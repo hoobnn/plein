@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* 设计 token：暗色优先，8pt 网格，三级阴影 */
+@theme {
+  --color-canvas: #0e0e10;
+  --color-surface: #18181b;
+  --color-surface-2: #1f1f23;
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-ink: #ededef;
+  --color-ink-muted: #8b8b93;
+  --color-accent: #e8d5b5;
+
+  --font-sans: "Inter", "PingFang SC", system-ui, sans-serif;
+
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-2: 0 8px 24px -8px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
+  --shadow-3: 0 24px 64px -16px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.08);
+
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}

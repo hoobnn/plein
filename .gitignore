@@ -1,0 +1,67 @@
+# ── 依赖 ──────────────────────────────────────────
+node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+
+# ── 构建产物 ──────────────────────────────────────
+dist/
+dist-ssr/
+build/
+out/
+*.tsbuildinfo
+.vite/
+.turbo/
+.cache/
+
+# ── 测试 / 覆盖率 ─────────────────────────────────
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+playwright/.cache/
+__screenshots__/__diff_output__/
+
+# ── 环境变量与密钥 ────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── 日志 ──────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── 后端服务（Bun / Hono）─────────────────────────
+.bun/
+*.sqlite
+*.sqlite-journal
+*.db
+*.db-journal
+
+# ── 媒体处理与本地存储（media-worker）─────────────
+# 本地上传 / 转码产物 / 缩略图金字塔，不进仓库
+storage/
+uploads/
+tmp/
+.tmp/
+
+# ── 编辑器 / IDE ──────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ── 系统文件 ──────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── AI 工具本地状态 ───────────────────────────────
+.claude/settings.local.json

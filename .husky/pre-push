@@ -1,0 +1,10 @@
+# Conventional Branch：https://conventionalbranch.org/
+pattern='^(main|master|develop|(feature|feat|bugfix|fix|hotfix|release|chore|ai|copilot|cursor|claude|codex)/[a-z0-9]+(\.[a-z0-9]+)*(-[a-z0-9]+(\.[a-z0-9]+)*)*)$'
+branch=$(git symbolic-ref --short HEAD)
+
+if ! printf '%s' "$branch" | grep -qE "$pattern"; then
+  echo "分支名 '$branch' 不符合 Conventional Branch 规范。" >&2
+  echo "格式：<type>/<description>，例如 feature/add-login-page。" >&2
+  echo "见 https://conventionalbranch.org/" >&2
+  exit 1
+fi

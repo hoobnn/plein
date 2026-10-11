@@ -1,0 +1,17 @@
+name: Branch name
+
+on: pull_request
+
+jobs:
+  conventional-branch:
+    runs-on: ubuntu-latest
+    steps:
+      # Conventional Branch v1.1.0：https://conventionalbranch.org/
+      - env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          pattern='^(main|master|develop|(feature|feat|bugfix|fix|hotfix|release|chore|ai|copilot|cursor|claude|codex)/[a-z0-9]+(\.[a-z0-9]+)*(-[a-z0-9]+(\.[a-z0-9]+)*)*)$'
+          if ! printf '%s' "$BRANCH" | grep -qE "$pattern"; then
+            echo "::error::分支名 '$BRANCH' 不符合 Conventional Branch 规范，格式：<type>/<description>"
+            exit 1
+          fi
