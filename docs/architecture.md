@@ -21,7 +21,7 @@ plein 是一块“可执行的画布”：同一个 Yjs 文档里既放图片、
 | `apps/web` | Vite + React 19 + Tailwind v4 + zustand，`CanvasView` 挂载引擎并写入演示元素 | 工具栏、选择/变换、节点表单、持久化、账号 |
 | `packages/canvas-core` | PixiJS v8（WebGPU 优先）、相机、触控板/惯性输入、点阵、占位矩形、端口与贝塞尔连线、DOM 覆盖层 | 按类型渲染、视口裁剪、LOD、命中测试、纹理管理 |
 | `packages/doc` | `elements`、`edges` 两个 `Y.Map`，带类型的 `Port`，`UndoManager`、`connectPorts` | 元素整对象存入（并发会互相覆盖）、无 schema 版本、无 z 序与父子关系、无持久化 |
-| `services/` | 仅 README（Bun + Hono API、libvips/ffmpeg 媒体 worker） | 全部待建 |
+| `apps/server` | 尚未创建（0.1.0 为 Node + Hono 单进程，见 roadmap-0.1.0.md） | 全部待建 |
 | 工程 | pnpm workspace、TS 7、commitlint + husky、CI（Node 26） | 测试、lint、性能基准 |
 
 ## 架构原则
@@ -51,7 +51,7 @@ flowchart TB
     doc --> local
   end
 
-  subgraph server["services/（可选）"]
+  subgraph server["服务端"]
     api["api<br/>鉴权、任务、SSE"]
     sync["sync<br/>Yjs 房间与持久化"]
     ai["ai-worker<br/>运行 flow"]
@@ -133,12 +133,12 @@ canvas-core 演进为场景引擎：从 doc 得到世界状态，维护场景图
 
 | 服务 | 技术 | 职责 |
 | --- | --- | --- |
-| `api` | Bun + Hono | 鉴权、画布元数据、上传签名、AI 任务、SSE、配额 |
-| `sync` | Bun WebSocket + Yjs | 文档房间、权限、增量持久化与快照 |
-| `ai-worker` | Bun + `packages/flow` | 取任务、调用 Provider、产出写对象存储 |
+| `api` | Node + Hono | 鉴权、画布元数据、上传签名、AI 任务、SSE、配额 |
+| `sync` | Node WebSocket + Yjs | 文档房间、权限、增量持久化与快照 |
+| `ai-worker` | Node + `packages/flow` | 取任务、调用 Provider、产出写对象存储 |
 | `media-worker` | libvips + ffmpeg | 缩略图金字塔、ThumbHash、封面、HLS |
 
-早期可合并为一个 Bun 进程部署，代码从第一天分开。依赖只有 Postgres（元数据、Yjs 更新、`SKIP LOCKED` 任务队列）和 S3 兼容对象存储（MinIO / R2），适合 AGPL 自托管。
+早期合并为一个 Node 进程（`apps/server`）部署，代码从第一天分开。依赖只有 Postgres（元数据、Yjs 更新、`SKIP LOCKED` 任务队列）和 S3 兼容对象存储（MinIO / R2），适合 AGPL 自托管。
 
 资产：
 

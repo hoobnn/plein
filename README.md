@@ -8,7 +8,7 @@ AI 无限画布：视觉创作 + 工作流编排，追求极致审美与丝滑�
 apps/web              Vite + React 19 + Tailwind v4 前端
 packages/canvas-core  画布内核：PixiJS v8（WebGPU 优先）+ 相机 + 输入
 packages/doc          文档模型：Yjs（Element / Edge / Undo）
-services/             后端服务（API、媒体处理）
+apps/server           本地服务：Hono（Node）+ SQLite + 资产与任务（0.1.0 新建）
 ```
 
 ## 开发

@@ -26,13 +26,36 @@
 | 参数 schema | zod v4 | 同时驱动校验、表单渲染和 LLM 结构化输出（JSON Schema 导出） |
 | 后端运行时 Bun | 改为 Node（已确认） | 仓库工具链已锁 Node 26 + pnpm，统一一套运行时、一套原生模块。Hono 在 Node 上同样可用（`@hono/node-server`、`@hono/node-ws`），以后要换 Bun 只换入口 |
 | 服务端运行 TS 源码 | 开发 `tsx watch`，发布打包 | workspace 包 `exports` 直接指向 `src/*.ts` 且导入不带扩展名，Node 自带的类型剥离跑不起来。开发用 tsx；发布和 Docker 用 tsdown（或 esbuild）把服务端连同 workspace 包打成一个 `dist/`，各包保持源码直出 |
-| 包边界 | 节点声明与执行分开，新增 protocol 包 | 节点的参数 schema、端口、模板提示词前后端共用；`execute` 要调供应商、读密钥、用 ffmpeg，只能在服务端。两者分开，前端打包不会带进服务端代码。前后端接口（上传、任务、SSE、设置）的 zod schema 放 `packages/protocol`。具体目录名见“目录结构审查”线程，待定 |
+| 包边界 | 节点声明与执行分开，新增 protocol 包 | 节点的参数 schema、端口、模板提示词前后端共用；`execute` 要调供应商、读密钥、用 ffmpeg，只能在服务端。两者分开，前端打包不会带进服务端代码。前后端接口（上传、任务、SSE、设置）的 zod schema 放 `packages/protocol`。目录见下方“目录结构” |
 | Postgres + MinIO/S3 | 改为 SQLite + 本地文件系统 | 本地单用户不需要数据库服务。SQLite（better-sqlite3 + Drizzle；`node:sqlite` 稳定后可替换）存元数据、Yjs 更新、任务队列；资产按内容哈希存 `data/assets/` |
 | 任务队列 | SQLite 表 + 进程内 worker | 取代 `SKIP LOCKED`，无 Redis。重启后从表里恢复未完成的远端任务继续轮询 |
 | 媒体处理 libvips + ffmpeg | 保留，换成 sharp + 系统 ffmpeg | sharp 自带 libvips；ffmpeg/ffprobe 负责元数据、封面、波形图、拼接、混音、烧字幕。Docker 镜像内置，裸跑要求本机已装 |
 | 模型接入 | 新建 TS 包 `packages/providers`，以 hoobnn-mcps 为契约参考 | 不在运行时调用 Python MCP：多一套 Python 运行时、工具级接口不带类型、结果是本地路径。hoobnn-mcps 已验证过各家端点、异步任务和交付细节，按它移植 TS 适配器；以后可加一个通用“MCP 工具节点”作为扩展口 |
 | TypeScript 7 | 保留，注意工具链 | TS 7 原生编译器的程序化 API 与 5.x 不同，依赖 TS API 的工具（typescript-eslint 类型感知规则等）可能跟不上（推断，未逐个验证）。lint 选 Biome 或 oxlint，测试用 Vitest（自带转译，不依赖 tsc） |
 | 部署 | Docker Compose 单容器 + `pnpm start` | 一个 Node 进程同时提供静态前端、API、WebSocket、worker；数据全在一个 `data/` 目录，备份即拷目录。桌面壳（Tauri）留到以后 |
+
+### 目录结构（已确认）
+
+```text
+apps/
+  web/                 前端
+  server/              本地服务：Hono + y-websocket + 资产 + 任务 worker + 静态前端
+    src/http/ sync/ assets/ jobs/ export/ storage/ executors/
+packages/
+  doc/                 Yjs 文档模型、命令式 API
+  canvas-core/         渲染与交互（不直接依赖 yjs，只消费 doc 给出的快照与变更事件）
+  protocol/            前后端共享的 HTTP / SSE / WS 消息 zod schema 与类型
+  flow/                工作流引擎：编译、缓存键、调度（不依赖供应商）
+  nodes/               内置节点声明：参数 schema、端口、迁移、短剧模板与提示词（前后端共用）
+  providers/           平台适配器，仅服务端 + fixtures/<provider>/
+e2e/                   Playwright
+scripts/               真机冒烟、基准等脚本
+Dockerfile · compose.yaml · .dockerignore · biome.json · vitest.config.ts
+```
+
+- 节点执行器放 `apps/server/src/executors/`，按 `type@version` 注册到 flow；`apps/web` 不依赖 `providers`，平台能力和模型列表通过 `protocol` 接口从服务端获取。
+- 单测与源码同目录（`src/**/*.test.ts`），根目录 `vitest.config.ts` 用 projects 汇总。
+- 数据目录默认 `./data`，可用 `PLEIN_DATA_DIR` 覆盖，Docker 挂卷到此路径。
 
 ### 对 architecture.md 原则的两处调整
 
@@ -138,7 +161,7 @@ flowchart LR
 | 多画布（项目列表）、重命名、删除 | P0 |
 | 小地图、搜索元素 | P1 |
 
-### B. 本地服务端（目录名待定）
+### B. 本地服务端（`apps/server`）
 
 | 功能 | 优先级 |
 | --- | --- |
@@ -232,4 +255,4 @@ flowchart LR
 | 模型接入 | TS 移植适配器，以 hoobnn-mcps 为契约参考，不在运行时调用 MCP |
 | 模板默认模型 | 文本 Doubao Seed；图像 Seedream 5.0 pro；视频 Seedance 2.0；配音 seed-tts-2.0；音效与配乐 seed-audio-1.0 |
 | 文档持久化 | 以服务端 SQLite 为准，IndexedDB 只做缓存 |
-| 目录结构（`apps/server` 或 `services/server`、节点声明包名） | 待定，见“目录结构审查”线程 |
+| 目录结构 | 后端放 `apps/server`，移除 `services/`；节点声明 `packages/nodes`，执行器在 `apps/server/src/executors/`；新增 `packages/protocol`（2026-10-11 确认） |
