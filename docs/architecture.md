@@ -22,7 +22,7 @@ plein 是一块“可执行的画布”：同一个 Yjs 文档里既放图片、
 | `packages/canvas-core` | PixiJS v8（WebGPU 优先）、相机、触控板/惯性输入、点阵、占位矩形、端口与贝塞尔连线、DOM 覆盖层 | 按类型渲染、视口裁剪、LOD、命中测试、纹理管理 |
 | `packages/doc` | `elements`、`edges` 两个 `Y.Map`，带类型的 `Port`，`UndoManager`、`connectPorts` | 元素整对象存入（并发会互相覆盖）、无 schema 版本、无 z 序与父子关系、无持久化 |
 | `services/` | 仅 README（Bun + Hono API、libvips/ffmpeg 媒体 worker） | 全部待建 |
-| 工程 | pnpm workspace、TS 5.9、commitlint + husky、CI（Node 26） | 测试、lint、性能基准 |
+| 工程 | pnpm workspace、TS 7、commitlint + husky、CI（Node 26） | 测试、lint、性能基准 |
 
 ## 架构原则
 

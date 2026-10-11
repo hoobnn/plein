@@ -6,5 +6,5 @@
   "exports": { ".": "./src/index.ts" },
   "scripts": { "typecheck": "tsc -p ." },
   "dependencies": { "yjs": "^13.6.33" },
-  "devDependencies": { "typescript": "^5.9.3" }
+  "devDependencies": { "typescript": "^7.0.2" }
 }
