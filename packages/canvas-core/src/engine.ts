@@ -1,34 +1,86 @@
+import {
+  bringToFront,
+  type ClipboardData,
+  deleteElements,
+  duplicateElements,
+  exportElements,
+  importElements,
+  isClipboardData,
+  moveElements,
+  type PleinDoc,
+  sendToBack,
+} from '@plein/doc'
 import { Application, Container, Graphics } from 'pixi.js'
-import type { YMapEvent } from 'yjs'
-import type { CanvasElement, PleinDoc } from '@plein/doc'
 import { Camera } from './camera'
-import { attachInput } from './input'
 import { EdgeLayer } from './edges'
+import { union } from './geometry'
+import { attachInput, isEditableTarget, type PanState } from './input'
 import { attachInteractions } from './interact'
+import { SelectionOverlay } from './overlay'
+import { type RenderContext, RendererRegistry } from './renderers'
+import { Scene, type Transient } from './scene'
+import { Selection } from './selection'
+import { ElementViews } from './views'
 
-export interface EngineOptions {
+export type Tool = 'select' | 'hand'
+
+export interface EngineOptions extends RenderContext {
   host: HTMLElement
   doc: PleinDoc
   /** DOM 覆盖层，跟随相机变换 */
   overlay?: HTMLElement
   background?: number
+  /** 默认 WebGL；WebGPU 待基准与兼容性验证后再切默认 */
+  renderer?: 'webgl' | 'webgpu'
+  renderers?: RendererRegistry
 }
 
+/** 引擎对外的运行时状态快照，供 UI 外壳展示 */
+export interface EngineState {
+  tool: Tool
+  zoom: number
+  selection: number
+  canUndo: boolean
+  canRedo: boolean
+}
+
+/** 粘贴时相对上一次的位移 */
+const PASTE_OFFSET = 24
+
 /**
- * 画布引擎：GPU 渲染（WebGPU 优先，回退 WebGL）+ DOM 覆盖层。
- * 当前为最小骨架：点阵网格 + 元素占位矩形 + 相机/输入。
+ * 画布引擎：GPU 渲染 + DOM 覆盖层。
+ * 场景（Scene）从文档维护世界坐标与空间索引；显示树只为视口内元素创建内容。
+ * 对外只暴露工具、选中、相机与命令，不暴露 Pixi 对象。
  */
 export class Engine {
   readonly camera = new Camera()
+  readonly selection = new Selection()
+  readonly scene: Scene
   private app = new Application()
-  private world = new Container()
+  private world = new Container({ sortableChildren: true })
   private grid = new Graphics()
-  private nodes = new Map<string, Graphics>()
-  private edgeLayer: EdgeLayer
+  private views: ElementViews
+  private edges: EdgeLayer
+  private overlay: SelectionOverlay
+  private pan: PanState = { space: false, hand: false }
+  private toolValue: Tool = 'select'
+  private viewDirty = true
+  private listeners = new Set<() => void>()
   private disposers: Array<() => void> = []
+  private pasteCount = 0
+  private lastClipboard: string | null = null
 
   constructor(private opts: EngineOptions) {
-    this.edgeLayer = new EdgeLayer(opts.doc, this.camera)
+    this.scene = new Scene(opts.doc)
+    this.views = new ElementViews(this.scene, opts.renderers ?? new RendererRegistry(), {
+      assetUrl: opts.assetUrl,
+    })
+    this.edges = new EdgeLayer(this.scene, this.camera)
+    this.overlay = new SelectionOverlay(this.scene, this.selection, this.camera)
+  }
+
+  get doc() {
+    return this.opts.doc
   }
 
   async init() {
@@ -39,37 +91,182 @@ export class Engine {
       antialias: true,
       autoDensity: true,
       resolution: window.devicePixelRatio,
-      preference: 'webgpu',
+      preference: this.opts.renderer ?? 'webgl',
     })
     host.appendChild(this.app.canvas)
     this.app.stage.addChild(this.grid, this.world)
-    // 连线在节点下、端口在节点上，靠 zIndex 排序
-    this.world.sortableChildren = true
-    this.world.addChild(this.edgeLayer.edges, this.edgeLayer.ports)
-    this.app.ticker.add(() => this.edgeLayer.update())
+    // 连线在元素下，端口、选择叠加层在元素上，靠 zIndex 排序
+    this.world.addChild(this.edges.edges, this.views.layer, this.edges.ports, this.overlay.graphics)
+    this.views.sync(this.scene.rebuild())
+    this.app.ticker.add(() => this.frame())
 
-    this.disposers.push(attachInput(host, this.camera))
-    this.disposers.push(attachInteractions(host, this.camera, this.opts.doc, this.edgeLayer))
-    this.disposers.push(this.camera.onChange(() => this.syncCamera()))
+    this.disposers.push(
+      attachInput(host, this.camera, this.pan),
+      attachInteractions({
+        el: host,
+        camera: this.camera,
+        scene: this.scene,
+        doc: this.doc,
+        selection: this.selection,
+        edges: this.edges,
+        overlay: this.overlay,
+        pan: this.pan,
+        preview: (patches) => this.preview(patches),
+        commit: (write) => this.commit(write),
+      }),
+      this.camera.onChange(() => this.syncCamera()),
+      this.selection.onChange(() => {
+        this.overlay.markDirty()
+        this.emit()
+      }),
+      this.doc.subscribe((change) => {
+        const update = this.scene.apply(change)
+        this.views.sync(update)
+        this.selection.prune((id) => this.scene.has(id))
+        this.edges.markDirty()
+        this.overlay.markDirty()
+        this.viewDirty = true
+        this.emit()
+      }),
+      this.attachShortcuts(),
+    )
 
-    // 订阅文档变更，做增量更新
-    const { elements } = this.opts.doc
-    elements.forEach((el) => this.upsertNode(el))
-    const observer = (e: YMapEvent<CanvasElement>) => {
-      e.keysChanged.forEach((id) => {
-        const el = elements.get(id)
-        if (el) this.upsertNode(el)
-        else this.removeNode(id)
-      })
-    }
-    elements.observe(observer)
-    this.disposers.push(() => elements.unobserve(observer))
-
-    const onResize = () => this.drawGrid()
+    const onResize = () => this.camera.setViewport(this.app.screen.width, this.app.screen.height)
     this.app.renderer.on('resize', onResize)
     this.disposers.push(() => this.app.renderer.off('resize', onResize))
+    onResize()
+  }
 
-    this.syncCamera()
+  // ── 状态 ────────────────────────────────────────────
+
+  get tool() {
+    return this.toolValue
+  }
+
+  setTool(tool: Tool) {
+    if (tool === this.toolValue) return
+    this.toolValue = tool
+    this.pan.hand = tool === 'hand'
+    this.opts.host.style.cursor = tool === 'hand' ? 'grab' : ''
+    this.emit()
+  }
+
+  get state(): EngineState {
+    return {
+      tool: this.toolValue,
+      zoom: this.camera.zoom,
+      selection: this.selection.size,
+      canUndo: this.doc.undo.canUndo(),
+      canRedo: this.doc.undo.canRedo(),
+    }
+  }
+
+  /** 工具、缩放、选中、撤销栈任一变化时通知 */
+  onStateChange(fn: () => void) {
+    this.listeners.add(fn)
+    return () => {
+      this.listeners.delete(fn)
+    }
+  }
+
+  get stats() {
+    return { elements: this.scene.size, visible: this.views.visibleCount, fps: this.app.ticker.FPS }
+  }
+
+  // ── 命令 ────────────────────────────────────────────
+
+  undo() {
+    this.doc.undo.undo()
+  }
+
+  redo() {
+    this.doc.undo.redo()
+  }
+
+  selectAll() {
+    this.selection.set(
+      this.scene.children(null).filter((id) => this.scene.get(id)?.locked === false),
+    )
+  }
+
+  deleteSelection() {
+    if (this.selection.size === 0) return
+    deleteElements(this.doc, this.selection.values())
+  }
+
+  duplicateSelection() {
+    if (this.selection.size === 0) return
+    this.selection.set(duplicateElements(this.doc, this.selection.values()))
+  }
+
+  nudge(dx: number, dy: number) {
+    if (this.selection.size === 0) return
+    moveElements(this.doc, this.selection.values(), dx, dy)
+  }
+
+  bringToFront() {
+    bringToFront(this.doc, this.selection.values())
+  }
+
+  sendToBack() {
+    sendToBack(this.doc, this.selection.values())
+  }
+
+  copy(): ClipboardData | null {
+    if (this.selection.size === 0) return null
+    this.pasteCount = 0
+    return exportElements(this.doc, this.selection.values())
+  }
+
+  paste(data: ClipboardData) {
+    this.pasteCount++
+    const d = PASTE_OFFSET * this.pasteCount
+    this.selection.set(importElements(this.doc, data, { dx: d, dy: d }))
+  }
+
+  /** 缩放到包住指定元素（默认全部） */
+  zoomToFit(ids?: Iterable<string>) {
+    const list = ids ? [...ids] : [...this.scene.children(null)]
+    const box = union(list.map((id) => this.scene.rect(id)).filter((r) => !!r))
+    if (box) this.camera.fit(box)
+  }
+
+  zoomTo(zoom: number) {
+    this.camera.zoomTo(zoom)
+  }
+
+  // ── 内部 ────────────────────────────────────────────
+
+  private emit() {
+    for (const fn of this.listeners) fn()
+  }
+
+  private frame() {
+    if (this.viewDirty) {
+      this.viewDirty = false
+      this.views.cull(this.camera.viewRect, this.camera.zoom)
+    }
+    this.edges.update()
+    this.overlay.update()
+  }
+
+  private preview(patches: Map<string, Transient>) {
+    const touched = this.scene.setTransient(patches)
+    this.afterTransient(touched)
+  }
+
+  private commit(write: () => void) {
+    write()
+    // 立即同步，保证清掉预览时场景已是新位置
+    this.doc.flush()
+    this.afterTransient(this.scene.clearTransient())
+  }
+
+  private afterTransient(touched: Set<string>) {
+    this.views.refresh(touched)
+    this.edges.markDirty()
+    this.overlay.markDirty()
+    this.viewDirty = true
   }
 
   private syncCamera() {
@@ -78,11 +275,15 @@ export class Engine {
     this.world.scale.set(zoom)
     if (this.opts.overlay) this.opts.overlay.style.transform = this.camera.cssTransform
     this.drawGrid()
+    this.edges.markDirty()
+    this.overlay.markDirty()
+    this.viewDirty = true
+    this.emit()
   }
 
   /** 屏幕空间点阵：间距随缩放分级，避免过密 */
   private drawGrid() {
-    const { width, height } = this.app.screen
+    const { width, height } = this.camera
     const { x, y, zoom } = this.camera
     let step = 24 * zoom
     while (step < 12) step *= 4
@@ -98,28 +299,87 @@ export class Engine {
     g.fill({ color: 0xffffff, alpha: 0.08 })
   }
 
-  private upsertNode(el: CanvasElement) {
-    let g = this.nodes.get(el.id)
-    if (!g) {
-      g = new Graphics()
-      this.nodes.set(el.id, g)
-      this.world.addChild(g)
+  private attachShortcuts() {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isEditableTarget(e.target)) return
+      const mod = e.metaKey || e.ctrlKey
+      const key = e.key.toLowerCase()
+      const step = e.shiftKey ? 10 : 1
+      let handled = true
+      if (mod && key === 'z') e.shiftKey ? this.redo() : this.undo()
+      else if (mod && key === 'y') this.redo()
+      else if (mod && key === 'a') this.selectAll()
+      else if (mod && key === 'd') this.duplicateSelection()
+      else if (mod && e.key === ']') this.bringToFront()
+      else if (mod && e.key === '[') this.sendToBack()
+      else if (mod && key === '0') this.zoomTo(1)
+      else if (e.shiftKey && e.code === 'Digit1') this.zoomToFit()
+      else if (e.shiftKey && e.code === 'Digit2') this.zoomToFit(this.selection.values())
+      else if (mod) handled = false
+      else if (key === 'delete' || key === 'backspace') this.deleteSelection()
+      else if (key === 'escape') this.selection.clear()
+      else if (key === 'v') this.setTool('select')
+      else if (key === 'h') this.setTool('hand')
+      else if (key === 'arrowleft') this.nudge(-step, 0)
+      else if (key === 'arrowright') this.nudge(step, 0)
+      else if (key === 'arrowup') this.nudge(0, -step)
+      else if (key === 'arrowdown') this.nudge(0, step)
+      else handled = false
+      if (handled) e.preventDefault()
     }
-    g.clear()
-      .roundRect(0, 0, el.w, el.h, 14)
-      .fill({ color: 0x1b1b1f })
-      .stroke({ color: 0xffffff, alpha: 0.08, width: 1 })
-    g.position.set(el.x, el.y)
-  }
 
-  private removeNode(id: string) {
-    this.nodes.get(id)?.destroy()
-    this.nodes.delete(id)
+    // 复制粘贴走原生事件，才能同步读写系统剪贴板
+    const onCopy = (e: ClipboardEvent, cut: boolean) => {
+      if (isEditableTarget(e.target)) return
+      const data = this.copy()
+      if (!data || !e.clipboardData) return
+      const text = JSON.stringify(data)
+      this.lastClipboard = text
+      e.clipboardData.setData('text/plain', text)
+      e.preventDefault()
+      if (cut) this.deleteSelection()
+    }
+    const onPaste = (e: ClipboardEvent) => {
+      if (isEditableTarget(e.target)) return
+      const text = e.clipboardData?.getData('text/plain')
+      if (!text) return
+      let data: unknown
+      try {
+        data = JSON.parse(text)
+      } catch {
+        return
+      }
+      if (!isClipboardData(data)) return
+      // 外部新复制的内容从原位附近开始偏移
+      if (text !== this.lastClipboard) {
+        this.lastClipboard = text
+        this.pasteCount = 0
+      }
+      e.preventDefault()
+      this.paste(data)
+    }
+    const copy = (e: ClipboardEvent) => onCopy(e, false)
+    const cut = (e: ClipboardEvent) => onCopy(e, true)
+
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('copy', copy)
+    window.addEventListener('cut', cut)
+    window.addEventListener('paste', onPaste)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('copy', copy)
+      window.removeEventListener('cut', cut)
+      window.removeEventListener('paste', onPaste)
+    }
   }
 
   destroy() {
-    this.disposers.forEach((d) => d())
-    this.edgeLayer.destroy()
+    this.disposers.forEach((d) => {
+      d()
+    })
+    this.views.destroy()
+    this.edges.destroy()
+    this.overlay.destroy()
     this.app.destroy(true, { children: true })
   }
 }

@@ -1,134 +1,370 @@
-import { connectPorts, removeEdge, type CanvasElement, type PleinDoc } from '@plein/doc'
+import {
+  type CanvasElement,
+  connect,
+  type PleinDoc,
+  type Rect,
+  removeEdges,
+  setParent,
+  topLevel,
+  updateElements,
+} from '@plein/doc'
 import type { Camera } from './camera'
 import type { EdgeLayer } from './edges'
-import { PORT_RADIUS, canConnect, findPort, hitPort, type PortRef } from './ports'
+import {
+  contains,
+  expand,
+  fromPoints,
+  HANDLE_CURSORS,
+  HANDLES,
+  type Handle,
+  handlePosition,
+  intersects,
+  mapRect,
+  resizeBox,
+  snapMove,
+  union,
+} from './geometry'
+import type { PanState } from './input'
+import { HANDLE_PX, type SelectionOverlay } from './overlay'
+import { canConnect, hitPort, PORT_RADIUS, type PortRef } from './ports'
+import type { Scene, Transient } from './scene'
+import type { Selection } from './selection'
 
 /** 端口命中范围：屏幕上至少 10px，便于缩小后也能点中 */
 const HIT_PX = 10
+/** 按下后移动超过这个距离（屏幕像素）才算拖拽，避免点击误写文档 */
+const DRAG_PX = 3
+/** 吸附阈值（屏幕像素） */
+const SNAP_PX = 6
+
+export interface InteractHost {
+  el: HTMLElement
+  camera: Camera
+  scene: Scene
+  doc: PleinDoc
+  selection: Selection
+  edges: EdgeLayer
+  overlay: SelectionOverlay
+  pan: PanState
+  /** 设置交互预览（局部坐标），不写文档 */
+  preview(patches: Map<string, Transient>): void
+  /** 写入文档并立即同步到场景，再清掉预览，避免闪回 */
+  commit(write: () => void): void
+}
 
 type Gesture =
   | { kind: 'connect'; from: PortRef }
-  | { kind: 'move'; id: string; ox: number; oy: number; sx: number; sy: number }
+  | { kind: 'press'; id: string; sx: number; sy: number; wx: number; wy: number; toggled: boolean }
+  | { kind: 'move'; ids: string[]; starts: Map<string, Rect>; box: Rect; wx: number; wy: number }
+  | {
+      kind: 'resize'
+      handle: Handle
+      ids: string[]
+      starts: Map<string, Rect>
+      /** 被缩放的 Frame 的直接子元素起始局部坐标：Frame 左上角移动时反向补偿，保持世界位置 */
+      kids: Map<string, { parent: string; x: number; y: number }>
+      box: Rect
+      wx: number
+      wy: number
+    }
+  | { kind: 'marquee'; wx: number; wy: number; base: string[] }
 
 /**
- * 左键交互（空格/中键留给相机平移）：
- * - 从端口拖出 = 连线；松手落在兼容端口上写入一条边
- * - 从已连接的输入端口拖出 = 拾起这条边，丢到空白处即删除
- * - 拖节点本体 = 移动节点
+ * 选择工具的左键交互（空格/抓手/中键留给相机平移）：
+ * - 拖缩放手柄 = 缩放选中元素（Shift 等比）
+ * - 从端口拖出 = 连线；从已连接的输入端口拖出 = 拾起这条边，丢到空白处即删除
+ * - 点元素 = 选中（Shift 增减）；拖元素 = 移动全部选中项，带吸附（Alt 关闭），松手落进 Frame 即归组
+ * - 在空白处拖 = 框选
  */
-export function attachInteractions(
-  el: HTMLElement,
-  camera: Camera,
-  doc: PleinDoc,
-  layer: EdgeLayer,
-) {
-  let spaceDown = false
+export function attachInteractions(host: InteractHost) {
+  const { el, camera, scene, doc, selection, edges, overlay, pan } = host
   let gesture: Gesture | null = null
 
   const toWorld = (e: PointerEvent) => {
     const rect = el.getBoundingClientRect()
     return camera.screenToWorld(e.clientX - rect.left, e.clientY - rect.top)
   }
-  const radius = () => Math.max(PORT_RADIUS * 1.5, HIT_PX / camera.zoom)
+  const portRadius = () => Math.max(PORT_RADIUS * 1.5, HIT_PX / camera.zoom)
 
-  const hitElement = (x: number, y: number) => {
-    let hit: CanvasElement | null = null
-    for (const n of doc.elements.values()) {
-      if (x >= n.x && x <= n.x + n.w && y >= n.y && y <= n.y + n.h) hit = n
+  const portCandidates = (x: number, y: number) => {
+    const out: Array<[CanvasElement, Rect]> = []
+    for (const id of scene.query(expand({ x, y, w: 0, h: 0 }, portRadius()))) {
+      const e = scene.get(id)
+      const r = scene.rect(id)
+      if (e?.ports && r) out.push([e, r])
     }
-    return hit
+    return out
   }
+  const findPortAt = (x: number, y: number, filter?: (p: PortRef) => boolean) =>
+    hitPort(portCandidates(x, y), x, y, portRadius(), filter)
+
+  const handleAt = (x: number, y: number): Handle | null => {
+    if (selection.size === 0 || !overlay.showHandles()) return null
+    const box = overlay.selectionBox()
+    if (!box) return null
+    const tol = HANDLE_PX / camera.zoom
+    return (
+      HANDLES.find((h) => {
+        const p = handlePosition(box, h)
+        return Math.abs(p.x - x) <= tol && Math.abs(p.y - y) <= tol
+      }) ?? null
+    )
+  }
+
+  /** 可编辑（未锁定）的顶层选中元素 */
+  const editableTops = () =>
+    topLevel(doc, selection.values()).filter((id) => scene.get(id)?.locked === false)
+
+  const parentOrigin = (id: string) => {
+    const p = scene.parent(id)
+    return (p && scene.rect(p)) || { x: 0, y: 0 }
+  }
+
+  // ── 按下 ────────────────────────────────────────────
 
   const onPointerDown = (e: PointerEvent) => {
-    if (e.button !== 0 || spaceDown) return
+    if (e.button !== 0 || pan.space || pan.hand) return
     const w = toWorld(e)
-    const port = hitPort(doc.elements.values(), w.x, w.y, radius())
-    if (port) {
-      let from = port
-      if (port.side === 'in') {
-        // 输入端口已有连线：拾起它，改从上游输出端口继续拖
-        const existing = [...doc.edges.values()].find(
-          (edge) => edge.to[0] === port.elementId && edge.to[1] === port.port.id,
-        )
-        const src = existing && doc.elements.get(existing.from[0])
-        const srcPort = src && findPort(src, existing.from[1], 'out')
-        if (existing && srcPort) {
-          removeEdge(doc, existing.id)
-          from = srcPort
+
+    const handle = handleAt(w.x, w.y)
+    if (handle) {
+      const ids = editableTops()
+      const starts = new Map(ids.map((id) => [id, scene.rect(id)!]))
+      const kids = new Map<string, { parent: string; x: number; y: number }>()
+      for (const id of ids) {
+        if (scene.get(id)?.kind !== 'frame') continue
+        for (const c of scene.children(id)) {
+          const r = scene.localRect(c)
+          if (r) kids.set(c, { parent: id, x: r.x, y: r.y })
         }
       }
-      gesture = { kind: 'connect', from }
-      layer.setPreview({ from, x: w.x, y: w.y, target: null })
+      const box = union(starts.values())
+      if (box) gesture = { kind: 'resize', handle, ids, starts, kids, box, wx: w.x, wy: w.y }
+    } else if (startConnect(w.x, w.y)) {
+      // 连线手势已建立
     } else {
-      const node = hitElement(w.x, w.y)
-      if (!node) return
-      doc.undo.stopCapturing()
-      gesture = { kind: 'move', id: node.id, ox: node.x, oy: node.y, sx: w.x, sy: w.y }
+      const id = scene.hitTest(w.x, w.y)
+      if (id) {
+        let toggled = false
+        if (e.shiftKey) {
+          selection.toggle(id)
+          toggled = !selection.has(id)
+        } else if (!selection.has(id)) {
+          selection.set([id])
+        }
+        gesture = { kind: 'press', id, sx: e.clientX, sy: e.clientY, wx: w.x, wy: w.y, toggled }
+      } else {
+        const base = e.shiftKey ? selection.values() : []
+        if (!e.shiftKey) selection.clear()
+        gesture = { kind: 'marquee', wx: w.x, wy: w.y, base }
+      }
     }
-    el.setPointerCapture(e.pointerId)
+    if (gesture) el.setPointerCapture(e.pointerId)
   }
+
+  const startConnect = (x: number, y: number) => {
+    const port = findPortAt(x, y)
+    if (!port) return false
+    let from = port
+    if (port.side === 'in') {
+      // 输入端口已有连线：拾起它，改从上游输出端口继续拖
+      const existing = [...doc.edges()].find(
+        (edge) => edge.to[0] === port.elementId && edge.to[1] === port.port.id,
+      )
+      const srcPort = existing && edges.port(existing.from[0], existing.from[1], 'out')
+      if (existing && srcPort) {
+        removeEdges(doc, [existing.id])
+        from = srcPort
+      }
+    }
+    gesture = { kind: 'connect', from }
+    edges.setPreview({ from, x, y, target: null })
+    return true
+  }
+
+  // ── 移动 ────────────────────────────────────────────
 
   const onPointerMove = (e: PointerEvent) => {
     const w = toWorld(e)
     if (!gesture) {
-      if (spaceDown) return
-      const port = hitPort(doc.elements.values(), w.x, w.y, radius())
-      layer.setHover(port)
-      el.style.cursor = port ? 'crosshair' : ''
+      if (pan.space || pan.hand) return
+      const handle = handleAt(w.x, w.y)
+      const port = handle ? null : findPortAt(w.x, w.y)
+      edges.setHover(port)
+      el.style.cursor = handle ? HANDLE_CURSORS[handle] : port ? 'crosshair' : ''
       return
     }
-    if (gesture.kind === 'connect') {
-      const { from } = gesture
-      const target = hitPort(doc.elements.values(), w.x, w.y, radius(), (p) => canConnect(from, p))
-      layer.setPreview({ from, x: w.x, y: w.y, target })
-    } else {
-      const node = doc.elements.get(gesture.id)
-      if (!node) return
-      doc.elements.set(node.id, {
-        ...node,
-        x: gesture.ox + w.x - gesture.sx,
-        y: gesture.oy + w.y - gesture.sy,
-      })
+    switch (gesture.kind) {
+      case 'connect': {
+        const { from } = gesture
+        const target = findPortAt(w.x, w.y, (p) => canConnect(from, p))
+        edges.setPreview({ from, x: w.x, y: w.y, target })
+        break
+      }
+      case 'press': {
+        if (gesture.toggled || Math.hypot(e.clientX - gesture.sx, e.clientY - gesture.sy) < DRAG_PX)
+          break
+        const ids = editableTops()
+        const starts = new Map(ids.map((id) => [id, scene.localRect(id)!]))
+        const box = union(ids.map((id) => scene.rect(id)!))
+        gesture = box ? { kind: 'move', ids, starts, box, wx: gesture.wx, wy: gesture.wy } : null
+        if (gesture) dragMove(gesture, w.x, w.y, e.altKey)
+        break
+      }
+      case 'move':
+        dragMove(gesture, w.x, w.y, e.altKey)
+        break
+      case 'resize': {
+        const { handle, ids, starts, kids, box } = gesture
+        const next = resizeBox(box, handle, w.x - gesture.wx, w.y - gesture.wy, e.shiftKey)
+        const patches = new Map<string, Transient>()
+        const shift = new Map<string, { dx: number; dy: number }>()
+        for (const id of ids) {
+          const start = starts.get(id)!
+          const r = mapRect(start, box, next)
+          const o = parentOrigin(id)
+          patches.set(id, { x: r.x - o.x, y: r.y - o.y, w: r.w, h: r.h })
+          shift.set(id, { dx: r.x - start.x, dy: r.y - start.y })
+        }
+        for (const [c, k] of kids) {
+          const s = shift.get(k.parent)!
+          patches.set(c, { x: k.x - s.dx, y: k.y - s.dy })
+        }
+        host.preview(patches)
+        break
+      }
+      case 'marquee': {
+        const rect = fromPoints(gesture.wx, gesture.wy, w.x, w.y)
+        overlay.setMarquee(rect)
+        selection.set([...gesture.base, ...marqueeHits(rect)])
+        break
+      }
     }
   }
+
+  const dragMove = (
+    g: Extract<Gesture, { kind: 'move' }>,
+    x: number,
+    y: number,
+    noSnap: boolean,
+  ) => {
+    let dx = x - g.wx
+    let dy = y - g.wy
+    const moved = { ...g.box, x: g.box.x + dx, y: g.box.y + dy }
+    if (!noSnap) {
+      const moving = new Set(g.ids)
+      const targets = scene
+        .query(camera.viewRect)
+        .filter((id) => !moving.has(id) && !g.ids.some((m) => scene.isAncestor(m, id)))
+        .map((id) => scene.rect(id)!)
+      const snap = snapMove(moved, targets, SNAP_PX / camera.zoom)
+      dx += snap.dx
+      dy += snap.dy
+      overlay.setGuides(snap.guides)
+    } else {
+      overlay.setGuides([])
+    }
+    const patches = new Map<string, Transient>()
+    for (const id of g.ids) {
+      const s = g.starts.get(id)!
+      patches.set(id, { x: s.x + dx, y: s.y + dy })
+    }
+    host.preview(patches)
+  }
+
+  /** 框选命中：普通元素相交即选中，Frame 需完整框住；已选 Frame 的后代不重复选 */
+  const marqueeHits = (rect: Rect) => {
+    const hits = scene.query(rect).filter((id) => {
+      const r = scene.rect(id)!
+      return scene.get(id)?.kind === 'frame' ? contains(rect, r) : intersects(rect, r)
+    })
+    const set = new Set(hits)
+    return hits.filter((id) => {
+      for (let p = scene.parent(id); p !== null; p = scene.parent(p)) if (set.has(p)) return false
+      return true
+    })
+  }
+
+  // ── 松开 ────────────────────────────────────────────
 
   const onPointerUp = (e: PointerEvent) => {
     if (!gesture) return
     const w = toWorld(e)
-    if (gesture.kind === 'connect') {
-      const { from } = gesture
-      const target = hitPort(doc.elements.values(), w.x, w.y, radius(), (p) => canConnect(from, p))
-      if (target) {
-        const [out, inp] = from.side === 'out' ? [from, target] : [target, from]
-        connectPorts(doc, [out.elementId, out.port.id], [inp.elementId, inp.port.id])
-      }
-      layer.setPreview(null)
-    }
+    const g = gesture
     gesture = null
     el.releasePointerCapture(e.pointerId)
-    layer.setHover(hitPort(doc.elements.values(), w.x, w.y, radius()))
+
+    switch (g.kind) {
+      case 'connect': {
+        const target = findPortAt(w.x, w.y, (p) => canConnect(g.from, p))
+        if (target) {
+          const [out, inp] = g.from.side === 'out' ? [g.from, target] : [target, g.from]
+          connect(doc, [out.elementId, out.port.id], [inp.elementId, inp.port.id])
+        }
+        edges.setPreview(null)
+        break
+      }
+      case 'press':
+        // 在多选中点了其中一个且没拖动：只留它
+        if (!g.toggled && !e.shiftKey && selection.size > 1) selection.set([g.id])
+        break
+      case 'move': {
+        overlay.setGuides([])
+        const patches = g.ids.map((id) => ({ id, ...scene.localRect(id)! }))
+        host.commit(() => {
+          doc.undo.stopCapturing()
+          updateElements(doc, patches)
+          regroup(g.ids)
+        })
+        break
+      }
+      case 'resize': {
+        const patches = [...g.ids, ...g.kids.keys()].map((id) => ({ id, ...scene.localRect(id)! }))
+        host.commit(() => {
+          doc.undo.stopCapturing()
+          updateElements(doc, patches)
+        })
+        break
+      }
+      case 'marquee':
+        overlay.setMarquee(null)
+        break
+    }
   }
 
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.code === 'Space') spaceDown = true
-  }
-  const onKeyUp = (e: KeyboardEvent) => {
-    if (e.code === 'Space') spaceDown = false
+  /** 拖动结束后按元素中心所在的最内层 Frame 归组；拖出 Frame 则回到外层 */
+  const regroup = (ids: string[]) => {
+    const moving = new Set(ids)
+    const byTarget = new Map<string | null, string[]>()
+    for (const id of ids) {
+      const r = doc.worldRect(id)
+      if (!r) continue
+      const frame = scene.hitTest(
+        r.x + r.w / 2,
+        r.y + r.h / 2,
+        (f) =>
+          scene.get(f)?.kind === 'frame' &&
+          !moving.has(f) &&
+          ![...moving].some((m) => scene.isAncestor(m, f)),
+      )
+      const current = doc.effectiveParent(doc.get(id)!)
+      if (frame === current) continue
+      const list = byTarget.get(frame)
+      if (list) list.push(id)
+      else byTarget.set(frame, [id])
+    }
+    for (const [target, list] of byTarget) setParent(doc, list, target)
   }
 
   el.addEventListener('pointerdown', onPointerDown)
   el.addEventListener('pointermove', onPointerMove)
   el.addEventListener('pointerup', onPointerUp)
   el.addEventListener('pointercancel', onPointerUp)
-  window.addEventListener('keydown', onKeyDown)
-  window.addEventListener('keyup', onKeyUp)
 
   return () => {
     el.removeEventListener('pointerdown', onPointerDown)
     el.removeEventListener('pointermove', onPointerMove)
     el.removeEventListener('pointerup', onPointerUp)
     el.removeEventListener('pointercancel', onPointerUp)
-    window.removeEventListener('keydown', onKeyDown)
-    window.removeEventListener('keyup', onKeyUp)
   }
 }

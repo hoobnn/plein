@@ -1,7 +1,7 @@
 import { Graphics } from 'pixi.js'
-import type { PleinDoc } from '@plein/doc'
 import type { Camera } from './camera'
 import { PORT_COLORS, PORT_RADIUS, eachPort, findPort, type PortRef } from './ports'
+import type { Scene } from './scene'
 
 const EDGE_COLOR = 0xe8d5b5
 
@@ -17,8 +17,8 @@ export interface EdgePreview {
 /**
  * 连线与端口图层。
  * - edges：画在节点下方
- * - ports：画在节点上方，含拖拽预览
- * 文档或相机变化只标脏，统一在 ticker 里重画（每帧最多一次）。
+ * - ports：画在节点上方，含拖拽预览；只画视口内元素的端口
+ * 位置取自场景（含拖拽预览），变化只标脏，统一在 ticker 里重画。
  */
 export class EdgeLayer {
   readonly edges = new Graphics()
@@ -26,22 +26,13 @@ export class EdgeLayer {
   private dirty = true
   private preview: EdgePreview | null = null
   private hover: PortRef | null = null
-  private disposers: Array<() => void> = []
 
   constructor(
-    private doc: PleinDoc,
+    private scene: Scene,
     private camera: Camera,
   ) {
     this.edges.zIndex = -1
     this.ports.zIndex = 1
-    const mark = () => this.markDirty()
-    doc.elements.observe(mark)
-    doc.edges.observe(mark)
-    this.disposers.push(
-      () => doc.elements.unobserve(mark),
-      () => doc.edges.unobserve(mark),
-      camera.onChange(mark),
-    )
   }
 
   markDirty() {
@@ -59,23 +50,27 @@ export class EdgeLayer {
     this.markDirty()
   }
 
+  /** 世界坐标下的端口 */
+  port(elementId: string, portId: string, side: 'in' | 'out') {
+    const el = this.scene.get(elementId)
+    const r = this.scene.rect(elementId)
+    return el && r ? findPort(el, r, portId, side) : null
+  }
+
   update() {
     if (!this.dirty) return
     this.dirty = false
     // 线宽按缩放反算，屏幕上保持恒定粗细
     const px = 1 / this.camera.zoom
-    const { elements, edges } = this.doc
 
     const g = this.edges.clear()
-    for (const e of edges.values()) {
-      const a = elements.get(e.from[0])
-      const b = elements.get(e.to[0])
-      const from = a && findPort(a, e.from[1], 'out')
-      const to = b && findPort(b, e.to[1], 'in')
+    for (const e of this.scene.doc.edges()) {
+      const from = this.port(e.from[0], e.from[1], 'out')
+      const to = this.port(e.to[0], e.to[1], 'in')
       if (!from || !to) continue
       bezier(g, from.x, from.y, to.x, to.y)
-      g.stroke({ color: EDGE_COLOR, alpha: 0.7, width: 2 * px })
     }
+    g.stroke({ color: EDGE_COLOR, alpha: 0.7, width: 2 * px })
 
     const p = this.ports.clear()
     if (this.preview) {
@@ -85,9 +80,14 @@ export class EdgeLayer {
       else bezier(p, end.x, end.y, from.x, from.y)
       p.stroke({ color: EDGE_COLOR, alpha: target ? 0.9 : 0.5, width: 2 * px })
     }
+    // 缩得很小时端口点太密，不画
+    if (this.camera.zoom < 0.25) return
     const active = this.preview?.target ?? this.hover
-    for (const el of elements.values()) {
-      eachPort(el, (ref) => {
+    for (const id of this.scene.query(this.camera.viewRect)) {
+      const el = this.scene.get(id)
+      const r = this.scene.rect(id)
+      if (!el?.ports || !r) continue
+      eachPort(el, r, (ref) => {
         const on = active?.elementId === ref.elementId && active.port.id === ref.port.id
         p.circle(ref.x, ref.y, on ? PORT_RADIUS * 1.4 : PORT_RADIUS)
           .fill({ color: 0x0e0e10 })
@@ -97,7 +97,6 @@ export class EdgeLayer {
   }
 
   destroy() {
-    this.disposers.forEach((d) => d())
     this.edges.destroy()
     this.ports.destroy()
   }

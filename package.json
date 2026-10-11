@@ -11,13 +11,20 @@
   "scripts": {
     "dev": "pnpm --filter @plein/web dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r typecheck && tsc -p .",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
     "prepare": "husky"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
     "@commitlint/cli": "^21.2.3",
     "@commitlint/config-conventional": "^21.2.3",
+    "@types/node": "^26.6.5",
     "husky": "^9.1.7",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.3"
   }
 }

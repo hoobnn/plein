@@ -16,7 +16,10 @@ apps/server           本地服务：Hono（Node）+ SQLite + 资产与任务（
 ```bash
 corepack enable          # 启用 pnpm（版本由 package.json 的 packageManager 锁定）
 pnpm install
-pnpm dev                 # http://localhost:5173
+pnpm dev                 # http://localhost:5173，演示画布默认 1000 个元素，可用 ?n=5000 调整
+pnpm lint                # Biome 检查（pnpm format 自动修复）
+pnpm typecheck
+pnpm test                # Vitest
 ```
 
 ## 原则

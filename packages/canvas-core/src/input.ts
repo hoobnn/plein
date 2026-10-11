@@ -1,13 +1,22 @@
 import type { Camera } from './camera'
 
+/** 平移模式：空格按住、或当前是抓手工具时，左键拖拽平移画布 */
+export interface PanState {
+  space: boolean
+  hand: boolean
+}
+
+export const isEditableTarget = (t: EventTarget | null) =>
+  t instanceof HTMLElement &&
+  (t.isContentEditable || t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement)
+
 /**
  * 触控板/滚轮/拖拽输入。
  * - 触控板双指滑动 = 平移；捏合（ctrlKey wheel）= 缩放
  * - 鼠标滚轮 + ⌘/Ctrl = 缩放
- * - 空格 + 拖拽 或 中键拖拽 = 平移，松手带惯性
+ * - 空格 + 拖拽、抓手工具拖拽、中键拖拽 = 平移，松手带惯性
  */
-export function attachInput(el: HTMLElement, camera: Camera) {
-  let spaceDown = false
+export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
   let dragging = false
   let lastX = 0
   let lastY = 0
@@ -15,6 +24,8 @@ export function attachInput(el: HTMLElement, camera: Camera) {
   let vy = 0
   let lastT = 0
   let inertiaRaf = 0
+
+  const idleCursor = () => (pan.space || pan.hand ? 'grab' : '')
 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault()
@@ -33,7 +44,8 @@ export function attachInput(el: HTMLElement, camera: Camera) {
   const stopInertia = () => cancelAnimationFrame(inertiaRaf)
 
   const onPointerDown = (e: PointerEvent) => {
-    if (!(spaceDown || e.button === 1)) return
+    const panning = e.button === 1 || (e.button === 0 && (pan.space || pan.hand))
+    if (!panning) return
     stopInertia()
     dragging = true
     lastX = e.clientX
@@ -66,7 +78,7 @@ export function attachInput(el: HTMLElement, camera: Camera) {
     if (!dragging) return
     dragging = false
     el.releasePointerCapture(e.pointerId)
-    el.style.cursor = spaceDown ? 'grab' : ''
+    el.style.cursor = idleCursor()
     // 惯性：指数衰减
     let px = vx * 16
     let py = vy * 16
@@ -81,24 +93,30 @@ export function attachInput(el: HTMLElement, camera: Camera) {
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.code === 'Space' && !e.repeat && !(e.target instanceof HTMLInputElement)) {
-      spaceDown = true
+    if (e.code === 'Space' && !e.repeat && !isEditableTarget(e.target)) {
+      e.preventDefault()
+      pan.space = true
       el.style.cursor = 'grab'
     }
   }
   const onKeyUp = (e: KeyboardEvent) => {
     if (e.code === 'Space') {
-      spaceDown = false
-      if (!dragging) el.style.cursor = ''
+      pan.space = false
+      if (!dragging) el.style.cursor = idleCursor()
     }
+  }
+  const onBlur = () => {
+    pan.space = false
   }
 
   el.addEventListener('wheel', onWheel, { passive: false })
   el.addEventListener('pointerdown', onPointerDown)
   el.addEventListener('pointermove', onPointerMove)
   el.addEventListener('pointerup', onPointerUp)
+  el.addEventListener('pointercancel', onPointerUp)
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
+  window.addEventListener('blur', onBlur)
 
   return () => {
     stopInertia()
@@ -106,7 +124,9 @@ export function attachInput(el: HTMLElement, camera: Camera) {
     el.removeEventListener('pointerdown', onPointerDown)
     el.removeEventListener('pointermove', onPointerMove)
     el.removeEventListener('pointerup', onPointerUp)
+    el.removeEventListener('pointercancel', onPointerUp)
     window.removeEventListener('keydown', onKeyDown)
     window.removeEventListener('keyup', onKeyUp)
+    window.removeEventListener('blur', onBlur)
   }
 }

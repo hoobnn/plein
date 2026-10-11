@@ -3,8 +3,17 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc -p ." },
-  "dependencies": { "yjs": "^13.6.33" },
-  "devDependencies": { "typescript": "^7.0.2" }
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "fractional-indexing": "^4.0.0",
+    "yjs": "^13.6.33"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
 }
