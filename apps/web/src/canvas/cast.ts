@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { createElement, currentResult, LOCAL_ORIGIN, type NewElement, setParams } from '@plein/doc'
+import { createElement, currentResult, type NewElement, setParams } from '@plein/doc'
 import { CAST_NODE_TYPES, type CastEntry, parseCast } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { findNode, mentionElements, nodeElement } from './nodes'
@@ -81,7 +81,7 @@ export function applyCast(
       byName.set(entry.name, [doc.get(id)!])
       result.created.push(id)
     }
-  }, LOCAL_ORIGIN)
+  }, doc.origin)
   doc.flush()
   return result
 }

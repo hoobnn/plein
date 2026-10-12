@@ -12,6 +12,7 @@ const STATUS: Record<AgentError['code'], 400 | 403 | 404 | 409 | 503> = {
   disabled: 403,
   not_installed: 400,
   not_ready: 503,
+  not_undoable: 409,
 }
 
 /** 智能体会话接口（需登录态，走 /api 鉴权） */
@@ -62,6 +63,17 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
       if (!agents.get(id, c.var.principal.id)) return c.json(notFound, 404)
       agents.stop(id)
       return c.body(null, 204)
+    })
+    .post('/api/agent/sessions/:id/turns/:turn/undo', (c) => {
+      const p = c.var.principal
+      if (p.role === 'viewer') return c.json(forbidden, 403)
+      try {
+        agents.undoTurn(c.req.param('id'), p.id, c.req.param('turn'))
+        return c.body(null, 204)
+      } catch (err) {
+        if (!(err instanceof AgentError)) throw err
+        return c.json({ error: err.code, message: err.message }, STATUS[err.code])
+      }
     })
     .get('/api/agent/sessions/:id/events', (c) => {
       const id = c.req.param('id')

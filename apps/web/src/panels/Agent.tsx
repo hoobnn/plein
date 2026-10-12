@@ -15,6 +15,7 @@ import { Select } from '../ui/Select'
 const TOOL_LABELS: Record<string, string> = {
   get_canvas: '查看画布',
   get_element: '查看元素',
+  find_elements: '查找元素',
   list_node_types: '查看可用节点',
   create_node: '新建节点',
   create_element: '新建元素',
@@ -329,7 +330,68 @@ function Item({ item }: { item: AgentItem }) {
       </p>
     )
   }
+  if (item.type === 'changes') return <ChangesRow item={item} />
   return <ToolRow item={item} />
+}
+
+/** 一轮对话的改动摘要：在画布上定位，或整轮撤销 */
+function ChangesRow({ item }: { item: Extract<AgentItem, { type: 'changes' }> }) {
+  const engine = useCanvas((s) => s.engine)
+  const running = useAgent((s) => s.session?.status === 'running')
+  const [busy, setBusy] = useState(false)
+  const parts = [
+    item.created.length && `新建 ${item.created.length} 个`,
+    item.updated.length && `修改 ${item.updated.length} 个`,
+    item.deleted.length && `删除 ${item.deleted.length} 个`,
+    item.edges && `连线 ${item.edges} 处`,
+    item.runs && `运行 ${item.runs} 次`,
+  ].filter(Boolean)
+  const shown = [...item.created, ...item.updated].filter((id) => engine?.doc.get(id))
+
+  return (
+    <div
+      className={`plein-agent-changes flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ring-1 ring-line ring-inset ${item.undone ? 'text-ink-subtle' : 'text-ink-muted'}`}
+      onPointerEnter={() => {
+        if (!item.undone && shown.length) engine?.flash(shown)
+      }}
+    >
+      <Icon name={item.undone ? 'undo' : 'sparkle'} size={14} />
+      <span className={`min-w-0 flex-1 truncate ${item.undone ? 'line-through' : ''}`}>
+        {item.undone ? '已撤销：' : '本轮'}
+        {parts.join('、') || '没有改动'}
+      </span>
+      {!item.undone && shown.length > 0 && engine && (
+        <button
+          type="button"
+          aria-label="在画布上查看改动"
+          title="在画布上查看改动"
+          className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn"
+          onClick={() => {
+            engine.selection.set(shown)
+            engine.zoomToFit(shown)
+            engine.flash(shown)
+          }}
+        >
+          <Icon name="locate" size={14} />
+        </button>
+      )}
+      {item.undoable && !item.undone && (
+        <button
+          type="button"
+          className="ui-btn ui-btn-xs ui-btn-secondary"
+          disabled={busy || running}
+          title="撤销小满这一轮对画布的改动；之后你手动改过的地方会保留"
+          onClick={async () => {
+            setBusy(true)
+            await useAgent.getState().undoTurn(item.turn)
+            setBusy(false)
+          }}
+        >
+          撤销这一轮
+        </button>
+      )}
+    </div>
+  )
 }
 
 function Markdown({ text }: { text: string }) {

@@ -103,6 +103,11 @@
   animation: ui-pop-in var(--dur-slow) var(--ease-spring);
   transform-origin: bottom right;
 }
+.plein-agent-changes {
+  --pop-from: translateY(4px) scale(0.98);
+  animation: ui-pop-in var(--dur-slow) var(--ease-spring);
+  transition: color var(--dur-base) var(--ease-standard);
+}
 .plein-agent-md {
   font-size: var(--text-sm);
   line-height: 1.6;

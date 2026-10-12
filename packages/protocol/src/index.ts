@@ -532,6 +532,22 @@ export type AgentItem =
       at: number
     }
   | { id: string; type: 'error'; text: string; at: number }
+  | {
+      id: string
+      /** 一轮对话对画布的改动，可整轮撤销 */
+      type: 'changes'
+      turn: string
+      created: string[]
+      updated: string[]
+      deleted: string[]
+      /** 新增与删除的连线数 */
+      edges: number
+      runs: number
+      /** 现在能撤销：只能从最近一轮往回撤，服务重启或会话空闲太久后不能再撤 */
+      undoable: boolean
+      undone?: boolean
+      at: number
+    }
 
 export interface AgentSession {
   id: string
@@ -561,6 +577,8 @@ export type AgentEvent =
   | { type: 'session'; session: AgentSession }
   | { type: 'item'; item: AgentItem }
   | { type: 'status'; status: AgentSession['status'] }
+  /** 智能体刚改动了这些元素（画布上短暂高亮） */
+  | { type: 'touch'; ids: string[] }
 
 // ── 路径 ──────────────────────────────────────────────
 
@@ -622,6 +640,9 @@ export const API = {
   agentSession: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}`,
   agentMessages: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}/messages`,
   agentStop: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}/stop`,
+  /** 撤销智能体某一轮对画布的改动 */
+  agentUndo: (id: string, turn: string) =>
+    `/api/agent/sessions/${encodeURIComponent(id)}/turns/${encodeURIComponent(turn)}/undo`,
   /** 会话事件流（SSE），见 AgentEvent */
   agentEvents: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}/events`,
 } as const

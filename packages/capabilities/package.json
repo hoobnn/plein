@@ -1,0 +1,21 @@
+{
+  "name": "@plein/capabilities",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@plein/doc": "workspace:*",
+    "@plein/plugin-sdk": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "yjs": "^13.6.33"
+  }
+}

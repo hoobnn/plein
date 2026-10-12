@@ -1,5 +1,5 @@
 import { createElements, ReadOnlyDocError, topLevel } from './commands'
-import { compareZ, LOCAL_ORIGIN, type PleinDoc } from './doc'
+import { compareZ, type PleinDoc } from './doc'
 import { newId } from './ids'
 import type { CanvasElement, Edge, NewElement } from './types'
 
@@ -94,7 +94,7 @@ export function importElements(
       const edge: Edge = { id: newId('edge'), from: [from, e.from[1]], to: [to, e.to[1]] }
       doc.edgeMap.set(edge.id, edge)
     }
-  }, LOCAL_ORIGIN)
+  }, doc.origin)
   return roots
 }
 

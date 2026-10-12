@@ -1,5 +1,12 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, connect, elementPorts, type Port, setParams } from '@plein/doc'
+import {
+  type CanvasElement,
+  connect,
+  elementPorts,
+  type Port,
+  setParams,
+  spotRightOf,
+} from '@plein/doc'
 import type { Catalog } from '@plein/protocol'
 import {
   applyAspect,
@@ -51,19 +58,9 @@ export function outputPort(el: CanvasElement, type: Port['type']): Port | undefi
   return elementPorts(el)?.outputs.find((p) => p.type === type)
 }
 
-/** 源元素右侧找一块 w×h 的空地（左上角坐标）：从紧挨着的位置往下挪，直到不压住别的元素 */
+/** 源元素右侧找一块 w×h 的空地（左上角坐标），与智能体放置新元素是同一套规则 */
 export function freeSpotRight(engine: Engine, source: string, w: number, h: number) {
-  const r = engine.scene.rect(source)!
-  const x = r.x + r.w + 80
-  let y = r.y + r.h / 2 - h / 2
-  for (let i = 0; i < 20; i++) {
-    const hits = engine.scene
-      .query({ x, y, w, h })
-      .filter((id) => id !== source && engine.scene.get(id)?.kind !== 'frame')
-    if (!hits.length) break
-    y = Math.max(...hits.map((id) => engine.scene.rect(id)!.y + engine.scene.rect(id)!.h)) + 40
-  }
-  return { x, y }
+  return spotRightOf(engine.doc, source, w, h, (r) => engine.scene.query(r))
 }
 
 /**

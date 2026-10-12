@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { connect, createElement, LOCAL_ORIGIN, type NewElement } from '@plein/doc'
+import { connect, createElement, type NewElement } from '@plein/doc'
 import {
   dramaTemplate,
   type DramaElementSpec,
@@ -140,7 +140,7 @@ export function placeDramaTemplate(
       if (!from || !to) continue
       if (!connect(doc, [from, e.from[1]], [to, e.to[1]])) result.loose++
     }
-  }, LOCAL_ORIGIN)
+  }, doc.origin)
 
   doc.flush()
   if (result.frames.length) {

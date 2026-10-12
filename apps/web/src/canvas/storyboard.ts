@@ -4,7 +4,6 @@ import {
   connect,
   createElement,
   currentResult,
-  LOCAL_ORIGIN,
   type NewElement,
   setParams,
   updateElement,
@@ -522,7 +521,7 @@ export function expandShots(
       else skipped++
     }
     sequence = linkSequence(doc, linked)
-  }, LOCAL_ORIGIN)
+  }, doc.origin)
   doc.flush()
   return {
     frames,

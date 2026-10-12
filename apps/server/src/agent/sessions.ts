@@ -19,6 +19,7 @@ import type { NodeRuns } from '../runs/runs'
 import type { DB } from '../storage/db'
 import { agentSessions } from '../storage/schema'
 import type { Rooms } from '../sync/rooms'
+import { AgentChanges } from './changes'
 import { detectClis } from './cli'
 import { McpServer } from './mcp'
 import { canvasTools } from './tools'
@@ -29,6 +30,8 @@ const TOOL_PREFIX = `mcp__${MCP_NAME}__`
 const TOKEN_ENV = 'PLEIN_AGENT_TOKEN'
 /** 每轮对话的上限，防止 CLI 卡住 */
 const TURN_TIMEOUT_MS = 60 * 60 * 1000
+/** 没人看着（无事件订阅）也没在跑时，多久后释放画布租约；之后这个会话的改动不能再撤销 */
+const RELEASE_AFTER_MS = 10 * 60 * 1000
 
 const INSTRUCTIONS = `你是 Plein 的创作助手。Plein 是一块 AI 无限画布：画布上有图片、视频、音频、Markdown 元素和工作流节点（文本、LLM、生成图片、生成视频、配音、配乐、角色、场景、分镜、序列等），节点之间用连线传递数据，运行节点会调用模型生成结果。
 
@@ -57,6 +60,9 @@ interface Live {
   stopped: boolean
   /** 当前这一轮的 id：Codex 的条目 id 每轮从 item_0 重新编号，要加上它才唯一 */
   turn: string
+  /** 改动集与按轮撤销 */
+  changes: AgentChanges
+  releaseTimer: NodeJS.Timeout | null
 }
 
 export interface AgentDeps {
@@ -148,7 +154,23 @@ export class AgentSessions {
     const s = this.load(id)
     if (!s) return () => {}
     s.listeners.add(fn)
-    return () => s.listeners.delete(fn)
+    this.keep(s)
+    return () => {
+      s.listeners.delete(fn)
+      this.scheduleRelease(s)
+    }
+  }
+
+  /** 撤销某一轮对画布的改动（只能从最近一轮往回撤） */
+  undoTurn(id: string, ownerId: string, turn: string) {
+    const s = this.load(id)
+    if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
+    if (s.busy || s.child) throw new AgentError('busy', '这一轮还没结束，先停止再撤销')
+    if (!s.changes.undoTurn(turn))
+      throw new AgentError('not_undoable', '这一轮的改动已经不能撤销了')
+    const item = s.items.find((i) => i.type === 'changes' && i.turn === turn)
+    if (item?.type === 'changes') this.push(s, { ...item, undone: true, undoable: false })
+    this.refreshUndoable(s)
   }
 
   /** 发一条消息：启动这一轮的 CLI 进程，立即返回；过程经事件流推送 */
@@ -173,6 +195,9 @@ export class AgentSessions {
       throw new AgentError('not_installed', `本机没有找到 ${cli?.name ?? s.row.agent}`)
     if (!this.mcpUrl) throw new AgentError('not_ready', '服务端还没准备好')
 
+    this.keep(s)
+    s.turn = newId('turn')
+    s.changes.begin(s.turn)
     if (s.items.length === 0) s.row.title = text.replace(/\s+/g, ' ').slice(0, 40)
     this.push(s, { id: newId('it'), type: 'user', text, selection, at: Date.now() })
     this.setRunning(s, true)
@@ -203,13 +228,14 @@ export class AgentSessions {
       })
     } catch (err) {
       this.fail(s, `启动 ${cli.name} 失败：${(err as Error).message}`)
+      s.changes.end()
       this.setRunning(s, false)
       s.busy = false
+      this.scheduleRelease(s)
       return
     }
     s.child = child
     s.stopped = false
-    s.turn = newId('turn')
     // CLI 读 stdin 之前就退出时写入会 EPIPE；没有监听会变成未捕获异常让服务崩溃
     child.stdin?.on('error', () => {})
     child.stdin?.end(stdin)
@@ -246,7 +272,9 @@ export class AgentSessions {
         this.fail(s, explain(cli.name, stderr) || `${cli.name} 异常退出（代码 ${code}）`)
       }
       this.closeRunningTools(s)
+      this.finishTurn(s)
       this.setRunning(s, false)
+      this.scheduleRelease(s)
     })
   }
 
@@ -502,6 +530,49 @@ export class AgentSessions {
     }
   }
 
+  /** 一轮结束：记下改动集，前面几轮不再能撤（只能从最近一轮往回撤） */
+  private finishTurn(s: Live) {
+    const c = s.changes.end()
+    if (c) {
+      this.push(s, {
+        id: `chg_${s.turn}`,
+        type: 'changes',
+        turn: s.turn,
+        ...c,
+        undoable: s.changes.canUndo(s.turn),
+        at: Date.now(),
+      })
+    }
+    this.refreshUndoable(s)
+  }
+
+  private refreshUndoable(s: Live) {
+    for (const it of s.items) {
+      if (it.type !== 'changes') continue
+      const undoable = !it.undone && s.changes.canUndo(it.turn)
+      if (undoable !== it.undoable) this.push(s, { ...it, undoable })
+    }
+  }
+
+  /** 有人订阅或开始一轮：保留画布租约 */
+  private keep(s: Live) {
+    if (s.releaseTimer) clearTimeout(s.releaseTimer)
+    s.releaseTimer = null
+  }
+
+  /** 没人订阅且空闲时，过一段时间释放租约和撤销栈 */
+  private scheduleRelease(s: Live) {
+    if (s.listeners.size || s.busy || s.child || !s.changes.attached) return
+    this.keep(s)
+    s.releaseTimer = setTimeout(() => {
+      s.releaseTimer = null
+      if (s.listeners.size || s.busy || s.child) return
+      s.changes.release()
+      this.refreshUndoable(s)
+    }, RELEASE_AFTER_MS)
+    s.releaseTimer.unref?.()
+  }
+
   private fail(s: Live, text: string) {
     this.push(s, { id: newId('err'), type: 'error', text, at: Date.now() })
   }
@@ -541,15 +612,32 @@ export class AgentSessions {
     if (!row) return null
     const token = randomBytes(24).toString('hex')
     const { rooms, runs, host, assets } = this.deps
+    let s!: Live
+    const changes = new AgentChanges(row.id, row.canvas_id, rooms, runs, (ids) =>
+      this.emit(s, { type: 'touch', ids }),
+    )
     const mcp = new McpServer(
       { name: 'plein', version: '0.1.0', instructions: '操作用户当前打开的 Plein 画布' },
-      canvasTools({ canvasId: row.canvas_id, ownerId: row.owner_id, rooms, runs, host, assets }),
+      canvasTools({
+        canvasId: row.canvas_id,
+        ownerId: row.owner_id,
+        rooms,
+        runs,
+        host,
+        assets,
+        origin: changes.origin,
+        onRun: (nodeId, runId) => changes.recordRun(nodeId, runId),
+      }),
     )
     let items: AgentItem[] = []
     try {
       items = JSON.parse(row.items) as AgentItem[]
     } catch {}
-    const s: Live = {
+    // 撤销栈只在内存里：重新加载的会话，之前的改动都不能再撤销
+    items = items.map((it) =>
+      it.type === 'changes' && it.undoable ? { ...it, undoable: false } : it,
+    )
+    s = {
       row,
       items,
       child: null,
@@ -559,6 +647,8 @@ export class AgentSessions {
       listeners: new Set(),
       stopped: false,
       turn: '',
+      changes,
+      releaseTimer: null,
     }
     this.live.set(id, s)
     this.byToken.set(token, s)
@@ -566,6 +656,8 @@ export class AgentSessions {
   }
 
   private drop(s: Live) {
+    this.keep(s)
+    s.changes.release()
     this.live.delete(s.row.id)
     this.byToken.delete(s.token)
   }
@@ -589,7 +681,13 @@ export class AgentSessions {
 
 export class AgentError extends Error {
   constructor(
-    readonly code: 'not_found' | 'busy' | 'disabled' | 'not_installed' | 'not_ready',
+    readonly code:
+      | 'not_found'
+      | 'busy'
+      | 'disabled'
+      | 'not_installed'
+      | 'not_ready'
+      | 'not_undoable',
     message: string,
   ) {
     super(message)

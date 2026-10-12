@@ -8,6 +8,7 @@ import {
 } from '@plein/protocol'
 import { create } from 'zustand'
 import { api } from '../api/client'
+import { useCanvas } from './canvas'
 
 /** 吉祥物的心情：跟着智能体的状态走 */
 export type Mood = 'idle' | 'working' | 'happy' | 'sad'
@@ -36,6 +37,8 @@ interface AgentStore {
   reset(): void
   send(text: string, selection?: string[]): Promise<void>
   stop(): Promise<void>
+  /** 撤销某一轮对画布的改动 */
+  undoTurn(turn: string): Promise<void>
   remove(id: string): Promise<void>
 }
 
@@ -78,6 +81,11 @@ export const useAgent = create<AgentStore>((set, get) => {
         return
       }
       if (!cur || cur.id !== id) return
+      if (e.type === 'touch') {
+        // 智能体刚改过的元素在画布上闪一下光晕
+        if (get().canvasId === cur.canvasId) useCanvas.getState().engine?.flash(e.ids)
+        return
+      }
       if (e.type === 'item') {
         const items = [...cur.items]
         const i = items.findIndex((x) => x.id === e.item.id)
@@ -208,6 +216,17 @@ export const useAgent = create<AgentStore>((set, get) => {
     async stop() {
       const id = get().session?.id
       if (id) await api.stopAgent(id).catch(() => {})
+    },
+
+    async undoTurn(turn) {
+      const id = get().session?.id
+      if (!id) return
+      set({ error: null })
+      try {
+        await api.undoAgentTurn(id, turn)
+      } catch (err) {
+        set({ error: (err as Error).message })
+      }
     },
 
     async remove(id) {

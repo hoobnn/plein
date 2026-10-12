@@ -4,7 +4,6 @@ import {
   connect,
   createElement,
   currentResult,
-  LOCAL_ORIGIN,
   type NewElement,
   setParam,
 } from '@plein/doc'
@@ -170,7 +169,7 @@ export async function placeLibraryItem(
       const port = created && outputPort(created, el.kind === 'video' ? 'video' : 'image')
       if (!port || !connect(engine.doc, [id, port.id], [cardId, 'references'])) loose++
     }
-  }, LOCAL_ORIGIN)
+  }, engine.doc.origin)
   engine.doc.flush()
   engine.selection.set([cardId])
   engine.setTool('select')

@@ -245,6 +245,9 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.4
         version: 2.1.4(hono@4.13.13)
+      '@plein/capabilities':
+        specifier: workspace:*
+        version: link:../../packages/capabilities
       '@plein/doc':
         specifier: workspace:*
         version: link:../../packages/doc
@@ -345,6 +348,9 @@ importers:
       '@plein/canvas-core':
         specifier: workspace:*
         version: link:../../packages/canvas-core
+      '@plein/capabilities':
+        specifier: workspace:*
+        version: link:../../packages/capabilities
       '@plein/doc':
         specifier: workspace:*
         version: link:../../packages/doc
@@ -428,6 +434,25 @@ importers:
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
+
+  packages/capabilities:
+    dependencies:
+      '@plein/doc':
+        specifier: workspace:*
+        version: link:../doc
+      '@plein/plugin-sdk':
+        specifier: workspace:*
+        version: link:../plugin-sdk
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      yjs:
+        specifier: ^13.6.33
+        version: 13.6.33
 
   packages/doc:
     dependencies:

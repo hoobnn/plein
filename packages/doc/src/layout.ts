@@ -1,6 +1,6 @@
 import { topLevel, updateElements } from './commands'
 import type { PleinDoc } from './doc'
-import type { CanvasElement, ElementPatch } from './types'
+import type { CanvasElement, ElementPatch, Rect } from './types'
 
 /**
  * 整理画布：按连线拓扑自动布局。
@@ -299,4 +299,68 @@ export function arrangeElements(
   updateElements(doc, patches)
   doc.undo.stopCapturing()
   return patches.length
+}
+
+// ── 放置：新元素找空位（界面和智能体共用） ─────────────────────
+
+/** 空间查询：返回与 rect 相交的元素 id。界面传场景的 R 树，缺省时线性扫描文档 */
+export type SpatialQuery = (rect: Rect) => Iterable<string>
+
+const PLACE_GAP = 80
+
+function scan(doc: PleinDoc): SpatialQuery {
+  return (r) => {
+    const out: string[] = []
+    for (const el of doc.elements()) {
+      const w = doc.worldRect(el.id)
+      if (w && r.x < w.x + w.w && r.x + r.w > w.x && r.y < w.y + w.h && r.y + r.h > w.y)
+        out.push(el.id)
+    }
+    return out
+  }
+}
+
+/**
+ * 参照元素右侧找一块 w×h 的空地（世界坐标左上角）：与参照元素垂直居中对齐，
+ * 压住别的元素（Frame 除外）就挪到它们下面，最多挪 20 次。
+ */
+export function spotRightOf(
+  doc: PleinDoc,
+  sourceId: string,
+  w: number,
+  h: number,
+  query: SpatialQuery = scan(doc),
+): { x: number; y: number } {
+  const r = doc.worldRect(sourceId) ?? { x: 0, y: 0, w: 0, h: 0 }
+  const x = r.x + r.w + PLACE_GAP
+  let y = r.y + r.h / 2 - h / 2
+  for (let i = 0; i < 20; i++) {
+    const hits = [...query({ x, y, w, h })].filter(
+      (id) => id !== sourceId && doc.get(id)?.kind !== 'frame',
+    )
+    if (!hits.length) break
+    y =
+      Math.max(...hits.map((id) => (doc.worldRect(id)?.y ?? 0) + (doc.worldRect(id)?.h ?? 0))) + 40
+  }
+  return { x, y }
+}
+
+/** 没有参照元素时：放在全部顶层内容的右侧，与最上沿对齐，压住了就往下挪 */
+export function spotAfterContent(doc: PleinDoc, w: number, h: number): { x: number; y: number } {
+  const roots = doc.children(null).map((e) => doc.worldRect(e.id)!)
+  if (!roots.length) return { x: 0, y: 0 }
+  const rect = {
+    x: Math.max(...roots.map((r) => r.x + r.w)) + PLACE_GAP * 1.5,
+    y: Math.min(...roots.map((r) => r.y)),
+    w,
+    h,
+  }
+  const pad = PLACE_GAP / 2
+  const hit = (r: Rect) =>
+    rect.x < r.x + r.w + pad &&
+    rect.x + rect.w + pad > r.x &&
+    rect.y < r.y + r.h + pad &&
+    rect.y + rect.h + pad > r.y
+  for (let i = 0; i < 60 && roots.some(hit); i++) rect.y += Math.max(h, 120) / 2
+  return { x: rect.x, y: rect.y }
 }

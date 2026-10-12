@@ -1,3 +1,9 @@
+import {
+  type CapabilityContext,
+  CapabilityError,
+  type CapabilityRegistry,
+  isContent,
+} from '@plein/capabilities'
 import { z } from 'zod'
 
 /**
@@ -28,7 +34,24 @@ export function defineTool<S extends z.ZodObject>(tool: McpTool<S>): McpTool {
 }
 
 /** 工具执行中可预期的错误：原样告诉模型，让它换个做法 */
-export class ToolError extends Error {}
+export const ToolError = CapabilityError
+
+/** 把能力注册表转成 MCP 工具：输入 schema 同一份，结果按 MCP content 序列化 */
+export function capabilityTools<C extends CapabilityContext>(
+  registry: CapabilityRegistry<C>,
+  ctx: C,
+): McpTool[] {
+  return registry.list().map((cap) => ({
+    name: cap.name,
+    description: cap.description,
+    input: cap.input,
+    run: async (args) => {
+      const out = await registry.invoke(cap.name, ctx, args)
+      if (isContent(out)) return { content: out.content }
+      return typeof out === 'string' ? out : JSON.stringify(out, null, 1)
+    },
+  }))
+}
 
 const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']
 

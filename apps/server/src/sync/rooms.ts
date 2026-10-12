@@ -323,12 +323,12 @@ export class Rooms {
 
   /**
    * 短暂读写一次文档：打开、执行、销毁，fn 必须是同步的。
-   * 画布已删除时，给了 fallback 就返回它，否则抛错。
+   * 画布已删除时，给了 fallback 就返回它，否则抛错。origin 是写入的事务 origin（默认 LOCAL_ORIGIN）。
    */
-  withDoc<T>(id: string, fn: (doc: PleinDoc) => T, fallback?: T): T {
+  withDoc<T>(id: string, fn: (doc: PleinDoc) => T, fallback?: T, origin?: unknown): T {
     let doc: PleinDoc
     try {
-      doc = createDoc(this.get(id).doc)
+      doc = createDoc(this.get(id).doc, origin === undefined ? undefined : { origin })
     } catch (err) {
       if (fallback !== undefined) return fallback
       throw err

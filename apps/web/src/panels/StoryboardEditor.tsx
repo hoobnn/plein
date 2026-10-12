@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { LOCAL_ORIGIN, setParam } from '@plein/doc'
+import { setParam } from '@plein/doc'
 import { dropShot, newShotId, SHOT_SIZES, type Shot, type ShotRole } from '@plein/nodes'
 import { useEffect, useState } from 'react'
 import { useDocVersion } from '../canvas/hooks'
@@ -128,7 +128,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     engine.doc.ydoc.transact(() => {
       setParam(engine.doc, id, 'shots', next.shots)
       detachShot(engine, id, shotId)
-    }, LOCAL_ORIGIN)
+    }, engine.doc.origin)
     engine.doc.flush()
     notify(nodes ? `已删除镜头，${nodes} 个节点保留在画布上（Ctrl+Z 可撤销）` : '已删除镜头')
   }

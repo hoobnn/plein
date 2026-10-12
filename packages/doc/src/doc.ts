@@ -27,6 +27,8 @@ export interface DocOptions {
   schedule?: Scheduler
   /** 连续修改合并为一步撤销的时间窗（毫秒） */
   captureTimeout?: number
+  /** 写命令的事务 origin，默认 LOCAL_ORIGIN；服务端替智能体写入时传会话自己的 origin */
+  origin?: unknown
 }
 
 type Listener = (change: DocChange) => void
@@ -59,6 +61,8 @@ export class PleinDoc {
   readonly elementMaps: Y.Map<ElementMap>
   readonly edgeMap: Y.Map<Edge>
   readonly undo: Y.UndoManager
+  /** 写命令的事务 origin（见 DocOptions.origin） */
+  readonly origin: unknown
   /** 文档版本高于本客户端时只读打开 */
   readOnly = false
   schemaVersion = 0
@@ -74,6 +78,7 @@ export class PleinDoc {
   constructor(ydoc = new Y.Doc(), opts: DocOptions = {}) {
     this.ydoc = ydoc
     this.schedule = opts.schedule ?? defaultSchedule
+    this.origin = opts.origin ?? LOCAL_ORIGIN
     this.meta = ydoc.getMap('meta')
     this.elementMaps = ydoc.getMap('elements')
     this.edgeMap = ydoc.getMap('edges')

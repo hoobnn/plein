@@ -9,6 +9,7 @@ import {
   type PleinDoc,
   type ResultValue,
   setParams,
+  SYSTEM_ORIGIN,
   writeRun,
 } from '@plein/doc'
 import { FlowGraph, runDag, type StepOutcome, stableStringify } from '@plein/flow'
@@ -292,7 +293,7 @@ export class NodeRuns {
    */
   async staleNodes(canvasId: string, ownerId: string): Promise<StaleNodes> {
     const lease = this.rooms.acquire(canvasId)
-    const doc = createDoc(lease.room.doc)
+    const doc = createDoc(lease.room.doc, { origin: SYSTEM_ORIGIN })
     try {
       const signal = new AbortController().signal
       const stale: string[] = []
@@ -375,7 +376,7 @@ export class NodeRuns {
     const options = JSON.parse(g.options) as StoredGroupOptions
     const rerun = new Set(options.rerun ?? [])
     const lease = this.rooms.acquire(g.canvas_id)
-    const doc = createDoc(lease.room.doc)
+    const doc = createDoc(lease.room.doc, { origin: SYSTEM_ORIGIN })
     try {
       const targets = (JSON.parse(g.targets) as string[]).filter((id) => doc.get(id))
       const graph = new FlowGraph(doc.edges())
@@ -541,7 +542,7 @@ export class NodeRuns {
   private async execute(a: ActiveJob) {
     // 任务可能跑几分钟；持有租约，期间关掉画布标签页也不会卸载文档、丢掉结果
     const lease = this.rooms.acquire(a.canvasId)
-    const doc = createDoc(lease.room.doc)
+    const doc = createDoc(lease.room.doc, { origin: SYSTEM_ORIGIN })
     const signal = a.ctrl.signal
     try {
       const el = doc.get(a.nodeId)

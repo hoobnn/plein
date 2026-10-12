@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.4",
+    "@plein/capabilities": "workspace:*",
     "@plein/doc": "workspace:*",
     "@plein/flow": "workspace:*",
     "@plein/nodes": "workspace:*",

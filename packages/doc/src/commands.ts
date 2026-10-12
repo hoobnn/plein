@@ -1,6 +1,6 @@
 import { generateNKeysBetween } from 'fractional-indexing'
 import * as Y from 'yjs'
-import { type ElementMap, LOCAL_ORIGIN, type PleinDoc, SYSTEM_ORIGIN } from './doc'
+import { type ElementMap, type PleinDoc, SYSTEM_ORIGIN } from './doc'
 import { newId } from './ids'
 import {
   type CanvasElement,
@@ -19,7 +19,7 @@ import {
 } from './types'
 
 /**
- * 命令式写入 API。每个命令是一个带 LOCAL_ORIGIN 的事务，
+ * 命令式写入 API。每个命令是一个带 doc.origin（默认 LOCAL_ORIGIN）的事务，
  * 撤销按命令（及 captureTimeout 内的连续命令）为一步。
  */
 
@@ -34,7 +34,7 @@ function write<T>(doc: PleinDoc, fn: () => T): T {
   let out!: T
   doc.ydoc.transact(() => {
     out = fn()
-  }, LOCAL_ORIGIN)
+  }, doc.origin)
   return out
 }
 

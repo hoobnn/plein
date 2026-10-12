@@ -24,6 +24,7 @@ import { DotGrid } from './grid'
 import { attachInput, isEditableTarget, type PanState } from './input'
 import { attachInteractions } from './interact'
 import type { PortRef } from './ports'
+import { HighlightLayer } from './highlight'
 import { SelectionOverlay } from './overlay'
 import { type RenderContext, RendererRegistry } from './renderers'
 import { Scene, type Transient } from './scene'
@@ -110,6 +111,7 @@ export class Engine {
   private views: ElementViews
   private edges: EdgeLayer
   private overlay: SelectionOverlay
+  private highlight: HighlightLayer
   private pan: PanState = { space: false, hand: false }
   private toolValue: Tool = 'select'
   private viewDirty = true
@@ -144,6 +146,7 @@ export class Engine {
     })
     this.edges = new EdgeLayer(this.scene, this.camera, this.selection)
     this.overlay = new SelectionOverlay(this.scene, this.selection, this.camera)
+    this.highlight = new HighlightLayer(this.scene, this.camera)
   }
 
   get doc() {
@@ -169,6 +172,7 @@ export class Engine {
       this.edges.flow,
       this.views.layer,
       this.edges.ports,
+      this.highlight.graphics,
       this.overlay.graphics,
     )
     this.views.sync(this.scene.rebuild())
@@ -520,6 +524,11 @@ export class Engine {
     return this.hostRect
   }
 
+  /** 高亮一组元素（智能体刚改过的），光晕扩散后淡出 */
+  flash(ids: Iterable<string>) {
+    this.highlight.flash(ids)
+  }
+
   /** 请求下一帧渲染（显示树被引擎之外改动时用） */
   requestRender() {
     this.renderDirty = true
@@ -550,6 +559,7 @@ export class Engine {
     if (moved) for (const fn of this.moveListeners) fn()
     if (this.edges.update()) this.renderDirty = true
     if (this.overlay.update()) this.renderDirty = true
+    if (this.highlight.update()) this.renderDirty = true
     if (this.renderDirty) {
       this.renderDirty = false
       this.app.render()

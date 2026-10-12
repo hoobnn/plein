@@ -140,6 +140,8 @@ export const api = {
   sendAgentMessage: (id: string, text: string, selection?: string[]) =>
     request<void>(API.agentMessages(id), json('POST', { text, selection })),
   stopAgent: (id: string) => request<void>(API.agentStop(id), json('POST', {})),
+  undoAgentTurn: (id: string, turn: string) =>
+    request<void>(API.agentUndo(id, turn), json('POST', {})),
 
   runNode: (canvasId: string, nodeId: string) =>
     request<NodeRunStarted>(API.nodeRun(canvasId, nodeId), { method: 'POST' }),
