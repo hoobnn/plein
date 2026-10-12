@@ -1,5 +1,9 @@
 import {
   API,
+  type AgentKind,
+  type AgentSession,
+  type AgentSessionSummary,
+  type AgentStatus,
   type Asset,
   type AssetVariant,
   type Canvas,
@@ -45,8 +49,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       body?.message ?? res.statusText,
     )
   }
-  if (res.status === 204) return undefined as T
-  return (await res.json()) as T
+  // 204 / 202 这类没有响应体的应答
+  const body = await res.text()
+  return (body ? JSON.parse(body) : undefined) as T
 }
 
 const json = (method: string, body?: unknown): RequestInit => ({
@@ -86,6 +91,17 @@ export const api = {
   testProvider: (id: string) => request<ProviderTestResult>(API.providerTest(id), json('POST', {})),
   rewritePrompt: (body: RewritePrompt) =>
     request<RewritePromptResult>(API.promptRewrite, json('POST', body)),
+
+  agentStatus: (refresh = false) =>
+    request<AgentStatus>(refresh ? `${API.agent}?refresh=1` : API.agent),
+  agentSessions: (canvasId: string) => request<AgentSessionSummary[]>(API.agentSessions(canvasId)),
+  createAgentSession: (canvasId: string, agent: AgentKind) =>
+    request<AgentSession>(API.agentSessions(canvasId), json('POST', { agent })),
+  agentSession: (id: string) => request<AgentSession>(API.agentSession(id)),
+  deleteAgentSession: (id: string) => request<void>(API.agentSession(id), { method: 'DELETE' }),
+  sendAgentMessage: (id: string, text: string, selection?: string[]) =>
+    request<void>(API.agentMessages(id), json('POST', { text, selection })),
+  stopAgent: (id: string) => request<void>(API.agentStop(id), json('POST', {})),
 
   assetMeta: (id: string) => request<Asset>(API.assetMeta(id)),
   upload: (file: File) =>

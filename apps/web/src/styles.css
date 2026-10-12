@@ -1528,3 +1528,191 @@ input[type="range"]::-moz-range-thumb {
 .board-count {
   right: 8px;
 }
+
+/* ── 吉祥物（小满）与助手面板 ─────────────────────── */
+.plein-mascot {
+  overflow: visible;
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.18));
+}
+.plein-mascot-ink {
+  fill: var(--ink);
+}
+.plein-mascot-shadow {
+  fill: var(--ink);
+  opacity: 0.12;
+  transform-origin: 32px 59px;
+  animation: plein-mascot-shadow 3.2s var(--ease-standard) infinite;
+}
+.plein-mascot-body {
+  transform-origin: 32px 54px;
+  animation: plein-mascot-float 3.2s var(--ease-standard) infinite;
+}
+.plein-mascot-eyes {
+  transition: transform 160ms var(--ease-standard);
+}
+.plein-mascot-open {
+  fill: var(--canvas);
+  transform-origin: 32px 31px;
+  animation: plein-mascot-blink 4.6s infinite;
+}
+.plein-mascot-closed,
+.plein-mascot-sad,
+.plein-mascot-mouth {
+  fill: none;
+  stroke: var(--canvas);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.plein-mascot-closed,
+.plein-mascot-sad,
+.plein-mascot-o {
+  opacity: 0;
+}
+.plein-mascot-o {
+  fill: var(--canvas);
+}
+.plein-mascot-spark {
+  fill: var(--accent);
+  opacity: 0;
+  transform-origin: 51px 10.7px;
+}
+.plein-mascot[data-mood="working"] .plein-mascot-body {
+  animation: plein-mascot-bounce 0.9s var(--ease-standard) infinite;
+}
+.plein-mascot[data-mood="working"] .plein-mascot-shadow {
+  animation: plein-mascot-shadow 0.9s var(--ease-standard) infinite;
+}
+.plein-mascot[data-mood="working"] .plein-mascot-spark {
+  opacity: 1;
+  animation: plein-mascot-spark 1.2s var(--ease-standard) infinite;
+}
+.plein-mascot[data-mood="working"] .plein-mascot-mouth {
+  opacity: 0;
+}
+.plein-mascot[data-mood="working"] .plein-mascot-o {
+  opacity: 1;
+}
+.plein-mascot[data-mood="happy"] .plein-mascot-open,
+.plein-mascot[data-mood="sad"] .plein-mascot-open {
+  opacity: 0;
+  animation: none;
+}
+.plein-mascot[data-mood="happy"] .plein-mascot-closed,
+.plein-mascot[data-mood="sad"] .plein-mascot-sad {
+  opacity: 1;
+}
+.plein-mascot[data-mood="happy"] .plein-mascot-mouth {
+  d: path("M27.5 39.5q4.5 5 9 0");
+}
+.plein-mascot[data-mood="happy"] .plein-mascot-body {
+  animation: plein-mascot-hop 0.7s var(--ease-spring) 2;
+}
+.plein-mascot[data-mood="sad"] .plein-mascot-mouth {
+  d: path("M29 42.5q3 -2.4 6 0");
+}
+.plein-mascot[data-mood="sad"] .plein-mascot-body {
+  animation: plein-mascot-shake 0.45s var(--ease-standard) 2;
+}
+
+.plein-mascot-btn {
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+.plein-mascot-btn:hover {
+  transform: scale(1.06);
+}
+.plein-mascot-btn:hover .plein-mascot-open ellipse {
+  ry: 4.9;
+}
+.plein-mascot-btn:active {
+  transform: scale(0.94);
+}
+
+.plein-agent-panel {
+  animation: plein-agent-in var(--dur-slow) var(--ease-spring);
+  transform-origin: bottom right;
+}
+.plein-agent-md {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.plein-agent-md pre {
+  overflow-x: auto;
+}
+
+@keyframes plein-mascot-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2.5px);
+  }
+}
+@keyframes plein-mascot-shadow {
+  0%,
+  100% {
+    transform: scaleX(1);
+  }
+  50% {
+    transform: scaleX(0.86);
+  }
+}
+@keyframes plein-mascot-bounce {
+  0%,
+  100% {
+    transform: translateY(0) scale(1.03, 0.97);
+  }
+  45% {
+    transform: translateY(-5px) scale(0.98, 1.02);
+  }
+}
+@keyframes plein-mascot-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-8px) rotate(-4deg);
+  }
+}
+@keyframes plein-mascot-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px) rotate(-3deg);
+  }
+  75% {
+    transform: translateX(2px) rotate(3deg);
+  }
+}
+@keyframes plein-mascot-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+@keyframes plein-mascot-spark {
+  0%,
+  100% {
+    transform: scale(0.6) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.1) rotate(45deg);
+  }
+}
+@keyframes plein-agent-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

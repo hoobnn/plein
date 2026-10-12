@@ -264,6 +264,78 @@ export interface RewritePromptResult {
   model: string
 }
 
+// ── 智能体 ────────────────────────────────────────────
+
+/**
+ * 本机智能体：服务端调用用户电脑上已安装、已登录的 Claude Code / Codex CLI，
+ * 智能体通过 Plein 的 MCP 工具读写画布。只在本机免登录模式（含桌面端）可用。
+ */
+export const AgentKind = z.enum(['claude', 'codex'])
+export type AgentKind = z.infer<typeof AgentKind>
+
+export interface AgentCli {
+  id: AgentKind
+  name: string
+  /** 在本机找到可执行文件 */
+  available: boolean
+  version?: string
+}
+
+export interface AgentStatus {
+  /** 服务端是否允许启动本机智能体 */
+  enabled: boolean
+  /** 不可用的原因（给用户看） */
+  reason?: string
+  agents: AgentCli[]
+}
+
+/** 对话里的一项：用户消息、智能体回复、一次工具调用或错误 */
+export type AgentItem =
+  | { id: string; type: 'user'; text: string; selection?: string[]; at: number }
+  | { id: string; type: 'text'; text: string; at: number }
+  | {
+      id: string
+      type: 'tool'
+      /** 工具名（Plein 工具不带 MCP 前缀） */
+      name: string
+      /** 参数摘要，给人看 */
+      detail?: string
+      status: 'running' | 'done' | 'error'
+      /** 结果摘要 */
+      output?: string
+      at: number
+    }
+  | { id: string; type: 'error'; text: string; at: number }
+
+export interface AgentSession {
+  id: string
+  canvasId: string
+  agent: AgentKind
+  title: string
+  status: 'idle' | 'running'
+  createdAt: number
+  updatedAt: number
+  items: AgentItem[]
+}
+
+export type AgentSessionSummary = Omit<AgentSession, 'items'>
+
+export const CreateAgentSession = z.object({ agent: AgentKind })
+export type CreateAgentSession = z.infer<typeof CreateAgentSession>
+
+export const SendAgentMessage = z.object({
+  text: z.string().trim().min(1).max(20_000),
+  /** 用户当前选中的元素 id，作为上下文告诉智能体 */
+  selection: z.array(z.string().max(200)).max(200).optional(),
+})
+export type SendAgentMessage = z.infer<typeof SendAgentMessage>
+
+/** 会话事件流（SSE）：先推一次完整会话，之后推增量 */
+export type AgentEvent =
+  | { type: 'session'; session: AgentSession }
+  | { type: 'item'; item: AgentItem }
+  | { type: 'status'; status: AgentSession['status'] }
+
 // ── 路径 ──────────────────────────────────────────────
 
 export const API = {
@@ -303,6 +375,16 @@ export const API = {
   canvasJobs: (canvasId: string) => `/api/canvases/${encodeURIComponent(canvasId)}/jobs`,
   /** Yjs 同步（y-websocket 协议），房间名为画布 id */
   sync: '/sync',
+  /** 本机智能体是否可用，返回 AgentStatus */
+  agent: '/api/agent',
+  /** 画布上的智能体会话：GET 列表，POST 新建 */
+  agentSessions: (canvasId: string) =>
+    `/api/canvases/${encodeURIComponent(canvasId)}/agent/sessions`,
+  agentSession: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}`,
+  agentMessages: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}/messages`,
+  agentStop: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}/stop`,
+  /** 会话事件流（SSE），见 AgentEvent */
+  agentEvents: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}/events`,
 } as const
 
 export const ApiError = z.object({ error: z.string(), message: z.string() })

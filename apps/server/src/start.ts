@@ -31,6 +31,8 @@ export async function startServer(config: Config): Promise<RunningServer> {
   })
   const { address, port, family } = http.address() as AddressInfo
   const host = family === 'IPv6' ? `[${address}]` : address
+  // 智能体 CLI 和服务端在同一台机器上，走回环地址
+  server.agents.setMcpUrl(`http://127.0.0.1:${port}/mcp`)
 
   let closing: Promise<void> | null = null
   return {

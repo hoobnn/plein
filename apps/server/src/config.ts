@@ -31,6 +31,11 @@ export interface Config {
    * 只有桌面端自己的窗口能访问，本机其他程序和浏览器里的网页都会被拒绝
    */
   desktopToken?: string
+  /**
+   * 允许调用本机的 Claude Code / Codex CLI。只在免登录模式下开启：
+   * 智能体以服务端进程的身份运行，开放给远程登录用户等于把本机交给对方
+   */
+  agent: boolean
 }
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost'])
@@ -66,5 +71,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ffmpegPath: env.PLEIN_FFMPEG_PATH || 'ffmpeg',
     ffprobePath: env.PLEIN_FFPROBE_PATH || 'ffprobe',
     desktopToken: env.PLEIN_DESKTOP_TOKEN || undefined,
+    agent: auth === 'none' && env.PLEIN_AGENT !== '0',
   }
 }

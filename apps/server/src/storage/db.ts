@@ -94,6 +94,21 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX job_groups_active ON job_groups(status) WHERE status = 'running';
   `,
+  `
+  -- 本机智能体会话：对话记录存 JSON，cli_session 是 Claude Code / Codex 自己的会话 id，用于续聊
+  CREATE TABLE agent_sessions (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    canvas_id TEXT NOT NULL REFERENCES canvases(id) ON DELETE CASCADE,
+    agent TEXT NOT NULL,
+    cli_session TEXT,
+    title TEXT NOT NULL,
+    items TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX agent_sessions_canvas ON agent_sessions(canvas_id, updated_at);
+  `,
 ]
 
 export function openDb(dataDir: string): DB {

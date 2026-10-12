@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
+import { agentMcpRoute, agentRoutes } from './agent/routes'
+import { AgentSessions } from './agent/sessions'
 import { setMediaTools } from './assets/media'
 import { AssetStore } from './assets/store'
 import { type AuthEnv, createAuth } from './auth'
@@ -31,6 +33,7 @@ export interface Server {
   plugins: PluginHost
   secrets: Secrets
   runs: NodeRuns
+  agents: AgentSessions
   close(): void
 }
 
@@ -48,18 +51,34 @@ export async function createServer(config: Config): Promise<Server> {
   )
   plugins.load(builtinPlugins({ mock: config.mockProvider }), true)
   const auth = await createAuth(config.auth, db, secrets, { publicUrl: config.publicUrl })
+  const runs = new NodeRuns(db, rooms, plugins, { concurrency: config.maxJobs })
+  const agents = new AgentSessions({
+    db,
+    rooms,
+    runs,
+    host: plugins,
+    assets,
+    dataDir: config.dataDir,
+    enabled: config.agent,
+  })
 
   const app = new Hono<AuthEnv>()
   app.onError((err, c) => {
     console.error('[http]', err)
     return c.json({ error: 'internal', message: '服务端错误' }, 500)
   })
-  if (config.desktopToken) app.use('*', desktopGuard(config.desktopToken))
+  // 智能体的 MCP 请求来自本机 CLI，没有桌面端窗口的 Cookie，用会话令牌单独鉴权
+  if (config.desktopToken) {
+    const guard = desktopGuard(config.desktopToken)
+    app.use('*', (c, next) => (c.req.path === '/mcp' ? next() : guard(c, next)))
+  }
   app.use(
     '*',
     originGuard({ authRequired: auth.provider.required, allowedHosts: config.allowedHosts }),
   )
   app.get('/api/health', (c) => c.json({ ok: true }))
+  // 放在登录鉴权之前：CLI 用会话令牌访问
+  app.route('/', agentMcpRoute(agents))
   app.route('/', auth.routes)
   app.use('/api/*', auth.requireAuth)
   app.use('/sync/*', auth.requireAuth)
@@ -69,8 +88,8 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', syncRoutes(db, rooms))
   app.route('/', pluginRoutes(plugins))
   app.route('/', promptRoutes(plugins))
-  const runs = new NodeRuns(db, rooms, plugins, { concurrency: config.maxJobs })
   app.route('/', runRoutes(db, runs))
+  app.route('/', agentRoutes(db, agents))
   app.all('/api/*', (c) => c.json({ error: 'not_found', message: '接口不存在' }, 404))
 
   if (config.webDist) {
@@ -92,7 +111,9 @@ export async function createServer(config: Config): Promise<Server> {
     plugins,
     secrets,
     runs,
+    agents,
     close() {
+      agents.close()
       runs.close()
       rooms.closeAll()
       db.close()
