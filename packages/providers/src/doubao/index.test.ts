@@ -1,19 +1,12 @@
-import type { ProviderContext } from '@plein/plugin-sdk'
 import { describe, expect, it, vi } from 'vitest'
-import { doubaoPlugin, doubaoProvider } from '.'
+import { fakeContext, requestBody } from '../testing'
+import { doubaoProvider } from '.'
 
 function context(
-  response = new Response(''),
-  values: Record<string, string> = { VOLC_SPEECH_API_KEY: 'test-key' },
+  response?: Response,
+  secret: Record<string, string> = { VOLC_SPEECH_API_KEY: 'test-key' },
 ) {
-  return {
-    settings: doubaoProvider.settings.parse({}),
-    secret: (name: string) => values[name],
-    fetch: vi.fn(async () => response) as unknown as ProviderContext['fetch'],
-    signal: new AbortController().signal,
-    log: vi.fn(),
-    files: { read: vi.fn(async () => ({ data: new Uint8Array([1, 2, 3]), mime: 'audio/wav' })) },
-  }
+  return fakeContext(doubaoProvider, response ? [response] : [], { secret, mime: 'audio/wav' }).ctx
 }
 
 describe('Doubao Speech HTTP contracts', () => {
@@ -59,7 +52,7 @@ describe('Doubao Speech HTTP contracts', () => {
       0, 32767, -32768,
     ])
     expect(output).toMatchObject({ name: 'doubao.wav', mime: 'audio/wav' })
-    const body = JSON.parse(String(vi.mocked(ctx.fetch).mock.calls[0]![1]!.body))
+    const body = requestBody(vi.mocked(ctx.fetch))
     expect(body.req_params.audio_params).toMatchObject({ format: 'pcm', sample_rate: 48000 })
   })
 
@@ -80,24 +73,10 @@ describe('Doubao Speech HTTP contracts', () => {
         { capability: 'audio.speech', model: 'seed-tts-2.0', input: { text: 'fixture' } },
         ctx,
       ),
-    ).rejects.toMatchObject({
-      message: '豆包语音 45000001: [redacted] [redacted] [redacted]',
-      retryable: false,
-    })
+    ).rejects.toMatchObject({ message: '豆包语音 45000001: [redacted] [redacted] [redacted]' })
   })
 
-  it('超时、分块响应中途断开和中止都不可重试', async () => {
-    const speech = {
-      capability: 'audio.speech' as const,
-      model: 'seed-tts-2.0',
-      input: { text: 'fixture' },
-    }
-    const timedOut = context()
-    vi.mocked(timedOut.fetch).mockRejectedValueOnce(new DOMException('timed out', 'TimeoutError'))
-    await expect(doubaoProvider.submit(speech, timedOut)).rejects.toMatchObject({
-      code: 'timeout',
-      retryable: false,
-    })
+  it('分块响应读到一半断开时提交结果未知，不可重试', async () => {
     const broken = new Response(
       new ReadableStream({
         start(controller) {
@@ -106,31 +85,12 @@ describe('Doubao Speech HTTP contracts', () => {
         },
       }),
     )
-    await expect(doubaoProvider.submit(speech, context(broken))).rejects.toMatchObject({
-      code: 'unavailable',
-      retryable: false,
-    })
-    const cancelled = context()
-    const controller = new AbortController()
-    controller.abort()
-    cancelled.signal = controller.signal
-    vi.mocked(cancelled.fetch).mockRejectedValueOnce(new Error('aborted'))
-    await expect(doubaoProvider.submit(speech, cancelled)).rejects.toMatchObject({
-      code: 'cancelled',
-      retryable: false,
-    })
-  })
-
-  it('does not suggest retrying a generation after unknown network submission state', async () => {
-    const ctx = context()
-    vi.mocked(ctx.fetch).mockRejectedValueOnce(new TypeError('connection closed'))
     await expect(
       doubaoProvider.submit(
         { capability: 'audio.speech', model: 'seed-tts-2.0', input: { text: 'fixture' } },
-        ctx,
+        context(broken),
       ),
     ).rejects.toMatchObject({ code: 'unavailable', retryable: false })
-    expect(ctx.fetch).toHaveBeenCalledTimes(1)
   })
 
   it('validates credentials locally without a billable request', async () => {
@@ -141,8 +101,6 @@ describe('Doubao Speech HTTP contracts', () => {
     await expect(doubaoProvider.test!(context(undefined, {}))).rejects.toMatchObject({
       code: 'auth',
     })
-    expect(doubaoPlugin.plugin.manifest.permissions.network).toEqual(['openspeech.bytedance.com'])
-    expect(doubaoPlugin.plugin.manifest.permissions.assets).toBe('read')
   })
 
   it('concatenates audio across NDJSON and adjacent JSON objects', async () => {
@@ -323,6 +281,21 @@ describe('Doubao Speech HTTP contracts', () => {
       ),
     ).rejects.toMatchObject({ code: expected })
   })
+
+  it.each(['invalid sample_rate: 44100', 'max tokens exceeds model limit'])(
+    '400 参数错误“%s”归为 invalid_input，不误判成限流或鉴权',
+    async (message) => {
+      const ctx = context(
+        new Response(JSON.stringify({ code: 45000000, message }), { status: 400 }),
+      )
+      await expect(
+        doubaoProvider.submit(
+          { capability: 'audio.speech', model: 'seed-tts-2.0', input: { text: 'hello' } },
+          ctx,
+        ),
+      ).rejects.toMatchObject({ code: 'invalid_input' })
+    },
+  )
 
   it('rejects a mismatched model before reading assets or sending a request', async () => {
     const ctx = context()

@@ -4,8 +4,10 @@ import {
   byName,
   centerOf,
   contextMenu,
+  addNode,
   edgesInto,
   elements,
+  newProject,
   waitEngine,
   waitIdle,
   waitNode,
@@ -21,14 +23,8 @@ const hasLibass = () => {
 }
 
 test('短剧模板：插入 → 跑骨架 → 展开 → 批量 → 导出', async ({ page }) => {
-  await page.goto('/')
-  await page.getByRole('button', { name: '新建项目', exact: true }).click()
-  await expect(page).toHaveURL(/#\/c\//)
-  await waitEngine(page)
-
-  await page.mouse.dblclick(720, 450)
-  await page.getByPlaceholder('添加节点').fill('短剧')
-  await page.keyboard.press('Enter')
+  await newProject(page)
+  await addNode(page, '短剧')
   await expect(page.locator('.ui-toast')).toContainText('短剧模板已铺出')
 
   const board = await byName(page, '分镜（双击展开镜头）')
@@ -70,7 +66,6 @@ test('短剧模板：插入 → 跑骨架 → 展开 → 批量 → 导出', asy
   for (const role of ['批量出分镜图', '批量生成视频', '批量配音']) {
     await dialog.getByRole('button', { name: role }).click()
     await expect(page.locator('.ui-toast')).toContainText('已开始生成')
-    console.log(role, await page.locator('.ui-toast').innerText())
     await waitIdle(page)
   }
   const all = await elements(page)

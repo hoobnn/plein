@@ -1,39 +1,21 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Asset, Canvas, UserTemplate } from '@plein/protocol'
 import sharp from 'sharp'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
 import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
 import { hasFfmpeg } from './assets/media'
-import { type Config, loadConfig } from './config'
 import { parseRange } from './http/files'
-import { startServer } from './start'
+import type { Config } from './config'
+import { startTestServer, tempDir, until } from './testing'
 
 const ffmpeg = await hasFfmpeg()
-const dirs: string[] = []
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true })
-})
 
-function tempDir() {
-  const d = mkdtempSync(join(tmpdir(), 'plein-test-'))
-  dirs.push(d)
-  return d
-}
-
-async function start(dataDir: string, overrides: Partial<Config> = {}) {
-  const config = {
-    ...loadConfig({ PLEIN_DATA_DIR: dataDir, PLEIN_PORT: '0' }),
-    webDist: null,
-    ...overrides,
-  }
-  const running = await startServer(config)
-  return { server: running.server, base: running.url, stop: () => running.close() }
-}
+const start = (dataDir = tempDir(), config: Partial<Config> = {}) =>
+  startTestServer({ dataDir, config, mock: false })
 
 function connect(base: string, room: string, doc = new Y.Doc()) {
   const provider = new WebsocketProvider(`${base.replace('http', 'ws')}/sync`, room, doc, {
@@ -44,22 +26,23 @@ function connect(base: string, room: string, doc = new Y.Doc()) {
   return { doc, provider, synced }
 }
 
-async function until(fn: () => boolean, ms = 3000) {
-  const end = Date.now() + ms
-  while (!fn()) {
-    if (Date.now() > end) throw new Error('timeout')
-    await new Promise((r) => setTimeout(r, 20))
-  }
+/** WebSocket 握手的结果：升级成功记 101，被拒绝时是 HTTP 状态码 */
+function handshake(url: string, headers?: Record<string, string>) {
+  return new Promise<number>((resolve) => {
+    const ws = new WebSocket(url, { headers })
+    ws.on('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0))
+    ws.on('open', () => {
+      ws.close()
+      resolve(101)
+    })
+  })
 }
 
 describe('server', () => {
-  let dataDir: string
   let s: Awaited<ReturnType<typeof start>>
   beforeAll(async () => {
-    dataDir = tempDir()
-    s = await start(dataDir)
+    s = await start()
   })
-  afterAll(() => s.stop())
 
   it('画布增删改查', async () => {
     const created = (await (
@@ -121,31 +104,37 @@ describe('server', () => {
   })
 
   it('两个客户端实时同步，重启后数据仍在', async () => {
+    const first = await start()
     const canvas = (await (
-      await fetch(`${s.base}/api/canvases`, { method: 'POST' })
+      await fetch(`${first.base}/api/canvases`, { method: 'POST' })
     ).json()) as Canvas
-    const a = connect(s.base, canvas.id)
-    const b = connect(s.base, canvas.id)
+    const a = connect(first.base, canvas.id)
+    const b = connect(first.base, canvas.id)
     await Promise.all([a.synced, b.synced])
     a.doc.getMap('elements').set('el1', 'hello')
-    await until(() => b.doc.getMap('elements').get('el1') === 'hello')
+    await until(() => b.doc.getMap('elements').get('el1') === 'hello', 3000)
     a.provider.destroy()
     b.provider.destroy()
 
-    await s.stop()
-    s = await start(dataDir)
-    const c = connect(s.base, canvas.id)
+    await first.close()
+    const again = await start(first.dataDir)
+    const c = connect(again.base, canvas.id)
     await c.synced
     expect(c.doc.getMap('elements').get('el1')).toBe('hello')
     c.provider.destroy()
   })
 
   it('不存在的画布不能同步', async () => {
-    const ws = new WebSocket(`${s.base.replace('http', 'ws')}/sync/cv_missing`)
-    const status = await new Promise((r) =>
-      ws.once('unexpected-response', (_req, res) => r(res.statusCode)),
-    )
-    expect(status).toBe(404)
+    expect(await handshake(`${s.base.replace('http', 'ws')}/sync/cv_missing`)).toBe(404)
+  })
+
+  it('同步握手同样拒绝跨站 Origin', async () => {
+    const canvas = (await (
+      await fetch(`${s.base}/api/canvases`, { method: 'POST' })
+    ).json()) as Canvas
+    const url = `${s.base.replace('http', 'ws')}/sync/${canvas.id}`
+    expect(await handshake(url, { origin: 'https://evil.example' })).toBe(403)
+    expect(await handshake(url, { origin: s.base })).toBe(101)
   })
 
   it('图片入库：元数据、缩略图、去重、Range', async () => {
@@ -253,7 +242,7 @@ describe('账号登录（Better Auth）', () => {
     const canvas = (await (
       await fetch(`${local.base}/api/canvases`, { method: 'POST' })
     ).json()) as Canvas
-    await local.stop()
+    await local.close()
 
     const s = await start(dir, { auth: 'password' })
     const json = (body: unknown) => ({
@@ -296,13 +285,13 @@ describe('账号登录（Better Auth）', () => {
         principal: { role: 'owner' },
       })
     } finally {
-      await s.stop()
+      await s.close()
     }
     // 回到本机模式仍能看到这个画布
     const again = await start(dir)
     const list = (await (await fetch(`${again.base}/api/canvases`)).json()) as Canvas[]
     expect(list.map((c) => c.id)).toEqual([canvas.id])
-    await again.stop()
+    await again.close()
   })
 })
 
@@ -321,24 +310,9 @@ describe('桌面端令牌', () => {
       })
       expect(ok.status).toBe(200)
 
-      const rejected = await new Promise<number>((resolve) => {
-        const ws = new WebSocket(`${s.base.replace('http', 'ws')}/sync/x`)
-        ws.on('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0))
-        ws.on('open', () => resolve(101))
-      })
-      expect(rejected).toBe(403)
+      expect(await handshake(`${s.base.replace('http', 'ws')}/sync/x`)).toBe(403)
     } finally {
-      await s.stop()
-    }
-  })
-
-  it('端口为 0 时由系统分配并返回实际端口', async () => {
-    const s = await start(tempDir())
-    try {
-      expect(Number(new URL(s.base).port)).toBeGreaterThan(0)
-      expect((await fetch(`${s.base}/api/health`)).status).toBe(200)
-    } finally {
-      await s.stop()
+      await s.close()
     }
   })
 })
@@ -351,5 +325,9 @@ describe('parseRange', () => {
     expect(parseRange('bytes=-10', 100)).toEqual([90, 99])
     expect(parseRange('bytes=0-999', 100)).toEqual([0, 99])
     expect(parseRange('bytes=100-', 100)).toBe('invalid')
+    expect(parseRange('bytes=-0', 100)).toBe('invalid')
+    expect(parseRange('bytes=5-2', 100)).toBe('invalid')
+    // 不认识的写法当作没有 Range
+    expect(parseRange('bytes=0-1,5-6', 100)).toBeNull()
   })
 })

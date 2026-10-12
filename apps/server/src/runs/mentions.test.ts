@@ -9,26 +9,12 @@ import {
 } from '@plein/doc'
 import type { PortValue } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vitest'
+import { addCharacter } from '../testing'
 import { applyMentions } from './mentions'
 
 /** 造一张角色卡：设定 + 音色（音色按平台存） */
-function character(doc: PleinDoc, name: string, params: Record<string, unknown>, x = 0) {
-  return createElement(doc, {
-    kind: 'node',
-    nodeType: 'plein/character',
-    nodeVersion: 1,
-    name,
-    params,
-    ports: {
-      inputs: [{ id: 'references', label: '参考图', type: 'image', multiple: true }],
-      outputs: [{ id: 'images', label: '参考图', type: 'image' }],
-    },
-    x,
-    y: 0,
-    w: 10,
-    h: 10,
-  })
-}
+const character = (doc: PleinDoc, name: string, params: Record<string, unknown>, x = 0) =>
+  addCharacter(doc, name, params, { x, w: 10, h: 10 })
 
 const node = (doc: PleinDoc, nodeType: string, params: Record<string, unknown>) =>
   createElement(doc, { kind: 'node', nodeType, params, x: 0, y: 300, w: 10, h: 10 })

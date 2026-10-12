@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { elements, waitEngine } from './canvas'
+import { elements, newProject, waitEngine } from './canvas'
 
 let dir = ''
 const files = () => ['still.png', 'clip.mp4', 'voice.wav', 'notes.md'].map((f) => join(dir, f))
@@ -20,9 +20,7 @@ test.beforeAll(() => {
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 test('导入图片、视频、音频、Markdown，刷新后都还在', async ({ page }) => {
-  await page.goto('/')
-  await page.getByRole('button', { name: '新建项目', exact: true }).click()
-  await waitEngine(page)
+  await newProject(page)
 
   const chooser = page.waitForEvent('filechooser')
   await page.getByRole('button', { name: '上传' }).click()

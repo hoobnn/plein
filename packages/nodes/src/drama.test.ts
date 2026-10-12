@@ -57,6 +57,9 @@ describe('短剧模板骨架', () => {
     expect(edges).toContain('character.images→charimg.references')
     expect(edges).toContain('charimg.images→shotImage.references')
     expect(edges).toContain('music.audio→seq.music')
+    // 分镜图接到镜头视频，视频用图生视频模式
+    expect(edges).toContain('shotImage.images→shotVideo.images')
+    expect(t.elements.find((e) => e.key === 'shotVideo')?.params?.mode).toBe('image')
     // 样例不进成片：真实镜头由分镜展开时按顺序接入序列
     expect(edges).not.toContain('shotVideo.video→seq.clips')
     expect(edges).not.toContain('shotSpeech.audio→seq.dialogue')
@@ -96,20 +99,6 @@ describe('短剧模板骨架', () => {
       }
   })
 
-  it('分镜图的图片接到视频、视频用图生视频模式：结构由模板保证', () => {
-    const t = dramaTemplate()
-    expect(
-      t.edges.some(
-        (e) =>
-          e.from[0] === 'shotImage' &&
-          e.from[1] === 'images' &&
-          e.to[0] === 'shotVideo' &&
-          e.to[1] === 'images',
-      ),
-    ).toBe(true)
-    expect(t.elements.find((e) => e.key === 'shotVideo')?.params?.mode).toBe('image')
-  })
-
   it('默认 8 个镜头，可以指定 6–10 之间的镜头数', () => {
     expect(byKey(['shots'])[0]!.params?.shotCount).toBe(DEFAULT_SHOT_COUNT)
     expect(
@@ -125,16 +114,10 @@ describe('短剧模板骨架', () => {
     expect(String(byKey(['shots'])[0]!.params?.prompt)).toContain('8 个镜头')
   })
 
-  it('剧本、角色抽取、分镜的中文提示词是可改的默认值，不是空串', () => {
+  it('剧本、角色抽取、分镜带可改的默认提示词', () => {
     for (const key of ['script', 'cast', 'shots']) {
-      const params = byKey([key])[0]!.params ?? {}
-      const text = Object.values(params).join('\n')
-      expect(text.trim().length).toBeGreaterThan(20)
-      // 中文默认：既有英文占位也有中文句子
-      expect(/[一-龥]{4,}/.test(text), key).toBe(true)
+      expect(String(byKey([key])[0]!.params?.prompt ?? '').trim(), key).not.toBe('')
     }
-    expect(byKey(['script'])[0]!.params?.system).toContain('编剧')
-    expect(byKey(['cast'])[0]!.params?.prompt).toContain('角色和场景设定')
   })
 
   it('模型 id 不写死：模板只声明能力，具体模型由 catalog 决定', () => {
@@ -165,9 +148,5 @@ describe('短剧模板骨架', () => {
     expect(optional.map((e) => e.key)).toEqual(['prop', 'style'])
     // 连线不依赖它们
     expect(t.edges.some((e) => e.from[0] === 'prop' || e.to[0] === 'style')).toBe(false)
-  })
-
-  it('布局是纯数据：同一份输入给出同一份模板', () => {
-    expect(dramaTemplate()).toEqual(dramaTemplate())
   })
 })

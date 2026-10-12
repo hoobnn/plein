@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { elements, waitEngine } from './canvas'
+import { addNode, elements, newProject, waitNode } from './canvas'
 
 const MOCK = '/api/providers/plein/mock/config'
 
@@ -10,12 +10,8 @@ test.afterEach(async ({ request }) => {
 test('平台报错时节点上给出可读的失败原因，改好后能重试成功', async ({ page, request }) => {
   expect((await request.put(MOCK, { data: { settings: { failWith: 'auth' } } })).ok()).toBe(true)
 
-  await page.goto('/')
-  await page.getByRole('button', { name: '新建项目', exact: true }).click()
-  await waitEngine(page)
-  await page.mouse.dblclick(720, 450)
-  await page.getByPlaceholder('添加节点').fill('生成图片')
-  await page.keyboard.press('Enter')
+  await newProject(page)
+  await addNode(page, '生成图片')
   await expect
     .poll(async () => (await elements(page)).filter((e) => e.kind === 'node'))
     .toHaveLength(1)
@@ -35,10 +31,6 @@ test('平台报错时节点上给出可读的失败原因，改好后能重试�
 
   await request.put(MOCK, { data: { settings: { failWith: 'none' } } })
   await run()
-  await expect
-    .poll(async () => (await elements(page)).find((e) => e.id === node!.id)?.status, {
-      timeout: 30_000,
-    })
-    .toBe('succeeded')
+  await waitNode(page, node!.id, 30_000)
   await expect(failed).toBeHidden()
 })

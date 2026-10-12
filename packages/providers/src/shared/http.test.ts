@@ -9,15 +9,10 @@ import {
   transportError,
   withRetry,
 } from './http'
+import { aborted } from '../testing'
 
 const messages = { cancelled: '已取消', network: '网络失败', timeout: '超时' }
 const live = () => new AbortController().signal
-
-function aborted(reason?: unknown) {
-  const controller = new AbortController()
-  controller.abort(reason)
-  return controller.signal
-}
 
 describe('公共请求层的重试规则', () => {
   it('提交生成的 POST 无论什么错误都不可重试', () => {

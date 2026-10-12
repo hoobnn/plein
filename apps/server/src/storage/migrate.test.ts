@@ -85,6 +85,22 @@ describe('数据库迁移', () => {
     old.close()
   })
 
+  it('旧画布各自变成同名项目', () => {
+    const db = new Database(':memory:')
+    // 先迁到加项目之前的版本，插一张旧画布，再迁到最新
+    for (const m of LEGACY_MIGRATIONS.slice(0, 4)) db.exec(m)
+    db.prepare('INSERT INTO canvases VALUES (?, ?, ?, ?, ?)').run('cv_old', 'local', '老画布', 1, 2)
+    db.pragma('user_version = 4')
+    migrate(db)
+    expect(db.prepare('SELECT project_id FROM canvases').get()).toEqual({ project_id: 'pj_cv_old' })
+    expect(db.prepare('SELECT id, title, owner_id FROM projects').get()).toEqual({
+      id: 'pj_cv_old',
+      title: '老画布',
+      owner_id: 'local',
+    })
+    db.close()
+  })
+
   it('Better Auth 旧数据（ISO 时间、0/1 布尔）经 Drizzle 读写正常', () => {
     const sqlite = legacyDb()
     sqlite

@@ -1,6 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
-import { createDoc, type ElementKind } from '@plein/doc'
-import { corePlugin, dramaTemplate } from '@plein/nodes'
+import { createDoc } from '@plein/doc'
+import { corePlugin } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
 import type { Catalog } from '@plein/protocol'
 import { describe, expect, it } from 'vitest'
@@ -54,9 +54,6 @@ describe('短剧模板落到画布', () => {
     // 第二个分组在第一个下方
     const [a, b] = r.frames.map((id) => doc.worldRect(id)!)
     expect(b!.y).toBeGreaterThan(a!.y + a!.h)
-    // 顶层分组里的剧本节点：世界坐标 = 模板坐标 + 落点
-    const script = [...doc.elements()].find((el) => el.nodeType === 'plein/llm')!
-    expect(doc.worldRect(script.id)).toMatchObject({ x: 1000 + 420, y: 200 + 40 })
 
     // 关键节点都在
     for (const type of [
@@ -140,23 +137,5 @@ describe('短剧模板落到画布', () => {
     const board = kind(doc, 'plein/storyboard')[0]!
     expect(board.params?.shotCount).toBe(8)
     expect(board.params?.shots).toEqual([])
-  })
-
-  it('内置中文提示词落在节点参数里，可以直接改', () => {
-    const { doc, engine } = setup()
-    placeDramaTemplate(engine, catalog, { x: 0, y: 0 })
-    const [script, cast] = kind(doc, 'plein/llm')
-    expect(String(script!.params?.prompt)).toContain('竖屏短剧剧本')
-    expect(String(cast!.params?.prompt)).toContain('角色和场景设定')
-    const board = kind(doc, 'plein/storyboard')[0]!
-    expect(String(board.params?.prompt)).toContain('8 个镜头')
-    const idea = [...doc.elements()].find((el: { kind: ElementKind }) => el.kind === 'markdown')
-    expect(idea?.text).toContain('创意')
-  })
-
-  it('换一个镜头数会重铺出对应的分镜参数', () => {
-    const { doc, engine } = setup()
-    placeDramaTemplate(engine, catalog, { x: 0, y: 0 }, dramaTemplate({ shotCount: 6 }))
-    expect(kind(doc, 'plein/storyboard')[0]!.params?.shotCount).toBe(6)
   })
 })

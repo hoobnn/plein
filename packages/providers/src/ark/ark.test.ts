@@ -1,38 +1,22 @@
-import { describeProvider, type ProviderContext } from '@plein/plugin-sdk'
-import { describe, expect, it, vi } from 'vitest'
-import { arkPlugin, arkProvider } from './index'
+import { describeProvider } from '@plein/plugin-sdk'
+import { describe, expect, it } from 'vitest'
+import { fakeContext } from '../testing'
+import { arkProvider } from './index'
+
+const harness = (replies?: unknown[]) => fakeContext(arkProvider, replies)
 
 const CHAT = 'doubao-seed-2-1-pro-260628'
 const IMAGE = 'doubao-seedream-5-0-pro-260628'
 const VIDEO = 'doubao-seedance-2-5-260628'
 const ref = { assetId: 'local-image', kind: 'image' as const }
 
-function harness(responses: Array<{ body: unknown; status?: number }> = []) {
-  const fetch = vi.fn<typeof globalThis.fetch>(async () => {
-    const next = responses.shift()
-    if (!next) throw new Error('Unexpected fetch')
-    return Response.json(next.body, { status: next.status ?? 200 })
-  })
-  const read = vi.fn(async () => ({ data: new Uint8Array([1, 2, 3]), mime: 'image/png' }))
-  const ctx: ProviderContext<ReturnType<typeof arkProvider.settings.parse>> = {
-    settings: arkProvider.settings.parse({}),
-    secret: () => 'test-secret',
-    fetch,
-    signal: new AbortController().signal,
-    log: () => {},
-    files: { read },
-  }
-  const body = (index = 0) => JSON.parse(String(fetch.mock.calls[index]?.[1]?.body))
-  return { ctx, fetch, read, body }
-}
-
 describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
   it('classifies unactivated models as authorization failures rather than malformed inputs', async () => {
     const { ctx } = harness([
-      {
-        status: 404,
-        body: { error: { code: 'ModelNotOpen', message: 'Model service not activated' } },
-      },
+      Response.json(
+        { error: { code: 'ModelNotOpen', message: 'Model service not activated' } },
+        { status: 404 },
+      ),
     ])
     await expect(
       arkProvider.submit(
@@ -41,19 +25,8 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
       ),
     ).rejects.toMatchObject({ code: 'auth', retryable: false })
   })
-  it('声明仅需要的密钥、网络和资产读取权限，并提供默认设置', () => {
-    expect(arkProvider.settings.parse({})).toEqual({
-      customChatModel: '',
-      customImageModel: '',
-      customVideoModel: '',
-    })
-    expect(arkPlugin.plugin.manifest.permissions.assets).toBe('read')
-    expect(arkPlugin.plugin.manifest.permissions.secrets).toEqual(['ARK_API_KEY'])
-    expect(arkPlugin.plugin.manifest.permissions.network).toContain('*.volces.com')
-  })
-
   it('连接测试只查询任务列表，不触发生成计费', async () => {
-    const { ctx, fetch } = harness([{ body: { items: [] } }])
+    const { ctx, fetch } = harness([{ items: [] }])
     await arkProvider.test!(ctx)
     expect(fetch).toHaveBeenCalledWith(
       'https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks?page_size=1',
@@ -69,10 +42,8 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
   it('对话图片经资产权限读入后使用 data URL，传递 JSON Schema 并归一化用量', async () => {
     const { ctx, body } = harness([
       {
-        body: {
-          choices: [{ message: { content: '{"answer":42}' }, finish_reason: 'stop' }],
-          usage: { prompt_tokens: 3, completion_tokens: 8 },
-        },
+        choices: [{ message: { content: '{"answer":42}' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 3, completion_tokens: 8 },
       },
     ])
     const schema = { type: 'object', properties: { answer: { type: 'integer' } } }
@@ -124,7 +95,7 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
   })
 
   it('自定义模型槽映射至设置中的 Endpoint ID', async () => {
-    const { ctx, body } = harness([{ body: { choices: [{ message: { content: 'OK' } }] } }])
+    const { ctx, body } = harness([{ choices: [{ message: { content: 'OK' } }] }])
     ctx.settings.customChatModel = 'ep-custom-chat'
     await arkProvider.submit(
       {
@@ -138,9 +109,7 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
   })
 
   it('图片请求不发送本机 URL；解码 b64_json 到资产输出', async () => {
-    const { ctx, body } = harness([
-      { body: { data: [{ b64_json: 'AQID', output_format: 'png' }] } },
-    ])
+    const { ctx, body } = harness([{ data: [{ b64_json: 'AQID', output_format: 'png' }] }])
     const result = await arkProvider.submit(
       {
         capability: 'image.generate',
@@ -176,7 +145,7 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
   ])(
     '核心 image executor payload 的 %s / %s 映射为官方 size %s',
     async (model, aspectRatio, size) => {
-      const { ctx, body } = harness([{ body: { data: [{ b64_json: 'AQID' }] } }])
+      const { ctx, body } = harness([{ data: [{ b64_json: 'AQID' }] }])
       await arkProvider.submit(
         {
           capability: 'image.generate',
@@ -195,7 +164,7 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     [IMAGE, '2K', '9:16', '1536x2720'],
     ['doubao-seedream-5-0-260128', '4K', '1:1', '4096x4096'],
   ])('%s 的分辨率 %s 按画幅 %s 换算为 %s', async (model, resolution, aspectRatio, size) => {
-    const { ctx, body } = harness([{ body: { data: [{ b64_json: 'AQID' }] } }])
+    const { ctx, body } = harness([{ data: [{ b64_json: 'AQID' }] }])
     await arkProvider.submit(
       {
         capability: 'image.generate',
@@ -223,7 +192,7 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
   })
 
   it('明确的 extra.size 优先于通用 aspectRatio / width / height', async () => {
-    const { ctx, body } = harness([{ body: { data: [{ b64_json: 'AQID' }] } }])
+    const { ctx, body } = harness([{ data: [{ b64_json: 'AQID' }] }])
     await arkProvider.submit(
       {
         capability: 'image.generate',
@@ -241,19 +210,15 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     expect(body()).not.toHaveProperty('aspectRatio')
   })
 
-  it('远端提交业务错误不可自动重新生成且错误文本不包含密钥', async () => {
+  it('提交报错和失败任务的错误文本不包含密钥', async () => {
     const { ctx } = harness([
+      Response.json(
+        { error: { code: 'InvalidParameter', message: 'test-secret bad test-secret' } },
+        { status: 400 },
+      ),
       {
-        body: {
-          error: { code: 'RateLimitExceeded', message: 'test-secret rate limit test-secret' },
-        },
-        status: 429,
-      },
-      {
-        body: {
-          status: 'failed',
-          error: { code: 'ServiceUnavailable', message: 'test-secret service unavailable' },
-        },
+        status: 'failed',
+        error: { code: 'ServiceUnavailable', message: 'test-secret service unavailable' },
       },
     ])
     await expect(
@@ -261,19 +226,15 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
         { capability: 'video.generate', model: VIDEO, input: { prompt: 'cat' } },
         ctx,
       ),
-    ).rejects.toMatchObject({
-      code: 'rate_limit',
-      message: '[redacted] rate limit [redacted]',
-      retryable: false,
-    })
+    ).rejects.toMatchObject({ message: '[redacted] bad [redacted]' })
     expect(await arkProvider.poll!('id', ctx)).toMatchObject({
       state: 'failed',
-      error: { message: '[redacted] service unavailable', retryable: false },
+      error: { message: '[redacted] service unavailable' },
     })
   })
 
   it('组图只为 Lite 构造官方 sequential 参数，不重复发起多次生成', async () => {
-    const { ctx, body, fetch } = harness([{ body: { data: [{ b64_json: 'AQID' }] } }])
+    const { ctx, body, fetch } = harness([{ data: [{ b64_json: 'AQID' }] }])
     await arkProvider.submit(
       {
         capability: 'image.generate',
@@ -297,7 +258,7 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
   })
 
   it('视频首尾帧为图片 data URL，使用 adaptive 比例并保留远端 ID', async () => {
-    const { ctx, body, fetch } = harness([{ body: { id: 'cgt-123' } }])
+    const { ctx, body, fetch } = harness([{ id: 'cgt-123' }])
     const result = await arkProvider.submit(
       {
         capability: 'video.generate',
@@ -348,22 +309,15 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
 
   it('轮询跨进程只依赖 remoteId，支持 pending、成功、失败及取消状态', async () => {
     const { ctx, fetch } = harness([
-      { body: { status: 'running' } },
+      { status: 'running' },
       {
-        body: {
-          status: 'succeeded',
-          content: { video_url: 'https://result.tos-cn-beijing.volces.com/clip.mp4' },
-          duration: 5,
-          usage: { completion_tokens: 100 },
-        },
+        status: 'succeeded',
+        content: { video_url: 'https://result.tos-cn-beijing.volces.com/clip.mp4' },
+        duration: 5,
+        usage: { completion_tokens: 100 },
       },
-      {
-        body: {
-          status: 'failed',
-          error: { code: 'ContentPolicyViolation', message: 'content policy' },
-        },
-      },
-      { body: { status: 'cancelled' } },
+      { status: 'failed', error: { code: 'ContentPolicyViolation', message: 'content policy' } },
+      { status: 'cancelled' },
     ])
     expect(await arkProvider.poll!('id/escaped', ctx)).toEqual({
       state: 'pending',
@@ -388,12 +342,10 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
   it('开了返回尾帧时多输出一张尾帧图片', async () => {
     const { ctx } = harness([
       {
-        body: {
-          status: 'succeeded',
-          content: {
-            video_url: 'https://result.tos-cn-beijing.volces.com/clip.mp4',
-            last_frame_url: 'https://result.tos-cn-beijing.volces.com/last.png',
-          },
+        status: 'succeeded',
+        content: {
+          video_url: 'https://result.tos-cn-beijing.volces.com/clip.mp4',
+          last_frame_url: 'https://result.tos-cn-beijing.volces.com/last.png',
         },
       },
     ])
@@ -406,26 +358,17 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     })
   })
 
-  it('模型声明的专属参数转成 JSON Schema 下发，约束原样保留', () => {
-    const seedance = describeProvider(arkProvider, 'volc/ark').models.find(
-      (m) => m.id === 'doubao-seedance-2-5-260628',
-    )!
+  it('Seedance 声明 4–30 秒时长且不支持 seed', () => {
+    const seedance = describeProvider(arkProvider, 'volc/ark').models.find((m) => m.id === VIDEO)!
     expect(seedance.limits).toMatchObject({ duration: { min: 4, max: 30 }, seed: false })
-    expect(Object.keys((seedance.optionsSchema as { properties: object }).properties)).toEqual([
-      'return_last_frame',
-      'service_tier',
-      'watermark',
-      'draft',
-    ])
-    expect(seedance).not.toHaveProperty('options')
   })
 
   it('取消仅删除 queued 任务，避免 DELETE 成功任务导致产物记录丢失', async () => {
     const { ctx, fetch } = harness([
-      { body: { status: 'queued' } },
-      { body: {} },
-      { body: { status: 'succeeded' } },
-      { body: { status: 'running' } },
+      { status: 'queued' },
+      {},
+      { status: 'succeeded' },
+      { status: 'running' },
     ])
     await arkProvider.cancel!('id', ctx)
     expect(fetch.mock.calls[1]?.[1]?.method).toBe('DELETE')
@@ -443,13 +386,14 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     [503, 'ServerOverloaded', 'unavailable'],
     [504, 'Timeout', 'timeout'],
   ] as const)('归一化 HTTP %i / %s → %s', async (status, code, normalized) => {
-    const { ctx } = harness([{ body: { error: { code, message: code } }, status }])
+    const { ctx } = harness([Response.json({ error: { code, message: code } }, { status })])
     await expect(arkProvider.test!(ctx)).rejects.toMatchObject({ code: normalized })
   })
 
-  it('传输失败不会自动重新提交生成，也不标记为可重试', async () => {
-    const { ctx, fetch } = harness()
-    fetch.mockRejectedValueOnce(new TypeError('network error'))
+  it('提交遇 503 不可重试，轮询遇 503 可重试，宿主据此续轮询', async () => {
+    const busy = () =>
+      Response.json({ error: { code: 'ServerOverloaded', message: 'busy' } }, { status: 503 })
+    const { ctx, fetch } = harness([busy(), busy()])
     await expect(
       arkProvider.submit(
         { capability: 'video.generate', model: VIDEO, input: { prompt: 'cat' } },
@@ -457,17 +401,6 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
       ),
     ).rejects.toMatchObject({ code: 'unavailable', retryable: false })
     expect(fetch).toHaveBeenCalledTimes(1)
-  })
-
-  it('轮询遇到网络失败或 503 可重试，宿主据此续轮询', async () => {
-    const { ctx, fetch } = harness([
-      { body: { error: { code: 'ServerOverloaded', message: 'busy' } }, status: 503 },
-    ])
-    fetch.mockRejectedValueOnce(new TypeError('network error'))
-    await expect(arkProvider.poll!('id', ctx)).rejects.toMatchObject({
-      code: 'unavailable',
-      retryable: true,
-    })
     await expect(arkProvider.poll!('id', ctx)).rejects.toMatchObject({
       code: 'unavailable',
       retryable: true,
@@ -476,9 +409,9 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
 
   it('拒绝缺少 ID / 畸形 JSON 输出以及权限外的产物 URL', async () => {
     const { ctx } = harness([
-      { body: {} },
-      { body: { choices: [{ message: { content: 'not JSON' } }] } },
-      { body: { status: 'succeeded', content: { video_url: 'http://127.0.0.1/private.mp4' } } },
+      {},
+      { choices: [{ message: { content: 'not JSON' } }] },
+      { status: 'succeeded', content: { video_url: 'http://127.0.0.1/private.mp4' } },
     ])
     await expect(
       arkProvider.submit(

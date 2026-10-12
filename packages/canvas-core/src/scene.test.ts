@@ -1,27 +1,11 @@
-import {
-  bringToFront,
-  createDoc,
-  createElement,
-  deleteElements,
-  moveElements,
-  type NewElement,
-  setParent,
-} from '@plein/doc'
+import { bringToFront, createElement, deleteElements, moveElements, setParent } from '@plein/doc'
+import { box, openDoc } from '@plein/doc/testing'
 import { describe, expect, it } from 'vitest'
 import { mapRect, resizeBox, snapMove } from './geometry'
 import { Scene } from './scene'
 
-const box = (extra: Partial<NewElement> = {}): NewElement => ({
-  kind: 'image',
-  x: 0,
-  y: 0,
-  w: 100,
-  h: 100,
-  ...extra,
-})
-
 function setup() {
-  const doc = createDoc(undefined, { schedule: () => {} })
+  const doc = openDoc()
   const scene = new Scene(doc)
   const sync = () => {
     let update = null as ReturnType<Scene['apply']> | null
@@ -98,6 +82,12 @@ describe('几何', () => {
     expect(resizeBox(b, 'e', -500, 0).w).toBe(8)
   })
 
+  it('边手柄等比：按该边比例，另一方向居中', () => {
+    const b = { x: 0, y: 0, w: 200, h: 100 }
+    expect(resizeBox(b, 'e', 100, 0, true)).toEqual({ x: 0, y: -25, w: 300, h: 150 })
+    expect(resizeBox(b, 's', 0, 50, true)).toEqual({ x: -50, y: 0, w: 300, h: 150 })
+  })
+
   it('多选缩放按包围盒线性映射', () => {
     const from = { x: 0, y: 0, w: 100, h: 100 }
     const to = { x: 0, y: 0, w: 200, h: 200 }
@@ -116,5 +106,15 @@ describe('几何', () => {
     expect(r.dx).toBe(-3)
     expect(r.dy).toBe(0)
     expect(r.guides).toEqual([{ axis: 'x', at: 100, from: 0, to: 550 }])
+  })
+
+  it('纵向吸附取最近的线，超出阈值不吸', () => {
+    const near = { x: 0, y: 0, w: 100, h: 100 }
+    const nearer = { x: 0, y: 206, w: 100, h: 100 }
+    const moving = { x: 500, y: 104, w: 50, h: 100 }
+    const r = snapMove(moving, [near, nearer], 6)
+    expect(r).toMatchObject({ dx: 0, dy: 2 })
+    expect(r.guides).toEqual([{ axis: 'y', at: 206, from: 0, to: 550 }])
+    expect(snapMove({ ...moving, y: 107 }, [near], 6)).toEqual({ dx: 0, dy: 0, guides: [] })
   })
 })

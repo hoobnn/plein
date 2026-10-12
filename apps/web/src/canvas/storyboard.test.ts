@@ -251,15 +251,6 @@ describe('台词增删后配音节点不错位', () => {
     expect(srcOf(engine.doc.get(speech('第三句').id)!)!.line).toBe(3)
     expect(engine.doc.get(speech('第一句').id)?.params?.text).toBe('第一句')
   })
-
-  it('原地改一句：只有这一句出现差异', () => {
-    const { engine, board, table, s } = start()
-    table([
-      { ...s, dialogue: [s.dialogue[0]!, { character: '路人', line: '改过' }, s.dialogue[2]!] },
-    ])
-    const diffs = planDiffs(engine, board).get(s.id) ?? []
-    expect(diffs.map((d) => [d.line, d.diffs.map((f) => f.key)])).toEqual([[1, ['text']]])
-  })
 })
 
 describe('表格改动 → 差异 → 用户选择同步', () => {

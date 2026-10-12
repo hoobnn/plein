@@ -1,107 +1,42 @@
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { connect, createDoc, createElement, type PleinDoc, setParams } from '@plein/doc'
 import type { JobList, StaleNodes } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
-import { createServer, type Server } from '../app'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { Server } from '../app'
 import { hasFfmpeg, mediaCaps } from '../assets/media'
-import { loadConfig } from '../config'
+import {
+  addNode,
+  bootServer,
+  createCanvas as canvas,
+  mockSettings as mock,
+  request as call,
+  until,
+  VIDEO_V1_PORTS,
+} from '../testing'
 
-const dirs: string[] = []
-const servers: Server[] = []
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true })
-})
 afterEach(() => {
-  for (const s of servers.splice(0)) s.close()
   vi.restoreAllMocks()
 })
 
-const textPorts = { inputs: [], outputs: [{ id: 'text', label: '文本', type: 'text' as const }] }
-const imagePorts = {
-  inputs: [
-    { id: 'prompt', label: '提示词', type: 'text' as const, multiple: true },
-    { id: 'references', label: '参考图', type: 'image' as const, multiple: true },
-  ],
-  outputs: [{ id: 'images', label: '图片', type: 'image' as const }],
-}
-const videoPorts = {
-  inputs: [
-    { id: 'prompt', label: '提示词', type: 'text' as const, multiple: true },
-    { id: 'firstFrame', label: '首帧', type: 'image' as const },
-  ],
-  outputs: [{ id: 'video', label: '视频', type: 'video' as const }],
+/** 测试里不等真实的退避时间 */
+const fastRetry = (server: Server) => {
+  ;(server.runs as unknown as { retryDelays: number[] }).retryDelays = [50, 50]
 }
 
-async function boot(dataDir = mkdtempSync(join(tmpdir(), 'plein-jobs-')), env = {}) {
-  if (!dirs.includes(dataDir)) dirs.push(dataDir)
-  const server = await createServer({
-    ...loadConfig({ PLEIN_DATA_DIR: dataDir, PLEIN_MOCK_PROVIDER: '1', ...env }),
-    webDist: null,
-  })
-  servers.push(server)
-  return { server, dataDir }
-}
-
-function mock(server: Server, settings: { latencyMs?: number; failWith?: string }) {
-  server.plugins.configs.update('plein/mock', {
-    settings: { latencyMs: 0, failWith: 'none', ...settings },
-  })
-}
-
-/** 直接调 Hono 应用；免认证模式要求 Host 是本机名 */
-function call(server: Server, path: string, init: RequestInit = {}) {
-  return server.app.request(path, { ...init, headers: { host: '127.0.0.1:8787' } })
-}
-
-async function canvas(server: Server) {
-  const res = await call(server, '/api/canvases', { method: 'POST', body: '{}' })
-  const { id } = (await res.json()) as { id: string }
-  return { id, doc: createDoc(server.rooms.get(id).doc, { schedule: () => {} }) }
-}
-
-const at = (x: number) => ({ x, y: 0, w: 200, h: 200 })
+const boot = (env: NodeJS.ProcessEnv = {}) => bootServer({ env })
 
 /** Frame：文本 → 图片 A → 图片 B，另有一个视频节点 */
 function chain(doc: PleinDoc) {
   const frame = createElement(doc, { kind: 'frame', x: -50, y: -50, w: 1400, h: 400 })
-  const opts = { parentId: frame }
-  const text = createElement(doc, {
-    kind: 'node',
-    nodeType: 'plein/text',
-    nodeVersion: 1,
-    params: { text: '天台 夜景' },
-    ports: textPorts,
-    ...at(0),
-    ...opts,
-  })
-  const a = createElement(doc, {
-    kind: 'node',
-    nodeType: 'plein/image',
-    nodeVersion: 1,
-    ports: imagePorts,
-    ...at(300),
-    ...opts,
-  })
-  const b = createElement(doc, {
-    kind: 'node',
-    nodeType: 'plein/image',
-    nodeVersion: 1,
-    params: { prompt: '换个角度' },
-    ports: imagePorts,
-    ...at(600),
-    ...opts,
-  })
-  const video = createElement(doc, {
-    kind: 'node',
-    nodeType: 'plein/video',
-    nodeVersion: 1,
+  const parentId = frame
+  const text = addNode(doc, 'plein/text', { params: { text: '天台 夜景' }, x: 0, parentId })
+  const a = addNode(doc, 'plein/image', { x: 300, parentId })
+  const b = addNode(doc, 'plein/image', { params: { prompt: '换个角度' }, x: 600, parentId })
+  const video = addNode(doc, 'plein/video', {
     params: { prompt: '镜头推近' },
-    ports: videoPorts,
-    ...at(900),
-    ...opts,
+    ports: VIDEO_V1_PORTS,
+    x: 900,
+    parentId,
   })
   connect(doc, [text, 'text'], [a, 'prompt'])
   connect(doc, [a, 'images'], [b, 'references'])
@@ -109,15 +44,12 @@ function chain(doc: PleinDoc) {
   return { frame, text, a, b, video }
 }
 
-async function until<T>(fn: () => T | undefined | false, timeout = 5000): Promise<T> {
-  const end = Date.now() + timeout
-  for (;;) {
-    const v = fn()
-    if (v) return v
-    if (Date.now() > end) throw new Error('等待超时')
-    await new Promise((r) => setTimeout(r, 20))
-  }
-}
+/** 等整组运行结束 */
+const groupDone = (server: Server, groupId: string) =>
+  until(() => {
+    const s = server.runs.groupState(groupId, 'local')
+    return s?.status !== 'running' && s
+  })
 
 async function runFrame(server: Server, canvasId: string, frame: string, body = {}) {
   const res = await call(server, `/api/canvases/${canvasId}/frames/${frame}/run`, {
@@ -126,32 +58,17 @@ async function runFrame(server: Server, canvasId: string, frame: string, body = 
   })
   expect(res.status).toBe(202)
   const { groupId, total } = (await res.json()) as { groupId: string; total: number }
-  const state = await until(() => {
-    const s = server.runs.groupState(groupId, 'local')
-    return s?.status !== 'running' && s
-  })
-  return { groupId, total, status: state!.status, summary: state!.summary! }
+  const state = await groupDone(server, groupId)
+  return { groupId, total, status: state.status, summary: state.summary! }
 }
 
 describe('任务队列', () => {
   it('超过并发上限的任务排队，前一个结束后再开始', async () => {
-    const { server } = await boot(undefined, { PLEIN_MAX_JOBS: '1' })
+    const { server } = await boot({ PLEIN_MAX_JOBS: '1' })
     mock(server, { latencyMs: 300 })
     const { id, doc } = await canvas(server)
-    const a = createElement(doc, {
-      kind: 'node',
-      nodeType: 'plein/image',
-      params: { prompt: 'a' },
-      ports: imagePorts,
-      ...at(0),
-    })
-    const b = createElement(doc, {
-      kind: 'node',
-      nodeType: 'plein/image',
-      params: { prompt: 'b' },
-      ports: imagePorts,
-      ...at(300),
-    })
+    const a = addNode(doc, 'plein/image', { params: { prompt: 'a' } })
+    const b = addNode(doc, 'plein/image', { params: { prompt: 'b' }, x: 300 })
     const ra = server.runs.start(id, a, 'local')
     server.runs.start(id, b, 'local')
     await until(() => doc.get(a)?.run?.status === 'running')
@@ -163,23 +80,11 @@ describe('任务队列', () => {
   })
 
   it('取消排队中的任务', async () => {
-    const { server } = await boot(undefined, { PLEIN_MAX_JOBS: '1' })
+    const { server } = await boot({ PLEIN_MAX_JOBS: '1' })
     mock(server, { latencyMs: 300 })
     const { id, doc } = await canvas(server)
-    const a = createElement(doc, {
-      kind: 'node',
-      nodeType: 'plein/image',
-      params: { prompt: 'a' },
-      ports: imagePorts,
-      ...at(0),
-    })
-    const b = createElement(doc, {
-      kind: 'node',
-      nodeType: 'plein/image',
-      params: { prompt: 'b' },
-      ports: imagePorts,
-      ...at(300),
-    })
+    const a = addNode(doc, 'plein/image', { params: { prompt: 'a' } })
+    const b = addNode(doc, 'plein/image', { params: { prompt: 'b' }, x: 300 })
     server.runs.start(id, a, 'local')
     const rb = server.runs.start(id, b, 'local')
     server.runs.cancel(id, b)
@@ -201,15 +106,9 @@ describe('任务队列', () => {
       }
       return submit(req, ctx)
     })
-    ;(server.runs as unknown as { retryDelays: number[] }).retryDelays = [50, 50]
+    fastRetry(server)
     const { id, doc } = await canvas(server)
-    const a = createElement(doc, {
-      kind: 'node',
-      nodeType: 'plein/image',
-      params: { prompt: 'a' },
-      ports: imagePorts,
-      ...at(0),
-    })
+    const a = addNode(doc, 'plein/image', { params: { prompt: 'a' } })
     const run = server.runs.start(id, a, 'local')
     await until(() => doc.get(a)?.run?.message?.includes('重试'))
     expect(await server.runs.wait(run)).toBe('succeeded')
@@ -220,13 +119,7 @@ describe('任务队列', () => {
     const { server } = await boot()
     mock(server, { failWith: 'content_policy' })
     const { id, doc } = await canvas(server)
-    const a = createElement(doc, {
-      kind: 'node',
-      nodeType: 'plein/image',
-      params: { prompt: 'a' },
-      ports: imagePorts,
-      ...at(0),
-    })
+    const a = addNode(doc, 'plein/image', { params: { prompt: 'a' } })
     const run = server.runs.start(id, a, 'local')
     expect(await server.runs.wait(run)).toBe('failed')
     expect(server.runs.store.get(run)).toMatchObject({ attempts: 1, status: 'failed' })
@@ -246,15 +139,9 @@ describe('任务队列', () => {
       }
       return poll(remoteId, ctx)
     })
-    ;(server.runs as unknown as { retryDelays: number[] }).retryDelays = [50, 50]
+    fastRetry(server)
     const { id, doc } = await canvas(server)
-    const a = createElement(doc, {
-      kind: 'node',
-      nodeType: 'plein/image',
-      params: { prompt: 'a', count: 1 },
-      ports: imagePorts,
-      ...at(0),
-    })
+    const a = addNode(doc, 'plein/image', { params: { prompt: 'a', count: 1 } })
     const run = server.runs.start(id, a, 'local')
     expect(await server.runs.wait(run)).toBe('succeeded')
     expect(submit).toHaveBeenCalledTimes(1)
@@ -265,14 +152,7 @@ describe('任务队列', () => {
     const { server } = await boot()
     mock(server, { latencyMs: 2_000 })
     const { id, doc } = await canvas(server)
-    const node = () =>
-      createElement(doc, {
-        kind: 'node',
-        nodeType: 'plein/image',
-        params: { prompt: 'a', count: 1 },
-        ports: imagePorts,
-        ...at(0),
-      })
+    const node = () => addNode(doc, 'plein/image', { params: { prompt: 'a', count: 1 } })
     const runs = Array.from({ length: 6 }, () => server.runs.start(id, node(), 'local'))
     await until(() => server.runs.store.get(runs[0]!)?.status === 'running')
     // 任务记录随画布级联删除，先拿到等待结果的 promise
@@ -283,26 +163,48 @@ describe('任务队列', () => {
     expect(server.rooms.has(id)).toBe(false)
   })
 
+  it('删除项目时停止其下各画布的任务', async () => {
+    const { server } = await boot()
+    mock(server, { latencyMs: 2_000 })
+    const project = (await (
+      await call(server, '/api/projects', { method: 'POST', body: JSON.stringify({ title: 'p' }) })
+    ).json()) as { id: string; lastCanvasId: string }
+    const second = (await (
+      await call(server, '/api/canvases', {
+        method: 'POST',
+        body: JSON.stringify({ projectId: project.id }),
+      })
+    ).json()) as { id: string }
+    const runs = [project.lastCanvasId, second.id].map((cv) => {
+      const doc = createDoc(server.rooms.get(cv).doc, { schedule: () => {} })
+      return server.runs.start(
+        cv,
+        addNode(doc, 'plein/image', { params: { prompt: 'a' } }),
+        'local',
+      )
+    })
+    await until(() => runs.every((r) => server.runs.store.get(r)?.status === 'running'))
+    const done = Promise.all(runs.map((run) => server.runs.wait(run)))
+    const res = await call(server, `/api/projects/${project.id}`, { method: 'DELETE' })
+    expect(res.status).toBe(204)
+    expect(await done).toEqual(['canceled', 'canceled'])
+    expect(server.rooms.has(second.id)).toBe(false)
+    expect(() => server.rooms.get(second.id)).toThrow(/已删除/)
+  })
+
   it('服务重启后接着轮询远端任务，不重复提交', async () => {
     const first = await boot()
     mock(first.server, { latencyMs: 600 })
     const submit = vi.spyOn(mockProvider, 'submit')
     const { id, doc } = await canvas(first.server)
-    const a = createElement(doc, {
-      kind: 'node',
-      nodeType: 'plein/image',
-      params: { prompt: 'a', count: 1 },
-      ports: imagePorts,
-      ...at(0),
-    })
+    const a = addNode(doc, 'plein/image', { params: { prompt: 'a', count: 1 } })
     const run = first.server.runs.start(id, a, 'local')
     await until(() => first.server.runs.store.get(run)?.calls.includes('pending'))
     expect(submit).toHaveBeenCalledTimes(1)
     // 退出：任务保持“运行中”，调用记录保留
-    servers.splice(servers.indexOf(first.server), 1)
-    first.server.close()
+    first.close()
 
-    const second = await boot(first.dataDir)
+    const second = await bootServer({ dataDir: first.dataDir })
     const doc2 = createDoc(second.server.rooms.get(id).doc, { schedule: () => {} })
     expect(await second.server.runs.wait(run)).toBe('succeeded')
     expect(submit).toHaveBeenCalledTimes(1)
@@ -363,11 +265,7 @@ describe('整组运行', () => {
       })
       expect(res.status).toBe(202)
       const { groupId } = (await res.json()) as { groupId: string }
-      const state = await until(() => {
-        const s = server.runs.groupState(groupId, 'local')
-        return s?.status !== 'running' && s
-      })
-      return state!
+      return groupDone(server, groupId)
     }
     // 运行到 B：A 改过要重跑，B 输入变了跟着跑
     expect((await flow(b, { scope: 'upstream' })).summary).toMatchObject({
@@ -423,10 +321,7 @@ describe('整组运行', () => {
       method: 'POST',
     })
     expect(cancel.status).toBe(204)
-    const state = await until(() => {
-      const s = server.runs.groupState(groupId, 'local')
-      return s?.status !== 'running' && s
-    })
+    const state = await groupDone(server, groupId)
     expect(state).toMatchObject({ status: 'canceled', summary: { canceled: 1, skipped: 1 } })
     expect(doc.get(a)?.run?.status).toBe('canceled')
     expect(doc.get(b)?.run).toBeUndefined()
@@ -448,153 +343,69 @@ const ffmpeg = await hasFfmpeg()
 const caps = await mediaCaps()
 
 describe.skipIf(!ffmpeg)('序列导出', () => {
-  const speechPorts = {
-    inputs: [{ id: 'text', label: '台词', type: 'text' as const, multiple: true }],
-    outputs: [{ id: 'audio', label: '语音', type: 'audio' as const }],
-  }
-  const sequencePorts = {
-    inputs: [
-      { id: 'clips', label: '镜头', type: 'video' as const, multiple: true },
-      { id: 'dialogue', label: '对白', type: 'audio' as const, multiple: true },
-      { id: 'music', label: '配乐', type: 'audio' as const },
-      { id: 'sfx', label: '音效', type: 'audio' as const, multiple: true },
-    ],
-    outputs: [{ id: 'video', label: '成片', type: 'video' as const }],
+  /** Frame 里两个镜头接到序列节点上，配音连到对白 */
+  async function setup(sequence: Record<string, unknown>, lines: string[]) {
+    const { server } = await boot()
+    mock(server, {})
+    const { id, doc } = await canvas(server)
+    const parentId = createElement(doc, { kind: 'frame', x: -50, y: -50, w: 1400, h: 900 })
+    const video = (prompt: string, x: number) =>
+      addNode(doc, 'plein/video', { params: { prompt }, ports: VIDEO_V1_PORTS, x, parentId })
+    const v1 = video('推近', 0)
+    const v2 = video('拉远', 300)
+    const speech = lines.map((text, i) =>
+      addNode(doc, 'plein/speech', { params: { text }, x: i * 300, y: 300, parentId }),
+    )
+    const seq = addNode(doc, 'plein/sequence', { params: sequence, x: 800, parentId })
+    connect(doc, [v1, 'video'], [seq, 'clips'])
+    connect(doc, [v2, 'video'], [seq, 'clips'])
+    for (const s of speech) connect(doc, [s, 'audio'], [seq, 'dialogue'])
+    const assetOf = (node: string) =>
+      server.assets.get(
+        'local',
+        (doc.get(node)!.results![0]!.value as { assetId: string }).assetId,
+      )!
+    return { server, id, doc, frame: parentId, v1, v2, speech, seq, assetOf }
   }
 
-  // 烧字幕需要 libass；本机没有时下面的导出用例跳过，改由「关掉字幕也能导出」那条覆盖结构部分
+  // 烧字幕需要 libass；本机没有时跳过，结构部分由「关掉字幕也能导出」覆盖
   it.skipIf(!caps.subtitles)(
     '整组运行含视频时最后导出：镜头按顺序拼接，配上对白和字幕',
     async () => {
-      const { server } = await boot()
-      mock(server, {})
-      const { id, doc } = await canvas(server)
-      const frame = createElement(doc, { kind: 'frame', x: -50, y: -50, w: 1400, h: 900 })
-      const node = (
-        nodeType: string,
-        params: Record<string, unknown>,
-        ports: object,
-        x: number,
-        y: number,
-      ) =>
-        createElement(doc, {
-          kind: 'node',
-          nodeType,
-          nodeVersion: 1,
-          params,
-          ports: ports as never,
-          x,
-          y,
-          w: 200,
-          h: 200,
-          parentId: frame,
-        })
-      const v1 = node('plein/video', { prompt: '推近' }, videoPorts, 0, 0)
-      const v2 = node('plein/video', { prompt: '拉远' }, videoPorts, 300, 0)
-      const s1 = node('plein/speech', { text: '你来了' }, speechPorts, 0, 300)
-      const s2 = node('plein/speech', { text: '我等你很久了' }, speechPorts, 300, 300)
-      const seq = node('plein/sequence', { resolution: '720p' }, sequencePorts, 800, 0)
-      connect(doc, [v1, 'video'], [seq, 'clips'])
-      connect(doc, [v2, 'video'], [seq, 'clips'])
-      connect(doc, [s1, 'audio'], [seq, 'dialogue'])
-      connect(doc, [s2, 'audio'], [seq, 'dialogue'])
-
+      const { server, id, doc, frame, v1, speech, seq, assetOf } = await setup(
+        { resolution: '720p' },
+        ['你来了', '我等你很久了'],
+      )
       const r = await runFrame(server, id, frame, { video: true })
       expect(r.summary).toMatchObject({ succeeded: 5, failed: 0 })
-      const out = doc.get(seq)!.results![0]!.value as {
-        type: string
-        assetId: string
-        mime?: string
-      }
-      expect(out).toMatchObject({ type: 'video', mime: 'video/mp4' })
-      const clip = server.assets.get(
-        'local',
-        (doc.get(v1)!.results![0]!.value as { assetId: string }).assetId,
-      )!
-      const asset = server.assets.get('local', out.assetId)!
-      expect(asset).toMatchObject({ width: 720, height: 1280 })
-      expect(asset.duration).toBeCloseTo(clip.duration! * 2, 0)
+      expect(doc.get(seq)!.results![0]!.value).toMatchObject({ type: 'video', mime: 'video/mp4' })
+      const clip = assetOf(v1)
+      expect(assetOf(seq)).toMatchObject({ width: 720, height: 1280 })
+      expect(assetOf(seq).duration).toBeCloseTo(clip.duration! * 2, 0)
       // 配音结果带台词，导出时用作字幕
-      expect(doc.get(s1)!.results![0]!.value).toMatchObject({ caption: '你来了' })
-
-      // 调换顺序、裁掉第二段的一半后重新导出
-      setParams(doc, seq, {
-        clips: [
-          { source: v2, in: 0, out: clip.duration! / 2 },
-          { source: v1, in: 0 },
-        ],
-      })
-      const again = await runFrame(server, id, frame, { video: true })
-      expect(again.summary).toMatchObject({ succeeded: 1, cached: 4 })
-      const second = server.assets.get(
-        'local',
-        (doc.get(seq)!.results![0]!.value as { assetId: string }).assetId,
-      )!
-      expect(second.duration).toBeCloseTo(clip.duration! * 1.5, 0)
+      expect(doc.get(speech[0]!)!.results![0]!.value).toMatchObject({ caption: '你来了' })
 
       // 叠化 + 按语音识别对齐字幕（mock 平台返回带时间戳的分段）
       setParams(doc, seq, { transition: '叠化', transitionDuration: 0.4, asrTiming: true })
-      const third = await runFrame(server, id, frame, { video: true })
-      expect(third.summary).toMatchObject({ succeeded: 1, failed: 0 })
-      const dissolved = server.assets.get(
-        'local',
-        (doc.get(seq)!.results![0]!.value as { assetId: string }).assetId,
-      )!
-      expect(dissolved.duration).toBeCloseTo(clip.duration! * 1.5 - 0.4, 0)
+      const again = await runFrame(server, id, frame, { video: true })
+      expect(again.summary).toMatchObject({ succeeded: 1, failed: 0 })
+      expect(assetOf(seq).duration).toBeCloseTo(clip.duration! * 2 - 0.4, 0)
     },
     60_000,
   )
 
   // 不依赖 libass：任何有 ffmpeg 的机器都要能导出，顺序与入出点按时间线来
   it('关掉字幕也能导出：镜头按连接顺序拼接，音轨混在一起', async () => {
-    const { server } = await boot()
-    mock(server, {})
-    const { id, doc } = await canvas(server)
-    const frame = createElement(doc, { kind: 'frame', x: 0, y: 0, w: 1400, h: 900 })
-    const node = (
-      nodeType: string,
-      params: Record<string, unknown>,
-      ports: object,
-      x: number,
-      y: number,
-    ) =>
-      createElement(doc, {
-        kind: 'node',
-        nodeType,
-        nodeVersion: 1,
-        params,
-        ports: ports as never,
-        x,
-        y,
-        w: 200,
-        h: 200,
-        parentId: frame,
-      })
-    const v1 = node('plein/video', { prompt: '推近' }, videoPorts, 0, 0)
-    const v2 = node('plein/video', { prompt: '拉远' }, videoPorts, 300, 0)
-    const s1 = node('plein/speech', { text: '你来了' }, speechPorts, 0, 300)
-    const seq = node(
-      'plein/sequence',
+    const { server, id, doc, frame, v1, v2, seq, assetOf } = await setup(
       { resolution: '720p', subtitles: false },
-      sequencePorts,
-      800,
-      0,
+      ['你来了'],
     )
-    connect(doc, [v1, 'video'], [seq, 'clips'])
-    connect(doc, [v2, 'video'], [seq, 'clips'])
-    connect(doc, [s1, 'audio'], [seq, 'dialogue'])
-
     const r = await runFrame(server, id, frame, { video: true })
     expect(r.summary).toMatchObject({ succeeded: 4, failed: 0 })
-    const out = doc.get(seq)!.results![0]!.value as { assetId: string; mime: string }
-    expect(out.mime).toBe('video/mp4')
-    const clip = server.assets.get(
-      'local',
-      (doc.get(v1)!.results![0]!.value as { assetId: string }).assetId,
-    )!
-    const asset = server.assets.get('local', out.assetId)!
-    expect(asset).toMatchObject({ width: 720, height: 1280 })
-    expect(asset.duration).toBeCloseTo(clip.duration! * 2, 0)
+    expect((doc.get(seq)!.results![0]!.value as { mime: string }).mime).toBe('video/mp4')
+    const clip = assetOf(v1)
+    expect(assetOf(seq)).toMatchObject({ width: 720, height: 1280 })
+    expect(assetOf(seq).duration).toBeCloseTo(clip.duration! * 2, 0)
 
     // 调换顺序并裁掉第二段的一半
     setParams(doc, seq, {
@@ -606,62 +417,16 @@ describe.skipIf(!ffmpeg)('序列导出', () => {
     })
     const again = await runFrame(server, id, frame, { video: true })
     expect(again.summary).toMatchObject({ succeeded: 1, cached: 3 })
-    const second = server.assets.get(
-      'local',
-      (doc.get(seq)!.results![0]!.value as { assetId: string }).assetId,
-    )!
-    expect(second.duration).toBeCloseTo(clip.duration! * 1.5, 0)
+    expect(assetOf(seq).duration).toBeCloseTo(clip.duration! * 1.5, 0)
   }, 60_000)
 
   // 本机 ffmpeg 常常没编 libass（Homebrew 默认不带）：这时要在合成前说清楚，而不是甩一句滤镜错误
   it.skipIf(caps.subtitles)(
     '要烧字幕但本机 ffmpeg 没有 ass 滤镜：提前给出可执行的提示',
     async () => {
-      const { server } = await boot()
-      mock(server, {})
-      const { id, doc } = await canvas(server)
-      const frame = createElement(doc, { kind: 'frame', x: 0, y: 0, w: 800, h: 600 })
-      const v1 = createElement(doc, {
-        kind: 'node',
-        nodeType: 'plein/video',
-        nodeVersion: 1,
-        params: { prompt: '推近' },
-        ports: videoPorts,
-        x: 0,
-        y: 0,
-        w: 200,
-        h: 200,
-        parentId: frame,
-      })
-      const s1 = createElement(doc, {
-        kind: 'node',
-        nodeType: 'plein/speech',
-        nodeVersion: 1,
-        params: { text: '你来了' },
-        ports: speechPorts,
-        x: 0,
-        y: 300,
-        w: 200,
-        h: 100,
-        parentId: frame,
-      })
-      const seq = createElement(doc, {
-        kind: 'node',
-        nodeType: 'plein/sequence',
-        nodeVersion: 1,
-        params: { subtitles: true },
-        ports: sequencePorts,
-        x: 400,
-        y: 0,
-        w: 200,
-        h: 200,
-        parentId: frame,
-      })
-      connect(doc, [v1, 'video'], [seq, 'clips'])
-      connect(doc, [s1, 'audio'], [seq, 'dialogue'])
-
+      const { server, id, doc, frame, seq } = await setup({ subtitles: true }, ['你来了'])
       const r = await runFrame(server, id, frame, { video: true })
-      expect(r.summary).toMatchObject({ succeeded: 2, failed: 1 })
+      expect(r.summary).toMatchObject({ succeeded: 3, failed: 1 })
       expect(doc.get(seq)?.run?.error).toMatch(/不支持烧字幕/)
       expect(doc.get(seq)?.run?.error).toMatch(/libass/)
     },

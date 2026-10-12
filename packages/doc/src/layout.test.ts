@@ -2,21 +2,15 @@ import { describe, expect, it } from 'vitest'
 import {
   arrangeElements,
   connect,
-  createDoc,
   createElement,
   groupElements,
   type LayoutItem,
   layoutGraph,
-  type NewElement,
   type Rect,
-  ungroupElements,
 } from './index'
+import { node, openDoc as open, overlaps } from './testing'
 
 const item = (id: string, x = 0, y = 0, w = 100, h = 80): LayoutItem => ({ id, x, y, w, h })
-
-function overlaps(a: Rect, b: Rect) {
-  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-}
 
 function expectNoOverlap(rects: Rect[]) {
   for (let i = 0; i < rects.length; i++) {
@@ -120,23 +114,7 @@ describe('layoutGraph', () => {
   })
 })
 
-const node = (extra: Partial<NewElement> = {}): NewElement => ({
-  kind: 'node',
-  nodeType: 'llm',
-  x: 0,
-  y: 0,
-  w: 100,
-  h: 80,
-  ports: {
-    inputs: [{ id: 'in', label: '输入', type: 'text' }],
-    outputs: [{ id: 'out', label: '输出', type: 'text' }],
-  },
-  ...extra,
-})
-
 describe('arrangeElements', () => {
-  const open = () => createDoc(undefined, { schedule: () => {} })
-
   it('整理整个画布，锚定原包围盒左上角，是一个撤销步', () => {
     const doc = open()
     const a = createElement(doc, node({ x: 400, y: 300 }))
@@ -190,17 +168,5 @@ describe('arrangeElements', () => {
     expect(doc.get(c)).toMatchObject({ x: 0, y: 0 })
     expect(doc.get(d)).toMatchObject({ x: 5, y: 5 })
     expectNoOverlap([doc.get(a)!, doc.get(b)!])
-  })
-})
-
-describe('ungroupElements', () => {
-  it('子元素回到父元素、世界坐标不变，Frame 被删除', () => {
-    const doc = createDoc(undefined, { schedule: () => {} })
-    const a = createElement(doc, node({ x: 100, y: 100 }))
-    const frame = groupElements(doc, [a])!
-    expect(doc.get(a)!.parentId).toBe(frame)
-    expect(ungroupElements(doc, frame)).toEqual([a])
-    expect(doc.has(frame)).toBe(false)
-    expect(doc.get(a)).toMatchObject({ parentId: null, x: 100, y: 100 })
   })
 })

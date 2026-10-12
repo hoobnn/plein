@@ -2,11 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import {
   defineNode,
+  defineProvider,
   describeNode,
   domainAllowed,
+  inputAssets,
+  inputText,
+  type PortValue,
+  ProviderError,
+  type ProviderDefinition,
   parseModelRef,
   parseNodeKey,
   PluginManifest,
+  providerConfigured,
   resolveParams,
 } from '.'
 
@@ -65,16 +72,17 @@ describe('plugin-sdk', () => {
     expect(() => resolveParams(node, {}, 3)).toThrow(/高于/)
   })
 
-  it('describeNode 输出 JSON Schema 和默认值', () => {
-    const node = defineNode({
-      ...base,
-      params: z.object({ model: z.string().default('').meta({ widget: 'model' }) }),
-    })
-    const d = describeNode(node, 'acme/p')
-    expect(d.defaults).toEqual({ model: '' })
-    expect((d.paramsSchema.properties as Record<string, { widget: string }>).model?.widget).toBe(
-      'model',
-    )
+  it('旧版本参数但节点没有 migrate 时报错', () => {
+    const node = defineNode({ ...base, params: z.object({}) })
+    expect(() => resolveParams(node, {}, 1)).toThrow(/不能从版本 1 升级/)
+  })
+
+  it('describeNode 给出默认值与运行方式', () => {
+    const params = z.object({ model: z.string().default('') })
+    const d = describeNode(defineNode({ ...base, params }), 'acme/p')
+    expect(d).toMatchObject({ defaults: { model: '' }, execution: 'inline', plugin: 'acme/p' })
+    const job = describeNode(defineNode({ ...base, params, capability: 'text.chat' }), 'acme/p')
+    expect(job.execution).toBe('job')
   })
 
   it('清单校验', () => {
@@ -94,5 +102,71 @@ describe('plugin-sdk', () => {
     expect(
       PluginManifest.safeParse({ ...ok, permissions: { network: ['https://x.com'] } }).success,
     ).toBe(false)
+  })
+})
+
+describe('Provider', () => {
+  const provider = (extra: Partial<ProviderDefinition> = {}): ProviderDefinition => ({
+    id: 'acme/p',
+    title: 'P',
+    settings: z.object({}),
+    secrets: [
+      { name: 'KEY', title: 'Key', required: true },
+      { name: 'AK', title: 'AK' },
+      { name: 'SK', title: 'SK' },
+    ],
+    models: [{ id: 'm', title: 'M', capabilities: ['text.chat'] }],
+    submit: async () => ({ state: 'pending', remoteId: 'r' }),
+    ...extra,
+  })
+
+  it.each([
+    ['模型 id 重复', { models: [...provider().models, ...provider().models] }, /重复/],
+    ['模型没有能力', { models: [{ id: 'm', title: 'M', capabilities: [] }] }, /能力/],
+    ['鉴权组引用未声明的密钥', { credentialAlternatives: [['AK', 'NOPE']] }, /鉴权组/],
+    ['鉴权组为空', { credentialAlternatives: [[]] }, /鉴权组/],
+  ])('defineProvider 拒绝：%s', (_, extra, error) => {
+    expect(() => defineProvider(provider(extra))).toThrow(error)
+  })
+
+  it.each([
+    ['必填密钥已填', {}, { KEY: 'k' }, true],
+    ['必填密钥只有空白', {}, { KEY: '  ' }, false],
+    [
+      '任一鉴权组填全',
+      { credentialAlternatives: [['AK', 'SK']] },
+      { KEY: 'k', AK: 'a', SK: 's' },
+      true,
+    ],
+    ['鉴权组只填了一半', { credentialAlternatives: [['AK', 'SK']] }, { KEY: 'k', AK: 'a' }, false],
+  ])('providerConfigured：%s', (_, extra, secrets, ok) => {
+    expect(providerConfigured(provider(extra), secrets)).toBe(ok)
+  })
+
+  it('ProviderError 默认按错误码判断能否重试', () => {
+    expect(new ProviderError('rate_limit', 'x').retryable).toBe(true)
+    expect(new ProviderError('timeout', 'x').retryable).toBe(true)
+    expect(new ProviderError('unavailable', 'x').retryable).toBe(true)
+    expect(new ProviderError('auth', 'x').retryable).toBe(false)
+    expect(new ProviderError('auth', 'x', { retryable: true }).retryable).toBe(true)
+  })
+})
+
+describe('执行器输入', () => {
+  const inputs: Record<string, PortValue[]> = {
+    p: [
+      { type: 'text', text: 'a' },
+      { type: 'json', value: { k: 1 } },
+      { type: 'image', assetId: 'i', kind: 'image' },
+    ],
+  }
+
+  it('inputText 拼接文本与 JSON，没有时为 undefined', () => {
+    expect(inputText(inputs, 'p')).toBe('a\n{"k":1}')
+    expect(inputText(inputs, 'none')).toBeUndefined()
+  })
+
+  it('inputAssets 只取媒体', () => {
+    expect(inputAssets(inputs, 'p')).toEqual([{ type: 'image', assetId: 'i', kind: 'image' }])
   })
 })

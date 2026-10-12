@@ -1,33 +1,13 @@
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import type { Canvas, LibraryItem, Project } from '@plein/protocol'
-import Database from 'better-sqlite3'
-import { afterAll, afterEach, describe, expect, it } from 'vitest'
-import { createServer, type Server } from '../app'
-import { loadConfig } from '../config'
-import { LEGACY_MIGRATIONS } from '../storage/legacy-migrations'
-import { migrate } from '../storage/migrate'
-
-const dirs: string[] = []
-const servers: Server[] = []
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true })
-})
-afterEach(() => {
-  for (const s of servers.splice(0)) s.close()
-})
+import { describe, expect, it } from 'vitest'
+import { bootServer, request } from '../testing'
 
 async function boot() {
-  const dataDir = mkdtempSync(join(tmpdir(), 'plein-projects-'))
-  dirs.push(dataDir)
-  const server = await createServer({ ...loadConfig({ PLEIN_DATA_DIR: dataDir }), webDist: null })
-  servers.push(server)
+  const { server } = await bootServer({ mock: false })
   const call = async <T>(path: string, method = 'GET', body?: unknown) => {
-    const res = await server.app.request(path, {
+    const res = await request(server, path, {
       method,
       body: body === undefined ? undefined : JSON.stringify(body),
-      headers: { host: '127.0.0.1:8787', 'content-type': 'application/json' },
     })
     const text = await res.text()
     return { status: res.status, body: (text ? JSON.parse(text) : undefined) as T }
@@ -68,24 +48,6 @@ describe('项目与画布', () => {
     const { body: projects } = await call<Project[]>('/api/projects')
     expect(projects.find((p) => p.id === c.projectId)?.title).toBe('散页')
     expect((await call('/api/canvases', 'POST', { projectId: 'pj_nope' })).status).toBe(404)
-  })
-})
-
-describe('数据库迁移', () => {
-  it('旧画布各自变成同名项目', () => {
-    const db = new Database(':memory:')
-    // 先迁到加项目之前的版本，插一张旧画布，再迁到最新
-    for (const m of LEGACY_MIGRATIONS.slice(0, 4)) db.exec(m)
-    db.prepare('INSERT INTO canvases VALUES (?, ?, ?, ?, ?)').run('cv_old', 'local', '老画布', 1, 2)
-    db.pragma('user_version = 4')
-    migrate(db)
-    expect(db.prepare('SELECT project_id FROM canvases').get()).toEqual({ project_id: 'pj_cv_old' })
-    expect(db.prepare('SELECT id, title, owner_id FROM projects').get()).toEqual({
-      id: 'pj_cv_old',
-      title: '老画布',
-      owner_id: 'local',
-    })
-    db.close()
   })
 })
 

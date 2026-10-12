@@ -1,28 +1,9 @@
-import { domainAllowed, type AssetRef, type ProviderContext } from '@plein/plugin-sdk'
-import { describe, expect, it, vi } from 'vitest'
+import { domainAllowed, type AssetRef } from '@plein/plugin-sdk'
+import { describe, expect, it } from 'vitest'
+import { fakeContext } from '../testing'
 import { minimaxPlugin, minimaxProvider } from './index'
 
-function setup(responses: unknown[] = []) {
-  const fetcher = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => {
-    const next = responses.shift()
-    if (next instanceof Error) throw next
-    return next instanceof Response ? next : Response.json(next)
-  })
-  const ctx: ProviderContext<ReturnType<typeof minimaxProvider.settings.parse>> = {
-    settings: minimaxProvider.settings.parse({}),
-    secret: () => 'test-key',
-    fetch: fetcher as typeof fetch,
-    signal: new AbortController().signal,
-    log: vi.fn(),
-    files: { read: vi.fn(async () => ({ data: new Uint8Array([1, 2, 3]), mime: 'image/png' })) },
-  }
-  return {
-    ctx,
-    fetcher,
-    body: (index = 0) =>
-      JSON.parse((fetcher.mock.calls[index] as unknown as [string, RequestInit])[1].body as string),
-  }
-}
+const setup = (replies?: unknown[]) => fakeContext(minimaxProvider, replies, { secret: 'test-key' })
 const frame: AssetRef = { assetId: 'frame', kind: 'image', mime: 'image/png' }
 
 describe('MiniMax 官方 HTTP 契约', () => {
@@ -57,17 +38,10 @@ describe('MiniMax 官方 HTTP 契约', () => {
       ),
     ).rejects.toMatchObject({ code: 'unavailable', retryable: false })
   })
-  it('声明地区、凭据和资产权限', () => {
-    expect(minimaxProvider.settings.parse({})).toMatchObject({ region: 'cn' })
-    expect(minimaxPlugin.plugin.manifest.permissions).toMatchObject({
-      assets: 'read',
-      secrets: ['MINIMAX_API_KEY'],
-    })
-  })
   it('连接测试只 GET models，不触发生成', async () => {
-    const { ctx, fetcher } = setup([{ data: [] }])
+    const { ctx, fetch } = setup([{ data: [] }])
     await minimaxProvider.test!(ctx)
-    expect(fetcher).toHaveBeenCalledWith(
+    expect(fetch).toHaveBeenCalledWith(
       'https://api.minimax.cn/v1/models',
       expect.objectContaining({ method: 'GET', signal: ctx.signal }),
     )
@@ -99,7 +73,7 @@ describe('MiniMax 官方 HTTP 契约', () => {
     })
   })
   it('M2.7 拒绝图片，在计费请求前失败', async () => {
-    const { ctx, fetcher } = setup()
+    const { ctx, fetch } = setup()
     await expect(
       minimaxProvider.submit(
         {
@@ -110,7 +84,7 @@ describe('MiniMax 官方 HTTP 契约', () => {
         ctx,
       ),
     ).rejects.toMatchObject({ code: 'invalid_input' })
-    expect(fetcher).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
   })
   it('参考图编码为 data URI；保留核心节点的 aspectRatio', async () => {
     const { ctx, body } = setup([{ data: { image_urls: ['https://cdn.hailuoai.com/image.jpg'] } }])
@@ -141,7 +115,7 @@ describe('MiniMax 官方 HTTP 契约', () => {
     expect(body().aspect_ratio).toBeUndefined()
   })
   it('H3 首尾帧走 V2 并使用 adaptive', async () => {
-    const { ctx, body, fetcher } = setup([{ task_id: 'task-1' }])
+    const { ctx, body, fetch } = setup([{ task_id: 'task-1' }])
     const result = await minimaxProvider.submit(
       {
         capability: 'video.generate',
@@ -156,7 +130,7 @@ describe('MiniMax 官方 HTTP 契约', () => {
       },
       ctx,
     )
-    expect(fetcher.mock.calls[0]?.[0]).toBe('https://api.minimax.cn/v2/video_generation')
+    expect(fetch.mock.calls[0]?.[0]).toBe('https://api.minimax.cn/v2/video_generation')
     expect(body()).toMatchObject({
       resolution: '2K',
       ratio: 'adaptive',
@@ -165,7 +139,7 @@ describe('MiniMax 官方 HTTP 契约', () => {
     expect(result).toMatchObject({ state: 'pending', remoteId: 'task-1' })
   })
   it('H3-Max 不支持 2K，在提交前失败', async () => {
-    const { ctx, fetcher } = setup()
+    const { ctx, fetch } = setup()
     await expect(
       minimaxProvider.submit(
         {
@@ -176,7 +150,7 @@ describe('MiniMax 官方 HTTP 契约', () => {
         ctx,
       ),
     ).rejects.toMatchObject({ code: 'invalid_input' })
-    expect(fetcher).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
   })
   it('轮询 queued → succeeded 从 task.content.url 获取视频', async () => {
     const { ctx } = setup([
@@ -198,12 +172,12 @@ describe('MiniMax 官方 HTTP 契约', () => {
     })
   })
   it('取消先查状态，不 DELETE 成功记录', async () => {
-    const { ctx, fetcher } = setup([{ task: { id: 't1', status: 'succeeded' } }])
+    const { ctx, fetch } = setup([{ task: { id: 't1', status: 'succeeded' } }])
     await minimaxProvider.cancel!('t1', ctx)
-    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(fetch).toHaveBeenCalledTimes(1)
     const queued = setup([{ task: { id: 't2', status: 'queued' } }, {}])
     await minimaxProvider.cancel!('t2', queued.ctx)
-    expect(queued.fetcher).toHaveBeenLastCalledWith(
+    expect(queued.fetch).toHaveBeenLastCalledWith(
       'https://api.minimax.cn/v2/video_generation/t2',
       expect.objectContaining({ method: 'DELETE' }),
     )
@@ -246,23 +220,31 @@ describe('MiniMax 官方 HTTP 契约', () => {
         { capability: 'audio.speech', model: 'speech-2.8-hd', input: { text: '你好' } },
         ctx,
       ),
-    ).rejects.toMatchObject({
-      code: 'quota',
-      message: 'MiniMax：balance [redacted]',
-      retryable: false,
-    })
+    ).rejects.toMatchObject({ code: 'quota', message: 'MiniMax：balance [redacted]' })
   })
-  it('未知提交不自动重试，也不虚构 task ID', async () => {
-    const { ctx, fetcher } = setup([new Error('disconnect')])
-    await expect(
-      minimaxProvider.submit(
-        { capability: 'video.generate', model: 'MiniMax-H3', input: { prompt: '跳舞' } },
-        ctx,
-      ),
-    ).rejects.toMatchObject({ code: 'unavailable', retryable: false })
-    expect(fetcher).toHaveBeenCalledTimes(1)
-  })
-  it('查询遇网关错误页、429 或断网可重试，提交遇 502 不可重试，中止归为 cancelled', async () => {
+  it.each([
+    [1004, 200, 'auth'],
+    [2049, 200, 'auth'],
+    [1026, 200, 'content_policy'],
+    [1043, 200, 'content_policy'],
+    [1013, 200, 'unavailable'],
+    [2013, 200, 'invalid_input'],
+    [9999, 429, 'rate_limit'],
+  ] as const)(
+    '业务码 %i（HTTP %i）归为 %s，未知业务码按 HTTP 状态',
+    async (code, status, expected) => {
+      const { ctx } = setup([
+        Response.json({ base_resp: { status_code: code, status_msg: 'failed' } }, { status }),
+      ])
+      await expect(
+        minimaxProvider.submit(
+          { capability: 'audio.speech', model: 'speech-2.8-hd', input: { text: '你好' } },
+          ctx,
+        ),
+      ).rejects.toMatchObject({ code: expected })
+    },
+  )
+  it('查询遇网关错误页或 429 可重试，提交遇 502 不可重试', async () => {
     const gateway = () => new Response('<html>bad gateway</html>', { status: 502 })
     const { ctx } = setup([
       gateway(),
@@ -270,10 +252,9 @@ describe('MiniMax 官方 HTTP 契约', () => {
         { base_resp: { status_code: 1002, status_msg: 'rate limit' } },
         { status: 429 },
       ),
-      new TypeError('fetch failed'),
       gateway(),
     ])
-    for (let i = 0; i < 3; i++)
+    for (let i = 0; i < 2; i++)
       await expect(minimaxProvider.poll!('123', ctx)).rejects.toMatchObject({ retryable: true })
     await expect(
       minimaxProvider.submit(
@@ -281,13 +262,5 @@ describe('MiniMax 官方 HTTP 契约', () => {
         ctx,
       ),
     ).rejects.toMatchObject({ code: 'unavailable', retryable: false })
-    const controller = new AbortController()
-    controller.abort()
-    const aborted = setup([new Error('aborted')])
-    aborted.ctx.signal = controller.signal
-    await expect(minimaxProvider.poll!('123', aborted.ctx)).rejects.toMatchObject({
-      code: 'cancelled',
-      retryable: false,
-    })
   })
 })

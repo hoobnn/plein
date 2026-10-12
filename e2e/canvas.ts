@@ -70,17 +70,23 @@ export async function centerOf(page: Page, id: string) {
   }, id)
 }
 
-/** 元素标题栏附近（Frame 中间是空白，点左上角内侧才命中 Frame 本身） */
-export async function cornerOf(page: Page, id: string) {
-  return page.evaluate((id) => {
-    const { engine } = window.__plein
-    const r = engine.doc.worldRect(id)
-    return engine.worldToClient(r.x + 12, r.y + 12)
-  }, id)
-}
-
 export async function waitEngine(page: Page) {
   await page.waitForFunction(() => !!window.__plein)
+}
+
+/** 从首页新建一个项目，进到它的第一张画布 */
+export async function newProject(page: Page) {
+  await page.goto('/')
+  await page.getByRole('button', { name: '新建项目', exact: true }).click()
+  await expect(page).toHaveURL(/#\/c\//)
+  await waitEngine(page)
+}
+
+/** 双击空白处打开添加菜单，搜索并选第一项 */
+export async function addNode(page: Page, query: string, at = { x: 720, y: 450 }) {
+  await page.mouse.dblclick(at.x, at.y)
+  await page.getByPlaceholder('添加节点').fill(query)
+  await page.keyboard.press('Enter')
 }
 
 /** 缩放到某些元素，保证它们在视口里能点到 */
@@ -97,6 +103,18 @@ export async function contextMenu(page: Page, id: string, item: string) {
   const p = await centerOf(page, id)
   await page.mouse.click(p.x, p.y, { button: 'right' })
   await page.getByRole('menu').getByText(item, { exact: true }).click()
+}
+
+/** 节点一侧连接点在屏幕上的位置：输入在左边中点、输出在右边中点（见 canvas-core ports.ts） */
+export async function handleOf(page: Page, id: string, side: 'in' | 'out') {
+  return page.evaluate(
+    ([id, side]) => {
+      const { engine } = window.__plein
+      const r = engine.doc.worldRect(id)
+      return engine.worldToClient(side === 'in' ? r.x : r.x + r.w, r.y + r.h / 2)
+    },
+    [id, side] as const,
+  )
 }
 
 /** 等节点跑完；失败直接带出错误信息 */

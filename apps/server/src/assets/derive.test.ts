@@ -1,8 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, readFileSync } from 'node:fs'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Asset } from '@plein/protocol'
 import { Hono } from 'hono'
@@ -11,17 +9,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { AuthEnv } from '../auth'
 import { mediaRoutes } from '../http/media'
 import { openDb } from '../storage/db'
+import { tempDir } from '../testing'
 import { deriveAsset, readOrigin } from './derive'
 import { atempoChain, audioTempoFilter, ffmpegBin, hasFfmpeg, mediaCaps } from './media'
 import { AssetStore } from './store'
 
 const OWNER = 'local'
 const ffmpegAvailable = await hasFfmpeg()
-const dirs: string[] = []
-
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true })
-})
 
 // ── 测试素材：都在临时目录里现生成，不往仓库里放二进制 ──
 
@@ -143,8 +137,7 @@ let orientedImage: Asset
 let lowFps: Asset
 
 beforeAll(async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'plein-derive-'))
-  dirs.push(dir)
+  const dir = tempDir('plein-derive-')
   db = openDb(dir)
   store = new AssetStore(dir, db, 256 * 1024 * 1024)
   await store.init()
@@ -273,6 +266,29 @@ describe('图片加工', () => {
   })
 })
 
+describe('变速滤镜', () => {
+  it('atempo 单级只到 2 倍，超出时串联', () => {
+    expect(atempoChain(3)).toBe('atempo=2,atempo=1.5')
+    expect(atempoChain(4)).toBe('atempo=2,atempo=2')
+    expect(atempoChain(0.25)).toBe('atempo=0.5,atempo=0.5')
+    expect(atempoChain(1.5)).toBe('atempo=1.5')
+  })
+
+  it('保音调优先 rubberband，没有时退到 atempo 并说明；不保音调改采样率', () => {
+    const opts = { sampleRate: 48000 }
+    expect(audioTempoFilter(2, true, { ...opts, rubberband: true })).toEqual({
+      filter: 'rubberband=tempo=2',
+    })
+    const fallback = audioTempoFilter(2, true, { ...opts, rubberband: false })
+    expect(fallback.filter).toBe('atempo=2')
+    expect(fallback.note).toMatch(/rubberband/)
+    // asetrate 让音高随速度一起变
+    expect(audioTempoFilter(2, false, { ...opts, rubberband: true }).filter).toBe(
+      'asetrate=96000,aresample=48000',
+    )
+  })
+})
+
 describe.skipIf(!ffmpegAvailable)('视频与音频加工', () => {
   it('抽帧：任意时刻落成图片资产，可以当参考图用', async () => {
     const made = await deriveAsset(store, OWNER, { op: 'frame', assetId: video.id, at: 2 })
@@ -328,11 +344,6 @@ describe.skipIf(!ffmpegAvailable)('视频与音频加工', () => {
       // 两条流各自变速，长度必须一致，否则播起来音画会错位
       expect(Math.abs(v - a)).toBeLessThan(0.12)
     }
-    // 3 倍超出 atempo 单级的 2 倍上限，靠串联实现
-    expect(atempoChain(3)).toBe('atempo=2,atempo=1.5')
-    expect(atempoChain(4)).toBe('atempo=2,atempo=2')
-    expect(atempoChain(0.25)).toBe('atempo=0.5,atempo=0.5')
-    expect(atempoChain(1.5)).toBe('atempo=1.5')
   })
 
   it('低帧率素材变速也不会拖尾：setpts 多出的那两帧要被截掉', async () => {
@@ -409,18 +420,7 @@ describe.skipIf(!ffmpegAvailable)('视频与音频加工', () => {
     if (caps.rubberband) expect(fast.note).toBeUndefined()
     // 没有 rubberband 时退到 atempo，必须如实说明它不是完美保音调
     else expect(fast.note).toMatch(/rubberband/)
-
-    const filter = audioTempoFilter(2, true, { rubberband: caps.rubberband, sampleRate: 48000 })
-    if (caps.rubberband) expect(filter.filter).toBe('rubberband=tempo=2')
-    else {
-      expect(filter.filter).toBe('atempo=2')
-      expect(filter.note).toMatch(/rubberband/)
-    }
-    // 不保音调时用 asetrate 改采样率，音高随之变化
-    expect(audioTempoFilter(2, false, { rubberband: false, sampleRate: 48000 }).filter).toBe(
-      'asetrate=96000,aresample=48000',
-    )
-  })
+  }, 30_000)
 
   it('加工结果能进入导出：新资产是完整可用的资产', async () => {
     const made = await deriveAsset(store, OWNER, {
@@ -435,12 +435,12 @@ describe.skipIf(!ffmpegAvailable)('视频与音频加工', () => {
   })
 })
 
-describe.skipIf(!ffmpegAvailable)('媒体加工接口', () => {
-  // 复刻 requireAuth 的效果：没有身份直接 401，加工只能碰自己名下的资产
+// 图片加工只靠 sharp：没有 ffmpeg 的机器也要跑
+describe('媒体加工接口', () => {
+  // 身份由 requireAuth 注入，这里直接给定，加工只能碰自己名下的资产
   const app = (principal = OWNER) => {
     const server = new Hono<AuthEnv>()
     server.use('*', async (c, next) => {
-      if (!c.req.header('x-test-user')) return c.json({ error: 'unauthorized' }, 401)
       c.set('principal', { id: principal, role: 'owner' })
       await next()
     })
@@ -450,7 +450,7 @@ describe.skipIf(!ffmpegAvailable)('媒体加工接口', () => {
   const post = (body: unknown, principal = OWNER) =>
     app(principal).request('/api/media/derive', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-test-user': principal },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
 
@@ -471,15 +471,6 @@ describe.skipIf(!ffmpegAvailable)('媒体加工接口', () => {
     expect(await readOrigin(store, body.assets[0]!.id)).toMatchObject({ op: 'crop' })
   })
 
-  it('没有身份就 401', async () => {
-    const res = await app().request('/api/media/derive', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ op: 'rotate', assetId: image.id, angle: 90 }),
-    })
-    expect(res.status).toBe(401)
-  })
-
   it('只认自己的资产：别人的 id 与不存在的 id 都是 404', async () => {
     expect(
       (await post({ op: 'rotate', assetId: image.id, angle: 90 }, 'someone-else')).status,
@@ -490,17 +481,15 @@ describe.skipIf(!ffmpegAvailable)('媒体加工接口', () => {
   it('参数不合法 400，并说明是哪一项', async () => {
     expect((await post({ op: 'nope', assetId: image.id })).status).toBe(400)
     expect((await post({ op: 'rotate', assetId: 'xyz', angle: 90 })).status).toBe(400)
-    expect((await post({ op: 'speed', assetId: video.id, speed: 9 })).status).toBe(400)
-    expect((await post({ op: 'split', assetId: video.id, segments: [] })).status).toBe(400)
+    // 参数先于资产类型校验
+    expect((await post({ op: 'speed', assetId: image.id, speed: 9 })).status).toBe(400)
+    expect((await post({ op: 'split', assetId: image.id, segments: [] })).status).toBe(400)
     const res = await post({ op: 'rotate', assetId: image.id, angle: 45 })
     expect(((await res.json()) as { message: string }).message).toMatch(/angle/)
   })
 
   it('加工与素材类型不匹配 422，坐标越界 400', async () => {
     expect((await post({ op: 'separate', assetId: image.id })).status).toBe(422)
-    expect(
-      (await post({ op: 'crop', assetId: video.id, left: 0, top: 0, width: 1, height: 1 })).status,
-    ).toBe(422)
     const res = await post({
       op: 'crop',
       assetId: image.id,
@@ -513,9 +502,15 @@ describe.skipIf(!ffmpegAvailable)('媒体加工接口', () => {
     expect(((await res.json()) as { message: string }).message).toMatch(/超出图片范围/)
   })
 
+  it.runIf(ffmpegAvailable)('视频不能按图片裁剪 422', async () => {
+    expect(
+      (await post({ op: 'crop', assetId: video.id, left: 0, top: 0, width: 1, height: 1 })).status,
+    ).toBe(422)
+  })
+
   it('能力查询返回本机 ffmpeg 能力', async () => {
-    const res = await app().request('/api/media/caps', { headers: { 'x-test-user': OWNER } })
+    const res = await app().request('/api/media/caps')
     expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ ffmpeg: true })
+    expect(await res.json()).toMatchObject({ ffmpeg: ffmpegAvailable })
   })
 })

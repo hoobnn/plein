@@ -1,12 +1,10 @@
 import { expect, test } from '@playwright/test'
-import { waitEngine } from './canvas'
+import { newProject, waitEngine } from './canvas'
 
 /** 项目和画布的增删改：画布页改过的东西回到首页能看到（列表数据走查询缓存，改完要失效重拉） */
 test('项目改名、加画布、首页重命名和删除', async ({ page }) => {
   const name = `项目 ${Date.now()}`
-  await page.goto('/')
-  await page.getByRole('button', { name: '新建项目', exact: true }).click()
-  await waitEngine(page)
+  await newProject(page)
 
   // 页头改项目名
   await page.getByTitle('重命名项目').click()

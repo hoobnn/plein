@@ -1,8 +1,5 @@
-import { mkdtempSync, rmSync, statSync } from 'node:fs'
-import type { AddressInfo } from 'node:net'
-import { tmpdir } from 'node:os'
+import { statSync } from 'node:fs'
 import { join } from 'node:path'
-import { serve } from '@hono/node-server'
 import { corePlugin } from '@plein/nodes'
 import { mockProvider } from '@plein/providers'
 import {
@@ -14,47 +11,29 @@ import {
   defineServerPlugin,
   PLUGIN_API_VERSION,
   type PluginManifestInput,
-  ProviderError,
+  type PollResult,
+  type ProviderRequest,
 } from '@plein/plugin-sdk'
 import type { Catalog, ProviderConfigView, ProviderTestResult } from '@plein/protocol'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { createServer } from '../app'
-import { loadConfig } from '../config'
-import { NodeRunError } from './host'
+import { startTestServer, tempDir } from '../testing'
+import { ProviderConfigStore } from './config-store'
+import { type CallRecord, NodeRunError, PluginHost } from './host'
 import { Limiter } from './limiter'
 import { PluginRegistry } from './registry'
 import { PermissionError, scopedFetch, scopedSecrets } from './sandbox'
 
-const dirs: string[] = []
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true })
-})
-
 async function start() {
-  const dataDir = mkdtempSync(join(tmpdir(), 'plein-plugins-'))
-  dirs.push(dataDir)
-  const server = await createServer({
-    ...loadConfig({ PLEIN_DATA_DIR: dataDir, PLEIN_MOCK_PROVIDER: '1' }),
-    webDist: null,
-  })
-  const http = serve({ fetch: server.app.fetch, hostname: '127.0.0.1', port: 0 })
-  await new Promise<void>((r) => http.once('listening', () => r()))
-  const base = `http://127.0.0.1:${(http.address() as AddressInfo).port}`
+  const running = await startTestServer()
   return {
-    server,
-    base,
-    dataDir,
-    host: server.plugins,
+    ...running,
+    host: running.server.plugins,
     json: (method: string, body: unknown) => ({
       method,
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     }),
-    async stop() {
-      server.close()
-      await new Promise((r) => http.close(r))
-    },
   }
 }
 
@@ -250,18 +229,14 @@ describe('插件宿主', () => {
   beforeAll(async () => {
     s = await start()
   })
-  afterAll(() => s.stop())
 
   it('目录接口列出内置节点、Provider 与插件状态', async () => {
     const catalog = (await (await fetch(`${s.base}/api/catalog`)).json()) as Catalog
-    expect(catalog.plugins.map((p) => [p.id, p.status])).toEqual([
-      ['plein/core', 'active'],
-      ['plein/mock', 'active'],
-      ['minimax/api', 'active'],
-      ['doubao/speech', 'active'],
-      ['aliyun/bailian', 'active'],
-      ['volc/ark', 'active'],
-    ])
+    // 内置插件都能加载；具体有哪些平台随版本增减，不在这里列死
+    expect(catalog.plugins.filter((p) => p.status !== 'active')).toEqual([])
+    expect(catalog.plugins.map((p) => p.id)).toEqual(
+      expect.arrayContaining(['plein/core', 'plein/mock']),
+    )
     const types = catalog.nodes.map((n) => `${n.type}@${n.version}`)
     expect(types).toEqual(corePlugin.manifest.contributes.nodes)
     expect(catalog.nodes.every((n) => n.executable)).toBe(true)
@@ -270,12 +245,10 @@ describe('插件宿主', () => {
     expect(
       (image.paramsSchema.properties as Record<string, { widget?: string }>).model?.widget,
     ).toBe('model')
-    expect(catalog.providers[0]).toMatchObject({
-      id: 'plein/mock',
+    expect(catalog.providers.find((p) => p.id === 'plein/mock')).toMatchObject({
       enabled: true,
       configured: true,
     })
-    expect(catalog.providers.slice(1).every((p) => !p.enabled && !p.configured)).toBe(true)
   })
 
   it('豆包替代鉴权需要完整密钥组；配置检查不声称连接成功', async () => {
@@ -522,7 +495,102 @@ describe('插件宿主', () => {
   })
 
   it('Provider 抛出的普通异常归一化为 unknown', async () => {
-    expect(new ProviderError('rate_limit', 'x').retryable).toBe(true)
-    expect(new ProviderError('auth', 'x').retryable).toBe(false)
+    const submit = vi.spyOn(mockProvider, 'submit').mockRejectedValueOnce(new Error('连接被重置'))
+    await expect(
+      s.host.runNode({ type: 'plein/llm', version: 1, params: { prompt: 'x' }, ownerId: 'local' }),
+    ).rejects.toMatchObject({ code: 'unknown', message: '连接被重置', retryable: false })
+    submit.mockRestore()
+  })
+})
+
+describe('模型调用记录', () => {
+  let s: Awaited<ReturnType<typeof start>>
+  beforeAll(async () => {
+    s = await start()
+  })
+
+  /** 异步平台：提交得到远端任务，轮询结果由各用例决定；模型不支持种子 */
+  function asyncHost(timeoutMs?: number) {
+    const submit = vi.fn(async (_req: ProviderRequest) => ({
+      state: 'pending' as const,
+      remoteId: 'r1',
+      pollAfterMs: 1,
+    }))
+    const poll = vi.fn(
+      async (): Promise<PollResult> => ({
+        state: 'succeeded',
+        outputs: [{ type: 'text', text: '好了' }],
+      }),
+    )
+    const provider = defineProvider({
+      id: 'acme/async',
+      title: 'Async',
+      settings: z.object({}),
+      secrets: [],
+      models: [{ id: 'm', title: 'M', capabilities: ['image.generate'], limits: { seed: false } }],
+      submit,
+      poll,
+    })
+    const host = new PluginHost(
+      new PluginRegistry(),
+      new ProviderConfigStore(tempDir(), new Set(['acme/async'])),
+      s.server.assets,
+      { timeoutMs, log: () => {} },
+    )
+    host.load(
+      [
+        defineServerPlugin(
+          definePlugin({ manifest: manifest({ contributes: { providers: ['acme/async'] } }) }),
+          { providers: [provider] },
+        ),
+      ],
+      false,
+    )
+    const records = new Map<string, CallRecord>()
+    const call = () =>
+      host.call(
+        'image.generate',
+        'acme/async:m',
+        { prompt: '天台', seed: 7 },
+        { ownerId: 'local', journal: { store: records, key: 'k' } },
+      )
+    return { submit, poll, records, call }
+  }
+
+  it('记录里已有结果：直接返回，不提交也不轮询', async () => {
+    const { submit, poll, records, call } = asyncHost()
+    records.set('k', {
+      state: 'done',
+      result: { outputs: [{ type: 'text', text: '旧的' }], assets: [] },
+    })
+    expect((await call()).outputs).toEqual([{ type: 'text', text: '旧的' }])
+    expect(submit).not.toHaveBeenCalled()
+    expect(poll).not.toHaveBeenCalled()
+  })
+
+  it('模型声明不支持的参数不传给平台；成功后记下结果', async () => {
+    const { submit, records, call } = asyncHost()
+    await call()
+    expect(submit.mock.calls[0]![0]).toMatchObject({ input: { prompt: '天台' } })
+    expect(submit.mock.calls[0]![0].input).not.toHaveProperty('seed')
+    expect(records.get('k')).toMatchObject({ state: 'done' })
+  })
+
+  it('远端确认失败：删掉记录，下次重新提交', async () => {
+    const { submit, poll, records, call } = asyncHost()
+    poll.mockResolvedValueOnce({
+      state: 'failed',
+      error: { code: 'unavailable', message: '远端出错', retryable: true },
+    })
+    await expect(call()).rejects.toMatchObject({ code: 'unavailable' })
+    expect(records.has('k')).toBe(false)
+    await call()
+    expect(submit).toHaveBeenCalledTimes(2)
+  })
+
+  it('超时归为 timeout', async () => {
+    const { poll, call } = asyncHost(50)
+    poll.mockResolvedValue({ state: 'pending', pollAfterMs: 10 })
+    await expect(call()).rejects.toMatchObject({ code: 'timeout' })
   })
 })

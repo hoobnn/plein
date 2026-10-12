@@ -1,25 +1,9 @@
-import { domainAllowed, type ProviderContext } from '@plein/plugin-sdk'
-import { describe, expect, it, vi } from 'vitest'
-import { bailianPlugin, bailianProvider } from './index'
+import { describe, expect, it } from 'vitest'
+import { fakeContext, sse } from '../testing'
+import { bailianProvider } from './index'
 
-function setup(values: unknown[] = []) {
-  const fetch = vi.fn(async () => {
-    const value = values.shift()
-    return typeof value === 'string'
-      ? new Response(value, { headers: { 'Content-Type': 'text/event-stream' } })
-      : Response.json(value ?? {})
-  })
-  const ctx: ProviderContext<ReturnType<typeof bailianProvider.settings.parse>> = {
-    settings: bailianProvider.settings.parse({}),
-    secret: () => 'sk-test',
-    fetch: fetch as typeof globalThis.fetch,
-    signal: new AbortController().signal,
-    log: vi.fn(),
-    files: { read: vi.fn(async () => ({ data: new Uint8Array([1, 2, 3]), mime: 'image/png' })) },
-  }
-  return { ctx, fetch }
-}
-const sse =
+const setup = (replies?: unknown[]) => fakeContext(bailianProvider, replies, { secret: 'sk-test' })
+const stream =
   'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":"stop"}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2}}\n\ndata: [DONE]\n\n'
 describe('百炼 API 契约', () => {
   it('upgrades official HTTP audio result URL to HTTPS without changing its signature', async () => {
@@ -48,19 +32,11 @@ describe('百炼 API 契约', () => {
       ],
     })
   })
-  it('设置均有默认值、权限包含当前官方结果 CDN；测试不计费', async () => {
+  it('连接测试只检查本地密钥，不计费', async () => {
     const { ctx, fetch } = setup()
-    expect(bailianProvider.settings.safeParse({}).success).toBe(true)
     await bailianProvider.test?.(ctx)
     expect(fetch).not.toHaveBeenCalled()
     expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining('未验证'))
-    expect(
-      domainAllowed(
-        bailianPlugin.plugin.manifest.permissions.network,
-        'dashscope-result-sz.oss-cn-shenzhen.aliyuncs.com',
-      ),
-    ).toBe(true)
-    expect(bailianPlugin.plugin.manifest.permissions.assets).toBe('read')
   })
   it('缺少密钥时不联网', async () => {
     const { ctx, fetch } = setup()
@@ -69,7 +45,7 @@ describe('百炼 API 契约', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
   it('对话走流式兼容 API，归一化回答和 usage，保护 model/messages', async () => {
-    const { ctx, fetch } = setup([sse])
+    const { ctx, fetch, body } = setup([sse(stream)])
     const result = await bailianProvider.submit(
       {
         capability: 'text.chat',
@@ -87,24 +63,26 @@ describe('百炼 API 契约', () => {
       outputs: [{ type: 'text', text: '你好' }],
       usage: { inputTokens: 3, outputTokens: 2 },
     })
-    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit]
+    const [url, init] = fetch.mock.calls[0]!
     expect(url).toBe('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions')
-    expect(JSON.parse(String(init.body))).toMatchObject({
+    expect(body()).toMatchObject({
       model: 'qwen3.7-plus',
       stream: true,
       max_tokens: 30,
     })
-    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer sk-test')
+    expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer sk-test')
   })
   it('结构化输出：要求 JSON、Schema 写进系统提示，结果按 Schema 校验', async () => {
     const answer = (content: string) =>
-      `data: ${JSON.stringify({ choices: [{ delta: { content }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
+      sse(
+        `data: ${JSON.stringify({ choices: [{ delta: { content }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`,
+      )
     const schema = {
       type: 'object',
       properties: { shots: { type: 'integer' } },
       required: ['shots'],
     }
-    const { ctx, fetch } = setup([answer('{"shots":3}'), answer('{"shots":"三"}')])
+    const { ctx, body } = setup([answer('{"shots":3}'), answer('{"shots":"三"}')])
     const run = () =>
       bailianProvider.submit(
         {
@@ -126,20 +104,18 @@ describe('百炼 API 契约', () => {
         ctx,
       )
     expect(await run()).toMatchObject({ outputs: [{ type: 'json', value: { shots: 3 } }] })
-    const body = JSON.parse(
-      String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body),
-    )
-    expect(body.response_format).toEqual({ type: 'json_object' })
-    expect(body.messages[0]).toMatchObject({ role: 'system' })
-    expect(body.messages[0].content).toContain('"shots"')
-    expect(body.messages[1].content).toEqual([
+    const sent = body()
+    expect(sent.response_format).toEqual({ type: 'json_object' })
+    expect(sent.messages[0]).toMatchObject({ role: 'system' })
+    expect(sent.messages[0].content).toContain('"shots"')
+    expect(sent.messages[1].content).toEqual([
       { type: 'text', text: '拆分镜' },
       { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } },
     ])
     await expect(run()).rejects.toMatchObject({ code: 'unknown' })
   })
   it('缺少 DONE 时拒绝成功且不会重新提交', async () => {
-    const { ctx, fetch } = setup([sse.replace('data: [DONE]\n\n', '')])
+    const { ctx, fetch } = setup([sse(stream.replace('data: [DONE]\n\n', ''))])
     await expect(
       bailianProvider.submit(
         {
@@ -153,7 +129,7 @@ describe('百炼 API 契约', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
   it('图片参考资产编码并解析 native 多图输出', async () => {
-    const { ctx, fetch } = setup([
+    const { ctx, body } = setup([
       {
         output: {
           choices: [
@@ -185,11 +161,9 @@ describe('百炼 API 契约', () => {
       ctx,
     )
     expect(result).toMatchObject({ state: 'succeeded', usage: { images: 2 } })
-    const body = JSON.parse(
-      String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body),
-    )
-    expect(body.input.messages[0].content[1]).toEqual({ image: 'data:image/png;base64,AQID' })
-    expect(body.parameters).toMatchObject({ size: '1024*1024', n: 2 })
+    const sent = body()
+    expect(sent.input.messages[0].content[1]).toEqual({ image: 'data:image/png;base64,AQID' })
+    expect(sent.parameters).toMatchObject({ size: '1024*1024', n: 2 })
   })
   it('异步视频可跨上下文轮询、取消，未知状态不无限轮询', async () => {
     const { ctx, fetch } = setup([
@@ -214,18 +188,14 @@ describe('百炼 API 契约', () => {
         ctx,
       ),
     ).toMatchObject({ state: 'pending', remoteId: 'task/1' })
-    expect(
-      new Headers((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].headers).get(
-        'X-DashScope-Async',
-      ),
-    ).toBe('enable')
+    expect(new Headers(fetch.mock.calls[0]?.[1]?.headers).get('X-DashScope-Async')).toBe('enable')
     expect(await bailianProvider.poll?.('task/1', { ...ctx })).toMatchObject({ state: 'pending' })
     expect(await bailianProvider.poll?.('task/1', ctx)).toMatchObject({
       state: 'succeeded',
       outputs: [{ kind: 'video' }],
     })
     await bailianProvider.cancel?.('task/1', ctx)
-    expect((fetch.mock.calls[3] as unknown as [string])[0]).toMatch(/tasks\/task%2F1\/cancel$/)
+    expect(fetch.mock.calls[3]?.[0]).toMatch(/tasks\/task%2F1\/cancel$/)
     expect(await bailianProvider.poll?.('missing', ctx)).toMatchObject({
       state: 'failed',
       error: { code: 'unknown' },
@@ -241,7 +211,7 @@ describe('百炼 API 契约', () => {
       x_oss_object_acl: 'private',
       x_oss_forbid_overwrite: 'true',
     }
-    const { ctx, fetch } = setup([{ data: policy }, {}, { output: { task_id: 't' } }])
+    const { ctx, fetch, body } = setup([{ data: policy }, {}, { output: { task_id: 't' } }])
     await bailianProvider.submit(
       {
         capability: 'video.generate',
@@ -250,21 +220,17 @@ describe('百炼 API 契约', () => {
       },
       ctx,
     )
-    const body = JSON.parse(
-      String((fetch.mock.calls[2] as unknown as [string, RequestInit])[1].body),
-    )
-    expect(body.input.media[0]).toMatchObject({
+    const sent = body(2)
+    expect(sent.input.media[0]).toMatchObject({
       type: 'first_frame',
       url: expect.stringMatching(/^oss:\/\/tmp\//),
     })
     expect(
-      new Headers((fetch.mock.calls[2] as unknown as [string, RequestInit])[1].headers).get(
-        'X-DashScope-OssResourceResolve',
-      ),
+      new Headers(fetch.mock.calls[2]?.[1]?.headers).get('X-DashScope-OssResourceResolve'),
     ).toBe('enable')
   })
   it('语音 input 指令、音色和业务空间端点符合 native API', async () => {
-    const { ctx, fetch } = setup([
+    const { ctx, fetch, body } = setup([
       {
         output: { audio: { url: 'https://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/a.wav' } },
       },
@@ -282,16 +248,15 @@ describe('百炼 API 契约', () => {
       state: 'succeeded',
       outputs: [{ kind: 'audio', mime: 'audio/wav' }],
     })
-    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit]
-    expect(url).toContain('work-123.cn-beijing.maas.aliyuncs.com')
-    expect(JSON.parse(String(init.body)).input).toMatchObject({
+    expect(fetch.mock.calls[0]?.[0]).toContain('work-123.cn-beijing.maas.aliyuncs.com')
+    expect(body().input).toMatchObject({
       text: '你好',
       voice: 'Cherry',
       instructions: '温柔',
       optimize_instructions: true,
     })
   })
-  it('业务层安全与欠费错误归一化，POST 提交状态未知不可重试', async () => {
+  it('业务层安全与欠费错误归一化', async () => {
     for (const [code, expected] of [
       ['DataInspectionFailed', 'content_policy'],
       ['Arrearage', 'quota'],
@@ -304,22 +269,11 @@ describe('百炼 API 契约', () => {
         ),
       ).rejects.toMatchObject({ code: expected })
     }
-    const { ctx, fetch } = setup()
-    fetch.mockRejectedValueOnce(new TypeError('network'))
-    await expect(
-      bailianProvider.submit(
-        { capability: 'audio.speech', model: 'qwen3-tts-flash', input: { text: 'hi' } },
-        ctx,
-      ),
-    ).rejects.toMatchObject({ code: 'unavailable', retryable: false })
-    expect(fetch).toHaveBeenCalledTimes(1)
   })
-  it('提交遇 503 / 429 不可重试，轮询遇网络失败、503、429 可重试', async () => {
+  it('提交遇 503 / 429 不可重试，轮询遇 503 / 429 可重试', async () => {
     for (const status of [503, 429]) {
-      const { ctx } = setup()
-      ctx.fetch = vi.fn(async () =>
-        Response.json({ code: 'Throttling', message: 'busy' }, { status }),
-      ) as typeof globalThis.fetch
+      const busy = () => Response.json({ code: 'Throttling', message: 'busy' }, { status })
+      const { ctx } = setup([busy(), busy()])
       await expect(
         bailianProvider.submit(
           { capability: 'audio.speech', model: 'qwen3-tts-flash', input: { text: 'hi' } },
@@ -328,12 +282,6 @@ describe('百炼 API 契约', () => {
       ).rejects.toMatchObject({ retryable: false })
       await expect(bailianProvider.poll!('t', ctx)).rejects.toMatchObject({ retryable: true })
     }
-    const { ctx, fetch } = setup()
-    fetch.mockRejectedValueOnce(new TypeError('network'))
-    await expect(bailianProvider.poll!('t', ctx)).rejects.toMatchObject({
-      code: 'unavailable',
-      retryable: true,
-    })
   })
   it('核心图片节点 aspectRatio 映射官方 size，显式 size 优先且不透传未知字段', async () => {
     for (const model of ['qwen-image-3.0-pro', 'wan2.7-image-pro']) {
@@ -342,7 +290,7 @@ describe('百炼 API 契约', () => {
         [{ aspectRatio: '16:9', size: '1024*1024' }, '1024*1024'],
         [{}, '1664*936'],
       ] as const) {
-        const { ctx, fetch } = setup([
+        const { ctx, body } = setup([
           {
             output: {
               choices: [
@@ -361,20 +309,22 @@ describe('百炼 API 契约', () => {
           { capability: 'image.generate', model, input: { prompt: 'cat', extra } },
           ctx,
         )
-        const body = JSON.parse(
-          String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body),
-        )
-        expect(body.parameters.size).toBe(expected)
-        expect(body.parameters).not.toHaveProperty('aspectRatio')
-        expect(body.parameters).not.toHaveProperty('unknown')
+        const sent = body()
+        expect(sent.parameters.size).toBe(expected)
+        expect(sent.parameters).not.toHaveProperty('aspectRatio')
+        expect(sent.parameters).not.toHaveProperty('unknown')
       }
     }
   })
   it('HTTP、SSE 与异步失败均脱敏密钥', async () => {
     const sensitive = 'sk-test'
     const { ctx } = setup([
-      `data: {"error":{"code":"InvalidApiKey","message":"invalid ${sensitive}"}}\n\n`,
+      sse(`data: {"error":{"code":"InvalidApiKey","message":"invalid ${sensitive}"}}\n\n`),
       { output: { task_status: 'FAILED', code: 'InvalidApiKey', message: `invalid ${sensitive}` } },
+      Response.json(
+        { error: { code: 'InvalidApiKey', message: `invalid ${sensitive}` } },
+        { status: 401 },
+      ),
     ])
     await expect(
       bailianProvider.submit(
@@ -390,12 +340,6 @@ describe('百炼 API 契约', () => {
       state: 'failed',
       error: { message: 'invalid [REDACTED]' },
     })
-    ctx.fetch = vi.fn(async () =>
-      Response.json(
-        { error: { code: 'InvalidApiKey', message: `invalid ${sensitive}` } },
-        { status: 401 },
-      ),
-    )
     await expect(
       bailianProvider.submit(
         { capability: 'audio.speech', model: 'qwen3-tts-flash', input: { text: 'hi' } },

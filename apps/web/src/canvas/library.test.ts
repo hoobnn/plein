@@ -1,6 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import { createDoc } from '@plein/doc'
-import { corePlugin, libraryKind, slotImages } from '@plein/nodes'
+import { corePlugin, libraryKind } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
 import type { Asset, Catalog, LibraryItem } from '@plein/protocol'
 import { describe, expect, it, vi } from 'vitest'
@@ -178,13 +178,5 @@ describe('资产库 ↔ 画布', () => {
         images: [{ slot: 'panorama', assetId: A }],
       }),
     )
-  })
-
-  it('参考图分槽位：第一张进第一个槽位，其余进可多张的槽位，单张槽位只留一张', () => {
-    expect(slotImages(libraryKind('character')!, [A, B, A])).toEqual([
-      { slot: 'main', assetId: A },
-      { slot: 'extra', assetId: B },
-    ])
-    expect(slotImages(libraryKind('effect')!, [A, B])).toEqual([{ slot: 'cover', assetId: A }])
   })
 })

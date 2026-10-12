@@ -29,6 +29,20 @@ describe('FlowGraph', () => {
     expect(layers.map((l) => l.sort())).toEqual([['a'], ['b', 'c'], ['d']])
     expect(cycle.sort()).toEqual(['x', 'y'])
   })
+
+  it('忽略自连边', () => {
+    const g = new FlowGraph([e('a', 'a'), e('a', 'b')])
+    expect(g.upstream('a').size).toBe(0)
+    expect([...g.descendants('a')]).toEqual(['b'])
+  })
+
+  it('分层时忽略目标集合之外的依赖', () => {
+    const deps = new Map([
+      ['a', new Set(['outside'])],
+      ['b', new Set(['a'])],
+    ])
+    expect(topoLayers(deps)).toEqual({ layers: [['a'], ['b']], cycle: [] })
+  })
 })
 
 describe('runDag', () => {
@@ -68,6 +82,16 @@ describe('runDag', () => {
     expect(r.canceled).toEqual(['a'])
     expect(r.skipped).toEqual(['b'])
   })
+
+  it('节点抛错算失败，下游跳过', async () => {
+    const g = new FlowGraph([e('a', 'b'), e('b', 'c')])
+    const r = await runDag(g.dependencies(['a', 'b', 'c']), async (id) => {
+      if (id === 'a') throw new Error('炸了')
+      return 'succeeded'
+    })
+    expect(r.failed).toEqual(['a'])
+    expect(r.skipped).toEqual(['b', 'c'])
+  })
 })
 
 describe('stableStringify', () => {
@@ -75,5 +99,11 @@ describe('stableStringify', () => {
     expect(stableStringify({ b: 1, a: [{ y: 2, x: undefined, z: null }] })).toBe(
       stableStringify({ a: [{ z: null, y: 2 }], b: 1 }),
     )
+  })
+
+  it('值不同则字符串不同，数组里的 undefined 写成 null', () => {
+    expect(stableStringify({ a: 1 })).not.toBe(stableStringify({ a: 2 }))
+    expect(stableStringify({ a: [1, 2] })).not.toBe(stableStringify({ a: [2, 1] }))
+    expect(stableStringify([1, undefined])).toBe('[1,null]')
   })
 })

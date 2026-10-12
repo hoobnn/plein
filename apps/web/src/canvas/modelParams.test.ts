@@ -1,7 +1,14 @@
+import type { ModelLimits } from '@plein/plugin-sdk'
 import type { Catalog } from '@plein/protocol'
 import { describe, expect, it } from 'vitest'
-import { adaptToModel, constrainFields, modelProblem, selectedModel } from './modelParams'
-import { fieldsOf, type NodeInfo } from './nodes'
+import {
+  adaptToModel,
+  constrainFields,
+  modelProblem,
+  type SelectedModel,
+  selectedModel,
+} from './modelParams'
+import { fieldsOf, type NodeInfo, type Upstream } from './nodes'
 
 const node = {
   type: 'plein/video',
@@ -37,7 +44,7 @@ const catalog = {
             seed: false,
           },
         },
-        { id: 'free', title: 'Free', capabilities: ['video.generate'] },
+        { id: 'free', title: 'Free', capabilities: ['video.generate' as const] },
       ],
     },
   ],
@@ -103,5 +110,83 @@ describe('配音参数', () => {
     )
     expect(patch).toEqual({ speed: 2 })
     expect(notes[0]).toBe('语速已从 3 倍改为 2 倍（X 支持 0.5–2 倍）')
+  })
+})
+
+describe('张数、参考图与画幅', () => {
+  const imageNode = {
+    type: 'plein/image',
+    capability: 'image.generate',
+    defaults: { model: '', count: 1, aspectRatio: 'auto' },
+    paramsSchema: {
+      properties: {
+        model: { type: 'string', widget: 'model' },
+        count: { type: 'integer', minimum: 1, maximum: 4, title: '张数' },
+        aspectRatio: { type: 'string', enum: ['auto', '16:9', '1:1'], title: '画幅' },
+      },
+    },
+  } as unknown as NodeInfo
+  const model = (limits: ModelLimits): SelectedModel['info'] => ({
+    ref: 'p:x',
+    id: 'x',
+    title: 'X',
+    capabilities: ['image.generate'],
+    limits,
+  })
+  const refs = (n: number, port = 'references') =>
+    new Map([[port, Array.from({ length: n }, () => ({}) as Upstream)]])
+
+  it('张数上限收窄字段，上限只有 1 张时不显示；超出时改到上限', () => {
+    const two = Object.fromEntries(
+      constrainFields(imageNode, fieldsOf(imageNode), { count: { max: 2 } }),
+    )
+    expect(two.count).toMatchObject({ minimum: 1, maximum: 2 })
+    const one = Object.fromEntries(
+      constrainFields(imageNode, fieldsOf(imageNode), { count: { max: 1 } }),
+    )
+    expect(one.count).toBeUndefined()
+    const params = { count: 4, aspectRatio: '16:9' }
+    const m = model({ count: { max: 2 } })
+    expect(adaptToModel(imageNode, params, m)).toEqual({
+      patch: { count: 2 },
+      notes: ['张数已改为 2（X 最多 2 张）'],
+    })
+    expect(modelProblem(imageNode, params, m, new Map())).toBe('X 一次最多生成 2 张')
+  })
+
+  it('智能画幅要模型明确声明支持', () => {
+    const plain = Object.fromEntries(constrainFields(imageNode, fieldsOf(imageNode), {}))
+    expect(plain.aspectRatio?.enum).toEqual(['16:9', '1:1'])
+    const { patch, notes } = adaptToModel(imageNode, { aspectRatio: 'auto' }, model({}))
+    expect(patch).toEqual({ aspectRatio: '16:9' })
+    expect(notes).toEqual(['画幅已从 智能 改为 16:9（X 不支持 智能）'])
+    const auto = model({ aspectRatios: ['auto', '1:1'] })
+    expect(adaptToModel(imageNode, { aspectRatio: 'auto' }, auto).patch).toEqual({})
+    expect(modelProblem(imageNode, { aspectRatio: 'auto' }, model({}), new Map())).toBe(
+      'X 不支持画幅 auto',
+    )
+  })
+
+  it('参考图超过模型上限时说明连了几张', () => {
+    const m = model({ references: { max: 2 } })
+    const params = { aspectRatio: '16:9' }
+    expect(modelProblem(imageNode, params, m, refs(2))).toBeNull()
+    expect(modelProblem(imageNode, params, m, refs(3))).toBe('X 最多支持 2 张参考图，现在连了 3 张')
+  })
+
+  it('生成视频：连入图片数要和模式对得上；只有图片参考模式按参考图计数', () => {
+    const m = { ...model({ references: { max: 1 } }), capabilities: ['video.generate' as const] }
+    const params = { model: '', duration: 5, aspectRatio: '16:9' }
+    // 没选到模型也先查模式
+    expect(modelProblem(node, { ...params, mode: 'image' }, undefined, new Map())).toBe(
+      '图生视频需要连入 1 张图作首帧',
+    )
+    expect(modelProblem(node, { ...params, mode: 'frames' }, m, refs(1, 'images'))).toMatch(
+      /^首尾帧需要连入 2 张图/,
+    )
+    expect(modelProblem(node, { ...params, mode: 'frames' }, m, refs(2, 'images'))).toBeNull()
+    expect(modelProblem(node, { ...params, mode: 'reference' }, m, refs(2, 'images'))).toBe(
+      'X 最多支持 1 张参考图，现在连了 2 张',
+    )
   })
 })

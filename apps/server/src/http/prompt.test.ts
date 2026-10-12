@@ -1,10 +1,6 @@
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { API, type RewritePrompt, type RewritePromptResult } from '@plein/protocol'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { loadConfig } from '../config'
-import { startServer } from '../start'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { startTestServer } from '../testing'
 import { maskPrompt, unmaskPrompt } from './prompt'
 
 describe('maskPrompt / unmaskPrompt', () => {
@@ -24,21 +20,7 @@ describe('maskPrompt / unmaskPrompt', () => {
   })
 })
 
-const dirs: string[] = []
-afterAll(() => {
-  for (const d of dirs) rmSync(d, { recursive: true, force: true })
-})
-
-async function start(mock: boolean) {
-  const dataDir = mkdtempSync(join(tmpdir(), 'plein-prompt-'))
-  dirs.push(dataDir)
-  const config = {
-    ...loadConfig({ PLEIN_DATA_DIR: dataDir, PLEIN_PORT: '0' }),
-    webDist: null,
-    mockProvider: mock,
-  }
-  return startServer(config)
-}
+const start = (mock: boolean) => startTestServer({ mock })
 
 const rewrite = (base: string, body: RewritePrompt | Record<string, unknown>) =>
   fetch(base + API.promptRewrite, {
@@ -52,7 +34,6 @@ describe('POST /api/prompt/rewrite', () => {
   beforeAll(async () => {
     s = await start(true)
   })
-  afterAll(() => s.close())
 
   it('优化：用已启用的对话模型改写，保留引用和占位', async () => {
     const res = await rewrite(s.url, {
@@ -96,12 +77,8 @@ describe('POST /api/prompt/rewrite', () => {
 
   it('没有启用对话模型时 409', async () => {
     const bare = await start(false)
-    try {
-      const res = await rewrite(bare.url, { text: '一只猫', mode: 'optimize' })
-      expect(res.status).toBe(409)
-      expect(((await res.json()) as { error: string }).error).toBe('no_model')
-    } finally {
-      bare.close()
-    }
+    const res = await rewrite(bare.url, { text: '一只猫', mode: 'optimize' })
+    expect(res.status).toBe(409)
+    expect(((await res.json()) as { error: string }).error).toBe('no_model')
   })
 })

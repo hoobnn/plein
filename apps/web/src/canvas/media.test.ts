@@ -8,7 +8,6 @@ import {
   elementSize,
   evenSegments,
   formatTimecode,
-  opLabel,
   opsFor,
   parseTimecode,
   quickOpsFor,
@@ -99,24 +98,21 @@ describe('裁剪框', () => {
 })
 
 describe('可用操作', () => {
-  it('按素材类型给出加工项', () => {
-    expect(opsFor('image')).toEqual(['crop', 'rotate', 'flip'])
-    expect(opsFor('audio')).toEqual(['trim', 'speed', 'split'])
-    expect(opsFor('video')).toEqual(['trim', 'speed', 'separate', 'frame'])
-    expect(opsFor('file')).toEqual([])
-  })
-
   it('本机没有 ffmpeg 时不给视频加工项', () => {
     expect(opsFor('video', { ffmpeg: false, subtitles: false, rubberband: false })).toEqual([])
     expect(opsFor('video', { ffmpeg: true, subtitles: false, rubberband: false })).toHaveLength(4)
+    // 图片加工不靠 ffmpeg
+    expect(opsFor('image', { ffmpeg: false, subtitles: false, rubberband: false })).not.toEqual([])
   })
 
   it('多选的一键操作都是不用填参数的那些', () => {
-    expect(quickOpsFor('image')).toEqual(['rotate', 'flip'])
-    expect(quickOpsFor('audio')).toEqual(['speed'])
-    expect(quickOpsFor('video')).toEqual(['speed', 'separate', 'frame'])
     // crop / trim / split 要填坐标或区间，只能单个素材用
-    expect(quickOpsFor('image')).not.toContain('crop')
+    for (const kind of ['image', 'audio', 'video'] as const) {
+      const quick = quickOpsFor(kind)
+      expect(quick.length).toBeGreaterThan(0)
+      expect(opsFor(kind)).toEqual(expect.arrayContaining(quick))
+      for (const op of ['crop', 'trim', 'split'] as const) expect(quick).not.toContain(op)
+    }
   })
 })
 
@@ -132,33 +128,16 @@ describe('来源描述', () => {
     expect(deriveLabel('speed', { speed: 2, keepPitch: false })).toBe('2×（变调）')
     expect(deriveLabel('split', { segments: [{}, {}, {}] })).toBe('3 段')
     expect(deriveLabel('frame', { at: 12.5 })).toBe('0:12.5')
-    expect(opLabel('separate')).toBe('分离音视频')
   })
 })
 
 describe('画布元素尺寸', () => {
-  it('图片视频按比例缩到长边 480，音频用固定高度', () => {
-    expect(elementSize(asset({ kind: 'image', width: 1920, height: 1080 }))).toEqual({
-      kind: 'image',
-      w: 480,
-      h: 270,
-    })
+  it('媒体资产按资产类型落成元素（尺寸规则见 @plein/doc sizes），其他文件不落', () => {
     expect(elementSize(asset({ kind: 'video', width: 1080, height: 1920 }))).toEqual({
       kind: 'video',
       w: 270,
       h: 480,
     })
-    expect(elementSize(asset({ kind: 'audio' }))).toEqual({ kind: 'audio', w: 384, h: 96 })
     expect(elementSize(asset({ kind: 'file' }))).toBeNull()
-    // 没有尺寸信息时给一个能看的默认大小
-    expect(elementSize(asset({ kind: 'image' }))).toEqual({ kind: 'image', w: 320, h: 240 })
-  })
-
-  it('小图不会被放大', () => {
-    expect(elementSize(asset({ kind: 'image', width: 200, height: 100 }))).toEqual({
-      kind: 'image',
-      w: 200,
-      h: 100,
-    })
   })
 })
