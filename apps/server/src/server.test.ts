@@ -189,6 +189,19 @@ describe('server', () => {
     expect(await (await fetch(`${s.base}/api/assets/${asset.id}`)).text()).toBe('not a png')
   })
 
+  it('HTML 等可执行类型的资产按附件下发，不在应用源内渲染', async () => {
+    const res = await fetch(`${s.base}/api/assets`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/html' },
+      body: '<script>alert(1)</script>',
+    })
+    const asset = (await res.json()) as Asset
+    const file = await fetch(`${s.base}/api/assets/${asset.id}`)
+    expect(file.headers.get('content-type')).toBe('application/octet-stream')
+    expect(file.headers.get('content-disposition')).toBe('attachment')
+    expect(file.headers.get('content-security-policy')).toContain('sandbox')
+  })
+
   it.runIf(ffmpeg)('视频封面与音频波形', async () => {
     const dir = tempDir()
     const video = join(dir, 'v.mp4')

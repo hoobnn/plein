@@ -57,6 +57,11 @@ function toAsset(r: AssetRow): Asset {
   }
 }
 
+export function normalizeMime(mime: string) {
+  const m = mime.split(';')[0]!.trim().toLowerCase()
+  return /^[a-z]+\/[a-z0-9][a-z0-9.+-]*$/.test(m) ? m : 'application/octet-stream'
+}
+
 export function kindOf(mime: string): AssetKind {
   if (mime.startsWith('image/')) return 'image'
   if (mime.startsWith('video/')) return 'video'
@@ -113,6 +118,8 @@ export class AssetStore {
     body: ReadableStream<Uint8Array> | Readable,
     meta: { mime: string; name: string },
   ): Promise<Asset> {
+    // 类型来自客户端或插件，不可信：格式不对的一律当作普通文件
+    meta = { ...meta, mime: normalizeMime(meta.mime) }
     const tmpFile = join(this.tmp, randomUUID())
     const hash = createHash('sha256')
     let size = 0

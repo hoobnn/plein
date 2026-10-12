@@ -15,21 +15,26 @@ export async function sendFile(
   const info = await stat(path).catch(() => null)
   if (!info?.isFile()) return c.json({ error: 'not_found', message: '文件不存在' }, 404)
 
+  const inline = renderableInline(opts.mime)
   const headers = new Headers({
-    'Content-Type': opts.mime,
+    // 浏览器能执行脚本的类型（HTML、XML、JS…）一律不按原类型下发，防止同源存储型 XSS
+    'Content-Type': inline ? opts.mime : 'application/octet-stream',
     'Accept-Ranges': 'bytes',
     'X-Content-Type-Options': 'nosniff',
     'Cache-Control': opts.immutable ? 'private, max-age=31536000, immutable' : 'no-cache',
   })
-  if (opts.download) {
+  if (opts.download || !inline) {
     headers.set(
       'Content-Disposition',
-      `attachment; filename*=UTF-8''${encodeURIComponent(opts.download)}`,
+      opts.download
+        ? `attachment; filename*=UTF-8''${encodeURIComponent(opts.download)}`
+        : 'attachment',
     )
   }
-  // SVG 等可执行内容不在同源下渲染
+  // SVG 可以内嵌脚本：内联显示但禁止执行；其余非媒体类型加沙箱兜底
   if (opts.mime === 'image/svg+xml')
     headers.set('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'")
+  else if (!inline) headers.set('Content-Security-Policy', "sandbox; default-src 'none'")
 
   const size = info.size
   const range = parseRange(c.req.header('range'), size)
@@ -69,4 +74,14 @@ export function parseRange(
   }
   if (start >= size || start > end) return 'invalid'
   return [start, end]
+}
+
+/** 可以按原类型内联显示的 MIME：图片、音视频、PDF 和纯文本（不会执行脚本） */
+export function renderableInline(mime: string) {
+  return (
+    /^(image|video|audio)\/[a-z0-9.+-]+$/.test(mime) ||
+    mime === 'application/pdf' ||
+    mime === 'text/plain' ||
+    mime === 'text/markdown'
+  )
 }
