@@ -86,6 +86,41 @@ describe('Doubao Speech HTTP contracts', () => {
     })
   })
 
+  it('超时、分块响应中途断开和中止都不可重试', async () => {
+    const speech = {
+      capability: 'audio.speech' as const,
+      model: 'seed-tts-2.0',
+      input: { text: 'fixture' },
+    }
+    const timedOut = context()
+    vi.mocked(timedOut.fetch).mockRejectedValueOnce(new DOMException('timed out', 'TimeoutError'))
+    await expect(doubaoProvider.submit(speech, timedOut)).rejects.toMatchObject({
+      code: 'timeout',
+      retryable: false,
+    })
+    const broken = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"code":0,'))
+          controller.error(new TypeError('terminated'))
+        },
+      }),
+    )
+    await expect(doubaoProvider.submit(speech, context(broken))).rejects.toMatchObject({
+      code: 'unavailable',
+      retryable: false,
+    })
+    const cancelled = context()
+    const controller = new AbortController()
+    controller.abort()
+    cancelled.signal = controller.signal
+    vi.mocked(cancelled.fetch).mockRejectedValueOnce(new Error('aborted'))
+    await expect(doubaoProvider.submit(speech, cancelled)).rejects.toMatchObject({
+      code: 'cancelled',
+      retryable: false,
+    })
+  })
+
   it('does not suggest retrying a generation after unknown network submission state', async () => {
     const ctx = context()
     vi.mocked(ctx.fetch).mockRejectedValueOnce(new TypeError('connection closed'))

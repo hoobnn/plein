@@ -10,6 +10,7 @@ import {
   type ProviderErrorCode,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
+import { isJson, type Json, redact, send, transportError } from '../shared/http'
 
 const settings = z.object({
   voice: z.string().min(1).default('zh_female_vv_uranus_bigtts').meta({ title: '默认音色 ID' }),
@@ -17,15 +18,13 @@ const settings = z.object({
   sampleRate: z.enum(['16000', '24000', '48000']).default('24000').meta({ title: '采样率' }),
 })
 type Context = ProviderContext<z.output<typeof settings>>
-type Json = Record<string, unknown>
 const secrets = ['VOLC_SPEECH_API_KEY', 'VOLC_SPEECH_APP_ID', 'VOLC_SPEECH_ACCESS_KEY']
 const host = 'https://openspeech.bytedance.com'
 
 function object(value: unknown): Json {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  if (!isJson(value))
     throw new ProviderError('unavailable', '豆包语音返回无效 JSON 对象', { retryable: false })
-  }
-  return value as Json
+  return value
 }
 
 function headers(ctx: Context, resource?: string): Record<string, string> {
@@ -48,18 +47,15 @@ function headers(ctx: Context, resource?: string): Record<string, string> {
   return result
 }
 
-function redact(value: string, ctx: Context) {
-  for (const secret of secrets
-    .map((name) => ctx.secret(name))
-    .filter((value): value is string => Boolean(value))
-    .sort((a, b) => b.length - a.length)) {
-    value = value.split(secret).join('[redacted]')
-  }
-  return value
+function scrub(value: string, ctx: Context) {
+  return redact(
+    value,
+    secrets.map((name) => ctx.secret(name)),
+  )
 }
 
 function failure(status: number, code: unknown, message: unknown, ctx: Context): ProviderError {
-  const detail = redact(typeof message === 'string' ? message : '请求失败', ctx).slice(0, 500)
+  const detail = scrub(typeof message === 'string' ? message : '请求失败', ctx).slice(0, 500)
   let normalized: ProviderErrorCode = 'unknown'
   // 只匹配完整词：“sample_rate”“max tokens”这类参数错误不能被当成限流或鉴权
   if (
@@ -81,7 +77,7 @@ function failure(status: number, code: unknown, message: unknown, ctx: Context):
   else if (status === 400 || String(code).startsWith('450')) normalized = 'invalid_input'
   return new ProviderError(
     normalized,
-    `豆包语音 ${redact(String(code ?? status), ctx)}: ${detail}`,
+    `豆包语音 ${scrub(String(code ?? status), ctx)}: ${detail}`,
     { retryable: false },
   )
 }
@@ -89,27 +85,23 @@ function failure(status: number, code: unknown, message: unknown, ctx: Context):
 async function post(ctx: Context, path: string, body: Json, resource?: string, asr = false) {
   const requestHeaders = headers(ctx, resource)
   if (asr) requestHeaders['X-Api-Sequence'] = '-1'
-  let response: Response
+  // 只有提交接口，一律不可重试；分块响应读完前断开同样算提交结果未知
+  const messages = {
+    cancelled: '豆包语音请求已取消',
+    network: '豆包语音网络请求失败，提交结果未知',
+    timeout: '豆包语音请求超时，提交结果未知',
+  }
+  const response = await send(
+    ctx,
+    `${host}${path}`,
+    { method: 'POST', headers: requestHeaders, body: JSON.stringify(body) },
+    messages,
+  )
   let raw: string
   try {
-    response = await ctx.fetch(`${host}${path}`, {
-      method: 'POST',
-      headers: requestHeaders,
-      body: JSON.stringify(body),
-      signal: ctx.signal,
-    })
     raw = await response.text()
   } catch (cause) {
-    if (
-      (cause instanceof Error && cause.name === 'TimeoutError') ||
-      (ctx.signal.reason instanceof Error && ctx.signal.reason.name === 'TimeoutError')
-    ) {
-      throw new ProviderError('timeout', '豆包语音请求超时，提交结果未知', { retryable: false })
-    }
-    if (ctx.signal.aborted) throw new ProviderError('cancelled', '豆包语音请求已取消', { cause })
-    throw new ProviderError('unavailable', '豆包语音网络请求失败，提交结果未知', {
-      retryable: false,
-    })
+    throw transportError(ctx, 'POST', cause, messages)
   }
   const status = response.headers.get('X-Api-Status-Code')
   if (!response.ok || (status && status !== '20000000' && !(asr && status === '20000003'))) {
