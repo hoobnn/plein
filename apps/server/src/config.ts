@@ -19,6 +19,8 @@ export interface Config {
   maxUpload: number
   /** 免认证模式下额外允许的主机名（默认只允许本机名） */
   allowedHosts: string[]
+  /** 同时运行的节点任务数上限 */
+  maxJobs: number
   /** 加载开发测试用的 mock 平台 */
   mockProvider: boolean
   /** ffmpeg / ffprobe 可执行文件，默认从 PATH 查找；桌面端指向安装包里附带的版本 */
@@ -60,6 +62,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .map((h) => h.trim())
       .filter(Boolean),
     mockProvider: env.PLEIN_MOCK_PROVIDER === '1',
+    maxJobs: Math.max(1, Number(env.PLEIN_MAX_JOBS ?? 4) || 4),
     ffmpegPath: env.PLEIN_FFMPEG_PATH || 'ffmpeg',
     ffprobePath: env.PLEIN_FFPROBE_PATH || 'ffprobe',
     desktopToken: env.PLEIN_DESKTOP_TOKEN || undefined,

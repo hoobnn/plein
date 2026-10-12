@@ -30,6 +30,7 @@ export interface Server {
   assets: AssetStore
   plugins: PluginHost
   secrets: Secrets
+  runs: NodeRuns
   close(): void
 }
 
@@ -68,7 +69,8 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', syncRoutes(db, rooms))
   app.route('/', pluginRoutes(plugins))
   app.route('/', promptRoutes(plugins))
-  app.route('/', runRoutes(db, new NodeRuns(rooms, plugins)))
+  const runs = new NodeRuns(db, rooms, plugins, { concurrency: config.maxJobs })
+  app.route('/', runRoutes(db, runs))
   app.all('/api/*', (c) => c.json({ error: 'not_found', message: '接口不存在' }, 404))
 
   if (config.webDist) {
@@ -79,6 +81,9 @@ export async function createServer(config: Config): Promise<Server> {
     app.get('*', (c) => c.html(index))
   }
 
+  // 接着跑上次退出时没结束的任务
+  runs.recover()
+
   return {
     app,
     db,
@@ -86,7 +91,9 @@ export async function createServer(config: Config): Promise<Server> {
     assets,
     plugins,
     secrets,
+    runs,
     close() {
+      runs.close()
       rooms.closeAll()
       db.close()
     },

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import {
@@ -22,6 +23,7 @@ import {
   resolveParams,
   type ServerPluginDefinition,
 } from '@plein/plugin-sdk'
+import { stableStringify } from '@plein/flow'
 import type { AssetStore } from '../assets/store'
 import type { ProviderConfigStore } from './config-store'
 import { Limiter, sleep } from './limiter'
@@ -43,6 +45,25 @@ export class NodeRunError extends Error {
   }
 }
 
+/**
+ * 一次节点运行内的模型调用记录。服务重启后重新执行同一个任务时：
+ * 已完成的调用直接返回记录的结果，已提交的异步任务接着轮询，都不会重复提交（也就不重复计费）。
+ */
+export type CallRecord =
+  | { state: 'pending'; remoteId: string }
+  | { state: 'done'; result: ProviderCallResult }
+
+/**
+ * 服务退出时中止运行用的 reason：不取消远端任务、不清调用记录，重启后接着轮询
+ */
+export const SHUTDOWN = Symbol('plein.shutdown')
+
+export interface CallJournal {
+  get(key: string): CallRecord | undefined
+  set(key: string, record: CallRecord): void
+  delete(key: string): void
+}
+
 export interface RunNodeOptions {
   type: string
   /** 文档里节点的版本；低于已安装版本时先迁移参数 */
@@ -52,6 +73,7 @@ export interface RunNodeOptions {
   ownerId: string
   signal?: AbortSignal
   onProgress?(fraction: number, message?: string): void
+  journal?: CallJournal
 }
 
 const toError = (err: unknown): ProviderError => {
@@ -122,8 +144,18 @@ export class PluginHost {
     capability: C,
     ref: string,
     input: CapabilityInput<C>,
-    opts: { ownerId: string; signal?: AbortSignal; onProgress?: (p: number) => void },
+    opts: {
+      ownerId: string
+      signal?: AbortSignal
+      onProgress?: (p: number) => void
+      /** 调用记录与这次调用的键，见 CallJournal */
+      journal?: { store: CallJournal; key: string }
+    },
   ): Promise<ProviderCallResult> {
+    const journal = opts.journal
+    const recorded = journal?.store.get(journal.key)
+    if (recorded?.state === 'done') return recorded.result
+
     const parsed = parseModelRef(ref)
     if (!parsed) throw new ProviderError('invalid_input', `模型引用格式不正确：${ref}`)
     const entry = this.registry.providers.get(parsed.provider)
@@ -145,15 +177,25 @@ export class PluginHost {
 
     try {
       const outputs = await limiter.run(async () => {
-        const submitted = await def.submit({ capability, model: parsed.model, input }, ctx)
-        if (submitted.state === 'succeeded') return submitted
-        if (!def.poll)
-          throw new ProviderError('unknown', `平台 ${def.title} 返回了异步任务但没有实现 poll`)
-        let wait = submitted.pollAfterMs ?? DEFAULT_POLL_MS
+        let remoteId: string
+        let wait = DEFAULT_POLL_MS
+        if (recorded?.state === 'pending' && def.poll) {
+          // 重启前已经提交过：接着轮询，不再提交
+          remoteId = recorded.remoteId
+          wait = 0
+        } else {
+          const submitted = await def.submit({ capability, model: parsed.model, input }, ctx)
+          if (submitted.state === 'succeeded') return submitted
+          if (!def.poll)
+            throw new ProviderError('unknown', `平台 ${def.title} 返回了异步任务但没有实现 poll`)
+          remoteId = submitted.remoteId
+          wait = submitted.pollAfterMs ?? DEFAULT_POLL_MS
+          journal?.store.set(journal.key, { state: 'pending', remoteId })
+        }
         try {
           for (;;) {
             await sleep(wait, signal)
-            const r: PollResult = await def.poll(submitted.remoteId, ctx)
+            const r: PollResult = await def.poll!(remoteId, ctx)
             if (r.state === 'succeeded') return r
             if (r.state === 'failed') {
               throw new ProviderError(r.error.code, r.error.message, {
@@ -165,7 +207,7 @@ export class PluginHost {
           }
         } catch (err) {
           // 取消或超时：通知平台取消远端任务（尽力而为）
-          if (signal.aborted && def.cancel) {
+          if (signal.aborted && def.cancel && opts.signal?.reason !== SHUTDOWN) {
             // 生成的 signal 已中止；取消请求必须使用独立、有限时长的上下文。
             const cancelCtx = this.providerContext(
               parsed.provider,
@@ -175,14 +217,18 @@ export class PluginHost {
                 requireEnabled: false,
               },
             )
-            await def.cancel(submitted.remoteId, cancelCtx).catch(() => {})
+            await def.cancel(remoteId, cancelCtx).catch(() => {})
           }
           throw err
         }
       }, signal)
       const assets = await this.storeOutputs(parsed.provider, outputs.outputs, opts.ownerId, signal)
-      return { outputs: outputs.outputs, assets, usage: outputs.usage }
+      const result: ProviderCallResult = { outputs: outputs.outputs, assets, usage: outputs.usage }
+      journal?.store.set(journal.key, { state: 'done', result })
+      return result
     } catch (err) {
+      // 失败的远端任务不能再接着轮询，重跑时重新提交；服务退出时保留，重启后续跑
+      if (opts.signal?.reason !== SHUTDOWN) journal?.store.delete(journal.key)
       if (timeout.aborted && !opts.signal?.aborted) throw new ProviderError('timeout', '任务超时')
       throw toError(err)
     }
@@ -295,6 +341,16 @@ export class PluginHost {
 
     const manifest = this.manifest(executor.plugin)
     const signal = opts.signal ?? new AbortController().signal
+    // 同样的调用可能有意发多次（例如一次要多张候选图），按出现次序区分
+    const seen = new Map<string, number>()
+    const callKey = (capability: string, model: string, input: unknown) => {
+      const hash = createHash('sha256')
+        .update(stableStringify({ capability, model, input }))
+        .digest('hex')
+      const n = seen.get(hash) ?? 0
+      seen.set(hash, n + 1)
+      return `${hash}#${n}`
+    }
     const ctx: ExecutorContext = {
       params,
       inputs,
@@ -307,6 +363,10 @@ export class PluginHost {
             ownerId: opts.ownerId,
             signal,
             onProgress: (p) => opts.onProgress?.(p),
+            journal: opts.journal && {
+              store: opts.journal,
+              key: callKey(capability, model, input),
+            },
           }),
         models: (capability) => this.models(capability),
       },

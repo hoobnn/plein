@@ -10,6 +10,7 @@ apps/server           本地服务：Hono（Node）+ SQLite + Yjs 同步 + 资�
 apps/desktop          桌面端：Electron 外壳，在 utilityProcess 里运行 apps/server
 packages/canvas-core  画布内核：PixiJS v8 + 相机 + 输入
 packages/doc          文档模型：Yjs（Element / Edge / Undo）
+packages/flow         工作流：依赖图、执行顺序、按依赖调度、缓存键
 packages/protocol     前后端共享的接口约定（zod）
 packages/plugin-sdk   插件 API：清单、节点、Provider、执行器（见 docs/plugins.md）
 packages/nodes        内置节点声明（plein/core）
@@ -36,6 +37,7 @@ docker compose up -d     # 打开 http://localhost:8787
 | `PLEIN_PUBLIC_URL`                         | 按请求推断                         | 反向代理后的对外地址                                   |
 | `PLEIN_ALLOWED_HOSTS`                      | 空                                 | 免登录模式下额外允许的主机名，逗号分隔                 |
 | `PLEIN_MAX_UPLOAD_MB`                      | `2048`                             | 单个文件上限                                           |
+| `PLEIN_MAX_JOBS`                           | `4`                                | 同时运行的节点任务数上限                               |
 | `PLEIN_FFMPEG_PATH` / `PLEIN_FFPROBE_PATH` | 从 `PATH` 查找                     | ffmpeg / ffprobe 可执行文件                            |
 
 ## 开发

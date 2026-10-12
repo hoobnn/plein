@@ -2,7 +2,7 @@ import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
 import { currentResult, setResultRating } from '@plein/doc'
 import { type ReactNode, useEffect, useRef } from 'react'
 import { findNode, type NodeInfo } from '../canvas/nodes'
-import { runGroup, templateData } from '../canvas/groups'
+import { describeGroupRun, runGroup, templateData } from '../canvas/groups'
 import { runNode } from '../canvas/runner'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
@@ -148,10 +148,8 @@ function ContextMenu({
   }
   const notify = useCanvas((s) => s.notify)
   const runFrame = async (id: string, video: boolean) => {
-    const r = await runGroup(engine, id, catalog, { video })
-    notify(
-      `运行完成：${r.succeeded} 个成功${r.failed ? `，${r.failed} 个失败` : ''}${r.skipped ? `，${r.skipped} 个跳过` : ''}`,
-    )
+    const r = await runGroup(id, { video })
+    if (r) notify(describeGroupRun(engine.doc.get(id)?.name ?? 'Frame', r))
   }
   const saveFrame = async (id: string) => {
     const title = await promptDialog({

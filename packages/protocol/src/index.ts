@@ -141,6 +141,38 @@ export interface NodeRunStarted {
   runId: string
 }
 
+/** 整组运行（Frame）的选项 */
+export const GroupRunOptions = z.object({
+  /** 是否包含视频节点（贵且慢，默认不跑） */
+  video: z.boolean().default(false),
+  /** 忽略缓存：参数和输入都没变的节点也重新运行 */
+  force: z.boolean().default(false),
+})
+export type GroupRunOptions = z.infer<typeof GroupRunOptions>
+
+export interface GroupRunStarted {
+  groupId: string
+  /** 组内要运行的节点数 */
+  total: number
+}
+
+export interface GroupRunSummary {
+  succeeded: number
+  /** 参数和输入都没变，沿用已有结果 */
+  cached: number
+  failed: number
+  canceled: number
+  /** 上游失败或取消而没有运行 */
+  skipped: number
+}
+
+export interface GroupRunState {
+  id: string
+  status: 'running' | 'done' | 'canceled'
+  total: number
+  summary?: GroupRunSummary
+}
+
 /** 用户存的模板：Frame 和里面的元素、内部连线，格式同复制粘贴（ClipboardData） */
 export const TemplateData = z.object({
   plein: z.literal(1),
@@ -211,6 +243,11 @@ export const API = {
     `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/run`,
   nodeCancel: (canvasId: string, nodeId: string) =>
     `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/cancel`,
+  /** 整组运行 Frame 里的节点，返回 GroupRunStarted */
+  frameRun: (canvasId: string, frameId: string) =>
+    `/api/canvases/${encodeURIComponent(canvasId)}/frames/${encodeURIComponent(frameId)}/run`,
+  groupRun: (groupId: string) => `/api/runs/groups/${encodeURIComponent(groupId)}`,
+  groupCancel: (groupId: string) => `/api/runs/groups/${encodeURIComponent(groupId)}/cancel`,
   /** Yjs 同步（y-websocket 协议），房间名为画布 id */
   sync: '/sync',
 } as const

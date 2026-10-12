@@ -1,7 +1,7 @@
 import type { Engine } from '@plein/canvas-core'
 import { updateElement } from '@plein/doc'
 import { useState } from 'react'
-import { groupNodes, runGroup, templateData } from '../canvas/groups'
+import { cancelGroup, describeGroupRun, groupNodes, runGroup, templateData } from '../canvas/groups'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useTemplates } from '../stores/templates'
@@ -35,7 +35,9 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
   const catalog = useCatalog((s) => s.catalog)
   const notify = useCanvas((s) => s.notify)
   const [video, setVideo] = useState(false)
+  const [force, setForce] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
+  const [group, setGroup] = useState<string | null>(null)
   const [palette, setPalette] = useState<HTMLElement | null>(null)
   const ids = engine.selection.values()
   const el = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
@@ -48,12 +50,10 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
 
   const run = async () => {
     setBusy(el.id)
-    const r = await runGroup(engine, el.id, catalog, { video })
+    const r = await runGroup(el.id, { video, force, onStart: setGroup })
     setBusy(null)
-    const parts = [`「${name}」运行完成：${r.succeeded} 个成功`]
-    if (r.failed) parts.push(`${r.failed} 个失败`)
-    if (r.skipped) parts.push(`${r.skipped} 个因上游失败跳过`)
-    notify(parts.join('，'))
+    setGroup(null)
+    if (r) notify(describeGroupRun(name, r))
   }
   const save = async () => {
     const title = await promptDialog({
@@ -110,16 +110,40 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
             <input type="checkbox" checked={video} onChange={(e) => setVideo(e.target.checked)} />
             含视频
           </label>
-          <button
-            type="button"
-            className={btn}
-            disabled={!count || busy === el.id}
-            title={count ? undefined : '组内没有要生成的节点'}
-            onClick={() => void run()}
+          <label
+            className="flex h-7 items-center gap-1.5 px-2 text-xs text-ink-muted"
+            title="默认参数和输入都没变的节点沿用原结果；勾选后全部重新生成"
           >
-            <Icon name="play" size={12} />
-            {busy === el.id ? '运行中…' : `运行整组${count ? `（${count}）` : ''}`}
-          </button>
+            <input
+              type="checkbox"
+              className="accent-[var(--accent)]"
+              checked={force}
+              onChange={(e) => setForce(e.target.checked)}
+            />
+            全部重跑
+          </label>
+          {busy === el.id ? (
+            <button
+              type="button"
+              className={btn}
+              disabled={!group}
+              title="停止整组：正在跑和排队的节点一起取消"
+              onClick={() => group && void cancelGroup(group)}
+            >
+              运行中… 停止
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={btn}
+              disabled={!count || busy !== null}
+              title={count ? undefined : '组内没有要生成的节点'}
+              onClick={() => void run()}
+            >
+              <Icon name="play" size={12} />
+              {`运行整组${count ? `（${count}）` : ''}`}
+            </button>
+          )}
           <button type="button" className={btn} onClick={() => void save()}>
             <Icon name="layers" size={13} />
             存为模板

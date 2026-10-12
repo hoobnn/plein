@@ -1,15 +1,13 @@
 import type { Engine } from '@plein/canvas-core'
 import { type ClipboardData, exportElements, importElements } from '@plein/doc'
-import type { Catalog } from '@plein/protocol'
+import { API, type Catalog, type GroupRunStarted, type GroupRunState } from '@plein/protocol'
+import { ApiError } from '../api/client'
+import { useCanvas } from '../stores/canvas'
 import { findNode, isPure } from './nodes'
-import { runNode } from './runner'
 
-/**
- * Frame 即分组：运行整组、存为模板。
- * 运行整组目前在前端按依赖顺序逐个调单节点运行接口；M3 任务队列落地后换成服务端整组调度，界面不变。
- */
+/** Frame 即分组：运行整组、存为模板 */
 
-/** 组内要调模型的节点 */
+/** 组内要调模型的节点（与服务端整组运行的范围一致） */
 export function groupNodes(
   engine: Engine,
   frameId: string,
@@ -24,99 +22,89 @@ export function groupNodes(
   })
 }
 
-/** 等某次运行结束：成功返回 true；失败、取消、节点被删或被另一次运行取代返回 false */
-function waitRun(engine: Engine, id: string, runId: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    // 服务端先写状态再返回 runId，但同步可能晚到：见过这次运行后，run.id 变了才算被取代
-    let seen = false
-    let finished = false
-    const done = (ok: boolean) => {
-      if (finished) return
-      finished = true
-      engine.doc.ydoc.off('afterTransaction', check)
-      resolve(ok)
-    }
-    const check = () => {
-      const el = engine.doc.get(id)
-      if (!el) return done(false)
-      const run = el.run
-      if (run?.id !== runId) {
-        if (seen) done(false)
-        return
-      }
-      seen = true
-      if (run.status === 'succeeded') done(true)
-      else if (run.status === 'failed' || run.status === 'canceled') done(false)
-    }
-    engine.doc.ydoc.on('afterTransaction', check)
-    check()
-  })
-}
-
 export interface GroupRun {
   succeeded: number
+  /** 参数和输入都没变，沿用已有结果 */
+  cached: number
   failed: number
-  /** 上游失败而没有运行的 */
+  canceled: number
+  /** 上游失败、取消而没有运行的 */
   skipped: number
+  /** 整组被停止 */
+  stopped: boolean
 }
 
 /**
- * 按组内连线的依赖顺序运行：上游都成功后才开始，同一层并发；上游失败的下游跳过。
- * 默认不跑视频节点（贵且慢），video 为 true 时一起跑。
+ * 整组运行：服务端按组内连线的依赖调度（上游成功才跑下游，上游失败的下游跳过），
+ * 参数和输入都没变的节点沿用已有结果，force 为 true 时全部重跑。
+ * 默认不跑视频节点（贵且慢），video 为 true 时一起跑。关掉页面不影响运行。
+ * 返回 null 表示没能开始（错误已提示）。
  */
 export async function runGroup(
-  engine: Engine,
   frameId: string,
-  catalog: Catalog | null,
-  opts: { video?: boolean } = {},
-): Promise<GroupRun> {
-  const targets = groupNodes(engine, frameId, catalog, opts.video ?? false)
-  const ids = new Set(targets.map((el) => el.id))
-  const deps = new Map<string, Set<string>>(targets.map((el) => [el.id, new Set()]))
-  for (const e of engine.doc.edges()) {
-    if (ids.has(e.to[0]) && ids.has(e.from[0])) deps.get(e.to[0])!.add(e.from[0])
+  opts: { video?: boolean; force?: boolean; onStart?(groupId: string): void } = {},
+): Promise<GroupRun | null> {
+  const { canvasId, notify } = useCanvas.getState()
+  if (!canvasId) {
+    notify('演示画布不能运行节点，请在首页新建画布')
+    return null
   }
-
-  const result: GroupRun = { succeeded: 0, failed: 0, skipped: 0 }
-  const ok = new Set<string>()
-  const bad = new Set<string>()
-  const pending = new Set(ids)
-  const running = new Map<string, Promise<void>>()
-
-  while (pending.size || running.size) {
-    for (const id of [...pending]) {
-      const up = deps.get(id)!
-      if ([...up].some((u) => bad.has(u))) {
-        pending.delete(id)
-        bad.add(id)
-        result.skipped++
-      } else if ([...up].every((u) => ok.has(u))) {
-        pending.delete(id)
-        running.set(
-          id,
-          (async () => {
-            const runId = await runNode(id)
-            const success = runId ? await waitRun(engine, id, runId) : false
-            if (success) {
-              ok.add(id)
-              result.succeeded++
-            } else {
-              bad.add(id)
-              result.failed++
-            }
-            running.delete(id)
-          })(),
-        )
+  try {
+    const { groupId } = await request<GroupRunStarted>(API.frameRun(canvasId, frameId), {
+      method: 'POST',
+      body: JSON.stringify({ video: opts.video ?? false, force: opts.force ?? false }),
+    })
+    opts.onStart?.(groupId)
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 1000))
+      const state = await request<GroupRunState>(API.groupRun(groupId))
+      if (state.status === 'running') continue
+      const s = state.summary
+      return {
+        succeeded: s?.succeeded ?? 0,
+        cached: s?.cached ?? 0,
+        failed: s?.failed ?? 0,
+        canceled: s?.canceled ?? 0,
+        skipped: s?.skipped ?? 0,
+        stopped: state.status === 'canceled',
       }
     }
-    // 组内连线成环时剩下的节点永远等不到上游
-    if (!running.size) {
-      result.skipped += pending.size
-      break
-    }
-    await Promise.race(running.values())
+  } catch (err) {
+    notify((err as Error).message)
+    return null
   }
-  return result
+}
+
+/** 停止整组运行：组内正在跑和排队的节点一起取消 */
+export async function cancelGroup(groupId: string) {
+  try {
+    await request(API.groupCancel(groupId), { method: 'POST' })
+  } catch (err) {
+    useCanvas.getState().notify((err as Error).message)
+  }
+}
+
+/** 整组运行结果的提示语 */
+export function describeGroupRun(name: string, r: GroupRun) {
+  const parts = [`「${name}」${r.stopped ? '已停止' : '运行完成'}：${r.succeeded} 个生成`]
+  if (r.cached) parts.push(`${r.cached} 个没有改动沿用原结果`)
+  if (r.failed) parts.push(`${r.failed} 个失败`)
+  if (r.canceled) parts.push(`${r.canceled} 个已取消`)
+  if (r.skipped) parts.push(`${r.skipped} 个${r.stopped ? '没有开始' : '因上游失败跳过'}`)
+  return parts.join('，')
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(path, {
+    credentials: 'same-origin',
+    headers: init.body ? { 'content-type': 'application/json' } : undefined,
+    ...init,
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string; message?: string } | null
+    throw new ApiError(res.status, body?.error ?? 'http_error', body?.message ?? res.statusText)
+  }
+  return (res.status === 204 ? undefined : await res.json()) as T
 }
 
 /** 导出 Frame 为模板数据：去掉生成结果和运行状态，只留结构和参数 */
