@@ -2,7 +2,13 @@ import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
 import { currentResult, setResultRating } from '@plein/doc'
 import { type ReactNode, useEffect, useRef } from 'react'
 import { findNode, type NodeInfo } from '../canvas/nodes'
-import { describeGroupRun, runGroup, templateData } from '../canvas/groups'
+import {
+  describeFlowRun,
+  describeGroupRun,
+  runFlow,
+  runGroup,
+  templateData,
+} from '../canvas/groups'
 import { runNode } from '../canvas/runner'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
@@ -151,6 +157,14 @@ function ContextMenu({
     const r = await runGroup(id, { video })
     if (r) notify(describeGroupRun(engine.doc.get(id)?.name ?? 'Frame', r))
   }
+  const flow = async (id: string, scope: 'upstream' | 'downstream') => {
+    const r = await runFlow(id, scope)
+    const el = engine.doc.get(id)
+    if (r)
+      notify(
+        describeFlowRun(scope, el?.name ?? findNode(catalog, el?.nodeType)?.title ?? '节点', r),
+      )
+  }
   const saveFrame = async (id: string) => {
     const title = await promptDialog({
       title: '存为模板',
@@ -193,8 +207,18 @@ function ContextMenu({
     items = (
       <>
         {node?.executable && node.execution === 'job' && single && (
+          <Item label="生成" hint="⌘↵" onClick={act(() => void runNode(single.id))} />
+        )}
+        {node && single && canImport && (
           <>
-            <Item label="生成" hint="⌘↵" onClick={act(() => void runNode(single.id))} />
+            {node.execution === 'job' && (
+              <Item
+                label="运行到此处"
+                hint="含上游"
+                onClick={act(() => void flow(single.id, 'upstream'))}
+              />
+            )}
+            <Item label="运行下游" onClick={act(() => void flow(single.id, 'downstream'))} />
             <Sep />
           </>
         )}

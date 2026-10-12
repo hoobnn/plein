@@ -948,6 +948,10 @@ input[type="range"]::-moz-range-thumb {
 .plein-node[data-status="failed"] .plein-node-status {
   color: var(--danger);
 }
+.plein-node[data-stale="self"] .plein-node-status,
+.plein-node[data-stale="upstream"] .plein-node-status {
+  color: var(--warning);
+}
 
 @keyframes plein-pulse {
   50% {

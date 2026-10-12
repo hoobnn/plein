@@ -1,6 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import type { PleinDoc } from '@plein/doc'
-import type { GroupInfo, JobInfo, JobList } from '@plein/protocol'
+import type { Catalog, GroupInfo, JobInfo, JobList } from '@plein/protocol'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { api } from '../api/client'
 import { cancelGroup } from '../canvas/groups'
@@ -56,6 +56,14 @@ function ago(at: number, now: number) {
   if (s < 3600) return `${Math.floor(s / 60)} 分钟前`
   if (s < 86400) return `${Math.floor(s / 3600)} 小时前`
   return new Date(at).toLocaleDateString()
+}
+
+/** 整组运行显示 Frame 名；运行到此处 / 运行下游显示出发的节点 */
+function groupName(g: GroupInfo, doc: PleinDoc, catalog: Catalog | null) {
+  const el = doc.get(g.frameId)
+  if (g.scope === 'frame') return el?.name ?? 'Frame'
+  const name = el?.name ?? findNode(catalog, el?.nodeType)?.title ?? '节点'
+  return g.scope === 'upstream' ? `运行到「${name}」` : `从「${name}」往下`
 }
 
 function took(ms: number) {
@@ -182,12 +190,12 @@ export function Tasks() {
         ) : (
           <>
             {groups.length > 0 && (
-              <Section title="整组运行">
+              <Section title="批量运行">
                 {groups.map((g) => (
                   <GroupRow
                     key={g.id}
                     group={g}
-                    name={doc.get(g.frameId)?.name ?? 'Frame'}
+                    name={groupName(g, doc, catalog)}
                     now={now}
                     onLocate={() => locate(g.frameId)}
                   />

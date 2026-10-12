@@ -138,7 +138,7 @@ export class JobStore {
     ownerId: string
     canvasId: string
     frameId: string
-    options: GroupRunOptions
+    options: GroupRunOptions & { scope?: string; rerun?: string[] }
     targets: string[]
   }) {
     this.db

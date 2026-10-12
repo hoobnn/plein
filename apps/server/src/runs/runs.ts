@@ -21,12 +21,14 @@ import {
   resolveParams,
 } from '@plein/plugin-sdk'
 import type {
+  FlowRunOptions,
   GroupInfo,
   GroupRunOptions,
   GroupRunStarted,
   GroupRunState,
   JobInfo,
   JobList,
+  StaleNodes,
 } from '@plein/protocol'
 import { sleep } from '../plugins/limiter'
 import { NodeRunError, type PluginHost, SHUTDOWN } from '../plugins/host'
@@ -174,18 +176,87 @@ export class NodeRuns {
 
   // ── 整组 ─────────────────────────────────────────
 
-  /** Frame 里要调模型的节点；默认不含视频节点 */
+  /** 需要排队运行、装了执行器的节点；video 为 false 时不含输出视频的节点 */
+  private isJobNode(el: CanvasElement | undefined, video = true) {
+    if (el?.kind !== 'node' || !el.nodeType) return false
+    const def = this.host.registry.latestNode(el.nodeType)?.def
+    if (!def || executionOf(def) !== 'job') return false
+    if (!this.host.registry.executors.has(nodeKey(def.type, def.version))) return false
+    return video || def.outputs[0]?.type !== 'video'
+  }
+
+  /** Frame 里要运行的节点；默认不含视频节点 */
   groupTargets(doc: PleinDoc, frameId: string, video: boolean): string[] {
     return doc
       .descendants(frameId)
-      .filter((el) => {
-        if (el.kind !== 'node' || !el.nodeType) return false
-        const def = this.host.registry.latestNode(el.nodeType)?.def
-        if (!def || executionOf(def) !== 'job') return false
-        if (!this.host.registry.executors.has(nodeKey(def.type, def.version))) return false
-        return video || def.outputs[0]?.type !== 'video'
-      })
+      .filter((el) => this.isJobNode(el, video))
       .map((el) => el.id)
+  }
+
+  /**
+   * 从一个节点出发运行，走和整组运行一样的调度与缓存：
+   * - upstream（运行到此处）：它和它的上游，没改动的沿用；
+   * - downstream（运行下游）：它自己总是重新运行，下游里输入变了的跟着重跑。
+   */
+  runFlow(
+    canvasId: string,
+    nodeId: string,
+    ownerId: string,
+    options: FlowRunOptions,
+  ): GroupRunStarted {
+    const targets = this.withDoc(canvasId, (doc) => {
+      if (doc.get(nodeId)?.kind !== 'node') throw new NodeRunError('not_found', '节点不存在')
+      const graph = new FlowGraph(doc.edges())
+      const around =
+        options.scope === 'upstream' ? graph.ancestors(nodeId) : graph.descendants(nodeId)
+      return [nodeId, ...around].filter((id) => this.isJobNode(doc.get(id)))
+    })
+    if (targets.length === 0)
+      throw new NodeRunError(
+        'invalid_input',
+        options.scope === 'upstream' ? '这里没有需要运行的节点' : '下游没有需要运行的节点',
+      )
+    const id = newId('grp')
+    const stored: StoredGroupOptions = {
+      video: true,
+      force: options.force,
+      scope: options.scope,
+      rerun: options.scope === 'downstream' ? [nodeId] : [],
+    }
+    this.store.insertGroup({ id, ownerId, canvasId, frameId: nodeId, options: stored, targets })
+    void this.orchestrate(this.store.group(id)!)
+    return { groupId: id, total: targets.length }
+  }
+
+  /**
+   * 需要重跑的节点：当前结果的缓存键和现在算出的不一致的（参数或输入改了），
+   * 以及它们下游已有结果的节点。正在运行的不算。
+   */
+  async staleNodes(canvasId: string, ownerId: string): Promise<StaleNodes> {
+    const doc = createDoc(this.rooms.get(canvasId).doc)
+    try {
+      const signal = new AbortController().signal
+      const stale: string[] = []
+      for (const el of doc.elements()) {
+        if (!this.isJobNode(el) || !el.results?.length || this.isRunning(canvasId, el.id)) continue
+        if (!(await this.isFresh(doc, el, ownerId, signal))) stale.push(el.id)
+      }
+      const graph = new FlowGraph(doc.edges())
+      const marked = new Set(stale)
+      const upstream: string[] = []
+      for (const id of stale) {
+        for (const d of graph.descendants(id)) {
+          const el = doc.get(d)
+          if (marked.has(d) || !this.isJobNode(el) || !el?.results?.length) continue
+          if (this.isRunning(canvasId, d)) continue
+          marked.add(d)
+          upstream.push(d)
+        }
+      }
+      return { stale, upstream }
+    } finally {
+      doc.destroy()
+    }
   }
 
   /** 整组运行 Frame：立即返回，进度看各节点状态，结果用 groupState 查询 */
@@ -219,6 +290,7 @@ export class NodeRuns {
         (g): GroupInfo => ({
           ...groupState(g),
           frameId: g.frame_id,
+          scope: (JSON.parse(g.options) as StoredGroupOptions).scope ?? 'frame',
           createdAt: g.created_at,
           finishedAt: g.finished_at ?? undefined,
         }),
@@ -240,7 +312,8 @@ export class NodeRuns {
   private async orchestrate(g: GroupRow) {
     const ctrl = new AbortController()
     this.groups.set(g.id, ctrl)
-    const options = JSON.parse(g.options) as GroupRunOptions
+    const options = JSON.parse(g.options) as StoredGroupOptions
+    const rerun = new Set(options.rerun ?? [])
     const doc = createDoc(this.rooms.get(g.canvas_id).doc)
     try {
       const targets = (JSON.parse(g.targets) as string[]).filter((id) => doc.get(id))
@@ -253,8 +326,8 @@ export class NodeRuns {
         if (this.store.succeededInGroup(g.id, nodeId)) return 'succeeded'
         let jobId = this.active.get(this.key(g.canvas_id, nodeId))?.id
         if (!jobId) {
-          if (!options.force && (await this.isFresh(doc, el, g.owner_id, ctrl.signal)))
-            return 'cached'
+          const reuse = !options.force && !rerun.has(nodeId)
+          if (reuse && (await this.isFresh(doc, el, g.owner_id, ctrl.signal))) return 'cached'
           jobId = this.start(g.canvas_id, nodeId, g.owner_id, g.id)
         }
         const status = await this.wait(jobId)
@@ -594,6 +667,13 @@ function retryable(err: unknown) {
 }
 
 export type { JobRow }
+
+/** 存在 job_groups.options 里的设置：整组运行的选项，加上运行到此处 / 运行下游的范围 */
+interface StoredGroupOptions extends GroupRunOptions {
+  scope?: 'upstream' | 'downstream'
+  /** 不看缓存、总是重新运行的节点 */
+  rerun?: string[]
+}
 
 function groupState(g: GroupRow): GroupRunState {
   return {

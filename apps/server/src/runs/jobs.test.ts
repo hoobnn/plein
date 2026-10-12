@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { connect, createDoc, createElement, type PleinDoc, setParams } from '@plein/doc'
-import type { JobList } from '@plein/protocol'
+import type { JobList, StaleNodes } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { createServer, type Server } from '../app'
@@ -290,6 +290,53 @@ describe('整组运行', () => {
     expect(forced.summary).toMatchObject({ succeeded: 3, cached: 0 })
     expect(doc.get(video)?.run?.status).toBe('succeeded')
     expect(doc.get(a)!.results!.length).toBeGreaterThan(1)
+  })
+
+  it('运行到此处、运行下游；参数改了标记需要重跑', async () => {
+    const { server } = await boot()
+    mock(server, {})
+    const { id, doc } = await canvas(server)
+    const { frame, a, b, video } = chain(doc)
+    await runFrame(server, id, frame)
+    const stale = async () =>
+      (await (await call(server, `/api/canvases/${id}/stale`)).json()) as StaleNodes
+    expect(await stale()).toEqual({ stale: [], upstream: [] })
+
+    // 改了 A 的参数：A 过期，B 跟着需要重跑；视频还没生成过，不标
+    setParams(doc, a, { prompt: '黄昏' })
+    expect(await stale()).toEqual({ stale: [a], upstream: [b] })
+
+    const flow = async (node: string, body: object) => {
+      const res = await call(server, `/api/canvases/${id}/nodes/${node}/run-flow`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      expect(res.status).toBe(202)
+      const { groupId } = (await res.json()) as { groupId: string }
+      const state = await until(() => {
+        const s = server.runs.groupState(groupId, 'local')
+        return s?.status !== 'running' && s
+      })
+      return state!
+    }
+    // 运行到 B：A 改过要重跑，B 输入变了跟着跑
+    expect((await flow(b, { scope: 'upstream' })).summary).toMatchObject({
+      succeeded: 2,
+      cached: 0,
+    })
+    expect(await stale()).toEqual({ stale: [], upstream: [] })
+    // 再运行到 B：都没改动
+    expect((await flow(b, { scope: 'upstream' })).summary).toMatchObject({
+      succeeded: 0,
+      cached: 2,
+    })
+    // 从 B 往下：B 总是重跑，视频没有结果也要跑；A 不在范围内
+    const down = await flow(b, { scope: 'downstream' })
+    expect(down.summary).toMatchObject({ succeeded: 2, cached: 0 })
+    expect(doc.get(video)!.results).toHaveLength(1)
+
+    const list = (await (await call(server, `/api/canvases/${id}/jobs`)).json()) as JobList
+    expect(list.groups[0]).toMatchObject({ frameId: b, scope: 'downstream' })
   })
 
   it('上游失败时下游跳过', async () => {

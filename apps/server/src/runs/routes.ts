@@ -1,4 +1,10 @@
-import { GroupRunOptions, type JobList, type NodeRunStarted } from '@plein/protocol'
+import {
+  FlowRunOptions,
+  GroupRunOptions,
+  type JobList,
+  type NodeRunStarted,
+  type StaleNodes,
+} from '@plein/protocol'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import { ownsCanvas } from '../http/canvases'
@@ -38,6 +44,25 @@ export function runRoutes(db: DB, runs: NodeRuns) {
       if (!ownsCanvas(db, p.id, canvas)) return c.json(notFound, 404)
       runs.cancel(canvas, node)
       return c.body(null, 204)
+    })
+    .post('/api/canvases/:canvas/nodes/:node/run-flow', async (c) => {
+      const { canvas, node } = c.req.param()
+      const p = c.var.principal
+      if (p.role === 'viewer') return c.json(forbidden, 403)
+      if (!ownsCanvas(db, p.id, canvas)) return c.json(notFound, 404)
+      const body = FlowRunOptions.safeParse(await c.req.json().catch(() => ({})))
+      if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
+      try {
+        return c.json(runs.runFlow(canvas, node, p.id, body.data), 202)
+      } catch (err) {
+        if (!(err instanceof NodeRunError)) throw err
+        return c.json({ error: err.code, message: err.message }, STATUS[err.code] ?? 400)
+      }
+    })
+    .get('/api/canvases/:canvas/stale', async (c) => {
+      const canvas = c.req.param('canvas')
+      if (!ownsCanvas(db, c.var.principal.id, canvas)) return c.json(notFound, 404)
+      return c.json((await runs.staleNodes(canvas, c.var.principal.id)) satisfies StaleNodes)
     })
     .get('/api/canvases/:canvas/jobs', (c) => {
       const canvas = c.req.param('canvas')

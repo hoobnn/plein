@@ -150,6 +150,22 @@ export const GroupRunOptions = z.object({
 })
 export type GroupRunOptions = z.infer<typeof GroupRunOptions>
 
+/** 从一个节点出发运行：upstream 运行到此处（含上游），downstream 运行它和下游 */
+export const FlowRunOptions = z.object({
+  scope: z.enum(['upstream', 'downstream']),
+  /** 忽略缓存，范围内的节点全部重新运行 */
+  force: z.boolean().default(false),
+})
+export type FlowRunOptions = z.infer<typeof FlowRunOptions>
+
+/** 画布上需要重跑的节点 */
+export interface StaleNodes {
+  /** 自己的参数或输入变了，当前结果已经过期 */
+  stale: string[]
+  /** 上游过期，跟着需要重跑 */
+  upstream: string[]
+}
+
 export interface GroupRunStarted {
   groupId: string
   /** 组内要运行的节点数 */
@@ -190,7 +206,9 @@ export interface JobInfo {
 }
 
 export interface GroupInfo extends GroupRunState {
+  /** Frame 整组运行时是 Frame，运行到此处 / 运行下游时是出发的节点 */
   frameId: string
+  scope: 'frame' | 'upstream' | 'downstream'
   createdAt: number
   finishedAt?: number
 }
@@ -271,6 +289,11 @@ export const API = {
     `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/run`,
   nodeCancel: (canvasId: string, nodeId: string) =>
     `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/cancel`,
+  /** 运行到此处 / 运行下游，body 为 FlowRunOptions，返回 GroupRunStarted */
+  nodeFlowRun: (canvasId: string, nodeId: string) =>
+    `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/run-flow`,
+  /** 需要重跑的节点，返回 StaleNodes */
+  canvasStale: (canvasId: string) => `/api/canvases/${encodeURIComponent(canvasId)}/stale`,
   /** 整组运行 Frame 里的节点，返回 GroupRunStarted */
   frameRun: (canvasId: string, frameId: string) =>
     `/api/canvases/${encodeURIComponent(canvasId)}/frames/${encodeURIComponent(frameId)}/run`,

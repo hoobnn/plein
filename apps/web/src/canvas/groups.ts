@@ -1,6 +1,12 @@
 import type { Engine } from '@plein/canvas-core'
 import { type ClipboardData, exportElements, importElements } from '@plein/doc'
-import { API, type Catalog, type GroupRunStarted, type GroupRunState } from '@plein/protocol'
+import {
+  API,
+  type Catalog,
+  type FlowRunOptions,
+  type GroupRunStarted,
+  type GroupRunState,
+} from '@plein/protocol'
 import { ApiError } from '../api/client'
 import { useCanvas } from '../stores/canvas'
 import { findNode, isPure } from './nodes'
@@ -44,17 +50,47 @@ export async function runGroup(
   frameId: string,
   opts: { video?: boolean; force?: boolean; onStart?(groupId: string): void } = {},
 ): Promise<GroupRun | null> {
+  const canvasId = remoteCanvas()
+  if (!canvasId) return null
+  return start(
+    API.frameRun(canvasId, frameId),
+    { video: opts.video ?? false, force: opts.force ?? false },
+    opts.onStart,
+  )
+}
+
+/**
+ * 从一个节点出发运行：upstream 运行到此处（它和上游，没改动的沿用），
+ * downstream 运行它和下游（它自己总是重跑，下游输入变了的跟着重跑）。
+ */
+export async function runFlow(
+  nodeId: string,
+  scope: FlowRunOptions['scope'],
+  opts: { force?: boolean } = {},
+): Promise<GroupRun | null> {
+  const canvasId = remoteCanvas()
+  if (!canvasId) return null
+  return start(API.nodeFlowRun(canvasId, nodeId), { scope, force: opts.force ?? false })
+}
+
+function remoteCanvas() {
   const { canvasId, notify } = useCanvas.getState()
-  if (!canvasId) {
-    notify('演示画布不能运行节点，请在首页新建画布')
-    return null
-  }
+  if (!canvasId) notify('演示画布不能运行节点，请在首页新建画布')
+  return canvasId
+}
+
+/** 发起运行并轮询到结束；返回 null 表示没能开始（错误已提示） */
+async function start(
+  path: string,
+  body: object,
+  onStart?: (groupId: string) => void,
+): Promise<GroupRun | null> {
   try {
-    const { groupId } = await request<GroupRunStarted>(API.frameRun(canvasId, frameId), {
+    const { groupId } = await request<GroupRunStarted>(path, {
       method: 'POST',
-      body: JSON.stringify({ video: opts.video ?? false, force: opts.force ?? false }),
+      body: JSON.stringify(body),
     })
-    opts.onStart?.(groupId)
+    onStart?.(groupId)
     for (;;) {
       await new Promise((r) => setTimeout(r, 1000))
       const state = await request<GroupRunState>(API.groupRun(groupId))
@@ -70,7 +106,7 @@ export async function runGroup(
       }
     }
   } catch (err) {
-    notify((err as Error).message)
+    useCanvas.getState().notify((err as Error).message)
     return null
   }
 }
@@ -86,7 +122,18 @@ export async function cancelGroup(groupId: string) {
 
 /** 整组运行结果的提示语 */
 export function describeGroupRun(name: string, r: GroupRun) {
-  const parts = [`「${name}」${r.stopped ? '已停止' : '运行完成'}：${r.succeeded} 个生成`]
+  return describeRun(`「${name}」`, r)
+}
+
+/** 运行到此处 / 运行下游的提示语 */
+export function describeFlowRun(scope: FlowRunOptions['scope'], name: string, r: GroupRun) {
+  return describeRun(scope === 'upstream' ? `运行到「${name}」` : `从「${name}」往下`, r)
+}
+
+function describeRun(title: string, r: GroupRun) {
+  if (!r.stopped && r.succeeded === 0 && !r.failed && !r.canceled && !r.skipped)
+    return `${title}：都没有改动，沿用原结果`
+  const parts = [`${title}${r.stopped ? '已停止' : '运行完成'}：${r.succeeded} 个生成`]
   if (r.cached) parts.push(`${r.cached} 个没有改动沿用原结果`)
   if (r.failed) parts.push(`${r.failed} 个失败`)
   if (r.canceled) parts.push(`${r.canceled} 个已取消`)

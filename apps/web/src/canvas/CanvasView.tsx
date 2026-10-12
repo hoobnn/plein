@@ -11,6 +11,7 @@ import { useCatalog } from '../stores/catalog'
 import { canvasTheme, useTheme } from '../stores/theme'
 import { demoAssetUrls, seedDemo } from './demo'
 import { importFiles, importText } from './import'
+import { watchStale } from '../stores/stale'
 import { NodeCards } from './nodeCards'
 import { CanvasOverlays } from './overlays'
 import { applyPresetToNode } from './presets'
@@ -79,12 +80,14 @@ export function CanvasView({ source }: { source: CanvasSource }) {
             window.dispatchEvent(new CustomEvent('plein:focus-generator', { detail: id })),
           )
         })
+        const offStale = canvasId ? watchStale(engine, canvasId) : () => {}
         const detach = attach(engine)
         const off = attachImport(engine, host, { setImporting, notify })
         const offTheme = useTheme.subscribe((s, prev) => {
           if (s.name !== prev.name) engine.setTheme(canvasTheme(s.name))
         })
         cleanups.push(() => {
+          offStale()
           offTheme()
           off()
           offActivate()
