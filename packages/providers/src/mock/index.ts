@@ -19,6 +19,9 @@ const ASPECT: Record<string, [number, number]> = {
   '1:1': [192, 192],
   '4:3': [224, 168],
   '3:4': [168, 224],
+  '21:9': [280, 120],
+  '3:2': [240, 160],
+  '2:3': [160, 240],
 }
 
 function lastUserText(input: CapabilityInput<'text.chat'>) {

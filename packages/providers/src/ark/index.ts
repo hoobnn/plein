@@ -25,8 +25,10 @@ const settings = z.object({
 type Context = ProviderContext<z.output<typeof settings>>
 type Json = Record<string, unknown>
 
-const SEEDREAM_ASPECTS = ['16:9', '9:16', '1:1', '4:3', '3:4']
-const SEEDANCE_ASPECTS = ['16:9', '4:3', '1:1', '3:4', '9:16']
+// Seedream 宽高比 1/16–16 都能给；auto 只传分辨率档位，比例由模型按提示词决定
+const SEEDREAM_ASPECTS = ['auto', '21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16']
+// Seedance 的 ratio；auto 即 adaptive，跟随首帧或由模型决定
+const SEEDANCE_ASPECTS = ['auto', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16']
 
 const seedreamOptions = z.object({
   watermark: z.boolean().optional().meta({ title: '水印', description: '在右下角加 AI 生成水印' }),
@@ -399,7 +401,8 @@ async function image(model: string, input: CapabilityInput<'image.generate'>, ct
     if (!model.startsWith('doubao-seedream-5-') || !tokens.includes(input.resolution) || !edge)
       invalid('所选 Seedream 模型不支持该分辨率')
     const { width, height } = sizeByArea(String(aspectRatio ?? '1:1'), edge * edge)
-    body.size = `${width}x${height}`
+    // 智能画幅只给档位，比例由模型按提示词决定
+    body.size = aspectRatio === 'auto' ? input.resolution : `${width}x${height}`
   }
   // Core image nodes express their frame through extra.aspectRatio. Translate it
   // into official pixel dimensions; an explicit platform size takes precedence.
@@ -415,6 +418,9 @@ async function image(model: string, input: CapabilityInput<'image.generate'>, ct
       '1:1': '2048x2048',
       '4:3': '2048x1536',
       '3:4': '1536x2048',
+      '21:9': '3120x1328',
+      '3:2': '2496x1664',
+      '2:3': '1664x2496',
     }
     const large: Record<string, string> = {
       '16:9': '2560x1440',
@@ -422,10 +428,14 @@ async function image(model: string, input: CapabilityInput<'image.generate'>, ct
       '1:1': '2048x2048',
       '4:3': '2304x1728',
       '3:4': '1728x2304',
+      '21:9': '3120x1328',
+      '3:2': '2496x1664',
+      '2:3': '1664x2496',
     }
-    const dimensions = (model.startsWith('doubao-seedream-5-') && !lite ? small : large)[
-      String(aspectRatio)
-    ]
+    const dimensions =
+      aspectRatio === 'auto'
+        ? '2K'
+        : (model.startsWith('doubao-seedream-5-') && !lite ? small : large)[String(aspectRatio)]
     if (!dimensions) invalid('Seedream 不支持该图片画幅')
     body.size = dimensions
   }
@@ -519,7 +529,10 @@ async function video(model: string, input: CapabilityInput<'video.generate'>, ct
     model,
     content: [],
     resolution: input.resolution ?? '720p',
-    ratio: input.aspectRatio ?? (input.firstFrame ? 'adaptive' : '16:9'),
+    ratio:
+      input.aspectRatio === 'auto'
+        ? 'adaptive'
+        : (input.aspectRatio ?? (input.firstFrame ? 'adaptive' : '16:9')),
   }
   const current = model.startsWith('doubao-seedance-2-')
   const v25 = model.startsWith('doubao-seedance-2-5-')

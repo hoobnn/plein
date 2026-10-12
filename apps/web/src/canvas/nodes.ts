@@ -68,6 +68,11 @@ export function parseAspect(v: unknown): number | null {
   return Number.isFinite(r) && r > 0 ? r : null
 }
 
+/** 画幅值的显示文字：auto 显示为「智能」 */
+export function aspectLabel(v: unknown) {
+  return v === 'auto' ? '智能' : String(v ?? '')
+}
+
 /** 节点里表示画幅的参数名 */
 export function aspectKey(node: NodeInfo): string | undefined {
   return fieldsOf(node).find(([k, f]) => /aspect/i.test(k) && f.enum)?.[0]

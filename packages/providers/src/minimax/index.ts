@@ -166,19 +166,29 @@ export const minimaxProvider = defineProvider({
       id: 'image-01',
       title: 'image-01',
       capabilities: ['image.generate' as const],
-      limits: { resolutions: ['1K', '2K'], count: { max: 9 }, references: { max: 1 } },
+      limits: {
+        aspectRatios: ['21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'],
+        resolutions: ['1K', '2K'],
+        count: { max: 9 },
+        references: { max: 1 },
+      },
     },
     {
       id: 'image-01-live',
       title: 'image-01-live',
       capabilities: ['image.generate' as const],
-      limits: { count: { max: 9 }, references: { max: 1 } },
+      limits: {
+        aspectRatios: ['16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'],
+        count: { max: 9 },
+        references: { max: 1 },
+      },
     },
     {
       id: 'MiniMax-H3',
       title: 'MiniMax-H3',
       capabilities: ['video.generate' as const],
       limits: {
+        aspectRatios: ['16:9', '4:3', '1:1', '3:4', '9:16'],
         resolutions: ['768P', '2K'],
         duration: { min: 4, max: 15 },
         seed: false,
@@ -190,6 +200,7 @@ export const minimaxProvider = defineProvider({
       title: 'MiniMax-H3-Max',
       capabilities: ['video.generate' as const],
       limits: {
+        aspectRatios: ['16:9', '4:3', '1:1', '3:4', '9:16'],
         resolutions: ['480P', '768P'],
         duration: { min: 5, max: 15 },
         seed: false,

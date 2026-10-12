@@ -15,7 +15,8 @@ const modelOptions = () =>
     .meta({ title: '模型专属参数', widget: 'modelOptions' })
 const textarea = (title: string, placeholder?: string) =>
   z.string().default('').meta({ title, widget: 'textarea', placeholder })
-const ASPECTS = ['16:9', '9:16', '1:1', '4:3', '3:4'] as const
+/** 画幅从宽到高排；auto 为「智能」，交给模型按提示词或素材决定。各模型只显示自己支持的那些 */
+const ASPECTS = ['auto', '21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'] as const
 
 /** 文本：提示词、台词等，下游节点的文本输入 */
 export const textNode = defineNode({
@@ -70,7 +71,6 @@ export const imageNode = defineNode({
     resolution: resolution(),
     options: modelOptions(),
     count: z.number().int().min(1).max(4).default(1).meta({ title: '张数' }),
-    seed: z.number().int().optional().meta({ title: '种子' }),
   }),
 })
 
@@ -98,7 +98,6 @@ export const videoNode = defineNode({
     aspectRatio: z.enum(ASPECTS).default('16:9').meta({ title: '画幅' }),
     resolution: resolution(),
     options: modelOptions(),
-    seed: z.number().int().optional().meta({ title: '种子' }),
   }),
 })
 

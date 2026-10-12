@@ -1,6 +1,13 @@
 import type { ModelInfo, ModelLimits } from '@plein/plugin-sdk'
 import type { Catalog } from '@plein/protocol'
-import { aspectKey, type FieldSchema, fieldsOf, type NodeInfo, type Upstream } from './nodes'
+import {
+  aspectKey,
+  aspectLabel,
+  type FieldSchema,
+  fieldsOf,
+  type NodeInfo,
+  type Upstream,
+} from './nodes'
 
 /**
  * 按所选模型的声明处理节点参数：收窄表单选项、换模型时校正取值、提交前检查。
@@ -64,8 +71,11 @@ export function constrainFields(
     if (f.widget === 'modelOptions') return []
     if (f.widget === 'resolution')
       return limits.resolutions?.length ? [[k, { ...f, enum: ['', ...limits.resolutions] }]] : []
-    if (k === ak && f.enum && limits.aspectRatios) {
-      const allowed = f.enum.filter((o) => limits.aspectRatios!.includes(String(o)))
+    if (k === ak && f.enum) {
+      // 没声明画幅的模型不给「智能」：auto 要模型明确支持
+      const allowed = f.enum.filter((o) =>
+        limits.aspectRatios ? limits.aspectRatios.includes(String(o)) : o !== 'auto',
+      )
       return [[k, { ...f, enum: allowed.length ? allowed : f.enum }]]
     }
     if (unsupported(k, limits)) return []
@@ -109,12 +119,18 @@ export function adaptToModel(
     if (f.widget === 'resolution' && v && !limits.resolutions?.includes(String(v))) {
       patch[k] = ''
       notes.push(`分辨率已改回默认（${name} 不支持 ${String(v)}）`)
-    } else if (k === aspectKey(node) && limits.aspectRatios && v !== undefined) {
-      if (!limits.aspectRatios.includes(String(v))) {
-        const next = (f.enum ?? []).find((o) => limits.aspectRatios!.includes(String(o)))
+    } else if (k === aspectKey(node) && v !== undefined) {
+      const supported = limits.aspectRatios
+      if (supported ? !supported.includes(String(v)) : v === 'auto') {
+        const allowed = (f.enum ?? []).filter((o) =>
+          supported ? supported.includes(String(o)) : o !== 'auto',
+        )
+        const next = allowed.includes('16:9') ? '16:9' : allowed.find((o) => o !== 'auto')
         if (next !== undefined) {
           patch[k] = next
-          notes.push(`画幅已从 ${String(v)} 改为 ${String(next)}（${name} 不支持 ${String(v)}）`)
+          notes.push(
+            `画幅已从 ${aspectLabel(v)} 改为 ${aspectLabel(next)}（${name} 不支持 ${aspectLabel(v)}）`,
+          )
         }
       }
     } else if (isRanged(k) && typeof v === 'number' && rangeOf(k, limits)) {

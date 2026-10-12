@@ -245,7 +245,9 @@ const supported: Partial<Record<string, string[]>> = {
   'video.generate': ['wan3.0-video', 'wan3.0-video-prime'],
   'audio.speech': ['qwen3-tts-flash', 'qwen3-tts-instruct-flash'],
 }
-const IMAGE_ASPECTS = ['16:9', '9:16', '1:1', '4:3', '3:4']
+const IMAGE_ASPECTS = ['21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16']
+// 万相视频的 ratio；auto 即 adaptive，跟随素材或由模型决定
+const VIDEO_ASPECTS = ['auto', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16']
 
 export const bailianProvider = defineProvider({
   testScope: 'configuration',
@@ -304,6 +306,7 @@ export const bailianProvider = defineProvider({
       title: id,
       capabilities: ['video.generate' as const],
       limits: {
+        aspectRatios: VIDEO_ASPECTS,
         resolutions: ['480P', '720P', '1080P'],
         duration: { min: 2, max: 30 },
         references: { max: 10 },
@@ -454,6 +457,9 @@ export const bailianProvider = defineProvider({
           '1:1': '1024*1024',
           '4:3': '1536*1152',
           '3:4': '1152*1536',
+          '21:9': '1904*816',
+          '3:2': '1536*1024',
+          '2:3': '1024*1536',
         }
         const aspect =
           typeof input.extra?.aspectRatio === 'string' ? input.extra.aspectRatio : '16:9'
@@ -527,7 +533,7 @@ export const bailianProvider = defineProvider({
           input: { prompt: input.prompt, ...(media.length ? { media } : {}) },
           parameters: {
             resolution: input.resolution ?? '720P',
-            ratio: input.aspectRatio ?? '16:9',
+            ratio: input.aspectRatio === 'auto' ? 'adaptive' : (input.aspectRatio ?? '16:9'),
             audio: true,
             watermark: false,
             ...input.extra,

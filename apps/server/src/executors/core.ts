@@ -90,7 +90,6 @@ const image = defineExecutor(imageNode, async (ctx) => {
       prompt: requireText(joinText(params.prompt, inputText(inputs, 'prompt')), '提示词'),
       references: inputAssets(inputs, 'references'),
       count: params.count,
-      seed: params.seed,
       resolution: params.resolution || undefined,
       extra: { ...modelOptions(params), aspectRatio: params.aspectRatio },
     },
@@ -110,7 +109,6 @@ const video = defineExecutor(videoNode, async (ctx) => {
       duration: params.duration,
       aspectRatio: params.aspectRatio,
       resolution: params.resolution || undefined,
-      seed: params.seed,
       extra: modelOptions(params),
     },
   )
