@@ -35,6 +35,8 @@ import type { Rooms } from '../sync/rooms'
 import { defineTool, type McpTool, type ToolContent, ToolError } from './mcp'
 
 const exec = promisify(execFile)
+/** 智能体工具里的 ffmpeg 调用上限：卡住的进程不能让这次工具调用永远不返回 */
+const FFMPEG_TIMEOUT_MS = 5 * 60_000
 
 /** 工具运行时绑定的画布与身份 */
 export interface ToolEnv {
@@ -409,7 +411,7 @@ export function canvasTools(env: ToolEnv): McpTool[] {
                 'png',
                 '-',
               ],
-              { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 },
+              { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024, timeout: 60_000 },
             )
             content.push(
               { type: 'text', text: `${t.toFixed(1)} 秒` },
@@ -463,7 +465,10 @@ export function canvasTools(env: ToolEnv): McpTool[] {
           args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p')
           if (!a.mute) args.push('-c:a', 'aac')
           args.push('-movflags', '+faststart', out)
-          await exec(ffmpegBin(), args, { maxBuffer: 16 * 1024 * 1024 })
+          await exec(ffmpegBin(), args, {
+            maxBuffer: 16 * 1024 * 1024,
+            timeout: FFMPEG_TIMEOUT_MS,
+          })
           const made = await env.assets.ingest(env.ownerId, createReadStream(out), {
             mime: 'video/mp4',
             name: `${a.name ?? 'edit'}.mp4`,
