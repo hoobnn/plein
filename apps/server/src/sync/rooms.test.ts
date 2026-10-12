@@ -61,3 +61,36 @@ describe('房间生命周期', () => {
     expect(rooms.has('c')).toBe(false)
   })
 })
+
+describe('写库合并', () => {
+  it('短时间内的多条更新合并成一条写入，内容不丢', () => {
+    vi.useFakeTimers()
+    const store = memoryStore()
+    const rooms = new Rooms(store)
+    const { room, release } = rooms.acquire('d')
+    const m = room.doc.getMap('m')
+    for (let i = 0; i < 20; i++) m.set(`k${i}`, i)
+    expect(store.load('d')).toHaveLength(0)
+    vi.advanceTimersByTime(100)
+    expect(store.load('d')).toHaveLength(1)
+
+    const reloaded = new Y.Doc()
+    for (const u of store.load('d')) Y.applyUpdate(reloaded, u)
+    expect(reloaded.getMap('m').get('k19')).toBe(19)
+    release()
+  })
+
+  it('卸载前还没写库的更新随快照落盘', () => {
+    vi.useFakeTimers()
+    const store = memoryStore()
+    const rooms = new Rooms(store)
+    const lease = rooms.acquire('e')
+    lease.room.doc.getMap('m').set('x', 1)
+    lease.release()
+    rooms.unload('e')
+    expect(rooms.has('e')).toBe(false)
+    const reloaded = new Y.Doc()
+    for (const u of store.load('e')) Y.applyUpdate(reloaded, u)
+    expect(reloaded.getMap('m').get('x')).toBe(1)
+  })
+})

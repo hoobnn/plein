@@ -11,6 +11,10 @@ const MESSAGE_AWARENESS = 1
 const COMPACT_AFTER = 500
 /** 没有连接、也没有服务端租约后多久卸载文档 */
 const UNLOAD_DELAY_MS = 30_000
+/** 增量先攒一会儿再合并成一条写库：拖动、输入时每秒几十条更新只落几次盘 */
+const WRITE_DELAY_MS = 50
+/** 攒的增量超过这么大立即写，免得粘贴大段内容时内存里压太多 */
+const WRITE_MAX_BYTES = 1 << 20
 
 /** 一个 WebSocket 连接；与具体的 WS 库解耦，便于测试 */
 export interface Conn {
@@ -34,7 +38,12 @@ export class Room {
   private conns = new Map<Conn, ConnState>()
   /** 服务端代码（任务、整组运行）持有的租约数；有租约时不卸载 */
   private leases = 0
+  /** 已写库、尚未合并的增量条数 */
   private pending = 0
+  /** 还没写库的增量 */
+  private buffer: Uint8Array[] = []
+  private bufferBytes = 0
+  private writeTimer: NodeJS.Timeout | null = null
   private unloadTimer: NodeJS.Timeout | null = null
 
   constructor(
@@ -46,14 +55,12 @@ export class Room {
     this.awareness.setLocalState(null)
 
     this.doc.on('update', (update: Uint8Array, origin: unknown) => {
-      if (origin !== this) {
-        store.append(id, update)
-        if (++this.pending >= COMPACT_AFTER) this.compact()
-      }
+      if (origin !== this) this.persist(update)
       const enc = encoding.createEncoder()
       encoding.writeVarUint(enc, MESSAGE_SYNC)
       syncProtocol.writeUpdate(enc, update)
-      this.broadcast(encoding.toUint8Array(enc))
+      // 发起方已经有这条更新，不用回传
+      this.broadcast(encoding.toUint8Array(enc), origin)
     })
 
     this.awareness.on(
@@ -167,14 +174,48 @@ export class Room {
     }
   }
 
-  /** 把所有增量合并成一条快照 */
+  /** 增量进缓冲区，定时合并写库 */
+  private persist(update: Uint8Array) {
+    this.buffer.push(update)
+    this.bufferBytes += update.byteLength
+    if (this.bufferBytes >= WRITE_MAX_BYTES) this.flush()
+    else if (!this.writeTimer) {
+      this.writeTimer = setTimeout(() => this.flush(), WRITE_DELAY_MS)
+      this.writeTimer.unref?.()
+    }
+  }
+
+  /** 把缓冲的增量合并成一条写库；攒够条数再整体合并成快照 */
+  flush() {
+    if (this.writeTimer) {
+      clearTimeout(this.writeTimer)
+      this.writeTimer = null
+    }
+    if (this.buffer.length === 0) return
+    const merged = this.buffer.length === 1 ? this.buffer[0]! : Y.mergeUpdates(this.buffer)
+    this.buffer = []
+    this.bufferBytes = 0
+    this.store.append(this.id, merged)
+    if (++this.pending >= COMPACT_AFTER) this.compact()
+  }
+
+  /**
+   * 把所有增量合并成一条快照。缓冲里没写库的增量直接丢弃是安全的：快照编码的是整个文档，已经包含它们。
+   * 进程被强杀时最多丢最近 WRITE_DELAY_MS 内的更新；客户端重连时会把它们重新同步上来。
+   */
   compact() {
+    if (this.writeTimer) clearTimeout(this.writeTimer)
+    this.writeTimer = null
+    this.buffer = []
+    this.bufferBytes = 0
     this.store.replace(this.id, Y.encodeStateAsUpdate(this.doc))
     this.pending = 0
   }
 
   /** 关闭所有连接并释放（画布被删除或服务关闭） */
   close(code = 1001, reason = 'closing') {
+    if (this.writeTimer) clearTimeout(this.writeTimer)
+    this.writeTimer = null
     for (const conn of this.conns.keys()) conn.close(code, reason)
     this.conns.clear()
     if (this.unloadTimer) clearTimeout(this.unloadTimer)
@@ -182,8 +223,8 @@ export class Room {
     this.doc.destroy()
   }
 
-  private broadcast(data: Uint8Array) {
-    for (const conn of this.conns.keys()) conn.send(data)
+  private broadcast(data: Uint8Array, except?: unknown) {
+    for (const conn of this.conns.keys()) if (conn !== except) conn.send(data)
   }
 }
 
