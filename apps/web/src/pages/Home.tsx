@@ -1,6 +1,8 @@
 import type { Project } from '@plein/protocol'
-import { useCallback, useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { api } from '../api/client'
+import { invalidateProjects, queryClient, queryKeys } from '../api/query'
 import { queueStartNode } from '../canvas/start'
 import { navigate, routeHash } from '../router'
 import { useLibrary } from '../stores/library'
@@ -25,22 +27,17 @@ const QUICK_START: Array<{ type: string; title: string; hint: string; icon: Icon
 export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   const info = useSession((s) => s.info)
   const refreshSession = useSession((s) => s.refresh)
-  const [projects, setProjects] = useState<Project[] | null>(null)
+  // 回到首页时先显示上次的列表，同时重新拉（在画布里改过的标题、更新时间）
+  const list = useQuery({
+    queryKey: queryKeys.projects,
+    queryFn: api.projects,
+    refetchOnMount: 'always',
+  })
+  const projects = list.data ?? null
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [creating, setCreating] = useState(false)
   const [scrolled, setScrolled] = useState(false)
-
-  const load = useCallback(async () => {
-    try {
-      setProjects(await api.projects())
-    } catch (err) {
-      setError((err as Error).message)
-    }
-  }, [])
-  useEffect(() => {
-    void load()
-  }, [load])
 
   const create = async (start?: string) => {
     if (creating) return
@@ -57,7 +54,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   }
   const rename = async (p: Project, title: string) => {
     await api.renameProject(p.id, title)
-    await load()
+    await invalidateProjects()
   }
   const remove = async (p: Project) => {
     const ok = await confirmDialog({
@@ -68,10 +65,11 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
     })
     if (!ok) return
     await api.deleteProject(p.id)
-    await load()
+    await invalidateProjects()
   }
   const logout = async () => {
     await api.logout()
+    queryClient.clear()
     await refreshSession()
   }
 
@@ -181,7 +179,9 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
           ))}
         </section>
 
-        {error && <p className="text-sm text-danger">加载失败：{error}</p>}
+        {(error ?? list.error) && (
+          <p className="text-sm text-danger">加载失败：{error ?? list.error?.message}</p>
+        )}
 
         {shown && (
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">

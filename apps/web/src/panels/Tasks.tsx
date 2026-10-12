@@ -1,8 +1,10 @@
 import type { Engine } from '@plein/canvas-core'
 import type { PleinDoc } from '@plein/doc'
 import type { Catalog, GroupInfo, JobInfo, JobList } from '@plein/protocol'
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { api } from '../api/client'
+import { queryKeys } from '../api/query'
 import { findNode } from '../canvas/nodes'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
@@ -59,49 +61,36 @@ function groupName(g: GroupInfo, doc: PleinDoc, catalog: Catalog | null) {
   return g.scope === 'upstream' ? `运行到「${name}」` : `从「${name}」往下`
 }
 
+const hasActive = (list: JobList) =>
+  list.jobs.some((j) => isActive(j.status)) || list.groups.some((g) => g.status === 'running')
+
 /** 右侧任务面板：整组运行、排队和运行中的任务、最近结束的任务 */
 export function Tasks() {
   const open = useCanvas((s) => s.tasks)
   const engine = useCanvas((s) => s.engine)
   const canvasId = useCanvas((s) => s.canvasId)
   const catalog = useCatalog((s) => s.catalog)
-  const [list, setList] = useState<JobList | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [now, setNow] = useState(Date.now())
   const sig = useSyncExternalStore(
     (notify) => engine?.doc.subscribe(notify) ?? (() => {}),
     () => (engine ? runSignature(engine.doc) : ''),
   )
-  // 打开时轮询：有任务在跑时每秒一次，否则慢一点；节点状态变化时立即刷新
+  // 打开时轮询：有任务在跑时每秒一次，否则慢一点；节点状态变化（sig）时立即刷新
+  const query = useQuery({
+    queryKey: queryKeys.canvasJobs(canvasId ?? ''),
+    queryFn: () => api.canvasJobs(canvasId!),
+    enabled: open && !!canvasId,
+    staleTime: 0,
+    refetchInterval: (q) => (q.state.data && hasActive(q.state.data) ? 1000 : 5000),
+    refetchIntervalInBackground: true,
+  })
+  const list = query.data ?? null
+  const error = query.error?.message
+  const now = query.dataUpdatedAt
+  const refetch = query.refetch
   // biome-ignore lint/correctness/useExhaustiveDependencies: sig 变化（节点开始、结束）时重新拉取
   useEffect(() => {
-    if (!open || !canvasId) return
-    let stopped = false
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const load = async () => {
-      clearTimeout(timer)
-      try {
-        const next = await api.canvasJobs(canvasId)
-        if (stopped) return
-        setList(next)
-        setError(null)
-        setNow(Date.now())
-        const active =
-          next.jobs.some((j) => isActive(j.status)) ||
-          next.groups.some((g) => g.status === 'running')
-        timer = setTimeout(load, active ? 1000 : 5000)
-      } catch (err) {
-        if (stopped) return
-        setError((err as Error).message)
-        timer = setTimeout(load, 5000)
-      }
-    }
-    void load()
-    return () => {
-      stopped = true
-      clearTimeout(timer)
-    }
-  }, [open, canvasId, sig])
+    if (open && canvasId) void refetch({ cancelRefetch: false })
+  }, [sig, refetch])
 
   useEffect(() => {
     if (!open) return

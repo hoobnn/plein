@@ -1,6 +1,8 @@
-import type { Canvas, Project } from '@plein/protocol'
-import { useCallback, useEffect, useState } from 'react'
+import type { Canvas } from '@plein/protocol'
+import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { api } from '../api/client'
+import { invalidateProjects, queryClient, queryKeys } from '../api/query'
 import { navigate } from '../router'
 import { useCanvas } from '../stores/canvas'
 import { confirmDialog, promptDialog } from '../ui/Dialog'
@@ -9,9 +11,6 @@ import { InlineTitle } from '../ui/InlineTitle'
 import { Popover } from '../ui/Popover'
 import { Presence } from '../ui/Presence'
 import { forgetLocalCache } from '../canvas/localCache'
-
-/** 读过的项目，按 id */
-const projects = new Map<string, Project>()
 
 const fail = (err: unknown) => useCanvas.getState().notify((err as Error).message)
 
@@ -26,26 +25,19 @@ export function ProjectSwitcher({
   canvas: Canvas
   onCanvas(c: Canvas): void
 }) {
-  // 侧栏展开收起、切故事板时会换位置重新挂载，先用上次读到的，免得项目名闪成「…」
-  const [project, setProject] = useState<Project | null>(
-    () => projects.get(canvas.projectId) ?? null,
-  )
-  const [canvases, setCanvases] = useState<Canvas[]>([])
+  // 侧栏展开收起、切故事板时会换位置重新挂载，查询缓存里有上次读到的，项目名不会闪成「…」
+  const project =
+    useQuery({
+      queryKey: queryKeys.project(canvas.projectId),
+      queryFn: () => api.project(canvas.projectId),
+    }).data ?? null
+  const canvasList = useQuery({
+    queryKey: queryKeys.projectCanvases(canvas.projectId),
+    queryFn: () => api.projectCanvases(canvas.projectId),
+  })
+  const canvases = canvasList.data ?? []
   const [renaming, setRenaming] = useState(false)
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
-
-  const load = useCallback(async () => {
-    const [p, list] = await Promise.all([
-      api.project(canvas.projectId),
-      api.projectCanvases(canvas.projectId),
-    ])
-    projects.set(p.id, p)
-    setProject(p)
-    setCanvases(list)
-  }, [canvas.projectId])
-  useEffect(() => {
-    load().catch(() => {})
-  }, [load])
 
   const close = () => setAnchor(null)
   const renameProject = async (title: string | null) => {
@@ -53,8 +45,8 @@ export function ProjectSwitcher({
     if (project && title && title !== project.title) {
       try {
         const next = await api.renameProject(project.id, title)
-        projects.set(next.id, next)
-        setProject(next)
+        queryClient.setQueryData(queryKeys.project(next.id), next)
+        void invalidateProjects()
       } catch (err) {
         fail(err)
       }
@@ -72,6 +64,7 @@ export function ProjectSwitcher({
     if (!title) return
     try {
       const c = await api.createCanvas(canvas.projectId, title)
+      void invalidateProjects()
       navigate({ name: 'canvas', id: c.id })
     } catch (err) {
       fail(err)
@@ -88,7 +81,7 @@ export function ProjectSwitcher({
     if (!title || title === canvas.title) return
     try {
       onCanvas(await api.renameCanvas(canvas.id, title))
-      await load()
+      await invalidateProjects()
     } catch (err) {
       fail(err)
     }
@@ -105,6 +98,7 @@ export function ProjectSwitcher({
     try {
       await api.deleteCanvas(canvas.id)
       forgetLocalCache(canvas.id)
+      void invalidateProjects()
     } catch (err) {
       return fail(err)
     }
@@ -141,7 +135,7 @@ export function ProjectSwitcher({
         onClick={(e) => {
           if (anchor) return close()
           setAnchor(e.currentTarget)
-          void load().catch(() => {})
+          void canvasList.refetch()
         }}
         className="ui-bar-btn max-w-52 gap-1 font-medium text-ink"
       >
