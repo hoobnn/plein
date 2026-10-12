@@ -22,7 +22,7 @@ type Cap = CapabilityDefinition<z.ZodObject, ServerContext>
  * 确认策略（调度层，不散进各个能力）：
  * - auto：全部直接执行；
  * - always：花钱（run）和破坏性（destructive）的都问；
- * - rules（默认）：视频生成、整组 / 上下游运行、删用户已有的东西、一轮里运行超过 RUN_LIMIT 次才问。
+ * - rules（默认）：视频生成、整组 / 上下游 / 分镜批量运行、删用户已有的东西、一轮里运行超过 RUN_LIMIT 次才问。
  */
 export function approvalFor(
   mode: AgentApprovalMode,
@@ -52,6 +52,11 @@ export function approvalFor(
       reason: `整组运行 ${name(frame)}${input.video ? '（包括视频）' : ''}`,
       ids: [frame],
     }
+  }
+  if (cap.name === 'run_storyboard') {
+    const board = String(input.id)
+    const what = { image: '分镜图', video: '镜头视频', speech: '配音' }[String(input.role)] ?? ''
+    return { reason: `批量生成${name(board)}的${what}`, ids: [board] }
   }
   if (cap.name === 'run_flow') {
     const node = String(input.id)

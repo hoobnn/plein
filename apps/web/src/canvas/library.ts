@@ -1,28 +1,20 @@
+import {
+  type CardRef,
+  cardSnapshot as cardSnapshotIn,
+  findPlacedCard as findPlacedCardIn,
+  placeLibraryCard,
+  REF_COL_GAP,
+  REF_W,
+} from '@plein/capabilities'
 import type { Engine } from '@plein/canvas-core'
-import {
-  type CanvasElement,
-  connect,
-  createElement,
-  currentResult,
-  type NewElement,
-  setParam,
-} from '@plein/doc'
-import {
-  type LibraryKindSpec,
-  libraryKind,
-  libraryKindOfNode,
-  orderedImages,
-  slotImages,
-  voiceOf,
-} from '@plein/nodes'
+import { type CanvasElement, setParam } from '@plein/doc'
+import { type LibraryKindSpec, libraryKind, orderedImages } from '@plein/nodes'
 import type { Asset, Catalog, CreateLibraryItem, LibraryItem } from '@plein/protocol'
 import { assetUrls } from '../api/client'
 import { loadAssetMeta } from '../stores/assetMeta'
 import type { LibrarySeed } from '../stores/library'
 import { mediaOf } from './grid'
-import { elementFor } from './import'
 import { findNode, mentionTargets, nodeElement } from './nodes'
-import { outputPort } from './presets'
 
 /**
  * 资产库与画布之间的往返：
@@ -50,16 +42,10 @@ export interface PlaceResult {
 }
 
 /** 素材在卡片左侧排成一列，宽度统一 */
-const REF_W = 180
-const REF_GAP = 24
-const COL_GAP = 80
 
 /** 画布上已经有这条资产展开出来的卡片 */
-export function findPlacedCard(engine: Engine, libraryId: string) {
-  for (const el of engine.doc.elements())
-    if (el.kind === 'node' && el.params?.libraryId === libraryId) return el
-  return undefined
-}
+export const findPlacedCard = (engine: Engine, libraryId: string) =>
+  findPlacedCardIn(engine.doc, libraryId)
 
 /** 从 at 起往右找一块放得下 [x-left, x+w] × [y, y+h] 的空地，返回卡片左上角 */
 function freeSpot(
@@ -123,7 +109,7 @@ export async function placeLibraryItem(
   const view = engine.camera.viewRect
   const base = nodeElement(info)
   // 卡片 + 左侧素材列一起找空地，从视口中央往右挪，不压住已有元素
-  const left = assets.length ? REF_W + COL_GAP : 0
+  const left = assets.length ? REF_W + REF_COL_GAP : 0
   const card = freeSpot(engine, {
     x: Math.round(view.x + view.w / 2 - (base.w - left) / 2),
     y: Math.round(view.y + view.h / 2 - base.h / 2),
@@ -139,38 +125,17 @@ export async function placeLibraryItem(
   }
   const duplicate = mentionTargets(engine).some((t) => t.name === input.name)
 
-  let cardId = ''
-  let loose = 0
-  engine.doc.ydoc.transact(() => {
-    cardId = createElement(engine.doc, {
-      ...base,
-      name: input.name,
-      x: card.x,
-      y: card.y,
-      params,
-    } as NewElement)
-    // 素材列以卡片竖直居中
-    const sized = assets.flatMap((a) => {
-      const el = elementFor(a)
-      if (!el) return []
-      const h = Math.round((el.h / el.w) * REF_W)
-      return [{ el: { ...el, w: REF_W, h }, asset: a }]
-    })
-    const total = sized.reduce((s, x) => s + x.el.h, 0) + REF_GAP * Math.max(0, sized.length - 1)
-    let y = card.y + base.h / 2 - total / 2
-    for (const { el } of sized) {
-      const id = createElement(engine.doc, {
-        ...el,
-        x: card.x - COL_GAP - REF_W,
-        y: Math.round(y),
-      } as NewElement)
-      y += el.h + REF_GAP
-      const created = engine.doc.get(id)
-      const port = created && outputPort(created, el.kind === 'video' ? 'video' : 'image')
-      if (!port || !connect(engine.doc, [id, port.id], [cardId, 'references'])) loose++
-    }
-  }, engine.doc.origin)
-  engine.doc.flush()
+  const refs: CardRef[] = assets.flatMap((a) =>
+    a.kind === 'image' || a.kind === 'video'
+      ? [{ kind: a.kind, assetId: a.id, name: a.name, width: a.width, height: a.height }]
+      : [],
+  )
+  const { id: cardId, loose } = placeLibraryCard(
+    engine.doc,
+    { ...base, name: input.name, params },
+    card,
+    refs,
+  )
   engine.selection.set([cardId])
   engine.setTool('select')
   // 为了不压住已有元素挪出了视口时，镜头跟过去
@@ -187,36 +152,9 @@ export async function placeLibraryItem(
   }
 }
 
-/** 卡片连入 references 的素材：素材元素或上游节点当前采用的结果 */
-function referenceAssets(engine: Engine, el: CanvasElement, type: 'image' | 'video') {
-  return [...engine.doc.edges()]
-    .filter((e) => e.to[0] === el.id && e.to[1] === 'references')
-    .flatMap((e) => {
-      const src = engine.doc.get(e.from[0])
-      if (src?.kind === type && src.assetId) return [src.assetId]
-      const r = src?.kind === 'node' ? currentResult(src, e.from[1])?.value : undefined
-      return r?.type === type ? [r.assetId] : []
-    })
-}
-
 /** 卡片当前内容，整理成资产库条目 */
-export function cardSnapshot(engine: Engine, el: CanvasElement, projectId: string | null) {
-  const kind = libraryKindOfNode(el.nodeType)
-  if (!kind) return null
-  const images = slotImages(kind, referenceAssets(engine, el, 'image'))
-  const videos = kind.video ? referenceAssets(engine, el, 'video') : []
-  const voice = kind.voice ? voiceOf(el.params) : null
-  const body: CreateLibraryItem = {
-    kind: kind.id,
-    name: (el.name ?? kind.title).trim().slice(0, 60) || kind.title,
-    projectId,
-    description: String(el.params?.description ?? ''),
-    images,
-    video: videos[0] ?? null,
-    voice: voice?.voiceId ? voice : null,
-  }
-  return { kind, body }
-}
+export const cardSnapshot = (engine: Engine, el: CanvasElement, projectId: string | null) =>
+  cardSnapshotIn(engine.doc, el, projectId)
 
 /**
  * 卡片存入资产库：卡片记着条目 id 且条目还在时更新它（保留已有图片的槽位、标签和收藏），

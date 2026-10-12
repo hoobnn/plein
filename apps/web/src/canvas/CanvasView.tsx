@@ -7,6 +7,7 @@ import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
 import { assetUrls, syncUrl } from '../api/client'
 import { navigate } from '../router'
+import { useAgent } from '../stores/agent'
 import { loadAssetMeta } from '../stores/assetMeta'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
@@ -109,7 +110,15 @@ export function CanvasView({ source }: { source: CanvasSource }) {
           const detach = attach(engine)
           // 端到端测试读画布状态、换算节点屏幕坐标用；只有 e2e 构建（--mode e2e）才有，正式构建会被摇掉
           const e2e = import.meta.env.MODE === 'e2e'
-          if (e2e) (window as { __plein?: unknown }).__plein = { engine }
+          if (e2e)
+            (window as { __plein?: unknown }).__plein = {
+              engine,
+              // 模拟小满改动了这些元素（光晕 + 光标）
+              agentTouch: (ids: string[]) => {
+                engine.flash(ids)
+                useAgent.setState({ cursor: { ids, at: Date.now() } })
+              },
+            }
           // 开发时方便在控制台调试
           if (import.meta.env.DEV) (window as { plein?: unknown }).plein = engine
           const off = attachImport(engine, host, { setImporting, notify })

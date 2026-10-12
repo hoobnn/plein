@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { placeStartNode } from '../canvas/start'
 import { CanvasMenus } from '../panels/CanvasMenus'
+import { AgentCursor } from '../panels/AgentCursor'
 import { CommandPalette } from '../panels/CommandPalette'
 import { ArrangeToast } from '../panels/ArrangeToast'
 import { Board } from '../panels/Board'
@@ -175,6 +176,7 @@ export function Editor({
       <SequenceEditor />
       <Shortcuts />
       <CommandPalette canvasId={canvasId} />
+      <AgentCursor />
       <History />
       {source.kind === 'remote' && <Tasks />}
       <Viewer />

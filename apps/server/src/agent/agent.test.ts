@@ -19,10 +19,10 @@ beforeAll(async () => {
     body: '{}',
   })
   canvasId = ((await res.json()) as Canvas).id
-  const { rooms, runs, plugins, assets } = running.server
+  const { rooms, runs, plugins, assets, library } = running.server
   mcp = new McpServer(
     { name: 'plein', version: 'test' },
-    canvasTools({ canvasId, ownerId: 'local', rooms, runs, host: plugins, assets }),
+    canvasTools({ canvasId, ownerId: 'local', rooms, runs, host: plugins, assets, library }),
   )
 })
 
@@ -118,6 +118,33 @@ describe('智能体 MCP', () => {
     expect(el.params.prompt).toContain('【mock】')
     // 没有展开结果的节点不能生成设定卡，原因说清楚
     expect((await call('extract_cast', { id: image.id })).text).toContain('抽取结果')
+  })
+
+  it('资产库：搜索、用到画布上、存回去', async () => {
+    const lib = running.server.library
+    const made = lib.create('local', {
+      kind: 'character',
+      name: '林夏',
+      projectId: null,
+      description: '短发，白衬衫',
+      tags: {},
+      voice: null,
+      images: [],
+      video: null,
+      models: [],
+    })
+    const found = (await call('search_library', { query: '白衬衫' })).json()
+    expect(found.items.map((i: { id: string }) => i.id)).toContain(made.id)
+    const placed = (await call('place_library_item', { item_id: made.id })).json()
+    expect(placed.existed).toBe(false)
+    expect((await call('place_library_item', { item_id: made.id })).json()).toMatchObject({
+      id: placed.id,
+      existed: true,
+    })
+    await call('update_element', { id: placed.id, params: { description: '短发，红裙子' } })
+    const saved = (await call('save_to_library', { id: placed.id })).json()
+    expect(saved).toEqual({ item_id: made.id, created: false })
+    expect(lib.get('local', made.id)?.description).toBe('短发，红裙子')
   })
 
   it('参数不对、元素不存在时把原因告诉模型', async () => {
@@ -359,6 +386,10 @@ describe('确认关卡与界面能力', () => {
     gate.approvals.expireAll()
     expect(gate.decided).toContain('run_frame:expired')
     expect(gate.approvals.decide(gated.approval_id, true)).toBe(false)
+    // 分镜批量运行同样要确认
+    const board = (await gate.call('create_node', { type: 'plein/storyboard' })).json()
+    const batch = (await gate.call('run_storyboard', { id: board.id, role: 'image' })).json()
+    expect(batch.status).toBe('needs_approval')
     gate.changes.end()
     gate.changes.release()
 

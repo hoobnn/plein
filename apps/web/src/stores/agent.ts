@@ -30,6 +30,8 @@ interface AgentStore {
   /** 面板关着时有新回复 */
   unread: boolean
   mood: Mood
+  /** 小满刚改过的元素：画布上的 AI 光标飘过去 */
+  cursor: { ids: string[]; at: number } | null
   error: string | null
   toggle(open?: boolean): void
   loadStatus(refresh?: boolean): Promise<void>
@@ -106,7 +108,9 @@ export const useAgent = create<AgentStore>((set, get) => {
       }
       if (e.type === 'touch') {
         // 智能体刚改过的元素在画布上闪一下光晕
-        if (get().canvasId === cur.canvasId) useCanvas.getState().engine?.flash(e.ids)
+        if (get().canvasId !== cur.canvasId) return
+        useCanvas.getState().engine?.flash(e.ids)
+        set({ cursor: { ids: e.ids, at: Date.now() } })
         return
       }
       if (e.type === 'item') {
@@ -148,6 +152,7 @@ export const useAgent = create<AgentStore>((set, get) => {
     approval: savedApproval(),
     canvasId: null,
     sessions: [],
+    cursor: null,
     session: null,
     unread: false,
     mood: 'idle',

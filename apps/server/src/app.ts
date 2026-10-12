@@ -12,6 +12,7 @@ import { assetRoutes } from './http/assets'
 import { canvasRoutes } from './http/canvases'
 import { previewer } from './storage/previews'
 import { desktopGuard, originGuard } from './http/guard'
+import { LibraryStore } from './library/store'
 import { libraryRoutes } from './http/library'
 import { mediaRoutes } from './http/media'
 import { projectRoutes } from './http/projects'
@@ -38,6 +39,7 @@ export interface Server {
   secrets: Secrets
   runs: NodeRuns
   agents: AgentSessions
+  library: LibraryStore
   close(): void
 }
 
@@ -56,8 +58,10 @@ export async function createServer(config: Config): Promise<Server> {
   plugins.load(builtinPlugins({ mock: config.mockProvider }), true)
   const auth = await createAuth(config.auth, db, secrets, { publicUrl: config.publicUrl })
   const runs = new NodeRuns(db, rooms, plugins, { concurrency: config.maxJobs })
+  const library = new LibraryStore(db)
   const agents = new AgentSessions({
     db,
+    library,
     rooms,
     runs,
     host: plugins,
@@ -89,7 +93,7 @@ export async function createServer(config: Config): Promise<Server> {
   const preview = previewer(db)
   app.route('/', projectRoutes(db, rooms, preview))
   app.route('/', canvasRoutes(db, rooms, preview))
-  app.route('/', libraryRoutes(db))
+  app.route('/', libraryRoutes(db, library))
   app.route('/', templateRoutes(db))
   app.route('/', assetRoutes(assets))
   app.route('/', mediaRoutes(assets))
@@ -120,6 +124,7 @@ export async function createServer(config: Config): Promise<Server> {
     secrets,
     runs,
     agents,
+    library,
     close() {
       agents.close()
       runs.close()

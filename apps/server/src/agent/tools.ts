@@ -16,6 +16,8 @@ import {
   need,
   placeNew,
   resultSummary,
+  runExpanded,
+  shotsOf,
   summarize,
 } from '@plein/capabilities'
 import { currentResult, elementMedia, mediaSize, type PleinDoc, setParams } from '@plein/doc'
@@ -34,9 +36,11 @@ import { ffmpegBin, hasFfmpeg } from '../assets/media'
 import type { AssetStore } from '../assets/store'
 import { NodeRunError, type PluginHost } from '../plugins/host'
 import type { NodeRuns } from '../runs/runs'
+import type { LibraryStore } from '../library/store'
 import type { Rooms } from '../sync/rooms'
 import { type Approvals, approvalFor } from './approvals'
 import type { AgentChanges } from './changes'
+import { libraryCapabilities } from './library'
 import { capabilityTools, type McpTool, type ToolResult } from './mcp'
 
 const exec = promisify(execFile)
@@ -49,6 +53,8 @@ export interface ToolEnv {
   runs: NodeRuns
   host: PluginHost
   assets: AssetStore
+  /** 资产库（测试里可以不给） */
+  library?: LibraryStore
   /** 文档写入的事务 origin：智能体会话用自己的 origin，改动集和撤销按它归属 */
   origin?: unknown
   /** 发起了一次运行（记进改动集，撤销这一轮时一并取消） */
@@ -538,12 +544,53 @@ const rewrite = serverCapability({
   },
 })
 
+const runStoryboard = serverCapability({
+  name: 'run_storyboard',
+  title: '批量运行分镜',
+  description:
+    '批量运行分镜展开出来的某一类节点：image（分镜图）、video（镜头视频，要等分镜图有结果）、speech（配音）。会产生费用，需要用户确认。返回发起的运行和跳过的原因，之后用 wait_for_run 逐个等结果。',
+  group: 'run',
+  where: 'server',
+  effect: 'run',
+  input: z.object({
+    id: id.describe('分镜节点'),
+    role: z.enum(['image', 'video', 'speech']),
+    shot_ids: z.array(z.string()).optional().describe('只跑这些镜头；不填跑全部'),
+  }),
+  run: (ctx, a) => {
+    const { env } = ctx
+    const picked: string[] = []
+    const batch = ctx.withDoc((doc) => {
+      const shots = shotsOf(need(doc, a.id))
+      if (!shots.length) throw new CapabilityError(`${a.id} 不是分镜节点，或还没有镜头`)
+      return runExpanded(doc, a.id, a.shot_ids ?? shots.map((s) => s.id), a.role, (n) =>
+        picked.push(n),
+      )
+    })
+    const started: Array<{ id: string; run_id: string }> = []
+    const failed: Array<{ id: string; error: string }> = []
+    for (const nodeId of picked) {
+      try {
+        const runId = env.runs.start(env.canvasId, nodeId, env.ownerId)
+        env.onRun?.(nodeId, runId)
+        started.push({ id: nodeId, run_id: runId })
+      } catch (err) {
+        if (!(err instanceof NodeRunError)) throw err
+        failed.push({ id: nodeId, error: err.message })
+      }
+    }
+    return { started, skipped: batch.skipped, reasons: batch.reasons, failed }
+  },
+})
+
 /** 服务端可用的全部能力：画布读写（前后端共用）+ 运行、媒体 */
 export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   ...(canvasCapabilities as never[]),
   ...(editCapabilities as never[]),
   ...(storyCapabilities as never[]),
   ...(promptCapabilities as never[]),
+  ...libraryCapabilities,
+  runStoryboard,
   rewrite,
   runNode,
   waitForRun,
