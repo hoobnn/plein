@@ -9,7 +9,12 @@ jobs:
       # Conventional Branch v1.1.0：https://conventionalbranch.org/
       - env:
           BRANCH: ${{ github.head_ref }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
+          # Dependabot 自动生成多层分支名；仅放行真正的机器人 PR。
+          if [ "$PR_AUTHOR" = 'dependabot[bot]' ]; then
+            case "$BRANCH" in dependabot/*) exit 0 ;; esac
+          fi
           pattern='^(main|master|develop|(feature|feat|bugfix|fix|hotfix|release|chore|ai|copilot|cursor|claude|codex)/[a-z0-9]+(\.[a-z0-9]+)*(-[a-z0-9]+(\.[a-z0-9]+)*)*)$'
           if ! printf '%s' "$BRANCH" | grep -qE "$pattern"; then
             echo "::error::分支名 '$BRANCH' 不符合 Conventional Branch 规范，格式：<type>/<description>"

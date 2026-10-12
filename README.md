@@ -76,6 +76,16 @@ pnpm start:desktop       # 先构建服务端和前端，再用构建产物启�
 
 三层强制：husky `pre-push` 本地拦截；GitHub 规则集（`.github/rulesets/conventional-branch.json`）禁止创建前缀不合规的分支；`Branch name` CI 用完整正则校验 PR 分支。
 
+Dependabot 的 `dependabot/*` 自动分支是保留例外；PR 检查同时核验作者必须为 `dependabot[bot]`。手动创建同前缀的 PR 仍会被命名检查拒绝。
+
+## 依赖检查
+
+- Dependabot 每周一北京时间 09:00 检查整个 pnpm workspace 和 GitHub Actions，提出更新 PR。生产与开发依赖的 minor / patch 分组更新，major 单独评审；不自动合并。
+- `Dependency security / dependency-review` 检查 PR 引入的依赖，新增 high / critical 漏洞时失败。
+- `Dependency security / dependency-audit` 用原生 `pnpm audit` 检查完整锁文件，覆盖生产、开发和间接依赖。PR、main 推送、每周定时及手动触发均运行；high / critical 漏洞阻断，不忽略审计服务错误。本地可运行 `pnpm audit:deps`。
+
+pnpm 12 锁文件包含多份 YAML 文档，上游依赖图解析仍有[兼容问题](https://github.com/dependabot/dependabot-core/issues/15904)，因此保留原生审计补足依赖图的覆盖。检查依据已知漏洞数据库，不代表所有依赖风险都已消除。若需要阻止漏洞 PR 合并，应在 main 的合并规则里把上述两个 job 设为必需检查。
+
 ## 许可证
 
 [GNU AGPL v3.0](LICENSE)：允许商用、修改与分发，但衍生作品（包括通过网络提供的服务）必须以相同许可证开源。

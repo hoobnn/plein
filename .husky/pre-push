@@ -2,6 +2,9 @@
 pattern='^(main|master|develop|(feature|feat|bugfix|fix|hotfix|release|chore|ai|copilot|cursor|claude|codex)/[a-z0-9]+(\.[a-z0-9]+)*(-[a-z0-9]+(\.[a-z0-9]+)*)*)$'
 branch=$(git symbolic-ref --short HEAD)
 
+# 允许维护 Dependabot 的自动更新分支；PR 上由 CI 核验机器人身份。
+case "$branch" in dependabot/*) exit 0 ;; esac
+
 if ! printf '%s' "$branch" | grep -qE "$pattern"; then
   echo "分支名 '$branch' 不符合 Conventional Branch 规范。" >&2
   echo "格式：<type>/<description>，例如 feature/add-login-page。" >&2

@@ -20,7 +20,9 @@
         "refs/heads/copilot/*",
         "refs/heads/cursor/*",
         "refs/heads/claude/*",
-        "refs/heads/codex/*"
+        "refs/heads/codex/*",
+        "refs/heads/dependabot/*",
+        "refs/heads/dependabot/**/*"
       ]
     }
   },

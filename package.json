@@ -18,6 +18,7 @@
     "start": "pnpm --filter @plein/server start",
     "typecheck": "pnpm -r typecheck && tsc -p .",
     "lint": "biome check .",
+    "audit:deps": "pnpm audit --audit-level=high",
     "format": "biome check --write .",
     "test": "vitest run",
     "prepare": "husky"
