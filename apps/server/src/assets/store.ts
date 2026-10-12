@@ -48,12 +48,12 @@ function toAsset(r: AssetRow): Asset {
   }
 }
 
-export function normalizeMime(mime: string) {
+function normalizeMime(mime: string) {
   const m = mime.split(';')[0]!.trim().toLowerCase()
   return /^[a-z]+\/[a-z0-9][a-z0-9.+-]*$/.test(m) ? m : 'application/octet-stream'
 }
 
-export function kindOf(mime: string): AssetKind {
+function kindOf(mime: string): AssetKind {
   if (mime.startsWith('image/')) return 'image'
   if (mime.startsWith('video/')) return 'video'
   if (mime.startsWith('audio/')) return 'audio'

@@ -1,10 +1,10 @@
 import type { CanvasElement, PleinDoc } from '@plein/doc'
 import {
-  ASSET_NODE_TYPES,
   findBrokenMentions,
   findMentions,
   hasVoice,
   type Mention,
+  mentionName,
   mentionProblem,
   type VoiceRef,
   voiceFitsProvider,
@@ -45,13 +45,11 @@ export interface MentionElement {
 }
 
 /** 列出可被 @ 引用的元素；重名不合并，由 `#序号` 消歧（序号顺序见 sortMentionTargets） */
-export function mentionTargets(doc: PleinDoc): MentionElement[] {
+function mentionTargets(doc: PleinDoc): MentionElement[] {
   const out: MentionElement[] = []
   for (const el of doc.elements()) {
-    const name = el.name?.trim()
-    if (!name) continue
-    const asset = el.kind === 'node' && el.nodeType && ASSET_NODE_TYPES.has(el.nodeType)
-    if (asset || (el.kind === 'image' && el.assetId)) out.push({ id: el.id, name, el })
+    const name = mentionName(el)
+    if (name) out.push({ id: el.id, name, el })
   }
   return out
 }

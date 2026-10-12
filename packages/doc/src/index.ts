@@ -11,5 +11,6 @@ export {
   SYSTEM_ORIGIN,
 } from './doc'
 export * from './layout'
+export * from './sizes'
 export { SCHEMA_VERSION } from './migrate'
 export * from './types'

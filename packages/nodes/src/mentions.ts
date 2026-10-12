@@ -202,3 +202,19 @@ export const ASSET_NODE_TYPES: ReadonlySet<string> = new Set([
   'plein/style',
   'plein/effect',
 ])
+
+/**
+ * 元素能被 @ 引用时返回它的名字（去掉首尾空白），否则 null。
+ * 资产卡（角色、场景、道具、风格、特效）和有名字的图片可以引用；前后端共用这一条规则。
+ */
+export function mentionName(el: {
+  kind: string
+  name?: string
+  nodeType?: string
+  assetId?: string
+}): string | null {
+  const name = el.name?.trim()
+  if (!name) return null
+  const asset = el.kind === 'node' && !!el.nodeType && ASSET_NODE_TYPES.has(el.nodeType)
+  return asset || (el.kind === 'image' && el.assetId) ? name : null
+}

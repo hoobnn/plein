@@ -13,7 +13,6 @@ import type {
   AgentSessionSummary,
   AgentStatus,
 } from '@plein/protocol'
-import { createDoc } from '@plein/doc'
 import type { AssetStore } from '../assets/store'
 import type { PluginHost } from '../plugins/host'
 import type { NodeRuns } from '../runs/runs'
@@ -302,17 +301,14 @@ export class AgentSessions {
   }
 
   private describeSelection(canvasId: string, ids: string[]) {
-    const doc = createDoc(this.deps.rooms.get(canvasId).doc)
-    try {
-      return ids.flatMap((id) => {
+    return this.deps.rooms.withDoc(canvasId, (doc) =>
+      ids.flatMap((id) => {
         const el = doc.get(id)
         if (!el) return []
         const label = el.kind === 'node' ? el.nodeType : el.kind
         return [`- ${id}（${label}${el.name ? `，「${el.name}」` : ''}）`]
-      })
-    } finally {
-      doc.destroy()
-    }
+      }),
+    )
   }
 
   private claudeArgs(s: Live, prompt: string) {

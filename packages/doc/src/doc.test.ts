@@ -3,10 +3,11 @@ import * as Y from 'yjs'
 import {
   addResults,
   adoptResult,
+  fitAspect,
+  MAX_RESULTS,
   currentResult,
   elementPorts,
   groupElements,
-  removeResult,
   resultHistory,
   writeRun,
   bringToFront,
@@ -20,39 +21,20 @@ import {
   exportElements,
   importElements,
   moveElements,
-  type NewElement,
-  pruneDanglingEdges,
   ReadOnlyDocError,
   SCHEMA_VERSION,
   sendToBack,
   setParams,
   setParent,
   setText,
+  ungroupElements,
   updateElement,
+  videoAssetOf,
+  elementMedia,
 } from './index'
+import { box, node, openDoc } from './testing'
 
-const manual = { schedule: () => {} }
-const open = (ydoc?: Y.Doc) => createDoc(ydoc, manual)
-
-const box = (extra: Partial<NewElement> = {}): NewElement => ({
-  kind: 'image',
-  x: 0,
-  y: 0,
-  w: 100,
-  h: 80,
-  ...extra,
-})
-
-const node = (extra: Partial<NewElement> = {}): NewElement =>
-  box({
-    kind: 'node',
-    nodeType: 'llm',
-    ports: {
-      inputs: [{ id: 'in', label: '输入', type: 'text' }],
-      outputs: [{ id: 'out', label: '输出', type: 'text' }],
-    },
-    ...extra,
-  })
+const open = openDoc
 
 /** 两端各自离线修改后互相交换全部状态 */
 function exchange(a: Y.Doc, b: Y.Doc) {
@@ -103,34 +85,23 @@ describe('元素', () => {
 })
 
 describe('并发', () => {
-  it('一端移动、另一端改参数，两边修改都保留', () => {
+  it('一端改 x、另一端改 y 和参数，两边修改都保留', () => {
     const a = open()
     const id = createElement(a, node({ params: { prompt: '旧' } }))
     const b = open(new Y.Doc())
     exchange(a.ydoc, b.ydoc)
 
     moveElements(a, [id], 50, 0)
+    updateElement(b, id, { y: 20 })
     setParams(b, id, { prompt: '新', seed: 7 })
     exchange(a.ydoc, b.ydoc)
 
     for (const d of [a, b]) {
-      expect(d.get(id)).toMatchObject({ x: 50, params: { prompt: '新', seed: 7 } })
+      expect(d.get(id)).toMatchObject({ x: 50, y: 20, params: { prompt: '新', seed: 7 } })
     }
   })
 
-  it('同时改 x 和 y 不互相覆盖', () => {
-    const a = open()
-    const id = createElement(a, box())
-    const b = open(new Y.Doc())
-    exchange(a.ydoc, b.ydoc)
-    updateElement(a, id, { x: 10 })
-    updateElement(b, id, { y: 20 })
-    exchange(a.ydoc, b.ydoc)
-    expect(a.get(id)).toMatchObject({ x: 10, y: 20 })
-    expect(b.get(id)).toMatchObject({ x: 10, y: 20 })
-  })
-
-  it('一端删除、另一端连线，悬空边在读取时被忽略，可清理', () => {
+  it('一端删除、另一端连线，悬空边在读取时被忽略', () => {
     const a = open()
     const [n1, n2] = createElements(a, [node(), node()])
     const b = open(new Y.Doc())
@@ -142,8 +113,6 @@ describe('并发', () => {
 
     expect([...a.edges()]).toHaveLength(0)
     expect(a.edgeMap.size).toBe(1)
-    pruneDanglingEdges(a)
-    expect(a.edgeMap.size).toBe(0)
   })
 
   it('并发 setParent 成环时，环上的元素按根处理', () => {
@@ -166,7 +135,7 @@ describe('并发', () => {
 
 describe('撤销', () => {
   it('撤销本地命令，不撤销远端修改', () => {
-    const a = createDoc(undefined, { ...manual, captureTimeout: 0 })
+    const a = createDoc(undefined, { schedule: () => {}, captureTimeout: 0 })
     const id = createElement(a, box())
     a.undo.stopCapturing()
     moveElements(a, [id], 30, 0)
@@ -238,6 +207,13 @@ describe('连线', () => {
     expect(connect(doc, [a!, 'out'], [a!, 'in'])).toBeNull()
   })
 
+  it('只能从输出连到输入', () => {
+    const doc = open()
+    const [a, b] = createElements(doc, [node(), node()])
+    expect(connect(doc, [a!, 'in'], [b!, 'in'])).toBeNull()
+    expect(connect(doc, [a!, 'out'], [b!, 'out'])).toBeNull()
+  })
+
   it('端口类型不兼容时拒绝，any 通配', () => {
     const doc = open()
     const image = node({
@@ -246,9 +222,13 @@ describe('连线', () => {
     const anyIn = node({
       ports: { inputs: [{ id: 'in', label: '任意', type: 'any' }], outputs: [] },
     })
-    const [t, i, x] = createElements(doc, [node(), image, anyIn])
+    const anyOut = node({
+      ports: { inputs: [], outputs: [{ id: 'out', label: '任意', type: 'any' }] },
+    })
+    const [t, i, x, y] = createElements(doc, [node(), image, anyIn, anyOut])
     expect(connect(doc, [t!, 'out'], [i!, 'in'])).toBeNull()
     expect(connect(doc, [t!, 'out'], [x!, 'in'])).not.toBeNull()
+    expect(connect(doc, [y!, 'out'], [i!, 'in'])).not.toBeNull()
   })
 })
 
@@ -320,32 +300,39 @@ describe('迁移', () => {
     expect(doc.undo.undoStack).toHaveLength(0)
   })
 
-  it('v1 生成视频节点的首帧 / 尾帧并成一个图片输入，模式按原连线推断', () => {
+  /** schemaVersion 1 的文档，带若干旧版生成视频节点 */
+  function v1Doc(videos: string[], nodeVersion = 1) {
     const ydoc = new Y.Doc()
     ydoc.getMap('meta').set('schemaVersion', 1)
     const elements = ydoc.getMap<unknown>('elements')
-    const video = (id: string) => {
+    for (const id of videos) {
       const m = new Y.Map<unknown>()
       for (const [k, v] of Object.entries({ kind: 'node', x: 0, y: 0, w: 10, h: 10, z: id }))
         m.set(k, v)
       m.set('nodeType', 'plein/video')
-      m.set('nodeVersion', 1)
+      m.set('nodeVersion', nodeVersion)
       m.set('params', new Y.Map(Object.entries({ prompt: 'p' })))
       m.set('ports', {
         inputs: [
           { id: 'prompt', label: '提示词', type: 'text', multiple: true },
           { id: 'firstFrame', label: '首帧', type: 'image' },
           { id: 'lastFrame', label: '尾帧', type: 'image' },
+          { id: 'references', label: '参考图', type: 'image', multiple: true },
         ],
         outputs: [{ id: 'video', label: '视频', type: 'video' }],
       })
       elements.set(id, m)
     }
-    video('v1')
-    video('v2')
-    const edges = ydoc.getMap<unknown>('edges')
-    edges.set('e1', { id: 'e1', from: ['a', 'image'], to: ['v1', 'firstFrame'] })
-    edges.set('e2', { id: 'e2', from: ['b', 'image'], to: ['v1', 'lastFrame'] })
+    const edges = ydoc.getMap<{ to: string[] }>('edges')
+    const wire = (id: string, from: string, to: [string, string]) =>
+      edges.set(id, { id, from: [from, 'image'], to } as never)
+    return { ydoc, edges, wire }
+  }
+
+  it('v1 生成视频节点的首帧 / 尾帧并成一个图片输入，模式按原连线推断', () => {
+    const { ydoc, wire } = v1Doc(['v1', 'v2'])
+    wire('e1', 'a', ['v1', 'firstFrame'])
+    wire('e2', 'b', ['v1', 'lastFrame'])
 
     const doc = open(ydoc)
     expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
@@ -356,6 +343,45 @@ describe('迁移', () => {
       ['v1', 'images'],
     ])
     expect(doc.get('v2')!.params).toMatchObject({ mode: 'text' })
+  })
+
+  it.each([
+    ['firstFrame', 'image'],
+    ['references', 'reference'],
+  ])('v1 视频节点只连了 %s 时模式为 %s', (port, mode) => {
+    const { ydoc, wire } = v1Doc(['v'])
+    wire('e', 'a', ['v', port])
+    expect(open(ydoc).get('v')!.params).toMatchObject({ mode })
+  })
+
+  it('v1 同一来源同时连首帧和尾帧时只留一条边', () => {
+    const { ydoc, edges, wire } = v1Doc(['v'])
+    wire('e1', 'a', ['v', 'firstFrame'])
+    wire('e2', 'a', ['v', 'lastFrame'])
+    open(ydoc)
+    expect([...edges.values()].map((e) => e.to)).toEqual([['v', 'images']])
+  })
+
+  it('已是 2 版的视频节点不动', () => {
+    const { ydoc, edges, wire } = v1Doc(['v'], 2)
+    wire('e', 'a', ['v', 'firstFrame'])
+    const doc = open(ydoc)
+    expect(doc.get('v')!.params).toEqual({ prompt: 'p' })
+    expect(doc.get('v')!.ports!.inputs).toHaveLength(4)
+    expect(edges.get('e')!.to).toEqual(['v', 'firstFrame'])
+  })
+
+  it('v0 未知的旧类型变成同名 nodeType 的节点', () => {
+    const ydoc = new Y.Doc()
+    ydoc.getMap<unknown>('elements').set('a', { id: 'a', kind: 'acme/x', x: 0, y: 0, w: 1, h: 1 })
+    expect(open(ydoc).get('a')).toMatchObject({ kind: 'node', nodeType: 'acme/x', nodeVersion: 1 })
+  })
+
+  it('没有版本号的空文档直接标为当前版本', () => {
+    const ydoc = new Y.Doc()
+    const doc = open(ydoc)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(ydoc.getMap('meta').get('schemaVersion')).toBe(SCHEMA_VERSION)
   })
 
   it('版本高于客户端时只读', () => {
@@ -377,7 +403,7 @@ describe('节点结果与端口', () => {
   }
 
   it('结果追加后自动采用，采用可撤销，系统写入不进撤销栈', () => {
-    const doc = createDoc(undefined, { schedule: () => {} })
+    const doc = open()
     const id = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200, ports: nodePorts })
     doc.undo.stopCapturing()
     const r = (n: number) => ({
@@ -398,18 +424,83 @@ describe('节点结果与端口', () => {
     expect(currentResult(doc.get(id)!)?.id).toBe('r1')
     // 结果本身仍在
     expect(doc.get(id)!.results).toHaveLength(2)
-    removeResult(doc, id, 'r1')
-    expect(currentResult(doc.get(id)!)?.id).toBe('r2')
     // 按端口取时跟着采用的那次运行：那次没有尾帧就是没有，不拿更早的凑数
     addResults(doc, id, [{ ...r(3), port: 'lastFrame', runId: 'run0' }])
     addResults(doc, id, [{ ...r(4), runId: 'run2' }])
     expect(currentResult(doc.get(id)!, 'lastFrame')).toBeUndefined()
     adoptResult(doc, id, 'r3')
     expect(currentResult(doc.get(id)!, 'lastFrame')?.id).toBe('r3')
+    // 取消采用回到最新结果
+    adoptResult(doc, id, null)
+    expect(currentResult(doc.get(id)!)?.id).toBe('r4')
+  })
+
+  it('结果最多保留 MAX_RESULTS 个，丢最旧的', () => {
+    const doc = open()
+    const id = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200, ports: nodePorts })
+    const batch = (from: number, n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        id: `r${from + i}`,
+        port: 'images',
+        value: { type: 'image' as const, assetId: 'a' },
+        runId: `run${from}`,
+        at: from,
+      }))
+    addResults(doc, id, batch(0, MAX_RESULTS))
+    addResults(doc, id, batch(MAX_RESULTS, 2))
+    const ids = doc.get(id)!.results!.map((r) => r.id)
+    expect(ids).toHaveLength(MAX_RESULTS)
+    expect(ids.slice(0, 3)).toEqual([`r${MAX_RESULTS}`, `r${MAX_RESULTS + 1}`, 'r0'])
+    expect(ids).not.toContain(`r${MAX_RESULTS - 1}`)
+  })
+
+  it('videoAssetOf：视频元素或当前结果是视频的节点', () => {
+    const doc = open()
+    const [video, image, n] = createElements(doc, [
+      box({ kind: 'video', assetId: 'v' }),
+      box({ assetId: 'i' }),
+      { kind: 'node', x: 0, y: 0, w: 200, h: 200, ports: nodePorts },
+    ])
+    expect(videoAssetOf(doc.get(video!))).toBe('v')
+    expect(videoAssetOf(doc.get(image!))).toBeUndefined()
+    expect(videoAssetOf(undefined)).toBeUndefined()
+    expect(videoAssetOf(doc.get(n!))).toBeUndefined()
+    const result = (id: string, type: 'image' | 'video') => ({
+      id,
+      port: 'out',
+      value: { type, assetId: id },
+      runId: id,
+      at: 0,
+    })
+    addResults(doc, n!, [result('img', 'image')])
+    expect(videoAssetOf(doc.get(n!))).toBeUndefined()
+    addResults(doc, n!, [result('vid', 'video')])
+    expect(videoAssetOf(doc.get(n!))).toBe('vid')
+  })
+
+  it('elementMedia：素材取自身资产，节点取当前媒体结果，文本和空素材没有', () => {
+    const doc = open()
+    const [audio, empty, md, n] = createElements(doc, [
+      box({ kind: 'audio', assetId: 'a' }),
+      box({ kind: 'video' }),
+      box({ kind: 'markdown', text: 'x' }),
+      { kind: 'node', x: 0, y: 0, w: 200, h: 200, ports: nodePorts },
+    ])
+    expect(elementMedia(doc.get(audio!)!)).toEqual({ assetId: 'a', kind: 'audio' })
+    expect(elementMedia(doc.get(empty!)!)).toBeNull()
+    expect(elementMedia(doc.get(md!)!)).toBeNull()
+    addResults(doc, n!, [
+      { id: 't', port: 'out', value: { type: 'text', text: 'hi' }, runId: 't', at: 0 },
+    ])
+    expect(elementMedia(doc.get(n!)!)).toBeNull()
+    addResults(doc, n!, [
+      { id: 's', port: 'out', value: { type: 'audio', assetId: 's' }, runId: 's', at: 1 },
+    ])
+    expect(elementMedia(doc.get(n!)!)).toEqual({ assetId: 's', kind: 'audio' })
   })
 
   it('多连端口保留已有连线，素材元素有隐式输出端口', () => {
-    const doc = createDoc(undefined, { schedule: () => {} })
+    const doc = open()
     const node = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200, ports: nodePorts })
     const a = createElement(doc, { kind: 'image', assetId: 'x', x: 0, y: 0, w: 10, h: 10 })
     const b = createElement(doc, { kind: 'image', assetId: 'y', x: 0, y: 0, w: 10, h: 10 })
@@ -417,6 +508,8 @@ describe('节点结果与端口', () => {
     expect(elementPorts(doc.get(a)!)?.outputs[0]?.type).toBe('image')
     expect(connect(doc, [a, 'image'], [node, 'refs'])).not.toBeNull()
     expect(connect(doc, [b, 'image'], [node, 'refs'])).not.toBeNull()
+    // 多连端口上重复连同一个来源
+    expect(connect(doc, [b, 'image'], [node, 'refs'])).toBeNull()
     expect(connect(doc, [md, 'text'], [node, 'prompt'])).not.toBeNull()
     expect(doc.edgesOf(node)).toHaveLength(3)
     const md2 = createElement(doc, { kind: 'markdown', text: 'yo', x: 0, y: 0, w: 10, h: 10 })
@@ -425,7 +518,7 @@ describe('节点结果与端口', () => {
   })
 
   it('打组：用 Frame 包住元素并保持世界坐标', () => {
-    const doc = createDoc(undefined, { schedule: () => {} })
+    const doc = open()
     const a = createElement(doc, { kind: 'image', x: 100, y: 100, w: 50, h: 50 })
     const b = createElement(doc, { kind: 'image', x: 300, y: 200, w: 50, h: 50 })
     const f = groupElements(doc, [a, b], { padding: 10 })!
@@ -433,8 +526,19 @@ describe('节点结果与端口', () => {
     expect(doc.get(a)!.parentId).toBe(f)
     expect(doc.worldRect(b)).toEqual({ x: 300, y: 200, w: 50, h: 50 })
   })
+
+  it('解组：子元素回到父元素、世界坐标不变，Frame 被删除', () => {
+    const doc = open()
+    const a = createElement(doc, node({ x: 100, y: 100 }))
+    const frame = groupElements(doc, [a])!
+    expect(doc.get(a)!.parentId).toBe(frame)
+    expect(ungroupElements(doc, frame)).toEqual([a])
+    expect(doc.has(frame)).toBe(false)
+    expect(doc.get(a)).toMatchObject({ parentId: null, x: 100, y: 100 })
+  })
+
   it('生成历史：只收节点的媒体结果，新到旧，标出采用的那个', () => {
-    const doc = createDoc(undefined, { schedule: () => {} })
+    const doc = open()
     const a = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200, ports: nodePorts })
     const b = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200, ports: nodePorts })
     createElement(doc, { kind: 'image', assetId: 'm', x: 0, y: 0, w: 10, h: 10 })
@@ -454,5 +558,30 @@ describe('节点结果与端口', () => {
     expect(h.find((e) => e.result.id === 'a2')).toMatchObject({ elementId: a, adopted: true })
     expect(h.find((e) => e.result.id === 'a1')!.adopted).toBe(false)
     expect(h[0]).toMatchObject({ elementId: b, adopted: true })
+  })
+})
+
+describe('fitAspect', () => {
+  it('长边和中心不动，系统写入不进撤销栈', () => {
+    const doc = open()
+    const id = createElement(doc, box({ x: 0, y: 0, w: 200, h: 100 }))
+    doc.undo.stopCapturing()
+    const before = doc.undo.undoStack.length
+    expect(fitAspect(doc, id, 0.5)).toBe(true)
+    expect(doc.get(id)).toMatchObject({ x: 50, y: -50, w: 100, h: 200 })
+    expect(doc.undo.undoStack.length).toBe(before)
+  })
+
+  it('差 1px 以内不写', () => {
+    const doc = open()
+    const id = createElement(doc, box({ w: 200, h: 100 }))
+    expect(fitAspect(doc, id, 200 / 101)).toBe(false)
+    expect(doc.get(id)).toMatchObject({ w: 200, h: 100 })
+  })
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])('比例 %s 无效', (ratio) => {
+    const doc = open()
+    const id = createElement(doc, box())
+    expect(fitAspect(doc, id, ratio)).toBe(false)
   })
 })

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { aspectLabel, type FieldSchema, parseAspect } from '../../canvas/nodes'
+import { parseAspect } from '@plein/doc'
+import { aspectLabel, type FieldSchema } from '../../canvas/nodes'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
 import { Presence } from '../../ui/Presence'

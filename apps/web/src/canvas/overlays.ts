@@ -2,7 +2,7 @@ import { defaultKeymap } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
 import { EditorView, drawSelection, keymap } from '@codemirror/view'
 import type { Engine } from '@plein/canvas-core'
-import { currentResult, type Rect } from '@plein/doc'
+import { currentResult, elementMedia, type Rect } from '@plein/doc'
 import { yCollab } from 'y-codemirror.next'
 import * as Y from 'yjs'
 import { renderMarkdown } from './markdown'
@@ -180,15 +180,10 @@ export class CanvasOverlays {
     this.deactivate()
     const el = this.engine.scene.get(id)
     if (!el || el.locked) return
+    // 音视频素材、当前结果是音视频的节点：双击就地播放
+    const m = elementMedia(el)
     if (el.kind === 'markdown') this.active = this.openEditor(id)
-    else if ((el.kind === 'video' || el.kind === 'audio') && el.assetId) {
-      this.active = this.openPlayer(id, el.kind, el.assetId)
-    } else if (el.kind === 'node') {
-      // 节点的当前结果是视频 / 音频时，双击就地播放
-      const v = currentResult(el)?.value
-      if (v?.type === 'video' || v?.type === 'audio')
-        this.active = this.openPlayer(id, v.type, v.assetId)
-    }
+    else if (m && m.kind !== 'image') this.active = this.openPlayer(id, m.kind, m.assetId)
     if (this.active) {
       this.active.node.dataset.pleinActive = ''
       // Esc 退出；其余按键留给编辑器 / 播放器

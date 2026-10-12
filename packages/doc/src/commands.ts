@@ -304,20 +304,6 @@ export function adoptResult(doc: PleinDoc, id: string, resultId: string | null) 
   })
 }
 
-/** 删除一个结果；正在采用的被删时回到最新结果 */
-export function removeResult(doc: PleinDoc, id: string, resultId: string) {
-  write(doc, () => {
-    const m = doc.mutable(id)
-    const list = m?.get('results')
-    if (!m || !Array.isArray(list)) return
-    m.set(
-      'results',
-      (list as NodeResult[]).filter((r) => r.id !== resultId),
-    )
-    if (m.get('adopted') === resultId) m.delete('adopted')
-  })
-}
-
 /**
  * 写入运行状态（服务端或本地运行器调用）。系统写入，不进撤销栈。
  * run 为 null 时清除。
@@ -358,13 +344,25 @@ export function currentResult(el: CanvasElement, port?: string): NodeResult | un
   return adopted ? list.find((r) => r.runId === adopted.runId) : list[0]
 }
 
+/** 元素当前展示的媒体：素材元素取自身资产，节点取采用的图片 / 视频 / 音频结果；没有时为 null */
+export function elementMedia(
+  el: CanvasElement,
+): { assetId: string; kind: 'image' | 'video' | 'audio' } | null {
+  if (el.kind === 'node') {
+    const v = currentResult(el)?.value
+    return v && (v.type === 'image' || v.type === 'video' || v.type === 'audio')
+      ? { assetId: v.assetId, kind: v.type }
+      : null
+  }
+  if ((el.kind === 'image' || el.kind === 'video' || el.kind === 'audio') && el.assetId)
+    return { assetId: el.assetId, kind: el.kind }
+  return null
+}
+
 /** 元素展示的视频：视频元素本身，或当前结果是视频的节点；其他情况为 undefined */
 export function videoAssetOf(el: CanvasElement | undefined): string | undefined {
-  if (!el) return undefined
-  if (el.kind === 'video') return el.assetId
-  if (el.kind !== 'node') return undefined
-  const v = currentResult(el)?.value
-  return v?.type === 'video' ? v.assetId : undefined
+  const m = el && elementMedia(el)
+  return m?.kind === 'video' ? m.assetId : undefined
 }
 
 /**
@@ -519,16 +517,5 @@ export function connect(doc: PleinDoc, from: PortAddress, to: PortAddress): Edge
 export function removeEdges(doc: PleinDoc, ids: Iterable<string>) {
   write(doc, () => {
     for (const id of ids) doc.edgeMap.delete(id)
-  })
-}
-
-/** 清理并发删除留下的悬空边（读取时已忽略，这里真正删掉） */
-export function pruneDanglingEdges(doc: PleinDoc) {
-  const dangling = [...doc.edgeMap.entries()]
-    .filter(([, e]) => !doc.has(e.from[0]) || !doc.has(e.to[0]))
-    .map(([id]) => id)
-  if (dangling.length === 0) return
-  doc.ydoc.transact(() => {
-    for (const id of dangling) doc.edgeMap.delete(id)
   })
 }

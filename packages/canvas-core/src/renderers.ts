@@ -102,7 +102,7 @@ function card(el: CanvasElement, texture?: () => Texture | undefined): ElementVi
   return view
 }
 
-export const cardRenderer: ElementRenderer = (el) => card(el)
+const cardRenderer: ElementRenderer = (el) => card(el)
 
 /** `#rrggbb` 转数值，格式不对时返回 undefined */
 function parseColor(color: string | undefined) {
@@ -110,7 +110,7 @@ function parseColor(color: string | undefined) {
 }
 
 /** Frame：半透明底 + 边框，标题在框外左上 */
-export const frameRenderer: ElementRenderer = (el) => {
+const frameRenderer: ElementRenderer = (el) => {
   const display = new Container()
   const bg = new Graphics()
   const label = new Text({
@@ -155,7 +155,7 @@ function loadTexture(url: string) {
  * 媒体元素：底板 + 预览纹理（图片缩略图 / 视频封面 / 音频波形）。
  * 纹理未加载或加载失败时显示占位卡片。
  */
-export const mediaRenderer: ElementRenderer = (el, ctx) => {
+const mediaRenderer: ElementRenderer = (el, ctx) => {
   const display = new Container()
   const bg = new Graphics()
   const glyph = new Graphics()
@@ -249,14 +249,11 @@ export const mediaRenderer: ElementRenderer = (el, ctx) => {
   return view
 }
 
-/** 兼容旧名 */
-export const imageRenderer = mediaRenderer
-
 /**
  * Markdown：只画底板，正文由 DOM 覆盖层渲染。
  * 缩得很小时覆盖层隐藏，用几条灰线示意正文，不画文字。
  */
-export const markdownRenderer: ElementRenderer = (el) => {
+const markdownRenderer: ElementRenderer = (el) => {
   const display = new Container()
   const bg = new Graphics()
   display.addChild(bg)
@@ -291,18 +288,13 @@ export const markdownRenderer: ElementRenderer = (el) => {
 /** 节点卡片的版式：标题行在卡片上方（局部坐标 y < 0），卡片本体整块用来展示结果 */
 export const NODE_LAYOUT = { title: 28 } as const
 
-/** 节点的预览区：整张卡片 */
-export function nodeBody(w: number, h: number) {
-  return { x: 0, y: 0, w, h }
-}
-
 /**
  * 工作流节点：底板 + 当前结果的预览图。
  * 结果和卡片比例一致时铺满卡片（卡片即结果），否则等比放进卡片居中。
  * 标题、状态、文本结果和操作由 DOM 覆盖层在正常细节下绘制；
  * 图片在 GPU 里画，缩小后整张画布仍能看到每个节点的产出。
  */
-export const nodeRenderer: ElementRenderer = (el, ctx) => {
+const nodeRenderer: ElementRenderer = (el, ctx) => {
   const display = new Container()
   const bg = new Graphics()
   display.addChild(bg)

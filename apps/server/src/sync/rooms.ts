@@ -3,6 +3,7 @@ import * as syncProtocol from 'y-protocols/sync'
 import * as decoding from 'lib0/decoding'
 import * as encoding from 'lib0/encoding'
 import * as Y from 'yjs'
+import { createDoc, type PleinDoc } from '@plein/doc'
 import { asc, eq, sql } from 'drizzle-orm'
 import type { DB } from '../storage/db'
 import { canvases, docUpdates } from '../storage/schema'
@@ -317,6 +318,25 @@ export class Rooms {
         released = true
         room.release()
       },
+    }
+  }
+
+  /**
+   * 短暂读写一次文档：打开、执行、销毁，fn 必须是同步的。
+   * 画布已删除时，给了 fallback 就返回它，否则抛错。
+   */
+  withDoc<T>(id: string, fn: (doc: PleinDoc) => T, fallback?: T): T {
+    let doc: PleinDoc
+    try {
+      doc = createDoc(this.get(id).doc)
+    } catch (err) {
+      if (fallback !== undefined) return fallback
+      throw err
+    }
+    try {
+      return fn(doc)
+    } finally {
+      doc.destroy()
     }
   }
 

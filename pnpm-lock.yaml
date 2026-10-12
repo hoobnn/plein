@@ -197,9 +197,6 @@ importers:
       '@commitlint/cli':
         specifier: ^21.2.3
         version: 21.2.3(@types/node@26.6.5)(conventional-commits-parser@7.1.3)(typescript@7.0.2)
-      '@commitlint/config-conventional':
-        specifier: ^21.2.3
-        version: 21.2.3
       '@playwright/test':
         specifier: 1.64.0
         version: 1.64.0
@@ -363,9 +360,6 @@ importers:
       '@tanstack/react-query':
         specifier: 5.104.1
         version: 5.104.1(react@19.3.0)
-      codemirror:
-        specifier: ^6.0.2
-        version: 6.0.2
       lucide:
         specifier: ^1.48.0
         version: 1.48.0
@@ -397,9 +391,6 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15))
-      '@types/markdown-it':
-        specifier: ^14.2.0
-        version: 14.2.0
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
@@ -736,9 +727,6 @@ packages:
 
   '@codemirror/lint@6.9.7':
     resolution: {integrity: sha512-28/+iWLYxKxsvGYhSYL7zaCZqLz5+FFFDq9tVsvGv9kv8RY4fFAchJ5WX9M3YrrRlTIsECjsXPqeNgnSmNP2dg==}
-
-  '@codemirror/search@6.7.2':
-    resolution: {integrity: sha512-gUYkYhT2+n/+VGZ+8EzE5WFkYZUZYm1VOKDudIsNqh42uRVQJ0a6Yss9sdKT3MeOYfuL1N6AZA57oza0Oyr0LA==}
 
   '@codemirror/state@6.7.6':
     resolution: {integrity: sha512-kAz+AncRtKuIknedxT1bq4XwXv4UowhbkHU1myPrtVb/jZtImWuV5BXzv5vK6i3kYACsdiZiQKFQQ5Mq7elW8w==}
@@ -1776,15 +1764,6 @@ packages:
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
-  '@types/linkify-it@5.0.0':
-    resolution: {integrity: sha512-sVDA58zAw4eWAffKOaQH5/5j3XeayukzDk+ewSsnv3p4yJEZHCCzMDiZM8e0OUrRvmpGZ85jf4yDHkHsgBNr9Q==}
-
-  '@types/markdown-it@14.2.0':
-    resolution: {integrity: sha512-NoQ2yGlLWj4wpxMs+TYmRKk3thDrQ97agr7sFqfLsAlvoS8SNQuTrlObhFqG9iugdTtgOE9jpJ6FNM4ZGsa5xQ==}
-
-  '@types/mdurl@2.0.0':
-    resolution: {integrity: sha512-RGdgjQUZba5p6QEFAVx2OGb8rQDL/cPRG7GiedRzMcJ1tYnUANBncjbSB1NRGwbvjcPeikRABz2nshyPk1bhWg==}
-
   '@types/node@24.19.2':
     resolution: {integrity: sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ==}
 
@@ -2161,9 +2140,6 @@ packages:
   cliui@9.0.1:
     resolution: {integrity: sha512-k7ndgKhwoQveBL+/1tqGJYNz097I7WOvwbmmU2AR5+magtbjPWQTS1C5vzGkBC8Ym8UWRzfKUzUUqFLypY4Q+w==}
     engines: {node: '>=20'}
-
-  codemirror@6.0.2:
-    resolution: {integrity: sha512-VhydHotNW5w1UGK0Qj96BwSk/Zqbp9WbnyK2W/eVMv4QyF41INRGpjUhFJY7/uDNuudSc33a/PKr4iDqRduvHw==}
 
   conventional-changelog-angular@9.4.0:
     resolution: {integrity: sha512-HdxRxuS8bBXVIuo4V82gvSwAXT0vYQUizrjs/izmPg5JdDstr8v8I5hduGL3iQbG+o310dUDxC4+LetuS5hu9w==}
@@ -3392,12 +3368,6 @@ snapshots:
       '@codemirror/view': 6.43.14
       crelt: 1.0.7
 
-  '@codemirror/search@6.7.2':
-    dependencies:
-      '@codemirror/state': 6.7.6
-      '@codemirror/view': 6.43.14
-      crelt: 1.0.7
-
   '@codemirror/state@6.7.6':
     dependencies:
       '@marijn/find-cluster-break': 1.0.4
@@ -4128,15 +4098,6 @@ snapshots:
 
   '@types/estree@1.0.9': {}
 
-  '@types/linkify-it@5.0.0': {}
-
-  '@types/markdown-it@14.2.0':
-    dependencies:
-      '@types/linkify-it': 5.0.0
-      '@types/mdurl': 2.0.0
-
-  '@types/mdurl@2.0.0': {}
-
   '@types/node@24.19.2':
     dependencies:
       undici-types: 7.24.6
@@ -4363,16 +4324,6 @@ snapshots:
       string-width: 7.2.0
       strip-ansi: 7.2.0
       wrap-ansi: 9.0.2
-
-  codemirror@6.0.2:
-    dependencies:
-      '@codemirror/autocomplete': 6.20.3
-      '@codemirror/commands': 6.11.1
-      '@codemirror/language': 6.13.1
-      '@codemirror/lint': 6.9.7
-      '@codemirror/search': 6.7.2
-      '@codemirror/state': 6.7.6
-      '@codemirror/view': 6.43.14
 
   conventional-changelog-angular@9.4.0:
     dependencies:

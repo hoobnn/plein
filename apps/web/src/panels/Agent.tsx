@@ -27,7 +27,7 @@ const TOOL_LABELS: Record<string, string> = {
   cancel_run: '取消运行',
   adopt_result: '采用结果',
   view_media: '查看效果',
-  edit_video: '剪辑视频',
+  edit_media: '加工素材',
   WebSearch: '搜索',
   web_search: '搜索',
   WebFetch: '读取网页',

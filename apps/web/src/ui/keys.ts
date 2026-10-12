@@ -1,6 +1,6 @@
 import { desktop } from '../desktop'
 
-export const isMac = desktop ? desktop.platform === 'darwin' : /Mac/i.test(navigator.platform)
+const isMac = desktop ? desktop.platform === 'darwin' : /Mac/i.test(navigator.platform)
 
 /** 主修饰键：配合鼠标、触控板的操作写成「⌘ + 滚轮」 */
 export const MOD = isMac ? '⌘' : 'Ctrl'

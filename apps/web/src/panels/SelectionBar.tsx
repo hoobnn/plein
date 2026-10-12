@@ -1,10 +1,11 @@
 import { type Engine, union } from '@plein/canvas-core'
+import { elementMedia } from '@plein/doc'
 import { templateData } from '../canvas/groups'
-import { assetOf, downloadAll } from '../canvas/grid'
+import { downloadAll } from '../canvas/grid'
 import { mediaIn } from '../canvas/library'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
 import { LibraryAdd } from './LibraryAdd'
-import { type MediaTarget, MediaBatchTools, mediaAsset } from './ResultBar'
+import { type MediaTarget, MediaBatchTools } from './MediaTools'
 import { useCanvas } from '../stores/canvas'
 import { useTemplates } from '../stores/templates'
 import { promptDialog } from '../ui/Dialog'
@@ -46,10 +47,10 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
     for (const el of [engine.doc.get(id), ...engine.doc.descendants(id)]) {
       if (!el || seen.has(el.id)) continue
       seen.add(el.id)
-      const assetId = assetOf(el)
-      if (assetId) assets.push({ assetId, name: el.name ?? `${el.kind}-${assets.length + 1}` })
-      const back = mediaAsset(el)
-      if (back) media.push({ elId: el.id, ...back })
+      const m = elementMedia(el)
+      if (!m) continue
+      assets.push({ assetId: m.assetId, name: el.name ?? `${el.kind}-${assets.length + 1}` })
+      media.push({ elId: el.id, ...m })
     }
   }
 

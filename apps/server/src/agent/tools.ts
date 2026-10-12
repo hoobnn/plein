@@ -1,13 +1,9 @@
 import { execFile } from 'node:child_process'
-import { createReadStream } from 'node:fs'
-import { rm } from 'node:fs/promises'
-import { join } from 'node:path'
 import { promisify } from 'node:util'
 import {
   adoptResult,
   type CanvasElement,
   connect,
-  createDoc,
   createElement,
   currentResult,
   deleteElements,
@@ -23,10 +19,16 @@ import {
   setParent,
   setText,
   updateElement,
+  elementMedia,
+  mediaSize,
+  nodeSize,
+  parseAspect,
 } from '@plein/doc'
 import { describeNode, executionOf } from '@plein/plugin-sdk'
+import { MediaDeriveRequest, type MediaDerivation, MediaOp } from '@plein/protocol'
 import sharp, { type Sharp } from 'sharp'
 import { z } from 'zod'
+import { DeriveError, deriveAsset } from '../assets/derive'
 import { ffmpegBin, hasFfmpeg } from '../assets/media'
 import type { AssetStore } from '../assets/store'
 import { NodeRunError, type PluginHost } from '../plugins/host'
@@ -35,8 +37,6 @@ import type { Rooms } from '../sync/rooms'
 import { defineTool, type McpTool, type ToolContent, ToolError } from './mcp'
 
 const exec = promisify(execFile)
-/** 智能体工具里的 ffmpeg 调用上限：卡住的进程不能让这次工具调用永远不返回 */
-const FFMPEG_TIMEOUT_MS = 5 * 60_000
 
 /** 工具运行时绑定的画布与身份 */
 export interface ToolEnv {
@@ -65,14 +65,7 @@ const position = {
 export function canvasTools(env: ToolEnv): McpTool[] {
   const { host } = env
 
-  const withDoc = <T>(fn: (doc: PleinDoc) => T): T => {
-    const doc = createDoc(env.rooms.get(env.canvasId).doc)
-    try {
-      return fn(doc)
-    } finally {
-      doc.destroy()
-    }
-  }
+  const withDoc = <T>(fn: (doc: PleinDoc) => T): T => env.rooms.withDoc(env.canvasId, fn)
 
   const need = (doc: PleinDoc, elementId: string) => {
     const el = doc.get(elementId)
@@ -181,7 +174,7 @@ export function canvasTools(env: ToolEnv): McpTool[] {
             ...(p.multiple ? { multiple: true } : {}),
             ...(p.required ? { required: true } : {}),
           })
-          const size = nodeSize(desc.outputs[0]?.type, params)
+          const size = nodeSize(desc.outputs[0]?.type, parseAspect(params.aspectRatio))
           const elId = place(doc, a, {
             kind: 'node',
             nodeType: def.type,
@@ -217,7 +210,7 @@ export function canvasTools(env: ToolEnv): McpTool[] {
             if (!a.asset_id) throw new ToolError(`${a.kind} 元素需要 asset_id`)
             const meta = asset(a.asset_id)
             if (meta.kind !== a.kind) throw new ToolError(`资产是 ${meta.kind}，不是 ${a.kind}`)
-            size = mediaSize(a.kind, meta.width, meta.height, a.w, a.h)
+            size = a.w && a.h ? { w: a.w, h: a.h } : mediaSize(a.kind, meta.width, meta.height)
           }
           const elId = place(doc, a, {
             kind: a.kind,
@@ -380,7 +373,9 @@ export function canvasTools(env: ToolEnv): McpTool[] {
       run: async (a) => {
         const assetId =
           a.asset_id ??
-          (a.element_id ? withDoc((doc) => assetOf(need(doc, a.element_id!))) : undefined)
+          (a.element_id
+            ? withDoc((doc) => elementMedia(need(doc, a.element_id!))?.assetId)
+            : undefined)
         if (!assetId) throw new ToolError('需要 asset_id，或一个有媒体内容的 element_id')
         const meta = asset(assetId)
         const src = env.assets.originalPath(assetId)
@@ -431,65 +426,57 @@ export function canvasTools(env: ToolEnv): McpTool[] {
     }),
 
     defineTool({
-      name: 'edit_video',
+      name: 'edit_media',
       description:
-        '用 ffmpeg 剪辑视频：截取片段、变速、去掉原声。结果是新资产，作为视频元素放在原元素旁边，原视频不变。',
+        '加工素材，与画布上的加工工具条是同一套实现：trim 截取片段（start、end 秒）、speed 变速（speed 倍数）、separate 把视频分离成音轨和无声视频（要去掉原声就用分出来的无声视频）、frame 抽一帧成图片（at 秒）、crop / rotate / flip 处理图片、split 把音频按区间切开（segments）。结果是新资产，作为元素放在原元素旁边，原素材不变；要做多步就依次调用。',
       input: z.object({
-        element_id: id.optional().describe('视频元素或视频节点（取当前结果）'),
+        element_id: id.optional().describe('素材元素或节点（取当前结果）'),
         asset_id: z.string().optional(),
-        start: z.number().min(0).optional().describe('入点（秒）'),
-        end: z.number().positive().optional().describe('出点（秒）'),
-        speed: z.number().min(0.25).max(4).optional().describe('播放速度倍数'),
-        mute: z.boolean().optional().describe('去掉音轨'),
+        op: MediaOp,
+        start: z.number().min(0).optional().describe('trim 入点（秒）'),
+        end: z.number().positive().optional().describe('trim 出点（秒）'),
+        speed: z.number().min(0.25).max(4).optional().describe('speed 倍数'),
+        at: z.number().min(0).optional().describe('frame 取帧时刻（秒）'),
+        left: z.number().int().optional(),
+        top: z.number().int().optional(),
+        width: z.number().int().optional(),
+        height: z.number().int().optional(),
+        angle: z.number().int().optional().describe('rotate：90 / 180 / 270'),
+        axis: z.enum(['horizontal', 'vertical']).optional().describe('flip 方向'),
+        segments: z
+          .array(z.object({ start: z.number(), end: z.number() }))
+          .optional()
+          .describe('split 的区间（秒）'),
         name: z.string().max(100).optional(),
       }),
-      run: async (a) => {
-        if (!(await hasFfmpeg())) throw new ToolError('本机没有 ffmpeg')
+      run: async ({ element_id, asset_id, ...edit }) => {
         const assetId =
-          a.asset_id ??
-          (a.element_id ? withDoc((doc) => assetOf(need(doc, a.element_id!))) : undefined)
-        if (!assetId) throw new ToolError('需要视频的 asset_id 或 element_id')
-        const meta = asset(assetId)
-        if (meta.kind !== 'video') throw new ToolError('只能剪辑视频')
-        const dir = await env.assets.tempDir()
-        const out = join(dir, 'edit.mp4')
+          asset_id ??
+          (element_id ? withDoc((doc) => elementMedia(need(doc, element_id))?.assetId) : undefined)
+        if (!assetId) throw new ToolError('需要素材的 asset_id 或 element_id')
+        const req = MediaDeriveRequest.safeParse({ ...edit, assetId })
+        if (!req.success) throw new ToolError(`参数不对：${z.prettifyError(req.error)}`)
+        let made: MediaDerivation
         try {
-          const args = ['-v', 'error', '-y']
-          if (a.start !== undefined) args.push('-ss', String(a.start))
-          if (a.end !== undefined) args.push('-to', String(a.end))
-          args.push('-i', env.assets.originalPath(assetId))
-          const speed = a.speed ?? 1
-          if (speed !== 1) args.push('-filter:v', `setpts=${(1 / speed).toFixed(4)}*PTS`)
-          if (a.mute) args.push('-an')
-          else if (speed !== 1) args.push('-filter:a', atempo(speed))
-          args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p')
-          if (!a.mute) args.push('-c:a', 'aac')
-          args.push('-movflags', '+faststart', out)
-          await exec(ffmpegBin(), args, {
-            maxBuffer: 16 * 1024 * 1024,
-            timeout: FFMPEG_TIMEOUT_MS,
-          })
-          const made = await env.assets.ingest(env.ownerId, createReadStream(out), {
-            mime: 'video/mp4',
-            name: `${a.name ?? 'edit'}.mp4`,
-          })
-          return withDoc((doc) => {
-            const size = mediaSize('video', made.width, made.height)
+          made = await deriveAsset(env.assets, env.ownerId, req.data)
+        } catch (err) {
+          if (err instanceof DeriveError) throw new ToolError(err.message)
+          throw err
+        }
+        return withDoc((doc) => {
+          const elements = made.assets.flatMap((out) => {
+            const kind = out.kind
+            if (kind !== 'image' && kind !== 'video' && kind !== 'audio') return []
+            const size = mediaSize(kind, out.width, out.height)
             const elId = place(
               doc,
-              { near: a.element_id },
-              {
-                kind: 'video',
-                assetId: made.id,
-                name: a.name ?? '剪辑',
-                ...size,
-              },
+              { near: element_id },
+              { kind, assetId: out.id, name: out.name, ...size },
             )
-            return json({ id: elId, asset_id: made.id, duration: made.duration })
+            return [{ id: elId, kind, asset_id: out.id, duration: out.duration }]
           })
-        } finally {
-          await rm(dir, { recursive: true, force: true })
-        }
+          return json({ elements, ...(made.note ? { note: made.note } : {}) })
+        })
       },
     }),
   ]
@@ -622,13 +609,6 @@ function summarize(doc: PleinDoc, el: CanvasElement, full: boolean) {
   return out
 }
 
-/** 元素自身的素材，或节点当前采用的媒体结果 */
-function assetOf(el: CanvasElement): string | undefined {
-  if (el.assetId) return el.assetId
-  const v = currentResult(el)?.value
-  return v && 'assetId' in v ? v.assetId : undefined
-}
-
 function overlaps(a: Rect, b: Rect, pad: number) {
   return (
     a.x < b.x + b.w + pad && a.x + a.w + pad > b.x && a.y < b.y + b.h + pad && a.y + a.h + pad > b.y
@@ -650,45 +630,6 @@ function freeSpot(doc: PleinDoc, size: { w: number; h: number }, anchor?: Rect) 
     rect.y += Math.max(size.h, 120) / 2
   }
   return { x: rect.x, y: rect.y }
-}
-
-/** 与前端 nodeElement 一致：出图 / 视频按画幅取形状 */
-function nodeSize(out: string | undefined, params: Record<string, unknown>) {
-  if (out === 'image' || out === 'video') {
-    const m = /^(\d+(?:\.\d+)?)\s*[:：]\s*(\d+(?:\.\d+)?)$/.exec(String(params.aspectRatio ?? ''))
-    const ratio = m ? Number(m[1]) / Number(m[2]) : 1
-    return ratio >= 1
-      ? { w: 400, h: Math.round(400 / ratio) }
-      : { w: Math.round(400 * ratio), h: 400 }
-  }
-  if (out === 'audio') return { w: 300, h: 160 }
-  return { w: 280, h: 200 }
-}
-
-function mediaSize(kind: string, width?: number, height?: number, w?: number, h?: number) {
-  if (w && h) return { w, h }
-  if (kind === 'audio') return { w: 320, h: 96 }
-  const ratio = width && height ? width / height : 16 / 9
-  if (w) return { w, h: Math.round(w / ratio) }
-  return ratio >= 1
-    ? { w: 400, h: Math.round(400 / ratio) }
-    : { w: Math.round(400 * ratio), h: 400 }
-}
-
-/** atempo 单级只支持 0.5–2，超出时串联 */
-function atempo(speed: number) {
-  const parts: string[] = []
-  let s = speed
-  while (s > 2) {
-    parts.push('atempo=2')
-    s /= 2
-  }
-  while (s < 0.5) {
-    parts.push('atempo=0.5')
-    s /= 0.5
-  }
-  parts.push(`atempo=${s.toFixed(4)}`)
-  return parts.join(',')
 }
 
 async function jpeg(img: Sharp, size = 768): Promise<ToolContent> {

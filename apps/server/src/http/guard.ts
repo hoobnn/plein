@@ -1,8 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import type { MiddlewareHandler } from 'hono'
 import { getCookie } from 'hono/cookie'
-
-const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
+import { LOOPBACK } from '../config'
 
 function hostname(host: string) {
   try {

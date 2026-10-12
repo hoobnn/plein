@@ -7,7 +7,7 @@ import { ffmpegBin } from './media'
 const RATE = 48000
 
 /** 每段画面在成片里实际播放的时长 */
-export function clipDurations(spec: ComposeSpec, infos: MediaInfo[]) {
+function clipDurations(spec: ComposeSpec, infos: MediaInfo[]) {
   return spec.clips.map((c, i) => {
     const total = infos[i]?.duration ?? 0
     const end = Math.min(c.out ?? total, total)
@@ -22,7 +22,7 @@ const fmt = (n: number) => Number(n.toFixed(3)).toString()
  * 画面统一缩放加黑边、帧率、像素格式后拼接；每段自带声音按音量保留，没有声音补静音，
  * 再和放在时间线上的配音、配乐、音效混合；有字幕时用 libass 烧录 subs.ass（相对工作目录）。
  */
-export function composeArgs(
+function composeArgs(
   spec: ComposeSpec,
   files: { clips: string[]; audio: string[] },
   infos: { clips: MediaInfo[] },
@@ -171,7 +171,7 @@ const STYLES: Record<
 }
 
 /** 生成 ASS 字幕：字号和边距按画面短边换算，中文字体由 fontconfig 兜底 */
-export function assSubtitles(spec: ComposeSpec) {
+function assSubtitles(spec: ComposeSpec) {
   const sub = spec.subtitles!
   const st = STYLES[sub.style]
   const short = Math.min(spec.width, spec.height)

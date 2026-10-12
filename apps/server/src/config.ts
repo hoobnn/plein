@@ -38,7 +38,8 @@ export interface Config {
   agent: boolean
 }
 
-const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost'])
+/** 本机地址：监听在这些地址上默认免登录，免登录模式也只接受这些 Host */
+export const LOOPBACK: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '::1', '[::1]'])
 
 /** 源码和打包产物都在 apps/server/<src|dist>/ 下，仓库根目录在上三级 */
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))

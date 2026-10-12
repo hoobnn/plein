@@ -98,7 +98,7 @@ const planEnv = (engine: Engine, boardId: string): PlanEnv => {
 }
 
 /** 这次要展开的镜头里，哪些角色名在画布上指不明（重名） */
-export function ambiguousCharacters(engine: Engine, boardId: string, shotIds: string[]): string[] {
+function ambiguousCharacters(engine: Engine, boardId: string, shotIds: string[]): string[] {
   const targets = mentionElements(engine)
   const out = new Set<string>()
   for (const shot of shotsOf(engine.doc.get(boardId)).filter((s) => shotIds.includes(s.id)))

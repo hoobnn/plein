@@ -1,23 +1,15 @@
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import type { Canvas } from '@plein/protocol'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { loadConfig } from '../config'
-import { startServer } from '../start'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { startTestServer } from '../testing'
 import { McpServer } from './mcp'
 import { canvasTools } from './tools'
 
-const dir = mkdtempSync(join(tmpdir(), 'plein-agent-'))
-let running: Awaited<ReturnType<typeof startServer>>
+let running: Awaited<ReturnType<typeof startTestServer>>
 let mcp: McpServer
 let canvasId: string
 
 beforeAll(async () => {
-  running = await startServer({
-    ...loadConfig({ PLEIN_DATA_DIR: dir, PLEIN_PORT: '0', PLEIN_MOCK_PROVIDER: '1' }),
-    webDist: null,
-  })
+  running = await startTestServer()
   const res = await fetch(`${running.url}/api/canvases`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -29,10 +21,6 @@ beforeAll(async () => {
     { name: 'plein', version: 'test' },
     canvasTools({ canvasId, ownerId: 'local', rooms, runs, host: plugins, assets }),
   )
-})
-afterAll(async () => {
-  await running.close()
-  rmSync(dir, { recursive: true, force: true })
 })
 
 let seq = 0
@@ -93,6 +81,18 @@ describe('智能体 MCP', () => {
     expect(view.result.content.some((c) => c.type === 'image' && c.mimeType === 'image/jpeg')).toBe(
       true,
     )
+    // 加工与工具条同一实现：产物作为新元素放在旁边，参数不对或类型不符时说明原因
+    const rotated = await call('edit_media', { element_id: imageId, op: 'rotate', angle: 90 })
+    expect(rotated.error).toBe(false)
+    const [made] = rotated.json().elements
+    expect(made).toMatchObject({ kind: 'image' })
+    expect(
+      (await call('get_canvas')).json().elements.some((e: { id: string }) => e.id === made.id),
+    ).toBe(true)
+    const badAngle = await call('edit_media', { element_id: imageId, op: 'rotate', angle: 45 })
+    expect(badAngle.text).toContain('参数不对')
+    const wrongKind = await call('edit_media', { element_id: imageId, op: 'trim', end: 1 })
+    expect(wrongKind.error).toBe(true)
   })
 
   it('参数不对、元素不存在时把原因告诉模型', async () => {

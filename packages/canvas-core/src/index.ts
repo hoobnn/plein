@@ -14,16 +14,9 @@ export * from './geometry'
 export { attachInput, isEditableTarget, type PanState } from './input'
 export * from './ports'
 export {
-  cardRenderer,
   type ElementRenderer,
   type ElementView,
-  frameRenderer,
-  imageRenderer,
-  markdownRenderer,
-  mediaRenderer,
   NODE_LAYOUT,
-  nodeBody,
-  nodeRenderer,
   type PreviewSize,
   type RenderContext,
   RendererRegistry,

@@ -6,14 +6,17 @@ import {
   currentResult,
   elementPorts,
   type NewElement,
+  nodeSize,
+  parseAspect,
   type Port,
   type PortType,
   portsCompatible,
   type ResultValue,
+  aspectSize,
   updateElement,
   videoAssetOf,
 } from '@plein/doc'
-import { ASSET_NODE_TYPES, type MentionTarget } from '@plein/nodes'
+import { type MentionTarget, mentionName } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { modelProblem, selectedModel } from './modelParams'
 
@@ -59,17 +62,6 @@ export function promptKey(node: NodeInfo): string | undefined {
   return fields.find(([, f]) => f.widget === 'textarea')?.[0]
 }
 
-/** 出图 / 视频节点的长边：卡片按画幅取形状，结果出来后正好铺满 */
-const MEDIA_LONG_SIDE = 400
-
-/** 画幅字段（如 aspectRatio: '16:9'）的值解析成宽高比；不是画幅返回 null */
-export function parseAspect(v: unknown): number | null {
-  const m = /^(\d+(?:\.\d+)?)\s*[:：]\s*(\d+(?:\.\d+)?)$/.exec(String(v ?? ''))
-  if (!m) return null
-  const r = Number(m[1]) / Number(m[2])
-  return Number.isFinite(r) && r > 0 ? r : null
-}
-
 /** 画幅值的显示文字：auto 显示为「智能」 */
 export function aspectLabel(v: unknown) {
   return v === 'auto' ? '智能' : String(v ?? '')
@@ -80,23 +72,10 @@ export function aspectKey(node: NodeInfo): string | undefined {
   return fieldsOf(node).find(([k, f]) => /aspect/i.test(k) && f.enum)?.[0]
 }
 
-/** 长边固定、按宽高比求卡片尺寸 */
-function aspectSize(ratio: number, long = MEDIA_LONG_SIDE) {
-  return ratio >= 1
-    ? { w: long, h: Math.round(long / ratio) }
-    : { w: Math.round(long * ratio), h: long }
-}
-
 /** 节点在画布上的默认尺寸：出图 / 视频的节点按默认画幅取形状 */
-function nodeSize(node: NodeInfo) {
-  const out = node.outputs[0]?.type
-  if (out === 'image' || out === 'video') {
-    const key = aspectKey(node)
-    const ratio = key ? parseAspect(node.defaults?.[key]) : null
-    return ratio ? aspectSize(ratio) : { w: 320, h: 320 }
-  }
-  if (out === 'audio') return { w: 300, h: 160 }
-  return { w: 280, h: 200 }
+function defaultSize(node: NodeInfo) {
+  const key = aspectKey(node)
+  return nodeSize(node.outputs[0]?.type, key ? parseAspect(node.defaults?.[key]) : null)
 }
 
 /**
@@ -127,7 +106,7 @@ export function nodeElement(node: NodeInfo): Omit<NewElement, 'x' | 'y'> {
     ...(p.multiple ? { multiple: true } : {}),
     ...(p.required ? { required: true } : {}),
   })
-  const { w, h } = nodeSize(node)
+  const { w, h } = defaultSize(node)
   return {
     kind: 'node',
     nodeType: node.type,
@@ -321,10 +300,8 @@ export function validate(
 export function mentionTargets(engine: Engine): MentionTarget[] {
   const out: MentionTarget[] = []
   for (const el of engine.doc.elements()) {
-    const name = el.name?.trim()
-    if (!name) continue
-    const asset = el.kind === 'node' && el.nodeType && ASSET_NODE_TYPES.has(el.nodeType)
-    if (asset || (el.kind === 'image' && el.assetId)) out.push({ id: el.id, name })
+    const name = mentionName(el)
+    if (name) out.push({ id: el.id, name })
   }
   return out
 }
@@ -333,10 +310,8 @@ export function mentionTargets(engine: Engine): MentionTarget[] {
 export function mentionElements(engine: Engine): Map<string, CanvasElement[]> {
   const out = new Map<string, CanvasElement[]>()
   for (const el of engine.doc.elements()) {
-    const name = el.name?.trim()
+    const name = mentionName(el)
     if (!name) continue
-    const asset = el.kind === 'node' && el.nodeType && ASSET_NODE_TYPES.has(el.nodeType)
-    if (!asset && !(el.kind === 'image' && el.assetId)) continue
     const list = out.get(name)
     if (list) list.push(el)
     else out.set(name, [el])

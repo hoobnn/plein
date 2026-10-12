@@ -171,13 +171,20 @@ export async function audioWaveform(src: string, out: string) {
 
 // ── 加工用的底层入口 ──────────────────────────────────
 
+/** 单次 ffmpeg 加工的上限 */
+const FFMPEG_TIMEOUT_MS = 10 * 60_000
+
 /** 跑一次 ffmpeg；失败时把 stderr 末尾几行带进消息里，别只丢一句 Command failed */
-export function ffmpeg(args: string[], opts: { maxBuffer?: number } = {}) {
+export function ffmpeg(args: string[], opts: { maxBuffer?: number; timeoutMs?: number } = {}) {
   return new Promise<void>((resolve, reject) => {
     execFile(
       bin.ffmpeg,
       ['-hide_banner', '-v', 'error', '-y', ...args],
-      { maxBuffer: opts.maxBuffer ?? 32 * 1024 * 1024 },
+      {
+        maxBuffer: opts.maxBuffer ?? 32 * 1024 * 1024,
+        // 卡死的 ffmpeg 不能一直占着进程；长视频加工也远用不了这么久
+        timeout: opts.timeoutMs ?? FFMPEG_TIMEOUT_MS,
+      },
       (err, _stdout, stderr) => {
         if (!err) return resolve()
         const tail = String(stderr ?? '')

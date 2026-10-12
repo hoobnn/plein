@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { AUDIO_SIZE, createElements, type NewElement } from '@plein/doc'
+import { createElements, mediaSize, type NewElement } from '@plein/doc'
 import type {
   Asset,
   AssetKind,
@@ -148,21 +148,9 @@ export function deriveLabel(op: MediaOp, params: Record<string, unknown>) {
 export function elementSize(
   asset: Asset,
 ): { kind: NewElement['kind']; w: number; h: number } | null {
-  const fit = (fallback: [number, number]) => {
-    if (!asset.width || !asset.height) return fallback
-    const k = Math.min(1, 480 / Math.max(asset.width, asset.height))
-    return [Math.round(asset.width * k), Math.round(asset.height * k)] as const
-  }
-  if (asset.kind === 'image') {
-    const [w, h] = fit([320, 240])
-    return { kind: 'image', w, h }
-  }
-  if (asset.kind === 'video') {
-    const [w, h] = fit([480, 270])
-    return { kind: 'video', w, h }
-  }
-  if (asset.kind === 'audio') return { kind: 'audio', ...AUDIO_SIZE }
-  return null
+  const { kind } = asset
+  if (kind !== 'image' && kind !== 'video' && kind !== 'audio') return null
+  return { kind, ...mediaSize(kind, asset.width, asset.height) }
 }
 
 let capsCache: Promise<MediaCapsInfo> | null = null

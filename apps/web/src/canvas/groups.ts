@@ -123,11 +123,6 @@ function wait(ms: number, signal?: AbortSignal) {
   })
 }
 
-/** 停止整组运行：组内正在跑和排队的节点一起取消 */
-export function cancelGroup(groupId: string): Promise<void> {
-  return api.cancelGroup(groupId)
-}
-
 /** 整组运行结果的提示语 */
 export function describeGroupRun(name: string, r: GroupRun) {
   return describeRun(`「${name}」`, r)

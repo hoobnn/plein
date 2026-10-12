@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, currentResult } from '@plein/doc'
+import { type CanvasElement, currentResult, elementMedia } from '@plein/doc'
 import { useMemo, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { useDocVersion } from '../canvas/hooks'
@@ -46,18 +46,11 @@ type Content =
   | null
 
 function contentOf(el: CanvasElement): Content {
-  if (el.kind === 'node') {
-    const v = currentResult(el)?.value
-    if (!v) return null
-    if (v.type === 'text') return { type: 'text', text: v.text }
-    if (v.type === 'image' || v.type === 'video' || v.type === 'audio')
-      return { type: v.type, assetId: v.assetId }
-    return null
-  }
   if (el.kind === 'markdown') return el.text?.trim() ? { type: 'text', text: el.text } : null
-  if ((el.kind === 'image' || el.kind === 'video' || el.kind === 'audio') && el.assetId)
-    return { type: el.kind, assetId: el.assetId }
-  return null
+  const v = el.kind === 'node' ? currentResult(el)?.value : undefined
+  if (v?.type === 'text') return { type: 'text', text: v.text }
+  const m = elementMedia(el)
+  return m && { type: m.kind, assetId: m.assetId }
 }
 
 /**

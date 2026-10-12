@@ -44,14 +44,14 @@ const MAX_DEPTH = 8
 /** 进度写回文档的最小间隔，避免高频同步 */
 const PROGRESS_INTERVAL_MS = 500
 
-export function toPortValue(v: ResultValue): PortValue {
+function toPortValue(v: ResultValue): PortValue {
   if (v.type === 'text' || v.type === 'json') return v
   const out: PortValue = { type: v.type, assetId: v.assetId, kind: v.type, mime: v.mime }
   if (v.caption) out.caption = v.caption
   return out
 }
 
-export function toResultValue(v: PortValue): ResultValue {
+function toResultValue(v: PortValue): ResultValue {
   if (v.type === 'text') return { type: 'text', text: v.text }
   if (v.type === 'json') return { type: 'json', value: v.value }
   const out: ResultValue = { type: v.type, assetId: v.assetId, mime: v.mime }
@@ -129,8 +129,7 @@ export class NodeRuns {
   /** 开始运行（先进队列），立即返回运行 id；校验失败直接抛 NodeRunError */
   start(canvasId: string, nodeId: string, ownerId: string, groupId?: string): string {
     if (this.isRunning(canvasId, nodeId)) throw new NodeRunError('busy', '节点正在运行')
-    const doc = createDoc(this.rooms.get(canvasId).doc)
-    try {
+    return this.rooms.withDoc(canvasId, (doc) => {
       const el = doc.get(nodeId)
       if (el?.kind !== 'node' || !el.nodeType) throw new NodeRunError('not_found', '节点不存在')
       const id = newId('run')
@@ -138,9 +137,7 @@ export class NodeRuns {
       writeRun(doc, nodeId, { id, status: 'queued', at: Date.now() })
       this.enqueue({ id, canvasId, nodeId, ownerId, groupId })
       return id
-    } finally {
-      doc.destroy()
-    }
+    })
   }
 
   /** 等任务结束，返回最终状态 */
@@ -157,12 +154,12 @@ export class NodeRuns {
       if (a.started) a.ctrl.abort()
       else {
         this.queue = this.queue.filter((q) => q !== a)
-        this.withDoc(a.canvasId, (doc) => this.finish(doc, a, 'canceled'))
+        this.rooms.withDoc(a.canvasId, (doc) => this.finish(doc, a, 'canceled'))
         this.release(a)
       }
       return
     }
-    this.withDoc(canvasId, (doc) => {
+    this.rooms.withDoc(canvasId, (doc) => {
       const run = doc.get(nodeId)?.run
       if (run && (run.status === 'running' || run.status === 'queued')) {
         writeRun(doc, nodeId, { ...run, status: 'canceled', at: Date.now() })
@@ -218,7 +215,7 @@ export class NodeRuns {
     ownerId: string,
     options: FlowRunOptions,
   ): GroupRunStarted {
-    const targets = this.withDoc(canvasId, (doc) => {
+    const targets = this.rooms.withDoc(canvasId, (doc) => {
       if (doc.get(nodeId)?.kind !== 'node') throw new NodeRunError('not_found', '节点不存在')
       const graph = new FlowGraph(doc.edges())
       const around =
@@ -282,7 +279,7 @@ export class NodeRuns {
     ownerId: string,
     options: GroupRunOptions,
   ): GroupRunStarted {
-    const targets = this.withDoc(canvasId, (doc) => {
+    const targets = this.rooms.withDoc(canvasId, (doc) => {
       if (doc.get(frameId)?.kind !== 'frame') throw new NodeRunError('not_found', 'Frame 不存在')
       return this.groupTargets(doc, frameId, options.video)
     })
@@ -391,7 +388,7 @@ export class NodeRuns {
   /** 服务启动时接着跑上次没结束的任务和整组运行 */
   recover() {
     for (const row of this.store.active()) {
-      const ok = this.withDoc(
+      const ok = this.rooms.withDoc(
         row.canvas_id,
         (doc) => {
           if (doc.get(row.node_id)?.kind !== 'node') return false
@@ -470,21 +467,6 @@ export class NodeRuns {
     this.store.update(a.id, { status, error: error ?? null, finished_at: at })
     if (doc.get(a.nodeId)) writeRun(doc, a.nodeId, { id: a.id, status, error, at })
     a.resolve(status)
-  }
-
-  private withDoc<T>(canvasId: string, fn: (doc: PleinDoc) => T, fallback?: T): T {
-    let doc: PleinDoc
-    try {
-      doc = createDoc(this.rooms.get(canvasId).doc)
-    } catch (err) {
-      if (fallback !== undefined) return fallback
-      throw err
-    }
-    try {
-      return fn(doc)
-    } finally {
-      doc.destroy()
-    }
   }
 
   private async execute(a: ActiveJob) {

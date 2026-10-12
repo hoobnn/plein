@@ -3,6 +3,7 @@ import {
   findBrokenMentions,
   findMentions,
   type MentionTarget,
+  mentionName,
   mentionProblem,
   mentionQuery,
 } from './mentions'
@@ -86,5 +87,18 @@ describe('改名断链', () => {
 
   it('引用还对得上时不算断链', () => {
     expect(findBrokenMentions('@林小夏站在@天台', renamed)).toEqual([])
+  })
+})
+
+describe('能被 @ 引用的元素', () => {
+  it.each([
+    [{ kind: 'node', nodeType: 'plein/character', name: ' 林夏 ' }, '林夏'],
+    [{ kind: 'node', nodeType: 'plein/effect', name: '雨' }, '雨'],
+    [{ kind: 'image', assetId: 'a', name: '海报' }, '海报'],
+    [{ kind: 'image', name: '还没上传' }, null],
+    [{ kind: 'node', nodeType: 'plein/image', name: '生成图片' }, null],
+    [{ kind: 'node', nodeType: 'plein/character', name: '  ' }, null],
+  ])('%o → %s', (el, name) => {
+    expect(mentionName(el)).toBe(name)
   })
 })

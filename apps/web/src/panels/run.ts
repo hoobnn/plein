@@ -1,10 +1,13 @@
 import type { FlowRunOptions } from '@plein/protocol'
+import { api } from '../api/client'
 import * as groups from '../canvas/groups'
-import * as runner from '../canvas/runner'
 import { useCanvas } from '../stores/canvas'
 import { groupRunSignal, useGroupRuns } from '../stores/groupRuns'
 
 /** 界面上的运行操作：取当前画布、发起请求，把结果和错误提示给用户 */
+
+/** 本地演示画布没有服务端文档，不能运行 */
+const DEMO_RUN_NOTICE = '演示画布不能运行节点，请在首页新建画布'
 
 const notify = (msg: string) => useCanvas.getState().notify(msg)
 const fail = (err: unknown) => notify((err as Error).message)
@@ -12,7 +15,7 @@ const fail = (err: unknown) => notify((err as Error).message)
 /** 当前远端画布；本地演示时提示并返回 null */
 function remoteCanvas() {
   const { canvasId } = useCanvas.getState()
-  if (!canvasId) notify(runner.DEMO_RUN_NOTICE)
+  if (!canvasId) notify(DEMO_RUN_NOTICE)
   return canvasId
 }
 
@@ -21,7 +24,7 @@ export async function runNode(id: string): Promise<string | null> {
   const canvasId = remoteCanvas()
   if (!canvasId) return null
   try {
-    return await runner.runNode(canvasId, id)
+    return (await api.runNode(canvasId, id)).runId
   } catch (err) {
     fail(err)
     return null
@@ -31,11 +34,11 @@ export async function runNode(id: string): Promise<string | null> {
 export async function cancelNode(id: string) {
   const { canvasId } = useCanvas.getState()
   if (!canvasId) return
-  await runner.cancelNode(canvasId, id).catch(fail)
+  await api.cancelNode(canvasId, id).catch(fail)
 }
 
 export async function cancelGroup(groupId: string) {
-  await groups.cancelGroup(groupId).catch(fail)
+  await api.cancelGroup(groupId).catch(fail)
 }
 
 /** 整组运行 Frame，结束后提示结果；同一个 Frame 已在运行时不重复发起 */

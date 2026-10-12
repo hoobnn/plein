@@ -168,7 +168,7 @@ export function SchemaForm({
 }
 
 /** 取值范围的说明，如“1–4 之间的整数” */
-export function rangeOf(f: FieldSchema) {
+function rangeOf(f: FieldSchema) {
   if (f.minimum === undefined && f.maximum === undefined) return undefined
   const kind = f.type === 'integer' ? '的整数' : ''
   if (f.minimum !== undefined && f.maximum !== undefined)

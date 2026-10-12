@@ -52,7 +52,7 @@ docker compose up -d     # 打开 http://localhost:8787
 
 ## 本机智能体
 
-右下角的助手会调用这台电脑上已安装、已登录的 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 或 [Codex](https://github.com/openai/codex) CLI，让它直接操作当前画布：读画布、新建和修改节点、连线、运行节点、查看生成效果、剪辑视频。Plein 不读取也不保存它们的登录凭据，用的是你在终端里的同一个账号和额度。
+右下角的助手会调用这台电脑上已安装、已登录的 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 或 [Codex](https://github.com/openai/codex) CLI，让它直接操作当前画布：读画布、新建和修改节点、连线、运行节点、查看生成效果、加工素材（截取、变速、抽帧、分离音轨等）。Plein 不读取也不保存它们的登录凭据，用的是你在终端里的同一个账号和额度。
 
 - 只在免登录模式（桌面端或本机部署）可用；开启登录后自动关闭，因为智能体以服务端进程的身份在这台机器上运行。
 - 服务端在本机 `/mcp` 提供画布工具（MCP，Streamable HTTP），每个对话一个随机令牌；CLI 只开放这些工具和联网搜索，不碰本机文件和命令（Codex 在只读沙箱里运行）。
