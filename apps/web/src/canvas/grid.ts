@@ -1,5 +1,11 @@
 import type { Engine } from '@plein/canvas-core'
-import { createElements, groupElements, type NewElement } from '@plein/doc'
+import {
+  type CanvasElement,
+  createElements,
+  currentResult,
+  groupElements,
+  type NewElement,
+} from '@plein/doc'
 import { api, assetUrls } from '../api/client'
 import { freeSpotRight } from './presets'
 
@@ -80,4 +86,23 @@ export function downloadAsset(assetId: string, name: string) {
   document.body.appendChild(a)
   a.click()
   a.remove()
+}
+
+/** 元素可下载的资产：节点取采用的媒体结果，素材元素取自身资产 */
+export function assetOf(el: CanvasElement): string | null {
+  if (el.kind === 'node') {
+    const v = currentResult(el)?.value
+    return v && v.type !== 'text' && v.type !== 'json' ? v.assetId : null
+  }
+  return el.kind === 'image' || el.kind === 'video' || el.kind === 'audio'
+    ? (el.assetId ?? null)
+    : null
+}
+
+/** 批量下载：逐个触发，间隔一点免得浏览器吞掉；返回下载的个数 */
+export function downloadAll(items: Array<{ assetId: string; name: string }>) {
+  items.forEach((it, i) => {
+    setTimeout(() => downloadAsset(it.assetId, it.name), i * 250)
+  })
+  return items.length
 }

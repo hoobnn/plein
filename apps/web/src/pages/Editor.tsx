@@ -4,9 +4,11 @@ import { api } from '../api/client'
 import { desktop } from '../desktop'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { CanvasMenus } from '../panels/CanvasMenus'
+import { ArrangeToast } from '../panels/ArrangeToast'
 import { FrameBar } from '../panels/FrameBar'
 import { Generator } from '../panels/Generator'
 import { ResultBar, Viewer } from '../panels/ResultBar'
+import { SelectionBar } from '../panels/SelectionBar'
 import { Shortcuts } from '../panels/Shortcuts'
 import { StoryboardEditor } from '../panels/StoryboardEditor'
 import { Toolbar } from '../panels/Toolbar'
@@ -112,6 +114,8 @@ export function Editor({
       <Generator />
       <ResultBar />
       <FrameBar remote={source.kind === 'remote'} />
+      <SelectionBar remote={source.kind === 'remote'} />
+      <ArrangeToast />
       <CanvasMenus canImport={source.kind === 'remote'} />
       <StoryboardEditor />
       <Shortcuts />

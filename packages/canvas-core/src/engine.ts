@@ -1,4 +1,5 @@
 import {
+  arrangeElements,
   bringToFront,
   type ClipboardData,
   deleteElements,
@@ -10,6 +11,7 @@ import {
   moveElements,
   type PleinDoc,
   sendToBack,
+  ungroupElements,
 } from '@plein/doc'
 import { Application, Container, Graphics } from 'pixi.js'
 import { Camera } from './camera'
@@ -64,6 +66,18 @@ export type CanvasMenuEvent =
   /** 右键：target 为空表示空白处 */
   | ({ kind: 'context'; target: string | null } & CanvasPoint)
 
+/** 一次整理的结果：外壳据此弹“保留 / 还原” */
+export interface ArrangeResult {
+  /** 整理整个画布，或只整理选中的元素 */
+  scope: 'canvas' | 'selection'
+  /** 移动或收放的元素数 */
+  count: number
+  /** 整理仍是撤销栈顶时撤销它并返回 true；之后又有别的修改时不动，返回 false */
+  revert(): boolean
+  /** 整理已不在撤销栈顶（被撤销或有了新的修改） */
+  stale(): boolean
+}
+
 /** 粘贴时相对上一次的位移 */
 const PASTE_OFFSET = 24
 
@@ -89,6 +103,7 @@ export class Engine {
   private viewListeners = new Set<() => void>()
   private activateListeners = new Set<(id: string) => void>()
   private menuListeners = new Set<(e: CanvasMenuEvent) => void>()
+  private arrangeListeners = new Set<(r: ArrangeResult) => void>()
   /** 元素内容或几何变化，需要通知覆盖层 */
   private contentDirty = false
   private disposers: Array<() => void> = []
@@ -228,6 +243,14 @@ export class Engine {
     }
   }
 
+  /** 整理画布完成时通知（工具栏按钮和 ⌥⇧F 都走这里） */
+  onArrange(fn: (r: ArrangeResult) => void) {
+    this.arrangeListeners.add(fn)
+    return () => {
+      this.arrangeListeners.delete(fn)
+    }
+  }
+
   get visibleIds(): ReadonlySet<string> {
     return this.views.visibleIds
   }
@@ -290,6 +313,39 @@ export class Engine {
     if (this.selection.size === 0) return
     const frame = groupElements(this.doc, this.selection.values())
     if (frame) this.selection.set([frame])
+  }
+
+  /** 解组选中的 Frame（⇧⌘G），选中原来的子元素 */
+  ungroupSelection() {
+    const frames = this.selection.values().filter((id) => this.scene.get(id)?.kind === 'frame')
+    if (frames.length === 0) return
+    const kids = frames.flatMap((id) => ungroupElements(this.doc, id))
+    this.selection.set(kids)
+  }
+
+  /**
+   * 整理画布（⌥⇧F）：按连线拓扑自动布局，作为单独的一个撤销步。
+   * 不传 ids 时整理整个画布。没有可移动的元素时返回 null。
+   */
+  arrange(ids?: Iterable<string>): ArrangeResult | null {
+    if (this.doc.readOnly) return null
+    const count = arrangeElements(this.doc, ids)
+    if (count === 0) return null
+    const undo = this.doc.undo
+    const item = undo.undoStack.at(-1)
+    const stale = () => undo.undoStack.at(-1) !== item
+    const result: ArrangeResult = {
+      scope: ids ? 'selection' : 'canvas',
+      count,
+      stale,
+      revert: () => {
+        if (stale()) return false
+        undo.undo()
+        return true
+      },
+    }
+    for (const fn of this.arrangeListeners) fn(result)
+    return result
   }
 
   bringToFront() {
@@ -458,6 +514,9 @@ export class Engine {
       else if (mod && key === 'a') this.selectAll()
       else if (mod && key === 'd') this.duplicateSelection()
       else if (mod && key === 'g' && !e.shiftKey) this.groupSelection()
+      else if (mod && key === 'g') this.ungroupSelection()
+      // ⌥ 会改变 e.key（Mac 上 ⌥⇧F 是 Ï），按物理键判断
+      else if (e.altKey && e.shiftKey && e.code === 'KeyF') this.arrange()
       else if (mod && e.key === ']') this.bringToFront()
       else if (mod && e.key === '[') this.sendToBack()
       else if (mod && key === '0') this.zoomTo(1)

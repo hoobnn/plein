@@ -14,7 +14,8 @@ const GROUPS: Array<{ title: string; items: Array<[string, string]> }> = [
     items: [
       ['添加节点', 'Tab / 双击空白'],
       ['生成', `${MOD} ↵`],
-      ['打组', `${MOD} G`],
+      ['打组 / 解组', `${MOD} G / ⇧ ${MOD} G`],
+      ['整理画布', '⌥ ⇧ F'],
       ['复制一份', `${MOD} D`],
       ['复制 / 粘贴', `${MOD} C / ${MOD} V`],
       ['删除', '⌫'],

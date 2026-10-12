@@ -168,6 +168,15 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
           />
         </>
       )}
+      <Button
+        label="整理画布"
+        hint="⌥⇧F"
+        onClick={() => {
+          if (!engine.arrange()) useCanvas.getState().notify('画布已经很整齐了')
+        }}
+      >
+        <Icon name="arrange" />
+      </Button>
       <Divider />
       <Button label="撤销" hint="⌘Z" disabled={!canUndo} onClick={() => engine.undo()}>
         <Icon name="undo" />

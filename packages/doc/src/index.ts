@@ -10,5 +10,6 @@ export {
   type Scheduler,
   SYSTEM_ORIGIN,
 } from './doc'
+export * from './layout'
 export { SCHEMA_VERSION } from './migrate'
 export * from './types'

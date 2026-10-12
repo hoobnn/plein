@@ -97,6 +97,11 @@ function card(el: CanvasElement, texture?: () => Texture | undefined): ElementVi
 
 export const cardRenderer: ElementRenderer = (el) => card(el)
 
+/** `#rrggbb` 转数值，格式不对时返回 undefined */
+function parseColor(color: string | undefined) {
+  return color && /^#[0-9a-f]{6}$/i.test(color) ? Number.parseInt(color.slice(1), 16) : undefined
+}
+
 /** Frame：半透明底 + 边框，标题在框外左上 */
 export const frameRenderer: ElementRenderer = (el) => {
   const display = new Container()
@@ -112,11 +117,17 @@ export const frameRenderer: ElementRenderer = (el) => {
     display,
     update(next) {
       const f = theme.frame
-      bg.clear()
-        .roundRect(0, 0, next.w, next.h, 20)
-        .fill({ color: f.fill, alpha: f.fillAlpha })
-        .stroke({ color: f.line, alpha: f.lineAlpha, width: 1 })
-      label.style.fill = theme.label
+      const tint = parseColor(next.color)
+      bg.clear().roundRect(0, 0, next.w, next.h, 20)
+      // 设了颜色的 Frame：同色淡底 + 实色边框，明暗主题下都看得出
+      if (tint === undefined)
+        bg.fill({ color: f.fill, alpha: f.fillAlpha }).stroke({
+          color: f.line,
+          alpha: f.lineAlpha,
+          width: 1,
+        })
+      else bg.fill({ color: tint, alpha: 0.08 }).stroke({ color: tint, alpha: 0.55, width: 1.5 })
+      label.style.fill = tint ?? theme.label
       label.text = titleOf(next)
     },
     setDetail(high) {

@@ -1,4 +1,4 @@
-import type { CanvasMenuEvent, Engine, EngineState } from '@plein/canvas-core'
+import type { ArrangeResult, CanvasMenuEvent, Engine, EngineState } from '@plein/canvas-core'
 import { create } from 'zustand'
 
 export type SyncStatus = 'local' | 'connecting' | 'connected' | 'disconnected'
@@ -19,6 +19,8 @@ interface CanvasStore extends EngineState {
   viewer: { assetId: string; kind: 'image' | 'video'; name: string } | null
   /** 快捷键面板 */
   shortcuts: boolean
+  /** 刚完成的整理：底部弹“保留 / 还原” */
+  arranged: ArrangeResult | null
   /** 挂载引擎并把它的运行时状态镜像到 store（只在状态变化时更新，不跟随每帧） */
   attach(engine: Engine): () => void
   setSync(sync: SyncStatus): void
@@ -29,6 +31,7 @@ interface CanvasStore extends EngineState {
   openStoryboard(id: string | null): void
   view(v: CanvasStore['viewer']): void
   toggleShortcuts(open?: boolean): void
+  setArranged(r: ArrangeResult | null): void
 }
 
 const initial: EngineState = {
@@ -52,15 +55,28 @@ export const useCanvas = create<CanvasStore>((set) => ({
   storyboard: null,
   viewer: null,
   shortcuts: false,
+  arranged: null,
   attach(engine) {
     const sync = () => set(engine.state)
     const off = engine.onStateChange(sync)
     const offMenu = engine.onMenu((menu) => set({ menu }))
+    const offArrange = engine.onArrange((arranged) => {
+      set({ arranged })
+      if (arranged.scope === 'canvas') engine.zoomToFit()
+    })
     set({ engine, ...engine.state })
     return () => {
       off()
       offMenu()
-      set({ engine: null, menu: null, storyboard: null, viewer: null, ...initial })
+      offArrange()
+      set({
+        engine: null,
+        menu: null,
+        storyboard: null,
+        viewer: null,
+        arranged: null,
+        ...initial,
+      })
     }
   },
   setCanvasId: (canvasId) => set({ canvasId }),
@@ -68,6 +84,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   openStoryboard: (storyboard) => set({ storyboard }),
   view: (viewer) => set({ viewer }),
   toggleShortcuts: (open) => set((s) => ({ shortcuts: open ?? !s.shortcuts })),
+  setArranged: (arranged) => set({ arranged }),
   setSync: (sync) => set({ sync }),
   setImporting: (importing) => set({ importing }),
   notify(notice) {

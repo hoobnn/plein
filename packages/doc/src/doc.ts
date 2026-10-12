@@ -308,6 +308,8 @@ function readElement(id: string, m: ElementMap): CanvasElement | undefined {
   }
   const name = str(m.get('name'))
   if (name !== undefined) el.name = name
+  const color = str(m.get('color'))
+  if (color !== undefined) el.color = color
   const assetId = str(m.get('assetId'))
   if (assetId !== undefined) el.assetId = assetId
   const text = m.get('text')

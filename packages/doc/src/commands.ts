@@ -45,6 +45,7 @@ const PATCH_KEYS = [
   'rotation',
   'locked',
   'name',
+  'color',
   'assetId',
   'ports',
   'nodeType',
@@ -106,6 +107,7 @@ export function createElements(doc: PleinDoc, inputs: NewElement[]): string[] {
         w: input.w,
         h: input.h,
         name: input.name,
+        color: input.color,
         assetId: input.assetId,
         ports: input.ports,
         nodeType: input.nodeType,
@@ -403,6 +405,22 @@ export function groupElements(
     })
     setParent(doc, tops, frame)
     return frame
+  })
+}
+
+/**
+ * 解组：子元素移到 Frame 的父元素里（世界坐标不变），再删掉 Frame。返回原子元素 id。
+ * 连到 Frame 本身的连线随之删除，子元素之间的连线保留。
+ */
+export function ungroupElements(doc: PleinDoc, frameId: string): string[] {
+  const frame = doc.get(frameId)
+  if (frame?.kind !== 'frame') return []
+  const parentId = doc.effectiveParent(frame)
+  return write(doc, () => {
+    const kids = doc.children(frameId).map((el) => el.id)
+    setParent(doc, kids, parentId)
+    deleteElements(doc, [frameId])
+    return kids
   })
 }
 

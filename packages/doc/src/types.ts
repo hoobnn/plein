@@ -51,6 +51,8 @@ export interface CanvasElement extends Rect {
   parentId: string | null
   locked: boolean
   name?: string
+  /** 强调色（#rrggbb），目前用于 Frame 的底色和边框 */
+  color?: string
   /** 指向资产系统，二进制不进文档 */
   assetId?: string
   /** Markdown 等文本内容（文档里是 Y.Text） */
@@ -113,6 +115,7 @@ export interface NewElement extends Rect {
   parentId?: string | null
   locked?: boolean
   name?: string
+  color?: string
   assetId?: string
   text?: string
   params?: Record<string, unknown>
@@ -135,6 +138,7 @@ export type ElementPatch = Partial<
     | 'rotation'
     | 'locked'
     | 'name'
+    | 'color'
     | 'assetId'
     | 'ports'
     | 'nodeType'

@@ -1,6 +1,7 @@
 export { Camera } from './camera'
 export { type EdgePreview, EdgeLayer } from './edges'
 export {
+  type ArrangeResult,
   type CanvasMenuEvent,
   type CanvasPoint,
   Engine,
