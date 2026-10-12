@@ -23,6 +23,7 @@ import type { DB } from '../storage/db'
 import { agentSessions } from '../storage/schema'
 import type { Rooms } from '../sync/rooms'
 import { Approvals } from './approvals'
+import { AgentPlan, PLAN_TOOL } from './plan'
 import { AgentChanges } from './changes'
 import { detectClis } from './cli'
 import { builtinModels, runBuiltinTurn } from './builtin'
@@ -50,6 +51,7 @@ const INSTRUCTIONS = `你是 Plein 的创作助手。Plein 是一块 AI 无限�
 - 运行节点会产生费用，视频尤其贵且慢：只运行完成任务需要的节点，不要批量试错；跑完用 view_media 看一眼效果再决定下一步。
 - 生成视频、整组运行（run_frame / run_flow / run_storyboard）、删除用户已有的东西等操作可能返回 needs_approval：用一句话告诉用户在等什么确认，然后调用 await_approval；用户允许后会直接执行并返回结果，不要重复调用原工具。
 - 每一轮的改动用户都能一键撤销，所以可以放手搭建；但不要删除用户没让删的东西。
+- 任务较大（要建很多节点、运行多次或花不少钱）时，先用 propose_plan 列出步骤请用户同意，执行中用 update_plan 逐步打勾。
 - 做完后用 ui_focus 把用户的镜头带到主要结果上。
 - 做短剧时优先用现成流程：place_drama_template 铺骨架，extract_cast 把抽取结果建成设定卡，expand_storyboard 把分镜展开成镜头节点，run_storyboard 批量生成，分镜改过后用 sync_storyboard 同步。需要角色、场景时先 search_library 看资产库里有没有，有就 place_library_item，满意的设定卡可以 save_to_library。写提示词可以先 list_presets / apply_preset 套模板，再用 rewrite_prompt 润色。
 - 角色参考图 + 声音做视频时，常见做法：生成图片节点出关键帧 → 生成视频节点（首帧）出画面 → 配音节点出台词 → 序列节点把镜头和对白合成为成片。
@@ -76,6 +78,7 @@ interface Live {
   /** 改动集与按轮撤销 */
   changes: AgentChanges
   approvals: Approvals
+  plan: AgentPlan
   /** 这一轮的确认方式 */
   mode: AgentApprovalMode
   releaseTimer: NodeJS.Timeout | null
@@ -215,6 +218,7 @@ export class AgentSessions {
     text: string,
     selection?: string[],
     mode: AgentApprovalMode = 'rules',
+    plan = false,
   ) {
     const s = this.load(id)
     if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
@@ -224,6 +228,7 @@ export class AgentSessions {
     s.busy = true
     try {
       s.mode = mode
+      s.plan.begin(plan)
       if (s.row.agent === 'builtin') this.startBuiltin(s, text, selection)
       else await this.startTurn(s, text, selection)
     } catch (err) {
@@ -442,6 +447,10 @@ export class AgentSessions {
       const lines = this.describeSelection(s.row.canvas_id, selection)
       if (lines.length) parts.push(`用户当前在画布上选中了：\n${lines.join('\n')}`)
     }
+    if (s.plan.planMode)
+      parts.push(
+        '（计划模式：先用只读工具了解情况，再调用 propose_plan 列出步骤并 await_approval 等用户同意；同意后才能改画布或运行，每做完一步调用 update_plan。）',
+      )
     parts.push(text)
     return parts.join('\n\n')
   }
@@ -743,7 +752,10 @@ export class AgentSessions {
     const changes = new AgentChanges(row.id, row.canvas_id, row.owner_id, rooms, runs, (ids) =>
       this.emit(s, { type: 'touch', ids }),
     )
-    const approvals = new Approvals((a) =>
+    const plan = new AgentPlan((item) => this.push(s, item))
+    const approvals = new Approvals((a) => {
+      // 计划的确认单显示成计划卡片
+      if (a.tool === PLAN_TOOL) return plan.onApproval(a)
       this.push(s, {
         id: a.id,
         type: 'approval',
@@ -752,8 +764,8 @@ export class AgentSessions {
         ids: a.ids,
         status: a.status,
         at: Date.now(),
-      }),
-    )
+      })
+    })
     const tools = agentTools(
       {
         canvasId: row.canvas_id,
@@ -772,7 +784,7 @@ export class AgentSessions {
           return true
         },
       },
-      { changes, approvals, mode: () => s.mode },
+      { changes, approvals, mode: () => s.mode, plan },
     )
     const mcp = new McpServer(
       { name: 'plein', version: '0.1.0', instructions: '操作用户当前打开的 Plein 画布' },
@@ -786,7 +798,7 @@ export class AgentSessions {
     items = items.map((it) =>
       it.type === 'changes' && it.undoable
         ? { ...it, undoable: false }
-        : it.type === 'approval' && it.status === 'pending'
+        : (it.type === 'approval' || it.type === 'plan') && it.status === 'pending'
           ? { ...it, status: 'expired' }
           : it,
     )
@@ -804,6 +816,7 @@ export class AgentSessions {
       turn: '',
       changes,
       approvals,
+      plan,
       mode: 'rules',
       releaseTimer: null,
     }

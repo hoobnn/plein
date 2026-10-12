@@ -79,7 +79,9 @@ function mockStoryboard(text: string) {
  */
 function mockAgentStep(input: CapabilityInput<'text.chat'>): ProviderOutput[] {
   const last = input.messages.findLastIndex((m) => m.role === 'user')
-  const ask = lastUserText(input)
+  // 去掉宿主加的计划模式说明，只留用户的话（计划模式另外判断）
+  const raw = lastUserText(input)
+  const ask = raw.replace(/（计划模式[^）]*）\s*/, '')
   const after = input.messages.slice(last + 1)
   const results = after.filter((m) => m.role === 'tool')
   const call = (name: string, args: Record<string, unknown>): ProviderOutput[] => [
@@ -89,6 +91,28 @@ function mockAgentStep(input: CapabilityInput<'text.chat'>): ProviderOutput[] {
     typeof m?.content === 'string' ? m.content : ''
   if (results.length === 0) return call('get_canvas', {})
   const made = results.find((m) => m.toolName === 'create_node')
+  if (/计划模式/.test(raw)) {
+    // 先出计划，等用户同意，再边做边打勾
+    const plan = results.find((m) => m.toolName === 'propose_plan')
+    if (!plan)
+      return call('propose_plan', {
+        summary: '新建一个生成图片节点并出图',
+        steps: ['新建生成图片节点', '运行出图'],
+      })
+    const waits = results.filter((m) => m.toolName === 'await_approval')
+    const waited = text(waits.at(-1))
+    if (!waits.length || waited.includes('pending'))
+      return call('await_approval', {
+        approval_id: (JSON.parse(text(plan) || '{}') as { approval_id?: string }).approval_id,
+      })
+    if (!waited.includes('同意')) return [{ type: 'text', text: '【mock】好的，这个计划先不做。' }]
+    const updates = results.filter((m) => m.toolName === 'update_plan').length
+    const ran = results.some((m) => m.toolName === 'run_node')
+    if (updates === 0) return call('update_plan', { step: 1, status: 'doing' })
+    if (made && updates === 1) return call('update_plan', { step: 1, status: 'done' })
+    if (made && updates === 2) return call('update_plan', { step: 2, status: 'doing' })
+    if (ran && updates === 3) return call('update_plan', { step: 2, status: 'done' })
+  }
   if (/图|画/.test(ask) && !made)
     return call('create_node', {
       type: 'plein/image',

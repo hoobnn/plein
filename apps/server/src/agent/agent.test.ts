@@ -5,6 +5,7 @@ import { startTestServer } from '../testing'
 import { Approvals } from './approvals'
 import { AgentChanges } from './changes'
 import { McpServer } from './mcp'
+import { AgentPlan, type PlanItem } from './plan'
 import { agentTools, canvasTools } from './tools'
 
 let running: Awaited<ReturnType<typeof startTestServer>>
@@ -472,5 +473,95 @@ describe('内置智能体', () => {
     await idle2
     const last = agents.get(session.id, 'local')!.items.at(-1)
     expect(last?.type === 'text' && last.text).toContain('看过画布了')
+  })
+
+  it('计划模式：先出计划，用户同意后才动手，边做边打勾', async () => {
+    const { agents } = running.server
+    const res = await fetch(`${running.url}/api/canvases`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    })
+    const id = ((await res.json()) as Canvas).id
+    const session = agents.create(id, 'local', 'builtin')
+    const idle = new Promise<void>((resolve) => {
+      agents.subscribe(session.id, (e) => {
+        if (e.type === 'item' && e.item.type === 'plan' && e.item.status === 'pending')
+          agents.decide(session.id, 'local', e.item.id, true)
+        if (e.type === 'status' && e.status === 'idle') resolve()
+      })
+    })
+    await agents.send(session.id, 'local', '画一张雨夜天台', undefined, 'rules', true)
+    await idle
+
+    const items = agents.get(session.id, 'local')!.items
+    const plan = items.find((i): i is PlanItem => i.type === 'plan')
+    expect(plan).toMatchObject({
+      status: 'approved',
+      steps: [
+        { title: '新建生成图片节点', status: 'done' },
+        { title: '运行出图', status: 'done' },
+      ],
+    })
+    // 计划卡片代替确认卡片
+    expect(items.some((i) => i.type === 'approval')).toBe(false)
+    const tools = items.flatMap((i) => (i.type === 'tool' ? [i.name] : []))
+    expect(tools.slice(0, 4)).toEqual([
+      'get_canvas',
+      'propose_plan',
+      'await_approval',
+      'update_plan',
+    ])
+    expect(tools).toContain('create_node')
+  })
+})
+
+describe('计划关卡', () => {
+  it('计划被同意前不能改画布，同意后放行，只能更新已同意的计划', async () => {
+    const res = await fetch(`${running.url}/api/canvases`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    })
+    const id = ((await res.json()) as Canvas).id
+    const { rooms, runs, plugins, assets } = running.server
+    const changes = new AgentChanges('agt_plan', id, 'local', rooms, runs)
+    const seen: PlanItem[] = []
+    const plan = new AgentPlan((item) => seen.push(item))
+    const approvals = new Approvals((a) => plan.onApproval(a))
+    const server = new McpServer(
+      { name: 'plein', version: 'test' },
+      agentTools(
+        { canvasId: id, ownerId: 'local', rooms, runs, host: plugins, assets },
+        { changes, approvals, mode: () => 'auto', plan },
+      ),
+    )
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = (await server.handle({
+        jsonrpc: '2.0',
+        id: ++seq,
+        method: 'tools/call',
+        params: { name, arguments: args },
+      })) as { result: { content: Array<{ text?: string }>; isError?: boolean } }
+      return { error: r.result.isError === true, text: r.result.content[0]?.text ?? '' }
+    }
+    changes.begin('t1')
+    plan.begin(true)
+
+    expect((await call('get_canvas')).error).toBe(false)
+    const early = await call('create_element', { kind: 'markdown', text: 'x' })
+    expect(early).toMatchObject({ error: true, text: expect.stringContaining('计划模式') })
+    expect((await call('update_plan', { step: 1, status: 'done' })).error).toBe(true)
+
+    const proposed = JSON.parse((await call('propose_plan', { steps: ['写笔记'] })).text)
+    expect(proposed.status).toBe('needs_approval')
+    const waiting = await call('create_element', { kind: 'markdown', text: 'x' })
+    expect(waiting.text).toContain('等用户同意')
+
+    approvals.decide(proposed.approval_id, true)
+    expect((await call('create_element', { kind: 'markdown', text: 'x' })).error).toBe(false)
+    expect((await call('update_plan', { step: 1, status: 'done' })).text).toContain('都完成了')
+    expect(seen.at(-1)).toMatchObject({ status: 'approved', steps: [{ status: 'done' }] })
+    changes.release()
   })
 })

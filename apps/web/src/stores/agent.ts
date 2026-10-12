@@ -16,6 +16,7 @@ export type Mood = 'idle' | 'working' | 'happy' | 'sad'
 
 const AGENT_KEY = 'plein:agent'
 const APPROVAL_KEY = 'plein:agent-approval'
+const PLAN_KEY = 'plein:agent-plan'
 
 interface AgentStore {
   open: boolean
@@ -24,6 +25,8 @@ interface AgentStore {
   agent: AgentKind
   /** 花钱、删东西前要不要先问，记在本机 */
   approval: AgentApprovalMode
+  /** 计划模式：先列计划，同意后才动手，记在本机 */
+  plan: boolean
   canvasId: string | null
   sessions: AgentSessionSummary[]
   session: AgentSession | null
@@ -37,6 +40,7 @@ interface AgentStore {
   loadStatus(refresh?: boolean): Promise<void>
   setAgent(agent: AgentKind): void
   setApproval(mode: AgentApprovalMode): void
+  setPlan(plan: boolean): void
   /** 允许或跳过一张确认单 */
   decide(approvalId: string, allow: boolean): Promise<void>
   /** 切换到某块画布（null 表示不在画布里）：读它的会话，接上最近一个 */
@@ -62,6 +66,14 @@ function savedApproval(): AgentApprovalMode {
     return v === 'always' || v === 'auto' ? v : 'rules'
   } catch {
     return 'rules'
+  }
+}
+
+function savedFlag(key: string) {
+  try {
+    return localStorage.getItem(key) === '1'
+  } catch {
+    return false
   }
 }
 
@@ -152,6 +164,7 @@ export const useAgent = create<AgentStore>((set, get) => {
     status: null,
     agent: savedAgent(),
     approval: savedApproval(),
+    plan: savedFlag(PLAN_KEY),
     canvasId: null,
     sessions: [],
     cursor: null,
@@ -189,6 +202,13 @@ export const useAgent = create<AgentStore>((set, get) => {
       set({ approval })
       try {
         localStorage.setItem(APPROVAL_KEY, approval)
+      } catch {}
+    },
+
+    setPlan(plan) {
+      set({ plan })
+      try {
+        localStorage.setItem(PLAN_KEY, plan ? '1' : '0')
       } catch {}
     },
 
@@ -252,7 +272,7 @@ export const useAgent = create<AgentStore>((set, get) => {
           set({ session })
           connect(session.id)
         }
-        await api.sendAgentMessage(session.id, text, selection, get().approval)
+        await api.sendAgentMessage(session.id, text, selection, get().approval, get().plan)
         void refreshList()
       } catch (err) {
         set({ error: (err as Error).message, mood: 'sad' })

@@ -112,6 +112,40 @@
     background-color var(--dur-base) var(--ease-standard),
     box-shadow var(--dur-base) var(--ease-standard);
 }
+.plein-plan-step {
+  animation: ui-pop-in var(--dur-slow) var(--ease-spring) backwards;
+  animation-delay: calc(var(--i) * 40ms);
+}
+.plein-plan-mark {
+  color: var(--ink-subtle);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  transition:
+    color var(--dur-base) var(--ease-standard),
+    background-color var(--dur-base) var(--ease-standard),
+    box-shadow var(--dur-base) var(--ease-standard);
+}
+.plein-plan-step[data-status="doing"] .plein-plan-mark {
+  color: var(--accent);
+  box-shadow: none;
+}
+.plein-plan-step[data-status="done"] .plein-plan-mark {
+  color: var(--surface);
+  background-color: var(--accent);
+  box-shadow: none;
+}
+.plein-plan-step[data-status="done"] .plein-plan-mark svg {
+  animation: ui-pop-in var(--dur-slow) var(--ease-spring);
+}
+.plein-plan-title {
+  transition: color var(--dur-base) var(--ease-standard);
+}
+.plein-plan-step[data-status="done"] .plein-plan-title,
+.plein-plan-step[data-status="skipped"] .plein-plan-title {
+  color: var(--ink-muted);
+}
+.plein-plan-step[data-status="skipped"] .plein-plan-title {
+  text-decoration: line-through;
+}
 .plein-agent-md {
   font-size: var(--text-sm);
   line-height: 1.6;

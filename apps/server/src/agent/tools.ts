@@ -41,6 +41,7 @@ import type { Rooms } from '../sync/rooms'
 import { type Approvals, approvalFor } from './approvals'
 import type { AgentChanges } from './changes'
 import { libraryCapabilities } from './library'
+import type { AgentPlan } from './plan'
 import { pluginCapabilities } from './plugin-caps'
 import { capabilityTools, type McpTool, type ToolResult } from './mcp'
 
@@ -638,10 +639,19 @@ export function canvasTools(env: ToolEnv): McpTool[] {
  */
 export function agentTools(
   env: ToolEnv,
-  opts: { changes: AgentChanges; approvals: Approvals; mode: () => AgentApprovalMode },
+  opts: {
+    changes: AgentChanges
+    approvals: Approvals
+    mode: () => AgentApprovalMode
+    /** 计划模式：计划被同意前拦下改动；也提供 propose_plan / update_plan */
+    plan?: AgentPlan
+  },
 ): McpTool[] {
   const ctx = serverContext(env)
-  const tools = capabilityTools(capabilitiesOf(env.host), ctx, (cap, args, run) => {
+  const registry = capabilitiesOf(env.host)
+  const tools = capabilityTools(registry, ctx, (cap, args, run) => {
+    const blocked = opts.plan?.blocked(registry.effectOf(cap, args, ctx))
+    if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
     const req = approvalFor(opts.mode(), cap, args, ctx, opts.changes)
     if (!req) return null
     const a = opts.approvals.create(cap.name, req, run)
@@ -652,6 +662,7 @@ export function agentTools(
       next: '已请用户在面板里确认。调用 await_approval 等待：用户允许后会直接执行并返回结果，不要重复调用原工具；用户跳过就换个做法或问用户。',
     })
   })
+  if (opts.plan) tools.push(...opts.plan.tools(opts.approvals))
   tools.push({
     name: 'await_approval',
     description: `等待用户确认一次需要确认的操作，最多 ${MAX_WAIT_S} 秒。允许后返回原操作的执行结果；还没决定时返回 pending，可以再调一次继续等。`,

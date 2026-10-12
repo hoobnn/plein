@@ -57,6 +57,7 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
           body.data.text,
           body.data.selection,
           body.data.approval,
+          body.data.plan,
         )
         return c.body(null, 202)
       } catch (err) {

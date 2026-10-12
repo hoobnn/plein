@@ -587,6 +587,15 @@ export type AgentItem =
     }
   | {
       id: string
+      /** 计划：大任务先列步骤，用户同意后执行，逐步打勾。id 就是确认单 id */
+      type: 'plan'
+      summary?: string
+      steps: Array<{ title: string; status: 'todo' | 'doing' | 'done' | 'skipped' }>
+      status: 'pending' | 'approved' | 'denied' | 'expired'
+      at: number
+    }
+  | {
+      id: string
       /** 等用户确认的操作：允许后服务端直接执行 */
       type: 'approval'
       tool: string
@@ -619,6 +628,8 @@ export const SendAgentMessage = z.object({
   selection: z.array(z.string().max(200)).max(200).optional(),
   /** 这一轮的确认方式，默认 rules */
   approval: AgentApprovalMode.optional(),
+  /** 计划模式：先列计划，用户同意后才动手 */
+  plan: z.boolean().optional(),
 })
 export type SendAgentMessage = z.infer<typeof SendAgentMessage>
 

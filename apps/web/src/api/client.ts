@@ -146,7 +146,8 @@ export const api = {
     text: string,
     selection?: string[],
     approval?: AgentApprovalMode,
-  ) => request<void>(API.agentMessages(id), json('POST', { text, selection, approval })),
+    plan?: boolean,
+  ) => request<void>(API.agentMessages(id), json('POST', { text, selection, approval, plan })),
   decideAgentApproval: (id: string, approvalId: string, allow: boolean) =>
     request<void>(API.agentApproval(id, approvalId), json('POST', { allow })),
   stopAgent: (id: string) => request<void>(API.agentStop(id), json('POST', {})),

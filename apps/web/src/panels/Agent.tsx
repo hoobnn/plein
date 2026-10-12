@@ -41,6 +41,8 @@ const TOOL_LABELS: Record<string, string> = {
   ui_focus: '带你看',
   ui_select: '选中',
   await_approval: '等你确认',
+  propose_plan: '列出计划',
+  update_plan: '更新计划进度',
   duplicate_elements: '复制',
   group_elements: '打组',
   ungroup: '解组',
@@ -353,9 +355,10 @@ function Transcript({
       }}
       className="ui-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-3"
     >
-      {items.map((it) => (
-        <Item key={it.id} item={it} />
-      ))}
+      {items.map((it) =>
+        // 计划进度直接画在计划卡片上，不再单列一行
+        it.type === 'tool' && HIDDEN_TOOLS.has(it.name) ? null : <Item key={it.id} item={it} />,
+      )}
       {running && (
         <div className="flex items-center gap-2 py-1 text-xs text-ink-subtle">
           <span className="ui-spinner size-3" />
@@ -389,7 +392,93 @@ function Item({ item }: { item: AgentItem }) {
   }
   if (item.type === 'changes') return <ChangesRow item={item} />
   if (item.type === 'approval') return <ApprovalRow item={item} />
+  if (item.type === 'plan') return <PlanRow item={item} />
   return <ToolRow item={item} />
+}
+
+const HIDDEN_TOOLS = new Set(['update_plan'])
+
+const PLAN_STATUS: Record<string, string> = {
+  pending: '小满想这样做',
+  approved: '计划',
+  denied: '计划没有采用',
+  expired: '计划已过期',
+}
+
+/** 计划卡片：同意后小满按步骤执行，每一步做完打勾 */
+function PlanRow({ item }: { item: Extract<AgentItem, { type: 'plan' }> }) {
+  const [busy, setBusy] = useState(false)
+  const pending = item.status === 'pending'
+  const done = item.steps.filter((s) => s.status === 'done' || s.status === 'skipped').length
+  const decide = async (allow: boolean) => {
+    setBusy(true)
+    await useAgent.getState().decide(item.id, allow)
+    setBusy(false)
+  }
+
+  return (
+    <div
+      className={`plein-agent-approval plein-agent-plan flex flex-col gap-2 rounded-lg px-3 py-2.5 text-xs ring-1 ring-inset ${pending ? 'bg-accent-soft/50 text-ink ring-accent/40' : 'text-ink ring-line'}`}
+      data-status={item.status}
+    >
+      <div className="flex items-center gap-2 text-ink-muted">
+        <Icon name="tasks" size={14} />
+        <span className="min-w-0 flex-1 truncate">
+          {PLAN_STATUS[item.status]}
+          {item.summary ? `：${item.summary}` : ''}
+        </span>
+        {item.status === 'approved' && (
+          <span className="flex-none tabular-nums text-ink-subtle">
+            {done}/{item.steps.length}
+          </span>
+        )}
+      </div>
+      <ol className="flex flex-col gap-1.5">
+        {item.steps.map((step, i) => (
+          <li
+            // biome-ignore lint/suspicious/noArrayIndexKey: 步骤按序号定位，不会重排
+            key={i}
+            className="plein-plan-step flex items-start gap-2"
+            data-status={step.status}
+            style={{ '--i': i } as React.CSSProperties}
+          >
+            <span className="plein-plan-mark mt-px flex size-4 flex-none items-center justify-center rounded-full">
+              {step.status === 'doing' ? (
+                <span className="ui-spinner size-3" />
+              ) : step.status === 'done' ? (
+                <Icon name="check" size={12} />
+              ) : step.status === 'skipped' ? (
+                <Icon name="x" size={12} />
+              ) : (
+                <span className="text-2xs tabular-nums">{i + 1}</span>
+              )}
+            </span>
+            <span className="plein-plan-title min-w-0 flex-1 leading-5">{step.title}</span>
+          </li>
+        ))}
+      </ol>
+      {pending && (
+        <div className="flex justify-end gap-1.5">
+          <button
+            type="button"
+            className="ui-btn ui-btn-xs ui-btn-quiet"
+            disabled={busy}
+            onClick={() => void decide(false)}
+          >
+            不用了
+          </button>
+          <button
+            type="button"
+            className="ui-btn ui-btn-xs ui-btn-primary"
+            disabled={busy}
+            onClick={() => void decide(true)}
+          >
+            同意并执行
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 const APPROVAL_DONE: Record<string, string> = {
@@ -596,6 +685,7 @@ function Composer({ running }: { running: boolean }) {
   const [withSelection, setWithSelection] = useState(true)
   const selected = useCanvas((s) => s.selection)
   const approval = useAgent((s) => s.approval)
+  const plan = useAgent((s) => s.plan)
   const ref = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -675,7 +765,17 @@ function Composer({ running }: { running: boolean }) {
           </button>
         )}
       </div>
-      <div className="mt-2 flex items-center">
+      <div className="mt-2 flex items-center gap-1">
+        <button
+          type="button"
+          aria-pressed={plan}
+          title="先列出计划，你同意后小满再动手"
+          className={`ui-btn ui-btn-xs ui-btn-quiet h-6 gap-1 px-1.5 text-2xs ${plan ? 'text-accent' : 'text-ink-subtle'}`}
+          onClick={() => useAgent.getState().setPlan(!plan)}
+        >
+          <Icon name="tasks" size={12} />
+          先出计划
+        </button>
         <Select
           aria-label="确认方式"
           value={approval}
