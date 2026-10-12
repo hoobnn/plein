@@ -10,9 +10,9 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "3.0.68",
+    "@ai-sdk/openai-compatible": "3.0.67",
     "@plein/plugin-sdk": "workspace:*",
-    "ai": "7.0.138",
+    "ai": "7.0.137",
     "zod": "4.6.5"
   },
   "devDependencies": {
