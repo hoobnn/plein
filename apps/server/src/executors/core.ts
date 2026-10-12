@@ -1,8 +1,10 @@
 import {
+  characterNode,
   corePlugin,
   imageNode,
   llmNode,
   musicNode,
+  sceneNode,
   speechNode,
   textNode,
   videoNode,
@@ -119,6 +121,14 @@ const music = defineExecutor(musicNode, async (ctx) => {
 })
 
 /** 基础节点插件的服务端部分：声明来自 @plein/nodes，执行器在这里 */
+/** 资产卡：输出连入的参考图，供下游直接连线使用 */
+const character = defineExecutor(characterNode, async ({ inputs }) => ({
+  images: inputAssets(inputs, 'references').map((a) => ({ type: 'image' as const, ...a })),
+}))
+const scene = defineExecutor(sceneNode, async ({ inputs }) => ({
+  images: inputAssets(inputs, 'references').map((a) => ({ type: 'image' as const, ...a })),
+}))
+
 export const coreServerPlugin = defineServerPlugin(corePlugin, {
-  executors: [text, llm, image, video, speech, music],
+  executors: [text, llm, image, video, speech, music, character, scene],
 })

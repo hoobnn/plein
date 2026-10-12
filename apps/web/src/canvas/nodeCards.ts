@@ -1,11 +1,14 @@
 import { type Engine, NODE_LAYOUT, portPosition } from '@plein/canvas-core'
 import { adoptResult, type CanvasElement, currentResult, type RunStatus } from '@plein/doc'
 import { useCatalog } from '../stores/catalog'
-import { findNode, isPure, promptKey } from './nodes'
+import { ASSET_NODE_TYPES } from '@plein/nodes'
+import { findNode, isPure, promptKey, targetImages } from './nodes'
 
 export interface NodeCardActions {
   run(id: string): void
   cancel(id: string): void
+  /** 资产卡上参考图缩略图的地址 */
+  thumbUrl(assetId: string): string
 }
 
 interface Card {
@@ -169,7 +172,10 @@ export class NodeCards {
     const pure = info ? isPure(info) : false
     const pk = info ? promptKey(info) : undefined
     const key = pure ? pk : undefined
+    const thumbs =
+      el.nodeType && ASSET_NODE_TYPES.has(el.nodeType) ? targetImages(this.engine, el) : []
     const sig = JSON.stringify([
+      thumbs,
       el.w,
       el.h,
       el.name,
@@ -204,6 +210,21 @@ export class NodeCards {
     if (!info) {
       card.body.textContent = `未安装的节点类型：${el.nodeType ?? '未知'}`
       card.body.classList.add('is-hint')
+    } else if (thumbs.length || (el.nodeType && ASSET_NODE_TYPES.has(el.nodeType))) {
+      // 资产卡：参考图一字排开，下面是设定
+      const strip = document.createElement('div')
+      strip.className = 'plein-node-thumbs'
+      for (const id of thumbs.slice(0, 4)) {
+        const img = document.createElement('img')
+        img.src = this.actions.thumbUrl(id)
+        img.alt = ''
+        strip.appendChild(img)
+      }
+      if (!thumbs.length) strip.textContent = '从左侧连入 2–4 张多角度参考图'
+      const text = document.createElement('div')
+      text.textContent = String(el.params?.description ?? '') || '在下方写设定'
+      text.className = el.params?.description ? '' : 'plein-node-muted'
+      card.body.replaceChildren(strip, text)
     } else if (key) {
       const text = String(el.params?.[key] ?? '')
       card.body.textContent = text || '双击写下文本，连到下游节点'

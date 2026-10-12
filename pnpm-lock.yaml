@@ -333,6 +333,9 @@ importers:
       '@plein/doc':
         specifier: workspace:*
         version: link:../../packages/doc
+      '@plein/nodes':
+        specifier: workspace:*
+        version: link:../../packages/nodes
       '@plein/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk

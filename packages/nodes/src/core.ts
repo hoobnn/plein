@@ -122,6 +122,35 @@ export const musicNode = defineNode({
   }),
 })
 
+/** 角色设定卡：参考图 + 设定 + 音色，提示词里 @ 它即可引用 */
+export const characterNode = defineNode({
+  type: 'plein/character',
+  version: 1,
+  title: '角色',
+  description: '角色设定卡：连入 2–4 张多角度参考图，在提示词里 @ 角色名即可引用',
+  category: 'story',
+  inputs: [{ id: 'references', label: '参考图', type: 'image', multiple: true }],
+  outputs: [{ id: 'images', label: '参考图', type: 'image' }],
+  params: z.object({
+    description: textarea('设定', '外貌、服装、性格，如：二十岁，短发，白衬衫'),
+    voice: z.string().default('').meta({ title: '音色', placeholder: '配音时使用的音色 id' }),
+  }),
+})
+
+/** 场景设定卡 */
+export const sceneNode = defineNode({
+  type: 'plein/scene',
+  version: 1,
+  title: '场景',
+  description: '场景设定卡：连入参考图，在提示词里 @ 场景名即可引用',
+  category: 'story',
+  inputs: [{ id: 'references', label: '参考图', type: 'image', multiple: true }],
+  outputs: [{ id: 'images', label: '参考图', type: 'image' }],
+  params: z.object({
+    description: textarea('设定', '时间、地点、光线、氛围，如：雨夜，老城区天台，霓虹反光'),
+  }),
+})
+
 /** 内置核心插件：只有声明，执行器在服务端（apps/server/src/executors） */
 export const corePlugin = definePlugin({
   manifest: {
@@ -138,8 +167,10 @@ export const corePlugin = definePlugin({
         'plein/video@1',
         'plein/speech@1',
         'plein/music@1',
+        'plein/character@1',
+        'plein/scene@1',
       ],
     },
   },
-  nodes: [textNode, llmNode, imageNode, videoNode, speechNode, musicNode],
+  nodes: [textNode, llmNode, imageNode, videoNode, speechNode, musicNode, characterNode, sceneNode],
 })

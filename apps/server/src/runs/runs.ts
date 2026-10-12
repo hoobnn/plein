@@ -10,7 +10,11 @@ import {
 } from '@plein/doc'
 import type { NodeOutputs, PortValue } from '@plein/plugin-sdk'
 import { NodeRunError, type PluginHost } from '../plugins/host'
+import { applyMentions } from './mentions'
 import type { Rooms } from '../sync/rooms'
+
+/** 就地计算纯上游节点的最大递归深度（防环） */
+const MAX_DEPTH = 8
 
 /** 进度写回文档的最小间隔，避免高频同步 */
 const PROGRESS_INTERVAL_MS = 500
@@ -96,11 +100,17 @@ export class NodeRuns {
   ) {
     let lastProgress = 0
     try {
-      const inputs = await this.collectInputs(doc, el.id, ownerId, signal)
+      const collected = await this.collectInputs(doc, el.id, ownerId, signal)
+      const def = this.host.registry.latestNode(el.nodeType!)?.def
+      const { params, inputs } = def
+        ? await applyMentions(doc, el, def, collected, (id) =>
+            this.collectInputs(doc, id, ownerId, signal),
+          )
+        : { params: el.params, inputs: collected }
       const outputs = await this.host.runNode({
         type: el.nodeType!,
         version: el.nodeVersion ?? 1,
-        params: el.params,
+        params,
         inputs,
         ownerId,
         signal,
@@ -138,7 +148,9 @@ export class NodeRuns {
     nodeId: string,
     ownerId: string,
     signal: AbortSignal,
+    depth = 0,
   ): Promise<Record<string, PortValue[]>> {
+    if (depth > MAX_DEPTH) throw new NodeRunError('invalid_input', '上游连线成环或层级过深')
     const edges = [...doc.edges()].filter((e) => e.to[0] === nodeId)
     const pos = (id: string) => doc.worldRect(id) ?? { x: 0, y: 0 }
     edges.sort((a, b) => {
@@ -150,17 +162,19 @@ export class NodeRuns {
     for (const edge of edges) {
       const src = doc.get(edge.from[0])
       if (!src) continue
-      const values = await this.upstreamValues(src, edge.from[1], ownerId, signal)
+      const values = await this.upstreamValues(doc, src, edge.from[1], ownerId, signal, depth)
       inputs[edge.to[1]] = [...(inputs[edge.to[1]] ?? []), ...values]
     }
     return inputs
   }
 
   private async upstreamValues(
+    doc: PleinDoc,
     src: CanvasElement,
     port: string,
     ownerId: string,
     signal: AbortSignal,
+    depth: number,
   ): Promise<PortValue[]> {
     const label = src.name ?? '上游'
     switch (src.kind) {
@@ -179,6 +193,7 @@ export class NodeRuns {
             type: src.nodeType!,
             version: src.nodeVersion ?? 1,
             params: src.params,
+            inputs: await this.collectInputs(doc, src.id, ownerId, signal, depth + 1),
             ownerId,
             signal,
           })

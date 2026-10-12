@@ -52,7 +52,11 @@ export function CanvasView({ source }: { source: CanvasSource }) {
           originalUrl: assetUrls.original,
           awareness,
         })
-        const cards = new NodeCards(engine, overlayRoot, { run: runNode, cancel: cancelNode })
+        const cards = new NodeCards(engine, overlayRoot, {
+          run: runNode,
+          cancel: cancelNode,
+          thumbUrl: (id) => assetUrls.variant(id, 'thumb-256'),
+        })
         // 双击节点：聚焦生成器的提示词（面板在选中后的下一帧才挂载）
         const offActivate = engine.onActivate((id) => {
           if (engine.scene.get(id)?.kind !== 'node') return

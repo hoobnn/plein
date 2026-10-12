@@ -1,5 +1,12 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, removeEdges, type ResultValue, setParam } from '@plein/doc'
+import {
+  type CanvasElement,
+  removeEdges,
+  type ResultValue,
+  setParam,
+  updateElement,
+} from '@plein/doc'
+import { ASSET_NODE_TYPES, findMentions, mentionQuery } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { assetUrls } from '../api/client'
@@ -8,8 +15,10 @@ import {
   fieldsOf,
   findNode,
   isPure,
+  mentionTargets,
   type NodeInfo,
   promptKey,
+  targetImages,
   type Upstream,
   upstreams,
   validate,
@@ -129,19 +138,30 @@ function Panel({
         }
       }}
     >
+      <NameField
+        value={el.name ?? node.title}
+        onChange={(name) => updateElement(engine.doc, el.id, { name })}
+        hint={
+          ASSET_NODE_TYPES.has(node.type)
+            ? `在提示词里输入 @${el.name ?? node.title} 引用`
+            : undefined
+        }
+      />
       {node.inputs.length > 0 && <Inputs engine={engine} node={node} ups={ups} />}
       {pk && (
         <PromptBox
           ref={promptRef}
+          engine={engine}
+          selfId={el.id}
           value={String(params[pk] ?? '')}
           placeholder={
             fields.find(([k]) => k === pk)?.[1].placeholder ??
-            (pure ? '写下文本' : '描述你想生成的内容，连入的上游文本会接在后面')
+            (pure ? '写下文本' : '描述你想生成的内容，输入 @ 引用角色或场景')
           }
           onChange={(v) => set(pk, v)}
         />
       )}
-      {!pure && (
+      {(!pure || Object.keys(rest).length > 0) && (
         <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3">
           {main.map(([key, f]) => (
             <Compact
@@ -164,24 +184,26 @@ function Panel({
               {more ? '收起' : '更多参数'}
             </button>
           )}
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              onClick={run}
-              disabled={!running && !!problem}
-              title={problem ?? '⌘↵'}
-              className={`h-8 rounded-lg px-4 text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${
-                running
-                  ? 'bg-white/10 text-ink hover:bg-white/15'
-                  : 'bg-accent text-[#18181b] hover:bg-[#f3e4ca]'
-              }`}
-            >
-              {running ? '取消' : el.results?.length ? '重新生成' : '生成'}
-            </button>
-          </div>
+          {!pure && (
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={run}
+                disabled={!running && !!problem}
+                title={problem ?? '⌘↵'}
+                className={`h-8 rounded-lg px-4 text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${
+                  running
+                    ? 'bg-white/10 text-ink hover:bg-white/15'
+                    : 'bg-accent text-[#18181b] hover:bg-[#f3e4ca]'
+                }`}
+              >
+                {running ? '取消' : el.results?.length ? '重新生成' : '生成'}
+              </button>
+            </div>
+          )}
         </div>
       )}
-      {!pure && more && (
+      {more && (
         <div className="border-t border-line px-3 py-3">
           <SchemaForm
             schema={{ properties: rest }}
@@ -200,6 +222,40 @@ function Panel({
         </p>
       )}
     </section>
+  )
+}
+
+/** 节点名：资产卡靠它被 @ 引用；失焦或回车时写入文档 */
+function NameField({
+  value,
+  hint,
+  onChange,
+}: {
+  value: string
+  hint?: string
+  onChange(v: string): void
+}) {
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+  const commit = () => {
+    const v = draft.trim()
+    if (v && v !== value) onChange(v)
+    else setDraft(value)
+  }
+  return (
+    <div className="flex items-center gap-2 border-b border-line px-4 py-2">
+      <input
+        aria-label="节点名称"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+        }}
+        className="min-w-0 flex-1 bg-transparent text-sm font-medium text-ink outline-none"
+      />
+      {hint && <span className="flex-none text-xs text-ink-muted">{hint}</span>}
+    </div>
   )
 }
 
@@ -305,39 +361,169 @@ function Compact({
 /**
  * 主提示词：本地草稿保证输入流畅，每次修改立即写入文档（协作端实时可见）；
  * 未聚焦时跟随文档，其他人改了能看到。
+ * 输入 @ 弹出画布上的角色、场景和有名字的图片，选中后插入 `@名字`。
  */
 function PromptBox({
   ref,
+  engine,
+  selfId,
   value,
   placeholder,
   onChange,
 }: {
-  ref: React.Ref<HTMLTextAreaElement>
+  ref: React.RefObject<HTMLTextAreaElement | null>
+  engine: Engine
+  selfId: string
   value: string
   placeholder: string
   onChange(v: string): void
 }) {
   const [draft, setDraft] = useState(value)
   const [focused, setFocused] = useState(false)
+  const [query, setQuery] = useState<{ start: number; query: string } | null>(null)
+  const [active, setActive] = useState(0)
   const shown = focused ? draft : value
+  const targets = mentionTargets(engine)
+  targets.forEach((t, name) => {
+    if (t.id === selfId) targets.delete(name)
+  })
+  const options = query
+    ? [...targets]
+        .filter(([name]) => name.toLowerCase().includes(query.query.toLowerCase()))
+        .slice(0, 8)
+    : []
+  const mentions = findMentions(shown, targets)
+
+  const update = (text: string, caret: number) => {
+    setDraft(text)
+    onChange(text)
+    setQuery(mentionQuery(text, caret))
+    setActive(0)
+  }
+  const insert = (name: string) => {
+    if (!query) return
+    const caret = query.start + 1 + query.query.length
+    const text = `${shown.slice(0, query.start)}@${name} ${shown.slice(caret)}`
+    update(text, -1)
+    setQuery(null)
+    const pos = query.start + name.length + 2
+    requestAnimationFrame(() => {
+      ref.current?.focus()
+      ref.current?.setSelectionRange(pos, pos)
+    })
+  }
+
   return (
-    <textarea
-      ref={ref}
-      aria-label="提示词"
-      value={shown}
-      placeholder={placeholder}
-      rows={3}
-      onFocus={() => {
-        setDraft(value)
-        setFocused(true)
-      }}
-      onBlur={() => setFocused(false)}
-      onChange={(e) => {
-        setDraft(e.target.value)
-        onChange(e.target.value)
-      }}
-      className="field-sizing-content max-h-60 min-h-20 w-full resize-none bg-transparent px-4 py-3 text-sm leading-relaxed text-ink outline-none placeholder:text-ink-muted"
+    <div className="relative">
+      <textarea
+        ref={ref}
+        aria-label="提示词"
+        value={shown}
+        placeholder={placeholder}
+        rows={3}
+        onFocus={() => {
+          setDraft(value)
+          setFocused(true)
+        }}
+        onBlur={() => {
+          setFocused(false)
+          // 让候选项的点击先生效
+          setTimeout(() => setQuery(null), 150)
+        }}
+        onChange={(e) => update(e.target.value, e.target.selectionStart)}
+        onKeyDown={(e) => {
+          if (!options.length) return
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault()
+            const d = e.key === 'ArrowDown' ? 1 : -1
+            setActive((a) => (a + d + options.length) % options.length)
+          } else if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault()
+            insert(options[active]![0])
+          } else if (e.key === 'Escape') {
+            e.stopPropagation()
+            setQuery(null)
+          }
+        }}
+        className="field-sizing-content max-h-60 min-h-20 w-full resize-none bg-transparent px-4 py-3 text-sm leading-relaxed text-ink outline-none placeholder:text-ink-muted"
+      />
+      {mentions.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2 text-xs text-ink-muted">
+          引用
+          {[...new Map(mentions.map((m) => [m.name, m.target])).entries()].map(([name, t]) => (
+            <MentionChip key={name} engine={engine} name={name} target={t} />
+          ))}
+        </div>
+      )}
+      {options.length > 0 && (
+        <div
+          role="listbox"
+          aria-label="引用资产"
+          className="absolute left-3 top-full z-10 mt-1 w-64 rounded-xl bg-surface p-1 shadow-[var(--shadow-3)]"
+        >
+          {options.map(([name, t], i) => (
+            <button
+              key={name}
+              type="button"
+              role="option"
+              aria-selected={i === active}
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => insert(name)}
+              onPointerEnter={() => setActive(i)}
+              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm ${i === active ? 'bg-white/8' : ''}`}
+            >
+              <Thumb engine={engine} target={t} />
+              <span className="truncate">{name}</span>
+              <span className="ml-auto text-xs text-ink-muted">{targetKind(t)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function targetKind(t: CanvasElement) {
+  if (t.nodeType === 'plein/character') return '角色'
+  if (t.nodeType === 'plein/scene') return '场景'
+  return '图片'
+}
+
+function Thumb({ engine, target }: { engine: Engine; target: CanvasElement }) {
+  const id = targetImages(engine, target)[0]
+  return id ? (
+    <img
+      src={assetUrls.variant(id, 'thumb-256')}
+      alt=""
+      className="size-6 flex-none rounded object-cover"
     />
+  ) : (
+    <span className="size-6 flex-none rounded bg-surface-2" />
+  )
+}
+
+function MentionChip({
+  engine,
+  name,
+  target,
+}: {
+  engine: Engine
+  name: string
+  target: CanvasElement
+}) {
+  return (
+    <button
+      type="button"
+      title={`定位到「${name}」`}
+      onClick={() => {
+        engine.selection.set([target.id])
+        engine.zoomToFit([target.id])
+      }}
+      className="flex h-7 items-center gap-1.5 rounded-md bg-accent/10 pl-0.5 pr-2 text-accent ring-1 ring-accent/20 hover:bg-accent/15"
+    >
+      <Thumb engine={engine} target={target} />
+      {name}
+    </button>
   )
 }
 

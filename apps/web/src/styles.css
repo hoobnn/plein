@@ -331,3 +331,23 @@ body,
 .plein-port-label.is-out {
   left: calc(100% + 4px);
 }
+
+.plein-node-thumbs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--color-ink-muted);
+  font-size: 12px;
+}
+
+.plein-node-thumbs img {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--color-surface-2);
+}
+
+.plein-node-muted {
+  color: var(--color-ink-muted);
+}

@@ -10,6 +10,7 @@ import {
   type PortType,
   type ResultValue,
 } from '@plein/doc'
+import { ASSET_NODE_TYPES } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 
 export type NodeInfo = Catalog['nodes'][number]
@@ -161,10 +162,14 @@ export function upstreams(
     if (source.kind === 'markdown') value = { type: 'text', text: source.text ?? '' }
     else if (source.kind === 'node') {
       value = currentResult(source, e.from[1])?.value
-      // 纯节点（如文本）没有结果时，运行下游会就地计算：它的主文本就是输出
+      // 纯节点（文本、资产卡）没有结果时，运行下游会就地计算
       const info = findNode(catalog, source.nodeType)
-      const key = info && isPure(info) ? promptKey(info) : undefined
-      if (!value && key) value = { type: 'text', text: String(source.params?.[key] ?? '') }
+      if (!value && info && isPure(info)) {
+        const out = info.outputs.find((p) => p.id === e.from[1])
+        if (out?.type === 'text')
+          value = { type: 'text', text: String(source.params?.[promptKey(info) ?? 'text'] ?? '') }
+        else value = upstreams(engine, source.id, catalog).get('references')?.[0]?.value
+      }
     } else if (
       (source.kind === 'image' || source.kind === 'video' || source.kind === 'audio') &&
       source.assetId
@@ -217,4 +222,29 @@ export function validate(
     }
   }
   return null
+}
+
+/** 可被 @ 引用的元素：资产卡（角色、场景）和有名字的图片，与服务端解析规则一致 */
+export function mentionTargets(engine: Engine): Map<string, CanvasElement> {
+  const out = new Map<string, CanvasElement>()
+  for (const el of engine.doc.elements()) {
+    const name = el.name?.trim()
+    if (!name || out.has(name)) continue
+    const asset = el.kind === 'node' && el.nodeType && ASSET_NODE_TYPES.has(el.nodeType)
+    if (asset || (el.kind === 'image' && el.assetId)) out.set(name, el)
+  }
+  return out
+}
+
+/** 资产卡或图片的缩略图：资产卡取它连入的第一张参考图 */
+export function targetImages(engine: Engine, el: CanvasElement): string[] {
+  if (el.kind === 'image' && el.assetId) return [el.assetId]
+  return [...engine.doc.edges()]
+    .filter((e) => e.to[0] === el.id && e.to[1] === 'references')
+    .flatMap((e) => {
+      const src = engine.doc.get(e.from[0])
+      if (src?.kind === 'image' && src.assetId) return [src.assetId]
+      const r = src?.kind === 'node' ? currentResult(src, e.from[1])?.value : undefined
+      return r?.type === 'image' ? [r.assetId] : []
+    })
 }
