@@ -15,10 +15,13 @@ export const PortSpec = z.object({
 })
 export type PortSpec = z.infer<typeof PortSpec>
 
+export const AssetKind = z.enum(['image', 'video', 'audio', 'file'])
+export type AssetKind = z.infer<typeof AssetKind>
+
 /** 资产引用：节点之间传递图片 / 视频 / 音频时只传 id，二进制在资产库 */
 export interface AssetRef {
   assetId: string
-  kind: 'image' | 'video' | 'audio' | 'file'
+  kind: AssetKind
   mime?: string
 }
 

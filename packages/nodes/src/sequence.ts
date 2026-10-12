@@ -150,7 +150,7 @@ export interface Cue {
 }
 
 /** 按句末标点切句，标点留在句子里 */
-export function splitSentences(text: string) {
+function splitSentences(text: string) {
   return (text.match(/[^。！？!?；;\n]+[。！？!?；;]*/g) ?? []).map((s) => s.trim()).filter(Boolean)
 }
 

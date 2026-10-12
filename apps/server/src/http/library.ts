@@ -9,7 +9,7 @@ import {
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import type { DB } from '../storage/db'
-import { ownsProject } from './canvases'
+import { ownsProject } from '../storage/canvases'
 
 interface LibraryRow {
   id: string

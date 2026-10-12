@@ -1,4 +1,4 @@
-import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
+import { generateNKeysBetween } from 'fractional-indexing'
 import * as Y from 'yjs'
 import { type ElementMap, LOCAL_ORIGIN, type PleinDoc, SYSTEM_ORIGIN } from './doc'
 import { newId } from './ids'
@@ -246,20 +246,6 @@ function reorder(doc: PleinDoc, ids: Iterable<string>, where: 'front' | 'back') 
         doc.mutable(el.id)!.set('z', zs[i]!)
       })
     }
-  })
-}
-
-/** 把元素插到同级某个元素之前或之后（拖拽排序用） */
-export function placeBetween(
-  doc: PleinDoc,
-  id: string,
-  before: string | null,
-  after: string | null,
-) {
-  const a = before ? (doc.get(before)?.z ?? null) : null
-  const b = after ? (doc.get(after)?.z ?? null) : null
-  write(doc, () => {
-    doc.mutable(id)?.set('z', generateKeyBetween(a, b))
   })
 }
 

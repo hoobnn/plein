@@ -1,8 +1,8 @@
-import type { GroupRunOptions, GroupRunSummary } from '@plein/protocol'
+import type { GroupRunOptions, GroupRunSummary, JobStatus } from '@plein/protocol'
 import type { CallJournal, CallRecord } from '../plugins/host'
 import type { DB } from '../storage/db'
 
-export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled'
+export type { JobStatus }
 
 export interface JobRow {
   id: string

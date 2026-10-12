@@ -98,7 +98,7 @@ export function findMentions(text: string, targets: readonly MentionTarget[]): A
 }
 
 /** 这个名字可以照抄的消歧写法（带 @，用户直接粘进提示词）：`@林夏`、`@林夏#2` */
-export function mentionChoices(m: Mention): string[] {
+function mentionChoices(m: Mention): string[] {
   return m.total > 1 ? m.ids.map((_, i) => `@${m.name}#${i + 1}`) : [`@${m.name}`]
 }
 
@@ -144,7 +144,7 @@ export function findBrokenMentions(
  * 首字不同的一律不算像——中文单字重合太常见（「天台」和「林夏站在天台」），
  * 报出来只会变成噪音，用户也就不会看这类提示了。
  */
-export function similarNames(query: string, names: readonly string[], limit = 4): string[] {
+function similarNames(query: string, names: readonly string[], limit = 4): string[] {
   if (!query) return []
   const scored: Array<{ name: string; score: number }> = []
   for (const name of names) {

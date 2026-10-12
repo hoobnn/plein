@@ -1,3 +1,4 @@
+import { newId } from '../ids'
 import { createHash } from 'node:crypto'
 import {
   addResults,
@@ -42,9 +43,6 @@ const MAX_DEPTH = 8
 
 /** 进度写回文档的最小间隔，避免高频同步 */
 const PROGRESS_INTERVAL_MS = 500
-
-const newId = (prefix: string) =>
-  `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 
 export function toPortValue(v: ResultValue): PortValue {
   if (v.type === 'text' || v.type === 'json') return v

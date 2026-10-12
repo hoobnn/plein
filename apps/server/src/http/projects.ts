@@ -3,7 +3,8 @@ import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
-import { insertCanvas, insertProject, listCanvases, type Previewer } from './canvases'
+import { insertCanvas, insertProject, listCanvases } from '../storage/canvases'
+import type { Previewer } from '../storage/previews'
 
 interface ProjectRow {
   id: string

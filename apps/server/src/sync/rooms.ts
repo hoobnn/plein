@@ -285,7 +285,7 @@ export class Rooms {
 
   unload(id: string) {
     const room = this.rooms.get(id)
-    if (!room || !room.idle) return
+    if (!room?.idle) return
     room.compact()
     this.rooms.delete(id)
     room.close()

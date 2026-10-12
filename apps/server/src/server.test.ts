@@ -36,7 +36,7 @@ async function start(dataDir: string, overrides: Partial<Config> = {}) {
 }
 
 function connect(base: string, room: string, doc = new Y.Doc()) {
-  const provider = new WebsocketProvider(base.replace('http', 'ws') + '/sync', room, doc, {
+  const provider = new WebsocketProvider(`${base.replace('http', 'ws')}/sync`, room, doc, {
     WebSocketPolyfill: WebSocket as never,
     disableBc: true,
   })

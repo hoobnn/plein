@@ -1,10 +1,11 @@
-import type {
-  ElementTypeDefinition,
-  NodeDescriptor,
-  PluginManifest,
-  ProviderDescriptor,
-  PromptPresetDefinition,
-  TemplateDefinition,
+import {
+  AssetKind,
+  type ElementTypeDefinition,
+  type NodeDescriptor,
+  type PluginManifest,
+  type ProviderDescriptor,
+  type PromptPresetDefinition,
+  type TemplateDefinition,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
 
@@ -87,8 +88,8 @@ export type UpdateCanvas = z.infer<typeof UpdateCanvas>
 
 // ── 资产 ──────────────────────────────────────────────
 
-export const AssetKind = z.enum(['image', 'video', 'audio', 'file'])
-export type AssetKind = z.infer<typeof AssetKind>
+// 资产类型由插件 SDK 定义（AssetRef 也用它），这里再导出给前后端
+export { AssetKind }
 
 /** 衍生物：图片缩略图、视频封面、音频波形 */
 export const AssetVariant = z.enum(['thumb-256', 'thumb-1024', 'poster', 'waveform'])
@@ -412,13 +413,16 @@ export interface GroupRunState {
 }
 
 /** 任务面板里的一条运行记录 */
+/** 任务状态；与 @plein/doc 的 RunStatus 一致，见 apps/server/src/shared-types.test.ts */
+export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled'
+
 export interface JobInfo {
   id: string
   nodeId: string
   nodeType: string
   /** 整组运行时所属的那次运行 */
   groupId?: string
-  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled'
+  status: JobStatus
   /** 已尝试次数（含自动重试） */
   attempts: number
   error?: string

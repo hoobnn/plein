@@ -1,3 +1,4 @@
+import { newId } from '../ids'
 import { type ChildProcess, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
@@ -77,9 +78,6 @@ export interface AgentDeps {
   /** 本机免登录模式才允许：调用 CLI 等于在服务端所在机器上以当前用户身份执行 */
   enabled: boolean
 }
-
-const newId = (prefix: string) =>
-  `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 
 /** 本机智能体会话：每轮对话启动一次 CLI 进程，之后用 CLI 自己的会话 id 续上 */
 export class AgentSessions {

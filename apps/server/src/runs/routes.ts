@@ -7,7 +7,7 @@ import {
 } from '@plein/protocol'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
-import { ownsCanvas } from '../http/canvases'
+import { ownsCanvas } from '../storage/canvases'
 import { NodeRunError } from '../plugins/host'
 import type { DB } from '../storage/db'
 import type { NodeRuns } from './runs'

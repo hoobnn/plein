@@ -2,7 +2,7 @@ import { CreateAgentSession, SendAgentMessage } from '@plein/protocol'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { AuthEnv } from '../auth'
-import { ownsCanvas } from '../http/canvases'
+import { ownsCanvas } from '../storage/canvases'
 import type { DB } from '../storage/db'
 import { AgentError, type AgentSessions } from './sessions'
 

@@ -1,7 +1,7 @@
 import { upgradeWebSocket } from '@hono/node-server'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
-import { ownsCanvas } from '../http/canvases'
+import { ownsCanvas } from '../storage/canvases'
 import type { DB } from '../storage/db'
 import type { Conn, Rooms } from './rooms'
 
