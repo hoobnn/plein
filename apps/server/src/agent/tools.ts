@@ -16,7 +16,7 @@ import {
   type NodeResult,
   type PleinDoc,
   type Port,
-  type PortType,
+  portsCompatible,
   type Rect,
   removeEdges,
   setParams,
@@ -545,7 +545,7 @@ export function canvasTools(env: ToolEnv): McpTool[] {
     let pair: [Port, Port] | undefined
     for (const o of outs) {
       const ins = toPort ? to.inputs.filter((p) => p.id === toPort) : to.inputs
-      const i = ins.find((p) => accepts(o.type, p.type))
+      const i = ins.find((p) => portsCompatible(o.type, p.type))
       if (i) {
         pair = [o, i]
         break
@@ -561,8 +561,6 @@ export function canvasTools(env: ToolEnv): McpTool[] {
       : `已连接：${fromId}.${pair[0].id} → ${toId}.${pair[1].id}`
   }
 }
-
-const accepts = (a: PortType, b: PortType) => a === 'any' || b === 'any' || a === b
 
 function json(v: unknown) {
   return JSON.stringify(v, null, 1)

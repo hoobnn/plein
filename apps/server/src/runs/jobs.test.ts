@@ -274,7 +274,7 @@ describe('任务队列', () => {
         ...at(0),
       })
     const runs = Array.from({ length: 6 }, () => server.runs.start(id, node(), 'local'))
-    await until(() => server.runs.store.get(runs[0])?.status === 'running')
+    await until(() => server.runs.store.get(runs[0]!)?.status === 'running')
     // 任务记录随画布级联删除，先拿到等待结果的 promise
     const done = Promise.all(runs.map((run) => server.runs.wait(run)))
     const res = await call(server, `/api/canvases/${id}`, { method: 'DELETE' })

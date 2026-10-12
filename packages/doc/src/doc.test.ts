@@ -237,6 +237,19 @@ describe('连线', () => {
     expect(connect(doc, [a!, 'nope'], [b!, 'in'])).toBeNull()
     expect(connect(doc, [a!, 'out'], [a!, 'in'])).toBeNull()
   })
+
+  it('端口类型不兼容时拒绝，any 通配', () => {
+    const doc = open()
+    const image = node({
+      ports: { inputs: [{ id: 'in', label: '图', type: 'image' }], outputs: [] },
+    })
+    const anyIn = node({
+      ports: { inputs: [{ id: 'in', label: '任意', type: 'any' }], outputs: [] },
+    })
+    const [t, i, x] = createElements(doc, [node(), image, anyIn])
+    expect(connect(doc, [t!, 'out'], [i!, 'in'])).toBeNull()
+    expect(connect(doc, [t!, 'out'], [x!, 'in'])).not.toBeNull()
+  })
 })
 
 describe('剪贴板', () => {

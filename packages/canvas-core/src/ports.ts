@@ -1,4 +1,11 @@
-import { type CanvasElement, elementPorts, type Port, type PortType, type Rect } from '@plein/doc'
+import {
+  type CanvasElement,
+  elementPorts,
+  type Port,
+  type PortType,
+  portsCompatible,
+  type Rect,
+} from '@plein/doc'
 import { theme } from './theme'
 
 /** 端口半径（世界坐标） */
@@ -91,5 +98,5 @@ export function sidePorts(el: CanvasElement, ref: PortRef): PortRef[] {
 /** 输出 -> 输入，且类型兼容（any 通配） */
 export function canConnect(a: PortRef, b: PortRef) {
   if (a.elementId === b.elementId || a.side === b.side) return false
-  return a.port.type === 'any' || b.port.type === 'any' || a.port.type === b.port.type
+  return portsCompatible(a.port.type, b.port.type)
 }

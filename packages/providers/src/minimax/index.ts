@@ -92,7 +92,8 @@ async function request(ctx: Context, path: string, body?: unknown, method = body
       },
     )
   } catch (err) {
-    if (ctx.signal.aborted) throw new ProviderError('cancelled', 'MiniMax 请求已取消', { cause: err })
+    if (ctx.signal.aborted)
+      throw new ProviderError('cancelled', 'MiniMax 请求已取消', { cause: err })
     throw new ProviderError(
       'unavailable',
       'MiniMax 网络请求失败；生成提交状态可能未知，请勿自动重试',

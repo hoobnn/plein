@@ -13,6 +13,7 @@ import {
   type NodeRun,
   type Port,
   type PortAddress,
+  type PortType,
   type Ports,
   type Rect,
 } from './types'
@@ -497,19 +498,26 @@ export function ungroupElements(doc: PleinDoc, frameId: string): string[] {
 
 // ── 连线 ──────────────────────────────────────────────
 
+/** 端口类型能否相连：类型相同，或任一端是 any（通配） */
+export function portsCompatible(a: PortType, b: PortType) {
+  return a === 'any' || b === 'any' || a === b
+}
+
 function findPort(el: CanvasElement | undefined, portId: string, side: 'inputs' | 'outputs') {
   return el ? elementPorts(el)?.[side].find((p) => p.id === portId) : undefined
 }
 
 /**
  * 连接输出端口到输入端口。单输入端口只接一条边，已有连线会被替换；
- * 可多连的端口（multiple）保留已有连线。自连、端口不存在或重复连线时返回 null。
+ * 可多连的端口（multiple）保留已有连线。自连、端口不存在、类型不兼容或重复连线时返回 null。
+ * 协作合并进来的旧边不经过这里，读取侧仍要容忍类型不符的边。
  */
 export function connect(doc: PleinDoc, from: PortAddress, to: PortAddress): Edge | null {
   if (from[0] === to[0]) return null
-  if (!findPort(doc.get(from[0]), from[1], 'outputs')) return null
+  const source = findPort(doc.get(from[0]), from[1], 'outputs')
+  if (!source) return null
   const target = findPort(doc.get(to[0]), to[1], 'inputs')
-  if (!target) return null
+  if (!target || !portsCompatible(source.type, target.type)) return null
   return write(doc, () => {
     for (const [id, e] of doc.edgeMap) {
       if (e.to[0] !== to[0] || e.to[1] !== to[1]) continue
