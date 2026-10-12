@@ -1,6 +1,7 @@
 import type { ClipboardData, NewElement } from '@plein/doc'
 import type { Engine, PortRef } from '@plein/canvas-core'
 import { useMemo, useState } from 'react'
+import { dramaNotice, placeDramaTemplate } from '../canvas/drama'
 import { placeTemplate } from '../canvas/groups'
 import { compatibleNodes, type NodeInfo, nodeElement, placeElement } from '../canvas/nodes'
 import { useCanvas } from '../stores/canvas'
@@ -90,6 +91,7 @@ export function AddMenu({
   style,
 }: AddMenuProps) {
   const nodes = useCatalog((s) => s.catalog?.nodes)
+  const catalog = useCatalog((s) => s.catalog)
   const templates = useTemplates((s) => s.templates)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
@@ -111,6 +113,16 @@ export function AddMenu({
     if (!from) {
       for (const b of BASIC)
         list.push({ ...b, section: '添加节点', run: (p) => placeElement(engine, b.input, p) })
+      // 短剧模板：铺一整条流水线，只建结构和连线，不触发任何运行
+      list.push({
+        id: 'builtin/drama',
+        title: '短剧模板',
+        hint: '创意 → 剧本 → 角色场景 → 分镜 → 镜头图 → 镜头视频 → 配音配乐 → 序列',
+        icon: 'workflow',
+        section: '内置模板',
+        run: (p) =>
+          useCanvas.getState().notify(dramaNotice(placeDramaTemplate(engine, catalog, p))),
+      })
       for (const t of templates)
         list.push({
           id: t.id,
@@ -142,7 +154,7 @@ export function AddMenu({
     return q
       ? list.filter((i) => `${i.title} ${i.hint ?? ''} ${i.id}`.toLowerCase().includes(q))
       : list
-  }, [nodes, templates, engine, from, query, canImport])
+  }, [nodes, catalog, templates, engine, from, query, canImport])
 
   const pick = (item: Item | undefined) => {
     if (!item) return
