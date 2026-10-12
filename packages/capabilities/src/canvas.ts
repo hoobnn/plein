@@ -2,9 +2,6 @@ import {
   adoptResult,
   deleteElements,
   mediaSize,
-  nodeSize,
-  parseAspect,
-  type Port,
   removeEdges,
   setParams,
   setParent,
@@ -14,6 +11,7 @@ import {
 import { z } from 'zod'
 import { CapabilityError, defineCapability } from './define'
 import { link, need, placeNew } from './place'
+import { nodeElementOf } from './story/nodes'
 import { summarize } from './summary'
 
 /** 画布读写能力：只依赖文档和节点目录，前后端共用 */
@@ -143,24 +141,8 @@ export const createNode = defineCapability({
     const params = { ...desc.defaults, ...(a.params ?? {}) }
     const check = def.params.safeParse(params)
     if (!check.success) throw new CapabilityError(`参数不对：${z.prettifyError(check.error)}`)
-    const toPort = (p: (typeof desc.inputs)[number]): Port => ({
-      id: p.id,
-      label: p.label,
-      type: p.type,
-      ...(p.multiple ? { multiple: true } : {}),
-      ...(p.required ? { required: true } : {}),
-    })
-    const size = nodeSize(desc.outputs[0]?.type, parseAspect(params.aspectRatio))
     return ctx.withDoc((doc) => {
-      const elId = placeNew(doc, a, {
-        kind: 'node',
-        nodeType: def.type,
-        nodeVersion: def.version,
-        name: a.name ?? def.title,
-        params,
-        ports: { inputs: desc.inputs.map(toPort), outputs: desc.outputs.map(toPort) },
-        ...size,
-      })
+      const elId = placeNew(doc, a, { ...nodeElementOf(desc, params), name: a.name ?? def.title })
       const edges = (a.inputs ?? []).map((i) => link(doc, i.from, i.from_port, elId, i.to_port))
       return { id: elId, element: summarize(doc, need(doc, elId), false), edges }
     })

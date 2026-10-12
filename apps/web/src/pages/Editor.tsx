@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { placeStartNode } from '../canvas/start'
 import { CanvasMenus } from '../panels/CanvasMenus'
+import { CommandPalette } from '../panels/CommandPalette'
 import { ArrangeToast } from '../panels/ArrangeToast'
 import { Board } from '../panels/Board'
 import { FrameBar } from '../panels/FrameBar'
@@ -173,6 +174,7 @@ export function Editor({
       <StoryboardEditor />
       <SequenceEditor />
       <Shortcuts />
+      <CommandPalette canvasId={canvasId} />
       <History />
       {source.kind === 'remote' && <Tasks />}
       <Viewer />

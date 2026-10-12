@@ -98,6 +98,28 @@ describe('智能体 MCP', () => {
     expect(wrongKind.error).toBe(true)
   })
 
+  it('剧情与提示词能力：铺短剧模板、套预设、改写提示词', async () => {
+    const drama = await call('place_drama_template')
+    expect(drama.error).toBe(false)
+    expect(drama.json().frames.length).toBeGreaterThan(0)
+    const board = (await call('find_elements', { query: '分镜' })).json()
+    expect(board.total).toBeGreaterThan(0)
+
+    const image = (await call('create_node', { type: 'plein/image' })).json()
+    const presets = (await call('list_presets', { id: image.id })).json() as Array<{ id: string }>
+    expect(presets.length).toBeGreaterThan(0)
+    const applied = await call('apply_preset', { id: image.id, preset_id: presets[0]!.id })
+    expect(applied.error).toBe(false)
+    expect(applied.json().prompt).toBeTruthy()
+
+    const rewritten = await call('rewrite_prompt', { id: image.id, mode: 'optimize' })
+    expect(rewritten.error).toBe(false)
+    const el = (await call('get_element', { id: image.id })).json()
+    expect(el.params.prompt).toContain('【mock】')
+    // 没有展开结果的节点不能生成设定卡，原因说清楚
+    expect((await call('extract_cast', { id: image.id })).text).toContain('抽取结果')
+  })
+
   it('参数不对、元素不存在时把原因告诉模型', async () => {
     const bad = await call('create_node', { type: 'plein/image', params: { count: 99 } })
     expect(bad.error).toBe(true)

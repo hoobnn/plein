@@ -187,3 +187,29 @@
     transform: scale(1.1) rotate(45deg);
   }
 }
+
+/* ⌘K 命令面板：列表项依次浮现，当前项的图标染成强调色 */
+.plein-palette-item {
+  animation: plein-palette-in var(--dur-base) var(--ease-standard) both;
+  animation-delay: calc(min(var(--i, 0), 8) * 18ms);
+}
+.plein-palette-icon {
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.plein-palette-item[aria-selected="true"] .plein-palette-icon {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+@keyframes plein-palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plein-palette-item {
+    animation: none;
+  }
+}

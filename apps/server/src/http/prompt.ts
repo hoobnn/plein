@@ -75,59 +75,81 @@ function clean(text: string) {
 
 const CJK = /[㐀-鿿]/
 
-/** 提示词改写：优化 / 中英互译，用已启用的对话模型 */
+/** 改写失败：带上给 HTTP 的错误码和状态 */
+export class PromptError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly status: 400 | 409 | 502,
+  ) {
+    super(message)
+  }
+}
+
+/** 提示词改写：优化 / 中英互译，用已启用的对话模型。@ 引用和【占位】原样保留 */
+export async function rewritePrompt(
+  host: PluginHost,
+  input: RewritePrompt,
+  opts: { ownerId: string; signal: AbortSignal },
+): Promise<RewritePromptResult> {
+  const { text, mode, mentions } = input
+  const target = input.target ?? 'image'
+  const models = host.models('text.chat')
+  const model = input.model ?? models[0]?.ref
+  if (!model)
+    throw new PromptError('no_model', '没有可用的对话模型，请先在设置里启用支持对话的平台', 409)
+  if (!models.some((m) => m.ref === model))
+    throw new PromptError('invalid', `模型 ${model} 不可用或不支持对话`, 400)
+
+  const { masked, kept } = maskPrompt(text, mentions)
+  const system =
+    mode === 'optimize'
+      ? SYSTEM[target]
+      : translateSystem(CJK.test(masked.replace(TOKEN, '')) ? '英文' : '简体中文')
+  let raw: string
+  try {
+    const res = await host.call(
+      'text.chat',
+      model,
+      {
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: masked },
+        ],
+        temperature: mode === 'optimize' ? 0.7 : 0.2,
+      },
+      {
+        ownerId: opts.ownerId,
+        signal: AbortSignal.any([opts.signal, AbortSignal.timeout(120_000)]),
+      },
+    )
+    raw = res.outputs.flatMap((o) => (o.type === 'text' ? [o.text] : [])).join('\n')
+  } catch (err) {
+    if (err instanceof ProviderError) throw new PromptError(err.code, err.message, 502)
+    throw err
+  }
+  const out = unmaskPrompt(clean(raw), kept)
+  if (out === null)
+    throw new PromptError('bad_output', '模型没有保留引用或占位，请重试或换一个模型', 502)
+  if (!out.trim()) throw new PromptError('bad_output', '模型没有返回内容，请重试', 502)
+  return { text: out, model }
+}
+
 export function promptRoutes(host: PluginHost) {
   return new Hono<AuthEnv>().post(API.promptRewrite, async (c) => {
     if (c.var.principal.role === 'viewer')
       return c.json({ error: 'forbidden', message: '只读成员不能改写提示词' }, 403)
     const body = RewritePrompt.safeParse(await c.req.json().catch(() => null))
     if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
-    const { text, mode, target, mentions } = body.data
-
-    const models = host.models('text.chat')
-    const model = body.data.model ?? models[0]?.ref
-    if (!model)
-      return c.json(
-        { error: 'no_model', message: '没有可用的对话模型，请先在设置里启用支持对话的平台' },
-        409,
-      )
-    if (!models.some((m) => m.ref === model))
-      return c.json({ error: 'invalid', message: `模型 ${model} 不可用或不支持对话` }, 400)
-
-    const { masked, kept } = maskPrompt(text, mentions)
-    const system =
-      mode === 'optimize'
-        ? SYSTEM[target]
-        : translateSystem(CJK.test(masked.replace(TOKEN, '')) ? '英文' : '简体中文')
     try {
-      const res = await host.call(
-        'text.chat',
-        model,
-        {
-          messages: [
-            { role: 'system', content: system },
-            { role: 'user', content: masked },
-          ],
-          temperature: mode === 'optimize' ? 0.7 : 0.2,
-        },
-        {
-          ownerId: c.var.principal.id,
-          signal: AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(120_000)]),
-        },
-      )
-      const raw = res.outputs.flatMap((o) => (o.type === 'text' ? [o.text] : [])).join('\n')
-      const out = unmaskPrompt(clean(raw), kept)
-      if (out === null)
-        return c.json(
-          { error: 'bad_output', message: '模型没有保留引用或占位，请重试或换一个模型' },
-          502,
-        )
-      if (!out.trim())
-        return c.json({ error: 'bad_output', message: '模型没有返回内容，请重试' }, 502)
-      return c.json({ text: out, model } satisfies RewritePromptResult)
+      const result = await rewritePrompt(host, body.data, {
+        ownerId: c.var.principal.id,
+        signal: c.req.raw.signal,
+      })
+      return c.json(result satisfies RewritePromptResult)
     } catch (err) {
-      if (!(err instanceof ProviderError)) throw err
-      return c.json({ error: err.code, message: err.message }, 502)
+      if (!(err instanceof PromptError)) throw err
+      return c.json({ error: err.code, message: err.message }, err.status)
     }
   })
 }

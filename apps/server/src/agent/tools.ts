@@ -8,12 +8,17 @@ import {
   canvasCapabilities,
   capabilityFor,
   content,
+  editCapabilities,
+  mentionElements,
+  promptCapabilities,
+  promptField,
+  storyCapabilities,
   need,
   placeNew,
   resultSummary,
   summarize,
 } from '@plein/capabilities'
-import { currentResult, elementMedia, mediaSize, type PleinDoc } from '@plein/doc'
+import { currentResult, elementMedia, mediaSize, type PleinDoc, setParams } from '@plein/doc'
 import { describeNode, executionOf } from '@plein/plugin-sdk'
 import {
   type AgentApprovalMode,
@@ -24,6 +29,7 @@ import {
 import sharp, { type Sharp } from 'sharp'
 import { z } from 'zod'
 import { DeriveError, deriveAsset } from '../assets/derive'
+import { PromptError, rewritePrompt } from '../http/prompt'
 import { ffmpegBin, hasFfmpeg } from '../assets/media'
 import type { AssetStore } from '../assets/store'
 import { NodeRunError, type PluginHost } from '../plugins/host'
@@ -108,6 +114,7 @@ export function serverContext(env: ToolEnv): ServerContext {
         return out
       },
       models: (capability) => host.models(capability).map((m) => ({ ref: m.ref, title: m.title })),
+      prompts: () => [...host.registry.prompts.values()].map((p) => p.def),
     },
     assetMeta: (assetId) => env.assets.get(env.ownerId, assetId) ?? undefined,
   }
@@ -489,9 +496,55 @@ async function jpeg(img: Sharp, size = 768): Promise<ContentBlock> {
   return { type: 'image', data: buf.toString('base64'), mimeType: 'image/jpeg' }
 }
 
+const rewrite = serverCapability({
+  name: 'rewrite_prompt',
+  title: '改写提示词',
+  description:
+    '用对话模型改写节点的提示词：optimize 补全画面 / 镜头细节，translate 中英互译。@ 引用和【占位】原样保留。默认直接写回节点，apply=false 时只返回结果。',
+  group: 'edit',
+  where: 'server',
+  effect: (a) => (a.apply === false ? 'read' : 'edit'),
+  input: z.object({
+    id,
+    mode: z.enum(['optimize', 'translate']).default('optimize'),
+    apply: z.boolean().default(true),
+  }),
+  run: async (ctx, a) => {
+    const { key, text, target, mentions } = ctx.withDoc((doc) => {
+      const el = need(doc, a.id)
+      const key = promptField(el.params)
+      const text = key ? String(el.params?.[key] ?? '').trim() : ''
+      if (!key || !text) throw new CapabilityError('这个节点没有可改写的提示词')
+      const capability = el.nodeType ? ctx.nodes.latest(el.nodeType)?.def.capability : undefined
+      return {
+        key,
+        text,
+        target: capability?.startsWith('video.') ? ('video' as const) : ('image' as const),
+        mentions: [...mentionElements(doc).keys()],
+      }
+    })
+    try {
+      const out = await rewritePrompt(
+        ctx.env.host,
+        { text, mode: a.mode, target, mentions },
+        { ownerId: ctx.env.ownerId, signal: AbortSignal.timeout(120_000) },
+      )
+      if (a.apply) ctx.withDoc((doc) => setParams(doc, a.id, { [key]: out.text }))
+      return { [key]: out.text, applied: a.apply }
+    } catch (err) {
+      if (err instanceof PromptError) throw new CapabilityError(err.message)
+      throw err
+    }
+  },
+})
+
 /** 服务端可用的全部能力：画布读写（前后端共用）+ 运行、媒体 */
 export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   ...(canvasCapabilities as never[]),
+  ...(editCapabilities as never[]),
+  ...(storyCapabilities as never[]),
+  ...(promptCapabilities as never[]),
+  rewrite,
   runNode,
   waitForRun,
   cancelRun,

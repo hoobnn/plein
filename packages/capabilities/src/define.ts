@@ -1,5 +1,10 @@
 import type { PleinDoc } from '@plein/doc'
-import type { Capability, NodeDefinition, NodeDescriptor } from '@plein/plugin-sdk'
+import type {
+  Capability,
+  NodeDefinition,
+  NodeDescriptor,
+  PromptPresetDefinition,
+} from '@plein/plugin-sdk'
 import type { z } from 'zod'
 
 /**
@@ -59,6 +64,8 @@ export interface NodeCatalog {
   all(): NodeTypeInfo[]
   /** 已启用、支持该模型能力的模型 */
   models(capability: Capability): Array<{ ref: string; title: string }>
+  /** 提示词预设（内置 + 插件） */
+  prompts(): PromptPresetDefinition[]
 }
 
 export interface AssetMeta {
@@ -92,6 +99,15 @@ export interface CapabilityDefinition<
   /** 固定等级，或按这次调用的参数判定 */
   effect: Effect | ((input: z.output<S>, ctx: C) => Effect)
   input: S
+  /**
+   * 出现在 ⌘K 命令面板里：按当前选区生成输入（返回 null 表示当前选区不适用，不显示）。
+   * 没有这一项的能力只给智能体用。
+   */
+  palette?: {
+    fromSelection(ids: string[], doc: PleinDoc): z.input<S> | null
+    /** 快捷键提示，如 mod+g */
+    shortcut?: string
+  }
   /** 返回结构化结果（字符串、对象或 content()）；失败抛 CapabilityError */
   run(ctx: C, input: z.output<S>): unknown
 }

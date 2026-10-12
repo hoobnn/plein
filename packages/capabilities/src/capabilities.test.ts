@@ -5,6 +5,7 @@ import * as Y from 'yjs'
 import { z } from 'zod'
 import { canvasCapabilities } from './canvas'
 import { type CapabilityContext, CapabilityError, defineCapability } from './define'
+import { editCapabilities } from './edit'
 import { CapabilityRegistry } from './registry'
 
 const textNode = defineNode({
@@ -37,10 +38,16 @@ function setup(origin?: unknown) {
           : undefined,
       all: () => [{ def: textNode, descriptor: describeNode(textNode, 'test'), runnable: true }],
       models: () => [],
+      prompts: () => [],
     },
     assetMeta: () => undefined,
   }
-  return { ctx, ydoc, origins, registry: new CapabilityRegistry(canvasCapabilities) }
+  return {
+    ctx,
+    ydoc,
+    origins,
+    registry: new CapabilityRegistry([...canvasCapabilities, ...editCapabilities] as never[]),
+  }
 }
 
 describe('能力注册表', () => {
@@ -109,5 +116,29 @@ describe('能力注册表', () => {
       expect(r.x).toBeGreaterThanOrEqual(200)
       expect(r.y).toBeGreaterThanOrEqual(200)
     })
+  })
+
+  it('编辑类能力：复制、打组、解组，palette 从选区取参数', async () => {
+    const { registry, ctx } = setup()
+    const [a, b] = ctx.withDoc((doc) => [
+      createElement(doc, { kind: 'markdown', x: 0, y: 0, w: 100, h: 100 }),
+      createElement(doc, { kind: 'markdown', x: 200, y: 0, w: 100, h: 100 }),
+    ])
+    const copy = (await registry.invoke('duplicate_elements', ctx, { ids: [a] })) as {
+      ids: string[]
+    }
+    expect(copy.ids).toHaveLength(1)
+    const { frame_id } = (await registry.invoke('group_elements', ctx, {
+      ids: [a, b],
+      name: '第一场',
+    })) as { frame_id: string }
+    ctx.withDoc((doc) => {
+      expect(doc.get(frame_id)?.name).toBe('第一场')
+      expect(registry.get('ungroup')!.palette!.fromSelection([frame_id], doc)).toEqual({ frame_id })
+      expect(registry.get('ungroup')!.palette!.fromSelection([a!], doc)).toBeNull()
+    })
+    const out = (await registry.invoke('ungroup', ctx, { frame_id })) as { ids: string[] }
+    expect(out.ids.sort()).toEqual([a, b].sort())
+    await expect(registry.invoke('ungroup', ctx, { frame_id: a })).rejects.toThrow('不是 Frame')
   })
 })

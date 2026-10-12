@@ -1,3 +1,4 @@
+import { mentionElements as mentionElementsIn, type NodeFactory } from '@plein/capabilities'
 import type { Engine } from '@plein/canvas-core'
 import {
   type CanvasElement,
@@ -307,17 +308,15 @@ export function mentionTargets(engine: Engine): MentionTarget[] {
 }
 
 /** 按名字取可引用元素；重名的全部返回，调用方要自己判断指不指得准 */
-export function mentionElements(engine: Engine): Map<string, CanvasElement[]> {
-  const out = new Map<string, CanvasElement[]>()
-  for (const el of engine.doc.elements()) {
-    const name = mentionName(el)
-    if (!name) continue
-    const list = out.get(name)
-    if (list) list.push(el)
-    else out.set(name, [el])
+export const mentionElements = (engine: Engine) => mentionElementsIn(engine.doc)
+
+/** 按 catalog 建卡片骨架，给 @plein/capabilities 里的纯文档操作用 */
+export const nodeFactory =
+  (catalog: Catalog | null): NodeFactory =>
+  (type) => {
+    const info = findNode(catalog, type)
+    return info && nodeElement(info)
   }
-  return out
-}
 
 /** 资产卡或图片的缩略图：资产卡取它连入的第一张参考图 */
 export function targetImages(engine: Engine, el: CanvasElement): string[] {

@@ -43,3 +43,30 @@ test('拖线连接节点，撤销重做连线与删除', async ({ page }) => {
   await expect.poll(async () => (await nodes(page)).length).toBe(2)
   await expect.poll(() => edgesInto(page, image.id)).toHaveLength(1)
 })
+
+/** ⌘K：对选区可用的命令（与智能体同一套能力），回车执行，撤销一步回去 */
+test('命令面板对选区打组，撤销回去', async ({ page }) => {
+  await newProject(page)
+  await addNode(page, '文本', { x: 360, y: 450 })
+  await page.keyboard.press('Escape')
+  await addNode(page, '文本', { x: 900, y: 450 })
+  await page.keyboard.press('Escape')
+  await expect.poll(async () => (await nodes(page)).length).toBe(2)
+  await page.mouse.click(640, 120)
+  await page.keyboard.press('ControlOrMeta+a')
+
+  await page.keyboard.press('ControlOrMeta+k')
+  const palette = page.getByRole('dialog', { name: '命令面板' })
+  await expect(palette.getByText('选中的 2 个元素')).toBeVisible()
+  await palette.getByRole('combobox').fill('打组')
+  await expect(palette.getByRole('option')).toHaveCount(2)
+  await expect(palette.getByRole('option').last()).toContainText('让小满来做')
+  await page.keyboard.press('Enter')
+  await expect(palette).toBeHidden()
+  const frames = async () => (await elements(page)).filter((e) => e.kind === 'frame')
+  await expect.poll(async () => (await frames()).length).toBe(1)
+
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(async () => (await frames()).length).toBe(0)
+  await expect.poll(async () => (await nodes(page)).length).toBe(2)
+})

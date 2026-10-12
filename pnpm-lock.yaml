@@ -440,6 +440,9 @@ importers:
       '@plein/doc':
         specifier: workspace:*
         version: link:../doc
+      '@plein/nodes':
+        specifier: workspace:*
+        version: link:../nodes
       '@plein/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk

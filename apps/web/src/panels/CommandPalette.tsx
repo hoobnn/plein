@@ -1,0 +1,228 @@
+import { CapabilityError } from '@plein/capabilities'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { type LocalCapability, localCapabilities, localContext } from '../canvas/capabilities'
+import { useAgent } from '../stores/agent'
+import { useCanvas } from '../stores/canvas'
+import { useCatalog } from '../stores/catalog'
+import { Icon, type IconName } from '../ui/icons'
+import { shortcut } from '../ui/keys'
+import { Mascot } from '../ui/Mascot'
+import { Modal } from '../ui/Modal'
+import { Presence } from '../ui/Presence'
+
+const ICONS: Record<string, IconName> = {
+  duplicate_elements: 'copy',
+  group_elements: 'group',
+  ungroup: 'ungroup',
+  arrange_elements: 'arrange',
+  reorder_elements: 'layers',
+  place_drama_template: 'story',
+  extract_cast: 'character',
+  expand_storyboard: 'board',
+}
+
+interface Command {
+  cap: LocalCapability
+  input: Record<string, unknown>
+}
+
+type Item = { kind: 'cap'; command: Command } | { kind: 'agent'; text: string }
+
+/** 命令说明的第一句：列表里只放得下一行 */
+const brief = (text: string) => text.split(/[。：]/)[0] ?? text
+
+/**
+ * ⌘K 命令面板：列出对当前选区可用的能力（与智能体同一套），参数从选区来；
+ * 搜不到想要的，回车把这句话交给小满去做。
+ */
+export function CommandPalette({ canvasId }: { canvasId: string | null }) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [])
+  return (
+    <Presence>{open && <Palette canvasId={canvasId} onClose={() => setOpen(false)} />}</Presence>
+  )
+}
+
+function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): void }) {
+  const engine = useCanvas((s) => s.engine)
+  const catalog = useCatalog((s) => s.catalog)
+  const [query, setQuery] = useState('')
+  const [active, setActive] = useState(0)
+  const list = useRef<HTMLDivElement>(null)
+
+  // 打开那一刻的选区：面板开着时画布不会变
+  const selection = useMemo(() => [...(engine?.selection.values() ?? [])], [engine])
+  const commands = useMemo<Command[]>(() => {
+    if (!engine) return []
+    return localCapabilities.list().flatMap((cap) => {
+      const input = cap.palette?.fromSelection(selection, engine.doc)
+      return input ? [{ cap, input: input as Record<string, unknown> }] : []
+    })
+  }, [engine, selection])
+
+  const q = query.trim()
+  const items = useMemo<Item[]>(() => {
+    const hits = commands.filter(
+      ({ cap }) => !q || cap.title.includes(q) || cap.name.includes(q.toLowerCase()),
+    )
+    const out: Item[] = hits.map((command) => ({ kind: 'cap', command }))
+    if (q && canvasId) out.push({ kind: 'agent', text: q })
+    return out
+  }, [commands, q, canvasId])
+
+  useEffect(() => {
+    list.current
+      ?.querySelector<HTMLElement>(`[data-index="${active}"]`)
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [active])
+
+  const run = async (item: Item) => {
+    onClose()
+    if (!engine) return
+    const { notify } = useCanvas.getState()
+    if (item.kind === 'agent') {
+      const agent = useAgent.getState()
+      agent.toggle(true)
+      await agent.send(item.text, selection)
+      return
+    }
+    const { cap, input } = item.command
+    try {
+      const result = await localCapabilities.invoke(cap.name, localContext(engine, catalog), input)
+      reveal(result)
+    } catch (err) {
+      notify(err instanceof CapabilityError ? err.message : `${cap.title}失败`)
+    }
+  }
+
+  /** 新建的选中并高亮，铺出的分组带镜头过去；有提示语就显示 */
+  const reveal = (result: unknown) => {
+    if (!engine || !result || typeof result !== 'object') return
+    const r = result as Record<string, unknown>
+    const ids = [
+      ...(Array.isArray(r.frames) ? r.frames : []),
+      ...(typeof r.frame_id === 'string' ? [r.frame_id] : []),
+      ...(Array.isArray(r.ids) ? r.ids : []),
+      ...(Array.isArray(r.created) ? r.created : []),
+    ].filter((v): v is string => typeof v === 'string')
+    if (ids.length) {
+      engine.selection.set(ids)
+      engine.flash(ids)
+      if (Array.isArray(r.frames) || Array.isArray(r.created)) engine.flyTo(ids)
+    }
+    if (typeof r.notice === 'string') useCanvas.getState().notify(r.notice)
+  }
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing) return
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const n = items.length
+      if (n) setActive((i) => (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const item = items[active]
+      if (item) void run(item)
+    }
+  }
+
+  const scope = selection.length ? `选中的 ${selection.length} 个元素` : '整个画布'
+  return (
+    <Modal
+      label="命令面板"
+      onClose={onClose}
+      isolateKeys
+      className="plein-palette max-w-140 self-start sm:mt-[12vh]"
+    >
+      <div className="flex items-center gap-2 border-b border-line px-4">
+        <span className="text-ink-subtle">
+          <Icon name="search" />
+        </span>
+        <input
+          // biome-ignore lint/a11y/noAutofocus: 打开面板就是为了输入
+          autoFocus
+          className="h-13 min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-subtle"
+          placeholder={canvasId ? '搜索命令，或直接告诉小满要做什么…' : '搜索命令…'}
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value)
+            setActive(0)
+          }}
+          onKeyDown={onKeyDown}
+          role="combobox"
+          aria-expanded
+          aria-controls="plein-palette-list"
+          aria-activedescendant={items.length ? `plein-palette-${active}` : undefined}
+        />
+        <span className="flex-none text-2xs text-ink-subtle">{scope}</span>
+      </div>
+      <div
+        ref={list}
+        id="plein-palette-list"
+        role="listbox"
+        aria-label="命令"
+        className="flex max-h-[min(420px,60vh)] flex-col overflow-y-auto p-2"
+      >
+        {items.length === 0 && (
+          <p className="px-3 py-6 text-center text-sm text-ink-subtle">
+            {selection.length ? '没有适用于选区的命令' : '先选中元素，或输入你想做的事'}
+          </p>
+        )}
+        {items.map((item, i) => (
+          <div
+            key={item.kind === 'cap' ? item.command.cap.name : 'agent'}
+            id={`plein-palette-${i}`}
+            data-index={i}
+            role="option"
+            aria-selected={i === active}
+            tabIndex={-1}
+            className="plein-palette-item ui-menu-item cursor-pointer"
+            style={{ '--i': i } as React.CSSProperties}
+            onPointerMove={() => setActive(i)}
+            onClick={() => void run(item)}
+            onKeyDown={() => {}}
+          >
+            {item.kind === 'cap' ? (
+              <>
+                <span className="flex size-7 flex-none items-center justify-center plein-palette-icon rounded-md bg-hover text-ink-muted">
+                  <Icon name={ICONS[item.command.cap.name] ?? 'sparkle'} />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">{item.command.cap.title}</span>
+                  <span className="truncate text-2xs text-ink-subtle">
+                    {brief(item.command.cap.description)}
+                  </span>
+                </span>
+                {item.command.cap.palette?.shortcut && (
+                  <kbd className="ui-keycap flex-none">
+                    {shortcut(item.command.cap.palette.shortcut)}
+                  </kbd>
+                )}
+              </>
+            ) : (
+              <>
+                <span className="flex size-7 flex-none items-center justify-center">
+                  <Mascot mood="idle" size={26} />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate">让小满来做</span>
+                  <span className="truncate text-2xs text-ink-subtle">「{item.text}」</span>
+                </span>
+                <kbd className="ui-keycap flex-none">{shortcut('enter')}</kbd>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </Modal>
+  )
+}

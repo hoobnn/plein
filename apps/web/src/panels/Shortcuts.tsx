@@ -14,6 +14,7 @@ const GROUPS: Array<{ title: string; items: Array<[string, ...Combo[]]> }> = [
     title: '创作',
     items: [
       ['添加节点', ['Tab'], ['双击空白']],
+      ['命令面板', [k('mod+k')]],
       ['生成', [k('mod+enter')]],
       ['打组 / 解组', [k('mod+g')], [k('mod+shift+g')]],
       ['整理画布', [k('alt+shift+f')]],
