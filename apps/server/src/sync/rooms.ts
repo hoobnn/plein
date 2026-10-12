@@ -231,10 +231,14 @@ export interface RoomLease {
  */
 export class Rooms {
   private rooms = new Map<string, Room>()
+  /** 已删除的画布：不再重建房间，免得残留任务把写入落到不存在的画布上 */
+  private dropped = new Set<string>()
+  private dropListeners = new Set<(id: string) => void>()
 
   constructor(private store: DocStore) {}
 
   get(id: string): Room {
+    if (this.dropped.has(id)) throw new Error(`画布 ${id} 已删除`)
     let room = this.rooms.get(id)
     if (!room) {
       room = new Room(id, this.store, (r) => this.unload(r.id))
@@ -263,8 +267,16 @@ export class Rooms {
     return this.rooms.has(id)
   }
 
-  /** 画布被删除：断开连接，不再写入 */
+  /** 画布被删除时通知（停止它的任务和智能体会话） */
+  onDrop(fn: (id: string) => void): () => void {
+    this.dropListeners.add(fn)
+    return () => this.dropListeners.delete(fn)
+  }
+
+  /** 画布被删除：通知订阅者、断开连接，不再写入 */
   drop(id: string) {
+    this.dropped.add(id)
+    for (const fn of this.dropListeners) fn(id)
     const room = this.rooms.get(id)
     if (!room) return
     this.rooms.delete(id)

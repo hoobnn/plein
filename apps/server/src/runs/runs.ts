@@ -101,7 +101,7 @@ export class NodeRuns {
   private byId = new Map<string, ActiveJob>()
   private queue: ActiveJob[] = []
   private running = 0
-  private groups = new Map<string, AbortController>()
+  private groups = new Map<string, { ctrl: AbortController; canvasId: string }>()
   private closed = false
   private concurrency: number
   private retryDelays: number[]
@@ -115,6 +115,7 @@ export class NodeRuns {
     this.store = new JobStore(db)
     this.concurrency = Math.max(1, opts.concurrency ?? 4)
     this.retryDelays = opts.retryDelaysMs ?? [2_000, 8_000]
+    rooms.onDrop((id) => this.cancelCanvas(id))
   }
 
   private key(canvasId: string, nodeId: string) {
@@ -172,6 +173,21 @@ export class NodeRuns {
           this.store.update(run.id, { status: 'canceled', finished_at: Date.now() })
       }
     })
+  }
+
+  /** 画布被删除：停止它的整组运行和所有排队、运行中的任务，不再调用付费平台 */
+  cancelCanvas(canvasId: string) {
+    for (const g of this.groups.values()) if (g.canvasId === canvasId) g.ctrl.abort()
+    for (const a of [...this.byId.values()]) {
+      if (a.canvasId !== canvasId) continue
+      if (a.started) a.ctrl.abort()
+      else {
+        this.queue = this.queue.filter((q) => q !== a)
+        this.store.update(a.id, { status: 'canceled', finished_at: Date.now() })
+        a.resolve('canceled')
+        this.release(a)
+      }
+    }
   }
 
   // ── 整组 ─────────────────────────────────────────
@@ -304,7 +320,7 @@ export class NodeRuns {
   cancelGroup(id: string, ownerId: string): boolean {
     const g = this.store.group(id)
     if (!g || g.owner_id !== ownerId) return false
-    this.groups.get(id)?.abort()
+    this.groups.get(id)?.ctrl.abort()
     for (const a of [...this.byId.values()]) {
       if (a.groupId === id) this.cancel(a.canvasId, a.nodeId)
     }
@@ -313,7 +329,7 @@ export class NodeRuns {
 
   private async orchestrate(g: GroupRow) {
     const ctrl = new AbortController()
-    this.groups.set(g.id, ctrl)
+    this.groups.set(g.id, { ctrl, canvasId: g.canvas_id })
     const options = JSON.parse(g.options) as StoredGroupOptions
     const rerun = new Set(options.rerun ?? [])
     const lease = this.rooms.acquire(g.canvas_id)
@@ -411,7 +427,7 @@ export class NodeRuns {
   close() {
     this.closed = true
     this.queue = []
-    for (const g of this.groups.values()) g.abort()
+    for (const g of this.groups.values()) g.ctrl.abort()
     for (const a of this.byId.values()) a.ctrl.abort(SHUTDOWN)
   }
 
@@ -434,11 +450,14 @@ export class NodeRuns {
       const a = this.queue.shift()!
       a.started = true
       this.running++
-      void this.execute(a).finally(() => {
-        this.running--
-        this.release(a)
-        this.pump()
-      })
+      void this.execute(a)
+        // 画布刚被删除时拿不到房间：记为取消，不留未处理的 rejection
+        .catch(() => a.resolve('canceled'))
+        .finally(() => {
+          this.running--
+          this.release(a)
+          this.pump()
+        })
     }
   }
 

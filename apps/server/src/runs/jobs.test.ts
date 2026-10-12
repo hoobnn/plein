@@ -261,6 +261,28 @@ describe('任务队列', () => {
     expect(server.runs.store.get(run)?.attempts).toBe(2)
   })
 
+  it('删除画布时停止它排队和运行中的任务', async () => {
+    const { server } = await boot()
+    mock(server, { latencyMs: 2_000 })
+    const { id, doc } = await canvas(server)
+    const node = () =>
+      createElement(doc, {
+        kind: 'node',
+        nodeType: 'plein/image',
+        params: { prompt: 'a', count: 1 },
+        ports: imagePorts,
+        ...at(0),
+      })
+    const runs = Array.from({ length: 6 }, () => server.runs.start(id, node(), 'local'))
+    await until(() => server.runs.store.get(runs[0])?.status === 'running')
+    // 任务记录随画布级联删除，先拿到等待结果的 promise
+    const done = Promise.all(runs.map((run) => server.runs.wait(run)))
+    const res = await call(server, `/api/canvases/${id}`, { method: 'DELETE' })
+    expect(res.status).toBe(204)
+    for (const status of await done) expect(status).toBe('canceled')
+    expect(server.rooms.has(id)).toBe(false)
+  })
+
   it('服务重启后接着轮询远端任务，不重复提交', async () => {
     const first = await boot()
     mock(first.server, { latencyMs: 600 })

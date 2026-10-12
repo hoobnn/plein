@@ -57,6 +57,8 @@ interface Live {
   row: SessionRow
   items: AgentItem[]
   child: ChildProcess | null
+  /** 这一轮已经开始（检查之后、进程起来之前也算），防止双击发送起两个进程 */
+  busy: boolean
   token: string
   mcp: McpServer
   listeners: Set<(e: AgentEvent) => void>
@@ -85,7 +87,9 @@ export class AgentSessions {
   private byToken = new Map<string, Live>()
   private mcpUrl = ''
 
-  constructor(private deps: AgentDeps) {}
+  constructor(private deps: AgentDeps) {
+    deps.rooms.onDrop((id) => this.closeCanvas(id))
+  }
 
   /** 服务端开始监听后告知 MCP 地址（桌面端端口是随机的） */
   setMcpUrl(url: string) {
@@ -165,8 +169,18 @@ export class AgentSessions {
   async send(id: string, ownerId: string, text: string, selection?: string[]) {
     const s = this.load(id)
     if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
-    if (s.child) throw new AgentError('busy', '上一条消息还在处理中')
+    if (s.busy || s.child) throw new AgentError('busy', '上一条消息还在处理中')
     if (!this.deps.enabled) throw new AgentError('disabled', '本机智能体未启用')
+    s.busy = true
+    try {
+      await this.startTurn(s, text, selection)
+    } catch (err) {
+      s.busy = false
+      throw err
+    }
+  }
+
+  private async startTurn(s: Live, text: string, selection?: string[]) {
     const env = await detectClis()
     const cli = env.agents.find((a) => a.id === s.row.agent)
     if (!cli?.path)
@@ -204,11 +218,14 @@ export class AgentSessions {
     } catch (err) {
       this.fail(s, `启动 ${cli.name} 失败：${(err as Error).message}`)
       this.setRunning(s, false)
+      s.busy = false
       return
     }
     s.child = child
     s.stopped = false
     s.turn = newId('turn')
+    // CLI 读 stdin 之前就退出时写入会 EPIPE；没有监听会变成未捕获异常让服务崩溃
+    child.stdin?.on('error', () => {})
     child.stdin?.end(stdin)
 
     const parse = s.row.agent === 'claude' ? this.claudeEvent : this.codexEvent
@@ -237,6 +254,7 @@ export class AgentSessions {
     child.on('close', (code) => {
       clearTimeout(timer)
       s.child = null
+      s.busy = false
       if (s.stopped) this.fail(s, '已停止')
       else if (code !== 0 && !sawResult) {
         this.fail(s, explain(cli.name, stderr) || `${cli.name} 异常退出（代码 ${code}）`)
@@ -255,6 +273,15 @@ export class AgentSessions {
     setTimeout(() => {
       if (child.exitCode === null) child.kill('SIGKILL')
     }, 3000).unref()
+  }
+
+  /** 画布被删除：停掉它的智能体会话并释放内存（数据库记录随画布级联删除） */
+  closeCanvas(canvasId: string) {
+    for (const s of [...this.live.values()]) {
+      if (s.row.canvas_id !== canvasId) continue
+      this.stop(s.row.id)
+      this.drop(s)
+    }
   }
 
   close() {
@@ -544,6 +571,7 @@ export class AgentSessions {
       row,
       items,
       child: null,
+      busy: false,
       token,
       mcp,
       listeners: new Set(),
