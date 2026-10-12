@@ -25,6 +25,8 @@ __screenshots__/__diff_output__/
 .env
 .env.*
 !.env.example
+# 开发默认值，不含密钥
+!apps/server/.env.development
 *.pem
 *.key
 

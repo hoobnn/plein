@@ -8,6 +8,11 @@ import type { Config } from './config'
 import { assetRoutes } from './http/assets'
 import { canvasRoutes } from './http/canvases'
 import { originGuard } from './http/guard'
+import { builtinPlugins } from './plugins/builtin'
+import { ProviderConfigStore } from './plugins/config-store'
+import { PluginHost } from './plugins/host'
+import { PluginRegistry } from './plugins/registry'
+import { pluginRoutes } from './plugins/routes'
 import { type DB, openDb } from './storage/db'
 import { loadSecrets, type Secrets } from './storage/secrets'
 import { Rooms, sqliteDocStore } from './sync/rooms'
@@ -18,6 +23,7 @@ export interface Server {
   db: DB
   rooms: Rooms
   assets: AssetStore
+  plugins: PluginHost
   secrets: Secrets
   close(): void
 }
@@ -28,6 +34,12 @@ export async function createServer(config: Config): Promise<Server> {
   const rooms = new Rooms(sqliteDocStore(db))
   const assets = new AssetStore(config.dataDir, db, config.maxUpload)
   await assets.init()
+  const plugins = new PluginHost(
+    new PluginRegistry(),
+    new ProviderConfigStore(config.dataDir, new Set(config.mockProvider ? ['plein/mock'] : [])),
+    assets,
+  )
+  plugins.load(builtinPlugins({ mock: config.mockProvider }), true)
   const auth = await createAuth(config.auth, db, secrets, { publicUrl: config.publicUrl })
 
   const app = new Hono<AuthEnv>()
@@ -46,6 +58,7 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', canvasRoutes(db, rooms))
   app.route('/', assetRoutes(assets))
   app.route('/', syncRoutes(db, rooms))
+  app.route('/', pluginRoutes(plugins))
   app.all('/api/*', (c) => c.json({ error: 'not_found', message: '接口不存在' }, 404))
 
   if (config.webDist) {
@@ -61,6 +74,7 @@ export async function createServer(config: Config): Promise<Server> {
     db,
     rooms,
     assets,
+    plugins,
     secrets,
     close() {
       rooms.closeAll()

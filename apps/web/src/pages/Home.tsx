@@ -1,6 +1,7 @@
 import type { Canvas } from '@plein/protocol'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
+import { SettingsDialog } from '../panels/Settings'
 import { navigate } from '../router'
 import { useSession } from '../stores/session'
 
@@ -12,6 +13,7 @@ export function Home() {
   const refreshSession = useSession((s) => s.refresh)
   const [canvases, setCanvases] = useState<Canvas[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [settings, setSettings] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -50,6 +52,13 @@ export function Home() {
         <header className="flex items-center justify-between gap-4">
           <h1 className="text-xl font-medium tracking-wide">Plein</h1>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSettings(true)}
+              className="h-9 rounded-lg px-3 text-sm text-ink-muted hover:text-ink"
+            >
+              设置
+            </button>
             {info?.authRequired && (
               <button
                 type="button"
@@ -106,6 +115,7 @@ export function Home() {
           ))}
         </ul>
       </div>
+      {settings && <SettingsDialog onClose={() => setSettings(false)} />}
     </div>
   )
 }

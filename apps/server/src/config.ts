@@ -19,6 +19,8 @@ export interface Config {
   maxUpload: number
   /** 免认证模式下额外允许的主机名（默认只允许本机名） */
   allowedHosts: string[]
+  /** 加载开发测试用的 mock 平台 */
+  mockProvider: boolean
 }
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost'])
@@ -45,5 +47,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .split(',')
       .map((h) => h.trim())
       .filter(Boolean),
+    mockProvider: env.PLEIN_MOCK_PROVIDER === '1',
   }
 }

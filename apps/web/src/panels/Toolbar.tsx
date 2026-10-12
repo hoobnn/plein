@@ -1,6 +1,8 @@
 import type { Tool } from '@plein/canvas-core'
 import { createElement, type NewElement } from '@plein/doc'
-import { type ReactNode, useRef } from 'react'
+import type { NodeCategory, NodeDescriptor } from '@plein/plugin-sdk'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { useCatalog } from '../stores/catalog'
 import { useCanvas } from '../stores/canvas'
 
 function Button(props: {
@@ -38,20 +40,88 @@ const TOOLS: Array<{ tool: Tool; label: string; hint: string; icon: string }> = 
 const NEW_ITEMS: Array<{ label: string; input: Omit<NewElement, 'x' | 'y'> }> = [
   { label: 'Frame', input: { kind: 'frame', w: 640, h: 400, name: '新场景' } },
   { label: 'Markdown', input: { kind: 'markdown', w: 280, h: 200, text: '# 新文档' } },
-  {
-    label: '节点',
-    input: {
-      kind: 'node',
-      nodeType: '文生图',
-      w: 240,
-      h: 180,
-      ports: {
-        inputs: [{ id: 'prompt', label: '提示词', type: 'text' }],
-        outputs: [{ id: 'out', label: '输出', type: 'image' }],
-      },
-    },
-  },
 ]
+
+const CATEGORY_LABELS: Record<NodeCategory, string> = {
+  input: '输入',
+  text: '文本',
+  image: '图片',
+  video: '视频',
+  audio: '音频',
+  story: '短剧',
+  util: '工具',
+}
+
+/** 由节点声明生成画布上的节点元素 */
+export function nodeElement(node: NodeDescriptor): Omit<NewElement, 'x' | 'y'> {
+  const port = (p: NodeDescriptor['inputs'][number]) => ({ id: p.id, label: p.label, type: p.type })
+  const rows = Math.max(node.inputs.length, node.outputs.length)
+  return {
+    kind: 'node',
+    nodeType: node.type,
+    nodeVersion: node.version,
+    name: node.title,
+    params: node.defaults,
+    w: 240,
+    h: Math.max(120, 64 + rows * 28),
+    ports: { inputs: node.inputs.map(port), outputs: node.outputs.map(port) },
+  }
+}
+
+/** 节点菜单：按插件目录列出已安装的节点，按类别分组 */
+function NodeMenu({ onPick }: { onPick(node: NodeDescriptor): void }) {
+  const nodes = useCatalog((s) => s.catalog?.nodes ?? [])
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('pointerdown', close)
+    return () => window.removeEventListener('pointerdown', close)
+  }, [open])
+  if (nodes.length === 0) return null
+  const groups = new Map<NodeCategory, NodeDescriptor[]>()
+  for (const n of nodes) groups.set(n.category, [...(groups.get(n.category) ?? []), n])
+  return (
+    <div ref={ref} className="relative">
+      <Button label="新建节点" active={open} onClick={() => setOpen(!open)}>
+        + 节点
+      </Button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute bottom-10 left-0 max-h-96 w-64 overflow-y-auto rounded-xl bg-surface p-1 shadow-[var(--shadow-3)]"
+        >
+          {[...groups].map(([cat, list]) => (
+            <div key={cat}>
+              <div className="px-2 pb-1 pt-2 text-xs text-ink-muted">{CATEGORY_LABELS[cat]}</div>
+              {list.map((n) => (
+                <button
+                  key={`${n.type}@${n.version}`}
+                  type="button"
+                  role="menuitem"
+                  title={n.description}
+                  onClick={() => {
+                    setOpen(false)
+                    onPick(n)
+                  }}
+                  className="flex w-full flex-col items-start rounded-lg px-2 py-1.5 text-left text-sm hover:bg-white/5"
+                >
+                  <span>{n.title}</span>
+                  {n.description && (
+                    <span className="line-clamp-1 text-xs text-ink-muted">{n.description}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 /** 底部工具栏：工具切换、新建元素、撤销重做、缩放 */
 export function Toolbar({ canImport }: { canImport: boolean }) {
@@ -89,6 +159,7 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
           + {item.label}
         </Button>
       ))}
+      <NodeMenu onPick={(n) => add(nodeElement(n))} />
       {canImport && (
         <>
           <Button

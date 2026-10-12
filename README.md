@@ -10,6 +10,9 @@ apps/server           本地服务：Hono（Node）+ SQLite + Yjs 同步 + 资�
 packages/canvas-core  画布内核：PixiJS v8 + 相机 + 输入
 packages/doc          文档模型：Yjs（Element / Edge / Undo）
 packages/protocol     前后端共享的接口约定（zod）
+packages/plugin-sdk   插件 API：清单、节点、Provider、执行器（见 docs/plugins.md）
+packages/nodes        内置节点声明（plein/core）
+packages/providers    模型平台适配器（服务端），目前只有开发用的 mock
 ```
 
 ## 本地部署

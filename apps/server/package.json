@@ -4,18 +4,22 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
+    "dev": "tsx watch --env-file=.env.development src/main.ts",
     "build": "tsdown",
     "start": "node --no-experimental-webstorage dist/main.mjs",
     "typecheck": "tsc -p ."
   },
   "dependencies": {
     "@hono/node-server": "^2.1.4",
+    "@plein/nodes": "workspace:*",
+    "@plein/plugin-sdk": "workspace:*",
     "@plein/protocol": "workspace:*",
+    "@plein/providers": "workspace:*",
     "better-auth": "^1.7.7",
     "better-sqlite3": "^13.0.3",
     "hono": "^4.13.13",
     "lib0": "^0.2.119",
+    "semver": "^7.8.5",
     "sharp": "^0.35.5",
     "ws": "^8.22.0",
     "y-protocols": "^1.0.7",
@@ -25,6 +29,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.6.5",
+    "@types/semver": "^7.8.0",
     "@types/ws": "^8.18.2",
     "tsdown": "^0.23.1",
     "tsx": "^4.23.15",

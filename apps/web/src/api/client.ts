@@ -1,4 +1,14 @@
-import { API, type Asset, type AssetVariant, type Canvas, type SessionInfo } from '@plein/protocol'
+import {
+  API,
+  type Asset,
+  type AssetVariant,
+  type Canvas,
+  type Catalog,
+  type ProviderConfigUpdate,
+  type ProviderConfigView,
+  type ProviderTestResult,
+  type SessionInfo,
+} from '@plein/protocol'
 
 export class ApiError extends Error {
   constructor(
@@ -57,6 +67,12 @@ export const api = {
   renameCanvas: (id: string, title: string) =>
     request<Canvas>(API.canvas(id), json('PATCH', { title })),
   deleteCanvas: (id: string) => request<void>(API.canvas(id), { method: 'DELETE' }),
+
+  catalog: () => request<Catalog>(API.catalog),
+  providerConfig: (id: string) => request<ProviderConfigView>(API.providerConfig(id)),
+  updateProviderConfig: (id: string, body: ProviderConfigUpdate) =>
+    request<ProviderConfigView>(API.providerConfig(id), json('PUT', body)),
+  testProvider: (id: string) => request<ProviderTestResult>(API.providerTest(id), json('POST', {})),
 
   upload: (file: File) =>
     request<Asset>(API.assets, {

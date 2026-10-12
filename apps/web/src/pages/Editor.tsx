@@ -2,7 +2,9 @@ import type { Canvas } from '@plein/protocol'
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
+import { SettingsDialog } from '../panels/Settings'
 import { Toolbar } from '../panels/Toolbar'
+import { useCatalog } from '../stores/catalog'
 import { type SyncStatus, useCanvas } from '../stores/canvas'
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
@@ -15,11 +17,13 @@ const SYNC_LABELS: Record<SyncStatus, string> = {
 export function Editor({ source }: { source: CanvasSource }) {
   const { selection, sync, importing, notice } = useCanvas()
   const [canvas, setCanvas] = useState<Canvas | null>(null)
+  const [settings, setSettings] = useState(false)
   const canvasId = source.kind === 'remote' ? source.canvasId : null
 
   useEffect(() => {
     if (!canvasId) return
     api.canvas(canvasId).then(setCanvas, () => setCanvas(null))
+    void useCatalog.getState().load()
   }, [canvasId])
 
   const rename = async () => {
@@ -50,6 +54,15 @@ export function Editor({ source }: { source: CanvasSource }) {
           >
             {SYNC_LABELS[sync]}
           </span>
+          {source.kind === 'remote' && (
+            <button
+              type="button"
+              onClick={() => setSettings(true)}
+              className="rounded-lg px-2 py-1 text-ink-muted hover:bg-white/5 hover:text-ink"
+            >
+              设置
+            </button>
+          )}
         </div>
         <p className="hidden text-xs text-ink-muted lg:block">
           {selection > 0 ? `已选 ${selection} 个 · ` : ''}拖入文件导入 · 双击编辑 / 播放 ·
@@ -63,6 +76,7 @@ export function Editor({ source }: { source: CanvasSource }) {
           </div>
         </div>
       )}
+      {settings && <SettingsDialog onClose={() => setSettings(false)} />}
       <footer className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4">
         <Toolbar canImport={source.kind === 'remote'} />
       </footer>
