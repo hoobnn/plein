@@ -1,11 +1,25 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, currentResult } from '@plein/doc'
 import { presetsFor } from '@plein/nodes'
-import type { Catalog } from '@plein/protocol'
-import { useState } from 'react'
-import { assetUrls } from '../api/client'
+import type { Asset, AssetKind, Catalog, MediaCapsInfo, MediaDeriveRequest } from '@plein/protocol'
+import { useEffect, useRef, useState } from 'react'
+import { api, assetUrls } from '../api/client'
 import { downloadAsset, splitGrid } from '../canvas/grid'
 import { useEngineVersion } from '../canvas/hooks'
+import {
+  applyDerivation,
+  clampRange,
+  clampSpeed,
+  cropRect,
+  evenSegments,
+  formatTimecode,
+  mediaCaps,
+  opLabel,
+  opsFor,
+  parseTimecode,
+  quickOpsFor,
+  SPEEDS,
+} from '../canvas/media'
 import { deriveNode } from '../canvas/presets'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
@@ -60,8 +74,10 @@ function ResultBarHost({ engine }: { engine: Engine }) {
   const el = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
   // 生成节点的结果操作在生成器里；锁定的节点没有生成器，仍用浮动工具条
   const media = el && (el.kind !== 'node' || el.locked) ? mediaOf(el) : null
+  // 加工工具要覆盖音频，所以另算一份只认资产类型的
+  const asset = el && (el.kind !== 'node' || el.locked) ? mediaAsset(el) : null
   const rect = el && engine.scene.rect(el.id)
-  if (!el || !media || !rect || engine.doc.readOnly) return null
+  if (!el || (!media && !asset) || !rect || engine.doc.readOnly) return null
 
   const bl = engine.worldToClient(rect.x, rect.y + rect.h)
   const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
@@ -75,14 +91,25 @@ function ResultBarHost({ engine }: { engine: Engine }) {
       style={{ top, left: center }}
       className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 w-max -translate-x-1/2"
     >
-      <ResultActions
-        engine={engine}
-        el={el}
-        media={media}
-        catalog={catalog}
-        remote={!!canvasId}
-        variant="bar"
-      />
+      {media && (
+        <ResultActions
+          engine={engine}
+          el={el}
+          media={media}
+          catalog={catalog}
+          remote={!!canvasId}
+          variant="bar"
+        />
+      )}
+      {asset && canvasId && (
+        // key 跟着素材走：换选一个素材时把已读的元信息和打开的表单一起丢掉
+        <MediaTools
+          key={asset.assetId}
+          engine={engine}
+          target={{ elId: el.id, ...asset }}
+          label="媒体工具"
+        />
+      )}
     </div>
   )
 }
@@ -240,6 +267,427 @@ export function ResultActions({
         </Popover>
       )}
     </>
+  )
+}
+
+/** 元素背后的资产：加工工具要连音频一起覆盖，所以不限于 image / video */
+export function mediaAsset(el: CanvasElement): { assetId: string; kind: AssetKind } | null {
+  if (el.kind === 'node') {
+    const v = currentResult(el)?.value
+    return v && (v.type === 'image' || v.type === 'video' || v.type === 'audio')
+      ? { assetId: v.assetId, kind: v.type }
+      : null
+  }
+  if ((el.kind === 'image' || el.kind === 'video' || el.kind === 'audio') && el.assetId)
+    return { assetId: el.assetId, kind: el.kind }
+  return null
+}
+
+/** 一次加工的目标：一个画布元素 + 它背后的资产 */
+export interface MediaTarget {
+  elId: string
+  assetId: string
+  kind: AssetKind
+}
+
+/** 加工过程中统一的提示与防重入 */
+function useDeriver(engine: Engine) {
+  const notify = useCanvas((s) => s.notify)
+  const [busy, setBusy] = useState(false)
+  // 批量加工是一轮 await 循环，用 ref 挡重入才不会被同一帧里的多次点击打乱
+  const running = useRef(false)
+  const run = async (target: MediaTarget, input: MediaDeriveRequest) => {
+    if (running.current) return null
+    running.current = true
+    setBusy(true)
+    try {
+      const made = await applyDerivation(engine, input, target.elId)
+      notify(
+        `已${opLabel(input.op)}，新素材放在右边：${made.assets.map((a) => a.name).join('、')}${
+          made.note ? `。${made.note}` : ''
+        }`,
+      )
+      return made
+    } catch (err) {
+      notify((err as Error).message)
+      return null
+    } finally {
+      running.current = false
+      setBusy(false)
+    }
+  }
+  return { busy, run }
+}
+
+function num(value: string) {
+  // Number('') 是 0：留空不能当成 0，否则裁剪会悄悄产出 1×1
+  if (value.trim() === '') return Number.NaN
+  const n = Number(value)
+  return Number.isFinite(n) ? n : Number.NaN
+}
+
+/**
+ * 媒体加工工具条：裁剪 / 旋转 / 镜像 / 截取 / 变速 / 切分 / 音视频分离 / 抽帧。
+ * 全部交给服务端的同一套接口（见 assets/derive.ts），前端只负责收参数和摆结果。
+ */
+export function MediaTools({
+  engine,
+  target,
+  label = '媒体工具',
+  ops,
+}: {
+  engine: Engine
+  target: MediaTarget | MediaTarget[]
+  label?: string
+  /** 多选时只给一键操作；默认按素材类型给全量 */
+  ops?: ReturnType<typeof opsFor>
+}) {
+  const notify = useCanvas((s) => s.notify)
+  const { busy, run } = useDeriver(engine)
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState<string | null>(null)
+  const [meta, setMeta] = useState<Asset | null>(null)
+  const [values, setValues] = useState<Record<string, string>>({})
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
+
+  const list = Array.isArray(target) ? target : [target]
+  const first = list[0]!
+  const [caps, setCaps] = useState<MediaCapsInfo | null>(null)
+  useEffect(() => {
+    let alive = true
+    mediaCaps()
+      .then((c) => alive && setCaps(c))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+  // 本机做不到的操作不显示（比如没装 ffmpeg 时的音视频加工）
+  const allowed = opsFor(first.kind, caps)
+  const actions = (ops ?? allowed).filter((op) => allowed.includes(op))
+  const sameKind = list.every((t) => t.kind === first.kind)
+
+  // 打开时读一次资产元信息：裁剪要有像素尺寸，抽帧和截取要知道时长
+  const toggle = () => {
+    const next = !open
+    setOpen(next)
+    setAnchorEl(btnRef.current)
+    if (next && !meta)
+      api
+        .assetMeta(first.assetId)
+        .then(setMeta)
+        .catch(() => notify('读不到素材信息'))
+  }
+
+  const set = (key: string, value: string) => setValues((v) => ({ ...v, [key]: value }))
+
+  /** 多选时按目标顺序逐个加工，失败的跳过并如实报数 */
+  const runAll = async (make: (t: MediaTarget) => MediaDeriveRequest) => {
+    let ok = 0
+    const failed: string[] = []
+    for (const t of list) {
+      const made = await run(t, make(t))
+      if (made) ok++
+      else failed.push(t.assetId.slice(0, 6))
+    }
+    setOpen(false)
+    if (failed.length) notify(`${ok} 个成功，${failed.length} 个失败`)
+  }
+
+  // 批量时每个目标用自己的 assetId；区间、尺寸类参数按第一个素材的信息校验
+  const submit = async () => {
+    if (form === 'crop') {
+      const rect = cropRect(
+        {
+          left: num(values.left ?? '0'),
+          top: num(values.top ?? '0'),
+          // 宽高留空表示到边缘，用素材信息补；信息还没到时 NaN 会被下面拦住
+          width: num(values.width || String(meta?.width ?? '')),
+          height: num(values.height || String(meta?.height ?? '')),
+        },
+        { width: meta?.width, height: meta?.height },
+      )
+      if (!rect.width || !rect.height) return notify('裁剪区域不对')
+      await runAll((t) => ({ op: 'crop', assetId: t.assetId, ...rect }))
+      return
+    }
+    if (form === 'trim') {
+      const range = clampRange(
+        parseTimecode(values.start ?? '0') ?? 0,
+        parseTimecode(values.end ?? '0') ?? Number.NaN,
+        meta?.duration,
+      )
+      if (!range) return notify('区间不对：出点要大于入点，且不能超出素材长度')
+      await runAll((t) => ({ op: 'trim', assetId: t.assetId, ...range }))
+      return
+    }
+    if (form === 'speed') {
+      const speed = clampSpeed(num(values.speed ?? '1'))
+      await runAll((t) => ({
+        op: 'speed',
+        assetId: t.assetId,
+        speed,
+        keepPitch: values.keepPitch !== 'no',
+      }))
+      return
+    }
+    if (form === 'split') {
+      const count = Math.max(2, Math.round(num(values.count ?? '2')))
+      const segments = evenSegments(meta?.duration ?? count, count)
+      await runAll((t) => ({ op: 'split', assetId: t.assetId, segments }))
+      return
+    }
+    if (form === 'frame') {
+      const at = parseTimecode(values.at ?? '0')
+      if (at === null) return notify('时间看不懂，试试 12.5 或 1:02')
+      await runAll((t) => ({ op: 'frame', assetId: t.assetId, at }))
+    }
+  }
+
+  /** 直接就能做的操作 */
+  const quick = (op: 'rotate' | 'flip' | 'separate') =>
+    runAll((t) =>
+      op === 'rotate'
+        ? { op: 'rotate', assetId: t.assetId, angle: 90 }
+        : op === 'flip'
+          ? { op: 'flip', assetId: t.assetId, axis: 'horizontal' }
+          : { op: 'separate', assetId: t.assetId },
+    )
+
+  const field = (key: string, label: string, fallback: string) => (
+    <label className="ui-field">
+      <span className="ui-label">{label}</span>
+      <input
+        className="ui-input"
+        value={values[key] ?? ''}
+        placeholder={fallback}
+        onChange={(e) => set(key, e.target.value)}
+      />
+    </label>
+  )
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        className="ui-bar-btn ui-btn-menu"
+        aria-expanded={open}
+        disabled={busy || !actions.length}
+        onClick={toggle}
+        title="裁剪、变速、抽帧等本地加工，结果是新素材，原素材不变"
+      >
+        <Icon name="sliders" size={14} />
+        {label}
+        <Icon name="chevronDown" size={12} />
+      </button>
+
+      {open && (
+        <Popover anchor={anchorEl} onClose={() => setOpen(false)} label={label} width={280}>
+          {form ? (
+            <>
+              <div className="ui-menu-label">{opLabel(form as never)}</div>
+              {form === 'crop' && (
+                <div className="grid grid-cols-2 gap-2">
+                  {field('left', '左', '0')}
+                  {field('top', '上', '0')}
+                  {field('width', '宽', String(meta?.width ?? ''))}
+                  {field('height', '高', String(meta?.height ?? ''))}
+                </div>
+              )}
+              {form === 'trim' && (
+                <div className="grid grid-cols-2 gap-2">
+                  {field('start', '入点', '0:00')}
+                  {field('end', '出点', formatTimecode(meta?.duration ?? 0))}
+                </div>
+              )}
+              {form === 'speed' && (
+                <>
+                  <div className="flex flex-wrap gap-1 pb-2">
+                    {SPEEDS.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        className="ui-menu-item w-auto justify-center px-2 py-1"
+                        onClick={() => set('speed', String(s))}
+                      >
+                        {s}×
+                      </button>
+                    ))}
+                  </div>
+                  {field('speed', '倍数', '2')}
+                  {first.kind === 'audio' && (
+                    <label className="flex items-center gap-2 pt-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={values.keepPitch !== 'no'}
+                        onChange={(e) => set('keepPitch', e.target.checked ? 'yes' : 'no')}
+                      />
+                      保音调（改的是素材本身，不是合成时的语速）
+                    </label>
+                  )}
+                </>
+              )}
+              {form === 'split' && field('count', '切成几段', '2')}
+              {form === 'frame' && field('at', '第几秒', '0:00')}
+              <div className="flex gap-2 pt-3">
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-sm"
+                  onClick={() => {
+                    setForm(null)
+                    setValues({})
+                  }}
+                >
+                  返回
+                </button>
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-sm ui-btn-primary flex-1"
+                  disabled={busy}
+                  onClick={() => void submit()}
+                >
+                  {busy ? '处理中…' : '开始加工'}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="ui-menu-label">
+                {list.length > 1 ? `对 ${list.length} 个素材` : '加工'}
+                {!sameKind && '（类型不同，只用第一个的操作）'}
+              </div>
+              {actions.includes('crop') && (
+                <button
+                  type="button"
+                  className="ui-menu-item"
+                  onClick={() => {
+                    setValues({
+                      left: '0',
+                      top: '0',
+                      width: String(meta?.width ?? ''),
+                      height: String(meta?.height ?? ''),
+                    })
+                    setForm('crop')
+                  }}
+                >
+                  裁剪
+                </button>
+              )}
+              {actions.includes('rotate') &&
+                ([90, 180, 270] as const).map((angle) => (
+                  <button
+                    key={angle}
+                    type="button"
+                    className="ui-menu-item justify-between"
+                    onClick={() =>
+                      void runAll((t) => ({ op: 'rotate', assetId: t.assetId, angle }))
+                    }
+                  >
+                    旋转 {angle}°
+                  </button>
+                ))}
+              {actions.includes('flip') && (
+                <>
+                  <button type="button" className="ui-menu-item" onClick={() => void quick('flip')}>
+                    左右翻转
+                  </button>
+                  <button
+                    type="button"
+                    className="ui-menu-item"
+                    onClick={() =>
+                      void runAll((t) => ({
+                        op: 'flip',
+                        assetId: t.assetId,
+                        axis: 'vertical',
+                      }))
+                    }
+                  >
+                    上下翻转
+                  </button>
+                </>
+              )}
+              {actions.includes('trim') && (
+                <button
+                  type="button"
+                  className="ui-menu-item"
+                  onClick={() => {
+                    setValues({ start: '0:00', end: formatTimecode(meta?.duration ?? 0) })
+                    setForm('trim')
+                  }}
+                >
+                  截取一段
+                </button>
+              )}
+              {actions.includes('speed') && (
+                <button
+                  type="button"
+                  className="ui-menu-item"
+                  onClick={() => {
+                    setValues({ speed: '2', keepPitch: 'yes' })
+                    setForm('speed')
+                  }}
+                >
+                  变速
+                </button>
+              )}
+              {actions.includes('split') && (
+                <button
+                  type="button"
+                  className="ui-menu-item"
+                  onClick={() => {
+                    setValues({ count: '2' })
+                    setForm('split')
+                  }}
+                >
+                  手动切分
+                </button>
+              )}
+              {actions.includes('separate') && (
+                <button
+                  type="button"
+                  className="ui-menu-item"
+                  onClick={() => void quick('separate')}
+                >
+                  分离音频与画面
+                </button>
+              )}
+              {actions.includes('frame') && (
+                <button
+                  type="button"
+                  className="ui-menu-item"
+                  onClick={() => {
+                    setValues({ at: '0:00' })
+                    setForm('frame')
+                  }}
+                >
+                  抽帧成图片
+                </button>
+              )}
+              <div className="ui-help px-2 pt-2">
+                加工在服务端跑 ffmpeg / sharp，产出新素材，原素材不动。
+              </div>
+            </>
+          )}
+        </Popover>
+      )}
+    </>
+  )
+}
+
+/** 多选时的一键加工：只给不用填参数的操作，逐个素材跑 */
+export function MediaBatchTools({ engine, targets }: { engine: Engine; targets: MediaTarget[] }) {
+  const ops = [...new Set(targets.flatMap((t) => quickOpsFor(t.kind)))]
+  if (!targets.length || !ops.length) return null
+  return (
+    <MediaTools
+      key={targets.map((t) => t.assetId).join(',')}
+      engine={engine}
+      target={targets}
+      label="批量加工"
+      ops={ops}
+    />
   )
 }
 

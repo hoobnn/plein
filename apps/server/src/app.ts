@@ -11,6 +11,7 @@ import type { Config } from './config'
 import { assetRoutes } from './http/assets'
 import { canvasRoutes } from './http/canvases'
 import { desktopGuard, originGuard } from './http/guard'
+import { mediaRoutes } from './http/media'
 import { builtinPlugins } from './plugins/builtin'
 import { ProviderConfigStore } from './plugins/config-store'
 import { PluginHost } from './plugins/host'
@@ -85,6 +86,7 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', canvasRoutes(db, rooms))
   app.route('/', templateRoutes(db))
   app.route('/', assetRoutes(assets))
+  app.route('/', mediaRoutes(assets))
   app.route('/', syncRoutes(db, rooms))
   app.route('/', pluginRoutes(plugins))
   app.route('/', promptRoutes(plugins))

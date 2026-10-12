@@ -168,3 +168,102 @@ export async function audioWaveform(src: string, out: string) {
     out,
   ])
 }
+
+// ── 加工用的底层入口 ──────────────────────────────────
+
+/** 跑一次 ffmpeg；失败时把 stderr 末尾几行带进消息里，别只丢一句 Command failed */
+export function ffmpeg(args: string[], opts: { maxBuffer?: number } = {}) {
+  return new Promise<void>((resolve, reject) => {
+    execFile(
+      bin.ffmpeg,
+      ['-hide_banner', '-v', 'error', '-y', ...args],
+      { maxBuffer: opts.maxBuffer ?? 32 * 1024 * 1024 },
+      (err, _stdout, stderr) => {
+        if (!err) return resolve()
+        const tail = String(stderr ?? '')
+          .trim()
+          .split('\n')
+          .slice(-2)
+          .join(' ')
+        reject(new Error(`ffmpeg 处理失败：${tail || err.message}`))
+      },
+    )
+  })
+}
+
+/** 音频流的采样率；取不到时按 48k 处理（重采样滤镜只是改率，不影响时长） */
+export async function audioSampleRate(file: string): Promise<number> {
+  const { stdout } = await run(bin.ffprobe, [
+    '-v',
+    'error',
+    '-print_format',
+    'json',
+    '-select_streams',
+    'a:0',
+    '-show_streams',
+    file,
+  ])
+  const info = JSON.parse(stdout) as { streams?: { sample_rate?: string }[] }
+  return Number(info.streams?.[0]?.sample_rate) || 48000
+}
+
+/** atempo 单级只支持 0.5–2，超出时串联（视频变速的音轨、音频变速都用它） */
+export function atempoChain(speed: number) {
+  const parts: string[] = []
+  let s = speed
+  while (s > 2) {
+    parts.push('atempo=2')
+    s /= 2
+  }
+  while (s < 0.5) {
+    parts.push('atempo=0.5')
+    s /= 0.5
+  }
+  parts.push(`atempo=${Number(s.toFixed(4))}`)
+  return parts.join(',')
+}
+
+/** ffmpeg 参数里的秒，保留三位足够精确又短 */
+export const fmtSeconds = (n: number) => Number(n.toFixed(3)).toString()
+
+/**
+ * 音频变速滤镜。
+ *
+ * keepPitch = true：有 rubberband 就用它（相位声码器，真保音调）；本机没有时退到
+ * atempo 串联（时域拉伸，音高基本不变，但不是相位声码级质量，倍速很极端时有轻微抖动）。
+ * 注意 asetrate 帮不上保音调：asetrate=k 让音高 ×k、时长 ÷k，atempo 只改时长不改音高，
+ * 两者串起来音高必然还差一个 k 倍，所以它只能用于“故意变调”的那一种。
+ * keepPitch = false：asetrate 直接改采样率，就是常见的“加速变调”。
+ */
+export function audioTempoFilter(
+  speed: number,
+  keepPitch: boolean,
+  opts: { rubberband: boolean; sampleRate: number },
+) {
+  const rate = opts.sampleRate || 48000
+  if (keepPitch && opts.rubberband) return { filter: `rubberband=tempo=${fmtSeconds(speed)}` }
+  if (keepPitch)
+    return {
+      filter: atempoChain(speed),
+      note: '本机 ffmpeg 没有 rubberband 滤镜：已退到 atempo 时域拉伸串联，音高基本保持，但不是相位声码级的完美保音调，倍速很极端时会有轻微失真。',
+    }
+  return {
+    filter: `asetrate=${Math.round(rate * speed)},aresample=${rate}`,
+    note: '不保音调：音高会跟着速度一起变（asetrate 直接改采样率）。',
+  }
+}
+
+/** 抽帧：取指定时刻的一帧写成 png（落在磁盘上，成为可用的图片资产） */
+export async function videoFrame(src: string, out: string, at: number) {
+  await ffmpeg([
+    '-ss',
+    fmtSeconds(Math.max(0, at)),
+    '-i',
+    src,
+    '-frames:v',
+    '1',
+    '-c:v',
+    'png',
+    out,
+  ])
+}

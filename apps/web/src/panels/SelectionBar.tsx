@@ -2,6 +2,7 @@ import { type Engine, union } from '@plein/canvas-core'
 import { templateData } from '../canvas/groups'
 import { assetOf, downloadAll } from '../canvas/grid'
 import { useEngineVersion } from '../canvas/hooks'
+import { type MediaTarget, MediaBatchTools, mediaAsset } from './ResultBar'
 import { useCanvas } from '../stores/canvas'
 import { useTemplates } from '../stores/templates'
 import { promptDialog } from '../ui/Dialog'
@@ -35,12 +36,15 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
   // 选中的 Frame 里的素材也算
   const seen = new Set<string>()
   const assets: Array<{ assetId: string; name: string }> = []
+  const media: MediaTarget[] = []
   for (const id of ids) {
     for (const el of [engine.doc.get(id), ...engine.doc.descendants(id)]) {
       if (!el || seen.has(el.id)) continue
       seen.add(el.id)
       const assetId = assetOf(el)
       if (assetId) assets.push({ assetId, name: el.name ?? `${el.kind}-${assets.length + 1}` })
+      const back = mediaAsset(el)
+      if (back) media.push({ elId: el.id, ...back })
     }
   }
 
@@ -104,6 +108,7 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
         <Icon name="copy" size={14} />
         复制一份
       </button>
+      {remote && <MediaBatchTools engine={engine} targets={media} />}
       {remote && (
         <button
           type="button"
