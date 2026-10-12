@@ -11,7 +11,7 @@ import {
   type ResultValue,
   updateElement,
 } from '@plein/doc'
-import { ASSET_NODE_TYPES } from '@plein/nodes'
+import { ASSET_NODE_TYPES, type MentionTarget } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { modelProblem, selectedModel } from './modelParams'
 
@@ -296,14 +296,32 @@ export function validate(
   return null
 }
 
-/** 可被 @ 引用的元素：资产卡（角色、场景）和有名字的图片，与服务端解析规则一致 */
-export function mentionTargets(engine: Engine): Map<string, CanvasElement> {
-  const out = new Map<string, CanvasElement>()
+/**
+ * 可被 @ 引用的元素：资产卡（角色、场景、道具、风格）和有名字的图片，与服务端解析规则一致。
+ * 重名要保留成多条——名字指不明时由用户写 `@林夏#2` 消歧，这里合并掉就再也提示不了了。
+ */
+export function mentionTargets(engine: Engine): MentionTarget[] {
+  const out: MentionTarget[] = []
   for (const el of engine.doc.elements()) {
     const name = el.name?.trim()
-    if (!name || out.has(name)) continue
+    if (!name) continue
     const asset = el.kind === 'node' && el.nodeType && ASSET_NODE_TYPES.has(el.nodeType)
-    if (asset || (el.kind === 'image' && el.assetId)) out.set(name, el)
+    if (asset || (el.kind === 'image' && el.assetId)) out.push({ id: el.id, name })
+  }
+  return out
+}
+
+/** 按名字取可引用元素；重名的全部返回，调用方要自己判断指不指得准 */
+export function mentionElements(engine: Engine): Map<string, CanvasElement[]> {
+  const out = new Map<string, CanvasElement[]>()
+  for (const el of engine.doc.elements()) {
+    const name = el.name?.trim()
+    if (!name) continue
+    const asset = el.kind === 'node' && el.nodeType && ASSET_NODE_TYPES.has(el.nodeType)
+    if (!asset && !(el.kind === 'image' && el.assetId)) continue
+    const list = out.get(name)
+    if (list) list.push(el)
+    else out.set(name, [el])
   }
   return out
 }

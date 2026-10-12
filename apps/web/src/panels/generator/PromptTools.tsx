@@ -53,7 +53,7 @@ export function PromptTools({
         text,
         mode,
         target: target ?? 'image',
-        mentions: [...mentionTargets(engine).keys()],
+        mentions: [...new Set(mentionTargets(engine).map((t) => t.name))],
       })
       // 等待期间提示词被改过（自己或协作者）就不覆盖
       if (String(engine.doc.get(elId)?.params?.[pk] ?? '') !== text)

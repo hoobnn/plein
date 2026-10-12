@@ -4,6 +4,7 @@ import {
   imageNode,
   llmNode,
   musicNode,
+  propNode,
   sceneNode,
   type ArrangedClip,
   arrangeSequence,
@@ -12,8 +13,10 @@ import {
   speechNode,
   StoryboardDraft,
   storyboardNode,
+  styleNode,
   textNode,
   videoNode,
+  voiceOf,
 } from '@plein/nodes'
 import {
   type Capability,
@@ -24,6 +27,7 @@ import {
   inputAssets,
   inputText,
   ProviderError,
+  parseModelRef,
   type TranscriptSegment,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
@@ -53,6 +57,22 @@ function requireText(text: string, label: string) {
   return text
 }
 
+/**
+ * 把「本次真正送进模型的 @ 引用」写进节点运行状态。
+ * 运行前的解析结果通过隐藏参数带过来（见 node 定义的 `usedRefs`），
+ * 用户在节点上能直接看到这次送的是谁、几张参考图；extra 用来补一句提示。
+ */
+function sayProgress(ctx: ExecutorContext<{ usedRefs?: unknown }>, extra = '') {
+  const refs = (ctx.params.usedRefs ?? []) as Array<{ name: string; assetIds: string[] }>
+  const shown = refs.length
+    ? `本次引用：${refs
+        .map((r) => (r.assetIds.length ? `${r.name}（${r.assetIds.length} 张参考图）` : r.name))
+        .join('、')}`
+    : ''
+  const text = [shown, extra].filter(Boolean).join('；')
+  if (text) ctx.progress(0, text)
+}
+
 const text = defineExecutor(textNode, async ({ params }) => ({
   text: [{ type: 'text', text: params.text }],
 }))
@@ -61,6 +81,7 @@ const llm = defineExecutor(llmNode, async (ctx) => {
   const { params, inputs } = ctx
   const prompt = requireText(joinText(params.prompt, inputText(inputs, 'prompt')), '提示词')
   const images = inputAssets(inputs, 'images')
+  sayProgress(ctx)
   const messages: ChatMessage[] = []
   if (params.system.trim()) messages.push({ role: 'system', content: params.system })
   messages.push({
@@ -84,6 +105,7 @@ const llm = defineExecutor(llmNode, async (ctx) => {
 
 const image = defineExecutor(imageNode, async (ctx) => {
   const { params, inputs } = ctx
+  sayProgress(ctx)
   const res = await ctx.providers.call(
     'image.generate',
     pickModel(ctx, 'image.generate', '生成图片'),
@@ -100,6 +122,7 @@ const image = defineExecutor(imageNode, async (ctx) => {
 
 const video = defineExecutor(videoNode, async (ctx) => {
   const { params, inputs } = ctx
+  sayProgress(ctx)
   const res = await ctx.providers.call(
     'video.generate',
     pickModel(ctx, 'video.generate', '生成视频'),
@@ -127,9 +150,28 @@ const video = defineExecutor(videoNode, async (ctx) => {
 const speech = defineExecutor(speechNode, async (ctx) => {
   const { params, inputs } = ctx
   const text = requireText(joinText(params.text, inputText(inputs, 'text')), '台词')
-  const res = await ctx.providers.call('audio.speech', pickModel(ctx, 'audio.speech', '配音'), {
+  // 音色存的是 { provider, voiceId }，送进平台前只取音色 ID：
+  // 各家的音色 ID 只在本家平台有效，平台的入参契约不变
+  const voice = voiceOf(params)
+  const model = pickModel(ctx, 'audio.speech', '配音')
+  // 手选的音色标明了平台、却和要用的模型不是一家：送过去多半读不出来，不如先停下
+  const provider = parseModelRef(model)?.provider ?? ''
+  if (voice.voiceId && voice.provider && provider && voice.provider !== provider)
+    throw new ProviderError(
+      'invalid_input',
+      `音色 ${voice.voiceId} 属于 ${voice.provider}，当前配音模型是 ${provider} 的，请换成同一平台的音色或模型`,
+      { retryable: false },
+    )
+  // 音色没有记录平台（手工填的或旧画布里的裸字符串）：照用，但说明没法校验是不是本平台的
+  sayProgress(
+    ctx,
+    voice.voiceId && !voice.provider
+      ? `音色 ${voice.voiceId} 未标明所属平台，请确认它适用于当前模型`
+      : '',
+  )
+  const res = await ctx.providers.call('audio.speech', model, {
     text,
-    voice: params.voice || undefined,
+    voice: voice.voiceId || undefined,
     instruction: params.instruction || undefined,
     // 1 倍是平台默认，不传：有的平台（千问）不接受语速参数
     speed: params.speed === 1 ? undefined : params.speed,
@@ -187,11 +229,17 @@ const storyboard = defineExecutor(storyboardNode, async (ctx) => {
   return { shots: [{ type: 'json', value: parsed.data }] }
 })
 
-/** 资产卡：输出连入的参考图，供下游直接连线使用 */
+/** 资产卡：输出连入的参考图，供下游直接连线使用（道具卡、风格卡同理） */
 const character = defineExecutor(characterNode, async ({ inputs }) => ({
   images: inputAssets(inputs, 'references').map((a) => ({ type: 'image' as const, ...a })),
 }))
 const scene = defineExecutor(sceneNode, async ({ inputs }) => ({
+  images: inputAssets(inputs, 'references').map((a) => ({ type: 'image' as const, ...a })),
+}))
+const prop = defineExecutor(propNode, async ({ inputs }) => ({
+  images: inputAssets(inputs, 'references').map((a) => ({ type: 'image' as const, ...a })),
+}))
+const style = defineExecutor(styleNode, async ({ inputs }) => ({
   images: inputAssets(inputs, 'references').map((a) => ({ type: 'image' as const, ...a })),
 }))
 
@@ -256,5 +304,18 @@ const sequence = defineExecutor(sequenceNode, async (ctx) => {
 })
 
 export const coreServerPlugin = defineServerPlugin(corePlugin, {
-  executors: [text, llm, image, video, speech, music, character, scene, storyboard, sequence],
+  executors: [
+    text,
+    llm,
+    image,
+    video,
+    speech,
+    music,
+    character,
+    scene,
+    prop,
+    style,
+    storyboard,
+    sequence,
+  ],
 })

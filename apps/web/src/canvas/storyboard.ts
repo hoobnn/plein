@@ -9,7 +9,7 @@ import {
 } from '@plein/doc'
 import type { Shot } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
-import { findNode, mentionTargets, nodeElement } from './nodes'
+import { findNode, mentionElements, nodeElement } from './nodes'
 import { runNode } from './runner'
 
 /** 展开出来的节点记下来源，重新展开、批量运行都按它找 */
@@ -75,7 +75,7 @@ export function expandShots(
     }
   }
 
-  const targets = mentionTargets(engine)
+  const targets = new Map([...mentionElements(engine)].map(([name, list]) => [name, list[0]!]))
   const image = nodeElement(imageInfo)
   const video = nodeElement(videoInfo)
   const speech = nodeElement(speechInfo)

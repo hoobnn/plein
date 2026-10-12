@@ -1,9 +1,17 @@
 import type { Engine } from '@plein/canvas-core'
 import type { CanvasElement } from '@plein/doc'
-import { findMentions, firstPlaceholder, mentionQuery, slashQuery } from '@plein/nodes'
+import {
+  findMentions,
+  firstPlaceholder,
+  mentionProblem,
+  mentionQuery,
+  slashQuery,
+  sortMentionTargets,
+} from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
 import { assetUrls } from '../../api/client'
+import { Icon } from '../../ui/icons'
 import { mentionTargets, targetImages } from '../../canvas/nodes'
 
 export type PromptPreset = Catalog['prompts'][number]
@@ -41,15 +49,22 @@ export function PromptBox({
   const [query, setQuery] = useState<{ kind: '@' | '/'; start: number; query: string } | null>(null)
   const [active, setActive] = useState(0)
   const shown = focused ? draft : value
-  const targets = mentionTargets(engine)
-  targets.forEach((t, name) => {
-    if (t.id === selfId) targets.delete(name)
-  })
+  // 序号顺序要和 findMentions 一致，否则插进去的 #2 运行时指向另一张卡
+  const targets = sortMentionTargets(mentionTargets(engine).filter((t) => t.id !== selfId))
   const q = query?.query.toLowerCase() ?? ''
-  const mentionOptions =
-    query?.kind === '@'
-      ? [...targets].filter(([name]) => name.toLowerCase().includes(q)).slice(0, MAX_OPTIONS)
-      : []
+  // 重名时给每张卡一条候选，插进提示词时自带 #序号，写完再改名字也不会串
+  const counts = new Map<string, number>()
+  for (const t of targets) counts.set(t.name, (counts.get(t.name) ?? 0) + 1)
+  const seen = new Map<string, number>()
+  const mentionOptions = (query?.kind === '@' ? targets : [])
+    .filter((t) => t.name.toLowerCase().includes(q))
+    .map((t) => {
+      const total = counts.get(t.name) ?? 1
+      const nth = (seen.get(t.name) ?? 0) + 1
+      seen.set(t.name, nth)
+      return { ...t, total, nth, insert: total > 1 ? `${t.name}#${nth}` : t.name }
+    })
+    .slice(0, MAX_OPTIONS)
   const presetOptions =
     query?.kind === '/'
       ? presets
@@ -95,7 +110,7 @@ export function PromptBox({
   }
   const pick = (i: number) => {
     if (query?.kind === '/') applyPreset(presetOptions[i]!)
-    else insert(mentionOptions[i]![0])
+    else insert(mentionOptions[i]!.insert)
   }
   /** 候选项：按下时不让文本框失焦 */
   const option = (key: string, i: number, onClick: () => void, body: React.ReactNode) => (
@@ -150,9 +165,25 @@ export function PromptBox({
       {mentions.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2 text-xs text-ink-subtle">
           引用
-          {[...new Map(mentions.map((m) => [m.name, m.target])).entries()].map(([name, t]) => (
-            <MentionChip key={name} engine={engine} name={name} target={t} />
-          ))}
+          {[...new Map(mentions.flatMap((m) => [[m.id ?? `?${m.name}`, m] as const])).values()].map(
+            (m) => {
+              if (!m.id) {
+                // 指不明的引用当场说清，不等到运行才报错
+                return (
+                  <span
+                    key={`?${m.name}`}
+                    className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-1.5 py-0.5 text-warning"
+                  >
+                    <Icon name="warning" size={12} />
+                    {mentionProblem(m)}
+                  </span>
+                )
+              }
+              const target = engine.doc.get(m.id)
+              if (!target) return null
+              return <MentionChip key={m.id} engine={engine} name={m.name} target={target} />
+            },
+          )}
         </div>
       )}
       {presetOptions.length > 0 && (
@@ -180,15 +211,16 @@ export function PromptBox({
           aria-label="引用资产"
           className="ui-menu absolute top-full left-3 z-10 mt-1 w-64"
         >
-          {mentionOptions.map(([name, t], i) =>
+          {mentionOptions.map((t, i) =>
             option(
-              name,
+              t.insert,
               i,
-              () => insert(name),
+              () => insert(t.insert),
               <>
-                <Thumb engine={engine} target={t} />
-                <span className="min-w-0 flex-1 truncate">{name}</span>
-                <span className="text-xs text-ink-subtle">{targetKind(t)}</span>
+                <Thumb engine={engine} target={engine.doc.get(t.id)!} />
+                <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                {t.total > 1 && <span className="text-xs text-ink-subtle">#{t.nth}</span>}
+                <span className="text-xs text-ink-subtle">{targetKind(engine.doc.get(t.id)!)}</span>
               </>,
             ),
           )}

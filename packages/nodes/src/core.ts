@@ -1,6 +1,7 @@
 import { defineNode, definePlugin, PLUGIN_API_VERSION } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { corePrompts } from './prompts'
+import { noVoice, VoiceRef } from './refs'
 import { sequenceNode } from './sequence'
 import { storyboardNode } from './storyboard'
 
@@ -15,6 +16,23 @@ const modelOptions = () =>
     .meta({ title: '模型专属参数', widget: 'modelOptions' })
 const textarea = (title: string, placeholder?: string) =>
   z.string().default('').meta({ title, widget: 'textarea', placeholder })
+/**
+ * 音色：`{ provider, voiceId }`，两家平台的音色 ID 互相不通用，跨平台必须重选。
+ * 旧画布里存的是裸字符串（0.1.0 之前），所以并联字符串，读的时候用 `voiceOf` 归一。
+ */
+const voice = (title: string, placeholder?: string) =>
+  z.union([VoiceRef, z.string()]).default(noVoice).meta({
+    title,
+    widget: 'voice',
+    placeholder,
+    description: '两家平台的音色不能混用；平台留空表示还没确认，跨平台时不会被自动沿用',
+  })
+/** 本次运行真正送进模型的 @ 引用：运行前算好，执行器显示在节点状态里；不是人工字段 */
+const usedRefs = () =>
+  z
+    .array(z.object({ name: z.string(), elementId: z.string(), assetIds: z.array(z.string()) }))
+    .default([])
+    .meta({ title: '本次实际引用', widget: 'hidden' })
 /** 画幅从宽到高排；auto 为「智能」，交给模型按提示词或素材决定。各模型只显示自己支持的那些 */
 const ASPECTS = ['auto', '21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'] as const
 
@@ -48,6 +66,7 @@ export const llmNode = defineNode({
     system: textarea('系统提示词'),
     prompt: textarea('提示词', '可用上游文本补充'),
     temperature: z.number().min(0).max(2).default(0.7).meta({ title: '温度' }),
+    usedRefs: usedRefs(),
   }),
 })
 
@@ -71,6 +90,7 @@ export const imageNode = defineNode({
     resolution: resolution(),
     options: modelOptions(),
     count: z.number().int().min(1).max(4).default(1).meta({ title: '张数' }),
+    usedRefs: usedRefs(),
   }),
 })
 
@@ -98,6 +118,7 @@ export const videoNode = defineNode({
     aspectRatio: z.enum(ASPECTS).default('16:9').meta({ title: '画幅' }),
     resolution: resolution(),
     options: modelOptions(),
+    usedRefs: usedRefs(),
   }),
 })
 
@@ -114,16 +135,15 @@ export const speechNode = defineNode({
   params: z.object({
     model: model(),
     text: textarea('台词'),
-    voice: z
-      .string()
-      .default('')
-      .meta({ title: '音色', placeholder: '音色 ID，留空用平台设置里的默认音色' }),
+    // 手工填的音色 ID 留空时用平台设置里的默认；自动沿用角色卡音色由运行前处理决定
+    voice: voice('音色', '音色 ID，留空用平台设置里的默认音色'),
     speed: z.number().min(0.5).max(2).default(1).meta({ title: '语速' }),
     options: modelOptions(),
     instruction: z
       .string()
       .default('')
       .meta({ title: '语气指令', placeholder: '如：压低声音，带着哭腔' }),
+    usedRefs: usedRefs(),
   }),
 })
 
@@ -155,7 +175,7 @@ export const characterNode = defineNode({
   outputs: [{ id: 'images', label: '参考图', type: 'image' }],
   params: z.object({
     description: textarea('设定', '外貌、服装、性格，如：二十岁，短发，白衬衫'),
-    voice: z.string().default('').meta({ title: '音色', placeholder: '配音时使用的音色 id' }),
+    voice: voice('音色', '配音时使用的音色，属于哪个平台要和配音模型一致'),
   }),
 })
 
@@ -170,6 +190,34 @@ export const sceneNode = defineNode({
   outputs: [{ id: 'images', label: '参考图', type: 'image' }],
   params: z.object({
     description: textarea('设定', '时间、地点、光线、氛围，如：雨夜，老城区天台，霓虹反光'),
+  }),
+})
+
+/** 道具设定卡：跨镜头复用的关键道具，外观要一次定死 */
+export const propNode = defineNode({
+  type: 'plein/prop',
+  version: 1,
+  title: '道具',
+  description: '道具设定卡：连入参考图，在提示词里 @ 道具名即可引用',
+  category: 'story',
+  inputs: [{ id: 'references', label: '参考图', type: 'image', multiple: true }],
+  outputs: [{ id: 'images', label: '参考图', type: 'image' }],
+  params: z.object({
+    description: textarea('设定', '材质、颜色、做旧程度，如：磨砂黑的旧打火机，铜盖有划痕'),
+  }),
+})
+
+/** 风格卡：整部片的画面风格，参考图 + 风格描述 */
+export const styleNode = defineNode({
+  type: 'plein/style',
+  version: 1,
+  title: '风格',
+  description: '风格卡：连入参考图定下画风，在提示词里 @ 风格名即可引用',
+  category: 'story',
+  inputs: [{ id: 'references', label: '参考图', type: 'image', multiple: true }],
+  outputs: [{ id: 'images', label: '参考图', type: 'image' }],
+  params: z.object({
+    description: textarea('风格', '影调、镜头质感、年代，如：90 年代港片，胶片颗粒，冷调霓虹'),
   }),
 })
 
@@ -191,6 +239,8 @@ export const corePlugin = definePlugin({
         'plein/music@1',
         'plein/character@1',
         'plein/scene@1',
+        'plein/prop@1',
+        'plein/style@1',
         'plein/storyboard@1',
         'plein/sequence@1',
       ],
@@ -208,6 +258,8 @@ export const corePlugin = definePlugin({
     musicNode,
     characterNode,
     sceneNode,
+    propNode,
+    styleNode,
     storyboardNode,
     sequenceNode,
   ],
