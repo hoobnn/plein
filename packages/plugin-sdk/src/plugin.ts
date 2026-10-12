@@ -1,3 +1,4 @@
+import type { PluginCapabilityDefinition } from './capability'
 import type {
   ElementTypeDefinition,
   PromptPresetDefinition,
@@ -37,7 +38,7 @@ export function definePlugin(input: {
 }
 
 /**
- * 插件的服务端部分：Provider 与节点执行器。
+ * 插件的服务端部分：Provider、节点执行器和能力。
  * 内置插件在主进程加载；第三方插件以后在子进程加载，通过 stdio JSON-RPC 与宿主通信，接口不变。
  */
 export interface ServerPluginDefinition {
@@ -46,12 +47,23 @@ export interface ServerPluginDefinition {
   providers: ProviderDefinition<any>[]
   // biome-ignore lint/suspicious/noExplicitAny: 各执行器对应的节点不同
   executors: ExecutorDefinition<any>[]
+  capabilities: PluginCapabilityDefinition[]
 }
 
 export function defineServerPlugin(
   plugin: PluginDefinition,
-  // biome-ignore lint/suspicious/noExplicitAny: 同上
-  parts: { providers?: ProviderDefinition<any>[]; executors?: ExecutorDefinition<any>[] },
+  parts: {
+    // biome-ignore lint/suspicious/noExplicitAny: 同上
+    providers?: ProviderDefinition<any>[]
+    // biome-ignore lint/suspicious/noExplicitAny: 同上
+    executors?: ExecutorDefinition<any>[]
+    capabilities?: PluginCapabilityDefinition[]
+  },
 ): ServerPluginDefinition {
-  return { plugin, providers: parts.providers ?? [], executors: parts.executors ?? [] }
+  return {
+    plugin,
+    providers: parts.providers ?? [],
+    executors: parts.executors ?? [],
+    capabilities: parts.capabilities ?? [],
+  }
 }

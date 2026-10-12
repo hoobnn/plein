@@ -1,5 +1,8 @@
 import type { AgentApprovalMode, AgentCli, AgentItem } from '@plein/protocol'
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { api } from '../api/client'
+import { queryKeys } from '../api/query'
 import { renderMarkdown } from '../canvas/markdown'
 import { useRoute } from '../router'
 import { useAgent } from '../stores/agent'
@@ -528,7 +531,15 @@ function ToolRow({ item }: { item: Extract<AgentItem, { type: 'tool' }> }) {
   const engine = useCanvas((s) => s.engine)
   const target = item.detail && engine?.doc.get(item.detail.split(' · ')[0]!)
   const detail = target ? (target.name ?? target.kind) : item.detail
-  const label = TOOL_LABELS[item.name] ?? item.name
+  // 插件能力的名字从插件来
+  const { data: plugins } = useQuery({
+    queryKey: queryKeys.capabilities,
+    queryFn: api.capabilities,
+    staleTime: Number.POSITIVE_INFINITY,
+    enabled: !(item.name in TOOL_LABELS),
+  })
+  const label =
+    TOOL_LABELS[item.name] ?? plugins?.find((c) => c.name === item.name)?.title ?? item.name
 
   return (
     <div className="text-xs">

@@ -49,8 +49,14 @@ export function Editor({
   onOpenSettings(): void
 }) {
   // 只取用到的字段：整个 store 会随相机缩放、选中等频繁更新，不能让整页跟着重渲染
-  const { sync, importing, notice, mode } = useCanvas(
-    useShallow((s) => ({ sync: s.sync, importing: s.importing, notice: s.notice, mode: s.mode })),
+  const { sync, importing, notice, noticeAction, mode } = useCanvas(
+    useShallow((s) => ({
+      sync: s.sync,
+      importing: s.importing,
+      notice: s.notice,
+      noticeAction: s.noticeAction,
+      mode: s.mode,
+    })),
   )
   const [canvas, setCanvas] = useState<Canvas | null>(null)
   const canvasId = source.kind === 'remote' ? source.canvasId : null
@@ -149,7 +155,25 @@ export function Editor({
       {mode === 'flow' && <EmptyHint />}
       <Presence>
         {(importing || notice) && (
-          <Toast>{importing ? `正在导入 ${importing.done}/${importing.total}…` : notice}</Toast>
+          <Toast
+            action={
+              !importing &&
+              noticeAction && (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-sm"
+                  onClick={() => {
+                    useCanvas.getState().notify(null)
+                    noticeAction.run()
+                  }}
+                >
+                  {noticeAction.label}
+                </button>
+              )
+            }
+          >
+            {importing ? `正在导入 ${importing.done}/${importing.total}…` : notice}
+          </Toast>
         )}
       </Presence>
       {mode === 'flow' && (

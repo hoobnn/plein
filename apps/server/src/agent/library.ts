@@ -104,11 +104,12 @@ export const placeLibraryItem = serverCapability({
       const left = refs.length ? REF_W + REF_COL_GAP : 0
       const w = left + base.w
       const h = Math.max(base.h, 400)
+      if (a.near) need(doc, a.near)
       const spot =
         a.x !== undefined && a.y !== undefined
           ? { x: a.x - left, y: a.y }
           : a.near
-            ? (need(doc, a.near), spotRightOf(doc, a.near, w, h))
+            ? spotRightOf(doc, a.near, w, h)
             : spotAfterContent(doc, w, h)
       const card = placeLibraryCard(
         doc,

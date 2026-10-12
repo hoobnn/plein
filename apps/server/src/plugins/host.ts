@@ -389,42 +389,15 @@ export class PluginHost {
       signal,
       progress: (f, m) => opts.onProgress?.(Math.min(1, Math.max(0, f)), m),
       log: (message, data) => this.log(executor.plugin, message, data),
-      providers: {
-        call: (capability, model, input) =>
-          this.call(capability, model, input, {
-            ownerId: opts.ownerId,
-            signal,
-            onProgress: (p) => opts.onProgress?.(p),
-            journal: opts.journal && {
-              store: opts.journal,
-              key: callKey(capability, model, input),
-            },
-          }),
-        models: (capability) => this.models(capability),
-      },
-      assets: {
-        put: async (file) => {
-          if (manifest.permissions.assets !== 'write')
-            throw new PermissionError(`插件 ${manifest.id} 没有写资产的权限`)
-          const a = await this.assets.ingest(
-            opts.ownerId,
-            Readable.from([Buffer.from(file.data)]),
-            {
-              mime: file.mime,
-              name: file.name ?? 'file',
-            },
-          )
-          return { assetId: a.id, kind: a.kind, mime: a.mime }
+      ...this.services(manifest, {
+        ownerId: opts.ownerId,
+        signal,
+        onProgress: (p) => opts.onProgress?.(p),
+        journal: opts.journal && {
+          store: opts.journal,
+          key: (capability, model, input) => callKey(capability, model, input),
         },
-        read: (ref) => this.readAsset(manifest, opts.ownerId, ref),
-      },
-      media: {
-        probe: (ref) => this.probe(manifest, opts.ownerId, ref),
-        compose: (spec) =>
-          this.compose(manifest, opts.ownerId, spec, signal, (f) =>
-            opts.onProgress?.(Math.min(1, Math.max(0, f))),
-          ),
-      },
+      }),
     }
 
     let outputs: NodeOutputs
@@ -444,6 +417,64 @@ export class PluginHost {
       }
     }
     return outputs
+  }
+
+  /**
+   * 插件代码可用的宿主服务：调模型、读写资产、处理媒体，都按插件清单的权限裁剪。
+   * 节点执行器和插件能力共用。
+   */
+  services(
+    manifest: PluginManifest,
+    opts: {
+      ownerId: string
+      signal: AbortSignal
+      onProgress?: (fraction: number) => void
+      journal?: {
+        store: CallJournal
+        key: (capability: string, model: string, input: unknown) => string
+      }
+    },
+  ): Pick<ExecutorContext, 'providers' | 'assets' | 'media'> {
+    const { ownerId, signal } = opts
+    return {
+      providers: {
+        call: (capability, model, input) =>
+          this.call(capability, model, input, {
+            ownerId,
+            signal,
+            onProgress: opts.onProgress,
+            journal: opts.journal && {
+              store: opts.journal.store,
+              key: opts.journal.key(capability, model, input),
+            },
+          }),
+        models: (capability) => this.models(capability),
+      },
+      assets: {
+        put: async (file) => {
+          if (manifest.permissions.assets !== 'write')
+            throw new PermissionError(`插件 ${manifest.id} 没有写资产的权限`)
+          const a = await this.assets.ingest(ownerId, Readable.from([Buffer.from(file.data)]), {
+            mime: file.mime,
+            name: file.name ?? 'file',
+          })
+          return { assetId: a.id, kind: a.kind, mime: a.mime }
+        },
+        read: (ref) => this.readAsset(manifest, ownerId, ref),
+      },
+      media: {
+        probe: (ref) => this.probe(manifest, ownerId, ref),
+        compose: (spec) =>
+          this.compose(manifest, ownerId, spec, signal, (f) =>
+            opts.onProgress?.(Math.min(1, Math.max(0, f))),
+          ),
+      },
+    }
+  }
+
+  /** 插件清单（插件已登记） */
+  pluginManifest(id: string) {
+    return this.manifest(id)
   }
 
   // ── 内部 ──────────────────────────────────────────

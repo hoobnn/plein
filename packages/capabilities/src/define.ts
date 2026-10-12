@@ -24,7 +24,16 @@ export type Effect = 'read' | 'edit' | 'run' | 'destructive'
 export type Where = 'doc' | 'server' | 'client'
 
 /** 工具分组：内置智能体按组按需加载，⌘K 按组归类 */
-export type Group = 'read' | 'edit' | 'run' | 'media' | 'story' | 'library' | 'project' | 'ui'
+export type Group =
+  | 'read'
+  | 'edit'
+  | 'run'
+  | 'media'
+  | 'story'
+  | 'library'
+  | 'project'
+  | 'ui'
+  | 'plugin'
 
 export type ContentBlock =
   | { type: 'text'; text: string }

@@ -1,8 +1,11 @@
 import {
+  capabilityIdError,
+  capabilityToolName,
   type ElementTypeDefinition,
   type ExecutorDefinition,
   type NodeDefinition,
   nodeKey,
+  type PluginCapabilityDefinition,
   PLUGIN_API_VERSION,
   type PluginManifest,
   type ProviderDefinition,
@@ -40,6 +43,8 @@ export class PluginRegistry {
   readonly templates = new Map<string, Owned<TemplateDefinition>>()
   readonly prompts = new Map<string, Owned<PromptPresetDefinition>>()
   readonly elements = new Map<string, Owned<ElementTypeDefinition>>()
+  /** 按 id 登记的插件能力 */
+  readonly capabilities = new Map<string, Owned<PluginCapabilityDefinition>>()
 
   register(sp: ServerPluginDefinition, opts: { builtin: boolean }): PluginEntry {
     const { manifest } = sp.plugin
@@ -153,6 +158,22 @@ export class PluginRegistry {
       own('元素类型', e.type)
       if (this.elements.has(e.type)) throw new Error(`元素类型 ${e.type} 已被其他插件注册`)
     }
+    sameSet(
+      'capabilities',
+      manifest.contributes.capabilities,
+      sp.capabilities.map((c) => c.id),
+    )
+    const tools = new Set([...this.capabilities.values()].map((c) => capabilityToolName(c.def.id)))
+    for (const c of sp.capabilities) {
+      own('能力', c.id)
+      const bad = capabilityIdError(c.id)
+      if (bad) throw new Error(bad)
+      const tool = capabilityToolName(c.id)
+      if (tools.has(tool)) throw new Error(`能力 ${c.id} 与其他插件的能力重名`)
+      tools.add(tool)
+      if (c.palette && !c.input.safeParse({}).success)
+        throw new Error(`能力 ${c.id} 出现在命令面板里，输入的每个字段都要可选`)
+    }
     for (const p of prompts) {
       own('提示词预设', p.id)
       if (this.prompts.has(p.id)) throw new Error(`提示词预设 ${p.id} 已被其他插件注册`)
@@ -177,5 +198,6 @@ export class PluginRegistry {
     for (const def of sp.plugin.templates) this.templates.set(def.id, { def, plugin })
     for (const def of sp.plugin.elements) this.elements.set(def.type, { def, plugin })
     for (const def of sp.plugin.prompts) this.prompts.set(def.id, { def, plugin })
+    for (const def of sp.capabilities) this.capabilities.set(def.id, { def, plugin })
   }
 }

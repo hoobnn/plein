@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
 import { agentMcpRoute, agentRoutes } from './agent/routes'
+import { capabilityRoutes } from './agent/cap-routes'
 import { AgentSessions } from './agent/sessions'
 import { setMediaTools } from './assets/media'
 import { AssetStore } from './assets/store'
@@ -102,6 +103,7 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', promptRoutes(plugins))
   app.route('/', runRoutes(db, runs))
   app.route('/', agentRoutes(db, agents))
+  app.route('/', capabilityRoutes({ db, rooms, runs, host: plugins, assets, library }))
   app.all('/api/*', (c) => c.json({ error: 'not_found', message: '接口不存在' }, 404))
 
   if (config.webDist) {

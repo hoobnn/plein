@@ -22,7 +22,8 @@ type Cap = CapabilityDefinition<z.ZodObject, ServerContext>
  * 确认策略（调度层，不散进各个能力）：
  * - auto：全部直接执行；
  * - always：花钱（run）和破坏性（destructive）的都问；
- * - rules（默认）：视频生成、整组 / 上下游 / 分镜批量运行、删用户已有的东西、一轮里运行超过 RUN_LIMIT 次才问。
+ * - rules（默认）：视频生成、整组 / 上下游 / 分镜批量运行、删用户已有的东西、一轮里运行超过 RUN_LIMIT 次、
+ *   插件能力花钱或删东西时才问。
  */
 export function approvalFor(
   mode: AgentApprovalMode,
@@ -81,7 +82,9 @@ export function approvalFor(
       }
     return null
   }
-  return mode === 'always' ? { reason: cap.title, ids: [] } : null
+  // 插件能力会花钱或删东西时，规则模式下也先问：宿主不知道它具体做什么
+  if (mode === 'always' || cap.group === 'plugin') return { reason: cap.title, ids: [] }
+  return null
 }
 
 export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'expired'

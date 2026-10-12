@@ -70,3 +70,27 @@ test('命令面板对选区打组，撤销回去', async ({ page }) => {
   await expect.poll(async () => (await frames()).length).toBe(0)
   await expect.poll(async () => (await nodes(page)).length).toBe(2)
 })
+
+/** 插件贡献的能力也在 ⌘K 里：服务端执行，提示里的“撤销”整次撤回 */
+test('命令面板运行插件能力，提示里撤销', async ({ page }) => {
+  await newProject(page)
+  await addNode(page, '文本', { x: 500, y: 450 })
+  await page.keyboard.press('Escape')
+  await page.mouse.click(640, 120)
+  await page.keyboard.press('ControlOrMeta+a')
+
+  await page.keyboard.press('ControlOrMeta+k')
+  const palette = page.getByRole('dialog', { name: '命令面板' })
+  await palette.getByRole('combobox').fill('便签')
+  await expect(palette.getByRole('option').first()).toContainText('贴一张便签（Mock）')
+  await expect(palette.getByRole('option').first()).toContainText('Mock 平台')
+  await page.keyboard.press('Enter')
+  const notes = async () => (await elements(page)).filter((e) => e.kind === 'markdown')
+  await expect.poll(async () => (await notes()).length).toBe(1)
+  const toast = page.getByRole('status').filter({ hasText: '旁边贴了便签' })
+  await expect(toast).toBeVisible()
+
+  await toast.getByRole('button', { name: '撤销' }).click()
+  await expect.poll(async () => (await notes()).length).toBe(0)
+  await expect.poll(async () => (await nodes(page)).length).toBe(1)
+})

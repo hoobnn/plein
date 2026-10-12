@@ -3,6 +3,7 @@ import {
   type CapabilityInput,
   defineProvider,
   definePlugin,
+  definePluginCapability,
   defineServerPlugin,
   PLUGIN_API_VERSION,
   ProviderError,
@@ -259,6 +260,32 @@ export const mockProvider = defineProvider({
   },
 })
 
+/** 演示插件能力：在选区旁边贴一张便签，写上选中了什么（只经 ctx.call 改画布） */
+const mockSticky = definePluginCapability({
+  id: 'plein/mock-sticky',
+  title: '贴一张便签（Mock）',
+  description: '在选中的元素旁边贴一张 Markdown 便签；不给 text 时写上选中元素的名字。',
+  effect: 'edit',
+  palette: 'selection',
+  input: z.object({ text: z.string().max(2000).optional().describe('便签内容') }),
+  async run(ctx, { text }) {
+    const [first] = ctx.selection
+    if (!first) throw new Error('先选中一个元素')
+    const names: string[] = []
+    for (const id of ctx.selection.slice(0, 20)) {
+      const el = (await ctx.call('get_element', { id })) as { name?: string; kind?: string }
+      names.push(el.name ?? el.kind ?? id)
+    }
+    const made = (await ctx.call('create_element', {
+      kind: 'markdown',
+      name: '便签',
+      text: text ?? `选中了：${names.join('、')}`,
+      near: first,
+    })) as { id: string }
+    return { id: made.id, note: `已在「${names[0]}」旁边贴了便签` }
+  },
+})
+
 export const mockPlugin = defineServerPlugin(
   definePlugin({
     manifest: {
@@ -267,9 +294,9 @@ export const mockPlugin = defineServerPlugin(
       name: 'Mock 平台',
       description: '开发与测试用的假模型平台',
       engines: { plein: `^${PLUGIN_API_VERSION}` },
-      contributes: { providers: ['plein/mock'] },
+      contributes: { providers: ['plein/mock'], capabilities: ['plein/mock-sticky'] },
       permissions: { secrets: ['MOCK_API_KEY'] },
     },
   }),
-  { providers: [mockProvider] },
+  { providers: [mockProvider], capabilities: [mockSticky] },
 )

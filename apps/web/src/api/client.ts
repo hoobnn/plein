@@ -31,6 +31,9 @@ import {
   type StaleNodes,
   type UpdateLibraryItem,
   type UserTemplate,
+  type CapabilityCall,
+  type CapabilityCallResult,
+  type PluginCapabilityInfo,
 } from '@plein/protocol'
 
 export class ApiError extends Error {
@@ -149,6 +152,10 @@ export const api = {
   stopAgent: (id: string) => request<void>(API.agentStop(id), json('POST', {})),
   undoAgentTurn: (id: string, turn: string) =>
     request<void>(API.agentUndo(id, turn), json('POST', {})),
+  capabilities: () => request<PluginCapabilityInfo[]>(API.capabilities),
+  callCapability: (canvasId: string, name: string, body: Partial<CapabilityCall>) =>
+    request<CapabilityCallResult>(API.capabilityCall(canvasId, name), json('POST', body)),
+  undoCapabilityCall: (id: string) => request<void>(API.capabilityUndo(id), json('POST', {})),
 
   runNode: (canvasId: string, nodeId: string) =>
     request<NodeRunStarted>(API.nodeRun(canvasId, nodeId), { method: 'POST' }),

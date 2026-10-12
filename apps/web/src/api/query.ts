@@ -22,6 +22,7 @@ export const queryKeys = {
   project: (id: string) => ['projects', id] as const,
   projectCanvases: (id: string) => ['projects', id, 'canvases'] as const,
   canvasJobs: (canvasId: string) => ['canvases', canvasId, 'jobs'] as const,
+  capabilities: ['capabilities'] as const,
 }
 
 /** 项目或其画布有改动：项目列表（画布数、更新时间）和该项目的数据都要重新拉 */

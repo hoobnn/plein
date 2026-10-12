@@ -41,6 +41,7 @@ import type { Rooms } from '../sync/rooms'
 import { type Approvals, approvalFor } from './approvals'
 import type { AgentChanges } from './changes'
 import { libraryCapabilities } from './library'
+import { pluginCapabilities } from './plugin-caps'
 import { capabilityTools, type McpTool, type ToolResult } from './mcp'
 
 const exec = promisify(execFile)
@@ -61,6 +62,8 @@ export interface ToolEnv {
   onRun?(nodeId: string, runId: string): void
   /** 发起了一次整组 / 上下游运行 */
   onGroup?(groupId: string): void
+  /** 调用方给定的选区（从 ⌘K 调用时）；不给时读用户屏幕上的选区 */
+  selection?: string[]
   /** 推给用户屏幕的界面动作；返回 false 表示没有人在看这块画布 */
   ui?(action: UiAction, ids: string[]): boolean
 }
@@ -608,9 +611,24 @@ export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   select,
 ])
 
+const withPlugins = new WeakMap<PluginHost, CapabilityRegistry<ServerContext>>()
+
+/** 自带能力 + 已加载插件贡献的能力（插件在启动时登记，之后不变，所以按宿主缓存） */
+export function capabilitiesOf(host: PluginHost): CapabilityRegistry<ServerContext> {
+  let reg = withPlugins.get(host)
+  if (!reg) {
+    reg = new CapabilityRegistry<ServerContext>([
+      ...serverCapabilities.list(),
+      ...pluginCapabilities(host, serverCapabilities),
+    ])
+    withPlugins.set(host, reg)
+  }
+  return reg
+}
+
 /** 智能体用的 MCP 工具：全部服务端能力（MCP 无状态，CLI 握手后只拉一次列表，所以给全量） */
 export function canvasTools(env: ToolEnv): McpTool[] {
-  return capabilityTools(serverCapabilities, serverContext(env))
+  return capabilityTools(capabilitiesOf(env.host), serverContext(env))
 }
 
 /**
@@ -623,7 +641,7 @@ export function agentTools(
   opts: { changes: AgentChanges; approvals: Approvals; mode: () => AgentApprovalMode },
 ): McpTool[] {
   const ctx = serverContext(env)
-  const tools = capabilityTools(serverCapabilities, ctx, (cap, args, run) => {
+  const tools = capabilityTools(capabilitiesOf(env.host), ctx, (cap, args, run) => {
     const req = approvalFor(opts.mode(), cap, args, ctx, opts.changes)
     if (!req) return null
     const a = opts.approvals.create(cap.name, req, run)

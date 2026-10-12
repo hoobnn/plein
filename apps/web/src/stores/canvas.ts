@@ -4,12 +4,19 @@ import { slideView } from '../ui/viewTransition'
 
 export type SyncStatus = 'local' | 'connecting' | 'connected' | 'disconnected'
 
+export interface NoticeAction {
+  label: string
+  run(): void
+}
+
 interface CanvasStore extends EngineState {
   engine: Engine | null
   sync: SyncStatus
   /** 正在导入的文件：已完成 / 总数 */
   importing: { done: number; total: number } | null
   notice: string | null
+  /** 提示上的按钮（如“撤销”） */
+  noticeAction: NoticeAction | null
   /** 远端画布 id；本地演示时为空（不能运行节点） */
   canvasId: string | null
   /** 当前弹出的画布菜单：节点选择器或右键菜单 */
@@ -34,7 +41,7 @@ interface CanvasStore extends EngineState {
   attach(engine: Engine): () => void
   setSync(sync: SyncStatus): void
   setImporting(importing: { done: number; total: number } | null): void
-  notify(notice: string | null): void
+  notify(notice: string | null, action?: NoticeAction): void
   setCanvasId(id: string | null): void
   setMenu(menu: CanvasMenuEvent | null): void
   openStoryboard(id: string | null): void
@@ -64,6 +71,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   sync: 'local',
   importing: null,
   notice: null,
+  noticeAction: null,
   canvasId: null,
   menu: null,
   storyboard: null,
@@ -113,10 +121,15 @@ export const useCanvas = create<CanvasStore>((set) => ({
   setMode: (mode) => set({ mode, menu: null }),
   setSync: (sync) => set({ sync }),
   setImporting: (importing) => set({ importing }),
-  notify(notice) {
+  notify(notice, action) {
     clearTimeout(noticeTimer)
-    set({ notice })
-    if (notice) noticeTimer = setTimeout(() => set({ notice: null }), 4000)
+    set({ notice, noticeAction: action ?? null })
+    // 带按钮的多留一会儿，来得及点
+    if (notice)
+      noticeTimer = setTimeout(
+        () => set({ notice: null, noticeAction: null }),
+        action ? 8000 : 4000,
+      )
   },
 }))
 

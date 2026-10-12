@@ -1,5 +1,9 @@
 import { CapabilityError } from '@plein/capabilities'
+import type { PluginCapabilityInfo } from '@plein/protocol'
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ApiError, api } from '../api/client'
+import { queryKeys } from '../api/query'
 import { type LocalCapability, localCapabilities, localContext } from '../canvas/capabilities'
 import { useAgent } from '../stores/agent'
 import { useCanvas } from '../stores/canvas'
@@ -21,10 +25,10 @@ const ICONS: Record<string, IconName> = {
   expand_storyboard: 'board',
 }
 
-interface Command {
-  cap: LocalCapability
-  input: Record<string, unknown>
-}
+/** 能力在面板里显示的部分：浏览器里跑的自带能力，或服务端跑的插件能力 */
+type Command =
+  | { kind: 'local'; cap: LocalCapability; input: Record<string, unknown> }
+  | { kind: 'plugin'; cap: PluginCapabilityInfo }
 
 type Item = { kind: 'cap'; command: Command } | { kind: 'agent'; text: string }
 
@@ -61,13 +65,26 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
 
   // 打开那一刻的选区：面板开着时画布不会变
   const selection = useMemo(() => [...(engine?.selection.values() ?? [])], [engine])
+  // 插件能力在服务端跑，只有连着服务端的画布才能用
+  const { data: plugins } = useQuery({
+    queryKey: queryKeys.capabilities,
+    queryFn: api.capabilities,
+    enabled: !!canvasId,
+    staleTime: Number.POSITIVE_INFINITY,
+  })
   const commands = useMemo<Command[]>(() => {
     if (!engine) return []
-    return localCapabilities.list().flatMap((cap) => {
+    const local = localCapabilities.list().flatMap((cap): Command[] => {
       const input = cap.palette?.fromSelection(selection, engine.doc)
-      return input ? [{ cap, input: input as Record<string, unknown> }] : []
+      return input ? [{ kind: 'local', cap, input: input as Record<string, unknown> }] : []
     })
-  }, [engine, selection])
+    const remote = (canvasId ? (plugins ?? []) : []).flatMap((cap): Command[] =>
+      cap.palette === 'always' || (cap.palette === 'selection' && selection.length)
+        ? [{ kind: 'plugin', cap }]
+        : [],
+    )
+    return [...local, ...remote]
+  }, [engine, selection, plugins, canvasId])
 
   const q = query.trim()
   const items = useMemo<Item[]>(() => {
@@ -95,7 +112,9 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
       await agent.send(item.text, selection)
       return
     }
-    const { cap, input } = item.command
+    const command = item.command
+    if (command.kind === 'plugin') return runPlugin(command.cap)
+    const { cap, input } = command
     try {
       const result = await localCapabilities.invoke(cap.name, localContext(engine, catalog), input)
       reveal(result)
@@ -104,11 +123,47 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
     }
   }
 
+  /** 插件能力在服务端执行；改了画布的，提示里给一个“撤销”整次撤回 */
+  const runPlugin = async (cap: PluginCapabilityInfo) => {
+    if (!canvasId) return
+    const { notify } = useCanvas.getState()
+    try {
+      const out = await api.callCapability(canvasId, cap.name, { selection })
+      let result: unknown = out.result
+      try {
+        result = JSON.parse(out.result)
+      } catch {}
+      reveal(result)
+      const said =
+        typeof result === 'string'
+          ? result
+          : typeof (result as { note?: unknown })?.note === 'string'
+            ? (result as { note: string }).note
+            : `${cap.title}：完成`
+      const undo = out.undo
+      notify(
+        said.slice(0, 120),
+        undo
+          ? {
+              label: '撤销',
+              run: () =>
+                api.undoCapabilityCall(undo).catch((err) => {
+                  notify(err instanceof ApiError ? err.message : '撤销失败')
+                }),
+            }
+          : undefined,
+      )
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : `${cap.title}失败`)
+    }
+  }
+
   /** 新建的选中并高亮，铺出的分组带镜头过去；有提示语就显示 */
   const reveal = (result: unknown) => {
     if (!engine || !result || typeof result !== 'object') return
     const r = result as Record<string, unknown>
     const ids = [
+      ...(typeof r.id === 'string' ? [r.id] : []),
       ...(Array.isArray(r.frames) ? r.frames : []),
       ...(typeof r.frame_id === 'string' ? [r.frame_id] : []),
       ...(Array.isArray(r.ids) ? r.ids : []),
@@ -179,7 +234,7 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
         )}
         {items.map((item, i) => (
           <div
-            key={item.kind === 'cap' ? item.command.cap.name : 'agent'}
+            key={item.kind === 'cap' ? `${item.command.kind}:${item.command.cap.name}` : 'agent'}
             id={`plein-palette-${i}`}
             data-index={i}
             role="option"
@@ -194,7 +249,12 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
             {item.kind === 'cap' ? (
               <>
                 <span className="flex size-7 flex-none items-center justify-center plein-palette-icon rounded-md bg-hover text-ink-muted">
-                  <Icon name={ICONS[item.command.cap.name] ?? 'sparkle'} />
+                  <Icon
+                    name={
+                      ICONS[item.command.cap.name] ??
+                      (item.command.kind === 'plugin' ? 'puzzle' : 'sparkle')
+                    }
+                  />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate">{item.command.cap.title}</span>
@@ -202,10 +262,15 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
                     {brief(item.command.cap.description)}
                   </span>
                 </span>
-                {item.command.cap.palette?.shortcut && (
+                {item.command.kind === 'local' && item.command.cap.palette?.shortcut && (
                   <kbd className="ui-keycap flex-none">
                     {shortcut(item.command.cap.palette.shortcut)}
                   </kbd>
+                )}
+                {item.command.kind === 'plugin' && (
+                  <span className="flex-none text-2xs text-ink-subtle">
+                    {item.command.cap.plugin}
+                  </span>
                 )}
               </>
             ) : (
