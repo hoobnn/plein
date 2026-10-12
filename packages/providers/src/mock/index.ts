@@ -160,12 +160,6 @@ export const mockProvider = defineProvider({
         duration: { min: 2, max: 10 },
         seed: false,
       },
-      options: z.object({
-        generate_audio: z
-          .boolean()
-          .optional()
-          .meta({ title: '生成音频', description: '仅用于测试表单' }),
-      }),
     },
     {
       id: 'audio',

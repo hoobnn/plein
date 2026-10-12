@@ -361,9 +361,9 @@ describe('插件宿主', () => {
     await expect(
       s.host.runNode({
         type: 'plein/video',
-        version: 1,
-        params: { prompt: 'x' },
-        inputs: { firstFrame: [{ type: 'text', text: 'not an image' }] },
+        version: 2,
+        params: { prompt: 'x', mode: 'image' },
+        inputs: { images: [{ type: 'text', text: 'not an image' }] },
         ownerId: 'local',
       }),
     ).rejects.toMatchObject({ code: 'invalid_input' })

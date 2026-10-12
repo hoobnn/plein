@@ -13,17 +13,21 @@ export interface ModelOptions {
   onChange(next: Record<string, unknown>): void
 }
 
-/** 模型、枚举和小范围整数放进参数胶囊，其余进“更多参数” */
+/** 模型、枚举、音频开关和小范围整数放进参数胶囊，其余进“更多参数” */
 export function isMainField(key: string, f: FieldSchema) {
-  if (f.widget === 'model' || f.enum) return true
+  if (f.widget === 'model' || f.widget === 'audio' || f.enum) return true
   return f.type === 'integer' && (key === 'count' || key === 'duration')
 }
 
-/** 参数值的简写：画幅原样、张数“1 张”、时长“5s” */
+/** 数量的单位：图片按张，视频按个 */
+export const countUnit = (f: FieldSchema) => (f.title?.includes('张') ? '张' : '个')
+
+/** 参数值的简写：画幅原样、张数“1 张”、时长“5s”；音频开关在摘要末尾画成图标 */
 function shortValue(key: string, f: FieldSchema, v: unknown) {
   if (f.widget === 'resolution') return v ? String(v) : '默认画质'
+  if (f.widget === 'audio') return null
   if (v === undefined || v === '') return null
-  if (key === 'count') return `${v} 张`
+  if (key === 'count') return `${v} ${countUnit(f)}`
   if (key === 'duration') return `${v}s`
   if (f.enum) return aspectLabel(v)
   return `${f.title ?? key} ${v}`
@@ -54,6 +58,8 @@ export function ParamsPill({
     .filter(Boolean)
     .join(' · ')
   const hasRest = Object.keys(rest).length > 0
+  const audio = fields.find(([, f]) => f.widget === 'audio')
+  const audioOn = audio ? (params[audio[0]] ?? audio[1].default) !== false : false
   const ratio = aspect ? parseAspect(params[aspect]) : null
   return (
     <>
@@ -72,6 +78,11 @@ export function ParamsPill({
           <Icon name="sliders" />
         )}
         <span className="truncate tabular-nums">{summary || '参数'}</span>
+        {audio && (
+          <span title={audioOn ? '生成音频' : '不生成音频'} className="flex items-center">
+            <Icon name={audioOn ? 'sound' : 'mute'} size={14} />
+          </span>
+        )}
         <Icon name="chevronDown" size={14} />
       </button>
       {anchor && (
@@ -165,7 +176,31 @@ function ParamControl({
     </button>
   )
   let control: React.ReactNode
-  if (field.enum && aspect) {
+  if (field.widget === 'audio') {
+    const on = (value ?? field.default) !== false
+    control = (
+      <fieldset aria-label={label} className="ui-seg ui-seg-block" {...segSlider(2, on ? 0 : 1)}>
+        {segment(
+          'on',
+          on,
+          () => onChange(true),
+          <>
+            <Icon name="sound" size={14} />
+            有声
+          </>,
+        )}
+        {segment(
+          'off',
+          !on,
+          () => onChange(false),
+          <>
+            <Icon name="mute" size={14} />
+            无声
+          </>,
+        )}
+      </fieldset>
+    )
+  } else if (field.enum && aspect) {
     control = (
       <fieldset
         aria-label={label}

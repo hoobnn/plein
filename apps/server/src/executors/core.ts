@@ -15,6 +15,7 @@ import {
   storyboardNode,
   styleNode,
   textNode,
+  videoModeProblem,
   videoNode,
   voiceOf,
 } from '@plein/nodes'
@@ -122,26 +123,38 @@ const image = defineExecutor(imageNode, async (ctx) => {
 
 const video = defineExecutor(videoNode, async (ctx) => {
   const { params, inputs } = ctx
+  const images = inputAssets(inputs, 'images')
+  const problem = videoModeProblem(params.mode, images.length)
+  if (problem) throw new ProviderError('invalid_input', problem)
+  // 文生视频不送图；其余按模式取用连入的图片
+  const media =
+    params.mode === 'image'
+      ? { firstFrame: images[0] }
+      : params.mode === 'frames'
+        ? { firstFrame: images[0], lastFrame: images[1] }
+        : params.mode === 'reference'
+          ? { references: images }
+          : {}
   sayProgress(ctx)
-  const res = await ctx.providers.call(
-    'video.generate',
-    pickModel(ctx, 'video.generate', '生成视频'),
-    {
-      prompt: requireText(joinText(params.prompt, inputText(inputs, 'prompt')), '提示词'),
-      firstFrame: inputAssets(inputs, 'firstFrame')[0],
-      lastFrame: inputAssets(inputs, 'lastFrame')[0],
-      duration: params.duration,
-      aspectRatio: params.aspectRatio,
-      resolution: params.resolution || undefined,
-      extra: modelOptions(params),
-    },
+  const model = pickModel(ctx, 'video.generate', '生成视频')
+  const input = {
+    prompt: requireText(joinText(params.prompt, inputText(inputs, 'prompt')), '提示词'),
+    ...media,
+    duration: params.duration,
+    aspectRatio: params.aspectRatio,
+    resolution: params.resolution || undefined,
+    audio: params.audio,
+    extra: modelOptions(params),
+  }
+  // 平台一次只出一条视频：要几条就并行提交几次
+  const results = await Promise.all(
+    Array.from({ length: params.count }, () => ctx.providers.call('video.generate', model, input)),
   )
+  const assets = results.flatMap((r) => r.assets)
   return {
-    video: res.assets
-      .filter((a) => a.kind === 'video')
-      .map((a) => ({ type: 'video' as const, ...a })),
+    video: assets.filter((a) => a.kind === 'video').map((a) => ({ type: 'video' as const, ...a })),
     // 开了「返回尾帧」的模型多给一张图
-    lastFrame: res.assets
+    lastFrame: assets
       .filter((a) => a.kind === 'image')
       .map((a) => ({ type: 'image' as const, ...a })),
   }

@@ -1,4 +1,5 @@
 import type { ModelInfo, ModelLimits } from '@plein/plugin-sdk'
+import { type VideoMode, videoModeProblem } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import {
   aspectKey,
@@ -52,7 +53,7 @@ const RANGED = { duration: '秒', speed: '倍' } as const
 type Ranged = keyof typeof RANGED
 const isRanged = (k: string): k is Ranged => k in RANGED
 /** 模型可以声明为不支持（false）的参数 */
-const TOGGLED = ['seed', 'duration', 'speed', 'instruction'] as const
+const TOGGLED = ['seed', 'duration', 'speed', 'instruction', 'audio'] as const
 const unsupported = (k: string, limits: ModelLimits) =>
   (TOGGLED as readonly string[]).includes(k) && limits[k as (typeof TOGGLED)[number]] === false
 const rangeOf = (k: Ranged, limits: ModelLimits) => {
@@ -159,6 +160,13 @@ export function modelProblem(
   model: SelectedModel['info'] | undefined,
   ups: Map<string, Upstream[]>,
 ): string | null {
+  // 生成视频：连入的图片数要和所选模式对得上
+  const video = node.capability === 'video.generate'
+  const mode = String(params.mode ?? 'text') as VideoMode
+  if (video) {
+    const problem = videoModeProblem(mode, ups.get('images')?.length ?? 0)
+    if (problem) return problem
+  }
   if (!model) return null
   const { patch } = adaptToModel(node, params, model)
   const limits = model.limits ?? NONE
@@ -175,7 +183,12 @@ export function modelProblem(
     if (k === 'count') return `${name} 一次最多生成 ${limits.count!.max} 张`
     return `${name} 不支持${f.title ?? k} ${String(v)}`
   }
-  const refs = ups.get('references')?.length ?? 0
+  // 参考图：图片节点的 references；生成视频只有图片参考模式才把图当参考
+  const refs = video
+    ? mode === 'reference'
+      ? (ups.get('images')?.length ?? 0)
+      : 0
+    : (ups.get('references')?.length ?? 0)
   if (limits.references && refs > limits.references.max)
     return `${name} 最多支持 ${limits.references.max} 张参考图，现在连了 ${refs} 张`
   return null

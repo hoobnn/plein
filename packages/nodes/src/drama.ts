@@ -192,6 +192,7 @@ export function dramaTemplate(opts: DramaTemplateOptions = {}): DramaTemplateSpe
         capability: 'video.generate',
         params: {
           prompt: '【运镜方式】，人物有细微动作和呼吸感，背景景深轻微变化，画面稳定，不切镜',
+          mode: 'image',
           aspectRatio: VERTICAL,
           duration: 5,
         },
@@ -219,8 +220,8 @@ export function dramaTemplate(opts: DramaTemplateOptions = {}): DramaTemplateSpe
       // 定妆图 → 镜头图：角色参考靠它进每个镜头（展开时也会 @ 角色名）
       { from: ['character', 'images'], to: ['charimg', 'references'] },
       { from: ['charimg', 'images'], to: ['shotImage', 'references'] },
-      // 图生视频：分镜图的图片接到视频的首帧，样例车道和展开出来的镜头一致
-      { from: ['shotImage', 'images'], to: ['shotVideo', 'firstFrame'] },
+      // 图生视频：分镜图作视频的首帧，样例车道和展开出来的镜头一致
+      { from: ['shotImage', 'images'], to: ['shotVideo', 'images'] },
       { from: ['shotVideo', 'video'], to: ['seq', 'clips'] },
       { from: ['shotSpeech', 'audio'], to: ['seq', 'dialogue'] },
       { from: ['music', 'audio'], to: ['seq', 'music'] },

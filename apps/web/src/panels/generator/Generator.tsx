@@ -6,6 +6,7 @@ import {
   presetsFor,
   SEQUENCE_TYPE,
   STORYBOARD_TYPE,
+  type VideoMode,
 } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useEffect, useRef, useState } from 'react'
@@ -32,11 +33,12 @@ import { mediaOf, ResultActions } from '../ResultBar'
 import { type ObjectSchema, SchemaForm } from '../SchemaForm'
 import { Inputs } from './Inputs'
 import { ModelPicker } from './ModelPicker'
-import { isMainField, type ModelOptions, ParamsPill } from './ParamsPill'
+import { ModePicker } from './ModePicker'
+import { countUnit, isMainField, type ModelOptions, ParamsPill } from './ParamsPill'
 import { PromptBox } from './PromptBox'
 import { PromptTools } from './PromptTools'
 
-const PANEL_W = 540
+const PANEL_W = 600
 const GAP = 12
 /** 节点标题行在卡片上方，面板放上方时让开它 */
 const TITLE_H = 30
@@ -138,8 +140,11 @@ function Panel({
             set(optionsKey, { ...allOptions, [model.ref]: next }),
         }
       : undefined
-  const main = fields.filter(([k, f]) => k !== pk && isMainField(k, f))
-  const rest = Object.fromEntries(fields.filter(([k, f]) => k !== pk && !isMainField(k, f)))
+  const main = fields.filter(([k, f]) => k !== pk && f.widget !== 'videoMode' && isMainField(k, f))
+  const rest = Object.fromEntries(
+    fields.filter(([k, f]) => k !== pk && f.widget !== 'videoMode' && !isMainField(k, f)),
+  )
+  const modeField = fields.find(([, f]) => f.widget === 'videoMode')
   const ups = upstreams(engine, el.id, catalog)
   const presets = presetsFor(catalog?.prompts ?? [], node)
   const pure = isPure(node)
@@ -150,6 +155,7 @@ function Panel({
   const paramFields = main
     .filter(([, f]) => f.widget !== 'model')
     .sort(([a], [b]) => Number(b === ak) - Number(a === ak))
+  const countField = fieldsOf(node).find(([k]) => k === 'count')
   const hasParams = paramFields.length > 0 || Object.keys(rest).length > 0 || !!modelOptions
   const runLabel = running ? '取消' : el.results?.length ? '重新生成' : '生成'
 
@@ -311,7 +317,16 @@ function Panel({
                 }}
               />
             )}
-            {modelField && hasParams && <span aria-hidden="true" className="ui-bar-sep" />}
+            {modeField && (
+              <ModePicker
+                value={params[modeField[0]] as VideoMode}
+                images={ups.get('images')?.length ?? 0}
+                onChange={(v) => set(modeField[0], v)}
+              />
+            )}
+            {(modelField || modeField) && hasParams && (
+              <span aria-hidden="true" className="ui-bar-sep" />
+            )}
             {hasParams && (
               <ParamsPill
                 fields={paramFields}
@@ -321,9 +336,8 @@ function Panel({
                 options={modelOptions}
                 // 模型只能出 1 张时张数不可选，摘要里照样写出来
                 fixed={
-                  fieldsOf(node).some(([k]) => k === 'count') &&
-                  !paramFields.some(([k]) => k === 'count')
-                    ? ['1 张']
+                  countField && !paramFields.some(([k]) => k === 'count')
+                    ? [`1 ${countUnit(countField[1])}`]
                     : []
                 }
                 onChange={set}

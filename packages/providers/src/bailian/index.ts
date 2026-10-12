@@ -312,10 +312,6 @@ export const bailianProvider = defineProvider({
         references: { max: 10 },
       },
       options: z.object({
-        audio: z
-          .boolean()
-          .optional()
-          .meta({ title: '生成音频', description: '默认开启，同时生成环境音和对白' }),
         prompt_extend: z
           .boolean()
           .optional()
@@ -534,9 +530,9 @@ export const bailianProvider = defineProvider({
           parameters: {
             resolution: input.resolution ?? '720P',
             ratio: input.aspectRatio === 'auto' ? 'adaptive' : (input.aspectRatio ?? '16:9'),
-            audio: true,
             watermark: false,
             ...input.extra,
+            audio: input.audio ?? true,
             ...(input.duration !== undefined ? { duration: input.duration } : {}),
             ...(input.seed !== undefined ? { seed: input.seed } : {}),
           },

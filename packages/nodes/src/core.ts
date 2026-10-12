@@ -94,18 +94,42 @@ export const imageNode = defineNode({
   }),
 })
 
-/** 文生视频 / 首帧、首尾帧生视频 */
+/**
+ * 视频生成模式：由用户指定，不按连线猜。连进来的图片按画布位置从上到下编号，模式决定怎么用：
+ * 图生视频用第 1 张做首帧，首尾帧用第 1、2 张，图片参考把全部图片当参考主体。
+ */
+export const VIDEO_MODES = ['text', 'image', 'frames', 'reference'] as const
+export type VideoMode = (typeof VIDEO_MODES)[number]
+export const VIDEO_MODE_LABELS: Record<VideoMode, string> = {
+  text: '文生视频',
+  image: '图生视频',
+  frames: '首尾帧',
+  reference: '图片参考',
+}
+
+/** 按模式检查连入的图片数，返回问题（null 表示可以运行）；前后端共用 */
+export function videoModeProblem(mode: VideoMode, images: number): string | null {
+  if (mode === 'image' && images !== 1)
+    return images
+      ? `图生视频只用 1 张图作首帧，现在连了 ${images} 张`
+      : '图生视频需要连入 1 张图作首帧'
+  if (mode === 'frames' && images !== 2)
+    return `首尾帧需要连入 2 张图（上面的作首帧、下面的作尾帧），现在连了 ${images} 张`
+  if (mode === 'reference' && images === 0) return '图片参考需要连入至少 1 张参考图'
+  return null
+}
+
+/** 生成视频：文生视频 / 图生视频 / 首尾帧 / 图片参考，模式由参数指定 */
 export const videoNode = defineNode({
   type: 'plein/video',
-  version: 1,
+  version: 2,
   title: '生成视频',
-  description: '文生视频；连上首帧（和尾帧）即为图生视频',
+  description: '文生视频、图生视频、首尾帧、图片参考；在生成器里选模式，连入的图片按模式使用',
   category: 'video',
   capability: 'video.generate',
   inputs: [
     { id: 'prompt', label: '提示词', type: 'text', multiple: true },
-    { id: 'firstFrame', label: '首帧', type: 'image' },
-    { id: 'lastFrame', label: '尾帧', type: 'image' },
+    { id: 'images', label: '图片', type: 'image', multiple: true },
   ],
   outputs: [
     { id: 'video', label: '视频', type: 'video' },
@@ -113,13 +137,21 @@ export const videoNode = defineNode({
   ],
   params: z.object({
     model: model(),
+    mode: z
+      .enum(VIDEO_MODES)
+      .default('text')
+      .meta({ title: '生成模式', widget: 'videoMode', labels: VIDEO_MODE_LABELS }),
     prompt: textarea('提示词'),
     duration: z.number().int().min(1).max(30).default(5).meta({ title: '时长（秒）' }),
     aspectRatio: z.enum(ASPECTS).default('16:9').meta({ title: '画幅' }),
     resolution: resolution(),
+    count: z.number().int().min(1).max(4).default(1).meta({ title: '数量' }),
+    audio: z.boolean().default(true).meta({ title: '生成音频', widget: 'audio' }),
     options: modelOptions(),
     usedRefs: usedRefs(),
   }),
+  // v1 的模式由文档迁移（schema v2）按原连线推断写入；这里只兜底
+  migrate: (params) => ({ mode: 'text', ...params }),
 })
 
 /** 配音：语音合成 */
@@ -234,7 +266,7 @@ export const corePlugin = definePlugin({
         'plein/text@1',
         'plein/llm@1',
         'plein/image@1',
-        'plein/video@1',
+        'plein/video@2',
         'plein/speech@1',
         'plein/music@1',
         'plein/character@1',

@@ -412,7 +412,6 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     )!
     expect(seedance.limits).toMatchObject({ duration: { min: 4, max: 30 }, seed: false })
     expect(Object.keys((seedance.optionsSchema as { properties: object }).properties)).toEqual([
-      'generate_audio',
       'return_last_frame',
       'service_tier',
       'watermark',

@@ -13,7 +13,7 @@ import { ThemeToggle } from '../ui/ThemeToggle'
 /** 快速开始：新建画布并放好对应节点、打开生成器 */
 const QUICK_START: Array<{ type: string; title: string; hint: string; icon: IconName }> = [
   { type: 'plein/image', title: '图片生成', hint: '文生图、参考图生图', icon: 'image' },
-  { type: 'plein/video', title: '视频生成', hint: '文生视频、首尾帧', icon: 'video' },
+  { type: 'plein/video', title: '视频生成', hint: '文生、图生、首尾帧、图片参考', icon: 'video' },
   { type: 'plein/llm', title: '剧本创作', hint: '写剧本、改文案', icon: 'sparkle' },
   { type: 'plein/speech', title: '配音', hint: '台词转语音', icon: 'mic' },
   { type: 'plein/music', title: '配乐', hint: '按描述生成音乐', icon: 'music' },

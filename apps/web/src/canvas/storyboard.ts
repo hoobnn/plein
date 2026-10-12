@@ -391,11 +391,13 @@ export function expandShots(
           ...imageParams,
         })
         const videoParams = planParams(shot, 'video', ctxBase)
+        // 镜头视频用图生视频：分镜图作首帧
         const vid = add(video, frame, [PAD + image.w + GAP, HEAD], {
           source: source('video', { plan: snapshot(videoParams) }),
           ...videoParams,
+          mode: 'image',
         })
-        connect(doc, [img, 'images'], [vid, 'firstFrame'])
+        connect(doc, [img, 'images'], [vid, 'images'])
         lines.forEach((d, i) => {
           const params = planParams(shot, 'speech', lineAt(d.i))
           add(
@@ -439,13 +441,21 @@ export function expandShots(
       if (!imgId) {
         const params = planParams(shot, 'image', ctxBase)
         imgId = addMissing(image, params, source('image', { plan: snapshot(params) }))
-        if (hasVideo) connect(doc, [imgId, 'images'], [byRole('video')[0]!.id, 'firstFrame'])
+        const vid = byRole('video')[0]
+        if (vid) {
+          connect(doc, [imgId, 'images'], [vid.id, 'images'])
+          setParams(doc, vid.id, { mode: 'image' })
+        }
       }
       if (!hasVideo) {
         const params = planParams(shot, 'video', ctxBase)
-        const vid = addMissing(video, params, source('video', { plan: snapshot(params) }))
+        const vid = addMissing(
+          video,
+          { ...params, mode: 'image' },
+          source('video', { plan: snapshot(params) }),
+        )
         // 补出来的视频也要接上分镜图，否则批量生成视频时会一直说「还没有分镜图」
-        connect(doc, [imgId, 'images'], [vid, 'firstFrame'])
+        connect(doc, [imgId, 'images'], [vid, 'images'])
       }
       lines.forEach((d) => {
         if (spokenLines.has(d.i)) return
@@ -513,9 +523,7 @@ export function runExpanded(
         continue
       }
       if (role === 'video') {
-        const edge = [...engine.doc.edges()].find(
-          (e) => e.to[0] === el.id && e.to[1] === 'firstFrame',
-        )
+        const edge = [...engine.doc.edges()].find((e) => e.to[0] === el.id && e.to[1] === 'images')
         const up = edge && engine.doc.get(edge.from[0])
         if (!up || !currentResult(up)) {
           skip('还没有分镜图')

@@ -40,10 +40,6 @@ const seedreamOptions = z.object({
 
 const seedanceOptions = (v25: boolean) =>
   z.object({
-    generate_audio: z
-      .boolean()
-      .optional()
-      .meta({ title: '生成音频', description: '同时生成环境音、音效和对白' }),
     return_last_frame: z
       .boolean()
       .optional()
@@ -127,6 +123,7 @@ const models: ModelSpec[] = [
       resolutions: ['480p', '720p', '1080p'],
       duration: { min: 4, max: 30 },
       seed: false,
+      references: { max: 30 },
     },
     options: seedanceOptions(true),
   },
@@ -139,6 +136,7 @@ const models: ModelSpec[] = [
       resolutions: ['480p', '720p', '1080p', '4k'],
       duration: { min: 4, max: 15 },
       seed: false,
+      references: { max: 9 },
     },
     options: seedanceOptions(false),
   },
@@ -151,6 +149,7 @@ const models: ModelSpec[] = [
       resolutions: ['480p', '720p'],
       duration: { min: 4, max: 15 },
       seed: false,
+      references: { max: 9 },
     },
     options: seedanceOptions(false),
   },
@@ -163,6 +162,7 @@ const models: ModelSpec[] = [
       resolutions: ['480p', '720p'],
       duration: { min: 4, max: 15 },
       seed: false,
+      references: { max: 9 },
     },
     options: seedanceOptions(false),
   },
@@ -518,7 +518,6 @@ async function video(model: string, input: CapabilityInput<'video.generate'>, ct
     invalid('首尾帧与参考图不能混用')
   const body: Json = {
     ...extraParams(input.extra, [
-      'generate_audio',
       'watermark',
       'return_last_frame',
       'service_tier',
@@ -526,6 +525,7 @@ async function video(model: string, input: CapabilityInput<'video.generate'>, ct
       'draft',
       'output_format',
     ]),
+    ...(input.audio !== undefined ? { generate_audio: input.audio } : {}),
     model,
     content: [],
     resolution: input.resolution ?? '720p',

@@ -68,7 +68,7 @@ describe('短剧模板骨架', () => {
     }
   })
 
-  it('分镜图的图片接到视频的首帧：图生视频的结构由模板保证', () => {
+  it('分镜图的图片接到视频、视频用图生视频模式：结构由模板保证', () => {
     const t = dramaTemplate()
     expect(
       t.edges.some(
@@ -76,9 +76,10 @@ describe('短剧模板骨架', () => {
           e.from[0] === 'shotImage' &&
           e.from[1] === 'images' &&
           e.to[0] === 'shotVideo' &&
-          e.to[1] === 'firstFrame',
+          e.to[1] === 'images',
       ),
     ).toBe(true)
+    expect(t.elements.find((e) => e.key === 'shotVideo')?.params?.mode).toBe('image')
   })
 
   it('默认 8 个镜头，可以指定 6–10 之间的镜头数', () => {

@@ -1,4 +1,4 @@
-import { imageNode, propNode, speechNode } from '@plein/nodes'
+import { imageNode, propNode, speechNode, videoNode } from '@plein/nodes'
 import {
   connect,
   createDoc,
@@ -115,6 +115,31 @@ describe('运行前解析 @ 引用', () => {
       { name: '打火机', elementId: doc.get(prop)!.id, assetIds: [] },
       { name: '林夏', elementId: doc.get(hero)!.id, assetIds: [doc.get(photo)!.assetId] },
     ])
+  })
+
+  it('视频节点：图片参考模式把 @ 角色的参考图并入图片；其他模式不送图并提示', async () => {
+    const { doc, photo } = setup()
+    const n = node(doc, 'plein/video', { prompt: '@林夏回头', mode: 'reference' })
+    const ref = await applyMentions(doc, doc.get(n)!, videoNode, {}, collect(doc))
+    expect(ref.inputs.images?.map((v) => v.type === 'image' && v.assetId)).toEqual([
+      doc.get(photo)!.assetId,
+    ])
+
+    setParams(doc, n, { mode: 'image' })
+    const first: PortValue = { type: 'image', assetId: 'b'.repeat(64), kind: 'image' }
+    const framed = await applyMentions(
+      doc,
+      doc.get(n)!,
+      videoNode,
+      { images: [first] },
+      collect(doc),
+    )
+    expect(framed.inputs.images).toEqual([first])
+    expect(framed.params.prompt).toContain('林夏：二十岁，短发')
+    expect(framed.refs[0]!.assetIds).toEqual([])
+    expect(framed.notices).toContain(
+      '@ 引用的参考图只在「图片参考」模式下送入模型，当前模式只附文字设定',
+    )
   })
 
   it('没有引用时原样返回', async () => {

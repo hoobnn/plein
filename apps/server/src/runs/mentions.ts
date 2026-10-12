@@ -80,7 +80,7 @@ function checkMention(m: Mention, byId: Map<string, CanvasElement>): Hit | undef
 /**
  * 运行前处理提示词里的 @ 引用：
  * - 文本里的 `@林夏` 换成 `林夏`；对话、图片、视频节点在主提示词后附上被引用者的设定；
- * - 被引用者的参考图并入节点的 `references` 输入（去重）；
+ * - 被引用者的参考图并入节点的 `references` 输入（去重）；生成视频只在「图片参考」模式并入 `images`；
  * - 配音节点没选音色、且只引用了一个有音色的角色时用它的音色——但只有同一家平台才沿用，
  *   跨平台的音色 ID 送过去多半是乱读，宁可停下来让用户重选；
  * - 汇总本次真正送进模型的引用（refs）和需要用户知道的提示（notices）。
@@ -147,15 +147,25 @@ export async function applyMentions(
   if (def.capability === 'audio.speech' && !hasVoice(voiceOf(params)))
     applyVoice(params, voices, notices)
 
+  // 参考图并到哪个输入：图片节点等是 references；生成视频只有「图片参考」模式才把图当参考主体
+  const video = def.capability === 'video.generate'
+  const port = video ? 'images' : 'references'
+  const send =
+    def.inputs.some((p) => p.id === port && p.type === 'image') &&
+    (!video || params.mode === 'reference')
+  if (video && !send && refs.length) {
+    notices.push('@ 引用的参考图只在「图片参考」模式下送入模型，当前模式只附文字设定')
+    for (const r of refList) r.assetIds = []
+  }
+
   // 本次真正送进去的东西带到执行器（宿主不把运行摘要传下去，见 node 定义的 usedRefs 注释）
   params.usedRefs = refList
 
-  const port = def.inputs.find((p) => p.id === 'references' && p.type === 'image')
   const merged =
-    port && refs.length
+    send && refs.length
       ? {
           ...inputs,
-          references: dedupe([...(inputs.references ?? []), ...refs]),
+          [port]: dedupe([...(inputs[port] ?? []), ...refs]),
         }
       : inputs
   return { params, inputs: merged, refs: refList, notices }

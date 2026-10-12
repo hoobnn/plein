@@ -2,7 +2,7 @@ import { generateNKeysBetween } from 'fractional-indexing'
 import * as Y from 'yjs'
 
 /** 当前文档 schema 版本 */
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 export interface MigrateResult {
   version: number
@@ -13,7 +13,7 @@ export interface MigrateResult {
 type Migration = (ydoc: Y.Doc) => void
 
 /** MIGRATIONS[n] 把 n 版升到 n + 1 版 */
-const MIGRATIONS: Migration[] = [v0ToV1]
+const MIGRATIONS: Migration[] = [v0ToV1, v1ToV2]
 
 /**
  * 顺序执行迁移。新文档直接标为当前版本；
@@ -89,4 +89,58 @@ function v0ToV1(ydoc: Y.Doc) {
     if (old.params) m.set('params', new Y.Map(Object.entries(old.params)))
     elements.set(id, m)
   })
+}
+
+interface LegacyEdge {
+  id: string
+  from: [string, string]
+  to: [string, string]
+}
+
+interface LegacyPorts {
+  inputs: Array<{ id: string }>
+  outputs: unknown[]
+}
+
+/** 旧版生成视频节点的三个图片输入，按这个顺序推断模式 */
+const VIDEO_FRAME_PORTS = ['lastFrame', 'firstFrame', 'references'] as const
+const VIDEO_MODE = { lastFrame: 'frames', firstFrame: 'image', references: 'reference' } as const
+
+/**
+ * v1 → v2：生成视频节点（plein/video@1）的首帧 / 尾帧 / 参考图三个输入并成一个「图片」输入，
+ * 怎么用改由参数 mode 指定（首尾帧 / 图生视频 / 图片参考 / 文生视频），节点升到 2 版。
+ * 模式按原来连了哪个口推断；图片顺序按画布位置从上到下，和运行时收集输入的顺序一致。
+ */
+function v1ToV2(ydoc: Y.Doc) {
+  const elements = ydoc.getMap<unknown>('elements')
+  const edges = ydoc.getMap<LegacyEdge>('edges')
+  for (const [id, m] of elements) {
+    if (!(m instanceof Y.Map) || m.get('nodeType') !== 'plein/video') continue
+    if ((m.get('nodeVersion') ?? 1) !== 1) continue
+    const into = [...edges.entries()].filter(([, e]) => e.to[0] === id)
+    const used = VIDEO_FRAME_PORTS.find((p) => into.some(([, e]) => e.to[1] === p))
+    const seen = new Set<string>()
+    for (const [key, e] of into) {
+      if (!(VIDEO_FRAME_PORTS as readonly string[]).includes(e.to[1])) continue
+      const from = e.from.join(':')
+      if (seen.has(from)) edges.delete(key)
+      else edges.set(key, { ...e, to: [id, 'images'] })
+      seen.add(from)
+    }
+    const ports = m.get('ports') as LegacyPorts | undefined
+    if (ports && Array.isArray(ports.inputs)) {
+      const inputs = ports.inputs.filter(
+        (p) => !(VIDEO_FRAME_PORTS as readonly string[]).includes(p.id),
+      )
+      inputs.push({ id: 'images', label: '图片', type: 'image', multiple: true } as { id: string })
+      m.set('ports', { ...ports, inputs })
+    }
+    let params = m.get('params')
+    if (!(params instanceof Y.Map)) {
+      params = new Y.Map<unknown>()
+      m.set('params', params)
+    }
+    ;(params as Y.Map<unknown>).set('mode', used ? VIDEO_MODE[used] : 'text')
+    m.set('nodeVersion', 2)
+  }
 }

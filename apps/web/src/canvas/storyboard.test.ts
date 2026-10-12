@@ -48,8 +48,7 @@ const catalog = {
       '生成视频',
       [
         { id: 'prompt', label: '提示词', type: 'text', multiple: true },
-        { id: 'firstFrame', label: '首帧', type: 'image' },
-        { id: 'lastFrame', label: '尾帧', type: 'image' },
+        { id: 'images', label: '图片', type: 'image', multiple: true },
       ],
       [
         { id: 'video', label: '视频', type: 'video' },

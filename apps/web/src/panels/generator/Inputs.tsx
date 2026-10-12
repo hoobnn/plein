@@ -70,6 +70,16 @@ export function Inputs({
     requestAnimationFrame(() => fileRef.current?.click())
   }
 
+  // 生成视频的图片按模式标注用途：图生视频第 1 张是首帧，首尾帧第 1、2 张分别是首帧、尾帧
+  const mode = node.capability === 'video.generate' ? el.params?.mode : undefined
+  const roleOf = (port: InputPort, i: number) => {
+    if (port.id !== 'images') return undefined
+    if (mode === 'image') return i === 0 ? '首帧' : '未使用'
+    if (mode === 'frames') return ['首帧', '尾帧'][i] ?? '未使用'
+    if (mode === 'text') return '未使用'
+    return undefined
+  }
+
   let n = 0
   const tiles: React.ReactNode[] = []
   const adds: React.ReactNode[] = []
@@ -77,14 +87,14 @@ export function Inputs({
     const list = ups.get(port.id) ?? []
     // 多连的“参考图”不逐个标端口名；首帧、尾帧这种单连输入在缩略图下标出
     const caption = port.multiple ? undefined : port.label
-    for (const u of list) {
+    for (const [i, u] of list.entries()) {
       n++
       tiles.push(
         <RefTile
           key={u.edgeId}
           index={n}
           up={u}
-          caption={caption}
+          caption={roleOf(port, i) ?? caption}
           onLocate={() => locate(u)}
           onRemove={() => disconnect(u)}
         />,

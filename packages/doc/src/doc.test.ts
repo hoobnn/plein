@@ -307,6 +307,44 @@ describe('迁移', () => {
     expect(doc.undo.undoStack).toHaveLength(0)
   })
 
+  it('v1 生成视频节点的首帧 / 尾帧并成一个图片输入，模式按原连线推断', () => {
+    const ydoc = new Y.Doc()
+    ydoc.getMap('meta').set('schemaVersion', 1)
+    const elements = ydoc.getMap<unknown>('elements')
+    const video = (id: string) => {
+      const m = new Y.Map<unknown>()
+      for (const [k, v] of Object.entries({ kind: 'node', x: 0, y: 0, w: 10, h: 10, z: id }))
+        m.set(k, v)
+      m.set('nodeType', 'plein/video')
+      m.set('nodeVersion', 1)
+      m.set('params', new Y.Map(Object.entries({ prompt: 'p' })))
+      m.set('ports', {
+        inputs: [
+          { id: 'prompt', label: '提示词', type: 'text', multiple: true },
+          { id: 'firstFrame', label: '首帧', type: 'image' },
+          { id: 'lastFrame', label: '尾帧', type: 'image' },
+        ],
+        outputs: [{ id: 'video', label: '视频', type: 'video' }],
+      })
+      elements.set(id, m)
+    }
+    video('v1')
+    video('v2')
+    const edges = ydoc.getMap<unknown>('edges')
+    edges.set('e1', { id: 'e1', from: ['a', 'image'], to: ['v1', 'firstFrame'] })
+    edges.set('e2', { id: 'e2', from: ['b', 'image'], to: ['v1', 'lastFrame'] })
+
+    const doc = open(ydoc)
+    expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(doc.get('v1')).toMatchObject({ nodeVersion: 2, params: { prompt: 'p', mode: 'frames' } })
+    expect(doc.get('v1')!.ports!.inputs.map((p) => p.id)).toEqual(['prompt', 'images'])
+    expect([...ydoc.getMap<{ to: string[] }>('edges').values()].map((e) => e.to)).toEqual([
+      ['v1', 'images'],
+      ['v1', 'images'],
+    ])
+    expect(doc.get('v2')!.params).toMatchObject({ mode: 'text' })
+  })
+
   it('版本高于客户端时只读', () => {
     const ydoc = new Y.Doc()
     ydoc.getMap('meta').set('schemaVersion', SCHEMA_VERSION + 1)

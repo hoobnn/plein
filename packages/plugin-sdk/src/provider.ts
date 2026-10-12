@@ -44,9 +44,12 @@ export interface CapabilityInputs {
   }
   'video.generate': {
     prompt: string
+    /** 首帧 / 尾帧与 references 互斥：各家平台都不允许混用 */
     firstFrame?: AssetRef
     lastFrame?: AssetRef
     references?: AssetRef[]
+    /** 是否同时生成音频（环境音、音效、对白）；不传用平台默认 */
+    audio?: boolean
     /** 秒 */
     duration?: number
     aspectRatio?: string
@@ -172,6 +175,8 @@ export interface ModelLimits {
   speed?: { min: number; max: number } | false
   /** false 表示不支持自然语言语气指令，表单隐藏，宿主不传 */
   instruction?: boolean
+  /** false 表示视频不能选择是否生成音频，表单隐藏，宿主不传 */
+  audio?: boolean
 }
 
 export interface ModelSpec {

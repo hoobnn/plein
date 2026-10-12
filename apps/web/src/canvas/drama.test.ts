@@ -88,7 +88,7 @@ describe('短剧模板落到画布', () => {
         const to = doc.get(e.to[0])
         return (
           e.from[1] === 'images' &&
-          e.to[1] === 'firstFrame' &&
+          e.to[1] === 'images' &&
           from?.nodeType === 'plein/image' &&
           to?.nodeType === 'plein/video'
         )
