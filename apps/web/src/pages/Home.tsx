@@ -92,10 +92,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
       className="ui-scrollbar h-full overflow-y-auto"
       onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 4)}
     >
-      <header
-        data-scrolled={scrolled || undefined}
-        className="home-bar app-drag sticky top-0 z-10"
-      >
+      <header data-scrolled={scrolled || undefined} className="home-bar app-drag sticky top-0 z-10">
         {/* 和下面的内容同一条栏宽，Logo 与标题左对齐；红绿灯让位见 .home-col */}
         <div className="home-col mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5 sm:px-10">
           <div className="flex items-center gap-2.5 text-base font-semibold">
