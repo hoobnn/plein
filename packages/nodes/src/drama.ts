@@ -140,17 +140,26 @@ export function dramaTemplate(opts: DramaTemplateOptions = {}): DramaTemplateSpe
     elements: [
       // ── 骨架：把创意一路推到分镜表 ──
       frame('skeleton', '短剧 · 创意与骨架', 0, 0, 1500, SKELETON_H),
-      card('idea', 'markdown', '创意 / 梗概', 40, 40, 320, 280, { text: IDEA_TEXT }),
+      card('idea', 'markdown', '创意 / 梗概', 40, 40, 320, 280, {
+        parent: 'skeleton',
+        text: IDEA_TEXT,
+      }),
       card('script', 'plein/llm', '剧本', 420, 40, 280, 240, {
+        parent: 'skeleton',
         capability: 'text.chat',
         params: { system: SCRIPT_SYSTEM, prompt: SCRIPT_PROMPT },
       }),
       card('cast', 'plein/llm', '角色与场景抽取', 800, 40, 280, 240, {
+        parent: 'skeleton',
         capability: 'text.chat',
         params: { system: CAST_SYSTEM, prompt: CAST_PROMPT },
       }),
-      card('prop', 'plein/prop', '道具', 1180, 40, 280, 240, { optional: true }),
+      card('prop', 'plein/prop', '道具', 1180, 40, 280, 240, {
+        parent: 'skeleton',
+        optional: true,
+      }),
       card('shots', 'plein/storyboard', `分镜（双击展开镜头）`, 420, 400, 320, 280, {
+        parent: 'skeleton',
         capability: 'text.chat',
         params: {
           prompt: `按竖屏短剧拆成 ${shotCount} 个镜头，每个镜头 3–5 秒；写清景别、画面描述、出场角色、情绪、光线、台词，并给出镜头图提示词与运镜提示词。`,
@@ -158,13 +167,19 @@ export function dramaTemplate(opts: DramaTemplateOptions = {}): DramaTemplateSpe
         },
       }),
       card('character', 'plein/character', '主角', 800, 400, 280, 240, {
+        parent: 'skeleton',
         params: { description: '二十岁，短发，白衬衫，倔强眼神；辨识特征：左眉有一道疤' },
       }),
       card('scene', 'plein/scene', '场景', 1180, 400, 280, 240, {
+        parent: 'skeleton',
         params: { description: '雨夜，老城区天台，霓虹反光，湿漉漉的水泥地面' },
       }),
-      card('style', 'plein/style', '画风', 1180, 700, 280, 240, { optional: true }),
+      card('style', 'plein/style', '画风', 1180, 700, 280, 240, {
+        parent: 'skeleton',
+        optional: true,
+      }),
       card('charimg', 'plein/image', '角色定妆图', 800, 700, 180, 320, {
+        parent: 'skeleton',
         capability: 'image.generate',
         params: {
           prompt:

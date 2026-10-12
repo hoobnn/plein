@@ -81,16 +81,8 @@ describe('短剧模板骨架', () => {
       a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h
     const overlap = (a: ReturnType<typeof abs>, b: ReturnType<typeof abs>) =>
       a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
-    const frames = t.elements.filter((e) => e.shape === 'frame')
-    // 没写 parent 的卡片按位置归到包住它的最内层分组
-    const container = (key: string) => {
-      const e = map.get(key)!
-      if (e.parent) return e.parent
-      const r = abs(key)
-      return frames
-        .filter((f) => f.key !== key && inside(r, abs(f.key)))
-        .sort((a, b) => a.w * a.h - b.w * b.h)[0]?.key
-    }
+    // 卡片必须挂在分组下：只是叠在分组上面的话，整组运行数不到它
+    const container = (key: string) => map.get(key)!.parent
     const cards = t.elements.filter((e) => e.shape === 'element')
     for (const c of cards) {
       const box = container(c.key)
