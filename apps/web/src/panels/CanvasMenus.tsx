@@ -1,5 +1,6 @@
 import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
 import type { ReactNode } from 'react'
+import { applyCast, castOf, describeCast } from '../canvas/cast'
 import { findNode, type NodeInfo } from '../canvas/nodes'
 import {
   describeFlowRun,
@@ -161,6 +162,8 @@ function ContextMenu({
   const single = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
   const node: NodeInfo | undefined =
     single?.kind === 'node' ? findNode(catalog, single.nodeType) : undefined
+  // 角色与场景抽取这类节点：结果按固定 Markdown 输出时，可以一键落成设定卡
+  const cast = single?.kind === 'node' ? castOf(engine, single.id) : []
   let items: ReactNode
   if (menu.target === null) {
     items = (
@@ -197,6 +200,16 @@ function ContextMenu({
               />
             )}
             <Item label="运行下游" onClick={act(() => void flow(single.id, 'downstream'))} />
+            <Sep />
+          </>
+        )}
+        {cast.length > 0 && single && !engine.doc.readOnly && (
+          <>
+            <Item
+              label={`生成设定卡（${cast.length}）`}
+              hint="按抽取结果"
+              onClick={act(() => notify(describeCast(applyCast(engine, catalog, single.id, cast))))}
+            />
             <Sep />
           </>
         )}

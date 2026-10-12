@@ -37,6 +37,17 @@ test('短剧模板：插入 → 跑骨架 → 展开 → 批量 → 导出', asy
   await waitNode(page, board.id)
   await expect(page.locator('.ui-toast')).toContainText('运行完成')
 
+  // 角色与场景抽取 → 一键落成设定卡
+  const cast = await byName(page, '角色与场景抽取')
+  await zoomTo(page, [cast.id])
+  await contextMenu(page, cast.id, '运行到此处')
+  await waitNode(page, cast.id)
+  await expect(page.locator('.ui-toast')).toContainText('运行完成')
+  await contextMenu(page, cast.id, '生成设定卡（3）')
+  await expect(page.locator('.ui-toast')).toContainText('新建 3 张设定卡')
+  expect((await byName(page, '林晚')).nodeType).toBe('plein/character')
+  expect((await byName(page, '老城区天台')).nodeType).toBe('plein/scene')
+
   const openBoard = async () => {
     await zoomTo(page, [board.id])
     const p = await centerOf(page, board.id)

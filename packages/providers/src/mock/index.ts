@@ -32,6 +32,20 @@ function lastUserText(input: CapabilityInput<'text.chat'>) {
     : msg.content.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n')
 }
 
+const MOCK_CAST = `## 角色
+### 林晚
+- 外貌与年龄：二十岁，短发
+- 服装：白衬衫
+- 辨识特征：左眉有一道疤
+
+### 老周
+- 外貌与年龄：五十多岁，花白头发
+
+## 场景
+### 老城区天台
+- 时间与地点：雨夜
+- 光线与氛围：霓虹反光`
+
 /** 分镜请求：按句拆剧本，每句一个镜头 */
 function mockStoryboard(text: string) {
   const script = /<剧本>([\s\S]*?)<\/剧本>/.exec(text)?.[1] ?? text
@@ -67,6 +81,9 @@ function fakeOutputs(req: ProviderRequest): ProviderOutput[] {
       if (input.jsonSchema && 'shots' in ((input.jsonSchema.properties as object) ?? {}))
         return [{ type: 'json', value: mockStoryboard(text) }]
       if (input.jsonSchema) return [{ type: 'json', value: { echo: text } }]
+      // 角色与场景抽取：按模板要的 Markdown 结构回一份固定设定，让「生成设定卡」能跑通
+      if (/^##\s*角色/m.test(text) && /^##\s*场景/m.test(text))
+        return [{ type: 'text', text: MOCK_CAST }]
       return [{ type: 'text', text: `【mock】${text}` }]
     }
     case 'image.generate': {
