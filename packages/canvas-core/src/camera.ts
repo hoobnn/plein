@@ -81,6 +81,29 @@ export class Camera {
     this.emit()
   }
 
+  /** fit 的目标：可见区域中央对准的世界坐标和缩放（不改相机，用来做过渡动画） */
+  fitTarget(r: Rect, padding = 64, maxZoom = 1) {
+    const { w, h } = this.safe
+    const zx = (w - padding * 2) / Math.max(r.w, 1)
+    const zy = (h - padding * 2) / Math.max(r.h, 1)
+    return { x: r.x + r.w / 2, y: r.y + r.h / 2, zoom: this.clamp(Math.min(zx, zy, maxZoom)) }
+  }
+
+  /** 可见区域中央对准的世界坐标 */
+  get center() {
+    const { cx, cy } = this.safe
+    return this.screenToWorld(cx, cy)
+  }
+
+  /** 让世界坐标 (wx, wy) 落在可见区域中央，并设成指定缩放 */
+  lookAt(wx: number, wy: number, zoom: number) {
+    const { cx, cy } = this.safe
+    this.zoom = this.clamp(zoom)
+    this.x = cx - wx * this.zoom
+    this.y = cy - wy * this.zoom
+    this.emit()
+  }
+
   /** 平移到让世界坐标 (wx, wy) 落在可见区域中央，缩放不变（小地图跳转） */
   centerOn(wx: number, wy: number) {
     const { cx, cy } = this.safe

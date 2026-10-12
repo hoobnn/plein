@@ -2,9 +2,10 @@ import { createElement, type PleinDoc, updateElement } from '@plein/doc'
 import type { Canvas } from '@plein/protocol'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { startTestServer } from '../testing'
+import { Approvals } from './approvals'
 import { AgentChanges } from './changes'
 import { McpServer } from './mcp'
-import { canvasTools } from './tools'
+import { agentTools, canvasTools } from './tools'
 
 let running: Awaited<ReturnType<typeof startTestServer>>
 let mcp: McpServer
@@ -126,7 +127,9 @@ describe('智能体改动集与撤销', () => {
     const id = ((await res.json()) as Canvas).id
     const { rooms, runs, plugins, assets } = running.server
     const touched: string[][] = []
-    const changes = new AgentChanges('agt_test', id, rooms, runs, (ids) => touched.push(ids))
+    const changes = new AgentChanges('agt_test', id, 'local', rooms, runs, (ids) =>
+      touched.push(ids),
+    )
     const ai = new McpServer(
       { name: 'plein', version: 'test' },
       canvasTools({
@@ -224,5 +227,147 @@ describe('智能体改动集与撤销', () => {
     changes.release()
     expect(changes.canUndo('t1')).toBe(false)
     expect(changes.undoTurn('t1')).toBe(false)
+  })
+})
+
+describe('确认关卡与界面能力', () => {
+  async function setup(mode: 'rules' | 'always' | 'auto' = 'rules') {
+    const res = await fetch(`${running.url}/api/canvases`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    })
+    const id = ((await res.json()) as Canvas).id
+    const { rooms, runs, plugins, assets } = running.server
+    const changes = new AgentChanges('agt_gate', id, 'local', rooms, runs)
+    const decided: string[] = []
+    const approvals = new Approvals((a) => decided.push(`${a.tool}:${a.status}`))
+    const ui: Array<[string, string[]]> = []
+    const server = new McpServer(
+      { name: 'plein', version: 'test' },
+      agentTools(
+        {
+          canvasId: id,
+          ownerId: 'local',
+          rooms,
+          runs,
+          host: plugins,
+          assets,
+          origin: changes.origin,
+          onRun: (n, r) => changes.recordRun(n, r),
+          onGroup: (g) => changes.recordGroup(g),
+          ui: (action, ids) => {
+            ui.push([action, ids])
+            return true
+          },
+        },
+        { changes, approvals, mode: () => mode },
+      ),
+    )
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const r = (await server.handle({
+        jsonrpc: '2.0',
+        id: ++seq,
+        method: 'tools/call',
+        params: { name, arguments: args },
+      })) as { result: { content: Array<{ text?: string }>; isError?: boolean } }
+      const text = r.result.content[0]?.text ?? ''
+      return { error: r.result.isError === true, text, json: () => JSON.parse(text) }
+    }
+    changes.begin('t1')
+    return { id, rooms, changes, approvals, decided, ui, call }
+  }
+
+  it('视频生成要确认，允许后直接执行并由 await_approval 返回结果', async () => {
+    const { call, approvals, changes } = await setup()
+    const text = (
+      await call('create_node', { type: 'plein/text', params: { text: '雨夜' } })
+    ).json()
+    const image = (
+      await call('create_node', { type: 'plein/image', inputs: [{ from: text.id }] })
+    ).json()
+    // 图片直接跑
+    expect((await call('run_node', { id: image.id, wait_seconds: 10 })).json().status).toBe(
+      'succeeded',
+    )
+    const video = (
+      await call('create_node', {
+        type: 'plein/video',
+        params: { prompt: '镜头缓缓推进' },
+        inputs: [{ from: image.id }],
+      })
+    ).json()
+    const gated = (await call('run_node', { id: video.id, wait_seconds: 10 })).json()
+    expect(gated.status).toBe('needs_approval')
+    expect(gated.reason).toContain('视频')
+    expect(
+      (await call('await_approval', { approval_id: gated.approval_id, wait_seconds: 0 })).json(),
+    ).toEqual({ status: 'pending' })
+    expect(approvals.decide(gated.approval_id, true)).toBe(true)
+    const done = (await call('await_approval', { approval_id: gated.approval_id })).json()
+    expect(done.error).toBeUndefined()
+    expect(done.status).toBe('succeeded')
+    expect(changes.end()!.runs).toBe(2)
+    changes.release()
+  })
+
+  it('跳过的操作不执行；删本轮自己建的不问，删用户已有的要问', async () => {
+    const { call, approvals, rooms, id, changes } = await setup()
+    const mine = rooms.withDoc(id, (d) =>
+      createElement(d, { kind: 'markdown', x: 0, y: 0, w: 100, h: 100 }),
+    )
+    const made = (await call('create_element', { kind: 'markdown', text: 'AI' })).json()
+    expect((await call('delete_elements', { ids: [made.id] })).text).toContain('已删除')
+    const gated = (await call('delete_elements', { ids: [mine] })).json()
+    expect(gated.status).toBe('needs_approval')
+    approvals.decide(gated.approval_id, false)
+    expect((await call('await_approval', { approval_id: gated.approval_id })).text).toContain(
+      '跳过',
+    )
+    rooms.withDoc(id, (d) => expect(d.get(mine)).toBeDefined())
+    changes.end()
+    changes.release()
+  })
+
+  it('整组运行要确认；auto 模式不问；一轮结束时没确认的作废', async () => {
+    const gate = await setup()
+    const frame = (await gate.call('create_element', { kind: 'frame' })).json()
+    const gated = (await gate.call('run_frame', { frame_id: frame.id })).json()
+    expect(gated.status).toBe('needs_approval')
+    gate.approvals.expireAll()
+    expect(gate.decided).toContain('run_frame:expired')
+    expect(gate.approvals.decide(gated.approval_id, true)).toBe(false)
+    gate.changes.end()
+    gate.changes.release()
+
+    const auto = await setup('auto')
+    const f2 = (await auto.call('create_element', { kind: 'frame' })).json()
+    await auto.call('create_node', { type: 'plein/text', params: { text: 'x' }, parent_id: f2.id })
+    const started = (await auto.call('run_frame', { frame_id: f2.id })).json()
+    expect(started.group_id).toBeTruthy()
+    const state = (await auto.call('wait_for_group', { group_id: started.group_id })).json()
+    expect(state.status).toBe('done')
+    auto.changes.end()
+    auto.changes.release()
+  })
+
+  it('读用户的选区和视口，把镜头带到元素上', async () => {
+    const { call, rooms, id, ui, changes } = await setup()
+    expect((await call('ui_get_selection')).text).toContain('没有打开')
+    const el = (
+      await call('create_element', { kind: 'markdown', text: '选中的', x: 10, y: 10 })
+    ).json()
+    rooms.get(id).awareness.setLocalState({
+      view: { selection: [el.id], viewport: { x: 0, y: 0, w: 1000, h: 800 }, at: Date.now() },
+    })
+    const sel = (await call('ui_get_selection')).json()
+    expect(sel.elements[0].id).toBe(el.id)
+    const view = (await call('ui_get_viewport')).json()
+    expect(view.elements.map((e: { id: string }) => e.id)).toContain(el.id)
+    expect((await call('ui_focus', { ids: [el.id, 'nope'] })).text).toContain('已在用户屏幕上')
+    expect(ui).toEqual([['focus', [el.id]]])
+    rooms.get(id).awareness.setLocalState(null)
+    changes.end()
+    changes.release()
   })
 })

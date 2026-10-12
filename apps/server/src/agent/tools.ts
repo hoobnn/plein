@@ -11,10 +11,16 @@ import {
   need,
   placeNew,
   resultSummary,
+  summarize,
 } from '@plein/capabilities'
 import { currentResult, elementMedia, mediaSize, type PleinDoc } from '@plein/doc'
 import { describeNode, executionOf } from '@plein/plugin-sdk'
-import { MediaDeriveRequest, type MediaDerivation, MediaOp } from '@plein/protocol'
+import {
+  type AgentApprovalMode,
+  MediaDeriveRequest,
+  type MediaDerivation,
+  MediaOp,
+} from '@plein/protocol'
 import sharp, { type Sharp } from 'sharp'
 import { z } from 'zod'
 import { DeriveError, deriveAsset } from '../assets/derive'
@@ -23,7 +29,9 @@ import type { AssetStore } from '../assets/store'
 import { NodeRunError, type PluginHost } from '../plugins/host'
 import type { NodeRuns } from '../runs/runs'
 import type { Rooms } from '../sync/rooms'
-import { capabilityTools, type McpTool } from './mcp'
+import { type Approvals, approvalFor } from './approvals'
+import type { AgentChanges } from './changes'
+import { capabilityTools, type McpTool, type ToolResult } from './mcp'
 
 const exec = promisify(execFile)
 
@@ -39,6 +47,30 @@ export interface ToolEnv {
   origin?: unknown
   /** 发起了一次运行（记进改动集，撤销这一轮时一并取消） */
   onRun?(nodeId: string, runId: string): void
+  /** 发起了一次整组 / 上下游运行 */
+  onGroup?(groupId: string): void
+  /** 推给用户屏幕的界面动作；返回 false 表示没有人在看这块画布 */
+  ui?(action: UiAction, ids: string[]): boolean
+}
+
+/** 能让用户屏幕执行的界面动作 */
+export type UiAction = 'focus' | 'select'
+
+/** 前端经 awareness 发布的界面状态（选区、视口），见 apps/web/src/canvas/CanvasView.tsx */
+export interface ViewState {
+  selection: string[]
+  viewport: { x: number; y: number; w: number; h: number }
+  at: number
+}
+
+/** 读这块画布最近活跃的那个标签页的选区和视口 */
+export function viewOf(rooms: Rooms, canvasId: string): ViewState | undefined {
+  let best: ViewState | undefined
+  for (const st of rooms.get(canvasId).awareness.getStates().values()) {
+    const v = (st as { view?: ViewState }).view
+    if (v && Array.isArray(v.selection) && v.viewport && (!best || v.at > best.at)) best = v
+  }
+  return best
 }
 
 /** 服务端能力的上下文：画布读写之外还能用运行队列、资产文件 */
@@ -268,6 +300,168 @@ const editMedia = serverCapability({
   },
 })
 
+const runFlow = serverCapability({
+  name: 'run_flow',
+  title: '运行上下游',
+  description:
+    '从一个节点出发批量运行，和画布上的“运行到此处 / 运行下游”是同一套调度：upstream 运行它和它的全部上游（没改动的沿用旧结果），downstream 重新运行它并跟着重跑输入变了的下游。会产生费用，通常需要用户确认。立即返回 group_id，用 wait_for_group 等结果。',
+  group: 'run',
+  where: 'server',
+  effect: 'run',
+  input: z.object({
+    id,
+    scope: z.enum(['upstream', 'downstream']),
+    force: z.boolean().default(false).describe('忽略缓存，范围内全部重新运行'),
+  }),
+  run: (ctx, a) => {
+    const { env } = ctx
+    try {
+      const started = env.runs.runFlow(env.canvasId, a.id, env.ownerId, {
+        scope: a.scope,
+        force: a.force,
+      })
+      env.onGroup?.(started.groupId)
+      return { group_id: started.groupId, total: started.total }
+    } catch (err) {
+      if (err instanceof NodeRunError) throw new CapabilityError(err.message)
+      throw err
+    }
+  },
+})
+
+const runFrame = serverCapability({
+  name: 'run_frame',
+  title: '整组运行',
+  description:
+    '整组运行一个 Frame 里的节点（按连线顺序，没改动的沿用旧结果）。默认不含视频节点，video=true 才包括。会产生费用，需要用户确认。立即返回 group_id，用 wait_for_group 等结果。',
+  group: 'run',
+  where: 'server',
+  effect: 'run',
+  input: z.object({
+    frame_id: id,
+    video: z.boolean().default(false).describe('是否包含视频节点（贵且慢）'),
+    force: z.boolean().default(false),
+  }),
+  run: (ctx, a) => {
+    const { env } = ctx
+    try {
+      const started = env.runs.runGroup(env.canvasId, a.frame_id, env.ownerId, {
+        video: a.video,
+        force: a.force,
+      })
+      env.onGroup?.(started.groupId)
+      return { group_id: started.groupId, total: started.total }
+    } catch (err) {
+      if (err instanceof NodeRunError) throw new CapabilityError(err.message)
+      throw err
+    }
+  },
+})
+
+const waitForGroup = serverCapability({
+  name: 'wait_for_group',
+  title: '等待整组结果',
+  description: `等待一次整组 / 上下游运行结束，最多 ${MAX_WAIT_S} 秒；返回各状态的节点数。`,
+  group: 'run',
+  where: 'server',
+  effect: 'read',
+  input: z.object({
+    group_id: id,
+    wait_seconds: z.number().min(0).max(MAX_WAIT_S).default(MAX_WAIT_S),
+  }),
+  run: async (ctx, { group_id, wait_seconds }) => {
+    const deadline = Date.now() + wait_seconds * 1000
+    for (;;) {
+      const state = ctx.env.runs.groupState(group_id, ctx.env.ownerId)
+      if (!state) throw new CapabilityError(`没有运行记录 ${group_id}`)
+      if (state.status !== 'running' || Date.now() >= deadline) return state
+      await new Promise((r) => setTimeout(r, 500))
+    }
+  },
+})
+
+const listStale = serverCapability({
+  name: 'list_stale',
+  title: '检查过期结果',
+  description:
+    '列出结果已经过期、需要重跑的节点：stale 是自己的参数或输入改了的，upstream 是因为上游过期跟着要重跑的。',
+  group: 'run',
+  where: 'server',
+  effect: 'read',
+  input: z.object({}),
+  run: (ctx) => ctx.env.runs.staleNodes(ctx.env.canvasId, ctx.env.ownerId),
+})
+
+const getSelection = serverCapability({
+  name: 'ui_get_selection',
+  title: '查看选区',
+  description: '读取用户现在在画布上选中的元素（用户可能在对话过程中改了选区）。',
+  group: 'ui',
+  where: 'client',
+  effect: 'read',
+  input: z.object({}),
+  run: (ctx) => {
+    const view = viewOf(ctx.env.rooms, ctx.env.canvasId)
+    if (!view) return '用户现在没有打开这块画布'
+    return ctx.withDoc((doc) => ({
+      elements: view.selection.flatMap((i) => {
+        const el = doc.get(i)
+        return el ? [summarize(doc, el, false)] : []
+      }),
+    }))
+  },
+})
+
+const getViewport = serverCapability({
+  name: 'ui_get_viewport',
+  title: '查看视口',
+  description:
+    '读取用户屏幕上正在看的画布区域（世界坐标）和区域内的元素，用来理解“这里”“这些”指什么。',
+  group: 'ui',
+  where: 'client',
+  effect: 'read',
+  input: z.object({ limit: z.number().int().min(1).max(100).default(40) }),
+  run: (ctx, { limit }) => {
+    const view = viewOf(ctx.env.rooms, ctx.env.canvasId)
+    if (!view) return '用户现在没有打开这块画布'
+    const v = view.viewport
+    return ctx.withDoc((doc) => {
+      const inside = [...doc.elements()].filter((el) => {
+        const r = doc.worldRect(el.id)
+        return r && r.x < v.x + v.w && r.x + r.w > v.x && r.y < v.y + v.h && r.y + r.h > v.y
+      })
+      return {
+        viewport: [v.x, v.y, v.w, v.h].map(Math.round),
+        total: inside.length,
+        elements: inside.slice(0, limit).map((el) => summarize(doc, el, false)),
+      }
+    })
+  },
+})
+
+const uiAction = (action: UiAction, title: string, description: string) =>
+  serverCapability({
+    name: `ui_${action}`,
+    title,
+    description,
+    group: 'ui',
+    where: 'client',
+    effect: 'read',
+    input: z.object({ ids: z.array(id).min(1).max(200) }),
+    run: (ctx, { ids }) => {
+      const known = ctx.withDoc((doc) => ids.filter((i) => doc.get(i)))
+      if (!known.length) throw new CapabilityError('这些元素都不存在')
+      return ctx.env.ui?.(action, known) ? '已在用户屏幕上完成' : '用户现在没有打开这块画布'
+    },
+  })
+
+const focus = uiAction(
+  'focus',
+  '带用户看',
+  '把用户的镜头平滑移动到这些元素并让它们闪一下。做完一件事后用它把用户带到结果那里。',
+)
+const select = uiAction('select', '选中', '在用户的画布上选中这些元素，方便用户接着操作。')
+
 async function waitRun(ctx: ServerContext, nodeId: string, runId: string, seconds: number) {
   const status = await Promise.race([
     ctx.env.runs.wait(runId),
@@ -303,9 +497,64 @@ export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   cancelRun,
   viewMedia,
   editMedia,
+  runFlow,
+  runFrame,
+  waitForGroup,
+  listStale,
+  getSelection,
+  getViewport,
+  focus,
+  select,
 ])
 
 /** 智能体用的 MCP 工具：全部服务端能力（MCP 无状态，CLI 握手后只拉一次列表，所以给全量） */
 export function canvasTools(env: ToolEnv): McpTool[] {
   return capabilityTools(serverCapabilities, serverContext(env))
+}
+
+/**
+ * 智能体会话用的 MCP 工具：能力 + 确认关卡 + await_approval。
+ * 需要确认的调用立即返回确认单，用户在面板里允许后服务端直接执行原调用，
+ * 模型用 await_approval 取结果（CLI 的工具调用有超时，不能一直挂着等用户）。
+ */
+export function agentTools(
+  env: ToolEnv,
+  opts: { changes: AgentChanges; approvals: Approvals; mode: () => AgentApprovalMode },
+): McpTool[] {
+  const ctx = serverContext(env)
+  const tools = capabilityTools(serverCapabilities, ctx, (cap, args, run) => {
+    const req = approvalFor(opts.mode(), cap, args, ctx, opts.changes)
+    if (!req) return null
+    const a = opts.approvals.create(cap.name, req, run)
+    return JSON.stringify({
+      status: 'needs_approval',
+      approval_id: a.id,
+      reason: req.reason,
+      next: '已请用户在面板里确认。调用 await_approval 等待：用户允许后会直接执行并返回结果，不要重复调用原工具；用户跳过就换个做法或问用户。',
+    })
+  })
+  tools.push({
+    name: 'await_approval',
+    description: `等待用户确认一次需要确认的操作，最多 ${MAX_WAIT_S} 秒。允许后返回原操作的执行结果；还没决定时返回 pending，可以再调一次继续等。`,
+    input: z.object({
+      approval_id: id,
+      wait_seconds: z.number().min(0).max(MAX_WAIT_S).default(MAX_WAIT_S),
+    }),
+    run: async (raw) => {
+      const { approval_id, wait_seconds } = raw as { approval_id: string; wait_seconds: number }
+      const a = await opts.approvals.wait(approval_id, wait_seconds)
+      if (!a) throw new CapabilityError(`没有确认单 ${approval_id}`)
+      if (a.status === 'pending') return JSON.stringify({ status: 'pending' })
+      if (a.status === 'denied') return '用户跳过了这个操作，不要再重复，换个做法或问问用户'
+      if (a.status === 'expired') return '确认单已经过期'
+      try {
+        return (await a.result) as ToolResult | string
+      } catch (err) {
+        if (err instanceof CapabilityError)
+          return { content: [{ type: 'text', text: err.message }], isError: true }
+        throw err
+      }
+    },
+  })
+  return tools
 }

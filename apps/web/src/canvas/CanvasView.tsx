@@ -113,10 +113,12 @@ export function CanvasView({ source }: { source: CanvasSource }) {
           // 开发时方便在控制台调试
           if (import.meta.env.DEV) (window as { plein?: unknown }).plein = engine
           const off = attachImport(engine, host, { setImporting, notify })
+          const offView = awareness ? publishView(engine, awareness as ViewAwareness) : () => {}
           const offTheme = useTheme.subscribe((s, prev) => {
             if (s.name !== prev.name) engine.setTheme(canvasTheme(s.name))
           })
           cleanups.push(() => {
+            offView()
             offStale()
             offAspect()
             offTheme()
@@ -302,5 +304,40 @@ function attachImport(
     host.removeEventListener('drop', onDrop)
     window.removeEventListener('paste', onPaste)
     window.removeEventListener('plein:import', onImportRequest)
+  }
+}
+
+interface ViewAwareness {
+  setLocalStateField(field: string, value: unknown): void
+}
+
+/**
+ * 把选区和视口节流发布到 awareness：服务端的智能体据此知道用户选中了什么、正在看哪里
+ * （见 apps/server/src/agent/tools.ts 的 viewOf）。
+ */
+function publishView(engine: Engine, awareness: ViewAwareness) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const publish = () => {
+    timer = undefined
+    const r = engine.camera.viewRect
+    awareness.setLocalStateField('view', {
+      selection: engine.selection.values().slice(0, 200),
+      viewport: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) },
+      at: Date.now(),
+    })
+  }
+  const schedule = () => {
+    timer ??= setTimeout(publish, 250)
+  }
+  publish()
+  const offState = engine.onStateChange(schedule)
+  const offMove = engine.onMove(schedule)
+  const onFocus = () => publish()
+  window.addEventListener('focus', onFocus)
+  return () => {
+    clearTimeout(timer)
+    offState()
+    offMove()
+    window.removeEventListener('focus', onFocus)
   }
 }

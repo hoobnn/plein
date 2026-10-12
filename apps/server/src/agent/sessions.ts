@@ -6,6 +6,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import type {
+  AgentApprovalMode,
   AgentEvent,
   AgentItem,
   AgentKind,
@@ -19,10 +20,11 @@ import type { NodeRuns } from '../runs/runs'
 import type { DB } from '../storage/db'
 import { agentSessions } from '../storage/schema'
 import type { Rooms } from '../sync/rooms'
+import { Approvals } from './approvals'
 import { AgentChanges } from './changes'
 import { detectClis } from './cli'
 import { McpServer } from './mcp'
-import { canvasTools } from './tools'
+import { agentTools } from './tools'
 
 /** MCP 服务名：Claude Code 里工具名是 mcp__plein__<工具> */
 const MCP_NAME = 'plein'
@@ -38,11 +40,14 @@ const INSTRUCTIONS = `你是 Plein 的创作助手。Plein 是一块 AI 无限�
 你通过 plein MCP 工具操作用户当前打开的这块画布，所有改动会实时出现在用户屏幕上。
 
 做事方式：
-- 先用 get_canvas 看清画布，用 list_node_types 了解可用节点、参数和已启用的模型。
+- 先用 get_canvas 看清画布（画布大时用 find_elements 找），用 list_node_types 了解可用节点、参数和已启用的模型。用户说“这个”“这些”“这里”时，用 ui_get_selection / ui_get_viewport 看用户现在选中和看着的东西。
 - 尽量复用画布上已有的素材、角色卡和节点，用连线把它们接起来，而不是重复上传或抄写内容。
 - 新节点放在相关元素旁边（near 参数），起一个能看懂的名字。
 - 用户对某个结果不满意时，优先新建一个调整后的分支节点再运行，保留原结果方便对比；用户明确要求时才直接改原节点或删除。
 - 运行节点会产生费用，视频尤其贵且慢：只运行完成任务需要的节点，不要批量试错；跑完用 view_media 看一眼效果再决定下一步。
+- 生成视频、整组运行（run_frame / run_flow）、删除用户已有的东西等操作可能返回 needs_approval：用一句话告诉用户在等什么确认，然后调用 await_approval；用户允许后会直接执行并返回结果，不要重复调用原工具。
+- 每一轮的改动用户都能一键撤销，所以可以放手搭建；但不要删除用户没让删的东西。
+- 做完后用 ui_focus 把用户的镜头带到主要结果上。
 - 角色参考图 + 声音做视频时，常见做法：生成图片节点出关键帧 → 生成视频节点（首帧）出画面 → 配音节点出台词 → 序列节点把镜头和对白合成为成片。
 - 用简体中文回复，简短说明你做了什么、结果在哪个元素上，以及还有什么需要用户决定的。`
 
@@ -62,6 +67,9 @@ interface Live {
   turn: string
   /** 改动集与按轮撤销 */
   changes: AgentChanges
+  approvals: Approvals
+  /** 这一轮的确认方式 */
+  mode: AgentApprovalMode
   releaseTimer: NodeJS.Timeout | null
 }
 
@@ -161,6 +169,14 @@ export class AgentSessions {
     }
   }
 
+  /** 用户允许或跳过一张确认单；允许后立即执行原调用 */
+  decide(id: string, ownerId: string, approvalId: string, allow: boolean) {
+    const s = this.load(id)
+    if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
+    if (!s.approvals.decide(approvalId, allow))
+      throw new AgentError('not_undoable', '这个确认已经处理过或过期了')
+  }
+
   /** 撤销某一轮对画布的改动（只能从最近一轮往回撤） */
   undoTurn(id: string, ownerId: string, turn: string) {
     const s = this.load(id)
@@ -174,13 +190,20 @@ export class AgentSessions {
   }
 
   /** 发一条消息：启动这一轮的 CLI 进程，立即返回；过程经事件流推送 */
-  async send(id: string, ownerId: string, text: string, selection?: string[]) {
+  async send(
+    id: string,
+    ownerId: string,
+    text: string,
+    selection?: string[],
+    mode: AgentApprovalMode = 'rules',
+  ) {
     const s = this.load(id)
     if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
     if (s.busy || s.child) throw new AgentError('busy', '上一条消息还在处理中')
     if (!this.deps.enabled) throw new AgentError('disabled', '本机智能体未启用')
     s.busy = true
     try {
+      s.mode = mode
       await this.startTurn(s, text, selection)
     } catch (err) {
       s.busy = false
@@ -229,6 +252,7 @@ export class AgentSessions {
     } catch (err) {
       this.fail(s, `启动 ${cli.name} 失败：${(err as Error).message}`)
       s.changes.end()
+      s.approvals.expireAll()
       this.setRunning(s, false)
       s.busy = false
       this.scheduleRelease(s)
@@ -532,6 +556,7 @@ export class AgentSessions {
 
   /** 一轮结束：记下改动集，前面几轮不再能撤（只能从最近一轮往回撤） */
   private finishTurn(s: Live) {
+    s.approvals.expireAll()
     const c = s.changes.end()
     if (c) {
       this.push(s, {
@@ -613,21 +638,41 @@ export class AgentSessions {
     const token = randomBytes(24).toString('hex')
     const { rooms, runs, host, assets } = this.deps
     let s!: Live
-    const changes = new AgentChanges(row.id, row.canvas_id, rooms, runs, (ids) =>
+    const changes = new AgentChanges(row.id, row.canvas_id, row.owner_id, rooms, runs, (ids) =>
       this.emit(s, { type: 'touch', ids }),
+    )
+    const approvals = new Approvals((a) =>
+      this.push(s, {
+        id: a.id,
+        type: 'approval',
+        tool: a.tool,
+        reason: a.reason,
+        ids: a.ids,
+        status: a.status,
+        at: Date.now(),
+      }),
     )
     const mcp = new McpServer(
       { name: 'plein', version: '0.1.0', instructions: '操作用户当前打开的 Plein 画布' },
-      canvasTools({
-        canvasId: row.canvas_id,
-        ownerId: row.owner_id,
-        rooms,
-        runs,
-        host,
-        assets,
-        origin: changes.origin,
-        onRun: (nodeId, runId) => changes.recordRun(nodeId, runId),
-      }),
+      agentTools(
+        {
+          canvasId: row.canvas_id,
+          ownerId: row.owner_id,
+          rooms,
+          runs,
+          host,
+          assets,
+          origin: changes.origin,
+          onRun: (nodeId, runId) => changes.recordRun(nodeId, runId),
+          onGroup: (groupId) => changes.recordGroup(groupId),
+          ui: (action, ids) => {
+            if (!s.listeners.size) return false
+            this.emit(s, { type: 'ui', action, ids })
+            return true
+          },
+        },
+        { changes, approvals, mode: () => s.mode },
+      ),
     )
     let items: AgentItem[] = []
     try {
@@ -635,7 +680,11 @@ export class AgentSessions {
     } catch {}
     // 撤销栈只在内存里：重新加载的会话，之前的改动都不能再撤销
     items = items.map((it) =>
-      it.type === 'changes' && it.undoable ? { ...it, undoable: false } : it,
+      it.type === 'changes' && it.undoable
+        ? { ...it, undoable: false }
+        : it.type === 'approval' && it.status === 'pending'
+          ? { ...it, status: 'expired' }
+          : it,
     )
     s = {
       row,
@@ -648,6 +697,8 @@ export class AgentSessions {
       stopped: false,
       turn: '',
       changes,
+      approvals,
+      mode: 'rules',
       releaseTimer: null,
     }
     this.live.set(id, s)

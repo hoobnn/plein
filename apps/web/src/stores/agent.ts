@@ -1,5 +1,6 @@
 import {
   API,
+  type AgentApprovalMode,
   type AgentEvent,
   type AgentKind,
   type AgentSession,
@@ -14,12 +15,15 @@ import { useCanvas } from './canvas'
 export type Mood = 'idle' | 'working' | 'happy' | 'sad'
 
 const AGENT_KEY = 'plein:agent'
+const APPROVAL_KEY = 'plein:agent-approval'
 
 interface AgentStore {
   open: boolean
   status: AgentStatus | null
   /** 新建对话用的 CLI，记在本机 */
   agent: AgentKind
+  /** 花钱、删东西前要不要先问，记在本机 */
+  approval: AgentApprovalMode
   canvasId: string | null
   sessions: AgentSessionSummary[]
   session: AgentSession | null
@@ -30,6 +34,9 @@ interface AgentStore {
   toggle(open?: boolean): void
   loadStatus(refresh?: boolean): Promise<void>
   setAgent(agent: AgentKind): void
+  setApproval(mode: AgentApprovalMode): void
+  /** 允许或跳过一张确认单 */
+  decide(approvalId: string, allow: boolean): Promise<void>
   /** 切换到某块画布（null 表示不在画布里）：读它的会话，接上最近一个 */
   enter(canvasId: string | null): Promise<void>
   select(id: string): Promise<void>
@@ -46,6 +53,15 @@ let source: EventSource | null = null
 /** 每次进入画布、切换会话都加一，晚到的应答对不上就丢掉 */
 let selectSeq = 0
 let moodTimer: ReturnType<typeof setTimeout> | undefined
+
+function savedApproval(): AgentApprovalMode {
+  try {
+    const v = localStorage.getItem(APPROVAL_KEY)
+    return v === 'always' || v === 'auto' ? v : 'rules'
+  } catch {
+    return 'rules'
+  }
+}
 
 function savedAgent(): AgentKind {
   try {
@@ -81,6 +97,13 @@ export const useAgent = create<AgentStore>((set, get) => {
         return
       }
       if (!cur || cur.id !== id) return
+      if (e.type === 'ui') {
+        const engine = get().canvasId === cur.canvasId ? useCanvas.getState().engine : null
+        if (!engine) return
+        if (e.action === 'select') engine.selection.set(e.ids)
+        else engine.flyTo(e.ids)
+        return
+      }
       if (e.type === 'touch') {
         // 智能体刚改过的元素在画布上闪一下光晕
         if (get().canvasId === cur.canvasId) useCanvas.getState().engine?.flash(e.ids)
@@ -122,6 +145,7 @@ export const useAgent = create<AgentStore>((set, get) => {
     open: false,
     status: null,
     agent: savedAgent(),
+    approval: savedApproval(),
     canvasId: null,
     sessions: [],
     session: null,
@@ -152,6 +176,23 @@ export const useAgent = create<AgentStore>((set, get) => {
       try {
         localStorage.setItem(AGENT_KEY, agent)
       } catch {}
+    },
+
+    setApproval(approval) {
+      set({ approval })
+      try {
+        localStorage.setItem(APPROVAL_KEY, approval)
+      } catch {}
+    },
+
+    async decide(approvalId, allow) {
+      const id = get().session?.id
+      if (!id) return
+      try {
+        await api.decideAgentApproval(id, approvalId, allow)
+      } catch (err) {
+        set({ error: (err as Error).message })
+      }
     },
 
     async enter(canvasId) {
@@ -204,7 +245,7 @@ export const useAgent = create<AgentStore>((set, get) => {
           set({ session })
           connect(session.id)
         }
-        await api.sendAgentMessage(session.id, text, selection)
+        await api.sendAgentMessage(session.id, text, selection, get().approval)
         void refreshList()
       } catch (err) {
         set({ error: (err as Error).message, mood: 'sad' })

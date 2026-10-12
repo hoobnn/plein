@@ -103,10 +103,14 @@
   animation: ui-pop-in var(--dur-slow) var(--ease-spring);
   transform-origin: bottom right;
 }
-.plein-agent-changes {
+.plein-agent-changes,
+.plein-agent-approval {
   --pop-from: translateY(4px) scale(0.98);
   animation: ui-pop-in var(--dur-slow) var(--ease-spring);
-  transition: color var(--dur-base) var(--ease-standard);
+  transition:
+    color var(--dur-base) var(--ease-standard),
+    background-color var(--dur-base) var(--ease-standard),
+    box-shadow var(--dur-base) var(--ease-standard);
 }
 .plein-agent-md {
   font-size: var(--text-sm);

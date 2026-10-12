@@ -499,6 +499,13 @@ export interface RewritePromptResult {
 export const AgentKind = z.enum(['claude', 'codex'])
 export type AgentKind = z.infer<typeof AgentKind>
 
+/**
+ * 智能体花钱、删东西前要不要问用户：
+ * rules 视频、整组运行、删用户已有的东西、一轮运行超过 6 次时问；always 每次运行和删除都问；auto 都不问。
+ */
+export const AgentApprovalMode = z.enum(['rules', 'always', 'auto'])
+export type AgentApprovalMode = z.infer<typeof AgentApprovalMode>
+
 export interface AgentCli {
   id: AgentKind
   name: string
@@ -548,6 +555,17 @@ export type AgentItem =
       undone?: boolean
       at: number
     }
+  | {
+      id: string
+      /** 等用户确认的操作：允许后服务端直接执行 */
+      type: 'approval'
+      tool: string
+      reason: string
+      /** 相关元素 */
+      ids: string[]
+      status: 'pending' | 'approved' | 'denied' | 'expired'
+      at: number
+    }
 
 export interface AgentSession {
   id: string
@@ -569,6 +587,8 @@ export const SendAgentMessage = z.object({
   text: z.string().trim().min(1).max(20_000),
   /** 用户当前选中的元素 id，作为上下文告诉智能体 */
   selection: z.array(z.string().max(200)).max(200).optional(),
+  /** 这一轮的确认方式，默认 rules */
+  approval: AgentApprovalMode.optional(),
 })
 export type SendAgentMessage = z.infer<typeof SendAgentMessage>
 
@@ -579,6 +599,8 @@ export type AgentEvent =
   | { type: 'status'; status: AgentSession['status'] }
   /** 智能体刚改动了这些元素（画布上短暂高亮） */
   | { type: 'touch'; ids: string[] }
+  /** 智能体请用户的画布执行界面动作：平滑定位到元素 / 选中元素 */
+  | { type: 'ui'; action: 'focus' | 'select'; ids: string[] }
 
 // ── 路径 ──────────────────────────────────────────────
 
@@ -640,6 +662,9 @@ export const API = {
   agentSession: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}`,
   agentMessages: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}/messages`,
   agentStop: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}/stop`,
+  /** 允许或跳过一张确认单，body 为 { allow: boolean } */
+  agentApproval: (id: string, approvalId: string) =>
+    `/api/agent/sessions/${encodeURIComponent(id)}/approvals/${encodeURIComponent(approvalId)}`,
   /** 撤销智能体某一轮对画布的改动 */
   agentUndo: (id: string, turn: string) =>
     `/api/agent/sessions/${encodeURIComponent(id)}/turns/${encodeURIComponent(turn)}/undo`,

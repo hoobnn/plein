@@ -92,6 +92,8 @@ export interface ArrangeResult {
 
 /** 连续缩放时线宽允许的偏差，超过才重画连线和选择层 */
 const STROKE_ZOOM_SLACK = 0.1
+/** 镜头过渡（flyTo）时长 */
+const FLIGHT_MS = 560
 
 /** 粘贴时相对上一次的位移 */
 const PASTE_OFFSET = 24
@@ -112,6 +114,12 @@ export class Engine {
   private edges: EdgeLayer
   private overlay: SelectionOverlay
   private highlight: HighlightLayer
+  /** 进行中的镜头过渡（flyTo） */
+  private flight: {
+    from: { x: number; y: number; zoom: number }
+    to: { x: number; y: number; zoom: number }
+    start: number
+  } | null = null
   private pan: PanState = { space: false, hand: false }
   private toolValue: Tool = 'select'
   private viewDirty = true
@@ -238,6 +246,16 @@ export class Engine {
     this.disposers.push(() => {
       window.removeEventListener('resize', onWindowResize)
       window.removeEventListener('scroll', onWindowResize, { capture: true })
+    })
+    // 用户自己动镜头时中断过渡动画
+    const stopFlight = () => {
+      this.flight = null
+    }
+    host.addEventListener('wheel', stopFlight, { passive: true })
+    host.addEventListener('pointerdown', stopFlight)
+    this.disposers.push(() => {
+      host.removeEventListener('wheel', stopFlight)
+      host.removeEventListener('pointerdown', stopFlight)
     })
     observer.observe(host)
     this.disposers.push(() => observer.disconnect())
@@ -524,6 +542,45 @@ export class Engine {
     return this.hostRect
   }
 
+  /**
+   * 镜头平滑移动到包住这些元素（中心线性插值、缩放按对数插值，看起来是匀速推拉），
+   * 到达后高亮它们。用户一滚轮或按下指针就中断。系统要求减少动态效果时直接跳过去。
+   */
+  flyTo(ids: Iterable<string>) {
+    const list = [...ids]
+    const box = union(list.map((id) => this.scene.rect(id)).filter((r) => !!r))
+    if (!box) return
+    const to = this.camera.fitTarget(box, 96)
+    const reduce =
+      typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (reduce) {
+      this.camera.lookAt(to.x, to.y, to.zoom)
+      this.flash(list)
+      return
+    }
+    this.flight = {
+      from: { ...this.camera.center, zoom: this.camera.zoom },
+      to,
+      start: performance.now(),
+    }
+    this.flightIds = list
+  }
+
+  private flightIds: string[] = []
+
+  private stepFlight(now: number) {
+    const f = this.flight
+    if (!f) return
+    const t = Math.min(1, (now - f.start) / FLIGHT_MS)
+    const e = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
+    const zoom = Math.exp(Math.log(f.from.zoom) + (Math.log(f.to.zoom) - Math.log(f.from.zoom)) * e)
+    this.camera.lookAt(f.from.x + (f.to.x - f.from.x) * e, f.from.y + (f.to.y - f.from.y) * e, zoom)
+    if (t >= 1) {
+      this.flight = null
+      this.flash(this.flightIds)
+    }
+  }
+
   /** 高亮一组元素（智能体刚改过的），光晕扩散后淡出 */
   flash(ids: Iterable<string>) {
     this.highlight.flash(ids)
@@ -541,6 +598,7 @@ export class Engine {
   }
 
   private frame() {
+    if (this.flight) this.stepFlight(performance.now())
     // 缩放停下来的那一帧：按最终缩放把线宽画准
     if (!this.cameraDirty && this.strokeZoom !== this.camera.zoom) this.redrawStrokes()
     const moved = this.cameraDirty || this.contentDirty

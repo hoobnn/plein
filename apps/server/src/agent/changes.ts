@@ -23,6 +23,8 @@ interface Pending {
   deleted: Set<string>
   edges: number
   runs: Array<{ nodeId: string; runId: string }>
+  /** 整组 / 上下游运行 */
+  groups: string[]
 }
 
 /**
@@ -40,13 +42,14 @@ export class AgentChanges {
   private detach: (() => void) | null = null
   private turn = ''
   private pending: Pending | null = null
-  private turnRuns = new Map<string, Pending['runs']>()
+  private turnRuns = new Map<string, Pick<Pending, 'runs' | 'groups'>>()
   private touched = new Set<string>()
   private touchTimer: NodeJS.Timeout | null = null
 
   constructor(
     sessionId: string,
     private canvasId: string,
+    private ownerId: string,
     private rooms: Rooms,
     private runs: NodeRuns,
     /** 改动了哪些元素（合并一小段时间内的改动再通知，用来在画布上高亮） */
@@ -70,7 +73,23 @@ export class AgentChanges {
       deleted: new Set(),
       edges: 0,
       runs: [],
+      groups: [],
     }
+  }
+
+  /** 这一轮里新建、之后又没删掉的元素（删它们不用问用户） */
+  createdThisTurn(id: string) {
+    return this.pending?.created.has(id) ?? false
+  }
+
+  /** 这一轮已经发起的运行次数（整组运行算一次） */
+  get runCount() {
+    return (this.pending?.runs.length ?? 0) + (this.pending?.groups.length ?? 0)
+  }
+
+  /** 这一轮发起了一次整组 / 上下游运行 */
+  recordGroup(groupId: string) {
+    this.pending?.groups.push(groupId)
   }
 
   /** 这一轮发起了一次运行 */
@@ -84,13 +103,14 @@ export class AgentChanges {
     this.pending = null
     this.undo?.stopCapturing()
     if (!p) return null
-    if (p.runs.length) this.turnRuns.set(this.turn, p.runs)
+    if (p.runs.length || p.groups.length)
+      this.turnRuns.set(this.turn, { runs: p.runs, groups: p.groups })
     const changes: TurnChanges = {
       created: [...p.created],
       updated: [...p.updated].filter((id) => !p.created.has(id) && !p.deleted.has(id)),
       deleted: [...p.deleted],
       edges: p.edges,
-      runs: p.runs.length,
+      runs: p.runs.length + p.groups.length,
     }
     const empty =
       !changes.created.length &&
@@ -110,7 +130,9 @@ export class AgentChanges {
   /** 撤销一轮：先取消这一轮还在跑的运行，再回退文档改动 */
   undoTurn(turn: string): boolean {
     if (!this.undo || !this.canUndo(turn)) return false
-    for (const { nodeId, runId } of this.turnRuns.get(turn) ?? []) {
+    const started = this.turnRuns.get(turn)
+    for (const g of started?.groups ?? []) this.runs.cancelGroup(g, this.ownerId)
+    for (const { nodeId, runId } of started?.runs ?? []) {
       const live = this.rooms.withDoc(
         this.canvasId,
         (doc) => {

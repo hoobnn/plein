@@ -51,7 +51,13 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
       const body = SendAgentMessage.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json({ error: 'invalid_input', message: '消息不能为空' }, 400)
       try {
-        await agents.send(c.req.param('id'), p.id, body.data.text, body.data.selection)
+        await agents.send(
+          c.req.param('id'),
+          p.id,
+          body.data.text,
+          body.data.selection,
+          body.data.approval,
+        )
         return c.body(null, 202)
       } catch (err) {
         if (!(err instanceof AgentError)) throw err
@@ -63,6 +69,20 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
       if (!agents.get(id, c.var.principal.id)) return c.json(notFound, 404)
       agents.stop(id)
       return c.body(null, 204)
+    })
+    .post('/api/agent/sessions/:id/approvals/:approval', async (c) => {
+      const p = c.var.principal
+      if (p.role === 'viewer') return c.json(forbidden, 403)
+      const body = (await c.req.json().catch(() => null)) as { allow?: unknown } | null
+      if (typeof body?.allow !== 'boolean')
+        return c.json({ error: 'invalid_input', message: '参数不对' }, 400)
+      try {
+        agents.decide(c.req.param('id'), p.id, c.req.param('approval'), body.allow)
+        return c.body(null, 204)
+      } catch (err) {
+        if (!(err instanceof AgentError)) throw err
+        return c.json({ error: err.code, message: err.message }, STATUS[err.code])
+      }
     })
     .post('/api/agent/sessions/:id/turns/:turn/undo', (c) => {
       const p = c.var.principal

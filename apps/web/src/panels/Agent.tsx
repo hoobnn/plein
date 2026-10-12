@@ -1,4 +1,4 @@
-import type { AgentItem } from '@plein/protocol'
+import type { AgentApprovalMode, AgentItem } from '@plein/protocol'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { renderMarkdown } from '../canvas/markdown'
 import { useRoute } from '../router'
@@ -29,11 +29,26 @@ const TOOL_LABELS: Record<string, string> = {
   adopt_result: '采用结果',
   view_media: '查看效果',
   edit_media: '加工素材',
+  run_flow: '运行上下游',
+  run_frame: '整组运行',
+  wait_for_group: '等待整组结果',
+  list_stale: '检查过期结果',
+  ui_get_selection: '查看选区',
+  ui_get_viewport: '查看视口',
+  ui_focus: '带你看',
+  ui_select: '选中',
+  await_approval: '等你确认',
   WebSearch: '搜索',
   web_search: '搜索',
   WebFetch: '读取网页',
   shell: '执行命令',
 }
+
+const APPROVAL_OPTIONS: Array<{ value: AgentApprovalMode; label: string }> = [
+  { value: 'rules', label: '视频、整组运行、删除前先问我' },
+  { value: 'always', label: '每次运行和删除都先问我' },
+  { value: 'auto', label: '不用问，直接做' },
+]
 
 const SUGGESTIONS = [
   '用选中的角色参考图和配音，做一段 5 秒的视频',
@@ -331,7 +346,76 @@ function Item({ item }: { item: AgentItem }) {
     )
   }
   if (item.type === 'changes') return <ChangesRow item={item} />
+  if (item.type === 'approval') return <ApprovalRow item={item} />
   return <ToolRow item={item} />
+}
+
+const APPROVAL_DONE: Record<string, string> = {
+  approved: '已允许',
+  denied: '已跳过',
+  expired: '已过期',
+}
+
+/** 等用户确认的操作：允许后服务端直接执行；悬停时在画布上高亮相关元素 */
+function ApprovalRow({ item }: { item: Extract<AgentItem, { type: 'approval' }> }) {
+  const engine = useCanvas((s) => s.engine)
+  const [busy, setBusy] = useState(false)
+  const pending = item.status === 'pending'
+  const ids = item.ids.filter((id) => engine?.doc.get(id))
+  const decide = async (allow: boolean) => {
+    setBusy(true)
+    await useAgent.getState().decide(item.id, allow)
+    setBusy(false)
+  }
+
+  return (
+    <div
+      className={`plein-agent-approval flex flex-col gap-2 rounded-lg px-3 py-2 text-xs ring-1 ring-inset ${pending ? 'bg-accent-soft/50 text-ink ring-accent/40' : 'text-ink-muted ring-line'}`}
+      data-status={item.status}
+      onPointerEnter={() => {
+        if (ids.length) engine?.flash(ids)
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <Icon name={pending ? 'warning' : item.status === 'approved' ? 'check' : 'x'} size={14} />
+        <span className="min-w-0 flex-1">
+          {pending ? '需要你确认：' : `${APPROVAL_DONE[item.status]}：`}
+          {item.reason}
+        </span>
+        {ids.length > 0 && engine && (
+          <button
+            type="button"
+            aria-label="在画布上查看"
+            title="在画布上查看"
+            className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn"
+            onClick={() => engine.flyTo(ids)}
+          >
+            <Icon name="locate" size={14} />
+          </button>
+        )}
+      </div>
+      {pending && (
+        <div className="flex justify-end gap-1.5">
+          <button
+            type="button"
+            className="ui-btn ui-btn-xs ui-btn-quiet"
+            disabled={busy}
+            onClick={() => void decide(false)}
+          >
+            跳过
+          </button>
+          <button
+            type="button"
+            className="ui-btn ui-btn-xs ui-btn-primary"
+            disabled={busy}
+            onClick={() => void decide(true)}
+          >
+            允许
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 /** 一轮对话的改动摘要：在画布上定位，或整轮撤销 */
@@ -340,11 +424,11 @@ function ChangesRow({ item }: { item: Extract<AgentItem, { type: 'changes' }> })
   const running = useAgent((s) => s.session?.status === 'running')
   const [busy, setBusy] = useState(false)
   const parts = [
-    item.created.length && `新建 ${item.created.length} 个`,
-    item.updated.length && `修改 ${item.updated.length} 个`,
-    item.deleted.length && `删除 ${item.deleted.length} 个`,
-    item.edges && `连线 ${item.edges} 处`,
-    item.runs && `运行 ${item.runs} 次`,
+    item.created.length && `新建 ${item.created.length}`,
+    item.updated.length && `修改 ${item.updated.length}`,
+    item.deleted.length && `删除 ${item.deleted.length}`,
+    item.edges && `连线 ${item.edges}`,
+    item.runs && `运行 ${item.runs}`,
   ].filter(Boolean)
   const shown = [...item.created, ...item.updated].filter((id) => engine?.doc.get(id))
 
@@ -357,8 +441,8 @@ function ChangesRow({ item }: { item: Extract<AgentItem, { type: 'changes' }> })
     >
       <Icon name={item.undone ? 'undo' : 'sparkle'} size={14} />
       <span className={`min-w-0 flex-1 truncate ${item.undone ? 'line-through' : ''}`}>
-        {item.undone ? '已撤销：' : '本轮'}
-        {parts.join('、') || '没有改动'}
+        {item.undone ? '已撤销：' : '本轮：'}
+        {parts.join(' · ') || '没有改动'}
       </span>
       {!item.undone && shown.length > 0 && engine && (
         <button
@@ -368,8 +452,7 @@ function ChangesRow({ item }: { item: Extract<AgentItem, { type: 'changes' }> })
           className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn"
           onClick={() => {
             engine.selection.set(shown)
-            engine.zoomToFit(shown)
-            engine.flash(shown)
+            engine.flyTo(shown)
           }}
         >
           <Icon name="locate" size={14} />
@@ -462,6 +545,7 @@ function Composer({ running }: { running: boolean }) {
   const [text, setText] = useState('')
   const [withSelection, setWithSelection] = useState(true)
   const selected = useCanvas((s) => s.selection)
+  const approval = useAgent((s) => s.approval)
   const ref = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
@@ -540,6 +624,15 @@ function Composer({ running }: { running: boolean }) {
             <Icon name="arrowUp" size={16} />
           </button>
         )}
+      </div>
+      <div className="mt-2 flex items-center">
+        <Select
+          aria-label="确认方式"
+          value={approval}
+          options={APPROVAL_OPTIONS}
+          onChange={(v) => useAgent.getState().setApproval(v as AgentApprovalMode)}
+          className="h-6 text-2xs text-ink-subtle"
+        />
       </div>
     </div>
   )

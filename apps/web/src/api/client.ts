@@ -1,5 +1,6 @@
 import {
   API,
+  type AgentApprovalMode,
   type AgentKind,
   type AgentSession,
   type AgentSessionSummary,
@@ -137,8 +138,14 @@ export const api = {
     request<AgentSession>(API.agentSessions(canvasId), json('POST', { agent })),
   agentSession: (id: string) => request<AgentSession>(API.agentSession(id)),
   deleteAgentSession: (id: string) => request<void>(API.agentSession(id), { method: 'DELETE' }),
-  sendAgentMessage: (id: string, text: string, selection?: string[]) =>
-    request<void>(API.agentMessages(id), json('POST', { text, selection })),
+  sendAgentMessage: (
+    id: string,
+    text: string,
+    selection?: string[],
+    approval?: AgentApprovalMode,
+  ) => request<void>(API.agentMessages(id), json('POST', { text, selection, approval })),
+  decideAgentApproval: (id: string, approvalId: string, allow: boolean) =>
+    request<void>(API.agentApproval(id, approvalId), json('POST', { allow })),
   stopAgent: (id: string) => request<void>(API.agentStop(id), json('POST', {})),
   undoAgentTurn: (id: string, turn: string) =>
     request<void>(API.agentUndo(id, turn), json('POST', {})),

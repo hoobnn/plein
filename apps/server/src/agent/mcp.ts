@@ -1,5 +1,6 @@
 import {
   type CapabilityContext,
+  type CapabilityDefinition,
   CapabilityError,
   type CapabilityRegistry,
   isContent,
@@ -36,19 +37,35 @@ export function defineTool<S extends z.ZodObject>(tool: McpTool<S>): McpTool {
 /** 工具执行中可预期的错误：原样告诉模型，让它换个做法 */
 export const ToolError = CapabilityError
 
+/** 能力的返回值转成 MCP 工具结果 */
+export function toToolResult(out: unknown): ToolResult | string {
+  if (isContent(out)) return { content: out.content }
+  return typeof out === 'string' ? out : JSON.stringify(out, null, 1)
+}
+
+/**
+ * 调用前的关卡（确认策略）：返回 null 放行；返回结果则不执行、把它交给模型。
+ * run 是放行后的原调用，批准后可以稍后再执行。
+ */
+export type ToolGate<C extends CapabilityContext> = (
+  cap: CapabilityDefinition<z.ZodObject, C>,
+  args: Record<string, unknown>,
+  run: () => Promise<ToolResult | string>,
+) => ToolResult | string | null
+
 /** 把能力注册表转成 MCP 工具：输入 schema 同一份，结果按 MCP content 序列化 */
 export function capabilityTools<C extends CapabilityContext>(
   registry: CapabilityRegistry<C>,
   ctx: C,
+  gate?: ToolGate<C>,
 ): McpTool[] {
   return registry.list().map((cap) => ({
     name: cap.name,
     description: cap.description,
     input: cap.input,
     run: async (args) => {
-      const out = await registry.invoke(cap.name, ctx, args)
-      if (isContent(out)) return { content: out.content }
-      return typeof out === 'string' ? out : JSON.stringify(out, null, 1)
+      const run = async () => toToolResult(await registry.invoke(cap.name, ctx, args))
+      return gate?.(cap, args, run) ?? run()
     },
   }))
 }
