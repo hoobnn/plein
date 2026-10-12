@@ -233,7 +233,8 @@ export class NodeRuns {
    * 以及它们下游已有结果的节点。正在运行的不算。
    */
   async staleNodes(canvasId: string, ownerId: string): Promise<StaleNodes> {
-    const doc = createDoc(this.rooms.get(canvasId).doc)
+    const lease = this.rooms.acquire(canvasId)
+    const doc = createDoc(lease.room.doc)
     try {
       const signal = new AbortController().signal
       const stale: string[] = []
@@ -256,6 +257,7 @@ export class NodeRuns {
       return { stale, upstream }
     } finally {
       doc.destroy()
+      lease.release()
     }
   }
 
@@ -314,7 +316,8 @@ export class NodeRuns {
     this.groups.set(g.id, ctrl)
     const options = JSON.parse(g.options) as StoredGroupOptions
     const rerun = new Set(options.rerun ?? [])
-    const doc = createDoc(this.rooms.get(g.canvas_id).doc)
+    const lease = this.rooms.acquire(g.canvas_id)
+    const doc = createDoc(lease.room.doc)
     try {
       const targets = (JSON.parse(g.targets) as string[]).filter((id) => doc.get(id))
       const graph = new FlowGraph(doc.edges())
@@ -346,6 +349,7 @@ export class NodeRuns {
     } finally {
       this.groups.delete(g.id)
       doc.destroy()
+      lease.release()
     }
   }
 
@@ -467,7 +471,9 @@ export class NodeRuns {
   }
 
   private async execute(a: ActiveJob) {
-    const doc = createDoc(this.rooms.get(a.canvasId).doc)
+    // 任务可能跑几分钟；持有租约，期间关掉画布标签页也不会卸载文档、丢掉结果
+    const lease = this.rooms.acquire(a.canvasId)
+    const doc = createDoc(lease.room.doc)
     const signal = a.ctrl.signal
     try {
       const el = doc.get(a.nodeId)
@@ -507,6 +513,7 @@ export class NodeRuns {
       else a.resolve('failed')
     } finally {
       doc.destroy()
+      lease.release()
     }
   }
 

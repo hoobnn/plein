@@ -9,7 +9,7 @@ const MESSAGE_SYNC = 0
 const MESSAGE_AWARENESS = 1
 /** 增量更新条数超过它就合并成一条 */
 const COMPACT_AFTER = 500
-/** 最后一个连接断开后多久卸载文档 */
+/** 没有连接、也没有服务端租约后多久卸载文档 */
 const UNLOAD_DELAY_MS = 30_000
 
 /** 一个 WebSocket 连接；与具体的 WS 库解耦，便于测试 */
@@ -32,6 +32,8 @@ export class Room {
   readonly doc = new Y.Doc({ gc: true })
   readonly awareness = new awarenessProtocol.Awareness(this.doc)
   private conns = new Map<Conn, ConnState>()
+  /** 服务端代码（任务、整组运行）持有的租约数；有租约时不卸载 */
+  private leases = 0
   private pending = 0
   private unloadTimer: NodeJS.Timeout | null = null
 
@@ -81,11 +83,13 @@ export class Room {
     return this.conns.size
   }
 
+  /** 既没有连接也没有租约：可以卸载 */
+  get idle() {
+    return this.conns.size === 0 && this.leases === 0
+  }
+
   join(conn: Conn) {
-    if (this.unloadTimer) {
-      clearTimeout(this.unloadTimer)
-      this.unloadTimer = null
-    }
+    this.cancelUnload()
     this.conns.set(conn, { clients: new Set() })
     // 先发 step1，客户端回 step2 补齐服务端缺的部分
     const enc = encoding.createEncoder()
@@ -133,8 +137,33 @@ export class Room {
     if (!state) return
     this.conns.delete(conn)
     awarenessProtocol.removeAwarenessStates(this.awareness, [...state.clients], null)
-    if (this.conns.size === 0) {
-      this.unloadTimer = setTimeout(() => this.onEmpty(this), UNLOAD_DELAY_MS)
+    this.scheduleUnload()
+  }
+
+  retain() {
+    this.leases++
+    this.cancelUnload()
+  }
+
+  release() {
+    this.leases = Math.max(0, this.leases - 1)
+    this.scheduleUnload()
+  }
+
+  /** 空闲时安排卸载；连接或租约回来会取消 */
+  scheduleUnload() {
+    if (!this.idle || this.unloadTimer) return
+    this.unloadTimer = setTimeout(() => {
+      this.unloadTimer = null
+      this.onEmpty(this)
+    }, UNLOAD_DELAY_MS)
+    this.unloadTimer.unref?.()
+  }
+
+  private cancelUnload() {
+    if (this.unloadTimer) {
+      clearTimeout(this.unloadTimer)
+      this.unloadTimer = null
     }
   }
 
@@ -189,7 +218,17 @@ export function sqliteDocStore(db: DB): DocStore {
   }
 }
 
-/** 房间管理：按需加载，最后一个连接断开一段时间后合并并卸载 */
+/** 一段时间内持有房间，期间不会被卸载；用完必须 release */
+export interface RoomLease {
+  room: Room
+  release(): void
+}
+
+/**
+ * 房间管理：按需加载，空闲（无连接、无租约）一段时间后合并并卸载。
+ * 短暂读写用 get；跨 await 长时间持有文档（任务执行、整组运行）必须用 acquire，
+ * 否则房间可能在中途被卸载，之后的写入不会持久化。
+ */
 export class Rooms {
   private rooms = new Map<string, Room>()
 
@@ -200,8 +239,24 @@ export class Rooms {
     if (!room) {
       room = new Room(id, this.store, (r) => this.unload(r.id))
       this.rooms.set(id, room)
+      // 只被服务端代码短暂打开的房间也要能卸载
+      room.scheduleUnload()
     }
     return room
+  }
+
+  acquire(id: string): RoomLease {
+    const room = this.get(id)
+    room.retain()
+    let released = false
+    return {
+      room,
+      release: () => {
+        if (released) return
+        released = true
+        room.release()
+      },
+    }
   }
 
   has(id: string) {
@@ -218,7 +273,7 @@ export class Rooms {
 
   unload(id: string) {
     const room = this.rooms.get(id)
-    if (!room || room.size > 0) return
+    if (!room || !room.idle) return
     room.compact()
     this.rooms.delete(id)
     room.close()
