@@ -22,11 +22,22 @@ export interface AssetRef {
   mime?: string
 }
 
+/** 端口值的附加信息，由宿主填写 */
+export interface PortValueMeta {
+  /** 来自画布上的哪个元素：同一端口有多个上游时，执行器靠它对应参数里的设置 */
+  source?: string
+}
+
 /** 端口上流动的值 */
-export type PortValue =
+export type PortValue = (
   | { type: 'text'; text: string }
   | { type: 'json'; value: unknown }
-  | ({ type: 'image' | 'video' | 'audio' } & AssetRef)
+  | ({ type: 'image' | 'video' | 'audio' } & AssetRef & {
+        /** 语音的台词：配音节点写入，序列导出时用作字幕 */
+        caption?: string
+      })
+) &
+  PortValueMeta
 
 export function portAccepts(port: PortType, value: PortValue['type']) {
   return port === 'any' || port === value

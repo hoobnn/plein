@@ -48,6 +48,7 @@ export const serverPlugin = defineServerPlugin(plugin, {
 | `permissions.network` | 可访问的域名，支持一级通配 `*.example.com`；重定向逐跳检查                                 |
 | `permissions.secrets` | 可读取的密钥名（大写下划线），Provider 用到的密钥必须在这里声明                            |
 | `permissions.assets`  | `none` / `read` / `write`：执行器读写资产库、Provider 读取参考图                           |
+| `permissions.media`   | 执行器用宿主的 ffmpeg 读取媒体信息（`ctx.media.probe`）、合成视频（`ctx.media.compose`）   |
 
 ## 节点
 
@@ -63,6 +64,10 @@ export const serverPlugin = defineServerPlugin(plugin, {
 参数或端口不兼容地变化时版本 +1，并提供 `migrate(params, fromVersion)`，画布上的旧节点在运行前自动升级参数。
 
 执行器拿到已校验的参数和上游输入，只能经过 `ctx.providers.call(能力, 模型引用, 输入)` 调用模型。宿主负责选平台、注入密钥、限流、轮询异步任务、取消，并把结果文件存入资产库，执行器拿到的是资产引用。输出端口和类型会被校验。
+
+输入值带 `source`（来自画布上哪个元素），同一端口连了多个上游时，执行器靠它对应参数里的设置（序列节点用它记每段镜头的入出点）。`source` 不计入缓存键。配音节点输出的语音带 `caption`（台词），下游可以直接用作字幕。
+
+`execution` 决定节点怎么运行：`inline` 参数即结果，下游需要时就地计算（文本节点）；`job` 排队运行、结果存进节点、参与整组运行和缓存。默认有 `capability` 为 `job`，否则为 `inline`；不调模型但耗时的节点（序列导出）显式声明 `execution: 'job'`。
 
 ## 提示词预设
 

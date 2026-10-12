@@ -1,6 +1,7 @@
 import { defineNode, definePlugin, PLUGIN_API_VERSION } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { corePrompts } from './prompts'
+import { sequenceNode } from './sequence'
 import { storyboardNode } from './storyboard'
 
 const model = () => z.string().default('').meta({ title: '模型', widget: 'model' })
@@ -172,9 +173,12 @@ export const corePlugin = definePlugin({
         'plein/character@1',
         'plein/scene@1',
         'plein/storyboard@1',
+        'plein/sequence@1',
       ],
       prompts: corePrompts.map((p) => p.id),
     },
+    // 序列导出要用宿主的 ffmpeg
+    permissions: { media: true },
   },
   nodes: [
     textNode,
@@ -186,6 +190,7 @@ export const corePlugin = definePlugin({
     characterNode,
     sceneNode,
     storyboardNode,
+    sequenceNode,
   ],
   prompts: corePrompts,
 })

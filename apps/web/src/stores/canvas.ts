@@ -15,6 +15,8 @@ interface CanvasStore extends EngineState {
   menu: CanvasMenuEvent | null
   /** 打开表格编辑器的分镜节点 */
   storyboard: string | null
+  /** 打开编辑器的序列节点 */
+  sequence: string | null
   /** 全屏查看的图片 / 视频 */
   viewer: { assetId: string; kind: 'image' | 'video'; name: string } | null
   /** 快捷键面板 */
@@ -35,6 +37,7 @@ interface CanvasStore extends EngineState {
   setCanvasId(id: string | null): void
   setMenu(menu: CanvasMenuEvent | null): void
   openStoryboard(id: string | null): void
+  openSequence(id: string | null): void
   view(v: CanvasStore['viewer']): void
   toggleShortcuts(open?: boolean): void
   setArranged(r: ArrangeResult | null): void
@@ -63,6 +66,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   canvasId: null,
   menu: null,
   storyboard: null,
+  sequence: null,
   viewer: null,
   shortcuts: false,
   arranged: null,
@@ -86,6 +90,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
         engine: null,
         menu: null,
         storyboard: null,
+        sequence: null,
         viewer: null,
         arranged: null,
         history: false,
@@ -98,6 +103,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   setCanvasId: (canvasId) => set({ canvasId }),
   setMenu: (menu) => set({ menu }),
   openStoryboard: (storyboard) => set({ storyboard }),
+  openSequence: (sequence) => set({ sequence }),
   view: (viewer) => set({ viewer }),
   toggleShortcuts: (open) => set((s) => ({ shortcuts: open ?? !s.shortcuts })),
   setArranged: (arranged) => set({ arranged }),

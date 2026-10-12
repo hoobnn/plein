@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# plein 单容器镜像：本地服务端 + 前端静态文件 + ffmpeg
+# plein 单容器镜像：本地服务端 + 前端静态文件 + ffmpeg（含中文字体，用于烧录字幕）
 
 FROM node:26-slim AS build
 # Node 25 起不再自带 corepack，pnpm 版本与 package.json 的 packageManager 保持一致
@@ -25,7 +25,7 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
 
 FROM node:26-slim
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /data && chown node:node /data
 WORKDIR /app

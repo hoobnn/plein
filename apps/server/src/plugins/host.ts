@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { readFile, rm } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import {
   type AssetRef,
   type Capability,
   type CapabilityInput,
+  type ComposeSpec,
   type ExecutorContext,
+  type MediaInfo,
   type ModelSpec,
   modelRef,
   type NodeOutputs,
@@ -24,6 +27,8 @@ import {
   type ServerPluginDefinition,
 } from '@plein/plugin-sdk'
 import { stableStringify } from '@plein/flow'
+import { composeVideo } from '../assets/compose'
+import { hasFfmpeg, probeMedia } from '../assets/media'
 import type { AssetStore } from '../assets/store'
 import type { ProviderConfigStore } from './config-store'
 import { Limiter, sleep } from './limiter'
@@ -386,6 +391,13 @@ export class PluginHost {
         },
         read: (ref) => this.readAsset(manifest, opts.ownerId, ref),
       },
+      media: {
+        probe: (ref) => this.probe(manifest, opts.ownerId, ref),
+        compose: (spec) =>
+          this.compose(manifest, opts.ownerId, spec, signal, (f) =>
+            opts.onProgress?.(Math.min(1, Math.max(0, f))),
+          ),
+      },
     }
 
     let outputs: NodeOutputs
@@ -417,6 +429,63 @@ export class PluginHost {
     return {
       data: new Uint8Array(await readFile(this.assets.originalPath(asset.id))),
       mime: asset.mime,
+    }
+  }
+
+  /** 插件有 media 权限、ffmpeg 可用时，返回资产原文件路径 */
+  private async mediaPath(manifest: PluginManifest, ownerId: string, ref: AssetRef) {
+    if (!manifest.permissions.media)
+      throw new PermissionError(`插件 ${manifest.id} 没有处理媒体的权限`)
+    if (!(await hasFfmpeg()))
+      throw new ProviderError('unavailable', '没有找到 ffmpeg，无法处理视频和音频', {
+        retryable: false,
+      })
+    const asset = this.assets.get(ownerId, ref.assetId)
+    if (!asset) throw new ProviderError('invalid_input', `资产 ${ref.assetId} 不存在`)
+    return this.assets.originalPath(asset.id)
+  }
+
+  private async probe(
+    manifest: PluginManifest,
+    ownerId: string,
+    ref: AssetRef,
+  ): Promise<MediaInfo> {
+    return probeMedia(await this.mediaPath(manifest, ownerId, ref))
+  }
+
+  private async compose(
+    manifest: PluginManifest,
+    ownerId: string,
+    spec: ComposeSpec,
+    signal: AbortSignal,
+    onProgress: (fraction: number) => void,
+  ): Promise<AssetRef> {
+    const clips = await Promise.all(
+      spec.clips.map((c) => this.mediaPath(manifest, ownerId, c.asset)),
+    )
+    const audio = await Promise.all(
+      spec.audio.map((a) => this.mediaPath(manifest, ownerId, a.asset)),
+    )
+    const infos = await Promise.all(clips.map((f) => probeMedia(f)))
+    const missing = infos.findIndex((i) => !i.hasVideo)
+    if (missing >= 0) throw new ProviderError('invalid_input', `第 ${missing + 1} 段不是视频`)
+    const dir = await this.assets.tempDir()
+    try {
+      const { file } = await composeVideo(spec, { clips, audio }, { clips: infos }, dir, {
+        signal,
+        onProgress,
+      })
+      const a = await this.assets.ingest(ownerId, createReadStream(file), {
+        mime: 'video/mp4',
+        name: `${spec.name ?? '成片'}.mp4`,
+      })
+      return { assetId: a.id, kind: a.kind, mime: a.mime }
+    } catch (err) {
+      if (signal.aborted) throw new ProviderError('cancelled', '已取消')
+      if (err instanceof ProviderError) throw err
+      throw new ProviderError('unknown', (err as Error).message)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
     }
   }
 

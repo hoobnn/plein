@@ -29,6 +29,8 @@ const PATHS = {
   table: 'M4 5h16v14H4zM4 10h16M4 15h16M10 5v14',
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3',
   pencil: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
+  arrowDown: 'M12 5v14M5.5 12.5 12 19l6.5-6.5',
+  grip: 'M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01',
   arrowUp: 'M12 19V5M5.5 11.5 12 5l6.5 6.5',
   image: 'M4 5h16v14H4zM4 16l4.5-4.5 3.5 3.5 2.5-2.5L20 18M15.5 9.5h.01',
   video: 'M4 6h12v12H4zM16 10l4-2.5v9L16 14',

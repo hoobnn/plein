@@ -25,6 +25,13 @@ export interface NodeDefinition<P extends z.ZodObject = z.ZodObject> {
   /** 需要的模型能力；表单里的模型下拉框只列支持它的模型 */
   capability?: Capability
   /**
+   * 怎么运行：
+   * - `inline`：参数即结果，下游需要时就地计算（如文本节点）；
+   * - `job`：排队运行，结果存进节点（调模型的节点，或合成视频这类耗时的处理）。
+   * 默认有 capability 时为 job，否则为 inline。
+   */
+  execution?: NodeExecution
+  /**
    * 运行成功后把输出写回参数（如分镜表要可编辑，结果需进参数）。
    * 返回要修改的参数键值；宿主以系统身份写入文档。
    */
@@ -37,6 +44,12 @@ export interface NodeDefinition<P extends z.ZodObject = z.ZodObject> {
 }
 
 export type NodeParams<N extends NodeDefinition> = z.output<N['params']>
+
+export type NodeExecution = 'inline' | 'job'
+
+export function executionOf(def: Pick<NodeDefinition, 'execution' | 'capability'>): NodeExecution {
+  return def.execution ?? (def.capability ? 'job' : 'inline')
+}
 
 /** 声明节点：校验基本约束，返回原对象（保留参数类型推断） */
 export function defineNode<P extends z.ZodObject>(def: NodeDefinition<P>): NodeDefinition<P> {
@@ -71,6 +84,7 @@ export interface NodeDescriptor {
   inputs: PortSpec[]
   outputs: PortSpec[]
   capability?: Capability
+  execution: NodeExecution
   /** 参数的 JSON Schema（含 meta 提示） */
   paramsSchema: Record<string, unknown>
   defaults: Record<string, unknown>
@@ -87,6 +101,7 @@ export function describeNode(def: NodeDefinition, plugin: string): NodeDescripto
     inputs: def.inputs,
     outputs: def.outputs,
     capability: def.capability,
+    execution: executionOf(def),
     paramsSchema: z.toJSONSchema(def.params, { io: 'input', unrepresentable: 'any' }) as Record<
       string,
       unknown

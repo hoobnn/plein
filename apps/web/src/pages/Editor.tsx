@@ -13,6 +13,7 @@ import { History } from '../panels/History'
 import { ResultBar, Viewer } from '../panels/ResultBar'
 import { SelectionBar } from '../panels/SelectionBar'
 import { Shortcuts } from '../panels/Shortcuts'
+import { SequenceEditor } from '../panels/SequenceEditor'
 import { StoryboardEditor } from '../panels/StoryboardEditor'
 import { Tasks } from '../panels/Tasks'
 import { Toolbar, ViewControls } from '../panels/Toolbar'
@@ -150,6 +151,7 @@ export function Editor({
         </>
       )}
       <StoryboardEditor />
+      <SequenceEditor />
       <Shortcuts />
       <History />
       {source.kind === 'remote' && <Tasks />}

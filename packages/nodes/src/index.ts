@@ -1,4 +1,5 @@
 export * from './core'
 export * from './mentions'
 export * from './prompts'
+export * from './sequence'
 export * from './storyboard'

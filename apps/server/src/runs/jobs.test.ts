@@ -6,6 +6,7 @@ import type { JobList } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { createServer, type Server } from '../app'
+import { hasFfmpeg } from '../assets/media'
 import { loadConfig } from '../config'
 
 const dirs: string[] = []
@@ -344,4 +345,86 @@ describe('整组运行', () => {
     })
     expect(res.status).toBe(404)
   })
+})
+
+const ffmpeg = await hasFfmpeg()
+
+describe.skipIf(!ffmpeg)('序列导出', () => {
+  const speechPorts = {
+    inputs: [{ id: 'text', label: '台词', type: 'text' as const, multiple: true }],
+    outputs: [{ id: 'audio', label: '语音', type: 'audio' as const }],
+  }
+  const sequencePorts = {
+    inputs: [
+      { id: 'clips', label: '镜头', type: 'video' as const, multiple: true },
+      { id: 'dialogue', label: '对白', type: 'audio' as const, multiple: true },
+      { id: 'music', label: '配乐', type: 'audio' as const },
+      { id: 'sfx', label: '音效', type: 'audio' as const, multiple: true },
+    ],
+    outputs: [{ id: 'video', label: '成片', type: 'video' as const }],
+  }
+
+  it('整组运行含视频时最后导出：镜头按顺序拼接，配上对白和字幕', async () => {
+    const { server } = await boot()
+    mock(server, {})
+    const { id, doc } = await canvas(server)
+    const frame = createElement(doc, { kind: 'frame', x: -50, y: -50, w: 1400, h: 900 })
+    const node = (
+      nodeType: string,
+      params: Record<string, unknown>,
+      ports: object,
+      x: number,
+      y: number,
+    ) =>
+      createElement(doc, {
+        kind: 'node',
+        nodeType,
+        nodeVersion: 1,
+        params,
+        ports: ports as never,
+        x,
+        y,
+        w: 200,
+        h: 200,
+        parentId: frame,
+      })
+    const v1 = node('plein/video', { prompt: '推近' }, videoPorts, 0, 0)
+    const v2 = node('plein/video', { prompt: '拉远' }, videoPorts, 300, 0)
+    const s1 = node('plein/speech', { text: '你来了' }, speechPorts, 0, 300)
+    const s2 = node('plein/speech', { text: '我等你很久了' }, speechPorts, 300, 300)
+    const seq = node('plein/sequence', { resolution: '720p' }, sequencePorts, 800, 0)
+    connect(doc, [v1, 'video'], [seq, 'clips'])
+    connect(doc, [v2, 'video'], [seq, 'clips'])
+    connect(doc, [s1, 'audio'], [seq, 'dialogue'])
+    connect(doc, [s2, 'audio'], [seq, 'dialogue'])
+
+    const r = await runFrame(server, id, frame, { video: true })
+    expect(r.summary).toMatchObject({ succeeded: 5, failed: 0 })
+    const out = doc.get(seq)!.results![0]!.value as { type: string; assetId: string; mime?: string }
+    expect(out).toMatchObject({ type: 'video', mime: 'video/mp4' })
+    const clip = server.assets.get(
+      'local',
+      (doc.get(v1)!.results![0]!.value as { assetId: string }).assetId,
+    )!
+    const asset = server.assets.get('local', out.assetId)!
+    expect(asset).toMatchObject({ width: 720, height: 1280 })
+    expect(asset.duration).toBeCloseTo(clip.duration! * 2, 0)
+    // 配音结果带台词，导出时用作字幕
+    expect(doc.get(s1)!.results![0]!.value).toMatchObject({ caption: '你来了' })
+
+    // 调换顺序、裁掉第二段的一半后重新导出
+    setParams(doc, seq, {
+      clips: [
+        { source: v2, in: 0, out: clip.duration! / 2 },
+        { source: v1, in: 0 },
+      ],
+    })
+    const again = await runFrame(server, id, frame, { video: true })
+    expect(again.summary).toMatchObject({ succeeded: 1, cached: 4 })
+    const second = server.assets.get(
+      'local',
+      (doc.get(seq)!.results![0]!.value as { assetId: string }).assetId,
+    )!
+    expect(second.duration).toBeCloseTo(clip.duration! * 1.5, 0)
+  }, 60_000)
 })

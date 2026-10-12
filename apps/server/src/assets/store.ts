@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
-import { mkdir, rename, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -85,6 +85,11 @@ export class AssetStore {
     await mkdir(this.root, { recursive: true })
     await rm(this.tmp, { recursive: true, force: true })
     await mkdir(this.tmp, { recursive: true })
+  }
+
+  /** 新建一个临时目录（在数据目录内，启动时清空） */
+  tempDir() {
+    return mkdtemp(join(this.tmp, 'job-'))
   }
 
   originalPath(id: string) {

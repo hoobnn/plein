@@ -1,3 +1,4 @@
+import type { MediaService } from './media'
 import type { NodeDefinition, NodeParams } from './node'
 import type { AssetRef, PortValue } from './ports'
 import type {
@@ -45,6 +46,8 @@ export interface ExecutorContext<P = Record<string, unknown>> {
     /** 需要清单 permissions.assets 至少为 read */
     read(ref: AssetRef): Promise<{ data: Uint8Array; mime: string }>
   }
+  /** 需要清单 permissions.media */
+  media: MediaService
 }
 
 /** 节点执行器：只在服务端运行，按节点 `type@version` 注册 */

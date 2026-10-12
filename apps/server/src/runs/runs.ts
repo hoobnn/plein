@@ -12,6 +12,7 @@ import {
 } from '@plein/doc'
 import { FlowGraph, runDag, type StepOutcome, stableStringify } from '@plein/flow'
 import {
+  executionOf,
   type NodeDefinition,
   type NodeOutputs,
   nodeKey,
@@ -45,12 +46,17 @@ const newId = (prefix: string) =>
 
 export function toPortValue(v: ResultValue): PortValue {
   if (v.type === 'text' || v.type === 'json') return v
-  return { type: v.type, assetId: v.assetId, kind: v.type, mime: v.mime }
+  const out: PortValue = { type: v.type, assetId: v.assetId, kind: v.type, mime: v.mime }
+  if (v.caption) out.caption = v.caption
+  return out
 }
 
 export function toResultValue(v: PortValue): ResultValue {
-  if (v.type === 'text' || v.type === 'json') return v
-  return { type: v.type, assetId: v.assetId, mime: v.mime }
+  if (v.type === 'text') return { type: 'text', text: v.text }
+  if (v.type === 'json') return { type: 'json', value: v.value }
+  const out: ResultValue = { type: v.type, assetId: v.assetId, mime: v.mime }
+  if (v.caption) out.caption = v.caption
+  return out
 }
 
 export interface NodeRunsOptions {
@@ -175,7 +181,7 @@ export class NodeRuns {
       .filter((el) => {
         if (el.kind !== 'node' || !el.nodeType) return false
         const def = this.host.registry.latestNode(el.nodeType)?.def
-        if (!def?.capability) return false
+        if (!def || executionOf(def) !== 'job') return false
         if (!this.host.registry.executors.has(nodeKey(def.type, def.version))) return false
         return video || def.outputs[0]?.type !== 'video'
       })
@@ -503,7 +509,10 @@ export class NodeRuns {
           type: el.nodeType,
           version: p.def?.version ?? el.nodeVersion,
           params: kept,
-          inputs: p.inputs,
+          // 来源元素 id 只用来对应设置，不算内容
+          inputs: Object.fromEntries(
+            Object.entries(p.inputs).map(([k, vs]) => [k, vs.map(({ source: _, ...v }) => v)]),
+          ),
         }),
       )
       .digest('hex')
@@ -534,7 +543,8 @@ export class NodeRuns {
       const src = doc.get(edge.from[0])
       if (!src) continue
       const values = await this.upstreamValues(doc, src, edge.from[1], ownerId, signal, depth)
-      inputs[edge.to[1]] = [...(inputs[edge.to[1]] ?? []), ...values]
+      const tagged = values.map((v) => ({ ...v, source: src.id }))
+      inputs[edge.to[1]] = [...(inputs[edge.to[1]] ?? []), ...tagged]
     }
     return inputs
   }
@@ -559,7 +569,7 @@ export class NodeRuns {
         const r = currentResult(src, port)
         if (r) return [toPortValue(r.value)]
         const def = src.nodeType ? this.host.registry.latestNode(src.nodeType)?.def : undefined
-        if (def && !def.capability) {
+        if (def && executionOf(def) === 'inline') {
           const out: NodeOutputs = await this.host.runNode({
             type: src.nodeType!,
             version: src.nodeVersion ?? 1,

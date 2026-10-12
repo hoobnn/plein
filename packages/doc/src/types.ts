@@ -73,7 +73,13 @@ export interface CanvasElement extends Rect {
 export type ResultValue =
   | { type: 'text'; text: string }
   | { type: 'json'; value: unknown }
-  | { type: 'image' | 'video' | 'audio'; assetId: string; mime?: string }
+  | {
+      type: 'image' | 'video' | 'audio'
+      assetId: string
+      mime?: string
+      /** 语音的台词（配音节点写入，导出时用作字幕） */
+      caption?: string
+    }
 
 /** 节点的一个结果（候选）。一次运行可能产出多个，按时间新到旧排列 */
 export interface NodeResult {

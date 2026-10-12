@@ -23,6 +23,9 @@ export function setMediaTools(paths: { ffmpeg: string; ffprobe: string }) {
   ffmpegAvailable = null
 }
 
+/** 当前使用的 ffmpeg 可执行文件 */
+export const ffmpegBin = () => bin.ffmpeg
+
 /** ffmpeg / ffprobe 是否可用；缺失时视频和音频只存原文件，不生成衍生物 */
 export function hasFfmpeg(): Promise<boolean> {
   ffmpegAvailable ??= Promise.all([

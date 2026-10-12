@@ -48,8 +48,10 @@ export const PluginManifest = z.object({
       secrets: z.array(z.string().regex(/^[A-Z][A-Z0-9_]*$/, '密钥名应为大写下划线')).default([]),
       /** 资产库访问 */
       assets: z.enum(['none', 'read', 'write']).default('none'),
+      /** 用宿主的 ffmpeg 读取媒体信息、合成视频（结果写入资产库） */
+      media: z.boolean().default(false),
     })
-    .default({ network: [], secrets: [], assets: 'none' }),
+    .default({ network: [], secrets: [], assets: 'none', media: false }),
 })
 export type PluginManifest = z.output<typeof PluginManifest>
 export type PluginManifestInput = z.input<typeof PluginManifest>

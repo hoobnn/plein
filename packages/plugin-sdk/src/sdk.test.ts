@@ -84,7 +84,7 @@ describe('plugin-sdk', () => {
       name: 'P',
       engines: { plein: '^0.1.0' },
     })
-    expect(ok.permissions).toEqual({ network: [], secrets: [], assets: 'none' })
+    expect(ok.permissions).toEqual({ network: [], secrets: [], assets: 'none', media: false })
     expect(ok.contributes.nodes).toEqual([])
     expect(PluginManifest.safeParse({ ...ok, id: 'Acme' }).success).toBe(false)
     expect(PluginManifest.safeParse({ ...ok, version: '1.0' }).success).toBe(false)

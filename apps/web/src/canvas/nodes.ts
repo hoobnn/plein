@@ -44,8 +44,8 @@ export function findNode(catalog: Catalog | null, type: string | undefined): Nod
   return best
 }
 
-/** 不调模型的节点（如文本）：参数即结果，不需要“生成” */
-export const isPure = (node: NodeInfo) => !node.capability
+/** 就地计算的节点（如文本）：参数即结果，不需要“生成” */
+export const isPure = (node: NodeInfo) => node.execution === 'inline'
 
 /** 主提示词字段：卡片和生成器里最显眼的那个输入框 */
 export function promptKey(node: NodeInfo): string | undefined {

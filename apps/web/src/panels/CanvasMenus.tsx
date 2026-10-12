@@ -192,7 +192,7 @@ function ContextMenu({
   } else {
     items = (
       <>
-        {node?.executable && node.capability && single && (
+        {node?.executable && node.execution === 'job' && single && (
           <>
             <Item label="生成" hint="⌘↵" onClick={act(() => void runNode(single.id))} />
             <Sep />

@@ -13,6 +13,7 @@ import {
   firstPlaceholder,
   mentionQuery,
   presetsFor,
+  SEQUENCE_TYPE,
   STORYBOARD_TYPE,
   slashQuery,
 } from '@plein/nodes'
@@ -200,6 +201,17 @@ function Panel({
             className="ui-btn ui-btn-secondary w-full"
           >
             编辑分镜表（{shotsOf(el).length} 个镜头）
+          </button>
+        </div>
+      )}
+      {node.type === SEQUENCE_TYPE && (
+        <div className="px-4 pt-4">
+          <button
+            type="button"
+            onClick={() => useCanvas.getState().openSequence(el.id)}
+            className="ui-btn ui-btn-secondary w-full"
+          >
+            编辑序列（{ups.get('clips')?.length ?? 0} 段镜头）
           </button>
         </div>
       )}

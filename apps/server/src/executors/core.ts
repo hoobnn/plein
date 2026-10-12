@@ -5,6 +5,9 @@ import {
   llmNode,
   musicNode,
   sceneNode,
+  arrangeSequence,
+  sequenceNode,
+  sequenceSpec,
   speechNode,
   StoryboardDraft,
   storyboardNode,
@@ -106,12 +109,14 @@ const video = defineExecutor(videoNode, async (ctx) => {
 
 const speech = defineExecutor(speechNode, async (ctx) => {
   const { params, inputs } = ctx
+  const text = requireText(joinText(params.text, inputText(inputs, 'text')), '台词')
   const res = await ctx.providers.call('audio.speech', pickModel(ctx, 'audio.speech', '配音'), {
-    text: requireText(joinText(params.text, inputText(inputs, 'text')), '台词'),
+    text,
     voice: params.voice || undefined,
     instruction: params.instruction || undefined,
   })
-  return { audio: res.assets.map((a) => ({ type: 'audio' as const, ...a })) }
+  // 台词随语音一起往下游传，序列导出时用作字幕
+  return { audio: res.assets.map((a) => ({ type: 'audio' as const, ...a, caption: text })) }
 })
 
 const music = defineExecutor(musicNode, async (ctx) => {
@@ -170,6 +175,29 @@ const scene = defineExecutor(sceneNode, async ({ inputs }) => ({
   images: inputAssets(inputs, 'references').map((a) => ({ type: 'image' as const, ...a })),
 }))
 
+/** 序列：探测各段时长，排好时间线，交给宿主的 ffmpeg 合成 */
+const sequence = defineExecutor(sequenceNode, async (ctx) => {
+  const { params, inputs } = ctx
+  const arranged = arrangeSequence(params, inputs)
+  if (arranged.length === 0) throw new ProviderError('invalid_input', '没有连入镜头视频')
+  ctx.progress(0, '读取素材…')
+  const [clips, dialogue] = await Promise.all([
+    Promise.all(arranged.map((c) => ctx.media.probe(c.clip))),
+    Promise.all(arranged.map((c) => (c.dialogue ? ctx.media.probe(c.dialogue) : undefined))),
+  ])
+  const spec = sequenceSpec(
+    params,
+    arranged,
+    { clips: clips.map((i) => i.duration ?? 0), dialogue: dialogue.map((i) => i?.duration) },
+    inputs.music,
+  )
+  if (spec.clips.length === 0)
+    throw new ProviderError('invalid_input', '各段时长都是 0，检查入点和出点')
+  ctx.progress(0, '合成中…')
+  const out = await ctx.media.compose(spec)
+  return { video: [{ type: 'video', ...out }] }
+})
+
 export const coreServerPlugin = defineServerPlugin(corePlugin, {
-  executors: [text, llm, image, video, speech, music, character, scene, storyboard],
+  executors: [text, llm, image, video, speech, music, character, scene, storyboard, sequence],
 })
