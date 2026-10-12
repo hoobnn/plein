@@ -146,7 +146,7 @@ export function ResultActions({
 
   // 浮动工具条里用工具条按钮；生成器第一行用 28 高的安静按钮，两处图标都是 14
   const btn = variant === 'inline' ? 'ui-btn ui-btn-sm ui-btn-quiet' : 'ui-bar-btn'
-  const icon = variant === 'inline' ? `${btn} ui-icon-btn` : btn
+  const icon = `${btn} ui-icon-btn`
   const image = media.kind === 'image'
   return (
     <>

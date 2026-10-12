@@ -48,7 +48,9 @@
     padding: 0 10px;
     font-size: var(--text-xs);
   }
-  .ui-bar-sm .ui-bar-btn:has(> svg:only-child) {
+  /* 只有图标的工具条按钮加 ui-icon-btn 变方形。不用 :has(> svg:only-child)：
+     它不看文字节点，图标加文字的按钮也会被去掉内边距 */
+  .ui-bar-sm .ui-bar-btn.ui-icon-btn {
     padding: 0;
   }
   .ui-bar-btn:hover {
@@ -673,10 +675,6 @@
     color: #fff;
     background: rgb(0 0 0 / 0.55);
     backdrop-filter: blur(8px);
-  }
-  .ui-badge:has(> svg:only-child) {
-    justify-content: center;
-    padding: 0;
   }
 
   /* 加载中：默认 20，用 size-3 / size-4 缩小（线宽随之变细） */

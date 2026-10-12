@@ -879,9 +879,10 @@ function SlotField({
   const canAdd = slot.multiple || images.length === 0
   return (
     <div className="ui-field">
-      <span className="ui-label">
-        {slot.label}
-        {slot.hint && <span className="ml-2 font-normal text-ink-subtle">{slot.hint}</span>}
+      {/* 标签和提示只占一行：提示折行会把这一格的上传框挤下去，跟同一行另一格对不齐 */}
+      <span className="ui-label flex min-w-0 items-baseline" title={slot.hint}>
+        <span className="flex-none">{slot.label}</span>
+        {slot.hint && <span className="ml-2 truncate font-normal text-ink-subtle">{slot.hint}</span>}
       </span>
       <div className="flex flex-wrap gap-2">
         {images.map((img) => (
