@@ -7,7 +7,8 @@ import type { AgentCli, AgentKind } from '@plein/protocol'
 
 const exec = promisify(execFile)
 
-const NAMES: Record<AgentKind, string> = { claude: 'Claude Code', codex: 'Codex' }
+type CliKind = Exclude<AgentKind, 'builtin'>
+const NAMES: Record<CliKind, string> = { claude: 'Claude Code', codex: 'Codex' }
 
 /** 常见安装位置：从 Finder / Dock 打开的桌面端拿不到 shell 里的 PATH */
 const COMMON_DIRS = [
@@ -46,7 +47,7 @@ async function detect(): Promise<CliEnvironment> {
     COMMON_DIRS.join(delimiter),
   )
   const agents = await Promise.all(
-    (Object.keys(NAMES) as AgentKind[]).map(async (id): Promise<ResolvedCli> => {
+    (Object.keys(NAMES) as CliKind[]).map(async (id): Promise<ResolvedCli> => {
       const bin = await which(id, path)
       if (!bin) return { id, name: NAMES[id], available: false }
       const version = await exec(bin, ['--version'], {

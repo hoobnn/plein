@@ -17,9 +17,29 @@ export type Capability = z.infer<typeof Capability>
 // ── 各能力的输入（归一化后的公共字段；平台特有参数放 extra） ─────────────
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
-  /** 文本，或文本与图片混排 */
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  /** 文本，或文本与图片混排；tool 消息是工具结果的文本 */
   content: string | Array<{ type: 'text'; text: string } | { type: 'image'; image: AssetRef }>
+  /** assistant：这一步模型发起的工具调用 */
+  toolCalls?: ChatToolCall[]
+  /** tool：回应的是哪一次调用 */
+  toolCallId?: string
+  /** tool：被调用的工具名 */
+  toolName?: string
+}
+
+/** 模型可以调用的工具：参数用 JSON Schema 描述 */
+export interface ChatTool {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+}
+
+/** 模型发起的一次工具调用 */
+export interface ChatToolCall {
+  id: string
+  name: string
+  arguments: Record<string, unknown>
 }
 
 export interface CapabilityInputs {
@@ -27,6 +47,9 @@ export interface CapabilityInputs {
     messages: ChatMessage[]
     /** 要求按 JSON Schema 输出结构化结果 */
     jsonSchema?: Record<string, unknown>
+    /** 可调用的工具（只发给声明了 tools 特性的模型）；模型要调用时输出 tool_calls */
+    tools?: ChatTool[]
+    toolChoice?: 'auto' | 'none' | 'required'
     temperature?: number
     maxTokens?: number
   }
@@ -89,6 +112,8 @@ export type CapabilityInput<C extends Capability> = CapabilityInputs[C] & {
 export type ProviderOutput =
   | { type: 'text'; text: string }
   | { type: 'json'; value: unknown }
+  /** text.chat 带 tools 时：模型要调用的工具（可能同时有一段 text） */
+  | { type: 'tool_calls'; calls: ChatToolCall[] }
   | {
       type: 'file'
       kind: 'image' | 'video' | 'audio'
@@ -179,12 +204,16 @@ export interface ModelLimits {
   audio?: boolean
 }
 
+export type ModelFeature = 'tools' | 'vision'
+
 export interface ModelSpec {
   /** 平台上的模型 id */
   id: string
   title: string
   capabilities: Capability[]
   description?: string
+  /** 对话模型的额外特性：tools（工具调用，内置智能体要用）、vision（看图） */
+  features?: ModelFeature[]
   limits?: ModelLimits
   /**
    * 模型专属参数（如 Seedance 的生成音频、返回尾帧）。字段名就是传给 Provider 的 `extra` 键，
@@ -224,6 +253,8 @@ export interface ProviderContext<S = Record<string, unknown>> {
     /** 读取资产内容（如把参考图转成 base64 传给平台） */
     read(ref: AssetRef): Promise<{ data: Uint8Array; mime: string }>
   }
+  /** 流式输出：text.chat 边生成边回调文本增量（宿主没要求时为空，平台照常一次返回） */
+  stream?(delta: { text: string }): void
 }
 
 /** 模型平台适配器 */

@@ -14,6 +14,7 @@ import type {
   AgentSessionSummary,
   AgentStatus,
 } from '@plein/protocol'
+import { type ChatMessage, ProviderError } from '@plein/plugin-sdk'
 import type { AssetStore } from '../assets/store'
 import type { PluginHost } from '../plugins/host'
 import type { NodeRuns } from '../runs/runs'
@@ -24,7 +25,8 @@ import type { Rooms } from '../sync/rooms'
 import { Approvals } from './approvals'
 import { AgentChanges } from './changes'
 import { detectClis } from './cli'
-import { McpServer } from './mcp'
+import { builtinModels, runBuiltinTurn } from './builtin'
+import { type McpTool, McpServer, type ToolResult } from './mcp'
 import { agentTools } from './tools'
 
 /** MCP 服务名：Claude Code 里工具名是 mcp__plein__<工具> */
@@ -38,7 +40,7 @@ const RELEASE_AFTER_MS = 10 * 60 * 1000
 
 const INSTRUCTIONS = `你是 Plein 的创作助手。Plein 是一块 AI 无限画布：画布上有图片、视频、音频、Markdown 元素和工作流节点（文本、LLM、生成图片、生成视频、配音、配乐、角色、场景、分镜、序列等），节点之间用连线传递数据，运行节点会调用模型生成结果。
 
-你通过 plein MCP 工具操作用户当前打开的这块画布，所有改动会实时出现在用户屏幕上。
+你通过 plein 工具操作用户当前打开的这块画布，所有改动会实时出现在用户屏幕上。
 
 做事方式：
 - 先用 get_canvas 看清画布（画布大时用 find_elements 找），用 list_node_types 了解可用节点、参数和已启用的模型。用户说“这个”“这些”“这里”时，用 ui_get_selection / ui_get_viewport 看用户现在选中和看着的东西。
@@ -63,6 +65,10 @@ interface Live {
   busy: boolean
   token: string
   mcp: McpServer
+  /** 画布工具（MCP 和内置智能体共用一份，含确认关卡） */
+  tools: McpTool[]
+  /** 内置智能体这一轮的取消开关 */
+  abort: AbortController | null
   listeners: Set<(e: AgentEvent) => void>
   stopped: boolean
   /** 当前这一轮的 id：Codex 的条目 id 每轮从 item_0 重新编号，要加上它才唯一 */
@@ -103,17 +109,27 @@ export class AgentSessions {
   }
 
   async status(refresh = false): Promise<AgentStatus> {
+    const model = builtinModels(this.deps.host)[0]
+    const builtin = {
+      id: 'builtin' as const,
+      name: '内置',
+      available: !!model,
+      ...(model ? { model: model.title } : {}),
+    }
+    // 内置智能体不跑本机程序，哪种部署都能用；CLI 只在本机免登录模式下可用
     if (!this.deps.enabled) {
-      return {
-        enabled: false,
-        reason: '本机智能体只在桌面端或本机免登录模式下可用',
-        agents: [],
-      }
+      return model
+        ? { enabled: true, agents: [builtin] }
+        : {
+            enabled: false,
+            reason: '在设置里启用支持工具调用的对话模型（如百炼的千问）后，就能使用内置智能体',
+            agents: [builtin],
+          }
     }
     const env = await detectClis(refresh)
     return {
       enabled: true,
-      agents: env.agents.map(({ path: _, ...a }) => a),
+      agents: [builtin, ...env.agents.map(({ path: _, ...a }) => a)],
     }
   }
 
@@ -203,11 +219,13 @@ export class AgentSessions {
     const s = this.load(id)
     if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
     if (s.busy || s.child) throw new AgentError('busy', '上一条消息还在处理中')
-    if (!this.deps.enabled) throw new AgentError('disabled', '本机智能体未启用')
+    if (!this.deps.enabled && s.row.agent !== 'builtin')
+      throw new AgentError('disabled', '本机智能体未启用')
     s.busy = true
     try {
       s.mode = mode
-      await this.startTurn(s, text, selection)
+      if (s.row.agent === 'builtin') this.startBuiltin(s, text, selection)
+      else await this.startTurn(s, text, selection)
     } catch (err) {
       s.busy = false
       throw err
@@ -220,13 +238,7 @@ export class AgentSessions {
     if (!cli?.path)
       throw new AgentError('not_installed', `本机没有找到 ${cli?.name ?? s.row.agent}`)
     if (!this.mcpUrl) throw new AgentError('not_ready', '服务端还没准备好')
-
-    this.keep(s)
-    s.turn = newId('turn')
-    s.changes.begin(s.turn)
-    if (s.items.length === 0) s.row.title = text.replace(/\s+/g, ' ').slice(0, 40)
-    this.push(s, { id: newId('it'), type: 'user', text, selection, at: Date.now() })
-    this.setRunning(s, true)
+    this.beginTurn(s, text, selection)
 
     // 所有会话共用一个工作目录：Claude Code 按目录归档会话，分开会在它的项目列表里留下一堆记录
     const workdir = join(this.deps.dataDir, 'agent')
@@ -293,20 +305,98 @@ export class AgentSessions {
     child.on('close', (code) => {
       clearTimeout(timer)
       s.child = null
-      s.busy = false
       if (s.stopped) this.fail(s, '已停止')
       else if (code !== 0 && !sawResult) {
         this.fail(s, explain(cli.name, stderr) || `${cli.name} 异常退出（代码 ${code}）`)
       }
-      this.closeRunningTools(s)
-      this.finishTurn(s)
-      this.setRunning(s, false)
-      this.scheduleRelease(s)
+      this.endTurn(s)
     })
+  }
+
+  /** 开始一轮：挂上撤销栈、记下用户消息、通知界面在跑 */
+  private beginTurn(s: Live, text: string, selection?: string[]) {
+    this.keep(s)
+    s.turn = newId('turn')
+    s.changes.begin(s.turn)
+    if (s.items.length === 0) s.row.title = text.replace(/\s+/g, ' ').slice(0, 40)
+    this.push(s, { id: newId('it'), type: 'user', text, selection, at: Date.now() })
+    this.setRunning(s, true)
+  }
+
+  /** 一轮结束（不论成败）：收尾工具、改动集、状态和租约 */
+  private endTurn(s: Live) {
+    s.busy = false
+    this.closeRunningTools(s)
+    this.finishTurn(s)
+    this.setRunning(s, false)
+    this.scheduleRelease(s)
+  }
+
+  /** 内置智能体：在服务端进程里跑模型 ↔ 工具循环，工具与 CLI 走的 MCP 是同一份 */
+  private startBuiltin(s: Live, text: string, selection?: string[]) {
+    const model = builtinModels(this.deps.host)[0]
+    if (!model)
+      throw new AgentError(
+        'not_installed',
+        '没有支持工具调用的对话模型：请先在设置里启用百炼等平台',
+      )
+    const history = historyOf(s.items)
+    this.beginTurn(s, text, selection)
+    const abort = new AbortController()
+    s.abort = abort
+    s.stopped = false
+    const turn = s.turn
+    const id = (key: string) => `${turn}_${key}`
+    const timer = setTimeout(() => abort.abort(), TURN_TIMEOUT_MS)
+    runBuiltinTurn({
+      host: this.deps.host,
+      model: model.ref,
+      ownerId: s.row.owner_id,
+      system: INSTRUCTIONS,
+      history,
+      prompt: this.prompt(s, text, selection),
+      tools: s.tools,
+      signal: abort.signal,
+      onText: (key, t, done) => {
+        const item: AgentItem = { id: id(key), type: 'text', text: t, at: Date.now() }
+        // 流式增量只推给界面，一步结束再存库
+        if (done) this.push(s, item)
+        else this.pushLive(s, item)
+      },
+      onToolStart: (call) =>
+        this.push(s, {
+          id: id(call.id),
+          type: 'tool',
+          name: call.name,
+          detail: brief(call.arguments),
+          status: 'running',
+          at: Date.now(),
+        }),
+      onToolEnd: (call, result: ToolResult) =>
+        this.finishTool(s, id(call.id), result.isError === true, toolText(result.content)),
+    })
+      .catch((err: unknown) => {
+        if (err instanceof ProviderError) this.fail(s, err.message)
+        else {
+          console.warn('[agent] 内置智能体出错：', err)
+          this.fail(s, `内置智能体出错：${(err as Error).message}`)
+        }
+      })
+      .finally(() => {
+        clearTimeout(timer)
+        s.abort = null
+        if (s.stopped) this.fail(s, '已停止')
+        this.endTurn(s)
+      })
   }
 
   stop(id: string) {
     const s = this.live.get(id)
+    if (s?.abort) {
+      s.stopped = true
+      s.abort.abort()
+      return
+    }
     if (!s?.child) return
     s.stopped = true
     s.child.kill('SIGTERM')
@@ -327,6 +417,7 @@ export class AgentSessions {
 
   close() {
     for (const s of this.live.values()) {
+      s.abort?.abort()
       if (s.child) {
         s.stopped = true
         s.child.kill('SIGTERM')
@@ -615,6 +706,14 @@ export class AgentSessions {
     this.emit(s, { type: 'item', item })
   }
 
+  /** 只推给界面、不存库（流式文字的中间状态） */
+  private pushLive(s: Live, item: AgentItem) {
+    const i = s.items.findIndex((x) => x.id === item.id)
+    if (i >= 0) s.items[i] = item
+    else s.items.push(item)
+    this.emit(s, { type: 'item', item })
+  }
+
   private setRunning(s: Live, running: boolean) {
     this.emit(s, { type: 'status', status: running ? 'running' : 'idle' })
   }
@@ -655,28 +754,29 @@ export class AgentSessions {
         at: Date.now(),
       }),
     )
+    const tools = agentTools(
+      {
+        canvasId: row.canvas_id,
+        ownerId: row.owner_id,
+        rooms,
+        runs,
+        host,
+        assets,
+        library,
+        origin: changes.origin,
+        onRun: (nodeId, runId) => changes.recordRun(nodeId, runId),
+        onGroup: (groupId) => changes.recordGroup(groupId),
+        ui: (action, ids) => {
+          if (!s.listeners.size) return false
+          this.emit(s, { type: 'ui', action, ids })
+          return true
+        },
+      },
+      { changes, approvals, mode: () => s.mode },
+    )
     const mcp = new McpServer(
       { name: 'plein', version: '0.1.0', instructions: '操作用户当前打开的 Plein 画布' },
-      agentTools(
-        {
-          canvasId: row.canvas_id,
-          ownerId: row.owner_id,
-          rooms,
-          runs,
-          host,
-          assets,
-          library,
-          origin: changes.origin,
-          onRun: (nodeId, runId) => changes.recordRun(nodeId, runId),
-          onGroup: (groupId) => changes.recordGroup(groupId),
-          ui: (action, ids) => {
-            if (!s.listeners.size) return false
-            this.emit(s, { type: 'ui', action, ids })
-            return true
-          },
-        },
-        { changes, approvals, mode: () => s.mode },
-      ),
+      tools,
     )
     let items: AgentItem[] = []
     try {
@@ -697,6 +797,8 @@ export class AgentSessions {
       busy: false,
       token,
       mcp,
+      tools,
+      abort: null,
       listeners: new Set(),
       stopped: false,
       turn: '',
@@ -750,6 +852,23 @@ export class AgentError extends Error {
 }
 
 /** 工具参数的一行摘要 */
+/** 之前几轮的对话给内置智能体：只留用户的话和回复的文字，最近的若干条 */
+function historyOf(items: AgentItem[]): ChatMessage[] {
+  const out: ChatMessage[] = []
+  for (const it of items) {
+    if (it.type === 'user') out.push({ role: 'user', content: it.text })
+    else if (it.type === 'text') {
+      const last = out.at(-1)
+      if (last?.role === 'assistant') last.content = `${last.content}\n\n${it.text}`
+      else out.push({ role: 'assistant', content: it.text })
+    }
+  }
+  // 从用户消息开始，最多 20 条
+  const tail = out.slice(-20)
+  while (tail.length && tail[0]!.role !== 'user') tail.shift()
+  return tail
+}
+
 function brief(input: unknown): string | undefined {
   if (!input || typeof input !== 'object') return undefined
   const o = input as Record<string, unknown>

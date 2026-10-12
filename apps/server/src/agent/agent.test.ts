@@ -1,5 +1,5 @@
 import { createElement, type PleinDoc, updateElement } from '@plein/doc'
-import type { Canvas } from '@plein/protocol'
+import type { AgentEvent, Canvas } from '@plein/protocol'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { startTestServer } from '../testing'
 import { Approvals } from './approvals'
@@ -422,5 +422,55 @@ describe('确认关卡与界面能力', () => {
     rooms.get(id).awareness.setLocalState(null)
     changes.end()
     changes.release()
+  })
+})
+
+describe('内置智能体', () => {
+  it('不装 CLI，用支持工具调用的对话模型跑完一轮：看画布、建节点、运行、回复，文字流式推送', async () => {
+    const { agents } = running.server
+    const status = await agents.status()
+    const builtin = status.agents.find((a) => a.id === 'builtin')
+    expect(builtin).toMatchObject({ available: true, model: 'Mock 智能体' })
+
+    const res = await fetch(`${running.url}/api/canvases`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    })
+    const id = ((await res.json()) as Canvas).id
+    const session = agents.create(id, 'local', 'builtin')
+    const events: AgentEvent[] = []
+    const idle = new Promise<void>((resolve) => {
+      agents.subscribe(session.id, (e) => {
+        events.push(e)
+        if (e.type === 'status' && e.status === 'idle') resolve()
+      })
+    })
+    await agents.send(session.id, 'local', '画一张雨夜天台')
+    await idle
+
+    const items = agents.get(session.id, 'local')!.items
+    const tools = items.flatMap((i) => (i.type === 'tool' ? [`${i.name}:${i.status}`] : []))
+    expect(tools).toEqual(['get_canvas:done', 'create_node:done', 'run_node:done', 'ui_focus:done'])
+    const reply = items.find((i) => i.type === 'text')
+    expect(reply?.type === 'text' && reply.text).toContain('【mock】好了')
+    const changes = items.find((i) => i.type === 'changes')
+    expect(changes).toMatchObject({ created: [expect.any(String)], runs: 1, undoable: true })
+    // 回复是一段段推过来的，最后一次是全文
+    const partial = events.filter(
+      (e) => e.type === 'item' && e.item.type === 'text' && e.item.id === reply?.id,
+    )
+    expect(partial.length).toBeGreaterThan(2)
+
+    // 第二轮带上前一轮的对话；新一轮没提画图，只看画布
+    const idle2 = new Promise<void>((resolve) => {
+      agents.subscribe(session.id, (e) => {
+        if (e.type === 'status' && e.status === 'idle') resolve()
+      })
+    })
+    await agents.send(session.id, 'local', '现在有哪些元素')
+    await idle2
+    const last = agents.get(session.id, 'local')!.items.at(-1)
+    expect(last?.type === 'text' && last.text).toContain('看过画布了')
   })
 })

@@ -142,7 +142,12 @@ export const createNode = defineCapability({
     const check = def.params.safeParse(params)
     if (!check.success) throw new CapabilityError(`参数不对：${z.prettifyError(check.error)}`)
     return ctx.withDoc((doc) => {
-      const elId = placeNew(doc, a, { ...nodeElementOf(desc, params), name: a.name ?? def.title })
+      const elId = placeNew(
+        doc,
+        a,
+        { ...nodeElementOf(desc, params), name: a.name ?? def.title },
+        ctx.viewport?.(),
+      )
       const edges = (a.inputs ?? []).map((i) => link(doc, i.from, i.from_port, elId, i.to_port))
       return { id: elId, element: summarize(doc, need(doc, elId), false), edges }
     })
@@ -177,13 +182,18 @@ export const createElement = defineCapability({
       size = a.w && a.h ? { w: a.w, h: a.h } : mediaSize(a.kind, meta.width, meta.height)
     }
     return ctx.withDoc((doc) => {
-      const elId = placeNew(doc, a, {
-        kind: a.kind,
-        name: a.name,
-        text: a.kind === 'markdown' ? (a.text ?? '') : undefined,
-        assetId: a.asset_id,
-        ...size,
-      })
+      const elId = placeNew(
+        doc,
+        a,
+        {
+          kind: a.kind,
+          name: a.name,
+          text: a.kind === 'markdown' ? (a.text ?? '') : undefined,
+          assetId: a.asset_id,
+          ...size,
+        },
+        ctx.viewport?.(),
+      )
       return { id: elId, element: summarize(doc, need(doc, elId), false) }
     })
   },

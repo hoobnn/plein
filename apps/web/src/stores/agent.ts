@@ -65,11 +65,13 @@ function savedApproval(): AgentApprovalMode {
   }
 }
 
+/** 记住的智能体；没记过时用内置的（不用装 CLI），状态读回来后不可用再换 */
 function savedAgent(): AgentKind {
   try {
-    return localStorage.getItem(AGENT_KEY) === 'codex' ? 'codex' : 'claude'
+    const v = localStorage.getItem(AGENT_KEY)
+    return v === 'claude' || v === 'codex' ? v : 'builtin'
   } catch {
-    return 'claude'
+    return 'builtin'
   }
 }
 
@@ -168,7 +170,7 @@ export const useAgent = create<AgentStore>((set, get) => {
       try {
         const status = await api.agentStatus(refresh)
         set({ status })
-        // 记住的 CLI 没装时换成装了的那个
+        // 记住的智能体不可用时换成可用的那个（内置排在最前）
         const ok = status.agents.filter((a) => a.available)
         if (ok.length && !ok.some((a) => a.id === get().agent)) set({ agent: ok[0]!.id })
       } catch (err) {

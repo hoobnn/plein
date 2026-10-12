@@ -30,6 +30,7 @@ export function placeNew(
   doc: PleinDoc,
   a: Placement,
   input: Omit<NewElement, 'x' | 'y'> & { w: number; h: number },
+  view?: { x: number; y: number; w: number; h: number } | null,
 ): string {
   if (a.near) need(doc, a.near)
   const world =
@@ -37,7 +38,9 @@ export function placeNew(
       ? { x: a.x, y: a.y }
       : a.near
         ? spotRightOf(doc, a.near, input.w, input.h)
-        : spotAfterContent(doc, input.w, input.h)
+        : view && !doc.children(null).length
+          ? { x: view.x + (view.w - input.w) / 2, y: view.y + (view.h - input.h) / 2 }
+          : spotAfterContent(doc, input.w, input.h)
   const parentId = a.parent_id ?? (a.near ? (doc.get(a.near)?.parentId ?? null) : null)
   if (parentId && doc.get(parentId)?.kind !== 'frame')
     throw new CapabilityError(`${parentId} 不是 Frame`)

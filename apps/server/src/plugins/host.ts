@@ -153,6 +153,8 @@ export class PluginHost {
       ownerId: string
       signal?: AbortSignal
       onProgress?: (p: number) => void
+      /** 对话流式输出的文本增量 */
+      onDelta?: (text: string) => void
       /** 调用记录与这次调用的键，见 CallJournal */
       journal?: { store: CallJournal; key: string }
     },
@@ -187,6 +189,8 @@ export class PluginHost {
     const ctx = this.providerContext(parsed.provider, opts.ownerId, signal, {
       requireEnabled: true,
     })
+    const { onDelta } = opts
+    if (onDelta) ctx.stream = (d) => onDelta(d.text)
     const { def } = entry
     const limiter = this.limiter(parsed.provider, def.limits)
     // 远端已受理、且没有明确失败：此后的可重试错误（轮询或下载结果时网络抖动）

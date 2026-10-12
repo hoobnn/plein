@@ -6,11 +6,13 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import {
   type AssetRef,
   type CapabilityInput,
+  type ChatMessage,
+  type ChatToolCall,
   type ProviderContext,
   ProviderError,
   type ProviderOutput,
 } from '@plein/plugin-sdk'
-import { jsonSchema, type ModelMessage, Output, streamText } from 'ai'
+import { jsonSchema, type ModelMessage, Output, streamText, tool } from 'ai'
 import { z } from 'zod'
 
 // AI SDK 默认把“平台不支持某功能”的提示打到控制台；json_object 降级是有意的，不刷屏
@@ -28,7 +30,7 @@ const RESERVED = new Set([
 ])
 
 export interface ChatOptions {
-  ctx: Pick<ProviderContext, 'signal'>
+  ctx: Pick<ProviderContext, 'signal' | 'stream'>
   /** 平台名，用在报错里（如“百炼”） */
   label: string
   /** 到 /chat/completions 之前的那一段，如 https://dashscope.aliyuncs.com/compatible-mode/v1 */
@@ -52,22 +54,42 @@ export interface ChatOptions {
 }
 
 async function toMessages(opts: ChatOptions): Promise<ModelMessage[]> {
+  const text = (content: ChatMessage['content']) =>
+    typeof content === 'string'
+      ? content
+      : content.map((p) => (p.type === 'text' ? p.text : '')).join('')
   const messages = await Promise.all(
     opts.input.messages.map(async (m): Promise<ModelMessage> => {
-      if (m.role === 'system')
+      if (m.role === 'system') return { role: 'system', content: text(m.content) }
+      if (m.role === 'tool')
         return {
-          role: 'system',
-          content:
-            typeof m.content === 'string'
-              ? m.content
-              : m.content.map((p) => (p.type === 'text' ? p.text : '')).join(''),
+          role: 'tool',
+          content: [
+            {
+              type: 'tool-result',
+              toolCallId: m.toolCallId ?? '',
+              toolName: m.toolName ?? '',
+              output: { type: 'text', value: text(m.content) },
+            },
+          ],
         }
-      if (typeof m.content === 'string') return { role: m.role, content: m.content }
-      if (m.role === 'assistant')
+      if (m.role === 'assistant') {
+        const said = text(m.content)
+        if (!m.toolCalls?.length) return { role: 'assistant', content: said }
         return {
           role: 'assistant',
-          content: m.content.flatMap((p) => (p.type === 'text' ? [p] : [])),
+          content: [
+            ...(said ? [{ type: 'text' as const, text: said }] : []),
+            ...m.toolCalls.map((c) => ({
+              type: 'tool-call' as const,
+              toolCallId: c.id,
+              toolName: c.name,
+              input: c.arguments,
+            })),
+          ],
         }
+      }
+      if (typeof m.content === 'string') return { role: 'user', content: m.content }
       return {
         role: 'user',
         content: await Promise.all(
@@ -167,6 +189,21 @@ export async function chatCompletion(opts: ChatOptions) {
     ...(input.jsonSchema
       ? { output: Output.object({ schema: outputSchema(input.jsonSchema), name: 'plein_output' }) }
       : {}),
+    // 工具只声明不执行：模型要调用时把调用交回宿主，由智能体循环执行后再发下一轮
+    ...(input.tools?.length
+      ? {
+          tools: Object.fromEntries(
+            input.tools.map((t) => [
+              t.name,
+              tool({ description: t.description, inputSchema: jsonSchema(t.parameters) }),
+            ]),
+          ),
+          toolChoice: input.toolChoice ?? 'auto',
+        }
+      : {}),
+    onChunk: ({ chunk }) => {
+      if (chunk.type === 'text-delta' && chunk.text) opts.ctx.stream?.({ text: chunk.text })
+    },
     onError: ({ error }) => {
       failure ??= error
     },
@@ -193,20 +230,29 @@ export async function chatCompletion(opts: ChatOptions) {
   let text: string
   let finishReason: string
   let usage: { inputTokens?: number; outputTokens?: number }
+  let calls: ChatToolCall[]
   try {
     text = await result.text
     finishReason = await result.finishReason
     usage = await result.usage
+    calls = (await result.toolCalls).map((c) => ({
+      id: c.toolCallId,
+      name: c.toolName,
+      arguments: (c.input ?? {}) as Record<string, unknown>,
+    }))
   } catch (e) {
     throw fail(e)
   }
   if (failure) throw fail(failure)
   if (finishReason === 'content-filter')
     throw new ProviderError('content_policy', `${label}拒绝生成此内容`)
-  if (!text) throw new ProviderError('unknown', `${label}响应缺少对话内容`)
+  if (!text && !calls.length) throw new ProviderError('unknown', `${label}响应缺少对话内容`)
   if (input.jsonSchema && finishReason === 'length')
     throw new ProviderError('unknown', '结构化输出被 token 上限截断')
-  let outputs: ProviderOutput[] = [{ type: 'text', text }]
+  let outputs: ProviderOutput[] = [
+    ...(text ? [{ type: 'text' as const, text }] : []),
+    ...(calls.length ? [{ type: 'tool_calls' as const, calls }] : []),
+  ]
   if (input.jsonSchema) {
     try {
       outputs = [{ type: 'json', value: await result.output }]

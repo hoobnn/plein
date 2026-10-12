@@ -72,11 +72,50 @@ function mockStoryboard(text: string) {
   }
 }
 
+/**
+ * 脚本化的智能体对话：每轮先看画布；用户提到图片 / 画就新建一个生成图片节点并运行；最后用一句话收尾。
+ * 不联网、确定性，内置智能体的测试和演示不花钱也能跑完整一轮。
+ */
+function mockAgentStep(input: CapabilityInput<'text.chat'>): ProviderOutput[] {
+  const last = input.messages.findLastIndex((m) => m.role === 'user')
+  const ask = lastUserText(input)
+  const after = input.messages.slice(last + 1)
+  const results = after.filter((m) => m.role === 'tool')
+  const call = (name: string, args: Record<string, unknown>): ProviderOutput[] => [
+    { type: 'tool_calls', calls: [{ id: `call_${after.length}_${name}`, name, arguments: args }] },
+  ]
+  const text = (m: (typeof results)[number] | undefined) =>
+    typeof m?.content === 'string' ? m.content : ''
+  if (results.length === 0) return call('get_canvas', {})
+  const made = results.find((m) => m.toolName === 'create_node')
+  if (/图|画/.test(ask) && !made)
+    return call('create_node', {
+      type: 'plein/image',
+      name: '小满画的图',
+      params: { prompt: ask },
+    })
+  const madeId = made && (JSON.parse(text(made) || '{}') as { id?: string }).id
+  if (madeId && !results.some((m) => m.toolName === 'run_node'))
+    return call('run_node', { id: madeId, wait_seconds: 10 })
+  // 做完把用户的镜头带到结果上
+  if (madeId && !results.some((m) => m.toolName === 'ui_focus'))
+    return call('ui_focus', { ids: [madeId] })
+  return [
+    {
+      type: 'text',
+      text: made
+        ? '【mock】好了，新建了一个生成图片节点并跑出了结果。'
+        : `【mock】看过画布了：${ask}`,
+    },
+  ]
+}
+
 /** 按能力生成假结果：不联网、确定性，供开发和测试跑通整条链路 */
 function fakeOutputs(req: ProviderRequest): ProviderOutput[] {
   switch (req.capability as Capability) {
     case 'text.chat': {
       const input = req.input as CapabilityInput<'text.chat'>
+      if (req.model === 'agent' && input.tools?.length) return mockAgentStep(input)
       const text = lastUserText(input)
       if (input.jsonSchema && 'shots' in ((input.jsonSchema.properties as object) ?? {}))
         return [{ type: 'json', value: mockStoryboard(text) }]
@@ -159,6 +198,7 @@ export const mockProvider = defineProvider({
   ],
   models: [
     { id: 'chat', title: 'Mock 对话', capabilities: ['text.chat'] },
+    { id: 'agent', title: 'Mock 智能体', capabilities: ['text.chat'], features: ['tools'] },
     {
       id: 'image',
       title: 'Mock 图片',
@@ -190,7 +230,14 @@ export const mockProvider = defineProvider({
   async submit(req, ctx) {
     const fail = ctx.settings.failWith
     if (fail !== 'none') throw new ProviderError(fail, `模拟错误：${fail}`)
-    if (ctx.settings.latencyMs === 0) return { state: 'succeeded', outputs: fakeOutputs(req) }
+    if (ctx.settings.latencyMs === 0) {
+      const outputs = fakeOutputs(req)
+      // 流式：文本分几段回调，界面能看到逐字出现
+      for (const o of outputs)
+        if (o.type === 'text' && ctx.stream)
+          for (const piece of o.text.match(/[\s\S]{1,6}/g) ?? []) ctx.stream({ text: piece })
+      return { state: 'succeeded', outputs }
+    }
     const remoteId = `mock-${++seq}`
     pending.set(remoteId, { readyAt: Date.now() + ctx.settings.latencyMs, req })
     return {

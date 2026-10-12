@@ -1,4 +1,4 @@
-import type { AgentApprovalMode, AgentItem } from '@plein/protocol'
+import type { AgentApprovalMode, AgentCli, AgentItem } from '@plein/protocol'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { renderMarkdown } from '../canvas/markdown'
 import { useRoute } from '../router'
@@ -83,6 +83,14 @@ export function AgentDock() {
     if (ready) void enter(canvasId)
   }, [ready, canvasId, enter])
 
+  // 面板浮在画布右侧：告诉相机右边被挡住多少，小满带你看结果时不会落在面板下面
+  const engine = useCanvas((s) => s.engine)
+  useEffect(() => {
+    if (!engine) return
+    engine.camera.setInsets({ right: open && window.innerWidth >= 640 ? 424 : 0 })
+    return () => engine.camera.setInsets({ right: 0 })
+  }, [engine, open])
+
   // Esc 关闭面板（输入框里的 Esc 也算）
   useEffect(() => {
     if (!open) return
@@ -119,7 +127,14 @@ function AgentPanel({ canvasId }: { canvasId: string | null }) {
   const running = session?.status === 'running'
   const available = status?.agents.filter((a) => a.available) ?? []
   const current = session?.agent ?? agent
-  const cliName = status?.agents.find((a) => a.id === current)?.name ?? 'Claude Code'
+  const label = (a: AgentCli) => (a.model ? `${a.name} · ${a.model}` : a.name)
+  const currentAgent = status?.agents.find((a) => a.id === current)
+  const cliName = currentAgent ? label(currentAgent) : '小满'
+  const intro =
+    current === 'builtin'
+      ? `我是小满，正在用${currentAgent?.model ? ` ${currentAgent.model} ` : '内置模型'}帮你操作这块画布。说说想做什么：`
+      : `我是小满，会用你电脑上的 ${cliName} 来操作这块画布。说说想做什么：`
+  const worker = current === 'builtin' ? '小满' : cliName
   const exit = useExit()
 
   return (
@@ -134,10 +149,10 @@ function AgentPanel({ canvasId }: { canvasId: string | null }) {
           <Select
             aria-label="使用的智能体"
             value={current}
-            options={available.map((a) => ({ value: a.id, label: a.name }))}
+            options={available.map((a) => ({ value: a.id, label: label(a) }))}
             onChange={(v) => {
               setAgent(v as typeof agent)
-              // 当前对话用的是另一家 CLI：切换后从新对话开始
+              // 当前对话用的是另一个智能体：切换后从新对话开始
               if (session && session.agent !== v) useAgent.getState().reset()
             }}
             className="h-7 text-xs"
@@ -177,7 +192,8 @@ function AgentPanel({ canvasId }: { canvasId: string | null }) {
         <Notice>{status.reason}</Notice>
       ) : available.length === 0 ? (
         <Notice>
-          <p>没有在这台电脑上找到 Claude Code 或 Codex。安装并登录其中一个后再试：</p>
+          <p>在设置里启用支持工具调用的对话模型（如百炼的千问），就能直接用内置智能体。</p>
+          <p className="mt-2">也可以安装并登录 Claude Code 或 Codex：</p>
           <pre className="mt-2 rounded-md bg-surface-2 px-3 py-2 text-left text-xs text-ink">
             {'npm i -g @anthropic-ai/claude-code\nnpm i -g @openai/codex'}
           </pre>
@@ -193,7 +209,12 @@ function AgentPanel({ canvasId }: { canvasId: string | null }) {
         <Notice>打开一块画布，我就能帮你搭工作流、生成素材，或者修改不满意的片段。</Notice>
       ) : (
         <>
-          <Transcript items={session?.items ?? []} running={running} cliName={cliName} />
+          <Transcript
+            items={session?.items ?? []}
+            running={running}
+            intro={intro}
+            worker={worker}
+          />
           {error && <p className="px-4 pb-2 text-xs text-danger">{error}</p>}
           <Composer running={running} />
         </>
@@ -278,11 +299,15 @@ function SessionMenu() {
 function Transcript({
   items,
   running,
-  cliName,
+  intro,
+  worker,
 }: {
   items: AgentItem[]
   running: boolean
-  cliName: string
+  /** 空对话时的开场白 */
+  intro: string
+  /** 「…正在处理」里的名字 */
+  worker: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -297,9 +322,7 @@ function Transcript({
   if (items.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-        <p className="text-sm text-ink-muted">
-          我是小满，会用你电脑上的 {cliName} 来操作这块画布。说说想做什么：
-        </p>
+        <p className="text-sm text-ink-muted">{intro}</p>
         <div className="flex w-full flex-col gap-1.5">
           {SUGGESTIONS.map((s) => (
             <button
@@ -333,7 +356,7 @@ function Transcript({
       {running && (
         <div className="flex items-center gap-2 py-1 text-xs text-ink-subtle">
           <span className="ui-spinner size-3" />
-          {cliName} 正在处理…
+          {worker} 正在处理…
         </div>
       )}
     </div>

@@ -123,6 +123,7 @@ export function serverContext(env: ToolEnv): ServerContext {
       prompts: () => [...host.registry.prompts.values()].map((p) => p.def),
     },
     assetMeta: (assetId) => env.assets.get(env.ownerId, assetId) ?? undefined,
+    viewport: () => viewOf(env.rooms, env.canvasId)?.viewport,
   }
 }
 

@@ -55,5 +55,6 @@ export function localContext(engine: Engine, catalog: Catalog | null): Capabilit
       prompts: () => catalog?.prompts ?? [],
     },
     assetMeta: () => undefined,
+    viewport: () => engine.camera.viewRect,
   }
 }

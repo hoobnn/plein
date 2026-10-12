@@ -72,6 +72,72 @@ describe('百炼 API 契约', () => {
     })
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer sk-test')
   })
+  it('工具调用：工具随请求发送，模型的调用作为 tool_calls 返回；文字边生成边回调', async () => {
+    const call = {
+      index: 0,
+      id: 'call_1',
+      type: 'function',
+      function: { name: 'create_node', arguments: '{"type":"plein/image"}' },
+    }
+    const frames = [
+      { choices: [{ delta: { content: '好的，' } }] },
+      { choices: [{ delta: { content: '我来建' } }] },
+      { choices: [{ delta: { tool_calls: [call] }, finish_reason: 'tool_calls' }] },
+    ]
+    const { ctx, body } = setup([
+      sse(`${frames.map((f) => `data: ${JSON.stringify(f)}\n\n`).join('')}data: [DONE]\n\n`),
+    ])
+    const deltas: string[] = []
+    ctx.stream = (d) => deltas.push(d.text)
+    const result = await bailianProvider.submit(
+      {
+        capability: 'text.chat',
+        model: 'qwen3.7-plus',
+        input: {
+          messages: [
+            { role: 'user', content: '画一张图' },
+            {
+              role: 'assistant',
+              content: '',
+              toolCalls: [{ id: 'call_0', name: 'get_canvas', arguments: {} }],
+            },
+            {
+              role: 'tool',
+              toolCallId: 'call_0',
+              toolName: 'get_canvas',
+              content: '{"elements":[]}',
+            },
+          ],
+          tools: [
+            {
+              name: 'create_node',
+              description: '新建节点',
+              parameters: { type: 'object', properties: { type: { type: 'string' } } },
+            },
+          ],
+        },
+      },
+      ctx,
+    )
+    expect(result).toMatchObject({
+      state: 'succeeded',
+      outputs: [
+        { type: 'text', text: '好的，我来建' },
+        {
+          type: 'tool_calls',
+          calls: [{ id: 'call_1', name: 'create_node', arguments: { type: 'plein/image' } }],
+        },
+      ],
+    })
+    expect(deltas).toEqual(['好的，', '我来建'])
+    const sent = body() as { tools: Array<{ function: { name: string } }>; messages: unknown[] }
+    expect(sent.tools[0]!.function.name).toBe('create_node')
+    expect(sent.messages).toMatchObject([
+      { role: 'user' },
+      { role: 'assistant', tool_calls: [{ id: 'call_0', function: { name: 'get_canvas' } }] },
+      { role: 'tool', tool_call_id: 'call_0' },
+    ])
+  })
   it('结构化输出：要求 JSON、Schema 写进系统提示，结果按 Schema 校验', async () => {
     const answer = (content: string) =>
       sse(

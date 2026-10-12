@@ -493,10 +493,12 @@ export interface RewritePromptResult {
 // ── 智能体 ────────────────────────────────────────────
 
 /**
- * 本机智能体：服务端调用用户电脑上已安装、已登录的 Claude Code / Codex CLI，
- * 智能体通过 Plein 的 MCP 工具读写画布。只在本机免登录模式（含桌面端）可用。
+ * 智能体：
+ * - builtin 内置：用已启用平台里支持工具调用的对话模型（如千问），不用装 CLI；
+ * - claude / codex：服务端调用用户电脑上已安装、已登录的 CLI，通过 Plein 的 MCP 工具读写画布，
+ *   只在本机免登录模式（含桌面端）可用。
  */
-export const AgentKind = z.enum(['claude', 'codex'])
+export const AgentKind = z.enum(['builtin', 'claude', 'codex'])
 export type AgentKind = z.infer<typeof AgentKind>
 
 /**
@@ -509,9 +511,11 @@ export type AgentApprovalMode = z.infer<typeof AgentApprovalMode>
 export interface AgentCli {
   id: AgentKind
   name: string
-  /** 在本机找到可执行文件 */
+  /** 能用：CLI 在本机找到了可执行文件；内置的有支持工具调用的对话模型 */
   available: boolean
   version?: string
+  /** 内置智能体用的模型（给人看） */
+  model?: string
 }
 
 export interface AgentStatus {

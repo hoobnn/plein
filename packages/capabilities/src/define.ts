@@ -82,6 +82,8 @@ export interface CapabilityContext {
   withDoc<T>(fn: (doc: PleinDoc) => T): T
   nodes: NodeCatalog
   assetMeta(id: string): AssetMeta | undefined
+  /** 用户此刻看着的画布区域（世界坐标）；不知道时为空。空画布上新建的东西放在视野中央 */
+  viewport?(): { x: number; y: number; w: number; h: number } | null | undefined
 }
 
 export interface CapabilityDefinition<

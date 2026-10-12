@@ -270,6 +270,7 @@ export const bailianProvider = defineProvider({
       id,
       title: id,
       capabilities: ['text.chat' as const],
+      features: ['tools' as const],
     })),
     ...['qwen-image-3.0-pro', 'qwen-image-3.0'].map((id) => ({
       id,

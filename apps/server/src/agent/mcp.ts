@@ -151,20 +151,25 @@ export class McpServer {
   private async call(params: Record<string, unknown>): Promise<ToolResult> {
     const tool = this.tools.get(String(params.name))
     if (!tool) throw new RpcError(-32602, `Unknown tool: ${String(params.name)}`)
-    const parsed = tool.input.safeParse(params.arguments ?? {})
-    if (!parsed.success) {
-      return {
-        content: [{ type: 'text', text: `参数不对：${z.prettifyError(parsed.error)}` }],
-        isError: true,
-      }
+    return callTool(tool, params.arguments ?? {})
+  }
+}
+
+/** 执行一次工具调用：参数不对、可预期的错误都变成给模型看的错误结果，不抛出 */
+export async function callTool(tool: McpTool, args: unknown): Promise<ToolResult> {
+  const parsed = tool.input.safeParse(args)
+  if (!parsed.success) {
+    return {
+      content: [{ type: 'text', text: `参数不对：${z.prettifyError(parsed.error)}` }],
+      isError: true,
     }
-    try {
-      const out = await tool.run(parsed.data)
-      return typeof out === 'string' ? { content: [{ type: 'text', text: out }] } : out
-    } catch (err) {
-      if (!(err instanceof ToolError)) console.warn(`[agent] 工具 ${tool.name} 出错：`, err)
-      return { content: [{ type: 'text', text: (err as Error).message }], isError: true }
-    }
+  }
+  try {
+    const out = await tool.run(parsed.data)
+    return typeof out === 'string' ? { content: [{ type: 'text', text: out }] } : out
+  } catch (err) {
+    if (!(err instanceof ToolError)) console.warn(`[agent] 工具 ${tool.name} 出错：`, err)
+    return { content: [{ type: 'text', text: (err as Error).message }], isError: true }
   }
 }
 
@@ -177,7 +182,8 @@ class RpcError extends Error {
   }
 }
 
-function inputSchema(schema: z.ZodObject): Record<string, unknown> {
+/** 工具参数的 JSON Schema（MCP 和内置智能体共用） */
+export function inputSchema(schema: z.ZodObject): Record<string, unknown> {
   const { $schema: _, ...rest } = z.toJSONSchema(schema, {
     io: 'input',
     unrepresentable: 'any',
