@@ -6,6 +6,7 @@ import { currentResult, type Rect } from '@plein/doc'
 import { yCollab } from 'y-codemirror.next'
 import * as Y from 'yjs'
 import { renderMarkdown } from './markdown'
+import { createPlayer } from './player'
 
 interface Preview {
   node: HTMLDivElement
@@ -231,22 +232,6 @@ export class CanvasOverlays {
   }
 
   private openPlayer(id: string, kind: 'video' | 'audio', assetId: string): Active {
-    const node = document.createElement('div')
-    node.className = `plein-player plein-player-${kind}`
-    const media = document.createElement(kind)
-    media.src = this.opts.originalUrl(assetId)
-    media.controls = true
-    media.autoplay = true
-    media.preload = 'metadata'
-    node.appendChild(media)
-    return {
-      id,
-      node,
-      dispose() {
-        media.pause()
-        media.removeAttribute('src')
-        media.load()
-      },
-    }
+    return { id, ...createPlayer(kind, this.opts.originalUrl(assetId)) }
   }
 }
