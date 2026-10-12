@@ -33,26 +33,20 @@ export function Minimap({ engine }: { engine: Engine }) {
     canvas.width = W * dpr
     canvas.height = H * dpr
     const ctx = canvas.getContext('2d')!
+    // 元素层画在离屏画布上：只平移时映射不变，直接贴图，再叠上视口框
+    const layer = document.createElement('canvas')
+    layer.width = canvas.width
+    layer.height = canvas.height
+    const lctx = layer.getContext('2d')!
+    let layerKey = ''
+    let t = tokens()
+    let bounds = engine.contentBounds()
     let frame = 0
 
-    const draw = () => {
-      frame = 0
-      const { scene, camera } = engine
-      const view = camera.viewRect
-      const content = engine.contentBounds()
-      // 取内容与视口的并集，留出边距，等比放进小地图
-      const x0 = Math.min(view.x, content?.x ?? view.x)
-      const y0 = Math.min(view.y, content?.y ?? view.y)
-      const x1 = Math.max(view.x + view.w, content ? content.x + content.w : view.x + view.w)
-      const y1 = Math.max(view.y + view.h, content ? content.y + content.h : view.y + view.h)
-      const k = Math.min((W - PAD * 2) / (x1 - x0), (H - PAD * 2) / (y1 - y0))
-      const ox = PAD + (W - PAD * 2 - (x1 - x0) * k) / 2 - x0 * k
-      const oy = PAD + (H - PAD * 2 - (y1 - y0) * k) / 2 - y0 * k
-      map.current = { x: ox, y: oy, k }
-
-      const t = tokens()
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      ctx.clearRect(0, 0, W, H)
+    const drawLayer = (ox: number, oy: number, k: number) => {
+      const { scene } = engine
+      lctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      lctx.clearRect(0, 0, W, H)
       for (const id of scene.children(null)) {
         const el = scene.get(id)
         const r = scene.rect(id)
@@ -62,25 +56,50 @@ export function Minimap({ engine }: { engine: Engine }) {
         const rw = Math.max(r.w * k, 1.5)
         const rh = Math.max(r.h * k, 1.5)
         if (el.kind === 'frame') {
-          ctx.strokeStyle = el.color ?? t.frame
-          ctx.lineWidth = 1
-          ctx.strokeRect(rx + 0.5, ry + 0.5, rw - 1, rh - 1)
+          lctx.strokeStyle = el.color ?? t.frame
+          lctx.lineWidth = 1
+          lctx.strokeRect(rx + 0.5, ry + 0.5, rw - 1, rh - 1)
+          lctx.globalAlpha = 0.55
+          lctx.fillStyle = t.node
           for (const cid of scene.children(id)) {
             const c = scene.rect(cid)
             if (!c) continue
-            ctx.globalAlpha = 0.55
-            ctx.fillStyle = t.node
-            ctx.fillRect(ox + c.x * k, oy + c.y * k, Math.max(c.w * k, 1), Math.max(c.h * k, 1))
-            ctx.globalAlpha = 1
+            lctx.fillRect(ox + c.x * k, oy + c.y * k, Math.max(c.w * k, 1), Math.max(c.h * k, 1))
           }
+          lctx.globalAlpha = 1
         } else {
-          ctx.globalAlpha = 0.55
-          ctx.fillStyle = t.node
-          ctx.fillRect(rx, ry, rw, rh)
-          ctx.globalAlpha = 1
+          lctx.globalAlpha = 0.55
+          lctx.fillStyle = t.node
+          lctx.fillRect(rx, ry, rw, rh)
+          lctx.globalAlpha = 1
         }
       }
+    }
+
+    const draw = () => {
+      frame = 0
+      const view = engine.camera.viewRect
+      const content = bounds
+      // 取内容与视口的并集，留出边距，等比放进小地图
+      const x0 = Math.min(view.x, content?.x ?? view.x)
+      const y0 = Math.min(view.y, content?.y ?? view.y)
+      const x1 = Math.max(view.x + view.w, content ? content.x + content.w : view.x + view.w)
+      const y1 = Math.max(view.y + view.h, content ? content.y + content.h : view.y + view.h)
+      const k = Math.min((W - PAD * 2) / (x1 - x0), (H - PAD * 2) / (y1 - y0))
+      const ox = PAD + (W - PAD * 2 - (x1 - x0) * k) / 2 - x0 * k
+      const oy = PAD + (H - PAD * 2 - (y1 - y0) * k) / 2 - y0 * k
+      map.current = { x: ox, y: oy, k }
+      const key = `${ox},${oy},${k}`
+      if (key !== layerKey) {
+        layerKey = key
+        drawLayer(ox, oy, k)
+      }
+
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(layer, 0, 0)
       // 视口框
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.fillStyle = t.viewFill
       ctx.strokeStyle = t.view
       ctx.lineWidth = 1.5
@@ -92,10 +111,21 @@ export function Minimap({ engine }: { engine: Engine }) {
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(draw)
     }
+    /** 元素或配色变了：元素层作废 */
+    const invalidate = () => {
+      layerKey = ''
+      schedule()
+    }
     draw()
     const offCamera = engine.camera.onChange(schedule)
-    const offDoc = engine.doc.subscribe(schedule)
-    const theme = new MutationObserver(schedule)
+    const offDoc = engine.doc.subscribe(() => {
+      bounds = engine.contentBounds()
+      invalidate()
+    })
+    const theme = new MutationObserver(() => {
+      t = tokens()
+      invalidate()
+    })
     theme.observe(document.documentElement, { attributeFilter: ['data-theme'] })
     return () => {
       offCamera()

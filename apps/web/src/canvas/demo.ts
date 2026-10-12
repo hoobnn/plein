@@ -30,7 +30,10 @@ export function demoAssetUrls(): Map<string, string> {
     grad.addColorStop(1, b!)
     g.fillStyle = grad
     g.fillRect(0, 0, 480, 360)
-    urls.set(`demo:${i}`, c.toDataURL('image/png'))
+    // 转成 blob URL：data URL 很长，纹理加载时的路径解析会反复跑正则
+    const [, b64] = c.toDataURL('image/png').split(',')
+    const bytes = Uint8Array.from(atob(b64!), (ch) => ch.charCodeAt(0))
+    urls.set(`demo:${i}`, URL.createObjectURL(new Blob([bytes], { type: 'image/png' })))
   })
   return urls
 }

@@ -8,6 +8,7 @@ import { Icon } from '../ui/icons'
 import { InlineTitle } from '../ui/InlineTitle'
 import { Popover } from '../ui/Popover'
 import { Presence } from '../ui/Presence'
+import { forgetLocalCache } from '../canvas/localCache'
 
 /** 读过的项目，按 id */
 const projects = new Map<string, Project>()
@@ -103,6 +104,7 @@ export function ProjectSwitcher({
     if (!ok) return
     try {
       await api.deleteCanvas(canvas.id)
+      forgetLocalCache(canvas.id)
     } catch (err) {
       return fail(err)
     }

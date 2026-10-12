@@ -2,7 +2,7 @@ import { type Engine, union } from '@plein/canvas-core'
 import { templateData } from '../canvas/groups'
 import { assetOf, downloadAll } from '../canvas/grid'
 import { mediaIn } from '../canvas/library'
-import { useEngineVersion } from '../canvas/hooks'
+import { useEngineVersion, useFollow } from '../canvas/hooks'
 import { LibraryAdd } from './LibraryAdd'
 import { type MediaTarget, MediaBatchTools, mediaAsset } from './ResultBar'
 import { useCanvas } from '../stores/canvas'
@@ -27,13 +27,16 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
   useEngineVersion(engine)
   const notify = useCanvas((s) => s.notify)
   const ids = engine.selection.values()
-  if (ids.length < 2 || engine.doc.readOnly) return null
-  const box = union(ids.map((id) => engine.scene.rect(id)).filter((r) => !!r))
-  if (!box) return null
-
-  const tl = engine.worldToClient(box.x, box.y)
-  const tr = engine.worldToClient(box.x + box.w, box.y)
-  const top = Math.max(TOP_RESERVED, tl.y - TITLE_H - BAR_H - 8)
+  const place = () => {
+    const box = union(ids.map((id) => engine.scene.rect(id)).filter((r) => !!r))
+    if (!box) return null
+    const tl = engine.worldToClient(box.x, box.y)
+    const tr = engine.worldToClient(box.x + box.w, box.y)
+    return { top: Math.max(TOP_RESERVED, tl.y - TITLE_H - BAR_H - 8), left: (tl.x + tr.x) / 2 }
+  }
+  const ref = useFollow<HTMLDivElement>(engine, place)
+  const style = place()
+  if (ids.length < 2 || engine.doc.readOnly || !style) return null
 
   // 选中的 Frame 里的素材也算
   const seen = new Set<string>()
@@ -82,8 +85,9 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
   return (
     <div
       role="toolbar"
+      ref={ref}
       aria-label="多选操作"
-      style={{ top, left: (tl.x + tr.x) / 2 }}
+      style={style}
       className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 -translate-x-1/2"
     >
       <span className="ui-bar-text">已选 {ids.length}</span>

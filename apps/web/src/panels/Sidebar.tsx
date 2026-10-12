@@ -2,7 +2,7 @@ import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, updateElement } from '@plein/doc'
 import { LIBRARY_KINDS } from '@plein/nodes'
 import type { LibraryItem } from '@plein/protocol'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { mediaOf } from '../canvas/grid'
 import { useDocVersion, useSelectionVersion } from '../canvas/hooks'
@@ -193,12 +193,14 @@ function Layers({ engine }: { engine: Engine }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [renaming, setRenaming] = useState<string | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  const prevRows = useRef(new Map<string, Row>())
   const q = query.trim().toLowerCase()
   const filtering = !!q || type !== 'all'
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: version 变化即文档变化
   const { rows, frames } = useMemo(() => {
     const frames: string[] = []
+    const next = new Map<string, Row>()
     const visit = (parentId: string | null, depth: number): Row[] => {
       const out: Row[] = []
       // 绘制顺序从下到上，列表里最上层的排在前面
@@ -212,13 +214,27 @@ function Layers({ engine }: { engine: Engine }) {
         if (el.kind === 'frame') frames.push(id)
         if (!self && !kids.length) continue
         const parent = engine.scene.children(id).length > 0
-        out.push({ el, depth, title, type: t, parent })
+        // 没变的行沿用上次的对象，memo 过的行组件就不会重渲染
+        const prev = prevRows.current.get(id)
+        const row =
+          prev &&
+          prev.el === el &&
+          prev.depth === depth &&
+          prev.title === title &&
+          prev.type === t &&
+          prev.parent === parent
+            ? prev
+            : { el, depth, title, type: t, parent }
+        next.set(id, row)
+        out.push(row)
         // 筛选时一律展开，免得命中的元素藏在折叠的分组里
         if (filtering || !collapsed.has(id)) out.push(...kids)
       }
       return out
     }
-    return { rows: visit(null, 0), frames }
+    const rows = visit(null, 0)
+    prevRows.current = next
+    return { rows, frames }
   }, [engine, catalog, version, q, type, collapsed, filtering])
 
   // 在画布上选中时：展开所在分组，并把它滚进可视范围
@@ -262,6 +278,25 @@ function Layers({ engine }: { engine: Engine }) {
     setRenaming(null)
     if (name !== null) updateElement(engine.doc, id, { name })
   }
+  // 行组件 memo 过：回调保持同一引用，选中变化时只重渲染选中状态变了的行
+  const latest = useRef<LayerActions>(null!)
+  latest.current = {
+    pick,
+    toggle: toggleFolder,
+    locate,
+    startRename: (id) => !engine.doc.readOnly && setRenaming(id),
+    rename,
+  }
+  const actions = useMemo<LayerActions>(
+    () => ({
+      pick: (id, e) => latest.current.pick(id, e),
+      toggle: (id) => latest.current.toggle(id),
+      locate: (id) => latest.current.locate(id),
+      startRename: (id) => latest.current.startRename(id),
+      rename: (id, name) => latest.current.rename(id, name),
+    }),
+    [],
+  )
 
   return (
     <>
@@ -341,11 +376,7 @@ function Layers({ engine }: { engine: Engine }) {
             selected={engine.selection.has(r.el.id)}
             open={filtering || !collapsed.has(r.el.id)}
             renaming={renaming === r.el.id}
-            onPick={(e) => pick(r.el.id, e)}
-            onToggle={() => toggleFolder(r.el.id)}
-            onLocate={() => locate(r.el.id)}
-            onRename={() => !engine.doc.readOnly && setRenaming(r.el.id)}
-            onRenamed={(name) => rename(r.el.id, name)}
+            actions={actions}
           />
         ))}
         {!rows.length && (
@@ -360,27 +391,32 @@ function Layers({ engine }: { engine: Engine }) {
   )
 }
 
-function LayerRow({
+interface LayerActions {
+  pick(id: string, e: React.MouseEvent | React.KeyboardEvent): void
+  toggle(id: string): void
+  locate(id: string): void
+  startRename(id: string): void
+  rename(id: string, name: string | null): void
+}
+
+const LayerRow = memo(function LayerRow({
   row: { el, depth, title, type, parent },
   selected,
   open,
   renaming,
-  onPick,
-  onToggle,
-  onLocate,
-  onRename,
-  onRenamed,
+  actions,
 }: {
   row: Row
   selected: boolean
   open: boolean
   renaming: boolean
-  onPick(e: React.MouseEvent | React.KeyboardEvent): void
-  onToggle(): void
-  onLocate(): void
-  onRename(): void
-  onRenamed(name: string | null): void
+  actions: LayerActions
 }) {
+  const onPick = (e: React.MouseEvent | React.KeyboardEvent) => actions.pick(el.id, e)
+  const onToggle = () => actions.toggle(el.id)
+  const onLocate = () => actions.locate(el.id)
+  const onRename = () => actions.startRename(el.id)
+  const onRenamed = (name: string | null) => actions.rename(el.id, name)
   const running = el.run?.status === 'running' || el.run?.status === 'queued'
   const failed = el.run?.status === 'failed'
   return (
@@ -454,7 +490,7 @@ function LayerRow({
       )}
     </div>
   )
-}
+})
 
 function Thumb({ el, type }: { el: CanvasElement; type: OutlineType }) {
   const m = mediaOf(el)

@@ -10,7 +10,7 @@ import {
 } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useEffect, useRef, useState } from 'react'
-import { useEngineVersion } from '../../canvas/hooks'
+import { useEngineVersion, useFollow } from '../../canvas/hooks'
 import { adaptToModel, constrainFields, selectedModel } from '../../canvas/modelParams'
 import {
   applyAspect,
@@ -65,9 +65,27 @@ function GeneratorHost({ engine }: { engine: Engine }) {
   const ids = engine.selection.values()
   const el = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
   const node = el?.kind === 'node' ? findNode(catalog, el.nodeType) : undefined
-  const rect = el && engine.scene.rect(el.id)
-  if (!el || !rect || !node || el.locked || engine.doc.readOnly) return null
+  const place = () => (el ? placeBeside(engine, el.id) : null)
+  const ref = useFollow<HTMLElement>(engine, place)
+  const style = place()
+  if (!el || !style || !node || el.locked || engine.doc.readOnly) return null
+  return (
+    <Panel
+      key={el.id}
+      engine={engine}
+      el={el}
+      node={node}
+      catalog={catalog}
+      style={style}
+      panelRef={ref}
+    />
+  )
+}
 
+/** 默认放在节点下方；下方实在放不下才放上方，让开标题行 */
+function placeBeside(engine: Engine, id: string) {
+  const rect = engine.scene.rect(id)
+  if (!rect) return null
   const tl = engine.worldToClient(rect.x, rect.y)
   const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
   const below = window.innerHeight - BOTTOM_RESERVED - br.y
@@ -76,21 +94,17 @@ function GeneratorHost({ engine }: { engine: Engine }) {
     Math.max(GAP, (tl.x + br.x) / 2 - PANEL_W / 2),
     window.innerWidth - PANEL_W - GAP,
   )
-  // 默认放在节点下方；下方实在放不下才放上方（让开标题行）
-  const style: React.CSSProperties =
-    below >= PREFER_BELOW || below >= above
-      ? {
-          left,
-          top: Math.max(TOP_RESERVED, br.y + GAP),
-          maxHeight: Math.max(MIN_H, below - GAP * 2),
-        }
-      : {
-          left,
-          bottom: window.innerHeight - tl.y + TITLE_H + GAP,
-          maxHeight: Math.max(MIN_H, above - GAP),
-        }
-
-  return <Panel key={el.id} engine={engine} el={el} node={node} catalog={catalog} style={style} />
+  return below >= PREFER_BELOW || below >= above
+    ? {
+        left,
+        top: Math.max(TOP_RESERVED, br.y + GAP),
+        maxHeight: Math.max(MIN_H, below - GAP * 2),
+      }
+    : {
+        left,
+        bottom: window.innerHeight - tl.y + TITLE_H + GAP,
+        maxHeight: Math.max(MIN_H, above - GAP),
+      }
 }
 
 function Panel({
@@ -99,12 +113,14 @@ function Panel({
   node,
   catalog,
   style,
+  panelRef,
 }: {
   engine: Engine
   el: CanvasElement
   node: NodeInfo
   catalog: Catalog | null
   style: React.CSSProperties
+  panelRef: React.Ref<HTMLElement>
 }) {
   const [more, setMore] = useState(false)
   const canvasId = useCanvas((s) => s.canvasId)
@@ -195,6 +211,7 @@ function Panel({
 
   return (
     <section
+      ref={panelRef}
       aria-label={`${node.title} 生成器`}
       data-testid="generator"
       style={{ ...style, width: PANEL_W }}

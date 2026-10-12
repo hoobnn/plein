@@ -29,6 +29,7 @@ import { useSidebar } from '../stores/sidebar'
 import { useTemplates } from '../stores/templates'
 import { Presence } from '../ui/Presence'
 import { Toast } from '../ui/Toast'
+import { useShallow } from 'zustand/react/shallow'
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
   local: '本地演示',
@@ -44,7 +45,10 @@ export function Editor({
   source: CanvasSource
   onOpenSettings(): void
 }) {
-  const { sync, importing, notice, mode } = useCanvas()
+  // 只取用到的字段：整个 store 会随相机缩放、选中等频繁更新，不能让整页跟着重渲染
+  const { sync, importing, notice, mode } = useCanvas(
+    useShallow((s) => ({ sync: s.sync, importing: s.importing, notice: s.notice, mode: s.mode })),
+  )
   const [canvas, setCanvas] = useState<Canvas | null>(null)
   const canvasId = source.kind === 'remote' ? source.canvasId : null
 

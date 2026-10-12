@@ -93,7 +93,8 @@ export class NodeCards {
     private actions: NodeCardActions,
   ) {
     this.disposers.push(
-      engine.onViewChange(() => this.sync()),
+      // 只是平移出入视口：已有的卡片不动，只增删
+      engine.onViewChange(({ content }) => this.sync(content)),
       engine.selection.onChange(() => this.sync()),
       useCatalog.subscribe(() => {
         for (const c of this.cards.values()) c.sig = ''
@@ -104,7 +105,7 @@ export class NodeCards {
     this.sync()
   }
 
-  sync() {
+  sync(content = true) {
     const { engine } = this
     const want = new Set<string>()
     if (engine.highDetail) {
@@ -123,6 +124,7 @@ export class NodeCards {
       const rect = engine.scene.rect(id)
       if (!rect) continue
       let card = this.cards.get(id)
+      if (card && !content) continue
       if (!card) {
         card = this.create(id)
         this.cards.set(id, card)

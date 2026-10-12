@@ -266,6 +266,9 @@
 .plein-layer {
   display: flex;
   height: 44px;
+  /* 上千行的图层列表：滚出视野的行跳过布局和绘制 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
   align-items: center;
   gap: 8px;
   padding-right: 6px;

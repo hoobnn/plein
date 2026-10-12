@@ -2,7 +2,7 @@ import type { Engine } from '@plein/canvas-core'
 import { updateElement } from '@plein/doc'
 import { useState } from 'react'
 import { groupNodes, templateData } from '../canvas/groups'
-import { useEngineVersion } from '../canvas/hooks'
+import { useEngineVersion, useFollow } from '../canvas/hooks'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useGroupRuns } from '../stores/groupRuns'
@@ -47,11 +47,18 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
   const [palette, setPalette] = useState<HTMLElement | null>(null)
   const ids = engine.selection.values()
   const el = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
-  const rect = el?.kind === 'frame' ? engine.scene.rect(el.id) : undefined
-  if (!el || !rect || engine.doc.readOnly) return null
+  const place = () => {
+    const rect = el?.kind === 'frame' ? engine.scene.rect(el.id) : undefined
+    if (!rect) return null
+    const tr = engine.worldToClient(rect.x + rect.w, rect.y)
+    // 贴在 Frame 右上角外侧，离 Frame 8；Frame 顶到页头时不压住页头
+    return { right: window.innerWidth - tr.x, top: Math.max(TOP_RESERVED, tr.y - 48) }
+  }
+  const ref = useFollow<HTMLDivElement>(engine, place)
+  const style = place()
+  if (!el || !style || engine.doc.readOnly) return null
 
   const count = groupNodes(engine, el.id, catalog, video).length
-  const tr = engine.worldToClient(rect.x + rect.w, rect.y)
   const name = el.name ?? 'Frame'
   const busy = el.id in runs
   const group = runs[el.id] ?? null
@@ -76,9 +83,9 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
   return (
     <div
       role="toolbar"
+      ref={ref}
       aria-label="Frame 操作"
-      // 贴在 Frame 右上角外侧，离 Frame 8；Frame 顶到页头时不压住页头
-      style={{ right: window.innerWidth - tr.x, top: Math.max(TOP_RESERVED, tr.y - 48) }}
+      style={style}
       className="ui-bar ui-bar-sm pointer-events-auto fixed z-20"
     >
       <button

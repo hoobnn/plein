@@ -1,7 +1,8 @@
-import { Engine, isEditableTarget } from '@plein/canvas-core'
-import { createDoc, type ElementKind, type PleinDoc } from '@plein/doc'
+import { Engine, isEditableTarget, type PreviewSize } from '@plein/canvas-core'
+import { createDoc, type ElementKind, type PleinDoc, SCHEMA_VERSION } from '@plein/doc'
 import { SEQUENCE_TYPE, STORYBOARD_TYPE } from '@plein/nodes'
 import { useEffect, useRef } from 'react'
+import { IndexeddbPersistence } from 'y-indexeddb'
 import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
 import { assetUrls, syncUrl } from '../api/client'
@@ -12,6 +13,7 @@ import { useCatalog } from '../stores/catalog'
 import { canvasTheme, useTheme } from '../stores/theme'
 import { demoAssetUrls, seedDemo } from './demo'
 import { importFiles, importText } from './import'
+import { localCacheName } from './localCache'
 import { abortGroupRuns } from '../stores/groupRuns'
 import { watchStale } from '../stores/stale'
 import { NodeCards } from './nodeCards'
@@ -22,17 +24,28 @@ import { watchVideoAspect } from './videoAspect'
 
 export type CanvasSource = { kind: 'remote'; canvasId: string } | { kind: 'demo'; count: number }
 
-/** 画布上的预览图：图片缩略图、视频封面、音频波形 */
-function previewUrl(assetId: string, kind: ElementKind) {
+/** 画布上的预览图：图片缩略图（缩得很小时用 256 档）、视频封面、音频波形 */
+function previewUrl(assetId: string, kind: ElementKind, size: PreviewSize) {
   if (kind === 'video') return assetUrls.variant(assetId, 'poster')
   if (kind === 'audio') return assetUrls.variant(assetId, 'waveform')
-  return assetUrls.variant(assetId, 'thumb-1024')
+  return assetUrls.variant(assetId, size === 'small' ? 'thumb-256' : 'thumb-1024')
 }
 
 /** 视频的宽高比，取自入库时探测的尺寸（已按旋转元数据换算） */
 async function videoRatio(assetId: string) {
   const { width, height } = await loadAssetMeta(assetId)
   return width && height ? width / height : null
+}
+
+/** 打开本地缓存；隐私模式等 IndexedDB 不可用时返回 null，照常等服务端同步 */
+function openLocalCache(canvasId: string, ydoc: Y.Doc) {
+  try {
+    const local = new IndexeddbPersistence(localCacheName(canvasId), ydoc)
+    ;(local as unknown as { _db?: Promise<unknown> })._db?.catch(() => {})
+    return local
+  } catch {
+    return null
+  }
 }
 
 /** 画布被删除时服务端以 4404 关闭同步连接 */
@@ -55,7 +68,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
 
     const start = (
       doc: PleinDoc,
-      assetUrl: (id: string, kind: ElementKind) => string | undefined,
+      assetUrl: (id: string, kind: ElementKind, size: PreviewSize) => string | undefined,
       awareness?: unknown,
     ) => {
       const engine = new Engine({
@@ -136,6 +149,8 @@ export function CanvasView({ source }: { source: CanvasSource }) {
       setSync('connecting')
       setCanvasId(canvasId)
       const ydoc = new Y.Doc()
+      // 本地缓存：上次打开过的画布不等服务端，先用缓存显示，同步完再补齐差异
+      const local = openLocalCache(canvasId, ydoc)
       const provider = new WebsocketProvider(syncUrl(), canvasId, ydoc)
       provider.awareness.setLocalStateField('user', { name: '我', color: '#4177d0' })
       provider.on('status', ({ status }: { status: string }) => {
@@ -150,20 +165,36 @@ export function CanvasView({ source }: { source: CanvasSource }) {
       provider.on('connection-close', (event: CloseEvent | null) => {
         if (event?.code === CLOSE_DELETED) {
           provider.disconnect()
+          void local?.clearData()
           notify('画布不存在或已被删除')
           navigate({ name: 'home' })
         }
       })
       let doc: PleinDoc | null = null
-      // 首次同步完成后再建文档模型：迁移要基于服务端的完整状态
-      const onSync = (synced: boolean) => {
-        if (!synced || doc || disposed) return
+      const open = () => {
         doc = createDoc(ydoc)
         start(doc, previewUrl, provider.awareness)
+      }
+      // 缓存已是当前版本：直接打开，迁移是空操作；旧版本缓存要等服务端完整状态再迁移
+      local?.whenSynced.then(() => {
+        if (doc || disposed || provider.synced) return
+        if (ydoc.getMap('meta').get('schemaVersion') === SCHEMA_VERSION) open()
+      })
+      const onSync = (synced: boolean) => {
+        if (!synced || disposed) return
+        if (!doc) return open()
+        // 从缓存打开的：服务端状态到齐后再检查一次版本（可能已被更新的客户端升级）
+        const wasReadOnly = doc.readOnly
+        doc.migrate()
+        if (doc.readOnly && !wasReadOnly) {
+          notify('这个画布已被新版本升级，当前只能查看，请刷新或更新应用')
+          useCanvas.getState().engine?.refreshState()
+        }
       }
       provider.on('sync', onSync)
       cleanups.push(() => {
         provider.destroy()
+        void local?.destroy()
         doc?.destroy()
         ydoc.destroy()
       })

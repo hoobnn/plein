@@ -12,7 +12,7 @@ import type {
 import { useEffect, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { downloadAsset, mediaOf, splitGrid } from '../canvas/grid'
-import { useEngineVersion } from '../canvas/hooks'
+import { useEngineVersion, useFollow } from '../canvas/hooks'
 import {
   applyDerivation,
   clampRange,
@@ -73,19 +73,27 @@ function ResultBarHost({ engine }: { engine: Engine }) {
   const media = el && (el.kind !== 'node' || el.locked) ? mediaOf(el) : null
   // 加工工具要覆盖音频，所以另算一份只认资产类型的
   const asset = el && (el.kind !== 'node' || el.locked) ? mediaAsset(el) : null
-  const rect = el && engine.scene.rect(el.id)
-  if (!el || (!media && !asset) || !rect || engine.doc.readOnly) return null
+  const place = () => {
+    const rect = el && engine.scene.rect(el.id)
+    if (!rect) return null
+    const bl = engine.worldToClient(rect.x, rect.y + rect.h)
+    const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
+    return {
+      top: Math.min(bl.y + 12, window.innerHeight - BOTTOM_RESERVED - BAR_H),
+      left: (bl.x + br.x) / 2,
+    }
+  }
+  const ref = useFollow<HTMLDivElement>(engine, place)
+  const style = place()
+  if (!el || (!media && !asset) || !style || engine.doc.readOnly) return null
 
-  const bl = engine.worldToClient(rect.x, rect.y + rect.h)
-  const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
-  const top = Math.min(bl.y + 12, window.innerHeight - BOTTOM_RESERVED - BAR_H)
-  const center = (bl.x + br.x) / 2
   return (
     <div
       key={el.id}
+      ref={ref}
       role="toolbar"
       aria-label="结果操作"
-      style={{ top, left: center }}
+      style={style}
       className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 w-max -translate-x-1/2"
     >
       {media && (

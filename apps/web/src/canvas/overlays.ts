@@ -85,7 +85,7 @@ export class CanvasOverlays {
     this.measurer.setAttribute('aria-hidden', 'true')
     root.appendChild(this.measurer)
     this.disposers.push(
-      engine.onViewChange(() => this.sync()),
+      engine.onViewChange(({ content }) => this.sync(content)),
       engine.onActivate((id) => this.activate(id)),
       engine.selection.onChange(() => {
         if (this.active && !engine.selection.has(this.active.id)) this.deactivate()
@@ -101,7 +101,8 @@ export class CanvasOverlays {
     return this.active?.id ?? null
   }
 
-  sync() {
+  /** content 为 false：只有元素进出视口，已显示的正文不用重新定位和量高 */
+  sync(content = true) {
     const { engine } = this
     const show = engine.highDetail
     const want = new Set<string>()
@@ -121,6 +122,7 @@ export class CanvasOverlays {
       const rect = engine.scene.rect(id)
       if (!rect) continue
       let p = this.previews.get(id)
+      if (p && !content) continue
       if (!p) {
         const node = document.createElement('div')
         node.className = 'plein-md plein-md-preview'
