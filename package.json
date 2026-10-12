@@ -21,7 +21,9 @@
     "audit:deps": "pnpm audit --audit-level=high",
     "format": "biome check --write . && prettier --write \"**/*.{md,yaml,yml,html}\"",
     "test": "vitest run",
-    "prepare": "husky"
+    "prepare": "husky",
+    "smoke": "pnpm --filter @plein/server exec tsx scripts/smoke.ts",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm smoke"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
