@@ -14,15 +14,16 @@ plein 是一块“可执行的画布”：同一个 Yjs 文档里既放图片、
 
 ## 现状
 
-相机和输入已脱离 React，渲染层订阅 `elements` 增量更新，端口与连线已可用；工作流、后端和资产系统还是空白。
+2026-10-12 更新。0.1.0 的功能大体就绪，下表是各模块现状与仍待补的部分；0.1.0 的进度以 [roadmap-0.1.0.md](roadmap-0.1.0.md) 为准。
 
-| 模块                   | 已有                                                                                          | 主要缺口                                                                      |
-| ---------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `apps/web`             | Vite + React 19 + Tailwind v4 + zustand，`CanvasView` 挂载引擎并写入演示元素                  | 工具栏、选择/变换、节点表单、持久化、账号                                     |
-| `packages/canvas-core` | PixiJS v8（WebGPU 优先）、相机、触控板/惯性输入、点阵、占位矩形、端口与贝塞尔连线、DOM 覆盖层 | 按类型渲染、视口裁剪、LOD、命中测试、纹理管理                                 |
-| `packages/doc`         | `elements`、`edges` 两个 `Y.Map`，带类型的 `Port`，`UndoManager`、`connectPorts`              | 元素整对象存入（并发会互相覆盖）、无 schema 版本、无 z 序与父子关系、无持久化 |
-| `apps/server`          | 尚未创建（0.1.0 为 Node + Hono 单进程，见 roadmap-0.1.0.md）                                  | 全部待建                                                                      |
-| 工程                   | pnpm workspace、TS 7、commitlint + husky、CI（Node 26）                                       | 测试、lint、性能基准                                                          |
+| 模块                   | 已有                                                                                                          | 主要缺口                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `apps/web`             | React 外壳、工具栏与面板、节点表单、分镜表、序列编辑、资产库、任务面板、本机智能体，经 `api/client.ts` 调后端 | 本地持久化（IndexedDB）：现在打开画布要等服务端同步完成才显示内容                      |
+| `packages/canvas-core` | PixiJS v8、相机与惯性输入、rbush 场景索引、视口裁剪与 LOD、选择/框选/吸附/缩放、端口与连线、DOM 覆盖层        | 纹理管理与性能基准（第三步性能审查）                                                   |
+| `packages/doc`         | 每元素一个嵌套 `Y.Map`、命令式 API、z 序与父子关系、schema 迁移、按帧合并的变更订阅、`portsCompatible`        | —                                                                                      |
+| `packages/flow`        | 纯 TS 的 DAG 调度（`runDag`）、依赖图                                                                         | 浏览器侧编译与用量预估                                                                 |
+| `apps/server`          | Node + Hono 单进程：Yjs 房间（带租约）、SQLite 任务队列与重试、插件宿主、资产与衍生物、导出、本机智能体       | Yjs 更新逐条同步写库，大文档导入时会占住事件循环，需要合并写入；整组运行状态靠前端轮询 |
+| 工程                   | Biome、Vitest、Playwright（mock）、commitlint + husky、CI（Node 26）                                          | e2e 进 CI、性能基准                                                                    |
 
 ## 架构原则
 
@@ -138,7 +139,7 @@ canvas-core 演进为场景引擎：从 doc 得到世界状态，维护场景图
 | `ai-worker`    | Node + `packages/flow` | 取任务、调用 Provider、产出写对象存储          |
 | `media-worker` | libvips + ffmpeg       | 缩略图金字塔、ThumbHash、封面、HLS             |
 
-早期合并为一个 Node 进程（`apps/server`）部署，代码从第一天分开。依赖只有 Postgres（元数据、Yjs 更新、`SKIP LOCKED` 任务队列）和 S3 兼容对象存储（MinIO / R2），适合 AGPL 自托管。
+早期合并为一个 Node 进程（`apps/server`）部署，代码从第一天分开。0.1.0 面向本地自部署，用 SQLite 与本地文件系统代替下面的 Postgres 和对象存储。长期依赖只有 Postgres（元数据、Yjs 更新、`SKIP LOCKED` 任务队列）和 S3 兼容对象存储（MinIO / R2），适合 AGPL 自托管。
 
 资产：
 
