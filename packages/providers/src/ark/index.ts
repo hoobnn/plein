@@ -15,7 +15,6 @@ import {
 import { z } from 'zod'
 import {
   asJson,
-  chatMessages,
   imageDataUrl,
   type Json,
   type Method,
@@ -23,6 +22,7 @@ import {
   send,
   withRetry,
 } from '../shared/http'
+import { chatCompletion, requireSseDone } from '../shared/llm'
 import { sizeByArea, tierEdge } from '../size'
 
 const BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
@@ -75,16 +75,19 @@ const seedanceOptions = (v25: boolean) =>
 const models: ModelSpec[] = [
   {
     id: 'doubao-seed-2-1-pro-260628',
+    features: ['tools'],
     title: 'Doubao Seed 2.1 Pro',
     capabilities: ['text.chat'],
   },
   {
     id: 'doubao-seed-2-1-lite-260915',
+    features: ['tools'],
     title: 'Doubao Seed 2.1 Lite',
     capabilities: ['text.chat'],
   },
   {
     id: 'doubao-seed-2-1-turbo-260628',
+    features: ['tools'],
     title: 'Doubao Seed 2.1 Turbo',
     capabilities: ['text.chat'],
   },
@@ -299,48 +302,46 @@ function remoteFile(url: unknown, kind: 'image' | 'video', mime: string): Provid
 
 async function chat(model: string, input: CapabilityInput<'text.chat'>, ctx: Context) {
   if (!input.messages.length) invalid('对话至少需要一条消息')
-  const messages = await chatMessages(input.messages, (ref) => imageData(ref, ctx))
-  const body: Json = {
-    ...extraParams(input.extra, ['thinking', 'top_p', 'frequency_penalty', 'presence_penalty']),
-    model,
-    messages,
-    stream: false,
-  }
-  if (input.temperature !== undefined) body.temperature = input.temperature
-  if (input.maxTokens !== undefined) body.max_tokens = input.maxTokens
-  if (input.jsonSchema)
-    body.response_format = {
-      type: 'json_schema',
-      json_schema: { name: 'plein_output', schema: input.jsonSchema, strict: true },
-    }
-  const data = await request(ctx, '/chat/completions', body)
-  const choices = Array.isArray(data.choices) ? data.choices : []
-  const choice = asJson(choices[0])
-  const message = asJson(choice.message)
-  if (choice.finish_reason === 'content_filter' || message.refusal)
-    throw new ProviderError('content_policy', '火山方舟拒绝生成此内容')
-  if (typeof message.content !== 'string' || !message.content)
-    throw new ProviderError('unknown', '火山方舟响应缺少对话内容')
-  let outputs: ProviderOutput[] = [{ type: 'text', text: message.content }]
-  if (input.jsonSchema) {
-    if (choice.finish_reason === 'length')
-      throw new ProviderError('unknown', '结构化输出被 token 上限截断')
-    try {
-      outputs = [{ type: 'json', value: JSON.parse(message.content) }]
-    } catch {
-      throw new ProviderError('unknown', '火山方舟返回的结构化内容不是有效 JSON')
-    }
-  }
-  const usage = asJson(data.usage)
-  return {
-    state: 'succeeded' as const,
-    outputs,
-    usage: {
-      inputTokens: typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens : undefined,
-      outputTokens:
-        typeof usage.completion_tokens === 'number' ? usage.completion_tokens : undefined,
+  extraParams(input.extra, ['thinking', 'top_p', 'frequency_penalty', 'presence_penalty'])
+  const key = ctx.secret('ARK_API_KEY')
+  if (!key) throw new ProviderError('auth', '请先配置 ARK_API_KEY')
+  return chatCompletion({
+    ctx,
+    label: '火山方舟',
+    baseURL: BASE_URL,
+    // 鉴权、传输失败和 HTTP 错误码归类沿用 request() 的规则；流必须以 [DONE] 结束
+    fetch: async (url, init) => {
+      const res = await send(
+        ctx,
+        String(url),
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+          body: String(init?.body),
+        },
+        {
+          cancelled: '火山方舟请求已取消',
+          network: '火山方舟网络请求失败；对话结果可能未知，不会自动重新提交',
+        },
+      )
+      if (!res.ok) {
+        let data: unknown = {}
+        try {
+          data = await res.json()
+        } catch {}
+        throw withRetry(errorInfo(asJson(data).error, res.status, key), 'POST')
+      }
+      return requireSseDone(
+        res,
+        () => new ProviderError('unknown', '火山方舟回答不完整或未收到 [DONE]；请勿自动重新提交'),
+      )
     },
-  }
+    model,
+    input,
+    image: (ref) => imageData(ref, ctx),
+    structured: 'json_schema',
+    streamError: (error) => withRetry(errorInfo(error, 200, key), 'POST'),
+  })
 }
 
 async function image(model: string, input: CapabilityInput<'image.generate'>, ctx: Context) {

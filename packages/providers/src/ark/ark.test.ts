@@ -1,6 +1,6 @@
 import { describeProvider } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vitest'
-import { fakeContext } from '../testing'
+import { fakeContext, sse } from '../testing'
 import { arkProvider } from './index'
 
 const harness = (replies?: unknown[]) => fakeContext(arkProvider, replies)
@@ -9,6 +9,16 @@ const CHAT = 'doubao-seed-2-1-pro-260628'
 const IMAGE = 'doubao-seedream-5-0-pro-260628'
 const VIDEO = 'doubao-seedance-2-5-260628'
 const ref = { assetId: 'local-image', kind: 'image' as const }
+/** 对话的 SSE 回复：frames 依次是 chat.completion.chunk */
+const chatSse = (frames: unknown[], done = true) =>
+  sse(
+    `${frames.map((f) => `data: ${JSON.stringify(f)}\n\n`).join('')}${done ? 'data: [DONE]\n\n' : ''}`,
+  )
+const say = (content: string, usage?: unknown) =>
+  chatSse([
+    { choices: [{ index: 0, delta: { role: 'assistant', content } }] },
+    { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }], ...(usage ? { usage } : {}) },
+  ])
 
 describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
   it('classifies unactivated models as authorization failures rather than malformed inputs', async () => {
@@ -41,10 +51,7 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
 
   it('对话图片经资产权限读入后使用 data URL，传递 JSON Schema 并归一化用量', async () => {
     const { ctx, body } = harness([
-      {
-        choices: [{ message: { content: '{"answer":42}' }, finish_reason: 'stop' }],
-        usage: { prompt_tokens: 3, completion_tokens: 8 },
-      },
+      say('{"answer":42}', { prompt_tokens: 3, completion_tokens: 8 }),
     ])
     const schema = { type: 'object', properties: { answer: { type: 'integer' } } }
     const result = await arkProvider.submit(
@@ -70,7 +77,7 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     )
     expect(body()).toMatchObject({
       model: CHAT,
-      stream: false,
+      stream: true,
       temperature: 0.2,
       max_tokens: 100,
       messages: [
@@ -94,8 +101,76 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     })
   })
 
+  it('豆包对话模型声明工具能力：工具声明随请求发送，模型的工具调用原样交回', async () => {
+    expect(arkProvider.models.find((m) => m.id === CHAT)?.features).toContain('tools')
+    const { ctx, body } = harness([
+      chatSse([
+        {
+          choices: [
+            {
+              index: 0,
+              delta: {
+                role: 'assistant',
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call_1',
+                    type: 'function',
+                    function: { name: 'get_canvas', arguments: '{"depth":1}' },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        { choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] },
+      ]),
+    ])
+    const parameters = { type: 'object', properties: { depth: { type: 'integer' } } }
+    const result = await arkProvider.submit(
+      {
+        capability: 'text.chat',
+        model: CHAT,
+        input: {
+          messages: [{ role: 'user', content: '画布上有什么' }],
+          tools: [{ name: 'get_canvas', description: '读画布', parameters }],
+        },
+      },
+      ctx,
+    )
+    expect(body()).toMatchObject({
+      tools: [{ type: 'function', function: { name: 'get_canvas', parameters } }],
+      tool_choice: 'auto',
+    })
+    expect(result).toMatchObject({
+      state: 'succeeded',
+      outputs: [
+        {
+          type: 'tool_calls',
+          calls: [{ id: 'call_1', name: 'get_canvas', arguments: { depth: 1 } }],
+        },
+      ],
+    })
+  })
+
+  it('对话流没有以 [DONE] 结束视为中断', async () => {
+    const { ctx } = harness([
+      chatSse([{ choices: [{ index: 0, delta: { role: 'assistant', content: '半截' } }] }], false),
+    ])
+    await expect(
+      arkProvider.submit(
+        {
+          capability: 'text.chat',
+          model: CHAT,
+          input: { messages: [{ role: 'user', content: 'hello' }] },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'unknown' })
+  })
+
   it('自定义模型槽映射至设置中的 Endpoint ID', async () => {
-    const { ctx, body } = harness([{ choices: [{ message: { content: 'OK' } }] }])
+    const { ctx, body } = harness([say('OK')])
     ctx.settings.customChatModel = 'ep-custom-chat'
     await arkProvider.submit(
       {
@@ -410,7 +485,7 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
   it('拒绝缺少 ID / 畸形 JSON 输出以及权限外的产物 URL', async () => {
     const { ctx } = harness([
       {},
-      { choices: [{ message: { content: 'not JSON' } }] },
+      say('not JSON'),
       { status: 'succeeded', content: { video_url: 'http://127.0.0.1/private.mp4' } },
     ])
     await expect(
