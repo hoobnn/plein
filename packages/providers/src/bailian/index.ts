@@ -320,11 +320,19 @@ export const bailianProvider = defineProvider({
         watermark: z.boolean().optional().meta({ title: '水印' }),
       }),
     })),
-    ...['qwen3-tts-flash', 'qwen3-tts-instruct-flash'].map((id) => ({
-      id,
-      title: id,
+    {
+      id: 'qwen3-tts-flash',
+      title: 'qwen3-tts-flash',
       capabilities: ['audio.speech' as const],
-    })),
+      limits: { speed: false as const, instruction: false },
+    },
+    {
+      id: 'qwen3-tts-instruct-flash',
+      title: 'qwen3-tts-instruct-flash',
+      capabilities: ['audio.speech' as const],
+      // 语速用语气指令描述
+      limits: { speed: false as const },
+    },
   ],
   async test(ctx) {
     key(ctx)

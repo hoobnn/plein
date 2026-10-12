@@ -240,9 +240,24 @@ export const doubaoProvider = defineProvider({
     ['VOLC_SPEECH_APP_ID', 'VOLC_SPEECH_ACCESS_KEY'],
   ],
   models: [
-    { id: 'seed-tts-2.0', title: '豆包语音合成 2.0', capabilities: ['audio.speech'] },
-    { id: 'seed-icl-2.0', title: '豆包声音复刻 2.0（已有音色）', capabilities: ['audio.speech'] },
-    { id: 'seed-audio-1.0', title: 'Seed Audio 1.0', capabilities: ['audio.music', 'audio.sfx'] },
+    {
+      id: 'seed-tts-2.0',
+      title: '豆包语音合成 2.0',
+      capabilities: ['audio.speech'],
+      limits: { speed: { min: 0.5, max: 2 } },
+    },
+    {
+      id: 'seed-icl-2.0',
+      title: '豆包声音复刻 2.0（已有音色）',
+      capabilities: ['audio.speech'],
+      limits: { speed: { min: 0.5, max: 2 } },
+    },
+    {
+      id: 'seed-audio-1.0',
+      title: 'Seed Audio 1.0',
+      capabilities: ['audio.music', 'audio.sfx'],
+      limits: { duration: { min: 1, max: 120 } },
+    },
     { id: 'bigmodel', title: '录音文件识别极速版', capabilities: ['audio.transcribe'] },
   ],
   async test(ctx) {

@@ -40,6 +40,19 @@ export function selectedModel(
 
 const NONE: ModelLimits = {}
 
+/** 有范围约束的数值参数及其单位 */
+const RANGED = { duration: '秒', speed: '倍' } as const
+type Ranged = keyof typeof RANGED
+const isRanged = (k: string): k is Ranged => k in RANGED
+/** 模型可以声明为不支持（false）的参数 */
+const TOGGLED = ['seed', 'duration', 'speed', 'instruction'] as const
+const unsupported = (k: string, limits: ModelLimits) =>
+  (TOGGLED as readonly string[]).includes(k) && limits[k as (typeof TOGGLED)[number]] === false
+const rangeOf = (k: Ranged, limits: ModelLimits) => {
+  const r = limits[k]
+  return r ? r : undefined
+}
+
 /** 按模型约束改写字段：选项收窄、范围取交集，不支持的项去掉；专属参数单独渲染，这里也去掉 */
 export function constrainFields(
   node: NodeInfo,
@@ -55,14 +68,16 @@ export function constrainFields(
       const allowed = f.enum.filter((o) => limits.aspectRatios!.includes(String(o)))
       return [[k, { ...f, enum: allowed.length ? allowed : f.enum }]]
     }
-    if (k === 'duration' && limits.duration)
+    if (unsupported(k, limits)) return []
+    const range = isRanged(k) ? rangeOf(k, limits) : undefined
+    if (range)
       return [
         [
           k,
           {
             ...f,
-            minimum: Math.max(f.minimum ?? limits.duration.min, limits.duration.min),
-            maximum: Math.min(f.maximum ?? limits.duration.max, limits.duration.max),
+            minimum: Math.max(f.minimum ?? range.min, range.min),
+            maximum: Math.min(f.maximum ?? range.max, range.max),
           },
         ],
       ]
@@ -70,7 +85,6 @@ export function constrainFields(
       const maximum = Math.min(f.maximum ?? limits.count.max, limits.count.max)
       return maximum <= (f.minimum ?? 1) ? [] : [[k, { ...f, maximum }]]
     }
-    if (k === 'seed' && limits.seed === false) return []
     return [[k, f]]
   })
 }
@@ -103,12 +117,15 @@ export function adaptToModel(
           notes.push(`画幅已从 ${String(v)} 改为 ${String(next)}（${name} 不支持 ${String(v)}）`)
         }
       }
-    } else if (k === 'duration' && limits.duration && typeof v === 'number') {
-      const n = clamp(v, limits.duration.min, limits.duration.max)
+    } else if (isRanged(k) && typeof v === 'number' && rangeOf(k, limits)) {
+      const r = rangeOf(k, limits)!
+      const n = clamp(v, r.min, r.max)
       if (n !== v) {
         patch[k] = n
+        const unit = RANGED[k]
+        const label = f.title?.replace(/（.*）/, '') ?? k
         notes.push(
-          `时长已从 ${v} 秒改为 ${n} 秒（${name} 支持 ${limits.duration.min}–${limits.duration.max} 秒）`,
+          `${label}已从 ${v} ${unit}改为 ${n} ${unit}（${name} 支持 ${r.min}–${r.max} ${unit}）`,
         )
       }
     } else if (k === 'count' && limits.count && typeof v === 'number' && v > limits.count.max) {
@@ -134,8 +151,11 @@ export function modelProblem(
     if (!(k in patch)) continue
     const v = params[k] ?? f.default
     if (f.widget === 'resolution') return `${name} 不支持分辨率 ${String(v)}`
-    if (k === 'duration')
-      return `${name} 的时长须为 ${limits.duration!.min}–${limits.duration!.max} 秒`
+    if (isRanged(k)) {
+      const r = rangeOf(k, limits)!
+      const label = f.title?.replace(/（.*）/, '') ?? k
+      return `${name} 的${label}须为 ${r.min}–${r.max} ${RANGED[k]}`
+    }
     if (k === 'count') return `${name} 一次最多生成 ${limits.count!.max} 张`
     return `${name} 不支持${f.title ?? k} ${String(v)}`
   }

@@ -200,8 +200,31 @@ export const minimaxProvider = defineProvider({
       id,
       title: id,
       capabilities: ['audio.speech' as const],
+      limits: { speed: { min: 0.5, max: 2 }, instruction: false },
+      options: z.object({
+        emotion: z
+          .enum(['happy', 'sad', 'angry', 'fearful', 'disgusted', 'surprised', 'calm'])
+          .optional()
+          .meta({
+            title: '情绪',
+            labels: {
+              happy: '高兴',
+              sad: '悲伤',
+              angry: '愤怒',
+              fearful: '害怕',
+              disgusted: '厌恶',
+              surprised: '惊讶',
+              calm: '平静',
+            },
+          }),
+      }),
     })),
-    { id: 'music-3.0', title: 'Music 3.0', capabilities: ['audio.music'] },
+    {
+      id: 'music-3.0',
+      title: 'Music 3.0',
+      capabilities: ['audio.music'],
+      limits: { duration: false },
+    },
   ],
   limits: { concurrency: 2 },
   async test(ctx) {

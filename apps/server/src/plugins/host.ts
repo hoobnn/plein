@@ -172,10 +172,14 @@ export class PluginHost {
       throw new ProviderError('invalid_input', `模型 ${model.title} 不支持 ${capability}`)
     }
 
-    // 模型声明不支持种子时不传：节点上残留的种子不该让整次生成失败
-    if (model.limits?.seed === false && 'seed' in input) {
-      const { seed: _, ...rest } = input as { seed?: number }
-      input = rest as typeof input
+    // 模型声明不支持的参数不传：节点上残留的取值（表单已隐藏）不该让整次生成失败
+    const unsupported = (['seed', 'duration', 'speed', 'instruction'] as const).filter(
+      (k) => model.limits?.[k] === false,
+    )
+    if (unsupported.some((k) => k in input)) {
+      const rest = { ...input } as Record<string, unknown>
+      for (const k of unsupported) delete rest[k]
+      input = rest as unknown as typeof input
     }
 
     const timeout = AbortSignal.timeout(this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)

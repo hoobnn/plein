@@ -70,3 +70,38 @@ describe('按模型处理参数', () => {
     expect(modelProblem(node, { ...params, ...patch }, m, new Map())).toBeNull()
   })
 })
+
+describe('配音参数', () => {
+  const speech = {
+    type: 'plein/speech',
+    capability: 'audio.speech',
+    defaults: { model: '', speed: 1 },
+    paramsSchema: {
+      properties: {
+        model: { type: 'string', widget: 'model' },
+        speed: { type: 'number', minimum: 0.5, maximum: 2, title: '语速' },
+        instruction: { type: 'string', title: '语气指令' },
+      },
+    },
+  } as unknown as NodeInfo
+
+  it('不支持语速、语气指令的模型隐藏它们；语速超出范围时校正', () => {
+    const none = Object.fromEntries(
+      constrainFields(speech, fieldsOf(speech), { speed: false, instruction: false }),
+    )
+    expect(Object.keys(none)).toEqual(['model'])
+    const { patch, notes } = adaptToModel(
+      speech,
+      { speed: 3 },
+      {
+        ref: 'p:x',
+        id: 'x',
+        title: 'X',
+        capabilities: ['audio.speech'],
+        limits: { speed: { min: 0.5, max: 2 } },
+      },
+    )
+    expect(patch).toEqual({ speed: 2 })
+    expect(notes[0]).toBe('语速已从 3 倍改为 2 倍（X 支持 0.5–2 倍）')
+  })
+})

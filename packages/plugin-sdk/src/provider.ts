@@ -160,14 +160,18 @@ export interface ModelLimits {
   aspectRatios?: string[]
   /** 可选分辨率（平台自己的写法，如 `720p`、`2K`）；不声明时不显示分辨率，用平台默认 */
   resolutions?: string[]
-  /** 时长范围（秒，整数） */
-  duration?: { min: number; max: number }
+  /** 时长范围（秒，整数）；false 表示时长由模型决定，表单隐藏，宿主不传 */
+  duration?: { min: number; max: number } | false
   /** 一次最多生成几张 */
   count?: { max: number }
   /** false 表示不支持种子，表单隐藏，宿主也不会传给 Provider */
   seed?: boolean
   /** 参考图最多几张 */
   references?: { max: number }
+  /** 语速范围（倍速）；false 表示不支持，表单隐藏，宿主不传 */
+  speed?: { min: number; max: number } | false
+  /** false 表示不支持自然语言语气指令，表单隐藏，宿主不传 */
+  instruction?: boolean
 }
 
 export interface ModelSpec {

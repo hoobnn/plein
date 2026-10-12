@@ -132,6 +132,9 @@ const speech = defineExecutor(speechNode, async (ctx) => {
     text,
     voice: params.voice || undefined,
     instruction: params.instruction || undefined,
+    // 1 倍是平台默认，不传：有的平台（千问）不接受语速参数
+    speed: params.speed === 1 ? undefined : params.speed,
+    extra: modelOptions(params),
   })
   // 台词随语音一起往下游传，序列导出时用作字幕
   return { audio: res.assets.map((a) => ({ type: 'audio' as const, ...a, caption: text })) }

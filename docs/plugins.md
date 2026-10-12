@@ -95,7 +95,7 @@ export const serverPlugin = defineServerPlugin(plugin, {
 
 每个模型可以声明两样东西，节点表单据此生成，不用为每个平台写界面：
 
-- `limits`（`ModelLimits`）：对通用参数的约束，包括 `aspectRatios`、`resolutions`、`duration {min,max}`、`count {max}`、`seed`（`false` 表示不支持，宿主不会传）、`references {max}`。表单只显示支持的选项和范围；换模型时不合法的值自动校正并说明；提交前按它检查。
+- `limits`（`ModelLimits`）：对通用参数的约束，包括 `aspectRatios`、`resolutions`、`duration {min,max}`、`count {max}`、`seed`、`references {max}`、`speed {min,max}`、`instruction`。`seed`、`duration`、`speed`、`instruction` 可声明为 `false` 表示不支持：表单隐藏，宿主也不会传给 Provider。表单只显示支持的选项和范围；换模型时不合法的值自动校正并说明；提交前按它检查。
 - `options`（zod object）：专属参数，字段名就是 `extra` 的键。字段都写成可选、不给默认值，表单会多一个「默认」选项，用户没改的不传，平台用自己的默认值；枚举可用 `.meta({ labels: { 值: '显示名' } })`。目录接口把它转成 `optionsSchema` 下发。
 
 缓存键只算所选模型那份专属参数；分辨率留空、专属参数为空时不计入。

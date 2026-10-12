@@ -703,13 +703,15 @@ function jobInfo(j: JobRow): JobInfo {
  * 计入缓存键的参数：
  * - 运行结果写回的参数（omit）不算；
  * - 模型专属参数只算所选模型那份，别的模型的设置改了不影响；
- * - 分辨率留空、专属参数为空时不算：这两个参数是后加的，加之前生成的结果不必因此重跑。
+ * - 后加参数取中性值（分辨率留空、语速 1 倍、专属参数为空）时不算：加之前生成的结果不必因此重跑。
  */
+const NEUTRAL: Record<string, unknown> = { resolution: '', speed: 1 }
+
 export function cacheParams(params: Record<string, unknown>, omit: string[] = []) {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(params)) {
     if (omit.includes(k)) continue
-    if (k === 'resolution' && v === '') continue
+    if (k in NEUTRAL && NEUTRAL[k] === v) continue
     if (k === 'options' && v && typeof v === 'object' && typeof params.model === 'string') {
       const own = (v as Record<string, Record<string, unknown> | undefined>)[params.model]
       if (own && Object.keys(own).length) out[k] = own

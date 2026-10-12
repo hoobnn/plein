@@ -115,7 +115,12 @@ export const speechNode = defineNode({
   params: z.object({
     model: model(),
     text: textarea('台词'),
-    voice: z.string().default('').meta({ title: '音色' }),
+    voice: z
+      .string()
+      .default('')
+      .meta({ title: '音色', placeholder: '音色 ID，留空用平台设置里的默认音色' }),
+    speed: z.number().min(0.5).max(2).default(1).meta({ title: '语速' }),
+    options: modelOptions(),
     instruction: z
       .string()
       .default('')

@@ -15,5 +15,8 @@ describe('缓存键参数', () => {
     // 别的模型的设置改了不影响
     expect(cacheParams({ ...base, options: { 'b:n': { x: 2 } } })).toEqual(cacheParams(base))
     expect(cacheParams(base, ['prompt'])).toEqual({ model: 'a:m' })
+    // 语速 1 倍是后加参数的中性值
+    expect(cacheParams({ ...base, speed: 1 })).toEqual(cacheParams(base))
+    expect(cacheParams({ ...base, speed: 1.2 })).toMatchObject({ speed: 1.2 })
   })
 })
