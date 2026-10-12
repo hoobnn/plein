@@ -4,9 +4,21 @@ import { api } from '../api/client'
 import { navigate } from '../router'
 import { useSession } from '../stores/session'
 import { Icon } from '../ui/icons'
+import { InlineTitle } from '../ui/InlineTitle'
 import { ThemeToggle } from '../ui/ThemeToggle'
 
-const timeFmt = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })
+const dateFmt = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })
+const relFmt = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
+
+/** 一周内显示相对时间（刚刚、3 小时前），更早显示日期 */
+function when(ts: number) {
+  const s = (Date.now() - ts) / 1000
+  if (s < 60) return '刚刚'
+  if (s < 3600) return relFmt.format(-Math.floor(s / 60), 'minute')
+  if (s < 86400) return relFmt.format(-Math.floor(s / 3600), 'hour')
+  if (s < 7 * 86400) return relFmt.format(-Math.floor(s / 86400), 'day')
+  return dateFmt.format(ts)
+}
 
 /** 画布列表：新建、打开、重命名、删除 */
 export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
@@ -14,6 +26,9 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   const refreshSession = useSession((s) => s.refresh)
   const [canvases, setCanvases] = useState<Canvas[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -27,12 +42,17 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   }, [load])
 
   const create = async () => {
-    const c = await api.createCanvas()
-    navigate({ name: 'canvas', id: c.id })
+    if (creating) return
+    setCreating(true)
+    try {
+      const c = await api.createCanvas()
+      navigate({ name: 'canvas', id: c.id })
+    } catch (err) {
+      setError((err as Error).message)
+      setCreating(false)
+    }
   }
-  const rename = async (c: Canvas) => {
-    const title = prompt('画布名称', c.title)?.trim()
-    if (!title || title === c.title) return
+  const rename = async (c: Canvas, title: string) => {
     await api.renameCanvas(c.id, title)
     await load()
   }
@@ -46,91 +66,217 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
     await refreshSession()
   }
 
+  const q = query.trim().toLowerCase()
+  const shown = canvases?.filter((c) => !q || c.title.toLowerCase().includes(q)) ?? null
+
   return (
-    <div className="ui-scrollbar h-full overflow-y-auto">
-      <div className="mx-auto flex max-w-6xl flex-col gap-8 px-5 py-8 sm:px-10">
-        <header className="flex items-center justify-between gap-4">
-          <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-wide">
-            <span className="size-5 rounded-md bg-accent" aria-hidden="true" />
-            Plein
-          </h1>
-          <div className="flex items-center gap-1.5">
-            <ThemeToggle />
+    <div
+      className="ui-scrollbar h-full overflow-y-auto"
+      onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 4)}
+    >
+      <header
+        data-scrolled={scrolled || undefined}
+        className="home-bar app-titlebar app-drag sticky top-0 z-10 flex h-[68px] items-center justify-between gap-4 px-5 sm:px-6"
+      >
+        <div className="flex items-center gap-2.5 text-[15px] font-semibold tracking-wide">
+          <span className="plein-logo size-[22px]" aria-hidden="true" />
+          Plein
+        </div>
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <div className="mx-1 h-4 w-px bg-line" />
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            aria-label="设置"
+            title="设置"
+            className="ui-btn ui-btn-quiet ui-icon-btn"
+          >
+            <Icon name="settings" />
+          </button>
+          {info?.authRequired && (
+            <button type="button" onClick={logout} className="ui-btn ui-btn-quiet">
+              退出登录
+            </button>
+          )}
+        </div>
+      </header>
+
+      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-5 pb-16 pt-6 sm:px-10">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="flex items-baseline gap-2 text-[26px] font-semibold tracking-tight">
+              我的画布
+              {canvases && canvases.length > 0 && (
+                <span className="text-sm font-normal text-ink-subtle">{canvases.length}</span>
+              )}
+            </h1>
+            <p className="mt-1 text-[13px] text-ink-subtle">
+              把剧本、角色、分镜和生成结果放在一张无限画布上
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {canvases && canvases.length > 1 && (
+              <label className="home-search">
+                <Icon name="search" size={15} />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="搜索画布"
+                  aria-label="搜索画布"
+                />
+              </label>
+            )}
             <button
               type="button"
-              onClick={onOpenSettings}
-              aria-label="设置"
-              title="设置"
-              className="ui-btn ui-btn-quiet ui-icon-btn"
+              onClick={() => void create()}
+              disabled={creating}
+              className="ui-btn ui-btn-primary !h-9 !rounded-[10px] !px-4"
             >
-              <Icon name="settings" />
-            </button>
-            {info?.authRequired && (
-              <button type="button" onClick={logout} className="ui-btn ui-btn-quiet">
-                退出登录
-              </button>
-            )}
-          </div>
-        </header>
-        <section className="flex flex-col gap-4">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-semibold tracking-tight">画布</h2>
-              <p className="mt-1 text-[13px] text-ink-subtle">
-                把剧本、角色、分镜和生成结果放在一张无限画布上
-              </p>
-            </div>
-            <button type="button" onClick={create} className="ui-btn ui-btn-primary !h-9 !px-4">
               <Icon name="plus" size={15} />
               新建画布
             </button>
           </div>
-          {error && <p className="text-sm text-danger">加载失败：{error}</p>}
-          {canvases && canvases.length === 0 && (
-            <div className="rounded-[18px] border border-dashed border-line-strong p-12 text-center text-sm text-ink-subtle">
-              还没有画布。新建一个，然后把图片、视频、音频或 Markdown 文件拖进去。
-            </div>
-          )}
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {canvases?.map((c) => (
-              <li
-                key={c.id}
-                className="group relative overflow-hidden rounded-[16px] bg-surface shadow-[var(--shadow-2)] transition-shadow duration-200 hover:shadow-[var(--shadow-3)]"
-              >
-                <a href={`#/c/${encodeURIComponent(c.id)}`} className="block">
-                  <div className="plein-thumb aspect-[16/9] border-b border-line" />
-                  <div className="px-4 py-3">
-                    <div className="truncate text-[14px] font-medium">{c.title}</div>
-                    <div className="mt-0.5 text-xs text-ink-subtle">
-                      {timeFmt.format(c.updatedAt)}
-                    </div>
-                  </div>
-                </a>
-                <div className="ui-float absolute right-2 top-2 flex gap-0.5 rounded-[10px] p-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-                  <button
-                    type="button"
-                    onClick={() => rename(c)}
-                    aria-label="重命名"
-                    title="重命名"
-                    className="ui-btn ui-btn-quiet ui-icon-btn !size-7"
-                  >
-                    <Icon name="pencil" size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => remove(c)}
-                    aria-label="删除"
-                    title="删除"
-                    className="ui-btn ui-btn-quiet ui-icon-btn !size-7 hover:!text-danger"
-                  >
-                    <Icon name="trash" size={14} />
-                  </button>
-                </div>
+        </div>
+
+        {error && <p className="text-sm text-danger">加载失败：{error}</p>}
+
+        {shown && (
+          <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {!q && (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => void create()}
+                  disabled={creating}
+                  className="home-new"
+                >
+                  <span className="home-new-icon">
+                    <Icon name="plus" size={20} />
+                  </span>
+                  <span className="text-[14px] font-medium text-ink">新建画布</span>
+                  <span className="text-xs text-ink-subtle">
+                    {canvases?.length ? '从一张空白画布开始' : '拖入图片、视频、音频或 Markdown'}
+                  </span>
+                </button>
               </li>
+            )}
+            {shown.map((c) => (
+              <CanvasCard
+                key={c.id}
+                canvas={c}
+                onRename={(t) => rename(c, t)}
+                onDelete={() => remove(c)}
+              />
             ))}
           </ul>
-        </section>
+        )}
+        {q && shown?.length === 0 && (
+          <p className="py-16 text-center text-sm text-ink-subtle">没有标题包含「{query}」的画布</p>
+        )}
+      </main>
+    </div>
+  )
+}
+
+function CanvasCard({
+  canvas: c,
+  onRename,
+  onDelete,
+}: {
+  canvas: Canvas
+  onRename(title: string): Promise<void>
+  onDelete(): void
+}) {
+  const [editing, setEditing] = useState(false)
+  const covers = c.covers ?? []
+  return (
+    <li className="home-card group">
+      <a href={`#/c/${encodeURIComponent(c.id)}`} className="block" draggable={false}>
+        <Cover covers={covers} elements={c.elements ?? 0} />
+      </a>
+      <div className="flex items-center gap-2 px-3.5 pb-3 pt-2.5">
+        <div className="min-w-0 flex-1">
+          {editing ? (
+            <InlineTitle
+              value={c.title}
+              className="-mx-1 h-6 w-full rounded-md px-1 text-[14px] font-medium"
+              onDone={async (t) => {
+                setEditing(false)
+                if (t && t !== c.title) await onRename(t)
+              }}
+            />
+          ) : (
+            <a
+              href={`#/c/${encodeURIComponent(c.id)}`}
+              className="block truncate text-[14px] font-medium leading-6"
+              draggable={false}
+            >
+              {c.title}
+            </a>
+          )}
+          <div className="truncate text-xs text-ink-subtle" title={dateFmt.format(c.updatedAt)}>
+            {when(c.updatedAt)}编辑
+            {c.elements ? ` · ${c.elements} 个元素` : ''}
+          </div>
+        </div>
+        <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            aria-label="重命名"
+            title="重命名"
+            className="ui-btn ui-btn-quiet ui-icon-btn !size-7"
+          >
+            <Icon name="pencil" size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            aria-label="删除"
+            title="删除"
+            className="ui-btn ui-btn-quiet ui-icon-btn !size-7 hover:!text-danger"
+          >
+            <Icon name="trash" size={14} />
+          </button>
+        </div>
       </div>
+    </li>
+  )
+}
+
+/** 缩略图：最近的 1–4 张生成结果拼成马赛克；没有媒体时画一张示意的空画布 */
+function Cover({ covers, elements }: { covers: string[]; elements: number }) {
+  if (covers.length === 0)
+    return (
+      <div className="plein-thumb home-cover flex items-center justify-center">
+        <span className="flex flex-col items-center gap-1.5 text-ink-subtle">
+          <Icon name={elements ? 'node' : 'frame'} size={22} />
+          <span className="text-xs">{elements ? '还没有生成图片' : '空画布'}</span>
+        </span>
+      </div>
+    )
+  const layout =
+    covers.length === 1
+      ? ''
+      : covers.length === 2
+        ? 'grid-cols-2'
+        : covers.length === 3
+          ? 'grid-cols-[2fr_1fr] grid-rows-2'
+          : 'grid-cols-2 grid-rows-2'
+  return (
+    <div className={`home-cover grid gap-0.5 ${layout}`}>
+      {covers.map((src, i) => (
+        <img
+          key={src}
+          src={src}
+          alt=""
+          loading="lazy"
+          draggable={false}
+          className={`size-full min-h-0 bg-surface-2 object-cover ${covers.length === 3 && i === 0 ? 'row-span-2' : ''}`}
+        />
+      ))}
     </div>
   )
 }

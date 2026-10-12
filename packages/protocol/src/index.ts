@@ -41,6 +41,10 @@ export const Canvas = z.object({
   title: z.string(),
   createdAt: z.number(),
   updatedAt: z.number(),
+  /** 列表专用：画布里最近的几张图片 / 视频封面地址，做首页缩略图 */
+  covers: z.array(z.string()).optional(),
+  /** 列表专用：顶层以外也算在内的元素数 */
+  elements: z.number().optional(),
 })
 export type Canvas = z.infer<typeof Canvas>
 
