@@ -110,7 +110,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
       setCanvasId(canvasId)
       const ydoc = new Y.Doc()
       const provider = new WebsocketProvider(syncUrl(), canvasId, ydoc)
-      provider.awareness.setLocalStateField('user', { name: '我', color: '#8b7cff' })
+      provider.awareness.setLocalStateField('user', { name: '我', color: '#4177d0' })
       provider.on('status', ({ status }: { status: string }) => {
         setSync(
           status === 'connected'

@@ -92,7 +92,7 @@ export function Shortcuts() {
         <div className="grid gap-6 sm:grid-cols-3">
           {GROUPS.map((g) => (
             <div key={g.title}>
-              <h3 className="mb-2 text-xs font-medium text-accent">{g.title}</h3>
+              <h3 className="mb-2 text-xs font-medium text-ink-muted">{g.title}</h3>
               <ul className="flex flex-col gap-2">
                 {g.items.map(([label, keys]) => (
                   <li key={label} className="flex items-center justify-between gap-3 text-[13px]">

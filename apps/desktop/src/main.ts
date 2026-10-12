@@ -44,7 +44,7 @@ function createWindow(url: string) {
     title: 'plein',
     icon: appIconPath(),
     // 与网页主题的画布底色一致，避免启动时闪色
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0b0b0d' : '#f3f3f5',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0a0a0a' : '#fcfcfb',
     show: false,
     webPreferences: {
       preload: join(import.meta.dirname, 'preload.cjs'),

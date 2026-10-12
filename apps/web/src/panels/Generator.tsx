@@ -298,7 +298,7 @@ function Panel({
               className={`flex size-9 flex-none items-center justify-center rounded-full transition-colors disabled:opacity-35 ${
                 running
                   ? 'bg-surface-3 text-ink hover:bg-active'
-                  : 'bg-accent text-on-accent hover:bg-accent-hover disabled:hover:bg-accent'
+                  : 'bg-primary text-on-primary hover:bg-primary-hover disabled:hover:bg-primary'
               }`}
             >
               <Icon name={running ? 'stop' : 'arrowUp'} size={running ? 14 : 18} />

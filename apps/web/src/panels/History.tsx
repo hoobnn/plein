@@ -435,7 +435,7 @@ function Card(props: {
           </span>
         )}
         {entry.adopted && (
-          <span className="absolute right-2 top-2 rounded-md bg-accent px-1.5 py-0.5 text-[11px] text-on-accent">
+          <span className="absolute right-2 top-2 rounded-md bg-primary px-1.5 py-0.5 text-[11px] text-on-primary">
             采用中
           </span>
         )}
