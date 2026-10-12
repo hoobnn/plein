@@ -27,3 +27,4 @@ export {
 } from './renderers'
 export { Scene, type SceneUpdate, type Transient } from './scene'
 export { Selection } from './selection'
+export { type CanvasTheme, DARK_THEME, LIGHT_THEME } from './theme'

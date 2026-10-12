@@ -74,11 +74,7 @@ function AppContent({ onOpenSettings }: { onOpenSettings(): void }) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-4 text-center text-sm text-ink-muted">
         <p>连不上 Plein 服务端。开发时请先运行 pnpm dev:server。</p>
-        <button
-          type="button"
-          onClick={refresh}
-          className="rounded-lg bg-surface px-4 py-2 text-ink"
-        >
+        <button type="button" onClick={refresh} className="ui-btn ui-btn-secondary">
           重试
         </button>
       </div>

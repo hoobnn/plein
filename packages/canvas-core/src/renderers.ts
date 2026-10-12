@@ -1,5 +1,6 @@
 import { type CanvasElement, currentResult, type ElementKind } from '@plein/doc'
 import { Assets, Container, Graphics, Text, type Texture } from 'pixi.js'
+import { theme } from './theme'
 
 export interface RenderContext {
   /** 资产在画布上的预览图 URL：图片缩略图、视频封面、音频波形 */
@@ -17,9 +18,7 @@ export interface ElementView {
 
 export type ElementRenderer = (el: CanvasElement, ctx: RenderContext) => ElementView
 
-const RADIUS = 14
-const SURFACE = 0x1b1b1f
-const LINE = 0xffffff
+const RADIUS = 16
 
 const KIND_LABELS: Record<ElementKind, string> = {
   image: '图片',
@@ -31,21 +30,19 @@ const KIND_LABELS: Record<ElementKind, string> = {
   sequence: '序列',
 }
 
-const KIND_ACCENTS: Record<ElementKind, number> = {
-  image: 0x7cc4ff,
-  video: 0xc59bff,
-  audio: 0x8be0a4,
-  markdown: 0xe8d5b5,
-  node: 0xf2b880,
-  frame: 0xb4b4bc,
-  sequence: 0xff9fb2,
-}
-
 const labelStyle = {
-  fontFamily: 'Inter, PingFang SC, system-ui, sans-serif',
+  fontFamily: 'system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif',
   fontSize: 13,
-  fill: 0x8b8b93,
+  fill: theme.label,
 } as const
+
+/** 卡片底板：填充 + 细描边 */
+function plate(g: Graphics, w: number, h: number) {
+  return g
+    .roundRect(0, 0, w, h, RADIUS)
+    .fill({ color: theme.surface })
+    .stroke({ color: theme.line.color, alpha: theme.line.alpha, width: 1 })
+}
 
 function titleOf(el: CanvasElement) {
   if (el.name) return el.name
@@ -71,13 +68,19 @@ function card(el: CanvasElement, texture?: () => Texture | undefined): ElementVi
       bg.clear().roundRect(0, 0, next.w, next.h, RADIUS)
       // 纹理按形状包围盒铺满（textureSpace: local），省掉昂贵的遮罩
       if (tex) bg.fill({ texture: tex, textureSpace: 'local' })
-      else bg.fill({ color: SURFACE }).stroke({ color: LINE, alpha: 0.08, width: 1 })
+      else
+        bg.fill({ color: theme.surface }).stroke({
+          color: theme.line.color,
+          alpha: theme.line.alpha,
+          width: 1,
+        })
       if (!tex && high) {
         bg.roundRect(12, next.h - 16, Math.min(40, next.w - 24), 3, 1.5).fill({
-          color: KIND_ACCENTS[next.kind],
+          color: theme.kinds[next.kind],
           alpha: 0.8,
         })
       }
+      label.style.fill = theme.label
       label.text = titleOf(next)
       label.visible = high && !tex && next.w > 60 && next.h > 36
     },
@@ -98,16 +101,22 @@ export const cardRenderer: ElementRenderer = (el) => card(el)
 export const frameRenderer: ElementRenderer = (el) => {
   const display = new Container()
   const bg = new Graphics()
-  const label = new Text({ text: '', style: { ...labelStyle, fontSize: 12 }, resolution: 2 })
-  label.position.set(2, -20)
+  const label = new Text({
+    text: '',
+    style: { ...labelStyle, fontSize: 12, fontWeight: '500' },
+    resolution: 2,
+  })
+  label.position.set(4, -22)
   display.addChild(bg, label)
   const view: ElementView = {
     display,
     update(next) {
+      const f = theme.frame
       bg.clear()
-        .roundRect(0, 0, next.w, next.h, 10)
-        .fill({ color: 0xffffff, alpha: 0.035 })
-        .stroke({ color: LINE, alpha: 0.16, width: 1.5 })
+        .roundRect(0, 0, next.w, next.h, 20)
+        .fill({ color: f.fill, alpha: f.fillAlpha })
+        .stroke({ color: f.line, alpha: f.lineAlpha, width: 1 })
+      label.style.fill = theme.label
       label.text = titleOf(next)
     },
     setDetail(high) {
@@ -143,15 +152,15 @@ export const mediaRenderer: ElementRenderer = (el, ctx) => {
 
   const draw = (next: CanvasElement) => {
     const { w, h, kind } = next
-    bg.clear().roundRect(0, 0, w, h, RADIUS).fill({ color: SURFACE })
+    bg.clear().roundRect(0, 0, w, h, RADIUS).fill({ color: theme.surface })
     if (texture) {
       // 纹理按形状包围盒铺满（textureSpace: local），省掉昂贵的遮罩
       bg.roundRect(0, 0, w, h, RADIUS).fill({ texture, textureSpace: 'local' })
     } else {
-      bg.stroke({ color: LINE, alpha: 0.08, width: 1 })
+      bg.stroke({ color: theme.line.color, alpha: theme.line.alpha, width: 1 })
       if (high)
         bg.roundRect(12, h - 16, Math.min(40, w - 24), 3, 1.5).fill({
-          color: KIND_ACCENTS[kind],
+          color: theme.kinds[kind],
           alpha: 0.8,
         })
     }
@@ -171,6 +180,7 @@ export const mediaRenderer: ElementRenderer = (el, ctx) => {
         ])
         .fill({ color: 0xffffff, alpha: 0.9 })
     }
+    label.style.fill = theme.label
     label.text = titleOf(next)
     // 图片、视频有了预览就不再显示标题；音频波形上方保留文件名
     label.visible = high && (!texture || kind === 'audio') && w > 60 && h > 36
@@ -226,10 +236,7 @@ export const markdownRenderer: ElementRenderer = (el) => {
     update(next) {
       current = next
       const { w, h } = next
-      bg.clear()
-        .roundRect(0, 0, w, h, RADIUS)
-        .fill({ color: SURFACE })
-        .stroke({ color: LINE, alpha: 0.08, width: 1 })
+      plate(bg.clear(), w, h)
       if (!high) {
         const pad = Math.min(24, w / 8)
         const step = Math.max(28, h / 10)
@@ -237,7 +244,7 @@ export const markdownRenderer: ElementRenderer = (el) => {
           const lw = (w - pad * 2) * (i === 0 ? 0.5 : i % 3 === 2 ? 0.7 : 1)
           bg.roundRect(pad, y, lw, i === 0 ? 14 : 8, 4)
         }
-        bg.fill({ color: 0xffffff, alpha: 0.1 })
+        bg.fill({ color: theme.placeholder.color, alpha: theme.placeholder.alpha })
       }
     },
     setDetail(next) {
@@ -259,12 +266,6 @@ export function nodeBody(w: number, h: number) {
   return { x: pad, y: header, w: Math.max(0, w - pad * 2), h: Math.max(0, h - header - footer) }
 }
 
-const STATUS_COLORS: Record<string, number> = {
-  queued: 0x8b8b93,
-  running: 0xe8d5b5,
-  failed: 0xff6b6b,
-}
-
 /**
  * 工作流节点：底板 + 当前结果的预览图（等比放进预览区）。
  * 标题、状态、文本结果和操作按钮由 DOM 覆盖层在正常细节下绘制；
@@ -283,21 +284,22 @@ export const nodeRenderer: ElementRenderer = (el, ctx) => {
   const draw = (next: CanvasElement) => {
     const { w, h } = next
     const status = next.run?.status
-    const accent = (status && STATUS_COLORS[status]) ?? KIND_ACCENTS.node
+    const accent = (status && theme.status[status]) ?? theme.kinds.node
+    const loud = status === 'running' || status === 'failed'
     bg.clear()
       .roundRect(0, 0, w, h, RADIUS)
-      .fill({ color: SURFACE })
+      .fill({ color: theme.surface })
       .stroke({
-        color: status === 'running' || status === 'failed' ? accent : LINE,
-        alpha: status === 'running' || status === 'failed' ? 0.9 : 0.1,
-        width: status === 'running' || status === 'failed' ? 2 : 1,
+        color: loud ? accent : theme.line.color,
+        alpha: loud ? 0.9 : theme.line.alpha,
+        width: loud ? 1.5 : 1,
       })
     const body = nodeBody(w, h)
     if (texture && body.w > 0 && body.h > 0) {
       const k = Math.min(body.w / texture.width, body.h / texture.height)
       const tw = texture.width * k
       const th = texture.height * k
-      bg.roundRect(body.x + (body.w - tw) / 2, body.y + (body.h - th) / 2, tw, th, 8).fill({
+      bg.roundRect(body.x + (body.w - tw) / 2, body.y + (body.h - th) / 2, tw, th, 10).fill({
         texture,
         textureSpace: 'local',
       })

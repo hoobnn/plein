@@ -4,6 +4,7 @@ import { groupNodes, runGroup, templateData } from '../canvas/groups'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useTemplates } from '../stores/templates'
+import { Icon } from '../ui/icons'
 import { useEngineVersion } from './Generator'
 
 /** 选中单个 Frame 时浮在它右上角：运行整组、存为模板 */
@@ -48,18 +49,22 @@ function FrameBarHost({ engine }: { engine: Engine }) {
     }
   }
 
-  const btn =
-    'h-7 rounded-md px-2 text-xs text-ink hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-40'
+  const btn = 'ui-btn !h-7 !rounded-md !px-2 !text-xs'
   return (
     <div
       role="toolbar"
       aria-label="Frame 操作"
       // 贴在 Frame 右上角外侧；Frame 顶到页头时不压住页头
       style={{ right: window.innerWidth - tr.x, top: Math.max(64, tr.y - 36) }}
-      className="pointer-events-auto fixed z-20 flex items-center gap-1 rounded-lg bg-surface/95 p-0.5 shadow-[var(--shadow-2)] backdrop-blur-xl"
+      className="ui-float pointer-events-auto fixed z-20 flex items-center gap-0.5 rounded-[10px] p-0.5"
     >
-      <label className="flex h-7 items-center gap-1 px-1.5 text-xs text-ink-muted">
-        <input type="checkbox" checked={video} onChange={(e) => setVideo(e.target.checked)} />
+      <label className="flex h-7 items-center gap-1.5 px-2 text-xs text-ink-muted">
+        <input
+          type="checkbox"
+          className="accent-[var(--accent)]"
+          checked={video}
+          onChange={(e) => setVideo(e.target.checked)}
+        />
         含视频
       </label>
       <button
@@ -69,9 +74,11 @@ function FrameBarHost({ engine }: { engine: Engine }) {
         title={count ? undefined : '组内没有要生成的节点'}
         onClick={() => void run()}
       >
+        <Icon name="play" size={12} />
         {busy === el.id ? '运行中…' : `运行整组${count ? `（${count}）` : ''}`}
       </button>
       <button type="button" className={btn} onClick={() => void save()}>
+        <Icon name="layers" size={13} />
         存为模板
       </button>
     </div>

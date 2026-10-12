@@ -35,20 +35,20 @@ function place(node: HTMLElement, r: Rect) {
 
 const editorTheme = EditorView.theme(
   {
-    '&': { height: '100%', fontSize: '14px', backgroundColor: 'transparent' },
+    '&': { height: '100%', fontSize: '14px', color: 'var(--ink)', backgroundColor: 'transparent' },
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': {
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
       lineHeight: '1.6',
     },
-    '.cm-content': { padding: '16px 0', caretColor: 'var(--color-accent)' },
+    '.cm-content': { padding: '16px 0', caretColor: 'var(--accent)' },
     '.cm-line': { padding: '0 16px' },
-    '.cm-cursor': { borderLeftColor: 'var(--color-accent)' },
+    '.cm-cursor': { borderLeftColor: 'var(--accent)' },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
-      backgroundColor: 'rgb(232 213 181 / 0.2) !important',
+      backgroundColor: 'var(--accent-soft) !important',
     },
   },
-  { dark: true },
+  // 颜色全部取 CSS 令牌，明暗主题共用一套
 )
 
 /**

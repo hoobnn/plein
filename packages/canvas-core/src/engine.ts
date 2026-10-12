@@ -22,6 +22,7 @@ import { SelectionOverlay } from './overlay'
 import { type RenderContext, RendererRegistry } from './renderers'
 import { Scene, type Transient } from './scene'
 import { Selection } from './selection'
+import { type CanvasTheme, theme } from './theme'
 import { ElementViews } from './views'
 
 export type Tool = 'select' | 'hand'
@@ -32,6 +33,8 @@ export interface EngineOptions extends RenderContext {
   /** DOM 覆盖层，跟随相机变换 */
   overlay?: HTMLElement
   background?: number
+  /** 初始配色，默认暗色；之后用 setTheme 切换 */
+  theme?: CanvasTheme
   /** 默认 WebGL；WebGPU 待基准与兼容性验证后再切默认 */
   renderer?: 'webgl' | 'webgpu'
   renderers?: RendererRegistry
@@ -106,7 +109,8 @@ export class Engine {
   }
 
   async init() {
-    const { host, background = 0x0e0e10 } = this.opts
+    if (this.opts.theme) Object.assign(theme, this.opts.theme)
+    const { host, background = theme.background } = this.opts
     await this.app.init({
       resizeTo: host,
       background,
@@ -315,6 +319,17 @@ export class Engine {
     if (box) this.camera.fit(box)
   }
 
+  /** 切换配色：背景、点阵、全部元素、连线和选择层一起重画 */
+  setTheme(next: CanvasTheme) {
+    Object.assign(theme, next)
+    if (this.app.renderer) this.app.renderer.background.color = next.background
+    this.drawGrid()
+    this.views.refreshAll()
+    this.edges.markDirty()
+    this.overlay.markDirty()
+    this.contentDirty = true
+  }
+
   zoomTo(zoom: number) {
     this.camera.zoomTo(zoom)
   }
@@ -388,7 +403,7 @@ export class Engine {
         g.circle(gx, gy, 0.9)
       }
     }
-    g.fill({ color: 0xffffff, alpha: 0.08 })
+    g.fill({ color: theme.grid.color, alpha: theme.grid.alpha })
   }
 
   private attachActivate() {

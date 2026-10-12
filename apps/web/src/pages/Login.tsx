@@ -2,8 +2,7 @@ import { type FormEvent, useState } from 'react'
 import { api } from '../api/client'
 import { useSession } from '../stores/session'
 
-const input =
-  'h-10 w-full rounded-lg bg-surface-2 px-3 text-sm text-ink outline-none ring-1 ring-line placeholder:text-ink-muted focus:ring-accent/60'
+const input = 'ui-input !h-10 w-full !text-sm'
 
 /** 登录；还没有账号时创建所有者账号 */
 export function Login({ setup }: { setup: boolean }) {
@@ -33,9 +32,9 @@ export function Login({ setup }: { setup: boolean }) {
     <div className="flex h-full items-center justify-center p-4">
       <form
         onSubmit={submit}
-        className="flex w-full max-w-sm flex-col gap-3 rounded-2xl bg-surface p-6 shadow-[var(--shadow-3)]"
+        className="flex w-full max-w-sm flex-col gap-3 rounded-[18px] bg-surface p-7 shadow-[var(--shadow-3)]"
       >
-        <h1 className="text-lg font-medium">{setup ? '创建所有者账号' : '登录 Plein'}</h1>
+        <h1 className="text-lg font-semibold">{setup ? '创建所有者账号' : '登录 Plein'}</h1>
         <p className="text-sm text-ink-muted">
           {setup
             ? '这台 Plein 还没有账号。创建后，只有你能访问这里的画布和素材。'
@@ -68,12 +67,8 @@ export function Login({ setup }: { setup: boolean }) {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        <button
-          type="submit"
-          disabled={busy}
-          className="mt-1 h-10 rounded-lg bg-accent text-sm font-medium text-canvas transition-opacity disabled:opacity-50"
-        >
+        {error && <p className="text-sm text-danger">{error}</p>}
+        <button type="submit" disabled={busy} className="ui-btn ui-btn-primary mt-1 !h-10 !text-sm">
           {setup ? '创建并进入' : '登录'}
         </button>
       </form>

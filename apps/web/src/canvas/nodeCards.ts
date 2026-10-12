@@ -197,6 +197,7 @@ export class NodeCards {
     const run = el.run
     const active = run?.status === 'running' || run?.status === 'queued'
     card.root.dataset.status = run?.status ?? 'idle'
+    card.root.dataset.kind = info?.outputs[0]?.type ?? ''
     card.root.dataset.selected = String(selected)
     card.title.textContent = el.name ?? info?.title ?? el.nodeType ?? '节点'
 
@@ -260,7 +261,9 @@ export class NodeCards {
     } else if (v?.type === 'json') {
       card.body.textContent = JSON.stringify(v.value, null, 2)
     } else if (v) {
-      card.body.textContent = MEDIA_TAG[v.type]
+      const tag = document.createElement('span')
+      tag.textContent = MEDIA_TAG[v.type]
+      card.body.replaceChildren(tag)
       card.body.classList.add('is-media')
     } else {
       const prompt = pk ? String(el.params?.[pk] ?? '').trim() : ''

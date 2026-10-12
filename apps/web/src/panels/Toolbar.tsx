@@ -5,6 +5,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { type NodeInfo, nodeElement, placeElement } from '../canvas/nodes'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
+import { Icon, type IconName } from '../ui/icons'
 import { CATEGORY_LABELS } from './CanvasMenus'
 
 function Button(props: {
@@ -23,8 +24,8 @@ function Button(props: {
       aria-pressed={props.active}
       disabled={props.disabled}
       onClick={props.onClick}
-      className={`flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-sm transition-colors duration-150 ease-[var(--ease-spring)] disabled:opacity-30 ${
-        props.active ? 'bg-accent/15 text-accent' : 'text-ink-muted hover:bg-white/5 hover:text-ink'
+      className={`flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-[10px] px-2 text-[13px] transition-colors duration-150 ease-[var(--ease-spring)] disabled:pointer-events-none disabled:opacity-30 ${
+        props.active ? 'bg-accent-soft text-accent' : 'text-ink-muted hover:bg-hover hover:text-ink'
       }`}
     >
       {props.children}
@@ -34,14 +35,18 @@ function Button(props: {
 
 const Divider = () => <div className="mx-1 h-5 w-px bg-line" />
 
-const TOOLS: Array<{ tool: Tool; label: string; hint: string; icon: string }> = [
-  { tool: 'select', label: '选择', hint: 'V', icon: '↖' },
-  { tool: 'hand', label: '抓手', hint: 'H', icon: '✋' },
+const TOOLS: Array<{ tool: Tool; label: string; hint: string; icon: IconName }> = [
+  { tool: 'select', label: '选择', hint: 'V', icon: 'cursor' },
+  { tool: 'hand', label: '抓手', hint: 'H', icon: 'hand' },
 ]
 
-const NEW_ITEMS: Array<{ label: string; input: Omit<NewElement, 'x' | 'y'> }> = [
-  { label: 'Frame', input: { kind: 'frame', w: 640, h: 400, name: '新场景' } },
-  { label: 'Markdown', input: { kind: 'markdown', w: 280, h: 200, text: '# 新文档' } },
+const NEW_ITEMS: Array<{ label: string; icon: IconName; input: Omit<NewElement, 'x' | 'y'> }> = [
+  { label: 'Frame', icon: 'frame', input: { kind: 'frame', w: 640, h: 400, name: '新场景' } },
+  {
+    label: 'Markdown',
+    icon: 'doc',
+    input: { kind: 'markdown', w: 280, h: 200, text: '# 新文档' },
+  },
 ]
 
 const EMPTY_NODES: NodeInfo[] = []
@@ -65,16 +70,17 @@ function NodeMenu({ onPick }: { onPick(node: NodeInfo): void }) {
   return (
     <div ref={ref} className="relative">
       <Button label="新建节点" active={open} onClick={() => setOpen(!open)}>
-        + 节点
+        <Icon name="sparkle" />
+        <span>节点</span>
       </Button>
       {open && (
         <div
           role="menu"
-          className="absolute bottom-10 left-0 max-h-96 w-64 overflow-y-auto rounded-xl bg-surface p-1 shadow-[var(--shadow-3)]"
+          className="ui-menu ui-scrollbar absolute bottom-12 left-1/2 max-h-96 w-64 -translate-x-1/2 overflow-y-auto"
         >
           {[...groups].map(([cat, list]) => (
             <div key={cat}>
-              <div className="px-2 pb-1 pt-2 text-xs text-ink-muted">{CATEGORY_LABELS[cat]}</div>
+              <div className="ui-menu-label">{CATEGORY_LABELS[cat]}</div>
               {list.map((n) => (
                 <button
                   key={`${n.type}@${n.version}`}
@@ -85,11 +91,11 @@ function NodeMenu({ onPick }: { onPick(node: NodeInfo): void }) {
                     setOpen(false)
                     onPick(n)
                   }}
-                  className="flex w-full flex-col items-start rounded-lg px-2 py-1.5 text-left text-sm hover:bg-white/5"
+                  className="ui-menu-item flex-col !items-start !gap-0.5"
                 >
                   <span>{n.title}</span>
                   {n.description && (
-                    <span className="line-clamp-1 text-xs text-ink-muted">{n.description}</span>
+                    <span className="line-clamp-1 text-xs text-ink-subtle">{n.description}</span>
                   )}
                 </button>
               ))}
@@ -119,7 +125,7 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
   }
 
   return (
-    <div className="pointer-events-auto flex items-center gap-0.5 rounded-xl bg-surface/85 p-1 shadow-[var(--shadow-3)] backdrop-blur-xl">
+    <div className="ui-float pointer-events-auto flex items-center gap-0.5 rounded-[14px] p-1">
       {TOOLS.map((t) => (
         <Button
           key={t.tool}
@@ -128,13 +134,13 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
           active={tool === t.tool}
           onClick={() => engine.setTool(t.tool)}
         >
-          {t.icon}
+          <Icon name={t.icon} />
         </Button>
       ))}
       <Divider />
       {NEW_ITEMS.map((item) => (
         <Button key={item.label} label={`新建 ${item.label}`} onClick={() => add(item.input)}>
-          + {item.label}
+          <Icon name={item.icon} />
         </Button>
       ))}
       <NodeMenu onPick={(n) => add(nodeElement(n))} />
@@ -145,7 +151,7 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
             hint="也可以直接拖入或粘贴"
             onClick={() => fileRef.current?.click()}
           >
-            导入
+            <Icon name="upload" />
           </Button>
           <input
             ref={fileRef}
@@ -164,23 +170,23 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
       )}
       <Divider />
       <Button label="撤销" hint="⌘Z" disabled={!canUndo} onClick={() => engine.undo()}>
-        ↶
+        <Icon name="undo" />
       </Button>
       <Button label="重做" hint="⇧⌘Z" disabled={!canRedo} onClick={() => engine.redo()}>
-        ↷
+        <Icon name="redo" />
       </Button>
       <Divider />
       <Button label="缩小" onClick={() => engine.zoomTo(zoom / 1.25)}>
-        −
+        <Icon name="minus" />
       </Button>
       <Button label="缩放到 100%" hint="⌘0" onClick={() => engine.zoomTo(1)}>
-        <span className="w-11 tabular-nums">{Math.round(zoom * 100)}%</span>
+        <span className="w-10 text-center text-xs tabular-nums">{Math.round(zoom * 100)}%</span>
       </Button>
       <Button label="放大" onClick={() => engine.zoomTo(zoom * 1.25)}>
-        +
+        <Icon name="plus" />
       </Button>
       <Button label="适应画布" hint="⇧1" onClick={() => engine.zoomToFit()}>
-        ⤢
+        <Icon name="fit" />
       </Button>
     </div>
   )

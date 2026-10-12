@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, shell } from 'electron'
 import { installMenu } from './menu'
 import { DEV_WEB_URL, dataDir, isDev, serverPaths } from './paths'
 import { type ServerHandle, startServer } from './server'
@@ -38,7 +38,8 @@ function createWindow(url: string) {
     titleBarStyle: 'default',
     autoHideMenuBar: false,
     title: 'plein',
-    backgroundColor: '#0e0e10',
+    // 与网页主题的画布底色一致，避免启动时闪色
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0b0b0d' : '#f3f3f5',
     show: false,
     webPreferences: {
       preload: join(import.meta.dirname, 'preload.cjs'),

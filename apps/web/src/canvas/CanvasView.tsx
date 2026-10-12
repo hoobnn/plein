@@ -7,6 +7,7 @@ import * as Y from 'yjs'
 import { assetUrls, syncUrl } from '../api/client'
 import { navigate } from '../router'
 import { useCanvas } from '../stores/canvas'
+import { canvasTheme, useTheme } from '../stores/theme'
 import { demoAssetUrls, seedDemo } from './demo'
 import { importFiles, importText } from './import'
 import { NodeCards } from './nodeCards'
@@ -45,7 +46,13 @@ export function CanvasView({ source }: { source: CanvasSource }) {
       assetUrl: (id: string, kind: ElementKind) => string | undefined,
       awareness?: unknown,
     ) => {
-      const engine = new Engine({ host, doc, overlay: overlayRoot, assetUrl })
+      const engine = new Engine({
+        host,
+        doc,
+        overlay: overlayRoot,
+        assetUrl,
+        theme: canvasTheme(useTheme.getState().name),
+      })
       // StrictMode 下 effect 会执行两次：init 未完成前不能 destroy
       engine.init().then(() => {
         if (disposed) return engine.destroy()
@@ -69,7 +76,11 @@ export function CanvasView({ source }: { source: CanvasSource }) {
         })
         const detach = attach(engine)
         const off = attachImport(engine, host, { setImporting, notify })
+        const offTheme = useTheme.subscribe((s, prev) => {
+          if (s.name !== prev.name) engine.setTheme(canvasTheme(s.name))
+        })
         cleanups.push(() => {
+          offTheme()
           off()
           offActivate()
           cards.destroy()
@@ -95,7 +106,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
       setCanvasId(canvasId)
       const ydoc = new Y.Doc()
       const provider = new WebsocketProvider(syncUrl(), canvasId, ydoc)
-      provider.awareness.setLocalStateField('user', { name: '我', color: '#e8d5b5' })
+      provider.awareness.setLocalStateField('user', { name: '我', color: '#8b7cff' })
       provider.on('status', ({ status }: { status: string }) => {
         setSync(
           status === 'connected'

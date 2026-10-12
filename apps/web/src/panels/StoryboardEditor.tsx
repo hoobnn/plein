@@ -4,6 +4,7 @@ import { newShotId, SHOT_SIZES, type Shot } from '@plein/nodes'
 import { useEffect, useState } from 'react'
 import { expandedNodes, expandShots, runExpanded, shotsOf } from '../canvas/storyboard'
 import { useCanvas } from '../stores/canvas'
+import { Icon } from '../ui/icons'
 import { useCatalog } from '../stores/catalog'
 
 /** 文档变化时重渲染（协作者改表格也能看到） */
@@ -14,7 +15,7 @@ function useDocVersion(engine: Engine) {
 }
 
 const cell =
-  'w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-sm leading-snug text-ink outline-none ring-1 ring-transparent hover:ring-line focus:bg-surface-2 focus:ring-accent/50'
+  'w-full resize-none rounded-lg bg-transparent px-2 py-1.5 text-[13px] leading-snug text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
 
 /** 台词在表格里写成“角色：台词”一行一句 */
 const dialogueText = (s: Shot) =>
@@ -114,11 +115,10 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       )
   }
 
-  const btn =
-    'h-8 rounded-lg px-3 text-sm text-ink hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-40'
+  const btn = 'ui-btn'
   return (
     <div
-      className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-6"
+      className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-scrim p-6"
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -126,15 +126,15 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       <section
         role="dialog"
         aria-label="分镜表"
-        className="flex max-h-full w-full max-w-[1400px] flex-col overflow-hidden rounded-2xl bg-surface shadow-[var(--shadow-3)]"
+        className="flex max-h-full w-full max-w-[1400px] flex-col overflow-hidden rounded-[18px] bg-surface shadow-[var(--shadow-3)]"
       >
-        <header className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3">
-          <h2 className="mr-2 text-base font-medium">{el?.name ?? '分镜'}</h2>
-          <span className="text-sm text-ink-muted">
+        <header className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3.5">
+          <h2 className="mr-1 text-base font-semibold">{el?.name ?? '分镜'}</h2>
+          <span className="ui-chip">
             {shots.length} 个镜头 · {shots.reduce((t, s) => t + s.duration, 0)} 秒
           </span>
           <div className="ml-auto flex flex-wrap items-center gap-1">
-            <span className="mr-1 text-xs text-ink-muted">作用于{scope}</span>
+            <span className="mr-1 text-xs text-ink-subtle">作用于{scope}</span>
             <button type="button" className={btn} onClick={addShot}>
               添加镜头
             </button>
@@ -143,7 +143,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             </button>
             <button
               type="button"
-              className={btn}
+              className={`${btn} ui-btn-secondary`}
               disabled={!expanded.size}
               onClick={() => batch('image')}
             >
@@ -151,7 +151,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             </button>
             <button
               type="button"
-              className={btn}
+              className={`${btn} ui-btn-primary`}
               disabled={!expanded.size}
               onClick={() => batch('video')}
             >
@@ -160,21 +160,21 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             <button
               type="button"
               aria-label="关闭"
-              className="ml-1 flex size-8 items-center justify-center rounded-lg text-ink-muted hover:bg-white/8 hover:text-ink"
+              className="ui-btn ui-btn-quiet ui-icon-btn ml-1"
               onClick={onClose}
             >
-              ×
+              <Icon name="x" />
             </button>
           </div>
         </header>
         {shots.length === 0 ? (
-          <p className="px-6 py-16 text-center text-sm text-ink-muted">
+          <p className="px-6 py-16 text-center text-sm text-ink-subtle">
             还没有镜头。把剧本连到分镜节点后点“生成”，或手动添加镜头。
           </p>
         ) : (
-          <div className="overflow-auto">
+          <div className="ui-scrollbar overflow-auto">
             <table className="w-full min-w-[1200px] border-collapse text-left text-sm">
-              <thead className="sticky top-0 z-10 bg-surface text-xs text-ink-muted">
+              <thead className="sticky top-0 z-10 bg-surface-2 text-xs font-medium text-ink-subtle">
                 <tr>
                   <th className="w-10 px-3 py-2">
                     <input
@@ -199,7 +199,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
               </thead>
               <tbody>
                 {shots.map((s) => (
-                  <tr key={s.id} className="border-t border-line align-top">
+                  <tr key={s.id} className="border-t border-line align-top hover:bg-hover">
                     <td className="px-3 py-2.5">
                       <input
                         type="checkbox"
@@ -230,7 +230,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                     <td className="px-1 py-1">
                       <select
                         aria-label="景别"
-                        className={cell}
+                        className="ui-select !h-8 w-full !bg-transparent !shadow-none hover:!bg-hover"
                         value={s.shotSize}
                         onChange={(e) =>
                           patch(s.id, { shotSize: e.target.value as Shot['shotSize'] })
@@ -268,17 +268,17 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                     />
                     <td className="px-2 py-2.5 text-right text-xs">
                       {expanded.has(s.id) ? (
-                        <span className="text-ink-muted">已展开</span>
+                        <span className="text-success">已展开</span>
                       ) : (
                         <button
                           type="button"
-                          className="text-ink-muted hover:text-[#ff8a8a]"
+                          className="text-ink-subtle hover:text-danger"
                           onClick={() => remove(s.id)}
                         >
                           删除
                         </button>
                       )}
-                      {s.edited && <div className="mt-1 text-ink-muted/70">手改</div>}
+                      {s.edited && <div className="mt-1 text-accent">手改</div>}
                     </td>
                   </tr>
                 ))}

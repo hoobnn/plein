@@ -19,8 +19,7 @@ export interface ObjectSchema {
   properties?: Record<string, FieldSchema>
 }
 
-const field =
-  'h-9 w-full rounded-lg bg-surface-2 px-3 text-sm text-ink outline-none ring-1 ring-line focus:ring-accent/60'
+const field = 'ui-input !h-9 w-full'
 
 export function SchemaForm({
   schema,
@@ -45,7 +44,7 @@ export function SchemaForm({
           control = (
             <select
               id={id}
-              className={field}
+              className={`${field} ui-select`}
               value={String(current ?? '')}
               onChange={(e) => set(key, e.target.value)}
             >
@@ -101,9 +100,9 @@ export function SchemaForm({
         }
         return (
           <label key={key} htmlFor={id} className="flex flex-col gap-1 text-sm">
-            <span className="text-ink-muted">{label}</span>
+            <span className="text-[13px] text-ink-muted">{label}</span>
             {control}
-            {f.description && <span className="text-xs text-ink-muted">{f.description}</span>}
+            {f.description && <span className="text-xs text-ink-subtle">{f.description}</span>}
           </label>
         )
       })}

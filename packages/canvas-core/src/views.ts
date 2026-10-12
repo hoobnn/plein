@@ -55,6 +55,11 @@ export class ElementViews {
     }
   }
 
+  /** 全部重画（换主题后） */
+  refreshAll() {
+    this.refresh([...this.nodes.keys()])
+  }
+
   /** 视口裁剪：只对进出视口的元素做增量切换 */
   /** 返回可见集合或细节层级是否变化 */
   cull(view: Rect, zoom: number): boolean {

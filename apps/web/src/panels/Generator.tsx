@@ -37,12 +37,15 @@ import { cancelNode, runNode } from '../canvas/runner'
 import { shotsOf } from '../canvas/storyboard'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
+import { Icon } from '../ui/icons'
 import { SchemaForm } from './SchemaForm'
 
-const PANEL_W = 420
+const PANEL_W = 440
 const GAP = 12
 /** 底部工具栏占的高度，面板不压住它 */
 const BOTTOM_RESERVED = 72
+/** 顶部页头占的高度 */
+const TOP_RESERVED = 64
 
 /** 引擎任一变化（相机、选中、文档内容）时递增，驱动面板重渲染和跟随定位 */
 export function useEngineVersion(engine: Engine) {
@@ -83,14 +86,18 @@ function GeneratorHost({ engine }: { engine: Engine }) {
   const tl = engine.worldToClient(rect.x, rect.y)
   const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
   const below = window.innerHeight - BOTTOM_RESERVED - br.y
-  const above = tl.y - 16
+  const above = tl.y - TOP_RESERVED
   const left = Math.min(
     Math.max(GAP, (tl.x + br.x) / 2 - PANEL_W / 2),
     window.innerWidth - PANEL_W - GAP,
   )
   const style: React.CSSProperties =
     below >= 300 || below >= above
-      ? { left, top: Math.max(GAP, br.y + GAP), maxHeight: Math.max(160, below - GAP * 2) }
+      ? {
+          left,
+          top: Math.max(TOP_RESERVED, br.y + GAP),
+          maxHeight: Math.max(160, below - GAP * 2),
+        }
       : { left, bottom: window.innerHeight - tl.y + GAP, maxHeight: Math.max(160, above - GAP) }
 
   return <Panel key={el.id} engine={engine} el={el} node={node} catalog={catalog} style={style} />
@@ -132,6 +139,33 @@ function Panel({
     return () => window.removeEventListener('plein:focus-generator', focus)
   }, [el.id])
 
+  // 模型、画幅、张数等紧凑参数；非纯节点放在吸底栏里，和生成按钮同一行
+  const controls = (
+    <>
+      {main.map(([key, f]) => (
+        <Compact
+          key={key}
+          name={key}
+          field={f}
+          value={params[key]}
+          node={node}
+          catalog={catalog}
+          onChange={(v) => set(key, v)}
+        />
+      ))}
+      {Object.keys(rest).length > 0 && (
+        <button
+          type="button"
+          onClick={() => setMore(!more)}
+          className="ui-btn ui-btn-quiet !px-2 !text-xs"
+          aria-expanded={more}
+        >
+          {more ? '收起' : '更多'}
+        </button>
+      )}
+    </>
+  )
+
   const run = () => {
     if (running) void cancelNode(el.id)
     else if (!problem) void runNode(el.id)
@@ -142,7 +176,7 @@ function Panel({
       aria-label={`${node.title} 生成器`}
       data-testid="generator"
       style={{ ...style, width: PANEL_W }}
-      className="pointer-events-auto fixed z-20 flex flex-col overflow-y-auto rounded-2xl bg-surface/95 shadow-[var(--shadow-3)] backdrop-blur-xl"
+      className="ui-float ui-scrollbar pointer-events-auto fixed z-20 flex flex-col overflow-y-auto rounded-[18px]"
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
           e.preventDefault()
@@ -165,7 +199,7 @@ function Panel({
           <button
             type="button"
             onClick={() => useCanvas.getState().openStoryboard(el.id)}
-            className="h-8 w-full rounded-lg bg-white/5 text-sm text-ink hover:bg-white/10"
+            className="ui-btn ui-btn-secondary w-full"
           >
             编辑分镜表（{shotsOf(el).length} 个镜头）
           </button>
@@ -192,47 +226,8 @@ function Panel({
           onChange={(v) => set(pk, v)}
         />
       )}
-      {(!pure || Object.keys(rest).length > 0) && (
-        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3">
-          {main.map(([key, f]) => (
-            <Compact
-              key={key}
-              name={key}
-              field={f}
-              value={params[key]}
-              node={node}
-              catalog={catalog}
-              onChange={(v) => set(key, v)}
-            />
-          ))}
-          {Object.keys(rest).length > 0 && (
-            <button
-              type="button"
-              onClick={() => setMore(!more)}
-              className="h-8 rounded-lg px-2 text-xs text-ink-muted hover:bg-white/5 hover:text-ink"
-              aria-expanded={more}
-            >
-              {more ? '收起' : '更多参数'}
-            </button>
-          )}
-          {!pure && (
-            <div className="ml-auto flex items-center gap-2">
-              <button
-                type="button"
-                onClick={run}
-                disabled={!running && !!problem}
-                title={problem ?? '⌘↵'}
-                className={`h-8 rounded-lg px-4 text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${
-                  running
-                    ? 'bg-white/10 text-ink hover:bg-white/15'
-                    : 'bg-accent text-[#18181b] hover:bg-[#f3e4ca]'
-                }`}
-              >
-                {running ? '取消' : el.results?.length ? '重新生成' : '生成'}
-              </button>
-            </div>
-          )}
-        </div>
+      {pure && Object.keys(rest).length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3 pt-1">{controls}</div>
       )}
       {more && (
         <div className="border-t border-line px-3 py-3">
@@ -245,12 +240,31 @@ function Panel({
           />
         </div>
       )}
-      {!pure && (problem || el.run?.status === 'failed') && !running && (
-        <p
-          className={`border-t border-line px-3 py-2 text-xs ${problem ? 'text-ink-muted' : 'text-[#ff8a8a]'}`}
-        >
-          {problem ?? el.run?.error ?? '生成失败'}
-        </p>
+      {!pure && (
+        // 底栏吸底：面板被视口截短时生成按钮仍然可见
+        <footer className="sticky bottom-0 flex flex-col gap-2 border-t border-line bg-float px-3 py-2.5 backdrop-blur-xl">
+          {(problem || (!running && el.run?.status === 'failed')) && (
+            <p
+              className={`px-1 text-xs ${problem ? 'text-ink-subtle' : 'text-danger'}`}
+              title={problem ?? el.run?.error ?? undefined}
+            >
+              {problem ?? el.run?.error ?? '生成失败'}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {controls}
+            <button
+              type="button"
+              onClick={run}
+              disabled={!running && !!problem}
+              title={problem ?? '⌘↵'}
+              className={`ui-btn ml-auto !h-9 !rounded-[10px] !px-4 ${running ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
+            >
+              <Icon name={running ? 'stop' : 'sparkle'} size={14} />
+              {running ? '取消' : el.results?.length ? '重新生成' : '生成'}
+            </button>
+          </div>
+        </footer>
       )}
     </section>
   )
@@ -274,7 +288,7 @@ function NameField({
     else setDraft(value)
   }
   return (
-    <div className="flex items-center gap-2 border-b border-line px-4 py-2">
+    <div className="flex items-center gap-2 border-b border-line px-4 pb-2.5 pt-3">
       <input
         aria-label="节点名称"
         value={draft}
@@ -283,9 +297,9 @@ function NameField({
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur()
         }}
-        className="min-w-0 flex-1 bg-transparent text-sm font-medium text-ink outline-none"
+        className="min-w-0 flex-1 rounded-md bg-transparent text-[15px] font-semibold text-ink outline-none"
       />
-      {hint && <span className="flex-none text-xs text-ink-muted">{hint}</span>}
+      {hint && <span className="flex-none text-xs text-ink-subtle">{hint}</span>}
     </div>
   )
 }
@@ -296,8 +310,7 @@ function isMainField(key: string, f: FieldSchema) {
   return f.type === 'integer' && (key === 'count' || key === 'duration')
 }
 
-const chip =
-  'h-8 rounded-lg bg-surface-2 px-2 text-xs text-ink outline-none ring-1 ring-line hover:ring-white/20 focus:ring-accent/60'
+const chip = 'ui-select !h-8 !text-xs'
 
 function Compact({
   name,
@@ -326,7 +339,7 @@ function Compact({
     return (
       <select
         aria-label={label}
-        className={`${chip} max-w-44`}
+        className={`${chip} max-w-[132px]`}
         value={String(value ?? '')}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -374,7 +387,7 @@ function Compact({
     )
   }
   return (
-    <label className={`${chip} flex items-center gap-1`}>
+    <label className="ui-input flex !h-8 items-center gap-1 !text-xs">
       <input
         aria-label={label}
         type="number"
@@ -384,7 +397,7 @@ function Compact({
         value={String(value ?? '')}
         onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
       />
-      <span className="text-ink-muted">{name === 'duration' ? '秒' : label}</span>
+      <span className="text-ink-subtle">{name === 'duration' ? '秒' : label}</span>
     </label>
   )
 }
@@ -508,10 +521,10 @@ function PromptBox({
             setQuery(null)
           }
         }}
-        className="field-sizing-content max-h-60 min-h-20 w-full resize-none bg-transparent px-4 py-3 text-sm leading-relaxed text-ink outline-none placeholder:text-ink-muted"
+        className="field-sizing-content max-h-60 min-h-24 w-full resize-none bg-transparent px-4 py-3 text-sm leading-relaxed text-ink outline-none placeholder:text-ink-subtle"
       />
       {mentions.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2 text-xs text-ink-muted">
+        <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2 text-xs text-ink-subtle">
           引用
           {[...new Map(mentions.map((m) => [m.name, m.target])).entries()].map(([name, t]) => (
             <MentionChip key={name} engine={engine} name={name} target={t} />
@@ -522,7 +535,7 @@ function PromptBox({
         <div
           role="listbox"
           aria-label="提示词预设"
-          className="absolute left-3 top-full z-10 mt-1 w-72 rounded-xl bg-surface p-1 shadow-[var(--shadow-3)]"
+          className="ui-menu absolute left-3 top-full z-10 mt-1 w-72"
         >
           {presetOptions.map((p, i) => (
             <button
@@ -533,11 +546,11 @@ function PromptBox({
               onPointerDown={(e) => e.preventDefault()}
               onClick={() => applyPreset(p)}
               onPointerEnter={() => setActive(i)}
-              className={`flex w-full flex-col rounded-lg px-2 py-1.5 text-left ${i === active ? 'bg-white/8' : ''}`}
+              className="ui-menu-item flex-col !items-start !gap-0.5"
             >
               <span className="text-sm">{p.title}</span>
               {p.description && (
-                <span className="truncate text-xs text-ink-muted">{p.description}</span>
+                <span className="truncate text-xs text-ink-subtle">{p.description}</span>
               )}
             </button>
           ))}
@@ -547,7 +560,7 @@ function PromptBox({
         <div
           role="listbox"
           aria-label="引用资产"
-          className="absolute left-3 top-full z-10 mt-1 w-64 rounded-xl bg-surface p-1 shadow-[var(--shadow-3)]"
+          className="ui-menu absolute left-3 top-full z-10 mt-1 w-64"
         >
           {mentionOptions.map(([name, t], i) => (
             <button
@@ -558,11 +571,11 @@ function PromptBox({
               onPointerDown={(e) => e.preventDefault()}
               onClick={() => insert(name)}
               onPointerEnter={() => setActive(i)}
-              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm ${i === active ? 'bg-white/8' : ''}`}
+              className="ui-menu-item"
             >
               <Thumb engine={engine} target={t} />
               <span className="truncate">{name}</span>
-              <span className="ml-auto text-xs text-ink-muted">{targetKind(t)}</span>
+              <span className="ml-auto text-xs text-ink-subtle">{targetKind(t)}</span>
             </button>
           ))}
         </div>
@@ -583,10 +596,10 @@ function Thumb({ engine, target }: { engine: Engine; target: CanvasElement }) {
     <img
       src={assetUrls.variant(id, 'thumb-256')}
       alt=""
-      className="size-6 flex-none rounded object-cover"
+      className="size-6 flex-none rounded-md object-cover"
     />
   ) : (
-    <span className="size-6 flex-none rounded bg-surface-2" />
+    <span className="size-6 flex-none rounded-md bg-surface-3" />
   )
 }
 
@@ -607,7 +620,7 @@ function MentionChip({
         engine.selection.set([target.id])
         engine.zoomToFit([target.id])
       }}
-      className="flex h-7 items-center gap-1.5 rounded-md bg-accent/10 pl-0.5 pr-2 text-accent ring-1 ring-accent/20 hover:bg-accent/15"
+      className="flex h-7 items-center gap-1.5 rounded-lg bg-accent-soft pl-0.5 pr-2 text-accent hover:brightness-110"
     >
       <Thumb engine={engine} target={target} />
       {name}
@@ -626,18 +639,18 @@ function Inputs({
   ups: Map<string, Upstream[]>
 }) {
   return (
-    <div className="flex flex-col gap-1.5 border-b border-line px-3 py-2.5">
+    <div className="flex flex-col gap-1.5 border-b border-line px-4 py-2.5">
       {node.inputs.map((port) => {
         const list = ups.get(port.id) ?? []
         return (
           <div key={port.id} className="flex min-h-7 items-center gap-2 text-xs">
             <span
-              className={`w-12 flex-none ${port.required && list.length === 0 ? 'text-[#ff8a8a]' : 'text-ink-muted'}`}
+              className={`w-12 flex-none ${port.required && list.length === 0 ? 'text-danger' : 'text-ink-muted'}`}
             >
               {port.label}
             </span>
             {list.length === 0 ? (
-              <span className="text-ink-muted/70">
+              <span className="text-ink-subtle">
                 从左侧端口连入{port.multiple ? '，可连多个' : ''}
               </span>
             ) : (
@@ -690,7 +703,7 @@ function UpstreamChip({
           ? name
           : `${name}（未生成）`
   return (
-    <span className="group flex h-7 max-w-56 items-center gap-1 rounded-md bg-surface-2 pr-1 ring-1 ring-line">
+    <span className="group flex h-7 max-w-56 items-center gap-1 rounded-lg bg-surface-2 pr-1 ring-1 ring-line">
       <button
         type="button"
         onClick={onLocate}
@@ -698,17 +711,17 @@ function UpstreamChip({
         className="flex min-w-0 items-center gap-1.5 pl-0.5 text-left"
       >
         {img ? (
-          <img src={img} alt="" className="size-6 flex-none rounded object-cover" />
+          <img src={img} alt="" className="size-6 flex-none rounded-md object-cover" />
         ) : (
           <span className="w-1" />
         )}
-        <span className={`truncate ${v ? 'text-ink' : 'text-ink-muted'}`}>{text}</span>
+        <span className={`truncate ${v ? 'text-ink' : 'text-ink-subtle'}`}>{text}</span>
       </button>
       <button
         type="button"
         onClick={onRemove}
         aria-label={`断开「${name}」`}
-        className="flex size-5 flex-none items-center justify-center rounded text-ink-muted opacity-60 hover:bg-white/10 hover:text-ink group-hover:opacity-100"
+        className="flex size-5 flex-none items-center justify-center rounded-md text-ink-subtle opacity-60 hover:bg-active hover:text-ink group-hover:opacity-100"
       >
         ×
       </button>

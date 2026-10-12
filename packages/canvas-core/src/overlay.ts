@@ -4,9 +4,8 @@ import type { Camera } from './camera'
 import { type Guide, HANDLES, handlePosition, union } from './geometry'
 import type { Scene } from './scene'
 import type { Selection } from './selection'
+import { theme } from './theme'
 
-const ACCENT = 0x7cc4ff
-const GUIDE = 0xff6b8a
 /** 手柄边长（屏幕像素） */
 export const HANDLE_PX = 8
 
@@ -62,34 +61,35 @@ export class SelectionOverlay {
     const ids = this.selection.values()
     for (const id of ids) {
       const r = this.scene.rect(id)
-      if (r) g.rect(r.x, r.y, r.w, r.h)
+      // 贴合卡片圆角
+      if (r) g.roundRect(r.x, r.y, r.w, r.h, this.scene.get(id)?.kind === 'frame' ? 20 : 16)
     }
-    if (ids.length > 0) g.stroke({ color: ACCENT, width: 1.5 * px })
+    if (ids.length > 0) g.stroke({ color: theme.accent, width: 1.5 * px })
 
     const box = this.selectionBox()
     if (box && this.showHandles()) {
       if (ids.length > 1)
-        g.rect(box.x, box.y, box.w, box.h).stroke({ color: ACCENT, alpha: 0.6, width: px })
+        g.rect(box.x, box.y, box.w, box.h).stroke({ color: theme.accent, alpha: 0.6, width: px })
       const s = HANDLE_PX * px
       for (const h of HANDLES) {
         const p = handlePosition(box, h)
         g.rect(p.x - s / 2, p.y - s / 2, s, s)
       }
-      g.fill({ color: 0x0e0e10 }).stroke({ color: ACCENT, width: 1.5 * px })
+      g.fill({ color: theme.knob }).stroke({ color: theme.accent, width: 1.5 * px })
     }
 
     if (this.marquee) {
       const m = this.marquee
       g.rect(m.x, m.y, m.w, m.h)
-        .fill({ color: ACCENT, alpha: 0.08 })
-        .stroke({ color: ACCENT, alpha: 0.8, width: px })
+        .fill({ color: theme.accent, alpha: 0.08 })
+        .stroke({ color: theme.accent, alpha: 0.8, width: px })
     }
 
     for (const guide of this.guides) {
       if (guide.axis === 'x') g.moveTo(guide.at, guide.from).lineTo(guide.at, guide.to)
       else g.moveTo(guide.from, guide.at).lineTo(guide.to, guide.at)
     }
-    if (this.guides.length > 0) g.stroke({ color: GUIDE, width: px })
+    if (this.guides.length > 0) g.stroke({ color: theme.guide, width: px })
   }
 
   /** 选中项全部锁定时不显示手柄 */

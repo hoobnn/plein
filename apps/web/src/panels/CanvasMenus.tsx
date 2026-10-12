@@ -169,7 +169,7 @@ function NodePicker({
     else if (item.create) placeElement(engine, item.create(), menu.world, from)
   }
 
-  const pos = placeAt(menu.client.x, menu.client.y, 360)
+  const pos = placeAt(menu.client.x, menu.client.y, 400)
   let lastGroup = ''
   return (
     <div
@@ -177,7 +177,7 @@ function NodePicker({
       role="dialog"
       aria-label="添加节点"
       style={{ ...pos, width: MENU_W }}
-      className="pointer-events-auto fixed z-30 flex max-h-[360px] flex-col overflow-hidden rounded-xl bg-surface p-1 shadow-[var(--shadow-3)]"
+      className="ui-menu pointer-events-auto fixed z-30 flex max-h-[400px] flex-col overflow-hidden"
     >
       <input
         // biome-ignore lint/a11y/noAutofocus: 弹出即输入是选择器的主要用法
@@ -200,27 +200,27 @@ function NodePicker({
             pick(items[active])
           }
         }}
-        className="mb-1 h-9 rounded-lg bg-surface-2 px-3 text-sm outline-none ring-1 ring-line focus:ring-accent/60"
+        className="ui-input mb-1 !h-9 !text-sm"
       />
-      <div role="listbox" className="overflow-y-auto">
-        {items.length === 0 && <p className="px-2 py-3 text-sm text-ink-muted">没有匹配的节点</p>}
+      <div role="listbox" className="ui-scrollbar overflow-y-auto">
+        {items.length === 0 && <p className="px-2 py-3 text-sm text-ink-subtle">没有匹配的节点</p>}
         {items.map((item, i) => {
           const header = item.group !== lastGroup ? item.group : null
           lastGroup = item.group
           return (
             <div key={item.id}>
-              {header && <div className="px-2 pb-1 pt-2 text-xs text-ink-muted">{header}</div>}
+              {header && <div className="ui-menu-label">{header}</div>}
               <button
                 type="button"
                 role="option"
                 aria-selected={i === active}
                 onPointerEnter={() => setActive(i)}
                 onClick={() => pick(item)}
-                className={`flex w-full flex-col items-start rounded-lg px-2 py-1.5 text-left text-sm ${i === active ? 'bg-white/8' : ''}`}
+                className="ui-menu-item flex-col !items-start !gap-0.5"
               >
                 <span>{item.title}</span>
                 {item.description && (
-                  <span className="line-clamp-1 text-xs text-ink-muted">{item.description}</span>
+                  <span className="line-clamp-1 text-xs text-ink-subtle">{item.description}</span>
                 )}
               </button>
             </div>
@@ -244,15 +244,15 @@ function Item(props: {
       role="menuitem"
       disabled={props.disabled}
       onClick={props.onClick}
-      className={`flex h-8 w-full items-center justify-between rounded-lg px-2 text-left text-sm hover:bg-white/8 disabled:opacity-40 ${props.danger ? 'text-[#ff8a8a]' : ''}`}
+      className={`ui-menu-item justify-between ${props.danger ? '!text-danger hover:!bg-danger-soft' : ''}`}
     >
       <span>{props.label}</span>
-      {props.hint && <span className="text-xs text-ink-muted">{props.hint}</span>}
+      {props.hint && <span className="ui-kbd">{props.hint}</span>}
     </button>
   )
 }
 
-const Sep = () => <div className="my-1 h-px bg-line" />
+const Sep = () => <div className="ui-sep" />
 
 function ContextMenu({
   engine,
@@ -343,7 +343,7 @@ function ContextMenu({
       ref={ref}
       role="menu"
       style={{ ...placeAt(menu.client.x, menu.client.y, 320), width: 220 }}
-      className="pointer-events-auto fixed z-30 rounded-xl bg-surface p-1 shadow-[var(--shadow-3)]"
+      className="ui-menu pointer-events-auto fixed z-30"
     >
       {items}
     </div>

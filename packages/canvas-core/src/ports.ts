@@ -1,4 +1,5 @@
 import { type CanvasElement, elementPorts, type Port, type PortType, type Rect } from '@plein/doc'
+import { theme } from './theme'
 
 /** 端口半径（世界坐标） */
 export const PORT_RADIUS = 6
@@ -13,15 +14,8 @@ export interface PortRef {
   y: number
 }
 
-/** 端口按类型着色 */
-export const PORT_COLORS: Record<PortType, number> = {
-  text: 0xe8d5b5,
-  image: 0x7cc4ff,
-  video: 0xc59bff,
-  audio: 0x8be0a4,
-  json: 0xf2b880,
-  any: 0xb4b4bc,
-}
+/** 端口按类型着色（随主题变化） */
+export const portColor = (type: PortType) => theme.ports[type]
 
 function portList(el: CanvasElement, side: PortSide) {
   const ports = elementPorts(el)

@@ -3,7 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="dark light" />
+    <script>
+      // 首帧前定好主题，避免闪一下另一种颜色（与 stores/theme.ts 一致）
+      ;(() => {
+        var pref = 'system'
+        try {
+          pref = localStorage.getItem('plein:theme') || 'system'
+        } catch {}
+        var light =
+          pref === 'light' ||
+          (pref !== 'dark' && window.matchMedia('(prefers-color-scheme: light)').matches)
+        document.documentElement.dataset.theme = light ? 'light' : 'dark'
+        document.documentElement.style.colorScheme = light ? 'light' : 'dark'
+      })()
+    </script>
     <link rel="icon" href="data:," />
     <title>Plein</title>
   </head>

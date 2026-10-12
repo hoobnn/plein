@@ -1,11 +1,10 @@
 import { type CanvasElement, elementPorts } from '@plein/doc'
 import { Graphics } from 'pixi.js'
 import type { Camera } from './camera'
-import { PORT_COLORS, PORT_RADIUS, eachPort, findPort, type PortRef } from './ports'
+import { eachPort, findPort, PORT_RADIUS, type PortRef, portColor } from './ports'
 import type { Scene } from './scene'
 import type { Selection } from './selection'
-
-const EDGE_COLOR = 0xe8d5b5
+import { theme } from './theme'
 
 /** 拖拽中的连线预览：从一个端口拉到光标 */
 export interface EdgePreview {
@@ -81,9 +80,15 @@ export class EdgeLayer {
       const from = this.port(e.from[0], e.from[1], 'out')
       const to = this.port(e.to[0], e.to[1], 'in')
       if (!from || !to) continue
+      // 按数据类型着色；连着选中元素的线加重
+      const on = this.selection.has(e.from[0]) || this.selection.has(e.to[0])
       bezier(g, from.x, from.y, to.x, to.y)
+      g.stroke({
+        color: portColor(from.port.type),
+        alpha: on ? 0.95 : 0.5,
+        width: (on ? 2 : 1.5) * px,
+      })
     }
-    g.stroke({ color: EDGE_COLOR, alpha: 0.7, width: 2 * px })
 
     const p = this.ports.clear()
     if (this.preview) {
@@ -91,7 +96,7 @@ export class EdgeLayer {
       const end = target ?? this.preview
       if (from.side === 'out') bezier(p, from.x, from.y, end.x, end.y)
       else bezier(p, end.x, end.y, from.x, from.y)
-      p.stroke({ color: EDGE_COLOR, alpha: target ? 0.9 : 0.5, width: 2 * px })
+      p.stroke({ color: portColor(from.port.type), alpha: target ? 0.95 : 0.6, width: 2 * px })
     }
     // 缩得很小时端口点太密，不画
     if (this.camera.zoom < 0.25) return
@@ -103,8 +108,8 @@ export class EdgeLayer {
       eachPort(el, r, (ref) => {
         const on = active?.elementId === ref.elementId && active.port.id === ref.port.id
         p.circle(ref.x, ref.y, on ? PORT_RADIUS * 1.4 : PORT_RADIUS)
-          .fill({ color: 0x0e0e10 })
-          .stroke({ color: PORT_COLORS[ref.port.type], width: 2 * px })
+          .fill({ color: theme.knob })
+          .stroke({ color: portColor(ref.port.type), width: 2 * px })
       })
     }
   }

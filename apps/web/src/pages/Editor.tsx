@@ -8,6 +8,8 @@ import { FrameBar } from '../panels/FrameBar'
 import { Generator } from '../panels/Generator'
 import { StoryboardEditor } from '../panels/StoryboardEditor'
 import { Toolbar } from '../panels/Toolbar'
+import { Icon } from '../ui/icons'
+import { ThemeToggle } from '../ui/ThemeToggle'
 import { useCatalog } from '../stores/catalog'
 import { type SyncStatus, useCanvas } from '../stores/canvas'
 import { useTemplates } from '../stores/templates'
@@ -48,43 +50,59 @@ export function Editor({
   return (
     <div className="relative h-full w-full">
       <CanvasView source={source} />
-      <header className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between gap-4 p-4">
-        <div className="pointer-events-auto flex items-center gap-1 rounded-xl bg-surface/80 p-1 text-sm shadow-[var(--shadow-2)] backdrop-blur-xl">
-          <a href="#/" className="rounded-lg px-2 py-1 font-medium tracking-wide hover:bg-white/5">
+      <header className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-4 p-3">
+        <div className="ui-float pointer-events-auto flex h-11 items-center gap-0.5 rounded-[14px] px-1.5 text-[13px]">
+          <a
+            href="#/"
+            className="flex h-8 items-center gap-2 rounded-lg px-2 font-semibold tracking-wide hover:bg-hover"
+          >
+            <span className="size-4 rounded-[5px] bg-accent" aria-hidden="true" />
             Plein
           </a>
-          <span className="text-ink-muted">/</span>
+          <span className="text-ink-subtle">/</span>
           <button
             type="button"
             onClick={rename}
-            className="max-w-60 truncate rounded-lg px-2 py-1 hover:bg-white/5"
+            className="h-8 max-w-60 truncate rounded-lg px-2 font-medium hover:bg-hover"
           >
             {source.kind === 'demo' ? `演示（${source.count} 个元素）` : (canvas?.title ?? '…')}
           </button>
           <span
-            className={`px-2 text-xs ${sync === 'disconnected' ? 'text-amber-400' : 'text-ink-muted'}`}
+            className={`flex items-center gap-1.5 px-2 text-xs ${sync === 'disconnected' ? 'text-warning' : 'text-ink-subtle'}`}
             data-testid="sync-status"
           >
+            <span
+              className={`size-1.5 rounded-full ${sync === 'connected' ? 'bg-success' : sync === 'disconnected' ? 'bg-warning' : 'bg-ink-subtle'}`}
+              aria-hidden="true"
+            />
             {SYNC_LABELS[sync]}
           </span>
+        </div>
+        <div className="ui-float pointer-events-auto flex h-11 items-center gap-1 rounded-[14px] px-1.5">
+          <ThemeToggle />
           {source.kind === 'remote' && (
-            <button
-              type="button"
-              onClick={onOpenSettings}
-              className="rounded-lg px-2 py-1 text-ink-muted hover:bg-white/5 hover:text-ink"
-            >
-              设置
-            </button>
+            <>
+              <div className="mx-0.5 h-5 w-px bg-line" />
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                aria-label="设置"
+                title="设置"
+                className="ui-btn ui-btn-quiet ui-icon-btn"
+              >
+                <Icon name="settings" />
+              </button>
+            </>
           )}
         </div>
-        <p className="hidden text-xs text-ink-muted lg:block">
-          {selection > 0 ? `已选 ${selection} 个 · ` : ''}双击空白处添加节点 · 从端口拖出连线 ·
-          右键更多操作 · 拖入文件导入 · 空格拖动平移 · {modifier}+滚轮缩放 · {modifier}+Z 撤销
-        </p>
       </header>
+      <p className="pointer-events-none absolute bottom-5 left-4 hidden max-w-[calc(50%-300px)] text-xs leading-relaxed text-ink-subtle 2xl:block">
+        {selection > 0 ? `已选 ${selection} 个 · ` : ''}双击空白处添加节点 · 从端口拖出连线 ·
+        右键更多操作 · 拖入文件导入 · 空格拖动平移 · {modifier}+滚轮缩放
+      </p>
       {(importing || notice) && (
-        <div className="pointer-events-none absolute inset-x-0 top-16 flex justify-center px-4">
-          <div className="rounded-lg bg-surface/90 px-3 py-1.5 text-sm shadow-[var(--shadow-2)] backdrop-blur-xl">
+        <div className="pointer-events-none absolute inset-x-0 top-[68px] z-30 flex justify-center px-4">
+          <div className="ui-float rounded-[10px] px-3.5 py-2 text-[13px]">
             {importing ? `正在导入 ${importing.done}/${importing.total}…` : notice}
           </div>
         </div>
@@ -93,7 +111,7 @@ export function Editor({
       <FrameBar remote={source.kind === 'remote'} />
       <CanvasMenus canImport={source.kind === 'remote'} />
       <StoryboardEditor />
-      <footer className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4">
+      <footer className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-3">
         <Toolbar canImport={source.kind === 'remote'} />
       </footer>
     </div>
