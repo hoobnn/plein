@@ -9,6 +9,13 @@ const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 /** 开发模式：`electron . --dev`，服务端跑源码，页面来自 Vite */
 export const isDev = process.argv.includes('--dev') || process.env.PLEIN_DESKTOP_DEV === '1'
 
+/** 图标与网页资产一同交付，开发与安装包使用同一份。 */
+export function appIconPath() {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'web', 'plein-icon.png')
+    : join(repoRoot, 'apps/web/public/plein-icon.png')
+}
+
 export interface ServerPaths {
   /** 服务端入口脚本 */
   entry: string

@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, shell } from 'electron'
 import { installMenu } from './menu'
-import { DEV_WEB_URL, dataDir, isDev, serverPaths } from './paths'
+import { appIconPath, DEV_WEB_URL, dataDir, isDev, serverPaths } from './paths'
 import { type ServerHandle, startServer } from './server'
 import { restoreWindowState, trackWindowState } from './window-state'
 
@@ -42,6 +42,7 @@ function createWindow(url: string) {
       : { titleBarStyle: 'default' as const }),
     autoHideMenuBar: false,
     title: 'plein',
+    icon: appIconPath(),
     // 与网页主题的画布底色一致，避免启动时闪色
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0b0b0d' : '#f3f3f5',
     show: false,
@@ -92,7 +93,12 @@ async function waitFor(url: string, timeoutMs = 30_000) {
 }
 
 async function boot() {
-  app.setAboutPanelOptions({ applicationName: 'Plein', applicationVersion: app.getVersion() })
+  app.dock?.setIcon(appIconPath())
+  app.setAboutPanelOptions({
+    applicationName: 'Plein',
+    applicationVersion: app.getVersion(),
+    iconPath: appIconPath(),
+  })
   installMenu(showWindow)
   const dir = dataDir()
   ipcMain.handle('plein:native-edit', (event, action: unknown) => {

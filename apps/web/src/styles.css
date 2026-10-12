@@ -838,10 +838,8 @@ input[type="radio"] {
 /* ── 首页 ─────────────────────────────────────────── */
 .plein-logo {
   flex-shrink: 0;
-  border-radius: 7px;
-  background:
-    radial-gradient(circle at 30% 28%, rgb(255 255 255 / 0.45), transparent 45%),
-    linear-gradient(135deg, var(--accent-hover), var(--accent) 55%, #4f8cff);
+  border-radius: 22%;
+  background: url("/plein-icon.png") center / contain no-repeat;
 }
 
 .home-card {
