@@ -23,12 +23,14 @@
     "test": "vitest run",
     "prepare": "husky",
     "smoke": "pnpm --filter @plein/server exec tsx scripts/smoke.ts",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm smoke"
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm smoke",
+    "e2e": "pnpm --filter @plein/web exec vite build --mode e2e --outDir dist-e2e && playwright test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
     "@commitlint/cli": "^21.2.3",
     "@commitlint/config-conventional": "^21.2.3",
+    "@playwright/test": "1.64.0",
     "@types/node": "^26.6.5",
     "husky": "^9.1.7",
     "prettier": "3.9.10",

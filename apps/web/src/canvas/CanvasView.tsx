@@ -90,6 +90,8 @@ export function CanvasView({ source }: { source: CanvasSource }) {
         const offStale = canvasId ? watchStale(engine, canvasId) : () => {}
         const offAspect = canvasId ? watchVideoAspect(engine, videoRatio) : () => {}
         const detach = attach(engine)
+        // 端到端测试读画布状态、换算节点屏幕坐标用；只有 e2e 构建（--mode e2e）才有，正式构建会被摇掉
+        if (import.meta.env.MODE === 'e2e') (window as { __plein?: unknown }).__plein = { engine }
         const off = attachImport(engine, host, { setImporting, notify })
         const offTheme = useTheme.subscribe((s, prev) => {
           if (s.name !== prev.name) engine.setTheme(canvasTheme(s.name))
