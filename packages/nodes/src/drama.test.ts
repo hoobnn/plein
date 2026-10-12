@@ -45,7 +45,7 @@ describe('短剧模板骨架', () => {
     expect(keys).toContain('scene')
     expect(keys).toContain('shots')
     expect(keys).toContain('seq')
-    // 样例车道：分镜图 → 镜头视频 → 配音 → 序列
+    // 样例车道：分镜图 → 镜头视频、配音（不接序列）
     expect(keys).toContain('shotImage')
     expect(keys).toContain('shotVideo')
     expect(keys).toContain('shotSpeech')
@@ -56,9 +56,10 @@ describe('短剧模板骨架', () => {
     expect(edges).toContain('script.text→shots.script')
     expect(edges).toContain('character.images→charimg.references')
     expect(edges).toContain('charimg.images→shotImage.references')
-    expect(edges).toContain('shotVideo.video→seq.clips')
-    expect(edges).toContain('shotSpeech.audio→seq.dialogue')
     expect(edges).toContain('music.audio→seq.music')
+    // 样例不进成片：真实镜头由分镜展开时按顺序接入序列
+    expect(edges).not.toContain('shotVideo.video→seq.clips')
+    expect(edges).not.toContain('shotSpeech.audio→seq.dialogue')
 
     // 连线引用的 key 都真实存在
     const set = new Set(keys)
@@ -66,6 +67,41 @@ describe('短剧模板骨架', () => {
       expect(set.has(e.from[0]), e.from[0]).toBe(true)
       expect(set.has(e.to[0]), e.to[0]).toBe(true)
     }
+  })
+
+  it('卡片都落在所属分组里，同一分组里互不重叠', () => {
+    const t = dramaTemplate()
+    const map = new Map(t.elements.map((e) => [e.key, e]))
+    const abs = (key: string): { x: number; y: number; w: number; h: number } => {
+      const e = map.get(key)!
+      const p = e.parent ? abs(e.parent) : { x: 0, y: 0 }
+      return { x: p.x + e.x, y: p.y + e.y, w: e.w, h: e.h }
+    }
+    const inside = (a: ReturnType<typeof abs>, b: ReturnType<typeof abs>) =>
+      a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h
+    const overlap = (a: ReturnType<typeof abs>, b: ReturnType<typeof abs>) =>
+      a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    const frames = t.elements.filter((e) => e.shape === 'frame')
+    // 没写 parent 的卡片按位置归到包住它的最内层分组
+    const container = (key: string) => {
+      const e = map.get(key)!
+      if (e.parent) return e.parent
+      const r = abs(key)
+      return frames
+        .filter((f) => f.key !== key && inside(r, abs(f.key)))
+        .sort((a, b) => a.w * a.h - b.w * b.h)[0]?.key
+    }
+    const cards = t.elements.filter((e) => e.shape === 'element')
+    for (const c of cards) {
+      const box = container(c.key)
+      expect(box, `${c.key} 应落在某个分组里`).toBeDefined()
+      expect(inside(abs(c.key), abs(box!)), `${c.key} 超出 ${box}`).toBe(true)
+    }
+    for (const a of cards)
+      for (const b of cards) {
+        if (a.key >= b.key || container(a.key) !== container(b.key)) continue
+        expect(overlap(abs(a.key), abs(b.key)), `${a.key} 与 ${b.key} 重叠`).toBe(false)
+      }
   })
 
   it('分镜图的图片接到视频、视频用图生视频模式：结构由模板保证', () => {

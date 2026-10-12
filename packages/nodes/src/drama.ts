@@ -197,12 +197,13 @@ export function dramaTemplate(opts: DramaTemplateOptions = {}): DramaTemplateSpe
           duration: 5,
         },
       }),
-      card('shotSpeech', 'plein/speech', '对白配音', 300, 420, 280, 160, {
+      card('shotSpeech', 'plein/speech', '对白配音', 40, 420, 280, 160, {
         parent: 'lane',
         capability: 'audio.speech',
         params: { text: '（示例台词）你到底把东西藏到哪儿去了？' },
       }),
       card('music', 'plein/music', '配乐', 620, 40, 280, 160, {
+        parent: 'stage',
         capability: 'audio.music',
         params: {
           prompt: '都市悬疑的紧张弦乐，中速，随着冲突渐强，结尾留一个悬念，不带人声',
@@ -210,6 +211,7 @@ export function dramaTemplate(opts: DramaTemplateOptions = {}): DramaTemplateSpe
         },
       }),
       card('seq', 'plein/sequence', '序列', 620, 240, 260, 420, {
+        parent: 'stage',
         params: { aspectRatio: VERTICAL },
       }),
     ],
@@ -222,8 +224,7 @@ export function dramaTemplate(opts: DramaTemplateOptions = {}): DramaTemplateSpe
       { from: ['charimg', 'images'], to: ['shotImage', 'references'] },
       // 图生视频：分镜图作视频的首帧，样例车道和展开出来的镜头一致
       { from: ['shotImage', 'images'], to: ['shotVideo', 'images'] },
-      { from: ['shotVideo', 'video'], to: ['seq', 'clips'] },
-      { from: ['shotSpeech', 'audio'], to: ['seq', 'dialogue'] },
+      // 样例车道不接序列：展开分镜时真实镜头会按顺序自动接进来，样例接着反而会混进成片
       { from: ['music', 'audio'], to: ['seq', 'music'] },
     ],
   }

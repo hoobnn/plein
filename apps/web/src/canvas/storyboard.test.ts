@@ -472,3 +472,80 @@ describe('画布上有重名资产卡时不猜', () => {
     expect(image.params?.prompt).toBe('@林夏 低机位')
   })
 })
+
+describe('展开的镜头接入序列', () => {
+  const addSequence = (doc: Engine['doc'], x = 800) =>
+    createElement(doc, {
+      kind: 'node',
+      nodeType: 'plein/sequence',
+      name: '序列',
+      params: { clips: [] },
+      ports: {
+        inputs: [
+          { id: 'clips', label: '镜头', type: 'video', multiple: true },
+          { id: 'dialogue', label: '对白', type: 'audio', multiple: true },
+        ],
+        outputs: [{ id: 'video', label: '成片', type: 'video' }],
+      },
+      x,
+      y: 0,
+      w: 200,
+      h: 300,
+    })
+  const intoSeq = (doc: Engine['doc'], seq: string) =>
+    [...doc.edges()].filter((e) => e.to[0] === seq).map((e) => [e.from[0], e.to[1]])
+
+  it('按表格顺序接视频与首句配音，没台词的镜头明确不配对白', () => {
+    const s1 = shot(1)
+    const s2 = shot(2, { dialogue: [{ character: '林夏', line: '你来了' }] })
+    const { doc, engine, board } = setup([s1, s2])
+    const seq = addSequence(doc)
+    const result = expandShots(engine, board, [s1.id, s2.id], catalog)
+    expect(result.sequence).toBe('linked')
+    const role = (shotId: string, r: string) =>
+      nodesOf(engine, board, shotId).find((el) => roleOf(el) === r)!.id
+    const v1 = role(s1.id, 'video')
+    const v2 = role(s2.id, 'video')
+    const a2 = role(s2.id, 'speech')
+    expect(intoSeq(doc, seq)).toEqual([
+      [v1, 'clips'],
+      [v2, 'clips'],
+      [a2, 'dialogue'],
+    ])
+    // 不写明的话序列按顺序把第一条对白配给第一个镜头，而那个镜头根本没台词
+    expect(doc.get(seq)?.params?.clips).toEqual([
+      { source: v1, in: 0, dialogue: '' },
+      { source: v2, in: 0, dialogue: a2 },
+    ])
+  })
+
+  it('更新展开补了台词：配音接进序列并补上这段的对白，用户调过的入点不动', () => {
+    const s = shot(1)
+    const { doc, engine, board, table } = setup([s])
+    const seq = addSequence(doc)
+    expandShots(engine, board, [s.id], catalog)
+    const [clip] = doc.get(seq)!.params!.clips as Array<{ source: string }>
+    setParam(doc, seq, 'clips', [{ ...clip, in: 1.5, dialogue: '' }])
+
+    table([{ ...s, dialogue: [{ character: '林夏', line: '补的一句' }] }])
+    expandShots(engine, board, [s.id], catalog, { mode: 'update' })
+    const speech = nodesOf(engine, board, s.id).find((el) => roleOf(el) === 'speech')!
+    expect(intoSeq(doc, seq)).toContainEqual([speech.id, 'dialogue'])
+    expect(doc.get(seq)?.params?.clips).toEqual([
+      { source: clip!.source, in: 1.5, dialogue: speech.id },
+    ])
+    // 再更新一次不会重复连线
+    expandShots(engine, board, [s.id], catalog, { mode: 'update' })
+    expect(intoSeq(doc, seq)).toHaveLength(2)
+  })
+
+  it('有多个序列时不猜，一条线都不连', () => {
+    const s = shot(1)
+    const { doc, engine, board } = setup([s])
+    const a = addSequence(doc, 800)
+    const b = addSequence(doc, 1200)
+    expect(expandShots(engine, board, [s.id], catalog).sequence).toBe('ambiguous')
+    expect(intoSeq(doc, a)).toEqual([])
+    expect(intoSeq(doc, b)).toEqual([])
+  })
+})

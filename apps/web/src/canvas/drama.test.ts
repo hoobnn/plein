@@ -94,8 +94,9 @@ describe('短剧模板落到画布', () => {
         )
       }),
     ).toBe(true)
-    expect(edges).toContain('video@plein/video→clips')
-    expect(edges).toContain('audio@plein/speech→dialogue')
+    // 样例车道不接序列，真实镜头由分镜展开时接入
+    expect(edges).not.toContain('video@plein/video→clips')
+    expect(edges).not.toContain('audio@plein/speech→dialogue')
     expect(edges).toContain('audio@plein/music→music')
     expect(edges).toContain('text@plein/llm→script')
     expect(edges).toContain('text@md→prompt')

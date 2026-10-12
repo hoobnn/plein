@@ -16,6 +16,8 @@ import {
   type PlanDiff,
   planParams,
   planVersion,
+  SEQUENCE_TYPE,
+  type SequenceClip,
   type Shot,
   type ShotPlan,
   type ShotRole,
@@ -277,6 +279,39 @@ export interface ExpandResult {
   skipped: number
   /** 画布上有重名资产卡、没敢自动引用的角色名；用户需要先改名或写清是哪一个 */
   ambiguous: string[]
+  /** 接入序列的结果：画布上只有一个序列才自动接，没有或有多个时不动 */
+  sequence: SequenceLink
+}
+
+export type SequenceLink = 'linked' | 'none' | 'ambiguous'
+
+/**
+ * 展开的镜头接到画布上唯一的序列：视频进「镜头」，首句配音进「对白」，
+ * 并把对应关系写进序列参数——不写的话序列按顺序配对白，没有台词的镜头会让后面的对白错位。
+ * 已经接过的不重复连，用户在序列里改过的设置不动（只给原先没有对白的镜头补上）。
+ */
+function linkSequence(
+  doc: Engine['doc'],
+  shots: Array<{ video: string; speech?: string }>,
+): SequenceLink {
+  const seqs = [...doc.elements()].filter((e) => e.kind === 'node' && e.nodeType === SEQUENCE_TYPE)
+  if (seqs.length !== 1) return seqs.length ? 'ambiguous' : 'none'
+  const seq = seqs[0]!
+  if (shots.length === 0) return 'linked'
+  const into = [...doc.edges()].filter((e) => e.to[0] === seq.id)
+  const has = (from: string, port: string) =>
+    into.some((e) => e.from[0] === from && e.to[1] === port)
+  const clips = [...((seq.params?.clips as SequenceClip[] | undefined) ?? [])]
+  for (const s of shots) {
+    if (!has(s.video, 'clips')) connect(doc, [s.video, 'video'], [seq.id, 'clips'])
+    if (s.speech && !has(s.speech, 'dialogue'))
+      connect(doc, [s.speech, 'audio'], [seq.id, 'dialogue'])
+    const at = clips.findIndex((c) => c.source === s.video)
+    if (at < 0) clips.push({ source: s.video, in: 0, dialogue: s.speech ?? '' })
+    else if (s.speech && !clips[at]!.dialogue) clips[at] = { ...clips[at]!, dialogue: s.speech }
+  }
+  setParams(doc, seq.id, { clips })
+  return 'linked'
 }
 
 export interface ExpandOptions {
@@ -307,7 +342,14 @@ export function expandShots(
   const imageInfo = findNode(catalog, 'plein/image')
   const videoInfo = findNode(catalog, 'plein/video')
   const speechInfo = findNode(catalog, 'plein/speech')
-  const empty = { frames: [], created: 0, updated: 0, skipped: 0, ambiguous: [] }
+  const empty: ExpandResult = {
+    frames: [],
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    ambiguous: [],
+    sequence: 'none',
+  }
   if (!board || !boardRect || !imageInfo || !videoInfo || !speechInfo) return empty
   const done = expandedNodes(engine, boardId)
   const all = shotsOf(board)
@@ -334,6 +376,9 @@ export function expandShots(
   let created = 0
   let updated = 0
   let skipped = 0
+  // 按表格顺序记下每个镜头的视频和首句配音，最后统一接到序列
+  const linked: Array<{ video: string; speech?: string }> = []
+  let sequence: SequenceLink = 'none'
   doc.ydoc.transact(() => {
     for (const shot of shots) {
       const existing = done.get(shot.id) ?? []
@@ -398,9 +443,10 @@ export function expandShots(
           mode: 'image',
         })
         connect(doc, [img, 'images'], [vid, 'images'])
+        const spoken: string[] = []
         lines.forEach((d, i) => {
           const params = planParams(shot, 'speech', lineAt(d.i))
-          add(
+          const id = add(
             { ...speech, name: `台词 · ${d.character || '旁白'}` },
             frame,
             [PAD, HEAD + image.h + PAD + i * (speech.h + ROW_GAP)],
@@ -409,7 +455,9 @@ export function expandShots(
               ...params,
             },
           )
+          spoken.push(id)
         })
+        linked.push({ video: vid, speech: spoken[0] })
         continue
       }
 
@@ -447,6 +495,7 @@ export function expandShots(
           setParams(doc, vid.id, { mode: 'image' })
         }
       }
+      let vidId = byRole('video')[0]?.id
       if (!hasVideo) {
         const params = planParams(shot, 'video', ctxBase)
         const vid = addMissing(
@@ -456,19 +505,24 @@ export function expandShots(
         )
         // 补出来的视频也要接上分镜图，否则批量生成视频时会一直说「还没有分镜图」
         connect(doc, [imgId, 'images'], [vid, 'images'])
+        vidId = vid
       }
+      let firstSpeech = speechNodes[0]?.id
       lines.forEach((d) => {
         if (spokenLines.has(d.i)) return
         const params = planParams(shot, 'speech', lineAt(d.i))
-        addMissing(
+        const id = addMissing(
           { ...speech, name: `台词 · ${d.character || '旁白'}` },
           params,
           source('speech', { line: d.i, plan: snapshot(params) }),
         )
+        firstSpeech ??= id
       })
+      if (vidId) linked.push({ video: vidId, speech: firstSpeech })
       if (created > before) updated++
       else skipped++
     }
+    sequence = linkSequence(doc, linked)
   }, LOCAL_ORIGIN)
   doc.flush()
   return {
@@ -477,6 +531,7 @@ export function expandShots(
     updated,
     skipped,
     ambiguous: ambiguousCharacters(engine, boardId, shotIds),
+    sequence,
   }
 }
 

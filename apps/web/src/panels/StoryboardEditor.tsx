@@ -129,7 +129,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const scope = picked.size ? `选中的 ${picked.size} 个镜头` : '全部镜头'
 
   const expand = (mode: 'new' | 'update') => {
-    const { frames, created, updated, skipped, ambiguous } = expandShots(
+    const { frames, created, updated, skipped, ambiguous, sequence } = expandShots(
       engine,
       id,
       targetIds,
@@ -157,6 +157,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           : '这些镜头都已展开过，要补齐用「更新展开」',
       )
     }
+    if (sequence === 'ambiguous')
+      notify('画布上有多个序列，镜头没有自动接入，请把镜头视频和配音连到要导出的那个序列')
     if (frames.length) {
       onClose()
       engine.zoomToFit([id, ...frames])
