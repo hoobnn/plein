@@ -20,7 +20,7 @@ function setup(values: unknown[] = []) {
   return { ctx, fetch }
 }
 const sse =
-  'data: {"choices":[{"delta":{"content":"你好"}}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2}}\n\ndata: [DONE]\n\n'
+  'data: {"choices":[{"delta":{"content":"你好"},"finish_reason":"stop"}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2}}\n\ndata: [DONE]\n\n'
 describe('百炼 API 契约', () => {
   it('upgrades official HTTP audio result URL to HTTPS without changing its signature', async () => {
     const { ctx } = setup([
@@ -96,11 +96,57 @@ describe('百炼 API 契约', () => {
     })
     expect(new Headers(init.headers).get('Authorization')).toBe('Bearer sk-test')
   })
+  it('结构化输出：要求 JSON、Schema 写进系统提示，结果按 Schema 校验', async () => {
+    const answer = (content: string) =>
+      `data: ${JSON.stringify({ choices: [{ delta: { content }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`
+    const schema = {
+      type: 'object',
+      properties: { shots: { type: 'integer' } },
+      required: ['shots'],
+    }
+    const { ctx, fetch } = setup([answer('{"shots":3}'), answer('{"shots":"三"}')])
+    const run = () =>
+      bailianProvider.submit(
+        {
+          capability: 'text.chat',
+          model: 'qwen3.7-plus',
+          input: {
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: '拆分镜' },
+                  { type: 'image', image: { assetId: 'a', kind: 'image' } as never },
+                ],
+              },
+            ],
+            jsonSchema: schema,
+          },
+        },
+        ctx,
+      )
+    expect(await run()).toMatchObject({ outputs: [{ type: 'json', value: { shots: 3 } }] })
+    const body = JSON.parse(
+      String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body),
+    )
+    expect(body.response_format).toEqual({ type: 'json_object' })
+    expect(body.messages[0]).toMatchObject({ role: 'system' })
+    expect(body.messages[0].content).toContain('"shots"')
+    expect(body.messages[1].content).toEqual([
+      { type: 'text', text: '拆分镜' },
+      { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } },
+    ])
+    await expect(run()).rejects.toMatchObject({ code: 'unknown' })
+  })
   it('缺少 DONE 时拒绝成功且不会重新提交', async () => {
     const { ctx, fetch } = setup([sse.replace('data: [DONE]\n\n', '')])
     await expect(
       bailianProvider.submit(
-        { capability: 'text.chat', model: 'qwen3.7-plus', input: { messages: [] } },
+        {
+          capability: 'text.chat',
+          model: 'qwen3.7-plus',
+          input: { messages: [{ role: 'user', content: 'hi' }] },
+        },
         ctx,
       ),
     ).rejects.toMatchObject({ code: 'unknown' })
@@ -332,7 +378,11 @@ describe('百炼 API 契约', () => {
     ])
     await expect(
       bailianProvider.submit(
-        { capability: 'text.chat', model: 'qwen3.7-plus', input: { messages: [] } },
+        {
+          capability: 'text.chat',
+          model: 'qwen3.7-plus',
+          input: { messages: [{ role: 'user', content: 'hi' }] },
+        },
         ctx,
       ),
     ).rejects.toMatchObject({ message: 'invalid [REDACTED]' })

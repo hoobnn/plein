@@ -13,15 +13,14 @@ import {
 import { z } from 'zod'
 import {
   asJson,
-  chatMessages,
   imageDataUrl,
   type Json,
   type Method,
   redact,
   send,
-  transportError,
   withRetry,
 } from '../shared/http'
+import { chatCompletion, requireSseDone } from '../shared/llm'
 
 const settings = z.object({
   region: z
@@ -344,70 +343,26 @@ export const bailianProvider = defineProvider({
     if (!supported[req.capability]?.includes(req.model))
       throw new ProviderError('invalid_input', `百炼模型 ${req.model} 不支持 ${req.capability}`)
     switch (req.capability) {
-      case 'text.chat': {
-        const input = req.input as CapabilityInput<'text.chat'>
-        const messages = await chatMessages(input.messages, (ref) => inline(ref, ctx))
-        if (input.jsonSchema)
-          messages.unshift({
-            role: 'system',
-            content: `Return only JSON matching this schema: ${JSON.stringify(input.jsonSchema)}`,
-          })
-        const res = await response(ctx, '/compatible-mode/v1/chat/completions', {
-          ...input.extra,
+      case 'text.chat':
+        return chatCompletion({
+          ctx,
+          label: '百炼',
+          baseURL: `${host(ctx)}/compatible-mode/v1`,
+          // 鉴权、传输失败和 HTTP 错误码归类沿用 response()；流必须以 [DONE] 结束
+          fetch: async (url, init) => {
+            const path = String(url).slice(host(ctx).length)
+            const body = JSON.parse(String(init?.body)) as Json
+            return requireSseDone(
+              await response(ctx, path, body),
+              () => new ProviderError('unknown', '百炼回答不完整或未收到 [DONE]；请勿自动重新提交'),
+            )
+          },
           model: req.model,
-          messages,
-          stream: true,
-          stream_options: { include_usage: true },
-          ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
-          ...(input.maxTokens !== undefined ? { max_tokens: input.maxTokens } : {}),
-          ...(input.jsonSchema ? { response_format: { type: 'json_object' } } : {}),
+          input: req.input as CapabilityInput<'text.chat'>,
+          image: (ref) => inline(ref, ctx),
+          structured: 'json_object',
+          streamError: (error) => withRetry(remoteError(200, { error }, ctx), 'POST'),
         })
-        let raw: string
-        try {
-          raw = await res.text()
-        } catch (e) {
-          const message = '百炼流式响应中断；勿重新生成'
-          throw transportError(ctx, 'POST', e, { cancelled: message, network: message })
-        }
-        let text = '',
-          done = false,
-          data: Json = {}
-        for (const frame of raw.split(/\r?\n\r?\n/)) {
-          const payload = frame
-            .split(/\r?\n/)
-            .filter((l) => l.startsWith('data:'))
-            .map((l) => l.slice(5).trimStart())
-            .join('\n')
-          if (!payload) continue
-          if (payload === '[DONE]') {
-            done = true
-            break
-          }
-          let chunk: Json
-          try {
-            chunk = asJson(JSON.parse(payload))
-          } catch {
-            throw new ProviderError('unknown', '百炼返回无效 SSE 数据')
-          }
-          if (chunk.error || chunk.code) throw withRetry(remoteError(200, chunk, ctx), 'POST')
-          if (chunk.usage) data = chunk
-          for (const choice of arr(chunk.choices)) {
-            const content = asJson(asJson(choice).delta).content
-            if (typeof content === 'string') text += content
-          }
-        }
-        if (!done || !text)
-          throw new ProviderError('unknown', '百炼回答不完整或未收到 [DONE]；请勿自动重新提交')
-        let outputs: ProviderOutput[] = [{ type: 'text', text }]
-        if (input.jsonSchema) {
-          try {
-            outputs = [{ type: 'json', value: JSON.parse(text) }]
-          } catch {
-            throw new ProviderError('unknown', '模型回答不是有效 JSON')
-          }
-        }
-        return { state: 'succeeded', outputs, usage: usage(data) }
-      }
       case 'image.generate': {
         const input = req.input as CapabilityInput<'image.generate'>
         if (!input.prompt.trim()) throw new ProviderError('invalid_input', '图片提示词不能为空')

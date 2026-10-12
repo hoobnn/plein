@@ -22,6 +22,8 @@ MiniMax 默认中国区 `api.minimax.cn`，可选国际区 `api.minimax.io`，�
 
 以官方接口文档为契约，直接使用宿主 `ctx.fetch`，确保域名许可、密钥访问、资产归属、取消信号和异步任务轮询一致。没有额外引入云厂商 SDK。每个平台独立声明模型、设置、密钥和最小网络权限；产物通过宿主写入资产库。
 
+OpenAI 兼容的对话（`text.chat`）共用 `packages/providers/src/shared/llm.ts`，基于 Vercel AI SDK（`ai` + `@ai-sdk/openai-compatible`）：负责消息转换、流式读取、结构化输出按请求的 JSON Schema 校验（zod `fromJSONSchema`）、用量归一化；鉴权、端点、HTTP 与流内错误码的归类和脱敏仍由各平台适配器通过传给它的 `fetch` 和 `streamError` 提供，请求一律不重试。目前百炼已接入；火山方舟和 MiniMax 的对话仍是各自手写的请求，等插件 SDK 支持流式输出到界面或工具调用时再迁移。
+
 SDK 新增 `testScope` 标记本地配置检查，以及 `credentialAlternatives` 表达豆包新旧鉴权方式；目录的 `configured` 只有在一组凭据完整时才为真。宿主取消使用独立的 10 秒信号，避免已取消的生成请求阻止远端取消请求。
 
 ## 能力边界
