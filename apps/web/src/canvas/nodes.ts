@@ -8,6 +8,7 @@ import {
   type NewElement,
   type Port,
   type PortType,
+  portsCompatible,
   type ResultValue,
   updateElement,
   videoAssetOf,
@@ -139,8 +140,6 @@ export function nodeElement(node: NodeInfo): Omit<NewElement, 'x' | 'y'> {
   }
 }
 
-const accepts = (a: PortType, b: PortType) => a === 'any' || b === 'any' || a === b
-
 type PortFrom = { elementId: string; port: Port; side: 'in' | 'out' }
 
 /** 连接点上的全部端口：每侧只有一个连接点，拉线时按类型挑其中能接上的 */
@@ -157,7 +156,7 @@ export function compatibleNodes(
 ) {
   return nodes.filter((n) =>
     (from.side === 'out' ? n.inputs : n.outputs).some((p) =>
-      from.types.some((t) => accepts(p.type, t)),
+      from.types.some((t) => portsCompatible(p.type, t)),
     ),
   )
 }
@@ -192,7 +191,7 @@ export function placeElement(
     const mine = handlePorts(engine, from)
     const theirs = (from.side === 'out' ? ports?.inputs : ports?.outputs) ?? []
     for (const p of theirs) {
-      const f = mine.find((m) => accepts(p.type, m.type))
+      const f = mine.find((m) => portsCompatible(p.type, m.type))
       if (!f) continue
       if (from.side === 'out') connect(engine.doc, [from.elementId, f.id], [id, p.id])
       else connect(engine.doc, [id, p.id], [from.elementId, f.id])
