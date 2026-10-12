@@ -30,7 +30,10 @@ export function composeArgs(
 ) {
   const { width: W, height: H, fps } = spec
   const durations = clipDurations(spec, infos.clips)
-  const total = durations.reduce((a, b) => a + b, 0)
+  const n = spec.clips.length
+  const tr = n > 1 ? spec.transition : undefined
+  const overlap = tr?.type === 'dissolve' ? tr.duration : 0
+  const total = durations.reduce((a, b) => a + b, 0) - overlap * Math.max(0, n - 1)
   const args = ['-hide_banner', '-v', 'error', '-y']
   const filters: string[] = []
 
@@ -42,22 +45,52 @@ export function composeArgs(
     args.push('-i', files.audio[i]!)
   })
 
-  const concat: string[] = []
+  // 经黑场转场：前一段结尾淡出、后一段开头淡入，各占一半
+  const half = tr?.type === 'fade' ? tr.duration / 2 : 0
+  const fades = (i: number, len: number, kind: 'v' | 'a') => {
+    if (!half) return ''
+    const f = kind === 'v' ? 'fade' : 'afade'
+    let out = ''
+    if (i > 0) out += `,${f}=t=in:st=0:d=${fmt(half)}`
+    if (i < n - 1) out += `,${f}=t=out:st=${fmt(Math.max(0, len - half))}:d=${fmt(half)}`
+    return out
+  }
+
   spec.clips.forEach((c, i) => {
-    const d = fmt(durations[i]!)
+    const len = durations[i]!
+    const d = fmt(len)
     filters.push(
-      `[${i}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=${fps},format=yuv420p,trim=duration=${d},setpts=PTS-STARTPTS[v${i}]`,
+      `[${i}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=${fps},format=yuv420p,trim=duration=${d},setpts=PTS-STARTPTS${fades(i, len, 'v')}[v${i}]`,
     )
     if (infos.clips[i]?.hasAudio && c.volume > 0) {
       filters.push(
-        `[${i}:a]aformat=sample_rates=${RATE}:channel_layouts=stereo,volume=${fmt(c.volume)},asetpts=PTS-STARTPTS,apad,atrim=duration=${d}[a${i}]`,
+        `[${i}:a]aformat=sample_rates=${RATE}:channel_layouts=stereo,volume=${fmt(c.volume)},asetpts=PTS-STARTPTS,apad,atrim=duration=${d}${fades(i, len, 'a')}[a${i}]`,
       )
     } else {
       filters.push(`anullsrc=r=${RATE}:cl=stereo,atrim=duration=${d}[a${i}]`)
     }
-    concat.push(`[v${i}][a${i}]`)
   })
-  filters.push(`${concat.join('')}concat=n=${spec.clips.length}:v=1:a=1[vcat][acat]`)
+  if (overlap > 0) {
+    // 叠化：画面 xfade、声音 acrossfade，第 k 段在前面各段总长减去 k 次重叠处开始
+    let v = '[v0]'
+    let a = '[a0]'
+    let offset = 0
+    for (let i = 1; i < n; i++) {
+      offset += durations[i - 1]! - overlap
+      const last = i === n - 1
+      const vo = last ? '[vcat]' : `[vx${i}]`
+      const ao = last ? '[acat]' : `[ax${i}]`
+      filters.push(
+        `${v}[v${i}]xfade=transition=fade:duration=${fmt(overlap)}:offset=${fmt(offset)}${vo}`,
+      )
+      filters.push(`${a}[a${i}]acrossfade=d=${fmt(overlap)}${ao}`)
+      v = vo
+      a = ao
+    }
+  } else {
+    const concat = spec.clips.map((_, i) => `[v${i}][a${i}]`).join('')
+    filters.push(`${concat}concat=n=${n}:v=1:a=1[vcat][acat]`)
+  }
 
   const mix = ['[acat]']
   spec.audio.forEach((a, j) => {

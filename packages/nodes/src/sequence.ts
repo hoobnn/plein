@@ -5,6 +5,7 @@ import {
   defineNode,
   type PortValue,
   type SubtitleStyle,
+  type TranscriptSegment,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
 
@@ -26,6 +27,7 @@ export type SequenceClip = z.infer<typeof SequenceClip>
 export const SEQUENCE_TYPE = 'plein/sequence'
 
 const SUBTITLE_STYLES = ['常规', '醒目', '底框'] as const
+export const TRANSITIONS = ['无', '淡入淡出', '叠化'] as const
 const STYLE_IDS: Record<(typeof SUBTITLE_STYLES)[number], SubtitleStyle> = {
   常规: 'standard',
   醒目: 'bold',
@@ -60,6 +62,12 @@ export const sequenceNode = defineNode({
     dialogueVolume: volume('对白音量', 1),
     musicVolume: volume('配乐音量', 0.35),
     sfxVolume: volume('音效音量', 0.8),
+    transition: z.enum(TRANSITIONS).default('无').meta({ title: '转场' }),
+    transitionDuration: z.number().min(0.2).max(2).default(0.5).meta({ title: '转场时长（秒）' }),
+    asrTiming: z.boolean().default(false).meta({
+      title: '按语音识别对齐字幕',
+      description: '用已启用平台的语音识别校准每句字幕的时间',
+    }),
   }),
 })
 
@@ -135,32 +143,90 @@ export function clipLength(c: Pick<ArrangedClip, 'in' | 'out'>, duration: number
   return Math.max(0, Math.min(c.out ?? duration, duration) - c.in)
 }
 
+export interface Cue {
+  start: number
+  end: number
+  text: string
+}
+
+/** 按句末标点切句，标点留在句子里 */
+export function splitSentences(text: string) {
+  return (text.match(/[^。！？!?；;\n]+[。！？!?；;]*/g) ?? []).map((s) => s.trim()).filter(Boolean)
+}
+
 /**
- * 生成合成参数。对白从所属镜头开头播放，可以延续到下一段有对白的镜头开始；
- * 字幕跟着对白的时长，没有对白时铺满这段镜头。配乐从头循环到尾，结尾淡出。
+ * 一条对白的字幕（时间相对对白开头）：
+ * - 有识别结果时按识别出的时间：台词句数和识别段数一致就逐句对上，否则整段台词铺满说话的时间；
+ *   没有台词时直接用识别出的文字；
+ * - 没有识别结果时整段台词铺满 fallback 秒。
  */
-export function sequenceSpec(
+export function dialogueCues(
+  text: string,
+  segments: TranscriptSegment[] | undefined,
+  fallback: number,
+): Cue[] {
+  const segs = (segments ?? []).filter((s) => s.end > s.start)
+  if (!segs.length) return text ? [{ start: 0, end: fallback, text }] : []
+  if (!text) return segs.map((s) => ({ start: s.start, end: s.end, text: s.text.trim() }))
+  const sentences = splitSentences(text)
+  if (sentences.length === segs.length)
+    return segs.map((s, i) => ({ start: s.start, end: s.end, text: sentences[i]! }))
+  return [{ start: segs[0]!.start, end: segs.at(-1)!.end, text }]
+}
+
+export interface TimelineClip {
+  start: number
+  length: number
+  /** 对白在成片里的起点和播放时长 */
+  dialogue?: { start: number; duration: number }
+  cues: Cue[]
+}
+
+export interface Timeline {
+  clips: TimelineClip[]
+  total: number
+  /** 实际使用的转场时长（叠化时受最短镜头限制），0 表示硬切 */
+  transition: { type: 'fade' | 'dissolve'; duration: number } | null
+}
+
+/**
+ * 排时间线：叠化时相邻镜头重叠转场时长，淡入淡出（经黑场）不改变时长。
+ * 对白从所属镜头开头播放，可以延续到下一段有对白的镜头开始；
+ * 字幕跟着对白（有识别结果时按识别时间），没有对白时铺满这段镜头。
+ */
+export function sequenceTimeline(
   params: SequenceParams,
   arranged: ArrangedClip[],
   durations: { clips: number[]; dialogue: Array<number | undefined> },
-  music: PortValue[] | undefined,
-  name?: string,
-): ComposeSpec {
-  const [width, height] = SIZES[params.resolution][params.aspectRatio]
+  transcripts: Array<TranscriptSegment[] | undefined> = [],
+): Timeline {
   const lengths = arranged.map((c, i) => clipLength(c, durations.clips[i] ?? 0))
+  const playing = lengths.filter((l) => l > 0)
+  let transition: Timeline['transition'] = null
+  if (params.transition !== '无' && playing.length > 1) {
+    const type = params.transition === '叠化' ? 'dissolve' : 'fade'
+    // 叠化的重叠部分不能超过最短镜头的一半
+    const limit = type === 'dissolve' ? Math.min(...playing) / 2 : Math.min(...playing)
+    const duration = Math.min(params.transitionDuration, limit)
+    if (duration > 0.04) transition = { type, duration }
+  }
+  const overlap = transition?.type === 'dissolve' ? transition.duration : 0
   const starts: number[] = []
   let t = 0
+  let first = true
   for (const len of lengths) {
+    if (len > 0 && !first) t -= overlap
     starts.push(t)
-    t += len
+    if (len > 0) {
+      t += len
+      first = false
+    }
   }
-  const total = t
-  const audio: ComposeAudio[] = []
-  const cues: Array<{ start: number; end: number; text: string }> = []
-  arranged.forEach((c, i) => {
+  const total = Math.max(0, t)
+  const clips = arranged.map((c, i): TimelineClip => {
     const start = starts[i]!
-    if (lengths[i] === 0) return
-    // 下一段有对白的镜头开始前，这段对白都可以继续
+    const length = lengths[i]!
+    if (length === 0) return { start, length, cues: [] }
     let until = total
     for (let j = i + 1; j < arranged.length; j++) {
       if (arranged[j]!.dialogue && lengths[j]! > 0) {
@@ -168,38 +234,77 @@ export function sequenceSpec(
         break
       }
     }
-    let spoken: number | undefined
-    if (c.dialogue) {
-      spoken = Math.min(durations.dialogue[i] ?? until - start, until - start)
+    const room = until - start
+    const dialogue = c.dialogue
+      ? { start, duration: Math.min(durations.dialogue[i] ?? room, room) }
+      : undefined
+    let cues: Cue[] = []
+    if (params.subtitles) {
+      if (c.subtitle?.trim())
+        cues = [{ start: 0, end: dialogue?.duration ?? length, text: c.subtitle.trim() }]
+      else if (dialogue)
+        cues = dialogueCues((c.dialogue?.caption ?? '').trim(), transcripts[i], dialogue.duration)
+      cues = cues
+        .map((q) => ({
+          start: start + q.start,
+          // 太短看不清，至少停留 1 秒（不超过镜头）
+          end: Math.min(start + Math.max(q.end, q.start + Math.min(1, length)), total),
+          text: q.text,
+        }))
+        .filter((q) => q.end > q.start && q.text)
+    }
+    return { start, length, dialogue, cues }
+  })
+  return { clips, total, transition }
+}
+
+/** 生成合成参数：画面、各段声音、配乐（循环铺满，结尾淡出）、字幕和转场 */
+export function sequenceSpec(
+  params: SequenceParams,
+  arranged: ArrangedClip[],
+  durations: { clips: number[]; dialogue: Array<number | undefined> },
+  music: PortValue[] | undefined,
+  name?: string,
+  transcripts?: Array<TranscriptSegment[] | undefined>,
+): ComposeSpec {
+  const [width, height] = SIZES[params.resolution][params.aspectRatio]
+  const tl = sequenceTimeline(params, arranged, durations, transcripts)
+  const audio: ComposeAudio[] = []
+  arranged.forEach((c, i) => {
+    const t = tl.clips[i]!
+    if (t.length === 0) return
+    if (c.dialogue && t.dialogue)
       audio.push({
         asset: asset(c.dialogue),
-        start,
-        duration: spoken,
+        start: t.dialogue.start,
+        duration: t.dialogue.duration,
         volume: params.dialogueVolume,
       })
-    }
     if (c.sfx)
-      audio.push({ asset: asset(c.sfx), start, duration: lengths[i], volume: params.sfxVolume })
-    const text = (c.subtitle ?? c.dialogue?.caption ?? '').trim()
-    if (params.subtitles && text) {
-      const end = start + Math.max(spoken ?? lengths[i]!, Math.min(1, lengths[i]!))
-      cues.push({ start, end: Math.min(end, total), text })
-    }
+      audio.push({
+        asset: asset(c.sfx),
+        start: t.start,
+        duration: t.length,
+        volume: params.sfxVolume,
+      })
   })
   for (const m of media(music)) {
     audio.push({ asset: asset(m), start: 0, volume: params.musicVolume, loop: true, fadeOut: 2 })
   }
+  const cues = tl.clips.flatMap((t) => t.cues)
   return {
     width,
     height,
     fps: 30,
-    clips: arranged.flatMap((c, i) =>
-      lengths[i]! > 0
-        ? [{ asset: asset(c.clip), in: c.in, out: c.in + lengths[i]!, volume: params.clipVolume }]
-        : [],
-    ),
+    clips: arranged.flatMap((c, i) => {
+      const len = tl.clips[i]!.length
+      return len > 0
+        ? [{ asset: asset(c.clip), in: c.in, out: c.in + len, volume: params.clipVolume }]
+        : []
+    }),
     audio,
     subtitles: cues.length ? { cues, style: STYLE_IDS[params.subtitleStyle] } : undefined,
+    transition: tl.transition ?? undefined,
     name,
   }
 }

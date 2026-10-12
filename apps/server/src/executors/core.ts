@@ -5,6 +5,7 @@ import {
   llmNode,
   musicNode,
   sceneNode,
+  type ArrangedClip,
   arrangeSequence,
   sequenceNode,
   sequenceSpec,
@@ -23,6 +24,7 @@ import {
   inputAssets,
   inputText,
   ProviderError,
+  type TranscriptSegment,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
 
@@ -175,6 +177,34 @@ const scene = defineExecutor(sceneNode, async ({ inputs }) => ({
   images: inputAssets(inputs, 'references').map((a) => ({ type: 'image' as const, ...a })),
 }))
 
+/** 对白逐条做语音识别，取带时间戳的分段；手写了字幕的段不用识别 */
+async function transcribe(ctx: ExecutorContext, arranged: ArrangedClip[]) {
+  const todo = arranged.filter((c) => c.dialogue && !c.subtitle?.trim())
+  if (!todo.length) return []
+  const model = pickModel(ctx as ExecutorContext<{ model: string }>, 'audio.transcribe', '语音识别')
+  ctx.progress(0, '识别对白…')
+  return Promise.all(
+    arranged.map(async (c): Promise<TranscriptSegment[] | undefined> => {
+      if (!c.dialogue || c.subtitle?.trim()) return undefined
+      const res = await ctx.providers.call('audio.transcribe', model, {
+        audio: { assetId: c.dialogue.assetId, kind: 'audio', mime: c.dialogue.mime },
+      })
+      for (const o of res.outputs) {
+        const segments =
+          o.type === 'json' ? (o.value as { segments?: unknown }).segments : undefined
+        if (Array.isArray(segments))
+          return segments.filter(
+            (s): s is TranscriptSegment =>
+              typeof s?.start === 'number' &&
+              typeof s?.end === 'number' &&
+              typeof s?.text === 'string',
+          )
+      }
+      return undefined
+    }),
+  )
+}
+
 /** 序列：探测各段时长，排好时间线，交给宿主的 ffmpeg 合成 */
 const sequence = defineExecutor(sequenceNode, async (ctx) => {
   const { params, inputs } = ctx
@@ -185,11 +215,14 @@ const sequence = defineExecutor(sequenceNode, async (ctx) => {
     Promise.all(arranged.map((c) => ctx.media.probe(c.clip))),
     Promise.all(arranged.map((c) => (c.dialogue ? ctx.media.probe(c.dialogue) : undefined))),
   ])
+  const transcripts = params.asrTiming && params.subtitles ? await transcribe(ctx, arranged) : []
   const spec = sequenceSpec(
     params,
     arranged,
     { clips: clips.map((i) => i.duration ?? 0), dialogue: dialogue.map((i) => i?.duration) },
     inputs.music,
+    undefined,
+    transcripts,
   )
   if (spec.clips.length === 0)
     throw new ProviderError('invalid_input', '各段时长都是 0，检查入点和出点')

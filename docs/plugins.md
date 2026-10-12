@@ -89,6 +89,8 @@ export const serverPlugin = defineServerPlugin(plugin, {
 
 错误统一抛 `ProviderError(code, message)`，`code` 为 `auth`、`quota`、`rate_limit`、`invalid_input`、`content_policy`、`timeout`、`unavailable` 等，节点上据此显示原因，`rate_limit` / `unavailable` / `timeout` 默认可重试。
 
+能力的输出约定：`audio.transcribe` 返回 `{ type: 'text' }` 全文，能给出时间轴时再加一条 `{ type: 'json', value: { segments } }`（`TranscriptSegment[]`，`start`、`end` 单位秒）；序列节点用它校字幕时间。`ctx.media.compose` 的 `transition` 支持 `fade`（经黑场，不改时长）和 `dissolve`（叠化，相邻镜头重叠）。
+
 `ctx.fetch` 只能访问清单声明的域名，`ctx.secret(name)` 只能读声明过的密钥，`ctx.files.read` 需要 `assets` 权限。
 
 ## 加载与隔离

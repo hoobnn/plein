@@ -63,6 +63,17 @@ export interface CapabilityInputs {
   'audio.transcribe': { audio: AssetRef; language?: string }
 }
 
+/**
+ * 语音识别的一段（秒，相对音频开头）。
+ * audio.transcribe 返回全文 `{ type: 'text' }`，能给出时间戳时再加一个
+ * `{ type: 'json', value: { segments: TranscriptSegment[] } }`，序列导出用它校准字幕。
+ */
+export interface TranscriptSegment {
+  start: number
+  end: number
+  text: string
+}
+
 export type CapabilityInput<C extends Capability> = CapabilityInputs[C] & {
   /** 平台特有参数，原样传给 Provider */
   extra?: Record<string, unknown>

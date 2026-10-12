@@ -1,6 +1,12 @@
 import type { PortValue } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vitest'
-import { arrangeSequence, sequenceNode, sequenceSpec } from './sequence'
+import {
+  arrangeSequence,
+  dialogueCues,
+  sequenceNode,
+  sequenceSpec,
+  sequenceTimeline,
+} from './sequence'
 
 const video = (source: string): PortValue => ({
   type: 'video',
@@ -80,5 +86,41 @@ describe('序列', () => {
     const spec = sequenceSpec(p, arranged, { clips: [5, 5], dialogue: [1, undefined] }, undefined)
     expect(spec.clips.map((c) => c.asset.assetId)).toEqual(['v-b'])
     expect(spec.subtitles).toBeUndefined()
+  })
+
+  it('叠化：相邻镜头重叠，后面的对白和字幕跟着提前；转场时长不超过最短镜头的一半', () => {
+    const p = params({ transition: '叠化', transitionDuration: 2 })
+    const arranged = arrangeSequence(p, {
+      clips: [video('a'), video('b'), video('c')],
+      dialogue: [audio('d1', '一'), audio('d2', '二'), audio('d3', '三')],
+    })
+    const tl = sequenceTimeline(p, arranged, { clips: [4, 3, 5], dialogue: [1, 1, 1] })
+    expect(tl.transition).toEqual({ type: 'dissolve', duration: 1.5 })
+    expect(tl.clips.map((c) => c.start)).toEqual([0, 2.5, 4])
+    expect(tl.total).toBe(9)
+    expect(tl.clips[2]!.cues).toEqual([{ start: 4, end: 5, text: '三' }])
+    // 经黑场淡入淡出不改变时长
+    const fade = sequenceTimeline(params({ transition: '淡入淡出' }), arranged, {
+      clips: [4, 3, 5],
+      dialogue: [1, 1, 1],
+    })
+    expect(fade.total).toBe(12)
+    expect(fade.transition).toEqual({ type: 'fade', duration: 0.5 })
+  })
+
+  it('字幕按识别结果对齐：句数一致逐句对上，否则整段铺满说话的时间', () => {
+    const segs = [
+      { start: 0.2, end: 1.1, text: '你终于来了' },
+      { start: 1.4, end: 2.6, text: '我等你很久了' },
+    ]
+    expect(dialogueCues('你终于来了。我等你很久了！', segs, 3)).toEqual([
+      { start: 0.2, end: 1.1, text: '你终于来了。' },
+      { start: 1.4, end: 2.6, text: '我等你很久了！' },
+    ])
+    expect(dialogueCues('你终于来了，我等你很久了', segs, 3)).toEqual([
+      { start: 0.2, end: 2.6, text: '你终于来了，我等你很久了' },
+    ])
+    expect(dialogueCues('', segs, 3).map((c) => c.text)).toEqual(['你终于来了', '我等你很久了'])
+    expect(dialogueCues('台词', undefined, 3)).toEqual([{ start: 0, end: 3, text: '台词' }])
   })
 })

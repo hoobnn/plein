@@ -50,6 +50,11 @@ export interface ComposeSpec {
   clips: ComposeClip[]
   audio: ComposeAudio[]
   subtitles?: { cues: ComposeCue[]; style: SubtitleStyle }
+  /**
+   * 镜头之间的转场：fade 经黑场淡出淡入（不改变总时长），
+   * dissolve 叠化（相邻镜头重叠 duration 秒，总时长相应缩短）
+   */
+  transition?: { type: 'fade' | 'dissolve'; duration: number }
   /** 输出文件名（不含扩展名） */
   name?: string
 }

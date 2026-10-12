@@ -103,7 +103,19 @@ function fakeOutputs(req: ProviderRequest): ProviderOutput[] {
       ]
     }
     case 'audio.transcribe':
-      return [{ type: 'text', text: '【mock】识别结果' }]
+      // 两段带时间戳的结果，模拟能校准字幕的识别平台
+      return [
+        { type: 'text', text: '【mock】识别结果' },
+        {
+          type: 'json',
+          value: {
+            segments: [
+              { start: 0.1, end: 0.5, text: '【mock】识别' },
+              { start: 0.5, end: 0.9, text: '结果' },
+            ],
+          },
+        },
+      ]
   }
 }
 

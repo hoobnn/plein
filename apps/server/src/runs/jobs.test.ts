@@ -473,5 +473,15 @@ describe.skipIf(!ffmpeg)('序列导出', () => {
       (doc.get(seq)!.results![0]!.value as { assetId: string }).assetId,
     )!
     expect(second.duration).toBeCloseTo(clip.duration! * 1.5, 0)
+
+    // 叠化 + 按语音识别对齐字幕（mock 平台返回带时间戳的分段）
+    setParams(doc, seq, { transition: '叠化', transitionDuration: 0.4, asrTiming: true })
+    const third = await runFrame(server, id, frame, { video: true })
+    expect(third.summary).toMatchObject({ succeeded: 1, failed: 0 })
+    const dissolved = server.assets.get(
+      'local',
+      (doc.get(seq)!.results![0]!.value as { assetId: string }).assetId,
+    )!
+    expect(dissolved.duration).toBeCloseTo(clip.duration! * 1.5 - 0.4, 0)
   }, 60_000)
 })

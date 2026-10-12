@@ -7,6 +7,8 @@ import {
   type SequenceClip,
   sequenceNode,
   type SequenceParams,
+  sequenceTimeline,
+  TRANSITIONS,
 } from '@plein/nodes'
 import type { PortValue } from '@plein/plugin-sdk'
 import { useEffect, useState } from 'react'
@@ -17,6 +19,7 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { Select } from '../ui/Select'
+import { SequencePreview } from './SequencePreview'
 
 /** 文档变化时重渲染（协作者改了顺序也能看到） */
 function useDocVersion(engine: Engine) {
@@ -25,27 +28,29 @@ function useDocVersion(engine: Engine) {
   return v
 }
 
-/** 素材时长（秒），按资产 id 缓存 */
+/** 素材时长（秒），按资产 id 缓存；取回后通知所有在用的编辑器（请求可能是别的挂载发起的） */
 const durations = new Map<string, number | undefined>()
+const listeners = new Set<() => void>()
 function useDurations(ids: string[]) {
   const [, setV] = useState(0)
   const key = ids.join(',')
   // biome-ignore lint/correctness/useExhaustiveDependencies: key 即 ids
   useEffect(() => {
-    let alive = true
+    const update = () => setV((x) => x + 1)
+    listeners.add(update)
     for (const id of ids) {
       if (!id || durations.has(id)) continue
       durations.set(id, undefined)
       api.assetMeta(id).then(
         (a) => {
           durations.set(id, a.duration)
-          if (alive) setV((x) => x + 1)
+          for (const l of listeners) l()
         },
         () => durations.delete(id),
       )
     }
     return () => {
-      alive = false
+      listeners.delete(update)
     }
   }, [key])
   return (id: string | undefined) => (id ? durations.get(id) : undefined)
@@ -92,7 +97,15 @@ function readSequence(engine: Engine, id: string) {
       label: u.source.name ?? `${port === 'dialogue' ? '对白' : '音效'} ${i + 1}`,
       caption: u.value && 'caption' in u.value ? u.value.caption : undefined,
     }))
-  return { el, params, rows, dialogue: options('dialogue'), sfx: options('sfx') }
+  const music = values('music').find((v) => 'assetId' in v && v.assetId)
+  return {
+    el,
+    params,
+    rows,
+    dialogue: options('dialogue'),
+    sfx: options('sfx'),
+    music: music && 'assetId' in music ? music.assetId : undefined,
+  }
 }
 
 /** 序列编辑器：调整镜头顺序、入出点，指定每段的对白、音效和字幕，导出成片 */
@@ -106,7 +119,7 @@ export function SequenceEditor() {
 
 function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose(): void }) {
   useDocVersion(engine)
-  const { el, params, rows, dialogue, sfx } = readSequence(engine, id)
+  const { el, params, rows, dialogue, sfx, music } = readSequence(engine, id)
   const [dragging, setDragging] = useState<number | null>(null)
   const duration = useDurations([
     ...rows.map((r) => r.clip.assetId),
@@ -117,10 +130,15 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     const d = duration(r.clip.assetId)
     return d === undefined ? undefined : clipLength(r, d)
   })
-  const total = lengths.every((l) => l !== undefined)
-    ? lengths.reduce<number>((a, b) => a + (b ?? 0), 0)
-    : undefined
   const pending = rows.filter((r) => r.pending).length
+  // 预览和总时长用与导出相同的时间线（还没生成或时长未知的镜头先跳过）
+  const ready = rows.filter((r) => !r.pending)
+  const timeline = sequenceTimeline(params, ready, {
+    clips: ready.map((r) => duration(r.clip.assetId) ?? 0),
+    dialogue: ready.map((r) => (r.dialogue ? duration(r.dialogue.assetId) : undefined)),
+  })
+  const known = lengths.every((l) => l !== undefined)
+  const total = known ? timeline.total : undefined
 
   useEffect(() => {
     // 捕获阶段拦下按键：编辑器打开时画布的快捷键不生效
@@ -226,133 +244,140 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             还没有镜头。把视频节点的输出连到序列的「镜头」端口，配音连到「对白」，配乐连到「配乐」。
           </p>
         ) : (
-          <div className="ui-scrollbar min-h-0 flex-1 overflow-auto">
-            <ol className="flex flex-col">
-              {rows.map((r, i) => {
-                const full = duration(r.clip.assetId)
-                const caption = r.dialogue?.caption
-                return (
-                  <li
-                    key={r.source ?? i}
-                    draggable
-                    onDragStart={(e) => {
-                      setDragging(i)
-                      e.dataTransfer.effectAllowed = 'move'
-                    }}
-                    onDragOver={(e) => {
-                      if (dragging === null) return
-                      e.preventDefault()
-                      e.dataTransfer.dropEffect = 'move'
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault()
-                      if (dragging !== null) move(dragging, i)
-                      setDragging(null)
-                    }}
-                    onDragEnd={() => setDragging(null)}
-                    className={`grid grid-cols-[auto_auto_minmax(0,1fr)] items-start gap-3 border-t border-line px-5 py-3 first:border-t-0 ${
-                      dragging === i ? 'opacity-40' : ''
-                    }`}
-                  >
-                    <div className="flex flex-col items-center gap-0.5 pt-1 text-ink-subtle">
-                      <span className="cursor-grab" title="拖动排序">
-                        <Icon name="grip" size={14} />
-                      </span>
-                      <span className="text-xs tabular-nums">{String(i + 1).padStart(2, '0')}</span>
-                    </div>
-                    <div className="relative flex aspect-video w-36 items-center justify-center overflow-hidden rounded-md bg-surface-2">
-                      {r.pending ? (
-                        <span className="text-xs text-ink-subtle">还没有生成</span>
-                      ) : (
-                        <img
-                          alt=""
-                          src={assetUrls.variant(r.clip.assetId, 'poster')}
-                          className="h-full w-full object-cover"
-                        />
-                      )}
-                    </div>
-                    <div className="flex min-w-0 flex-col gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="min-w-0 truncate text-sm font-medium">
-                          {r.el?.name ?? `镜头 ${i + 1}`}
+          <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+            <div className="ui-scrollbar min-h-0 flex-1 overflow-auto">
+              <ol className="flex flex-col">
+                {rows.map((r, i) => {
+                  const full = duration(r.clip.assetId)
+                  const caption = r.dialogue?.caption
+                  return (
+                    <li
+                      key={r.source ?? i}
+                      draggable
+                      onDragStart={(e) => {
+                        setDragging(i)
+                        e.dataTransfer.effectAllowed = 'move'
+                      }}
+                      onDragOver={(e) => {
+                        if (dragging === null) return
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = 'move'
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault()
+                        if (dragging !== null) move(dragging, i)
+                        setDragging(null)
+                      }}
+                      onDragEnd={() => setDragging(null)}
+                      className={`grid grid-cols-[auto_auto_minmax(0,1fr)] items-start gap-3 border-t border-line px-5 py-3 first:border-t-0 ${
+                        dragging === i ? 'opacity-40' : ''
+                      }`}
+                    >
+                      <div className="flex flex-col items-center gap-0.5 pt-1 text-ink-subtle">
+                        <span className="cursor-grab" title="拖动排序">
+                          <Icon name="grip" size={14} />
                         </span>
-                        <span className="text-xs text-ink-subtle">
-                          {lengths[i] !== undefined && full !== undefined && lengths[i] !== full
-                            ? `${seconds(lengths[i])} / 原 ${seconds(full)}`
-                            : seconds(full)}
-                        </span>
-                        <span className="ml-auto flex">
-                          <button
-                            type="button"
-                            aria-label="上移"
-                            className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
-                            disabled={i === 0}
-                            onClick={() => move(i, i - 1)}
-                          >
-                            <Icon name="arrowUp" size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="下移"
-                            className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
-                            disabled={i === rows.length - 1}
-                            onClick={() => move(i, i + 1)}
-                          >
-                            <Icon name="arrowDown" size={14} />
-                          </button>
+                        <span className="text-xs tabular-nums">
+                          {String(i + 1).padStart(2, '0')}
                         </span>
                       </div>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-ink-muted">
-                        <div className="flex items-center gap-1.5">
-                          入点
-                          <NumberField
-                            label="入点（秒）"
-                            value={r.in}
-                            max={full}
-                            onChange={(v) => patch(r.source, { in: v ?? 0 })}
-                          />
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          出点
-                          <NumberField
-                            label="出点（秒）"
-                            value={r.out}
-                            placeholder={full === undefined ? '结尾' : full.toFixed(1)}
-                            max={full}
-                            onChange={(v) => patch(r.source, { out: v })}
-                          />
-                        </div>
-                        {dialogue.length > 0 && (
-                          <ChoiceField
-                            label="对白"
-                            options={dialogue}
-                            chosen={params.clips.find((c) => c.source === r.source)?.dialogue}
-                            current={r.dialogue?.source}
-                            onChange={(v) => patch(r.source, { dialogue: v })}
-                          />
-                        )}
-                        {sfx.length > 0 && (
-                          <ChoiceField
-                            label="音效"
-                            options={sfx}
-                            chosen={params.clips.find((c) => c.source === r.source)?.sfx}
-                            current={r.sfx?.source}
-                            onChange={(v) => patch(r.source, { sfx: v })}
+                      <div className="relative flex aspect-video w-36 items-center justify-center overflow-hidden rounded-md bg-surface-2">
+                        {r.pending ? (
+                          <span className="text-xs text-ink-subtle">还没有生成</span>
+                        ) : (
+                          <img
+                            alt=""
+                            src={assetUrls.variant(r.clip.assetId, 'poster')}
+                            className="h-full w-full object-cover"
                           />
                         )}
                       </div>
-                      {params.subtitles && (
-                        <SubtitleField
-                          value={r.subtitle}
-                          placeholder={caption ? caption : '这段没有字幕，可以在这里写'}
-                          onChange={(v) => patch(r.source, { subtitle: v })}
-                        />
-                      )}
-                    </div>
-                  </li>
-                )
-              })}
-            </ol>
+                      <div className="flex min-w-0 flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="min-w-0 truncate text-sm font-medium">
+                            {r.el?.name ?? `镜头 ${i + 1}`}
+                          </span>
+                          <span className="text-xs text-ink-subtle">
+                            {lengths[i] !== undefined && full !== undefined && lengths[i] !== full
+                              ? `${seconds(lengths[i])} / 原 ${seconds(full)}`
+                              : seconds(full)}
+                          </span>
+                          <span className="ml-auto flex">
+                            <button
+                              type="button"
+                              aria-label="上移"
+                              className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
+                              disabled={i === 0}
+                              onClick={() => move(i, i - 1)}
+                            >
+                              <Icon name="arrowUp" size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label="下移"
+                              className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
+                              disabled={i === rows.length - 1}
+                              onClick={() => move(i, i + 1)}
+                            >
+                              <Icon name="arrowDown" size={14} />
+                            </button>
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-ink-muted">
+                          <div className="flex items-center gap-1.5">
+                            入点
+                            <NumberField
+                              label="入点（秒）"
+                              value={r.in}
+                              max={full}
+                              onChange={(v) => patch(r.source, { in: v ?? 0 })}
+                            />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            出点
+                            <NumberField
+                              label="出点（秒）"
+                              value={r.out}
+                              placeholder={full === undefined ? '结尾' : full.toFixed(1)}
+                              max={full}
+                              onChange={(v) => patch(r.source, { out: v })}
+                            />
+                          </div>
+                          {dialogue.length > 0 && (
+                            <ChoiceField
+                              label="对白"
+                              options={dialogue}
+                              chosen={params.clips.find((c) => c.source === r.source)?.dialogue}
+                              current={r.dialogue?.source}
+                              onChange={(v) => patch(r.source, { dialogue: v })}
+                            />
+                          )}
+                          {sfx.length > 0 && (
+                            <ChoiceField
+                              label="音效"
+                              options={sfx}
+                              chosen={params.clips.find((c) => c.source === r.source)?.sfx}
+                              current={r.sfx?.source}
+                              onChange={(v) => patch(r.source, { sfx: v })}
+                            />
+                          )}
+                        </div>
+                        {params.subtitles && (
+                          <SubtitleField
+                            value={r.subtitle}
+                            placeholder={caption ? caption : '这段没有字幕，可以在这里写'}
+                            onChange={(v) => patch(r.source, { subtitle: v })}
+                          />
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ol>
+            </div>
+            <aside className="flex-none border-t border-line p-4 lg:w-96 lg:border-l lg:border-t-0">
+              <SequencePreview rows={ready} timeline={timeline} params={params} music={music} />
+            </aside>
           </div>
         )}
 
@@ -396,6 +421,36 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
               options={[{ value: '常规' }, { value: '醒目' }, { value: '底框' }]}
               onChange={(v) => set('subtitleStyle', v)}
             />
+          )}
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={params.asrTiming}
+              disabled={!params.subtitles}
+              onChange={(e) => set('asrTiming', e.target.checked)}
+            />
+            按语音识别对齐字幕
+          </label>
+          <div className="flex items-center gap-2">
+            转场
+            <Select
+              aria-label="转场"
+              className="ui-input"
+              value={params.transition}
+              options={TRANSITIONS.map((value) => ({ value }))}
+              onChange={(v) => set('transition', v)}
+            />
+          </div>
+          {params.transition !== '无' && (
+            <div className="flex items-center gap-2">
+              时长
+              <NumberField
+                label="转场时长（秒）"
+                value={params.transitionDuration}
+                max={2}
+                onChange={(v) => set('transitionDuration', Math.max(0.2, v ?? 0.5))}
+              />
+            </div>
           )}
           <span className="mx-1 h-4 w-px bg-line" />
           <Volume label="原声" value={params.clipVolume} onChange={(v) => set('clipVolume', v)} />
