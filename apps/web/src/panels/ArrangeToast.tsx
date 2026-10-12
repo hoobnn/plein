@@ -1,7 +1,7 @@
 import type { Engine } from '@plein/canvas-core'
 import { useEffect } from 'react'
+import { useEngineVersion } from '../canvas/hooks'
 import { useCanvas } from '../stores/canvas'
-import { useEngineVersion } from './Generator'
 
 /** 整理后多久自动收起（视为保留） */
 const AUTO_HIDE_MS = 10_000
@@ -33,7 +33,7 @@ function ArrangeToastHost({ engine }: { engine: Engine }) {
   return (
     <div
       role="status"
-      className="ui-bar ui-bar-sm pointer-events-auto absolute bottom-16 left-1/2 z-30 -translate-x-1/2 gap-3 !pl-4 !pr-1.5"
+      className="ui-bar ui-bar-sm pointer-events-auto absolute bottom-16 left-1/2 z-30 -translate-x-1/2 gap-3 pr-1.5 pl-4"
     >
       <span>是否保留此次整理结果？</span>
       <div className="flex items-center gap-1">

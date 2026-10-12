@@ -5,20 +5,20 @@ import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
 import { assetUrls } from '../api/client'
 import { downloadAsset, splitGrid } from '../canvas/grid'
+import { useEngineVersion } from '../canvas/hooks'
 import { deriveNode } from '../canvas/presets'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { Popover } from '../ui/Popover'
-import { useEngineVersion } from './Generator'
 
 const BAR_H = 40
 const BOTTOM_RESERVED = 64
 
 const GRIDS = [
-  { rows: 2, cols: 2, label: '4 宫格（2×2）' },
-  { rows: 3, cols: 3, label: '9 宫格（3×3）' },
-  { rows: 4, cols: 4, label: '16 宫格（4×4）' },
+  { rows: 2, cols: 2, label: '4 宫格' },
+  { rows: 3, cols: 3, label: '9 宫格' },
+  { rows: 4, cols: 4, label: '16 宫格' },
 ]
 
 /** 元素当前展示的媒体：节点取采用的结果，素材元素取自身资产 */
@@ -134,30 +134,21 @@ export function ResultActions({
     }
   }
 
-  const inline = variant === 'inline'
-  const btn = inline
-    ? 'flex h-8 flex-none items-center gap-1 rounded-full px-2.5 text-sm text-ink-muted transition-colors duration-[var(--dur-fast)] hover:bg-hover hover:text-ink aria-expanded:bg-active aria-expanded:text-ink'
-    : 'ui-bar-btn'
-  const icon = inline
-    ? 'flex size-8 flex-none items-center justify-center rounded-full text-ink-muted transition-colors duration-[var(--dur-fast)] hover:bg-hover hover:text-ink'
-    : 'ui-bar-btn'
-  const sep = inline ? (
-    <span aria-hidden="true" className="mx-1 h-4 w-px flex-none bg-line-strong" />
-  ) : (
-    <div className="ui-bar-sep" />
-  )
+  // 浮动工具条里用工具条按钮；生成器第一行用 28 高的安静按钮，两处图标都是 14
+  const btn = variant === 'inline' ? 'ui-btn ui-btn-sm ui-btn-quiet' : 'ui-bar-btn'
+  const icon = variant === 'inline' ? `${btn} ui-icon-btn` : btn
   const image = media.kind === 'image'
   return (
     <>
       {image && imageNode && presets.length > 0 && (
         <button
           type="button"
-          className={btn}
+          className={`${btn} ui-btn-menu`}
           aria-expanded={open?.kind === 'presets'}
           onClick={toggle('presets')}
           title="以这张图为参考，套用预设新建一个图片节点"
         >
-          <Icon name="grid" size={14} />
+          <Icon name="presets" size={14} />
           预设
           <Icon name="chevronDown" size={12} />
         </button>
@@ -178,17 +169,19 @@ export function ResultActions({
       {image && remote && (
         <button
           type="button"
-          className={btn}
+          className={`${btn} ui-btn-menu`}
           aria-expanded={open?.kind === 'grid'}
           onClick={toggle('grid')}
           title="把宫格图切成单张图片"
         >
-          <Icon name="frame" size={14} />
+          <Icon name="gridSplit" size={14} />
           宫格切分
           <Icon name="chevronDown" size={12} />
         </button>
       )}
-      {image && (imageNode || videoNode || remote) && sep}
+      {image && (imageNode || videoNode || remote) && (
+        <span aria-hidden="true" className="ui-bar-sep" />
+      )}
       <button
         type="button"
         className={icon}
@@ -196,7 +189,7 @@ export function ResultActions({
         title="下载原文件"
         onClick={() => downloadAsset(media.assetId, name)}
       >
-        <Icon name="download" size={15} />
+        <Icon name="download" size={14} />
       </button>
       <button
         type="button"
@@ -205,7 +198,7 @@ export function ResultActions({
         title="全屏查看"
         onClick={() => view({ ...media, name })}
       >
-        <Icon name="expand" size={15} />
+        <Icon name="expand" size={14} />
       </button>
 
       {open?.kind === 'presets' && imageNode && (
@@ -215,14 +208,16 @@ export function ResultActions({
             <button
               key={p.id}
               type="button"
-              className="ui-menu-item flex-col !items-start !gap-0.5"
+              className="ui-menu-item"
               onClick={() => {
                 setOpen(null)
                 deriveNode(engine, catalog, el.id, imageNode.type, { preset: p })
               }}
             >
-              <span>{p.title}</span>
-              {p.description && <span className="text-xs text-ink-subtle">{p.description}</span>}
+              <span className="ui-menu-text">
+                <span>{p.title}</span>
+                {p.description && <span className="ui-menu-desc">{p.description}</span>}
+              </span>
             </button>
           ))}
         </Popover>
@@ -233,10 +228,13 @@ export function ResultActions({
             <button
               key={g.label}
               type="button"
-              className="ui-menu-item"
+              className="ui-menu-item justify-between"
               onClick={() => void split(g.rows, g.cols)}
             >
               {g.label}
+              <span className="ui-kbd">
+                {g.rows}×{g.cols}
+              </span>
             </button>
           ))}
         </Popover>
@@ -283,9 +281,9 @@ export function Viewer() {
         autoFocus
         aria-label="关闭"
         onClick={() => view(null)}
-        className="absolute right-5 top-5 flex size-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+        className="absolute top-5 right-5 flex size-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
       >
-        <Icon name="x" size={18} />
+        <Icon name="x" size={20} />
       </button>
     </div>
   )

@@ -1,0 +1,91 @@
+import type { ReactNode } from 'react'
+import { Icon } from './icons'
+
+/**
+ * 盖住整个窗口的面板（设置、生成历史、分镜表、序列、快捷键）：遮罩淡入、面板弹出，点遮罩关闭。
+ * 按 Esc 关闭由各面板自己处理：有的要在捕获阶段拦下画布快捷键。
+ */
+export function Modal({
+  label,
+  onClose,
+  align = 'center',
+  top = false,
+  isolateKeys = false,
+  className = '',
+  children,
+}: {
+  label: string
+  onClose(): void
+  /** bottom：贴着底部工具条弹出（快捷键面板） */
+  align?: 'center' | 'bottom'
+  /** 盖在其他面板之上（设置可以从任何页面打开） */
+  top?: boolean
+  /** 焦点在面板里时，画布不响应键盘（删除、方向键等） */
+  isolateKeys?: boolean
+  /** 面板的尺寸和布局 */
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <div
+      className={`pointer-events-auto fixed inset-0 flex justify-center p-4 sm:p-6 ${
+        top ? 'z-50' : 'z-40'
+      } ${align === 'bottom' ? 'items-end pb-16 sm:pb-16' : 'items-center'}`}
+    >
+      <button
+        type="button"
+        aria-label="关闭"
+        tabIndex={-1}
+        onClick={onClose}
+        className="ui-dialog-scrim absolute inset-0 cursor-default bg-scrim"
+      />
+      <section
+        role="dialog"
+        aria-label={label}
+        data-plein-active={isolateKeys ? '' : undefined}
+        className={`ui-dialog relative flex max-h-full w-full flex-col overflow-hidden rounded-2xl bg-surface shadow-4 ${className}`}
+      >
+        {children}
+      </section>
+    </div>
+  )
+}
+
+/** 面板标题行：标题、紧跟标题的说明，右侧操作和关闭按钮 */
+export function ModalHeader({
+  title,
+  meta,
+  onClose,
+  divider = true,
+  children,
+}: {
+  title: ReactNode
+  meta?: ReactNode
+  onClose(): void
+  /** 下面是滚动内容时加分隔线 */
+  divider?: boolean
+  children?: ReactNode
+}) {
+  return (
+    <header
+      className={`flex min-h-14 flex-none flex-wrap items-center gap-x-3 gap-y-2 py-2.5 pr-3 pl-5 ${
+        divider ? 'border-b border-line' : ''
+      }`}
+    >
+      <h2 className="truncate text-lg font-semibold">{title}</h2>
+      {meta}
+      <div className="ml-auto flex flex-wrap items-center gap-2">
+        {children}
+        <button
+          type="button"
+          aria-label="关闭"
+          title="关闭（Esc）"
+          onClick={onClose}
+          className="ui-btn ui-btn-quiet ui-icon-btn"
+        >
+          <Icon name="x" />
+        </button>
+      </div>
+    </header>
+  )
+}

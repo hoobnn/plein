@@ -227,7 +227,7 @@ export function SequencePreview({
           disabled={total === 0}
           onClick={toggle}
         >
-          <Icon name={playing ? 'stop' : 'play'} size={12} />
+          <Icon name={playing ? 'pause' : 'play'} size={12} />
         </button>
         <input
           type="range"

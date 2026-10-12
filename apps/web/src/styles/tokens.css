@@ -1,0 +1,193 @@
+/*
+ * 设计令牌：颜色、尺寸、动效。数值的用法见 docs/design-spec.md。
+ * 明暗两套颜色，<html data-theme> 切换（stores/theme.ts）。
+ * 画布 GPU 层的配色在 canvas-core/src/theme.ts，数值与这里对应。
+ * 层级：canvas（画布底）< surface（卡片、面板）< surface-2（输入框、凹槽）< surface-3（按下）。
+ * 配色：外壳只用灰阶，颜色留给画布里的作品。primary 是黑白反色的主操作；
+ * accent 是蓝，只表示选中、焦点、链接和运行中。
+ */
+:root,
+:root[data-theme="dark"] {
+  --canvas: #0a0a0a;
+  --surface: #161616;
+  --surface-2: #1f1f1f;
+  --surface-3: #292929;
+  /* 材质：浮动工具条半透明，菜单和弹层更实，盖在图片上也读得清 */
+  --float: rgb(24 24 24 / 0.84);
+  --menu: rgb(28 28 28 / 0.96);
+  --hover: rgb(255 255 255 / 0.06);
+  --active: rgb(255 255 255 / 0.1);
+  --line: rgb(255 255 255 / 0.08);
+  --line-strong: rgb(255 255 255 / 0.15);
+  --ink: #ededed;
+  --ink-muted: #a3a3a3;
+  --ink-subtle: #6b6b6b;
+  --primary: #ededed;
+  --primary-hover: #ffffff;
+  --on-primary: #0a0a0a;
+  --accent: #5b8de0;
+  --accent-hover: #74a0e8;
+  --accent-soft: rgb(91 141 224 / 0.2);
+  --on-accent: #ffffff;
+  --danger: #f87171;
+  --danger-soft: rgb(248 113 113 / 0.14);
+  --success: #34d399;
+  --warning: #fbbf24;
+  --scrim: rgb(0 0 0 / 0.55);
+  --port-text: #f5c66b;
+  --port-image: #4cc4ea;
+  --port-video: #ff8a6e;
+  --port-audio: #4fd69c;
+  --port-json: #f28dc4;
+  /* 深色材质顶边的一道高光，让浮层从背景里“浮”起来 */
+  --edge-light: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  /* 高度：1 静止的卡片 · 2 浮动工具条和面板 · 3 菜单和弹层 · 4 对话框 */
+  --shadow-1: 0 0 0 1px var(--line), 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-2: var(--edge-light), 0 0 0 1px var(--line), 0 8px 24px -8px rgb(0 0 0 / 0.6);
+  --shadow-3: var(--edge-light), 0 0 0 1px var(--line-strong), 0 16px 40px -12px rgb(0 0 0 / 0.7);
+  --shadow-4: var(--edge-light), 0 0 0 1px var(--line-strong), 0 32px 72px -16px rgb(0 0 0 / 0.75);
+}
+
+:root[data-theme="light"] {
+  --canvas: #fcfcfb;
+  --surface: #ffffff;
+  --surface-2: #f4f4f3;
+  --surface-3: #e9e9e7;
+  --float: rgb(255 255 255 / 0.82);
+  --menu: rgb(255 255 255 / 0.96);
+  --hover: rgb(0 0 0 / 0.05);
+  --active: rgb(0 0 0 / 0.09);
+  --line: rgb(0 0 0 / 0.08);
+  --line-strong: rgb(0 0 0 / 0.14);
+  --ink: #171717;
+  --ink-muted: #5e5e5e;
+  --ink-subtle: #949494;
+  --primary: #171717;
+  --primary-hover: #333333;
+  --on-primary: #ffffff;
+  --accent: #4177d0;
+  --accent-hover: #3567bd;
+  --accent-soft: rgb(65 119 208 / 0.22);
+  --on-accent: #ffffff;
+  --danger: #dc4c4c;
+  --danger-soft: rgb(220 76 76 / 0.1);
+  --success: #17a873;
+  --warning: #c98a0b;
+  --scrim: rgb(0 0 0 / 0.32);
+  --port-text: #d99a14;
+  --port-image: #0e93c4;
+  --port-video: #e8603f;
+  --port-audio: #17a873;
+  --port-json: #d9529e;
+  --edge-light: 0 0 #0000;
+  --shadow-1: 0 0 0 1px var(--line), 0 1px 2px rgb(0 0 0 / 0.05);
+  --shadow-2: 0 0 0 1px var(--line), 0 6px 20px -8px rgb(0 0 0 / 0.16);
+  --shadow-3: 0 0 0 1px var(--line), 0 12px 32px -10px rgb(0 0 0 / 0.2);
+  --shadow-4: 0 0 0 1px var(--line), 0 28px 64px -16px rgb(0 0 0 / 0.26);
+}
+
+/* Tailwind 颜色映射到令牌：bg-surface、text-ink-muted、bg-hover…… */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-float: var(--float);
+  --color-menu: var(--menu);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-scrim: var(--scrim);
+}
+
+/*
+ * 尺寸令牌。Tailwind 的同名工具类直接取这些值，所以 rounded-md、text-sm 就是规范里的值。
+ * 圆角同心：内层圆角 = 外层圆角 − 内边距（12 的工具条、4 的内边距 → 8 的按钮）。
+ */
+@theme {
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Segoe UI",
+    "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* 间距：4 的倍数。p-1 = 4、p-2 = 8、p-3 = 12、p-4 = 16，不随根字号变化 */
+  --spacing: 4px;
+
+  /* 圆角：xs 键帽、复选框 · sm 标签、24 高的小控件 · md 28–36 高的按钮、输入框、菜单项
+     lg 工具条、菜单、弹层、缩略图 · xl 卡片、面板 · 2xl 对话框 */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+
+  /* 字号 / 行高：界面正文 13，阅读和输入 14 */
+  --text-2xs: 11px;
+  --text-2xs--line-height: 14px;
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 18px;
+  --text-base: 14px;
+  --text-base--line-height: 22px;
+  --text-lg: 16px;
+  --text-lg--line-height: 22px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+  --text-2xl: 26px;
+  --text-2xl--line-height: 32px;
+  --text-2xl--letter-spacing: -0.02em;
+
+  /* 动效：颜色变化用 fast，弹出和位移用 base，对话框用 slow */
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  /* transition-colors 等工具类默认就是 fast 的时长和标准曲线，组件里不再写 duration */
+  --default-transition-duration: 120ms;
+  --default-transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 高度：shadow-1 静止的卡片 · 2 浮动工具条和面板 · 3 菜单和弹层 · 4 对话框（数值随主题切换） */
+@utility shadow-1 {
+  box-shadow: var(--shadow-1);
+}
+@utility shadow-2 {
+  box-shadow: var(--shadow-2);
+}
+@utility shadow-3 {
+  box-shadow: var(--shadow-3);
+}
+@utility shadow-4 {
+  box-shadow: var(--shadow-4);
+}
+
+:root {
+  /* 控件高度：xs 24 · sm 28 · md 32（默认）· lg 36（工具条按钮）· xl 40 */
+  --h-xs: 24px;
+  --h-sm: 28px;
+  --h-md: 32px;
+  --h-lg: 36px;
+  --h-xl: 40px;
+  /* 布局：浮动外框离视口边 12，顶栏 44，之下的浮层从 64 开始 */
+  --chrome-inset: 12px;
+  --chrome-h: 44px;
+  --chrome-top: 64px;
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 280ms;
+}

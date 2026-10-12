@@ -1,6 +1,6 @@
 # 界面设计规范
 
-原则：外壳克制、尺寸成体系、层级靠材质和阴影区分，颜色留给画布里的作品。所有数值都是 `apps/web/src/styles.css` 里的令牌，组件只用令牌和通用控件类，不写任意值（`rounded-[10px]`、`text-[13px]`、`!h-9` 这类）。
+原则：外壳克制、尺寸成体系、层级靠材质和阴影区分，颜色留给画布里的作品。所有数值都是 `apps/web/src/styles/tokens.css` 里的令牌，组件只用令牌和通用控件类，不写任意值（`rounded-[10px]`、`text-[13px]`、`!h-9` 这类）。
 
 ## 配色
 
@@ -61,11 +61,27 @@
 | 36      | `.ui-btn-lg`、`.ui-input-lg`：页面主操作、对话框和设置里的表单；底部和顶部工具条的按钮 |
 | 40 / 44 | `.ui-bar-sm` / `.ui-bar` 工具条外框                                                    |
 
+## 图标
+
+`ui/icons.tsx`：Lucide 的 24 画板线框图标，按用途起名（`workflow`、`presets`、`gridSplit`……），只收录用到的；不走 React 的画布覆盖层用同一套的 `iconElement()`。界面里不用文字符号（`×` `▶` `‹›` `↑↓`）代替图标。
+
+尺寸只有五档，类型上限定为 `IconSize`。图标比旁边的文字大 2–3：
+
+| 尺寸 | 用在                                                          |
+| ---- | ------------------------------------------------------------- |
+| 12   | 角标、标签里，`text-xs` 小按钮里的下拉箭头，实心的播放 / 停止 |
+| 14   | 28 高的按钮、`.ui-bar-sm` 工具条、分段控件、`text-sm` 标题旁  |
+| 16   | 默认：32–36 高的按钮、菜单项、工具条、输入框里的搜索图标      |
+| 20   | 40 高的大方块（首页快速开始、新建画布），底部工具条的添加按钮 |
+| 24   | 空状态、节点卡片中央的类型图标                                |
+
+线宽随尺寸换算：12 → 1.25px，16 → 1.5px，20 及以上 1.75px。播放、暂停、停止画实心。画幅图标（`AspectGlyph`）按同样的 1.5px 线宽绘制。
+
 ## 层级与材质
 
 | 高度 | 阴影         | 用在                         |
 | ---- | ------------ | ---------------------------- |
-| 1    | `--shadow-1` | 静止的卡片                   |
+| 1    | `--shadow-1` | 静止的卡片（`shadow-1`）     |
 | 2    | `--shadow-2` | 浮动工具条、生成器、卡片悬停 |
 | 3    | `--shadow-3` | 菜单、弹层、提示条           |
 | 4    | `--shadow-4` | 对话框                       |
@@ -84,6 +100,7 @@
 | `--dur-slow` | 280ms | 对话框                   |
 
 - 曲线：位移和缩放用 `--ease-spring`，颜色用 `--ease-standard`。
+- Tailwind 的 `transition-colors` 等默认就是 120ms 加标准曲线，组件里不写 `duration-*`。
 - 菜单、弹层从 97% 缩放淡入；对话框遮罩淡入、面板弹出。
 - 系统开启“减少动态效果”时，所有动效和过渡缩短到 1ms。
 
@@ -102,13 +119,25 @@
 | 类                                                                                                                                                                     | 说明                                                |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | `.ui-bar` / `.ui-bar-sm` / `.ui-bar-btn` / `.ui-bar-sep` / `.ui-bar-text`                                                                                              | 工具条：页头、底部工具条、结果 / Frame / 多选工具条 |
-| `.ui-btn` + `-primary` `-secondary` `-quiet` `-danger` `-danger-solid`，尺寸 `-sm` `-lg`，`.ui-icon-btn`                                                               | 按钮                                                |
+| `.ui-btn` + `-primary` `-secondary` `-quiet` `-danger` `-danger-solid`，尺寸 `-xs` `-sm` `-lg`，`.ui-icon-btn`（宽 = 高），`.ui-btn-menu`（打开菜单，末尾箭头弱色）    | 按钮                                                |
 | `.ui-input` / `.ui-select` / `.ui-input-lg`                                                                                                                            | 输入框、下拉框（`ui/Select.tsx`）                   |
 | `.ui-field` / `.ui-label` / `.ui-help` / `.ui-section-title`                                                                                                           | 表单字段和分组标题                                  |
 | `.ui-seg` / `.ui-seg-item`，`.ui-seg-block`（铺满等分，选中底色滑动切换，需传 `--seg-n` / `--seg-i`）、`.ui-seg-tall`（图标在上）、`.ui-seg-aspect`（画幅，最多 9 项） | 分段控件：主题切换、筛选；参数面板选画幅、分辨率    |
-| `.ui-menu` / `.ui-menu-item` / `.ui-menu-label` / `.ui-sep`                                                                                                            | 菜单、弹层（`ui/Popover.tsx`）                      |
-| `.ui-dialog-scrim` / `.ui-dialog`                                                                                                                                      | 对话框动效（`ui/Dialog.tsx`）                       |
+| `.ui-menu` / `.ui-menu-item` / `.ui-menu-label` / `.ui-sep`，两行项用 `.ui-menu-text` + `.ui-menu-desc`                                                                | 菜单、弹层（`ui/Popover.tsx`）                      |
+| `.ui-dialog-scrim` / `.ui-dialog`                                                                                                                                      | 对话框动效（`ui/Dialog.tsx`、`ui/Modal.tsx`）       |
 | `.ui-toast` / `.ui-tooltip`                                                                                                                                            | 提示条、悬停提示（`ui/Tooltip.tsx`）                |
-| `.ui-chip` / `.ui-badge` / `.ui-kbd`                                                                                                                                   | 标签、图片上的角标、快捷键                          |
+| `.ui-chip` / `.ui-tag`（`-success` `-warning` `-danger` `-accent`）/ `.ui-badge`                                                                                       | 24 高的标签；20 高的状态标签；图片上的角标          |
+| `.ui-kbd` / `.ui-keycap`                                                                                                                                               | 菜单里的快捷键提示；成组出现的键帽                  |
+| `.ui-spinner`                                                                                                                                                          | 加载中，`size-3` / `size-4` 缩小                    |
 
-新组件先找这里的类；确实需要新的样式时，先在 `styles.css` 加成通用类，再在组件里用。
+新组件先找这里的类；确实需要新的样式时，先在 `styles/controls.css` 加成通用类，再在组件里用。通用控件都在 `@layer components` 里，组件上的 Tailwind 工具类能直接覆盖，不需要 `!`；`styles/` 下其他文件是不分层的页面样式，别和同属性的工具类混用。
+
+## 共享模块
+
+| 模块               | 用途                                                                             |
+| ------------------ | -------------------------------------------------------------------------------- |
+| `ui/Modal.tsx`     | 全屏面板的遮罩、外框和标题行（设置、生成历史、分镜表、序列、快捷键）             |
+| `ui/keys.ts`       | 快捷键的显示文本：`shortcut('mod+shift+z')` → macOS「⇧⌘Z」、其他「Ctrl+Shift+Z」 |
+| `ui/format.ts`     | 时间：相对时间、「今天 14:05」、时长                                             |
+| `ui/useDismiss.ts` | 点外面、按 Esc（可选滚轮）关闭浮层                                               |
+| `canvas/hooks.ts`  | `useEngineVersion`（跟随元素的浮层）、`useDocVersion`（列表和表格）              |

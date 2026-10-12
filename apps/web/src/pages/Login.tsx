@@ -32,7 +32,7 @@ export function Login({ setup }: { setup: boolean }) {
     <div className="flex h-full items-center justify-center p-4">
       <form
         onSubmit={submit}
-        className="ui-dialog flex w-full max-w-sm flex-col gap-3 rounded-2xl bg-surface p-8 shadow-[var(--shadow-4)]"
+        className="ui-dialog flex w-full max-w-sm flex-col gap-3 rounded-2xl bg-surface p-8 shadow-4"
       >
         <h1 className="text-xl font-semibold">{setup ? '创建所有者账号' : '登录 Plein'}</h1>
         <p className="text-sm text-ink-muted">

@@ -8,6 +8,7 @@ import { findNode } from '../canvas/nodes'
 import { cancelNode, runNode } from '../canvas/runner'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
+import { duration, relativeTime } from '../ui/format'
 import { Icon } from '../ui/icons'
 
 const STATUS: Record<JobInfo['status'], string> = {
@@ -49,26 +50,12 @@ function runSignature(doc: PleinDoc) {
   return parts.join('|')
 }
 
-function ago(at: number, now: number) {
-  const s = Math.max(0, Math.round((now - at) / 1000))
-  if (s < 10) return '刚刚'
-  if (s < 60) return `${s} 秒前`
-  if (s < 3600) return `${Math.floor(s / 60)} 分钟前`
-  if (s < 86400) return `${Math.floor(s / 3600)} 小时前`
-  return new Date(at).toLocaleDateString()
-}
-
 /** 整组运行显示 Frame 名；运行到此处 / 运行下游显示出发的节点 */
 function groupName(g: GroupInfo, doc: PleinDoc, catalog: Catalog | null) {
   const el = doc.get(g.frameId)
   if (g.scope === 'frame') return el?.name ?? 'Frame'
   const name = el?.name ?? findNode(catalog, el?.nodeType)?.title ?? '节点'
   return g.scope === 'upstream' ? `运行到「${name}」` : `从「${name}」往下`
-}
-
-function took(ms: number) {
-  const s = Math.round(ms / 1000)
-  return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`
 }
 
 /** 右侧任务面板：整组运行、排队和运行中的任务、最近结束的任务 */
@@ -162,7 +149,7 @@ export function Tasks() {
       aria-label="任务"
       className="ui-float pointer-events-auto absolute inset-y-16 right-3 z-30 flex w-90 flex-col rounded-xl max-sm:left-3 max-sm:w-auto"
     >
-      <header className="flex items-center gap-2 border-b border-line px-4 py-3">
+      <header className="flex h-12 flex-none items-center gap-2 border-b border-line pr-2 pl-4">
         <h2 className="text-sm font-semibold">任务</h2>
         {active.length > 0 && (
           <span className="text-xs text-ink-subtle">{active.length} 个排队或运行中</span>
@@ -183,7 +170,7 @@ export function Tasks() {
             {error ? `读取任务失败：${error}` : '加载中…'}
           </p>
         ) : list.jobs.length === 0 && groups.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-xs text-ink-subtle">
+          <div className="flex flex-col items-center gap-3 px-4 py-10 text-center text-xs text-ink-subtle">
             <Icon name="tasks" size={24} />
             还没有运行过节点。点节点上的「生成」或 Frame 的「整组运行」后，任务会出现在这里。
           </div>
@@ -242,7 +229,7 @@ export function Tasks() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mb-2">
-      <h3 className="px-2 pb-1 pt-2 text-2xs font-medium text-ink-subtle">{title}</h3>
+      <h3 className="ui-menu-label">{title}</h3>
       <ul className="flex flex-col">{children}</ul>
     </section>
   )
@@ -280,7 +267,7 @@ function JobRow(props: {
   if (job.status === 'running' && run?.progress) detail += ` ${Math.round(run.progress * 100)}%`
   if (active && run?.message) detail = run.message
   if (!active && job.startedAt && job.finishedAt)
-    detail += ` · 用时 ${took(job.finishedAt - job.startedAt)}`
+    detail += ` · 用时 ${duration(job.finishedAt - job.startedAt)}`
   if (job.attempts > 1) detail += ` · 第 ${job.attempts} 次尝试`
 
   return (
@@ -298,7 +285,7 @@ function JobRow(props: {
             {props.name}
           </button>
           <span className="ml-auto shrink-0 text-2xs text-ink-subtle">
-            {ago(job.finishedAt ?? job.startedAt ?? job.createdAt, now)}
+            {relativeTime(job.finishedAt ?? job.startedAt ?? job.createdAt, now)}
           </span>
         </div>
         <p className="truncate text-xs text-ink-muted">
@@ -330,7 +317,7 @@ function JobRow(props: {
           (job.status === 'failed' || job.status === 'canceled') &&
           !isActive(el.run?.status ?? '') && (
             <RowButton label="重试" onClick={() => void runNode(job.nodeId)}>
-              <Icon name="redo" size={14} />
+              <Icon name="retry" size={14} />
             </RowButton>
           )}
       </div>
@@ -370,7 +357,7 @@ function GroupRow(props: { group: GroupInfo; name: string; now: number; onLocate
             {props.name}
           </button>
           <span className="ml-auto shrink-0 text-2xs text-ink-subtle">
-            {ago(g.finishedAt ?? g.createdAt, now)}
+            {relativeTime(g.finishedAt ?? g.createdAt, now)}
           </span>
         </div>
         <p className="truncate text-xs text-ink-muted">{detail}</p>

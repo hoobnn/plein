@@ -1,6 +1,6 @@
 import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
 import { currentResult, setResultRating } from '@plein/doc'
-import { type ReactNode, useEffect, useRef } from 'react'
+import type { ReactNode } from 'react'
 import { findNode, type NodeInfo } from '../canvas/nodes'
 import {
   describeFlowRun,
@@ -14,7 +14,9 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useTemplates } from '../stores/templates'
 import { promptDialog } from '../ui/Dialog'
+import { shortcut } from '../ui/keys'
 import { Stars } from '../ui/Stars'
+import { useDismiss } from '../ui/useDismiss'
 import { AddMenu } from './AddMenu'
 
 const MENU_W = 280
@@ -25,30 +27,6 @@ function placeAt(x: number, y: number, h: number, w = MENU_W) {
     left: Math.min(x, window.innerWidth - w - 8),
     top: Math.max(8, Math.min(y, window.innerHeight - h - 8)),
   }
-}
-
-function useDismiss(onClose: () => void) {
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const down = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose()
-    }
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    const wheel = (e: WheelEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose()
-    }
-    window.addEventListener('pointerdown', down, true)
-    window.addEventListener('keydown', key)
-    window.addEventListener('wheel', wheel, true)
-    return () => {
-      window.removeEventListener('pointerdown', down, true)
-      window.removeEventListener('keydown', key)
-      window.removeEventListener('wheel', wheel, true)
-    }
-  }, [onClose])
-  return ref
 }
 
 /** 画布菜单：双击空白、拉线到空白弹节点选择器；右键弹上下文菜单 */
@@ -94,7 +72,7 @@ function NodePicker({
   canImport: boolean
   onClose(): void
 }) {
-  const ref = useDismiss(onClose)
+  const ref = useDismiss(onClose, { wheel: true })
   const pos = placeAt(menu.client.x, menu.client.y, PICKER_H, PICKER_W)
   return (
     <div ref={ref} className="fixed z-30" style={pos}>
@@ -123,7 +101,7 @@ function Item(props: {
       role="menuitem"
       disabled={props.disabled}
       onClick={props.onClick}
-      className={`ui-menu-item justify-between ${props.danger ? '!text-danger hover:!bg-danger-soft' : ''}`}
+      className={`ui-menu-item justify-between ${props.danger ? 'text-danger hover:bg-danger-soft' : ''}`}
     >
       <span>{props.label}</span>
       {props.hint && <span className="ui-kbd">{props.hint}</span>}
@@ -146,7 +124,7 @@ function ContextMenu({
   onClose(): void
   onAddNode(): void
 }) {
-  const ref = useDismiss(onClose)
+  const ref = useDismiss(onClose, { wheel: true })
   const catalog = useCatalog((s) => s.catalog)
   const act = (fn: () => void) => () => {
     onClose()
@@ -199,15 +177,19 @@ function ContextMenu({
           />
         )}
         <Sep />
-        <Item label="适应画布" hint="⇧1" onClick={act(() => engine.zoomToFit())} />
-        <Item label="全选" hint="⌘A" onClick={act(() => engine.selectAll())} />
+        <Item label="适应画布" hint={shortcut('shift+1')} onClick={act(() => engine.zoomToFit())} />
+        <Item label="全选" hint={shortcut('mod+a')} onClick={act(() => engine.selectAll())} />
       </>
     )
   } else {
     items = (
       <>
         {node?.executable && node.execution === 'job' && single && (
-          <Item label="生成" hint="⌘↵" onClick={act(() => void runNode(single.id))} />
+          <Item
+            label="生成"
+            hint={shortcut('mod+enter')}
+            onClick={act(() => void runNode(single.id))}
+          />
         )}
         {node && single && canImport && (
           <>
@@ -232,7 +214,7 @@ function ContextMenu({
         )}
         {ratable && single && !engine.doc.readOnly && (
           <>
-            <div className="flex h-8 items-center justify-between px-2">
+            <div className="flex h-8 items-center justify-between pr-1 pl-2">
               <span>评级</span>
               <Stars
                 value={rated.rating}
@@ -245,14 +227,31 @@ function ContextMenu({
             <Sep />
           </>
         )}
-        <Item label="复制一份" hint="⌘D" onClick={act(() => engine.duplicateSelection())} />
-        <Item label="打组" hint="⌘G" onClick={act(() => engine.groupSelection())} />
-        <Item label="缩放到选中" hint="⇧2" onClick={act(() => engine.zoomToFit(ids))} />
+        <Item
+          label="复制一份"
+          hint={shortcut('mod+d')}
+          onClick={act(() => engine.duplicateSelection())}
+        />
+        <Item label="打组" hint={shortcut('mod+g')} onClick={act(() => engine.groupSelection())} />
+        <Item
+          label="缩放到选中"
+          hint={shortcut('shift+2')}
+          onClick={act(() => engine.zoomToFit(ids))}
+        />
         <Sep />
-        <Item label="置于顶层" hint="⌘]" onClick={act(() => engine.bringToFront())} />
-        <Item label="置于底层" hint="⌘[" onClick={act(() => engine.sendToBack())} />
+        <Item
+          label="置于顶层"
+          hint={shortcut('mod+]')}
+          onClick={act(() => engine.bringToFront())}
+        />
+        <Item label="置于底层" hint={shortcut('mod+[')} onClick={act(() => engine.sendToBack())} />
         <Sep />
-        <Item label="删除" hint="⌫" danger onClick={act(() => engine.deleteSelection())} />
+        <Item
+          label="删除"
+          hint={shortcut('backspace')}
+          danger
+          onClick={act(() => engine.deleteSelection())}
+        />
       </>
     )
   }

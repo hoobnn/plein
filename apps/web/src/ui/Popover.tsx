@@ -93,7 +93,7 @@ export function Popover({
       role="dialog"
       aria-label={label}
       style={{ ...pos, width }}
-      className="ui-menu ui-scrollbar pointer-events-auto fixed z-[70] max-h-[min(480px,70vh)] overflow-y-auto"
+      className="ui-menu ui-scrollbar pointer-events-auto fixed z-70 max-h-[min(480px,70vh)] overflow-y-auto"
     >
       {children}
     </div>,

@@ -109,14 +109,14 @@ function DialogView({ req }: { req: Request }) {
 
   return (
     <div
-      className="ui-dialog-scrim fixed inset-0 z-[60] flex items-center justify-center bg-scrim p-6"
+      className="ui-dialog-scrim fixed inset-0 z-60 flex items-center justify-center bg-scrim p-6"
       onPointerDown={() => settle(null)}
     >
       <form
         role="dialog"
         aria-modal="true"
         aria-label={options.title}
-        className="ui-dialog flex w-full max-w-[400px] flex-col gap-5 rounded-2xl bg-surface p-6 shadow-[var(--shadow-4)]"
+        className="ui-dialog flex w-full max-w-100 flex-col gap-5 rounded-2xl bg-surface p-6 shadow-4"
         onPointerDown={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault()

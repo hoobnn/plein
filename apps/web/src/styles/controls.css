@@ -1,0 +1,565 @@
+/* ── 通用控件 ─────────────────────────────────────── */
+@layer components {
+  /* 浮动材质：页头、底部工具条、生成器、结果工具条 */
+  .ui-float {
+    background: var(--float);
+    box-shadow: var(--shadow-2);
+    backdrop-filter: blur(24px) saturate(1.8);
+  }
+
+  /*
+   * 工具条：外框 12 圆角、4 内边距；里面的按钮 8 圆角。
+   * 默认 44 高（36 的按钮），.ui-bar-sm 是 40 高（32 的按钮），用于贴着元素的上下文工具条。
+   */
+  .ui-bar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: var(--chrome-h);
+    padding: 4px;
+    border-radius: var(--radius-lg);
+    background: var(--float);
+    box-shadow: var(--shadow-2);
+    backdrop-filter: blur(24px) saturate(1.8);
+  }
+  .ui-bar-sm {
+    height: var(--h-xl);
+  }
+  .ui-bar-btn {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: var(--h-lg);
+    min-width: var(--h-lg);
+    padding: 0 8px;
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    color: var(--ink-muted);
+    white-space: nowrap;
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard);
+  }
+  .ui-bar-sm .ui-bar-btn {
+    height: var(--h-md);
+    min-width: var(--h-md);
+    padding: 0 10px;
+    font-size: var(--text-xs);
+  }
+  .ui-bar-sm .ui-bar-btn:has(> svg:only-child) {
+    padding: 0;
+  }
+  .ui-bar-btn:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+  .ui-bar-btn:active,
+  .ui-bar-btn[aria-pressed="true"],
+  .ui-bar-btn[aria-expanded="true"] {
+    background: var(--active);
+    color: var(--ink);
+  }
+  .ui-bar-btn:disabled {
+    pointer-events: none;
+    opacity: 0.3;
+  }
+  .ui-bar-sep {
+    flex: none;
+    width: 1px;
+    height: 16px;
+    margin: 0 4px;
+    background: var(--line);
+  }
+  .ui-bar-text {
+    padding: 0 8px;
+    font-size: var(--text-xs);
+    color: var(--ink-subtle);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: var(--h-md);
+    padding: 0 12px;
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    color: var(--ink);
+    white-space: nowrap;
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard),
+      box-shadow var(--dur-fast) var(--ease-standard);
+  }
+  .ui-btn:hover {
+    background: var(--hover);
+  }
+  .ui-btn:active,
+  .ui-btn[aria-expanded="true"] {
+    background: var(--active);
+  }
+  .ui-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+    background: transparent;
+  }
+  .ui-btn-quiet {
+    color: var(--ink-muted);
+  }
+  .ui-btn-quiet:hover {
+    color: var(--ink);
+  }
+  .ui-btn-primary {
+    background: var(--primary);
+    color: var(--on-primary);
+    font-weight: 500;
+  }
+  .ui-btn-primary:hover {
+    background: var(--primary-hover);
+  }
+  .ui-btn-primary:disabled {
+    background: var(--primary);
+  }
+  .ui-btn-secondary {
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .ui-btn-secondary:hover {
+    background: var(--surface-3);
+  }
+  .ui-btn-danger {
+    color: var(--danger);
+  }
+  .ui-btn-danger:hover {
+    background: var(--danger-soft);
+  }
+  .ui-btn-danger-solid {
+    background: var(--danger);
+    color: #ffffff;
+    font-weight: 500;
+  }
+  .ui-btn-danger-solid:hover {
+    background: color-mix(in srgb, var(--danger) 88%, black);
+  }
+  /* 尺寸：xs 24（行内、卡片里的小按钮）· sm 28（面板里的次要操作）· 默认 32 · lg 36（页面主操作） */
+  .ui-btn-xs {
+    height: var(--h-xs);
+    gap: 4px;
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+  }
+  .ui-btn-sm {
+    height: var(--h-sm);
+    padding: 0 10px;
+    font-size: var(--text-xs);
+  }
+  .ui-btn-lg {
+    height: var(--h-lg);
+    padding: 0 16px;
+  }
+  .ui-icon-btn {
+    width: var(--h-md);
+    padding: 0;
+  }
+  .ui-btn-xs.ui-icon-btn {
+    width: var(--h-xs);
+  }
+  .ui-btn-sm.ui-icon-btn {
+    width: var(--h-sm);
+  }
+  .ui-btn-lg.ui-icon-btn {
+    width: var(--h-lg);
+  }
+  /* 打开菜单的按钮：内容左右对称收紧，末尾的下拉箭头用弱色 */
+  .ui-btn-menu {
+    padding: 0 8px 0 10px;
+  }
+  .ui-btn-menu > svg:last-child {
+    color: var(--ink-subtle);
+  }
+
+  .ui-input,
+  .ui-select {
+    height: var(--h-md);
+    min-width: 0;
+    border-radius: var(--radius-md);
+    padding: 0 10px;
+    font-size: var(--text-sm);
+    color: var(--ink);
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--line);
+    outline: none;
+    transition: box-shadow var(--dur-fast) var(--ease-standard);
+  }
+  .ui-input::placeholder {
+    color: var(--ink-subtle);
+  }
+  .ui-input:hover,
+  .ui-select:hover {
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+  .ui-input:focus-visible,
+  .ui-select:focus-visible {
+    outline: none;
+  }
+  .ui-input:focus,
+  .ui-select:focus {
+    box-shadow:
+      inset 0 0 0 1px var(--accent),
+      0 0 0 3px var(--accent-soft);
+  }
+  /* 对话框和设置页这类表单里用 36 高 */
+  .ui-input-lg,
+  .ui-select.ui-input-lg {
+    height: var(--h-lg);
+  }
+  textarea.ui-input {
+    height: auto;
+    padding: 8px 10px;
+    line-height: 20px;
+  }
+  .ui-select {
+    appearance: none;
+    padding-right: 28px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238e8e96' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    cursor: pointer;
+  }
+
+  /* 表单字段：标签在上，说明在下，间距 6 */
+  .ui-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .ui-label {
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: var(--ink-muted);
+  }
+  .ui-help {
+    font-size: var(--text-xs);
+    color: var(--ink-subtle);
+  }
+  /* 区块小标题：对话框和面板里分组用 */
+  .ui-section-title {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--ink-subtle);
+  }
+
+  /* 分段控件：凹槽 8 圆角、2 内边距，里面的项 6 圆角；选中项浮起 */
+  .ui-seg {
+    display: inline-flex;
+    gap: 2px;
+    margin: 0;
+    padding: 2px;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+  .ui-seg-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: var(--h-xs);
+    min-width: var(--h-xs);
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    color: var(--ink-muted);
+    white-space: nowrap;
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard);
+  }
+  .ui-seg-item:has(> svg:only-child) {
+    padding: 0;
+  }
+  .ui-seg-item:hover {
+    color: var(--ink);
+  }
+  .ui-seg-item[aria-pressed="true"] {
+    background: var(--surface);
+    color: var(--ink);
+    box-shadow: var(--shadow-1);
+  }
+  :root[data-theme="dark"] .ui-seg-item[aria-pressed="true"] {
+    background: var(--surface-3);
+  }
+  /* 铺满一行的大分段：参数面板里选分辨率、张数；项等分，32 高。
+     选中底色是一块滑块，按 --seg-n（项数）和 --seg-i（选中序号，-1 为无）平移过去 */
+  .ui-seg-block {
+    position: relative;
+    display: flex;
+    width: 100%;
+    isolation: isolate;
+  }
+  .ui-seg-block::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: 2px;
+    bottom: 2px;
+    left: 2px;
+    width: calc((100% - 4px - (var(--seg-n, 1) - 1) * 2px) / var(--seg-n, 1));
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    box-shadow: var(--shadow-1);
+    transform: translateX(calc(max(var(--seg-i, 0), 0) * (100% + 2px)));
+    transition:
+      transform var(--dur-slow) var(--ease-spring),
+      opacity var(--dur-fast) var(--ease-standard);
+  }
+  :root[data-theme="dark"] .ui-seg-block::before {
+    background: var(--surface-3);
+  }
+  .ui-seg-block[data-seg-empty]::before {
+    opacity: 0;
+  }
+  .ui-seg-block > .ui-seg-item {
+    flex: 1 1 0;
+    min-width: 0;
+    height: var(--h-md);
+    padding: 0 4px;
+    font-size: var(--text-sm);
+  }
+  /* 加 :root 压过上面深色主题的选中底色，底色交给滑块 */
+  :root .ui-seg-block > .ui-seg-item[aria-pressed="true"] {
+    background: transparent;
+    box-shadow: none;
+  }
+  /* 图标在上、文字在下的高分段：选画幅 */
+  .ui-seg-block.ui-seg-tall > .ui-seg-item {
+    flex-direction: column;
+    gap: 4px;
+    height: 48px;
+  }
+  /* 画幅：项多（最多 9 个）且窄，文字用正文色、略加粗，未选中的靠图标变淡区分 */
+  .ui-seg-block.ui-seg-aspect > .ui-seg-item {
+    padding: 0;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .ui-seg-block.ui-seg-aspect > .ui-seg-item > :first-child {
+    opacity: 0.72;
+    transition: opacity var(--dur-fast) var(--ease-standard);
+  }
+  .ui-seg-block.ui-seg-aspect > .ui-seg-item:hover > :first-child,
+  .ui-seg-block.ui-seg-aspect > .ui-seg-item[aria-pressed="true"] > :first-child {
+    opacity: 1;
+  }
+
+  /* 菜单与弹层：更实的材质，12 圆角、4 内边距，菜单项 8 圆角、32 高 */
+  .ui-menu {
+    border-radius: var(--radius-lg);
+    padding: 4px;
+    background: var(--menu);
+    box-shadow: var(--shadow-3);
+    backdrop-filter: blur(32px) saturate(1.8);
+    animation: ui-pop-in var(--dur-base) var(--ease-spring);
+  }
+  .ui-menu-label {
+    padding: 8px 8px 4px;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    color: var(--ink-subtle);
+  }
+  .ui-menu-item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 10px;
+    min-height: var(--h-md);
+    padding: 6px 8px;
+    border-radius: var(--radius-md);
+    text-align: left;
+    font-size: var(--text-sm);
+    color: var(--ink);
+  }
+  .ui-menu-item:hover,
+  .ui-menu-item[aria-selected="true"] {
+    background: var(--hover);
+  }
+  .ui-menu-item[aria-pressed="true"] {
+    background: var(--active);
+  }
+  .ui-menu-item:disabled {
+    opacity: 0.4;
+  }
+  .ui-menu-item > svg {
+    color: var(--ink-muted);
+  }
+  /* 两行的菜单项：名称下面一行弱色说明 */
+  .ui-menu-text {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ui-menu-desc {
+    font-size: var(--text-xs);
+    color: var(--ink-subtle);
+  }
+  .ui-sep {
+    height: 1px;
+    margin: 4px 8px;
+    background: var(--line);
+  }
+
+  /* 提示条：顶栏下方居中 */
+  .ui-toast {
+    display: flex;
+    align-items: center;
+    min-height: var(--h-lg);
+    padding: 8px 16px;
+    border-radius: var(--radius-lg);
+    font-size: var(--text-sm);
+    background: var(--menu);
+    box-shadow: var(--shadow-3);
+    backdrop-filter: blur(32px) saturate(1.8);
+    animation: ui-pop-in var(--dur-base) var(--ease-spring);
+  }
+
+  .ui-tooltip {
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    line-height: 16px;
+    color: var(--on-primary);
+    background: var(--primary);
+    box-shadow: var(--shadow-2);
+    animation: ui-pop-in var(--dur-fast) var(--ease-spring);
+  }
+
+  /* 对话框（ui/Dialog.tsx）：遮罩淡入，面板弹出 */
+  .ui-dialog-scrim {
+    animation: ui-fade-in var(--dur-base) var(--ease-standard);
+  }
+  .ui-dialog {
+    animation: ui-pop-in var(--dur-base) var(--ease-spring);
+  }
+
+  /* 键帽：快捷键面板、空画布提示里成组出现的按键 */
+  .ui-keycap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 20px;
+    min-width: 20px;
+    padding: 0 6px;
+    border-radius: var(--radius-xs);
+    font-family: var(--font-sans);
+    font-size: var(--text-2xs);
+    color: var(--ink-muted);
+    background: var(--surface-2);
+    box-shadow:
+      inset 0 0 0 1px var(--line),
+      inset 0 -1px 0 var(--line-strong);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* 菜单项、按钮提示里跟在文字后面的快捷键 */
+  .ui-kbd {
+    font-family: var(--font-sans);
+    font-size: var(--text-2xs);
+    color: var(--ink-subtle);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: var(--h-xs);
+    padding: 0 8px;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-xs);
+    color: var(--ink-muted);
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--line);
+  }
+
+  /* 状态标签：20 高、无描边，颜色表示状态；和图片上的 .ui-badge 同尺寸 */
+  .ui-tag {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-2xs);
+    line-height: 1;
+    white-space: nowrap;
+    color: var(--ink-muted);
+    background: var(--surface-2);
+  }
+  .ui-tag-success {
+    color: var(--success);
+    background: color-mix(in srgb, var(--success) 14%, transparent);
+  }
+  .ui-tag-warning {
+    color: var(--warning);
+    background: color-mix(in srgb, var(--warning) 14%, transparent);
+  }
+  .ui-tag-danger {
+    color: var(--danger);
+    background: var(--danger-soft);
+  }
+  .ui-tag-accent {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  /* 盖在图片上的小角标：深色半透明，明暗主题一致 */
+  .ui-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 20px;
+    min-width: 20px;
+    padding: 0 6px;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-2xs);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+    background: rgb(0 0 0 / 0.55);
+    backdrop-filter: blur(8px);
+  }
+  .ui-badge:has(> svg:only-child) {
+    justify-content: center;
+    padding: 0;
+  }
+
+  /* 加载中：默认 20，用 size-3 / size-4 缩小（线宽随之变细） */
+  .ui-spinner {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid var(--accent-soft);
+    border-top-color: var(--accent);
+    animation: ui-spin 0.9s linear infinite;
+  }
+  .ui-spinner:is(.size-3, .size-4) {
+    border-width: 1.5px;
+  }
+
+  .ui-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+}

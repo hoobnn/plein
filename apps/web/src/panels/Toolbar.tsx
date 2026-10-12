@@ -2,7 +2,9 @@ import type { Engine, Tool } from '@plein/canvas-core'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { useCanvas } from '../stores/canvas'
 import { Icon, type IconName } from '../ui/icons'
+import { shortcut } from '../ui/keys'
 import { Popover } from '../ui/Popover'
+import { useDismiss } from '../ui/useDismiss'
 import { AddMenu } from './AddMenu'
 import { Minimap } from './Minimap'
 import { useActiveRuns } from './Tasks'
@@ -37,7 +39,7 @@ const Divider = () => <div className="ui-bar-sep" />
 
 const TOOLS: Array<{ tool: Tool; label: string; hint: string; icon: IconName }> = [
   { tool: 'select', label: '移动', hint: 'V', icon: 'cursor' },
-  { tool: 'hand', label: '抓手工具', hint: 'H', icon: 'hand' },
+  { tool: 'hand', label: '抓手', hint: 'H', icon: 'hand' },
 ]
 
 /** 工具切换：一个按钮显示当前工具，弹层里选（省一格） */
@@ -65,12 +67,10 @@ function ToolPicker({ engine, tool }: { engine: Engine; tool: Tool }) {
                 engine.setTool(t.tool)
                 setAnchor(null)
               }}
-              className="ui-menu-item justify-between aria-pressed:bg-active"
+              className="ui-menu-item"
             >
-              <span className="flex items-center gap-2.5">
-                <Icon name={t.icon} />
-                {t.label}
-              </span>
+              <Icon name={t.icon} />
+              <span className="flex-1">{t.label}</span>
               <span className="ui-kbd">{t.hint}</span>
             </button>
           ))}
@@ -83,22 +83,7 @@ function ToolPicker({ engine, tool }: { engine: Engine; tool: Tool }) {
 /** 添加节点：实心的“+”，菜单在按钮上方弹出，新元素落在视口中央 */
 function NodeMenu({ engine, canImport }: { engine: Engine; canImport: boolean }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const close = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false)
-    }
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    window.addEventListener('pointerdown', close)
-    window.addEventListener('keydown', key)
-    return () => {
-      window.removeEventListener('pointerdown', close)
-      window.removeEventListener('keydown', key)
-    }
-  }, [open])
+  const ref = useDismiss(() => setOpen(false), { active: open })
   return (
     <div ref={ref} className="relative">
       <button
@@ -109,7 +94,7 @@ function NodeMenu({ engine, canImport }: { engine: Engine; canImport: boolean })
         onClick={() => setOpen(!open)}
         className="plein-add-btn"
       >
-        <Icon name="plus" size={18} />
+        <Icon name="plus" size={20} />
       </button>
       {open && (
         <AddMenu
@@ -120,7 +105,7 @@ function NodeMenu({ engine, canImport }: { engine: Engine; canImport: boolean })
             return { x: c.x + c.w / 2, y: c.y + c.h / 2 }
           }}
           onClose={() => setOpen(false)}
-          className="absolute bottom-12 left-0"
+          className="absolute bottom-12 -left-1"
           style={{ width: 240, maxHeight: 'min(440px, calc(100vh - 120px))' }}
         />
       )}
@@ -180,7 +165,7 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
         >
           <Icon name="tasks" />
           {running > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-2xs font-medium tabular-nums text-on-accent">
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-2xs font-medium text-on-accent tabular-nums ring-2 ring-float">
               {running}
             </span>
           )}
@@ -225,9 +210,9 @@ function ZoomMenu({ engine, zoom }: { engine: Engine; zoom: number }) {
           setDraft(String(Math.round(zoom * 100)))
           setAnchor(anchor ? null : e.currentTarget)
         }}
-        className="!px-2.5"
+        className="min-w-14 text-xs tabular-nums"
       >
-        <span className="text-xs tabular-nums">{Math.round(zoom * 100)}%</span>
+        {Math.round(zoom * 100)}%
       </Button>
       {anchor && (
         <Popover anchor={anchor} onClose={close} label="缩放" width={200}>
@@ -251,15 +236,27 @@ function ZoomMenu({ engine, zoom }: { engine: Engine; zoom: number }) {
             />
             <span className="text-ink-subtle">%</span>
           </label>
-          <ZoomItem label="放大" hint="⌘ +" onClick={act(() => engine.zoomTo(zoom * 1.25))} />
-          <ZoomItem label="缩小" hint="⌘ −" onClick={act(() => engine.zoomTo(zoom / 1.25))} />
-          <ZoomItem label="适应画布" hint="⇧ 1" onClick={act(() => engine.zoomToFit())} />
+          <ZoomItem
+            label="放大"
+            hint={shortcut('mod+plus')}
+            onClick={act(() => engine.zoomTo(zoom * 1.25))}
+          />
+          <ZoomItem
+            label="缩小"
+            hint={shortcut('mod+minus')}
+            onClick={act(() => engine.zoomTo(zoom / 1.25))}
+          />
+          <ZoomItem
+            label="适应画布"
+            hint={shortcut('shift+1')}
+            onClick={act(() => engine.zoomToFit())}
+          />
           <div className="ui-sep" />
           {ZOOM_PRESETS.map((z) => (
             <ZoomItem
               key={z}
               label={`缩放至 ${z * 100}%`}
-              hint={z === 1 ? '⌘ 0' : undefined}
+              hint={z === 1 ? shortcut('mod+0') : undefined}
               onClick={act(() => engine.zoomTo(z))}
             />
           ))}
@@ -291,16 +288,26 @@ export function ViewControls() {
     <div className="pointer-events-none flex flex-col items-start gap-2">
       {minimap && <Minimap engine={engine} />}
       <div className="ui-bar pointer-events-auto">
-        <Button label="撤销" hint="⌘Z" disabled={!canUndo} onClick={() => engine.undo()}>
+        <Button
+          label="撤销"
+          hint={shortcut('mod+z')}
+          disabled={!canUndo}
+          onClick={() => engine.undo()}
+        >
           <Icon name="undo" />
         </Button>
-        <Button label="重做" hint="⇧⌘Z" disabled={!canRedo} onClick={() => engine.redo()}>
+        <Button
+          label="重做"
+          hint={shortcut('mod+shift+z')}
+          disabled={!canRedo}
+          onClick={() => engine.redo()}
+        >
           <Icon name="redo" />
         </Button>
         <Divider />
         <Button
           label="整理画布"
-          hint="⌥⇧F"
+          hint={shortcut('alt+shift+f')}
           onClick={() => {
             if (!engine.arrange()) useCanvas.getState().notify('画布已经很整齐了')
           }}
@@ -316,7 +323,7 @@ export function ViewControls() {
           active={edgesHidden}
           onClick={() => engine.setEdgesHidden(!edgesHidden)}
         >
-          <Icon name="route" />
+          <Icon name="edges" />
         </Button>
         <Divider />
         <ZoomMenu engine={engine} zoom={zoom} />

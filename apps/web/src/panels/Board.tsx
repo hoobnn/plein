@@ -1,13 +1,8 @@
 import type { Engine } from '@plein/canvas-core'
-import {
-  type CanvasElement,
-  currentResult,
-  elementPorts,
-  type PleinDoc,
-  type Port,
-} from '@plein/doc'
-import { useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { type CanvasElement, currentResult, elementPorts, type Port } from '@plein/doc'
+import { useMemo, useState } from 'react'
 import { assetUrls } from '../api/client'
+import { useDocVersion } from '../canvas/hooks'
 import { findNode } from '../canvas/nodes'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
@@ -20,7 +15,7 @@ const SECTIONS: Array<{ type: Kind; label: string; icon: IconName }> = [
   { type: 'image', label: '图片', icon: 'image' },
   { type: 'video', label: '视频', icon: 'video' },
   { type: 'audio', label: '音频', icon: 'audio' },
-  { type: 'text', label: '文本', icon: 'textBox' },
+  { type: 'text', label: '文本', icon: 'text' },
 ]
 
 const FILTERS: Array<{ id: Filter; label: string }> = [
@@ -30,22 +25,10 @@ const FILTERS: Array<{ id: Filter; label: string }> = [
 ]
 
 const STATUS: Record<string, { label: string; tone: string }> = {
-  queued: { label: '排队中', tone: 'text-ink-muted' },
-  running: { label: '生成中', tone: 'text-accent' },
-  failed: { label: '失败', tone: 'text-danger' },
-  canceled: { label: '已取消', tone: 'text-ink-subtle' },
-}
-
-function useDocVersion(doc: PleinDoc) {
-  const ref = useRef(0)
-  return useSyncExternalStore(
-    (notify) =>
-      doc.subscribe(() => {
-        ref.current++
-        notify()
-      }),
-    () => ref.current,
-  )
+  queued: { label: '排队中', tone: '' },
+  running: { label: '生成中', tone: 'ui-tag-accent' },
+  failed: { label: '失败', tone: 'ui-tag-danger' },
+  canceled: { label: '已取消', tone: '' },
 }
 
 /** 节点主要产出的类型：第一个输出端口 */
@@ -100,7 +83,7 @@ function BoardPanel({ engine }: { engine: Engine }) {
 
   return (
     <div className="ui-scrollbar absolute inset-0 z-10 overflow-y-auto bg-canvas">
-      <div className="mx-auto flex max-w-[1400px] flex-col gap-8 px-6 pb-16 pt-20">
+      <div className="mx-auto flex max-w-350 flex-col gap-8 px-6 pt-20 pb-16">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-xl font-semibold">故事板</h2>
           <fieldset aria-label="筛选" className="ui-seg">
@@ -110,7 +93,7 @@ function BoardPanel({ engine }: { engine: Engine }) {
                 type="button"
                 aria-pressed={filter === f.id}
                 onClick={() => setFilter(f.id)}
-                className="ui-seg-item !h-7 !px-3"
+                className="ui-seg-item"
               >
                 {f.label}
               </button>
@@ -118,15 +101,15 @@ function BoardPanel({ engine }: { engine: Engine }) {
           </fieldset>
         </div>
         {groups.length === 0 && (
-          <div className="flex flex-col items-center gap-2 py-24 text-center text-sm text-ink-subtle">
-            <Icon name="layers" size={28} />
+          <div className="flex flex-col items-center gap-3 py-24 text-center text-sm text-ink-subtle">
+            <Icon name="board" size={24} />
             {filter === 'all' ? '画布上还没有生成节点' : '没有符合筛选的节点'}
           </div>
         )}
         {groups.map((g) => (
           <section key={g.type} className="flex flex-col gap-3">
             <h3 className="flex items-center gap-2 text-sm font-medium text-ink-muted">
-              <Icon name={g.icon} size={15} />
+              <Icon name={g.icon} size={14} />
               {g.label}
               <span className="text-ink-subtle">{g.items.length}</span>
             </h3>
@@ -190,8 +173,8 @@ function BoardCard({ el, index, onOpen }: { el: CanvasElement; index: number; on
           </span>
         )}
         {v?.type === 'video' && (
-          <span className="absolute bottom-2 left-2 flex size-6 items-center justify-center rounded-full bg-black/55 text-white">
-            <Icon name="play" size={10} />
+          <span className="ui-badge absolute bottom-2 left-2">
+            <Icon name="play" size={12} />
           </span>
         )}
         <span className="ui-badge board-index">{index}</span>
@@ -199,7 +182,7 @@ function BoardCard({ el, index, onOpen }: { el: CanvasElement; index: number; on
       </div>
       <div className="flex items-center gap-2 px-1 pt-2">
         <span className="min-w-0 flex-1 truncate text-left text-sm">{el.name ?? '未命名'}</span>
-        {status && <span className={`shrink-0 text-xs ${status.tone}`}>{status.label}</span>}
+        {status && <span className={`ui-tag ${status.tone}`}>{status.label}</span>}
       </div>
     </button>
   )

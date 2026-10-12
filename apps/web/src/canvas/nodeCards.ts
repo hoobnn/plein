@@ -4,6 +4,7 @@ import { ASSET_NODE_TYPES, presetsFor, STORYBOARD_TYPE } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useCatalog } from '../stores/catalog'
 import { useStale } from '../stores/stale'
+import { type IconName, iconElement } from '../ui/icons'
 import { findNode, isPure, promptKey, targetImages } from './nodes'
 import { shotsOf } from './storyboard'
 
@@ -40,49 +41,31 @@ const STATUS_TEXT: Record<RunStatus, string> = {
   canceled: '已取消',
 }
 
-/** 按输出类型的线框图标（24×24），标题前和空节点中央用 */
-const GLYPHS: Record<string, string> = {
-  image: 'M4 5h16v14H4zM4 16l4.5-4.5 3.5 3.5 2.5-2.5L20 18M15.5 9.5h.01',
-  video: 'M4 6h12v12H4zM16 10l4-2.5v9L16 14',
-  audio: 'M5 10v4M9 7v10M13 4v16M17 8v8M21 11v2',
-  text: 'M5 6h14M5 10h14M5 14h10M5 18h7',
-  json: 'M8 4c-2 0-2 1.5-2 3s0 3-2 5c2 2 2 3.5 2 5s0 3 2 3M16 4c2 0 2 1.5 2 3s0 3 2 5c-2 2-2 3.5-2 5s0 3-2 3',
-  story: 'M4 5h16v14H4zM4 10h16M10 5v14',
-  asset: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20c1.5-3.5 4.5-5 8-5s6.5 1.5 8 5',
+/** 按输出类型的图标，标题前和空节点中央用 */
+const GLYPHS: Record<string, IconName> = {
+  image: 'image',
+  video: 'video',
+  audio: 'audio',
+  text: 'text',
+  json: 'json',
 }
 
-function svg(path: string, size: number) {
-  const ns = 'http://www.w3.org/2000/svg'
-  const el = document.createElementNS(ns, 'svg')
-  el.setAttribute('width', String(size))
-  el.setAttribute('height', String(size))
-  el.setAttribute('viewBox', '0 0 24 24')
-  el.setAttribute('fill', 'none')
-  el.setAttribute('stroke', 'currentColor')
-  el.setAttribute('stroke-width', '1.6')
-  el.setAttribute('stroke-linecap', 'round')
-  el.setAttribute('stroke-linejoin', 'round')
-  el.setAttribute('aria-hidden', 'true')
-  const p = document.createElementNS(ns, 'path')
-  p.setAttribute('d', path)
-  el.appendChild(p)
-  return el
-}
-
-function button(cls: string, label: string, text: string) {
+/** 卡片上的按钮：图标按钮传 icon，文字按钮传 text */
+function button(cls: string, label: string, content: { text: string } | { icon: IconName }) {
   const b = document.createElement('button')
   b.type = 'button'
   b.className = cls
   b.title = label
   b.setAttribute('aria-label', label)
-  b.textContent = text
+  if ('icon' in content) b.appendChild(iconElement(content.icon, 14))
+  else b.textContent = content.text
   return b
 }
 
-function glyphOf(el: CanvasElement, kind: string) {
-  if (el.nodeType === STORYBOARD_TYPE) return GLYPHS.story!
-  if (el.nodeType && ASSET_NODE_TYPES.has(el.nodeType)) return GLYPHS.asset!
-  return GLYPHS[kind] ?? GLYPHS.text!
+function glyphOf(el: CanvasElement, kind: string): IconName {
+  if (el.nodeType === STORYBOARD_TYPE) return 'story'
+  if (el.nodeType && ASSET_NODE_TYPES.has(el.nodeType)) return 'character'
+  return GLYPHS[kind] ?? 'text'
 }
 
 /**
@@ -164,10 +147,10 @@ export class NodeCards {
     status.className = 'plein-node-status'
     const nav = document.createElement('span')
     nav.className = 'plein-node-nav'
-    const prev = button('plein-node-btn', '上一个结果', '‹')
+    const prev = button('plein-node-btn', '上一个结果', { icon: 'chevronLeft' })
     const count = document.createElement('span')
     count.className = 'plein-node-count'
-    const next = button('plein-node-btn', '下一个结果', '›')
+    const next = button('plein-node-btn', '下一个结果', { icon: 'chevronRight' })
     nav.append(prev, count, next)
     head.append(glyph, title, status, nav)
 
@@ -231,7 +214,7 @@ export class NodeCards {
     card.root.dataset.kind = kind
     card.root.dataset.selected = String(selected)
     card.title.textContent = el.name ?? info?.title ?? el.nodeType ?? '节点'
-    card.glyph.replaceChildren(svg(glyphOf(el, kind), 14))
+    card.glyph.replaceChildren(iconElement(glyphOf(el, kind), 14))
 
     let status = run && !(run.status === 'running' && !run.progress) ? STATUS_TEXT[run.status] : ''
     if (run?.status === 'running' && run.progress) status += ` ${Math.round(run.progress * 100)}%`
@@ -315,8 +298,8 @@ export class NodeCards {
       card.body.replaceChildren()
       if (v.type === 'video') {
         const tag = document.createElement('span')
-        tag.className = 'plein-node-tag'
-        tag.textContent = '▶ 双击播放'
+        tag.className = 'ui-badge'
+        tag.append(iconElement('play', 12), '双击播放')
         card.body.appendChild(tag)
       }
       card.body.classList.add('is-media')
@@ -350,7 +333,7 @@ export class NodeCards {
     center.className = 'plein-node-empty'
     const icon = document.createElement('span')
     icon.className = 'plein-node-empty-icon'
-    icon.appendChild(svg(glyphOf(el, kind), 28))
+    icon.appendChild(iconElement(glyphOf(el, kind), 24))
     center.appendChild(icon)
     const room = el.h >= 150 && el.w >= 160
     if (room && presets.length) {
@@ -360,7 +343,7 @@ export class NodeCards {
       label.textContent = '尝试：'
       tries.appendChild(label)
       for (const p of presets.slice(0, el.h >= 220 ? 3 : 2)) {
-        const b = button('plein-node-try', p.description ?? p.title, p.title)
+        const b = button('plein-node-try', p.description ?? p.title, { text: p.title })
         b.addEventListener('click', (e) => {
           e.stopPropagation()
           this.actions.applyPreset(el.id, p)
@@ -377,12 +360,12 @@ export class NodeCards {
     const box = document.createElement('div')
     box.className = 'plein-node-running'
     const spin = document.createElement('span')
-    spin.className = 'plein-spinner'
+    spin.className = 'ui-spinner'
     const text = document.createElement('span')
     const p = el.run?.progress
     text.textContent =
       el.run?.status === 'queued' ? '排队中…' : p ? `生成中 ${Math.round(p * 100)}%` : '生成中…'
-    const cancel = button('plein-node-action', '取消生成', '取消')
+    const cancel = button('plein-node-action', '取消生成', { text: '取消' })
     cancel.addEventListener('click', (e) => {
       e.stopPropagation()
       this.actions.cancel(el.id)
@@ -397,7 +380,7 @@ export class NodeCards {
     box.className = 'plein-node-failed'
     const text = document.createElement('span')
     text.textContent = error ?? '生成失败'
-    const retry = button('plein-node-action', '重试', '重试')
+    const retry = button('plein-node-action', '重试', { text: '重试' })
     retry.addEventListener('click', (e) => {
       e.stopPropagation()
       this.engine.selection.set([el.id])

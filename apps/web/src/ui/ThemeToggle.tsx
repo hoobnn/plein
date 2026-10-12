@@ -1,7 +1,7 @@
 import { type ThemePref, useTheme } from '../stores/theme'
 import { Icon, type IconName } from './icons'
 
-const OPTIONS: Array<{ pref: ThemePref; label: string; icon: IconName }> = [
+export const THEME_OPTIONS: Array<{ pref: ThemePref; label: string; icon: IconName }> = [
   { pref: 'system', label: '跟随系统', icon: 'monitor' },
   { pref: 'light', label: '浅色', icon: 'sun' },
   { pref: 'dark', label: '深色', icon: 'moon' },
@@ -13,7 +13,7 @@ export function ThemeToggle() {
   const setPref = useTheme((s) => s.setPref)
   return (
     <fieldset aria-label="主题" className="ui-seg">
-      {OPTIONS.map((o) => (
+      {THEME_OPTIONS.map((o) => (
         <button
           key={o.pref}
           type="button"

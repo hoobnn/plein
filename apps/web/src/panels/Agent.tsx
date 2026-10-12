@@ -5,6 +5,7 @@ import { useRoute } from '../router'
 import { useAgent } from '../stores/agent'
 import { useCanvas } from '../stores/canvas'
 import { useSession } from '../stores/session'
+import { shortTime } from '../ui/format'
 import { Icon } from '../ui/icons'
 import { Mascot } from '../ui/Mascot'
 import { Popover } from '../ui/Popover'
@@ -90,9 +91,9 @@ function AgentPanel({ canvasId }: { canvasId: string | null }) {
   return (
     <aside
       aria-label="助手"
-      className="plein-agent-panel ui-float pointer-events-auto fixed right-3 bottom-[76px] z-40 flex h-[min(640px,calc(100vh-150px))] w-[400px] flex-col overflow-hidden rounded-xl max-sm:inset-x-3 max-sm:bottom-[132px] max-sm:w-auto"
+      className="plein-agent-panel ui-float pointer-events-auto fixed right-3 bottom-19 z-40 flex h-[min(640px,calc(100vh-150px))] w-100 flex-col overflow-hidden rounded-xl max-sm:inset-x-3 max-sm:bottom-33 max-sm:w-auto"
     >
-      <header className="flex items-center gap-1 border-b border-line py-2 pr-2 pl-4">
+      <header className="flex h-12 flex-none items-center gap-1 border-b border-line pr-2 pl-4">
         <h2 className="mr-1 text-sm font-semibold">小满</h2>
         {available.length > 1 ? (
           <Select
@@ -213,9 +214,9 @@ function SessionMenu() {
                     void select(s.id)
                   }}
                 >
-                  <span className="block truncate text-[13px]">{s.title}</span>
+                  <span className="block truncate text-sm">{s.title}</span>
                   <span className="text-xs text-ink-subtle">
-                    {s.agent === 'codex' ? 'Codex' : 'Claude Code'} · {formatTime(s.updatedAt)}
+                    {s.agent === 'codex' ? 'Codex' : 'Claude Code'} · {shortTime(s.updatedAt)}
                     {s.status === 'running' && ' · 进行中'}
                   </span>
                 </button>
@@ -267,7 +268,7 @@ function Transcript({
             <button
               key={s}
               type="button"
-              className="rounded-lg px-3 py-2 text-left text-[13px] text-ink-muted shadow-[inset_0_0_0_1px_var(--line)] hover:bg-hover hover:text-ink"
+              className="rounded-md px-3 py-2 text-left text-sm text-ink-muted ring-1 ring-line transition-colors ring-inset hover:bg-hover hover:text-ink"
               onClick={() =>
                 useAgent.getState().send(s, useCanvas.getState().engine?.selection.values())
               }
@@ -294,7 +295,7 @@ function Transcript({
       ))}
       {running && (
         <div className="flex items-center gap-2 py-1 text-xs text-ink-subtle">
-          <span className="plein-spinner size-3" />
+          <span className="ui-spinner size-3" />
           {cliName} 正在处理…
         </div>
       )}
@@ -305,7 +306,7 @@ function Transcript({
 function Item({ item }: { item: AgentItem }) {
   if (item.type === 'user') {
     return (
-      <div className="ml-10 self-end rounded-xl rounded-br-sm bg-surface-3 px-3 py-2 text-[13px] whitespace-pre-wrap">
+      <div className="ml-10 self-end rounded-xl rounded-br-xs bg-surface-3 px-3 py-2 text-sm whitespace-pre-wrap">
         {item.text}
         {item.selection?.length ? (
           <span className="mt-1 block text-xs text-ink-subtle">
@@ -345,14 +346,14 @@ function ToolRow({ item }: { item: Extract<AgentItem, { type: 'tool' }> }) {
       <div className="flex items-center gap-2 text-ink-muted">
         <span className="flex size-4 flex-none items-center justify-center">
           {item.status === 'running' ? (
-            <span className="plein-spinner size-3" />
+            <span className="ui-spinner size-3" />
           ) : item.status === 'error' ? (
             <span className="text-danger">
-              <Icon name="x" size={13} />
+              <Icon name="x" size={14} />
             </span>
           ) : (
             <span className="text-ink-subtle">
-              <Icon name="check" size={13} />
+              <Icon name="check" size={14} />
             </span>
           )}
         </span>
@@ -371,13 +372,13 @@ function ToolRow({ item }: { item: Extract<AgentItem, { type: 'tool' }> }) {
             type="button"
             aria-label="在画布上定位"
             title="在画布上定位"
-            className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn !h-5 !w-5"
+            className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn"
             onClick={() => {
               engine.selection.set([target.id])
               engine.zoomToFit([target.id])
             }}
           >
-            <Icon name="target" size={13} />
+            <Icon name="locate" size={14} />
           </button>
         )}
       </div>
@@ -415,13 +416,14 @@ function Composer({ running }: { running: boolean }) {
     <div className="border-t border-line p-3">
       {selected > 0 && withSelection && (
         <div className="mb-2 flex">
-          <span className="ui-badge flex items-center gap-1">
+          <span className="ui-chip pr-0.5">
             <Icon name="cursor" size={12} />
             带上选中的 {selected} 个元素
             <button
               type="button"
               aria-label="不带选中元素"
-              className="-mr-1 ml-0.5 text-ink-subtle hover:text-ink"
+              title="不带选中元素"
+              className="flex size-5 items-center justify-center rounded-xs text-ink-subtle transition-colors hover:bg-active hover:text-ink"
               onClick={() => setWithSelection(false)}
             >
               <Icon name="x" size={12} />
@@ -435,7 +437,7 @@ function Composer({ running }: { running: boolean }) {
           value={text}
           rows={1}
           placeholder="让小满帮你做点什么…"
-          className="ui-input ui-scrollbar max-h-40 min-h-9 flex-1 resize-none"
+          className="ui-input ui-input-lg ui-scrollbar max-h-40 min-h-9 flex-1 resize-none"
           onChange={(e) => {
             setText(e.target.value)
             const el = e.target
@@ -454,7 +456,7 @@ function Composer({ running }: { running: boolean }) {
             type="button"
             aria-label="停止"
             title="停止"
-            className="ui-btn ui-btn-secondary ui-icon-btn !h-9 !w-9"
+            className="ui-btn ui-btn-lg ui-btn-secondary ui-icon-btn"
             onClick={() => void useAgent.getState().stop()}
           >
             <Icon name="stop" size={14} />
@@ -464,7 +466,7 @@ function Composer({ running }: { running: boolean }) {
             type="button"
             aria-label="发送"
             title="发送（Enter）"
-            className="ui-btn ui-btn-primary ui-icon-btn !h-9 !w-9"
+            className="ui-btn ui-btn-lg ui-btn-primary ui-icon-btn"
             disabled={!text.trim()}
             onClick={submit}
           >
@@ -474,11 +476,4 @@ function Composer({ running }: { running: boolean }) {
       </div>
     </div>
   )
-}
-
-function formatTime(t: number) {
-  const d = new Date(t)
-  const now = new Date()
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  return d.toDateString() === now.toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`
 }

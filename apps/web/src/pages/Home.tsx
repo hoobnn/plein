@@ -4,8 +4,9 @@ import { api } from '../api/client'
 import { queueStartNode } from '../canvas/start'
 import { navigate } from '../router'
 import { useSession } from '../stores/session'
-import { Icon, type IconName } from '../ui/icons'
 import { confirmDialog } from '../ui/Dialog'
+import { fullTime, relativeTime } from '../ui/format'
+import { Icon, type IconName } from '../ui/icons'
 import { InlineTitle } from '../ui/InlineTitle'
 import { ThemeToggle } from '../ui/ThemeToggle'
 
@@ -15,21 +16,8 @@ const QUICK_START: Array<{ type: string; title: string; hint: string; icon: Icon
   { type: 'plein/video', title: '视频生成', hint: '文生视频、首尾帧', icon: 'video' },
   { type: 'plein/llm', title: '剧本创作', hint: '写剧本、改文案', icon: 'sparkle' },
   { type: 'plein/speech', title: '配音', hint: '台词转语音', icon: 'mic' },
-  { type: 'plein/music', title: '配乐', hint: '按描述生成音乐', icon: 'audio' },
+  { type: 'plein/music', title: '配乐', hint: '按描述生成音乐', icon: 'music' },
 ]
-
-const dateFmt = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })
-const relFmt = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
-
-/** 一周内显示相对时间（刚刚、3 小时前），更早显示日期 */
-function when(ts: number) {
-  const s = (Date.now() - ts) / 1000
-  if (s < 60) return '刚刚'
-  if (s < 3600) return relFmt.format(-Math.floor(s / 60), 'minute')
-  if (s < 86400) return relFmt.format(-Math.floor(s / 3600), 'hour')
-  if (s < 7 * 86400) return relFmt.format(-Math.floor(s / 86400), 'day')
-  return dateFmt.format(ts)
-}
 
 /** 画布列表：新建、打开、重命名、删除 */
 export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
@@ -112,6 +100,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
             </button>
             {info?.authRequired && (
               <button type="button" onClick={logout} className="ui-btn ui-btn-quiet">
+                <Icon name="logout" />
                 退出登录
               </button>
             )}
@@ -135,7 +124,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
           <div className="flex items-center gap-2">
             {canvases && canvases.length > 1 && (
               <label className="home-search">
-                <Icon name="search" size={15} />
+                <Icon name="search" />
                 <input
                   type="search"
                   value={query}
@@ -151,7 +140,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
               disabled={creating}
               className="ui-btn ui-btn-primary ui-btn-lg"
             >
-              <Icon name="plus" size={15} />
+              <Icon name="plus" />
               新建画布
             </button>
           </div>
@@ -256,8 +245,8 @@ function CanvasCard({
               {c.title}
             </a>
           )}
-          <div className="truncate text-xs text-ink-subtle" title={dateFmt.format(c.updatedAt)}>
-            {when(c.updatedAt)}编辑
+          <div className="truncate text-xs text-ink-subtle" title={fullTime(c.updatedAt)}>
+            {relativeTime(c.updatedAt)}编辑
             {c.elements ? ` · ${c.elements} 个元素` : ''}
           </div>
         </div>
@@ -276,7 +265,7 @@ function CanvasCard({
             onClick={onDelete}
             aria-label="删除"
             title="删除"
-            className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn hover:!text-danger"
+            className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn hover:text-danger"
           >
             <Icon name="trash" size={14} />
           </button>
@@ -291,8 +280,8 @@ function Cover({ covers, elements }: { covers: string[]; elements: number }) {
   if (covers.length === 0)
     return (
       <div className="plein-thumb home-cover flex items-center justify-center">
-        <span className="flex flex-col items-center gap-1.5 text-ink-subtle">
-          <Icon name={elements ? 'node' : 'frame'} size={22} />
+        <span className="flex flex-col items-center gap-2 text-ink-subtle">
+          <Icon name={elements ? 'workflow' : 'frame'} size={24} />
           <span className="text-xs">{elements ? '还没有生成图片' : '空画布'}</span>
         </span>
       </div>

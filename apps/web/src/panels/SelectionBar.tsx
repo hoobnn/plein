@@ -1,11 +1,12 @@
 import { type Engine, union } from '@plein/canvas-core'
 import { templateData } from '../canvas/groups'
 import { assetOf, downloadAll } from '../canvas/grid'
+import { useEngineVersion } from '../canvas/hooks'
 import { useCanvas } from '../stores/canvas'
 import { useTemplates } from '../stores/templates'
 import { promptDialog } from '../ui/Dialog'
 import { Icon } from '../ui/icons'
-import { useEngineVersion } from './Generator'
+import { withShortcut } from '../ui/keys'
 
 /** 节点标题在卡片外上方，工具条要让开它 */
 const TITLE_H = 30
@@ -88,16 +89,16 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
       <button
         type="button"
         className={btn}
-        title="打组（⌘G）"
+        title={withShortcut('打组', 'mod+g')}
         onClick={() => engine.groupSelection()}
       >
-        <Icon name="frame" size={14} />
+        <Icon name="group" size={14} />
         打组
       </button>
       <button
         type="button"
         className={btn}
-        title="复制一份（⌘D），所选元素之间的连线一起复制"
+        title={`${withShortcut('复制一份', 'mod+d')}，所选元素之间的连线一起复制`}
         onClick={() => engine.duplicateSelection()}
       >
         <Icon name="copy" size={14} />

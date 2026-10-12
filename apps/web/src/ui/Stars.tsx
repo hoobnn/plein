@@ -1,6 +1,6 @@
 import { MAX_RATING } from '@plein/doc'
 import { useState } from 'react'
-import { Icon } from './icons'
+import { Icon, type IconSize } from './icons'
 
 const STEPS = Array.from({ length: MAX_RATING }, (_, i) => i + 1)
 
@@ -12,7 +12,7 @@ export function Stars({
 }: {
   value: number | undefined
   onChange?(rating: number | null): void
-  size?: number
+  size?: IconSize
 }) {
   const [hover, setHover] = useState(0)
   const shown = hover || value || 0
@@ -38,7 +38,7 @@ export function Stars({
             e.stopPropagation()
             onChange(n === value ? null : n)
           }}
-          className={`flex items-center justify-center rounded-xs p-0.5 transition-colors duration-[var(--dur-fast)] ${
+          className={`flex items-center justify-center rounded-xs p-0.5 transition-colors ${
             n <= shown ? 'text-warning' : 'text-ink-subtle hover:text-ink-muted'
           }`}
         >

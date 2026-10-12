@@ -2,13 +2,17 @@ import type { Engine } from '@plein/canvas-core'
 import { updateElement } from '@plein/doc'
 import { useState } from 'react'
 import { cancelGroup, describeGroupRun, groupNodes, runGroup, templateData } from '../canvas/groups'
+import { useEngineVersion } from '../canvas/hooks'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useTemplates } from '../stores/templates'
 import { Icon } from '../ui/icons'
 import { promptDialog } from '../ui/Dialog'
+import { withShortcut } from '../ui/keys'
 import { Popover } from '../ui/Popover'
-import { useEngineVersion } from './Generator'
+
+/** 页头占的高度：Frame 顶到页头时工具条不压住它 */
+const TOP_RESERVED = 64
 
 /** Frame 预设色：写进元素的 color，GPU 渲染据此画底色和边框 */
 const COLORS: Array<{ label: string; value: string | undefined }> = [
@@ -78,7 +82,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
       role="toolbar"
       aria-label="Frame 操作"
       // 贴在 Frame 右上角外侧，离 Frame 8；Frame 顶到页头时不压住页头
-      style={{ right: window.innerWidth - tr.x, top: Math.max(64, tr.y - 48) }}
+      style={{ right: window.innerWidth - tr.x, top: Math.max(TOP_RESERVED, tr.y - 48) }}
       className="ui-bar ui-bar-sm pointer-events-auto fixed z-20"
     >
       <button
@@ -97,10 +101,10 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
       <button
         type="button"
         className={btn}
-        title="解组（⇧⌘G）：保留里面的元素，去掉 Frame"
+        title={`${withShortcut('解组', 'mod+shift+g')}：保留里面的元素，去掉 Frame`}
         onClick={() => engine.ungroupSelection()}
       >
-        <Icon name="ungroup" size={13} />
+        <Icon name="ungroup" size={14} />
         解组
       </button>
       {remote && <div className="ui-bar-sep" />}
@@ -125,7 +129,8 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
               title="停止整组：正在跑和排队的节点一起取消"
               onClick={() => group && void cancelGroup(group)}
             >
-              运行中… 停止
+              <Icon name="stop" size={12} />
+              停止运行
             </button>
           ) : (
             <button
@@ -140,7 +145,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
             </button>
           )}
           <button type="button" className={btn} onClick={() => void save()}>
-            <Icon name="layers" size={13} />
+            <Icon name="layers" size={14} />
             存为模板
           </button>
         </>
@@ -159,7 +164,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
                   updateElement(engine.doc, el.id, { color: c.value })
                   setPalette(null)
                 }}
-                className="flex size-7 items-center justify-center rounded-full border border-line transition-transform duration-[var(--dur-fast)] hover:scale-110 aria-pressed:ring-2 aria-pressed:ring-[var(--accent)] aria-pressed:ring-offset-2 aria-pressed:ring-offset-[var(--menu)]"
+                className="flex size-7 items-center justify-center rounded-full border border-line text-ink-subtle transition-transform hover:scale-110 aria-pressed:ring-2 aria-pressed:ring-accent aria-pressed:ring-offset-2 aria-pressed:ring-offset-menu"
                 style={{ background: c.value ?? 'transparent' }}
               >
                 {!c.value && <Icon name="x" size={12} />}

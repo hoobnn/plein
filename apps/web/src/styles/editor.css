@@ -1,0 +1,119 @@
+/* ── 编辑器外壳：底部工具条的添加按钮、添加节点菜单、故事板 ── */
+
+/* 底部工具条的“添加节点”：实心按钮 */
+.plein-add-btn {
+  display: flex;
+  width: var(--h-lg);
+  height: var(--h-lg);
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--primary);
+  color: var(--on-primary);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.plein-add-btn:hover {
+  background: var(--primary-hover);
+}
+.plein-add-btn svg {
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+.plein-add-btn[aria-expanded="true"] svg {
+  transform: rotate(45deg);
+}
+
+/* 添加节点菜单：单行图标 + 名称 */
+.plein-add-menu {
+  z-index: 30;
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  background: var(--menu);
+  box-shadow: var(--shadow-3);
+  backdrop-filter: blur(32px) saturate(1.8);
+  animation: ui-pop-in var(--dur-base) var(--ease-spring);
+}
+.plein-add-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: var(--h-xl);
+  padding: 0 10px;
+  color: var(--ink-subtle);
+}
+.plein-add-search input {
+  min-width: 0;
+  flex: 1;
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  outline: none;
+}
+.plein-add-search input::placeholder {
+  color: var(--ink-subtle);
+}
+.plein-add-section {
+  margin: 4px 8px 0;
+  padding: 8px 2px 4px;
+  border-top: 1px solid var(--line);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--ink-subtle);
+}
+.plein-add-item {
+  display: flex;
+  width: 100%;
+  height: var(--h-lg);
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--ink);
+  text-align: left;
+}
+.plein-add-icon {
+  display: flex;
+  color: var(--ink-muted);
+}
+.plein-add-item[aria-selected="true"] {
+  background: var(--hover);
+}
+.plein-add-item[aria-selected="true"] .plein-add-icon {
+  color: var(--ink);
+}
+
+/* 故事板视图 */
+.board-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+.board-thumb {
+  position: relative;
+  display: flex;
+  aspect-ratio: 16 / 9;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transition: box-shadow var(--dur-base) var(--ease-spring);
+}
+.board-card:hover .board-thumb {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    var(--shadow-1);
+}
+.board-index,
+.board-count {
+  position: absolute;
+  top: 8px;
+}
+.board-index {
+  left: 8px;
+}
+.board-count {
+  right: 8px;
+}

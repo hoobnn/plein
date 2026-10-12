@@ -1,14 +1,13 @@
 import type { Canvas } from '@plein/protocol'
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
-import { desktop } from '../desktop'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { placeStartNode } from '../canvas/start'
 import { CanvasMenus } from '../panels/CanvasMenus'
 import { ArrangeToast } from '../panels/ArrangeToast'
 import { Board } from '../panels/Board'
 import { FrameBar } from '../panels/FrameBar'
-import { Generator } from '../panels/Generator'
+import { Generator } from '../panels/generator/Generator'
 import { History } from '../panels/History'
 import { ResultBar, Viewer } from '../panels/ResultBar'
 import { SelectionBar } from '../panels/SelectionBar'
@@ -19,6 +18,7 @@ import { Tasks } from '../panels/Tasks'
 import { Toolbar, ViewControls } from '../panels/Toolbar'
 import { Icon } from '../ui/icons'
 import { InlineTitle } from '../ui/InlineTitle'
+import { MOD } from '../ui/keys'
 import { ThemeToggle } from '../ui/ThemeToggle'
 import { useCatalog } from '../stores/catalog'
 import { type SyncStatus, useCanvas } from '../stores/canvas'
@@ -38,8 +38,6 @@ export function Editor({
   source: CanvasSource
   onOpenSettings(): void
 }) {
-  const mac = desktop ? desktop.platform === 'darwin' : /Mac/i.test(navigator.platform)
-  const modifier = mac ? '⌘' : 'Ctrl'
   const { sync, importing, notice, mode } = useCanvas()
   const [canvas, setCanvas] = useState<Canvas | null>(null)
   const canvasId = source.kind === 'remote' ? source.canvasId : null
@@ -70,11 +68,13 @@ export function Editor({
       <Board />
       <header className="app-titlebar pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 p-3">
         <div className="app-drag ui-bar pointer-events-auto">
-          <a href="#/" className="ui-bar-btn gap-2 !px-2.5 font-semibold !text-ink">
-            <span className="plein-logo size-[18px]" aria-hidden="true" />
+          <a href="#/" className="ui-bar-btn gap-2 px-2.5 font-semibold text-ink">
+            <span className="plein-logo size-5" aria-hidden="true" />
             Plein
           </a>
-          <span className="text-ink-subtle">/</span>
+          <span className="text-ink-subtle" aria-hidden="true">
+            /
+          </span>
           {renaming && canvas ? (
             <InlineTitle
               value={canvas.title}
@@ -86,7 +86,7 @@ export function Editor({
               type="button"
               onClick={() => setRenaming(source.kind === 'remote' && !!canvas)}
               title={source.kind === 'remote' ? '重命名' : undefined}
-              className="ui-bar-btn block max-w-60 truncate font-medium !text-ink"
+              className="ui-bar-btn block max-w-60 truncate font-medium text-ink"
             >
               {source.kind === 'demo' ? `演示（${source.count} 个元素）` : (canvas?.title ?? '…')}
             </button>
@@ -126,9 +126,9 @@ export function Editor({
           )}
         </div>
       </header>
-      {mode === 'flow' && <EmptyHint modifier={modifier} />}
+      {mode === 'flow' && <EmptyHint />}
       {(importing || notice) && (
-        <div className="pointer-events-none absolute inset-x-0 top-[var(--chrome-top)] z-30 flex justify-center px-4">
+        <div className="pointer-events-none absolute inset-x-0 top-16 z-30 flex justify-center px-4">
           <div className="ui-toast">
             {importing ? `正在导入 ${importing.done}/${importing.total}…` : notice}
           </div>
@@ -161,7 +161,7 @@ export function Editor({
 }
 
 /** 空画布时在中央给一句上手提示，放下第一个元素后消失 */
-function EmptyHint({ modifier }: { modifier: string }) {
+function EmptyHint() {
   const engine = useCanvas((s) => s.engine)
   const [empty, setEmpty] = useState(false)
   useEffect(() => {
@@ -174,13 +174,12 @@ function EmptyHint({ modifier }: { modifier: string }) {
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
       <div className="flex flex-col items-center gap-3 text-center">
-        <div className="flex gap-2 text-ink-subtle">
-          <span className="plein-empty-key">双击</span>
-          <span className="plein-empty-key">Tab</span>
+        <div className="flex items-center gap-1.5 text-xs text-ink-subtle">
+          <span className="ui-keycap">双击</span>或<span className="ui-keycap">Tab</span>
         </div>
         <p className="text-sm text-ink-muted">双击空白处或按 Tab 添加节点</p>
         <p className="text-xs text-ink-subtle">
-          也可以把图片、视频、音频拖进来 · {modifier}+滚轮缩放 · 按 ? 查看快捷键
+          也可以把图片、视频、音频拖进来 · {MOD} + 滚轮缩放 · 按 ? 查看快捷键
         </p>
       </div>
     </div>
@@ -188,8 +187,8 @@ function EmptyHint({ modifier }: { modifier: string }) {
 }
 
 const MODES = [
-  { mode: 'flow', label: '工作流', icon: 'node' },
-  { mode: 'board', label: '故事板', icon: 'grid' },
+  { mode: 'flow', label: '工作流', icon: 'workflow' },
+  { mode: 'board', label: '故事板', icon: 'board' },
 ] as const
 
 /** 工作流 / 故事板切换（左上角的两个图标） */
@@ -212,7 +211,7 @@ function ModeSwitch() {
           }}
           className="ui-bar-btn"
         >
-          <Icon name={m.icon} size={16} />
+          <Icon name={m.icon} />
         </button>
       ))}
     </div>

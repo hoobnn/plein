@@ -9,27 +9,27 @@ import { useTemplates } from '../stores/templates'
 import { Icon, type IconName } from '../ui/icons'
 
 const NODE_ICONS: Record<string, IconName> = {
-  'plein/text': 'textBox',
+  'plein/text': 'text',
   'plein/llm': 'sparkle',
   'plein/image': 'image',
   'plein/video': 'video',
   'plein/speech': 'mic',
-  'plein/music': 'audio',
-  'plein/character': 'user',
+  'plein/music': 'music',
+  'plein/character': 'character',
   'plein/scene': 'scene',
 }
 const CATEGORY_ICONS: Record<NodeInfo['category'], IconName> = {
-  input: 'textBox',
+  input: 'text',
   text: 'sparkle',
   image: 'image',
   video: 'video',
   audio: 'audio',
-  story: 'layers',
+  story: 'story',
   util: 'sliders',
 }
 
-export const nodeIcon = (n: NodeInfo): IconName =>
-  NODE_ICONS[n.type] ?? CATEGORY_ICONS[n.category] ?? 'node'
+const nodeIcon = (n: NodeInfo): IconName =>
+  NODE_ICONS[n.type] ?? CATEGORY_ICONS[n.category] ?? 'workflow'
 
 const BASIC: Array<{
   id: string
@@ -159,6 +159,7 @@ export function AddMenu({
       className={`plein-add-menu pointer-events-auto flex flex-col ${className}`}
     >
       <label className="plein-add-search">
+        <Icon name="search" />
         <input
           // biome-ignore lint/a11y/noAutofocus: 弹出即可打字搜索
           autoFocus
@@ -182,7 +183,6 @@ export function AddMenu({
             }
           }}
         />
-        <Icon name="search" size={17} />
       </label>
       <div role="listbox" className="ui-scrollbar min-h-0 overflow-y-auto">
         {items.length === 0 && (
@@ -204,7 +204,7 @@ export function AddMenu({
                 className="plein-add-item"
               >
                 <span className="plein-add-icon">
-                  <Icon name={item.icon} size={19} />
+                  <Icon name={item.icon} />
                 </span>
                 <span className="truncate">{item.title}</span>
               </button>

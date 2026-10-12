@@ -1,10 +1,12 @@
-import { type ThemePref, useTheme } from '../stores/theme'
-import { Icon, type IconName } from '../ui/icons'
 import type { ProviderConfigView, ProviderInfo, ProviderTestResult } from '@plein/protocol'
 import { type ReactNode, useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { desktop } from '../desktop'
 import { useCatalog } from '../stores/catalog'
+import { useTheme } from '../stores/theme'
+import { Icon, type IconName } from '../ui/icons'
+import { Modal, ModalHeader } from '../ui/Modal'
+import { THEME_OPTIONS } from '../ui/ThemeToggle'
 import { type ObjectSchema, SchemaForm } from './SchemaForm'
 
 const input = 'ui-input ui-input-lg w-full'
@@ -13,16 +15,9 @@ type Section = 'appearance' | 'providers' | 'plugins' | 'data'
 
 /** 平台行的状态：停用 / 缺密钥 / 可用 */
 function providerState(p: ProviderInfo): { label: string; tone: string } {
-  if (!p.enabled) return { label: '已停用', tone: 'text-ink-subtle bg-hover' }
-  if (!p.configured)
-    return {
-      label: '缺少密钥',
-      tone: 'text-warning bg-[color-mix(in_srgb,var(--warning)_14%,transparent)]',
-    }
-  return {
-    label: '可用',
-    tone: 'text-success bg-[color-mix(in_srgb,var(--success)_14%,transparent)]',
-  }
+  if (!p.enabled) return { label: '已停用', tone: '' }
+  if (!p.configured) return { label: '缺少密钥', tone: 'ui-tag-warning' }
+  return { label: '可用', tone: 'ui-tag-success' }
 }
 
 function Switch({
@@ -52,7 +47,7 @@ function Switch({
       }`}
     >
       <span
-        className={`absolute top-0.5 left-0.5 size-4 rounded-full bg-white shadow-[var(--shadow-1)] transition-transform ${
+        className={`absolute top-0.5 left-0.5 size-4 rounded-full bg-white shadow-1 transition-transform ${
           checked ? 'translate-x-4' : ''
         }`}
       />
@@ -153,9 +148,7 @@ function ProviderRow({
               {provider.description ?? `${provider.models.length} 个模型`}
             </span>
           </span>
-          <span className={`flex-none rounded-sm px-1.5 py-0.5 text-2xs ${state.tone}`}>
-            {state.label}
-          </span>
+          <span className={`ui-tag ${state.tone}`}>{state.label}</span>
         </button>
         <Switch
           checked={provider.enabled}
@@ -164,15 +157,13 @@ function ProviderRow({
           onChange={setEnabled}
         />
       </div>
+      {/* 展开的内容和标题文字对齐：左边距 16 + 箭头 14 + 间距 12 */}
       {open && (
-        <div id={bodyId} className="flex flex-col gap-4 px-4 pb-4 pl-[42px]">
+        <div id={bodyId} className="flex flex-col gap-4 px-4 pb-4 pl-10.5">
           {provider.models.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {provider.models.map((m) => (
-                <span
-                  key={m.id}
-                  className="rounded-sm bg-surface-2 px-1.5 py-0.5 text-2xs text-ink-muted"
-                >
+                <span key={m.id} className="ui-tag">
                   {m.title}
                 </span>
               ))}
@@ -275,136 +266,115 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
       icon: 'sparkle',
       badge: providers.filter((p) => p.enabled && p.configured).length,
     },
-    { id: 'plugins', label: '插件', icon: 'layers', badge: plugins.length },
-    ...(desktop ? [{ id: 'data' as const, label: '数据', icon: 'doc' as const }] : []),
+    { id: 'plugins', label: '插件', icon: 'puzzle', badge: plugins.length },
+    ...(desktop ? [{ id: 'data' as const, label: '数据', icon: 'folder' as const }] : []),
   ]
   const current = sections.find((s) => s.id === section) ?? sections[0]!
 
   return (
-    <div
-      className="ui-dialog-scrim fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6"
-      onPointerDown={onClose}
-    >
-      <div
-        role="dialog"
-        aria-label="设置"
-        className="ui-dialog flex h-[min(640px,100%)] w-full max-w-[860px] flex-col overflow-hidden rounded-2xl bg-surface shadow-[var(--shadow-4)] sm:flex-row"
-        onPointerDown={(e) => e.stopPropagation()}
+    <Modal label="设置" onClose={onClose} top className="h-[min(640px,100%)] max-w-215 sm:flex-row">
+      <nav
+        aria-label="设置分区"
+        className="flex flex-none gap-1 overflow-x-auto border-b border-line bg-surface-2 p-2 sm:w-52 sm:flex-col sm:overflow-visible sm:border-r sm:border-b-0 sm:p-3"
       >
-        <nav
-          aria-label="设置分区"
-          className="flex flex-none gap-1 overflow-x-auto border-b border-line bg-surface-2 p-2 sm:w-52 sm:flex-col sm:overflow-visible sm:border-r sm:border-b-0 sm:p-3"
-        >
-          <h2 className="hidden px-2.5 pt-1 pb-3 text-lg font-semibold sm:block">设置</h2>
-          {sections.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              aria-current={s.id === current.id ? 'page' : undefined}
-              onClick={() => setSection(s.id)}
-              className={`flex h-8 flex-none items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors duration-[var(--dur-fast)] ${
-                s.id === current.id
-                  ? 'bg-surface text-ink shadow-[var(--shadow-1)] ring-1 ring-line'
-                  : 'text-ink-muted hover:bg-hover hover:text-ink'
-              }`}
-            >
-              <Icon name={s.icon} size={15} />
-              <span className="flex-1 text-left">{s.label}</span>
-              {!!s.badge && (
-                <span className="hidden text-2xs text-ink-subtle tabular-nums sm:inline">
-                  {s.badge}
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="flex h-14 flex-none items-center justify-between pr-3 pl-6">
-            <h2 className="text-lg font-semibold">{current.label}</h2>
-            <button
-              type="button"
-              onClick={onClose}
-              className="ui-btn ui-btn-quiet ui-icon-btn"
-              aria-label="关闭"
-            >
-              <Icon name="x" />
-            </button>
-          </header>
-          <div className="ui-scrollbar flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto px-6 pt-2 pb-6">
-            {current.id === 'appearance' && (
-              <Group title="主题" hint="跟随系统时，会随系统的浅色 / 深色自动切换">
-                <Appearance />
-              </Group>
+        <h2 className="hidden px-2.5 pt-1.5 pb-3 text-lg font-semibold sm:block">设置</h2>
+        {sections.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            aria-current={s.id === current.id ? 'page' : undefined}
+            onClick={() => setSection(s.id)}
+            className={`flex h-8 flex-none items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors ${
+              s.id === current.id
+                ? 'bg-surface text-ink shadow-1'
+                : 'text-ink-muted hover:bg-hover hover:text-ink'
+            }`}
+          >
+            <Icon name={s.icon} />
+            <span className="flex-1 text-left">{s.label}</span>
+            {!!s.badge && (
+              <span className="hidden text-2xs text-ink-subtle tabular-nums sm:inline">
+                {s.badge}
+              </span>
             )}
-            {current.id === 'providers' && (
-              <Group title="已安装的平台" hint="启用并填好密钥后，节点里才能选到这个平台的模型">
-                {providers.length === 0 ? (
-                  <p className="text-sm text-ink-subtle">还没有安装模型平台插件。</p>
-                ) : (
-                  <ul className="rounded-lg ring-1 ring-line">
-                    {providers.map((p) => (
-                      <ProviderRow
-                        key={p.id}
-                        provider={p}
-                        open={openProvider === p.id}
-                        onToggleOpen={() => setOpenProvider(openProvider === p.id ? null : p.id)}
-                        onSaved={load}
-                      />
-                    ))}
-                  </ul>
-                )}
-              </Group>
-            )}
-            {current.id === 'plugins' && (
-              <Group title="已安装的插件">
+          </button>
+        ))}
+      </nav>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <ModalHeader title={current.label} onClose={onClose} divider={false} />
+        <div className="ui-scrollbar flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto px-5 pt-2 pb-5">
+          {current.id === 'appearance' && (
+            <Group title="主题" hint="跟随系统时，会随系统的浅色 / 深色自动切换">
+              <Appearance />
+            </Group>
+          )}
+          {current.id === 'providers' && (
+            <Group title="已安装的平台" hint="启用并填好密钥后，节点里才能选到这个平台的模型">
+              {providers.length === 0 ? (
+                <p className="text-sm text-ink-subtle">还没有安装模型平台插件。</p>
+              ) : (
                 <ul className="rounded-lg ring-1 ring-line">
-                  {plugins.map((p) => (
-                    <li
+                  {providers.map((p) => (
+                    <ProviderRow
                       key={p.id}
-                      className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm">{p.name}</span>
-                        <span className="block truncate text-xs text-ink-subtle">
-                          {p.id} · {p.version}
-                          {p.builtin ? ' · 内置' : ''}
-                        </span>
-                      </span>
-                      <span
-                        className={`flex-none text-xs ${p.status === 'active' ? 'text-success' : 'text-danger'}`}
-                      >
-                        {p.status === 'active' ? '已加载' : `加载失败：${p.error}`}
-                      </span>
-                    </li>
+                      provider={p}
+                      open={openProvider === p.id}
+                      onToggleOpen={() => setOpenProvider(openProvider === p.id ? null : p.id)}
+                      onSaved={load}
+                    />
                   ))}
                 </ul>
-              </Group>
-            )}
-            {current.id === 'data' && (
-              <Group title="数据目录" hint="画布、素材和平台密钥都保存在本机的数据目录里">
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => void desktop?.openDataDir()}
-                    className="ui-btn ui-btn-secondary"
+              )}
+            </Group>
+          )}
+          {current.id === 'plugins' && (
+            <Group title="已安装的插件">
+              <ul className="rounded-lg ring-1 ring-line">
+                {plugins.map((p) => (
+                  <li
+                    key={p.id}
+                    className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0"
                   >
-                    打开数据目录
-                  </button>
-                </div>
-              </Group>
-            )}
-          </div>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm">{p.name}</span>
+                      <span className="block truncate text-xs text-ink-subtle">
+                        {p.id} · {p.version}
+                        {p.builtin ? ' · 内置' : ''}
+                      </span>
+                      {p.error && (
+                        <span className="mt-0.5 block text-xs break-words text-danger">
+                          {p.error}
+                        </span>
+                      )}
+                    </span>
+                    <span
+                      className={`ui-tag ${p.status === 'active' ? 'ui-tag-success' : 'ui-tag-danger'}`}
+                    >
+                      {p.status === 'active' ? '已加载' : '加载失败'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Group>
+          )}
+          {current.id === 'data' && (
+            <Group title="数据目录" hint="画布、素材和平台密钥都保存在本机的数据目录里">
+              <div>
+                <button
+                  type="button"
+                  onClick={() => void desktop?.openDataDir()}
+                  className="ui-btn ui-btn-secondary"
+                >
+                  打开数据目录
+                </button>
+              </div>
+            </Group>
+          )}
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
-
-const APPEARANCE: Array<{ pref: ThemePref; label: string; icon: IconName }> = [
-  { pref: 'system', label: '跟随系统', icon: 'monitor' },
-  { pref: 'light', label: '浅色', icon: 'sun' },
-  { pref: 'dark', label: '深色', icon: 'moon' },
-]
 
 /** 外观：主题三选一 */
 function Appearance() {
@@ -412,13 +382,13 @@ function Appearance() {
   const setPref = useTheme((s) => s.setPref)
   return (
     <fieldset aria-label="主题" className="grid grid-cols-3 gap-2 border-0 p-0">
-      {APPEARANCE.map((o) => (
+      {THEME_OPTIONS.map((o) => (
         <button
           key={o.pref}
           type="button"
           aria-pressed={pref === o.pref}
           onClick={() => setPref(o.pref)}
-          className={`flex h-10 items-center justify-center gap-2 rounded-md text-sm ring-1 transition-colors duration-[var(--dur-fast)] ${
+          className={`flex h-10 items-center justify-center gap-2 rounded-md text-sm ring-1 transition-colors ${
             pref === o.pref
               ? 'bg-accent-soft text-accent ring-accent'
               : 'bg-surface-2 text-ink-muted ring-line hover:text-ink'

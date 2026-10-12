@@ -2,18 +2,13 @@ import type { Engine } from '@plein/canvas-core'
 import { setParam } from '@plein/doc'
 import { newShotId, SHOT_SIZES, type Shot } from '@plein/nodes'
 import { useEffect, useState } from 'react'
+import { useDocVersion } from '../canvas/hooks'
 import { expandedNodes, expandShots, runExpanded, shotsOf } from '../canvas/storyboard'
 import { useCanvas } from '../stores/canvas'
-import { Icon } from '../ui/icons'
-import { Select } from '../ui/Select'
 import { useCatalog } from '../stores/catalog'
-
-/** 文档变化时重渲染（协作者改表格也能看到） */
-function useDocVersion(engine: Engine) {
-  const [v, setV] = useState(0)
-  useEffect(() => engine.onViewChange(() => setV((x) => x + 1)), [engine])
-  return v
-}
+import { Icon } from '../ui/icons'
+import { Modal, ModalHeader } from '../ui/Modal'
+import { Select } from '../ui/Select'
 
 const cell =
   'w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
@@ -46,7 +41,8 @@ export function StoryboardEditor() {
 }
 
 function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose(): void }) {
-  useDocVersion(engine)
+  // 协作者改表格也能看到
+  useDocVersion(engine.doc)
   const catalog = useCatalog((s) => s.catalog)
   const notify = useCanvas((s) => s.notify)
   const el = engine.doc.get(id)
@@ -118,173 +114,164 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
 
   const btn = 'ui-btn ui-btn-secondary'
   return (
-    <div
-      className="ui-dialog-scrim pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-scrim p-6"
-      onPointerDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <section
-        role="dialog"
-        aria-label="分镜表"
-        className="ui-dialog flex max-h-full w-full max-w-[1400px] flex-col overflow-hidden rounded-2xl bg-surface shadow-[var(--shadow-4)]"
-      >
-        <header className="flex min-h-14 flex-wrap items-center gap-2 border-b border-line py-2.5 pl-5 pr-3">
-          <h2 className="mr-1 text-lg font-semibold">{el?.name ?? '分镜'}</h2>
+    <Modal label="分镜表" onClose={onClose} className="max-w-350">
+      <ModalHeader
+        title={el?.name ?? '分镜'}
+        onClose={onClose}
+        meta={
           <span className="ui-chip">
             {shots.length} 个镜头 · {shots.reduce((t, s) => t + s.duration, 0)} 秒
           </span>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            <span className="mr-1 text-xs text-ink-subtle">作用于{scope}</span>
-            <button type="button" className={btn} onClick={addShot}>
-              添加镜头
-            </button>
-            <button type="button" className={btn} disabled={!shots.length} onClick={expand}>
-              展开为节点
-            </button>
-            <div className="mx-1 h-4 w-px bg-line" />
-            <button
-              type="button"
-              className={btn}
-              disabled={!expanded.size}
-              onClick={() => batch('image')}
-            >
-              批量出分镜图
-            </button>
-            <button
-              type="button"
-              className="ui-btn ui-btn-primary"
-              disabled={!expanded.size}
-              onClick={() => batch('video')}
-            >
-              批量生成视频
-            </button>
-            <button
-              type="button"
-              aria-label="关闭"
-              className="ui-btn ui-btn-quiet ui-icon-btn"
-              onClick={onClose}
-            >
-              <Icon name="x" />
-            </button>
-          </div>
-        </header>
-        {shots.length === 0 ? (
-          <p className="px-6 py-16 text-center text-sm text-ink-subtle">
-            还没有镜头。把剧本连到分镜节点后点“生成”，或手动添加镜头。
-          </p>
-        ) : (
-          <div className="ui-scrollbar overflow-auto">
-            <table className="w-full min-w-[1200px] border-collapse text-left text-sm">
-              <thead className="sticky top-0 z-10 bg-surface-2 text-xs font-medium text-ink-subtle">
-                <tr>
-                  <th className="w-12 py-2 pl-5 pr-2">
+        }
+      >
+        <span className="mr-1 text-xs text-ink-subtle">作用于{scope}</span>
+        <button type="button" className={btn} onClick={addShot}>
+          <Icon name="plus" />
+          添加镜头
+        </button>
+        <button type="button" className={btn} disabled={!shots.length} onClick={expand}>
+          <Icon name="workflow" />
+          展开为节点
+        </button>
+        <span aria-hidden="true" className="ui-bar-sep" />
+        <button
+          type="button"
+          className={btn}
+          disabled={!expanded.size}
+          onClick={() => batch('image')}
+        >
+          <Icon name="image" />
+          批量出分镜图
+        </button>
+        <button
+          type="button"
+          className="ui-btn ui-btn-primary"
+          disabled={!expanded.size}
+          onClick={() => batch('video')}
+        >
+          <Icon name="video" />
+          批量生成视频
+        </button>
+      </ModalHeader>
+      {shots.length === 0 ? (
+        <p className="px-6 py-16 text-center text-sm text-ink-subtle">
+          还没有镜头。把剧本连到分镜节点后点“生成”，或手动添加镜头。
+        </p>
+      ) : (
+        <div className="ui-scrollbar min-h-0 overflow-auto">
+          <table className="w-full min-w-300 border-collapse text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-surface-2 text-xs font-medium text-ink-subtle">
+              <tr>
+                <th className="w-12 py-2 pl-5 pr-2">
+                  <input
+                    type="checkbox"
+                    aria-label="全选"
+                    checked={picked.size > 0 && picked.size === shots.length}
+                    onChange={(e) =>
+                      setPicked(new Set(e.target.checked ? shots.map((s) => s.id) : []))
+                    }
+                  />
+                </th>
+                <th className="w-12 px-2 py-2 font-normal">镜号</th>
+                <th className="w-16 px-2 py-2 font-normal">时长</th>
+                <th className="w-20 px-2 py-2 font-normal">景别</th>
+                <th className="px-2 py-2 font-normal">画面</th>
+                <th className="w-32 px-2 py-2 font-normal">出场</th>
+                <th className="w-56 px-2 py-2 font-normal">台词（角色：台词）</th>
+                <th className="px-2 py-2 font-normal">分镜图提示词</th>
+                <th className="w-48 px-2 py-2 font-normal">运动提示词</th>
+                <th className="w-20 py-2 pl-2 pr-5" />
+              </tr>
+            </thead>
+            <tbody>
+              {shots.map((s) => (
+                <tr key={s.id} className="border-t border-line align-top hover:bg-hover">
+                  <td className="py-2.5 pl-5 pr-2">
                     <input
                       type="checkbox"
-                      aria-label="全选"
-                      checked={picked.size > 0 && picked.size === shots.length}
-                      onChange={(e) =>
-                        setPicked(new Set(e.target.checked ? shots.map((s) => s.id) : []))
-                      }
+                      aria-label={`选择镜头 ${s.no}`}
+                      checked={picked.has(s.id)}
+                      onChange={(e) => {
+                        const next = new Set(picked)
+                        if (e.target.checked) next.add(s.id)
+                        else next.delete(s.id)
+                        setPicked(next)
+                      }}
                     />
-                  </th>
-                  <th className="w-12 px-2 py-2 font-normal">镜号</th>
-                  <th className="w-16 px-2 py-2 font-normal">时长</th>
-                  <th className="w-20 px-2 py-2 font-normal">景别</th>
-                  <th className="px-2 py-2 font-normal">画面</th>
-                  <th className="w-32 px-2 py-2 font-normal">出场</th>
-                  <th className="w-56 px-2 py-2 font-normal">台词（角色：台词）</th>
-                  <th className="px-2 py-2 font-normal">分镜图提示词</th>
-                  <th className="w-48 px-2 py-2 font-normal">运动提示词</th>
-                  <th className="w-20 py-2 pl-2 pr-5" />
-                </tr>
-              </thead>
-              <tbody>
-                {shots.map((s) => (
-                  <tr key={s.id} className="border-t border-line align-top hover:bg-hover">
-                    <td className="py-2.5 pl-5 pr-2">
-                      <input
-                        type="checkbox"
-                        aria-label={`选择镜头 ${s.no}`}
-                        checked={picked.has(s.id)}
-                        onChange={(e) => {
-                          const next = new Set(picked)
-                          if (e.target.checked) next.add(s.id)
-                          else next.delete(s.id)
-                          setPicked(next)
-                        }}
-                      />
-                    </td>
-                    <td className="px-2 py-2.5 tabular-nums text-ink-muted">
-                      {String(s.no).padStart(2, '0')}
-                    </td>
-                    <td className="px-1 py-1">
-                      <input
-                        type="number"
-                        min={1}
-                        max={30}
-                        aria-label="时长"
-                        className={cell}
-                        value={s.duration}
-                        onChange={(e) => patch(s.id, { duration: Number(e.target.value) || 1 })}
-                      />
-                    </td>
-                    <td className="px-1 py-1">
-                      <Select
-                        aria-label="景别"
-                        className="!h-8 w-full !bg-transparent !shadow-none hover:!bg-hover"
-                        value={s.shotSize}
-                        options={SHOT_SIZES.map((o) => ({ value: o }))}
-                        onChange={(v) => patch(s.id, { shotSize: v as Shot['shotSize'] })}
-                      />
-                    </td>
-                    <TextCell
-                      value={s.description}
-                      label="画面"
-                      onChange={(v) => patch(s.id, { description: v })}
+                  </td>
+                  <td className="px-2 py-2.5 tabular-nums text-ink-muted">
+                    {String(s.no).padStart(2, '0')}
+                  </td>
+                  <td className="px-1 py-1">
+                    <input
+                      type="number"
+                      min={1}
+                      max={30}
+                      aria-label="时长"
+                      className={cell}
+                      value={s.duration}
+                      onChange={(e) => patch(s.id, { duration: Number(e.target.value) || 1 })}
                     />
-                    <TextCell
-                      value={s.characters.join('、')}
-                      label="出场"
-                      onChange={(v) => patch(s.id, { characters: splitNames(v) })}
+                  </td>
+                  <td className="px-1 py-1">
+                    <Select
+                      aria-label="景别"
+                      className="h-8 w-full bg-transparent shadow-none hover:bg-hover"
+                      value={s.shotSize}
+                      options={SHOT_SIZES.map((o) => ({ value: o }))}
+                      onChange={(v) => patch(s.id, { shotSize: v as Shot['shotSize'] })}
                     />
-                    <TextCell
-                      value={dialogueText(s)}
-                      label="台词"
-                      onChange={(v) => patch(s.id, { dialogue: parseDialogue(v) })}
-                    />
-                    <TextCell
-                      value={s.imagePrompt}
-                      label="分镜图提示词"
-                      onChange={(v) => patch(s.id, { imagePrompt: v })}
-                    />
-                    <TextCell
-                      value={s.motionPrompt}
-                      label="运动提示词"
-                      onChange={(v) => patch(s.id, { motionPrompt: v })}
-                    />
-                    <td className="py-2.5 pl-2 pr-5 text-right text-xs">
+                  </td>
+                  <TextCell
+                    value={s.description}
+                    label="画面"
+                    onChange={(v) => patch(s.id, { description: v })}
+                  />
+                  <TextCell
+                    value={s.characters.join('、')}
+                    label="出场"
+                    onChange={(v) => patch(s.id, { characters: splitNames(v) })}
+                  />
+                  <TextCell
+                    value={dialogueText(s)}
+                    label="台词"
+                    onChange={(v) => patch(s.id, { dialogue: parseDialogue(v) })}
+                  />
+                  <TextCell
+                    value={s.imagePrompt}
+                    label="分镜图提示词"
+                    onChange={(v) => patch(s.id, { imagePrompt: v })}
+                  />
+                  <TextCell
+                    value={s.motionPrompt}
+                    label="运动提示词"
+                    onChange={(v) => patch(s.id, { motionPrompt: v })}
+                  />
+                  <td className="py-2 pr-5 pl-2">
+                    <div className="flex flex-col items-end gap-1">
                       {expanded.has(s.id) ? (
-                        <span className="text-success">已展开</span>
+                        <span className="ui-tag ui-tag-success">已展开</span>
                       ) : (
                         <button
                           type="button"
-                          className="text-ink-subtle hover:text-danger"
+                          aria-label={`删除镜头 ${s.no}`}
+                          title="删除镜头"
+                          className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn hover:text-danger"
                           onClick={() => remove(s.id)}
                         >
-                          删除
+                          <Icon name="trash" size={14} />
                         </button>
                       )}
-                      {s.edited && <div className="mt-1 text-accent">手改</div>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </div>
+                      {s.edited && <span className="ui-tag ui-tag-accent">手改</span>}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Modal>
   )
 }
 

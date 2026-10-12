@@ -4,16 +4,18 @@ import {
   createElements,
   type HistoryEntry,
   type NewElement,
-  type PleinDoc,
   resultHistory,
   setResultRating,
 } from '@plein/doc'
-import { type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { api, assetUrls } from '../api/client'
 import { downloadAsset } from '../canvas/grid'
+import { useDocVersion } from '../canvas/hooks'
 import { elementFor } from '../canvas/import'
 import { useCanvas } from '../stores/canvas'
+import { shortTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
+import { Modal, ModalHeader } from '../ui/Modal'
 import { Stars } from '../ui/Stars'
 
 type MediaType = 'image' | 'video' | 'audio'
@@ -62,32 +64,11 @@ const GAP = 24
 
 const keyOf = (e: HistoryEntry) => `${e.elementId}/${e.result.id}`
 
-/** 文档变化时重新取历史（按帧归并） */
-function useDocVersion(doc: PleinDoc) {
-  const ref = useRef(0)
-  return useSyncExternalStore(
-    (notify) =>
-      doc.subscribe(() => {
-        ref.current++
-        notify()
-      }),
-    () => ref.current,
-  )
-}
-
 function thumbOf(e: HistoryEntry, size: number) {
   const { type, assetId } = e.result.value
   if (type === 'video') return assetUrls.variant(assetId, 'poster')
   if (type === 'audio') return assetUrls.variant(assetId, 'waveform')
   return assetUrls.variant(assetId, size * devicePixelRatio > 256 ? 'thumb-1024' : 'thumb-256')
-}
-
-function timeLabel(at: number) {
-  const d = new Date(at)
-  const now = new Date()
-  const hm = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-  if (d.toDateString() === now.toDateString()) return `今天 ${hm}`
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`
 }
 
 /**
@@ -219,144 +200,124 @@ function HistoryPanel({ engine }: { engine: Engine }) {
   }
 
   return (
-    <div className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center p-4 sm:p-8">
-      <button
-        type="button"
-        aria-label="关闭生成历史"
-        tabIndex={-1}
-        onClick={close}
-        className="ui-dialog-scrim absolute inset-0 cursor-default bg-scrim/40"
-      />
-      <section
-        role="dialog"
-        aria-label="生成历史"
-        data-plein-active
-        className="ui-dialog relative flex h-[min(86vh,820px)] w-full max-w-[1120px] flex-col overflow-hidden rounded-2xl bg-surface shadow-[var(--shadow-4)]"
-      >
-        <header className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line py-2.5 pl-5 pr-3">
-          <h2 className="text-lg font-semibold">生成历史</h2>
-          <span className="ui-chip" title="“全部画布”需要服务端索引所有画布的结果，暂只支持本画布">
+    <Modal label="生成历史" onClose={close} isolateKeys className="h-[min(86vh,820px)] max-w-280">
+      <ModalHeader
+        title="生成历史"
+        onClose={close}
+        meta={
+          <span className="ui-tag" title="“全部画布”需要服务端索引所有画布的结果，暂只支持本画布">
             本画布
           </span>
-          <div className="ml-auto flex items-center gap-3">
-            <label className="flex items-center gap-2 text-xs text-ink-muted">
-              <Icon name="grid" size={14} />
-              <input
-                type="range"
-                aria-label="缩略图大小"
-                min={SIZE_MIN}
-                max={SIZE_MAX}
-                step={8}
-                value={size}
-                onChange={(e) => setSize(Number(e.target.value))}
-                className="w-28"
+        }
+      >
+        <label className="flex items-center gap-2 text-ink-subtle" title="缩略图大小">
+          <Icon name="board" size={14} />
+          <input
+            type="range"
+            aria-label="缩略图大小"
+            min={SIZE_MIN}
+            max={SIZE_MAX}
+            step={8}
+            value={size}
+            onChange={(e) => setSize(Number(e.target.value))}
+            className="w-28"
+          />
+        </label>
+        <button
+          type="button"
+          className="ui-btn ui-btn-quiet ui-btn-sm"
+          onClick={() => setOldestFirst(!oldestFirst)}
+          title="切换排序"
+        >
+          <Icon name={oldestFirst ? 'sortOldest' : 'sortNewest'} size={14} />
+          {oldestFirst ? '最早在前' : '最新在前'}
+        </button>
+      </ModalHeader>
+
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3">
+        <Segmented label="类型">
+          {TYPES.map((t) => (
+            <SegButton key={t.id} active={type === t.id} onClick={() => setType(t.id)}>
+              {t.icon && <Icon name={t.icon} size={14} />}
+              {t.label}
+              <span className="tabular-nums text-ink-subtle">{counts[t.id]}</span>
+            </SegButton>
+          ))}
+        </Segmented>
+        <Segmented label="评级">
+          {RATINGS.map((r) => (
+            <SegButton key={r.id} active={rating === r.id} onClick={() => setRating(r.id)}>
+              {typeof r.id === 'number' && r.id > 1 && <Icon name="star" size={12} fill />}
+              {r.label}
+            </SegButton>
+          ))}
+        </Segmented>
+      </div>
+
+      <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-5">
+        {shown.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-ink-subtle">
+            <Icon name="history" size={24} />
+            {all.length === 0 ? '本画布还没有生成过图片、视频或音频' : '没有符合筛选条件的结果'}
+          </div>
+        ) : (
+          <ul
+            className="grid gap-3"
+            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${size}px, 1fr))` }}
+          >
+            {shown.map((e) => (
+              <Card
+                key={keyOf(e)}
+                entry={e}
+                name={nameOf(e)}
+                thumb={thumbOf(e, size)}
+                picked={picked.has(keyOf(e))}
+                selecting={selected.length > 0}
+                readOnly={doc.readOnly}
+                onPick={() => togglePick(e)}
+                onOpen={() => locate(e)}
+                onRate={(n) => setResultRating(doc, e.elementId, e.result.id, n)}
               />
-            </label>
-            <button
-              type="button"
-              className="ui-btn ui-btn-quiet ui-btn-sm"
-              onClick={() => setOldestFirst(!oldestFirst)}
-              title="切换排序"
-            >
-              {oldestFirst ? '最早在前' : '最新在前'}
-              <span aria-hidden="true">{oldestFirst ? '↑' : '↓'}</span>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {selected.length > 0 && (
+        <footer className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-3 text-sm">
+          <span className="mr-1">已选 {selected.length} 项</span>
+          <button
+            type="button"
+            className="ui-btn ui-btn-quiet ui-btn-sm"
+            onClick={() => setPicked(new Set(shown.map(keyOf)))}
+          >
+            全选
+          </button>
+          <button
+            type="button"
+            className="ui-btn ui-btn-quiet ui-btn-sm"
+            onClick={() => setPicked(new Set())}
+          >
+            取消选择
+          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button type="button" className="ui-btn ui-btn-secondary" onClick={download}>
+              <Icon name="download" />
+              下载
             </button>
             <button
               type="button"
-              aria-label="关闭"
-              onClick={close}
-              className="ui-btn ui-btn-quiet ui-icon-btn"
+              className="ui-btn ui-btn-primary"
+              disabled={busy || doc.readOnly}
+              onClick={() => void place()}
             >
-              <Icon name="x" />
+              <Icon name="upload" />
+              放到画布上
             </button>
           </div>
-        </header>
-
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3">
-          <Segmented label="类型">
-            {TYPES.map((t) => (
-              <SegButton key={t.id} active={type === t.id} onClick={() => setType(t.id)}>
-                {t.icon && <Icon name={t.icon} size={13} />}
-                {t.label}
-                <span className="tabular-nums text-ink-subtle">{counts[t.id]}</span>
-              </SegButton>
-            ))}
-          </Segmented>
-          <Segmented label="评级">
-            {RATINGS.map((r) => (
-              <SegButton key={r.id} active={rating === r.id} onClick={() => setRating(r.id)}>
-                {typeof r.id === 'number' && r.id > 1 && <Icon name="star" size={12} fill />}
-                {r.label}
-              </SegButton>
-            ))}
-          </Segmented>
-        </div>
-
-        <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-          {shown.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-ink-subtle">
-              <Icon name="history" size={28} />
-              {all.length === 0 ? '本画布还没有生成过图片、视频或音频' : '没有符合筛选条件的结果'}
-            </div>
-          ) : (
-            <ul
-              className="grid gap-3"
-              style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${size}px, 1fr))` }}
-            >
-              {shown.map((e) => (
-                <Card
-                  key={keyOf(e)}
-                  entry={e}
-                  name={nameOf(e)}
-                  thumb={thumbOf(e, size)}
-                  picked={picked.has(keyOf(e))}
-                  selecting={selected.length > 0}
-                  readOnly={doc.readOnly}
-                  onPick={() => togglePick(e)}
-                  onOpen={() => locate(e)}
-                  onRate={(n) => setResultRating(doc, e.elementId, e.result.id, n)}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
-
-        {selected.length > 0 && (
-          <footer className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-3 text-sm">
-            <span className="mr-1">已选 {selected.length} 项</span>
-            <button
-              type="button"
-              className="ui-btn ui-btn-quiet ui-btn-sm"
-              onClick={() => setPicked(new Set(shown.map(keyOf)))}
-            >
-              全选
-            </button>
-            <button
-              type="button"
-              className="ui-btn ui-btn-quiet ui-btn-sm"
-              onClick={() => setPicked(new Set())}
-            >
-              取消选择
-            </button>
-            <div className="ml-auto flex items-center gap-2">
-              <button type="button" className="ui-btn ui-btn-secondary" onClick={download}>
-                <Icon name="download" size={14} />
-                下载
-              </button>
-              <button
-                type="button"
-                className="ui-btn ui-btn-primary"
-                disabled={busy || doc.readOnly}
-                onClick={() => void place()}
-              >
-                <Icon name="upload" size={14} />
-                放到画布上
-              </button>
-            </div>
-          </footer>
-        )}
-      </section>
-    </div>
+        </footer>
+      )}
+    </Modal>
   )
 }
 
@@ -405,14 +366,12 @@ function Card(props: {
         }
         title={props.selecting ? '选择' : '定位到节点并采用这个结果'}
         className={`relative flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-surface-2 outline-offset-2 transition-shadow ${
-          picked
-            ? 'shadow-[0_0_0_2px_var(--accent)]'
-            : 'shadow-[inset_0_0_0_1px_var(--line)] hover:shadow-[0_0_0_1px_var(--line-strong)]'
+          picked ? 'ring-2 ring-accent' : 'shadow-1 hover:shadow-2'
         }`}
       >
         {broken ? (
           <span className="text-ink-subtle">
-            <Icon name={type === 'image' ? 'image' : type} size={28} />
+            <Icon name={type} size={24} />
           </span>
         ) : (
           <img
@@ -431,9 +390,7 @@ function Card(props: {
           </span>
         )}
         {entry.adopted && (
-          <span className="ui-badge absolute right-2 top-2 !bg-primary !text-on-primary">
-            采用中
-          </span>
+          <span className="ui-badge absolute top-2 right-2 bg-primary text-on-primary">采用中</span>
         )}
       </button>
       <input
@@ -451,7 +408,7 @@ function Card(props: {
         <div className="min-w-0">
           <div className="truncate text-xs">{props.name}</div>
           <div className="whitespace-nowrap text-2xs text-ink-subtle">
-            {timeLabel(entry.result.at)}
+            {shortTime(entry.result.at)}
           </div>
         </div>
         {props.readOnly ? (
