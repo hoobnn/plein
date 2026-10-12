@@ -1,19 +1,17 @@
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { serve } from '@hono/node-server'
 import type { Asset, Canvas } from '@plein/protocol'
 import sharp from 'sharp'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { WebSocket, WebSocketServer } from 'ws'
+import { WebSocket } from 'ws'
 import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
-import { createServer } from './app'
 import { hasFfmpeg } from './assets/media'
 import { type Config, loadConfig } from './config'
 import { parseRange } from './http/files'
+import { startServer } from './start'
 
 const ffmpeg = await hasFfmpeg()
 const dirs: string[] = []
@@ -28,26 +26,13 @@ function tempDir() {
 }
 
 async function start(dataDir: string, overrides: Partial<Config> = {}) {
-  const config = { ...loadConfig({ PLEIN_DATA_DIR: dataDir }), webDist: null, ...overrides }
-  const server = await createServer(config)
-  const wss = new WebSocketServer({ noServer: true })
-  const http = serve({
-    fetch: server.app.fetch,
-    hostname: '127.0.0.1',
-    port: 0,
-    websocket: { server: wss },
-  })
-  await new Promise<void>((r) => http.once('listening', () => r()))
-  const base = `http://127.0.0.1:${(http.address() as AddressInfo).port}`
-  return {
-    server,
-    base,
-    async stop() {
-      for (const ws of wss.clients) ws.terminate()
-      server.close()
-      await new Promise((r) => http.close(r))
-    },
+  const config = {
+    ...loadConfig({ PLEIN_DATA_DIR: dataDir, PLEIN_PORT: '0' }),
+    webDist: null,
+    ...overrides,
   }
+  const running = await startServer(config)
+  return { server: running.server, base: running.url, stop: () => running.close() }
 }
 
 function connect(base: string, room: string, doc = new Y.Doc()) {
@@ -280,6 +265,43 @@ describe('账号登录（Better Auth）', () => {
     const list = (await (await fetch(`${again.base}/api/canvases`)).json()) as Canvas[]
     expect(list.map((c) => c.id)).toEqual([canvas.id])
     await again.stop()
+  })
+})
+
+describe('桌面端令牌', () => {
+  it('只接受带启动令牌 Cookie 的请求，WebSocket 也一样', async () => {
+    const token = 'a'.repeat(64)
+    const s = await start(tempDir(), { desktopToken: token })
+    try {
+      expect((await fetch(`${s.base}/api/health`)).status).toBe(403)
+      const wrong = await fetch(`${s.base}/api/health`, {
+        headers: { cookie: `plein_desktop=${'b'.repeat(64)}` },
+      })
+      expect(wrong.status).toBe(403)
+      const ok = await fetch(`${s.base}/api/canvases`, {
+        headers: { cookie: `plein_desktop=${token}` },
+      })
+      expect(ok.status).toBe(200)
+
+      const rejected = await new Promise<number>((resolve) => {
+        const ws = new WebSocket(`${s.base.replace('http', 'ws')}/sync/x`)
+        ws.on('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0))
+        ws.on('open', () => resolve(101))
+      })
+      expect(rejected).toBe(403)
+    } finally {
+      await s.stop()
+    }
+  })
+
+  it('端口为 0 时由系统分配并返回实际端口', async () => {
+    const s = await start(tempDir())
+    try {
+      expect(Number(new URL(s.base).port)).toBeGreaterThan(0)
+      expect((await fetch(`${s.base}/api/health`)).status).toBe(200)
+    } finally {
+      await s.stop()
+    }
   })
 })
 

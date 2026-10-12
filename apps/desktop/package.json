@@ -1,0 +1,22 @@
+{
+  "name": "@plein/desktop",
+  "productName": "plein",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.mjs",
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown && electron . --dev",
+    "start": "tsdown && electron .",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@plein/protocol": "workspace:*",
+    "@types/node": "^26.6.5",
+    "electron": "^44.7.0",
+    "tsdown": "^0.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

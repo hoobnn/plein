@@ -11,6 +11,9 @@ COPY apps/web/package.json apps/web/
 COPY packages/doc/package.json packages/doc/
 COPY packages/canvas-core/package.json packages/canvas-core/
 COPY packages/protocol/package.json packages/protocol/
+COPY packages/plugin-sdk/package.json packages/plugin-sdk/
+COPY packages/nodes/package.json packages/nodes/
+COPY packages/providers/package.json packages/providers/
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --ignore-scripts
 COPY . .

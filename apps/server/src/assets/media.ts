@@ -13,11 +13,22 @@ export interface Probe {
   hasAudio: boolean
 }
 
+const bin = { ffmpeg: 'ffmpeg', ffprobe: 'ffprobe' }
 let ffmpegAvailable: Promise<boolean> | null = null
+
+/** 指定 ffmpeg / ffprobe 可执行文件；默认从 PATH 查找 */
+export function setMediaTools(paths: { ffmpeg: string; ffprobe: string }) {
+  if (paths.ffmpeg === bin.ffmpeg && paths.ffprobe === bin.ffprobe) return
+  Object.assign(bin, paths)
+  ffmpegAvailable = null
+}
 
 /** ffmpeg / ffprobe 是否可用；缺失时视频和音频只存原文件，不生成衍生物 */
 export function hasFfmpeg(): Promise<boolean> {
-  ffmpegAvailable ??= Promise.all([run('ffmpeg', ['-version']), run('ffprobe', ['-version'])]).then(
+  ffmpegAvailable ??= Promise.all([
+    run(bin.ffmpeg, ['-version']),
+    run(bin.ffprobe, ['-version']),
+  ]).then(
     () => true,
     () => false,
   )
@@ -46,7 +57,7 @@ interface FfprobeStream {
 }
 
 export async function probeMedia(file: string): Promise<Probe> {
-  const { stdout } = await run('ffprobe', [
+  const { stdout } = await run(bin.ffprobe, [
     '-v',
     'error',
     '-print_format',
@@ -91,7 +102,7 @@ export async function imageThumb(src: string, out: string, size: number) {
 export async function videoPoster(src: string, out: string, duration?: number) {
   const at = duration !== undefined && duration < 2 ? '0' : '1'
   const { stdout } = await run(
-    'ffmpeg',
+    bin.ffmpeg,
     ['-v', 'error', '-ss', at, '-i', src, '-frames:v', '1', '-f', 'image2pipe', '-c:v', 'png', '-'],
     { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 },
   )
@@ -103,7 +114,7 @@ export async function videoPoster(src: string, out: string, duration?: number) {
 
 /** 音频波形：透明底 png，画布上当作音频元素的预览 */
 export async function audioWaveform(src: string, out: string) {
-  await run('ffmpeg', [
+  await run(bin.ffmpeg, [
     '-v',
     'error',
     '-y',

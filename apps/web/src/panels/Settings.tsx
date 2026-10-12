@@ -1,6 +1,7 @@
 import type { ProviderConfigView, ProviderInfo, ProviderTestResult } from '@plein/protocol'
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
+import { desktop } from '../desktop'
 import { useCatalog } from '../stores/catalog'
 import { type ObjectSchema, SchemaForm } from './SchemaForm'
 
@@ -200,6 +201,21 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
               ))}
             </ul>
           </div>
+          {desktop && (
+            <div className="flex flex-col gap-2">
+              <h3 className="text-sm text-ink-muted">数据</h3>
+              <div className="flex items-center justify-between gap-3 px-2 text-sm">
+                <span className="text-ink-muted">画布、素材和平台密钥都保存在本机的数据目录里</span>
+                <button
+                  type="button"
+                  onClick={() => void desktop?.openDataDir()}
+                  className="shrink-0 rounded-lg px-3 py-1.5 ring-1 ring-line hover:bg-white/5"
+                >
+                  打开数据目录
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

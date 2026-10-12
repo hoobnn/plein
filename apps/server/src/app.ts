@@ -2,12 +2,13 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
+import { setMediaTools } from './assets/media'
 import { AssetStore } from './assets/store'
 import { type AuthEnv, createAuth } from './auth'
 import type { Config } from './config'
 import { assetRoutes } from './http/assets'
 import { canvasRoutes } from './http/canvases'
-import { originGuard } from './http/guard'
+import { desktopGuard, originGuard } from './http/guard'
 import { builtinPlugins } from './plugins/builtin'
 import { ProviderConfigStore } from './plugins/config-store'
 import { PluginHost } from './plugins/host'
@@ -29,6 +30,7 @@ export interface Server {
 }
 
 export async function createServer(config: Config): Promise<Server> {
+  setMediaTools({ ffmpeg: config.ffmpegPath, ffprobe: config.ffprobePath })
   const db = openDb(config.dataDir)
   const secrets = loadSecrets(config.dataDir)
   const rooms = new Rooms(sqliteDocStore(db))
@@ -47,6 +49,7 @@ export async function createServer(config: Config): Promise<Server> {
     console.error('[http]', err)
     return c.json({ error: 'internal', message: '服务端错误' }, 500)
   })
+  if (config.desktopToken) app.use('*', desktopGuard(config.desktopToken))
   app.use(
     '*',
     originGuard({ authRequired: auth.provider.required, allowedHosts: config.allowedHosts }),

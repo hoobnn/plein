@@ -21,6 +21,14 @@ export interface Config {
   allowedHosts: string[]
   /** 加载开发测试用的 mock 平台 */
   mockProvider: boolean
+  /** ffmpeg / ffprobe 可执行文件，默认从 PATH 查找；桌面端指向安装包里附带的版本 */
+  ffmpegPath: string
+  ffprobePath: string
+  /**
+   * 桌面端启动令牌：设置后所有请求都必须带上同值的 Cookie，
+   * 只有桌面端自己的窗口能访问，本机其他程序和浏览器里的网页都会被拒绝
+   */
+  desktopToken?: string
 }
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost'])
@@ -30,6 +38,10 @@ const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const host = env.PLEIN_HOST ?? '127.0.0.1'
+  const port = Number(env.PLEIN_PORT ?? 8787)
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(`PLEIN_PORT 必须是 0–65535 的整数（0 表示随机端口），收到 ${env.PLEIN_PORT}`)
+  }
   const auth = (env.PLEIN_AUTH ?? (LOOPBACK.has(host) ? 'none' : 'password')) as AuthMode
   if (auth !== 'none' && auth !== 'password') {
     throw new Error(`PLEIN_AUTH 只能是 none 或 password，收到 ${auth}`)
@@ -37,7 +49,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const webDist = resolve(env.PLEIN_WEB_DIST ?? resolve(repoRoot, 'apps/web/dist'))
   return {
     host,
-    port: Number(env.PLEIN_PORT ?? 8787),
+    port,
     dataDir: resolve(env.PLEIN_DATA_DIR ?? resolve(repoRoot, 'data')),
     auth,
     publicUrl: env.PLEIN_PUBLIC_URL || undefined,
@@ -48,5 +60,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .map((h) => h.trim())
       .filter(Boolean),
     mockProvider: env.PLEIN_MOCK_PROVIDER === '1',
+    ffmpegPath: env.PLEIN_FFMPEG_PATH || 'ffmpeg',
+    ffprobePath: env.PLEIN_FFPROBE_PATH || 'ffprobe',
+    desktopToken: env.PLEIN_DESKTOP_TOKEN || undefined,
   }
 }

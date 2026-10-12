@@ -1,4 +1,6 @@
+import { timingSafeEqual } from 'node:crypto'
 import type { MiddlewareHandler } from 'hono'
+import { getCookie } from 'hono/cookie'
 
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
 
@@ -40,6 +42,23 @@ export function originGuard(opts: {
       if (!ok) return c.json({ error: 'forbidden_origin', message: '跨站请求被拒绝' }, 403)
     } else if (origin === 'null') {
       return c.json({ error: 'forbidden_origin', message: '跨站请求被拒绝' }, 403)
+    }
+    await next()
+  }
+}
+
+export const DESKTOP_COOKIE = 'plein_desktop'
+
+/**
+ * 桌面端令牌校验：桌面端主进程每次启动生成随机令牌，写进自己窗口的 Cookie，
+ * 服务端只接受带这个 Cookie 的请求（含 WebSocket 握手）
+ */
+export function desktopGuard(token: string): MiddlewareHandler {
+  const expected = Buffer.from(token)
+  return async (c, next) => {
+    const got = Buffer.from(getCookie(c, DESKTOP_COOKIE) ?? '')
+    if (got.length !== expected.length || !timingSafeEqual(got, expected)) {
+      return c.json({ error: 'forbidden', message: '只允许 plein 桌面端访问' }, 403)
     }
     await next()
   }

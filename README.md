@@ -7,6 +7,7 @@ AI 无限画布：视觉创作 + 工作流编排，追求极致审美与丝滑�
 ```text
 apps/web              Vite + React 19 + Tailwind v4 前端
 apps/server           本地服务：Hono（Node）+ SQLite + Yjs 同步 + 资产 + Better Auth
+apps/desktop          桌面端：Electron 外壳，在 utilityProcess 里运行 apps/server
 packages/canvas-core  画布内核：PixiJS v8 + 相机 + 输入
 packages/doc          文档模型：Yjs（Element / Edge / Undo）
 packages/protocol     前后端共享的接口约定（zod）
@@ -33,6 +34,7 @@ docker compose up -d     # 打开 http://localhost:8787
 | `PLEIN_PUBLIC_URL` | 按请求推断 | 反向代理后的对外地址 |
 | `PLEIN_ALLOWED_HOSTS` | 空 | 免登录模式下额外允许的主机名，逗号分隔 |
 | `PLEIN_MAX_UPLOAD_MB` | `2048` | 单个文件上限 |
+| `PLEIN_FFMPEG_PATH` / `PLEIN_FFPROBE_PATH` | 从 `PATH` 查找 | ffmpeg / ffprobe 可执行文件 |
 
 ## 开发
 
@@ -46,6 +48,15 @@ pnpm test                # Vitest
 ```
 
 性能演示画布不依赖服务端：`http://localhost:5173/#/demo?n=5000`。
+
+### 桌面端
+
+```bash
+pnpm dev:desktop         # Vite + Electron；服务端跑源码，接口经 Vite 代理到 :8787
+pnpm start:desktop       # 先构建服务端和前端，再用构建产物启动（与安装包的运行方式一致）
+```
+
+首次运行会下载 Electron。桌面端的数据在系统应用数据目录（macOS `~/Library/Application Support/plein/data`，Windows `%APPDATA%\plein\data`，Linux `~/.config/plein/data`），可用 `PLEIN_DATA_DIR` 覆盖；服务端只接受桌面端窗口的请求（每次启动生成的令牌放在窗口 Cookie 里），所以开发模式下用普通浏览器打开 5173 会返回 403。安装包打包见路线图第八节。
 
 ## 原则
 
