@@ -16,6 +16,8 @@ interface Preview {
 interface Active {
   id: string
   node: HTMLElement
+  /** 播放器正在放的素材：节点切换结果版本时据此换片 */
+  assetId?: string
   /** 挂到页面后调用 */
   focus?(): void
   dispose(): void
@@ -134,6 +136,8 @@ export class CanvasOverlays {
       this.fit(id)
     }
     if (this.active) {
+      this.follow()
+      if (!this.active) return
       this.fit(this.active.id)
       const rect = engine.scene.rect(this.active.id)
       if (rect) place(this.active.node, rect)
@@ -153,6 +157,20 @@ export class CanvasOverlays {
     m.style.width = `${el.w}px`
     m.innerHTML = renderMarkdown(text)
     this.engine.fitContent(id, el.w, Math.max(MD_MIN_H, Math.ceil(m.offsetHeight)))
+  }
+
+  /** 节点切到别的结果版本时，播放器跟着换成那一版；新版本不是音视频就退出 */
+  private follow() {
+    const a = this.active
+    const el = a?.assetId ? this.engine.scene.get(a.id) : undefined
+    if (!a || el?.kind !== 'node') return
+    const v = currentResult(el)?.value
+    if (v?.type !== 'video' && v?.type !== 'audio') return this.deactivate()
+    if (v.assetId === a.assetId) return
+    a.dispose()
+    a.node.remove()
+    this.active = null
+    this.activate(a.id)
   }
 
   activate(id: string) {
@@ -232,6 +250,6 @@ export class CanvasOverlays {
   }
 
   private openPlayer(id: string, kind: 'video' | 'audio', assetId: string): Active {
-    return { id, ...createPlayer(kind, this.opts.originalUrl(assetId)) }
+    return { id, assetId, ...createPlayer(kind, this.opts.originalUrl(assetId)) }
   }
 }
