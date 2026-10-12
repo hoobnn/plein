@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, setParam, setParams } from '@plein/doc'
+import { type CanvasElement, currentResult, setParam, setParams } from '@plein/doc'
 import {
   type ArrangedClip,
   arrangeSequence,
@@ -13,7 +13,9 @@ import {
 import type { PortValue } from '@plein/plugin-sdk'
 import { useEffect, useState } from 'react'
 import { assetUrls } from '../api/client'
+import { downloadAsset } from '../canvas/grid'
 import { useDocVersion } from '../canvas/hooks'
+import { desktop } from '../desktop'
 import { upstreams } from '../canvas/nodes'
 import { cancelNode, runNode } from './run'
 import { useAssetMetas } from '../stores/assetMeta'
@@ -167,6 +169,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     else void runNode(id)
   }
   const progress = el?.run?.status === 'running' ? el.run.progress : undefined
+  const film = el && currentResult(el)?.value
+  const filmAsset = film && film.type === 'video' ? film.assetId : undefined
 
   return (
     <Modal label="序列" onClose={onClose} className="max-w-6xl">
@@ -183,6 +187,16 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           <span className="max-w-80 truncate text-xs text-danger" title={el.run.error}>
             {el.run.error ?? '导出失败'}
           </span>
+        )}
+        {filmAsset && !running && (
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary"
+            title="把导出的成片保存到电脑上"
+            onClick={() => downloadAsset(filmAsset, `${el?.name ?? '成片'}.mp4`)}
+          >
+            {desktop ? '另存为…' : '下载成片'}
+          </button>
         )}
         <button
           type="button"

@@ -23,16 +23,19 @@ function providerState(p: ProviderInfo): { label: string; tone: string } {
 }
 
 /** 单个平台：一行摘要（状态、启用开关），展开后是设置表单（由插件声明的 schema 生成）、密钥、测试连接 */
-function ProviderRow({
+export function ProviderRow({
   provider,
   open,
   onToggleOpen,
   onSaved,
+  enableOnSave = false,
 }: {
   provider: ProviderInfo
   open: boolean
   onToggleOpen(): void
   onSaved(): void
+  /** 保存时顺带启用（首次启动引导里填完密钥就能用） */
+  enableOnSave?: boolean
 }) {
   const [config, setConfig] = useState<ProviderConfigView | null>(null)
   const [settings, setSettings] = useState<Record<string, unknown>>({})
@@ -58,6 +61,7 @@ function ProviderRow({
     setStatus(null)
     try {
       const next = await api.updateProviderConfig(provider.id, {
+        ...(enableOnSave ? { enabled: true } : {}),
         settings,
         // 只提交改过的密钥；留空表示不修改
         secrets: Object.fromEntries(Object.entries(secrets).filter(([, v]) => v !== '')),
@@ -149,11 +153,6 @@ function ProviderRow({
             </p>
           ) : (
             <>
-              <SchemaForm
-                schema={provider.settingsSchema as ObjectSchema}
-                value={settings}
-                onChange={setSettings}
-              />
               {provider.secrets.map((s) => (
                 <label key={s.name} className="ui-field">
                   <span className="ui-label">
@@ -171,6 +170,11 @@ function ProviderRow({
                   {s.help && <span className="ui-help">{s.help}</span>}
                 </label>
               ))}
+              <SchemaForm
+                schema={provider.settingsSchema as ObjectSchema}
+                value={settings}
+                onChange={setSettings}
+              />
               <div className="flex flex-wrap items-center gap-2">
                 <span className="mr-auto text-xs text-ink-muted" role="status">
                   {test

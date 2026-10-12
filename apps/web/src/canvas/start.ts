@@ -1,7 +1,12 @@
 import type { Engine } from '@plein/canvas-core'
 import type { Catalog } from '@plein/protocol'
+import { useCanvas } from '../stores/canvas'
+import { dramaNotice, placeDramaTemplate } from './drama'
 import { findNode, nodeElement, placeElement } from './nodes'
 import { focusGenerator } from './presets'
+
+/** 新画布上铺短剧模板（首次启动引导的“从短剧模板开始”） */
+export const DRAMA_START = 'builtin/drama'
 
 /** 首页“快速开始”：新建画布后要放下的节点，打开画布时取走（同一页面内跳转，放内存即可） */
 const pending = new Map<string, string>()
@@ -15,6 +20,13 @@ export function placeStartNode(engine: Engine, catalog: Catalog, canvasId: strin
   const type = pending.get(canvasId)
   if (!type) return
   pending.delete(canvasId)
+  if (type === DRAMA_START) {
+    const c = engine.camera.viewRect
+    const r = placeDramaTemplate(engine, catalog, { x: c.x + 80, y: c.y + 80 })
+    engine.zoomToFit()
+    useCanvas.getState().notify(dramaNotice(r))
+    return
+  }
   const node = findNode(catalog, type)
   if (!node) return
   const c = engine.camera.viewRect

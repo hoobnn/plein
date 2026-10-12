@@ -156,6 +156,14 @@ export function AddMenu({
           run: () => window.dispatchEvent(new CustomEvent('plein:import-pick')),
         })
         list.push({
+          id: 'upload-folder',
+          title: '上传文件夹',
+          hint: '文件夹里的图片、视频、音频和 Markdown 一起导入',
+          icon: 'folder',
+          section: '添加资源',
+          run: () => window.dispatchEvent(new CustomEvent('plein:import-pick-folder')),
+        })
+        list.push({
           id: 'history',
           title: '从生成历史选择',
           icon: 'history',

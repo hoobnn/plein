@@ -22,6 +22,11 @@ if (config.desktopToken) console.log('桌面端模式：只接受桌面端窗口
 else if (config.auth === 'password') console.log('已开启登录；首次访问时创建所有者账号')
 else console.log('未开启登录，只应在本机访问')
 parentPort?.postMessage({ type: 'ready', port: running.port, url: running.url })
+// 任务动态交给桌面端主进程：Dock 徽标、系统通知、退出前确认
+if (parentPort)
+  running.server.runs.onActivity((activity) =>
+    parentPort.postMessage({ type: 'activity', activity }),
+  )
 
 let closing = false
 async function shutdown(reason: string) {

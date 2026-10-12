@@ -1,5 +1,6 @@
 import type { Engine, Tool } from '@plein/canvas-core'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { visibleFiles } from '../canvas/dropped'
 import { useCanvas } from '../stores/canvas'
 import { Icon, type IconName } from '../ui/icons'
 import { shortcut } from '../ui/keys'
@@ -128,12 +129,23 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
   const tasks = useCanvas((s) => s.tasks)
   const running = useActiveRuns(engine)
   const fileRef = useRef<HTMLInputElement>(null)
+  const folderRef = useRef<HTMLInputElement>(null)
   // 右键菜单、添加菜单里的“上传”借用这里的文件选择框
   useEffect(() => {
     const pick = () => fileRef.current?.click()
+    const pickFolder = () => folderRef.current?.click()
     window.addEventListener('plein:import-pick', pick)
-    return () => window.removeEventListener('plein:import-pick', pick)
+    window.addEventListener('plein:import-pick-folder', pickFolder)
+    return () => {
+      window.removeEventListener('plein:import-pick', pick)
+      window.removeEventListener('plein:import-pick-folder', pickFolder)
+    }
   }, [])
+  const importPicked = (input: HTMLInputElement) => {
+    const files = visibleFiles([...(input.files ?? [])])
+    input.value = ''
+    if (files.length) window.dispatchEvent(new CustomEvent('plein:import', { detail: files }))
+  }
   if (!engine) return null
 
   return (
@@ -151,12 +163,15 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
             multiple
             hidden
             accept="image/*,video/*,audio/*,.md,.markdown,.txt"
-            onChange={(e) => {
-              const files = [...(e.target.files ?? [])]
-              e.target.value = ''
-              if (files.length)
-                window.dispatchEvent(new CustomEvent('plein:import', { detail: files }))
-            }}
+            onChange={(e) => importPicked(e.target)}
+          />
+          {/* 选整个文件夹：子文件夹里的文件一起导入 */}
+          <input
+            ref={folderRef}
+            type="file"
+            hidden
+            {...{ webkitdirectory: '' }}
+            onChange={(e) => importPicked(e.target)}
           />
         </>
       )}

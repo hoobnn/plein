@@ -164,10 +164,16 @@ function ContextMenu({
       <>
         <Item label="添加节点…" hint="双击" onClick={onAddNode} />
         {canImport && (
-          <Item
-            label="导入文件…"
-            onClick={act(() => window.dispatchEvent(new CustomEvent('plein:import-pick')))}
-          />
+          <>
+            <Item
+              label="导入文件…"
+              onClick={act(() => window.dispatchEvent(new CustomEvent('plein:import-pick')))}
+            />
+            <Item
+              label="导入文件夹…"
+              onClick={act(() => window.dispatchEvent(new CustomEvent('plein:import-pick-folder')))}
+            />
+          </>
         )}
         <Sep />
         <Item label="适应画布" hint={shortcut('shift+1')} onClick={act(() => engine.zoomToFit())} />

@@ -1,5 +1,5 @@
 import { connect, createDoc, createElement, type PleinDoc, setParams } from '@plein/doc'
-import type { JobList, StaleNodes } from '@plein/protocol'
+import type { JobList, RunActivity, StaleNodes } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Server } from '../app'
@@ -77,6 +77,36 @@ describe('任务队列', () => {
     await until(() => doc.get(b)?.run?.status === 'running')
     expect(doc.get(a)?.run?.status).toBe('succeeded')
     await until(() => doc.get(b)?.run?.status === 'succeeded')
+  })
+
+  it('任务动态：队列计数、单个任务结束和整组结束', async () => {
+    const { server } = await boot({ PLEIN_MAX_JOBS: '1' })
+    mock(server, { latencyMs: 100 })
+    const { id, doc } = await canvas(server)
+    const events: RunActivity[] = []
+    server.runs.onActivity((e) => events.push(e))
+    const a = addNode(doc, 'plein/image', { params: { prompt: 'a' } })
+    const b = addNode(doc, 'plein/image', { name: '镜头 2', params: { prompt: 'b' }, x: 300 })
+    server.runs.start(id, a, 'local')
+    server.runs.start(id, b, 'local')
+    await until(() => events.filter((e) => e.type === 'job-finished').length === 2)
+    await until(() => {
+      const last = events.findLast((e) => e.type === 'jobs')
+      return last?.type === 'jobs' && last.running + last.queued === 0
+    })
+    expect(events).toContainEqual({ type: 'jobs', queued: 1, running: 1, progress: undefined })
+    const finished = events.filter((e) => e.type === 'job-finished')
+    expect(finished.map((e) => [e.nodeId, e.status])).toEqual([
+      [a, 'succeeded'],
+      [b, 'succeeded'],
+    ])
+    expect(finished[1]!.title).toBe('镜头 2')
+
+    const { frame } = chain(doc)
+    const { groupId } = await runFrame(server, id, frame)
+    const group = events.find((e) => e.type === 'group-finished')
+    expect(group).toMatchObject({ canvasId: id, frameId: frame, status: 'done' })
+    expect(events.filter((e) => e.type === 'job-finished' && e.groupId === groupId).length).toBe(2)
   })
 
   it('取消排队中的任务', async () => {

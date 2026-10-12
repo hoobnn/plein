@@ -13,6 +13,7 @@ import { Icon, type IconName } from '../ui/icons'
 import { InlineTitle } from '../ui/InlineTitle'
 import { ThemeToggle } from '../ui/ThemeToggle'
 import { EmptyState } from '../ui/EmptyState'
+import { Welcome } from '../panels/Welcome'
 
 /** 快速开始：新建项目并在它的第一张画布上放好对应节点、打开生成器 */
 const QUICK_START: Array<{ type: string; title: string; hint: string; icon: IconName }> = [
@@ -217,6 +218,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
           <EmptyState icon="search" title={`没有标题包含「${query}」的项目`} />
         )}
       </main>
+      <Welcome />
     </div>
   )
 }

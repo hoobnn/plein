@@ -21,6 +21,7 @@ import { CanvasOverlays } from './overlays'
 import { applyPresetToNode } from './presets'
 import { cancelNode, runNode } from '../panels/run'
 import { watchVideoAspect } from './videoAspect'
+import { droppedFiles, MAX_IMPORT_FILES } from './dropped'
 
 export type CanvasSource = { kind: 'remote'; canvasId: string } | { kind: 'demo'; count: number }
 
@@ -238,18 +239,26 @@ function attachImport(
     const r = engine.camera.viewRect
     return { x: r.x + r.w / 2, y: r.y + r.h / 2 }
   }
-  const run = async (files: File[], at: { x: number; y: number }) => {
-    if (!files.length) return
+  const run = async (all: File[], at: { x: number; y: number }) => {
+    if (!all.length) return
+    const files = all.slice(0, MAX_IMPORT_FILES)
     ui.setImporting({ done: 0, total: files.length })
     try {
       const res = await importFiles(engine, files, at, (done, total) =>
         ui.setImporting({ done, total }),
       )
+      const notes: string[] = []
       if (res.skipped.length) {
-        ui.notify(
-          `${res.skipped.length} 个文件未导入：${res.skipped.map((s) => `${s.name}（${s.reason}）`).join('，')}`,
+        const shown = res.skipped.slice(0, 3).map((s) => `${s.name}（${s.reason}）`)
+        notes.push(
+          `${res.skipped.length} 个文件未导入：${shown.join('，')}${res.skipped.length > 3 ? ' 等' : ''}`,
         )
       }
+      if (all.length > files.length)
+        notes.push(
+          `一次最多导入 ${MAX_IMPORT_FILES} 个文件，其余 ${all.length - files.length} 个没有导入`,
+        )
+      if (notes.length) ui.notify(notes.join('；'))
     } finally {
       ui.setImporting(null)
     }
@@ -262,10 +271,10 @@ function attachImport(
     }
   }
   const onDrop = (e: DragEvent) => {
-    const files = [...(e.dataTransfer?.files ?? [])]
-    if (!files.length) return
+    if (!e.dataTransfer?.files.length) return
     e.preventDefault()
-    void run(files, engine.clientToWorld(e.clientX, e.clientY))
+    const at = engine.clientToWorld(e.clientX, e.clientY)
+    void droppedFiles(e.dataTransfer).then((files) => run(files, at))
   }
   const onPaste = (e: ClipboardEvent) => {
     // 引擎已处理 plein 自己的剪贴板格式

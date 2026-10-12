@@ -2,6 +2,7 @@ import { isEditableTarget } from '@plein/canvas-core'
 import { useEffect, useState } from 'react'
 import { desktop } from './desktop'
 import { AgentDock } from './panels/Agent'
+import { DesktopEvents } from './panels/DesktopEvents'
 import { SettingsDialog } from './panels/Settings'
 import { DialogHost } from './ui/Dialog'
 import { TooltipHost } from './ui/Tooltip'
@@ -57,6 +58,7 @@ export function App() {
       <Presence>{settings && <SettingsDialog onClose={() => setSettings(false)} />}</Presence>
       <DialogHost />
       <TooltipHost />
+      <DesktopEvents />
     </>
   )
 }

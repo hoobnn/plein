@@ -29,6 +29,7 @@ import type {
   GroupRunState,
   JobInfo,
   JobList,
+  RunActivity,
   StaleNodes,
 } from '@plein/protocol'
 import { sleep } from '../plugins/limiter'
@@ -74,6 +75,8 @@ interface ActiveJob {
   groupId?: string
   ctrl: AbortController
   started: boolean
+  /** 执行器最近报告的进度（0–1） */
+  progress?: number
   done: Promise<JobStatus>
   resolve(status: JobStatus): void
 }
@@ -101,6 +104,8 @@ export class NodeRuns {
   private running = 0
   private groups = new Map<string, { ctrl: AbortController; canvasId: string }>()
   private closed = false
+  private listeners = new Set<(e: RunActivity) => void>()
+  private jobsChanged = false
   private concurrency: number
   private retryDelays: number[]
 
@@ -114,6 +119,48 @@ export class NodeRuns {
     this.concurrency = Math.max(1, opts.concurrency ?? 4)
     this.retryDelays = opts.retryDelaysMs ?? [2_000, 8_000]
     rooms.onDrop((id) => this.cancelCanvas(id))
+  }
+
+  /** 订阅任务动态（桌面端用）；返回取消订阅 */
+  onActivity(fn: (e: RunActivity) => void) {
+    this.listeners.add(fn)
+    // 启动时 recover 已经排上的任务：订阅后马上给一次当前计数
+    this.jobsChange()
+    return () => {
+      this.listeners.delete(fn)
+    }
+  }
+
+  private emit(e: RunActivity) {
+    if (this.closed) return
+    for (const fn of this.listeners) fn(e)
+  }
+
+  /** 队列有变化：同一轮里的多次变化合成一条 */
+  private jobsChange() {
+    if (this.jobsChanged || !this.listeners.size) return
+    this.jobsChanged = true
+    queueMicrotask(() => {
+      this.jobsChanged = false
+      const progress = [...this.byId.values()]
+        .filter((a) => a.started && a.progress !== undefined)
+        .map((a) => a.progress!)
+      this.emit({
+        type: 'jobs',
+        queued: this.queue.length,
+        running: this.running,
+        progress: progress.length
+          ? progress.reduce((sum, p) => sum + p, 0) / progress.length
+          : undefined,
+      })
+    })
+  }
+
+  /** 节点名，没有时用节点类型的标题 */
+  private titleOf(el: CanvasElement | undefined, fallback: string) {
+    if (el?.name) return el.name
+    const def = el?.nodeType ? this.host.registry.latestNode(el.nodeType)?.def : undefined
+    return def?.title ?? fallback
   }
 
   private key(canvasId: string, nodeId: string) {
@@ -350,12 +397,22 @@ export class NodeRuns {
       }
       const r = await runDag(graph.dependencies(targets), step, { signal: ctrl.signal })
       if (this.closed) return
-      this.store.finishGroup(g.id, ctrl.signal.aborted ? 'canceled' : 'done', {
+      const status = ctrl.signal.aborted ? 'canceled' : 'done'
+      const summary = {
         succeeded: r.succeeded.length,
         cached: r.cached.length,
         failed: r.failed.length,
         canceled: r.canceled.length,
         skipped: r.skipped.length,
+      }
+      this.store.finishGroup(g.id, status, summary)
+      this.emit({
+        type: 'group-finished',
+        canvasId: g.canvas_id,
+        frameId: g.frame_id,
+        title: this.titleOf(doc.get(g.frame_id), '分组'),
+        status,
+        summary,
       })
     } finally {
       this.groups.delete(g.id)
@@ -438,6 +495,7 @@ export class NodeRuns {
     this.byId.set(a.id, a)
     this.queue.push(a)
     this.pump()
+    this.jobsChange()
   }
 
   private pump() {
@@ -460,13 +518,24 @@ export class NodeRuns {
     if (this.active.get(this.key(a.canvasId, a.nodeId)) === a)
       this.active.delete(this.key(a.canvasId, a.nodeId))
     this.byId.delete(a.id)
+    this.jobsChange()
   }
 
   private finish(doc: PleinDoc, a: ActiveJob, status: JobStatus, error?: string) {
     const at = Date.now()
     this.store.update(a.id, { status, error: error ?? null, finished_at: at })
-    if (doc.get(a.nodeId)) writeRun(doc, a.nodeId, { id: a.id, status, error, at })
+    const el = doc.get(a.nodeId)
+    if (el) writeRun(doc, a.nodeId, { id: a.id, status, error, at })
     a.resolve(status)
+    this.emit({
+      type: 'job-finished',
+      canvasId: a.canvasId,
+      nodeId: a.nodeId,
+      groupId: a.groupId,
+      title: this.titleOf(el, '节点'),
+      status,
+      error,
+    })
   }
 
   private async execute(a: ActiveJob) {
@@ -534,6 +603,8 @@ export class NodeRuns {
         const now = Date.now()
         if (now - lastProgress < PROGRESS_INTERVAL_MS) return
         lastProgress = now
+        a.progress = progress
+        this.jobsChange()
         writeRun(doc, el.id, { id: a.id, status: 'running', progress, message, at: now })
       },
     })

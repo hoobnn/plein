@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { createWriteStream, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, type UtilityProcess, utilityProcess } from 'electron'
+import type { RunActivity } from '@plein/protocol'
 import { DEV_SERVER_PORT, isDev, type ServerPaths } from './paths'
 
 export interface ServerHandle {
@@ -13,19 +14,25 @@ export interface ServerHandle {
   stop(): Promise<void>
   /** 服务端意外退出时回调 */
   onExit(fn: (code: number) => void): void
+  /** 任务动态 */
+  onActivity(fn: (activity: RunActivity) => void): void
 }
 
 type ServerMessage =
   | { type: 'ready'; port: number; url: string }
   | { type: 'error'; message: string }
+  | { type: 'activity'; activity: RunActivity }
 
-/** 在 utilityProcess 里启动 apps/server，等它报告实际端口 */
-export function startServer(paths: ServerPaths, dataDir: string): Promise<ServerHandle> {
+/**
+ * 在 utilityProcess 里启动 apps/server，等它报告实际端口。
+ * port 为 0 时由系统分配；开发模式固定用 Vite 代理的端口。
+ */
+export function startServer(paths: ServerPaths, dataDir: string, port = 0): Promise<ServerHandle> {
   const token = randomBytes(32).toString('hex')
   const env: Record<string, string> = {
     ...(process.env as Record<string, string>),
     PLEIN_HOST: '127.0.0.1',
-    PLEIN_PORT: String(isDev ? DEV_SERVER_PORT : 0),
+    PLEIN_PORT: String(isDev ? DEV_SERVER_PORT : port),
     PLEIN_AUTH: 'none',
     PLEIN_DATA_DIR: dataDir,
     PLEIN_DESKTOP_TOKEN: token,
@@ -66,8 +73,13 @@ export function startServer(paths: ServerPaths, dataDir: string): Promise<Server
     })
   })
 
+  const activityListeners: Array<(activity: RunActivity) => void> = []
   return new Promise((resolve, reject) => {
     child.on('message', (msg: ServerMessage) => {
+      if (msg.type === 'activity') {
+        for (const fn of activityListeners) fn(msg.activity)
+        return
+      }
       if (msg.type === 'error') reject(new Error(msg.message))
       if (msg.type !== 'ready') return
       resolve({
@@ -82,6 +94,9 @@ export function startServer(paths: ServerPaths, dataDir: string): Promise<Server
         },
         onExit(fn) {
           exitListeners.push(fn)
+        },
+        onActivity(fn) {
+          activityListeners.push(fn)
         },
       })
     })
