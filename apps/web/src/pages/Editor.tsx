@@ -4,6 +4,7 @@ import { api } from '../api/client'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { CanvasMenus } from '../panels/CanvasMenus'
 import { Generator } from '../panels/Generator'
+import { StoryboardEditor } from '../panels/StoryboardEditor'
 import { SettingsDialog } from '../panels/Settings'
 import { Toolbar } from '../panels/Toolbar'
 import { useCatalog } from '../stores/catalog'
@@ -80,6 +81,7 @@ export function Editor({ source }: { source: CanvasSource }) {
       )}
       <Generator />
       <CanvasMenus canImport={source.kind === 'remote'} />
+      <StoryboardEditor />
       {settings && <SettingsDialog onClose={() => setSettings(false)} />}
       <footer className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4">
         <Toolbar canImport={source.kind === 'remote'} />

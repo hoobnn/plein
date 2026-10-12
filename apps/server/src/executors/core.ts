@@ -6,6 +6,8 @@ import {
   musicNode,
   sceneNode,
   speechNode,
+  StoryboardDraft,
+  storyboardNode,
   textNode,
   videoNode,
 } from '@plein/nodes'
@@ -19,6 +21,7 @@ import {
   inputText,
   ProviderError,
 } from '@plein/plugin-sdk'
+import { z } from 'zod'
 
 /** 参数里没选模型时，用已启用平台中第一个支持该能力的模型 */
 function pickModel(ctx: ExecutorContext<{ model: string }>, capability: Capability, label: string) {
@@ -121,6 +124,44 @@ const music = defineExecutor(musicNode, async (ctx) => {
 })
 
 /** 基础节点插件的服务端部分：声明来自 @plein/nodes，执行器在这里 */
+const STORYBOARD_SYSTEM = `你是短剧分镜师。把剧本拆成镜头，按 JSON Schema 输出。
+每个镜头写清：景别、画面描述、出场角色或场景的名字（与剧本里的名字一致）、情绪、光影氛围、音效、台词（说话人与台词）、
+用于生成分镜图的画面提示词（具体可画：人物外观动作、构图、环境、光线）、用于图生视频的运动提示词（镜头运动与人物动作）。
+镜号从 1 开始连续编号，时长以秒计。`
+
+/** 分镜：剧本 → 结构化分镜表（写回参数由节点声明的 applyOutputs 完成） */
+const storyboard = defineExecutor(storyboardNode, async (ctx) => {
+  const { params, inputs } = ctx
+  const script = requireText(inputText(inputs, 'script') ?? '', '剧本（请连入剧本文本）')
+  const user = [
+    `请拆成大约 ${params.shotCount} 个镜头。`,
+    params.prompt.trim() && `补充要求：${params.prompt.trim()}`,
+    `<剧本>\n${script}\n</剧本>`,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+  const res = await ctx.providers.call('text.chat', pickModel(ctx, 'text.chat', '对话'), {
+    messages: [
+      { role: 'system', content: STORYBOARD_SYSTEM },
+      { role: 'user', content: user },
+    ],
+    jsonSchema: z.toJSONSchema(StoryboardDraft, { io: 'input' }) as Record<string, unknown>,
+  })
+  const out = res.outputs[0]
+  let value: unknown = out?.type === 'json' ? out.value : undefined
+  if (out?.type === 'text') {
+    try {
+      value = JSON.parse(out.text.replace(/^```(?:json)?\s*|\s*```$/g, ''))
+    } catch {
+      throw new ProviderError('unknown', '模型没有按格式返回分镜，请重试或换一个模型')
+    }
+  }
+  const parsed = StoryboardDraft.safeParse(value)
+  if (!parsed.success)
+    throw new ProviderError('unknown', '模型返回的分镜格式不对，请重试或换一个模型')
+  return { shots: [{ type: 'json', value: parsed.data }] }
+})
+
 /** 资产卡：输出连入的参考图，供下游直接连线使用 */
 const character = defineExecutor(characterNode, async ({ inputs }) => ({
   images: inputAssets(inputs, 'references').map((a) => ({ type: 'image' as const, ...a })),
@@ -130,5 +171,5 @@ const scene = defineExecutor(sceneNode, async ({ inputs }) => ({
 }))
 
 export const coreServerPlugin = defineServerPlugin(corePlugin, {
-  executors: [text, llm, image, video, speech, music, character, scene],
+  executors: [text, llm, image, video, speech, music, character, scene, storyboard],
 })

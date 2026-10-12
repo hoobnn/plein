@@ -6,9 +6,10 @@ import {
   type NodeResult,
   type PleinDoc,
   type ResultValue,
+  setParams,
   writeRun,
 } from '@plein/doc'
-import type { NodeOutputs, PortValue } from '@plein/plugin-sdk'
+import { type NodeOutputs, type PortValue, resolveParams } from '@plein/plugin-sdk'
 import { NodeRunError, type PluginHost } from '../plugins/host'
 import { applyMentions } from './mentions'
 import type { Rooms } from '../sync/rooms'
@@ -126,6 +127,11 @@ export class NodeRuns {
         values.map((v) => ({ id: newId('res'), port, value: toResultValue(v), runId, at })),
       )
       addResults(doc, el.id, results)
+      const patch = def?.applyOutputs?.(
+        resolveParams(def, doc.get(el.id)?.params, el.nodeVersion ?? def.version),
+        outputs,
+      )
+      if (patch) setParams(doc, el.id, patch)
       writeRun(doc, el.id, { id: runId, status: 'succeeded', at })
     } catch (err) {
       const canceled = signal.aborted

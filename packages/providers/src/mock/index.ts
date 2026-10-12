@@ -29,12 +29,40 @@ function lastUserText(input: CapabilityInput<'text.chat'>) {
     : msg.content.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n')
 }
 
+/** 分镜请求：按句拆剧本，每句一个镜头 */
+function mockStoryboard(text: string) {
+  const script = /<剧本>([\s\S]*?)<\/剧本>/.exec(text)?.[1] ?? text
+  const sizes = ['全景', '中景', '近景', '特写'] as const
+  const lines = script
+    .split(/[。！？!?\n]/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 1)
+    .slice(0, 12)
+  return {
+    shots: lines.map((line, i) => ({
+      no: i + 1,
+      duration: 4,
+      shotSize: sizes[i % sizes.length],
+      description: line,
+      characters: [],
+      emotion: '',
+      lighting: '',
+      sfx: '',
+      dialogue: [],
+      imagePrompt: `【mock】${line}`,
+      motionPrompt: '镜头缓慢推近',
+    })),
+  }
+}
+
 /** 按能力生成假结果：不联网、确定性，供开发和测试跑通整条链路 */
 function fakeOutputs(req: ProviderRequest): ProviderOutput[] {
   switch (req.capability as Capability) {
     case 'text.chat': {
       const input = req.input as CapabilityInput<'text.chat'>
       const text = lastUserText(input)
+      if (input.jsonSchema && 'shots' in ((input.jsonSchema.properties as object) ?? {}))
+        return [{ type: 'json', value: mockStoryboard(text) }]
       if (input.jsonSchema) return [{ type: 'json', value: { echo: text } }]
       return [{ type: 'text', text: `【mock】${text}` }]
     }

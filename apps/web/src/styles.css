@@ -348,6 +348,31 @@ body,
   background: var(--color-surface-2);
 }
 
+.plein-node-shots {
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.plein-node-shots li {
+  display: grid;
+  grid-template-columns: 20px 36px 1fr;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.plein-node-shots li span:not(:last-child) {
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.plein-node-shots li span:last-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .plein-node-muted {
   color: var(--color-ink-muted);
 }

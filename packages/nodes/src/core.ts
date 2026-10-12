@@ -1,5 +1,6 @@
 import { defineNode, definePlugin, PLUGIN_API_VERSION } from '@plein/plugin-sdk'
 import { z } from 'zod'
+import { storyboardNode } from './storyboard'
 
 const model = () => z.string().default('').meta({ title: '模型', widget: 'model' })
 const textarea = (title: string, placeholder?: string) =>
@@ -169,8 +170,19 @@ export const corePlugin = definePlugin({
         'plein/music@1',
         'plein/character@1',
         'plein/scene@1',
+        'plein/storyboard@1',
       ],
     },
   },
-  nodes: [textNode, llmNode, imageNode, videoNode, speechNode, musicNode, characterNode, sceneNode],
+  nodes: [
+    textNode,
+    llmNode,
+    imageNode,
+    videoNode,
+    speechNode,
+    musicNode,
+    characterNode,
+    sceneNode,
+    storyboardNode,
+  ],
 })

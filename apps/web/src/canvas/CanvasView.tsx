@@ -1,5 +1,6 @@
 import { Engine, isEditableTarget } from '@plein/canvas-core'
 import { createDoc, type ElementKind, type PleinDoc } from '@plein/doc'
+import { STORYBOARD_TYPE } from '@plein/nodes'
 import { useEffect, useRef } from 'react'
 import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
@@ -59,7 +60,9 @@ export function CanvasView({ source }: { source: CanvasSource }) {
         })
         // 双击节点：聚焦生成器的提示词（面板在选中后的下一帧才挂载）
         const offActivate = engine.onActivate((id) => {
-          if (engine.scene.get(id)?.kind !== 'node') return
+          const el = engine.scene.get(id)
+          if (el?.kind !== 'node') return
+          if (el.nodeType === STORYBOARD_TYPE) return useCanvas.getState().openStoryboard(id)
           requestAnimationFrame(() =>
             window.dispatchEvent(new CustomEvent('plein:focus-generator', { detail: id })),
           )

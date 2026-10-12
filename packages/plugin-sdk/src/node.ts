@@ -24,6 +24,14 @@ export interface NodeDefinition<P extends z.ZodObject = z.ZodObject> {
   params: P
   /** 需要的模型能力；表单里的模型下拉框只列支持它的模型 */
   capability?: Capability
+  /**
+   * 运行成功后把输出写回参数（如分镜表要可编辑，结果需进参数）。
+   * 返回要修改的参数键值；宿主以系统身份写入文档。
+   */
+  applyOutputs?(
+    params: NodeParams<NodeDefinition<P>>,
+    outputs: Record<string, Array<{ type: string; value?: unknown }>>,
+  ): Record<string, unknown> | undefined
   /** 把 fromVersion 的参数升级到当前 version */
   migrate?(params: Record<string, unknown>, fromVersion: number): Record<string, unknown>
 }

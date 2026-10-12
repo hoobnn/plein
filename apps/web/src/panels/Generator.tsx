@@ -6,7 +6,7 @@ import {
   setParam,
   updateElement,
 } from '@plein/doc'
-import { ASSET_NODE_TYPES, findMentions, mentionQuery } from '@plein/nodes'
+import { ASSET_NODE_TYPES, findMentions, mentionQuery, STORYBOARD_TYPE } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { assetUrls } from '../api/client'
@@ -24,6 +24,7 @@ import {
   validate,
 } from '../canvas/nodes'
 import { cancelNode, runNode } from '../canvas/runner'
+import { shotsOf } from '../canvas/storyboard'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { SchemaForm } from './SchemaForm'
@@ -103,7 +104,7 @@ function Panel({
   const params = { ...node.defaults, ...el.params }
   const set = (key: string, value: unknown) => setParam(engine.doc, el.id, key, value)
   const pk = promptKey(node)
-  const fields = fieldsOf(node)
+  const fields = fieldsOf(node).filter(([, f]) => f.widget !== 'hidden')
   const main = fields.filter(([k, f]) => k !== pk && isMainField(k, f))
   const rest = Object.fromEntries(fields.filter(([k, f]) => k !== pk && !isMainField(k, f)))
   const ups = upstreams(engine, el.id, catalog)
@@ -148,6 +149,17 @@ function Panel({
         }
       />
       {node.inputs.length > 0 && <Inputs engine={engine} node={node} ups={ups} />}
+      {node.type === STORYBOARD_TYPE && (
+        <div className="px-3 pb-3">
+          <button
+            type="button"
+            onClick={() => useCanvas.getState().openStoryboard(el.id)}
+            className="h-8 w-full rounded-lg bg-white/5 text-sm text-ink hover:bg-white/10"
+          >
+            编辑分镜表（{shotsOf(el).length} 个镜头）
+          </button>
+        </div>
+      )}
       {pk && (
         <PromptBox
           ref={promptRef}

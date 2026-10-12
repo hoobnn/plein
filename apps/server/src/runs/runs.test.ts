@@ -161,4 +161,44 @@ describe('节点运行接口', () => {
     expect(res.status).toBe(204)
     expect(doc.get(id)?.run?.status).toBe('canceled')
   })
+
+  it('分镜节点：剧本拆成镜头写回参数', async () => {
+    const canvas = (await (
+      await fetch(`${base}/api/canvases`, { method: 'POST', body: '{}' })
+    ).json()) as Canvas
+    const doc = createDoc(server.rooms.get(canvas.id).doc, { schedule: () => {} })
+    const script = createElement(doc, {
+      kind: 'markdown',
+      text: '雨夜，林夏推开天台的门。她看见了陈默。两人对视。',
+      x: 0,
+      y: 0,
+      w: 200,
+      h: 100,
+    })
+    const board = createElement(doc, {
+      kind: 'node',
+      nodeType: 'plein/storyboard',
+      nodeVersion: 1,
+      params: { shots: [] },
+      ports: {
+        inputs: [{ id: 'script', label: '剧本', type: 'text', multiple: true }],
+        outputs: [{ id: 'shots', label: '分镜', type: 'json' }],
+      },
+      x: 300,
+      y: 0,
+      w: 200,
+      h: 200,
+    })
+    connect(doc, [script, 'text'], [board, 'script'])
+    await fetch(`${base}/api/canvases/${canvas.id}/nodes/${board}/run`, { method: 'POST' })
+    const el = await waitFor(doc, board, (s) => s === 'succeeded' || s === 'failed')
+    expect(el.run?.error).toBeUndefined()
+    const shots = el.params!.shots as Array<{ no: number; description: string; id: string }>
+    expect(shots.map((s) => s.description)).toEqual([
+      '雨夜，林夏推开天台的门',
+      '她看见了陈默',
+      '两人对视',
+    ])
+    expect(shots[0]!.id).toMatch(/^shot_/)
+  })
 })

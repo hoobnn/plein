@@ -1,8 +1,9 @@
 import { type Engine, NODE_LAYOUT, portPosition } from '@plein/canvas-core'
 import { adoptResult, type CanvasElement, currentResult, type RunStatus } from '@plein/doc'
 import { useCatalog } from '../stores/catalog'
-import { ASSET_NODE_TYPES } from '@plein/nodes'
+import { ASSET_NODE_TYPES, STORYBOARD_TYPE } from '@plein/nodes'
 import { findNode, isPure, promptKey, targetImages } from './nodes'
+import { shotsOf } from './storyboard'
 
 export interface NodeCardActions {
   run(id: string): void
@@ -174,6 +175,7 @@ export class NodeCards {
     const key = pure ? pk : undefined
     const thumbs =
       el.nodeType && ASSET_NODE_TYPES.has(el.nodeType) ? targetImages(this.engine, el) : []
+    const board = el.nodeType === STORYBOARD_TYPE
     const sig = JSON.stringify([
       thumbs,
       el.w,
@@ -187,6 +189,7 @@ export class NodeCards {
       selected,
       el.ports,
       Boolean(info),
+      board ? el.params?.shots : undefined,
     ])
     if (sig === card.sig) return
     card.sig = sig
@@ -225,6 +228,26 @@ export class NodeCards {
       text.textContent = String(el.params?.description ?? '') || '在下方写设定'
       text.className = el.params?.description ? '' : 'plein-node-muted'
       card.body.replaceChildren(strip, text)
+    } else if (board && !active && shotsOf(el).length) {
+      // 分镜：镜号 / 景别 / 画面的小表，双击打开完整表格
+      const shots = shotsOf(el)
+      const list = document.createElement('ol')
+      list.className = 'plein-node-shots'
+      for (const s of shots.slice(0, 12)) {
+        const li = document.createElement('li')
+        const no = document.createElement('span')
+        no.textContent = String(s.no).padStart(2, '0')
+        const size = document.createElement('span')
+        size.textContent = s.shotSize
+        const desc = document.createElement('span')
+        desc.textContent = s.description
+        li.append(no, size, desc)
+        list.appendChild(li)
+      }
+      const more = document.createElement('div')
+      more.className = 'plein-node-muted'
+      more.textContent = `${shots.length} 个镜头 · ${shots.reduce((t, s) => t + s.duration, 0)} 秒 · 双击打开分镜表`
+      card.body.replaceChildren(list, more)
     } else if (key) {
       const text = String(el.params?.[key] ?? '')
       card.body.textContent = text || '双击写下文本，连到下游节点'

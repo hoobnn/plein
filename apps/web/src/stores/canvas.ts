@@ -13,6 +13,8 @@ interface CanvasStore extends EngineState {
   canvasId: string | null
   /** 当前弹出的画布菜单：节点选择器或右键菜单 */
   menu: CanvasMenuEvent | null
+  /** 打开表格编辑器的分镜节点 */
+  storyboard: string | null
   /** 挂载引擎并把它的运行时状态镜像到 store（只在状态变化时更新，不跟随每帧） */
   attach(engine: Engine): () => void
   setSync(sync: SyncStatus): void
@@ -20,6 +22,7 @@ interface CanvasStore extends EngineState {
   notify(notice: string | null): void
   setCanvasId(id: string | null): void
   setMenu(menu: CanvasMenuEvent | null): void
+  openStoryboard(id: string | null): void
 }
 
 const initial: EngineState = {
@@ -40,6 +43,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   notice: null,
   canvasId: null,
   menu: null,
+  storyboard: null,
   attach(engine) {
     const sync = () => set(engine.state)
     const off = engine.onStateChange(sync)
@@ -48,11 +52,12 @@ export const useCanvas = create<CanvasStore>((set) => ({
     return () => {
       off()
       offMenu()
-      set({ engine: null, menu: null, ...initial })
+      set({ engine: null, menu: null, storyboard: null, ...initial })
     }
   },
   setCanvasId: (canvasId) => set({ canvasId }),
   setMenu: (menu) => set({ menu }),
+  openStoryboard: (storyboard) => set({ storyboard }),
   setSync: (sync) => set({ sync }),
   setImporting: (importing) => set({ importing }),
   notify(notice) {
