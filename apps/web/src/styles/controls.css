@@ -282,7 +282,9 @@
       background-color var(--dur-fast) var(--ease-standard),
       color var(--dur-fast) var(--ease-standard);
   }
-  .ui-seg-item:has(> svg:only-child) {
+  /* 只有图标的分段（主题切换）：方形 28 宽。不能用 :has(> svg:only-child) 判断，
+     它不看文字节点，图标加文字的项也会被压成 28 宽 */
+  .ui-seg-icon > .ui-seg-item {
     padding: 0;
     width: 28px;
   }
