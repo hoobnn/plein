@@ -24,10 +24,10 @@
 | Yjs 文档 | 保留 | 单人本地也受益：撤销、多标签页同步、离线、以后接协作不改模型。必须先完成“每元素一个嵌套 `Y.Map`”改造 |
 | Markdown 编辑 | 选 CodeMirror 6 + `y-codemirror.next` | Markdown 源码即事实，比 Tiptap/Lexical 轻；展示用 markdown-it + DOMPurify。关闭 architecture.md 里“富文本编辑器”这一待定项 |
 | 参数 schema | zod v4 | 同时驱动校验、表单渲染和 LLM 结构化输出（JSON Schema 导出） |
-| 后端运行时 Bun | 改为 Node（已确认） | 仓库工具链已锁 Node 26 + pnpm，统一一套运行时、一套原生模块。Hono 在 Node 上同样可用（`@hono/node-server`、`@hono/node-ws`），以后要换 Bun 只换入口 |
+| 后端运行时 Bun | 改为 Node（已确认） | 仓库工具链已锁 Node 26 + pnpm，统一一套运行时、一套原生模块。Hono 在 Node 上同样可用（`@hono/node-server` 自带 WebSocket 升级，配合 `ws`），以后要换 Bun 只换入口 |
 | 服务端运行 TS 源码 | 开发 `tsx watch`，发布打包 | workspace 包 `exports` 直接指向 `src/*.ts` 且导入不带扩展名，Node 自带的类型剥离跑不起来。开发用 tsx；发布和 Docker 用 tsdown（或 esbuild）把服务端连同 workspace 包打成一个 `dist/`，各包保持源码直出 |
 | 包边界 | 节点声明与执行分开，新增 protocol 包 | 节点的参数 schema、端口、模板提示词前后端共用；`execute` 要调供应商、读密钥、用 ffmpeg，只能在服务端。两者分开，前端打包不会带进服务端代码。前后端接口（上传、任务、SSE、设置）的 zod schema 放 `packages/protocol`。目录见下方“目录结构” |
-| Postgres + MinIO/S3 | 改为 SQLite + 本地文件系统 | 本地单用户不需要数据库服务。SQLite（better-sqlite3 + Drizzle；`node:sqlite` 稳定后可替换）存元数据、Yjs 更新、任务队列；资产按内容哈希存 `data/assets/` |
+| Postgres + MinIO/S3 | 改为 SQLite + 本地文件系统 | 本地单用户不需要数据库服务。SQLite（better-sqlite3 + 手写 SQL，`PRAGMA user_version` 做迁移；表少，暂不引入 ORM；`node:sqlite` 稳定后可替换）存元数据、Yjs 更新、任务队列；资产按内容哈希存 `data/assets/` |
 | 任务队列 | SQLite 表 + 进程内 worker | 取代 `SKIP LOCKED`，无 Redis。重启后从表里恢复未完成的远端任务继续轮询 |
 | 媒体处理 libvips + ffmpeg | 保留，换成 sharp + 系统 ffmpeg | sharp 自带 libvips；ffmpeg/ffprobe 负责元数据、封面、波形图、拼接、混音、烧字幕。Docker 镜像内置，裸跑要求本机已装 |
 | 模型接入 | 新建 TS 包 `packages/providers`，以 hoobnn-mcps 为契约参考 | 不在运行时调用 Python MCP：多一套 Python 运行时、工具级接口不带类型、结果是本地路径。hoobnn-mcps 已验证过各家端点、异步任务和交付细节，按它移植 TS 适配器；以后可加一个通用“MCP 工具节点”作为扩展口 |

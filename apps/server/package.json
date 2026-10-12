@@ -1,0 +1,33 @@
+{
+  "name": "@plein/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsdown",
+    "start": "node dist/main.mjs",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.4",
+    "@plein/protocol": "workspace:*",
+    "better-sqlite3": "^13.0.3",
+    "hono": "^4.13.13",
+    "lib0": "^0.2.119",
+    "sharp": "^0.35.5",
+    "ws": "^8.22.0",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.33",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.5",
+    "@types/ws": "^8.18.2",
+    "tsdown": "^0.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "y-websocket": "^3.1.0"
+  }
+}
