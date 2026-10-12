@@ -124,7 +124,7 @@ export async function createServer(config: Config): Promise<Server> {
       agents.close()
       runs.close()
       rooms.closeAll()
-      db.close()
+      db.$client.close()
     },
   }
 }

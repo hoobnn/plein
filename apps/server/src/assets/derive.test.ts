@@ -172,7 +172,7 @@ beforeAll(async () => {
   }
 })
 
-afterAll(() => db.close())
+afterAll(() => db.$client.close())
 
 describe('图片加工', () => {
   it('裁剪：矩形坐标对应实际像素，超出范围给可读错误', async () => {

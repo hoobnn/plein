@@ -1,0 +1,40 @@
+// 由 scripts/embed-migrations.ts 生成，不要手改；改 schema 后跑 pnpm --filter @plein/server db:generate
+import type { Migration } from './migrate'
+
+export const MIGRATIONS: Migration[] = [
+  {
+    tag: '0000_baseline',
+    when: 1791830525153,
+    hash: '2f1219182d02b7e359a9aed1e69c48701c4025b897814143c2f8c677aba8b4f9',
+    statements: [
+      'CREATE TABLE `account` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`accountId` text NOT NULL,\n\t`providerId` text NOT NULL,\n\t`userId` text NOT NULL,\n\t`accessToken` text,\n\t`refreshToken` text,\n\t`idToken` text,\n\t`accessTokenExpiresAt` date,\n\t`refreshTokenExpiresAt` date,\n\t`scope` text,\n\t`password` text,\n\t`createdAt` date NOT NULL,\n\t`updatedAt` date NOT NULL,\n\tFOREIGN KEY (`userId`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade\n);',
+      'CREATE INDEX `account_userId_idx` ON `account` (`userId`);',
+      'CREATE TABLE `agent_sessions` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`owner_id` text NOT NULL,\n\t`canvas_id` text NOT NULL,\n\t`agent` text NOT NULL,\n\t`cli_session` text,\n\t`title` text NOT NULL,\n\t`items` text NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`updated_at` integer NOT NULL,\n\tFOREIGN KEY (`canvas_id`) REFERENCES `canvases`(`id`) ON UPDATE no action ON DELETE cascade\n);',
+      'CREATE INDEX `agent_sessions_canvas` ON `agent_sessions` (`canvas_id`,`updated_at`);',
+      'CREATE TABLE `assets` (\n\t`id` text NOT NULL,\n\t`owner_id` text NOT NULL,\n\t`kind` text NOT NULL,\n\t`mime` text NOT NULL,\n\t`name` text NOT NULL,\n\t`size` integer NOT NULL,\n\t`width` integer,\n\t`height` integer,\n\t`duration` real,\n\t`variants` text NOT NULL,\n\t`created_at` integer NOT NULL,\n\tPRIMARY KEY(`owner_id`, `id`)\n);',
+      'CREATE TABLE `canvases` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`owner_id` text NOT NULL,\n\t`title` text NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`updated_at` integer NOT NULL,\n\t`project_id` text,\n\tFOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade\n);',
+      'CREATE INDEX `canvases_owner` ON `canvases` (`owner_id`,`updated_at`);',
+      'CREATE INDEX `canvases_project` ON `canvases` (`project_id`,`updated_at`);',
+      'CREATE TABLE `doc_updates` (\n\t`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,\n\t`canvas_id` text NOT NULL,\n\t`data` blob NOT NULL,\n\t`created_at` integer NOT NULL,\n\tFOREIGN KEY (`canvas_id`) REFERENCES `canvases`(`id`) ON UPDATE no action ON DELETE cascade\n);',
+      'CREATE INDEX `doc_updates_canvas` ON `doc_updates` (`canvas_id`,`id`);',
+      'CREATE TABLE `job_groups` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`owner_id` text NOT NULL,\n\t`canvas_id` text NOT NULL,\n\t`frame_id` text NOT NULL,\n\t`options` text NOT NULL,\n\t`targets` text NOT NULL,\n\t`status` text NOT NULL,\n\t`summary` text,\n\t`created_at` integer NOT NULL,\n\t`finished_at` integer,\n\tFOREIGN KEY (`canvas_id`) REFERENCES `canvases`(`id`) ON UPDATE no action ON DELETE cascade\n);',
+      "CREATE INDEX `job_groups_active` ON `job_groups` (`status`) WHERE status = 'running';",
+      "CREATE TABLE `jobs` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`owner_id` text NOT NULL,\n\t`canvas_id` text NOT NULL,\n\t`node_id` text NOT NULL,\n\t`group_id` text,\n\t`node_type` text NOT NULL,\n\t`status` text NOT NULL,\n\t`attempts` integer DEFAULT 0 NOT NULL,\n\t`cache_key` text,\n\t`cache_omit` text,\n\t`calls` text DEFAULT '{}' NOT NULL,\n\t`error` text,\n\t`created_at` integer NOT NULL,\n\t`started_at` integer,\n\t`finished_at` integer,\n\tFOREIGN KEY (`canvas_id`) REFERENCES `canvases`(`id`) ON UPDATE no action ON DELETE cascade\n);",
+      "CREATE INDEX `jobs_active` ON `jobs` (`status`) WHERE status IN ('queued', 'running');",
+      'CREATE INDEX `jobs_node` ON `jobs` (`canvas_id`,`node_id`,`created_at`);',
+      'CREATE TABLE `library_items` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`owner_id` text NOT NULL,\n\t`project_id` text,\n\t`kind` text NOT NULL,\n\t`name` text NOT NULL,\n\t`data` text NOT NULL,\n\t`favorite` integer DEFAULT 0 NOT NULL,\n\t`used_at` integer,\n\t`created_at` integer NOT NULL,\n\t`updated_at` integer NOT NULL,\n\tFOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE set null\n);',
+      'CREATE INDEX `library_owner` ON `library_items` (`owner_id`,`kind`,`updated_at`);',
+      'CREATE TABLE `projects` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`owner_id` text NOT NULL,\n\t`title` text NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`updated_at` integer NOT NULL\n);',
+      'CREATE INDEX `projects_owner` ON `projects` (`owner_id`,`updated_at`);',
+      'CREATE TABLE `session` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`expiresAt` date NOT NULL,\n\t`token` text NOT NULL,\n\t`createdAt` date NOT NULL,\n\t`updatedAt` date NOT NULL,\n\t`ipAddress` text,\n\t`userAgent` text,\n\t`userId` text NOT NULL,\n\tFOREIGN KEY (`userId`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade\n);',
+      'CREATE UNIQUE INDEX `session_token_unique` ON `session` (`token`);',
+      'CREATE INDEX `session_userId_idx` ON `session` (`userId`);',
+      'CREATE TABLE `templates` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`owner_id` text NOT NULL,\n\t`title` text NOT NULL,\n\t`data` text NOT NULL,\n\t`created_at` integer NOT NULL\n);',
+      'CREATE INDEX `templates_owner` ON `templates` (`owner_id`,`created_at`);',
+      'CREATE TABLE `user` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`name` text NOT NULL,\n\t`email` text NOT NULL,\n\t`emailVerified` integer NOT NULL,\n\t`image` text,\n\t`createdAt` date NOT NULL,\n\t`updatedAt` date NOT NULL\n);',
+      'CREATE UNIQUE INDEX `user_email_unique` ON `user` (`email`);',
+      'CREATE TABLE `verification` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`identifier` text NOT NULL,\n\t`value` text NOT NULL,\n\t`expiresAt` date NOT NULL,\n\t`createdAt` date NOT NULL,\n\t`updatedAt` date NOT NULL\n);',
+      'CREATE INDEX `verification_identifier_idx` ON `verification` (`identifier`);',
+    ],
+  },
+]

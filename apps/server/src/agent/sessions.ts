@@ -1,3 +1,4 @@
+import { and, desc, eq } from 'drizzle-orm'
 import { newId } from '../ids'
 import { type ChildProcess, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
@@ -17,6 +18,7 @@ import type { AssetStore } from '../assets/store'
 import type { PluginHost } from '../plugins/host'
 import type { NodeRuns } from '../runs/runs'
 import type { DB } from '../storage/db'
+import { agentSessions } from '../storage/schema'
 import type { Rooms } from '../sync/rooms'
 import { detectClis } from './cli'
 import { McpServer } from './mcp'
@@ -42,17 +44,7 @@ const INSTRUCTIONS = `你是 Plein 的创作助手。Plein 是一块 AI 无限�
 - 角色参考图 + 声音做视频时，常见做法：生成图片节点出关键帧 → 生成视频节点（首帧）出画面 → 配音节点出台词 → 序列节点把镜头和对白合成为成片。
 - 用简体中文回复，简短说明你做了什么、结果在哪个元素上，以及还有什么需要用户决定的。`
 
-interface SessionRow {
-  id: string
-  owner_id: string
-  canvas_id: string
-  agent: AgentKind
-  cli_session: string | null
-  title: string
-  items: string
-  created_at: number
-  updated_at: number
-}
+type SessionRow = typeof agentSessions.$inferSelect
 
 interface Live {
   row: SessionRow
@@ -113,10 +105,12 @@ export class AgentSessions {
 
   list(canvasId: string, ownerId: string): AgentSessionSummary[] {
     return this.deps.db
-      .prepare<[string, string], SessionRow>(
-        'SELECT * FROM agent_sessions WHERE canvas_id = ? AND owner_id = ? ORDER BY updated_at DESC LIMIT 50',
-      )
-      .all(canvasId, ownerId)
+      .select()
+      .from(agentSessions)
+      .where(and(eq(agentSessions.canvas_id, canvasId), eq(agentSessions.owner_id, ownerId)))
+      .orderBy(desc(agentSessions.updated_at))
+      .limit(50)
+      .all()
       .map((r) => this.summary(this.live.get(r.id)?.row ?? r))
   }
 
@@ -133,12 +127,7 @@ export class AgentSessions {
       created_at: now,
       updated_at: now,
     }
-    this.deps.db
-      .prepare(
-        `INSERT INTO agent_sessions (id, owner_id, canvas_id, agent, cli_session, title, items, created_at, updated_at)
-         VALUES (@id, @owner_id, @canvas_id, @agent, @cli_session, @title, @items, @created_at, @updated_at)`,
-      )
-      .run(row)
+    this.deps.db.insert(agentSessions).values(row).run()
     return this.view(this.load(row.id)!)
   }
 
@@ -152,7 +141,7 @@ export class AgentSessions {
     if (!s || s.row.owner_id !== ownerId) return false
     this.stop(id)
     this.drop(s)
-    this.deps.db.prepare('DELETE FROM agent_sessions WHERE id = ?').run(id)
+    this.deps.db.delete(agentSessions).where(eq(agentSessions.id, id)).run()
     return true
   }
 
@@ -541,19 +530,18 @@ export class AgentSessions {
 
   private save(s: Live) {
     s.row.items = JSON.stringify(s.items)
+    const { cli_session, title, items, updated_at } = s.row
     this.deps.db
-      .prepare(
-        'UPDATE agent_sessions SET cli_session = ?, title = ?, items = ?, updated_at = ? WHERE id = ?',
-      )
-      .run(s.row.cli_session, s.row.title, s.row.items, s.row.updated_at, s.row.id)
+      .update(agentSessions)
+      .set({ cli_session, title, items, updated_at })
+      .where(eq(agentSessions.id, s.row.id))
+      .run()
   }
 
   private load(id: string): Live | null {
     const cached = this.live.get(id)
     if (cached) return cached
-    const row = this.deps.db
-      .prepare<[string], SessionRow>('SELECT * FROM agent_sessions WHERE id = ?')
-      .get(id)
+    const row = this.deps.db.select().from(agentSessions).where(eq(agentSessions.id, id)).get()
     if (!row) return null
     const token = randomBytes(24).toString('hex')
     const { rooms, runs, host, assets } = this.deps

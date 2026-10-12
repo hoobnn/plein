@@ -3,7 +3,9 @@ import * as syncProtocol from 'y-protocols/sync'
 import * as decoding from 'lib0/decoding'
 import * as encoding from 'lib0/encoding'
 import * as Y from 'yjs'
+import { asc, eq, sql } from 'drizzle-orm'
 import type { DB } from '../storage/db'
+import { canvases, docUpdates } from '../storage/schema'
 
 const MESSAGE_SYNC = 0
 const MESSAGE_AWARENESS = 1
@@ -236,26 +238,40 @@ export interface DocStore {
 }
 
 export function sqliteDocStore(db: DB): DocStore {
-  const select = db.prepare<[string], { data: Buffer }>(
-    'SELECT data FROM doc_updates WHERE canvas_id = ? ORDER BY id',
-  )
-  const insert = db.prepare(
-    'INSERT INTO doc_updates (canvas_id, data, created_at) VALUES (?, ?, ?)',
-  )
-  const clear = db.prepare('DELETE FROM doc_updates WHERE canvas_id = ?')
-  const touch = db.prepare('UPDATE canvases SET updated_at = ? WHERE id = ?')
-  const replace = db.transaction((id: string, state: Uint8Array) => {
-    clear.run(id)
-    insert.run(id, Buffer.from(state), Date.now())
-  })
+  // 每次编辑都会走 append：预编译语句，不在热路径上重复生成 SQL
+  const select = db
+    .select({ data: docUpdates.data })
+    .from(docUpdates)
+    .where(eq(docUpdates.canvas_id, sql.placeholder('id')))
+    .orderBy(asc(docUpdates.id))
+    .prepare()
+  const insert = db
+    .insert(docUpdates)
+    .values({
+      canvas_id: sql.placeholder('id'),
+      data: sql.placeholder('data'),
+      created_at: sql.placeholder('at'),
+    })
+    .prepare()
+  const touch = db
+    .update(canvases)
+    .set({ updated_at: sql`${sql.placeholder('at')}` })
+    .where(eq(canvases.id, sql.placeholder('id')))
+    .prepare()
   return {
-    load: (id) => select.all(id).map((r) => new Uint8Array(r.data)),
+    load: (id) => select.all({ id }).map((r) => new Uint8Array(r.data)),
     append(id, update) {
-      const now = Date.now()
-      insert.run(id, Buffer.from(update), now)
-      touch.run(now, id)
+      const at = Date.now()
+      insert.run({ id, data: Buffer.from(update), at })
+      touch.run({ id, at })
     },
-    replace: (id, state) => replace(id, state),
+    replace: (id, state) =>
+      db.transaction((tx) => {
+        tx.delete(docUpdates).where(eq(docUpdates.canvas_id, id)).run()
+        tx.insert(docUpdates)
+          .values({ canvas_id: id, data: Buffer.from(state), created_at: Date.now() })
+          .run()
+      }),
   }
 }
 

@@ -1,9 +1,9 @@
 import { API, CreateCanvas, UpdateCanvas } from '@plein/protocol'
+import { and, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import {
-  CANVAS_COLUMNS,
-  type CanvasRow,
+  canvasColumns,
   insertCanvas,
   insertProject,
   listCanvases,
@@ -11,16 +11,17 @@ import {
   toCanvas,
 } from '../storage/canvases'
 import type { DB } from '../storage/db'
+import { canvases } from '../storage/schema'
 import type { Previewer } from '../storage/previews'
 import type { Rooms } from '../sync/rooms'
 
 export function canvasRoutes(db: DB, rooms: Rooms, preview: Previewer) {
   const get = (owner: string, id: string) =>
     db
-      .prepare<[string, string], CanvasRow>(
-        `SELECT ${CANVAS_COLUMNS} FROM canvases WHERE id = ? AND owner_id = ?`,
-      )
-      .get(id, owner)
+      .select(canvasColumns)
+      .from(canvases)
+      .where(and(eq(canvases.id, id), eq(canvases.owner_id, owner)))
+      .get()
   const notFound = { error: 'not_found', message: '画布不存在' }
 
   return new Hono<AuthEnv>()
@@ -50,15 +51,18 @@ export function canvasRoutes(db: DB, rooms: Rooms, preview: Previewer) {
       if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
       const id = c.req.param('id')
       const res = db
-        .prepare('UPDATE canvases SET title = ?, updated_at = ? WHERE id = ? AND owner_id = ?')
-        .run(body.data.title, Date.now(), id, c.var.principal.id)
+        .update(canvases)
+        .set({ title: body.data.title, updated_at: Date.now() })
+        .where(and(eq(canvases.id, id), eq(canvases.owner_id, c.var.principal.id)))
+        .run()
       return res.changes ? c.json(toCanvas(get(c.var.principal.id, id)!)) : c.json(notFound, 404)
     })
     .delete('/api/canvases/:id', (c) => {
       const id = c.req.param('id')
       const res = db
-        .prepare('DELETE FROM canvases WHERE id = ? AND owner_id = ?')
-        .run(id, c.var.principal.id)
+        .delete(canvases)
+        .where(and(eq(canvases.id, id), eq(canvases.owner_id, c.var.principal.id)))
+        .run()
       if (!res.changes) return c.json(notFound, 404)
       rooms.drop(id)
       return c.body(null, 204)

@@ -1,10 +1,12 @@
 import { LOCAL_PRINCIPAL, type Principal, type SessionInfo } from '@plein/protocol'
 import { type BetterAuthOptions, betterAuth } from 'better-auth'
-import { getMigrations } from 'better-auth/db/migration'
+import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { asc, eq, sql } from 'drizzle-orm'
 import type { Context, MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
 import type { AuthMode } from '../config'
 import type { DB } from '../storage/db'
+import { account, canvases, session, user, verification } from '../storage/schema'
 import type { Secrets } from '../storage/secrets'
 
 /**
@@ -22,9 +24,7 @@ export type AuthEnv = { Variables: { principal: Principal } }
 
 /** 所有者账号：第一个创建的用户 */
 function ownerId(db: DB): string | null {
-  const row = db.prepare('SELECT id FROM user ORDER BY createdAt LIMIT 1').get() as
-    | { id: string }
-    | undefined
+  const row = db.select({ id: user.id }).from(user).orderBy(asc(user.createdAt)).limit(1).get()
   return row?.id ?? null
 }
 
@@ -41,7 +41,11 @@ export async function createAuth(
   opts: { publicUrl?: string } = {},
 ) {
   const options = {
-    database: db,
+    // 认证表和业务表在同一份 Drizzle schema 和迁移里（storage/schema.ts）
+    database: drizzleAdapter(db, {
+      provider: 'sqlite',
+      schema: { user, session, account, verification },
+    }),
     secret: secrets.authSecret,
     basePath: '/api/auth',
     // 本地自部署的访问地址不固定（localhost、局域网 IP、反向代理域名），按请求推断；Host 由 originGuard 把关
@@ -60,19 +64,20 @@ export async function createAuth(
           // 只允许创建第一个账号（所有者）
           before: async () => (ownerId(db) ? false : undefined),
           // 本机模式下创建的数据归到所有者名下
-          after: async (user) => {
-            db.prepare("UPDATE canvases SET owner_id = ? WHERE owner_id = 'local'").run(user.id)
-            db.prepare("UPDATE OR IGNORE assets SET owner_id = ? WHERE owner_id = 'local'").run(
-              user.id,
+          after: async (created) => {
+            db.update(canvases)
+              .set({ owner_id: created.id })
+              .where(eq(canvases.owner_id, 'local'))
+              .run()
+            // 同一资产所有者已有一份时保留原行
+            db.run(
+              sql`UPDATE OR IGNORE assets SET owner_id = ${created.id} WHERE owner_id = 'local'`,
             )
           },
         },
       },
     },
   } satisfies BetterAuthOptions
-  // 先建表再初始化，避免 Better Auth 启动时报表缺失
-  const { runMigrations } = await getMigrations(options)
-  await runMigrations()
   const auth = betterAuth(options)
 
   const provider: AuthProvider =

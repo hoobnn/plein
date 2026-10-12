@@ -6,22 +6,14 @@ import {
   LibraryKind,
   UpdateLibraryItem,
 } from '@plein/protocol'
+import { and, desc, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import type { DB } from '../storage/db'
 import { ownsProject } from '../storage/canvases'
+import { libraryItems } from '../storage/schema'
 
-interface LibraryRow {
-  id: string
-  project_id: string | null
-  kind: LibraryItem['kind']
-  name: string
-  data: string
-  favorite: number
-  used_at: number | null
-  created_at: number
-  updated_at: number
-}
+type LibraryRow = typeof libraryItems.$inferSelect
 
 /** data 列里存的字段 */
 type LibraryData = Pick<
@@ -33,7 +25,7 @@ const toItem = (r: LibraryRow): LibraryItem => {
   const d = JSON.parse(r.data) as Partial<LibraryData>
   return {
     id: r.id,
-    kind: r.kind,
+    kind: r.kind as LibraryItem['kind'],
     name: r.name,
     projectId: r.project_id,
     description: d.description ?? '',
@@ -64,28 +56,26 @@ export function libraryRoutes(db: DB) {
   const notFound = { error: 'not_found', message: '资产不存在' }
   const forbidden = { error: 'forbidden', message: '只读成员不能修改资产库' }
   const noProject = { error: 'not_found', message: '项目不存在' }
+  const mine = (owner: string, id: string) =>
+    and(eq(libraryItems.id, id), eq(libraryItems.owner_id, owner))
   const get = (owner: string, id: string) =>
-    db
-      .prepare<[string, string], LibraryRow>(
-        'SELECT * FROM library_items WHERE id = ? AND owner_id = ?',
-      )
-      .get(id, owner)
+    db.select().from(libraryItems).where(mine(owner, id)).get()
 
   return new Hono<AuthEnv>()
     .get(API.library, (c) => {
       const owner = c.var.principal.id
       const kind = LibraryKind.safeParse(c.req.query('kind'))
-      const rows = kind.success
-        ? db
-            .prepare<[string, string], LibraryRow>(
-              'SELECT * FROM library_items WHERE owner_id = ? AND kind = ? ORDER BY updated_at DESC',
-            )
-            .all(owner, kind.data)
-        : db
-            .prepare<[string], LibraryRow>(
-              'SELECT * FROM library_items WHERE owner_id = ? ORDER BY updated_at DESC',
-            )
-            .all(owner)
+      const rows = db
+        .select()
+        .from(libraryItems)
+        .where(
+          and(
+            eq(libraryItems.owner_id, owner),
+            kind.success ? eq(libraryItems.kind, kind.data) : undefined,
+          ),
+        )
+        .orderBy(desc(libraryItems.updated_at))
+        .all()
       return c.json(rows.map(toItem))
     })
     .post(API.library, async (c) => {
@@ -97,10 +87,18 @@ export function libraryRoutes(db: DB) {
       if (projectId && !ownsProject(db, owner, projectId)) return c.json(noProject, 404)
       const id = `lib_${randomBytes(9).toString('base64url')}`
       const now = Date.now()
-      db.prepare(
-        `INSERT INTO library_items (id, owner_id, project_id, kind, name, data, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(id, owner, projectId, kind, name, dataOf(data), now, now)
+      db.insert(libraryItems)
+        .values({
+          id,
+          owner_id: owner,
+          project_id: projectId,
+          kind,
+          name,
+          data: dataOf(data),
+          created_at: now,
+          updated_at: now,
+        })
+        .run()
       return c.json(toItem(get(owner, id)!), 201)
     })
     .get('/api/library/:id', (c) => {
@@ -119,32 +117,33 @@ export function libraryRoutes(db: DB) {
       const cur = toItem(row)
       // 只是收藏 / 取消收藏不算修改，列表顺序不跳
       const edited = Object.keys(body.data).some((k) => k !== 'favorite')
-      db.prepare(
-        `UPDATE library_items SET name = ?, project_id = ?, data = ?, favorite = ?, updated_at = ?
-         WHERE id = ? AND owner_id = ?`,
-      ).run(
-        name ?? cur.name,
-        projectId === undefined ? cur.projectId : projectId,
-        dataOf({ ...cur, ...patch }),
-        (favorite ?? cur.favorite) ? 1 : 0,
-        edited ? Date.now() : cur.updatedAt,
-        row.id,
-        owner,
-      )
+      db.update(libraryItems)
+        .set({
+          name: name ?? cur.name,
+          project_id: projectId === undefined ? cur.projectId : projectId,
+          data: dataOf({ ...cur, ...patch }),
+          favorite: (favorite ?? cur.favorite) ? 1 : 0,
+          updated_at: edited ? Date.now() : cur.updatedAt,
+        })
+        .where(mine(owner, row.id))
+        .run()
       return c.json(toItem(get(owner, row.id)!))
     })
     .post('/api/library/:id/use', (c) => {
       const owner = c.var.principal.id
       const res = db
-        .prepare('UPDATE library_items SET used_at = ? WHERE id = ? AND owner_id = ?')
-        .run(Date.now(), c.req.param('id'), owner)
+        .update(libraryItems)
+        .set({ used_at: Date.now() })
+        .where(mine(owner, c.req.param('id')))
+        .run()
       return res.changes ? c.body(null, 204) : c.json(notFound, 404)
     })
     .delete('/api/library/:id', (c) => {
       if (c.var.principal.role === 'viewer') return c.json(forbidden, 403)
       const res = db
-        .prepare('DELETE FROM library_items WHERE id = ? AND owner_id = ?')
-        .run(c.req.param('id'), c.var.principal.id)
+        .delete(libraryItems)
+        .where(mine(c.var.principal.id, c.req.param('id')))
+        .run()
       return res.changes ? c.body(null, 204) : c.json(notFound, 404)
     })
 }

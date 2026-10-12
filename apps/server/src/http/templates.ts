@@ -1,15 +1,12 @@
 import { randomBytes } from 'node:crypto'
 import { API, CreateTemplate, type UserTemplate } from '@plein/protocol'
+import { and, desc, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import type { DB } from '../storage/db'
+import { templates } from '../storage/schema'
 
-interface TemplateRow {
-  id: string
-  title: string
-  data: string
-  created_at: number
-}
+type TemplateRow = Omit<typeof templates.$inferSelect, 'owner_id'>
 
 const toTemplate = (r: TemplateRow): UserTemplate => ({
   id: r.id,
@@ -28,10 +25,16 @@ export function templateRoutes(db: DB) {
   return new Hono<AuthEnv>()
     .get(API.templates, (c) => {
       const rows = db
-        .prepare<[string], TemplateRow>(
-          'SELECT id, title, data, created_at FROM templates WHERE owner_id = ? ORDER BY created_at DESC',
-        )
-        .all(c.var.principal.id)
+        .select({
+          id: templates.id,
+          title: templates.title,
+          data: templates.data,
+          created_at: templates.created_at,
+        })
+        .from(templates)
+        .where(eq(templates.owner_id, c.var.principal.id))
+        .orderBy(desc(templates.created_at))
+        .all()
       return c.json(rows.map(toTemplate))
     })
     .post(API.templates, async (c) => {
@@ -53,16 +56,17 @@ export function templateRoutes(db: DB) {
         data: JSON.stringify(body.data.data),
         created_at: Date.now(),
       }
-      db.prepare(
-        'INSERT INTO templates (id, owner_id, title, data, created_at) VALUES (?, ?, ?, ?, ?)',
-      ).run(row.id, c.var.principal.id, row.title, row.data, row.created_at)
+      db.insert(templates)
+        .values({ ...row, owner_id: c.var.principal.id })
+        .run()
       return c.json(toTemplate(row), 201)
     })
     .delete('/api/templates/:id', (c) => {
       if (c.var.principal.role === 'viewer') return c.json(forbidden, 403)
       const res = db
-        .prepare('DELETE FROM templates WHERE id = ? AND owner_id = ?')
-        .run(c.req.param('id'), c.var.principal.id)
+        .delete(templates)
+        .where(and(eq(templates.id, c.req.param('id')), eq(templates.owner_id, c.var.principal.id)))
+        .run()
       return res.changes ? c.body(null, 204) : c.json(notFound, 404)
     })
 }

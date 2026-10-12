@@ -5,7 +5,9 @@ import { join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { Asset, AssetKind, AssetVariant } from '@plein/protocol'
+import { and, eq } from 'drizzle-orm'
 import type { DB } from '../storage/db'
+import { assets } from '../storage/schema'
 import {
   audioWaveform,
   hasFfmpeg,
@@ -29,18 +31,7 @@ const PASSTHROUGH_IMAGES = new Set(['image/svg+xml', 'image/x-icon', 'image/vnd.
 
 export class UploadTooLargeError extends Error {}
 
-interface AssetRow {
-  id: string
-  kind: AssetKind
-  mime: string
-  name: string
-  size: number
-  width: number | null
-  height: number | null
-  duration: number | null
-  variants: string
-  created_at: number
-}
+type AssetRow = typeof assets.$inferSelect
 
 function toAsset(r: AssetRow): Asset {
   return {
@@ -107,8 +98,10 @@ export class AssetStore {
 
   get(ownerId: string, id: string): Asset | null {
     const row = this.db
-      .prepare<[string, string], AssetRow>('SELECT * FROM assets WHERE owner_id = ? AND id = ?')
-      .get(ownerId, id)
+      .select()
+      .from(assets)
+      .where(and(eq(assets.owner_id, ownerId), eq(assets.id, id)))
+      .get()
     return row ? toAsset(row) : null
   }
 
@@ -176,23 +169,22 @@ export class AssetStore {
       createdAt: Date.now(),
     }
     this.db
-      .prepare(
-        `INSERT OR IGNORE INTO assets (id, owner_id, kind, mime, name, size, width, height, duration, variants, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
+      .insert(assets)
+      .values({
         id,
-        ownerId,
+        owner_id: ownerId,
         kind,
-        asset.mime,
-        asset.name,
+        mime: asset.mime,
+        name: asset.name,
         size,
-        asset.width ?? null,
-        asset.height ?? null,
-        asset.duration ?? null,
-        JSON.stringify(variants),
-        asset.createdAt,
-      )
+        width: asset.width ?? null,
+        height: asset.height ?? null,
+        duration: asset.duration ?? null,
+        variants: JSON.stringify(variants),
+        created_at: asset.createdAt,
+      })
+      .onConflictDoNothing()
+      .run()
     return this.get(ownerId, id) ?? asset
   }
 

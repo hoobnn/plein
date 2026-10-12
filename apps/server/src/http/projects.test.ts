@@ -6,7 +6,8 @@ import Database from 'better-sqlite3'
 import { afterAll, afterEach, describe, expect, it } from 'vitest'
 import { createServer, type Server } from '../app'
 import { loadConfig } from '../config'
-import { migrate } from '../storage/db'
+import { LEGACY_MIGRATIONS } from '../storage/legacy-migrations'
+import { migrate } from '../storage/migrate'
 
 const dirs: string[] = []
 const servers: Server[] = []
@@ -74,15 +75,7 @@ describe('数据库迁移', () => {
   it('旧画布各自变成同名项目', () => {
     const db = new Database(':memory:')
     // 先迁到加项目之前的版本，插一张旧画布，再迁到最新
-    db.exec(`CREATE TABLE canvases (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, title TEXT NOT NULL,
-      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
-    db.exec(`CREATE TABLE doc_updates (id INTEGER PRIMARY KEY AUTOINCREMENT, canvas_id TEXT, data BLOB, created_at INTEGER);
-      CREATE TABLE assets (id TEXT, owner_id TEXT, kind TEXT, mime TEXT, name TEXT, size INTEGER, width INTEGER,
-      height INTEGER, duration REAL, variants TEXT, created_at INTEGER, PRIMARY KEY (owner_id, id));
-      CREATE TABLE templates (id TEXT PRIMARY KEY, owner_id TEXT, title TEXT, data TEXT, created_at INTEGER);
-      CREATE TABLE jobs (id TEXT PRIMARY KEY, canvas_id TEXT);
-      CREATE TABLE job_groups (id TEXT PRIMARY KEY, canvas_id TEXT);
-      CREATE TABLE agent_sessions (id TEXT PRIMARY KEY, canvas_id TEXT);`)
+    for (const m of LEGACY_MIGRATIONS.slice(0, 4)) db.exec(m)
     db.prepare('INSERT INTO canvases VALUES (?, ?, ?, ?, ?)').run('cv_old', 'local', '老画布', 1, 2)
     db.pragma('user_version = 4')
     migrate(db)

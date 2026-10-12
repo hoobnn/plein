@@ -1,7 +1,9 @@
 import { createDoc, currentResult } from '@plein/doc'
 import { API, type Canvas } from '@plein/protocol'
 import * as Y from 'yjs'
+import { and, asc, eq, sql } from 'drizzle-orm'
 import type { DB } from './db'
+import { assets, docUpdates } from './schema'
 
 const MAX_COVERS = 4
 
@@ -19,16 +21,21 @@ export type Previewer = ReturnType<typeof previewer>
 
 export function previewer(db: DB) {
   const cache = new Map<string, Preview>()
-  const updates = db.prepare<[string], { data: Buffer }>(
-    'SELECT data FROM doc_updates WHERE canvas_id = ? ORDER BY id',
-  )
-  const variants = db.prepare<[string, string], { variants: string }>(
-    'SELECT variants FROM assets WHERE owner_id = ? AND id = ?',
-  )
+  const updates = db
+    .select({ data: docUpdates.data })
+    .from(docUpdates)
+    .where(eq(docUpdates.canvas_id, sql.placeholder('id')))
+    .orderBy(asc(docUpdates.id))
+    .prepare()
+  const variants = db
+    .select({ variants: assets.variants })
+    .from(assets)
+    .where(and(eq(assets.owner_id, sql.placeholder('owner')), eq(assets.id, sql.placeholder('id'))))
+    .prepare()
 
   const compute = (owner: string, id: string): Omit<Preview, 'updatedAt'> => {
     const ydoc = new Y.Doc()
-    for (const r of updates.all(id)) Y.applyUpdate(ydoc, new Uint8Array(r.data))
+    for (const r of updates.all({ id })) Y.applyUpdate(ydoc, new Uint8Array(r.data))
     const doc = createDoc(ydoc, { schedule: () => {} })
     try {
       const generated: Array<{ assetId: string; at: number }> = []
@@ -47,7 +54,7 @@ export function previewer(db: DB) {
       generated.sort((a, b) => b.at - a.at)
       const covers: string[] = []
       for (const assetId of new Set([...generated.map((g) => g.assetId), ...imported])) {
-        const row = variants.get(owner, assetId)
+        const row = variants.get({ owner, id: assetId })
         const list: string[] = row ? JSON.parse(row.variants) : []
         const v = list.includes('thumb-1024')
           ? 'thumb-1024'

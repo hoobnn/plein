@@ -1,39 +1,13 @@
 import type { GroupRunOptions, GroupRunSummary, JobStatus } from '@plein/protocol'
 import type { CallJournal, CallRecord } from '../plugins/host'
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { DB } from '../storage/db'
+import { jobGroups, jobs } from '../storage/schema'
 
 export type { JobStatus }
 
-export interface JobRow {
-  id: string
-  owner_id: string
-  canvas_id: string
-  node_id: string
-  group_id: string | null
-  node_type: string
-  status: JobStatus
-  attempts: number
-  cache_key: string | null
-  cache_omit: string | null
-  calls: string
-  error: string | null
-  created_at: number
-  started_at: number | null
-  finished_at: number | null
-}
-
-export interface GroupRow {
-  id: string
-  owner_id: string
-  canvas_id: string
-  frame_id: string
-  options: string
-  targets: string
-  status: 'running' | 'done' | 'canceled'
-  summary: string | null
-  created_at: number
-  finished_at: number | null
-}
+export type JobRow = typeof jobs.$inferSelect
+export type GroupRow = typeof jobGroups.$inferSelect
 
 type JobPatch = Partial<
   Pick<
@@ -55,56 +29,62 @@ export class JobStore {
     nodeType: string
   }) {
     this.db
-      .prepare(
-        `INSERT INTO jobs (id, owner_id, canvas_id, node_id, group_id, node_type, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)`,
-      )
-      .run(
-        job.id,
-        job.ownerId,
-        job.canvasId,
-        job.nodeId,
-        job.groupId ?? null,
-        job.nodeType,
-        Date.now(),
-      )
+      .insert(jobs)
+      .values({
+        id: job.id,
+        owner_id: job.ownerId,
+        canvas_id: job.canvasId,
+        node_id: job.nodeId,
+        group_id: job.groupId ?? null,
+        node_type: job.nodeType,
+        status: 'queued',
+        created_at: Date.now(),
+      })
+      .run()
   }
 
   get(id: string): JobRow | undefined {
-    return this.db.prepare<[string], JobRow>('SELECT * FROM jobs WHERE id = ?').get(id)
+    return this.db.select().from(jobs).where(eq(jobs.id, id)).get()
   }
 
   update(id: string, patch: JobPatch) {
-    const keys = Object.keys(patch) as (keyof JobPatch)[]
-    if (keys.length === 0) return
-    this.db
-      .prepare(`UPDATE jobs SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`)
-      .run(...keys.map((k) => patch[k] ?? null), id)
+    if (Object.keys(patch).length === 0) return
+    // 显式传 undefined 的字段写成 NULL（与改用 Drizzle 前一致）
+    const set = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, v ?? null]))
+    this.db.update(jobs).set(set).where(eq(jobs.id, id)).run()
   }
 
   /** 服务重启时还没结束的任务，按创建顺序 */
   active(): JobRow[] {
     return this.db
-      .prepare<[], JobRow>(
-        "SELECT * FROM jobs WHERE status IN ('queued', 'running') ORDER BY created_at",
-      )
+      .select()
+      .from(jobs)
+      .where(inArray(jobs.status, ['queued', 'running']))
+      .orderBy(asc(jobs.created_at))
       .all()
   }
 
   /** 某次整组运行里这个节点已经成功的任务（重启后继续整组时不重复跑） */
   succeededInGroup(groupId: string, nodeId: string): JobRow | undefined {
     return this.db
-      .prepare<[string, string], JobRow>(
-        "SELECT * FROM jobs WHERE group_id = ? AND node_id = ? AND status = 'succeeded' LIMIT 1",
+      .select()
+      .from(jobs)
+      .where(
+        and(eq(jobs.group_id, groupId), eq(jobs.node_id, nodeId), eq(jobs.status, 'succeeded')),
       )
-      .get(groupId, nodeId)
+      .limit(1)
+      .get()
   }
 
   /** 模型调用记录：读写这个任务的 calls 列 */
   journal(id: string): CallJournal {
     const read = (): Record<string, CallRecord> => JSON.parse(this.get(id)?.calls ?? '{}')
     const write = (calls: Record<string, CallRecord>) =>
-      this.db.prepare('UPDATE jobs SET calls = ? WHERE id = ?').run(JSON.stringify(calls), id)
+      this.db
+        .update(jobs)
+        .set({ calls: JSON.stringify(calls) })
+        .where(eq(jobs.id, id))
+        .run()
     return {
       get: (key) => read()[key],
       set: (key, record) => write({ ...read(), [key]: record }),
@@ -119,18 +99,22 @@ export class JobStore {
   /** 画布最近的任务，新的在前 */
   recent(canvasId: string, limit: number): JobRow[] {
     return this.db
-      .prepare<[string, number], JobRow>(
-        'SELECT * FROM jobs WHERE canvas_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?',
-      )
-      .all(canvasId, limit)
+      .select()
+      .from(jobs)
+      .where(eq(jobs.canvas_id, canvasId))
+      .orderBy(desc(jobs.created_at), sql`rowid DESC`)
+      .limit(limit)
+      .all()
   }
 
   recentGroups(canvasId: string, limit: number): GroupRow[] {
     return this.db
-      .prepare<[string, number], GroupRow>(
-        'SELECT * FROM job_groups WHERE canvas_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?',
-      )
-      .all(canvasId, limit)
+      .select()
+      .from(jobGroups)
+      .where(eq(jobGroups.canvas_id, canvasId))
+      .orderBy(desc(jobGroups.created_at), sql`rowid DESC`)
+      .limit(limit)
+      .all()
   }
 
   insertGroup(g: {
@@ -142,36 +126,38 @@ export class JobStore {
     targets: string[]
   }) {
     this.db
-      .prepare(
-        `INSERT INTO job_groups (id, owner_id, canvas_id, frame_id, options, targets, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'running', ?)`,
-      )
-      .run(
-        g.id,
-        g.ownerId,
-        g.canvasId,
-        g.frameId,
-        JSON.stringify(g.options),
-        JSON.stringify(g.targets),
-        Date.now(),
-      )
+      .insert(jobGroups)
+      .values({
+        id: g.id,
+        owner_id: g.ownerId,
+        canvas_id: g.canvasId,
+        frame_id: g.frameId,
+        options: JSON.stringify(g.options),
+        targets: JSON.stringify(g.targets),
+        status: 'running',
+        created_at: Date.now(),
+      })
+      .run()
   }
 
   group(id: string): GroupRow | undefined {
-    return this.db.prepare<[string], GroupRow>('SELECT * FROM job_groups WHERE id = ?').get(id)
+    return this.db.select().from(jobGroups).where(eq(jobGroups.id, id)).get()
   }
 
   finishGroup(id: string, status: 'done' | 'canceled', summary: GroupRunSummary) {
     this.db
-      .prepare('UPDATE job_groups SET status = ?, summary = ?, finished_at = ? WHERE id = ?')
-      .run(status, JSON.stringify(summary), Date.now(), id)
+      .update(jobGroups)
+      .set({ status, summary: JSON.stringify(summary), finished_at: Date.now() })
+      .where(eq(jobGroups.id, id))
+      .run()
   }
 
   activeGroups(): GroupRow[] {
     return this.db
-      .prepare<[], GroupRow>(
-        "SELECT * FROM job_groups WHERE status = 'running' ORDER BY created_at",
-      )
+      .select()
+      .from(jobGroups)
+      .where(eq(jobGroups.status, 'running'))
+      .orderBy(asc(jobGroups.created_at))
       .all()
   }
 }
