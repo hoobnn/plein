@@ -56,8 +56,10 @@ export class ElementViews {
   }
 
   /** 视口裁剪：只对进出视口的元素做增量切换 */
-  cull(view: Rect, zoom: number) {
+  /** 返回可见集合或细节层级是否变化 */
+  cull(view: Rect, zoom: number): boolean {
     const high = zoom >= DETAIL_ZOOM
+    let changed = high !== this.highDetail
     if (high !== this.highDetail) {
       this.highDetail = high
       for (const n of this.nodes.values()) n.body?.setDetail?.(high)
@@ -66,13 +68,33 @@ export class ElementViews {
     const next = new Set(
       this.scene.query({ x: view.x - m, y: view.y - m, w: view.w + m * 2, h: view.h + m * 2 }),
     )
-    for (const id of this.visible) if (!next.has(id)) this.setInView(id, false)
-    for (const id of next) if (!this.visible.has(id)) this.setInView(id, true)
+    for (const id of this.visible) {
+      if (!next.has(id)) {
+        this.setInView(id, false)
+        changed = true
+      }
+    }
+    for (const id of next) {
+      if (!this.visible.has(id)) {
+        this.setInView(id, true)
+        changed = true
+      }
+    }
     this.visible = next
+    return changed
   }
 
   get visibleCount() {
     return this.visible.size
+  }
+
+  /** 视口内（含边距）的元素 */
+  get visibleIds(): ReadonlySet<string> {
+    return this.visible
+  }
+
+  get isHighDetail() {
+    return this.highDetail
   }
 
   destroy() {

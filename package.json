@@ -9,8 +9,11 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "pnpm --filter @plein/web dev",
+    "dev": "pnpm --parallel --filter @plein/server --filter @plein/web dev",
+    "dev:server": "pnpm --filter @plein/server dev",
+    "dev:web": "pnpm --filter @plein/web dev",
     "build": "pnpm -r build",
+    "start": "pnpm --filter @plein/server start",
     "typecheck": "pnpm -r typecheck && tsc -p .",
     "lint": "biome check .",
     "format": "biome check --write .",

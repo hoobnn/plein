@@ -66,6 +66,10 @@ export class Engine {
   private toolValue: Tool = 'select'
   private viewDirty = true
   private listeners = new Set<() => void>()
+  private viewListeners = new Set<() => void>()
+  private activateListeners = new Set<(id: string) => void>()
+  /** 元素内容或几何变化，需要通知覆盖层 */
+  private contentDirty = false
   private disposers: Array<() => void> = []
   private pasteCount = 0
   private lastClipboard: string | null = null
@@ -126,9 +130,11 @@ export class Engine {
         this.edges.markDirty()
         this.overlay.markDirty()
         this.viewDirty = true
+        this.contentDirty = true
         this.emit()
       }),
       this.attachShortcuts(),
+      this.attachActivate(),
     )
 
     const onResize = () => this.camera.setViewport(this.app.screen.width, this.app.screen.height)
@@ -167,6 +173,40 @@ export class Engine {
     return () => {
       this.listeners.delete(fn)
     }
+  }
+
+  /**
+   * 视口内元素集合、细节层级或元素内容变化时通知（不随平移每帧触发），
+   * 供 DOM 覆盖层（Markdown 正文、播放器、编辑器）增量更新。
+   */
+  onViewChange(fn: () => void) {
+    this.viewListeners.add(fn)
+    return () => {
+      this.viewListeners.delete(fn)
+    }
+  }
+
+  /** 双击元素时通知：打开编辑器、播放器等 */
+  onActivate(fn: (id: string) => void) {
+    this.activateListeners.add(fn)
+    return () => {
+      this.activateListeners.delete(fn)
+    }
+  }
+
+  get visibleIds(): ReadonlySet<string> {
+    return this.views.visibleIds
+  }
+
+  /** 是否处于正常细节（缩得很小时为 false，覆盖层应隐藏） */
+  get highDetail() {
+    return this.views.isHighDetail
+  }
+
+  /** 屏幕坐标（相对画布宿主）转世界坐标 */
+  clientToWorld(clientX: number, clientY: number) {
+    const r = this.opts.host.getBoundingClientRect()
+    return this.camera.screenToWorld(clientX - r.left, clientY - r.top)
   }
 
   get stats() {
@@ -242,10 +282,13 @@ export class Engine {
   }
 
   private frame() {
+    let notify = this.contentDirty
+    this.contentDirty = false
     if (this.viewDirty) {
       this.viewDirty = false
-      this.views.cull(this.camera.viewRect, this.camera.zoom)
+      if (this.views.cull(this.camera.viewRect, this.camera.zoom)) notify = true
     }
+    if (notify) for (const fn of this.viewListeners) fn()
     this.edges.update()
     this.overlay.update()
   }
@@ -264,6 +307,7 @@ export class Engine {
 
   private afterTransient(touched: Set<string>) {
     this.views.refresh(touched)
+    if (touched.size > 0) this.contentDirty = true
     this.edges.markDirty()
     this.overlay.markDirty()
     this.viewDirty = true
@@ -297,6 +341,20 @@ export class Engine {
       }
     }
     g.fill({ color: 0xffffff, alpha: 0.08 })
+  }
+
+  private attachActivate() {
+    const host = this.opts.host
+    const onDblClick = (e: MouseEvent) => {
+      if (this.toolValue !== 'select') return
+      const p = this.clientToWorld(e.clientX, e.clientY)
+      const id = this.scene.hitTest(p.x, p.y)
+      if (!id) return
+      this.selection.set([id])
+      for (const fn of this.activateListeners) fn(id)
+    }
+    host.addEventListener('dblclick', onDblClick)
+    return () => host.removeEventListener('dblclick', onDblClick)
   }
 
   private attachShortcuts() {

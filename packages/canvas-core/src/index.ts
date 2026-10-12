@@ -2,7 +2,7 @@ export { Camera } from './camera'
 export { type EdgePreview, EdgeLayer } from './edges'
 export { Engine, type EngineOptions, type EngineState, type Tool } from './engine'
 export * from './geometry'
-export { attachInput, type PanState } from './input'
+export { attachInput, isEditableTarget, type PanState } from './input'
 export * from './ports'
 export {
   cardRenderer,
@@ -10,6 +10,8 @@ export {
   type ElementView,
   frameRenderer,
   imageRenderer,
+  markdownRenderer,
+  mediaRenderer,
   type RenderContext,
   RendererRegistry,
 } from './renderers'

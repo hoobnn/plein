@@ -2,8 +2,8 @@ import type { CanvasElement, ElementKind } from '@plein/doc'
 import { Assets, Container, Graphics, Text, type Texture } from 'pixi.js'
 
 export interface RenderContext {
-  /** assetId → 可加载的 URL；M2 由资产服务提供 */
-  assetUrl?: (assetId: string) => string | undefined
+  /** 资产在画布上的预览图 URL：图片缩略图、视频封面、音频波形 */
+  assetUrl?: (assetId: string, kind: ElementKind) => string | undefined
 }
 
 /** 渲染器产出的显示对象，按元素局部坐标 (0,0)-(w,h) 绘制 */
@@ -119,35 +119,132 @@ export const frameRenderer: ElementRenderer = (el) => {
   return view
 }
 
-/** 图片：有可用 URL 时加载纹理铺满卡片，否则显示占位卡片 */
-export const imageRenderer: ElementRenderer = (el, ctx) => {
+/** 加载预览纹理；URL 没有扩展名，显式指定解析器 */
+function loadTexture(url: string) {
+  return Assets.load<Texture>({ src: url, parser: 'texture' })
+}
+
+/**
+ * 媒体元素：底板 + 预览纹理（图片缩略图 / 视频封面 / 音频波形）。
+ * 纹理未加载或加载失败时显示占位卡片。
+ */
+export const mediaRenderer: ElementRenderer = (el, ctx) => {
+  const display = new Container()
+  const bg = new Graphics()
+  const glyph = new Graphics()
+  const label = new Text({ text: '', style: labelStyle, resolution: 2 })
+  label.position.set(12, 10)
+  display.addChild(bg, glyph, label)
   let texture: Texture | undefined
   let loading: string | undefined
   let destroyed = false
-  let latest = el
-  const view = card(el, () => texture)
-  const update = view.update
+  let high = true
+  let current = el
 
-  view.update = (next) => {
-    latest = next
-    update(next)
-    const url = next.assetId ? ctx.assetUrl?.(next.assetId) : undefined
-    if (!url || url === loading) return
-    loading = url
-    Assets.load<Texture>(url)
-      .then((tex) => {
-        if (destroyed || loading !== url) return
-        texture = tex
-        update(latest)
-      })
-      .catch(() => {
-        // 加载失败保留占位卡片
-      })
+  const draw = (next: CanvasElement) => {
+    const { w, h, kind } = next
+    bg.clear().roundRect(0, 0, w, h, RADIUS).fill({ color: SURFACE })
+    if (texture) {
+      // 纹理按形状包围盒铺满（textureSpace: local），省掉昂贵的遮罩
+      bg.roundRect(0, 0, w, h, RADIUS).fill({ texture, textureSpace: 'local' })
+    } else {
+      bg.stroke({ color: LINE, alpha: 0.08, width: 1 })
+      if (high)
+        bg.roundRect(12, h - 16, Math.min(40, w - 24), 3, 1.5).fill({
+          color: KIND_ACCENTS[kind],
+          alpha: 0.8,
+        })
+    }
+    glyph.clear()
+    if (kind === 'video' && high && texture) {
+      const r = Math.min(24, w / 6, h / 6)
+      glyph
+        .circle(w / 2, h / 2, r)
+        .fill({ color: 0x000000, alpha: 0.45 })
+        .poly([
+          w / 2 - r * 0.35,
+          h / 2 - r * 0.5,
+          w / 2 - r * 0.35,
+          h / 2 + r * 0.5,
+          w / 2 + r * 0.55,
+          h / 2,
+        ])
+        .fill({ color: 0xffffff, alpha: 0.9 })
+    }
+    label.text = titleOf(next)
+    // 图片、视频有了预览就不再显示标题；音频波形上方保留文件名
+    label.visible = high && (!texture || kind === 'audio') && w > 60 && h > 36
   }
-  const destroy = view.destroy
-  view.destroy = () => {
-    destroyed = true
-    destroy()
+
+  const view: ElementView = {
+    display,
+    update(next) {
+      current = next
+      draw(next)
+      const url = next.assetId ? ctx.assetUrl?.(next.assetId, next.kind) : undefined
+      if (!url || url === loading) return
+      loading = url
+      loadTexture(url)
+        .then((tex) => {
+          if (destroyed || loading !== url) return
+          texture = tex
+          draw(current)
+        })
+        .catch(() => {
+          // 加载失败保留占位卡片
+        })
+    },
+    setDetail(next) {
+      if (next === high) return
+      high = next
+      draw(current)
+    },
+    destroy() {
+      destroyed = true
+      display.destroy({ children: true })
+    },
+  }
+  view.update(el)
+  return view
+}
+
+/** 兼容旧名 */
+export const imageRenderer = mediaRenderer
+
+/**
+ * Markdown：只画底板，正文由 DOM 覆盖层渲染。
+ * 缩得很小时覆盖层隐藏，用几条灰线示意正文，不画文字。
+ */
+export const markdownRenderer: ElementRenderer = (el) => {
+  const display = new Container()
+  const bg = new Graphics()
+  display.addChild(bg)
+  let high = true
+  let current = el
+  const view: ElementView = {
+    display,
+    update(next) {
+      current = next
+      const { w, h } = next
+      bg.clear()
+        .roundRect(0, 0, w, h, RADIUS)
+        .fill({ color: SURFACE })
+        .stroke({ color: LINE, alpha: 0.08, width: 1 })
+      if (!high) {
+        const pad = Math.min(24, w / 8)
+        const step = Math.max(28, h / 10)
+        for (let y = pad, i = 0; y + 10 < h - pad; y += step, i++) {
+          const lw = (w - pad * 2) * (i === 0 ? 0.5 : i % 3 === 2 ? 0.7 : 1)
+          bg.roundRect(pad, y, lw, i === 0 ? 14 : 8, 4)
+        }
+        bg.fill({ color: 0xffffff, alpha: 0.1 })
+      }
+    },
+    setDetail(next) {
+      high = next
+      view.update(current)
+    },
+    destroy: () => display.destroy({ children: true }),
   }
   view.update(el)
   return view
@@ -160,7 +257,10 @@ export class RendererRegistry {
   constructor(defaults = true) {
     if (defaults) {
       this.register('frame', frameRenderer)
-      this.register('image', imageRenderer)
+      this.register('image', mediaRenderer)
+      this.register('video', mediaRenderer)
+      this.register('audio', mediaRenderer)
+      this.register('markdown', markdownRenderer)
     }
   }
 

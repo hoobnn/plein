@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "build": "tsdown",
-    "start": "node dist/main.mjs",
+    "start": "node --no-experimental-webstorage dist/main.mjs",
     "typecheck": "tsc -p ."
   },
   "dependencies": {

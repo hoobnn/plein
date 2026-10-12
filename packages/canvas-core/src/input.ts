@@ -8,7 +8,12 @@ export interface PanState {
 
 export const isEditableTarget = (t: EventTarget | null) =>
   t instanceof HTMLElement &&
-  (t.isContentEditable || t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement)
+  (t.isContentEditable ||
+    t instanceof HTMLInputElement ||
+    t instanceof HTMLTextAreaElement ||
+    t instanceof HTMLMediaElement ||
+    // 覆盖层里正在交互的内容（编辑器、播放器）自己处理键盘
+    t.closest('[data-plein-active]') !== null)
 
 /**
  * 触控板/滚轮/拖拽输入。

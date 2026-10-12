@@ -1,5 +1,5 @@
 import { LOCAL_PRINCIPAL, type Principal, type SessionInfo } from '@plein/protocol'
-import { betterAuth } from 'better-auth'
+import { type BetterAuthOptions, betterAuth } from 'better-auth'
 import { getMigrations } from 'better-auth/db/migration'
 import type { Context, MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
@@ -40,11 +40,12 @@ export async function createAuth(
   secrets: Secrets,
   opts: { publicUrl?: string } = {},
 ) {
-  const auth = betterAuth({
+  const options = {
     database: db,
     secret: secrets.authSecret,
     basePath: '/api/auth',
-    baseURL: opts.publicUrl,
+    // 本地自部署的访问地址不固定（localhost、局域网 IP、反向代理域名），按请求推断；Host 由 originGuard 把关
+    baseURL: opts.publicUrl ?? { allowedHosts: ['*'] },
     // 同源校验由 originGuard 负责；这里信任请求自身的源
     trustedOrigins: (req) => {
       const host = req?.headers.get('host')
@@ -68,9 +69,11 @@ export async function createAuth(
         },
       },
     },
-  })
-  const { runMigrations } = await getMigrations(auth.options)
+  } satisfies BetterAuthOptions
+  // 先建表再初始化，避免 Better Auth 启动时报表缺失
+  const { runMigrations } = await getMigrations(options)
   await runMigrations()
+  const auth = betterAuth(options)
 
   const provider: AuthProvider =
     mode === 'password'

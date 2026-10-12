@@ -1,6 +1,6 @@
 import type { Tool } from '@plein/canvas-core'
 import { createElement, type NewElement } from '@plein/doc'
-import type { ReactNode } from 'react'
+import { type ReactNode, useRef } from 'react'
 import { useCanvas } from '../stores/canvas'
 
 function Button(props: {
@@ -54,8 +54,9 @@ const NEW_ITEMS: Array<{ label: string; input: Omit<NewElement, 'x' | 'y'> }> = 
 ]
 
 /** 底部工具栏：工具切换、新建元素、撤销重做、缩放 */
-export function Toolbar() {
+export function Toolbar({ canImport }: { canImport: boolean }) {
   const { engine, tool, zoom, canUndo, canRedo } = useCanvas()
+  const fileRef = useRef<HTMLInputElement>(null)
   if (!engine) return null
 
   const add = (input: Omit<NewElement, 'x' | 'y'>) => {
@@ -88,6 +89,30 @@ export function Toolbar() {
           + {item.label}
         </Button>
       ))}
+      {canImport && (
+        <>
+          <Button
+            label="导入文件"
+            hint="也可以直接拖入或粘贴"
+            onClick={() => fileRef.current?.click()}
+          >
+            导入
+          </Button>
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            hidden
+            accept="image/*,video/*,audio/*,.md,.markdown,.txt"
+            onChange={(e) => {
+              const files = [...(e.target.files ?? [])]
+              e.target.value = ''
+              if (files.length)
+                window.dispatchEvent(new CustomEvent('plein:import', { detail: files }))
+            }}
+          />
+        </>
+      )}
       <Divider />
       <Button label="撤销" hint="⌘Z" disabled={!canUndo} onClick={() => engine.undo()}>
         ↶

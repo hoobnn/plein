@@ -1,0 +1,20 @@
+# 本地自部署：docker compose up -d，然后打开 http://localhost:8787
+services:
+  plein:
+    build: .
+    image: plein:local
+    restart: unless-stopped
+    ports:
+      # 只绑定本机。要让局域网或公网访问，改成 "8787:8787"，并删掉下面的 PLEIN_AUTH
+      - "127.0.0.1:8787:8787"
+    environment:
+      # 只在本机访问时免登录；删掉这一行后首次访问会要求创建所有者账号
+      PLEIN_AUTH: none
+      # 通过反向代理用域名访问时填写，例如 https://plein.example.com
+      # PLEIN_PUBLIC_URL: ""
+    volumes:
+      # 画布、素材、数据库都在这里；备份这个卷即可
+      - plein-data:/data
+
+volumes:
+  plein-data:

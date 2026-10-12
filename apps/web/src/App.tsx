@@ -1,24 +1,40 @@
-import { CanvasView } from './canvas/CanvasView'
-import { Toolbar } from './panels/Toolbar'
-import { useCanvas } from './stores/canvas'
+import { useEffect } from 'react'
+import { Editor } from './pages/Editor'
+import { Home } from './pages/Home'
+import { Login } from './pages/Login'
+import { useRoute } from './router'
+import { useSession } from './stores/session'
 
 export function App() {
-  const selection = useCanvas((s) => s.selection)
-  return (
-    <div className="relative h-full w-full">
-      <CanvasView />
-      <header className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between p-4">
-        <div className="pointer-events-auto rounded-xl bg-surface/80 px-3 py-1.5 text-sm font-medium tracking-wide shadow-[var(--shadow-2)] backdrop-blur-xl">
-          Plein
-        </div>
-        <p className="text-xs text-ink-muted">
-          {selection > 0 ? `已选 ${selection} 个 · ` : ''}拖拽框选 · 空格拖动平移 · 捏合 /
-          ⌘+滚轮缩放 · ⌘C/⌘V 复制粘贴 · ⌘D 复制一份 · ⌘Z 撤销
-        </p>
-      </header>
-      <footer className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4">
-        <Toolbar />
-      </footer>
-    </div>
-  )
+  const route = useRoute()
+  const { status, info, refresh } = useSession()
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  // 本地演示不依赖服务端，可用于性能测试：#/demo?n=1000
+  if (route.name === 'demo') {
+    const n = Number(new URLSearchParams(location.hash.split('?')[1] ?? '').get('n') ?? 1000)
+    return <Editor source={{ kind: 'demo', count: Number.isFinite(n) ? n : 1000 }} />
+  }
+  if (status === 'loading') return null
+  if (status === 'offline') {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-4 text-center text-sm text-ink-muted">
+        <p>连不上 Plein 服务端。开发时请先运行 pnpm dev:server。</p>
+        <button
+          type="button"
+          onClick={refresh}
+          className="rounded-lg bg-surface px-4 py-2 text-ink"
+        >
+          重试
+        </button>
+      </div>
+    )
+  }
+  if (info?.authRequired && !info.principal) return <Login setup={info.needsSetup} />
+  if (route.name === 'canvas')
+    return <Editor key={route.id} source={{ kind: 'remote', canvasId: route.id }} />
+  return <Home />
 }
