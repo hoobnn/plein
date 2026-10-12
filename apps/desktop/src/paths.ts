@@ -9,11 +9,15 @@ const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 /** 开发模式：`electron . --dev`，服务端跑源码，页面来自 Vite */
 export const isDev = process.argv.includes('--dev') || process.env.PLEIN_DESKTOP_DEV === '1'
 
-/** 图标与网页资产一同交付，开发与安装包使用同一份。 */
+/**
+ * 图标与网页资产一同交付，开发与安装包使用同一份。
+ * macOS 不会给 Dock / 关于面板的图标套圆角，所以用按 Apple 网格预先裁好的版本（824 主体 + 透明边 + 投影）。
+ */
 export function appIconPath() {
+  const file = process.platform === 'darwin' ? 'plein-icon-mac.png' : 'plein-icon.png'
   return app.isPackaged
-    ? join(process.resourcesPath, 'web', 'plein-icon.png')
-    : join(repoRoot, 'apps/web/public/plein-icon.png')
+    ? join(process.resourcesPath, 'web', file)
+    : join(repoRoot, 'apps/web/public', file)
 }
 
 export interface ServerPaths {
