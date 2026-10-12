@@ -94,10 +94,10 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
     >
       <header
         data-scrolled={scrolled || undefined}
-        className="home-bar app-titlebar app-drag sticky top-0 z-10"
+        className="home-bar app-drag sticky top-0 z-10"
       >
-        {/* 和下面的内容同一条栏宽，Logo 与标题左对齐 */}
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5 sm:px-10">
+        {/* 和下面的内容同一条栏宽，Logo 与标题左对齐；红绿灯让位见 .home-col */}
+        <div className="home-col mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5 sm:px-10">
           <div className="flex items-center gap-2.5 text-base font-semibold">
             <span className="plein-logo size-6" aria-hidden="true" />
             Plein
@@ -122,7 +122,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-5 pb-16 pt-4 sm:px-10">
+      <main className="home-col mx-auto flex max-w-6xl flex-col gap-6 px-5 pb-16 pt-4 sm:px-10">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="flex items-baseline gap-2 text-2xl font-semibold">

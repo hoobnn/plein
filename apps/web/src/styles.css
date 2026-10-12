@@ -1244,6 +1244,11 @@ input[type="range"]::-moz-range-thumb {
 :root[data-desktop="darwin"] .app-titlebar {
   padding-left: 96px;
 }
+/* 首页顶栏和正文共用一条居中的栏：整条顶栏加 96px 会把栏右推、与正文错位。
+   改为栏左缘离窗口不足 96px 时，顶栏和正文一起补齐差额，任何窗口宽度都对齐 */
+:root[data-desktop="darwin"] .home-col {
+  padding-left: max(2.5rem, 96px - max(0px, (100vw - 72rem) / 2));
+}
 
 /* 首页顶栏：平时透明，内容滚到下面时才出底色和分隔线 */
 .home-bar {
