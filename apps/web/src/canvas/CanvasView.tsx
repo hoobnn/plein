@@ -8,7 +8,9 @@ import { navigate } from '../router'
 import { useCanvas } from '../stores/canvas'
 import { demoAssetUrls, seedDemo } from './demo'
 import { importFiles, importText } from './import'
+import { NodeCards } from './nodeCards'
 import { CanvasOverlays } from './overlays'
+import { cancelNode, runNode } from './runner'
 
 export type CanvasSource = { kind: 'remote'; canvasId: string } | { kind: 'demo'; count: number }
 
@@ -33,7 +35,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
   useEffect(() => {
     const host = hostRef.current!
     const overlayRoot = overlayRef.current!
-    const { attach, setSync, setImporting, notify } = useCanvas.getState()
+    const { attach, setSync, setImporting, notify, setCanvasId } = useCanvas.getState()
     let disposed = false
     const cleanups: Array<() => void> = []
 
@@ -50,10 +52,20 @@ export function CanvasView({ source }: { source: CanvasSource }) {
           originalUrl: assetUrls.original,
           awareness,
         })
+        const cards = new NodeCards(engine, overlayRoot, { run: runNode, cancel: cancelNode })
+        // 双击节点：聚焦生成器的提示词（面板在选中后的下一帧才挂载）
+        const offActivate = engine.onActivate((id) => {
+          if (engine.scene.get(id)?.kind !== 'node') return
+          requestAnimationFrame(() =>
+            window.dispatchEvent(new CustomEvent('plein:focus-generator', { detail: id })),
+          )
+        })
         const detach = attach(engine)
         const off = attachImport(engine, host, { setImporting, notify })
         cleanups.push(() => {
           off()
+          offActivate()
+          cards.destroy()
           overlays.destroy()
           detach()
           engine.destroy()
@@ -73,6 +85,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
       cleanups.push(() => doc.destroy())
     } else {
       setSync('connecting')
+      setCanvasId(canvasId)
       const ydoc = new Y.Doc()
       const provider = new WebsocketProvider(syncUrl(), canvasId, ydoc)
       provider.awareness.setLocalStateField('user', { name: '我', color: '#e8d5b5' })
@@ -111,6 +124,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
       disposed = true
       for (const c of cleanups.reverse()) c()
       setSync('local')
+      setCanvasId(null)
     }
   }, [kind, canvasId, count])
 

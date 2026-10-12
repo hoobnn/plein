@@ -2,6 +2,8 @@ import type { Canvas } from '@plein/protocol'
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
+import { CanvasMenus } from '../panels/CanvasMenus'
+import { Generator } from '../panels/Generator'
 import { SettingsDialog } from '../panels/Settings'
 import { Toolbar } from '../panels/Toolbar'
 import { useCatalog } from '../stores/catalog'
@@ -65,8 +67,8 @@ export function Editor({ source }: { source: CanvasSource }) {
           )}
         </div>
         <p className="hidden text-xs text-ink-muted lg:block">
-          {selection > 0 ? `已选 ${selection} 个 · ` : ''}拖入文件导入 · 双击编辑 / 播放 ·
-          空格拖动平移 · ⌘+滚轮缩放 · ⌘Z 撤销
+          {selection > 0 ? `已选 ${selection} 个 · ` : ''}双击空白处添加节点 · 从端口拖出连线 ·
+          右键更多操作 · 拖入文件导入 · 空格拖动平移
         </p>
       </header>
       {(importing || notice) && (
@@ -76,6 +78,8 @@ export function Editor({ source }: { source: CanvasSource }) {
           </div>
         </div>
       )}
+      <Generator />
+      <CanvasMenus canImport={source.kind === 'remote'} />
       {settings && <SettingsDialog onClose={() => setSettings(false)} />}
       <footer className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4">
         <Toolbar canImport={source.kind === 'remote'} />

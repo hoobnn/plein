@@ -1,9 +1,11 @@
 import type { Tool } from '@plein/canvas-core'
-import { createElement, type NewElement } from '@plein/doc'
-import type { NodeCategory, NodeDescriptor } from '@plein/plugin-sdk'
+import type { NewElement } from '@plein/doc'
+import type { NodeCategory } from '@plein/plugin-sdk'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
-import { useCatalog } from '../stores/catalog'
+import { type NodeInfo, nodeElement, placeElement } from '../canvas/nodes'
 import { useCanvas } from '../stores/canvas'
+import { useCatalog } from '../stores/catalog'
+import { CATEGORY_LABELS } from './CanvasMenus'
 
 function Button(props: {
   label: string
@@ -42,34 +44,8 @@ const NEW_ITEMS: Array<{ label: string; input: Omit<NewElement, 'x' | 'y'> }> = 
   { label: 'Markdown', input: { kind: 'markdown', w: 280, h: 200, text: '# 新文档' } },
 ]
 
-const CATEGORY_LABELS: Record<NodeCategory, string> = {
-  input: '输入',
-  text: '文本',
-  image: '图片',
-  video: '视频',
-  audio: '音频',
-  story: '短剧',
-  util: '工具',
-}
-
-/** 由节点声明生成画布上的节点元素 */
-export function nodeElement(node: NodeDescriptor): Omit<NewElement, 'x' | 'y'> {
-  const port = (p: NodeDescriptor['inputs'][number]) => ({ id: p.id, label: p.label, type: p.type })
-  const rows = Math.max(node.inputs.length, node.outputs.length)
-  return {
-    kind: 'node',
-    nodeType: node.type,
-    nodeVersion: node.version,
-    name: node.title,
-    params: node.defaults,
-    w: 240,
-    h: Math.max(120, 64 + rows * 28),
-    ports: { inputs: node.inputs.map(port), outputs: node.outputs.map(port) },
-  }
-}
-
 /** 节点菜单：按插件目录列出已安装的节点，按类别分组 */
-function NodeMenu({ onPick }: { onPick(node: NodeDescriptor): void }) {
+function NodeMenu({ onPick }: { onPick(node: NodeInfo): void }) {
   const nodes = useCatalog((s) => s.catalog?.nodes ?? [])
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -82,7 +58,7 @@ function NodeMenu({ onPick }: { onPick(node: NodeDescriptor): void }) {
     return () => window.removeEventListener('pointerdown', close)
   }, [open])
   if (nodes.length === 0) return null
-  const groups = new Map<NodeCategory, NodeDescriptor[]>()
+  const groups = new Map<NodeCategory, NodeInfo[]>()
   for (const n of nodes) groups.set(n.category, [...(groups.get(n.category) ?? []), n])
   return (
     <div ref={ref} className="relative">
@@ -127,17 +103,17 @@ function NodeMenu({ onPick }: { onPick(node: NodeDescriptor): void }) {
 export function Toolbar({ canImport }: { canImport: boolean }) {
   const { engine, tool, zoom, canUndo, canRedo } = useCanvas()
   const fileRef = useRef<HTMLInputElement>(null)
+  // 右键菜单“导入文件…”借用这里的文件选择框
+  useEffect(() => {
+    const pick = () => fileRef.current?.click()
+    window.addEventListener('plein:import-pick', pick)
+    return () => window.removeEventListener('plein:import-pick', pick)
+  }, [])
   if (!engine) return null
 
   const add = (input: Omit<NewElement, 'x' | 'y'>) => {
     const c = engine.camera.viewRect
-    const id = createElement(engine.doc, {
-      ...input,
-      x: Math.round(c.x + c.w / 2 - input.w / 2),
-      y: Math.round(c.y + c.h / 2 - input.h / 2),
-    } as NewElement)
-    engine.selection.set([id])
-    engine.setTool('select')
+    placeElement(engine, input, { x: c.x + c.w / 2, y: c.y + c.h / 2 })
   }
 
   return (

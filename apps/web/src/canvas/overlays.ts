@@ -2,7 +2,7 @@ import { defaultKeymap } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
 import { EditorView, drawSelection, keymap } from '@codemirror/view'
 import type { Engine } from '@plein/canvas-core'
-import type { Rect } from '@plein/doc'
+import { currentResult, type Rect } from '@plein/doc'
 import { yCollab } from 'y-codemirror.next'
 import * as Y from 'yjs'
 import { renderMarkdown } from './markdown'
@@ -55,7 +55,7 @@ const editorTheme = EditorView.theme(
  * DOM 覆盖层：挂在跟随相机变换的容器里，按世界坐标定位。
  * - 视口内的 Markdown 元素渲染正文（只读，不接收指针事件）；
  * - 双击 Markdown 进入编辑（CodeMirror 绑定 Y.Text，协作实时同步）；
- * - 双击视频 / 音频显示播放器。
+ * - 双击视频 / 音频（或结果是视频 / 音频的节点）显示播放器。
  * 点击画布其他位置、按 Esc 或选中别的元素时退出。
  */
 export class CanvasOverlays {
@@ -134,6 +134,11 @@ export class CanvasOverlays {
     if (el.kind === 'markdown') this.active = this.openEditor(id)
     else if ((el.kind === 'video' || el.kind === 'audio') && el.assetId) {
       this.active = this.openPlayer(id, el.kind, el.assetId)
+    } else if (el.kind === 'node') {
+      // 节点的当前结果是视频 / 音频时，双击就地播放
+      const v = currentResult(el)?.value
+      if (v?.type === 'video' || v?.type === 'audio')
+        this.active = this.openPlayer(id, v.type, v.assetId)
     }
     if (this.active) {
       this.active.node.dataset.pleinActive = ''

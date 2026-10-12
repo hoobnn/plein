@@ -1,4 +1,4 @@
-import type { Engine, EngineState } from '@plein/canvas-core'
+import type { CanvasMenuEvent, Engine, EngineState } from '@plein/canvas-core'
 import { create } from 'zustand'
 
 export type SyncStatus = 'local' | 'connecting' | 'connected' | 'disconnected'
@@ -9,11 +9,17 @@ interface CanvasStore extends EngineState {
   /** 正在导入的文件：已完成 / 总数 */
   importing: { done: number; total: number } | null
   notice: string | null
+  /** 远端画布 id；本地演示时为空（不能运行节点） */
+  canvasId: string | null
+  /** 当前弹出的画布菜单：节点选择器或右键菜单 */
+  menu: CanvasMenuEvent | null
   /** 挂载引擎并把它的运行时状态镜像到 store（只在状态变化时更新，不跟随每帧） */
   attach(engine: Engine): () => void
   setSync(sync: SyncStatus): void
   setImporting(importing: { done: number; total: number } | null): void
   notify(notice: string | null): void
+  setCanvasId(id: string | null): void
+  setMenu(menu: CanvasMenuEvent | null): void
 }
 
 const initial: EngineState = {
@@ -32,15 +38,21 @@ export const useCanvas = create<CanvasStore>((set) => ({
   sync: 'local',
   importing: null,
   notice: null,
+  canvasId: null,
+  menu: null,
   attach(engine) {
     const sync = () => set(engine.state)
     const off = engine.onStateChange(sync)
+    const offMenu = engine.onMenu((menu) => set({ menu }))
     set({ engine, ...engine.state })
     return () => {
       off()
-      set({ engine: null, ...initial })
+      offMenu()
+      set({ engine: null, menu: null, ...initial })
     }
   },
+  setCanvasId: (canvasId) => set({ canvasId }),
+  setMenu: (menu) => set({ menu }),
   setSync: (sync) => set({ sync }),
   setImporting: (importing) => set({ importing }),
   notify(notice) {
