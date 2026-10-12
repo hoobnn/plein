@@ -1,19 +1,17 @@
 import type { Canvas } from '@plein/protocol'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
-import { SettingsDialog } from '../panels/Settings'
 import { navigate } from '../router'
 import { useSession } from '../stores/session'
 
 const timeFmt = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })
 
 /** 画布列表：新建、打开、重命名、删除 */
-export function Home() {
+export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   const info = useSession((s) => s.info)
   const refreshSession = useSession((s) => s.refresh)
   const [canvases, setCanvases] = useState<Canvas[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [settings, setSettings] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -54,7 +52,7 @@ export function Home() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setSettings(true)}
+              onClick={onOpenSettings}
               className="h-9 rounded-lg px-3 text-sm text-ink-muted hover:text-ink"
             >
               设置
@@ -115,7 +113,6 @@ export function Home() {
           ))}
         </ul>
       </div>
-      {settings && <SettingsDialog onClose={() => setSettings(false)} />}
     </div>
   )
 }

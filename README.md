@@ -58,6 +58,8 @@ pnpm dev:desktop         # Vite + Electron；服务端跑源码，接口经 Vite
 pnpm start:desktop       # 先构建服务端和前端，再用构建产物启动（与安装包的运行方式一致）
 ```
 
+桌面端保留系统原生标题栏和窗口按钮：macOS 使用系统菜单栏、⌘ 快捷键，关闭窗口后应用继续运行，可从 Dock 重开；Windows 使用窗口菜单栏、Ctrl 快捷键和系统窗口布局，关闭最后一个窗口即退出。菜单中的撤销、重做和全选会作用于当前画布或文本编辑器，设置可用 `CmdOrCtrl+,` 打开。窗口位置、尺寸和最大化状态保存在应用数据目录的 `window-state.json`；显示器变化时会将窗口移回可见工作区。开发工具菜单仅在开发模式显示。
+
 首次运行会下载 Electron。桌面端的数据在系统应用数据目录（macOS `~/Library/Application Support/plein/data`，Windows `%APPDATA%\plein\data`，Linux `~/.config/plein/data`），可用 `PLEIN_DATA_DIR` 覆盖；服务端只接受桌面端窗口的请求（每次启动生成的令牌放在窗口 Cookie 里），所以开发模式下用普通浏览器打开 5173 会返回 403。安装包打包见路线图第八节。
 
 ## 原则

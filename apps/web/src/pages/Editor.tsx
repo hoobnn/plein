@@ -1,12 +1,12 @@
 import type { Canvas } from '@plein/protocol'
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
+import { desktop } from '../desktop'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { CanvasMenus } from '../panels/CanvasMenus'
 import { FrameBar } from '../panels/FrameBar'
 import { Generator } from '../panels/Generator'
 import { StoryboardEditor } from '../panels/StoryboardEditor'
-import { SettingsDialog } from '../panels/Settings'
 import { Toolbar } from '../panels/Toolbar'
 import { useCatalog } from '../stores/catalog'
 import { type SyncStatus, useCanvas } from '../stores/canvas'
@@ -19,10 +19,17 @@ const SYNC_LABELS: Record<SyncStatus, string> = {
   disconnected: '离线，恢复连接后自动同步',
 }
 
-export function Editor({ source }: { source: CanvasSource }) {
+export function Editor({
+  source,
+  onOpenSettings,
+}: {
+  source: CanvasSource
+  onOpenSettings(): void
+}) {
+  const mac = desktop ? desktop.platform === 'darwin' : /Mac/i.test(navigator.platform)
+  const modifier = mac ? '⌘' : 'Ctrl'
   const { selection, sync, importing, notice } = useCanvas()
   const [canvas, setCanvas] = useState<Canvas | null>(null)
-  const [settings, setSettings] = useState(false)
   const canvasId = source.kind === 'remote' ? source.canvasId : null
 
   useEffect(() => {
@@ -63,7 +70,7 @@ export function Editor({ source }: { source: CanvasSource }) {
           {source.kind === 'remote' && (
             <button
               type="button"
-              onClick={() => setSettings(true)}
+              onClick={onOpenSettings}
               className="rounded-lg px-2 py-1 text-ink-muted hover:bg-white/5 hover:text-ink"
             >
               设置
@@ -72,7 +79,7 @@ export function Editor({ source }: { source: CanvasSource }) {
         </div>
         <p className="hidden text-xs text-ink-muted lg:block">
           {selection > 0 ? `已选 ${selection} 个 · ` : ''}双击空白处添加节点 · 从端口拖出连线 ·
-          右键更多操作 · 拖入文件导入 · 空格拖动平移
+          右键更多操作 · 拖入文件导入 · 空格拖动平移 · {modifier}+滚轮缩放 · {modifier}+Z 撤销
         </p>
       </header>
       {(importing || notice) && (
@@ -86,7 +93,6 @@ export function Editor({ source }: { source: CanvasSource }) {
       <FrameBar remote={source.kind === 'remote'} />
       <CanvasMenus canImport={source.kind === 'remote'} />
       <StoryboardEditor />
-      {settings && <SettingsDialog onClose={() => setSettings(false)} />}
       <footer className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4">
         <Toolbar canImport={source.kind === 'remote'} />
       </footer>

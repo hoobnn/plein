@@ -44,9 +44,11 @@ const NEW_ITEMS: Array<{ label: string; input: Omit<NewElement, 'x' | 'y'> }> = 
   { label: 'Markdown', input: { kind: 'markdown', w: 280, h: 200, text: '# 新文档' } },
 ]
 
+const EMPTY_NODES: NodeInfo[] = []
+
 /** 节点菜单：按插件目录列出已安装的节点，按类别分组 */
 function NodeMenu({ onPick }: { onPick(node: NodeInfo): void }) {
-  const nodes = useCatalog((s) => s.catalog?.nodes ?? [])
+  const nodes = useCatalog((s) => s.catalog?.nodes ?? EMPTY_NODES)
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {

@@ -188,8 +188,13 @@ export const ApiError = z.object({ error: z.string(), message: z.string() })
 export type ApiError = z.infer<typeof ApiError>
 
 /** 桌面端 preload 暴露给页面的原生能力；浏览器里不存在（window.pleinDesktop 为 undefined） */
+export type DesktopEditCommand = 'undo' | 'redo' | 'selectAll'
+export type DesktopMenuCommand = DesktopEditCommand | 'settings'
+
 export interface DesktopBridge {
   platform: string
+  onMenuCommand(listener: (command: DesktopMenuCommand) => void): () => void
+  nativeEdit(command: DesktopEditCommand): Promise<void>
   /** 在系统文件管理器里打开数据目录 */
   openDataDir(): Promise<void>
 }

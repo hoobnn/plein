@@ -1,7 +1,9 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron'
+import { installMenu } from './menu'
 import { DEV_WEB_URL, dataDir, isDev, serverPaths } from './paths'
 import { type ServerHandle, startServer } from './server'
+import { restoreWindowState, trackWindowState } from './window-state'
 
 const DESKTOP_COOKIE = 'plein_desktop'
 
@@ -9,23 +11,34 @@ let server: ServerHandle | null = null
 let window: BrowserWindow | null = null
 let quitting = false
 
-if (!app.requestSingleInstanceLock()) app.quit()
+app.setName('plein')
+if (process.platform === 'win32') app.setAppUserModelId('app.plein.desktop')
+const primaryInstance = app.requestSingleInstanceLock()
+if (!primaryInstance) app.quit()
 
-app.on('second-instance', () => {
-  if (!window) return
+function showWindow() {
+  if (quitting) return null
+  if (!window && server) window = createWindow(isDev ? DEV_WEB_URL : server.url)
+  if (!window) return null
   if (window.isMinimized()) window.restore()
+  window.show()
   window.focus()
-})
+  return window
+}
+
+app.on('second-instance', showWindow)
 
 function createWindow(url: string) {
   const origin = new URL(url).origin
+  const { maximized, ...bounds } = restoreWindowState()
   const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 800,
-    minHeight: 560,
+    ...bounds,
+    // 使用系统标题栏，保留原生窗口按钮、双击和 Windows Snap 行为。
+    frame: true,
+    titleBarStyle: 'default',
+    autoHideMenuBar: false,
     title: 'plein',
-    backgroundColor: '#0b0b0f',
+    backgroundColor: '#0e0e10',
     show: false,
     webPreferences: {
       preload: join(import.meta.dirname, 'preload.cjs'),
@@ -34,7 +47,12 @@ function createWindow(url: string) {
       nodeIntegration: false,
     },
   })
-  win.once('ready-to-show', () => win.show())
+  trackWindowState(win)
+  win.once('ready-to-show', () => {
+    if (maximized) win.maximize()
+    win.show()
+  })
+  win.on('page-title-updated', (event) => event.preventDefault())
   // 只在窗口里打开 plein 自己的页面，外部链接交给系统浏览器
   const external = (target: string) => {
     if (/^https?:/.test(target)) void shell.openExternal(target)
@@ -69,7 +87,18 @@ async function waitFor(url: string, timeoutMs = 30_000) {
 }
 
 async function boot() {
+  app.setAboutPanelOptions({ applicationName: 'Plein', applicationVersion: app.getVersion() })
+  installMenu(showWindow)
   const dir = dataDir()
+  ipcMain.handle('plein:native-edit', (event, action: unknown) => {
+    if (
+      !window ||
+      event.sender !== window.webContents ||
+      event.senderFrame !== window.webContents.mainFrame
+    )
+      return
+    if (action === 'undo' || action === 'redo' || action === 'selectAll') event.sender[action]()
+  })
   ipcMain.handle('plein:open-data-dir', async () => {
     const err = await shell.openPath(dir)
     if (err) throw new Error(err)
@@ -101,11 +130,9 @@ async function boot() {
   window = createWindow(url)
 }
 
-app.whenReady().then(boot)
+if (primaryInstance) void app.whenReady().then(boot)
 
-app.on('activate', () => {
-  if (!window && server) window = createWindow(isDev ? DEV_WEB_URL : server.url)
-})
+app.on('activate', showWindow)
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
