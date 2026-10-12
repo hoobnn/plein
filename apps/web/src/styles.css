@@ -601,6 +601,24 @@ input[type="range"]::-moz-range-thumb {
   :root[data-theme="dark"] .ui-seg-item[aria-pressed="true"] {
     background: var(--surface-3);
   }
+  /* 铺满一行的大分段：参数面板里选分辨率、张数；项等分，36 高 */
+  .ui-seg-block {
+    display: flex;
+    width: 100%;
+  }
+  .ui-seg-block > .ui-seg-item {
+    flex: 1 1 0;
+    min-width: 0;
+    height: var(--h-lg);
+    padding: 0 4px;
+    font-size: 13px;
+  }
+  /* 图标在上、文字在下的高分段：选画幅 */
+  .ui-seg-block.ui-seg-tall > .ui-seg-item {
+    flex-direction: column;
+    gap: 4px;
+    height: 52px;
+  }
 
   /* 菜单与弹层：更实的材质，12 圆角、4 内边距，菜单项 8 圆角、32 高 */
   .ui-menu {

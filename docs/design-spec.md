@@ -105,7 +105,7 @@
 | `.ui-btn` + `-primary` `-secondary` `-quiet` `-danger` `-danger-solid`，尺寸 `-sm` `-lg`，`.ui-icon-btn` | 按钮                                                |
 | `.ui-input` / `.ui-select` / `.ui-input-lg`                                                              | 输入框、下拉框（`ui/Select.tsx`）                   |
 | `.ui-field` / `.ui-label` / `.ui-help` / `.ui-section-title`                                             | 表单字段和分组标题                                  |
-| `.ui-seg` / `.ui-seg-item`                                                                               | 分段控件：主题切换、筛选                            |
+| `.ui-seg` / `.ui-seg-item`，`.ui-seg-block`（铺满等分）、`.ui-seg-tall`（图标在上）                      | 分段控件：主题切换、筛选；参数面板选画幅、分辨率    |
 | `.ui-menu` / `.ui-menu-item` / `.ui-menu-label` / `.ui-sep`                                              | 菜单、弹层（`ui/Popover.tsx`）                      |
 | `.ui-dialog-scrim` / `.ui-dialog`                                                                        | 对话框动效（`ui/Dialog.tsx`）                       |
 | `.ui-toast` / `.ui-tooltip`                                                                              | 提示条、悬停提示（`ui/Tooltip.tsx`）                |

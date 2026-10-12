@@ -646,8 +646,8 @@ function ParamsPill({
         <Icon name="chevronDown" size={12} />
       </button>
       {anchor && (
-        <Popover anchor={anchor} onClose={() => setAnchor(null)} label="参数" width={340}>
-          <div className="flex flex-col gap-3 p-2">
+        <Popover anchor={anchor} onClose={() => setAnchor(null)} label="参数" width={360}>
+          <div className="flex flex-col gap-4 p-3">
             {fields.map(([k, f]) => (
               <ParamControl
                 key={k}
@@ -736,9 +736,6 @@ function AspectGlyph({ ratio, size }: { ratio: number; size: number }) {
   )
 }
 
-const seg =
-  'flex h-8 flex-1 items-center justify-center gap-1 rounded-md text-xs text-ink-muted ring-1 ring-line transition-colors hover:bg-hover hover:text-ink aria-pressed:bg-accent-soft aria-pressed:text-accent aria-pressed:ring-accent/40'
-
 /** 参数面板里的一个参数：画幅用形状按钮，少量选项用分段按钮，范围用滑块 */
 function ParamControl({
   name,
@@ -755,41 +752,45 @@ function ParamControl({
 }) {
   const label = field.title ?? name
   let control: React.ReactNode
+  const segment = (key: string, pressed: boolean, onClick: () => void, body: React.ReactNode) => (
+    <button
+      key={key}
+      type="button"
+      aria-pressed={pressed}
+      onClick={onClick}
+      className="ui-seg-item"
+    >
+      {body}
+    </button>
+  )
   if (field.enum && aspect) {
     control = (
-      <div className="grid grid-cols-5 gap-1.5">
-        {field.enum.map((o) => {
-          const r = parseAspect(o) ?? 1
-          return (
-            <button
-              key={String(o)}
-              type="button"
-              aria-pressed={String(value) === String(o)}
-              onClick={() => onChange(o)}
-              className={`${seg} !h-14 flex-col !gap-1.5`}
-            >
-              <AspectGlyph ratio={r} size={18} />
+      <fieldset aria-label={label} className="ui-seg ui-seg-block ui-seg-tall">
+        {field.enum.map((o) =>
+          segment(
+            String(o),
+            String(value) === String(o),
+            () => onChange(o),
+            <>
+              <AspectGlyph ratio={parseAspect(o) ?? 1} size={18} />
               <span className="tabular-nums">{String(o)}</span>
-            </button>
-          )
-        })}
-      </div>
+            </>,
+          ),
+        )}
+      </fieldset>
     )
   } else if (field.enum) {
     control = (
-      <div className="flex flex-wrap gap-1.5">
-        {field.enum.map((o) => (
-          <button
-            key={String(o)}
-            type="button"
-            aria-pressed={String(value) === String(o)}
-            onClick={() => onChange(o)}
-            className={`${seg} min-w-14`}
-          >
-            {String(o) || '默认'}
-          </button>
-        ))}
-      </div>
+      <fieldset aria-label={label} className="ui-seg ui-seg-block">
+        {field.enum.map((o) =>
+          segment(
+            String(o),
+            String(value ?? '') === String(o),
+            () => onChange(o),
+            String(o) || '默认',
+          ),
+        )}
+      </fieldset>
     )
   } else {
     const min = field.minimum ?? 1
@@ -797,19 +798,11 @@ function ParamControl({
     const n = Number(value ?? field.default ?? min)
     control =
       max - min <= 5 ? (
-        <div className="flex gap-1.5">
-          {Array.from({ length: max - min + 1 }, (_, i) => min + i).map((v) => (
-            <button
-              key={v}
-              type="button"
-              aria-pressed={n === v}
-              onClick={() => onChange(v)}
-              className={seg}
-            >
-              {name === 'count' ? `${v} 张` : v}
-            </button>
-          ))}
-        </div>
+        <fieldset aria-label={label} className="ui-seg ui-seg-block">
+          {Array.from({ length: max - min + 1 }, (_, i) => min + i).map((v) =>
+            segment(String(v), n === v, () => onChange(v), v),
+          )}
+        </fieldset>
       ) : (
         <div className="flex items-center gap-3">
           <input
@@ -822,7 +815,7 @@ function ParamControl({
             onChange={(e) => onChange(Number(e.target.value))}
             className="flex-1"
           />
-          <span className="w-12 text-right text-xs tabular-nums text-ink">
+          <span className="ui-chip w-14 justify-center tabular-nums">
             {n}
             {name === 'duration' ? ' 秒' : ''}
           </span>
@@ -830,8 +823,8 @@ function ParamControl({
       )
   }
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-xs text-ink-subtle">{label}</span>
+    <div className="flex flex-col gap-2">
+      <span className="ui-section-title">{label.replace(/（.*）/, '')}</span>
       {control}
     </div>
   )
