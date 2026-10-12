@@ -268,6 +268,27 @@ describe('百炼 API 契约', () => {
     ).rejects.toMatchObject({ code: 'unavailable', retryable: false })
     expect(fetch).toHaveBeenCalledTimes(1)
   })
+  it('提交遇 503 / 429 不可重试，轮询遇网络失败、503、429 可重试', async () => {
+    for (const status of [503, 429]) {
+      const { ctx } = setup()
+      ctx.fetch = vi.fn(async () =>
+        Response.json({ code: 'Throttling', message: 'busy' }, { status }),
+      ) as typeof globalThis.fetch
+      await expect(
+        bailianProvider.submit(
+          { capability: 'audio.speech', model: 'qwen3-tts-flash', input: { text: 'hi' } },
+          ctx,
+        ),
+      ).rejects.toMatchObject({ retryable: false })
+      await expect(bailianProvider.poll!('t', ctx)).rejects.toMatchObject({ retryable: true })
+    }
+    const { ctx, fetch } = setup()
+    fetch.mockRejectedValueOnce(new TypeError('network'))
+    await expect(bailianProvider.poll!('t', ctx)).rejects.toMatchObject({
+      code: 'unavailable',
+      retryable: true,
+    })
+  })
   it('核心图片节点 aspectRatio 映射官方 size，显式 size 优先且不透传未知字段', async () => {
     for (const model of ['qwen-image-3.0-pro', 'wan2.7-image-pro']) {
       for (const [extra, expected] of [

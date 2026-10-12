@@ -11,6 +11,17 @@ import {
   type ProviderUsage,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
+import {
+  asJson,
+  chatMessages,
+  imageDataUrl,
+  type Json,
+  type Method,
+  redact,
+  send,
+  transportError,
+  withRetry,
+} from '../shared/http'
 
 const settings = z.object({
   region: z
@@ -33,10 +44,6 @@ const settings = z.object({
     .meta({ title: '任务轮询间隔（毫秒）' }),
 })
 type Context = ProviderContext<z.output<typeof settings>>
-type Obj = Record<string, unknown>
-function obj(value: unknown): Obj {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Obj) : {}
-}
 function arr(value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
@@ -55,15 +62,14 @@ function host(ctx: Context) {
       : 'https://dashscope-us.aliyuncs.com'
 }
 function remoteError(status: number, value: unknown, ctx: Context) {
-  const data = obj(value),
-    error = obj(data.error)
+  const data = asJson(value),
+    error = asJson(data.error)
   const code = String(error.code ?? data.code ?? '').toLowerCase()
   const secret = ctx.secret('DASHSCOPE_API_KEY')?.trim()
-  let message = String(error.message ?? data.message ?? `百炼 HTTP ${status}`)
-  if (secret) message = message.split(secret).join('[REDACTED]')
-  message = message
-    .replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]')
-    .replace(/sk-[a-zA-Z0-9_-]+/g, '[REDACTED]')
+  const message = redact(String(error.message ?? data.message ?? `百炼 HTTP ${status}`), [secret], {
+    mask: '[REDACTED]',
+    tokens: true,
+  })
   const normalized =
     status === 401 || status === 403 || /apikey|accessdenied|unauthorized/.test(code)
       ? 'auth'
@@ -85,46 +91,38 @@ function remoteError(status: number, value: unknown, ctx: Context) {
 async function response(
   ctx: Context,
   path: string,
-  body?: Obj,
+  body?: Json,
   asyncTask = false,
 ): Promise<Response> {
-  try {
-    const res = await ctx.fetch(host(ctx) + path, {
-      method: body === undefined ? 'GET' : 'POST',
-      signal: ctx.signal,
+  const method: Method = body === undefined ? 'GET' : 'POST'
+  const failed =
+    method === 'GET' ? '百炼请求中断或网络不可用' : '百炼提交状态未知；请先恢复查询，勿重新生成'
+  const res = await send(
+    ctx,
+    host(ctx) + path,
+    {
+      method,
       headers: {
         Authorization: `Bearer ${key(ctx)}`,
         'Content-Type': 'application/json',
         ...(asyncTask ? { 'X-DashScope-Async': 'enable' } : {}),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    })
-    if (!res.ok) {
-      let data: unknown
-      try {
-        data = await res.json()
-      } catch {
-        data = {}
-      }
-      throw remoteError(res.status, data, ctx)
+    },
+    { cancelled: failed, network: failed, timeout: failed },
+  )
+  if (!res.ok) {
+    let data: unknown
+    try {
+      data = await res.json()
+    } catch {
+      data = {}
     }
-    return res
-  } catch (e) {
-    if (e instanceof ProviderError) throw e
-    throw new ProviderError(
-      ctx.signal.aborted
-        ? 'cancelled'
-        : e instanceof Error && e.name === 'TimeoutError'
-          ? 'timeout'
-          : 'unavailable',
-      body === undefined
-        ? '百炼请求中断或网络不可用'
-        : '百炼提交状态未知；请先恢复查询，勿重新生成',
-      { retryable: body === undefined, cause: e },
-    )
+    throw withRetry(remoteError(res.status, data, ctx), method)
   }
+  return res
 }
-async function request(ctx: Context, path: string, body?: Obj, asyncTask = false): Promise<Obj> {
+async function request(ctx: Context, path: string, body?: Json, asyncTask = false): Promise<Json> {
   const res = await response(ctx, path, body, asyncTask)
   let value: unknown
   try {
@@ -132,13 +130,14 @@ async function request(ctx: Context, path: string, body?: Obj, asyncTask = false
   } catch (e) {
     throw new ProviderError('unknown', '百炼返回无效 JSON；请勿自动重新提交生成任务', { cause: e })
   }
-  const data = obj(value)
+  const data = asJson(value)
   if (Object.keys(data).length === 0) throw new ProviderError('unknown', '百炼返回空响应')
-  if (data.code || data.error) throw remoteError(res.status, data, ctx)
+  if (data.code || data.error)
+    throw withRetry(remoteError(res.status, data, ctx), body === undefined ? 'GET' : 'POST')
   return data
 }
-function usage(data: Obj): ProviderUsage {
-  const u = obj(data.usage)
+function usage(data: Json): ProviderUsage {
+  const u = asJson(data.usage)
   return {
     inputTokens:
       typeof u.input_tokens === 'number'
@@ -162,11 +161,14 @@ function usage(data: Obj): ProviderUsage {
     seconds: typeof u.duration === 'number' ? u.duration : undefined,
   }
 }
-async function inline(ref: AssetRef, ctx: Context) {
-  const { data, mime } = await ctx.files.read(ref)
-  if (!mime.startsWith('image/')) throw new ProviderError('invalid_input', '参考资产必须是图片')
-  if (data.length > 10 * 1024 * 1024) throw new ProviderError('invalid_input', '参考图片超过 10 MB')
-  return `data:${mime};base64,${Buffer.from(data).toString('base64')}`
+function inline(ref: AssetRef, ctx: Context) {
+  return imageDataUrl(ctx, ref, {
+    accept: (mime) => mime.startsWith('image/'),
+    badMime: '参考资产必须是图片',
+    maxBytes: 10 * 1024 * 1024,
+    tooLarge: '参考图片超过 10 MB',
+    allowEmpty: true,
+  })
 }
 async function upload(ref: AssetRef, model: string, ctx: Context) {
   const { data, mime } = await ctx.files.read(ref)
@@ -190,7 +192,7 @@ async function upload(ref: AssetRef, model: string, ctx: Context) {
       ? 15 * 1024 * 1024
       : 100 * 1024 * 1024
   if (data.length > maxBytes) throw new ProviderError('invalid_input', '万相参考素材超过大小限制')
-  const policy = obj(
+  const policy = asJson(
     (await request(ctx, `/api/v1/uploads?action=getPolicy&model=${encodeURIComponent(model)}`))
       .data,
   )
@@ -344,21 +346,7 @@ export const bailianProvider = defineProvider({
     switch (req.capability) {
       case 'text.chat': {
         const input = req.input as CapabilityInput<'text.chat'>
-        const messages = await Promise.all(
-          input.messages.map(async (m) => ({
-            role: m.role,
-            content:
-              typeof m.content === 'string'
-                ? m.content
-                : await Promise.all(
-                    m.content.map(async (p) =>
-                      p.type === 'text'
-                        ? p
-                        : { type: 'image_url', image_url: { url: await inline(p.image, ctx) } },
-                    ),
-                  ),
-          })),
-        )
+        const messages = await chatMessages(input.messages, (ref) => inline(ref, ctx))
         if (input.jsonSchema)
           messages.unshift({
             role: 'system',
@@ -378,15 +366,12 @@ export const bailianProvider = defineProvider({
         try {
           raw = await res.text()
         } catch (e) {
-          throw new ProviderError(
-            ctx.signal.aborted ? 'cancelled' : 'unavailable',
-            '百炼流式响应中断；勿重新生成',
-            { retryable: false, cause: e },
-          )
+          const message = '百炼流式响应中断；勿重新生成'
+          throw transportError(ctx, 'POST', e, { cancelled: message, network: message })
         }
         let text = '',
           done = false,
-          data: Obj = {}
+          data: Json = {}
         for (const frame of raw.split(/\r?\n\r?\n/)) {
           const payload = frame
             .split(/\r?\n/)
@@ -398,16 +383,16 @@ export const bailianProvider = defineProvider({
             done = true
             break
           }
-          let chunk: Obj
+          let chunk: Json
           try {
-            chunk = obj(JSON.parse(payload))
+            chunk = asJson(JSON.parse(payload))
           } catch {
             throw new ProviderError('unknown', '百炼返回无效 SSE 数据')
           }
-          if (chunk.error || chunk.code) throw remoteError(200, chunk, ctx)
+          if (chunk.error || chunk.code) throw withRetry(remoteError(200, chunk, ctx), 'POST')
           if (chunk.usage) data = chunk
           for (const choice of arr(chunk.choices)) {
-            const content = obj(obj(choice).delta).content
+            const content = asJson(asJson(choice).delta).content
             if (typeof content === 'string') text += content
           }
         }
@@ -464,7 +449,7 @@ export const bailianProvider = defineProvider({
         const size =
           extra.size ??
           (input.width && input.height ? `${input.width}*${input.height}` : ratios[aspect])
-        const content: Obj[] = [{ text: input.prompt }]
+        const content: Json[] = [{ text: input.prompt }]
         for (const ref of input.references ?? []) content.push({ image: await inline(ref, ctx) })
         const data = await request(ctx, generation, {
           model: req.model,
@@ -478,9 +463,9 @@ export const bailianProvider = defineProvider({
             ...(input.negativePrompt ? { negative_prompt: input.negativePrompt } : {}),
           },
         })
-        const outputs = arr(obj(data.output).choices)
-          .flatMap((c) => arr(obj(obj(c).message).content))
-          .map(obj)
+        const outputs = arr(asJson(data.output).choices)
+          .flatMap((c) => arr(asJson(asJson(c).message).content))
+          .map(asJson)
           .filter((p) => p.image)
           .map((p) => file('image', p.image))
         if (!outputs.length) throw new ProviderError('unknown', '百炼没有返回生成图片')
@@ -513,7 +498,7 @@ export const bailianProvider = defineProvider({
           if ((input.references ?? []).filter((ref) => ref.kind === kind).length > limit)
             throw new ProviderError('invalid_input', `万相 ${kind} 参考数量超过 ${limit}`)
         }
-        const media: Obj[] = []
+        const media: Json[] = []
         if (input.firstFrame)
           media.push({ type: 'first_frame', url: await upload(input.firstFrame, req.model, ctx) })
         if (input.lastFrame)
@@ -541,7 +526,7 @@ export const bailianProvider = defineProvider({
         const data = media.length
           ? await requestWithOss(ctx, path, body)
           : await request(ctx, path, body, true)
-        const output = obj(data.output)
+        const output = asJson(data.output)
         if (typeof output.task_id !== 'string' || !output.task_id)
           throw new ProviderError('unknown', '百炼未返回 task_id；请勿重新提交任务')
         return {
@@ -575,7 +560,7 @@ export const bailianProvider = defineProvider({
         })
         return {
           state: 'succeeded',
-          outputs: [file('audio', obj(obj(data.output).audio).url)],
+          outputs: [file('audio', asJson(asJson(data.output).audio).url)],
           usage: usage(data),
         }
       }
@@ -585,14 +570,14 @@ export const bailianProvider = defineProvider({
   },
   async poll(remoteId, ctx) {
     const data = await request(ctx, `/api/v1/tasks/${encodeURIComponent(remoteId)}`)
-    const output = obj(data.output),
+    const output = asJson(data.output),
       status = output.task_status
     if (status === 'PENDING' || status === 'RUNNING')
       return { state: 'pending', pollAfterMs: ctx.settings.pollIntervalMs }
     if (status === 'SUCCEEDED')
       return {
         state: 'succeeded',
-        outputs: [file('video', output.video_url ?? obj(output.results).video_url)],
+        outputs: [file('video', output.video_url ?? asJson(output.results).video_url)],
         usage: usage(data),
       }
     if (status === 'CANCELED' || status === 'CANCELLED')
@@ -609,7 +594,7 @@ export const bailianProvider = defineProvider({
   },
   async cancel(remoteId, ctx) {
     const data = await request(ctx, `/api/v1/tasks/${encodeURIComponent(remoteId)}/cancel`, {})
-    const output = obj(data.output)
+    const output = asJson(data.output)
     if (
       output.code ||
       (output.task_status && !['CANCELED', 'CANCELLED'].includes(String(output.task_status)))
@@ -617,7 +602,7 @@ export const bailianProvider = defineProvider({
       throw remoteError(400, output, ctx)
   },
 })
-async function requestWithOss(ctx: Context, path: string, body: Obj) {
+async function requestWithOss(ctx: Context, path: string, body: Json) {
   const wrapped: Context = {
     ...ctx,
     fetch: ((url, init) =>
