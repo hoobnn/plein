@@ -15,7 +15,7 @@ export interface ImportResult {
   skipped: Array<{ name: string; reason: string }>
 }
 
-export const isTextFile = (f: File) =>
+const isTextFile = (f: File) =>
   TEXT_EXT.test(f.name) || f.type === 'text/markdown' || f.type === 'text/plain'
 
 function fit(w: number | undefined, h: number | undefined, fallback: [number, number]) {
@@ -25,7 +25,7 @@ function fit(w: number | undefined, h: number | undefined, fallback: [number, nu
 }
 
 /** 文本内容生成 Markdown 元素的尺寸：宽固定，高随行数 */
-export function markdownSize(text: string): [number, number] {
+function markdownSize(text: string): [number, number] {
   const lines = text.split('\n').length
   return [360, Math.min(480, Math.max(160, lines * 22 + 48))]
 }

@@ -12,6 +12,14 @@ import {
   type JobList,
   type LibraryItem,
   type LibraryKind,
+  type FlowRunOptions,
+  type GroupRunOptions,
+  type GroupRunStarted,
+  type GroupRunState,
+  type MediaCapsInfo,
+  type MediaDerivation,
+  type MediaDeriveRequest,
+  type NodeRunStarted,
   type Project,
   type ProviderConfigUpdate,
   type ProviderConfigView,
@@ -19,6 +27,7 @@ import {
   type RewritePrompt,
   type RewritePromptResult,
   type SessionInfo,
+  type StaleNodes,
   type UpdateLibraryItem,
   type UserTemplate,
 } from '@plein/protocol'
@@ -39,7 +48,8 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+/** 发请求并把非 2xx 统一转成 ApiError */
+async function send(path: string, init: RequestInit = {}): Promise<Response> {
   const res = await fetch(path, { credentials: 'same-origin', ...init })
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as {
@@ -54,6 +64,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       body?.message ?? res.statusText,
     )
   }
+  return res
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await send(path, init)
   // 204 / 202 这类没有响应体的应答
   const body = await res.text()
   return (body ? JSON.parse(body) : undefined) as T
@@ -126,7 +141,28 @@ export const api = {
     request<void>(API.agentMessages(id), json('POST', { text, selection })),
   stopAgent: (id: string) => request<void>(API.agentStop(id), json('POST', {})),
 
+  runNode: (canvasId: string, nodeId: string) =>
+    request<NodeRunStarted>(API.nodeRun(canvasId, nodeId), { method: 'POST' }),
+  cancelNode: (canvasId: string, nodeId: string) =>
+    request<void>(API.nodeCancel(canvasId, nodeId), { method: 'POST' }),
+  /** 整组运行 Frame 里的节点 */
+  runFrame: (canvasId: string, frameId: string, body: GroupRunOptions) =>
+    request<GroupRunStarted>(API.frameRun(canvasId, frameId), json('POST', body)),
+  /** 运行到此处 / 运行下游 */
+  runFlow: (canvasId: string, nodeId: string, body: FlowRunOptions) =>
+    request<GroupRunStarted>(API.nodeFlowRun(canvasId, nodeId), json('POST', body)),
+  groupRun: (groupId: string, signal?: AbortSignal) =>
+    request<GroupRunState>(API.groupRun(groupId), { signal }),
+  cancelGroup: (groupId: string) => request<void>(API.groupCancel(groupId), { method: 'POST' }),
+  canvasStale: (canvasId: string) => request<StaleNodes>(API.canvasStale(canvasId)),
+
+  mediaDerive: (body: MediaDeriveRequest) =>
+    request<MediaDerivation>(API.mediaDerive, json('POST', body)),
+  mediaCaps: () => request<MediaCapsInfo>(API.mediaCaps),
+
   assetMeta: (id: string) => request<Asset>(API.assetMeta(id)),
+  /** 资产原文件 */
+  assetBlob: async (id: string) => (await send(API.asset(id))).blob(),
   upload: (file: File) =>
     request<Asset>(API.assets, {
       method: 'POST',

@@ -28,7 +28,6 @@ import {
 } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { findNode, mentionElements, nodeElement } from './nodes'
-import { runNode } from './runner'
 
 /** 展开出来的节点记下来源，重新展开、批量运行、同步都按它找 */
 export interface ShotSource {
@@ -553,7 +552,7 @@ export function runExpanded(
   boardId: string,
   shotIds: string[],
   role: ShotRole,
-  run: (id: string) => void = (id) => void runNode(id),
+  run: (id: string) => void,
 ): BatchResult {
   const groups = expandedNodes(engine, boardId)
   const shots = new Map(shotsOf(engine.doc.get(boardId)).map((s) => [s.id, s]))

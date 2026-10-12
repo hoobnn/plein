@@ -40,6 +40,8 @@ interface AgentStore {
 }
 
 let source: EventSource | null = null
+/** 每次进入画布、切换会话都加一，晚到的应答对不上就丢掉 */
+let selectSeq = 0
 let moodTimer: ReturnType<typeof setTimeout> | undefined
 
 function savedAgent(): AgentKind {
@@ -58,8 +60,18 @@ export const useAgent = create<AgentStore>((set, get) => {
     if (!id) return
     const es = new EventSource(API.agentEvents(id))
     source = es
+    es.onerror = () => {
+      // 浏览器会自动重连；连接彻底关闭时才算断开
+      if (source === es && es.readyState === EventSource.CLOSED)
+        set({ error: '与智能体的连接已断开，请重新打开对话' })
+    }
     es.onmessage = (msg) => {
-      const e = JSON.parse(msg.data) as AgentEvent
+      let e: AgentEvent
+      try {
+        e = JSON.parse(msg.data) as AgentEvent
+      } catch {
+        return
+      }
       const cur = get().session
       if (e.type === 'session') {
         set({ session: e.session, mood: e.session.status === 'running' ? 'working' : get().mood })
@@ -136,26 +148,36 @@ export const useAgent = create<AgentStore>((set, get) => {
 
     async enter(canvasId) {
       if (canvasId === get().canvasId) return
+      const mine = ++selectSeq
       connect(null)
       set({ canvasId, sessions: [], session: null, error: null, mood: 'idle' })
       if (!canvasId) return
       try {
         const sessions = await api.agentSessions(canvasId)
-        if (get().canvasId !== canvasId) return
+        if (mine !== selectSeq) return
         set({ sessions })
         if (sessions[0]) await get().select(sessions[0].id)
       } catch (err) {
-        set({ error: (err as Error).message })
+        if (mine === selectSeq) set({ error: (err as Error).message })
       }
     },
 
     async select(id) {
-      const session = await api.agentSession(id)
-      set({ session, error: null, mood: session.status === 'running' ? 'working' : 'idle' })
-      connect(id)
+      const mine = ++selectSeq
+      const canvasId = get().canvasId
+      try {
+        const session = await api.agentSession(id)
+        // 等应答期间换了画布或又点了别的会话
+        if (mine !== selectSeq || get().canvasId !== canvasId) return
+        set({ session, error: null, mood: session.status === 'running' ? 'working' : 'idle' })
+        connect(id)
+      } catch (err) {
+        if (mine === selectSeq) set({ error: (err as Error).message })
+      }
     },
 
     reset() {
+      selectSeq++
       connect(null)
       set({ session: null, error: null, mood: 'idle' })
     },
@@ -169,6 +191,8 @@ export const useAgent = create<AgentStore>((set, get) => {
         // 换了 CLI 就开新对话：两家的会话不能互相续
         if (!session || session.agent !== agent) {
           session = await api.createAgentSession(canvasId, agent)
+          if (get().canvasId !== canvasId) return
+          selectSeq++
           set({ session })
           connect(session.id)
         }
@@ -187,7 +211,12 @@ export const useAgent = create<AgentStore>((set, get) => {
     },
 
     async remove(id) {
-      await api.deleteAgentSession(id)
+      try {
+        await api.deleteAgentSession(id)
+      } catch (err) {
+        set({ error: (err as Error).message })
+        return
+      }
       if (get().session?.id === id) get().reset()
       set({ sessions: get().sessions.filter((s) => s.id !== id) })
     },

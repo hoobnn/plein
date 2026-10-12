@@ -7,10 +7,11 @@ import {
   resultHistory,
 } from '@plein/doc'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
-import { api, assetUrls } from '../api/client'
+import { assetUrls } from '../api/client'
 import { downloadAsset } from '../canvas/grid'
 import { useDocVersion } from '../canvas/hooks'
 import { elementFor } from '../canvas/import'
+import { loadAssetMeta } from '../stores/assetMeta'
 import { useCanvas } from '../stores/canvas'
 import { shortTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
@@ -142,7 +143,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
       let done = 0
       const inputs = await Promise.all(
         selected.map(async (e) => {
-          const asset = await api.assetMeta(e.result.value.assetId)
+          const asset = await loadAssetMeta(e.result.value.assetId)
           setImporting({ done: ++done, total: selected.length })
           const input = elementFor(asset)
           return input && { ...input, name: nameOf(e) }

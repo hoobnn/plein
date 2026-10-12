@@ -78,10 +78,13 @@ function ProviderRow({
   // 展开时才读配置
   useEffect(() => {
     if (!open || config) return
-    api.providerConfig(provider.id).then((c) => {
-      setConfig(c)
-      setSettings(c.settings)
-    })
+    api.providerConfig(provider.id).then(
+      (c) => {
+        setConfig(c)
+        setSettings(c.settings)
+      },
+      (err) => setStatus(`读取配置失败：${(err as Error).message}`),
+    )
   }, [open, config, provider.id])
 
   const save = async () => {
@@ -110,6 +113,8 @@ function ProviderRow({
       const next = await api.updateProviderConfig(provider.id, { enabled })
       if (config) setConfig(next)
       onSaved()
+    } catch (err) {
+      setStatus(`保存失败：${(err as Error).message}`)
     } finally {
       setBusy(false)
     }
@@ -120,6 +125,8 @@ function ProviderRow({
     setBusy(true)
     try {
       setTest(await api.testProvider(provider.id))
+    } catch (err) {
+      setTest({ ok: false, message: (err as Error).message })
     } finally {
       setBusy(false)
     }
@@ -171,7 +178,9 @@ function ProviderRow({
             </div>
           )}
           {!config ? (
-            <p className="text-xs text-ink-subtle">读取中…</p>
+            <p className="text-xs text-ink-subtle" role="status">
+              {status ?? '读取中…'}
+            </p>
           ) : (
             <>
               <SchemaForm

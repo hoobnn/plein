@@ -2,6 +2,7 @@ import type { Canvas, Project } from '@plein/protocol'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { navigate } from '../router'
+import { useCanvas } from '../stores/canvas'
 import { confirmDialog, promptDialog } from '../ui/Dialog'
 import { Icon } from '../ui/icons'
 import { InlineTitle } from '../ui/InlineTitle'
@@ -9,6 +10,8 @@ import { Popover } from '../ui/Popover'
 
 /** 读过的项目，按 id */
 const projects = new Map<string, Project>()
+
+const fail = (err: unknown) => useCanvas.getState().notify((err as Error).message)
 
 /**
  * 页头的「项目 / 画布 ▾」：
@@ -46,9 +49,13 @@ export function ProjectSwitcher({
   const renameProject = async (title: string | null) => {
     setRenaming(false)
     if (project && title && title !== project.title) {
-      const next = await api.renameProject(project.id, title)
-      projects.set(next.id, next)
-      setProject(next)
+      try {
+        const next = await api.renameProject(project.id, title)
+        projects.set(next.id, next)
+        setProject(next)
+      } catch (err) {
+        fail(err)
+      }
     }
   }
   const addCanvas = async () => {
@@ -61,8 +68,12 @@ export function ProjectSwitcher({
       confirmLabel: '新建',
     })
     if (!title) return
-    const c = await api.createCanvas(canvas.projectId, title)
-    navigate({ name: 'canvas', id: c.id })
+    try {
+      const c = await api.createCanvas(canvas.projectId, title)
+      navigate({ name: 'canvas', id: c.id })
+    } catch (err) {
+      fail(err)
+    }
   }
   const renameCanvas = async () => {
     close()
@@ -73,8 +84,12 @@ export function ProjectSwitcher({
       confirmLabel: '保存',
     })
     if (!title || title === canvas.title) return
-    onCanvas(await api.renameCanvas(canvas.id, title))
-    await load()
+    try {
+      onCanvas(await api.renameCanvas(canvas.id, title))
+      await load()
+    } catch (err) {
+      fail(err)
+    }
   }
   const removeCanvas = async () => {
     close()
@@ -85,7 +100,11 @@ export function ProjectSwitcher({
       danger: true,
     })
     if (!ok) return
-    await api.deleteCanvas(canvas.id)
+    try {
+      await api.deleteCanvas(canvas.id)
+    } catch (err) {
+      return fail(err)
+    }
     const next = canvases.find((c) => c.id !== canvas.id)
     navigate(next ? { name: 'canvas', id: next.id } : { name: 'home' }, { replace: true })
   }

@@ -1,15 +1,17 @@
 import type { Engine } from '@plein/canvas-core'
 import { updateElement } from '@plein/doc'
 import { useState } from 'react'
-import { cancelGroup, describeGroupRun, groupNodes, runGroup, templateData } from '../canvas/groups'
+import { groupNodes, templateData } from '../canvas/groups'
 import { useEngineVersion } from '../canvas/hooks'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
+import { useGroupRuns } from '../stores/groupRuns'
 import { useTemplates } from '../stores/templates'
 import { Icon } from '../ui/icons'
 import { promptDialog } from '../ui/Dialog'
 import { withShortcut } from '../ui/keys'
 import { Popover } from '../ui/Popover'
+import { cancelGroup, runFrame } from './run'
 
 /** 页头占的高度：Frame 顶到页头时工具条不压住它 */
 const TOP_RESERVED = 64
@@ -40,8 +42,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
   const notify = useCanvas((s) => s.notify)
   const [video, setVideo] = useState(false)
   const [force, setForce] = useState(false)
-  const [busy, setBusy] = useState<string | null>(null)
-  const [group, setGroup] = useState<string | null>(null)
+  const runs = useGroupRuns((s) => s.runs)
   const [palette, setPalette] = useState<HTMLElement | null>(null)
   const ids = engine.selection.values()
   const el = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
@@ -51,14 +52,8 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
   const count = groupNodes(engine, el.id, catalog, video).length
   const tr = engine.worldToClient(rect.x + rect.w, rect.y)
   const name = el.name ?? 'Frame'
-
-  const run = async () => {
-    setBusy(el.id)
-    const r = await runGroup(el.id, { video, force, onStart: setGroup })
-    setBusy(null)
-    setGroup(null)
-    if (r) notify(describeGroupRun(name, r))
-  }
+  const busy = el.id in runs
+  const group = runs[el.id] ?? null
   const save = async () => {
     const title = await promptDialog({
       title: '存为模板',
@@ -121,7 +116,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
             <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
             全部重跑
           </label>
-          {busy === el.id ? (
+          {busy ? (
             <button
               type="button"
               className={btn}
@@ -136,9 +131,9 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
             <button
               type="button"
               className={btn}
-              disabled={!count || busy !== null}
+              disabled={!count}
               title={count ? undefined : '组内没有要生成的节点'}
-              onClick={() => void run()}
+              onClick={() => void runFrame(el.id, name, { video, force })}
             >
               <Icon name="play" size={12} />
               {`运行整组${count ? `（${count}）` : ''}`}

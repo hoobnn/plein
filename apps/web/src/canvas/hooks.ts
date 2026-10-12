@@ -29,6 +29,11 @@ export function useEngineVersion(engine: Engine) {
   })
 }
 
+/** 选中变化时递增 */
+export function useSelectionVersion(engine: Engine) {
+  return useVersion((bump) => engine.selection.onChange(bump))
+}
+
 /** 文档内容变化时递增（含协作者的修改）：列表、表格类面板靠它刷新 */
 export function useDocVersion(doc: PleinDoc) {
   return useVersion((bump) => doc.subscribe(bump))

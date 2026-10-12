@@ -12,44 +12,17 @@ import {
 } from '@plein/nodes'
 import type { PortValue } from '@plein/plugin-sdk'
 import { useEffect, useState } from 'react'
-import { api, assetUrls } from '../api/client'
+import { assetUrls } from '../api/client'
 import { useDocVersion } from '../canvas/hooks'
 import { upstreams } from '../canvas/nodes'
-import { cancelNode, runNode } from '../canvas/runner'
+import { cancelNode, runNode } from './run'
+import { useAssetMetas } from '../stores/assetMeta'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { Select } from '../ui/Select'
 import { SequencePreview } from './SequencePreview'
-
-/** 素材时长（秒），按资产 id 缓存；取回后通知所有在用的编辑器（请求可能是别的挂载发起的） */
-const durations = new Map<string, number | undefined>()
-const listeners = new Set<() => void>()
-function useDurations(ids: string[]) {
-  const [, setV] = useState(0)
-  const key = ids.join(',')
-  // biome-ignore lint/correctness/useExhaustiveDependencies: key 即 ids
-  useEffect(() => {
-    const update = () => setV((x) => x + 1)
-    listeners.add(update)
-    for (const id of ids) {
-      if (!id || durations.has(id)) continue
-      durations.set(id, undefined)
-      api.assetMeta(id).then(
-        (a) => {
-          durations.set(id, a.duration)
-          for (const l of listeners) l()
-        },
-        () => durations.delete(id),
-      )
-    }
-    return () => {
-      listeners.delete(update)
-    }
-  }, [key])
-  return (id: string | undefined) => (id ? durations.get(id) : undefined)
-}
 
 const seconds = (s: number | undefined) => (s === undefined ? '—' : `${s.toFixed(1)} 秒`)
 
@@ -117,10 +90,12 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   useDocVersion(engine.doc)
   const { el, params, rows, dialogue, sfx, music } = readSequence(engine, id)
   const [dragging, setDragging] = useState<number | null>(null)
-  const duration = useDurations([
+  // 素材时长（秒）
+  const meta = useAssetMetas([
     ...rows.map((r) => r.clip.assetId),
     ...rows.flatMap((r) => (r.dialogue ? [r.dialogue.assetId] : [])),
   ])
+  const duration = (assetId: string | undefined) => meta(assetId)?.duration
   const running = el?.run?.status === 'running' || el?.run?.status === 'queued'
   const lengths = rows.map((r) => {
     const d = duration(r.clip.assetId)

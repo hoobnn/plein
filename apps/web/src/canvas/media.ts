@@ -1,21 +1,21 @@
 import type { Engine } from '@plein/canvas-core'
 import { AUDIO_SIZE, createElements, type NewElement } from '@plein/doc'
-import {
-  API,
-  type Asset,
-  type AssetKind,
-  type MediaCapsInfo,
-  type MediaDerivation,
-  type MediaDeriveRequest,
-  type MediaOp,
+import type {
+  Asset,
+  AssetKind,
+  MediaCapsInfo,
+  MediaDerivation,
+  MediaDeriveRequest,
+  MediaOp,
 } from '@plein/protocol'
+import { api } from '../api/client'
 import { freeSpotRight } from './presets'
 
 /** 变速可选的倍数：本地工具直接改素材，不是 TTS 那种合成时的语速参数 */
 export const SPEEDS = [0.5, 0.75, 1.5, 2, 3] as const
 
 /** 服务端允许的变速范围，这里先夹一次，省得把明显越界的值发出去 */
-export const SPEED_RANGE = { min: 0.25, max: 4 } as const
+const SPEED_RANGE = { min: 0.25, max: 4 } as const
 
 /** 多个产物（音视频分离）之间的间距 */
 const GAP = 16
@@ -165,34 +165,14 @@ export function elementSize(
   return null
 }
 
-/** 加工请求：服务端统一执行，前端只负责填参数 */
-export async function mediaDerive(input: MediaDeriveRequest): Promise<MediaDerivation> {
-  const res = await fetch(API.mediaDerive, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(input),
-  })
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { message?: string } | null
-    throw new Error(body?.message ?? `加工失败（${res.status}）`)
-  }
-  return (await res.json()) as MediaDerivation
-}
-
 let capsCache: Promise<MediaCapsInfo> | null = null
 
 /** 本机媒体能力；同一会话里只问一次，失败了下次再问 */
 export function mediaCaps(): Promise<MediaCapsInfo> {
-  capsCache ??= fetch(API.mediaCaps, { credentials: 'same-origin' })
-    .then((res) => {
-      if (!res.ok) throw new Error('读不到本机媒体能力')
-      return res.json() as Promise<MediaCapsInfo>
-    })
-    .catch((err) => {
-      capsCache = null
-      throw err
-    })
+  capsCache ??= api.mediaCaps().catch((err) => {
+    capsCache = null
+    throw err
+  })
   return capsCache
 }
 
@@ -205,7 +185,7 @@ export async function applyDerivation(
   input: MediaDeriveRequest,
   nearId: string,
 ): Promise<MediaDerivation> {
-  const made = await mediaDerive(input)
+  const made = await api.mediaDerive(input)
   // 分离会一次出两个资产，先量好整组的尺寸再找位置，否则两个会叠在一起
   const sizes = made.assets
     .map((asset) => ({ asset, size: elementSize(asset) }))

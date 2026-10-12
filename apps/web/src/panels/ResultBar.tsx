@@ -1,9 +1,16 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, currentResult } from '@plein/doc'
 import { presetsFor } from '@plein/nodes'
-import type { Asset, AssetKind, Catalog, MediaCapsInfo, MediaDeriveRequest } from '@plein/protocol'
+import type {
+  Asset,
+  AssetKind,
+  Catalog,
+  MediaCapsInfo,
+  MediaDerivation,
+  MediaDeriveRequest,
+} from '@plein/protocol'
 import { useEffect, useRef, useState } from 'react'
-import { api, assetUrls } from '../api/client'
+import { assetUrls } from '../api/client'
 import { downloadAsset, mediaOf, splitGrid } from '../canvas/grid'
 import { useEngineVersion } from '../canvas/hooks'
 import {
@@ -21,6 +28,7 @@ import {
   SPEEDS,
 } from '../canvas/media'
 import { deriveNode } from '../canvas/presets'
+import { loadAssetMeta } from '../stores/assetMeta'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
@@ -281,31 +289,48 @@ export interface MediaTarget {
   kind: AssetKind
 }
 
-/** 加工过程中统一的提示与防重入 */
+/**
+ * 加工过程中统一的提示与防重入：一轮（单个或批量）只提示一次。
+ * 已有一轮在跑时返回 false，不算失败。
+ */
 function useDeriver(engine: Engine) {
   const notify = useCanvas((s) => s.notify)
   const [busy, setBusy] = useState(false)
   // 批量加工是一轮 await 循环，用 ref 挡重入才不会被同一帧里的多次点击打乱
   const running = useRef(false)
-  const run = async (target: MediaTarget, input: MediaDeriveRequest) => {
-    if (running.current) return null
+  const run = async (targets: MediaTarget[], make: (t: MediaTarget) => MediaDeriveRequest) => {
+    if (running.current || !targets.length) return false
     running.current = true
     setBusy(true)
+    const made: MediaDerivation[] = []
+    const errors: string[] = []
+    let op: MediaDeriveRequest['op'] | undefined
     try {
-      const made = await applyDerivation(engine, input, target.elId)
-      notify(
-        `已${opLabel(input.op)}，新素材放在右边：${made.assets.map((a) => a.name).join('、')}${
-          made.note ? `。${made.note}` : ''
-        }`,
-      )
-      return made
-    } catch (err) {
-      notify((err as Error).message)
-      return null
+      for (const t of targets) {
+        const input = make(t)
+        op = input.op
+        try {
+          made.push(await applyDerivation(engine, input, t.elId))
+        } catch (err) {
+          errors.push((err as Error).message)
+        }
+      }
     } finally {
       running.current = false
       setBusy(false)
     }
+    const one = made[0]
+    if (targets.length === 1)
+      notify(
+        one && op
+          ? `已${opLabel(op)}，新素材放在右边：${one.assets.map((a) => a.name).join('、')}${
+              one.note ? `。${one.note}` : ''
+            }`
+          : (errors[0] ?? null),
+      )
+    else if (errors.length) notify(`${made.length} 个成功，${errors.length} 个失败：${errors[0]}`)
+    else if (op) notify(`已${opLabel(op)} ${made.length} 个素材，新素材放在右边`)
+    return true
   }
   return { busy, run }
 }
@@ -365,25 +390,16 @@ export function MediaTools({
     setOpen(next)
     setAnchorEl(btnRef.current)
     if (next && !meta)
-      api
-        .assetMeta(first.assetId)
+      loadAssetMeta(first.assetId)
         .then(setMeta)
         .catch(() => notify('读不到素材信息'))
   }
 
   const set = (key: string, value: string) => setValues((v) => ({ ...v, [key]: value }))
 
-  /** 多选时按目标顺序逐个加工，失败的跳过并如实报数 */
+  /** 多选时按目标顺序逐个加工，失败的跳过并如实报数；上一轮还没完时不重复发起 */
   const runAll = async (make: (t: MediaTarget) => MediaDeriveRequest) => {
-    let ok = 0
-    const failed: string[] = []
-    for (const t of list) {
-      const made = await run(t, make(t))
-      if (made) ok++
-      else failed.push(t.assetId.slice(0, 6))
-    }
-    setOpen(false)
-    if (failed.length) notify(`${ok} 个成功，${failed.length} 个失败`)
+    if (await run(list, make)) setOpen(false)
   }
 
   // 批量时每个目标用自己的 assetId；区间、尺寸类参数按第一个素材的信息校验

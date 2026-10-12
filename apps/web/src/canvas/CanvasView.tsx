@@ -4,18 +4,20 @@ import { SEQUENCE_TYPE, STORYBOARD_TYPE } from '@plein/nodes'
 import { useEffect, useRef } from 'react'
 import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
-import { api, assetUrls, syncUrl } from '../api/client'
+import { assetUrls, syncUrl } from '../api/client'
 import { navigate } from '../router'
+import { loadAssetMeta } from '../stores/assetMeta'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { canvasTheme, useTheme } from '../stores/theme'
 import { demoAssetUrls, seedDemo } from './demo'
 import { importFiles, importText } from './import'
+import { abortGroupRuns } from '../stores/groupRuns'
 import { watchStale } from '../stores/stale'
 import { NodeCards } from './nodeCards'
 import { CanvasOverlays } from './overlays'
 import { applyPresetToNode } from './presets'
-import { cancelNode, runNode } from './runner'
+import { cancelNode, runNode } from '../panels/run'
 import { watchVideoAspect } from './videoAspect'
 
 export type CanvasSource = { kind: 'remote'; canvasId: string } | { kind: 'demo'; count: number }
@@ -29,7 +31,7 @@ function previewUrl(assetId: string, kind: ElementKind) {
 
 /** 视频的宽高比，取自入库时探测的尺寸（已按旋转元数据换算） */
 async function videoRatio(assetId: string) {
-  const { width, height } = await api.assetMeta(assetId)
+  const { width, height } = await loadAssetMeta(assetId)
   return width && height ? width / height : null
 }
 
@@ -64,53 +66,63 @@ export function CanvasView({ source }: { source: CanvasSource }) {
         theme: canvasTheme(useTheme.getState().name),
       })
       // StrictMode 下 effect 会执行两次：init 未完成前不能 destroy
-      engine.init().then(() => {
-        if (disposed) return engine.destroy()
-        const overlays = new CanvasOverlays(engine, overlayRoot, host, {
-          originalUrl: assetUrls.original,
-          awareness,
-        })
-        const cards = new NodeCards(engine, overlayRoot, {
-          run: runNode,
-          cancel: cancelNode,
-          applyPreset: (id, preset) =>
-            applyPresetToNode(engine, useCatalog.getState().catalog, id, preset),
-          thumbUrl: (id) => assetUrls.variant(id, 'thumb-256'),
-        })
-        // 双击节点：聚焦生成器的提示词（面板在选中后的下一帧才挂载）
-        const offActivate = engine.onActivate((id) => {
-          const el = engine.scene.get(id)
-          if (el?.kind !== 'node') return
-          if (el.nodeType === STORYBOARD_TYPE) return useCanvas.getState().openStoryboard(id)
-          if (el.nodeType === SEQUENCE_TYPE) return useCanvas.getState().openSequence(id)
-          requestAnimationFrame(() =>
-            window.dispatchEvent(new CustomEvent('plein:focus-generator', { detail: id })),
-          )
-        })
-        const offStale = canvasId ? watchStale(engine, canvasId) : () => {}
-        const offAspect = canvasId ? watchVideoAspect(engine, videoRatio) : () => {}
-        const detach = attach(engine)
-        // 端到端测试读画布状态、换算节点屏幕坐标用；只有 e2e 构建（--mode e2e）才有，正式构建会被摇掉
-        if (import.meta.env.MODE === 'e2e') (window as { __plein?: unknown }).__plein = { engine }
-        const off = attachImport(engine, host, { setImporting, notify })
-        const offTheme = useTheme.subscribe((s, prev) => {
-          if (s.name !== prev.name) engine.setTheme(canvasTheme(s.name))
-        })
-        cleanups.push(() => {
-          offStale()
-          offAspect()
-          offTheme()
-          off()
-          offActivate()
-          cards.destroy()
-          overlays.destroy()
-          detach()
-          engine.destroy()
-        })
-        engine.zoomToFit()
-        // 方便在控制台调试和端到端测试（页面脚本本就同源，不额外暴露能力）
-        Object.assign(window, { plein: engine })
-      })
+      engine.init().then(
+        () => {
+          if (disposed) return engine.destroy()
+          const overlays = new CanvasOverlays(engine, overlayRoot, host, {
+            originalUrl: assetUrls.original,
+            awareness,
+          })
+          const cards = new NodeCards(engine, overlayRoot, {
+            run: runNode,
+            cancel: cancelNode,
+            applyPreset: (id, preset) =>
+              applyPresetToNode(engine, useCatalog.getState().catalog, id, preset),
+            thumbUrl: (id) => assetUrls.variant(id, 'thumb-256'),
+          })
+          // 双击节点：聚焦生成器的提示词（面板在选中后的下一帧才挂载）
+          const offActivate = engine.onActivate((id) => {
+            const el = engine.scene.get(id)
+            if (el?.kind !== 'node') return
+            if (el.nodeType === STORYBOARD_TYPE) return useCanvas.getState().openStoryboard(id)
+            if (el.nodeType === SEQUENCE_TYPE) return useCanvas.getState().openSequence(id)
+            requestAnimationFrame(() =>
+              window.dispatchEvent(new CustomEvent('plein:focus-generator', { detail: id })),
+            )
+          })
+          const offStale = canvasId ? watchStale(engine, canvasId) : () => {}
+          const offAspect = canvasId ? watchVideoAspect(engine, videoRatio) : () => {}
+          const detach = attach(engine)
+          // 端到端测试读画布状态、换算节点屏幕坐标用；只有 e2e 构建（--mode e2e）才有，正式构建会被摇掉
+          const e2e = import.meta.env.MODE === 'e2e'
+          if (e2e) (window as { __plein?: unknown }).__plein = { engine }
+          // 开发时方便在控制台调试
+          if (import.meta.env.DEV) (window as { plein?: unknown }).plein = engine
+          const off = attachImport(engine, host, { setImporting, notify })
+          const offTheme = useTheme.subscribe((s, prev) => {
+            if (s.name !== prev.name) engine.setTheme(canvasTheme(s.name))
+          })
+          cleanups.push(() => {
+            offStale()
+            offAspect()
+            offTheme()
+            off()
+            offActivate()
+            cards.destroy()
+            overlays.destroy()
+            detach()
+            engine.destroy()
+            if (e2e) delete (window as { __plein?: unknown }).__plein
+            if (import.meta.env.DEV) delete (window as { plein?: unknown }).plein
+          })
+          engine.zoomToFit()
+        },
+        (err) => {
+          if (disposed) return
+          console.error(err)
+          notify('画布加载失败：浏览器可能不支持 WebGL，请换用较新的浏览器或开启硬件加速')
+        },
+      )
     }
 
     if (kind === 'demo') {
@@ -160,6 +172,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
     return () => {
       disposed = true
       for (const c of cleanups.reverse()) c()
+      abortGroupRuns()
       setSync('local')
       setCanvasId(null)
     }

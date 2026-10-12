@@ -80,7 +80,7 @@ export function aspectKey(node: NodeInfo): string | undefined {
 }
 
 /** 长边固定、按宽高比求卡片尺寸 */
-export function aspectSize(ratio: number, long = MEDIA_LONG_SIDE) {
+function aspectSize(ratio: number, long = MEDIA_LONG_SIDE) {
   return ratio >= 1
     ? { w: long, h: Math.round(long / ratio) }
     : { w: Math.round(long * ratio), h: long }

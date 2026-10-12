@@ -22,7 +22,7 @@ export interface SelectedModel {
 }
 
 /** 节点的模型参数名 */
-export function modelKey(node: NodeInfo) {
+function modelKey(node: NodeInfo) {
   return fieldsOf(node).find(([, f]) => f.widget === 'model')?.[0]
 }
 

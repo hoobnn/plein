@@ -3,13 +3,12 @@ import type { PleinDoc } from '@plein/doc'
 import type { Catalog, GroupInfo, JobInfo, JobList } from '@plein/protocol'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { api } from '../api/client'
-import { cancelGroup } from '../canvas/groups'
 import { findNode } from '../canvas/nodes'
-import { cancelNode, runNode } from '../canvas/runner'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { duration, relativeTime } from '../ui/format'
 import { Icon } from '../ui/icons'
+import { cancelGroup, cancelNode, runNode } from './run'
 
 const STATUS: Record<JobInfo['status'], string> = {
   queued: '排队中',

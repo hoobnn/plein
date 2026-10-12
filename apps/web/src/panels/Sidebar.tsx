@@ -1,12 +1,12 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, updateElement } from '@plein/doc'
-import { LIBRARY_KINDS, orderedImages } from '@plein/nodes'
+import { LIBRARY_KINDS } from '@plein/nodes'
 import type { LibraryItem } from '@plein/protocol'
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { mediaOf } from '../canvas/grid'
-import { useDocVersion } from '../canvas/hooks'
-import { findPlacedCard, placeInputOf, placeLibraryItem } from '../canvas/library'
+import { useDocVersion, useSelectionVersion } from '../canvas/hooks'
+import { coverOf, findPlacedCard, placeInputOf, placeLibraryItem } from '../canvas/library'
 import {
   OUTLINE_TYPES,
   type OutlineType,
@@ -169,19 +169,6 @@ function inView(engine: Engine, r: { x: number; y: number; w: number; h: number 
   const p = camera.worldToScreen(r.x + r.w / 2, r.y + r.h / 2)
   const { left, top, right, bottom } = camera.insets
   return p.x >= left && p.x <= camera.width - right && p.y >= top && p.y <= camera.height - bottom
-}
-
-/** 选中变化时重渲染 */
-function useSelectionVersion(engine: Engine) {
-  const ref = useRef(0)
-  return useSyncExternalStore(
-    (notify) =>
-      engine.selection.onChange(() => {
-        ref.current++
-        notify()
-      }),
-    () => ref.current,
-  )
 }
 
 interface Row {
@@ -594,11 +581,3 @@ function Assets({ engine }: { engine: Engine | null }) {
 
 /** 没有引擎时给 useDocVersion 的空订阅 */
 const NO_DOC = { subscribe: () => () => {} } as unknown as Engine['doc']
-
-function coverOf(item: LibraryItem) {
-  const kind = LIBRARY_KINDS.find((k) => k.id === item.kind)
-  const first = kind && orderedImages(kind, item.images)[0]
-  if (first) return assetUrls.variant(first.assetId, 'thumb-256')
-  if (item.video) return assetUrls.variant(item.video, 'poster')
-  return null
-}

@@ -17,7 +17,8 @@ import {
   voiceOf,
 } from '@plein/nodes'
 import type { Asset, Catalog, CreateLibraryItem, LibraryItem } from '@plein/protocol'
-import { api } from '../api/client'
+import { assetUrls } from '../api/client'
+import { loadAssetMeta } from '../stores/assetMeta'
 import type { LibrarySeed } from '../stores/library'
 import { mediaOf } from './grid'
 import { elementFor } from './import'
@@ -84,8 +85,16 @@ function freeSpot(
   return { x, y: at.y }
 }
 
+/** 条目封面：第一张参考图的缩略图，没有图时用参考视频的封面 */
+export function coverOf(item: LibraryItem, kind = libraryKind(item.kind)) {
+  const first = kind && orderedImages(kind, item.images)[0]
+  if (first) return assetUrls.variant(first.assetId, 'thumb-256')
+  if (item.video) return assetUrls.variant(item.video, 'poster')
+  return null
+}
+
 async function metas(ids: string[]) {
-  const out = await Promise.all(ids.map((id) => api.assetMeta(id).catch(() => null)))
+  const out = await Promise.all(ids.map((id) => loadAssetMeta(id).catch(() => null)))
   return out.filter((a): a is Asset => a !== null)
 }
 

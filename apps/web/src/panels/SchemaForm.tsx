@@ -177,7 +177,7 @@ export function rangeOf(f: FieldSchema) {
 }
 
 /** 按 schema 收拢数值：超出范围的夹到边界，整数取整 */
-export function clampNumber(f: FieldSchema, n: number) {
+function clampNumber(f: FieldSchema, n: number) {
   let v = f.type === 'integer' ? Math.round(n) : n
   if (f.minimum !== undefined) v = Math.max(f.minimum, v)
   if (f.maximum !== undefined) v = Math.min(f.maximum, v)

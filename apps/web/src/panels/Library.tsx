@@ -4,7 +4,6 @@ import {
   libraryKind,
   OFFICIAL_LIBRARY,
   type OfficialLibraryItem,
-  orderedImages,
   slotImages,
 } from '@plein/nodes'
 import type { LibraryImage, LibraryItem, LibraryKind } from '@plein/protocol'
@@ -13,6 +12,7 @@ import { api, assetUrls } from '../api/client'
 import {
   type CanvasMedia,
   canvasMedia,
+  coverOf,
   placeInputOf,
   placeLibraryItem,
   type PlaceInput,
@@ -314,13 +314,6 @@ function Empty({
 /** 缩略图地址：图片取 256 缩略图，视频取封面 */
 const thumb = (assetId: string) => assetUrls.variant(assetId, 'thumb-256')
 
-function coverOf(kind: LibraryKindSpec, item: LibraryItem) {
-  const first = orderedImages(kind, item.images)[0]
-  if (first) return thumb(first.assetId)
-  if (item.video) return assetUrls.variant(item.video, 'poster')
-  return null
-}
-
 function tagLine(kind: LibraryKindSpec, tags: Record<string, string>) {
   return kind.tags
     .map((t) => tags[t.id])
@@ -341,7 +334,7 @@ function Card({
   onOpen(): void
   onPlace(): void
 }) {
-  const cover = coverOf(kind, item)
+  const cover = coverOf(item, kind)
   const update = useLibrary((s) => s.update)
   return (
     <li className="home-card group relative">
@@ -373,7 +366,11 @@ function Card({
         aria-label={item.favorite ? '取消收藏' : '收藏'}
         aria-pressed={item.favorite}
         title={item.favorite ? '取消收藏' : '收藏'}
-        onClick={() => void update(item.id, { favorite: !item.favorite })}
+        onClick={() =>
+          update(item.id, { favorite: !item.favorite }).catch((err) =>
+            useCanvas.getState().notify(`收藏没改成：${(err as Error).message}`),
+          )
+        }
         className={`ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn absolute top-2 right-2 bg-float ${
           item.favorite
             ? 'text-warning'
@@ -554,7 +551,12 @@ function Editor({
       danger: true,
     })
     if (!ok) return
-    await lib.remove(item.id)
+    try {
+      await lib.remove(item.id)
+    } catch (err) {
+      setError((err as Error).message)
+      return
+    }
     onBack()
   }
 

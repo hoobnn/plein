@@ -23,7 +23,7 @@ import {
   upstreams,
   validate,
 } from '../../canvas/nodes'
-import { cancelNode, runNode } from '../../canvas/runner'
+import { cancelNode, runNode } from '../run'
 import { shotsOf } from '../../canvas/storyboard'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'

@@ -2,14 +2,7 @@ import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
 import type { ReactNode } from 'react'
 import { applyCast, castOf, describeCast } from '../canvas/cast'
 import { findNode, type NodeInfo } from '../canvas/nodes'
-import {
-  describeFlowRun,
-  describeGroupRun,
-  runFlow,
-  runGroup,
-  templateData,
-} from '../canvas/groups'
-import { runNode } from '../canvas/runner'
+import { templateData } from '../canvas/groups'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useTemplates } from '../stores/templates'
@@ -17,6 +10,7 @@ import { promptDialog } from '../ui/Dialog'
 import { shortcut } from '../ui/keys'
 import { useDismiss } from '../ui/useDismiss'
 import { AddMenu } from './AddMenu'
+import { runFlowFrom, runFrame, runNode } from './run'
 
 const MENU_W = 280
 
@@ -130,17 +124,11 @@ function ContextMenu({
     fn()
   }
   const notify = useCanvas((s) => s.notify)
-  const runFrame = async (id: string, video: boolean) => {
-    const r = await runGroup(id, { video })
-    if (r) notify(describeGroupRun(engine.doc.get(id)?.name ?? 'Frame', r))
-  }
-  const flow = async (id: string, scope: 'upstream' | 'downstream') => {
-    const r = await runFlow(id, scope)
+  const runGroup = (id: string, video: boolean) =>
+    runFrame(id, engine.doc.get(id)?.name ?? 'Frame', { video })
+  const flow = (id: string, scope: 'upstream' | 'downstream') => {
     const el = engine.doc.get(id)
-    if (r)
-      notify(
-        describeFlowRun(scope, el?.name ?? findNode(catalog, el?.nodeType)?.title ?? '节点', r),
-      )
+    return runFlowFrom(id, scope, el?.name ?? findNode(catalog, el?.nodeType)?.title ?? '节点')
   }
   const saveFrame = async (id: string) => {
     const title = await promptDialog({
@@ -215,8 +203,8 @@ function ContextMenu({
         )}
         {single?.kind === 'frame' && canImport && (
           <>
-            <Item label="运行整组" onClick={act(() => void runFrame(single.id, false))} />
-            <Item label="运行整组（含视频）" onClick={act(() => void runFrame(single.id, true))} />
+            <Item label="运行整组" onClick={act(() => void runGroup(single.id, false))} />
+            <Item label="运行整组（含视频）" onClick={act(() => void runGroup(single.id, true))} />
             <Item label="存为模板…" onClick={act(() => void saveFrame(single.id))} />
             <Sep />
           </>

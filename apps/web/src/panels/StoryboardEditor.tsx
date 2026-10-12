@@ -17,6 +17,7 @@ import { confirmDialog, dialogOpen } from '../ui/Dialog'
 import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { Select } from '../ui/Select'
+import { runNode } from './run'
 import { StoryboardSync } from './StoryboardSync'
 
 const cell =
@@ -165,7 +166,13 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
   }
   const batch = (role: ShotRole) => {
-    const { started, skipped, reasons } = runExpanded(engine, id, targetIds, role)
+    const { started, skipped, reasons } = runExpanded(
+      engine,
+      id,
+      targetIds,
+      role,
+      (n) => void runNode(n),
+    )
     const label = role === 'image' ? '分镜图' : role === 'video' ? '视频' : '配音'
     if (!started && !skipped) notify(`先把镜头展开成节点，再批量生成${label}`)
     else

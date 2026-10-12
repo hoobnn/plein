@@ -1,6 +1,7 @@
 import type { Engine } from '@plein/canvas-core'
-import { API, type StaleNodes } from '@plein/protocol'
+import type { StaleNodes } from '@plein/protocol'
 import { create } from 'zustand'
+import { api } from '../api/client'
 
 export type StaleKind = 'self' | 'upstream'
 
@@ -31,9 +32,8 @@ export function watchStale(engine: Engine, canvasId: string) {
   const load = async () => {
     const mine = ++seq
     try {
-      const res = await fetch(API.canvasStale(canvasId), { credentials: 'same-origin' })
-      if (!res.ok || mine !== seq) return
-      useStale.getState().set((await res.json()) as StaleNodes)
+      const stale = await api.canvasStale(canvasId)
+      if (mine === seq) useStale.getState().set(stale)
     } catch {}
   }
   const schedule = () => {

@@ -27,9 +27,7 @@ export async function splitGrid(
 ): Promise<string | null> {
   const rect = engine.scene.rect(sourceId)
   if (!rect) return null
-  const res = await fetch(assetUrls.original(assetId), { credentials: 'same-origin' })
-  if (!res.ok) throw new Error('原图下载失败')
-  const bitmap = await createImageBitmap(await res.blob())
+  const bitmap = await createImageBitmap(await api.assetBlob(assetId))
   const tw = Math.floor(bitmap.width / cols)
   const th = Math.floor(bitmap.height / rows)
   const canvas = document.createElement('canvas')
