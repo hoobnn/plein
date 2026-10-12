@@ -5,6 +5,7 @@ plein 的节点、模型平台、模板、自定义元素类型都通过插件�
 - 节点声明：`packages/nodes/src/core.ts`（插件 `plein/core`）
 - 节点执行器：`apps/server/src/executors/core.ts`
 - 模型平台：`packages/providers/src/mock/`（插件 `plein/mock`，开发测试用）
+- 真实平台：`packages/providers/src/{minimax,doubao,bailian,ark}/`（配置与能力见 [模型平台接入](providers.md)）
 
 ## 结构
 
@@ -67,6 +68,8 @@ export const serverPlugin = defineServerPlugin(plugin, {
 - `submit(request, ctx)`：同步平台直接返回结果；异步平台返回 `remoteId`，宿主按 `pollAfterMs` 调 `poll`
 - `poll(remoteId, ctx)` / `cancel(remoteId, ctx)`：任务被取消或超时时宿主会调 `cancel`
 - `test(ctx)`：设置页的“测试连接”
+
+没有免费远端鉴权探针时，声明 `testScope: 'configuration'`，设置页显示“检查配置”并说明未验证远端连接。不同鉴权方案可用 `credentialAlternatives` 声明任意一组必须完整填写的密钥，例如豆包 API Key 或 App ID + Access Key。
 
 错误统一抛 `ProviderError(code, message)`，`code` 为 `auth`、`quota`、`rate_limit`、`invalid_input`、`content_policy`、`timeout`、`unavailable` 等，节点上据此显示原因，`rate_limit` / `unavailable` / `timeout` 默认可重试。
 

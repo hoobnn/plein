@@ -13,7 +13,7 @@ packages/doc          文档模型：Yjs（Element / Edge / Undo）
 packages/protocol     前后端共享的接口约定（zod）
 packages/plugin-sdk   插件 API：清单、节点、Provider、执行器（见 docs/plugins.md）
 packages/nodes        内置节点声明（plein/core）
-packages/providers    模型平台适配器（服务端），目前只有开发用的 mock
+packages/providers    模型平台适配器（服务端）：MiniMax、豆包语音、百炼、火山方舟及 mock
 ```
 
 ## 本地部署
@@ -25,6 +25,8 @@ docker compose up -d     # 打开 http://localhost:8787
 画布、素材和数据库都在 `plein-data` 卷里，备份它即可。默认只绑定本机且免登录；要让其他设备访问，按 `compose.yaml` 里的注释改端口并删掉 `PLEIN_AUTH`，首次访问会要求创建所有者账号。
 
 不用 Docker 时：`pnpm install && pnpm build && pnpm start`（需要本机装好 ffmpeg，用于视频封面和音频波形）。
+
+打开设置中的「模型平台」，填写密钥、保存并启用对应平台，再在节点里选择模型。四家真实平台默认关闭；无需环境变量注入密钥。支持范围和配置说明见 [模型平台接入](docs/providers.md)。
 
 | 环境变量 | 默认 | 说明 |
 | --- | --- | --- |
