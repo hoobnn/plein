@@ -23,8 +23,14 @@ export interface EdgePreview {
  */
 export class EdgeLayer {
   readonly edges = new Graphics()
+  /** 下游正在生成的连线上流动的虚线：单独一层，每帧只重画这几条 */
+  readonly flow = new Graphics()
   readonly ports = new Graphics()
   private dirty = true
+  /** 只有端口层要重画（悬停变化）：连线不动 */
+  private portsDirty = true
+  /** 正在流动的连线（世界坐标端点），静态层重画时收集 */
+  private running: Array<{ x1: number; y1: number; x2: number; y2: number }> = []
   private preview: EdgePreview | null = null
   private hover: PortRef | null = null
   /** 光标所在（或贴近）的元素：它的端口显示出来 */
@@ -38,11 +44,17 @@ export class EdgeLayer {
     private selection: Selection,
   ) {
     this.edges.zIndex = -1
+    this.flow.zIndex = -1
     this.ports.zIndex = 1
   }
 
   markDirty() {
     this.dirty = true
+  }
+
+  /** 只平移：连线在世界坐标里不变；正在拉线时端口要按新视口重画 */
+  cameraMoved() {
+    if (this.preview) this.portsDirty = true
   }
 
   setPreview(p: EdgePreview | null) {
@@ -53,7 +65,7 @@ export class EdgeLayer {
   setHover(p: PortRef | null) {
     if (p?.elementId === this.hover?.elementId && p?.side === this.hover?.side) return
     this.hover = p
-    this.markDirty()
+    this.portsDirty = true
   }
 
   setHidden(hidden: boolean) {
@@ -64,7 +76,9 @@ export class EdgeLayer {
   setHoverElement(id: string | null) {
     if (id === this.hoverEl) return
     this.hoverEl = id
-    this.markDirty()
+    // 悬停只影响端口；隐藏连线模式下悬停元素的线才露出来，要整层重画
+    if (this.hidden) this.markDirty()
+    else this.portsDirty = true
   }
 
   /**
@@ -83,22 +97,35 @@ export class EdgeLayer {
     return el && r ? findPort(el, r, portId, side) : null
   }
 
-  update() {
-    if (!this.dirty) return
-    this.dirty = false
+  /** 需要时重画；返回这一帧是否改了图形（引擎据此决定要不要渲染） */
+  update(): boolean {
+    let changed = false
+    if (this.dirty) {
+      this.dirty = false
+      this.portsDirty = false
+      this.drawEdges()
+      this.drawPorts()
+      changed = true
+    } else if (this.portsDirty) {
+      this.portsDirty = false
+      this.drawPorts()
+      changed = true
+    }
+    return this.drawFlow() || changed
+  }
+
+  private drawEdges() {
     // 线宽按缩放反算，屏幕上保持恒定粗细
     const px = 1 / this.camera.zoom
-    const now = performance.now()
-    let animating = false
-
     const g = this.edges.clear()
-    const connected = new Set<string>()
+    this.running = []
+    this.connected.clear()
     for (const e of this.scene.doc.edges()) {
       const from = this.port(e.from[0], e.from[1], 'out')
       const to = this.port(e.to[0], e.to[1], 'in')
       if (!from || !to) continue
-      connected.add(`${e.from[0]}:out`)
-      connected.add(`${e.to[0]}:in`)
+      this.connected.add(`${e.from[0]}:out`)
+      this.connected.add(`${e.to[0]}:in`)
       // 按数据类型着色；连着选中元素的线加重
       const on = this.selection.has(e.from[0]) || this.selection.has(e.to[0])
       const status = this.scene.get(e.to[0])?.run?.status
@@ -106,19 +133,22 @@ export class EdgeLayer {
       if (this.hidden && !on && !running && this.hoverEl !== e.from[0] && this.hoverEl !== e.to[0])
         continue
       const color = portColor(from.port.type)
+      bezier(g, from.x, from.y, to.x, to.y)
       if (running) {
-        // 下游正在生成：沿连线流动的虚线，示意数据正在流过去
-        animating = true
-        bezier(g, from.x, from.y, to.x, to.y)
+        // 下游正在生成：淡底线 + 流动的虚线（虚线在 flow 层逐帧画）
         g.stroke({ color, alpha: 0.18, width: 2 * px })
-        dashedBezier(g, from.x, from.y, to.x, to.y, 8 * px, 6 * px, (now / 40) * px)
-        g.stroke({ color: theme.accent, alpha: 0.95, width: 2 * px })
+        this.running.push({ x1: from.x, y1: from.y, x2: to.x, y2: to.y })
         continue
       }
-      bezier(g, from.x, from.y, to.x, to.y)
       g.stroke({ color, alpha: on ? 0.95 : 0.45, width: (on ? 2 : 1.5) * px })
     }
+  }
 
+  /** 端口上已连线的一侧（画“+”还是实心点） */
+  private connected = new Set<string>()
+
+  private drawPorts() {
+    const px = 1 / this.camera.zoom
     const p = this.ports.clear()
     if (this.preview) {
       const { from, target } = this.preview
@@ -127,11 +157,14 @@ export class EdgeLayer {
       else bezier(p, end.x, end.y, from.x, from.y)
       p.stroke({ color: portColor(from.port.type), alpha: target ? 0.95 : 0.6, width: 2 * px })
     }
-    if (animating) this.dirty = true
     // 缩得很小时端口点太密，不画
     if (this.camera.zoom < 0.25) return
     const active = this.preview?.target ?? this.hover
-    for (const id of this.scene.query(this.camera.viewRect)) {
+    // 平时只有选中和悬停的元素露出端口；拉线时视口内都露出
+    const candidates = this.preview
+      ? this.scene.query(this.camera.viewRect)
+      : [...this.selection.values(), ...(this.hoverEl ? [this.hoverEl] : [])]
+    for (const id of new Set(candidates)) {
       const el = this.scene.get(id)
       const r = this.scene.rect(id)
       if (!el || !r || !this.portsVisible(el)) continue
@@ -146,7 +179,7 @@ export class EdgeLayer {
           .fill({ color: theme.knob })
           .stroke({ color, width: 1.5 * px })
         // 没连线的一侧画“+”：从这里拉出可以新建并连上节点
-        if (!connected.has(`${el.id}:${side}`)) {
+        if (!this.connected.has(`${el.id}:${side}`)) {
           const a = rad * 0.45
           p.moveTo(at.x - a, at.y)
             .lineTo(at.x + a, at.y)
@@ -160,8 +193,40 @@ export class EdgeLayer {
     }
   }
 
+  /** 流动虚线：只要有下游在生成就逐帧推进；视口外的不画 */
+  private drawFlow(): boolean {
+    const f = this.flow
+    const px = 1 / this.camera.zoom
+    const offset = (performance.now() / 40) * px
+    const v = this.camera.viewRect
+    let drawn = 0
+    if (this.running.length > 0) f.clear()
+    for (const { x1, y1, x2, y2 } of this.running) {
+      const c = Math.max(40, Math.abs(x2 - x1) * 0.5)
+      if (
+        Math.max(x1, x2) + c < v.x ||
+        Math.min(x1, x2) - c > v.x + v.w ||
+        Math.max(y1, y2) < v.y ||
+        Math.min(y1, y2) > v.y + v.h
+      )
+        continue
+      dashedBezier(f, x1, y1, x2, y2, 8 * px, 6 * px, offset)
+      drawn++
+    }
+    // 没有可见的流动线：清掉一次后不再触发渲染
+    if (drawn === 0) {
+      if (!f.visible) return false
+      f.clear().visible = false
+      return true
+    }
+    f.visible = true
+    f.stroke({ color: theme.accent, alpha: 0.95, width: 2 * px })
+    return true
+  }
+
   destroy() {
     this.edges.destroy()
+    this.flow.destroy()
     this.ports.destroy()
   }
 }

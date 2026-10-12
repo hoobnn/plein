@@ -16,10 +16,11 @@ import {
   sendToBack,
   ungroupElements,
 } from '@plein/doc'
-import { Application, Container, Graphics } from 'pixi.js'
+import { Application, Container } from 'pixi.js'
 import { Camera } from './camera'
 import { EdgeLayer } from './edges'
 import { union } from './geometry'
+import { DotGrid } from './grid'
 import { attachInput, isEditableTarget, type PanState } from './input'
 import { attachInteractions } from './interact'
 import type { PortRef } from './ports'
@@ -55,6 +56,12 @@ export interface EngineState {
   edgesHidden: boolean
 }
 
+/** onViewChange 的通知内容 */
+export interface ViewChange {
+  /** 元素内容或几何变了（否则只是视口内的元素集合或细节层级变了） */
+  content: boolean
+}
+
 /** 画布上的一个位置：世界坐标 + 视口坐标（clientX / clientY，弹菜单用） */
 export interface CanvasPoint {
   world: { x: number; y: number }
@@ -82,6 +89,9 @@ export interface ArrangeResult {
   stale(): boolean
 }
 
+/** 连续缩放时线宽允许的偏差，超过才重画连线和选择层 */
+const STROKE_ZOOM_SLACK = 0.1
+
 /** 粘贴时相对上一次的位移 */
 const PASTE_OFFSET = 24
 
@@ -96,15 +106,26 @@ export class Engine {
   readonly scene: Scene
   private app = new Application()
   private world = new Container({ sortableChildren: true })
-  private grid = new Graphics()
+  private grid = new DotGrid()
   private views: ElementViews
   private edges: EdgeLayer
   private overlay: SelectionOverlay
   private pan: PanState = { space: false, hand: false }
   private toolValue: Tool = 'select'
   private viewDirty = true
+  /** 画面有变化、下一帧要渲染；静止时不重画，省 GPU 和电量 */
+  private renderDirty = true
+  /** 相机变了、还没应用到显示树：同一帧里的多次滚轮 / 拖动只处理一次 */
+  private cameraDirty = true
+  /** 上次应用时的缩放：只平移时状态不用通知 */
+  private appliedZoom = Number.NaN
+  /** 连线和选择层按这个缩放画的线宽；缩放过程中差得不多就先不重画，停下再画准 */
+  private strokeZoom = Number.NaN
   private listeners = new Set<() => void>()
-  private viewListeners = new Set<() => void>()
+  private viewListeners = new Set<(change: ViewChange) => void>()
+  private moveListeners = new Set<() => void>()
+  /** 宿主在视口里的位置，尺寸变化时更新；坐标换算每帧都要用，不能每次读布局 */
+  private hostRect: DOMRect | null = null
   private activateListeners = new Set<(id: string) => void>()
   private menuListeners = new Set<(e: CanvasMenuEvent) => void>()
   private arrangeListeners = new Set<(r: ArrangeResult) => void>()
@@ -119,6 +140,7 @@ export class Engine {
     this.views = new ElementViews(this.scene, opts.renderers ?? new RendererRegistry(), {
       assetUrl: opts.assetUrl,
       onContentSize: (id, w, h) => this.fitMedia(id, w, h),
+      invalidate: () => this.requestRender(),
     })
     this.edges = new EdgeLayer(this.scene, this.camera, this.selection)
     this.overlay = new SelectionOverlay(this.scene, this.selection, this.camera)
@@ -140,10 +162,18 @@ export class Engine {
       preference: this.opts.renderer ?? 'webgl',
     })
     host.appendChild(this.app.canvas)
-    this.app.stage.addChild(this.grid, this.world)
+    this.app.stage.addChild(this.grid.display, this.world)
     // 连线在元素下，端口、选择叠加层在元素上，靠 zIndex 排序
-    this.world.addChild(this.edges.edges, this.views.layer, this.edges.ports, this.overlay.graphics)
+    this.world.addChild(
+      this.edges.edges,
+      this.edges.flow,
+      this.views.layer,
+      this.edges.ports,
+      this.overlay.graphics,
+    )
     this.views.sync(this.scene.rebuild())
+    // 不用 Pixi 默认的每帧渲染，改为在 frame() 里按需渲染
+    this.app.ticker.remove(this.app.render, this.app)
     this.app.ticker.add(() => this.frame())
 
     this.disposers.push(
@@ -162,7 +192,9 @@ export class Engine {
         connectToEmpty: (from, world, client) =>
           this.emitMenu({ kind: 'connect', from, world, client }),
       }),
-      this.camera.onChange(() => this.syncCamera()),
+      this.camera.onChange(() => {
+        this.cameraDirty = true
+      }),
       this.selection.onChange(() => {
         this.overlay.markDirty()
         this.edges.markDirty()
@@ -183,14 +215,30 @@ export class Engine {
       this.attachContextMenu(),
     )
 
-    const onResize = () => this.camera.setViewport(this.app.screen.width, this.app.screen.height)
+    const onResize = () => {
+      this.camera.setViewport(this.app.screen.width, this.app.screen.height)
+      this.requestRender()
+    }
     this.app.renderer.on('resize', onResize)
     this.disposers.push(() => this.app.renderer.off('resize', onResize))
     // resizeTo 只听窗口 resize；宿主随侧栏展开收起变宽变窄时也要跟上
-    const observer = new ResizeObserver(() => this.app.resize())
+    const observer = new ResizeObserver(() => {
+      this.hostRect = null
+      this.app.resize()
+    })
+    const onWindowResize = () => {
+      this.hostRect = null
+    }
+    window.addEventListener('resize', onWindowResize)
+    window.addEventListener('scroll', onWindowResize, { capture: true, passive: true })
+    this.disposers.push(() => {
+      window.removeEventListener('resize', onWindowResize)
+      window.removeEventListener('scroll', onWindowResize, { capture: true })
+    })
     observer.observe(host)
     this.disposers.push(() => observer.disconnect())
     onResize()
+    this.syncCamera()
   }
 
   // ── 状态 ────────────────────────────────────────────
@@ -218,6 +266,11 @@ export class Engine {
     }
   }
 
+  /** 引擎之外改了会影响状态的东西（如文档转为只读）时，让外壳重新读取 */
+  refreshState() {
+    this.emit()
+  }
+
   /** 工具、缩放、选中、撤销栈任一变化时通知 */
   onStateChange(fn: () => void) {
     this.listeners.add(fn)
@@ -229,11 +282,23 @@ export class Engine {
   /**
    * 视口内元素集合、细节层级或元素内容变化时通知（不随平移每帧触发），
    * 供 DOM 覆盖层（Markdown 正文、播放器、编辑器）增量更新。
+   * content 为 false 表示只有元素进出视口：已显示的元素不用重画。
    */
-  onViewChange(fn: () => void) {
+  onViewChange(fn: (change: ViewChange) => void) {
     this.viewListeners.add(fn)
     return () => {
       this.viewListeners.delete(fn)
+    }
+  }
+
+  /**
+   * 相机或元素几何（含拖动预览）变化后、本帧绘制前通知，每帧至少一次、最多一次。
+   * 浮在元素旁的 DOM 面板用它直接改位置，不必走 React 重渲染。
+   */
+  onMove(fn: () => void) {
+    this.moveListeners.add(fn)
+    return () => {
+      this.moveListeners.delete(fn)
     }
   }
 
@@ -288,14 +353,14 @@ export class Engine {
 
   /** 世界坐标转视口坐标（clientX / clientY） */
   worldToClient(x: number, y: number) {
-    const r = this.opts.host.getBoundingClientRect()
+    const r = this.host()
     const s = this.camera.worldToScreen(x, y)
     return { x: s.x + r.left, y: s.y + r.top }
   }
 
   /** 屏幕坐标（相对画布宿主）转世界坐标 */
   clientToWorld(clientX: number, clientY: number) {
-    const r = this.opts.host.getBoundingClientRect()
+    const r = this.host()
     return this.camera.screenToWorld(clientX - r.left, clientY - r.top)
   }
 
@@ -405,7 +470,9 @@ export class Engine {
   setTheme(next: CanvasTheme) {
     Object.assign(theme, next)
     if (this.app.renderer) this.app.renderer.background.color = next.background
-    this.drawGrid()
+    this.grid.setTheme()
+    this.cameraDirty = true
+    this.requestRender()
     this.views.refreshAll()
     this.edges.markDirty()
     this.overlay.markDirty()
@@ -448,16 +515,45 @@ export class Engine {
     for (const fn of this.listeners) fn()
   }
 
+  private host() {
+    this.hostRect ??= this.opts.host.getBoundingClientRect()
+    return this.hostRect
+  }
+
+  /** 请求下一帧渲染（显示树被引擎之外改动时用） */
+  requestRender() {
+    this.renderDirty = true
+  }
+
+  private redrawStrokes() {
+    this.strokeZoom = this.camera.zoom
+    this.edges.markDirty()
+    this.overlay.markDirty()
+  }
+
   private frame() {
-    let notify = this.contentDirty
+    // 缩放停下来的那一帧：按最终缩放把线宽画准
+    if (!this.cameraDirty && this.strokeZoom !== this.camera.zoom) this.redrawStrokes()
+    const moved = this.cameraDirty || this.contentDirty
+    // 宿主可能因页面布局变化移动而尺寸不变：每个有变化的帧重新量一次
+    if (moved) this.hostRect = null
+    if (moved || this.viewDirty) this.renderDirty = true
+    if (this.cameraDirty) this.syncCamera()
+    const content = this.contentDirty
+    let notify = content
     this.contentDirty = false
     if (this.viewDirty) {
       this.viewDirty = false
       if (this.views.cull(this.camera.viewRect, this.camera.zoom)) notify = true
     }
-    if (notify) for (const fn of this.viewListeners) fn()
-    this.edges.update()
-    this.overlay.update()
+    if (notify) for (const fn of this.viewListeners) fn({ content })
+    if (moved) for (const fn of this.moveListeners) fn()
+    if (this.edges.update()) this.renderDirty = true
+    if (this.overlay.update()) this.renderDirty = true
+    if (this.renderDirty) {
+      this.renderDirty = false
+      this.app.render()
+    }
   }
 
   private preview(patches: Map<string, Transient>) {
@@ -480,34 +576,23 @@ export class Engine {
     this.viewDirty = true
   }
 
+  /** 把相机应用到显示树和 DOM 覆盖层；每帧最多一次 */
   private syncCamera() {
+    this.cameraDirty = false
     const { x, y, zoom } = this.camera
     this.world.position.set(x, y)
     this.world.scale.set(zoom)
     if (this.opts.overlay) this.opts.overlay.style.transform = this.camera.cssTransform
-    this.drawGrid()
-    this.edges.markDirty()
-    this.overlay.markDirty()
-    this.viewDirty = true
-    this.emit()
-  }
-
-  /** 屏幕空间点阵：间距随缩放分级，避免过密 */
-  private drawGrid() {
-    const { width, height } = this.camera
-    const { x, y, zoom } = this.camera
-    let step = 24 * zoom
-    while (step < 12) step *= 4
-    while (step > 96) step /= 4
-    const ox = ((x % step) + step) % step
-    const oy = ((y % step) + step) % step
-    const g = this.grid.clear()
-    for (let gx = ox; gx < width; gx += step) {
-      for (let gy = oy; gy < height; gy += step) {
-        g.circle(gx, gy, 0.9)
-      }
+    this.grid.update(this.camera)
+    if (zoom !== this.appliedZoom) {
+      this.appliedZoom = zoom
+      this.emit()
     }
-    g.fill({ color: theme.grid.color, alpha: theme.grid.alpha })
+    // 线宽按缩放反算：平移时世界坐标里的图形不变；连续缩放时线宽偏差超过一成才重画
+    if (Math.abs(zoom / this.strokeZoom - 1) > STROKE_ZOOM_SLACK || Number.isNaN(this.strokeZoom))
+      this.redrawStrokes()
+    this.edges.cameraMoved()
+    this.viewDirty = true
   }
 
   private attachActivate() {
@@ -631,6 +716,7 @@ export class Engine {
     this.views.destroy()
     this.edges.destroy()
     this.overlay.destroy()
+    this.grid.destroy()
     this.app.destroy(true, { children: true })
   }
 }

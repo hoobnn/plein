@@ -8,6 +8,7 @@ export {
   type EngineOptions,
   type EngineState,
   type Tool,
+  type ViewChange,
 } from './engine'
 export * from './geometry'
 export { attachInput, isEditableTarget, type PanState } from './input'
@@ -23,6 +24,7 @@ export {
   NODE_LAYOUT,
   nodeBody,
   nodeRenderer,
+  type PreviewSize,
   type RenderContext,
   RendererRegistry,
 } from './renderers'

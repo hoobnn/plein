@@ -1,4 +1,4 @@
-import type { Rect } from '@plein/doc'
+import type { CanvasElement, Rect } from '@plein/doc'
 import { Container } from 'pixi.js'
 import type { ElementView, RenderContext, RendererRegistry } from './renderers'
 import type { Scene, SceneUpdate } from './scene'
@@ -10,6 +10,13 @@ interface ViewNode {
   /** 元素自身的显示对象，首次进入视口时才创建 */
   body: ElementView | null
   inView: boolean
+  /** 上次画 body 用的元素快照与尺寸：只是挪位置（拖动、平移父级）时不用重画 */
+  drawn: { el: CanvasElement; key: string; w: number; h: number } | null
+}
+
+/** 元素除位置以外的内容：位置由容器承担，内容没变就不用重画 */
+function contentKey({ x: _x, y: _y, z: _z, parentId: _p, ...rest }: CanvasElement) {
+  return JSON.stringify(rest)
 }
 
 /** 视口外多渲染一圈（世界坐标会按缩放换算），平移时不闪 */
@@ -43,21 +50,33 @@ export class ElementViews {
     this.refresh(update.changed)
   }
 
-  /** 重新定位并重画（几何或内容变化后） */
-  refresh(ids: Iterable<string>) {
+  /** 重新定位；内容或尺寸变了才重画（几何或内容变化后） */
+  refresh(ids: Iterable<string>, force = false) {
     for (const id of ids) {
       const node = this.nodes.get(id)
       const local = this.scene.localRect(id)
       const el = this.scene.get(id)
       if (!node || !local || !el) continue
       node.root.position.set(local.x, local.y)
-      node.body?.update({ ...el, ...local })
+      if (!node.body) continue
+      const d = node.drawn
+      if (!force && d && d.w === local.w && d.h === local.h) {
+        // 文档快照按元素缓存，没变时是同一个对象；变了也可能只是挪了位置（拖完松手、协作者拖动）
+        if (d.el === el) continue
+        const key = contentKey(el)
+        if (key === d.key) {
+          d.el = el
+          continue
+        }
+        node.drawn = { el, key, w: local.w, h: local.h }
+      } else node.drawn = { el, key: contentKey(el), w: local.w, h: local.h }
+      node.body.update({ ...el, ...local })
     }
   }
 
   /** 全部重画（换主题后） */
   refreshAll() {
-    this.refresh([...this.nodes.keys()])
+    this.refresh([...this.nodes.keys()], true)
   }
 
   /** 视口裁剪：只对进出视口的元素做增量切换 */
@@ -113,7 +132,7 @@ export class ElementViews {
     const kids = new Container({ sortableChildren: true })
     root.addChild(kids)
     root.visible = false
-    return { root, kids, body: null, inView: false }
+    return { root, kids, body: null, inView: false, drawn: null }
   }
 
   private setInView(id: string, inView: boolean) {
@@ -125,6 +144,7 @@ export class ElementViews {
       const local = this.scene.localRect(id)
       if (el && local) {
         node.body = this.registry.create({ ...el, ...local }, this.ctx)
+        node.drawn = { el, key: contentKey(el), w: local.w, h: local.h }
         node.body.setDetail?.(this.highDetail)
         node.root.addChildAt(node.body.display, 0)
       }

@@ -2,11 +2,16 @@ import { type CanvasElement, currentResult, type ElementKind } from '@plein/doc'
 import { Assets, Container, Graphics, Text, type Texture } from 'pixi.js'
 import { theme } from './theme'
 
+/** 预览图档位：缩得很小时用小图，省下载、解码和显存 */
+export type PreviewSize = 'small' | 'large'
+
 export interface RenderContext {
   /** 资产在画布上的预览图 URL：图片缩略图、视频封面、音频波形 */
-  assetUrl?: (assetId: string, kind: ElementKind) => string | undefined
+  assetUrl?: (assetId: string, kind: ElementKind, size: PreviewSize) => string | undefined
   /** 媒体预览加载后报告其像素尺寸，用来按内容校正元素尺寸 */
   onContentSize?: (id: string, w: number, h: number) => void
+  /** 异步内容（纹理）就绪后请求重新渲染；引擎只在画面有变化时才渲染 */
+  invalidate?: () => void
 }
 
 /** 渲染器产出的显示对象，按元素局部坐标 (0,0)-(w,h) 绘制 */
@@ -159,6 +164,10 @@ export const mediaRenderer: ElementRenderer = (el, ctx) => {
   display.addChild(bg, glyph, label)
   let texture: Texture | undefined
   let loading: string | undefined
+  /** 已加载过大图：缩小时不再换回小图 */
+  let large = false
+  /** 已按哪个资产的大图校正过尺寸，不再重复写文档 */
+  let sized: string | undefined
   let destroyed = false
   let high = true
   let current = el
@@ -202,16 +211,23 @@ export const mediaRenderer: ElementRenderer = (el, ctx) => {
   const view: ElementView = {
     display,
     update(next) {
+      if (next.assetId !== current.assetId) large = false
       current = next
       draw(next)
-      const url = next.assetId ? ctx.assetUrl?.(next.assetId, next.kind) : undefined
+      const size = high || large ? 'large' : 'small'
+      const url = next.assetId ? ctx.assetUrl?.(next.assetId, next.kind, size) : undefined
       if (!url || url === loading) return
       loading = url
       loadTexture(url)
         .then((tex) => {
           if (destroyed || loading !== url) return
           texture = tex
+          if (size === 'large') large = true
           draw(current)
+          ctx.invalidate?.()
+          // 按大图校正比例：小图边长取整后比例有误差
+          if (size !== 'large' || sized === current.assetId) return
+          sized = current.assetId
           ctx.onContentSize?.(current.id, tex.width, tex.height)
         })
         .catch(() => {
@@ -221,7 +237,8 @@ export const mediaRenderer: ElementRenderer = (el, ctx) => {
     setDetail(next) {
       if (next === high) return
       high = next
-      draw(current)
+      // 放大回正常细节时换上大图（加载完之前先显示小图）
+      view.update(current)
     },
     destroy() {
       destroyed = true
@@ -291,6 +308,8 @@ export const nodeRenderer: ElementRenderer = (el, ctx) => {
   display.addChild(bg)
   let texture: Texture | undefined
   let loading: string | undefined
+  /** 当前结果已加载过大图：缩小时不再换回小图 */
+  let largeOf: string | undefined
   let destroyed = false
   let high = true
   let current = el
@@ -331,8 +350,9 @@ export const nodeRenderer: ElementRenderer = (el, ctx) => {
       current = next
       const r = currentResult(next)
       const v = r?.value
-      const url =
-        v && v.type !== 'text' && v.type !== 'json' ? ctx.assetUrl?.(v.assetId, v.type) : undefined
+      const media = v && v.type !== 'text' && v.type !== 'json' ? v : undefined
+      const size = high || largeOf === media?.assetId ? 'large' : 'small'
+      const url = media ? ctx.assetUrl?.(media.assetId, media.type, size) : undefined
       if (!url) {
         texture = undefined
         loading = undefined
@@ -344,7 +364,9 @@ export const nodeRenderer: ElementRenderer = (el, ctx) => {
         .then((tex) => {
           if (destroyed || loading !== url) return
           texture = tex
+          if (size === 'large') largeOf = media?.assetId
           draw(current)
+          ctx.invalidate?.()
         })
         .catch(() => {
           // 加载失败只显示底板
@@ -353,7 +375,7 @@ export const nodeRenderer: ElementRenderer = (el, ctx) => {
     setDetail(next) {
       if (next === high) return
       high = next
-      draw(current)
+      view.update(current)
     },
     destroy() {
       destroyed = true

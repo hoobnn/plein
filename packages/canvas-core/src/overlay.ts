@@ -54,8 +54,9 @@ export class SelectionOverlay {
     )
   }
 
-  update() {
-    if (!this.dirty) return
+  /** 需要时重画；返回是否改了图形 */
+  update(): boolean {
+    if (!this.dirty) return false
     this.dirty = false
     const px = 1 / this.camera.zoom
     const g = this.graphics.clear()
@@ -92,6 +93,7 @@ export class SelectionOverlay {
       else g.moveTo(guide.from, guide.at).lineTo(guide.to, guide.at)
     }
     if (this.guides.length > 0) g.stroke({ color: theme.guide, width: px })
+    return true
   }
 
   /** 单选节点只留四角手柄：边中点留给端口 */
