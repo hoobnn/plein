@@ -6,7 +6,7 @@ import type { JobList, StaleNodes } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { createServer, type Server } from '../app'
-import { hasFfmpeg } from '../assets/media'
+import { hasFfmpeg, mediaCaps } from '../assets/media'
 import { loadConfig } from '../config'
 
 const dirs: string[] = []
@@ -395,6 +395,7 @@ describe('整组运行', () => {
 })
 
 const ffmpeg = await hasFfmpeg()
+const caps = await mediaCaps()
 
 describe.skipIf(!ffmpeg)('序列导出', () => {
   const speechPorts = {
@@ -411,11 +412,95 @@ describe.skipIf(!ffmpeg)('序列导出', () => {
     outputs: [{ id: 'video', label: '成片', type: 'video' as const }],
   }
 
-  it('整组运行含视频时最后导出：镜头按顺序拼接，配上对白和字幕', async () => {
+  // 烧字幕需要 libass；本机没有时下面的导出用例跳过，改由「关掉字幕也能导出」那条覆盖结构部分
+  it.skipIf(!caps.subtitles)(
+    '整组运行含视频时最后导出：镜头按顺序拼接，配上对白和字幕',
+    async () => {
+      const { server } = await boot()
+      mock(server, {})
+      const { id, doc } = await canvas(server)
+      const frame = createElement(doc, { kind: 'frame', x: -50, y: -50, w: 1400, h: 900 })
+      const node = (
+        nodeType: string,
+        params: Record<string, unknown>,
+        ports: object,
+        x: number,
+        y: number,
+      ) =>
+        createElement(doc, {
+          kind: 'node',
+          nodeType,
+          nodeVersion: 1,
+          params,
+          ports: ports as never,
+          x,
+          y,
+          w: 200,
+          h: 200,
+          parentId: frame,
+        })
+      const v1 = node('plein/video', { prompt: '推近' }, videoPorts, 0, 0)
+      const v2 = node('plein/video', { prompt: '拉远' }, videoPorts, 300, 0)
+      const s1 = node('plein/speech', { text: '你来了' }, speechPorts, 0, 300)
+      const s2 = node('plein/speech', { text: '我等你很久了' }, speechPorts, 300, 300)
+      const seq = node('plein/sequence', { resolution: '720p' }, sequencePorts, 800, 0)
+      connect(doc, [v1, 'video'], [seq, 'clips'])
+      connect(doc, [v2, 'video'], [seq, 'clips'])
+      connect(doc, [s1, 'audio'], [seq, 'dialogue'])
+      connect(doc, [s2, 'audio'], [seq, 'dialogue'])
+
+      const r = await runFrame(server, id, frame, { video: true })
+      expect(r.summary).toMatchObject({ succeeded: 5, failed: 0 })
+      const out = doc.get(seq)!.results![0]!.value as {
+        type: string
+        assetId: string
+        mime?: string
+      }
+      expect(out).toMatchObject({ type: 'video', mime: 'video/mp4' })
+      const clip = server.assets.get(
+        'local',
+        (doc.get(v1)!.results![0]!.value as { assetId: string }).assetId,
+      )!
+      const asset = server.assets.get('local', out.assetId)!
+      expect(asset).toMatchObject({ width: 720, height: 1280 })
+      expect(asset.duration).toBeCloseTo(clip.duration! * 2, 0)
+      // 配音结果带台词，导出时用作字幕
+      expect(doc.get(s1)!.results![0]!.value).toMatchObject({ caption: '你来了' })
+
+      // 调换顺序、裁掉第二段的一半后重新导出
+      setParams(doc, seq, {
+        clips: [
+          { source: v2, in: 0, out: clip.duration! / 2 },
+          { source: v1, in: 0 },
+        ],
+      })
+      const again = await runFrame(server, id, frame, { video: true })
+      expect(again.summary).toMatchObject({ succeeded: 1, cached: 4 })
+      const second = server.assets.get(
+        'local',
+        (doc.get(seq)!.results![0]!.value as { assetId: string }).assetId,
+      )!
+      expect(second.duration).toBeCloseTo(clip.duration! * 1.5, 0)
+
+      // 叠化 + 按语音识别对齐字幕（mock 平台返回带时间戳的分段）
+      setParams(doc, seq, { transition: '叠化', transitionDuration: 0.4, asrTiming: true })
+      const third = await runFrame(server, id, frame, { video: true })
+      expect(third.summary).toMatchObject({ succeeded: 1, failed: 0 })
+      const dissolved = server.assets.get(
+        'local',
+        (doc.get(seq)!.results![0]!.value as { assetId: string }).assetId,
+      )!
+      expect(dissolved.duration).toBeCloseTo(clip.duration! * 1.5 - 0.4, 0)
+    },
+    60_000,
+  )
+
+  // 不依赖 libass：任何有 ffmpeg 的机器都要能导出，顺序与入出点按时间线来
+  it('关掉字幕也能导出：镜头按连接顺序拼接，音轨混在一起', async () => {
     const { server } = await boot()
     mock(server, {})
     const { id, doc } = await canvas(server)
-    const frame = createElement(doc, { kind: 'frame', x: -50, y: -50, w: 1400, h: 900 })
+    const frame = createElement(doc, { kind: 'frame', x: 0, y: 0, w: 1400, h: 900 })
     const node = (
       nodeType: string,
       params: Record<string, unknown>,
@@ -438,17 +523,21 @@ describe.skipIf(!ffmpeg)('序列导出', () => {
     const v1 = node('plein/video', { prompt: '推近' }, videoPorts, 0, 0)
     const v2 = node('plein/video', { prompt: '拉远' }, videoPorts, 300, 0)
     const s1 = node('plein/speech', { text: '你来了' }, speechPorts, 0, 300)
-    const s2 = node('plein/speech', { text: '我等你很久了' }, speechPorts, 300, 300)
-    const seq = node('plein/sequence', { resolution: '720p' }, sequencePorts, 800, 0)
+    const seq = node(
+      'plein/sequence',
+      { resolution: '720p', subtitles: false },
+      sequencePorts,
+      800,
+      0,
+    )
     connect(doc, [v1, 'video'], [seq, 'clips'])
     connect(doc, [v2, 'video'], [seq, 'clips'])
     connect(doc, [s1, 'audio'], [seq, 'dialogue'])
-    connect(doc, [s2, 'audio'], [seq, 'dialogue'])
 
     const r = await runFrame(server, id, frame, { video: true })
-    expect(r.summary).toMatchObject({ succeeded: 5, failed: 0 })
-    const out = doc.get(seq)!.results![0]!.value as { type: string; assetId: string; mime?: string }
-    expect(out).toMatchObject({ type: 'video', mime: 'video/mp4' })
+    expect(r.summary).toMatchObject({ succeeded: 4, failed: 0 })
+    const out = doc.get(seq)!.results![0]!.value as { assetId: string; mime: string }
+    expect(out.mime).toBe('video/mp4')
     const clip = server.assets.get(
       'local',
       (doc.get(v1)!.results![0]!.value as { assetId: string }).assetId,
@@ -456,32 +545,76 @@ describe.skipIf(!ffmpeg)('序列导出', () => {
     const asset = server.assets.get('local', out.assetId)!
     expect(asset).toMatchObject({ width: 720, height: 1280 })
     expect(asset.duration).toBeCloseTo(clip.duration! * 2, 0)
-    // 配音结果带台词，导出时用作字幕
-    expect(doc.get(s1)!.results![0]!.value).toMatchObject({ caption: '你来了' })
 
-    // 调换顺序、裁掉第二段的一半后重新导出
+    // 调换顺序并裁掉第二段的一半
     setParams(doc, seq, {
+      subtitles: false,
       clips: [
         { source: v2, in: 0, out: clip.duration! / 2 },
         { source: v1, in: 0 },
       ],
     })
     const again = await runFrame(server, id, frame, { video: true })
-    expect(again.summary).toMatchObject({ succeeded: 1, cached: 4 })
+    expect(again.summary).toMatchObject({ succeeded: 1, cached: 3 })
     const second = server.assets.get(
       'local',
       (doc.get(seq)!.results![0]!.value as { assetId: string }).assetId,
     )!
     expect(second.duration).toBeCloseTo(clip.duration! * 1.5, 0)
-
-    // 叠化 + 按语音识别对齐字幕（mock 平台返回带时间戳的分段）
-    setParams(doc, seq, { transition: '叠化', transitionDuration: 0.4, asrTiming: true })
-    const third = await runFrame(server, id, frame, { video: true })
-    expect(third.summary).toMatchObject({ succeeded: 1, failed: 0 })
-    const dissolved = server.assets.get(
-      'local',
-      (doc.get(seq)!.results![0]!.value as { assetId: string }).assetId,
-    )!
-    expect(dissolved.duration).toBeCloseTo(clip.duration! * 1.5 - 0.4, 0)
   }, 60_000)
+
+  // 本机 ffmpeg 常常没编 libass（Homebrew 默认不带）：这时要在合成前说清楚，而不是甩一句滤镜错误
+  it.skipIf(caps.subtitles)(
+    '要烧字幕但本机 ffmpeg 没有 ass 滤镜：提前给出可执行的提示',
+    async () => {
+      const { server } = await boot()
+      mock(server, {})
+      const { id, doc } = await canvas(server)
+      const frame = createElement(doc, { kind: 'frame', x: 0, y: 0, w: 800, h: 600 })
+      const v1 = createElement(doc, {
+        kind: 'node',
+        nodeType: 'plein/video',
+        nodeVersion: 1,
+        params: { prompt: '推近' },
+        ports: videoPorts,
+        x: 0,
+        y: 0,
+        w: 200,
+        h: 200,
+        parentId: frame,
+      })
+      const s1 = createElement(doc, {
+        kind: 'node',
+        nodeType: 'plein/speech',
+        nodeVersion: 1,
+        params: { text: '你来了' },
+        ports: speechPorts,
+        x: 0,
+        y: 300,
+        w: 200,
+        h: 100,
+        parentId: frame,
+      })
+      const seq = createElement(doc, {
+        kind: 'node',
+        nodeType: 'plein/sequence',
+        nodeVersion: 1,
+        params: { subtitles: true },
+        ports: sequencePorts,
+        x: 400,
+        y: 0,
+        w: 200,
+        h: 200,
+        parentId: frame,
+      })
+      connect(doc, [v1, 'video'], [seq, 'clips'])
+      connect(doc, [s1, 'audio'], [seq, 'dialogue'])
+
+      const r = await runFrame(server, id, frame, { video: true })
+      expect(r.summary).toMatchObject({ succeeded: 2, failed: 1 })
+      expect(doc.get(seq)?.run?.error).toMatch(/不支持烧字幕/)
+      expect(doc.get(seq)?.run?.error).toMatch(/libass/)
+    },
+    60_000,
+  )
 })

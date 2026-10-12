@@ -15,12 +15,14 @@ export interface Probe {
 
 const bin = { ffmpeg: 'ffmpeg', ffprobe: 'ffprobe' }
 let ffmpegAvailable: Promise<boolean> | null = null
+let capsCache: Promise<MediaCaps> | null = null
 
 /** 指定 ffmpeg / ffprobe 可执行文件；默认从 PATH 查找 */
 export function setMediaTools(paths: { ffmpeg: string; ffprobe: string }) {
   if (paths.ffmpeg === bin.ffmpeg && paths.ffprobe === bin.ffprobe) return
   Object.assign(bin, paths)
   ffmpegAvailable = null
+  capsCache = null
 }
 
 /** 当前使用的 ffmpeg 可执行文件 */
@@ -36,6 +38,38 @@ export function hasFfmpeg(): Promise<boolean> {
     () => false,
   )
   return ffmpegAvailable
+}
+
+/** 本机 ffmpeg 能做什么：烧字幕需要 libass（Homebrew 默认没有，Docker 镜像里有） */
+export interface MediaCaps {
+  ffmpeg: boolean
+  /** 有 `ass` 滤镜，能把字幕烧进画面 */
+  subtitles: boolean
+  /** 有 `rubberband` 滤镜，音频变速能真正保音调（Homebrew 默认没有） */
+  rubberband: boolean
+}
+
+/**
+ * 探测 ffmpeg 的滤镜能力。缺少 libass 时序列导出要提前给可执行的提示，
+ * 不能等合成跑完才抛一句 “Error parsing a filter description”。
+ */
+export function mediaCaps(): Promise<MediaCaps> {
+  capsCache ??= run(bin.ffmpeg, ['-hide_banner', '-filters']).then(
+    ({ stdout }) => ({
+      ffmpeg: true,
+      subtitles: /^\s*\S+\s+ass\s/m.test(stdout) || /^\s*\S+\s+subtitles\s/m.test(stdout),
+      rubberband: /^\s*\S+\s+rubberband\s/m.test(stdout),
+    }),
+    () => ({ ffmpeg: false, subtitles: false, rubberband: false }),
+  )
+  return capsCache
+}
+
+/** 缺能力时给用户看的话：说清缺什么、怎么解决 */
+export function missingCapability(cap: 'subtitles'): string {
+  return cap === 'subtitles'
+    ? '本机 ffmpeg 不支持烧字幕（缺少 ass 滤镜，通常是没装 libass）。关掉字幕后重试，或换成带 libass 的 ffmpeg / 直接用 Docker 镜像。'
+    : '本机缺少该 ffmpeg 能力'
 }
 
 export async function probeImage(file: string): Promise<Probe> {

@@ -27,6 +27,7 @@ import {
   type TranscriptSegment,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
+import { mediaCaps, missingCapability } from '../assets/media'
 
 /** 参数里没选模型时，用已启用平台中第一个支持该能力的模型 */
 function pickModel(ctx: ExecutorContext<{ model: string }>, capability: Capability, label: string) {
@@ -243,6 +244,12 @@ const sequence = defineExecutor(sequenceNode, async (ctx) => {
   )
   if (spec.clips.length === 0)
     throw new ProviderError('invalid_input', '各段时长都是 0，检查入点和出点')
+  // 烧字幕要 libass；缺了就在合成前说清楚，别等 ffmpeg 报一句看不懂的滤镜错误。
+  // 本机缺能力是长期状态，重试没有意义，标成不可重试。
+  // 完全没有 ffmpeg 时不是缺 libass 的问题，交给合成本身报错
+  const caps = await mediaCaps()
+  if (spec.subtitles?.cues.length && caps.ffmpeg && !caps.subtitles)
+    throw new ProviderError('unavailable', missingCapability('subtitles'), { retryable: false })
   ctx.progress(0, '合成中…')
   const out = await ctx.media.compose(spec)
   return { video: [{ type: 'video', ...out }] }
