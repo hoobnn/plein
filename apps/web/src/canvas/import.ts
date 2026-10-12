@@ -30,7 +30,8 @@ export function markdownSize(text: string): [number, number] {
   return [360, Math.min(480, Math.max(160, lines * 22 + 48))]
 }
 
-function elementFor(asset: Asset): Omit<NewElement, 'x' | 'y'> | null {
+/** 资产对应的素材元素（按原始比例缩到长边 480） */
+export function elementFor(asset: Asset): Omit<NewElement, 'x' | 'y'> | null {
   const base = { assetId: asset.id, name: asset.name }
   switch (asset.kind) {
     case 'image': {

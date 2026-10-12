@@ -321,6 +321,31 @@ export function removeResult(doc: PleinDoc, id: string, resultId: string) {
   })
 }
 
+/** 评级范围 */
+export const MAX_RATING = 5
+
+/** 给结果打星（1–5，用户操作，可撤销）；rating 为 null 或 0 时清除评级 */
+export function setResultRating(
+  doc: PleinDoc,
+  id: string,
+  resultId: string,
+  rating: number | null,
+) {
+  const value = rating ? Math.min(MAX_RATING, Math.max(1, Math.round(rating))) : undefined
+  write(doc, () => {
+    const m = doc.mutable(id)
+    const list = m?.get('results')
+    if (!m || !Array.isArray(list)) return
+    const results = list as NodeResult[]
+    const i = results.findIndex((r) => r.id === resultId)
+    if (i < 0 || results[i]!.rating === value) return
+    const { rating: _, ...rest } = results[i]!
+    const next = [...results]
+    next[i] = value === undefined ? rest : { ...rest, rating: value }
+    m.set('results', next)
+  })
+}
+
 /**
  * 写入运行状态（服务端或本地运行器调用）。系统写入，不进撤销栈。
  * run 为 null 时清除。
@@ -351,6 +376,28 @@ export function addResults(doc: PleinDoc, id: string, results: NodeResult[]) {
 export function currentResult(el: CanvasElement, port?: string): NodeResult | undefined {
   const list = (el.results ?? []).filter((r) => port === undefined || r.port === port)
   return list.find((r) => r.id === el.adopted) ?? list[0]
+}
+
+/** 生成历史里的一项：哪个节点的哪个媒体结果 */
+export interface HistoryEntry {
+  elementId: string
+  result: NodeResult & { value: Extract<NodeResult['value'], { assetId: string }> }
+  /** 是否是节点当前采用的结果 */
+  adopted: boolean
+}
+
+/** 全画布节点的图片 / 视频 / 音频结果，按生成时间新到旧（同一时间按节点内顺序） */
+export function resultHistory(doc: PleinDoc): HistoryEntry[] {
+  const out: HistoryEntry[] = []
+  for (const el of doc.elements()) {
+    if (el.kind !== 'node' || !el.results?.length) continue
+    const current = currentResult(el)?.id
+    for (const r of el.results) {
+      if (r.value.type === 'text' || r.value.type === 'json') continue
+      out.push({ elementId: el.id, result: r as HistoryEntry['result'], adopted: r.id === current })
+    }
+  }
+  return out.sort((a, b) => b.result.at - a.result.at)
 }
 
 // ── 端口 ──────────────────────────────────────────────

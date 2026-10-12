@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, currentResult } from '@plein/doc'
+import { type CanvasElement, currentResult, setResultRating } from '@plein/doc'
 import { presetsFor } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
@@ -10,6 +10,7 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { Popover } from '../ui/Popover'
+import { Stars } from '../ui/Stars'
 import { useEngineVersion } from './Generator'
 
 /** 节点标题行的高度：工具条放在它上方 */
@@ -47,7 +48,7 @@ function nodeFor(catalog: Catalog | null, capability: string) {
 /**
  * 选中一张有结果的图片 / 视频时浮在它上方的工具条：
  * 预设 = 在右侧派生一个连好、填好提示词的新节点，确认后再生成；
- * 宫格切分在本地完成；下载、全屏查看。
+ * 宫格切分在本地完成；节点结果可打星；下载、全屏查看。
  */
 export function ResultBar() {
   const engine = useCanvas((s) => s.engine)
@@ -110,6 +111,7 @@ function Bar({
       )
     : []
   const name = el.name ?? (media.kind === 'image' ? '图片' : '视频')
+  const result = el.kind === 'node' ? currentResult(el) : undefined
   const toggle = (kind: 'presets' | 'grid') => (e: React.MouseEvent<HTMLButtonElement>) =>
     setOpen(open?.kind === kind ? null : { kind, anchor: e.currentTarget })
 
@@ -137,7 +139,7 @@ function Bar({
       role="toolbar"
       aria-label="结果操作"
       style={style}
-      className="ui-float pointer-events-auto fixed z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-xl p-1"
+      className="ui-float pointer-events-auto fixed z-20 flex w-max -translate-x-1/2 items-center gap-0.5 rounded-xl p-1"
     >
       {image && imageNode && presets.length > 0 && (
         <button
@@ -179,6 +181,17 @@ function Bar({
         </button>
       )}
       {image && <div className="mx-0.5 h-4 w-px bg-line" />}
+      {result && (
+        <>
+          <span className="px-1">
+            <Stars
+              value={result.rating}
+              onChange={(n) => setResultRating(engine.doc, el.id, result.id, n)}
+            />
+          </span>
+          <div className="mx-0.5 h-4 w-px bg-line" />
+        </>
+      )}
       <button
         type="button"
         className={icon}

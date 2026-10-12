@@ -7,6 +7,7 @@ import { CanvasMenus } from '../panels/CanvasMenus'
 import { ArrangeToast } from '../panels/ArrangeToast'
 import { FrameBar } from '../panels/FrameBar'
 import { Generator } from '../panels/Generator'
+import { History } from '../panels/History'
 import { ResultBar, Viewer } from '../panels/ResultBar'
 import { SelectionBar } from '../panels/SelectionBar'
 import { Shortcuts } from '../panels/Shortcuts'
@@ -119,6 +120,7 @@ export function Editor({
       <CanvasMenus canImport={source.kind === 'remote'} />
       <StoryboardEditor />
       <Shortcuts />
+      <History />
       <Viewer />
       <footer className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-3">
         <Toolbar canImport={source.kind === 'remote'} />

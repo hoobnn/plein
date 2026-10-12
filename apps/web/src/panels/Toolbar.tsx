@@ -198,6 +198,9 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
         <Icon name="fit" />
       </Button>
       <Divider />
+      <Button label="生成历史" onClick={() => useCanvas.getState().toggleHistory()}>
+        <Icon name="history" />
+      </Button>
       <Button label="快捷键" hint="?" onClick={() => useCanvas.getState().toggleShortcuts()}>
         <Icon name="keyboard" />
       </Button>

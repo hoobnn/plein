@@ -84,6 +84,7 @@ export const api = {
   rewritePrompt: (body: RewritePrompt) =>
     request<RewritePromptResult>(API.promptRewrite, json('POST', body)),
 
+  assetMeta: (id: string) => request<Asset>(API.assetMeta(id)),
   upload: (file: File) =>
     request<Asset>(API.assets, {
       method: 'POST',

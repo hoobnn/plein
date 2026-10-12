@@ -1,5 +1,5 @@
 import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
-import type { ClipboardData, NewElement } from '@plein/doc'
+import { type ClipboardData, currentResult, type NewElement, setResultRating } from '@plein/doc'
 import type { NodeCategory } from '@plein/plugin-sdk'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -14,6 +14,7 @@ import { runNode } from '../canvas/runner'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useTemplates } from '../stores/templates'
+import { Stars } from '../ui/Stars'
 
 export const CATEGORY_LABELS: Record<NodeCategory, string> = {
   input: '输入',
@@ -294,6 +295,8 @@ function ContextMenu({
   const single = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
   const node: NodeInfo | undefined =
     single?.kind === 'node' ? findNode(catalog, single.nodeType) : undefined
+  const rated = single?.kind === 'node' ? currentResult(single) : undefined
+  const ratable = rated && rated.value.type !== 'text' && rated.value.type !== 'json'
   let items: ReactNode
   if (menu.target === null) {
     items = (
@@ -324,6 +327,21 @@ function ContextMenu({
             <Item label="运行整组" onClick={act(() => void runFrame(single.id, false))} />
             <Item label="运行整组（含视频）" onClick={act(() => void runFrame(single.id, true))} />
             <Item label="存为模板…" onClick={act(() => void saveFrame(single.id))} />
+            <Sep />
+          </>
+        )}
+        {ratable && single && !engine.doc.readOnly && (
+          <>
+            <div className="flex h-8 items-center justify-between px-2 text-sm">
+              <span>评级</span>
+              <Stars
+                value={rated.rating}
+                onChange={(n) => {
+                  onClose()
+                  setResultRating(engine.doc, single.id, rated.id, n)
+                }}
+              />
+            </div>
             <Sep />
           </>
         )}

@@ -21,6 +21,8 @@ interface CanvasStore extends EngineState {
   shortcuts: boolean
   /** 刚完成的整理：底部弹“保留 / 还原” */
   arranged: ArrangeResult | null
+  /** 生成历史面板 */
+  history: boolean
   /** 挂载引擎并把它的运行时状态镜像到 store（只在状态变化时更新，不跟随每帧） */
   attach(engine: Engine): () => void
   setSync(sync: SyncStatus): void
@@ -32,6 +34,7 @@ interface CanvasStore extends EngineState {
   view(v: CanvasStore['viewer']): void
   toggleShortcuts(open?: boolean): void
   setArranged(r: ArrangeResult | null): void
+  toggleHistory(open?: boolean): void
 }
 
 const initial: EngineState = {
@@ -56,6 +59,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   viewer: null,
   shortcuts: false,
   arranged: null,
+  history: false,
   attach(engine) {
     const sync = () => set(engine.state)
     const off = engine.onStateChange(sync)
@@ -75,6 +79,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
         storyboard: null,
         viewer: null,
         arranged: null,
+        history: false,
         ...initial,
       })
     }
@@ -85,6 +90,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   view: (viewer) => set({ viewer }),
   toggleShortcuts: (open) => set((s) => ({ shortcuts: open ?? !s.shortcuts })),
   setArranged: (arranged) => set({ arranged }),
+  toggleHistory: (open) => set((s) => ({ history: open ?? !s.history })),
   setSync: (sync) => set({ sync }),
   setImporting: (importing) => set({ importing }),
   notify(notice) {

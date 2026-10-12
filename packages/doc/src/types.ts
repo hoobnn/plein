@@ -84,6 +84,8 @@ export interface NodeResult {
   /** 同一次运行的结果共享 runId */
   runId: string
   at: number
+  /** 用户评级 1–5；未评级时不存 */
+  rating?: number
 }
 
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled'
