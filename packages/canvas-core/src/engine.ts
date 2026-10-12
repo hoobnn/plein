@@ -334,6 +334,13 @@ export class Engine {
     this.camera.zoomTo(zoom)
   }
 
+  /** 在视口中央弹出节点选择器（Tab） */
+  openCreateMenu() {
+    const r = this.opts.host.getBoundingClientRect()
+    const client = { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    this.emitMenu({ kind: 'create', world: this.clientToWorld(client.x, client.y), client })
+  }
+
   // ── 内部 ────────────────────────────────────────────
 
   private emitMenu(e: CanvasMenuEvent) {
@@ -459,6 +466,7 @@ export class Engine {
       else if (mod) handled = false
       else if (key === 'delete' || key === 'backspace') this.deleteSelection()
       else if (key === 'escape') this.selection.clear()
+      else if (key === 'tab' && !e.shiftKey) this.openCreateMenu()
       else if (key === 'v') this.setTool('select')
       else if (key === 'h') this.setTool('hand')
       else if (key === 'arrowleft') this.nudge(-step, 0)

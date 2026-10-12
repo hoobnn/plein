@@ -188,6 +188,10 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
       <Button label="适应画布" hint="⇧1" onClick={() => engine.zoomToFit()}>
         <Icon name="fit" />
       </Button>
+      <Divider />
+      <Button label="快捷键" hint="?" onClick={() => useCanvas.getState().toggleShortcuts()}>
+        <Icon name="keyboard" />
+      </Button>
     </div>
   )
 }

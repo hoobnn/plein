@@ -1,6 +1,7 @@
 import {
   type CanvasElement,
   connect,
+  elementPorts,
   type PleinDoc,
   type Rect,
   removeEdges,
@@ -15,7 +16,6 @@ import {
   expand,
   fromPoints,
   HANDLE_CURSORS,
-  HANDLES,
   type Handle,
   handlePosition,
   intersects,
@@ -26,7 +26,7 @@ import {
 } from './geometry'
 import type { PanState } from './input'
 import { HANDLE_PX, type SelectionOverlay } from './overlay'
-import { canConnect, hitPort, PORT_RADIUS, type PortRef } from './ports'
+import { canConnect, eachPort, hitPort, PORT_RADIUS, type PortRef } from './ports'
 import type { Scene, Transient } from './scene'
 import type { Selection } from './selection'
 
@@ -102,8 +102,45 @@ export function attachInteractions(host: InteractHost) {
     }
     return out
   }
+  /** 光标下或贴近边缘（端口那一圈）的有端口元素，悬停时显示它的端口 */
+  const nearElement = (x: number, y: number) => {
+    const hit = scene.hitTest(x, y)
+    if (hit && elementPorts(scene.get(hit)!)) return hit
+    const reach = portRadius() * 1.5
+    for (const id of scene.query(expand({ x, y, w: 0, h: 0 }, reach))) {
+      const e = scene.get(id)
+      if (e && e.kind !== 'frame' && elementPorts(e)) return id
+    }
+    return null
+  }
+
   const findPortAt = (x: number, y: number, filter?: (p: PortRef) => boolean) =>
     hitPort(portCandidates(x, y), x, y, portRadius(), filter)
+
+  /**
+   * 连线的落点：先找端口；落在元素卡片上时接到它第一个能接的端口，
+   * 优先还没连线的（或可多连的），不必精确对准端口点。
+   */
+  const dropTarget = (from: PortRef, x: number, y: number): PortRef | null => {
+    const port = findPortAt(x, y, (p) => canConnect(from, p))
+    if (port) return port
+    const id = scene.hitTest(x, y, (i) => scene.get(i)?.kind !== 'frame')
+    const e = id ? scene.get(id) : undefined
+    const r = id ? scene.rect(id) : undefined
+    if (!e || !r) return null
+    const list: PortRef[] = []
+    eachPort(e, r, (p) => {
+      if (canConnect(from, p)) list.push(p)
+    })
+    const taken = (p: PortRef) =>
+      !p.port.multiple &&
+      [...doc.edges()].some((edge) =>
+        p.side === 'in'
+          ? edge.to[0] === p.elementId && edge.to[1] === p.port.id
+          : edge.from[0] === p.elementId && edge.from[1] === p.port.id,
+      )
+    return list.find((p) => !taken(p)) ?? list[0] ?? null
+  }
 
   const handleAt = (x: number, y: number): Handle | null => {
     if (selection.size === 0 || !overlay.showHandles()) return null
@@ -111,7 +148,7 @@ export function attachInteractions(host: InteractHost) {
     if (!box) return null
     const tol = HANDLE_PX / camera.zoom
     return (
-      HANDLES.find((h) => {
+      overlay.handles().find((h) => {
         const p = handlePosition(box, h)
         return Math.abs(p.x - x) <= tol && Math.abs(p.y - y) <= tol
       }) ?? null
@@ -198,6 +235,7 @@ export function attachInteractions(host: InteractHost) {
     const w = toWorld(e)
     if (!gesture) {
       if (pan.space || pan.hand) return
+      edges.setHoverElement(nearElement(w.x, w.y))
       const port = findPortAt(w.x, w.y)
       const handle = port ? null : handleAt(w.x, w.y)
       edges.setHover(port)
@@ -207,7 +245,7 @@ export function attachInteractions(host: InteractHost) {
     switch (gesture.kind) {
       case 'connect': {
         const { from } = gesture
-        const target = findPortAt(w.x, w.y, (p) => canConnect(from, p))
+        const target = dropTarget(from, w.x, w.y)
         edges.setPreview({ from, x: w.x, y: w.y, target })
         break
       }
@@ -306,7 +344,7 @@ export function attachInteractions(host: InteractHost) {
 
     switch (g.kind) {
       case 'connect': {
-        const target = findPortAt(w.x, w.y, (p) => canConnect(g.from, p))
+        const target = dropTarget(g.from, w.x, w.y)
         edges.setPreview(null)
         if (target) {
           const [out, inp] = g.from.side === 'out' ? [g.from, target] : [target, g.from]
@@ -368,13 +406,17 @@ export function attachInteractions(host: InteractHost) {
     for (const [target, list] of byTarget) setParent(doc, list, target)
   }
 
+  const onPointerLeave = () => edges.setHoverElement(null)
+
   el.addEventListener('pointerdown', onPointerDown)
+  el.addEventListener('pointerleave', onPointerLeave)
   el.addEventListener('pointermove', onPointerMove)
   el.addEventListener('pointerup', onPointerUp)
   el.addEventListener('pointercancel', onPointerUp)
 
   return () => {
     el.removeEventListener('pointerdown', onPointerDown)
+    el.removeEventListener('pointerleave', onPointerLeave)
     el.removeEventListener('pointermove', onPointerMove)
     el.removeEventListener('pointerup', onPointerUp)
     el.removeEventListener('pointercancel', onPointerUp)

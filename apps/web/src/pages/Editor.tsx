@@ -6,6 +6,8 @@ import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { CanvasMenus } from '../panels/CanvasMenus'
 import { FrameBar } from '../panels/FrameBar'
 import { Generator } from '../panels/Generator'
+import { ResultBar, Viewer } from '../panels/ResultBar'
+import { Shortcuts } from '../panels/Shortcuts'
 import { StoryboardEditor } from '../panels/StoryboardEditor'
 import { Toolbar } from '../panels/Toolbar'
 import { Icon } from '../ui/icons'
@@ -97,8 +99,8 @@ export function Editor({
         </div>
       </header>
       <p className="pointer-events-none absolute bottom-5 left-4 hidden max-w-[calc(50%-300px)] text-xs leading-relaxed text-ink-subtle 2xl:block">
-        {selection > 0 ? `已选 ${selection} 个 · ` : ''}双击空白处添加节点 · 从端口拖出连线 ·
-        右键更多操作 · 拖入文件导入 · 空格拖动平移 · {modifier}+滚轮缩放
+        {selection > 0 ? `已选 ${selection} 个 · ` : ''}双击空白处或按 Tab 添加节点 · 悬停节点从 +
+        拖出连线 · 右键更多操作 · {modifier}+滚轮缩放 · 按 ? 查看快捷键
       </p>
       {(importing || notice) && (
         <div className="pointer-events-none absolute inset-x-0 top-[68px] z-30 flex justify-center px-4">
@@ -108,9 +110,12 @@ export function Editor({
         </div>
       )}
       <Generator />
+      <ResultBar />
       <FrameBar remote={source.kind === 'remote'} />
       <CanvasMenus canImport={source.kind === 'remote'} />
       <StoryboardEditor />
+      <Shortcuts />
+      <Viewer />
       <footer className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-3">
         <Toolbar canImport={source.kind === 'remote'} />
       </footer>

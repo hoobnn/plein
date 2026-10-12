@@ -15,6 +15,10 @@ interface CanvasStore extends EngineState {
   menu: CanvasMenuEvent | null
   /** 打开表格编辑器的分镜节点 */
   storyboard: string | null
+  /** 全屏查看的图片 / 视频 */
+  viewer: { assetId: string; kind: 'image' | 'video'; name: string } | null
+  /** 快捷键面板 */
+  shortcuts: boolean
   /** 挂载引擎并把它的运行时状态镜像到 store（只在状态变化时更新，不跟随每帧） */
   attach(engine: Engine): () => void
   setSync(sync: SyncStatus): void
@@ -23,6 +27,8 @@ interface CanvasStore extends EngineState {
   setCanvasId(id: string | null): void
   setMenu(menu: CanvasMenuEvent | null): void
   openStoryboard(id: string | null): void
+  view(v: CanvasStore['viewer']): void
+  toggleShortcuts(open?: boolean): void
 }
 
 const initial: EngineState = {
@@ -44,6 +50,8 @@ export const useCanvas = create<CanvasStore>((set) => ({
   canvasId: null,
   menu: null,
   storyboard: null,
+  viewer: null,
+  shortcuts: false,
   attach(engine) {
     const sync = () => set(engine.state)
     const off = engine.onStateChange(sync)
@@ -52,12 +60,14 @@ export const useCanvas = create<CanvasStore>((set) => ({
     return () => {
       off()
       offMenu()
-      set({ engine: null, menu: null, storyboard: null, ...initial })
+      set({ engine: null, menu: null, storyboard: null, viewer: null, ...initial })
     }
   },
   setCanvasId: (canvasId) => set({ canvasId }),
   setMenu: (menu) => set({ menu }),
   openStoryboard: (storyboard) => set({ storyboard }),
+  view: (viewer) => set({ viewer }),
+  toggleShortcuts: (open) => set((s) => ({ shortcuts: open ?? !s.shortcuts })),
   setSync: (sync) => set({ sync }),
   setImporting: (importing) => set({ importing }),
   notify(notice) {

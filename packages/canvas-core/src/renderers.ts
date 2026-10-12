@@ -257,18 +257,18 @@ export const markdownRenderer: ElementRenderer = (el) => {
   return view
 }
 
-/** 节点卡片的版式（局部坐标），DOM 覆盖层按同样的数值排版 */
-export const NODE_LAYOUT = { header: 36, footer: 36, pad: 8 } as const
+/** 节点卡片的版式：标题行在卡片上方（局部坐标 y < 0），卡片本体整块用来展示结果 */
+export const NODE_LAYOUT = { title: 28 } as const
 
-/** 节点的预览区：卡片去掉标题栏和底栏 */
+/** 节点的预览区：整张卡片 */
 export function nodeBody(w: number, h: number) {
-  const { header, footer, pad } = NODE_LAYOUT
-  return { x: pad, y: header, w: Math.max(0, w - pad * 2), h: Math.max(0, h - header - footer) }
+  return { x: 0, y: 0, w, h }
 }
 
 /**
- * 工作流节点：底板 + 当前结果的预览图（等比放进预览区）。
- * 标题、状态、文本结果和操作按钮由 DOM 覆盖层在正常细节下绘制；
+ * 工作流节点：底板 + 当前结果的预览图。
+ * 结果和卡片比例一致时铺满卡片（卡片即结果），否则等比放进卡片居中。
+ * 标题、状态、文本结果和操作由 DOM 覆盖层在正常细节下绘制；
  * 图片在 GPU 里画，缩小后整张画布仍能看到每个节点的产出。
  */
 export const nodeRenderer: ElementRenderer = (el, ctx) => {
@@ -285,24 +285,26 @@ export const nodeRenderer: ElementRenderer = (el, ctx) => {
     const { w, h } = next
     const status = next.run?.status
     const accent = (status && theme.status[status]) ?? theme.kinds.node
-    const loud = status === 'running' || status === 'failed'
-    bg.clear()
-      .roundRect(0, 0, w, h, RADIUS)
-      .fill({ color: theme.surface })
-      .stroke({
+    const loud = status === 'running' || status === 'failed' || status === 'queued'
+    bg.clear().roundRect(0, 0, w, h, RADIUS).fill({ color: theme.surface })
+    if (!texture || loud)
+      bg.stroke({
         color: loud ? accent : theme.line.color,
         alpha: loud ? 0.9 : theme.line.alpha,
         width: loud ? 1.5 : 1,
       })
-    const body = nodeBody(w, h)
-    if (texture && body.w > 0 && body.h > 0) {
-      const k = Math.min(body.w / texture.width, body.h / texture.height)
+    if (texture && w > 0 && h > 0) {
+      const k = Math.min(w / texture.width, h / texture.height)
       const tw = texture.width * k
       const th = texture.height * k
-      bg.roundRect(body.x + (body.w - tw) / 2, body.y + (body.h - th) / 2, tw, th, 10).fill({
-        texture,
-        textureSpace: 'local',
-      })
+      // 比例几乎一致：铺满卡片，圆角与卡片相同
+      if (Math.abs(tw - w) < 2 && Math.abs(th - h) < 2)
+        bg.roundRect(0, 0, w, h, RADIUS).fill({ texture, textureSpace: 'local' })
+      else
+        bg.roundRect((w - tw) / 2, (h - th) / 2, tw, th, 10).fill({
+          texture,
+          textureSpace: 'local',
+        })
     } else if (!high) {
       // 缩小时用色条示意节点类型和状态
       bg.roundRect(12, 12, Math.min(48, w - 24), 6, 3).fill({ color: accent, alpha: 0.8 })

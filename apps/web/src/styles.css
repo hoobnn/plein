@@ -466,25 +466,25 @@ input[type="radio"] {
   --kind: var(--port-json);
 }
 
+/* 标题行：卡片外上方，类型图标 + 名称，右侧状态与候选切换 */
 .plein-node-head {
   position: absolute;
-  inset: 0 0 auto 0;
-  height: var(--node-head);
+  left: 2px;
+  right: 2px;
+  bottom: calc(100% + 6px);
+  height: calc(var(--node-title) - 8px);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px 0 14px;
-  overflow: hidden;
+  gap: 6px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
-/* 类型色点：一眼区分文本 / 图片 / 视频 / 音频节点 */
-.plein-node-head::before {
-  content: "";
+.plein-node-glyph {
+  display: inline-flex;
   flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 3px;
-  background: var(--kind);
+  color: var(--kind);
 }
 
 .plein-node-title {
@@ -492,10 +492,12 @@ input[type="radio"] {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-  font-size: 13px;
+  font-weight: 500;
   letter-spacing: 0.01em;
+}
+
+.plein-node[data-selected="true"] .plein-node-title {
+  color: var(--ink);
 }
 
 .plein-node-status {
@@ -503,13 +505,8 @@ input[type="radio"] {
   display: none;
   align-items: center;
   gap: 5px;
-  height: 20px;
-  padding: 0 7px;
-  border-radius: 6px;
   font-size: 11px;
   font-weight: 500;
-  color: var(--ink-muted);
-  background: var(--surface-2);
   font-variant-numeric: tabular-nums;
 }
 .plein-node-status:not(:empty) {
@@ -525,19 +522,12 @@ input[type="radio"] {
 .plein-node[data-status="running"] .plein-node-status,
 .plein-node[data-status="queued"] .plein-node-status {
   color: var(--accent);
-  background: var(--accent-soft);
 }
 .plein-node[data-status="running"] .plein-node-status::before {
   animation: plein-pulse 1.2s ease-in-out infinite;
 }
 .plein-node[data-status="failed"] .plein-node-status {
   color: var(--danger);
-  background: var(--danger-soft);
-}
-.plein-node[data-status="succeeded"] .plein-node-status {
-  color: var(--success);
-  background: transparent;
-  padding: 0;
 }
 
 @keyframes plein-pulse {
@@ -546,90 +536,27 @@ input[type="radio"] {
   }
 }
 
-.plein-node-progress {
-  position: absolute;
-  left: 14px;
-  bottom: 0;
-  height: 2px;
-  max-width: calc(100% - 28px);
-  border-radius: 1px;
-  background: var(--accent);
-  transition: width 400ms var(--ease-spring);
-}
-
-.plein-node-body {
-  position: absolute;
-  top: var(--node-head);
-  bottom: var(--node-foot);
-  left: var(--node-pad);
-  right: var(--node-pad);
-  padding: 2px 6px;
-  overflow: hidden;
-  white-space: pre-wrap;
-  line-height: 1.6;
-  word-break: break-word;
-  color: var(--ink);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
-}
-
-.plein-node-body.is-hint {
-  color: var(--ink-subtle);
-}
-
-.plein-node-body.is-error {
-  color: var(--danger);
-}
-
-/* 媒体结果由 GPU 画，这里只在右下角放类型标签 */
-.plein-node-body.is-media {
-  mask-image: none;
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  padding: 8px;
-}
-.plein-node-body.is-media > span {
-  padding: 2px 7px;
-  border-radius: 6px;
-  font-size: 11px;
-  color: #fff;
-  background: rgb(0 0 0 / 0.55);
-  backdrop-filter: blur(8px);
-}
-
-.plein-node-foot {
-  position: absolute;
-  inset: auto 0 0 0;
-  height: var(--node-foot);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 8px 0 10px;
-}
-
 .plein-node-nav {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 2px;
-  color: var(--ink-muted);
-  font-size: 12px;
+  gap: 1px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
 .plein-node-nav[hidden] {
-  visibility: hidden;
-  display: flex;
+  display: none;
 }
 
 .plein-node-btn,
-.plein-node-run {
+.plein-node-try,
+.plein-node-action {
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  border-radius: 7px;
   cursor: pointer;
   transition:
     background-color 150ms var(--ease-spring),
@@ -637,8 +564,9 @@ input[type="radio"] {
 }
 
 .plein-node-btn {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
   color: var(--ink-muted);
 }
 
@@ -647,31 +575,160 @@ input[type="radio"] {
   color: var(--ink);
 }
 
-.plein-node-run {
+/* 卡片本体：结果由 GPU 画，这里放文本结果、空状态、运行状态 */
+.plein-node-body {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.plein-node-body.is-text {
+  padding: 12px 14px;
+  white-space: pre-wrap;
+  line-height: 1.6;
+  word-break: break-word;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+}
+
+.plein-node-body.is-hint {
+  color: var(--ink-subtle);
+}
+
+.plein-node-body.is-media {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 8px;
+}
+
+.plein-node-tag {
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #fff;
+  background: rgb(0 0 0 / 0.55);
+  backdrop-filter: blur(8px);
+}
+
+.plein-node-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 12px;
+}
+
+.plein-node-empty-icon {
+  display: inline-flex;
+  color: var(--ink-subtle);
+  opacity: 0.7;
+}
+
+.plein-node-tries {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--ink-subtle);
+}
+
+.plein-node-try {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--ink-muted);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.plein-node-try:hover {
+  color: var(--ink);
+  background: var(--surface-3);
+}
+
+.plein-node-running,
+.plein-node-failed {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 重新生成时盖在旧结果上：半透明毛玻璃，文字在图片上也看得清 */
+.plein-node-running {
+  background:
+    radial-gradient(80% 80% at 50% 50%, var(--accent-soft), transparent 70%),
+    color-mix(in srgb, var(--surface) 72%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.plein-node-failed {
+  color: var(--danger);
+  word-break: break-word;
+}
+
+.plein-node-failed > span {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.plein-node-action {
   height: 24px;
   padding: 0 10px;
+  border-radius: 7px;
   font-size: 12px;
-  font-weight: 500;
-  color: var(--on-accent);
-  background: var(--accent);
-}
-
-.plein-node-run:hover {
-  background: var(--accent-hover);
-}
-
-.plein-node-run[data-variant="cancel"] {
   color: var(--ink);
   background: var(--surface-2);
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
-.plein-node-run[data-variant="cancel"]:hover {
+.plein-node-action:hover {
   background: var(--surface-3);
 }
 
-.plein-node-run[hidden] {
-  display: none;
+.plein-spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  animation: plein-spin 0.9s linear infinite;
+}
+
+@keyframes plein-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.plein-node-progress {
+  position: absolute;
+  left: 12px;
+  bottom: 8px;
+  height: 2px;
+  max-width: calc(100% - 24px);
+  border-radius: 1px;
+  background: var(--accent);
+  transition: width 400ms var(--ease-spring);
 }
 
 .plein-port-label {
@@ -742,10 +799,6 @@ input[type="radio"] {
 
 .plein-node-muted {
   color: var(--ink-subtle);
-}
-
-.plein-node-body.is-media > span:empty {
-  display: none;
 }
 
 /* 首页画布卡片的预览底：点阵 + 一点渐变，暂代缩略图 */

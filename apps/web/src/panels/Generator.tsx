@@ -1,6 +1,7 @@
 import type { Engine } from '@plein/canvas-core'
 import {
   type CanvasElement,
+  connect,
   removeEdges,
   type ResultValue,
   setParam,
@@ -20,13 +21,17 @@ import type { Catalog } from '@plein/protocol'
 type PromptPreset = Catalog['prompts'][number]
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { assetUrls } from '../api/client'
+import { importFiles } from '../canvas/import'
 import {
+  applyAspect,
+  aspectKey,
   type FieldSchema,
   fieldsOf,
   findNode,
   isPure,
   mentionTargets,
   type NodeInfo,
+  parseAspect,
   promptKey,
   targetImages,
   type Upstream,
@@ -38,12 +43,15 @@ import { shotsOf } from '../canvas/storyboard'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
+import { Popover } from '../ui/Popover'
 import { SchemaForm } from './SchemaForm'
 
-const PANEL_W = 440
-const GAP = 12
-/** 底部工具栏占的高度，面板不压住它 */
-const BOTTOM_RESERVED = 72
+const PANEL_W = 540
+const GAP = 14
+/** 节点标题行在卡片上方，面板放上方时让开它 */
+const TITLE_H = 30
+/** 面板离视口底边的最小距离；可以盖住底部工具栏（选中节点时工具栏用得少） */
+const BOTTOM_RESERVED = 12
 /** 顶部页头占的高度 */
 const TOP_RESERVED = 64
 
@@ -67,7 +75,7 @@ export function useEngineVersion(engine: Engine) {
   )
 }
 
-/** 选中单个节点时浮在它下方的生成器：主提示词、模型与常用参数、上游输入、生成 */
+/** 选中单个节点时浮在它下方的生成器：参考素材、主提示词、模型与参数、生成 */
 export function Generator() {
   const engine = useCanvas((s) => s.engine)
   if (!engine) return null
@@ -86,19 +94,24 @@ function GeneratorHost({ engine }: { engine: Engine }) {
   const tl = engine.worldToClient(rect.x, rect.y)
   const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
   const below = window.innerHeight - BOTTOM_RESERVED - br.y
-  const above = tl.y - TOP_RESERVED
+  const above = tl.y - TITLE_H - TOP_RESERVED
   const left = Math.min(
     Math.max(GAP, (tl.x + br.x) / 2 - PANEL_W / 2),
     window.innerWidth - PANEL_W - GAP,
   )
+  // 默认放在节点下方；下方实在放不下才放上方（让开标题行）
   const style: React.CSSProperties =
-    below >= 300 || below >= above
+    below >= 280 || below >= above
       ? {
           left,
           top: Math.max(TOP_RESERVED, br.y + GAP),
-          maxHeight: Math.max(160, below - GAP * 2),
+          maxHeight: Math.max(180, below - GAP * 2),
         }
-      : { left, bottom: window.innerHeight - tl.y + GAP, maxHeight: Math.max(160, above - GAP) }
+      : {
+          left,
+          bottom: window.innerHeight - tl.y + TITLE_H + GAP,
+          maxHeight: Math.max(180, above - GAP),
+        }
 
   return <Panel key={el.id} engine={engine} el={el} node={node} catalog={catalog} style={style} />
 }
@@ -119,7 +132,11 @@ function Panel({
   const [more, setMore] = useState(false)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const params = { ...node.defaults, ...el.params }
-  const set = (key: string, value: unknown) => setParam(engine.doc, el.id, key, value)
+  const ak = aspectKey(node)
+  const set = (key: string, value: unknown) => {
+    setParam(engine.doc, el.id, key, value)
+    if (key === ak) applyAspect(engine, el.id, value)
+  }
   const pk = promptKey(node)
   const fields = fieldsOf(node).filter(([, f]) => f.widget !== 'hidden')
   const main = fields.filter(([k, f]) => k !== pk && isMainField(k, f))
@@ -129,42 +146,25 @@ function Panel({
   const pure = isPure(node)
   const problem = validate(node, el, ups, catalog)
   const running = el.run?.status === 'running' || el.run?.status === 'queued'
+  const modelField = main.find(([, f]) => f.widget === 'model')
+  // 画幅放最前：摘要读起来是“16:9 · 5s”
+  const paramFields = main
+    .filter(([, f]) => f.widget !== 'model')
+    .sort(([a], [b]) => Number(b === ak) - Number(a === ak))
 
-  // 双击节点时聚焦提示词
+  // 双击节点、套用预设后聚焦提示词；有【占位】时选中第一个，直接打字替换
   useEffect(() => {
     const focus = (e: Event) => {
-      if ((e as CustomEvent<string>).detail === el.id) promptRef.current?.focus()
+      if ((e as CustomEvent<string>).detail !== el.id) return
+      const ta = promptRef.current
+      if (!ta) return
+      ta.focus()
+      const hole = firstPlaceholder(ta.value)
+      if (hole) ta.setSelectionRange(hole.start, hole.end)
     }
     window.addEventListener('plein:focus-generator', focus)
     return () => window.removeEventListener('plein:focus-generator', focus)
   }, [el.id])
-
-  // 模型、画幅、张数等紧凑参数；非纯节点放在吸底栏里，和生成按钮同一行
-  const controls = (
-    <>
-      {main.map(([key, f]) => (
-        <Compact
-          key={key}
-          name={key}
-          field={f}
-          value={params[key]}
-          node={node}
-          catalog={catalog}
-          onChange={(v) => set(key, v)}
-        />
-      ))}
-      {Object.keys(rest).length > 0 && (
-        <button
-          type="button"
-          onClick={() => setMore(!more)}
-          className="ui-btn ui-btn-quiet !px-2 !text-xs"
-          aria-expanded={more}
-        >
-          {more ? '收起' : '更多'}
-        </button>
-      )}
-    </>
-  )
 
   const run = () => {
     if (running) void cancelNode(el.id)
@@ -176,7 +176,7 @@ function Panel({
       aria-label={`${node.title} 生成器`}
       data-testid="generator"
       style={{ ...style, width: PANEL_W }}
-      className="ui-float ui-scrollbar pointer-events-auto fixed z-20 flex flex-col overflow-y-auto rounded-[18px]"
+      className="ui-float ui-scrollbar pointer-events-auto fixed z-20 flex flex-col overflow-y-auto rounded-[20px]"
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
           e.preventDefault()
@@ -184,18 +184,16 @@ function Panel({
         }
       }}
     >
-      <NameField
-        value={el.name ?? node.title}
-        onChange={(name) => updateElement(engine.doc, el.id, { name })}
-        hint={
-          ASSET_NODE_TYPES.has(node.type)
-            ? `在提示词里输入 @${el.name ?? node.title} 引用`
-            : undefined
-        }
-      />
-      {node.inputs.length > 0 && <Inputs engine={engine} node={node} ups={ups} />}
+      {ASSET_NODE_TYPES.has(node.type) && (
+        <NameField
+          value={el.name ?? node.title}
+          onChange={(name) => updateElement(engine.doc, el.id, { name })}
+          hint={`在提示词里输入 @${el.name ?? node.title} 引用`}
+        />
+      )}
+      {node.inputs.length > 0 && <Inputs engine={engine} el={el} node={node} ups={ups} />}
       {node.type === STORYBOARD_TYPE && (
-        <div className="px-3 pb-3">
+        <div className="px-3 pt-3">
           <button
             type="button"
             onClick={() => useCanvas.getState().openStoryboard(el.id)}
@@ -221,28 +219,37 @@ function Panel({
             fields.find(([k]) => k === pk)?.[1].placeholder ??
             (pure
               ? '写下文本'
-              : `描述你想生成的内容，输入 @ 引用角色或场景${presets.length ? '，行首输入 / 选预设' : ''}`)
+              : `描述你想生成的内容，@ 引用角色或场景${presets.length ? '，行首 / 选预设' : ''}`)
           }
           onChange={(v) => set(pk, v)}
         />
       )}
       {pure && Object.keys(rest).length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3 pt-1">{controls}</div>
-      )}
-      {more && (
-        <div className="border-t border-line px-3 py-3">
-          <SchemaForm
-            schema={{ properties: rest }}
-            value={params}
-            onChange={(next) => {
-              for (const k of Object.keys(rest)) if (next[k] !== params[k]) set(k, next[k])
-            }}
-          />
+        <div className="px-4 pb-3">
+          <button
+            type="button"
+            onClick={() => setMore(!more)}
+            className="ui-btn ui-btn-quiet !h-7 !px-2 !text-xs"
+            aria-expanded={more}
+          >
+            {more ? '收起设置' : '更多设置'}
+          </button>
+          {more && (
+            <div className="pt-2">
+              <SchemaForm
+                schema={{ properties: rest }}
+                value={params}
+                onChange={(next) => {
+                  for (const k of Object.keys(rest)) if (next[k] !== params[k]) set(k, next[k])
+                }}
+              />
+            </div>
+          )}
         </div>
       )}
       {!pure && (
         // 底栏吸底：面板被视口截短时生成按钮仍然可见
-        <footer className="sticky bottom-0 flex flex-col gap-2 border-t border-line bg-float px-3 py-2.5 backdrop-blur-xl">
+        <footer className="sticky bottom-0 flex flex-col gap-1.5 bg-float px-3 pb-3 pt-1 backdrop-blur-xl">
           {(problem || (!running && el.run?.status === 'failed')) && (
             <p
               className={`px-1 text-xs ${problem ? 'text-ink-subtle' : 'text-danger'}`}
@@ -251,17 +258,39 @@ function Panel({
               {problem ?? el.run?.error ?? '生成失败'}
             </p>
           )}
-          <div className="flex flex-wrap items-center gap-1.5">
-            {controls}
+          <div className="flex items-center gap-1">
+            {modelField && (
+              <ModelPicker
+                value={String(params[modelField[0]] ?? '')}
+                node={node}
+                catalog={catalog}
+                onChange={(v) => set(modelField[0], v)}
+              />
+            )}
+            {(paramFields.length > 0 || Object.keys(rest).length > 0) && (
+              <ParamsPill
+                fields={paramFields}
+                rest={rest}
+                params={params}
+                aspect={ak}
+                onChange={set}
+              />
+            )}
             <button
               type="button"
               onClick={run}
               disabled={!running && !!problem}
-              title={problem ?? '⌘↵'}
-              className={`ui-btn ml-auto !h-9 !rounded-[10px] !px-4 ${running ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
+              title={
+                problem ?? (running ? '取消' : `${el.results?.length ? '重新生成' : '生成'}（⌘↵）`)
+              }
+              aria-label={running ? '取消' : el.results?.length ? '重新生成' : '生成'}
+              className={`ml-auto flex size-9 flex-none items-center justify-center rounded-full transition-colors disabled:opacity-35 ${
+                running
+                  ? 'bg-surface-3 text-ink hover:bg-active'
+                  : 'bg-accent text-on-accent hover:bg-accent-hover disabled:hover:bg-accent'
+              }`}
             >
-              <Icon name={running ? 'stop' : 'sparkle'} size={14} />
-              {running ? '取消' : el.results?.length ? '重新生成' : '生成'}
+              <Icon name={running ? 'stop' : 'arrowUp'} size={running ? 14 : 18} />
             </button>
           </div>
         </footer>
@@ -304,101 +333,302 @@ function NameField({
   )
 }
 
-/** 模型、枚举和小范围整数放进紧凑行，其余进“更多参数” */
+/** 模型、枚举和小范围整数放进参数胶囊，其余进“更多参数” */
 function isMainField(key: string, f: FieldSchema) {
   if (f.widget === 'model' || f.enum) return true
   return f.type === 'integer' && (key === 'count' || key === 'duration')
 }
 
-const chip = 'ui-select !h-8 !text-xs'
+const pill =
+  'flex h-8 min-w-0 items-center gap-1.5 rounded-[10px] px-2.5 text-xs text-ink-muted transition-colors hover:bg-hover hover:text-ink aria-expanded:bg-active aria-expanded:text-ink'
 
-function Compact({
-  name,
-  field,
+/** 模型选择：按平台分组，每项带一句说明；“自动”交给服务端按能力挑 */
+function ModelPicker({
   value,
   node,
   catalog,
   onChange,
 }: {
+  value: string
+  node: NodeInfo
+  catalog: Catalog | null
+  onChange(v: string): void
+}) {
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
+  const providers = (catalog?.providers ?? [])
+    .filter((p) => p.enabled && p.configured)
+    .map((p) => ({
+      ...p,
+      models: p.models.filter((m) => !node.capability || m.capabilities.includes(node.capability)),
+    }))
+    .filter((p) => p.models.length > 0)
+  const current = providers
+    .flatMap((p) => p.models.map((m) => ({ ref: `${p.id}:${m.id}`, title: m.title })))
+    .find((m) => m.ref === value)
+  const pick = (v: string) => {
+    onChange(v)
+    setAnchor(null)
+  }
+  const Row = ({ v, title, desc }: { v: string; title: string; desc?: string }) => (
+    <button
+      type="button"
+      role="option"
+      aria-selected={v === value}
+      onClick={() => pick(v)}
+      className="ui-menu-item !items-start"
+    >
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
+        <span className="truncate text-sm">{title}</span>
+        {desc && <span className="line-clamp-2 text-xs text-ink-subtle">{desc}</span>}
+      </span>
+      {v === value && (
+        <span className="mt-0.5 text-accent">
+          <Icon name="check" size={14} />
+        </span>
+      )}
+    </button>
+  )
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="模型"
+        aria-expanded={!!anchor}
+        title={current?.title ?? '自动选择模型'}
+        onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
+        className={`${pill} max-w-44 font-medium text-ink`}
+      >
+        <Icon name="sparkle" size={13} />
+        <span className="truncate">{current?.title ?? '自动'}</span>
+        <Icon name="chevronDown" size={12} />
+      </button>
+      {anchor && (
+        <Popover anchor={anchor} onClose={() => setAnchor(null)} label="选择模型" width={300}>
+          <div role="listbox" aria-label="模型">
+            <Row v="" title="自动选择" desc="按节点能力使用第一个可用的模型" />
+            {providers.map((p) => (
+              <div key={p.id}>
+                <div className="ui-menu-label">{p.title}</div>
+                {p.models.map((m) => (
+                  <Row key={m.id} v={`${p.id}:${m.id}`} title={m.title} desc={m.description} />
+                ))}
+              </div>
+            ))}
+            {providers.length === 0 && (
+              <p className="px-2 py-2 text-xs text-ink-subtle">
+                还没有可用的模型：在设置的「模型平台」里填写密钥并启用。
+              </p>
+            )}
+          </div>
+        </Popover>
+      )}
+    </>
+  )
+}
+
+/** 参数值的简写：画幅原样、张数“1 张”、时长“5s” */
+function shortValue(key: string, f: FieldSchema, v: unknown) {
+  if (v === undefined || v === '') return null
+  if (key === 'count') return `${v} 张`
+  if (key === 'duration') return `${v}s`
+  if (f.enum) return String(v)
+  return `${f.title ?? key} ${v}`
+}
+
+/** 参数胶囊：一行摘要（16:9 · 1 张 · 5s），点开是可视化的参数面板 */
+function ParamsPill({
+  fields,
+  rest,
+  params,
+  aspect,
+  onChange,
+}: {
+  fields: Array<[string, FieldSchema]>
+  rest: Record<string, FieldSchema>
+  params: Record<string, unknown>
+  aspect?: string
+  onChange(key: string, v: unknown): void
+}) {
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
+  const [more, setMore] = useState(false)
+  const summary = fields
+    .map(([k, f]) => shortValue(k, f, params[k]))
+    .filter(Boolean)
+    .join(' · ')
+  const ratio = aspect ? parseAspect(params[aspect]) : null
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="参数"
+        aria-expanded={!!anchor}
+        onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
+        className={pill}
+      >
+        {ratio ? <AspectGlyph ratio={ratio} size={14} /> : <Icon name="sliders" size={13} />}
+        <span className="truncate tabular-nums">{summary || '参数'}</span>
+        <Icon name="chevronDown" size={12} />
+      </button>
+      {anchor && (
+        <Popover anchor={anchor} onClose={() => setAnchor(null)} label="参数" width={340}>
+          <div className="flex flex-col gap-3 p-2">
+            {fields.map(([k, f]) => (
+              <ParamControl
+                key={k}
+                name={k}
+                field={f}
+                value={params[k]}
+                aspect={k === aspect}
+                onChange={(v) => onChange(k, v)}
+              />
+            ))}
+            {Object.keys(rest).length > 0 && (
+              <div className="border-t border-line pt-2">
+                <button
+                  type="button"
+                  onClick={() => setMore(!more)}
+                  aria-expanded={more}
+                  className="flex w-full items-center justify-between text-xs text-ink-muted hover:text-ink"
+                >
+                  更多参数
+                  <Icon name="chevronDown" size={12} />
+                </button>
+                {more && (
+                  <div className="pt-2">
+                    <SchemaForm
+                      schema={{ properties: rest }}
+                      value={params}
+                      onChange={(next) => {
+                        for (const k of Object.keys(rest))
+                          if (next[k] !== params[k]) onChange(k, next[k])
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </Popover>
+      )}
+    </>
+  )
+}
+
+/** 画幅图标：按比例画的小矩形 */
+function AspectGlyph({ ratio, size }: { ratio: number; size: number }) {
+  const w = ratio >= 1 ? size : Math.max(4, size * ratio)
+  const h = ratio >= 1 ? Math.max(4, size / ratio) : size
+  return (
+    <span
+      className="flex flex-none items-center justify-center"
+      style={{ width: size, height: size }}
+    >
+      <span
+        className="rounded-[2px] border-[1.5px] border-current"
+        style={{ width: w, height: h }}
+      />
+    </span>
+  )
+}
+
+const seg =
+  'flex h-8 flex-1 items-center justify-center gap-1 rounded-lg text-xs text-ink-muted ring-1 ring-line transition-colors hover:bg-hover hover:text-ink aria-pressed:bg-accent-soft aria-pressed:text-accent aria-pressed:ring-accent/40'
+
+/** 参数面板里的一个参数：画幅用形状按钮，少量选项用分段按钮，范围用滑块 */
+function ParamControl({
+  name,
+  field,
+  value,
+  aspect,
+  onChange,
+}: {
   name: string
   field: FieldSchema
   value: unknown
-  node: NodeInfo
-  catalog: Catalog | null
+  aspect: boolean
   onChange(v: unknown): void
 }) {
   const label = field.title ?? name
-  if (field.widget === 'model') {
-    const models = (catalog?.providers ?? [])
-      .filter((p) => p.enabled && p.configured)
-      .flatMap((p) =>
-        p.models
-          .filter((m) => !node.capability || m.capabilities.includes(node.capability))
-          .map((m) => ({ ref: `${p.id}:${m.id}`, title: m.title, provider: p.title })),
-      )
-    return (
-      <select
-        aria-label={label}
-        className={`${chip} max-w-[132px]`}
-        value={String(value ?? '')}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="">自动选择模型</option>
-        {models.map((m) => (
-          <option key={m.ref} value={m.ref}>
-            {m.title} · {m.provider}
-          </option>
-        ))}
-      </select>
+  let control: React.ReactNode
+  if (field.enum && aspect) {
+    control = (
+      <div className="grid grid-cols-5 gap-1.5">
+        {field.enum.map((o) => {
+          const r = parseAspect(o) ?? 1
+          return (
+            <button
+              key={String(o)}
+              type="button"
+              aria-pressed={String(value) === String(o)}
+              onClick={() => onChange(o)}
+              className={`${seg} !h-14 flex-col !gap-1.5`}
+            >
+              <AspectGlyph ratio={r} size={18} />
+              <span className="tabular-nums">{String(o)}</span>
+            </button>
+          )
+        })}
+      </div>
     )
-  }
-  if (field.enum) {
-    return (
-      <select
-        aria-label={label}
-        className={chip}
-        value={String(value ?? '')}
-        onChange={(e) => onChange(e.target.value)}
-      >
+  } else if (field.enum) {
+    control = (
+      <div className="flex flex-wrap gap-1.5">
         {field.enum.map((o) => (
-          <option key={String(o)} value={String(o)}>
+          <button
+            key={String(o)}
+            type="button"
+            aria-pressed={String(value) === String(o)}
+            onClick={() => onChange(o)}
+            className={`${seg} min-w-14`}
+          >
             {String(o)}
-          </option>
+          </button>
         ))}
-      </select>
+      </div>
     )
-  }
-  const min = field.minimum ?? 1
-  const max = field.maximum ?? min + 9
-  if (max - min <= 9) {
-    return (
-      <select
-        aria-label={label}
-        className={chip}
-        value={String(value ?? min)}
-        onChange={(e) => onChange(Number(e.target.value))}
-      >
-        {Array.from({ length: max - min + 1 }, (_, i) => min + i).map((n) => (
-          <option key={n} value={n}>
-            {name === 'count' ? `${n} 个` : `${label} ${n}`}
-          </option>
-        ))}
-      </select>
-    )
+  } else {
+    const min = field.minimum ?? 1
+    const max = field.maximum ?? min + 9
+    const n = Number(value ?? field.default ?? min)
+    control =
+      max - min <= 5 ? (
+        <div className="flex gap-1.5">
+          {Array.from({ length: max - min + 1 }, (_, i) => min + i).map((v) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={n === v}
+              onClick={() => onChange(v)}
+              className={seg}
+            >
+              {name === 'count' ? `${v} 张` : v}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            aria-label={label}
+            min={min}
+            max={max}
+            step={1}
+            value={n}
+            onChange={(e) => onChange(Number(e.target.value))}
+            className="flex-1 accent-[var(--accent)]"
+          />
+          <span className="w-12 text-right text-xs tabular-nums text-ink">
+            {n}
+            {name === 'duration' ? ' 秒' : ''}
+          </span>
+        </div>
+      )
   }
   return (
-    <label className="ui-input flex !h-8 items-center gap-1 !text-xs">
-      <input
-        aria-label={label}
-        type="number"
-        min={min}
-        max={max}
-        className="w-10 bg-transparent text-right outline-none"
-        value={String(value ?? '')}
-        onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
-      />
-      <span className="text-ink-subtle">{name === 'duration' ? '秒' : label}</span>
-    </label>
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs text-ink-subtle">{label}</span>
+      {control}
+    </div>
   )
 }
 
@@ -628,49 +858,127 @@ function MentionChip({
   )
 }
 
-/** 连入的上游：参考图缩略图、上游文本摘要；可断开 */
+/**
+ * 连入的素材（生成器顶部那一排）：参考图 / 首尾帧是带编号的缩略图，
+ * 空着的单连输入显示虚线占位，点一下直接上传并连上；上游文本是一行小标签。
+ */
 function Inputs({
   engine,
+  el,
   node,
   ups,
 }: {
   engine: Engine
+  el: CanvasElement
   node: NodeInfo
   ups: Map<string, Upstream[]>
 }) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [target, setTarget] = useState<NodeInfo['inputs'][number] | null>(null)
+  const media = node.inputs.filter((p) => p.type !== 'text')
+  const texts = node.inputs.filter((p) => p.type === 'text').flatMap((p) => ups.get(p.id) ?? [])
+  const locate = (u: Upstream) => {
+    engine.selection.set([u.source.id])
+    engine.zoomToFit([u.source.id])
+  }
+
+  /** 上传文件到节点左侧，连到指定输入端口，然后选回节点 */
+  const upload = async (files: File[]) => {
+    const port = target
+    const rect = engine.scene.rect(el.id)
+    if (!port || !rect || !files.length) return
+    const { setImporting, notify } = useCanvas.getState()
+    setImporting({ done: 0, total: files.length })
+    try {
+      const res = await importFiles(
+        engine,
+        port.multiple ? files : files.slice(0, 1),
+        { x: rect.x - 420, y: rect.y + rect.h / 2 },
+        (done, total) => setImporting({ done, total }),
+      )
+      for (const id of res.created) {
+        const src = engine.doc.get(id)
+        const out = src && (src.kind === 'image' || src.kind === 'video' || src.kind === 'audio')
+        if (out) connect(engine.doc, [id, src.kind], [el.id, port.id])
+      }
+      if (res.skipped.length) notify(`${res.skipped.map((s) => s.name).join('，')} 未导入`)
+    } finally {
+      setImporting(null)
+      engine.selection.set([el.id])
+    }
+  }
+  const pick = (port: NodeInfo['inputs'][number]) => {
+    setTarget(port)
+    requestAnimationFrame(() => fileRef.current?.click())
+  }
+
+  let n = 0
+  const tiles: React.ReactNode[] = []
+  for (const port of media) {
+    const list = ups.get(port.id) ?? []
+    // 多连的“参考图”不逐个标端口名；首帧、尾帧这种单连输入在缩略图下标出
+    const caption = port.multiple ? undefined : port.label
+    for (const u of list) {
+      n++
+      tiles.push(
+        <RefTile
+          key={u.edgeId}
+          index={n}
+          up={u}
+          caption={caption}
+          onLocate={() => locate(u)}
+          onRemove={() => removeEdges(engine.doc, [u.edgeId])}
+        />,
+      )
+    }
+    if (port.multiple || list.length === 0)
+      tiles.push(
+        <button
+          key={`add-${port.id}`}
+          type="button"
+          onClick={() => pick(port)}
+          title={`上传${port.label}，也可以从画布上的图片拖线连入`}
+          className={`flex flex-none flex-col items-center gap-1 text-[11px] ${port.required && list.length === 0 ? 'text-danger' : 'text-ink-subtle'} hover:text-ink`}
+        >
+          <span className="flex size-12 items-center justify-center rounded-xl border border-dashed border-line-strong bg-surface-2/50">
+            <Icon name="plus" size={16} />
+          </span>
+          {port.label}
+        </button>,
+      )
+  }
+
+  if (!tiles.length && !texts.length) return null
   return (
-    <div className="flex flex-col gap-1.5 border-b border-line px-4 py-2.5">
-      {node.inputs.map((port) => {
-        const list = ups.get(port.id) ?? []
-        return (
-          <div key={port.id} className="flex min-h-7 items-center gap-2 text-xs">
-            <span
-              className={`w-12 flex-none ${port.required && list.length === 0 ? 'text-danger' : 'text-ink-muted'}`}
-            >
-              {port.label}
-            </span>
-            {list.length === 0 ? (
-              <span className="text-ink-subtle">
-                从左侧端口连入{port.multiple ? '，可连多个' : ''}
-              </span>
-            ) : (
-              <div className="flex min-w-0 flex-wrap gap-1.5">
-                {list.map((u) => (
-                  <UpstreamChip
-                    key={u.edgeId}
-                    up={u}
-                    onLocate={() => {
-                      engine.selection.set([u.source.id])
-                      engine.zoomToFit([u.source.id])
-                    }}
-                    onRemove={() => removeEdges(engine.doc, [u.edgeId])}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )
-      })}
+    <div className="flex flex-col gap-2 px-4 pt-3.5">
+      {tiles.length > 0 && (
+        <div className="ui-scrollbar flex items-start gap-2 overflow-x-auto pb-0.5">{tiles}</div>
+      )}
+      {texts.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-subtle">
+          上游文本
+          {texts.map((u) => (
+            <TextChip
+              key={u.edgeId}
+              up={u}
+              onLocate={() => locate(u)}
+              onRemove={() => removeEdges(engine.doc, [u.edgeId])}
+            />
+          ))}
+        </div>
+      )}
+      <input
+        ref={fileRef}
+        type="file"
+        hidden
+        multiple={target?.multiple}
+        accept={target ? `${target.type}/*` : undefined}
+        onChange={(e) => {
+          const files = [...(e.target.files ?? [])]
+          e.target.value = ''
+          void upload(files)
+        }}
+      />
     </div>
   )
 }
@@ -682,7 +990,57 @@ function preview(v: ResultValue | undefined) {
   return null
 }
 
-function UpstreamChip({
+/** 一张连入的素材：编号角标，悬停出现断开按钮，点击定位到上游 */
+function RefTile({
+  index,
+  up,
+  caption,
+  onLocate,
+  onRemove,
+}: {
+  index: number
+  up: Upstream
+  caption?: string
+  onLocate(): void
+  onRemove(): void
+}) {
+  const v = up.value
+  const img = preview(v)
+  const name = up.source.name ?? '上游'
+  return (
+    <div className="group relative flex flex-none flex-col items-center gap-1 text-[11px] text-ink-subtle">
+      <button
+        type="button"
+        onClick={onLocate}
+        title={v ? `定位到「${name}」` : `「${name}」还没有结果`}
+        className="relative size-12 overflow-hidden rounded-xl bg-surface-2 ring-1 ring-line"
+      >
+        {img ? (
+          <img src={img} alt="" className="size-full object-cover" />
+        ) : (
+          <span className="flex size-full items-center justify-center text-ink-subtle">
+            <Icon name={v?.type === 'video' ? 'video' : 'image'} size={16} />
+          </span>
+        )}
+        <span className="absolute left-1 top-1 flex size-4 items-center justify-center rounded-full bg-black/60 text-[10px] font-medium text-white tabular-nums">
+          {index}
+        </span>
+        {!v && <span className="absolute inset-0 bg-canvas/50" />}
+      </button>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`断开「${name}」`}
+        className="absolute -right-1.5 -top-1.5 hidden size-5 items-center justify-center rounded-full bg-surface-3 text-ink shadow ring-1 ring-line group-hover:flex"
+      >
+        <Icon name="x" size={11} />
+      </button>
+      {caption && <span>{caption}</span>}
+    </div>
+  )
+}
+
+function TextChip({
   up,
   onLocate,
   onRemove,
@@ -692,36 +1050,23 @@ function UpstreamChip({
   onRemove(): void
 }) {
   const v = up.value
-  const img = preview(v)
   const name = up.source.name ?? '上游'
-  const text =
-    v?.type === 'text'
-      ? v.text.trim().slice(0, 24) || '（空）'
-      : v?.type === 'audio'
-        ? `♪ ${name}`
-        : v
-          ? name
-          : `${name}（未生成）`
+  const text = v?.type === 'text' ? v.text.trim().slice(0, 20) || '（空）' : `${name}（未生成）`
   return (
-    <span className="group flex h-7 max-w-56 items-center gap-1 rounded-lg bg-surface-2 pr-1 ring-1 ring-line">
+    <span className="group flex h-6 max-w-56 items-center gap-1 rounded-md bg-surface-2 pl-2 pr-0.5 ring-1 ring-line">
       <button
         type="button"
         onClick={onLocate}
         title={`定位到「${name}」`}
-        className="flex min-w-0 items-center gap-1.5 pl-0.5 text-left"
+        className={`truncate text-left ${v ? 'text-ink' : 'text-ink-subtle'}`}
       >
-        {img ? (
-          <img src={img} alt="" className="size-6 flex-none rounded-md object-cover" />
-        ) : (
-          <span className="w-1" />
-        )}
-        <span className={`truncate ${v ? 'text-ink' : 'text-ink-subtle'}`}>{text}</span>
+        {text}
       </button>
       <button
         type="button"
         onClick={onRemove}
         aria-label={`断开「${name}」`}
-        className="flex size-5 flex-none items-center justify-center rounded-md text-ink-subtle opacity-60 hover:bg-active hover:text-ink group-hover:opacity-100"
+        className="flex size-5 flex-none items-center justify-center rounded text-ink-subtle opacity-60 hover:bg-active hover:text-ink group-hover:opacity-100"
       >
         ×
       </button>

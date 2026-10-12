@@ -1,10 +1,12 @@
 import type { Rect } from '@plein/doc'
 import { Graphics } from 'pixi.js'
 import type { Camera } from './camera'
-import { type Guide, HANDLES, handlePosition, union } from './geometry'
+import { type Guide, HANDLES, type Handle, handlePosition, union } from './geometry'
 import type { Scene } from './scene'
 import type { Selection } from './selection'
 import { theme } from './theme'
+
+const CORNERS: readonly Handle[] = ['nw', 'ne', 'se', 'sw']
 
 /** 手柄边长（屏幕像素） */
 export const HANDLE_PX = 8
@@ -71,7 +73,7 @@ export class SelectionOverlay {
       if (ids.length > 1)
         g.rect(box.x, box.y, box.w, box.h).stroke({ color: theme.accent, alpha: 0.6, width: px })
       const s = HANDLE_PX * px
-      for (const h of HANDLES) {
+      for (const h of this.handles()) {
         const p = handlePosition(box, h)
         g.rect(p.x - s / 2, p.y - s / 2, s, s)
       }
@@ -90,6 +92,13 @@ export class SelectionOverlay {
       else g.moveTo(guide.from, guide.at).lineTo(guide.to, guide.at)
     }
     if (this.guides.length > 0) g.stroke({ color: theme.guide, width: px })
+  }
+
+  /** 单选节点只留四角手柄：边中点留给端口 */
+  handles(): readonly Handle[] {
+    const ids = this.selection.values()
+    if (ids.length === 1 && this.scene.get(ids[0]!)?.kind === 'node') return CORNERS
+    return HANDLES
   }
 
   /** 选中项全部锁定时不显示手柄 */

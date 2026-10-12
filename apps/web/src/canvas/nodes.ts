@@ -9,6 +9,7 @@ import {
   type Port,
   type PortType,
   type ResultValue,
+  updateElement,
 } from '@plein/doc'
 import { ASSET_NODE_TYPES } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
@@ -55,12 +56,57 @@ export function promptKey(node: NodeInfo): string | undefined {
   return fields.find(([, f]) => f.widget === 'textarea')?.[0]
 }
 
-/** 节点在画布上的默认尺寸：出图 / 视频的节点留出预览区 */
+/** 出图 / 视频节点的长边：卡片按画幅取形状，结果出来后正好铺满 */
+const MEDIA_LONG_SIDE = 400
+
+/** 画幅字段（如 aspectRatio: '16:9'）的值解析成宽高比；不是画幅返回 null */
+export function parseAspect(v: unknown): number | null {
+  const m = /^(\d+(?:\.\d+)?)\s*[:：]\s*(\d+(?:\.\d+)?)$/.exec(String(v ?? ''))
+  if (!m) return null
+  const r = Number(m[1]) / Number(m[2])
+  return Number.isFinite(r) && r > 0 ? r : null
+}
+
+/** 节点里表示画幅的参数名 */
+export function aspectKey(node: NodeInfo): string | undefined {
+  return fieldsOf(node).find(([k, f]) => /aspect/i.test(k) && f.enum)?.[0]
+}
+
+/** 长边固定、按宽高比求卡片尺寸 */
+export function aspectSize(ratio: number, long = MEDIA_LONG_SIDE) {
+  return ratio >= 1
+    ? { w: long, h: Math.round(long / ratio) }
+    : { w: Math.round(long * ratio), h: long }
+}
+
+/** 节点在画布上的默认尺寸：出图 / 视频的节点按默认画幅取形状 */
 function nodeSize(node: NodeInfo) {
   const out = node.outputs[0]?.type
-  if (out === 'image' || out === 'video') return { w: 320, h: 300 }
-  if (out === 'audio') return { w: 300, h: 180 }
+  if (out === 'image' || out === 'video') {
+    const key = aspectKey(node)
+    const ratio = key ? parseAspect(node.defaults?.[key]) : null
+    return ratio ? aspectSize(ratio) : { w: 320, h: 320 }
+  }
+  if (out === 'audio') return { w: 300, h: 160 }
   return { w: 280, h: 200 }
+}
+
+/**
+ * 改画幅时卡片跟着变形：保持长边和中心不动。
+ * 用户手动缩放过的大小按其长边换算，不会突然变回默认大小。
+ */
+export function applyAspect(engine: Engine, id: string, value: unknown) {
+  const ratio = parseAspect(value)
+  const el = engine.doc.get(id)
+  if (!ratio || !el) return
+  const { w, h } = aspectSize(ratio, Math.max(el.w, el.h))
+  if (Math.abs(w - el.w) < 1 && Math.abs(h - el.h) < 1) return
+  updateElement(engine.doc, id, {
+    w,
+    h,
+    x: Math.round(el.x + (el.w - w) / 2),
+    y: Math.round(el.y + (el.h - h) / 2),
+  })
 }
 
 /** 由节点声明生成画布上的节点元素 */
@@ -73,7 +119,6 @@ export function nodeElement(node: NodeInfo): Omit<NewElement, 'x' | 'y'> {
     ...(p.required ? { required: true } : {}),
   })
   const { w, h } = nodeSize(node)
-  const rows = Math.max(node.inputs.length, node.outputs.length)
   return {
     kind: 'node',
     nodeType: node.type,
@@ -81,7 +126,7 @@ export function nodeElement(node: NodeInfo): Omit<NewElement, 'x' | 'y'> {
     name: node.title,
     params: node.defaults,
     w,
-    h: Math.max(h, 64 + rows * 28),
+    h,
     ports: { inputs: node.inputs.map(port), outputs: node.outputs.map(port) },
   }
 }

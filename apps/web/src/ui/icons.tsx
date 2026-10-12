@@ -29,6 +29,16 @@ const PATHS = {
   table: 'M4 5h16v14H4zM4 10h16M4 15h16M10 5v14',
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3',
   pencil: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
+  arrowUp: 'M12 19V5M5.5 11.5 12 5l6.5 6.5',
+  image: 'M4 5h16v14H4zM4 16l4.5-4.5 3.5 3.5 2.5-2.5L20 18M15.5 9.5h.01',
+  video: 'M4 6h12v12H4zM16 10l4-2.5v9L16 14',
+  check: 'm5 12.5 4.5 4.5L19 7.5',
+  download: 'M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14',
+  expand: 'M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7',
+  grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
+  sliders: 'M4 7h10M18 7h2M4 17h4M12 17h8M14 4v6M8 14v6',
+  keyboard: 'M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M7 14h10',
+  help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17h.01',
 } as const
 
 export type IconName = keyof typeof PATHS

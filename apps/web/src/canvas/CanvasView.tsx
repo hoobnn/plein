@@ -7,11 +7,13 @@ import * as Y from 'yjs'
 import { assetUrls, syncUrl } from '../api/client'
 import { navigate } from '../router'
 import { useCanvas } from '../stores/canvas'
+import { useCatalog } from '../stores/catalog'
 import { canvasTheme, useTheme } from '../stores/theme'
 import { demoAssetUrls, seedDemo } from './demo'
 import { importFiles, importText } from './import'
 import { NodeCards } from './nodeCards'
 import { CanvasOverlays } from './overlays'
+import { applyPresetToNode } from './presets'
 import { cancelNode, runNode } from './runner'
 
 export type CanvasSource = { kind: 'remote'; canvasId: string } | { kind: 'demo'; count: number }
@@ -63,6 +65,8 @@ export function CanvasView({ source }: { source: CanvasSource }) {
         const cards = new NodeCards(engine, overlayRoot, {
           run: runNode,
           cancel: cancelNode,
+          applyPreset: (id, preset) =>
+            applyPresetToNode(engine, useCatalog.getState().catalog, id, preset),
           thumbUrl: (id) => assetUrls.variant(id, 'thumb-256'),
         })
         // 双击节点：聚焦生成器的提示词（面板在选中后的下一帧才挂载）
