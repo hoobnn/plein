@@ -36,6 +36,10 @@ module.exports = {
           const ok = allowed.map(norm).includes(norm(emoji))
           return [ok, `"${emoji}" 与 type "${type}" 不匹配，应为: ${allowed[0]}`]
         },
+        'no-claude-session': ({ raw }) => [
+          !/^Claude-Session:/m.test(raw ?? ''),
+          '提交消息不允许包含 Claude-Session 行',
+        ],
         'subject-chinese': ({ type, subject }) => {
           if (type === 'revert' || !subject) return [true]
           return [/\p{Script=Han}/u.test(subject), 'subject 需使用中文描述']
@@ -45,6 +49,7 @@ module.exports = {
   ],
   rules: {
     'emoji-type-match': [2, 'always'],
+    'no-claude-session': [2, 'always'],
     'type-enum': [2, 'always', Object.keys(TYPE_EMOJI)],
     'type-empty': [2, 'never'],
     'scope-case': [2, 'always', 'lower-case'],
