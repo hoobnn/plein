@@ -459,6 +459,21 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
+  it('轮询遇到网络失败或 503 可重试，宿主据此续轮询', async () => {
+    const { ctx, fetch } = harness([
+      { body: { error: { code: 'ServerOverloaded', message: 'busy' } }, status: 503 },
+    ])
+    fetch.mockRejectedValueOnce(new TypeError('network error'))
+    await expect(arkProvider.poll!('id', ctx)).rejects.toMatchObject({
+      code: 'unavailable',
+      retryable: true,
+    })
+    await expect(arkProvider.poll!('id', ctx)).rejects.toMatchObject({
+      code: 'unavailable',
+      retryable: true,
+    })
+  })
+
   it('拒绝缺少 ID / 畸形 JSON 输出以及权限外的产物 URL', async () => {
     const { ctx } = harness([
       { body: {} },

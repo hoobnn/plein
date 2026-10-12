@@ -13,6 +13,16 @@ import {
   type ProviderOutput,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
+import {
+  asJson,
+  chatMessages,
+  imageDataUrl,
+  type Json,
+  type Method,
+  redact,
+  send,
+  withRetry,
+} from '../shared/http'
 import { sizeByArea, tierEdge } from '../size'
 
 const BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
@@ -23,7 +33,6 @@ const settings = z.object({
   customVideoModel: z.string().default('').meta({ title: '自定义视频模型 / Endpoint ID' }),
 })
 type Context = ProviderContext<z.output<typeof settings>>
-type Json = Record<string, unknown>
 
 // Seedream 宽高比 1/16–16 都能给；auto 只传分辨率档位，比例由模型按提示词决定
 const SEEDREAM_ASPECTS = ['auto', '21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16']
@@ -183,20 +192,17 @@ const models: ModelSpec[] = [
   },
 ]
 
-function object(value: unknown): Json {
-  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : {}
-}
-
 function invalid(message: string): never {
   throw new ProviderError('invalid_input', message)
 }
 
 function errorInfo(value: unknown, status = 0, secret?: string): ProviderError {
-  const error = object(value)
+  const error = asJson(value)
   const name = String(error.code ?? '')
-  const rawMessage =
-    typeof error.message === 'string' ? error.message : `火山方舟请求失败（HTTP ${status}）`
-  const message = secret ? rawMessage.replaceAll(secret, '[redacted]') : rawMessage
+  const message = redact(
+    typeof error.message === 'string' ? error.message : `火山方舟请求失败（HTTP ${status}）`,
+    [secret],
+  )
   const match = `${name} ${message}`.toLowerCase()
   let code: ProviderErrorCode = 'unknown'
   if (/quota|balance|insufficient|arrears/.test(match) || status === 402) code = 'quota'
@@ -221,60 +227,49 @@ async function request(
   ctx: Context,
   path: string,
   body?: Json,
-  method = body ? 'POST' : 'GET',
+  method: Method = body ? 'POST' : 'GET',
 ): Promise<Json> {
   const key = ctx.secret('ARK_API_KEY')
   if (!key) throw new ProviderError('auth', '请先配置 ARK_API_KEY')
-  let response: Response
-  try {
-    response = await ctx.fetch(`${BASE_URL}${path}`, {
+  const response = await send(
+    ctx,
+    `${BASE_URL}${path}`,
+    {
       method,
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       ...(body ? { body: JSON.stringify(body) } : {}),
-      signal: ctx.signal,
-    })
-  } catch {
-    if (ctx.signal.aborted) throw new ProviderError('cancelled', '火山方舟请求已取消')
-    // POST transport failures have an unknown submission outcome. Never retry automatically.
-    throw new ProviderError(
-      'unavailable',
-      '火山方舟网络请求失败；生成提交结果可能未知，不会自动重新提交',
-      { retryable: method !== 'POST' },
-    )
-  }
+    },
+    {
+      cancelled: '火山方舟请求已取消',
+      network: '火山方舟网络请求失败；生成提交结果可能未知，不会自动重新提交',
+    },
+  )
   let data: Json
   try {
-    data = object(await response.json())
+    data = asJson(await response.json())
   } catch {
-    if (!response.ok) {
-      const error = errorInfo({}, response.status, key)
-      throw new ProviderError(error.code, error.message, {
-        retryable: method === 'POST' ? false : error.retryable,
-      })
-    }
+    if (!response.ok) throw withRetry(errorInfo({}, response.status, key), method)
     throw new ProviderError('unknown', '火山方舟返回无效 JSON；不会自动重新提交')
   }
   if (
     !response.ok ||
     (data.error && !['failed', 'cancelled', 'expired'].includes(String(data.status)))
-  ) {
-    const error = errorInfo(data.error, response.status, key)
-    throw new ProviderError(error.code, error.message, {
-      retryable: method === 'POST' ? false : error.retryable,
-    })
-  }
+  )
+    throw withRetry(errorInfo(data.error, response.status, key), method)
   return data
 }
 
-async function imageData(ref: AssetRef, ctx: Context) {
-  if (ref.kind !== 'image')
-    invalid('火山方舟此输入仅支持图片参考；本地视频 / 音频参考需预先上传至平台素材库')
-  const file = await ctx.files.read(ref)
-  if (!/^image\/(jpeg|png|webp|bmp|tiff|gif|heic|heif)$/.test(file.mime.toLowerCase()))
-    invalid('参考图片 MIME 格式不受火山方舟支持')
-  if (!file.data.length || file.data.length >= 30 * 1024 * 1024)
-    invalid('参考图片必须非空且小于 30 MB')
-  return `data:${file.mime.toLowerCase()};base64,${Buffer.from(file.data).toString('base64')}`
+const imageRule = {
+  notImage: '火山方舟此输入仅支持图片参考；本地视频 / 音频参考需预先上传至平台素材库',
+  accept: (mime: string) => /^image\/(jpeg|png|webp|bmp|tiff|gif|heic|heif)$/.test(mime),
+  badMime: '参考图片 MIME 格式不受火山方舟支持',
+  // 须小于 30 MB
+  maxBytes: 30 * 1024 * 1024 - 1,
+  tooLarge: '参考图片必须非空且小于 30 MB',
+}
+
+function imageData(ref: AssetRef, ctx: Context) {
+  return imageDataUrl(ctx, ref, imageRule)
 }
 
 function extraParams(extra: Json | undefined, allowed: string[]): Json {
@@ -304,21 +299,7 @@ function remoteFile(url: unknown, kind: 'image' | 'video', mime: string): Provid
 
 async function chat(model: string, input: CapabilityInput<'text.chat'>, ctx: Context) {
   if (!input.messages.length) invalid('对话至少需要一条消息')
-  const messages = await Promise.all(
-    input.messages.map(async (message) => ({
-      role: message.role,
-      content:
-        typeof message.content === 'string'
-          ? message.content
-          : await Promise.all(
-              message.content.map(async (part) =>
-                part.type === 'text'
-                  ? part
-                  : { type: 'image_url', image_url: { url: await imageData(part.image, ctx) } },
-              ),
-            ),
-    })),
-  )
+  const messages = await chatMessages(input.messages, (ref) => imageData(ref, ctx))
   const body: Json = {
     ...extraParams(input.extra, ['thinking', 'top_p', 'frequency_penalty', 'presence_penalty']),
     model,
@@ -334,8 +315,8 @@ async function chat(model: string, input: CapabilityInput<'text.chat'>, ctx: Con
     }
   const data = await request(ctx, '/chat/completions', body)
   const choices = Array.isArray(data.choices) ? data.choices : []
-  const choice = object(choices[0])
-  const message = object(choice.message)
+  const choice = asJson(choices[0])
+  const message = asJson(choice.message)
   if (choice.finish_reason === 'content_filter' || message.refusal)
     throw new ProviderError('content_policy', '火山方舟拒绝生成此内容')
   if (typeof message.content !== 'string' || !message.content)
@@ -350,7 +331,7 @@ async function chat(model: string, input: CapabilityInput<'text.chat'>, ctx: Con
       throw new ProviderError('unknown', '火山方舟返回的结构化内容不是有效 JSON')
     }
   }
-  const usage = object(data.usage)
+  const usage = asJson(data.usage)
   return {
     state: 'succeeded' as const,
     outputs,
@@ -479,7 +460,7 @@ async function image(model: string, input: CapabilityInput<'image.generate'>, ct
   if (!Array.isArray(data.data) || !data.data.length)
     throw new ProviderError('unknown', '火山方舟响应缺少图片')
   const outputs = data.data.map((item): ProviderOutput => {
-    const result = object(item)
+    const result = asJson(item)
     if (result.error) {
       const error = errorInfo(result.error, 0, ctx.secret('ARK_API_KEY'))
       throw new ProviderError(error.code, error.message, { retryable: false })
@@ -614,7 +595,7 @@ export const arkProvider = defineProvider({
     const data = await request(ctx, `/contents/generations/tasks/${encodeURIComponent(remoteId)}`)
     if (data.status === 'succeeded') {
       const mov = data.output_format === 'mov'
-      const content = object(data.content)
+      const content = asJson(data.content)
       const outputs = [
         remoteFile(content.video_url, 'video', mov ? 'video/quicktime' : 'video/mp4'),
       ]
@@ -627,8 +608,8 @@ export const arkProvider = defineProvider({
         usage: {
           seconds: typeof data.duration === 'number' ? data.duration : undefined,
           outputTokens:
-            typeof object(data.usage).completion_tokens === 'number'
-              ? (object(data.usage).completion_tokens as number)
+            typeof asJson(data.usage).completion_tokens === 'number'
+              ? (asJson(data.usage).completion_tokens as number)
               : undefined,
         },
       }
