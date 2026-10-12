@@ -67,11 +67,8 @@ export function Editor({
       <CanvasView source={source} />
       <Board />
       <header className="app-titlebar pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 p-3">
-        <div className="app-drag ui-float pointer-events-auto flex h-11 items-center gap-0.5 rounded-[14px] px-1.5 text-[13px]">
-          <a
-            href="#/"
-            className="flex h-8 items-center gap-2 rounded-lg px-2 font-semibold tracking-wide hover:bg-hover"
-          >
+        <div className="app-drag ui-bar pointer-events-auto">
+          <a href="#/" className="ui-bar-btn gap-2 !px-2.5 font-semibold !text-ink">
             <span className="plein-logo size-[18px]" aria-hidden="true" />
             Plein
           </a>
@@ -80,20 +77,20 @@ export function Editor({
             <InlineTitle
               value={canvas.title}
               onDone={rename}
-              className="h-7 w-52 rounded-lg px-2 font-medium"
+              className="h-9 w-52 rounded-md px-2 text-sm font-medium"
             />
           ) : (
             <button
               type="button"
               onClick={() => setRenaming(source.kind === 'remote' && !!canvas)}
               title={source.kind === 'remote' ? '重命名' : undefined}
-              className="h-8 max-w-60 truncate rounded-lg px-2 font-medium hover:bg-hover"
+              className="ui-bar-btn block max-w-60 truncate font-medium !text-ink"
             >
               {source.kind === 'demo' ? `演示（${source.count} 个元素）` : (canvas?.title ?? '…')}
             </button>
           )}
           <span
-            className={`flex items-center gap-1.5 px-1.5 text-xs ${sync === 'disconnected' ? 'text-warning' : 'text-ink-subtle'}`}
+            className={`flex items-center gap-1.5 px-2 text-xs ${sync === 'disconnected' ? 'text-warning' : 'text-ink-subtle'}`}
             title={SYNC_LABELS[sync]}
             data-testid="sync-status"
           >
@@ -106,20 +103,20 @@ export function Editor({
               {SYNC_LABELS[sync]}
             </span>
           </span>
-          <div className="mx-1 h-5 w-px bg-line" />
+          <div className="ui-bar-sep" />
           <ModeSwitch />
         </div>
-        <div className="ui-float pointer-events-auto flex h-11 items-center gap-1 rounded-[14px] px-1.5">
+        <div className="ui-bar pointer-events-auto">
           <ThemeToggle />
           {source.kind === 'remote' && (
             <>
-              <div className="mx-0.5 h-5 w-px bg-line" />
+              <div className="ui-bar-sep" />
               <button
                 type="button"
                 onClick={onOpenSettings}
                 aria-label="设置"
                 title="设置"
-                className="ui-btn ui-btn-quiet ui-icon-btn"
+                className="ui-bar-btn"
               >
                 <Icon name="settings" />
               </button>
@@ -129,8 +126,8 @@ export function Editor({
       </header>
       {mode === 'flow' && <EmptyHint modifier={modifier} />}
       {(importing || notice) && (
-        <div className="pointer-events-none absolute inset-x-0 top-[68px] z-30 flex justify-center px-4">
-          <div className="ui-float rounded-[10px] px-3.5 py-2 text-[13px]">
+        <div className="pointer-events-none absolute inset-x-0 top-[var(--chrome-top)] z-30 flex justify-center px-4">
+          <div className="ui-toast">
             {importing ? `正在导入 ${importing.done}/${importing.total}…` : notice}
           </div>
         </div>
@@ -209,9 +206,7 @@ function ModeSwitch() {
             if (m.mode === 'board') engine?.selection.clear()
             useCanvas.getState().setMode(m.mode)
           }}
-          className={`flex size-8 items-center justify-center rounded-lg transition-colors ${
-            mode === m.mode ? 'bg-active text-ink' : 'text-ink-subtle hover:bg-hover hover:text-ink'
-          }`}
+          className="ui-bar-btn"
         >
           <Icon name={m.icon} size={16} />
         </button>

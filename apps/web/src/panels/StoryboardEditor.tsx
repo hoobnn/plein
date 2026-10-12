@@ -16,7 +16,7 @@ function useDocVersion(engine: Engine) {
 }
 
 const cell =
-  'w-full resize-none rounded-lg bg-transparent px-2 py-1.5 text-[13px] leading-snug text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
+  'w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
 
 /** 台词在表格里写成“角色：台词”一行一句 */
 const dialogueText = (s: Shot) =>
@@ -116,10 +116,10 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       )
   }
 
-  const btn = 'ui-btn'
+  const btn = 'ui-btn ui-btn-secondary'
   return (
     <div
-      className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-scrim p-6"
+      className="ui-dialog-scrim pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-scrim p-6"
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -127,14 +127,14 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       <section
         role="dialog"
         aria-label="分镜表"
-        className="flex max-h-full w-full max-w-[1400px] flex-col overflow-hidden rounded-[18px] bg-surface shadow-[var(--shadow-3)]"
+        className="ui-dialog flex max-h-full w-full max-w-[1400px] flex-col overflow-hidden rounded-2xl bg-surface shadow-[var(--shadow-4)]"
       >
-        <header className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3.5">
-          <h2 className="mr-1 text-base font-semibold">{el?.name ?? '分镜'}</h2>
+        <header className="flex min-h-14 flex-wrap items-center gap-2 border-b border-line py-2.5 pl-5 pr-3">
+          <h2 className="mr-1 text-lg font-semibold">{el?.name ?? '分镜'}</h2>
           <span className="ui-chip">
             {shots.length} 个镜头 · {shots.reduce((t, s) => t + s.duration, 0)} 秒
           </span>
-          <div className="ml-auto flex flex-wrap items-center gap-1">
+          <div className="ml-auto flex flex-wrap items-center gap-2">
             <span className="mr-1 text-xs text-ink-subtle">作用于{scope}</span>
             <button type="button" className={btn} onClick={addShot}>
               添加镜头
@@ -142,9 +142,10 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             <button type="button" className={btn} disabled={!shots.length} onClick={expand}>
               展开为节点
             </button>
+            <div className="mx-1 h-4 w-px bg-line" />
             <button
               type="button"
-              className={`${btn} ui-btn-secondary`}
+              className={btn}
               disabled={!expanded.size}
               onClick={() => batch('image')}
             >
@@ -152,7 +153,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             </button>
             <button
               type="button"
-              className={`${btn} ui-btn-primary`}
+              className="ui-btn ui-btn-primary"
               disabled={!expanded.size}
               onClick={() => batch('video')}
             >
@@ -161,7 +162,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             <button
               type="button"
               aria-label="关闭"
-              className="ui-btn ui-btn-quiet ui-icon-btn ml-1"
+              className="ui-btn ui-btn-quiet ui-icon-btn"
               onClick={onClose}
             >
               <Icon name="x" />
@@ -177,7 +178,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             <table className="w-full min-w-[1200px] border-collapse text-left text-sm">
               <thead className="sticky top-0 z-10 bg-surface-2 text-xs font-medium text-ink-subtle">
                 <tr>
-                  <th className="w-10 px-3 py-2">
+                  <th className="w-12 py-2 pl-5 pr-2">
                     <input
                       type="checkbox"
                       aria-label="全选"
@@ -195,13 +196,13 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                   <th className="w-56 px-2 py-2 font-normal">台词（角色：台词）</th>
                   <th className="px-2 py-2 font-normal">分镜图提示词</th>
                   <th className="w-48 px-2 py-2 font-normal">运动提示词</th>
-                  <th className="w-20 px-2 py-2" />
+                  <th className="w-20 py-2 pl-2 pr-5" />
                 </tr>
               </thead>
               <tbody>
                 {shots.map((s) => (
                   <tr key={s.id} className="border-t border-line align-top hover:bg-hover">
-                    <td className="px-3 py-2.5">
+                    <td className="py-2.5 pl-5 pr-2">
                       <input
                         type="checkbox"
                         aria-label={`选择镜头 ${s.no}`}
@@ -262,7 +263,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       label="运动提示词"
                       onChange={(v) => patch(s.id, { motionPrompt: v })}
                     />
-                    <td className="px-2 py-2.5 text-right text-xs">
+                    <td className="py-2.5 pl-2 pr-5 text-right text-xs">
                       {expanded.has(s.id) ? (
                         <span className="text-success">已展开</span>
                       ) : (

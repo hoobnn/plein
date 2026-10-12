@@ -33,13 +33,13 @@ function ArrangeToastHost({ engine }: { engine: Engine }) {
   return (
     <div
       role="status"
-      className="ui-float pointer-events-auto absolute bottom-[72px] left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-xl py-1.5 pl-4 pr-1.5 text-[13px]"
+      className="ui-bar ui-bar-sm pointer-events-auto absolute bottom-16 left-1/2 z-30 -translate-x-1/2 gap-3 !pl-4 !pr-1.5"
     >
       <span>是否保留此次整理结果？</span>
       <div className="flex items-center gap-1">
         <button
           type="button"
-          className="ui-btn !h-7 !rounded-md !px-3 !text-xs"
+          className="ui-btn ui-btn-sm"
           onClick={() => {
             arranged.revert()
             setArranged(null)
@@ -49,7 +49,7 @@ function ArrangeToastHost({ engine }: { engine: Engine }) {
         </button>
         <button
           type="button"
-          className="ui-btn ui-btn-primary !h-7 !rounded-md !px-3 !text-xs"
+          className="ui-btn ui-btn-primary ui-btn-sm"
           onClick={() => setArranged(null)}
         >
           保留

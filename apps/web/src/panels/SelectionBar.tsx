@@ -29,7 +29,7 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
 
   const tl = engine.worldToClient(box.x, box.y)
   const tr = engine.worldToClient(box.x + box.w, box.y)
-  const top = Math.max(TOP_RESERVED, tl.y - TITLE_H - BAR_H - 6)
+  const top = Math.max(TOP_RESERVED, tl.y - TITLE_H - BAR_H - 8)
 
   // 选中的 Frame 里的素材也算
   const seen = new Set<string>()
@@ -71,17 +71,16 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
     }
   }
 
-  const btn =
-    'flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-ink-muted transition-colors hover:bg-hover hover:text-ink disabled:pointer-events-none disabled:opacity-40'
+  const btn = 'ui-bar-btn'
   return (
     <div
       role="toolbar"
       aria-label="多选操作"
       style={{ top, left: (tl.x + tr.x) / 2 }}
-      className="ui-float pointer-events-auto fixed z-20 flex -translate-x-1/2 items-center gap-0.5 rounded-xl p-1"
+      className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 -translate-x-1/2"
     >
-      <span className="px-2 text-xs tabular-nums text-ink-subtle">已选 {ids.length}</span>
-      <div className="mx-0.5 h-4 w-px bg-line" />
+      <span className="ui-bar-text">已选 {ids.length}</span>
+      <div className="ui-bar-sep" />
       <button type="button" className={btn} title="整理所选（按连线自动排布）" onClick={arrange}>
         <Icon name="arrange" size={14} />
         整理

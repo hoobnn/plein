@@ -38,7 +38,7 @@ export function Stars({
             e.stopPropagation()
             onChange(n === value ? null : n)
           }}
-          className={`flex items-center justify-center rounded p-0.5 transition-colors ${
+          className={`flex items-center justify-center rounded-xs p-0.5 transition-colors duration-[var(--dur-fast)] ${
             n <= shown ? 'text-warning' : 'text-ink-subtle hover:text-ink-muted'
           }`}
         >

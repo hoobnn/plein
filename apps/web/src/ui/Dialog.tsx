@@ -109,14 +109,14 @@ function DialogView({ req }: { req: Request }) {
 
   return (
     <div
-      className="ui-dialog-scrim fixed inset-0 z-[60] flex items-center justify-center bg-scrim p-4"
+      className="ui-dialog-scrim fixed inset-0 z-[60] flex items-center justify-center bg-scrim p-6"
       onPointerDown={() => settle(null)}
     >
       <form
         role="dialog"
         aria-modal="true"
         aria-label={options.title}
-        className="ui-dialog flex w-full max-w-[400px] flex-col gap-4 rounded-[16px] bg-surface p-5 shadow-[var(--shadow-3)]"
+        className="ui-dialog flex w-full max-w-[400px] flex-col gap-5 rounded-2xl bg-surface p-6 shadow-[var(--shadow-4)]"
         onPointerDown={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault()
@@ -124,15 +124,13 @@ function DialogView({ req }: { req: Request }) {
         }}
       >
         <div className="flex flex-col gap-1.5">
-          <h2 className="text-[15px] font-semibold">{options.title}</h2>
-          {options.message && (
-            <p className="text-[13px] leading-relaxed text-ink-muted">{options.message}</p>
-          )}
+          <h2 className="text-lg font-semibold">{options.title}</h2>
+          {options.message && <p className="text-sm leading-5 text-ink-muted">{options.message}</p>}
         </div>
         {req.kind === 'prompt' && (
           <input
             ref={inputRef}
-            className="ui-input !h-9 w-full"
+            className="ui-input ui-input-lg w-full"
             value={text}
             placeholder={req.options.placeholder}
             onChange={(e) => setText(e.target.value)}
@@ -141,7 +139,7 @@ function DialogView({ req }: { req: Request }) {
         <div className="flex justify-end gap-2">
           <button
             type="button"
-            className="ui-btn ui-btn-secondary !h-9"
+            className="ui-btn ui-btn-secondary ui-btn-lg"
             onClick={() => settle(null)}
           >
             {options.cancelLabel ?? '取消'}
@@ -150,7 +148,7 @@ function DialogView({ req }: { req: Request }) {
             ref={confirmRef}
             type="submit"
             disabled={!canConfirm}
-            className={`ui-btn !h-9 ${danger ? 'ui-btn-danger-solid' : 'ui-btn-primary'}`}
+            className={`ui-btn ui-btn-lg ${danger ? 'ui-btn-danger-solid' : 'ui-btn-primary'}`}
           >
             {options.confirmLabel ?? '确定'}
           </button>

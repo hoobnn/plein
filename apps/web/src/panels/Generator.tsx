@@ -47,7 +47,7 @@ import { Popover } from '../ui/Popover'
 import { SchemaForm } from './SchemaForm'
 
 const PANEL_W = 540
-const GAP = 14
+const GAP = 12
 /** 节点标题行在卡片上方，面板放上方时让开它 */
 const TITLE_H = 30
 /** 面板离视口底边的最小距离；可以盖住底部工具栏（选中节点时工具栏用得少） */
@@ -176,7 +176,7 @@ function Panel({
       aria-label={`${node.title} 生成器`}
       data-testid="generator"
       style={{ ...style, width: PANEL_W }}
-      className="ui-float ui-scrollbar pointer-events-auto fixed z-20 flex flex-col overflow-y-auto rounded-[20px]"
+      className="ui-float ui-scrollbar pointer-events-auto fixed z-20 flex flex-col overflow-y-auto rounded-xl"
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
           e.preventDefault()
@@ -193,7 +193,7 @@ function Panel({
       )}
       {node.inputs.length > 0 && <Inputs engine={engine} el={el} node={node} ups={ups} />}
       {node.type === STORYBOARD_TYPE && (
-        <div className="px-3 pt-3">
+        <div className="px-4 pt-4">
           <button
             type="button"
             onClick={() => useCanvas.getState().openStoryboard(el.id)}
@@ -229,7 +229,7 @@ function Panel({
           <button
             type="button"
             onClick={() => setMore(!more)}
-            className="ui-btn ui-btn-quiet !h-7 !px-2 !text-xs"
+            className="ui-btn ui-btn-quiet ui-btn-sm -ml-2.5"
             aria-expanded={more}
           >
             {more ? '收起设置' : '更多设置'}
@@ -237,6 +237,7 @@ function Panel({
           {more && (
             <div className="pt-2">
               <SchemaForm
+                dense
                 schema={{ properties: rest }}
                 value={params}
                 onChange={(next) => {
@@ -249,7 +250,7 @@ function Panel({
       )}
       {!pure && (
         // 底栏吸底：面板被视口截短时生成按钮仍然可见
-        <footer className="sticky bottom-0 flex flex-col gap-1.5 bg-float px-3 pb-3 pt-1 backdrop-blur-xl">
+        <footer className="sticky bottom-0 flex flex-col gap-2 bg-float px-3 pb-3 pt-1 backdrop-blur-xl">
           {(problem || (!running && el.run?.status === 'failed')) && (
             <p
               className={`px-1 text-xs ${problem ? 'text-ink-subtle' : 'text-danger'}`}
@@ -295,7 +296,7 @@ function Panel({
                 problem ?? (running ? '取消' : `${el.results?.length ? '重新生成' : '生成'}（⌘↵）`)
               }
               aria-label={running ? '取消' : el.results?.length ? '重新生成' : '生成'}
-              className={`flex size-9 flex-none items-center justify-center rounded-full transition-colors disabled:opacity-35 ${
+              className={`ml-1 flex size-9 flex-none items-center justify-center rounded-full transition-colors duration-[var(--dur-fast)] disabled:opacity-35 ${
                 running
                   ? 'bg-surface-3 text-ink hover:bg-active'
                   : 'bg-primary text-on-primary hover:bg-primary-hover disabled:hover:bg-primary'
@@ -328,7 +329,7 @@ function NameField({
     else setDraft(value)
   }
   return (
-    <div className="flex items-center gap-2 border-b border-line px-4 pb-2.5 pt-3">
+    <div className="flex items-center gap-2 border-b border-line px-4 py-3">
       <input
         aria-label="节点名称"
         value={draft}
@@ -337,7 +338,7 @@ function NameField({
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur()
         }}
-        className="min-w-0 flex-1 rounded-md bg-transparent text-[15px] font-semibold text-ink outline-none"
+        className="min-w-0 flex-1 rounded-sm bg-transparent text-base font-semibold text-ink outline-none"
       />
       {hint && <span className="flex-none text-xs text-ink-subtle">{hint}</span>}
     </div>
@@ -351,7 +352,7 @@ function isMainField(key: string, f: FieldSchema) {
 }
 
 const pill =
-  'flex h-8 min-w-0 items-center gap-1.5 rounded-[10px] px-2.5 text-xs text-ink-muted transition-colors hover:bg-hover hover:text-ink aria-expanded:bg-active aria-expanded:text-ink'
+  'flex h-8 min-w-0 items-center gap-1.5 rounded-md px-2.5 text-xs text-ink-muted transition-colors duration-[var(--dur-fast)] hover:bg-hover hover:text-ink aria-expanded:bg-active aria-expanded:text-ink'
 
 /** 模型选择：按平台分组，每项带一句说明；“自动”交给服务端按能力挑 */
 function ModelPicker({
@@ -438,7 +439,7 @@ function ModelPicker({
 }
 
 const tool =
-  'flex size-8 flex-none items-center justify-center rounded-[10px] text-ink-muted transition-colors hover:bg-hover hover:text-ink aria-disabled:opacity-35 aria-disabled:hover:bg-transparent aria-disabled:hover:text-ink-muted'
+  'flex size-8 flex-none items-center justify-center rounded-md text-ink-muted transition-colors duration-[var(--dur-fast)] hover:bg-hover hover:text-ink aria-disabled:opacity-35 aria-disabled:hover:bg-transparent aria-disabled:hover:text-ink-muted'
 
 /**
  * 发送按钮左侧的“优化提示词”“翻译提示词”：用已启用的对话模型改写，
@@ -603,6 +604,7 @@ function ParamsPill({
                 {more && (
                   <div className="pt-2">
                     <SchemaForm
+                      dense
                       schema={{ properties: rest }}
                       value={params}
                       onChange={(next) => {
@@ -639,7 +641,7 @@ function AspectGlyph({ ratio, size }: { ratio: number; size: number }) {
 }
 
 const seg =
-  'flex h-8 flex-1 items-center justify-center gap-1 rounded-lg text-xs text-ink-muted ring-1 ring-line transition-colors hover:bg-hover hover:text-ink aria-pressed:bg-accent-soft aria-pressed:text-accent aria-pressed:ring-accent/40'
+  'flex h-8 flex-1 items-center justify-center gap-1 rounded-md text-xs text-ink-muted ring-1 ring-line transition-colors hover:bg-hover hover:text-ink aria-pressed:bg-accent-soft aria-pressed:text-accent aria-pressed:ring-accent/40'
 
 /** 参数面板里的一个参数：画幅用形状按钮，少量选项用分段按钮，范围用滑块 */
 function ParamControl({
@@ -858,7 +860,7 @@ function PromptBox({
             setQuery(null)
           }
         }}
-        className="field-sizing-content max-h-60 min-h-24 w-full resize-none bg-transparent px-4 py-3 text-sm leading-relaxed text-ink outline-none placeholder:text-ink-subtle"
+        className="field-sizing-content max-h-60 min-h-24 w-full resize-none bg-transparent px-4 py-3 text-base text-ink outline-none placeholder:text-ink-subtle"
       />
       {mentions.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2 text-xs text-ink-subtle">
@@ -933,10 +935,10 @@ function Thumb({ engine, target }: { engine: Engine; target: CanvasElement }) {
     <img
       src={assetUrls.variant(id, 'thumb-256')}
       alt=""
-      className="size-6 flex-none rounded-md object-cover"
+      className="size-6 flex-none rounded-sm object-cover"
     />
   ) : (
-    <span className="size-6 flex-none rounded-md bg-surface-3" />
+    <span className="size-6 flex-none rounded-sm bg-surface-3" />
   )
 }
 
@@ -957,7 +959,7 @@ function MentionChip({
         engine.selection.set([target.id])
         engine.zoomToFit([target.id])
       }}
-      className="flex h-7 items-center gap-1.5 rounded-lg bg-accent-soft pl-0.5 pr-2 text-accent hover:brightness-110"
+      className="flex h-7 items-center gap-1.5 rounded-md bg-accent-soft pl-0.5 pr-2 text-accent hover:brightness-110"
     >
       <Thumb engine={engine} target={target} />
       {name}
@@ -1045,9 +1047,9 @@ function Inputs({
           type="button"
           onClick={() => pick(port)}
           title={`上传${port.label}，也可以从画布上的图片拖线连入`}
-          className={`flex flex-none flex-col items-center gap-1 text-[11px] ${port.required && list.length === 0 ? 'text-danger' : 'text-ink-subtle'} hover:text-ink`}
+          className={`group flex flex-none flex-col items-center gap-1 text-2xs ${port.required && list.length === 0 ? 'text-danger' : 'text-ink-subtle'} hover:text-ink`}
         >
-          <span className="flex size-12 items-center justify-center rounded-xl border border-dashed border-line-strong bg-surface-2/50">
+          <span className="flex size-12 items-center justify-center rounded-md border border-dashed border-line-strong bg-surface-2/50 transition-colors duration-[var(--dur-fast)] group-hover:border-ink-subtle">
             <Icon name="plus" size={16} />
           </span>
           {port.label}
@@ -1057,7 +1059,7 @@ function Inputs({
 
   if (!tiles.length && !texts.length) return null
   return (
-    <div className="flex flex-col gap-2 px-4 pt-3.5">
+    <div className="flex flex-col gap-2 px-4 pt-4">
       {tiles.length > 0 && (
         <div className="ui-scrollbar flex items-start gap-2 overflow-x-auto pb-0.5">{tiles}</div>
       )}
@@ -1115,12 +1117,12 @@ function RefTile({
   const img = preview(v)
   const name = up.source.name ?? '上游'
   return (
-    <div className="group relative flex flex-none flex-col items-center gap-1 text-[11px] text-ink-subtle">
+    <div className="group relative flex flex-none flex-col items-center gap-1 text-2xs text-ink-subtle">
       <button
         type="button"
         onClick={onLocate}
         title={v ? `定位到「${name}」` : `「${name}」还没有结果`}
-        className="relative size-12 overflow-hidden rounded-xl bg-surface-2 ring-1 ring-line"
+        className="relative size-12 overflow-hidden rounded-md bg-surface-2 ring-1 ring-line"
       >
         {img ? (
           <img src={img} alt="" className="size-full object-cover" />
@@ -1129,7 +1131,7 @@ function RefTile({
             <Icon name={v?.type === 'video' ? 'video' : 'image'} size={16} />
           </span>
         )}
-        <span className="absolute left-1 top-1 flex size-4 items-center justify-center rounded-full bg-black/60 text-[10px] font-medium text-white tabular-nums">
+        <span className="absolute left-1 top-1 flex size-4 items-center justify-center rounded-full bg-black/60 text-2xs font-medium text-white tabular-nums">
           {index}
         </span>
         {!v && <span className="absolute inset-0 bg-canvas/50" />}
@@ -1160,7 +1162,7 @@ function TextChip({
   const name = up.source.name ?? '上游'
   const text = v?.type === 'text' ? v.text.trim().slice(0, 20) || '（空）' : `${name}（未生成）`
   return (
-    <span className="group flex h-6 max-w-56 items-center gap-1 rounded-md bg-surface-2 pl-2 pr-0.5 ring-1 ring-line">
+    <span className="group flex h-6 max-w-56 items-center gap-1 rounded-sm bg-surface-2 pl-2 pr-0.5 ring-1 ring-line">
       <button
         type="button"
         onClick={onLocate}
@@ -1173,7 +1175,7 @@ function TextChip({
         type="button"
         onClick={onRemove}
         aria-label={`断开「${name}」`}
-        className="flex size-5 flex-none items-center justify-center rounded text-ink-subtle opacity-60 hover:bg-active hover:text-ink group-hover:opacity-100"
+        className="flex size-5 flex-none items-center justify-center rounded-xs text-ink-subtle opacity-60 hover:bg-active hover:text-ink group-hover:opacity-100"
       >
         ×
       </button>

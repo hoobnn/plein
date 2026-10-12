@@ -7,7 +7,7 @@ import { desktop } from '../desktop'
 import { useCatalog } from '../stores/catalog'
 import { type ObjectSchema, SchemaForm } from './SchemaForm'
 
-const input = 'ui-input !h-9 w-full'
+const input = 'ui-input ui-input-lg w-full'
 
 type Section = 'appearance' | 'providers' | 'plugins' | 'data'
 
@@ -153,7 +153,7 @@ function ProviderRow({
               {provider.description ?? `${provider.models.length} 个模型`}
             </span>
           </span>
-          <span className={`flex-none rounded-md px-1.5 py-0.5 text-[11px] ${state.tone}`}>
+          <span className={`flex-none rounded-sm px-1.5 py-0.5 text-2xs ${state.tone}`}>
             {state.label}
           </span>
         </button>
@@ -171,7 +171,7 @@ function ProviderRow({
               {provider.models.map((m) => (
                 <span
                   key={m.id}
-                  className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] text-ink-muted"
+                  className="rounded-sm bg-surface-2 px-1.5 py-0.5 text-2xs text-ink-muted"
                 >
                   {m.title}
                 </span>
@@ -188,8 +188,8 @@ function ProviderRow({
                 onChange={setSettings}
               />
               {provider.secrets.map((s) => (
-                <label key={s.name} className="flex flex-col gap-1 text-sm">
-                  <span className="text-[13px] text-ink-muted">
+                <label key={s.name} className="ui-field">
+                  <span className="ui-label">
                     {s.title}
                     {s.required ? '' : '（可选）'}
                   </span>
@@ -201,7 +201,7 @@ function ProviderRow({
                     value={secrets[s.name] ?? ''}
                     onChange={(e) => setSecrets({ ...secrets, [s.name]: e.target.value })}
                   />
-                  {s.help && <span className="text-xs text-ink-subtle">{s.help}</span>}
+                  {s.help && <span className="ui-help">{s.help}</span>}
                 </label>
               ))}
               <div className="flex flex-wrap items-center gap-2">
@@ -216,7 +216,7 @@ function ProviderRow({
                   type="button"
                   disabled={busy}
                   onClick={runTest}
-                  className="ui-btn ui-btn-secondary !h-8"
+                  className="ui-btn ui-btn-secondary"
                 >
                   {provider.testScope === 'configuration' ? '检查配置' : '测试连接'}
                 </button>
@@ -224,7 +224,7 @@ function ProviderRow({
                   type="button"
                   disabled={busy}
                   onClick={() => save()}
-                  className="ui-btn ui-btn-primary !h-8"
+                  className="ui-btn ui-btn-primary"
                 >
                   保存
                 </button>
@@ -282,27 +282,27 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4"
+      className="ui-dialog-scrim fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6"
       onPointerDown={onClose}
     >
       <div
         role="dialog"
         aria-label="设置"
-        className="flex h-[min(640px,100%)] w-full max-w-[860px] flex-col overflow-hidden rounded-[18px] bg-surface shadow-[var(--shadow-3)] sm:flex-row"
+        className="ui-dialog flex h-[min(640px,100%)] w-full max-w-[860px] flex-col overflow-hidden rounded-2xl bg-surface shadow-[var(--shadow-4)] sm:flex-row"
         onPointerDown={(e) => e.stopPropagation()}
       >
         <nav
           aria-label="设置分区"
           className="flex flex-none gap-1 overflow-x-auto border-b border-line bg-surface-2 p-2 sm:w-52 sm:flex-col sm:overflow-visible sm:border-r sm:border-b-0 sm:p-3"
         >
-          <h2 className="hidden px-2 pt-1 pb-3 text-base font-semibold sm:block">设置</h2>
+          <h2 className="hidden px-2.5 pt-1 pb-3 text-lg font-semibold sm:block">设置</h2>
           {sections.map((s) => (
             <button
               key={s.id}
               type="button"
               aria-current={s.id === current.id ? 'page' : undefined}
               onClick={() => setSection(s.id)}
-              className={`flex h-8 flex-none items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-colors ${
+              className={`flex h-8 flex-none items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors duration-[var(--dur-fast)] ${
                 s.id === current.id
                   ? 'bg-surface text-ink shadow-[var(--shadow-1)] ring-1 ring-line'
                   : 'text-ink-muted hover:bg-hover hover:text-ink'
@@ -311,7 +311,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
               <Icon name={s.icon} size={15} />
               <span className="flex-1 text-left">{s.label}</span>
               {!!s.badge && (
-                <span className="hidden text-[11px] text-ink-subtle tabular-nums sm:inline">
+                <span className="hidden text-2xs text-ink-subtle tabular-nums sm:inline">
                   {s.badge}
                 </span>
               )}
@@ -319,8 +319,8 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
           ))}
         </nav>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header className="flex flex-none items-center justify-between px-6 pt-4 pb-2">
-            <h2 className="text-base font-semibold">{current.label}</h2>
+          <header className="flex h-14 flex-none items-center justify-between pr-3 pl-6">
+            <h2 className="text-lg font-semibold">{current.label}</h2>
             <button
               type="button"
               onClick={onClose}
@@ -341,7 +341,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
                 {providers.length === 0 ? (
                   <p className="text-sm text-ink-subtle">还没有安装模型平台插件。</p>
                 ) : (
-                  <ul className="rounded-xl ring-1 ring-line">
+                  <ul className="rounded-lg ring-1 ring-line">
                     {providers.map((p) => (
                       <ProviderRow
                         key={p.id}
@@ -357,7 +357,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
             )}
             {current.id === 'plugins' && (
               <Group title="已安装的插件">
-                <ul className="rounded-xl ring-1 ring-line">
+                <ul className="rounded-lg ring-1 ring-line">
                   {plugins.map((p) => (
                     <li
                       key={p.id}
@@ -418,7 +418,7 @@ function Appearance() {
           type="button"
           aria-pressed={pref === o.pref}
           onClick={() => setPref(o.pref)}
-          className={`flex h-10 items-center justify-center gap-2 rounded-[10px] text-[13px] ring-1 transition-colors ${
+          className={`flex h-10 items-center justify-center gap-2 rounded-md text-sm ring-1 transition-colors duration-[var(--dur-fast)] ${
             pref === o.pref
               ? 'bg-accent-soft text-accent ring-accent'
               : 'bg-surface-2 text-ink-muted ring-line hover:text-ink'

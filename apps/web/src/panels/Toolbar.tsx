@@ -25,18 +25,14 @@ function Button(props: {
       aria-expanded={props.expanded}
       disabled={props.disabled}
       onClick={props.onClick}
-      className={`flex h-9 min-w-9 items-center justify-center gap-1 rounded-[10px] px-2 text-[13px] transition-colors duration-150 ease-[var(--ease-spring)] disabled:pointer-events-none disabled:opacity-30 ${
-        props.active || props.expanded
-          ? 'bg-active text-ink'
-          : 'text-ink-muted hover:bg-hover hover:text-ink'
-      } ${props.className ?? ''}`}
+      className={`ui-bar-btn ${props.className ?? ''}`}
     >
       {props.children}
     </button>
   )
 }
 
-const Divider = () => <div className="mx-1 h-5 w-px bg-line" />
+const Divider = () => <div className="ui-bar-sep" />
 
 const TOOLS: Array<{ tool: Tool; label: string; hint: string; icon: IconName }> = [
   { tool: 'select', label: '移动', hint: 'V', icon: 'cursor' },
@@ -147,7 +143,7 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
   if (!engine) return null
 
   return (
-    <div className="ui-float pointer-events-auto flex items-center gap-0.5 rounded-[14px] p-1">
+    <div className="ui-bar pointer-events-auto">
       <NodeMenu engine={engine} canImport={canImport} />
       <ToolPicker engine={engine} tool={tool} />
       {canImport && (
@@ -216,7 +212,7 @@ function ZoomMenu({ engine, zoom }: { engine: Engine; zoom: number }) {
       </Button>
       {anchor && (
         <Popover anchor={anchor} onClose={close} label="缩放" width={200}>
-          <label className="mb-1 flex h-9 items-center gap-1 rounded-lg bg-surface-2 px-2.5 text-sm">
+          <label className="ui-input mb-1 flex items-center gap-1">
             <input
               // biome-ignore lint/a11y/noAutofocus: 打开就能输入倍数
               autoFocus
@@ -275,7 +271,7 @@ export function ViewControls() {
   return (
     <div className="pointer-events-none flex flex-col items-start gap-2">
       {minimap && <Minimap engine={engine} />}
-      <div className="ui-float pointer-events-auto flex items-center gap-0.5 rounded-[14px] p-1">
+      <div className="ui-bar pointer-events-auto">
         <Button label="撤销" hint="⌘Z" disabled={!canUndo} onClick={() => engine.undo()}>
           <Icon name="undo" />
         </Button>

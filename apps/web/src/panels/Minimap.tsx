@@ -112,12 +112,12 @@ export function Minimap({ engine }: { engine: Engine }) {
   }
 
   return (
-    <div className="ui-float pointer-events-auto overflow-hidden rounded-[14px] p-1">
+    <div className="ui-float pointer-events-auto overflow-hidden rounded-lg p-1">
       <canvas
         ref={ref}
         aria-label="小地图：点击或拖动移动视口"
         style={{ width: W, height: H }}
-        className="block cursor-pointer rounded-[10px] bg-canvas"
+        className="block cursor-pointer rounded-md bg-canvas"
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId)
           jump(e)

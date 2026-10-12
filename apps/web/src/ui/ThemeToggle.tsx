@@ -7,12 +7,12 @@ const OPTIONS: Array<{ pref: ThemePref; label: string; icon: IconName }> = [
   { pref: 'dark', label: '深色', icon: 'moon' },
 ]
 
-/** 主题切换：跟随系统 / 浅色 / 深色三段 */
+/** 主题切换：跟随系统 / 浅色 / 深色三段的分段控件 */
 export function ThemeToggle() {
   const pref = useTheme((s) => s.pref)
   const setPref = useTheme((s) => s.setPref)
   return (
-    <fieldset aria-label="主题" className="m-0 flex items-center gap-0.5 rounded-lg border-0 p-0.5">
+    <fieldset aria-label="主题" className="ui-seg">
       {OPTIONS.map((o) => (
         <button
           key={o.pref}
@@ -21,11 +21,9 @@ export function ThemeToggle() {
           aria-label={o.label}
           title={o.label}
           onClick={() => setPref(o.pref)}
-          className={`flex size-7 items-center justify-center rounded-md transition-colors duration-150 ${
-            pref === o.pref ? 'bg-active text-ink' : 'text-ink-subtle hover:text-ink'
-          }`}
+          className="ui-seg-item w-7"
         >
-          <Icon name={o.icon} size={15} />
+          <Icon name={o.icon} size={14} />
         </button>
       ))}
     </fieldset>

@@ -186,7 +186,7 @@ export function AddMenu({
       </label>
       <div role="listbox" className="ui-scrollbar min-h-0 overflow-y-auto">
         {items.length === 0 && (
-          <p className="px-3 pb-3 pt-1 text-[13px] text-ink-subtle">没有匹配的节点</p>
+          <p className="px-3 pb-3 pt-1 text-sm text-ink-subtle">没有匹配的节点</p>
         )}
         {items.map((item, i) => {
           const header = item.section !== lastSection && i > 0 ? item.section : null

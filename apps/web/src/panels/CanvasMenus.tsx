@@ -208,7 +208,7 @@ function ContextMenu({
         )}
         {ratable && single && !engine.doc.readOnly && (
           <>
-            <div className="flex h-8 items-center justify-between px-2 text-sm">
+            <div className="flex h-8 items-center justify-between px-2">
               <span>评级</span>
               <Stars
                 value={rated.rating}

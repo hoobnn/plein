@@ -71,7 +71,7 @@ function ResultBarHost({ engine }: { engine: Engine }) {
   const tl = engine.worldToClient(rect.x, rect.y)
   const tr = engine.worldToClient(rect.x + rect.w, rect.y)
   const offset = el.kind === 'node' ? TITLE_H : 8
-  const top = Math.max(TOP_RESERVED, tl.y - offset - BAR_H - 6)
+  const top = Math.max(TOP_RESERVED, tl.y - offset - BAR_H - 8)
   const center = (tl.x + tr.x) / 2
   return (
     <Bar
@@ -129,17 +129,15 @@ function Bar({
     }
   }
 
-  const btn =
-    'flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs text-ink-muted transition-colors hover:bg-hover hover:text-ink aria-expanded:bg-active aria-expanded:text-ink disabled:opacity-40'
-  const icon =
-    'flex size-8 items-center justify-center rounded-lg text-ink-muted hover:bg-hover hover:text-ink'
+  const btn = 'ui-bar-btn'
+  const icon = 'ui-bar-btn'
   const image = media.kind === 'image'
   return (
     <div
       role="toolbar"
       aria-label="结果操作"
       style={style}
-      className="ui-float pointer-events-auto fixed z-20 flex w-max -translate-x-1/2 items-center gap-0.5 rounded-xl p-1"
+      className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 w-max -translate-x-1/2"
     >
       {image && imageNode && presets.length > 0 && (
         <button
@@ -180,7 +178,7 @@ function Bar({
           <Icon name="chevronDown" size={12} />
         </button>
       )}
-      {image && <div className="mx-0.5 h-4 w-px bg-line" />}
+      {image && <div className="ui-bar-sep" />}
       {result && (
         <>
           <span className="px-1">
@@ -189,7 +187,7 @@ function Bar({
               onChange={(n) => setResultRating(engine.doc, el.id, result.id, n)}
             />
           </span>
-          <div className="mx-0.5 h-4 w-px bg-line" />
+          <div className="ui-bar-sep" />
         </>
       )}
       <button
@@ -224,7 +222,7 @@ function Bar({
                 deriveNode(engine, catalog, el.id, imageNode.type, { preset: p })
               }}
             >
-              <span className="text-sm">{p.title}</span>
+              <span>{p.title}</span>
               {p.description && <span className="text-xs text-ink-subtle">{p.description}</span>}
             </button>
           ))}
@@ -274,11 +272,11 @@ export function Viewer() {
         <img
           src={src}
           alt={viewer.name}
-          className="relative max-h-full max-w-full rounded-lg object-contain"
+          className="relative max-h-full max-w-full rounded-md object-contain"
         />
       ) : (
         // biome-ignore lint/a11y/useMediaCaption: 生成的视频没有字幕轨
-        <video src={src} controls autoPlay className="relative max-h-full max-w-full rounded-lg" />
+        <video src={src} controls autoPlay className="relative max-h-full max-w-full rounded-md" />
       )}
       <button
         type="button"

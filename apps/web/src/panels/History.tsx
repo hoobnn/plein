@@ -225,16 +225,16 @@ function HistoryPanel({ engine }: { engine: Engine }) {
         aria-label="关闭生成历史"
         tabIndex={-1}
         onClick={close}
-        className="absolute inset-0 cursor-default bg-scrim/40"
+        className="ui-dialog-scrim absolute inset-0 cursor-default bg-scrim/40"
       />
       <section
         role="dialog"
         aria-label="生成历史"
         data-plein-active
-        className="ui-float relative flex h-[min(86vh,820px)] w-full max-w-[1120px] flex-col rounded-[20px]"
+        className="ui-dialog relative flex h-[min(86vh,820px)] w-full max-w-[1120px] flex-col overflow-hidden rounded-2xl bg-surface shadow-[var(--shadow-4)]"
       >
-        <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-5 py-3.5">
-          <h2 className="text-sm font-semibold">生成历史</h2>
+        <header className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line py-2.5 pl-5 pr-3">
+          <h2 className="text-lg font-semibold">生成历史</h2>
           <span className="ui-chip" title="“全部画布”需要服务端索引所有画布的结果，暂只支持本画布">
             本画布
           </span>
@@ -254,7 +254,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
             </label>
             <button
               type="button"
-              className="ui-btn ui-btn-quiet !h-8 !px-2 text-xs"
+              className="ui-btn ui-btn-quiet ui-btn-sm"
               onClick={() => setOldestFirst(!oldestFirst)}
               title="切换排序"
             >
@@ -272,7 +272,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
           </div>
         </header>
 
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-5 py-2.5">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3">
           <Segmented label="类型">
             {TYPES.map((t) => (
               <SegButton key={t.id} active={type === t.id} onClick={() => setType(t.id)}>
@@ -322,18 +322,18 @@ function HistoryPanel({ engine }: { engine: Engine }) {
         </div>
 
         {selected.length > 0 && (
-          <footer className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-3 text-[13px]">
+          <footer className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-3 text-sm">
             <span className="mr-1">已选 {selected.length} 项</span>
             <button
               type="button"
-              className="ui-btn ui-btn-quiet !h-8 !px-2"
+              className="ui-btn ui-btn-quiet ui-btn-sm"
               onClick={() => setPicked(new Set(shown.map(keyOf)))}
             >
               全选
             </button>
             <button
               type="button"
-              className="ui-btn ui-btn-quiet !h-8 !px-2"
+              className="ui-btn ui-btn-quiet ui-btn-sm"
               onClick={() => setPicked(new Set())}
             >
               取消选择
@@ -364,7 +364,7 @@ function Segmented({ label, children }: { label: string; children: ReactNode }) 
   return (
     <div className="flex items-center gap-2">
       <span className="text-xs text-ink-subtle">{label}</span>
-      <div className="flex rounded-[10px] bg-surface-2 p-0.5">{children}</div>
+      <div className="ui-seg">{children}</div>
     </div>
   )
 }
@@ -375,11 +375,7 @@ function SegButton(props: { active: boolean; onClick(): void; children: ReactNod
       type="button"
       aria-pressed={props.active}
       onClick={props.onClick}
-      className={`flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs transition-colors ${
-        props.active
-          ? 'bg-surface text-ink shadow-[var(--shadow-1)]'
-          : 'text-ink-muted hover:text-ink'
-      }`}
+      className="ui-seg-item"
     >
       {props.children}
     </button>
@@ -408,7 +404,7 @@ function Card(props: {
           props.selecting || e.metaKey || e.ctrlKey || e.shiftKey ? props.onPick() : props.onOpen()
         }
         title={props.selecting ? '选择' : '定位到节点并采用这个结果'}
-        className={`relative flex aspect-square items-center justify-center overflow-hidden rounded-xl bg-surface-2 outline-offset-2 transition-shadow ${
+        className={`relative flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-surface-2 outline-offset-2 transition-shadow ${
           picked
             ? 'shadow-[0_0_0_2px_var(--accent)]'
             : 'shadow-[inset_0_0_0_1px_var(--line)] hover:shadow-[0_0_0_1px_var(--line-strong)]'
@@ -429,13 +425,13 @@ function Card(props: {
           />
         )}
         {type !== 'image' && (
-          <span className="absolute bottom-2 left-2 flex items-center gap-1 rounded-md bg-black/55 px-1.5 py-0.5 text-[11px] text-white">
+          <span className="ui-badge absolute bottom-2 left-2">
             <Icon name={type} size={12} />
             {TYPE_LABEL[type]}
           </span>
         )}
         {entry.adopted && (
-          <span className="absolute right-2 top-2 rounded-md bg-primary px-1.5 py-0.5 text-[11px] text-on-primary">
+          <span className="ui-badge absolute right-2 top-2 !bg-primary !text-on-primary">
             采用中
           </span>
         )}
@@ -454,7 +450,7 @@ function Card(props: {
       <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 px-0.5">
         <div className="min-w-0">
           <div className="truncate text-xs">{props.name}</div>
-          <div className="whitespace-nowrap text-[11px] text-ink-subtle">
+          <div className="whitespace-nowrap text-2xs text-ink-subtle">
             {timeLabel(entry.result.at)}
           </div>
         </div>

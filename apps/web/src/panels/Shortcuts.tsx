@@ -65,21 +65,21 @@ export function Shortcuts() {
   }, [toggle])
   if (!open) return null
   return (
-    <div className="pointer-events-auto fixed inset-0 z-40 flex items-end justify-center p-4 pb-20">
+    <div className="pointer-events-auto fixed inset-0 z-40 flex items-end justify-center p-4 pb-16">
       <button
         type="button"
         aria-label="关闭快捷键面板"
         tabIndex={-1}
         onClick={() => toggle(false)}
-        className="absolute inset-0 cursor-default bg-scrim/40"
+        className="ui-dialog-scrim absolute inset-0 cursor-default bg-scrim/40"
       />
       <section
         role="dialog"
         aria-label="快捷键"
-        className="ui-float relative w-full max-w-[880px] rounded-[20px] p-5"
+        className="ui-dialog relative w-full max-w-[880px] rounded-2xl bg-surface p-5 pt-3 shadow-[var(--shadow-4)]"
       >
-        <header className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">快捷键</h2>
+        <header className="-mr-2 mb-3 flex h-10 items-center justify-between">
+          <h2 className="text-lg font-semibold">快捷键</h2>
           <button
             type="button"
             aria-label="关闭"
@@ -92,10 +92,10 @@ export function Shortcuts() {
         <div className="grid gap-6 sm:grid-cols-3">
           {GROUPS.map((g) => (
             <div key={g.title}>
-              <h3 className="mb-2 text-xs font-medium text-ink-muted">{g.title}</h3>
-              <ul className="flex flex-col gap-2">
+              <h3 className="ui-section-title mb-3">{g.title}</h3>
+              <ul className="flex flex-col gap-2.5">
                 {g.items.map(([label, keys]) => (
-                  <li key={label} className="flex items-center justify-between gap-3 text-[13px]">
+                  <li key={label} className="flex items-center justify-between gap-3">
                     <span className="text-ink-muted">{label}</span>
                     <span className="ui-kbd whitespace-nowrap">{keys}</span>
                   </li>

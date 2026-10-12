@@ -21,17 +21,19 @@ export interface ObjectSchema {
   properties?: Record<string, FieldSchema>
 }
 
-const field = 'ui-input !h-9 w-full'
-
 export function SchemaForm({
   schema,
   value,
   onChange,
+  dense = false,
 }: {
   schema: ObjectSchema
   value: Record<string, unknown>
   onChange(next: Record<string, unknown>): void
+  /** 弹层里用 32 高的控件；默认是设置页的 36 高 */
+  dense?: boolean
 }) {
+  const field = dense ? 'ui-input w-full' : 'ui-input ui-input-lg w-full'
   const props = Object.entries(schema.properties ?? {})
   if (props.length === 0) return null
   const set = (key: string, v: unknown) => onChange({ ...value, [key]: v })
@@ -96,10 +98,10 @@ export function SchemaForm({
           )
         }
         return (
-          <label key={key} htmlFor={id} className="flex flex-col gap-1 text-sm">
-            <span className="text-[13px] text-ink-muted">{label}</span>
+          <label key={key} htmlFor={id} className="ui-field">
+            <span className="ui-label">{label}</span>
             {control}
-            {f.description && <span className="text-xs text-ink-subtle">{f.description}</span>}
+            {f.description && <span className="ui-help">{f.description}</span>}
           </label>
         )
       })}

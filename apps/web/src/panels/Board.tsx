@@ -102,20 +102,15 @@ function BoardPanel({ engine }: { engine: Engine }) {
     <div className="ui-scrollbar absolute inset-0 z-10 overflow-y-auto bg-canvas">
       <div className="mx-auto flex max-w-[1400px] flex-col gap-8 px-6 pb-16 pt-20">
         <div className="flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold">故事板</h2>
-          <fieldset
-            aria-label="筛选"
-            className="m-0 flex gap-0.5 rounded-[10px] border-0 bg-surface p-0.5 shadow-[var(--shadow-1)]"
-          >
+          <h2 className="text-xl font-semibold">故事板</h2>
+          <fieldset aria-label="筛选" className="ui-seg">
             {FILTERS.map((f) => (
               <button
                 key={f.id}
                 type="button"
                 aria-pressed={filter === f.id}
                 onClick={() => setFilter(f.id)}
-                className={`h-7 rounded-lg px-3 text-xs transition-colors ${
-                  filter === f.id ? 'bg-active text-ink' : 'text-ink-muted hover:text-ink'
-                }`}
+                className="ui-seg-item !h-7 !px-3"
               >
                 {f.label}
               </button>
@@ -199,11 +194,11 @@ function BoardCard({ el, index, onOpen }: { el: CanvasElement; index: number; on
             <Icon name="play" size={10} />
           </span>
         )}
-        <span className="board-index">{index}</span>
-        {count > 1 && <span className="board-count">{count}</span>}
+        <span className="ui-badge board-index">{index}</span>
+        {count > 1 && <span className="ui-badge board-count">{count}</span>}
       </div>
       <div className="flex items-center gap-2 px-1 pt-2">
-        <span className="min-w-0 flex-1 truncate text-left text-[13px]">{el.name ?? '未命名'}</span>
+        <span className="min-w-0 flex-1 truncate text-left text-sm">{el.name ?? '未命名'}</span>
         {status && <span className={`shrink-0 text-xs ${status.tone}`}>{status.label}</span>}
       </div>
     </button>

@@ -72,14 +72,14 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
     }
   }
 
-  const btn = 'ui-btn !h-7 !rounded-md !px-2 !text-xs'
+  const btn = 'ui-bar-btn'
   return (
     <div
       role="toolbar"
       aria-label="Frame 操作"
-      // 贴在 Frame 右上角外侧；Frame 顶到页头时不压住页头
-      style={{ right: window.innerWidth - tr.x, top: Math.max(64, tr.y - 36) }}
-      className="ui-float pointer-events-auto fixed z-20 flex items-center gap-0.5 rounded-[10px] p-0.5"
+      // 贴在 Frame 右上角外侧，离 Frame 8；Frame 顶到页头时不压住页头
+      style={{ right: window.innerWidth - tr.x, top: Math.max(64, tr.y - 48) }}
+      className="ui-bar ui-bar-sm pointer-events-auto fixed z-20"
     >
       <button
         type="button"
@@ -103,23 +103,18 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
         <Icon name="ungroup" size={13} />
         解组
       </button>
-      {remote && <div className="mx-0.5 h-4 w-px bg-line" />}
+      {remote && <div className="ui-bar-sep" />}
       {remote && (
         <>
-          <label className="flex h-7 items-center gap-1.5 px-2 text-xs text-ink-muted">
+          <label className="flex h-8 cursor-pointer items-center gap-2 px-2.5 text-xs text-ink-muted hover:text-ink">
             <input type="checkbox" checked={video} onChange={(e) => setVideo(e.target.checked)} />
             含视频
           </label>
           <label
-            className="flex h-7 items-center gap-1.5 px-2 text-xs text-ink-muted"
+            className="flex h-8 cursor-pointer items-center gap-2 px-2.5 text-xs text-ink-muted hover:text-ink"
             title="默认参数和输入都没变的节点沿用原结果；勾选后全部重新生成"
           >
-            <input
-              type="checkbox"
-              className="accent-[var(--accent)]"
-              checked={force}
-              onChange={(e) => setForce(e.target.checked)}
-            />
+            <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
             全部重跑
           </label>
           {busy === el.id ? (
@@ -164,7 +159,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
                   updateElement(engine.doc, el.id, { color: c.value })
                   setPalette(null)
                 }}
-                className="flex size-7 items-center justify-center rounded-full border border-line hover:scale-110 aria-pressed:ring-2 aria-pressed:ring-[var(--accent)]"
+                className="flex size-7 items-center justify-center rounded-full border border-line transition-transform duration-[var(--dur-fast)] hover:scale-110 aria-pressed:ring-2 aria-pressed:ring-[var(--accent)] aria-pressed:ring-offset-2 aria-pressed:ring-offset-[var(--menu)]"
                 style={{ background: c.value ?? 'transparent' }}
               >
                 {!c.value && <Icon name="x" size={12} />}

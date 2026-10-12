@@ -94,42 +94,44 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
     >
       <header
         data-scrolled={scrolled || undefined}
-        className="home-bar app-titlebar app-drag sticky top-0 z-10 flex h-[68px] items-center justify-between gap-4 px-5 sm:px-6"
+        className="home-bar app-titlebar app-drag sticky top-0 z-10"
       >
-        <div className="flex items-center gap-2.5 text-[15px] font-semibold tracking-wide">
-          <span className="plein-logo size-[22px]" aria-hidden="true" />
-          Plein
-        </div>
-        <div className="flex items-center gap-1">
-          <ThemeToggle />
-          <div className="mx-1 h-4 w-px bg-line" />
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            aria-label="设置"
-            title="设置"
-            className="ui-btn ui-btn-quiet ui-icon-btn"
-          >
-            <Icon name="settings" />
-          </button>
-          {info?.authRequired && (
-            <button type="button" onClick={logout} className="ui-btn ui-btn-quiet">
-              退出登录
+        {/* 和下面的内容同一条栏宽，Logo 与标题左对齐 */}
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5 sm:px-10">
+          <div className="flex items-center gap-2.5 text-base font-semibold">
+            <span className="plein-logo size-6" aria-hidden="true" />
+            Plein
+          </div>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              aria-label="设置"
+              title="设置"
+              className="ui-btn ui-btn-quiet ui-icon-btn"
+            >
+              <Icon name="settings" />
             </button>
-          )}
+            {info?.authRequired && (
+              <button type="button" onClick={logout} className="ui-btn ui-btn-quiet">
+                退出登录
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-5 pb-16 pt-6 sm:px-10">
+      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-5 pb-16 pt-4 sm:px-10">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="flex items-baseline gap-2 text-[26px] font-semibold tracking-tight">
+            <h1 className="flex items-baseline gap-2 text-2xl font-semibold">
               我的画布
               {canvases && canvases.length > 0 && (
                 <span className="text-sm font-normal text-ink-subtle">{canvases.length}</span>
               )}
             </h1>
-            <p className="mt-1 text-[13px] text-ink-subtle">
+            <p className="mt-1 text-sm text-ink-subtle">
               把剧本、角色、分镜和生成结果放在一张无限画布上
             </p>
           </div>
@@ -150,7 +152,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
               type="button"
               onClick={() => void create()}
               disabled={creating}
-              className="ui-btn ui-btn-primary !h-9 !rounded-[10px] !px-4"
+              className="ui-btn ui-btn-primary ui-btn-lg"
             >
               <Icon name="plus" size={15} />
               新建画布
@@ -160,7 +162,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
 
         <section
           aria-label="快速开始"
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
+          className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5"
         >
           {QUICK_START.map((q) => (
             <button
@@ -174,7 +176,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
                 <Icon name={q.icon} size={20} />
               </span>
               <span className="min-w-0 text-left">
-                <span className="block text-[14px] font-medium text-ink">{q.title}</span>
+                <span className="block text-base font-medium text-ink">{q.title}</span>
                 <span className="block truncate text-xs text-ink-subtle">{q.hint}</span>
               </span>
             </button>
@@ -184,7 +186,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
         {error && <p className="text-sm text-danger">加载失败：{error}</p>}
 
         {shown && (
-          <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {!q && (
               <li>
                 <button
@@ -196,7 +198,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
                   <span className="home-new-icon">
                     <Icon name="plus" size={20} />
                   </span>
-                  <span className="text-[14px] font-medium text-ink">新建画布</span>
+                  <span className="text-base font-medium text-ink">新建画布</span>
                   <span className="text-xs text-ink-subtle">
                     {canvases?.length ? '从一张空白画布开始' : '拖入图片、视频、音频或 Markdown'}
                   </span>
@@ -237,12 +239,12 @@ function CanvasCard({
       <a href={`#/c/${encodeURIComponent(c.id)}`} className="block" draggable={false}>
         <Cover covers={covers} elements={c.elements ?? 0} />
       </a>
-      <div className="flex items-center gap-2 px-3.5 pb-3 pt-2.5">
+      <div className="flex items-center gap-2 px-3 pb-3 pt-2.5">
         <div className="min-w-0 flex-1">
           {editing ? (
             <InlineTitle
               value={c.title}
-              className="-mx-1 h-6 w-full rounded-md px-1 text-[14px] font-medium"
+              className="-mx-1 h-6 w-full rounded-sm px-1 text-base font-medium"
               onDone={async (t) => {
                 setEditing(false)
                 if (t && t !== c.title) await onRename(t)
@@ -251,7 +253,7 @@ function CanvasCard({
           ) : (
             <a
               href={`#/c/${encodeURIComponent(c.id)}`}
-              className="block truncate text-[14px] font-medium leading-6"
+              className="block truncate text-base font-medium"
               draggable={false}
             >
               {c.title}
@@ -268,7 +270,7 @@ function CanvasCard({
             onClick={() => setEditing(true)}
             aria-label="重命名"
             title="重命名"
-            className="ui-btn ui-btn-quiet ui-icon-btn !size-7"
+            className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
           >
             <Icon name="pencil" size={14} />
           </button>
@@ -277,7 +279,7 @@ function CanvasCard({
             onClick={onDelete}
             aria-label="删除"
             title="删除"
-            className="ui-btn ui-btn-quiet ui-icon-btn !size-7 hover:!text-danger"
+            className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn hover:!text-danger"
           >
             <Icon name="trash" size={14} />
           </button>
