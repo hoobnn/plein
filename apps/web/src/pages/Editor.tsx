@@ -13,16 +13,19 @@ import { ProjectSwitcher } from '../panels/ProjectSwitcher'
 import { ResultBar, Viewer } from '../panels/ResultBar'
 import { SelectionBar } from '../panels/SelectionBar'
 import { Shortcuts } from '../panels/Shortcuts'
+import { Sidebar } from '../panels/Sidebar'
 import { SequenceEditor } from '../panels/SequenceEditor'
 import { StoryboardEditor } from '../panels/StoryboardEditor'
 import { Tasks } from '../panels/Tasks'
 import { Toolbar, ViewControls } from '../panels/Toolbar'
 import { Icon } from '../ui/icons'
-import { MOD } from '../ui/keys'
+import { MOD, withShortcut } from '../ui/keys'
+import { SlidePill } from '../ui/Slide'
 import { ThemeToggle } from '../ui/ThemeToggle'
 import { useCatalog } from '../stores/catalog'
 import { useLibrary } from '../stores/library'
-import { type SyncStatus, useCanvas } from '../stores/canvas'
+import { type SyncStatus, switchMode, useCanvas } from '../stores/canvas'
+import { useSidebar } from '../stores/sidebar'
 import { useTemplates } from '../stores/templates'
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
@@ -62,12 +65,28 @@ export function Editor({
     return () => useLibrary.getState().setProject(null)
   }, [canvas?.projectId])
 
+  const sidebarOpen = useSidebar((s) => s.open)
+  const sidebarWidth = useSidebar((s) => s.width)
+  const sidebar = mode === 'flow' && sidebarOpen
+  // 侧栏浮在画布上：告诉相机左边被挡住多少，适应画布、定位时把内容放在右边的可见区域
+  useEffect(() => {
+    engine?.camera.setInsets({ left: sidebar ? sidebarWidth + 12 : 0 })
+  }, [engine, sidebar, sidebarWidth])
+
   return (
     <div className="relative h-full w-full">
       <CanvasView source={source} />
       <Board />
-      <header className="app-titlebar pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 p-3">
+      {/* 侧栏是浮在画布左侧的面板：开关只滑入滑出，顶栏和画布都不动 */}
+      {mode === 'flow' && <Sidebar open={sidebarOpen} />}
+      <header className="app-titlebar app-viewbar pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 p-3">
         <div className="app-drag ui-bar pointer-events-auto">
+          {mode === 'flow' && (
+            <>
+              <SidebarToggle open={sidebar} />
+              <div className="ui-bar-sep" />
+            </>
+          )}
           <a href="#/" className="ui-bar-btn gap-2 px-2.5 font-semibold text-ink">
             <span className="plein-logo size-5" aria-hidden="true" />
             Plein
@@ -82,20 +101,7 @@ export function Editor({
               {source.kind === 'demo' ? `演示（${source.count} 个元素）` : '…'}
             </span>
           )}
-          <span
-            className={`flex items-center gap-1.5 px-2 text-xs ${sync === 'disconnected' ? 'text-warning' : 'text-ink-subtle'}`}
-            title={SYNC_LABELS[sync]}
-            data-testid="sync-status"
-          >
-            <span
-              className={`size-1.5 rounded-full ${sync === 'connected' ? 'bg-success' : sync === 'disconnected' ? 'bg-warning' : 'bg-ink-subtle'}`}
-              aria-hidden="true"
-            />
-            {/* 正常同步时只留一个点，异常才写出来 */}
-            <span className={sync === 'connected' || sync === 'local' ? 'sr-only' : ''}>
-              {SYNC_LABELS[sync]}
-            </span>
-          </span>
+          <SyncDot sync={sync} />
           <div className="ui-bar-sep" />
           <ModeSwitch />
         </div>
@@ -148,7 +154,11 @@ export function Editor({
           <ArrangeToast />
           <CanvasMenus canImport={source.kind === 'remote'} />
           <footer className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-center p-3">
-            <div className="absolute bottom-3 left-3 max-sm:hidden">
+            {/* 视图工具条让在侧栏右边，跟侧栏同一条曲线滑动 */}
+            <div
+              className="plein-follow-sidebar absolute bottom-3 max-sm:hidden"
+              style={{ left: sidebar ? sidebarWidth + 24 : 12 }}
+            >
               <ViewControls />
             </div>
             <Toolbar canImport={source.kind === 'remote'} />
@@ -162,6 +172,59 @@ export function Editor({
       {source.kind === 'remote' && <Tasks />}
       <Viewer />
     </div>
+  )
+}
+
+const SIDEBAR_KEY = 'mod+\\'
+
+/** 侧栏开关：工作流左上工具条的第一个按钮，快捷键 ⌘\ */
+function SidebarToggle({ open }: { open: boolean }) {
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (
+        (e.code !== 'Backslash' && e.key !== '\\') ||
+        !(e.metaKey || e.ctrlKey) ||
+        e.shiftKey ||
+        e.altKey
+      )
+        return
+      if (useCanvas.getState().mode !== 'flow') return
+      e.preventDefault()
+      useSidebar.getState().toggle()
+    }
+    window.addEventListener('keydown', key)
+    return () => window.removeEventListener('keydown', key)
+  }, [])
+  const label = open ? '收起侧栏' : '展开侧栏'
+  return (
+    <button
+      type="button"
+      onClick={() => useSidebar.getState().toggle()}
+      aria-label={label}
+      title={withShortcut(label, SIDEBAR_KEY)}
+      className="ui-bar-btn"
+    >
+      <Icon name={open ? 'sidebarClose' : 'sidebarOpen'} />
+    </button>
+  )
+}
+
+/** 同步状态：正常同步时只留一个点，异常才写出来 */
+function SyncDot({ sync }: { sync: SyncStatus }) {
+  return (
+    <span
+      className={`flex items-center gap-1.5 px-2 text-xs ${sync === 'disconnected' ? 'text-warning' : 'text-ink-subtle'}`}
+      title={SYNC_LABELS[sync]}
+      data-testid="sync-status"
+    >
+      <span
+        className={`size-1.5 rounded-full ${sync === 'connected' ? 'bg-success' : sync === 'disconnected' ? 'bg-warning' : 'bg-ink-subtle'}`}
+        aria-hidden="true"
+      />
+      <span className={sync === 'connected' || sync === 'local' ? 'sr-only' : ''}>
+        {SYNC_LABELS[sync]}
+      </span>
+    </span>
   )
 }
 
@@ -199,9 +262,9 @@ const MODES = [
 /** 工作流 / 故事板切换（左上角的两个图标） */
 function ModeSwitch() {
   const mode = useCanvas((s) => s.mode)
-  const engine = useCanvas((s) => s.engine)
   return (
-    <div className="flex gap-0.5">
+    <div className="ui-slide flex gap-0.5">
+      <SlidePill />
       {MODES.map((m) => (
         <button
           key={m.mode}
@@ -209,11 +272,7 @@ function ModeSwitch() {
           aria-label={m.label}
           title={m.label}
           aria-pressed={mode === m.mode}
-          onClick={() => {
-            // 故事板里看不到选区，切过去时清掉，免得按删除键误删
-            if (m.mode === 'board') engine?.selection.clear()
-            useCanvas.getState().setMode(m.mode)
-          }}
+          onClick={() => switchMode(m.mode)}
           className="ui-bar-btn"
         >
           <Icon name={m.icon} />

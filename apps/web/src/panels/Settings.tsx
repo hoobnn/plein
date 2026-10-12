@@ -8,6 +8,7 @@ import { Icon, type IconName } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { THEME_OPTIONS } from '../ui/ThemeToggle'
 import { type ObjectSchema, SchemaForm } from './SchemaForm'
+import { SlidePill, SlideSwap } from '../ui/Slide'
 
 const input = 'ui-input ui-input-lg w-full'
 
@@ -275,9 +276,10 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
     <Modal label="设置" onClose={onClose} top className="h-[min(640px,100%)] max-w-215 sm:flex-row">
       <nav
         aria-label="设置分区"
-        className="flex flex-none gap-1 overflow-x-auto border-b border-line bg-surface-2 p-2 sm:w-52 sm:flex-col sm:overflow-visible sm:border-r sm:border-b-0 sm:p-3"
+        className="ui-slide flex flex-none gap-1 overflow-x-auto border-b border-line bg-surface-2 p-2 sm:w-52 sm:flex-col sm:overflow-visible sm:border-r sm:border-b-0 sm:p-3"
       >
         <h2 className="hidden px-2.5 pt-1.5 pb-3 text-lg font-semibold sm:block">设置</h2>
+        <SlidePill variant="seg" />
         {sections.map((s) => (
           <button
             key={s.id}
@@ -285,9 +287,7 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
             aria-current={s.id === current.id ? 'page' : undefined}
             onClick={() => setSection(s.id)}
             className={`flex h-8 flex-none items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors ${
-              s.id === current.id
-                ? 'bg-surface text-ink shadow-1'
-                : 'text-ink-muted hover:bg-hover hover:text-ink'
+              s.id === current.id ? 'text-ink' : 'text-ink-muted hover:bg-hover hover:text-ink'
             }`}
           >
             <Icon name={s.icon} />
@@ -302,74 +302,77 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
       </nav>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ModalHeader title={current.label} onClose={onClose} divider={false} />
-        <div className="ui-scrollbar flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto px-5 pt-2 pb-5">
-          {current.id === 'appearance' && (
-            <Group title="主题" hint="跟随系统时，会随系统的浅色 / 深色自动切换">
-              <Appearance />
-            </Group>
-          )}
-          {current.id === 'providers' && (
-            <Group title="已安装的平台" hint="启用并填好密钥后，节点里才能选到这个平台的模型">
-              {providers.length === 0 ? (
-                <p className="text-sm text-ink-subtle">还没有安装模型平台插件。</p>
-              ) : (
+        <div className="ui-scrollbar flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-5 pt-2 pb-5">
+          {/* 分区导航是竖排的：内容按上下方向滑入 */}
+          <SlideSwap index={sections.indexOf(current)} axis="y" className="flex flex-col gap-8">
+            {current.id === 'appearance' && (
+              <Group title="主题" hint="跟随系统时，会随系统的浅色 / 深色自动切换">
+                <Appearance />
+              </Group>
+            )}
+            {current.id === 'providers' && (
+              <Group title="已安装的平台" hint="启用并填好密钥后，节点里才能选到这个平台的模型">
+                {providers.length === 0 ? (
+                  <p className="text-sm text-ink-subtle">还没有安装模型平台插件。</p>
+                ) : (
+                  <ul className="rounded-lg ring-1 ring-line">
+                    {providers.map((p) => (
+                      <ProviderRow
+                        key={p.id}
+                        provider={p}
+                        open={openProvider === p.id}
+                        onToggleOpen={() => setOpenProvider(openProvider === p.id ? null : p.id)}
+                        onSaved={load}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </Group>
+            )}
+            {current.id === 'plugins' && (
+              <Group title="已安装的插件">
                 <ul className="rounded-lg ring-1 ring-line">
-                  {providers.map((p) => (
-                    <ProviderRow
+                  {plugins.map((p) => (
+                    <li
                       key={p.id}
-                      provider={p}
-                      open={openProvider === p.id}
-                      onToggleOpen={() => setOpenProvider(openProvider === p.id ? null : p.id)}
-                      onSaved={load}
-                    />
+                      className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm">{p.name}</span>
+                        <span className="block truncate text-xs text-ink-subtle">
+                          {p.id} · {p.version}
+                          {p.builtin ? ' · 内置' : ''}
+                        </span>
+                        {p.error && (
+                          <span className="mt-0.5 block text-xs break-words text-danger">
+                            {p.error}
+                          </span>
+                        )}
+                      </span>
+                      <span
+                        className={`ui-tag ${p.status === 'active' ? 'ui-tag-success' : 'ui-tag-danger'}`}
+                      >
+                        {p.status === 'active' ? '已加载' : '加载失败'}
+                      </span>
+                    </li>
                   ))}
                 </ul>
-              )}
-            </Group>
-          )}
-          {current.id === 'plugins' && (
-            <Group title="已安装的插件">
-              <ul className="rounded-lg ring-1 ring-line">
-                {plugins.map((p) => (
-                  <li
-                    key={p.id}
-                    className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0"
+              </Group>
+            )}
+            {current.id === 'data' && (
+              <Group title="数据目录" hint="画布、素材和平台密钥都保存在本机的数据目录里">
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => void desktop?.openDataDir()}
+                    className="ui-btn ui-btn-secondary"
                   >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm">{p.name}</span>
-                      <span className="block truncate text-xs text-ink-subtle">
-                        {p.id} · {p.version}
-                        {p.builtin ? ' · 内置' : ''}
-                      </span>
-                      {p.error && (
-                        <span className="mt-0.5 block text-xs break-words text-danger">
-                          {p.error}
-                        </span>
-                      )}
-                    </span>
-                    <span
-                      className={`ui-tag ${p.status === 'active' ? 'ui-tag-success' : 'ui-tag-danger'}`}
-                    >
-                      {p.status === 'active' ? '已加载' : '加载失败'}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </Group>
-          )}
-          {current.id === 'data' && (
-            <Group title="数据目录" hint="画布、素材和平台密钥都保存在本机的数据目录里">
-              <div>
-                <button
-                  type="button"
-                  onClick={() => void desktop?.openDataDir()}
-                  className="ui-btn ui-btn-secondary"
-                >
-                  打开数据目录
-                </button>
-              </div>
-            </Group>
-          )}
+                    打开数据目录
+                  </button>
+                </div>
+              </Group>
+            )}
+          </SlideSwap>
         </div>
       </div>
     </Modal>
@@ -381,7 +384,8 @@ function Appearance() {
   const pref = useTheme((s) => s.pref)
   const setPref = useTheme((s) => s.setPref)
   return (
-    <fieldset aria-label="主题" className="grid grid-cols-3 gap-2 border-0 p-0">
+    <fieldset aria-label="主题" className="ui-slide grid grid-cols-3 gap-2 border-0 p-0">
+      <SlidePill variant="accent" />
       {THEME_OPTIONS.map((o) => (
         <button
           key={o.pref}
@@ -390,7 +394,7 @@ function Appearance() {
           onClick={() => setPref(o.pref)}
           className={`flex h-10 items-center justify-center gap-2 rounded-md text-sm ring-1 transition-colors ${
             pref === o.pref
-              ? 'bg-accent-soft text-accent ring-accent'
+              ? 'text-accent ring-transparent'
               : 'bg-surface-2 text-ink-muted ring-line hover:text-ink'
           }`}
         >

@@ -15,6 +15,7 @@ import { useCanvas } from '../stores/canvas'
 import { shortTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
+import { SlidePill } from '../ui/Slide'
 
 type MediaType = 'image' | 'video' | 'audio'
 type TypeFilter = 'all' | MediaType
@@ -295,7 +296,10 @@ function Segmented({ label, children }: { label: string; children: ReactNode }) 
   return (
     <div className="flex items-center gap-2">
       <span className="text-xs text-ink-subtle">{label}</span>
-      <div className="ui-seg">{children}</div>
+      <div className="ui-seg ui-slide">
+        <SlidePill variant="seg" />
+        {children}
+      </div>
     </div>
   )
 }

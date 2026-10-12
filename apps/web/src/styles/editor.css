@@ -83,37 +83,270 @@
   color: var(--ink);
 }
 
-/* 故事板视图 */
-.board-card {
-  display: block;
-  width: 100%;
-  text-align: left;
+/* 故事板视图：按类型并排的几栏，每栏独立滚动 */
+.board-col {
+  display: flex;
+  min-width: 320px;
+  flex: 1 1 0;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
 }
-.board-thumb {
+.board-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.board-media {
   position: relative;
   display: flex;
-  aspect-ratio: 16 / 9;
+  max-width: 400px;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-1);
+  background: var(--surface-2);
   transition: box-shadow var(--dur-base) var(--ease-spring);
 }
-.board-card:hover .board-thumb {
-  box-shadow:
-    0 0 0 2px var(--accent),
-    var(--shadow-1);
+.board-media:hover {
+  box-shadow: 0 0 0 2px var(--accent);
 }
-.board-index,
-.board-count {
+.board-play {
   position: absolute;
-  top: 8px;
+  display: flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.45);
+  color: #fff;
+  backdrop-filter: blur(8px);
 }
-.board-index {
-  left: 8px;
+.board-chip {
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
 }
-.board-count {
-  right: 8px;
+.board-text {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px;
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+.board-text:hover {
+  background: var(--hover);
+}
+.board-text-icon {
+  display: flex;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-muted);
+}
+
+/* 工作流左侧栏：项目 / 画布、页签、图层树、底部收起 */
+.plein-sidebar {
+  position: absolute;
+  top: calc(var(--chrome-h) + 20px);
+  bottom: 12px;
+  left: 12px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-xl);
+  /* 面积大，用不透明底，免得底下的卡片透出来 */
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  /* 收起：向左滑出并淡出，结束后再隐藏 */
+  opacity: 0;
+  transform: translateX(calc(-100% - 12px));
+  visibility: hidden;
+  transition:
+    transform var(--dur-slow) var(--ease-spring),
+    opacity var(--dur-base) var(--ease-standard),
+    visibility 0s linear var(--dur-slow);
+}
+.plein-sidebar[data-open] {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  transition:
+    transform var(--dur-slow) var(--ease-spring),
+    opacity var(--dur-base) var(--ease-standard),
+    visibility 0s;
+}
+/* 跟着侧栏让位的浮层（左下视图工具条）：同一条曲线 */
+.plein-follow-sidebar {
+  transition: left var(--dur-slow) var(--ease-spring);
+}
+/* 拖宽度时不要动画，跟手 */
+.plein-resizing .plein-follow-sidebar {
+  transition: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .plein-sidebar,
+  .plein-sidebar[data-open],
+  .plein-follow-sidebar {
+    transition: none;
+  }
+}
+/* 右边缘的拖动条：热区 8px 跨在边框上，悬停或拖动时边框变成强调色 */
+.plein-sidebar-resize {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  z-index: 1;
+  width: 8px;
+  cursor: col-resize;
+  outline: none;
+  touch-action: none;
+}
+.plein-sidebar-resize::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  content: "";
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.plein-sidebar-resize:hover::after,
+.plein-sidebar-resize:focus-visible::after,
+.plein-sidebar-resize[data-dragging]::after {
+  background: var(--accent);
+}
+/* 拖动期间不选中文字；光标靠拖动条的 pointer capture 保持 col-resize */
+.plein-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+.plein-sidebar-tab {
+  height: var(--h-md);
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--ink-muted);
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.plein-sidebar-tab:hover {
+  color: var(--ink);
+}
+.plein-sidebar-tab[aria-selected="true"] {
+  background: var(--active);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* 图层行：缩略图 + 名称，悬停出定位按钮 */
+.plein-layer {
+  display: flex;
+  height: 44px;
+  align-items: center;
+  gap: 8px;
+  padding-right: 6px;
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  cursor: default;
+  outline: none;
+}
+.plein-layer:hover {
+  background: var(--hover);
+}
+.plein-layer:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.plein-layer[aria-selected="true"] {
+  background: var(--accent-soft);
+}
+.plein-layer:disabled {
+  opacity: 0.5;
+}
+.plein-layer-caret {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--ink-subtle);
+}
+.plein-layer-caret:hover {
+  color: var(--ink);
+}
+.plein-layer-thumb {
+  position: relative;
+  display: flex;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink-muted);
+}
+.plein-layer-folder {
+  background: transparent;
+  color: var(--ink-subtle);
+}
+.plein-layer-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.2);
+  color: #fff;
+}
+.plein-layer-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+}
+.plein-layer-action {
+  display: flex;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--ink-subtle);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+.plein-layer:hover .plein-layer-action,
+.plein-layer:focus-visible .plein-layer-action {
+  opacity: 1;
+}
+.plein-layer-action:hover {
+  background: var(--active);
+  color: var(--ink);
 }

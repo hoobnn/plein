@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { NodeInfo } from '../../canvas/nodes'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
+import { SlidePill, SlideSwap } from '../../ui/Slide'
 
 /** 模型选择：左栏选平台、右栏列该平台的模型；“自动”交给服务端按能力挑 */
 export function ModelPicker({
@@ -99,19 +100,27 @@ export function ModelPicker({
                 role="tablist"
                 aria-label="平台"
                 aria-orientation="vertical"
-                className="ui-scrollbar flex w-40 flex-none flex-col gap-0.5 overflow-y-auto border-r border-line pr-1"
+                className="ui-slide ui-scrollbar flex w-40 flex-none flex-col gap-0.5 overflow-y-auto border-r border-line pr-1"
               >
+                <SlidePill variant="menu" />
                 {railItem('', '自动', '按能力挑选')}
                 {providers.map((p) => railItem(p.id, p.title, `${p.models.length} 个模型`))}
               </div>
               <div
                 role="listbox"
                 aria-label={shown ? `${shown.title} 的模型` : '自动选择'}
-                className="ui-scrollbar flex min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto pl-1"
+                className="ui-scrollbar flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto pl-1"
               >
-                {shown
-                  ? shown.models.map((m) => option(`${shown.id}:${m.id}`, m.title, m.description))
-                  : option('', '自动选择', '按节点能力使用第一个可用平台里的第一个模型')}
+                {/* 平台是竖排的：模型列表按上下方向滑入 */}
+                <SlideSwap
+                  index={shown ? providers.indexOf(shown) + 1 : 0}
+                  axis="y"
+                  className="flex flex-col gap-0.5"
+                >
+                  {shown
+                    ? shown.models.map((m) => option(`${shown.id}:${m.id}`, m.title, m.description))
+                    : option('', '自动选择', '按节点能力使用第一个可用平台里的第一个模型')}
+                </SlideSwap>
               </div>
             </div>
           )}

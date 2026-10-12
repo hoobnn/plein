@@ -563,3 +563,145 @@
     scrollbar-color: var(--line-strong) transparent;
   }
 }
+
+/* ── 同级切换的滑动动画（ui/Slide.tsx） ──────────────── */
+@layer components {
+  /* 选中底色滑块：容器加 .ui-slide，滑块按选中项的位置和尺寸平移、伸缩 */
+  .ui-slide {
+    position: relative;
+    isolation: isolate;
+  }
+  .ui-slide-pill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: -1;
+    pointer-events: none;
+    border-radius: var(--radius-md);
+  }
+  .ui-slide-pill[data-ready] {
+    transition:
+      transform var(--dur-slow) var(--ease-spring),
+      width var(--dur-slow) var(--ease-spring),
+      height var(--dur-slow) var(--ease-spring),
+      opacity var(--dur-fast) var(--ease-standard);
+  }
+  .ui-slide-pill[data-hidden] {
+    opacity: 0;
+  }
+  .ui-slide-pill-bar,
+  .ui-slide-pill-tab {
+    background: var(--active);
+  }
+  .ui-slide-pill-seg {
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    box-shadow: var(--shadow-1);
+  }
+  :root[data-theme="dark"] .ui-slide-pill-seg {
+    background: var(--surface-3);
+  }
+  .ui-slide-pill-menu {
+    background: var(--hover);
+  }
+  .ui-slide-pill-accent {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  /* 选中项自己的底色交给滑块，只保留文字颜色 */
+  :root
+    .ui-slide
+    > :is(
+      [aria-pressed="true"],
+      [aria-selected="true"],
+      [aria-current]:not([aria-current="false"])
+    ) {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  /* 内容切换：从切换方向滑入并淡入 */
+  .ui-slide-swap[data-slide-from] {
+    animation: ui-slide-in var(--dur-slow) var(--ease-spring) both;
+  }
+  .ui-slide-swap[data-slide-from="next"][data-slide-axis="x"] {
+    --slide-from: translateX(24px);
+  }
+  .ui-slide-swap[data-slide-from="prev"][data-slide-axis="x"] {
+    --slide-from: translateX(-24px);
+  }
+  .ui-slide-swap[data-slide-from="next"][data-slide-axis="y"] {
+    --slide-from: translateY(16px);
+  }
+  .ui-slide-swap[data-slide-from="prev"][data-slide-axis="y"] {
+    --slide-from: translateY(-16px);
+  }
+}
+
+@keyframes ui-slide-in {
+  from {
+    opacity: 0;
+    transform: var(--slide-from);
+  }
+}
+
+/* 工作流 ↔ 故事板：整页按方向滑动交叉淡化（View Transitions），顶栏不参与，选中滑块自己滑 */
+.app-viewbar {
+  view-transition-name: app-viewbar;
+}
+::view-transition-old(app-viewbar) {
+  display: none;
+}
+::view-transition-new(app-viewbar) {
+  animation: none;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--dur-slow);
+  animation-timing-function: var(--ease-spring);
+}
+:root[data-view-slide="next"]::view-transition-old(root) {
+  animation-name: ui-view-out-left;
+}
+:root[data-view-slide="next"]::view-transition-new(root) {
+  animation-name: ui-view-in-right;
+}
+:root[data-view-slide="prev"]::view-transition-old(root) {
+  animation-name: ui-view-out-right;
+}
+:root[data-view-slide="prev"]::view-transition-new(root) {
+  animation-name: ui-view-in-left;
+}
+@keyframes ui-view-out-left {
+  to {
+    opacity: 0;
+    transform: translateX(-48px);
+  }
+}
+@keyframes ui-view-out-right {
+  to {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+}
+@keyframes ui-view-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(48px);
+  }
+}
+@keyframes ui-view-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-48px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-slide-pill[data-ready] {
+    transition: none;
+  }
+  .ui-slide-swap[data-slide-from] {
+    animation: none;
+  }
+}

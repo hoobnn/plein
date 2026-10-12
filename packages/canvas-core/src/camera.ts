@@ -13,6 +13,8 @@ export class Camera {
   /** 视口尺寸（屏幕像素），由引擎在 resize 时更新 */
   width = 0
   height = 0
+  /** 被浮在画布上的面板（如侧栏）挡住的边距（屏幕像素）；适配与居中只用剩下的区域 */
+  insets = { left: 0, top: 0, right: 0, bottom: 0 }
 
   private listeners = new Set<() => void>()
 
@@ -54,21 +56,36 @@ export class Camera {
     this.zoomAt(this.width / 2, this.height / 2, zoom / this.zoom)
   }
 
-  /** 让世界矩形完整落在视口内，留出 padding（屏幕像素） */
+  /** 只改记录，不重绘：挡住的区域变了不影响当前画面 */
+  setInsets(insets: Partial<Camera['insets']>) {
+    this.insets = { ...this.insets, ...insets }
+  }
+
+  /** 去掉挡住部分后的可见区域（屏幕像素） */
+  private get safe() {
+    const { left, top, right, bottom } = this.insets
+    const w = Math.max(1, this.width - left - right)
+    const h = Math.max(1, this.height - top - bottom)
+    return { w, h, cx: left + w / 2, cy: top + h / 2 }
+  }
+
+  /** 让世界矩形完整落在可见区域内，留出 padding（屏幕像素） */
   fit(r: Rect, padding = 64, maxZoom = 1) {
     if (this.width === 0 || this.height === 0) return
-    const zx = (this.width - padding * 2) / Math.max(r.w, 1)
-    const zy = (this.height - padding * 2) / Math.max(r.h, 1)
+    const { w, h, cx, cy } = this.safe
+    const zx = (w - padding * 2) / Math.max(r.w, 1)
+    const zy = (h - padding * 2) / Math.max(r.h, 1)
     this.zoom = this.clamp(Math.min(zx, zy, maxZoom))
-    this.x = this.width / 2 - (r.x + r.w / 2) * this.zoom
-    this.y = this.height / 2 - (r.y + r.h / 2) * this.zoom
+    this.x = cx - (r.x + r.w / 2) * this.zoom
+    this.y = cy - (r.y + r.h / 2) * this.zoom
     this.emit()
   }
 
-  /** 平移到让世界坐标 (wx, wy) 落在视口中央，缩放不变（小地图跳转） */
+  /** 平移到让世界坐标 (wx, wy) 落在可见区域中央，缩放不变（小地图跳转） */
   centerOn(wx: number, wy: number) {
-    this.x = this.width / 2 - wx * this.zoom
-    this.y = this.height / 2 - wy * this.zoom
+    const { cx, cy } = this.safe
+    this.x = cx - wx * this.zoom
+    this.y = cy - wy * this.zoom
     this.emit()
   }
 

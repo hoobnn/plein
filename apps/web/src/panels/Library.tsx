@@ -26,6 +26,7 @@ import { Modal, ModalHeader } from '../ui/Modal'
 import { Popover } from '../ui/Popover'
 import { Select } from '../ui/Select'
 import { KIND_ICONS } from './LibraryAdd'
+import { SlidePill, SlideSwap } from '../ui/Slide'
 
 /**
  * 资产库面板：
@@ -134,6 +135,10 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
     if (r.id) close()
   }
 
+  const scopes = SCOPES[preset ? 'preset' : 'asset'].filter((s) => s.id !== 'project' || projectId)
+  const slideIndex =
+    LIBRARY_KINDS.findIndex((k) => k.id === kindId) * 10 + scopes.findIndex((s) => s.id === scope)
+
   const editingItem = editing?.type === 'item' ? items.find((i) => i.id === editing.id) : undefined
   // 「从画布选」的候选：打开着画布时取画布上的图片和视频
   const media = useMemo(() => (canPlace && engine ? canvasMedia(engine) : []), [canPlace, engine])
@@ -144,7 +149,8 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
         title="资产库"
         onClose={close}
         meta={
-          <fieldset className="ui-seg" aria-label="资产类别">
+          <fieldset className="ui-seg ui-slide" aria-label="资产类别">
+            <SlidePill variant="seg" />
             {LIBRARY_KINDS.map((k) => (
               <button
                 key={k.id}
@@ -200,20 +206,19 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
       ) : (
         <>
           <div className="flex flex-none flex-wrap items-center gap-2 border-b border-line px-5 py-3">
-            <fieldset className="ui-seg" aria-label="范围">
-              {SCOPES[preset ? 'preset' : 'asset']
-                .filter((s) => s.id !== 'project' || projectId)
-                .map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    aria-pressed={scope === s.id}
-                    onClick={() => setScope(s.id)}
-                    className="ui-seg-item"
-                  >
-                    {s.label}
-                  </button>
-                ))}
+            <fieldset className="ui-seg ui-slide" aria-label="范围">
+              <SlidePill variant="seg" />
+              {scopes.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  aria-pressed={scope === s.id}
+                  onClick={() => setScope(s.id)}
+                  className="ui-seg-item"
+                >
+                  {s.label}
+                </button>
+              ))}
             </fieldset>
             {kind.tags.map((t) => (
               <Select
@@ -226,44 +231,47 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
               />
             ))}
           </div>
-          <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto p-5">
-            {scope === 'official' && (
-              <p className="mb-4 text-xs text-ink-subtle">
-                官方{kind.title}只包含提示词，不带模型或
-                LoRA；放到画布上后可以连参考图加强约束，效果取决于所选模型。
-              </p>
-            )}
-            {!loaded && scope !== 'official' ? null : shown.length === 0 ? (
-              <Empty kind={kind} scope={scope} onCreate={() => setEditing({ type: 'new' })} />
-            ) : (
-              <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                {shown.map((it) =>
-                  'favorite' in it ? (
-                    <Card
-                      key={it.id}
-                      kind={kind}
-                      item={it}
-                      canPlace={canPlace}
-                      onOpen={() => setEditing({ type: 'item', id: it.id })}
-                      onPlace={() => {
-                        const input = placeInputOf(it)
-                        if (input) void place(input)
-                      }}
-                    />
-                  ) : (
-                    <OfficialCard
-                      key={it.id}
-                      item={it}
-                      canPlace={canPlace}
-                      onOpen={() => setEditing({ type: 'official', item: it })}
-                      onPlace={() =>
-                        void place({ kind, name: it.name, description: it.description })
-                      }
-                    />
-                  ),
-                )}
-              </ul>
-            )}
+          <div className="ui-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-5">
+            {/* 换类别或范围时内容按切换方向滑入 */}
+            <SlideSwap index={slideIndex}>
+              {scope === 'official' && (
+                <p className="mb-4 text-xs text-ink-subtle">
+                  官方{kind.title}只包含提示词，不带模型或
+                  LoRA；放到画布上后可以连参考图加强约束，效果取决于所选模型。
+                </p>
+              )}
+              {!loaded && scope !== 'official' ? null : shown.length === 0 ? (
+                <Empty kind={kind} scope={scope} onCreate={() => setEditing({ type: 'new' })} />
+              ) : (
+                <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                  {shown.map((it) =>
+                    'favorite' in it ? (
+                      <Card
+                        key={it.id}
+                        kind={kind}
+                        item={it}
+                        canPlace={canPlace}
+                        onOpen={() => setEditing({ type: 'item', id: it.id })}
+                        onPlace={() => {
+                          const input = placeInputOf(it)
+                          if (input) void place(input)
+                        }}
+                      />
+                    ) : (
+                      <OfficialCard
+                        key={it.id}
+                        item={it}
+                        canPlace={canPlace}
+                        onOpen={() => setEditing({ type: 'official', item: it })}
+                        onPlace={() =>
+                          void place({ kind, name: it.name, description: it.description })
+                        }
+                      />
+                    ),
+                  )}
+                </ul>
+              )}
+            </SlideSwap>
           </div>
         </>
       )}

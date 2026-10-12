@@ -186,6 +186,10 @@ export class Engine {
     const onResize = () => this.camera.setViewport(this.app.screen.width, this.app.screen.height)
     this.app.renderer.on('resize', onResize)
     this.disposers.push(() => this.app.renderer.off('resize', onResize))
+    // resizeTo 只听窗口 resize；宿主随侧栏展开收起变宽变窄时也要跟上
+    const observer = new ResizeObserver(() => this.app.resize())
+    observer.observe(host)
+    this.disposers.push(() => observer.disconnect())
     onResize()
   }
 

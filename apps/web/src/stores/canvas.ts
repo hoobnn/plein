@@ -1,5 +1,6 @@
 import type { ArrangeResult, CanvasMenuEvent, Engine, EngineState } from '@plein/canvas-core'
 import { create } from 'zustand'
+import { slideView } from '../ui/viewTransition'
 
 export type SyncStatus = 'local' | 'connecting' | 'connected' | 'disconnected'
 
@@ -118,3 +119,16 @@ export const useCanvas = create<CanvasStore>((set) => ({
     if (notice) noticeTimer = setTimeout(() => set({ notice: null }), 4000)
   },
 }))
+
+const MODE_ORDER: Array<CanvasStore['mode']> = ['flow', 'board']
+
+/** 切换工作流 / 故事板，带整页滑动：按按钮的左右顺序决定方向 */
+export function switchMode(mode: CanvasStore['mode']) {
+  const { mode: from, engine, setMode } = useCanvas.getState()
+  if (from === mode) return
+  // 故事板里看不到选区，切过去时清掉，免得按删除键误删
+  if (mode === 'board') engine?.selection.clear()
+  slideView(MODE_ORDER.indexOf(mode) > MODE_ORDER.indexOf(from) ? 'next' : 'prev', () =>
+    setMode(mode),
+  )
+}

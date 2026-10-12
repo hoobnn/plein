@@ -32,6 +32,7 @@ const GROUPS: Array<{ title: string; items: Array<[string, ...Combo[]]> }> = [
       ['缩放到选中', [k('shift+2')]],
       ['放大 / 缩小', [k('mod+plus')], [k('mod+minus')]],
       ['缩放到 100%', [k('mod+0')]],
+      ['展开 / 收起侧栏', [k('mod+\\')]],
     ],
   },
   {

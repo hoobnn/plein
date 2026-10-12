@@ -7,6 +7,9 @@ import { Icon } from '../ui/icons'
 import { InlineTitle } from '../ui/InlineTitle'
 import { Popover } from '../ui/Popover'
 
+/** 读过的项目，按 id */
+const projects = new Map<string, Project>()
+
 /**
  * 页头的「项目 / 画布 ▾」：
  * 点项目名改名；画布下拉里切换同项目的其他画布、新建、改名、删除当前画布。
@@ -18,7 +21,10 @@ export function ProjectSwitcher({
   canvas: Canvas
   onCanvas(c: Canvas): void
 }) {
-  const [project, setProject] = useState<Project | null>(null)
+  // 侧栏展开收起、切故事板时会换位置重新挂载，先用上次读到的，免得项目名闪成「…」
+  const [project, setProject] = useState<Project | null>(
+    () => projects.get(canvas.projectId) ?? null,
+  )
   const [canvases, setCanvases] = useState<Canvas[]>([])
   const [renaming, setRenaming] = useState(false)
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
@@ -28,6 +34,7 @@ export function ProjectSwitcher({
       api.project(canvas.projectId),
       api.projectCanvases(canvas.projectId),
     ])
+    projects.set(p.id, p)
     setProject(p)
     setCanvases(list)
   }, [canvas.projectId])
@@ -38,8 +45,11 @@ export function ProjectSwitcher({
   const close = () => setAnchor(null)
   const renameProject = async (title: string | null) => {
     setRenaming(false)
-    if (project && title && title !== project.title)
-      setProject(await api.renameProject(project.id, title))
+    if (project && title && title !== project.title) {
+      const next = await api.renameProject(project.id, title)
+      projects.set(next.id, next)
+      setProject(next)
+    }
   }
   const addCanvas = async () => {
     close()
