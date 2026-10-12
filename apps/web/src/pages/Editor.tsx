@@ -3,12 +3,14 @@ import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { CanvasMenus } from '../panels/CanvasMenus'
+import { FrameBar } from '../panels/FrameBar'
 import { Generator } from '../panels/Generator'
 import { StoryboardEditor } from '../panels/StoryboardEditor'
 import { SettingsDialog } from '../panels/Settings'
 import { Toolbar } from '../panels/Toolbar'
 import { useCatalog } from '../stores/catalog'
 import { type SyncStatus, useCanvas } from '../stores/canvas'
+import { useTemplates } from '../stores/templates'
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
   local: '本地演示',
@@ -27,6 +29,7 @@ export function Editor({ source }: { source: CanvasSource }) {
     if (!canvasId) return
     api.canvas(canvasId).then(setCanvas, () => setCanvas(null))
     void useCatalog.getState().load()
+    void useTemplates.getState().load()
   }, [canvasId])
 
   const rename = async () => {
@@ -80,6 +83,7 @@ export function Editor({ source }: { source: CanvasSource }) {
         </div>
       )}
       <Generator />
+      <FrameBar remote={source.kind === 'remote'} />
       <CanvasMenus canImport={source.kind === 'remote'} />
       <StoryboardEditor />
       {settings && <SettingsDialog onClose={() => setSettings(false)} />}

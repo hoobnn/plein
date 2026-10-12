@@ -41,6 +41,17 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (owner_id, id)
   );
   `,
+  `
+  -- 用户存的模板（Frame 及其内容，JSON 同复制粘贴格式）
+  CREATE TABLE templates (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    data TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX templates_owner ON templates(owner_id, created_at);
+  `,
 ]
 
 export function openDb(dataDir: string): DB {

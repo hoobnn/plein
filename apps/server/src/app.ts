@@ -20,6 +20,7 @@ import { type DB, openDb } from './storage/db'
 import { loadSecrets, type Secrets } from './storage/secrets'
 import { Rooms, sqliteDocStore } from './sync/rooms'
 import { syncRoutes } from './sync/route'
+import { templateRoutes } from './http/templates'
 
 export interface Server {
   app: Hono<AuthEnv>
@@ -61,6 +62,7 @@ export async function createServer(config: Config): Promise<Server> {
   app.use('/api/*', auth.requireAuth)
   app.use('/sync/*', auth.requireAuth)
   app.route('/', canvasRoutes(db, rooms))
+  app.route('/', templateRoutes(db))
   app.route('/', assetRoutes(assets))
   app.route('/', syncRoutes(db, rooms))
   app.route('/', pluginRoutes(plugins))

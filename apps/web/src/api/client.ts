@@ -8,6 +8,7 @@ import {
   type ProviderConfigView,
   type ProviderTestResult,
   type SessionInfo,
+  type UserTemplate,
 } from '@plein/protocol'
 
 export class ApiError extends Error {
@@ -67,6 +68,11 @@ export const api = {
   renameCanvas: (id: string, title: string) =>
     request<Canvas>(API.canvas(id), json('PATCH', { title })),
   deleteCanvas: (id: string) => request<void>(API.canvas(id), { method: 'DELETE' }),
+  templates: () => request<UserTemplate[]>(API.templates),
+  /** data 是 ClipboardData（Frame 及其内容），服务端按 TemplateData 校验 */
+  saveTemplate: (title: string, data: object) =>
+    request<UserTemplate>(API.templates, json('POST', { title, data })),
+  deleteTemplate: (id: string) => request<void>(API.template(id), { method: 'DELETE' }),
 
   catalog: () => request<Catalog>(API.catalog),
   providerConfig: (id: string) => request<ProviderConfigView>(API.providerConfig(id)),

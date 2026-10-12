@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Asset, Canvas } from '@plein/protocol'
+import type { Asset, Canvas, UserTemplate } from '@plein/protocol'
 import sharp from 'sharp'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
@@ -82,6 +82,31 @@ describe('server', () => {
       204,
     )
     expect((await fetch(`${s.base}/api/canvases/${created.id}`)).status).toBe(404)
+  })
+
+  it('用户模板：保存、列出、删除，格式不对时拒绝', async () => {
+    const post = (body: unknown) =>
+      fetch(`${s.base}/api/templates`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    const data = {
+      plein: 1,
+      elements: [{ id: 'el_a', kind: 'frame', x: 0, y: 0, w: 640, h: 400, name: '镜头' }],
+      edges: [],
+    }
+    const created = (await (await post({ title: '一镜到底', data })).json()) as UserTemplate
+    expect(created.title).toBe('一镜到底')
+    expect((await post({ title: '空的', data: { ...data, elements: [] } })).status).toBe(400)
+    expect((await post({ title: '', data })).status).toBe(400)
+    const list = (await (await fetch(`${s.base}/api/templates`)).json()) as UserTemplate[]
+    expect(list.find((t) => t.id === created.id)?.data.elements[0]?.name).toBe('镜头')
+    const del = await fetch(`${s.base}/api/templates/${created.id}`, { method: 'DELETE' })
+    expect(del.status).toBe(204)
+    expect(
+      (await fetch(`${s.base}/api/templates/${created.id}`, { method: 'DELETE' })).status,
+    ).toBe(404)
   })
 
   it('拒绝跨站请求', async () => {

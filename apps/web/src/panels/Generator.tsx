@@ -45,7 +45,7 @@ const GAP = 12
 const BOTTOM_RESERVED = 72
 
 /** 引擎任一变化（相机、选中、文档内容）时递增，驱动面板重渲染和跟随定位 */
-function useEngineVersion(engine: Engine) {
+export function useEngineVersion(engine: Engine) {
   const ref = useRef(0)
   return useSyncExternalStore(
     (notify) => {
