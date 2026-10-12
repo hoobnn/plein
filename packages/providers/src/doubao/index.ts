@@ -5,6 +5,7 @@ import {
   defineServerPlugin,
   PLUGIN_API_VERSION,
   type ProviderContext,
+  type TranscriptSegment,
   ProviderError,
   type ProviderErrorCode,
 } from '@plein/plugin-sdk'
@@ -339,7 +340,13 @@ export const doubaoProvider = defineProvider({
             ...(format === 'ogg' ? { codec: 'opus' } : {}),
             ...(input.language ? { language: input.language } : {}),
           },
-          request: { model_name: 'bigmodel', enable_itn: true, enable_punc: true },
+          // show_utterances：返回分句和时间戳，序列导出用它校准字幕
+          request: {
+            model_name: 'bigmodel',
+            enable_itn: true,
+            enable_punc: true,
+            show_utterances: true,
+          },
         },
         'volc.bigasr.auc_turbo',
         true,
@@ -352,7 +359,30 @@ export const doubaoProvider = defineProvider({
       const result = object(packet.result)
       if (typeof result.text !== 'string')
         throw new ProviderError('unavailable', '豆包语音返回无效识别文本')
-      return { state: 'succeeded', outputs: [{ type: 'text', text: result.text }] }
+      // 分句时间是毫秒，按 SDK 约定换成秒
+      const segments: TranscriptSegment[] = (
+        Array.isArray(result.utterances) ? result.utterances : []
+      )
+        .map(object)
+        .filter(
+          (u) =>
+            typeof u.text === 'string' &&
+            typeof u.start_time === 'number' &&
+            typeof u.end_time === 'number' &&
+            u.end_time > u.start_time,
+        )
+        .map((u) => ({
+          start: (u.start_time as number) / 1000,
+          end: (u.end_time as number) / 1000,
+          text: (u.text as string).trim(),
+        }))
+      return {
+        state: 'succeeded',
+        outputs: [
+          { type: 'text', text: result.text },
+          ...(segments.length ? [{ type: 'json' as const, value: { segments } }] : []),
+        ],
+      }
     }
     throw new ProviderError('invalid_input', '豆包语音不支持该能力')
   },

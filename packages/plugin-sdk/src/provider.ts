@@ -37,7 +37,7 @@ export interface CapabilityInputs {
     references?: AssetRef[]
     width?: number
     height?: number
-    /** 分辨率档位，取模型 `resolutions` 里的值；和画幅一起换算成平台尺寸，显式宽高优先 */
+    /** 分辨率档位，取模型 `limits.resolutions` 里的值；和画幅一起换算成平台尺寸，显式宽高优先 */
     resolution?: string
     count?: number
     seed?: number
@@ -50,7 +50,7 @@ export interface CapabilityInputs {
     /** 秒 */
     duration?: number
     aspectRatio?: string
-    /** 分辨率，取模型 `resolutions` 里的值 */
+    /** 分辨率，取模型 `limits.resolutions` 里的值 */
     resolution?: string
     seed?: number
   }
@@ -151,18 +151,41 @@ export class ProviderError extends Error {
   }
 }
 
+/**
+ * 模型对通用参数的约束。节点表单按它收窄选项、换模型时校正取值、提交前检查；
+ * 没声明的项按节点自己的范围处理。
+ */
+export interface ModelLimits {
+  /** 支持的画幅（`16:9` 这种写法） */
+  aspectRatios?: string[]
+  /** 可选分辨率（平台自己的写法，如 `720p`、`2K`）；不声明时不显示分辨率，用平台默认 */
+  resolutions?: string[]
+  /** 时长范围（秒，整数） */
+  duration?: { min: number; max: number }
+  /** 一次最多生成几张 */
+  count?: { max: number }
+  /** false 表示不支持种子，表单隐藏，宿主也不会传给 Provider */
+  seed?: boolean
+  /** 参考图最多几张 */
+  references?: { max: number }
+}
+
 export interface ModelSpec {
   /** 平台上的模型 id */
   id: string
   title: string
   capabilities: Capability[]
   description?: string
+  limits?: ModelLimits
   /**
-   * 图片、视频模型可选的分辨率（平台自己的写法，如 `720p`、`2K`）。
-   * 节点的分辨率参数只列这些；不声明时不显示分辨率，用平台默认。
+   * 模型专属参数（如 Seedance 的生成音频、返回尾帧）。字段名就是传给 Provider 的 `extra` 键，
+   * 都应可选：用户没改的不传，平台用自己的默认值。表单在「模型专属」里按它生成。
    */
-  resolutions?: string[]
+  options?: z.ZodObject
 }
+
+/** 可序列化的模型描述：专属参数转成 JSON Schema */
+export type ModelInfo = Omit<ModelSpec, 'options'> & { optionsSchema?: Record<string, unknown> }
 
 export interface SecretSpec {
   /** 必须在插件清单 permissions.secrets 里声明 */
@@ -264,7 +287,7 @@ export interface ProviderDescriptor {
   testScope?: 'connection' | 'configuration'
   settingsSchema: Record<string, unknown>
   secrets: SecretSpec[]
-  models: ModelSpec[]
+  models: ModelInfo[]
   plugin: string
 }
 
@@ -280,7 +303,17 @@ export function describeProvider(def: ProviderDefinition, plugin: string): Provi
       unknown
     >,
     secrets: def.secrets,
-    models: def.models,
+    models: def.models.map(({ options, ...m }) =>
+      options
+        ? {
+            ...m,
+            optionsSchema: z.toJSONSchema(options, {
+              io: 'input',
+              unrepresentable: 'any',
+            }) as Record<string, unknown>,
+          }
+        : m,
+    ),
     plugin,
   }
 }

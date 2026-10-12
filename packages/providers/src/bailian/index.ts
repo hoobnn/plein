@@ -245,6 +245,8 @@ const supported: Partial<Record<string, string[]>> = {
   'video.generate': ['wan3.0-video', 'wan3.0-video-prime'],
   'audio.speech': ['qwen3-tts-flash', 'qwen3-tts-instruct-flash'],
 }
+const IMAGE_ASPECTS = ['16:9', '9:16', '1:1', '4:3', '3:4']
+
 export const bailianProvider = defineProvider({
   testScope: 'configuration',
   id: 'aliyun/bailian',
@@ -266,16 +268,57 @@ export const bailianProvider = defineProvider({
       title: id,
       capabilities: ['text.chat' as const],
     })),
-    ...['qwen-image-3.0-pro', 'qwen-image-3.0', 'wan2.7-image-pro'].map((id) => ({
+    ...['qwen-image-3.0-pro', 'qwen-image-3.0'].map((id) => ({
       id,
       title: id,
       capabilities: ['image.generate' as const],
+      limits: { aspectRatios: IMAGE_ASPECTS, references: { max: 3 } },
+      options: z.object({
+        negative_prompt: z
+          .string()
+          .optional()
+          .meta({ title: '反向提示词', placeholder: '不希望出现的内容' }),
+        watermark: z.boolean().optional().meta({ title: '水印' }),
+      }),
     })),
+    {
+      id: 'wan2.7-image-pro',
+      title: 'wan2.7-image-pro',
+      capabilities: ['image.generate' as const],
+      limits: { aspectRatios: IMAGE_ASPECTS },
+      options: z.object({
+        negative_prompt: z
+          .string()
+          .optional()
+          .meta({ title: '反向提示词', placeholder: '不希望出现的内容' }),
+        prompt_extend: z
+          .boolean()
+          .optional()
+          .meta({ title: '提示词扩写', description: '由模型自动润色、补充提示词' }),
+        thinking_mode: z.boolean().optional().meta({ title: '思考模式' }),
+        watermark: z.boolean().optional().meta({ title: '水印' }),
+      }),
+    },
     ...['wan3.0-video', 'wan3.0-video-prime'].map((id) => ({
       id,
       title: id,
       capabilities: ['video.generate' as const],
-      resolutions: ['480P', '720P', '1080P'],
+      limits: {
+        resolutions: ['480P', '720P', '1080P'],
+        duration: { min: 2, max: 30 },
+        references: { max: 10 },
+      },
+      options: z.object({
+        audio: z
+          .boolean()
+          .optional()
+          .meta({ title: '生成音频', description: '默认开启，同时生成环境音和对白' }),
+        prompt_extend: z
+          .boolean()
+          .optional()
+          .meta({ title: '提示词扩写', description: '由模型自动润色、补充提示词' }),
+        watermark: z.boolean().optional().meta({ title: '水印' }),
+      }),
     })),
     ...['qwen3-tts-flash', 'qwen3-tts-instruct-flash'].map((id) => ({
       id,

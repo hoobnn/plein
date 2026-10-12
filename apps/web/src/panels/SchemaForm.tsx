@@ -16,6 +16,8 @@ interface FieldSchema {
   minimum?: number
   maximum?: number
   default?: unknown
+  /** 枚举值的显示名 */
+  labels?: Record<string, string>
 }
 
 export interface ObjectSchema {
@@ -37,7 +39,13 @@ export function SchemaForm({
   const field = dense ? 'ui-input w-full' : 'ui-input ui-input-lg w-full'
   const props = Object.entries(schema.properties ?? {})
   if (props.length === 0) return null
-  const set = (key: string, v: unknown) => onChange({ ...value, [key]: v })
+  // 设为 undefined 即删掉这个键：没有默认值的字段表示“交给平台默认”
+  const set = (key: string, v: unknown) => {
+    const next = { ...value, [key]: v }
+    if (v === undefined) delete next[key]
+    onChange(next)
+  }
+  const DEFAULT = '__default'
   return (
     <div className="flex flex-col gap-3">
       {props.map(([key, f]) => {
@@ -45,14 +53,33 @@ export function SchemaForm({
         const current = value[key] ?? f.default
         const label = f.title ?? key
         let control: React.ReactNode
+        // 没有默认值的选项和开关多一个「默认」：不传，用平台自己的默认
+        const optional = f.default === undefined
         if (f.enum) {
           control = (
             <Select
               id={id}
               className={field}
-              value={String(current ?? '')}
-              options={f.enum.map((o) => ({ value: String(o) }))}
-              onChange={(v) => set(key, v)}
+              value={current === undefined ? DEFAULT : String(current)}
+              options={[
+                ...(optional ? [{ value: DEFAULT, label: '默认' }] : []),
+                ...f.enum.map((o) => ({ value: String(o), label: f.labels?.[String(o)] })),
+              ]}
+              onChange={(v) => set(key, v === DEFAULT ? undefined : v)}
+            />
+          )
+        } else if (f.type === 'boolean' && optional) {
+          control = (
+            <Select
+              id={id}
+              className={field}
+              value={current === undefined ? DEFAULT : String(current)}
+              options={[
+                { value: DEFAULT, label: '默认' },
+                { value: 'true', label: '开' },
+                { value: 'false', label: '关' },
+              ]}
+              onChange={(v) => set(key, v === DEFAULT ? undefined : v === 'true')}
             />
           )
         } else if (f.type === 'boolean') {
@@ -81,7 +108,9 @@ export function SchemaForm({
               className={`${field} h-24 py-2`}
               placeholder={f.placeholder}
               value={String(current ?? '')}
-              onChange={(e) => set(key, e.target.value)}
+              onChange={(e) =>
+                set(key, optional && e.target.value === '' ? undefined : e.target.value)
+              }
             />
           )
         } else {

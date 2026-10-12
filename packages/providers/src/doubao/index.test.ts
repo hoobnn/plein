@@ -213,6 +213,48 @@ describe('Doubao Speech HTTP contracts', () => {
     })
   })
 
+  it('returns utterance timings as transcript segments in seconds', async () => {
+    const ctx = context(
+      new Response(
+        JSON.stringify({
+          result: {
+            text: '你好。再见。',
+            utterances: [
+              { text: '你好。', start_time: 120, end_time: 900 },
+              { text: '再见。', start_time: 1000, end_time: 1800 },
+            ],
+          },
+        }),
+        { headers: { 'X-Api-Status-Code': '20000000' } },
+      ),
+    )
+    const result = await doubaoProvider.submit(
+      {
+        capability: 'audio.transcribe',
+        model: 'bigmodel',
+        input: { audio: { assetId: 'fixture', kind: 'audio' } },
+      },
+      ctx,
+    )
+    expect(result).toEqual({
+      state: 'succeeded',
+      outputs: [
+        { type: 'text', text: '你好。再见。' },
+        {
+          type: 'json',
+          value: {
+            segments: [
+              { start: 0.12, end: 0.9, text: '你好。' },
+              { start: 1, end: 1.8, text: '再见。' },
+            ],
+          },
+        },
+      ],
+    })
+    const init = vi.mocked(ctx.fetch).mock.calls[0]![1]!
+    expect(JSON.parse(String(init.body)).request).toMatchObject({ show_utterances: true })
+  })
+
   it('returns empty text for documented silent audio status', async () => {
     const ctx = context(new Response('{}', { headers: { 'X-Api-Status-Code': '20000003' } }))
     await expect(

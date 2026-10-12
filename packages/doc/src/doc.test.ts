@@ -350,6 +350,12 @@ describe('节点结果与端口', () => {
     expect(doc.get(id)!.results).toHaveLength(2)
     removeResult(doc, id, 'r1')
     expect(currentResult(doc.get(id)!)?.id).toBe('r2')
+    // 按端口取时跟着采用的那次运行：那次没有尾帧就是没有，不拿更早的凑数
+    addResults(doc, id, [{ ...r(3), port: 'lastFrame', runId: 'run0' }])
+    addResults(doc, id, [{ ...r(4), runId: 'run2' }])
+    expect(currentResult(doc.get(id)!, 'lastFrame')).toBeUndefined()
+    adoptResult(doc, id, 'r3')
+    expect(currentResult(doc.get(id)!, 'lastFrame')?.id).toBe('r3')
   })
 
   it('多连端口保留已有连线，素材元素有隐式输出端口', () => {

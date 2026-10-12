@@ -13,6 +13,7 @@ import {
 } from '@plein/doc'
 import { ASSET_NODE_TYPES } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
+import { modelProblem, selectedModel } from './modelParams'
 
 export type NodeInfo = Catalog['nodes'][number]
 
@@ -231,18 +232,6 @@ export function upstreams(
  * 运行前校验，返回第一条不满足的原因（null 表示可以运行）。
  * 与服务端执行器的检查一致，提前在界面上说明，而不是跑了再报错。
  */
-/** 模型声明的分辨率；“自动”按服务端的规则取第一个已启用平台的第一个模型 */
-export function modelResolutions(catalog: Catalog | null, node: NodeInfo, value: string) {
-  const models = (catalog?.providers ?? [])
-    .filter((p) => p.enabled)
-    .flatMap((p) =>
-      p.models
-        .filter((m) => !node.capability || m.capabilities.includes(node.capability))
-        .map((m) => ({ ref: `${p.id}:${m.id}`, resolutions: m.resolutions })),
-    )
-  return (value ? models.find((m) => m.ref === value) : models[0])?.resolutions
-}
-
 export function validate(
   node: NodeInfo,
   el: CanvasElement,
@@ -271,13 +260,15 @@ export function validate(
       if (f.type === 'integer' && !Number.isInteger(n)) return `参数「${label}」应为整数`
       if ((f.minimum !== undefined && n < f.minimum) || (f.maximum !== undefined && n > f.maximum))
         return `参数「${label}」应在 ${f.minimum ?? '−∞'}–${f.maximum ?? '∞'} 之间`
-    } else if (f.widget === 'resolution') {
-      const model = fieldsOf(node).find(([, m]) => m.widget === 'model')?.[0]
-      const list = modelResolutions(catalog, node, String(el.params?.[model ?? ''] ?? ''))
-      if (catalog && !list?.includes(String(v))) return `所选模型不支持分辨率「${String(v)}」`
     } else if (f.enum && !f.enum.includes(v)) {
       return `参数「${label}」的值「${String(v)}」不在可选范围内`
     }
+  }
+  // 所选模型的约束（分辨率、画幅、时长、张数、参考图数量）
+  if (catalog) {
+    const params = { ...node.defaults, ...el.params }
+    const problem = modelProblem(node, params, selectedModel(catalog, node, params)?.info, ups)
+    if (problem) return problem
   }
   for (const port of node.inputs) {
     const list = ups.get(port.id) ?? []

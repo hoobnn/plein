@@ -23,6 +23,7 @@ type PromptPreset = Catalog['prompts'][number]
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { ApiError, api, assetUrls } from '../api/client'
 import { importFiles } from '../canvas/import'
+import { adaptToModel, constrainFields, selectedModel } from '../canvas/modelParams'
 import {
   applyAspect,
   aspectKey,
@@ -31,7 +32,6 @@ import {
   findNode,
   isPure,
   mentionTargets,
-  modelResolutions,
   type NodeInfo,
   parseAspect,
   promptKey,
@@ -46,7 +46,7 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { Popover } from '../ui/Popover'
-import { SchemaForm } from './SchemaForm'
+import { type ObjectSchema, SchemaForm } from './SchemaForm'
 
 const PANEL_W = 540
 const GAP = 12
@@ -140,16 +140,32 @@ function Panel({
     if (key === ak) applyAspect(engine, el.id, value)
   }
   const pk = promptKey(node)
-  const modelKey = fieldsOf(node).find(([, f]) => f.widget === 'model')?.[0]
-  const resolutions = modelKey
-    ? modelResolutions(catalog, node, String(params[modelKey] ?? ''))
-    : undefined
-  // 分辨率的选项跟着所选模型走；模型没声明分辨率时不显示
-  const fields = fieldsOf(node).flatMap(([k, f]): Array<[string, FieldSchema]> => {
-    if (f.widget === 'hidden') return []
-    if (f.widget !== 'resolution') return [[k, f]]
-    return resolutions?.length ? [[k, { ...f, enum: ['', ...resolutions] }]] : []
-  })
+  const model = selectedModel(catalog, node, params)
+  // 选项和范围跟着所选模型走，模型不支持的参数不显示
+  const fields = constrainFields(
+    node,
+    fieldsOf(node).filter(([, f]) => f.widget !== 'hidden'),
+    model?.info.limits,
+  )
+  // 换模型时自动校正了哪些参数
+  const [notes, setNotes] = useState<string[]>([])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 换节点时清空
+  useEffect(() => setNotes([]), [el.id])
+  const optionsKey = fieldsOf(node).find(([, f]) => f.widget === 'modelOptions')?.[0]
+  const allOptions = (optionsKey ? params[optionsKey] : undefined) as
+    | Record<string, Record<string, unknown>>
+    | undefined
+  // 专属参数只在明确选了模型时可设（自动选择时不知道会落到哪个模型）
+  const modelOptions =
+    optionsKey && model?.ref && model.info.optionsSchema
+      ? {
+          title: model.info.title,
+          schema: model.info.optionsSchema as ObjectSchema,
+          value: allOptions?.[model.ref] ?? {},
+          onChange: (next: Record<string, unknown>) =>
+            set(optionsKey, { ...allOptions, [model.ref]: next }),
+        }
+      : undefined
   const main = fields.filter(([k, f]) => k !== pk && isMainField(k, f))
   const rest = Object.fromEntries(fields.filter(([k, f]) => k !== pk && !isMainField(k, f)))
   const ups = upstreams(engine, el.id, catalog)
@@ -273,6 +289,9 @@ function Panel({
       {!pure && (
         // 底栏吸底：面板被视口截短时生成按钮仍然可见
         <footer className="sticky bottom-0 flex flex-col gap-2 bg-float px-3 pb-3 pt-1 backdrop-blur-xl">
+          {notes.length > 0 && !problem && (
+            <p className="px-1 text-xs text-ink-subtle">{notes.join('；')}</p>
+          )}
           {(problem || (!running && el.run?.status === 'failed')) && (
             <p
               className={`px-1 text-xs ${problem ? 'text-ink-subtle' : 'text-danger'}`}
@@ -288,21 +307,25 @@ function Panel({
                 node={node}
                 catalog={catalog}
                 onChange={(v) => {
+                  const next = { ...params, [modelField[0]]: v }
+                  const { patch, notes } = adaptToModel(
+                    node,
+                    next,
+                    selectedModel(catalog, node, next)?.info,
+                  )
                   set(modelField[0], v)
-                  // 换了模型，原来的分辨率新模型不支持时改回默认
-                  for (const [k, f] of fieldsOf(node)) {
-                    if (f.widget !== 'resolution' || !params[k]) continue
-                    if (!modelResolutions(catalog, node, v)?.includes(String(params[k]))) set(k, '')
-                  }
+                  for (const [k, value] of Object.entries(patch)) set(k, value)
+                  setNotes(notes)
                 }}
               />
             )}
-            {(paramFields.length > 0 || Object.keys(rest).length > 0) && (
+            {(paramFields.length > 0 || Object.keys(rest).length > 0 || modelOptions) && (
               <ParamsPill
                 fields={paramFields}
                 rest={rest}
                 params={params}
                 aspect={ak}
+                options={modelOptions}
                 onChange={set}
               />
             )}
@@ -578,16 +601,26 @@ function ParamsPill({
   rest,
   params,
   aspect,
+  options,
   onChange,
 }: {
   fields: Array<[string, FieldSchema]>
   rest: Record<string, FieldSchema>
   params: Record<string, unknown>
   aspect?: string
+  /** 所选模型的专属参数 */
+  options?: {
+    title: string
+    schema: ObjectSchema
+    value: Record<string, unknown>
+    onChange(next: Record<string, unknown>): void
+  }
   onChange(key: string, v: unknown): void
 }) {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
   const [more, setMore] = useState(false)
+  const [special, setSpecial] = useState(false)
+  const customized = options ? Object.keys(options.value).length : 0
   const summary = fields
     .map(([k, f]) => shortValue(k, f, params[k]))
     .filter(Boolean)
@@ -604,6 +637,12 @@ function ParamsPill({
       >
         {ratio ? <AspectGlyph ratio={ratio} size={14} /> : <Icon name="sliders" size={13} />}
         <span className="truncate tabular-nums">{summary || '参数'}</span>
+        {customized > 0 && (
+          <span
+            className="size-1.5 flex-none rounded-full bg-accent"
+            title={`改了 ${customized} 项模型专属参数`}
+          />
+        )}
         <Icon name="chevronDown" size={12} />
       </button>
       {anchor && (
@@ -619,6 +658,34 @@ function ParamsPill({
                 onChange={(v) => onChange(k, v)}
               />
             ))}
+            {options && (
+              <div className="border-t border-line pt-2">
+                <button
+                  type="button"
+                  onClick={() => setSpecial(!special)}
+                  aria-expanded={special}
+                  className="flex w-full items-center justify-between text-xs text-ink-muted hover:text-ink"
+                >
+                  <span>
+                    {options.title} 专属
+                    {customized > 0 && (
+                      <span className="ml-1.5 text-ink-subtle">已改 {customized} 项</span>
+                    )}
+                  </span>
+                  <Icon name="chevronDown" size={12} />
+                </button>
+                {special && (
+                  <div className="pt-2">
+                    <SchemaForm
+                      dense
+                      schema={options.schema}
+                      value={options.value}
+                      onChange={options.onChange}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
             {Object.keys(rest).length > 0 && (
               <div className="border-t border-line pt-2">
                 <button

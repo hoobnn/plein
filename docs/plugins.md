@@ -57,7 +57,8 @@ export const serverPlugin = defineServerPlugin(plugin, {
 - `title`、`placeholder`、`description`：标签与说明
 - `widget: 'textarea'`：多行文本
 - `widget: 'model'`：模型下拉框，列出已启用平台中支持节点 `capability` 的模型
-- `widget: 'resolution'`：分辨率，选项来自所选模型的 `ModelSpec.resolutions`，空字符串表示平台默认；模型没声明时不显示
+- `widget: 'resolution'`：分辨率，选项来自所选模型的 `limits.resolutions`，空字符串表示平台默认；模型没声明时不显示
+- `widget: 'modelOptions'`：模型专属参数，按模型引用分开存（`{ [模型引用]: {...} }`），执行器把所选模型那份作为 `extra` 传给 Provider；表单在参数面板的「<模型> 专属」里按模型的 `options` 生成
 - `widget: 'hidden'`：不在生成器里显示（如分镜节点的 `shots`，由专门的表格编辑）
 
 可选的 `applyOutputs(params, outputs)`：运行成功后返回要写回参数的部分，比如分镜节点把镜头表写回 `shots`。
@@ -90,7 +91,16 @@ export const serverPlugin = defineServerPlugin(plugin, {
 
 错误统一抛 `ProviderError(code, message)`，`code` 为 `auth`、`quota`、`rate_limit`、`invalid_input`、`content_policy`、`timeout`、`unavailable` 等，节点上据此显示原因，`rate_limit` / `unavailable` / `timeout` 默认可重试。
 
-能力的输出约定：`audio.transcribe` 返回 `{ type: 'text' }` 全文，能给出时间轴时再加一条 `{ type: 'json', value: { segments } }`（`TranscriptSegment[]`，`start`、`end` 单位秒）；序列节点用它校字幕时间。`ctx.media.compose` 的 `transition` 支持 `fade`（经黑场，不改时长）和 `dissolve`（叠化，相邻镜头重叠）。
+### 模型声明参数
+
+每个模型可以声明两样东西，节点表单据此生成，不用为每个平台写界面：
+
+- `limits`（`ModelLimits`）：对通用参数的约束，包括 `aspectRatios`、`resolutions`、`duration {min,max}`、`count {max}`、`seed`（`false` 表示不支持，宿主不会传）、`references {max}`。表单只显示支持的选项和范围；换模型时不合法的值自动校正并说明；提交前按它检查。
+- `options`（zod object）：专属参数，字段名就是 `extra` 的键。字段都写成可选、不给默认值，表单会多一个「默认」选项，用户没改的不传，平台用自己的默认值；枚举可用 `.meta({ labels: { 值: '显示名' } })`。目录接口把它转成 `optionsSchema` 下发。
+
+缓存键只算所选模型那份专属参数；分辨率留空、专属参数为空时不计入。
+
+能力的输出约定：`audio.transcribe` 返回 `{ type: 'text' }` 全文，能给出时间轴时再加一条 `{ type: 'json', value: { segments } }`（`TranscriptSegment[]`，`start`、`end` 单位秒）；序列节点用它校字幕时间。`video.generate` 可以在视频之外再返回一张图片作为尾帧（如 Seedance 开了「返回尾帧」），生成视频节点从「尾帧」端口输出，可连到下一个镜头的首帧。`ctx.media.compose` 的 `transition` 支持 `fade`（经黑场，不改时长）和 `dissolve`（叠化，相邻镜头重叠）。
 
 `ctx.fetch` 只能访问清单声明的域名，`ctx.secret(name)` 只能读声明过的密钥，`ctx.files.read` 需要 `assets` 权限。
 

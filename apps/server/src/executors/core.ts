@@ -37,6 +37,11 @@ function pickModel(ctx: ExecutorContext<{ model: string }>, capability: Capabili
   return first.ref
 }
 
+/** 所选模型的专属参数；自动选模型时没有 */
+function modelOptions(params: { model: string; options: Record<string, Record<string, unknown>> }) {
+  return params.model ? (params.options[params.model] ?? {}) : {}
+}
+
 /** 参数里的文本与上游文本合并：两者都有时参数在前 */
 function joinText(own: string, upstream: string | undefined) {
   return [own.trim(), upstream?.trim()].filter(Boolean).join('\n\n')
@@ -87,7 +92,7 @@ const image = defineExecutor(imageNode, async (ctx) => {
       count: params.count,
       seed: params.seed,
       resolution: params.resolution || undefined,
-      extra: { aspectRatio: params.aspectRatio },
+      extra: { ...modelOptions(params), aspectRatio: params.aspectRatio },
     },
   )
   return { images: res.assets.map((a) => ({ type: 'image' as const, ...a })) }
@@ -106,9 +111,18 @@ const video = defineExecutor(videoNode, async (ctx) => {
       aspectRatio: params.aspectRatio,
       resolution: params.resolution || undefined,
       seed: params.seed,
+      extra: modelOptions(params),
     },
   )
-  return { video: res.assets.map((a) => ({ type: 'video' as const, ...a })) }
+  return {
+    video: res.assets
+      .filter((a) => a.kind === 'video')
+      .map((a) => ({ type: 'video' as const, ...a })),
+    // 开了「返回尾帧」的模型多给一张图
+    lastFrame: res.assets
+      .filter((a) => a.kind === 'image')
+      .map((a) => ({ type: 'image' as const, ...a })),
+  }
 })
 
 const speech = defineExecutor(speechNode, async (ctx) => {

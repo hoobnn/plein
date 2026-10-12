@@ -575,12 +575,7 @@ export class NodeRuns {
         params = resolveParams(p.def, p.params, el.nodeVersion ?? p.def.version)
       } catch {}
     }
-    // 分辨率留空（平台默认）不计入：这个参数是后加的，加之前生成的结果不必因此重跑
-    const kept = Object.fromEntries(
-      Object.entries(params ?? {}).filter(
-        ([k, v]) => !omit.includes(k) && !(k === 'resolution' && v === ''),
-      ),
-    )
+    const kept = cacheParams(params ?? {}, omit)
     return createHash('sha256')
       .update(
         stableStringify({
@@ -702,4 +697,25 @@ function jobInfo(j: JobRow): JobInfo {
     startedAt: j.started_at ?? undefined,
     finishedAt: j.finished_at ?? undefined,
   }
+}
+
+/**
+ * 计入缓存键的参数：
+ * - 运行结果写回的参数（omit）不算；
+ * - 模型专属参数只算所选模型那份，别的模型的设置改了不影响；
+ * - 分辨率留空、专属参数为空时不算：这两个参数是后加的，加之前生成的结果不必因此重跑。
+ */
+export function cacheParams(params: Record<string, unknown>, omit: string[] = []) {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(params)) {
+    if (omit.includes(k)) continue
+    if (k === 'resolution' && v === '') continue
+    if (k === 'options' && v && typeof v === 'object' && typeof params.model === 'string') {
+      const own = (v as Record<string, Record<string, unknown> | undefined>)[params.model]
+      if (own && Object.keys(own).length) out[k] = own
+      continue
+    }
+    out[k] = v
+  }
+  return out
 }

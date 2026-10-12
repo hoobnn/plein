@@ -172,6 +172,12 @@ export class PluginHost {
       throw new ProviderError('invalid_input', `模型 ${model.title} 不支持 ${capability}`)
     }
 
+    // 模型声明不支持种子时不传：节点上残留的种子不该让整次生成失败
+    if (model.limits?.seed === false && 'seed' in input) {
+      const { seed: _, ...rest } = input as { seed?: number }
+      input = rest as typeof input
+    }
+
     const timeout = AbortSignal.timeout(this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
     const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout
     const ctx = this.providerContext(parsed.provider, opts.ownerId, signal, {

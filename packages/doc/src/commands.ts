@@ -372,10 +372,18 @@ export function addResults(doc: PleinDoc, id: string, results: NodeResult[]) {
   }, SYSTEM_ORIGIN)
 }
 
-/** 当前生效的结果：采用的那个，否则最新的；可按输出端口筛选 */
+/**
+ * 当前生效的结果：采用的那个，否则最新的；可按输出端口筛选。
+ * 按端口取时跟着采用的那次运行走：那次没产出这个端口（如没开「返回尾帧」）就是没有，
+ * 不拿更早一次的结果凑数。
+ */
 export function currentResult(el: CanvasElement, port?: string): NodeResult | undefined {
-  const list = (el.results ?? []).filter((r) => port === undefined || r.port === port)
-  return list.find((r) => r.id === el.adopted) ?? list[0]
+  const all = el.results ?? []
+  const list = all.filter((r) => port === undefined || r.port === port)
+  const own = list.find((r) => r.id === el.adopted)
+  if (own) return own
+  const adopted = el.adopted ? all.find((r) => r.id === el.adopted) : undefined
+  return adopted ? list.find((r) => r.runId === adopted.runId) : list[0]
 }
 
 /** 生成历史里的一项：哪个节点的哪个媒体结果 */

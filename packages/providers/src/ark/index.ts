@@ -7,6 +7,7 @@ import {
   domainAllowed,
   PLUGIN_API_VERSION,
   ProviderError,
+  type ModelSpec,
   type ProviderErrorCode,
   type ProviderContext,
   type ProviderOutput,
@@ -24,78 +25,159 @@ const settings = z.object({
 type Context = ProviderContext<z.output<typeof settings>>
 type Json = Record<string, unknown>
 
-const models = [
+const SEEDREAM_ASPECTS = ['16:9', '9:16', '1:1', '4:3', '3:4']
+const SEEDANCE_ASPECTS = ['16:9', '4:3', '1:1', '3:4', '9:16']
+
+const seedreamOptions = z.object({
+  watermark: z.boolean().optional().meta({ title: '水印', description: '在右下角加 AI 生成水印' }),
+  output_format: z
+    .enum(['jpeg', 'png'])
+    .optional()
+    .meta({ title: '输出格式', labels: { jpeg: 'JPEG', png: 'PNG' } }),
+})
+
+const seedanceOptions = (v25: boolean) =>
+  z.object({
+    generate_audio: z
+      .boolean()
+      .optional()
+      .meta({ title: '生成音频', description: '同时生成环境音、音效和对白' }),
+    return_last_frame: z
+      .boolean()
+      .optional()
+      .meta({ title: '返回尾帧', description: '输出最后一帧图片，可连到下一个镜头的首帧' }),
+    service_tier: z
+      .enum(['default', 'flex'])
+      .optional()
+      .meta({
+        title: '服务等级',
+        description: '离线模式价格更低，排队时间更长',
+        labels: { default: '在线', flex: '离线（低价）' },
+      }),
+    watermark: z.boolean().optional().meta({ title: '水印' }),
+    ...(v25
+      ? {
+          draft: z
+            .boolean()
+            .optional()
+            .meta({ title: '草稿模式', description: '先出低成本预览，仅 480p' }),
+        }
+      : {}),
+  })
+
+const models: ModelSpec[] = [
   {
     id: 'doubao-seed-2-1-pro-260628',
     title: 'Doubao Seed 2.1 Pro',
-    capabilities: ['text.chat'] as const,
+    capabilities: ['text.chat'],
   },
   {
     id: 'doubao-seed-2-1-lite-260915',
     title: 'Doubao Seed 2.1 Lite',
-    capabilities: ['text.chat'] as const,
+    capabilities: ['text.chat'],
   },
   {
     id: 'doubao-seed-2-1-turbo-260628',
     title: 'Doubao Seed 2.1 Turbo',
-    capabilities: ['text.chat'] as const,
+    capabilities: ['text.chat'],
   },
   {
     id: 'doubao-seedream-5-0-pro-260628',
     title: 'Seedream 5.0 Pro',
-    capabilities: ['image.generate'] as const,
-    resolutions: ['1K', '1.5K', '2K'],
+    capabilities: ['image.generate'],
+    limits: {
+      aspectRatios: SEEDREAM_ASPECTS,
+      resolutions: ['1K', '1.5K', '2K'],
+      count: { max: 1 },
+      references: { max: 10 },
+    },
+    options: seedreamOptions,
   },
   {
     id: 'doubao-seedream-5-0-flash-260915',
     title: 'Seedream 5.0 Flash',
-    capabilities: ['image.generate'] as const,
-    resolutions: ['1K', '1.5K', '2K'],
+    capabilities: ['image.generate'],
+    limits: {
+      aspectRatios: SEEDREAM_ASPECTS,
+      resolutions: ['1K', '1.5K', '2K'],
+      count: { max: 1 },
+      references: { max: 10 },
+    },
+    options: seedreamOptions,
   },
   {
     id: 'doubao-seedream-5-0-260128',
     title: 'Seedream 5.0 Lite（支持组图）',
-    capabilities: ['image.generate'] as const,
-    resolutions: ['2K', '3K', '4K'],
+    capabilities: ['image.generate'],
+    limits: {
+      aspectRatios: SEEDREAM_ASPECTS,
+      resolutions: ['2K', '3K', '4K'],
+      references: { max: 14 },
+    },
+    options: seedreamOptions,
   },
   {
     id: 'doubao-seedance-2-5-260628',
     title: 'Seedance 2.5',
-    capabilities: ['video.generate'] as const,
-    resolutions: ['480p', '720p', '1080p'],
+    capabilities: ['video.generate'],
+    limits: {
+      aspectRatios: SEEDANCE_ASPECTS,
+      resolutions: ['480p', '720p', '1080p'],
+      duration: { min: 4, max: 30 },
+      seed: false,
+    },
+    options: seedanceOptions(true),
   },
   {
     id: 'doubao-seedance-2-0-260128',
     title: 'Seedance 2.0',
-    capabilities: ['video.generate'] as const,
-    resolutions: ['480p', '720p', '1080p', '4k'],
+    capabilities: ['video.generate'],
+    limits: {
+      aspectRatios: SEEDANCE_ASPECTS,
+      resolutions: ['480p', '720p', '1080p', '4k'],
+      duration: { min: 4, max: 15 },
+      seed: false,
+    },
+    options: seedanceOptions(false),
   },
   {
     id: 'doubao-seedance-2-0-fast-260128',
     title: 'Seedance 2.0 Fast',
-    capabilities: ['video.generate'] as const,
-    resolutions: ['480p', '720p'],
+    capabilities: ['video.generate'],
+    limits: {
+      aspectRatios: SEEDANCE_ASPECTS,
+      resolutions: ['480p', '720p'],
+      duration: { min: 4, max: 15 },
+      seed: false,
+    },
+    options: seedanceOptions(false),
   },
   {
     id: 'doubao-seedance-2-0-mini-260615',
     title: 'Seedance 2.0 Mini',
-    capabilities: ['video.generate'] as const,
-    resolutions: ['480p', '720p'],
+    capabilities: ['video.generate'],
+    limits: {
+      aspectRatios: SEEDANCE_ASPECTS,
+      resolutions: ['480p', '720p'],
+      duration: { min: 4, max: 15 },
+      seed: false,
+    },
+    options: seedanceOptions(false),
   },
   {
     id: 'custom-chat',
     title: '自定义对话模型（设置中填写）',
-    capabilities: ['text.chat'] as const,
+    capabilities: ['text.chat'],
   },
   {
     id: 'custom-image',
     title: '自定义图片模型（设置中填写）',
-    capabilities: ['image.generate'] as const,
+    capabilities: ['image.generate'],
   },
   {
     id: 'custom-video',
     title: '自定义视频模型（设置中填写）',
-    capabilities: ['video.generate'] as const,
+    capabilities: ['video.generate'],
   },
 ]
 
@@ -527,9 +609,13 @@ export const arkProvider = defineProvider({
     const data = await request(ctx, `/contents/generations/tasks/${encodeURIComponent(remoteId)}`)
     if (data.status === 'succeeded') {
       const mov = data.output_format === 'mov'
+      const content = object(data.content)
       const outputs = [
-        remoteFile(object(data.content).video_url, 'video', mov ? 'video/quicktime' : 'video/mp4'),
+        remoteFile(content.video_url, 'video', mov ? 'video/quicktime' : 'video/mp4'),
       ]
+      // 开了「返回尾帧」时多一张尾帧图片
+      if (typeof content.last_frame_url === 'string' && content.last_frame_url)
+        outputs.push(remoteFile(content.last_frame_url, 'image', 'image/png'))
       return {
         state: 'succeeded',
         outputs,

@@ -1,6 +1,9 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
+/** 当前打开的弹层，后开的在后面 */
+const stack: Array<React.RefObject<HTMLDivElement | null>> = []
+
 /**
  * 锚定在某个按钮上的弹层：渲染到 body（不被面板的滚动裁掉），
  * 默认优先放在锚点上方，放不下时放下方（placement="below" 反过来）；点外面或按 Esc 关闭。
@@ -38,24 +41,35 @@ export function Popover({
     )
   }, [anchor, width, placement])
 
+  // 回调和锚点放进 ref：监听只在挂载时注册一次，在弹层栈里的位置不会因重渲染而变
+  const latest = useRef({ anchor, onClose })
+  latest.current = { anchor, onClose }
   useEffect(() => {
+    const self = ref
+    stack.push(self)
+    const above = () => stack.slice(stack.indexOf(self) + 1)
     const down = (e: PointerEvent) => {
       const t = e.target as Node
-      if (!ref.current?.contains(t) && !anchor?.contains(t)) onClose()
+      // 弹层里再开的弹层（如参数面板里的下拉框）渲染在 body 上，点它不算点外面
+      if (above().some((r) => r.current?.contains(t))) return
+      if (!self.current?.contains(t) && !latest.current.anchor?.contains(t))
+        latest.current.onClose()
     }
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      // Esc 只关最上面那层
+      if (e.key === 'Escape' && above().length === 0) {
         e.stopPropagation()
-        onClose()
+        latest.current.onClose()
       }
     }
     window.addEventListener('pointerdown', down, true)
     window.addEventListener('keydown', key, true)
     return () => {
+      stack.splice(stack.indexOf(self), 1)
       window.removeEventListener('pointerdown', down, true)
       window.removeEventListener('keydown', key, true)
     }
-  }, [anchor, onClose])
+  }, [])
 
   return createPortal(
     <div

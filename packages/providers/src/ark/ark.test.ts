@@ -1,4 +1,4 @@
-import type { ProviderContext } from '@plein/plugin-sdk'
+import { describeProvider, type ProviderContext } from '@plein/plugin-sdk'
 import { describe, expect, it, vi } from 'vitest'
 import { arkPlugin, arkProvider } from './index'
 
@@ -383,6 +383,42 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
       state: 'failed',
       error: { code: 'cancelled', retryable: false },
     })
+  })
+
+  it('开了返回尾帧时多输出一张尾帧图片', async () => {
+    const { ctx } = harness([
+      {
+        body: {
+          status: 'succeeded',
+          content: {
+            video_url: 'https://result.tos-cn-beijing.volces.com/clip.mp4',
+            last_frame_url: 'https://result.tos-cn-beijing.volces.com/last.png',
+          },
+        },
+      },
+    ])
+    expect(await arkProvider.poll!('id', ctx)).toMatchObject({
+      state: 'succeeded',
+      outputs: [
+        { kind: 'video', mime: 'video/mp4' },
+        { kind: 'image', url: 'https://result.tos-cn-beijing.volces.com/last.png' },
+      ],
+    })
+  })
+
+  it('模型声明的专属参数转成 JSON Schema 下发，约束原样保留', () => {
+    const seedance = describeProvider(arkProvider, 'volc/ark').models.find(
+      (m) => m.id === 'doubao-seedance-2-5-260628',
+    )!
+    expect(seedance.limits).toMatchObject({ duration: { min: 4, max: 30 }, seed: false })
+    expect(Object.keys((seedance.optionsSchema as { properties: object }).properties)).toEqual([
+      'generate_audio',
+      'return_last_frame',
+      'service_tier',
+      'watermark',
+      'draft',
+    ])
+    expect(seedance).not.toHaveProperty('options')
   })
 
   it('取消仅删除 queued 任务，避免 DELETE 成功任务导致产物记录丢失', async () => {

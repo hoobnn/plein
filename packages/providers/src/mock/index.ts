@@ -143,13 +143,26 @@ export const mockProvider = defineProvider({
       id: 'image',
       title: 'Mock 图片',
       capabilities: ['image.generate'],
-      resolutions: ['1K', '2K'],
+      limits: { resolutions: ['1K', '2K'] },
+      options: z.object({
+        watermark: z.boolean().optional().meta({ title: '水印', description: '仅用于测试表单' }),
+      }),
     },
     {
       id: 'video',
       title: 'Mock 视频',
       capabilities: ['video.generate'],
-      resolutions: ['480p', '720p', '1080p'],
+      limits: {
+        resolutions: ['480p', '720p', '1080p'],
+        duration: { min: 2, max: 10 },
+        seed: false,
+      },
+      options: z.object({
+        generate_audio: z
+          .boolean()
+          .optional()
+          .meta({ title: '生成音频', description: '仅用于测试表单' }),
+      }),
     },
     {
       id: 'audio',
