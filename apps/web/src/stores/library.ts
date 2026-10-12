@@ -7,15 +7,27 @@ import type {
 import { create } from 'zustand'
 import { api } from '../api/client'
 
+/** 从画布带进资产库的内容：打开面板时直接进入预填好的新建表单 */
+export interface LibrarySeed {
+  name?: string
+  /** 图片资产 id，按画布上的顺序 */
+  images: string[]
+  /** 视频资产 id（只有特效收参考视频） */
+  videos: string[]
+}
+
 interface LibraryStore {
   items: LibraryItem[]
   loaded: boolean
   /** 资产库面板：打开哪一类；null 为关闭 */
   open: LibraryKind | null
+  /** 打开时要预填的新建内容；面板接手后清掉 */
+  seed: LibrarySeed | null
   /** 当前画布所属项目，「本项目」筛选与新建条目的默认归属 */
   projectId: string | null
   setProject(id: string | null): void
-  show(kind: LibraryKind | null): void
+  show(kind: LibraryKind | null, seed?: LibrarySeed): void
+  takeSeed(): LibrarySeed | null
   load(): Promise<void>
   create(body: CreateLibraryItem): Promise<LibraryItem>
   update(id: string, body: UpdateLibraryItem): Promise<LibraryItem>
@@ -32,13 +44,19 @@ export const useLibrary = create<LibraryStore>((set, get) => ({
   items: [],
   loaded: false,
   open: null,
+  seed: null,
   projectId: null,
   setProject(projectId) {
     set({ projectId })
   },
-  show(open) {
-    set({ open })
+  show(open, seed) {
+    set({ open, seed: open ? (seed ?? null) : null })
     if (open && !get().loaded) void get().load()
+  },
+  takeSeed() {
+    const { seed } = get()
+    if (seed) set({ seed: null })
+    return seed
   },
   async load() {
     try {

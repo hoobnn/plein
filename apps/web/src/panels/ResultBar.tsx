@@ -4,7 +4,7 @@ import { presetsFor } from '@plein/nodes'
 import type { Asset, AssetKind, Catalog, MediaCapsInfo, MediaDeriveRequest } from '@plein/protocol'
 import { useEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../api/client'
-import { downloadAsset, splitGrid } from '../canvas/grid'
+import { downloadAsset, mediaOf, splitGrid } from '../canvas/grid'
 import { useEngineVersion } from '../canvas/hooks'
 import {
   applyDerivation,
@@ -25,6 +25,7 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { Popover } from '../ui/Popover'
+import { LibraryAdd } from './LibraryAdd'
 
 const BAR_H = 40
 const BOTTOM_RESERVED = 64
@@ -34,19 +35,6 @@ const GRIDS = [
   { rows: 3, cols: 3, label: '9 宫格' },
   { rows: 4, cols: 4, label: '16 宫格' },
 ]
-
-/** 元素当前展示的媒体：节点取采用的结果，素材元素取自身资产 */
-export function mediaOf(el: CanvasElement): { assetId: string; kind: 'image' | 'video' } | null {
-  if (el.kind === 'node') {
-    const v = currentResult(el)?.value
-    return v && (v.type === 'image' || v.type === 'video')
-      ? { assetId: v.assetId, kind: v.type }
-      : null
-  }
-  if ((el.kind === 'image' || el.kind === 'video') && el.assetId)
-    return { assetId: el.assetId, kind: el.kind }
-  return null
-}
 
 /** 能接图片输入的某类生成节点（同能力多个时取内置的） */
 function nodeFor(catalog: Catalog | null, capability: string) {
@@ -206,7 +194,10 @@ export function ResultActions({
           <Icon name="chevronDown" size={12} />
         </button>
       )}
-      {image && (imageNode || videoNode || remote) && (
+      {remote && (
+        <LibraryAdd media={[{ elId: el.id, ...media, name: el.name ?? '' }]} variant={variant} />
+      )}
+      {(remote || (image && (imageNode || videoNode))) && (
         <span aria-hidden="true" className="ui-bar-sep" />
       )}
       <button

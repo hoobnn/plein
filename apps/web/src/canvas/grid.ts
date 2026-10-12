@@ -99,6 +99,19 @@ export function assetOf(el: CanvasElement): string | null {
     : null
 }
 
+/** 元素当前展示的媒体：节点取采用的结果，素材元素取自身资产 */
+export function mediaOf(el: CanvasElement): { assetId: string; kind: 'image' | 'video' } | null {
+  if (el.kind === 'node') {
+    const v = currentResult(el)?.value
+    return v && (v.type === 'image' || v.type === 'video')
+      ? { assetId: v.assetId, kind: v.type }
+      : null
+  }
+  if ((el.kind === 'image' || el.kind === 'video') && el.assetId)
+    return { assetId: el.assetId, kind: el.kind }
+  return null
+}
+
 /** 批量下载：逐个触发，间隔一点免得浏览器吞掉；返回下载的个数 */
 export function downloadAll(items: Array<{ assetId: string; name: string }>) {
   items.forEach((it, i) => {

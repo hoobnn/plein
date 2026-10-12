@@ -1,7 +1,9 @@
 import { type Engine, union } from '@plein/canvas-core'
 import { templateData } from '../canvas/groups'
 import { assetOf, downloadAll } from '../canvas/grid'
+import { mediaIn } from '../canvas/library'
 import { useEngineVersion } from '../canvas/hooks'
+import { LibraryAdd } from './LibraryAdd'
 import { type MediaTarget, MediaBatchTools, mediaAsset } from './ResultBar'
 import { useCanvas } from '../stores/canvas'
 import { useTemplates } from '../stores/templates'
@@ -121,6 +123,7 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
           下载{assets.length ? `（${assets.length}）` : ''}
         </button>
       )}
+      {remote && <LibraryAdd media={mediaIn(engine, ids)} variant="bar" />}
       {remote && (
         <button
           type="button"

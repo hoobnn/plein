@@ -18,6 +18,8 @@ import {
 } from '@plein/nodes'
 import type { Asset, Catalog, CreateLibraryItem, LibraryItem } from '@plein/protocol'
 import { api } from '../api/client'
+import type { LibrarySeed } from '../stores/library'
+import { mediaOf } from './grid'
 import { elementFor } from './import'
 import { findNode, mentionTargets, nodeElement } from './nodes'
 import { outputPort } from './presets'
@@ -255,5 +257,44 @@ export function placeInputOf(item: LibraryItem): PlaceInput | null {
     images: item.images,
     video: item.video,
     libraryId: item.id,
+  }
+}
+
+/** 画布上的一份图片 / 视频：素材元素，或生成节点当前采用的结果 */
+export interface CanvasMedia {
+  elId: string
+  assetId: string
+  kind: 'image' | 'video'
+  name: string
+}
+
+/** 这些元素（含 Frame 里的）展示的图片和视频，按资产去重 */
+export function mediaIn(engine: Engine, ids: readonly string[]): CanvasMedia[] {
+  const seen = new Set<string>()
+  const out: CanvasMedia[] = []
+  for (const id of ids)
+    for (const el of [engine.doc.get(id), ...engine.doc.descendants(id)]) {
+      const m = el && mediaOf(el)
+      if (!el || !m || seen.has(m.assetId)) continue
+      seen.add(m.assetId)
+      out.push({ elId: el.id, ...m, name: el.name ?? '' })
+    }
+  return out
+}
+
+/** 整张画布上的图片 / 视频，给资产库「从画布选」用 */
+export function canvasMedia(engine: Engine): CanvasMedia[] {
+  return mediaIn(
+    engine,
+    [...engine.doc.elements()].map((el) => el.id),
+  )
+}
+
+/** 选中内容 → 资产库新建表单的预填；只有一个素材时用它的名字 */
+export function seedOf(media: readonly CanvasMedia[]): LibrarySeed {
+  return {
+    name: media.length === 1 ? media[0]!.name : undefined,
+    images: media.filter((m) => m.kind === 'image').map((m) => m.assetId),
+    videos: media.filter((m) => m.kind === 'video').map((m) => m.assetId),
   }
 }

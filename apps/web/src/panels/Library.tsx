@@ -5,32 +5,33 @@ import {
   OFFICIAL_LIBRARY,
   type OfficialLibraryItem,
   orderedImages,
+  slotImages,
 } from '@plein/nodes'
 import type { LibraryImage, LibraryItem, LibraryKind } from '@plein/protocol'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, assetUrls } from '../api/client'
-import { placeInputOf, placeLibraryItem, type PlaceInput } from '../canvas/library'
+import {
+  type CanvasMedia,
+  canvasMedia,
+  placeInputOf,
+  placeLibraryItem,
+  type PlaceInput,
+} from '../canvas/library'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
-import { useLibrary } from '../stores/library'
+import { type LibrarySeed, useLibrary } from '../stores/library'
 import { confirmDialog } from '../ui/Dialog'
-import { Icon, type IconName } from '../ui/icons'
+import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
+import { Popover } from '../ui/Popover'
 import { Select } from '../ui/Select'
+import { KIND_ICONS } from './LibraryAdd'
 
 /**
  * 资产库面板：
  * 按类别浏览、筛选、收藏，编辑设定与图片槽位，一键放到当前画布上。
  * 没有打开画布时（首页）只能管理，不能放到画布上。
  */
-
-const KIND_ICONS: Record<LibraryKind, IconName> = {
-  character: 'character',
-  scene: 'scene',
-  prop: 'puzzle',
-  style: 'palette',
-  effect: 'wand',
-}
 
 type Scope = 'project' | 'mine' | 'official' | 'favorite' | 'recent'
 
@@ -57,7 +58,7 @@ const hasOfficial = (kind: LibraryKind) => OFFICIAL_LIBRARY.some((o) => o.kind =
 type Editing =
   | { type: 'item'; id: string }
   | { type: 'official'; item: OfficialLibraryItem }
-  | { type: 'new' }
+  | { type: 'new'; seed?: LibrarySeed }
 
 export function LibraryPanel() {
   const open = useLibrary((s) => s.open)
@@ -78,18 +79,28 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
   const [tags, setTags] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<Editing | null>(null)
   const close = () => show(null)
+  const seed = useLibrary((s) => s.seed)
 
-  // 换类别时重置筛选
+  // 换类别时重置筛选；从画布带来的新建内容跟着换到新类别，方便选错了类别再改
   useEffect(() => {
     setScope(hasOfficial(kindId) ? 'official' : projectId ? 'project' : 'mine')
     setTags({})
     setQuery('')
-    setEditing(null)
+    setEditing((e) => (e?.type === 'new' && e.seed ? e : null))
   }, [kindId, projectId])
+
+  // 画布上「存入资产库」：直接进预填好的新建表单
+  useEffect(() => {
+    if (!seed) return
+    const taken = useLibrary.getState().takeSeed()
+    if (taken) setEditing({ type: 'new', seed: taken })
+  }, [seed])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || document.querySelector('[role=alertdialog]')) return
+      // 确认框、弹层（下拉框、从画布选）开着时 Esc 归它们
+      if (e.key !== 'Escape' || document.querySelector('[role=alertdialog], .ui-menu[role=dialog]'))
+        return
       e.stopPropagation()
       if (editing) setEditing(null)
       else close()
@@ -124,6 +135,8 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
   }
 
   const editingItem = editing?.type === 'item' ? items.find((i) => i.id === editing.id) : undefined
+  // 「从画布选」的候选：打开着画布时取画布上的图片和视频
+  const media = useMemo(() => (canPlace && engine ? canvasMedia(engine) : []), [canPlace, engine])
 
   return (
     <Modal label="资产库" onClose={close} isolateKeys top className="h-[min(820px,100%)] max-w-6xl">
@@ -146,13 +159,38 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
             ))}
           </fieldset>
         }
-      />
+      >
+        {!editing && (
+          <>
+            <label className="home-search w-48">
+              <Icon name="search" />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={`搜索${kind.title}`}
+                aria-label={`搜索${kind.title}`}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => setEditing({ type: 'new' })}
+              className="ui-btn ui-btn-primary"
+            >
+              <Icon name="plus" />
+              新建{kind.title}
+            </button>
+          </>
+        )}
+      </ModalHeader>
       {editing ? (
         <Editor
-          key={editing.type === 'item' ? editing.id : editing.type}
+          key={`${kindId}:${editing.type === 'item' ? editing.id : editing.type}`}
           kind={kind}
           item={editingItem}
           official={editing.type === 'official' ? editing.item : undefined}
+          seed={editing.type === 'new' ? editing.seed : undefined}
+          media={media}
           projectId={projectId}
           canPlace={canPlace}
           onBack={() => setEditing(null)}
@@ -187,26 +225,6 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
                 className="w-28"
               />
             ))}
-            <div className="ml-auto flex items-center gap-2">
-              <label className="home-search">
-                <Icon name="search" />
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={`搜索${kind.title}`}
-                  aria-label={`搜索${kind.title}`}
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() => setEditing({ type: 'new' })}
-                className="ui-btn ui-btn-primary"
-              >
-                <Icon name="plus" />
-                新建{kind.title}
-              </button>
-            </div>
           </div>
           <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto p-5">
             {scope === 'official' && (
@@ -274,7 +292,8 @@ function Empty({
     <div className="flex flex-col items-center gap-3 py-20 text-center">
       <p className="text-sm text-ink-muted">{text}</p>
       <p className="max-w-md text-xs text-ink-subtle">
-        {kind.description}。也可以在画布上选中{kind.title}卡片，点「存入资产库」。
+        {kind.description}。也可以在画布上选中图片{kind.video ? '或视频' : ''}
+        ，点工具条上的「存入资产库」。
       </p>
       <button type="button" onClick={onCreate} className="ui-btn ui-btn-secondary">
         <Icon name="plus" />
@@ -421,14 +440,15 @@ function draftOf(
   item: LibraryItem | undefined,
   official: OfficialLibraryItem | undefined,
   projectId: string | null,
+  seed?: LibrarySeed,
 ): Draft {
   return {
-    name: item?.name ?? official?.name ?? '',
+    name: item?.name ?? official?.name ?? seed?.name?.replace(/\.[a-z0-9]{2,5}$/i, '') ?? '',
     description: item?.description ?? official?.description ?? '',
     tags: { ...(item?.tags ?? official?.tags ?? {}) },
     voice: item?.voice ?? { provider: '', voiceId: '' },
-    images: item?.images ?? [],
-    video: item?.video ?? null,
+    images: item?.images ?? (seed ? slotImages(kind, seed.images) : []),
+    video: item?.video ?? (kind.video ? (seed?.videos[0] ?? null) : null),
     models: (item?.models ?? official?.models ?? []).join('，'),
     // 新建的角色 / 场景 / 道具默认归到当前项目；风格、特效默认全局
     inProject: item ? item.projectId !== null : !!projectId && !kind.video && kind.id !== 'style',
@@ -440,6 +460,8 @@ function Editor({
   kind,
   item,
   official,
+  seed,
+  media,
   projectId,
   canPlace,
   onBack,
@@ -449,6 +471,8 @@ function Editor({
   kind: LibraryKindSpec
   item?: LibraryItem
   official?: OfficialLibraryItem
+  seed?: LibrarySeed
+  media: CanvasMedia[]
   projectId: string | null
   canPlace: boolean
   onBack(): void
@@ -457,7 +481,7 @@ function Editor({
 }) {
   const lib = useLibrary()
   const readOnly = !!official
-  const [draft, setDraft] = useState(() => draftOf(kind, item, official, projectId))
+  const [draft, setDraft] = useState(() => draftOf(kind, item, official, projectId, seed))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const initial = useMemo(
@@ -510,6 +534,9 @@ function Editor({
     if (input) await onPlace(input)
   }
 
+  // 从画布存进来的内容本来就在画布上，新建时不再提供放回画布
+  const placeable = canPlace && !(seed && !item)
+
   const remove = async () => {
     if (!item) return
     const ok = await confirmDialog({
@@ -539,6 +566,8 @@ function Editor({
                   key={slot.id}
                   slot={slot}
                   images={draft.images.filter((i) => i.slot === slot.id)}
+                  used={draft.images.map((i) => i.assetId)}
+                  media={media}
                   onAdd={(ids) =>
                     patch({
                       images: [
@@ -561,7 +590,7 @@ function Editor({
             </div>
           )}
           {kind.video && !readOnly && (
-            <VideoField value={draft.video} onChange={(video) => patch({ video })} />
+            <VideoField value={draft.video} media={media} onChange={(video) => patch({ video })} />
           )}
         </section>
         <section aria-label="设定" className="flex flex-col gap-4">
@@ -698,12 +727,12 @@ function Editor({
               type="button"
               disabled={busy || (!!item && !dirty)}
               onClick={() => void save()}
-              className="ui-btn ui-btn-secondary"
+              className={`ui-btn ${placeable ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
             >
               {item ? (dirty ? '保存' : '已保存') : '保存'}
             </button>
           )}
-          {canPlace && (
+          {placeable && (
             <button
               type="button"
               disabled={busy}
@@ -730,14 +759,103 @@ async function uploadAll(files: File[], want: 'image' | 'video') {
   return out
 }
 
+/** 「从画布选」：列出当前画布上的图片 / 视频，单张槽位点一下就选中，多张槽位可以连续点 */
+function CanvasPick({
+  media,
+  type,
+  multiple,
+  taken,
+  onPick,
+}: {
+  media: CanvasMedia[]
+  type: 'image' | 'video'
+  multiple: boolean
+  /** 已经用在条目里的资产，列表里标出来、不能重复选 */
+  taken: string[]
+  onPick(assetId: string): void
+}) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const list = media.filter((m) => m.kind === type)
+  if (!media.length) return null
+  return (
+    <>
+      <button
+        type="button"
+        aria-expanded={!!anchor}
+        disabled={!list.length}
+        title={list.length ? undefined : `画布上没有${type === 'image' ? '图片' : '视频'}`}
+        onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
+        className="flex size-24 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line text-xs text-ink-subtle enabled:hover:text-ink disabled:opacity-50"
+      >
+        <Icon name="board" size={16} />
+        从画布选
+      </button>
+      {anchor && (
+        <Popover
+          anchor={anchor}
+          onClose={() => setAnchor(null)}
+          label="从画布选"
+          width={344}
+          placement="below"
+        >
+          <div className="ui-menu-label">
+            画布上的{type === 'image' ? '图片' : '视频'}（{list.length}）
+          </div>
+          <div className="ui-scrollbar grid max-h-80 grid-cols-4 gap-2 overflow-y-auto p-2">
+            {list.map((m) => {
+              const on = taken.includes(m.assetId)
+              return (
+                <button
+                  key={m.assetId}
+                  type="button"
+                  title={m.name || undefined}
+                  aria-pressed={on}
+                  disabled={on}
+                  onClick={() => {
+                    onPick(m.assetId)
+                    if (!multiple) setAnchor(null)
+                  }}
+                  className={`relative aspect-square overflow-hidden rounded-md bg-surface-2 ${
+                    on ? 'opacity-40' : 'hover:ring-2 hover:ring-accent'
+                  }`}
+                >
+                  <img
+                    src={
+                      type === 'image' ? thumb(m.assetId) : assetUrls.variant(m.assetId, 'poster')
+                    }
+                    alt=""
+                    loading="lazy"
+                    draggable={false}
+                    className="size-full object-cover"
+                  />
+                  {on && (
+                    <span className="absolute inset-0 flex items-center justify-center text-ink">
+                      <Icon name="check" size={16} />
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </Popover>
+      )}
+    </>
+  )
+}
+
 function SlotField({
   slot,
   images,
+  used,
+  media,
   onAdd,
   onRemove,
 }: {
   slot: LibraryKindSpec['slots'][number]
   images: LibraryImage[]
+  /** 整个条目已经用到的图片，「从画布选」里标出来 */
+  used: string[]
+  media: CanvasMedia[]
   onAdd(ids: string[]): void
   onRemove(assetId: string): void
 }) {
@@ -803,6 +921,15 @@ function SlotField({
             {busy ? '上传中' : '上传'}
           </button>
         )}
+        {canAdd && (
+          <CanvasPick
+            media={media}
+            type="image"
+            multiple={!!slot.multiple}
+            taken={used}
+            onPick={(id) => onAdd([id])}
+          />
+        )}
       </div>
       {error && <span className="text-xs text-danger">{error}</span>}
       <input
@@ -823,9 +950,11 @@ function SlotField({
 
 function VideoField({
   value,
+  media,
   onChange,
 }: {
   value: string | null
+  media: CanvasMedia[]
   onChange(v: string | null): void
 }) {
   const ref = useRef<HTMLInputElement>(null)
@@ -854,15 +983,18 @@ function VideoField({
           </button>
         </div>
       ) : (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => ref.current?.click()}
-          className="ui-btn ui-btn-secondary self-start"
-        >
-          <Icon name="upload" />
-          {busy ? '上传中…' : '上传视频'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => ref.current?.click()}
+            className="flex size-24 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line text-xs text-ink-subtle hover:text-ink"
+          >
+            <Icon name="upload" size={16} />
+            {busy ? '上传中' : '上传视频'}
+          </button>
+          <CanvasPick media={media} type="video" multiple={false} taken={[]} onPick={onChange} />
+        </div>
       )}
       {error && <span className="text-xs text-danger">{error}</span>}
       <input
