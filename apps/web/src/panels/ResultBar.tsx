@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, currentResult, setResultRating } from '@plein/doc'
+import { type CanvasElement, currentResult } from '@plein/doc'
 import { presetsFor } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
@@ -10,13 +10,10 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { Popover } from '../ui/Popover'
-import { Stars } from '../ui/Stars'
 import { useEngineVersion } from './Generator'
 
-/** 节点标题行的高度：工具条放在它上方 */
-const TITLE_H = 30
 const BAR_H = 40
-const TOP_RESERVED = 64
+const BOTTOM_RESERVED = 64
 
 const GRIDS = [
   { rows: 2, cols: 2, label: '4 宫格（2×2）' },
@@ -25,7 +22,7 @@ const GRIDS = [
 ]
 
 /** 元素当前展示的媒体：节点取采用的结果，素材元素取自身资产 */
-function mediaOf(el: CanvasElement): { assetId: string; kind: 'image' | 'video' } | null {
+export function mediaOf(el: CanvasElement): { assetId: string; kind: 'image' | 'video' } | null {
   if (el.kind === 'node') {
     const v = currentResult(el)?.value
     return v && (v.type === 'image' || v.type === 'video')
@@ -46,9 +43,8 @@ function nodeFor(catalog: Catalog | null, capability: string) {
 }
 
 /**
- * 选中一张有结果的图片 / 视频时浮在它上方的工具条：
- * 预设 = 在右侧派生一个连好、填好提示词的新节点，确认后再生成；
- * 宫格切分在本地完成；节点结果可打星；下载、全屏查看。
+ * 选中画布上的图片 / 视频素材时浮在它下方的工具条。
+ * 生成节点不用它：同样的操作放在节点下方生成器的第一行（见 ResultActions）。
  */
 export function ResultBar() {
   const engine = useCanvas((s) => s.engine)
@@ -62,44 +58,54 @@ function ResultBarHost({ engine }: { engine: Engine }) {
   const canvasId = useCanvas((s) => s.canvasId)
   const ids = engine.selection.values()
   const el = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
-  const media = el ? mediaOf(el) : null
+  // 生成节点的结果操作在生成器里；锁定的节点没有生成器，仍用浮动工具条
+  const media = el && (el.kind !== 'node' || el.locked) ? mediaOf(el) : null
   const rect = el && engine.scene.rect(el.id)
   if (!el || !media || !rect || engine.doc.readOnly) return null
-  const running = el.run?.status === 'running' || el.run?.status === 'queued'
-  if (running) return null
 
-  const tl = engine.worldToClient(rect.x, rect.y)
-  const tr = engine.worldToClient(rect.x + rect.w, rect.y)
-  const offset = el.kind === 'node' ? TITLE_H : 8
-  const top = Math.max(TOP_RESERVED, tl.y - offset - BAR_H - 8)
-  const center = (tl.x + tr.x) / 2
+  const bl = engine.worldToClient(rect.x, rect.y + rect.h)
+  const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
+  const top = Math.min(bl.y + 12, window.innerHeight - BOTTOM_RESERVED - BAR_H)
+  const center = (bl.x + br.x) / 2
   return (
-    <Bar
+    <div
       key={el.id}
-      engine={engine}
-      el={el}
-      media={media}
-      catalog={catalog}
-      remote={!!canvasId}
+      role="toolbar"
+      aria-label="结果操作"
       style={{ top, left: center }}
-    />
+      className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 w-max -translate-x-1/2"
+    >
+      <ResultActions
+        engine={engine}
+        el={el}
+        media={media}
+        catalog={catalog}
+        remote={!!canvasId}
+        variant="bar"
+      />
+    </div>
   )
 }
 
-function Bar({
+/**
+ * 对结果的操作：预设 = 在右侧派生一个连好、填好提示词的新节点，确认后再生成；
+ * 生成视频；宫格切分在本地完成；下载、全屏查看。
+ * bar 用在素材的浮动工具条里，inline 用在生成器第一行。
+ */
+export function ResultActions({
   engine,
   el,
   media,
   catalog,
   remote,
-  style,
+  variant,
 }: {
   engine: Engine
   el: CanvasElement
   media: { assetId: string; kind: 'image' | 'video' }
   catalog: Catalog | null
   remote: boolean
-  style: React.CSSProperties
+  variant: 'bar' | 'inline'
 }) {
   const [open, setOpen] = useState<{ kind: 'presets' | 'grid'; anchor: HTMLElement } | null>(null)
   const { notify, setImporting, view } = useCanvas.getState()
@@ -111,7 +117,6 @@ function Bar({
       )
     : []
   const name = el.name ?? (media.kind === 'image' ? '图片' : '视频')
-  const result = el.kind === 'node' ? currentResult(el) : undefined
   const toggle = (kind: 'presets' | 'grid') => (e: React.MouseEvent<HTMLButtonElement>) =>
     setOpen(open?.kind === kind ? null : { kind, anchor: e.currentTarget })
 
@@ -129,16 +134,21 @@ function Bar({
     }
   }
 
-  const btn = 'ui-bar-btn'
-  const icon = 'ui-bar-btn'
+  const inline = variant === 'inline'
+  const btn = inline
+    ? 'flex h-8 flex-none items-center gap-1 rounded-full px-2.5 text-sm text-ink-muted transition-colors duration-[var(--dur-fast)] hover:bg-hover hover:text-ink aria-expanded:bg-active aria-expanded:text-ink'
+    : 'ui-bar-btn'
+  const icon = inline
+    ? 'flex size-8 flex-none items-center justify-center rounded-full text-ink-muted transition-colors duration-[var(--dur-fast)] hover:bg-hover hover:text-ink'
+    : 'ui-bar-btn'
+  const sep = inline ? (
+    <span aria-hidden="true" className="mx-1 h-4 w-px flex-none bg-line-strong" />
+  ) : (
+    <div className="ui-bar-sep" />
+  )
   const image = media.kind === 'image'
   return (
-    <div
-      role="toolbar"
-      aria-label="结果操作"
-      style={style}
-      className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 w-max -translate-x-1/2"
-    >
+    <>
       {image && imageNode && presets.length > 0 && (
         <button
           type="button"
@@ -178,18 +188,7 @@ function Bar({
           <Icon name="chevronDown" size={12} />
         </button>
       )}
-      {image && <div className="ui-bar-sep" />}
-      {result && (
-        <>
-          <span className="px-1">
-            <Stars
-              value={result.rating}
-              onChange={(n) => setResultRating(engine.doc, el.id, result.id, n)}
-            />
-          </span>
-          <div className="ui-bar-sep" />
-        </>
-      )}
+      {image && (imageNode || videoNode || remote) && sep}
       <button
         type="button"
         className={icon}
@@ -242,7 +241,7 @@ function Bar({
           ))}
         </Popover>
       )}
-    </div>
+    </>
   )
 }
 

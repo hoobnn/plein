@@ -27,6 +27,7 @@ import { adaptToModel, constrainFields, selectedModel } from '../canvas/modelPar
 import {
   applyAspect,
   aspectKey,
+  aspectLabel,
   type FieldSchema,
   fieldsOf,
   findNode,
@@ -46,6 +47,7 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { Popover } from '../ui/Popover'
+import { mediaOf, ResultActions } from './ResultBar'
 import { type ObjectSchema, SchemaForm } from './SchemaForm'
 
 const PANEL_W = 540
@@ -132,6 +134,7 @@ function Panel({
   style: React.CSSProperties
 }) {
   const [more, setMore] = useState(false)
+  const canvasId = useCanvas((s) => s.canvasId)
   const promptRef = useRef<HTMLTextAreaElement>(null)
   const params = { ...node.defaults, ...el.params }
   const ak = aspectKey(node)
@@ -193,6 +196,19 @@ function Panel({
     return () => window.removeEventListener('plein:focus-generator', focus)
   }, [el.id])
 
+  // 已有结果时，预设、生成视频、宫格切分、下载、全屏放在第一行右侧
+  const media = running ? null : mediaOf(el)
+  const actions = media && (
+    <ResultActions
+      engine={engine}
+      el={el}
+      media={media}
+      catalog={catalog}
+      remote={!!canvasId}
+      variant="inline"
+    />
+  )
+
   const run = () => {
     if (running) void cancelNode(el.id)
     else if (!problem) void runNode(el.id)
@@ -203,7 +219,7 @@ function Panel({
       aria-label={`${node.title} 生成器`}
       data-testid="generator"
       style={{ ...style, width: PANEL_W }}
-      className="ui-float ui-scrollbar pointer-events-auto fixed z-20 flex flex-col overflow-y-auto rounded-xl"
+      className="ui-float ui-scrollbar pointer-events-auto fixed z-20 flex flex-col overflow-y-auto rounded-2xl"
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
           e.preventDefault()
@@ -218,7 +234,9 @@ function Panel({
           hint={`在提示词里输入 @${el.name ?? node.title} 引用`}
         />
       )}
-      {node.inputs.length > 0 && <Inputs engine={engine} el={el} node={node} ups={ups} />}
+      {(node.inputs.length > 0 || actions) && (
+        <Inputs engine={engine} el={el} node={node} ups={ups} trailing={actions} />
+      )}
       {node.type === STORYBOARD_TYPE && (
         <div className="px-4 pt-4">
           <button
@@ -319,6 +337,10 @@ function Panel({
                 }}
               />
             )}
+            {modelField &&
+              (paramFields.length > 0 || Object.keys(rest).length > 0 || !!modelOptions) && (
+                <span aria-hidden="true" className="mx-1 h-4 w-px flex-none bg-line-strong" />
+              )}
             {(paramFields.length > 0 || Object.keys(rest).length > 0 || modelOptions) && (
               <ParamsPill
                 fields={paramFields}
@@ -326,6 +348,13 @@ function Panel({
                 params={params}
                 aspect={ak}
                 options={modelOptions}
+                // 模型只能出 1 张时张数不可选，摘要里照样写出来
+                fixed={
+                  fieldsOf(node).some(([k]) => k === 'count') &&
+                  !paramFields.some(([k]) => k === 'count')
+                    ? ['1 张']
+                    : []
+                }
                 onChange={set}
               />
             )}
@@ -348,13 +377,13 @@ function Panel({
                 problem ?? (running ? '取消' : `${el.results?.length ? '重新生成' : '生成'}（⌘↵）`)
               }
               aria-label={running ? '取消' : el.results?.length ? '重新生成' : '生成'}
-              className={`ml-1 flex size-9 flex-none items-center justify-center rounded-full transition-colors duration-[var(--dur-fast)] disabled:opacity-35 ${
+              className={`ml-2 flex size-10 flex-none items-center justify-center rounded-xl transition-colors duration-[var(--dur-fast)] disabled:opacity-35 ${
                 running
                   ? 'bg-surface-3 text-ink hover:bg-active'
                   : 'bg-primary text-on-primary hover:bg-primary-hover disabled:hover:bg-primary'
               }`}
             >
-              <Icon name={running ? 'stop' : 'arrowUp'} size={running ? 14 : 18} />
+              <Icon name={running ? 'stop' : 'arrowUp'} size={running ? 14 : 20} />
             </button>
           </div>
         </footer>
@@ -404,7 +433,7 @@ function isMainField(key: string, f: FieldSchema) {
 }
 
 const pill =
-  'flex h-8 min-w-0 items-center gap-1.5 rounded-md px-2.5 text-xs text-ink-muted transition-colors duration-[var(--dur-fast)] hover:bg-hover hover:text-ink aria-expanded:bg-active aria-expanded:text-ink'
+  'flex h-9 min-w-0 items-center gap-1.5 rounded-lg px-2.5 text-sm text-ink transition-colors duration-[var(--dur-fast)] hover:bg-hover hover:text-ink aria-expanded:bg-active aria-expanded:text-ink'
 
 /** 模型选择：按平台分组，每项带一句说明；“自动”交给服务端按能力挑 */
 function ModelPicker({
@@ -433,23 +462,25 @@ function ModelPicker({
     onChange(v)
     setAnchor(null)
   }
-  const Row = ({ v, title, desc }: { v: string; title: string; desc?: string }) => (
+  // 左栏选平台、右栏列该平台的模型；打开时停在当前模型所在的平台
+  const owner = value ? value.slice(0, value.indexOf(':')) : ''
+  const [tab, setTab] = useState(owner)
+  const shown = providers.find((p) => p.id === tab)
+  const railItem = (id: string, title: string, sub: string) => (
     <button
+      key={id}
       type="button"
-      role="option"
-      aria-selected={v === value}
-      onClick={() => pick(v)}
-      className="ui-menu-item !items-start"
+      role="tab"
+      aria-selected={tab === id}
+      onClick={() => setTab(id)}
+      onPointerEnter={() => setTab(id)}
+      className="flex w-full flex-col items-start gap-0.5 rounded-lg px-2.5 py-2 text-left transition-colors duration-[var(--dur-fast)] hover:bg-hover aria-selected:bg-hover"
     >
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
-        <span className="truncate text-sm">{title}</span>
-        {desc && <span className="line-clamp-2 text-xs text-ink-subtle">{desc}</span>}
+      <span className="w-full truncate text-sm text-ink">{title}</span>
+      {/* 当前模型所在的平台写明「使用中」，不另加标记 */}
+      <span className="w-full truncate text-xs text-ink-subtle">
+        {owner === id ? `使用中 · ${sub}` : sub}
       </span>
-      {v === value && (
-        <span className="mt-0.5 text-accent">
-          <Icon name="check" size={14} />
-        </span>
-      )}
     </button>
   )
   return (
@@ -459,31 +490,92 @@ function ModelPicker({
         aria-label="模型"
         aria-expanded={!!anchor}
         title={current?.title ?? '自动选择模型'}
-        onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
-        className={`${pill} max-w-44 font-medium text-ink`}
+        onClick={(e) => {
+          setTab(owner)
+          setAnchor(anchor ? null : e.currentTarget)
+        }}
+        className={`${pill} max-w-48`}
       >
-        <Icon name="sparkle" size={13} />
+        <Icon name="sparkle" size={16} />
         <span className="truncate">{current?.title ?? '自动'}</span>
-        <Icon name="chevronDown" size={12} />
+        <span className="text-ink-subtle">
+          <Icon name="chevronDown" size={14} />
+        </span>
       </button>
       {anchor && (
-        <Popover anchor={anchor} onClose={() => setAnchor(null)} label="选择模型" width={300}>
-          <div role="listbox" aria-label="模型">
-            <Row v="" title="自动选择" desc="按节点能力使用第一个可用的模型" />
-            {providers.map((p) => (
-              <div key={p.id}>
-                <div className="ui-menu-label">{p.title}</div>
-                {p.models.map((m) => (
-                  <Row key={m.id} v={`${p.id}:${m.id}`} title={m.title} desc={m.description} />
-                ))}
+        <Popover anchor={anchor} onClose={() => setAnchor(null)} label="选择模型" width={460}>
+          {providers.length === 0 ? (
+            <p className="px-3 py-3 text-xs text-ink-subtle">
+              还没有可用的模型：在设置的「模型平台」里填写密钥并启用。
+            </p>
+          ) : (
+            <div className="flex max-h-80 min-h-40">
+              <div
+                role="tablist"
+                aria-label="平台"
+                aria-orientation="vertical"
+                className="ui-scrollbar flex w-40 flex-none flex-col gap-0.5 overflow-y-auto border-r border-line p-1.5"
+              >
+                {railItem('', '自动', '按能力挑选')}
+                {providers.map((p) => railItem(p.id, p.title, `${p.models.length} 个模型`))}
               </div>
-            ))}
-            {providers.length === 0 && (
-              <p className="px-2 py-2 text-xs text-ink-subtle">
-                还没有可用的模型：在设置的「模型平台」里填写密钥并启用。
-              </p>
-            )}
-          </div>
+              <div
+                role="listbox"
+                aria-label={shown ? `${shown.title} 的模型` : '自动选择'}
+                className="ui-scrollbar flex min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto p-1.5"
+              >
+                {shown ? (
+                  shown.models.map((m) => {
+                    const v = `${shown.id}:${m.id}`
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        role="option"
+                        aria-selected={v === value}
+                        onClick={() => pick(v)}
+                        className="flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors duration-[var(--dur-fast)] hover:bg-hover aria-selected:bg-active"
+                      >
+                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="truncate text-sm text-ink">{m.title}</span>
+                          {m.description && (
+                            <span className="line-clamp-2 text-xs text-ink-subtle">
+                              {m.description}
+                            </span>
+                          )}
+                        </span>
+                        {v === value && (
+                          <span className="mt-0.5 text-ink">
+                            <Icon name="check" size={14} />
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })
+                ) : (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={value === ''}
+                    onClick={() => pick('')}
+                    className="flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors duration-[var(--dur-fast)] hover:bg-hover aria-selected:bg-active"
+                  >
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="text-sm text-ink">自动选择</span>
+                      <span className="text-xs text-ink-subtle">
+                        按节点能力使用第一个可用平台里的第一个模型
+                      </span>
+                    </span>
+                    {value === '' && (
+                      <span className="mt-0.5 text-ink">
+                        <Icon name="check" size={14} />
+                      </span>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
         </Popover>
       )}
     </>
@@ -491,7 +583,7 @@ function ModelPicker({
 }
 
 const tool =
-  'flex size-8 flex-none items-center justify-center rounded-md text-ink-muted transition-colors duration-[var(--dur-fast)] hover:bg-hover hover:text-ink aria-disabled:opacity-35 aria-disabled:hover:bg-transparent aria-disabled:hover:text-ink-muted'
+  'flex size-9 flex-none items-center justify-center rounded-md text-ink-muted transition-colors duration-[var(--dur-fast)] hover:bg-hover hover:text-ink aria-disabled:opacity-35 aria-disabled:hover:bg-transparent aria-disabled:hover:text-ink-muted'
 
 /**
  * 发送按钮左侧的“优化提示词”“翻译提示词”：用已启用的对话模型改写，
@@ -572,7 +664,7 @@ function PromptTools({
         {busy === mode ? (
           <span className="plein-spinner !size-3.5" />
         ) : (
-          <Icon name={icon} size={16} />
+          <Icon name={icon} size={18} />
         )}
       </button>
     )
@@ -588,10 +680,11 @@ function PromptTools({
 
 /** 参数值的简写：画幅原样、张数“1 张”、时长“5s” */
 function shortValue(key: string, f: FieldSchema, v: unknown) {
+  if (f.widget === 'resolution') return v ? String(v) : '默认画质'
   if (v === undefined || v === '') return null
   if (key === 'count') return `${v} 张`
   if (key === 'duration') return `${v}s`
-  if (f.enum) return String(v)
+  if (f.enum) return aspectLabel(v)
   return `${f.title ?? key} ${v}`
 }
 
@@ -602,13 +695,16 @@ function ParamsPill({
   params,
   aspect,
   options,
+  fixed = [],
   onChange,
 }: {
   fields: Array<[string, FieldSchema]>
   rest: Record<string, FieldSchema>
   params: Record<string, unknown>
   aspect?: string
-  /** 所选模型的专属参数 */
+  /** 不可调、但摘要里要写出来的值 */
+  fixed?: string[]
+  /** 所选模型自带的参数，和通用参数一起放进「更多参数」 */
   options?: {
     title: string
     schema: ObjectSchema
@@ -619,12 +715,10 @@ function ParamsPill({
 }) {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
   const [more, setMore] = useState(false)
-  const [special, setSpecial] = useState(false)
-  const customized = options ? Object.keys(options.value).length : 0
-  const summary = fields
-    .map(([k, f]) => shortValue(k, f, params[k]))
+  const summary = [...fields.map(([k, f]) => shortValue(k, f, params[k])), ...fixed]
     .filter(Boolean)
     .join(' · ')
+  const hasMore = Object.keys(rest).length > 0 || !!options
   const ratio = aspect ? parseAspect(params[aspect]) : null
   return (
     <>
@@ -635,18 +729,20 @@ function ParamsPill({
         onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
         className={pill}
       >
-        {ratio ? <AspectGlyph ratio={ratio} size={14} /> : <Icon name="sliders" size={13} />}
-        <span className="truncate tabular-nums">{summary || '参数'}</span>
-        {customized > 0 && (
-          <span
-            className="size-1.5 flex-none rounded-full bg-accent"
-            title={`改了 ${customized} 项模型专属参数`}
-          />
+        {ratio ? (
+          <AspectGlyph ratio={ratio} size={16} />
+        ) : aspect && params[aspect] === 'auto' ? (
+          <AutoAspectGlyph size={16} />
+        ) : (
+          <Icon name="sliders" size={15} />
         )}
-        <Icon name="chevronDown" size={12} />
+        <span className="truncate tabular-nums">{summary || '参数'}</span>
+        <span className="text-ink-subtle">
+          <Icon name="chevronDown" size={14} />
+        </span>
       </button>
       {anchor && (
-        <Popover anchor={anchor} onClose={() => setAnchor(null)} label="参数" width={360}>
+        <Popover anchor={anchor} onClose={() => setAnchor(null)} label="参数" width={392}>
           <div className="flex flex-col gap-4 p-3">
             {fields.map(([k, f]) => (
               <ParamControl
@@ -658,35 +754,7 @@ function ParamsPill({
                 onChange={(v) => onChange(k, v)}
               />
             ))}
-            {options && (
-              <div className="border-t border-line pt-2">
-                <button
-                  type="button"
-                  onClick={() => setSpecial(!special)}
-                  aria-expanded={special}
-                  className="flex w-full items-center justify-between text-xs text-ink-muted hover:text-ink"
-                >
-                  <span>
-                    {options.title} 专属
-                    {customized > 0 && (
-                      <span className="ml-1.5 text-ink-subtle">已改 {customized} 项</span>
-                    )}
-                  </span>
-                  <Icon name="chevronDown" size={12} />
-                </button>
-                {special && (
-                  <div className="pt-2">
-                    <SchemaForm
-                      dense
-                      schema={options.schema}
-                      value={options.value}
-                      onChange={options.onChange}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-            {Object.keys(rest).length > 0 && (
+            {hasMore && (
               <div className="border-t border-line pt-2">
                 <button
                   type="button"
@@ -698,16 +766,26 @@ function ParamsPill({
                   <Icon name="chevronDown" size={12} />
                 </button>
                 {more && (
-                  <div className="pt-2">
-                    <SchemaForm
-                      dense
-                      schema={{ properties: rest }}
-                      value={params}
-                      onChange={(next) => {
-                        for (const k of Object.keys(rest))
-                          if (next[k] !== params[k]) onChange(k, next[k])
-                      }}
-                    />
+                  <div className="flex flex-col gap-3 pt-2">
+                    {options && (
+                      <SchemaForm
+                        dense
+                        schema={options.schema}
+                        value={options.value}
+                        onChange={options.onChange}
+                      />
+                    )}
+                    {Object.keys(rest).length > 0 && (
+                      <SchemaForm
+                        dense
+                        schema={{ properties: rest }}
+                        value={params}
+                        onChange={(next) => {
+                          for (const k of Object.keys(rest))
+                            if (next[k] !== params[k]) onChange(k, next[k])
+                        }}
+                      />
+                    )}
                   </div>
                 )}
               </div>
@@ -719,20 +797,42 @@ function ParamsPill({
   )
 }
 
-/** 画幅图标：按比例画的小矩形 */
+/** 画幅图标：按比例画的圆角矩形，长边比框略短，宽窄两头都看得出比例 */
 function AspectGlyph({ ratio, size }: { ratio: number; size: number }) {
-  const w = ratio >= 1 ? size : Math.max(4, size * ratio)
-  const h = ratio >= 1 ? Math.max(4, size / ratio) : size
+  const long = size * 0.9
+  const w = ratio >= 1 ? long : Math.max(5, long * ratio)
+  const h = ratio >= 1 ? Math.max(5, long / ratio) : long
   return (
     <span
       className="flex flex-none items-center justify-center"
       style={{ width: size, height: size }}
     >
       <span
-        className="rounded-[2px] border-[1.5px] border-current"
+        className="rounded-[3px] border-[1.5px] border-current"
         style={{ width: w, height: h }}
       />
     </span>
+  )
+}
+
+/** 「智能」画幅图标：圆角方框里两个朝外的角，表示比例自适应 */
+function AutoAspectGlyph({ size }: { size: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 18 18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="flex-none"
+    >
+      <rect x="1.75" y="1.75" width="14.5" height="14.5" rx="4" />
+      <path d="M5.5 8V5.5H8M12.5 10v2.5H10" />
+    </svg>
   )
 }
 
@@ -763,17 +863,33 @@ function ParamControl({
       {body}
     </button>
   )
+  // 等分分段的滑块定位：项数与选中序号交给 CSS 算位置
+  const slider = (n: number, i: number) => ({
+    style: { '--seg-n': n, '--seg-i': i } as React.CSSProperties,
+    'data-seg-empty': i < 0 ? '' : undefined,
+  })
   if (field.enum && aspect) {
     control = (
-      <fieldset aria-label={label} className="ui-seg ui-seg-block ui-seg-tall">
+      <fieldset
+        aria-label={label}
+        className="ui-seg ui-seg-block ui-seg-tall ui-seg-aspect"
+        {...slider(
+          field.enum.length,
+          field.enum.findIndex((o) => String(value) === String(o)),
+        )}
+      >
         {field.enum.map((o) =>
           segment(
             String(o),
             String(value) === String(o),
             () => onChange(o),
             <>
-              <AspectGlyph ratio={parseAspect(o) ?? 1} size={18} />
-              <span className="tabular-nums">{String(o)}</span>
+              {o === 'auto' ? (
+                <AutoAspectGlyph size={18} />
+              ) : (
+                <AspectGlyph ratio={parseAspect(o) ?? 1} size={18} />
+              )}
+              <span className="tabular-nums">{aspectLabel(o)}</span>
             </>,
           ),
         )}
@@ -781,7 +897,14 @@ function ParamControl({
     )
   } else if (field.enum) {
     control = (
-      <fieldset aria-label={label} className="ui-seg ui-seg-block">
+      <fieldset
+        aria-label={label}
+        className="ui-seg ui-seg-block"
+        {...slider(
+          field.enum.length,
+          field.enum.findIndex((o) => String(value ?? '') === String(o)),
+        )}
+      >
         {field.enum.map((o) =>
           segment(
             String(o),
@@ -798,7 +921,11 @@ function ParamControl({
     const n = Number(value ?? field.default ?? min)
     control =
       max - min <= 5 ? (
-        <fieldset aria-label={label} className="ui-seg ui-seg-block">
+        <fieldset
+          aria-label={label}
+          className="ui-seg ui-seg-block"
+          {...slider(max - min + 1, n >= min && n <= max ? n - min : -1)}
+        >
           {Array.from({ length: max - min + 1 }, (_, i) => min + i).map((v) =>
             segment(String(v), n === v, () => onChange(v), v),
           )}
@@ -1065,11 +1192,14 @@ function Inputs({
   el,
   node,
   ups,
+  trailing,
 }: {
   engine: Engine
   el: CanvasElement
   node: NodeInfo
   ups: Map<string, Upstream[]>
+  /** 第一行右侧的操作（对结果的操作） */
+  trailing?: React.ReactNode
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [target, setTarget] = useState<NodeInfo['inputs'][number] | null>(null)
@@ -1112,6 +1242,7 @@ function Inputs({
 
   let n = 0
   const tiles: React.ReactNode[] = []
+  const adds: React.ReactNode[] = []
   for (const port of media) {
     const list = ups.get(port.id) ?? []
     // 多连的“参考图”不逐个标端口名；首帧、尾帧这种单连输入在缩略图下标出
@@ -1129,26 +1260,35 @@ function Inputs({
         />,
       )
     }
+    // 还能再连的输入在顶部给一个「+ 参考图」胶囊，点一下上传并连上
     if (port.multiple || list.length === 0)
-      tiles.push(
+      adds.push(
         <button
           key={`add-${port.id}`}
           type="button"
           onClick={() => pick(port)}
           title={`上传${port.label}，也可以从画布上的图片拖线连入`}
-          className={`group flex flex-none flex-col items-center gap-1 text-2xs ${port.required && list.length === 0 ? 'text-danger' : 'text-ink-subtle'} hover:text-ink`}
+          className={`flex h-8 flex-none items-center gap-1 rounded-full bg-surface-2 pl-2.5 pr-3 text-sm transition-colors duration-[var(--dur-fast)] hover:bg-active ${port.required && list.length === 0 ? 'text-danger' : 'text-ink'}`}
         >
-          <span className="flex size-12 items-center justify-center rounded-md border border-dashed border-line-strong bg-surface-2/50 transition-colors duration-[var(--dur-fast)] group-hover:border-ink-subtle">
-            <Icon name="plus" size={16} />
-          </span>
+          <Icon name="plus" size={16} />
           {port.label}
         </button>,
       )
   }
 
-  if (!tiles.length && !texts.length) return null
+  if (!tiles.length && !adds.length && !texts.length && !trailing) return null
   return (
-    <div className="flex flex-col gap-2 px-4 pt-4">
+    <div className="flex flex-col gap-3 px-4 pt-4">
+      {(adds.length > 0 || trailing) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {adds}
+          {trailing && (
+            <div role="toolbar" aria-label="结果操作" className="ml-auto flex items-center">
+              {trailing}
+            </div>
+          )}
+        </div>
+      )}
       {tiles.length > 0 && (
         <div className="ui-scrollbar flex items-start gap-2 overflow-x-auto pb-0.5">{tiles}</div>
       )}

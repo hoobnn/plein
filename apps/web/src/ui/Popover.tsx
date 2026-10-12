@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 const stack: Array<React.RefObject<HTMLDivElement | null>> = []
 
 /**
- * 锚定在某个按钮上的弹层：渲染到 body（不被面板的滚动裁掉），
+ * 锚定在某个按钮上的弹层：渲染到 body（不被面板的滚动裁掉），打开期间跟着锚点移动，
  * 默认优先放在锚点上方，放不下时放下方（placement="below" 反过来）；点外面或按 Esc 关闭。
  */
 export function Popover({
@@ -27,18 +27,34 @@ export function Popover({
   const [pos, setPos] = useState<React.CSSProperties>({ visibility: 'hidden' })
 
   useLayoutEffect(() => {
-    if (!anchor || !ref.current) return
-    const a = anchor.getBoundingClientRect()
-    const h = ref.current.offsetHeight
-    const left = Math.max(8, Math.min(a.left, window.innerWidth - width - 8))
-    const fitsAbove = a.top - 8 - h >= 8
-    const fitsBelow = a.bottom + 8 + h <= window.innerHeight - 8
-    const above = placement === 'above' ? fitsAbove : !fitsBelow && fitsAbove
-    setPos(
-      above
-        ? { left, top: a.top - 8 - h }
-        : { left, top: Math.min(a.bottom + 8, window.innerHeight - h - 8) },
-    )
+    const el = ref.current
+    if (!anchor || !el) return
+    // 上下方向只在打开时定一次，之后跟着锚点平移，不会拖着拖着翻到另一边
+    let side: 'above' | 'below' | null = null
+    let last = ''
+    const place = () => {
+      const a = anchor.getBoundingClientRect()
+      const h = el.offsetHeight
+      if (!side) {
+        const fitsAbove = a.top - 8 - h >= 8
+        const fitsBelow = a.bottom + 8 + h <= window.innerHeight - 8
+        side = (placement === 'above' ? fitsAbove : !fitsBelow && fitsAbove) ? 'above' : 'below'
+      }
+      const left = Math.max(8, Math.min(a.left, window.innerWidth - width - 8))
+      const top =
+        side === 'above' ? a.top - 8 - h : Math.min(a.bottom + 8, window.innerHeight - h - 8)
+      const key = `${left},${top}`
+      if (key === last) return
+      last = key
+      setPos({ left, top })
+    }
+    place()
+    // 锚点会随画布平移缩放、面板滚动一起动：打开期间逐帧跟随，位置没变就不更新
+    let raf = requestAnimationFrame(function loop() {
+      place()
+      raf = requestAnimationFrame(loop)
+    })
+    return () => cancelAnimationFrame(raf)
   }, [anchor, width, placement])
 
   // 回调和锚点放进 ref：监听只在挂载时注册一次，在弹层栈里的位置不会因重渲染而变

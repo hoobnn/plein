@@ -601,23 +601,67 @@ input[type="range"]::-moz-range-thumb {
   :root[data-theme="dark"] .ui-seg-item[aria-pressed="true"] {
     background: var(--surface-3);
   }
-  /* 铺满一行的大分段：参数面板里选分辨率、张数；项等分，36 高 */
+  /* 铺满一行的大分段：参数面板里选分辨率、张数；项等分，32 高。
+     选中底色是一块滑块，按 --seg-n（项数）和 --seg-i（选中序号，-1 为无）平移过去 */
   .ui-seg-block {
+    position: relative;
     display: flex;
     width: 100%;
+    isolation: isolate;
+  }
+  .ui-seg-block::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: 2px;
+    bottom: 2px;
+    left: 2px;
+    width: calc((100% - 4px - (var(--seg-n, 1) - 1) * 2px) / var(--seg-n, 1));
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    box-shadow: var(--shadow-1);
+    transform: translateX(calc(max(var(--seg-i, 0), 0) * (100% + 2px)));
+    transition:
+      transform var(--dur-slow) var(--ease-spring),
+      opacity var(--dur-fast) var(--ease-standard);
+  }
+  :root[data-theme="dark"] .ui-seg-block::before {
+    background: var(--surface-3);
+  }
+  .ui-seg-block[data-seg-empty]::before {
+    opacity: 0;
   }
   .ui-seg-block > .ui-seg-item {
     flex: 1 1 0;
     min-width: 0;
-    height: var(--h-lg);
+    height: var(--h-md);
     padding: 0 4px;
     font-size: 13px;
+  }
+  /* 加 :root 压过上面深色主题的选中底色，底色交给滑块 */
+  :root .ui-seg-block > .ui-seg-item[aria-pressed="true"] {
+    background: transparent;
+    box-shadow: none;
   }
   /* 图标在上、文字在下的高分段：选画幅 */
   .ui-seg-block.ui-seg-tall > .ui-seg-item {
     flex-direction: column;
-    gap: 4px;
-    height: 52px;
+    gap: 3px;
+    height: 46px;
+  }
+  /* 画幅：项多（最多 9 个）且窄，文字用正文色、略加粗，未选中的靠图标变淡区分 */
+  .ui-seg-block.ui-seg-aspect > .ui-seg-item {
+    padding: 0;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .ui-seg-block.ui-seg-aspect > .ui-seg-item > :first-child {
+    opacity: 0.72;
+    transition: opacity var(--dur-fast) var(--ease-standard);
+  }
+  .ui-seg-block.ui-seg-aspect > .ui-seg-item:hover > :first-child,
+  .ui-seg-block.ui-seg-aspect > .ui-seg-item[aria-pressed="true"] > :first-child {
+    opacity: 1;
   }
 
   /* 菜单与弹层：更实的材质，12 圆角、4 内边距，菜单项 8 圆角、32 高 */
