@@ -14,6 +14,7 @@ import { ResultBar, Viewer } from '../panels/ResultBar'
 import { SelectionBar } from '../panels/SelectionBar'
 import { Shortcuts } from '../panels/Shortcuts'
 import { StoryboardEditor } from '../panels/StoryboardEditor'
+import { Tasks } from '../panels/Tasks'
 import { Toolbar, ViewControls } from '../panels/Toolbar'
 import { Icon } from '../ui/icons'
 import { InlineTitle } from '../ui/InlineTitle'
@@ -151,6 +152,7 @@ export function Editor({
       <StoryboardEditor />
       <Shortcuts />
       <History />
+      {source.kind === 'remote' && <Tasks />}
       <Viewer />
     </div>
   )

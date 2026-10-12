@@ -116,6 +116,23 @@ export class JobStore {
     }
   }
 
+  /** 画布最近的任务，新的在前 */
+  recent(canvasId: string, limit: number): JobRow[] {
+    return this.db
+      .prepare<[string, number], JobRow>(
+        'SELECT * FROM jobs WHERE canvas_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?',
+      )
+      .all(canvasId, limit)
+  }
+
+  recentGroups(canvasId: string, limit: number): GroupRow[] {
+    return this.db
+      .prepare<[string, number], GroupRow>(
+        'SELECT * FROM job_groups WHERE canvas_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?',
+      )
+      .all(canvasId, limit)
+  }
+
   insertGroup(g: {
     id: string
     ownerId: string

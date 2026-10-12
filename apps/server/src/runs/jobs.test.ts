@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { connect, createDoc, createElement, type PleinDoc, setParams } from '@plein/doc'
+import type { JobList } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import { createServer, type Server } from '../app'
@@ -298,6 +299,15 @@ describe('整组运行', () => {
     const r = await runFrame(server, id, frame)
     expect(r.summary).toMatchObject({ failed: 1, skipped: 1, succeeded: 0 })
     expect(doc.get(b)?.run).toBeUndefined()
+
+    // 任务面板：失败的任务带错误，整组运行带汇总
+    const res = await call(server, `/api/canvases/${id}/jobs`)
+    expect(res.status).toBe(200)
+    const list = (await res.json()) as JobList
+    expect(list.jobs).toHaveLength(1)
+    expect(list.jobs[0]).toMatchObject({ status: 'failed', groupId: r.groupId })
+    expect(list.jobs[0]!.error).toBeTruthy()
+    expect(list.groups[0]).toMatchObject({ id: r.groupId, frameId: frame, status: 'done' })
   })
 
   it('取消整组：正在跑的取消，下游不再开始', async () => {
@@ -324,9 +334,10 @@ describe('整组运行', () => {
     expect(doc.get(b)?.run).toBeUndefined()
   })
 
-  it('Frame 不存在时 404', async () => {
+  it('Frame 或画布不存在时 404', async () => {
     const { server } = await boot()
     const { id } = await canvas(server)
+    expect((await call(server, '/api/canvases/nope/jobs')).status).toBe(404)
     const res = await call(server, `/api/canvases/${id}/frames/nope/run`, {
       method: 'POST',
       body: '{}',

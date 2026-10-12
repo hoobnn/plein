@@ -173,6 +173,34 @@ export interface GroupRunState {
   summary?: GroupRunSummary
 }
 
+/** 任务面板里的一条运行记录 */
+export interface JobInfo {
+  id: string
+  nodeId: string
+  nodeType: string
+  /** 整组运行时所属的那次运行 */
+  groupId?: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled'
+  /** 已尝试次数（含自动重试） */
+  attempts: number
+  error?: string
+  createdAt: number
+  startedAt?: number
+  finishedAt?: number
+}
+
+export interface GroupInfo extends GroupRunState {
+  frameId: string
+  createdAt: number
+  finishedAt?: number
+}
+
+/** 画布最近的运行记录，新的在前 */
+export interface JobList {
+  jobs: JobInfo[]
+  groups: GroupInfo[]
+}
+
 /** 用户存的模板：Frame 和里面的元素、内部连线，格式同复制粘贴（ClipboardData） */
 export const TemplateData = z.object({
   plein: z.literal(1),
@@ -248,6 +276,8 @@ export const API = {
     `/api/canvases/${encodeURIComponent(canvasId)}/frames/${encodeURIComponent(frameId)}/run`,
   groupRun: (groupId: string) => `/api/runs/groups/${encodeURIComponent(groupId)}`,
   groupCancel: (groupId: string) => `/api/runs/groups/${encodeURIComponent(groupId)}/cancel`,
+  /** 画布最近的运行记录，返回 JobList */
+  canvasJobs: (canvasId: string) => `/api/canvases/${encodeURIComponent(canvasId)}/jobs`,
   /** Yjs 同步（y-websocket 协议），房间名为画布 id */
   sync: '/sync',
 } as const

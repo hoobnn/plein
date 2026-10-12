@@ -1,4 +1,4 @@
-import { GroupRunOptions, type NodeRunStarted } from '@plein/protocol'
+import { GroupRunOptions, type JobList, type NodeRunStarted } from '@plein/protocol'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import { ownsCanvas } from '../http/canvases'
@@ -38,6 +38,11 @@ export function runRoutes(db: DB, runs: NodeRuns) {
       if (!ownsCanvas(db, p.id, canvas)) return c.json(notFound, 404)
       runs.cancel(canvas, node)
       return c.body(null, 204)
+    })
+    .get('/api/canvases/:canvas/jobs', (c) => {
+      const canvas = c.req.param('canvas')
+      if (!ownsCanvas(db, c.var.principal.id, canvas)) return c.json(notFound, 404)
+      return c.json(runs.list(canvas) satisfies JobList)
     })
     .post('/api/canvases/:canvas/frames/:frame/run', async (c) => {
       const { canvas, frame } = c.req.param()

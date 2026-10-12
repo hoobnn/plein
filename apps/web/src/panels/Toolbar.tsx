@@ -5,6 +5,7 @@ import { Icon, type IconName } from '../ui/icons'
 import { Popover } from '../ui/Popover'
 import { AddMenu } from './AddMenu'
 import { Minimap } from './Minimap'
+import { useActiveRuns } from './Tasks'
 
 function Button(props: {
   label: string
@@ -127,12 +128,14 @@ function NodeMenu({ engine, canImport }: { engine: Engine; canImport: boolean })
   )
 }
 
-/** 底部中间：创作入口——添加节点、工具、上传、生成历史、快捷键 */
+/** 底部中间：创作入口——添加节点、工具、上传、任务、生成历史、快捷键 */
 export function Toolbar({ canImport }: { canImport: boolean }) {
   const engine = useCanvas((s) => s.engine)
   const tool = useCanvas((s) => s.tool)
   const history = useCanvas((s) => s.history)
   const shortcuts = useCanvas((s) => s.shortcuts)
+  const tasks = useCanvas((s) => s.tasks)
+  const running = useActiveRuns(engine)
   const fileRef = useRef<HTMLInputElement>(null)
   // 右键菜单、添加菜单里的“上传”借用这里的文件选择框
   useEffect(() => {
@@ -167,6 +170,22 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
         </>
       )}
       <Divider />
+      {canImport && (
+        <Button
+          label="任务"
+          hint={running ? `${running} 个排队或运行中` : undefined}
+          active={tasks}
+          onClick={() => useCanvas.getState().toggleTasks()}
+          className="relative"
+        >
+          <Icon name="tasks" />
+          {running > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-2xs font-medium tabular-nums text-on-accent">
+              {running}
+            </span>
+          )}
+        </Button>
+      )}
       <Button
         label="生成历史"
         active={history}

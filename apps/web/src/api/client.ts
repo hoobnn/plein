@@ -4,6 +4,7 @@ import {
   type AssetVariant,
   type Canvas,
   type Catalog,
+  type JobList,
   type ProviderConfigUpdate,
   type ProviderConfigView,
   type ProviderTestResult,
@@ -77,6 +78,8 @@ export const api = {
   deleteTemplate: (id: string) => request<void>(API.template(id), { method: 'DELETE' }),
 
   catalog: () => request<Catalog>(API.catalog),
+  /** 画布最近的运行记录（任务面板） */
+  canvasJobs: (id: string) => request<JobList>(API.canvasJobs(id)),
   providerConfig: (id: string) => request<ProviderConfigView>(API.providerConfig(id)),
   updateProviderConfig: (id: string, body: ProviderConfigUpdate) =>
     request<ProviderConfigView>(API.providerConfig(id), json('PUT', body)),

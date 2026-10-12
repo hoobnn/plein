@@ -19,7 +19,14 @@ import {
   ProviderError,
   resolveParams,
 } from '@plein/plugin-sdk'
-import type { GroupRunOptions, GroupRunStarted, GroupRunState } from '@plein/protocol'
+import type {
+  GroupInfo,
+  GroupRunOptions,
+  GroupRunStarted,
+  GroupRunState,
+  JobInfo,
+  JobList,
+} from '@plein/protocol'
 import { sleep } from '../plugins/limiter'
 import { NodeRunError, type PluginHost, SHUTDOWN } from '../plugins/host'
 import type { DB } from '../storage/db'
@@ -195,11 +202,21 @@ export class NodeRuns {
   groupState(id: string, ownerId: string): GroupRunState | null {
     const g = this.store.group(id)
     if (!g || g.owner_id !== ownerId) return null
+    return groupState(g)
+  }
+
+  /** 任务面板：画布最近的任务和整组运行 */
+  list(canvasId: string, limit = 100): JobList {
     return {
-      id: g.id,
-      status: g.status,
-      total: (JSON.parse(g.targets) as string[]).length,
-      summary: g.summary ? JSON.parse(g.summary) : undefined,
+      jobs: this.store.recent(canvasId, limit).map(jobInfo),
+      groups: this.store.recentGroups(canvasId, 20).map(
+        (g): GroupInfo => ({
+          ...groupState(g),
+          frameId: g.frame_id,
+          createdAt: g.created_at,
+          finishedAt: g.finished_at ?? undefined,
+        }),
+      ),
     }
   }
 
@@ -567,3 +584,27 @@ function retryable(err: unknown) {
 }
 
 export type { JobRow }
+
+function groupState(g: GroupRow): GroupRunState {
+  return {
+    id: g.id,
+    status: g.status,
+    total: (JSON.parse(g.targets) as string[]).length,
+    summary: g.summary ? JSON.parse(g.summary) : undefined,
+  }
+}
+
+function jobInfo(j: JobRow): JobInfo {
+  return {
+    id: j.id,
+    nodeId: j.node_id,
+    nodeType: j.node_type,
+    groupId: j.group_id ?? undefined,
+    status: j.status,
+    attempts: j.attempts,
+    error: j.error ?? undefined,
+    createdAt: j.created_at,
+    startedAt: j.started_at ?? undefined,
+    finishedAt: j.finished_at ?? undefined,
+  }
+}
