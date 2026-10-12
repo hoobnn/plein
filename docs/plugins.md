@@ -11,10 +11,10 @@ plein 的节点、模型平台、模板、自定义元素类型都通过插件�
 
 一个插件分两部分：
 
-| 部分 | 内容 | 运行位置 |
-| --- | --- | --- |
-| 共用部分 `definePlugin` | 清单、节点声明、模板、元素类型 | 前后端都可导入，只能是纯数据和 zod schema |
-| 服务端部分 `defineServerPlugin` | Provider（模型平台适配器）、节点执行器 | 只在服务端 |
+| 部分                            | 内容                                   | 运行位置                                  |
+| ------------------------------- | -------------------------------------- | ----------------------------------------- |
+| 共用部分 `definePlugin`         | 清单、节点声明、模板、元素类型         | 前后端都可导入，只能是纯数据和 zod schema |
+| 服务端部分 `defineServerPlugin` | Provider（模型平台适配器）、节点执行器 | 只在服务端                                |
 
 ```ts
 import { defineNode, definePlugin, defineExecutor, defineProvider, defineServerPlugin } from '@plein/plugin-sdk'
@@ -39,15 +39,15 @@ export const serverPlugin = defineServerPlugin(plugin, {
 
 ## 清单 `plein-plugin.json`
 
-| 字段 | 说明 |
-| --- | --- |
-| `id` | `vendor/name`，全小写。插件贡献的节点、Provider、模板、元素类型都必须在同一个 `vendor/` 下 |
-| `version` | 语义化版本 |
-| `engines.plein` | 兼容的插件 API 版本范围，不满足时拒绝加载 |
-| `contributes` | 必须和实际注册的内容完全一致，多了少了都拒绝加载 |
-| `permissions.network` | 可访问的域名，支持一级通配 `*.example.com`；重定向逐跳检查 |
-| `permissions.secrets` | 可读取的密钥名（大写下划线），Provider 用到的密钥必须在这里声明 |
-| `permissions.assets` | `none` / `read` / `write`：执行器读写资产库、Provider 读取参考图 |
+| 字段                  | 说明                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------ |
+| `id`                  | `vendor/name`，全小写。插件贡献的节点、Provider、模板、元素类型都必须在同一个 `vendor/` 下 |
+| `version`             | 语义化版本                                                                                 |
+| `engines.plein`       | 兼容的插件 API 版本范围，不满足时拒绝加载                                                  |
+| `contributes`         | 必须和实际注册的内容完全一致，多了少了都拒绝加载                                           |
+| `permissions.network` | 可访问的域名，支持一级通配 `*.example.com`；重定向逐跳检查                                 |
+| `permissions.secrets` | 可读取的密钥名（大写下划线），Provider 用到的密钥必须在这里声明                            |
+| `permissions.assets`  | `none` / `read` / `write`：执行器读写资产库、Provider 读取参考图                           |
 
 ## 节点
 
@@ -88,12 +88,12 @@ export const serverPlugin = defineServerPlugin(plugin, {
 
 ## 加载与隔离
 
-| 类型 | 方式 | 状态 |
-| --- | --- | --- |
-| 内置插件 | 主进程内加载，同一套注册表和权限裁剪 | 已完成 |
-| 本地第三方插件 | 放进 `data/plugins/<id>/`，服务端部分在独立子进程运行，宿主代理网络、密钥和资产访问 | M5 |
-| MCP 工具节点 | 把 MCP server 的工具包装成节点 | M5 |
-| 自定义元素渲染 | 沙箱 iframe | 0.1.0 之后 |
+| 类型           | 方式                                                                                | 状态       |
+| -------------- | ----------------------------------------------------------------------------------- | ---------- |
+| 内置插件       | 主进程内加载，同一套注册表和权限裁剪                                                | 已完成     |
+| 本地第三方插件 | 放进 `data/plugins/<id>/`，服务端部分在独立子进程运行，宿主代理网络、密钥和资产访问 | M5         |
+| MCP 工具节点   | 把 MCP server 的工具包装成节点                                                      | M5         |
+| 自定义元素渲染 | 沙箱 iframe                                                                         | 0.1.0 之后 |
 
 注册是原子的：清单不合规、贡献冲突、权限不足时整个插件标记为加载失败（设置页可见原因），不影响其他插件和服务启动。
 

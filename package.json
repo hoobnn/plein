@@ -17,9 +17,9 @@
     "build": "pnpm -r build",
     "start": "pnpm --filter @plein/server start",
     "typecheck": "pnpm -r typecheck && tsc -p .",
-    "lint": "biome check .",
+    "lint": "biome check . && prettier --check \"**/*.{md,yaml,yml,html}\"",
     "audit:deps": "pnpm audit --audit-level=high",
-    "format": "biome check --write .",
+    "format": "biome check --write . && prettier --write \"**/*.{md,yaml,yml,html}\"",
     "test": "vitest run",
     "prepare": "husky"
   },
@@ -29,6 +29,7 @@
     "@commitlint/config-conventional": "^21.2.3",
     "@types/node": "^26.6.5",
     "husky": "^9.1.7",
+    "prettier": "3.9.10",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.3"

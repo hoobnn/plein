@@ -16,13 +16,13 @@ plein 是一块“可执行的画布”：同一个 Yjs 文档里既放图片、
 
 相机和输入已脱离 React，渲染层订阅 `elements` 增量更新，端口与连线已可用；工作流、后端和资产系统还是空白。
 
-| 模块 | 已有 | 主要缺口 |
-| --- | --- | --- |
-| `apps/web` | Vite + React 19 + Tailwind v4 + zustand，`CanvasView` 挂载引擎并写入演示元素 | 工具栏、选择/变换、节点表单、持久化、账号 |
-| `packages/canvas-core` | PixiJS v8（WebGPU 优先）、相机、触控板/惯性输入、点阵、占位矩形、端口与贝塞尔连线、DOM 覆盖层 | 按类型渲染、视口裁剪、LOD、命中测试、纹理管理 |
-| `packages/doc` | `elements`、`edges` 两个 `Y.Map`，带类型的 `Port`，`UndoManager`、`connectPorts` | 元素整对象存入（并发会互相覆盖）、无 schema 版本、无 z 序与父子关系、无持久化 |
-| `apps/server` | 尚未创建（0.1.0 为 Node + Hono 单进程，见 roadmap-0.1.0.md） | 全部待建 |
-| 工程 | pnpm workspace、TS 7、commitlint + husky、CI（Node 26） | 测试、lint、性能基准 |
+| 模块                   | 已有                                                                                          | 主要缺口                                                                      |
+| ---------------------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `apps/web`             | Vite + React 19 + Tailwind v4 + zustand，`CanvasView` 挂载引擎并写入演示元素                  | 工具栏、选择/变换、节点表单、持久化、账号                                     |
+| `packages/canvas-core` | PixiJS v8（WebGPU 优先）、相机、触控板/惯性输入、点阵、占位矩形、端口与贝塞尔连线、DOM 覆盖层 | 按类型渲染、视口裁剪、LOD、命中测试、纹理管理                                 |
+| `packages/doc`         | `elements`、`edges` 两个 `Y.Map`，带类型的 `Port`，`UndoManager`、`connectPorts`              | 元素整对象存入（并发会互相覆盖）、无 schema 版本、无 z 序与父子关系、无持久化 |
+| `apps/server`          | 尚未创建（0.1.0 为 Node + Hono 单进程，见 roadmap-0.1.0.md）                                  | 全部待建                                                                      |
+| 工程                   | pnpm workspace、TS 7、commitlint + husky、CI（Node 26）                                       | 测试、lint、性能基准                                                          |
 
 ## 架构原则
 
@@ -97,13 +97,13 @@ Y.Doc
 
 canvas-core 演进为场景引擎：从 doc 得到世界状态，维护场景图和空间索引，对外只暴露工具和事件，不暴露 Pixi 对象。
 
-| 层 | 职责 |
-| --- | --- |
-| SceneSync | 订阅 doc、按帧归并，维护 `id → SceneNode` 与 R-tree（rbush） |
-| Renderers | 按 `kind` 注册：图片、视频、Markdown、节点、连线、Frame |
-| Culling + LOD | 只渲染视口内元素，按屏幕尺寸切换缩略图级别与 DOM 表单挂载 |
-| Interaction | 命中测试、工具状态机（选择、框选、变换、连线、平移）、吸附 |
-| TextureManager | 按 assetId + 级别加载纹理，LRU 淘汰，GPU 内存预算 |
+| 层             | 职责                                                         |
+| -------------- | ------------------------------------------------------------ |
+| SceneSync      | 订阅 doc、按帧归并，维护 `id → SceneNode` 与 R-tree（rbush） |
+| Renderers      | 按 `kind` 注册：图片、视频、Markdown、节点、连线、Frame      |
+| Culling + LOD  | 只渲染视口内元素，按屏幕尺寸切换缩略图级别与 DOM 表单挂载    |
+| Interaction    | 命中测试、工具状态机（选择、框选、变换、连线、平移）、吸附   |
+| TextureManager | 按 assetId + 级别加载纹理，LRU 淘汰，GPU 内存预算            |
 
 关键策略：
 
@@ -131,12 +131,12 @@ canvas-core 演进为场景引擎：从 doc 得到世界状态，维护场景图
 
 ## 后端与资产
 
-| 服务 | 技术 | 职责 |
-| --- | --- | --- |
-| `api` | Node + Hono | 鉴权、画布元数据、上传签名、AI 任务、SSE、配额 |
-| `sync` | Node WebSocket + Yjs | 文档房间、权限、增量持久化与快照 |
-| `ai-worker` | Node + `packages/flow` | 取任务、调用 Provider、产出写对象存储 |
-| `media-worker` | libvips + ffmpeg | 缩略图金字塔、ThumbHash、封面、HLS |
+| 服务           | 技术                   | 职责                                           |
+| -------------- | ---------------------- | ---------------------------------------------- |
+| `api`          | Node + Hono            | 鉴权、画布元数据、上传签名、AI 任务、SSE、配额 |
+| `sync`         | Node WebSocket + Yjs   | 文档房间、权限、增量持久化与快照               |
+| `ai-worker`    | Node + `packages/flow` | 取任务、调用 Provider、产出写对象存储          |
+| `media-worker` | libvips + ffmpeg       | 缩略图金字塔、ThumbHash、封面、HLS             |
 
 早期合并为一个 Node 进程（`apps/server`）部署，代码从第一天分开。依赖只有 Postgres（元数据、Yjs 更新、`SKIP LOCKED` 任务队列）和 S3 兼容对象存储（MinIO / R2），适合 AGPL 自托管。
 
@@ -169,21 +169,21 @@ canvas-core 演进为场景引擎：从 doc 得到世界状态，维护场景图
 
 ## 路线图
 
-| 阶段 | 内容 | 进入下一阶段的门槛 |
-| --- | --- | --- |
-| 一 地基（0–2 月） | 嵌套 `Y.Map` 与命令式 API、schema 迁移；按类型渲染、裁剪、R-tree；选择/框选/变换/连线；IndexedDB；Vitest、Playwright、性能基准 | 1 万元素平移不掉帧，刷新不丢数据 |
-| 二 工作流（2–5 月） | `packages/flow`；api + ai-worker、任务队列、SSE；Prompt/LLM/文生图/图生图；内容哈希上传与缩略图 | 提示词 → 图片 → 画布端到端跑通，未改动节点命中缓存 |
-| 三 协作与内容（5–9 月） | sync 多人编辑与只读分享；Markdown、视频与 HLS；长任务节点；组合节点；元素插件化 | 两人同时编辑同一节点不丢修改，长任务可取消重试 |
-| 四 规模与生态（9–18 月） | subdocs 按需加载；OffscreenCanvas 渲染；第三方节点与 Provider 开放；自托管与托管版 | — |
+| 阶段                     | 内容                                                                                                                           | 进入下一阶段的门槛                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| 一 地基（0–2 月）        | 嵌套 `Y.Map` 与命令式 API、schema 迁移；按类型渲染、裁剪、R-tree；选择/框选/变换/连线；IndexedDB；Vitest、Playwright、性能基准 | 1 万元素平移不掉帧，刷新不丢数据                   |
+| 二 工作流（2–5 月）      | `packages/flow`；api + ai-worker、任务队列、SSE；Prompt/LLM/文生图/图生图；内容哈希上传与缩略图                                | 提示词 → 图片 → 画布端到端跑通，未改动节点命中缓存 |
+| 三 协作与内容（5–9 月）  | sync 多人编辑与只读分享；Markdown、视频与 HLS；长任务节点；组合节点；元素插件化                                                | 两人同时编辑同一节点不丢修改，长任务可取消重试     |
+| 四 规模与生态（9–18 月） | subdocs 按需加载；OffscreenCanvas 渲染；第三方节点与 Provider 开放；自托管与托管版                                             | —                                                  |
 
 月份是建议节奏，不是承诺。阶段一的 doc 模型改造需一并迁移 `connectPorts` 和 canvas-core 的订阅逻辑。
 
 ## 待定决策
 
-| 问题 | 建议 | 截止 |
-| --- | --- | --- |
-| 同步服务：自建 vs Hocuspocus 等 | 自建薄层，保持自托管友好 | 阶段二 |
-| 工作流执行位置 | 同一引擎两端跑，需密钥的节点默认服务端 | 阶段二 |
-| 富文本编辑器 | Tiptap/ProseMirror 或 Lexical | Markdown 元素开工前 |
-| 资产保留期 | 30 天（待定） | 上线云存储前 |
-| 官方托管版与计费 | 未定，影响多租户设计 | 阶段三前 |
+| 问题                            | 建议                                   | 截止                |
+| ------------------------------- | -------------------------------------- | ------------------- |
+| 同步服务：自建 vs Hocuspocus 等 | 自建薄层，保持自托管友好               | 阶段二              |
+| 工作流执行位置                  | 同一引擎两端跑，需密钥的节点默认服务端 | 阶段二              |
+| 富文本编辑器                    | Tiptap/ProseMirror 或 Lexical          | Markdown 元素开工前 |
+| 资产保留期                      | 30 天（待定）                          | 上线云存储前        |
+| 官方托管版与计费                | 未定，影响多租户设计                   | 阶段三前            |

@@ -28,15 +28,15 @@ docker compose up -d     # 打开 http://localhost:8787
 
 打开设置中的「模型平台」，填写密钥、保存并启用对应平台，再在节点里选择模型。四家真实平台默认关闭；无需环境变量注入密钥。支持范围和配置说明见 [模型平台接入](docs/providers.md)。
 
-| 环境变量 | 默认 | 说明 |
-| --- | --- | --- |
-| `PLEIN_HOST` / `PLEIN_PORT` | `127.0.0.1` / `8787` | 监听地址 |
-| `PLEIN_DATA_DIR` | `./data` | 数据目录 |
-| `PLEIN_AUTH` | 本机地址为 `none`，否则 `password` | `password` 时用 Better Auth 登录，只允许一个所有者账号 |
-| `PLEIN_PUBLIC_URL` | 按请求推断 | 反向代理后的对外地址 |
-| `PLEIN_ALLOWED_HOSTS` | 空 | 免登录模式下额外允许的主机名，逗号分隔 |
-| `PLEIN_MAX_UPLOAD_MB` | `2048` | 单个文件上限 |
-| `PLEIN_FFMPEG_PATH` / `PLEIN_FFPROBE_PATH` | 从 `PATH` 查找 | ffmpeg / ffprobe 可执行文件 |
+| 环境变量                                   | 默认                               | 说明                                                   |
+| ------------------------------------------ | ---------------------------------- | ------------------------------------------------------ |
+| `PLEIN_HOST` / `PLEIN_PORT`                | `127.0.0.1` / `8787`               | 监听地址                                               |
+| `PLEIN_DATA_DIR`                           | `./data`                           | 数据目录                                               |
+| `PLEIN_AUTH`                               | 本机地址为 `none`，否则 `password` | `password` 时用 Better Auth 登录，只允许一个所有者账号 |
+| `PLEIN_PUBLIC_URL`                         | 按请求推断                         | 反向代理后的对外地址                                   |
+| `PLEIN_ALLOWED_HOSTS`                      | 空                                 | 免登录模式下额外允许的主机名，逗号分隔                 |
+| `PLEIN_MAX_UPLOAD_MB`                      | `2048`                             | 单个文件上限                                           |
+| `PLEIN_FFMPEG_PATH` / `PLEIN_FFPROBE_PATH` | 从 `PATH` 查找                     | ffmpeg / ffprobe 可执行文件                            |
 
 ## 开发
 
@@ -44,12 +44,14 @@ docker compose up -d     # 打开 http://localhost:8787
 npm i -g pnpm@12         # 版本由 package.json 的 packageManager 锁定
 pnpm install
 pnpm dev                 # 前端 http://localhost:5173 + 服务端 :8787（数据在 ./data）
-pnpm lint                # Biome 检查（pnpm format 自动修复）
+pnpm lint                # Biome + Prettier 检查（pnpm format 自动修复）
 pnpm typecheck
 pnpm test                # Vitest
 ```
 
 性能演示画布不依赖服务端：`http://localhost:5173/#/demo?n=5000`。
+
+格式化与代码检查统一使用 `pnpm lint`，CI 在 PR 和 main 推送时执行同一命令。`pnpm format` 应用格式化和可安全自动修复的代码规则：Biome 负责 JS / TS / JSX / TSX、JSON / JSONC 和 CSS；Prettier 负责 Markdown（`.md`）、YAML（`.yaml` / `.yml`）和 HTML（`.html`）。两者遵循 `.gitignore`，排除构建产物；`pnpm-lock.yaml` 保留 pnpm 生成的格式。Markdown 段落不强制折行，代码块和 HTML 内嵌代码不做二次格式化。
 
 ### 桌面端
 

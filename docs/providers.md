@@ -2,12 +2,12 @@
 
 四个平台作为内置服务端插件加载，通过现有设置页配置和启用，默认关闭。节点的模型列表来自平台声明；仅启用的平台会参与自动选模型。生成使用各平台按量 API，模型目录不代表账号已经开通权限。
 
-| 平台 / Provider ID | 已接入能力 | 密钥 |
-| --- | --- | --- |
-| MiniMax `minimax/api` | M3 / M2.7 对话、image-01 图片、H3 / H3-Max 视频、speech-2.8 配音、Music 3.0 纯音乐 | `MINIMAX_API_KEY` |
-| 豆包语音 `doubao/speech` | TTS 2.0、已有复刻音色、Seed Audio 音乐 / 音效、极速录音识别 | `VOLC_SPEECH_API_KEY`，或 `VOLC_SPEECH_APP_ID` + `VOLC_SPEECH_ACCESS_KEY` |
-| 百炼 `aliyun/bailian` | 千问对话、Qwen Image / 万相图片、Wan 3.0 视频、Qwen TTS | `DASHSCOPE_API_KEY` |
-| 方舟 `volc/ark` | Seed 对话、Seedream 图片、Seedance 视频 | `ARK_API_KEY` |
+| 平台 / Provider ID       | 已接入能力                                                                         | 密钥                                                                      |
+| ------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| MiniMax `minimax/api`    | M3 / M2.7 对话、image-01 图片、H3 / H3-Max 视频、speech-2.8 配音、Music 3.0 纯音乐 | `MINIMAX_API_KEY`                                                         |
+| 豆包语音 `doubao/speech` | TTS 2.0、已有复刻音色、Seed Audio 音乐 / 音效、极速录音识别                        | `VOLC_SPEECH_API_KEY`，或 `VOLC_SPEECH_APP_ID` + `VOLC_SPEECH_ACCESS_KEY` |
+| 百炼 `aliyun/bailian`    | 千问对话、Qwen Image / 万相图片、Wan 3.0 视频、Qwen TTS                            | `DASHSCOPE_API_KEY`                                                       |
+| 方舟 `volc/ark`          | Seed 对话、Seedream 图片、Seedance 视频                                            | `ARK_API_KEY`                                                             |
 
 ## 配置
 

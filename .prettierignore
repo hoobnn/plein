@@ -1,0 +1,10 @@
+# Biome owns code and JSON; Prettier owns Markdown, YAML, and HTML.
+**/*
+!**/
+!**/*.md
+!**/*.yaml
+!**/*.yml
+!**/*.html
+
+# Keep the package-manager-generated lockfile unchanged.
+pnpm-lock.yaml
