@@ -20,6 +20,10 @@ export interface Port {
   id: string
   label: string
   type: PortType
+  /** 输入端口可接多条连线（如多张参考图）；否则新连线替换旧连线 */
+  multiple?: boolean
+  /** 输入端口必须连线才能运行 */
+  required?: boolean
 }
 
 export interface Ports {
@@ -56,6 +60,41 @@ export interface CanvasElement extends Rect {
   ports?: Ports
   nodeType?: string
   nodeVersion?: number
+  /** 节点结果，新到旧 */
+  results?: NodeResult[]
+  /** 当前采用的结果 id：卡片显示它，下游读取它；未设置时用最新结果 */
+  adopted?: string
+  run?: NodeRun
+}
+
+/** 节点结果的值：文本直接存，媒体只存资产 id */
+export type ResultValue =
+  | { type: 'text'; text: string }
+  | { type: 'json'; value: unknown }
+  | { type: 'image' | 'video' | 'audio'; assetId: string; mime?: string }
+
+/** 节点的一个结果（候选）。一次运行可能产出多个，按时间新到旧排列 */
+export interface NodeResult {
+  id: string
+  /** 输出端口 id */
+  port: string
+  value: ResultValue
+  /** 同一次运行的结果共享 runId */
+  runId: string
+  at: number
+}
+
+export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled'
+
+/** 节点最近一次运行的状态，由服务端写入，不进撤销栈 */
+export interface NodeRun {
+  id: string
+  status: RunStatus
+  /** 0–1 */
+  progress?: number
+  message?: string
+  error?: string
+  at: number
 }
 
 export type PortAddress = [elementId: string, portId: string]
@@ -80,6 +119,9 @@ export interface NewElement extends Rect {
   ports?: Ports
   nodeType?: string
   nodeVersion?: number
+  /** 复制节点时带上结果 */
+  results?: NodeResult[]
+  adopted?: string
 }
 
 /** 可直接覆盖的元素字段；z、parentId、text、params 走专门的命令 */

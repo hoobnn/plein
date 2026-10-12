@@ -131,6 +131,10 @@ export interface ProviderTestResult {
   message?: string
 }
 
+export interface NodeRunStarted {
+  runId: string
+}
+
 // ── 路径 ──────────────────────────────────────────────
 
 export const API = {
@@ -147,6 +151,11 @@ export const API = {
   /** Provider id 形如 vendor/name，直接作为两段路径 */
   providerConfig: (id: string) => `/api/providers/${id}/config`,
   providerTest: (id: string) => `/api/providers/${id}/test`,
+  /** 运行画布上的一个节点；状态与结果经 Yjs 同步回画布 */
+  nodeRun: (canvasId: string, nodeId: string) =>
+    `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/run`,
+  nodeCancel: (canvasId: string, nodeId: string) =>
+    `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/cancel`,
   /** Yjs 同步（y-websocket 协议），房间名为画布 id */
   sync: '/sync',
 } as const

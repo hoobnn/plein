@@ -50,10 +50,17 @@ export interface InteractHost {
   preview(patches: Map<string, Transient>): void
   /** 写入文档并立即同步到场景，再清掉预览，避免闪回 */
   commit(write: () => void): void
+  /** 从端口新拉出的线松手在空白处：外壳弹出节点菜单，新建节点并连上 */
+  connectToEmpty?(
+    from: PortRef,
+    world: { x: number; y: number },
+    client: { x: number; y: number },
+  ): void
 }
 
 type Gesture =
-  | { kind: 'connect'; from: PortRef }
+  /** picked：从输入端口拾起的已有连线，丢到空白处即删除 */
+  | { kind: 'connect'; from: PortRef; picked: boolean }
   | { kind: 'press'; id: string; sx: number; sy: number; wx: number; wy: number; toggled: boolean }
   | { kind: 'move'; ids: string[]; starts: Map<string, Rect>; box: Rect; wx: number; wy: number }
   | {
@@ -91,7 +98,7 @@ export function attachInteractions(host: InteractHost) {
     for (const id of scene.query(expand({ x, y, w: 0, h: 0 }, portRadius()))) {
       const e = scene.get(id)
       const r = scene.rect(id)
-      if (e?.ports && r) out.push([e, r])
+      if (e && r && edges.portsVisible(e)) out.push([e, r])
     }
     return out
   }
@@ -126,7 +133,8 @@ export function attachInteractions(host: InteractHost) {
     if (e.button !== 0 || pan.space || pan.hand) return
     const w = toWorld(e)
 
-    const handle = handleAt(w.x, w.y)
+    // 端口优先于缩放手柄：单端口节点的端口正好在边的中点手柄上
+    const handle = findPortAt(w.x, w.y) ? null : handleAt(w.x, w.y)
     if (handle) {
       const ids = editableTops()
       const starts = new Map(ids.map((id) => [id, scene.rect(id)!]))
@@ -166,8 +174,9 @@ export function attachInteractions(host: InteractHost) {
     const port = findPortAt(x, y)
     if (!port) return false
     let from = port
-    if (port.side === 'in') {
-      // 输入端口已有连线：拾起它，改从上游输出端口继续拖
+    let picked = false
+    if (port.side === 'in' && !port.port.multiple) {
+      // 单连输入端口已有连线：拾起它，改从上游输出端口继续拖
       const existing = [...doc.edges()].find(
         (edge) => edge.to[0] === port.elementId && edge.to[1] === port.port.id,
       )
@@ -175,9 +184,10 @@ export function attachInteractions(host: InteractHost) {
       if (existing && srcPort) {
         removeEdges(doc, [existing.id])
         from = srcPort
+        picked = true
       }
     }
-    gesture = { kind: 'connect', from }
+    gesture = { kind: 'connect', from, picked }
     edges.setPreview({ from, x, y, target: null })
     return true
   }
@@ -188,8 +198,8 @@ export function attachInteractions(host: InteractHost) {
     const w = toWorld(e)
     if (!gesture) {
       if (pan.space || pan.hand) return
-      const handle = handleAt(w.x, w.y)
-      const port = handle ? null : findPortAt(w.x, w.y)
+      const port = findPortAt(w.x, w.y)
+      const handle = port ? null : handleAt(w.x, w.y)
       edges.setHover(port)
       el.style.cursor = handle ? HANDLE_CURSORS[handle] : port ? 'crosshair' : ''
       return
@@ -297,11 +307,13 @@ export function attachInteractions(host: InteractHost) {
     switch (g.kind) {
       case 'connect': {
         const target = findPortAt(w.x, w.y, (p) => canConnect(g.from, p))
+        edges.setPreview(null)
         if (target) {
           const [out, inp] = g.from.side === 'out' ? [g.from, target] : [target, g.from]
           connect(doc, [out.elementId, out.port.id], [inp.elementId, inp.port.id])
+        } else if (!g.picked && !scene.hitTest(w.x, w.y)) {
+          host.connectToEmpty?.(g.from, w, { x: e.clientX, y: e.clientY })
         }
-        edges.setPreview(null)
         break
       }
       case 'press':

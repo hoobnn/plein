@@ -1,4 +1,4 @@
-import type { CanvasElement, ElementKind } from '@plein/doc'
+import { type CanvasElement, currentResult, type ElementKind } from '@plein/doc'
 import { Assets, Container, Graphics, Text, type Texture } from 'pixi.js'
 
 export interface RenderContext {
@@ -250,6 +250,102 @@ export const markdownRenderer: ElementRenderer = (el) => {
   return view
 }
 
+/** 节点卡片的版式（局部坐标），DOM 覆盖层按同样的数值排版 */
+export const NODE_LAYOUT = { header: 36, footer: 36, pad: 8 } as const
+
+/** 节点的预览区：卡片去掉标题栏和底栏 */
+export function nodeBody(w: number, h: number) {
+  const { header, footer, pad } = NODE_LAYOUT
+  return { x: pad, y: header, w: Math.max(0, w - pad * 2), h: Math.max(0, h - header - footer) }
+}
+
+const STATUS_COLORS: Record<string, number> = {
+  queued: 0x8b8b93,
+  running: 0xe8d5b5,
+  failed: 0xff6b6b,
+}
+
+/**
+ * 工作流节点：底板 + 当前结果的预览图（等比放进预览区）。
+ * 标题、状态、文本结果和操作按钮由 DOM 覆盖层在正常细节下绘制；
+ * 图片在 GPU 里画，缩小后整张画布仍能看到每个节点的产出。
+ */
+export const nodeRenderer: ElementRenderer = (el, ctx) => {
+  const display = new Container()
+  const bg = new Graphics()
+  display.addChild(bg)
+  let texture: Texture | undefined
+  let loading: string | undefined
+  let destroyed = false
+  let high = true
+  let current = el
+
+  const draw = (next: CanvasElement) => {
+    const { w, h } = next
+    const status = next.run?.status
+    const accent = (status && STATUS_COLORS[status]) ?? KIND_ACCENTS.node
+    bg.clear()
+      .roundRect(0, 0, w, h, RADIUS)
+      .fill({ color: SURFACE })
+      .stroke({
+        color: status === 'running' || status === 'failed' ? accent : LINE,
+        alpha: status === 'running' || status === 'failed' ? 0.9 : 0.1,
+        width: status === 'running' || status === 'failed' ? 2 : 1,
+      })
+    const body = nodeBody(w, h)
+    if (texture && body.w > 0 && body.h > 0) {
+      const k = Math.min(body.w / texture.width, body.h / texture.height)
+      const tw = texture.width * k
+      const th = texture.height * k
+      bg.roundRect(body.x + (body.w - tw) / 2, body.y + (body.h - th) / 2, tw, th, 8).fill({
+        texture,
+        textureSpace: 'local',
+      })
+    } else if (!high) {
+      // 缩小时用色条示意节点类型和状态
+      bg.roundRect(12, 12, Math.min(48, w - 24), 6, 3).fill({ color: accent, alpha: 0.8 })
+    }
+  }
+
+  const view: ElementView = {
+    display,
+    update(next) {
+      current = next
+      const r = currentResult(next)
+      const v = r?.value
+      const url =
+        v && v.type !== 'text' && v.type !== 'json' ? ctx.assetUrl?.(v.assetId, v.type) : undefined
+      if (!url) {
+        texture = undefined
+        loading = undefined
+      }
+      draw(next)
+      if (!url || url === loading) return
+      loading = url
+      loadTexture(url)
+        .then((tex) => {
+          if (destroyed || loading !== url) return
+          texture = tex
+          draw(current)
+        })
+        .catch(() => {
+          // 加载失败只显示底板
+        })
+    },
+    setDetail(next) {
+      if (next === high) return
+      high = next
+      draw(current)
+    },
+    destroy() {
+      destroyed = true
+      display.destroy({ children: true })
+    },
+  }
+  view.update(el)
+  return view
+}
+
 /** 按元素类型注册渲染器；未注册的类型用占位卡片 */
 export class RendererRegistry {
   private map = new Map<ElementKind, ElementRenderer>()
@@ -261,6 +357,7 @@ export class RendererRegistry {
       this.register('video', mediaRenderer)
       this.register('audio', mediaRenderer)
       this.register('markdown', markdownRenderer)
+      this.register('node', nodeRenderer)
     }
   }
 

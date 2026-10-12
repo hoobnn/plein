@@ -7,6 +7,8 @@ import {
   ELEMENT_KINDS,
   type Edge,
   type ElementKind,
+  type NodeResult,
+  type NodeRun,
   type Ports,
   type Rect,
 } from './types'
@@ -284,6 +286,11 @@ export class PleinDoc {
   }
 }
 
+function isResult(r: unknown): r is NodeResult {
+  const v = r as NodeResult | null
+  return !!v && typeof v.id === 'string' && typeof v.port === 'string' && !!v.value
+}
+
 function readElement(id: string, m: ElementMap): CanvasElement | undefined {
   const kind = m.get('kind')
   if (!isKind(kind)) return undefined
@@ -313,6 +320,12 @@ function readElement(id: string, m: ElementMap): CanvasElement | undefined {
   if (nodeType !== undefined) el.nodeType = nodeType
   const nodeVersion = m.get('nodeVersion')
   if (typeof nodeVersion === 'number') el.nodeVersion = nodeVersion
+  const results = m.get('results')
+  if (Array.isArray(results)) el.results = results.filter(isResult)
+  const adopted = str(m.get('adopted'))
+  if (adopted !== undefined) el.adopted = adopted
+  const run = m.get('run') as NodeRun | undefined
+  if (run && typeof run === 'object' && typeof run.status === 'string') el.run = run
   return el
 }
 

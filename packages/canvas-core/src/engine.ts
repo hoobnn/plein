@@ -4,6 +4,7 @@ import {
   deleteElements,
   duplicateElements,
   exportElements,
+  groupElements,
   importElements,
   isClipboardData,
   moveElements,
@@ -16,6 +17,7 @@ import { EdgeLayer } from './edges'
 import { union } from './geometry'
 import { attachInput, isEditableTarget, type PanState } from './input'
 import { attachInteractions } from './interact'
+import type { PortRef } from './ports'
 import { SelectionOverlay } from './overlay'
 import { type RenderContext, RendererRegistry } from './renderers'
 import { Scene, type Transient } from './scene'
@@ -44,6 +46,21 @@ export interface EngineState {
   canRedo: boolean
 }
 
+/** 画布上的一个位置：世界坐标 + 视口坐标（clientX / clientY，弹菜单用） */
+export interface CanvasPoint {
+  world: { x: number; y: number }
+  client: { x: number; y: number }
+}
+
+/** 需要外壳弹出菜单的画布事件 */
+export type CanvasMenuEvent =
+  /** 双击空白处：新建节点 */
+  | ({ kind: 'create' } & CanvasPoint)
+  /** 从端口拉线到空白处：新建节点并连上 */
+  | ({ kind: 'connect'; from: PortRef } & CanvasPoint)
+  /** 右键：target 为空表示空白处 */
+  | ({ kind: 'context'; target: string | null } & CanvasPoint)
+
 /** 粘贴时相对上一次的位移 */
 const PASTE_OFFSET = 24
 
@@ -68,6 +85,7 @@ export class Engine {
   private listeners = new Set<() => void>()
   private viewListeners = new Set<() => void>()
   private activateListeners = new Set<(id: string) => void>()
+  private menuListeners = new Set<(e: CanvasMenuEvent) => void>()
   /** 元素内容或几何变化，需要通知覆盖层 */
   private contentDirty = false
   private disposers: Array<() => void> = []
@@ -79,7 +97,7 @@ export class Engine {
     this.views = new ElementViews(this.scene, opts.renderers ?? new RendererRegistry(), {
       assetUrl: opts.assetUrl,
     })
-    this.edges = new EdgeLayer(this.scene, this.camera)
+    this.edges = new EdgeLayer(this.scene, this.camera, this.selection)
     this.overlay = new SelectionOverlay(this.scene, this.selection, this.camera)
   }
 
@@ -117,10 +135,13 @@ export class Engine {
         pan: this.pan,
         preview: (patches) => this.preview(patches),
         commit: (write) => this.commit(write),
+        connectToEmpty: (from, world, client) =>
+          this.emitMenu({ kind: 'connect', from, world, client }),
       }),
       this.camera.onChange(() => this.syncCamera()),
       this.selection.onChange(() => {
         this.overlay.markDirty()
+        this.edges.markDirty()
         this.emit()
       }),
       this.doc.subscribe((change) => {
@@ -135,6 +156,7 @@ export class Engine {
       }),
       this.attachShortcuts(),
       this.attachActivate(),
+      this.attachContextMenu(),
     )
 
     const onResize = () => this.camera.setViewport(this.app.screen.width, this.app.screen.height)
@@ -194,6 +216,14 @@ export class Engine {
     }
   }
 
+  /** 双击空白、拉线到空白、右键时通知外壳弹菜单 */
+  onMenu(fn: (e: CanvasMenuEvent) => void) {
+    this.menuListeners.add(fn)
+    return () => {
+      this.menuListeners.delete(fn)
+    }
+  }
+
   get visibleIds(): ReadonlySet<string> {
     return this.views.visibleIds
   }
@@ -201,6 +231,13 @@ export class Engine {
   /** 是否处于正常细节（缩得很小时为 false，覆盖层应隐藏） */
   get highDetail() {
     return this.views.isHighDetail
+  }
+
+  /** 世界坐标转视口坐标（clientX / clientY） */
+  worldToClient(x: number, y: number) {
+    const r = this.opts.host.getBoundingClientRect()
+    const s = this.camera.worldToScreen(x, y)
+    return { x: s.x + r.left, y: s.y + r.top }
   }
 
   /** 屏幕坐标（相对画布宿主）转世界坐标 */
@@ -244,6 +281,13 @@ export class Engine {
     moveElements(this.doc, this.selection.values(), dx, dy)
   }
 
+  /** 用 Frame 包住选中元素（⌘G） */
+  groupSelection() {
+    if (this.selection.size === 0) return
+    const frame = groupElements(this.doc, this.selection.values())
+    if (frame) this.selection.set([frame])
+  }
+
   bringToFront() {
     bringToFront(this.doc, this.selection.values())
   }
@@ -276,6 +320,10 @@ export class Engine {
   }
 
   // ── 内部 ────────────────────────────────────────────
+
+  private emitMenu(e: CanvasMenuEvent) {
+    for (const fn of this.menuListeners) fn(e)
+  }
 
   private emit() {
     for (const fn of this.listeners) fn()
@@ -349,12 +397,31 @@ export class Engine {
       if (this.toolValue !== 'select') return
       const p = this.clientToWorld(e.clientX, e.clientY)
       const id = this.scene.hitTest(p.x, p.y)
-      if (!id) return
+      const client = { x: e.clientX, y: e.clientY }
+      // 双击 Frame 的空白处也算画布空白：在组里新建节点
+      if (!id || this.scene.get(id)?.kind === 'frame') {
+        this.emitMenu({ kind: 'create', world: p, client })
+        return
+      }
       this.selection.set([id])
       for (const fn of this.activateListeners) fn(id)
     }
     host.addEventListener('dblclick', onDblClick)
     return () => host.removeEventListener('dblclick', onDblClick)
+  }
+
+  private attachContextMenu() {
+    const host = this.opts.host
+    const onContextMenu = (e: MouseEvent) => {
+      e.preventDefault()
+      const world = this.clientToWorld(e.clientX, e.clientY)
+      const target = this.scene.hitTest(world.x, world.y)
+      if (target && !this.selection.has(target)) this.selection.set([target])
+      if (!target) this.selection.clear()
+      this.emitMenu({ kind: 'context', target, world, client: { x: e.clientX, y: e.clientY } })
+    }
+    host.addEventListener('contextmenu', onContextMenu)
+    return () => host.removeEventListener('contextmenu', onContextMenu)
   }
 
   private attachShortcuts() {
@@ -368,6 +435,7 @@ export class Engine {
       else if (mod && key === 'y') this.redo()
       else if (mod && key === 'a') this.selectAll()
       else if (mod && key === 'd') this.duplicateSelection()
+      else if (mod && key === 'g' && !e.shiftKey) this.groupSelection()
       else if (mod && e.key === ']') this.bringToFront()
       else if (mod && e.key === '[') this.sendToBack()
       else if (mod && key === '0') this.zoomTo(1)

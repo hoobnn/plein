@@ -1,6 +1,13 @@
 export { Camera } from './camera'
 export { type EdgePreview, EdgeLayer } from './edges'
-export { Engine, type EngineOptions, type EngineState, type Tool } from './engine'
+export {
+  type CanvasMenuEvent,
+  type CanvasPoint,
+  Engine,
+  type EngineOptions,
+  type EngineState,
+  type Tool,
+} from './engine'
 export * from './geometry'
 export { attachInput, isEditableTarget, type PanState } from './input'
 export * from './ports'
@@ -12,6 +19,9 @@ export {
   imageRenderer,
   markdownRenderer,
   mediaRenderer,
+  NODE_LAYOUT,
+  nodeBody,
+  nodeRenderer,
   type RenderContext,
   RendererRegistry,
 } from './renderers'

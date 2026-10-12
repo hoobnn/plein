@@ -1,7 +1,9 @@
+import { type CanvasElement, elementPorts } from '@plein/doc'
 import { Graphics } from 'pixi.js'
 import type { Camera } from './camera'
 import { PORT_COLORS, PORT_RADIUS, eachPort, findPort, type PortRef } from './ports'
 import type { Scene } from './scene'
+import type { Selection } from './selection'
 
 const EDGE_COLOR = 0xe8d5b5
 
@@ -30,6 +32,7 @@ export class EdgeLayer {
   constructor(
     private scene: Scene,
     private camera: Camera,
+    private selection: Selection,
   ) {
     this.edges.zIndex = -1
     this.ports.zIndex = 1
@@ -48,6 +51,16 @@ export class EdgeLayer {
     if (p?.elementId === this.hover?.elementId && p?.port.id === this.hover?.port.id) return
     this.hover = p
     this.markDirty()
+  }
+
+  /**
+   * 端口是否显示（也决定能否点中）：节点的端口一直显示；
+   * 素材元素的隐式端口只在选中或正在连线时显示，避免满屏端口点。
+   */
+  portsVisible(el: CanvasElement) {
+    if (el.ports) return true
+    if (!elementPorts(el)) return false
+    return this.preview !== null || this.selection.has(el.id)
   }
 
   /** 世界坐标下的端口 */
@@ -86,7 +99,7 @@ export class EdgeLayer {
     for (const id of this.scene.query(this.camera.viewRect)) {
       const el = this.scene.get(id)
       const r = this.scene.rect(id)
-      if (!el?.ports || !r) continue
+      if (!el || !r || !this.portsVisible(el)) continue
       eachPort(el, r, (ref) => {
         const on = active?.elementId === ref.elementId && active.port.id === ref.port.id
         p.circle(ref.x, ref.y, on ? PORT_RADIUS * 1.4 : PORT_RADIUS)

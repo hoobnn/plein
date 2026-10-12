@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import {
+  addResults,
+  adoptResult,
+  currentResult,
+  elementPorts,
+  groupElements,
+  removeResult,
+  writeRun,
   bringToFront,
   connect,
   createDoc,
@@ -305,5 +312,67 @@ describe('迁移', () => {
     const doc = open(ydoc)
     expect(doc.readOnly).toBe(true)
     expect(() => createElement(doc, box())).toThrow(ReadOnlyDocError)
+  })
+})
+
+describe('节点结果与端口', () => {
+  const nodePorts = {
+    inputs: [
+      { id: 'prompt', label: '提示词', type: 'text' as const },
+      { id: 'refs', label: '参考图', type: 'image' as const, multiple: true },
+    ],
+    outputs: [{ id: 'images', label: '图片', type: 'image' as const }],
+  }
+
+  it('结果追加后自动采用，采用可撤销，系统写入不进撤销栈', () => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    const id = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200, ports: nodePorts })
+    doc.undo.stopCapturing()
+    const r = (n: number) => ({
+      id: `r${n}`,
+      port: 'images',
+      value: { type: 'image' as const, assetId: `a${n}` },
+      runId: 'run1',
+      at: n,
+    })
+    addResults(doc, id, [r(1), r(2)])
+    writeRun(doc, id, { id: 'run1', status: 'succeeded', at: 1 })
+    expect(doc.get(id)!.results!.map((x) => x.id)).toEqual(['r1', 'r2'])
+    expect(currentResult(doc.get(id)!)?.id).toBe('r1')
+    expect(doc.get(id)!.run?.status).toBe('succeeded')
+    adoptResult(doc, id, 'r2')
+    expect(currentResult(doc.get(id)!)?.id).toBe('r2')
+    doc.undo.undo()
+    expect(currentResult(doc.get(id)!)?.id).toBe('r1')
+    // 结果本身仍在
+    expect(doc.get(id)!.results).toHaveLength(2)
+    removeResult(doc, id, 'r1')
+    expect(currentResult(doc.get(id)!)?.id).toBe('r2')
+  })
+
+  it('多连端口保留已有连线，素材元素有隐式输出端口', () => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    const node = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200, ports: nodePorts })
+    const a = createElement(doc, { kind: 'image', assetId: 'x', x: 0, y: 0, w: 10, h: 10 })
+    const b = createElement(doc, { kind: 'image', assetId: 'y', x: 0, y: 0, w: 10, h: 10 })
+    const md = createElement(doc, { kind: 'markdown', text: 'hi', x: 0, y: 0, w: 10, h: 10 })
+    expect(elementPorts(doc.get(a)!)?.outputs[0]?.type).toBe('image')
+    expect(connect(doc, [a, 'image'], [node, 'refs'])).not.toBeNull()
+    expect(connect(doc, [b, 'image'], [node, 'refs'])).not.toBeNull()
+    expect(connect(doc, [md, 'text'], [node, 'prompt'])).not.toBeNull()
+    expect(doc.edgesOf(node)).toHaveLength(3)
+    const md2 = createElement(doc, { kind: 'markdown', text: 'yo', x: 0, y: 0, w: 10, h: 10 })
+    connect(doc, [md2, 'text'], [node, 'prompt'])
+    expect(doc.edgesOf(node).filter((e) => e.to[1] === 'prompt')).toHaveLength(1)
+  })
+
+  it('打组：用 Frame 包住元素并保持世界坐标', () => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    const a = createElement(doc, { kind: 'image', x: 100, y: 100, w: 50, h: 50 })
+    const b = createElement(doc, { kind: 'image', x: 300, y: 200, w: 50, h: 50 })
+    const f = groupElements(doc, [a, b], { padding: 10 })!
+    expect(doc.get(f)).toMatchObject({ kind: 'frame', x: 90, y: 90, w: 270, h: 170 })
+    expect(doc.get(a)!.parentId).toBe(f)
+    expect(doc.worldRect(b)).toEqual({ x: 300, y: 200, w: 50, h: 50 })
   })
 })

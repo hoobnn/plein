@@ -242,6 +242,9 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.4
         version: 2.1.4(hono@4.13.13)
+      '@plein/doc':
+        specifier: workspace:*
+        version: link:../../packages/doc
       '@plein/nodes':
         specifier: workspace:*
         version: link:../../packages/nodes

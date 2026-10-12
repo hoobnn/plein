@@ -14,6 +14,8 @@ import { ProviderConfigStore } from './plugins/config-store'
 import { PluginHost } from './plugins/host'
 import { PluginRegistry } from './plugins/registry'
 import { pluginRoutes } from './plugins/routes'
+import { runRoutes } from './runs/routes'
+import { NodeRuns } from './runs/runs'
 import { type DB, openDb } from './storage/db'
 import { loadSecrets, type Secrets } from './storage/secrets'
 import { Rooms, sqliteDocStore } from './sync/rooms'
@@ -62,6 +64,7 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', assetRoutes(assets))
   app.route('/', syncRoutes(db, rooms))
   app.route('/', pluginRoutes(plugins))
+  app.route('/', runRoutes(db, new NodeRuns(rooms, plugins)))
   app.all('/api/*', (c) => c.json({ error: 'not_found', message: '接口不存在' }, 404))
 
   if (config.webDist) {

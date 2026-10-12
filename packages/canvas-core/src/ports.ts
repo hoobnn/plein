@@ -1,4 +1,4 @@
-import type { CanvasElement, Port, PortType, Rect } from '@plein/doc'
+import { type CanvasElement, elementPorts, type Port, type PortType, type Rect } from '@plein/doc'
 
 /** 端口半径（世界坐标） */
 export const PORT_RADIUS = 6
@@ -24,7 +24,8 @@ export const PORT_COLORS: Record<PortType, number> = {
 }
 
 function portList(el: CanvasElement, side: PortSide) {
-  return (side === 'in' ? el.ports?.inputs : el.ports?.outputs) ?? []
+  const ports = elementPorts(el)
+  return (side === 'in' ? ports?.inputs : ports?.outputs) ?? []
 }
 
 /** 输入端口沿左边、输出端口沿右边均匀分布；rect 为世界坐标 */
