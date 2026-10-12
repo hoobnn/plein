@@ -56,6 +56,9 @@ function settle(value: boolean | string | null) {
   else req.resolve(typeof value === 'string' ? value : null)
 }
 
+/** 当前有没有对话框开着：外层面板的 Esc 处理要让给对话框 */
+export const dialogOpen = () => current !== null
+
 export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => open({ kind: 'confirm', options, resolve }))
 }

@@ -1,14 +1,23 @@
 import type { Engine } from '@plein/canvas-core'
-import { setParam } from '@plein/doc'
-import { newShotId, SHOT_SIZES, type Shot } from '@plein/nodes'
+import { LOCAL_ORIGIN, setParam } from '@plein/doc'
+import { dropShot, newShotId, SHOT_SIZES, type Shot, type ShotRole } from '@plein/nodes'
 import { useEffect, useState } from 'react'
 import { useDocVersion } from '../canvas/hooks'
-import { expandedNodes, expandShots, runExpanded, shotsOf } from '../canvas/storyboard'
+import {
+  detachShot,
+  expandedNodes,
+  expandShots,
+  planDiffs,
+  runExpanded,
+  shotsOf,
+} from '../canvas/storyboard'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
+import { confirmDialog, dialogOpen } from '../ui/Dialog'
 import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { Select } from '../ui/Select'
+import { StoryboardSync } from './StoryboardSync'
 
 const cell =
   'w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
@@ -48,19 +57,26 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const el = engine.doc.get(id)
   const shots = shotsOf(el)
   const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [syncScope, setSyncScope] = useState<string[] | null>(null)
   const expanded = expandedNodes(engine, id)
+  const diffs = planDiffs(engine, id)
   const targets = picked.size ? shots.filter((s) => picked.has(s.id)) : shots
   const targetIds = targets.map((s) => s.id)
+  /** 每个镜头有出入的字段数：表格改动后在行尾提示 */
+  const diffCount = (shotId: string) =>
+    (diffs.get(shotId) ?? []).reduce((n, d) => n + d.diffs.length, 0)
+  const scopeDiffs = targetIds.reduce((n, sid) => n + diffCount(sid), 0)
 
   useEffect(() => {
     // 捕获阶段拦下按键：表格打开时画布的快捷键（删除、方向键等）不生效
     const key = (e: KeyboardEvent) => {
       e.stopPropagation()
-      if (e.key === 'Escape') onClose()
+      // 差异面板或确认框开着时 Esc 关它们，不连带关掉表格
+      if (e.key === 'Escape' && !syncScope && !dialogOpen()) onClose()
     }
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
-  }, [onClose])
+  }, [onClose, syncScope])
 
   const write = (next: Shot[]) => setParam(engine.doc, id, 'shots', next)
   const patch = (shotId: string, p: Partial<Shot>) =>
@@ -86,29 +102,79 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       },
     ])
   }
-  const remove = (shotId: string) => write(shots.filter((s) => s.id !== shotId))
+  /**
+   * 删镜头：只从计划里去掉这一行。已经展开出来的节点和它们的产物留在画布上，
+   * 只是标记成脱离计划、不再跟着表格更新；删行和标记在同一次撤销里。
+   */
+  const remove = async (shotId: string) => {
+    const nodes = expanded.get(shotId)?.length ?? 0
+    const no = shots.find((s) => s.id === shotId)?.no
+    if (nodes > 0) {
+      const ok = await confirmDialog({
+        title: `删除镜头 ${String(no ?? '').padStart(2, '0')}？`,
+        message: `这个镜头已经展开成 ${nodes} 个节点。节点和它们的产物会保留在画布上，只是不再属于当前分镜表；按 Ctrl+Z 可以撤销这次删除。`,
+        confirmLabel: '删除镜头',
+        danger: true,
+      })
+      if (!ok) return
+    }
+    const next = dropShot(shots, shotId)
+    engine.doc.ydoc.transact(() => {
+      setParam(engine.doc, id, 'shots', next.shots)
+      detachShot(engine, id, shotId)
+    }, LOCAL_ORIGIN)
+    engine.doc.flush()
+    notify(nodes ? `已删除镜头，${nodes} 个节点保留在画布上（Ctrl+Z 可撤销）` : '已删除镜头')
+  }
   const scope = picked.size ? `选中的 ${picked.size} 个镜头` : '全部镜头'
 
-  const expand = () => {
-    const frames = expandShots(engine, id, targetIds, catalog)
-    const already = targets.filter((s) => expanded.has(s.id)).length
-    notify(
-      frames.length
-        ? `已展开 ${frames.length} 个镜头${already ? `，${already} 个之前展开过，已跳过` : ''}`
-        : '这些镜头都已展开过',
+  const expand = (mode: 'new' | 'update') => {
+    const { frames, created, updated, skipped, ambiguous } = expandShots(
+      engine,
+      id,
+      targetIds,
+      catalog,
+      {
+        mode,
+      },
     )
+    // 重名的角色卡没法判断分镜指的是哪一个，宁可不引用也不能引错
+    if (ambiguous.length)
+      notify(
+        `画布上有重名的资产卡：${ambiguous.join('、')}。先改名或写清是哪一个，这次没有把它们写进提示词`,
+      )
+    if (mode === 'update')
+      notify(
+        updated
+          ? `已给 ${updated} 个镜头补齐缺的节点（新建 ${created} 个）${skipped ? `，${skipped} 个结构完整没动` : ''}`
+          : '这些镜头结构已经完整，已有节点一个参数都没改',
+      )
+    else {
+      const already = targets.filter((s) => expanded.has(s.id)).length
+      notify(
+        frames.length
+          ? `已展开 ${frames.length} 个镜头（${created} 个节点）${already ? `，${already} 个之前展开过，已跳过` : ''}`
+          : '这些镜头都已展开过，要补齐用「更新展开」',
+      )
+    }
     if (frames.length) {
       onClose()
       engine.zoomToFit([id, ...frames])
     }
   }
-  const batch = (role: 'image' | 'video') => {
-    const { started, skipped } = runExpanded(engine, id, targetIds, role)
-    const label = role === 'image' ? '分镜图' : '视频'
-    if (!started && !skipped) notify('先把镜头展开成节点，再批量生成')
+  const batch = (role: ShotRole) => {
+    const { started, skipped, reasons } = runExpanded(engine, id, targetIds, role)
+    const label = role === 'image' ? '分镜图' : role === 'video' ? '视频' : '配音'
+    if (!started && !skipped) notify(`先把镜头展开成节点，再批量生成${label}`)
     else
       notify(
-        `已开始生成 ${started} 个${label}${skipped ? `；${skipped} 个镜头还没有分镜图，已跳过` : ''}`,
+        `已开始生成 ${started} 个${label}${
+          skipped
+            ? `；跳过 ${skipped} 个（${Object.entries(reasons)
+                .map(([k, n]) => `${k} ${n}`)
+                .join('、')}）`
+            : ''
+        }`,
       )
   }
 
@@ -129,9 +195,24 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           <Icon name="plus" />
           添加镜头
         </button>
-        <button type="button" className={btn} disabled={!shots.length} onClick={expand}>
+        <button
+          type="button"
+          className={btn}
+          disabled={!shots.length}
+          onClick={() => expand('new')}
+        >
           <Icon name="workflow" />
           展开为节点
+        </button>
+        <button
+          type="button"
+          className={btn}
+          disabled={!expanded.size}
+          title="给已展开的镜头补齐缺的角色和新增的台词，已有节点不动"
+          onClick={() => expand('update')}
+        >
+          <Icon name="retry" />
+          更新展开
         </button>
         <span aria-hidden="true" className="ui-bar-sep" />
         <button
@@ -145,12 +226,31 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         </button>
         <button
           type="button"
-          className="ui-btn ui-btn-primary"
+          className={btn}
           disabled={!expanded.size}
           onClick={() => batch('video')}
         >
           <Icon name="video" />
           批量生成视频
+        </button>
+        <button
+          type="button"
+          className="ui-btn ui-btn-primary"
+          disabled={!expanded.size}
+          onClick={() => batch('speech')}
+        >
+          <Icon name="mic" />
+          批量配音
+        </button>
+        <button
+          type="button"
+          className={btn}
+          disabled={!scopeDiffs}
+          title="看分镜表改动和已展开节点的出入，确认后才同步"
+          onClick={() => setSyncScope(targetIds)}
+        >
+          <Icon name="layers" />
+          查看差异{scopeDiffs ? `（${scopeDiffs}）` : ''}
         </button>
       </ModalHeader>
       {shots.length === 0 ? (
@@ -249,19 +349,30 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                   />
                   <td className="py-2 pr-5 pl-2">
                     <div className="flex flex-col items-end gap-1">
-                      {expanded.has(s.id) ? (
-                        <span className="ui-tag ui-tag-success">已展开</span>
-                      ) : (
+                      <div className="flex items-center gap-1">
+                        {expanded.has(s.id) && (
+                          <span className="ui-tag ui-tag-success">已展开</span>
+                        )}
+                        {diffCount(s.id) > 0 && (
+                          <button
+                            type="button"
+                            aria-label={`查看镜头 ${s.no} 的差异`}
+                            className="ui-tag ui-tag-warning hover:brightness-110"
+                            onClick={() => setSyncScope([s.id])}
+                          >
+                            {diffCount(s.id)} 处差异
+                          </button>
+                        )}
                         <button
                           type="button"
                           aria-label={`删除镜头 ${s.no}`}
-                          title="删除镜头"
+                          title={expanded.has(s.id) ? '删除镜头（已展开的节点保留）' : '删除镜头'}
                           className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn hover:text-danger"
-                          onClick={() => remove(s.id)}
+                          onClick={() => void remove(s.id)}
                         >
                           <Icon name="trash" size={14} />
                         </button>
-                      )}
+                      </div>
                       {s.edited && <span className="ui-tag ui-tag-accent">手改</span>}
                     </div>
                   </td>
@@ -270,6 +381,14 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             </tbody>
           </table>
         </div>
+      )}
+      {syncScope && (
+        <StoryboardSync
+          engine={engine}
+          boardId={id}
+          shotIds={syncScope}
+          onClose={() => setSyncScope(null)}
+        />
       )}
     </Modal>
   )
