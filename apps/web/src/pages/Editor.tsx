@@ -9,6 +9,7 @@ import { Board } from '../panels/Board'
 import { FrameBar } from '../panels/FrameBar'
 import { Generator } from '../panels/generator/Generator'
 import { History } from '../panels/History'
+import { ProjectSwitcher } from '../panels/ProjectSwitcher'
 import { ResultBar, Viewer } from '../panels/ResultBar'
 import { SelectionBar } from '../panels/SelectionBar'
 import { Shortcuts } from '../panels/Shortcuts'
@@ -17,10 +18,10 @@ import { StoryboardEditor } from '../panels/StoryboardEditor'
 import { Tasks } from '../panels/Tasks'
 import { Toolbar, ViewControls } from '../panels/Toolbar'
 import { Icon } from '../ui/icons'
-import { InlineTitle } from '../ui/InlineTitle'
 import { MOD } from '../ui/keys'
 import { ThemeToggle } from '../ui/ThemeToggle'
 import { useCatalog } from '../stores/catalog'
+import { useLibrary } from '../stores/library'
 import { type SyncStatus, useCanvas } from '../stores/canvas'
 import { useTemplates } from '../stores/templates'
 
@@ -53,14 +54,13 @@ export function Editor({
     api.canvas(canvasId).then(setCanvas, () => setCanvas(null))
     void useCatalog.getState().load()
     void useTemplates.getState().load()
+    void useLibrary.getState().load()
   }, [canvasId])
-
-  const [renaming, setRenaming] = useState(false)
-  const rename = async (title: string | null) => {
-    setRenaming(false)
-    if (canvas && title && title !== canvas.title)
-      setCanvas(await api.renameCanvas(canvas.id, title))
-  }
+  // 资产库的「本项目」与新建条目的默认归属跟着当前画布走
+  useEffect(() => {
+    useLibrary.getState().setProject(canvas?.projectId ?? null)
+    return () => useLibrary.getState().setProject(null)
+  }, [canvas?.projectId])
 
   return (
     <div className="relative h-full w-full">
@@ -75,21 +75,12 @@ export function Editor({
           <span className="text-ink-subtle" aria-hidden="true">
             /
           </span>
-          {renaming && canvas ? (
-            <InlineTitle
-              value={canvas.title}
-              onDone={rename}
-              className="h-9 w-52 rounded-md px-2 text-sm font-medium"
-            />
+          {canvas ? (
+            <ProjectSwitcher canvas={canvas} onCanvas={setCanvas} />
           ) : (
-            <button
-              type="button"
-              onClick={() => setRenaming(source.kind === 'remote' && !!canvas)}
-              title={source.kind === 'remote' ? '重命名' : undefined}
-              className="ui-bar-btn block max-w-60 truncate font-medium text-ink"
-            >
-              {source.kind === 'demo' ? `演示（${source.count} 个元素）` : (canvas?.title ?? '…')}
-            </button>
+            <span className="ui-bar-btn block max-w-60 truncate font-medium text-ink">
+              {source.kind === 'demo' ? `演示（${source.count} 个元素）` : '…'}
+            </span>
           )}
           <span
             className={`flex items-center gap-1.5 px-2 text-xs ${sync === 'disconnected' ? 'text-warning' : 'text-ink-subtle'}`}
@@ -109,6 +100,20 @@ export function Editor({
           <ModeSwitch />
         </div>
         <div className="ui-bar pointer-events-auto">
+          {source.kind === 'remote' && (
+            <>
+              <button
+                type="button"
+                onClick={() => useLibrary.getState().show('character')}
+                title="资产库：角色、场景、道具、风格、特效"
+                className="ui-bar-btn gap-1.5"
+              >
+                <Icon name="library" />
+                资产库
+              </button>
+              <div className="ui-bar-sep" />
+            </>
+          )}
           <ThemeToggle />
           {source.kind === 'remote' && (
             <>

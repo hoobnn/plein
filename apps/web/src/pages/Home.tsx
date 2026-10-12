@@ -1,8 +1,9 @@
-import type { Canvas } from '@plein/protocol'
+import type { Project } from '@plein/protocol'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { queueStartNode } from '../canvas/start'
-import { navigate } from '../router'
+import { navigate, routeHash } from '../router'
+import { useLibrary } from '../stores/library'
 import { useSession } from '../stores/session'
 import { confirmDialog } from '../ui/Dialog'
 import { fullTime, relativeTime } from '../ui/format'
@@ -10,7 +11,7 @@ import { Icon, type IconName } from '../ui/icons'
 import { InlineTitle } from '../ui/InlineTitle'
 import { ThemeToggle } from '../ui/ThemeToggle'
 
-/** 快速开始：新建画布并放好对应节点、打开生成器 */
+/** 快速开始：新建项目并在它的第一张画布上放好对应节点、打开生成器 */
 const QUICK_START: Array<{ type: string; title: string; hint: string; icon: IconName }> = [
   { type: 'plein/image', title: '图片生成', hint: '文生图、参考图生图', icon: 'image' },
   { type: 'plein/video', title: '视频生成', hint: '文生、图生、首尾帧、图片参考', icon: 'video' },
@@ -19,11 +20,11 @@ const QUICK_START: Array<{ type: string; title: string; hint: string; icon: Icon
   { type: 'plein/music', title: '配乐', hint: '按描述生成音乐', icon: 'music' },
 ]
 
-/** 画布列表：新建、打开、重命名、删除 */
+/** 项目列表：新建、打开（进入最近的画布）、重命名、删除 */
 export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   const info = useSession((s) => s.info)
   const refreshSession = useSession((s) => s.refresh)
-  const [canvases, setCanvases] = useState<Canvas[] | null>(null)
+  const [projects, setProjects] = useState<Project[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [creating, setCreating] = useState(false)
@@ -31,7 +32,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
 
   const load = useCallback(async () => {
     try {
-      setCanvases(await api.canvases())
+      setProjects(await api.projects())
     } catch (err) {
       setError((err as Error).message)
     }
@@ -44,27 +45,28 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
     if (creating) return
     setCreating(true)
     try {
-      const c = await api.createCanvas()
-      if (start) queueStartNode(c.id, start)
-      navigate({ name: 'canvas', id: c.id })
+      const p = await api.createProject()
+      if (!p.lastCanvasId) throw new Error('项目建好了，但没有画布')
+      if (start) queueStartNode(p.lastCanvasId, start)
+      navigate({ name: 'canvas', id: p.lastCanvasId })
     } catch (err) {
       setError((err as Error).message)
       setCreating(false)
     }
   }
-  const rename = async (c: Canvas, title: string) => {
-    await api.renameCanvas(c.id, title)
+  const rename = async (p: Project, title: string) => {
+    await api.renameProject(p.id, title)
     await load()
   }
-  const remove = async (c: Canvas) => {
+  const remove = async (p: Project) => {
     const ok = await confirmDialog({
-      title: `删除画布「${c.title}」？`,
-      message: '画布内容会一并删除，素材文件保留。',
+      title: `删除项目「${p.title}」？`,
+      message: `项目里的 ${p.canvases} 张画布会一并删除；素材文件和资产库里的角色、场景等保留。`,
       confirmLabel: '删除',
       danger: true,
     })
     if (!ok) return
-    await api.deleteCanvas(c.id)
+    await api.deleteProject(p.id)
     await load()
   }
   const logout = async () => {
@@ -73,7 +75,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   }
 
   const q = query.trim().toLowerCase()
-  const shown = canvases?.filter((c) => !q || c.title.toLowerCase().includes(q)) ?? null
+  const shown = projects?.filter((p) => !q || p.title.toLowerCase().includes(q)) ?? null
 
   return (
     <div
@@ -88,6 +90,15 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
             Plein
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => useLibrary.getState().show('character')}
+              title="资产库：角色、场景、道具、风格、特效"
+              className="ui-btn ui-btn-quiet"
+            >
+              <Icon name="library" />
+              资产库
+            </button>
             <ThemeToggle />
             <button
               type="button"
@@ -112,25 +123,25 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="flex items-baseline gap-2 text-2xl font-semibold">
-              我的画布
-              {canvases && canvases.length > 0 && (
-                <span className="text-sm font-normal text-ink-subtle">{canvases.length}</span>
+              我的项目
+              {projects && projects.length > 0 && (
+                <span className="text-sm font-normal text-ink-subtle">{projects.length}</span>
               )}
             </h1>
             <p className="mt-1 text-sm text-ink-subtle">
-              把剧本、角色、分镜和生成结果放在一张无限画布上
+              一个项目一部片子，下面可以分多张画布；角色、场景、风格存进资产库跨画布复用
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {canvases && canvases.length > 1 && (
+            {projects && projects.length > 1 && (
               <label className="home-search">
                 <Icon name="search" />
                 <input
                   type="search"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="搜索画布"
-                  aria-label="搜索画布"
+                  placeholder="搜索项目"
+                  aria-label="搜索项目"
                 />
               </label>
             )}
@@ -141,7 +152,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
               className="ui-btn ui-btn-primary ui-btn-lg"
             >
               <Icon name="plus" />
-              新建画布
+              新建项目
             </button>
           </div>
         </div>
@@ -184,46 +195,47 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
                   <span className="home-new-icon">
                     <Icon name="plus" size={20} />
                   </span>
-                  <span className="text-base font-medium text-ink">新建画布</span>
+                  <span className="text-base font-medium text-ink">新建项目</span>
                   <span className="text-xs text-ink-subtle">
-                    {canvases?.length ? '从一张空白画布开始' : '拖入图片、视频、音频或 Markdown'}
+                    {projects?.length ? '从一张空白画布开始' : '拖入图片、视频、音频或 Markdown'}
                   </span>
                 </button>
               </li>
             )}
-            {shown.map((c) => (
-              <CanvasCard
-                key={c.id}
-                canvas={c}
-                onRename={(t) => rename(c, t)}
-                onDelete={() => remove(c)}
+            {shown.map((p) => (
+              <ProjectCard
+                key={p.id}
+                project={p}
+                onRename={(t) => rename(p, t)}
+                onDelete={() => remove(p)}
               />
             ))}
           </ul>
         )}
         {q && shown?.length === 0 && (
-          <p className="py-16 text-center text-sm text-ink-subtle">没有标题包含「{query}」的画布</p>
+          <p className="py-16 text-center text-sm text-ink-subtle">没有标题包含「{query}」的项目</p>
         )}
       </main>
     </div>
   )
 }
 
-function CanvasCard({
-  canvas: c,
+function ProjectCard({
+  project: c,
   onRename,
   onDelete,
 }: {
-  canvas: Canvas
+  project: Project
   onRename(title: string): Promise<void>
   onDelete(): void
 }) {
   const [editing, setEditing] = useState(false)
   const covers = c.covers ?? []
+  const href = routeHash({ name: 'project', id: c.id })
   return (
     <li className="home-card group">
-      <a href={`#/c/${encodeURIComponent(c.id)}`} className="block" draggable={false}>
-        <Cover covers={covers} elements={c.elements ?? 0} />
+      <a href={href} className="block" draggable={false}>
+        <Cover covers={covers} empty={c.canvases === 0} />
       </a>
       <div className="flex items-center gap-2 px-3 pb-3 pt-2.5">
         <div className="min-w-0 flex-1">
@@ -237,17 +249,12 @@ function CanvasCard({
               }}
             />
           ) : (
-            <a
-              href={`#/c/${encodeURIComponent(c.id)}`}
-              className="block truncate text-base font-medium"
-              draggable={false}
-            >
+            <a href={href} className="block truncate text-base font-medium" draggable={false}>
               {c.title}
             </a>
           )}
           <div className="truncate text-xs text-ink-subtle" title={fullTime(c.updatedAt)}>
-            {relativeTime(c.updatedAt)}编辑
-            {c.elements ? ` · ${c.elements} 个元素` : ''}
+            {relativeTime(c.updatedAt)}编辑 · {c.canvases} 张画布
           </div>
         </div>
         <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
@@ -275,14 +282,14 @@ function CanvasCard({
   )
 }
 
-/** 缩略图：最近的 1–4 张生成结果拼成马赛克；没有媒体时画一张示意的空画布 */
-function Cover({ covers, elements }: { covers: string[]; elements: number }) {
+/** 缩略图：项目里最近的 1–4 张生成结果拼成马赛克；没有媒体时画一张示意的空画布 */
+function Cover({ covers, empty }: { covers: string[]; empty: boolean }) {
   if (covers.length === 0)
     return (
       <div className="plein-thumb home-cover flex items-center justify-center">
         <span className="flex flex-col items-center gap-2 text-ink-subtle">
-          <Icon name={elements ? 'workflow' : 'frame'} size={24} />
-          <span className="text-xs">{elements ? '还没有生成图片' : '空画布'}</span>
+          <Icon name="frame" size={24} />
+          <span className="text-xs">{empty ? '还没有画布' : '还没有生成图片'}</span>
         </span>
       </div>
     )

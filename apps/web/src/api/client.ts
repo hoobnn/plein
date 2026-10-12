@@ -8,13 +8,18 @@ import {
   type AssetVariant,
   type Canvas,
   type Catalog,
+  type CreateLibraryItem,
   type JobList,
+  type LibraryItem,
+  type LibraryKind,
+  type Project,
   type ProviderConfigUpdate,
   type ProviderConfigView,
   type ProviderTestResult,
   type RewritePrompt,
   type RewritePromptResult,
   type SessionInfo,
+  type UpdateLibraryItem,
   type UserTemplate,
 } from '@plein/protocol'
 
@@ -69,9 +74,18 @@ export const api = {
     request(`${API.auth}/sign-in/email`, json('POST', input)),
   logout: () => request(`${API.auth}/sign-out`, json('POST', {})),
 
+  projects: () => request<Project[]>(API.projects),
+  project: (id: string) => request<Project>(API.project(id)),
+  /** 新建项目，服务端同时建好第一张画布（lastCanvasId） */
+  createProject: (title?: string) =>
+    request<Project>(API.projects, json('POST', title ? { title } : {})),
+  renameProject: (id: string, title: string) =>
+    request<Project>(API.project(id), json('PATCH', { title })),
+  deleteProject: (id: string) => request<void>(API.project(id), { method: 'DELETE' }),
+  projectCanvases: (id: string) => request<Canvas[]>(API.projectCanvases(id)),
   canvases: () => request<Canvas[]>(API.canvases),
-  createCanvas: (title?: string) =>
-    request<Canvas>(API.canvases, json('POST', title ? { title } : {})),
+  createCanvas: (projectId: string, title?: string) =>
+    request<Canvas>(API.canvases, json('POST', { projectId, ...(title ? { title } : {}) })),
   canvas: (id: string) => request<Canvas>(API.canvas(id)),
   renameCanvas: (id: string, title: string) =>
     request<Canvas>(API.canvas(id), json('PATCH', { title })),
@@ -81,6 +95,15 @@ export const api = {
   saveTemplate: (title: string, data: object) =>
     request<UserTemplate>(API.templates, json('POST', { title, data })),
   deleteTemplate: (id: string) => request<void>(API.template(id), { method: 'DELETE' }),
+
+  library: (kind?: LibraryKind) =>
+    request<LibraryItem[]>(kind ? `${API.library}?kind=${kind}` : API.library),
+  createLibraryItem: (body: CreateLibraryItem) =>
+    request<LibraryItem>(API.library, json('POST', body)),
+  updateLibraryItem: (id: string, body: UpdateLibraryItem) =>
+    request<LibraryItem>(API.libraryItem(id), json('PATCH', body)),
+  deleteLibraryItem: (id: string) => request<void>(API.libraryItem(id), { method: 'DELETE' }),
+  markLibraryUsed: (id: string) => request<void>(API.libraryUse(id), json('POST', {})),
 
   catalog: () => request<Catalog>(API.catalog),
   /** 画布最近的运行记录（任务面板） */

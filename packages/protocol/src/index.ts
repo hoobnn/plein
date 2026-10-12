@@ -34,10 +34,37 @@ export const SessionInfo = z.object({
 })
 export type SessionInfo = z.infer<typeof SessionInfo>
 
+// ── 项目 ──────────────────────────────────────────────
+
+/** 项目：一部片子的容器，下面挂多张画布，项目资产（角色、场景……）可以归到项目里 */
+export const Project = z.object({
+  id: z.string(),
+  title: z.string(),
+  createdAt: z.number(),
+  /** 项目或其下任一画布最后修改的时间 */
+  updatedAt: z.number(),
+  /** 画布数 */
+  canvases: z.number(),
+  /** 最近修改的画布，打开项目时进入它 */
+  lastCanvasId: z.string().nullable(),
+  /** 列表专用：项目里最近的几张图片 / 视频封面地址 */
+  covers: z.array(z.string()).optional(),
+})
+export type Project = z.infer<typeof Project>
+
+export const CreateProject = z.object({
+  title: z.string().trim().min(1).max(200).default('未命名项目'),
+})
+export type CreateProject = z.input<typeof CreateProject>
+
+export const UpdateProject = z.object({ title: z.string().trim().min(1).max(200) })
+export type UpdateProject = z.infer<typeof UpdateProject>
+
 // ── 画布 ──────────────────────────────────────────────
 
 export const Canvas = z.object({
   id: z.string(),
+  projectId: z.string(),
   title: z.string(),
   createdAt: z.number(),
   updatedAt: z.number(),
@@ -50,6 +77,8 @@ export type Canvas = z.infer<typeof Canvas>
 
 export const CreateCanvas = z.object({
   title: z.string().trim().min(1).max(200).default('未命名画布'),
+  /** 建在哪个项目下；不填时新建一个同名项目（旧客户端、脚本照常可用） */
+  projectId: z.string().max(100).optional(),
 })
 export type CreateCanvas = z.input<typeof CreateCanvas>
 
@@ -80,6 +109,90 @@ export const Asset = z.object({
   createdAt: z.number(),
 })
 export type Asset = z.infer<typeof Asset>
+
+// ── 资产库 ────────────────────────────────────────────
+
+/**
+ * 资产库：把画布上的设定卡固化下来，跨画布、跨项目复用。
+ * 条目只存设定和资产 id，二进制在资产存储里；用到画布上时展开成对应的卡片节点和参考图。
+ */
+export const LibraryKind = z.enum(['character', 'scene', 'prop', 'style', 'effect'])
+export type LibraryKind = z.infer<typeof LibraryKind>
+
+/** 一张参考图放在哪个位置：槽位由各类资产自己定义（全身、半身、设定图、多角度……），见 @plein/nodes 的 LIBRARY_KINDS */
+export const LibraryImage = z.object({
+  slot: z.string().trim().min(1).max(40),
+  assetId: z.string().regex(/^[0-9a-f]{64}$/, '资产 id 不合法'),
+})
+export type LibraryImage = z.infer<typeof LibraryImage>
+
+const libraryVoice = z.object({
+  provider: z.string().max(100).default(''),
+  voiceId: z.string().max(200).default(''),
+})
+
+const libraryTags = z.record(z.string().max(40), z.string().max(40))
+
+const libraryFields = {
+  name: z.string().trim().min(1).max(60),
+  /** 归属项目；null 表示不归属任何项目（全局可用） */
+  projectId: z.string().max(100).nullable().default(null),
+  /** 设定 / 风格提示词 / 运镜描述：用到画布上就是卡片的「设定」，@ 引用时并入提示词 */
+  description: z.string().max(4000).default(''),
+  /** 筛选用的标签，如角色的 gender / age / region / era，键与可选值见 LIBRARY_KINDS */
+  tags: libraryTags.default({}),
+  /** 角色音色，只有角色用 */
+  voice: libraryVoice.nullable().default(null),
+  images: z.array(LibraryImage).max(24).default([]),
+  /** 特效 / 运镜的参考视频（只给人看，不送进模型） */
+  video: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .nullable()
+    .default(null),
+  /** 适配模型（展示用，如 Seedance 2.0、Kling 3.0） */
+  models: z.array(z.string().trim().min(1).max(60)).max(12).default([]),
+}
+
+export const CreateLibraryItem = z.object({ kind: LibraryKind, ...libraryFields })
+export type CreateLibraryItem = z.input<typeof CreateLibraryItem>
+
+/** 部分更新；kind 不能改 */
+export const UpdateLibraryItem = z
+  .object({
+    name: libraryFields.name,
+    projectId: z.string().max(100).nullable(),
+    description: z.string().max(4000),
+    tags: libraryTags,
+    voice: libraryVoice.nullable(),
+    images: z.array(LibraryImage).max(24),
+    video: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .nullable(),
+    models: z.array(z.string().trim().min(1).max(60)).max(12),
+    favorite: z.boolean(),
+  })
+  .partial()
+export type UpdateLibraryItem = z.infer<typeof UpdateLibraryItem>
+
+export interface LibraryItem {
+  id: string
+  kind: LibraryKind
+  name: string
+  projectId: string | null
+  description: string
+  tags: Record<string, string>
+  voice: { provider: string; voiceId: string } | null
+  images: LibraryImage[]
+  video: string | null
+  models: string[]
+  favorite: boolean
+  /** 最近一次用到画布上的时间，「最近使用」按它排 */
+  usedAt: number | null
+  createdAt: number
+  updatedAt: number
+}
 
 // ── 媒体加工 ──────────────────────────────────────────
 
@@ -453,8 +566,17 @@ export const API = {
   auth: '/api/auth',
   templates: '/api/templates',
   template: (id: string) => `/api/templates/${encodeURIComponent(id)}`,
+  projects: '/api/projects',
+  project: (id: string) => `/api/projects/${encodeURIComponent(id)}`,
+  /** 项目下的画布，按最近修改排序 */
+  projectCanvases: (id: string) => `/api/projects/${encodeURIComponent(id)}/canvases`,
   canvases: '/api/canvases',
   canvas: (id: string) => `/api/canvases/${encodeURIComponent(id)}`,
+  /** 资产库：GET 列表（?kind=），POST 新建，body 为 CreateLibraryItem */
+  library: '/api/library',
+  libraryItem: (id: string) => `/api/library/${encodeURIComponent(id)}`,
+  /** 记一次「用到画布上」，最近使用按它排 */
+  libraryUse: (id: string) => `/api/library/${encodeURIComponent(id)}/use`,
   assets: '/api/assets',
   asset: (id: string) => `/api/assets/${id}`,
   assetMeta: (id: string) => `/api/assets/${id}/meta`,

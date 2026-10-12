@@ -1,5 +1,6 @@
 export * from './core'
 export * from './drama'
+export * from './library'
 export * from './mentions'
 export * from './prompts'
 export * from './refs'

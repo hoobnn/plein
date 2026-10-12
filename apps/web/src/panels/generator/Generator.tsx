@@ -32,6 +32,7 @@ import { withShortcut } from '../../ui/keys'
 import { mediaOf, ResultActions } from '../ResultBar'
 import { type ObjectSchema, SchemaForm } from '../SchemaForm'
 import { Inputs } from './Inputs'
+import { LibrarySave } from './LibrarySave'
 import { ModelPicker } from './ModelPicker'
 import { ModePicker } from './ModePicker'
 import { countUnit, isMainField, type ModelOptions, ParamsPill } from './ParamsPill'
@@ -209,6 +210,7 @@ function Panel({
           value={el.name ?? node.title}
           onChange={(name) => updateElement(engine.doc, el.id, { name })}
           hint={`在提示词里输入 @${el.name ?? node.title} 引用`}
+          trailing={canvasId ? <LibrarySave engine={engine} el={el} /> : null}
         />
       )}
       {(node.inputs.length > 0 || actions) && (
@@ -375,10 +377,12 @@ function Panel({
 function NameField({
   value,
   hint,
+  trailing,
   onChange,
 }: {
   value: string
   hint?: string
+  trailing?: React.ReactNode
   onChange(v: string): void
 }) {
   const [draft, setDraft] = useState(value)
@@ -401,6 +405,7 @@ function NameField({
         className="min-w-0 flex-1 rounded-sm bg-transparent text-base font-semibold text-ink outline-none"
       />
       {hint && <span className="flex-none text-xs text-ink-subtle">{hint}</span>}
+      {trailing}
     </div>
   )
 }

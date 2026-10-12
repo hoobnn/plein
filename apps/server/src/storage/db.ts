@@ -109,6 +109,41 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX agent_sessions_canvas ON agent_sessions(canvas_id, updated_at);
   `,
+  `
+  -- 项目：一个项目下挂多张画布
+  CREATE TABLE projects (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX projects_owner ON projects(owner_id, updated_at);
+
+  ALTER TABLE canvases ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE CASCADE;
+  -- 已有画布各自成为一个同名项目，链接和内容都不变
+  INSERT INTO projects (id, owner_id, title, created_at, updated_at)
+    SELECT 'pj_' || id, owner_id, title, created_at, updated_at FROM canvases;
+  UPDATE canvases SET project_id = 'pj_' || id;
+  CREATE INDEX canvases_project ON canvases(project_id, updated_at);
+
+  -- 资产库：角色 / 场景 / 道具 / 风格 / 特效。图片等二进制在 assets，这里只存设定与资产 id
+  CREATE TABLE library_items (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    -- 归属项目；删项目时条目保留、变成不归属任何项目
+    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL,
+    -- description / tags / voice / images / video / models，JSON
+    data TEXT NOT NULL,
+    favorite INTEGER NOT NULL DEFAULT 0,
+    used_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX library_owner ON library_items(owner_id, kind, updated_at);
+  `,
 ]
 
 export function openDb(dataDir: string): DB {

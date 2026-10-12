@@ -9,9 +9,11 @@ import { AssetStore } from './assets/store'
 import { type AuthEnv, createAuth } from './auth'
 import type { Config } from './config'
 import { assetRoutes } from './http/assets'
-import { canvasRoutes } from './http/canvases'
+import { canvasRoutes, previewer } from './http/canvases'
 import { desktopGuard, originGuard } from './http/guard'
+import { libraryRoutes } from './http/library'
 import { mediaRoutes } from './http/media'
+import { projectRoutes } from './http/projects'
 import { builtinPlugins } from './plugins/builtin'
 import { ProviderConfigStore } from './plugins/config-store'
 import { PluginHost } from './plugins/host'
@@ -83,7 +85,10 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', auth.routes)
   app.use('/api/*', auth.requireAuth)
   app.use('/sync/*', auth.requireAuth)
-  app.route('/', canvasRoutes(db, rooms))
+  const preview = previewer(db)
+  app.route('/', projectRoutes(db, rooms, preview))
+  app.route('/', canvasRoutes(db, rooms, preview))
+  app.route('/', libraryRoutes(db))
   app.route('/', templateRoutes(db))
   app.route('/', assetRoutes(assets))
   app.route('/', mediaRoutes(assets))

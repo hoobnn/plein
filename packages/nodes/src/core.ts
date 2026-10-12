@@ -253,6 +253,26 @@ export const styleNode = defineNode({
   }),
 })
 
+/**
+ * 特效卡：运镜 / 转场 / 视觉特效的做法。
+ * 描述在 @ 引用时并入视频提示词；参考视频只给人看——视频节点没有视频参考输入，不会送进模型。
+ */
+export const effectNode = defineNode({
+  type: 'plein/effect',
+  version: 1,
+  title: '特效',
+  description: '特效卡：运镜 / 特效的描述与参考视频，在视频提示词里 @ 特效名即可引用描述',
+  category: 'story',
+  inputs: [{ id: 'references', label: '参考视频', type: 'video', multiple: true }],
+  outputs: [{ id: 'videos', label: '参考视频', type: 'video' }],
+  params: z.object({
+    description: textarea(
+      '描述',
+      '镜头怎么动、画面怎么变，如：镜头从高空俯冲穿过云层，贴近地面后急停',
+    ),
+  }),
+})
+
 /** 内置核心插件：只有声明，执行器在服务端（apps/server/src/executors） */
 export const corePlugin = definePlugin({
   manifest: {
@@ -273,6 +293,7 @@ export const corePlugin = definePlugin({
         'plein/scene@1',
         'plein/prop@1',
         'plein/style@1',
+        'plein/effect@1',
         'plein/storyboard@1',
         'plein/sequence@1',
       ],
@@ -292,6 +313,7 @@ export const corePlugin = definePlugin({
     sceneNode,
     propNode,
     styleNode,
+    effectNode,
     storyboardNode,
     sequenceNode,
   ],

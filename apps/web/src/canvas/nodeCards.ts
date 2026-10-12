@@ -61,9 +61,18 @@ function button(cls: string, label: string, content: { text: string } | { icon: 
   return b
 }
 
+/** 资产卡按类别区分图标，与资产库的分类一致 */
+const CARD_GLYPHS: Record<string, IconName> = {
+  'plein/scene': 'scene',
+  'plein/prop': 'puzzle',
+  'plein/style': 'palette',
+  'plein/effect': 'wand',
+}
+
 function glyphOf(el: CanvasElement, kind: string): IconName {
   if (el.nodeType === STORYBOARD_TYPE) return 'story'
-  if (el.nodeType && ASSET_NODE_TYPES.has(el.nodeType)) return 'character'
+  if (el.nodeType && ASSET_NODE_TYPES.has(el.nodeType))
+    return CARD_GLYPHS[el.nodeType] ?? 'character'
   return GLYPHS[kind] ?? 'text'
 }
 

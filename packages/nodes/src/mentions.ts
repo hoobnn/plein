@@ -200,4 +200,5 @@ export const ASSET_NODE_TYPES: ReadonlySet<string> = new Set([
   'plein/scene',
   'plein/prop',
   'plein/style',
+  'plein/effect',
 ])

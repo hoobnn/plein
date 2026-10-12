@@ -9,6 +9,8 @@ import { useCanvas } from './stores/canvas'
 import { Editor } from './pages/Editor'
 import { Home } from './pages/Home'
 import { Login } from './pages/Login'
+import { ProjectOpen } from './pages/ProjectOpen'
+import { LibraryPanel } from './panels/Library'
 import { useRoute } from './router'
 import { useSession } from './stores/session'
 
@@ -50,6 +52,7 @@ export function App() {
     <>
       <AppContent onOpenSettings={() => setSettings(true)} />
       <AgentDock />
+      <LibraryPanel />
       {settings && <SettingsDialog onClose={() => setSettings(false)} />}
       <DialogHost />
       <TooltipHost />
@@ -87,6 +90,7 @@ function AppContent({ onOpenSettings }: { onOpenSettings(): void }) {
     )
   }
   if (info?.authRequired && !info.principal) return <Login setup={info.needsSetup} />
+  if (route.name === 'project') return <ProjectOpen key={route.id} id={route.id} />
   if (route.name === 'canvas')
     return (
       <Editor

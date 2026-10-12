@@ -1,5 +1,6 @@
 import {
   characterNode,
+  effectNode,
   corePlugin,
   imageNode,
   llmNode,
@@ -255,6 +256,9 @@ const prop = defineExecutor(propNode, async ({ inputs }) => ({
 const style = defineExecutor(styleNode, async ({ inputs }) => ({
   images: inputAssets(inputs, 'references').map((a) => ({ type: 'image' as const, ...a })),
 }))
+const effect = defineExecutor(effectNode, async ({ inputs }) => ({
+  videos: inputAssets(inputs, 'references').map((a) => ({ type: 'video' as const, ...a })),
+}))
 
 /** 对白逐条做语音识别，取带时间戳的分段；手写了字幕的段不用识别 */
 async function transcribe(ctx: ExecutorContext, arranged: ArrangedClip[]) {
@@ -328,6 +332,7 @@ export const coreServerPlugin = defineServerPlugin(corePlugin, {
     scene,
     prop,
     style,
+    effect,
     storyboard,
     sequence,
   ],
