@@ -1,4 +1,4 @@
-import type { Rect } from '@plein/doc'
+import { AUTO_SIZE_KINDS, type Rect } from '@plein/doc'
 import { Graphics } from 'pixi.js'
 import type { Camera } from './camera'
 import { type Guide, HANDLES, type Handle, handlePosition, union } from './geometry'
@@ -101,9 +101,13 @@ export class SelectionOverlay {
     return HANDLES
   }
 
-  /** 选中项全部锁定时不显示手柄 */
+  /** 选中项全部锁定，或含有尺寸自适应的素材元素时不显示手柄 */
   showHandles() {
-    return this.selection.values().some((id) => this.scene.get(id)?.locked === false)
+    const els = this.selection.values().map((id) => this.scene.get(id))
+    return (
+      els.some((el) => el?.locked === false) &&
+      !els.some((el) => el && !el.locked && AUTO_SIZE_KINDS.has(el.kind))
+    )
   }
 
   destroy() {

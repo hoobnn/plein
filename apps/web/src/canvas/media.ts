@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { createElements, type NewElement } from '@plein/doc'
+import { AUDIO_SIZE, createElements, type NewElement } from '@plein/doc'
 import {
   API,
   type Asset,
@@ -161,7 +161,7 @@ export function elementSize(
     const [w, h] = fit([480, 270])
     return { kind: 'video', w, h }
   }
-  if (asset.kind === 'audio') return { kind: 'audio', w: 384, h: 96 }
+  if (asset.kind === 'audio') return { kind: 'audio', ...AUDIO_SIZE }
   return null
 }
 

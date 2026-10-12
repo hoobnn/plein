@@ -144,6 +144,16 @@ export function updateElements(doc: PleinDoc, patches: Array<{ id: string } & El
   })
 }
 
+/** 素材元素按内容自适应尺寸。系统写入，不进撤销栈；尺寸没变时不写 */
+export function fitElementSize(doc: PleinDoc, id: string, w: number, h: number) {
+  const el = doc.get(id)
+  if (doc.readOnly || !el || (Math.abs(el.w - w) < 1 && Math.abs(el.h - h) < 1)) return
+  doc.ydoc.transact(() => {
+    const m = doc.mutable(id)
+    if (m) applyPatch(m, { w, h })
+  }, SYSTEM_ORIGIN)
+}
+
 /** 只保留“祖先不在集合里”的元素：父元素一动，子元素随之移动 */
 export function topLevel(doc: PleinDoc, ids: Iterable<string>): string[] {
   const set = new Set(ids)

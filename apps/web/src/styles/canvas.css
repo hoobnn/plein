@@ -11,8 +11,6 @@
   overflow: hidden;
   padding: 16px;
   pointer-events: none;
-  /* 底部渐隐，提示内容被截断 */
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
 }
 
 .plein-md-editor,

@@ -14,6 +14,17 @@ export const ELEMENT_KINDS: readonly ElementKind[] = [
 /** 可以作为父元素（分组容器）的类型 */
 export const CONTAINER_KINDS: ReadonlySet<ElementKind> = new Set(['frame'])
 
+/** 素材元素：尺寸由内容决定（媒体按原始比例、Markdown 按正文高度），不能手动缩放 */
+export const AUTO_SIZE_KINDS: ReadonlySet<ElementKind> = new Set([
+  'image',
+  'video',
+  'audio',
+  'markdown',
+])
+
+/** 音频素材的固定尺寸：波形条 */
+export const AUDIO_SIZE = { w: 384, h: 96 } as const
+
 export type PortType = 'text' | 'image' | 'video' | 'audio' | 'json' | 'any'
 
 export interface Port {

@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { createElements, type NewElement } from '@plein/doc'
+import { AUDIO_SIZE, createElements, type NewElement } from '@plein/doc'
 import type { Asset } from '@plein/protocol'
 import { api } from '../api/client'
 
@@ -43,7 +43,7 @@ export function elementFor(asset: Asset): Omit<NewElement, 'x' | 'y'> | null {
       return { ...base, kind: 'video', w, h }
     }
     case 'audio':
-      return { ...base, kind: 'audio', w: 384, h: 96 }
+      return { ...base, kind: 'audio', ...AUDIO_SIZE }
     default:
       return null
   }

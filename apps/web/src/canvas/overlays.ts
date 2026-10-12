@@ -27,6 +27,9 @@ export interface OverlayOptions {
   awareness?: unknown
 }
 
+/** Markdown 元素的最小高度：空正文也留出一行 */
+const MD_MIN_H = 64
+
 function place(node: HTMLElement, r: Rect) {
   node.style.transform = `translate(${r.x}px, ${r.y}px)`
   node.style.width = `${r.w}px`
@@ -53,7 +56,7 @@ const editorTheme = EditorView.theme(
 
 /**
  * DOM 覆盖层：挂在跟随相机变换的容器里，按世界坐标定位。
- * - 视口内的 Markdown 元素渲染正文（只读，不接收指针事件）；
+ * - 视口内的 Markdown 元素渲染正文（只读，不接收指针事件），高度随正文自适应；
  * - 双击 Markdown 进入编辑（CodeMirror 绑定 Y.Text，协作实时同步）；
  * - 双击视频 / 音频（或结果是视频 / 音频的节点）显示播放器。
  * 点击画布其他位置、按 Esc 或选中别的元素时退出。
@@ -61,6 +64,10 @@ const editorTheme = EditorView.theme(
 export class CanvasOverlays {
   private previews = new Map<string, Preview>()
   private active: Active | null = null
+  /** 隐藏的量高节点：按元素宽度排版正文，量出自适应高度 */
+  private measurer: HTMLDivElement
+  /** 已量过的宽度 + 正文，没变就不再量 */
+  private fitted = new Map<string, string>()
   private disposers: Array<() => void> = []
 
   constructor(
@@ -69,6 +76,11 @@ export class CanvasOverlays {
     private host: HTMLElement,
     private opts: OverlayOptions,
   ) {
+    this.measurer = document.createElement('div')
+    this.measurer.className = 'plein-md plein-md-preview'
+    this.measurer.style.visibility = 'hidden'
+    this.measurer.setAttribute('aria-hidden', 'true')
+    root.appendChild(this.measurer)
     this.disposers.push(
       engine.onViewChange(() => this.sync()),
       engine.onActivate((id) => this.activate(id)),
@@ -118,12 +130,28 @@ export class CanvasOverlays {
         p.text = el.text
         p.node.innerHTML = renderMarkdown(el.text ?? '')
       }
+      this.fit(id)
     }
     if (this.active) {
+      this.fit(this.active.id)
       const rect = engine.scene.rect(this.active.id)
       if (rect) place(this.active.node, rect)
       else this.deactivate()
     }
+  }
+
+  /** Markdown 高度跟随正文：宽度不变，按渲染后的实际高度写回文档 */
+  private fit(id: string) {
+    const el = this.engine.scene.get(id)
+    if (el?.kind !== 'markdown') return
+    const text = el.text ?? ''
+    const key = `${el.w}\n${text}`
+    if (this.fitted.get(id) === key) return
+    this.fitted.set(id, key)
+    const m = this.measurer
+    m.style.width = `${el.w}px`
+    m.innerHTML = renderMarkdown(text)
+    this.engine.fitContent(id, el.w, Math.max(MD_MIN_H, Math.ceil(m.offsetHeight)))
   }
 
   activate(id: string) {
@@ -170,6 +198,7 @@ export class CanvasOverlays {
     for (const d of this.disposers) d()
     for (const p of this.previews.values()) p.node.remove()
     this.previews.clear()
+    this.measurer.remove()
   }
 
   private openEditor(id: string): Active | null {

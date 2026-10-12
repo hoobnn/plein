@@ -1,10 +1,12 @@
 import {
+  AUDIO_SIZE,
   arrangeElements,
   bringToFront,
   type ClipboardData,
   deleteElements,
   duplicateElements,
   exportElements,
+  fitElementSize,
   groupElements,
   importElements,
   isClipboardData,
@@ -116,6 +118,7 @@ export class Engine {
     this.scene = new Scene(opts.doc)
     this.views = new ElementViews(this.scene, opts.renderers ?? new RendererRegistry(), {
       assetUrl: opts.assetUrl,
+      onContentSize: (id, w, h) => this.fitMedia(id, w, h),
     })
     this.edges = new EdgeLayer(this.scene, this.camera, this.selection)
     this.overlay = new SelectionOverlay(this.scene, this.selection, this.camera)
@@ -252,6 +255,22 @@ export class Engine {
     return () => {
       this.arrangeListeners.delete(fn)
     }
+  }
+
+  /** 素材元素按内容自适应尺寸（Markdown 由覆盖层量出正文高度后调用） */
+  fitContent(id: string, w: number, h: number) {
+    fitElementSize(this.doc, id, Math.round(w), Math.round(h))
+  }
+
+  /** 图片、视频按预览的真实比例校正，保留当前长边；音频固定尺寸 */
+  private fitMedia(id: string, pw: number, ph: number) {
+    const el = this.doc.get(id)
+    if (!el) return
+    if (el.kind === 'audio') return this.fitContent(id, AUDIO_SIZE.w, AUDIO_SIZE.h)
+    if ((el.kind !== 'image' && el.kind !== 'video') || pw <= 0 || ph <= 0) return
+    const long = Math.max(el.w, el.h)
+    const k = long / Math.max(pw, ph)
+    this.fitContent(id, pw * k, ph * k)
   }
 
   get visibleIds(): ReadonlySet<string> {

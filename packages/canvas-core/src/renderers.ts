@@ -5,6 +5,8 @@ import { theme } from './theme'
 export interface RenderContext {
   /** 资产在画布上的预览图 URL：图片缩略图、视频封面、音频波形 */
   assetUrl?: (assetId: string, kind: ElementKind) => string | undefined
+  /** 媒体预览加载后报告其像素尺寸，用来按内容校正元素尺寸 */
+  onContentSize?: (id: string, w: number, h: number) => void
 }
 
 /** 渲染器产出的显示对象，按元素局部坐标 (0,0)-(w,h) 绘制 */
@@ -210,6 +212,7 @@ export const mediaRenderer: ElementRenderer = (el, ctx) => {
           if (destroyed || loading !== url) return
           texture = tex
           draw(current)
+          ctx.onContentSize?.(current.id, tex.width, tex.height)
         })
         .catch(() => {
           // 加载失败保留占位卡片
