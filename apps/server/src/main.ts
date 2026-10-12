@@ -15,8 +15,8 @@ const http = serve(
     console.log(`数据目录：${config.dataDir}`)
     if (!config.webDist)
       console.log('未找到前端构建产物，开发时请另开 pnpm --filter @plein/web dev')
-    if (config.auth === 'token') console.log(`访问令牌：${server.secrets.token}`)
-    else console.log('未开启认证，只应在本机访问')
+    if (config.auth === 'password') console.log('已开启登录；首次访问时创建所有者账号')
+    else console.log('未开启登录，只应在本机访问')
   },
 )
 

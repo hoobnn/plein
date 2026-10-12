@@ -28,7 +28,7 @@ export async function createServer(config: Config): Promise<Server> {
   const rooms = new Rooms(sqliteDocStore(db))
   const assets = new AssetStore(config.dataDir, db, config.maxUpload)
   await assets.init()
-  const auth = createAuth(config.auth, secrets)
+  const auth = await createAuth(config.auth, db, secrets, { publicUrl: config.publicUrl })
 
   const app = new Hono<AuthEnv>()
   app.onError((err, c) => {

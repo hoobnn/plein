@@ -222,33 +222,64 @@ describe('server', () => {
   })
 })
 
-describe('令牌认证', () => {
-  it('无令牌 401，Bearer 与登录 Cookie 可用', async () => {
-    const s = await start(tempDir(), { auth: 'token' })
+describe('账号登录（Better Auth）', () => {
+  it('只能创建一个所有者账号，登录后可访问，本机数据归到所有者', async () => {
+    const dir = tempDir()
+    // 先在本机模式下建一个画布
+    const local = await start(dir)
+    const canvas = (await (
+      await fetch(`${local.base}/api/canvases`, { method: 'POST' })
+    ).json()) as Canvas
+    await local.stop()
+
+    const s = await start(dir, { auth: 'password' })
+    const json = (body: unknown) => ({
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: s.base },
+      body: JSON.stringify(body),
+    })
     try {
       expect((await fetch(`${s.base}/api/canvases`)).status).toBe(401)
-      const token = s.server.secrets.token
-      const bearer = await fetch(`${s.base}/api/canvases`, {
-        headers: { authorization: `Bearer ${token}` },
-      })
-      expect(bearer.status).toBe(200)
-      const bad = await fetch(`${s.base}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token: 'nope' }),
-      })
+      const before = await (await fetch(`${s.base}/api/session`)).json()
+      expect(before).toMatchObject({ principal: null, authRequired: true, needsSetup: true })
+
+      const owner = { email: 'owner@example.com', password: 'correct horse', name: '所有者' }
+      const signUp = await fetch(`${s.base}/api/auth/sign-up/email`, json(owner))
+      expect(signUp.status).toBe(200)
+      const second = await fetch(
+        `${s.base}/api/auth/sign-up/email`,
+        json({ ...owner, email: 'other@example.com' }),
+      )
+      expect(second.ok).toBe(false)
+
+      const bad = await fetch(
+        `${s.base}/api/auth/sign-in/email`,
+        json({ ...owner, password: 'wrong pass' }),
+      )
       expect(bad.status).toBe(401)
-      const login = await fetch(`${s.base}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ token }),
+      const signIn = await fetch(`${s.base}/api/auth/sign-in/email`, json(owner))
+      const cookie = signIn.headers
+        .getSetCookie()
+        .map((c) => c.split(';')[0])
+        .join('; ')
+      const list = (await (
+        await fetch(`${s.base}/api/canvases`, { headers: { cookie } })
+      ).json()) as Canvas[]
+      expect(list.map((c) => c.id)).toEqual([canvas.id])
+      const session = await (await fetch(`${s.base}/api/session`, { headers: { cookie } })).json()
+      expect(session).toMatchObject({
+        authRequired: true,
+        needsSetup: false,
+        principal: { role: 'owner' },
       })
-      const cookie = login.headers.get('set-cookie')!.split(';')[0]!
-      expect((await fetch(`${s.base}/api/canvases`, { headers: { cookie } })).status).toBe(200)
-      expect((await fetch(`${s.base}/api/session`, { headers: { cookie } })).status).toBe(200)
     } finally {
       await s.stop()
     }
+    // 回到本机模式仍能看到这个画布
+    const again = await start(dir)
+    const list = (await (await fetch(`${again.base}/api/canvases`)).json()) as Canvas[]
+    expect(list.map((c) => c.id)).toEqual([canvas.id])
+    await again.stop()
   })
 })
 

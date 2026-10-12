@@ -171,7 +171,7 @@ flowchart LR
 | Yjs 文档同步与持久化（y-websocket 协议，更新追加 + 定期合并快照） | P0 |
 | 资产：内容哈希、去重、ffprobe 元数据、sharp 缩略图、视频封面、音频波形 | P0 |
 | 任务队列：提交、轮询远端、下载入库、取消、失败重试、重启恢复；SSE 推送进度 | P0 |
-| 安全默认值：只监听 `127.0.0.1`；监听其他地址时必须设置访问令牌 | P0 |
+| 安全默认值：只监听 `127.0.0.1`；监听其他地址时必须登录（Better Auth 所有者账号） | P0 |
 | 认证边界：所有 HTTP / WS 入口经 `auth/` 解析出 Principal，数据带 `ownerId`（默认 `local`）；详见第七节 | P1 |
 | 用量记录：按平台 / 能力统计调用次数、秒数、字数 | P1 |
 
@@ -240,7 +240,7 @@ flowchart LR
 | 里程碑 | 内容 | 完成门槛 |
 | --- | --- | --- |
 | M1 地基 | doc 模型改造、命令式 API；按类型渲染、裁剪、选择 / 变换；tsconfig 拆分、lint + Vitest | 1000 元素画布可编辑，撤销重做正确，测试进 CI |
-| M2 本地服务与素材 | 本地服务端、`protocol` 包、认证边界（本机放行 + 访问令牌）、SQLite、Yjs 持久化、资产上传与衍生物；四类素材元素完整可用；Docker | `docker compose up` 后导入图片 / 视频 / 音频 / Markdown，刷新和重启后都不丢 |
+| M2 本地服务与素材 | 本地服务端、`protocol` 包、认证边界（本机放行 + Better Auth 所有者账号）、SQLite、Yjs 持久化、资产上传与衍生物；四类素材元素完整可用；Docker | `docker compose up` 后导入图片 / 视频 / 音频 / Markdown，刷新和重启后都不丢 |
 | M3 模型与工作流 | `plugin-sdk` 与内置注册表（内置节点、Provider 都通过它注册），火山方舟与豆包语音适配器，设置页；`flow`、节点声明与执行器、任务队列、SSE；基础节点 | 提示词 → 图片 → 视频 → 配音 → 配乐在画布上端到端跑通，两家每类 P0 能力冒烟通过，未改动节点命中缓存 |
 | M4 短剧流水线 | 剧本、角色、分镜节点，展开，角色参考，镜头兜底，序列与导出 | 从一句创意出发，用模板生成 6–10 个镜头、配音配乐，导出带字幕的 MP4（验收流程是否跑通，不验收画面一致性） |
 | M5 打磨与 P1 | 百炼、MiniMax 适配器，本地插件目录加载与 MCP 工具节点，及其他 P1 选做项、错误提示、空状态、文档、Playwright 冒烟 | 新机器按 README 十分钟内跑起来，打 `v0.1.0` 标签 |
@@ -264,16 +264,16 @@ flowchart LR
 
 ### 认证（只预留，低优先级）
 
-0.1.0 仍是本机单用户，不做账号体系，只把边界留好，以后接多用户或托管版时不必改数据和接口。
+0.1.0 仍是本机单用户：认证用 Better Auth（2026-10-12 确认），但只开一个所有者账号，不做多用户账号体系；边界留好，以后接多用户或托管版时不必改数据和接口。
 
 | 内容 | 0.1.0 做法 | 以后 |
 | --- | --- | --- |
-| 入口 | `apps/server/src/auth/` 提供 `AuthProvider.authenticate(req) → Principal \| null`；HTTP、WS（含 Yjs 同步握手）、SSE 全部经过它 | 增加账号密码 / OAuth、会话、API Key |
-| 身份 | `Principal = { id, role: 'owner' \| 'editor' \| 'viewer' }`，类型放 `protocol`；默认实现 `LocalAuth`（本机请求视为 `owner`）与 `TokenAuth`（监听非本机地址时要求令牌） | 多用户、团队、分享链接 |
-| 数据 | 画布、资产、任务、密钥记录都带 `ownerId`（默认 `local`），查询统一按 Principal 过滤 | 无需迁移即可多租户 |
+| 入口 | `apps/server/src/auth/` 提供 `AuthProvider.authenticate(req) → Principal \| null`；HTTP、WS（含 Yjs 同步握手）、SSE 全部经过它 | 在 Better Auth 上开放注册、OAuth、API Key、组织（插件） |
+| 身份 | `Principal = { id, role: 'owner' \| 'editor' \| 'viewer' }`，类型放 `protocol`；`PLEIN_AUTH=none`（本机默认）所有请求视为所有者；`PLEIN_AUTH=password`（监听非本机地址时默认）走 Better Auth 邮箱密码登录，只允许创建第一个账号，会话存同一个 SQLite | 多用户、团队、分享链接 |
+| 数据 | 画布、资产、任务、密钥记录都带 `ownerId`（未建账号时为 `local`，建所有者账号时归到它名下），查询统一按 Principal 过滤 | 无需迁移即可多租户 |
 | 权限 | 同步层按 role 决定只读或可编辑；插件权限也挂在这里（见下） | 细粒度权限、审计日志 |
 
-优先级：令牌访问是 P0（已在 B 节）；Principal 和 `ownerId` 贯穿是 P1，放在 M2 顺手做。
+优先级：非本机访问必须登录是 P0（已在 B 节）；Principal 和 `ownerId` 贯穿是 P1，放在 M2 顺手做。
 
 ### 三方插件
 

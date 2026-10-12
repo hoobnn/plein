@@ -1,20 +1,17 @@
-import { timingSafeEqual } from 'node:crypto'
-import {
-  API,
-  LOCAL_PRINCIPAL,
-  LoginRequest,
-  type Principal,
-  type SessionInfo,
-} from '@plein/protocol'
+import { LOCAL_PRINCIPAL, type Principal, type SessionInfo } from '@plein/protocol'
+import { betterAuth } from 'better-auth'
+import { getMigrations } from 'better-auth/db/migration'
 import type { Context, MiddlewareHandler } from 'hono'
 import { Hono } from 'hono'
-import { deleteCookie, getSignedCookie, setSignedCookie } from 'hono/cookie'
 import type { AuthMode } from '../config'
+import type { DB } from '../storage/db'
 import type { Secrets } from '../storage/secrets'
 
 /**
  * 认证边界：所有 HTTP / WS 入口都经它得到 Principal。
- * 0.1.0 只有本机放行与访问令牌两种实现；以后接账号体系（如 Better Auth）只需换掉 AuthProvider。
+ * - none：本机免登录，所有请求视为所有者；
+ * - password：Better Auth 邮箱密码登录。0.1.0 只允许创建一个所有者账号，
+ *   多用户注册、角色、团队等账号体系以后在 Better Auth 上扩展。
  */
 export interface AuthProvider {
   readonly required: boolean
@@ -23,79 +20,92 @@ export interface AuthProvider {
 
 export type AuthEnv = { Variables: { principal: Principal } }
 
-const COOKIE = 'plein_session'
-
-function safeEqual(a: string, b: string) {
-  const x = Buffer.from(a)
-  const y = Buffer.from(b)
-  return x.length === y.length && timingSafeEqual(x, y)
+/** 所有者账号：第一个创建的用户 */
+function ownerId(db: DB): string | null {
+  const row = db.prepare('SELECT id FROM user ORDER BY createdAt LIMIT 1').get() as
+    | { id: string }
+    | undefined
+  return row?.id ?? null
 }
 
-/** 本机模式：所有请求视为所有者 */
-export class LocalAuth implements AuthProvider {
-  readonly required = false
-  async authenticate() {
-    return LOCAL_PRINCIPAL
-  }
+/** 已有所有者账号时，本机模式也以它的身份读写，切换模式不会“看不到”数据 */
+function localPrincipal(db: DB): Principal {
+  const id = ownerId(db)
+  return id ? { id, role: 'owner' } : LOCAL_PRINCIPAL
 }
 
-/** 令牌模式：Bearer 令牌或登录后签发的签名 Cookie */
-export class TokenAuth implements AuthProvider {
-  readonly required = true
-  constructor(private secrets: Secrets) {}
+export async function createAuth(
+  mode: AuthMode,
+  db: DB,
+  secrets: Secrets,
+  opts: { publicUrl?: string } = {},
+) {
+  const auth = betterAuth({
+    database: db,
+    secret: secrets.authSecret,
+    basePath: '/api/auth',
+    baseURL: opts.publicUrl,
+    // 同源校验由 originGuard 负责；这里信任请求自身的源
+    trustedOrigins: (req) => {
+      const host = req?.headers.get('host')
+      return host ? [`http://${host}`, `https://${host}`] : []
+    },
+    emailAndPassword: { enabled: true, minPasswordLength: 8 },
+    session: { expiresIn: 60 * 60 * 24 * 30 },
+    telemetry: { enabled: false },
+    databaseHooks: {
+      user: {
+        create: {
+          // 只允许创建第一个账号（所有者）
+          before: async () => (ownerId(db) ? false : undefined),
+          // 本机模式下创建的数据归到所有者名下
+          after: async (user) => {
+            db.prepare("UPDATE canvases SET owner_id = ? WHERE owner_id = 'local'").run(user.id)
+            db.prepare("UPDATE OR IGNORE assets SET owner_id = ? WHERE owner_id = 'local'").run(
+              user.id,
+            )
+          },
+        },
+      },
+    },
+  })
+  const { runMigrations } = await getMigrations(auth.options)
+  await runMigrations()
 
-  async authenticate(c: Context) {
-    const header = c.req.header('authorization')
-    if (header?.startsWith('Bearer ') && safeEqual(header.slice(7), this.secrets.token)) {
-      return LOCAL_PRINCIPAL
-    }
-    const session = await getSignedCookie(c, this.secrets.cookieSecret, COOKIE)
-    return session === LOCAL_PRINCIPAL.id ? LOCAL_PRINCIPAL : null
-  }
-
-  checkToken(token: string) {
-    return safeEqual(token, this.secrets.token)
-  }
-}
-
-export function createAuth(mode: AuthMode, secrets: Secrets) {
-  const provider: AuthProvider = mode === 'token' ? new TokenAuth(secrets) : new LocalAuth()
+  const provider: AuthProvider =
+    mode === 'password'
+      ? {
+          required: true,
+          async authenticate(c) {
+            const s = await auth.api.getSession({ headers: c.req.raw.headers })
+            // 0.1.0 只有所有者一个账号
+            return s ? { id: s.user.id, role: 'owner' } : null
+          },
+        }
+      : { required: false, authenticate: async () => localPrincipal(db) }
 
   /** 未认证返回 401；认证结果放进 c.var.principal */
   const requireAuth: MiddlewareHandler<AuthEnv> = async (c, next) => {
     const principal = await provider.authenticate(c)
-    if (!principal) return c.json({ error: 'unauthorized', message: '需要访问令牌' }, 401)
+    if (!principal) return c.json({ error: 'unauthorized', message: '请先登录' }, 401)
     c.set('principal', principal)
     await next()
   }
 
-  /** 会话与登录接口（不经过 requireAuth） */
+  /** 会话查询与 Better Auth 接口（不经过 requireAuth） */
   const routes = new Hono<AuthEnv>()
-    .get(API.session, async (c) => {
+    .get('/api/session', async (c) => {
       const principal = await provider.authenticate(c)
-      if (!principal) return c.json({ error: 'unauthorized', message: '需要访问令牌' }, 401)
-      return c.json({ principal, authRequired: provider.required } satisfies SessionInfo)
+      return c.json({
+        principal,
+        authRequired: provider.required,
+        needsSetup: provider.required && !ownerId(db),
+      } satisfies SessionInfo)
     })
-    .post(API.login, async (c) => {
-      if (!(provider instanceof TokenAuth)) {
-        return c.json({ principal: LOCAL_PRINCIPAL, authRequired: false } satisfies SessionInfo)
-      }
-      const body = LoginRequest.safeParse(await c.req.json().catch(() => null))
-      if (!body.success || !provider.checkToken(body.data.token)) {
-        return c.json({ error: 'invalid_token', message: '令牌不正确' }, 401)
-      }
-      await setSignedCookie(c, COOKIE, LOCAL_PRINCIPAL.id, secrets.cookieSecret, {
-        httpOnly: true,
-        sameSite: 'Strict',
-        path: '/',
-        maxAge: 60 * 60 * 24 * 30,
-      })
-      return c.json({ principal: LOCAL_PRINCIPAL, authRequired: true } satisfies SessionInfo)
-    })
-    .post(API.logout, (c) => {
-      deleteCookie(c, COOKIE, { path: '/' })
-      return c.body(null, 204)
+    .all('/api/auth/*', async (c) => {
+      if (mode !== 'password') return c.json({ error: 'auth_disabled', message: '未开启登录' }, 404)
+      return auth.handler(c.req.raw)
     })
 
-  return { provider, requireAuth, routes }
+  return { auth, provider, requireAuth, routes }
 }

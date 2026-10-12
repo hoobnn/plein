@@ -161,7 +161,7 @@ canvas-core 演进为场景引擎：从 doc 得到世界状态，维护场景图
 
 **测试**：`doc`、`flow` 用 Vitest（含双 Y.Doc 并发与迁移）；`canvas-core` 用 Playwright 截图与交互测试，合成大画布基准进 CI；服务端用 mock Provider 跑集成测试。
 
-**认证**：所有入口经统一的 AuthProvider 得到 Principal，数据从一开始带 `ownerId`；0.1.0 只有本机放行与访问令牌，账号体系留到托管版。
+**认证**：所有入口经统一的 AuthProvider 得到 Principal，数据从一开始带 `ownerId`；0.1.0 用 Better Auth，只有本机放行与单个所有者账号两种模式，多用户账号体系以后再加。
 
 **安全**：sync 层校验只读/可编辑；Markdown 做 HTML 消毒、外链图片经代理；密钥只在 ai-worker 解密；LLM 输出只作数据，不直接驱动画布操作；配额按用户和供应商记账。
 

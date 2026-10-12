@@ -16,13 +16,13 @@ export type Principal = z.infer<typeof Principal>
 /** 本机单用户模式下的默认身份 */
 export const LOCAL_PRINCIPAL: Principal = { id: 'local', role: 'owner' }
 
-export const LoginRequest = z.object({ token: z.string().min(1) })
-export type LoginRequest = z.infer<typeof LoginRequest>
-
 export const SessionInfo = z.object({
-  principal: Principal,
-  /** 服务端是否要求令牌（监听非本机地址时） */
+  /** 未登录时为 null */
+  principal: Principal.nullable(),
+  /** 服务端是否要求登录（监听非本机地址时） */
   authRequired: z.boolean(),
+  /** 要求登录但还没有所有者账号：前端显示创建账号 */
+  needsSetup: z.boolean(),
 })
 export type SessionInfo = z.infer<typeof SessionInfo>
 
@@ -73,8 +73,8 @@ export type Asset = z.infer<typeof Asset>
 
 export const API = {
   session: '/api/session',
-  login: '/api/auth/login',
-  logout: '/api/auth/logout',
+  /** Better Auth 接口前缀：sign-up/email、sign-in/email、sign-out */
+  auth: '/api/auth',
   canvases: '/api/canvases',
   canvas: (id: string) => `/api/canvases/${encodeURIComponent(id)}`,
   assets: '/api/assets',
