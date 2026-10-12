@@ -7,6 +7,7 @@ import {
   type PluginManifest,
   type ProviderDefinition,
   type ServerPluginDefinition,
+  type PromptPresetDefinition,
   type TemplateDefinition,
   vendorOf,
 } from '@plein/plugin-sdk'
@@ -37,6 +38,7 @@ export class PluginRegistry {
   readonly executors = new Map<string, Owned<ExecutorDefinition>>()
   readonly providers = new Map<string, Owned<ProviderDefinition>>()
   readonly templates = new Map<string, Owned<TemplateDefinition>>()
+  readonly prompts = new Map<string, Owned<PromptPresetDefinition>>()
   readonly elements = new Map<string, Owned<ElementTypeDefinition>>()
 
   register(sp: ServerPluginDefinition, opts: { builtin: boolean }): PluginEntry {
@@ -72,7 +74,7 @@ export class PluginRegistry {
   }
 
   private validate(sp: ServerPluginDefinition) {
-    const { manifest, nodes, templates, elements } = sp.plugin
+    const { manifest, nodes, templates, elements, prompts } = sp.plugin
     const id = manifest.id
     if (this.entries.has(id)) throw new Error(`插件 ${id} 已加载`)
     if (!semver.validRange(manifest.engines.plein)) {
@@ -118,6 +120,11 @@ export class PluginRegistry {
       manifest.contributes.elements,
       elements.map((e) => e.type),
     )
+    sameSet(
+      'prompts',
+      manifest.contributes.prompts,
+      prompts.map((p) => p.id),
+    )
 
     for (const n of nodes) {
       own('节点', n.type)
@@ -146,6 +153,10 @@ export class PluginRegistry {
       own('元素类型', e.type)
       if (this.elements.has(e.type)) throw new Error(`元素类型 ${e.type} 已被其他插件注册`)
     }
+    for (const p of prompts) {
+      own('提示词预设', p.id)
+      if (this.prompts.has(p.id)) throw new Error(`提示词预设 ${p.id} 已被其他插件注册`)
+    }
     // 执行器只能实现本插件声明的节点
     const seen = new Set<string>()
     for (const ex of sp.executors) {
@@ -165,5 +176,6 @@ export class PluginRegistry {
     for (const def of sp.providers) this.providers.set(def.id, { def, plugin })
     for (const def of sp.plugin.templates) this.templates.set(def.id, { def, plugin })
     for (const def of sp.plugin.elements) this.elements.set(def.type, { def, plugin })
+    for (const def of sp.plugin.prompts) this.prompts.set(def.id, { def, plugin })
   }
 }

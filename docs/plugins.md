@@ -56,10 +56,21 @@ export const serverPlugin = defineServerPlugin(plugin, {
 - `title`、`placeholder`、`description`：标签与说明
 - `widget: 'textarea'`：多行文本
 - `widget: 'model'`：模型下拉框，列出已启用平台中支持节点 `capability` 的模型
+- `widget: 'hidden'`：不在生成器里显示（如分镜节点的 `shots`，由专门的表格编辑）
+
+可选的 `applyOutputs(params, outputs)`：运行成功后返回要写回参数的部分，比如分镜节点把镜头表写回 `shots`。
 
 参数或端口不兼容地变化时版本 +1，并提供 `migrate(params, fromVersion)`，画布上的旧节点在运行前自动升级参数。
 
 执行器拿到已校验的参数和上游输入，只能经过 `ctx.providers.call(能力, 模型引用, 输入)` 调用模型。宿主负责选平台、注入密钥、限流、轮询异步任务、取消，并把结果文件存入资产库，执行器拿到的是资产引用。输出端口和类型会被校验。
+
+## 提示词预设
+
+`definePromptPreset` 声明一条预设，用户在提示词框行首输入 `/` 选用，并在清单 `contributes.prompts` 里列出 id：
+
+- `template`：插入的文本，`【…】` 是待填占位，插入后选中第一个
+- `appliesTo`：适用的能力（`image.generate`）或节点类型（`plein/llm`），不填表示所有带提示词的节点
+- `params`：选用时一并设置的参数，如 `{ aspectRatio: '1:1', count: 1 }`，节点没有的参数忽略
 
 ## 模型平台（Provider）
 

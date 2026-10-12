@@ -9,6 +9,7 @@ import {
   defineExecutor,
   defineNode,
   definePlugin,
+  definePromptPreset,
   defineProvider,
   defineServerPlugin,
   PLUGIN_API_VERSION,
@@ -123,6 +124,25 @@ describe('插件注册表', () => {
     expect(entry.status).toBe('error')
     expect(entry.error).toMatch(error)
     expect(r.nodes.size).toBe(0)
+  })
+
+  it('提示词预设：清单要声明，进入目录', () => {
+    const prompt = definePromptPreset({ id: 'acme/hero', title: '主角', template: '【主体】特写' })
+    const bad = load(
+      defineServerPlugin(definePlugin({ manifest: manifest(), prompts: [prompt] }), {}),
+    )
+    expect(bad.entry.error).toMatch(/contributes.prompts 缺少：acme\/hero/)
+    const ok = load(
+      defineServerPlugin(
+        definePlugin({
+          manifest: manifest({ contributes: { prompts: ['acme/hero'] } }),
+          prompts: [prompt],
+        }),
+        {},
+      ),
+    )
+    expect(ok.entry.status).toBe('active')
+    expect(ok.r.prompts.get('acme/hero')?.def.template).toBe('【主体】特写')
   })
 
   it('Provider 使用未声明的密钥时拒绝加载', () => {

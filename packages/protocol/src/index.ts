@@ -3,6 +3,7 @@ import type {
   NodeDescriptor,
   PluginManifest,
   ProviderDescriptor,
+  PromptPresetDefinition,
   TemplateDefinition,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
@@ -102,6 +103,7 @@ export interface Catalog {
   nodes: Array<NodeDescriptor & { executable: boolean }>
   providers: ProviderInfo[]
   templates: Array<TemplateDefinition & { plugin: string }>
+  prompts: Array<PromptPresetDefinition & { plugin: string }>
   elements: Array<
     Pick<ElementTypeDefinition, 'type' | 'title' | 'description' | 'defaultSize'> & {
       dataSchema: Record<string, unknown>

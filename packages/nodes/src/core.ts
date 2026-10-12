@@ -1,5 +1,6 @@
 import { defineNode, definePlugin, PLUGIN_API_VERSION } from '@plein/plugin-sdk'
 import { z } from 'zod'
+import { corePrompts } from './prompts'
 import { storyboardNode } from './storyboard'
 
 const model = () => z.string().default('').meta({ title: '模型', widget: 'model' })
@@ -172,6 +173,7 @@ export const corePlugin = definePlugin({
         'plein/scene@1',
         'plein/storyboard@1',
       ],
+      prompts: corePrompts.map((p) => p.id),
     },
   },
   nodes: [
@@ -185,4 +187,5 @@ export const corePlugin = definePlugin({
     sceneNode,
     storyboardNode,
   ],
+  prompts: corePrompts,
 })

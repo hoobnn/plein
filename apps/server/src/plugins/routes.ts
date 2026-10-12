@@ -59,6 +59,7 @@ export function pluginRoutes(host: PluginHost) {
           }
         }),
         templates: [...registry.templates.values()].map((t) => ({ ...t.def, plugin: t.plugin })),
+        prompts: [...registry.prompts.values()].map((p) => ({ ...p.def, plugin: p.plugin })),
         elements: [...registry.elements.values()].map((e) => ({
           type: e.def.type,
           title: e.def.title,

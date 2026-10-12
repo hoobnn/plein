@@ -32,6 +32,27 @@ export function defineTemplate(def: TemplateDefinition): TemplateDefinition {
 }
 
 /**
+ * 提示词预设：提示词框行首输入 `/` 选用，插入模板文本，可顺带设置参数（如张数、画幅）。
+ * 模板里的 `【…】` 是待填的占位，插入后选中第一个，直接打字替换。
+ */
+export interface PromptPresetDefinition {
+  id: string
+  title: string
+  description?: string
+  template: string
+  /** 适用的节点能力（如 image.generate）或节点类型（如 plein/llm）；不填表示所有带提示词的节点 */
+  appliesTo?: string[]
+  /** 选用时一并设置的参数；节点没有的参数忽略 */
+  params?: Record<string, unknown>
+}
+
+export function definePromptPreset(def: PromptPresetDefinition): PromptPresetDefinition {
+  if (!NAMESPACED_ID.test(def.id)) throw new Error(`提示词预设 id ${def.id} 应为 vendor/name`)
+  if (!def.template.trim()) throw new Error(`提示词预设 ${def.id} 的模板为空`)
+  return def
+}
+
+/**
  * 自定义元素类型：文档里存为 `kind: 'custom'` + `customType`。
  * 0.1.0 只有声明（标题、默认尺寸、数据 schema），渲染器以后用沙箱 iframe 提供；
  * 未安装对应插件时画布显示占位卡片，数据不丢。

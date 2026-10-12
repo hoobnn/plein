@@ -36,8 +36,10 @@ export const PluginManifest = z.object({
       providers: z.array(NamespacedId).default([]),
       templates: z.array(NamespacedId).default([]),
       elements: z.array(NamespacedId).default([]),
+      /** 提示词预设 */
+      prompts: z.array(NamespacedId).default([]),
     })
-    .default({ nodes: [], providers: [], templates: [], elements: [] }),
+    .default({ nodes: [], providers: [], templates: [], elements: [], prompts: [] }),
   permissions: z
     .object({
       /** 可访问的域名 */

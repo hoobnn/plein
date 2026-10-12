@@ -1,4 +1,8 @@
-import type { ElementTypeDefinition, TemplateDefinition } from './contributions'
+import type {
+  ElementTypeDefinition,
+  PromptPresetDefinition,
+  TemplateDefinition,
+} from './contributions'
 import type { ExecutorDefinition } from './executor'
 import { PluginManifest, type PluginManifestInput } from './manifest'
 import type { NodeDefinition } from './node'
@@ -12,6 +16,7 @@ export interface PluginDefinition {
   nodes: NodeDefinition[]
   templates: TemplateDefinition[]
   elements: ElementTypeDefinition[]
+  prompts: PromptPresetDefinition[]
 }
 
 export function definePlugin(input: {
@@ -20,12 +25,14 @@ export function definePlugin(input: {
   nodes?: NodeDefinition<any>[]
   templates?: TemplateDefinition[]
   elements?: ElementTypeDefinition[]
+  prompts?: PromptPresetDefinition[]
 }): PluginDefinition {
   return {
     manifest: PluginManifest.parse(input.manifest),
     nodes: input.nodes ?? [],
     templates: input.templates ?? [],
     elements: input.elements ?? [],
+    prompts: input.prompts ?? [],
   }
 }
 

@@ -6,8 +6,18 @@ import {
   setParam,
   updateElement,
 } from '@plein/doc'
-import { ASSET_NODE_TYPES, findMentions, mentionQuery, STORYBOARD_TYPE } from '@plein/nodes'
+import {
+  ASSET_NODE_TYPES,
+  findMentions,
+  firstPlaceholder,
+  mentionQuery,
+  presetsFor,
+  STORYBOARD_TYPE,
+  slashQuery,
+} from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
+
+type PromptPreset = Catalog['prompts'][number]
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { assetUrls } from '../api/client'
 import {
@@ -108,6 +118,7 @@ function Panel({
   const main = fields.filter(([k, f]) => k !== pk && isMainField(k, f))
   const rest = Object.fromEntries(fields.filter(([k, f]) => k !== pk && !isMainField(k, f)))
   const ups = upstreams(engine, el.id, catalog)
+  const presets = presetsFor(catalog?.prompts ?? [], node)
   const pure = isPure(node)
   const problem = validate(node, el, ups, catalog)
   const running = el.run?.status === 'running' || el.run?.status === 'queued'
@@ -166,9 +177,17 @@ function Panel({
           engine={engine}
           selfId={el.id}
           value={String(params[pk] ?? '')}
+          presets={presets}
+          onPreset={(p) => {
+            for (const [k, v] of Object.entries(p.params ?? {})) {
+              if (fields.some(([f]) => f === k)) set(k, v)
+            }
+          }}
           placeholder={
             fields.find(([k]) => k === pk)?.[1].placeholder ??
-            (pure ? '写下文本' : '描述你想生成的内容，输入 @ 引用角色或场景')
+            (pure
+              ? '写下文本'
+              : `描述你想生成的内容，输入 @ 引用角色或场景${presets.length ? '，行首输入 / 选预设' : ''}`)
           }
           onChange={(v) => set(pk, v)}
         />
@@ -380,49 +399,81 @@ function PromptBox({
   engine,
   selfId,
   value,
+  presets,
   placeholder,
   onChange,
+  onPreset,
 }: {
   ref: React.RefObject<HTMLTextAreaElement | null>
   engine: Engine
   selfId: string
   value: string
+  presets: PromptPreset[]
   placeholder: string
   onChange(v: string): void
+  onPreset(p: PromptPreset): void
 }) {
   const [draft, setDraft] = useState(value)
   const [focused, setFocused] = useState(false)
-  const [query, setQuery] = useState<{ start: number; query: string } | null>(null)
+  // 正在输入的 @ 引用或行首 / 预设
+  const [query, setQuery] = useState<{ kind: '@' | '/'; start: number; query: string } | null>(null)
   const [active, setActive] = useState(0)
   const shown = focused ? draft : value
   const targets = mentionTargets(engine)
   targets.forEach((t, name) => {
     if (t.id === selfId) targets.delete(name)
   })
-  const options = query
-    ? [...targets]
-        .filter(([name]) => name.toLowerCase().includes(query.query.toLowerCase()))
-        .slice(0, 8)
-    : []
+  const q = query?.query.toLowerCase() ?? ''
+  const mentionOptions =
+    query?.kind === '@'
+      ? [...targets].filter(([name]) => name.toLowerCase().includes(q)).slice(0, 8)
+      : []
+  const presetOptions =
+    query?.kind === '/'
+      ? presets
+          .filter((p) => p.title.toLowerCase().includes(q) || p.id.toLowerCase().includes(q))
+          .slice(0, 8)
+      : []
+  const count = mentionOptions.length + presetOptions.length
   const mentions = findMentions(shown, targets)
 
+  const detect = (text: string, caret: number) => {
+    const slash = presets.length ? slashQuery(text, caret) : null
+    if (slash) return { kind: '/' as const, ...slash }
+    const at = mentionQuery(text, caret)
+    return at && { kind: '@' as const, ...at }
+  }
   const update = (text: string, caret: number) => {
     setDraft(text)
     onChange(text)
-    setQuery(mentionQuery(text, caret))
+    setQuery(detect(text, caret))
     setActive(0)
   }
-  const insert = (name: string) => {
+  /** 把正在输入的查询换成 replacement，然后选中 [selStart, selEnd)（相对替换起点） */
+  const replaceQuery = (replacement: string, sel: (inserted: string) => [number, number]) => {
     if (!query) return
     const caret = query.start + 1 + query.query.length
-    const text = `${shown.slice(0, query.start)}@${name} ${shown.slice(caret)}`
+    const text = `${shown.slice(0, query.start)}${replacement}${shown.slice(caret)}`
     update(text, -1)
     setQuery(null)
-    const pos = query.start + name.length + 2
+    const [a, b] = sel(replacement).map((n) => query.start + n)
     requestAnimationFrame(() => {
       ref.current?.focus()
-      ref.current?.setSelectionRange(pos, pos)
+      ref.current?.setSelectionRange(a!, b!)
     })
+  }
+  const insert = (name: string) => replaceQuery(`@${name} `, (r) => [r.length, r.length])
+  const applyPreset = (p: PromptPreset) => {
+    onPreset(p)
+    // 选中第一个【占位】，直接打字替换
+    replaceQuery(p.template, (r) => {
+      const hole = firstPlaceholder(r)
+      return hole ? [hole.start, hole.end] : [r.length, r.length]
+    })
+  }
+  const pick = (i: number) => {
+    if (query?.kind === '/') applyPreset(presetOptions[i]!)
+    else insert(mentionOptions[i]![0])
   }
 
   return (
@@ -444,14 +495,14 @@ function PromptBox({
         }}
         onChange={(e) => update(e.target.value, e.target.selectionStart)}
         onKeyDown={(e) => {
-          if (!options.length) return
+          if (!count) return
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault()
             const d = e.key === 'ArrowDown' ? 1 : -1
-            setActive((a) => (a + d + options.length) % options.length)
-          } else if (e.key === 'Enter' || e.key === 'Tab') {
+            setActive((a) => (a + d + count) % count)
+          } else if ((e.key === 'Enter' && !e.metaKey && !e.ctrlKey) || e.key === 'Tab') {
             e.preventDefault()
-            insert(options[active]![0])
+            pick(active)
           } else if (e.key === 'Escape') {
             e.stopPropagation()
             setQuery(null)
@@ -467,13 +518,38 @@ function PromptBox({
           ))}
         </div>
       )}
-      {options.length > 0 && (
+      {presetOptions.length > 0 && (
+        <div
+          role="listbox"
+          aria-label="提示词预设"
+          className="absolute left-3 top-full z-10 mt-1 w-72 rounded-xl bg-surface p-1 shadow-[var(--shadow-3)]"
+        >
+          {presetOptions.map((p, i) => (
+            <button
+              key={p.id}
+              type="button"
+              role="option"
+              aria-selected={i === active}
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => applyPreset(p)}
+              onPointerEnter={() => setActive(i)}
+              className={`flex w-full flex-col rounded-lg px-2 py-1.5 text-left ${i === active ? 'bg-white/8' : ''}`}
+            >
+              <span className="text-sm">{p.title}</span>
+              {p.description && (
+                <span className="truncate text-xs text-ink-muted">{p.description}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {mentionOptions.length > 0 && (
         <div
           role="listbox"
           aria-label="引用资产"
           className="absolute left-3 top-full z-10 mt-1 w-64 rounded-xl bg-surface p-1 shadow-[var(--shadow-3)]"
         >
-          {options.map(([name, t], i) => (
+          {mentionOptions.map(([name, t], i) => (
             <button
               key={name}
               type="button"
