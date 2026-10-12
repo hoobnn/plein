@@ -127,6 +127,19 @@ describe('MiniMax 官方 HTTP 契约', () => {
       subject_reference: [{ type: 'character', image_file: 'data:image/png;base64,AQID' }],
     })
   })
+  it('分辨率档位按长边换算宽高，不再传 aspect_ratio', async () => {
+    const { ctx, body } = setup([{ data: { image_urls: ['https://cdn.hailuoai.com/image.jpg'] } }])
+    await minimaxProvider.submit(
+      {
+        capability: 'image.generate',
+        model: 'image-01',
+        input: { prompt: '画一只猫', resolution: '2K', extra: { aspectRatio: '16:9' } },
+      },
+      ctx,
+    )
+    expect(body()).toMatchObject({ width: 2048, height: 1152 })
+    expect(body().aspect_ratio).toBeUndefined()
+  })
   it('H3 首尾帧走 V2 并使用 adaptive', async () => {
     const { ctx, body, fetcher } = setup([{ task_id: 'task-1' }])
     const result = await minimaxProvider.submit(

@@ -5,6 +5,8 @@ import { sequenceNode } from './sequence'
 import { storyboardNode } from './storyboard'
 
 const model = () => z.string().default('').meta({ title: '模型', widget: 'model' })
+/** 分辨率：选项随所选模型变化，空字符串用平台默认 */
+const resolution = () => z.string().default('').meta({ title: '分辨率', widget: 'resolution' })
 const textarea = (title: string, placeholder?: string) =>
   z.string().default('').meta({ title, widget: 'textarea', placeholder })
 const ASPECTS = ['16:9', '9:16', '1:1', '4:3', '3:4'] as const
@@ -59,6 +61,7 @@ export const imageNode = defineNode({
     model: model(),
     prompt: textarea('提示词'),
     aspectRatio: z.enum(ASPECTS).default('16:9').meta({ title: '画幅' }),
+    resolution: resolution(),
     count: z.number().int().min(1).max(4).default(1).meta({ title: '张数' }),
     seed: z.number().int().optional().meta({ title: '种子' }),
   }),
@@ -83,6 +86,7 @@ export const videoNode = defineNode({
     prompt: textarea('提示词'),
     duration: z.number().int().min(1).max(30).default(5).meta({ title: '时长（秒）' }),
     aspectRatio: z.enum(ASPECTS).default('16:9').meta({ title: '画幅' }),
+    resolution: resolution(),
     seed: z.number().int().optional().meta({ title: '种子' }),
   }),
 })

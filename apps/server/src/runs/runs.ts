@@ -575,7 +575,12 @@ export class NodeRuns {
         params = resolveParams(p.def, p.params, el.nodeVersion ?? p.def.version)
       } catch {}
     }
-    const kept = Object.fromEntries(Object.entries(params ?? {}).filter(([k]) => !omit.includes(k)))
+    // 分辨率留空（平台默认）不计入：这个参数是后加的，加之前生成的结果不必因此重跑
+    const kept = Object.fromEntries(
+      Object.entries(params ?? {}).filter(
+        ([k, v]) => !omit.includes(k) && !(k === 'resolution' && v === ''),
+      ),
+    )
     return createHash('sha256')
       .update(
         stableStringify({

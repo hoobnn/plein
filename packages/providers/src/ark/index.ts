@@ -12,6 +12,7 @@ import {
   type ProviderOutput,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
+import { sizeByArea, tierEdge } from '../size'
 
 const BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 const NETWORK = ['*.volces.com', '*.byteimg.com', '*.ibytedtos.com', '*.byteicdn.com']
@@ -43,36 +44,43 @@ const models = [
     id: 'doubao-seedream-5-0-pro-260628',
     title: 'Seedream 5.0 Pro',
     capabilities: ['image.generate'] as const,
+    resolutions: ['1K', '1.5K', '2K'],
   },
   {
     id: 'doubao-seedream-5-0-flash-260915',
     title: 'Seedream 5.0 Flash',
     capabilities: ['image.generate'] as const,
+    resolutions: ['1K', '1.5K', '2K'],
   },
   {
     id: 'doubao-seedream-5-0-260128',
     title: 'Seedream 5.0 Lite（支持组图）',
     capabilities: ['image.generate'] as const,
+    resolutions: ['2K', '3K', '4K'],
   },
   {
     id: 'doubao-seedance-2-5-260628',
     title: 'Seedance 2.5',
     capabilities: ['video.generate'] as const,
+    resolutions: ['480p', '720p', '1080p'],
   },
   {
     id: 'doubao-seedance-2-0-260128',
     title: 'Seedance 2.0',
     capabilities: ['video.generate'] as const,
+    resolutions: ['480p', '720p', '1080p', '4k'],
   },
   {
     id: 'doubao-seedance-2-0-fast-260128',
     title: 'Seedance 2.0 Fast',
     capabilities: ['video.generate'] as const,
+    resolutions: ['480p', '720p'],
   },
   {
     id: 'doubao-seedance-2-0-mini-260615',
     title: 'Seedance 2.0 Mini',
     capabilities: ['video.generate'] as const,
+    resolutions: ['480p', '720p'],
   },
   {
     id: 'custom-chat',
@@ -297,6 +305,20 @@ async function image(model: string, input: CapabilityInput<'image.generate'>, ct
   }
   const aspectRatio = body.aspectRatio
   delete body.aspectRatio
+  // 分辨率档位按画幅换成像素尺寸，保证画幅不丢
+  if (
+    input.resolution !== undefined &&
+    body.size === undefined &&
+    input.width === undefined &&
+    input.height === undefined
+  ) {
+    const tokens = lite ? ['2K', '3K', '4K'] : ['1K', '1.5K', '2K']
+    const edge = tierEdge(input.resolution)
+    if (!model.startsWith('doubao-seedream-5-') || !tokens.includes(input.resolution) || !edge)
+      invalid('所选 Seedream 模型不支持该分辨率')
+    const { width, height } = sizeByArea(String(aspectRatio ?? '1:1'), edge * edge)
+    body.size = `${width}x${height}`
+  }
   // Core image nodes express their frame through extra.aspectRatio. Translate it
   // into official pixel dimensions; an explicit platform size takes precedence.
   if (

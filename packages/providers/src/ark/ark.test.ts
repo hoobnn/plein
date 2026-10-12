@@ -190,6 +190,38 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     },
   )
 
+  it.each([
+    [IMAGE, '1K', '16:9', '1360x768'],
+    [IMAGE, '2K', '9:16', '1536x2720'],
+    ['doubao-seedream-5-0-260128', '4K', '1:1', '4096x4096'],
+  ])('%s 的分辨率 %s 按画幅 %s 换算为 %s', async (model, resolution, aspectRatio, size) => {
+    const { ctx, body } = harness([{ body: { data: [{ b64_json: 'AQID' }] } }])
+    await arkProvider.submit(
+      {
+        capability: 'image.generate',
+        model,
+        input: { prompt: 'cat', resolution, extra: { aspectRatio } },
+      },
+      ctx,
+    )
+    expect(body().size).toBe(size)
+  })
+
+  it('模型不支持的分辨率直接报错', async () => {
+    const { ctx, fetch } = harness([])
+    await expect(
+      arkProvider.submit(
+        {
+          capability: 'image.generate',
+          model: IMAGE,
+          input: { prompt: 'cat', resolution: '4K', extra: { aspectRatio: '16:9' } },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('明确的 extra.size 优先于通用 aspectRatio / width / height', async () => {
     const { ctx, body } = harness([{ body: { data: [{ b64_json: 'AQID' }] } }])
     await arkProvider.submit(

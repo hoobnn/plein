@@ -275,6 +275,7 @@ export const bailianProvider = defineProvider({
       id,
       title: id,
       capabilities: ['video.generate' as const],
+      resolutions: ['480P', '720P', '1080P'],
     })),
     ...['qwen3-tts-flash', 'qwen3-tts-instruct-flash'].map((id) => ({
       id,

@@ -37,6 +37,8 @@ export interface CapabilityInputs {
     references?: AssetRef[]
     width?: number
     height?: number
+    /** 分辨率档位，取模型 `resolutions` 里的值；和画幅一起换算成平台尺寸，显式宽高优先 */
+    resolution?: string
     count?: number
     seed?: number
   }
@@ -48,6 +50,7 @@ export interface CapabilityInputs {
     /** 秒 */
     duration?: number
     aspectRatio?: string
+    /** 分辨率，取模型 `resolutions` 里的值 */
     resolution?: string
     seed?: number
   }
@@ -154,6 +157,11 @@ export interface ModelSpec {
   title: string
   capabilities: Capability[]
   description?: string
+  /**
+   * 图片、视频模型可选的分辨率（平台自己的写法，如 `720p`、`2K`）。
+   * 节点的分辨率参数只列这些；不声明时不显示分辨率，用平台默认。
+   */
+  resolutions?: string[]
 }
 
 export interface SecretSpec {

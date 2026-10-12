@@ -86,6 +86,7 @@ const image = defineExecutor(imageNode, async (ctx) => {
       references: inputAssets(inputs, 'references'),
       count: params.count,
       seed: params.seed,
+      resolution: params.resolution || undefined,
       extra: { aspectRatio: params.aspectRatio },
     },
   )
@@ -103,6 +104,7 @@ const video = defineExecutor(videoNode, async (ctx) => {
       lastFrame: inputAssets(inputs, 'lastFrame')[0],
       duration: params.duration,
       aspectRatio: params.aspectRatio,
+      resolution: params.resolution || undefined,
       seed: params.seed,
     },
   )

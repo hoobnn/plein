@@ -57,6 +57,7 @@ export const serverPlugin = defineServerPlugin(plugin, {
 - `title`、`placeholder`、`description`：标签与说明
 - `widget: 'textarea'`：多行文本
 - `widget: 'model'`：模型下拉框，列出已启用平台中支持节点 `capability` 的模型
+- `widget: 'resolution'`：分辨率，选项来自所选模型的 `ModelSpec.resolutions`，空字符串表示平台默认；模型没声明时不显示
 - `widget: 'hidden'`：不在生成器里显示（如分镜节点的 `shots`，由专门的表格编辑）
 
 可选的 `applyOutputs(params, outputs)`：运行成功后返回要写回参数的部分，比如分镜节点把镜头表写回 `shots`。

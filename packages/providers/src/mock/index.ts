@@ -139,8 +139,18 @@ export const mockProvider = defineProvider({
   ],
   models: [
     { id: 'chat', title: 'Mock 对话', capabilities: ['text.chat'] },
-    { id: 'image', title: 'Mock 图片', capabilities: ['image.generate'] },
-    { id: 'video', title: 'Mock 视频', capabilities: ['video.generate'] },
+    {
+      id: 'image',
+      title: 'Mock 图片',
+      capabilities: ['image.generate'],
+      resolutions: ['1K', '2K'],
+    },
+    {
+      id: 'video',
+      title: 'Mock 视频',
+      capabilities: ['video.generate'],
+      resolutions: ['480p', '720p', '1080p'],
+    },
     {
       id: 'audio',
       title: 'Mock 音频',

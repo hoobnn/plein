@@ -9,7 +9,7 @@ export type NodeCategory = z.infer<typeof NodeCategory>
 /**
  * 节点声明：前后端共用的纯数据 + zod schema，不含执行逻辑。
  * 参数表单由 params 自动生成；可用 `.meta({ widget })` 提示控件：
- * `textarea`、`model`（按 capability 列出已启用平台的模型）、`asset`。
+ * `textarea`、`model`（按 capability 列出已启用平台的模型）、`resolution`（列出所选模型声明的分辨率）、`asset`。
  */
 export interface NodeDefinition<P extends z.ZodObject = z.ZodObject> {
   /** `vendor/name` */

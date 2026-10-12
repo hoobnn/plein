@@ -31,6 +31,7 @@ import {
   findNode,
   isPure,
   mentionTargets,
+  modelResolutions,
   type NodeInfo,
   parseAspect,
   promptKey,
@@ -139,7 +140,16 @@ function Panel({
     if (key === ak) applyAspect(engine, el.id, value)
   }
   const pk = promptKey(node)
-  const fields = fieldsOf(node).filter(([, f]) => f.widget !== 'hidden')
+  const modelKey = fieldsOf(node).find(([, f]) => f.widget === 'model')?.[0]
+  const resolutions = modelKey
+    ? modelResolutions(catalog, node, String(params[modelKey] ?? ''))
+    : undefined
+  // 分辨率的选项跟着所选模型走；模型没声明分辨率时不显示
+  const fields = fieldsOf(node).flatMap(([k, f]): Array<[string, FieldSchema]> => {
+    if (f.widget === 'hidden') return []
+    if (f.widget !== 'resolution') return [[k, f]]
+    return resolutions?.length ? [[k, { ...f, enum: ['', ...resolutions] }]] : []
+  })
   const main = fields.filter(([k, f]) => k !== pk && isMainField(k, f))
   const rest = Object.fromEntries(fields.filter(([k, f]) => k !== pk && !isMainField(k, f)))
   const ups = upstreams(engine, el.id, catalog)
@@ -277,7 +287,14 @@ function Panel({
                 value={String(params[modelField[0]] ?? '')}
                 node={node}
                 catalog={catalog}
-                onChange={(v) => set(modelField[0], v)}
+                onChange={(v) => {
+                  set(modelField[0], v)
+                  // 换了模型，原来的分辨率新模型不支持时改回默认
+                  for (const [k, f] of fieldsOf(node)) {
+                    if (f.widget !== 'resolution' || !params[k]) continue
+                    if (!modelResolutions(catalog, node, v)?.includes(String(params[k]))) set(k, '')
+                  }
+                }}
               />
             )}
             {(paramFields.length > 0 || Object.keys(rest).length > 0) && (
@@ -702,7 +719,7 @@ function ParamControl({
             onClick={() => onChange(o)}
             className={`${seg} min-w-14`}
           >
-            {String(o)}
+            {String(o) || '默认'}
           </button>
         ))}
       </div>

@@ -10,6 +10,7 @@ import {
   type ProviderErrorCode,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
+import { sizeByLongEdge, tierEdge } from '../size'
 
 const settings = z.object({
   region: z.enum(['cn', 'global']).default('cn').meta({ title: 'API 地区' }),
@@ -161,16 +162,25 @@ export const minimaxProvider = defineProvider({
   models: [
     { id: 'MiniMax-M3', title: 'MiniMax M3', capabilities: ['text.chat'] },
     { id: 'MiniMax-M2.7', title: 'MiniMax M2.7（纯文本）', capabilities: ['text.chat'] },
-    ...['image-01', 'image-01-live'].map((id) => ({
-      id,
-      title: id,
+    {
+      id: 'image-01',
+      title: 'image-01',
       capabilities: ['image.generate' as const],
-    })),
-    ...['MiniMax-H3', 'MiniMax-H3-Max'].map((id) => ({
-      id,
-      title: id,
+      resolutions: ['1K', '2K'],
+    },
+    { id: 'image-01-live', title: 'image-01-live', capabilities: ['image.generate' as const] },
+    {
+      id: 'MiniMax-H3',
+      title: 'MiniMax-H3',
       capabilities: ['video.generate' as const],
-    })),
+      resolutions: ['768P', '2K'],
+    },
+    {
+      id: 'MiniMax-H3-Max',
+      title: 'MiniMax-H3-Max',
+      capabilities: ['video.generate' as const],
+      resolutions: ['480P', '768P'],
+    },
     ...['speech-2.8-hd', 'speech-2.8-turbo'].map((id) => ({
       id,
       title: id,
@@ -252,14 +262,25 @@ export const minimaxProvider = defineProvider({
         if (!Number.isInteger(n) || n < 1 || n > 9)
           throw new ProviderError('invalid_input', 'MiniMax 图片数量须为 1–9')
         const reference = input.references?.[0]
+        // 分辨率档位按长边换算宽高（image-01 宽高 512–2048、8 的倍数），优先于 aspect_ratio
+        let { width, height } = input
+        if (input.resolution !== undefined && width === undefined && height === undefined) {
+          const edge = tierEdge(input.resolution)
+          if (req.model !== 'image-01' || !edge || edge > 2048)
+            throw new ProviderError('invalid_input', '所选 MiniMax 图片模型不支持该分辨率')
+          const aspect = input.extra?.aspectRatio
+          ;({ width, height } = sizeByLongEdge(typeof aspect === 'string' ? aspect : '1:1', edge))
+          width = Math.max(512, width)
+          height = Math.max(512, height)
+        }
         const result = await request(ctx, '/v1/image_generation', {
           model: req.model,
           prompt: input.prompt,
           n,
           seed: input.seed,
-          aspect_ratio: input.extra?.aspectRatio ?? (input.width ? undefined : '1:1'),
-          width: input.width,
-          height: input.height,
+          aspect_ratio: width ? undefined : (input.extra?.aspectRatio ?? '1:1'),
+          width,
+          height,
           response_format: 'url',
           subject_reference: reference
             ? [{ type: 'character', image_file: await imageData(ctx, reference, 10) }]
