@@ -722,7 +722,7 @@ function ParamControl({
             step={1}
             value={n}
             onChange={(e) => onChange(Number(e.target.value))}
-            className="flex-1 accent-[var(--accent)]"
+            className="flex-1"
           />
           <span className="w-12 text-right text-xs tabular-nums text-ink">
             {n}

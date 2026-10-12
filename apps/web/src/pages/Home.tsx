@@ -5,6 +5,7 @@ import { queueStartNode } from '../canvas/start'
 import { navigate } from '../router'
 import { useSession } from '../stores/session'
 import { Icon, type IconName } from '../ui/icons'
+import { confirmDialog } from '../ui/Dialog'
 import { InlineTitle } from '../ui/InlineTitle'
 import { ThemeToggle } from '../ui/ThemeToggle'
 
@@ -68,7 +69,13 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
     await load()
   }
   const remove = async (c: Canvas) => {
-    if (!confirm(`删除画布「${c.title}」？画布内容会一并删除，素材文件保留。`)) return
+    const ok = await confirmDialog({
+      title: `删除画布「${c.title}」？`,
+      message: '画布内容会一并删除，素材文件保留。',
+      confirmLabel: '删除',
+      danger: true,
+    })
+    if (!ok) return
     await api.deleteCanvas(c.id)
     await load()
   }

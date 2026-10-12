@@ -7,6 +7,7 @@ import { runNode } from '../canvas/runner'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useTemplates } from '../stores/templates'
+import { promptDialog } from '../ui/Dialog'
 import { Stars } from '../ui/Stars'
 import { AddMenu } from './AddMenu'
 
@@ -153,7 +154,13 @@ function ContextMenu({
     )
   }
   const saveFrame = async (id: string) => {
-    const title = prompt('模板名称', engine.doc.get(id)?.name ?? 'Frame')?.trim()
+    const title = await promptDialog({
+      title: '存为模板',
+      message: '存好后，双击画布空白处，在「我的模板」里找到它。',
+      defaultValue: engine.doc.get(id)?.name ?? 'Frame',
+      placeholder: '模板名称',
+      confirmLabel: '保存',
+    })
     if (!title) return
     try {
       await useTemplates.getState().save(title, templateData(engine, id))

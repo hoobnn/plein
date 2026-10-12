@@ -3,6 +3,7 @@ import { templateData } from '../canvas/groups'
 import { assetOf, downloadAll } from '../canvas/grid'
 import { useCanvas } from '../stores/canvas'
 import { useTemplates } from '../stores/templates'
+import { promptDialog } from '../ui/Dialog'
 import { Icon } from '../ui/icons'
 import { useEngineVersion } from './Generator'
 
@@ -51,7 +52,13 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
   }
   // 模板以 Frame 为单位：先打组，再把这个组存下来
   const save = async () => {
-    const title = prompt('模板名称', '我的模板')?.trim()
+    const title = await promptDialog({
+      title: '存为模板',
+      message: '存好后，双击画布空白处，在「我的模板」里找到它。',
+      defaultValue: '我的模板',
+      placeholder: '模板名称',
+      confirmLabel: '保存',
+    })
     if (!title) return
     engine.groupSelection()
     const frame = engine.selection.values()[0]

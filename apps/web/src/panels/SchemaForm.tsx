@@ -3,6 +3,8 @@
  * 插件不写 UI：平台设置、以后的节点参数都用它渲染。
  */
 
+import { Select } from '../ui/Select'
+
 interface FieldSchema {
   type?: string
   title?: string
@@ -42,18 +44,13 @@ export function SchemaForm({
         let control: React.ReactNode
         if (f.enum) {
           control = (
-            <select
+            <Select
               id={id}
-              className={`${field} ui-select`}
+              className={field}
               value={String(current ?? '')}
-              onChange={(e) => set(key, e.target.value)}
-            >
-              {f.enum.map((o) => (
-                <option key={String(o)} value={String(o)}>
-                  {String(o)}
-                </option>
-              ))}
-            </select>
+              options={f.enum.map((o) => ({ value: String(o) }))}
+              onChange={(v) => set(key, v)}
+            />
           )
         } else if (f.type === 'boolean') {
           control = (

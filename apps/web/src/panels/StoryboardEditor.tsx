@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { expandedNodes, expandShots, runExpanded, shotsOf } from '../canvas/storyboard'
 import { useCanvas } from '../stores/canvas'
 import { Icon } from '../ui/icons'
+import { Select } from '../ui/Select'
 import { useCatalog } from '../stores/catalog'
 
 /** 文档变化时重渲染（协作者改表格也能看到） */
@@ -228,18 +229,13 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       />
                     </td>
                     <td className="px-1 py-1">
-                      <select
+                      <Select
                         aria-label="景别"
-                        className="ui-select !h-8 w-full !bg-transparent !shadow-none hover:!bg-hover"
+                        className="!h-8 w-full !bg-transparent !shadow-none hover:!bg-hover"
                         value={s.shotSize}
-                        onChange={(e) =>
-                          patch(s.id, { shotSize: e.target.value as Shot['shotSize'] })
-                        }
-                      >
-                        {SHOT_SIZES.map((o) => (
-                          <option key={o}>{o}</option>
-                        ))}
-                      </select>
+                        options={SHOT_SIZES.map((o) => ({ value: o }))}
+                        onChange={(v) => patch(s.id, { shotSize: v as Shot['shotSize'] })}
+                      />
                     </td>
                     <TextCell
                       value={s.description}

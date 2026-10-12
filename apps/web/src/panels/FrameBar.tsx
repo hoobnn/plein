@@ -6,6 +6,7 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useTemplates } from '../stores/templates'
 import { Icon } from '../ui/icons'
+import { promptDialog } from '../ui/Dialog'
 import { Popover } from '../ui/Popover'
 import { useEngineVersion } from './Generator'
 
@@ -55,7 +56,13 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
     notify(parts.join('，'))
   }
   const save = async () => {
-    const title = prompt('模板名称', name)?.trim()
+    const title = await promptDialog({
+      title: '存为模板',
+      message: '存好后，双击画布空白处，在「我的模板」里找到它。',
+      defaultValue: name,
+      placeholder: '模板名称',
+      confirmLabel: '保存',
+    })
     if (!title) return
     try {
       await useTemplates.getState().save(title, templateData(engine, el.id))
@@ -100,12 +107,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
       {remote && (
         <>
           <label className="flex h-7 items-center gap-1.5 px-2 text-xs text-ink-muted">
-            <input
-              type="checkbox"
-              className="accent-[var(--accent)]"
-              checked={video}
-              onChange={(e) => setVideo(e.target.checked)}
-            />
+            <input type="checkbox" checked={video} onChange={(e) => setVideo(e.target.checked)} />
             含视频
           </label>
           <button

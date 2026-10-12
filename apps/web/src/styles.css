@@ -128,9 +128,117 @@ body,
   overscroll-behavior: none;
 }
 
+@keyframes ui-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ui-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+/* 复选框、单选框、滑块不用系统控件，统一成应用的样式 */
 input[type="checkbox"],
 input[type="radio"] {
-  accent-color: var(--accent);
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin: 0;
+  border-radius: 5px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+  cursor: pointer;
+  transition:
+    background-color 120ms,
+    box-shadow 120ms;
+}
+input[type="radio"] {
+  border-radius: 50%;
+}
+input[type="checkbox"]:hover,
+input[type="radio"]:hover {
+  box-shadow: inset 0 0 0 1.5px var(--ink-subtle);
+}
+input[type="checkbox"]:checked,
+input[type="radio"]:checked {
+  background: var(--accent);
+  box-shadow: none;
+}
+input[type="checkbox"]::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background: var(--on-accent);
+  clip-path: polygon(14% 52%, 0 66%, 38% 100%, 100% 26%, 86% 12%, 38% 72%);
+  transform: scale(0);
+  transition: transform 120ms var(--ease-spring);
+}
+input[type="radio"]::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--on-accent);
+  transform: scale(0);
+  transition: transform 120ms var(--ease-spring);
+}
+input[type="checkbox"]:checked::after,
+input[type="radio"]:checked::after {
+  transform: scale(1);
+}
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+input[type="range"] {
+  appearance: none;
+  height: 16px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+}
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.12),
+    0 1px 3px rgb(0 0 0 / 0.25);
+  transition: transform 120ms var(--ease-spring);
+}
+input[type="range"]:hover::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.12),
+    0 1px 3px rgb(0 0 0 / 0.25);
 }
 
 ::selection {
@@ -295,6 +403,33 @@ input[type="radio"] {
     height: 1px;
     margin: 4px 6px;
     background: var(--line);
+  }
+
+  .ui-btn-danger-solid {
+    background: var(--danger);
+    color: #ffffff;
+    font-weight: 500;
+  }
+  .ui-btn-danger-solid:hover {
+    background: color-mix(in srgb, var(--danger) 88%, black);
+  }
+
+  .ui-tooltip {
+    padding: 5px 8px;
+    border-radius: 7px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--on-primary);
+    background: var(--primary);
+    box-shadow: var(--shadow-2);
+    animation: ui-pop-in 120ms var(--ease-spring);
+  }
+
+  .ui-dialog-scrim {
+    animation: ui-fade-in 150ms ease-out;
+  }
+  .ui-dialog {
+    animation: ui-pop-in 180ms var(--ease-spring);
   }
 
   .ui-kbd {
