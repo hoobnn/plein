@@ -215,6 +215,54 @@ describe('重新展开', () => {
   })
 })
 
+describe('台词增删后配音节点不错位', () => {
+  const start = () => {
+    const s = shot(1, {
+      dialogue: [
+        { character: '林夏', line: '第一句' },
+        { character: '路人', line: '第二句' },
+        { character: '林夏', line: '第三句' },
+      ],
+    })
+    const { engine, board, table } = setup([s])
+    expandShots(engine, board, [s.id], catalog)
+    const speech = (text: string) =>
+      nodesOf(engine, board, s.id).find((el) => el.params?.text === text)!
+    return { engine, board, table, s, speech }
+  }
+
+  it('删掉中间一句：其余节点没有差异，同步不会改写台词', () => {
+    const { engine, board, table, s, speech } = start()
+    const second = speech('第二句')
+    table([{ ...s, dialogue: [s.dialogue[0]!, s.dialogue[2]!] }])
+    expect(planDiffs(engine, board).get(s.id) ?? []).toEqual([])
+    syncExpanded(engine, board, [s.id], 'unmodified')
+    expect(engine.doc.get(second.id)?.params?.text).toBe('第二句')
+    expect(engine.doc.get(speech('第三句').id)?.params?.text).toBe('第三句')
+    // 更新展开也不会给剩下的台词重复建节点
+    expect(expandShots(engine, board, [s.id], catalog, { mode: 'update' }).created).toBe(0)
+  })
+
+  it('开头插一句：只给新台词补节点，同步后已有节点记下新序号', () => {
+    const { engine, board, table, s, speech } = start()
+    table([{ ...s, dialogue: [{ character: '路人', line: '开场白' }, ...s.dialogue] }])
+    expect(expandShots(engine, board, [s.id], catalog, { mode: 'update' }).created).toBe(1)
+    expect(speech('开场白')).toBeDefined()
+    syncExpanded(engine, board, [s.id], 'unmodified')
+    expect(srcOf(engine.doc.get(speech('第三句').id)!)!.line).toBe(3)
+    expect(engine.doc.get(speech('第一句').id)?.params?.text).toBe('第一句')
+  })
+
+  it('原地改一句：只有这一句出现差异', () => {
+    const { engine, board, table, s } = start()
+    table([
+      { ...s, dialogue: [s.dialogue[0]!, { character: '路人', line: '改过' }, s.dialogue[2]!] },
+    ])
+    const diffs = planDiffs(engine, board).get(s.id) ?? []
+    expect(diffs.map((d) => [d.line, d.diffs.map((f) => f.key)])).toEqual([[1, ['text']]])
+  })
+})
+
 describe('表格改动 → 差异 → 用户选择同步', () => {
   const start = () => {
     const s = shot(1, { imagePrompt: '低机位', motionPrompt: '缓慢推近', duration: 7 })

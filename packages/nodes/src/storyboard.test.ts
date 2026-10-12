@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   diffPlan,
   dropShot,
+  matchLines,
   mergeShots,
   planParams,
   planVersion,
@@ -223,5 +224,41 @@ describe('删除镜头', () => {
     expect(dropped?.no).toBe(2)
     // 删不存在的镜头：表格原样返回，不误删
     expect(dropShot(shots, 'nope').shots).toBe(shots)
+  })
+})
+
+describe('配音节点按内容对应台词', () => {
+  const lines = (...texts: string[]) => texts.map((line) => ({ character: '林夏', line }))
+  const spoken = [
+    { id: 'a', line: 0, text: '第一句' },
+    { id: 'b', line: 1, text: '第二句' },
+    { id: 'c', line: 2, text: '第三句' },
+  ]
+  const match = (dialogue: ReturnType<typeof lines>) =>
+    Object.fromEntries(matchLines(spoken, dialogue))
+
+  it('删掉中间一句：后面的节点跟着内容走，被删的那句对不上', () => {
+    expect(match(lines('第一句', '第三句'))).toEqual({ a: 0, b: undefined, c: 1 })
+  })
+
+  it('开头插一句：已有节点整体后移，新台词留给补节点', () => {
+    expect(match(lines('新的一句', '第一句', '第二句', '第三句'))).toEqual({ a: 1, b: 2, c: 3 })
+  })
+
+  it('原地改字：内容对不上时按原序号对应', () => {
+    expect(match(lines('第一句', '改过的第二句', '第三句'))).toEqual({ a: 0, b: 1, c: 2 })
+  })
+
+  it('同文多句：各取离原序号最近的一句，不重复认领', () => {
+    const same = [
+      { id: 'x', line: 0, text: '好' },
+      { id: 'y', line: 2, text: '好' },
+    ]
+    const got = matchLines(same, lines('好', '嗯', '好'))
+    expect(Object.fromEntries(got)).toEqual({ x: 0, y: 2 })
+  })
+
+  it('改成空行：当作删除', () => {
+    expect(match(lines('第一句', '', '第三句'))).toEqual({ a: 0, b: undefined, c: 2 })
   })
 })

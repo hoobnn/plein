@@ -11,6 +11,7 @@ import {
 } from '@plein/doc'
 import {
   diffPlan,
+  matchLines,
   type PlanContext,
   type PlanDiff,
   planParams,
@@ -32,7 +33,10 @@ export interface ShotSource {
   storyboard: string
   shot: string
   role: ShotRole
-  /** 配音节点对应台词在 dialogue 里的序号：表格加了新台词才只补缺的那句 */
+  /**
+   * 配音节点上次对上的台词在 dialogue 里的序号。只作兜底：
+   * 表格增删台词后按内容重新对应（见 matchLines），同步时回写新序号
+   */
   line?: number
   /** 展开时的分镜版本与写进节点的参数快照：表格改动后据此算差异 */
   plan?: ShotPlan
@@ -109,9 +113,31 @@ const actualOf = (el: CanvasElement): Record<string, unknown> => ({
   voice: el.params?.voice,
 })
 
-const contextOf = (el: CanvasElement, env: PlanEnv, shot: Shot): PlanContext => {
+/**
+ * 一个镜头里各配音节点现在对应哪一句台词；台词被删了的为 undefined。
+ * 老节点没记序号，按创建顺序兜底；台词以计划快照为准，没有快照才看节点现值。
+ */
+function linesOf(list: CanvasElement[], shot: Shot) {
+  const speech = list.filter((el) => sourceOf(el)?.role === 'speech')
+  return matchLines(
+    speech.map((el, i) => {
+      const src = sourceOf(el)!
+      return {
+        id: el.id,
+        line: src.line ?? i,
+        text: String(src.plan?.params.text ?? el.params?.text ?? ''),
+      }
+    }),
+    shot.dialogue,
+  )
+}
+
+/** 配音节点的台词删了时为 undefined：节点留着，但没有计划可比，不再参与同步 */
+const lineFor = (el: CanvasElement, lines: Map<string, number | undefined>) =>
+  sourceOf(el)?.role === 'speech' ? lines.get(el.id) : 0
+
+const contextOf = (el: CanvasElement, env: PlanEnv, shot: Shot, line: number): PlanContext => {
   const src = sourceOf(el)!
-  const line = src.line ?? 0
   return {
     plan: src.plan,
     version: env.version,
@@ -146,16 +172,24 @@ export function planDiffs(engine: Engine, boardId: string): Map<string, ShotNode
     const shot = shots.get(shotId)
     // 镜头行删了：节点和产物还在，但没有计划可比，差异面板不再提它
     if (!shot) continue
+    const lines = linesOf(list, shot)
     for (const el of list) {
       const src = sourceOf(el)
-      if (!src || src.detached) continue
-      const diffs = diffPlan(src.role, contextOf(el, env, shot)).filter(
+      const line = lineFor(el, lines)
+      if (!src || src.detached || line === undefined) continue
+      const diffs = diffPlan(src.role, contextOf(el, env, shot, line)).filter(
         (d) => d.stale || d.overridden,
       )
       if (!diffs.length) continue
       out.set(shotId, [
         ...(out.get(shotId) ?? []),
-        { el, role: src.role, line: src.line, version: src.plan?.version ?? '', diffs },
+        {
+          el,
+          role: src.role,
+          line: src.role === 'speech' ? line : undefined,
+          version: src.plan?.version ?? '',
+          diffs,
+        },
       ])
     }
   }
@@ -189,16 +223,21 @@ export function syncExpanded(
   for (const [shotId, list] of expandedNodes(engine, boardId)) {
     const shot = shots.get(shotId)
     if (!shot || !shotIds.includes(shotId)) continue
+    const lines = linesOf(list, shot)
     for (const el of list) {
       const src = sourceOf(el)
-      if (!src || src.detached) continue
-      const ctx = contextOf(el, env, shot)
+      const line = lineFor(el, lines)
+      if (!src || src.detached || line === undefined) continue
+      const ctx = contextOf(el, env, shot, line)
       kept += diffPlan(src.role, ctx).filter((d) => d.overridden).length
       const sync = syncPlan(src.role, mode, ctx)
       const patch = Object.keys(sync.params)
+      // 台词增删后对应到了新位置：序号一并回写，下次兜底才不会错
+      const moved = src.role === 'speech' && src.line !== line
       const settled = JSON.stringify(sync.plan) !== JSON.stringify(src.plan ?? null)
-      if (!patch.length && !settled) continue
-      setParams(engine.doc, el.id, { ...sync.params, source: { ...src, plan: sync.plan } })
+      if (!patch.length && !settled && !moved) continue
+      const next = { ...src, plan: sync.plan, ...(src.role === 'speech' ? { line } : {}) }
+      setParams(engine.doc, el.id, { ...sync.params, source: next })
       if (patch.length) {
         nodes++
         fields += patch.length
@@ -304,7 +343,7 @@ export function expandShots(
         line: i,
         voice: env.voice(shot.dialogue[i]?.character ?? ''),
       })
-      // 台词序号按 shot.dialogue 的位置记：表格改台词后还能对上同一句
+      // 台词序号按 shot.dialogue 的位置记，增删台词后由 matchLines 按内容重新对应
       const lines = shot.dialogue.map((d, i) => ({ ...d, i })).filter((d) => d.line.trim())
       const snapshot = (params: Record<string, unknown>): ShotPlan => ({
         version: env.version,
@@ -382,8 +421,8 @@ export function expandShots(
       const byRole = (role: ShotRole) => existing.filter((el) => sourceOf(el)?.role === role)
       const hasVideo = byRole('video').length > 0
       const speechNodes = byRole('speech')
-      // 老节点没记台词序号，按创建顺序兜底对上
-      const spokenLines = new Set(speechNodes.map((el, i) => sourceOf(el)?.line ?? i))
+      // 按内容对应已有的配音节点，对不上的台词才补节点
+      const spokenLines = new Set(linesOf(speechNodes, shot).values())
       const inside = [...doc.elements()].filter((e) => e.parentId === frame)
       let cursor = inside.reduce((t, e) => Math.max(t, e.y + e.h), 0) + ROW_GAP
       const grow = () => {

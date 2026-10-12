@@ -248,6 +248,50 @@ export function syncPlan(role: ShotRole, mode: SyncMode, ctx: PlanContext): Plan
   return { params, plan: { version: ctx.version, params: snapshot, keep: [...keep] } }
 }
 
+/** 一个已展开的配音节点：记下的台词序号和展开 / 上次同步时的台词 */
+export interface SpokenNode {
+  id: string
+  line: number
+  text: string
+}
+
+/**
+ * 配音节点对应到当前的哪一句台词。台词没有稳定 id（表格里按行解析），
+ * 只按序号对应的话，删一句或插一句后面的节点就全错位了，所以：
+ * 1. 先按内容对：节点记下的台词还在，就跟着它走（同文多句时取离原序号最近的）；
+ * 2. 再按原序号对：原位置的台词没被别的节点认领，当成原地改了字；
+ * 3. 都对不上说明那句台词删了，返回 undefined，节点留着但不再参与同步。
+ * 这是启发式：删一句的同时又改了相邻一句，可能对错，差异面板会把出入列出来给用户看。
+ */
+export function matchLines(
+  nodes: readonly SpokenNode[],
+  dialogue: Shot['dialogue'],
+): Map<string, number | undefined> {
+  const out = new Map<string, number | undefined>()
+  const claimed = new Set<number>()
+  const spoken = (i: number) => (dialogue[i]?.line.trim() ?? '') !== ''
+  const ordered = [...nodes].sort((a, b) => a.line - b.line)
+  for (const n of ordered) {
+    const text = n.text.trim()
+    if (!text) continue
+    let best: number | undefined
+    dialogue.forEach((d, i) => {
+      if (claimed.has(i) || d.line.trim() !== text) return
+      if (best === undefined || Math.abs(i - n.line) < Math.abs(best - n.line)) best = i
+    })
+    if (best === undefined) continue
+    claimed.add(best)
+    out.set(n.id, best)
+  }
+  for (const n of ordered) {
+    if (out.has(n.id)) continue
+    const ok = spoken(n.line) && !claimed.has(n.line)
+    if (ok) claimed.add(n.line)
+    out.set(n.id, ok ? n.line : undefined)
+  }
+  return out
+}
+
 /**
  * 删镜头：行从计划里去掉，已展开的节点和它们的产物必须留着。
  * 返回被删的那一行，调用方据此提示「N 个节点保留在画布上」并标记脱离计划；
