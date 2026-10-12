@@ -8,6 +8,7 @@ import {
   setParent,
   topLevel,
   updateElements,
+  videoAssetOf,
 } from '@plein/doc'
 import type { Camera } from './camera'
 import type { EdgeLayer } from './edges'
@@ -68,6 +69,8 @@ type Gesture =
       handle: Handle
       ids: string[]
       starts: Map<string, Rect>
+      /** 选中里有视频（元素或结果是视频的节点）：始终等比，形状跟视频一致 */
+      lock: boolean
       /** 被缩放的 Frame 的直接子元素起始局部坐标：Frame 左上角移动时反向补偿，保持世界位置 */
       kids: Map<string, { parent: string; x: number; y: number }>
       box: Rect
@@ -193,7 +196,8 @@ export function attachInteractions(host: InteractHost) {
         }
       }
       const box = union(starts.values())
-      if (box) gesture = { kind: 'resize', handle, ids, starts, kids, box, wx: w.x, wy: w.y }
+      const lock = ids.some((id) => videoAssetOf(scene.get(id)) !== undefined)
+      if (box) gesture = { kind: 'resize', handle, ids, starts, lock, kids, box, wx: w.x, wy: w.y }
     } else if (startConnect(w.x, w.y)) {
       // 连线手势已建立
     } else {
@@ -276,8 +280,8 @@ export function attachInteractions(host: InteractHost) {
         dragMove(gesture, w.x, w.y, e.altKey)
         break
       case 'resize': {
-        const { handle, ids, starts, kids, box } = gesture
-        const next = resizeBox(box, handle, w.x - gesture.wx, w.y - gesture.wy, e.shiftKey)
+        const { handle, ids, starts, kids, box, lock } = gesture
+        const next = resizeBox(box, handle, w.x - gesture.wx, w.y - gesture.wy, lock || e.shiftKey)
         const patches = new Map<string, Transient>()
         const shift = new Map<string, { dx: number; dy: number }>()
         for (const id of ids) {

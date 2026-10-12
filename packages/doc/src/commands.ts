@@ -371,6 +371,37 @@ export function currentResult(el: CanvasElement, port?: string): NodeResult | un
   return adopted ? list.find((r) => r.runId === adopted.runId) : list[0]
 }
 
+/** 元素展示的视频：视频元素本身，或当前结果是视频的节点；其他情况为 undefined */
+export function videoAssetOf(el: CanvasElement | undefined): string | undefined {
+  if (!el) return undefined
+  if (el.kind === 'video') return el.assetId
+  if (el.kind !== 'node') return undefined
+  const v = currentResult(el)?.value
+  return v?.type === 'video' ? v.assetId : undefined
+}
+
+/**
+ * 把元素调成给定宽高比：长边和中心不动。已经一致（差 1px 以内）时不写。
+ * 跟随媒体自身的比例，属于系统写入，不进撤销栈。
+ */
+export function fitAspect(doc: PleinDoc, id: string, ratio: number): boolean {
+  const el = doc.get(id)
+  if (!el || doc.readOnly || !(ratio > 0) || !Number.isFinite(ratio)) return false
+  const long = Math.max(el.w, el.h)
+  const w = Math.round(ratio >= 1 ? long : long * ratio)
+  const h = Math.round(ratio >= 1 ? long / ratio : long)
+  if (Math.abs(w - el.w) <= 1 && Math.abs(h - el.h) <= 1) return false
+  doc.ydoc.transact(() => {
+    const m = doc.mutable(id)
+    if (!m) return
+    m.set('x', Math.round(el.x + (el.w - w) / 2))
+    m.set('y', Math.round(el.y + (el.h - h) / 2))
+    m.set('w', w)
+    m.set('h', h)
+  }, SYSTEM_ORIGIN)
+  return true
+}
+
 /** 生成历史里的一项：哪个节点的哪个媒体结果 */
 export interface HistoryEntry {
   elementId: string

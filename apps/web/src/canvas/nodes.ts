@@ -10,6 +10,7 @@ import {
   type PortType,
   type ResultValue,
   updateElement,
+  videoAssetOf,
 } from '@plein/doc'
 import { ASSET_NODE_TYPES, type MentionTarget } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
@@ -100,11 +101,12 @@ function nodeSize(node: NodeInfo) {
 /**
  * 改画幅时卡片跟着变形：保持长边和中心不动。
  * 用户手动缩放过的大小按其长边换算，不会突然变回默认大小。
+ * 已经有视频结果时卡片跟视频走（见 videoAspect.ts），新画幅等生成后再体现。
  */
 export function applyAspect(engine: Engine, id: string, value: unknown) {
   const ratio = parseAspect(value)
   const el = engine.doc.get(id)
-  if (!ratio || !el) return
+  if (!ratio || !el || videoAssetOf(el)) return
   const { w, h } = aspectSize(ratio, Math.max(el.w, el.h))
   if (Math.abs(w - el.w) < 1 && Math.abs(h - el.h) < 1) return
   updateElement(engine.doc, id, {

@@ -4,7 +4,7 @@ import { SEQUENCE_TYPE, STORYBOARD_TYPE } from '@plein/nodes'
 import { useEffect, useRef } from 'react'
 import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
-import { assetUrls, syncUrl } from '../api/client'
+import { api, assetUrls, syncUrl } from '../api/client'
 import { navigate } from '../router'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
@@ -16,6 +16,7 @@ import { NodeCards } from './nodeCards'
 import { CanvasOverlays } from './overlays'
 import { applyPresetToNode } from './presets'
 import { cancelNode, runNode } from './runner'
+import { watchVideoAspect } from './videoAspect'
 
 export type CanvasSource = { kind: 'remote'; canvasId: string } | { kind: 'demo'; count: number }
 
@@ -24,6 +25,12 @@ function previewUrl(assetId: string, kind: ElementKind) {
   if (kind === 'video') return assetUrls.variant(assetId, 'poster')
   if (kind === 'audio') return assetUrls.variant(assetId, 'waveform')
   return assetUrls.variant(assetId, 'thumb-1024')
+}
+
+/** 视频的宽高比，取自入库时探测的尺寸（已按旋转元数据换算） */
+async function videoRatio(assetId: string) {
+  const { width, height } = await api.assetMeta(assetId)
+  return width && height ? width / height : null
 }
 
 /** 画布被删除时服务端以 4404 关闭同步连接 */
@@ -81,6 +88,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
           )
         })
         const offStale = canvasId ? watchStale(engine, canvasId) : () => {}
+        const offAspect = canvasId ? watchVideoAspect(engine, videoRatio) : () => {}
         const detach = attach(engine)
         const off = attachImport(engine, host, { setImporting, notify })
         const offTheme = useTheme.subscribe((s, prev) => {
@@ -88,6 +96,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
         })
         cleanups.push(() => {
           offStale()
+          offAspect()
           offTheme()
           off()
           offActivate()
