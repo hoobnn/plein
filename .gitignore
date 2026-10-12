@@ -64,4 +64,4 @@ Thumbs.db
 Desktop.ini
 
 # ── AI 工具本地状态 ───────────────────────────────
-.claude/settings.local.json
+.claude/
