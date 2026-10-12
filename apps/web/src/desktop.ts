@@ -8,3 +8,6 @@ declare global {
 }
 
 export const desktop = typeof window === 'undefined' ? undefined : window.pleinDesktop
+
+// 桌面端样式开关：macOS 隐藏了标题栏，顶栏要给红绿灯让位并可拖动窗口（styles.css）
+if (desktop) document.documentElement.dataset.desktop = desktop.platform

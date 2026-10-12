@@ -65,6 +65,13 @@ export class Camera {
     this.emit()
   }
 
+  /** 平移到让世界坐标 (wx, wy) 落在视口中央，缩放不变（小地图跳转） */
+  centerOn(wx: number, wy: number) {
+    this.x = this.width / 2 - wx * this.zoom
+    this.y = this.height / 2 - wy * this.zoom
+    this.emit()
+  }
+
   screenToWorld(sx: number, sy: number) {
     return { x: (sx - this.x) / this.zoom, y: (sy - this.y) / this.zoom }
   }

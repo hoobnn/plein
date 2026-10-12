@@ -1,57 +1,21 @@
 import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
-import { type ClipboardData, currentResult, type NewElement, setResultRating } from '@plein/doc'
-import type { NodeCategory } from '@plein/plugin-sdk'
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  compatibleNodes,
-  findNode,
-  type NodeInfo,
-  nodeElement,
-  placeElement,
-} from '../canvas/nodes'
-import { placeTemplate, runGroup, templateData } from '../canvas/groups'
+import { currentResult, setResultRating } from '@plein/doc'
+import { type ReactNode, useEffect, useRef } from 'react'
+import { findNode, type NodeInfo } from '../canvas/nodes'
+import { runGroup, templateData } from '../canvas/groups'
 import { runNode } from '../canvas/runner'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useTemplates } from '../stores/templates'
 import { Stars } from '../ui/Stars'
-
-export const CATEGORY_LABELS: Record<NodeCategory, string> = {
-  input: '输入',
-  text: '文本',
-  image: '图片',
-  video: '视频',
-  audio: '音频',
-  story: '短剧',
-  util: '工具',
-}
-
-const BASIC: Array<{
-  id: string
-  title: string
-  description: string
-  input: Omit<NewElement, 'x' | 'y'>
-}> = [
-  {
-    id: 'markdown',
-    title: 'Markdown',
-    description: '可编辑的文档，也能作为文本连到节点',
-    input: { kind: 'markdown', w: 320, h: 200, text: '# 新文档' },
-  },
-  {
-    id: 'frame',
-    title: 'Frame',
-    description: '分组容器',
-    input: { kind: 'frame', w: 640, h: 400, name: '新场景' },
-  },
-]
+import { AddMenu } from './AddMenu'
 
 const MENU_W = 280
 
 /** 菜单定位：贴着光标，超出视口时往回收 */
-function placeAt(x: number, y: number, h: number) {
+function placeAt(x: number, y: number, h: number, w = MENU_W) {
   return {
-    left: Math.min(x, window.innerWidth - MENU_W - 8),
+    left: Math.min(x, window.innerWidth - w - 8),
     top: Math.max(8, Math.min(y, window.innerHeight - h - 8)),
   }
 }
@@ -102,132 +66,39 @@ export function CanvasMenus({ canImport }: { canImport: boolean }) {
       key={`${menu.client.x},${menu.client.y}`}
       engine={engine}
       menu={menu}
+      canImport={canImport}
       onClose={close}
     />
   )
 }
 
-type PickerItem = {
-  id: string
-  title: string
-  description?: string
-  group: string
-  create?(): Omit<NewElement, 'x' | 'y'>
-  /** 模板：整组铺出，不走 create */
-  place?(at: { x: number; y: number }): void
-}
+const PICKER_W = 240
+const PICKER_H = 440
 
-/** 可搜索的节点选择器；从端口拉出时只列能接上的节点，选中后自动连线 */
+/** 双击空白、拉线到空白：在光标处弹添加节点菜单，选中后落在光标处（拉线时自动连上） */
 function NodePicker({
   engine,
   menu,
+  canImport,
   onClose,
 }: {
   engine: Engine
   menu: Extract<CanvasMenuEvent, { kind: 'create' | 'connect' }>
+  canImport: boolean
   onClose(): void
 }) {
-  const nodes = useCatalog((s) => s.catalog?.nodes ?? [])
-  const templates = useTemplates((s) => s.templates)
-  const [query, setQuery] = useState('')
-  const [active, setActive] = useState(0)
   const ref = useDismiss(onClose)
-  const from = menu.kind === 'connect' ? menu.from : undefined
-
-  const items = useMemo(() => {
-    const list: PickerItem[] = []
-    const pool = from ? compatibleNodes(nodes, { type: from.port.type, side: from.side }) : nodes
-    for (const n of pool) {
-      list.push({
-        id: `${n.type}@${n.version}`,
-        title: n.title,
-        description: n.description,
-        group: CATEGORY_LABELS[n.category],
-        create: () => nodeElement(n),
-      })
-    }
-    // 拉出文本输出时也能落一个 Markdown；空白处双击时可建基础元素
-    if (!from) for (const b of BASIC) list.push({ ...b, group: '基础', create: () => b.input })
-    if (!from)
-      for (const t of templates)
-        list.push({
-          id: t.id,
-          title: t.title,
-          description: `${t.data.elements.length} 个元素`,
-          group: '我的模板',
-          place: (at) => placeTemplate(engine, t.data as unknown as ClipboardData, at),
-        })
-    const q = query.trim().toLowerCase()
-    return q
-      ? list.filter((i) => `${i.title} ${i.description ?? ''} ${i.id}`.toLowerCase().includes(q))
-      : list
-  }, [nodes, templates, engine, from, query])
-
-  const pick = (item: PickerItem | undefined) => {
-    if (!item) return
-    onClose()
-    if (item.place) item.place(menu.world)
-    else if (item.create) placeElement(engine, item.create(), menu.world, from)
-  }
-
-  const pos = placeAt(menu.client.x, menu.client.y, 400)
-  let lastGroup = ''
+  const pos = placeAt(menu.client.x, menu.client.y, PICKER_H, PICKER_W)
   return (
-    <div
-      ref={ref}
-      role="dialog"
-      aria-label="添加节点"
-      style={{ ...pos, width: MENU_W }}
-      className="ui-menu pointer-events-auto fixed z-30 flex max-h-[400px] flex-col overflow-hidden"
-    >
-      <input
-        // biome-ignore lint/a11y/noAutofocus: 弹出即输入是选择器的主要用法
-        autoFocus
-        value={query}
-        placeholder={from ? `搜索能接上「${from.port.label}」的节点` : '搜索节点'}
-        onChange={(e) => {
-          setQuery(e.target.value)
-          setActive(0)
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowDown') {
-            e.preventDefault()
-            setActive((a) => Math.min(items.length - 1, a + 1))
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault()
-            setActive((a) => Math.max(0, a - 1))
-          } else if (e.key === 'Enter') {
-            e.preventDefault()
-            pick(items[active])
-          }
-        }}
-        className="ui-input mb-1 !h-9 !text-sm"
+    <div ref={ref} className="fixed z-30" style={pos}>
+      <AddMenu
+        engine={engine}
+        from={menu.kind === 'connect' ? menu.from : undefined}
+        at={() => menu.world}
+        canImport={canImport}
+        onClose={onClose}
+        style={{ width: PICKER_W, maxHeight: PICKER_H }}
       />
-      <div role="listbox" className="ui-scrollbar overflow-y-auto">
-        {items.length === 0 && <p className="px-2 py-3 text-sm text-ink-subtle">没有匹配的节点</p>}
-        {items.map((item, i) => {
-          const header = item.group !== lastGroup ? item.group : null
-          lastGroup = item.group
-          return (
-            <div key={item.id}>
-              {header && <div className="ui-menu-label">{header}</div>}
-              <button
-                type="button"
-                role="option"
-                aria-selected={i === active}
-                onPointerEnter={() => setActive(i)}
-                onClick={() => pick(item)}
-                className="ui-menu-item flex-col !items-start !gap-0.5"
-              >
-                <span>{item.title}</span>
-                {item.description && (
-                  <span className="line-clamp-1 text-xs text-ink-subtle">{item.description}</span>
-                )}
-              </button>
-            </div>
-          )
-        })}
-      </div>
     </div>
   )
 }

@@ -30,6 +30,7 @@ const GROUPS: Array<{ title: string; items: Array<[string, string]> }> = [
       ['移动画布', '空格 + 拖动 / 滚轮'],
       ['适应画布', '⇧ 1'],
       ['缩放到选中', '⇧ 2'],
+      ['放大 / 缩小', `${MOD} + / ${MOD} −`],
       ['缩放到 100%', `${MOD} 0`],
     ],
   },

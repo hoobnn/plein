@@ -809,6 +809,20 @@ input[type="radio"] {
     var(--canvas);
 }
 
+/* ── 桌面端窗口 ───────────────────────────────────── */
+/* macOS 隐藏标题栏后，顶栏承担拖动窗口，并给左上角红绿灯留位 */
+:root[data-desktop="darwin"] .app-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+:root[data-desktop="darwin"] .app-drag :is(button, a, input, label, fieldset, [role="menu"]) {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+:root[data-desktop="darwin"] .app-titlebar {
+  padding-left: 96px;
+}
+
 /* 首页顶栏：平时透明，内容滚到下面时才出底色和分隔线 */
 .home-bar {
   transition:
@@ -921,4 +935,179 @@ input[type="radio"] {
 }
 .home-search input::-webkit-search-cancel-button {
   display: none;
+}
+
+/* 底部工具条的“添加节点”：实心按钮 */
+.plein-add-btn {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--canvas);
+  transition:
+    transform 150ms var(--ease-spring),
+    opacity 150ms;
+}
+.plein-add-btn:hover {
+  opacity: 0.88;
+}
+.plein-add-btn svg {
+  transition: transform 200ms var(--ease-spring);
+}
+.plein-add-btn[aria-expanded="true"] svg {
+  transform: rotate(45deg);
+}
+
+/* ── 添加节点菜单（单行图标 + 名称） ───── */
+.plein-add-menu {
+  z-index: 30;
+  padding: 6px;
+  border-radius: 16px;
+  background: var(--float);
+  box-shadow: var(--shadow-3);
+  backdrop-filter: blur(24px) saturate(1.4);
+}
+.plein-add-search {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 10px 0 12px;
+  color: var(--ink-subtle);
+}
+.plein-add-search input {
+  min-width: 0;
+  flex: 1;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  outline: none;
+}
+.plein-add-search input::placeholder {
+  color: var(--ink-subtle);
+}
+.plein-add-section {
+  margin: 6px 6px 0;
+  padding: 8px 6px 4px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-subtle);
+}
+.plein-add-item {
+  display: flex;
+  width: 100%;
+  height: 40px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--ink);
+  text-align: left;
+}
+.plein-add-icon {
+  display: flex;
+  color: var(--ink-muted);
+}
+.plein-add-item[aria-selected="true"] {
+  background: var(--hover);
+}
+.plein-add-item[aria-selected="true"] .plein-add-icon {
+  color: var(--ink);
+}
+
+.plein-empty-key {
+  padding: 3px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.home-quick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  transition:
+    box-shadow 200ms var(--ease-spring),
+    transform 200ms var(--ease-spring);
+}
+.home-quick:hover {
+  box-shadow: var(--shadow-3);
+  transform: translateY(-1px);
+}
+.home-quick:disabled {
+  opacity: 0.6;
+}
+.home-quick-icon {
+  display: flex;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  transition: transform 200ms var(--ease-spring);
+}
+.home-quick:hover .home-quick-icon {
+  transform: scale(1.06);
+}
+
+/* ── 故事板视图 ───────────────────────────────────── */
+.board-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+.board-thumb {
+  position: relative;
+  display: flex;
+  aspect-ratio: 16 / 9;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  transition: box-shadow 200ms var(--ease-spring);
+}
+.board-card:hover .board-thumb {
+  box-shadow:
+    0 0 0 2px var(--accent),
+    var(--shadow-2);
+}
+.board-index {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font-size: 11px;
+  line-height: 20px;
+  text-align: center;
+}
+.board-count {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  font-size: 11px;
+  line-height: 20px;
 }

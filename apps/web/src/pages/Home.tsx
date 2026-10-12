@@ -1,11 +1,21 @@
 import type { Canvas } from '@plein/protocol'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api/client'
+import { queueStartNode } from '../canvas/start'
 import { navigate } from '../router'
 import { useSession } from '../stores/session'
-import { Icon } from '../ui/icons'
+import { Icon, type IconName } from '../ui/icons'
 import { InlineTitle } from '../ui/InlineTitle'
 import { ThemeToggle } from '../ui/ThemeToggle'
+
+/** 快速开始：新建画布并放好对应节点、打开生成器 */
+const QUICK_START: Array<{ type: string; title: string; hint: string; icon: IconName }> = [
+  { type: 'plein/image', title: '图片生成', hint: '文生图、参考图生图', icon: 'image' },
+  { type: 'plein/video', title: '视频生成', hint: '文生视频、首尾帧', icon: 'video' },
+  { type: 'plein/llm', title: '剧本创作', hint: '写剧本、改文案', icon: 'sparkle' },
+  { type: 'plein/speech', title: '配音', hint: '台词转语音', icon: 'mic' },
+  { type: 'plein/music', title: '配乐', hint: '按描述生成音乐', icon: 'audio' },
+]
 
 const dateFmt = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' })
 const relFmt = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
@@ -41,11 +51,12 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
     void load()
   }, [load])
 
-  const create = async () => {
+  const create = async (start?: string) => {
     if (creating) return
     setCreating(true)
     try {
       const c = await api.createCanvas()
+      if (start) queueStartNode(c.id, start)
       navigate({ name: 'canvas', id: c.id })
     } catch (err) {
       setError((err as Error).message)
@@ -139,6 +150,29 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
             </button>
           </div>
         </div>
+
+        <section
+          aria-label="快速开始"
+          className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
+        >
+          {QUICK_START.map((q) => (
+            <button
+              key={q.type}
+              type="button"
+              disabled={creating}
+              onClick={() => void create(q.type)}
+              className="home-quick group"
+            >
+              <span className="home-quick-icon">
+                <Icon name={q.icon} size={20} />
+              </span>
+              <span className="min-w-0 text-left">
+                <span className="block text-[14px] font-medium text-ink">{q.title}</span>
+                <span className="block truncate text-xs text-ink-subtle">{q.hint}</span>
+              </span>
+            </button>
+          ))}
+        </section>
 
         {error && <p className="text-sm text-danger">加载失败：{error}</p>}
 

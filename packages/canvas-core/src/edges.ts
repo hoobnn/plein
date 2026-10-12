@@ -29,6 +29,8 @@ export class EdgeLayer {
   private hover: PortRef | null = null
   /** 光标所在（或贴近）的元素：它的端口显示出来 */
   private hoverEl: string | null = null
+  /** 隐藏连线：只画连着选中 / 悬停元素的线，画布密时看得清卡片 */
+  private hidden = false
 
   constructor(
     private scene: Scene,
@@ -51,6 +53,11 @@ export class EdgeLayer {
   setHover(p: PortRef | null) {
     if (p?.elementId === this.hover?.elementId && p?.port.id === this.hover?.port.id) return
     this.hover = p
+    this.markDirty()
+  }
+
+  setHidden(hidden: boolean) {
+    this.hidden = hidden
     this.markDirty()
   }
 
@@ -94,9 +101,12 @@ export class EdgeLayer {
       connected.add(`${e.to[0]}:in:${e.to[1]}`)
       // 按数据类型着色；连着选中元素的线加重
       const on = this.selection.has(e.from[0]) || this.selection.has(e.to[0])
-      const color = portColor(from.port.type)
       const status = this.scene.get(e.to[0])?.run?.status
-      if (status === 'running' || status === 'queued') {
+      const running = status === 'running' || status === 'queued'
+      if (this.hidden && !on && !running && this.hoverEl !== e.from[0] && this.hoverEl !== e.to[0])
+        continue
+      const color = portColor(from.port.type)
+      if (running) {
         // 下游正在生成：沿连线流动的虚线，示意数据正在流过去
         animating = true
         bezier(g, from.x, from.y, to.x, to.y)

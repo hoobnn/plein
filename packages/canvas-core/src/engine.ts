@@ -10,6 +10,7 @@ import {
   isClipboardData,
   moveElements,
   type PleinDoc,
+  type Rect,
   sendToBack,
   ungroupElements,
 } from '@plein/doc'
@@ -49,6 +50,7 @@ export interface EngineState {
   selection: number
   canUndo: boolean
   canRedo: boolean
+  edgesHidden: boolean
 }
 
 /** 画布上的一个位置：世界坐标 + 视口坐标（clientX / clientY，弹菜单用） */
@@ -205,6 +207,7 @@ export class Engine {
       selection: this.selection.size,
       canUndo: this.doc.undo.canUndo(),
       canRedo: this.doc.undo.canRedo(),
+      edgesHidden: this.edgesHidden,
     }
   }
 
@@ -390,6 +393,21 @@ export class Engine {
     this.camera.zoomTo(zoom)
   }
 
+  private edgesHidden = false
+
+  /** 隐藏连线（只留选中 / 悬停元素的线） */
+  setEdgesHidden(hidden: boolean) {
+    if (hidden === this.edgesHidden) return
+    this.edgesHidden = hidden
+    this.edges.setHidden(hidden)
+    this.emit()
+  }
+
+  /** 全部顶层元素的外包矩形；空画布为 null（小地图用） */
+  contentBounds(): Rect | null {
+    return union([...this.scene.children(null)].map((id) => this.scene.rect(id)).filter((r) => !!r))
+  }
+
   /** 在视口中央弹出节点选择器（Tab） */
   openCreateMenu() {
     const r = this.opts.host.getBoundingClientRect()
@@ -520,6 +538,8 @@ export class Engine {
       else if (mod && e.key === ']') this.bringToFront()
       else if (mod && e.key === '[') this.sendToBack()
       else if (mod && key === '0') this.zoomTo(1)
+      else if (mod && (e.key === '=' || e.key === '+')) this.zoomTo(this.camera.zoom * 1.25)
+      else if (mod && (e.key === '-' || e.key === '_')) this.zoomTo(this.camera.zoom / 1.25)
       else if (e.shiftKey && e.code === 'Digit1') this.zoomToFit()
       else if (e.shiftKey && e.code === 'Digit2') this.zoomToFit(this.selection.values())
       else if (mod) handled = false

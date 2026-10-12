@@ -33,9 +33,13 @@ function createWindow(url: string) {
   const { maximized, ...bounds } = restoreWindowState()
   const win = new BrowserWindow({
     ...bounds,
-    // 使用系统标题栏，保留原生窗口按钮、双击和 Windows Snap 行为。
+    // macOS 隐藏标题栏、红绿灯浮在应用顶栏上（顶栏可拖动、双击缩放，见 styles.css 的 .app-drag），
+    // 红绿灯与首页顶栏、编辑器左上角工具条垂直居中对齐。
+    // 其他平台保留系统标题栏，留住原生窗口按钮和 Windows Snap 行为。
     frame: true,
-    titleBarStyle: 'default',
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 20, y: 27 } }
+      : { titleBarStyle: 'default' as const }),
     autoHideMenuBar: false,
     title: 'plein',
     // 与网页主题的画布底色一致，避免启动时闪色

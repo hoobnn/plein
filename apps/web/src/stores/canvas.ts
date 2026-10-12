@@ -23,6 +23,8 @@ interface CanvasStore extends EngineState {
   arranged: ArrangeResult | null
   /** 生成历史面板 */
   history: boolean
+  /** 画布视图：工作流（节点图）或故事板（按类型分栏的列表） */
+  mode: 'flow' | 'board'
   /** 挂载引擎并把它的运行时状态镜像到 store（只在状态变化时更新，不跟随每帧） */
   attach(engine: Engine): () => void
   setSync(sync: SyncStatus): void
@@ -35,6 +37,7 @@ interface CanvasStore extends EngineState {
   toggleShortcuts(open?: boolean): void
   setArranged(r: ArrangeResult | null): void
   toggleHistory(open?: boolean): void
+  setMode(mode: 'flow' | 'board'): void
 }
 
 const initial: EngineState = {
@@ -43,6 +46,7 @@ const initial: EngineState = {
   selection: 0,
   canUndo: false,
   canRedo: false,
+  edgesHidden: false,
 }
 
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
@@ -60,6 +64,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   shortcuts: false,
   arranged: null,
   history: false,
+  mode: 'flow',
   attach(engine) {
     const sync = () => set(engine.state)
     const off = engine.onStateChange(sync)
@@ -80,6 +85,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
         viewer: null,
         arranged: null,
         history: false,
+        mode: 'flow',
         ...initial,
       })
     }
@@ -91,6 +97,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   toggleShortcuts: (open) => set((s) => ({ shortcuts: open ?? !s.shortcuts })),
   setArranged: (arranged) => set({ arranged }),
   toggleHistory: (open) => set((s) => ({ history: open ?? !s.history })),
+  setMode: (mode) => set({ mode, menu: null }),
   setSync: (sync) => set({ sync }),
   setImporting: (importing) => set({ importing }),
   notify(notice) {
