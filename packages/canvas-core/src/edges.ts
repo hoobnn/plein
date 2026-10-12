@@ -1,7 +1,7 @@
 import { type CanvasElement, elementPorts } from '@plein/doc'
 import { Graphics } from 'pixi.js'
 import type { Camera } from './camera'
-import { eachPort, findPort, PORT_RADIUS, type PortRef, portColor } from './ports'
+import { eachHandle, findPort, PORT_RADIUS, type PortRef, portColor } from './ports'
 import type { Scene } from './scene'
 import type { Selection } from './selection'
 import { theme } from './theme'
@@ -51,7 +51,7 @@ export class EdgeLayer {
   }
 
   setHover(p: PortRef | null) {
-    if (p?.elementId === this.hover?.elementId && p?.port.id === this.hover?.port.id) return
+    if (p?.elementId === this.hover?.elementId && p?.side === this.hover?.side) return
     this.hover = p
     this.markDirty()
   }
@@ -97,8 +97,8 @@ export class EdgeLayer {
       const from = this.port(e.from[0], e.from[1], 'out')
       const to = this.port(e.to[0], e.to[1], 'in')
       if (!from || !to) continue
-      connected.add(`${e.from[0]}:out:${e.from[1]}`)
-      connected.add(`${e.to[0]}:in:${e.to[1]}`)
+      connected.add(`${e.from[0]}:out`)
+      connected.add(`${e.to[0]}:in`)
       // 按数据类型着色；连着选中元素的线加重
       const on = this.selection.has(e.from[0]) || this.selection.has(e.to[0])
       const status = this.scene.get(e.to[0])?.run?.status
@@ -135,24 +135,26 @@ export class EdgeLayer {
       const el = this.scene.get(id)
       const r = this.scene.rect(id)
       if (!el || !r || !this.portsVisible(el)) continue
-      eachPort(el, r, (ref) => {
-        const on = active?.elementId === ref.elementId && active.port.id === ref.port.id
-        const color = portColor(ref.port.type)
+      eachHandle(el, r, (side, ports, at) => {
+        const on = active?.elementId === el.id && active.side === side
+        // 一侧的端口类型都一样时按类型着色，混着的用中性色
+        const types = new Set(ports.map((p) => p.type))
+        const color = types.size === 1 ? portColor(ports[0]!.type) : portColor('any')
         // 屏幕上保持约 9px 的圆，缩小后也点得中
         const rad = Math.max(PORT_RADIUS, 9 * px) * (on ? 1.25 : 1)
-        p.circle(ref.x, ref.y, rad)
+        p.circle(at.x, at.y, rad)
           .fill({ color: theme.knob })
           .stroke({ color, width: 1.5 * px })
-        // 未连接的端口画“+”：从这里拉出可以新建并连上节点
-        if (!connected.has(`${ref.elementId}:${ref.side}:${ref.port.id}`)) {
+        // 没连线的一侧画“+”：从这里拉出可以新建并连上节点
+        if (!connected.has(`${el.id}:${side}`)) {
           const a = rad * 0.45
-          p.moveTo(ref.x - a, ref.y)
-            .lineTo(ref.x + a, ref.y)
-            .moveTo(ref.x, ref.y - a)
-            .lineTo(ref.x, ref.y + a)
+          p.moveTo(at.x - a, at.y)
+            .lineTo(at.x + a, at.y)
+            .moveTo(at.x, at.y - a)
+            .lineTo(at.x, at.y + a)
             .stroke({ color, width: 1.5 * px })
         } else {
-          p.circle(ref.x, ref.y, rad * 0.4).fill({ color })
+          p.circle(at.x, at.y, rad * 0.4).fill({ color })
         }
       })
     }

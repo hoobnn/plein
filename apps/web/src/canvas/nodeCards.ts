@@ -1,4 +1,4 @@
-import { type Engine, NODE_LAYOUT, portPosition } from '@plein/canvas-core'
+import { type Engine, NODE_LAYOUT } from '@plein/canvas-core'
 import { adoptResult, type CanvasElement, currentResult, type RunStatus } from '@plein/doc'
 import { ASSET_NODE_TYPES, presetsFor, STORYBOARD_TYPE } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
@@ -28,7 +28,6 @@ interface Card {
   count: HTMLSpanElement
   body: HTMLDivElement
   progress: HTMLDivElement
-  ports: HTMLDivElement
   /** 上次渲染的签名，没变化就不碰 DOM */
   sig: string
 }
@@ -158,10 +157,8 @@ export class NodeCards {
     body.className = 'plein-node-body'
     const progress = document.createElement('div')
     progress.className = 'plein-node-progress'
-    const ports = document.createElement('div')
-    ports.className = 'plein-node-ports'
 
-    root.append(head, body, progress, ports)
+    root.append(head, body, progress)
     this.root.appendChild(root)
 
     const step = (d: number) => {
@@ -176,7 +173,7 @@ export class NodeCards {
     prev.addEventListener('click', () => step(-1))
     next.addEventListener('click', () => step(1))
 
-    return { root, glyph, title, status, nav, count, body, progress, ports, sig: '' }
+    return { root, glyph, title, status, nav, count, body, progress, sig: '' }
   }
 
   private render(card: Card, el: CanvasElement, selected: boolean) {
@@ -200,7 +197,6 @@ export class NodeCards {
       el.results?.[0]?.id,
       pk ? el.params?.[pk] : undefined,
       selected,
-      el.ports,
       Boolean(info),
       board ? el.params?.shots : undefined,
     ])
@@ -307,23 +303,6 @@ export class NodeCards {
       // 已经写了提示词就不再推荐预设
       const written = pk ? String(el.params?.[pk] ?? '').trim() : ''
       this.renderEmpty(card, el, kind, written ? [] : presetsFor(catalog?.prompts ?? [], info))
-    }
-
-    // 端口名：选中时显示在卡片外侧，平时只看连线
-    card.ports.replaceChildren()
-    if (selected) {
-      const rect = { x: 0, y: 0, w: el.w, h: el.h }
-      for (const side of ['in', 'out'] as const) {
-        const ports = (side === 'in' ? el.ports?.inputs : el.ports?.outputs) ?? []
-        ports.forEach((p, i) => {
-          const pos = portPosition(el, rect, side, i)
-          const tag = document.createElement('span')
-          tag.className = `plein-port-label is-${side}`
-          tag.textContent = p.label
-          tag.style.top = `${pos.y}px`
-          card.ports.appendChild(tag)
-        })
-      }
     }
   }
 

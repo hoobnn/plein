@@ -139,10 +139,24 @@ export function nodeElement(node: NodeInfo): Omit<NewElement, 'x' | 'y'> {
 
 const accepts = (a: PortType, b: PortType) => a === 'any' || b === 'any' || a === b
 
-/** 能接上某个端口的节点：从输出拉出时找有对应输入的节点，反之亦然 */
-export function compatibleNodes(nodes: NodeInfo[], from: { type: PortType; side: 'in' | 'out' }) {
+type PortFrom = { elementId: string; port: Port; side: 'in' | 'out' }
+
+/** 连接点上的全部端口：每侧只有一个连接点，拉线时按类型挑其中能接上的 */
+export function handlePorts(engine: Engine, from: PortFrom): Port[] {
+  const el = engine.doc.get(from.elementId)
+  const ports = el ? elementPorts(el) : undefined
+  return (from.side === 'in' ? ports?.inputs : ports?.outputs) ?? [from.port]
+}
+
+/** 能接上某个连接点的节点：从输出拉出时找有对应输入的节点，反之亦然 */
+export function compatibleNodes(
+  nodes: NodeInfo[],
+  from: { types: PortType[]; side: 'in' | 'out' },
+) {
   return nodes.filter((n) =>
-    (from.side === 'out' ? n.inputs : n.outputs).some((p) => accepts(p.type, from.type)),
+    (from.side === 'out' ? n.inputs : n.outputs).some((p) =>
+      from.types.some((t) => accepts(p.type, t)),
+    ),
   )
 }
 
@@ -155,7 +169,7 @@ export function placeElement(
   engine: Engine,
   input: Omit<NewElement, 'x' | 'y'>,
   at: { x: number; y: number },
-  from?: { elementId: string; port: Port; side: 'in' | 'out' },
+  from?: PortFrom,
 ): string {
   const { scene } = engine
   const frame = scene.hitTest(at.x, at.y, (id) => scene.get(id)?.kind === 'frame')
@@ -172,12 +186,15 @@ export function placeElement(
   if (from) {
     const el = engine.doc.get(id)
     const ports = el ? elementPorts(el) : undefined
-    if (from.side === 'out') {
-      const target = ports?.inputs.find((p) => accepts(p.type, from.port.type))
-      if (target) connect(engine.doc, [from.elementId, from.port.id], [id, target.id])
-    } else {
-      const source = ports?.outputs.find((p) => accepts(p.type, from.port.type))
-      if (source) connect(engine.doc, [id, source.id], [from.elementId, from.port.id])
+    // 新节点的第一个能接上的端口，配上连接点里与它类型兼容的那个
+    const mine = handlePorts(engine, from)
+    const theirs = (from.side === 'out' ? ports?.inputs : ports?.outputs) ?? []
+    for (const p of theirs) {
+      const f = mine.find((m) => accepts(p.type, m.type))
+      if (!f) continue
+      if (from.side === 'out') connect(engine.doc, [from.elementId, f.id], [id, p.id])
+      else connect(engine.doc, [id, p.id], [from.elementId, f.id])
+      break
     }
   }
   // 立即同步到场景，选中和生成器才能拿到新元素的位置

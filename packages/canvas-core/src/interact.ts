@@ -26,7 +26,7 @@ import {
 } from './geometry'
 import type { PanState } from './input'
 import { HANDLE_PX, type SelectionOverlay } from './overlay'
-import { canConnect, eachPort, hitPort, PORT_RADIUS, type PortRef } from './ports'
+import { canConnect, eachPort, hitPort, PORT_RADIUS, type PortRef, sidePorts } from './ports'
 import type { Scene, Transient } from './scene'
 import type { Selection } from './selection'
 
@@ -117,20 +117,29 @@ export function attachInteractions(host: InteractHost) {
   const findPortAt = (x: number, y: number, filter?: (p: PortRef) => boolean) =>
     hitPort(portCandidates(x, y), x, y, portRadius(), filter)
 
+  /** 同一连接点上的全部端口 */
+  const portsOf = (ref: PortRef) => {
+    const e = scene.get(ref.elementId)
+    return e ? sidePorts(e, ref) : [ref]
+  }
+
   /**
-   * 连线的落点：先找端口；落在元素卡片上时接到它第一个能接的端口，
-   * 优先还没连线的（或可多连的），不必精确对准端口点。
+   * 连线的两端：每侧只有一个连接点，落在对方的连接点或卡片上都行，
+   * 再从两侧端口里挑一对类型兼容的，目标优先还没连线的（或可多连的）。
    */
-  const dropTarget = (from: PortRef, x: number, y: number): PortRef | null => {
-    const port = findPortAt(x, y, (p) => canConnect(from, p))
-    if (port) return port
-    const id = scene.hitTest(x, y, (i) => scene.get(i)?.kind !== 'frame')
+  const resolve = (from: PortRef, x: number, y: number) => {
+    const froms = portsOf(from)
+    const fits = (p: PortRef) => froms.some((f) => canConnect(f, p))
+    const port = findPortAt(x, y, fits)
+    const id =
+      port?.elementId ?? scene.hitTest(x, y, (i) => scene.get(i)?.kind !== 'frame') ?? undefined
     const e = id ? scene.get(id) : undefined
     const r = id ? scene.rect(id) : undefined
     if (!e || !r) return null
-    const list: PortRef[] = []
+    const pairs: Array<{ from: PortRef; target: PortRef }> = []
     eachPort(e, r, (p) => {
-      if (canConnect(from, p)) list.push(p)
+      const f = froms.find((f) => canConnect(f, p))
+      if (f) pairs.push({ from: f, target: p })
     })
     const taken = (p: PortRef) =>
       !p.port.multiple &&
@@ -139,7 +148,7 @@ export function attachInteractions(host: InteractHost) {
           ? edge.to[0] === p.elementId && edge.to[1] === p.port.id
           : edge.from[0] === p.elementId && edge.from[1] === p.port.id,
       )
-    return list.find((p) => !taken(p)) ?? list[0] ?? null
+    return pairs.find((p) => !taken(p.target)) ?? pairs[0] ?? null
   }
 
   const handleAt = (x: number, y: number): Handle | null => {
@@ -212,8 +221,8 @@ export function attachInteractions(host: InteractHost) {
     if (!port) return false
     let from = port
     let picked = false
-    if (port.side === 'in' && !port.port.multiple) {
-      // 单连输入端口已有连线：拾起它，改从上游输出端口继续拖
+    if (port.side === 'in' && portsOf(port).length === 1 && !port.port.multiple) {
+      // 只有一个单连输入端口且已有连线：拾起它，改从上游输出端口继续拖
       const existing = [...doc.edges()].find(
         (edge) => edge.to[0] === port.elementId && edge.to[1] === port.port.id,
       )
@@ -244,9 +253,13 @@ export function attachInteractions(host: InteractHost) {
     }
     switch (gesture.kind) {
       case 'connect': {
-        const { from } = gesture
-        const target = dropTarget(from, w.x, w.y)
-        edges.setPreview({ from, x: w.x, y: w.y, target })
+        const r = resolve(gesture.from, w.x, w.y)
+        edges.setPreview({
+          from: r?.from ?? gesture.from,
+          x: w.x,
+          y: w.y,
+          target: r?.target ?? null,
+        })
         break
       }
       case 'press': {
@@ -344,10 +357,10 @@ export function attachInteractions(host: InteractHost) {
 
     switch (g.kind) {
       case 'connect': {
-        const target = dropTarget(g.from, w.x, w.y)
+        const r = resolve(g.from, w.x, w.y)
         edges.setPreview(null)
-        if (target) {
-          const [out, inp] = g.from.side === 'out' ? [g.from, target] : [target, g.from]
+        if (r) {
+          const [out, inp] = r.from.side === 'out' ? [r.from, r.target] : [r.target, r.from]
           connect(doc, [out.elementId, out.port.id], [inp.elementId, inp.port.id])
         } else if (!g.picked && !scene.hitTest(w.x, w.y)) {
           host.connectToEmpty?.(g.from, w, { x: e.clientX, y: e.clientY })

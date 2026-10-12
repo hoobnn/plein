@@ -3,7 +3,13 @@ import type { Engine, PortRef } from '@plein/canvas-core'
 import { useMemo, useState } from 'react'
 import { dramaNotice, placeDramaTemplate } from '../canvas/drama'
 import { placeTemplate } from '../canvas/groups'
-import { compatibleNodes, type NodeInfo, nodeElement, placeElement } from '../canvas/nodes'
+import {
+  compatibleNodes,
+  handlePorts,
+  type NodeInfo,
+  nodeElement,
+  placeElement,
+} from '../canvas/nodes'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useTemplates } from '../stores/templates'
@@ -99,7 +105,10 @@ export function AddMenu({
   const items = useMemo(() => {
     const list: Item[] = []
     const pool = from
-      ? compatibleNodes(nodes ?? [], { type: from.port.type, side: from.side })
+      ? compatibleNodes(nodes ?? [], {
+          types: handlePorts(engine, from).map((p) => p.type),
+          side: from.side,
+        })
       : (nodes ?? [])
     for (const n of pool)
       list.push({
