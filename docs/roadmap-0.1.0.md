@@ -259,6 +259,7 @@ flowchart LR
 | 文档持久化 | 以服务端 SQLite 为准，IndexedDB 只做缓存 |
 | 目录结构 | 后端放 `apps/server`，移除 `services/`；节点声明 `packages/nodes`，执行器在 `apps/server/src/executors/`；新增 `packages/protocol`（2026-10-11 确认） |
 | 认证与插件 | 认证只预留边界（低优先级）；插件 API 在 0.1.0 定型并由内置功能先用起来，第三方加载为 P1（2026-10-11 用户补充） |
+| 桌面端 | 提议用 Electron 包一层，服务端在 utilityProcess 里原样运行，Docker 保留；待用户确认（2026-10-12，见第八节） |
 
 ## 七、认证与插件
 
@@ -302,3 +303,59 @@ flowchart LR
 | 插件市场、签名、自动更新 | — | 0.1.0 之后 |
 
 插件 API 在 0.1.0 期间可以调整，`v0.1.0` 发布时给 `plugin-sdk` 定版本号，此后按语义化版本演进；`engines.plein` 不匹配的插件拒绝加载并提示。
+
+## 八、桌面端（提议，待确认）
+
+2026-10-12 用户提出提前加入桌面端架构。目标是同一套 `apps/server` + `apps/web` 既能 `docker compose up` 自部署，也能装成双击即用的桌面应用，两条路共用代码，不分叉。
+
+### 方案比较
+
+| | Electron（推荐） | Tauri + Node sidecar |
+| --- | --- | --- |
+| 服务端怎么跑 | Electron 自带 Node（44.x 为 Node 24），`apps/server` 放进 `utilityProcess` 原样运行，不用另带 Node | 另外打包一份 Node 可执行文件和 `node_modules` 作为 sidecar 子进程，再加一层 Rust 外壳 |
+| 页面渲染 | 自带固定版本的 Chromium，各平台一致；与开发、Playwright 测试用的是同一内核 | 系统 WebView：macOS 是 WKWebView，Windows 是 WebView2，Linux 是 WebKitGTK。PixiJS 的 WebGL / WebGPU 和视频解码在三个平台上表现不同，Linux 上最弱 |
+| 视频编解码 | 内置 H.264 / AAC 等专有解码，生成的 MP4 能直接播放 | 依赖系统；WebKitGTK 依赖 GStreamer 插件，用户机器上不一定有 |
+| 原生模块 | sharp 走 N-API 预编译包，可直接用；better-sqlite3 需按 Electron ABI 重新编译（`@electron/rebuild`，打包脚本里一步完成） | 用普通 Node 运行，原生模块不用重新编译，但每个平台都要单独打一份 Node + 模块 |
+| 安装包体积 | 较大，约 100 MB 起（不含 ffmpeg） | 外壳小，但带上 Node 和原生模块后差距缩到几十 MB |
+| 团队成本 | 全部 TypeScript；自动更新、签名、公证有成熟工具（electron-builder） | 要维护 Rust 外壳，sidecar 的启动、退出、端口传递要自己写 |
+
+结论：plein 的核心是 Node 服务端 + 重度依赖 WebGL 和视频播放的前端，Electron 能让桌面端和 Docker、浏览器跑的是同一份代码、同一个内核，成本最低。Tauri 的体积优势在带上 Node 之后不明显，换来的是三套 WebView 的兼容问题。
+
+### 进程结构
+
+```
+Electron 主进程（apps/desktop）
+ ├─ utilityProcess：apps/server（Hono + SQLite + 资产 + 插件宿主），监听 127.0.0.1 随机端口
+ │    └─ 以后的第三方插件子进程（M5，stdio JSON-RPC，不变）
+ └─ BrowserWindow：加载 http://127.0.0.1:<端口>/，就是现在的 apps/web 构建产物
+```
+
+窗口仍通过 HTTP 和 WebSocket 访问本机服务，前端代码不用区分桌面端和浏览器。只有少数原生能力（打开数据目录、选择导出位置、系统菜单）通过 preload 暴露一个很小的 `window.pleinDesktop`，浏览器里不存在时自动隐藏对应入口。
+
+### 需要调整的地方
+
+| 方面 | Docker / 自部署（不变） | 桌面端 |
+| --- | --- | --- |
+| 服务端入口 | `main.ts` 读环境变量启动 | 把启动逻辑抽成 `startServer(config) → { port, close }`，`main.ts` 和桌面端都调用它；`port: 0` 时由系统分配端口，再通过 `process.parentPort` 告诉主进程 |
+| 数据目录 | `PLEIN_DATA_DIR`，默认仓库下 `data/` | 系统应用数据目录（macOS `~/Library/Application Support/plein`，Windows `%APPDATA%\plein`，Linux `~/.config/plein`）；目录结构与 Docker 完全相同，可以互相拷贝；设置里可改位置、可一键打开 |
+| 认证 | 本机 `none`，对外 `password`（Better Auth） | 默认 `none`，但每次启动生成随机令牌，主进程把它写进窗口的 Cookie，服务端只认带令牌的请求，防止本机其他程序或浏览器里的网页访问这个端口。以后加「允许局域网访问」开关时切到 `password` 模式，账号体系不变 |
+| ffmpeg | 镜像里 `apt install ffmpeg` | 按平台随安装包附带 ffmpeg / ffprobe（选 LGPL 构建），路径通过新增的 `PLEIN_FFMPEG_PATH` / `PLEIN_FFPROBE_PATH` 传给服务端；找不到时沿用现在的降级逻辑（只存原文件） |
+| 前端静态文件 | `PLEIN_WEB_DIST` | 打进安装包 `resources/`，同样通过 `webDist` 传入；去掉 `config.ts` 里「仓库根目录在上三级」的假设 |
+| 原生模块 | 镜像内 `pnpm install` | 打包时 `@electron/rebuild` 重新编译 better-sqlite3；sharp 用对应平台的预编译包 |
+| 退出 | SIGTERM 时保存并退出 | 主进程退出前先通知服务端关闭，等 Yjs 落盘和 SQLite 关闭后再退出 |
+| 更新 | 拉新镜像 | electron-updater，从 GitHub Releases 检查更新 |
+
+### 分期
+
+| 阶段 | 内容 | 放在 |
+| --- | --- | --- |
+| 1. 服务端可嵌入 | `startServer`、随机端口、可配置的 ffmpeg 和前端路径、去掉仓库路径假设；Docker 行为不变 | 现在，M3 工作流之前 |
+| 2. 桌面壳 | 新增 `apps/desktop`：主进程、utilityProcess、启动令牌、preload；`pnpm desktop:dev` 连 Vite 开发服务器 | 现在，与阶段 1 一起 |
+| 3. 打包 | electron-builder 出 macOS（dmg）、Windows（nsis）、Linux（AppImage）安装包，附带 ffmpeg；CI 里构建，先不签名 | M4 |
+| 4. 发布 | macOS 签名与公证、Windows 签名、自动更新 | M5，打 `v0.1.0` 时 |
+
+### 待确认
+
+- 是否采用 Electron（推荐）。
+- 先支持哪些平台，默认 macOS 和 Windows 优先，Linux 只出 AppImage。
+- Docker 是否继续作为正式部署方式，默认保留。
