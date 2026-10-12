@@ -189,6 +189,10 @@ export class PluginHost {
     })
     const { def } = entry
     const limiter = this.limiter(parsed.provider, def.limits)
+    // 远端已受理、且没有明确失败：此后的可重试错误（轮询或下载结果时网络抖动）
+    // 保留 journal，外层重试接着轮询，不能重新提交付费任务
+    let remoteAccepted = false
+    let remoteFailed = false
 
     try {
       const outputs = await limiter.run(async () => {
@@ -197,6 +201,7 @@ export class PluginHost {
         if (recorded?.state === 'pending' && def.poll) {
           // 重启前已经提交过：接着轮询，不再提交
           remoteId = recorded.remoteId
+          remoteAccepted = true
           wait = 0
         } else {
           const submitted = await def.submit({ capability, model: parsed.model, input }, ctx)
@@ -206,6 +211,7 @@ export class PluginHost {
           remoteId = submitted.remoteId
           wait = submitted.pollAfterMs ?? DEFAULT_POLL_MS
           journal?.store.set(journal.key, { state: 'pending', remoteId })
+          remoteAccepted = true
         }
         try {
           for (;;) {
@@ -213,6 +219,7 @@ export class PluginHost {
             const r: PollResult = await def.poll!(remoteId, ctx)
             if (r.state === 'succeeded') return r
             if (r.state === 'failed') {
+              remoteFailed = true
               throw new ProviderError(r.error.code, r.error.message, {
                 retryable: r.error.retryable,
               })
@@ -242,10 +249,16 @@ export class PluginHost {
       journal?.store.set(journal.key, { state: 'done', result })
       return result
     } catch (err) {
-      // 失败的远端任务不能再接着轮询，重跑时重新提交；服务退出时保留，重启后续跑
-      if (opts.signal?.reason !== SHUTDOWN) journal?.store.delete(journal.key)
-      if (timeout.aborted && !opts.signal?.aborted) throw new ProviderError('timeout', '任务超时')
-      throw toError(err)
+      const error =
+        timeout.aborted && !opts.signal?.aborted
+          ? new ProviderError('timeout', '任务超时')
+          : toError(err)
+      // 服务退出时保留，重启后续跑；远端仍在跑而本地只是临时出错时保留，重试时续轮询。
+      // 远端确认失败、用户取消、超时或还没提交成功：删掉，重跑时重新提交
+      const resumable =
+        remoteAccepted && !remoteFailed && !signal.aborted && error.retryable === true
+      if (opts.signal?.reason !== SHUTDOWN && !resumable) journal?.store.delete(journal.key)
+      throw error
     }
   }
 

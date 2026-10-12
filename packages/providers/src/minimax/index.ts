@@ -92,7 +92,7 @@ async function request(ctx: Context, path: string, body?: unknown, method = body
       },
     )
   } catch (err) {
-    if (ctx.signal.aborted) throw err
+    if (ctx.signal.aborted) throw new ProviderError('cancelled', 'MiniMax 请求已取消', { cause: err })
     throw new ProviderError(
       'unavailable',
       'MiniMax 网络请求失败；生成提交状态可能未知，请勿自动重试',
@@ -104,7 +104,8 @@ async function request(ctx: Context, path: string, body?: unknown, method = body
     throw new ProviderError(
       res.ok ? 'unknown' : errorCode(res.status),
       `MiniMax 返回无效响应（HTTP ${res.status}）`,
-      { retryable: false },
+      // 查询接口遇到网关错误页（502/503 等非 JSON）可以重试；提交接口一律不重试
+      { retryable: method === 'GET' && res.status >= 500 },
     )
   const data = parsed.data
   if (!res.ok || data.error || (data.base_resp?.status_code ?? 0) !== 0) {

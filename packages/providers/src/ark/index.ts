@@ -447,15 +447,7 @@ async function image(model: string, input: CapabilityInput<'image.generate'>, ct
       input.height! < 1
     )
       invalid('图片宽高必须同时指定为正整数')
-    const pixels = input.width! * input.height!
-    if (
-      model.startsWith('doubao-seedream-5-') &&
-      (pixels < (lite ? 3686400 : 921600) ||
-        pixels > (lite ? 16777216 : 4624220) ||
-        input.width! / input.height! < 1 / 16 ||
-        input.width! / input.height! > 16)
-    )
-      invalid('图片尺寸超出 Seedream 5.0 的像素 / 宽高比范围')
+    // 像素与宽高比范围统一在下面按 size 校验
     body.size = `${input.width}x${input.height}`
   }
   if (body.size !== undefined && model.startsWith('doubao-seedream-5-')) {

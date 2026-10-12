@@ -233,6 +233,34 @@ describe('任务队列', () => {
     expect(doc.get(a)?.run?.error).toContain('content_policy')
   })
 
+  it('远端已受理后轮询临时出错：重试时接着轮询，不重复提交', async () => {
+    const { server } = await boot()
+    mock(server, { latencyMs: 300 })
+    const submit = vi.spyOn(mockProvider, 'submit')
+    const poll = mockProvider.poll!
+    let polls = 0
+    vi.spyOn(mockProvider, 'poll').mockImplementation(async (remoteId, ctx) => {
+      if (polls++ === 0) {
+        const { ProviderError } = await import('@plein/plugin-sdk')
+        throw new ProviderError('unavailable', '模拟轮询网络抖动')
+      }
+      return poll(remoteId, ctx)
+    })
+    ;(server.runs as unknown as { retryDelays: number[] }).retryDelays = [50, 50]
+    const { id, doc } = await canvas(server)
+    const a = createElement(doc, {
+      kind: 'node',
+      nodeType: 'plein/image',
+      params: { prompt: 'a', count: 1 },
+      ports: imagePorts,
+      ...at(0),
+    })
+    const run = server.runs.start(id, a, 'local')
+    expect(await server.runs.wait(run)).toBe('succeeded')
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect(server.runs.store.get(run)?.attempts).toBe(2)
+  })
+
   it('服务重启后接着轮询远端任务，不重复提交', async () => {
     const first = await boot()
     mock(first.server, { latencyMs: 600 })

@@ -61,10 +61,19 @@ function redact(value: string, ctx: Context) {
 function failure(status: number, code: unknown, message: unknown, ctx: Context): ProviderError {
   const detail = redact(typeof message === 'string' ? message : '请求失败', ctx).slice(0, 500)
   let normalized: ProviderErrorCode = 'unknown'
-  if (status === 401 || status === 403 || /auth|token|credential|鉴权|权限/i.test(detail)) {
+  // 只匹配完整词：“sample_rate”“max tokens”这类参数错误不能被当成限流或鉴权
+  if (
+    status === 401 ||
+    status === 403 ||
+    /\bunauthori[sz]ed\b|\binvalid[ _-]?(?:token|api[ _-]?key|credential)|鉴权|权限/i.test(detail)
+  ) {
     normalized = 'auth'
-  } else if (status === 402 || /quota|balance|欠费|余额|额度/i.test(detail)) normalized = 'quota'
-  else if (status === 429 || /rate|concurr|limit exceeded|限流|并发/i.test(detail))
+  } else if (status === 402 || /\bquota\b|\binsufficient balance\b|欠费|余额|额度/i.test(detail))
+    normalized = 'quota'
+  else if (
+    status === 429 ||
+    /\brate[ _-]?limit|\btoo many requests\b|\bconcurrency\b|limit exceeded|限流|并发/i.test(detail)
+  )
     normalized = 'rate_limit'
   else if (/content.?policy|sensitive|违规|敏感/i.test(detail)) normalized = 'content_policy'
   else if (status === 408 || status === 504) normalized = 'timeout'
