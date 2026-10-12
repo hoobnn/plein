@@ -237,6 +237,10 @@ describe('插件宿主', () => {
     expect(catalog.plugins.map((p) => [p.id, p.status])).toEqual([
       ['plein/core', 'active'],
       ['plein/mock', 'active'],
+      ['minimax/api', 'active'],
+      ['doubao/speech', 'active'],
+      ['aliyun/bailian', 'active'],
+      ['volc/ark', 'active'],
     ])
     const types = catalog.nodes.map((n) => `${n.type}@${n.version}`)
     expect(types).toEqual(corePlugin.manifest.contributes.nodes)
@@ -250,6 +254,26 @@ describe('插件宿主', () => {
       id: 'plein/mock',
       enabled: true,
       configured: true,
+    })
+    expect(catalog.providers.slice(1).every((p) => !p.enabled && !p.configured)).toBe(true)
+  })
+
+  it('豆包替代鉴权需要完整密钥组；配置检查不声称连接成功', async () => {
+    s.host.configs.update('doubao/speech', { secrets: { VOLC_SPEECH_APP_ID: 'app' } })
+    const partial = (await (await fetch(`${s.base}/api/catalog`)).json()) as Catalog
+    expect(partial.providers.find((p) => p.id === 'doubao/speech')?.configured).toBe(false)
+    s.host.configs.update('doubao/speech', { secrets: { VOLC_SPEECH_ACCESS_KEY: 'key' } })
+    const complete = (await (await fetch(`${s.base}/api/catalog`)).json()) as Catalog
+    expect(complete.providers.find((p) => p.id === 'doubao/speech')?.configured).toBe(true)
+    const result = (await (
+      await fetch(`${s.base}/api/providers/doubao/speech/test`, { method: 'POST' })
+    ).json()) as ProviderTestResult
+    expect(result).toMatchObject({
+      ok: true,
+      message: '配置检查通过；尚未验证远端密钥、模型权限或网络',
+    })
+    s.host.configs.update('doubao/speech', {
+      secrets: { VOLC_SPEECH_APP_ID: null, VOLC_SPEECH_ACCESS_KEY: null },
     })
   })
 
