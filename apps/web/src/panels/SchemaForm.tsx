@@ -3,6 +3,7 @@
  * 插件不写 UI：平台设置、以后的节点参数都用它渲染。
  */
 
+import { useState } from 'react'
 import { Select } from '../ui/Select'
 
 interface FieldSchema {
@@ -65,15 +66,12 @@ export function SchemaForm({
           )
         } else if (f.type === 'number' || f.type === 'integer') {
           control = (
-            <input
+            <NumberControl
               id={id}
-              type="number"
+              field={f}
               className={field}
-              min={f.minimum}
-              max={f.maximum}
-              step={f.type === 'integer' ? 1 : 'any'}
-              value={current === undefined ? '' : String(current)}
-              onChange={(e) => set(key, e.target.value === '' ? undefined : Number(e.target.value))}
+              value={value[key] as number | undefined}
+              onChange={(v) => set(key, v)}
             />
           )
         } else if (f.widget === 'textarea') {
@@ -101,10 +99,96 @@ export function SchemaForm({
           <label key={key} htmlFor={id} className="ui-field">
             <span className="ui-label">{label}</span>
             {control}
-            {f.description && <span className="ui-help">{f.description}</span>}
+            {(f.description || rangeOf(f)) && (
+              <span className="ui-help">{f.description ?? rangeOf(f)}</span>
+            )}
           </label>
         )
       })}
+    </div>
+  )
+}
+
+/** 取值范围的说明，如“1–4 之间的整数” */
+export function rangeOf(f: FieldSchema) {
+  if (f.minimum === undefined && f.maximum === undefined) return undefined
+  const kind = f.type === 'integer' ? '的整数' : ''
+  if (f.minimum !== undefined && f.maximum !== undefined)
+    return `${f.minimum}–${f.maximum} 之间${kind}`
+  return f.minimum !== undefined ? `不小于 ${f.minimum}` : `不大于 ${f.maximum}`
+}
+
+/** 按 schema 收拢数值：超出范围的夹到边界，整数取整 */
+export function clampNumber(f: FieldSchema, n: number) {
+  let v = f.type === 'integer' ? Math.round(n) : n
+  if (f.minimum !== undefined) v = Math.max(f.minimum, v)
+  if (f.maximum !== undefined) v = Math.min(f.maximum, v)
+  return v
+}
+
+/**
+ * 数值输入：输入时只改草稿，失焦或回车时夹到范围内再写入；清空表示用默认值（没有默认值时如种子为“随机”）。
+ * 有上下限的小数（温度、音量）配一个滑块。
+ */
+function NumberControl({
+  id,
+  field: f,
+  className,
+  value,
+  onChange,
+}: {
+  id: string
+  field: FieldSchema
+  className: string
+  value: number | undefined
+  onChange(v: number | undefined): void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const shown = value ?? (f.default as number | undefined)
+  const commit = () => {
+    if (draft === null) return
+    setDraft(null)
+    const t = draft.trim()
+    if (t === '') return onChange(undefined)
+    const n = Number(t)
+    if (Number.isFinite(n)) onChange(clampNumber(f, n))
+  }
+  const input = (
+    <input
+      id={id}
+      type="number"
+      className={className}
+      min={f.minimum}
+      max={f.maximum}
+      step={f.type === 'integer' ? 1 : 'any'}
+      placeholder={f.placeholder ?? (f.default === undefined ? '随机' : String(f.default))}
+      value={draft ?? (value === undefined ? '' : String(value))}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+      }}
+    />
+  )
+  const slider =
+    f.type === 'number' &&
+    f.minimum !== undefined &&
+    f.maximum !== undefined &&
+    f.maximum - f.minimum <= 10
+  if (!slider) return input
+  return (
+    <div className="flex items-center gap-3">
+      <input
+        type="range"
+        aria-label={f.title}
+        className="min-w-0 flex-1"
+        min={f.minimum}
+        max={f.maximum}
+        step={(f.maximum! - f.minimum!) / 100}
+        value={shown ?? f.minimum}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+      <div className="w-20 flex-none">{input}</div>
     </div>
   )
 }

@@ -248,6 +248,21 @@ export function validate(
     )
     if (!ok) return '没有启用支持这个能力的平台，请先在设置里配置'
   }
+  // 参数按 schema 检查：协作者或旧版本写进文档的值可能越界
+  for (const [key, f] of fieldsOf(node)) {
+    const v = el.params?.[key]
+    if (v === undefined || v === null || v === '') continue
+    const label = f.title ?? key
+    if (f.type === 'number' || f.type === 'integer') {
+      const n = Number(v)
+      if (!Number.isFinite(n)) return `参数「${label}」应为数字`
+      if (f.type === 'integer' && !Number.isInteger(n)) return `参数「${label}」应为整数`
+      if ((f.minimum !== undefined && n < f.minimum) || (f.maximum !== undefined && n > f.maximum))
+        return `参数「${label}」应在 ${f.minimum ?? '−∞'}–${f.maximum ?? '∞'} 之间`
+    } else if (f.enum && !f.enum.includes(v)) {
+      return `参数「${label}」的值「${String(v)}」不在可选范围内`
+    }
+  }
   for (const port of node.inputs) {
     const list = ups.get(port.id) ?? []
     if (port.required && list.length === 0) return `需要连入${port.label}`
