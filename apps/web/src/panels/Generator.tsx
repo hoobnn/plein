@@ -20,7 +20,7 @@ import type { Catalog } from '@plein/protocol'
 
 type PromptPreset = Catalog['prompts'][number]
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { assetUrls } from '../api/client'
+import { ApiError, api, assetUrls } from '../api/client'
 import { importFiles } from '../canvas/import'
 import {
   applyAspect,
@@ -276,6 +276,17 @@ function Panel({
                 onChange={set}
               />
             )}
+            <span className="flex-1" />
+            {pk && (
+              <PromptTools
+                engine={engine}
+                elId={el.id}
+                promptKey={pk}
+                text={String(params[pk] ?? '')}
+                node={node}
+                catalog={catalog}
+              />
+            )}
             <button
               type="button"
               onClick={run}
@@ -284,7 +295,7 @@ function Panel({
                 problem ?? (running ? '取消' : `${el.results?.length ? '重新生成' : '生成'}（⌘↵）`)
               }
               aria-label={running ? '取消' : el.results?.length ? '重新生成' : '生成'}
-              className={`ml-auto flex size-9 flex-none items-center justify-center rounded-full transition-colors disabled:opacity-35 ${
+              className={`flex size-9 flex-none items-center justify-center rounded-full transition-colors disabled:opacity-35 ${
                 running
                   ? 'bg-surface-3 text-ink hover:bg-active'
                   : 'bg-accent text-on-accent hover:bg-accent-hover disabled:hover:bg-accent'
@@ -423,6 +434,102 @@ function ModelPicker({
         </Popover>
       )}
     </>
+  )
+}
+
+const tool =
+  'flex size-8 flex-none items-center justify-center rounded-[10px] text-ink-muted transition-colors hover:bg-hover hover:text-ink aria-disabled:opacity-35 aria-disabled:hover:bg-transparent aria-disabled:hover:text-ink-muted'
+
+/**
+ * 发送按钮左侧的“优化提示词”“翻译提示词”：用已启用的对话模型改写，
+ * 结果整段写回提示词，算一个撤销步；`@引用` 和【占位】由服务端原样保留。
+ */
+function PromptTools({
+  engine,
+  elId,
+  promptKey: pk,
+  text,
+  node,
+  catalog,
+}: {
+  engine: Engine
+  elId: string
+  promptKey: string
+  text: string
+  node: NodeInfo
+  catalog: Catalog | null
+}) {
+  const [busy, setBusy] = useState<'optimize' | 'translate' | null>(null)
+  const hasChat = (catalog?.providers ?? []).some(
+    (p) => p.enabled && p.configured && p.models.some((m) => m.capabilities.includes('text.chat')),
+  )
+  const target =
+    node.capability === 'video.generate'
+      ? 'video'
+      : node.capability === 'image.generate'
+        ? 'image'
+        : null
+  const empty = !text.trim()
+
+  const rewrite = async (mode: 'optimize' | 'translate') => {
+    const { notify } = useCanvas.getState()
+    if (busy) return
+    if (!hasChat) return notify('没有可用的对话模型：在设置的「模型平台」里启用支持对话的平台')
+    if (empty) return notify('先写提示词')
+    setBusy(mode)
+    try {
+      const res = await api.rewritePrompt({
+        text,
+        mode,
+        target: target ?? 'image',
+        mentions: [...mentionTargets(engine).keys()],
+      })
+      // 等待期间提示词被改过（自己或协作者）就不覆盖
+      if (String(engine.doc.get(elId)?.params?.[pk] ?? '') !== text)
+        return notify('提示词已经改动，没有写回改写结果')
+      engine.doc.undo.stopCapturing()
+      setParam(engine.doc, elId, pk, res.text)
+      engine.doc.undo.stopCapturing()
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : '改写失败，请重试')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const button = (mode: 'optimize' | 'translate', label: string, icon: 'wand' | 'languages') => {
+    const disabled = !hasChat || empty || (busy !== null && busy !== mode)
+    const hint = !hasChat
+      ? '没有可用的对话模型：在设置的「模型平台」里启用支持对话的平台'
+      : empty
+        ? `先写提示词再${label}`
+        : busy === mode
+          ? `正在${label}…`
+          : label
+    return (
+      <button
+        type="button"
+        aria-label={label}
+        aria-disabled={disabled || undefined}
+        aria-busy={busy === mode || undefined}
+        title={hint}
+        onClick={() => void rewrite(mode)}
+        className={tool}
+      >
+        {busy === mode ? (
+          <span className="plein-spinner !size-3.5" />
+        ) : (
+          <Icon name={icon} size={16} />
+        )}
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-0.5">
+      {target && button('optimize', '优化提示词', 'wand')}
+      {button('translate', '翻译提示词', 'languages')}
+    </div>
   )
 }
 

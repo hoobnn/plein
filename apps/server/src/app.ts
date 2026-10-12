@@ -20,6 +20,7 @@ import { type DB, openDb } from './storage/db'
 import { loadSecrets, type Secrets } from './storage/secrets'
 import { Rooms, sqliteDocStore } from './sync/rooms'
 import { syncRoutes } from './sync/route'
+import { promptRoutes } from './http/prompt'
 import { templateRoutes } from './http/templates'
 
 export interface Server {
@@ -66,6 +67,7 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', assetRoutes(assets))
   app.route('/', syncRoutes(db, rooms))
   app.route('/', pluginRoutes(plugins))
+  app.route('/', promptRoutes(plugins))
   app.route('/', runRoutes(db, new NodeRuns(rooms, plugins)))
   app.all('/api/*', (c) => c.json({ error: 'not_found', message: '接口不存在' }, 404))
 

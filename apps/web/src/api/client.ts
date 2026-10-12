@@ -7,6 +7,8 @@ import {
   type ProviderConfigUpdate,
   type ProviderConfigView,
   type ProviderTestResult,
+  type RewritePrompt,
+  type RewritePromptResult,
   type SessionInfo,
   type UserTemplate,
 } from '@plein/protocol'
@@ -79,6 +81,8 @@ export const api = {
   updateProviderConfig: (id: string, body: ProviderConfigUpdate) =>
     request<ProviderConfigView>(API.providerConfig(id), json('PUT', body)),
   testProvider: (id: string) => request<ProviderTestResult>(API.providerTest(id), json('POST', {})),
+  rewritePrompt: (body: RewritePrompt) =>
+    request<RewritePromptResult>(API.promptRewrite, json('POST', body)),
 
   upload: (file: File) =>
     request<Asset>(API.assets, {

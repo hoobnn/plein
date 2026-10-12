@@ -38,6 +38,8 @@ const PATHS = {
   grid: 'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',
   sliders: 'M4 7h10M18 7h2M4 17h4M12 17h8M14 4v6M8 14v6',
   keyboard: 'M3 6h18v12H3zM7 10h.01M11 10h.01M15 10h.01M7 14h10',
+  wand: 'M15 4V2M15 10V8M11 6h2M17 6h4M17.8 3.2l-1.2 1.2M17.8 8.8l-1.2-1.2M12.2 3.2l1.2 1.2M3 21l9-9',
+  languages: 'm5 8 6 6M4 14l6-6 2-3M2 5h12M7 2h1M22 22l-5-10-5 10M14 18h6',
   help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17h.01',
 } as const
 
