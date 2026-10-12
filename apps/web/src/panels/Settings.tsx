@@ -119,10 +119,14 @@ function ProviderCard({ provider, onSaved }: { provider: ProviderInfo; onSaved()
               onClick={runTest}
               className="h-9 rounded-lg px-3 text-sm text-ink-muted ring-1 ring-line hover:text-ink disabled:opacity-50"
             >
-              测试连接
+              {provider.testScope === 'configuration' ? '检查配置' : '测试连接'}
             </button>
             <span className="text-xs text-ink-muted" role="status">
-              {test ? (test.ok ? '连接正常' : `连接失败：${test.message}`) : status}
+              {test
+                ? test.ok
+                  ? (test.message ?? '连接正常')
+                  : `检查失败：${test.message}`
+                : status}
             </span>
           </div>
         </>

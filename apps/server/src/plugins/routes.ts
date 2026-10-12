@@ -4,7 +4,12 @@ import {
   ProviderConfigUpdate,
   type ProviderTestResult,
 } from '@plein/protocol'
-import { describeNode, describeProvider, ProviderError } from '@plein/plugin-sdk'
+import {
+  describeNode,
+  describeProvider,
+  providerConfigured,
+  ProviderError,
+} from '@plein/plugin-sdk'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AuthEnv } from '../auth'
@@ -50,7 +55,7 @@ export function pluginRoutes(host: PluginHost) {
           return {
             ...describeProvider(p.def, p.plugin),
             enabled: cfg.enabled,
-            configured: p.def.secrets.every((s) => !s.required || Boolean(cfg.secrets[s.name])),
+            configured: providerConfigured(p.def, cfg.secrets),
           }
         }),
         templates: [...registry.templates.values()].map((t) => ({ ...t.def, plugin: t.plugin })),
@@ -98,7 +103,12 @@ export function pluginRoutes(host: PluginHost) {
       if (!registry.providers.has(id)) return c.json(notFound, 404)
       try {
         await host.testProvider(id, c.var.principal.id, AbortSignal.timeout(30_000))
-        return c.json({ ok: true } satisfies ProviderTestResult)
+        return c.json({
+          ok: true,
+          ...(registry.providers.get(id)!.def.testScope === 'configuration'
+            ? { message: '配置检查通过；尚未验证远端密钥、模型权限或网络' }
+            : {}),
+        } satisfies ProviderTestResult)
       } catch (err) {
         const e =
           err instanceof ProviderError ? err : new ProviderError('unknown', (err as Error).message)

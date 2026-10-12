@@ -17,6 +17,7 @@ import {
   type ProviderCallResult,
   type ProviderContext,
   ProviderError,
+  providerConfigured,
   type ProviderOutput,
   resolveParams,
   type ServerPluginDefinition,
@@ -164,7 +165,18 @@ export class PluginHost {
           }
         } catch (err) {
           // 取消或超时：通知平台取消远端任务（尽力而为）
-          if (signal.aborted) await def.cancel?.(submitted.remoteId, ctx).catch(() => {})
+          if (signal.aborted && def.cancel) {
+            // 生成的 signal 已中止；取消请求必须使用独立、有限时长的上下文。
+            const cancelCtx = this.providerContext(
+              parsed.provider,
+              opts.ownerId,
+              AbortSignal.timeout(10_000),
+              {
+                requireEnabled: false,
+              },
+            )
+            await def.cancel(submitted.remoteId, cancelCtx).catch(() => {})
+          }
           throw err
         }
       }, signal)
@@ -197,6 +209,8 @@ export class PluginHost {
       if (s.required && !config.secrets[s.name])
         throw new ProviderError('auth', `平台 ${def.title} 缺少 ${s.title}`)
     }
+    if (!providerConfigured(def, config.secrets))
+      throw new ProviderError('auth', `平台 ${def.title} 缺少一组完整的鉴权密钥`)
     const fetchScoped = scopedFetch(manifest)
     return {
       settings: settings.data,

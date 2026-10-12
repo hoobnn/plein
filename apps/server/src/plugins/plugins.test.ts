@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { serve } from '@hono/node-server'
 import { corePlugin } from '@plein/nodes'
+import { mockProvider } from '@plein/providers'
 import {
   defineExecutor,
   defineNode,
@@ -15,7 +16,7 @@ import {
   ProviderError,
 } from '@plein/plugin-sdk'
 import type { Catalog, ProviderConfigView, ProviderTestResult } from '@plein/protocol'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { createServer } from '../app'
 import { loadConfig } from '../config'
@@ -341,6 +342,7 @@ describe('插件宿主', () => {
     expect(progress.length).toBeGreaterThan(0)
 
     const ac = new AbortController()
+    const cancel = vi.spyOn(mockProvider, 'cancel')
     const run = s.host.runNode({
       type: 'plein/llm',
       version: 1,
@@ -350,6 +352,9 @@ describe('插件宿主', () => {
     })
     setTimeout(() => ac.abort(), 50)
     await expect(run).rejects.toMatchObject({ code: 'cancelled' })
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(cancel.mock.calls[0]?.[1].signal.aborted).toBe(false)
+    cancel.mockRestore()
     s.host.configs.update('plein/mock', { settings: { latencyMs: 0, failWith: 'none' } })
   })
 

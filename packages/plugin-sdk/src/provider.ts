@@ -185,9 +185,13 @@ export interface ProviderDefinition<S extends z.ZodObject = z.ZodObject> {
   /** 非敏感配置：地域、Base URL 等；设置页按它生成表单 */
   settings: S
   secrets: SecretSpec[]
+  /** 多种鉴权方式，任意一组密钥全部填写即满足条件；与 required 并用 */
+  credentialAlternatives?: string[][]
   models: ModelSpec[]
   /** 宿主按它限流（同一 Provider 的并发与每分钟请求数） */
   limits?: { concurrency?: number; requestsPerMinute?: number }
+  /** 无免费鉴权探针的平台仅做本地配置检查，设置页需如实提示 */
+  testScope?: 'connection' | 'configuration'
   /** “测试连接”：校验密钥与网络，失败时抛 ProviderError */
   test?(ctx: ProviderContext<z.output<S>>): Promise<void>
   submit(request: ProviderRequest, ctx: ProviderContext<z.output<S>>): Promise<SubmitResult>
@@ -200,6 +204,13 @@ export function defineProvider<S extends z.ZodObject>(
 ): ProviderDefinition<S> {
   if (!NAMESPACED_ID.test(def.id)) throw new Error(`Provider id ${def.id} 应为 vendor/name`)
   const ids = new Set<string>()
+  const secretNames = new Set(def.secrets.map((s) => s.name))
+  if (
+    def.credentialAlternatives?.some(
+      (group) => group.length === 0 || group.some((name) => !secretNames.has(name)),
+    )
+  )
+    throw new Error(`Provider ${def.id} 的鉴权组必须引用已声明的密钥且不能为空`)
   for (const m of def.models) {
     if (ids.has(m.id)) throw new Error(`Provider ${def.id} 的模型 ${m.id} 重复`)
     if (m.capabilities.length === 0) {
@@ -212,12 +223,26 @@ export function defineProvider<S extends z.ZodObject>(
   return def
 }
 
+export function providerConfigured(
+  def: ProviderDefinition,
+  secrets: Record<string, string>,
+): boolean {
+  return (
+    def.secrets.every((s) => !s.required || Boolean(secrets[s.name]?.trim())) &&
+    (!def.credentialAlternatives ||
+      def.credentialAlternatives.some(
+        (group) => group.length > 0 && group.every((name) => Boolean(secrets[name]?.trim())),
+      ))
+  )
+}
+
 /** Provider 的可序列化描述，供设置页使用 */
 export interface ProviderDescriptor {
   id: string
   title: string
   description?: string
   docsUrl?: string
+  testScope?: 'connection' | 'configuration'
   settingsSchema: Record<string, unknown>
   secrets: SecretSpec[]
   models: ModelSpec[]
@@ -230,6 +255,7 @@ export function describeProvider(def: ProviderDefinition, plugin: string): Provi
     title: def.title,
     description: def.description,
     docsUrl: def.docsUrl,
+    testScope: def.testScope,
     settingsSchema: z.toJSONSchema(def.settings, { io: 'input', unrepresentable: 'any' }) as Record<
       string,
       unknown
