@@ -10,6 +10,7 @@ import {
   type ProviderErrorCode,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
+import { chatMessages, imageDataUrl, type Method, redact, retryableFor, send } from '../shared/http'
 import { sizeByLongEdge, tierEdge } from '../size'
 
 const settings = z.object({
@@ -74,66 +75,63 @@ function errorCode(code: number | string): ProviderErrorCode {
   return 'unknown'
 }
 
-async function request(ctx: Context, path: string, body?: unknown, method = body ? 'POST' : 'GET') {
+async function request(
+  ctx: Context,
+  path: string,
+  body?: unknown,
+  method: Method = body ? 'POST' : 'GET',
+) {
   const key = ctx.secret('MINIMAX_API_KEY')?.trim()
   if (!key) throw new ProviderError('auth', '请填写 MiniMax API Key')
   const payload = body === undefined ? undefined : JSON.stringify(body)
   if (payload && Buffer.byteLength(payload) > 64 * 1024 * 1024)
     throw new ProviderError('invalid_input', 'MiniMax 请求体超过 64 MB')
-  let res: Response
-  try {
-    res = await ctx.fetch(
-      `${ctx.settings.region === 'cn' ? 'https://api.minimax.cn' : 'https://api.minimax.io'}${path}`,
-      {
-        method,
-        signal: ctx.signal,
-        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: payload,
-      },
-    )
-  } catch (err) {
-    if (ctx.signal.aborted)
-      throw new ProviderError('cancelled', 'MiniMax 请求已取消', { cause: err })
-    throw new ProviderError(
-      'unavailable',
-      'MiniMax 网络请求失败；生成提交状态可能未知，请勿自动重试',
-      { retryable: method === 'GET', cause: err },
-    )
-  }
+  const res = await send(
+    ctx,
+    `${ctx.settings.region === 'cn' ? 'https://api.minimax.cn' : 'https://api.minimax.io'}${path}`,
+    {
+      method,
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: payload,
+    },
+    {
+      cancelled: 'MiniMax 请求已取消',
+      network: 'MiniMax 网络请求失败；生成提交状态可能未知，请勿自动重试',
+    },
+  )
   const parsed = responseSchema.safeParse(await res.json().catch(() => null))
-  if (!parsed.success)
-    throw new ProviderError(
-      res.ok ? 'unknown' : errorCode(res.status),
-      `MiniMax 返回无效响应（HTTP ${res.status}）`,
-      // 查询接口遇到网关错误页（502/503 等非 JSON）可以重试；提交接口一律不重试
-      { retryable: method === 'GET' && res.status >= 500 },
-    )
+  if (!parsed.success) {
+    const code = res.ok ? 'unknown' : errorCode(res.status)
+    // 查询接口遇到网关错误页（502/503 等非 JSON）可以重试；提交接口一律不重试
+    throw new ProviderError(code, `MiniMax 返回无效响应（HTTP ${res.status}）`, {
+      retryable: retryableFor(method, code),
+    })
+  }
   const data = parsed.data
   if (!res.ok || data.error || (data.base_resp?.status_code ?? 0) !== 0) {
     const code = data.error?.type ?? data.base_resp?.status_code ?? res.status
-    const message = (
-      data.error?.message ??
-      data.base_resp?.status_msg ??
-      `HTTP ${res.status}`
-    ).replaceAll(key, '[redacted]')
+    const message = redact(
+      data.error?.message ?? data.base_resp?.status_msg ?? `HTTP ${res.status}`,
+      [key],
+    )
     const normalized = errorCode(code) === 'unknown' ? errorCode(res.status) : errorCode(code)
     throw new ProviderError(normalized, `MiniMax：${message}`, {
-      retryable: method === 'GET' && ['unavailable', 'rate_limit', 'timeout'].includes(normalized),
+      retryable: retryableFor(method, normalized),
     })
   }
   return data
 }
 
-async function imageData(ctx: Context, ref: AssetRef, maxMb = 30) {
-  if (ref.kind !== 'image') throw new ProviderError('invalid_input', 'MiniMax 参考素材必须是图片')
-  const file = await ctx.files.read(ref)
-  if (
-    !['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(file.mime) ||
-    !file.data.length ||
-    file.data.length > maxMb * 1024 * 1024
-  )
-    throw new ProviderError('invalid_input', `MiniMax 图片格式不支持或超过 ${maxMb} MB`)
-  return `data:${file.mime};base64,${Buffer.from(file.data).toString('base64')}`
+function imageData(ctx: Context, ref: AssetRef, maxMb = 30) {
+  const message = `MiniMax 图片格式不支持或超过 ${maxMb} MB`
+  return imageDataUrl(ctx, ref, {
+    notImage: 'MiniMax 参考素材必须是图片',
+    accept: (mime) =>
+      ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(mime),
+    badMime: message,
+    maxBytes: maxMb * 1024 * 1024,
+    tooLarge: message,
+  })
 }
 
 function required(value: string, max: number, label: string) {
@@ -257,28 +255,11 @@ export const minimaxProvider = defineProvider({
         const input = req.input as CapabilityInput<'text.chat'>
         if (input.jsonSchema)
           throw new ProviderError('invalid_input', 'MiniMax 此适配器不支持 JSON Schema 输出')
-        const messages = await Promise.all(
-          input.messages.map(async (m) => ({
-            role: m.role,
-            content:
-              typeof m.content === 'string'
-                ? m.content
-                : await Promise.all(
-                    m.content.map(async (p) => {
-                      if (p.type === 'text') return p
-                      if (req.model !== 'MiniMax-M3')
-                        throw new ProviderError(
-                          'invalid_input',
-                          'M2.7 只支持纯文本，请使用 M3 处理图片',
-                        )
-                      return {
-                        type: 'image_url',
-                        image_url: { url: await imageData(ctx, p.image) },
-                      }
-                    }),
-                  ),
-          })),
-        )
+        const messages = await chatMessages(input.messages, (ref) => {
+          if (req.model !== 'MiniMax-M3')
+            throw new ProviderError('invalid_input', 'M2.7 只支持纯文本，请使用 M3 处理图片')
+          return imageData(ctx, ref)
+        })
         const result = await request(ctx, '/v1/chat/completions', {
           model: req.model,
           messages,

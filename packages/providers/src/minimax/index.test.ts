@@ -262,4 +262,32 @@ describe('MiniMax 官方 HTTP 契约', () => {
     ).rejects.toMatchObject({ code: 'unavailable', retryable: false })
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
+  it('查询遇网关错误页、429 或断网可重试，提交遇 502 不可重试，中止归为 cancelled', async () => {
+    const gateway = () => new Response('<html>bad gateway</html>', { status: 502 })
+    const { ctx } = setup([
+      gateway(),
+      Response.json(
+        { base_resp: { status_code: 1002, status_msg: 'rate limit' } },
+        { status: 429 },
+      ),
+      new TypeError('fetch failed'),
+      gateway(),
+    ])
+    for (let i = 0; i < 3; i++)
+      await expect(minimaxProvider.poll!('123', ctx)).rejects.toMatchObject({ retryable: true })
+    await expect(
+      minimaxProvider.submit(
+        { capability: 'video.generate', model: 'MiniMax-H3', input: { prompt: '跳舞' } },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'unavailable', retryable: false })
+    const controller = new AbortController()
+    controller.abort()
+    const aborted = setup([new Error('aborted')])
+    aborted.ctx.signal = controller.signal
+    await expect(minimaxProvider.poll!('123', aborted.ctx)).rejects.toMatchObject({
+      code: 'cancelled',
+      retryable: false,
+    })
+  })
 })
