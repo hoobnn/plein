@@ -4,6 +4,7 @@ import { useCanvas } from '../stores/canvas'
 import { Icon, type IconName } from '../ui/icons'
 import { shortcut } from '../ui/keys'
 import { Popover } from '../ui/Popover'
+import { Presence } from '../ui/Presence'
 import { useDismiss } from '../ui/useDismiss'
 import { AddMenu } from './AddMenu'
 import { Minimap } from './Minimap'
@@ -56,26 +57,28 @@ function ToolPicker({ engine, tool }: { engine: Engine; tool: Tool }) {
       >
         <Icon name={current.icon} />
       </Button>
-      {anchor && (
-        <Popover anchor={anchor} onClose={() => setAnchor(null)} label="工具" width={168}>
-          {TOOLS.map((t) => (
-            <button
-              key={t.tool}
-              type="button"
-              aria-pressed={t.tool === tool}
-              onClick={() => {
-                engine.setTool(t.tool)
-                setAnchor(null)
-              }}
-              className="ui-menu-item"
-            >
-              <Icon name={t.icon} />
-              <span className="flex-1">{t.label}</span>
-              <span className="ui-kbd">{t.hint}</span>
-            </button>
-          ))}
-        </Popover>
-      )}
+      <Presence>
+        {anchor && (
+          <Popover anchor={anchor} onClose={() => setAnchor(null)} label="工具" width={168}>
+            {TOOLS.map((t) => (
+              <button
+                key={t.tool}
+                type="button"
+                aria-pressed={t.tool === tool}
+                onClick={() => {
+                  engine.setTool(t.tool)
+                  setAnchor(null)
+                }}
+                className="ui-menu-item"
+              >
+                <Icon name={t.icon} />
+                <span className="flex-1">{t.label}</span>
+                <span className="ui-kbd">{t.hint}</span>
+              </button>
+            ))}
+          </Popover>
+        )}
+      </Presence>
     </>
   )
 }
@@ -96,19 +99,22 @@ function NodeMenu({ engine, canImport }: { engine: Engine; canImport: boolean })
       >
         <Icon name="plus" size={20} />
       </button>
-      {open && (
-        <AddMenu
-          engine={engine}
-          canImport={canImport}
-          at={() => {
-            const c = engine.camera.viewRect
-            return { x: c.x + c.w / 2, y: c.y + c.h / 2 }
-          }}
-          onClose={() => setOpen(false)}
-          className="absolute bottom-12 -left-1"
-          style={{ width: 240, maxHeight: 'min(440px, calc(100vh - 120px))' }}
-        />
-      )}
+      <Presence>
+        {open && (
+          <AddMenu
+            side="above"
+            engine={engine}
+            canImport={canImport}
+            at={() => {
+              const c = engine.camera.viewRect
+              return { x: c.x + c.w / 2, y: c.y + c.h / 2 }
+            }}
+            onClose={() => setOpen(false)}
+            className="absolute bottom-12 -left-1"
+            style={{ width: 240, maxHeight: 'min(440px, calc(100vh - 120px))' }}
+          />
+        )}
+      </Presence>
     </div>
   )
 }
@@ -214,54 +220,56 @@ function ZoomMenu({ engine, zoom }: { engine: Engine; zoom: number }) {
       >
         {Math.round(zoom * 100)}%
       </Button>
-      {anchor && (
-        <Popover anchor={anchor} onClose={close} label="缩放" width={200}>
-          <label className="ui-input mb-1 flex items-center gap-1">
-            <input
-              // biome-ignore lint/a11y/noAutofocus: 打开就能输入倍数
-              autoFocus
-              value={draft}
-              inputMode="numeric"
-              aria-label="缩放百分比"
-              onFocus={(e) => e.currentTarget.select()}
-              onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ''))}
-              onKeyDown={(e) => {
-                e.stopPropagation()
-                if (e.key !== 'Enter') return
-                const n = Number(draft)
-                if (n > 0) engine.zoomTo(n / 100)
-                close()
-              }}
-              className="min-w-0 flex-1 bg-transparent tabular-nums outline-none"
-            />
-            <span className="text-ink-subtle">%</span>
-          </label>
-          <ZoomItem
-            label="放大"
-            hint={shortcut('mod+plus')}
-            onClick={act(() => engine.zoomTo(zoom * 1.25))}
-          />
-          <ZoomItem
-            label="缩小"
-            hint={shortcut('mod+minus')}
-            onClick={act(() => engine.zoomTo(zoom / 1.25))}
-          />
-          <ZoomItem
-            label="适应画布"
-            hint={shortcut('shift+1')}
-            onClick={act(() => engine.zoomToFit())}
-          />
-          <div className="ui-sep" />
-          {ZOOM_PRESETS.map((z) => (
+      <Presence>
+        {anchor && (
+          <Popover anchor={anchor} onClose={close} label="缩放" width={200}>
+            <label className="ui-input mb-1 flex items-center gap-1">
+              <input
+                // biome-ignore lint/a11y/noAutofocus: 打开就能输入倍数
+                autoFocus
+                value={draft}
+                inputMode="numeric"
+                aria-label="缩放百分比"
+                onFocus={(e) => e.currentTarget.select()}
+                onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ''))}
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  if (e.key !== 'Enter') return
+                  const n = Number(draft)
+                  if (n > 0) engine.zoomTo(n / 100)
+                  close()
+                }}
+                className="min-w-0 flex-1 bg-transparent tabular-nums outline-none"
+              />
+              <span className="text-ink-subtle">%</span>
+            </label>
             <ZoomItem
-              key={z}
-              label={`缩放至 ${z * 100}%`}
-              hint={z === 1 ? shortcut('mod+0') : undefined}
-              onClick={act(() => engine.zoomTo(z))}
+              label="放大"
+              hint={shortcut('mod+plus')}
+              onClick={act(() => engine.zoomTo(zoom * 1.25))}
             />
-          ))}
-        </Popover>
-      )}
+            <ZoomItem
+              label="缩小"
+              hint={shortcut('mod+minus')}
+              onClick={act(() => engine.zoomTo(zoom / 1.25))}
+            />
+            <ZoomItem
+              label="适应画布"
+              hint={shortcut('shift+1')}
+              onClick={act(() => engine.zoomToFit())}
+            />
+            <div className="ui-sep" />
+            {ZOOM_PRESETS.map((z) => (
+              <ZoomItem
+                key={z}
+                label={`缩放至 ${z * 100}%`}
+                hint={z === 1 ? shortcut('mod+0') : undefined}
+                onClick={act(() => engine.zoomTo(z))}
+              />
+            ))}
+          </Popover>
+        )}
+      </Presence>
     </>
   )
 }

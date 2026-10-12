@@ -5,6 +5,7 @@ import { type CanvasMedia, seedOf } from '../canvas/library'
 import { useLibrary } from '../stores/library'
 import { Icon, type IconName } from '../ui/icons'
 import { Popover } from '../ui/Popover'
+import { Presence } from '../ui/Presence'
 
 export const KIND_ICONS: Record<LibraryKind, IconName> = {
   character: 'character',
@@ -58,39 +59,41 @@ export function LibraryAdd({
         {variant === 'bar' && '存入资产库'}
         <Icon name="chevronDown" size={12} />
       </button>
-      {anchor && (
-        <Popover anchor={anchor} onClose={() => setAnchor(null)} label="存入资产库" width={260}>
-          <div className="ui-menu-label">
-            {media.length > 1
-              ? `把 ${images ? `${images} 张图片` : ''}${images && videos ? '、' : ''}${
-                  videos ? `${videos} 个视频` : ''
-                }存为`
-              : '存为'}
-          </div>
-          {LIBRARY_KINDS.map((k) => {
-            // 视频只有特效收；只选了视频时其他类别存不进东西
-            const usable = images > 0 || !!k.video
-            return (
-              <button
-                key={k.id}
-                type="button"
-                className="ui-menu-item items-start"
-                disabled={!usable}
-                title={usable ? undefined : `${k.title}只收图片`}
-                onClick={() => pick(k.id)}
-              >
-                <span className="mt-0.5">
-                  <Icon name={KIND_ICONS[k.id]} size={14} />
-                </span>
-                <span className="flex min-w-0 flex-col">
-                  <span>{k.title}</span>
-                  <span className="truncate text-xs text-ink-subtle">{KIND_HINTS[k.id]}</span>
-                </span>
-              </button>
-            )
-          })}
-        </Popover>
-      )}
+      <Presence>
+        {anchor && (
+          <Popover anchor={anchor} onClose={() => setAnchor(null)} label="存入资产库" width={260}>
+            <div className="ui-menu-label">
+              {media.length > 1
+                ? `把 ${images ? `${images} 张图片` : ''}${images && videos ? '、' : ''}${
+                    videos ? `${videos} 个视频` : ''
+                  }存为`
+                : '存为'}
+            </div>
+            {LIBRARY_KINDS.map((k) => {
+              // 视频只有特效收；只选了视频时其他类别存不进东西
+              const usable = images > 0 || !!k.video
+              return (
+                <button
+                  key={k.id}
+                  type="button"
+                  className="ui-menu-item items-start"
+                  disabled={!usable}
+                  title={usable ? undefined : `${k.title}只收图片`}
+                  onClick={() => pick(k.id)}
+                >
+                  <span className="mt-0.5">
+                    <Icon name={KIND_ICONS[k.id]} size={14} />
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <span>{k.title}</span>
+                    <span className="truncate text-xs text-ink-subtle">{KIND_HINTS[k.id]}</span>
+                  </span>
+                </button>
+              )
+            })}
+          </Popover>
+        )}
+      </Presence>
     </>
   )
 }

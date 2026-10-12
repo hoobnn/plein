@@ -11,6 +11,7 @@ import { shortcut } from '../ui/keys'
 import { useDismiss } from '../ui/useDismiss'
 import { AddMenu } from './AddMenu'
 import { runFlowFrom, runFrame, runNode } from './run'
+import { Presence, useExit } from '../ui/Presence'
 
 const MENU_W = 280
 
@@ -27,26 +28,30 @@ export function CanvasMenus({ canImport }: { canImport: boolean }) {
   const engine = useCanvas((s) => s.engine)
   const menu = useCanvas((s) => s.menu)
   const setMenu = useCanvas((s) => s.setMenu)
-  if (!engine || !menu) return null
   const close = () => setMenu(null)
+  if (!engine || !menu) return <Presence>{null}</Presence>
   if (menu.kind === 'context')
     return (
-      <ContextMenu
+      <Presence>
+        <ContextMenu
+          engine={engine}
+          menu={menu}
+          canImport={canImport}
+          onClose={close}
+          onAddNode={() => setMenu({ ...menu, kind: 'create' })}
+        />
+      </Presence>
+    )
+  return (
+    <Presence>
+      <NodePicker
+        key={`${menu.client.x},${menu.client.y}`}
         engine={engine}
         menu={menu}
         canImport={canImport}
         onClose={close}
-        onAddNode={() => setMenu({ ...menu, kind: 'create' })}
       />
-    )
-  return (
-    <NodePicker
-      key={`${menu.client.x},${menu.client.y}`}
-      engine={engine}
-      menu={menu}
-      canImport={canImport}
-      onClose={close}
-    />
+    </Presence>
   )
 }
 
@@ -118,6 +123,7 @@ function ContextMenu({
   onAddNode(): void
 }) {
   const ref = useDismiss(onClose, { wheel: true })
+  const exit = useExit()
   const catalog = useCatalog((s) => s.catalog)
   const act = (fn: () => void) => () => {
     onClose()
@@ -241,6 +247,7 @@ function ContextMenu({
     <div
       ref={ref}
       role="menu"
+      {...exit}
       style={{ ...placeAt(menu.client.x, menu.client.y, 320), width: 220 }}
       className="ui-menu pointer-events-auto fixed z-30"
     >

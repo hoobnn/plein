@@ -6,7 +6,7 @@ import {
   type NewElement,
   resultHistory,
 } from '@plein/doc'
-import { type ReactNode, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { downloadAsset } from '../canvas/grid'
 import { useDocVersion } from '../canvas/hooks'
@@ -16,7 +16,9 @@ import { useCanvas } from '../stores/canvas'
 import { shortTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
-import { SlidePill } from '../ui/Slide'
+import { Segmented } from '../ui/Segmented'
+import { Presence } from '../ui/Presence'
+import { EmptyState } from '../ui/EmptyState'
 
 type MediaType = 'image' | 'video' | 'audio'
 type TypeFilter = 'all' | MediaType
@@ -69,8 +71,7 @@ function thumbOf(e: HistoryEntry, size: number) {
 export function History() {
   const engine = useCanvas((s) => s.engine)
   const open = useCanvas((s) => s.history)
-  if (!engine || !open) return null
-  return <HistoryPanel engine={engine} />
+  return <Presence>{engine && open && <HistoryPanel engine={engine} />}</Presence>
 }
 
 function HistoryPanel({ engine }: { engine: Engine }) {
@@ -217,23 +218,31 @@ function HistoryPanel({ engine }: { engine: Engine }) {
       </ModalHeader>
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3">
-        <Segmented label="类型">
-          {TYPES.map((t) => (
-            <SegButton key={t.id} active={type === t.id} onClick={() => setType(t.id)}>
-              {t.icon && <Icon name={t.icon} size={14} />}
-              {t.label}
-              <span className="tabular-nums text-ink-subtle">{counts[t.id]}</span>
-            </SegButton>
-          ))}
-        </Segmented>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-ink-subtle">类型</span>
+          <Segmented
+            label="类型"
+            options={TYPES.map((t) => ({
+              value: t.id,
+              label: t.label,
+              icon: t.icon,
+              extra: counts[t.id],
+            }))}
+            value={type}
+            onChange={setType}
+          />
+        </div>
       </div>
 
       <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-5">
         {shown.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-ink-subtle">
-            <Icon name="history" size={24} />
-            {all.length === 0 ? '本画布还没有生成过图片、视频或音频' : '没有符合筛选条件的结果'}
-          </div>
+          <EmptyState
+            fill
+            icon={all.length === 0 ? 'history' : 'filter'}
+            title={
+              all.length === 0 ? '本画布还没有生成过图片、视频或音频' : '没有符合筛选条件的结果'
+            }
+          />
         ) : (
           <ul
             className="grid gap-3"
@@ -290,31 +299,6 @@ function HistoryPanel({ engine }: { engine: Engine }) {
         </footer>
       )}
     </Modal>
-  )
-}
-
-function Segmented({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-ink-subtle">{label}</span>
-      <div className="ui-seg ui-slide">
-        <SlidePill variant="seg" />
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function SegButton(props: { active: boolean; onClick(): void; children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={props.active}
-      onClick={props.onClick}
-      className="ui-seg-item"
-    >
-      {props.children}
-    </button>
   )
 }
 

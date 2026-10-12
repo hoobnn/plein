@@ -284,6 +284,13 @@
   }
   .ui-seg-item:has(> svg:only-child) {
     padding: 0;
+    width: 28px;
+  }
+  /* 放在面板标题旁的大号分段：32 高、13 号字 */
+  .ui-seg-lg > .ui-seg-item {
+    height: var(--h-md);
+    padding: 0 12px;
+    font-size: var(--text-sm);
   }
   .ui-seg-item:hover {
     color: var(--ink);
@@ -367,6 +374,17 @@
     box-shadow: var(--shadow-3);
     backdrop-filter: blur(32px) saturate(1.8);
     animation: ui-pop-in var(--dur-base) var(--ease-spring);
+    transform-origin: var(--pop-origin, top left);
+  }
+  /* 弹层（ui/Popover.tsx、添加节点菜单）从锚点那一侧长出：在锚点上方就从下边缘长，反之从上边缘 */
+  [data-side="above"] {
+    --pop-origin: bottom left;
+    --pop-from: translateY(4px) scale(0.97);
+    --pop-to: translateY(2px) scale(0.98);
+  }
+  [data-side="below"] {
+    --pop-from: translateY(-4px) scale(0.97);
+    --pop-to: translateY(-2px) scale(0.98);
   }
   .ui-menu-label {
     padding: 8px 8px 4px;
@@ -375,6 +393,8 @@
     color: var(--ink-subtle);
   }
   .ui-menu-item {
+    /* 悬停底色：移入立即出现，移出时淡掉，扫过一列菜单项不拖泥带水 */
+    transition: background-color var(--dur-fast) var(--ease-standard);
     display: flex;
     width: 100%;
     align-items: center;
@@ -389,6 +409,7 @@
   .ui-menu-item:hover,
   .ui-menu-item[aria-selected="true"] {
     background: var(--hover);
+    transition-duration: 0ms;
   }
   .ui-menu-item[aria-pressed="true"] {
     background: var(--active);
@@ -428,6 +449,9 @@
     background: var(--menu);
     box-shadow: var(--shadow-3);
     backdrop-filter: blur(32px) saturate(1.8);
+    /* 贴在顶栏下面：从上方落下、往上收回 */
+    --pop-from: translateY(-6px);
+    --pop-to: translateY(-4px);
     animation: ui-pop-in var(--dur-base) var(--ease-spring);
   }
 
@@ -442,12 +466,105 @@
     animation: ui-pop-in var(--dur-fast) var(--ease-spring);
   }
 
-  /* 对话框（ui/Dialog.tsx）：遮罩淡入，面板弹出 */
+  /* 对话框（ui/Dialog.tsx、ui/Modal.tsx）：遮罩淡入，面板略微上浮着弹出，两者同时进行 */
   .ui-dialog-scrim {
     animation: ui-fade-in var(--dur-base) var(--ease-standard);
   }
   .ui-dialog {
+    --pop-from: translateY(8px) scale(0.96);
+    --pop-to: translateY(4px) scale(0.98);
+    animation: ui-pop-in var(--dur-slow) var(--ease-spring);
+  }
+  /* 其他弹出的浮层（任务面板等）：用 --pop-from / --pop-origin 指定从哪边进来 */
+  .ui-pop {
     animation: ui-pop-in var(--dur-base) var(--ease-spring);
+    transform-origin: var(--pop-origin, center);
+  }
+  /* 贴着底部的提示条：从下方升起 */
+  .ui-pop-up {
+    --pop-from: translateY(8px);
+    --pop-to: translateY(6px);
+  }
+  /* 贴着右边缘的面板：从右侧滑入 */
+  .ui-pop-right {
+    --pop-origin: right center;
+    --pop-from: translateX(12px);
+    --pop-to: translateX(8px);
+  }
+
+  /* 开关（ui/Switch.tsx）：20 高，开时 accent 底，圆钮弹性滑过去 */
+  .ui-switch {
+    position: relative;
+    flex: none;
+    width: 36px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--surface-3);
+    transition: background-color var(--dur-fast) var(--ease-standard);
+  }
+  .ui-switch[aria-checked="true"] {
+    background: var(--accent);
+  }
+  .ui-switch:disabled {
+    opacity: 0.4;
+  }
+  .ui-switch > span {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--on-accent);
+    box-shadow: var(--shadow-1);
+    transition:
+      transform var(--dur-base) var(--ease-spring),
+      width var(--dur-base) var(--ease-spring);
+  }
+  .ui-switch[aria-checked="true"] > span {
+    transform: translateX(16px);
+  }
+  .ui-switch:active:not(:disabled) > span {
+    width: 20px;
+  }
+  .ui-switch[aria-checked="true"]:active:not(:disabled) > span {
+    transform: translateX(12px);
+  }
+
+  /* 空状态（ui/EmptyState.tsx）：图标、标题、说明、操作上下排开，居中，淡入 */
+  .ui-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 64px 24px;
+    text-align: center;
+    color: var(--ink-subtle);
+    animation: ui-fade-in var(--dur-base) var(--ease-standard);
+  }
+  .ui-empty > svg {
+    margin-bottom: 4px;
+  }
+  .ui-empty-fill {
+    flex: 1;
+    min-height: 100%;
+    justify-content: center;
+  }
+  .ui-empty-compact {
+    padding: 40px 16px;
+  }
+  .ui-empty-title {
+    font-size: var(--text-sm);
+    color: var(--ink-muted);
+  }
+  .ui-empty-compact .ui-empty-title {
+    font-size: var(--text-xs);
+  }
+  .ui-empty-hint {
+    max-width: 28rem;
+    font-size: var(--text-xs);
+    line-height: 18px;
+    color: var(--ink-subtle);
   }
 
   /* 键帽：快捷键面板、空画布提示里成组出现的按键 */
@@ -657,7 +774,7 @@
 }
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: var(--dur-slow);
+  animation-duration: var(--dur-move);
   animation-timing-function: var(--ease-spring);
 }
 :root[data-view-slide="next"]::view-transition-old(root) {
@@ -704,4 +821,19 @@
   .ui-slide-swap[data-slide-from] {
     animation: none;
   }
+}
+
+/*
+ * 退场（ui/Presence.tsx）：浮层关闭时先标上 data-closing，播完收起动画再卸载。
+ * 不分层、带 :root 提高优先级，盖过各浮层自己的进场动画；收起途中不再响应指针。
+ */
+:where([data-closing]),
+:where([data-closing]) * {
+  pointer-events: none;
+}
+:root [data-closing] {
+  animation: ui-pop-out var(--dur-exit) var(--ease-exit) forwards;
+}
+:root .ui-dialog-scrim[data-closing] {
+  animation: ui-fade-out var(--dur-exit) var(--ease-standard) forwards;
 }

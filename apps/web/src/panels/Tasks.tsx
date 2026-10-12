@@ -9,6 +9,8 @@ import { useCatalog } from '../stores/catalog'
 import { duration, relativeTime } from '../ui/format'
 import { Icon } from '../ui/icons'
 import { cancelGroup, cancelNode, runNode } from './run'
+import { Presence, useExit } from '../ui/Presence'
+import { EmptyState } from '../ui/EmptyState'
 
 const STATUS: Record<JobInfo['status'], string> = {
   queued: '排队中',
@@ -132,7 +134,7 @@ export function Tasks() {
     }
   }, [list])
 
-  if (!open || !engine) return null
+  if (!engine) return null
   const doc = engine.doc
 
   const nameOf = (j: JobInfo) =>
@@ -144,85 +146,96 @@ export function Tasks() {
   }
 
   return (
-    <aside
-      aria-label="任务"
-      className="ui-float pointer-events-auto absolute inset-y-16 right-3 z-30 flex w-90 flex-col rounded-xl max-sm:left-3 max-sm:w-auto"
-    >
-      <header className="flex h-12 flex-none items-center gap-2 border-b border-line pr-2 pl-4">
-        <h2 className="text-sm font-semibold">任务</h2>
-        {active.length > 0 && (
-          <span className="text-xs text-ink-subtle">{active.length} 个排队或运行中</span>
-        )}
-        <button
-          type="button"
-          aria-label="关闭"
-          title="关闭（Esc）"
-          className="ui-btn ui-btn-quiet ui-icon-btn ml-auto"
-          onClick={() => useCanvas.getState().toggleTasks(false)}
+    <Presence>
+      {open && (
+        <Panel
+          aria-label="任务"
+          className="ui-float ui-pop ui-pop-right pointer-events-auto absolute inset-y-16 right-3 z-30 flex w-90 flex-col rounded-xl max-sm:left-3 max-sm:w-auto"
         >
-          <Icon name="x" />
-        </button>
-      </header>
-      <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        {!list ? (
-          <p className="px-2 py-6 text-center text-xs text-ink-subtle">
-            {error ? `读取任务失败：${error}` : '加载中…'}
-          </p>
-        ) : list.jobs.length === 0 && groups.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 px-4 py-10 text-center text-xs text-ink-subtle">
-            <Icon name="tasks" size={24} />
-            还没有运行过节点。点节点上的「生成」或 Frame 的「整组运行」后，任务会出现在这里。
-          </div>
-        ) : (
-          <>
-            {groups.length > 0 && (
-              <Section title="批量运行">
-                {groups.map((g) => (
-                  <GroupRow
-                    key={g.id}
-                    group={g}
-                    name={groupName(g, doc, catalog)}
-                    now={now}
-                    onLocate={() => locate(g.frameId)}
-                  />
-                ))}
-              </Section>
-            )}
+          <header className="flex h-12 flex-none items-center gap-2 border-b border-line pr-2 pl-4">
+            <h2 className="text-sm font-semibold">任务</h2>
             {active.length > 0 && (
-              <Section title="进行中">
-                {active.map((j) => (
-                  <JobRow
-                    key={j.id}
-                    job={j}
-                    doc={doc}
-                    name={nameOf(j)}
-                    now={now}
-                    latest={latest.has(j.id)}
-                    onLocate={() => locate(j.nodeId)}
-                  />
-                ))}
-              </Section>
+              <span className="text-xs text-ink-subtle">{active.length} 个排队或运行中</span>
             )}
-            {done.length > 0 && (
-              <Section title="最近">
-                {done.map((j) => (
-                  <JobRow
-                    key={j.id}
-                    job={j}
-                    doc={doc}
-                    name={nameOf(j)}
-                    now={now}
-                    latest={latest.has(j.id)}
-                    onLocate={() => locate(j.nodeId)}
-                  />
-                ))}
-              </Section>
+            <button
+              type="button"
+              aria-label="关闭"
+              title="关闭（Esc）"
+              className="ui-btn ui-btn-quiet ui-icon-btn ml-auto"
+              onClick={() => useCanvas.getState().toggleTasks(false)}
+            >
+              <Icon name="x" />
+            </button>
+          </header>
+          <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-2">
+            {!list ? (
+              <p className="px-2 py-6 text-center text-xs text-ink-subtle">
+                {error ? `读取任务失败：${error}` : '加载中…'}
+              </p>
+            ) : list.jobs.length === 0 && groups.length === 0 ? (
+              <EmptyState
+                compact
+                icon="tasks"
+                title="还没有运行过节点"
+                hint="点节点上的「生成」或 Frame 的「整组运行」后，任务会出现在这里。"
+              />
+            ) : (
+              <>
+                {groups.length > 0 && (
+                  <Section title="批量运行">
+                    {groups.map((g) => (
+                      <GroupRow
+                        key={g.id}
+                        group={g}
+                        name={groupName(g, doc, catalog)}
+                        now={now}
+                        onLocate={() => locate(g.frameId)}
+                      />
+                    ))}
+                  </Section>
+                )}
+                {active.length > 0 && (
+                  <Section title="进行中">
+                    {active.map((j) => (
+                      <JobRow
+                        key={j.id}
+                        job={j}
+                        doc={doc}
+                        name={nameOf(j)}
+                        now={now}
+                        latest={latest.has(j.id)}
+                        onLocate={() => locate(j.nodeId)}
+                      />
+                    ))}
+                  </Section>
+                )}
+                {done.length > 0 && (
+                  <Section title="最近">
+                    {done.map((j) => (
+                      <JobRow
+                        key={j.id}
+                        job={j}
+                        doc={doc}
+                        name={nameOf(j)}
+                        now={now}
+                        latest={latest.has(j.id)}
+                        onLocate={() => locate(j.nodeId)}
+                      />
+                    ))}
+                  </Section>
+                )}
+              </>
             )}
-          </>
-        )}
-      </div>
-    </aside>
+          </div>
+        </Panel>
+      )}
+    </Presence>
   )
+}
+
+/** 面板外框：从右侧滑入，关闭时收回 */
+function Panel(props: React.ComponentProps<'aside'>) {
+  return <aside {...props} {...useExit()} />
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

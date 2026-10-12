@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react'
 import { Icon } from './icons'
+import { useExit } from './Presence'
 
 /**
  * 盖住整个窗口的面板（设置、生成历史、分镜表、序列、快捷键）：遮罩淡入、面板弹出，点遮罩关闭。
  * 按 Esc 关闭由各面板自己处理：有的要在捕获阶段拦下画布快捷键。
+ * 打开处包一层 `<Presence>`，关闭时遮罩淡出、面板收起。
  */
 export function Modal({
   label,
@@ -26,6 +28,7 @@ export function Modal({
   className?: string
   children: ReactNode
 }) {
+  const exit = useExit()
   return (
     <div
       className={`pointer-events-auto fixed inset-0 flex justify-center p-4 sm:p-6 ${
@@ -37,12 +40,14 @@ export function Modal({
         aria-label="关闭"
         tabIndex={-1}
         onClick={onClose}
+        {...exit}
         className="ui-dialog-scrim absolute inset-0 cursor-default bg-scrim"
       />
       <section
         role="dialog"
         aria-label={label}
         data-plein-active={isolateKeys ? '' : undefined}
+        {...exit}
         className={`ui-dialog relative flex max-h-full w-full flex-col overflow-hidden rounded-2xl bg-surface shadow-4 ${className}`}
       >
         {children}

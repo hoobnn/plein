@@ -31,6 +31,7 @@
   box-shadow: var(--shadow-3);
   backdrop-filter: blur(32px) saturate(1.8);
   animation: ui-pop-in var(--dur-base) var(--ease-spring);
+  transform-origin: var(--pop-origin, top left);
 }
 .plein-add-search {
   display: flex;
@@ -182,22 +183,22 @@
   transform: translateX(calc(-100% - 12px));
   visibility: hidden;
   transition:
-    transform var(--dur-slow) var(--ease-spring),
+    transform var(--dur-move) var(--ease-spring),
     opacity var(--dur-base) var(--ease-standard),
-    visibility 0s linear var(--dur-slow);
+    visibility 0s linear var(--dur-move);
 }
 .plein-sidebar[data-open] {
   opacity: 1;
   transform: none;
   visibility: visible;
   transition:
-    transform var(--dur-slow) var(--ease-spring),
+    transform var(--dur-move) var(--ease-spring),
     opacity var(--dur-base) var(--ease-standard),
     visibility 0s;
 }
 /* 跟着侧栏让位的浮层（左下视图工具条）：同一条曲线 */
 .plein-follow-sidebar {
-  transition: left var(--dur-slow) var(--ease-spring);
+  transition: left var(--dur-move) var(--ease-spring);
 }
 /* 拖宽度时不要动画，跟手 */
 .plein-resizing .plein-follow-sidebar {

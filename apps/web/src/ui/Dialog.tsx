@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
+import { Presence, useExit } from './Presence'
 
 /**
  * 应用内的确认框 / 输入框，替代浏览器原生的 confirm() / prompt()。
@@ -76,8 +77,9 @@ export function DialogHost() {
     },
     () => current,
   )
-  if (!req) return null
-  return createPortal(<DialogView key={req.id} req={req} />, document.body)
+  return (
+    <Presence>{req && createPortal(<DialogView key={req.id} req={req} />, document.body)}</Presence>
+  )
 }
 
 function DialogView({ req }: { req: Request }) {
@@ -109,17 +111,20 @@ function DialogView({ req }: { req: Request }) {
     settle(req.kind === 'confirm' ? true : value)
   }
   const danger = req.kind === 'confirm' && req.options.danger
+  const exit = useExit()
 
   return (
     <div
-      className="ui-dialog-scrim fixed inset-0 z-60 flex items-center justify-center bg-scrim p-6"
+      className="fixed inset-0 z-60 flex items-center justify-center p-6"
       onPointerDown={() => settle(null)}
     >
+      <div {...exit} className="ui-dialog-scrim absolute inset-0 bg-scrim" />
       <form
+        {...exit}
         role="dialog"
         aria-modal="true"
         aria-label={options.title}
-        className="ui-dialog flex w-full max-w-100 flex-col gap-5 rounded-2xl bg-surface p-6 shadow-4"
+        className="ui-dialog relative flex w-full max-w-100 flex-col gap-5 rounded-2xl bg-surface p-6 shadow-4"
         onPointerDown={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault()

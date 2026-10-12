@@ -2,6 +2,7 @@ import { VIDEO_MODE_LABELS, VIDEO_MODES, type VideoMode } from '@plein/nodes'
 import { useState } from 'react'
 import { Icon, type IconName } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
+import { Presence } from '../../ui/Presence'
 
 const MODES: Record<VideoMode, { icon: IconName; hint: string }> = {
   text: { icon: 'text', hint: '只用提示词，不使用连入的图片' },
@@ -36,36 +37,38 @@ export function ModePicker({
         <span>{VIDEO_MODE_LABELS[value] ?? VIDEO_MODE_LABELS.text}</span>
         <Icon name="chevronDown" size={14} />
       </button>
-      {anchor && (
-        <Popover anchor={anchor} onClose={() => setAnchor(null)} label="视频生成模式" width={280}>
-          <p className="ui-section-title px-2 pt-1 pb-2">视频生成模式</p>
-          <div role="listbox" aria-label="视频生成模式" className="flex flex-col gap-0.5">
-            {VIDEO_MODES.map((m) => (
-              <button
-                key={m}
-                type="button"
-                role="option"
-                aria-selected={m === value}
-                onClick={() => {
-                  onChange(m)
-                  setAnchor(null)
-                }}
-                className="ui-menu-item items-start"
-              >
-                <Icon name={MODES[m].icon} />
-                <span className="ui-menu-text">
-                  <span className="truncate">{VIDEO_MODE_LABELS[m]}</span>
-                  <span className="ui-menu-desc">
-                    {MODES[m].hint}
-                    {m !== 'text' && `（已连 ${images} 张）`}
+      <Presence>
+        {anchor && (
+          <Popover anchor={anchor} onClose={() => setAnchor(null)} label="视频生成模式" width={280}>
+            <p className="ui-section-title px-2 pt-1 pb-2">视频生成模式</p>
+            <div role="listbox" aria-label="视频生成模式" className="flex flex-col gap-0.5">
+              {VIDEO_MODES.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="option"
+                  aria-selected={m === value}
+                  onClick={() => {
+                    onChange(m)
+                    setAnchor(null)
+                  }}
+                  className="ui-menu-item items-start"
+                >
+                  <Icon name={MODES[m].icon} />
+                  <span className="ui-menu-text">
+                    <span className="truncate">{VIDEO_MODE_LABELS[m]}</span>
+                    <span className="ui-menu-desc">
+                      {MODES[m].hint}
+                      {m !== 'text' && `（已连 ${images} 张）`}
+                    </span>
                   </span>
-                </span>
-                {m === value && <Icon name="check" size={14} />}
-              </button>
-            ))}
-          </div>
-        </Popover>
-      )}
+                  {m === value && <Icon name="check" size={14} />}
+                </button>
+              ))}
+            </div>
+          </Popover>
+        )}
+      </Presence>
     </>
   )
 }

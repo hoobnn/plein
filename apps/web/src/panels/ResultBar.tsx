@@ -33,6 +33,7 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { Popover } from '../ui/Popover'
+import { Presence } from '../ui/Presence'
 import { LibraryAdd } from './LibraryAdd'
 
 const BAR_H = 40
@@ -227,44 +228,48 @@ export function ResultActions({
         <Icon name="expand" size={14} />
       </button>
 
-      {open?.kind === 'presets' && imageNode && (
-        <Popover anchor={open.anchor} onClose={() => setOpen(null)} label="预设" width={280}>
-          <div className="ui-menu-label">以这张图为参考新建</div>
-          {presets.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className="ui-menu-item"
-              onClick={() => {
-                setOpen(null)
-                deriveNode(engine, catalog, el.id, imageNode.type, { preset: p })
-              }}
-            >
-              <span className="ui-menu-text">
-                <span>{p.title}</span>
-                {p.description && <span className="ui-menu-desc">{p.description}</span>}
-              </span>
-            </button>
-          ))}
-        </Popover>
-      )}
-      {open?.kind === 'grid' && (
-        <Popover anchor={open.anchor} onClose={() => setOpen(null)} label="宫格切分" width={200}>
-          {GRIDS.map((g) => (
-            <button
-              key={g.label}
-              type="button"
-              className="ui-menu-item justify-between"
-              onClick={() => void split(g.rows, g.cols)}
-            >
-              {g.label}
-              <span className="ui-kbd">
-                {g.rows}×{g.cols}
-              </span>
-            </button>
-          ))}
-        </Popover>
-      )}
+      <Presence>
+        {open?.kind === 'presets' && imageNode && (
+          <Popover anchor={open.anchor} onClose={() => setOpen(null)} label="预设" width={280}>
+            <div className="ui-menu-label">以这张图为参考新建</div>
+            {presets.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="ui-menu-item"
+                onClick={() => {
+                  setOpen(null)
+                  deriveNode(engine, catalog, el.id, imageNode.type, { preset: p })
+                }}
+              >
+                <span className="ui-menu-text">
+                  <span>{p.title}</span>
+                  {p.description && <span className="ui-menu-desc">{p.description}</span>}
+                </span>
+              </button>
+            ))}
+          </Popover>
+        )}
+      </Presence>
+      <Presence>
+        {open?.kind === 'grid' && (
+          <Popover anchor={open.anchor} onClose={() => setOpen(null)} label="宫格切分" width={200}>
+            {GRIDS.map((g) => (
+              <button
+                key={g.label}
+                type="button"
+                className="ui-menu-item justify-between"
+                onClick={() => void split(g.rows, g.cols)}
+              >
+                {g.label}
+                <span className="ui-kbd">
+                  {g.rows}×{g.cols}
+                </span>
+              </button>
+            ))}
+          </Popover>
+        )}
+      </Presence>
     </>
   )
 }
@@ -490,195 +495,201 @@ export function MediaTools({
         <Icon name="chevronDown" size={12} />
       </button>
 
-      {open && (
-        <Popover anchor={anchorEl} onClose={() => setOpen(false)} label={label} width={280}>
-          {form ? (
-            <>
-              <div className="ui-menu-label">{opLabel(form as never)}</div>
-              {form === 'crop' && (
-                <div className="grid grid-cols-2 gap-2">
-                  {field('left', '左', '0')}
-                  {field('top', '上', '0')}
-                  {field('width', '宽', String(meta?.width ?? ''))}
-                  {field('height', '高', String(meta?.height ?? ''))}
-                </div>
-              )}
-              {form === 'trim' && (
-                <div className="grid grid-cols-2 gap-2">
-                  {field('start', '入点', '0:00')}
-                  {field('end', '出点', formatTimecode(meta?.duration ?? 0))}
-                </div>
-              )}
-              {form === 'speed' && (
-                <>
-                  <div className="flex flex-wrap gap-1 pb-2">
-                    {SPEEDS.map((s) => (
-                      <button
-                        key={s}
-                        type="button"
-                        className="ui-menu-item w-auto justify-center px-2 py-1"
-                        onClick={() => set('speed', String(s))}
-                      >
-                        {s}×
-                      </button>
-                    ))}
+      <Presence>
+        {open && (
+          <Popover anchor={anchorEl} onClose={() => setOpen(false)} label={label} width={280}>
+            {form ? (
+              <>
+                <div className="ui-menu-label">{opLabel(form as never)}</div>
+                {form === 'crop' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {field('left', '左', '0')}
+                    {field('top', '上', '0')}
+                    {field('width', '宽', String(meta?.width ?? ''))}
+                    {field('height', '高', String(meta?.height ?? ''))}
                   </div>
-                  {field('speed', '倍数', '2')}
-                  {first.kind === 'audio' && (
-                    <label className="flex items-center gap-2 pt-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={values.keepPitch !== 'no'}
-                        onChange={(e) => set('keepPitch', e.target.checked ? 'yes' : 'no')}
-                      />
-                      保音调（改的是素材本身，不是合成时的语速）
-                    </label>
-                  )}
-                </>
-              )}
-              {form === 'split' && field('count', '切成几段', '2')}
-              {form === 'frame' && field('at', '第几秒', '0:00')}
-              <div className="flex gap-2 pt-3">
-                <button
-                  type="button"
-                  className="ui-btn ui-btn-sm"
-                  onClick={() => {
-                    setForm(null)
-                    setValues({})
-                  }}
-                >
-                  返回
-                </button>
-                <button
-                  type="button"
-                  className="ui-btn ui-btn-sm ui-btn-primary flex-1"
-                  disabled={busy}
-                  onClick={() => void submit()}
-                >
-                  {busy ? '处理中…' : '开始加工'}
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="ui-menu-label">
-                {list.length > 1 ? `对 ${list.length} 个素材` : '加工'}
-                {!sameKind && '（类型不同，只用第一个的操作）'}
-              </div>
-              {actions.includes('crop') && (
-                <button
-                  type="button"
-                  className="ui-menu-item"
-                  onClick={() => {
-                    setValues({
-                      left: '0',
-                      top: '0',
-                      width: String(meta?.width ?? ''),
-                      height: String(meta?.height ?? ''),
-                    })
-                    setForm('crop')
-                  }}
-                >
-                  裁剪
-                </button>
-              )}
-              {actions.includes('rotate') &&
-                ([90, 180, 270] as const).map((angle) => (
+                )}
+                {form === 'trim' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    {field('start', '入点', '0:00')}
+                    {field('end', '出点', formatTimecode(meta?.duration ?? 0))}
+                  </div>
+                )}
+                {form === 'speed' && (
+                  <>
+                    <div className="flex flex-wrap gap-1 pb-2">
+                      {SPEEDS.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          className="ui-menu-item w-auto justify-center px-2 py-1"
+                          onClick={() => set('speed', String(s))}
+                        >
+                          {s}×
+                        </button>
+                      ))}
+                    </div>
+                    {field('speed', '倍数', '2')}
+                    {first.kind === 'audio' && (
+                      <label className="flex items-center gap-2 pt-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={values.keepPitch !== 'no'}
+                          onChange={(e) => set('keepPitch', e.target.checked ? 'yes' : 'no')}
+                        />
+                        保音调（改的是素材本身，不是合成时的语速）
+                      </label>
+                    )}
+                  </>
+                )}
+                {form === 'split' && field('count', '切成几段', '2')}
+                {form === 'frame' && field('at', '第几秒', '0:00')}
+                <div className="flex gap-2 pt-3">
                   <button
-                    key={angle}
                     type="button"
-                    className="ui-menu-item justify-between"
-                    onClick={() =>
-                      void runAll((t) => ({ op: 'rotate', assetId: t.assetId, angle }))
-                    }
+                    className="ui-btn ui-btn-sm"
+                    onClick={() => {
+                      setForm(null)
+                      setValues({})
+                    }}
                   >
-                    旋转 {angle}°
+                    返回
                   </button>
-                ))}
-              {actions.includes('flip') && (
-                <>
-                  <button type="button" className="ui-menu-item" onClick={() => void quick('flip')}>
-                    左右翻转
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn-sm ui-btn-primary flex-1"
+                    disabled={busy}
+                    onClick={() => void submit()}
+                  >
+                    {busy ? '处理中…' : '开始加工'}
                   </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="ui-menu-label">
+                  {list.length > 1 ? `对 ${list.length} 个素材` : '加工'}
+                  {!sameKind && '（类型不同，只用第一个的操作）'}
+                </div>
+                {actions.includes('crop') && (
                   <button
                     type="button"
                     className="ui-menu-item"
-                    onClick={() =>
-                      void runAll((t) => ({
-                        op: 'flip',
-                        assetId: t.assetId,
-                        axis: 'vertical',
-                      }))
-                    }
+                    onClick={() => {
+                      setValues({
+                        left: '0',
+                        top: '0',
+                        width: String(meta?.width ?? ''),
+                        height: String(meta?.height ?? ''),
+                      })
+                      setForm('crop')
+                    }}
                   >
-                    上下翻转
+                    裁剪
                   </button>
-                </>
-              )}
-              {actions.includes('trim') && (
-                <button
-                  type="button"
-                  className="ui-menu-item"
-                  onClick={() => {
-                    setValues({ start: '0:00', end: formatTimecode(meta?.duration ?? 0) })
-                    setForm('trim')
-                  }}
-                >
-                  截取一段
-                </button>
-              )}
-              {actions.includes('speed') && (
-                <button
-                  type="button"
-                  className="ui-menu-item"
-                  onClick={() => {
-                    setValues({ speed: '2', keepPitch: 'yes' })
-                    setForm('speed')
-                  }}
-                >
-                  变速
-                </button>
-              )}
-              {actions.includes('split') && (
-                <button
-                  type="button"
-                  className="ui-menu-item"
-                  onClick={() => {
-                    setValues({ count: '2' })
-                    setForm('split')
-                  }}
-                >
-                  手动切分
-                </button>
-              )}
-              {actions.includes('separate') && (
-                <button
-                  type="button"
-                  className="ui-menu-item"
-                  onClick={() => void quick('separate')}
-                >
-                  分离音频与画面
-                </button>
-              )}
-              {actions.includes('frame') && (
-                <button
-                  type="button"
-                  className="ui-menu-item"
-                  onClick={() => {
-                    setValues({ at: '0:00' })
-                    setForm('frame')
-                  }}
-                >
-                  抽帧成图片
-                </button>
-              )}
-              <div className="ui-help px-2 pt-2">
-                加工在服务端跑 ffmpeg / sharp，产出新素材，原素材不动。
-              </div>
-            </>
-          )}
-        </Popover>
-      )}
+                )}
+                {actions.includes('rotate') &&
+                  ([90, 180, 270] as const).map((angle) => (
+                    <button
+                      key={angle}
+                      type="button"
+                      className="ui-menu-item justify-between"
+                      onClick={() =>
+                        void runAll((t) => ({ op: 'rotate', assetId: t.assetId, angle }))
+                      }
+                    >
+                      旋转 {angle}°
+                    </button>
+                  ))}
+                {actions.includes('flip') && (
+                  <>
+                    <button
+                      type="button"
+                      className="ui-menu-item"
+                      onClick={() => void quick('flip')}
+                    >
+                      左右翻转
+                    </button>
+                    <button
+                      type="button"
+                      className="ui-menu-item"
+                      onClick={() =>
+                        void runAll((t) => ({
+                          op: 'flip',
+                          assetId: t.assetId,
+                          axis: 'vertical',
+                        }))
+                      }
+                    >
+                      上下翻转
+                    </button>
+                  </>
+                )}
+                {actions.includes('trim') && (
+                  <button
+                    type="button"
+                    className="ui-menu-item"
+                    onClick={() => {
+                      setValues({ start: '0:00', end: formatTimecode(meta?.duration ?? 0) })
+                      setForm('trim')
+                    }}
+                  >
+                    截取一段
+                  </button>
+                )}
+                {actions.includes('speed') && (
+                  <button
+                    type="button"
+                    className="ui-menu-item"
+                    onClick={() => {
+                      setValues({ speed: '2', keepPitch: 'yes' })
+                      setForm('speed')
+                    }}
+                  >
+                    变速
+                  </button>
+                )}
+                {actions.includes('split') && (
+                  <button
+                    type="button"
+                    className="ui-menu-item"
+                    onClick={() => {
+                      setValues({ count: '2' })
+                      setForm('split')
+                    }}
+                  >
+                    手动切分
+                  </button>
+                )}
+                {actions.includes('separate') && (
+                  <button
+                    type="button"
+                    className="ui-menu-item"
+                    onClick={() => void quick('separate')}
+                  >
+                    分离音频与画面
+                  </button>
+                )}
+                {actions.includes('frame') && (
+                  <button
+                    type="button"
+                    className="ui-menu-item"
+                    onClick={() => {
+                      setValues({ at: '0:00' })
+                      setForm('frame')
+                    }}
+                  >
+                    抽帧成图片
+                  </button>
+                )}
+                <div className="ui-help px-2 pt-2">
+                  加工在服务端跑 ffmpeg / sharp，产出新素材，原素材不动。
+                </div>
+              </>
+            )}
+          </Popover>
+        )}
+      </Presence>
     </>
   )
 }

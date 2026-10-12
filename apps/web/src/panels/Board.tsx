@@ -11,6 +11,7 @@ import { switchMode, useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { MenuSelect } from '../ui/MenuSelect'
+import { EmptyState } from '../ui/EmptyState'
 
 /** 故事板卡片的最大高度 */
 const MEDIA_MAX_H = 320
@@ -111,12 +112,7 @@ function BoardPanel({ engine }: { engine: Engine }) {
           onLocate={locate}
         />
       ))}
-      {!columns.length && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-ink-subtle">
-          <Icon name="board" size={24} />
-          画布上还没有内容
-        </div>
-      )}
+      {!columns.length && <EmptyState fill icon="board" title="画布上还没有内容" />}
     </div>
   )
 }

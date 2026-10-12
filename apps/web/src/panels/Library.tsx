@@ -24,9 +24,12 @@ import { confirmDialog } from '../ui/Dialog'
 import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { Popover } from '../ui/Popover'
+import { Presence } from '../ui/Presence'
 import { Select } from '../ui/Select'
 import { KIND_ICONS } from './LibraryAdd'
-import { SlidePill, SlideSwap } from '../ui/Slide'
+import { Segmented } from '../ui/Segmented'
+import { SlideSwap } from '../ui/Slide'
+import { EmptyState } from '../ui/EmptyState'
 
 /**
  * 资产库面板：
@@ -63,8 +66,7 @@ type Editing =
 
 export function LibraryPanel() {
   const open = useLibrary((s) => s.open)
-  if (!open) return null
-  return <Panel kind={open} />
+  return <Presence>{open && <Panel kind={open} />}</Presence>
 }
 
 function Panel({ kind: kindId }: { kind: LibraryKind }) {
@@ -149,21 +151,17 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
         title="资产库"
         onClose={close}
         meta={
-          <fieldset className="ui-seg ui-slide" aria-label="资产类别">
-            <SlidePill variant="seg" />
-            {LIBRARY_KINDS.map((k) => (
-              <button
-                key={k.id}
-                type="button"
-                aria-pressed={k.id === kindId}
-                onClick={() => show(k.id)}
-                className="ui-seg-item h-8 px-3 text-sm"
-              >
-                <Icon name={KIND_ICONS[k.id]} size={14} />
-                {k.title}
-              </button>
-            ))}
-          </fieldset>
+          <Segmented
+            label="资产类别"
+            size="lg"
+            options={LIBRARY_KINDS.map((k) => ({
+              value: k.id,
+              label: k.title,
+              icon: KIND_ICONS[k.id],
+            }))}
+            value={kindId}
+            onChange={show}
+          />
         }
       >
         {!editing && (
@@ -206,20 +204,12 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
       ) : (
         <>
           <div className="flex flex-none flex-wrap items-center gap-2 border-b border-line px-5 py-3">
-            <fieldset className="ui-seg ui-slide" aria-label="范围">
-              <SlidePill variant="seg" />
-              {scopes.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  aria-pressed={scope === s.id}
-                  onClick={() => setScope(s.id)}
-                  className="ui-seg-item"
-                >
-                  {s.label}
-                </button>
-              ))}
-            </fieldset>
+            <Segmented
+              label="范围"
+              options={scopes.map((s) => ({ value: s.id, label: s.label }))}
+              value={scope}
+              onChange={setScope}
+            />
             {kind.tags.map((t) => (
               <Select
                 key={t.id}
@@ -297,17 +287,17 @@ function Empty({
           ? `这个项目还没有${kind.title}`
           : `还没有${kind.title}`
   return (
-    <div className="flex flex-col items-center gap-3 py-20 text-center">
-      <p className="text-sm text-ink-muted">{text}</p>
-      <p className="max-w-md text-xs text-ink-subtle">
-        {kind.description}。也可以在画布上选中图片{kind.video ? '或视频' : ''}
-        ，点工具条上的「存入资产库」。
-      </p>
-      <button type="button" onClick={onCreate} className="ui-btn ui-btn-secondary">
-        <Icon name="plus" />
-        新建{kind.title}
-      </button>
-    </div>
+    <EmptyState
+      icon="library"
+      title={text}
+      hint={`${kind.description}。也可以在画布上选中图片${kind.video ? '或视频' : ''}，点工具条上的「存入资产库」。`}
+      action={
+        <button type="button" onClick={onCreate} className="ui-btn ui-btn-secondary">
+          <Icon name="plus" />
+          新建{kind.title}
+        </button>
+      }
+    />
   )
 }
 
@@ -800,55 +790,57 @@ function CanvasPick({
         <Icon name="board" size={16} />
         从画布选
       </button>
-      {anchor && (
-        <Popover
-          anchor={anchor}
-          onClose={() => setAnchor(null)}
-          label="从画布选"
-          width={344}
-          placement="below"
-        >
-          <div className="ui-menu-label">
-            画布上的{type === 'image' ? '图片' : '视频'}（{list.length}）
-          </div>
-          <div className="ui-scrollbar grid max-h-80 grid-cols-4 gap-2 overflow-y-auto p-2">
-            {list.map((m) => {
-              const on = taken.includes(m.assetId)
-              return (
-                <button
-                  key={m.assetId}
-                  type="button"
-                  title={m.name || undefined}
-                  aria-pressed={on}
-                  disabled={on}
-                  onClick={() => {
-                    onPick(m.assetId)
-                    if (!multiple) setAnchor(null)
-                  }}
-                  className={`relative aspect-square overflow-hidden rounded-md bg-surface-2 ${
-                    on ? 'opacity-40' : 'hover:ring-2 hover:ring-accent'
-                  }`}
-                >
-                  <img
-                    src={
-                      type === 'image' ? thumb(m.assetId) : assetUrls.variant(m.assetId, 'poster')
-                    }
-                    alt=""
-                    loading="lazy"
-                    draggable={false}
-                    className="size-full object-cover"
-                  />
-                  {on && (
-                    <span className="absolute inset-0 flex items-center justify-center text-ink">
-                      <Icon name="check" size={16} />
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </Popover>
-      )}
+      <Presence>
+        {anchor && (
+          <Popover
+            anchor={anchor}
+            onClose={() => setAnchor(null)}
+            label="从画布选"
+            width={344}
+            placement="below"
+          >
+            <div className="ui-menu-label">
+              画布上的{type === 'image' ? '图片' : '视频'}（{list.length}）
+            </div>
+            <div className="ui-scrollbar grid max-h-80 grid-cols-4 gap-2 overflow-y-auto p-2">
+              {list.map((m) => {
+                const on = taken.includes(m.assetId)
+                return (
+                  <button
+                    key={m.assetId}
+                    type="button"
+                    title={m.name || undefined}
+                    aria-pressed={on}
+                    disabled={on}
+                    onClick={() => {
+                      onPick(m.assetId)
+                      if (!multiple) setAnchor(null)
+                    }}
+                    className={`relative aspect-square overflow-hidden rounded-md bg-surface-2 ${
+                      on ? 'opacity-40' : 'hover:ring-2 hover:ring-accent'
+                    }`}
+                  >
+                    <img
+                      src={
+                        type === 'image' ? thumb(m.assetId) : assetUrls.variant(m.assetId, 'poster')
+                      }
+                      alt=""
+                      loading="lazy"
+                      draggable={false}
+                      className="size-full object-cover"
+                    />
+                    {on && (
+                      <span className="absolute inset-0 flex items-center justify-center text-ink">
+                        <Icon name="check" size={16} />
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          </Popover>
+        )}
+      </Presence>
     </>
   )
 }

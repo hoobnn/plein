@@ -27,6 +27,8 @@ import { useLibrary } from '../stores/library'
 import { type SyncStatus, switchMode, useCanvas } from '../stores/canvas'
 import { useSidebar } from '../stores/sidebar'
 import { useTemplates } from '../stores/templates'
+import { Presence } from '../ui/Presence'
+import { Toast } from '../ui/Toast'
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
   local: '本地演示',
@@ -138,13 +140,11 @@ export function Editor({
         </div>
       </header>
       {mode === 'flow' && <EmptyHint />}
-      {(importing || notice) && (
-        <div className="pointer-events-none absolute inset-x-0 top-16 z-30 flex justify-center px-4">
-          <div className="ui-toast">
-            {importing ? `正在导入 ${importing.done}/${importing.total}…` : notice}
-          </div>
-        </div>
-      )}
+      <Presence>
+        {(importing || notice) && (
+          <Toast>{importing ? `正在导入 ${importing.done}/${importing.total}…` : notice}</Toast>
+        )}
+      </Presence>
       {mode === 'flow' && (
         <>
           <Generator />

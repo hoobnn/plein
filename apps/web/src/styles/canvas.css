@@ -64,7 +64,7 @@
   padding: 24px 10px 8px;
   color: #fff;
   background: linear-gradient(to top, rgb(0 0 0 / 0.7), transparent);
-  transition: opacity 0.2s;
+  transition: opacity var(--dur-base) var(--ease-standard);
 }
 .plein-player-video.is-idle .plein-player-bar {
   opacity: 0;
@@ -132,7 +132,7 @@
   background: #fff;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
   transform: scale(0);
-  transition: transform 0.12s;
+  transition: transform var(--dur-fast) var(--ease-spring);
 }
 .plein-player-track:hover .plein-player-thumb,
 .plein-player.is-scrubbing .plein-player-thumb {
@@ -505,7 +505,7 @@
   max-width: calc(100% - 24px);
   border-radius: 999px;
   background: var(--accent);
-  transition: width 400ms var(--ease-spring);
+  transition: width var(--dur-move) var(--ease-spring);
 }
 
 .plein-node-thumbs {

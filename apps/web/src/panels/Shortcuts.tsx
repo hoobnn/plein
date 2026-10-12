@@ -3,6 +3,7 @@ import { Fragment, useEffect } from 'react'
 import { useCanvas } from '../stores/canvas'
 import { MOD, shortcut as k } from '../ui/keys'
 import { Modal, ModalHeader } from '../ui/Modal'
+import { Presence } from '../ui/Presence'
 
 /** 一种按法：同时按下的几个键；一项操作可以有几种按法 */
 type Combo = string[]
@@ -64,38 +65,41 @@ export function Shortcuts() {
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
   }, [toggle])
-  if (!open) return null
   const close = () => toggle(false)
   return (
-    <Modal label="快捷键" onClose={close} align="bottom" className="max-w-220">
-      <ModalHeader title="快捷键" onClose={close} divider={false} />
-      <div className="grid gap-x-8 gap-y-6 px-5 pb-5 sm:grid-cols-3">
-        {GROUPS.map((g) => (
-          <section key={g.title}>
-            <h3 className="ui-section-title mb-2">{g.title}</h3>
-            <ul className="flex flex-col">
-              {g.items.map(([label, ...combos]) => (
-                <li key={label} className="flex h-8 items-center justify-between gap-3">
-                  <span className="truncate text-ink-muted">{label}</span>
-                  <span className="flex flex-none items-center gap-1 text-2xs text-ink-subtle">
-                    {combos.map((combo, i) => (
-                      <Fragment key={combo.join()}>
-                        {i > 0 && <span className="px-0.5">/</span>}
-                        {combo.map((cap, j) => (
-                          <Fragment key={cap}>
-                            {j > 0 && '+'}
-                            <kbd className="ui-keycap">{cap}</kbd>
+    <Presence>
+      {open && (
+        <Modal label="快捷键" onClose={close} align="bottom" className="max-w-220">
+          <ModalHeader title="快捷键" onClose={close} divider={false} />
+          <div className="grid gap-x-8 gap-y-6 px-5 pb-5 sm:grid-cols-3">
+            {GROUPS.map((g) => (
+              <section key={g.title}>
+                <h3 className="ui-section-title mb-2">{g.title}</h3>
+                <ul className="flex flex-col">
+                  {g.items.map(([label, ...combos]) => (
+                    <li key={label} className="flex h-8 items-center justify-between gap-3">
+                      <span className="truncate text-ink-muted">{label}</span>
+                      <span className="flex flex-none items-center gap-1 text-2xs text-ink-subtle">
+                        {combos.map((combo, i) => (
+                          <Fragment key={combo.join()}>
+                            {i > 0 && <span className="px-0.5">/</span>}
+                            {combo.map((cap, j) => (
+                              <Fragment key={cap}>
+                                {j > 0 && '+'}
+                                <kbd className="ui-keycap">{cap}</kbd>
+                              </Fragment>
+                            ))}
                           </Fragment>
                         ))}
-                      </Fragment>
-                    ))}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-      </div>
-    </Modal>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        </Modal>
+      )}
+    </Presence>
   )
 }

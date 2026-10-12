@@ -1,7 +1,8 @@
-import type { Engine } from '@plein/canvas-core'
+import type { ArrangeResult, Engine } from '@plein/canvas-core'
 import { useEffect } from 'react'
 import { useEngineVersion } from '../canvas/hooks'
 import { useCanvas } from '../stores/canvas'
+import { Presence, useExit } from '../ui/Presence'
 
 /** 整理后多久自动收起（视为保留） */
 const AUTO_HIDE_MS = 10_000
@@ -28,12 +29,23 @@ function ArrangeToastHost({ engine }: { engine: Engine }) {
     return () => clearTimeout(t)
   }, [arranged, setArranged])
 
-  if (!arranged || arranged.stale()) return null
+  return (
+    <Presence>
+      {arranged && !arranged.stale() && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-16 z-30 flex justify-center">
+          <Bar arranged={arranged} onDone={() => setArranged(null)} />
+        </div>
+      )}
+    </Presence>
+  )
+}
 
+function Bar({ arranged, onDone }: { arranged: ArrangeResult; onDone(): void }) {
   return (
     <div
       role="status"
-      className="ui-bar ui-bar-sm pointer-events-auto absolute bottom-16 left-1/2 z-30 -translate-x-1/2 gap-3 pr-1.5 pl-4"
+      {...useExit()}
+      className="ui-bar ui-bar-sm ui-pop ui-pop-up pointer-events-auto gap-3 pr-1.5 pl-4"
     >
       <span>是否保留此次整理结果？</span>
       <div className="flex items-center gap-1">
@@ -42,16 +54,12 @@ function ArrangeToastHost({ engine }: { engine: Engine }) {
           className="ui-btn ui-btn-sm"
           onClick={() => {
             arranged.revert()
-            setArranged(null)
+            onDone()
           }}
         >
           还原
         </button>
-        <button
-          type="button"
-          className="ui-btn ui-btn-primary ui-btn-sm"
-          onClick={() => setArranged(null)}
-        >
+        <button type="button" className="ui-btn ui-btn-primary ui-btn-sm" onClick={onDone}>
           保留
         </button>
       </div>

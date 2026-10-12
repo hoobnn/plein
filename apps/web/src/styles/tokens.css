@@ -157,6 +157,8 @@
   /* 动效：颜色变化用 fast，弹出和位移用 base，对话框用 slow */
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  /* 退场：加速离开，不回弹 */
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   /* transition-colors 等工具类默认就是 fast 的时长和标准曲线，组件里不再写 duration */
   --default-transition-duration: 120ms;
   --default-transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
@@ -187,7 +189,14 @@
   --chrome-inset: 12px;
   --chrome-h: 44px;
   --chrome-top: 64px;
+  /*
+   * 动效时长：fast 悬停和颜色 · base 菜单和弹层弹出 · slow 对话框和面板 · move 侧栏、封面这类大块位移
+   * exit 是所有浮层的退场：比进场快，配 --ease-exit 加速离开。
+   * 吉祥物、加载脉冲这类循环的环境动画不受这些令牌约束。
+   */
   --dur-fast: 120ms;
   --dur-base: 180ms;
   --dur-slow: 280ms;
+  --dur-move: 360ms;
+  --dur-exit: 140ms;
 }

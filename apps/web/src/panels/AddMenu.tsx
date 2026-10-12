@@ -14,6 +14,7 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useTemplates } from '../stores/templates'
 import { Icon, type IconName } from '../ui/icons'
+import { useExit } from '../ui/Presence'
 
 const NODE_ICONS: Record<string, IconName> = {
   'plein/text': 'text',
@@ -81,6 +82,8 @@ export interface AddMenuProps {
   onClose(): void
   className?: string
   style?: React.CSSProperties
+  /** 菜单在锚点的哪一侧：从那一侧长出 */
+  side?: 'above' | 'below'
 }
 
 /**
@@ -95,7 +98,9 @@ export function AddMenu({
   onClose,
   className = '',
   style,
+  side = 'below',
 }: AddMenuProps) {
+  const exit = useExit()
   const nodes = useCatalog((s) => s.catalog?.nodes)
   const catalog = useCatalog((s) => s.catalog)
   const templates = useTemplates((s) => s.templates)
@@ -177,6 +182,8 @@ export function AddMenu({
       role="dialog"
       aria-label="添加节点"
       style={style}
+      data-side={side}
+      {...exit}
       className={`plein-add-menu pointer-events-auto flex flex-col ${className}`}
     >
       <label className="plein-add-search">

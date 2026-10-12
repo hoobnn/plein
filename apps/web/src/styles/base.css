@@ -31,10 +31,22 @@ body {
     transform: rotate(360deg);
   }
 }
+/* 弹出和收起：位移和缩放由元素的 --pop-from / --pop-to 决定（从锚点方向长出、往锚点方向收回） */
 @keyframes ui-pop-in {
   from {
     opacity: 0;
-    transform: scale(0.97);
+    transform: var(--pop-from, scale(0.97));
+  }
+}
+@keyframes ui-pop-out {
+  to {
+    opacity: 0;
+    transform: var(--pop-to, scale(0.98));
+  }
+}
+@keyframes ui-fade-out {
+  to {
+    opacity: 0;
   }
 }
 
@@ -75,7 +87,7 @@ input[type="checkbox"]::after {
   background: var(--on-accent);
   clip-path: polygon(14% 52%, 0 66%, 38% 100%, 100% 26%, 86% 12%, 38% 72%);
   transform: scale(0);
-  transition: transform var(--dur-fast) var(--ease-spring);
+  transition: transform var(--dur-base) var(--ease-spring);
 }
 input[type="radio"]::after {
   content: "";
@@ -84,7 +96,7 @@ input[type="radio"]::after {
   border-radius: 50%;
   background: var(--on-accent);
   transform: scale(0);
-  transition: transform var(--dur-fast) var(--ease-spring);
+  transition: transform var(--dur-base) var(--ease-spring);
 }
 input[type="checkbox"]:checked::after,
 input[type="radio"]:checked::after {

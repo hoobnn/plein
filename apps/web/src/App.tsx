@@ -13,6 +13,7 @@ import { ProjectOpen } from './pages/ProjectOpen'
 import { LibraryPanel } from './panels/Library'
 import { useRoute } from './router'
 import { useSession } from './stores/session'
+import { Presence } from './ui/Presence'
 
 export function App() {
   const [settings, setSettings] = useState(false)
@@ -53,7 +54,7 @@ export function App() {
       <AppContent onOpenSettings={() => setSettings(true)} />
       <AgentDock />
       <LibraryPanel />
-      {settings && <SettingsDialog onClose={() => setSettings(false)} />}
+      <Presence>{settings && <SettingsDialog onClose={() => setSettings(false)} />}</Presence>
       <DialogHost />
       <TooltipHost />
     </>

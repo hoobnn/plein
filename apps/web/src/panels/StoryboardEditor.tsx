@@ -19,6 +19,8 @@ import { Modal, ModalHeader } from '../ui/Modal'
 import { Select } from '../ui/Select'
 import { runNode } from './run'
 import { StoryboardSync } from './StoryboardSync'
+import { Presence } from '../ui/Presence'
+import { EmptyState } from '../ui/EmptyState'
 
 const cell =
   'w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
@@ -46,8 +48,11 @@ export function StoryboardEditor() {
   const engine = useCanvas((s) => s.engine)
   const id = useCanvas((s) => s.storyboard)
   const close = () => useCanvas.getState().openStoryboard(null)
-  if (!engine || !id || !engine.doc.get(id)) return null
-  return <Editor engine={engine} id={id} onClose={close} />
+  return (
+    <Presence>
+      {engine && id && engine.doc.get(id) && <Editor engine={engine} id={id} onClose={close} />}
+    </Presence>
+  )
 }
 
 function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose(): void }) {
@@ -263,9 +268,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         </button>
       </ModalHeader>
       {shots.length === 0 ? (
-        <p className="px-6 py-16 text-center text-sm text-ink-subtle">
-          还没有镜头。把剧本连到分镜节点后点“生成”，或手动添加镜头。
-        </p>
+        <EmptyState
+          icon="frames"
+          title="还没有镜头"
+          hint="把剧本连到分镜节点后点“生成”，或手动添加镜头。"
+        />
       ) : (
         <div className="ui-scrollbar min-h-0 overflow-auto">
           <table className="w-full min-w-300 border-collapse text-left text-sm">

@@ -7,6 +7,7 @@ import { confirmDialog, promptDialog } from '../ui/Dialog'
 import { Icon } from '../ui/icons'
 import { InlineTitle } from '../ui/InlineTitle'
 import { Popover } from '../ui/Popover'
+import { Presence } from '../ui/Presence'
 
 /** 读过的项目，按 id */
 const projects = new Map<string, Project>()
@@ -145,45 +146,47 @@ export function ProjectSwitcher({
         <span className="truncate">{canvas.title}</span>
         <Icon name="chevronDown" size={14} />
       </button>
-      {anchor && (
-        <Popover anchor={anchor} onClose={close} label="画布" width={240} placement="below">
-          <div className="ui-menu-label">画布</div>
-          <div className="ui-scrollbar max-h-72 overflow-y-auto">
-            {canvases.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                aria-current={c.id === canvas.id || undefined}
-                onClick={() => {
-                  close()
-                  if (c.id !== canvas.id) navigate({ name: 'canvas', id: c.id })
-                }}
-                className="ui-menu-item"
-              >
-                <span className="flex-1 truncate">{c.title}</span>
-                {c.id === canvas.id && <Icon name="check" size={14} />}
-              </button>
-            ))}
-          </div>
-          <div className="ui-sep" />
-          <button type="button" onClick={() => void addCanvas()} className="ui-menu-item">
-            <Icon name="plus" size={14} />
-            新建画布
-          </button>
-          <button type="button" onClick={() => void renameCanvas()} className="ui-menu-item">
-            <Icon name="pencil" size={14} />
-            重命名当前画布
-          </button>
-          <button
-            type="button"
-            onClick={() => void removeCanvas()}
-            className="ui-menu-item hover:text-danger"
-          >
-            <Icon name="trash" size={14} />
-            删除当前画布
-          </button>
-        </Popover>
-      )}
+      <Presence>
+        {anchor && (
+          <Popover anchor={anchor} onClose={close} label="画布" width={240} placement="below">
+            <div className="ui-menu-label">画布</div>
+            <div className="ui-scrollbar max-h-72 overflow-y-auto">
+              {canvases.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  aria-current={c.id === canvas.id || undefined}
+                  onClick={() => {
+                    close()
+                    if (c.id !== canvas.id) navigate({ name: 'canvas', id: c.id })
+                  }}
+                  className="ui-menu-item"
+                >
+                  <span className="flex-1 truncate">{c.title}</span>
+                  {c.id === canvas.id && <Icon name="check" size={14} />}
+                </button>
+              ))}
+            </div>
+            <div className="ui-sep" />
+            <button type="button" onClick={() => void addCanvas()} className="ui-menu-item">
+              <Icon name="plus" size={14} />
+              新建画布
+            </button>
+            <button type="button" onClick={() => void renameCanvas()} className="ui-menu-item">
+              <Icon name="pencil" size={14} />
+              重命名当前画布
+            </button>
+            <button
+              type="button"
+              onClick={() => void removeCanvas()}
+              className="ui-menu-item hover:text-danger"
+            >
+              <Icon name="trash" size={14} />
+              删除当前画布
+            </button>
+          </Popover>
+        )}
+      </Presence>
     </>
   )
 }

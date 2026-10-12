@@ -23,6 +23,7 @@ import { InlineTitle } from '../ui/InlineTitle'
 import { MenuSelect } from '../ui/MenuSelect'
 import { SlidePill, SlideSwap } from '../ui/Slide'
 import { KIND_ICONS } from './LibraryAdd'
+import { EmptyState } from '../ui/EmptyState'
 
 const TABS: Array<{ id: SidebarTab; label: string }> = [
   { id: 'layers', label: '画布' },
@@ -348,9 +349,11 @@ function Layers({ engine }: { engine: Engine }) {
           />
         ))}
         {!rows.length && (
-          <p className="px-3 py-10 text-center text-xs text-ink-subtle">
-            {filtering ? '没有符合条件的元素' : '画布上还没有元素'}
-          </p>
+          <EmptyState
+            compact
+            icon={filtering ? 'filter' : 'layers'}
+            title={filtering ? '没有符合条件的元素' : '画布上还没有元素'}
+          />
         )}
       </div>
     </>
@@ -558,11 +561,12 @@ function Assets({ engine }: { engine: Engine | null }) {
           </section>
         ))}
         {loaded && !groups.length && (
-          <p className="px-3 py-10 text-center text-xs leading-relaxed text-ink-subtle">
-            本项目还没有资产
-            <br />
-            角色、场景、道具存入资产库后会列在这里
-          </p>
+          <EmptyState
+            compact
+            icon="library"
+            title="本项目还没有资产"
+            hint="角色、场景、道具存入资产库后会列在这里"
+          />
         )}
       </div>
       <div className="flex-none px-3 pb-3">

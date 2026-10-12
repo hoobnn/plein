@@ -60,7 +60,7 @@
   background-color: var(--surface-2);
 }
 .home-cover img {
-  transition: transform 400ms var(--ease-spring);
+  transition: transform var(--dur-move) var(--ease-spring);
 }
 .home-card:hover .home-cover img {
   transform: scale(1.03);

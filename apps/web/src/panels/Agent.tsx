@@ -9,6 +9,7 @@ import { shortTime } from '../ui/format'
 import { Icon } from '../ui/icons'
 import { Mascot } from '../ui/Mascot'
 import { Popover } from '../ui/Popover'
+import { Presence, useExit } from '../ui/Presence'
 import { Select } from '../ui/Select'
 
 const TOOL_LABELS: Record<string, string> = {
@@ -63,7 +64,7 @@ export function AgentDock() {
   if (!ready || route.name === 'demo') return null
   return (
     <>
-      {open && <AgentPanel canvasId={canvasId} />}
+      <Presence>{open && <AgentPanel canvasId={canvasId} />}</Presence>
       <button
         type="button"
         onClick={() => toggle()}
@@ -87,10 +88,12 @@ function AgentPanel({ canvasId }: { canvasId: string | null }) {
   const available = status?.agents.filter((a) => a.available) ?? []
   const current = session?.agent ?? agent
   const cliName = status?.agents.find((a) => a.id === current)?.name ?? 'Claude Code'
+  const exit = useExit()
 
   return (
     <aside
       aria-label="助手"
+      {...exit}
       className="plein-agent-panel ui-float pointer-events-auto fixed right-3 bottom-19 z-40 flex h-[min(640px,calc(100vh-150px))] w-100 flex-col overflow-hidden rounded-xl max-sm:inset-x-3 max-sm:bottom-33 max-sm:w-auto"
     >
       <header className="flex h-12 flex-none items-center gap-1 border-b border-line pr-2 pl-4">
@@ -192,48 +195,50 @@ function SessionMenu() {
       >
         <Icon name="history" />
       </button>
-      {anchor && (
-        <Popover
-          anchor={anchor}
-          onClose={() => setAnchor(null)}
-          label="历史对话"
-          placement="below"
-          width={280}
-        >
-          <div className="ui-scrollbar max-h-80 overflow-y-auto p-1">
-            {sessions.map((s) => (
-              <div
-                key={s.id}
-                className={`group flex items-center rounded-md hover:bg-hover ${s.id === session?.id ? 'bg-active' : ''}`}
-              >
-                <button
-                  type="button"
-                  className="min-w-0 flex-1 px-2.5 py-2 text-left"
-                  onClick={() => {
-                    setAnchor(null)
-                    void select(s.id)
-                  }}
+      <Presence>
+        {anchor && (
+          <Popover
+            anchor={anchor}
+            onClose={() => setAnchor(null)}
+            label="历史对话"
+            placement="below"
+            width={280}
+          >
+            <div className="ui-scrollbar max-h-80 overflow-y-auto p-1">
+              {sessions.map((s) => (
+                <div
+                  key={s.id}
+                  className={`group flex items-center rounded-md hover:bg-hover ${s.id === session?.id ? 'bg-active' : ''}`}
                 >
-                  <span className="block truncate text-sm">{s.title}</span>
-                  <span className="text-xs text-ink-subtle">
-                    {s.agent === 'codex' ? 'Codex' : 'Claude Code'} · {shortTime(s.updatedAt)}
-                    {s.status === 'running' && ' · 进行中'}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  aria-label="删除对话"
-                  title="删除对话"
-                  className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn mr-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                  onClick={() => void remove(s.id)}
-                >
-                  <Icon name="trash" size={14} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </Popover>
-      )}
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 px-2.5 py-2 text-left"
+                    onClick={() => {
+                      setAnchor(null)
+                      void select(s.id)
+                    }}
+                  >
+                    <span className="block truncate text-sm">{s.title}</span>
+                    <span className="text-xs text-ink-subtle">
+                      {s.agent === 'codex' ? 'Codex' : 'Claude Code'} · {shortTime(s.updatedAt)}
+                      {s.status === 'running' && ' · 进行中'}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="删除对话"
+                    title="删除对话"
+                    className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn mr-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    onClick={() => void remove(s.id)}
+                  >
+                    <Icon name="trash" size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </Popover>
+        )}
+      </Presence>
     </>
   )
 }

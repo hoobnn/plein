@@ -23,6 +23,8 @@ import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { Select } from '../ui/Select'
 import { SequencePreview } from './SequencePreview'
+import { Presence } from '../ui/Presence'
+import { EmptyState } from '../ui/EmptyState'
 
 const seconds = (s: number | undefined) => (s === undefined ? '—' : `${s.toFixed(1)} 秒`)
 
@@ -81,8 +83,11 @@ export function SequenceEditor() {
   const engine = useCanvas((s) => s.engine)
   const id = useCanvas((s) => s.sequence)
   const close = () => useCanvas.getState().openSequence(null)
-  if (!engine || !id || !engine.doc.get(id)) return null
-  return <Editor engine={engine} id={id} onClose={close} />
+  return (
+    <Presence>
+      {engine && id && engine.doc.get(id) && <Editor engine={engine} id={id} onClose={close} />}
+    </Presence>
+  )
 }
 
 function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose(): void }) {
@@ -201,9 +206,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       </ModalHeader>
 
       {rows.length === 0 ? (
-        <p className="px-6 py-16 text-center text-sm text-ink-subtle">
-          还没有镜头。把视频节点的输出连到序列的「镜头」端口，配音连到「对白」，配乐连到「配乐」。
-        </p>
+        <EmptyState
+          icon="video"
+          title="还没有镜头"
+          hint="把视频节点的输出连到序列的「镜头」端口，配音连到「对白」，配乐连到「配乐」。"
+        />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           <div className="ui-scrollbar min-h-0 flex-1 overflow-auto">

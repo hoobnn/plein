@@ -5,6 +5,7 @@ import { type ShotRole, type SyncMode, voiceOf } from '@plein/nodes'
 import { useEffect } from 'react'
 import { useCanvas } from '../stores/canvas'
 import { Modal, ModalHeader } from '../ui/Modal'
+import { EmptyState } from '../ui/EmptyState'
 
 const ROLE_LABEL: Record<ShotRole, string> = { image: '分镜图', video: '视频', speech: '配音' }
 const PARAM_LABEL: Record<string, string> = {
@@ -94,9 +95,11 @@ export function StoryboardSync({
         </button>
       </ModalHeader>
       {rows.length === 0 ? (
-        <p className="px-6 py-16 text-center text-sm text-ink-subtle">
-          没有待处理的差异。分镜表改了之后，有出入的字段会出现在这里。
-        </p>
+        <EmptyState
+          icon="check"
+          title="没有待处理的差异"
+          hint="分镜表改了之后，有出入的字段会出现在这里。"
+        />
       ) : (
         <div className="ui-scrollbar min-h-0 overflow-auto px-5 pb-5">
           <ul className="flex flex-col gap-3">

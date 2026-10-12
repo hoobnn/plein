@@ -93,16 +93,21 @@
 
 ## 动效
 
-| 令牌         | 时长  | 用在                     |
-| ------------ | ----- | ------------------------ |
-| `--dur-fast` | 120ms | 悬停、按下、颜色变化     |
-| `--dur-base` | 180ms | 菜单和弹层弹出、卡片抬起 |
-| `--dur-slow` | 280ms | 对话框                   |
+| 令牌         | 时长  | 用在                                                  |
+| ------------ | ----- | ----------------------------------------------------- |
+| `--dur-fast` | 120ms | 悬停、按下、颜色变化                                  |
+| `--dur-base` | 180ms | 菜单和弹层弹出、卡片抬起、开关和复选框                |
+| `--dur-slow` | 280ms | 对话框、助手面板、分段滑块、内容切换                  |
+| `--dur-move` | 360ms | 大块位移：侧栏收起展开、工作流 ↔ 故事板整页切换、封面 |
+| `--dur-exit` | 140ms | 所有浮层的退场                                        |
 
-- 曲线：位移和缩放用 `--ease-spring`，颜色用 `--ease-standard`。
+- 曲线：进场的位移和缩放用 `--ease-spring`，颜色用 `--ease-standard`，退场用 `--ease-exit`（加速离开，不回弹）。
 - Tailwind 的 `transition-colors` 等默认就是 120ms 加标准曲线，组件里不写 `duration-*`。
-- 菜单、弹层从 97% 缩放淡入；对话框遮罩淡入、面板弹出。
-- 系统开启“减少动态效果”时，所有动效和过渡缩短到 1ms。
+- **进场**：菜单、弹层从锚点那一侧长出（`data-side="above|below"` 决定变换原点和 4px 位移），从 97% 缩放淡入；提示条从上方落下；底部提示条（`.ui-pop-up`）从下方升起；右侧面板（`.ui-pop-right`）从右侧滑入；对话框遮罩淡入、面板从 96% 略微上浮着弹出。动画的起止由元素上的 `--pop-from` / `--pop-to` / `--pop-origin` 决定，关键帧只有 `ui-pop-in` / `ui-pop-out` 一套。
+- **退场**：浮层都要有。打开处写成 `<Presence>{open && <X />}</Presence>`，X 的根元素铺上 `useExit()`；关闭时元素标上 `data-closing`，播完 `ui-pop-out`（遮罩是 `ui-fade-out`）再卸载，收起途中不响应指针、Esc 和点外面。退场比进场快，位移和缩放也比进场小。
+- 菜单项悬停：底色移入立即出现、移出时淡掉。
+- 循环的环境动画（吉祥物、运行中的脉冲、加载圈）不受这些令牌约束。
+- 系统开启“减少动态效果”时，所有动效和过渡缩短到 1ms，退场直接卸载。
 
 ## 状态
 
@@ -129,15 +134,24 @@
 | `.ui-chip` / `.ui-tag`（`-success` `-warning` `-danger` `-accent`）/ `.ui-badge`                                                                                       | 24 高的标签；20 高的状态标签；图片上的角标          |
 | `.ui-kbd` / `.ui-keycap`                                                                                                                                               | 菜单里的快捷键提示；成组出现的键帽                  |
 | `.ui-spinner`                                                                                                                                                          | 加载中，`size-3` / `size-4` 缩小                    |
+| `.ui-empty`（`-fill` `-compact`）                                                                                                                                      | 空状态（`ui/EmptyState.tsx`）                       |
+| `.ui-switch`                                                                                                                                                           | 开关（`ui/Switch.tsx`）                             |
+| `.ui-pop`（`.ui-pop-up` `.ui-pop-right`）                                                                                                                              | 其他弹出的浮层的进场方向                            |
 
 新组件先找这里的类；确实需要新的样式时，先在 `styles/controls.css` 加成通用类，再在组件里用。通用控件都在 `@layer components` 里，组件上的 Tailwind 工具类能直接覆盖，不需要 `!`；`styles/` 下其他文件是不分层的页面样式，别和同属性的工具类混用。
 
 ## 共享模块
 
-| 模块               | 用途                                                                             |
-| ------------------ | -------------------------------------------------------------------------------- |
-| `ui/Modal.tsx`     | 全屏面板的遮罩、外框和标题行（设置、生成历史、分镜表、序列、快捷键）             |
-| `ui/keys.ts`       | 快捷键的显示文本：`shortcut('mod+shift+z')` → macOS「⇧⌘Z」、其他「Ctrl+Shift+Z」 |
-| `ui/format.ts`     | 时间：相对时间、「今天 14:05」、时长                                             |
-| `ui/useDismiss.ts` | 点外面、按 Esc（可选滚轮）关闭浮层                                               |
-| `canvas/hooks.ts`  | `useEngineVersion`（跟随元素的浮层）、`useDocVersion`（列表和表格）              |
+| 模块                | 用途                                                                             |
+| ------------------- | -------------------------------------------------------------------------------- |
+| `ui/Modal.tsx`      | 全屏面板的遮罩、外框和标题行（设置、生成历史、分镜表、序列、快捷键）             |
+| `ui/Presence.tsx`   | 浮层退场：`<Presence>` 延迟卸载，`useExit()` 铺属性，`useClosing()` 判断收起中   |
+| `ui/Popover.tsx`    | 锚定在按钮上的弹层，从锚点那一侧长出                                             |
+| `ui/Segmented.tsx`  | 分段控件（筛选、范围、主题），选中底色滑动                                       |
+| `ui/EmptyState.tsx` | 空状态：图标、标题、说明、操作                                                   |
+| `ui/Switch.tsx`     | 开关                                                                             |
+| `ui/Toast.tsx`      | 顶栏下方的提示条                                                                 |
+| `ui/keys.ts`        | 快捷键的显示文本：`shortcut('mod+shift+z')` → macOS「⇧⌘Z」、其他「Ctrl+Shift+Z」 |
+| `ui/format.ts`      | 时间：相对时间、「今天 14:05」、时长                                             |
+| `ui/useDismiss.ts`  | 点外面、按 Esc（可选滚轮）关闭浮层                                               |
+| `canvas/hooks.ts`   | `useEngineVersion`（跟随元素的浮层）、`useDocVersion`（列表和表格）              |

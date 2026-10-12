@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { aspectLabel, type FieldSchema, parseAspect } from '../../canvas/nodes'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
+import { Presence } from '../../ui/Presence'
 import { type ObjectSchema, SchemaForm } from '../SchemaForm'
 import { AspectGlyph, AutoAspectGlyph } from './AspectGlyph'
 
@@ -85,60 +86,62 @@ export function ParamsPill({
         )}
         <Icon name="chevronDown" size={14} />
       </button>
-      {anchor && (
-        <Popover anchor={anchor} onClose={() => setAnchor(null)} label="参数" width={392}>
-          <div className="flex flex-col gap-4 p-3">
-            {fields.map(([k, f]) => (
-              <ParamControl
-                key={k}
-                name={k}
-                field={f}
-                value={params[k]}
-                aspect={k === aspect}
-                onChange={(v) => onChange(k, v)}
-              />
-            ))}
-            {(hasRest || options) && (
-              <div className="border-t border-line pt-3">
-                <button
-                  type="button"
-                  onClick={() => setMore(!more)}
-                  aria-expanded={more}
-                  className="flex w-full items-center justify-between text-xs text-ink-muted transition-colors hover:text-ink"
-                >
-                  更多参数
-                  <span className={`transition-transform ${more ? 'rotate-180' : ''}`}>
-                    <Icon name="chevronDown" size={14} />
-                  </span>
-                </button>
-                {more && (
-                  <div className="flex flex-col gap-3 pt-3">
-                    {options && (
-                      <SchemaForm
-                        dense
-                        schema={options.schema}
-                        value={options.value}
-                        onChange={options.onChange}
-                      />
-                    )}
-                    {hasRest && (
-                      <SchemaForm
-                        dense
-                        schema={{ properties: rest }}
-                        value={params}
-                        onChange={(next) => {
-                          for (const k of Object.keys(rest))
-                            if (next[k] !== params[k]) onChange(k, next[k])
-                        }}
-                      />
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </Popover>
-      )}
+      <Presence>
+        {anchor && (
+          <Popover anchor={anchor} onClose={() => setAnchor(null)} label="参数" width={392}>
+            <div className="flex flex-col gap-4 p-3">
+              {fields.map(([k, f]) => (
+                <ParamControl
+                  key={k}
+                  name={k}
+                  field={f}
+                  value={params[k]}
+                  aspect={k === aspect}
+                  onChange={(v) => onChange(k, v)}
+                />
+              ))}
+              {(hasRest || options) && (
+                <div className="border-t border-line pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setMore(!more)}
+                    aria-expanded={more}
+                    className="flex w-full items-center justify-between text-xs text-ink-muted transition-colors hover:text-ink"
+                  >
+                    更多参数
+                    <span className={`transition-transform ${more ? 'rotate-180' : ''}`}>
+                      <Icon name="chevronDown" size={14} />
+                    </span>
+                  </button>
+                  {more && (
+                    <div className="flex flex-col gap-3 pt-3">
+                      {options && (
+                        <SchemaForm
+                          dense
+                          schema={options.schema}
+                          value={options.value}
+                          onChange={options.onChange}
+                        />
+                      )}
+                      {hasRest && (
+                        <SchemaForm
+                          dense
+                          schema={{ properties: rest }}
+                          value={params}
+                          onChange={(next) => {
+                            for (const k of Object.keys(rest))
+                              if (next[k] !== params[k]) onChange(k, next[k])
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </Popover>
+        )}
+      </Presence>
     </>
   )
 }

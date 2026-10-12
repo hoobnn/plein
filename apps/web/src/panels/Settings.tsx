@@ -9,6 +9,7 @@ import { Modal, ModalHeader } from '../ui/Modal'
 import { THEME_OPTIONS } from '../ui/ThemeToggle'
 import { type ObjectSchema, SchemaForm } from './SchemaForm'
 import { SlidePill, SlideSwap } from '../ui/Slide'
+import { Switch } from '../ui/Switch'
 
 const input = 'ui-input ui-input-lg w-full'
 
@@ -19,41 +20,6 @@ function providerState(p: ProviderInfo): { label: string; tone: string } {
   if (!p.enabled) return { label: '已停用', tone: '' }
   if (!p.configured) return { label: '缺少密钥', tone: 'ui-tag-warning' }
   return { label: '可用', tone: 'ui-tag-success' }
-}
-
-function Switch({
-  checked,
-  disabled,
-  label,
-  onChange,
-}: {
-  checked: boolean
-  disabled?: boolean
-  label: string
-  onChange(next: boolean): void
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={(e) => {
-        e.stopPropagation()
-        onChange(!checked)
-      }}
-      className={`relative h-5 w-9 flex-none rounded-full transition-colors disabled:opacity-50 ${
-        checked ? 'bg-accent' : 'bg-surface-3'
-      }`}
-    >
-      <span
-        className={`absolute top-0.5 left-0.5 size-4 rounded-full bg-white shadow-1 transition-transform ${
-          checked ? 'translate-x-4' : ''
-        }`}
-      />
-    </button>
-  )
 }
 
 /** 单个平台：一行摘要（状态、启用开关），展开后是设置表单（由插件声明的 schema 生成）、密钥、测试连接 */

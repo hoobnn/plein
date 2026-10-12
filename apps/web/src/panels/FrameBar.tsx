@@ -11,6 +11,7 @@ import { Icon } from '../ui/icons'
 import { promptDialog } from '../ui/Dialog'
 import { withShortcut } from '../ui/keys'
 import { Popover } from '../ui/Popover'
+import { Presence } from '../ui/Presence'
 import { cancelGroup, runFrame } from './run'
 
 /** 页头占的高度：Frame 顶到页头时工具条不压住它 */
@@ -145,29 +146,31 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
           </button>
         </>
       )}
-      {palette && (
-        <Popover anchor={palette} onClose={() => setPalette(null)} label="Frame 颜色" width={196}>
-          <div className="grid grid-cols-5 gap-1.5 p-2">
-            {COLORS.map((c) => (
-              <button
-                key={c.label}
-                type="button"
-                title={c.label}
-                aria-label={c.label}
-                aria-pressed={el.color === c.value}
-                onClick={() => {
-                  updateElement(engine.doc, el.id, { color: c.value })
-                  setPalette(null)
-                }}
-                className="flex size-7 items-center justify-center rounded-full border border-line text-ink-subtle transition-transform hover:scale-110 aria-pressed:ring-2 aria-pressed:ring-accent aria-pressed:ring-offset-2 aria-pressed:ring-offset-menu"
-                style={{ background: c.value ?? 'transparent' }}
-              >
-                {!c.value && <Icon name="x" size={12} />}
-              </button>
-            ))}
-          </div>
-        </Popover>
-      )}
+      <Presence>
+        {palette && (
+          <Popover anchor={palette} onClose={() => setPalette(null)} label="Frame 颜色" width={196}>
+            <div className="grid grid-cols-5 gap-1.5 p-2">
+              {COLORS.map((c) => (
+                <button
+                  key={c.label}
+                  type="button"
+                  title={c.label}
+                  aria-label={c.label}
+                  aria-pressed={el.color === c.value}
+                  onClick={() => {
+                    updateElement(engine.doc, el.id, { color: c.value })
+                    setPalette(null)
+                  }}
+                  className="flex size-7 items-center justify-center rounded-full border border-line text-ink-subtle transition-transform hover:scale-110 aria-pressed:ring-2 aria-pressed:ring-accent aria-pressed:ring-offset-2 aria-pressed:ring-offset-menu"
+                  style={{ background: c.value ?? 'transparent' }}
+                >
+                  {!c.value && <Icon name="x" size={12} />}
+                </button>
+              ))}
+            </div>
+          </Popover>
+        )}
+      </Presence>
     </div>
   )
 }
