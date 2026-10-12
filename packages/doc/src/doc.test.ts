@@ -8,7 +8,6 @@ import {
   groupElements,
   removeResult,
   resultHistory,
-  setResultRating,
   writeRun,
   bringToFront,
   connect,
@@ -383,46 +382,6 @@ describe('节点结果与端口', () => {
     expect(doc.get(a)!.parentId).toBe(f)
     expect(doc.worldRect(b)).toEqual({ x: 300, y: 200, w: 50, h: 50 })
   })
-  it('结果评级：1–5 取整夹紧，0 / null 清除，可撤销，只改目标结果', () => {
-    const doc = createDoc(undefined, { schedule: () => {} })
-    const id = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200, ports: nodePorts })
-    const r = (n: number) => ({
-      id: `r${n}`,
-      port: 'images',
-      value: { type: 'image' as const, assetId: `a${n}` },
-      runId: 'run1',
-      at: n,
-    })
-    addResults(doc, id, [r(1), r(2)])
-    doc.undo.stopCapturing()
-    const rating = (rid: string) => doc.get(id)!.results!.find((x) => x.id === rid)?.rating
-
-    setResultRating(doc, id, 'r2', 4)
-    expect(rating('r2')).toBe(4)
-    expect(rating('r1')).toBeUndefined()
-    doc.undo.stopCapturing()
-    setResultRating(doc, id, 'r2', 9.4)
-    expect(rating('r2')).toBe(5)
-    doc.undo.stopCapturing()
-    setResultRating(doc, id, 'r2', 0.2)
-    expect(rating('r2')).toBe(1)
-    doc.undo.undo()
-    expect(rating('r2')).toBe(5)
-    doc.undo.stopCapturing()
-    setResultRating(doc, id, 'r2', null)
-    expect(rating('r2')).toBeUndefined()
-    expect('rating' in doc.get(id)!.results!.find((x) => x.id === 'r2')!).toBe(false)
-    // 不存在的结果、相同评级都不写入
-    const before = doc.undo.undoStack.length
-    setResultRating(doc, id, 'nope', 3)
-    setResultRating(doc, id, 'r2', null)
-    expect(doc.undo.undoStack.length).toBe(before)
-    // 评级跟着结果走：后续追加结果不影响已有评级
-    setResultRating(doc, id, 'r1', 3)
-    addResults(doc, id, [r(3)])
-    expect(rating('r1')).toBe(3)
-  })
-
   it('生成历史：只收节点的媒体结果，新到旧，标出采用的那个', () => {
     const doc = createDoc(undefined, { schedule: () => {} })
     const a = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200, ports: nodePorts })

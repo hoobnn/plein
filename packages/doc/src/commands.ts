@@ -321,31 +321,6 @@ export function removeResult(doc: PleinDoc, id: string, resultId: string) {
   })
 }
 
-/** 评级范围 */
-export const MAX_RATING = 5
-
-/** 给结果打星（1–5，用户操作，可撤销）；rating 为 null 或 0 时清除评级 */
-export function setResultRating(
-  doc: PleinDoc,
-  id: string,
-  resultId: string,
-  rating: number | null,
-) {
-  const value = rating ? Math.min(MAX_RATING, Math.max(1, Math.round(rating))) : undefined
-  write(doc, () => {
-    const m = doc.mutable(id)
-    const list = m?.get('results')
-    if (!m || !Array.isArray(list)) return
-    const results = list as NodeResult[]
-    const i = results.findIndex((r) => r.id === resultId)
-    if (i < 0 || results[i]!.rating === value) return
-    const { rating: _, ...rest } = results[i]!
-    const next = [...results]
-    next[i] = value === undefined ? rest : { ...rest, rating: value }
-    m.set('results', next)
-  })
-}
-
 /**
  * 写入运行状态（服务端或本地运行器调用）。系统写入，不进撤销栈。
  * run 为 null 时清除。

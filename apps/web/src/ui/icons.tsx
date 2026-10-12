@@ -54,7 +54,6 @@ import {
   Sparkles,
   Spline,
   Square,
-  Star,
   Sun,
   Trash2,
   Type,
@@ -135,7 +134,6 @@ const ICONS = {
   sliders: SlidersHorizontal,
   wand: WandSparkles,
   languages: Languages,
-  star: Star,
   // 设置与外观
   settings: Settings,
   palette: Palette,
@@ -156,22 +154,13 @@ const SOLID = new Set<IconName>(['play', 'pause', 'stop'])
 /** 屏幕上的线宽（px）换算回 24 画板的 stroke-width */
 const strokeWidth = (size: IconSize) => (Math.min(1.75, 0.5 + size / 16) * 24) / size
 
-export function Icon({
-  name,
-  size = 16,
-  fill = false,
-}: {
-  name: IconName
-  size?: IconSize
-  /** 实心（星标等） */
-  fill?: boolean
-}) {
+export function Icon({ name, size = 16 }: { name: IconName; size?: IconSize }) {
   return (
     <svg
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill={fill || SOLID.has(name) ? 'currentColor' : 'none'}
+      fill={SOLID.has(name) ? 'currentColor' : 'none'}
       stroke="currentColor"
       strokeWidth={strokeWidth(size)}
       strokeLinecap="round"

@@ -5,7 +5,6 @@ import {
   type HistoryEntry,
   type NewElement,
   resultHistory,
-  setResultRating,
 } from '@plein/doc'
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import { api, assetUrls } from '../api/client'
@@ -16,27 +15,15 @@ import { useCanvas } from '../stores/canvas'
 import { shortTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
-import { Stars } from '../ui/Stars'
 
 type MediaType = 'image' | 'video' | 'audio'
 type TypeFilter = 'all' | MediaType
-/** 评级筛选：至少 n 星，或只看未评级 */
-type RatingFilter = 'all' | 'none' | 1 | 2 | 3 | 4 | 5
 
 const TYPES: Array<{ id: TypeFilter; label: string; icon?: IconName }> = [
   { id: 'all', label: '全部' },
   { id: 'image', label: '图片', icon: 'image' },
   { id: 'video', label: '视频', icon: 'video' },
   { id: 'audio', label: '音频', icon: 'audio' },
-]
-
-const RATINGS: Array<{ id: RatingFilter; label: string }> = [
-  { id: 'all', label: '全部' },
-  { id: 5, label: '5 星' },
-  { id: 4, label: '4 星以上' },
-  { id: 3, label: '3 星以上' },
-  { id: 1, label: '已评级' },
-  { id: 'none', label: '未评级' },
 ]
 
 const TYPE_LABEL: Record<MediaType, string> = { image: '图片', video: '视频', audio: '音频' }
@@ -73,7 +60,7 @@ function thumbOf(e: HistoryEntry, size: number) {
 
 /**
  * 生成历史：本画布所有节点的图片 / 视频 / 音频结果。
- * 按类型分栏计数、按评级筛选、时间排序、调缩略图大小；
+ * 按类型分栏计数、时间排序、调缩略图大小；
  * 点一项定位到所属节点并采用它，批量选中后可下载或放到画布上。
  * “全部画布”需要服务端结果索引，暂不支持。
  */
@@ -91,7 +78,6 @@ function HistoryPanel({ engine }: { engine: Engine }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: version 变化即文档变化
   const all = useMemo(() => resultHistory(doc), [doc, version])
   const [type, setType] = useState<TypeFilter>('all')
-  const [rating, setRating] = useState<RatingFilter>('all')
   const [oldestFirst, setOldestFirst] = useState(false)
   const [size, setSize] = useState(160)
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
@@ -113,15 +99,9 @@ function HistoryPanel({ engine }: { engine: Engine }) {
   }, [all])
 
   const shown = useMemo(() => {
-    const list = all.filter((e) => {
-      if (type !== 'all' && e.result.value.type !== type) return false
-      const r = e.result.rating
-      if (rating === 'none') return !r
-      if (rating !== 'all') return !!r && r >= rating
-      return true
-    })
+    const list = all.filter((e) => type === 'all' || e.result.value.type === type)
     return oldestFirst ? list.reverse() : list
-  }, [all, type, rating, oldestFirst])
+  }, [all, type, oldestFirst])
 
   // 结果被删或筛掉后，选择里只保留还看得见的
   const visible = new Set(shown.map(keyOf))
@@ -244,14 +224,6 @@ function HistoryPanel({ engine }: { engine: Engine }) {
             </SegButton>
           ))}
         </Segmented>
-        <Segmented label="评级">
-          {RATINGS.map((r) => (
-            <SegButton key={r.id} active={rating === r.id} onClick={() => setRating(r.id)}>
-              {typeof r.id === 'number' && r.id > 1 && <Icon name="star" size={12} fill />}
-              {r.label}
-            </SegButton>
-          ))}
-        </Segmented>
       </div>
 
       <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-5 pb-5">
@@ -273,10 +245,8 @@ function HistoryPanel({ engine }: { engine: Engine }) {
                 thumb={thumbOf(e, size)}
                 picked={picked.has(keyOf(e))}
                 selecting={selected.length > 0}
-                readOnly={doc.readOnly}
                 onPick={() => togglePick(e)}
                 onOpen={() => locate(e)}
-                onRate={(n) => setResultRating(doc, e.elementId, e.result.id, n)}
               />
             ))}
           </ul>
@@ -349,10 +319,8 @@ function Card(props: {
   thumb: string
   picked: boolean
   selecting: boolean
-  readOnly: boolean
   onPick(): void
   onOpen(): void
-  onRate(n: number | null): void
 }) {
   const { entry, picked } = props
   const { type } = entry.result.value
@@ -404,26 +372,11 @@ function Card(props: {
             : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
         }`}
       />
-      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 px-0.5">
-        <div className="min-w-0">
-          <div className="truncate text-xs">{props.name}</div>
-          <div className="whitespace-nowrap text-2xs text-ink-subtle">
-            {shortTime(entry.result.at)}
-          </div>
+      <div className="min-w-0 px-0.5">
+        <div className="truncate text-xs">{props.name}</div>
+        <div className="whitespace-nowrap text-2xs text-ink-subtle">
+          {shortTime(entry.result.at)}
         </div>
-        {props.readOnly ? (
-          <Stars value={entry.result.rating} size={12} />
-        ) : (
-          <span
-            className={
-              entry.result.rating
-                ? ''
-                : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'
-            }
-          >
-            <Stars value={entry.result.rating} onChange={props.onRate} size={12} />
-          </span>
-        )}
       </div>
     </li>
   )

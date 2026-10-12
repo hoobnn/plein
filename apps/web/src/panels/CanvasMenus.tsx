@@ -1,5 +1,4 @@
 import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
-import { currentResult, setResultRating } from '@plein/doc'
 import type { ReactNode } from 'react'
 import { findNode, type NodeInfo } from '../canvas/nodes'
 import {
@@ -15,7 +14,6 @@ import { useCatalog } from '../stores/catalog'
 import { useTemplates } from '../stores/templates'
 import { promptDialog } from '../ui/Dialog'
 import { shortcut } from '../ui/keys'
-import { Stars } from '../ui/Stars'
 import { useDismiss } from '../ui/useDismiss'
 import { AddMenu } from './AddMenu'
 
@@ -163,8 +161,6 @@ function ContextMenu({
   const single = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
   const node: NodeInfo | undefined =
     single?.kind === 'node' ? findNode(catalog, single.nodeType) : undefined
-  const rated = single?.kind === 'node' ? currentResult(single) : undefined
-  const ratable = rated && rated.value.type !== 'text' && rated.value.type !== 'json'
   let items: ReactNode
   if (menu.target === null) {
     items = (
@@ -209,21 +205,6 @@ function ContextMenu({
             <Item label="运行整组" onClick={act(() => void runFrame(single.id, false))} />
             <Item label="运行整组（含视频）" onClick={act(() => void runFrame(single.id, true))} />
             <Item label="存为模板…" onClick={act(() => void saveFrame(single.id))} />
-            <Sep />
-          </>
-        )}
-        {ratable && single && !engine.doc.readOnly && (
-          <>
-            <div className="flex h-8 items-center justify-between pr-1 pl-2">
-              <span>评级</span>
-              <Stars
-                value={rated.rating}
-                onChange={(n) => {
-                  onClose()
-                  setResultRating(engine.doc, single.id, rated.id, n)
-                }}
-              />
-            </div>
             <Sep />
           </>
         )}
