@@ -49,6 +49,8 @@ test('短剧模板：插入 → 跑骨架 → 展开 → 批量 → 导出', asy
   expect((await byName(page, '老城区天台')).nodeType).toBe('plein/scene')
 
   const openBoard = async () => {
+    // 先取消选中：上一步选中节点的生成器面板可能正好盖在分镜节点上
+    await page.keyboard.press('Escape')
     await zoomTo(page, [board.id])
     const p = await centerOf(page, board.id)
     await page.mouse.dblclick(p.x, p.y)
