@@ -1,11 +1,11 @@
+import { Dialog } from '@base-ui/react/dialog'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { createPortal } from 'react-dom'
-import { Presence, useExit } from './Presence'
+import { Presence, useClosing, useExit } from './Presence'
 
 /**
  * 应用内的确认框 / 输入框，替代浏览器原生的 confirm() / prompt()。
  * 用法：`if (!(await confirmDialog({...}))) return`、`const name = await promptDialog({...})`。
- * 由 <DialogHost /> 渲染，同一时间只显示一个。
+ * 由 <DialogHost /> 渲染，同一时间只显示一个。基于 Base UI Dialog：焦点圈在对话框里，关闭后还给原来的元素。
  */
 
 interface ConfirmOptions {
@@ -77,9 +77,7 @@ export function DialogHost() {
     },
     () => current,
   )
-  return (
-    <Presence>{req && createPortal(<DialogView key={req.id} req={req} />, document.body)}</Presence>
-  )
+  return <Presence>{req && <DialogView key={req.id} req={req} />}</Presence>
 }
 
 function DialogView({ req }: { req: Request }) {
@@ -87,12 +85,9 @@ function DialogView({ req }: { req: Request }) {
   const [text, setText] = useState(req.kind === 'prompt' ? (req.options.defaultValue ?? '') : '')
   const inputRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
+  const closing = useClosing()
 
-  useEffect(() => {
-    if (req.kind === 'prompt') inputRef.current?.select()
-    else confirmRef.current?.focus()
-  }, [req.kind])
-
+  // Esc 自己处理并停止传播，不交给 Base UI：外层面板的 Esc 处理用 dialogOpen() 让位
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -114,54 +109,71 @@ function DialogView({ req }: { req: Request }) {
   const exit = useExit()
 
   return (
-    <div
-      className="fixed inset-0 z-60 flex items-center justify-center p-6"
-      onPointerDown={() => settle(null)}
+    <Dialog.Root
+      open={!closing}
+      onOpenChange={(open, details) => {
+        if (!open && details.reason !== 'escape-key') settle(null)
+      }}
     >
-      <div {...exit} className="ui-dialog-scrim absolute inset-0 bg-scrim" />
-      <form
-        {...exit}
-        role="dialog"
-        aria-modal="true"
-        aria-label={options.title}
-        className="ui-dialog relative flex w-full max-w-100 flex-col gap-5 rounded-2xl bg-surface p-6 shadow-4"
-        onPointerDown={(e) => e.stopPropagation()}
-        onSubmit={(e) => {
-          e.preventDefault()
-          confirm()
-        }}
-      >
-        <div className="flex flex-col gap-1.5">
-          <h2 className="text-lg font-semibold">{options.title}</h2>
-          {options.message && <p className="text-sm leading-5 text-ink-muted">{options.message}</p>}
-        </div>
-        {req.kind === 'prompt' && (
-          <input
-            ref={inputRef}
-            className="ui-input ui-input-lg w-full"
-            value={text}
-            placeholder={req.options.placeholder}
-            onChange={(e) => setText(e.target.value)}
-          />
-        )}
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            className="ui-btn ui-btn-secondary ui-btn-lg"
-            onClick={() => settle(null)}
+      <Dialog.Portal>
+        <Dialog.Backdrop {...exit} className="ui-dialog-scrim fixed inset-0 z-60 bg-scrim" />
+        <Dialog.Viewport className="fixed inset-0 z-60 flex items-center justify-center p-6">
+          <Dialog.Popup
+            {...exit}
+            aria-label={options.title}
+            initialFocus={
+              req.kind === 'prompt'
+                ? () => {
+                    inputRef.current?.select()
+                    return inputRef.current
+                  }
+                : confirmRef
+            }
+            render={
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  confirm()
+                }}
+              />
+            }
+            className="ui-dialog relative flex w-full max-w-100 flex-col gap-5 rounded-2xl bg-surface p-6 shadow-4 outline-none"
           >
-            {options.cancelLabel ?? '取消'}
-          </button>
-          <button
-            ref={confirmRef}
-            type="submit"
-            disabled={!canConfirm}
-            className={`ui-btn ui-btn-lg ${danger ? 'ui-btn-danger-solid' : 'ui-btn-primary'}`}
-          >
-            {options.confirmLabel ?? '确定'}
-          </button>
-        </div>
-      </form>
-    </div>
+            <div className="flex flex-col gap-1.5">
+              <h2 className="text-lg font-semibold">{options.title}</h2>
+              {options.message && (
+                <p className="text-sm leading-5 text-ink-muted">{options.message}</p>
+              )}
+            </div>
+            {req.kind === 'prompt' && (
+              <input
+                ref={inputRef}
+                className="ui-input ui-input-lg w-full"
+                value={text}
+                placeholder={req.options.placeholder}
+                onChange={(e) => setText(e.target.value)}
+              />
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary ui-btn-lg"
+                onClick={() => settle(null)}
+              >
+                {options.cancelLabel ?? '取消'}
+              </button>
+              <button
+                ref={confirmRef}
+                type="submit"
+                disabled={!canConfirm}
+                className={`ui-btn ui-btn-lg ${danger ? 'ui-btn-danger-solid' : 'ui-btn-primary'}`}
+              >
+                {options.confirmLabel ?? '确定'}
+              </button>
+            </div>
+          </Dialog.Popup>
+        </Dialog.Viewport>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }

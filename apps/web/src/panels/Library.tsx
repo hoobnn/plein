@@ -20,7 +20,7 @@ import {
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { type LibrarySeed, useLibrary } from '../stores/library'
-import { confirmDialog } from '../ui/Dialog'
+import { confirmDialog, dialogOpen } from '../ui/Dialog'
 import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { Popover } from '../ui/Popover'
@@ -102,8 +102,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // 确认框、弹层（下拉框、从画布选）开着时 Esc 归它们
-      if (e.key !== 'Escape' || document.querySelector('[role=alertdialog], .ui-menu[role=dialog]'))
-        return
+      if (e.key !== 'Escape' || dialogOpen() || document.querySelector('.ui-menu')) return
       e.stopPropagation()
       if (editing) setEditing(null)
       else close()

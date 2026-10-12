@@ -1,4 +1,6 @@
-/** 开关：开 = accent 底，圆钮弹性滑到右边；点它不会冒泡到所在的行 */
+import { Switch as Base } from '@base-ui/react/switch'
+
+/** 开关（Base UI Switch）：开 = accent 底，圆钮弹性滑到右边；点它不会冒泡到所在的行 */
 export function Switch({
   checked,
   disabled,
@@ -11,19 +13,17 @@ export function Switch({
   onChange(next: boolean): void
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
+    <Base.Root
+      checked={checked}
       disabled={disabled}
-      onClick={(e) => {
-        e.stopPropagation()
-        onChange(!checked)
-      }}
+      aria-label={label}
+      nativeButton
+      render={<button type="button" />}
+      onClick={(e) => e.stopPropagation()}
+      onCheckedChange={(next) => onChange(next)}
       className="ui-switch"
     >
-      <span />
-    </button>
+      <Base.Thumb />
+    </Base.Root>
   )
 }

@@ -1,10 +1,12 @@
+import { Dialog } from '@base-ui/react/dialog'
 import type { ReactNode } from 'react'
 import { Icon } from './icons'
-import { useExit } from './Presence'
+import { useClosing, useExit } from './Presence'
 
 /**
- * 盖住整个窗口的面板（设置、生成历史、分镜表、序列、快捷键）：遮罩淡入、面板弹出，点遮罩关闭。
- * 按 Esc 关闭由各面板自己处理：有的要在捕获阶段拦下画布快捷键。
+ * 盖住整个窗口的面板（设置、生成历史、分镜表、序列、快捷键），基于 Base UI Dialog：
+ * 遮罩淡入、面板弹出，点遮罩关闭；打开时焦点移进面板并圈在里面，关闭后还给原来的元素，背后页面不滚动。
+ * Esc 关闭最上面的一层（面板里的下拉、弹层先关）；要先关面板里其他子层的面板，在捕获阶段自己拦下 Esc。
  * 打开处包一层 `<Presence>`，关闭时遮罩淡出、面板收起。
  */
 export function Modal({
@@ -29,30 +31,35 @@ export function Modal({
   children: ReactNode
 }) {
   const exit = useExit()
+  const closing = useClosing()
   return (
-    <div
-      className={`pointer-events-auto fixed inset-0 flex justify-center p-4 sm:p-6 ${
-        top ? 'z-50' : 'z-40'
-      } ${align === 'bottom' ? 'items-end pb-16 sm:pb-16' : 'items-center'}`}
+    <Dialog.Root
+      open={!closing}
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
     >
-      <button
-        type="button"
-        aria-label="关闭"
-        tabIndex={-1}
-        onClick={onClose}
-        {...exit}
-        className="ui-dialog-scrim absolute inset-0 cursor-default bg-scrim"
-      />
-      <section
-        role="dialog"
-        aria-label={label}
-        data-plein-active={isolateKeys ? '' : undefined}
-        {...exit}
-        className={`ui-dialog relative flex max-h-full w-full flex-col overflow-hidden rounded-2xl bg-surface shadow-4 ${className}`}
-      >
-        {children}
-      </section>
-    </div>
+      <Dialog.Portal>
+        <Dialog.Backdrop
+          {...exit}
+          className={`ui-dialog-scrim pointer-events-auto fixed inset-0 bg-scrim ${top ? 'z-50' : 'z-40'}`}
+        />
+        <Dialog.Viewport
+          className={`pointer-events-auto fixed inset-0 flex justify-center p-4 sm:p-6 ${
+            top ? 'z-50' : 'z-40'
+          } ${align === 'bottom' ? 'items-end pb-16 sm:pb-16' : 'items-center'}`}
+        >
+          <Dialog.Popup
+            aria-label={label}
+            data-plein-active={isolateKeys ? '' : undefined}
+            {...exit}
+            className={`ui-dialog relative flex max-h-full w-full flex-col overflow-hidden rounded-2xl bg-surface shadow-4 outline-none ${className}`}
+          >
+            {children}
+          </Dialog.Popup>
+        </Dialog.Viewport>
+      </Dialog.Portal>
+    </Dialog.Root>
   )
 }
 

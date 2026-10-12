@@ -103,8 +103,8 @@
 
 - 曲线：进场的位移和缩放用 `--ease-spring`，颜色用 `--ease-standard`，退场用 `--ease-exit`（加速离开，不回弹）。
 - Tailwind 的 `transition-colors` 等默认就是 120ms 加标准曲线，组件里不写 `duration-*`。
-- **进场**：菜单、弹层从锚点那一侧长出（`data-side="above|below"` 决定变换原点和 4px 位移），从 97% 缩放淡入；提示条从上方落下；底部提示条（`.ui-pop-up`）从下方升起；右侧面板（`.ui-pop-right`）从右侧滑入；对话框遮罩淡入、面板从 96% 略微上浮着弹出。动画的起止由元素上的 `--pop-from` / `--pop-to` / `--pop-origin` 决定，关键帧只有 `ui-pop-in` / `ui-pop-out` 一套。
-- **退场**：浮层都要有。打开处写成 `<Presence>{open && <X />}</Presence>`，X 的根元素铺上 `useExit()`；关闭时元素标上 `data-closing`，播完 `ui-pop-out`（遮罩是 `ui-fade-out`）再卸载，收起途中不响应指针、Esc 和点外面。退场比进场快，位移和缩放也比进场小。
+- **进场**：菜单、弹层从锚点那一侧长出（`data-side="above|below"`，Base UI 定位的弹层是 `top|bottom`，决定变换原点和 4px 位移），从 97% 缩放淡入；提示条从上方落下；底部提示条（`.ui-pop-up`）从下方升起；右侧面板（`.ui-pop-right`）从右侧滑入；对话框遮罩淡入、面板从 96% 略微上浮着弹出。动画的起止由元素上的 `--pop-from` / `--pop-to` / `--pop-origin` 决定，关键帧只有 `ui-pop-in` / `ui-pop-out` 一套。
+- **退场**：浮层都要有。打开处写成 `<Presence>{open && <X />}</Presence>`，X 的根元素铺上 `useExit()`；关闭时元素标上 `data-closing`，播完 `ui-pop-out`（遮罩是 `ui-fade-out`）再卸载，收起途中不响应指针、Esc 和点外面。Base UI 自己管理挂载的下拉和菜单（`ui/Select.tsx`、`ui/MenuSelect.tsx`）关闭时标 `data-ending-style`，同样播 `ui-pop-out`。退场比进场快，位移和缩放也比进场小。
 - 菜单项悬停：底色移入立即出现、移出时淡掉。
 - 循环的环境动画（吉祥物、运行中的脉冲、加载圈）不受这些令牌约束。
 - 系统开启“减少动态效果”时，所有动效和过渡缩短到 1ms，退场直接卸载。
@@ -142,11 +142,13 @@
 
 ## 共享模块
 
+弹层、下拉、菜单、开关、面板和对话框基于 [Base UI](https://base-ui.com)（`@base-ui/react`，无样式组件）：键盘操作、焦点圈定与归还、ARIA、定位与碰撞翻转、嵌套浮层的点外面和 Esc 都交给它，样式和动效仍用本文档的类和令牌。新的交互控件（菜单、复选、滑块、标签页等）先找 Base UI 里对应的组件再套样式，不要从头手写。
+
 | 模块                | 用途                                                                             |
 | ------------------- | -------------------------------------------------------------------------------- |
 | `ui/Modal.tsx`      | 全屏面板的遮罩、外框和标题行（设置、生成历史、分镜表、序列、快捷键）             |
 | `ui/Presence.tsx`   | 浮层退场：`<Presence>` 延迟卸载，`useExit()` 铺属性，`useClosing()` 判断收起中   |
-| `ui/Popover.tsx`    | 锚定在按钮上的弹层，从锚点那一侧长出                                             |
+| `ui/Popover.tsx`    | 锚定在按钮上的弹层，从锚点那一侧长出（Base UI Popover）                          |
 | `ui/Segmented.tsx`  | 分段控件（筛选、范围、主题），选中底色滑动                                       |
 | `ui/EmptyState.tsx` | 空状态：图标、标题、说明、操作                                                   |
 | `ui/Switch.tsx`     | 开关                                                                             |

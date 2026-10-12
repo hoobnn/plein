@@ -233,6 +233,8 @@ function ZoomMenu({ engine, zoom }: { engine: Engine; zoom: number }) {
                 onFocus={(e) => e.currentTarget.select()}
                 onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ''))}
                 onKeyDown={(e) => {
+                  // Esc 交给弹层关闭，其余按键不让画布快捷键响应
+                  if (e.key === 'Escape') return
                   e.stopPropagation()
                   if (e.key !== 'Enter') return
                   const n = Number(draft)

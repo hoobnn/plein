@@ -376,13 +376,16 @@
     animation: ui-pop-in var(--dur-base) var(--ease-spring);
     transform-origin: var(--pop-origin, top left);
   }
-  /* 弹层（ui/Popover.tsx、添加节点菜单）从锚点那一侧长出：在锚点上方就从下边缘长，反之从上边缘 */
-  [data-side="above"] {
+  /* 弹层（ui/Popover.tsx、添加节点菜单）从锚点那一侧长出：在锚点上方就从下边缘长，反之从上边缘。
+     top / bottom 是 Base UI 定位器标的方向 */
+  [data-side="above"],
+  .ui-menu[data-side="top"] {
     --pop-origin: bottom left;
     --pop-from: translateY(4px) scale(0.97);
     --pop-to: translateY(2px) scale(0.98);
   }
-  [data-side="below"] {
+  [data-side="below"],
+  .ui-menu[data-side="bottom"] {
     --pop-from: translateY(-4px) scale(0.97);
     --pop-to: translateY(-2px) scale(0.98);
   }
@@ -411,7 +414,20 @@
     background: var(--hover);
     transition-duration: 0ms;
   }
-  .ui-menu-item[aria-pressed="true"] {
+  .ui-menu-item[data-highlighted] {
+    background: var(--hover);
+    transition-duration: 0ms;
+  }
+  /* 下拉（ui/Select.tsx）：选中项只打勾，底色跟着键盘 / 指针高亮走 */
+  .ui-select-item[aria-selected="true"]:not([data-highlighted], :hover) {
+    background: none;
+  }
+  .ui-select-popup {
+    min-width: max(var(--anchor-width), 160px);
+    max-height: min(480px, var(--available-height));
+  }
+  .ui-menu-item[aria-pressed="true"],
+  .ui-menu-item[aria-checked="true"] {
     background: var(--active);
   }
   .ui-menu-item:disabled {
@@ -825,15 +841,20 @@
 
 /*
  * 退场（ui/Presence.tsx）：浮层关闭时先标上 data-closing，播完收起动画再卸载。
+ * Base UI 自己管理挂载的弹层（下拉、菜单）收起时标 data-ending-style，同样播这段动画，
+ * Base UI 会等它播完再卸载。
  * 不分层、带 :root 提高优先级，盖过各浮层自己的进场动画；收起途中不再响应指针。
  */
-:where([data-closing]),
-:where([data-closing]) * {
+:where([data-closing], .ui-menu[data-ending-style], .ui-dialog[data-ending-style]),
+:where([data-closing], .ui-menu[data-ending-style], .ui-dialog[data-ending-style]) * {
   pointer-events: none;
 }
-:root [data-closing] {
+:root [data-closing],
+:root .ui-menu[data-ending-style],
+:root .ui-dialog[data-ending-style] {
   animation: ui-pop-out var(--dur-exit) var(--ease-exit) forwards;
 }
-:root .ui-dialog-scrim[data-closing] {
+:root .ui-dialog-scrim[data-closing],
+:root .ui-dialog-scrim[data-ending-style] {
   animation: ui-fade-out var(--dur-exit) var(--ease-standard) forwards;
 }
