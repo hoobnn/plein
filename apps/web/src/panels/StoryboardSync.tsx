@@ -6,6 +6,8 @@ import { useEffect } from 'react'
 import { useCanvas } from '../stores/canvas'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { EmptyState } from '../ui/EmptyState'
+import { useCatalog } from '../stores/catalog'
+import { voicePresets } from './VoicePicker'
 
 const ROLE_LABEL: Record<ShotRole, string> = { image: '分镜图', video: '视频', speech: '配音' }
 const PARAM_LABEL: Record<string, string> = {
@@ -18,8 +20,12 @@ const PARAM_LABEL: Record<string, string> = {
 /** 参数值直接写进界面，空值说成「空」而不是留白 */
 const show = (v: unknown) => {
   if (v !== null && typeof v === 'object') {
-    // 音色是 { provider, voiceId }，直接 String 会显示成 [object Object]
+    // 音色是 { provider, voiceId }，直接 String 会显示成 [object Object]；预置音色显示名字
     const voice = voiceOf({ voice: v })
+    const preset = voicePresets(useCatalog.getState().catalog).find(
+      (p) => p.provider === voice.provider && p.id === voice.voiceId,
+    )
+    if (preset) return preset.label
     return voice.voiceId
       ? voice.provider
         ? `${voice.voiceId}（${voice.provider}）`
@@ -81,19 +87,26 @@ export function StoryboardSync({
           type="button"
           className={btn}
           disabled={!rows.length}
-          onClick={() => sync('unmodified')}
+          title="节点一个字段都不改，这版差异记为已确认、不再提示"
+          onClick={() => sync('keep-overrides')}
         >
-          同步未改字段
+          不同步，按节点现状
         </button>
         <button
           type="button"
           className="ui-btn ui-btn-primary"
           disabled={!rows.length}
-          onClick={() => sync('keep-overrides')}
+          title="把分镜表的改动写进节点；你在节点上改过的字段保留"
+          onClick={() => sync('unmodified')}
         >
-          保留用户覆盖
+          同步计划改动
         </button>
       </ModalHeader>
+      {rows.length > 0 && (
+        <p className="px-5 pb-3 text-xs text-ink-subtle">
+          「同步计划改动」只改标着「计划已改」的字段，标着「你改过」的保留你的值；同步后的节点需要重新生成。
+        </p>
+      )}
       {rows.length === 0 ? (
         <EmptyState
           icon="check"

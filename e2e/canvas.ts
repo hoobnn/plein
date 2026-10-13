@@ -8,6 +8,7 @@ interface RawElement {
   nodeType?: string
   parentId: string | null
   assetId?: string
+  params?: Record<string, unknown>
   run?: { status: string }
   results?: Array<{ value: Record<string, unknown> }>
 }
@@ -23,6 +24,7 @@ declare global {
         }
         worldToClient(x: number, y: number): { x: number; y: number }
         zoomToFit(ids?: Iterable<string>): void
+        selection: { values(): string[] }
       }
     }
   }
@@ -100,13 +102,75 @@ export async function zoomTo(page: Page, ids: string[]) {
     const { engine } = window.__plein
     engine.zoomToFit(ids)
   }, ids)
-  await page.waitForTimeout(300)
+  await settle(page, ids[0]!)
+}
+
+/**
+ * 等镜头停稳：元素在屏幕上的位置连续几帧不变。
+ * 展开分镜、放资产等操作会自己飞到新内容，动画没结束就按坐标点，会点到别处
+ */
+export async function settle(page: Page, id: string) {
+  await page.waitForFunction(
+    (id) =>
+      new Promise<boolean>((done) => {
+        const { engine } = window.__plein
+        const at = () => {
+          const r = engine.doc.worldRect(id)
+          const p = engine.worldToClient(r.x, r.y)
+          return `${Math.round(p.x)},${Math.round(p.y)}`
+        }
+        let last = at()
+        let same = 0
+        const tick = () => {
+          const now = at()
+          same = now === last ? same + 1 : 0
+          last = now
+          if (same >= 5) done(true)
+          else requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      }),
+    id,
+  )
+}
+
+/**
+ * 取消选中，并等选中节点的生成器浮层收起：浮层会盖住画布上的元素，
+ * 有时第一下 Esc 被别的弹层（关闭中的对话框、提示）接走，所以按到真的清空为止
+ */
+export async function deselect(page: Page) {
+  await expect
+    .poll(
+      async () => {
+        await page.keyboard.press('Escape')
+        return page.evaluate(() => window.__plein.engine.selection.values().length)
+      },
+      { message: '按 Esc 应取消选中' },
+    )
+    .toBe(0)
+}
+
+/** 单击选中元素：取消选中、镜头对准并停稳，确认落点在画布上没被浮层挡住再点 */
+export async function clickElement(page: Page, id: string) {
+  await deselect(page)
+  await zoomTo(page, [id])
+  const p = await centerOf(page, id)
+  await expect
+    .poll(() => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, p), {
+      message: '点击落点应在画布上，没有被浮层挡住',
+    })
+    .toBe('CANVAS')
+  await page.mouse.click(p.x, p.y)
+  await expect
+    .poll(() => page.evaluate(() => window.__plein.engine.selection.values()))
+    .toEqual([id])
 }
 
 /** 右键元素，点菜单项 */
 export async function contextMenu(page: Page, id: string, item: string) {
   // 先取消选中：选中节点的生成器面板会浮在画布上，可能正好盖住要右键的元素
-  await page.keyboard.press('Escape')
+  await deselect(page)
+  await settle(page, id)
   const p = await centerOf(page, id)
   await expect
     .poll(() => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, p), {

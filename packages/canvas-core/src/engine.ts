@@ -698,7 +698,13 @@ export class Engine {
 
   private attachShortcuts() {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isEditableTarget(e.target)) return
+      if (isEditableTarget(e.target)) {
+        // 输入框里的 Esc：退出输入框，焦点回到画布，再按一次才是取消选中。
+        // 输入框自己处理过的（关掉候选、取消编辑）不再管；输入法组字时的 Esc 是撤销组字
+        if (e.key === 'Escape' && !e.defaultPrevented && !e.isComposing)
+          (e.target as HTMLElement).blur()
+        return
+      }
       const mod = e.metaKey || e.ctrlKey
       const key = e.key.toLowerCase()
       const step = e.shiftKey ? 10 : 1

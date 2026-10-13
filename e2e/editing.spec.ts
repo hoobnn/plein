@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { addNode, edgesInto, elements, handleOf, newProject } from './canvas'
+import { addNode, clickElement, edgesInto, elements, handleOf, newProject } from './canvas'
 
 const nodes = async (page: Parameters<typeof elements>[0]) =>
   (await elements(page)).filter((e) => e.kind === 'node')
@@ -34,8 +34,7 @@ test('拖线连接节点，撤销重做连线与删除', async ({ page }) => {
   await expect.poll(() => edgesInto(page, image.id)).toHaveLength(1)
 
   // 删除文本节点连线一起没了；撤销后节点和连线都回来
-  const p = await handleOf(page, text.id, 'in')
-  await page.mouse.click(p.x + 40, p.y)
+  await clickElement(page, text.id)
   await page.keyboard.press('Delete')
   await expect.poll(async () => (await nodes(page)).length).toBe(1)
   await expect.poll(() => edgesInto(page, image.id)).toEqual([])
@@ -93,4 +92,27 @@ test('命令面板运行插件能力，提示里撤销', async ({ page }) => {
   await toast.getByRole('button', { name: '撤销' }).click()
   await expect.poll(async () => (await notes()).length).toBe(0)
   await expect.poll(async () => (await nodes(page)).length).toBe(1)
+})
+
+/** 在节点面板的输入框里按 Esc：先退出输入框，再按一次取消选中、收起面板 */
+test('输入框里按 Esc 先退出输入，再按取消选中', async ({ page }) => {
+  await newProject(page)
+  await addNode(page, '生成图片')
+  const prompt = page.getByRole('textbox', { name: '提示词' })
+  await prompt.click()
+  await page.keyboard.type('雨夜天台')
+  await page.keyboard.press('Escape')
+  await expect(prompt).not.toBeFocused()
+  await expect
+    .poll(() => page.evaluate(() => window.__plein.engine.selection.values().length))
+    .toBe(1)
+  await page.keyboard.press('Escape')
+  await expect
+    .poll(() => page.evaluate(() => window.__plein.engine.selection.values().length))
+    .toBe(0)
+  await expect(prompt).toBeHidden()
+  const [node] = (await elements(page)).filter((e) => e.kind === 'node')
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.prompt, node!.id),
+  ).toBe('雨夜天台')
 })
