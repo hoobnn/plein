@@ -1,7 +1,7 @@
 name: Release
 
-# v* 标签：测试 → 构建、签名、公证 macOS 安装包（Apple 芯片）并发布 GitHub Release。
-# 在分支上手动运行只构建和公证，产物在运行页的 Artifacts 里，不发布。
+# v* 标签：测试 → 构建 → 签名、公证 macOS 安装包（Apple 芯片）并发布 GitHub Release。
+# 手动运行只出 Artifacts 不发布；取消勾选 sign 时试运行（ad-hoc 签名、不公证），不需要凭据。
 # 签名、公证、打包与发布由 hoobnn/ci-workflows 的复用工作流完成，凭据见它的 README：
 #   Secrets：APPLE_CERT_APPLICATION_P12_BASE64、APPLE_CERT_APPLICATION_P12_PASSWORD、
 #            APPLE_NOTARY_KEY_ID、APPLE_NOTARY_ISSUER_ID、APPLE_NOTARY_KEY_P8_BASE64
@@ -10,6 +10,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      sign:
+        description: 签名并公证（取消则试运行，不需要凭据）
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -23,17 +28,67 @@ jobs:
   test:
     uses: ./.github/workflows/ci.yml
 
+  build:
+    name: Build app
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # ffmpeg 从源码构建（LGPL + libass + VideoToolbox），按脚本内容缓存
+      - name: Cache ffmpeg
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: apps/desktop/stage/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/desktop/scripts/build-ffmpeg.sh') }}
+      - name: Build ffmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: |
+          brew install meson ninja pkgconf
+          apps/desktop/scripts/build-ffmpeg.sh
+
+      - run: pnpm install --frozen-lockfile
+      - name: Build Plein.app
+        env:
+          # 标签 v0.1.0 → 0.1.0，写进 CFBundleShortVersionString；复用工作流会核对它和标签一致
+          PLEIN_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+        run: |
+          export PLEIN_VERSION=${PLEIN_VERSION#v}
+          pnpm --filter @plein/web build
+          cd apps/desktop
+          pnpm stage:server
+          # 没有证书，electron-builder 做 ad-hoc 签名；复用工作流会由内向外全部重签
+          pnpm exec electron-builder --mac --dir --publish never --config electron-builder.config.mjs
+          # 打成 tar 再上传：upload-artifact 的 zip 会丢掉 framework 里的符号链接
+          tar -cf "$RUNNER_TEMP/plein-app.tar" -C release/mac-arm64 Plein.app
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plein-app
+          path: ${{ runner.temp }}/plein-app.tar
+          retention-days: 1
+          if-no-files-found: error
+
   release:
-    name: Build, sign, notarize and release
-    needs: test
+    name: Sign, notarize and release
+    needs: [test, build]
     permissions:
       contents: write
     uses: hoobnn/ci-workflows/.github/workflows/macos-release.yml@v1
     with:
       app-path: apps/desktop/release/mac-arm64/Plein.app
-      # 工具链、ffmpeg 和内层签名都在脚本里，原因见脚本开头
-      build-command: apps/desktop/scripts/ci-build.sh
+      app-artifact: plein-app
       artifact-basename: Plein
+      # Electron 的 Helper、Framework、原生模块和 ffmpeg 都要先签；Helper 缺 allow-jit 会崩溃
+      inner-binaries: auto
+      inner-entitlements: apps/desktop/resources/entitlements.mac.plist
       entitlements: apps/desktop/resources/entitlements.mac.plist
+      arch-suffix: true
       make-dmg: true
+      sign: ${{ github.event_name == 'push' || inputs.sign }}
     secrets: inherit

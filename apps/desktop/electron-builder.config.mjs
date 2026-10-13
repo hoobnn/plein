@@ -5,7 +5,7 @@
 // - CSC_LINK（.p12 证书，可以是 base64）+ CSC_KEY_PASSWORD：用 Developer ID 证书签名；
 // - 再加 APPLE_ID、APPLE_APP_SPECIFIC_PASSWORD、APPLE_TEAM_ID：签名后提交 Apple 公证；
 // - 都没有时做 ad-hoc 签名，本机能打开，发给别人会被 Gatekeeper 拦（右键“打开”可绕过）。
-// CI 发版走 scripts/ci-build.sh：CSC_NAME 指向钥匙串里的证书，只签名不公证，公证由复用工作流做。
+// CI 发版时这里只出 ad-hoc 签名的 .app（--dir），由 hoobnn/ci-workflows 的复用工作流全部重签、公证和打包。
 import { cpSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
