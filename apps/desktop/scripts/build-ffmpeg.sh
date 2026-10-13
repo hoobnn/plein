@@ -32,12 +32,21 @@ if [ "$os" = Darwin ]; then
 fi
 export CFLAGS="-O2 -fPIC ${CFLAGS:-}"
 
-fetch() { # fetch <目录名> <地址>
+fetch() { # fetch <目录名> <地址> [备用地址...]
   local dir=$work/src/$1
   [ -d "$dir" ] && return
   echo "下载 $1"
   local archive=$work/src/$1.archive
-  curl -fsSL --retry 3 -o "$archive" "$2"
+  shift
+  local url ok=
+  for url in "$@"; do
+    if curl -fsSL --retry 3 --retry-all-errors --connect-timeout 20 -o "$archive" "$url"; then
+      ok=1
+      break
+    fi
+    echo "下载失败，换下一个地址：$url" >&2
+  done
+  [ -n "$ok" ] || { echo "无法下载 $dir" >&2; exit 1; }
   mkdir -p "$dir"
   tar -xf "$archive" -C "$dir" --strip-components=1
   rm "$archive"
@@ -56,7 +65,8 @@ meson_static() { # meson_static <源码目录> [meson 选项...]
 }
 
 fetch "freetype-$FREETYPE_VERSION" \
-  "https://download.savannah.gnu.org/releases/freetype/freetype-$FREETYPE_VERSION.tar.xz"
+  "https://download.savannah.gnu.org/releases/freetype/freetype-$FREETYPE_VERSION.tar.xz" \
+  "https://downloads.sourceforge.net/project/freetype/freetype2/$FREETYPE_VERSION/freetype-$FREETYPE_VERSION.tar.xz"
 if ! built freetype; then
   meson_static "$work/src/freetype-$FREETYPE_VERSION" \
     -Dharfbuzz=disabled -Dpng=disabled -Dbrotli=disabled -Dbzip2=disabled -Dzlib=disabled
@@ -100,7 +110,9 @@ if ! built libass; then
   mark libass
 fi
 
-fetch "ffmpeg-$FFMPEG_VERSION" "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz"
+# ffmpeg.org 偶尔连不上，退到 GitHub 上的官方镜像（同一标签的源码）
+fetch "ffmpeg-$FFMPEG_VERSION" "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" \
+  "https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n$FFMPEG_VERSION.tar.gz"
 ffmpeg_flags=(
   --prefix="$prefix"
   --pkg-config-flags=--static
