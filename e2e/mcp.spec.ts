@@ -9,6 +9,11 @@ const FIXTURE = fileURLToPath(
 /** 外部 MCP 服务：设置里添加，画布上的「MCP 工具」节点选工具、填参数、运行 */
 test('添加 MCP 服务，用 MCP 工具节点调用它', async ({ page }) => {
   await newProject(page)
+  // 还没接 MCP 服务时，添加菜单里没有这个节点
+  await page.mouse.dblclick(720, 450)
+  await page.getByPlaceholder('添加节点').fill('MCP 工具')
+  await expect(page.getByRole('option', { name: /MCP 工具/ })).toHaveCount(0)
+  await page.keyboard.press('Escape')
   await page.getByRole('button', { name: '设置', exact: true }).click()
   const settings = page.getByRole('dialog', { name: '设置' })
   await settings.getByRole('button', { name: /^MCP 服务/ }).click()
