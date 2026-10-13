@@ -571,7 +571,8 @@ describe('模型调用记录', () => {
     await call()
     expect(submit.mock.calls[0]![0]).toMatchObject({ input: { prompt: '天台' } })
     expect(submit.mock.calls[0]![0].input).not.toHaveProperty('seed')
-    expect(records.get('k')).toMatchObject({ state: 'done' })
+    // 远端 ID 也留着：重启续跑后能核对是不是同一个任务
+    expect(records.get('k')).toMatchObject({ state: 'done', remoteId: 'r1' })
   })
 
   it('远端确认失败：删掉记录，下次重新提交', async () => {

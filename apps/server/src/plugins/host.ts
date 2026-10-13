@@ -56,7 +56,8 @@ export class NodeRunError extends Error {
  */
 export type CallRecord =
   | { state: 'pending'; remoteId: string }
-  | { state: 'done'; result: ProviderCallResult }
+  /** remoteId：异步任务的远端 ID，完成后也留着，便于核对有没有重复提交 */
+  | { state: 'done'; result: ProviderCallResult; remoteId?: string }
 
 /**
  * 服务退出时中止运行用的 reason：不取消远端任务、不清调用记录，重启后接着轮询
@@ -210,6 +211,7 @@ export class PluginHost {
     // 保留 journal，外层重试接着轮询，不能重新提交付费任务
     let remoteAccepted = false
     let remoteFailed = false
+    let remote: string | undefined
 
     try {
       const outputs = await limiter.run(async () => {
@@ -218,6 +220,7 @@ export class PluginHost {
         if (recorded?.state === 'pending' && def.poll) {
           // 重启前已经提交过：接着轮询，不再提交
           remoteId = recorded.remoteId
+          remote = remoteId
           remoteAccepted = true
           wait = 0
           stage('generating')
@@ -230,6 +233,7 @@ export class PluginHost {
           remoteId = submitted.remoteId
           wait = submitted.pollAfterMs ?? DEFAULT_POLL_MS
           journal?.store.set(journal.key, { state: 'pending', remoteId })
+          remote = remoteId
           remoteAccepted = true
         }
         try {
@@ -268,7 +272,11 @@ export class PluginHost {
       if (outputs.outputs.some((o) => o.type === 'file')) stage('saving')
       const assets = await this.storeOutputs(parsed.provider, outputs.outputs, opts.ownerId, signal)
       const result: ProviderCallResult = { outputs: outputs.outputs, assets, usage: outputs.usage }
-      journal?.store.set(journal.key, { state: 'done', result })
+      journal?.store.set(journal.key, {
+        state: 'done',
+        result,
+        ...(remote ? { remoteId: remote } : {}),
+      })
       return result
     } catch (err) {
       const error =
