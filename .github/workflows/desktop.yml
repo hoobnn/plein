@@ -48,6 +48,10 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           export PLEIN_VERSION=${PLEIN_VERSION#v}
+          # 没配的 secret 会是空字符串，electron-builder 会把空的 CSC_LINK 当成路径，去掉才走 ad-hoc 签名
+          for v in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            [ -n "${!v}" ] || unset "$v"
+          done
           pnpm dist:desktop
 
       - uses: actions/upload-artifact@v4

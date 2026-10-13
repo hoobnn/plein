@@ -12,7 +12,7 @@
     "typecheck": "tsc -p .",
     "ffmpeg": "scripts/build-ffmpeg.sh",
     "stage:server": "vp pack && node scripts/stage-server.mjs",
-    "dist:mac": "pnpm stage:server && electron-builder --mac --config electron-builder.config.mjs"
+    "dist:mac": "pnpm stage:server && electron-builder --mac --publish never --config electron-builder.config.mjs"
   },
   "devDependencies": {
     "@plein/protocol": "workspace:*",
