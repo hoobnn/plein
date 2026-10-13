@@ -51,7 +51,8 @@ export function assetRoutes(store: AssetStore) {
         })
       }
       const variant = AssetVariant.safeParse(v)
-      if (!variant.success || !asset.variants.includes(variant.data)) return c.json(notFound, 404)
+      if (!variant.success || !(await store.ensureVariant(asset, variant.data)))
+        return c.json(notFound, 404)
       return sendFile(c, store.variantPath(id, variant.data), {
         mime: VARIANT_TYPES[variant.data].mime,
         immutable: true,

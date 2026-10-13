@@ -1,7 +1,7 @@
 import { type ArrangedClip, clipLines, type SequenceParams, type Timeline } from '@plein/nodes'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { assetUrls } from '../api/client'
-import { Icon } from '../ui/icons'
+import { type Playhead, usePlayheadTime, usePlaying } from './sequence/playhead'
 
 const DRIFT = 0.25
 
@@ -16,11 +16,6 @@ function syncMedia(el: HTMLMediaElement, at: number, playing: boolean) {
   if (!playing && !el.paused) el.pause()
 }
 
-const clock = (t: number) => {
-  const s = Math.max(0, t)
-  return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`
-}
-
 /**
  * 序列预览：不导出，直接在浏览器里按时间线播放。
  * 两个 video 交替承担相邻镜头（叠化时两段同时可见），对白、音效、配乐各用 Audio 跟着时钟走，
@@ -31,18 +26,19 @@ export function SequencePreview({
   timeline,
   params,
   music,
+  playhead,
 }: {
-  rows: ArrangedClip[]
+  /** pending 的镜头没有素材，轮到它时显示占位 */
+  rows: Array<ArrangedClip & { pending?: boolean }>
   timeline: Timeline
   params: SequenceParams
   music?: string
+  playhead: Playhead
 }) {
-  const [t, setT] = useState(0)
-  const [playing, setPlaying] = useState(false)
+  const t = usePlayheadTime(playhead)
+  const playing = usePlaying(playhead)
   const videos = [useRef<HTMLVideoElement>(null), useRef<HTMLVideoElement>(null)]
   const audios = useRef(new Map<string, HTMLAudioElement>())
-  const tRef = useRef(0)
-  tRef.current = t
   const { total, transition } = timeline
   const portrait = params.aspectRatio === '9:16'
 
@@ -65,25 +61,6 @@ export function SequencePreview({
     }
   }, [])
 
-  // 播放时钟
-  useEffect(() => {
-    if (!playing) return
-    let raf = 0
-    const base = performance.now() - tRef.current * 1000
-    const tick = () => {
-      const now = (performance.now() - base) / 1000
-      if (now >= total) {
-        setT(total)
-        setPlaying(false)
-        return
-      }
-      setT(now)
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [playing, total])
-
   // 正在画面上的镜头（叠化时最多两段）
   const active = timeline.clips
     .map((c, i) => ({ c, i }))
@@ -104,7 +81,7 @@ export function SequencePreview({
       const slot = i % 2
       used.add(slot)
       const v = videos[slot]!.current
-      if (!v) continue
+      if (!v || rows[i]!.pending) continue
       const url = assetUrls.original(rows[i]!.clip.assetId)
       if (v.dataset.src !== url) {
         v.dataset.src = url
@@ -169,86 +146,56 @@ export function SequencePreview({
     ? timeline.clips.flatMap((c) => c.cues).find((q) => t >= q.start && t < q.end)
     : undefined
 
-  const toggle = () => {
-    if (!playing && t >= total) setT(0)
-    setPlaying(!playing)
-  }
+  const placeholder = active.some(({ i }) => rows[i]?.pending)
 
   return (
-    <div className="flex flex-col gap-3">
-      <div
-        className={`relative mx-auto overflow-hidden rounded-lg bg-black ${portrait ? 'aspect-[9/16] w-full max-w-72' : 'aspect-video w-full'}`}
-      >
-        {[0, 1].map((slot) => (
-          // oxlint-disable-next-line jsx-a11y/media-has-caption -- 字幕由上面叠加的 DOM 显示
-          <video
-            key={slot}
-            ref={videos[slot]}
-            playsInline
-            preload="auto"
-            className="absolute inset-0 h-full w-full object-contain"
-            style={{
-              opacity: opacity.get(slot) ?? 0,
-              zIndex: topSlot === slot ? 2 : 1,
-            }}
-          />
-        ))}
-        <div
-          className="pointer-events-none absolute inset-0 z-10 bg-black"
-          style={{ opacity: black }}
-        />
-        {cue && (
+    <div className="flex min-h-0 flex-1 flex-col items-center gap-2">
+      <div className="seq-viewer">
+        <div className="seq-stage" data-portrait={portrait || undefined}>
+          {[0, 1].map((slot) => (
+            // oxlint-disable-next-line jsx-a11y/media-has-caption -- 字幕由上面叠加的 DOM 显示
+            <video
+              key={slot}
+              ref={videos[slot]}
+              playsInline
+              preload="auto"
+              className="absolute inset-0 h-full w-full object-contain"
+              style={{
+                opacity: opacity.get(slot) ?? 0,
+                zIndex: topSlot === slot ? 2 : 1,
+              }}
+            />
+          ))}
           <div
-            className={`pointer-events-none absolute inset-x-4 z-20 flex justify-center ${portrait ? 'bottom-[12%]' : 'bottom-[7%]'}`}
-          >
-            <span
-              className={`whitespace-pre-line text-center text-white ${
-                params.subtitleStyle === '底框'
-                  ? 'rounded-xs bg-black/40 px-2 py-0.5 text-sm'
-                  : params.subtitleStyle === '醒目'
-                    ? 'text-base font-semibold [text-shadow:0_0_3px_#000,0_0_3px_#000,0_0_3px_#000]'
-                    : 'text-sm [text-shadow:0_0_2px_#000,0_0_2px_#000]'
-              }`}
+            className="pointer-events-none absolute inset-0 z-10 bg-black"
+            style={{ opacity: black }}
+          />
+          {cue && (
+            <div
+              className={`pointer-events-none absolute inset-x-4 z-20 flex justify-center ${portrait ? 'bottom-[12%]' : 'bottom-[7%]'}`}
             >
-              {cue.text}
-            </span>
-          </div>
-        )}
-        {total === 0 && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center text-xs text-white/70">
-            没有可播放的镜头
-          </div>
-        )}
+              <span
+                className={`whitespace-pre-line text-center text-white ${
+                  params.subtitleStyle === '底框'
+                    ? 'rounded-xs bg-black/40 px-2 py-0.5 text-sm'
+                    : params.subtitleStyle === '醒目'
+                      ? 'text-base font-semibold [text-shadow:0_0_3px_#000,0_0_3px_#000,0_0_3px_#000]'
+                      : 'text-sm [text-shadow:0_0_2px_#000,0_0_2px_#000]'
+                }`}
+              >
+                {cue.text}
+              </span>
+            </div>
+          )}
+          {(total === 0 || placeholder) && (
+            <div className="absolute inset-0 z-30 flex items-center justify-center text-xs text-white/70">
+              {total === 0 ? '没有可播放的镜头' : '这段镜头还没有生成'}
+            </div>
+          )}
+        </div>
       </div>
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          aria-label={playing ? '暂停' : '播放'}
-          className="ui-btn ui-btn-secondary ui-btn-sm ui-icon-btn flex-none"
-          disabled={total === 0}
-          onClick={toggle}
-        >
-          <Icon name={playing ? 'pause' : 'play'} size={12} />
-        </button>
-        <input
-          type="range"
-          aria-label="播放位置"
-          className="min-w-0 flex-1"
-          min={0}
-          max={total || 1}
-          step={0.01}
-          value={Math.min(t, total)}
-          onChange={(e) => {
-            setPlaying(false)
-            setT(Number(e.target.value))
-          }}
-        />
-        <span className="flex-none text-xs tabular-nums text-ink-subtle">
-          {clock(t)} / {clock(total)}
-        </span>
-      </div>
-      <p className="text-2xs text-ink-subtle">
-        预览按时间线实时播放，画质与混音是近似的；导出的成片以服务端合成为准。
+      <p className="flex-none text-2xs text-ink-subtle">
+        预览画质与混音是近似的，导出的成片以服务端合成为准。
         {params.asrTiming && ' 语音识别校准的字幕时间只在导出时生效。'}
       </p>
     </div>

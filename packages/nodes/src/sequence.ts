@@ -97,7 +97,7 @@ export interface ArrangedClip {
 
 /**
  * 按参数排好镜头：参数里记着的镜头按参数顺序在前，新连进来的按画布位置排在后面，
- * 已断开的设置丢掉。对白、音效没指定时按顺序对应第 n 段。
+ * 已断开的设置丢掉。对白、音效没指定时按顺序对应第 n 段（别的段已经指定了的除外）。
  */
 export function arrangeSequence(
   params: Pick<SequenceParams, 'clips'>,
@@ -121,10 +121,13 @@ export function arrangeSequence(
       if (ob !== undefined) return 1
       return a.i - b.i
     })
+  // 已经被某段明确指定的对白、音效，不再按顺序自动对应给别的段（调换顺序后不会一条台词播两遍）
+  const claimed = new Set(params.clips.flatMap((c) => [c.dialogue, c.sfx]).filter(Boolean))
   const pick = (list: MediaValue[], choice: string | undefined, index: number) => {
     if (choice === '') return undefined
     if (choice !== undefined) return list.find((v) => v.source === choice)
-    return list[index]
+    const auto = list[index]
+    return auto?.source !== undefined && claimed.has(auto.source) ? undefined : auto
   }
   return sorted.map(({ clip }, index) => {
     const s = clip.source !== undefined ? settings.get(clip.source) : undefined

@@ -4,7 +4,6 @@ import {
   type ArrangedClip,
   arrangeSequence,
   clipLines,
-  clipLength,
   type SequenceClip,
   sequenceNode,
   type SequenceParams,
@@ -12,8 +11,7 @@ import {
   TRANSITIONS,
 } from '@plein/nodes'
 import type { PortValue } from '@plein/plugin-sdk'
-import { useEffect, useState } from 'react'
-import { assetUrls } from '../api/client'
+import { useEffect, useRef, useState } from 'react'
 import { downloadAsset } from '../canvas/grid'
 import { useDocVersion } from '../canvas/hooks'
 import { desktop } from '../desktop'
@@ -28,6 +26,8 @@ import { Select } from '../ui/Select'
 import { SequencePreview } from './SequencePreview'
 import { Presence } from '../ui/Presence'
 import { EmptyState } from '../ui/EmptyState'
+import { Playhead } from './sequence/playhead'
+import { Timeline, type TrackItem, type TrimPatch } from './sequence/Timeline'
 
 const seconds = (s: number | undefined) => (s === undefined ? '—' : `${s.toFixed(1)} 秒`)
 
@@ -93,11 +93,36 @@ export function SequenceEditor() {
   )
 }
 
+/** 还没生成的镜头在时间线上先占这么长，生成后换成真实时长 */
+const PENDING_LENGTH = 2
+/** 方向键逐帧移动（按 30 帧） */
+const FRAME = 1 / 30
+
+const rowKey = (r: Row, i: number) => r.source ?? String(i)
+
+/** 焦点在输入框里时，空格、方向键留给输入框 */
+const typing = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+
 function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose(): void }) {
   // 协作者改了顺序也能看到
   useDocVersion(engine.doc)
-  const { el, params, rows, dialogue, sfx, music } = readSequence(engine, id)
-  const [dragging, setDragging] = useState<number | null>(null)
+  const read = readSequence(engine, id)
+  const { el, params, dialogue, sfx, music } = read
+  const [playhead] = useState(() => new Playhead())
+  useEffect(() => () => playhead.dispose(), [playhead])
+  const [selected, setSelected] = useState<string | undefined>()
+  /** 正在拖动修剪的那段：松手前只改显示，不写文档 */
+  const [draft, setDraft] = useState<{ key: string; patch: TrimPatch } | null>(null)
+  const rows = read.rows.map((r, i) => {
+    if (draft?.key !== rowKey(r, i)) return r
+    return {
+      ...r,
+      in: draft.patch.in ?? r.in,
+      out: 'out' in draft.patch ? draft.patch.out : r.out,
+    }
+  })
   // 素材时长（秒）
   const meta = useAssetMetas([
     ...rows.map((r) => r.clip.assetId),
@@ -105,30 +130,51 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   ])
   const duration = (assetId: string | undefined) => meta(assetId)?.duration
   const running = el?.run?.status === 'running' || el?.run?.status === 'queued'
-  const lengths = rows.map((r) => {
-    const d = duration(r.clip.assetId)
-    return d === undefined ? undefined : clipLength(r, d)
-  })
   const pending = rows.filter((r) => r.pending).length
-  // 预览和总时长用与导出相同的时间线（还没生成或时长未知的镜头先跳过）
-  const ready = rows.filter((r) => !r.pending)
-  const timeline = sequenceTimeline(params, ready, {
-    clips: ready.map((r) => duration(r.clip.assetId) ?? 0),
-    dialogue: ready.map((r) => (r.dialogue ? duration(r.dialogue.assetId) : undefined)),
-    more: ready.map((r) => r.more.map((m) => duration(m.assetId))),
+  // 时间线、预览和导出用同一套排法；还没生成的镜头先按固定长度占位
+  const timeline = sequenceTimeline(params, rows, {
+    clips: rows.map((r) => (r.pending ? PENDING_LENGTH : (duration(r.clip.assetId) ?? 0))),
+    dialogue: rows.map((r) => (r.dialogue ? duration(r.dialogue.assetId) : undefined)),
+    more: rows.map((r) => r.more.map((m) => duration(m.assetId))),
   })
-  const known = lengths.every((l) => l !== undefined)
+  const known = rows.every((r) => !r.pending && duration(r.clip.assetId) !== undefined)
   const total = known ? timeline.total : undefined
+  playhead.setTotal(timeline.total)
 
+  const current = rows.findIndex((r, i) => rowKey(r, i) === selected)
+  // 默认选中第一段；选中的镜头断开了就退回第一段
+  const firstKey = rows[0] ? rowKey(rows[0], 0) : undefined
   useEffect(() => {
-    // 捕获阶段拦下按键：编辑器打开时画布的快捷键不生效
-    const key = (e: KeyboardEvent) => {
-      e.stopPropagation()
-      if (e.key === 'Escape') onClose()
+    if (current < 0 && firstKey) setSelected(firstKey)
+  }, [current, firstKey])
+
+  // 捕获阶段拦下按键：编辑器打开时画布的快捷键不生效；播放控制在这里处理
+  const keys = useRef<(e: KeyboardEvent) => void>(() => {})
+  keys.current = (e) => {
+    e.stopPropagation()
+    if (e.key === 'Escape') return onClose()
+    if (typing(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
+    const step = e.shiftKey ? 1 : FRAME
+    if (e.key === ' ') {
+      e.preventDefault()
+      playhead.toggle()
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault()
+      playhead.pause()
+      playhead.seek(playhead.t + (e.key === 'ArrowLeft' ? -step : step))
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      playhead.seek(0)
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      playhead.seek(playhead.total)
     }
+  }
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => keys.current(e)
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
-  }, [onClose])
+  }, [])
 
   /** 参数里按当前显示顺序记下每段的设置 */
   // 自动对应的对白、音效在这时记下来：之后调换镜头顺序，对白跟着镜头走
@@ -157,11 +203,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   }
   const patch = (source: string | undefined, p: Partial<SequenceClip>) => {
     if (!source) return
-    write(settings(rows).map((c) => (c.source === source ? { ...c, ...p } : c)))
+    write(settings(read.rows).map((c) => (c.source === source ? { ...c, ...p } : c)))
   }
   const move = (from: number, to: number) => {
     if (to < 0 || to >= rows.length || from === to) return
-    const next = [...rows]
+    const next = [...read.rows]
     const [r] = next.splice(from, 1)
     next.splice(to, 0, r!)
     write(settings(next))
@@ -169,6 +215,12 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const set = (key: keyof SequenceParams, value: unknown) => {
     setParams(engine.doc, id, { [key]: value })
     engine.doc.flush()
+  }
+  const trim = (key: string, p: TrimPatch, done: boolean) => {
+    if (!done) return setDraft({ key, patch: p })
+    setDraft(null)
+    const r = read.rows.find((x, i) => rowKey(x, i) === key)
+    patch(r?.source, p)
   }
 
   const exportVideo = () => {
@@ -179,8 +231,39 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const film = el && currentResult(el)?.value
   const filmAsset = film && film.type === 'video' ? film.assetId : undefined
 
+  const items: TrackItem[] = rows.map((r, i) => {
+    const t = timeline.clips[i]!
+    const m = meta(r.clip.assetId)
+    const own = clipLines(r)
+    return {
+      key: rowKey(r, i),
+      index: i,
+      name: r.el?.name ?? `镜头 ${i + 1}`,
+      assetId: r.clip.assetId,
+      pending: r.pending,
+      start: t.start,
+      length: t.length,
+      in: r.in,
+      out: r.out,
+      full: m?.duration,
+      aspect: m?.width && m.height ? m.width / m.height : 9 / 16,
+      lines: t.lines.map((l, k) => ({
+        assetId: own[k]!.assetId,
+        start: l.start,
+        duration: l.duration,
+        caption: own[k]!.caption,
+      })),
+      sfx:
+        r.sfx && t.length > 0
+          ? { assetId: r.sfx.assetId, start: t.start, length: t.length }
+          : undefined,
+      cues: t.cues,
+    }
+  })
+  const row = current >= 0 ? rows[current] : undefined
+
   return (
-    <Modal label="序列" onClose={onClose} className="max-w-6xl">
+    <Modal label="序列" onClose={onClose} className="h-full max-w-7xl">
       <ModalHeader
         title={el?.name ?? '序列'}
         onClose={onClose}
@@ -233,143 +316,45 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           hint="把视频节点的输出连到序列的「镜头」端口，配音连到「对白」，配乐连到「配乐」。"
         />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-          <div className="ui-scrollbar min-h-0 flex-1 overflow-auto">
-            <ol className="flex flex-col">
-              {rows.map((r, i) => {
-                const full = duration(r.clip.assetId)
-                // 同一镜头里依次播放的几句台词都列出来
-                const caption =
-                  clipLines(r)
-                    .map((d) => d.caption)
-                    .filter(Boolean)
-                    .join(' / ') || undefined
-                return (
-                  <li
-                    key={r.source ?? i}
-                    draggable
-                    onDragStart={(e) => {
-                      setDragging(i)
-                      e.dataTransfer.effectAllowed = 'move'
-                    }}
-                    onDragOver={(e) => {
-                      if (dragging === null) return
-                      e.preventDefault()
-                      e.dataTransfer.dropEffect = 'move'
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault()
-                      if (dragging !== null) move(dragging, i)
-                      setDragging(null)
-                    }}
-                    onDragEnd={() => setDragging(null)}
-                    className={`grid grid-cols-[auto_auto_minmax(0,1fr)] items-start gap-3 border-t border-line px-5 py-3 first:border-t-0 ${
-                      dragging === i ? 'opacity-40' : ''
-                    }`}
-                  >
-                    <div className="flex flex-col items-center gap-0.5 pt-1 text-ink-subtle">
-                      <span className="cursor-grab" title="拖动排序">
-                        <Icon name="grip" size={14} />
-                      </span>
-                      <span className="text-xs tabular-nums">{String(i + 1).padStart(2, '0')}</span>
-                    </div>
-                    <div className="relative flex aspect-video w-36 items-center justify-center overflow-hidden rounded-lg bg-surface-2">
-                      {r.pending ? (
-                        <span className="text-xs text-ink-subtle">还没有生成</span>
-                      ) : (
-                        <img
-                          alt=""
-                          src={assetUrls.variant(r.clip.assetId, 'poster')}
-                          className="h-full w-full object-cover"
-                        />
-                      )}
-                    </div>
-                    <div className="flex min-w-0 flex-col gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="min-w-0 truncate text-sm font-medium">
-                          {r.el?.name ?? `镜头 ${i + 1}`}
-                        </span>
-                        <span className="text-xs text-ink-subtle">
-                          {lengths[i] !== undefined && full !== undefined && lengths[i] !== full
-                            ? `${seconds(lengths[i])} / 原 ${seconds(full)}`
-                            : seconds(full)}
-                        </span>
-                        <span className="ml-auto flex">
-                          <button
-                            type="button"
-                            aria-label="上移"
-                            className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
-                            disabled={i === 0}
-                            onClick={() => move(i, i - 1)}
-                          >
-                            <Icon name="arrowUp" size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="下移"
-                            className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
-                            disabled={i === rows.length - 1}
-                            onClick={() => move(i, i + 1)}
-                          >
-                            <Icon name="arrowDown" size={14} />
-                          </button>
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-ink-muted">
-                        <div className="flex items-center gap-1.5">
-                          入点
-                          <NumberField
-                            label="入点（秒）"
-                            value={r.in}
-                            max={full}
-                            onChange={(v) => patch(r.source, { in: v ?? 0 })}
-                          />
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          出点
-                          <NumberField
-                            label="出点（秒）"
-                            value={r.out}
-                            placeholder={full === undefined ? '结尾' : full.toFixed(1)}
-                            max={full}
-                            onChange={(v) => patch(r.source, { out: v })}
-                          />
-                        </div>
-                        {dialogue.length > 0 && (
-                          <ChoiceField
-                            label="对白"
-                            options={dialogue}
-                            chosen={params.clips.find((c) => c.source === r.source)?.dialogue}
-                            current={r.dialogue?.source}
-                            onChange={(v) => patch(r.source, { dialogue: v })}
-                          />
-                        )}
-                        {sfx.length > 0 && (
-                          <ChoiceField
-                            label="音效"
-                            options={sfx}
-                            chosen={params.clips.find((c) => c.source === r.source)?.sfx}
-                            current={r.sfx?.source}
-                            onChange={(v) => patch(r.source, { sfx: v })}
-                          />
-                        )}
-                      </div>
-                      {params.subtitles && (
-                        <SubtitleField
-                          value={r.subtitle}
-                          placeholder={caption ? caption : '这段没有字幕，可以在这里写'}
-                          onChange={(v) => patch(r.source, { subtitle: v })}
-                        />
-                      )}
-                    </div>
-                  </li>
-                )
-              })}
-            </ol>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1">
+            <div className="flex min-w-0 flex-1 flex-col p-4">
+              <SequencePreview
+                rows={rows}
+                timeline={timeline}
+                params={params}
+                music={music}
+                playhead={playhead}
+              />
+            </div>
+            {row && (
+              <aside className="seq-inspector w-80 flex-none" aria-label="镜头设置">
+                <Inspector
+                  row={row}
+                  index={current}
+                  count={rows.length}
+                  full={duration(row.clip.assetId)}
+                  length={timeline.clips[current]?.length}
+                  params={params}
+                  dialogue={dialogue}
+                  sfx={sfx}
+                  onMove={(to) => move(current, to)}
+                  onPatch={(p) => patch(row.source, p)}
+                />
+              </aside>
+            )}
           </div>
-          <aside className="flex-none border-t border-line p-4 lg:w-96 lg:border-l lg:border-t-0">
-            <SequencePreview rows={ready} timeline={timeline} params={params} music={music} />
-          </aside>
+          <Timeline
+            items={items}
+            total={timeline.total}
+            music={music ? { assetId: music, volume: params.musicVolume } : undefined}
+            transition={timeline.transition}
+            playhead={playhead}
+            selected={selected}
+            onSelect={setSelected}
+            onMove={move}
+            onTrim={trim}
+          />
         </div>
       )}
 
@@ -455,6 +440,131 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         <Volume label="音效" value={params.sfxVolume} onChange={(v) => set('sfxVolume', v)} />
       </footer>
     </Modal>
+  )
+}
+
+/** 选中镜头的设置：顺序、入出点、对白、音效、字幕 */
+function Inspector({
+  row,
+  index,
+  count,
+  full,
+  length,
+  params,
+  dialogue,
+  sfx,
+  onMove,
+  onPatch,
+}: {
+  row: Row
+  index: number
+  count: number
+  full: number | undefined
+  length: number | undefined
+  params: SequenceParams
+  dialogue: Array<{ value: string; label: string; caption?: string }>
+  sfx: Array<{ value: string; label: string }>
+  onMove(to: number): void
+  onPatch(p: Partial<SequenceClip>): void
+}) {
+  const chosen = params.clips.find((c) => c.source === row.source)
+  // 同一镜头里依次播放的几句台词都列出来
+  const caption =
+    clipLines(row)
+      .map((d) => d.caption)
+      .filter(Boolean)
+      .join(' / ') || undefined
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <span className="text-xs tabular-nums text-ink-subtle">
+          {String(index + 1).padStart(2, '0')}
+        </span>
+        <span className="min-w-0 truncate text-sm font-medium">
+          {row.el?.name ?? `镜头 ${index + 1}`}
+        </span>
+        <span className="ml-auto flex">
+          <button
+            type="button"
+            aria-label="前移"
+            title="前移一段"
+            className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
+            disabled={index === 0}
+            onClick={() => onMove(index - 1)}
+          >
+            <Icon name="chevronLeft" size={14} />
+          </button>
+          <button
+            type="button"
+            aria-label="后移"
+            title="后移一段"
+            className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
+            disabled={index === count - 1}
+            onClick={() => onMove(index + 1)}
+          >
+            <Icon name="chevronRight" size={14} />
+          </button>
+        </span>
+      </div>
+      {row.pending ? (
+        <p className="text-xs text-ink-subtle">这段镜头还没有生成，生成后可以修剪和配音。</p>
+      ) : (
+        <>
+          <p className="text-xs text-ink-subtle">
+            {length !== undefined && full !== undefined && Math.abs(length - full) > 0.01
+              ? `用 ${seconds(length)}，原 ${seconds(full)}`
+              : `时长 ${seconds(full)}`}
+          </p>
+          <div className="seq-inspector-row">
+            入点
+            <NumberField
+              label="入点（秒）"
+              value={row.in}
+              max={full}
+              onChange={(v) => onPatch({ in: v ?? 0 })}
+            />
+          </div>
+          <div className="seq-inspector-row">
+            出点
+            <NumberField
+              label="出点（秒）"
+              value={row.out}
+              placeholder={full === undefined ? '结尾' : full.toFixed(1)}
+              max={full}
+              onChange={(v) => onPatch({ out: v })}
+            />
+          </div>
+        </>
+      )}
+      {dialogue.length > 0 && (
+        <ChoiceField
+          label="对白"
+          options={dialogue}
+          chosen={chosen?.dialogue}
+          current={row.dialogue?.source}
+          onChange={(v) => onPatch({ dialogue: v })}
+        />
+      )}
+      {sfx.length > 0 && (
+        <ChoiceField
+          label="音效"
+          options={sfx}
+          chosen={chosen?.sfx}
+          current={row.sfx?.source}
+          onChange={(v) => onPatch({ sfx: v })}
+        />
+      )}
+      {params.subtitles && (
+        <div className="flex flex-col gap-2 text-xs text-ink-muted">
+          字幕
+          <SubtitleField
+            value={row.subtitle}
+            placeholder={caption ? caption : '这段没有字幕，可以在这里写'}
+            onChange={(v) => onPatch({ subtitle: v })}
+          />
+        </div>
+      )}
+    </>
   )
 }
 

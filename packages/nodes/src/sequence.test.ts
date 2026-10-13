@@ -41,6 +41,18 @@ describe('序列', () => {
     expect(arranged[2]!.dialogue).toBeUndefined()
   })
 
+  it('别的段已经指定的对白不再按顺序自动对应：换顺序后同一句台词不会播两遍', () => {
+    // a 原来在第一段、自动对应了 d1 并记了下来；拖到最后后 b 成了第一段
+    const arranged = arrangeSequence(
+      params({ clips: [{ source: 'b' }, { source: 'a', dialogue: 'd1' }] }),
+      { clips: [video('a'), video('b')], dialogue: [audio('d1', '一')] },
+    )
+    expect(arranged.map((c) => [c.source, c.dialogue?.source])).toEqual([
+      ['b', undefined],
+      ['a', 'd1'],
+    ])
+  })
+
   // 一个镜头里常有好几句台词：只播第一句的话，其余台词会悄悄从成片里消失
   it('同一镜头的多句台词依次播放，每句一条字幕和一条音轨', () => {
     const p = params({

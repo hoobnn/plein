@@ -8,13 +8,16 @@ import type { Asset, AssetKind, AssetVariant } from '@plein/protocol'
 import { and, eq } from 'drizzle-orm'
 import type { DB } from '../storage/db'
 import { assets } from '../storage/schema'
+import { FILMSTRIP_FRAMES } from '@plein/protocol'
 import {
+  audioPeaks,
   audioWaveform,
   hasFfmpeg,
   imageThumb,
   type Probe,
   probeImage,
   probeMedia,
+  videoFilmstrip,
   videoPoster,
 } from './media'
 
@@ -24,6 +27,14 @@ export const VARIANT_TYPES: Record<AssetVariant, { ext: string; mime: string }> 
   'thumb-1024': { ext: 'webp', mime: 'image/webp' },
   poster: { ext: 'webp', mime: 'image/webp' },
   waveform: { ext: 'png', mime: 'image/png' },
+  filmstrip: { ext: 'webp', mime: 'image/webp' },
+  peaks: { ext: 'json', mime: 'application/json' },
+}
+
+/** 第一次请求时才生成的衍生物（只有剪辑时间线用得上，不拖慢上传） */
+const LAZY_VARIANTS: Partial<Record<AssetVariant, AssetKind[]>> = {
+  filmstrip: ['video'],
+  peaks: ['video', 'audio'],
 }
 
 /** 浏览器常见但 sharp 处理不了或不该转码的图片，只存原图 */
@@ -67,6 +78,8 @@ function kindOf(mime: string): AssetKind {
 export class AssetStore {
   private root: string
   private tmp: string
+  /** 正在生成的按需衍生物，同一个只跑一次 */
+  private pending = new Map<string, Promise<boolean>>()
 
   constructor(
     dataDir: string,
@@ -186,6 +199,60 @@ export class AssetStore {
       .onConflictDoNothing()
       .run()
     return this.get(ownerId, id) ?? asset
+  }
+
+  /**
+   * 确保按需衍生物存在：已有直接返回 true；资产类型不对、没有 ffmpeg 或生成失败返回 false。
+   * 生成后记进所有持有该内容的记录里（同一内容的衍生物本来就是共享的）。
+   */
+  async ensureVariant(asset: Asset, v: AssetVariant): Promise<boolean> {
+    if (asset.variants.includes(v)) return true
+    if (!LAZY_VARIANTS[v]?.includes(asset.kind) || !(await hasFfmpeg())) return false
+    const key = `${asset.id}.${v}`
+    let job = this.pending.get(key)
+    if (!job) {
+      job = this.makeLazy(asset, v).finally(() => this.pending.delete(key))
+      this.pending.set(key, job)
+    }
+    return job
+  }
+
+  private async makeLazy(asset: Asset, v: AssetVariant) {
+    const src = this.originalPath(asset.id)
+    const out = this.variantPath(asset.id, v)
+    const exists = await stat(out).then(
+      () => true,
+      () => false,
+    )
+    if (!exists) {
+      const part = `${out}.${randomUUID()}.part`
+      try {
+        if (v === 'filmstrip') {
+          if (!asset.duration || !asset.width) return false
+          await videoFilmstrip(src, part, asset.duration, FILMSTRIP_FRAMES)
+        } else {
+          const probe = await probeMedia(src)
+          if (!probe.hasAudio) return false
+          await audioPeaks(src, part)
+        }
+        await rename(part, out)
+      } catch (err) {
+        await rm(part, { force: true })
+        console.warn(`[assets] 生成 ${v} 失败：`, (err as Error).message)
+        return false
+      }
+    }
+    const rows = this.db.select().from(assets).where(eq(assets.id, asset.id)).all()
+    for (const r of rows) {
+      const list = JSON.parse(r.variants) as AssetVariant[]
+      if (list.includes(v)) continue
+      this.db
+        .update(assets)
+        .set({ variants: JSON.stringify([...list, v]) })
+        .where(and(eq(assets.id, r.id), eq(assets.owner_id, r.owner_id)))
+        .run()
+    }
+    return true
   }
 
   /** 读取元数据并生成衍生物；已存在的衍生物跳过 */

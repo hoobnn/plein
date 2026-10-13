@@ -514,3 +514,29 @@ describe('媒体加工接口', () => {
     expect(await res.json()).toMatchObject({ ffmpeg: ffmpegAvailable })
   })
 })
+
+describe.skipIf(!ffmpegAvailable)('剪辑时间线的按需衍生物', () => {
+  it('胶片条：16 帧等宽横拼，第一次请求时生成并记进资产', async () => {
+    expect(video.variants).not.toContain('filmstrip')
+    expect(await store.ensureVariant(video, 'filmstrip')).toBe(true)
+    const meta = await sharp(store.variantPath(video.id, 'filmstrip')).metadata()
+    // 320×180 缩到 90 高是 160 宽
+    expect([meta.width, meta.height]).toEqual([160 * 16, 90])
+    expect(store.get(OWNER, video.id)!.variants).toContain('filmstrip')
+    // 音频没有胶片条
+    expect(await store.ensureVariant(audio, 'filmstrip')).toBe(false)
+  }, 30_000)
+
+  it('峰值：每秒 100 个，正弦波接近满幅', async () => {
+    expect(await store.ensureVariant(audio, 'peaks')).toBe(true)
+    const { rate, peaks } = JSON.parse(
+      readFileSync(store.variantPath(audio.id, 'peaks'), 'utf8'),
+    ) as { rate: number; peaks: number[] }
+    expect(rate).toBe(100)
+    expect(Math.abs(peaks.length - 600)).toBeLessThan(10)
+    expect(Math.max(...peaks.slice(10, 500))).toBeGreaterThan(0.05)
+    // 视频自带的声音也能出峰值，图片不能
+    expect(await store.ensureVariant(video, 'peaks')).toBe(true)
+    expect(await store.ensureVariant(image, 'peaks')).toBe(false)
+  }, 30_000)
+})

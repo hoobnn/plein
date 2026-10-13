@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 import sharp from 'sharp'
 
@@ -203,6 +204,81 @@ export async function audioWaveform(src: string, out: string) {
     'png',
     out,
   ])
+}
+
+/**
+ * 胶片条：在时长的 (k + 0.5) / frames 处各取一帧，缩到 90 高后横向拼成一张 webp。
+ * 每帧单独 -ss 定位（输入前定位很快），一次 ffmpeg 用 hstack 拼起来，帧数和位置都是确定的。
+ */
+export async function videoFilmstrip(src: string, out: string, duration: number, frames: number) {
+  const args = ['-v', 'error']
+  const span = Math.max(0, duration - 0.05)
+  for (let k = 0; k < frames; k++)
+    args.push('-ss', ((span * (k + 0.5)) / frames).toFixed(3), '-i', src)
+  const scaled = Array.from(
+    { length: frames },
+    (_, k) => `[${k}:v]scale=-2:90,setsar=1,format=rgb24[f${k}]`,
+  )
+  const stack = `${scaled.map((_, k) => `[f${k}]`).join('')}hstack=inputs=${frames}[out]`
+  const { stdout } = await run(
+    bin.ffmpeg,
+    [
+      ...args,
+      '-filter_complex',
+      `${scaled.join(';')};${stack}`,
+      '-map',
+      '[out]',
+      '-frames:v',
+      '1',
+      '-f',
+      'image2pipe',
+      '-c:v',
+      'png',
+      '-',
+    ],
+    { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 },
+  )
+  await sharp(stdout).webp({ quality: 72 }).toFile(out)
+}
+
+/** 峰值的采样：单声道 4 kHz 解出来，每 40 个样本取一个峰值，即每秒 100 个 */
+const PEAK_SOURCE_RATE = 4000
+const PEAK_RATE = 100
+
+/** 音频峰值：时间线上画波形用，比整段解码轻得多 */
+export async function audioPeaks(src: string, out: string) {
+  const { stdout } = await run(
+    bin.ffmpeg,
+    [
+      '-v',
+      'error',
+      '-i',
+      src,
+      '-vn',
+      '-ac',
+      '1',
+      '-ar',
+      String(PEAK_SOURCE_RATE),
+      '-f',
+      's16le',
+      '-',
+    ],
+    { encoding: 'buffer', maxBuffer: 256 * 1024 * 1024 },
+  )
+  // Buffer 可能不按 2 字节对齐，逐个读而不是直接套 Int16Array
+  const count = Math.floor(stdout.length / 2)
+  const step = PEAK_SOURCE_RATE / PEAK_RATE
+  const peaks: number[] = []
+  for (let i = 0; i < count; i += step) {
+    let max = 0
+    const end = Math.min(count, i + step)
+    for (let j = i; j < end; j++) {
+      const v = Math.abs(stdout.readInt16LE(j * 2))
+      if (v > max) max = v
+    }
+    peaks.push(Math.round((max / 32768) * 1000) / 1000)
+  }
+  await writeFile(out, JSON.stringify({ rate: PEAK_RATE, peaks }))
 }
 
 // ── 加工用的底层入口 ──────────────────────────────────
