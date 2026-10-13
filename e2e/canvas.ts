@@ -80,6 +80,11 @@ export async function newProject(page: Page) {
   await page.getByRole('button', { name: '新建项目', exact: true }).click()
   await expect(page).toHaveURL(/#\/c\//)
   await waitEngine(page)
+  // 首页卡片放大成画布走 View Transition，过渡期间点击落在过渡层上、打不到画布
+  await page.waitForFunction(() => {
+    const at = document.elementFromPoint(innerWidth / 2, innerHeight / 2)
+    return at?.tagName === 'CANVAS'
+  })
 }
 
 /** 双击空白处打开添加菜单，搜索并选第一项 */
@@ -100,7 +105,14 @@ export async function zoomTo(page: Page, ids: string[]) {
 
 /** 右键元素，点菜单项 */
 export async function contextMenu(page: Page, id: string, item: string) {
+  // 先取消选中：选中节点的生成器面板会浮在画布上，可能正好盖住要右键的元素
+  await page.keyboard.press('Escape')
   const p = await centerOf(page, id)
+  await expect
+    .poll(() => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, p), {
+      message: '右键落点应在画布上，没有被浮层挡住',
+    })
+    .toBe('CANVAS')
   await page.mouse.click(p.x, p.y, { button: 'right' })
   await page.getByRole('menu').getByText(item, { exact: true }).click()
 }
