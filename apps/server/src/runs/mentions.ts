@@ -122,6 +122,8 @@ function checkMention(m: Mention, byId: Map<string, CanvasElement>): Hit | undef
  * - 被引用者的参考图并入节点的 `references` 输入（去重）；生成视频只在「图片参考」模式并入 `images`；
  * - 配音节点没选音色、且只引用了一个有音色的角色时用它的音色——但只有同一家平台才沿用，
  *   跨平台的音色 ID 送过去多半是乱读，宁可停下来让用户重选；
+ * - 模型声明了参考图上限（maxRefs）时，节点自己连入的图先占位，再按角色、场景、道具的顺序
+ *   每张卡先放一张，有余量再放其余的；放不下的卡只附文字设定，并提示用户；
  * - 汇总本次真正送进模型的引用（refs）和需要用户知道的提示（notices）。
  * 返回新的参数与输入，不改文档。
  */
@@ -131,6 +133,7 @@ export async function applyMentions(
   def: NodeDefinition,
   inputs: Inputs,
   collect: (id: string) => Promise<Inputs>,
+  maxRefs?: number,
 ): Promise<AppliedMentions> {
   const params = { ...el.params }
   const targets = mentionTargets(doc)
@@ -162,14 +165,17 @@ export async function applyMentions(
   }
   if (hit.size === 0) return { params, inputs, refs: [], notices }
 
-  const refs: PortValue[] = []
+  const groups: Array<{ rank: number; images: PortValue[] }> = []
   const refList: UsedRef[] = []
   const notes: string[] = []
   const voices: Array<{ name: string; voice: VoiceRef }> = []
   for (const h of hit.values()) {
     const target = h.el
     if (target.kind === 'image' && target.assetId) {
-      refs.push({ type: 'image', assetId: target.assetId, kind: 'image', source: target.id })
+      groups.push({
+        rank: RANK.length,
+        images: [{ type: 'image', assetId: target.assetId, kind: 'image', source: target.id }],
+      })
       refList.push({ name: h.name, elementId: target.id, assetIds: [target.assetId] })
       continue
     }
@@ -191,7 +197,8 @@ export async function applyMentions(
               source: target.id,
             },
         )
-    refs.push(...images)
+    const rank = RANK.indexOf(target.nodeType ?? '')
+    groups.push({ rank: rank < 0 ? RANK.length : rank, images })
     refList.push({
       name: pickLabel(h.name, h.pick),
       elementId: target.id,
@@ -212,10 +219,13 @@ export async function applyMentions(
   const send =
     def.inputs.some((p) => p.id === port && p.type === 'image') &&
     (!video || params.mode === 'reference')
-  if (video && !send && refs.length) {
+  if (video && !send && groups.some((g) => g.images.length)) {
     notices.push('@ 引用的参考图只在「图片参考」模式下送入模型，当前模式只附文字设定')
     for (const r of refList) r.assetIds = []
   }
+
+  const own = send ? (inputs[port] ?? []) : []
+  const refs = send ? pickRefs(own, groups, refList, maxRefs, notices) : []
 
   // 本次真正送进去的东西带到执行器（宿主不把运行摘要传下去，见 node 定义的 usedRefs 注释）
   params.usedRefs = refList
@@ -224,10 +234,51 @@ export async function applyMentions(
     send && refs.length
       ? {
           ...inputs,
-          [port]: dedupe([...(inputs[port] ?? []), ...refs]),
+          [port]: dedupe([...own, ...refs]),
         }
       : inputs
   return { params, inputs: merged, refs: refList, notices }
+}
+
+/** 参考图放不下时的取舍顺序：角色最要紧（同一个人），其次场景、道具；直接 @ 的图片元素排最后 */
+const RANK = ['plein/character', 'plein/scene', 'plein/prop', 'plein/style']
+
+/**
+ * 在参考图上限内挑出 @ 引用要送的图：每张卡先放第一张（主图），有余量再按顺序放其余的。
+ * 放不下的卡从 refList 里去掉对应的图，并提示用户
+ */
+function pickRefs(
+  own: PortValue[],
+  groups: Array<{ rank: number; images: PortValue[] }>,
+  refList: UsedRef[],
+  max: number | undefined,
+  notices: string[],
+): PortValue[] {
+  const all = groups.flatMap((g) => g.images)
+  if (max === undefined) return all
+  const seen = new Set(imageIds(own))
+  const room = () => max - seen.size
+  const order = groups.map((g, i) => ({ ...g, i })).sort((a, b) => a.rank - b.rank || a.i - b.i)
+  const kept = new Set<string>()
+  const take = (v: PortValue | undefined) => {
+    const id = v && imageIds([v])[0]
+    if (!id || seen.has(id) || room() <= 0) return
+    seen.add(id)
+    kept.add(id)
+  }
+  for (const g of order) take(g.images[0])
+  for (const g of order) for (const v of g.images.slice(1)) take(v)
+  const dropped: string[] = []
+  for (const r of refList) {
+    const before = r.assetIds.length
+    r.assetIds = r.assetIds.filter((id) => kept.has(id) || imageIds(own).includes(id))
+    if (before > 0 && r.assetIds.length === 0) dropped.push(r.name)
+  }
+  if (dropped.length)
+    notices.push(
+      `这个模型最多带 ${max} 张参考图，${dropped.join('、')} 的参考图没有送入，只附了文字设定`,
+    )
+  return all.filter((v) => kept.has(imageIds([v])[0] ?? ''))
 }
 
 /**

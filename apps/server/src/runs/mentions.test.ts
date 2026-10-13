@@ -9,7 +9,7 @@ import {
 } from '@plein/doc'
 import type { PortValue } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
-import { addCharacter } from '../testing'
+import { addCharacter, addNode } from '../testing'
 import { applyMentions } from './mentions'
 
 /** 造一张角色卡：设定 + 音色（音色按平台存） */
@@ -126,6 +126,42 @@ describe('运行前解析 @ 引用', () => {
     expect(framed.notices).toContain(
       '@ 引用的参考图只在「图片参考」模式下送入模型，当前模式只附文字设定',
     )
+  })
+
+  it('超过模型的参考图上限：先保角色、再场景，放不下的道具只附设定', async () => {
+    const { doc, hero } = setup()
+    const card = (nodeType: string, name: string, asset: string, x: number) => {
+      const img = createElement(doc, {
+        kind: 'image',
+        assetId: asset.repeat(64),
+        x,
+        y: 0,
+        w: 10,
+        h: 10,
+      })
+      const id = addNode(doc, nodeType, {
+        name,
+        params: { description: `${name}的设定` },
+        x,
+        y: 100,
+        w: 10,
+        h: 10,
+      })
+      connect(doc, [img, 'image'], [id, 'references'])
+      return id
+    }
+    card('plein/prop', '铁盒', 'c', 400)
+    card('plein/scene', '天台', 'b', 600)
+    const n = node(doc, 'plein/image', { prompt: '@铁盒 @天台 @林夏 打开盒子' })
+    const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc), 2)
+    expect(r.inputs.references?.map((v) => (v as { assetId: string }).assetId)).toEqual([
+      'b'.repeat(64),
+      'a'.repeat(64),
+    ])
+    expect(r.params.prompt).toContain('铁盒：铁盒的设定')
+    expect(r.refs.find((x) => x.name === '铁盒')!.assetIds).toEqual([])
+    expect(r.notices).toContain('这个模型最多带 2 张参考图，铁盒 的参考图没有送入，只附了文字设定')
+    expect(hero).toBeTruthy()
   })
 
   it('没有引用时原样返回', async () => {

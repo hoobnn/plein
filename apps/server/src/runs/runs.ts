@@ -16,9 +16,11 @@ import {
 import { FlowGraph, runDag, type StepOutcome, stableStringify } from '@plein/flow'
 import {
   executionOf,
+  type Capability,
   type NodeDefinition,
   type NodeOutputs,
   nodeKey,
+  parseModelRef,
   type PortValue,
   ProviderError,
   resolveParams,
@@ -698,11 +700,31 @@ export class NodeRuns {
     const collected = await this.collectInputs(doc, el.id, ownerId, signal)
     const def = this.host.registry.latestNode(el.nodeType!)?.def
     const { params, inputs } = def
-      ? await applyMentions(doc, el, def, collected, (id) =>
-          this.collectInputs(doc, id, ownerId, signal),
+      ? await applyMentions(
+          doc,
+          el,
+          def,
+          collected,
+          (id) => this.collectInputs(doc, id, ownerId, signal),
+          this.referenceLimit(el.params?.model, def.capability),
         )
       : { params: el.params, inputs: collected }
     return { def, params, inputs }
+  }
+
+  /**
+   * 节点要用的模型最多收几张参考图；没选模型时按执行器自动选的那个（同能力排第一的已启用模型）。
+   * 没声明上限时不限
+   */
+  private referenceLimit(model: unknown, capability: string | undefined) {
+    if (typeof model === 'string' && model) {
+      const ref = parseModelRef(model)
+      if (!ref) return undefined
+      const entry = this.host.registry.providers.get(ref.provider)
+      return entry?.def.models.find((m) => m.id === ref.model)?.limits?.references?.max
+    }
+    if (!capability) return undefined
+    return this.host.models(capability as Capability)[0]?.limits?.references?.max
   }
 
   /** 节点类型、版本、参数（迁移到最新版本后）和输入的哈希 */
