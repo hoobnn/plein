@@ -18,9 +18,22 @@ import { zoomView } from '../ui/viewTransition'
 import { Welcome } from '../panels/Welcome'
 
 /** 快速开始：新建项目并在它的第一张画布上放好对应节点、打开生成器 */
-const QUICK_START: Array<{ type: string; title: string; hint: string; icon: IconName }> = [
-  { type: 'plein/image', title: '图片生成', hint: '文生图、参考图生图', icon: 'image' },
-  { type: 'plein/video', title: '视频生成', hint: '文生、图生、首尾帧、图片参考', icon: 'video' },
+const QUICK_START: Array<{
+  type: string
+  title: string
+  /** 卡片上的一行说明，要短到不被截断；更完整的写在 detail，悬停时看 */
+  hint: string
+  detail?: string
+  icon: IconName
+}> = [
+  { type: 'plein/image', title: '图片生成', hint: '文生图、图生图', icon: 'image' },
+  {
+    type: 'plein/video',
+    title: '视频生成',
+    hint: '文生、图生视频',
+    detail: '文生视频、图生视频、首尾帧、图片参考',
+    icon: 'video',
+  },
   { type: 'plein/llm', title: '剧本创作', hint: '写剧本、改文案', icon: 'sparkle' },
   { type: 'plein/speech', title: '配音', hint: '台词转语音', icon: 'mic' },
   { type: 'plein/music', title: '配乐', hint: '按描述生成音乐', icon: 'music' },
@@ -178,6 +191,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
               type="button"
               disabled={creating}
               onClick={(e) => void create(e.currentTarget, q.type)}
+              title={q.detail}
               className="home-quick group"
             >
               <span className="home-quick-icon">

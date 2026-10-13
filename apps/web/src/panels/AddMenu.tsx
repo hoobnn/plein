@@ -25,6 +25,10 @@ const NODE_ICONS: Record<string, IconName> = {
   'plein/music': 'music',
   'plein/character': 'character',
   'plein/scene': 'scene',
+  // 与资产库分类、节点卡片的图标一致
+  'plein/prop': 'puzzle',
+  'plein/style': 'palette',
+  'plein/effect': 'wand',
 }
 const CATEGORY_ICONS: Record<NodeInfo['category'], IconName> = {
   input: 'text',

@@ -44,8 +44,8 @@ const PANEL_W = 600
 const GAP = 12
 /** 节点标题行在卡片上方，面板放上方时让开它 */
 const TITLE_H = 30
-/** 面板离视口底边的最小距离；可以盖住底部工具栏（选中节点时工具栏用得少） */
-const BOTTOM_RESERVED = 12
+/** 面板离视口底边的最小距离：让开底部工具条（12 边距 + 44 高 + 8 间隔） */
+const BOTTOM_RESERVED = 64
 /** 顶部页头占的高度 */
 const TOP_RESERVED = 64
 /** 下方剩余空间不少于这么高时总放在下方 */
@@ -90,18 +90,23 @@ function placeBeside(engine: Engine, id: string) {
   const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
   const below = window.innerHeight - BOTTOM_RESERVED - br.y
   const above = tl.y - TITLE_H - TOP_RESERVED
-  const left = Math.min(
-    Math.max(GAP, (tl.x + br.x) / 2 - PANEL_W / 2),
-    window.innerWidth - PANEL_W - GAP,
+  // 左边让开侧栏；可见区域不够宽时面板跟着变窄
+  const minLeft = engine.camera.insets.left + GAP
+  const width = Math.max(320, Math.min(PANEL_W, window.innerWidth - minLeft - GAP))
+  const left = Math.max(
+    minLeft,
+    Math.min((tl.x + br.x) / 2 - width / 2, window.innerWidth - width - GAP),
   )
   return below >= PREFER_BELOW || below >= above
     ? {
         left,
+        width,
         top: Math.max(TOP_RESERVED, br.y + GAP),
-        maxHeight: Math.max(MIN_H, below - GAP * 2),
+        maxHeight: Math.max(MIN_H, below - GAP),
       }
     : {
         left,
+        width,
         bottom: window.innerHeight - tl.y + TITLE_H + GAP,
         maxHeight: Math.max(MIN_H, above - GAP),
       }
@@ -168,6 +173,11 @@ function Panel({
   const presets = presetsFor(catalog?.prompts ?? [], node)
   const pure = isPure(node)
   const problem = validate(node, el, ups, catalog)
+  // 只差提示词时不在底栏重复说（输入框的占位文字已经在说），按钮的悬停提示照常给原因
+  const onlyPromptMissing =
+    !!problem &&
+    !!pk &&
+    !validate(node, { ...el, params: { ...el.params, [pk]: '-' } }, ups, catalog)
   const running = el.run?.status === 'running' || el.run?.status === 'queued'
   const modelField = main.find(([, f]) => f.widget === 'model')
   // 画幅放最前：摘要读起来是“16:9 · 5s”
@@ -215,7 +225,7 @@ function Panel({
       ref={panelRef}
       aria-label={`${node.title} 生成器`}
       data-testid="generator"
-      style={{ ...style, width: PANEL_W }}
+      style={style}
       className="ui-float ui-scrollbar pointer-events-auto fixed z-20 flex flex-col overflow-y-auto rounded-xl"
       onKeyDown={(e) => {
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -311,7 +321,7 @@ function Panel({
           {notes.length > 0 && !problem && (
             <p className="px-1 text-xs text-ink-subtle">{notes.join('；')}</p>
           )}
-          {(problem || (!running && el.run?.status === 'failed')) && (
+          {((problem && !onlyPromptMissing) || (!running && el.run?.status === 'failed')) && (
             <p
               className={`px-1 text-xs ${problem ? 'text-ink-subtle' : 'text-danger'}`}
               title={problem ?? el.run?.error ?? undefined}

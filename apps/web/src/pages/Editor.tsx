@@ -40,7 +40,7 @@ import { useShallow } from 'zustand/react/shallow'
 const SYNC_LABELS: Record<SyncStatus, string> = {
   local: '本地演示',
   connecting: '连接中…',
-  connected: '已同步',
+  connected: '已同步，改动实时保存',
   disconnected: '离线，恢复连接后自动同步',
 }
 
@@ -99,12 +99,9 @@ export function Editor({
       {mode === 'flow' && <Sidebar open={sidebarOpen} />}
       <header className="app-titlebar app-viewbar pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 p-3">
         <div className="app-drag ui-bar pointer-events-auto">
-          {mode === 'flow' && (
-            <>
-              <SidebarToggle open={sidebar} />
-              <div className="ui-bar-sep" />
-            </>
-          )}
+          {/* 故事板没有侧栏，开关保留但禁用，切换视图时后面的按钮不挪位置 */}
+          <SidebarToggle open={sidebar} disabled={mode !== 'flow'} />
+          <div className="ui-bar-sep" />
           <Brand
             onClick={(e) => {
               if (!isPlainClick(e)) return
@@ -198,12 +195,12 @@ export function Editor({
           <SelectionBar remote={source.kind === 'remote'} />
           <ArrangeToast />
           <CanvasMenus canImport={source.kind === 'remote'} />
-          <footer className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-center p-3">
-            {/* 视图工具条让在侧栏右边，跟侧栏同一条曲线滑动 */}
-            <div
-              className="plein-follow-sidebar absolute bottom-3 max-sm:hidden"
-              style={{ left: sidebar ? sidebarWidth + 24 : 12 }}
-            >
+          {/* 底栏从侧栏右边开始，跟侧栏同一条曲线滑动：视图工具条靠左，主工具条在可见画布里居中，空间不够时往右让 */}
+          <footer
+            className="plein-follow-sidebar plein-footer pointer-events-none absolute right-0 bottom-0 p-3"
+            style={{ left: sidebar ? sidebarWidth + 12 : 0 }}
+          >
+            <div className="max-sm:hidden">
               <ViewControls />
             </div>
             <Toolbar canImport={source.kind === 'remote'} />
@@ -225,7 +222,7 @@ export function Editor({
 const SIDEBAR_KEY = 'mod+\\'
 
 /** 侧栏开关：工作流左上工具条的第一个按钮，快捷键 ⌘\ */
-function SidebarToggle({ open }: { open: boolean }) {
+function SidebarToggle({ open, disabled }: { open: boolean; disabled: boolean }) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (
@@ -247,8 +244,9 @@ function SidebarToggle({ open }: { open: boolean }) {
     <button
       type="button"
       onClick={() => useSidebar.getState().toggle()}
+      disabled={disabled}
       aria-label={label}
-      title={withShortcut(label, SIDEBAR_KEY)}
+      title={disabled ? '侧栏只在工作流里显示' : withShortcut(label, SIDEBAR_KEY)}
       className="ui-bar-btn"
     >
       <Icon name={open ? 'sidebarClose' : 'sidebarOpen'} />

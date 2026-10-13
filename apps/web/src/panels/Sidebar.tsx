@@ -237,6 +237,7 @@ function Layers({ engine }: { engine: Engine }) {
     return { rows, frames }
   }, [engine, catalog, version, q, type, collapsed, filtering])
   // oxlint-enable react-hooks/exhaustive-deps
+  const nested = rows.some((r) => r.parent)
 
   // 在画布上选中时：展开所在分组，并把它滚进可视范围
   // oxlint-disable react-hooks/exhaustive-deps -- selVersion 变化即选中变化
@@ -375,6 +376,7 @@ function Layers({ engine }: { engine: Engine }) {
           <LayerRow
             key={r.el.id}
             row={r}
+            caret={nested}
             selected={engine.selection.has(r.el.id)}
             open={filtering || !collapsed.has(r.el.id)}
             renaming={renaming === r.el.id}
@@ -403,12 +405,15 @@ interface LayerActions {
 
 const LayerRow = memo(function LayerRow({
   row: { el, depth, title, type, parent },
+  caret,
   selected,
   open,
   renaming,
   actions,
 }: {
   row: Row
+  /** 列表里有可展开的分组时才给每行留出箭头的位置，否则整列不缩进 */
+  caret: boolean
   selected: boolean
   open: boolean
   renaming: boolean
@@ -456,7 +461,7 @@ const LayerRow = memo(function LayerRow({
           <Icon name={open ? 'chevronDown' : 'chevronRight'} size={14} />
         </button>
       ) : (
-        <span className="w-5 flex-none" />
+        caret && <span className="w-5 flex-none" />
       )}
       <Thumb el={el} type={type} />
       {renaming ? (

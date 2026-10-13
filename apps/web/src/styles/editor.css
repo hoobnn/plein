@@ -103,6 +103,10 @@
   padding: 16px 0;
   border-bottom: 1px solid var(--line);
 }
+/* 分隔线只在条目之间，最后一条下面不画 */
+.board-item:last-child {
+  border-bottom: none;
+}
 .board-media {
   position: relative;
   display: flex;
@@ -131,7 +135,7 @@
 }
 .board-chip {
   display: inline-flex;
-  height: 26px;
+  height: 24px;
   align-items: center;
   gap: 4px;
   padding: 0 10px;
@@ -196,9 +200,16 @@
     opacity var(--dur-base) var(--ease-standard),
     visibility 0s;
 }
-/* 跟着侧栏让位的浮层（左下视图工具条）：同一条曲线 */
+/* 跟着侧栏让位的浮层（底栏）：同一条曲线 */
 .plein-follow-sidebar {
   transition: left var(--dur-move) var(--ease-spring);
+}
+/* 底栏三栏：视图工具条靠左，主工具条居中，右栏留空保持对称 */
+.plein-footer {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+  gap: 8px;
 }
 /* 拖宽度时不要动画，跟手 */
 .plein-resizing .plein-follow-sidebar {

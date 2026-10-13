@@ -424,12 +424,18 @@
 
 .plein-node-tries {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  gap: 6px;
   max-width: 100%;
   font-size: var(--text-xs);
   color: var(--ink-subtle);
+}
+
+.plein-node-tries-label {
+  flex-basis: 100%;
+  text-align: center;
 }
 
 .plein-node-try {

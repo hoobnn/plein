@@ -304,7 +304,7 @@ function MediaItem({
       {(chips.length > 0 || status) && (
         <div className="flex flex-wrap items-center gap-1.5">
           {chips.map((c, i) => (
-            <span key={c} className="board-chip">
+            <span key={c} className="board-chip" title={i === 0 && model ? '所用模型' : undefined}>
               {i === 0 && model && <Icon name="sparkle" size={12} />}
               {c}
             </span>

@@ -373,7 +373,8 @@ export class NodeCards {
       const tries = document.createElement('div')
       tries.className = 'plein-node-tries'
       const label = document.createElement('span')
-      label.textContent = '尝试：'
+      label.className = 'plein-node-tries-label'
+      label.textContent = '试试'
       tries.appendChild(label)
       for (const p of presets.slice(0, el.h >= 220 ? 3 : 2)) {
         const b = button('plein-node-try', p.description ?? p.title, { text: p.title })

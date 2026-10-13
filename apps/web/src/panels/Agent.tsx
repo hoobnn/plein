@@ -151,7 +151,7 @@ function AgentPanel({ canvasId }: { canvasId: string | null }) {
     <aside
       aria-label="助手"
       {...exit}
-      className="plein-agent-panel ui-float pointer-events-auto fixed right-3 bottom-19 z-40 flex h-[min(640px,calc(100vh-150px))] w-100 flex-col overflow-hidden rounded-xl max-sm:inset-x-3 max-sm:bottom-33 max-sm:w-auto"
+      className="plein-agent-panel ui-float pointer-events-auto fixed top-16 right-3 bottom-21 z-40 flex w-100 flex-col overflow-hidden rounded-xl max-sm:inset-x-3 max-sm:bottom-35 max-sm:w-auto"
     >
       <header className="flex h-12 flex-none items-center gap-1 border-b border-line pr-2 pl-4">
         <h2 className="mr-1 text-sm font-semibold">小满</h2>
@@ -332,8 +332,9 @@ function Transcript({
 
   if (items.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
-        <p className="text-sm text-ink-muted">{intro}</p>
+      // 面板铺满高度，开场白和建议贴着输入框，不悬在中间
+      <div className="flex flex-1 flex-col justify-end gap-3 p-4">
+        <p className="px-1 text-sm text-ink-muted">{intro}</p>
         <div className="flex w-full flex-col gap-1.5">
           {SUGGESTIONS.map((s) => (
             <button
