@@ -1,20 +1,11 @@
+import type { PortValue } from '@plein/plugin-sdk'
 import { arrangeSequence, sequenceNode, sequenceTimeline } from '@plein/nodes'
 import { describe, expect, it } from 'vite-plus/test'
 import { envelopeAt } from './engine'
 import { previewScene } from './scene'
 
-const video = (id: string) => ({
-  kind: 'video' as const,
-  assetId: id,
-  mime: 'video/mp4',
-  source: id,
-})
-const audio = (id: string) => ({
-  kind: 'audio' as const,
-  assetId: id,
-  mime: 'audio/wav',
-  source: id,
-})
+const video = (id: string): PortValue => ({ type: 'video', assetId: id, kind: 'video', source: id })
+const audio = (id: string): PortValue => ({ type: 'audio', assetId: id, kind: 'audio', source: id })
 
 function scene(overrides: Record<string, unknown>, music?: string) {
   const params = sequenceNode.params.parse(overrides)
