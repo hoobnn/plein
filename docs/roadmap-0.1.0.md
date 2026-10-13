@@ -422,12 +422,12 @@ Electron 主进程（apps/desktop）
 
 ### 分期
 
-| 阶段            | 内容                                                                                                                                        | 放在                 |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| 1. 服务端可嵌入 | `startServer`、随机端口、可配置的 ffmpeg 路径、桌面令牌；Docker 行为不变                                                                    | 已完成（2026-10-12） |
-| 2. 桌面壳       | 新增 `apps/desktop`：主进程、utilityProcess、启动令牌、preload（打开数据目录）；`pnpm dev:desktop` 连 Vite，`pnpm start:desktop` 用构建产物 | 已完成（2026-10-12） |
-| 3. 打包         | electron-builder 出 macOS（dmg）、Windows（nsis）、Linux（AppImage）安装包，附带 ffmpeg；CI 里构建，先不签名                                | M4                   |
-| 4. 发布         | macOS 签名与公证、Windows 签名、自动更新                                                                                                    | M5，打 `v0.1.0` 时   |
+| 阶段            | 内容                                                                                                                                                                                      | 放在                 |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| 1. 服务端可嵌入 | `startServer`、随机端口、可配置的 ffmpeg 路径、桌面令牌；Docker 行为不变                                                                                                                  | 已完成（2026-10-12） |
+| 2. 桌面壳       | 新增 `apps/desktop`：主进程、utilityProcess、启动令牌、preload（打开数据目录）；`pnpm dev:desktop` 连 Vite，`pnpm start:desktop` 用构建产物                                               | 已完成（2026-10-12） |
+| 3. 打包         | electron-builder 出 macOS 安装包（dmg + zip，Apple 芯片），附带 LGPL ffmpeg（libass + VideoToolbox）；CI 手动或打标签时构建；有证书密钥时签名公证，否则 ad-hoc 签名。Windows / Linux 暂缓 | 已完成（2026-10-13） |
+| 4. 发布         | macOS 签名与公证、Windows 签名、自动更新                                                                                                                                                  | M5，打 `v0.1.0` 时   |
 
 ### 桌面端体验（2026-10-12，先只做 macOS）
 
@@ -439,6 +439,14 @@ Electron 主进程（apps/desktop）
 - **服务端崩溃**：意外退出后自动重启并重新载入页面，一分钟内再次退出才报错，错误框可打开日志目录。
 - **文件进出**：下载走系统“另存为”，记住上次目录，保存后提示并可“在访达中显示”；序列编辑器加“另存为…”；拖入或选择整个文件夹导入（含子文件夹，跳过隐藏文件，单次最多 500 个）。
 - **端口沿用**：服务端尽量沿用上次的端口（存在 `<userData>/desktop.json`），否则网页的本地设置（主题、侧栏、智能体选择、引导是否看过）每次启动都会丢；端口被占用时换一个。
+
+### 打包（2026-10-13）
+
+- `pnpm --filter @plein/desktop ffmpeg`：从源码构建 ffmpeg / ffprobe 到 `apps/desktop/stage/ffmpeg`（需要 `brew install meson ninja pkgconf`）。LGPL 构建，静态链接 libass、freetype、fribidi、harfbuzz，字体走 CoreText，只依赖系统框架；没有 libx264，服务端的 `h264Args()` 在这种情况下改用 `h264_videotoolbox`（按码率，`-allow_sw` 兜底）。
+- `pnpm dist:desktop`：构建前端，`scripts/stage-server.mjs` 把服务端连同全部依赖打成一个 `main.mjs`，只有 better-sqlite3、sharp 两个原生模块按当前平台从已安装的依赖复制（约 40 MB）；再由 `electron-builder.config.mjs` 出 `release/Plein-<版本>-arm64.dmg` 和 zip。extraResources 会跳过 node_modules，原生模块在 afterPack 里补进去，签名时一并签上。
+- 打包后的服务端可以单独验证：`PLEIN_E2E_SERVER="node --no-experimental-webstorage apps/desktop/stage/server/main.mjs" pnpm e2e`。
+- CI：`.github/workflows/desktop.yml`（手动触发或推送 `v*` 标签），ffmpeg 按脚本内容缓存。签名密钥 `MAC_CERT_P12_BASE64`、`MAC_CERT_PASSWORD`，公证密钥 `APPLE_ID`、`APPLE_APP_SPECIFIC_PASSWORD`、`APPLE_TEAM_ID`；没配时 ad-hoc 签名，本机能用，发给别人会被 Gatekeeper 拦。
+- Intel Mac 暂不出包：要在 x64 机器上装依赖（sharp 的平台包）并单独构建 ffmpeg。
 
 ### 已定与默认
 

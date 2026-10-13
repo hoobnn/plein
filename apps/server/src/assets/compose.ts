@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ComposeSpec, MediaInfo, SubtitleStyle } from '@plein/plugin-sdk'
-import { ffmpegBin } from './media'
+import { ffmpegBin, h264Args } from './media'
 
 const RATE = 48000
 
@@ -27,6 +27,8 @@ function composeArgs(
   files: { clips: string[]; audio: string[] },
   infos: { clips: MediaInfo[] },
   out: string,
+  /** H.264 编码参数，见 h264Args */
+  encoder: string[],
 ) {
   const { width: W, height: H, fps } = spec
   const durations = clipDurations(spec, infos.clips)
@@ -126,14 +128,7 @@ function composeArgs(
     '[vout]',
     '-map',
     '[aout]',
-    '-c:v',
-    'libx264',
-    '-preset',
-    'veryfast',
-    '-crf',
-    '20',
-    '-pix_fmt',
-    'yuv420p',
+    ...encoder,
     '-r',
     String(fps),
     '-c:a',
@@ -218,7 +213,7 @@ export async function composeVideo(
   if (spec.clips.length === 0) throw new Error('没有可合成的画面')
   const out = join(dir, 'out.mp4')
   if (spec.subtitles?.cues.length) await writeFile(join(dir, 'subs.ass'), assSubtitles(spec))
-  const { args, total } = composeArgs(spec, files, infos, out)
+  const { args, total } = composeArgs(spec, files, infos, out, await h264Args())
   if (total <= 0) throw new Error('画面总时长为 0，检查各段的入点和出点')
 
   await new Promise<void>((resolve, reject) => {

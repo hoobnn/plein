@@ -28,7 +28,9 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: 'pnpm --filter @plein/server exec tsx src/main.ts',
+    // PLEIN_E2E_SERVER：换成别的服务端入口，例如桌面安装包用的打包产物
+    // （node apps/desktop/stage/server/main.mjs）
+    command: process.env.PLEIN_E2E_SERVER ?? 'pnpm --filter @plein/server exec tsx src/main.ts',
     url: `http://127.0.0.1:${PORT}/api/health`,
     reuseExistingServer: false,
     timeout: 60_000,

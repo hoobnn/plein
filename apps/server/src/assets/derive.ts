@@ -16,6 +16,7 @@ import {
   ffmpeg,
   fmtSeconds,
   hasFfmpeg,
+  h264Args,
   mediaCaps,
   probeMedia,
   videoFrame,
@@ -70,16 +71,6 @@ interface Made {
   note?: string
 }
 
-const VIDEO_ENCODER = [
-  '-c:v',
-  'libx264',
-  '-preset',
-  'veryfast',
-  '-crf',
-  '20',
-  '-pix_fmt',
-  'yuv420p',
-]
 const CONTAINER = ['-movflags', '+faststart']
 
 const KIND_LABEL: Record<MediaOp, string> = {
@@ -206,7 +197,7 @@ async function deriveVideo(
       audio,
       '-map',
       '0:v',
-      ...VIDEO_ENCODER,
+      ...(await h264Args()),
       '-an',
       ...CONTAINER,
       out,
@@ -232,7 +223,7 @@ async function deriveVideo(
     // 两条流各自变速后长度一致，所以不会音画不同步
     args.push('-filter:v', `setpts=${fmtSeconds(1 / input.speed)}*PTS`)
     if (probe.hasAudio) args.push('-filter:a', atempoChain(input.speed))
-    args.push(...VIDEO_ENCODER)
+    args.push(...(await h264Args()))
     // setpts 只改 PTS 不会缩放最后一帧的时长，输出会多出约两帧画面（10fps 时有 0.2 秒），
     // 音轨就跟着短了。按时长兜个底，两条流才对得齐。
     if (probe.duration) args.push('-t', fmtSeconds(probe.duration / input.speed))

@@ -14,6 +14,7 @@
     "dev:web": "pnpm --filter @plein/web dev",
     "dev:desktop": "pnpm --parallel --filter @plein/web --filter @plein/desktop dev",
     "start:desktop": "pnpm --filter @plein/server --filter @plein/web build && pnpm --filter @plein/desktop start",
+    "dist:desktop": "pnpm --filter @plein/web build && pnpm --filter @plein/desktop dist:mac",
     "build": "pnpm -r build",
     "start": "pnpm --filter @plein/server start",
     "typecheck": "pnpm -r typecheck && tsc -p .",

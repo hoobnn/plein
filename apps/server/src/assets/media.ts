@@ -16,6 +16,7 @@ export interface Probe {
 const bin = { ffmpeg: 'ffmpeg', ffprobe: 'ffprobe' }
 let ffmpegAvailable: Promise<boolean> | null = null
 let capsCache: Promise<MediaCaps> | null = null
+let h264Cache: Promise<string[] | null> | null = null
 
 /** 指定 ffmpeg / ffprobe 可执行文件；默认从 PATH 查找 */
 export function setMediaTools(paths: { ffmpeg: string; ffprobe: string }) {
@@ -23,6 +24,41 @@ export function setMediaTools(paths: { ffmpeg: string; ffprobe: string }) {
   Object.assign(bin, paths)
   ffmpegAvailable = null
   capsCache = null
+  h264Cache = null
+}
+
+/**
+ * 输出 H.264 的编码参数。优先 libx264；桌面安装包附带的是 LGPL 构建，没有 libx264，
+ * macOS 上改用系统的 VideoToolbox（硬件编码，不可用时 allow_sw 退到 Apple 的软件编码）。
+ */
+export function h264Args(): Promise<string[]> {
+  h264Cache ??= run(bin.ffmpeg, ['-hide_banner', '-encoders']).then(
+    ({ stdout }) => {
+      if (/^\s*V\S*\s+libx264\s/m.test(stdout))
+        return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20']
+      if (/^\s*V\S*\s+h264_videotoolbox\s/m.test(stdout))
+        // VideoToolbox 的恒定质量（-q:v）只有 Apple 芯片支持，统一按码率
+        return [
+          '-c:v',
+          'h264_videotoolbox',
+          '-allow_sw',
+          '1',
+          '-b:v',
+          '12M',
+          '-maxrate',
+          '20M',
+          '-bufsize',
+          '24M',
+        ]
+      return null
+    },
+    () => null,
+  )
+  return h264Cache.then((args) => {
+    if (!args)
+      throw new Error('本机 ffmpeg 没有 H.264 编码器（libx264 或 VideoToolbox），无法输出视频')
+    return [...args, '-pix_fmt', 'yuv420p']
+  })
 }
 
 /** 当前使用的 ffmpeg 可执行文件 */

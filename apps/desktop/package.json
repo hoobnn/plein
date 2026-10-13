@@ -9,14 +9,20 @@
     "build": "vp pack",
     "dev": "vp pack && electron . --dev",
     "start": "vp pack && electron .",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "ffmpeg": "scripts/build-ffmpeg.sh",
+    "stage:server": "vp pack && node scripts/stage-server.mjs",
+    "dist:mac": "pnpm stage:server && electron-builder --mac --config electron-builder.config.mjs"
   },
   "devDependencies": {
     "@plein/protocol": "workspace:*",
     "@types/node": "^26.6.5",
     "electron": "^44.7.0",
+    "electron-builder": "^26.17.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite-plus": "catalog:"
-  }
+  },
+  "author": "hoobnn",
+  "description": "Plein 桌面端"
 }

@@ -14,6 +14,11 @@ out/
 .turbo/
 .cache/
 
+# 桌面安装包：打包前准备的服务端与 ffmpeg、ffmpeg 构建缓存、安装包输出
+apps/desktop/stage/
+apps/desktop/.ffmpeg-build/
+apps/desktop/release/
+
 # ── 测试 / 覆盖率 ─────────────────────────────────
 coverage/
 .nyc_output/

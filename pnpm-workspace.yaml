@@ -5,6 +5,8 @@ packages:
 # esbuild 的安装脚本只做二进制自检，平台二进制来自可选依赖，不需要执行
 allowBuilds:
   esbuild: false
+  # electron-builder 带的 Windows 安装器，只出 macOS 包时用不到
+  electron-winstaller: false
 # Vite+：vite 由 vite-plus-core 提供，插件和 vitest 依赖的 vite 都指向这一份
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@1.1.0
