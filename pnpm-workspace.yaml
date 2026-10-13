@@ -18,3 +18,7 @@ peerDependencyRules:
     - vite
   allowedVersions:
     vite: "*"
+permissions:
+  pixi.js:
+    build: true
+    skills: true
