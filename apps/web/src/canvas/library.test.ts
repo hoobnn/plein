@@ -62,6 +62,7 @@ const item = (patch: Partial<LibraryItem> = {}): LibraryItem => ({
   ],
   video: null,
   models: [],
+  profile: null,
   favorite: false,
   usedAt: null,
   createdAt: 0,

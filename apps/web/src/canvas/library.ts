@@ -29,6 +29,7 @@ export interface PlaceInput {
   name: string
   description: string
   voice?: LibraryItem['voice']
+  profile?: LibraryItem['profile']
   images?: LibraryItem['images']
   video?: string | null
   /** 资产库条目 id；官方条目没有 */
@@ -121,6 +122,7 @@ export async function placeLibraryItem(
     ...base.params,
     description: input.description,
     ...(kind.voice && input.voice ? { voice: input.voice } : {}),
+    ...(input.profile ? { profile: input.profile } : {}),
     ...(input.libraryId ? { libraryId: input.libraryId } : {}),
   }
   const duplicate = mentionTargets(engine).some((t) => t.name === input.name)
@@ -185,6 +187,7 @@ export async function saveCardToLibrary(
       images,
       video: body.video,
       voice: body.voice,
+      profile: body.profile,
     })
     return { item, created: false }
   }
@@ -205,6 +208,7 @@ export function placeInputOf(item: LibraryItem): PlaceInput | null {
     name: item.name,
     description: item.description,
     voice: item.voice,
+    profile: item.profile,
     images: item.images,
     video: item.video,
     libraryId: item.id,

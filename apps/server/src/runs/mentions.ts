@@ -6,6 +6,13 @@ import {
   type Mention,
   mentionName,
   mentionProblem,
+  pickEmpty,
+  pickImages,
+  pickLabel,
+  pickNotes,
+  type ProfilePick,
+  pickVoice,
+  profileOf,
   type VoiceRef,
   voiceFitsProvider,
   voiceOf,
@@ -42,6 +49,7 @@ export interface MentionElement {
   id: string
   name: string
   el: CanvasElement
+  profile?: ReturnType<typeof profileOf>
 }
 
 /** 列出可被 @ 引用的元素；重名不合并，由 `#序号` 消歧（序号顺序见 sortMentionTargets） */
@@ -49,7 +57,9 @@ function mentionTargets(doc: PleinDoc): MentionElement[] {
   const out: MentionElement[] = []
   for (const el of doc.elements()) {
     const name = mentionName(el)
-    if (name) out.push({ id: el.id, name, el })
+    if (!name) continue
+    const profile = el.nodeType === 'plein/character' ? profileOf(el.params?.profile) : undefined
+    out.push({ id: el.id, name, el, ...(profile ? { profile } : {}) })
   }
   return out
 }
@@ -80,9 +90,21 @@ interface Hit {
   index: number
   total: number
   el: CanvasElement
+  /** `@林夏/少年/校服` 里写明的档案项 */
+  pick: ProfilePick
 }
 
-const label = (h: Hit) => (h.total > 1 ? `${h.name}#${h.index + 1}` : h.name)
+const label = (h: Hit) => pickLabel(h.total > 1 ? `${h.name}#${h.index + 1}` : h.name, h.pick)
+
+/** 同一个角色写了不同的档案项（`@林夏/童年` 和 `@林夏/青年`）算两处引用 */
+const hitKey = (h: Hit) =>
+  [
+    h.el.id,
+    h.pick.period?.id,
+    h.pick.outfit?.id,
+    h.pick.expression?.id,
+    h.pick.voiceState?.id,
+  ].join('/')
 
 /** 提示词里 @ 的名字，对应到画布上的元素 */
 function checkMention(m: Mention, byId: Map<string, CanvasElement>): Hit | undefined {
@@ -91,7 +113,7 @@ function checkMention(m: Mention, byId: Map<string, CanvasElement>): Hit | undef
   if (problem) throw new NodeRunError('invalid_input', problem)
   const el = m.id ? byId.get(m.id) : undefined
   if (!el) return undefined
-  return { name: m.name, index: m.ids.indexOf(m.id!), total: m.total, el }
+  return { name: m.name, index: m.ids.indexOf(m.id!), total: m.total, el, pick: m.pick ?? {} }
 }
 
 /**
@@ -127,9 +149,13 @@ export async function applyMentions(
     let last = 0
     for (const m of found) {
       const h = checkMention(m, byId)
-      text += `${value.slice(last, m.start)}${m.name}`
+      // 写了档案项的换成「林夏（少年·校服）」，同一段里出现两个时期也分得清
+      text += `${value.slice(last, m.start)}${pickLabel(m.name, m.pick ?? {})}`
       last = m.end
-      if (h) hit.set(h.el.id, h)
+      if (h) hit.set(hitKey(h), h)
+      if (m.profileMiss)
+        notices.push(`「${m.name}」的档案里没有「${m.profileMiss}」，这一段按普通文字处理`)
+      if (m.profileConflict) notices.push(`@${m.name}：${m.profileConflict}，已忽略`)
     }
     params[key] = text + value.slice(last)
     for (const b of broken) notices.push(brokenNotice(b.name, b.candidates))
@@ -147,14 +173,30 @@ export async function applyMentions(
       refList.push({ name: h.name, elementId: target.id, assetIds: [target.assetId] })
       continue
     }
-    const description = String(target.params?.description ?? '').trim()
+    const description = pickNotes(String(target.params?.description ?? ''), h.pick)
     if (description) notes.push(`${label(h)}：${description}`)
-    const v = voiceOf(target.params)
-    if (hasVoice(v)) voices.push({ name: h.name, voice: v })
+    const v = pickVoice(h.pick, voiceOf(target.params))
+    if (hasVoice(v)) voices.push({ name: pickLabel(h.name, h.pick), voice: v })
     const own = await collect(target.id)
-    const images = (own.references ?? []).filter((v) => v.type === 'image')
+    const base = (own.references ?? []).filter((v) => v.type === 'image')
+    // 写了档案项：命中项的图排前面，再补卡片的参考图，每个角色截到上限
+    const images = pickEmpty(h.pick)
+      ? base
+      : pickImages(h.pick, imageIds(base)).map(
+          (id): PortValue =>
+            base.find((b) => 'assetId' in b && b.assetId === id) ?? {
+              type: 'image',
+              assetId: id,
+              kind: 'image',
+              source: target.id,
+            },
+        )
     refs.push(...images)
-    refList.push({ name: h.name, elementId: target.id, assetIds: imageIds(images) })
+    refList.push({
+      name: pickLabel(h.name, h.pick),
+      elementId: target.id,
+      assetIds: imageIds(images),
+    })
   }
 
   const prompt = ['prompt', 'text'].find((k) => typeof params[k] === 'string')

@@ -133,6 +133,7 @@ describe('智能体 MCP', () => {
       images: [],
       video: null,
       models: [],
+      profile: null,
     })
     const found = (await call('search_library', { query: '白衬衫' })).json()
     expect(found.items.map((i: { id: string }) => i.id)).toContain(made.id)

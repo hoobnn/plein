@@ -4,7 +4,11 @@ import {
   findMentions,
   firstPlaceholder,
   mentionProblem,
+  matchProfile,
   mentionQuery,
+  pickLabel,
+  profileOptions,
+  SLOT_LABELS,
   slashQuery,
   sortMentionTargets,
 } from '@plein/nodes'
@@ -56,7 +60,33 @@ export function PromptBox({
   const counts = new Map<string, number>()
   for (const t of targets) counts.set(t.name, (counts.get(t.name) ?? 0) + 1)
   const seen = new Map<string, number>()
-  const mentionOptions = (query?.kind === '@' ? targets : [])
+  // `@林夏/少` ：列出林夏档案里还没写的那几类（时期、服饰、表情、次音色）
+  const profileOpts = (() => {
+    if (query?.kind !== '@') return []
+    const cut = query.query.lastIndexOf('/')
+    if (cut < 0) return []
+    const head = query.query.slice(0, cut)
+    const seg = query.query.slice(cut + 1)
+    const owner = targets.find((t, i) => {
+      if (!t.profile) return false
+      const total = counts.get(t.name) ?? 1
+      const nth = targets.slice(0, i + 1).filter((x) => x.name === t.name).length
+      const insert = total > 1 ? `${t.name}#${nth}` : t.name
+      return head === insert || head.startsWith(`${insert}/`)
+    })
+    if (!owner?.profile) return []
+    const base = head.slice(0, head.indexOf('/') < 0 ? head.length : head.indexOf('/'))
+    const written = matchProfile(head.slice(base.length), owner.profile).pick
+    return profileOptions(owner.profile, written)
+      .filter((o) => o.name.includes(seg))
+      .slice(0, MAX_OPTIONS)
+      .map((o) => ({
+        ...o,
+        key: `${o.slot}:${o.period ?? ''}:${o.name}`,
+        insert: `${head}/${o.name}`,
+      }))
+  })()
+  const mentionOptions = (query?.kind === '@' && !query.query.includes('/') ? targets : [])
     .filter((t) => t.name.toLowerCase().includes(q))
     .map((t) => {
       const total = counts.get(t.name) ?? 1
@@ -71,7 +101,7 @@ export function PromptBox({
           .filter((p) => p.title.toLowerCase().includes(q) || p.id.toLowerCase().includes(q))
           .slice(0, MAX_OPTIONS)
       : []
-  const count = mentionOptions.length + presetOptions.length
+  const count = mentionOptions.length + presetOptions.length + profileOpts.length
   const mentions = findMentions(shown, targets)
 
   const detect = (text: string, caret: number) => {
@@ -110,6 +140,7 @@ export function PromptBox({
   }
   const pick = (i: number) => {
     if (query?.kind === '/') applyPreset(presetOptions[i]!)
+    else if (profileOpts.length) insert(profileOpts[i]!.insert)
     else insert(mentionOptions[i]!.insert)
   }
   /** 候选项：按下时不让文本框失焦 */
@@ -165,25 +196,43 @@ export function PromptBox({
       {mentions.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2 text-xs text-ink-subtle">
           引用
-          {[...new Map(mentions.flatMap((m) => [[m.id ?? `?${m.name}`, m] as const])).values()].map(
-            (m) => {
-              if (!m.id) {
-                // 指不明的引用当场说清，不等到运行才报错
-                return (
-                  <span
-                    key={`?${m.name}`}
-                    className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-1.5 py-0.5 text-warning"
-                  >
+          {[
+            ...new Map(
+              mentions.flatMap((m) => [
+                [`${m.id ?? `?${m.name}`}:${pickLabel(m.name, m.pick ?? {})}`, m] as const,
+              ]),
+            ).values(),
+          ].map((m) => {
+            if (!m.id) {
+              // 指不明的引用当场说清，不等到运行才报错
+              return (
+                <span
+                  key={`?${m.name}`}
+                  className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-1.5 py-0.5 text-warning"
+                >
+                  <Icon name="warning" size={12} />
+                  {mentionProblem(m)}
+                </span>
+              )
+            }
+            const target = engine.doc.get(m.id)
+            if (!target) return null
+            const label = pickLabel(m.name, m.pick ?? {})
+            const warn = m.profileMiss
+              ? `「${m.name}」的档案里没有「${m.profileMiss}」`
+              : m.profileConflict
+            return (
+              <span key={`${m.id}:${label}`} className="contents">
+                <MentionChip engine={engine} name={label} target={target} />
+                {warn && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-1.5 py-0.5 text-warning">
                     <Icon name="warning" size={12} />
-                    {mentionProblem(m)}
+                    {warn}
                   </span>
-                )
-              }
-              const target = engine.doc.get(m.id)
-              if (!target) return null
-              return <MentionChip key={m.id} engine={engine} name={m.name} target={target} />
-            },
-          )}
+                )}
+              </span>
+            )
+          })}
         </div>
       )}
       {presetOptions.length > 0 && (
@@ -201,6 +250,39 @@ export function PromptBox({
                 <span>{p.title}</span>
                 {p.description && <span className="ui-menu-desc truncate">{p.description}</span>}
               </span>,
+            ),
+          )}
+        </div>
+      )}
+      {profileOpts.length > 0 && (
+        <div
+          role="listbox"
+          aria-label="引用角色档案"
+          className="ui-menu absolute top-full left-3 z-10 mt-1 w-72"
+        >
+          {profileOpts.map((o, i) =>
+            option(
+              o.key,
+              i,
+              () => insert(o.insert),
+              <>
+                {o.images[0] ? (
+                  <img
+                    src={assetUrls.variant(o.images[0], 'thumb-256')}
+                    alt=""
+                    className="size-6 flex-none rounded-sm object-cover"
+                  />
+                ) : (
+                  <span className="flex size-6 flex-none items-center justify-center rounded-sm bg-surface-3 text-ink-subtle">
+                    <Icon name={SLOT_ICONS[o.slot]} size={12} />
+                  </span>
+                )}
+                <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                <span className="text-xs text-ink-subtle">
+                  {o.period ? `${o.period} · ` : ''}
+                  {SLOT_LABELS[o.slot]}
+                </span>
+              </>,
             ),
           )}
         </div>
@@ -229,6 +311,13 @@ export function PromptBox({
     </div>
   )
 }
+
+const SLOT_ICONS = {
+  period: 'period',
+  outfit: 'outfit',
+  expression: 'expression',
+  voiceState: 'mic',
+} as const
 
 function targetKind(t: CanvasElement) {
   if (t.nodeType === 'plein/character') return '角色'

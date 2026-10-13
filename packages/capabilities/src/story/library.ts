@@ -11,6 +11,8 @@ import {
   characterTags,
   type LibraryKindSpec,
   libraryKindOfNode,
+  profileEmpty,
+  profileOf,
   slotImages,
   voiceOf,
 } from '@plein/nodes'
@@ -119,6 +121,7 @@ export function cardSnapshot(doc: PleinDoc, el: CanvasElement, projectId: string
   const voice = kind.voice ? voiceOf(el.params) : null
   const name = (el.name ?? kind.title).trim().slice(0, 60) || kind.title
   const description = String(el.params?.description ?? '')
+  const profile = kind.id === 'character' ? profileOf(el.params?.profile) : null
   return {
     kind,
     body: {
@@ -131,6 +134,7 @@ export function cardSnapshot(doc: PleinDoc, el: CanvasElement, projectId: string
       images,
       video: videos[0] ?? null,
       voice: voice?.voiceId ? voice : null,
+      profile: profile && !profileEmpty(profile) ? profile : null,
     },
   }
 }

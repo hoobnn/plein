@@ -895,6 +895,31 @@
   }
 }
 
+/* 资产卡 ↔ 档案（morphView）：封面长成大图，其余内容短促交叉淡化 */
+:root[data-view-morph]::view-transition-group(app-morph) {
+  animation-duration: var(--dur-move);
+  animation-timing-function: var(--ease-spring);
+}
+:root[data-view-morph]::view-transition-image-pair(app-morph) {
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+}
+:root[data-view-morph]::view-transition-old(app-morph),
+:root[data-view-morph]::view-transition-new(app-morph) {
+  height: 100%;
+  object-fit: cover;
+  animation-duration: var(--dur-slow);
+}
+:root[data-view-morph]::view-transition-old(root),
+:root[data-view-morph]::view-transition-new(root) {
+  animation-duration: var(--dur-base);
+  animation-timing-function: var(--ease-standard);
+  animation-name: ui-fade-out;
+}
+:root[data-view-morph]::view-transition-new(root) {
+  animation-name: ui-fade-in;
+}
+
 /* 首页 ↔ 画布（zoomView）：卡片封面放大成整个编辑器，Logo 和右侧操作区滑到新位置，其余淡入淡出 */
 :root[data-view-zoom] .app-stage {
   view-transition-name: app-stage;

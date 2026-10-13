@@ -1,5 +1,6 @@
 import { defineNode, definePlugin, PLUGIN_API_VERSION } from '@plein/plugin-sdk'
 import { z } from 'zod'
+import { CharacterProfile, emptyProfile } from './profile'
 import { corePrompts } from './prompts'
 import { noVoice, VoiceRef } from './refs'
 import { sequenceNode } from './sequence'
@@ -208,6 +209,8 @@ export const characterNode = defineNode({
   params: z.object({
     description: textarea('设定', '外貌、服装、性格，如：二十岁，短发，白衬衫'),
     voice: voice('音色', '配音时使用的音色，属于哪个平台要和配音模型一致'),
+    // 时期、服饰、表情与次音色：在资产库里编辑，卡片上同步一份，@林夏/少年/校服 引用
+    profile: CharacterProfile.default(emptyProfile).meta({ title: '角色档案', widget: 'hidden' }),
   }),
 })
 

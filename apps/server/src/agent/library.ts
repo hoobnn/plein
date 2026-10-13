@@ -120,6 +120,7 @@ export const placeLibraryItem = serverCapability({
             ...base.params,
             description: item.description,
             ...(kind.voice && item.voice ? { voice: item.voice } : {}),
+            ...(item.profile ? { profile: item.profile } : {}),
             libraryId: item.id,
           },
         },
@@ -170,6 +171,7 @@ export const saveToLibrary = serverCapability({
         images: body.images.map((i) => ({ ...i, slot: slots.get(i.assetId) ?? i.slot })),
         video: body.video,
         voice: body.voice,
+        profile: body.profile,
       })!
       return { item_id: item.id, created: false }
     }

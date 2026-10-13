@@ -1,6 +1,13 @@
 import { type Engine, NODE_LAYOUT } from '@plein/canvas-core'
 import { adoptResult, type CanvasElement, currentResult, type RunStatus } from '@plein/doc'
-import { ASSET_NODE_TYPES, presetsFor, STORYBOARD_TYPE } from '@plein/nodes'
+import {
+  ASSET_NODE_TYPES,
+  presetsFor,
+  profileEmpty,
+  profileOf,
+  profileSize,
+  STORYBOARD_TYPE,
+} from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useCatalog } from '../stores/catalog'
 import { useStale } from '../stores/stale'
@@ -245,6 +252,7 @@ export class NodeCards {
       selected,
       Boolean(info),
       board ? el.params?.shots : undefined,
+      el.params?.profile,
     ])
     if (sig === card.sig) return
     card.sig = sig
@@ -303,7 +311,7 @@ export class NodeCards {
       const text = document.createElement('div')
       text.textContent = String(el.params?.description ?? '') || '在下方写设定'
       text.className = el.params?.description ? '' : 'plein-node-muted'
-      card.body.replaceChildren(strip, text)
+      card.body.replaceChildren(strip, ...profileRow(el), text)
       card.body.classList.add('is-text')
     } else if (board && !active && shotsOf(el).length) {
       // 分镜：镜号 / 景别 / 画面的小表，双击打开完整表格
@@ -500,4 +508,31 @@ export class NodeCards {
 function primaryResults(el: CanvasElement) {
   const port = el.ports?.outputs[0]?.id
   return (el.results ?? []).filter((r) => port === undefined || r.port === port)
+}
+
+/** 角色卡的档案行：时期名一排小标签，后面是服饰和表情的数量 */
+function profileRow(el: CanvasElement): HTMLElement[] {
+  if (el.nodeType !== 'plein/character') return []
+  const profile = profileOf(el.params?.profile)
+  if (profileEmpty(profile)) return []
+  const row = document.createElement('div')
+  row.className = 'plein-node-profile'
+  for (const p of profile.periods.slice(0, 4)) {
+    const chip = document.createElement('span')
+    chip.className = 'plein-node-chip'
+    chip.append(iconElement('period', 12), p.name)
+    row.appendChild(chip)
+  }
+  const size = profileSize(profile)
+  const rest = [
+    size.outfits && `${size.outfits} 服饰`,
+    size.expressions && `${size.expressions} 表情`,
+  ].filter(Boolean)
+  if (rest.length) {
+    const meta = document.createElement('span')
+    meta.className = 'plein-node-muted'
+    meta.textContent = rest.join(' · ')
+    row.appendChild(meta)
+  }
+  return [row]
 }

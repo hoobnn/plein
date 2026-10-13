@@ -58,3 +58,33 @@ function inViewport(el: Element) {
   const r = el.getBoundingClientRect()
   return r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth
 }
+
+/**
+ * 共享元素过渡：from 元素（如资产卡封面）在 update 之后长成 to 元素（如档案大图），其余内容轻轻交叉淡化。
+ * 返回时反过来传即可。to 找不到或不在视口里时只做淡化；不支持或要求减少动态效果时直接切。
+ */
+export function morphView(
+  update: () => void,
+  from: Element | null | undefined,
+  to: () => Element | null,
+) {
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  if (!document.startViewTransition || reduce) {
+    update()
+    return
+  }
+  const root = document.documentElement
+  root.dataset.viewMorph = ''
+  const src = from instanceof HTMLElement && inViewport(from) ? from : null
+  src?.style.setProperty('view-transition-name', 'app-morph')
+  const t = document.startViewTransition(() => {
+    flushSync(update)
+    src?.style.removeProperty('view-transition-name')
+    const dst = to()
+    if (src && dst instanceof HTMLElement && inViewport(dst)) {
+      dst.style.setProperty('view-transition-name', 'app-morph')
+      void t.finished.finally(() => dst.style.removeProperty('view-transition-name'))
+    }
+  })
+  void t.finished.finally(() => delete root.dataset.viewMorph)
+}

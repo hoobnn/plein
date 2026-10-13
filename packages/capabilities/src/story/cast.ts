@@ -69,6 +69,8 @@ export interface CastLibraryItem {
   name: string
   description: string
   voice: VoiceRef | null
+  /** 角色档案（时期 / 服饰 / 表情），原样写进卡片 */
+  profile?: unknown
   images: Array<{ slot: string; assetId: string }>
   projectId: string | null
 }
@@ -191,6 +193,7 @@ export function applyCast(
           ...base.params,
           description,
           ...(voice ? { voice } : {}),
+          ...(item?.profile ? { profile: item.profile } : {}),
           ...(item ? { libraryId: item.id } : {}),
         },
       }

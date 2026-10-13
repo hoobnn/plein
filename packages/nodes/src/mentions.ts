@@ -8,6 +8,8 @@
  * 这时把可能的新名字找出来提示用户改，而不是悄悄当成普通文字。
  */
 
+import { type CharacterProfile, matchProfile, type ProfilePick, profileEmpty } from './profile'
+
 /** @ 后到这些字符为止 */
 const STOP = /[\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]/
 
@@ -18,6 +20,8 @@ const INDEX = /^#(\d{1,3})/
 export interface MentionTarget {
   id: string
   name: string
+  /** 角色档案：有时 `@林夏/少年/校服` 的 `/` 部分按它解析 */
+  profile?: CharacterProfile
 }
 
 /** 文本里的一处 @ 引用 */
@@ -35,6 +39,12 @@ export interface Mention {
   ids: string[]
   /** 用户写的序号（`@林夏#2` 里的 2），没写为 undefined */
   index?: number
+  /** `@林夏/少年/校服` 里命中的档案项；end 已包含这一段 */
+  pick?: ProfilePick
+  /** 写了 `/xxx` 却对不上档案项时的 xxx */
+  profileMiss?: string
+  /** 服饰 / 次音色和写明的时期对不上 */
+  profileConflict?: string
 }
 
 /** 一处 @ 引用没有对上画布上的任何名字（多半是被改名了） */
@@ -83,15 +93,24 @@ export function findMentions(text: string, targets: readonly MentionTarget[]): A
     const asked = rest.slice(name.length).match(INDEX)
     const index = asked ? Number(asked[1]) : undefined
     const picked = index && index >= 1 && index <= list.length ? list[index - 1] : undefined
+    // 重名又没写序号时不猜：id 留空，交给调用方提示用户消歧
+    const target = picked ?? (index === undefined && list.length === 1 ? list[0] : undefined)
+    const end = i + 1 + name.length + (asked ? asked[0].length : 0)
+    const profile =
+      target?.profile && !profileEmpty(target.profile)
+        ? matchProfile(text.slice(end), target.profile)
+        : undefined
     out.push({
       start: i,
-      end: i + 1 + name.length + (asked ? asked[0].length : 0),
+      end: end + (profile?.length ?? 0),
       name,
-      // 重名又没写序号时不猜：id 留空，交给调用方提示用户消歧
-      id: picked?.id ?? (index === undefined && list.length === 1 ? list[0]!.id : undefined),
+      id: target?.id,
       total: list.length,
       ids: list.map((t) => t.id),
       index,
+      ...(profile?.length ? { pick: profile.pick } : {}),
+      ...(profile?.miss ? { profileMiss: profile.miss } : {}),
+      ...(profile?.conflict ? { profileConflict: profile.conflict } : {}),
     })
   }
   return out

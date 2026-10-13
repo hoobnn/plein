@@ -34,6 +34,7 @@ import { ResultActions } from '../ResultBar'
 import { type ObjectSchema, SchemaForm } from '../SchemaForm'
 import { Inputs } from './Inputs'
 import { LibrarySave } from './LibrarySave'
+import { ProfileSummary } from './ProfileSummary'
 import { ModelPicker } from './ModelPicker'
 import { ModePicker } from './ModePicker'
 import { countUnit, isMainField, type ModelOptions, ParamsPill } from './ParamsPill'
@@ -245,6 +246,7 @@ function Panel({
       {(node.inputs.length > 0 || actions) && (
         <Inputs engine={engine} el={el} node={node} ups={ups} trailing={actions} />
       )}
+      {node.type === 'plein/character' && canvasId && <ProfileSummary engine={engine} el={el} />}
       {node.type === STORYBOARD_TYPE && (
         <div className="px-4 pt-4">
           <button

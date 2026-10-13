@@ -655,6 +655,26 @@
   font-size: var(--text-xs);
 }
 
+.plein-node-profile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-size: var(--text-xs);
+}
+.plein-node-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-muted);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
 .plein-node-thumbs img {
   width: 56px;
   height: 56px;

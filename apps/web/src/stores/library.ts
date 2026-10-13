@@ -23,11 +23,19 @@ interface LibraryStore {
   open: LibraryKind | null
   /** 打开时要预填的新建内容；面板接手后清掉 */
   seed: LibrarySeed | null
+  /** 打开时直接进入编辑的条目 id（画布上角色卡的「编辑档案」）；面板接手后清掉 */
+  focus: string | null
+  /** 进入编辑时先打开哪一页（如「时期」） */
+  tab: 'basics' | 'periods' | 'expressions' | null
   /** 当前画布所属项目，「本项目」筛选与新建条目的默认归属 */
   projectId: string | null
   setProject(id: string | null): void
   show(kind: LibraryKind | null, seed?: LibrarySeed): void
+  /** 打开资产库并直接编辑一条，可指定先看哪一页 */
+  edit(item: LibraryItem, tab?: LibraryStore['tab']): void
   takeSeed(): LibrarySeed | null
+  takeFocus(): string | null
+  takeTab(): LibraryStore['tab']
   load(): Promise<void>
   create(body: CreateLibraryItem): Promise<LibraryItem>
   update(id: string, body: UpdateLibraryItem): Promise<LibraryItem>
@@ -45,6 +53,8 @@ export const useLibrary = create<LibraryStore>((set, get) => ({
   loaded: false,
   open: null,
   seed: null,
+  focus: null,
+  tab: null,
   projectId: null,
   setProject(projectId) {
     set({ projectId })
@@ -52,6 +62,19 @@ export const useLibrary = create<LibraryStore>((set, get) => ({
   show(open, seed) {
     set({ open, seed: open ? (seed ?? null) : null })
     if (open && !get().loaded) void get().load()
+  },
+  edit(item, tab) {
+    set({ open: item.kind, seed: null, focus: item.id, tab: tab ?? null })
+  },
+  takeFocus() {
+    const { focus } = get()
+    if (focus) set({ focus: null })
+    return focus
+  },
+  takeTab() {
+    const { tab } = get()
+    if (tab) set({ tab: null })
+    return tab
   },
   takeSeed() {
     const { seed } = get()

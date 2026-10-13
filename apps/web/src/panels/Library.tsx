@@ -1,18 +1,26 @@
+import { setParam } from '@plein/doc'
 import {
+  type CharacterProfile,
+  emptyProfile,
   LIBRARY_KINDS,
   type LibraryKindSpec,
   libraryKind,
   OFFICIAL_LIBRARY,
   type OfficialLibraryItem,
+  orderedImages,
+  profileEmpty,
+  profileOf,
+  profileSize,
   slotImages,
 } from '@plein/nodes'
 import type { LibraryImage, LibraryItem, LibraryKind } from '@plein/protocol'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { api, assetUrls } from '../api/client'
+import { assetUrls } from '../api/client'
 import {
   type CanvasMedia,
   canvasMedia,
   coverOf,
+  findPlacedCard,
   placeInputOf,
   placeLibraryItem,
   type PlaceInput,
@@ -21,16 +29,18 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { type LibrarySeed, useLibrary } from '../stores/library'
 import { confirmDialog, dialogOpen } from '../ui/Dialog'
-import { Icon } from '../ui/icons'
-import { Modal, ModalHeader } from '../ui/Modal'
-import { Popover } from '../ui/Popover'
-import { Presence } from '../ui/Presence'
-import { Select } from '../ui/Select'
-import { KIND_ICONS } from './LibraryAdd'
-import { VoicePicker } from './VoicePicker'
-import { Segmented } from '../ui/Segmented'
-import { SlideSwap } from '../ui/Slide'
 import { EmptyState } from '../ui/EmptyState'
+import { Icon, type IconName } from '../ui/icons'
+import { Modal, ModalHeader } from '../ui/Modal'
+import { Presence } from '../ui/Presence'
+import { Segmented } from '../ui/Segmented'
+import { Select } from '../ui/Select'
+import { SlideSwap } from '../ui/Slide'
+import { morphView } from '../ui/viewTransition'
+import { KIND_ICONS } from './LibraryAdd'
+import { SlotField, thumb, VideoField } from './LibraryFields'
+import { ExpressionsTab, type HeroControl, PeriodsTab } from './LibraryProfile'
+import { VoicePicker } from './VoicePicker'
 
 /**
  * 资产库面板：
@@ -100,12 +110,37 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
     if (taken) setEditing({ type: 'new', seed: taken })
   }, [seed])
 
+  // 从画布上的角色卡点「编辑档案」：直接打开那一条
+  const focus = useLibrary((s) => s.focus)
+  useEffect(() => {
+    if (!focus) return
+    const id = useLibrary.getState().takeFocus()
+    if (id) setEditing({ type: 'item', id })
+  }, [focus])
+
+  /** 卡片封面长成档案大图 */
+  const openItem = (id: string, cover: HTMLElement | null) =>
+    morphView(
+      () => setEditing({ type: 'item', id }),
+      cover,
+      () => document.querySelector('.lib-hero'),
+    )
+  /** 返回列表：大图缩回它的卡片 */
+  const back = () => {
+    const id = editing?.type === 'item' ? editing.id : null
+    morphView(
+      () => setEditing(null),
+      document.querySelector('.lib-hero'),
+      () => (id ? document.querySelector(`[data-lib-cover="${id}"]`) : null),
+    )
+  }
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // 确认框、弹层（下拉框、从画布选）开着时 Esc 归它们
       if (e.key !== 'Escape' || dialogOpen() || document.querySelector('.ui-menu')) return
       e.stopPropagation()
-      if (editing) setEditing(null)
+      if (editing) back()
       else close()
     }
     window.addEventListener('keydown', onKey, true)
@@ -197,7 +232,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
           media={media}
           projectId={projectId}
           canPlace={canPlace}
-          onBack={() => setEditing(null)}
+          onBack={back}
           onCreated={(id) => setEditing({ type: 'item', id })}
           onPlace={place}
         />
@@ -241,7 +276,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
                         kind={kind}
                         item={it}
                         canPlace={canPlace}
-                        onOpen={() => setEditing({ type: 'item', id: it.id })}
+                        onOpen={(cover) => openItem(it.id, cover)}
                         onPlace={() => {
                           const input = placeInputOf(it)
                           if (input) void place(input)
@@ -301,9 +336,6 @@ function Empty({
   )
 }
 
-/** 缩略图地址：图片取 256 缩略图，视频取封面 */
-const thumb = (assetId: string) => assetUrls.variant(assetId, 'thumb-256')
-
 function tagLine(kind: LibraryKindSpec, tags: Record<string, string>) {
   return kind.tags
     .map((t) => tags[t.id])
@@ -321,33 +353,51 @@ function Card({
   kind: LibraryKindSpec
   item: LibraryItem
   canPlace: boolean
-  onOpen(): void
+  onOpen(cover: HTMLElement | null): void
   onPlace(): void
 }) {
   const cover = coverOf(item, kind)
   const update = useLibrary((s) => s.update)
+  const coverRef = useRef<HTMLDivElement>(null)
+  const profile = item.profile ? profileSize(item.profile) : null
+  // 悬停时从底部升起的一排小图：各时期、服饰的首图
+  const peek = item.profile ? profilePeek(item.profile) : []
   return (
-    <li className="home-card group relative">
-      <button type="button" onClick={onOpen} className="block w-full text-left">
-        <div className="flex aspect-[3/4] items-center justify-center overflow-hidden bg-surface-2">
+    <li className="home-card lib-card group relative">
+      <button
+        type="button"
+        onClick={() => onOpen(coverRef.current)}
+        className="block w-full text-left"
+      >
+        <div ref={coverRef} data-lib-cover={item.id} className="lib-card-cover">
           {cover ? (
-            <img
-              src={cover}
-              alt=""
-              loading="lazy"
-              draggable={false}
-              className="size-full object-cover"
-            />
+            <img src={cover} alt="" loading="lazy" draggable={false} />
           ) : (
             <span className="line-clamp-6 px-4 text-xs text-ink-subtle">
               {item.description || '没有参考图'}
+            </span>
+          )}
+          {peek.length > 0 && (
+            <span className="lib-card-peek" aria-hidden="true">
+              {peek.map((id, i) => (
+                <img
+                  key={id}
+                  src={thumb(id)}
+                  alt=""
+                  loading="lazy"
+                  draggable={false}
+                  style={{ '--i': i } as React.CSSProperties}
+                />
+              ))}
             </span>
           )}
         </div>
         <div className="px-3 pt-2.5 pb-3">
           <div className="truncate text-sm font-medium">{item.name}</div>
           <div className="truncate text-xs text-ink-subtle">
-            {tagLine(kind, item.tags) || `${item.images.length} 张参考图`}
+            {profile && (profile.periods || profile.expressions)
+              ? profileLine(profile)
+              : tagLine(kind, item.tags) || `${item.images.length} 张参考图`}
           </div>
         </div>
       </button>
@@ -373,13 +423,34 @@ function Card({
         <button
           type="button"
           onClick={onPlace}
-          className="ui-btn ui-btn-primary ui-btn-sm absolute bottom-16 left-1/2 -translate-x-1/2 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+          className="ui-btn ui-btn-primary ui-btn-sm lib-card-place absolute bottom-16 left-1/2"
         >
           添加到画布
         </button>
       )}
     </li>
   )
+}
+
+/** 卡片底部一行：「3 时期 · 5 服饰 · 8 表情」 */
+function profileLine(n: ReturnType<typeof profileSize>) {
+  return [
+    n.periods && `${n.periods} 时期`,
+    n.outfits && `${n.outfits} 服饰`,
+    n.expressions && `${n.expressions} 表情`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+/** 悬停预览的小图：各时期首图在前，再是服饰、表情，最多 4 张 */
+function profilePeek(p: NonNullable<LibraryItem['profile']>) {
+  const ids = [
+    ...p.periods.flatMap((x) => x.images.slice(0, 1)),
+    ...p.periods.flatMap((x) => x.outfits.flatMap((o) => o.images.slice(0, 1))),
+    ...p.expressions.flatMap((e) => e.images.slice(0, 1)),
+  ]
+  return [...new Set(ids)].slice(0, 4)
 }
 
 function OfficialCard({
@@ -394,7 +465,7 @@ function OfficialCard({
   onPlace(): void
 }) {
   return (
-    <li className="home-card group relative">
+    <li className="home-card lib-card group relative">
       <button type="button" onClick={onOpen} className="block w-full text-left">
         <div className="plein-thumb flex aspect-[4/3] flex-col justify-end gap-1 p-3">
           <span className="ui-chip self-start">{Object.values(item.tags)[0]}</span>
@@ -409,7 +480,7 @@ function OfficialCard({
         <button
           type="button"
           onClick={onPlace}
-          className="ui-btn ui-btn-primary ui-btn-sm absolute bottom-16 left-1/2 -translate-x-1/2 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+          className="ui-btn ui-btn-primary ui-btn-sm lib-card-place absolute bottom-16 left-1/2"
         >
           添加到画布
         </button>
@@ -426,6 +497,7 @@ interface Draft {
   images: LibraryImage[]
   video: string | null
   models: string
+  profile: CharacterProfile
   /** 归属当前项目 */
   inProject: boolean
 }
@@ -445,12 +517,22 @@ function draftOf(
     images: item?.images ?? (seed ? slotImages(kind, seed.images) : []),
     video: item?.video ?? (kind.video ? (seed?.videos[0] ?? null) : null),
     models: (item?.models ?? official?.models ?? []).join('，'),
+    profile: profileOf(item?.profile),
     // 新建的角色 / 场景 / 道具默认归到当前项目；风格、特效默认全局
     inProject: item ? item.projectId !== null : !!projectId && !kind.video && kind.id !== 'style',
   }
 }
 
-/** 条目编辑：左边图片槽位，右边设定；官方条目只读，可以复制成自己的 */
+/** 角色编辑页的分页 */
+type Tab = 'basics' | 'periods' | 'expressions'
+
+/** 情绪九宫格是表情的总览图，放到「表情」页，不在「设定」页的槽位里重复出现 */
+const SHEET_SLOT = 'emotions'
+
+/**
+ * 条目编辑（档案式）：左边一张大图，悬停或选中任何一张图时交叉淡入成它；
+ * 右边是设定，角色多两页「时期」「表情」。官方条目只读，可以复制成自己的。
+ */
 function Editor({
   kind,
   item,
@@ -476,9 +558,13 @@ function Editor({
 }) {
   const lib = useLibrary()
   const readOnly = !!official
+  const character = kind.id === 'character'
   const [draft, setDraft] = useState(() => draftOf(kind, item, official, projectId, seed))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [tab, setTab] = useState<Tab>(() => useLibrary.getState().takeTab() ?? 'basics')
+  const [preview, setPreview] = useState<{ id: string | null; caption?: string } | null>(null)
+  const [pin, setPin] = useState<{ id: string | null; caption?: string }>({ id: null })
   const initial = useMemo(
     () => JSON.stringify(draftOf(kind, item, official, projectId)),
     [kind, item, official, projectId],
@@ -499,18 +585,23 @@ function Editor({
           .map((m) => m.trim())
           .filter(Boolean)
       : [],
+    profile: character && !profileEmpty(draft.profile) ? draft.profile : null,
     projectId: draft.inProject ? (item?.projectId ?? projectId) : null,
   })
 
-  /** 保存并返回条目；官方条目复制一份成自己的 */
+  /** 保存并返回条目；官方条目复制一份成自己的。画布上已经放下的这张角色卡跟着同步档案 */
   const save = async (): Promise<LibraryItem | null> => {
     setBusy(true)
     setError(null)
     try {
-      if (item) return dirty ? await lib.update(item.id, body()) : item
-      const created = await lib.create({ kind: kind.id, ...body() })
-      onCreated(created.id)
-      return created
+      const saved = item
+        ? dirty
+          ? await lib.update(item.id, body())
+          : item
+        : await lib.create({ kind: kind.id, ...body() })
+      if (!item) onCreated(saved.id)
+      if (character) syncPlacedProfile(saved)
+      return saved
     } catch (err) {
       setError((err as Error).message)
       return null
@@ -550,125 +641,236 @@ function Editor({
     onBack()
   }
 
+  const ordered = orderedImages(kind, draft.images)
+  const cover = ordered[0]?.assetId ?? null
+  // 悬停中的图优先，其次是选中项钉住的图，最后是封面；悬停到没有图的项时不换
+  const shown = preview?.id ?? pin.id ?? cover
+  const caption = preview?.id ? preview.caption : pin.id ? pin.caption : undefined
+  const hero: HeroControl = {
+    onPreview: (id, c) => setPreview(id ? { id, caption: c } : null),
+    onPin: (id, c) => setPin({ id, caption: c }),
+  }
+  const size = profileSize(draft.profile)
+  const tabs: Array<{ value: Tab; label: string; icon: IconName; extra?: number }> = [
+    { value: 'basics', label: '设定', icon: 'character' },
+    { value: 'periods', label: '时期', icon: 'period', extra: size.periods || undefined },
+    {
+      value: 'expressions',
+      label: '表情',
+      icon: 'expression',
+      extra: size.expressions || undefined,
+    },
+  ]
+  const tabIndex = tabs.findIndex((t) => t.value === tab)
+  const slotField = (slot: LibraryKindSpec['slots'][number]) => (
+    <SlotField
+      key={slot.id}
+      slot={slot}
+      images={draft.images.filter((i) => i.slot === slot.id)}
+      used={draft.images.map((i) => i.assetId)}
+      media={media}
+      onAdd={(ids) =>
+        patch({
+          images: [
+            ...(slot.multiple ? draft.images : draft.images.filter((i) => i.slot !== slot.id)),
+            ...ids.map((assetId) => ({ slot: slot.id, assetId })),
+          ],
+        })
+      }
+      onRemove={(assetId) =>
+        patch({
+          images: draft.images.filter((i) => !(i.slot === slot.id && i.assetId === assetId)),
+        })
+      }
+    />
+  )
+
+  const basics = (
+    <div className="flex flex-col gap-4">
+      <label className="ui-field">
+        <span className="ui-label">名称</span>
+        <input
+          className="ui-input"
+          value={draft.name}
+          readOnly={readOnly}
+          maxLength={60}
+          placeholder={`${kind.title}名，提示词里用 @名称 引用`}
+          onChange={(e) => patch({ name: e.target.value })}
+        />
+      </label>
+      {kind.tags.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          {kind.tags.map((t) => (
+            <div key={t.id} className="ui-field">
+              <span className="ui-label">{t.label}</span>
+              {readOnly ? (
+                <span className="text-sm">{draft.tags[t.id] || '—'}</span>
+              ) : (
+                <Select
+                  aria-label={t.label}
+                  value={draft.tags[t.id] ?? ''}
+                  options={[{ value: '', label: '不限' }, ...t.options.map((v) => ({ value: v }))]}
+                  onChange={(v) => patch({ tags: { ...draft.tags, [t.id]: v } })}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <label className="ui-field">
+        <span className="ui-label">{character ? '基础设定' : kind.descriptionLabel}</span>
+        <textarea
+          className="ui-input h-32"
+          value={draft.description}
+          readOnly={readOnly}
+          maxLength={4000}
+          placeholder={kind.placeholder}
+          onChange={(e) => patch({ description: e.target.value })}
+        />
+        <span className="text-xs text-ink-subtle">
+          {character
+            ? '各时期共用的部分；时期、服饰、表情里只写不一样的地方，@ 引用时按顺序叠加'
+            : '放到画布上就是卡片的「设定」；提示词里 @ 它时会并入提示词'}
+        </span>
+      </label>
+      {kind.voice && (
+        <div className="ui-field">
+          <span className="ui-label">{character ? '基础音色' : '音色'}</span>
+          <VoicePicker value={draft.voice} onChange={(voice) => patch({ voice })} />
+          <span className="text-xs text-ink-subtle">
+            {character ? '时期没有单独设主音色时用它；' : ''}音色只能在同一家平台的配音模型里使用
+          </span>
+        </div>
+      )}
+      {!readOnly && (
+        <div className="grid grid-cols-2 gap-4">
+          {kind.slots.filter((s) => !character || s.id !== SHEET_SLOT).map(slotField)}
+        </div>
+      )}
+      {kind.video && !readOnly && (
+        <VideoField value={draft.video} media={media} onChange={(video) => patch({ video })} />
+      )}
+      {kind.video && (
+        <label className="ui-field">
+          <span className="ui-label">适配模型</span>
+          <input
+            className="ui-input"
+            value={draft.models}
+            readOnly={readOnly}
+            placeholder="仅作记录，如：Seedance 2.0，Kling 3.0"
+            onChange={(e) => patch({ models: e.target.value })}
+          />
+        </label>
+      )}
+      {projectId && !readOnly && (
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={draft.inProject}
+            onChange={(e) => patch({ inProject: e.target.checked })}
+          />
+          归到当前项目（「本项目」里能看到；不勾选则不归属任何项目）
+        </label>
+      )}
+    </div>
+  )
+
+  const sheet = kind.slots.find((s) => s.id === SHEET_SLOT)
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="ui-scrollbar grid min-h-0 flex-1 gap-6 overflow-y-auto p-5 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-        <section aria-label="图片" className="flex flex-col gap-4">
-          {readOnly ? (
-            <div className="plein-thumb flex aspect-video items-center justify-center rounded-xl p-6 text-center text-sm text-ink-muted">
-              官方{kind.title}只有提示词。复制到「我的」之后可以加参考图
-              {kind.video ? '和参考视频' : ''}。
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4">
-              {kind.slots.map((slot) => (
-                <SlotField
-                  key={slot.id}
-                  slot={slot}
-                  images={draft.images.filter((i) => i.slot === slot.id)}
-                  used={draft.images.map((i) => i.assetId)}
-                  media={media}
-                  onAdd={(ids) =>
-                    patch({
-                      images: [
-                        ...(slot.multiple
-                          ? draft.images
-                          : draft.images.filter((i) => i.slot !== slot.id)),
-                        ...ids.map((assetId) => ({ slot: slot.id, assetId })),
-                      ],
-                    })
-                  }
-                  onRemove={(assetId) =>
-                    patch({
-                      images: draft.images.filter(
-                        (i) => !(i.slot === slot.id && i.assetId === assetId),
-                      ),
-                    })
-                  }
+      <div className="ui-scrollbar grid min-h-0 flex-1 gap-6 overflow-y-auto p-5 md:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+        <aside aria-label="预览" className="lib-hero-col">
+          <Hero
+            kind={kind}
+            assetId={readOnly ? null : shown}
+            caption={caption}
+            name={draft.name.trim() || `新${kind.title}`}
+            readOnly={readOnly}
+          />
+          {!readOnly && ordered.length > 1 && (
+            <ul className="lib-hero-strip" aria-label="参考图">
+              {ordered.map((img) => (
+                <li key={`${img.slot}:${img.assetId}`}>
+                  <button
+                    type="button"
+                    aria-label={kind.slots.find((s) => s.id === img.slot)?.label ?? '参考图'}
+                    title={kind.slots.find((s) => s.id === img.slot)?.label}
+                    aria-pressed={shown === img.assetId}
+                    onPointerEnter={() =>
+                      setPreview({
+                        id: img.assetId,
+                        caption: kind.slots.find((s) => s.id === img.slot)?.label,
+                      })
+                    }
+                    onPointerLeave={() => setPreview(null)}
+                    onClick={() =>
+                      setPin({
+                        id: img.assetId,
+                        caption: kind.slots.find((s) => s.id === img.slot)?.label,
+                      })
+                    }
+                    className="lib-hero-thumb"
+                  >
+                    <img src={thumb(img.assetId)} alt="" draggable={false} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {character && !readOnly && (size.periods > 0 || size.expressions > 0) && (
+            <p className="text-xs text-ink-subtle">
+              提示词里写{' '}
+              <code className="ui-kbd">
+                @{draft.name.trim() || kind.title}/
+                {draft.profile.periods[0]?.name ?? draft.profile.expressions[0]?.name}
+              </code>{' '}
+              引用档案里的一项，可以叠加时期、服饰、表情。
+            </p>
+          )}
+        </aside>
+        <section aria-label="设定" className="flex min-w-0 flex-col gap-4">
+          {character && !readOnly ? (
+            <>
+              <div className="flex-none">
+                <Segmented
+                  label="档案分页"
+                  options={tabs.map((t) => ({
+                    value: t.value,
+                    label: t.label,
+                    icon: t.icon,
+                    extra: t.extra,
+                  }))}
+                  value={tab}
+                  onChange={(t) => {
+                    setTab(t)
+                    setPin({ id: null })
+                  }}
                 />
-              ))}
-            </div>
-          )}
-          {kind.video && !readOnly && (
-            <VideoField value={draft.video} media={media} onChange={(video) => patch({ video })} />
-          )}
-        </section>
-        <section aria-label="设定" className="flex flex-col gap-4">
-          <label className="ui-field">
-            <span className="ui-label">名称</span>
-            <input
-              className="ui-input"
-              value={draft.name}
-              readOnly={readOnly}
-              maxLength={60}
-              placeholder={`${kind.title}名，提示词里用 @名称 引用`}
-              onChange={(e) => patch({ name: e.target.value })}
-            />
-          </label>
-          {kind.tags.length > 0 && (
-            <div className="grid grid-cols-2 gap-3">
-              {kind.tags.map((t) => (
-                <div key={t.id} className="ui-field">
-                  <span className="ui-label">{t.label}</span>
-                  {readOnly ? (
-                    <span className="text-sm">{draft.tags[t.id] || '—'}</span>
-                  ) : (
-                    <Select
-                      aria-label={t.label}
-                      value={draft.tags[t.id] ?? ''}
-                      options={[
-                        { value: '', label: '不限' },
-                        ...t.options.map((v) => ({ value: v })),
-                      ]}
-                      onChange={(v) => patch({ tags: { ...draft.tags, [t.id]: v } })}
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          <label className="ui-field">
-            <span className="ui-label">{kind.descriptionLabel}</span>
-            <textarea
-              className="ui-input h-36"
-              value={draft.description}
-              readOnly={readOnly}
-              maxLength={4000}
-              placeholder={kind.placeholder}
-              onChange={(e) => patch({ description: e.target.value })}
-            />
-            <span className="text-xs text-ink-subtle">
-              放到画布上就是卡片的「设定」；提示词里 @ 它时会并入提示词
-            </span>
-          </label>
-          {kind.voice && (
-            <div className="ui-field">
-              <span className="ui-label">音色</span>
-              <VoicePicker value={draft.voice} onChange={(voice) => patch({ voice })} />
-              <span className="text-xs text-ink-subtle">音色只能在同一家平台的配音模型里使用</span>
-            </div>
-          )}
-          {kind.video && (
-            <label className="ui-field">
-              <span className="ui-label">适配模型</span>
-              <input
-                className="ui-input"
-                value={draft.models}
-                readOnly={readOnly}
-                placeholder="仅作记录，如：Seedance 2.0，Kling 3.0"
-                onChange={(e) => patch({ models: e.target.value })}
-              />
-            </label>
-          )}
-          {projectId && !readOnly && (
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={draft.inProject}
-                onChange={(e) => patch({ inProject: e.target.checked })}
-              />
-              归到当前项目（「本项目」里能看到；不勾选则不归属任何项目）
-            </label>
+              </div>
+              <SlideSwap index={tabIndex}>
+                {tab === 'basics' ? (
+                  basics
+                ) : tab === 'periods' ? (
+                  <PeriodsTab
+                    profile={draft.profile}
+                    onChange={(profile) => patch({ profile })}
+                    media={media}
+                    hero={hero}
+                  />
+                ) : (
+                  <ExpressionsTab
+                    profile={draft.profile}
+                    onChange={(profile) => patch({ profile })}
+                    media={media}
+                    hero={hero}
+                    sheet={sheet ? slotField(sheet) : null}
+                  />
+                )}
+              </SlideSwap>
+            </>
+          ) : (
+            basics
           )}
           {error && <p className="text-sm text-danger">{error}</p>}
         </section>
@@ -733,282 +935,67 @@ function Editor({
   )
 }
 
-/** 上传文件进资产存储，返回资产 id；kind 不对的文件跳过 */
-async function uploadAll(files: File[], want: 'image' | 'video') {
-  const out: string[] = []
-  for (const f of files) {
-    if (!f.type.startsWith(`${want}/`)) continue
-    const a = await api.upload(f)
-    out.push(a.id)
-  }
-  return out
-}
-
-/** 「从画布选」：列出当前画布上的图片 / 视频，单张槽位点一下就选中，多张槽位可以连续点 */
-function CanvasPick({
-  media,
-  type,
-  multiple,
-  taken,
-  onPick,
+/** 档案大图：换图时新图在旧图上交叉淡入并轻微回缩，底部一行写着现在看的是哪一项 */
+function Hero({
+  kind,
+  assetId,
+  caption,
+  name,
+  readOnly,
 }: {
-  media: CanvasMedia[]
-  type: 'image' | 'video'
-  multiple: boolean
-  /** 已经用在条目里的资产，列表里标出来、不能重复选 */
-  taken: string[]
-  onPick(assetId: string): void
+  kind: LibraryKindSpec
+  assetId: string | null
+  caption?: string
+  name: string
+  readOnly: boolean
 }) {
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
-  const list = media.filter((m) => m.kind === type)
-  if (!media.length) return null
+  // 叠两层：下面是上一张，上面是新的一张从透明淡入，换得再快也不闪白
+  const [layers, setLayers] = useState<Array<{ id: string | null; key: number }>>([
+    { id: assetId, key: 0 },
+  ])
+  const top = layers[layers.length - 1]!
+  if (top.id !== assetId) setLayers([top, { id: assetId, key: top.key + 1 }])
   return (
-    <>
-      <button
-        type="button"
-        aria-expanded={!!anchor}
-        disabled={!list.length}
-        title={list.length ? undefined : `画布上没有${type === 'image' ? '图片' : '视频'}`}
-        onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
-        className="ui-drop-tile"
-      >
-        <Icon name="board" size={16} />
-        从画布选
-      </button>
-      <Presence>
-        {anchor && (
-          <Popover
-            anchor={anchor}
-            onClose={() => setAnchor(null)}
-            label="从画布选"
-            width={344}
-            placement="below"
-          >
-            <div className="ui-menu-label">
-              画布上的{type === 'image' ? '图片' : '视频'}（{list.length}）
-            </div>
-            <div className="ui-scrollbar grid max-h-80 grid-cols-4 gap-2 overflow-y-auto p-2">
-              {list.map((m) => {
-                const on = taken.includes(m.assetId)
-                return (
-                  <button
-                    key={m.assetId}
-                    type="button"
-                    title={m.name || undefined}
-                    aria-pressed={on}
-                    disabled={on}
-                    onClick={() => {
-                      onPick(m.assetId)
-                      if (!multiple) setAnchor(null)
-                    }}
-                    className={`relative aspect-square overflow-hidden rounded-md bg-surface-2 ${
-                      on ? 'opacity-40' : 'hover:ring-2 hover:ring-accent'
-                    }`}
-                  >
-                    <img
-                      src={
-                        type === 'image' ? thumb(m.assetId) : assetUrls.variant(m.assetId, 'poster')
-                      }
-                      alt=""
-                      loading="lazy"
-                      draggable={false}
-                      className="size-full object-cover"
-                    />
-                    {on && (
-                      <span className="absolute inset-0 flex items-center justify-center text-ink">
-                        <Icon name="check" size={16} />
-                      </span>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          </Popover>
-        )}
-      </Presence>
-    </>
-  )
-}
-
-function SlotField({
-  slot,
-  images,
-  used,
-  media,
-  onAdd,
-  onRemove,
-}: {
-  slot: LibraryKindSpec['slots'][number]
-  images: LibraryImage[]
-  /** 整个条目已经用到的图片，「从画布选」里标出来 */
-  used: string[]
-  media: CanvasMedia[]
-  onAdd(ids: string[]): void
-  onRemove(assetId: string): void
-}) {
-  const ref = useRef<HTMLInputElement>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const pick = async (files: File[]) => {
-    setBusy(true)
-    setError(null)
-    try {
-      const ids = await uploadAll(files, 'image')
-      if (ids.length) onAdd(slot.multiple ? ids : ids.slice(0, 1))
-      else setError('只能放图片')
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-  const canAdd = slot.multiple || images.length === 0
-  return (
-    <div className="ui-field">
-      {/* 标签和提示只占一行：提示折行会把这一格的上传框挤下去，跟同一行另一格对不齐 */}
-      <span className="ui-label flex min-w-0 items-baseline" title={slot.hint}>
-        <span className="flex-none">{slot.label}</span>
-        {slot.hint && (
-          <span className="ml-2 truncate font-normal text-ink-subtle">{slot.hint}</span>
-        )}
-      </span>
-      <div className="flex flex-wrap gap-2">
-        {images.map((img) => (
-          <div
-            key={img.assetId}
-            className="group relative size-24 overflow-hidden rounded-lg bg-surface-2"
-          >
-            <img
-              src={thumb(img.assetId)}
-              alt=""
-              draggable={false}
-              className="size-full object-cover"
-            />
-            <button
-              type="button"
-              aria-label="移除"
-              title="移除"
-              onClick={() => onRemove(img.assetId)}
-              className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn absolute top-1 right-1 bg-float opacity-0 group-hover:opacity-100 focus:opacity-100"
-            >
-              <Icon name="x" size={12} />
-            </button>
-          </div>
-        ))}
-        {canAdd && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => ref.current?.click()}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault()
-              void pick([...e.dataTransfer.files])
-            }}
-            className="ui-drop-tile"
-          >
-            <Icon name={busy ? 'upload' : 'plus'} size={16} />
-            {busy ? '上传中' : '上传'}
-          </button>
-        )}
-        {canAdd && (
-          <CanvasPick
-            media={media}
-            type="image"
-            multiple={!!slot.multiple}
-            taken={used}
-            onPick={(id) => onAdd([id])}
+    <div className="lib-hero">
+      {layers.map((l, i) =>
+        l.id ? (
+          <img
+            key={l.key}
+            src={assetUrls.variant(l.id, 'thumb-1024')}
+            alt=""
+            draggable={false}
+            data-enter={i === layers.length - 1 && layers.length > 1 ? '' : undefined}
+            onAnimationEnd={() => setLayers((ls) => ls.slice(-1))}
           />
-        )}
-      </div>
-      {error && <span className="text-xs text-danger">{error}</span>}
-      <input
-        ref={ref}
-        type="file"
-        accept="image/*"
-        multiple={slot.multiple}
-        hidden
-        onChange={(e) => {
-          const files = [...(e.target.files ?? [])]
-          e.target.value = ''
-          if (files.length) void pick(files)
-        }}
-      />
-    </div>
-  )
-}
-
-function VideoField({
-  value,
-  media,
-  onChange,
-}: {
-  value: string | null
-  media: CanvasMedia[]
-  onChange(v: string | null): void
-}) {
-  const ref = useRef<HTMLInputElement>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  return (
-    <div className="ui-field">
-      <span className="ui-label">
-        参考视频
-        <span className="ml-2 font-normal text-ink-subtle">只给人看，不会送进模型</span>
-      </span>
-      {value ? (
-        <div className="flex items-start gap-2">
-          {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 参考视频没有字幕 */}
-          <video
-            src={assetUrls.original(value)}
-            controls
-            className="max-h-56 w-full rounded-lg bg-black"
-          />
-          <button
-            type="button"
-            onClick={() => onChange(null)}
-            className="ui-btn ui-btn-quiet ui-btn-sm"
+        ) : (
+          <span
+            key={l.key}
+            data-enter={i === layers.length - 1 && layers.length > 1 ? '' : undefined}
+            onAnimationEnd={() => setLayers((ls) => ls.slice(-1))}
+            className="lib-hero-empty"
           >
-            移除
-          </button>
-        </div>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => ref.current?.click()}
-            className="ui-drop-tile"
-          >
-            <Icon name="upload" size={16} />
-            {busy ? '上传中' : '上传视频'}
-          </button>
-          <CanvasPick media={media} type="video" multiple={false} taken={[]} onPick={onChange} />
-        </div>
+            <Icon name={KIND_ICONS[kind.id]} size={24} />
+            {readOnly
+              ? `官方${kind.title}只有提示词，复制到「我的」之后可以加参考图`
+              : '还没有参考图'}
+          </span>
+        ),
       )}
-      {error && <span className="text-xs text-danger">{error}</span>}
-      <input
-        ref={ref}
-        type="file"
-        accept="video/*"
-        hidden
-        onChange={async (e) => {
-          const files = [...(e.target.files ?? [])]
-          e.target.value = ''
-          if (!files.length) return
-          setBusy(true)
-          setError(null)
-          try {
-            const [id] = await uploadAll(files, 'video')
-            if (id) onChange(id)
-            else setError('只能放视频')
-          } catch (err) {
-            setError((err as Error).message)
-          } finally {
-            setBusy(false)
-          }
-        }}
-      />
+      <div className="lib-hero-caption">
+        <span className="truncate text-base font-semibold">{name}</span>
+        {caption && <span className="truncate text-xs">{caption}</span>}
+      </div>
     </div>
   )
+}
+
+/** 资产库里改了档案：当前画布上从这条资产放下的角色卡跟着同步，@ 引用马上用上新的 */
+function syncPlacedProfile(item: LibraryItem) {
+  const engine = useCanvas.getState().engine
+  if (!engine || engine.doc.readOnly) return
+  const card = findPlacedCard(engine, item.id)
+  if (!card) return
+  const next = item.profile ?? emptyProfile()
+  if (JSON.stringify(profileOf(card.params?.profile)) === JSON.stringify(profileOf(next))) return
+  setParam(engine.doc, card.id, 'profile', next)
 }

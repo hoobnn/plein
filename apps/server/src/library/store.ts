@@ -15,7 +15,7 @@ type LibraryRow = typeof libraryItems.$inferSelect
 /** data 列里存的字段 */
 type LibraryData = Pick<
   LibraryItem,
-  'description' | 'tags' | 'voice' | 'images' | 'video' | 'models'
+  'description' | 'tags' | 'voice' | 'images' | 'video' | 'models' | 'profile'
 >
 
 const toItem = (r: LibraryRow): LibraryItem => {
@@ -31,6 +31,7 @@ const toItem = (r: LibraryRow): LibraryItem => {
     images: d.images ?? [],
     video: d.video ?? null,
     models: d.models ?? [],
+    profile: d.profile ?? null,
     favorite: r.favorite === 1,
     usedAt: r.used_at,
     createdAt: r.created_at,
@@ -46,6 +47,7 @@ const dataOf = (i: LibraryData): string =>
     images: i.images,
     video: i.video,
     models: i.models,
+    profile: i.profile,
   })
 
 /** 资产库条目的增删改查，按所有者隔离；HTTP 路由和智能体能力共用 */

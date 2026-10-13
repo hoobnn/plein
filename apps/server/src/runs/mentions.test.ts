@@ -252,3 +252,82 @@ describe('音色按平台沿用', () => {
     expect(r.notices[0]).toContain('请在配音节点里手动选择音色')
   })
 })
+
+describe('角色档案：@林夏/少年/校服', () => {
+  const setup = () => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    const photo = createElement(doc, {
+      kind: 'image',
+      name: '定妆照',
+      assetId: 'a'.repeat(64),
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+    })
+    const hero = character(doc, '林夏', { description: '二十岁，短发' }, 200)
+    connect(doc, [photo, 'image'], [hero, 'references'])
+    return { doc, photo, hero }
+  }
+
+  const look = (id: string, name: string, images: string[] = [], description = '') => ({
+    id,
+    name,
+    aliases: [],
+    description,
+    images,
+  })
+  const profile = {
+    periods: [
+      {
+        ...look('p1', '少年', ['1'.repeat(64)], '十五岁'),
+        voice: { provider: 'plein/mock', voiceId: 'v_young' },
+        voiceStates: [
+          {
+            id: 's1',
+            name: '生病',
+            aliases: [],
+            voice: { provider: 'plein/mock', voiceId: 'v_sick' },
+          },
+        ],
+        outfits: [look('o1', '校服', ['2'.repeat(64)], '蓝白校服')],
+      },
+    ],
+    expressions: [],
+  }
+
+  it('图片节点：时期与服饰的设定附上，图排在卡片参考图前面', async () => {
+    const { doc, photo, hero } = setup()
+    setParams(doc, hero, { profile })
+    const n = node(doc, 'plein/image', { prompt: '@林夏/少年/校服站在天台' })
+    const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
+    expect(r.params.prompt).toBe(
+      '林夏（少年·校服）站在天台\n\n设定：\n林夏（少年·校服）：二十岁，短发\n少年时期：十五岁\n服饰「校服」：蓝白校服',
+    )
+    expect(r.inputs.references?.map((v) => ('assetId' in v ? v.assetId : ''))).toEqual([
+      '1'.repeat(64),
+      '2'.repeat(64),
+      doc.get(photo)!.assetId,
+    ])
+  })
+
+  it('配音：状态次音色优先于时期主音色', async () => {
+    const { doc, hero } = setup()
+    setParams(doc, hero, { profile })
+    const sick = node(doc, 'plein/speech', { model: 'plein/mock:tts', text: '@林夏/生病 咳咳' })
+    const r = await applyMentions(doc, doc.get(sick)!, speechNode, {}, collect(doc))
+    expect(r.params.voice).toEqual({ provider: 'plein/mock', voiceId: 'v_sick' })
+    const young = node(doc, 'plein/speech', { model: 'plein/mock:tts', text: '@林夏/少年 你好' })
+    const r2 = await applyMentions(doc, doc.get(young)!, speechNode, {}, collect(doc))
+    expect(r2.params.voice).toEqual({ provider: 'plein/mock', voiceId: 'v_young' })
+  })
+
+  it('对不上的档案项给提示，文本原样保留', async () => {
+    const { doc, hero } = setup()
+    setParams(doc, hero, { profile })
+    const n = node(doc, 'plein/image', { prompt: '@林夏/学生装' })
+    const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
+    expect(r.params.prompt).toMatch(/^林夏\/学生装/)
+    expect(r.notices.join()).toContain('学生装')
+  })
+})

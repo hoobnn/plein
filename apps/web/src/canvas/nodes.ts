@@ -17,7 +17,7 @@ import {
   updateElement,
   videoAssetOf,
 } from '@plein/doc'
-import { type MentionTarget, mentionName } from '@plein/nodes'
+import { type MentionTarget, mentionName, profileOf } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { modelProblem, selectedModel } from './modelParams'
 
@@ -305,7 +305,9 @@ export function mentionTargets(engine: Engine): MentionTarget[] {
   const out: MentionTarget[] = []
   for (const el of engine.doc.elements()) {
     const name = mentionName(el)
-    if (name) out.push({ id: el.id, name })
+    if (!name) continue
+    const profile = el.nodeType === 'plein/character' ? profileOf(el.params?.profile) : undefined
+    out.push({ id: el.id, name, ...(profile ? { profile } : {}) })
   }
   return out
 }
