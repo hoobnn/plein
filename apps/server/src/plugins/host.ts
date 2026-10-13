@@ -27,6 +27,7 @@ import {
   type ServerPluginDefinition,
 } from '@plein/plugin-sdk'
 import { stableStringify } from '@plein/flow'
+import { Agent } from 'undici'
 import { composeVideo } from '../assets/compose'
 import { hasFfmpeg, probeMedia } from '../assets/media'
 import type { AssetStore } from '../assets/store'
@@ -37,6 +38,15 @@ import { PermissionError, scopedFetch, scopedSecrets } from './sandbox'
 
 /** 异步任务最长等待时间 */
 const DEFAULT_TIMEOUT_MS = 30 * 60_000
+
+/**
+ * 平台请求用的连接池：不设等响应头、读响应体的超时。
+ * Node fetch 默认等响应头最多 5 分钟，同步出图在平台排队时会超过，被掐断后成了「提交状态未知」；
+ * 一次调用多久算超时由上面的调用超时（signal）统一管
+ */
+const providerDispatcher = new Agent({ headersTimeout: 0, bodyTimeout: 0 })
+const providerFetch = ((input: Request, init?: RequestInit) =>
+  fetch(input, { ...init, dispatcher: providerDispatcher } as RequestInit)) as typeof fetch
 const DEFAULT_POLL_MS = 2_000
 
 export class NodeRunError extends Error {
@@ -315,7 +325,7 @@ export class PluginHost {
     }
     if (!providerConfigured(def, config.secrets))
       throw new ProviderError('auth', `平台 ${def.title} 缺少一组完整的鉴权密钥`)
-    const fetchScoped = scopedFetch(manifest)
+    const fetchScoped = scopedFetch(manifest, providerFetch)
     return {
       settings: settings.data,
       secret: scopedSecrets(manifest, config.secrets),
