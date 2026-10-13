@@ -6,6 +6,7 @@ import {
   createDoc,
   currentResult,
   type NodeResult,
+  type NodeRun,
   type PleinDoc,
   type ResultValue,
   setParams,
@@ -522,11 +523,16 @@ export class NodeRuns {
     this.jobsChange()
   }
 
-  private finish(doc: PleinDoc, a: ActiveJob, status: JobStatus, error?: string) {
+  private finish(doc: PleinDoc, a: ActiveJob, status: JobStatus, err?: unknown) {
     const at = Date.now()
+    const error = err === undefined ? undefined : (err as Error).message
+    const errorCode =
+      typeof (err as { code?: unknown })?.code === 'string'
+        ? (err as { code: string }).code
+        : undefined
     this.store.update(a.id, { status, error: error ?? null, finished_at: at })
     const el = doc.get(a.nodeId)
-    if (el) writeRun(doc, a.nodeId, { id: a.id, status, error, at })
+    if (el) writeRun(doc, a.nodeId, { id: a.id, status, error, errorCode, at })
     a.resolve(status)
     this.emit({
       type: 'job-finished',
@@ -547,26 +553,30 @@ export class NodeRuns {
     try {
       const el = doc.get(a.nodeId)
       if (el?.kind !== 'node' || !el.nodeType) return this.finish(doc, a, 'canceled')
-      this.store.update(a.id, { status: 'running', started_at: Date.now() })
-      writeRun(doc, a.nodeId, { id: a.id, status: 'running', progress: 0, at: Date.now() })
+      const startedAt = Date.now()
+      this.store.update(a.id, { status: 'running', started_at: startedAt })
+      const base = { id: a.id, status: 'running', startedAt } as const
+      writeRun(doc, a.nodeId, { ...base, progress: 0, at: startedAt })
 
       for (;;) {
         const attempts = (this.store.get(a.id)?.attempts ?? 0) + 1
         this.store.update(a.id, { attempts })
         try {
-          await this.runOnce(doc, a, signal)
+          await this.runOnce(doc, a, signal, attempts > 1 ? { ...base, attempt: attempts } : base)
           return this.finish(doc, a, 'succeeded')
         } catch (err) {
           if (signal.reason === SHUTDOWN) return a.resolve('running')
           if (signal.aborted) return this.finish(doc, a, 'canceled')
-          const message = (err as Error).message
           const delay = this.retryDelays[attempts - 1]
-          if (!retryable(err) || delay === undefined) return this.finish(doc, a, 'failed', message)
+          if (!retryable(err) || delay === undefined) return this.finish(doc, a, 'failed', err)
+          const now = Date.now()
           writeRun(doc, a.nodeId, {
-            id: a.id,
-            status: 'running',
-            message: `${message}，${Math.ceil(delay / 1000)} 秒后重试（第 ${attempts} 次）`,
-            at: Date.now(),
+            ...base,
+            phase: 'retrying',
+            message: (err as Error).message,
+            retryAt: now + delay,
+            attempt: attempts,
+            at: now,
           })
           try {
             await sleep(delay, signal)
@@ -578,7 +588,7 @@ export class NodeRuns {
       }
     } catch (err) {
       // 写文档或数据库本身出错：任务记为失败，不让队列卡住
-      if (!this.closed) this.finish(doc, a, 'failed', (err as Error).message)
+      if (!this.closed) this.finish(doc, a, 'failed', err)
       else a.resolve('failed')
     } finally {
       doc.destroy()
@@ -587,10 +597,17 @@ export class NodeRuns {
   }
 
   /** 执行一次：收集输入、调执行器、写回结果 */
-  private async runOnce(doc: PleinDoc, a: ActiveJob, signal: AbortSignal) {
+  private async runOnce(
+    doc: PleinDoc,
+    a: ActiveJob,
+    signal: AbortSignal,
+    base: Omit<NodeRun, 'at'>,
+  ) {
     const el = doc.get(a.nodeId)
     if (!el?.nodeType) throw new NodeRunError('not_found', '节点不存在')
     const prepared = await this.prepare(doc, el, a.ownerId, signal)
+    // 运行中的状态：进度、执行器提示和调用平台的阶段合在一起写回文档
+    const live: Omit<NodeRun, 'at'> = { ...base }
     let lastProgress = 0
     const outputs = await this.host.runNode({
       type: el.nodeType,
@@ -606,7 +623,14 @@ export class NodeRuns {
         lastProgress = now
         a.progress = progress
         this.jobsChange()
-        writeRun(doc, el.id, { id: a.id, status: 'running', progress, message, at: now })
+        Object.assign(live, { progress, message })
+        writeRun(doc, el.id, { ...live, at: now })
+      },
+      // 阶段变化不多，立即写回，界面上排队、生成、下载结果的切换不滞后
+      onStage: ({ phase, via }) => {
+        if (live.phase === phase && live.via === via) return
+        Object.assign(live, { phase, via })
+        writeRun(doc, el.id, { ...live, at: Date.now() })
       },
     })
     const at = Date.now()

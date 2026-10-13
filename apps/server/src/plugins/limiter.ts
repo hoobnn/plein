@@ -9,6 +9,11 @@ export class Limiter {
     private perMinute = Number.POSITIVE_INFINITY,
   ) {}
 
+  /** 并发已满，新的调用要排队 */
+  get full() {
+    return this.active >= this.concurrency
+  }
+
   async run<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     await this.acquire(signal)
     try {

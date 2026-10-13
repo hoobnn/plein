@@ -105,14 +105,35 @@ export interface NodeResult {
 
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled'
 
+/**
+ * 运行中调用外部平台的阶段：
+ * waiting 等平台并发空位 → submitting 提交（同步平台在这一步直接出结果）→
+ * queued 平台排队 → generating 平台生成中 → saving 下载结果存入资产库；
+ * retrying 是出错后等待自动重试
+ */
+export type RunPhase = 'waiting' | 'submitting' | 'queued' | 'generating' | 'saving' | 'retrying'
+
 /** 节点最近一次运行的状态，由服务端写入，不进撤销栈 */
 export interface NodeRun {
   id: string
   status: RunStatus
   /** 0–1 */
   progress?: number
+  /** 执行器自己的提示（如“识别对白…”）；重试时是出错原因 */
   message?: string
   error?: string
+  /** 失败时的错误类别（ProviderErrorCode / NodeRunError 的 code），界面据此给出处理建议 */
+  errorCode?: string
+  /** 运行中当前所处的阶段，没有时只知道“生成中” */
+  phase?: RunPhase
+  /** 正在调用的平台和模型，如“火山方舟 · Seedance 1.0 Pro” */
+  via?: string
+  /** 开始运行的时间，界面据此显示已用时长 */
+  startedAt?: number
+  /** 等待自动重试时，下次重试的时间 */
+  retryAt?: number
+  /** 第几次尝试（含自动重试），大于 1 时显示 */
+  attempt?: number
   at: number
 }
 

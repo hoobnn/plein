@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { desktop } from './desktop'
 import { AgentDock } from './panels/Agent'
 import { DesktopEvents } from './panels/DesktopEvents'
-import { SettingsDialog } from './panels/Settings'
+import { type Section, SettingsDialog } from './panels/Settings'
 import { DialogHost } from './ui/Dialog'
 import { TooltipHost } from './ui/Tooltip'
 import { useCanvas } from './stores/canvas'
@@ -17,12 +17,19 @@ import { useSession } from './stores/session'
 import { Presence } from './ui/Presence'
 
 export function App() {
-  const [settings, setSettings] = useState(false)
+  const [settings, setSettings] = useState<false | Section | undefined>(false)
+  // 卡片、任务面板上的“去设置”（如密钥无效）直接打开对应分区
+  useEffect(() => {
+    const open = (e: Event) =>
+      setSettings((e as CustomEvent<{ section?: Section }>).detail?.section)
+    window.addEventListener('plein:open-settings', open)
+    return () => window.removeEventListener('plein:open-settings', open)
+  }, [])
   useEffect(
     () =>
       desktop?.onMenuCommand((command) => {
         if (command === 'settings') {
-          setSettings(true)
+          setSettings(undefined)
           return
         }
         const engine = useCanvas.getState().engine
@@ -52,10 +59,14 @@ export function App() {
 
   return (
     <>
-      <AppContent onOpenSettings={() => setSettings(true)} />
+      <AppContent onOpenSettings={() => setSettings(undefined)} />
       <AgentDock />
       <LibraryPanel />
-      <Presence>{settings && <SettingsDialog onClose={() => setSettings(false)} />}</Presence>
+      <Presence>
+        {settings !== false && (
+          <SettingsDialog initial={settings} onClose={() => setSettings(false)} />
+        )}
+      </Presence>
       <DialogHost />
       <TooltipHost />
       <DesktopEvents />

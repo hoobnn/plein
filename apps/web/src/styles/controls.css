@@ -1006,3 +1006,78 @@
 :root .ui-dialog-scrim[data-ending-style] {
   animation: ui-fade-out var(--dur-exit) var(--ease-standard) forwards;
 }
+
+/*
+ * 外部调用的四步进度（任务面板）：提交 → 排队 → 生成 → 保存。
+ * 走过的实心；当前这步知道进度时按进度填满，不知道时一段光来回流动；没到的只留轨道。
+ */
+.ui-run-steps {
+  display: flex;
+  gap: 3px;
+}
+
+.ui-run-steps > li {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ui-run-step-bar {
+  position: relative;
+  display: block;
+  flex: none;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink-subtle) 22%, transparent);
+  transition: background-color var(--dur-slow) var(--ease-standard);
+}
+
+.ui-run-steps > li[data-state="done"] .ui-run-step-bar {
+  background: var(--accent);
+}
+
+.ui-run-steps > li[data-state="now"] .ui-run-step-bar {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.ui-run-step-bar > i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width var(--dur-move) var(--ease-spring);
+}
+
+.ui-run-step-bar[data-indeterminate="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 45%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: ui-run-flow 1.6s var(--ease-standard) infinite;
+}
+
+.ui-run-step-label {
+  font-size: var(--text-2xs);
+  line-height: 1;
+  color: var(--ink-subtle);
+  transition: color var(--dur-slow) var(--ease-standard);
+}
+
+.ui-run-steps > li[data-state="now"] .ui-run-step-label {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+@keyframes ui-run-flow {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(230%);
+  }
+}

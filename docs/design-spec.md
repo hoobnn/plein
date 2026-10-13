@@ -136,6 +136,7 @@
 | `.ui-drop-tile`                                                                                                                                                        | 96 见方的虚线投放格（上传、从画布选）                                                                             |
 | `.ui-kbd` / `.ui-keycap`                                                                                                                                               | 菜单里的快捷键提示；成组出现的键帽                                                                                |
 | `.ui-spinner`                                                                                                                                                          | 加载中，`size-3` / `size-4` 缩小                                                                                  |
+| `.ui-run-steps` / `.ui-run-step-bar` / `.ui-run-step-label`                                                                                                            | 外部调用的四步进度（提交、排队、生成、保存）                                                                      |
 | `.ui-empty`（`-fill` `-compact`）                                                                                                                                      | 空状态（`ui/EmptyState.tsx`）                                                                                     |
 | `.ui-switch`                                                                                                                                                           | 开关（`ui/Switch.tsx`）                                                                                           |
 | `.ui-pop`（`.ui-pop-up` `.ui-pop-right`）                                                                                                                              | 其他弹出的浮层的进场方向                                                                                          |
@@ -148,16 +149,17 @@
 
 弹层、下拉、菜单、开关、面板和对话框基于 [Base UI](https://base-ui.com)（`@base-ui/react`，无样式组件）：键盘操作、焦点圈定与归还、ARIA、定位与碰撞翻转、嵌套浮层的点外面和 Esc 都交给它，样式和动效仍用本文档的类和令牌。新的交互控件（菜单、复选、滑块、标签页等）先找 Base UI 里对应的组件再套样式，不要从头手写。
 
-| 模块                | 用途                                                                             |
-| ------------------- | -------------------------------------------------------------------------------- |
-| `ui/Modal.tsx`      | 全屏面板的遮罩、外框和标题行（设置、生成历史、分镜表、序列、快捷键）             |
-| `ui/Presence.tsx`   | 浮层退场：`<Presence>` 延迟卸载，`useExit()` 铺属性，`useClosing()` 判断收起中   |
-| `ui/Popover.tsx`    | 锚定在按钮上的弹层，从锚点那一侧长出（Base UI Popover）                          |
-| `ui/Segmented.tsx`  | 分段控件（筛选、范围、主题），选中底色滑动                                       |
-| `ui/EmptyState.tsx` | 空状态：图标、标题、说明、操作                                                   |
-| `ui/Switch.tsx`     | 开关                                                                             |
-| `ui/Toast.tsx`      | 顶栏下方的提示条                                                                 |
-| `ui/keys.ts`        | 快捷键的显示文本：`shortcut('mod+shift+z')` → macOS「⇧⌘Z」、其他「Ctrl+Shift+Z」 |
-| `ui/format.ts`      | 时间：相对时间、「今天 14:05」、时长                                             |
-| `ui/useDismiss.ts`  | 点外面、按 Esc（可选滚轮）关闭浮层                                               |
-| `canvas/hooks.ts`   | `useEngineVersion`（跟随元素的浮层）、`useDocVersion`（列表和表格）              |
+| 模块                  | 用途                                                                             |
+| --------------------- | -------------------------------------------------------------------------------- |
+| `ui/Modal.tsx`        | 全屏面板的遮罩、外框和标题行（设置、生成历史、分镜表、序列、快捷键）             |
+| `ui/Presence.tsx`     | 浮层退场：`<Presence>` 延迟卸载，`useExit()` 铺属性，`useClosing()` 判断收起中   |
+| `ui/Popover.tsx`      | 锚定在按钮上的弹层，从锚点那一侧长出（Base UI Popover）                          |
+| `ui/Segmented.tsx`    | 分段控件（筛选、范围、主题），选中底色滑动                                       |
+| `ui/EmptyState.tsx`   | 空状态：图标、标题、说明、操作                                                   |
+| `ui/Switch.tsx`       | 开关                                                                             |
+| `ui/Toast.tsx`        | 顶栏下方的提示条                                                                 |
+| `ui/keys.ts`          | 快捷键的显示文本：`shortcut('mod+shift+z')` → macOS「⇧⌘Z」、其他「Ctrl+Shift+Z」 |
+| `ui/format.ts`        | 时间：相对时间、「今天 14:05」、时长                                             |
+| `canvas/runStatus.ts` | 运行状态的说法：阶段标签、平台、已用时长、重试倒计时、失败原因和处理建议         |
+| `ui/useDismiss.ts`    | 点外面、按 Esc（可选滚轮）关闭浮层                                               |
+| `canvas/hooks.ts`     | `useEngineVersion`（跟随元素的浮层）、`useDocVersion`（列表和表格）              |

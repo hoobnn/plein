@@ -471,16 +471,124 @@
   backdrop-filter: blur(6px);
 }
 
-.plein-node-failed {
-  color: var(--danger);
-  word-break: break-word;
+.plein-node-running {
+  gap: 6px;
 }
 
-.plein-node-failed > span {
+.plein-node-running > .ui-spinner {
+  margin-bottom: 4px;
+}
+
+.plein-node-run-label {
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+/* 平台排队、重试时标签换成提醒色：在等别人，不是在生成 */
+.plein-node-running[data-phase="queued"] .plein-node-run-label,
+.plein-node-running[data-phase="waiting"] .plein-node-run-label,
+.plein-node-running[data-phase="local"] .plein-node-run-label {
+  color: var(--ink-muted);
+}
+.plein-node-running[data-phase="retrying"] .plein-node-run-label {
+  color: var(--warning);
+}
+
+.plein-node-run-detail {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-subtle);
+}
+.plein-node-run-detail:empty {
+  display: none;
+}
+
+/* 四步：提交 → 排队 → 生成 → 保存。走过的实心，当前这步在呼吸 */
+.plein-node-steps {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0 2px;
+}
+.plein-node-steps[hidden] {
+  display: none;
+}
+.plein-node-steps > li {
+  width: 16px;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink-subtle) 30%, transparent);
+  transition:
+    background-color var(--dur-slow) var(--ease-standard),
+    width var(--dur-slow) var(--ease-spring);
+}
+.plein-node-steps > li[data-state="done"] {
+  background: var(--accent);
+}
+.plein-node-steps > li[data-state="now"] {
+  width: 24px;
+  background: var(--accent);
+  animation: plein-pulse 1.4s ease-in-out infinite;
+}
+
+.plein-node-run-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.plein-node-run-time {
+  color: var(--ink-subtle);
+  font-size: var(--text-2xs);
+}
+.plein-node-run-time:empty {
+  display: none;
+}
+
+.plein-node-running[data-compact="true"]
+  :is(.plein-node-run-detail, .plein-node-steps, .plein-node-run-time) {
+  display: none;
+}
+.plein-node-running[data-compact="true"] > .ui-spinner {
+  margin-bottom: 0;
+}
+.plein-node-running[data-compact="true"] .plein-node-run-foot {
+  margin-top: 2px;
+}
+
+.plein-node-failed {
+  gap: 6px;
+  color: var(--ink-muted);
+  word-break: break-word;
+  background: radial-gradient(80% 80% at 50% 50%, var(--danger-soft), transparent 70%);
+}
+
+.plein-node-failed-icon {
+  display: inline-flex;
+  color: var(--danger);
+}
+
+.plein-node-failed > strong {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.plein-node-failed > span:not([class]) {
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  color: var(--ink-subtle);
+}
+
+.plein-node-failed-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
 }
 
 .plein-node-action {
@@ -506,6 +614,31 @@
   border-radius: 999px;
   background: var(--accent);
   transition: width var(--dur-move) var(--ease-spring);
+}
+
+/* 不知道进度：一段光在轨道上来回流动 */
+.plein-node-progress.is-indeterminate {
+  width: calc(100% - 24px);
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.plein-node-progress.is-indeterminate::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: plein-indeterminate 1.6s var(--ease-standard) infinite;
+}
+
+@keyframes plein-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
 }
 
 .plein-node-thumbs {

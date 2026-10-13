@@ -6,6 +6,13 @@ import { useCatalog } from '../stores/catalog'
 import { useStale } from '../stores/stale'
 import { type IconName, iconElement } from '../ui/icons'
 import { findNode, isPure, promptKey, targetImages } from './nodes'
+import {
+  clock,
+  describeActive,
+  describeFailure,
+  openProviderSettings,
+  RUN_STEPS,
+} from './runStatus'
 import { shotsOf } from './storyboard'
 
 type PromptPreset = Catalog['prompts'][number]
@@ -28,8 +35,18 @@ interface Card {
   count: HTMLSpanElement
   body: HTMLDivElement
   progress: HTMLDivElement
+  /** 运行中浮层：建一次，之后只改文字，转圈和步骤的动画不会被打断 */
+  live?: LiveBox
   /** 上次渲染的签名，没变化就不碰 DOM */
   sig: string
+}
+
+interface LiveBox {
+  box: HTMLDivElement
+  label: HTMLSpanElement
+  detail: HTMLSpanElement
+  steps: HTMLOListElement
+  time: HTMLSpanElement
 }
 
 const STATUS_TEXT: Record<RunStatus, string> = {
@@ -86,6 +103,8 @@ function glyphOf(el: CanvasElement, kind: string): IconName {
 export class NodeCards {
   private cards = new Map<string, Card>()
   private disposers: Array<() => void> = []
+  /** 有节点在运行时每秒走一次：已用时长、重试倒计时 */
+  private ticker: ReturnType<typeof setInterval> | undefined
 
   constructor(
     private engine: Engine,
@@ -134,9 +153,25 @@ export class NodeCards {
       card.root.style.height = `${rect.h}px`
       this.render(card, { ...el, ...rect }, engine.selection.has(id))
     }
+    const ticking = [...this.cards.values()].some((c) => c.live)
+    if (ticking && !this.ticker) this.ticker = setInterval(() => this.tick(), 1000)
+    else if (!ticking && this.ticker) {
+      clearInterval(this.ticker)
+      this.ticker = undefined
+    }
+  }
+
+  /** 只刷新运行中卡片的时间和文字，不重建 DOM */
+  private tick() {
+    for (const [id, card] of this.cards) {
+      const run = this.engine.scene.get(id)?.run
+      if (!run || !card.live) continue
+      this.updateLive(card, run)
+    }
   }
 
   destroy() {
+    clearInterval(this.ticker)
     for (const d of this.disposers) d()
     for (const c of this.cards.values()) c.root.remove()
     this.cards.clear()
@@ -223,8 +258,11 @@ export class NodeCards {
     card.title.textContent = el.name ?? info?.title ?? el.nodeType ?? '节点'
     card.glyph.replaceChildren(iconElement(glyphOf(el, kind), 14))
 
-    let status = run && !(run.status === 'running' && !run.progress) ? STATUS_TEXT[run.status] : ''
-    if (run?.status === 'running' && run.progress) status += ` ${Math.round(run.progress * 100)}%`
+    let status = run ? STATUS_TEXT[run.status] : ''
+    if (run && active) {
+      const view = describeActive(run, Date.now())
+      status = view.retrying ? '重试中' : view.label
+    }
     // 参数或上游改过、结果已经过期：运行中、失败时以运行状态为准
     const stale =
       active || run?.status === 'failed' ? undefined : useStale.getState().nodes.get(el.id)
@@ -236,7 +274,10 @@ export class NodeCards {
         : '上游节点改过，重跑上游后这里也要重跑'
       : ''
     card.status.textContent = status
-    card.progress.style.width = active ? `${Math.max(4, (run?.progress ?? 0) * 100)}%` : '0'
+    // 不知道进度时进度条换成来回流动的光，一眼能看出没卡住
+    const known = active && run?.status === 'running' && run.phase !== 'retrying' && !!run.progress
+    card.progress.classList.toggle('is-indeterminate', active && !known)
+    card.progress.style.width = known ? `${Math.max(4, run!.progress! * 100)}%` : active ? '' : '0'
 
     const list = primaryResults(el)
     const cur = currentResult(el, list[0]?.port)
@@ -293,7 +334,7 @@ export class NodeCards {
     } else if (active) {
       this.renderRunning(card, el)
     } else if (run?.status === 'failed') {
-      this.renderFailed(card, el, run.error)
+      this.renderFailed(card, el, run)
     } else if (v?.type === 'text') {
       card.body.textContent = v.text
       card.body.classList.add('is-text')
@@ -315,6 +356,8 @@ export class NodeCards {
       const written = pk ? String(el.params?.[pk] ?? '').trim() : ''
       this.renderEmpty(card, el, kind, written ? [] : presetsFor(catalog?.prompts ?? [], info))
     }
+    // 运行浮层只在运行中保留，其他状态清掉引用，下次运行重新建
+    if (!card.body.classList.contains('is-running')) card.live = undefined
   }
 
   /** 空节点：中央类型图标，下面列几个可直接套用的预设 */
@@ -346,37 +389,107 @@ export class NodeCards {
     card.body.classList.add('is-empty')
   }
 
+  /**
+   * 运行中：转圈、当前在做什么（平台排队、生成 42%、3 秒后重试）、调用的平台、
+   * 四步进度（提交 → 排队 → 生成 → 保存）、已用时长和取消。
+   */
   private renderRunning(card: Card, el: CanvasElement) {
-    const box = document.createElement('div')
-    box.className = 'plein-node-running'
-    const spin = document.createElement('span')
-    spin.className = 'ui-spinner'
-    const text = document.createElement('span')
-    const p = el.run?.progress
-    text.textContent =
-      el.run?.status === 'queued' ? '排队中…' : p ? `生成中 ${Math.round(p * 100)}%` : '生成中…'
-    const cancel = button('plein-node-action', '取消生成', { text: '取消' })
-    cancel.addEventListener('click', (e) => {
-      e.stopPropagation()
-      this.actions.cancel(el.id)
-    })
-    box.append(spin, text, cancel)
-    card.body.replaceChildren(box)
     card.body.classList.add('is-running')
+    if (!card.live || card.live.box.parentNode !== card.body) {
+      const box = document.createElement('div')
+      box.className = 'plein-node-running'
+      const spin = document.createElement('span')
+      spin.className = 'ui-spinner'
+      const label = document.createElement('span')
+      label.className = 'plein-node-run-label'
+      const detail = document.createElement('span')
+      detail.className = 'plein-node-run-detail'
+      const steps = document.createElement('ol')
+      steps.className = 'plein-node-steps'
+      for (const name of RUN_STEPS) {
+        const li = document.createElement('li')
+        li.title = name
+        steps.appendChild(li)
+      }
+      const foot = document.createElement('span')
+      foot.className = 'plein-node-run-foot'
+      const time = document.createElement('span')
+      time.className = 'plein-node-run-time'
+      const cancel = button('plein-node-action', '取消生成', { text: '取消' })
+      cancel.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this.actions.cancel(el.id)
+      })
+      foot.append(time, cancel)
+      box.append(spin, label, detail, steps, foot)
+      card.body.replaceChildren(box)
+      card.live = { box, label, detail, steps, time }
+    }
+    // 卡片太矮时只留转圈、标签和取消
+    card.live.box.dataset.compact = String(el.h < 150 || el.w < 160)
+    if (el.run) this.updateLive(card, el.run)
   }
 
-  private renderFailed(card: Card, el: CanvasElement, error?: string) {
+  private updateLive(card: Card, run: NonNullable<CanvasElement['run']>) {
+    const live = card.live!
+    const view = describeActive(run, Date.now())
+    live.box.dataset.phase = run.status === 'queued' ? 'local' : (run.phase ?? 'generating')
+    if (live.label.textContent !== view.label) live.label.textContent = view.label
+    const detail = view.detail ?? ''
+    if (live.detail.textContent !== detail) {
+      live.detail.textContent = detail
+      live.detail.title = detail
+    }
+    live.steps.hidden = view.step === undefined
+    live.steps.childNodes.forEach((li, i) => {
+      const state =
+        view.step === undefined ? '' : i < view.step ? 'done' : i === view.step ? 'now' : ''
+      ;(li as HTMLElement).dataset.state = state
+    })
+    const time = [
+      view.elapsed !== undefined && clock(view.elapsed),
+      run.attempt && run.attempt > 1 && `第 ${run.attempt} 次`,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    if (live.time.textContent !== time) live.time.textContent = time
+  }
+
+  /** 失败：一句人话的原因，平台原话在下面；密钥、余额问题给“去设置” */
+  private renderFailed(card: Card, el: CanvasElement, run: NonNullable<CanvasElement['run']>) {
+    const view = describeFailure(run)
     const box = document.createElement('div')
     box.className = 'plein-node-failed'
-    const text = document.createElement('span')
-    text.textContent = error ?? '生成失败'
+    const icon = document.createElement('span')
+    icon.className = 'plein-node-failed-icon'
+    icon.appendChild(iconElement('warning', 16))
+    const title = document.createElement('strong')
+    title.textContent = view.title
+    box.append(icon, title)
+    if (view.detail) {
+      const detail = document.createElement('span')
+      detail.textContent = view.detail
+      detail.title = view.detail
+      box.appendChild(detail)
+    }
+    const actions = document.createElement('span')
+    actions.className = 'plein-node-failed-actions'
     const retry = button('plein-node-action', '重试', { text: '重试' })
     retry.addEventListener('click', (e) => {
       e.stopPropagation()
       this.engine.selection.set([el.id])
       this.actions.run(el.id)
     })
-    box.append(text, retry)
+    actions.appendChild(retry)
+    if (view.settings) {
+      const fix = button('plein-node-action', '打开模型平台设置', { text: '去设置' })
+      fix.addEventListener('click', (e) => {
+        e.stopPropagation()
+        openProviderSettings()
+      })
+      actions.appendChild(fix)
+    }
+    box.appendChild(actions)
     card.body.replaceChildren(box)
     card.body.classList.add('is-failed')
   }

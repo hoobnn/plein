@@ -16,7 +16,7 @@ import { Switch } from '../ui/Switch'
 
 const input = 'ui-input ui-input-lg w-full'
 
-type Section = 'appearance' | 'providers' | 'mcp' | 'plugins' | 'data'
+export type Section = 'appearance' | 'providers' | 'mcp' | 'plugins' | 'data'
 
 /** 平台行的状态：停用 / 缺密钥 / 可用 */
 function providerState(p: ProviderInfo): { label: string; tone: string } {
@@ -224,9 +224,9 @@ function Group({ title, hint, children }: { title: string; hint?: string; childr
 }
 
 /** 设置：左侧分区导航，右侧当前分区 */
-export function SettingsDialog({ onClose }: { onClose(): void }) {
+export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?: Section }) {
   const { catalog, load } = useCatalog()
-  const [section, setSection] = useState<Section>('appearance')
+  const [section, setSection] = useState<Section>(initial ?? 'appearance')
   const [openProvider, setOpenProvider] = useState<string | null>(null)
   useEffect(() => {
     void load()

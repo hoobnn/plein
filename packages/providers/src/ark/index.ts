@@ -628,7 +628,11 @@ export const arkProvider = defineProvider({
     }
     if (data.status !== 'queued' && data.status !== 'running')
       throw new ProviderError('unknown', '火山方舟返回未知任务状态')
-    return { state: 'pending', pollAfterMs: 5000 }
+    return {
+      state: 'pending',
+      pollAfterMs: 5000,
+      remote: data.status === 'queued' ? 'queued' : 'running',
+    }
   },
   async cancel(remoteId, ctx) {
     const path = `/contents/generations/tasks/${encodeURIComponent(remoteId)}`

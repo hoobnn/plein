@@ -529,7 +529,11 @@ export const bailianProvider = defineProvider({
     const output = asJson(data.output),
       status = output.task_status
     if (status === 'PENDING' || status === 'RUNNING')
-      return { state: 'pending', pollAfterMs: ctx.settings.pollIntervalMs }
+      return {
+        state: 'pending',
+        pollAfterMs: ctx.settings.pollIntervalMs,
+        remote: status === 'PENDING' ? 'queued' : 'running',
+      }
     if (status === 'SUCCEEDED')
       return {
         state: 'succeeded',

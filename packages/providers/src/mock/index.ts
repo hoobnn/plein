@@ -204,7 +204,10 @@ function fakeOutputs(req: ProviderRequest): ProviderOutput[] {
 }
 
 /** 进行中的模拟异步任务 */
-const pending = new Map<string, { readyAt: number; req: ProviderRequest }>()
+const pending = new Map<
+  string,
+  { startAt: number; readyAt: number; polls: number; queueMs: number; req: ProviderRequest }
+>()
 let seq = 0
 
 export const mockProvider = defineProvider({
@@ -213,6 +216,7 @@ export const mockProvider = defineProvider({
   description: '不联网的假平台，按能力返回固定结果，用来在没有密钥时跑通工作流',
   settings: z.object({
     latencyMs: z.number().int().min(0).max(60_000).default(0).meta({ title: '模拟耗时（毫秒）' }),
+    queueMs: z.number().int().min(0).max(60_000).default(0).meta({ title: '其中平台排队（毫秒）' }),
     failWith: z
       .enum(['none', 'auth', 'rate_limit', 'content_policy'])
       .default('none')
@@ -264,7 +268,13 @@ export const mockProvider = defineProvider({
       return { state: 'succeeded', outputs }
     }
     const remoteId = `mock-${++seq}`
-    pending.set(remoteId, { readyAt: Date.now() + ctx.settings.latencyMs, req })
+    pending.set(remoteId, {
+      startAt: Date.now(),
+      polls: 0,
+      queueMs: ctx.settings.queueMs,
+      readyAt: Date.now() + ctx.settings.latencyMs,
+      req,
+    })
     return {
       state: 'pending',
       remoteId,
@@ -275,7 +285,23 @@ export const mockProvider = defineProvider({
     const job = pending.get(remoteId)
     if (!job) return { state: 'failed', error: { code: 'unknown', message: '任务不存在' } }
     const left = job.readyAt - Date.now()
-    if (left > 0) return { state: 'pending', progress: 0.5, pollAfterMs: Math.min(left, 500) }
+    if (left > 0) {
+      // 第一次查询时（和设置的排队时长内）还在平台排队，之后生成，进度按时间推进
+      const total = job.readyAt - job.startAt
+      const queued = job.polls++ === 0 || Date.now() - job.startAt < job.queueMs
+      return queued
+        ? {
+            state: 'pending',
+            remote: 'queued',
+            pollAfterMs: Math.min(left, Math.ceil(total / 3), 500),
+          }
+        : {
+            state: 'pending',
+            remote: 'running',
+            progress: Math.min(0.95, (total - left) / total),
+            pollAfterMs: Math.min(left, Math.ceil(total / 3), 500),
+          }
+    }
     pending.delete(remoteId)
     return { state: 'succeeded', outputs: fakeOutputs(job.req) }
   },

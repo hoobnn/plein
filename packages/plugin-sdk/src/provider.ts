@@ -139,7 +139,13 @@ export type SubmitResult =
   | { state: 'pending'; remoteId: string; pollAfterMs?: number }
 
 export type PollResult =
-  | { state: 'pending'; progress?: number; pollAfterMs?: number }
+  | {
+      state: 'pending'
+      progress?: number
+      pollAfterMs?: number
+      /** 远端任务是在平台排队还是已开始生成；不给时界面只显示“生成中” */
+      remote?: 'queued' | 'running'
+    }
   | { state: 'succeeded'; outputs: ProviderOutput[]; usage?: ProviderUsage }
   | { state: 'failed'; error: ProviderErrorInfo }
 

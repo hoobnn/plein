@@ -140,7 +140,9 @@ describe('任务队列', () => {
     const { id, doc } = await canvas(server)
     const a = addNode(doc, 'plein/image', { params: { prompt: 'a' } })
     const run = server.runs.start(id, a, 'local')
-    await until(() => doc.get(a)?.run?.message?.includes('重试'))
+    await until(() => doc.get(a)?.run?.phase === 'retrying')
+    expect(doc.get(a)?.run).toMatchObject({ message: '模拟限流', attempt: 1 })
+    expect(doc.get(a)?.run?.retryAt).toBeGreaterThan(Date.now() - 1000)
     expect(await server.runs.wait(run)).toBe('succeeded')
     expect(server.runs.store.get(run)?.attempts).toBe(2)
   })
@@ -154,6 +156,23 @@ describe('任务队列', () => {
     expect(await server.runs.wait(run)).toBe('failed')
     expect(server.runs.store.get(run)).toMatchObject({ attempts: 1, status: 'failed' })
     expect(doc.get(a)?.run?.error).toContain('content_policy')
+    expect(doc.get(a)?.run?.errorCode).toBe('content_policy')
+  })
+
+  it('运行中写回调用平台的阶段：平台排队、生成、保存结果', async () => {
+    const { server } = await boot()
+    mock(server, { latencyMs: 800 })
+    const { id, doc } = await canvas(server)
+    const a = addNode(doc, 'plein/image', { params: { prompt: 'a' } })
+    const phases: string[] = []
+    doc.ydoc.on('afterTransaction', () => {
+      const phase = doc.get(a)?.run?.phase
+      if (phase && phases.at(-1) !== phase) phases.push(phase)
+    })
+    const run = server.runs.start(id, a, 'local')
+    expect(await server.runs.wait(run)).toBe('succeeded')
+    expect(phases).toEqual(['submitting', 'queued', 'generating', 'saving'])
+    expect(doc.get(a)?.run?.status).toBe('succeeded')
   })
 
   it('远端已受理后轮询临时出错：重试时接着轮询，不重复提交', async () => {

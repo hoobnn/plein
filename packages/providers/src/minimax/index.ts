@@ -459,7 +459,7 @@ export const minimaxProvider = defineProvider({
     if (!task || String(task.id) !== remoteId)
       throw new ProviderError('unknown', 'MiniMax 查询未返回匹配的任务')
     if (task.status === 'queued' || task.status === 'running')
-      return { state: 'pending', pollAfterMs: 10_000 }
+      return { state: 'pending', pollAfterMs: 10_000, remote: task.status }
     if (task.status === 'failed' || task.status === 'cancelled')
       return {
         state: 'failed',

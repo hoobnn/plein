@@ -397,6 +397,7 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
     expect(await arkProvider.poll!('id/escaped', ctx)).toEqual({
       state: 'pending',
       pollAfterMs: 5000,
+      remote: 'running',
     })
     expect(fetch.mock.calls[0]?.[0]).toContain('id%2Fescaped')
     expect(await arkProvider.poll!('id', ctx)).toMatchObject({

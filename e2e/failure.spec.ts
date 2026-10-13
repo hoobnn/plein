@@ -28,6 +28,12 @@ test('平台报错时节点上给出可读的失败原因，改好后能重试�
   // 说人话：带中文说明，不是裸的错误码或堆栈
   expect(reason).toMatch(/[一-龥]/)
   expect(reason).not.toMatch(/Error:|at \w+ \(/)
+  // 密钥问题给“去设置”，直接打开模型平台设置
+  await failed.getByRole('button', { name: '打开模型平台设置' }).click()
+  const settings = page.getByRole('dialog', { name: '设置' })
+  await expect(settings.getByText('火山方舟').first()).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(settings).toHaveCount(0)
 
   await request.put(MOCK, { data: { settings: { failWith: 'none' } } })
   await run()

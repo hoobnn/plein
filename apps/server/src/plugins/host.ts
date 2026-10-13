@@ -69,6 +69,13 @@ export interface CallJournal {
   delete(key: string): void
 }
 
+/** 一次模型调用所处的阶段，见 @plein/doc 的 RunPhase */
+export interface CallStage {
+  phase: 'waiting' | 'submitting' | 'queued' | 'generating' | 'saving'
+  /** 平台和模型，如“火山方舟 · Seedance 1.0 Pro” */
+  via: string
+}
+
 export interface RunNodeOptions {
   type: string
   /** 文档里节点的版本；低于已安装版本时先迁移参数 */
@@ -78,6 +85,8 @@ export interface RunNodeOptions {
   ownerId: string
   signal?: AbortSignal
   onProgress?(fraction: number, message?: string): void
+  /** 执行器调模型时阶段变化（排队、提交、生成、下载结果） */
+  onStage?(stage: CallStage): void
   journal?: CallJournal
 }
 
@@ -153,6 +162,7 @@ export class PluginHost {
       ownerId: string
       signal?: AbortSignal
       onProgress?: (p: number) => void
+      onStage?: (stage: CallStage) => void
       /** 对话流式输出的文本增量 */
       onDelta?: (text: string) => void
       /** 调用记录与这次调用的键，见 CallJournal */
@@ -193,6 +203,9 @@ export class PluginHost {
     if (onDelta) ctx.stream = (d) => onDelta(d.text)
     const { def } = entry
     const limiter = this.limiter(parsed.provider, def.limits)
+    const via = `${def.title} · ${model.title}`
+    const stage = (phase: CallStage['phase']) => opts.onStage?.({ phase, via })
+    if (limiter.full) stage('waiting')
     // 远端已受理、且没有明确失败：此后的可重试错误（轮询或下载结果时网络抖动）
     // 保留 journal，外层重试接着轮询，不能重新提交付费任务
     let remoteAccepted = false
@@ -207,7 +220,9 @@ export class PluginHost {
           remoteId = recorded.remoteId
           remoteAccepted = true
           wait = 0
+          stage('generating')
         } else {
+          stage('submitting')
           const submitted = await def.submit({ capability, model: parsed.model, input }, ctx)
           if (submitted.state === 'succeeded') return submitted
           if (!def.poll)
@@ -228,6 +243,8 @@ export class PluginHost {
                 retryable: r.error.retryable,
               })
             }
+            // 平台没说在排队还是在生成时，按生成中算
+            stage(r.remote === 'queued' ? 'queued' : 'generating')
             if (r.progress !== undefined) opts.onProgress?.(r.progress)
             wait = r.pollAfterMs ?? DEFAULT_POLL_MS
           }
@@ -248,6 +265,7 @@ export class PluginHost {
           throw err
         }
       }, signal)
+      if (outputs.outputs.some((o) => o.type === 'file')) stage('saving')
       const assets = await this.storeOutputs(parsed.provider, outputs.outputs, opts.ownerId, signal)
       const result: ProviderCallResult = { outputs: outputs.outputs, assets, usage: outputs.usage }
       journal?.store.set(journal.key, { state: 'done', result })
@@ -393,6 +411,7 @@ export class PluginHost {
         ownerId: opts.ownerId,
         signal,
         onProgress: (p) => opts.onProgress?.(p),
+        onStage: opts.onStage,
         journal: opts.journal && {
           store: opts.journal,
           key: (capability, model, input) => callKey(capability, model, input),
@@ -429,6 +448,7 @@ export class PluginHost {
       ownerId: string
       signal: AbortSignal
       onProgress?: (fraction: number) => void
+      onStage?: (stage: CallStage) => void
       journal?: {
         store: CallJournal
         key: (capability: string, model: string, input: unknown) => string
@@ -443,6 +463,7 @@ export class PluginHost {
             ownerId,
             signal,
             onProgress: opts.onProgress,
+            onStage: opts.onStage,
             journal: opts.journal && {
               store: opts.journal.store,
               key: opts.journal.key(capability, model, input),
