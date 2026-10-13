@@ -84,11 +84,11 @@ function findPackage(name, fromDir) {
 
 for (const name of NATIVE) copyPackage(name, serverSrc)
 
-// better-sqlite3 自带所有平台的预编译文件，只留当前平台的
+// better-sqlite3 自带所有平台的预编译文件（<平台>-<架构>.node，Linux 另有 linuxmusl-），只留当前平台和架构的
 const prebuilds = join(out, 'node_modules/better-sqlite3/prebuilds')
+const keep = new RegExp(`^${process.platform}(musl)?-${process.arch}\\.node$`)
 if (existsSync(prebuilds))
-  for (const f of readdirSync(prebuilds))
-    if (!f.startsWith(`${process.platform}-`)) rmSync(join(prebuilds, f))
+  for (const f of readdirSync(prebuilds)) if (!keep.test(f)) rmSync(join(prebuilds, f))
 
 const versions = Object.fromEntries([...copied].sort(([a], [b]) => a.localeCompare(b)))
 writeFileSync(
