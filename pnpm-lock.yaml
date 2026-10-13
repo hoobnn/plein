@@ -379,8 +379,8 @@ importers:
         specifier: 5.104.1
         version: 5.104.1(react@19.3.0)
       lucide:
-        specifier: ^1.48.0
-        version: 1.48.0
+        specifier: ^1.55.0
+        version: 1.55.0
       markdown-it:
         specifier: ^15.0.2
         version: 15.0.2
@@ -3681,8 +3681,8 @@ packages:
     resolution: {integrity: sha512-Jo6dJ04CmSjuznwJSS3pUeWmd/H0ffTlkXXgwZi+eq1UCmqQwCh+eLsYOYCwY991i2Fah4h1BEMCx4qThGbsiA==}
     engines: {node: '>=10'}
 
-  lucide@1.48.0:
-    resolution: {integrity: sha512-8FglIlGkcIItJjJfLUiqAufUCdbtnTOsdG02/fxXd4oIt+NrcrEVH8t0ZcKAfawxHckorO5qJ9XDfnJbdf0TOg==}
+  lucide@1.55.0:
+    resolution: {integrity: sha512-FA0GSqTWkdwtvY4KqOFcMXvurex3exkX9FMtfSwUdo8rVsYGx56fBB3TLfc5Iroi4YtgXHUl+2EMJ/uqd30F+Q==}
 
   lz-string@1.5.0:
     resolution: {integrity: sha512-h5bgJWpxJNswbU7qCrV0tIKQCaS3blPDrqKWx+QxzuzL1zGUzij9XCWLrSLsJPu5t+eWA/ycetzYAO5IOMcWAQ==}
@@ -7122,7 +7122,7 @@ snapshots:
     dependencies:
       yallist: 4.0.0
 
-  lucide@1.48.0: {}
+  lucide@1.55.0: {}
 
   lz-string@1.5.0: {}
 

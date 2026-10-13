@@ -22,7 +22,7 @@
     "@plein/plugin-sdk": "workspace:*",
     "@plein/protocol": "workspace:*",
     "@tanstack/react-query": "5.104.1",
-    "lucide": "^1.48.0",
+    "lucide": "^1.55.0",
     "markdown-it": "^15.0.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
