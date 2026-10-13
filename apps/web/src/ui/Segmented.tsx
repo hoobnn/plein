@@ -31,7 +31,10 @@ export function Segmented<T extends string>({
   size?: 'md' | 'lg'
 }) {
   return (
-    <fieldset aria-label={label} className={`ui-seg ui-slide ${size === 'lg' ? 'ui-seg-lg' : ''} ${iconOnly ? 'ui-seg-icon' : ''}`}>
+    <fieldset
+      aria-label={label}
+      className={`ui-seg ui-slide ${size === 'lg' ? 'ui-seg-lg' : ''} ${iconOnly ? 'ui-seg-icon' : ''}`}
+    >
       <SlidePill variant="seg" />
       {options.map((o) => (
         <button

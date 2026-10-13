@@ -97,7 +97,7 @@ export class AgentPlan {
         }),
         run: ({ step, status }) => {
           const item = this.item
-          if (!item || item.status !== 'approved') throw new CapabilityError('还没有用户同意的计划')
+          if (item?.status !== 'approved') throw new CapabilityError('还没有用户同意的计划')
           if (step > item.steps.length)
             throw new CapabilityError(`计划只有 ${item.steps.length} 步`)
           const steps = item.steps.map((s, i) =>

@@ -36,6 +36,11 @@ export interface Config {
    * 智能体以服务端进程的身份运行，开放给远程登录用户等于把本机交给对方
    */
   agent: boolean
+  /**
+   * 允许添加外部 MCP 服务（stdio 在本机执行命令、http 由服务端访问任意地址），同样只在免登录模式开启。
+   * 和 agent 分开：测试环境关掉本机 CLI，但要测 MCP
+   */
+  mcp: boolean
 }
 
 /** 本机地址：监听在这些地址上默认免登录，免登录模式也只接受这些 Host */
@@ -73,5 +78,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ffprobePath: env.PLEIN_FFPROBE_PATH || 'ffprobe',
     desktopToken: env.PLEIN_DESKTOP_TOKEN || undefined,
     agent: auth === 'none' && env.PLEIN_AGENT !== '0',
+    mcp: auth === 'none' && env.PLEIN_MCP !== '0',
   }
 }

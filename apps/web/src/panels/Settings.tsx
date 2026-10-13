@@ -1,5 +1,6 @@
 import type { ProviderConfigView, ProviderInfo, ProviderTestResult } from '@plein/protocol'
 import { type ReactNode, useEffect, useState } from 'react'
+import { MCP_TOOL_TYPE } from '@plein/nodes'
 import { api } from '../api/client'
 import { desktop } from '../desktop'
 import { useCatalog } from '../stores/catalog'
@@ -7,13 +8,14 @@ import { useTheme } from '../stores/theme'
 import { Icon, type IconName } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { THEME_OPTIONS } from '../ui/ThemeToggle'
+import { McpSettings } from './McpSettings'
 import { type ObjectSchema, SchemaForm } from './SchemaForm'
 import { SlidePill, SlideSwap } from '../ui/Slide'
 import { Switch } from '../ui/Switch'
 
 const input = 'ui-input ui-input-lg w-full'
 
-type Section = 'appearance' | 'providers' | 'plugins' | 'data'
+type Section = 'appearance' | 'providers' | 'mcp' | 'plugins' | 'data'
 
 /** 平台行的状态：停用 / 缺密钥 / 可用 */
 function providerState(p: ProviderInfo): { label: string; tone: string } {
@@ -246,6 +248,10 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
       icon: 'sparkle',
       badge: providers.filter((p) => p.enabled && p.configured).length,
     },
+    // 外部 MCP 服务只在本机模式开放：那时目录里才有 MCP 工具节点
+    ...(catalog?.nodes.some((n) => n.type === MCP_TOOL_TYPE)
+      ? [{ id: 'mcp' as const, label: 'MCP 服务', icon: 'plug' as const }]
+      : []),
     { id: 'plugins', label: '插件', icon: 'puzzle', badge: plugins.length },
     ...(desktop ? [{ id: 'data' as const, label: '数据', icon: 'folder' as const }] : []),
   ]
@@ -306,6 +312,14 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
                     ))}
                   </ul>
                 )}
+              </Group>
+            )}
+            {current.id === 'mcp' && (
+              <Group
+                title="外部 MCP 服务"
+                hint="添加后，画布上的「MCP 工具」节点和小满都能调用这些服务的工具"
+              >
+                <McpSettings />
               </Group>
             )}
             {current.id === 'plugins' && (

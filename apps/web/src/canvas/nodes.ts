@@ -17,7 +17,7 @@ import {
   updateElement,
   videoAssetOf,
 } from '@plein/doc'
-import { type MentionTarget, mentionName } from '@plein/nodes'
+import { MCP_TOOL_TYPE, type MentionTarget, mentionName } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { modelProblem, selectedModel } from './modelParams'
 
@@ -243,6 +243,8 @@ export function validate(
 ): string | null {
   if (isPure(node)) return null
   if (!node.executable) return '这个节点还没有执行器'
+  if (node.type === MCP_TOOL_TYPE && (!el.params?.server || !el.params?.tool))
+    return '先选一个 MCP 服务和工具'
   if (node.capability && catalog) {
     const ok = catalog.providers.some(
       (p) =>

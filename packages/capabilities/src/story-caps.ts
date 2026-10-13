@@ -49,11 +49,12 @@ export const placeDrama = defineCapability({
     const h = Math.max(...tops.map((e) => e.y + e.h))
     const pick = (c: string) => ctx.nodes.models(c as Capability)[0]?.ref ?? ''
     return ctx.withDoc((doc) => {
+      if (a.near) need(doc, a.near)
       const at =
         a.x !== undefined && a.y !== undefined
           ? { x: a.x, y: a.y }
           : a.near
-            ? (need(doc, a.near), spotRightOf(doc, a.near, w, h))
+            ? spotRightOf(doc, a.near, w, h)
             : spotAfterContent(doc, w, h)
       const r = placeDramaTemplate(doc, nodeFactoryOf(ctx), pick, at, template)
       return { frames: r.frames, created: r.created, notice: dramaNotice(r) }

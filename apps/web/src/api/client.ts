@@ -34,6 +34,9 @@ import {
   type CapabilityCall,
   type CapabilityCallResult,
   type PluginCapabilityInfo,
+  type McpServerInput,
+  type McpServerView,
+  type McpToolInfo,
 } from '@plein/protocol'
 
 export class ApiError extends Error {
@@ -154,6 +157,14 @@ export const api = {
   undoAgentTurn: (id: string, turn: string) =>
     request<void>(API.agentUndo(id, turn), json('POST', {})),
   capabilities: () => request<PluginCapabilityInfo[]>(API.capabilities),
+  mcpServers: () => request<McpServerView[]>(API.mcpServers),
+  createMcpServer: (body: McpServerInput) =>
+    request<McpServerView>(API.mcpServers, json('POST', body)),
+  updateMcpServer: (id: string, body: McpServerInput) =>
+    request<McpServerView>(API.mcpServer(id), json('PUT', body)),
+  deleteMcpServer: (id: string) => request<void>(API.mcpServer(id), { method: 'DELETE' }),
+  mcpTools: (id: string, refresh = false) =>
+    request<McpToolInfo[]>(`${API.mcpServerTools(id)}${refresh ? '?refresh=1' : ''}`),
   callCapability: (canvasId: string, name: string, body: Partial<CapabilityCall>) =>
     request<CapabilityCallResult>(API.capabilityCall(canvasId, name), json('POST', body)),
   undoCapabilityCall: (id: string) => request<void>(API.capabilityUndo(id), json('POST', {})),

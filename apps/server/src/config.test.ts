@@ -3,8 +3,17 @@ import { loadConfig } from './config'
 
 describe('loadConfig', () => {
   it('本机默认免登录、可用智能体；监听非本机地址时默认要求登录并关闭智能体', () => {
-    expect(loadConfig({})).toMatchObject({ host: '127.0.0.1', auth: 'none', agent: true })
-    expect(loadConfig({ PLEIN_HOST: '0.0.0.0' })).toMatchObject({ auth: 'password', agent: false })
+    expect(loadConfig({})).toMatchObject({
+      host: '127.0.0.1',
+      auth: 'none',
+      agent: true,
+      mcp: true,
+    })
+    expect(loadConfig({ PLEIN_HOST: '0.0.0.0' })).toMatchObject({
+      auth: 'password',
+      agent: false,
+      mcp: false,
+    })
     // 显式免登录也能对外，但智能体只看是否免登录
     expect(loadConfig({ PLEIN_HOST: '0.0.0.0', PLEIN_AUTH: 'none' }).agent).toBe(true)
     expect(loadConfig({ PLEIN_AGENT: '0' }).agent).toBe(false)

@@ -23,6 +23,7 @@ import type { DB } from '../storage/db'
 import { agentSessions } from '../storage/schema'
 import type { Rooms } from '../sync/rooms'
 import { Approvals } from './approvals'
+import type { McpClients } from '../mcp/clients'
 import { AgentPlan, PLAN_TOOL } from './plan'
 import { AgentChanges } from './changes'
 import { detectClis } from './cli'
@@ -91,6 +92,8 @@ export interface AgentDeps {
   runs: NodeRuns
   host: PluginHost
   assets: AssetStore
+  /** 外部 MCP 服务（只在本机模式有） */
+  mcp?: McpClients
   dataDir: string
   /** 本机免登录模式才允许：调用 CLI 等于在服务端所在机器上以当前用户身份执行 */
   enabled: boolean
@@ -775,6 +778,7 @@ export class AgentSessions {
         host,
         assets,
         library,
+        mcp: this.deps.mcp,
         origin: changes.origin,
         onRun: (nodeId, runId) => changes.recordRun(nodeId, runId),
         onGroup: (groupId) => changes.recordGroup(groupId),

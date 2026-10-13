@@ -3,6 +3,7 @@ import { type CanvasElement, setParam, updateElement } from '@plein/doc'
 import {
   ASSET_NODE_TYPES,
   firstPlaceholder,
+  MCP_TOOL_TYPE,
   presetsFor,
   SEQUENCE_TYPE,
   STORYBOARD_TYPE,
@@ -34,6 +35,7 @@ import { ResultActions } from '../ResultBar'
 import { type ObjectSchema, SchemaForm } from '../SchemaForm'
 import { Inputs } from './Inputs'
 import { LibrarySave } from './LibrarySave'
+import { McpToolFields } from './McpTool'
 import { ModelPicker } from './ModelPicker'
 import { ModePicker } from './ModePicker'
 import { countUnit, isMainField, type ModelOptions, ParamsPill } from './ParamsPill'
@@ -245,6 +247,7 @@ function Panel({
           </button>
         </div>
       )}
+      {node.type === MCP_TOOL_TYPE && <McpToolFields params={params} set={set} />}
       {node.type === SEQUENCE_TYPE && (
         <div className="px-4 pt-4">
           <button
