@@ -72,3 +72,5 @@ Desktop.ini
 # ── AI 工具本地状态 ───────────────────────────────
 .claude/
 .vitest/
+# Playwright MCP 的截图、快照与日志输出
+.playwright-mcp/
