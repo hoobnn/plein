@@ -1,4 +1,4 @@
-import type { AgentApprovalMode, AgentCli, AgentItem } from '@plein/protocol'
+import type { AgentAccess, AgentApprovalMode, AgentCli, AgentItem } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
@@ -69,6 +69,11 @@ const APPROVAL_OPTIONS: Array<{ value: AgentApprovalMode; label: string }> = [
   { value: 'rules', label: '视频、整组运行、删除前先问我' },
   { value: 'always', label: '每次运行和删除都先问我' },
   { value: 'auto', label: '不用问，直接做' },
+]
+
+const ACCESS_OPTIONS: Array<{ value: AgentAccess; label: string }> = [
+  { value: 'auto', label: '本机操作先问我' },
+  { value: 'full', label: '本机操作不用问' },
 ]
 
 const SUGGESTIONS = [
@@ -686,6 +691,8 @@ function Composer({ running }: { running: boolean }) {
   const selected = useCanvas((s) => s.selection)
   const approval = useAgent((s) => s.approval)
   const plan = useAgent((s) => s.plan)
+  const access = useAgent((s) => s.access)
+  const local = useAgent((s) => (s.session?.agent ?? s.agent) !== 'builtin')
   const focusSeq = useAgent((s) => s.focusSeq)
   const ref = useRef<HTMLTextAreaElement>(null)
 
@@ -786,6 +793,15 @@ function Composer({ running }: { running: boolean }) {
           onChange={(v) => useAgent.getState().setApproval(v as AgentApprovalMode)}
           className="h-6 text-2xs text-ink-subtle"
         />
+        {local && (
+          <Select
+            aria-label="本机权限"
+            value={access}
+            options={ACCESS_OPTIONS}
+            onChange={(v) => useAgent.getState().setAccess(v as AgentAccess)}
+            className={`h-6 text-2xs ${access === 'full' ? 'text-warning' : 'text-ink-subtle'}`}
+          />
+        )}
       </div>
     </div>
   )

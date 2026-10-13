@@ -10,13 +10,15 @@ import { Icon, type IconName } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { THEME_OPTIONS } from '../ui/ThemeToggle'
 import { ExternalMcp } from './ExternalMcp'
+import { LocalClis } from './LocalClis'
+import { useAgent } from '../stores/agent'
 import { type ObjectSchema, SchemaForm } from './SchemaForm'
 import { SlidePill, SlideSwap } from '../ui/Slide'
 import { Switch } from '../ui/Switch'
 
 const input = 'ui-input ui-input-lg w-full'
 
-export type Section = 'appearance' | 'providers' | 'mcp' | 'plugins' | 'data'
+export type Section = 'appearance' | 'providers' | 'local' | 'mcp' | 'plugins' | 'data'
 
 /** 平台行的状态：停用 / 缺密钥 / 可用 */
 function providerState(p: ProviderInfo): { label: string; tone: string } {
@@ -243,6 +245,12 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
     queryKey: queryKeys.mcpExternal,
     queryFn: api.externalMcp,
   })
+  // 本机 CLI 只在本机模式可用：那时状态里才有 Claude Code / Codex
+  const agentStatus = useAgent((s) => s.status)
+  useEffect(() => {
+    if (!useAgent.getState().status) void useAgent.getState().loadStatus()
+  }, [])
+  const localCli = !!agentStatus?.agents.some((a) => a.id !== 'builtin')
   const providers = catalog?.providers ?? []
   const plugins = catalog?.plugins ?? []
   const sections: Array<{ id: Section; label: string; icon: IconName; badge?: number }> = [
@@ -253,6 +261,7 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
       icon: 'sparkle',
       badge: providers.filter((p) => p.enabled && p.configured).length,
     },
+    ...(localCli ? [{ id: 'local' as const, label: '本机 AI', icon: 'terminal' as const }] : []),
     // 对外开放 MCP 只在本机模式可用：其他模式下接口返回 403，不显示这一栏
     ...(externalMcp ? [{ id: 'mcp' as const, label: 'MCP', icon: 'plug' as const }] : []),
     { id: 'plugins', label: '插件', icon: 'puzzle', badge: plugins.length },
@@ -315,6 +324,14 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
                     ))}
                   </ul>
                 )}
+              </Group>
+            )}
+            {current.id === 'local' && (
+              <Group
+                title="命令行 AI"
+                hint="小满可以直接用你电脑上已登录的 Claude Code 或 Codex，沿用它们自己的账号、MCP 和 skill"
+              >
+                <LocalClis />
               </Group>
             )}
             {current.id === 'mcp' && (

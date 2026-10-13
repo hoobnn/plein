@@ -1,0 +1,45 @@
+#!/usr/bin/env node
+// 测试用的假 Claude Code：stream-json 输入输出，按提示词演示权限请求、打断和多轮对话
+import fs from 'node:fs'
+import readline from 'node:readline'
+
+if (process.env.FAKE_CLI_LOG) fs.appendFileSync(process.env.FAKE_CLI_LOG, `${JSON.stringify(process.argv.slice(2))}\n`)
+const resume = process.argv.indexOf('--resume')
+const session = resume > 0 ? process.argv[resume + 1] : 'fake-claude-1'
+const out = (m) => process.stdout.write(`${JSON.stringify({ ...m, session_id: session })}\n`)
+const say = (text) =>
+  out({ type: 'assistant', message: { id: `msg_${Math.random().toString(36).slice(2)}`, content: [{ type: 'text', text }] } })
+const done = (subtype = 'success') => out({ type: 'result', subtype, is_error: subtype !== 'success', result: '' })
+
+let turns = 0
+let waiting = null
+out({ type: 'system', subtype: 'init' })
+readline.createInterface({ input: process.stdin }).on('line', (line) => {
+  const msg = JSON.parse(line)
+  if (msg.type === 'control_response') return waiting?.(msg.response)
+  if (msg.type === 'control_request' && msg.request.subtype === 'interrupt') {
+    out({ type: 'control_response', response: { subtype: 'success', request_id: msg.request_id } })
+    waiting = null
+    return done('error_during_execution')
+  }
+  if (msg.type !== 'user') return
+  turns++
+  const prompt = msg.message.content
+  if (prompt.includes('权限')) {
+    const input = { command: 'rm -rf build' }
+    out({ type: 'assistant', message: { id: 'msg_tool', content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input }] } })
+    waiting = (r) => {
+      waiting = null
+      const allow = r.response.behavior === 'allow'
+      out({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_1', is_error: !allow, content: allow ? '已执行' : r.response.message }] } })
+      say(allow ? '删好了' : '没有删')
+      done()
+    }
+    out({ type: 'control_request', request_id: 'req_1', request: { subtype: 'can_use_tool', tool_name: 'Bash', input, tool_use_id: 'toolu_1', description: '清理构建目录' } })
+  } else if (prompt.includes('慢')) {
+    say('开始了')
+  } else {
+    say(`第 ${turns} 轮：${prompt.split('\n').at(-1)}`)
+    done()
+  }
+})

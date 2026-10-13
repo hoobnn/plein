@@ -1,5 +1,6 @@
 import {
   API,
+  type AgentAccess,
   type AgentApprovalMode,
   type AgentKind,
   type AgentSession,
@@ -35,6 +36,8 @@ import {
   type CapabilityCallResult,
   type PluginCapabilityInfo,
   type ExternalMcpStatus,
+  type LocalCliInfo,
+  type LocalCliUpdateResult,
   type ExternalMcpToken,
 } from '@plein/protocol'
 
@@ -147,15 +150,18 @@ export const api = {
     id: string,
     text: string,
     selection?: string[],
-    approval?: AgentApprovalMode,
-    plan?: boolean,
-  ) => request<void>(API.agentMessages(id), json('POST', { text, selection, approval, plan })),
+    opts: { approval?: AgentApprovalMode; plan?: boolean; access?: AgentAccess } = {},
+  ) => request<void>(API.agentMessages(id), json('POST', { text, selection, ...opts })),
   decideAgentApproval: (id: string, approvalId: string, allow: boolean) =>
     request<void>(API.agentApproval(id, approvalId), json('POST', { allow })),
   stopAgent: (id: string) => request<void>(API.agentStop(id), json('POST', {})),
   undoAgentTurn: (id: string, turn: string) =>
     request<void>(API.agentUndo(id, turn), json('POST', {})),
   capabilities: () => request<PluginCapabilityInfo[]>(API.capabilities),
+  localClis: (refresh = false) =>
+    request<LocalCliInfo[]>(refresh ? `${API.agentClis}?refresh=1` : API.agentClis),
+  updateLocalCli: (id: string) =>
+    request<LocalCliUpdateResult>(API.agentCliUpdate(id), json('POST', {})),
   externalMcp: () => request<ExternalMcpStatus>(API.mcpExternal),
   issueExternalMcp: () => request<ExternalMcpToken>(API.mcpExternal, json('POST', {})),
   revokeExternalMcp: () => request<void>(API.mcpExternal, { method: 'DELETE' }),

@@ -143,6 +143,14 @@ export class Approvals {
     }
   }
 
+  /** 某一张不再需要答复（CLI 撤回了请求） */
+  expire(id: string) {
+    const a = this.items.get(id)
+    if (a?.status !== 'pending') return
+    a.status = 'expired'
+    this.settle(a)
+  }
+
   /** 等用户决定，最多 seconds 秒；返回当时的确认单 */
   async wait(id: string, seconds: number): Promise<Approval | undefined> {
     const a = this.items.get(id)

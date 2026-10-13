@@ -55,8 +55,10 @@ docker compose up -d     # 打开 http://localhost:8787
 右下角的助手会调用这台电脑上已安装、已登录的 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 或 [Codex](https://github.com/openai/codex) CLI，让它直接操作当前画布：读画布、新建和修改节点、连线、运行节点、查看生成效果、加工素材（截取、变速、抽帧、分离音轨等）。Plein 不读取也不保存它们的登录凭据，用的是你在终端里的同一个账号和额度。
 
 - 只在免登录模式（桌面端或本机部署）可用；开启登录后自动关闭，因为智能体以服务端进程的身份在这台机器上运行。
-- 服务端在本机 `/mcp` 提供画布工具（MCP，Streamable HTTP），每个对话一个随机令牌；CLI 只开放这些工具和联网搜索，不碰本机文件和命令（Codex 在只读沙箱里运行）。
-- 每条消息启动一次 `claude -p` / `codex exec`，之后用 CLI 自己的会话 id 续聊；对话记录存在数据库里，工作目录是 `<数据目录>/agent`。
+- 服务端在本机 `/mcp` 提供画布工具（MCP，Streamable HTTP），每个对话一个随机令牌；除此之外 CLI 照常加载用户自己的账号、MCP、skill 和配置。
+- 每个对话一个长驻进程：Claude Code 用 `claude -p --input-format stream-json --output-format stream-json`，Codex 用 `codex app-server`；进程退出后用 CLI 自己的会话 id 续聊。对话记录存在数据库里，工作目录是 `<数据目录>/agent`。
+- 本机权限两档：「本机操作先问我」时 CLI 改文件、跑命令前在面板里出确认卡片（Claude 用 `--permission-prompt-tool stdio`，Codex 用 `on-request` + `workspace-write` 沙箱）；「本机操作不用问」对应 `--dangerously-skip-permissions` 和 `never` + `danger-full-access`。
+- 设置 →「本机 AI」显示两个 CLI 的路径、版本、登录状态，对比 npm 上的 dist-tags 提示新版本（Claude Code 本地领先 latest 时也看 next），可以一键运行更新命令。
 - 选中画布元素再提问，选中的元素会作为上下文一起发过去。
 
 ## 开发

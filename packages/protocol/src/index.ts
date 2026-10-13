@@ -547,6 +547,42 @@ export type AgentKind = z.infer<typeof AgentKind>
 export const AgentApprovalMode = z.enum(['rules', 'always', 'auto'])
 export type AgentApprovalMode = z.infer<typeof AgentApprovalMode>
 
+/**
+ * 本机 CLI（Claude Code、Codex）能在电脑上做多少事：
+ * auto 读文件、查资料直接做，改文件、跑命令、用你自己的 MCP 工具前先在面板里问；full 完全放开，不再询问。
+ * 画布上花钱、删除的确认仍按 AgentApprovalMode。
+ */
+export const AgentAccess = z.enum(['auto', 'full'])
+export type AgentAccess = z.infer<typeof AgentAccess>
+
+/** 本机 CLI 的安装、登录和版本状态（设置页用） */
+export interface LocalCliInfo {
+  id: Exclude<AgentKind, 'builtin'>
+  name: string
+  installed: boolean
+  version?: string
+  /** 可执行文件路径 */
+  path?: string
+  /** 是否已登录；null 表示查不出来（版本太旧或检查超时） */
+  loggedIn: boolean | null
+  /** npm 上的最新版本；查不到时没有 */
+  latest?: string
+  updateAvailable: boolean
+  /** 一键更新会执行的命令；没有时只能手动更新 */
+  updateCommand?: string
+  /** 在终端里安装的命令 */
+  installCommand: string
+  /** 在终端里登录的命令 */
+  loginCommand: string
+}
+
+export interface LocalCliUpdateResult {
+  ok: boolean
+  /** 命令输出的最后一段，失败时给用户看 */
+  output: string
+  cli: LocalCliInfo
+}
+
 export interface AgentCli {
   id: AgentKind
   name: string
@@ -643,6 +679,8 @@ export const SendAgentMessage = z.object({
   approval: AgentApprovalMode.optional(),
   /** 计划模式：先列计划，用户同意后才动手 */
   plan: z.boolean().optional(),
+  /** 本机 CLI 的电脑权限，默认 auto */
+  access: AgentAccess.optional(),
 })
 export type SendAgentMessage = z.infer<typeof SendAgentMessage>
 
@@ -710,6 +748,10 @@ export const API = {
   sync: '/sync',
   /** 本机智能体是否可用，返回 AgentStatus */
   agent: '/api/agent',
+  /** 本机 CLI 的安装、登录和版本，返回 LocalCliInfo[]；?refresh=1 重新检测 */
+  agentClis: '/api/agent/clis',
+  /** 运行 CLI 的更新命令，返回 LocalCliUpdateResult */
+  agentCliUpdate: (id: string) => `/api/agent/clis/${encodeURIComponent(id)}/update`,
   /** 画布上的智能体会话：GET 列表，POST 新建 */
   agentSessions: (canvasId: string) =>
     `/api/canvases/${encodeURIComponent(canvasId)}/agent/sessions`,

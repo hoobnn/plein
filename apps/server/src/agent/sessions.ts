@@ -1,11 +1,10 @@
 import { and, desc, eq } from 'drizzle-orm'
 import { newId } from '../ids'
-import { type ChildProcess, spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { createInterface } from 'node:readline'
 import type {
+  AgentAccess,
   AgentApprovalMode,
   AgentEvent,
   AgentItem,
@@ -25,15 +24,15 @@ import type { Rooms } from '../sync/rooms'
 import { Approvals } from './approvals'
 import { AgentPlan, PLAN_TOOL } from './plan'
 import { AgentChanges } from './changes'
-import { detectClis } from './cli'
+import { type CliEnvironment, detectClis, type ResolvedCli } from './cli'
+import { startClaude } from './drivers/claude'
+import { startCodex } from './drivers/codex'
+import { type CliDriver, type PermissionAsk, TOKEN_ENV } from './drivers/types'
+import { brief, childEnv, toolText } from './drivers/util'
 import { builtinModels, runBuiltinTurn } from './builtin'
 import { type McpTool, McpServer, type ToolResult } from './mcp'
 import { agentTools } from './tools'
 
-/** MCP 服务名：Claude Code 里工具名是 mcp__plein__<工具> */
-const MCP_NAME = 'plein'
-const TOOL_PREFIX = `mcp__${MCP_NAME}__`
-const TOKEN_ENV = 'PLEIN_AGENT_TOKEN'
 /** 每轮对话的上限，防止 CLI 卡住 */
 const TURN_TIMEOUT_MS = 60 * 60 * 1000
 /** 没人看着（无事件订阅）也没在跑时，多久后释放画布租约；之后这个会话的改动不能再撤销 */
@@ -62,9 +61,11 @@ type SessionRow = typeof agentSessions.$inferSelect
 interface Live {
   row: SessionRow
   items: AgentItem[]
-  child: ChildProcess | null
-  /** 这一轮已经开始（检查之后、进程起来之前也算），防止双击发送起两个进程 */
+  /** 长驻的 CLI 进程：多轮对话都发给它，空闲久了或换权限档时重启 */
+  driver: CliDriver | null
+  /** 这一轮已经开始到结束之间为 true，防止双击发送起两轮 */
   busy: boolean
+  turnTimer: NodeJS.Timeout | null
   token: string
   mcp: McpServer
   /** 画布工具（MCP 和内置智能体共用一份，含确认关卡） */
@@ -73,7 +74,7 @@ interface Live {
   abort: AbortController | null
   listeners: Set<(e: AgentEvent) => void>
   stopped: boolean
-  /** 当前这一轮的 id：Codex 的条目 id 每轮从 item_0 重新编号，要加上它才唯一 */
+  /** 当前这一轮的 id：CLI 的条目 id 加上它才保证唯一 */
   turn: string
   /** 改动集与按轮撤销 */
   changes: AgentChanges
@@ -96,14 +97,21 @@ export interface AgentDeps {
   enabled: boolean
 }
 
-/** 本机智能体会话：每轮对话启动一次 CLI 进程，之后用 CLI 自己的会话 id 续上 */
+/** 本机智能体会话：每个会话一个长驻 CLI 进程，进程退出后用 CLI 自己的会话 id 续上 */
 export class AgentSessions {
   private live = new Map<string, Live>()
   private byToken = new Map<string, Live>()
   private mcpUrl = ''
+  /** 找本机 CLI；测试里换成假的 */
+  detect: (refresh?: boolean) => Promise<CliEnvironment> = detectClis
 
   constructor(private deps: AgentDeps) {
     deps.rooms.onDrop((id) => this.closeCanvas(id))
+  }
+
+  /** 是否允许调用本机 CLI */
+  get localEnabled() {
+    return this.deps.enabled
   }
 
   /** 服务端开始监听后告知 MCP 地址（桌面端端口是随机的） */
@@ -129,7 +137,7 @@ export class AgentSessions {
             agents: [builtin],
           }
     }
-    const env = await detectClis(refresh)
+    const env = await this.detect(refresh)
     return {
       enabled: true,
       agents: [builtin, ...env.agents.map(({ path: _, ...a }) => a)],
@@ -203,7 +211,7 @@ export class AgentSessions {
   undoTurn(id: string, ownerId: string, turn: string) {
     const s = this.load(id)
     if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
-    if (s.busy || s.child) throw new AgentError('busy', '这一轮还没结束，先停止再撤销')
+    if (s.busy) throw new AgentError('busy', '这一轮还没结束，先停止再撤销')
     if (!s.changes.undoTurn(turn))
       throw new AgentError('not_undoable', '这一轮的改动已经不能撤销了')
     const item = s.items.find((i) => i.type === 'changes' && i.turn === turn)
@@ -219,10 +227,11 @@ export class AgentSessions {
     selection?: string[],
     mode: AgentApprovalMode = 'rules',
     plan = false,
+    access: AgentAccess = 'auto',
   ) {
     const s = this.load(id)
     if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
-    if (s.busy || s.child) throw new AgentError('busy', '上一条消息还在处理中')
+    if (s.busy) throw new AgentError('busy', '上一条消息还在处理中')
     if (!this.deps.enabled && s.row.agent !== 'builtin')
       throw new AgentError('disabled', '本机智能体未启用')
     s.busy = true
@@ -230,92 +239,114 @@ export class AgentSessions {
       s.mode = mode
       s.plan.begin(plan)
       if (s.row.agent === 'builtin') this.startBuiltin(s, text, selection)
-      else await this.startTurn(s, text, selection)
+      else await this.startTurn(s, text, selection, access)
     } catch (err) {
       s.busy = false
       throw err
     }
   }
 
-  private async startTurn(s: Live, text: string, selection?: string[]) {
-    const env = await detectClis()
+  private async startTurn(
+    s: Live,
+    text: string,
+    selection: string[] | undefined,
+    access: AgentAccess,
+  ) {
+    const env = await this.detect()
     const cli = env.agents.find((a) => a.id === s.row.agent)
     if (!cli?.path)
       throw new AgentError('not_installed', `本机没有找到 ${cli?.name ?? s.row.agent}`)
     if (!this.mcpUrl) throw new AgentError('not_ready', '服务端还没准备好')
+    // 权限档变了要带新参数重启（之后用 CLI 的会话 id 接上）
+    if (s.driver && (!s.driver.alive || s.driver.access !== access)) {
+      s.driver.close()
+      s.driver = null
+    }
     this.beginTurn(s, text, selection)
+    s.stopped = false
+    s.driver ??= this.startDriver(s, cli, env.path, access)
+    s.turnTimer = setTimeout(() => this.stop(s.row.id), TURN_TIMEOUT_MS)
+    s.driver.send(this.prompt(s, text, selection))
+  }
 
+  /** 起一个长驻 CLI 进程，把它的事件落到这个会话里 */
+  private startDriver(s: Live, cli: ResolvedCli, path: string, access: AgentAccess): CliDriver {
     // 所有会话共用一个工作目录：Claude Code 按目录归档会话，分开会在它的项目列表里留下一堆记录
     const workdir = join(this.deps.dataDir, 'agent')
     mkdirSync(workdir, { recursive: true })
-    const prompt = this.prompt(s, text, selection)
-    const { args, stdin } =
-      s.row.agent === 'claude' ? this.claudeArgs(s, prompt) : this.codexArgs(s, prompt, workdir)
-
-    const childEnv: NodeJS.ProcessEnv = { ...process.env, PATH: env.path, [TOKEN_ENV]: s.token }
-    // 不把 Plein 自己的配置和外层 Claude Code 的标记带给子进程
-    for (const k of Object.keys(childEnv)) {
-      if (k.startsWith('PLEIN_') && k !== TOKEN_ENV) delete childEnv[k]
-    }
-    delete childEnv.CLAUDECODE
-    delete childEnv.CLAUDE_CODE_ENTRYPOINT
-    delete childEnv.ELECTRON_RUN_AS_NODE
-
-    let child: ChildProcess
-    try {
-      child = spawn(cli.path, args, {
+    let driver!: CliDriver
+    const mine = () => s.driver === driver
+    const tid = (id: string) => `${s.turn}_${id}`
+    const start = cli.id === 'claude' ? startClaude : startCodex
+    driver = start(
+      {
+        bin: cli.path!,
+        name: cli.name,
         cwd: workdir,
-        env: childEnv,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        windowsHide: true,
-      })
-    } catch (err) {
-      this.fail(s, `启动 ${cli.name} 失败：${(err as Error).message}`)
-      s.changes.end()
-      s.approvals.expireAll()
-      this.setRunning(s, false)
-      s.busy = false
-      this.scheduleRelease(s)
-      return
-    }
-    s.child = child
-    s.stopped = false
-    // CLI 读 stdin 之前就退出时写入会 EPIPE；没有监听会变成未捕获异常让服务崩溃
-    child.stdin?.on('error', () => {})
-    child.stdin?.end(stdin)
+        env: childEnv({ ...process.env, PATH: path, [TOKEN_ENV]: s.token }, [TOKEN_ENV]),
+        resume: s.row.cli_session,
+        access,
+        mcpUrl: this.mcpUrl,
+        token: s.token,
+        instructions: INSTRUCTIONS,
+      },
+      {
+        session: (id) => {
+          if (!mine() || id === s.row.cli_session) return
+          s.row.cli_session = id
+          this.save(s)
+        },
+        text: (id, text, done) => {
+          if (!mine() || !s.busy) return
+          const item: AgentItem = { id: tid(id), type: 'text', text, at: Date.now() }
+          // 流式增量只推给界面，一段结束再存库
+          if (done) this.push(s, item)
+          else this.pushLive(s, item)
+        },
+        toolStart: (id, name, detail) => {
+          if (!mine() || !s.busy) return
+          this.push(s, {
+            id: tid(id),
+            type: 'tool',
+            name,
+            detail,
+            status: 'running',
+            at: Date.now(),
+          })
+        },
+        toolEnd: (id, error, output, fallback) => {
+          if (mine() && s.busy) this.finishTool(s, tid(id), error, output, fallback)
+        },
+        error: (text) => {
+          if (mine() && s.busy) this.fail(s, text)
+        },
+        turnEnd: () => {
+          if (!mine() || !s.busy) return
+          if (s.stopped) this.fail(s, '已停止')
+          this.endTurn(s)
+        },
+        exit: (reason) => {
+          if (!mine()) return
+          s.driver = null
+          if (!s.busy) return
+          this.fail(s, s.stopped ? '已停止' : (reason ?? `${cli.name} 已退出`))
+          this.endTurn(s)
+        },
+        permission: (ask, signal) => this.askPermission(s, ask, signal),
+      },
+    )
+    return driver
+  }
 
-    const parse = s.row.agent === 'claude' ? this.claudeEvent : this.codexEvent
-    let sawResult = false
-    createInterface({ input: child.stdout! }).on('line', (line) => {
-      let ev: unknown
-      try {
-        ev = JSON.parse(line)
-      } catch {
-        return
-      }
-      try {
-        if (parse.call(this, s, ev as Record<string, unknown>)) sawResult = true
-      } catch (err) {
-        console.warn('[agent] 解析事件失败：', (err as Error).message)
-      }
-    })
-    let stderr = ''
-    child.stderr?.on('data', (d: Buffer) => {
-      stderr = (stderr + d.toString()).slice(-4000)
-    })
-    const timer = setTimeout(() => child.kill('SIGTERM'), TURN_TIMEOUT_MS)
-    child.on('error', (err) => {
-      this.fail(s, `${cli.name} 运行出错：${err.message}`)
-    })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      s.child = null
-      if (s.stopped) this.fail(s, '已停止')
-      else if (code !== 0 && !sawResult) {
-        this.fail(s, explain(cli.name, stderr) || `${cli.name} 异常退出（代码 ${code}）`)
-      }
-      this.endTurn(s)
-    })
+  /** CLI 要做需要点头的事：在面板里出一张确认卡片，等用户允许或拒绝 */
+  private async askPermission(s: Live, ask: PermissionAsk, signal: AbortSignal) {
+    const a = s.approvals.create(ask.tool, { reason: ask.reason, ids: [] }, async () => true)
+    const expire = () => s.approvals.expire(a.id)
+    if (signal.aborted) expire()
+    signal.addEventListener('abort', expire, { once: true })
+    while (a.status === 'pending') await s.approvals.wait(a.id, 600)
+    signal.removeEventListener('abort', expire)
+    return a.status === 'approved'
   }
 
   /** 开始一轮：挂上撤销栈、记下用户消息、通知界面在跑 */
@@ -331,6 +362,8 @@ export class AgentSessions {
   /** 一轮结束（不论成败）：收尾工具、改动集、状态和租约 */
   private endTurn(s: Live) {
     s.busy = false
+    if (s.turnTimer) clearTimeout(s.turnTimer)
+    s.turnTimer = null
     this.closeRunningTools(s)
     this.finishTurn(s)
     this.setRunning(s, false)
@@ -402,13 +435,9 @@ export class AgentSessions {
       s.abort.abort()
       return
     }
-    if (!s?.child) return
+    if (!s?.driver || !s.busy) return
     s.stopped = true
-    s.child.kill('SIGTERM')
-    const child = s.child
-    setTimeout(() => {
-      if (child.exitCode === null) child.kill('SIGKILL')
-    }, 3000).unref()
+    s.driver.interrupt()
   }
 
   /** 画布被删除：停掉它的智能体会话并释放内存（数据库记录随画布级联删除） */
@@ -423,10 +452,8 @@ export class AgentSessions {
   close() {
     for (const s of this.live.values()) {
       s.abort?.abort()
-      if (s.child) {
-        s.stopped = true
-        s.child.kill('SIGTERM')
-      }
+      s.stopped = true
+      s.driver?.close()
     }
   }
 
@@ -439,7 +466,7 @@ export class AgentSessions {
     return s.mcp.handle(body)
   }
 
-  // ── CLI 参数 ──────────────────────────────────────
+  // ── 提示词 ──────────────────────────────────────
 
   private prompt(s: Live, text: string, selection?: string[]) {
     const parts: string[] = []
@@ -464,167 +491,6 @@ export class AgentSessions {
         return [`- ${id}（${label}${el.name ? `，「${el.name}」` : ''}）`]
       }),
     )
-  }
-
-  private claudeArgs(s: Live, prompt: string) {
-    const mcp = {
-      mcpServers: {
-        [MCP_NAME]: {
-          type: 'http',
-          url: this.mcpUrl,
-          headers: { Authorization: `Bearer ${s.token}` },
-        },
-      },
-    }
-    const args = [
-      '-p',
-      '--output-format',
-      'stream-json',
-      '--verbose',
-      '--mcp-config',
-      JSON.stringify(mcp),
-      '--strict-mcp-config',
-      // 只开放画布工具和联网查资料，不让它碰本机文件和命令
-      '--tools',
-      'WebSearch,WebFetch',
-      '--allowedTools',
-      `mcp__${MCP_NAME}`,
-      'WebSearch',
-      'WebFetch',
-      '--permission-mode',
-      'dontAsk',
-      '--append-system-prompt',
-      INSTRUCTIONS,
-    ]
-    if (s.row.cli_session) args.push('--resume', s.row.cli_session)
-    return { args, stdin: prompt }
-  }
-
-  private codexArgs(s: Live, prompt: string, workdir: string) {
-    const config = [
-      `mcp_servers.${MCP_NAME}.url=${JSON.stringify(this.mcpUrl)}`,
-      `mcp_servers.${MCP_NAME}.bearer_token_env_var=${JSON.stringify(TOKEN_ENV)}`,
-      `mcp_servers.${MCP_NAME}.tool_timeout_sec=120`,
-      // exec 模式没人能点审批，画布工具默认放行
-      `mcp_servers.${MCP_NAME}.default_tools_approval_mode="approve"`,
-      `developer_instructions=${JSON.stringify(INSTRUCTIONS)}`,
-    ].flatMap((c) => ['-c', c])
-    const common = ['--json', '--skip-git-repo-check', ...config]
-    const args = s.row.cli_session
-      ? ['exec', ...common, 'resume', s.row.cli_session, '-']
-      : ['exec', ...common, '-s', 'read-only', '-C', workdir, '-']
-    return { args, stdin: prompt }
-  }
-
-  // ── 事件解析 ──────────────────────────────────────
-
-  /** Claude Code stream-json；返回 true 表示这一轮正常结束 */
-  private claudeEvent(s: Live, ev: Record<string, unknown>): boolean {
-    if (typeof ev.session_id === 'string' && ev.session_id !== s.row.cli_session) {
-      s.row.cli_session = ev.session_id
-      this.save(s)
-    }
-    const message = ev.message as { id?: string; content?: unknown } | undefined
-    const blocks = Array.isArray(message?.content)
-      ? (message.content as Array<Record<string, unknown>>)
-      : []
-    if (ev.type === 'assistant') {
-      blocks.forEach((b, i) => {
-        if (b.type === 'text' && typeof b.text === 'string' && b.text.trim()) {
-          this.push(s, {
-            id: `${message?.id ?? newId('m')}_${i}`,
-            type: 'text',
-            text: b.text,
-            at: Date.now(),
-          })
-        } else if (b.type === 'tool_use') {
-          this.push(s, {
-            id: String(b.id),
-            type: 'tool',
-            name: String(b.name).replace(TOOL_PREFIX, ''),
-            detail: brief(b.input),
-            status: 'running',
-            at: Date.now(),
-          })
-        }
-      })
-    } else if (ev.type === 'user') {
-      for (const b of blocks) {
-        if (b.type !== 'tool_result') continue
-        this.finishTool(s, String(b.tool_use_id), b.is_error === true, toolText(b.content))
-      }
-    } else if (ev.type === 'result') {
-      if (ev.is_error === true || (typeof ev.subtype === 'string' && ev.subtype !== 'success')) {
-        const msg = typeof ev.result === 'string' && ev.result ? ev.result : String(ev.subtype)
-        this.fail(s, msg)
-      }
-      return true
-    }
-    return false
-  }
-
-  /** Codex exec --json */
-  private codexEvent(s: Live, ev: Record<string, unknown>): boolean {
-    if (ev.type === 'thread.started' && typeof ev.thread_id === 'string') {
-      s.row.cli_session = ev.thread_id
-      this.save(s)
-    } else if (ev.type === 'item.started' || ev.type === 'item.completed') {
-      const item = ev.item as Record<string, unknown> | undefined
-      if (!item) return false
-      const done = ev.type === 'item.completed'
-      const itemId = `${s.turn}_${String(item.id)}`
-      if (item.type === 'agent_message' && done && typeof item.text === 'string') {
-        this.push(s, { id: itemId, type: 'text', text: item.text, at: Date.now() })
-      } else if (item.type === 'mcp_tool_call') {
-        const failed = item.status === 'failed' || !!item.error
-        if (!done) {
-          this.push(s, {
-            id: itemId,
-            type: 'tool',
-            name: String(item.tool),
-            detail: brief(item.arguments),
-            status: 'running',
-            at: Date.now(),
-          })
-        } else {
-          const result = item.result as { content?: unknown } | undefined
-          const err = item.error as { message?: string } | undefined
-          this.finishTool(s, itemId, failed, err?.message ?? toolText(result?.content), {
-            name: String(item.tool),
-            detail: brief(item.arguments),
-          })
-        }
-      } else if (item.type === 'web_search' && done) {
-        this.push(s, {
-          id: itemId,
-          type: 'tool',
-          name: 'web_search',
-          detail: typeof item.query === 'string' ? item.query : undefined,
-          status: 'done',
-          at: Date.now(),
-        })
-      } else if (item.type === 'command_execution') {
-        this.push(s, {
-          id: itemId,
-          type: 'tool',
-          name: 'shell',
-          detail: typeof item.command === 'string' ? item.command.slice(0, 200) : undefined,
-          status: done ? (item.exit_code === 0 ? 'done' : 'error') : 'running',
-          at: Date.now(),
-        })
-      } else if (item.type === 'error' && typeof item.message === 'string') {
-        this.fail(s, item.message)
-      }
-    } else if (ev.type === 'turn.completed') {
-      return true
-    } else if (ev.type === 'turn.failed') {
-      const err = ev.error as { message?: string } | undefined
-      this.fail(s, err?.message ?? 'Codex 运行失败')
-      return true
-    } else if (ev.type === 'error' && typeof ev.message === 'string') {
-      this.fail(s, ev.message)
-    }
-    return false
   }
 
   // ── 状态 ─────────────────────────────────────────
@@ -690,11 +556,14 @@ export class AgentSessions {
 
   /** 没人订阅且空闲时，过一段时间释放租约和撤销栈 */
   private scheduleRelease(s: Live) {
-    if (s.listeners.size || s.busy || s.child || !s.changes.attached) return
+    if (s.listeners.size || s.busy || (!s.changes.attached && !s.driver)) return
     this.keep(s)
     s.releaseTimer = setTimeout(() => {
       s.releaseTimer = null
-      if (s.listeners.size || s.busy || s.child) return
+      if (s.listeners.size || s.busy) return
+      // 空闲的 CLI 进程也收掉，下次发消息再用会话 id 接上
+      s.driver?.close()
+      s.driver = null
       s.changes.release()
       this.refreshUndoable(s)
     }, RELEASE_AFTER_MS)
@@ -805,8 +674,9 @@ export class AgentSessions {
     s = {
       row,
       items,
-      child: null,
+      driver: null,
       busy: false,
+      turnTimer: null,
       token,
       mcp,
       tools,
@@ -827,6 +697,8 @@ export class AgentSessions {
 
   private drop(s: Live) {
     this.keep(s)
+    s.driver?.close()
+    s.driver = null
     s.changes.release()
     this.live.delete(s.row.id)
     this.byToken.delete(s.token)
@@ -838,7 +710,7 @@ export class AgentSessions {
       canvasId: row.canvas_id,
       agent: row.agent,
       title: row.title,
-      status: this.live.get(row.id)?.child ? 'running' : 'idle',
+      status: this.live.get(row.id)?.busy ? 'running' : 'idle',
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }
@@ -864,7 +736,6 @@ export class AgentError extends Error {
   }
 }
 
-/** 工具参数的一行摘要 */
 /** 之前几轮的对话给内置智能体：只留用户的话和回复的文字，最近的若干条 */
 function historyOf(items: AgentItem[]): ChatMessage[] {
   const out: ChatMessage[] = []
@@ -880,42 +751,4 @@ function historyOf(items: AgentItem[]): ChatMessage[] {
   const tail = out.slice(-20)
   while (tail.length && tail[0]!.role !== 'user') tail.shift()
   return tail
-}
-
-function brief(input: unknown): string | undefined {
-  if (!input || typeof input !== 'object') return undefined
-  const o = input as Record<string, unknown>
-  const pick = o.type ?? o.kind ?? o.id ?? o.element_id ?? o.query ?? o.url
-  const extra =
-    o.params && typeof o.params === 'object' ? (o.params as Record<string, unknown>).prompt : o.text
-  const parts = [pick, extra].filter((v): v is string => typeof v === 'string' && v.length > 0)
-  const s = parts.join(' · ')
-  return s ? (s.length > 120 ? `${s.slice(0, 120)}…` : s) : undefined
-}
-
-/** MCP 工具结果内容转成一段文字 */
-function toolText(content: unknown): string | undefined {
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return undefined
-  return (
-    content
-      .map((c: { type?: string; text?: string }) =>
-        c.type === 'text' ? (c.text ?? '') : c.type === 'image' ? '[图片]' : '',
-      )
-      .filter(Boolean)
-      .join('\n')
-      // Claude Code 把图片结果另存到本地，并在文字里附上路径，对用户没用
-      .replace(/\[Image: source: [^\]]*\]/g, '')
-      .trim()
-  )
-}
-
-/** 把常见的 CLI 报错翻译成能操作的提示 */
-function explain(name: string, stderr: string): string | undefined {
-  const s = stderr.trim()
-  if (!s) return undefined
-  if (/log ?in|logged in|authenticat|unauthori[sz]ed|401/i.test(s)) {
-    return `${name} 还没有登录：请先在终端运行 ${name === 'Codex' ? 'codex login' : 'claude'} 完成登录。\n${s.slice(-300)}`
-  }
-  return `${name} 出错：${s.slice(-600)}`
 }

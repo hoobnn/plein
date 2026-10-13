@@ -1,5 +1,6 @@
 import {
   API,
+  type AgentAccess,
   type AgentApprovalMode,
   type AgentEvent,
   type AgentKind,
@@ -17,6 +18,7 @@ export type Mood = 'idle' | 'working' | 'happy' | 'sad'
 const AGENT_KEY = 'plein:agent'
 const APPROVAL_KEY = 'plein:agent-approval'
 const PLAN_KEY = 'plein:agent-plan'
+const ACCESS_KEY = 'plein:agent-access'
 
 interface AgentStore {
   open: boolean
@@ -27,6 +29,8 @@ interface AgentStore {
   approval: AgentApprovalMode
   /** 计划模式：先列计划，同意后才动手，记在本机 */
   plan: boolean
+  /** 本机 CLI 能不能不问就改文件、跑命令 */
+  access: AgentAccess
   canvasId: string | null
   sessions: AgentSessionSummary[]
   session: AgentSession | null
@@ -45,6 +49,7 @@ interface AgentStore {
   setAgent(agent: AgentKind): void
   setApproval(mode: AgentApprovalMode): void
   setPlan(plan: boolean): void
+  setAccess(access: AgentAccess): void
   /** 允许或跳过一张确认单 */
   decide(approvalId: string, allow: boolean): Promise<void>
   /** 切换到某块画布（null 表示不在画布里）：读它的会话，接上最近一个 */
@@ -70,6 +75,14 @@ function savedApproval(): AgentApprovalMode {
     return v === 'always' || v === 'auto' ? v : 'rules'
   } catch {
     return 'rules'
+  }
+}
+
+function savedAccess(): AgentAccess {
+  try {
+    return localStorage.getItem(ACCESS_KEY) === 'full' ? 'full' : 'auto'
+  } catch {
+    return 'auto'
   }
 }
 
@@ -169,6 +182,7 @@ export const useAgent = create<AgentStore>((set, get) => {
     agent: savedAgent(),
     approval: savedApproval(),
     plan: savedFlag(PLAN_KEY),
+    access: savedAccess(),
     canvasId: null,
     sessions: [],
     cursor: null,
@@ -219,6 +233,13 @@ export const useAgent = create<AgentStore>((set, get) => {
       set({ plan })
       try {
         localStorage.setItem(PLAN_KEY, plan ? '1' : '0')
+      } catch {}
+    },
+
+    setAccess(access) {
+      set({ access })
+      try {
+        localStorage.setItem(ACCESS_KEY, access)
       } catch {}
     },
 
@@ -282,7 +303,11 @@ export const useAgent = create<AgentStore>((set, get) => {
           set({ session })
           connect(session.id)
         }
-        await api.sendAgentMessage(session.id, text, selection, get().approval, get().plan)
+        await api.sendAgentMessage(session.id, text, selection, {
+          approval: get().approval,
+          plan: get().plan,
+          access: get().access,
+        })
         void refreshList()
       } catch (err) {
         set({ error: (err as Error).message, mood: 'sad' })

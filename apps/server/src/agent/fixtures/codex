@@ -1,0 +1,62 @@
+#!/usr/bin/env node
+// 测试用的假 Codex app-server：按行 JSON-RPC，按提示词演示审批请求、打断和多轮对话
+import fs from 'node:fs'
+import readline from 'node:readline'
+
+if (process.env.FAKE_CLI_LOG) fs.appendFileSync(process.env.FAKE_CLI_LOG, `${JSON.stringify(process.argv.slice(2))}\n`)
+const send = (m) => process.stdout.write(`${JSON.stringify(m)}\n`)
+const note = (method, params) => send({ method, params })
+let threadId = ''
+let turn = 0
+let turnId = ''
+const answers = new Map()
+
+const reply = (id, text) => {
+  note('item/agentMessage/delta', { itemId: id, delta: text.slice(0, 2) })
+  note('item/agentMessage/delta', { itemId: id, delta: text.slice(2) })
+  note('item/completed', { item: { type: 'agentMessage', id, text } })
+}
+const complete = (status = 'completed') => note('turn/completed', { threadId, turn: { id: turnId, status, error: null } })
+
+readline.createInterface({ input: process.stdin }).on('line', (line) => {
+  const msg = JSON.parse(line)
+  if (!msg.method) return answers.get(msg.id)?.(msg.result)
+  const ok = (result) => send({ id: msg.id, result })
+  switch (msg.method) {
+    case 'initialize':
+      return ok({ userAgent: 'fake' })
+    case 'thread/start':
+      threadId = 'thr_fake'
+      if (process.env.FAKE_CLI_LOG) fs.appendFileSync(process.env.FAKE_CLI_LOG, `${JSON.stringify(msg.params)}\n`)
+      return ok({ thread: { id: threadId } })
+    case 'thread/resume':
+      threadId = msg.params.threadId
+      if (process.env.FAKE_CLI_LOG) fs.appendFileSync(process.env.FAKE_CLI_LOG, `${JSON.stringify(msg.params)}\n`)
+      return ok({ thread: { id: threadId } })
+    case 'turn/interrupt':
+      ok({})
+      return complete('interrupted')
+    case 'turn/start': {
+      turn++
+      turnId = `turn_${turn}`
+      ok({ turn: { id: turnId } })
+      note('turn/started', { threadId, turn: { id: turnId } })
+      const prompt = msg.params.input[0].text
+      if (prompt.includes('权限')) {
+        const item = { type: 'commandExecution', id: 'cmd_1', command: 'rm -rf build', status: 'inProgress' }
+        note('item/started', { item })
+        answers.set(900, (r) => {
+          const allow = r.decision === 'accept'
+          note('serverRequest/resolved', { requestId: 900 })
+          note('item/completed', { item: { ...item, status: allow ? 'completed' : 'declined', exitCode: allow ? 0 : null, aggregatedOutput: allow ? '已执行' : '' } })
+          reply('msg_1', allow ? '删好了' : '没有删')
+          complete()
+        })
+        return send({ id: 900, method: 'item/commandExecution/requestApproval', params: { command: 'rm -rf build', reason: '清理构建目录' } })
+      }
+      if (prompt.includes('慢')) return reply('msg_1', '开始了')
+      reply('msg_1', `第 ${turn} 轮：${prompt.split('\n').at(-1)}`)
+      return complete()
+    }
+  }
+})
