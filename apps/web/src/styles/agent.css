@@ -1,10 +1,32 @@
 /* ── 吉祥物（小满）与助手面板 ─────────────────────── */
 .plein-mascot {
   overflow: visible;
-  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.18));
+  filter: drop-shadow(0 3px 4px rgb(0 0 0 / 0.14));
 }
-.plein-mascot-ink {
-  fill: var(--ink);
+.plein-mascot-whale,
+.plein-mascot-horn,
+.plein-mascot-horn-line,
+.plein-mascot-wink {
+  stroke: #192832;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.plein-mascot-whale {
+  fill: #779db7;
+}
+.plein-mascot-horn,
+.plein-mascot-belly {
+  fill: #fff4d9;
+}
+.plein-mascot-horn-line,
+.plein-mascot-wink {
+  fill: none;
+}
+.plein-mascot-belly {
+  stroke: #192832;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
 }
 .plein-mascot-shadow {
   fill: var(--ink);
@@ -20,15 +42,15 @@
   transition: transform var(--dur-base) var(--ease-spring);
 }
 .plein-mascot-open {
-  fill: var(--canvas);
-  transform-origin: 32px 31px;
+  fill: #192832;
+  transform-origin: 27px 31px;
   animation: plein-mascot-blink 4.6s infinite;
 }
 .plein-mascot-closed,
 .plein-mascot-sad,
 .plein-mascot-mouth {
   fill: none;
-  stroke: var(--canvas);
+  stroke: #192832;
   stroke-width: 2;
   stroke-linecap: round;
 }
@@ -38,22 +60,13 @@
   opacity: 0;
 }
 .plein-mascot-o {
-  fill: var(--canvas);
-}
-.plein-mascot-spark {
-  fill: var(--accent);
-  opacity: 0;
-  transform-origin: 51px 10.7px;
+  fill: #192832;
 }
 .plein-mascot[data-mood="working"] .plein-mascot-body {
   animation: plein-mascot-bounce 0.9s var(--ease-standard) infinite;
 }
 .plein-mascot[data-mood="working"] .plein-mascot-shadow {
   animation: plein-mascot-shadow 0.9s var(--ease-standard) infinite;
-}
-.plein-mascot[data-mood="working"] .plein-mascot-spark {
-  opacity: 1;
-  animation: plein-mascot-spark 1.2s var(--ease-standard) infinite;
 }
 .plein-mascot[data-mood="working"] .plein-mascot-mouth {
   opacity: 0;
@@ -70,14 +83,8 @@
 .plein-mascot[data-mood="sad"] .plein-mascot-sad {
   opacity: 1;
 }
-.plein-mascot[data-mood="happy"] .plein-mascot-mouth {
-  d: path("M27.5 39.5q4.5 5 9 0");
-}
 .plein-mascot[data-mood="happy"] .plein-mascot-body {
   animation: plein-mascot-hop 0.7s var(--ease-spring) 2;
-}
-.plein-mascot[data-mood="sad"] .plein-mascot-mouth {
-  d: path("M29 42.5q3 -2.4 6 0");
 }
 .plein-mascot[data-mood="sad"] .plein-mascot-body {
   animation: plein-mascot-shake 0.45s var(--ease-standard) 2;
@@ -90,7 +97,7 @@
   transform: scale(1.06);
 }
 .plein-mascot-btn:hover .plein-mascot-open ellipse {
-  ry: 4.9;
+  ry: 3.5;
 }
 .plein-mascot-btn:active {
   transform: scale(0.94);
@@ -210,15 +217,6 @@
   }
   95% {
     transform: scaleY(0.1);
-  }
-}
-@keyframes plein-mascot-spark {
-  0%,
-  100% {
-    transform: scale(0.6) rotate(0deg);
-  }
-  50% {
-    transform: scale(1.1) rotate(45deg);
   }
 }
 
