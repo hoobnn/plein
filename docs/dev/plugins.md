@@ -43,12 +43,14 @@ export const serverPlugin = defineServerPlugin(plugin, {
 | --------------------- | ------------------------------------------------------------------------------------------ |
 | `id`                  | `vendor/name`，全小写。插件贡献的节点、Provider、模板、元素类型都必须在同一个 `vendor/` 下 |
 | `version`             | 语义化版本                                                                                 |
-| `engines.plein`       | 兼容的插件 API 版本范围，不满足时拒绝加载                                                  |
+| `engines.plein`       | 兼容的插件 API 版本范围，不满足时拒绝加载（版本策略见下）                                  |
 | `contributes`         | 必须和实际注册的内容完全一致，多了少了都拒绝加载                                           |
 | `permissions.network` | 可访问的域名，支持一级通配 `*.example.com`；重定向逐跳检查                                 |
 | `permissions.secrets` | 可读取的密钥名（大写下划线），Provider 用到的密钥必须在这里声明                            |
 | `permissions.assets`  | `none` / `read` / `write`：执行器读写资产库、Provider 读取参考图                           |
 | `permissions.media`   | 执行器用宿主的 ffmpeg 读取媒体信息（`ctx.media.probe`）、合成视频（`ctx.media.compose`）   |
+
+插件 API 的版本就是 `@plein/plugin-sdk` 的版本（`PLUGIN_API_VERSION`），Plein `v0.1.0` 发布时定为 `0.1.0`，此后按语义化版本演进：0.x 期间不兼容的改动升次版本号（`0.2.0`），兼容的新增和修复升修订号（`0.1.1`）。所以清单写 `^0.1.0` 只会匹配 `0.1.x`，API 出现不兼容改动时旧插件会被拒绝加载，不会带着错误的假设跑起来。
 
 ## 节点
 
