@@ -2,7 +2,9 @@ import type { PortValue } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
 import {
   arrangeSequence,
+  DUCK_LEVEL,
   dialogueCues,
+  duckEnvelope,
   sequenceNode,
   sequenceSpec,
   sequenceTimeline,
@@ -140,7 +142,11 @@ describe('序列', () => {
       dialogue: [audio('d1', '一'), audio('d2', '二'), audio('d3', '三')],
     })
     const tl = sequenceTimeline(p, arranged, { clips: [4, 3, 5], dialogue: [1, 1, 1] })
-    expect(tl.transition).toEqual({ type: 'dissolve', duration: 1.5 })
+    expect(tl.clips.map((c) => c.transition)).toEqual([
+      undefined,
+      { type: 'dissolve', duration: 1.5 },
+      { type: 'dissolve', duration: 1.5 },
+    ])
     expect(tl.clips.map((c) => c.start)).toEqual([0, 2.5, 4])
     expect(tl.total).toBe(9)
     expect(tl.clips[2]!.cues).toEqual([{ start: 4, end: 5, text: '三' }])
@@ -150,7 +156,71 @@ describe('序列', () => {
       dialogue: [1, 1, 1],
     })
     expect(fade.total).toBe(12)
-    expect(fade.transition).toEqual({ type: 'fade', duration: 0.5 })
+    expect(fade.clips[1]!.transition).toEqual({ type: 'fade', duration: 0.5 })
+  })
+
+  it('每段可以单独指定转场、速度、原声音量和台词延后', () => {
+    const p = params({
+      transition: '叠化',
+      transitionDuration: 0.5,
+      clips: [
+        { source: 'a', speed: 2, volume: 0.5 },
+        { source: 'b', transition: '无', lineDelay: 0.5 },
+        { source: 'c', transition: '推移', transitionDuration: 1 },
+      ],
+    })
+    const arranged = arrangeSequence(p, {
+      clips: [video('a'), video('b'), video('c')],
+      dialogue: [audio('d1'), audio('d2'), audio('d3')],
+    })
+    const durations = { clips: [4, 3, 5], dialogue: [1, 1, 1] }
+    const tl = sequenceTimeline(p, arranged, durations)
+    // a 两倍速只占 2 秒；b 硬切；c 推移 1 秒
+    expect(tl.clips.map((c) => [c.start, c.length])).toEqual([
+      [0, 2],
+      [2, 3],
+      [4, 5],
+    ])
+    expect(tl.clips[1]!.transition).toBeUndefined()
+    expect(tl.clips[2]!.transition).toEqual({ type: 'slide', duration: 1 })
+    expect(tl.clips[1]!.lines[0]!.start).toBe(2.5)
+    const spec = sequenceSpec(p, arranged, durations, [audio('m')])
+    expect(spec.clips[0]).toMatchObject({ in: 0, out: 4, speed: 2, volume: 0.5 })
+    expect(spec.clips[2]!.transition).toEqual({ type: 'slide', duration: 1 })
+    expect(spec.transition).toBeUndefined()
+    expect(spec.loudnorm).toBe(true)
+    // 对白时压低配乐：第二、三句只隔 0.5 秒，中间不回升，共两次起落
+    const music = spec.audio.find((a) => a.loop)!
+    // 第一句从 0 秒开始：一开始就是压低的，没有起始的 1
+    expect(music.envelope?.length).toBe(7)
+    expect(music.envelope?.[0]).toEqual([0, DUCK_LEVEL])
+  })
+
+  it('压低配乐：挨得近的两句之间不回升；关掉后没有包络', () => {
+    const tl = {
+      total: 10,
+      clips: [
+        {
+          start: 0,
+          length: 5,
+          cues: [],
+          lines: [
+            { start: 1, duration: 1 },
+            { start: 2.2, duration: 1 },
+          ],
+        },
+      ],
+    }
+    expect(duckEnvelope(tl)).toEqual([
+      [0.85, 1],
+      [1, DUCK_LEVEL],
+      [3.2, DUCK_LEVEL],
+      [3.6, 1],
+    ])
+    const p = params({ duck: false })
+    const arranged = arrangeSequence(p, { clips: [video('a')], dialogue: [audio('d')] })
+    const spec = sequenceSpec(p, arranged, { clips: [3], dialogue: [1] }, [audio('m')])
+    expect(spec.audio.find((a) => a.loop)!.envelope).toBeUndefined()
   })
 
   it('字幕按识别结果对齐：句数一致逐句对上，否则整段铺满说话的时间', () => {

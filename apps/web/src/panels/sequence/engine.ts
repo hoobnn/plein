@@ -1,4 +1,4 @@
-import type { Timeline } from '@plein/nodes'
+import { type ComposeTransition, overlapping } from '@plein/plugin-sdk'
 import { ALL_FORMATS, CanvasSink, Input, UrlSource, type WrappedCanvas } from 'mediabunny'
 import { assetUrls } from '../../api/client'
 import type { ClockSource, Playhead } from './playhead'
@@ -11,6 +11,10 @@ export interface SceneClip {
   start: number
   length: number
   in: number
+  /** 播放速度：素材时间 = in + 成片里过去的时间 × speed */
+  speed: number
+  /** 从上一段切进来的转场（和导出同一份） */
+  transition?: ComposeTransition
 }
 
 /** 一段声音：成片 start 处开始，从素材 offset 起播 duration 秒 */
@@ -21,6 +25,8 @@ export interface SceneSound {
   duration: number
   gain: number
   loop?: boolean
+  /** 播放速率（变速镜头的原声）；Web Audio 变速会变调，导出时不变调 */
+  rate?: number
   /** 音量包络（成片时间，倍数），点之间线性；第一个点之前取第一个值，最后一个点之后取最后一个值 */
   envelope?: Array<[number, number]>
 }
@@ -31,7 +37,6 @@ export interface Scene {
   total: number
   clips: SceneClip[]
   sounds: SceneSound[]
-  transition: Timeline['transition']
 }
 
 /** 预览画布长边上限：再大肉眼看不出，解码和合成的开销却翻倍 */
@@ -59,11 +64,30 @@ export function envelopeAt(env: SceneSound['envelope'], x: number) {
   return env.at(-1)![1]
 }
 
+function smoothstep(e0: number, e1: number, x: number) {
+  const k = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)))
+  return k * k * (3 - 2 * k)
+}
+
+/** 等比缩放居中画进 w × h，dx 是整体水平偏移 */
+function drawContain(
+  g: CanvasRenderingContext2D,
+  image: { source: CanvasImageSource; width: number; height: number },
+  w: number,
+  h: number,
+  dx: number,
+) {
+  const k = Math.min(w / image.width, h / image.height)
+  const iw = image.width * k
+  const ih = image.height * k
+  g.drawImage(image.source, dx + (w - iw) / 2, (h - ih) / 2, iw, ih)
+}
+
 /** 一段画面的帧来源 */
 interface Frames {
   readonly kind: 'webcodecs' | 'element'
-  /** 对齐到素材时间 mt；播放中连续出帧，暂停时取精确的那一帧 */
-  update(mt: number, playing: boolean): void
+  /** 对齐到素材时间 mt；播放中连续出帧，暂停时取精确的那一帧；rate 是播放速度 */
+  update(mt: number, playing: boolean, rate: number): void
   /** 不在画面上：停掉解码，释放资源 */
   park(): void
   image(): { source: CanvasImageSource; width: number; height: number } | null
@@ -236,8 +260,9 @@ class ElementFrames implements Frames {
     el.addEventListener('loadeddata', onFrame)
   }
 
-  update(mt: number, playing: boolean) {
+  update(mt: number, playing: boolean, rate: number) {
     const el = this.el
+    if (el.playbackRate !== rate) el.playbackRate = rate
     if (
       Math.abs(el.currentTime - mt) > 0.25 ||
       (!playing && Math.abs(el.currentTime - mt) > 0.01)
@@ -276,7 +301,7 @@ class ElementFrames implements Frames {
 export class PreviewEngine {
   private canvas: HTMLCanvasElement | null = null
   private g: CanvasRenderingContext2D | null = null
-  private scene: Scene = { width: 0, height: 0, total: 0, clips: [], sounds: [], transition: null }
+  private scene: Scene = { width: 0, height: 0, total: 0, clips: [], sounds: [] }
   private frames = new Map<string, Frames>()
   private audio: AudioContext | null = null
   private master: GainNode | null = null
@@ -380,12 +405,15 @@ export class PreviewEngine {
     return f
   }
 
-  /** 画当前时刻：黑底，叠化时后一段按进度渐显，经黑场时压一层黑 */
+  /**
+   * 画当前时刻：黑底上按顺序画正在画面上的各段，转场和导出的 xfade 同一套算法：
+   * 叠化渐显、划像从右往左擦出、推移从右侧推入、闪白先白后显，经黑场压一层黑。
+   */
   private render = () => {
     const g = this.g
     const c = this.canvas
     if (!g || !c) return
-    const { clips, total, transition } = this.scene
+    const { clips, total } = this.scene
     const t = this.playhead.t
     const playing = this.playhead.playing
     const real = clips.filter((x) => x.length > 0)
@@ -403,12 +431,19 @@ export class PreviewEngine {
       }
       const f = this.framesFor(clip)
       if (!f) continue
-      if (on) f.update(clip.in + local(clip), playing)
+      if (on) f.update(clip.in + local(clip) * clip.speed, playing, clip.speed)
       // 快到的下一段先起解码器，切过去的那一帧不用等
-      else f.update(clip.in, true)
+      else f.update(clip.in, true, clip.speed)
     }
 
-    const layers = active.map((clip) => ({ clip, image: this.frames.get(clip.key)?.image() }))
+    const layers = active.map((clip) => ({
+      clip,
+      image: this.frames.get(clip.key)?.image(),
+      dx: 0,
+      x0: 0,
+      alpha: 1,
+      flash: -1,
+    }))
     const kinds = new Set(
       layers.flatMap((l) => (l.clip.assetId ? [this.frames.get(l.clip.key)!.kind] : [])),
     )
@@ -416,39 +451,85 @@ export class PreviewEngine {
     // 有素材的画面还没解出来：保留上一帧，别闪黑
     if (layers.some((l) => l.clip.assetId && !l.image)) return
 
+    const W = c.width
+    const H = c.height
+    let black = 0
+    layers.forEach((l, i) => {
+      const { clip } = l
+      const tr = clip.transition
+      if (tr?.type === 'fade' && t - clip.start < tr.duration / 2)
+        black = Math.max(black, 1 - (t - clip.start) / (tr.duration / 2))
+      const next = real[real.indexOf(clip) + 1]?.transition
+      const left = clip.start + clip.length - t
+      if (next?.type === 'fade' && left < next.duration / 2)
+        black = Math.max(black, 1 - left / (next.duration / 2))
+      if (i === 0 || !tr || !overlapping(tr) || t >= clip.start + tr.duration) return
+      const p = Math.min(1, Math.max(0, (t - clip.start) / tr.duration))
+      if (tr.type === 'dissolve') l.alpha = p
+      else if (tr.type === 'wipe') l.x0 = W * (1 - p)
+      else if (tr.type === 'slide') {
+        l.dx = W * (1 - p)
+        layers[i - 1]!.dx = -W * p
+      } else if (tr.type === 'flash') l.flash = p
+    })
+
     g.globalAlpha = 1
     g.fillStyle = '#000'
-    g.fillRect(0, 0, c.width, c.height)
-    const firstReal = real[0]
-    const lastReal = real.at(-1)
-    let black = 0
-    for (const { clip, image } of layers) {
-      let alpha = 1
-      if (
-        transition?.type === 'dissolve' &&
-        clip !== firstReal &&
-        t < clip.start + transition.duration
-      )
-        alpha = Math.max(0, (t - clip.start) / transition.duration)
-      if (transition?.type === 'fade') {
-        const half = transition.duration / 2
-        if (clip !== firstReal && t - clip.start < half)
-          black = Math.max(black, 1 - (t - clip.start) / half)
-        const left = clip.start + clip.length - t
-        if (clip !== lastReal && left < half) black = Math.max(black, 1 - left / half)
+    g.fillRect(0, 0, W, H)
+    for (const l of layers) {
+      if (!l.image) continue
+      if (l.flash >= 0) {
+        // xfade fadewhite：A' = A 混白（前 20% 变白），B' = 白混 B，再按进度在两者间叠化
+        const q = 1 - l.flash
+        g.globalAlpha = 1 - smoothstep(0.8, 1, q)
+        g.fillStyle = '#fff'
+        g.fillRect(0, 0, W, H)
+        const scratch = this.scratchFor(W, H)
+        const sg = scratch.getContext('2d')!
+        sg.globalAlpha = 1
+        sg.fillStyle = '#000'
+        sg.fillRect(0, 0, W, H)
+        drawContain(sg, l.image, W, H, 0)
+        sg.globalAlpha = smoothstep(0.2, 1, q)
+        sg.fillStyle = '#fff'
+        sg.fillRect(0, 0, W, H)
+        g.globalAlpha = l.flash
+        g.drawImage(scratch, 0, 0)
+        continue
       }
-      if (!image) continue
-      const k = Math.min(c.width / image.width, c.height / image.height)
-      const w = image.width * k
-      const h = image.height * k
-      g.globalAlpha = alpha
-      g.drawImage(image.source, (c.width - w) / 2, (c.height - h) / 2, w, h)
+      g.globalAlpha = l.alpha
+      if (l.x0 > 0) {
+        g.save()
+        g.beginPath()
+        g.rect(l.x0, 0, W - l.x0, H)
+        g.clip()
+        g.fillStyle = '#000'
+        g.fillRect(l.x0, 0, W - l.x0, H)
+        drawContain(g, l.image, W, H, l.dx)
+        g.restore()
+      } else {
+        if (l.dx) {
+          // 推移时各段连同自己的黑边一起移动
+          g.fillStyle = '#000'
+          g.fillRect(l.dx, 0, W, H)
+        }
+        drawContain(g, l.image, W, H, l.dx)
+      }
     }
     if (black > 0) {
       g.globalAlpha = Math.min(1, black)
-      g.fillRect(0, 0, c.width, c.height)
+      g.fillStyle = '#000'
+      g.fillRect(0, 0, W, H)
     }
     g.globalAlpha = 1
+  }
+
+  private scratch: HTMLCanvasElement | null = null
+  private scratchFor(w: number, h: number) {
+    const s = (this.scratch ??= document.createElement('canvas'))
+    if (s.width !== w) s.width = w
+    if (s.height !== h) s.height = h
+    return s
   }
 
   private transport = () => {
@@ -501,12 +582,14 @@ export class PreviewEngine {
     const end = Math.min(s.start + s.duration, this.scene.total)
     if (end <= t) return
     const delay = Math.max(0, s.start - t)
-    let offset = s.offset + Math.max(0, t - s.start)
+    const rate = s.rate ?? 1
+    let offset = s.offset + Math.max(0, t - s.start) * rate
     if (s.loop) offset %= buf.duration
     else if (offset >= buf.duration) return
     const src = ctx.createBufferSource()
     src.buffer = buf
     src.loop = !!s.loop
+    src.playbackRate.value = rate
     const gain = ctx.createGain()
     const from = t + delay
     gain.gain.setValueAtTime(s.gain * envelopeAt(s.envelope, from), now + delay)

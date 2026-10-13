@@ -1,19 +1,27 @@
 import {
   type ArrangedClip,
   clipLines,
+  duckEnvelope,
+  MUSIC_FADE,
   type SequenceParams,
   sequenceSize,
   type Timeline,
 } from '@plein/nodes'
-import type { Scene, SceneClip, SceneSound } from './engine'
+import { overlapping } from '@plein/plugin-sdk'
+import { envelopeAt, type Scene, type SceneClip, type SceneSound } from './engine'
 
-/** 结尾配乐淡出时长，和导出一致 */
-const MUSIC_FADE = 2
+/** 两条包络相乘：在两边所有拐点上取值（配乐的闪避 × 结尾淡出） */
+function multiply(a: Array<[number, number]>, b: Array<[number, number]>): Array<[number, number]> {
+  if (!a.length) return b
+  if (!b.length) return a
+  const xs = [...new Set([...a, ...b].map(([x]) => x))].sort((x, y) => x - y)
+  return xs.map((x) => [x, envelopeAt(a, x) * envelopeAt(b, x)])
+}
 
 /**
  * 把时间线换成预览引擎要的场景：画面各段、各轨声音和它们的音量包络。
  * 和导出（sequenceSpec → compose）同一套规则：镜头原声随转场交叉淡化或经黑场淡入淡出，
- * 对白、音效按段落位，配乐循环铺满、结尾淡出。
+ * 对白、音效按段落位，配乐循环铺满、对白时压低、结尾淡出。
  */
 export function previewScene(
   rows: Array<ArrangedClip & { pending?: boolean }>,
@@ -21,7 +29,7 @@ export function previewScene(
   params: SequenceParams,
   music?: string,
 ): Scene {
-  const { total, transition } = timeline
+  const { total } = timeline
   const seen = new Map<string, number>()
   const clips = rows.map((row, i): SceneClip => {
     const c = timeline.clips[i]!
@@ -34,31 +42,35 @@ export function previewScene(
       start: c.start,
       length: c.length,
       in: row.in,
+      speed: row.speed,
+      transition: c.transition,
     }
   })
   const real = clips.filter((c) => c.length > 0)
   const sounds: SceneSound[] = []
-  for (const c of real) {
-    if (!c.assetId || params.clipVolume <= 0) continue
+  // 转场两侧的原声：重叠转场交叉淡化整个重叠段，经黑场各淡一半
+  const edge = (tr: SceneClip['transition']) =>
+    !tr ? 0 : overlapping(tr) ? tr.duration : tr.duration / 2
+  real.forEach((c, k) => {
+    const row = rows[clips.indexOf(c)]!
+    const gain = params.clipVolume * row.volume
+    if (!c.assetId || gain <= 0) return
     const end = c.start + c.length
     const env: Array<[number, number]> = []
-    const edge =
-      transition?.type === 'dissolve'
-        ? transition.duration
-        : transition?.type === 'fade'
-          ? transition.duration / 2
-          : 0
-    if (edge && c !== real[0]) env.push([c.start, 0], [c.start + edge, 1])
-    if (edge && c !== real.at(-1)) env.push([end - edge, 1], [end, 0])
+    const into = edge(c.transition)
+    const out = edge(real[k + 1]?.transition)
+    if (into) env.push([c.start, 0], [c.start + into, 1])
+    if (out) env.push([end - out, 1], [end, 0])
     sounds.push({
       assetId: c.assetId,
       start: c.start,
       offset: c.in,
       duration: c.length,
-      gain: params.clipVolume,
+      gain,
+      rate: c.speed !== 1 ? c.speed : undefined,
       envelope: env.length ? env : undefined,
     })
-  }
+  })
   rows.forEach((row, i) => {
     const c = timeline.clips[i]!
     if (c.length === 0) return
@@ -81,7 +93,15 @@ export function previewScene(
         gain: params.sfxVolume,
       })
   })
-  if (music && total > 0)
+  if (music && total > 0) {
+    const fade: Array<[number, number]> =
+      total > MUSIC_FADE
+        ? [
+            [total - MUSIC_FADE, 1],
+            [total, 0],
+          ]
+        : []
+    const envelope = multiply(params.duck ? duckEnvelope(timeline) : [], fade)
     sounds.push({
       assetId: music,
       start: 0,
@@ -89,13 +109,8 @@ export function previewScene(
       duration: total,
       gain: params.musicVolume,
       loop: true,
-      envelope:
-        total > MUSIC_FADE
-          ? [
-              [total - MUSIC_FADE, 1],
-              [total, 0],
-            ]
-          : undefined,
+      envelope: envelope.length ? envelope : undefined,
     })
-  return { ...sequenceSize(params), total, clips, sounds, transition }
+  }
+  return { ...sequenceSize(params), total, clips, sounds }
 }

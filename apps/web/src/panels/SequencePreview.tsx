@@ -118,6 +118,8 @@ export function SequencePreview({
           ? '预览字幕样式是近似的，导出的成片以服务端合成为准。'
           : '预览按成片的时间、转场、混音和字幕播放，画质略低于导出。'}
         {params.asrTiming && ' 语音识别校准的字幕时间只在导出时生效。'}
+        {params.loudnorm && ' 响度标准化只在导出时处理。'}
+        {rows.some((r) => r.speed !== 1) && ' 变速镜头的原声预览会变调，导出时不变调。'}
       </p>
     </div>
   )

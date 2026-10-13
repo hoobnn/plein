@@ -4,6 +4,7 @@ import {
   type ArrangedClip,
   arrangeSequence,
   clipLines,
+  duckEnvelope,
   type SequenceClip,
   sequenceNode,
   type SequenceParams,
@@ -249,6 +250,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       out: r.out,
       full: m?.duration,
       aspect: m?.width && m.height ? m.width / m.height : 9 / 16,
+      speed: r.speed,
+      transition: t.transition,
       lines: t.lines.map((l, k) => ({
         assetId: own[k]!.assetId,
         start: l.start,
@@ -349,8 +352,15 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           <Timeline
             items={items}
             total={timeline.total}
-            music={music ? { assetId: music, volume: params.musicVolume } : undefined}
-            transition={timeline.transition}
+            music={
+              music
+                ? {
+                    assetId: music,
+                    volume: params.musicVolume,
+                    duck: params.duck ? duckEnvelope(timeline) : [],
+                  }
+                : undefined
+            }
             playhead={playhead}
             selected={selected}
             onSelect={setSelected}
@@ -440,6 +450,23 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         />
         <Volume label="配乐" value={params.musicVolume} onChange={(v) => set('musicVolume', v)} />
         <Volume label="音效" value={params.sfxVolume} onChange={(v) => set('sfxVolume', v)} />
+        <span aria-hidden="true" className="ui-bar-sep" />
+        <label className="flex items-center gap-2" title="有台词的地方配乐自动降低约 10 dB">
+          <input
+            type="checkbox"
+            checked={params.duck}
+            onChange={(e) => set('duck', e.target.checked)}
+          />
+          对白时压低配乐
+        </label>
+        <label className="flex items-center gap-2" title="成片响度统一到 -14 LUFS，只在导出时处理">
+          <input
+            type="checkbox"
+            checked={params.loudnorm}
+            onChange={(e) => set('loudnorm', e.target.checked)}
+          />
+          响度标准化
+        </label>
       </footer>
     </Modal>
   )
@@ -536,6 +563,54 @@ function Inspector({
               onChange={(v) => onPatch({ out: v })}
             />
           </div>
+          <div className="seq-inspector-row">
+            速度
+            <Select
+              aria-label="速度"
+              className="ui-input w-20"
+              value={String(row.speed)}
+              options={SPEEDS.map((v) => ({ value: String(v), label: `${v}×` }))}
+              onChange={(v) => onPatch({ speed: Number(v) === 1 ? undefined : Number(v) })}
+            />
+          </div>
+          <Volume
+            label="本段原声"
+            value={row.volume}
+            onChange={(v) => onPatch({ volume: v === 1 ? undefined : v })}
+          />
+          {index > 0 && (
+            <div className="seq-inspector-row">
+              转场
+              <Select
+                aria-label="进入这段的转场"
+                className="ui-input w-36"
+                value={row.transition ?? AUTO}
+                options={[
+                  { value: AUTO, label: `跟随全局（${params.transition}）` },
+                  ...TRANSITIONS.map((value) => ({ value })),
+                ]}
+                onChange={(v) =>
+                  onPatch({
+                    transition: v === AUTO ? undefined : (v as SequenceClip['transition']),
+                  })
+                }
+              />
+            </div>
+          )}
+          {index > 0 && (row.transition ?? params.transition) !== '无' && (
+            <div className="seq-inspector-row">
+              转场时长
+              <NumberField
+                label="这段转场时长（秒）"
+                value={row.transitionDuration}
+                placeholder={String(params.transitionDuration)}
+                max={2}
+                onChange={(v) =>
+                  onPatch({ transitionDuration: v === undefined ? undefined : Math.max(0.2, v) })
+                }
+              />
+            </div>
+          )}
         </>
       )}
       {dialogue.length > 0 && (
@@ -546,6 +621,18 @@ function Inspector({
           current={row.dialogue?.source}
           onChange={(v) => onPatch({ dialogue: v })}
         />
+      )}
+      {clipLines(row).length > 0 && (
+        <div className="seq-inspector-row">
+          台词延后
+          <NumberField
+            label="台词延后（秒）"
+            value={row.lineDelay || undefined}
+            placeholder="0"
+            max={10}
+            onChange={(v) => onPatch({ lineDelay: v ? v : undefined })}
+          />
+        </div>
       )}
       {sfx.length > 0 && (
         <ChoiceField
@@ -606,6 +693,7 @@ function NumberField(props: {
 }
 
 const AUTO = '__auto'
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
 const NONE = '__none'
 
 /** 对白 / 音效：自动（按顺序）、不配，或指定某一条 */

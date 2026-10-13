@@ -177,6 +177,37 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 转场标记：重叠转场盖住重叠的那一截，经黑场骑在两段交界处 */
+.seq-transition {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  display: flex;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  box-shadow:
+    inset 0 0 0 1px var(--line-strong),
+    var(--shadow-1);
+  color: var(--ink-muted);
+  cursor: pointer;
+  translate: 0 -50%;
+  transition:
+    color 120ms,
+    box-shadow 120ms;
+}
+.seq-transition:hover {
+  color: var(--ink);
+}
+.seq-transition[data-selected] {
+  box-shadow:
+    inset 0 0 0 1px var(--accent),
+    var(--shadow-1);
+  color: var(--accent);
+}
+
 /* 修剪把手：悬停时出现，拖动时常亮 */
 .seq-trim {
   position: absolute;
@@ -256,6 +287,22 @@
   right: 0;
   bottom: 0;
   background: linear-gradient(to right, transparent, var(--surface));
+}
+
+/* 配乐的音量线 */
+.seq-envelope {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.seq-envelope polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
 }
 
 /* 播放头：横跨所有轨道，顶上的小把手可以拖 */

@@ -2,14 +2,19 @@ import { spawn } from 'node:child_process'
 import { mkdir, symlink, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { subtitleAss } from '@plein/nodes'
-import type { ComposeSpec, MediaInfo } from '@plein/plugin-sdk'
+import {
+  type ComposeSpec,
+  type ComposeTransition,
+  type MediaInfo,
+  overlapping,
+} from '@plein/plugin-sdk'
 import { subtitleFont } from './fonts'
-import { ffmpegBin, h264Args } from './media'
+import { atempoChain, ffmpegBin, h264Args } from './media'
 
 const RATE = 48000
 
-/** 每段画面在成片里实际播放的时长 */
-function clipDurations(spec: ComposeSpec, infos: MediaInfo[]) {
+/** 每段从素材里取多长（秒，素材时间） */
+function sourceLengths(spec: ComposeSpec, infos: MediaInfo[]) {
   return spec.clips.map((c, i) => {
     const total = infos[i]?.duration ?? 0
     const end = Math.min(c.out ?? total, total)
@@ -18,6 +23,30 @@ function clipDurations(spec: ComposeSpec, infos: MediaInfo[]) {
 }
 
 const fmt = (n: number) => Number(n.toFixed(3)).toString()
+
+/** 重叠转场对应的 xfade 效果 */
+const XFADE: Record<Exclude<ComposeTransition['type'], 'fade'>, string> = {
+  dissolve: 'fade',
+  wipe: 'wipeleft',
+  slide: 'slideleft',
+  flash: 'fadewhite',
+}
+
+/**
+ * 分段线性的音量包络写成 ffmpeg 表达式（t 是这条声音自己的时间，所以减去它在成片里的起点）。
+ * 两端保持端点值，和预览的 Web Audio 包络一致。
+ */
+export function envelopeExpr(env: Array<[number, number]>, offset: number) {
+  const pts = env.map(([x, v]) => [x - offset, v] as const)
+  let expr = fmt(pts.at(-1)![1])
+  for (let i = pts.length - 1; i >= 1; i--) {
+    const [x0, v0] = pts[i - 1]!
+    const [x1, v1] = pts[i]!
+    const seg = x1 > x0 ? `${fmt(v0)}+(${fmt(v1 - v0)})*(t-${fmt(x0)})/${fmt(x1 - x0)}` : fmt(v1)
+    expr = `if(lt(t,${fmt(x1)}),${seg},${expr})`
+  }
+  return `if(lt(t,${fmt(pts[0]![0])}),${fmt(pts[0]![1])},${expr})`
+}
 
 /**
  * 组装 ffmpeg 参数。输入顺序：先各段画面，再各段声音。
@@ -35,16 +64,19 @@ function composeArgs(
   fontsdir = false,
 ) {
   const { width: W, height: H, fps } = spec
-  const durations = clipDurations(spec, infos.clips)
+  const sources = sourceLengths(spec, infos.clips)
+  const speeds = spec.clips.map((c) => (c.speed && c.speed > 0 ? c.speed : 1))
+  const durations = sources.map((d, i) => d / speeds[i]!)
   const n = spec.clips.length
-  const tr = n > 1 ? spec.transition : undefined
-  const overlap = tr?.type === 'dissolve' ? tr.duration : 0
-  const total = durations.reduce((a, b) => a + b, 0) - overlap * Math.max(0, n - 1)
+  // 进入第 i 段的转场：各段自己的优先，没有用全局的；第一段没有
+  const transitions = spec.clips.map((c, i) =>
+    i > 0 ? (c.transition ?? spec.transition) : undefined,
+  )
   const args = ['-hide_banner', '-v', 'error', '-y']
   const filters: string[] = []
 
   spec.clips.forEach((c, i) => {
-    args.push('-ss', fmt(c.in), '-t', fmt(durations[i]!), '-i', files.clips[i]!)
+    args.push('-ss', fmt(c.in), '-t', fmt(sources[i]!), '-i', files.clips[i]!)
   })
   spec.audio.forEach((a, i) => {
     if (a.loop) args.push('-stream_loop', '-1')
@@ -52,51 +84,61 @@ function composeArgs(
   })
 
   // 经黑场转场：前一段结尾淡出、后一段开头淡入，各占一半
-  const half = tr?.type === 'fade' ? tr.duration / 2 : 0
   const fades = (i: number, len: number, kind: 'v' | 'a') => {
-    if (!half) return ''
     const f = kind === 'v' ? 'fade' : 'afade'
+    const into = transitions[i]
+    const next = transitions[i + 1]
     let out = ''
-    if (i > 0) out += `,${f}=t=in:st=0:d=${fmt(half)}`
-    if (i < n - 1) out += `,${f}=t=out:st=${fmt(Math.max(0, len - half))}:d=${fmt(half)}`
+    if (into?.type === 'fade') out += `,${f}=t=in:st=0:d=${fmt(into.duration / 2)}`
+    if (next?.type === 'fade') {
+      const half = next.duration / 2
+      out += `,${f}=t=out:st=${fmt(Math.max(0, len - half))}:d=${fmt(half)}`
+    }
     return out
   }
 
   spec.clips.forEach((c, i) => {
     const len = durations[i]!
     const d = fmt(len)
+    const speed = speeds[i]!
+    const retime = speed !== 1 ? `setpts=(PTS-STARTPTS)/${fmt(speed)},` : ''
     filters.push(
-      `[${i}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=${fps},format=yuv420p,trim=duration=${d},setpts=PTS-STARTPTS${fades(i, len, 'v')}[v${i}]`,
+      `[${i}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,${retime}fps=${fps},format=yuv420p,trim=duration=${d},setpts=PTS-STARTPTS${fades(i, len, 'v')}[v${i}]`,
     )
     if (infos.clips[i]?.hasAudio && c.volume > 0) {
+      // 变速不变调（和画面同步拉伸）
+      const tempo = speed !== 1 ? `${atempoChain(speed)},` : ''
       filters.push(
-        `[${i}:a]aformat=sample_rates=${RATE}:channel_layouts=stereo,volume=${fmt(c.volume)},asetpts=PTS-STARTPTS,apad,atrim=duration=${d}${fades(i, len, 'a')}[a${i}]`,
+        `[${i}:a]aformat=sample_rates=${RATE}:channel_layouts=stereo,volume=${fmt(c.volume)},asetpts=PTS-STARTPTS,${tempo}apad,atrim=duration=${d}${fades(i, len, 'a')}[a${i}]`,
       )
     } else {
       filters.push(`anullsrc=r=${RATE}:cl=stereo,atrim=duration=${d}[a${i}]`)
     }
   })
-  if (overlap > 0) {
-    // 叠化：画面 xfade、声音 acrossfade，第 k 段在前面各段总长减去 k 次重叠处开始
-    let v = '[v0]'
-    let a = '[a0]'
-    let offset = 0
-    for (let i = 1; i < n; i++) {
-      offset += durations[i - 1]! - overlap
-      const last = i === n - 1
-      const vo = last ? '[vcat]' : `[vx${i}]`
-      const ao = last ? '[acat]' : `[ax${i}]`
+
+  // 逐段接上：重叠转场用 xfade / acrossfade，其余直接拼接
+  let v = '[v0]'
+  let a = '[a0]'
+  let total = durations[0] ?? 0
+  for (let i = 1; i < n; i++) {
+    const tr = transitions[i]
+    const last = i === n - 1
+    const vo = last ? '[vcat]' : `[vx${i}]`
+    const ao = last ? '[acat]' : `[ax${i}]`
+    if (tr && overlapping(tr)) {
       filters.push(
-        `${v}[v${i}]xfade=transition=fade:duration=${fmt(overlap)}:offset=${fmt(offset)}${vo}`,
+        `${v}[v${i}]xfade=transition=${XFADE[tr.type as keyof typeof XFADE]}:duration=${fmt(tr.duration)}:offset=${fmt(total - tr.duration)}${vo}`,
       )
-      filters.push(`${a}[a${i}]acrossfade=d=${fmt(overlap)}${ao}`)
-      v = vo
-      a = ao
+      filters.push(`${a}[a${i}]acrossfade=d=${fmt(tr.duration)}${ao}`)
+      total += durations[i]! - tr.duration
+    } else {
+      filters.push(`${v}${a}[v${i}][a${i}]concat=n=2:v=1:a=1${vo}${ao}`)
+      total += durations[i]!
     }
-  } else {
-    const concat = spec.clips.map((_, i) => `[v${i}][a${i}]`).join('')
-    filters.push(`${concat}concat=n=${n}:v=1:a=1[vcat][acat]`)
+    v = vo
+    a = ao
   }
+  if (n === 1) filters.push('[v0]null[vcat]', '[a0]anull[acat]')
 
   const mix = ['[acat]']
   spec.audio.forEach((a, j) => {
@@ -110,6 +152,7 @@ function composeArgs(
       'asetpts=PTS-STARTPTS',
       `volume=${fmt(a.volume)}`,
     ]
+    if (a.envelope?.length) chain.push(`volume='${envelopeExpr(a.envelope, a.start)}':eval=frame`)
     if (a.fadeOut && length > a.fadeOut)
       chain.push(`afade=t=out:st=${fmt(length - a.fadeOut)}:d=${fmt(a.fadeOut)}`)
     const delay = Math.round(a.start * 1000)
@@ -117,11 +160,17 @@ function composeArgs(
     filters.push(`[${input}:a]${chain.join(',')}[m${j}]`)
     mix.push(`[m${j}]`)
   })
-  // normalize=0：各轨按设定音量叠加，不因轨数多而整体变小
+  // normalize=0：各轨按设定音量叠加，不因轨数多而整体变小；
+  // 响度标准化到 -14 LUFS（单遍动态模式，自带真峰值限制），loudnorm 内部升采样，再降回来
+  const master = spec.loudnorm
+    ? `loudnorm=I=-14:TP=-1.5:LRA=11,aresample=${RATE}`
+    : mix.length > 1
+      ? 'alimiter=limit=0.95'
+      : 'anull'
   filters.push(
     mix.length > 1
-      ? `${mix.join('')}amix=inputs=${mix.length}:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95[aout]`
-      : '[acat]anull[aout]',
+      ? `${mix.join('')}amix=inputs=${mix.length}:duration=first:dropout_transition=0:normalize=0,${master}[aout]`
+      : `[acat]${master}[aout]`,
   )
   filters.push(
     spec.subtitles?.cues.length

@@ -190,6 +190,30 @@ test('序列时间线：排序、修剪、播放', async ({ page }) => {
     await editor.screenshot({ path: join(shotDir, 'subtitles.png') })
   }
 
+  // 逐段设置：第二段转场改成推移、两倍速；时间线上出现转场标记，这段时长减半
+  const second = clip((await leftToRight())[1]!)
+  await second.click()
+  const len = async () =>
+    Number.parseFloat((await second.locator('.seq-clip-len').textContent())!.split('·').at(-1)!)
+  const full = await len()
+  await editor.getByRole('combobox', { name: '进入这段的转场' }).click()
+  await page.getByRole('option', { name: '推移' }).click()
+  await expect(timeline.locator('.seq-transition')).toHaveCount(1)
+  await editor.getByRole('combobox', { name: '速度' }).click()
+  await page.getByRole('option', { name: '2×' }).click()
+  await expect(second.locator('.seq-clip-len')).toContainText('2×')
+  expect(await len()).toBeCloseTo(full / 2, 1)
+  // 配乐上画出对白时压低的音量线
+  await expect(timeline.locator('.seq-envelope')).toBeVisible()
+  // 停在推移中间：画布上左右两半来自不同的镜头
+  const tr = (await timeline.locator('.seq-transition').boundingBox())!
+  const ruler = (await timeline.locator('.seq-ruler').boundingBox())!
+  await page.mouse.click(tr.x + tr.width / 2, ruler.y + ruler.height / 2)
+  if (shotDir) {
+    await page.waitForTimeout(400)
+    await editor.screenshot({ path: join(shotDir, 'transition.png') })
+  }
+
   await page.keyboard.press('Escape')
   await expect(editor).toBeHidden()
 })

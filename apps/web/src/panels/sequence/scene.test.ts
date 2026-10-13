@@ -37,7 +37,7 @@ describe('previewScene', () => {
   })
 
   it('配乐循环铺满，结尾 2 秒淡出；原声音量为 0 时不排镜头声', () => {
-    const s = scene({ clipVolume: 0 }, 'bgm')
+    const s = scene({ clipVolume: 0, duck: false }, 'bgm')
     expect(s.sounds.some((x) => x.assetId === 'a')).toBe(false)
     expect(s.sounds.find((x) => x.assetId === 'bgm')).toMatchObject({
       loop: true,
@@ -47,6 +47,19 @@ describe('previewScene', () => {
         [7, 0],
       ],
     })
+  })
+})
+
+describe('previewScene 配乐', () => {
+  it('对白时压低和结尾淡出相乘；变速段的原声按速率播放', () => {
+    const s = scene({ clips: [{ source: 'b', speed: 2 }] }, 'bgm')
+    const music = s.sounds.find((x) => x.assetId === 'bgm')!
+    expect(envelopeAt(music.envelope, 0.5)).toBeCloseTo(0.32)
+    expect(envelopeAt(music.envelope, 3)).toBe(1)
+    expect(envelopeAt(music.envelope, music.duration)).toBe(0)
+    const b = s.clips.find((c) => c.key === 'b#0')!
+    expect(b).toMatchObject({ speed: 2, length: 1 })
+    expect(s.sounds.find((x) => x.assetId === 'b')).toMatchObject({ rate: 2, duration: 1 })
   })
 })
 

@@ -2,12 +2,30 @@ import {
   type AssetRef,
   type ComposeAudio,
   type ComposeSpec,
+  type ComposeTransition,
   defineNode,
+  overlapping,
   type PortValue,
   type SubtitleStyle,
   type TranscriptSegment,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
+
+export const TRANSITIONS = ['无', '淡入淡出', '叠化', '划像', '推移', '闪白'] as const
+export type TransitionName = (typeof TRANSITIONS)[number]
+const TRANSITION_TYPES: Record<Exclude<TransitionName, '无'>, ComposeTransition['type']> = {
+  淡入淡出: 'fade',
+  叠化: 'dissolve',
+  划像: 'wipe',
+  推移: 'slide',
+  闪白: 'flash',
+}
+/** 对白时配乐压到的音量（约 -10 dB），前后各留一点起落 */
+export const DUCK_LEVEL = 0.32
+const DUCK_ATTACK = 0.15
+const DUCK_RELEASE = 0.4
+/** 配乐结尾淡出秒数 */
+export const MUSIC_FADE = 2
 
 /** 序列里的一段镜头：按 source（上游元素 id）对应连进来的视频 */
 export const SequenceClip = z.object({
@@ -23,13 +41,21 @@ export const SequenceClip = z.object({
   sfx: z.string().optional(),
   /** 字幕；不填用对白的台词 */
   subtitle: z.string().optional(),
+  /** 从上一段切到这段的转场和时长；不填跟随全局 */
+  transition: z.enum(TRANSITIONS).optional(),
+  transitionDuration: z.number().min(0.2).max(2).optional(),
+  /** 这段原声的音量（再乘全局原声音量），默认 1 */
+  volume: z.number().min(0).max(2).optional(),
+  /** 播放速度，默认 1 */
+  speed: z.number().min(0.25).max(4).optional(),
+  /** 台词在镜头开始后多久开始说（秒），默认 0 */
+  lineDelay: z.number().min(0).max(10).optional(),
 })
 export type SequenceClip = z.infer<typeof SequenceClip>
 
 export const SEQUENCE_TYPE = 'plein/sequence'
 
 const SUBTITLE_STYLES = ['常规', '醒目', '底框'] as const
-export const TRANSITIONS = ['无', '淡入淡出', '叠化'] as const
 export const SUBTITLE_STYLE_IDS: Record<(typeof SUBTITLE_STYLES)[number], SubtitleStyle> = {
   常规: 'standard',
   醒目: 'bold',
@@ -66,6 +92,14 @@ export const sequenceNode = defineNode({
     sfxVolume: volume('音效音量', 0.8),
     transition: z.enum(TRANSITIONS).default('无').meta({ title: '转场' }),
     transitionDuration: z.number().min(0.2).max(2).default(0.5).meta({ title: '转场时长（秒）' }),
+    duck: z.boolean().default(true).meta({
+      title: '对白时压低配乐',
+      description: '有台词的地方配乐自动降低约 10 dB，说完再回来',
+    }),
+    loudnorm: z.boolean().default(true).meta({
+      title: '响度标准化',
+      description: '成片响度统一到 -14 LUFS（短视频平台的通行响度）',
+    }),
     asrTiming: z.boolean().default(false).meta({
       title: '按语音识别对齐字幕',
       description: '用已启用平台的语音识别校准每句字幕的时间',
@@ -93,6 +127,15 @@ export interface ArrangedClip {
   more: MediaValue[]
   sfx?: MediaValue
   subtitle?: string
+  /** 播放速度 */
+  speed: number
+  /** 原声音量倍数 */
+  volume: number
+  /** 台词延后（秒） */
+  lineDelay: number
+  /** 进入这段的转场（不填跟随全局） */
+  transition?: TransitionName
+  transitionDuration?: number
 }
 
 /**
@@ -140,6 +183,11 @@ export function arrangeSequence(
       more: (s?.more ?? []).flatMap((id) => allDialogue.filter((v) => v.source === id)),
       sfx: pick(sfx, s?.sfx, index),
       subtitle: s?.subtitle,
+      speed: s?.speed ?? 1,
+      volume: s?.volume ?? 1,
+      lineDelay: s?.lineDelay ?? 0,
+      transition: s?.transition,
+      transitionDuration: s?.transitionDuration,
     }
   })
 }
@@ -155,9 +203,12 @@ export function sequenceSize(params: Pick<SequenceParams, 'resolution' | 'aspect
   return { width, height }
 }
 
-/** 每段实际时长：出点不超过素材结尾，入点之前的部分去掉 */
-export function clipLength(c: Pick<ArrangedClip, 'in' | 'out'>, duration: number) {
-  return Math.max(0, Math.min(c.out ?? duration, duration) - c.in)
+/** 每段在成片里的时长：出点不超过素材结尾，入点之前的部分去掉，再按速度换算 */
+export function clipLength(
+  c: Pick<ArrangedClip, 'in' | 'out'> & { speed?: number },
+  duration: number,
+) {
+  return Math.max(0, Math.min(c.out ?? duration, duration) - c.in) / (c.speed ?? 1)
 }
 
 export interface Cue {
@@ -194,6 +245,8 @@ export function dialogueCues(
 export interface TimelineClip {
   start: number
   length: number
+  /** 从上一段切进来的转场（第一段、硬切时为空）；重叠转场时这段比上一段结尾早 duration 开始 */
+  transition?: ComposeTransition
   /** 各句对白（dialogue 和 more 依次）在成片里的起点和播放时长；放不下的句子不在里面 */
   lines: Array<{ start: number; duration: number }>
   cues: Cue[]
@@ -216,13 +269,13 @@ export interface SequenceDurations {
 export interface Timeline {
   clips: TimelineClip[]
   total: number
-  /** 实际使用的转场时长（叠化时受最短镜头限制），0 表示硬切 */
-  transition: { type: 'fade' | 'dissolve'; duration: number } | null
 }
 
 /**
- * 排时间线：叠化时相邻镜头重叠转场时长，淡入淡出（经黑场）不改变时长。
- * 对白从所属镜头开头播放，可以延续到下一段有对白的镜头开始；
+ * 排时间线：每段可以单独指定进入它的转场，不指定跟随全局。
+ * 叠化、划像、推移、闪白让相邻镜头重叠转场时长，经黑场淡入淡出不改变时长；
+ * 转场时长不超过相邻两段里较短那段（重叠转场是一半）。
+ * 对白从所属镜头开头（加上台词延后）播放，可以延续到下一段有对白的镜头开始；
  * 字幕跟着对白（有识别结果时按识别时间），没有对白时铺满这段镜头。
  */
 export function sequenceTimeline(
@@ -232,31 +285,38 @@ export function sequenceTimeline(
   transcripts: Array<TranscriptSegment[] | undefined> = [],
 ): Timeline {
   const lengths = arranged.map((c, i) => clipLength(c, durations.clips[i] ?? 0))
-  const playing = lengths.filter((l) => l > 0)
-  let transition: Timeline['transition'] = null
-  if (params.transition !== '无' && playing.length > 1) {
-    const type = params.transition === '叠化' ? 'dissolve' : 'fade'
-    // 叠化的重叠部分不能超过最短镜头的一半
-    const limit = type === 'dissolve' ? Math.min(...playing) / 2 : Math.min(...playing)
-    const duration = Math.min(params.transitionDuration, limit)
-    if (duration > 0.04) transition = { type, duration }
-  }
-  const overlap = transition?.type === 'dissolve' ? transition.duration : 0
+  const transitions: Array<ComposeTransition | undefined> = []
+  let prev = -1
+  arranged.forEach((c, i) => {
+    const len = lengths[i]!
+    if (len <= 0) return
+    if (prev >= 0) {
+      const name = c.transition ?? params.transition
+      if (name !== '无') {
+        const type = TRANSITION_TYPES[name]
+        const room = Math.min(lengths[prev]!, len)
+        const duration = Math.min(
+          c.transitionDuration ?? params.transitionDuration,
+          type === 'fade' ? room : room / 2,
+        )
+        if (duration > 0.04) transitions[i] = { type, duration: Number(duration.toFixed(3)) }
+      }
+    }
+    prev = i
+  })
   const starts: number[] = []
   let t = 0
-  let first = true
-  for (const len of lengths) {
-    if (len > 0 && !first) t -= overlap
+  arranged.forEach((_, i) => {
+    const tr = transitions[i]
+    if (overlapping(tr)) t -= tr!.duration
     starts.push(t)
-    if (len > 0) {
-      t += len
-      first = false
-    }
-  }
+    t += lengths[i]!
+  })
   const total = Math.max(0, t)
   const clips = arranged.map((c, i): TimelineClip => {
     const start = starts[i]!
     const length = lengths[i]!
+    const transition = transitions[i]
     if (length === 0) return { start, length, lines: [], cues: [] }
     let until = total
     for (let j = i + 1; j < arranged.length; j++) {
@@ -266,10 +326,10 @@ export function sequenceTimeline(
       }
     }
     const room = until - start
-    // 台词从镜头开头依次播放，可以延续到下一段有对白的镜头开始；放不下的句子丢掉
+    // 台词从镜头开头（加上延后）依次播放，可以延续到下一段有对白的镜头开始；放不下的句子丢掉
     const own = clipLines(c)
     const lines: TimelineClip['lines'] = []
-    let at = 0
+    let at = Math.min(c.lineDelay, room)
     own.forEach((_, k) => {
       if (at >= room - 0.04) return
       const d =
@@ -307,9 +367,33 @@ export function sequenceTimeline(
       for (let k = 0; k + 1 < cues.length; k++)
         cues[k]!.end = Math.min(cues[k]!.end, Math.max(cues[k]!.start + 0.04, cues[k + 1]!.start))
     }
-    return { start, length, lines, cues }
+    return { start, length, lines, cues, transition }
   })
-  return { clips, total, transition }
+  return { clips, total }
+}
+
+/**
+ * 对白时压低配乐的音量包络（成片时间，倍数）：每句台词前 0.15 秒压下去，说完 0.4 秒回来；
+ * 两句挨得近时中间不回升。没有台词时为空。
+ */
+export function duckEnvelope(timeline: Timeline): Array<[number, number]> {
+  const spans = timeline.clips
+    .flatMap((c) => c.lines.map((l) => [l.start, l.start + l.duration] as [number, number]))
+    .filter(([a, b]) => b > a)
+    .sort((x, y) => x[0] - y[0])
+  const merged: Array<[number, number]> = []
+  for (const [a, b] of spans) {
+    const last = merged.at(-1)
+    if (last && a - last[1] < DUCK_ATTACK + DUCK_RELEASE) last[1] = Math.max(last[1], b)
+    else merged.push([a, b])
+  }
+  // 开头就有台词时一开始就是压低的（包络在第一个点之前取第一个点的值）
+  return merged.flatMap(([a, b]): Array<[number, number]> => [
+    ...(a >= DUCK_ATTACK ? [[a - DUCK_ATTACK, 1] as [number, number]] : []),
+    [a, DUCK_LEVEL],
+    [b, DUCK_LEVEL],
+    [b + DUCK_RELEASE, 1],
+  ])
 }
 
 /** 生成合成参数：画面、各段声音、配乐（循环铺满，结尾淡出）、字幕和转场 */
@@ -344,8 +428,16 @@ export function sequenceSpec(
         volume: params.sfxVolume,
       })
   })
+  const duck = params.duck ? duckEnvelope(tl) : []
   for (const m of media(music)) {
-    audio.push({ asset: asset(m), start: 0, volume: params.musicVolume, loop: true, fadeOut: 2 })
+    audio.push({
+      asset: asset(m),
+      start: 0,
+      volume: params.musicVolume,
+      loop: true,
+      fadeOut: MUSIC_FADE,
+      envelope: duck.length ? duck : undefined,
+    })
   }
   const cues = tl.clips.flatMap((t) => t.cues)
   return {
@@ -353,14 +445,22 @@ export function sequenceSpec(
     height,
     fps: 30,
     clips: arranged.flatMap((c, i) => {
-      const len = tl.clips[i]!.length
-      return len > 0
-        ? [{ asset: asset(c.clip), in: c.in, out: c.in + len, volume: params.clipVolume }]
-        : []
+      const { length, transition } = tl.clips[i]!
+      if (length <= 0) return []
+      return [
+        {
+          asset: asset(c.clip),
+          in: c.in,
+          out: c.in + length * c.speed,
+          volume: params.clipVolume * c.volume,
+          ...(c.speed !== 1 && { speed: c.speed }),
+          ...(transition && { transition }),
+        },
+      ]
     }),
     audio,
     subtitles: cues.length ? { cues, style: SUBTITLE_STYLE_IDS[params.subtitleStyle] } : undefined,
-    transition: tl.transition ?? undefined,
+    loudnorm: params.loudnorm || undefined,
     name,
   }
 }

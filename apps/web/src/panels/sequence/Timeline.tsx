@@ -1,4 +1,5 @@
 import type { Cue } from '@plein/nodes'
+import { type ComposeTransition, overlapping } from '@plein/plugin-sdk'
 import {
   type PointerEvent as ReactPointerEvent,
   useEffect,
@@ -26,6 +27,10 @@ export interface TrackItem {
   full?: number
   /** 画面宽高比，胶片条每格的宽度按它算 */
   aspect: number
+  /** 播放速度：时间线上的 1 秒 = 素材里的 speed 秒 */
+  speed: number
+  /** 从上一段切进来的转场 */
+  transition?: ComposeTransition
   lines: Array<{ assetId: string; start: number; duration: number; caption?: string }>
   sfx?: { assetId: string; start: number; length: number }
   cues: Cue[]
@@ -46,6 +51,14 @@ const ZOOM_MAX = 40
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
+const TRANSITION_LABELS: Record<ComposeTransition['type'], string> = {
+  fade: '淡入淡出',
+  dissolve: '叠化',
+  wipe: '划像',
+  slide: '推移',
+  flash: '闪白',
+}
+
 /**
  * 多轨时间线：画面（胶片条）、对白、音效（波形）、配乐、字幕五条轨。
  * 拖动画面块换顺序，拖两边修剪入出点；点刻度尺或拖播放头定位；⌘/Ctrl + 滚轮缩放。
@@ -54,7 +67,6 @@ export function Timeline({
   items,
   total,
   music,
-  transition,
   playhead,
   selected,
   onSelect,
@@ -63,8 +75,8 @@ export function Timeline({
 }: {
   items: TrackItem[]
   total: number
-  music?: { assetId: string; volume: number }
-  transition: { type: 'fade' | 'dissolve'; duration: number } | null
+  /** 配乐和它的音量包络（对白时压低的地方画成凹下去） */
+  music?: { assetId: string; volume: number; duck: Array<[number, number]> }
   playhead: Playhead
   selected?: string
   onSelect(key: string | undefined): void
@@ -165,7 +177,6 @@ export function Timeline({
 
   const ticks = []
   for (let t = 0; t <= Math.max(total, 1) + 1e-6; t += step) ticks.push(t)
-  const overlap = transition?.type === 'dissolve' ? transition.duration : 0
 
   return (
     <section className="seq-timeline" aria-label="时间线">
@@ -258,7 +269,6 @@ export function Timeline({
             items={items}
             pps={pps}
             x={x}
-            overlap={overlap}
             selected={selected}
             playhead={playhead}
             onSelect={onSelect}
@@ -320,6 +330,21 @@ export function Timeline({
                 }}
               >
                 <Waveform assetId={music.assetId} from={0} to={total} width={total * pps} loop />
+                {music.duck.length > 0 && (
+                  // 音量线：对白处压低（和导出的包络同一份）
+                  <svg
+                    className="seq-envelope"
+                    viewBox={`0 0 ${total} 1`}
+                    preserveAspectRatio="none"
+                    aria-hidden="true"
+                  >
+                    <polyline
+                      points={[[0, 1] as const, ...music.duck, [total, 1] as const]
+                        .map(([t, v]) => `${t},${1 - v * 0.8}`)
+                        .join(' ')}
+                    />
+                  </svg>
+                )}
                 {/* 结尾 2 秒淡出 */}
                 <span className="seq-fade-out" style={{ width: Math.min(total, 2) * pps }} />
               </div>
@@ -403,7 +428,6 @@ function ClipTrack({
   items,
   pps,
   x,
-  overlap,
   selected,
   playhead,
   onSelect,
@@ -413,7 +437,6 @@ function ClipTrack({
   items: TrackItem[]
   pps: number
   x(t: number): number
-  overlap: number
   selected?: string
   playhead: Playhead
   onSelect(key: string | undefined): void
@@ -459,13 +482,14 @@ function ClipTrack({
         return
       }
       if (current.target !== index) {
-        // 新位置的起点：按新顺序把前面各段的长度加起来
+        // 新位置的起点：按新顺序把前面各段的长度加起来（重叠转场的重叠部分按原样估计）
         const order = items.filter((_, i) => i !== index)
         order.splice(current.target, 0, item)
         let start = 0
         for (const it of order) {
           if (it === item) break
-          if (it.length > 0) start += it.length - overlap
+          if (it.length > 0)
+            start += it.length - (overlapping(it.transition) ? it.transition!.duration : 0)
         }
         start = Math.max(0, start)
         setSettle({ key: item.key, dx: x(item.start) + current.dx - x(start), animate: false })
@@ -489,7 +513,8 @@ function ClipTrack({
     const out0 = Math.min(item.out ?? full, full)
     let patch: TrimPatch = {}
     const move = (ev: PointerEvent) => {
-      const d = (ev.clientX - x0) / pps
+      // 拖动距离是成片时间，换算成素材时间
+      const d = ((ev.clientX - x0) / pps) * item.speed
       if (edge === 'in') {
         const v = round2(Math.min(Math.max(0, in0 + d), out0 - MIN_LEN))
         patch = { in: v }
@@ -498,7 +523,7 @@ function ClipTrack({
         const v = round2(Math.max(Math.min(full, out0 + d), in0 + MIN_LEN))
         // 拖回素材结尾就是“到结尾”
         patch = { out: v >= full - 0.01 ? undefined : v }
-        playhead.seek(item.start + (v - in0) - 0.04)
+        playhead.seek(item.start + (v - in0) / item.speed - 0.04)
       }
       onTrim(item.key, patch, false)
     }
@@ -561,7 +586,7 @@ function ClipTrack({
                   duration={it.full}
                   aspect={it.aspect}
                   from={it.in}
-                  to={it.in + it.length}
+                  to={it.in + it.length * it.speed}
                   width={width}
                   height={56}
                 />
@@ -569,7 +594,12 @@ function ClipTrack({
               <span className="seq-clip-name">
                 {String(i + 1).padStart(2, '0')} {it.pending ? '还没有生成' : it.name}
               </span>
-              {!it.pending && <span className="seq-clip-len">{it.length.toFixed(1)}s</span>}
+              {!it.pending && (
+                <span className="seq-clip-len">
+                  {it.speed !== 1 && `${it.speed}× · `}
+                  {it.length.toFixed(1)}s
+                </span>
+              )}
               {!it.pending && (
                 <>
                   <span
@@ -587,6 +617,28 @@ function ClipTrack({
             </div>
           )
         })}
+        {!drag &&
+          items.map((it) => {
+            const tr = it.transition
+            if (!tr) return null
+            // 重叠转场盖住重叠的那一截；经黑场骑在交界处
+            const from = overlapping(tr) ? it.start : it.start - tr.duration / 2
+            return (
+              <button
+                key={`tr-${it.key}`}
+                type="button"
+                className="seq-transition"
+                data-selected={selected === it.key || undefined}
+                aria-label={`${it.name} 的转场`}
+                title={`${TRANSITION_LABELS[tr.type]} ${tr.duration} 秒`}
+                style={{ left: x(from), width: Math.max(tr.duration * pps, 18) }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => onSelect(it.key)}
+              >
+                <Icon name="transition" size={12} />
+              </button>
+            )
+          })}
       </div>
     </div>
   )
