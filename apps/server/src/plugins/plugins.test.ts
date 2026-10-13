@@ -238,8 +238,7 @@ describe('插件宿主', () => {
       expect.arrayContaining(['plein/core', 'plein/mock']),
     )
     const types = catalog.nodes.map((n) => `${n.type}@${n.version}`)
-    // 本机模式下还有 MCP 工具节点
-    expect(types).toEqual([...corePlugin.manifest.contributes.nodes, 'plein/mcp-tool@1'])
+    expect(types).toEqual(corePlugin.manifest.contributes.nodes)
     expect(catalog.nodes.every((n) => n.executable)).toBe(true)
     const image = catalog.nodes.find((n) => n.type === 'plein/image')!
     expect(image.defaults).toMatchObject({ model: '', aspectRatio: '16:9', count: 1 })

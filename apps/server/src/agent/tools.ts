@@ -37,8 +37,6 @@ import type { AssetStore } from '../assets/store'
 import { NodeRunError, type PluginHost } from '../plugins/host'
 import type { NodeRuns } from '../runs/runs'
 import type { LibraryStore } from '../library/store'
-import { mcpCapabilities } from '../mcp/caps'
-import type { McpClients } from '../mcp/clients'
 import type { Rooms } from '../sync/rooms'
 import { type Approvals, approvalFor } from './approvals'
 import type { AgentChanges } from './changes'
@@ -59,8 +57,6 @@ export interface ToolEnv {
   assets: AssetStore
   /** 资产库（测试里可以不给） */
   library?: LibraryStore
-  /** 外部 MCP 服务（只在本机模式有） */
-  mcp?: McpClients
   /** 文档写入的事务 origin：智能体会话用自己的 origin，改动集和撤销按它归属 */
   origin?: unknown
   /** 发起了一次运行（记进改动集，撤销这一轮时一并取消） */
@@ -599,7 +595,6 @@ export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   ...(storyCapabilities as never[]),
   ...(promptCapabilities as never[]),
   ...libraryCapabilities,
-  ...mcpCapabilities,
   runStoryboard,
   rewrite,
   runNode,

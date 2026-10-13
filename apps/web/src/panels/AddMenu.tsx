@@ -1,10 +1,6 @@
 import type { ClipboardData, NewElement } from '@plein/doc'
 import type { Engine, PortRef } from '@plein/canvas-core'
-import { MCP_TOOL_TYPE } from '@plein/nodes'
-import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { api } from '../api/client'
-import { queryKeys } from '../api/query'
 import { dramaNotice, placeDramaTemplate } from '../canvas/drama'
 import { placeTemplate } from '../canvas/groups'
 import {
@@ -105,20 +101,8 @@ export function AddMenu({
   side = 'below',
 }: AddMenuProps) {
   const exit = useExit()
-  const allNodes = useCatalog((s) => s.catalog?.nodes)
+  const nodes = useCatalog((s) => s.catalog?.nodes)
   const catalog = useCatalog((s) => s.catalog)
-  // MCP 工具节点只在设置里接过（并启用）MCP 服务后才出现，平时不打扰
-  const hasMcpNode = !!allNodes?.some((n) => n.type === MCP_TOOL_TYPE)
-  const { data: mcpServers } = useQuery({
-    queryKey: queryKeys.mcpServers,
-    queryFn: api.mcpServers,
-    enabled: hasMcpNode,
-  })
-  const mcpReady = !!mcpServers?.some((s) => s.enabled)
-  const nodes = useMemo(
-    () => (mcpReady ? allNodes : allNodes?.filter((n) => n.type !== MCP_TOOL_TYPE)),
-    [allNodes, mcpReady],
-  )
   const templates = useTemplates((s) => s.templates)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)

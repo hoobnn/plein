@@ -34,9 +34,6 @@ import {
   type CapabilityCall,
   type CapabilityCallResult,
   type PluginCapabilityInfo,
-  type McpServerInput,
-  type McpServerView,
-  type McpToolInfo,
   type ExternalMcpStatus,
   type ExternalMcpToken,
 } from '@plein/protocol'
@@ -159,17 +156,9 @@ export const api = {
   undoAgentTurn: (id: string, turn: string) =>
     request<void>(API.agentUndo(id, turn), json('POST', {})),
   capabilities: () => request<PluginCapabilityInfo[]>(API.capabilities),
-  mcpServers: () => request<McpServerView[]>(API.mcpServers),
   externalMcp: () => request<ExternalMcpStatus>(API.mcpExternal),
   issueExternalMcp: () => request<ExternalMcpToken>(API.mcpExternal, json('POST', {})),
   revokeExternalMcp: () => request<void>(API.mcpExternal, { method: 'DELETE' }),
-  createMcpServer: (body: McpServerInput) =>
-    request<McpServerView>(API.mcpServers, json('POST', body)),
-  updateMcpServer: (id: string, body: McpServerInput) =>
-    request<McpServerView>(API.mcpServer(id), json('PUT', body)),
-  deleteMcpServer: (id: string) => request<void>(API.mcpServer(id), { method: 'DELETE' }),
-  mcpTools: (id: string, refresh = false) =>
-    request<McpToolInfo[]>(`${API.mcpServerTools(id)}${refresh ? '?refresh=1' : ''}`),
   callCapability: (canvasId: string, name: string, body: Partial<CapabilityCall>) =>
     request<CapabilityCallResult>(API.capabilityCall(canvasId, name), json('POST', body)),
   undoCapabilityCall: (id: string) => request<void>(API.capabilityUndo(id), json('POST', {})),

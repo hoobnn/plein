@@ -37,8 +37,8 @@ export interface Config {
    */
   agent: boolean
   /**
-   * 允许添加外部 MCP 服务（stdio 在本机执行命令、http 由服务端访问任意地址），同样只在免登录模式开启。
-   * 和 agent 分开：测试环境关掉本机 CLI，但要测 MCP
+   * 对外开放 MCP（外部 AI 应用用长期令牌操作画布），同样只在免登录模式开启。
+   * 和 agent 分开：测试环境关掉本机 CLI，但要测对外开放
    */
   mcp: boolean
 }

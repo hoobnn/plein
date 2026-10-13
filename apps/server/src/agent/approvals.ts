@@ -66,8 +66,6 @@ export function approvalFor(
       ids: [node],
     }
   }
-  if (cap.name === 'mcp_call_tool')
-    return { reason: `调用外部工具 ${String(input.tool)}（${String(input.server)}）`, ids: [] }
   if (cap.name === 'run_node') {
     const node = String(input.id)
     const capability = ctx.withDoc((doc) => {

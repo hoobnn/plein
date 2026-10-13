@@ -490,52 +490,7 @@ export interface RewritePromptResult {
   model: string
 }
 
-// ── 外部 MCP 服务 ────────────────────────────────────
-
-/**
- * 外部 MCP 服务：stdio 在本机起一个进程，http 连远端（Streamable HTTP）。
- * 只在本机免登录模式（含桌面端）可用：stdio 等于在服务端所在机器上执行命令。
- */
-export const McpTransport = z.enum(['stdio', 'http'])
-export type McpTransport = z.infer<typeof McpTransport>
-
-const SECRET_KEY = /^[A-Za-z_][A-Za-z0-9_-]{0,127}$/
-
-export const McpServerInput = z.object({
-  name: z.string().trim().min(1).max(60),
-  transport: McpTransport,
-  /** stdio：可执行文件，如 npx、uvx */
-  command: z.string().trim().max(1000).optional(),
-  args: z.array(z.string().max(2000)).max(50).optional(),
-  /** http：服务地址 */
-  url: z.url().max(2000).optional(),
-  /** stdio 的环境变量，或 http 的请求头（如 Authorization）；值为空串表示删除，没传的键保持不变 */
-  secrets: z.record(z.string().regex(SECRET_KEY), z.string().max(8000)).optional(),
-  enabled: z.boolean().optional(),
-})
-export type McpServerInput = z.infer<typeof McpServerInput>
-
-export interface McpServerView {
-  id: string
-  name: string
-  transport: McpTransport
-  command?: string
-  args?: string[]
-  url?: string
-  /** 已保存的环境变量 / 请求头的键（值不回传） */
-  secretKeys: string[]
-  enabled: boolean
-}
-
-export interface McpToolInfo {
-  name: string
-  title?: string
-  description?: string
-  /** 工具参数的 JSON Schema */
-  inputSchema: Record<string, unknown>
-  /** 服务声明这个工具只读（不改外部状态） */
-  readOnly?: boolean
-}
+// ── 对外开放 MCP ────────────────────────────────────
 
 /** 对外开放的 MCP（让 Claude Desktop、Cursor 等连本机 Plein）：令牌只在生成时返回一次 */
 export interface ExternalMcpStatus {
@@ -764,12 +719,6 @@ export const API = {
   /** 允许或跳过一张确认单，body 为 { allow: boolean } */
   agentApproval: (id: string, approvalId: string) =>
     `/api/agent/sessions/${encodeURIComponent(id)}/approvals/${encodeURIComponent(approvalId)}`,
-  /** 外部 MCP 服务：GET 列表，POST 新增（McpServerInput） */
-  mcpServers: '/api/mcp/servers',
-  /** PUT 修改、DELETE 删除 */
-  mcpServer: (id: string) => `/api/mcp/servers/${encodeURIComponent(id)}`,
-  /** 连上服务列出工具（McpToolInfo[]），也用来测试连接；?refresh=1 不用缓存 */
-  mcpServerTools: (id: string) => `/api/mcp/servers/${encodeURIComponent(id)}/tools`,
   /** 对外开放的 MCP：GET 状态，POST 生成新令牌（旧的作废），DELETE 关闭 */
   mcpExternal: '/api/mcp/external',
   /** 插件贡献的能力，返回 PluginCapabilityInfo[] */

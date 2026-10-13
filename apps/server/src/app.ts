@@ -4,11 +4,8 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
 import { agentMcpRoute, agentRoutes } from './agent/routes'
 import { capabilityRoutes } from './agent/cap-routes'
-import { McpClients } from './mcp/clients'
-import { mcpServerPlugin } from './mcp/plugin'
 import { ExternalMcp } from './mcp/external'
 import { mcpRoutes } from './mcp/routes'
-import { McpServerStore } from './mcp/store'
 import { AgentSessions } from './agent/sessions'
 import { setMediaTools } from './assets/media'
 import { AssetStore } from './assets/store'
@@ -46,8 +43,6 @@ export interface Server {
   runs: NodeRuns
   agents: AgentSessions
   library: LibraryStore
-  /** 外部 MCP 服务（只在本机模式有） */
-  mcp: McpClients | null
   close(): void
 }
 
@@ -63,12 +58,7 @@ export async function createServer(config: Config): Promise<Server> {
     new ProviderConfigStore(config.dataDir, new Set(config.mockProvider ? ['plein/mock'] : [])),
     assets,
   )
-  // 外部 MCP 服务和本机智能体一样，只在本机免登录模式开放
-  const mcp = config.mcp ? new McpClients(new McpServerStore(config.dataDir)) : null
-  plugins.load(
-    [...builtinPlugins({ mock: config.mockProvider }), ...(mcp ? [mcpServerPlugin(mcp)] : [])],
-    true,
-  )
+  plugins.load(builtinPlugins({ mock: config.mockProvider }), true)
   const auth = await createAuth(config.auth, db, secrets, { publicUrl: config.publicUrl })
   const runs = new NodeRuns(db, rooms, plugins, { concurrency: config.maxJobs })
   const library = new LibraryStore(db)
@@ -79,13 +69,13 @@ export async function createServer(config: Config): Promise<Server> {
     runs,
     host: plugins,
     assets,
-    mcp: mcp ?? undefined,
     dataDir: config.dataDir,
     enabled: config.agent,
   })
 
-  const external = mcp
-    ? new ExternalMcp(config.dataDir, { db, rooms, runs, host: plugins, assets, library, mcp })
+  // 对外开放 MCP 和本机智能体一样，只在本机免登录模式开放
+  const external = config.mcp
+    ? new ExternalMcp(config.dataDir, { db, rooms, runs, host: plugins, assets, library })
     : null
 
   const app = new Hono<AuthEnv>()
@@ -120,11 +110,8 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', promptRoutes(plugins))
   app.route('/', runRoutes(db, runs))
   app.route('/', agentRoutes(db, agents))
-  app.route(
-    '/',
-    capabilityRoutes({ db, rooms, runs, host: plugins, assets, library, mcp: mcp ?? undefined }),
-  )
-  app.route('/', mcpRoutes(mcp, external))
+  app.route('/', capabilityRoutes({ db, rooms, runs, host: plugins, assets, library }))
+  app.route('/', mcpRoutes(external))
   app.all('/api/*', (c) => c.json({ error: 'not_found', message: '接口不存在' }, 404))
 
   if (config.webDist) {
@@ -148,9 +135,7 @@ export async function createServer(config: Config): Promise<Server> {
     runs,
     agents,
     library,
-    mcp,
     close() {
-      void mcp?.close()
       agents.close()
       runs.close()
       rooms.closeAll()

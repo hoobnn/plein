@@ -9,7 +9,6 @@ import type { AuthEnv } from '../auth'
 import { newId } from '../ids'
 import type { AssetStore } from '../assets/store'
 import type { LibraryStore } from '../library/store'
-import type { McpClients } from '../mcp/clients'
 import type { PluginHost } from '../plugins/host'
 import type { NodeRuns } from '../runs/runs'
 import { ownsCanvas } from '../storage/canvases'
@@ -30,7 +29,6 @@ interface Deps {
   host: PluginHost
   assets: AssetStore
   library: LibraryStore
-  mcp?: McpClients
 }
 
 /**
@@ -89,7 +87,6 @@ export function capabilityRoutes(deps: Deps) {
         host: deps.host,
         assets: deps.assets,
         library: deps.library,
-        mcp: deps.mcp,
         origin: changes.origin,
         selection: body.data.selection,
         onRun: (nodeId, runId) => changes.recordRun(nodeId, runId),
