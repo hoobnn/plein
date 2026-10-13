@@ -17,7 +17,7 @@ import { confirmDialog, dialogOpen } from '../ui/Dialog'
 import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { Select } from '../ui/Select'
-import { runNode } from './run'
+import { runBatch, runNode } from './run'
 import { StoryboardSync } from './StoryboardSync'
 import { Presence } from '../ui/Presence'
 import { EmptyState } from '../ui/EmptyState'
@@ -170,19 +170,20 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       engine.zoomToFit([id, ...frames])
     }
   }
-  const batch = (role: ShotRole) => {
-    const { started, skipped, reasons } = runExpanded(
-      engine,
-      id,
-      targetIds,
-      role,
-      (n) => void runNode(n),
+  const batch = async (role: ShotRole) => {
+    // 分镜图一起交给服务端排：@ 到的角色、场景卡还没出定妆图的，先出定妆图再出分镜图
+    const picked: string[] = []
+    const { started, skipped, reasons } = runExpanded(engine, id, targetIds, role, (n) =>
+      role === 'image' ? picked.push(n) : void runNode(n),
     )
+    const total = picked.length ? await runBatch(id, picked) : 0
+    if (total === null) return
     const label = role === 'image' ? '分镜图' : role === 'video' ? '视频' : '配音'
+    const before = total - picked.length
     if (!started && !skipped) notify(`先把镜头展开成节点，再批量生成${label}`)
     else
       notify(
-        `已开始生成 ${started} 个${label}${
+        `已开始生成 ${started} 个${label}${before > 0 ? `（先出 ${before} 张定妆图）` : ''}${
           skipped
             ? `；跳过 ${skipped} 个（${Object.entries(reasons)
                 .map(([k, n]) => `${k} ${n}`)
@@ -233,7 +234,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           type="button"
           className={btn}
           disabled={!expanded.size}
-          onClick={() => batch('image')}
+          onClick={() => void batch('image')}
         >
           <Icon name="image" />
           批量出分镜图
@@ -242,7 +243,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           type="button"
           className={btn}
           disabled={!expanded.size}
-          onClick={() => batch('video')}
+          onClick={() => void batch('video')}
         >
           <Icon name="video" />
           批量生成视频
@@ -251,7 +252,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           type="button"
           className="ui-btn ui-btn-primary"
           disabled={!expanded.size}
-          onClick={() => batch('speech')}
+          onClick={() => void batch('speech')}
         >
           <Icon name="mic" />
           批量配音

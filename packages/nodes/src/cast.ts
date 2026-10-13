@@ -72,3 +72,29 @@ export function parseCast(markdown: string): CastEntry[] {
   flush()
   return out
 }
+
+export interface SpeakerTraits {
+  gender?: 'female' | 'male'
+  age: 'young' | 'mature'
+}
+
+const MALE = /男|先生|少爷|公子|大叔|大爷|老头|爷爷|父亲|爸|哥|弟|叔|伯|舅|他/
+const FEMALE = /女|姑娘|小姐|夫人|阿姨|大妈|老太|奶奶|婆|母亲|妈|姐|妹|姨|她/
+const MATURE =
+  /中年|老年|年迈|花白|白发|大叔|大爷|大妈|老头|老太|爷爷|奶奶|婆婆|伯|[四五六七八九]十/
+
+/**
+ * 从角色的名字和设定里看出性别、年龄感，配音据此挑音色。
+ * 先认「性别：」字段（抽取模板要求写），没有再按称谓猜；猜不出性别就留空，不乱配。
+ */
+export function speakerTraits(name: string, description: string): SpeakerTraits {
+  const field = /(?:^|\n)\s*性别[：:]\s*(\S+)/.exec(description)?.[1] ?? ''
+  const text = `${name}\n${description}`
+  const fromField = /女/.test(field) ? 'female' : /男/.test(field) ? 'male' : undefined
+  const male = MALE.test(text)
+  const female = FEMALE.test(text)
+  const gender = fromField ?? (male === female ? undefined : male ? 'male' : 'female')
+  const years = Number(/(\d{1,3})\s*多?岁/.exec(description)?.[1] ?? 0)
+  const mature = years >= 40 || MATURE.test(text) || /^老./.test(name)
+  return { gender, age: mature ? 'mature' : 'young' }
+}

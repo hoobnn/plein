@@ -226,6 +226,18 @@ export interface ModelSpec {
    * 都应可选：用户没改的不传，平台用自己的默认值。表单在「模型专属」里按它生成。
    */
   options?: z.ZodObject
+  /** 配音模型的预置音色：设定卡按角色性别、年龄从这里挑；不声明的话音色只能手填 */
+  voices?: VoicePreset[]
+}
+
+/** 平台预置的一个音色 */
+export interface VoicePreset {
+  /** 传给平台的音色 ID */
+  id: string
+  title: string
+  gender: 'female' | 'male'
+  /** 声音年龄感：young 青年，mature 中年及以上；不填算 young */
+  age?: 'young' | 'mature'
 }
 
 /** 可序列化的模型描述：专属参数转成 JSON Schema */

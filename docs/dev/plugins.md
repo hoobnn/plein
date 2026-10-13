@@ -99,6 +99,7 @@ export const serverPlugin = defineServerPlugin(plugin, {
 
 - `limits`（`ModelLimits`）：对通用参数的约束，包括 `aspectRatios`、`resolutions`、`duration {min,max}`、`count {max}`、`seed`、`references {max}`、`speed {min,max}`、`instruction`。`seed`、`duration`、`speed`、`instruction` 可声明为 `false` 表示不支持：表单隐藏，宿主也不会传给 Provider。表单只显示支持的选项和范围；换模型时不合法的值自动校正并说明；提交前按它检查。
 - `options`（zod object）：专属参数，字段名就是 `extra` 的键。字段都写成可选、不给默认值，表单会多一个「默认」选项，用户没改的不传，平台用自己的默认值；枚举可用 `.meta({ labels: { 值: '显示名' } })`。目录接口把它转成 `optionsSchema` 下发。
+- `voices`（`VoicePreset[]`）：配音模型的预置音色，每个写明 `id`、`title`、`gender`（`female` / `male`）和可选的 `age`（`young` / `mature`）。生成设定卡时，宿主按角色的性别、年龄从排第一的配音模型的音色表里挑音色，同类音色轮着分，尽量一人一个声音；不声明的话角色卡的音色只能手填。
 
 缓存键只算所选模型那份专属参数；分辨率留空、专属参数为空时不计入。
 

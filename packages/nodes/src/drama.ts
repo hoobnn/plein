@@ -77,6 +77,7 @@ const CAST_PROMPT = `读下面的剧本，抽出角色和场景设定，只输�
 - 外貌与年龄：
 - 服装：
 - 性格：
+- 性别：（男 / 女，配音按它挑音色）
 - 辨识特征：（出图时用它保持同一个人）
 
 ## 场景
@@ -234,9 +235,8 @@ export function dramaTemplate(opts: DramaTemplateOptions = {}): DramaTemplateSpe
       { from: ['idea', 'text'], to: ['script', 'prompt'] },
       { from: ['script', 'text'], to: ['cast', 'prompt'] },
       { from: ['script', 'text'], to: ['shots', 'script'] },
-      // 定妆图 → 镜头图：角色参考靠它进每个镜头（展开时也会 @ 角色名）
-      { from: ['character', 'images'], to: ['charimg', 'references'] },
-      { from: ['charimg', 'images'], to: ['shotImage', 'references'] },
+      // 定妆图 → 角色卡的参考图：镜头图 @ 角色名时带上它（生成设定卡时每张新卡也这样配一个）
+      { from: ['charimg', 'images'], to: ['character', 'references'] },
       // 图生视频：分镜图作视频的首帧，样例车道和展开出来的镜头一致
       { from: ['shotImage', 'images'], to: ['shotVideo', 'images'] },
       // 样例车道不接序列：展开分镜时真实镜头会按顺序自动接进来，样例接着反而会混进成片

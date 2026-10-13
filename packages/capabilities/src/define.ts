@@ -4,6 +4,7 @@ import type {
   NodeDefinition,
   NodeDescriptor,
   PromptPresetDefinition,
+  VoicePreset,
 } from '@plein/plugin-sdk'
 import type { z } from 'zod'
 
@@ -72,7 +73,7 @@ export interface NodeCatalog {
   /** 全部类型的最新版本 */
   all(): NodeTypeInfo[]
   /** 已启用、支持该模型能力的模型 */
-  models(capability: Capability): Array<{ ref: string; title: string }>
+  models(capability: Capability): Array<{ ref: string; title: string; voices?: VoicePreset[] }>
   /** 提示词预设（内置 + 插件） */
   prompts(): PromptPresetDefinition[]
 }

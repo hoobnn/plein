@@ -76,3 +76,18 @@ export async function runFlowFrom(nodeId: string, scope: FlowRunOptions['scope']
     if (!signal.aborted) fail(err)
   }
 }
+
+/**
+ * 批量运行（分镜的「批量出分镜图」）：节点 @ 到的卡片还没出定妆图时先出。
+ * 返回实际排进去的节点数（含定妆图）；没能开始时返回 null（错误已提示）
+ */
+export async function runBatch(sourceId: string, nodes: string[]): Promise<number | null> {
+  const canvasId = remoteCanvas()
+  if (!canvasId) return null
+  try {
+    return (await api.runBatch(canvasId, sourceId, { nodes })).total
+  } catch (err) {
+    fail(err)
+    return null
+  }
+}

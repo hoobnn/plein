@@ -2,6 +2,7 @@ import { applyCast as applyCastIn, castOf as castOfIn } from '@plein/capabilitie
 import type { Engine } from '@plein/canvas-core'
 import type { CastEntry } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
+import { localContext } from './capabilities'
 import { nodeFactory } from './nodes'
 
 export { type CastResult, describeCast } from '@plein/capabilities'
@@ -15,4 +16,11 @@ export const applyCast = (
   catalog: Catalog | null,
   sourceId: string,
   entries: CastEntry[],
-) => applyCastIn(engine.doc, nodeFactory(catalog), sourceId, entries)
+) =>
+  applyCastIn(
+    engine.doc,
+    nodeFactory(catalog),
+    sourceId,
+    entries,
+    localContext(engine, catalog).nodes.models('audio.speech')[0],
+  )

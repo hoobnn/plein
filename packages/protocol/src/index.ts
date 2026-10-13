@@ -381,6 +381,12 @@ export const FlowRunOptions = z.object({
 })
 export type FlowRunOptions = z.infer<typeof FlowRunOptions>
 
+/** 从一个节点发起批量运行（分镜的「批量出分镜图」）：这些节点重新运行，@ 到的卡片的上游先跑 */
+export const BatchRunOptions = z.object({
+  nodes: z.array(z.string().min(1).max(200)).min(1).max(500),
+})
+export type BatchRunOptions = z.infer<typeof BatchRunOptions>
+
 /** 画布上需要重跑的节点 */
 export interface StaleNodes {
   /** 自己的参数或输入变了，当前结果已经过期 */
@@ -735,6 +741,9 @@ export const API = {
   /** 运行到此处 / 运行下游，body 为 FlowRunOptions，返回 GroupRunStarted */
   nodeFlowRun: (canvasId: string, nodeId: string) =>
     `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/run-flow`,
+  /** 批量运行，body 为 BatchRunOptions，返回 GroupRunStarted */
+  nodeBatchRun: (canvasId: string, nodeId: string) =>
+    `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/run-batch`,
   /** 需要重跑的节点，返回 StaleNodes */
   canvasStale: (canvasId: string) => `/api/canvases/${encodeURIComponent(canvasId)}/stale`,
   /** 整组运行 Frame 里的节点，返回 GroupRunStarted */

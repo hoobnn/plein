@@ -14,6 +14,7 @@ import {
   type JobList,
   type LibraryItem,
   type LibraryKind,
+  type BatchRunOptions,
   type FlowRunOptions,
   type GroupRunOptions,
   type GroupRunStarted,
@@ -179,6 +180,9 @@ export const api = {
   /** 运行到此处 / 运行下游 */
   runFlow: (canvasId: string, nodeId: string, body: FlowRunOptions) =>
     request<GroupRunStarted>(API.nodeFlowRun(canvasId, nodeId), json('POST', body)),
+  /** 批量运行一组节点，它们 @ 到的卡片的上游先跑 */
+  runBatch: (canvasId: string, nodeId: string, body: BatchRunOptions) =>
+    request<GroupRunStarted>(API.nodeBatchRun(canvasId, nodeId), json('POST', body)),
   groupRun: (groupId: string, signal?: AbortSignal) =>
     request<GroupRunState>(API.groupRun(groupId), { signal }),
   cancelGroup: (groupId: string) => request<void>(API.groupCancel(groupId), { method: 'POST' }),

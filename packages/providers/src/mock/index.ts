@@ -35,11 +35,13 @@ function lastUserText(input: CapabilityInput<'text.chat'>) {
 
 const MOCK_CAST = `## 角色
 ### 林晚
+- 性别：女
 - 外貌与年龄：二十岁，短发
 - 服装：白衬衫
 - 辨识特征：左眉有一道疤
 
 ### 老周
+- 性别：男
 - 外貌与年龄：五十多岁，花白头发
 
 ## 场景
@@ -62,7 +64,8 @@ function mockStoryboard(text: string) {
       duration: 4,
       shotSize: sizes[i % sizes.length],
       description: line,
-      characters: [],
+      // 台词里点到名字的角色算出场，展开时镜头会 @ 到这张角色卡
+      characters: line.includes('林晚') ? ['林晚'] : [],
       emotion: '',
       lighting: '',
       sfx: '',
@@ -251,6 +254,11 @@ export const mockProvider = defineProvider({
       id: 'audio',
       title: 'Mock 音频',
       capabilities: ['audio.speech', 'audio.music', 'audio.sfx', 'audio.transcribe'],
+      voices: [
+        { id: 'mock-female', title: 'Mock 女声', gender: 'female' },
+        { id: 'mock-male', title: 'Mock 男声', gender: 'male' },
+        { id: 'mock-uncle', title: 'Mock 大叔', gender: 'male', age: 'mature' },
+      ],
     },
   ],
   async test(ctx) {

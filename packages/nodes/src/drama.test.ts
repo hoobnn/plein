@@ -54,8 +54,7 @@ describe('短剧模板骨架', () => {
     expect(edges).toContain('idea.text→script.prompt')
     expect(edges).toContain('script.text→cast.prompt')
     expect(edges).toContain('script.text→shots.script')
-    expect(edges).toContain('character.images→charimg.references')
-    expect(edges).toContain('charimg.images→shotImage.references')
+    expect(edges).toContain('charimg.images→character.references')
     expect(edges).toContain('music.audio→seq.music')
     // 分镜图接到镜头视频，视频用图生视频模式
     expect(edges).toContain('shotImage.images→shotVideo.images')

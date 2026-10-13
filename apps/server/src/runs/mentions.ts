@@ -54,6 +54,25 @@ function mentionTargets(doc: PleinDoc): MentionElement[] {
   return out
 }
 
+/**
+ * 提示词里的 @ 引用当作依赖边：被引用的卡片 → 引用它的节点。
+ * 调度时据此先跑卡片上游（例如连进角色卡的定妆图），再跑 @ 它的镜头图；画布上不画这些边。
+ */
+export function mentionEdges(doc: PleinDoc) {
+  const targets = mentionTargets(doc)
+  const edges: Array<{ from: [string, string]; to: [string, string] }> = []
+  if (targets.length === 0) return edges
+  for (const el of doc.elements()) {
+    if (el.kind !== 'node') continue
+    for (const value of Object.values(el.params ?? {})) {
+      if (typeof value !== 'string' || !value.includes('@')) continue
+      for (const m of findMentions(value, targets))
+        if (m.id && m.id !== el.id) edges.push({ from: [m.id, '@'], to: [el.id, '@'] })
+    }
+  }
+  return edges
+}
+
 /** 引用到的一个资产：写下来的名字与它在同名里的序号（重名时提示用） */
 interface Hit {
   name: string

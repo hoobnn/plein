@@ -83,9 +83,96 @@ describe('抽取结果落成设定卡', () => {
     const written = asset('plein/character', '老周', '我自己写的')
     asset('plein/prop', '天台', '其实是个道具')
     const r = applyCast(engine, catalog, llm, castOf(engine, llm))
-    expect(r).toEqual({ created: [], filled: ['林晚'], kept: ['老周'], ambiguous: ['天台'] })
+    expect(r).toEqual({
+      created: [],
+      portraits: [],
+      voiced: [],
+      filled: ['林晚'],
+      kept: ['老周'],
+      ambiguous: ['天台'],
+    })
     expect(doc.get(empty)?.params?.description).toBe('外貌与年龄：二十岁，短发')
     expect(doc.get(written)?.params?.description).toBe('我自己写的')
+  })
+
+  it('每张新角色卡配一个定妆图节点连进参考图；角色按性别、年龄配上配音模型的音色', () => {
+    const { doc, engine, llm } = setup()
+    addResults(doc, llm, [
+      {
+        id: 'r2',
+        port: 'text',
+        value: {
+          type: 'text',
+          text: `## 角色
+### 林晚
+- 性别：女
+- 外貌与年龄：二十岁，短发
+### 黑衣男
+- 外貌与年龄：三十岁，黑色雨衣
+### 老周
+- 性别：男
+- 外貌与年龄：五十多岁，快递站老板
+### 阿九
+- 外貌与年龄：看不出年纪
+
+## 场景
+### 天台
+- 时间与地点：雨夜`,
+        },
+        runId: 'run2',
+        at: 2,
+      },
+    ])
+    const image = {
+      ...card('plein/image', '生成图片'),
+      defaults: { prompt: '', aspectRatio: '16:9', count: 2 },
+      outputs: [{ id: 'images', label: '图片', type: 'image' }],
+    }
+    const voices = [
+      { id: 'f1', title: '女一', gender: 'female' },
+      { id: 'm1', title: '男一', gender: 'male' },
+      { id: 'm2', title: '男二', gender: 'male' },
+      { id: 'm9', title: '大叔', gender: 'male', age: 'mature' },
+    ]
+    const full = {
+      nodes: [
+        ...catalog.nodes.map((n) => ({
+          ...n,
+          inputs: [{ id: 'references', label: '参考图', type: 'image', multiple: true }],
+        })),
+        image,
+      ],
+      providers: [
+        {
+          id: 'doubao/speech',
+          enabled: true,
+          models: [{ id: 'tts', title: 'TTS', capabilities: ['audio.speech'], voices }],
+        },
+      ],
+    } as unknown as Catalog
+    const r = applyCast(engine, full, llm, castOf(engine, llm))
+    // 只给角色配：场景卡不会被镜头 @ 到
+    expect(r.portraits).toHaveLength(4)
+    const edges = [...doc.edges()].map((e) => `${e.from.join('.')}→${e.to.join('.')}`)
+    for (const [i, id] of r.created.slice(0, 4).entries())
+      expect(edges).toContain(`${r.portraits[i]}.images→${id}.references`)
+    const lin = doc.get(r.portraits[0]!)!
+    expect(lin.name).toBe('林晚 · 定妆图')
+    expect(lin.params?.prompt).toContain('三视图')
+    expect(lin.params?.prompt).toContain('二十岁，短发')
+    expect(lin.params?.count).toBe(1)
+    // 定妆图在卡片左边，不压住卡片
+    const linCard = doc.get(r.created[0]!)!
+    expect(lin.x + lin.w).toBeLessThan(linCard.x)
+
+    const voiceOf = (name: string) =>
+      r.created.map((id) => doc.get(id)!).find((e) => e.name === name)?.params?.voice
+    expect(voiceOf('林晚')).toEqual({ provider: 'doubao/speech', voiceId: 'f1' })
+    expect(voiceOf('黑衣男')).toEqual({ provider: 'doubao/speech', voiceId: 'm1' })
+    expect(voiceOf('老周')).toEqual({ provider: 'doubao/speech', voiceId: 'm9' })
+    // 看不出性别的不乱配
+    expect(voiceOf('阿九')).toBeUndefined()
+    expect(r.voiced).toEqual(['林晚', '黑衣男', '老周'])
   })
 
   it('再点一次不会重复建卡', () => {

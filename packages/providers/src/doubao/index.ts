@@ -5,6 +5,7 @@ import {
   defineServerPlugin,
   PLUGIN_API_VERSION,
   type ProviderContext,
+  type VoicePreset,
   type TranscriptSegment,
   ProviderError,
   type ProviderErrorCode,
@@ -227,6 +228,49 @@ function text(value: unknown, name: string, max = 3000): string {
   return value
 }
 
+/**
+ * 语音合成 2.0 里适合短剧角色的音色（官方音色列表：https://docs.volcengine.com/docs/6561/1257544），
+ * 同性别同年龄段按顺序轮着分给不同角色
+ */
+const TTS_VOICES: VoicePreset[] = [
+  { id: 'zh_female_vv_uranus_bigtts', title: 'Vivi 2.0', gender: 'female' },
+  { id: 'zh_female_xiaohe_uranus_bigtts', title: '小何 2.0', gender: 'female' },
+  { id: 'zh_female_linjianvhai_uranus_bigtts', title: '邻家女孩 2.0', gender: 'female' },
+  { id: 'zh_female_gaolengyujie_uranus_bigtts', title: '高冷御姐 2.0', gender: 'female' },
+  { id: 'zh_female_wenroushunv_uranus_bigtts', title: '温柔淑女 2.0', gender: 'female' },
+  {
+    id: 'zh_female_zhixingnv_uranus_bigtts',
+    title: '知性女声 2.0',
+    gender: 'female',
+    age: 'mature',
+  },
+  {
+    id: 'zh_female_wenroumama_uranus_bigtts',
+    title: '温柔妈妈 2.0',
+    gender: 'female',
+    age: 'mature',
+  },
+  { id: 'zh_female_popo_uranus_bigtts', title: '婆婆 2.0', gender: 'female', age: 'mature' },
+  { id: 'zh_male_m191_uranus_bigtts', title: '云舟 2.0', gender: 'male' },
+  { id: 'zh_male_taocheng_uranus_bigtts', title: '小天 2.0', gender: 'male' },
+  { id: 'zh_male_shaonianzixin_uranus_bigtts', title: '少年梓辛 2.0', gender: 'male' },
+  { id: 'zh_male_aojiaobazong_uranus_bigtts', title: '傲娇霸总 2.0', gender: 'male' },
+  { id: 'zh_male_gaolengchenwen_uranus_bigtts', title: '高冷沉稳 2.0', gender: 'male' },
+  { id: 'zh_male_baqiqingshu_uranus_bigtts', title: '霸气青叔 2.0', gender: 'male', age: 'mature' },
+  {
+    id: 'zh_male_yuanboxiaoshu_uranus_bigtts',
+    title: '渊博小叔 2.0',
+    gender: 'male',
+    age: 'mature',
+  },
+  {
+    id: 'zh_male_xuanyijieshuo_uranus_bigtts',
+    title: '悬疑解说 2.0',
+    gender: 'male',
+    age: 'mature',
+  },
+]
+
 export const doubaoProvider = defineProvider({
   testScope: 'configuration',
   id: 'doubao/speech',
@@ -246,6 +290,7 @@ export const doubaoProvider = defineProvider({
       title: '豆包语音合成 2.0',
       capabilities: ['audio.speech'],
       limits: { speed: { min: 0.5, max: 2 } },
+      voices: TTS_VOICES,
     },
     {
       id: 'seed-icl-2.0',

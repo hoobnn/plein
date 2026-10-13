@@ -31,18 +31,35 @@ test('短剧模板：插入 → 跑骨架 → 展开 → 批量 → 导出', asy
   await zoomTo(page, [board.id])
   await contextMenu(page, board.id, '运行到此处')
   await waitNode(page, board.id)
-  await expect(page.locator('.ui-toast')).toContainText('运行完成')
+  // 认准这一次的提示：节点先变成成功，「运行完成」要等前端下一次查进度才弹出
+  await expect(page.locator('.ui-toast')).toContainText('运行到「分镜（双击展开镜头）」运行完成')
 
   // 角色与场景抽取 → 一键落成设定卡
   const cast = await byName(page, '角色与场景抽取')
   await zoomTo(page, [cast.id])
   await contextMenu(page, cast.id, '运行到此处')
   await waitNode(page, cast.id)
-  await expect(page.locator('.ui-toast')).toContainText('运行完成')
+  // 等这次的提示弹过再点：不然它晚到一步，会盖掉「新建设定卡」的提示
+  await expect(page.locator('.ui-toast')).toContainText('运行到「角色与场景抽取」运行完成')
   await contextMenu(page, cast.id, '生成设定卡（3）')
   await expect(page.locator('.ui-toast')).toContainText('新建 3 张设定卡')
   expect((await byName(page, '林晚')).nodeType).toBe('plein/character')
   expect((await byName(page, '老城区天台')).nodeType).toBe('plein/scene')
+  // 每张新角色卡配好定妆图节点；角色按性别、年龄配上音色
+  const voiceOf = (name: string) =>
+    page
+      .evaluate(
+        (name) =>
+          [...window.__plein.engine.doc.elements()].find((e) => e.name === name) as
+            | { params?: { voice?: { voiceId: string } } }
+            | undefined,
+        name,
+      )
+      .then((e) => e?.params?.voice?.voiceId)
+  expect(await voiceOf('林晚')).toBe('mock-female')
+  expect(await voiceOf('老周')).toBe('mock-uncle')
+  const portrait = await byName(page, '林晚 · 定妆图')
+  expect(portrait.results).toBe(0)
 
   const openBoard = async () => {
     // 先取消选中：上一步选中节点的生成器面板可能正好盖在分镜节点上
@@ -70,6 +87,8 @@ test('短剧模板：插入 → 跑骨架 → 展开 → 批量 → 导出', asy
   }
   const all = await elements(page)
   expect(all.filter((e) => e.status === 'failed')).toEqual([])
+  // 批量出分镜图时，镜头 @ 到的林晚先出了定妆图
+  expect((await byName(page, '林晚 · 定妆图')).results).toBeGreaterThan(0)
 
   // 展开时镜头已按顺序接进序列：12 段镜头 + 1 条对白 + 配乐
   const seq = await byName(page, '序列')

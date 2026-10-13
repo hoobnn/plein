@@ -167,6 +167,15 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
   await castMenu.getByText(/^生成设定卡/).click()
   await expect(page.locator('.ui-toast')).toContainText('设定卡')
   note('设定卡', (await page.locator('.ui-toast').textContent()) ?? '')
+  const voices = await page.evaluate(() =>
+    [...window.__plein.engine.doc.elements()]
+      .filter((e) => e.nodeType === 'plein/character')
+      .map((e) => {
+        const v = (e as { params?: { voice?: { voiceId?: string } } }).params?.voice
+        return `${e.name}=${v?.voiceId || '（未配）'}`
+      }),
+  )
+  note('音色', voices.join('；'))
 
   let dialog = await openBoard(page, board.id)
   await dialog.getByRole('button', { name: '展开为节点' }).click()
@@ -177,6 +186,10 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
   await dialog.getByRole('button', { name: '批量出分镜图' }).click()
   await expect(page.locator('.ui-toast')).toContainText('已开始生成')
   await waitIdle(page, 20 * 60_000)
+  // 批量出分镜图会先出镜头 @ 到的角色的定妆图
+  const portraits = (await elements(page)).filter((e) => e.name?.endsWith(' · 定妆图'))
+  note('定妆图', portraits.map((e) => `${e.name}：${e.results} 张`).join('；'))
+  expect(portraits.some((e) => e.results > 0)).toBe(true)
 
   dialog = await openBoard(page, board.id)
   await dialog.getByRole('button', { name: '批量生成视频' }).click()

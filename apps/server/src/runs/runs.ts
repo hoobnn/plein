@@ -38,7 +38,7 @@ import { sleep } from '../plugins/limiter'
 import { NodeRunError, type PluginHost, SHUTDOWN } from '../plugins/host'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
-import { applyMentions } from './mentions'
+import { applyMentions, mentionEdges } from './mentions'
 import { type GroupRow, type JobRow, type JobStatus, JobStore } from './store'
 
 /** 就地计算纯上游节点的最大递归深度（防环） */
@@ -46,6 +46,11 @@ const MAX_DEPTH = 8
 
 /** 进度写回文档的最小间隔，避免高频同步 */
 const PROGRESS_INTERVAL_MS = 500
+
+/** 调度用的依赖图：画布上的连线，加上提示词里 @ 引用带来的依赖 */
+function runGraph(doc: PleinDoc) {
+  return new FlowGraph([...doc.edges(), ...mentionEdges(doc)])
+}
 
 function toPortValue(v: ResultValue): PortValue {
   if (v.type === 'text' || v.type === 'json') return v
@@ -266,7 +271,7 @@ export class NodeRuns {
   ): GroupRunStarted {
     const targets = this.rooms.withDoc(canvasId, (doc) => {
       if (doc.get(nodeId)?.kind !== 'node') throw new NodeRunError('not_found', '节点不存在')
-      const graph = new FlowGraph(doc.edges())
+      const graph = runGraph(doc)
       const around =
         options.scope === 'upstream' ? graph.ancestors(nodeId) : graph.descendants(nodeId)
       return [nodeId, ...around].filter((id) => this.isJobNode(doc.get(id)))
@@ -289,6 +294,36 @@ export class NodeRuns {
   }
 
   /**
+   * 批量运行一组节点（如分镜编辑器里的「批量出分镜图」）：这些节点总是重新运行；
+   * 它们 @ 引用的卡片的上游（连进卡片的定妆图）一起排进来、先跑，已有结果且没改过的沿用。
+   * 不带其他上游：剧本、分镜改过也不在这里重跑，免得批量出图悄悄覆盖文本结果。
+   */
+  runBatch(
+    canvasId: string,
+    /** 发起批量的元素（分镜节点）：整组的进度和结束提示挂在它上面 */
+    sourceId: string,
+    nodeIds: string[],
+    ownerId: string,
+  ): GroupRunStarted {
+    const targets = this.rooms.withDoc(canvasId, (doc) => {
+      const picked = nodeIds.filter((id) => this.isJobNode(doc.get(id)))
+      const mentioned = new FlowGraph(mentionEdges(doc))
+      const edges = new FlowGraph(doc.edges())
+      const before = new Set<string>()
+      for (const id of picked)
+        for (const card of mentioned.upstream(id))
+          for (const up of edges.ancestors(card)) if (this.isJobNode(doc.get(up))) before.add(up)
+      return [...before].filter((id) => !picked.includes(id)).concat(picked)
+    })
+    if (targets.length === 0) throw new NodeRunError('invalid_input', '没有需要运行的节点')
+    const id = newId('grp')
+    const stored: StoredGroupOptions = { video: true, force: false, rerun: nodeIds }
+    this.store.insertGroup({ id, ownerId, canvasId, frameId: sourceId, options: stored, targets })
+    void this.orchestrate(this.store.group(id)!)
+    return { groupId: id, total: targets.length }
+  }
+
+  /**
    * 需要重跑的节点：当前结果的缓存键和现在算出的不一致的（参数或输入改了），
    * 以及它们下游已有结果的节点。正在运行的不算。
    */
@@ -302,7 +337,7 @@ export class NodeRuns {
         if (!this.isJobNode(el) || !el.results?.length || this.isRunning(canvasId, el.id)) continue
         if (!(await this.isFresh(doc, el, ownerId, signal))) stale.push(el.id)
       }
-      const graph = new FlowGraph(doc.edges())
+      const graph = runGraph(doc)
       const marked = new Set(stale)
       const upstream: string[] = []
       for (const id of stale) {
@@ -378,7 +413,7 @@ export class NodeRuns {
     const doc = createDoc(lease.room.doc, { origin: SYSTEM_ORIGIN })
     try {
       const targets = (JSON.parse(g.targets) as string[]).filter((id) => doc.get(id))
-      const graph = new FlowGraph(doc.edges())
+      const graph = runGraph(doc)
       const step = async (nodeId: string): Promise<StepOutcome> => {
         if (ctrl.signal.aborted) return 'canceled'
         const el = doc.get(nodeId)
@@ -389,7 +424,10 @@ export class NodeRuns {
         if (!jobId) {
           const reuse = !options.force && !rerun.has(nodeId)
           if (reuse && (await this.isFresh(doc, el, g.owner_id, ctrl.signal))) return 'cached'
-          jobId = this.start(g.canvas_id, nodeId, g.owner_id, g.id)
+          // 判断新旧要等一会儿，期间另一组可能已经发起了同一个节点（几组共用一张定妆图）：跟着等它
+          jobId =
+            this.active.get(this.key(g.canvas_id, nodeId))?.id ??
+            this.start(g.canvas_id, nodeId, g.owner_id, g.id)
         }
         const status = await this.wait(jobId)
         if (status === 'succeeded') return 'succeeded'

@@ -1,4 +1,5 @@
 import {
+  BatchRunOptions,
   FlowRunOptions,
   GroupRunOptions,
   type JobList,
@@ -54,6 +55,20 @@ export function runRoutes(db: DB, runs: NodeRuns) {
       if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
       try {
         return c.json(runs.runFlow(canvas, node, p.id, body.data), 202)
+      } catch (err) {
+        if (!(err instanceof NodeRunError)) throw err
+        return c.json({ error: err.code, message: err.message }, STATUS[err.code] ?? 400)
+      }
+    })
+    .post('/api/canvases/:canvas/nodes/:node/run-batch', async (c) => {
+      const { canvas, node } = c.req.param()
+      const p = c.var.principal
+      if (p.role === 'viewer') return c.json(forbidden, 403)
+      if (!ownsCanvas(db, p.id, canvas)) return c.json(notFound, 404)
+      const body = BatchRunOptions.safeParse(await c.req.json().catch(() => ({})))
+      if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
+      try {
+        return c.json(runs.runBatch(canvas, node, body.data.nodes, p.id), 202)
       } catch (err) {
         if (!(err instanceof NodeRunError)) throw err
         return c.json({ error: err.code, message: err.message }, STATUS[err.code] ?? 400)

@@ -123,7 +123,8 @@ export function serverContext(env: ToolEnv): ServerContext {
         }
         return out
       },
-      models: (capability) => host.models(capability).map((m) => ({ ref: m.ref, title: m.title })),
+      models: (capability) =>
+        host.models(capability).map((m) => ({ ref: m.ref, title: m.title, voices: m.voices })),
       prompts: () => [...host.registry.prompts.values()].map((p) => p.def),
     },
     assetMeta: (assetId) => env.assets.get(env.ownerId, assetId) ?? undefined,
@@ -553,7 +554,7 @@ const runStoryboard = serverCapability({
   name: 'run_storyboard',
   title: '批量运行分镜',
   description:
-    '批量运行分镜展开出来的某一类节点：image（分镜图）、video（镜头视频，要等分镜图有结果）、speech（配音）。会产生费用，需要用户确认。返回发起的运行和跳过的原因，之后用 wait_for_run 逐个等结果。',
+    '批量运行分镜展开出来的某一类节点：image（分镜图）、video（镜头视频，要等分镜图有结果）、speech（配音）。会产生费用，需要用户确认。image 作为一组运行：镜头 @ 到的角色、场景卡还没出定妆图的先出，返回 group_id，用 wait_for_group 等结果；video、speech 返回发起的运行和跳过的原因，之后用 wait_for_run 逐个等结果。',
   group: 'run',
   where: 'server',
   effect: 'run',
@@ -572,6 +573,22 @@ const runStoryboard = serverCapability({
         picked.push(n),
       )
     })
+    if (a.role === 'image' && picked.length) {
+      try {
+        const group = env.runs.runBatch(env.canvasId, a.id, picked, env.ownerId)
+        env.onGroup?.(group.groupId)
+        return {
+          group_id: group.groupId,
+          images: picked.length,
+          portraits: group.total - picked.length,
+          skipped: batch.skipped,
+          reasons: batch.reasons,
+        }
+      } catch (err) {
+        if (err instanceof NodeRunError) throw new CapabilityError(err.message)
+        throw err
+      }
+    }
     const started: Array<{ id: string; run_id: string }> = []
     const failed: Array<{ id: string; error: string }> = []
     for (const nodeId of picked) {
