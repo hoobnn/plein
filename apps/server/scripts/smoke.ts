@@ -2,7 +2,7 @@
  * L3 运行冒烟：真的起一个服务端进程，用 HTTP 与 Yjs WebSocket 走一遍用户路径。
  *
  * 与 vitest 里的进程内集成测试不同，这里验证的是「服务真能起来、真能连、
- * 重启后数据还在」，是 docs/acceptance-0.1.0.md 里 L3 层的自动化部分。
+ * 重启后数据还在」，是 docs/plan/acceptance-0.1.0.md 里 L3 层的自动化部分。
  * 界面点击仍需人工或后续的 Playwright 用例。
  *
  * 用法：pnpm smoke                    （临时数据目录，结束即清理）

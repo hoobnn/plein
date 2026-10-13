@@ -5,7 +5,7 @@ plein 的节点、模型平台、模板、自定义元素类型都通过插件�
 - 节点声明：`packages/nodes/src/core.ts`（插件 `plein/core`）
 - 节点执行器：`apps/server/src/executors/core.ts`
 - 模型平台：`packages/providers/src/mock/`（插件 `plein/mock`，开发测试用）
-- 真实平台：`packages/providers/src/{minimax,doubao,bailian,ark}/`（配置与能力见 [模型平台接入](providers.md)）
+- 真实平台：`packages/providers/src/{minimax,doubao,bailian,ark}/`（配置与能力见 [模型平台接入](../guide/providers.md)）
 
 ## 结构
 

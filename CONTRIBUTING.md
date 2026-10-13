@@ -26,7 +26,7 @@ pnpm dev                 # 前端 http://localhost:5173 + 服务端 :8787（数�
 | `pnpm e2e`       | Playwright 界面冒烟（mock 平台，走通短剧模板到导出）                                |
 | `pnpm perf`      | 画布渲染性能基准                                                                    |
 
-验收分四层（单测、集成、启动冒烟、真实样例），见 [docs/acceptance-0.1.0.md](docs/acceptance-0.1.0.md)。
+验收分四层（单测、集成、启动冒烟、真实样例），见 [docs/acceptance-0.1.0.md](docs/plan/acceptance-0.1.0.md)。
 
 工具链是 [Vite+](https://viteplus.dev)（`vp`）：Oxfmt 格式化代码、样式、Markdown、YAML 和 HTML，Oxlint 做代码检查（含类型感知规则），Vitest 跑单测，`vp pack`（tsdown）打包服务端和桌面端；规则与格式选项都在根目录 `vite.config.ts`。遵循 `.gitignore`，排除构建产物；`pnpm-lock.yaml` 保留 pnpm 生成的格式。Markdown 段落不强制折行，代码块和 HTML 内嵌代码不做二次格式化；Markdown 规则另由 markdownlint 检查，配置在 `.markdownlint.jsonc`（VS Code 的 markdownlint 插件读同一份）。
 
@@ -46,7 +46,7 @@ packages/plugin-sdk    插件 API：清单、节点、Provider、执行器
 packages/providers     模型平台适配器（服务端）：MiniMax、豆包语音、百炼、火山方舟及 mock
 ```
 
-设计取舍见 [architecture.md](docs/architecture.md)，界面规范见 [design-spec.md](docs/design-spec.md)。几条硬约束：
+设计取舍见 [architecture.md](docs/dev/architecture.md)，界面规范见 [design-spec.md](docs/dev/design-spec.md)。几条硬约束：
 
 - 相机与渲染不走 React state，拖动 / 缩放期间 React 零重渲染
 - 二进制资源不进 Yjs 文档，只存 assetId
@@ -62,7 +62,7 @@ pnpm dist:desktop        # 出 macOS 安装包（Apple 芯片），没有证书�
 
 桌面端保留系统原生标题栏和窗口按钮：macOS 使用系统菜单栏、⌘ 快捷键，关闭窗口后应用继续运行，可从 Dock 重开；Windows 使用窗口菜单栏、Ctrl 快捷键和系统窗口布局，关闭最后一个窗口即退出。菜单中的撤销、重做和全选会作用于当前画布或文本编辑器，设置可用 `CmdOrCtrl+,` 打开。窗口位置、尺寸和最大化状态保存在应用数据目录的 `window-state.json`；显示器变化时会将窗口移回可见工作区。开发工具菜单仅在开发模式显示。
 
-首次运行会下载 Electron。服务端只接受桌面端窗口的请求（每次启动生成的令牌放在窗口 Cookie 里），所以开发模式下用普通浏览器打开 5173 会返回 403。ffmpeg 构建、打包和签名发布见[路线图第八节](docs/roadmap-0.1.0.md#八桌面端)。
+首次运行会下载 Electron。服务端只接受桌面端窗口的请求（每次启动生成的令牌放在窗口 Cookie 里），所以开发模式下用普通浏览器打开 5173 会返回 403。ffmpeg 构建、打包和签名发布见[桌面端文档](docs/dev/desktop.md)。
 
 ## 分支
 

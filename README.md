@@ -76,7 +76,7 @@
 - 对外开放 MCP：Claude Code、Claude Desktop、Cursor 等可以连进本机 Plein
 - 花钱和删除前先确认；支持计划模式；一轮改动可以整轮撤销
 
-详见 [智能体与 MCP](docs/agent.md)。
+详见 [智能体与 MCP](docs/guide/agent.md)。
 
 ### 模型平台
 
@@ -87,7 +87,7 @@
 | 阿里云百炼 | 千问（含工具调用） | Qwen Image、万相 | Wan 3.0            | Qwen TTS                               |
 | MiniMax    | M3 / M2.7          | image-01         | H3 / H3-Max        | speech-2.8、Music 3.0                  |
 
-各平台的参数映射与能力边界见 [模型平台接入](docs/providers.md)。新平台、节点和模板可以通过插件接入，见 [插件](docs/plugins.md)。
+各平台的参数映射与能力边界见 [模型平台接入](docs/guide/providers.md)。新平台、节点和模板可以通过插件接入，见 [插件](docs/dev/plugins.md)。
 
 ## 快速开始
 
@@ -161,20 +161,16 @@ pnpm install && pnpm build && pnpm start   # http://localhost:8787
 - [ ] **0.2.0**：分镜组与拼图、项目包迁移、区域编辑、取帧续镜、运镜 / 风格预设、第三方插件
 - [ ] **之后**：全景、3D 导演台、深度参考、原生片段重拍、智能剪辑
 
-完整规划、决策记录和验收状态见 [0.1.0 路线图](docs/roadmap-0.1.0.md) 与 [验收记录](docs/acceptance-0.1.0.md)。
+完整规划、决策记录和验收状态见 [0.1.0 路线图](docs/plan/roadmap-0.1.0.md) 与 [验收记录](docs/plan/acceptance-0.1.0.md)。
 
 ## 文档
 
-| 文档                                   | 内容                                 |
-| -------------------------------------- | ------------------------------------ |
-| [路线图](docs/roadmap-0.1.0.md)        | 0.1.0 范围、里程碑、决策记录、桌面端 |
-| [验收记录](docs/acceptance-0.1.0.md)   | 四层验收流程与各工作包状态           |
-| [模型平台接入](docs/providers.md)      | 各平台能力、配置与边界               |
-| [智能体与 MCP](docs/agent.md)          | 小满、本机 CLI、对外 MCP             |
-| [插件](docs/plugins.md)                | 插件清单、节点、Provider、能力       |
-| [长期架构](docs/architecture.md)       | 文档模型、渲染、工作流、后端         |
-| [设计规范](docs/design-spec.md)        | 界面尺寸、颜色、组件                 |
-| [功能规划与取舍](docs/feature-plan.md) | 各项能力的排期与边界                 |
+完整索引见 [docs/](docs/README.md)。常用的几篇：
+
+- [模型平台接入](docs/guide/providers.md)：各平台能力、配置与边界
+- [智能体与 MCP](docs/guide/agent.md)：小满、本机 CLI、对外 MCP
+- [0.1.0 路线图](docs/plan/roadmap-0.1.0.md)：范围、里程碑、决策记录与发版清单
+- [长期架构](docs/dev/architecture.md)：文档模型、渲染、工作流、后端
 
 ## 参与开发
 

@@ -1,4 +1,4 @@
-// markdownlint 规则（VS Code 插件与 pnpm lint 共用）
+// markdownlint 规则（VS Code 插件与 pnpm lint 里的 markdownlint-cli 共用）
 {
   "default": true,
   // 项目约定 Markdown 段落不折行，表格每行写在一行里

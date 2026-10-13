@@ -1,5 +1,5 @@
 /*
- * 设计令牌：颜色、尺寸、动效。数值的用法见 docs/design-spec.md。
+ * 设计令牌：颜色、尺寸、动效。数值的用法见 docs/dev/design-spec.md。
  * 明暗两套颜色，<html data-theme> 切换（stores/theme.ts）。
  * 画布 GPU 层的配色在 canvas-core/src/theme.ts，数值与这里对应。
  * 层级：canvas（画布底）< surface（卡片、面板）< surface-2（输入框、凹槽）< surface-3（按下）。
