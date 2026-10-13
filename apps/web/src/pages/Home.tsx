@@ -1,18 +1,20 @@
 import type { Project } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { type MouseEvent, useState } from 'react'
 import { api } from '../api/client'
 import { invalidateProjects, queryClient, queryKeys } from '../api/query'
 import { queueStartNode } from '../canvas/start'
 import { navigate, routeHash } from '../router'
 import { useLibrary } from '../stores/library'
 import { useSession } from '../stores/session'
+import { Brand, isPlainClick } from '../ui/Brand'
 import { confirmDialog } from '../ui/Dialog'
 import { fullTime, relativeTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
 import { InlineTitle } from '../ui/InlineTitle'
 import { ThemeToggle } from '../ui/ThemeToggle'
 import { EmptyState } from '../ui/EmptyState'
+import { zoomView } from '../ui/viewTransition'
 import { Welcome } from '../panels/Welcome'
 
 /** 快速开始：新建项目并在它的第一张画布上放好对应节点、打开生成器 */
@@ -40,14 +42,20 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   const [creating, setCreating] = useState(false)
   const [scrolled, setScrolled] = useState(false)
 
-  const create = async (start?: string) => {
+  const create = async (from: Element, start?: string) => {
     if (creating) return
     setCreating(true)
     try {
       const p = await api.createProject()
       if (!p.lastCanvasId) throw new Error('项目建好了，但没有画布')
       if (start) queueStartNode(p.lastCanvasId, start)
-      navigate({ name: 'canvas', id: p.lastCanvasId })
+      // 先把新项目塞进列表缓存：从画布回首页时它的卡片立刻就在，画布能缩回去
+      queryClient.setQueryData<Project[]>(queryKeys.projects, (prev) => prev && [p, ...prev])
+      const id = p.lastCanvasId
+      zoomView('enter', () => navigate({ name: 'canvas', id }), {
+        from,
+        shape: from.classList.contains('home-new') ? undefined : 'rect',
+      })
     } catch (err) {
       setError((err as Error).message)
       setCreating(false)
@@ -84,33 +92,36 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
     >
       <header data-scrolled={scrolled || undefined} className="home-bar app-drag sticky top-0 z-10">
         {/* 和下面的内容同一条栏宽，Logo 与标题左对齐；红绿灯让位见 .home-col */}
-        <div className="home-col mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-5 sm:px-10">
-          <div className="flex items-center gap-2.5 text-base font-semibold">
-            <span className="plein-logo size-6" aria-hidden="true" />
-            Plein
+        <div className="home-col mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-3 sm:px-10">
+          {/* 和画布顶栏同一套尺寸（44 高的工具条、36 的按钮），只是不带底色；
+              -mx 抵掉工具条和按钮的内边距，Logo 与右侧按钮仍和正文左右对齐 */}
+          <div className="ui-bar ui-bar-bare -ml-3.5">
+            <Brand />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="app-actions ui-bar ui-bar-bare -mr-1">
             <button
               type="button"
               onClick={() => useLibrary.getState().show('character')}
               title="资产库：角色、场景、道具、风格、特效"
-              className="ui-btn ui-btn-quiet"
+              className="ui-bar-btn gap-1.5"
             >
               <Icon name="library" />
               资产库
             </button>
+            <div className="ui-bar-sep" />
             <ThemeToggle />
+            <div className="ui-bar-sep" />
             <button
               type="button"
               onClick={onOpenSettings}
               aria-label="设置"
               title="设置"
-              className="ui-btn ui-btn-quiet ui-icon-btn"
+              className="ui-bar-btn"
             >
               <Icon name="settings" />
             </button>
             {info?.authRequired && (
-              <button type="button" onClick={logout} className="ui-btn ui-btn-quiet">
+              <button type="button" onClick={logout} className="ui-bar-btn gap-1.5">
                 <Icon name="logout" />
                 退出登录
               </button>
@@ -147,7 +158,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
             )}
             <button
               type="button"
-              onClick={() => void create()}
+              onClick={(e) => void create(e.currentTarget)}
               disabled={creating}
               className="ui-btn ui-btn-primary ui-btn-lg"
             >
@@ -166,7 +177,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
               key={q.type}
               type="button"
               disabled={creating}
-              onClick={() => void create(q.type)}
+              onClick={(e) => void create(e.currentTarget, q.type)}
               className="home-quick group"
             >
               <span className="home-quick-icon">
@@ -190,7 +201,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
               <li>
                 <button
                   type="button"
-                  onClick={() => void create()}
+                  onClick={(e) => void create(e.currentTarget)}
                   disabled={creating}
                   className="home-new"
                 >
@@ -235,9 +246,17 @@ function ProjectCard({
   const [editing, setEditing] = useState(false)
   const covers = c.covers ?? []
   const href = routeHash({ name: 'project', id: c.id })
+  // 有最近画布就直接进去，封面放大成画布；没有画布的项目照旧走打开项目（会先建一张）
+  const open = (e: MouseEvent<HTMLAnchorElement>) => {
+    const id = c.lastCanvasId
+    if (!id || !isPlainClick(e)) return
+    e.preventDefault()
+    const from = e.currentTarget.closest('.home-card')?.querySelector('.home-cover')
+    zoomView('enter', () => navigate({ name: 'canvas', id }), { from })
+  }
   return (
-    <li className="home-card group">
-      <a href={href} className="block" draggable={false}>
+    <li className="home-card group" data-project={c.id}>
+      <a href={href} onClick={open} className="block" draggable={false}>
         <Cover covers={covers} empty={c.canvases === 0} />
       </a>
       <div className="flex items-center gap-2 px-3 pb-3 pt-2.5">
@@ -252,7 +271,12 @@ function ProjectCard({
               }}
             />
           ) : (
-            <a href={href} className="block truncate text-base font-medium" draggable={false}>
+            <a
+              href={href}
+              onClick={open}
+              className="block truncate text-base font-medium"
+              draggable={false}
+            >
               {c.title}
             </a>
           )}

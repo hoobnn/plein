@@ -21,6 +21,7 @@ import { SequenceEditor } from '../panels/SequenceEditor'
 import { StoryboardEditor } from '../panels/StoryboardEditor'
 import { Tasks } from '../panels/Tasks'
 import { Toolbar, ViewControls } from '../panels/Toolbar'
+import { Brand, isPlainClick } from '../ui/Brand'
 import { Icon } from '../ui/icons'
 import { MOD, withShortcut } from '../ui/keys'
 import { SlidePill } from '../ui/Slide'
@@ -30,7 +31,9 @@ import { useLibrary } from '../stores/library'
 import { type SyncStatus, switchMode, useCanvas } from '../stores/canvas'
 import { useSidebar } from '../stores/sidebar'
 import { useTemplates } from '../stores/templates'
+import { navigate } from '../router'
 import { Presence } from '../ui/Presence'
+import { zoomView } from '../ui/viewTransition'
 import { Toast } from '../ui/Toast'
 import { useShallow } from 'zustand/react/shallow'
 
@@ -89,7 +92,7 @@ export function Editor({
   }, [engine, sidebar, sidebarWidth])
 
   return (
-    <div className="relative h-full w-full">
+    <div className="app-stage relative h-full w-full">
       <CanvasView source={source} />
       <Board />
       {/* 侧栏是浮在画布左侧的面板：开关只滑入滑出，顶栏和画布都不动 */}
@@ -102,10 +105,21 @@ export function Editor({
               <div className="ui-bar-sep" />
             </>
           )}
-          <a href="#/" className="ui-bar-btn gap-2 px-2.5 font-semibold text-ink">
-            <span className="plein-logo size-5" aria-hidden="true" />
-            Plein
-          </a>
+          <Brand
+            onClick={(e) => {
+              if (!isPlainClick(e)) return
+              e.preventDefault()
+              const projectId = canvas?.projectId
+              zoomView('leave', () => navigate({ name: 'home' }), {
+                to: () =>
+                  projectId
+                    ? document.querySelector(
+                        `[data-project="${CSS.escape(projectId)}"] .home-cover`,
+                      )
+                    : null,
+              })
+            }}
+          />
           <span className="text-ink-subtle" aria-hidden="true">
             /
           </span>
@@ -120,7 +134,7 @@ export function Editor({
           <div className="ui-bar-sep" />
           <ModeSwitch />
         </div>
-        <div className="ui-bar pointer-events-auto">
+        <div className="app-actions ui-bar pointer-events-auto">
           {source.kind === 'remote' && (
             <>
               <button

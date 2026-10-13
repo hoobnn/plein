@@ -25,6 +25,12 @@
   .ui-bar-sm {
     height: var(--h-xl);
   }
+  /* 同样尺寸但不带底色：首页顶栏，和画布顶栏对齐 */
+  .ui-bar-bare {
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
   .ui-bar-btn {
     display: inline-flex;
     flex: none;
@@ -886,6 +892,89 @@
   from {
     opacity: 0;
     transform: translateX(-48px);
+  }
+}
+
+/* 首页 ↔ 画布（zoomView）：卡片封面放大成整个编辑器，Logo 和右侧操作区滑到新位置，其余淡入淡出 */
+:root[data-view-zoom] .app-stage {
+  view-transition-name: app-stage;
+}
+:root[data-view-zoom] .app-brand {
+  view-transition-name: app-brand;
+}
+:root[data-view-zoom] .app-actions {
+  view-transition-name: app-actions;
+}
+/* 顶栏其余部分跟着画布一起缩放，不单独截 */
+:root[data-view-zoom] .app-viewbar {
+  view-transition-name: none;
+}
+:root[data-view-zoom]::view-transition-group(*) {
+  animation-duration: var(--dur-move);
+  animation-timing-function: var(--ease-spring);
+}
+:root[data-view-zoom]::view-transition-image-pair(app-stage) {
+  overflow: hidden;
+  animation: ui-view-stage-radius var(--dur-move) var(--ease-spring) both;
+}
+:root[data-view-zoom="leave"]::view-transition-image-pair(app-stage) {
+  animation-direction: reverse;
+}
+:root[data-view-zoom]::view-transition-old(app-stage),
+:root[data-view-zoom]::view-transition-new(app-stage) {
+  height: 100%;
+  object-fit: cover;
+}
+/* 旧画面被拉伸得最厉害，趁形变刚开始就淡掉，免得看到放大糊掉的卡片 */
+:root[data-view-zoom]::view-transition-old(app-stage) {
+  animation: ui-fade-out var(--dur-fast) var(--ease-exit) both;
+}
+:root[data-view-zoom]::view-transition-new(app-stage) {
+  animation: ui-fade-in var(--dur-base) var(--ease-standard) both;
+}
+/* 从扁按钮长出来：不拉伸按钮的画面，画布直接从按钮的位置长大 */
+:root[data-view-zoom-shape="rect"]::view-transition-old(app-stage) {
+  animation: none;
+  opacity: 0;
+}
+:root[data-view-zoom-shape="rect"]::view-transition-new(app-stage) {
+  animation-duration: var(--dur-fast);
+}
+/* 回首页时卡片不在视口里：画布直接缩小淡出 */
+:root[data-view-zoom]::view-transition-old(app-stage):only-child {
+  animation: ui-view-recede var(--dur-base) var(--ease-exit) both;
+}
+/* 像穿过首页进入画布：首页放大一点淡出；回来时首页从放大处落回 */
+:root[data-view-zoom]::view-transition-old(root) {
+  animation: ui-view-pass var(--dur-base) var(--ease-exit) both;
+}
+:root[data-view-zoom]::view-transition-new(root) {
+  animation: ui-view-pass-in var(--dur-move) var(--ease-spring) both;
+}
+@keyframes ui-view-stage-radius {
+  from {
+    border-radius: calc(var(--radius-xl) - 6px);
+  }
+  to {
+    border-radius: 0;
+  }
+}
+@keyframes ui-view-recede {
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+@keyframes ui-view-pass {
+  to {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+}
+@keyframes ui-view-pass-in {
+  from {
+    opacity: 0;
+    transform: scale(1.03);
   }
 }
 

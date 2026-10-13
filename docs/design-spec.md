@@ -106,6 +106,7 @@
 - **进场**：菜单、弹层从锚点那一侧长出（`data-side="above|below"`，Base UI 定位的弹层是 `top|bottom`，决定变换原点和 4px 位移），从 97% 缩放淡入；提示条从上方落下；底部提示条（`.ui-pop-up`）从下方升起；右侧面板（`.ui-pop-right`）从右侧滑入；对话框遮罩淡入、面板从 96% 略微上浮着弹出。动画的起止由元素上的 `--pop-from` / `--pop-to` / `--pop-origin` 决定，关键帧只有 `ui-pop-in` / `ui-pop-out` 一套。
 - **退场**：浮层都要有。打开处写成 `<Presence>{open && <X />}</Presence>`，X 的根元素铺上 `useExit()`；关闭时元素标上 `data-closing`，播完 `ui-pop-out`（遮罩是 `ui-fade-out`）再卸载，收起途中不响应指针、Esc 和点外面。Base UI 自己管理挂载的下拉和菜单（`ui/Select.tsx`、`ui/MenuSelect.tsx`）关闭时标 `data-ending-style`，同样播 `ui-pop-out`。退场比进场快，位移和缩放也比进场小。
 - 菜单项悬停：底色移入立即出现、移出时淡掉。
+- **页面切换**：工作流 ↔ 故事板用 `slideView` 左右滑；首页 ↔ 画布用 `zoomView`，被点的项目卡片放大成画布、回首页时缩回卡片，Logo（`.app-brand`）和右侧操作区（`.app-actions`）滑到新位置，时长 `--dur-move`。都基于 View Transitions，减少动态效果时直接切。
 - 循环的环境动画（吉祥物、运行中的脉冲、加载圈）不受这些令牌约束。
 - 系统开启“减少动态效果”时，所有动效和过渡缩短到 1ms，退场直接卸载。
 
@@ -121,23 +122,23 @@
 
 ## 通用控件
 
-| 类                                                                                                                                                                     | 说明                                                     |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `.ui-bar` / `.ui-bar-sm` / `.ui-bar-btn` / `.ui-bar-sep` / `.ui-bar-text` / `.ui-bar-check`（复选项）；纯图标按钮加 `.ui-icon-btn`                                     | 工具条：页头、底部工具条、结果 / Frame / 多选工具条      |
-| `.ui-btn` + `-primary` `-secondary` `-quiet` `-danger` `-danger-solid`，尺寸 `-xs` `-sm` `-lg`，`.ui-icon-btn`（宽 = 高），`.ui-btn-menu`（打开菜单，末尾箭头弱色）    | 按钮                                                     |
-| `.ui-input` / `.ui-select` / `.ui-input-lg`                                                                                                                            | 输入框、下拉框（`ui/Select.tsx`）                        |
-| `.ui-field` / `.ui-label` / `.ui-help` / `.ui-section-title`                                                                                                           | 表单字段和分组标题                                       |
-| `.ui-seg` / `.ui-seg-item`，`.ui-seg-block`（铺满等分，选中底色滑动切换，需传 `--seg-n` / `--seg-i`）、`.ui-seg-tall`（图标在上）、`.ui-seg-aspect`（画幅，最多 9 项） | 分段控件：主题切换、筛选；参数面板选画幅、分辨率         |
-| `.ui-menu` / `.ui-menu-item` / `.ui-menu-label` / `.ui-sep`，两行项用 `.ui-menu-text` + `.ui-menu-desc`                                                                | 菜单、弹层（`ui/Popover.tsx`）                           |
-| `.ui-dialog-scrim` / `.ui-dialog`                                                                                                                                      | 对话框动效（`ui/Dialog.tsx`、`ui/Modal.tsx`）            |
-| `.ui-toast` / `.ui-tooltip`                                                                                                                                            | 提示条、悬停提示（`ui/Tooltip.tsx`）                     |
-| `.ui-chip` / `.ui-chip-remove` / `.ui-tag`（`-success` `-warning` `-danger` `-accent`）/ `.ui-badge`                                                                   | 24 高的标签和它的移除按钮；20 高的状态标签；图片上的角标 |
-| `.ui-drop-tile`                                                                                                                                                        | 96 见方的虚线投放格（上传、从画布选）                    |
-| `.ui-kbd` / `.ui-keycap`                                                                                                                                               | 菜单里的快捷键提示；成组出现的键帽                       |
-| `.ui-spinner`                                                                                                                                                          | 加载中，`size-3` / `size-4` 缩小                         |
-| `.ui-empty`（`-fill` `-compact`）                                                                                                                                      | 空状态（`ui/EmptyState.tsx`）                            |
-| `.ui-switch`                                                                                                                                                           | 开关（`ui/Switch.tsx`）                                  |
-| `.ui-pop`（`.ui-pop-up` `.ui-pop-right`）                                                                                                                              | 其他弹出的浮层的进场方向                                 |
+| 类                                                                                                                                                                     | 说明                                                                                                              |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `.ui-bar` / `.ui-bar-sm` / `.ui-bar-btn` / `.ui-bar-sep` / `.ui-bar-text` / `.ui-bar-check`（复选项）；纯图标按钮加 `.ui-icon-btn`；`.ui-bar-bare` 同尺寸不带底色      | 工具条：页头、底部工具条、结果 / Frame / 多选工具条；首页和画布顶栏都用 44 的 `.ui-bar`，Logo 共用 `ui/Brand.tsx` |
+| `.ui-btn` + `-primary` `-secondary` `-quiet` `-danger` `-danger-solid`，尺寸 `-xs` `-sm` `-lg`，`.ui-icon-btn`（宽 = 高），`.ui-btn-menu`（打开菜单，末尾箭头弱色）    | 按钮                                                                                                              |
+| `.ui-input` / `.ui-select` / `.ui-input-lg`                                                                                                                            | 输入框、下拉框（`ui/Select.tsx`）                                                                                 |
+| `.ui-field` / `.ui-label` / `.ui-help` / `.ui-section-title`                                                                                                           | 表单字段和分组标题                                                                                                |
+| `.ui-seg` / `.ui-seg-item`，`.ui-seg-block`（铺满等分，选中底色滑动切换，需传 `--seg-n` / `--seg-i`）、`.ui-seg-tall`（图标在上）、`.ui-seg-aspect`（画幅，最多 9 项） | 分段控件：主题切换、筛选；参数面板选画幅、分辨率                                                                  |
+| `.ui-menu` / `.ui-menu-item` / `.ui-menu-label` / `.ui-sep`，两行项用 `.ui-menu-text` + `.ui-menu-desc`                                                                | 菜单、弹层（`ui/Popover.tsx`）                                                                                    |
+| `.ui-dialog-scrim` / `.ui-dialog`                                                                                                                                      | 对话框动效（`ui/Dialog.tsx`、`ui/Modal.tsx`）                                                                     |
+| `.ui-toast` / `.ui-tooltip`                                                                                                                                            | 提示条、悬停提示（`ui/Tooltip.tsx`）                                                                              |
+| `.ui-chip` / `.ui-chip-remove` / `.ui-tag`（`-success` `-warning` `-danger` `-accent`）/ `.ui-badge`                                                                   | 24 高的标签和它的移除按钮；20 高的状态标签；图片上的角标                                                          |
+| `.ui-drop-tile`                                                                                                                                                        | 96 见方的虚线投放格（上传、从画布选）                                                                             |
+| `.ui-kbd` / `.ui-keycap`                                                                                                                                               | 菜单里的快捷键提示；成组出现的键帽                                                                                |
+| `.ui-spinner`                                                                                                                                                          | 加载中，`size-3` / `size-4` 缩小                                                                                  |
+| `.ui-empty`（`-fill` `-compact`）                                                                                                                                      | 空状态（`ui/EmptyState.tsx`）                                                                                     |
+| `.ui-switch`                                                                                                                                                           | 开关（`ui/Switch.tsx`）                                                                                           |
+| `.ui-pop`（`.ui-pop-up` `.ui-pop-right`）                                                                                                                              | 其他弹出的浮层的进场方向                                                                                          |
 
 纯图标的控件一律显式标记（`.ui-icon-btn`、`Segmented` 的 `iconOnly`），不要用 `:has(> svg:only-child)` 推断：`:only-child` 不看文字节点，图标加文字的控件也会命中。
 

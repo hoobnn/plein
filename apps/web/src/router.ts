@@ -17,14 +17,22 @@ function parse(hash: string): Route {
   return { name: 'home' }
 }
 
-let current = parse(location.hash)
+let currentHash = location.hash
+let current = parse(currentHash)
+const listeners = new Set<() => void>()
+/** 地址变了就重新解析并通知；navigate 里同步调用，配合 flushSync 让页面切换能放进同一个 View Transition */
+function sync() {
+  if (location.hash === currentHash) return
+  currentHash = location.hash
+  current = parse(currentHash)
+  for (const fn of listeners) fn()
+}
+window.addEventListener('hashchange', sync)
 const subscribe = (fn: () => void) => {
-  const on = () => {
-    current = parse(location.hash)
-    fn()
+  listeners.add(fn)
+  return () => {
+    listeners.delete(fn)
   }
-  window.addEventListener('hashchange', on)
-  return () => window.removeEventListener('hashchange', on)
 }
 
 export function useRoute() {
@@ -49,4 +57,5 @@ export function navigate(route: Route, opts: { replace?: boolean } = {}) {
   const hash = routeHash(route)
   if (opts.replace) location.replace(hash)
   else location.hash = hash
+  sync()
 }
