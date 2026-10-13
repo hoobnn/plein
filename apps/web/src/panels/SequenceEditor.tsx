@@ -143,13 +143,16 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       ]
     })
   // 去掉值为 undefined 的键（清空入出点、改回自动）
-  const write = (clips: SequenceClip[]) =>
+  // 写完立即派发：复选框、下拉是受控的，等批量通知才重渲染会先弹回旧值再变过来
+  const write = (clips: SequenceClip[]) => {
     setParam(
       engine.doc,
       id,
       'clips',
       clips.map((c) => Object.fromEntries(Object.entries(c).filter(([, v]) => v !== undefined))),
     )
+    engine.doc.flush()
+  }
   const patch = (source: string | undefined, p: Partial<SequenceClip>) => {
     if (!source) return
     write(settings(rows).map((c) => (c.source === source ? { ...c, ...p } : c)))
@@ -161,8 +164,10 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     next.splice(to, 0, r!)
     write(settings(next))
   }
-  const set = (key: keyof SequenceParams, value: unknown) =>
+  const set = (key: keyof SequenceParams, value: unknown) => {
     setParams(engine.doc, id, { [key]: value })
+    engine.doc.flush()
+  }
 
   const exportVideo = () => {
     if (running) void cancelNode(id)

@@ -158,6 +158,8 @@ export function placeElement(
   let x = at.x - input.w / 2
   if (from?.side === 'out') x = at.x
   if (from?.side === 'in') x = at.x - input.w
+  // 新建（连同自动连线）单独算一步撤销
+  engine.doc.undo.stopCapturing()
   const id = createElement(engine.doc, {
     ...input,
     parentId: frame,
@@ -178,6 +180,7 @@ export function placeElement(
       break
     }
   }
+  engine.doc.undo.stopCapturing()
   // 立即同步到场景，选中和生成器才能拿到新元素的位置
   engine.doc.flush()
   engine.selection.set([id])

@@ -115,8 +115,11 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
     const command = item.command
     if (command.kind === 'plugin') return runPlugin(command.cap)
     const { cap, input } = command
+    // 一条命令单独算一步撤销，不和前后紧挨着的编辑合并
+    engine.doc.undo.stopCapturing()
     try {
       const result = await localCapabilities.invoke(cap.name, localContext(engine, catalog), input)
+      engine.doc.undo.stopCapturing()
       reveal(result)
     } catch (err) {
       notify(err instanceof CapabilityError ? err.message : `${cap.title}失败`)
