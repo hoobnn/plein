@@ -12,8 +12,11 @@ export const Shot = z.object({
   shotSize: z.enum(SHOT_SIZES).default('中景'),
   /** 画面描述 */
   description: z.string().default(''),
-  /** 出场的资产卡名字（角色、场景），展开时作为 @ 引用 */
-  characters: z.array(z.string()).default([]),
+  /** 出场的资产卡名字（角色、场景、道具），展开时作为 @ 引用 */
+  characters: z
+    .array(z.string())
+    .default([])
+    .describe('这个镜头出场的角色、所在场景、画面里的关键道具的名字'),
   emotion: z.string().default(''),
   lighting: z.string().default(''),
   sfx: z.string().default(''),

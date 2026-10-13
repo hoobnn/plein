@@ -97,7 +97,7 @@ describe('抽取结果落成设定卡', () => {
     expect(doc.get(written)?.params?.description).toBe('我自己写的')
   })
 
-  it('每张新角色卡配一个定妆图节点连进参考图；角色按性别、年龄配上配音模型的音色', () => {
+  it('每张新卡配一个参考图节点连进参考图（角色定妆图、场景图）；角色按性别、年龄配上配音模型的音色', () => {
     const { doc, engine, llm } = setup()
     addResults(doc, llm, [
       {
@@ -153,11 +153,14 @@ describe('抽取结果落成设定卡', () => {
       ],
     } as unknown as Catalog
     const r = applyCast(engine, full, llm, castOf(engine, llm))
-    // 只给角色配：场景卡不会被镜头 @ 到
-    expect(r.portraits).toHaveLength(4)
+    expect(r.portraits).toHaveLength(5)
     const edges = [...doc.edges()].map((e) => `${e.from.join('.')}→${e.to.join('.')}`)
-    for (const [i, id] of r.created.slice(0, 4).entries())
+    for (const [i, id] of r.created.entries())
       expect(edges).toContain(`${r.portraits[i]}.images→${id}.references`)
+    const roof = doc.get(r.portraits[4]!)!
+    expect(roof.name).toBe('天台 · 场景图')
+    expect(roof.params).toMatchObject({ aspectRatio: '9:16', count: 1 })
+    expect(roof.params?.prompt).toContain('不出现人物')
     const lin = doc.get(r.portraits[0]!)!
     expect(lin.name).toBe('林晚 · 定妆图')
     expect(lin.params?.prompt).toContain('三视图')
@@ -222,8 +225,8 @@ describe('抽取结果落成设定卡', () => {
     })
     const into = [...doc.edges()].filter((e) => e.to[0] === lin.id)
     expect(into.map((e) => doc.get(e.from[0])?.assetId)).toEqual(['asset-lw-here'])
-    // 只有老周配了定妆图；参考图不压在卡片上
-    expect(r.portraits.map((id) => doc.get(id)?.name)).toEqual(['老周 · 定妆图'])
+    // 林晚用资产库的参考图，不再配定妆图；参考图不压在卡片上
+    expect(r.portraits.map((id) => doc.get(id)?.name)).toEqual(['老周 · 定妆图', '天台 · 场景图'])
     const ref = doc.get(into[0]!.from[0])!
     expect(ref.x + ref.w).toBeLessThan(lin.x)
     expect(describeCast(r)).toContain('林晚 用了资产库里的设定和参考图')

@@ -47,11 +47,16 @@ const MOCK_CAST = `## 角色
 ## 场景
 ### 老城区天台
 - 时间与地点：雨夜
-- 光线与氛围：霓虹反光`
+- 光线与氛围：霓虹反光
+
+## 道具
+### 铁盒
+- 外观：巴掌大的旧铁盒，挂着铜锁，锈迹斑斑`
 
 /** 分镜请求：按句拆剧本，每句一个镜头 */
 function mockStoryboard(text: string) {
-  const script = /<剧本>([\s\S]*?)<\/剧本>/.exec(text)?.[1] ?? text
+  // 连进来的设定清单（## 角色 / ## 场景 / ## 道具）不拆成镜头
+  const script = (/<剧本>([\s\S]*?)<\/剧本>/.exec(text)?.[1] ?? text).split(/^##\s/m)[0]!
   const sizes = ['全景', '中景', '近景', '特写'] as const
   const lines = script
     .split(/[。！？!?\n]/)
@@ -64,8 +69,12 @@ function mockStoryboard(text: string) {
       duration: 4,
       shotSize: sizes[i % sizes.length],
       description: line,
-      // 台词里点到名字的角色算出场，展开时镜头会 @ 到这张角色卡
-      characters: line.includes('林晚') ? ['林晚'] : [],
+      // 台词里点到名字的角色、道具算出场，展开时镜头会 @ 到这些卡；场景每个镜头都在
+      characters: [
+        ...(line.includes('林晚') ? ['林晚'] : []),
+        ...(text.includes('### 老城区天台') ? ['老城区天台'] : []),
+        ...(line.includes('铁盒') && text.includes('### 铁盒') ? ['铁盒'] : []),
+      ],
       emotion: '',
       lighting: '',
       sfx: '',

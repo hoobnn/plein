@@ -13,6 +13,7 @@ import {
 
 interface Item {
   id: string
+  kind: string
   name: string
   tags: Record<string, string>
   images: Array<{ assetId: string }>
@@ -32,7 +33,7 @@ async function castFromTemplate(page: Page) {
   await contextMenu(page, cast.id, '运行到此处')
   await waitNode(page, cast.id)
   await expect(page.locator('.ui-toast')).toContainText('运行到「角色与场景抽取」运行完成')
-  await contextMenu(page, cast.id, '生成设定卡（3）')
+  await contextMenu(page, cast.id, '生成设定卡（4）')
   await expect(page.locator('.ui-toast')).toContainText('设定卡')
   return (await page.locator('.ui-toast').textContent()) ?? ''
 }
@@ -45,9 +46,11 @@ async function select(page: Page, id: string) {
   await page.mouse.click(p.x, p.y)
 }
 
-test('角色存进资产库，换个项目生成设定卡时直接套用，不再重新出定妆图', async ({ page }) => {
+test('角色、道具存进资产库，换个项目生成设定卡时直接套用，不再重新出定妆图、道具图', async ({
+  page,
+}) => {
   // 资产库按账号共享：先清掉别的用例或上次留下的同名条目，否则同名多条会被当成指不明、不套用
-  for (const i of (await library(page)).filter((i) => i.name === '林晚'))
+  for (const i of (await library(page)).filter((i) => i.name === '林晚' || i.name === '铁盒'))
     await page.request.delete(`/api/library/${i.id}`)
   // 项目 A：抽取出林晚，出定妆图，存进资产库
   await newProject(page)
@@ -69,6 +72,18 @@ test('角色存进资产库，换个项目生成设定卡时直接套用，不�
   })
   expect(saved!.images).toHaveLength(1)
 
+  // 道具同样：出道具图，存进资产库带着图
+  const boxImage = await byName(page, '铁盒 · 道具图')
+  await zoomTo(page, [boxImage.id])
+  await contextMenu(page, boxImage.id, '生成')
+  await waitNode(page, boxImage.id)
+  await select(page, (await byName(page, '铁盒')).id)
+  await page.getByRole('button', { name: '存入资产库' }).click()
+  await expect(page.locator('.ui-toast')).toContainText('已存入资产库：道具「铁盒」')
+  const [box] = (await library(page)).filter((i) => i.name === '铁盒')
+  expect(box).toMatchObject({ kind: 'prop', voice: null })
+  expect(box!.images).toHaveLength(1)
+
   // 资产库里按性别筛：女能看到林晚，男看不到
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: '资产库' }).click()
@@ -85,10 +100,12 @@ test('角色存进资产库，换个项目生成设定卡时直接套用，不�
   // 项目 B：同一个模板，林晚直接用资产库的设定、参考图和音色
   await newProject(page)
   const notice = await castFromTemplate(page)
-  expect(notice).toContain('林晚 用了资产库里的设定和参考图')
+  expect(notice).toContain('林晚、铁盒 用了资产库里的设定和参考图')
   const names = (await elements(page)).map((e) => e.name)
   expect(names).not.toContain('林晚 · 定妆图')
+  expect(names).not.toContain('铁盒 · 道具图')
   expect(names).toContain('老周 · 定妆图')
+  expect(names).toContain('老城区天台 · 场景图')
   const again = await byName(page, '林晚')
   const into = await edgesInto(page, again.id)
   expect(into).toHaveLength(1)

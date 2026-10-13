@@ -33,7 +33,7 @@ export function castOf(doc: PleinDoc, id: string): CastEntry[] {
 export interface CastResult {
   /** 新建的设定卡 */
   created: string[]
-  /** 给新角色卡配的定妆图节点：只建不跑，批量出分镜图时先跑 @ 到的那些 */
+  /** 给新卡配的参考图节点（角色定妆图、场景图、道具图）：只建不跑，批量出分镜图时先跑 @ 到的那些 */
   portraits: string[]
   /** 照资产库条目建的卡（设定、参考图、音色用条目的） */
   fromLibrary: string[]
@@ -54,13 +54,32 @@ const ROW_GAP = 24
 const PORTRAIT_GAP = 40
 
 /**
- * 新角色卡配的定妆图：三视图定妆照，设定原样写进提示词。
+ * 新卡左边配的参考图节点：角色三视图定妆照、场景空镜、道具单品图，设定原样写进提示词。
  * 不在提示词里 @ 卡片自己：卡片的参考图就是这张图的结果，@ 了等于自己引用自己。
- * 场景、道具卡不配：展开分镜时镜头只 @ 出场角色，场景图出了也进不了镜头。
+ * 镜头 @ 到这张卡时，调度先出这张图，再带着它出分镜图。
  */
-const PORTRAIT_PROMPT =
-  '的定妆参考图：正面、侧面、背面三视图，全身站姿，同一角色同一服装，纯白背景，平光，角色设计稿风格，线条清晰'
-const PORTRAIT_ASPECT = '16:9'
+const REFERENCE_IMAGES: Record<
+  CastEntry['kind'],
+  { suffix: string; prompt: string; aspect: string }
+> = {
+  character: {
+    suffix: '定妆图',
+    prompt:
+      '的定妆参考图：正面、侧面、背面三视图，全身站姿，同一角色同一服装，纯白背景，平光，角色设计稿风格，线条清晰',
+    aspect: '16:9',
+  },
+  scene: {
+    suffix: '场景图',
+    prompt:
+      '的场景设定图：空镜，画面里不出现人物，交代空间结构、陈设、光线和氛围，电影感，竖屏构图',
+    aspect: '9:16',
+  },
+  prop: {
+    suffix: '道具图',
+    prompt: '的道具设定图：单个物件居中，完整入画，纯白背景，产品摄影平光，材质和细节清晰',
+    aspect: '1:1',
+  },
+}
 
 /** 资产库条目里套用到设定卡上要用的部分（与 protocol 的 LibraryItem 同构，这里不依赖它） */
 export interface CastLibraryItem {
@@ -94,7 +113,7 @@ export interface CastOptions {
 /**
  * 按抽取结果建设定卡：同名卡已存在时只给空设定补上，写过的不覆盖；
  * 资产库里有同名同类条目时照条目建卡（设定、参考图、音色都用条目的）；
- * 其余新卡按角色 / 场景 / 道具分列，放在来源节点所在分组的右侧，角色卡左边配一个定妆图节点。
+ * 其余新卡按角色 / 场景 / 道具分列，放在来源节点所在分组的右侧，每张卡左边配一个参考图节点。
  * 整个操作是一步撤销。
  */
 export function applyCast(
@@ -119,11 +138,12 @@ export function applyCast(
   if (!rect) return result
   const byName = mentionElements(doc)
   const image = make('plein/image')
-  const portraitSize = image ? nodeSize('image', parseAspect(PORTRAIT_ASPECT)) : undefined
+  const refSize = (kind: CastEntry['kind']) =>
+    image ? nodeSize('image', parseAspect(REFERENCE_IMAGES[kind].aspect)) : undefined
   const pickVoice = voicePicker(doc, options.speech)
   const fromLibrary = libraryMatcher(options.library, result)
 
-  // 先定下每张卡怎么建，各列左边留多宽：角色列放定妆图，套用资产库的放参考图
+  // 先定下每张卡怎么建，各列左边留多宽：新卡放参考图节点，套用资产库的放条目里的参考图
   const plans = entries.map((entry) => {
     const type = CAST_NODE_TYPES[entry.kind]
     const same = byName.get(entry.name) ?? []
@@ -141,8 +161,8 @@ export function applyCast(
       ? p.refs!.length
         ? REF_W + REF_COL_GAP
         : 0
-      : p.entry.kind === 'character' && portraitSize
-        ? portraitSize.w + PORTRAIT_GAP
+      : image
+        ? refSize(p.entry.kind)!.w + PORTRAIT_GAP
         : 0
     leads.set(p.type, Math.max(leads.get(p.type) ?? 0, lead))
   }
@@ -212,24 +232,26 @@ export function applyCast(
           x: Math.round(col.x + lead),
           y: Math.round(col.y),
         } as NewElement)
-        if (entry.kind === 'character' && image && portraitSize) {
-          // 角色卡左边是定妆图节点：图的结果连进卡片的参考图
-          const portrait = createElement(doc, {
+        const size = refSize(entry.kind)
+        if (image && size) {
+          // 卡片左边是参考图节点：图的结果连进卡片的参考图
+          const spec = REFERENCE_IMAGES[entry.kind]
+          const ref = createElement(doc, {
             ...image,
-            ...portraitSize,
-            name: `${entry.name} · 定妆图`,
-            x: Math.round(col.x + lead - PORTRAIT_GAP - portraitSize.w),
+            ...size,
+            name: `${entry.name} · ${spec.suffix}`,
+            x: Math.round(col.x + lead - PORTRAIT_GAP - size.w),
             y: Math.round(col.y),
             params: {
               ...image.params,
-              prompt: `${entry.name}${PORTRAIT_PROMPT}\n\n${entry.description}`,
+              prompt: `${entry.name}${spec.prompt}\n\n${entry.description}`,
               count: 1,
-              aspectRatio: PORTRAIT_ASPECT,
+              aspectRatio: spec.aspect,
             },
           } as NewElement)
-          connect(doc, [portrait, 'images'], [id, 'references'])
-          result.portraits.push(portrait)
-          rowH = Math.max(rowH, portraitSize.h)
+          connect(doc, [ref, 'images'], [id, 'references'])
+          result.portraits.push(ref)
+          rowH = Math.max(rowH, size.h)
         }
       }
       if (voice && !owned) result.voiced.push(entry.name)
@@ -316,7 +338,7 @@ function voicePicker(doc: PleinDoc, speech: SpeechModel | undefined) {
 export function describeCast(r: CastResult) {
   const parts = [
     r.created.length &&
-      `新建 ${r.created.length} 张设定卡${r.portraits.length ? `，配好 ${r.portraits.length} 个定妆图节点（批量出分镜图时先出它们）` : ''}`,
+      `新建 ${r.created.length} 张设定卡${r.portraits.length ? `，配好 ${r.portraits.length} 个定妆图 / 场景图 / 道具图节点（批量出分镜图时先出它们）` : ''}`,
     r.fromLibrary.length && `${r.fromLibrary.join('、')} 用了资产库里的设定和参考图`,
     r.voiced.length && `给 ${r.voiced.join('、')} 配好音色`,
     r.filled.length && `补上 ${r.filled.join('、')} 的设定`,

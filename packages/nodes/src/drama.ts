@@ -69,8 +69,9 @@ const SCRIPT_PROMPT = `把下面的创意改写成竖屏短剧剧本：
 
 创意：`
 
-const CAST_SYSTEM = '你是一名短剧美术指导，擅长从剧本里抽出可以拿去生成设定图的角色与场景描述。'
-const CAST_PROMPT = `读下面的剧本，抽出角色和场景设定，只输出下面这种 Markdown，不要解释：
+const CAST_SYSTEM =
+  '你是一名短剧美术指导，擅长从剧本里抽出可以拿去生成设定图的角色、场景与道具描述。'
+const CAST_PROMPT = `读下面的剧本，抽出角色、场景和关键道具设定，只输出下面这种 Markdown，不要解释：
 
 ## 角色
 ### 角色名
@@ -84,6 +85,12 @@ const CAST_PROMPT = `读下面的剧本，抽出角色和场景设定，只输�
 ### 场景名
 - 时间与地点：
 - 光线与氛围：
+
+## 道具
+### 道具名
+- 外观：（材质、颜色、尺寸、做旧程度）
+- 剧情作用：
+（只列在多个镜头里出现、推动剧情的关键物件；没有就省略这一节）
 
 剧本：`
 
@@ -235,6 +242,8 @@ export function dramaTemplate(opts: DramaTemplateOptions = {}): DramaTemplateSpe
       { from: ['idea', 'text'], to: ['script', 'prompt'] },
       { from: ['script', 'text'], to: ['cast', 'prompt'] },
       { from: ['script', 'text'], to: ['shots', 'script'] },
+      // 设定清单也交给分镜：镜头里的角色、场景、道具按设定卡的名字写，展开时才 @ 得到卡片
+      { from: ['cast', 'text'], to: ['shots', 'script'] },
       // 定妆图 → 角色卡的参考图：镜头图 @ 角色名时带上它（生成设定卡时每张新卡也这样配一个）
       { from: ['charimg', 'images'], to: ['character', 'references'] },
       // 图生视频：分镜图作视频的首帧，样例车道和展开出来的镜头一致
