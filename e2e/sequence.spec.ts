@@ -6,7 +6,8 @@ import { expect, test } from '@playwright/test'
 import { addNode, centerOf, edgesInto, elements, newProject, zoomTo } from './canvas'
 
 let dir = ''
-const shots = ['shot-a.mp4', 'shot-b.mp4', 'shot-c.mp4']
+/** WebM（VP9）：Playwright 自带的 Chromium 没有 H.264 解码器，WebM 才能走 WebCodecs 预览 */
+const shots = ['shot-a.webm', 'shot-b.webm', 'shot-c.webm']
 /** PLEIN_E2E_SHOTS=目录：顺手把编辑器截图存下来（看效果用，CI 不设） */
 const shotDir = process.env.PLEIN_E2E_SHOTS
 
@@ -25,6 +26,12 @@ test.beforeAll(() => {
       'lavfi',
       '-i',
       `sine=f=${300 + i * 100}:d=${2 + i * 0.5}`,
+      '-c:v',
+      'libvpx-vp9',
+      '-deadline',
+      'realtime',
+      '-c:a',
+      'libopus',
       '-pix_fmt',
       'yuv420p',
       '-shortest',
@@ -147,6 +154,26 @@ test('序列时间线：排序、修剪、播放', async ({ page }) => {
   await expect.poll(async () => (await time.textContent())?.slice(0, 6)).not.toBe('0:00.0')
   await page.keyboard.press('Space')
   if (shotDir) await editor.screenshot({ path: join(shotDir, 'timeline-trimmed.png') })
+
+  // 预览画面由引擎解码画到画布上：暂停时也有画面，不是黑屏
+  const screen = editor.locator('.seq-stage canvas').first()
+  await expect(screen).toHaveAttribute('data-decoder', /\S/)
+  await expect
+    .poll(() =>
+      screen.evaluate((c: HTMLCanvasElement) => {
+        const px = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data
+        let lit = 0
+        for (let i = 0; i < px.length; i += 4 * 97) if (px[i]! + px[i + 1]! + px[i + 2]! > 60) lit++
+        return lit
+      }),
+    )
+    .toBeGreaterThan(50)
+  // 播放时画面跟着走（逐帧解码，不是停在一帧上）
+  const snap = () => screen.evaluate((c: HTMLCanvasElement) => c.toDataURL('image/png'))
+  const still = await snap()
+  await page.keyboard.press('Space')
+  await expect.poll(snap).not.toBe(still)
+  await page.keyboard.press('Space')
 
   // 字幕：预览用 libass（与导出同一个字体），没有中文字体的机器退回近似字幕；CI 装了 Noto CJK
   await page.keyboard.press('Home')

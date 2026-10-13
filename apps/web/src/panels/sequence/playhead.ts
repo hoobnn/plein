@@ -19,6 +19,8 @@ export class Playhead {
   playing = false
   total = 0
   private listeners = new Set<() => void>()
+  /** 播放、暂停、跳转时通知（播放中的逐帧推进不算），声音据此重新排程 */
+  private transports = new Set<() => void>()
   private raf = 0
   /** 播放开始时的时钟读数和播放头位置 */
   private base = { clock: 0, t: 0 }
@@ -31,7 +33,15 @@ export class Playhead {
     }
   }
 
-  private emit() {
+  onTransport = (fn: () => void) => {
+    this.transports.add(fn)
+    return () => {
+      this.transports.delete(fn)
+    }
+  }
+
+  private emit(transport = false) {
+    if (transport) for (const fn of this.transports) fn()
     for (const fn of this.listeners) fn()
   }
 
@@ -50,7 +60,7 @@ export class Playhead {
   seek(t: number) {
     this.t = Math.min(Math.max(0, t), this.total)
     this.base = { clock: this.clock.now(), t: this.t }
-    this.emit()
+    this.emit(true)
   }
 
   play() {
@@ -60,7 +70,7 @@ export class Playhead {
     this.playing = true
     this.base = { clock: this.clock.now(), t: this.t }
     this.raf = requestAnimationFrame(this.tick)
-    this.emit()
+    this.emit(true)
   }
 
   pause() {
@@ -68,7 +78,7 @@ export class Playhead {
     cancelAnimationFrame(this.raf)
     this.t = this.position()
     this.playing = false
-    this.emit()
+    this.emit(true)
   }
 
   toggle() {
@@ -87,7 +97,7 @@ export class Playhead {
     if (t >= this.total) {
       this.t = this.total
       this.playing = false
-      this.emit()
+      this.emit(true)
       return
     }
     this.t = t
@@ -99,6 +109,7 @@ export class Playhead {
     cancelAnimationFrame(this.raf)
     this.playing = false
     this.listeners.clear()
+    this.transports.clear()
   }
 }
 
