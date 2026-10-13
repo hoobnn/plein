@@ -26,6 +26,8 @@ export interface Config {
   /** ffmpeg / ffprobe 可执行文件，默认从 PATH 查找；桌面端指向安装包里附带的版本 */
   ffmpegPath: string
   ffprobePath: string
+  /** 字幕字体文件（导出和预览共用）；不设时按 fontconfig、系统字体查找 */
+  subtitleFont?: string
   /**
    * 桌面端启动令牌：设置后所有请求都必须带上同值的 Cookie，
    * 只有桌面端自己的窗口能访问，本机其他程序和浏览器里的网页都会被拒绝
@@ -76,6 +78,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxJobs: Math.max(1, Number(env.PLEIN_MAX_JOBS ?? 4) || 4),
     ffmpegPath: env.PLEIN_FFMPEG_PATH || 'ffmpeg',
     ffprobePath: env.PLEIN_FFPROBE_PATH || 'ffprobe',
+    subtitleFont: env.PLEIN_SUBTITLE_FONT || undefined,
     desktopToken: env.PLEIN_DESKTOP_TOKEN || undefined,
     agent: auth === 'none' && env.PLEIN_AGENT !== '0',
     mcp: auth === 'none' && env.PLEIN_MCP !== '0',

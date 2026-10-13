@@ -30,7 +30,7 @@ export const SEQUENCE_TYPE = 'plein/sequence'
 
 const SUBTITLE_STYLES = ['常规', '醒目', '底框'] as const
 export const TRANSITIONS = ['无', '淡入淡出', '叠化'] as const
-const STYLE_IDS: Record<(typeof SUBTITLE_STYLES)[number], SubtitleStyle> = {
+export const SUBTITLE_STYLE_IDS: Record<(typeof SUBTITLE_STYLES)[number], SubtitleStyle> = {
   常规: 'standard',
   醒目: 'bold',
   底框: 'boxed',
@@ -148,6 +148,12 @@ const SIZES = {
   '1080p': { '9:16': [1080, 1920], '16:9': [1920, 1080] },
   '720p': { '9:16': [720, 1280], '16:9': [1280, 720] },
 } as const
+
+/** 成片的像素尺寸 */
+export function sequenceSize(params: Pick<SequenceParams, 'resolution' | 'aspectRatio'>) {
+  const [width, height] = SIZES[params.resolution][params.aspectRatio]
+  return { width, height }
+}
 
 /** 每段实际时长：出点不超过素材结尾，入点之前的部分去掉 */
 export function clipLength(c: Pick<ArrangedClip, 'in' | 'out'>, duration: number) {
@@ -315,7 +321,7 @@ export function sequenceSpec(
   name?: string,
   transcripts?: Array<TranscriptSegment[] | undefined>,
 ): ComposeSpec {
-  const [width, height] = SIZES[params.resolution][params.aspectRatio]
+  const { width, height } = sequenceSize(params)
   const tl = sequenceTimeline(params, arranged, durations, transcripts)
   const audio: ComposeAudio[] = []
   arranged.forEach((c, i) => {
@@ -353,7 +359,7 @@ export function sequenceSpec(
         : []
     }),
     audio,
-    subtitles: cues.length ? { cues, style: STYLE_IDS[params.subtitleStyle] } : undefined,
+    subtitles: cues.length ? { cues, style: SUBTITLE_STYLE_IDS[params.subtitleStyle] } : undefined,
     transition: tl.transition ?? undefined,
     name,
   }

@@ -7,6 +7,7 @@ import { capabilityRoutes } from './agent/cap-routes'
 import { ExternalMcp } from './mcp/external'
 import { mcpRoutes } from './mcp/routes'
 import { AgentSessions } from './agent/sessions'
+import { setSubtitleFont } from './assets/fonts'
 import { setMediaTools } from './assets/media'
 import { AssetStore } from './assets/store'
 import { type AuthEnv, createAuth } from './auth'
@@ -48,6 +49,7 @@ export interface Server {
 
 export async function createServer(config: Config): Promise<Server> {
   setMediaTools({ ffmpeg: config.ffmpegPath, ffprobe: config.ffprobePath })
+  setSubtitleFont(config.subtitleFont)
   const db = openDb(config.dataDir)
   const secrets = loadSecrets(config.dataDir)
   const rooms = new Rooms(sqliteDocStore(db))

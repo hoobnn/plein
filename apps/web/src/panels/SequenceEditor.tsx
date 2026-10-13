@@ -151,9 +151,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   // 捕获阶段拦下按键：编辑器打开时画布的快捷键不生效；播放控制在这里处理
   const keys = useRef<(e: KeyboardEvent) => void>(() => {})
   keys.current = (e) => {
+    // 输入框里的按键照常交给输入框（回车提交、Esc 由面板关闭）；画布的快捷键本来就不管输入框
+    if (typing(e.target)) return
     e.stopPropagation()
     if (e.key === 'Escape') return onClose()
-    if (typing(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
+    if (e.metaKey || e.ctrlKey || e.altKey) return
     const step = e.shiftKey ? 1 : FRAME
     if (e.key === ' ') {
       e.preventDefault()

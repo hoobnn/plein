@@ -105,6 +105,12 @@ export const AssetVariant = z.enum([
 ])
 export type AssetVariant = z.infer<typeof AssetVariant>
 
+/** 字幕字体：族名写进 ASS 样式；version 随文件变化，用作字体文件地址的缓存键 */
+export interface SubtitleFontInfo {
+  family: string
+  version: string
+}
+
 /** filmstrip 横条里的帧数：第 k 帧取在时长的 (k + 0.5) / 16 处，各帧等宽 */
 export const FILMSTRIP_FRAMES = 16
 
@@ -792,6 +798,10 @@ export const API = {
   mediaDerive: '/api/media/derive',
   /** 本机媒体能力，返回 MediaCapsInfo */
   mediaCaps: '/api/media/caps',
+  /** 字幕字体：导出烧字幕用的那个字体，预览加载同一个文件；返回 SubtitleFontInfo，没有时 404 */
+  subtitleFont: '/api/media/subtitle-font',
+  subtitleFontFile: (version: string) =>
+    `/api/media/subtitle-font/file?v=${encodeURIComponent(version)}`,
   catalog: '/api/catalog',
   /** 优化 / 翻译提示词，见 RewritePrompt */
   promptRewrite: '/api/prompt/rewrite',

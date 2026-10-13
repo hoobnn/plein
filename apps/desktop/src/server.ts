@@ -40,6 +40,7 @@ export function startServer(paths: ServerPaths, dataDir: string, port = 0): Prom
   if (paths.webDist) env.PLEIN_WEB_DIST = paths.webDist
   if (paths.ffmpeg) env.PLEIN_FFMPEG_PATH = paths.ffmpeg
   if (paths.ffprobe) env.PLEIN_FFPROBE_PATH = paths.ffprobe
+  if (paths.subtitleFont) env.PLEIN_SUBTITLE_FONT ??= paths.subtitleFont
   if (isDev) env.PLEIN_MOCK_PROVIDER ??= '1'
 
   const child: UtilityProcess = utilityProcess.fork(paths.entry, [], {

@@ -1,7 +1,16 @@
-import { type ArrangedClip, clipLines, type SequenceParams, type Timeline } from '@plein/nodes'
-import { useEffect, useRef } from 'react'
+import {
+  type ArrangedClip,
+  clipLines,
+  SUBTITLE_STYLE_IDS,
+  type SequenceParams,
+  sequenceSize,
+  subtitleAss,
+  type Timeline,
+} from '@plein/nodes'
+import { useEffect, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { type Playhead, usePlayheadTime, usePlaying } from './sequence/playhead'
+import { SubtitleLayer, type SubtitleMode } from './sequence/SubtitleLayer'
 
 const DRIFT = 0.25
 
@@ -37,6 +46,9 @@ export function SequencePreview({
 }) {
   const t = usePlayheadTime(playhead)
   const playing = usePlaying(playhead)
+  const [subMode, setSubMode] = useState<SubtitleMode>('loading')
+  const size = sequenceSize(params)
+  const cues = params.subtitles ? timeline.clips.flatMap((c) => c.cues) : []
   const videos = [useRef<HTMLVideoElement>(null), useRef<HTMLVideoElement>(null)]
   const audios = useRef(new Map<string, HTMLAudioElement>())
   const { total, transition } = timeline
@@ -142,16 +154,19 @@ export function SequencePreview({
     }
   }
   const topSlot = active.length > 1 ? active.at(-1)!.i % 2 : undefined
-  const cue = params.subtitles
-    ? timeline.clips.flatMap((c) => c.cues).find((q) => t >= q.start && t < q.end)
-    : undefined
+  // 字幕优先用 libass 渲染（与成片一致），不可用时退回近似的 DOM 字幕
+  const cue = subMode === 'fallback' ? cues.find((q) => t >= q.start && t < q.end) : undefined
 
   const placeholder = active.some(({ i }) => rows[i]?.pending)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center gap-2">
       <div className="seq-viewer">
-        <div className="seq-stage" data-portrait={portrait || undefined}>
+        <div
+          className="seq-stage"
+          data-portrait={portrait || undefined}
+          data-subtitles={params.subtitles ? subMode : undefined}
+        >
           {[0, 1].map((slot) => (
             // oxlint-disable-next-line jsx-a11y/media-has-caption -- 字幕由上面叠加的 DOM 显示
             <video
@@ -170,6 +185,20 @@ export function SequencePreview({
             className="pointer-events-none absolute inset-0 z-10 bg-black"
             style={{ opacity: black }}
           />
+          {params.subtitles && (
+            <SubtitleLayer
+              build={(font) =>
+                subtitleAss(
+                  { ...size, subtitles: { cues, style: SUBTITLE_STYLE_IDS[params.subtitleStyle] } },
+                  font,
+                )
+              }
+              width={size.width}
+              height={size.height}
+              playhead={playhead}
+              onMode={setSubMode}
+            />
+          )}
           {cue && (
             <div
               className={`pointer-events-none absolute inset-x-4 z-20 flex justify-center ${portrait ? 'bottom-[12%]' : 'bottom-[7%]'}`}
@@ -195,7 +224,9 @@ export function SequencePreview({
         </div>
       </div>
       <p className="flex-none text-2xs text-ink-subtle">
-        预览画质与混音是近似的，导出的成片以服务端合成为准。
+        {subMode === 'fallback'
+          ? '预览画质、混音和字幕样式是近似的，导出的成片以服务端合成为准。'
+          : '预览画质与混音是近似的，导出的成片以服务端合成为准。'}
         {params.asrTiming && ' 语音识别校准的字幕时间只在导出时生效。'}
       </p>
     </div>

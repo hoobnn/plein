@@ -139,6 +139,7 @@ pnpm install && pnpm build && pnpm start   # http://localhost:8787
 | `PLEIN_MAX_UPLOAD_MB`                      | `2048`                             | 单个文件上限                                           |
 | `PLEIN_MAX_JOBS`                           | `4`                                | 同时运行的节点任务数上限                               |
 | `PLEIN_FFMPEG_PATH` / `PLEIN_FFPROBE_PATH` | 从 `PATH` 查找                     | ffmpeg / ffprobe 可执行文件                            |
+| `PLEIN_SUBTITLE_FONT`                      | fontconfig 里的 Noto Sans CJK SC   | 字幕字体文件，导出烧字幕和剪辑预览共用                 |
 | `PLEIN_AGENT`                              | 免登录模式下开启                   | 设为 `0` 关闭本机 CLI 智能体                           |
 
 </details>

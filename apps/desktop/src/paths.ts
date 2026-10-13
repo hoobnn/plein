@@ -29,7 +29,12 @@ export interface ServerPaths {
   /** 随安装包附带的 ffmpeg / ffprobe，不存在时服务端从 PATH 查找 */
   ffmpeg?: string
   ffprobe?: string
+  /** 随安装包附带的字幕字体，导出和预览共用 */
+  subtitleFont?: string
 }
+
+const SUBTITLE_FONT = 'NotoSansCJKsc-Regular.otf'
+const existing = (file: string) => (existsSync(file) ? file : undefined)
 
 function bundled(dir: string, name: string) {
   const file = join(dir, process.platform === 'win32' ? `${name}.exe` : name)
@@ -46,17 +51,23 @@ export function serverPaths(): ServerPaths {
       webDist: join(res, 'web'),
       ffmpeg: bundled(join(res, 'ffmpeg'), 'ffmpeg'),
       ffprobe: bundled(join(res, 'ffmpeg'), 'ffprobe'),
+      subtitleFont: existing(join(res, 'fonts', SUBTITLE_FONT)),
     }
   }
   const server = join(repoRoot, 'apps/server')
   if (isDev) {
     // 开发模式直接跑源码（经 tsx），改服务端代码后重启桌面端即可生效
-    return { entry: join(repoRoot, 'apps/desktop/scripts/dev-server.mjs'), cwd: server }
+    return {
+      entry: join(repoRoot, 'apps/desktop/scripts/dev-server.mjs'),
+      cwd: server,
+      subtitleFont: existing(join(repoRoot, 'apps/desktop/stage/fonts', SUBTITLE_FONT)),
+    }
   }
   return {
     entry: join(server, 'dist/main.mjs'),
     cwd: server,
     webDist: join(repoRoot, 'apps/web/dist'),
+    subtitleFont: existing(join(repoRoot, 'apps/desktop/stage/fonts', SUBTITLE_FONT)),
   }
 }
 

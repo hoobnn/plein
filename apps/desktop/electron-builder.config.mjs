@@ -33,6 +33,8 @@ export default {
     { from: 'stage/server', to: 'server' },
     { from: '../web/dist', to: 'web' },
     ...(existsSync('stage/ffmpeg/ffmpeg') ? [{ from: 'stage/ffmpeg', to: 'ffmpeg' }] : []),
+    // 字幕字体：导出和预览共用（scripts/fetch-font.mjs）
+    ...(existsSync('stage/fonts') ? [{ from: 'stage/fonts', to: 'fonts' }] : []),
   ],
   // 原生模块已在 stage/server 里按当前平台准备好，Electron 侧没有原生依赖
   npmRebuild: false,

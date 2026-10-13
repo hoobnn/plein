@@ -7,6 +7,9 @@ const server = process.env.PLEIN_SERVER ?? 'http://127.0.0.1:8787'
 
 export default defineConfig({
   plugins: lazyPlugins(() => [react(), tailwindcss()]),
+  // JASSUB 用 new URL(..., import.meta.url) 找自己的 worker 和 wasm，预构建会打乱相对路径
+  optimizeDeps: { exclude: ['jassub'] },
+  worker: { format: 'es' },
   server: {
     port: 5173,
     proxy: {

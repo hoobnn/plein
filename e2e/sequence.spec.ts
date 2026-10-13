@@ -148,6 +148,21 @@ test('序列时间线：排序、修剪、播放', async ({ page }) => {
   await page.keyboard.press('Space')
   if (shotDir) await editor.screenshot({ path: join(shotDir, 'timeline-trimmed.png') })
 
+  // 字幕：预览用 libass（与导出同一个字体），没有中文字体的机器退回近似字幕；CI 装了 Noto CJK
+  await page.keyboard.press('Home')
+  const subtitle = editor.getByRole('textbox', { name: '字幕' })
+  await subtitle.fill('雨夜，她终于回来了')
+  await subtitle.press('Enter')
+  const stage = editor.locator('.seq-stage')
+  await expect(stage).not.toHaveAttribute('data-subtitles', 'loading')
+  if (process.env.CI || process.env.PLEIN_SUBTITLE_FONT)
+    await expect(stage).toHaveAttribute('data-subtitles', 'libass')
+  await expect(timeline.locator('.seq-block-text').first()).toContainText('雨夜')
+  if (shotDir) {
+    await page.waitForTimeout(500)
+    await editor.screenshot({ path: join(shotDir, 'subtitles.png') })
+  }
+
   await page.keyboard.press('Escape')
   await expect(editor).toBeHidden()
 })

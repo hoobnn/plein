@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process'
-import { writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import type { ComposeSpec, MediaInfo, SubtitleStyle } from '@plein/plugin-sdk'
+import { mkdir, symlink, writeFile } from 'node:fs/promises'
+import { basename, join } from 'node:path'
+import { subtitleAss } from '@plein/nodes'
+import type { ComposeSpec, MediaInfo } from '@plein/plugin-sdk'
+import { subtitleFont } from './fonts'
 import { ffmpegBin, h264Args } from './media'
 
 const RATE = 48000
@@ -29,6 +31,8 @@ function composeArgs(
   out: string,
   /** H.264 编码参数，见 h264Args */
   encoder: string[],
+  /** 字幕字体放在工作目录的 fonts/ 里（只给 libass 这一个字体，和预览一致） */
+  fontsdir = false,
 ) {
   const { width: W, height: H, fps } = spec
   const durations = clipDurations(spec, infos.clips)
@@ -119,7 +123,11 @@ function composeArgs(
       ? `${mix.join('')}amix=inputs=${mix.length}:duration=first:dropout_transition=0:normalize=0,alimiter=limit=0.95[aout]`
       : '[acat]anull[aout]',
   )
-  filters.push(spec.subtitles?.cues.length ? '[vcat]ass=subs.ass[vout]' : '[vcat]null[vout]')
+  filters.push(
+    spec.subtitles?.cues.length
+      ? `[vcat]ass=subs.ass${fontsdir ? ':fontsdir=fonts' : ''}[vout]`
+      : '[vcat]null[vout]',
+  )
 
   args.push(
     '-filter_complex',
@@ -147,58 +155,6 @@ function composeArgs(
   return { args, total }
 }
 
-function assTime(t: number) {
-  const cs = Math.max(0, Math.round(t * 100))
-  const h = Math.floor(cs / 360000)
-  const m = Math.floor((cs % 360000) / 6000)
-  const s = Math.floor((cs % 6000) / 100)
-  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(cs % 100).padStart(2, '0')}`
-}
-
-/** ASS 颜色是 &HAABBGGRR，AA 为透明度 */
-const STYLES: Record<
-  SubtitleStyle,
-  { size: number; bold: number; outline: number; border: number; back: string }
-> = {
-  standard: { size: 0.05, bold: 0, outline: 0.0025, border: 1, back: '&H80000000' },
-  bold: { size: 0.06, bold: 1, outline: 0.004, border: 1, back: '&H80000000' },
-  boxed: { size: 0.05, bold: 0, outline: 0.006, border: 3, back: '&H60000000' },
-}
-
-/** 生成 ASS 字幕：字号和边距按画面短边换算，中文字体由 fontconfig 兜底 */
-function assSubtitles(spec: ComposeSpec) {
-  const sub = spec.subtitles!
-  const st = STYLES[sub.style]
-  const short = Math.min(spec.width, spec.height)
-  const size = Math.round(short * st.size)
-  const outline = Math.max(1, Math.round(short * st.outline))
-  const margin = Math.round(spec.height * (spec.height > spec.width ? 0.12 : 0.07))
-  const side = Math.round(spec.width * 0.06)
-  const text = (t: string) =>
-    t.replace(/\\/g, '＼').replace(/[{}]/g, '').replace(/\r?\n/g, '\\N').trim()
-  return [
-    '[Script Info]',
-    'ScriptType: v4.00+',
-    `PlayResX: ${spec.width}`,
-    `PlayResY: ${spec.height}`,
-    'WrapStyle: 0',
-    'ScaledBorderAndShadow: yes',
-    '',
-    '[V4+ Styles]',
-    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    `Style: Default,Noto Sans CJK SC,${size},&H00FFFFFF,&H00FFFFFF,${st.border === 3 ? st.back : '&H00000000'},${st.back},${st.bold ? -1 : 0},0,0,0,100,100,0,0,${st.border},${outline},0,2,${side},${side},${margin},1`,
-    '',
-    '[Events]',
-    'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
-    ...sub.cues
-      .filter((c) => c.end > c.start && c.text.trim())
-      .map(
-        (c) => `Dialogue: 0,${assTime(c.start)},${assTime(c.end)},Default,,0,0,0,,${text(c.text)}`,
-      ),
-    '',
-  ].join('\n')
-}
-
 /**
  * 在临时目录里运行 ffmpeg 合成视频，返回输出文件路径。
  * 进度按 out_time 与总时长之比报告；signal 中止时结束 ffmpeg。
@@ -212,8 +168,17 @@ export async function composeVideo(
 ) {
   if (spec.clips.length === 0) throw new Error('没有可合成的画面')
   const out = join(dir, 'out.mp4')
-  if (spec.subtitles?.cues.length) await writeFile(join(dir, 'subs.ass'), assSubtitles(spec))
-  const { args, total } = composeArgs(spec, files, infos, out, await h264Args())
+  let fontsdir = false
+  if (spec.subtitles?.cues.length) {
+    const font = await subtitleFont()
+    if (font) {
+      await mkdir(join(dir, 'fonts'), { recursive: true })
+      await symlink(font.file, join(dir, 'fonts', basename(font.file)))
+      fontsdir = true
+    }
+    await writeFile(join(dir, 'subs.ass'), subtitleAss(spec, font?.family))
+  }
+  const { args, total } = composeArgs(spec, files, infos, out, await h264Args(), fontsdir)
   if (total <= 0) throw new Error('画面总时长为 0，检查各段的入点和出点')
 
   await new Promise<void>((resolve, reject) => {
