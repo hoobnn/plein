@@ -10,6 +10,8 @@ COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY packages/doc/package.json packages/doc/
 COPY packages/canvas-core/package.json packages/canvas-core/
+COPY packages/capabilities/package.json packages/capabilities/
+COPY packages/flow/package.json packages/flow/
 COPY packages/protocol/package.json packages/protocol/
 COPY packages/plugin-sdk/package.json packages/plugin-sdk/
 COPY packages/nodes/package.json packages/nodes/
