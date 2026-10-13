@@ -435,7 +435,13 @@ export class NodeRuns {
         if (status === 'succeeded') return 'succeeded'
         return status === 'canceled' ? 'canceled' : 'failed'
       }
-      const r = await runDag(graph.dependencies(targets), step, { signal: ctrl.signal })
+      // @ 引用带来的依赖是软的：参考图出不来（比如被平台审核拦下）时，镜头只带文字设定照常出
+      const deps = graph.dependencies(targets)
+      const hard = new FlowGraph(doc.edges()).dependencies(targets)
+      const soft = new Map(
+        [...deps].map(([id, ups]) => [id, new Set([...ups].filter((u) => !hard.get(id)?.has(u)))]),
+      )
+      const r = await runDag(hard, step, { signal: ctrl.signal, soft })
       if (this.closed) return
       const status = ctrl.signal.aborted ? 'canceled' : 'done'
       const summary = {

@@ -94,6 +94,28 @@ describe('runDag', () => {
   })
 })
 
+describe('runDag 软依赖', () => {
+  it('等软依赖跑完再开始；它失败时下游照常运行', async () => {
+    const order: string[] = []
+    const deps = new Map([
+      ['ref', new Set<string>()],
+      ['shot', new Set<string>()],
+    ])
+    const soft = new Map([['shot', new Set(['ref'])]])
+    const r = await runDag(
+      deps,
+      async (id) => {
+        order.push(id)
+        return id === 'ref' ? 'failed' : 'succeeded'
+      },
+      { soft },
+    )
+    expect(order).toEqual(['ref', 'shot'])
+    expect(r.failed).toEqual(['ref'])
+    expect(r.succeeded).toEqual(['shot'])
+  })
+})
+
 describe('stableStringify', () => {
   it('与键顺序无关', () => {
     expect(stableStringify({ b: 1, a: [{ y: 2, x: undefined, z: null }] })).toBe(
