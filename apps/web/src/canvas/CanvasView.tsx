@@ -145,7 +145,13 @@ export function CanvasView({ source }: { source: CanvasSource }) {
         (err) => {
           if (disposed) return
           console.error(err)
-          notify('画布加载失败：浏览器可能不支持 WebGL，请换用较新的浏览器或开启硬件加速')
+          // 只有确实拿不到 WebGL 才提示换浏览器；其余是画布内容或引擎的问题，直接给出原因
+          const webgl = !!document.createElement('canvas').getContext('webgl2')
+          notify(
+            webgl
+              ? `画布加载失败：${err instanceof Error ? err.message : String(err)}`
+              : '画布加载失败：拿不到 WebGL，请开启硬件加速；桌面端请重启应用',
+          )
         },
       )
     }
