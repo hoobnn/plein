@@ -22,3 +22,7 @@ permissions:
   pixi.js:
     build: true
     skills: true
+# 已批准依赖提供的 agent skill 链接到这里（.claude/ 不进仓库，CI 的全新 clone 里没有，需显式指定）
+skills:
+  dirs:
+    - .claude/skills
