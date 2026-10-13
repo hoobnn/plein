@@ -6,7 +6,7 @@
 // - 再加 APPLE_ID、APPLE_APP_SPECIFIC_PASSWORD、APPLE_TEAM_ID：签名后提交 Apple 公证；
 // - 都没有时做 ad-hoc 签名，本机能打开，发给别人会被 Gatekeeper 拦（右键“打开”可绕过）。
 // CI 发版时这里只出 ad-hoc 签名的 .app（--dir），由 hoobnn/ci-workflows 的复用工作流全部重签、公证和打包。
-import { cpSync, existsSync } from 'node:fs'
+import { cpSync, existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const signed = Boolean(process.env.CSC_LINK || process.env.CSC_NAME)
@@ -63,5 +63,11 @@ export default {
         ? join(ctx.appOutDir, `${ctx.packager.appInfo.productFilename}.app`, 'Contents/Resources')
         : join(ctx.appOutDir, 'resources')
     cpSync('stage/server/node_modules', join(resources, 'server/node_modules'), { recursive: true })
+    // 自动更新从这里读来源和缓存目录（electron-updater）。electron-builder 只在打 dmg / zip 时自己写，
+    // 发版 CI 用 --dir 出 .app，所以在这里写；上传 latest-mac.yml 由 release.yml 完成
+    writeFileSync(
+      join(resources, 'app-update.yml'),
+      'provider: github\nowner: hoobnn\nrepo: plein\nupdaterCacheDirName: plein-updater\n',
+    )
   },
 }

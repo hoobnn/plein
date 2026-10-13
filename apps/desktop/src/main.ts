@@ -7,6 +7,7 @@ import { installMenu } from './menu'
 import { appIconPath, DEV_WEB_URL, dataDir, isDev, serverPaths } from './paths'
 import { readPrefs, writePrefs } from './prefs'
 import { type ServerHandle, startServer } from './server'
+import { setupUpdater } from './updater'
 import { restoreWindowState, trackWindowState } from './window-state'
 
 const DESKTOP_COOKIE = 'plein_desktop'
@@ -130,7 +131,7 @@ async function boot() {
     applicationVersion: app.getVersion(),
     iconPath: appIconPath(),
   })
-  installMenu(showWindow)
+  installMenu(showWindow, setupUpdater(() => window).check)
   const dir = dataDir()
   ipcMain.handle('plein:native-edit', (event, action: unknown) => {
     if (

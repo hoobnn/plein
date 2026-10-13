@@ -92,3 +92,36 @@ jobs:
       make-dmg: true
       sign: ${{ github.event_name == 'push' || inputs.sign }}
     secrets: inherit
+
+  # 自动更新的索引：electron-updater 从最新 Release 读 latest-mac.yml，按里面的 sha512 校验下载的 zip。
+  # 必须用复用工作流签名、公证后的那个 zip 计算，所以等它发布完再生成
+  update-feed:
+    name: Publish update feed
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.release.outputs.version }}
+          SUFFIX: ${{ needs.release.outputs.artifact-suffix }}
+        run: |
+          set -euo pipefail
+          ZIP="Plein-${VERSION}-macOS${SUFFIX}.zip"
+          gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" -p "$ZIP"
+          SHA512=$(openssl dgst -sha512 -binary "$ZIP" | base64 -w0)
+          SIZE=$(stat -c %s "$ZIP")
+          cat > latest-mac.yml <<YAML
+          version: ${VERSION}
+          files:
+            - url: ${ZIP}
+              sha512: ${SHA512}
+              size: ${SIZE}
+          path: ${ZIP}
+          sha512: ${SHA512}
+          releaseDate: '$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'
+          YAML
+          cat latest-mac.yml
+          gh release upload "$GITHUB_REF_NAME" latest-mac.yml -R "$GITHUB_REPOSITORY" --clobber

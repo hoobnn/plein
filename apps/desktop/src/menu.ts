@@ -2,7 +2,11 @@ import type { DesktopMenuCommand } from '@plein/protocol'
 import { app, type BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
 import { isDev } from './paths'
 
-export function installMenu(showWindow: () => BrowserWindow | null) {
+/** checkUpdates 为空时（开发模式、非 macOS）不显示「检查更新…」 */
+export function installMenu(
+  showWindow: () => BrowserWindow | null,
+  checkUpdates: (() => void) | null = null,
+) {
   const mac = process.platform === 'darwin'
   const command = (action: DesktopMenuCommand) => () => {
     const win = showWindow()
@@ -25,6 +29,9 @@ export function installMenu(showWindow: () => BrowserWindow | null) {
             label: app.name,
             submenu: [
               { role: 'about' },
+              ...(checkUpdates
+                ? [{ label: '检查更新…', click: checkUpdates } satisfies MenuItemConstructorOptions]
+                : []),
               { type: 'separator' },
               settings,
               { type: 'separator' },
