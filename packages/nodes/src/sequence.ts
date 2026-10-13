@@ -17,6 +17,8 @@ export const SequenceClip = z.object({
   out: z.number().min(0).optional(),
   /** 这段的对白（对白端口上游元素 id）；空字符串表示不配，不填按顺序自动对应 */
   dialogue: z.string().optional(),
+  /** 同一段镜头里接在对白后面依次播放的其他台词（对白端口上游元素 id，按顺序） */
+  more: z.array(z.string()).optional(),
   /** 这段的音效，规则同对白 */
   sfx: z.string().optional(),
   /** 字幕；不填用对白的台词 */
@@ -87,6 +89,8 @@ export interface ArrangedClip {
   in: number
   out?: number
   dialogue?: MediaValue
+  /** 接在 dialogue 后面依次播放的台词 */
+  more: MediaValue[]
   sfx?: MediaValue
   subtitle?: string
 }
@@ -100,7 +104,10 @@ export function arrangeSequence(
   inputs: Record<string, PortValue[]>,
 ): ArrangedClip[] {
   const clips = media(inputs.clips)
-  const dialogue = media(inputs.dialogue)
+  // 写进某段 more 的台词只在那一段播，不参与按顺序自动对应
+  const extra = new Set(params.clips.flatMap((c) => c.more ?? []))
+  const allDialogue = media(inputs.dialogue)
+  const dialogue = allDialogue.filter((v) => v.source === undefined || !extra.has(v.source))
   const sfx = media(inputs.sfx)
   const settings = new Map(params.clips.map((c) => [c.source, c]))
   const order = new Map(params.clips.map((c, i) => [c.source, i]))
@@ -127,6 +134,7 @@ export function arrangeSequence(
       in: s?.in ?? 0,
       out: s?.out,
       dialogue: pick(dialogue, s?.dialogue, index),
+      more: (s?.more ?? []).flatMap((id) => allDialogue.filter((v) => v.source === id)),
       sfx: pick(sfx, s?.sfx, index),
       subtitle: s?.subtitle,
     }
@@ -177,9 +185,23 @@ export function dialogueCues(
 export interface TimelineClip {
   start: number
   length: number
-  /** 对白在成片里的起点和播放时长 */
-  dialogue?: { start: number; duration: number }
+  /** 各句对白（dialogue 和 more 依次）在成片里的起点和播放时长；放不下的句子不在里面 */
+  lines: Array<{ start: number; duration: number }>
   cues: Cue[]
+}
+
+/** 同一段镜头里相邻两句台词之间的停顿（秒） */
+export const LINE_GAP = 0.2
+
+/** 这段镜头依次播放的全部台词 */
+export const clipLines = (c: Pick<ArrangedClip, 'dialogue' | 'more'>) =>
+  c.dialogue ? [c.dialogue, ...c.more] : [...c.more]
+
+/** 各段的台词时长：dialogue 是每段第一句，more 是其余各句（与 ArrangedClip.more 对应） */
+export interface SequenceDurations {
+  clips: number[]
+  dialogue: Array<number | undefined>
+  more?: Array<Array<number | undefined>>
 }
 
 export interface Timeline {
@@ -197,7 +219,7 @@ export interface Timeline {
 export function sequenceTimeline(
   params: SequenceParams,
   arranged: ArrangedClip[],
-  durations: { clips: number[]; dialogue: Array<number | undefined> },
+  durations: SequenceDurations,
   transcripts: Array<TranscriptSegment[] | undefined> = [],
 ): Timeline {
   const lengths = arranged.map((c, i) => clipLength(c, durations.clips[i] ?? 0))
@@ -226,24 +248,44 @@ export function sequenceTimeline(
   const clips = arranged.map((c, i): TimelineClip => {
     const start = starts[i]!
     const length = lengths[i]!
-    if (length === 0) return { start, length, cues: [] }
+    if (length === 0) return { start, length, lines: [], cues: [] }
     let until = total
     for (let j = i + 1; j < arranged.length; j++) {
-      if (arranged[j]!.dialogue && lengths[j]! > 0) {
+      if (clipLines(arranged[j]!).length && lengths[j]! > 0) {
         until = starts[j]!
         break
       }
     }
     const room = until - start
-    const dialogue = c.dialogue
-      ? { start, duration: Math.min(durations.dialogue[i] ?? room, room) }
-      : undefined
+    // 台词从镜头开头依次播放，可以延续到下一段有对白的镜头开始；放不下的句子丢掉
+    const own = clipLines(c)
+    const lines: TimelineClip['lines'] = []
+    let at = 0
+    own.forEach((_, k) => {
+      if (at >= room - 0.04) return
+      const d =
+        k === 0 && c.dialogue
+          ? durations.dialogue[i]
+          : durations.more?.[i]?.[c.dialogue ? k - 1 : k]
+      const duration = Math.min(d ?? room - at, room - at)
+      lines.push({ start: start + at, duration })
+      at += duration + LINE_GAP
+    })
     let cues: Cue[] = []
     if (params.subtitles) {
-      if (c.subtitle?.trim())
-        cues = [{ start: 0, end: dialogue?.duration ?? length, text: c.subtitle.trim() }]
-      else if (dialogue)
-        cues = dialogueCues((c.dialogue?.caption ?? '').trim(), transcripts[i], dialogue.duration)
+      const span = lines.length ? lines.at(-1)!.start + lines.at(-1)!.duration - start : length
+      if (c.subtitle?.trim()) cues = [{ start: 0, end: span, text: c.subtitle.trim() }]
+      else
+        cues = lines.flatMap((l, k) => {
+          const offset = l.start - start
+          // 识别结果只对第一句（dialogue）做
+          const segs = k === 0 && c.dialogue ? transcripts[i] : undefined
+          return dialogueCues((own[k]!.caption ?? '').trim(), segs, l.duration).map((q) => ({
+            start: offset + q.start,
+            end: offset + q.end,
+            text: q.text,
+          }))
+        })
       cues = cues
         .map((q) => ({
           start: start + q.start,
@@ -252,8 +294,11 @@ export function sequenceTimeline(
           text: q.text,
         }))
         .filter((q) => q.end > q.start && q.text)
+      // 至少停留 1 秒会让前一句盖到后一句上：截到后一句开始
+      for (let k = 0; k + 1 < cues.length; k++)
+        cues[k]!.end = Math.min(cues[k]!.end, Math.max(cues[k]!.start + 0.04, cues[k + 1]!.start))
     }
-    return { start, length, dialogue, cues }
+    return { start, length, lines, cues }
   })
   return { clips, total, transition }
 }
@@ -262,7 +307,7 @@ export function sequenceTimeline(
 export function sequenceSpec(
   params: SequenceParams,
   arranged: ArrangedClip[],
-  durations: { clips: number[]; dialogue: Array<number | undefined> },
+  durations: SequenceDurations,
   music: PortValue[] | undefined,
   name?: string,
   transcripts?: Array<TranscriptSegment[] | undefined>,
@@ -273,13 +318,15 @@ export function sequenceSpec(
   arranged.forEach((c, i) => {
     const t = tl.clips[i]!
     if (t.length === 0) return
-    if (c.dialogue && t.dialogue)
+    const own = clipLines(c)
+    t.lines.forEach((l, k) =>
       audio.push({
-        asset: asset(c.dialogue),
-        start: t.dialogue.start,
-        duration: t.dialogue.duration,
+        asset: asset(own[k]!),
+        start: l.start,
+        duration: l.duration,
         volume: params.dialogueVolume,
-      })
+      }),
+    )
     if (c.sfx)
       audio.push({
         asset: asset(c.sfx),

@@ -294,15 +294,20 @@ const sequence = defineExecutor(sequenceNode, async (ctx) => {
   const arranged = arrangeSequence(params, inputs)
   if (arranged.length === 0) throw new ProviderError('invalid_input', '没有连入镜头视频')
   ctx.progress(0, '读取素材…')
-  const [clips, dialogue] = await Promise.all([
+  const [clips, dialogue, more] = await Promise.all([
     Promise.all(arranged.map((c) => ctx.media.probe(c.clip))),
     Promise.all(arranged.map(async (c) => (c.dialogue ? ctx.media.probe(c.dialogue) : undefined))),
+    Promise.all(arranged.map((c) => Promise.all(c.more.map((m) => ctx.media.probe(m))))),
   ])
   const transcripts = params.asrTiming && params.subtitles ? await transcribe(ctx, arranged) : []
   const spec = sequenceSpec(
     params,
     arranged,
-    { clips: clips.map((i) => i.duration ?? 0), dialogue: dialogue.map((i) => i?.duration) },
+    {
+      clips: clips.map((i) => i.duration ?? 0),
+      dialogue: dialogue.map((i) => i?.duration),
+      more: more.map((list) => list.map((i) => i.duration)),
+    },
     inputs.music,
     undefined,
     transcripts,

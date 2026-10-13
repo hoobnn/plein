@@ -282,14 +282,22 @@ export interface ExpandResult {
 
 export type SequenceLink = 'linked' | 'none' | 'ambiguous'
 
+/** 画布上唯一的序列的画幅；没有序列、有多个或没设画幅时返回空 */
+function sequenceAspect(doc: PleinDoc): string | undefined {
+  const seqs = [...doc.elements()].filter((e) => e.kind === 'node' && e.nodeType === SEQUENCE_TYPE)
+  const aspect = seqs.length === 1 ? seqs[0]!.params?.aspectRatio : undefined
+  return typeof aspect === 'string' && aspect !== 'auto' ? aspect : undefined
+}
+
 /**
- * 展开的镜头接到画布上唯一的序列：视频进「镜头」，首句配音进「对白」，
- * 并把对应关系写进序列参数——不写的话序列按顺序配对白，没有台词的镜头会让后面的对白错位。
- * 已经接过的不重复连，用户在序列里改过的设置不动（只给原先没有对白的镜头补上）。
+ * 展开的镜头接到画布上唯一的序列：视频进「镜头」，这个镜头的每句配音都进「对白」，
+ * 并把对应关系写进序列参数：首句是这段的对白，其余按台词顺序记在 more 里接着播——
+ * 不写的话序列按顺序配对白，没有台词的镜头会让后面的对白错位，第二句起的台词也进不了成片。
+ * 已经接过的不重复连，用户在序列里改过的设置不动（只补原先没有的对白）。
  */
 function linkSequence(
   doc: PleinDoc,
-  shots: Array<{ video: string; speech?: string }>,
+  shots: Array<{ video: string; speeches: string[] }>,
 ): SequenceLink {
   const seqs = [...doc.elements()].filter((e) => e.kind === 'node' && e.nodeType === SEQUENCE_TYPE)
   if (seqs.length !== 1) return seqs.length ? 'ambiguous' : 'none'
@@ -301,11 +309,24 @@ function linkSequence(
   const clips = [...((seq.params?.clips as SequenceClip[] | undefined) ?? [])]
   for (const s of shots) {
     if (!has(s.video, 'clips')) connect(doc, [s.video, 'video'], [seq.id, 'clips'])
-    if (s.speech && !has(s.speech, 'dialogue'))
-      connect(doc, [s.speech, 'audio'], [seq.id, 'dialogue'])
+    for (const sp of s.speeches)
+      if (!has(sp, 'dialogue')) connect(doc, [sp, 'audio'], [seq.id, 'dialogue'])
     const at = clips.findIndex((c) => c.source === s.video)
-    if (at < 0) clips.push({ source: s.video, in: 0, dialogue: s.speech ?? '' })
-    else if (s.speech && !clips[at]!.dialogue) clips[at] = { ...clips[at]!, dialogue: s.speech }
+    if (at < 0) {
+      const [first, ...rest] = s.speeches
+      clips.push({
+        source: s.video,
+        in: 0,
+        dialogue: first ?? '',
+        ...(rest.length ? { more: rest } : {}),
+      })
+      continue
+    }
+    const c = clips[at]!
+    const dialogue = c.dialogue || s.speeches[0] || c.dialogue
+    const used = new Set([dialogue, ...(c.more ?? [])])
+    const more = [...(c.more ?? []), ...s.speeches.filter((sp) => !used.has(sp))]
+    clips[at] = { ...c, dialogue, ...(more.length ? { more } : {}) }
   }
   setParams(doc, seq.id, { clips })
   return 'linked'
@@ -365,12 +386,15 @@ export function expandShots(
   }
 
   const env = planEnv(doc, boardId)
+  // 镜头图和视频跟随要接入的序列的画幅（竖屏短剧是 9:16），否则按节点默认值出图，拼进成片会带黑边
+  const aspect = sequenceAspect(doc)
+  const framing = aspect ? { aspectRatio: aspect } : {}
   const frames: string[] = []
   let created = 0
   let updated = 0
   let skipped = 0
   // 按表格顺序记下每个镜头的视频和首句配音，最后统一接到序列
-  const linked: Array<{ video: string; speech?: string }> = []
+  const linked: Array<{ video: string; speeches: string[] }> = []
   let sequence: SequenceLink = 'none'
   doc.ydoc.transact(() => {
     for (const shot of shots) {
@@ -427,12 +451,14 @@ export function expandShots(
         const img = add(image, frame, [PAD, HEAD], {
           source: source('image', { plan: snapshot(imageParams) }),
           ...imageParams,
+          ...framing,
         })
         const videoParams = planParams(shot, 'video', ctxBase)
         // 镜头视频用图生视频：分镜图作首帧
         const vid = add(video, frame, [PAD + image.w + GAP, HEAD], {
           source: source('video', { plan: snapshot(videoParams) }),
           ...videoParams,
+          ...framing,
           mode: 'image',
         })
         connect(doc, [img, 'images'], [vid, 'images'])
@@ -450,7 +476,7 @@ export function expandShots(
           )
           spoken.push(id)
         })
-        linked.push({ video: vid, speech: spoken[0] })
+        linked.push({ video: vid, speeches: spoken })
         continue
       }
 
@@ -493,14 +519,19 @@ export function expandShots(
         const params = planParams(shot, 'video', ctxBase)
         const vid = addMissing(
           video,
-          { ...params, mode: 'image' },
+          { ...params, ...framing, mode: 'image' },
           source('video', { plan: snapshot(params) }),
         )
         // 补出来的视频也要接上分镜图，否则批量生成视频时会一直说「还没有分镜图」
         connect(doc, [imgId, 'images'], [vid, 'images'])
         vidId = vid
       }
-      let firstSpeech = speechNodes[0]?.id
+      // 已有的和新补的配音按台词顺序排好，一起接进序列
+      const order = linesOf(speechNodes, shot)
+      const speeches: Array<[string, number]> = speechNodes.map((el) => [
+        el.id,
+        order.get(el.id) ?? Number.POSITIVE_INFINITY,
+      ])
       lines.forEach((d) => {
         if (spokenLines.has(d.i)) return
         const params = planParams(shot, 'speech', lineAt(d.i))
@@ -509,9 +540,10 @@ export function expandShots(
           params,
           source('speech', { line: d.i, plan: snapshot(params) }),
         )
-        firstSpeech ??= id
+        speeches.push([id, d.i])
       })
-      if (vidId) linked.push({ video: vidId, speech: firstSpeech })
+      speeches.sort((a, b) => a[1] - b[1])
+      if (vidId) linked.push({ video: vidId, speeches: speeches.map(([id]) => id) })
       if (created > before) updated++
       else skipped++
     }

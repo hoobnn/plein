@@ -41,6 +41,39 @@ describe('序列', () => {
     expect(arranged[2]!.dialogue).toBeUndefined()
   })
 
+  // 一个镜头里常有好几句台词：只播第一句的话，其余台词会悄悄从成片里消失
+  it('同一镜头的多句台词依次播放，每句一条字幕和一条音轨', () => {
+    const p = params({
+      clips: [{ source: 'a', dialogue: 'd1', more: ['d2', 'd3'] }, { source: 'b' }],
+    })
+    const arranged = arrangeSequence(p, {
+      clips: [video('a'), video('b')],
+      dialogue: [audio('d1', '松手！'), audio('d2', '这是我的件！'), audio('d3', '那不是快递！')],
+    })
+    // 写进 more 的台词不参与按顺序对应：b 没有自己的对白
+    expect(arranged[1]!.dialogue).toBeUndefined()
+    const spec = sequenceSpec(
+      p,
+      arranged,
+      { clips: [5, 5], dialogue: [1, undefined], more: [[1.5, 3], []] },
+      undefined,
+    )
+    expect(spec.audio.map((a) => [a.asset.assetId, a.start, a.duration])).toEqual([
+      ['a-d1', 0, 1],
+      ['a-d2', 1.2, 1.5],
+      // 第三句放到镜头结尾为止（b 没有对白，可以延续到成片结尾）
+      ['a-d3', 2.9, 3],
+    ])
+    expect(spec.subtitles?.cues.map((c) => c.text)).toEqual([
+      '松手！',
+      '这是我的件！',
+      '那不是快递！',
+    ])
+    const cues = spec.subtitles!.cues
+    for (let i = 0; i + 1 < cues.length; i++)
+      expect(cues[i]!.end).toBeLessThanOrEqual(cues[i + 1]!.start)
+  })
+
   it('时间线：对白从所属镜头开头播放，字幕跟对白时长；配乐循环；出点不超过素材', () => {
     const p = params({ clips: [{ source: 'b', in: 0, out: 99, subtitle: '改过的字幕' }] })
     const arranged = arrangeSequence(p, {

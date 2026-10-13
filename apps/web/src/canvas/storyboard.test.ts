@@ -465,12 +465,12 @@ describe('画布上有重名资产卡时不猜', () => {
 })
 
 describe('展开的镜头接入序列', () => {
-  const addSequence = (doc: Engine['doc'], x = 800) =>
+  const addSequence = (doc: Engine['doc'], x = 800, params: Record<string, unknown> = {}) =>
     createElement(doc, {
       kind: 'node',
       nodeType: 'plein/sequence',
       name: '序列',
-      params: { clips: [] },
+      params: { clips: [], ...params },
       ports: {
         inputs: [
           { id: 'clips', label: '镜头', type: 'video', multiple: true },
@@ -508,6 +508,39 @@ describe('展开的镜头接入序列', () => {
       { source: v1, in: 0, dialogue: '' },
       { source: v2, in: 0, dialogue: a2 },
     ])
+  })
+
+  it('一个镜头有几句台词：都接进序列，首句是对白，其余按顺序接着播', () => {
+    const s1 = shot(1, {
+      dialogue: [
+        { character: '黑衣男', line: '松手！' },
+        { character: '林晚', line: '这是我的件！' },
+        { character: '黑衣男', line: '那不是快递！' },
+      ],
+    })
+    const { doc, engine, board } = setup([s1])
+    const seq = addSequence(doc)
+    expandShots(engine, board, [s1.id], catalog)
+    const speech = nodesOf(engine, board, s1.id)
+      .filter((el) => roleOf(el) === 'speech')
+      .map((el) => el.id)
+    expect(speech).toHaveLength(3)
+    expect(intoSeq(doc, seq).filter(([, port]) => port === 'dialogue')).toHaveLength(3)
+    expect(doc.get(seq)?.params?.clips).toEqual([
+      expect.objectContaining({ dialogue: speech[0], more: [speech[1], speech[2]] }),
+    ])
+  })
+
+  // 竖屏短剧：镜头图按节点默认画幅出成横图的话，拼进 9:16 成片会上下留黑边
+  it('镜头图和视频跟随序列的画幅', () => {
+    const s1 = shot(1)
+    const { doc, engine, board } = setup([s1])
+    addSequence(doc, 800, { aspectRatio: '9:16' })
+    expandShots(engine, board, [s1.id], catalog)
+    const aspects = nodesOf(engine, board, s1.id)
+      .filter((el) => roleOf(el) !== 'speech')
+      .map((el) => el.params?.aspectRatio)
+    expect(aspects).toEqual(['9:16', '9:16'])
   })
 
   it('更新展开补了台词：配音接进序列并补上这段的对白，用户调过的入点不动', () => {

@@ -3,6 +3,7 @@ import { type CanvasElement, currentResult, setParam, setParams } from '@plein/d
 import {
   type ArrangedClip,
   arrangeSequence,
+  clipLines,
   clipLength,
   type SequenceClip,
   sequenceNode,
@@ -100,7 +101,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   // 素材时长（秒）
   const meta = useAssetMetas([
     ...rows.map((r) => r.clip.assetId),
-    ...rows.flatMap((r) => (r.dialogue ? [r.dialogue.assetId] : [])),
+    ...rows.flatMap((r) => clipLines(r).map((d) => d.assetId)),
   ])
   const duration = (assetId: string | undefined) => meta(assetId)?.duration
   const running = el?.run?.status === 'running' || el?.run?.status === 'queued'
@@ -114,6 +115,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const timeline = sequenceTimeline(params, ready, {
     clips: ready.map((r) => duration(r.clip.assetId) ?? 0),
     dialogue: ready.map((r) => (r.dialogue ? duration(r.dialogue.assetId) : undefined)),
+    more: ready.map((r) => r.more.map((m) => duration(m.assetId))),
   })
   const known = lengths.every((l) => l !== undefined)
   const total = known ? timeline.total : undefined
@@ -236,7 +238,12 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             <ol className="flex flex-col">
               {rows.map((r, i) => {
                 const full = duration(r.clip.assetId)
-                const caption = r.dialogue?.caption
+                // 同一镜头里依次播放的几句台词都列出来
+                const caption =
+                  clipLines(r)
+                    .map((d) => d.caption)
+                    .filter(Boolean)
+                    .join(' / ') || undefined
                 return (
                   <li
                     key={r.source ?? i}

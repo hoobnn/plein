@@ -1,4 +1,4 @@
-import type { ArrangedClip, SequenceParams, Timeline } from '@plein/nodes'
+import { type ArrangedClip, clipLines, type SequenceParams, type Timeline } from '@plein/nodes'
 import { useEffect, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { Icon } from '../ui/icons'
@@ -120,13 +120,14 @@ export function SequencePreview({
     }
     timeline.clips.forEach((c, i) => {
       const row = rows[i]!
-      if (row.dialogue && c.dialogue) {
-        const a = audioFor(`d${i}`, assetUrls.original(row.dialogue.assetId))
+      const own = clipLines(row)
+      c.lines.forEach((l, k) => {
+        const a = audioFor(`d${i}.${k}`, assetUrls.original(own[k]!.assetId))
         a.volume = Math.min(1, params.dialogueVolume)
-        const on = t >= c.dialogue.start && t < c.dialogue.start + c.dialogue.duration
-        if (on) syncMedia(a, t - c.dialogue.start, playing)
+        const on = t >= l.start && t < l.start + l.duration
+        if (on) syncMedia(a, t - l.start, playing)
         else if (!a.paused) a.pause()
-      }
+      })
       if (row.sfx && c.length > 0) {
         const a = audioFor(`s${i}`, assetUrls.original(row.sfx.assetId))
         a.volume = Math.min(1, params.sfxVolume)
