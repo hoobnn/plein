@@ -100,6 +100,13 @@ function jobCalls(ids: string[]) {
   return JSON.parse(out) as Array<{ id: string; status: string; attempts: number; calls: string }>
 }
 
+/** 调用记录里的远端任务 ID：提交后（pending）和完成后（done）都带着；没提交的调用没有 */
+const remoteIds = (calls: string) =>
+  Object.values(JSON.parse(calls) as Record<string, { remoteId?: string }>)
+    .map((r) => r.remoteId)
+    .filter((id): id is string => !!id)
+    .sort()
+
 const note = (type: string, description: string) => {
   test.info().annotations.push({ type, description })
   console.log(`[${type}] ${description}`)
@@ -177,7 +184,7 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
 
   // 等至少一个视频已经提交到平台（调用记录里有远端任务），再强杀服务端
   await expect
-    .poll(() => activeJobs(canvas).filter((j) => j.calls !== '{}' && j.calls.length > 2).length, {
+    .poll(() => activeJobs(canvas).filter((j) => remoteIds(j.calls).length > 0).length, {
       timeout: 10 * 60_000,
       intervals: [2_000],
     })
@@ -185,7 +192,7 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
   const before = activeJobs(canvas)
   note(
     '重启前',
-    `${before.length} 个任务在跑，${before.filter((j) => j.calls.length > 2).length} 个已提交到平台`,
+    `${before.length} 个任务在跑，${before.filter((j) => remoteIds(j.calls).length > 0).length} 个已提交到平台`,
   )
   killServer()
   await startServer()
@@ -194,11 +201,18 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
 
   await waitIdle(page, 40 * 60_000)
   const after = jobCalls(before.map((j) => j.id))
-  for (const b of before) {
+  for (const b of before.filter((j) => remoteIds(j.calls).length > 0)) {
     const a = after.find((x) => x.id === b.id)!
-    // 已提交的调用要原样留着：续查同一个远端任务，不会再提交一次
-    if (b.calls.length > 2) expect(a.calls.startsWith(b.calls.slice(0, -1))).toBe(true)
+    // 重启前已提交的远端任务，完成后记录里还是同一个 ID：续查原任务，没有再提交一次（不重复计费）
+    expect(remoteIds(a.calls), `任务 ${b.id} 的远端任务`).toEqual(remoteIds(b.calls))
   }
+  note(
+    '续跑',
+    before
+      .filter((b) => remoteIds(b.calls).length)
+      .map((b) => `${b.id} → ${remoteIds(b.calls).join('、')}`)
+      .join('；'),
+  )
   note('重启后', after.map((a) => `${a.id}:${a.status}（第 ${a.attempts} 次）`).join('，'))
 
   dialog = await openBoard(page, board.id)
