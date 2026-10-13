@@ -464,6 +464,40 @@ describe('画布上有重名资产卡时不猜', () => {
   })
 })
 
+// 短剧模板里分镜表和角色、场景卡在同一个分组里，抽取生成的设定卡又放在分组右边：
+// 镜头紧贴分镜右边放的话会压住这些卡
+it('展开的镜头放到画布现有内容的右侧，不压住分组和设定卡', () => {
+  const doc = createDoc(undefined, { schedule: () => {} })
+  const group = createElement(doc, { kind: 'frame', name: '骨架', x: 0, y: 0, w: 1500, h: 1000 })
+  const board = createElement(doc, {
+    kind: 'node',
+    nodeType: 'plein/storyboard',
+    name: '分镜',
+    params: { shots: [shot(1), shot(2)] },
+    parentId: group,
+    x: 420,
+    y: 400,
+    w: 320,
+    h: 280,
+  })
+  createElement(doc, {
+    kind: 'node',
+    nodeType: 'plein/character',
+    name: '老周',
+    x: 1560,
+    y: 0,
+    w: 280,
+    h: 240,
+  })
+  const engine = { doc } as unknown as Engine
+  const { frames } = expandShots(engine, board, ['s1'], catalog)
+  expect(doc.worldRect(frames[0]!)!.x).toBeGreaterThanOrEqual(1840)
+  // 之后再展开的镜头接在下面，左边对齐
+  const more = expandShots(engine, board, ['s2'], catalog).frames
+  expect(doc.worldRect(more[0]!)!.x).toBe(doc.worldRect(frames[0]!)!.x)
+  expect(doc.worldRect(more[0]!)!.y).toBeGreaterThan(doc.worldRect(frames[0]!)!.y)
+})
+
 describe('展开的镜头接入序列', () => {
   const addSequence = (doc: Engine['doc'], x = 800, params: Record<string, unknown> = {}) =>
     createElement(doc, {

@@ -375,14 +375,26 @@ export function expandShots(
   const shots = options.mode === 'update' ? picked : picked.filter((s) => !done.has(s.id))
   if (shots.length === 0) return empty
 
-  // 新 Frame 接在已展开的镜头下面，都放在分镜表右侧
-  const x = boardRect.x + boardRect.w + 120
+  // 新 Frame 接在已展开的镜头下面，与它们左对齐；第一次展开放在画布现有内容的右侧，
+  // 不压住分镜所在分组里的角色、场景卡，也不压住抽取生成的设定卡
+  let x: number | undefined
   let y = boardRect.y
   for (const list of done.values()) {
     for (const el of list) {
       const p = el.parentId ? doc.worldRect(el.parentId) : doc.worldRect(el.id)
-      if (p) y = Math.max(y, p.y + p.h + FRAME_GAP)
+      if (!p) continue
+      x = x === undefined ? p.x : Math.min(x, p.x)
+      y = Math.max(y, p.y + p.h + FRAME_GAP)
     }
+  }
+  if (x === undefined) {
+    let right = boardRect.x + boardRect.w
+    for (const el of doc.elements()) {
+      if (el.parentId) continue
+      const r = doc.worldRect(el.id)
+      if (r) right = Math.max(right, r.x + r.w)
+    }
+    x = right + 120
   }
 
   const env = planEnv(doc, boardId)
