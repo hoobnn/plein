@@ -340,6 +340,11 @@ export class Rooms {
     }
   }
 
+  /** 当前在内存里的画布 id */
+  loaded(): string[] {
+    return [...this.rooms.keys()]
+  }
+
   has(id: string) {
     return this.rooms.has(id)
   }

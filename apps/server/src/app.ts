@@ -6,6 +6,7 @@ import { agentMcpRoute, agentRoutes } from './agent/routes'
 import { capabilityRoutes } from './agent/cap-routes'
 import { McpClients } from './mcp/clients'
 import { mcpServerPlugin } from './mcp/plugin'
+import { ExternalMcp } from './mcp/external'
 import { mcpRoutes } from './mcp/routes'
 import { McpServerStore } from './mcp/store'
 import { AgentSessions } from './agent/sessions'
@@ -83,6 +84,10 @@ export async function createServer(config: Config): Promise<Server> {
     enabled: config.agent,
   })
 
+  const external = mcp
+    ? new ExternalMcp(config.dataDir, { db, rooms, runs, host: plugins, assets, library, mcp })
+    : null
+
   const app = new Hono<AuthEnv>()
   app.onError((err, c) => {
     console.error('[http]', err)
@@ -99,7 +104,7 @@ export async function createServer(config: Config): Promise<Server> {
   )
   app.get('/api/health', (c) => c.json({ ok: true }))
   // 放在登录鉴权之前：CLI 用会话令牌访问
-  app.route('/', agentMcpRoute(agents))
+  app.route('/', agentMcpRoute(agents, external))
   app.route('/', auth.routes)
   app.use('/api/*', auth.requireAuth)
   app.use('/sync/*', auth.requireAuth)
@@ -119,7 +124,7 @@ export async function createServer(config: Config): Promise<Server> {
     '/',
     capabilityRoutes({ db, rooms, runs, host: plugins, assets, library, mcp: mcp ?? undefined }),
   )
-  app.route('/', mcpRoutes(mcp))
+  app.route('/', mcpRoutes(mcp, external))
   app.all('/api/*', (c) => c.json({ error: 'not_found', message: '接口不存在' }, 404))
 
   if (config.webDist) {

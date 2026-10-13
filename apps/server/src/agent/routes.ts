@@ -1,3 +1,4 @@
+import type { ExternalMcp } from '../mcp/external'
 import { CreateAgentSession, SendAgentMessage } from '@plein/protocol'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
@@ -134,7 +135,7 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
  * 智能体调用画布工具的 MCP 入口。CLI 不带浏览器 Cookie，
  * 用会话令牌（Authorization: Bearer）鉴权，令牌只在服务端内存里、随会话生成。
  */
-export function agentMcpRoute(agents: AgentSessions) {
+export function agentMcpRoute(agents: AgentSessions, external?: ExternalMcp | null) {
   return (
     new Hono()
       .post('/mcp', async (c) => {
@@ -147,7 +148,10 @@ export function agentMcpRoute(agents: AgentSessions) {
             400,
           )
         }
-        const out = await agents.handleMcp(token, body)
+        // 长期令牌给外部应用（Claude Desktop、Cursor…），其余是会话令牌
+        const out = external?.matches(token)
+          ? await external.handle(body)
+          : await agents.handleMcp(token, body)
         if (out === undefined) return c.json({ error: 'unauthorized' }, 401)
         return out === null ? c.body(null, 202) : c.json(out)
       })

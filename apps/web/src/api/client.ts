@@ -37,6 +37,8 @@ import {
   type McpServerInput,
   type McpServerView,
   type McpToolInfo,
+  type ExternalMcpStatus,
+  type ExternalMcpToken,
 } from '@plein/protocol'
 
 export class ApiError extends Error {
@@ -158,6 +160,9 @@ export const api = {
     request<void>(API.agentUndo(id, turn), json('POST', {})),
   capabilities: () => request<PluginCapabilityInfo[]>(API.capabilities),
   mcpServers: () => request<McpServerView[]>(API.mcpServers),
+  externalMcp: () => request<ExternalMcpStatus>(API.mcpExternal),
+  issueExternalMcp: () => request<ExternalMcpToken>(API.mcpExternal, json('POST', {})),
+  revokeExternalMcp: () => request<void>(API.mcpExternal, { method: 'DELETE' }),
   createMcpServer: (body: McpServerInput) =>
     request<McpServerView>(API.mcpServers, json('POST', body)),
   updateMcpServer: (id: string, body: McpServerInput) =>

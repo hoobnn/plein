@@ -1,14 +1,21 @@
-import { McpServerInput, type McpServerView, type McpToolInfo } from '@plein/protocol'
+import {
+  type ExternalMcpStatus,
+  type ExternalMcpToken,
+  McpServerInput,
+  type McpServerView,
+  type McpToolInfo,
+} from '@plein/protocol'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import { type McpClients, McpError } from './clients'
+import type { ExternalMcp } from './external'
 import { McpConfigError, viewOf } from './store'
 
 /**
  * 外部 MCP 服务的设置接口。只在本机免登录模式（含桌面端）开放：
  * stdio 服务等于在服务端所在机器上执行命令，http 服务等于让服务端去访问任意地址。
  */
-export function mcpRoutes(clients: McpClients | null) {
+export function mcpRoutes(clients: McpClients | null, external: ExternalMcp | null) {
   const off = { error: 'disabled', message: '外部 MCP 服务只在本机模式可用' }
   const notFound = { error: 'not_found', message: 'MCP 服务不存在' }
   const app = new Hono<AuthEnv>()
@@ -18,11 +25,19 @@ export function mcpRoutes(clients: McpClients | null) {
       return c.json({ error: 'forbidden', message: '只读成员不能修改' }, 403)
     await next()
   })
-  if (!clients) return app
+  if (!clients || !external) return app
   const parse = async (body: Promise<unknown>) =>
     McpServerInput.safeParse(await body.catch(() => null))
 
   return app
+    .get('/api/mcp/external', (c) => c.json(external.status() satisfies ExternalMcpStatus))
+    .post('/api/mcp/external', (c) =>
+      c.json(external.issue(c.var.principal.id) satisfies ExternalMcpToken, 201),
+    )
+    .delete('/api/mcp/external', (c) => {
+      external.revoke()
+      return c.body(null, 204)
+    })
     .get('/api/mcp/servers', (c) =>
       c.json(clients.store.list().map(viewOf) satisfies McpServerView[]),
     )

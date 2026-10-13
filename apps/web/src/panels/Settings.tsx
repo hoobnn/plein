@@ -8,6 +8,7 @@ import { useTheme } from '../stores/theme'
 import { Icon, type IconName } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { THEME_OPTIONS } from '../ui/ThemeToggle'
+import { ExternalMcp } from './ExternalMcp'
 import { McpSettings } from './McpSettings'
 import { type ObjectSchema, SchemaForm } from './SchemaForm'
 import { SlidePill, SlideSwap } from '../ui/Slide'
@@ -320,6 +321,14 @@ export function SettingsDialog({ onClose }: { onClose(): void }) {
                 hint="添加后，画布上的「MCP 工具」节点和小满都能调用这些服务的工具"
               >
                 <McpSettings />
+              </Group>
+            )}
+            {current.id === 'mcp' && (
+              <Group
+                title="让其他 AI 应用连进来"
+                hint="对外开放 Plein 自己的 MCP，只接受本机的连接"
+              >
+                <ExternalMcp />
               </Group>
             )}
             {current.id === 'plugins' && (

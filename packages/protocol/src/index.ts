@@ -537,6 +537,17 @@ export interface McpToolInfo {
   readOnly?: boolean
 }
 
+/** 对外开放的 MCP（让 Claude Desktop、Cursor 等连本机 Plein）：令牌只在生成时返回一次 */
+export interface ExternalMcpStatus {
+  enabled: boolean
+  createdAt?: number
+}
+
+export interface ExternalMcpToken {
+  token: string
+  createdAt: number
+}
+
 // ── 智能体 ────────────────────────────────────────────
 
 /** 插件贡献的能力（给 ⌘K 和智能体面板显示） */
@@ -759,6 +770,8 @@ export const API = {
   mcpServer: (id: string) => `/api/mcp/servers/${encodeURIComponent(id)}`,
   /** 连上服务列出工具（McpToolInfo[]），也用来测试连接；?refresh=1 不用缓存 */
   mcpServerTools: (id: string) => `/api/mcp/servers/${encodeURIComponent(id)}/tools`,
+  /** 对外开放的 MCP：GET 状态，POST 生成新令牌（旧的作废），DELETE 关闭 */
+  mcpExternal: '/api/mcp/external',
   /** 插件贡献的能力，返回 PluginCapabilityInfo[] */
   capabilities: '/api/capabilities',
   /** 在画布上调用一个插件能力，body 为 CapabilityCall，返回 CapabilityCallResult */

@@ -24,6 +24,7 @@ export const queryKeys = {
   canvasJobs: (canvasId: string) => ['canvases', canvasId, 'jobs'] as const,
   capabilities: ['capabilities'] as const,
   mcpServers: ['mcp', 'servers'] as const,
+  mcpExternal: ['mcp', 'external'] as const,
   mcpTools: (id: string) => ['mcp', 'servers', id, 'tools'] as const,
 }
 
