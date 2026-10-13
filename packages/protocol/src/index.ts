@@ -838,6 +838,16 @@ export interface DesktopSaved {
   savePath?: string
 }
 
+/** 新版本安装包的下载进度；字节数可能为 0（服务器没给长度） */
+export interface DesktopUpdateProgress {
+  version: string
+  /** 0–100 */
+  percent: number
+  transferred: number
+  total: number
+  bytesPerSecond: number
+}
+
 export interface DesktopBridge {
   platform: string
   onMenuCommand(listener: (command: DesktopMenuCommand) => void): () => void
@@ -850,4 +860,6 @@ export interface DesktopBridge {
   onSaved(listener: (saved: DesktopSaved) => void): () => void
   /** 在访达 / 资源管理器里显示刚保存的文件；只接受本次运行中保存过的路径 */
   showSavedFile(path: string): Promise<void>
+  /** 更新包下载中持续推送进度，下载结束（成功或失败）推送 null */
+  onUpdateProgress(listener: (progress: DesktopUpdateProgress | null) => void): () => void
 }

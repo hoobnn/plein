@@ -30,3 +30,16 @@ export function duration(ms: number) {
   const s = Math.round(ms / 1000)
   return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`
 }
+
+/** 文件大小：「820 KB」「12.3 MB」「1.2 GB」 */
+export function bytes(n: number) {
+  if (n < 1024) return `${Math.round(n)} B`
+  const units = ['KB', 'MB', 'GB']
+  let v = n / 1024
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i++
+  }
+  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`
+}

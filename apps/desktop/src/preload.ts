@@ -1,4 +1,4 @@
-import type { DesktopBridge, DesktopMenuCommand } from '@plein/protocol'
+import type { DesktopBridge, DesktopMenuCommand, DesktopUpdateProgress } from '@plein/protocol'
 import { contextBridge, ipcRenderer } from 'electron'
 
 const bridge: DesktopBridge = {
@@ -13,6 +13,8 @@ const bridge: DesktopBridge = {
   },
   onSaved: (listener) => on('plein:saved', listener),
   showSavedFile: (path) => ipcRenderer.invoke('plein:show-saved-file', path),
+  onUpdateProgress: (listener) =>
+    on<DesktopUpdateProgress | null>('plein:update-progress', listener),
 }
 
 function on<T>(channel: string, listener: (value: T) => void) {

@@ -1,3 +1,4 @@
+import type { DesktopUpdateProgress } from '@plein/protocol'
 import { app, type BrowserWindow, dialog } from 'electron'
 import electronUpdater from 'electron-updater'
 
@@ -9,7 +10,7 @@ const CHECK_EVERY_MS = 6 * 60 * 60 * 1000
 
 /**
  * 自动更新：从 GitHub Releases 的 latest-mac.yml 查新版本（release.yml 发版时生成），
- * 后台下载完提示重启；不重启的话，下次退出时安装。
+ * 后台下载，进度推给页面并显示在 Dock 图标上，下载完提示重启；不重启的话，下次退出时安装。
  * 只在安装包里启用：开发模式和 ad-hoc 签名的本地包无法通过 Squirrel 的签名校验。
  */
 export function setupUpdater(getWindow: () => BrowserWindow | null) {
@@ -27,6 +28,8 @@ export function setupUpdater(getWindow: () => BrowserWindow | null) {
   /** 用户从菜单手动检查时，没有更新或出错也要告诉他 */
   let manual = false
   let downloaded: string | null = null
+  /** 正在下载的版本；download-progress 事件里不带版本号 */
+  let downloading = ''
 
   const show = async (options: Electron.MessageBoxOptions) => {
     const win = getWindow()
@@ -41,16 +44,36 @@ export function setupUpdater(getWindow: () => BrowserWindow | null) {
     void show({ type: 'info', message: '已经是最新版本', detail: `当前版本 ${app.getVersion()}` })
   })
   autoUpdater.on('update-available', (info) => {
+    downloading = info.version
     if (!manual) return
     manual = false
     void show({
       type: 'info',
       message: `发现新版本 ${info.version}`,
-      detail: '正在后台下载，下载完会提示重启。',
+      detail: '正在后台下载，窗口顶部会显示进度，下载完会提示重启。',
     })
   })
+
+  /** 推给页面，同时显示在 Dock 图标上；null 表示下载结束，收起进度 */
+  const report = (progress: DesktopUpdateProgress | null) => {
+    const win = getWindow()
+    if (!win || win.isDestroyed()) return
+    win.setProgressBar(progress ? progress.percent / 100 : -1)
+    win.webContents.send('plein:update-progress', progress)
+  }
+  autoUpdater.on('download-progress', (p) => {
+    report({
+      version: downloading,
+      percent: p.percent,
+      transferred: p.transferred,
+      total: p.total,
+      bytesPerSecond: p.bytesPerSecond,
+    })
+  })
+
   autoUpdater.on('error', (err) => {
     console.error('检查更新失败', err)
+    report(null)
     if (!manual) return
     manual = false
     void show({ type: 'warning', message: '检查更新失败', detail: err.message })
@@ -68,6 +91,7 @@ export function setupUpdater(getWindow: () => BrowserWindow | null) {
     if (response === 0) autoUpdater.quitAndInstall()
   }
   autoUpdater.on('update-downloaded', (info) => {
+    report(null)
     // 定时检查会重复触发同一个版本，只提示一次
     if (downloaded === info.version) return
     downloaded = info.version
