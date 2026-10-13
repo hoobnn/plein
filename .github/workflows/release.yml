@@ -43,7 +43,7 @@ jobs:
       # ffmpeg 从源码构建（LGPL + libass + VideoToolbox），按脚本内容缓存
       - name: Cache ffmpeg
         id: ffmpeg-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/desktop/stage/ffmpeg
           key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('apps/desktop/scripts/build-ffmpeg.sh') }}
