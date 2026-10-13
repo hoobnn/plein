@@ -7,6 +7,8 @@ allowBuilds:
   esbuild: false
   # electron-builder 带的 Windows 安装器，只出 macOS 包时用不到
   electron-winstaller: false
+  # JASSUB 依赖的本地字体查询垫片，安装脚本只是联网刷新内置字体名单，预览不查本机字体（queryFonts: false）
+  lfa-ponyfill: false
 # Vite+：vite 由 vite-plus-core 提供，插件和 vitest 依赖的 vite 都指向这一份
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@1.1.0
