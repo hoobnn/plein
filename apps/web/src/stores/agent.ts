@@ -37,6 +37,10 @@ interface AgentStore {
   cursor: { ids: string[]; at: number } | null
   error: string | null
   toggle(open?: boolean): void
+  /** 输入框要抢焦点的次数：「让小满处理」打开面板时加一 */
+  focusSeq: number
+  /** 打开面板并把光标放进输入框（带上当前选区） */
+  ask(): void
   loadStatus(refresh?: boolean): Promise<void>
   setAgent(agent: AgentKind): void
   setApproval(mode: AgentApprovalMode): void
@@ -172,6 +176,12 @@ export const useAgent = create<AgentStore>((set, get) => {
     unread: false,
     mood: 'idle',
     error: null,
+    focusSeq: 0,
+
+    ask() {
+      get().toggle(true)
+      set({ focusSeq: get().focusSeq + 1 })
+    },
 
     toggle(open) {
       const next = open ?? !get().open

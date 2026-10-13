@@ -686,11 +686,14 @@ function Composer({ running }: { running: boolean }) {
   const selected = useCanvas((s) => s.selection)
   const approval = useAgent((s) => s.approval)
   const plan = useAgent((s) => s.plan)
+  const focusSeq = useAgent((s) => s.focusSeq)
   const ref = useRef<HTMLTextAreaElement>(null)
 
+  // 打开时、点「让小满处理」时把光标放进输入框
+  // biome-ignore lint/correctness/useExhaustiveDependencies: focusSeq 变化即重新聚焦
   useEffect(() => {
     ref.current?.focus()
-  }, [])
+  }, [focusSeq])
   // 选区变了就默认重新带上
   // biome-ignore lint/correctness/useExhaustiveDependencies: 选区数量变化时重置
   useEffect(() => setWithSelection(true), [selected])

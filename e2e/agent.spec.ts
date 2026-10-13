@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { elements, newProject } from './canvas'
+import { addNode, elements, newProject } from './canvas'
 
 /** 内置智能体：不装 CLI，用 mock 的工具调用模型跑完一轮，再整轮撤销 */
 test('内置小满建节点并运行，整轮撤销', async ({ page }) => {
@@ -41,4 +41,24 @@ test('先出计划，同意后执行并打勾', async ({ page }) => {
   await expect(panel.locator('.plein-plan-step[data-status="done"]')).toHaveCount(2)
   await expect(panel.getByText('2/2')).toBeVisible()
   await expect.poll(images).toBe(1)
+})
+
+/** 多选工具条「让小满处理」：打开面板，带上选区，光标在输入框里 */
+test('选区上让小满处理', async ({ page }) => {
+  await newProject(page)
+  await addNode(page, '文本', { x: 360, y: 450 })
+  await page.keyboard.press('Escape')
+  await addNode(page, '文本', { x: 900, y: 450 })
+  await page.keyboard.press('Escape')
+  await expect.poll(async () => (await elements(page)).length).toBe(2)
+  await page.mouse.click(640, 120)
+  await page.keyboard.press('ControlOrMeta+a')
+
+  await page
+    .getByRole('toolbar', { name: '多选操作' })
+    .getByRole('button', { name: '让小满处理' })
+    .click()
+  const panel = page.getByRole('complementary', { name: '助手' })
+  await expect(panel.getByText('带上选中的 2 个元素')).toBeVisible()
+  await expect(panel.getByPlaceholder('让小满帮你做点什么…')).toBeFocused()
 })

@@ -6,6 +6,7 @@ import { mediaIn } from '../canvas/library'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
 import { LibraryAdd } from './LibraryAdd'
 import { type MediaTarget, MediaBatchTools } from './MediaTools'
+import { useAgent } from '../stores/agent'
 import { useCanvas } from '../stores/canvas'
 import { useTemplates } from '../stores/templates'
 import { promptDialog } from '../ui/Dialog'
@@ -93,6 +94,18 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
     >
       <span className="ui-bar-text">已选 {ids.length}</span>
       <div className="ui-bar-sep" />
+      {remote && (
+        <button
+          type="button"
+          className={btn}
+          title="打开小满，带上所选元素，说说要怎么处理"
+          onClick={() => useAgent.getState().ask()}
+        >
+          <Icon name="wand" size={14} />
+          让小满处理
+        </button>
+      )}
+      {remote && <div className="ui-bar-sep" />}
       <button type="button" className={btn} title="整理所选（按连线自动排布）" onClick={arrange}>
         <Icon name="arrange" size={14} />
         整理
