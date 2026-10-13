@@ -52,6 +52,8 @@ export const serverPlugin = defineServerPlugin(plugin, {
 
 插件 API 的版本就是 `@plein/plugin-sdk` 的版本（`PLUGIN_API_VERSION`），Plein `v0.1.0` 发布时定为 `0.1.0`，此后按语义化版本演进：0.x 期间不兼容的改动升次版本号（`0.2.0`），兼容的新增和修复升修订号（`0.1.1`）。所以清单写 `^0.1.0` 只会匹配 `0.1.x`，API 出现不兼容改动时旧插件会被拒绝加载，不会带着错误的假设跑起来。
 
+版本记录：`0.1.1` 新增配音模型的预置音色 `ModelSpec.voices`（可选字段，旧插件不受影响）。
+
 ## 节点
 
 `defineNode` 声明类型、版本、端口和参数 schema。参数必须都有默认值；表单由 schema 自动生成，用 `.meta()` 提示控件：
