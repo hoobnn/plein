@@ -78,7 +78,7 @@ flowchart TB
 
 最紧迫的改动：元素从“整对象存入 `Y.Map`”改为“每个元素一个嵌套 `Y.Map`”，否则一人拖位置、一人改参数时后写者会整个覆盖前者。
 
-```
+```text
 Y.Doc
 ├─ meta: Y.Map            schemaVersion, title, createdAt
 ├─ elements: Y.Map<id, Y.Map>

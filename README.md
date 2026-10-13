@@ -1,37 +1,129 @@
+<div align="center">
+
+<img src="apps/web/public/plein-icon.png" width="112" alt="Plein" />
+
 # Plein
 
-AI 无限画布：视觉创作 + 工作流编排，追求极致审美与丝滑体验。
+**本地优先的 AI 短剧画布。**<br/>
+把创意、剧本、角色、分镜、镜头、配音和成片放在同一张无限画布上，每一步都能看、能改、能单独返工。
 
-功能排期见 [0.1.0 规划](docs/roadmap-0.1.0.md)；[功能规划与取舍](docs/feature-plan.md)记录了资产准备、分镜审核和镜头返工的取舍。规划项不代表已经实现。
+[![CI](https://github.com/hoobnn/plein/actions/workflows/ci.yml/badge.svg)](https://github.com/hoobnn/plein/actions/workflows/ci.yml)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+![Status](https://img.shields.io/badge/status-pre--0.1.0-orange)
+![Platform](<https://img.shields.io/badge/platform-macOS%20(Apple%20芯片)%20%7C%20自部署-lightgrey>)
 
-## 结构
+[快速开始](#快速开始) · [功能](#功能) · [路线图](#路线图) · [文档](#文档) · [参与开发](CONTRIBUTING.md)
 
-```text
-apps/web              Vite + React 19 + Tailwind v4 前端
-apps/server           本地服务：Hono（Node）+ SQLite + Yjs 同步 + 资产 + Better Auth
-apps/desktop          桌面端：Electron 外壳，在 utilityProcess 里运行 apps/server
-packages/canvas-core  画布内核：PixiJS v8 + 相机 + 输入
-packages/doc          文档模型：Yjs（Element / Edge / Undo）
-packages/flow         工作流：依赖图、执行顺序、按依赖调度、缓存键
-packages/protocol     前后端共享的接口约定（zod）
-packages/plugin-sdk   插件 API：清单、节点、Provider、执行器（见 docs/plugins.md）
-packages/nodes        内置节点声明（plein/core）
-packages/providers    模型平台适配器（服务端）：MiniMax、豆包语音、百炼、火山方舟及 mock
-```
+</div>
 
-## 本地部署
+> [!NOTE]
+> Plein 还在 0.1.0 发布前的开发阶段，还没有正式版本。主流程已经能在 mock 平台下走通，真实平台的成片验收还没做完，数据格式也可能调整，见[路线图](#路线图)。
+
+## 为什么是 Plein
+
+- **流程摊在画布上**：剧本、角色卡、分镜表、镜头图、视频、配音、序列都是画布上连好线的节点，没有黑盒。改了哪一步，下游哪些需要重跑一目了然。
+- **先审再花钱**：插入模板只搭骨架，不会自动调用模型。先审分镜和镜头图，再分批生成视频和配音；任何一个镜头都能换候选、重生成或手动替换。
+- **数据在你自己手里**：一个 Node 进程、一个 SQLite 文件、一个素材目录。密钥只存在本机服务端，不进画布、不进浏览器。
+- **接国内主流平台**：火山方舟、豆包语音、阿里云百炼、MiniMax 开箱可选，节点按所选模型自动给出参数。
+- **让 AI 替你点按钮**：内置智能体「小满」能读画布、建节点、跑分镜、加工素材；也可以交给本机已登录的 Claude Code / Codex，或通过 MCP 让 Cursor、Claude Desktop 直接操作画布。
+
+## 功能
+
+### 画布
+
+- PixiJS（WebGL）渲染的无限画布，基于 Yjs 的文档模型：撤销重做、刷新和重启不丢、多标签页同步
+- 图片、视频、音频、Markdown 素材拖拽、粘贴或整个文件夹导入；视频和音频用自绘播放器
+- 小地图、图层侧栏、故事板视图、整理画布、多选浮动工具条、⌘K 命令面板、浅色 / 深色主题
+
+### 生成节点
+
+- 文本、对话（LLM）、图片、视频、配音、配乐节点；参数表单按所选模型生成，9 种画幅
+- 视频模式由你指定：文生视频、首帧、首尾帧、多图参考，可选生成数量和同步音频
+- 提示词里 `@` 引用角色 / 场景 / 道具 / 风格卡，重名可消歧；行首 `/` 选用三视图、表情九宫格、多机位、四格剧情等预设
+- 提示词优化与翻译；每次生成保留候选和历史，下游只用你采用的那一版
+
+### 短剧流水线
+
+- 一键插入短剧模板：创意 → 剧本 → 角色与场景抽取 → 设定卡 → 分镜 → 镜头 → 序列
+- 分镜表格编辑；展开成镜头节点后，表格再改会显示差异，可以只同步你没手改过的字段
+- 镜头图、视频、配音分阶段批量生成，失败的单独重试
+- 序列编辑器：排序、入出点、对白 / 配乐 / 音效三条音轨、字幕样式、淡入淡出与叠化转场，浏览器内按导出时间线预览
+- 服务端 ffmpeg 导出 MP4（9:16 / 16:9，1080p / 720p），烧录中文字幕，可按语音识别对齐字幕时间轴
+
+### 素材加工
+
+- 图片：裁剪、旋转、镜像、宫格切分
+- 视频：截取、变速、抽帧入库、音视频分离
+- 音频：截取、手动切分、保音调变速
+
+加工结果都是带来源记录的新素材，原文件不动。
+
+### 项目与资产库
+
+- 一个项目一部片子，下面可以有多张画布
+- 资产库分角色、场景、道具、风格、特效五类，跨画布、跨项目复用。角色有全身 / 半身 / 设定图 / 情绪九宫格槽位、标签和音色；画布卡片和资产库可以双向同步
+
+### 运行与任务
+
+- 单节点运行、运行到此处（含上游）、运行下游、整组运行；没改动的节点命中缓存，不重复花钱
+- 任务排在 SQLite 里，关掉页面照常跑，服务重启后接着查询远端任务
+- 任务面板显示进度、自动重试和失败原因；参数或上游改过的节点标出「需要重跑」
+
+### 智能体「小满」
+
+- 内置智能体：用已启用平台的对话模型（支持工具调用的）操作画布，不用另装软件
+- 本机 CLI：调用这台电脑上已登录的 Claude Code 或 Codex，用你自己的账号和额度
+- 对外开放 MCP：Claude Code、Claude Desktop、Cursor 等可以连进本机 Plein
+- 花钱和删除前先确认；支持计划模式；一轮改动可以整轮撤销
+
+详见 [智能体与 MCP](docs/agent.md)。
+
+### 模型平台
+
+| 平台       | 对话               | 图片             | 视频               | 语音与音频                             |
+| ---------- | ------------------ | ---------------- | ------------------ | -------------------------------------- |
+| 火山方舟   | Doubao Seed        | Seedream 5.0     | Seedance 2.0 / 2.5 | —                                      |
+| 豆包语音   | —                  | —                | —                  | TTS 2.0、Seed Audio 音乐音效、极速识别 |
+| 阿里云百炼 | 千问（含工具调用） | Qwen Image、万相 | Wan 3.0            | Qwen TTS                               |
+| MiniMax    | M3 / M2.7          | image-01         | H3 / H3-Max        | speech-2.8、Music 3.0                  |
+
+各平台的参数映射与能力边界见 [模型平台接入](docs/providers.md)。新平台、节点和模板可以通过插件接入，见 [插件](docs/plugins.md)。
+
+## 快速开始
+
+### 桌面端（macOS，推荐）
+
+双击即用，自带 ffmpeg；从 0.1.0 起会自动检查更新。安装包（Apple 芯片）随正式版本发布在 [Releases](https://github.com/hoobnn/plein/releases)；在此之前可以从源码打包：`pnpm install && pnpm dist:desktop`。Intel Mac 和 Windows 暂未提供。
+
+### Docker 自部署
 
 ```bash
-docker compose up -d     # 打开 http://localhost:8787
+git clone https://github.com/hoobnn/plein.git && cd plein
+docker compose up -d
 ```
 
-画布、素材和数据库都在 `plein-data` 卷里，备份它即可。默认只绑定本机且免登录；要让其他设备访问，按 `compose.yaml` 里的注释改端口并删掉 `PLEIN_AUTH`，首次访问会要求创建所有者账号。
+不提供预构建镜像，`compose` 会从源码构建。打开 <http://localhost:8787>，镜像内置 ffmpeg 和中文字体，画布、素材和数据库都在 `plein-data` 卷里，备份它即可。
 
-不用 Docker 时：`pnpm install && pnpm build && pnpm start`（需要本机装好 ffmpeg，用于视频封面和音频波形）。
+默认只绑定本机且免登录。要让其他设备访问，按 `compose.yaml` 里的注释改端口并删掉 `PLEIN_AUTH`，首次访问会要求创建所有者账号。
 
-打开设置中的「模型平台」，填写密钥、保存并启用对应平台，再在节点里选择模型。四家真实平台默认关闭；无需环境变量注入密钥。支持范围和配置说明见 [模型平台接入](docs/providers.md)。
+### 从源码运行
 
-| 环境变量                                   | 默认                               | 说明                                                   |
+需要 Node ≥ 24、pnpm 12 和本机 ffmpeg（用于视频封面、音频波形和导出；烧字幕需要带 libass 的构建）。
+
+```bash
+pnpm install && pnpm build && pnpm start   # http://localhost:8787
+```
+
+### 接入模型
+
+1. 打开设置 →「模型平台」，填写密钥，保存并启用。四家真实平台默认关闭，密钥不需要放环境变量。
+2. 新建项目，在空白处双击插入「短剧模板」，或从空白画布开始。
+3. 在节点的生成器里选择模型，运行。
+
+<details>
+<summary><b>环境变量</b></summary>
+
+| 变量                                       | 默认                               | 说明                                                   |
 | ------------------------------------------ | ---------------------------------- | ------------------------------------------------------ |
 | `PLEIN_HOST` / `PLEIN_PORT`                | `127.0.0.1` / `8787`               | 监听地址                                               |
 | `PLEIN_DATA_DIR`                           | `./data`                           | 数据目录                                               |
@@ -41,77 +133,56 @@ docker compose up -d     # 打开 http://localhost:8787
 | `PLEIN_MAX_UPLOAD_MB`                      | `2048`                             | 单个文件上限                                           |
 | `PLEIN_MAX_JOBS`                           | `4`                                | 同时运行的节点任务数上限                               |
 | `PLEIN_FFMPEG_PATH` / `PLEIN_FFPROBE_PATH` | 从 `PATH` 查找                     | ffmpeg / ffprobe 可执行文件                            |
-| `PLEIN_AGENT`                              | 免登录模式下开启                   | 设为 `0` 关闭本机智能体                                |
+| `PLEIN_AGENT`                              | 免登录模式下开启                   | 设为 `0` 关闭本机 CLI 智能体                           |
 
-## 项目与资产库
+</details>
 
-- **项目 → 画布**：首页列出项目，一个项目一部片子，下面可以有多张画布；打开项目进入最近修改的画布，页头「项目 / 画布 ▾」里切换、新建、改名、删除画布。升级时每张旧画布各自成为一个同名项目，链接不变；接口不带 `projectId` 建画布时同样自动建一个同名项目。
-- **资产库**：角色、场景、道具、风格、特效五类，按所有者存在本机数据库里，跨画布、跨项目复用。角色有全身主图、半身、设定图、情绪九宫格槽位、性别 / 年龄段 / 文化区域 / 年代标签和音色；场景有主场景图、多角度、全景槽位。条目可以归到某个项目（「本项目」筛选），也可以不归属任何项目；删除项目时条目保留。
-- **往返**：资产库里点「添加到画布」展开成对应卡片节点，参考图连进卡片；画布上选中卡片点「存入资产库」固化下来，之后「更新资产库」写回同一条目（保留图片所在槽位）。
-- **官方风格 / 特效**只是可编辑的提示词：Plein 不挂 LoRA，也没有模型专属特效，放到画布上后可以再连参考图加强约束。特效卡（`plein/effect`）的描述在 @ 引用时并入视频提示词；参考视频只给人看，不送进模型。
+<details>
+<summary><b>数据存在哪</b></summary>
 
-## 本机智能体
+- Docker：`plein-data` 卷
+- 源码运行：仓库下的 `data/`，可用 `PLEIN_DATA_DIR` 覆盖
+- 桌面端：macOS `~/Library/Application Support/plein/data`，Windows `%APPDATA%\plein\data`，Linux `~/.config/plein/data`
 
-右下角的助手会调用这台电脑上已安装、已登录的 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 或 [Codex](https://github.com/openai/codex) CLI，让它直接操作当前画布：读画布、新建和修改节点、连线、运行节点、查看生成效果、加工素材（截取、变速、抽帧、分离音轨等）。Plein 不读取也不保存它们的登录凭据，用的是你在终端里的同一个账号和额度。
+目录结构在三种方式下相同，可以互相拷贝。里面是 `plein.db`（SQLite）、`assets/`（按内容哈希存的素材）、`exports/` 和平台密钥文件（权限 600）。
 
-- 只在免登录模式（桌面端或本机部署）可用；开启登录后自动关闭，因为智能体以服务端进程的身份在这台机器上运行。
-- 服务端在本机 `/mcp` 提供画布工具（MCP，Streamable HTTP），每个对话一个随机令牌；除此之外 CLI 照常加载用户自己的账号、MCP、skill 和配置。
-- 每个对话一个长驻进程：Claude Code 用 `claude -p --input-format stream-json --output-format stream-json`，Codex 用 `codex app-server`；进程退出后用 CLI 自己的会话 id 续聊。对话记录存在数据库里，工作目录是 `<数据目录>/agent`。
-- 本机权限两档：「本机操作先问我」时 CLI 改文件、跑命令前在面板里出确认卡片（Claude 用 `--permission-prompt-tool stdio`，Codex 用 `on-request` + `workspace-write` 沙箱）；「本机操作不用问」对应 `--dangerously-skip-permissions` 和 `never` + `danger-full-access`。
-- 设置 →「本机 AI」显示两个 CLI 的路径、版本、登录状态，对比 npm 上的 dist-tags 提示新版本（Claude Code 本地领先 latest 时也看 next），可以一键运行更新命令。
-- 选中画布元素再提问，选中的元素会作为上下文一起发过去。
+</details>
 
-## 开发
+## 路线图
 
-```bash
-npm i -g pnpm@12         # 版本由 package.json 的 packageManager 锁定
-pnpm install
-pnpm dev                 # 前端 http://localhost:5173 + 服务端 :8787（数据在 ./data）
-pnpm lint                # Vite+ 检查：Oxfmt 格式 + Oxlint 规则（pnpm format 自动修复）
-pnpm typecheck
-pnpm test                # Vitest
-```
+- [x] 无限画布、四类素材、项目与资产库
+- [x] 四家模型平台、生成节点、候选与历史
+- [x] 任务队列、缓存、整组运行、重启恢复
+- [x] 短剧模板、分镜同步、分阶段批量生成、序列导出 MP4
+- [x] 图片 / 视频 / 音频基础加工
+- [x] 智能体小满、本机 Claude Code / Codex、对外 MCP
+- [x] macOS 桌面端安装包、签名与公证流水线
+- [ ] **0.1.0**：真实平台 6 镜头样片验收、界面测试进 CI、自动更新，发布 macOS（Apple 芯片）安装包
+- [ ] **0.2.0**：分镜组与拼图、项目包迁移、区域编辑、取帧续镜、运镜 / 风格预设、第三方插件
+- [ ] **之后**：全景、3D 导演台、深度参考、原生片段重拍、智能剪辑
 
-性能演示画布不依赖服务端：`http://localhost:5173/#/demo?n=5000`。
+完整规划、决策记录和验收状态见 [0.1.0 路线图](docs/roadmap-0.1.0.md) 与 [验收记录](docs/acceptance-0.1.0.md)。
 
-格式化与代码检查统一使用 `pnpm lint`，CI 在 PR 和 main 推送时执行同一命令。`pnpm format` 应用格式化和可安全自动修复的代码规则。工具链是 [Vite+](https://viteplus.dev)（`vp`）：Oxfmt 格式化代码、样式、Markdown、YAML 和 HTML，Oxlint 做代码检查（含类型感知规则），Vitest 跑单测，`vp pack`（tsdown）打包服务端和桌面端；规则与格式选项都在根目录 `vite.config.ts`。遵循 `.gitignore`，排除构建产物；`pnpm-lock.yaml` 保留 pnpm 生成的格式。Markdown 段落不强制折行，代码块和 HTML 内嵌代码不做二次格式化。
+## 文档
 
-### 桌面端
+| 文档                                             | 内容                                 |
+| ------------------------------------------------ | ------------------------------------ |
+| [路线图](docs/roadmap-0.1.0.md)                  | 0.1.0 范围、里程碑、决策记录、桌面端 |
+| [验收记录](docs/acceptance-0.1.0.md)             | 四层验收流程与各工作包状态           |
+| [模型平台接入](docs/providers.md)                | 各平台能力、配置与边界               |
+| [智能体与 MCP](docs/agent.md)                    | 小满、本机 CLI、对外 MCP             |
+| [插件](docs/plugins.md)                          | 插件清单、节点、Provider、能力       |
+| [长期架构](docs/architecture.md)                 | 文档模型、渲染、工作流、后端         |
+| [设计规范](docs/design-spec.md)                  | 界面尺寸、颜色、组件                 |
+| [功能规划与取舍](docs/feature-plan.md) | 各项能力的排期与边界                 |
 
-```bash
-pnpm dev:desktop         # Vite + Electron；服务端跑源码，接口经 Vite 代理到 :8787
-pnpm start:desktop       # 先构建服务端和前端，再用构建产物启动（与安装包的运行方式一致）
-```
+## 参与开发
 
-桌面端保留系统原生标题栏和窗口按钮：macOS 使用系统菜单栏、⌘ 快捷键，关闭窗口后应用继续运行，可从 Dock 重开；Windows 使用窗口菜单栏、Ctrl 快捷键和系统窗口布局，关闭最后一个窗口即退出。菜单中的撤销、重做和全选会作用于当前画布或文本编辑器，设置可用 `CmdOrCtrl+,` 打开。窗口位置、尺寸和最大化状态保存在应用数据目录的 `window-state.json`；显示器变化时会将窗口移回可见工作区。开发工具菜单仅在开发模式显示。
+开发环境、命令、代码结构、分支与提交规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-首次运行会下载 Electron。桌面端的数据在系统应用数据目录（macOS `~/Library/Application Support/plein/data`，Windows `%APPDATA%\plein\data`，Linux `~/.config/plein/data`），可用 `PLEIN_DATA_DIR` 覆盖；服务端只接受桌面端窗口的请求（每次启动生成的令牌放在窗口 Cookie 里），所以开发模式下用普通浏览器打开 5173 会返回 403。安装包打包见路线图第八节。
+## 技术栈
 
-## 原则
-
-- 相机与渲染不走 React state，拖动/缩放期间 React 零重渲染
-- 二进制资源不进 Yjs 文档，只存 assetId
-- 渲染：GPU 画内容，DOM 覆盖层负责编辑与表单（按 LOD 挂载）
-
-## 分支规范
-
-遵循 [Conventional Branch](https://conventionalbranch.org/)：`<type>/<description>`，全小写、连字符分隔。
-
-- type：`feature`/`feat`、`bugfix`/`fix`、`hotfix`、`release`、`chore`；AI 代理自建分支用 `claude/`、`codex/`、`copilot/`、`cursor/`、`ai/`
-- 主干 `main` 不加前缀
-- 示例：`feature/add-login-page`、`fix/edge-hit-test`、`release/v1.2.0`
-
-三层强制：husky `pre-push` 本地拦截；GitHub 规则集（`.github/rulesets/conventional-branch.json`）禁止创建前缀不合规的分支；`Branch name` CI 用完整正则校验 PR 分支。
-
-Dependabot 的 `dependabot/*` 自动分支是保留例外；PR 检查同时核验作者必须为 `dependabot[bot]`。手动创建同前缀的 PR 仍会被命名检查拒绝。
-
-## 依赖检查
-
-- Dependabot 每周一北京时间 09:00 检查整个 pnpm workspace 和 GitHub Actions，提出更新 PR。生产与开发依赖的 minor / patch 分组更新，major 单独评审；不自动合并。
-- `Dependency security / dependency-review` 检查 PR 引入的依赖，新增 high / critical 漏洞时失败。
-- `Dependency security / dependency-audit` 用原生 `pnpm audit` 检查完整锁文件，覆盖生产、开发和间接依赖。PR、main 推送、每周定时及手动触发均运行；high / critical 漏洞阻断，不忽略审计服务错误。本地可运行 `pnpm audit:deps`。
-
-pnpm 12 锁文件包含多份 YAML 文档，上游依赖图解析仍有[兼容问题](https://github.com/dependabot/dependabot-core/issues/15904)，因此保留原生审计补足依赖图的覆盖。检查依据已知漏洞数据库，不代表所有依赖风险都已消除。若需要阻止漏洞 PR 合并，应在 main 的合并规则里把上述两个 job 设为必需检查。
+React 19 · Vite+ · Tailwind v4 · PixiJS v8 · Yjs · Hono · SQLite（Drizzle）· Better Auth · ffmpeg · Electron
 
 ## 许可证
 
