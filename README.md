@@ -165,15 +165,15 @@ pnpm install && pnpm build && pnpm start   # http://localhost:8787
 
 ## 文档
 
-| 文档                                             | 内容                                 |
-| ------------------------------------------------ | ------------------------------------ |
-| [路线图](docs/roadmap-0.1.0.md)                  | 0.1.0 范围、里程碑、决策记录、桌面端 |
-| [验收记录](docs/acceptance-0.1.0.md)             | 四层验收流程与各工作包状态           |
-| [模型平台接入](docs/providers.md)                | 各平台能力、配置与边界               |
-| [智能体与 MCP](docs/agent.md)                    | 小满、本机 CLI、对外 MCP             |
-| [插件](docs/plugins.md)                          | 插件清单、节点、Provider、能力       |
-| [长期架构](docs/architecture.md)                 | 文档模型、渲染、工作流、后端         |
-| [设计规范](docs/design-spec.md)                  | 界面尺寸、颜色、组件                 |
+| 文档                                   | 内容                                 |
+| -------------------------------------- | ------------------------------------ |
+| [路线图](docs/roadmap-0.1.0.md)        | 0.1.0 范围、里程碑、决策记录、桌面端 |
+| [验收记录](docs/acceptance-0.1.0.md)   | 四层验收流程与各工作包状态           |
+| [模型平台接入](docs/providers.md)      | 各平台能力、配置与边界               |
+| [智能体与 MCP](docs/agent.md)          | 小满、本机 CLI、对外 MCP             |
+| [插件](docs/plugins.md)                | 插件清单、节点、Provider、能力       |
+| [长期架构](docs/architecture.md)       | 文档模型、渲染、工作流、后端         |
+| [设计规范](docs/design-spec.md)        | 界面尺寸、颜色、组件                 |
 | [功能规划与取舍](docs/feature-plan.md) | 各项能力的排期与边界                 |
 
 ## 参与开发
