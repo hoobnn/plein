@@ -28,7 +28,7 @@ pnpm dev                 # 前端 http://localhost:5173 + 服务端 :8787（数�
 
 验收分四层（单测、集成、启动冒烟、真实样例），见 [docs/acceptance-0.1.0.md](docs/acceptance-0.1.0.md)。
 
-工具链是 [Vite+](https://viteplus.dev)（`vp`）：Oxfmt 格式化代码、样式、Markdown、YAML 和 HTML，Oxlint 做代码检查（含类型感知规则），Vitest 跑单测，`vp pack`（tsdown）打包服务端和桌面端；规则与格式选项都在根目录 `vite.config.ts`。遵循 `.gitignore`，排除构建产物；`pnpm-lock.yaml` 保留 pnpm 生成的格式。Markdown 段落不强制折行，代码块和 HTML 内嵌代码不做二次格式化；Markdown 规则另由 markdownlint 检查，配置在 `.markdownlint-cli2.jsonc`（VS Code 的 markdownlint 插件读同一份）。
+工具链是 [Vite+](https://viteplus.dev)（`vp`）：Oxfmt 格式化代码、样式、Markdown、YAML 和 HTML，Oxlint 做代码检查（含类型感知规则），Vitest 跑单测，`vp pack`（tsdown）打包服务端和桌面端；规则与格式选项都在根目录 `vite.config.ts`。遵循 `.gitignore`，排除构建产物；`pnpm-lock.yaml` 保留 pnpm 生成的格式。Markdown 段落不强制折行，代码块和 HTML 内嵌代码不做二次格式化；Markdown 规则另由 markdownlint 检查，配置在 `.markdownlint.jsonc`（VS Code 的 markdownlint 插件读同一份）。
 
 ## 代码结构
 
