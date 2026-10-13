@@ -1,6 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, updateElement } from '@plein/doc'
-import { LIBRARY_KINDS } from '@plein/nodes'
+import { LIBRARY_KINDS, libraryKindOfNode } from '@plein/nodes'
 import type { LibraryItem } from '@plein/protocol'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
@@ -499,6 +499,11 @@ const LayerRow = memo(function LayerRow({
   )
 })
 
+function assetIcon(el: CanvasElement) {
+  const kind = el.kind === 'node' ? libraryKindOfNode(el.nodeType) : undefined
+  return kind && KIND_ICONS[kind.id]
+}
+
 function Thumb({ el, type }: { el: CanvasElement; type: OutlineType }) {
   const m = mediaOf(el)
   if (el.kind === 'frame')
@@ -518,7 +523,8 @@ function Thumb({ el, type }: { el: CanvasElement; type: OutlineType }) {
           className="size-full object-cover"
         />
       ) : (
-        <Icon name={outlineIcon(type)} size={16} />
+        // 设定卡按输出归在「图片」里，图标用资产类别的，和画布上卡片标题一致
+        <Icon name={assetIcon(el) ?? outlineIcon(type)} size={16} />
       )}
       {m?.kind === 'video' && (
         <span className="plein-layer-play">

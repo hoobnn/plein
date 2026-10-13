@@ -7,7 +7,13 @@ import {
   type NewElement,
   type PleinDoc,
 } from '@plein/doc'
-import { type LibraryKindSpec, libraryKindOfNode, slotImages, voiceOf } from '@plein/nodes'
+import {
+  characterTags,
+  type LibraryKindSpec,
+  libraryKindOfNode,
+  slotImages,
+  voiceOf,
+} from '@plein/nodes'
 
 /**
  * 资产库与画布之间的往返（纯文档部分）：
@@ -46,33 +52,49 @@ export function placeLibraryCard(
   at: { x: number; y: number },
   refs: CardRef[],
 ): { id: string; loose: number } {
-  let id = ''
-  let loose = 0
+  let out = { id: '', loose: 0 }
   doc.ydoc.transact(() => {
-    id = createElement(doc, { ...card, x: at.x, y: at.y } as NewElement)
-    const sized = refs.map((r) => {
-      const ratio = r.width && r.height ? r.height / r.width : r.kind === 'video' ? 9 / 16 : 1
-      return { ...r, h: Math.round(ratio * REF_W) }
-    })
-    const total = sized.reduce((s, r) => s + r.h, 0) + REF_GAP * Math.max(0, sized.length - 1)
-    let y = at.y + card.h / 2 - total / 2
-    for (const r of sized) {
-      const ref = createElement(doc, {
-        kind: r.kind,
-        assetId: r.assetId,
-        name: r.name,
-        x: at.x - REF_COL_GAP - REF_W,
-        y: Math.round(y),
-        w: REF_W,
-        h: r.h,
-      } as NewElement)
-      y += r.h + REF_GAP
-      const created = doc.get(ref)
-      const port = created && elementPorts(created)?.outputs.find((p) => p.type === r.kind)
-      if (!port || !connect(doc, [ref, port.id], [id, 'references'])) loose++
-    }
+    out = addCardWithRefs(doc, card, at, refs)
   }, doc.origin)
   doc.flush()
+  return out
+}
+
+const refHeight = (r: CardRef) => {
+  const ratio = r.width && r.height ? r.height / r.width : r.kind === 'video' ? 9 / 16 : 1
+  return Math.round(ratio * REF_W)
+}
+
+/** 卡片左侧素材列的总高度 */
+export const refsHeight = (refs: readonly CardRef[]) =>
+  refs.reduce((s, r) => s + refHeight(r), 0) + REF_GAP * Math.max(0, refs.length - 1)
+
+/** placeLibraryCard 的文档操作本身，不开事务：给已经在事务里的调用方（如生成设定卡）用 */
+export function addCardWithRefs(
+  doc: PleinDoc,
+  card: Omit<NewElement, 'x' | 'y'> & { w: number; h: number },
+  at: { x: number; y: number },
+  refs: readonly CardRef[],
+): { id: string; loose: number } {
+  let loose = 0
+  const id = createElement(doc, { ...card, x: Math.round(at.x), y: Math.round(at.y) } as NewElement)
+  let y = at.y + card.h / 2 - refsHeight(refs) / 2
+  for (const r of refs) {
+    const h = refHeight(r)
+    const ref = createElement(doc, {
+      kind: r.kind,
+      assetId: r.assetId,
+      name: r.name,
+      x: at.x - REF_COL_GAP - REF_W,
+      y: Math.round(y),
+      w: REF_W,
+      h,
+    } as NewElement)
+    y += h + REF_GAP
+    const created = doc.get(ref)
+    const port = created && elementPorts(created)?.outputs.find((p) => p.type === r.kind)
+    if (!port || !connect(doc, [ref, port.id], [id, 'references'])) loose++
+  }
   return { id, loose }
 }
 
@@ -95,13 +117,17 @@ export function cardSnapshot(doc: PleinDoc, el: CanvasElement, projectId: string
   const images = slotImages(kind, referenceAssets(doc, el, 'image'))
   const videos = kind.video ? referenceAssets(doc, el, 'video') : []
   const voice = kind.voice ? voiceOf(el.params) : null
+  const name = (el.name ?? kind.title).trim().slice(0, 60) || kind.title
+  const description = String(el.params?.description ?? '')
   return {
     kind,
     body: {
       kind: kind.id,
-      name: (el.name ?? kind.title).trim().slice(0, 60) || kind.title,
+      name,
       projectId,
-      description: String(el.params?.description ?? ''),
+      description,
+      // 角色的性别、年龄段从设定里看出来，资产库里按它筛选
+      tags: kind.id === 'character' ? characterTags(name, description) : {},
       images,
       video: videos[0] ?? null,
       voice: voice?.voiceId ? voice : null,

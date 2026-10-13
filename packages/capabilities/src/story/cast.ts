@@ -12,11 +12,15 @@ import {
   CAST_NODE_TYPES,
   type CastEntry,
   hasVoice,
+  libraryKind,
+  orderedImages,
   parseCast,
   speakerTraits,
+  type VoiceRef,
   voiceOf,
 } from '@plein/nodes'
 import { parseModelRef, type VoicePreset } from '@plein/plugin-sdk'
+import { addCardWithRefs, type CardRef, REF_COL_GAP, REF_W, refsHeight } from './library'
 import { mentionElements, type NodeFactory } from './nodes'
 
 /** 节点当前采用的文本结果；不是文本节点或还没跑过时为空 */
@@ -31,6 +35,8 @@ export interface CastResult {
   created: string[]
   /** 给新角色卡配的定妆图节点：只建不跑，批量出分镜图时先跑 @ 到的那些 */
   portraits: string[]
+  /** 照资产库条目建的卡（设定、参考图、音色用条目的） */
+  fromLibrary: string[]
   /** 按性别、年龄配上音色的角色卡 */
   voiced: string[]
   /** 原来设定为空、这次补上的卡 */
@@ -39,6 +45,8 @@ export interface CastResult {
   kept: string[]
   /** 画布上有重名、或同名的是别的类型：指不明，不动 */
   ambiguous: string[]
+  /** 资产库里有好几条同名的、指不明：照常新建，没有套用 */
+  libraryAmbiguous: string[]
 }
 
 const COLUMN_GAP = 40
@@ -54,101 +62,174 @@ const PORTRAIT_PROMPT =
   '的定妆参考图：正面、侧面、背面三视图，全身站姿，同一角色同一服装，纯白背景，平光，角色设计稿风格，线条清晰'
 const PORTRAIT_ASPECT = '16:9'
 
+/** 资产库条目里套用到设定卡上要用的部分（与 protocol 的 LibraryItem 同构，这里不依赖它） */
+export interface CastLibraryItem {
+  id: string
+  kind: string
+  name: string
+  description: string
+  voice: VoiceRef | null
+  images: Array<{ slot: string; assetId: string }>
+  projectId: string | null
+}
+
+export interface CastOptions {
+  /** 默认配音模型（排第一的已启用模型，和执行时自动选的一致）；它声明了音色表才配音色 */
+  speech?: SpeechModel
+  /**
+   * 资产库：抽取出的名字在资产库里有同类条目时，直接用条目的设定、参考图和音色建卡，
+   * 不再配定妆图——跨项目复用同一个角色，形象一致也省一次出图
+   */
+  library?: {
+    items: readonly CastLibraryItem[]
+    /** 当前项目：同名条目优先用本项目的 */
+    projectId: string | null
+    /** 参考图尺寸，排版用；拿不到按方图排 */
+    assetMeta?(id: string): { width?: number; height?: number } | undefined
+  }
+}
+
 /**
  * 按抽取结果建设定卡：同名卡已存在时只给空设定补上，写过的不覆盖；
- * 新卡按角色 / 场景 / 道具分列，放在来源节点所在分组的右侧。整个操作是一步撤销。
+ * 资产库里有同名同类条目时照条目建卡（设定、参考图、音色都用条目的）；
+ * 其余新卡按角色 / 场景 / 道具分列，放在来源节点所在分组的右侧，角色卡左边配一个定妆图节点。
+ * 整个操作是一步撤销。
  */
 export function applyCast(
   doc: PleinDoc,
   make: NodeFactory,
   sourceId: string,
   entries: CastEntry[],
-  /** 默认配音模型（排第一的已启用模型，和执行时自动选的一致）；它声明了音色表才配音色 */
-  speech?: SpeechModel,
+  options: CastOptions = {},
 ): CastResult {
   const result: CastResult = {
     created: [],
     portraits: [],
+    fromLibrary: [],
     voiced: [],
     filled: [],
     kept: [],
     ambiguous: [],
+    libraryAmbiguous: [],
   }
   const anchor = doc.ancestors(sourceId).at(-1)?.id ?? sourceId
   const rect = doc.worldRect(anchor)
   if (!rect) return result
   const byName = mentionElements(doc)
+  const image = make('plein/image')
+  const portraitSize = image ? nodeSize('image', parseAspect(PORTRAIT_ASPECT)) : undefined
+  const pickVoice = voicePicker(doc, options.speech)
+  const fromLibrary = libraryMatcher(options.library, result)
+
+  // 先定下每张卡怎么建，各列左边留多宽：角色列放定妆图，套用资产库的放参考图
+  const plans = entries.map((entry) => {
+    const type = CAST_NODE_TYPES[entry.kind]
+    const same = byName.get(entry.name) ?? []
+    if (same.length > 1 || (same.length === 1 && same[0]!.nodeType !== type))
+      return { entry, type, skip: 'ambiguous' as const }
+    if (same[0]) return { entry, type, existing: same[0] }
+    const item = fromLibrary(entry)
+    const refs = item ? libraryRefs(item, options.library?.assetMeta) : []
+    return { entry, type, item, refs }
+  })
+  const leads = new Map<string, number>()
+  for (const p of plans) {
+    if (p.skip || p.existing) continue
+    const lead = p.item
+      ? p.refs!.length
+        ? REF_W + REF_COL_GAP
+        : 0
+      : p.entry.kind === 'character' && portraitSize
+        ? portraitSize.w + PORTRAIT_GAP
+        : 0
+    leads.set(p.type, Math.max(leads.get(p.type) ?? 0, lead))
+  }
+
   const columns = new Map<string, { x: number; y: number }>()
   let nextX = rect.x + rect.w + 120
-  const image = make('plein/image')
-  const pickVoice = voicePicker(doc, speech)
-
   doc.ydoc.transact(() => {
-    for (const entry of entries) {
-      const type = CAST_NODE_TYPES[entry.kind]
-      const same = byName.get(entry.name) ?? []
-      if (same.length > 1 || (same.length === 1 && same[0]!.nodeType !== type)) {
+    for (const plan of plans) {
+      const { entry, type } = plan
+      if (plan.skip) {
         result.ambiguous.push(entry.name)
         continue
       }
-      const existing = same[0]
-      const voice =
-        entry.kind === 'character' && !hasVoice(voiceOf(existing?.params))
-          ? pickVoice(entry)
-          : undefined
+      const existing = plan.existing
       if (existing) {
         if (String(existing.params?.description ?? '').trim()) result.kept.push(entry.name)
         else {
           setParams(doc, existing.id, { description: entry.description })
           result.filled.push(entry.name)
         }
-        if (voice) {
-          setParams(doc, existing.id, { voice })
-          result.voiced.push(entry.name)
+        if (entry.kind === 'character' && !hasVoice(voiceOf(existing.params))) {
+          const voice = pickVoice(entry)
+          if (voice) {
+            setParams(doc, existing.id, { voice })
+            result.voiced.push(entry.name)
+          }
         }
         continue
       }
       const base = make(type)
       if (!base) continue
-      // 角色这一列每行左边是定妆图节点、右边是卡片：图的结果连进卡片的参考图
-      const size =
-        entry.kind === 'character' && image
-          ? nodeSize('image', parseAspect(PORTRAIT_ASPECT))
-          : undefined
-      const lead = size ? size.w + PORTRAIT_GAP : 0
+      const lead = leads.get(type) ?? 0
       let col = columns.get(type)
       if (!col) {
         col = { x: nextX, y: rect.y }
         columns.set(type, col)
         nextX += lead + base.w + COLUMN_GAP
       }
-      const id = createElement(doc, {
+      const item = plan.item
+      const description = item?.description.trim() || entry.description
+      const owned = item?.voice && hasVoice(item.voice) ? item.voice : undefined
+      const voice =
+        entry.kind === 'character' ? (owned ?? pickVoice({ ...entry, description })) : undefined
+      const card = {
         ...base,
         name: entry.name,
-        x: Math.round(col.x + lead),
-        y: Math.round(col.y),
-        params: { ...base.params, description: entry.description, ...(voice ? { voice } : {}) },
-      } as NewElement)
-      if (voice) result.voiced.push(entry.name)
-      let rowH = base.h
-      if (image && size) {
-        const portrait = createElement(doc, {
-          ...image,
-          ...size,
-          name: `${entry.name} · 定妆图`,
-          x: Math.round(col.x),
-          y: Math.round(col.y),
-          params: {
-            ...image.params,
-            prompt: `${entry.name}${PORTRAIT_PROMPT}\n\n${entry.description}`,
-            count: 1,
-            aspectRatio: PORTRAIT_ASPECT,
-          },
-        } as NewElement)
-        connect(doc, [portrait, 'images'], [id, 'references'])
-        result.portraits.push(portrait)
-        rowH = Math.max(rowH, size.h)
+        params: {
+          ...base.params,
+          description,
+          ...(voice ? { voice } : {}),
+          ...(item ? { libraryId: item.id } : {}),
+        },
       }
+      let id: string
+      let rowH = base.h
+      if (item) {
+        // 参考图一列以卡片竖直居中，比卡片高时把卡片往下挪，不压住上一行
+        const refsH = refsHeight(plan.refs!)
+        const top = Math.max(0, (refsH - base.h) / 2)
+        id = addCardWithRefs(doc, card, { x: col.x + lead, y: col.y + top }, plan.refs!).id
+        rowH = Math.max(base.h, refsH)
+        result.fromLibrary.push(entry.name)
+      } else {
+        id = createElement(doc, {
+          ...card,
+          x: Math.round(col.x + lead),
+          y: Math.round(col.y),
+        } as NewElement)
+        if (entry.kind === 'character' && image && portraitSize) {
+          // 角色卡左边是定妆图节点：图的结果连进卡片的参考图
+          const portrait = createElement(doc, {
+            ...image,
+            ...portraitSize,
+            name: `${entry.name} · 定妆图`,
+            x: Math.round(col.x + lead - PORTRAIT_GAP - portraitSize.w),
+            y: Math.round(col.y),
+            params: {
+              ...image.params,
+              prompt: `${entry.name}${PORTRAIT_PROMPT}\n\n${entry.description}`,
+              count: 1,
+              aspectRatio: PORTRAIT_ASPECT,
+            },
+          } as NewElement)
+          connect(doc, [portrait, 'images'], [id, 'references'])
+          result.portraits.push(portrait)
+          rowH = Math.max(rowH, portraitSize.h)
+        }
+      }
+      if (voice && !owned) result.voiced.push(entry.name)
       col.y += rowH + ROW_GAP
       byName.set(entry.name, [doc.get(id)!])
       result.created.push(id)
@@ -156,6 +237,43 @@ export function applyCast(
   }, doc.origin)
   doc.flush()
   return result
+}
+
+/**
+ * 抽取出的名字对应哪条资产库条目：同类同名、本项目的优先；
+ * 本项目没有、全部里只有一条时用它，有好几条指不明时不套用，记到 libraryAmbiguous 里
+ */
+function libraryMatcher(library: CastOptions['library'], result: CastResult) {
+  return (entry: CastEntry) => {
+    const same = (library?.items ?? []).filter(
+      (i) => i.kind === entry.kind && i.name === entry.name,
+    )
+    if (same.length === 0) return undefined
+    const own = same.filter((i) => i.projectId && i.projectId === library?.projectId)
+    const pick =
+      own.length === 1 ? own[0] : own.length === 0 && same.length === 1 ? same[0] : undefined
+    if (!pick) result.libraryAmbiguous.push(entry.name)
+    return pick
+  }
+}
+
+/** 条目的参考图按槽位顺序排好，带上尺寸 */
+function libraryRefs(
+  item: CastLibraryItem,
+  meta: ((id: string) => { width?: number; height?: number } | undefined) | undefined,
+): CardRef[] {
+  const kind = libraryKind(item.kind)
+  if (!kind) return []
+  return orderedImages(kind, item.images).map((i) => {
+    const m = meta?.(i.assetId)
+    return {
+      kind: 'image' as const,
+      assetId: i.assetId,
+      name: `${item.name} · 参考图`,
+      width: m?.width,
+      height: m?.height,
+    }
+  })
 }
 
 export interface SpeechModel {
@@ -196,10 +314,13 @@ export function describeCast(r: CastResult) {
   const parts = [
     r.created.length &&
       `新建 ${r.created.length} 张设定卡${r.portraits.length ? `，配好 ${r.portraits.length} 个定妆图节点（批量出分镜图时先出它们）` : ''}`,
+    r.fromLibrary.length && `${r.fromLibrary.join('、')} 用了资产库里的设定和参考图`,
     r.voiced.length && `给 ${r.voiced.join('、')} 配好音色`,
     r.filled.length && `补上 ${r.filled.join('、')} 的设定`,
     r.kept.length && `${r.kept.join('、')} 已有设定，没有覆盖`,
     r.ambiguous.length && `${r.ambiguous.join('、')} 在画布上重名，没有动`,
+    r.libraryAmbiguous.length &&
+      `资产库里有多个「${r.libraryAmbiguous.join('」「')}」，没有自动套用，可以从资产库手动放`,
   ].filter(Boolean)
   return parts.length ? parts.join('；') : '抽取结果里没有可用的角色或场景'
 }

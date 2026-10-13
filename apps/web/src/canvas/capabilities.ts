@@ -8,6 +8,7 @@ import {
 import type { Engine } from '@plein/canvas-core'
 import type { NodeDefinition } from '@plein/plugin-sdk'
 import type { Catalog } from '@plein/protocol'
+import { useLibrary } from '../stores/library'
 import { findNode } from './nodes'
 
 /**
@@ -56,5 +57,10 @@ export function localContext(engine: Engine, catalog: Catalog | null): Capabilit
     },
     assetMeta: () => undefined,
     viewport: () => engine.camera.viewRect,
+    // 资产库没加载过时给空：⌘K 里生成设定卡照常新建，不等网络
+    library: () => {
+      const { items, projectId } = useLibrary.getState()
+      return { items, projectId }
+    },
   }
 }

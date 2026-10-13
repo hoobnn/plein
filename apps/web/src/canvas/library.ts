@@ -180,6 +180,8 @@ export async function saveCardToLibrary(
     const item = await lib.update(linked.id, {
       name: body.name,
       description: body.description,
+      // 资产库里手选过的标签优先，没选的按设定补上
+      tags: { ...body.tags, ...nonEmpty(linked.tags) },
       images,
       video: body.video,
       voice: body.voice,
@@ -190,6 +192,9 @@ export async function saveCardToLibrary(
   setParam(engine.doc, el.id, 'libraryId', item.id)
   return { item, created: true }
 }
+
+const nonEmpty = (tags: Record<string, string>) =>
+  Object.fromEntries(Object.entries(tags).filter(([, v]) => v))
 
 /** 资产库条目 → 放到画布上的输入 */
 export function placeInputOf(item: LibraryItem): PlaceInput | null {

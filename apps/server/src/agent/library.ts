@@ -150,7 +150,8 @@ export const saveToLibrary = serverCapability({
   input: z.object({ id: id.describe('设定卡节点') }),
   run: (ctx, a) => {
     const lib = library(ctx)
-    const snap = ctx.withDoc((doc) => cardSnapshot(doc, need(doc, a.id), null))
+    const project = lib.projectOf(ctx.env.ownerId, ctx.env.canvasId)
+    const snap = ctx.withDoc((doc) => cardSnapshot(doc, need(doc, a.id), project))
     if (!snap) throw new CapabilityError('这个节点不是设定卡，不能存入资产库')
     const linkedId = ctx.withDoc((doc) => doc.get(a.id)?.params?.libraryId)
     const linked = typeof linkedId === 'string' ? lib.get(ctx.env.ownerId, linkedId) : null
@@ -161,13 +162,18 @@ export const saveToLibrary = serverCapability({
       const item = lib.update(ctx.env.ownerId, linked.id, {
         name: body.name,
         description: body.description,
+        // 资产库里手选过的标签优先，没选的按设定补上
+        tags: {
+          ...body.tags,
+          ...Object.fromEntries(Object.entries(linked.tags).filter(([, v]) => v)),
+        },
         images: body.images.map((i) => ({ ...i, slot: slots.get(i.assetId) ?? i.slot })),
         video: body.video,
         voice: body.voice,
       })!
       return { item_id: item.id, created: false }
     }
-    const item = lib.create(ctx.env.ownerId, { ...body, tags: {}, models: [] })
+    const item = lib.create(ctx.env.ownerId, { ...body, models: [] })
     ctx.withDoc((doc) => setParam(doc, a.id, 'libraryId', item.id))
     return { item_id: item.id, created: true }
   },

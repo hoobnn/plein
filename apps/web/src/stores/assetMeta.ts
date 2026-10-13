@@ -24,6 +24,9 @@ export function loadAssetMeta(id: string): Promise<Asset> {
   return p
 }
 
+/** 已经取回来的元信息；还没取过或取失败时为 undefined */
+export const assetMetaNow = (id: string): Asset | undefined => loaded.get(id)
+
 /** 列表里展示尺寸、时长用；读不到时为 null */
 export function useAssetMeta(id: string | undefined): Asset | null {
   const [meta, setMeta] = useState<Asset | null>(() => (id && loaded.get(id)) || null)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { parseCast, speakerTraits } from './cast'
+import { characterTags, parseCast, speakerTraits } from './cast'
 
 describe('解析角色与场景抽取结果', () => {
   it('按二级标题分类，每个三级标题一张卡，空字段不写', () => {
@@ -64,5 +64,20 @@ describe('从设定看出配音的性别和年龄', () => {
       age: 'mature',
     })
     expect(speakerTraits('阿九', '外貌与年龄：看不出年纪').gender).toBeUndefined()
+  })
+})
+
+describe('角色存进资产库时的标签', () => {
+  it('性别、年龄段从设定里看出来，看不出的不填', () => {
+    expect(characterTags('林晚', '性别：女\n外貌与年龄：二十岁，短发')).toEqual({
+      gender: '女',
+      age: '青年',
+    })
+    expect(characterTags('老周', '性别：男\n外貌与年龄：五十多岁')).toEqual({
+      gender: '男',
+      age: '中年',
+    })
+    expect(characterTags('小豆', '外貌与年龄：17 岁的学生')).toEqual({ age: '少年' })
+    expect(characterTags('阿九', '外貌与年龄：看不出年纪')).toEqual({})
   })
 })

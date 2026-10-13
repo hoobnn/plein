@@ -129,6 +129,12 @@ export function serverContext(env: ToolEnv): ServerContext {
     },
     assetMeta: (assetId) => env.assets.get(env.ownerId, assetId) ?? undefined,
     viewport: () => viewOf(env.rooms, env.canvasId)?.viewport,
+    library: env.library
+      ? () => ({
+          items: env.library!.list(env.ownerId),
+          projectId: env.library!.projectOf(env.ownerId, env.canvasId),
+        })
+      : undefined,
   }
 }
 

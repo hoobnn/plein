@@ -4,8 +4,9 @@
  */
 
 import { useState } from 'react'
-import { noVoice, voiceOf } from '@plein/nodes'
+import { voiceOf } from '@plein/nodes'
 import { Select } from '../ui/Select'
+import { VoicePicker } from './VoicePicker'
 
 interface FieldSchema {
   type?: string
@@ -115,32 +116,14 @@ export function SchemaForm({
             />
           )
         } else if (f.widget === 'voice') {
-          // 音色分「哪个平台的」和「平台里的哪个音色」两格：平台填错的话，
-          // 音色 ID 送过去多半读不出来。旧画布里存的是裸字符串，这里照样读得出。
-          const v = voiceOf(value)
+          // 旧画布里存的是裸字符串，voiceOf 照样读得出
           control = (
-            <div className="flex gap-2">
-              <input
-                className={`${field} flex-1`}
-                placeholder="平台，如 plein/doubao-speech"
-                value={v.provider}
-                onChange={(e) => set(key, { ...v, provider: e.target.value.trim() })}
-              />
-              <input
-                id={id}
-                className={`${field} flex-1`}
-                placeholder={f.placeholder ?? '音色 ID'}
-                value={v.voiceId}
-                onChange={(e) =>
-                  set(
-                    key,
-                    e.target.value.trim() === '' && !v.provider
-                      ? noVoice
-                      : { ...v, voiceId: e.target.value },
-                  )
-                }
-              />
-            </div>
+            <VoicePicker
+              id={id}
+              value={voiceOf(value)}
+              onChange={(v) => set(key, v)}
+              inputClassName={field}
+            />
           )
         } else {
           control = (

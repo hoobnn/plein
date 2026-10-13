@@ -94,7 +94,63 @@ export function speakerTraits(name: string, description: string): SpeakerTraits 
   const male = MALE.test(text)
   const female = FEMALE.test(text)
   const gender = fromField ?? (male === female ? undefined : male ? 'male' : 'female')
-  const years = Number(/(\d{1,3})\s*多?岁/.exec(description)?.[1] ?? 0)
+  const years = yearsOf(description) ?? 0
   const mature = years >= 40 || MATURE.test(text) || /^老./.test(name)
   return { gender, age: mature ? 'mature' : 'young' }
+}
+
+const CN_TENS: Record<string, number> = {
+  一: 10,
+  二: 20,
+  三: 30,
+  四: 40,
+  五: 50,
+  六: 60,
+  七: 70,
+  八: 80,
+  九: 90,
+}
+
+/** 设定里写的年龄（「二十岁」「五十多岁」「17 岁」）；没写为 undefined */
+function yearsOf(description: string): number | undefined {
+  const digits = /(\d{1,3})\s*多?岁/.exec(description)?.[1]
+  if (digits) return Number(digits)
+  const cn = /([一二三四五六七八九])十[一二三四五六七八九]?多?岁/.exec(description)?.[1]
+  if (cn) return CN_TENS[cn]
+  if (/十[一二三四五六七八九]?多?岁/.test(description)) return 15
+  return undefined
+}
+
+/**
+ * 角色存进资产库时的筛选标签（性别、年龄段，取值见 LIBRARY_KINDS），从名字和设定里看出来；
+ * 看不出的不填，留给用户在资产库里选。
+ */
+export function characterTags(name: string, description: string): Record<string, string> {
+  const tags: Record<string, string> = {}
+  const { gender } = speakerTraits(name, description)
+  if (gender) tags.gender = gender === 'female' ? '女' : '男'
+  const text = `${name}\n${description}`
+  const years = yearsOf(description)
+  const age =
+    years !== undefined
+      ? years < 12
+        ? '儿童'
+        : years < 18
+          ? '少年'
+          : years < 40
+            ? '青年'
+            : years < 60
+              ? '中年'
+              : '老年'
+      : /老年|年迈|爷爷|奶奶|老头|老太|婆婆/.test(text)
+        ? '老年'
+        : /中年|大叔|大妈/.test(text)
+          ? '中年'
+          : /少年|少女|学生/.test(text)
+            ? '少年'
+            : /孩子|小孩|孩童|儿童/.test(text)
+              ? '儿童'
+              : undefined
+  if (age) tags.age = age
+  return tags
 }

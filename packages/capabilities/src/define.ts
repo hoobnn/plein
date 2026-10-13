@@ -1,4 +1,5 @@
 import type { PleinDoc } from '@plein/doc'
+import type { CastLibraryItem } from './story/cast'
 import type {
   Capability,
   NodeDefinition,
@@ -94,6 +95,8 @@ export interface CapabilityContext {
   assetMeta(id: string): AssetMeta | undefined
   /** 用户此刻看着的画布区域（世界坐标）；不知道时为空。空画布上新建的东西放在视野中央 */
   viewport?(): { x: number; y: number; w: number; h: number } | null | undefined
+  /** 资产库条目和当前项目；没有资产库（本地演示、测试）时不给 */
+  library?(): { items: CastLibraryItem[]; projectId: string | null }
 }
 
 export interface CapabilityDefinition<

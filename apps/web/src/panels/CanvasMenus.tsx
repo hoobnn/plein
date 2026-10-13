@@ -1,6 +1,6 @@
 import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
 import type { ReactNode } from 'react'
-import { applyCast, castOf, describeCast } from '../canvas/cast'
+import { applyCast, castLibrary, castOf, describeCast } from '../canvas/cast'
 import { findNode, type NodeInfo } from '../canvas/nodes'
 import { templateData } from '../canvas/groups'
 import { useCanvas } from '../stores/canvas'
@@ -208,7 +208,12 @@ function ContextMenu({
             <Item
               label={`生成设定卡（${cast.length}）`}
               hint="按抽取结果"
-              onClick={act(() => notify(describeCast(applyCast(engine, catalog, single.id, cast))))}
+              onClick={act(
+                () =>
+                  void castLibrary(cast).then((lib) =>
+                    notify(describeCast(applyCast(engine, catalog, single.id, cast, lib))),
+                  ),
+              )}
             />
             <Sep />
           </>

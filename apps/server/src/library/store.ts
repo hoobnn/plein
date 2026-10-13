@@ -8,7 +8,7 @@ import type {
 import { and, desc, eq } from 'drizzle-orm'
 import type { z } from 'zod'
 import type { DB } from '../storage/db'
-import { libraryItems } from '../storage/schema'
+import { canvases, libraryItems } from '../storage/schema'
 
 type LibraryRow = typeof libraryItems.$inferSelect
 
@@ -54,6 +54,16 @@ export class LibraryStore {
 
   private mine(owner: string, id: string) {
     return and(eq(libraryItems.id, id), eq(libraryItems.owner_id, owner))
+  }
+
+  /** 画布所在的项目：新条目归到这个项目，同名条目优先用它的 */
+  projectOf(owner: string, canvasId: string): string | null {
+    const row = this.db
+      .select({ project: canvases.project_id })
+      .from(canvases)
+      .where(and(eq(canvases.id, canvasId), eq(canvases.owner_id, owner)))
+      .get()
+    return row?.project ?? null
   }
 
   list(owner: string, kind?: LibraryKind): LibraryItem[] {

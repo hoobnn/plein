@@ -81,13 +81,11 @@ export const extractCast = defineCapability({
       const entries = castOf(doc, a.id)
       if (!entries.length)
         throw new CapabilityError('这个节点还没有可用的抽取结果（先运行它，或换一个节点）')
-      const r = applyCast(
-        doc,
-        nodeFactoryOf(ctx),
-        a.id,
-        entries,
-        ctx.nodes.models('audio.speech')[0],
-      )
+      const lib = ctx.library?.()
+      const r = applyCast(doc, nodeFactoryOf(ctx), a.id, entries, {
+        speech: ctx.nodes.models('audio.speech')[0],
+        library: lib && { ...lib, assetMeta: (assetId) => ctx.assetMeta(assetId) },
+      })
       return { ...r, notice: describeCast(r) }
     }),
 })

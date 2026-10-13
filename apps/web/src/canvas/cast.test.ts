@@ -2,7 +2,7 @@ import type { Engine } from '@plein/canvas-core'
 import { addResults, createDoc, createElement } from '@plein/doc'
 import type { Catalog } from '@plein/protocol'
 import { describe, expect, it } from 'vite-plus/test'
-import { applyCast, castOf } from './cast'
+import { applyCast, castOf, describeCast } from './cast'
 
 const card = (type: string, title: string) =>
   ({
@@ -86,10 +86,12 @@ describe('抽取结果落成设定卡', () => {
     expect(r).toEqual({
       created: [],
       portraits: [],
+      fromLibrary: [],
       voiced: [],
       filled: ['林晚'],
       kept: ['老周'],
       ambiguous: ['天台'],
+      libraryAmbiguous: [],
     })
     expect(doc.get(empty)?.params?.description).toBe('外貌与年龄：二十岁，短发')
     expect(doc.get(written)?.params?.description).toBe('我自己写的')
@@ -173,6 +175,59 @@ describe('抽取结果落成设定卡', () => {
     // 看不出性别的不乱配
     expect(voiceOf('阿九')).toBeUndefined()
     expect(r.voiced).toEqual(['林晚', '黑衣男', '老周'])
+  })
+
+  it('资产库里有同名角色：照条目建卡，带上参考图和音色，不配定妆图；本项目优先，指不明的不套用', () => {
+    const { doc, engine, llm } = setup()
+    const image = {
+      ...card('plein/image', '生成图片'),
+      defaults: { prompt: '', aspectRatio: '16:9', count: 2 },
+      outputs: [{ id: 'images', label: '图片', type: 'image' }],
+    }
+    const full = {
+      nodes: [
+        ...catalog.nodes.map((n) => ({
+          ...n,
+          inputs: [{ id: 'references', label: '参考图', type: 'image', multiple: true }],
+        })),
+        image,
+      ],
+    } as unknown as Catalog
+    const item = (id: string, name: string, projectId: string | null, kind = 'character') => ({
+      id,
+      kind,
+      name,
+      description: `${name}：资产库里的设定`,
+      voice: { provider: 'doubao/speech', voiceId: `voice-${id}` },
+      images: [{ slot: 'main', assetId: `asset-${id}` }],
+      projectId,
+    })
+    const r = applyCast(engine, full, llm, castOf(engine, llm), {
+      // 林晚：别的项目和本项目各一条，用本项目的；老周：别的项目两条，指不明
+      items: [
+        item('lw-other', '林晚', 'pj_other'),
+        item('lw-here', '林晚', 'pj_here'),
+        item('lz-1', '老周', 'pj_a'),
+        item('lz-2', '老周', 'pj_b'),
+      ],
+      projectId: 'pj_here',
+    })
+    expect(r.fromLibrary).toEqual(['林晚'])
+    expect(r.libraryAmbiguous).toEqual(['老周'])
+    const lin = doc.get(r.created[0]!)!
+    expect(lin.params).toMatchObject({
+      description: '林晚：资产库里的设定',
+      voice: { provider: 'doubao/speech', voiceId: 'voice-lw-here' },
+      libraryId: 'lw-here',
+    })
+    const into = [...doc.edges()].filter((e) => e.to[0] === lin.id)
+    expect(into.map((e) => doc.get(e.from[0])?.assetId)).toEqual(['asset-lw-here'])
+    // 只有老周配了定妆图；参考图不压在卡片上
+    expect(r.portraits.map((id) => doc.get(id)?.name)).toEqual(['老周 · 定妆图'])
+    const ref = doc.get(into[0]!.from[0])!
+    expect(ref.x + ref.w).toBeLessThan(lin.x)
+    expect(describeCast(r)).toContain('林晚 用了资产库里的设定和参考图')
+    expect(describeCast(r)).toContain('资产库里有多个「老周」')
   })
 
   it('再点一次不会重复建卡', () => {

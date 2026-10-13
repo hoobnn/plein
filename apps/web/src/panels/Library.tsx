@@ -27,6 +27,7 @@ import { Popover } from '../ui/Popover'
 import { Presence } from '../ui/Presence'
 import { Select } from '../ui/Select'
 import { KIND_ICONS } from './LibraryAdd'
+import { VoicePicker } from './VoicePicker'
 import { Segmented } from '../ui/Segmented'
 import { SlideSwap } from '../ui/Slide'
 import { EmptyState } from '../ui/EmptyState'
@@ -643,22 +644,7 @@ function Editor({
           {kind.voice && (
             <div className="ui-field">
               <span className="ui-label">音色</span>
-              <div className="flex gap-2">
-                <input
-                  className="ui-input flex-1"
-                  placeholder="平台，如 plein/doubao-speech"
-                  value={draft.voice.provider}
-                  onChange={(e) =>
-                    patch({ voice: { ...draft.voice, provider: e.target.value.trim() } })
-                  }
-                />
-                <input
-                  className="ui-input flex-1"
-                  placeholder="音色 ID"
-                  value={draft.voice.voiceId}
-                  onChange={(e) => patch({ voice: { ...draft.voice, voiceId: e.target.value } })}
-                />
-              </div>
+              <VoicePicker value={draft.voice} onChange={(voice) => patch({ voice })} />
               <span className="text-xs text-ink-subtle">音色只能在同一家平台的配音模型里使用</span>
             </div>
           )}
