@@ -82,20 +82,18 @@ export class ExternalMcp {
   /** 全部能力，每个都多一个可选的 canvas_id；外加 list_canvases */
   private tools(): McpTool[] {
     const registry = capabilitiesOf(this.deps.host)
-    const caps = registry.list().map(
-      (cap): McpTool => ({
-        name: cap.name,
-        description: cap.description,
-        input: cap.input.extend({
-          canvas_id: z.string().max(100).optional().describe('画布 id；不填用用户正在看的画布'),
-        }),
-        run: async (raw) => {
-          const { canvas_id, ...args } = raw as { canvas_id?: string }
-          const ctx = serverContext(this.env(this.canvas(canvas_id)))
-          return toToolResult(await registry.invoke(cap.name, ctx, args))
-        },
+    const caps = registry.list().map((cap): McpTool => ({
+      name: cap.name,
+      description: cap.description,
+      input: cap.input.extend({
+        canvas_id: z.string().max(100).optional().describe('画布 id；不填用用户正在看的画布'),
       }),
-    )
+      run: async (raw) => {
+        const { canvas_id, ...args } = raw as { canvas_id?: string }
+        const ctx = serverContext(this.env(this.canvas(canvas_id)))
+        return toToolResult(await registry.invoke(cap.name, ctx, args))
+      },
+    }))
     return [
       {
         name: 'list_canvases',

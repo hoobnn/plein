@@ -1,5 +1,5 @@
 import type { CanvasElement, Port } from '@plein/doc'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { canConnect, hitPort, type PortRef } from './ports'
 
 const port = (id: string, type: Port['type'] = 'text'): Port => ({ id, label: id, type })

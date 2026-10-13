@@ -22,7 +22,7 @@ export function InlineTitle({
   }
   return (
     <input
-      // biome-ignore lint/a11y/noAutofocus: 点了「重命名」就是要输入
+      // oxlint-disable-next-line jsx-a11y/no-autofocus -- 点了「重命名」就是要输入
       autoFocus
       value={draft}
       maxLength={200}

@@ -1,5 +1,5 @@
 import type { Canvas } from '@plein/protocol'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
 import { request, startTestServer } from '../testing'
 
 let running: Awaited<ReturnType<typeof startTestServer>>

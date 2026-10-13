@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { AgentAccess, AgentEvent, AgentItem, Canvas } from '@plein/protocol'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it } from 'vite-plus/test'
 import { startTestServer, tempDir } from '../testing'
 import { type CliKind, newerVersion, versionOf } from './cli'
 

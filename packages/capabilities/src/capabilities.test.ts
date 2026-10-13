@@ -1,6 +1,6 @@
 import { createDoc, createElement, LOCAL_ORIGIN, type PleinDoc } from '@plein/doc'
 import { describeNode, defineNode } from '@plein/plugin-sdk'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import * as Y from 'yjs'
 import { z } from 'zod'
 import { canvasCapabilities } from './canvas'

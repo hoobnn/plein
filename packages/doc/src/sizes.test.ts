@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { aspectSize, mediaSize, nodeSize, parseAspect } from './sizes'
 
 describe('元素默认尺寸', () => {

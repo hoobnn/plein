@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { wrapDb } from './db'
 import { LEGACY_MIGRATIONS } from './legacy-migrations'
 import { migrate } from './migrate'

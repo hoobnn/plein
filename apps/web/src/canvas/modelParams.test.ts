@@ -1,6 +1,6 @@
 import type { ModelLimits } from '@plein/plugin-sdk'
 import type { Catalog } from '@plein/protocol'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import {
   adaptToModel,
   constrainFields,

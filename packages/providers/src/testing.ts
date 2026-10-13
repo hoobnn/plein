@@ -2,12 +2,13 @@
  * 适配器测试共用的假宿主上下文（不从包入口导出，只给 *.test.ts 用）。
  */
 import type { ProviderContext } from '@plein/plugin-sdk'
-import { vi } from 'vitest'
+import { vi } from 'vite-plus/test'
 
 /**
  * fetch 依次返回的应答：Response 原样返回，Error 直接抛出，其余当 JSON 响应体；
  * 队列用完再请求就报错，避免测试意外多发请求
  */
+// oxlint-disable-next-line typescript/no-redundant-type-constituents -- 列出常见的几种，便于阅读
 export type Reply = Response | Error | unknown
 
 export interface FakeOptions {

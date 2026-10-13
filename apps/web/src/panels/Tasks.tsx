@@ -107,10 +107,11 @@ export function Tasks() {
   const error = query.error?.message
   const now = useNow(open && !!list && hasActive(list))
   const refetch = query.refetch
-  // biome-ignore lint/correctness/useExhaustiveDependencies: sig 变化（节点开始、结束）时重新拉取
+  // oxlint-disable react-hooks/exhaustive-deps -- sig 变化（节点开始、结束）时重新拉取
   useEffect(() => {
     if (open && canvasId) void refetch({ cancelRefetch: false })
   }, [sig, refetch])
+  // oxlint-enable react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!open) return

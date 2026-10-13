@@ -71,7 +71,7 @@ function BoardPanel({ engine }: { engine: Engine }) {
   const version = useDocVersion(engine.doc)
   const [expanded, setExpanded] = useState<Column | null>(null)
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version 变化即文档变化
+  // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化
   const columns = useMemo(() => {
     const items = [...engine.doc.elements()]
       .filter((el) => el.kind !== 'frame' && el.kind !== 'sequence')
@@ -84,6 +84,7 @@ function BoardPanel({ engine }: { engine: Engine }) {
       items: items.filter((el) => outlineType(el) === c.type),
     })).filter((c) => c.items.length > 0)
   }, [engine, catalog, version])
+  // oxlint-enable react-hooks/exhaustive-deps
 
   const locate = (id: string) => {
     switchMode('flow')

@@ -703,8 +703,10 @@ export class Engine {
       const key = e.key.toLowerCase()
       const step = e.shiftKey ? 10 : 1
       let handled = true
-      if (mod && key === 'z') e.shiftKey ? this.redo() : this.undo()
-      else if (mod && key === 'y') this.redo()
+      if (mod && key === 'z') {
+        if (e.shiftKey) this.redo()
+        else this.undo()
+      } else if (mod && key === 'y') this.redo()
       else if (mod && key === 'a') this.selectAll()
       else if (mod && key === 'd') this.duplicateSelection()
       else if (mod && key === 'g' && !e.shiftKey) this.groupSelection()

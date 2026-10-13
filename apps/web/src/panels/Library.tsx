@@ -439,7 +439,7 @@ function draftOf(
   return {
     name: item?.name ?? official?.name ?? seed?.name?.replace(/\.[a-z0-9]{2,5}$/i, '') ?? '',
     description: item?.description ?? official?.description ?? '',
-    tags: { ...(item?.tags ?? official?.tags ?? {}) },
+    tags: { ...(item?.tags ?? official?.tags) },
     voice: item?.voice ?? { provider: '', voiceId: '' },
     images: item?.images ?? (seed ? slotImages(kind, seed.images) : []),
     video: item?.video ?? (kind.video ? (seed?.videos[0] ?? null) : null),
@@ -972,7 +972,7 @@ function VideoField({
       </span>
       {value ? (
         <div className="flex items-start gap-2">
-          {/* biome-ignore lint/a11y/useMediaCaption: 参考视频没有字幕 */}
+          {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 参考视频没有字幕 */}
           <video
             src={assetUrls.original(value)}
             controls

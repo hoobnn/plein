@@ -2,7 +2,7 @@ import type { Engine } from '@plein/canvas-core'
 import { createDoc, createElement, setParam, setParams, writeRun } from '@plein/doc'
 import { dropShot, planVersion, type Shot } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import {
   detachShot,
   expandShots,
@@ -152,7 +152,7 @@ describe('展开时记下计划版本', () => {
     const video = nodes.find((el) => roleOf(el) === 'video')!
     expect(video.params).toMatchObject({ prompt: '缓慢推近', duration: 7 })
     const speech = nodes.filter((el) => roleOf(el) === 'speech')
-    expect(speech.map((el) => el.params?.text).sort()).toEqual(['你终于来了', '别过去'])
+    expect(speech.map((el) => String(el.params?.text)).sort()).toEqual(['你终于来了', '别过去'])
     // 音色连平台一起写进配音节点：换成别家模型时服务端能判定不兼容
     expect(speech.find((el) => el.params?.text === '你终于来了')?.params?.voice).toEqual({
       provider: 'doubao-speech',

@@ -15,7 +15,7 @@ import {
   type ProviderRequest,
 } from '@plein/plugin-sdk'
 import type { Catalog, ProviderConfigView, ProviderTestResult } from '@plein/protocol'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vite-plus/test'
 import { z } from 'zod'
 import { startTestServer, tempDir } from '../testing'
 import { ProviderConfigStore } from './config-store'
@@ -516,12 +516,10 @@ describe('模型调用记录', () => {
       remoteId: 'r1',
       pollAfterMs: 1,
     }))
-    const poll = vi.fn(
-      async (): Promise<PollResult> => ({
-        state: 'succeeded',
-        outputs: [{ type: 'text', text: '好了' }],
-      }),
-    )
+    const poll = vi.fn(async (): Promise<PollResult> => ({
+      state: 'succeeded',
+      outputs: [{ type: 'text', text: '好了' }],
+    }))
     const provider = defineProvider({
       id: 'acme/async',
       title: 'Async',

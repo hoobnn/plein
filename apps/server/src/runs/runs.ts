@@ -348,15 +348,13 @@ export class NodeRuns {
   list(canvasId: string, limit = 100): JobList {
     return {
       jobs: this.store.recent(canvasId, limit).map(jobInfo),
-      groups: this.store.recentGroups(canvasId, 20).map(
-        (g): GroupInfo => ({
-          ...groupState(g),
-          frameId: g.frame_id,
-          scope: (JSON.parse(g.options) as StoredGroupOptions).scope ?? 'frame',
-          createdAt: g.created_at,
-          finishedAt: g.finished_at ?? undefined,
-        }),
-      ),
+      groups: this.store.recentGroups(canvasId, 20).map((g): GroupInfo => ({
+        ...groupState(g),
+        frameId: g.frame_id,
+        scope: (JSON.parse(g.options) as StoredGroupOptions).scope ?? 'frame',
+        createdAt: g.created_at,
+        finishedAt: g.finished_at ?? undefined,
+      })),
     }
   }
 

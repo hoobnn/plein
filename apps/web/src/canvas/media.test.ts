@@ -1,5 +1,5 @@
 import type { Asset } from '@plein/protocol'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import {
   clampRange,
   clampSpeed,

@@ -1,6 +1,6 @@
 import { createElement, type PleinDoc, updateElement } from '@plein/doc'
 import type { AgentEvent, Canvas } from '@plein/protocol'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vite-plus/test'
 import { startTestServer } from '../testing'
 import { Approvals } from './approvals'
 import { AgentChanges } from './changes'

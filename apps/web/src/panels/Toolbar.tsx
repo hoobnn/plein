@@ -240,7 +240,7 @@ function ZoomMenu({ engine, zoom }: { engine: Engine; zoom: number }) {
           <Popover anchor={anchor} onClose={close} label="缩放" width={200}>
             <label className="ui-input mb-1 flex items-center gap-1">
               <input
-                // biome-ignore lint/a11y/noAutofocus: 打开就能输入倍数
+                // oxlint-disable-next-line jsx-a11y/no-autofocus -- 打开就能输入倍数
                 autoFocus
                 value={draft}
                 inputMode="numeric"

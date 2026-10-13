@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=.env.development src/main.ts",
-    "build": "tsdown",
+    "build": "vp pack",
     "start": "node --no-experimental-webstorage dist/main.mjs",
     "typecheck": "tsc -p .",
-    "db:generate": "drizzle-kit generate && tsx scripts/embed-migrations.ts && biome format --write src/storage/migrations.gen.ts"
+    "db:generate": "drizzle-kit generate && tsx scripts/embed-migrations.ts && vp fmt src/storage/migrations.gen.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.4",
@@ -37,9 +37,9 @@
     "@types/semver": "^7.8.0",
     "@types/ws": "^8.18.2",
     "drizzle-kit": "^0.31.11",
-    "tsdown": "^0.23.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "y-websocket": "^3.1.0"
+    "y-websocket": "^3.1.0",
+    "vite-plus": "catalog:"
   }
 }

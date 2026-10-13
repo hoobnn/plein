@@ -8,7 +8,7 @@ import {
   updateElement,
 } from '@plein/doc'
 import type { PortValue } from '@plein/plugin-sdk'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { addCharacter } from '../testing'
 import { applyMentions } from './mentions'
 

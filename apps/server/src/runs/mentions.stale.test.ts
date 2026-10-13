@@ -8,7 +8,7 @@ import {
 } from '@plein/doc'
 import type { StaleNodes } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import type { Server } from '../app'
 import {
   addCharacter,

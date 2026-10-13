@@ -1,5 +1,5 @@
 import type { Canvas, LibraryItem, Project } from '@plein/protocol'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { bootServer, request } from '../testing'
 
 async function boot() {

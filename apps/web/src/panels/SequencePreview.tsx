@@ -179,7 +179,7 @@ export function SequencePreview({
         className={`relative mx-auto overflow-hidden rounded-lg bg-black ${portrait ? 'aspect-[9/16] w-full max-w-72' : 'aspect-video w-full'}`}
       >
         {[0, 1].map((slot) => (
-          // biome-ignore lint/a11y/useMediaCaption: 字幕由上面叠加的 DOM 显示
+          // oxlint-disable-next-line jsx-a11y/media-has-caption -- 字幕由上面叠加的 DOM 显示
           <video
             key={slot}
             ref={videos[slot]}

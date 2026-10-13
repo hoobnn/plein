@@ -1,5 +1,5 @@
 import { describeProvider } from '@plein/plugin-sdk'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { fakeContext, sse } from '../testing'
 import { arkProvider } from './index'
 

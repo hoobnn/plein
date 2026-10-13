@@ -50,6 +50,7 @@ export function elementFor(asset: Asset): Omit<NewElement, 'x' | 'y'> | null {
 }
 
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>) {
+  // oxlint-disable-next-line unicorn/no-new-array -- 按长度预分配，结果按下标写回
   const out = new Array<R>(items.length)
   let next = 0
   const worker = async () => {

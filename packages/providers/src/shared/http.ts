@@ -146,11 +146,10 @@ export function chatMessages(
         typeof message.content === 'string'
           ? message.content
           : await Promise.all(
-              message.content.map(
-                async (part): Promise<ChatPart> =>
-                  part.type === 'text'
-                    ? part
-                    : { type: 'image_url', image_url: { url: await image(part.image) } },
+              message.content.map(async (part): Promise<ChatPart> =>
+                part.type === 'text'
+                  ? part
+                  : { type: 'image_url', image_url: { url: await image(part.image) } },
               ),
             ),
     })),

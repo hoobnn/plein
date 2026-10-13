@@ -118,7 +118,9 @@ export const jobs = sqliteTable(
     finished_at: integer(),
   },
   (t) => [
-    index('jobs_active').on(t.status).where(sql`status IN ('queued', 'running')`),
+    index('jobs_active')
+      .on(t.status)
+      .where(sql`status IN ('queued', 'running')`),
     index('jobs_node').on(t.canvas_id, t.node_id, t.created_at),
   ],
 )
@@ -141,7 +143,11 @@ export const jobGroups = sqliteTable(
     created_at: integer().notNull(),
     finished_at: integer(),
   },
-  (t) => [index('job_groups_active').on(t.status).where(sql`status = 'running'`)],
+  (t) => [
+    index('job_groups_active')
+      .on(t.status)
+      .where(sql`status = 'running'`),
+  ],
 )
 
 /** 本机智能体会话：对话记录存 JSON，cli_session 是 Claude Code / Codex 自己的会话 id，用于续聊 */

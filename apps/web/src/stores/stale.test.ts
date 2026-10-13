@@ -1,6 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import type { StaleNodes } from '@plein/protocol'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { api } from '../api/client'
 import { useStale, watchStale } from './stale'
 

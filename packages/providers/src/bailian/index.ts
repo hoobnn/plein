@@ -493,6 +493,7 @@ export const bailianProvider = defineProvider({
       }
       case 'audio.speech': {
         const input = req.input as CapabilityInput<'audio.speech'>
+        // oxlint-disable-next-line typescript/no-misused-spread -- 平台按 Unicode 码点计字数
         if (!input.text.trim() || [...input.text].length > 600)
           throw new ProviderError('invalid_input', '千问语音文本须为 1–600 字符')
         if (input.instruction && !req.model.includes('instruct'))

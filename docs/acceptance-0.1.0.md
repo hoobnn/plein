@@ -116,7 +116,7 @@ pnpm dev            # 手工走查时用：服务端 + 前端
 ### 集成门禁（2026-10-12）
 
 ```bash
-pnpm lint        # biome + prettier，干净
+pnpm lint        # vp check（oxfmt + oxlint），干净
 pnpm typecheck   # 全部包 Done
 pnpm test        # 28 个文件 / 303 passed / 1 skipped（跳过的是本机无 libass 的烧字幕用例）
 pnpm smoke       # 14 项全通过

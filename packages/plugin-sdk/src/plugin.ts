@@ -22,7 +22,7 @@ export interface PluginDefinition {
 
 export function definePlugin(input: {
   manifest: PluginManifestInput
-  // biome-ignore lint/suspicious/noExplicitAny: 各节点的参数类型不同
+  // oxlint-disable-next-line typescript/no-explicit-any -- 各节点的参数类型不同
   nodes?: NodeDefinition<any>[]
   templates?: TemplateDefinition[]
   elements?: ElementTypeDefinition[]
@@ -43,9 +43,9 @@ export function definePlugin(input: {
  */
 export interface ServerPluginDefinition {
   plugin: PluginDefinition
-  // biome-ignore lint/suspicious/noExplicitAny: 各 Provider 的设置类型不同
+  // oxlint-disable-next-line typescript/no-explicit-any -- 各 Provider 的设置类型不同
   providers: ProviderDefinition<any>[]
-  // biome-ignore lint/suspicious/noExplicitAny: 各执行器对应的节点不同
+  // oxlint-disable-next-line typescript/no-explicit-any -- 各执行器对应的节点不同
   executors: ExecutorDefinition<any>[]
   capabilities: PluginCapabilityDefinition[]
 }
@@ -53,9 +53,9 @@ export interface ServerPluginDefinition {
 export function defineServerPlugin(
   plugin: PluginDefinition,
   parts: {
-    // biome-ignore lint/suspicious/noExplicitAny: 同上
+    // oxlint-disable-next-line typescript/no-explicit-any -- 同上
     providers?: ProviderDefinition<any>[]
-    // biome-ignore lint/suspicious/noExplicitAny: 同上
+    // oxlint-disable-next-line typescript/no-explicit-any -- 同上
     executors?: ExecutorDefinition<any>[]
     capabilities?: PluginCapabilityDefinition[]
   },

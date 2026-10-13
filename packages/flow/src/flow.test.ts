@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { FlowGraph, runDag, stableStringify, type StepOutcome, topoLayers } from './index'
 
 const e = (a: string, b: string) => ({ from: [a, 'out'] as const, to: [b, 'in'] as const })

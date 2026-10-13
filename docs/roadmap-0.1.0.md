@@ -65,11 +65,11 @@ packages/
   plugin-sdk/          插件公开 API：清单 schema、defineNode / defineProvider 等类型与辅助函数
 e2e/                   Playwright
 scripts/               真机冒烟、基准等脚本
-Dockerfile · compose.yaml · .dockerignore · biome.json · vitest.config.ts
+Dockerfile · compose.yaml · .dockerignore · vite.config.ts（Vite+：lint / fmt / test）
 ```
 
 - 节点执行器放 `apps/server/src/executors/`，按 `type@version` 注册到 flow；`apps/web` 不依赖 `providers`，平台能力和模型列表通过 `protocol` 接口从服务端获取。
-- 单测与源码同目录（`src/**/*.test.ts`），根目录 `vitest.config.ts` 用 projects 汇总。
+- 单测与源码同目录（`src/**/*.test.ts`），根目录 `vite.config.ts` 的 `test.projects` 汇总。
 - 数据目录默认 `./data`，可用 `PLEIN_DATA_DIR` 覆盖，Docker 挂卷到此路径。
 
 ### 对 architecture.md 原则的两处调整
@@ -296,7 +296,7 @@ flowchart LR
 | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
 | Vitest：doc（含双文档并发、迁移）、flow（编译、缓存、调度）、providers（夹具）、server（mock Provider 集成） | P0                                              |
 | Playwright：导入素材、跑通 mock 短剧模板、导出的冒烟测试                                                     | P0，已落地（`pnpm e2e`，2026-10-13）；尚未进 CI |
-| Biome（或 oxlint）lint + format，进 CI                                                                       | P0                                              |
+| Vite+（oxlint + oxfmt）lint + format，进 CI                                                                  | P0                                              |
 | tsconfig 拆浏览器 / Node 两套预设；`doc`、`flow`、节点声明、`protocol` 不引入 DOM                            | P0                                              |
 | 服务端开发 `tsx watch`，发布用 tsdown 打包                                                                   | P0                                              |
 | Dockerfile（含 ffmpeg）+ `compose.yaml`；README 写清本地运行步骤                                             | P0                                              |

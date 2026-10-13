@@ -1,5 +1,5 @@
 import { API, type RewritePrompt, type RewritePromptResult } from '@plein/protocol'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vite-plus/test'
 import { startTestServer } from '../testing'
 import { maskPrompt, unmaskPrompt } from './prompt'
 

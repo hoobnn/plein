@@ -3,7 +3,7 @@ import { createDoc } from '@plein/doc'
 import { corePlugin, libraryKind } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
 import type { Asset, Catalog, LibraryItem } from '@plein/protocol'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vite-plus/test'
 
 const A = 'a'.repeat(64)
 const B = 'b'.repeat(64)
@@ -29,9 +29,8 @@ vi.mock('../api/client', () => ({
   },
 }))
 
-const { cardSnapshot, placeLibraryItem, placeInputOf, saveCardToLibrary } = await import(
-  './library'
-)
+const { cardSnapshot, placeLibraryItem, placeInputOf, saveCardToLibrary } =
+  await import('./library')
 
 const nodes = corePlugin.nodes.map((n) => ({ ...describeNode(n, 'plein/core'), executable: true }))
 const catalog = { nodes, providers: [] } as unknown as Catalog

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { ApiError, api, setUnauthorizedHandler } from './client'
 
 const reply = (status: number, body?: string, statusText = '') =>

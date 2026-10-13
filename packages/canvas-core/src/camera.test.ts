@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { Camera } from './camera'
 
 const camera = (x = 0, y = 0, zoom = 1) => Object.assign(new Camera(), { x, y, zoom })

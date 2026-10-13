@@ -1,7 +1,7 @@
 import { connect, createDoc, createElement, type PleinDoc, setParams } from '@plein/doc'
 import type { JobList, RunActivity, StaleNodes } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import type { Server } from '../app'
 import { hasFfmpeg, mediaCaps } from '../assets/media'
 import {

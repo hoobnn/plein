@@ -78,8 +78,9 @@ function HistoryPanel({ engine }: { engine: Engine }) {
   const { toggleHistory: toggle, notify, setImporting } = useCanvas.getState()
   const doc = engine.doc
   const version = useDocVersion(doc)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version 变化即文档变化
+  // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化
   const all = useMemo(() => resultHistory(doc), [doc, version])
+  // oxlint-enable react-hooks/exhaustive-deps
   const [type, setType] = useState<TypeFilter>('all')
   const [oldestFirst, setOldestFirst] = useState(false)
   const [size, setSize] = useState(160)

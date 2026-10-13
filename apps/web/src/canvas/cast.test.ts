@@ -1,7 +1,7 @@
 import type { Engine } from '@plein/canvas-core'
 import { addResults, createDoc, createElement } from '@plein/doc'
 import type { Catalog } from '@plein/protocol'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { applyCast, castOf } from './cast'
 
 const card = (type: string, title: string) =>

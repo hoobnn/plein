@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { parseCast } from './cast'
 
 describe('解析角色与场景抽取结果', () => {

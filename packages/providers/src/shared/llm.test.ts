@@ -1,5 +1,5 @@
 import { type CapabilityInput, ProviderError } from '@plein/plugin-sdk'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vite-plus/test'
 import { requestBody, sse } from '../testing'
 import { type ChatOptions, chatCompletion, requireSseDone } from './llm'
 

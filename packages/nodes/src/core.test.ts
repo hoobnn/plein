@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { type VideoMode, videoModeProblem } from './core'
 
 describe('视频模式与连入图片数', () => {

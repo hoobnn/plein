@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { clock, describeActive, describeFailure } from './runStatus'
 
 const base = { id: 'r', status: 'running', at: 0, startedAt: 1000 } as const

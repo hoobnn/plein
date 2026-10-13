@@ -1,6 +1,6 @@
 import * as decoding from 'lib0/decoding'
 import * as encoding from 'lib0/encoding'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import * as syncProtocol from 'y-protocols/sync'
 import * as Y from 'yjs'
 import { type Conn, type DocStore, Rooms } from './rooms'

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { droppedFiles, visibleFiles } from './dropped'
 
 /** 模拟拖入时 webkitGetAsEntry 给出的文件 / 文件夹条目 */

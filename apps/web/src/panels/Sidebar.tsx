@@ -128,7 +128,6 @@ function ResizeHandle() {
   }
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: 可拖动的分隔条没有对应的原生元素
     <div
       role="separator"
       aria-orientation="vertical"
@@ -156,11 +155,12 @@ function ResizeHandle() {
 
 function Count({ engine }: { engine: Engine }) {
   const version = useDocVersion(engine.doc)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version 变化即文档变化
+  // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化
   const n = useMemo(
     () => [...engine.doc.elements()].filter((el) => el.kind !== 'frame').length,
     [engine, version],
   )
+  // oxlint-enable react-hooks/exhaustive-deps
   return <span className="px-2 text-xs text-ink-subtle tabular-nums">共 {n} 个元素</span>
 }
 
@@ -197,7 +197,7 @@ function Layers({ engine }: { engine: Engine }) {
   const q = query.trim().toLowerCase()
   const filtering = !!q || type !== 'all'
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version 变化即文档变化
+  // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化
   const { rows, frames } = useMemo(() => {
     const frames: string[] = []
     const next = new Map<string, Row>()
@@ -236,9 +236,10 @@ function Layers({ engine }: { engine: Engine }) {
     prevRows.current = next
     return { rows, frames }
   }, [engine, catalog, version, q, type, collapsed, filtering])
+  // oxlint-enable react-hooks/exhaustive-deps
 
   // 在画布上选中时：展开所在分组，并把它滚进可视范围
-  // biome-ignore lint/correctness/useExhaustiveDependencies: selVersion 变化即选中变化
+  // oxlint-disable react-hooks/exhaustive-deps -- selVersion 变化即选中变化
   useEffect(() => {
     const ids = engine.selection.values()
     if (!ids.length) return
@@ -253,6 +254,7 @@ function Layers({ engine }: { engine: Engine }) {
         ?.scrollIntoView({ block: 'nearest' }),
     )
   }, [engine, selVersion])
+  // oxlint-enable react-hooks/exhaustive-deps
 
   const toggleFolder = (id: string) =>
     setCollapsed((c) => {
@@ -305,7 +307,7 @@ function Layers({ engine }: { engine: Engine }) {
           <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md bg-surface-2 px-2 text-ink-subtle">
             <Icon name="search" size={14} />
             <input
-              // biome-ignore lint/a11y/noAutofocus: 点了搜索就是要输入
+              // oxlint-disable-next-line jsx-a11y/no-autofocus -- 点了搜索就是要输入
               autoFocus
               value={query}
               placeholder="搜索名称"
@@ -534,11 +536,12 @@ function Assets({ engine }: { engine: Engine | null }) {
     items: mine.filter((i) => i.kind === k.id),
   })).filter((g) => g.items.length)
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version 变化即文档变化
+  // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化
   const placed = useMemo(
     () => new Set(engine ? mine.filter((i) => findPlacedCard(engine, i.id)).map((i) => i.id) : []),
     [engine, version, mine.map((i) => i.id).join()],
   )
+  // oxlint-enable react-hooks/exhaustive-deps
 
   const place = async (item: LibraryItem) => {
     const input = placeInputOf(item)

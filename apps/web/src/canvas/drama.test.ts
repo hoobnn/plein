@@ -3,7 +3,7 @@ import { createDoc } from '@plein/doc'
 import { corePlugin } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
 import type { Catalog } from '@plein/protocol'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { dramaNotice, placeDramaTemplate } from './drama'
 
 /** 用真实的内置节点声明拼一个最小 catalog：端口和默认参数与线上一样 */

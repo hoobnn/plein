@@ -5,7 +5,7 @@ import {
   PLUGIN_API_VERSION,
 } from '@plein/plugin-sdk'
 import type { Canvas, CapabilityCallResult, PluginCapabilityInfo } from '@plein/protocol'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vite-plus/test'
 import { z } from 'zod'
 import { request, startTestServer } from '../testing'
 import { Approvals } from './approvals'

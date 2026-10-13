@@ -23,7 +23,7 @@ plein 是一块“可执行的画布”：同一个 Yjs 文档里既放图片、
 | `packages/doc`         | 每元素一个嵌套 `Y.Map`、命令式 API、z 序与父子关系、schema 迁移、按帧合并的变更订阅、`portsCompatible`        | —                                                                                      |
 | `packages/flow`        | 纯 TS 的 DAG 调度（`runDag`）、依赖图                                                                         | 浏览器侧编译与用量预估                                                                 |
 | `apps/server`          | Node + Hono 单进程：Yjs 房间（带租约）、SQLite 任务队列与重试、插件宿主、资产与衍生物、导出、本机智能体       | Yjs 更新逐条同步写库，大文档导入时会占住事件循环，需要合并写入；整组运行状态靠前端轮询 |
-| 工程                   | Biome、Vitest、Playwright（mock）、commitlint + husky、CI（Node 26）                                          | e2e 进 CI、性能基准                                                                    |
+| 工程                   | Vite+（Oxlint、Oxfmt、Vitest、tsdown）、Playwright（mock）、commitlint + husky、CI（Node 26）                 | e2e 进 CI、性能基准                                                                    |
 
 ## 架构原则
 

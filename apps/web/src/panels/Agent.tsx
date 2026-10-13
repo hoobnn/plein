@@ -323,11 +323,12 @@ function Transcript({
   const stick = useRef(true)
 
   // 停在底部时跟着新内容滚动；用户往上翻时不打扰
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 内容变化时触发滚动
+  // oxlint-disable react-hooks/exhaustive-deps -- 内容变化时触发滚动
   useEffect(() => {
     const el = ref.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [items, running])
+  // oxlint-enable react-hooks/exhaustive-deps
 
   if (items.length === 0) {
     return (
@@ -441,7 +442,7 @@ function PlanRow({ item }: { item: Extract<AgentItem, { type: 'plan' }> }) {
       <ol className="flex flex-col gap-1.5">
         {item.steps.map((step, i) => (
           <li
-            // biome-ignore lint/suspicious/noArrayIndexKey: 步骤按序号定位，不会重排
+            // oxlint-disable-next-line react/no-array-index-key -- 步骤按序号定位，不会重排
             key={i}
             className="plein-plan-step flex items-start gap-2"
             data-status={step.status}
@@ -615,7 +616,7 @@ function ChangesRow({ item }: { item: Extract<AgentItem, { type: 'changes' }> })
 
 function Markdown({ text }: { text: string }) {
   const html = useMemo(() => renderMarkdown(text), [text])
-  // biome-ignore lint/security/noDangerouslySetInnerHtml: markdown-it 已关闭原始 HTML
+  // oxlint-disable-next-line react/no-danger -- markdown-it 已关闭原始 HTML
   return <div className="plein-md plein-agent-md" dangerouslySetInnerHTML={{ __html: html }} />
 }
 
@@ -697,13 +698,15 @@ function Composer({ running }: { running: boolean }) {
   const ref = useRef<HTMLTextAreaElement>(null)
 
   // 打开时、点「让小满处理」时把光标放进输入框
-  // biome-ignore lint/correctness/useExhaustiveDependencies: focusSeq 变化即重新聚焦
+  // oxlint-disable react-hooks/exhaustive-deps -- focusSeq 变化即重新聚焦
   useEffect(() => {
     ref.current?.focus()
   }, [focusSeq])
+  // oxlint-enable react-hooks/exhaustive-deps
   // 选区变了就默认重新带上
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 选区数量变化时重置
+  // oxlint-disable react-hooks/exhaustive-deps -- 选区数量变化时重置
   useEffect(() => setWithSelection(true), [selected])
+  // oxlint-enable react-hooks/exhaustive-deps
 
   const submit = () => {
     const t = text.trim()

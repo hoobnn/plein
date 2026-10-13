@@ -138,7 +138,7 @@ export const createNode = defineCapability({
     const info = ctx.nodes.latest(a.type)
     if (!info) throw new CapabilityError(`没有节点类型 ${a.type}，先用 list_node_types 查看`)
     const { def, descriptor: desc } = info
-    const params = { ...desc.defaults, ...(a.params ?? {}) }
+    const params = { ...desc.defaults, ...a.params }
     const check = def.params.safeParse(params)
     if (!check.success) throw new CapabilityError(`参数不对：${z.prettifyError(check.error)}`)
     return ctx.withDoc((doc) => {

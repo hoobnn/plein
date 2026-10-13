@@ -188,7 +188,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
         start(doc, previewUrl, provider.awareness)
       }
       // 缓存已是当前版本：直接打开，迁移是空操作；旧版本缓存要等服务端完整状态再迁移
-      local?.whenSynced.then(() => {
+      void local?.whenSynced.then(() => {
         if (doc || disposed || provider.synced) return
         if (ydoc.getMap('meta').get('schemaVersion') === SCHEMA_VERSION) open()
       })

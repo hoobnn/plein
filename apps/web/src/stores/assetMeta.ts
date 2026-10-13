@@ -46,7 +46,7 @@ export function useAssetMeta(id: string | undefined): Asset | null {
 export function useAssetMetas(ids: string[]): (id: string | undefined) => Asset | undefined {
   const [, setV] = useState(0)
   const key = ids.join(',')
-  // biome-ignore lint/correctness/useExhaustiveDependencies: key 即 ids
+  // oxlint-disable react-hooks/exhaustive-deps -- key 即 ids
   useEffect(() => {
     let live = true
     for (const id of ids) {
@@ -60,5 +60,6 @@ export function useAssetMetas(ids: string[]): (id: string | undefined) => Asset 
       live = false
     }
   }, [key])
+  // oxlint-enable react-hooks/exhaustive-deps
   return (id) => (id ? loaded.get(id) : undefined)
 }

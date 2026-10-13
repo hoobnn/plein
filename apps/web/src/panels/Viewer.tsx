@@ -31,12 +31,12 @@ export function Viewer() {
           className="relative max-h-full max-w-full rounded-md object-contain"
         />
       ) : (
-        // biome-ignore lint/a11y/useMediaCaption: 生成的视频没有字幕轨
+        // oxlint-disable-next-line jsx-a11y/media-has-caption -- 生成的视频没有字幕轨
         <video src={src} controls autoPlay className="relative max-h-full max-w-full rounded-md" />
       )}
       <button
         type="button"
-        // biome-ignore lint/a11y/noAutofocus: 打开即可按 Esc 关闭
+        // oxlint-disable-next-line jsx-a11y/no-autofocus -- 打开即可按 Esc 关闭
         autoFocus
         aria-label="关闭"
         onClick={() => view(null)}

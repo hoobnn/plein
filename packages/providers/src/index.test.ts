@@ -1,5 +1,5 @@
 import { domainAllowed } from '@plein/plugin-sdk'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { arkPlugin, bailianPlugin, doubaoPlugin, minimaxPlugin } from './index'
 
 describe('内置平台插件的权限声明', () => {

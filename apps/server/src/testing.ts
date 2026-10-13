@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createDoc, createElement, type PleinDoc, type Port } from '@plein/doc'
 import { corePlugin } from '@plein/nodes'
-import { afterAll, onTestFinished } from 'vitest'
+import { afterAll, onTestFinished } from 'vite-plus/test'
 import { createServer, type Server } from './app'
 import { type Config, loadConfig } from './config'
 import { type RunningServer, startServer } from './start'
@@ -92,7 +92,11 @@ export async function startTestServer(opts: BootOptions = {}) {
 export function request(server: Server, path: string, init: RequestInit = {}) {
   return server.app.request(path, {
     ...init,
-    headers: { host: '127.0.0.1:8787', 'content-type': 'application/json', ...init.headers },
+    headers: {
+      host: '127.0.0.1:8787',
+      'content-type': 'application/json',
+      ...(init.headers as Record<string, string> | undefined),
+    },
   })
 }
 

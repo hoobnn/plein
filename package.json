@@ -17,25 +17,23 @@
     "build": "pnpm -r build",
     "start": "pnpm --filter @plein/server start",
     "typecheck": "pnpm -r typecheck && tsc -p .",
-    "lint": "biome check . && prettier --check \"**/*.{md,yaml,yml,html}\"",
+    "lint": "vp check",
     "audit:deps": "pnpm audit --audit-level=high",
-    "format": "biome check --write . && prettier --write \"**/*.{md,yaml,yml,html}\"",
-    "test": "vitest run",
+    "format": "vp check --fix",
+    "test": "vp test",
     "prepare": "husky",
     "smoke": "pnpm --filter @plein/server exec tsx scripts/smoke.ts",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm smoke",
-    "e2e": "pnpm --filter @plein/web exec vite build --mode e2e --outDir dist-e2e && playwright test",
-    "perf": "pnpm --filter @plein/web exec vite build --mode e2e --outDir dist-e2e && node --experimental-strip-types e2e/perf/bench.ts"
+    "e2e": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test",
+    "perf": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && node --experimental-strip-types e2e/perf/bench.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.15",
     "@commitlint/cli": "^21.2.3",
     "@playwright/test": "1.64.0",
     "@types/node": "^26.6.5",
     "husky": "^9.1.7",
-    "prettier": "3.9.10",
     "typescript": "^7.0.2",
-    "vite": "^8.3.4",
-    "vitest": "^5.0.3"
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
   }
 }

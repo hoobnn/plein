@@ -1,7 +1,7 @@
 import type { Engine } from '@plein/canvas-core'
 import { addResults, type CanvasElement, connect, createDoc, createElement } from '@plein/doc'
 import type { Catalog } from '@plein/protocol'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { type NodeInfo, nodeElement, type Upstream, upstreams, validate } from './nodes'
 
 type PortDecl = { id: string; label: string; type: string; multiple?: boolean; required?: boolean }

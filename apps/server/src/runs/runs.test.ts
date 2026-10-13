@@ -7,7 +7,7 @@ import {
   writeRun,
 } from '@plein/doc'
 import type { Canvas } from '@plein/protocol'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vite-plus/test'
 import { addNode, startTestServer, until } from '../testing'
 
 /** 等节点的运行状态满足条件 */

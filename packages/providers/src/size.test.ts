@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { ratioOf, sizeByArea, sizeByLongEdge, tierEdge } from './size'
 
 describe('尺寸换算', () => {

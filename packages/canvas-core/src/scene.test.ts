@@ -1,6 +1,6 @@
 import { bringToFront, createElement, deleteElements, moveElements, setParent } from '@plein/doc'
 import { box, openDoc } from '@plein/doc/testing'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { mapRect, resizeBox, snapMove } from './geometry'
 import { Scene } from './scene'
 

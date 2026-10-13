@@ -203,7 +203,7 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
           <Icon name="search" />
         </span>
         <input
-          // biome-ignore lint/a11y/noAutofocus: 打开面板就是为了输入
+          // oxlint-disable-next-line jsx-a11y/no-autofocus -- 打开面板就是为了输入
           autoFocus
           className="h-13 min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-ink-subtle"
           placeholder={canvasId ? '搜索命令，或直接告诉小满要做什么…' : '搜索命令…'}

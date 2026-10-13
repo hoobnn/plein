@@ -141,8 +141,9 @@ function Panel({
   )
   // 换模型时自动校正了哪些参数
   const [notes, setNotes] = useState<string[]>([])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: 换节点时清空
+  // oxlint-disable react-hooks/exhaustive-deps -- 换节点时清空
   useEffect(() => setNotes([]), [el.id])
+  // oxlint-enable react-hooks/exhaustive-deps
   const optionsKey = fieldsOf(node).find(([, f]) => f.widget === 'modelOptions')?.[0]
   const allOptions = (optionsKey ? params[optionsKey] : undefined) as
     | Record<string, Record<string, unknown>>

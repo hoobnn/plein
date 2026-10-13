@@ -296,7 +296,7 @@ const sequence = defineExecutor(sequenceNode, async (ctx) => {
   ctx.progress(0, '读取素材…')
   const [clips, dialogue] = await Promise.all([
     Promise.all(arranged.map((c) => ctx.media.probe(c.clip))),
-    Promise.all(arranged.map((c) => (c.dialogue ? ctx.media.probe(c.dialogue) : undefined))),
+    Promise.all(arranged.map(async (c) => (c.dialogue ? ctx.media.probe(c.dialogue) : undefined))),
   ])
   const transcripts = params.asrTiming && params.subtitles ? await transcribe(ctx, arranged) : []
   const spec = sequenceSpec(

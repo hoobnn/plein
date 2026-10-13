@@ -197,7 +197,7 @@ export function AddMenu({
       <label className="plein-add-search">
         <Icon name="search" />
         <input
-          // biome-ignore lint/a11y/noAutofocus: 弹出即可打字搜索
+          // oxlint-disable-next-line jsx-a11y/no-autofocus -- 弹出即可打字搜索
           autoFocus
           value={query}
           placeholder={from ? `连接「${from.port.label}」` : '添加节点'}

@@ -1,5 +1,5 @@
 import { domainAllowed, type AssetRef } from '@plein/plugin-sdk'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { fakeContext } from '../testing'
 import { minimaxPlugin, minimaxProvider } from './index'
 

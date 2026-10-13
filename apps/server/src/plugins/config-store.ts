@@ -27,8 +27,8 @@ export class ProviderConfigStore {
     const c = this.data[id]
     return {
       enabled: c?.enabled ?? this.enabledByDefault.has(id),
-      settings: { ...(c?.settings ?? {}) },
-      secrets: { ...(c?.secrets ?? {}) },
+      settings: { ...c?.settings },
+      secrets: { ...c?.secrets },
     }
   }
 
