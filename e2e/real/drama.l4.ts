@@ -6,7 +6,10 @@ import {
   addNode,
   byName,
   centerOf,
+  clickElement,
   contextMenu,
+  deselect,
+  edgesInto,
   elements,
   newProject,
   waitEngine,
@@ -112,8 +115,65 @@ const note = (type: string, description: string) => {
   console.log(`[${type}] ${description}`)
 }
 
+/** 设定卡左边配的参考图节点名字后缀 */
+const REF_SUFFIX: Record<string, string> = {
+  'plein/character': '定妆图',
+  'plein/scene': '场景图',
+  'plein/prop': '道具图',
+}
+
+const KIND_TITLE: Record<string, string> = {
+  'plein/character': '角色',
+  'plein/scene': '场景',
+  'plein/prop': '道具',
+}
+
+interface Card {
+  id: string
+  name: string
+  nodeType: string
+  voiceId: string
+}
+
+/** 生成设定卡新建的卡片（排除模板自带的示例卡「主角」「场景」「道具」） */
+async function castCards(page: Page, names: string[]): Promise<Card[]> {
+  return page.evaluate(
+    ({ names, types }) =>
+      [...window.__plein.engine.doc.elements()]
+        .filter((e) => types.includes(e.nodeType ?? '') && names.includes(e.name ?? ''))
+        .map((e) => ({
+          id: e.id,
+          name: e.name!,
+          nodeType: e.nodeType!,
+          voiceId: (e.params?.voice as { voiceId?: string } | undefined)?.voiceId ?? '',
+        })),
+    { names, types: Object.keys(REF_SUFFIX) },
+  )
+}
+
+interface LibraryItem {
+  id: string
+  kind: string
+  name: string
+  tags: Record<string, string>
+  images: Array<{ assetId: string }>
+  voice: { voiceId: string } | null
+}
+
+/** 失败的节点：名字、错误码和错误信息 */
+function failures(page: Page) {
+  return page.evaluate(() =>
+    [...window.__plein.engine.doc.elements()]
+      .filter((e) => e.run?.status === 'failed')
+      .map((e) => {
+        const run = e.run as { error?: string; errorCode?: string }
+        return { name: e.name ?? e.id, code: run.errorCode ?? '', error: run.error ?? '' }
+      }),
+  )
+}
+
 async function openBoard(page: Page, id: string) {
-  await page.keyboard.press('Escape')
+  await deselect(page)
   await zoomTo(page, [id])
   const p = await centerOf(page, id)
   await page.mouse.dblclick(p.x, p.y)
@@ -122,11 +182,17 @@ async function openBoard(page: Page, id: string) {
   return dialog
 }
 
+test.describe.configure({ mode: 'serial' })
+
+/** 第一个用例出片的画布；单独跑资产库用例时用 PLEIN_L4_CANVAS 指定，不给就取数据目录里最近的画布 */
+let filmCanvas = process.env.PLEIN_L4_CANVAS ?? ''
+
 test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务', async ({ page }) => {
   await startServer()
   test.info().annotations.push({ type: '数据目录', description: DATA! })
   await newProject(page)
   const canvas = page.url().split('#/c/')[1]!.split(/[/?]/)[0]!
+  filmCanvas = canvas
   note('画布', canvas)
   await addNode(page, '短剧')
   await expect(page.locator('.ui-toast')).toContainText('短剧模板已铺出')
@@ -139,10 +205,7 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
 
   // 镜头数改成 6：参数和提示词里的数字一起改
   const board = await byName(page, '分镜（双击展开镜头）')
-  await page.keyboard.press('Escape')
-  await zoomTo(page, [board.id])
-  const bp = await centerOf(page, board.id)
-  await page.mouse.click(bp.x, bp.y)
+  await clickElement(page, board.id)
   const prompt = page.getByRole('textbox', { name: '提示词' })
   await prompt.fill((await prompt.inputValue()).replace(/拆成 \d+ 个镜头/, `拆成 ${SHOTS} 个镜头`))
   await page
@@ -153,43 +216,126 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
   await page.getByLabel('镜头数').fill(String(SHOTS))
   await page.keyboard.press('Escape')
 
+  // 分镜的上游是剧本和角色场景抽取（设定清单连进分镜，镜头按卡片名字写出场的角色、场景、道具）
   await contextMenu(page, board.id, '运行到此处')
   await waitNode(page, board.id, 10 * 60_000)
 
   const cast = await byName(page, '角色与场景抽取')
+  expect(cast.status).toBe('succeeded')
+  const entries = await page.evaluate((id) => {
+    const v = window.__plein.engine.doc.get(id)!.results!.at(-1)!.value as { text?: string }
+    return v.text ?? ''
+  }, cast.id)
+  note('抽取', entries.replace(/\n+/g, ' ').slice(0, 600))
   await zoomTo(page, [cast.id])
-  await contextMenu(page, cast.id, '运行到此处')
-  await waitNode(page, cast.id, 5 * 60_000)
-  const castMenu = page.getByRole('menu')
+  await deselect(page)
   const p = await centerOf(page, cast.id)
-  await page.keyboard.press('Escape')
   await page.mouse.click(p.x, p.y, { button: 'right' })
-  await castMenu.getByText(/^生成设定卡/).click()
+  await page
+    .getByRole('menu')
+    .getByText(/^生成设定卡/)
+    .click()
   await expect(page.locator('.ui-toast')).toContainText('设定卡')
   note('设定卡', (await page.locator('.ui-toast').textContent()) ?? '')
-  const voices = await page.evaluate(() =>
-    [...window.__plein.engine.doc.elements()]
-      .filter((e) => e.nodeType === 'plein/character')
-      .map((e) => {
-        const v = (e as { params?: { voice?: { voiceId?: string } } }).params?.voice
-        return `${e.name}=${v?.voiceId || '（未配）'}`
-      }),
+
+  // 抽取结果里的名字（### 标题）就是新卡的名字
+  const names = [...entries.matchAll(/^###\s+(.+)$/gm)].map((m) =>
+    m[1]!.replace(/\*\*/g, '').trim(),
   )
-  note('音色', voices.join('；'))
+  const cards = await castCards(page, names)
+  const ofType = (t: string) => cards.filter((c) => c.nodeType === t)
+  note(
+    '卡片',
+    Object.keys(REF_SUFFIX)
+      .map(
+        (t) =>
+          `${t}：${ofType(t)
+            .map((c) => c.name)
+            .join('、')}`,
+      )
+      .join('；'),
+  )
+  expect(ofType('plein/character').length).toBeGreaterThanOrEqual(2)
+  expect(ofType('plein/scene').length).toBeGreaterThanOrEqual(1)
+  // 一个上锁的铁盒贯穿全片，抽取得出道具
+  expect(ofType('plein/prop').length).toBeGreaterThanOrEqual(1)
+  // 每张卡左边配好参考图节点，连进卡片
+  const all0 = await elements(page)
+  for (const c of cards) {
+    const ref = all0.find((e) => e.name === `${c.name} · ${REF_SUFFIX[c.nodeType]}`)
+    expect(ref, `${c.name} 的${REF_SUFFIX[c.nodeType]}节点`).toBeTruthy()
+    const into = await edgesInto(page, c.id)
+    expect(into.map(([from]) => from)).toContain(ref!.id)
+  }
+  // 角色都配上音色，男女角色不共用一个声音
+  const chars = ofType('plein/character')
+  note('音色', chars.map((c) => `${c.name}=${c.voiceId || '（未配）'}`).join('；'))
+  expect(chars.filter((c) => !c.voiceId).map((c) => c.name)).toEqual([])
+  expect(new Set(chars.map((c) => c.voiceId)).size).toBeGreaterThanOrEqual(2)
 
   let dialog = await openBoard(page, board.id)
   await dialog.getByRole('button', { name: '展开为节点' }).click()
   await expect(page.locator('.ui-toast')).toContainText('已展开')
   note('展开', (await page.locator('.ui-toast').textContent()) ?? '')
+  // 镜头图提示词 @ 到了角色、场景和道具卡
+  const prompts = await page.evaluate(() =>
+    [...window.__plein.engine.doc.elements()]
+      // 展开出来的节点参数里带着分镜来源
+      .filter((e) => e.nodeType === 'plein/image' && !!e.params?.source)
+      .map((e) => String(e.params?.prompt ?? '')),
+  )
+  const mentioned = (t: string) =>
+    ofType(t)
+      .filter((c) => prompts.some((pr) => pr.includes(`@${c.name}`)))
+      .map((c) => c.name)
+  note(
+    '镜头引用',
+    Object.keys(REF_SUFFIX)
+      .map((t) => `${t}：${mentioned(t).join('、') || '无'}`)
+      .join('；'),
+  )
+  expect(mentioned('plein/character').length).toBeGreaterThan(0)
+  expect(mentioned('plein/scene').length).toBeGreaterThan(0)
+  expect(mentioned('plein/prop').length).toBeGreaterThan(0)
 
   dialog = await openBoard(page, board.id)
   await dialog.getByRole('button', { name: '批量出分镜图' }).click()
   await expect(page.locator('.ui-toast')).toContainText('已开始生成')
   await waitIdle(page, 20 * 60_000)
-  // 批量出分镜图会先出镜头 @ 到的角色的定妆图
-  const portraits = (await elements(page)).filter((e) => e.name?.endsWith(' · 定妆图'))
-  note('定妆图', portraits.map((e) => `${e.name}：${e.results} 张`).join('；'))
-  expect(portraits.some((e) => e.results > 0)).toBe(true)
+  // 平台审核偶尔拦下生成出来的图（不是提示词的问题，重出一次多半能过）：
+  // 像用户那样再点一次批量，出过的沿用，只补失败和因此跳过的
+  const rejected = await failures(page)
+  if (rejected.length && rejected.every((f) => f.code === 'content_policy')) {
+    note('审核重出', rejected.map((f) => `${f.name}：${f.error}`).join('；'))
+    dialog = await openBoard(page, board.id)
+    await dialog.getByRole('button', { name: '批量出分镜图' }).click()
+    await expect(page.locator('.ui-toast')).toContainText('已开始生成')
+    await waitIdle(page, 20 * 60_000)
+  }
+  // 重出一次还被审核拦下的只能是参考图（比如印着姓名的快递单）：@ 引用是软依赖，
+  // 镜头不等它、只带文字设定照常出；其余节点一个都不许失败
+  const isRef = (name: string) => / · (定妆图|场景图|道具图)$/.test(name)
+  const still = await failures(page)
+  if (still.length) note('审核未过', still.map((f) => `${f.name}：${f.error}`).join('；'))
+  expect(still.filter((f) => !(isRef(f.name) && f.code === 'content_policy'))).toEqual([])
+  const blocked = new Set(still.map((f) => f.name))
+  // 批量出分镜图会先出镜头 @ 到的卡片的参考图：定妆图、场景图、道具图
+  const refs = (await elements(page)).filter((e) => isRef(e.name ?? ''))
+  note('参考图', refs.map((e) => `${e.name}：${e.results} 张`).join('；'))
+  for (const t of Object.keys(REF_SUFFIX))
+    for (const name of mentioned(t)) {
+      const ref = refs.find((e) => e.name === `${name} · ${REF_SUFFIX[t]}`)
+      if (blocked.has(ref?.name ?? '')) continue
+      expect(ref?.results, `${name} 的${REF_SUFFIX[t]}`).toBeGreaterThan(0)
+    }
+  // 展开出来的镜头图一张不少
+  const shots = await page.evaluate(() =>
+    [...window.__plein.engine.doc.elements()]
+      .filter((e) => e.nodeType === 'plein/image' && !!e.params?.source)
+      .map((e) => ({ name: e.name, results: e.results?.length ?? 0 })),
+  )
+  expect(shots.length).toBeGreaterThan(0)
+  expect(shots.filter((e) => e.results === 0).map((e) => e.name)).toEqual([])
 
   dialog = await openBoard(page, board.id)
   await dialog.getByRole('button', { name: '批量生成视频' }).click()
@@ -233,7 +379,7 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
   await waitIdle(page, 20 * 60_000)
 
   const all = await elements(page)
-  const failed = all.filter((e) => e.status === 'failed')
+  const failed = all.filter((e) => e.status === 'failed' && !blocked.has(e.name ?? ''))
   expect(failed.map((e) => e.name)).toEqual([])
 
   const music = await byName(page, '配乐')
@@ -257,4 +403,117 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
   }
   note('成片', `${out.assetId}：${meta.width}×${meta.height}，${meta.duration.toFixed(1)} 秒`)
   expect([meta.width, meta.height]).toEqual([1080, 1920])
+
+  // 等这次运行的完成提示弹过：它晚一步到，会盖掉后面的提示
+  await expect(page.locator('.ui-toast')).toContainText('运行到「序列」')
+})
+
+test('资产库：出片画布上的角色、场景、道具存进资产库，在新项目里取用', async ({ page }) => {
+  if (!server) await startServer()
+  if (!filmCanvas) {
+    const out = execFileSync(
+      'sqlite3',
+      [join(DATA!, 'plein.db'), 'SELECT id FROM canvases ORDER BY created_at DESC LIMIT 1'],
+      { encoding: 'utf8' },
+    )
+    filmCanvas = out.trim()
+  }
+  note('画布', filmCanvas)
+  await page.goto(`/#/c/${filmCanvas}`)
+  await waitEngine(page)
+  const cast = await byName(page, '角色与场景抽取')
+  const entries = await page.evaluate((id) => {
+    const v = window.__plein.engine.doc.get(id)!.results!.at(-1)!.value as { text?: string }
+    return v.text ?? ''
+  }, cast.id)
+  const names = [...entries.matchAll(/^###\s+(.+)$/gm)].map((m) =>
+    m[1]!.replace(/\*\*/g, '').trim(),
+  )
+  const cards = await castCards(page, names)
+  const library = async () =>
+    (await (await page.request.get('/api/library')).json()) as LibraryItem[]
+
+  // 出过参考图的角色、场景、道具卡逐个存进去（以资产库接口为准：提示可能被别的提示盖掉）
+  const done = await elements(page)
+  const saved: Card[] = []
+  for (const c of cards) {
+    const ref = done.find((e) => e.name === `${c.name} · ${REF_SUFFIX[c.nodeType]}`)
+    if (!ref?.results) continue
+    await clickElement(page, c.id)
+    // 卡片已经存过时按钮是「更新资产库」
+    await page.getByRole('button', { name: /^(存入|更新)资产库$/ }).click()
+    await expect
+      .poll(async () => (await library()).some((i) => i.name === c.name), {
+        message: `「${c.name}」应已存入资产库`,
+      })
+      .toBe(true)
+    saved.push(c)
+  }
+  await page.keyboard.press('Escape')
+  const items = await library()
+  const itemOf = (name: string) => items.find((i) => i.name === name)
+  note(
+    '资产库',
+    saved
+      .map((c) => {
+        const i = itemOf(c.name)
+        return `${i?.kind}/${c.name}：${i?.images.length ?? 0} 张图${i?.voice ? `，音色 ${i.voice.voiceId}` : ''}${i?.tags.gender ? `，${i.tags.gender}·${i.tags.age ?? ''}` : ''}`
+      })
+      .join('；'),
+  )
+  for (const kind of ['character', 'scene', 'prop'])
+    expect(
+      saved.some((c) => itemOf(c.name)?.kind === kind),
+      `资产库里有 ${kind}`,
+    ).toBe(true)
+  for (const c of saved) {
+    const i = itemOf(c.name)!
+    expect(i.images.length, `${c.name} 的参考图`).toBeGreaterThan(0)
+    if (c.nodeType === 'plein/character') {
+      expect(i.voice?.voiceId).toBe(c.voiceId)
+      expect(i.tags.gender).toBeTruthy()
+    }
+  }
+
+  // 换一个项目，从资产库把角色、场景、道具各取一张放到画布：卡片带着设定、参考图和音色
+  await newProject(page)
+  const panel = page.getByRole('dialog', { name: '资产库' })
+  const picks = ['character', 'scene', 'prop'].map((k) =>
+    saved.find((c) => itemOf(c.name)?.kind === k)!,
+  )
+  // 添加到画布后面板会收起，每取一项重新打开
+  for (const c of picks) {
+    await deselect(page)
+    await page.getByRole('button', { name: '资产库' }).click()
+    await panel
+      .getByRole('group', { name: '资产类别' })
+      .getByRole('button', { name: KIND_TITLE[c.nodeType]!, exact: true })
+      .click()
+    await panel.getByRole('button', { name: '全部', exact: true }).click()
+    const row = panel.getByRole('listitem').filter({ hasText: c.name })
+    await row.first().hover()
+    await row.first().getByRole('button', { name: '添加到画布' }).click()
+    await expect(panel).toBeHidden()
+  }
+  for (const c of picks) {
+    await expect
+      .poll(async () => (await elements(page)).filter((e) => e.name === c.name).length)
+      .toBe(1)
+    const placed = await byName(page, c.name)
+    expect(placed.nodeType).toBe(c.nodeType)
+    const into = await edgesInto(page, placed.id)
+    const assets = await page.evaluate(
+      (ids) => ids.map((id) => window.__plein.engine.doc.get(id)?.assetId),
+      into.map(([from]) => from),
+    )
+    expect(assets).toEqual(itemOf(c.name)!.images.map((i) => i.assetId))
+    if (c.nodeType === 'plein/character') {
+      const voice = await page.evaluate(
+        (id) => (window.__plein.engine.doc.get(id)?.params?.voice as { voiceId?: string })?.voiceId,
+        placed.id,
+      )
+      expect(voice).toBe(c.voiceId)
+    }
+  }
+  note('新项目取用', picks.map((c) => c.name).join('、'))
 })
