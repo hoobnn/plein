@@ -22,6 +22,7 @@ import {
   type MediaCapsInfo,
   type MediaDerivation,
   type MediaDeriveRequest,
+  type SequenceExportRequest,
   type NodeRunStarted,
   type Project,
   type ProviderConfigUpdate,
@@ -190,6 +191,9 @@ export const api = {
 
   mediaDerive: (body: MediaDeriveRequest) =>
     request<MediaDerivation>(API.mediaDerive, json('POST', body)),
+  /** 剪辑工程（OTIO / FCPXML + 素材）：返回一个短期下载地址 */
+  sequenceExport: (body: SequenceExportRequest) =>
+    request<{ url: string }>(API.sequenceExport, json('POST', body)),
   mediaCaps: () => request<MediaCapsInfo>(API.mediaCaps),
 
   assetMeta: (id: string) => request<Asset>(API.assetMeta(id)),

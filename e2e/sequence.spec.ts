@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
@@ -213,6 +213,14 @@ test('序列时间线：排序、修剪、播放', async ({ page }) => {
     await page.waitForTimeout(400)
     await editor.screenshot({ path: join(shotDir, 'transition.png') })
   }
+
+  // 导出剪辑工程：下载一个 zip（OTIO / FCPXML / 字幕 / 素材）
+  const download = page.waitForEvent('download')
+  await editor.getByRole('button', { name: '导出工程' }).click()
+  // 文件名是中文时 Playwright 自带的无头 Chromium 只给出 "download"，这里检查内容
+  const zipped = readFileSync((await (await download).path())!)
+  expect(zipped.subarray(0, 2).toString()).toBe('PK')
+  expect(zipped.includes(Buffer.from('timeline.otio'))).toBe(true)
 
   await page.keyboard.press('Escape')
   await expect(editor).toBeHidden()

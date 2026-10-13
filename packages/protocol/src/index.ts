@@ -354,6 +354,60 @@ export const MediaDeriveRequest = z.discriminatedUnion('op', [
 ])
 export type MediaDeriveRequest = z.infer<typeof MediaDeriveRequest>
 
+const composeRef = z.object({ assetId: assetIdField, kind: AssetKind, mime: z.string().optional() })
+const composeTransition = z.object({
+  type: z.enum(['fade', 'dissolve', 'wipe', 'slide', 'flash']),
+  duration: z.number().positive().max(10),
+})
+
+/**
+ * 导出剪辑工程（OTIO / FCPXML / SRT 和用到的素材打成一个 zip）：
+ * 前端按和导出成片同一套规则算出合成参数（ComposeSpec）交上来，服务端只负责打包。
+ */
+export const SequenceExportRequest = z.object({
+  spec: z.object({
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    fps: z.number().int().min(1).max(120),
+    name: z.string().trim().max(120).optional(),
+    clips: z
+      .array(
+        z.object({
+          asset: composeRef,
+          in: z.number().min(0),
+          out: z.number().min(0).optional(),
+          volume: z.number().min(0).max(4),
+          speed: z.number().min(0.1).max(10).optional(),
+          transition: composeTransition.optional(),
+        }),
+      )
+      .min(1)
+      .max(500),
+    audio: z
+      .array(
+        z.object({
+          asset: composeRef,
+          start: z.number().min(0),
+          duration: z.number().positive().optional(),
+          volume: z.number().min(0).max(4),
+          loop: z.boolean().optional(),
+          fadeOut: z.number().min(0).optional(),
+          envelope: z.array(z.tuple([z.number(), z.number()])).optional(),
+        }),
+      )
+      .max(2000),
+    subtitles: z
+      .object({
+        cues: z.array(z.object({ start: z.number(), end: z.number(), text: z.string() })),
+        style: z.enum(['standard', 'bold', 'boxed']),
+      })
+      .optional(),
+    transition: composeTransition.optional(),
+    loudnorm: z.boolean().optional(),
+  }),
+})
+export type SequenceExportRequest = z.infer<typeof SequenceExportRequest>
+
 /** 加工结果：产物 + 来源（源资产、操作、参数），供 UI 展示与回溯 */
 export const MediaDerivation = z.object({
   source: z.object({ assetId: z.string(), kind: AssetKind, name: z.string() }),
@@ -802,6 +856,9 @@ export const API = {
   subtitleFont: '/api/media/subtitle-font',
   subtitleFontFile: (version: string) =>
     `/api/media/subtitle-font/file?v=${encodeURIComponent(version)}`,
+  /** 导出剪辑工程：POST SequenceExportRequest，返回 { url }，再 GET 那个地址下载 zip */
+  sequenceExport: '/api/media/sequence-export',
+  sequenceExportFile: (token: string) => `/api/media/sequence-export/${encodeURIComponent(token)}`,
   catalog: '/api/catalog',
   /** 优化 / 翻译提示词，见 RewritePrompt */
   promptRewrite: '/api/prompt/rewrite',

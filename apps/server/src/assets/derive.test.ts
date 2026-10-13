@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Asset } from '@plein/protocol'
+import { API, type Asset } from '@plein/protocol'
+import { strFromU8, unzipSync } from 'fflate'
 import { Hono } from 'hono'
 import sharp from 'sharp'
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
@@ -539,4 +540,70 @@ describe.skipIf(!ffmpegAvailable)('剪辑时间线的按需衍生物', () => {
     expect(await store.ensureVariant(video, 'peaks')).toBe(true)
     expect(await store.ensureVariant(image, 'peaks')).toBe(false)
   }, 30_000)
+})
+
+describe.skipIf(!ffmpegAvailable)('剪辑工程导出', () => {
+  const app = (principal = OWNER) => {
+    const server = new Hono<AuthEnv>()
+    server.use('*', async (c, next) => {
+      c.set('principal', { id: principal, role: 'owner' })
+      await next()
+    })
+    server.route('/', mediaRoutes(store))
+    return server
+  }
+  const spec = () => ({
+    width: 1080,
+    height: 1920,
+    fps: 30,
+    name: '雨夜/归来',
+    clips: [
+      { asset: { assetId: video.id, kind: 'video' }, in: 0, out: 3, volume: 1 },
+      {
+        asset: { assetId: video.id, kind: 'video' },
+        in: 1,
+        out: 4,
+        volume: 1,
+        transition: { type: 'dissolve', duration: 0.5 },
+      },
+    ],
+    audio: [{ asset: { assetId: audio.id, kind: 'audio' }, start: 0, volume: 0.3, loop: true }],
+    subtitles: { cues: [{ start: 0, end: 1, text: '你来了' }], style: 'standard' },
+  })
+
+  it('打包 OTIO、FCPXML、字幕、说明和素材；链接只给本人用', async () => {
+    const res = await app().request(API.sequenceExport, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ spec: spec() }),
+    })
+    expect(res.status).toBe(201)
+    const { url } = (await res.json()) as { url: string }
+    expect((await app('someone-else').request(url)).status).toBe(404)
+    const file = await app().request(url)
+    expect(file.status).toBe(200)
+    expect(file.headers.get('content-disposition')).toContain(encodeURIComponent('雨夜_归来.zip'))
+    const entries = unzipSync(new Uint8Array(await file.arrayBuffer()))
+    expect(Object.keys(entries).sort()).toEqual([
+      '雨夜_归来/README.txt',
+      '雨夜_归来/media/01 原片.mp4',
+      '雨夜_归来/media/02 原声.m4a',
+      '雨夜_归来/subtitles.srt',
+      '雨夜_归来/timeline.fcpxml',
+      '雨夜_归来/timeline.otio',
+    ])
+    // 素材原样存进去
+    expect(entries['雨夜_归来/media/01 原片.mp4']!.length).toBe(video.size)
+    const otio = JSON.parse(strFromU8(entries['雨夜_归来/timeline.otio']!))
+    expect(otio.tracks.children[0].children[1].OTIO_SCHEMA).toBe('Transition.1')
+  })
+
+  it('别人的素材当作不存在', async () => {
+    const res = await app('someone-else').request(API.sequenceExport, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ spec: spec() }),
+    })
+    expect(res.status).toBe(404)
+  })
 })

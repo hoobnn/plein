@@ -8,11 +8,13 @@ import {
   type SequenceClip,
   sequenceNode,
   type SequenceParams,
+  sequenceSpec,
   sequenceTimeline,
   TRANSITIONS,
 } from '@plein/nodes'
 import type { PortValue } from '@plein/plugin-sdk'
 import { useEffect, useRef, useState } from 'react'
+import { api } from '../api/client'
 import { downloadAsset } from '../canvas/grid'
 import { useDocVersion } from '../canvas/hooks'
 import { desktop } from '../desktop'
@@ -226,6 +228,38 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     patch(r?.source, p)
   }
 
+  /** 导出剪辑工程：和成片同一套合成参数，服务端打包成 OTIO / FCPXML + 素材的 zip */
+  const [packing, setPacking] = useState(false)
+  const [packError, setPackError] = useState<string | null>(null)
+  const exportProject = async () => {
+    setPacking(true)
+    setPackError(null)
+    try {
+      const spec = sequenceSpec(
+        params,
+        rows,
+        {
+          clips: rows.map((r) => duration(r.clip.assetId) ?? 0),
+          dialogue: rows.map((r) => (r.dialogue ? duration(r.dialogue.assetId) : undefined)),
+          more: rows.map((r) => r.more.map((m) => duration(m.assetId))),
+        },
+        music ? [{ type: 'audio', assetId: music, kind: 'audio' }] : undefined,
+        el?.name,
+      )
+      const { url } = await api.sequenceExport({ spec })
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${(el?.name ?? '序列').replace(/[\\/:*?"<>|]/g, '_')}.zip`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    } catch (err) {
+      setPackError((err as Error).message || '导出工程失败')
+    } finally {
+      setPacking(false)
+    }
+  }
+
   const exportVideo = () => {
     if (running) void cancelNode(id)
     else void runNode(id)
@@ -283,6 +317,25 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             {el.run.error ?? '导出失败'}
           </span>
         )}
+        {packError && (
+          <span className="max-w-80 truncate text-xs text-danger" title={packError}>
+            {packError}
+          </span>
+        )}
+        <button
+          type="button"
+          className="ui-btn ui-btn-secondary"
+          disabled={packing || rows.length === 0 || !known}
+          title={
+            pending
+              ? `还有 ${pending} 段镜头没有生成`
+              : '导出 OTIO / FCPXML 剪辑工程（连同素材打包），在达芬奇、Final Cut 里接着剪'
+          }
+          onClick={() => void exportProject()}
+        >
+          <Icon name="exportFile" />
+          {packing ? '打包中…' : '导出工程'}
+        </button>
         {filmAsset && !running && (
           <button
             type="button"
