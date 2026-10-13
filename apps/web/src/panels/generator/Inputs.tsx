@@ -248,7 +248,7 @@ function TextChip({
         onClick={onRemove}
         aria-label={`断开「${name}」`}
         title="断开"
-        className="flex size-5 flex-none items-center justify-center rounded-xs text-ink-subtle transition-colors hover:bg-active hover:text-ink"
+        className="ui-chip-remove"
       >
         <Icon name="x" size={12} />
       </button>

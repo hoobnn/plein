@@ -67,13 +67,13 @@
 
 尺寸只有五档，类型上限定为 `IconSize`。图标比旁边的文字大 2–3：
 
-| 尺寸 | 用在                                                          |
-| ---- | ------------------------------------------------------------- |
-| 12   | 角标、标签里，`text-xs` 小按钮里的下拉箭头，实心的播放 / 停止 |
-| 14   | 28 高的按钮、`.ui-bar-sm` 工具条、分段控件、`text-sm` 标题旁  |
-| 16   | 默认：32–36 高的按钮、菜单项、工具条、输入框里的搜索图标      |
-| 20   | 40 高的大方块（首页快速开始、新建画布），底部工具条的添加按钮 |
-| 24   | 空状态、节点卡片中央的类型图标                                |
+| 尺寸 | 用在                                                            |
+| ---- | --------------------------------------------------------------- |
+| 12   | 角标、标签里，`text-xs` 小按钮里的下拉箭头，实心的播放 / 停止   |
+| 14   | 24–28 高的按钮、`.ui-bar-sm` 工具条、分段控件、`text-sm` 标题旁 |
+| 16   | 默认：32–36 高的按钮、菜单项、工具条、输入框里的搜索图标        |
+| 20   | 40 高的大方块（首页快速开始、新建画布），底部工具条的添加按钮   |
+| 24   | 空状态、节点卡片中央的类型图标                                  |
 
 线宽随尺寸换算：12 → 1.25px，16 → 1.5px，20 及以上 1.75px。播放、暂停、停止画实心。画幅图标（`AspectGlyph`）按同样的 1.5px 线宽绘制。
 
@@ -121,22 +121,25 @@
 
 ## 通用控件
 
-| 类                                                                                                                                                                     | 说明                                                |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `.ui-bar` / `.ui-bar-sm` / `.ui-bar-btn` / `.ui-bar-sep` / `.ui-bar-text`                                                                                              | 工具条：页头、底部工具条、结果 / Frame / 多选工具条 |
-| `.ui-btn` + `-primary` `-secondary` `-quiet` `-danger` `-danger-solid`，尺寸 `-xs` `-sm` `-lg`，`.ui-icon-btn`（宽 = 高），`.ui-btn-menu`（打开菜单，末尾箭头弱色）    | 按钮                                                |
-| `.ui-input` / `.ui-select` / `.ui-input-lg`                                                                                                                            | 输入框、下拉框（`ui/Select.tsx`）                   |
-| `.ui-field` / `.ui-label` / `.ui-help` / `.ui-section-title`                                                                                                           | 表单字段和分组标题                                  |
-| `.ui-seg` / `.ui-seg-item`，`.ui-seg-block`（铺满等分，选中底色滑动切换，需传 `--seg-n` / `--seg-i`）、`.ui-seg-tall`（图标在上）、`.ui-seg-aspect`（画幅，最多 9 项） | 分段控件：主题切换、筛选；参数面板选画幅、分辨率    |
-| `.ui-menu` / `.ui-menu-item` / `.ui-menu-label` / `.ui-sep`，两行项用 `.ui-menu-text` + `.ui-menu-desc`                                                                | 菜单、弹层（`ui/Popover.tsx`）                      |
-| `.ui-dialog-scrim` / `.ui-dialog`                                                                                                                                      | 对话框动效（`ui/Dialog.tsx`、`ui/Modal.tsx`）       |
-| `.ui-toast` / `.ui-tooltip`                                                                                                                                            | 提示条、悬停提示（`ui/Tooltip.tsx`）                |
-| `.ui-chip` / `.ui-tag`（`-success` `-warning` `-danger` `-accent`）/ `.ui-badge`                                                                                       | 24 高的标签；20 高的状态标签；图片上的角标          |
-| `.ui-kbd` / `.ui-keycap`                                                                                                                                               | 菜单里的快捷键提示；成组出现的键帽                  |
-| `.ui-spinner`                                                                                                                                                          | 加载中，`size-3` / `size-4` 缩小                    |
-| `.ui-empty`（`-fill` `-compact`）                                                                                                                                      | 空状态（`ui/EmptyState.tsx`）                       |
-| `.ui-switch`                                                                                                                                                           | 开关（`ui/Switch.tsx`）                             |
-| `.ui-pop`（`.ui-pop-up` `.ui-pop-right`）                                                                                                                              | 其他弹出的浮层的进场方向                            |
+| 类                                                                                                                                                                     | 说明                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `.ui-bar` / `.ui-bar-sm` / `.ui-bar-btn` / `.ui-bar-sep` / `.ui-bar-text` / `.ui-bar-check`（复选项）；纯图标按钮加 `.ui-icon-btn`                                     | 工具条：页头、底部工具条、结果 / Frame / 多选工具条      |
+| `.ui-btn` + `-primary` `-secondary` `-quiet` `-danger` `-danger-solid`，尺寸 `-xs` `-sm` `-lg`，`.ui-icon-btn`（宽 = 高），`.ui-btn-menu`（打开菜单，末尾箭头弱色）    | 按钮                                                     |
+| `.ui-input` / `.ui-select` / `.ui-input-lg`                                                                                                                            | 输入框、下拉框（`ui/Select.tsx`）                        |
+| `.ui-field` / `.ui-label` / `.ui-help` / `.ui-section-title`                                                                                                           | 表单字段和分组标题                                       |
+| `.ui-seg` / `.ui-seg-item`，`.ui-seg-block`（铺满等分，选中底色滑动切换，需传 `--seg-n` / `--seg-i`）、`.ui-seg-tall`（图标在上）、`.ui-seg-aspect`（画幅，最多 9 项） | 分段控件：主题切换、筛选；参数面板选画幅、分辨率         |
+| `.ui-menu` / `.ui-menu-item` / `.ui-menu-label` / `.ui-sep`，两行项用 `.ui-menu-text` + `.ui-menu-desc`                                                                | 菜单、弹层（`ui/Popover.tsx`）                           |
+| `.ui-dialog-scrim` / `.ui-dialog`                                                                                                                                      | 对话框动效（`ui/Dialog.tsx`、`ui/Modal.tsx`）            |
+| `.ui-toast` / `.ui-tooltip`                                                                                                                                            | 提示条、悬停提示（`ui/Tooltip.tsx`）                     |
+| `.ui-chip` / `.ui-chip-remove` / `.ui-tag`（`-success` `-warning` `-danger` `-accent`）/ `.ui-badge`                                                                   | 24 高的标签和它的移除按钮；20 高的状态标签；图片上的角标 |
+| `.ui-drop-tile`                                                                                                                                                        | 96 见方的虚线投放格（上传、从画布选）                    |
+| `.ui-kbd` / `.ui-keycap`                                                                                                                                               | 菜单里的快捷键提示；成组出现的键帽                       |
+| `.ui-spinner`                                                                                                                                                          | 加载中，`size-3` / `size-4` 缩小                         |
+| `.ui-empty`（`-fill` `-compact`）                                                                                                                                      | 空状态（`ui/EmptyState.tsx`）                            |
+| `.ui-switch`                                                                                                                                                           | 开关（`ui/Switch.tsx`）                                  |
+| `.ui-pop`（`.ui-pop-up` `.ui-pop-right`）                                                                                                                              | 其他弹出的浮层的进场方向                                 |
+
+纯图标的控件一律显式标记（`.ui-icon-btn`、`Segmented` 的 `iconOnly`），不要用 `:has(> svg:only-child)` 推断：`:only-child` 不看文字节点，图标加文字的控件也会命中。
 
 新组件先找这里的类；确实需要新的样式时，先在 `styles/controls.css` 加成通用类，再在组件里用。通用控件都在 `@layer components` 里，组件上的 Tailwind 工具类能直接覆盖，不需要 `!`；`styles/` 下其他文件是不分层的页面样式，别和同属性的工具类混用。
 

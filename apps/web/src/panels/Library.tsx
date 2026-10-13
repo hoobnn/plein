@@ -784,7 +784,7 @@ function CanvasPick({
         disabled={!list.length}
         title={list.length ? undefined : `画布上没有${type === 'image' ? '图片' : '视频'}`}
         onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
-        className="flex size-24 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line text-xs text-ink-subtle enabled:hover:text-ink disabled:opacity-50"
+        className="ui-drop-tile"
       >
         <Icon name="board" size={16} />
         从画布选
@@ -917,7 +917,7 @@ function SlotField({
               e.preventDefault()
               void pick([...e.dataTransfer.files])
             }}
-            className="flex size-24 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line text-xs text-ink-subtle hover:text-ink"
+            className="ui-drop-tile"
           >
             <Icon name={busy ? 'upload' : 'plus'} size={16} />
             {busy ? '上传中' : '上传'}
@@ -990,7 +990,7 @@ function VideoField({
             type="button"
             disabled={busy}
             onClick={() => ref.current?.click()}
-            className="flex size-24 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line text-xs text-ink-subtle hover:text-ink"
+            className="ui-drop-tile"
           >
             <Icon name="upload" size={16} />
             {busy ? '上传中' : '上传视频'}

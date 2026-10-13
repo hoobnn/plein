@@ -714,7 +714,7 @@ function Composer({ running }: { running: boolean }) {
               type="button"
               aria-label="不带选中元素"
               title="不带选中元素"
-              className="flex size-5 items-center justify-center rounded-xs text-ink-subtle transition-colors hover:bg-active hover:text-ink"
+              className="ui-chip-remove"
               onClick={() => setWithSelection(false)}
             >
               <Icon name="x" size={12} />

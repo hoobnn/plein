@@ -113,12 +113,12 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
       {remote && <div className="ui-bar-sep" />}
       {remote && (
         <>
-          <label className="flex h-8 cursor-pointer items-center gap-2 px-2.5 text-xs text-ink-muted hover:text-ink">
+          <label className="ui-bar-check">
             <input type="checkbox" checked={video} onChange={(e) => setVideo(e.target.checked)} />
             含视频
           </label>
           <label
-            className="flex h-8 cursor-pointer items-center gap-2 px-2.5 text-xs text-ink-muted hover:text-ink"
+            className="ui-bar-check"
             title="默认参数和输入都没变的节点沿用原结果；勾选后全部重新生成"
           >
             <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />

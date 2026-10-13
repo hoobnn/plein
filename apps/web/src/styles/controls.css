@@ -74,6 +74,23 @@
     margin: 0 4px;
     background: var(--line);
   }
+  /* 工具条里的复选项：和按钮同高，文字弱色、悬停变实 */
+  .ui-bar-check {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    height: var(--h-md);
+    padding: 0 10px;
+    font-size: var(--text-xs);
+    color: var(--ink-muted);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease-standard);
+  }
+  .ui-bar-check:hover {
+    color: var(--ink);
+  }
   .ui-bar-text {
     padding: 0 8px;
     font-size: var(--text-xs);
@@ -626,6 +643,48 @@
     color: var(--ink-muted);
     background: var(--surface-2);
     box-shadow: inset 0 0 0 1px var(--line);
+  }
+
+  /* 标签里的移除按钮：20 见方，标签右内边距收到 2（pr-0.5），圆角按同心 6 − 2 = 4 */
+  .ui-chip-remove {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: var(--radius-xs);
+    color: var(--ink-subtle);
+    transition:
+      background-color var(--dur-fast) var(--ease-standard),
+      color var(--dur-fast) var(--ease-standard);
+  }
+  .ui-chip-remove:hover {
+    background: var(--active);
+    color: var(--ink);
+  }
+
+  /* 虚线投放格：表单里「上传」「从画布选」，和 96 的缩略图同尺寸 */
+  .ui-drop-tile {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 96px;
+    height: 96px;
+    border-radius: var(--radius-lg);
+    border: 1px dashed var(--line);
+    font-size: var(--text-xs);
+    color: var(--ink-subtle);
+    transition: color var(--dur-fast) var(--ease-standard);
+  }
+  .ui-drop-tile:enabled:hover {
+    color: var(--ink);
+  }
+  .ui-drop-tile:disabled {
+    opacity: 0.4;
   }
 
   /* 状态标签：20 高、无描边，颜色表示状态；和图片上的 .ui-badge 同尺寸 */
