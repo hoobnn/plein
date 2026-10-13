@@ -2,16 +2,14 @@ import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
 import type { ReactNode } from 'react'
 import { applyCast, castLibrary, castOf, describeCast } from '../canvas/cast'
 import { findNode, type NodeInfo } from '../canvas/nodes'
-import { templateData } from '../canvas/groups'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
-import { useTemplates } from '../stores/templates'
-import { promptDialog } from '../ui/Dialog'
 import { shortcut } from '../ui/keys'
 import { useDismiss } from '../ui/useDismiss'
 import { AddMenu } from './AddMenu'
 import { runFlowFrom, runFrame, runNode } from './run'
 import { Presence, useExit } from '../ui/Presence'
+import { saveAsTemplate } from './templates'
 
 const MENU_W = 280
 
@@ -136,22 +134,7 @@ function ContextMenu({
     const el = engine.doc.get(id)
     return runFlowFrom(id, scope, el?.name ?? findNode(catalog, el?.nodeType)?.title ?? '节点')
   }
-  const saveFrame = async (id: string) => {
-    const title = await promptDialog({
-      title: '存为模板',
-      message: '存好后，双击画布空白处，在「我的模板」里找到它。',
-      defaultValue: engine.doc.get(id)?.name ?? 'Frame',
-      placeholder: '模板名称',
-      confirmLabel: '保存',
-    })
-    if (!title) return
-    try {
-      await useTemplates.getState().save(title, templateData(engine, id))
-      notify(`已存为模板「${title}」，双击空白处在“我的模板”里找到`)
-    } catch (err) {
-      notify((err as Error).message)
-    }
-  }
+  const saveFrame = (id: string) => saveAsTemplate(engine, id, engine.doc.get(id)?.name ?? 'Frame')
   const ids = engine.selection.values()
   const single = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
   const node: NodeInfo | undefined =

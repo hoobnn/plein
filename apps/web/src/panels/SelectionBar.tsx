@@ -1,6 +1,5 @@
 import { type Engine, union } from '@plein/canvas-core'
 import { elementMedia } from '@plein/doc'
-import { templateData } from '../canvas/groups'
 import { downloadAll } from '../canvas/grid'
 import { mediaIn } from '../canvas/library'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
@@ -8,10 +7,9 @@ import { LibraryAdd } from './LibraryAdd'
 import { type MediaTarget, MediaBatchTools } from './MediaTools'
 import { useAgent } from '../stores/agent'
 import { useCanvas } from '../stores/canvas'
-import { useTemplates } from '../stores/templates'
-import { promptDialog } from '../ui/Dialog'
 import { Icon } from '../ui/icons'
 import { withShortcut } from '../ui/keys'
+import { saveAsTemplate } from './templates'
 
 /** 节点标题在卡片外上方，工具条要让开它 */
 const TITLE_H = 30
@@ -63,25 +61,7 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
     notify(`开始下载 ${n} 个文件`)
   }
   // 模板以 Frame 为单位：先打组，再把这个组存下来
-  const save = async () => {
-    const title = await promptDialog({
-      title: '存为模板',
-      message: '存好后，双击画布空白处，在「我的模板」里找到它。',
-      defaultValue: '我的模板',
-      placeholder: '模板名称',
-      confirmLabel: '保存',
-    })
-    if (!title) return
-    engine.groupSelection()
-    const frame = engine.selection.values()[0]
-    if (!frame || engine.scene.get(frame)?.kind !== 'frame') return
-    try {
-      await useTemplates.getState().save(title, templateData(engine, frame))
-      notify(`已打组并存为模板「${title}」，双击空白处在“我的模板”里找到`)
-    } catch (err) {
-      notify((err as Error).message)
-    }
-  }
+  const save = () => saveAsTemplate(engine, null, '我的模板')
 
   const btn = 'ui-bar-btn'
   return (

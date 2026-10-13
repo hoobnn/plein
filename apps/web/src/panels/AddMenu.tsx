@@ -15,6 +15,7 @@ import { useCatalog } from '../stores/catalog'
 import { useTemplates } from '../stores/templates'
 import { Icon, type IconName } from '../ui/icons'
 import { useExit } from '../ui/Presence'
+import { confirmDialog } from '../ui/Dialog'
 
 const NODE_ICONS: Record<string, IconName> = {
   'plein/text': 'text',
@@ -74,6 +75,8 @@ interface Item {
   section: string
   /** 在世界坐标 at 处落下 */
   run(at: { x: number; y: number }): void
+  /** 可以删掉的条目（我的模板） */
+  remove?(): void
 }
 
 export interface AddMenuProps {
@@ -149,6 +152,7 @@ export function AddMenu({
           icon: 'layers',
           section: '我的模板',
           run: (p) => placeTemplate(engine, t.data as unknown as ClipboardData, p),
+          remove: () => void removeTemplate(t.id, t.title),
         })
       if (canImport) {
         list.push({
@@ -232,7 +236,7 @@ export function AddMenu({
           const header = item.section !== lastSection && i > 0 ? item.section : null
           lastSection = item.section
           return (
-            <div key={item.id}>
+            <div key={item.id} className="group relative">
               {header && <div className="plein-add-section">{header}</div>}
               <button
                 type="button"
@@ -248,10 +252,41 @@ export function AddMenu({
                 </span>
                 <span className="truncate">{item.title}</span>
               </button>
+              {item.remove && (
+                <button
+                  type="button"
+                  aria-label={`删除模板「${item.title}」`}
+                  title="删除模板"
+                  onClick={() => {
+                    onClose()
+                    item.remove!()
+                  }}
+                  className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn absolute right-2 bottom-1 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                >
+                  <Icon name="trash" size={14} />
+                </button>
+              )}
             </div>
           )
         })}
       </div>
     </div>
   )
+}
+
+/** 删掉一个我的模板：已经用模板铺到画布上的内容不受影响 */
+async function removeTemplate(id: string, title: string) {
+  const ok = await confirmDialog({
+    title: `删除模板「${title}」？`,
+    message: '只删除模板本身；已经用它铺到画布上的内容保留。',
+    confirmLabel: '删除',
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await useTemplates.getState().remove(id)
+    useCanvas.getState().notify(`已删除模板「${title}」`)
+  } catch (err) {
+    useCanvas.getState().notify(`模板没删掉：${(err as Error).message}`)
+  }
 }

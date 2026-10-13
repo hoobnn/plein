@@ -1,18 +1,17 @@
 import type { Engine } from '@plein/canvas-core'
 import { updateElement } from '@plein/doc'
 import { useState } from 'react'
-import { groupNodes, templateData } from '../canvas/groups'
+import { groupNodes } from '../canvas/groups'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useGroupRuns } from '../stores/groupRuns'
-import { useTemplates } from '../stores/templates'
 import { Icon } from '../ui/icons'
-import { promptDialog } from '../ui/Dialog'
 import { withShortcut } from '../ui/keys'
 import { Popover } from '../ui/Popover'
 import { Presence } from '../ui/Presence'
 import { cancelGroup, runFrame } from './run'
+import { saveAsTemplate } from './templates'
 
 /** 页头占的高度：Frame 顶到页头时工具条不压住它 */
 const TOP_RESERVED = 64
@@ -40,7 +39,6 @@ export function FrameBar({ remote }: { remote: boolean }) {
 function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
   useEngineVersion(engine)
   const catalog = useCatalog((s) => s.catalog)
-  const notify = useCanvas((s) => s.notify)
   const [video, setVideo] = useState(false)
   const [force, setForce] = useState(false)
   const runs = useGroupRuns((s) => s.runs)
@@ -62,22 +60,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
   const name = el.name ?? 'Frame'
   const busy = el.id in runs
   const group = runs[el.id] ?? null
-  const save = async () => {
-    const title = await promptDialog({
-      title: '存为模板',
-      message: '存好后，双击画布空白处，在「我的模板」里找到它。',
-      defaultValue: name,
-      placeholder: '模板名称',
-      confirmLabel: '保存',
-    })
-    if (!title) return
-    try {
-      await useTemplates.getState().save(title, templateData(engine, el.id))
-      notify(`已存为模板「${title}」，双击空白处在“我的模板”里找到`)
-    } catch (err) {
-      notify((err as Error).message)
-    }
-  }
+  const save = () => saveAsTemplate(engine, el.id, name)
 
   const btn = 'ui-bar-btn'
   return (
