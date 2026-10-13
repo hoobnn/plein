@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # release.yml 发版前复用同一套检查
+  workflow_call:
 
 jobs:
   check:

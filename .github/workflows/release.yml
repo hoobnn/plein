@@ -1,0 +1,39 @@
+name: Release
+
+# v* 标签：测试 → 构建、签名、公证 macOS 安装包（Apple 芯片）并发布 GitHub Release。
+# 在分支上手动运行只构建和公证，产物在运行页的 Artifacts 里，不发布。
+# 签名、公证、打包与发布由 hoobnn/ci-workflows 的复用工作流完成，凭据见它的 README：
+#   Secrets：APPLE_CERT_APPLICATION_P12_BASE64、APPLE_CERT_APPLICATION_P12_PASSWORD、
+#            APPLE_NOTARY_KEY_ID、APPLE_NOTARY_ISSUER_ID、APPLE_NOTARY_KEY_P8_BASE64
+#   Variables：APPLE_TEAM_ID、APPLE_SIGN_IDENTITY_APPLICATION
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 发版不取消：公证中途被打断最难收拾
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Build, sign, notarize and release
+    needs: test
+    permissions:
+      contents: write
+    uses: hoobnn/ci-workflows/.github/workflows/macos-release.yml@v1
+    with:
+      app-path: apps/desktop/release/mac-arm64/Plein.app
+      # 工具链、ffmpeg 和内层签名都在脚本里，原因见脚本开头
+      build-command: apps/desktop/scripts/ci-build.sh
+      artifact-basename: Plein
+      entitlements: apps/desktop/resources/entitlements.mac.plist
+      make-dmg: true
+    secrets: inherit
