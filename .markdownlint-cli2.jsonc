@@ -1,0 +1,15 @@
+// markdownlint 规则（VS Code 插件与 pnpm lint 共用）
+{
+  "config": {
+    "default": true,
+    // 项目约定 Markdown 段落不折行，表格每行写在一行里
+    "MD013": false,
+    // README 顶部的居中图标、折叠区需要少量 HTML
+    "MD033": { "allowed_elements": ["div", "img", "br", "details", "summary", "b"] },
+    // README 以居中的图标区开头，标题在其中
+    "MD041": { "allow_preamble": true },
+  },
+  "globs": ["**/*.md"],
+  // 跳过 .gitignore 里的目录（node_modules、构建产物、data 等）
+  "gitignore": true,
+}
