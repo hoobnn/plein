@@ -328,7 +328,7 @@ M4 的代码部分（模板、资产引用、分镜同步、媒体加工）已�
 - [x] 桌面端自动更新（electron-updater，从 GitHub Releases 检查；本机签名两个版本实测更新成功）
 - [x] `plugin-sdk` 定版本号（0.1.0）
 - [ ] 新机器按 README 十分钟内装好并跑通模板（README 截图已补；干净克隆已装通，冷缓存的新机器还需人工走一遍）
-- [ ] 推 `v0.1.0` 标签，`release.yml` 发出签名、公证过的 macOS Apple 芯片安装包
+- [x] 推 `v0.1.0` 标签，`release.yml` 发出签名、公证过的 macOS Apple 芯片安装包（2026-10-13，[Release](https://github.com/hoobnn/plein/releases/tag/v0.1.0)；校验时 Apple CloudKit 断线失败一次，重跑通过）
 
 不在 0.1.0：Docker 镜像发布、Intel Mac 与 Windows 安装包、第三方插件加载。
 

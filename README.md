@@ -9,7 +9,7 @@
 
 [![CI](https://github.com/hoobnn/plein/actions/workflows/ci.yml/badge.svg)](https://github.com/hoobnn/plein/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
-![Status](https://img.shields.io/badge/status-pre--0.1.0-orange)
+[![Release](https://img.shields.io/github/v/release/hoobnn/plein)](https://github.com/hoobnn/plein/releases)
 ![Platform](<https://img.shields.io/badge/platform-macOS%20(Apple%20芯片)%20%7C%20自部署-lightgrey>)
 
 [快速开始](#快速开始) · [功能](#功能) · [路线图](#路线图) · [文档](#文档) · [参与开发](CONTRIBUTING.md)
@@ -17,7 +17,7 @@
 </div>
 
 > [!NOTE]
-> Plein 即将发布 0.1.0，还没有正式版本。主流程已在真实平台（阿里云百炼 + 豆包语音）上跑通一部 6 镜头竖屏样片；0.x 期间数据格式仍可能调整，见[路线图](#路线图)。
+> Plein 0.1.0 已发布（macOS Apple 芯片）。主流程已在真实平台（阿里云百炼 + 豆包语音）上跑通一部 6 镜头竖屏样片；0.x 期间数据格式仍可能调整，见[路线图](#路线图)。
 
 ![画布：每个镜头的分镜图、视频和逐句配音](docs/images/canvas.png)
 
@@ -99,7 +99,7 @@
 
 ### 桌面端（macOS，推荐）
 
-双击即用，自带 ffmpeg；从 0.1.0 起会自动检查更新。安装包（Apple 芯片）随正式版本发布在 [Releases](https://github.com/hoobnn/plein/releases)；在此之前可以从源码打包：`pnpm install && pnpm dist:desktop`。Intel Mac 和 Windows 暂未提供。
+从 [Releases](https://github.com/hoobnn/plein/releases/latest) 下载 `Plein-<版本>-macOS-arm64.dmg`（Apple 芯片），拖进「应用程序」即可。已签名并经 Apple 公证，自带 ffmpeg，启动后会自动检查更新，也可以从菜单「Plein → 检查更新…」手动检查。Intel Mac 和 Windows 暂未提供，可以从源码打包：`pnpm install && pnpm dist:desktop`。
 
 ### Docker 自部署
 
@@ -164,7 +164,7 @@ pnpm install && pnpm build && pnpm start   # http://localhost:8787
 - [x] 智能体小满、本机 Claude Code / Codex、对外 MCP
 - [x] macOS 桌面端安装包、签名与公证流水线
 - [x] 真实平台 6 镜头样片验收、界面测试进 CI、自动更新
-- [ ] **0.1.0**：发布 macOS（Apple 芯片）安装包
+- [x] **0.1.0**：发布 macOS（Apple 芯片）安装包（2026-10-13）
 - [ ] **0.2.0**：分镜组与拼图、项目包迁移、区域编辑、取帧续镜、运镜 / 风格预设、第三方插件
 - [ ] **之后**：全景、3D 导演台、深度参考、原生片段重拍、智能剪辑
 
