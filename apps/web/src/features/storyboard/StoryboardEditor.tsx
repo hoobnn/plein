@@ -53,6 +53,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   useDocVersion(engine.doc)
   const catalog = useCatalog((s) => s.catalog)
   const notify = useCanvas((s) => s.notify)
+  const canvasId = useCanvas((s) => s.canvasId)
   const el = engine.doc.get(id)
   const shots = shotsOf(el)
   const [picked, setPicked] = useState<Set<string>>(new Set())
@@ -260,6 +261,21 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           <Icon name="layers" />
           查看差异{scopeDiffs ? `（${scopeDiffs}）` : ''}
         </button>
+        {canvasId && (
+          <button
+            type="button"
+            className={btn}
+            disabled={!expanded.size}
+            title="改了之后哪些镜头图、视频、配音受影响，保留还是重做"
+            onClick={() => {
+              onClose()
+              useCanvas.getState().toggleImpact(true)
+            }}
+          >
+            <Icon name="layers" />
+            查看影响
+          </button>
+        )}
       </ModalHeader>
       {shots.length === 0 ? (
         <EmptyState

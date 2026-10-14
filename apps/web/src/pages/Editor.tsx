@@ -20,6 +20,7 @@ import { Sidebar } from '../shell/Sidebar'
 import { SequenceEditor } from '../features/sequence/SequenceEditor'
 import { StoryboardEditor } from '../features/storyboard/StoryboardEditor'
 import { Tasks } from '../features/runs/Tasks'
+import { ImpactPanel } from '../features/runs/ImpactPanel'
 import { Toolbar, ViewControls } from '../shell/Toolbar'
 import { Brand, isPlainClick } from '../ui/Brand'
 import { Icon } from '../ui/icons'
@@ -214,6 +215,7 @@ export function Editor({
       <AgentCursor />
       <History />
       {source.kind === 'remote' && <Tasks />}
+      {source.kind === 'remote' && <ImpactPanel />}
       <Viewer />
     </div>
   )

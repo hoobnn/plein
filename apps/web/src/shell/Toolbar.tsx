@@ -10,6 +10,7 @@ import { useDismiss } from '../ui/useDismiss'
 import { AddMenu } from './AddMenu'
 import { Minimap } from './Minimap'
 import { useActiveRuns } from '../features/runs/Tasks'
+import { useStale } from '../features/runs/stale'
 
 function Button(props: {
   label: string
@@ -127,6 +128,9 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
   const history = useCanvas((s) => s.history)
   const shortcuts = useCanvas((s) => s.shortcuts)
   const tasks = useCanvas((s) => s.tasks)
+  const impact = useCanvas((s) => s.impact)
+  // 需要审查的结果：自己过期或上游过期、还没确认保留的
+  const stale = useStale((s) => [...s.nodes.values()].filter((k) => k !== 'kept').length)
   const running = useActiveRuns(engine)
   const fileRef = useRef<HTMLInputElement>(null)
   const folderRef = useRef<HTMLInputElement>(null)
@@ -188,6 +192,22 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
           {running > 0 && (
             <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-2xs font-medium text-on-accent tabular-nums ring-2 ring-float">
               {running}
+            </span>
+          )}
+        </Button>
+      )}
+      {canImport && (
+        <Button
+          label="查看影响"
+          hint={stale ? `${stale} 个结果需要审查` : undefined}
+          active={impact}
+          onClick={() => useCanvas.getState().toggleImpact()}
+          className="relative"
+        >
+          <Icon name="layers" />
+          {stale > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-warning px-1 text-2xs font-medium text-on-accent tabular-nums ring-2 ring-float">
+              {stale}
             </span>
           )}
         </Button>

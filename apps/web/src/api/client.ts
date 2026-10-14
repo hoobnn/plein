@@ -37,6 +37,10 @@ import {
   type RewritePromptResult,
   type SessionInfo,
   type StaleNodes,
+  type ImpactDecision,
+  type ImpactReport,
+  type ImpactRunOptions,
+  type KeepResults,
   type UpdateLibraryItem,
   type UserTemplate,
   type CapabilityCall,
@@ -214,6 +218,16 @@ export const api = {
     request<GroupRunState>(API.groupRun(groupId), { signal }),
   cancelGroup: (groupId: string) => request<void>(API.groupCancel(groupId), { method: 'POST' }),
   canvasStale: (canvasId: string) => request<StaleNodes>(API.canvasStale(canvasId)),
+  /** 修改的影响（只读，不调用付费平台） */
+  canvasImpact: (canvasId: string) => request<ImpactReport>(API.canvasImpact(canvasId)),
+  /** 保留过期结果；输入在查看后又变了时服务端返回 409 input_changed */
+  keepResults: (canvasId: string, body: KeepResults) =>
+    request<ImpactDecision[]>(API.impactKeep(canvasId), json('POST', body)),
+  revokeKeep: (canvasId: string, id: string) =>
+    request<void>(API.impactDecision(canvasId, id), { method: 'DELETE' }),
+  /** 只运行勾选的受影响节点 */
+  runImpact: (canvasId: string, body: ImpactRunOptions) =>
+    request<GroupRunStarted>(API.impactRun(canvasId), json('POST', body)),
 
   mediaDerive: (body: MediaDeriveRequest) =>
     request<MediaDerivation>(API.mediaDerive, json('POST', body)),

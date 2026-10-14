@@ -10,7 +10,7 @@ import {
 } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useCatalog } from '../stores/catalog'
-import { useStale } from '../features/runs/stale'
+import { type StaleKind, useStale } from '../features/runs/stale'
 import { type IconName, iconElement } from '../ui/icons'
 import { findNode, isPure, promptKey, targetImages } from './nodes'
 import {
@@ -62,6 +62,18 @@ const STATUS_TEXT: Record<RunStatus, string> = {
   succeeded: '',
   failed: '失败',
   canceled: '已取消',
+}
+
+/** 结果过期时卡片上的状态与悬停说明 */
+const STALE_TEXT: Record<StaleKind, string> = {
+  self: '需要重跑',
+  upstream: '上游已改',
+  kept: '已保留',
+}
+const STALE_HINT: Record<StaleKind, string> = {
+  self: '参数或输入改过，当前结果不是按现在的设置生成的',
+  upstream: '上游节点改过，重跑上游后这里也要重跑',
+  kept: '结果已过期，你在「查看影响」里确认过先保留',
 }
 
 /** 按输出类型的图标，标题前和空节点中央用 */
@@ -274,13 +286,9 @@ export class NodeCards {
     // 参数或上游改过、结果已经过期：运行中、失败时以运行状态为准
     const stale =
       active || run?.status === 'failed' ? undefined : useStale.getState().nodes.get(el.id)
-    if (stale) status = stale === 'self' ? '需要重跑' : '上游已改'
+    if (stale) status = STALE_TEXT[stale]
     card.root.dataset.stale = stale ?? ''
-    card.status.title = stale
-      ? stale === 'self'
-        ? '参数或输入改过，当前结果不是按现在的设置生成的'
-        : '上游节点改过，重跑上游后这里也要重跑'
-      : ''
+    card.status.title = stale ? STALE_HINT[stale] : ''
     card.status.textContent = status
     // 不知道进度时进度条换成来回流动的光，一眼能看出没卡住
     const known = active && run?.status === 'running' && run.phase !== 'retrying' && !!run.progress

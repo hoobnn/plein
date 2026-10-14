@@ -71,6 +71,18 @@ export function runFlow(
   return start(() => api.runFlow(canvasId, nodeId, { scope, force: opts.force ?? false }), opts)
 }
 
+/**
+ * 只运行在「查看影响」里勾选的节点：按依赖先后跑，不带上下游；
+ * 还有效的结果和按现在的输入生成过的候选直接沿用，force 时全部重新生成
+ */
+export function runImpact(
+  canvasId: string,
+  nodes: string[],
+  opts: { force?: boolean } & GroupRunHooks = {},
+): Promise<GroupRun> {
+  return start(() => api.runImpact(canvasId, { nodes, force: opts.force ?? false }), opts)
+}
+
 /** 发起运行并轮询到结束 */
 async function start(
   begin: () => Promise<GroupRunStarted>,
@@ -126,6 +138,11 @@ function wait(ms: number, signal?: AbortSignal) {
 /** 整组运行结果的提示语 */
 export function describeGroupRun(name: string, r: GroupRun) {
   return describeRun(`「${name}」`, r)
+}
+
+/** 按影响重做的提示语 */
+export function describeImpactRun(r: GroupRun) {
+  return describeRun('重做受影响的结果', r)
 }
 
 /** 运行到此处 / 运行下游的提示语 */

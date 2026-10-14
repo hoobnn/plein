@@ -65,11 +65,12 @@ describe('过期节点', () => {
     watchStale(engine, 'c1')
     change()
     await vi.advanceTimersByTimeAsync(1200)
-    pending[1]!({ stale: ['b'], upstream: ['c'] })
+    // c 过期但用户确认过保留
+    pending[1]!({ stale: ['b'], upstream: ['c'], kept: ['c'] })
     await vi.advanceTimersByTimeAsync(0)
-    pending[0]!({ stale: ['a'], upstream: [] })
+    pending[0]!({ stale: ['a'], upstream: [], kept: [] })
     await vi.advanceTimersByTimeAsync(0)
-    expect(nodes()).toEqual({ b: 'self', c: 'upstream' })
+    expect(nodes()).toEqual({ b: 'self', c: 'kept' })
   })
 
   it('停止后清空、退订，晚到的应答也不再写入', async () => {
@@ -78,7 +79,7 @@ describe('过期节点', () => {
     const stop = watchStale(engine, 'c1')
     stop()
     expect(listeners.size).toBe(0)
-    pending[0]!({ stale: ['a'], upstream: [] })
+    pending[0]!({ stale: ['a'], upstream: [], kept: [] })
     change()
     await vi.advanceTimersByTimeAsync(5000)
     expect(nodes()).toEqual({})

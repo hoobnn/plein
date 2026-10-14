@@ -77,6 +77,7 @@ function runSignature(doc: PleinDoc) {
 function groupName(g: GroupInfo, doc: PleinDoc, catalog: Catalog | null) {
   const el = doc.get(g.frameId)
   if (g.scope === 'frame') return el?.name ?? 'Frame'
+  if (g.scope === 'impact') return '重做受影响的结果'
   const name = el?.name ?? findNode(catalog, el?.nodeType)?.title ?? '节点'
   return g.scope === 'upstream' ? `运行到「${name}」` : `从「${name}」往下`
 }
