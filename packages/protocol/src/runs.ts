@@ -165,6 +165,8 @@ export interface StaleNodes {
   stale: string[]
   /** 上游过期，跟着需要重跑 */
   upstream: string[]
+  /** 上面两类里用户确认过保留现有结果的（见 ImpactDecision）；缓存判断不受影响 */
+  kept: string[]
 }
 
 export interface GroupRunStarted {
@@ -212,9 +214,10 @@ export interface JobInfo {
 }
 
 export interface GroupInfo extends GroupRunState {
-  /** Frame 整组运行时是 Frame，运行到此处 / 运行下游时是出发的节点 */
+  /** Frame 整组运行时是 Frame，运行到此处 / 运行下游时是出发的节点，按影响运行时是第一个勾选的节点 */
   frameId: string
-  scope: 'frame' | 'upstream' | 'downstream'
+  /** impact：在「查看影响」里勾选的节点 */
+  scope: 'frame' | 'upstream' | 'downstream' | 'impact'
   createdAt: number
   finishedAt?: number
 }

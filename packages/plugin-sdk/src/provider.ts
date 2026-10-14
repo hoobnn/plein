@@ -226,6 +226,8 @@ export interface ModelSpec {
   /** 对话模型的额外特性：tools（工具调用，内置智能体要用）、vision（看图） */
   features?: ModelFeature[]
   limits?: ModelLimits
+  /** 每次提交的大致费用：影响分析据此估算重做的花费；不填算作未知 */
+  price?: { amount: number; currency: string }
   /**
    * 模型专属参数（如 Seedance 的生成音频、返回尾帧）。字段名就是传给 Provider 的 `extra` 键，
    * 都应可选：用户没改的不传，平台用自己的默认值。表单在「模型专属」里按它生成。

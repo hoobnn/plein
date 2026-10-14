@@ -2,12 +2,13 @@ import type { GroupRunOptions, GroupRunSummary, JobStatus } from '@plein/protoco
 import type { CallJournal, CallRecord } from '../plugins/host'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { DB } from '../storage/db'
-import { jobGroups, jobs } from '../storage/schema'
+import { impactDecisions, jobGroups, jobs } from '../storage/schema'
 
 export type { JobStatus }
 
 export type JobRow = typeof jobs.$inferSelect
 export type GroupRow = typeof jobGroups.$inferSelect
+export type DecisionRow = typeof impactDecisions.$inferSelect
 
 type JobPatch = Partial<
   Pick<
@@ -81,6 +82,12 @@ export class JobStore {
       )
       .limit(1)
       .get()
+  }
+
+  /** 一批任务，按 id 取（影响分析对照节点各个候选是哪次运行产生的） */
+  many(ids: string[]): JobRow[] {
+    if (!ids.length) return []
+    return this.db.select().from(jobs).where(inArray(jobs.id, ids)).all()
   }
 
   /** 模型调用记录：读写这个任务的 calls 列 */
@@ -166,5 +173,38 @@ export class JobStore {
       .where(eq(jobGroups.status, 'running'))
       .orderBy(asc(jobGroups.created_at))
       .all()
+  }
+
+  // ── 保留决定 ──
+
+  insertDecision(d: Omit<DecisionRow, 'revoked_at'>) {
+    this.db.insert(impactDecisions).values(d).run()
+  }
+
+  /** 画布的保留决定，新的在前 */
+  decisions(canvasId: string, limit = 200): DecisionRow[] {
+    return this.db
+      .select()
+      .from(impactDecisions)
+      .where(eq(impactDecisions.canvas_id, canvasId))
+      .orderBy(desc(impactDecisions.created_at), sql`rowid DESC`)
+      .limit(limit)
+      .all()
+  }
+
+  /** 撤销：记录留着，只记下撤销时间；没找到或已撤销时返回 false */
+  revokeDecision(canvasId: string, id: string): boolean {
+    const r = this.db
+      .update(impactDecisions)
+      .set({ revoked_at: Date.now() })
+      .where(
+        and(
+          eq(impactDecisions.id, id),
+          eq(impactDecisions.canvas_id, canvasId),
+          sql`revoked_at IS NULL`,
+        ),
+      )
+      .run()
+    return r.changes > 0
   }
 }

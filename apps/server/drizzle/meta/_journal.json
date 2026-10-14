@@ -15,6 +15,13 @@
       "when": 1791952615477,
       "tag": "0001_ordinary_xorn",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791958827377,
+      "tag": "0002_glorious_nightcrawler",
+      "breakpoints": true
     }
   ]
 }

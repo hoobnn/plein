@@ -2,6 +2,7 @@ import { newId } from '../ids'
 import { createHash } from 'node:crypto'
 import {
   addResults,
+  adoptResult,
   type CanvasElement,
   createDoc,
   currentResult,
@@ -29,6 +30,7 @@ import { hasVoice, voiceOf } from '@plein/nodes'
 import type {
   FlowRunOptions,
   GroupInfo,
+  ImpactRunOptions,
   GroupRunOptions,
   GroupRunStarted,
   GroupRunState,
@@ -54,7 +56,7 @@ const MAX_DEPTH = 8
 const PROGRESS_INTERVAL_MS = 500
 
 /** 调度用的依赖图：画布上的连线，加上提示词里 @ 引用带来的依赖 */
-function runGraph(doc: PleinDoc) {
+export function runGraph(doc: PleinDoc) {
   return new FlowGraph([...doc.edges(), ...mentionEdges(doc)])
 }
 
@@ -113,6 +115,18 @@ interface Origin {
 /** 缓存键的算法版本；算法变了递增，旧键由 legacyCacheKey 兼容比对 */
 const CACHE_KEY_VERSION = 'v2:'
 
+/** 检查一个节点得到的东西：实际输入摘要、收集到的输入值与迁移后的参数 */
+export interface Inspection {
+  input: PreparedInput
+  inputs: Record<string, PortValue[]>
+  params: Record<string, unknown>
+  /**
+   * 某次任务的结果是否按这份输入生成：缓存键一致（任务写回的参数不计入，
+   * 无前缀的旧键按旧算法比，与 isFresh 相同）；准备不过去时总是 false
+   */
+  matches(job: Pick<JobRow, 'cache_key' | 'cache_omit'>): boolean
+}
+
 /** 输入里的长文本在实际输入摘要里只留开头 */
 const TEXT_PREVIEW = 2_000
 
@@ -139,7 +153,7 @@ export class NodeRuns {
 
   constructor(
     db: DB,
-    private rooms: Rooms,
+    readonly rooms: Rooms,
     private host: PluginHost,
     opts: NodeRunsOptions = {},
   ) {
@@ -259,6 +273,95 @@ export class NodeRuns {
       lease.release()
     }
   }
+
+  // ── 影响分析用（见 impact.ts）────────────────────────
+
+  /**
+   * 准备节点的输入并整理成摘要，不调用付费生成。
+   * 准备不过去时的摘要与预览给出的一致（直接取 preview），key 返回 undefined
+   */
+  async inspect(
+    canvasId: string,
+    doc: PleinDoc,
+    el: CanvasElement,
+    ownerId: string,
+    signal: AbortSignal,
+  ): Promise<Inspection> {
+    let prepared: Prepared
+    try {
+      prepared = await this.prepare(doc, el, ownerId, signal)
+    } catch (err) {
+      if (!(err instanceof NodeRunError)) throw err
+      return {
+        input: await this.preview(canvasId, el.id, ownerId),
+        inputs: {},
+        params: el.params ?? {},
+        matches: () => false,
+      }
+    }
+    return {
+      input: this.summarize(el, prepared),
+      inputs: prepared.inputs,
+      params: this.latestParams(el, prepared) ?? {},
+      matches: (job) => {
+        if (!job.cache_key) return false
+        const omit = job.cache_omit ? (JSON.parse(job.cache_omit) as string[]) : []
+        const key = job.cache_key.startsWith(CACHE_KEY_VERSION)
+          ? this.cacheKey(el, prepared, omit)
+          : this.legacyCacheKey(el, prepared, omit)
+        return key === job.cache_key
+      },
+    }
+  }
+
+  /**
+   * 已有候选里按现在的输入生成过的那个（不含当前采用的）：重做时直接改用它，不调用平台。
+   * 撤销修改后旧候选就又对得上了
+   */
+  cachedCandidate(el: CanvasElement, inspection: Inspection): string | undefined {
+    const cur = currentResult(el)
+    if (!cur) return undefined
+    const candidates = (el.results ?? []).filter((r) => r.port === cur.port && r.id !== cur.id)
+    const jobs = new Map(
+      this.store.many([...new Set(candidates.map((r) => r.runId))]).map((j) => [j.id, j]),
+    )
+    return candidates.find((r) => {
+      const job = jobs.get(r.runId)
+      return job?.status === 'succeeded' && inspection.matches(job)
+    })?.id
+  }
+
+  /**
+   * 当前采用的结果是否按这份输入生成：产生它的那次运行的缓存键与现在的一致。
+   * 早于任务记录的结果（没有对应任务）视为有效，与 isFresh 相同
+   */
+  resultMatches(el: CanvasElement, inspection: Inspection): boolean {
+    const r = currentResult(el)
+    if (!r) return false
+    const job = this.store.get(r.runId)
+    if (!job) return true
+    return job.status === 'succeeded' && inspection.matches(job)
+  }
+
+  /** 模型配的每次提交费用；没配时为空 */
+  priceOf(model: PreparedInput['model']) {
+    const ref = model && parseModelRef(model.ref)
+    if (!ref) return undefined
+    return this.host.registry.providers
+      .get(ref.provider)
+      ?.def.models.find((m) => m.id === ref.model)?.price
+  }
+
+  /** 参数的显示名（节点声明里的 title），没有时用键名 */
+  paramTitle(nodeType: string, key: string): string {
+    const def = this.host.registry.latestNode(nodeType)?.def
+    const shape = (def?.params as { shape?: Record<string, { meta?(): unknown }> } | undefined)
+      ?.shape
+    const meta = shape?.[key]?.meta?.() as { title?: string } | undefined
+    return meta?.title ?? key
+  }
+
+  // ─────────────────────────────────────────────
 
   /** 把准备结果整理成给人看、也存进执行记录的实际输入 */
   private summarize(el: CanvasElement, p: Prepared): PreparedInput {
@@ -399,7 +502,7 @@ export class NodeRuns {
   // ── 整组 ─────────────────────────────────────────
 
   /** 需要排队运行、装了执行器的节点；video 为 false 时不含输出视频的节点 */
-  private isJobNode(el: CanvasElement | undefined, video = true) {
+  isJobNode(el: CanvasElement | undefined, video = true) {
     if (el?.kind !== 'node' || !el.nodeType) return false
     const def = this.host.registry.latestNode(el.nodeType)?.def
     if (!def || executionOf(def) !== 'job') return false
@@ -481,6 +584,35 @@ export class NodeRuns {
   }
 
   /**
+   * 只运行在「查看影响」里勾选的节点，按依赖先后调度，不带它们的上下游。
+   * 现在的结果还有效的沿用；已有候选里有按现在的输入生成过的直接改用它（如撤销修改之后），
+   * 都不调用平台；force 时勾选的全部重新生成。
+   */
+  runImpact(canvasId: string, ownerId: string, options: ImpactRunOptions): GroupRunStarted {
+    const targets = this.rooms.withDoc(canvasId, (doc) =>
+      [...new Set(options.nodes)].filter((id) => this.isJobNode(doc.get(id))),
+    )
+    if (targets.length === 0) throw new NodeRunError('invalid_input', '没有需要运行的节点')
+    const id = newId('grp')
+    const stored: StoredGroupOptions = {
+      video: true,
+      force: options.force,
+      scope: 'impact',
+      candidates: !options.force,
+    }
+    this.store.insertGroup({
+      id,
+      ownerId,
+      canvasId,
+      frameId: targets[0]!,
+      options: stored,
+      targets,
+    })
+    void this.orchestrate(this.store.group(id)!)
+    return { groupId: id, total: targets.length }
+  }
+
+  /**
    * 需要重跑的节点：当前结果的缓存键和现在算出的不一致的（参数或输入改了），
    * 以及它们下游已有结果的节点。正在运行的不算。
    */
@@ -506,7 +638,19 @@ export class NodeRuns {
           upstream.push(d)
         }
       }
-      return { stale, upstream }
+      // 用户确认过保留的：决定时的输入和采用的结果都还是现在这样才算
+      const kept: string[] = []
+      const active = new Map<string, { result_id: string; input_hash: string }>()
+      for (const d of this.store.decisions(canvasId))
+        if (!d.revoked_at && !active.has(d.node_id)) active.set(d.node_id, d)
+      for (const id of [...stale, ...upstream]) {
+        const d = active.get(id)
+        const el = doc.get(id)
+        if (!d || !el || currentResult(el)?.id !== d.result_id) continue
+        const now = await this.inspect(canvasId, doc, el, ownerId, signal)
+        if (now.input.inputHash === d.input_hash) kept.push(id)
+      }
+      return { stale, upstream, kept }
     } finally {
       doc.destroy()
       lease.release()
@@ -581,6 +725,14 @@ export class NodeRuns {
         if (!jobId) {
           const reuse = !options.force && !rerun.has(nodeId)
           if (reuse && (await this.isFresh(doc, el, g.owner_id, ctrl.signal))) return 'cached'
+          if (options.candidates && reuse) {
+            const now = await this.inspect(g.canvas_id, doc, el, g.owner_id, ctrl.signal)
+            const hit = this.cachedCandidate(el, now)
+            if (hit) {
+              adoptResult(doc, nodeId, hit)
+              return 'cached'
+            }
+          }
           // 判断新旧要等一会儿，期间另一组可能已经发起了同一个节点（几组共用一张定妆图）：跟着等它
           jobId =
             this.active.get(this.key(g.canvas_id, nodeId))?.id ??
@@ -1016,9 +1168,11 @@ export type { JobRow }
 
 /** 存在 job_groups.options 里的设置：整组运行的选项，加上运行到此处 / 运行下游的范围 */
 interface StoredGroupOptions extends GroupRunOptions {
-  scope?: 'upstream' | 'downstream'
+  scope?: 'upstream' | 'downstream' | 'impact'
   /** 不看缓存、总是重新运行的节点 */
   rerun?: string[]
+  /** 结果过期时先找按现在的输入生成过的候选，有就改用它（按影响运行） */
+  candidates?: boolean
 }
 
 function groupState(g: GroupRow): GroupRunState {

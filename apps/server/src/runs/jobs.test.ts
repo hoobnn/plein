@@ -301,11 +301,11 @@ describe('整组运行', () => {
     await runFrame(server, id, frame)
     const stale = async () =>
       (await (await call(server, `/api/canvases/${id}/stale`)).json()) as StaleNodes
-    expect(await stale()).toEqual({ stale: [], upstream: [] })
+    expect(await stale()).toEqual({ stale: [], upstream: [], kept: [] })
 
     // 改了 A 的参数：A 过期，B 跟着需要重跑；视频还没生成过，不标
     setParams(doc, a, { prompt: '黄昏' })
-    expect(await stale()).toEqual({ stale: [a], upstream: [b] })
+    expect(await stale()).toEqual({ stale: [a], upstream: [b], kept: [] })
 
     const flow = async (node: string, body: object) => {
       const res = await call(server, `/api/canvases/${id}/nodes/${node}/run-flow`, {
@@ -321,7 +321,7 @@ describe('整组运行', () => {
       succeeded: 2,
       cached: 0,
     })
-    expect(await stale()).toEqual({ stale: [], upstream: [] })
+    expect(await stale()).toEqual({ stale: [], upstream: [], kept: [] })
     // 再运行到 B：都没改动
     expect((await flow(b, { scope: 'upstream' })).summary).toMatchObject({
       succeeded: 0,

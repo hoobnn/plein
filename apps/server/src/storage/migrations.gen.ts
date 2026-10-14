@@ -43,4 +43,13 @@ export const MIGRATIONS: Migration[] = [
     hash: 'e7287c93415116ab6a959572c0ab7441bbf7c7ebfd190c02634ff618b559b1a2',
     statements: ['ALTER TABLE `jobs` ADD `input` text;'],
   },
+  {
+    tag: '0002_glorious_nightcrawler',
+    when: 1791958827377,
+    hash: '71dec36d966c0202ed8c163347c7a32878300e00c0c9a1561aa5e9d23e88ab53',
+    statements: [
+      "CREATE TABLE `impact_decisions` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`owner_id` text NOT NULL,\n\t`canvas_id` text NOT NULL,\n\t`node_id` text NOT NULL,\n\t`result_id` text NOT NULL,\n\t`input_hash` text NOT NULL,\n\t`causes` text DEFAULT '[]' NOT NULL,\n\t`note` text,\n\t`created_at` integer NOT NULL,\n\t`revoked_at` integer,\n\tFOREIGN KEY (`canvas_id`) REFERENCES `canvases`(`id`) ON UPDATE no action ON DELETE cascade\n);",
+      'CREATE INDEX `impact_decisions_canvas` ON `impact_decisions` (`canvas_id`,`created_at`);',
+    ],
+  },
 ]

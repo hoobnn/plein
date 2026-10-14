@@ -65,6 +65,15 @@ export const API = {
     `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/run-batch`,
   /** 需要重跑的节点，返回 StaleNodes */
   canvasStale: (canvasId: string) => `/api/canvases/${encodeURIComponent(canvasId)}/stale`,
+  /** 修改的影响，返回 ImpactReport；只读，不调用付费平台 */
+  canvasImpact: (canvasId: string) => `/api/canvases/${encodeURIComponent(canvasId)}/impact`,
+  /** 保留过期结果，body 为 KeepResults，返回 ImpactDecision[] */
+  impactKeep: (canvasId: string) => `/api/canvases/${encodeURIComponent(canvasId)}/impact/keep`,
+  /** 撤销一条保留决定（记录留着，标为已撤销） */
+  impactDecision: (canvasId: string, id: string) =>
+    `/api/canvases/${encodeURIComponent(canvasId)}/impact/keep/${encodeURIComponent(id)}`,
+  /** 只运行勾选的受影响节点，body 为 ImpactRunOptions，返回 GroupRunStarted */
+  impactRun: (canvasId: string) => `/api/canvases/${encodeURIComponent(canvasId)}/impact/run`,
   /** 整组运行 Frame 里的节点，返回 GroupRunStarted */
   frameRun: (canvasId: string, frameId: string) =>
     `/api/canvases/${encodeURIComponent(canvasId)}/frames/${encodeURIComponent(frameId)}/run`,

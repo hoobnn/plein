@@ -152,6 +152,32 @@ export const jobGroups = sqliteTable(
   ],
 )
 
+/**
+ * 影响分析里的保留决定：用户确认过期结果先留着。只追加，撤销时记 revoked_at，事后可查；
+ * 不改任务的缓存键，input_hash 或采用的结果变了决定就不再适用
+ */
+export const impactDecisions = sqliteTable(
+  'impact_decisions',
+  {
+    id: text().primaryKey(),
+    owner_id: text().notNull(),
+    canvas_id: text()
+      .notNull()
+      .references(() => canvases.id, { onDelete: 'cascade' }),
+    node_id: text().notNull(),
+    /** 保留的那个结果 */
+    result_id: text().notNull(),
+    /** 决定时的实际输入哈希（PreparedInput.inputHash） */
+    input_hash: text().notNull(),
+    /** 决定时的过期原因（ImpactCause[] JSON） */
+    causes: text().notNull().default('[]'),
+    note: text(),
+    created_at: integer().notNull(),
+    revoked_at: integer(),
+  },
+  (t) => [index('impact_decisions_canvas').on(t.canvas_id, t.created_at)],
+)
+
 /** 本机智能体会话：对话记录存 JSON，cli_session 是 Claude Code / Codex 自己的会话 id，用于续聊 */
 export const agentSessions = sqliteTable(
   'agent_sessions',

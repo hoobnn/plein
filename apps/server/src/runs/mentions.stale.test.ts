@@ -65,13 +65,13 @@ describe('@ 引用改动后下游过期', () => {
     const shot = addNode(doc, 'plein/image', { params: { prompt: '@林夏站在天台' }, x: 600 })
     connect(doc, [photo, 'image'], [hero, 'references'])
     await run(server, id, shot, doc)
-    expect(await staleOf(server, id)).toEqual({ stale: [], upstream: [] })
+    expect(await staleOf(server, id)).toEqual({ stale: [], upstream: [], kept: [] })
 
     // 改角色设定：设定会附进镜头图的提示词，结果已过期
     setParams(doc, hero, { description: '三十岁，长发，黑风衣' })
     expect((await staleOf(server, id)).stale).toEqual([shot])
     await run(server, id, shot, doc)
-    expect(await staleOf(server, id)).toEqual({ stale: [], upstream: [] })
+    expect(await staleOf(server, id)).toEqual({ stale: [], upstream: [], kept: [] })
 
     // 换参考图：送进模型的参考图变了，结果也过期
     updateElement(doc, photo, { assetId: 'b'.repeat(64) })
@@ -92,7 +92,7 @@ describe('@ 引用改动后下游过期', () => {
     expect(newest && older).toBeTruthy()
     adoptResult(doc, ref, newest!.id)
     await run(server, id, shot, doc)
-    expect(await staleOf(server, id)).toEqual({ stale: [], upstream: [] })
+    expect(await staleOf(server, id)).toEqual({ stale: [], upstream: [], kept: [] })
 
     adoptResult(doc, ref, older!.id)
     // 采用的那次运行本身参数也变了，会一起标成过期；这里只关心镜头图

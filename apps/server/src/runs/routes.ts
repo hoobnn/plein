@@ -2,7 +2,10 @@ import {
   BatchRunOptions,
   FlowRunOptions,
   GroupRunOptions,
+  type ImpactReport,
+  ImpactRunOptions,
   type JobList,
+  KeepResults,
   NodeRunOptions,
   type NodeRunStarted,
   type PreparedInput,
@@ -13,6 +16,7 @@ import type { AuthEnv } from '../auth'
 import { ownsCanvas } from '../storage/canvases'
 import { NodeRunError } from '../plugins/host'
 import type { DB } from '../storage/db'
+import { ImpactAnalyzer } from './impact'
 import type { NodeRuns } from './runs'
 
 const STATUS: Record<string, 404 | 409 | 400> = {
@@ -25,6 +29,7 @@ const STATUS: Record<string, 404 | 409 | 400> = {
 export function runRoutes(db: DB, runs: NodeRuns) {
   const notFound = { error: 'not_found', message: '画布不存在' }
   const forbidden = { error: 'forbidden', message: '只读成员不能运行节点' }
+  const impact = new ImpactAnalyzer(db, runs)
 
   return new Hono<AuthEnv>()
     .post('/api/canvases/:canvas/nodes/:node/run', async (c) => {
@@ -103,6 +108,58 @@ export function runRoutes(db: DB, runs: NodeRuns) {
       const canvas = c.req.param('canvas')
       if (!ownsCanvas(db, c.var.principal.id, canvas)) return c.json(notFound, 404)
       return c.json((await runs.staleNodes(canvas, c.var.principal.id)) satisfies StaleNodes)
+    })
+    .get('/api/canvases/:canvas/impact', async (c) => {
+      const canvas = c.req.param('canvas')
+      if (!ownsCanvas(db, c.var.principal.id, canvas)) return c.json(notFound, 404)
+      return c.json((await impact.analyze(canvas, c.var.principal.id)) satisfies ImpactReport)
+    })
+    .post('/api/canvases/:canvas/impact/keep', async (c) => {
+      const canvas = c.req.param('canvas')
+      const p = c.var.principal
+      if (p.role === 'viewer') return c.json(forbidden, 403)
+      if (!ownsCanvas(db, p.id, canvas)) return c.json(notFound, 404)
+      const body = KeepResults.safeParse(await c.req.json().catch(() => ({})))
+      if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
+      try {
+        const r = await impact.keep(canvas, p.id, body.data)
+        if ('changed' in r)
+          return c.json(
+            {
+              error: 'input_changed',
+              message: '有节点的输入在查看后又变了，请重新查看影响',
+              nodes: r.changed,
+            },
+            409,
+          )
+        return c.json(r.decisions, 201)
+      } catch (err) {
+        if (!(err instanceof NodeRunError)) throw err
+        return c.json({ error: err.code, message: err.message }, STATUS[err.code] ?? 400)
+      }
+    })
+    .delete('/api/canvases/:canvas/impact/keep/:id', (c) => {
+      const { canvas, id } = c.req.param()
+      const p = c.var.principal
+      if (p.role === 'viewer') return c.json(forbidden, 403)
+      if (!ownsCanvas(db, p.id, canvas)) return c.json(notFound, 404)
+      return runs.store.revokeDecision(canvas, id)
+        ? c.body(null, 204)
+        : c.json({ error: 'not_found', message: '保留记录不存在或已撤销' }, 404)
+    })
+    .post('/api/canvases/:canvas/impact/run', async (c) => {
+      const canvas = c.req.param('canvas')
+      const p = c.var.principal
+      if (p.role === 'viewer') return c.json(forbidden, 403)
+      if (!ownsCanvas(db, p.id, canvas)) return c.json(notFound, 404)
+      const body = ImpactRunOptions.safeParse(await c.req.json().catch(() => ({})))
+      if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
+      try {
+        return c.json(runs.runImpact(canvas, p.id, body.data), 202)
+      } catch (err) {
+        if (!(err instanceof NodeRunError)) throw err
+        return c.json({ error: err.code, message: err.message }, STATUS[err.code] ?? 400)
+      }
     })
     .get('/api/canvases/:canvas/jobs', (c) => {
       const canvas = c.req.param('canvas')
