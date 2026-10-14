@@ -53,6 +53,8 @@ interface Stored {
   /** 只含真正变化的键 */
   edits: Map<string, Record<string, unknown>>
   expires: number
+  /** 正在复核或执行：复核要等一会儿，期间同一方案的第二次批准直接拒绝，免得执行两次 */
+  applying?: boolean
 }
 
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
@@ -310,7 +312,18 @@ export class EditPlans {
     if (!s) throw new NodeRunError('not_found', '方案不存在或已经过期，请重新提出')
     if (s.plan.status !== 'pending')
       throw new NodeRunError('invalid_input', `方案${STATUS_LABEL[s.plan.status]}，请重新提出`)
+    if (s.applying) throw new NodeRunError('busy', '方案正在执行')
+    s.applying = true
+    try {
+      return await this.applyPending(s, req, io)
+    } finally {
+      s.applying = false
+    }
+  }
+
+  private async applyPending(s: Stored, req: ApplyEditPlan, io: EditPlanIO): Promise<EditPlan> {
     const plan = s.plan
+    const ownerId = s.ownerId
     const picked = req.only
       ? plan.targets.filter(
           (t) => req.only!.includes(t.nodeId) || (t.shot && req.only!.includes(t.shot.id)),

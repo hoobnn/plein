@@ -185,9 +185,16 @@ describe('智能体修改方案', () => {
       summary: '让第三镜头更紧张',
       edits: [{ id: img3, params: { prompt: TENSE } }],
     })
-    const applied = await mcp('apply_edit_plan', { plan_id: plan.plan_id, scope: 'full' })
-    expect(applied.applied.nodes).toEqual([img3, vid3])
-    expect((await waitGroup(server, applied.applied.group_id)).status).toBe('done')
+    // 同时批准两次：只执行一次
+    const apply = () => mcp('apply_edit_plan', { plan_id: plan.plan_id, scope: 'full' })
+    const [applied, second] = (await Promise.allSettled([apply(), apply()])) as [
+      PromiseSettledResult<{ applied: { nodes: string[]; group_id: string } }>,
+      PromiseSettledResult<unknown>,
+    ]
+    expect(second.status).toBe('rejected')
+    if (applied.status !== 'fulfilled') throw new Error('第一次批准应当成功')
+    expect(applied.value.applied.nodes).toEqual([img3, vid3])
+    expect((await waitGroup(server, applied.value.applied.group_id)).status).toBe('done')
     expect(jobCount(server, canvas)).toBe(jobs + 2)
     expect(jobsOf(server, canvas, img3)).toBe(2)
     expect(jobsOf(server, canvas, vid3)).toBe(2)
