@@ -380,7 +380,22 @@ describe('项目包校验', () => {
     const truncated = Buffer.from(rezip(files)).subarray(0, 200)
     const cut = await upload(server, truncated)
     expect(cut.status).toBe(422)
+    // 截断的包不能说成「不是项目包」，要说明文件不完整
+    expect(cut.body).toMatchObject({ error: 'corrupt' })
+    expect(cut.body.message).toMatch(/不完整/)
     expect(server.db.select().from(projects).all()).toEqual([])
+  })
+
+  it('清单超过大小上限：说明是清单的问题，不说成哈希不符', async () => {
+    const { server, files, manifest } = await pkg()
+    const text = JSON.stringify(manifest)
+    const padded = `${text.slice(0, -1)}${' '.repeat(65 * 1024 * 1024)}}`
+    const res = await upload(
+      server,
+      zipSync({ ...files, 'manifest.json': [strToU8(padded), { level: 1 }] }, { level: 0 }),
+    )
+    expect(res.body).toMatchObject({ error: 'corrupt' })
+    expect(res.body.message).toMatch(/manifest\.json 超过 64 MB/)
   })
 
   it('越出包目录的路径：拒绝导入', async () => {

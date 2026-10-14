@@ -40,7 +40,14 @@ export async function readZipIndex(file: string): Promise<ZipEntry[]> {
         break
       }
     }
-    if (at < 0) throw new ZipError('找不到 zip 目录')
+    if (at < 0) {
+      // 开头是 zip 条目头却找不到结尾的目录：多半是下载或拷贝到一半被截断
+      const head = Buffer.alloc(4)
+      await fh.read(head, 0, 4, 0)
+      throw new ZipError(
+        head.readUInt32LE(0) === LOCAL ? 'zip 结尾的目录缺失，文件不完整' : '找不到 zip 目录',
+      )
+    }
     const count = tail.readUInt16LE(at + 10)
     const cdSize = tail.readUInt32LE(at + 12)
     const cdOffset = tail.readUInt32LE(at + 16)

@@ -622,7 +622,7 @@ export async function inspectPackage(
       entries = await readZipIndex(pkg)
     } catch (err) {
       if (!(err instanceof ZipError)) throw err
-      const broken = /目录损坏|越界|条目/.test(err.message)
+      const broken = /目录损坏|越界|条目|不完整/.test(err.message)
       throw new PackageError(
         broken ? 'corrupt' : 'not_a_package',
         broken
@@ -654,7 +654,11 @@ export async function inspectPackage(
       const { data } = await extract(pkg, manifestEntry, null, MANIFEST_LIMIT)
       raw = JSON.parse(new TextDecoder().decode(data))
     } catch (err) {
-      if (err instanceof PackageError) throw err
+      if (err instanceof PackageError)
+        throw new PackageError(
+          'corrupt',
+          `manifest.json 超过 ${MANIFEST_LIMIT / 1024 / 1024} MB，不是 Plein 导出的清单，${reexport}`,
+        )
       throw new PackageError('corrupt', `manifest.json 读不出来，${reexport}`)
     }
     const head = raw as { format?: unknown; formatVersion?: unknown } | null
