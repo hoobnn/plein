@@ -79,6 +79,11 @@ export const API = {
     `/api/canvases/${encodeURIComponent(canvasId)}/frames/${encodeURIComponent(frameId)}/run`,
   groupRun: (groupId: string) => `/api/runs/groups/${encodeURIComponent(groupId)}`,
   groupCancel: (groupId: string) => `/api/runs/groups/${encodeURIComponent(groupId)}/cancel`,
+  /** 批次快照：启动时定下的目标、阶段、批准的输入与结局，返回 BatchItem[] */
+  groupItems: (groupId: string) => `/api/runs/groups/${encodeURIComponent(groupId)}/items`,
+  /** 任务恢复操作，body 为 RecoverJobOptions，返回处理后的 JobInfo */
+  jobRecover: (canvasId: string, jobId: string) =>
+    `/api/canvases/${encodeURIComponent(canvasId)}/jobs/${encodeURIComponent(jobId)}/recover`,
   /** 画布最近的运行记录，返回 JobList */
   canvasJobs: (canvasId: string) => `/api/canvases/${encodeURIComponent(canvasId)}/jobs`,
   /** Yjs 同步（y-websocket 协议），房间名为画布 id */

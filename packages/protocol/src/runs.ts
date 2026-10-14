@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { CanceledBy, JobRecovery } from './recovery'
 
 export interface NodeRunStarted {
   runId: string
@@ -211,6 +212,10 @@ export interface JobInfo {
   finishedAt?: number
   /** 提交时冻结的实际输入（0.2 之前的任务没有） */
   input?: PreparedInput
+  /** 恢复状态与可执行的处理；排队、还没提交的任务没有 */
+  recovery?: JobRecovery
+  /** 已取消时是谁取消的 */
+  canceledBy?: CanceledBy
 }
 
 export interface GroupInfo extends GroupRunState {
@@ -218,6 +223,8 @@ export interface GroupInfo extends GroupRunState {
   frameId: string
   /** impact：在「查看影响」里勾选的节点 */
   scope: 'frame' | 'upstream' | 'downstream' | 'impact'
+  /** 输入相对启动时变了、等重新审查的目标数 */
+  review?: number
   createdAt: number
   finishedAt?: number
 }

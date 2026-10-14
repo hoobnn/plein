@@ -20,6 +20,7 @@ import {
   portAccepts,
   type ProviderCallResult,
   type ProviderContext,
+  type ProviderDefinition,
   ProviderError,
   providerConfigured,
   type ProviderOutput,
@@ -50,6 +51,8 @@ const providerFetch = ((input: Request, init?: RequestInit) =>
 const DEFAULT_POLL_MS = 2_000
 
 export class NodeRunError extends Error {
+  /** 失败发生在哪一步（见 FailureStage）；任务恢复据此给出可执行的处理 */
+  stage?: FailureStage
   constructor(
     readonly code: string,
     message: string,
@@ -61,11 +64,51 @@ export class NodeRunError extends Error {
 }
 
 /**
- * 一次节点运行内的模型调用记录。服务重启后重新执行同一个任务时：
- * 已完成的调用直接返回记录的结果，已提交的异步任务接着轮询，都不会重复提交（也就不重复计费）。
+ * 模型调用失败在哪一步：
+ * - submit_unknown：提交后没收到回应，不知道平台有没有受理
+ * - fetch_failed：平台已生成，下载或保存到本地失败（调用记录里留着结果，可重新获取）
+ * - remote_failed：平台明确返回失败
+ * - remote_canceled：平台那边取消了任务
+ */
+export type FailureStage = 'submit_unknown' | 'fetch_failed' | 'remote_failed' | 'remote_canceled'
+
+/** 给错误标上失败的步骤 */
+function staged<E extends Error>(err: E, stage: FailureStage): E {
+  ;(err as E & { stage?: FailureStage }).stage = stage
+  return err
+}
+
+/** 错误上标的失败步骤；没标时为空 */
+export function stageOf(err: unknown): FailureStage | undefined {
+  return (err as { stage?: FailureStage } | undefined)?.stage
+}
+
+/** 文件结果在调用记录里的样子：直接给的字节转成 base64，过大时丢掉（只能重新查询平台） */
+export type RecordedOutput =
+  | Exclude<ProviderOutput, { type: 'file' }>
+  | (Omit<Extract<ProviderOutput, { type: 'file' }>, 'data'> & { base64?: string; dropped?: true })
+
+/** 调用记录里内嵌字节的上限；超过的文件结果不存字节，重新获取时只能再查平台 */
+const RECORD_DATA_LIMIT = 16 * 1024 * 1024
+
+/**
+ * 一次节点运行内的模型调用记录。服务重启或重新获取时，按记录接着做，不重复提交（也就不重复计费）：
+ * - submitting：已发出提交、还没收到回应（进程在这时退出，重启后按状态未知处理）
+ * - unknown：提交后没收到回应，不知道平台有没有受理；有查询或幂等合同才自动核查，否则等人工处理
+ * - pending：平台已受理，接着轮询；canceled 表示用户取消过（平台不一定真的停了）
+ * - fetched：平台已生成，结果还没存到本地（下载或保存失败时留着，重新获取时直接再存）
+ * - done：结果已入库
  */
 export type CallRecord =
-  | { state: 'pending'; remoteId: string }
+  | { state: 'submitting'; at: number }
+  | { state: 'unknown'; at: number; message: string }
+  | { state: 'pending'; remoteId: string; canceled?: true }
+  | {
+      state: 'fetched'
+      remoteId?: string
+      outputs: RecordedOutput[]
+      usage?: ProviderCallResult['usage']
+    }
   /** remoteId：异步任务的远端 ID，完成后也留着，便于核对有没有重复提交 */
   | { state: 'done'; result: ProviderCallResult; remoteId?: string }
 
@@ -75,9 +118,53 @@ export type CallRecord =
 export const SHUTDOWN = Symbol('plein.shutdown')
 
 export interface CallJournal {
+  /** 所属任务；用来生成稳定的幂等键 */
+  id?: string
   get(key: string): CallRecord | undefined
   set(key: string, record: CallRecord): void
   delete(key: string): void
+}
+
+/** 提交时抛的错误是不是「不知道到没到平台」：网络断在半路、超时、响应读不出来 */
+function ambiguous(err: unknown) {
+  if (!(err instanceof ProviderError)) return !(err instanceof PermissionError)
+  if (err.outcome === 'unknown') return true
+  return err.code === 'unknown' || err.code === 'timeout'
+}
+
+/** 结果地址过期或失效（重新查询平台可能拿到新地址） */
+const EXPIRED = new Set([401, 403, 404, 410])
+
+function recordOutputs(outputs: ProviderOutput[]): RecordedOutput[] {
+  let budget = RECORD_DATA_LIMIT
+  return outputs.map((o) => {
+    if (o.type !== 'file' || !o.data) return o
+    const { data, ...rest } = o
+    if (data.byteLength > budget) return { ...rest, dropped: true as const }
+    budget -= data.byteLength
+    return { ...rest, base64: Buffer.from(data).toString('base64') }
+  })
+}
+
+function restoreOutputs(outputs: RecordedOutput[]): ProviderOutput[] | undefined {
+  if (outputs.some((o) => o.type === 'file' && 'dropped' in o && o.dropped)) return undefined
+  return outputs.map((o) => {
+    if (o.type !== 'file') return o
+    const { base64, dropped: _, ...rest } = o as Extract<RecordedOutput, { type: 'file' }>
+    return base64 ? { ...rest, data: new Uint8Array(Buffer.from(base64, 'base64')) } : rest
+  })
+}
+
+/** 只在服务退出时中止的信号：用户取消后已生成的结果照样存下来 */
+function shutdownOnly(signal: AbortSignal | undefined) {
+  const ctrl = new AbortController()
+  if (!signal) return ctrl.signal
+  const check = () => {
+    if (signal.reason === SHUTDOWN) ctrl.abort(SHUTDOWN)
+  }
+  if (signal.aborted) check()
+  else signal.addEventListener('abort', check, { once: true })
+  return ctrl.signal
 }
 
 /** 一次模型调用所处的阶段，见 @plein/doc 的 RunPhase */
@@ -108,6 +195,45 @@ const toError = (err: unknown): ProviderError => {
   if ((err as Error)?.name === 'AbortError')
     return new ProviderError('cancelled', '已取消', { cause: err })
   return new ProviderError('unknown', (err as Error)?.message ?? String(err), { cause: err })
+}
+
+/** 提交状态未知：不自动重试，等核查或人工处理 */
+function unknownSubmit(platform: string, message: string, cause?: unknown) {
+  return staged(
+    new ProviderError(
+      'unknown',
+      `提交后没有收到${platform}的确认，无法判断是否已受理（${message}）`,
+      {
+        retryable: false,
+        cause,
+        outcome: 'unknown',
+      },
+    ),
+    'submit_unknown',
+  )
+}
+
+/** 平台已生成，下载或保存失败；网络类错误可自动重试（只是重新下载，不重新提交） */
+function fetchFailed(err: unknown, remoteId: string | undefined, requery: boolean) {
+  const e = toError(err)
+  const status = (err as { status?: number }).status
+  const expired = status !== undefined && EXPIRED.has(status)
+  const note = expired
+    ? requery
+      ? '结果地址已失效，重新查询平台后仍未取到'
+      : '结果地址已失效，平台不支持重新查询'
+    : e.message
+  const code = e.code === 'cancelled' ? 'unavailable' : e.code
+  return Object.assign(
+    staged(
+      new ProviderError(code, `平台已生成，保存到本地失败：${note}`, {
+        retryable: !expired && e.retryable,
+        cause: err,
+      }),
+      'fetch_failed',
+    ),
+    { remoteId, expired },
+  )
 }
 
 /**
@@ -183,6 +309,7 @@ export class PluginHost {
     const journal = opts.journal
     const recorded = journal?.store.get(journal.key)
     if (recorded?.state === 'done') return recorded.result
+    const record = (r: CallRecord) => journal?.store.set(journal.key, r)
 
     const parsed = parseModelRef(ref)
     if (!parsed) throw new ProviderError('invalid_input', `模型引用格式不正确：${ref}`)
@@ -207,8 +334,13 @@ export class PluginHost {
 
     const timeout = AbortSignal.timeout(this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
     const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout
+    // 同一个任务里的同一次调用，幂等键不变（重启、重新提交都一样）
+    const idempotencyKey = journal?.store.id
+      ? `plein-${createHash('sha256').update(`${journal.store.id}\n${journal.key}`).digest('hex').slice(0, 32)}`
+      : undefined
     const ctx = this.providerContext(parsed.provider, opts.ownerId, signal, {
       requireEnabled: true,
+      idempotencyKey,
     })
     const { onDelta } = opts
     if (onDelta) ctx.stream = (d) => onDelta(d.text)
@@ -216,97 +348,202 @@ export class PluginHost {
     const limiter = this.limiter(parsed.provider, def.limits)
     const via = `${def.title} · ${model.title}`
     const stage = (phase: CallStage['phase']) => opts.onStage?.({ phase, via })
-    if (limiter.full) stage('waiting')
-    // 远端已受理、且没有明确失败：此后的可重试错误（轮询或下载结果时网络抖动）
-    // 保留 journal，外层重试接着轮询，不能重新提交付费任务
-    let remoteAccepted = false
+    // 远端已受理、且没有明确失败：此后的错误（轮询或下载结果时网络抖动、超时、用户取消）
+    // 保留调用记录，重试、重启或重新获取时接着轮询，不能重新提交付费任务
     let remoteFailed = false
     let remote: string | undefined
+    let fetched: { outputs: ProviderOutput[]; usage?: ProviderCallResult['usage'] } | undefined
+    if (recorded?.state === 'fetched') {
+      remote = recorded.remoteId
+      const outputs = restoreOutputs(recorded.outputs)
+      if (outputs) fetched = { outputs, usage: recorded.usage }
+    }
 
-    try {
-      const outputs = await limiter.run(async () => {
-        let remoteId: string
-        let wait = DEFAULT_POLL_MS
-        if (recorded?.state === 'pending' && def.poll) {
-          // 重启前已经提交过：接着轮询，不再提交
-          remoteId = recorded.remoteId
-          remote = remoteId
-          remoteAccepted = true
-          wait = 0
-          stage('generating')
-        } else {
-          stage('submitting')
-          const submitted = await def.submit({ capability, model: parsed.model, input }, ctx)
-          if (submitted.state === 'succeeded') return submitted
-          if (!def.poll)
-            throw new ProviderError('unknown', `平台 ${def.title} 返回了异步任务但没有实现 poll`)
-          remoteId = submitted.remoteId
-          wait = submitted.pollAfterMs ?? DEFAULT_POLL_MS
-          journal?.store.set(journal.key, { state: 'pending', remoteId })
-          remote = remoteId
-          remoteAccepted = true
-        }
-        try {
-          for (;;) {
-            await sleep(wait, signal)
-            const r: PollResult = await def.poll!(remoteId, ctx)
-            if (r.state === 'succeeded') return r
-            if (r.state === 'failed') {
-              remoteFailed = true
-              throw new ProviderError(r.error.code, r.error.message, {
-                retryable: r.error.retryable,
-              })
-            }
-            // 平台没说在排队还是在生成时，按生成中算
-            stage(r.remote === 'queued' ? 'queued' : 'generating')
-            if (r.progress !== undefined) opts.onProgress?.(r.progress)
-            wait = r.pollAfterMs ?? DEFAULT_POLL_MS
+    /** 轮询远端任务直到结束 */
+    const pollUntilDone = async (remoteId: string, first: number) => {
+      let wait = first
+      try {
+        for (;;) {
+          await sleep(wait, signal)
+          const r: PollResult = await def.poll!(remoteId, ctx)
+          if (r.state === 'succeeded') return r
+          if (r.state === 'failed') {
+            remoteFailed = true
+            const err = new ProviderError(r.error.code, r.error.message, {
+              retryable: r.error.retryable,
+            })
+            throw staged(err, r.error.code === 'cancelled' ? 'remote_canceled' : 'remote_failed')
           }
-        } catch (err) {
-          // 取消或超时：通知平台取消远端任务（尽力而为）
-          if (signal.aborted && def.cancel && opts.signal?.reason !== SHUTDOWN) {
+          // 平台没说在排队还是在生成时，按生成中算
+          stage(r.remote === 'queued' ? 'queued' : 'generating')
+          if (r.progress !== undefined) opts.onProgress?.(r.progress)
+          wait = r.pollAfterMs ?? DEFAULT_POLL_MS
+        }
+      } catch (err) {
+        // 用户取消或超时：通知平台取消远端任务（尽力而为）；平台不一定停得下来，调用记录留着
+        if (signal.aborted && !remoteFailed && opts.signal?.reason !== SHUTDOWN) {
+          if (opts.signal?.aborted) record({ state: 'pending', remoteId, canceled: true })
+          if (def.cancel) {
             // 生成的 signal 已中止；取消请求必须使用独立、有限时长的上下文。
             const cancelCtx = this.providerContext(
               parsed.provider,
               opts.ownerId,
               AbortSignal.timeout(10_000),
-              {
-                requireEnabled: false,
-              },
+              { requireEnabled: false },
             )
             await def.cancel(remoteId, cancelCtx).catch(() => {})
           }
-          throw err
         }
-      }, signal)
-      if (outputs.outputs.some((o) => o.type === 'file')) stage('saving')
-      const assets = await this.storeOutputs(parsed.provider, outputs.outputs, opts.ownerId, signal)
-      const result: ProviderCallResult = { outputs: outputs.outputs, assets, usage: outputs.usage }
-      journal?.store.set(journal.key, {
-        state: 'done',
-        result,
-        ...(remote ? { remoteId: remote } : {}),
-      })
-      return result
+        throw err
+      }
+    }
+
+    try {
+      if (!fetched) {
+        if (limiter.full) stage('waiting')
+        fetched = await limiter.run(async () => {
+          if (recorded?.state === 'pending' && def.poll) {
+            // 之前已经提交过（重启、重试或重新获取）：接着轮询，不再提交
+            remote = recorded.remoteId
+            stage('generating')
+            return pollUntilDone(recorded.remoteId, 0)
+          }
+          if (recorded?.state === 'fetched' && recorded.remoteId && def.poll) {
+            // 记录里的结果没存字节：再查一次平台拿结果
+            remote = recorded.remoteId
+            return pollUntilDone(recorded.remoteId, 0)
+          }
+          if (recorded?.state === 'submitting' || recorded?.state === 'unknown') {
+            // 上次提交没收到回应：有查询合同就先查，有幂等合同就用同一个键重新提交，否则不提交
+            const found = await this.verifySubmit(def, ctx, idempotencyKey, recorded)
+            if (found) {
+              remote = found.remoteId
+              record({ state: 'pending', remoteId: found.remoteId })
+              stage('generating')
+              return pollUntilDone(found.remoteId, 0)
+            }
+          }
+          let submitted: Awaited<ReturnType<typeof def.submit>>
+          let verified = false
+          for (;;) {
+            stage('submitting')
+            record({ state: 'submitting', at: Date.now() })
+            try {
+              submitted = await def.submit({ capability, model: parsed.model, input }, ctx)
+              break
+            } catch (err) {
+              // 服务退出：留着 submitting，重启后按状态未知核查
+              if (opts.signal?.reason === SHUTDOWN) throw err
+              // 没有调用记录（智能体、插件能力直接调用）时无从恢复，原样抛出
+              if (!journal || !ambiguous(err)) {
+                journal?.store.delete(journal.key)
+                throw err
+              }
+              const message = (err as Error)?.message ?? String(err)
+              const unknown = { state: 'unknown' as const, at: Date.now(), message }
+              record(unknown)
+              if (opts.signal?.aborted) throw err
+              // 平台有查询或幂等合同：马上核查一次；查到就接着轮询，确认没受理就用同一个键再提交一次
+              if (verified || !(def.lookup || def.idempotent))
+                throw unknownSubmit(def.title, message, err)
+              verified = true
+              const found = await this.verifySubmit(def, ctx, idempotencyKey, unknown)
+              if (found) {
+                remote = found.remoteId
+                record({ state: 'pending', remoteId: found.remoteId })
+                stage('generating')
+                return pollUntilDone(found.remoteId, 0)
+              }
+            }
+          }
+          if (submitted.state === 'succeeded') return submitted
+          if (!def.poll)
+            throw new ProviderError('unknown', `平台 ${def.title} 返回了异步任务但没有实现 poll`)
+          remote = submitted.remoteId
+          record({ state: 'pending', remoteId: submitted.remoteId })
+          return pollUntilDone(submitted.remoteId, submitted.pollAfterMs ?? DEFAULT_POLL_MS)
+        }, signal)
+        record({
+          state: 'fetched',
+          outputs: recordOutputs(fetched.outputs),
+          ...(fetched.usage ? { usage: fetched.usage } : {}),
+          ...(remote ? { remoteId: remote } : {}),
+        })
+      }
     } catch (err) {
       const error =
         timeout.aborted && !opts.signal?.aborted
           ? new ProviderError('timeout', '任务超时')
           : toError(err)
-      // 服务退出时保留，重启后续跑；远端仍在跑而本地只是临时出错时保留，重试时续轮询。
-      // 远端确认失败、用户取消、超时或还没提交成功：删掉，重跑时重新提交
-      const resumable =
-        remoteAccepted && !remoteFailed && !signal.aborted && error.retryable === true
-      if (opts.signal?.reason !== SHUTDOWN && !resumable) journal?.store.delete(journal.key)
+      const failedAt = stageOf(err)
+      if (failedAt) staged(error, failedAt)
+      // 平台明确失败：删掉记录，重跑时重新提交；其余情况（受理后出错、提交状态未知）记录留着
+      if (remoteFailed) journal?.store.delete(journal.key)
       throw error
     }
+
+    // 下载、保存结果：用户取消了也照样存（已经生成、可能已计费），只有服务退出时中止
+    const storeSignal = AbortSignal.any([
+      AbortSignal.timeout(this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+      shutdownOnly(opts.signal),
+    ])
+    let outputs = fetched.outputs
+    if (outputs.some((o) => o.type === 'file')) stage('saving')
+    let assets: AssetRef[]
+    try {
+      assets = await this.storeOutputs(parsed.provider, outputs, opts.ownerId, storeSignal)
+    } catch (err) {
+      // 结果地址过期：平台能再查就拿一份新地址再存一次
+      const status = (err as { status?: number }).status
+      if (status && EXPIRED.has(status) && remote && def.poll && !storeSignal.aborted) {
+        try {
+          const again = await def.poll(remote, ctx)
+          if (again.state !== 'succeeded') throw err
+          outputs = again.outputs
+          record({
+            state: 'fetched',
+            outputs: recordOutputs(outputs),
+            remoteId: remote,
+            ...(fetched.usage ? { usage: fetched.usage } : {}),
+          })
+          assets = await this.storeOutputs(parsed.provider, outputs, opts.ownerId, storeSignal)
+        } catch (again) {
+          throw fetchFailed(again, remote, true)
+        }
+      } else throw fetchFailed(err, remote, !!(remote && def.poll))
+    }
+    const result: ProviderCallResult = { outputs, assets, usage: fetched.usage }
+    record({ state: 'done', result, ...(remote ? { remoteId: remote } : {}) })
+    return result
+  }
+
+  /**
+   * 提交状态未知时核查：平台实现了 lookup 就按幂等键查，找到返回远端任务，
+   * 平台确认没有这个任务（或声明了幂等提交）返回 null，接着提交；都没有就抛「状态未知」
+   */
+  private async verifySubmit(
+    def: ProviderDefinition,
+    ctx: ProviderContext,
+    key: string | undefined,
+    recorded: Extract<CallRecord, { state: 'submitting' | 'unknown' }>,
+  ): Promise<{ remoteId: string } | null> {
+    const message = recorded.state === 'unknown' ? recorded.message : '上次提交时服务退出'
+    if (key && def.lookup) {
+      try {
+        return await def.lookup(key, ctx)
+      } catch (err) {
+        throw unknownSubmit(def.title, `${message}；核查失败：${(err as Error).message}`, err)
+      }
+    }
+    if (key && def.idempotent) return null
+    throw unknownSubmit(def.title, message)
   }
 
   private providerContext(
     id: string,
     ownerId: string,
     signal: AbortSignal,
-    opts: { requireEnabled: boolean },
+    opts: { requireEnabled: boolean; idempotencyKey?: string },
   ): ProviderContext {
     const { def, plugin } = this.registry.providers.get(id)!
     const manifest = this.manifest(plugin)
@@ -337,6 +574,7 @@ export class PluginHost {
       signal,
       log: (message, data) => this.log(plugin, message, data),
       files: { read: (ref) => this.readAsset(manifest, ownerId, ref) },
+      ...(opts.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : {}),
     }
   }
 
@@ -356,7 +594,12 @@ export class PluginHost {
         // 结果文件同样只能从声明过的域名下载
         const res = await scopedFetch(manifest)(out.url, { signal })
         if (!res.ok || !res.body)
-          throw new ProviderError('unavailable', `下载结果失败：HTTP ${res.status}`)
+          throw Object.assign(
+            new ProviderError('unavailable', `下载结果失败：HTTP ${res.status}`, {
+              retryable: !EXPIRED.has(res.status),
+            }),
+            { status: res.status },
+          )
         body = Readable.fromWeb(res.body as never)
       } else throw new ProviderError('unknown', '平台返回的文件既没有 url 也没有 data')
       const asset = await this.assets.ingest(ownerId, body, {
@@ -443,7 +686,9 @@ export class PluginHost {
     } catch (err) {
       if (err instanceof NodeRunError) throw err
       const e = toError(err)
-      throw new NodeRunError(e.code, e.message, e.retryable)
+      const wrapped = new NodeRunError(e.code, e.message, e.retryable)
+      wrapped.stage = stageOf(err)
+      throw wrapped
     }
     for (const [port, values] of Object.entries(outputs)) {
       const spec = node.def.outputs.find((p) => p.id === port)

@@ -114,6 +114,15 @@ export const jobs = sqliteTable(
     calls: text().notNull().default('{}'),
     /** 提交时的实际输入（PreparedInput JSON）：引用、降级、模型与有效参数 */
     input: text(),
+    /**
+     * 用户或批次批准的计划（JobExpect JSON）：执行前重新准备，与它不一致就不提交，
+     * 记为需要重新审查
+     */
+    expect: text(),
+    /** 提交时冻结的参数与输入值（JSON）；续查、重启、重新获取都按它执行，不再读画布 */
+    frozen: text(),
+    /** 恢复状态（JobRecovery JSON）：失败在哪一步、谁取消的、产物是否待采用 */
+    recovery: text(),
     error: text(),
     created_at: integer().notNull(),
     started_at: integer(),
@@ -150,6 +159,41 @@ export const jobGroups = sqliteTable(
       .on(t.status)
       .where(sql`status = 'running'`),
   ],
+)
+
+/**
+ * 批次快照：整组运行启动时每个目标的执行阶段、批准的实际输入与待解析依赖。
+ * 只存在服务端任务层，进度留在运行时，不写进画布文档
+ */
+export const batchItems = sqliteTable(
+  'batch_items',
+  {
+    group_id: text()
+      .notNull()
+      .references(() => jobGroups.id, { onDelete: 'cascade' }),
+    node_id: text().notNull(),
+    seq: integer().notNull(),
+    /** run | reuse | blocked */
+    stage: text().notNull(),
+    reason: text(),
+    /** 启动时批准的 inputHash；有待解析依赖时为空 */
+    input_hash: text(),
+    /** 节点自身参数与模型的哈希：有待解析依赖时据此判断计划有没有变 */
+    plan_hash: text(),
+    /** 待解析的依赖（BatchDependency[] JSON） */
+    deps: text().notNull().default('[]'),
+    /** 启动时的实际输入（PreparedInput JSON） */
+    input: text(),
+    /** 实际提交时冻结的 inputHash */
+    frozen_hash: text(),
+    job_id: text(),
+    /** BatchOutcome */
+    outcome: text().notNull().default('pending'),
+    /** 本批次落定的结果 */
+    result_id: text(),
+    updated_at: integer().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.group_id, t.node_id] })],
 )
 
 /**

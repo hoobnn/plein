@@ -28,8 +28,10 @@ import {
 } from '@plein/plugin-sdk'
 import { hasVoice, voiceOf } from '@plein/nodes'
 import type {
+  BatchItem,
   FlowRunOptions,
   GroupInfo,
+  HeldReason,
   ImpactRunOptions,
   GroupRunOptions,
   GroupRunStarted,
@@ -38,16 +40,40 @@ import type {
   JobInfo,
   JobList,
   PreparedInput,
+  RecoverJobOptions,
   RunActivity,
   StaleNodes,
 } from '@plein/protocol'
 import { PREPARED_INPUT_VERSION } from '@plein/protocol'
 import { sleep } from '../plugins/limiter'
-import { NodeRunError, type PluginHost, SHUTDOWN } from '../plugins/host'
+import { type CallRecord, NodeRunError, type PluginHost, SHUTDOWN, stageOf } from '../plugins/host'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { type AppliedMentions, applyMentions, mentionEdges } from './mentions'
 import { type GroupRow, type JobRow, type JobStatus, JobStore } from './store'
+import {
+  type BatchHost,
+  batchItem,
+  expectOf,
+  type JobExpect,
+  outcomeOf,
+  parseExpect,
+  planChange,
+  snapshotBatch,
+} from './batch'
+import {
+  canceledByOf,
+  describeRecovery,
+  modelOf,
+  parseCalls,
+  parseRecovery,
+  type ProviderAbility,
+  recoveryAfter,
+  reviewError,
+  type StoredRecovery,
+  SYSTEM_CANCEL,
+  USER_CANCEL,
+} from './recovery'
 
 /** 就地计算纯上游节点的最大递归深度（防环） */
 const MAX_DEPTH = 8
@@ -94,6 +120,26 @@ interface ActiveJob {
   progress?: number
   done: Promise<JobStatus>
   resolve(status: JobStatus): void
+  /** 恢复操作（重新获取、核查后续查）发起的：节点上已有更新的运行时不改它的运行状态 */
+  quiet?: boolean
+  /** 结果一律只进候选历史（用户取消过的任务取回的结果） */
+  held?: HeldReason
+}
+
+/** 提交时冻结的参数与输入值（jobs.frozen） */
+interface Frozen {
+  params: Record<string, unknown> | undefined
+  inputs: Record<string, PortValue[]>
+  inputHash?: string
+}
+
+function parseFrozen(raw: string | null | undefined): Frozen | undefined {
+  if (!raw) return undefined
+  try {
+    return JSON.parse(raw) as Frozen
+  } catch {
+    return undefined
+  }
 }
 
 /** 运行前准备好的输入；缓存键、实际输入预览和提交都由它算出 */
@@ -138,7 +184,7 @@ const TEXT_PREVIEW = 2_000
  * - 整组运行（Frame）在服务端按连线的依赖调度：上游成功才跑下游，上游失败或取消时下游跳过，
  *   参数和输入都没变的节点直接沿用已有结果（缓存）。
  */
-export class NodeRuns {
+export class NodeRuns implements BatchHost {
   readonly store: JobStore
   private active = new Map<string, ActiveJob>()
   private byId = new Map<string, ActiveJob>()
@@ -216,13 +262,28 @@ export class NodeRuns {
   // ── 单节点 ────────────────────────────────────────
 
   /** 开始运行（先进队列），立即返回运行 id；校验失败直接抛 NodeRunError */
-  start(canvasId: string, nodeId: string, ownerId: string, groupId?: string): string {
+  start(
+    canvasId: string,
+    nodeId: string,
+    ownerId: string,
+    groupId?: string,
+    /** 批准的计划：执行前重新准备，对不上就不提交（见 JobExpect） */
+    expect?: JobExpect,
+  ): string {
     if (this.isRunning(canvasId, nodeId)) throw new NodeRunError('busy', '节点正在运行')
     return this.rooms.withDoc(canvasId, (doc) => {
       const el = doc.get(nodeId)
       if (el?.kind !== 'node' || !el.nodeType) throw new NodeRunError('not_found', '节点不存在')
       const id = newId('run')
-      this.store.insert({ id, ownerId, canvasId, nodeId, groupId, nodeType: el.nodeType })
+      this.store.insert({
+        id,
+        ownerId,
+        canvasId,
+        nodeId,
+        groupId,
+        nodeType: el.nodeType,
+        ...(expect ? { expect: JSON.stringify(expect) } : {}),
+      })
       writeRun(doc, nodeId, { id, status: 'queued', at: Date.now() })
       this.enqueue({ id, canvasId, nodeId, ownerId, groupId })
       return id
@@ -231,7 +292,8 @@ export class NodeRuns {
 
   /**
    * 用户确认过实际输入后开始运行：重新准备，与确认时的 inputHash 不同就不运行，
-   * 返回新的实际输入（changed）让界面展示差异；一致或没带 expect 时同 start
+   * 返回新的实际输入（changed）让界面展示差异；一致或没带 expect 时同 start。
+   * 确认的哈希随任务存下，排队期间输入又变了，执行前复核时不提交
    */
   async startChecked(
     canvasId: string,
@@ -243,7 +305,15 @@ export class NodeRuns {
       const now = await this.preview(canvasId, nodeId, ownerId)
       if (!now.inputHash || now.inputHash !== expect) return { changed: now }
     }
-    return { runId: this.start(canvasId, nodeId, ownerId) }
+    return {
+      runId: this.start(
+        canvasId,
+        nodeId,
+        ownerId,
+        undefined,
+        expect ? { inputHash: expect } : undefined,
+      ),
+    }
   }
 
   /** 节点的实际输入：最终提示词、参考图及顺序、音色、模型与有效参数；不调用付费生成 */
@@ -341,6 +411,35 @@ export class NodeRuns {
     const job = this.store.get(r.runId)
     if (!job) return true
     return job.status === 'succeeded' && inspection.matches(job)
+  }
+
+  // ── 批次快照用（见 batch.ts）────────────────────────
+
+  async inspectInput(
+    canvasId: string,
+    doc: PleinDoc,
+    el: CanvasElement,
+    ownerId: string,
+    signal: AbortSignal,
+  ): Promise<PreparedInput> {
+    return (await this.inspect(canvasId, doc, el, ownerId, signal)).input
+  }
+
+  fresh(doc: PleinDoc, el: CanvasElement, ownerId: string, signal: AbortSignal) {
+    return this.isFresh(doc, el, ownerId, signal)
+  }
+
+  /** 节点自身参数与实际模型的哈希（不含输入）：上游还没出结果时据此判断计划有没有变 */
+  planKey(el: CanvasElement): string {
+    const def = el.nodeType ? this.host.registry.latestNode(el.nodeType)?.def : undefined
+    return this.cacheKey(el, { def, params: el.params, inputs: {} }, [])
+  }
+
+  /** 批次快照：整组运行启动时定下的目标、阶段、批准的输入与结局 */
+  batchItems(groupId: string, ownerId: string): BatchItem[] | null {
+    const g = this.store.group(groupId)
+    if (!g || g.owner_id !== ownerId) return null
+    return this.store.batchItems(groupId).map(batchItem)
   }
 
   /** 模型配的每次提交费用；没配时为空 */
@@ -465,10 +564,12 @@ export class NodeRuns {
   cancel(canvasId: string, nodeId: string) {
     const a = this.active.get(this.key(canvasId, nodeId))
     if (a) {
-      if (a.started) a.ctrl.abort()
+      if (a.started) a.ctrl.abort(USER_CANCEL)
       else {
         this.queue = this.queue.filter((q) => q !== a)
-        this.rooms.withDoc(a.canvasId, (doc) => this.finish(doc, a, 'canceled'))
+        this.rooms.withDoc(a.canvasId, (doc) =>
+          this.finish(doc, a, 'canceled', undefined, { canceledBy: 'user' }),
+        )
         this.release(a)
       }
       return
@@ -479,7 +580,13 @@ export class NodeRuns {
         writeRun(doc, nodeId, { ...run, status: 'canceled', at: Date.now() })
         const job = this.store.get(run.id)
         if (job && (job.status === 'queued' || job.status === 'running'))
-          this.store.update(run.id, { status: 'canceled', finished_at: Date.now() })
+          this.store.update(run.id, {
+            status: 'canceled',
+            finished_at: Date.now(),
+            recovery: JSON.stringify(
+              recoveryAfter('canceled', undefined, parseCalls(job.calls), { canceledBy: 'user' }),
+            ),
+          })
       }
     })
   }
@@ -489,7 +596,7 @@ export class NodeRuns {
     for (const g of this.groups.values()) if (g.canvasId === canvasId) g.ctrl.abort()
     for (const a of [...this.byId.values()]) {
       if (a.canvasId !== canvasId) continue
-      if (a.started) a.ctrl.abort()
+      if (a.started) a.ctrl.abort(SYSTEM_CANCEL)
       else {
         this.queue = this.queue.filter((q) => q !== a)
         this.store.update(a.id, { status: 'canceled', finished_at: Date.now() })
@@ -675,16 +782,102 @@ export class NodeRuns {
 
   /** 任务面板：画布最近的任务和整组运行 */
   list(canvasId: string, limit = 100): JobList {
+    const rows = this.store.recent(canvasId, limit)
+    // 候选有没有被采用要看画布；画布读不出来时不给这部分
+    const jobs =
+      this.rooms.withDoc(canvasId, (doc) => rows.map((r) => this.jobInfo(r, doc)), null) ??
+      rows.map((r) => this.jobInfo(r))
+    const groups = this.store.recentGroups(canvasId, 20)
+    const review = this.store.reviewCounts(groups.map((g) => g.id))
     return {
-      jobs: this.store.recent(canvasId, limit).map(jobInfo),
-      groups: this.store.recentGroups(canvasId, 20).map((g): GroupInfo => ({
+      jobs,
+      groups: groups.map((g): GroupInfo => ({
         ...groupState(g),
         frameId: g.frame_id,
         scope: (JSON.parse(g.options) as StoredGroupOptions).scope ?? 'frame',
+        ...(review.get(g.id) ? { review: review.get(g.id) } : {}),
         createdAt: g.created_at,
         finishedAt: g.finished_at ?? undefined,
       })),
     }
+  }
+
+  /** 任务面板里的一条：执行记录加上恢复状态 */
+  jobInfo(row: JobRow, doc?: PleinDoc): JobInfo {
+    const model = modelOf(row)
+    return { ...jobInfo(row), ...describeRecovery(row, { doc, provider: this.abilityOf(model) }) }
+  }
+
+  /** 平台在恢复上的能力：能不能按任务 ID 查询、有没有查询或幂等合同 */
+  private abilityOf(ref: string | undefined): ProviderAbility | undefined {
+    const parsed = ref ? parseModelRef(ref) : undefined
+    const def = parsed ? this.host.registry.providers.get(parsed.provider)?.def : undefined
+    if (!def) return undefined
+    return { title: def.title, poll: !!def.poll, verify: !!def.lookup || !!def.idempotent }
+  }
+
+  // ── 任务恢复 ─────────────────────────────────────
+
+  /**
+   * 处理一个需要恢复的任务（见 RecoverJobOptions）：重新获取、填任务 ID 续查、核查后重新提交、
+   * 标记已处理。都按提交时冻结的输入执行；返回处理后的任务，任务不存在时返回 null
+   */
+  recoverJob(
+    canvasId: string,
+    jobId: string,
+    ownerId: string,
+    opt: RecoverJobOptions,
+  ): JobInfo | null {
+    const row = this.store.get(jobId)
+    if (!row || row.canvas_id !== canvasId || row.owner_id !== ownerId) return null
+    const view = this.rooms.withDoc(canvasId, (doc) => this.jobInfo(row, doc))
+    const rec = view.recovery
+    const stored = parseRecovery(row.recovery)
+    if (opt.action === 'dismiss') {
+      this.store.update(jobId, { recovery: JSON.stringify({ ...stored, dismissed: true }) })
+      return this.jobInfo(this.store.get(jobId)!)
+    }
+    const calls = JSON.parse(row.calls || '{}') as Record<string, CallRecord>
+    const unknown = Object.keys(calls).filter(
+      (k) => calls[k]!.state === 'unknown' || calls[k]!.state === 'submitting',
+    )
+    const journal = this.store.journal(jobId)
+    if (opt.action === 'refetch') {
+      if (!rec?.refetchable)
+        throw new NodeRunError('invalid_input', rec?.note ?? '这个任务没有可以重新获取的结果')
+    } else {
+      if (rec?.state !== 'submit_unknown' || !unknown.length)
+        throw new NodeRunError('invalid_input', '这个任务的提交状态不是未知')
+      if (opt.action === 'attach') {
+        if (!rec.attachable || !row.frozen)
+          throw new NodeRunError('invalid_input', '这个平台不支持按任务 ID 查询，无法接着取结果')
+        journal.set(unknown[0]!, { state: 'pending', remoteId: opt.remoteId })
+      } else for (const k of unknown) journal.delete(k)
+    }
+    this.resume(row, stored)
+    return this.jobInfo(this.store.get(jobId)!)
+  }
+
+  /** 按调用记录重新执行一个已结束的任务（不新建任务，结果和费用都记在原任务上） */
+  private resume(row: JobRow, stored: StoredRecovery) {
+    if (this.isRunning(row.canvas_id, row.node_id))
+      throw new NodeRunError('busy', '节点正在运行，等它结束后再处理')
+    const canceled = stored.canceledBy === 'user' || row.status === 'canceled'
+    this.store.update(row.id, {
+      status: 'queued',
+      error: null,
+      finished_at: null,
+      recovery: stored.canceledBy ? JSON.stringify({ canceledBy: stored.canceledBy }) : null,
+    })
+    this.enqueue({
+      id: row.id,
+      canvasId: row.canvas_id,
+      nodeId: row.node_id,
+      ownerId: row.owner_id,
+      groupId: row.group_id ?? undefined,
+      quiet: true,
+      ...(canceled ? { held: 'canceled' as const } : {}),
+    })
   }
 
   /** 取消整组：停止调度，组内正在跑和排队的任务一起取消 */
@@ -708,37 +901,75 @@ export class NodeRuns {
     try {
       const targets = (JSON.parse(g.targets) as string[]).filter((id) => doc.get(id))
       const graph = runGraph(doc)
+      // 批次快照：启动时（重启后继续时已经有了）定下每个目标的阶段、批准的输入和待解析依赖
+      if (!this.store.batchItems(g.id).length)
+        await snapshotBatch(
+          this,
+          g,
+          doc,
+          targets,
+          graph,
+          {
+            force: options.force,
+            rerun,
+            // 用户确认保留的结果也按沿用记（按影响运行时除外）
+            kept:
+              options.scope === 'impact'
+                ? undefined
+                : (el) => this.isKept(g.canvas_id, doc, el, g.owner_id, ctrl.signal),
+          },
+          ctrl.signal,
+        ).catch(() => {})
+      const settle = (nodeId: string, outcome: BatchItem['outcome'], resultId?: string) =>
+        this.store.updateBatchItem(g.id, nodeId, {
+          outcome,
+          ...(resultId ? { result_id: resultId } : {}),
+        })
       const step = async (nodeId: string): Promise<StepOutcome> => {
         if (ctrl.signal.aborted) return 'canceled'
         const el = doc.get(nodeId)
-        if (!el) return 'failed'
+        if (!el) {
+          this.store.updateBatchItem(g.id, nodeId, { outcome: 'failed', reason: '节点已删除' })
+          return 'failed'
+        }
         // 重启后继续：这次整组里已经成功的不再跑
         if (this.store.succeededInGroup(g.id, nodeId)) return 'succeeded'
         let jobId = this.active.get(this.key(g.canvas_id, nodeId))?.id
         if (!jobId) {
           const reuse = !options.force && !rerun.has(nodeId)
-          if (reuse && (await this.isFresh(doc, el, g.owner_id, ctrl.signal))) return 'cached'
+          if (reuse && (await this.isFresh(doc, el, g.owner_id, ctrl.signal))) {
+            settle(nodeId, 'cached', currentResult(el)?.id)
+            return 'cached'
+          }
           // 用户确认保留的过期结果：整组运行不花钱重跑；在「查看影响」里勾选了才重做
           if (
             reuse &&
             options.scope !== 'impact' &&
             (await this.isKept(g.canvas_id, doc, el, g.owner_id, ctrl.signal))
-          )
+          ) {
+            settle(nodeId, 'cached', currentResult(el)?.id)
             return 'cached'
+          }
           if (options.candidates && reuse) {
             const now = await this.inspect(g.canvas_id, doc, el, g.owner_id, ctrl.signal)
             const hit = this.cachedCandidate(el, now)
             if (hit) {
               adoptResult(doc, nodeId, hit)
+              settle(nodeId, 'cached', hit)
               return 'cached'
             }
           }
           // 判断新旧要等一会儿，期间另一组可能已经发起了同一个节点（几组共用一张定妆图）：跟着等它
+          const item = this.store.batchItem(g.id, nodeId)
           jobId =
             this.active.get(this.key(g.canvas_id, nodeId))?.id ??
-            this.start(g.canvas_id, nodeId, g.owner_id, g.id)
+            this.start(g.canvas_id, nodeId, g.owner_id, g.id, item ? expectOf(item) : undefined)
+          this.store.updateBatchItem(g.id, nodeId, { job_id: jobId, outcome: 'running' })
         }
         const status = await this.wait(jobId)
+        const outcome = outcomeOf(this.store.get(jobId))
+        const now = doc.get(nodeId)
+        settle(nodeId, outcome, outcome === 'succeeded' && now ? currentResult(now)?.id : undefined)
         if (status === 'succeeded') return 'succeeded'
         return status === 'canceled' ? 'canceled' : 'failed'
       }
@@ -750,6 +981,14 @@ export class NodeRuns {
       )
       const r = await runDag(hard, step, { signal: ctrl.signal, soft })
       if (this.closed) return
+      for (const id of r.skipped)
+        this.store.updateBatchItem(g.id, id, {
+          outcome: 'skipped',
+          reason: '上游失败或取消，没有运行',
+        })
+      for (const id of r.canceled)
+        if (this.store.batchItem(g.id, id)?.outcome === 'pending')
+          this.store.updateBatchItem(g.id, id, { outcome: 'canceled' })
       const status = ctrl.signal.aborted ? 'canceled' : 'done'
       const summary = {
         succeeded: r.succeeded.length,
@@ -818,22 +1057,32 @@ export class NodeRuns {
   /** 服务启动时接着跑上次没结束的任务和整组运行 */
   recover() {
     for (const row of this.store.active()) {
+      // 用户取消过、又去取回结果的任务：照旧只进候选，不动节点上更新的运行状态
+      const canceled = parseRecovery(row.recovery).canceledBy === 'user'
       const ok = this.rooms.withDoc(
         row.canvas_id,
         (doc) => {
-          if (doc.get(row.node_id)?.kind !== 'node') return false
-          writeRun(doc, row.node_id, {
-            id: row.id,
-            status: 'queued',
-            message: '服务重启后继续',
-            at: Date.now(),
-          })
-          return true
+          const el = doc.get(row.node_id)
+          if (el?.kind !== 'node') return false
+          if (!el.run || el.run.id === row.id)
+            writeRun(doc, row.node_id, {
+              id: row.id,
+              status: 'queued',
+              message: '服务重启后继续',
+              at: Date.now(),
+            })
+          return { quiet: !!el.run && el.run.id !== row.id }
         },
         false,
       )
       if (!ok) {
-        this.store.update(row.id, { status: 'canceled', finished_at: Date.now() })
+        this.store.update(row.id, {
+          status: 'canceled',
+          finished_at: Date.now(),
+          recovery: JSON.stringify(
+            recoveryAfter('canceled', undefined, parseCalls(row.calls), { canceledBy: 'system' }),
+          ),
+        })
         continue
       }
       this.store.update(row.id, { status: 'queued' })
@@ -843,6 +1092,8 @@ export class NodeRuns {
         nodeId: row.node_id,
         ownerId: row.owner_id,
         groupId: row.group_id ?? undefined,
+        ...(ok.quiet || canceled ? { quiet: true } : {}),
+        ...(canceled ? { held: 'canceled' as const } : {}),
       })
     }
     for (const g of this.store.activeGroups()) void this.orchestrate(g)
@@ -858,7 +1109,9 @@ export class NodeRuns {
 
   // ── 队列 ─────────────────────────────────────────
 
-  private enqueue(job: Pick<ActiveJob, 'id' | 'canvasId' | 'nodeId' | 'ownerId' | 'groupId'>) {
+  private enqueue(
+    job: Pick<ActiveJob, 'id' | 'canvasId' | 'nodeId' | 'ownerId' | 'groupId' | 'quiet' | 'held'>,
+  ) {
     let resolve!: (s: JobStatus) => void
     const done = new Promise<JobStatus>((r) => {
       resolve = r
@@ -894,16 +1147,33 @@ export class NodeRuns {
     this.jobsChange()
   }
 
-  private finish(doc: PleinDoc, a: ActiveJob, status: JobStatus, err?: unknown) {
+  private finish(
+    doc: PleinDoc,
+    a: ActiveJob,
+    status: JobStatus,
+    err?: unknown,
+    extra?: StoredRecovery,
+  ) {
     const at = Date.now()
     const error = err === undefined ? undefined : (err as Error).message
+    // 提交状态未知、保存失败按步骤给原因，不按平台错误码（那只是表面的网络错误）
+    const stage = stageOf(err)
     const errorCode =
-      typeof (err as { code?: unknown })?.code === 'string'
-        ? (err as { code: string }).code
-        : undefined
-    this.store.update(a.id, { status, error: error ?? null, finished_at: at })
+      stage === 'submit_unknown' || stage === 'fetch_failed'
+        ? stage
+        : typeof (err as { code?: unknown })?.code === 'string'
+          ? (err as { code: string }).code
+          : undefined
+    const recovery = recoveryAfter(status, err, parseCalls(this.store.get(a.id)?.calls), extra)
+    this.store.update(a.id, {
+      status,
+      error: error ?? null,
+      finished_at: at,
+      recovery: recovery ? JSON.stringify(recovery) : null,
+    })
     const el = doc.get(a.nodeId)
-    if (el) writeRun(doc, a.nodeId, { id: a.id, status, error, errorCode, at })
+    if (el && (!a.quiet || el.run?.id === a.id || !el.run))
+      writeRun(doc, a.nodeId, { id: a.id, status, error, errorCode, at })
     a.resolve(status)
     this.emit({
       type: 'job-finished',
@@ -923,37 +1193,55 @@ export class NodeRuns {
     const signal = a.ctrl.signal
     try {
       const el = doc.get(a.nodeId)
-      if (el?.kind !== 'node' || !el.nodeType) return this.finish(doc, a, 'canceled')
+      if (el?.kind !== 'node' || !el.nodeType)
+        return this.finish(doc, a, 'canceled', undefined, { canceledBy: 'system' })
       const startedAt = Date.now()
       this.store.update(a.id, { status: 'running', started_at: startedAt })
       const base = { id: a.id, status: 'running', startedAt } as const
-      writeRun(doc, a.nodeId, { ...base, progress: 0, at: startedAt })
+      // 恢复操作发起的：节点上已经有更新的运行时不动它的状态
+      const own = !a.quiet || !el.run || el.run.id === a.id
+      if (own) writeRun(doc, a.nodeId, { ...base, progress: 0, at: startedAt })
 
       for (;;) {
         const attempts = (this.store.get(a.id)?.attempts ?? 0) + 1
         this.store.update(a.id, { attempts })
         try {
-          await this.runOnce(doc, a, signal, attempts > 1 ? { ...base, attempt: attempts } : base)
-          return this.finish(doc, a, 'succeeded')
+          const done = await this.runOnce(
+            doc,
+            a,
+            signal,
+            attempts > 1 ? { ...base, attempt: attempts } : base,
+            own,
+          )
+          // 取消后才返回的结果：入库待采用，任务仍算已取消
+          if (done.held === 'canceled')
+            return this.finish(doc, a, 'canceled', undefined, {
+              ...done,
+              canceledBy: canceledByOf(signal.reason),
+            })
+          return this.finish(doc, a, 'succeeded', undefined, done)
         } catch (err) {
           if (signal.reason === SHUTDOWN) return a.resolve('running')
-          if (signal.aborted) return this.finish(doc, a, 'canceled')
+          if (signal.aborted)
+            return this.finish(doc, a, 'canceled', err, { canceledBy: canceledByOf(signal.reason) })
+          if (stageOf(err) === 'remote_canceled') return this.finish(doc, a, 'canceled', err)
           const delay = this.retryDelays[attempts - 1]
           if (!retryable(err) || delay === undefined) return this.finish(doc, a, 'failed', err)
           const now = Date.now()
-          writeRun(doc, a.nodeId, {
-            ...base,
-            phase: 'retrying',
-            message: (err as Error).message,
-            retryAt: now + delay,
-            attempt: attempts,
-            at: now,
-          })
+          if (own)
+            writeRun(doc, a.nodeId, {
+              ...base,
+              phase: 'retrying',
+              message: (err as Error).message,
+              retryAt: now + delay,
+              attempt: attempts,
+              at: now,
+            })
           try {
             await sleep(delay, signal)
           } catch {
             if (signal.reason === SHUTDOWN) return a.resolve('running')
-            return this.finish(doc, a, 'canceled')
+            return this.finish(doc, a, 'canceled', err, { canceledBy: canceledByOf(signal.reason) })
           }
         }
       }
@@ -967,22 +1255,47 @@ export class NodeRuns {
     }
   }
 
-  /** 执行一次：收集输入、调执行器、写回结果 */
+  /**
+   * 执行一次：收集输入、核对批准的计划、冻结输入、调执行器、写回结果。
+   * 已经调用过平台（重启、重试、重新获取）时按冻结的输入接着做，不再读画布：
+   * 输入改过也不会让调用对不上记录而重新提交。返回结果是否被采用
+   */
   private async runOnce(
     doc: PleinDoc,
     a: ActiveJob,
     signal: AbortSignal,
     base: Omit<NodeRun, 'at'>,
-  ) {
+    own = true,
+  ): Promise<StoredRecovery & { held?: HeldReason }> {
     const el = doc.get(a.nodeId)
     if (!el?.nodeType) throw new NodeRunError('not_found', '节点不存在')
-    const prepared = await this.prepare(doc, el, a.ownerId, signal)
-    // 实际输入随任务存下来：降级、舍弃的参考图和所用模型以后查得到
-    const input = this.summarize(el, prepared)
-    this.store.update(a.id, { input: JSON.stringify(input) })
-    // 必需参考用不上：不提交，免得花钱生成一张缺了关键角色或道具的图
-    if (input.blocked.length)
-      throw new NodeRunError('invalid_input', input.blocked.map((b) => b.message).join('；'))
+    const row = this.store.get(a.id)
+    const def = this.host.registry.latestNode(el.nodeType)?.def
+    let frozen = parseFrozen(row?.frozen)
+    if (!frozen || !parseCalls(row?.calls).length) {
+      const prepared = await this.prepare(doc, el, a.ownerId, signal)
+      // 实际输入随任务存下来：降级、舍弃的参考图和所用模型以后查得到
+      const input = this.summarize(el, prepared)
+      this.store.update(a.id, { input: JSON.stringify(input) })
+      // 付费节点：实际输入相对批准的计划变了（排队期间改过、批次里上游换了来源）就不提交
+      const expect = parseExpect(row?.expect)
+      if (expect && def?.capability) {
+        const reason = planChange(
+          expect,
+          { inputHash: input.inputHash, planHash: this.planKey(el) },
+          { doc, groupId: a.groupId, store: this.store },
+        )
+        if (reason) throw reviewError(reason)
+      }
+      // 必需参考用不上：不提交，免得花钱生成一张缺了关键角色或道具的图
+      if (input.blocked.length)
+        throw new NodeRunError('invalid_input', input.blocked.map((b) => b.message).join('；'))
+      frozen = { params: prepared.params, inputs: prepared.inputs, inputHash: input.inputHash }
+      this.store.update(a.id, { frozen: JSON.stringify(frozen) })
+      if (a.groupId)
+        this.store.updateBatchItem(a.groupId, a.nodeId, { frozen_hash: input.inputHash ?? null })
+    }
+    const prepared: Prepared = { def, params: frozen.params, inputs: frozen.inputs }
     // 运行中的状态：进度、执行器提示和调用平台的阶段合在一起写回文档
     const live: Omit<NodeRun, 'at'> = { ...base }
     let lastProgress = 0
@@ -1001,32 +1314,70 @@ export class NodeRuns {
         a.progress = progress
         this.jobsChange()
         Object.assign(live, { progress, message })
-        writeRun(doc, el.id, { ...live, at: now })
+        if (own) writeRun(doc, el.id, { ...live, at: now })
       },
       // 阶段变化不多，立即写回，界面上排队、生成、下载结果的切换不滞后
       onStage: ({ phase, via }) => {
         if (live.phase === phase && live.via === via) return
         Object.assign(live, { phase, via })
-        writeRun(doc, el.id, { ...live, at: Date.now() })
+        if (own) writeRun(doc, el.id, { ...live, at: Date.now() })
       },
     })
     const at = Date.now()
     const results: NodeResult[] = Object.entries(outputs).flatMap(([port, values]) =>
       values.map((v) => ({ id: newId('res'), port, value: toResultValue(v), runId: a.id, at })),
     )
-    addResults(doc, el.id, results)
-    const def = prepared.def
-    const patch = def?.applyOutputs?.(
-      resolveParams(def, doc.get(el.id)?.params, el.nodeVersion ?? def.version),
-      outputs,
-    )
-    if (patch) setParams(doc, el.id, patch)
     // 运行结果写回的参数不计入缓存键，否则节点一跑完就“过期”
+    const patchFor = () => {
+      const now = doc.get(el.id)
+      return def?.applyOutputs?.(
+        resolveParams(def, now?.params, el.nodeVersion ?? def.version),
+        outputs,
+      )
+    }
+    const held = await this.heldReason(doc, a, el, frozen.inputHash, row?.created_at ?? 0, signal)
+    const resultIds = results.map((r) => r.id)
+    if (held === 'node_deleted') {
+      // 节点没了：产物只留在执行记录里
+      const assets = results.flatMap((r) => ('assetId' in r.value ? [r.value.assetId] : []))
+      this.store.update(a.id, { cache_key: this.cacheKey(el, prepared, []) })
+      return { state: 'stored', held, assets }
+    }
+    addResults(doc, el.id, results, { adopt: !held })
+    const patch = held ? undefined : patchFor()
+    if (patch) setParams(doc, el.id, patch)
     const omit = patch ? Object.keys(patch) : []
     this.store.update(a.id, {
       cache_key: this.cacheKey(el, prepared, omit),
       cache_omit: omit.length ? JSON.stringify(omit) : null,
     })
+    return held ? { state: 'stored', held, resultIds } : { state: 'adopted', resultIds }
+  }
+
+  /**
+   * 晚返回的结果能不能成为当前结果：用户取消过、节点删了、节点有更新的运行、
+   * 或输入在提交后改过，都只进候选历史，返回原因；可以采用时返回 undefined
+   */
+  private async heldReason(
+    doc: PleinDoc,
+    a: ActiveJob,
+    el: CanvasElement,
+    inputHash: string | undefined,
+    createdAt: number,
+    signal: AbortSignal,
+  ): Promise<HeldReason | undefined> {
+    if (a.held) return a.held
+    if (signal.aborted && signal.reason !== SHUTDOWN) return 'canceled'
+    const now = doc.get(el.id)
+    if (!now) return 'node_deleted'
+    if (this.store.newerJobs(a.canvasId, el.id, createdAt).length) return 'superseded'
+    if (!inputHash) return undefined
+    try {
+      const p = await this.prepare(doc, now, a.ownerId, new AbortController().signal)
+      return this.cacheKey(now, p, []) === inputHash ? undefined : 'input_changed'
+    } catch {
+      return 'input_changed'
+    }
   }
 
   /** 收集输入、展开 @ 引用；执行和判断缓存都用它，保证两边算的是同一份东西 */

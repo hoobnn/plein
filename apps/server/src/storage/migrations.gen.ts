@@ -52,4 +52,15 @@ export const MIGRATIONS: Migration[] = [
       'CREATE INDEX `impact_decisions_canvas` ON `impact_decisions` (`canvas_id`,`created_at`);',
     ],
   },
+  {
+    tag: '0003_funny_grim_reaper',
+    when: 1791960943495,
+    hash: 'd68927855c47683d2fdbda2b50f498a8013e5c23c566404d99fdcd27f7c90e5d',
+    statements: [
+      "CREATE TABLE `batch_items` (\n\t`group_id` text NOT NULL,\n\t`node_id` text NOT NULL,\n\t`seq` integer NOT NULL,\n\t`stage` text NOT NULL,\n\t`reason` text,\n\t`input_hash` text,\n\t`plan_hash` text,\n\t`deps` text DEFAULT '[]' NOT NULL,\n\t`input` text,\n\t`frozen_hash` text,\n\t`job_id` text,\n\t`outcome` text DEFAULT 'pending' NOT NULL,\n\t`result_id` text,\n\t`updated_at` integer NOT NULL,\n\tPRIMARY KEY(`group_id`, `node_id`),\n\tFOREIGN KEY (`group_id`) REFERENCES `job_groups`(`id`) ON UPDATE no action ON DELETE cascade\n);",
+      'ALTER TABLE `jobs` ADD `expect` text;',
+      'ALTER TABLE `jobs` ADD `frozen` text;',
+      'ALTER TABLE `jobs` ADD `recovery` text;',
+    ],
+  },
 ]

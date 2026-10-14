@@ -172,14 +172,20 @@ export interface ProviderErrorInfo {
 export class ProviderError extends Error {
   readonly code: ProviderErrorCode
   readonly retryable: boolean
+  /**
+   * unknown：请求可能已经到达平台（如提交时网络断开、响应读不出来），不能当作没提交。
+   * 宿主据此把提交记为「状态未知」，不自动重新提交
+   */
+  readonly outcome?: 'unknown'
   constructor(
     code: ProviderErrorCode,
     message: string,
-    opts: { retryable?: boolean; cause?: unknown } = {},
+    opts: { retryable?: boolean; cause?: unknown; outcome?: 'unknown' } = {},
   ) {
     super(message, { cause: opts.cause })
     this.name = 'ProviderError'
     this.code = code
+    if (opts.outcome) this.outcome = opts.outcome
     this.retryable =
       opts.retryable ?? (code === 'rate_limit' || code === 'unavailable' || code === 'timeout')
   }
@@ -280,6 +286,11 @@ export interface ProviderContext<S = Record<string, unknown>> {
   }
   /** 流式输出：text.chat 边生成边回调文本增量（宿主没要求时为空，平台照常一次返回） */
   stream?(delta: { text: string }): void
+  /**
+   * 这次调用的幂等键：同一个任务里的同一次调用（含重启、重新提交）不变。
+   * 平台支持客户端幂等键或按客户端标识查任务时传给平台；不支持的忽略
+   */
+  idempotencyKey?: string
 }
 
 /** 模型平台适配器 */
@@ -304,6 +315,20 @@ export interface ProviderDefinition<S extends z.ZodObject = z.ZodObject> {
   submit(request: ProviderRequest, ctx: ProviderContext<z.output<S>>): Promise<SubmitResult>
   poll?(remoteId: string, ctx: ProviderContext<z.output<S>>): Promise<PollResult>
   cancel?(remoteId: string, ctx: ProviderContext<z.output<S>>): Promise<void>
+  /**
+   * 按幂等键（ctx.idempotencyKey）查提交过的任务：提交后没收到回应时宿主用它核查。
+   * 找到返回远端任务 ID，平台确认没有这个任务返回 null；查不了就抛错。
+   * 只有平台官方提供按客户端标识查询的接口时才实现
+   */
+  lookup?(
+    idempotencyKey: string,
+    ctx: ProviderContext<z.output<S>>,
+  ): Promise<{ remoteId: string } | null>
+  /**
+   * 提交按 ctx.idempotencyKey 去重：同一个键重复提交不会产生第二个任务、不重复计费。
+   * 只有平台官方承诺幂等时才声明；声明了，提交状态未知时宿主会用同一个键重新提交
+   */
+  idempotent?: boolean
 }
 
 export function defineProvider<S extends z.ZodObject>(

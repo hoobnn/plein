@@ -49,6 +49,7 @@ export function withRetry(error: ProviderError, method: Method): ProviderError {
   return new ProviderError(error.code, error.message, {
     retryable: retryableFor(method, error.code),
     cause: error.cause,
+    ...(error.outcome ? { outcome: error.outcome } : {}),
   })
 }
 
@@ -64,7 +65,10 @@ function isTimeout(value: unknown) {
   return value instanceof Error && value.name === 'TimeoutError'
 }
 
-/** fetch 或读响应体抛错时的归类：中止为 cancelled，其余按方法决定能否重试 */
+/**
+ * fetch 或读响应体抛错时的归类：中止为 cancelled，其余按方法决定能否重试。
+ * POST 断在半路时请求可能已到平台，标为结果未知（outcome），宿主不会当作没提交
+ */
 export function transportError(
   ctx: Pick<ProviderContext, 'signal'>,
   method: Method,
@@ -75,11 +79,13 @@ export function transportError(
     return new ProviderError('timeout', messages.timeout, {
       retryable: !ctx.signal.aborted && method === 'GET',
       cause,
+      ...(method === 'POST' ? { outcome: 'unknown' as const } : {}),
     })
   if (ctx.signal.aborted) return new ProviderError('cancelled', messages.cancelled, { cause })
   return new ProviderError('unavailable', messages.network, {
     retryable: method === 'GET',
     cause,
+    ...(method === 'POST' ? { outcome: 'unknown' as const } : {}),
   })
 }
 

@@ -317,16 +317,26 @@ export function writeRun(doc: PleinDoc, id: string, run: NodeRun | null) {
   }, SYSTEM_ORIGIN)
 }
 
-/** 追加一次运行的结果（插到最前），并采用其中第一个。系统写入，不进撤销栈 */
-export function addResults(doc: PleinDoc, id: string, results: NodeResult[]) {
+/**
+ * 追加一次运行的结果（插到最前），并采用其中第一个。系统写入，不进撤销栈。
+ * adopt 为 false 时只进候选历史、当前结果不变（晚返回、输入已经改过的结果待用户采用）
+ */
+export function addResults(
+  doc: PleinDoc,
+  id: string,
+  results: NodeResult[],
+  opts: { adopt?: boolean } = {},
+) {
   if (results.length === 0) return
   doc.ydoc.transact(() => {
     const m = doc.mutable(id)
     if (!m) return
-    const old = m.get('results')
-    const list = [...results, ...(Array.isArray(old) ? (old as NodeResult[]) : [])]
+    const old = Array.isArray(m.get('results')) ? (m.get('results') as NodeResult[]) : []
+    const list = [...results, ...old]
     m.set('results', list.slice(0, MAX_RESULTS))
-    m.set('adopted', results[0]!.id)
+    if (opts.adopt !== false) m.set('adopted', results[0]!.id)
+    // 没显式采用过时当前结果是最新的那个：钉住原来的，免得新插进来的顶替它
+    else if (!m.get('adopted') && old[0]) m.set('adopted', old[0].id)
   }, SYSTEM_ORIGIN)
 }
 

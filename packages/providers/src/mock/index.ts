@@ -254,6 +254,8 @@ const pending = new Map<
   { startAt: number; readyAt: number; polls: number; queueMs: number; req: ProviderRequest }
 >()
 let seq = 0
+/** 幂等键 → 远端任务：提交后没收到回应时按键查回来（模拟平台的按客户端标识查询） */
+const byKey = new Map<string, string>()
 
 export const mockProvider = defineProvider({
   id: 'plein/mock',
@@ -311,6 +313,13 @@ export const mockProvider = defineProvider({
     if (fail !== 'none') throw new ProviderError(fail, `模拟错误：${fail}`)
     if (ctx.settings.latencyMs === 0) {
       const outputs = fakeOutputs(req)
+      // 同步出结果也登记一个已完成的任务，按幂等键能查到
+      if (ctx.idempotencyKey) {
+        const remoteId = `mock-${++seq}`
+        const now = Date.now()
+        pending.set(remoteId, { startAt: now, readyAt: now, polls: 0, queueMs: 0, req })
+        byKey.set(ctx.idempotencyKey, remoteId)
+      }
       // 流式：文本分几段回调，界面能看到逐字出现
       for (const o of outputs)
         if (o.type === 'text' && ctx.stream)
@@ -325,6 +334,7 @@ export const mockProvider = defineProvider({
       readyAt: Date.now() + ctx.settings.latencyMs,
       req,
     })
+    if (ctx.idempotencyKey) byKey.set(ctx.idempotencyKey, remoteId)
     return {
       state: 'pending',
       remoteId,
@@ -357,6 +367,10 @@ export const mockProvider = defineProvider({
   },
   async cancel(remoteId) {
     pending.delete(remoteId)
+  },
+  async lookup(key) {
+    const remoteId = byKey.get(key)
+    return remoteId ? { remoteId } : null
   },
 })
 

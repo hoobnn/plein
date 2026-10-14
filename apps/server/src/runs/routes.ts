@@ -6,9 +6,11 @@ import {
   ImpactRunOptions,
   type JobList,
   KeepResults,
+  type JobInfo,
   NodeRunOptions,
   type NodeRunStarted,
   type PreparedInput,
+  RecoverJobOptions,
   type StaleNodes,
 } from '@plein/protocol'
 import { Hono } from 'hono'
@@ -166,6 +168,23 @@ export function runRoutes(db: DB, runs: NodeRuns) {
       if (!ownsCanvas(db, c.var.principal.id, canvas)) return c.json(notFound, 404)
       return c.json(runs.list(canvas) satisfies JobList)
     })
+    .post('/api/canvases/:canvas/jobs/:job/recover', async (c) => {
+      const { canvas, job } = c.req.param()
+      const p = c.var.principal
+      if (p.role === 'viewer') return c.json(forbidden, 403)
+      if (!ownsCanvas(db, p.id, canvas)) return c.json(notFound, 404)
+      const body = RecoverJobOptions.safeParse(await c.req.json().catch(() => ({})))
+      if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
+      try {
+        const r = runs.recoverJob(canvas, job, p.id, body.data)
+        return r
+          ? c.json(r satisfies JobInfo)
+          : c.json({ error: 'not_found', message: '任务不存在' }, 404)
+      } catch (err) {
+        if (!(err instanceof NodeRunError)) throw err
+        return c.json({ error: err.code, message: err.message }, STATUS[err.code] ?? 400)
+      }
+    })
     .post('/api/canvases/:canvas/frames/:frame/run', async (c) => {
       const { canvas, frame } = c.req.param()
       const p = c.var.principal
@@ -183,6 +202,10 @@ export function runRoutes(db: DB, runs: NodeRuns) {
     .get('/api/runs/groups/:id', (c) => {
       const state = runs.groupState(c.req.param('id'), c.var.principal.id)
       return state ? c.json(state) : c.json({ error: 'not_found', message: '运行记录不存在' }, 404)
+    })
+    .get('/api/runs/groups/:id/items', (c) => {
+      const items = runs.batchItems(c.req.param('id'), c.var.principal.id)
+      return items ? c.json(items) : c.json({ error: 'not_found', message: '运行记录不存在' }, 404)
     })
     .post('/api/runs/groups/:id/cancel', (c) => {
       if (c.var.principal.role === 'viewer') return c.json(forbidden, 403)
