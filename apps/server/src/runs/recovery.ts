@@ -79,7 +79,8 @@ export function recoveryAfter(
   const out: StoredRecovery = { ...extra }
   const stage = stageOf(err)
   if (stage) out.state = STAGE_STATE[stage]
-  if (stage === 'remote_canceled') out.canceledBy = 'remote'
+  // 用户取消过、平台随后也确认停下：仍记为用户取消
+  if (stage === 'remote_canceled' && out.canceledBy !== 'user') out.canceledBy = 'remote'
   if ((err as { code?: string } | undefined)?.code === 'input_changed') out.state = 'review'
   const remoteId = (err as { remoteId?: string } | undefined)?.remoteId
   if (remoteId) out.remoteId = remoteId

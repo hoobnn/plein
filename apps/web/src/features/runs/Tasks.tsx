@@ -651,7 +651,15 @@ function RecoveryBlock(props: {
           </button>
         )}
         {r.state === 'stored' && el && pick && !doc.readOnly && (
-          <button type="button" className={btn} onClick={() => adoptResult(doc, el.id, pick)}>
+          <button
+            type="button"
+            className={btn}
+            onClick={() => {
+              adoptResult(doc, el.id, pick)
+              if (canvasId)
+                void client.invalidateQueries({ queryKey: queryKeys.canvasJobs(canvasId) })
+            }}
+          >
             采用
           </button>
         )}

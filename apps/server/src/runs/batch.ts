@@ -71,8 +71,7 @@ export async function snapshotBatch(
     const reusable = !!el && !opts.force && !opts.rerun.has(id)
     fresh.set(
       id,
-      reusable &&
-        ((await host.fresh(doc, el, g.owner_id, signal)) || !!(await opts.kept?.(el))),
+      reusable && ((await host.fresh(doc, el, g.owner_id, signal)) || !!(await opts.kept?.(el))),
     )
   }
   const now = Date.now()

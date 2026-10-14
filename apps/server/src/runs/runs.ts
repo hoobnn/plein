@@ -1224,7 +1224,14 @@ export class NodeRuns implements BatchHost {
           if (signal.reason === SHUTDOWN) return a.resolve('running')
           if (signal.aborted)
             return this.finish(doc, a, 'canceled', err, { canceledBy: canceledByOf(signal.reason) })
-          if (stageOf(err) === 'remote_canceled') return this.finish(doc, a, 'canceled', err)
+          if (stageOf(err) === 'remote_canceled')
+            return this.finish(
+              doc,
+              a,
+              'canceled',
+              err,
+              a.held === 'canceled' ? { canceledBy: 'user' } : undefined,
+            )
           const delay = this.retryDelays[attempts - 1]
           if (!retryable(err) || delay === undefined) return this.finish(doc, a, 'failed', err)
           const now = Date.now()
