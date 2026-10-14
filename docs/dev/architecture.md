@@ -21,9 +21,42 @@ plein 是一块“可执行的画布”：同一个 Yjs 文档里既放图片、
 | `apps/web`             | React 外壳、工具栏与面板、节点表单、分镜表、序列编辑、资产库、任务面板、本机智能体，经 `api/client.ts` 调后端 | 已接入 y-indexeddb 文档缓存；断线编辑、重连、schema 与缓存失效在 0.1.3 验收            |
 | `packages/canvas-core` | PixiJS v8、相机与惯性输入、rbush 场景索引、视口裁剪与 LOD、选择/框选/吸附/缩放、端口与连线、DOM 覆盖层        | 纹理管理与性能基准（第三步性能审查）                                                   |
 | `packages/doc`         | 每元素一个嵌套 `Y.Map`、命令式 API、z 序与父子关系、schema 迁移、按帧合并的变更订阅、`portsCompatible`        | —                                                                                      |
-| `packages/flow`        | 纯 TS 的 DAG 调度（`runDag`）、依赖图                                                                         | 浏览器侧编译与用量预估                                                                 |
+| `packages/flow`        | 纯 TS 的 DAG 调度（`runDag`）、依赖图；目前只在服务端（任务运行、插件宿主）调用                               | 浏览器侧编译与用量预估                                                                 |
 | `apps/server`          | Node + Hono 单进程：Yjs 房间（带租约）、SQLite 任务队列与重试、插件宿主、资产与衍生物、导出、本机智能体       | Yjs 更新逐条同步写库，大文档导入时会占住事件循环，需要合并写入；整组运行状态靠前端轮询 |
-| 工程                   | Vite+（Oxlint、Oxfmt、Vitest、tsdown）、Playwright（mock）、commitlint + husky、CI（Node 26）                 | e2e 进 CI、性能基准                                                                    |
+| 工程                   | Vite+（Oxlint、Oxfmt、Vitest、tsdown）、Playwright（mock，已进 CI）、commitlint + husky、CI（Node 26）        | 性能基准进 CI                                                                          |
+
+## 包与依赖
+
+```mermaid
+flowchart TB
+  web["apps/web"]
+  server["apps/server"]
+  sdk["plugin-sdk"]
+  core["canvas-core"]
+  desktop["apps/desktop"] -->|子进程运行| server
+  desktop --> protocol
+  web --> capabilities & core & protocol
+  server --> capabilities & providers & protocol & flow
+  capabilities --> nodes & doc
+  providers --> sdk
+  protocol --> sdk
+  nodes --> sdk
+  core --> doc
+  capabilities --> sdk
+```
+
+| 包                      | 职责                                                                                            |
+| ----------------------- | ----------------------------------------------------------------------------------------------- |
+| `packages/plugin-sdk`   | 插件公开 API：清单、节点、Provider、执行器、能力的类型与注册方式                                |
+| `packages/doc`          | Yjs 文档模型与命令式 API                                                                        |
+| `packages/canvas-core`  | 画布渲染与交互内核                                                                              |
+| `packages/flow`         | 依赖图、调度、缓存键                                                                            |
+| `packages/nodes`        | 内置节点声明与短剧领域约定（模板、资产库分类、角色档案、分镜、序列），纯数据 + 纯函数，不碰 Yjs |
+| `packages/capabilities` | 对文档的操作（能力），界面、⌘K、内置智能体、对外 MCP 和插件共用                                 |
+| `packages/protocol`     | 前后端接口约定：路径与请求 / 响应 schema，按领域分文件                                          |
+| `packages/providers`    | 模型平台适配器，只在服务端使用                                                                  |
+
+依赖只能自上而下，下层包不反向引用上层；`apps/*` 之间不互相 import，桌面端通过子进程和 `protocol` 里的类型与服务端、前端交互。两个应用内部的目录约定见 [CONTRIBUTING](../../CONTRIBUTING.md#代码结构)。
 
 ## 架构原则
 

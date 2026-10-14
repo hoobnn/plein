@@ -48,6 +48,26 @@ packages/plugin-sdk    插件 API：清单、节点、Provider、执行器
 packages/providers     模型平台适配器（服务端）：MiniMax、豆包语音、百炼、火山方舟及 mock
 ```
 
+应用内部按领域组织：
+
+```text
+apps/web/src
+  canvas/      画布接线与元素操作：CanvasView、节点卡片、覆盖层、导入、宫格、分组
+  shell/       编辑器外壳：工具栏、侧栏、菜单、选区条、结果条、命令面板
+  features/    功能域，组件、store 与领域逻辑放在一起：agent、library、sequence、
+               storyboard、generator、runs、templates、settings、projects、onboarding
+  stores/      跨功能的全局状态：canvas、catalog、session、sidebar、theme、assetMeta
+  ui/          通用控件，不含业务流程
+  pages/       路由页面：Home、Editor、Login、ProjectOpen
+apps/server/src
+  <领域>/      每个领域一个目录，路由统一叫 routes.ts：agent、assets、canvases、library、
+               mcp、plugins、projects、prompt、runs、sync、templates
+  http/        HTTP 基础设施：来源校验、文件响应
+  storage/     SQLite schema、迁移与数据访问
+```
+
+包之间的依赖只能自上而下：`apps/*` → `capabilities` / `providers` / `protocol` → `nodes` / `canvas-core` / `flow` → `doc` / `plugin-sdk`。`doc`、`canvas-core`、`flow`、`nodes` 不依赖 React 和 Node 专属 API，前后端、Worker 和测试都能直接用。
+
 设计取舍见 [architecture.md](docs/dev/architecture.md)，界面规范见 [design-spec.md](docs/dev/design-spec.md)。几条硬约束：
 
 - 相机与渲染不走 React state，拖动 / 缩放期间 React 零重渲染

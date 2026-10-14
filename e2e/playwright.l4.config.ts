@@ -9,7 +9,8 @@ process.env.PLEIN_L4_PORT = String(PORT)
  * 必须给 PLEIN_L4_DATA：一个已在设置里配好、启用了平台的数据目录，用例不会替你选平台。
  */
 export default defineConfig({
-  testDir: 'e2e/real',
+  testDir: 'real',
+  outputDir: '../test-results',
   testMatch: '**/*.l4.ts',
   workers: 1,
   timeout: 90 * 60_000,

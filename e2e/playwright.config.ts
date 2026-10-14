@@ -12,7 +12,8 @@ const dataDir = process.env.PLEIN_E2E_DATA ?? mkdtempSync(join(tmpdir(), 'plein-
 process.env.PLEIN_E2E_DATA = dataDir
 
 export default defineConfig({
-  testDir: 'e2e',
+  testDir: '.',
+  outputDir: '../test-results',
   // 一条用例走完整条流水线，状态前后相依，不并行
   workers: 1,
   fullyParallel: false,
@@ -37,7 +38,7 @@ export default defineConfig({
     env: {
       PLEIN_PORT: String(PORT),
       PLEIN_DATA_DIR: dataDir,
-      PLEIN_WEB_DIST: join(import.meta.dirname, 'apps/web/dist-e2e'),
+      PLEIN_WEB_DIST: join(import.meta.dirname, '../apps/web/dist-e2e'),
       PLEIN_MOCK_PROVIDER: '1',
       PLEIN_AGENT: '0',
     },
