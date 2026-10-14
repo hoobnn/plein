@@ -194,30 +194,9 @@ async function openBoard(page: Page, id: string) {
   return dialog
 }
 
-test.describe.configure({ mode: 'serial' })
-
-/** 第一个用例出片的画布；单独跑资产库用例时用 PLEIN_L4_CANVAS 指定，不给就取数据目录里最近的画布 */
-let filmCanvas = process.env.PLEIN_L4_CANVAS ?? ''
-
-test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务', async ({ page }) => {
-  await startServer()
-  test.info().annotations.push({ type: '数据目录', description: DATA! })
-  await newProject(page)
-  const canvas = page.url().split('#/c/')[1]!.split(/[/?]/)[0]!
-  filmCanvas = canvas
-  note('画布', canvas)
-  await addNode(page, '短剧')
-  await expect(page.locator('.ui-toast')).toContainText('短剧模板已铺出')
-  const models = await page.evaluate(() =>
-    [...window.__plein.engine.doc.elements()]
-      .filter((e) => e.kind === 'node')
-      .map((e) => `${e.name}=${(e as { params?: { model?: string } }).params?.model ?? ''}`),
-  )
-  note('模型', models.join('；'))
-
-  // 镜头数改成 6：参数和提示词里的数字一起改
-  const board = await byName(page, BOARD)
-  await clickElement(page, board.id)
+/** 镜头数改成 SHOTS（参数和提示词里的数字一起改），再运行到分镜：上游是剧本和角色场景抽取 */
+async function prepareBoard(page: Page, id: string) {
+  await clickElement(page, id)
   const prompt = page.getByRole('textbox', { name: '提示词' })
   await prompt.fill((await prompt.inputValue()).replace(/拆成 \d+ 个镜头/, `拆成 ${SHOTS} 个镜头`))
   await page
@@ -230,8 +209,41 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
 
   // 分镜的上游是剧本和角色场景抽取（设定清单连进分镜，镜头按卡片名字写出场的角色、场景、道具）
   // 三次对话串行，平台慢时每次要三四分钟
-  await contextMenu(page, board.id, '运行到此处')
-  await waitNode(page, board.id, 30 * 60_000)
+  await contextMenu(page, id, '运行到此处')
+  await waitNode(page, id, 30 * 60_000)
+}
+
+test.describe.configure({ mode: 'serial' })
+
+/** 第一个用例出片的画布；单独跑资产库用例时用 PLEIN_L4_CANVAS 指定，不给就取数据目录里最近的画布 */
+let filmCanvas = process.env.PLEIN_L4_CANVAS ?? ''
+/** 接着跑一块已经铺好模板、出过设定卡并展开镜头的画布（前一次在出图之后断了），省掉前面的对话和出图 */
+const RESUME = process.env.PLEIN_L4_RESUME ?? ''
+
+test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务', async ({ page }) => {
+  await startServer()
+  test.info().annotations.push({ type: '数据目录', description: DATA! })
+  if (RESUME) {
+    await page.goto(`/#/c/${RESUME}`)
+    await waitEngine(page)
+  } else {
+    await newProject(page)
+    await addNode(page, '短剧')
+    await expect(page.locator('.ui-toast')).toContainText('短剧模板已铺出')
+  }
+  const canvas = page.url().split('#/c/')[1]!.split(/[/?]/)[0]!
+  filmCanvas = canvas
+  note('画布', RESUME ? `${canvas}（接着跑）` : canvas)
+  const models = await page.evaluate(() =>
+    [...window.__plein.engine.doc.elements()]
+      .filter((e) => e.kind === 'node')
+      .map((e) => `${e.name}=${(e as { params?: { model?: string } }).params?.model ?? ''}`),
+  )
+  note('模型', models.join('；'))
+
+  // 镜头数改成 6：参数和提示词里的数字一起改
+  const board = await byName(page, BOARD)
+  if (!RESUME) await prepareBoard(page, board.id)
 
   const cast = await byName(page, '角色与场景抽取')
   expect(cast.status).toBe('succeeded')
@@ -240,16 +252,18 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
     return v.text ?? ''
   }, cast.id)
   note('抽取', entries.replace(/\n+/g, ' ').slice(0, 600))
-  await zoomTo(page, [cast.id])
-  await deselect(page)
-  const p = await centerOf(page, cast.id)
-  await page.mouse.click(p.x, p.y, { button: 'right' })
-  await page
-    .getByRole('menu')
-    .getByText(/^生成设定卡/)
-    .click()
-  await expect(page.locator('.ui-toast')).toContainText('设定卡')
-  note('设定卡', (await page.locator('.ui-toast').textContent()) ?? '')
+  if (!RESUME) {
+    await zoomTo(page, [cast.id])
+    await deselect(page)
+    const p = await centerOf(page, cast.id)
+    await page.mouse.click(p.x, p.y, { button: 'right' })
+    await page
+      .getByRole('menu')
+      .getByText(/^生成设定卡/)
+      .click()
+    await expect(page.locator('.ui-toast')).toContainText('设定卡')
+    note('设定卡', (await page.locator('.ui-toast').textContent()) ?? '')
+  }
 
   // 抽取结果里的名字（### 标题）就是新卡的名字
   const names = [...entries.matchAll(/^###\s+(.+)$/gm)].map((m) =>
@@ -286,10 +300,13 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
   expect(chars.filter((c) => !c.voiceId).map((c) => c.name)).toEqual([])
   expect(new Set(chars.map((c) => c.voiceId)).size).toBeGreaterThanOrEqual(2)
 
-  let dialog = await openBoard(page, board.id)
-  await dialog.getByRole('button', { name: '展开为节点' }).click()
-  await expect(page.locator('.ui-toast')).toContainText('已展开')
-  note('展开', (await page.locator('.ui-toast').textContent()) ?? '')
+  let dialog: Awaited<ReturnType<typeof openBoard>>
+  if (!RESUME) {
+    dialog = await openBoard(page, board.id)
+    await dialog.getByRole('button', { name: '展开为节点' }).click()
+    await expect(page.locator('.ui-toast')).toContainText('已展开')
+    note('展开', (await page.locator('.ui-toast').textContent()) ?? '')
+  }
   // 镜头图提示词 @ 到了角色、场景和道具卡
   const prompts = await page.evaluate(() =>
     [...window.__plein.engine.doc.elements()]
@@ -315,11 +332,13 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
   await dialog.getByRole('button', { name: '批量出分镜图' }).click()
   await expect(page.locator('.ui-toast')).toContainText('已开始生成')
   await waitIdle(page, 20 * 60_000)
-  // 平台审核偶尔拦下生成出来的图（不是提示词的问题，重出一次多半能过）：
+  // 平台审核偶尔拦下生成出来的图（不是提示词的问题，重出一次多半能过）；同步出图排队太久时
+  // 连接也可能断在半路、记为提交结果未知（百炼没有按客户端标识查任务的接口，只能人工确认后重出）。
   // 像用户那样再点一次批量，出过的沿用，只补失败和因此跳过的
+  const retryable = new Set(['content_policy', 'submit_unknown'])
   const rejected = await failures(page)
-  if (rejected.length && rejected.every((f) => f.code === 'content_policy')) {
-    note('审核重出', rejected.map((f) => `${f.name}：${f.error}`).join('；'))
+  if (rejected.length && rejected.every((f) => retryable.has(f.code))) {
+    note('重出', rejected.map((f) => `${f.name}：${f.code}`).join('；'))
     dialog = await openBoard(page, board.id)
     await dialog.getByRole('button', { name: '批量出分镜图' }).click()
     await expect(page.locator('.ui-toast')).toContainText('已开始生成')
