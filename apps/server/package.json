@@ -8,6 +8,7 @@
     "build": "vp pack",
     "start": "node --no-experimental-webstorage dist/main.mjs",
     "typecheck": "tsc -p .",
+    "bench:recovery": "vp test run --config bench/vite.config.ts",
     "db:generate": "drizzle-kit generate && tsx scripts/embed-migrations.ts && vp fmt src/storage/migrations.gen.ts"
   },
   "dependencies": {
