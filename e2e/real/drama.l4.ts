@@ -229,8 +229,9 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
   await page.keyboard.press('Escape')
 
   // 分镜的上游是剧本和角色场景抽取（设定清单连进分镜，镜头按卡片名字写出场的角色、场景、道具）
+  // 三次对话串行，平台慢时每次要三四分钟
   await contextMenu(page, board.id, '运行到此处')
-  await waitNode(page, board.id, 10 * 60_000)
+  await waitNode(page, board.id, 30 * 60_000)
 
   const cast = await byName(page, '角色与场景抽取')
   expect(cast.status).toBe('succeeded')
