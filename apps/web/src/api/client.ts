@@ -12,6 +12,9 @@ import {
   type Catalog,
   type CreateLibraryItem,
   type JobList,
+  type JobInfo,
+  type BatchItem,
+  type RecoverJobOptions,
   type LibraryItem,
   type LibraryKind,
   type BatchRunOptions,
@@ -221,6 +224,10 @@ export const api = {
   groupRun: (groupId: string, signal?: AbortSignal) =>
     request<GroupRunState>(API.groupRun(groupId), { signal }),
   cancelGroup: (groupId: string) => request<void>(API.groupCancel(groupId), { method: 'POST' }),
+  groupItems: (groupId: string) => request<BatchItem[]>(API.groupItems(groupId)),
+  /** 任务恢复：重新获取、填任务 ID 续查、核查后重新提交、标记已处理 */
+  recoverJob: (canvasId: string, jobId: string, body: RecoverJobOptions) =>
+    request<JobInfo>(API.jobRecover(canvasId, jobId), json('POST', body)),
   canvasStale: (canvasId: string) => request<StaleNodes>(API.canvasStale(canvasId)),
   /** 修改的影响（只读，不调用付费平台） */
   canvasImpact: (canvasId: string) => request<ImpactReport>(API.canvasImpact(canvasId)),

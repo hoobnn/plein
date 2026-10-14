@@ -22,6 +22,7 @@ export const queryKeys = {
   project: (id: string) => ['projects', id] as const,
   projectCanvases: (id: string) => ['projects', id, 'canvases'] as const,
   canvasJobs: (canvasId: string) => ['canvases', canvasId, 'jobs'] as const,
+  groupItems: (groupId: string) => ['groups', groupId, 'items'] as const,
   capabilities: ['capabilities'] as const,
   mcpExternal: ['mcp', 'external'] as const,
   localClis: ['agent', 'clis'] as const,

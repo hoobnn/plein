@@ -105,6 +105,9 @@ const FAILURE: Record<string, { title: string; settings?: boolean }> = {
   unavailable: { title: '平台暂时不可用' },
   missing_input: { title: '缺少输入' },
   not_installed: { title: '节点没有安装' },
+  submit_unknown: { title: '提交结果未知，请在任务面板核查' },
+  fetch_failed: { title: '平台已生成，结果没存到本地' },
+  input_changed: { title: '输入已变，需要重新审查' },
 }
 
 /** 失败的展示：按错误类别给一句人话，平台原话放在下面 */

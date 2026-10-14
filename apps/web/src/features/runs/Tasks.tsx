@@ -1,7 +1,7 @@
 import type { Engine } from '@plein/canvas-core'
-import type { PleinDoc } from '@plein/doc'
-import type { Catalog, GroupInfo, JobInfo, JobList } from '@plein/protocol'
-import { useQuery } from '@tanstack/react-query'
+import { adoptResult, type PleinDoc } from '@plein/doc'
+import type { Catalog, GroupInfo, JobInfo, JobList, RecoverJobOptions } from '@plein/protocol'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { api } from '../../api/client'
 import { queryKeys } from '../../api/query'
@@ -19,6 +19,7 @@ import { useCatalog } from '../../stores/catalog'
 import { duration, relativeTime } from '../../ui/format'
 import { Icon } from '../../ui/icons'
 import { cancelGroup, cancelNode, runNode } from './run'
+import { BATCH_OUTCOME, BATCH_STAGE, CANCELED_BY, describeRecovery } from './recovery'
 import { Presence, useExit } from '../../ui/Presence'
 import { EmptyState } from '../../ui/EmptyState'
 
@@ -209,6 +210,12 @@ export function Tasks() {
                         name={groupName(g, doc, catalog)}
                         now={now}
                         onLocate={() => locate(g.frameId)}
+                        nameOf={(id) =>
+                          doc.get(id)?.name ??
+                          findNode(catalog, doc.get(id)?.nodeType)?.title ??
+                          '节点'
+                        }
+                        onLocateNode={locate}
                       />
                     ))}
                   </Section>
@@ -296,11 +303,14 @@ function JobRow(props: {
   const active = isActive(job.status)
   const view = active ? describeActive(run ?? { ...job, at: job.createdAt }, now) : undefined
   // 失败的错误类别只在文档里（最近一次）；更早的记录只有原话
+  const recovery = active ? null : describeRecovery(job)
+  // 有恢复提示时由它说明现状和处理，不再重复平台的报错
   const failure =
-    job.status === 'failed'
+    job.status === 'failed' && !recovery
       ? describeFailure({ error: job.error, errorCode: run?.errorCode })
       : undefined
-  let detail = STATUS[job.status]
+  let detail =
+    job.status === 'canceled' && job.canceledBy ? CANCELED_BY[job.canceledBy] : STATUS[job.status]
   // 不到一秒就结束的（多半是一提交就被拒）不写用时
   if (!active && job.startedAt && job.finishedAt && job.finishedAt - job.startedAt >= 1000)
     detail += ` · 用时 ${duration(job.finishedAt - job.startedAt)}`
@@ -353,6 +363,15 @@ function JobRow(props: {
             <p className="mt-0.5 text-2xs text-ink-subtle">{detail}</p>
           </>
         )}
+        {recovery && (
+          <RecoveryBlock
+            job={job}
+            view={recovery}
+            doc={doc}
+            onLocate={props.onLocate}
+            latest={props.latest}
+          />
+        )}
       </div>
       <div className="flex shrink-0 items-center">
         {active && (
@@ -368,6 +387,8 @@ function JobRow(props: {
         {props.latest &&
           el &&
           (job.status === 'failed' || job.status === 'canceled') &&
+          // 提交状态未知时不给一键重试：先核查，免得重复计费
+          job.recovery?.state !== 'submit_unknown' &&
           !isActive(el.run?.status ?? '') && (
             <RowButton label="重试" onClick={() => void runNode(job.nodeId)}>
               <Icon name="retry" size={14} />
@@ -442,8 +463,16 @@ function ActiveDetail({
   )
 }
 
-function GroupRow(props: { group: GroupInfo; name: string; now: number; onLocate: () => void }) {
+function GroupRow(props: {
+  group: GroupInfo
+  name: string
+  now: number
+  onLocate: () => void
+  nameOf: (id: string) => string
+  onLocateNode: (id: string) => void
+}) {
   const { group: g, now } = props
+  const [open, setOpen] = useState(false)
   const s = g.summary
   const detail =
     g.status === 'running'
@@ -455,6 +484,7 @@ function GroupRow(props: { group: GroupInfo; name: string; now: number; onLocate
           s?.failed && `${s.failed} 个失败`,
           s?.canceled && `${s.canceled} 个取消`,
           s?.skipped && `${s.skipped} 个跳过`,
+          g.review && `${g.review} 个需重新审查`,
         ]
           .filter(Boolean)
           .join(' · ')
@@ -478,6 +508,15 @@ function GroupRow(props: { group: GroupInfo; name: string; now: number; onLocate
           </span>
         </div>
         <p className="truncate text-xs text-ink-muted">{detail}</p>
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="mt-0.5 text-2xs text-ink-subtle hover:text-ink hover:underline"
+        >
+          {open ? '收起批次记录' : '批次记录'}
+        </button>
+        {open && <BatchItems groupId={g.id} nameOf={props.nameOf} onLocate={props.onLocateNode} />}
       </div>
       {g.status === 'running' && (
         <RowButton label="停止整组" onClick={() => void cancelGroup(g.id)}>
@@ -485,5 +524,195 @@ function GroupRow(props: { group: GroupInfo; name: string; now: number; onLocate
         </RowButton>
       )}
     </li>
+  )
+}
+
+/** 批次快照：启动时定下的每个目标、阶段与结局；待解析的依赖和原因 */
+function BatchItems(props: {
+  groupId: string
+  nameOf: (id: string) => string
+  onLocate: (id: string) => void
+}) {
+  const query = useQuery({
+    queryKey: queryKeys.groupItems(props.groupId),
+    queryFn: () => api.groupItems(props.groupId),
+    staleTime: 0,
+    refetchInterval: 2000,
+  })
+  if (!query.data)
+    return (
+      <p className="mt-1 text-2xs text-ink-subtle">
+        {query.error ? `读取失败：${query.error.message}` : '加载中…'}
+      </p>
+    )
+  if (!query.data.length)
+    return <p className="mt-1 text-2xs text-ink-subtle">这次运行没有批次记录</p>
+  return (
+    <ul className="mt-1 flex flex-col gap-0.5" aria-label="批次记录">
+      {query.data.map((it) => (
+        <li key={it.nodeId} className="flex min-w-0 items-baseline gap-1.5 text-2xs">
+          <button
+            type="button"
+            onClick={() => props.onLocate(it.nodeId)}
+            className="min-w-0 truncate text-left text-ink-muted hover:underline"
+          >
+            {props.nameOf(it.nodeId)}
+          </button>
+          <span className="shrink-0 text-ink-subtle">
+            {BATCH_STAGE[it.stage]}
+            {it.deps.length > 0 && ` · 等 ${it.deps.length} 个上游`}
+          </span>
+          <span
+            className={`ml-auto shrink-0 ${it.outcome === 'review' || it.outcome === 'failed' ? 'text-warning' : 'text-ink-subtle'}`}
+            title={it.reason}
+          >
+            {BATCH_OUTCOME[it.outcome]}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * 任务的恢复提示与操作：重新获取、人工核查（填任务 ID / 确认未受理后重新提交 / 标记已处理）、
+ * 采用待采用的结果、去重新审查
+ */
+function RecoveryBlock(props: {
+  job: JobInfo
+  view: NonNullable<ReturnType<typeof describeRecovery>>
+  doc: PleinDoc
+  onLocate: () => void
+  latest: boolean
+}) {
+  const { job, view, doc } = props
+  const r = job.recovery!
+  const canvasId = useCanvas((s) => s.canvasId)
+  const client = useQueryClient()
+  const [busy, setBusy] = useState(false)
+  const [attach, setAttach] = useState<string | null>(null)
+  const [confirm, setConfirm] = useState(false)
+  const el = doc.get(job.nodeId)
+  const act = async (body: RecoverJobOptions) => {
+    if (!canvasId) return
+    setBusy(true)
+    try {
+      await api.recoverJob(canvasId, job.id, body)
+      await client.invalidateQueries({ queryKey: queryKeys.canvasJobs(canvasId) })
+    } catch (err) {
+      useCanvas.getState().notify((err as Error).message)
+    } finally {
+      setBusy(false)
+      setAttach(null)
+      setConfirm(false)
+    }
+  }
+  const pick = r.resultIds?.find((id) => el?.results?.some((x) => x.id === id))
+  const tone =
+    view.tone === 'warning'
+      ? 'text-warning'
+      : view.tone === 'danger'
+        ? 'text-danger'
+        : 'text-ink-muted'
+  const btn = 'ui-btn ui-btn-secondary ui-btn-xs'
+  return (
+    <div className="mt-1 flex flex-col gap-1" data-testid="job-recovery">
+      <p className={`text-xs ${tone}`}>{view.title}</p>
+      {view.detail && <p className="text-2xs text-ink-subtle">{view.detail}</p>}
+      <div className="flex flex-wrap gap-1">
+        {r.refetchable && (
+          <button
+            type="button"
+            className={btn}
+            disabled={busy}
+            onClick={() => void act({ action: 'refetch' })}
+          >
+            {r.state === 'submit_unknown' ? '重新核查' : '重新获取'}
+          </button>
+        )}
+        {r.state === 'submit_unknown' && r.attachable && attach === null && (
+          <button type="button" className={btn} disabled={busy} onClick={() => setAttach('')}>
+            填写平台任务 ID
+          </button>
+        )}
+        {r.state === 'submit_unknown' && !confirm && (
+          <button type="button" className={btn} disabled={busy} onClick={() => setConfirm(true)}>
+            确认未受理，重新提交
+          </button>
+        )}
+        {r.state === 'submit_unknown' && (
+          <button
+            type="button"
+            className="ui-btn ui-btn-quiet ui-btn-xs"
+            disabled={busy}
+            onClick={() => void act({ action: 'dismiss' })}
+          >
+            标记已处理
+          </button>
+        )}
+        {r.state === 'stored' && el && pick && !doc.readOnly && (
+          <button type="button" className={btn} onClick={() => adoptResult(doc, el.id, pick)}>
+            采用
+          </button>
+        )}
+        {r.state === 'review' && el && props.latest && (
+          <button type="button" className={btn} onClick={props.onLocate}>
+            去审查
+          </button>
+        )}
+      </div>
+      {attach !== null && (
+        <form
+          className="flex gap-1"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (attach.trim()) void act({ action: 'attach', remoteId: attach.trim() })
+          }}
+        >
+          <input
+            className="ui-input h-7 min-w-0 flex-1 text-xs"
+            placeholder={`${r.provider ?? '平台'}控制台里的任务 ID`}
+            aria-label="平台任务 ID"
+            value={attach}
+            onChange={(e) => setAttach(e.target.value)}
+          />
+          <button type="submit" className={btn} disabled={busy || !attach.trim()}>
+            接着取结果
+          </button>
+          <button
+            type="button"
+            className="ui-btn ui-btn-quiet ui-btn-xs"
+            onClick={() => setAttach(null)}
+          >
+            取消
+          </button>
+        </form>
+      )}
+      {confirm && (
+        <div className="flex flex-col gap-1 rounded-md bg-hover px-2 py-1.5">
+          <p className="text-2xs text-ink-muted">
+            只在确认{r.provider ?? '平台'}
+            上没有这次任务时重新提交；平台若其实已受理，会再生成一次、可能重复计费。
+          </p>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              className="ui-btn ui-btn-danger ui-btn-xs"
+              disabled={busy}
+              onClick={() => void act({ action: 'resubmit' })}
+            >
+              重新提交
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn-quiet ui-btn-xs"
+              onClick={() => setConfirm(false)}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
