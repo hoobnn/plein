@@ -31,7 +31,7 @@ Idea, script, characters, storyboard, shots, voiceover and the final cut live on
 - **Review before you spend**: inserting a template only builds the skeleton and never calls a model on its own. Review the storyboard and shot images first, then generate videos and voiceover in batches. Any shot can switch candidates, regenerate, or be replaced by hand.
 - **Your data stays yours**: one Node process, one SQLite file, one asset folder. API keys live only on the local server, never in the canvas or the browser.
 - **Built for Chinese model platforms**: Volcengine Ark, Doubao Speech, Alibaba Cloud Model Studio (Bailian) and MiniMax work out of the box; node parameters adapt to the selected model.
-- **Let AI click the buttons**: the built-in agent "Xiaoman" reads the canvas, creates nodes, runs the storyboard and processes media. You can also hand the work to a locally signed-in Claude Code / Codex, or let Cursor and Claude Desktop drive the canvas over MCP.
+- **Let AI operate the canvas**: the built-in agent "Xiaoman" reads the canvas, creates nodes, batch-generates the storyboard and processes media. You can also hand the work to a locally signed-in Claude Code / Codex, or let Cursor and Claude Desktop drive the canvas over MCP.
 
 ## Features
 
@@ -55,9 +55,9 @@ Idea, script, characters, storyboard, shots, voiceover and the final cut live on
 | ![Storyboard: shot size, visuals, dialogue and prompts](docs/images/storyboard.png) | ![Sequence editor: ordering, in / out points, dialogue and subtitle preview](docs/images/sequence.png) |
 
 - One-click short drama template: idea → script → character and scene extraction → setting cards → storyboard → shots → sequence
-- Edit the storyboard as a table; once expanded into shot nodes, later table edits show a diff and only sync fields you have not changed by hand
-- Shot images, videos and voiceover generate in stages and in batches; failures retry individually
-- Sequence editor: ordering, in / out points, dialogue / music / SFX tracks, subtitle styles, fades and cross-dissolves, in-browser preview on the export timeline
+- Edit the storyboard as a table; after it is expanded into shot nodes, further table edits show up as a diff, and you can sync only the fields you have not changed by hand
+- Shot images, videos and voiceover generate in stages and in batches; retry just the ones that failed
+- Sequence editor: ordering, in / out points, a five-track timeline (picture, dialogue, SFX, music, subtitles), per-clip transitions and speed, music ducking, loudness normalization, subtitle styles, in-browser preview on the export timeline
 - Server-side ffmpeg export to MP4 (9:16 / 16:9, 1080p / 720p) with burned-in Chinese subtitles, optionally aligned by speech recognition
 - Export editing projects (OTIO / FCPXML / SRT) together with their assets
 
@@ -71,7 +71,7 @@ Every result is a new asset with its source recorded; originals are never touche
 
 ### Projects and asset library
 
-- One project per film, each with multiple canvases
+- One project is one film, and it can hold several canvases
 - The asset library holds characters, scenes, props, styles and effects, reusable across canvases and projects. Characters have full-body / half-body / turnaround / emotion-grid slots, tags and a voice; canvas cards and the library sync both ways
 
 ### Runs and jobs
@@ -171,7 +171,8 @@ The layout is identical across all three and can be copied between them: `plein.
 - [x] macOS desktop installer, signing and notarization pipeline
 - [x] 6-shot sample on real platforms, UI tests in CI, auto-update
 - [x] **0.1.0**: macOS (Apple silicon) release (2026-10-13)
-- [ ] **0.2.0**: actual-input preview, reference strategies, impact analysis and partial rework, batches and job recovery, project package migration, cache and reconnect acceptance; agent change plans evolve alongside
+- [ ] **0.1.x**: ship the multi-track timeline, editing-project export and character profiles (0.1.2); browser cache and reconnect acceptance (0.1.3)
+- [ ] **0.2.0**: actual-input preview and reference strategies → impact analysis and partial rework → batches and job recovery, with project package migration in parallel; agent change plans with scoped approval
 - [ ] **Extension candidates**: storyboard groups and collages, region editing, frame-to-next-shot, camera / style presets, third-party plugins; static 3D composition validated separately
 - [ ] **Later**: panoramas, 3D director stage, depth references, native segment re-shoot, smart editing
 

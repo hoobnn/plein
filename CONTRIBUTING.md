@@ -2,8 +2,8 @@
 
 ## 环境
 
-- Node ≥ 24（`.node-version`），pnpm 版本由 `package.json` 的 `packageManager` 锁定
-- ffmpeg / ffprobe（视频封面、音频波形、导出成片；烧字幕需要带 libass 的构建）
+- Node ≥ 24（版本写在 `.node-version`）；pnpm 版本由 `package.json` 的 `packageManager` 锁定
+- ffmpeg / ffprobe：生成视频封面、音频波形和导出成片都要用到；烧字幕需要带 libass 的构建
 
 ```bash
 npm i -g pnpm@12
@@ -15,20 +15,22 @@ pnpm dev                 # 前端 http://localhost:5173 + 服务端 :8787（数�
 
 ## 常用命令
 
-| 命令             | 作用                                                                                |
-| ---------------- | ----------------------------------------------------------------------------------- |
-| `pnpm lint`      | Vite+ 检查（Oxfmt 格式 + Oxlint 规则）+ markdownlint（CI 在 PR 和 main 推送时执行） |
-| `pnpm format`    | 应用格式化和可安全自动修复的规则，含 markdownlint 能自动修的项                      |
-| `pnpm typecheck` | 全部包的类型检查                                                                    |
-| `pnpm test`      | Vitest 单测与集成测试                                                               |
-| `pnpm smoke`     | 起真服务，走 HTTP 与 Yjs WebSocket，重启后验证不丢数据                              |
-| `pnpm verify`    | 以上四项依次跑完，合并前的门禁                                                      |
-| `pnpm e2e`       | Playwright 界面冒烟（mock 平台，走通短剧模板到导出）                                |
-| `pnpm perf`      | 画布渲染性能基准                                                                    |
+| 命令             | 作用                                                                                   |
+| ---------------- | -------------------------------------------------------------------------------------- |
+| `pnpm lint`      | Vite+ 检查（Oxfmt 格式 + Oxlint 规则）加 markdownlint；CI 在 PR 和推送 main 时自动运行 |
+| `pnpm format`    | 格式化代码，并应用能安全自动修复的规则，包括 markdownlint 能自动修的项                 |
+| `pnpm typecheck` | 全部包的类型检查                                                                       |
+| `pnpm test`      | Vitest 单测与集成测试                                                                  |
+| `pnpm smoke`     | 启动真实服务，经 HTTP 和 Yjs WebSocket 读写，重启后确认数据没丢                        |
+| `pnpm verify`    | 依次运行以上四项，合并前必须通过                                                       |
+| `pnpm e2e`       | Playwright 界面冒烟：基于 mock 平台覆盖从短剧模板到导出的完整流程                      |
+| `pnpm perf`      | 画布渲染性能基准                                                                       |
 
-验收分四层（单测、集成、启动冒烟、真实样例），见 [docs/acceptance-0.1.0.md](docs/plan/acceptance-0.1.0.md)。
+验收分四层：单测、集成、启动冒烟、真实样例，各层的准入和写法见 [docs/acceptance-0.1.0.md](docs/plan/acceptance-0.1.0.md)。
 
-工具链是 [Vite+](https://viteplus.dev)（`vp`）：Oxfmt 格式化代码、样式、Markdown、YAML 和 HTML，Oxlint 做代码检查（含类型感知规则），Vitest 跑单测，`vp pack`（tsdown）打包服务端和桌面端；规则与格式选项都在根目录 `vite.config.ts`。遵循 `.gitignore`，排除构建产物；`pnpm-lock.yaml` 保留 pnpm 生成的格式。Markdown 段落不强制折行，代码块和 HTML 内嵌代码不做二次格式化；Markdown 规则另由 markdownlint 检查，配置在 `.markdownlint.jsonc`（VS Code 的 markdownlint 插件读同一份）。
+工具链是 [Vite+](https://viteplus.dev)（命令 `vp`）：Oxfmt 负责格式化代码、样式、Markdown、YAML 和 HTML，Oxlint 做代码检查（含类型感知规则），Vitest 运行单元测试，`vp pack`（tsdown）打包服务端和桌面端。规则和格式选项都写在根目录的 `vite.config.ts`。
+
+格式化遵循 `.gitignore`，排除构建产物；`pnpm-lock.yaml` 保留 pnpm 自己生成的格式。Markdown 段落不强制折行，代码块和 HTML 里内嵌的代码不做二次格式化。Markdown 规则另由 markdownlint 检查，配置在 `.markdownlint.jsonc`，VS Code 的 markdownlint 插件读取同一份配置。
 
 ## 代码结构
 
@@ -55,7 +57,7 @@ packages/providers     模型平台适配器（服务端）：MiniMax、豆包�
 ## 桌面端
 
 ```bash
-pnpm dev:desktop         # Vite + Electron；服务端跑源码，接口经 Vite 代理到 :8787
+pnpm dev:desktop         # Vite + Electron；服务端直接运行源码，接口经 Vite 代理到 :8787
 pnpm start:desktop       # 先构建服务端和前端，再用构建产物启动（与安装包的运行方式一致）
 pnpm dist:desktop        # 出 macOS 安装包（Apple 芯片），没有证书时 ad-hoc 签名
 ```
@@ -66,24 +68,24 @@ pnpm dist:desktop        # 出 macOS 安装包（Apple 芯片），没有证书�
 
 ## 分支
 
-遵循 [Conventional Branch](https://conventionalbranch.org/)：`<type>/<description>`，全小写、连字符分隔。
+分支名遵循 [Conventional Branch](https://conventionalbranch.org/)：`<type>/<description>`，全小写，单词之间用连字符。
 
-- type：`feature`/`feat`、`bugfix`/`fix`、`hotfix`、`release`、`chore`；AI 代理自建分支用 `claude/`、`codex/`、`copilot/`、`cursor/`、`ai/`
+- type 可选 `feature`/`feat`、`bugfix`/`fix`、`hotfix`、`release`、`chore`；AI 代理自己建的分支用 `claude/`、`codex/`、`copilot/`、`cursor/`、`ai/`
 - 主干 `main` 不加前缀
 - 示例：`feature/add-login-page`、`fix/edge-hit-test`、`release/v1.2.0`
 
-三层强制：husky `pre-push` 本地拦截；GitHub 规则集（`.github/rulesets/conventional-branch.json`）禁止创建前缀不合规的分支；`Branch name` CI 用完整正则校验 PR 分支。
+命名规则有三道关卡：本地由 husky `pre-push` 拦截；GitHub 规则集（`.github/rulesets/conventional-branch.json`）不允许创建前缀不合规的分支；PR 分支再由 `Branch name` CI 用完整正则校验一遍。
 
-Dependabot 的 `dependabot/*` 自动分支是保留例外；PR 检查同时核验作者必须为 `dependabot[bot]`。手动创建同前缀的 PR 仍会被命名检查拒绝。
+Dependabot 自动创建的 `dependabot/*` 分支是保留的例外，PR 检查会同时核验作者必须为 `dependabot[bot]`；手动使用该前缀创建的 PR 仍会被命名检查拒绝。
 
 ## 提交
 
-格式为 `<emoji> type(scope): 中文描述`，例如 `✨ feat(canvas): 新增小地图`。type 与 emoji 一一对应，由 husky `commit-msg` 钩子里的 commitlint 校验，完整对照表见 `commitlint.config.cjs`。
+提交信息的格式是 `<emoji> type(scope): 中文描述`，例如 `✨ feat(canvas): 新增小地图`。type 和 emoji 一一对应，由 husky `commit-msg` 钩子里的 commitlint 校验，完整对照表见 `commitlint.config.cjs`。
 
 ## 依赖检查
 
-- Dependabot 每周一北京时间 09:00 检查整个 pnpm workspace 和 GitHub Actions，提出更新 PR。生产与开发依赖的 minor / patch 分组更新，major 单独评审；不自动合并。
-- `Dependency security / dependency-review` 检查 PR 引入的依赖，新增 high / critical 漏洞时失败。
-- `Dependency security / dependency-audit` 用原生 `pnpm audit` 检查完整锁文件，覆盖生产、开发和间接依赖。PR、main 推送、每周定时及手动触发均运行；high / critical 漏洞阻断，不忽略审计服务错误。本地可运行 `pnpm audit:deps`。
+- Dependabot 每周一北京时间 09:00 检查整个 pnpm workspace 和 GitHub Actions，有更新时自动创建 PR。生产依赖和开发依赖的 minor / patch 各自分组更新，major 单独评审；所有更新都不自动合并。
+- `Dependency security / dependency-review` 检查 PR 新引入的依赖，带进 high / critical 漏洞就失败。
+- `Dependency security / dependency-audit` 用原生 `pnpm audit` 检查整份锁文件，生产、开发和间接依赖都覆盖到。它在 PR、推送 main、每周定时和手动触发时运行；发现 high / critical 漏洞就阻断，审计服务本身报错也按失败处理。本地可以运行 `pnpm audit:deps`。
 
-pnpm 12 锁文件包含多份 YAML 文档，上游依赖图解析仍有[兼容问题](https://github.com/dependabot/dependabot-core/issues/15904)，因此保留原生审计补足依赖图的覆盖。检查依据已知漏洞数据库，不代表所有依赖风险都已消除。若需要阻止漏洞 PR 合并，应在 main 的合并规则里把上述两个 job 设为必需检查。
+pnpm 12 的锁文件包含多份 YAML 文档，上游的依赖图解析对此还有[兼容问题](https://github.com/dependabot/dependabot-core/issues/15904)，所以保留原生审计来补足依赖图覆盖不到的部分。两项检查都基于已知漏洞数据库，通过不代表依赖风险已经全部排除。要真正阻止带漏洞的 PR 合并，还需要在 main 的合并规则里把这两个 job 设为必需检查。

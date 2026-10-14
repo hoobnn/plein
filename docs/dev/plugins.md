@@ -50,7 +50,7 @@ export const serverPlugin = defineServerPlugin(plugin, {
 | `permissions.assets`  | `none` / `read` / `write`：执行器读写资产库、Provider 读取参考图                           |
 | `permissions.media`   | 执行器用宿主的 ffmpeg 读取媒体信息（`ctx.media.probe`）、合成视频（`ctx.media.compose`）   |
 
-插件 API 的版本就是 `@plein/plugin-sdk` 的版本（`PLUGIN_API_VERSION`），Plein `v0.1.0` 发布时定为 `0.1.0`，此后按语义化版本演进：0.x 期间不兼容的改动升次版本号（`0.2.0`），兼容的新增和修复升修订号（`0.1.1`）。所以清单写 `^0.1.0` 只会匹配 `0.1.x`，API 出现不兼容改动时旧插件会被拒绝加载，不会带着错误的假设跑起来。
+插件 API 的版本就是 `@plein/plugin-sdk` 的版本（`PLUGIN_API_VERSION`），Plein `v0.1.0` 发布时定为 `0.1.0`，此后按语义化版本演进：0.x 期间不兼容的改动升次版本号（`0.2.0`），兼容的新增和修复升修订号（`0.1.1`）。所以清单写 `^0.1.0` 只会匹配 `0.1.x`，API 出现不兼容改动时旧插件会被拒绝加载，不会在错误的假设下运行。
 
 版本记录：`0.1.1` 新增配音模型的预置音色 `ModelSpec.voices`（可选字段，旧插件不受影响）。
 
@@ -69,7 +69,7 @@ export const serverPlugin = defineServerPlugin(plugin, {
 
 参数或端口不兼容地变化时版本 +1，并提供 `migrate(params, fromVersion)`，画布上的旧节点在运行前自动升级参数。
 
-执行器拿到已校验的参数和上游输入，只能经过 `ctx.providers.call(能力, 模型引用, 输入)` 调用模型。宿主负责选平台、注入密钥、限流、轮询异步任务、取消，并把结果文件存入资产库，执行器拿到的是资产引用。输出端口和类型会被校验。
+执行器接收已校验的参数和上游输入，只能经过 `ctx.providers.call(能力, 模型引用, 输入)` 调用模型。宿主负责选平台、注入密钥、限流、轮询异步任务、取消，并把结果文件存入资产库，执行器获得的是资产引用。输出端口和类型会被校验。
 
 输入值带 `source`（来自画布上哪个元素），同一端口连了多个上游时，执行器靠它对应参数里的设置（序列节点用它记每段镜头的入出点）。`source` 不计入缓存键。配音节点输出的语音带 `caption`（台词），下游可以直接用作字幕。
 
@@ -126,4 +126,4 @@ export const serverPlugin = defineServerPlugin(plugin, {
 - `GET/PUT /api/providers/<vendor>/<name>/config`：平台开关、设置与密钥；密钥只回显是否已填，存在 `data/providers.json`（权限 600）
 - `POST /api/providers/<vendor>/<name>/test`：测试连接
 
-开发时 `pnpm dev` 会加载 mock 平台（`apps/server/.env.development` 里的 `PLEIN_MOCK_PROVIDER=1`），不需要任何密钥就能跑通节点。
+开发时 `pnpm dev` 会加载 mock 平台（`apps/server/.env.development` 里的 `PLEIN_MOCK_PROVIDER=1`），无需任何密钥即可完整运行节点。

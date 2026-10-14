@@ -1,6 +1,6 @@
 # 模型平台接入
 
-四个平台作为内置服务端插件加载，通过现有设置页配置和启用，默认关闭。节点的模型列表来自平台声明；仅启用的平台会参与自动选模型。生成使用各平台按量 API，模型目录不代表账号已经开通权限。
+四家平台以内置服务端插件的形式加载，默认关闭，在设置页填好配置后启用。节点里能选哪些模型，由平台自己声明；自动选模型时只考虑已启用的平台。生成走的是各平台的按量计费 API，模型出现在目录里，不代表你的账号已经开通了它的权限。
 
 | 平台 / Provider ID       | 已接入能力                                                                         | 密钥                                                                      |
 | ------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
@@ -11,20 +11,20 @@
 
 ## 配置
 
-1. 在设置页填写对应平台的密钥及地域等设置，点击保存。
-2. MiniMax / 方舟可「测试连接」：分别调用模型列表 / 视频任务列表，不触发生成。通过不代表每个模型都可用。
-3. 百炼 / 豆包只提供「检查配置」：校验本地凭据，明确未验证远端密钥、网络、模型权限和余额。
-4. 启用平台，在图片、视频、配音等节点选择模型并执行。密钥由宿主保存，不放入画布。
+1. 在设置页填写平台的密钥、地域等信息，点击保存。
+2. MiniMax / 方舟可以「测试连接」：分别调用模型列表 / 视频任务列表接口，不会触发生成。测试通过，也不代表每个模型都能用。
+3. 百炼 / 豆包只提供「检查配置」：只校验本地凭据，并明确告诉你远端密钥、网络、模型权限和余额都还没验证。
+4. 启用平台，然后在图片、视频、配音等节点里选模型、运行。密钥由宿主保存，不会写进画布。
 
-MiniMax 默认中国区 `api.minimax.cn`，可选国际区 `api.minimax.io`，密钥应匹配地域。百炼支持北京、新加坡、美国地域；业务空间 ID 留空使用对应 DashScope 兼容端点。方舟默认北京，可在平台设置填写自定义模型 / Endpoint ID，再选择「自定义」模型条目。
+MiniMax 默认走中国区 `api.minimax.cn`，也可以选国际区 `api.minimax.io`，密钥要和地域对应。百炼支持北京、新加坡、美国三个地域；业务空间 ID 留空时，使用该地域的 DashScope 兼容端点。方舟默认北京地域；要用自定义模型，先在平台设置里填好模型 / Endpoint ID，再在模型列表里选「自定义」。
 
 ## 接口实现
 
-以官方接口文档为契约，直接使用宿主 `ctx.fetch`，确保域名许可、密钥访问、资产归属、取消信号和异步任务轮询一致。没有额外引入云厂商 SDK。每个平台独立声明模型、设置、密钥和最小网络权限；产物通过宿主写入资产库。
+适配器以官方接口文档为契约，直接调用宿主提供的 `ctx.fetch`，没有引入云厂商 SDK。这样域名许可、密钥访问、资产归属、取消信号和异步任务轮询都由宿主统一把关。每个平台各自声明模型、设置、密钥和所需的最小网络权限；生成的产物经宿主写入资产库。
 
-OpenAI 兼容的对话（`text.chat`）共用 `packages/providers/src/shared/llm.ts`，基于 Vercel AI SDK（`ai` + `@ai-sdk/openai-compatible`）：负责消息转换、流式读取、结构化输出按请求的 JSON Schema 校验（zod `fromJSONSchema`）、用量归一化；鉴权、端点、HTTP 与流内错误码的归类和脱敏仍由各平台适配器通过传给它的 `fetch` 和 `streamError` 提供，请求一律不重试。目前百炼已接入；火山方舟和 MiniMax 的对话仍是各自手写的请求，等插件 SDK 支持流式输出到界面或工具调用时再迁移。
+OpenAI 兼容的对话（`text.chat`）共用 `packages/providers/src/shared/llm.ts`。它基于 Vercel AI SDK（`ai` + `@ai-sdk/openai-compatible`），负责消息转换、流式读取、按请求里的 JSON Schema 校验结构化输出（zod `fromJSONSchema`），以及用量归一化。鉴权、端点，以及 HTTP 错误码和流内错误码的归类与脱敏，仍由各平台适配器通过传入的 `fetch` 和 `streamError` 负责；请求一律不重试。目前只有百炼接入了这一层；火山方舟和 MiniMax 的对话还是各自手写请求，等插件 SDK 支持把流式输出送到界面、或支持工具调用时再迁过来。
 
-SDK 新增 `testScope` 标记本地配置检查，以及 `credentialAlternatives` 表达豆包新旧鉴权方式；目录的 `configured` 只有在一组凭据完整时才为真。宿主取消使用独立的 10 秒信号，避免已取消的生成请求阻止远端取消请求。
+SDK 新增了两个字段：`testScope` 用来标出「只检查本地配置」，`credentialAlternatives` 用来表达豆包的新旧两种鉴权方式；只有某一组凭据填完整时，目录里的 `configured` 才为真。宿主发送取消请求时使用独立的 10 秒信号，避免已取消的生成请求把远端取消请求也一起拦下。
 
 ## 能力边界
 
@@ -40,9 +40,9 @@ SDK 新增 `testScope` 标记本地配置检查，以及 `credentialAlternatives
 
 ## 验证与官方来源
 
-契约测试使用模拟 HTTP 响应，覆盖节点参数映射、二进制素材和音频、业务错误、任务状态、取消和权限清单；宿主集成测试检查插件目录、默认禁用状态、鉴权配置与取消信号。它们不证明账号模型权限或云端生成效果。
+契约测试用模拟的 HTTP 响应，覆盖节点参数映射、二进制素材和音频、业务错误、任务状态、取消和权限清单；宿主集成测试检查插件目录、默认禁用状态、鉴权配置与取消信号。这些测试证明不了账号有没有模型权限，也证明不了云端的实际生成效果。
 
-2026-10-12 按用户授权迁入本机 MCP 共享环境中的密钥，并进行云端生成实测。配置保存在被 Git 忽略的 `data/providers.json`（权限 600）；具体调用回执、成功资产和账号权限限制保存在本机 `data/provider-smoke-2026-10-12.json`。真实响应补齐了豆包结束包 `data:null`、百炼 OSS 音频 HTTP→HTTPS 下载以及 MiniMax 图片 OSS 域名的兼容处理。
+2026-10-12，经用户授权，迁入本机 MCP 共享环境中的密钥，并进行了一轮云端生成实测。配置保存在被 Git 忽略的 `data/providers.json`（权限 600）；每次调用的回执、生成成功的资产和账号权限限制，记在本机的 `data/provider-smoke-2026-10-12.json`。真实响应暴露出的几处问题都已兼容：豆包结束包里的 `data:null`、百炼 OSS 音频需要从 HTTP 改走 HTTPS 下载，以及 MiniMax 图片的 OSS 域名。
 
 - MiniMax：[对话](https://platform.minimax.cn/docs/api-reference/text-chat-openai)、[图片](https://platform.minimax.cn/docs/api-reference/image-generation-t2i)、[H3 V2](https://platform.minimax.cn/docs/api-reference/video-generation-v2-create)、[配音](https://platform.minimax.cn/docs/api-reference/speech-t2a-http)、[音乐](https://platform.minimax.cn/docs/api-reference/music-generation)。
 - 豆包：[HTTP 配音](https://docs.volcengine.com/docs/DoubaoVoice/unidirectional-streaming-text-to-speech-http?lang=zh)、[Seed Audio](https://docs.volcengine.com/docs/DoubaoVoice/audio-generation-http?lang=zh)、[极速识别](https://www.volcengine.com/docs/6561/1631584?lang=zh)。

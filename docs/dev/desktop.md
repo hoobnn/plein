@@ -6,16 +6,16 @@
 
 ## 方案比较
 
-|              | Electron（推荐）                                                                                   | Tauri + Node sidecar                                                                                                                             |
-| ------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 服务端怎么跑 | Electron 自带 Node（44.x 为 Node 24），`apps/server` 放进 `utilityProcess` 原样运行，不用另带 Node | 另外打包一份 Node 可执行文件和 `node_modules` 作为 sidecar 子进程，再加一层 Rust 外壳                                                            |
-| 页面渲染     | 自带固定版本的 Chromium，各平台一致；与开发、Playwright 测试用的是同一内核                         | 系统 WebView：macOS 是 WKWebView，Windows 是 WebView2，Linux 是 WebKitGTK。PixiJS 的 WebGL / WebGPU 和视频解码在三个平台上表现不同，Linux 上最弱 |
-| 视频编解码   | 内置 H.264 / AAC 等专有解码，生成的 MP4 能直接播放                                                 | 依赖系统；WebKitGTK 依赖 GStreamer 插件，用户机器上不一定有                                                                                      |
-| 原生模块     | sharp 和 better-sqlite3（13.x）都是 N-API 预编译包，Electron 里直接可用，不用重新编译（已验证）    | 用普通 Node 运行，但每个平台都要单独打一份 Node + 模块                                                                                           |
-| 安装包体积   | 较大，约 100 MB 起（不含 ffmpeg）                                                                  | 外壳小，但带上 Node 和原生模块后差距缩到几十 MB                                                                                                  |
-| 团队成本     | 全部 TypeScript；自动更新、签名、公证有成熟工具（electron-builder）                                | 要维护 Rust 外壳，sidecar 的启动、退出、端口传递要自己写                                                                                         |
+|                | Electron（推荐）                                                                                   | Tauri + Node sidecar                                                                                                                             |
+| -------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 服务端运行方式 | Electron 自带 Node（44.x 为 Node 24），`apps/server` 放进 `utilityProcess` 原样运行，不用另带 Node | 另外打包一份 Node 可执行文件和 `node_modules` 作为 sidecar 子进程，再加一层 Rust 外壳                                                            |
+| 页面渲染       | 自带固定版本的 Chromium，各平台一致；与开发、Playwright 测试用的是同一内核                         | 系统 WebView：macOS 是 WKWebView，Windows 是 WebView2，Linux 是 WebKitGTK。PixiJS 的 WebGL / WebGPU 和视频解码在三个平台上表现不同，Linux 上最弱 |
+| 视频编解码     | 内置 H.264 / AAC 等专有解码，生成的 MP4 能直接播放                                                 | 依赖系统；WebKitGTK 依赖 GStreamer 插件，用户机器上不一定有                                                                                      |
+| 原生模块       | sharp 和 better-sqlite3（13.x）都是 N-API 预编译包，Electron 里直接可用，不用重新编译（已验证）    | 用普通 Node 运行，但每个平台都要单独打一份 Node + 模块                                                                                           |
+| 安装包体积     | 较大，约 100 MB 起（不含 ffmpeg）                                                                  | 外壳小，但带上 Node 和原生模块后差距缩到几十 MB                                                                                                  |
+| 团队成本       | 全部 TypeScript；自动更新、签名、公证有成熟工具（electron-builder）                                | 要维护 Rust 外壳，sidecar 的启动、退出、端口传递要自己写                                                                                         |
 
-结论：plein 的核心是 Node 服务端 + 重度依赖 WebGL 和视频播放的前端，Electron 能让桌面端和 Docker、浏览器跑的是同一份代码、同一个内核，成本最低。Tauri 的体积优势在带上 Node 之后不明显，换来的是三套 WebView 的兼容问题。
+结论：plein 的核心是 Node 服务端 + 重度依赖 WebGL 和视频播放的前端，Electron 能让桌面端和 Docker、浏览器运行同一份代码、同一个内核，成本最低。Tauri 的体积优势在带上 Node 之后不明显，换来的是三套 WebView 的兼容问题。
 
 ## 进程结构
 
