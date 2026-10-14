@@ -12,7 +12,14 @@ export type GroupRow = typeof jobGroups.$inferSelect
 type JobPatch = Partial<
   Pick<
     JobRow,
-    'status' | 'attempts' | 'cache_key' | 'cache_omit' | 'error' | 'started_at' | 'finished_at'
+    | 'status'
+    | 'attempts'
+    | 'cache_key'
+    | 'cache_omit'
+    | 'input'
+    | 'error'
+    | 'started_at'
+    | 'finished_at'
   >
 >
 

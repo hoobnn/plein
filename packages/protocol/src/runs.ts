@@ -4,6 +4,83 @@ export interface NodeRunStarted {
   runId: string
 }
 
+/** 开始运行单个节点的选项 */
+export const NodeRunOptions = z.object({
+  /**
+   * 用户确认过的实际输入（PreparedInput.inputHash）。带上时，提交前重新准备的结果与它不一致就不运行，
+   * 返回 409 input_changed 和新的实际输入，让用户看过再提交
+   */
+  expect: z.string().max(128).optional(),
+})
+export type NodeRunOptions = z.infer<typeof NodeRunOptions>
+
+/** @ 引用的资产卡类别；直接 @ 的图片元素是 image */
+export type InputRefKind = 'character' | 'scene' | 'prop' | 'style' | 'image' | 'other'
+
+/**
+ * 参考图没有（全部）送进模型的原因：
+ * - over_limit：超过模型的参考图上限，按优先级舍弃
+ * - unsupported：当前节点或模式不收参考图（如生成视频不是「图片参考」模式），只附文字设定
+ * - no_image：被引用者没有可用的参考图（还没生成、生成失败或没连），只附文字设定
+ */
+export type InputRefReason = 'over_limit' | 'unsupported' | 'no_image'
+
+/** 提示词里 @ 到的一个引用，在本次运行中实际怎么用 */
+export interface InputRef {
+  /** 画布上的元素 id（改名不变） */
+  elementId: string
+  /** 显示名，写了档案项时是「林夏（少年·校服）」 */
+  name: string
+  kind: InputRefKind
+  /** 用户设为必需：缺失、不可用或放不下时不提交 */
+  required: boolean
+  /** 它能提供的参考图资产 */
+  available: string[]
+  /** 实际送进模型的参考图资产 */
+  sent: string[]
+  /** available 里有图没送，或根本没图时的原因 */
+  reason?: InputRefReason
+}
+
+/** 实际送进某个输入端口的一个值；图片按送入顺序排列 */
+export interface InputValue {
+  type: 'text' | 'json' | 'image' | 'video' | 'audio'
+  assetId?: string
+  /** 文本节选（长文本截断） */
+  text?: string
+  /** 来源元素：连线的上游或 @ 引用的卡片 */
+  source?: string
+}
+
+/**
+ * 一个节点的实际输入：预览、缓存判断和提交共用同一份准备结果。
+ * 预览不调用付费生成；提交时重新准备，inputHash 不同说明输入在预览后变过。
+ */
+export interface PreparedInput {
+  nodeId: string
+  nodeType: string
+  capability?: string
+  /** 实际使用的模型；自动选择时是当前排第一的已启用模型，没有可用模型时缺省 */
+  model?: { ref: string; provider: string; title: string; auto: boolean }
+  /** 模型的参考图上限；没声明时不限 */
+  referenceLimit?: number
+  /** 展开 @ 并附上设定后的提示词（含上游文本） */
+  prompt?: string
+  /** 计入缓存的有效参数（不含提示词与内部字段） */
+  params: Record<string, unknown>
+  /** 各输入端口实际送入的值 */
+  inputs: Record<string, InputValue[]>
+  refs: InputRef[]
+  /** 配音实际使用的音色 */
+  voice?: { provider: string; voiceId: string }
+  /** 降级与需要用户知道的提示，不阻断运行 */
+  notices: string[]
+  /** 阻断运行的问题（必需参考缺失、音色跨平台、上游没结果等）；非空时提交会失败 */
+  blocked: string[]
+  /** 节点类型、版本、有效参数与实际输入内容的哈希（即缓存键） */
+  inputHash: string
+}
+
 /** 整组运行（Frame）的选项 */
 export const GroupRunOptions = z.object({
   /** 是否包含视频节点（贵且慢，默认不跑） */
@@ -75,6 +152,8 @@ export interface JobInfo {
   createdAt: number
   startedAt?: number
   finishedAt?: number
+  /** 提交时冻结的实际输入（0.2 之前的任务没有） */
+  input?: PreparedInput
 }
 
 export interface GroupInfo extends GroupRunState {

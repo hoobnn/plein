@@ -44,6 +44,9 @@ export const API = {
     `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/run`,
   nodeCancel: (canvasId: string, nodeId: string) =>
     `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/cancel`,
+  /** 节点的实际输入预览，返回 PreparedInput；不调用付费生成 */
+  nodeInput: (canvasId: string, nodeId: string) =>
+    `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/input`,
   /** 运行到此处 / 运行下游，body 为 FlowRunOptions，返回 GroupRunStarted */
   nodeFlowRun: (canvasId: string, nodeId: string) =>
     `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/run-flow`,

@@ -37,4 +37,10 @@ export const MIGRATIONS: Migration[] = [
       'CREATE INDEX `verification_identifier_idx` ON `verification` (`identifier`);',
     ],
   },
+  {
+    tag: '0001_ordinary_xorn',
+    when: 1791952615477,
+    hash: 'e7287c93415116ab6a959572c0ab7441bbf7c7ebfd190c02634ff618b559b1a2',
+    statements: ['ALTER TABLE `jobs` ADD `input` text;'],
+  },
 ]

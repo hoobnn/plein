@@ -3,7 +3,9 @@ import {
   FlowRunOptions,
   GroupRunOptions,
   type JobList,
+  NodeRunOptions,
   type NodeRunStarted,
+  type PreparedInput,
   type StaleNodes,
 } from '@plein/protocol'
 import { Hono } from 'hono'
@@ -25,14 +27,37 @@ export function runRoutes(db: DB, runs: NodeRuns) {
   const forbidden = { error: 'forbidden', message: '只读成员不能运行节点' }
 
   return new Hono<AuthEnv>()
-    .post('/api/canvases/:canvas/nodes/:node/run', (c) => {
+    .post('/api/canvases/:canvas/nodes/:node/run', async (c) => {
       const { canvas, node } = c.req.param()
       const p = c.var.principal
       if (p.role === 'viewer') return c.json(forbidden, 403)
       if (!ownsCanvas(db, p.id, canvas)) return c.json(notFound, 404)
+      const body = NodeRunOptions.safeParse(await c.req.json().catch(() => ({})))
+      if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
       try {
-        const runId = runs.start(canvas, node, p.id)
-        return c.json({ runId } satisfies NodeRunStarted, 202)
+        const r = await runs.startChecked(canvas, node, p.id, body.data.expect)
+        if ('changed' in r)
+          return c.json(
+            {
+              error: 'input_changed',
+              message: '实际输入在预览后变了，请确认后再生成',
+              input: r.changed,
+            },
+            409,
+          )
+        return c.json({ runId: r.runId } satisfies NodeRunStarted, 202)
+      } catch (err) {
+        if (!(err instanceof NodeRunError)) throw err
+        return c.json({ error: err.code, message: err.message }, STATUS[err.code] ?? 400)
+      }
+    })
+    .get('/api/canvases/:canvas/nodes/:node/input', async (c) => {
+      const { canvas, node } = c.req.param()
+      if (!ownsCanvas(db, c.var.principal.id, canvas)) return c.json(notFound, 404)
+      try {
+        return c.json(
+          (await runs.preview(canvas, node, c.var.principal.id)) satisfies PreparedInput,
+        )
       } catch (err) {
         if (!(err instanceof NodeRunError)) throw err
         return c.json({ error: err.code, message: err.message }, STATUS[err.code] ?? 400)

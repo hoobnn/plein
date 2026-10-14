@@ -32,6 +32,7 @@ import { withShortcut } from '../../ui/keys'
 import { mediaOf } from '../../canvas/grid'
 import { ResultActions } from '../../shell/ResultBar'
 import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
+import { InputPreview, useInputPreview } from './InputPreview'
 import { Inputs } from './Inputs'
 import { LibrarySave } from './LibrarySave'
 import { ProfileSummary } from './ProfileSummary'
@@ -173,12 +174,16 @@ function Panel({
   const ups = upstreams(engine, el.id, catalog)
   const presets = presetsFor(catalog?.prompts ?? [], node)
   const pure = isPure(node)
-  const problem = validate(node, el, ups, catalog)
+  // 生成前的实际输入：调模型的节点才有
+  const input = useInputPreview(engine, !pure && node.capability ? canvasId : null, el.id)
+  // 必需参考用不上这类问题只有服务端准备过才知道；输入刚改、还在重新准备时先不拦
+  const blocked =
+    !input.loading && input.data?.blocked.length ? input.data.blocked.join('；') : null
+  const own = validate(node, el, ups, catalog)
+  const problem = own ?? blocked
   // 只差提示词时不在底栏重复说（输入框的占位文字已经在说），按钮的悬停提示照常给原因
   const onlyPromptMissing =
-    !!problem &&
-    !!pk &&
-    !validate(node, { ...el, params: { ...el.params, [pk]: '-' } }, ups, catalog)
+    !!own && !!pk && !validate(node, { ...el, params: { ...el.params, [pk]: '-' } }, ups, catalog)
   const running = el.run?.status === 'running' || el.run?.status === 'queued'
   const modelField = main.find(([, f]) => f.widget === 'model')
   // 画幅放最前：摘要读起来是“16:9 · 5s”
@@ -218,7 +223,14 @@ function Panel({
 
   const run = () => {
     if (running) void cancelNode(el.id)
-    else if (!problem) void runNode(el.id)
+    // 带上用户看到的实际输入：提交时输入已经变了就不运行，换成新的预览
+    else if (!problem)
+      void runNode(
+        el.id,
+        input.data && !input.loading
+          ? { expect: input.data.inputHash, onChanged: input.setData }
+          : undefined,
+      )
   }
 
   return (
@@ -316,6 +328,15 @@ function Panel({
             </div>
           )}
         </div>
+      )}
+      {!pure && (
+        <InputPreview
+          engine={engine}
+          el={el}
+          node={node}
+          data={input.data}
+          loading={input.loading}
+        />
       )}
       {!pure && (
         // 底栏吸底：面板被视口截短时生成按钮仍然可见

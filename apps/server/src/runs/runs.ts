@@ -25,14 +25,17 @@ import {
   ProviderError,
   resolveParams,
 } from '@plein/plugin-sdk'
+import { hasVoice, voiceOf } from '@plein/nodes'
 import type {
   FlowRunOptions,
   GroupInfo,
   GroupRunOptions,
   GroupRunStarted,
   GroupRunState,
+  InputValue,
   JobInfo,
   JobList,
+  PreparedInput,
   RunActivity,
   StaleNodes,
 } from '@plein/protocol'
@@ -40,7 +43,7 @@ import { sleep } from '../plugins/limiter'
 import { NodeRunError, type PluginHost, SHUTDOWN } from '../plugins/host'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
-import { applyMentions, mentionEdges } from './mentions'
+import { type AppliedMentions, applyMentions, mentionEdges } from './mentions'
 import { type GroupRow, type JobRow, type JobStatus, JobStore } from './store'
 
 /** 就地计算纯上游节点的最大递归深度（防环） */
@@ -90,12 +93,17 @@ interface ActiveJob {
   resolve(status: JobStatus): void
 }
 
-/** 运行前准备好的输入与缓存键 */
+/** 运行前准备好的输入；缓存键、实际输入预览和提交都由它算出 */
 interface Prepared {
   def?: NodeDefinition
   params: Record<string, unknown> | undefined
   inputs: Record<string, PortValue[]>
+  /** @ 引用的实际用法、降级提示与阻断原因；节点没有声明时为空 */
+  mentions?: Pick<AppliedMentions, 'details' | 'notices' | 'blocked'>
 }
+
+/** 输入里的长文本在实际输入摘要里只留开头 */
+const TEXT_PREVIEW = 2_000
 
 /**
  * 节点运行的任务队列。
@@ -194,6 +202,105 @@ export class NodeRuns {
       this.enqueue({ id, canvasId, nodeId, ownerId, groupId })
       return id
     })
+  }
+
+  /**
+   * 用户确认过实际输入后开始运行：重新准备，与确认时的 inputHash 不同就不运行，
+   * 返回新的实际输入（changed）让界面展示差异；一致或没带 expect 时同 start
+   */
+  async startChecked(
+    canvasId: string,
+    nodeId: string,
+    ownerId: string,
+    expect?: string,
+  ): Promise<{ runId: string } | { changed: PreparedInput }> {
+    if (expect) {
+      const now = await this.preview(canvasId, nodeId, ownerId)
+      if (now.inputHash !== expect) return { changed: now }
+    }
+    return { runId: this.start(canvasId, nodeId, ownerId) }
+  }
+
+  /** 节点的实际输入：最终提示词、参考图及顺序、音色、模型与有效参数；不调用付费生成 */
+  async preview(canvasId: string, nodeId: string, ownerId: string): Promise<PreparedInput> {
+    const lease = this.rooms.acquire(canvasId)
+    const doc = createDoc(lease.room.doc, { origin: SYSTEM_ORIGIN })
+    try {
+      const el = doc.get(nodeId)
+      if (el?.kind !== 'node' || !el.nodeType) throw new NodeRunError('not_found', '节点不存在')
+      try {
+        const prepared = await this.prepare(doc, el, ownerId, new AbortController().signal)
+        return this.summarize(el, prepared)
+      } catch (err) {
+        // 准备本身就过不去（上游没结果、@ 重名、音色跨平台）：照样给出能给的部分，原因放进阻断
+        if (!(err instanceof NodeRunError)) throw err
+        const def = this.host.registry.latestNode(el.nodeType)?.def
+        const base = this.summarize(el, { def, params: el.params, inputs: {} })
+        return { ...base, blocked: [err.message, ...base.blocked] }
+      }
+    } finally {
+      doc.destroy()
+      lease.release()
+    }
+  }
+
+  /** 把准备结果整理成给人看、也存进执行记录的实际输入 */
+  private summarize(el: CanvasElement, p: Prepared): PreparedInput {
+    const def = p.def
+    let params: Record<string, unknown> = p.params ?? {}
+    if (def) {
+      try {
+        params = resolveParams(def, p.params, el.nodeVersion ?? def.version) as typeof params
+      } catch {}
+    }
+    const promptKey = ['prompt', 'text'].find((k) => typeof params[k] === 'string')
+    const upstreamText = (p.inputs[promptKey ?? 'prompt'] ?? []).flatMap((v) =>
+      v.type === 'text' ? [v.text] : v.type === 'json' ? [JSON.stringify(v.value)] : [],
+    )
+    const prompt = promptKey
+      ? [String(params[promptKey]).trim(), upstreamText.join('\n').trim()]
+          .filter(Boolean)
+          .join('\n\n')
+      : undefined
+    const shown = cacheParams(params)
+    for (const k of [promptKey, 'usedRefs', 'requiredRefs', 'voice']) if (k) delete shown[k]
+    const voice = voiceOf(params)
+    const limit = this.referenceLimit(params.model, def?.capability)
+    return {
+      nodeId: el.id,
+      nodeType: el.nodeType!,
+      capability: def?.capability,
+      model: this.modelOf(params.model, def?.capability),
+      ...(limit === undefined ? {} : { referenceLimit: limit }),
+      ...(prompt === undefined ? {} : { prompt }),
+      params: shown,
+      inputs: Object.fromEntries(
+        Object.entries(p.inputs).map(([port, values]) => [port, values.map(inputValue)]),
+      ),
+      refs: p.mentions?.details ?? [],
+      ...(def?.capability === 'audio.speech' && hasVoice(voice)
+        ? { voice: { provider: voice.provider, voiceId: voice.voiceId } }
+        : {}),
+      notices: p.mentions?.notices ?? [],
+      blocked: p.mentions?.blocked ?? [],
+      inputHash: this.cacheKey(el, p, []),
+    }
+  }
+
+  /** 实际使用的模型：选了就是它，没选时按执行器的规则取同能力排第一的已启用模型 */
+  private modelOf(model: unknown, capability: string | undefined): PreparedInput['model'] {
+    if (typeof model === 'string' && model) {
+      const ref = parseModelRef(model)
+      const spec = ref
+        ? this.host.registry.providers.get(ref.provider)?.def.models.find((m) => m.id === ref.model)
+        : undefined
+      return { ref: model, provider: ref?.provider ?? '', title: spec?.title ?? model, auto: false }
+    }
+    if (!capability) return undefined
+    const first = this.host.models(capability as Capability)[0]
+    return first
+      ? { ref: first.ref, provider: first.provider, title: first.title, auto: true }
+      : undefined
   }
 
   /** 等任务结束，返回最终状态 */
@@ -650,6 +757,11 @@ export class NodeRuns {
     const el = doc.get(a.nodeId)
     if (!el?.nodeType) throw new NodeRunError('not_found', '节点不存在')
     const prepared = await this.prepare(doc, el, a.ownerId, signal)
+    // 实际输入随任务存下来：降级、舍弃的参考图和所用模型以后查得到
+    const input = this.summarize(el, prepared)
+    this.store.update(a.id, { input: JSON.stringify(input) })
+    // 必需参考用不上：不提交，免得花钱生成一张缺了关键角色或道具的图
+    if (input.blocked.length) throw new NodeRunError('invalid_input', input.blocked.join('；'))
     // 运行中的状态：进度、执行器提示和调用平台的阶段合在一起写回文档
     const live: Omit<NodeRun, 'at'> = { ...base }
     let lastProgress = 0
@@ -705,17 +817,16 @@ export class NodeRuns {
   ): Promise<Prepared> {
     const collected = await this.collectInputs(doc, el.id, ownerId, signal)
     const def = this.host.registry.latestNode(el.nodeType!)?.def
-    const { params, inputs } = def
-      ? await applyMentions(
-          doc,
-          el,
-          def,
-          collected,
-          (id) => this.collectInputs(doc, id, ownerId, signal),
-          this.referenceLimit(el.params?.model, def.capability),
-        )
-      : { params: el.params, inputs: collected }
-    return { def, params, inputs }
+    if (!def) return { def, params: el.params, inputs: collected }
+    const { params, inputs, details, notices, blocked } = await applyMentions(
+      doc,
+      el,
+      def,
+      collected,
+      (id) => this.collectInputs(doc, id, ownerId, signal),
+      this.referenceLimit(el.params?.model, def.capability),
+    )
+    return { def, params, inputs, mentions: { details, notices, blocked } }
   }
 
   /**
@@ -850,7 +961,25 @@ function groupState(g: GroupRow): GroupRunState {
   }
 }
 
+function inputValue(v: PortValue): InputValue {
+  const source = v.source ? { source: v.source } : {}
+  if (v.type === 'text') return { type: 'text', text: v.text.slice(0, TEXT_PREVIEW), ...source }
+  if (v.type === 'json')
+    return { type: 'json', text: JSON.stringify(v.value).slice(0, TEXT_PREVIEW), ...source }
+  return { type: v.type, assetId: v.assetId, ...source }
+}
+
+function parseInput(raw: string | null): PreparedInput | undefined {
+  if (!raw) return undefined
+  try {
+    return JSON.parse(raw) as PreparedInput
+  } catch {
+    return undefined
+  }
+}
+
 function jobInfo(j: JobRow): JobInfo {
+  const input = parseInput(j.input)
   return {
     id: j.id,
     nodeId: j.node_id,
@@ -862,6 +991,7 @@ function jobInfo(j: JobRow): JobInfo {
     createdAt: j.created_at,
     startedAt: j.started_at ?? undefined,
     finishedAt: j.finished_at ?? undefined,
+    ...(input ? { input } : {}),
   }
 }
 
@@ -872,11 +1002,13 @@ function jobInfo(j: JobRow): JobInfo {
  * - 后加参数取中性值（分辨率留空、语速 1 倍、专属参数为空）时不算：加之前生成的结果不必因此重跑。
  */
 const NEUTRAL: Record<string, unknown> = { resolution: '', speed: 1 }
+/** 不影响送进模型内容的设置：必需参考只决定怎么取舍，取舍结果已经体现在实际输入里 */
+const NOT_CONTENT = new Set(['requiredRefs'])
 
 export function cacheParams(params: Record<string, unknown>, omit: string[] = []) {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(params)) {
-    if (omit.includes(k)) continue
+    if (omit.includes(k) || NOT_CONTENT.has(k)) continue
     if (k in NEUTRAL && NEUTRAL[k] === v) continue
     if (k === 'options' && v && typeof v === 'object' && typeof params.model === 'string') {
       const own = (v as Record<string, Record<string, unknown> | undefined>)[params.model]

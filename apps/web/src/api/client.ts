@@ -23,7 +23,9 @@ import {
   type MediaDerivation,
   type MediaDeriveRequest,
   type SequenceExportRequest,
+  type NodeRunOptions,
   type NodeRunStarted,
+  type PreparedInput,
   type Project,
   type ProviderConfigUpdate,
   type ProviderConfigView,
@@ -48,6 +50,8 @@ export class ApiError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** 错误响应的完整内容（如 input_changed 带回的新实际输入） */
+    readonly body?: unknown,
   ) {
     super(message)
   }
@@ -73,6 +77,7 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
       res.status,
       body?.error ?? body?.code ?? 'http_error',
       body?.message ?? res.statusText,
+      body ?? undefined,
     )
   }
   return res
@@ -171,8 +176,12 @@ export const api = {
     request<CapabilityCallResult>(API.capabilityCall(canvasId, name), json('POST', body)),
   undoCapabilityCall: (id: string) => request<void>(API.capabilityUndo(id), json('POST', {})),
 
-  runNode: (canvasId: string, nodeId: string) =>
-    request<NodeRunStarted>(API.nodeRun(canvasId, nodeId), { method: 'POST' }),
+  /** expect 为用户看过的实际输入哈希：输入在那之后变了，服务端返回 409 input_changed */
+  runNode: (canvasId: string, nodeId: string, opts: NodeRunOptions = {}) =>
+    request<NodeRunStarted>(API.nodeRun(canvasId, nodeId), json('POST', opts)),
+  /** 节点的实际输入预览（不调用付费生成） */
+  nodeInput: (canvasId: string, nodeId: string) =>
+    request<PreparedInput>(API.nodeInput(canvasId, nodeId)),
   cancelNode: (canvasId: string, nodeId: string) =>
     request<void>(API.nodeCancel(canvasId, nodeId), { method: 'POST' }),
   /** 整组运行 Frame 里的节点 */

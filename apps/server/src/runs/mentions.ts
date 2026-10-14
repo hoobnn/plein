@@ -18,6 +18,7 @@ import {
   voiceOf,
 } from '@plein/nodes'
 import { type NodeDefinition, parseModelRef, type PortValue } from '@plein/plugin-sdk'
+import type { InputRef, InputRefKind } from '@plein/protocol'
 import { NodeRunError } from '../plugins/host'
 
 type Inputs = Record<string, PortValue[]>
@@ -40,8 +41,12 @@ export interface AppliedMentions {
   params: Record<string, unknown>
   inputs: Inputs
   refs: UsedRef[]
-  /** 不阻断运行、但用户该知道的提示（音色无法校验、@ 名字可能已改名） */
+  /** 不阻断运行、但用户该知道的提示（音色无法校验、@ 名字可能已改名、可选参考降级） */
   notices: string[]
+  /** 每个引用的实际用法：能提供哪些图、送了哪些、没送的原因、是否必需；供实际输入预览与执行记录 */
+  details: InputRef[]
+  /** 必需参考用不上（缺图、当前模式不收、放不下）：这个镜头不提交 */
+  blocked: string[]
 }
 
 /** 画布上可被 @ 引用的东西：资产卡（角色、场景、道具、风格）和有名字的图片元素 */
@@ -163,20 +168,26 @@ export async function applyMentions(
     params[key] = text + value.slice(last)
     for (const b of broken) notices.push(brokenNotice(b.name, b.candidates))
   }
-  if (hit.size === 0) return { params, inputs, refs: [], notices }
+  if (hit.size === 0) return { params, inputs, refs: [], notices, details: [], blocked: [] }
 
-  const groups: Array<{ rank: number; images: PortValue[] }> = []
+  const required = requiredOrder(params.requiredRefs)
+  const groups: Group[] = []
   const refList: UsedRef[] = []
+  const details: InputRef[] = []
+  const blocked: string[] = []
   const notes: string[] = []
   const voices: Array<{ name: string; voice: VoiceRef }> = []
   for (const h of hit.values()) {
     const target = h.el
+    const priority = required.get(target.id) ?? -1
     if (target.kind === 'image' && target.assetId) {
       groups.push({
         rank: RANK.length,
+        priority,
         images: [{ type: 'image', assetId: target.assetId, kind: 'image', source: target.id }],
       })
       refList.push({ name: h.name, elementId: target.id, assetIds: [target.assetId] })
+      details.push(detail(target, h.name, priority, [target.assetId]))
       continue
     }
     const description = pickNotes(String(target.params?.description ?? ''), h.pick)
@@ -198,12 +209,13 @@ export async function applyMentions(
             },
         )
     const rank = RANK.indexOf(target.nodeType ?? '')
-    groups.push({ rank: rank < 0 ? RANK.length : rank, images })
+    groups.push({ rank: rank < 0 ? RANK.length : rank, priority, images })
     refList.push({
       name: pickLabel(h.name, h.pick),
       elementId: target.id,
       assetIds: imageIds(images),
     })
+    details.push(detail(target, pickLabel(h.name, h.pick), priority, imageIds(images)))
   }
 
   const prompt = ['prompt', 'text'].find((k) => typeof params[k] === 'string')
@@ -224,8 +236,26 @@ export async function applyMentions(
     for (const r of refList) r.assetIds = []
   }
 
+  for (const d of details) {
+    if (!d.required) continue
+    if (!send)
+      blocked.push(
+        video
+          ? `「${d.name}」是必需参考，当前模式不送参考图，请切到「图片参考」或取消必需`
+          : `「${d.name}」是必需参考，这个节点不收参考图`,
+      )
+    else if (d.available.length === 0)
+      blocked.push(`「${d.name}」是必需参考，但还没有可用的参考图（未生成、生成失败或没连）`)
+  }
+
   const own = send ? (inputs[port] ?? []) : []
-  const refs = send ? pickRefs(own, groups, refList, maxRefs, notices) : []
+  const refs = send ? pickRefs(own, groups, refList, details, maxRefs, notices, blocked) : []
+  for (const [i, d] of details.entries()) {
+    d.sent = send ? refList[i]!.assetIds : []
+    if (d.available.length === 0) d.reason = 'no_image'
+    else if (!send) d.reason = 'unsupported'
+    else if (d.sent.length < d.available.length) d.reason = 'over_limit'
+  }
 
   // 本次真正送进去的东西带到执行器（宿主不把运行摘要传下去，见 node 定义的 usedRefs 注释）
   params.usedRefs = refList
@@ -237,41 +267,87 @@ export async function applyMentions(
           [port]: dedupe([...own, ...refs]),
         }
       : inputs
-  return { params, inputs: merged, refs: refList, notices }
+  return { params, inputs: merged, refs: refList, notices, details, blocked }
+}
+
+/** 一组 @ 引用带来的参考图；priority 为必需参考的先后（-1 为可选） */
+interface Group {
+  rank: number
+  priority: number
+  images: PortValue[]
+}
+
+/** 必需参考的元素 id → 先后顺序 */
+function requiredOrder(value: unknown) {
+  const ids = Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+  return new Map(ids.map((id, i) => [id, i]))
+}
+
+const KINDS: Record<string, InputRefKind> = {
+  'plein/character': 'character',
+  'plein/scene': 'scene',
+  'plein/prop': 'prop',
+  'plein/style': 'style',
+}
+
+function detail(el: CanvasElement, name: string, priority: number, available: string[]): InputRef {
+  return {
+    elementId: el.id,
+    name,
+    kind: el.kind === 'image' ? 'image' : (KINDS[el.nodeType ?? ''] ?? 'other'),
+    required: priority >= 0,
+    available,
+    sent: [],
+  }
 }
 
 /** 参考图放不下时的取舍顺序：角色最要紧（同一个人），其次场景、道具；直接 @ 的图片元素排最后 */
 const RANK = ['plein/character', 'plein/scene', 'plein/prop', 'plein/style']
 
 /**
- * 在参考图上限内挑出 @ 引用要送的图：每张卡先放第一张（主图），有余量再按顺序放其余的。
- * 放不下的卡从 refList 里去掉对应的图，并提示用户
+ * 在参考图上限内挑出 @ 引用要送的图：必需参考按设定的先后先放，再按角色、场景、道具的顺序；
+ * 每张卡先放第一张（主图），有余量再按顺序放其余的。
+ * 必需参考的主图放不下时记为阻断；可选参考放不下的从 refList 里去掉对应的图，并提示用户
  */
 function pickRefs(
   own: PortValue[],
-  groups: Array<{ rank: number; images: PortValue[] }>,
+  groups: Group[],
   refList: UsedRef[],
+  details: InputRef[],
   max: number | undefined,
   notices: string[],
+  blocked: string[],
 ): PortValue[] {
   const all = groups.flatMap((g) => g.images)
   if (max === undefined) return all
-  const seen = new Set(imageIds(own))
+  const ownIds = imageIds(own)
+  const seen = new Set(ownIds)
   const room = () => max - seen.size
-  const order = groups.map((g, i) => ({ ...g, i })).sort((a, b) => a.rank - b.rank || a.i - b.i)
+  const first = (g: Group) => (g.priority >= 0 ? g.priority : Number.MAX_SAFE_INTEGER)
+  const order = groups
+    .map((g, i) => ({ ...g, i }))
+    .sort((a, b) => first(a) - first(b) || a.rank - b.rank || a.i - b.i)
   const kept = new Set<string>()
   const take = (v: PortValue | undefined) => {
     const id = v && imageIds([v])[0]
-    if (!id || seen.has(id) || room() <= 0) return
+    if (!id) return false
+    if (seen.has(id)) return kept.has(id) || ownIds.includes(id)
+    if (room() <= 0) return false
     seen.add(id)
     kept.add(id)
+    return true
   }
-  for (const g of order) take(g.images[0])
+  for (const g of order) {
+    if (take(g.images[0]) || g.priority < 0 || !g.images.length) continue
+    blocked.push(
+      `「${details[g.i]!.name}」是必需参考，但这个模型最多带 ${max} 张参考图，放不下了，请减少必需参考或换模型`,
+    )
+  }
   for (const g of order) for (const v of g.images.slice(1)) take(v)
   const dropped: string[] = []
   for (const r of refList) {
     const before = r.assetIds.length
-    r.assetIds = r.assetIds.filter((id) => kept.has(id) || imageIds(own).includes(id))
+    r.assetIds = r.assetIds.filter((id) => kept.has(id) || ownIds.includes(id))
     if (before > 0 && r.assetIds.length === 0) dropped.push(r.name)
   }
   if (dropped.length)

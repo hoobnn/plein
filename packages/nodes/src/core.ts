@@ -34,6 +34,12 @@ const usedRefs = () =>
     .array(z.object({ name: z.string(), elementId: z.string(), assetIds: z.array(z.string()) }))
     .default([])
     .meta({ title: '本次实际引用', widget: 'hidden' })
+/**
+ * 必需参考：@ 引用的元素 id，按优先级排列。必需参考先占参考图名额；缺图、当前模式不收参考图
+ * 或放不下时这个镜头不提交。没设的引用都是可选参考，按角色、场景、道具的顺序取舍
+ */
+const requiredRefs = () =>
+  z.array(z.string()).default([]).meta({ title: '必需参考', widget: 'hidden' })
 /** 画幅从宽到高排；auto 为「智能」，交给模型按提示词或素材决定。各模型只显示自己支持的那些 */
 const ASPECTS = ['auto', '21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'] as const
 
@@ -92,6 +98,7 @@ export const imageNode = defineNode({
     options: modelOptions(),
     count: z.number().int().min(1).max(4).default(1).meta({ title: '张数' }),
     usedRefs: usedRefs(),
+    requiredRefs: requiredRefs(),
   }),
 })
 
@@ -150,6 +157,7 @@ export const videoNode = defineNode({
     audio: z.boolean().default(true).meta({ title: '生成音频', widget: 'audio' }),
     options: modelOptions(),
     usedRefs: usedRefs(),
+    requiredRefs: requiredRefs(),
   }),
   // v1 的模式由文档迁移（schema v2）按原连线推断写入；这里只兜底
   migrate: (params) => ({ mode: 'text', ...params }),

@@ -1,5 +1,5 @@
-import type { FlowRunOptions } from '@plein/protocol'
-import { api } from '../../api/client'
+import type { FlowRunOptions, PreparedInput } from '@plein/protocol'
+import { ApiError, api } from '../../api/client'
 import * as groups from '../../canvas/groups'
 import { useCanvas } from '../../stores/canvas'
 import { groupRunSignal, useGroupRuns } from './groupRuns'
@@ -19,13 +19,23 @@ function remoteCanvas() {
   return canvasId
 }
 
-/** 返回这次运行的 id；没能开始时返回 null（错误已提示） */
-export async function runNode(id: string): Promise<string | null> {
+/**
+ * 返回这次运行的 id；没能开始时返回 null（错误已提示）。
+ * 带上用户看过的实际输入（expect）时，输入在那之后变了就不运行，新的实际输入交给 onChanged
+ */
+export async function runNode(
+  id: string,
+  check?: { expect: string; onChanged(input: PreparedInput): void },
+): Promise<string | null> {
   const canvasId = remoteCanvas()
   if (!canvasId) return null
   try {
-    return (await api.runNode(canvasId, id)).runId
+    return (await api.runNode(canvasId, id, check ? { expect: check.expect } : {})).runId
   } catch (err) {
+    const input = (err instanceof ApiError && err.code === 'input_changed' && err.body) as
+      | { input?: PreparedInput }
+      | false
+    if (check && input && input.input) check.onChanged(input.input)
     fail(err)
     return null
   }
