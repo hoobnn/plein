@@ -1,6 +1,6 @@
 # Plein 0.2.0 规划：生成可控与局部返工
 
-2026-10-14；同日调整范围与顺序。状态：W1 已实现并定稿，W2、W4、W5（最小版）已实现（均 L1–L3 通过），其余待实施。
+2026-10-14；同日调整范围与顺序。状态：W1 已实现并定稿，W2、W3、W4、W5（最小版）已实现（均 L1–L3 通过），其余待实施。
 
 ## 目标与依据
 
@@ -60,7 +60,7 @@
 - 界面：生成器底栏上方的「实际输入」，摘要一行显示模型与参考图张数，展开后列出引用及用法、送入顺序、最终提示词、有效参数和提示；每个引用可切换必需 / 可选；有阻断时生成按钮不可用。
 - 评审修订（定稿）：`PreparedInput` 带格式版本 `v`、`nodeVersion`、`preparedAt` 与 `status`（`ready` / `blocked` / `unprepared`）；准备失败时不给 `inputHash`，带旧哈希提交会被拦下。`notices` / `blocked` 改为 `InputIssue`（`code`、`message`、可选 `elementId`），W2 / W5 按代码和元素判断，不解析文案。`InputValue` 记录来源节点的 `resultId` / `runId`，长文本标 `truncated`。引用原因新增 `failed`（参考图生成失败），与 `no_image`（还没生成或没连）分开。
 - 缓存键 v2：带 `v2:` 前缀，计入实际模型（自动选择时是解析出的那个）、平台插件版本和平台声明的模型版本（`ModelSpec.version`，可选）；`usedRefs` 只是取舍结果的描述，不再计入。升级前无前缀的键按旧算法比对，旧结果不因升级整组重跑。
-- 留待 W3：`expect` 只在提交时核对，排队期间输入变化不会拦下；W3 冻结批次输入时把确认的哈希随任务存下并在执行前复核。
+- 留待 W3（已在 W3 完成）：`expect` 原先只在提交时核对，排队期间输入变化不会拦下；现在确认的哈希随任务存下，执行前复核，见 W3 实现记录。
 - 测试：`apps/server/src/runs/mentions.required.test.ts`、`preview.test.ts`，`e2e/assets.spec.ts` 覆盖预览与必需开关。模型切换只在单测里按上限覆盖，mock 只有一个图片模型；自动选模型换了之后缓存键变化、旧缓存键兼容各有一个用例。
 
 ## W2 影响分析与局部返工
@@ -118,6 +118,20 @@
 ### W3 验收
 
 用故障注入覆盖提交响应丢失、轮询中断、下载失败、保存失败、取消后晚返回和服务重启。对已经获得远端 ID 的任务，恢复时远端提交次数不增加；结果未写入本地时不显示完整完成。真实平台恢复验收沿用四层流程与调用授权。
+
+### W3 实现记录
+
+2026-10-14 实现，L1–L3 通过，真实平台未验收；字段可在评审后调整。
+
+- 协议：`packages/protocol/src/recovery.ts`。`JobInfo.recovery`（`JobRecovery`）的 `state` 为 `remote_failed` / `submit_unknown` / `remote_pending` / `fetch_failed` / `stored` / `adopted` / `review`，带远端任务 ID、平台名、能否自动核查 `verifiable`、能否填任务 ID 续查 `attachable`、能否重新获取 `refetchable`、说明 `note`、这次的结果 `resultIds`、待采用原因 `held`（`canceled` / `input_changed` / `node_deleted` / `superseded`）和 `dismissed`；`JobInfo.canceledBy` 区分 `user` / `remote` / `system`。`BatchItem` 是批次快照的一项：阶段 `run` / `reuse` / `blocked`、原因、批准的 `inputHash`（有待解析依赖时缺省）、待解析依赖 `BatchDependency`（上游节点及启动时的结果）、启动时的实际输入、提交时冻结的 `frozenHash`、任务、结局 `BatchOutcome` 与落定的结果。`GroupInfo.review` 是等重新审查的目标数。插件 SDK 新增可选的 `ProviderDefinition.lookup` / `idempotent`、`ProviderContext.idempotencyKey` 与 `ProviderError.outcome: 'unknown'`。
+- 存储：迁移 `0003_funny_grim_reaper`，新表 `batch_items`，`jobs` 加 `expect`（批准的计划）、`frozen`（提交时的参数与输入值）、`recovery`（恢复状态）。进度仍在运行时状态里，批次快照不写画布文档。项目包不导出这三列和批次快照（远端任务号属于调用日志），迁入的任务照旧只作历史。
+- 批次快照：`apps/server/src/runs/batch.ts`。整组运行（Frame、运行到此处 / 下游、批量、按影响运行）启动时逐个准备目标；自己结果有效（或用户确认保留）且本批次里没有要重新生成的上游时记为沿用，上游要重新生成时只记依赖和上游当时的结果，不把还没产生的资产写成已冻结。付费节点提交前重新准备：没有依赖的比对 `inputHash`，有依赖的比对节点自身参数与模型的哈希，并要求上游现在的结果是启动时那个或本批次产生的；对不上就不提交，任务失败、恢复状态 `review`。单节点生成带的 `expect` 同样随任务存下、执行前复核，排队期间改了输入不调用平台。
+- 冻结与续查：任务第一次调用平台前把参数与输入值写进 `jobs.frozen`；之后重启、自动重试、重新获取都按冻结的输入执行，不再读画布，调用对得上记录，不会因为输入改过而重新提交。调用记录新增 `submitting` / `unknown` / `fetched`：提交回应丢失（POST 断在半路、超时、响应读不出来）记为未知，不自动重试；平台声明了 `lookup` 才按幂等键核查，查到接着轮询，确认没受理（或声明了 `idempotent`）才用同一个键重放，否则等人工处理。平台已生成时结果先记下（内嵌字节 16 MB 以内），下载或保存失败不算完成，可重新获取；结果地址返回 401 / 403 / 404 / 410 时先重新查询平台。用户取消时平台已受理的任务保留远端 ID，取消请求只是尽力而为。
+- 晚返回：结果只在没被取消、节点还在、没有更新的运行且输入与冻结时一致时成为当前结果，否则只进候选历史（`addResults` 新增 `adopt: false`，当前结果钉住不变），运行写回的参数也不应用；节点已删除时资产 ID 只记在执行记录里。取消后取回的结果任务仍记为已取消。
+- 接口：`GET /api/runs/groups/:id/items` 返回批次快照；`POST /api/canvases/:canvas/jobs/:job/recover`（`RecoverJobOptions`）的 `refetch` 重新获取或重新核查、`attach` 填平台任务 ID 续查、`resubmit` 确认未受理后重新提交、`dismiss` 标记已处理，都记在原任务上、不新建任务。
+- 界面：任务面板的每条任务按恢复状态给出一句现状和操作：「重新获取」「重新核查」「填写平台任务 ID」「确认未受理，重新提交」（先说明平台若已受理可能重复计费，再确认）、「标记已处理」、待采用的「采用」、输入变了的「去审查」（定位到节点，生成器里看实际输入后再生成）；提交结果未知时不给一键重试。整组运行可展开「批次记录」，列出各目标的阶段、等几个上游与结局。节点卡片上 `submit_unknown` / `fetch_failed` / `input_changed` 有对应的失败说法。
+- 测试：`apps/server/src/runs/recovery.test.ts` 用 mock 平台注入故障，覆盖提交回应丢失（有查询合同时自动核查、没有时人工填任务 ID、确认后重新提交、标记已处理）、提交时服务退出后重启核查、保存失败后重新获取、结果地址过期重新查询、取消后平台仍生成完再取回、取消时请求在途随后返回、生成期间改输入、排队期间改输入不付费执行，以及批次快照的阶段、待解析依赖、冻结哈希和执行中改下游后需重新审查；断言远端提交次数不增加、结果没写入本地时任务不是已完成。轮询中断和重启续查沿用 `jobs.test.ts` 的用例。
+- 已知限制：内置真实平台都没有声明 `lookup` / `idempotent`，提交结果未知时只能人工核查，重新提交可能重复计费；平台不返回取消是否生效，取消后统一提示“可能仍在生成”；`shared/http.ts` 把所有 POST 的传输失败标为结果未知，提交里夹带的上传失败也会进入人工核查；节点已删除的任务不能重新获取；单节点运行的进度仍按原有节流写回画布文档。
 
 ## W4 项目包迁移
 
