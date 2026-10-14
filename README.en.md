@@ -19,7 +19,9 @@ Idea, script, characters, storyboard, shots, voiceover and the final cut live on
 </div>
 
 > [!NOTE]
-> Plein 0.1.0 is out for macOS (Apple silicon). The full pipeline has produced a 6-shot vertical sample on real platforms (Alibaba Cloud Model Studio + Doubao Speech). The data format may still change during 0.x, see the [roadmap](#roadmap).
+> Plein is in a **testing and iteration phase**; the latest release is 0.2.0 for macOS (Apple silicon). The full pipeline has been verified end to end on real platforms (Alibaba Cloud Model Studio, Doubao Speech, MiniMax), but the data format and interactions may still change between versions, so export project packages regularly for important work. See the [roadmap](#roadmap).
+>
+> The app identifier changed in 0.2.0. The earlier 0.1.x builds have been withdrawn and may not auto-update to the new version: if you installed one, download 0.2.0 manually and install over it. The data directory stays the same.
 >
 > The app UI and most docs are currently in Simplified Chinese only.
 
@@ -28,6 +30,7 @@ Idea, script, characters, storyboard, shots, voiceover and the final cut live on
 ## Why Plein
 
 - **The pipeline is on the canvas**: script, character cards, storyboard, shot images, videos, voiceover and the sequence are all wired-up nodes on the canvas. No black boxes. Change one step and you can see exactly what downstream needs a re-run.
+- **Change one thing, redo only that**: after editing the script, a line or a character, "View impact" lists the affected shots with suggestions, redoes only what you tick and leaves everything else as is. Before generating you can see the exact prompt and reference images sent to the model.
 - **Review before you spend**: inserting a template only builds the skeleton and never calls a model on its own. Review the storyboard and shot images first, then generate videos and voiceover in batches. Any shot can switch candidates, regenerate, or be replaced by hand.
 - **Your data stays yours**: one Node process, one SQLite file, one asset folder. API keys live only on the local server, never in the canvas or the browser.
 - **Built for Chinese model platforms**: Volcengine Ark, Doubao Speech, Alibaba Cloud Model Studio (Bailian) and MiniMax work out of the box; node parameters adapt to the selected model.
@@ -46,6 +49,7 @@ Idea, script, characters, storyboard, shots, voiceover and the final cut live on
 - Text, chat (LLM), image, video, voiceover and music nodes; forms are generated from the selected model, 9 aspect ratios
 - You choose the video mode: text-to-video, first frame, first + last frame or multi-image reference, with candidate count and synced audio
 - `@` references character / scene / prop / style cards in prompts, with disambiguation for duplicate names; `/` at line start applies presets such as three-view turnaround, expression grid, multi-angle and four-panel story
+- You choose the model: Settings sets a default model per capability, new nodes start with it and each node can pick another; enabling a new platform never switches models behind your back
 - Prompt enhancement and translation; every run keeps candidates and history, and downstream only uses the version you adopt
 
 ### Short drama pipeline
@@ -80,13 +84,17 @@ Every result is a new asset with its source recorded; originals are never touche
 - Run a single node, run up to here (with upstream), run downstream, or run a whole group; unchanged nodes hit the cache instead of spending again
 - Jobs are queued in SQLite, keep running after the page closes, and resume polling remote tasks after a server restart
 - The job panel shows progress, automatic retries and failure reasons; nodes whose parameters or upstream changed are marked "needs re-run"
+- Actual-input preview: before generating, see the model, the prompt with `@` expanded, and which reference images are sent or dropped by the model's limit
+- View impact: after a change, list the affected nodes with causes and suggestions (redo / review / keep), redo only the ticked ones in dependency order, and reuse matching candidates
+- Failure recovery: when a submission's outcome is unknown or polling / download fails, Plein never resubmits on its own (to avoid double billing); the job panel offers re-fetch, attaching a platform task ID, or resubmitting after you confirm it was not accepted
 
 ### Agent "Xiaoman"
 
-- Built-in agent: drives the canvas with any enabled chat model that supports tool calling, no extra software needed
+- Built-in agent: drives the canvas with the default chat model (it must support tool calling), no extra software needed
 - Local CLI: calls Claude Code or Codex already signed in on this machine, using your own account and quota
 - MCP server: Claude Code, Claude Desktop, Cursor and others can connect to your local Plein
 - Asks before spending money or deleting; supports plan mode; a whole turn of changes can be undone at once
+- Change plans: the fields to edit, nodes to redo and estimated calls are listed first, then approved by scope (text only / candidate images / everything); if the canvas changed before approval, the plan must be checked again
 
 See [Agent and MCP](docs/guide/agent.md) (Chinese).
 
@@ -130,7 +138,7 @@ pnpm install && pnpm build && pnpm start   # http://localhost:8787
 
 1. Open Settings → "Model platforms", enter your keys, save and enable. All four real platforms are off by default, and keys do not need environment variables.
 2. Create a project and double-click empty space to insert the "short drama template", or start from a blank canvas.
-3. Pick a model in a node's generator and run it.
+3. Check "Default models" at the top of "Model platforms" (enabling a platform fills in its first model). New nodes start with the default model; you can pick another in a node's generator, then run it.
 
 <details>
 <summary><b>Environment variables</b></summary>
@@ -171,13 +179,13 @@ The layout is identical across all three and can be copied between them: `plein.
 - [x] Agent Xiaoman, local Claude Code / Codex, MCP server
 - [x] macOS desktop installer, signing and notarization pipeline
 - [x] 6-shot sample on real platforms, UI tests in CI, auto-update
-- [x] **0.1.0**: macOS (Apple silicon) release (2026-10-13)
-- [ ] **0.1.x**: ship the multi-track timeline, editing-project export and character profiles (0.1.2); browser cache and reconnect acceptance (0.1.3)
-- [ ] **0.2.0**: actual-input preview and reference strategies → impact analysis and partial rework → batches and job recovery, with project package migration in parallel; agent change plans with scoped approval
+- [x] Multi-track timeline, editing-project export, character profiles and turnaround sheets, cross-project asset reuse
+- [x] **0.2.0**: actual-input preview and reference strategies, impact analysis and partial rework, batches and job recovery, project package migration, change plans with scoped approval, default models (2026-10-14, verified on real platforms)
+- [ ] Browser cache and reconnect acceptance; editing change plans item by item in chat
 - [ ] **Extension candidates**: storyboard groups and collages, region editing, frame-to-next-shot, camera / style presets, third-party plugins; static 3D composition validated separately
 - [ ] **Later**: panoramas, 3D director stage, depth references, native segment re-shoot, smart editing
 
-Next-phase scope is in the [0.2.0 roadmap](docs/plan/roadmap-0.2.0.md); first-release planning and acceptance are in the [0.1.0 roadmap](docs/plan/roadmap-0.1.0.md) and [acceptance record](docs/plan/acceptance-0.1.0.md) (all Chinese).
+0.2.0 scope, implementation notes and acceptance are in the [0.2.0 roadmap](docs/plan/roadmap-0.2.0.md); first-release planning and acceptance are in the [0.1.0 roadmap](docs/plan/roadmap-0.1.0.md) and [acceptance record](docs/plan/acceptance-0.1.0.md) (all Chinese).
 
 ## Docs
 

@@ -4,7 +4,7 @@ import { z } from 'zod'
  * 插件 API 版本，与 package.json 的 version 一致；插件清单的 engines.plein 用它做兼容判断。
  * 0.1.0 起按语义化版本演进：0.x 期间不兼容的改动升次版本号（0.2.0），兼容的新增和修复升修订号
  */
-export const PLUGIN_API_VERSION = '0.1.1'
+export const PLUGIN_API_VERSION = '0.1.2'
 
 /**
  * 命名空间标识：`vendor/name`，全小写。

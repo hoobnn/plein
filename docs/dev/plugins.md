@@ -52,7 +52,10 @@ export const serverPlugin = defineServerPlugin(plugin, {
 
 插件 API 的版本就是 `@plein/plugin-sdk` 的版本（`PLUGIN_API_VERSION`），Plein `v0.1.0` 发布时定为 `0.1.0`，此后按语义化版本演进：0.x 期间不兼容的改动升次版本号（`0.2.0`），兼容的新增和修复升修订号（`0.1.1`）。所以清单写 `^0.1.0` 只会匹配 `0.1.x`，API 出现不兼容改动时旧插件会被拒绝加载，不会在错误的假设下运行。
 
-版本记录：`0.1.1` 新增配音模型的预置音色 `ModelSpec.voices`（可选字段，旧插件不受影响）。
+版本记录：
+
+- `0.1.1` 新增配音模型的预置音色 `ModelSpec.voices`（可选字段，旧插件不受影响）。
+- `0.1.2`（Plein 0.2.0）新增可选的模型版本 `ModelSpec.version` 与价格 `ModelSpec.price`、按幂等键查任务 `ProviderDefinition.lookup` / `idempotent` 与 `ProviderContext.idempotencyKey`、提交结果未知 `ProviderError.outcome: 'unknown'`，合成规格增加逐段转场、变速、音量包络与响度标准化，以及 `modelParamOf` / `withDefaultModel`；都是新增，旧插件不受影响。
 
 ## 节点
 
