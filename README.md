@@ -4,13 +4,15 @@
 
 # Plein
 
-**本地优先的 AI 短剧画布。**<br/>
+**本地优先的 AI 无限画布，为短剧创作而生。**<br/>
 把创意、剧本、角色、分镜、镜头、配音和成片放在同一张无限画布上，每一步都能看、能改、能单独返工。
 
 [![CI](https://github.com/hoobnn/plein/actions/workflows/ci.yml/badge.svg)](https://github.com/hoobnn/plein/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/hoobnn/plein)](https://github.com/hoobnn/plein/releases)
 ![Platform](<https://img.shields.io/badge/platform-macOS%20(Apple%20芯片)%20%7C%20自部署-lightgrey>)
+
+**简体中文** · [English](README.en.md)
 
 [快速开始](#快速开始) · [功能](#功能) · [路线图](#路线图) · [文档](#文档) · [参与开发](CONTRIBUTING.md)
 
@@ -55,6 +57,7 @@
 - 镜头图、视频、配音分阶段批量生成，失败的单独重试
 - 序列编辑器：排序、入出点、对白 / 配乐 / 音效三条音轨、字幕样式、淡入淡出与叠化转场，浏览器内按导出时间线预览
 - 服务端 ffmpeg 导出 MP4（9:16 / 16:9，1080p / 720p），烧录中文字幕，可按语音识别对齐字幕时间轴
+- 导出剪辑工程（OTIO / FCPXML / SRT），连同素材打包
 
 ### 素材加工
 
