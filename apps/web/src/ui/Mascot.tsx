@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { Mood } from '../stores/agent'
+import type { Mood } from '../features/agent/store'
 
 /**
  * 吉祥物「小满」：与应用图标一致的蓝灰色独角鲸，带奶油色螺纹角与肚皮。

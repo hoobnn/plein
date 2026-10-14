@@ -10,7 +10,7 @@ import {
 } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useCatalog } from '../stores/catalog'
-import { useStale } from '../stores/stale'
+import { useStale } from '../features/runs/stale'
 import { type IconName, iconElement } from '../ui/icons'
 import { findNode, isPure, promptKey, targetImages } from './nodes'
 import {
@@ -20,7 +20,7 @@ import {
   openProviderSettings,
   RUN_STEPS,
 } from './runStatus'
-import { shotsOf } from './storyboard'
+import { shotsOf } from '../features/storyboard/model'
 
 type PromptPreset = Catalog['prompts'][number]
 

@@ -3,7 +3,7 @@ import type { Engine } from '@plein/canvas-core'
 import type { CastEntry } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { assetMetaNow, loadAssetMeta } from '../stores/assetMeta'
-import { useLibrary } from '../stores/library'
+import { useLibrary } from '../features/library/store'
 import { localContext } from './capabilities'
 import { nodeFactory } from './nodes'
 

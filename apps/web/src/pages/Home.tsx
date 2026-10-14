@@ -5,7 +5,7 @@ import { api } from '../api/client'
 import { invalidateProjects, queryClient, queryKeys } from '../api/query'
 import { queueStartNode } from '../canvas/start'
 import { navigate, routeHash } from '../router'
-import { useLibrary } from '../stores/library'
+import { useLibrary } from '../features/library/store'
 import { useSession } from '../stores/session'
 import { Brand, isPlainClick } from '../ui/Brand'
 import { confirmDialog } from '../ui/Dialog'
@@ -15,7 +15,7 @@ import { InlineTitle } from '../ui/InlineTitle'
 import { ThemeToggle } from '../ui/ThemeToggle'
 import { EmptyState } from '../ui/EmptyState'
 import { zoomView } from '../ui/viewTransition'
-import { Welcome } from '../panels/Welcome'
+import { Welcome } from '../features/onboarding/Welcome'
 
 /** 快速开始：新建项目并在它的第一张画布上放好对应节点、打开生成器 */
 const QUICK_START: Array<{

@@ -8,7 +8,7 @@ import {
 import type { Engine } from '@plein/canvas-core'
 import type { NodeDefinition } from '@plein/plugin-sdk'
 import type { Catalog } from '@plein/protocol'
-import { useLibrary } from '../stores/library'
+import { useLibrary } from '../features/library/store'
 import { findNode } from './nodes'
 
 /**
