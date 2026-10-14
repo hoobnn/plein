@@ -73,6 +73,7 @@ Every result is a new asset with its source recorded; originals are never touche
 
 - One project is one film, and it can hold several canvases
 - The asset library holds characters, scenes, props, styles and effects, reusable across canvases and projects. Characters have full-body / half-body / turnaround / emotion-grid slots, tags and a voice; canvas cards and the library sync both ways
+- Project packages (.plein): export a whole project from the home page (canvases, the assets they use, library items, adopted results and run history, optionally all past candidates) and import it on another machine or data directory; imports check the format version and file hashes first and list missing models, voices and plugins. Platform keys and sign-in data are never included
 
 ### Runs and jobs
 
