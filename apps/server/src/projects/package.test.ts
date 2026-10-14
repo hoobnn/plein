@@ -263,6 +263,26 @@ describe('项目包导入', () => {
     expect(s.doc.get(s.card)!.params?.libraryId).toBe(s.item.id)
   })
 
+  it('全局资产库条目：本机同一所有者已有的直接复用，副本里的引用不改', async () => {
+    const s = await seed()
+    const { body: shared } = await call<LibraryItem>(s.server, '/api/library', {
+      method: 'POST',
+      body: JSON.stringify({ kind: 'prop', name: '铁盒', images: [] }),
+    })
+    const prop = addNode(s.doc, 'plein/prop', { name: '铁盒', params: { libraryId: shared.id } })
+    const data = await download(s.server, s.projectId)
+    expect(manifestOf(data).library.map((l) => l.id)).toContain(shared.id)
+    const before = (await call<LibraryItem[]>(s.server, '/api/library')).body.length
+    const { preview, result } = await importInto(s.server, data)
+    expect(preview.copy).toBe(true)
+    expect(preview.reusedLibrary).toBe(1)
+    // 项目自己的条目仍换新复制一份，全局条目不重复添加
+    expect(preview.remapped.library).toBe(1)
+    expect((await call<LibraryItem[]>(s.server, '/api/library')).body.length).toBe(before + 1)
+    const doc = openDoc(s.server, result.canvasId!)
+    expect(doc.get(prop)!.params?.libraryId).toBe(shared.id)
+  })
+
   it('运行中状态迁入后是历史记录，不会被当作待续跑的任务', () => {
     const ydoc = createDoc(undefined, { schedule: () => {} })
     const n = addNode(ydoc, 'plein/image', { params: { libraryId: 'lib_a', nested: ['lib_a'] } })

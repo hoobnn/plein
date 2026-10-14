@@ -262,8 +262,13 @@ export function ImportPackageDialog({
       </p>
       {p.copy && (
         <p className="leading-5">
-          本机已经有这个项目，会作为副本导入：项目、画布、资产库条目和运行记录都换新
+          本机已经有这个项目，会作为副本导入：项目、画布、项目自己的资产库条目和运行记录都换新
           id，画布里的引用一起改，原项目不受影响。
+        </p>
+      )}
+      {p.reusedLibrary > 0 && (
+        <p className="leading-5 text-ink-muted">
+          {p.reusedLibrary} 个资产库条目本机已有，直接沿用，不再重复添加。
         </p>
       )}
       {(models.length > 0 || nodes.length > 0 || p.voices.length > 0) && (

@@ -539,8 +539,17 @@ function nodeStatus(host: PluginHost, type: string, version: number): Dependency
   return latest.def.version < version ? 'outdated' : 'ok'
 }
 
-/** 和本机已有记录冲突的 id，确认导入时据此换新 */
-function conflicts(deps: PackageDeps, m: ProjectPackageManifest, jobList: PackageJob[]) {
+/**
+ * 和本机已有记录冲突的 id，确认导入时据此换新。
+ * 不属于这个项目的资产库条目（全局条目或别的项目的），本机同一所有者已有同 id 的直接复用，
+ * 不换新也不再写一份：反复导入不在资产库里堆出重复条目
+ */
+function conflicts(
+  deps: PackageDeps,
+  owner: string,
+  m: ProjectPackageManifest,
+  jobList: PackageJob[],
+) {
   const { db } = deps
   const ids = <T extends { id: string }>(rows: T[]) => new Set(rows.map((r) => r.id))
   const project = Boolean(
@@ -554,22 +563,31 @@ function conflicts(deps: PackageDeps, m: ProjectPackageManifest, jobList: Packag
     : new Set<string>()
   for (const id of canvasIds) if (deps.rooms.wasDropped(id)) canvasHit.add(id)
   const libIds = m.library.map((l) => l.id)
-  const libHit = libIds.length
-    ? ids(
-        db
-          .select({ id: libraryItems.id })
-          .from(libraryItems)
-          .where(inArray(libraryItems.id, libIds))
-          .all(),
-      )
-    : new Set<string>()
+  const libRows = libIds.length
+    ? db
+        .select({ id: libraryItems.id, owner: libraryItems.owner_id })
+        .from(libraryItems)
+        .where(inArray(libraryItems.id, libIds))
+        .all()
+    : []
+  const shared = new Set(m.library.filter((l) => l.projectId !== m.project.id).map((l) => l.id))
+  const libReused = new Set(
+    libRows.filter((r) => r.owner === owner && shared.has(r.id)).map((r) => r.id),
+  )
+  const libHit = new Set(libRows.filter((r) => !libReused.has(r.id)).map((r) => r.id))
   const jobHit = new Set<string>()
   for (let i = 0; i < jobList.length; i += 500) {
     const chunk = jobList.slice(i, i + 500).map((j) => j.id)
     for (const r of db.select({ id: jobs.id }).from(jobs).where(inArray(jobs.id, chunk)).all())
       jobHit.add(r.id)
   }
-  return { project, canvases: canvasHit, library: libHit, jobs: jobHit }
+  return {
+    project,
+    canvases: canvasHit,
+    library: libHit,
+    libraryReused: libReused,
+    jobs: jobHit,
+  }
 }
 
 /**
@@ -738,7 +756,7 @@ export async function inspectPackage(
     const expires = Date.now() + PENDING_TTL
     pending.set(token, { owner, dir, manifest, staged, docs, jobs: jobList, expires })
 
-    const hit = conflicts(deps, manifest, jobList)
+    const hit = conflicts(deps, owner, manifest, jobList)
     const { host } = deps
     const notices = [
       '平台密钥、登录信息和智能体会话不在项目包里；导入后在设置里启用可用的平台，再按需重新选择模型和音色',
@@ -767,6 +785,7 @@ export async function inspectPackage(
         library: hit.library.size,
         jobs: hit.jobs.size,
       },
+      reusedLibrary: hit.libraryReused.size,
       models: manifest.dependencies.models.map((ref) => ({ ref, status: modelStatus(host, ref) })),
       voices: manifest.dependencies.voices.map((v) => ({
         ...v,
@@ -872,15 +891,16 @@ export async function commitImport(
   try {
     const { db, assets: store } = deps
     const m = p.manifest
-    const hit = conflicts(deps, m, p.jobs)
+    const hit = conflicts(deps, owner, m, p.jobs)
     const map = new Map<string, string>()
     const projectId = hit.project ? newProjectId() : m.project.id
     if (hit.project) map.set(m.project.id, projectId)
     // 作为副本导入时一律换新，保证和原项目没有任何共用的 id
     for (const c of m.canvases)
       if (hit.project || hit.canvases.has(c.id)) map.set(c.id, newCanvasId())
+    // 作为副本时项目自己的条目也换新；共享条目本机已有的直接复用
     for (const l of m.library)
-      if (hit.project || hit.library.has(l.id))
+      if (hit.library.has(l.id) || (hit.project && !hit.libraryReused.has(l.id)))
         map.set(l.id, `lib_${randomBytes(9).toString('base64url')}`)
     for (const j of p.jobs)
       if (hit.project || hit.jobs.has(j.id))
@@ -931,6 +951,7 @@ export async function commitImport(
           .run()
       }
       for (const l of m.library) {
+        if (hit.libraryReused.has(l.id)) continue
         const { id: lid, kind, name, projectId: lp, favorite, createdAt, updatedAt, ...data } = l
         tx.insert(libraryItems)
           .values({

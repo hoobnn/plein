@@ -157,10 +157,15 @@ export interface ProjectImportPreview {
   title: string
   candidates: PackageCandidates
   counts: { canvases: number; assets: number; library: number; jobs: number; bytes: number }
-  /** 本机已有同一个项目（同一个包导入过，或就是从这里导出的）：作为新副本导入，项目及其画布、条目、运行记录全部换新 id */
+  /**
+   * 本机已有同一个项目（同一个包导入过，或就是从这里导出的）：作为新副本导入，
+   * 项目及其画布、项目自己的条目、运行记录全部换新 id
+   */
   copy: boolean
   /** 因为和本机已有记录冲突而换了 id 的数量；文档里的引用同步改写 */
   remapped: { canvases: number; library: number; jobs: number }
+  /** 不属于这个项目、本机资产库已有的条目数：直接复用，不再写一份 */
+  reusedLibrary: number
   models: Array<{ ref: string; status: DependencyStatus }>
   voices: Array<{ provider: string; voiceId: string; status: DependencyStatus }>
   nodes: Array<{ type: string; version: number; plugin?: string; status: DependencyStatus }>
