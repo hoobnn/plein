@@ -8,8 +8,8 @@ import {
   edgesInto,
   elements,
   newProject,
+  runBatch,
   waitEngine,
-  waitIdle,
   waitNode,
   zoomTo,
 } from './canvas'
@@ -80,11 +80,8 @@ test('短剧模板：插入 → 跑骨架 → 展开 → 批量 → 导出', asy
   await dialog.getByLabel('台词').nth(1).click()
   await dialog.getByRole('button', { name: '更新展开' }).click()
   await expect(page.locator('.ui-toast')).toContainText('已给 1 个镜头补齐')
-  for (const role of ['批量出分镜图', '批量生成视频', '批量配音']) {
-    await dialog.getByRole('button', { name: role }).click()
-    await expect(page.locator('.ui-toast')).toContainText('已开始生成')
-    await waitIdle(page)
-  }
+  for (const role of ['批量出分镜图', '批量生成视频', '批量配音'])
+    await runBatch(page, dialog, role)
   const all = await elements(page)
   expect(all.filter((e) => e.status === 'failed')).toEqual([])
   // 批量出分镜图时，镜头 @ 到的林晚、老城区天台、铁盒先出了参考图

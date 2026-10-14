@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test'
+import { expect, type Locator, type Page } from '@playwright/test'
 
 /** e2e 构建在 window 上暴露的只读入口（见 apps/web/src/canvas/CanvasView.tsx），这里只声明用到的部分 */
 interface RawElement {
@@ -228,4 +228,43 @@ export async function waitIdle(page: Page, timeout = 90_000) {
       { timeout, message: '节点应全部跑完' },
     )
     .toBe(0)
+}
+
+/** 画布上的全部任务 id 与状态（任务面板接口，最新的在前） */
+async function jobs(page: Page) {
+  const canvas = /#\/c\/([^/?]+)/.exec(page.url())![1]!
+  const list = (await page.evaluate(
+    (url) => fetch(url).then((r) => r.json()),
+    `/api/canvases/${canvas}/jobs`,
+  )) as { jobs: Array<{ id: string; status: string }> }
+  return list.jobs
+}
+
+/**
+ * 点分镜表里的批量按钮并等这一批跑完。视频、配音是按节点逐个提交的，提示比提交先出来，
+ * 上一批的「已开始生成」提示也可能还在：只等提示和节点空闲会在任务还没提交时就往下走。
+ * 这里按提示里的个数等新任务都提交到服务端、全部结束，再等画布同步到空闲
+ */
+export async function runBatch(page: Page, dialog: Locator, label: string, timeout = 90_000) {
+  const noun = { 批量出分镜图: '分镜图', 批量生成视频: '视频', 批量配音: '配音' }[label]
+  if (!noun) throw new Error(`不认识的批量按钮：${label}`)
+  const seen = new Set((await jobs(page)).map((j) => j.id))
+  await dialog.getByRole('button', { name: label }).click()
+  const toast = page.locator('.ui-toast', { hasText: new RegExp(`已开始生成 \\d+ 个${noun}`) })
+  await expect(toast).toBeVisible()
+  const started = Number(
+    new RegExp(`已开始生成 (\\d+) 个${noun}`).exec(await toast.innerText())![1],
+  )
+  await expect
+    .poll(
+      async () => {
+        const fresh = (await jobs(page)).filter((j) => !seen.has(j.id))
+        const done = fresh.filter((j) => !['queued', 'running'].includes(j.status))
+        return fresh.length >= started && done.length === fresh.length
+      },
+      { timeout, message: `${noun}应全部提交并跑完` },
+    )
+    .toBe(true)
+  await waitIdle(page, timeout)
+  return started
 }

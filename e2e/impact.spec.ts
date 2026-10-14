@@ -6,6 +6,7 @@ import {
   contextMenu,
   deselect,
   newProject,
+  runBatch,
   waitIdle,
   waitNode,
   zoomTo,
@@ -83,11 +84,8 @@ test('六镜头项目改第三镜头：查看影响、只重做勾选的分支�
   await expect(page.locator('.ui-toast')).toContainText('已展开 6 个镜头')
 
   dialog = await openBoard()
-  for (const role of ['批量出分镜图', '批量生成视频', '批量配音']) {
-    await dialog.getByRole('button', { name: role }).click()
-    await expect(page.locator('.ui-toast')).toContainText('已开始生成')
-    await waitIdle(page)
-  }
+  for (const role of ['批量出分镜图', '批量生成视频', '批量配音'])
+    await runBatch(page, dialog, role)
   const before = await snapshot(page)
   expect(before.shots).toHaveLength(6)
   for (const s of before.shots) expect(s.image!.results).toBe(1)

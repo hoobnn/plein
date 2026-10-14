@@ -17,6 +17,7 @@ import {
   contextMenu,
   deselect,
   newProject,
+  runBatch,
   waitIdle,
   waitNode,
   zoomTo,
@@ -109,11 +110,8 @@ async function sixShots(page: Page) {
   await dialog.getByRole('button', { name: '展开为节点' }).click()
   await expect(page.locator('.ui-toast')).toContainText('已展开 6 个镜头')
   dialog = await openBoard()
-  for (const role of ['批量出分镜图', '批量生成视频', '批量配音']) {
-    await dialog.getByRole('button', { name: role }).click()
-    await expect(page.locator('.ui-toast')).toContainText('已开始生成')
-    await waitIdle(page)
-  }
+  for (const role of ['批量出分镜图', '批量生成视频', '批量配音'])
+    await runBatch(page, dialog, role)
   await page.keyboard.press('Escape')
   await deselect(page)
   return { board: board.id, openBoard }
@@ -186,11 +184,8 @@ test('分镜表批量按钮重跑', async ({ page }) => {
     await editShot3(dialog, op)
     await op(() => dialog.getByRole('button', { name: /^查看差异/ }).click())
     await syncPlan(page, op)
-    for (const role of ['批量出分镜图', '批量生成视频', '批量配音']) {
-      await op(() => dialog.getByRole('button', { name: role }).click())
-      await expect(page.locator('.ui-toast')).toContainText('已开始生成')
-      await waitIdle(page)
-    }
+    for (const role of ['批量出分镜图', '批量生成视频', '批量配音'])
+      await op(() => runBatch(page, dialog, role))
   })
   expect(row.replaced).toContain('image')
 })
