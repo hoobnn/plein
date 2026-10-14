@@ -21,7 +21,7 @@ interface Saved {
 
 type Deps = Omit<ToolEnv, 'canvasId' | 'ownerId'> & { db: DB }
 
-const INSTRUCTIONS = `操作用户本机 Plein（AI 无限画布）里的画布。不传 canvas_id 时操作用户正在看的那块画布（没有打开的就用最近改过的），可以先调用 list_canvases 看有哪些画布。先用 get_canvas 看清画布再动手；运行节点会产生费用，视频尤其贵。`
+const INSTRUCTIONS = `操作用户本机 Plein（AI 无限画布）里的画布。不传 canvas_id 时操作用户正在看的那块画布（没有打开的就用最近改过的），可以先调用 list_canvases 看有哪些画布。先用 get_canvas 看清画布再动手；运行节点会产生费用，视频尤其贵。修改已有镜头或节点时先用 propose_edit 出修改方案，给用户看过、问清批准范围（只改文字 / 只出候选图 / 完整方案）后再用 apply_edit_plan 执行。`
 
 const hash = (token: string) => createHash('sha256').update(token).digest()
 

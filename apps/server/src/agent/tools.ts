@@ -24,6 +24,8 @@ import { currentResult, elementMedia, mediaSize, type PleinDoc, setParams } from
 import { describeNode, executionOf } from '@plein/plugin-sdk'
 import {
   type AgentApprovalMode,
+  type EditPlan,
+  EditScope,
   MediaDeriveRequest,
   type MediaDerivation,
   MediaOp,
@@ -35,11 +37,13 @@ import { PromptError, rewritePrompt } from '../prompt/rewrite'
 import { ffmpegBin, hasFfmpeg } from '../assets/media'
 import type { AssetStore } from '../assets/store'
 import { NodeRunError, type PluginHost } from '../plugins/host'
+import type { EditPlans } from '../runs/edit-plan'
 import type { NodeRuns } from '../runs/runs'
 import type { LibraryStore } from '../library/store'
 import type { Rooms } from '../sync/rooms'
 import { type Approvals, approvalFor } from './approvals'
 import type { AgentChanges } from './changes'
+import { APPLY_EDIT, editPlanCapabilities, planBrief, PROPOSE_EDIT } from './edit-plan'
 import { libraryCapabilities } from './library'
 import type { AgentPlan } from './plan'
 import { pluginCapabilities } from './plugin-caps'
@@ -57,6 +61,8 @@ export interface ToolEnv {
   assets: AssetStore
   /** 资产库（测试里可以不给） */
   library?: LibraryStore
+  /** 修改方案（测试里可以不给） */
+  plans?: EditPlans
   /** 文档写入的事务 origin：智能体会话用自己的 origin，改动集和撤销按它归属 */
   origin?: unknown
   /** 发起了一次运行（记进改动集，撤销这一轮时一并取消） */
@@ -619,6 +625,7 @@ export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   ...(promptCapabilities as never[]),
   ...libraryCapabilities,
   runStoryboard,
+  ...editPlanCapabilities,
   rewrite,
   runNode,
   waitForRun,
@@ -668,6 +675,8 @@ export function agentTools(
     mode: () => AgentApprovalMode
     /** 计划模式：计划被同意前拦下改动；也提供 propose_plan / update_plan */
     plan?: AgentPlan
+    /** 修改方案卡片出现或方案状态变了（id 是确认单 id） */
+    onEditPlan?(approvalId: string, plan: EditPlan): void
   },
 ): McpTool[] {
   const ctx = serverContext(env)
@@ -685,6 +694,44 @@ export function agentTools(
       next: '已请用户在面板里确认。调用 await_approval 等待：用户允许后会直接执行并返回结果，不要重复调用原工具；用户跳过就换个做法或问用户。',
     })
   })
+  // 修改方案：方案本身就是确认单，用户在卡片上选范围后服务端按范围执行
+  const propose = tools.find((t) => t.name === PROPOSE_EDIT)
+  if (propose && env.plans) {
+    const plans = env.plans
+    propose.run = async (args) => {
+      const brief = (await registry.invoke(PROPOSE_EDIT, ctx, args)) as { plan_id: string }
+      const plan = plans.get(brief.plan_id, env.ownerId)!
+      let approvalId = ''
+      const a = opts.approvals.create(
+        PROPOSE_EDIT,
+        { reason: plan.summary, ids: plan.targets.map((t) => t.nodeId) },
+        async (choice) => {
+          const scope = EditScope.catch('text').parse(choice)
+          try {
+            const out = (await registry.invoke(APPLY_EDIT, ctx, {
+              plan_id: plan.id,
+              scope,
+            })) as Record<string, unknown>
+            return JSON.stringify({ ...out, scope }, null, 1)
+          } catch (err) {
+            if (!(err instanceof CapabilityError)) throw err
+            return { content: [{ type: 'text', text: err.message }], isError: true }
+          } finally {
+            const now = plans.get(plan.id, env.ownerId)
+            if (now) opts.onEditPlan?.(approvalId, now)
+          }
+        },
+      )
+      approvalId = a.id
+      opts.onEditPlan?.(a.id, plan)
+      return JSON.stringify({
+        status: 'needs_approval',
+        approval_id: a.id,
+        plan: planBrief(plan),
+        next: '方案卡片已经给用户看了，用户会选只改文字、只出候选图或完整方案。用一句话说明方案要点，然后调用 await_approval 等用户选择；用户批准后服务端直接按范围执行并返回结果，不要再调用 apply_edit_plan。',
+      })
+    }
+  }
   if (opts.plan) tools.push(...opts.plan.tools(opts.approvals))
   tools.push({
     name: 'await_approval',

@@ -1,5 +1,5 @@
 import type { ExternalMcp } from '../mcp/external'
-import { CreateAgentSession, SendAgentMessage } from '@plein/protocol'
+import { CreateAgentSession, DecideAgentApproval, SendAgentMessage } from '@plein/protocol'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { AuthEnv } from '../auth'
@@ -91,11 +91,16 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
       .post('/api/agent/sessions/:id/approvals/:approval', async (c) => {
         const p = c.var.principal
         if (p.role === 'viewer') return c.json(forbidden, 403)
-        const body = (await c.req.json().catch(() => null)) as { allow?: unknown } | null
-        if (typeof body?.allow !== 'boolean')
-          return c.json({ error: 'invalid_input', message: '参数不对' }, 400)
+        const body = DecideAgentApproval.safeParse(await c.req.json().catch(() => null))
+        if (!body.success) return c.json({ error: 'invalid_input', message: '参数不对' }, 400)
         try {
-          agents.decide(c.req.param('id'), p.id, c.req.param('approval'), body.allow)
+          agents.decide(
+            c.req.param('id'),
+            p.id,
+            c.req.param('approval'),
+            body.data.allow,
+            body.data.scope,
+          )
           return c.body(null, 204)
         } catch (err) {
           if (!(err instanceof AgentError)) throw err

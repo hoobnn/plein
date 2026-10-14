@@ -183,6 +183,11 @@ export class ImpactAnalyzer {
     }
   }
 
+  /** 分析调用方给的文档（如套用了修改方案的副本）；文档的生命周期由调用方负责 */
+  analyzeDoc(doc: PleinDoc, canvasId: string, ownerId: string): Promise<ImpactReport> {
+    return this.report(doc, canvasId, ownerId)
+  }
+
   /**
    * 保留过期结果：记下当时的输入哈希、采用的结果和过期原因。
    * 不改缓存键，整组运行照样认为它过期；输入在用户看过之后又变了就不记，返回变了的节点

@@ -27,6 +27,7 @@ import { PluginHost } from './plugins/host'
 import { PluginRegistry } from './plugins/registry'
 import { pluginRoutes } from './plugins/routes'
 import { runRoutes } from './runs/routes'
+import { EditPlans } from './runs/edit-plan'
 import { NodeRuns } from './runs/runs'
 import { type DB, openDb } from './storage/db'
 import { loadSecrets, type Secrets } from './storage/secrets'
@@ -43,6 +44,7 @@ export interface Server {
   plugins: PluginHost
   secrets: Secrets
   runs: NodeRuns
+  plans: EditPlans
   agents: AgentSessions
   library: LibraryStore
   close(): void
@@ -65,6 +67,8 @@ export async function createServer(config: Config): Promise<Server> {
   const auth = await createAuth(config.auth, db, secrets, { publicUrl: config.publicUrl })
   const runs = new NodeRuns(db, rooms, plugins, { concurrency: config.maxJobs })
   const library = new LibraryStore(db)
+  // 修改方案：内置智能体、本机 CLI 和对外 MCP 共用一份
+  const plans = new EditPlans(db, runs, plugins)
   const agents = new AgentSessions({
     db,
     library,
@@ -72,13 +76,14 @@ export async function createServer(config: Config): Promise<Server> {
     runs,
     host: plugins,
     assets,
+    plans,
     dataDir: config.dataDir,
     enabled: config.agent,
   })
 
   // 对外开放 MCP 和本机智能体一样，只在本机免登录模式开放
   const external = config.mcp
-    ? new ExternalMcp(config.dataDir, { db, rooms, runs, host: plugins, assets, library })
+    ? new ExternalMcp(config.dataDir, { db, rooms, runs, host: plugins, assets, library, plans })
     : null
 
   const app = new Hono<AuthEnv>()
@@ -137,6 +142,7 @@ export async function createServer(config: Config): Promise<Server> {
     plugins,
     secrets,
     runs,
+    plans,
     agents,
     library,
     close() {

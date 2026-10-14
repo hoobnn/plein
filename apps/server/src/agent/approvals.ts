@@ -59,6 +59,12 @@ export function approvalFor(
     const what = { image: '分镜图', video: '镜头视频', speech: '配音' }[String(input.role)] ?? ''
     return { reason: `批量生成${name(board)}的${what}`, ids: [board] }
   }
+  // 智能体自己执行修改方案（没经过方案卡片）：要生成就先问，范围写进确认
+  if (cap.name === 'apply_edit_plan')
+    return {
+      reason: input.scope === 'images' ? '按修改方案生成候选图' : '按修改方案执行全部生成步骤',
+      ids: [],
+    }
   if (cap.name === 'run_flow') {
     const node = String(input.id)
     return {
@@ -95,7 +101,9 @@ export interface Approval extends ApprovalRequest {
   status: ApprovalStatus
   /** 批准后执行原调用的结果（MCP 工具结果） */
   result?: Promise<unknown>
-  run: () => Promise<unknown>
+  /** 用户批准时选的项（修改方案的批准范围） */
+  choice?: string
+  run: (choice?: string) => Promise<unknown>
   /** 状态变化时唤醒等待者 */
   wake: Set<() => void>
 }
@@ -106,7 +114,7 @@ export class Approvals {
 
   constructor(private onChange: (a: Approval) => void) {}
 
-  create(tool: string, req: ApprovalRequest, run: () => Promise<unknown>): Approval {
+  create(tool: string, req: ApprovalRequest, run: (choice?: string) => Promise<unknown>): Approval {
     const a: Approval = {
       id: newId('apv'),
       tool,
@@ -124,12 +132,13 @@ export class Approvals {
     return this.items.get(id)
   }
 
-  /** 用户点了允许 / 跳过；不是待确认状态时返回 false */
-  decide(id: string, allow: boolean): boolean {
+  /** 用户点了允许 / 跳过（允许时可带上选的项）；不是待确认状态时返回 false */
+  decide(id: string, allow: boolean, choice?: string): boolean {
     const a = this.items.get(id)
     if (a?.status !== 'pending') return false
     a.status = allow ? 'approved' : 'denied'
-    if (allow) a.result = a.run()
+    if (allow && choice !== undefined) a.choice = choice
+    if (allow) a.result = a.run(choice)
     this.settle(a)
     return true
   }

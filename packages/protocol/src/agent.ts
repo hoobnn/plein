@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { type EditPlan, EditScope } from './edit-plan'
 
 /**
  * 智能体：
@@ -114,6 +115,19 @@ export type AgentItem =
     }
   | {
       id: string
+      /**
+       * 修改方案：用户按范围批准（只改文字 / 只出候选图 / 完整方案）后服务端执行。
+       * id 是确认单 id，plan 是方案的最新状态
+       */
+      type: 'edit_plan'
+      plan: EditPlan
+      status: 'pending' | 'approved' | 'denied' | 'expired'
+      /** 用户批准的范围 */
+      scope?: EditScope
+      at: number
+    }
+  | {
+      id: string
       /** 等用户确认的操作：允许后服务端直接执行 */
       type: 'approval'
       tool: string
@@ -152,6 +166,13 @@ export const SendAgentMessage = z.object({
   access: AgentAccess.optional(),
 })
 export type SendAgentMessage = z.infer<typeof SendAgentMessage>
+
+/** 用户处理一张确认单；修改方案的卡片允许时带上批准范围 */
+export const DecideAgentApproval = z.object({
+  allow: z.boolean(),
+  scope: EditScope.optional(),
+})
+export type DecideAgentApproval = z.infer<typeof DecideAgentApproval>
 
 /** 会话事件流（SSE）：先推一次完整会话，之后推增量 */
 export type AgentEvent =

@@ -12,16 +12,20 @@ import type {
   AgentSession,
   AgentSessionSummary,
   AgentStatus,
+  EditPlan,
+  EditScope,
 } from '@plein/protocol'
 import { type ChatMessage, ProviderError } from '@plein/plugin-sdk'
 import type { AssetStore } from '../assets/store'
 import type { PluginHost } from '../plugins/host'
+import type { EditPlans } from '../runs/edit-plan'
 import type { NodeRuns } from '../runs/runs'
 import type { LibraryStore } from '../library/store'
 import type { DB } from '../storage/db'
 import { agentSessions } from '../storage/schema'
 import type { Rooms } from '../sync/rooms'
-import { Approvals } from './approvals'
+import { type Approval, Approvals } from './approvals'
+import { PROPOSE_EDIT } from './edit-plan'
 import { AgentPlan, PLAN_TOOL } from './plan'
 import { AgentChanges } from './changes'
 import { type CliEnvironment, detectClis, type ResolvedCli } from './cli'
@@ -51,6 +55,7 @@ const INSTRUCTIONS = `你是 Plein 的创作助手。Plein 是一块 AI 无限�
 - 生成视频、整组运行（run_frame / run_flow / run_storyboard）、删除用户已有的东西等操作可能返回 needs_approval：用一句话告诉用户在等什么确认，然后调用 await_approval；用户允许后会直接执行并返回结果，不要重复调用原工具。
 - 每一轮的改动用户都能一键撤销，所以可以放手搭建；但不要删除用户没让删的东西。
 - 任务较大（要建很多节点、运行多次或花不少钱）时，先用 propose_plan 列出步骤请用户同意，执行中用 update_plan 逐步打勾。
+- 修改已有的镜头或节点（如“让第三镜头更紧张”“这句台词改一下”）时，先用 propose_edit 给出修改方案：写明每个目标节点要改的参数，用户会在方案卡片上选只改文字、只出候选图或完整方案，调用 await_approval 等结果，不要自己改参数再运行。
 - 做完后用 ui_focus 把用户的镜头带到主要结果上。
 - 做短剧时优先用现成流程：place_drama_template 铺骨架，extract_cast 把抽取结果建成设定卡，expand_storyboard 把分镜展开成镜头节点，run_storyboard 批量生成，分镜改过后用 sync_storyboard 同步。需要角色、场景时先 search_library 看资产库里有没有，有就 place_library_item，满意的设定卡可以 save_to_library。写提示词可以先 list_presets / apply_preset 套模板，再用 rewrite_prompt 润色。
 - 角色参考图 + 声音做视频时，常见做法：生成图片节点出关键帧 → 生成视频节点（首帧）出画面 → 配音节点出台词 → 序列节点把镜头和对白合成为成片。
@@ -92,6 +97,8 @@ export interface AgentDeps {
   runs: NodeRuns
   host: PluginHost
   assets: AssetStore
+  /** 修改方案（三种入口共用一份） */
+  plans?: EditPlans
   dataDir: string
   /** 本机免登录模式才允许：调用 CLI 等于在服务端所在机器上以当前用户身份执行 */
   enabled: boolean
@@ -200,10 +207,10 @@ export class AgentSessions {
   }
 
   /** 用户允许或跳过一张确认单；允许后立即执行原调用 */
-  decide(id: string, ownerId: string, approvalId: string, allow: boolean) {
+  decide(id: string, ownerId: string, approvalId: string, allow: boolean, scope?: EditScope) {
     const s = this.load(id)
     if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
-    if (!s.approvals.decide(approvalId, allow))
+    if (!s.approvals.decide(approvalId, allow, scope))
       throw new AgentError('not_undoable', '这个确认已经处理过或过期了')
   }
 
@@ -623,8 +630,9 @@ export class AgentSessions {
     )
     const plan = new AgentPlan((item) => this.push(s, item))
     const approvals = new Approvals((a) => {
-      // 计划的确认单显示成计划卡片
+      // 计划的确认单显示成计划卡片，修改方案的显示成方案卡片
       if (a.tool === PLAN_TOOL) return plan.onApproval(a)
+      if (a.tool === PROPOSE_EDIT) return this.editPlanDecided(s, a)
       this.push(s, {
         id: a.id,
         type: 'approval',
@@ -644,6 +652,7 @@ export class AgentSessions {
         host,
         assets,
         library,
+        plans: this.deps.plans,
         origin: changes.origin,
         onRun: (nodeId, runId) => changes.recordRun(nodeId, runId),
         onGroup: (groupId) => changes.recordGroup(groupId),
@@ -653,7 +662,13 @@ export class AgentSessions {
           return true
         },
       },
-      { changes, approvals, mode: () => s.mode, plan },
+      {
+        changes,
+        approvals,
+        mode: () => s.mode,
+        plan,
+        onEditPlan: (approvalId, p) => this.showEditPlan(s, approvalId, p),
+      },
     )
     const mcp = new McpServer(
       { name: 'plein', version: '0.1.0', instructions: '操作用户当前打开的 Plein 画布' },
@@ -667,7 +682,8 @@ export class AgentSessions {
     items = items.map((it) =>
       it.type === 'changes' && it.undoable
         ? { ...it, undoable: false }
-        : (it.type === 'approval' || it.type === 'plan') && it.status === 'pending'
+        : (it.type === 'approval' || it.type === 'plan' || it.type === 'edit_plan') &&
+            it.status === 'pending'
           ? { ...it, status: 'expired' }
           : it,
     )
@@ -693,6 +709,30 @@ export class AgentSessions {
     this.live.set(id, s)
     this.byToken.set(token, s)
     return s
+  }
+
+  /** 方案卡片：出现时和方案执行完后刷新 */
+  private showEditPlan(s: Live, approvalId: string, plan: EditPlan) {
+    const a = s.approvals.get(approvalId)
+    const prev = s.items.find((i) => i.id === approvalId)
+    this.push(s, {
+      id: approvalId,
+      type: 'edit_plan',
+      plan,
+      status: a?.status ?? 'pending',
+      ...(a?.choice ? { scope: a.choice as EditScope } : {}),
+      at: prev?.at ?? Date.now(),
+    })
+  }
+
+  /** 方案卡片的确认单状态变了：没采用、作废时方案跟着作废 */
+  private editPlanDecided(s: Live, a: Approval) {
+    const item = s.items.find((i) => i.id === a.id)
+    if (item?.type !== 'edit_plan') return
+    const plans = this.deps.plans
+    if (a.status === 'denied' || a.status === 'expired')
+      plans?.settle(item.plan.id, s.row.owner_id, a.status)
+    this.showEditPlan(s, a.id, plans?.get(item.plan.id, s.row.owner_id) ?? item.plan)
   }
 
   private drop(s: Live) {
