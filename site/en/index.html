@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plein — Local-first AI infinite canvas for short drama</title>
+    <meta
+      name="description"
+      content="Plein is an open-source, local-first AI tool for making short dramas. Script, characters, storyboard, shots, voiceover and the final cut all live on one infinite canvas, and every step can be reviewed, edited and re-run on its own."
+    />
+    <link rel="canonical" href="https://plein.ikuyu.com/en/" />
+    <link rel="alternate" hreflang="zh-CN" href="https://plein.ikuyu.com/" />
+    <link rel="alternate" hreflang="en" href="https://plein.ikuyu.com/en/" />
+    <link rel="alternate" hreflang="x-default" href="https://plein.ikuyu.com/" />
+    <meta name="theme-color" content="#f3f4f1" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Plein" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="zh_CN" />
+    <meta property="og:url" content="https://plein.ikuyu.com/en/" />
+    <meta property="og:title" content="Plein — Local-first AI infinite canvas for short drama" />
+    <meta
+      property="og:description"
+      content="Script, storyboard, shots, voiceover and the final cut on one canvas. Open source, runs on your machine."
+    />
+    <meta property="og:image" content="https://plein.ikuyu.com/og.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/style.css" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Plein",
+        "alternateName": "Plein AI short drama canvas",
+        "description": "A local-first AI infinite canvas for short drama: script, storyboard, shots, voiceover and the final cut on one canvas.",
+        "url": "https://plein.ikuyu.com/en/",
+        "image": "https://plein.ikuyu.com/og.png",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "macOS 12+ (Apple silicon), Docker",
+        "downloadUrl": "https://github.com/hoobnn/plein/releases/latest",
+        "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@type": "Person", "name": "hoobnn", "url": "https://github.com/hoobnn" },
+        "sameAs": ["https://github.com/hoobnn/plein"],
+        "inLanguage": "en"
+      }
+    </script>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="wave" viewBox="0 0 112 40" fill="currentColor">
+        <rect x="0" y="2.9" width="1.2" height="34.2" rx=".6" />
+        <rect x="2" y="7.6" width="1.2" height="24.8" rx=".6" />
+        <rect x="4" y="10.6" width="1.2" height="18.7" rx=".6" />
+        <rect x="6" y="17.7" width="1.2" height="4.7" rx=".6" />
+        <rect x="8" y="16.8" width="1.2" height="6.5" rx=".6" />
+        <rect x="10" y="17.1" width="1.2" height="5.8" rx=".6" />
+        <rect x="12" y="15.9" width="1.2" height="8.3" rx=".6" />
+        <rect x="14" y="15.9" width="1.2" height="8.3" rx=".6" />
+        <rect x="16" y="17.7" width="1.2" height="4.7" rx=".6" />
+        <rect x="18" y="13.3" width="1.2" height="13.3" rx=".6" />
+        <rect x="20" y="14.2" width="1.2" height="11.5" rx=".6" />
+        <rect x="22" y="12.4" width="1.2" height="15.1" rx=".6" />
+        <rect x="24" y="11.2" width="1.2" height="17.6" rx=".6" />
+        <rect x="26" y="12.1" width="1.2" height="15.8" rx=".6" />
+        <rect x="28" y="13.2" width="1.2" height="13.7" rx=".6" />
+        <rect x="30" y="13.0" width="1.2" height="14.0" rx=".6" />
+        <rect x="32" y="8.8" width="1.2" height="22.3" rx=".6" />
+        <rect x="34" y="8.7" width="1.2" height="22.7" rx=".6" />
+        <rect x="36" y="13.0" width="1.2" height="14.0" rx=".6" />
+        <rect x="38" y="16.0" width="1.2" height="7.9" rx=".6" />
+        <rect x="40" y="15.9" width="1.2" height="8.3" rx=".6" />
+        <rect x="42" y="15.7" width="1.2" height="8.6" rx=".6" />
+        <rect x="44" y="15.0" width="1.2" height="10.1" rx=".6" />
+        <rect x="46" y="14.2" width="1.2" height="11.5" rx=".6" />
+        <rect x="48" y="13.2" width="1.2" height="13.7" rx=".6" />
+        <rect x="50" y="14.6" width="1.2" height="10.8" rx=".6" />
+        <rect x="52" y="8.1" width="1.2" height="23.8" rx=".6" />
+        <rect x="54" y="2.0" width="1.2" height="36.0" rx=".6" />
+        <rect x="56" y="4.0" width="1.2" height="32.0" rx=".6" />
+        <rect x="58" y="4.7" width="1.2" height="30.6" rx=".6" />
+        <rect x="60" y="7.6" width="1.2" height="24.8" rx=".6" />
+        <rect x="62" y="8.8" width="1.2" height="22.3" rx=".6" />
+        <rect x="64" y="10.8" width="1.2" height="18.4" rx=".6" />
+        <rect x="66" y="14.8" width="1.2" height="10.4" rx=".6" />
+        <rect x="68" y="7.2" width="1.2" height="25.6" rx=".6" />
+        <rect x="70" y="6.1" width="1.2" height="27.7" rx=".6" />
+        <rect x="72" y="14.1" width="1.2" height="11.9" rx=".6" />
+        <rect x="74" y="14.6" width="1.2" height="10.8" rx=".6" />
+        <rect x="76" y="14.1" width="1.2" height="11.9" rx=".6" />
+        <rect x="78" y="13.0" width="1.2" height="14.0" rx=".6" />
+        <rect x="80" y="12.3" width="1.2" height="15.5" rx=".6" />
+        <rect x="82" y="12.4" width="1.2" height="15.1" rx=".6" />
+        <rect x="84" y="13.5" width="1.2" height="13.0" rx=".6" />
+        <rect x="86" y="12.8" width="1.2" height="14.4" rx=".6" />
+        <rect x="88" y="12.4" width="1.2" height="15.1" rx=".6" />
+        <rect x="90" y="13.7" width="1.2" height="12.6" rx=".6" />
+        <rect x="92" y="16.2" width="1.2" height="7.6" rx=".6" />
+        <rect x="94" y="15.7" width="1.2" height="8.6" rx=".6" />
+        <rect x="96" y="13.9" width="1.2" height="12.2" rx=".6" />
+        <rect x="98" y="12.8" width="1.2" height="14.4" rx=".6" />
+        <rect x="100" y="4.2" width="1.2" height="31.7" rx=".6" />
+        <rect x="102" y="7.4" width="1.2" height="25.2" rx=".6" />
+        <rect x="104" y="12.1" width="1.2" height="15.8" rx=".6" />
+        <rect x="106" y="15.0" width="1.2" height="10.1" rx=".6" />
+        <rect x="108" y="15.3" width="1.2" height="9.4" rx=".6" />
+        <rect x="110" y="12.3" width="1.2" height="15.5" rx=".6" />
+      </symbol>
+    </svg>
+
+    <div class="wrap">
+      <header class="top">
+        <a class="brand" href="/en/"><img src="/icon.png" alt="" width="36" height="36" />Plein</a>
+        <nav>
+          <a class="hide-sm" href="#sample">Sample</a>
+          <a class="hide-sm" href="#download">Download</a>
+          <a href="https://github.com/hoobnn/plein">GitHub</a>
+          <a href="/" hreflang="zh-CN" lang="zh-CN">简体中文</a>
+        </nav>
+      </header>
+
+      <main>
+        <div class="hero">
+          <div>
+            <h1><span>Lay out a whole</span><span>short drama on</span><span>one canvas</span></h1>
+            <p class="lead">
+              Plein is a local-first AI infinite canvas for short drama. Script, characters,
+              storyboard, shots, voiceover and the final cut are wired-up nodes on one canvas. Every
+              step stays visible and editable, and if one shot is off you redo just that shot.
+            </p>
+            <div class="actions">
+              <a class="btn btn-primary" href="https://github.com/hoobnn/plein/releases/latest"
+                >Download for macOS</a
+              >
+              <a class="btn btn-ghost" href="https://github.com/hoobnn/plein"
+                >View source on GitHub</a
+              >
+            </div>
+            <p class="note">
+              Free and open source. Runs on Apple silicon Macs, or self-host it with Docker. The app
+              UI is in Simplified Chinese for now.
+            </p>
+          </div>
+
+          <figure
+            class="board"
+            aria-label="A Plein canvas: script, character, shots and voiceover wired into the final cut"
+          >
+            <svg class="wires" aria-hidden="true">
+              <path class="t-text" stroke="currentColor" pathLength="1" />
+              <path class="t-media" stroke="currentColor" pathLength="1" />
+              <path class="t-media" stroke="currentColor" pathLength="1" />
+              <path class="t-audio" stroke="currentColor" pathLength="1" />
+            </svg>
+
+            <div class="node n-script">
+              <div class="node-head t-text"><i></i>Script</div>
+              <div class="node-body">
+                <p>A note slips out of the folded newspaper.</p>
+                <p>It reads: it wasn't suicide.</p>
+              </div>
+              <span class="port out t-text"></span>
+            </div>
+
+            <div class="node n-character">
+              <div class="node-head t-media"><i></i>Character · Lin Wan</div>
+              <div class="node-body">
+                <img
+                  src="/media/character.jpg"
+                  alt="Character sheet for Lin Wan: front, side, back and props"
+                  width="900"
+                  height="506"
+                />
+              </div>
+              <span class="port out t-media"></span>
+            </div>
+
+            <div class="node n-shots">
+              <div class="node-head t-media"><i></i>Shot images</div>
+              <div class="node-body shots3">
+                <img
+                  src="/media/shot-1.jpg"
+                  alt="On a rainy rooftop, Old Zhou stops Lin Wan"
+                  width="360"
+                  height="640"
+                />
+                <img
+                  src="/media/shot-3.jpg"
+                  alt="A badge, old newspaper and note inside the iron box"
+                  width="360"
+                  height="640"
+                />
+                <img
+                  src="/media/shot-5.jpg"
+                  alt="A man in black reaches for the iron box"
+                  width="360"
+                  height="640"
+                />
+              </div>
+              <span class="port out t-media"></span>
+            </div>
+
+            <div class="node n-voice">
+              <div class="node-head t-audio"><i></i>Voice · Lin Wan</div>
+              <div class="node-body">
+                <svg aria-hidden="true"><use href="#wave" /></svg>
+              </div>
+              <span class="port out t-audio"></span>
+            </div>
+
+            <div class="node n-final">
+              <div class="node-head t-media"><i></i>Final cut · 28 s</div>
+              <div class="node-body player">
+                <video
+                  src="/media/final.mp4"
+                  poster="/media/final.jpg"
+                  width="576"
+                  height="1024"
+                  autoplay
+                  muted
+                  loop
+                  playsinline
+                  preload="metadata"
+                  aria-label="Sample vertical short drama made with Plein, with Chinese dialogue and subtitles"
+                ></video>
+                <button
+                  class="sound"
+                  type="button"
+                  aria-pressed="false"
+                  data-on="Sound on"
+                  data-off="Sound off"
+                >
+                  Sound on
+                </button>
+              </div>
+              <span class="port in t-media"></span>
+            </div>
+          </figure>
+        </div>
+      </main>
+    </div>
+
+    <section id="sample">
+      <div class="wrap">
+        <h2>How the sample was made</h2>
+        <p class="sub">
+          The clip above, "It Wasn't Suicide", started from a one-line idea and went through seven
+          steps on one canvas. Every result stays on the canvas, can be edited on its own, and
+          downstream nodes show what needs a re-run.
+        </p>
+      </div>
+
+      <ol
+        class="chain"
+        tabindex="0"
+        aria-label="Steps used to make the sample, scrolls horizontally"
+      >
+        <li class="step step-idea">
+          <header><b>Idea</b><span>Step 1</span></header>
+          <div class="body">
+            <p>
+              On a rainy rooftop, a courier finds a locked iron box and is pulled into an old case.
+            </p>
+          </div>
+        </li>
+
+        <li class="step step-script">
+          <header><b>Script</b><span>Step 2</span></header>
+          <div class="body">
+            <p>
+              A chat model writes a vertical script scene by scene: conflict in the first three
+              seconds, a hook at the end.
+            </p>
+            <p>The note reads: <em>it wasn't suicide.</em></p>
+          </div>
+        </li>
+
+        <li class="step step-cards">
+          <header><b>Setting cards</b><span>Step 3</span></header>
+          <div class="body cards2">
+            <img
+              src="/media/character.jpg"
+              alt="Character sheet for Lin Wan"
+              width="900"
+              height="506"
+              loading="lazy"
+            />
+            <img
+              src="/media/prop.jpg"
+              alt="Key prop: the iron box"
+              width="560"
+              height="560"
+              loading="lazy"
+            />
+          </div>
+        </li>
+
+        <li class="step step-board">
+          <header><b>Storyboard</b><span>Step 4</span></header>
+          <div class="body">
+            <table>
+              <thead>
+                <tr>
+                  <th>Visual</th>
+                  <th>Line</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Rooftop, a man in black closes in</td>
+                  <td>Who are you?</td>
+                </tr>
+                <tr>
+                  <td>A note falls from the box</td>
+                  <td>—</td>
+                </tr>
+                <tr>
+                  <td>Outside her flat</td>
+                  <td>Wanwan, open the door.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </li>
+
+        <li class="step step-shots">
+          <header><b>Shots</b><span>Step 5</span></header>
+          <div class="body shots6">
+            <img
+              src="/media/shot-1.jpg"
+              alt="Old Zhou stops Lin Wan on the rooftop"
+              width="360"
+              height="640"
+              loading="lazy"
+            />
+            <img
+              src="/media/shot-2.jpg"
+              alt="Lin Wan crouches to pick up the iron box"
+              width="360"
+              height="640"
+              loading="lazy"
+            />
+            <img
+              src="/media/shot-3.jpg"
+              alt="A badge and note inside the iron box"
+              width="360"
+              height="640"
+              loading="lazy"
+            />
+            <img
+              src="/media/shot-4.jpg"
+              alt="Lin Wan at her door, Old Zhou at the end of the hallway"
+              width="360"
+              height="640"
+              loading="lazy"
+            />
+            <img
+              src="/media/shot-5.jpg"
+              alt="A man in black reaches for the iron box"
+              width="360"
+              height="640"
+              loading="lazy"
+            />
+            <img
+              src="/media/shot-6.jpg"
+              alt="The doorbell lights up as an old phone gets a text"
+              width="360"
+              height="640"
+              loading="lazy"
+            />
+          </div>
+        </li>
+
+        <li class="step step-voice">
+          <header><b>Voiceover</b><span>Step 6</span></header>
+          <div class="body">
+            <svg aria-hidden="true"><use href="#wave" /></svg>
+            <p class="line">
+              Each line is voiced with the character's bound voice and can be redone line by line.
+            </p>
+          </div>
+        </li>
+
+        <li class="step step-final">
+          <header><b>Final cut</b><span>Step 7</span></header>
+          <div class="body">
+            <p>
+              The sequence editor lines up shots, dialogue and subtitles, then exports a vertical
+              MP4.
+            </p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="wrap">
+        <p class="chain-note">
+          Generated with Alibaba Cloud Model Studio and Doubao Speech, with no post-production on
+          picture or sound.
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>Why Plein</h2>
+        <dl class="reasons">
+          <div style="--wire: var(--wire-text)">
+            <dt>Review before you spend</dt>
+            <dd>
+              Inserting the short drama template only builds the skeleton and never calls a model on
+              its own. Review the storyboard and shot images first, then generate video and
+              voiceover in batches.
+            </dd>
+          </div>
+          <div style="--wire: var(--wire-media)">
+            <dt>Change one thing, redo one thing</dt>
+            <dd>
+              Any shot can switch candidates, regenerate or be replaced by hand. Unchanged nodes hit
+              the cache, so you never pay twice.
+            </dd>
+          </div>
+          <div style="--wire: var(--wire-audio)">
+            <dt>Your data stays on your machine</dt>
+            <dd>
+              One local server, one SQLite file, one asset folder. API keys stay on your machine and
+              never reach the browser.
+            </dd>
+          </div>
+          <div style="--wire: var(--mascot)">
+            <dt>Let AI click the buttons</dt>
+            <dd>
+              The built-in agent reads the canvas, creates nodes and runs the storyboard. You can
+              also hand the work to Claude Code or Codex on your machine, or drive the canvas from
+              Cursor over MCP.
+            </dd>
+          </div>
+        </dl>
+        <p class="platforms">
+          Works with <strong>Volcengine Ark</strong>, <strong>Doubao Speech</strong>,
+          <strong>Alibaba Cloud Model Studio</strong> and <strong>MiniMax</strong>. Node parameters
+          adapt to the model you pick.
+        </p>
+      </div>
+    </section>
+
+    <section id="download">
+      <div class="wrap">
+        <h2>Get started</h2>
+        <div class="get">
+          <div>
+            <h3>macOS app</h3>
+            <p>
+              For Apple silicon Macs. Signed and notarized by Apple, ships with ffmpeg, and updates
+              itself.
+            </p>
+            <a class="btn btn-primary" href="https://github.com/hoobnn/plein/releases/latest"
+              >Download installer</a
+            >
+          </div>
+          <div>
+            <h3>Self-host with Docker</h3>
+            <p>Run it on your own computer or server, then open localhost:8787.</p>
+            <div class="cmd">
+              <pre>
+git clone https://github.com/hoobnn/plein.git &amp;&amp; cd plein &amp;&amp; docker compose up -d</pre>
+              <button type="button" data-label="Copy" data-done="Copied" data-fail="Copy manually">
+                Copy
+              </button>
+            </div>
+          </div>
+          <div>
+            <h3>Source</h3>
+            <p>
+              Open source under AGPL-3.0. Issues and plugins for new model platforms and nodes are
+              welcome.
+            </p>
+            <a class="btn btn-ghost" href="https://github.com/hoobnn/plein">Open the GitHub repo</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="wrap">
+        <p>Plein is open source under the GNU AGPL-3.0.</p>
+        <p>
+          <a href="https://github.com/hoobnn/plein">GitHub</a>
+          <a href="https://www.ikuyu.com/">Author's blog</a>
+          <a href="/" hreflang="zh-CN" lang="zh-CN">简体中文</a>
+        </p>
+      </div>
+    </footer>
+
+    <script src="/site.js" defer></script>
+  </body>
+</html>

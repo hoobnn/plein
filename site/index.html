@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Plein — 本地优先的 AI 无限画布，为短剧创作而生</title>
+    <meta
+      name="description"
+      content="Plein 是开源、本地运行的 AI 短剧创作工具：剧本、角色、分镜、镜头、配音到成片都在一张无限画布上完成，每一步可看可改、可单独返工。支持火山方舟、豆包语音、阿里云百炼、MiniMax。"
+    />
+    <link rel="canonical" href="https://plein.ikuyu.com/" />
+    <link rel="alternate" hreflang="zh-CN" href="https://plein.ikuyu.com/" />
+    <link rel="alternate" hreflang="en" href="https://plein.ikuyu.com/en/" />
+    <link rel="alternate" hreflang="x-default" href="https://plein.ikuyu.com/" />
+    <meta name="theme-color" content="#f3f4f1" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Plein" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:locale:alternate" content="en_US" />
+    <meta property="og:url" content="https://plein.ikuyu.com/" />
+    <meta property="og:title" content="Plein — 本地优先的 AI 无限画布，为短剧创作而生" />
+    <meta
+      property="og:description"
+      content="剧本、角色、分镜、镜头、配音到成片，都在一张画布上完成。开源，本地运行。"
+    />
+    <meta property="og:image" content="https://plein.ikuyu.com/og.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="stylesheet" href="/style.css" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Plein",
+        "alternateName": "Plein AI 短剧画布",
+        "description": "本地优先的 AI 无限画布，为短剧创作而生：剧本、分镜、镜头、配音到成片都在一张画布上完成。",
+        "url": "https://plein.ikuyu.com/",
+        "image": "https://plein.ikuyu.com/og.png",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "macOS 12+ (Apple silicon), Docker",
+        "downloadUrl": "https://github.com/hoobnn/plein/releases/latest",
+        "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CNY" },
+        "author": { "@type": "Person", "name": "hoobnn", "url": "https://github.com/hoobnn" },
+        "sameAs": ["https://github.com/hoobnn/plein"],
+        "inLanguage": "zh-CN"
+      }
+    </script>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="wave" viewBox="0 0 112 40" fill="currentColor">
+        <rect x="0" y="2.9" width="1.2" height="34.2" rx=".6" />
+        <rect x="2" y="7.6" width="1.2" height="24.8" rx=".6" />
+        <rect x="4" y="10.6" width="1.2" height="18.7" rx=".6" />
+        <rect x="6" y="17.7" width="1.2" height="4.7" rx=".6" />
+        <rect x="8" y="16.8" width="1.2" height="6.5" rx=".6" />
+        <rect x="10" y="17.1" width="1.2" height="5.8" rx=".6" />
+        <rect x="12" y="15.9" width="1.2" height="8.3" rx=".6" />
+        <rect x="14" y="15.9" width="1.2" height="8.3" rx=".6" />
+        <rect x="16" y="17.7" width="1.2" height="4.7" rx=".6" />
+        <rect x="18" y="13.3" width="1.2" height="13.3" rx=".6" />
+        <rect x="20" y="14.2" width="1.2" height="11.5" rx=".6" />
+        <rect x="22" y="12.4" width="1.2" height="15.1" rx=".6" />
+        <rect x="24" y="11.2" width="1.2" height="17.6" rx=".6" />
+        <rect x="26" y="12.1" width="1.2" height="15.8" rx=".6" />
+        <rect x="28" y="13.2" width="1.2" height="13.7" rx=".6" />
+        <rect x="30" y="13.0" width="1.2" height="14.0" rx=".6" />
+        <rect x="32" y="8.8" width="1.2" height="22.3" rx=".6" />
+        <rect x="34" y="8.7" width="1.2" height="22.7" rx=".6" />
+        <rect x="36" y="13.0" width="1.2" height="14.0" rx=".6" />
+        <rect x="38" y="16.0" width="1.2" height="7.9" rx=".6" />
+        <rect x="40" y="15.9" width="1.2" height="8.3" rx=".6" />
+        <rect x="42" y="15.7" width="1.2" height="8.6" rx=".6" />
+        <rect x="44" y="15.0" width="1.2" height="10.1" rx=".6" />
+        <rect x="46" y="14.2" width="1.2" height="11.5" rx=".6" />
+        <rect x="48" y="13.2" width="1.2" height="13.7" rx=".6" />
+        <rect x="50" y="14.6" width="1.2" height="10.8" rx=".6" />
+        <rect x="52" y="8.1" width="1.2" height="23.8" rx=".6" />
+        <rect x="54" y="2.0" width="1.2" height="36.0" rx=".6" />
+        <rect x="56" y="4.0" width="1.2" height="32.0" rx=".6" />
+        <rect x="58" y="4.7" width="1.2" height="30.6" rx=".6" />
+        <rect x="60" y="7.6" width="1.2" height="24.8" rx=".6" />
+        <rect x="62" y="8.8" width="1.2" height="22.3" rx=".6" />
+        <rect x="64" y="10.8" width="1.2" height="18.4" rx=".6" />
+        <rect x="66" y="14.8" width="1.2" height="10.4" rx=".6" />
+        <rect x="68" y="7.2" width="1.2" height="25.6" rx=".6" />
+        <rect x="70" y="6.1" width="1.2" height="27.7" rx=".6" />
+        <rect x="72" y="14.1" width="1.2" height="11.9" rx=".6" />
+        <rect x="74" y="14.6" width="1.2" height="10.8" rx=".6" />
+        <rect x="76" y="14.1" width="1.2" height="11.9" rx=".6" />
+        <rect x="78" y="13.0" width="1.2" height="14.0" rx=".6" />
+        <rect x="80" y="12.3" width="1.2" height="15.5" rx=".6" />
+        <rect x="82" y="12.4" width="1.2" height="15.1" rx=".6" />
+        <rect x="84" y="13.5" width="1.2" height="13.0" rx=".6" />
+        <rect x="86" y="12.8" width="1.2" height="14.4" rx=".6" />
+        <rect x="88" y="12.4" width="1.2" height="15.1" rx=".6" />
+        <rect x="90" y="13.7" width="1.2" height="12.6" rx=".6" />
+        <rect x="92" y="16.2" width="1.2" height="7.6" rx=".6" />
+        <rect x="94" y="15.7" width="1.2" height="8.6" rx=".6" />
+        <rect x="96" y="13.9" width="1.2" height="12.2" rx=".6" />
+        <rect x="98" y="12.8" width="1.2" height="14.4" rx=".6" />
+        <rect x="100" y="4.2" width="1.2" height="31.7" rx=".6" />
+        <rect x="102" y="7.4" width="1.2" height="25.2" rx=".6" />
+        <rect x="104" y="12.1" width="1.2" height="15.8" rx=".6" />
+        <rect x="106" y="15.0" width="1.2" height="10.1" rx=".6" />
+        <rect x="108" y="15.3" width="1.2" height="9.4" rx=".6" />
+        <rect x="110" y="12.3" width="1.2" height="15.5" rx=".6" />
+      </symbol>
+    </svg>
+
+    <div class="wrap">
+      <header class="top">
+        <a class="brand" href="/"><img src="/icon.png" alt="" width="36" height="36" />Plein</a>
+        <nav>
+          <a class="hide-sm" href="#sample">样片</a>
+          <a class="hide-sm" href="#download">下载</a>
+          <a href="https://github.com/hoobnn/plein">GitHub</a>
+          <a href="/en/" hreflang="en" lang="en">English</a>
+        </nav>
+      </header>
+
+      <main>
+        <div class="hero">
+          <div>
+            <h1><span>把一部短剧</span><span>摊在一张画布上</span></h1>
+            <p class="lead">
+              Plein 是本地优先的 AI
+              无限画布，为短剧创作而生。剧本、角色、分镜、镜头、配音和成片都是画布上连好线的节点，每一步都看得见、改得动，哪个镜头不满意就只重做那一个。
+            </p>
+            <div class="actions">
+              <a class="btn btn-primary" href="https://github.com/hoobnn/plein/releases/latest"
+                >下载 macOS 版</a
+              >
+              <a class="btn btn-ghost" href="https://github.com/hoobnn/plein">在 GitHub 查看源码</a>
+            </div>
+            <p class="note">免费开源，支持 Apple 芯片的 Mac，也可以用 Docker 自部署。</p>
+          </div>
+
+          <figure class="board" aria-label="Plein 画布示意：剧本、角色、镜头和配音连到成片">
+            <svg class="wires" aria-hidden="true">
+              <path class="t-text" stroke="currentColor" pathLength="1" />
+              <path class="t-media" stroke="currentColor" pathLength="1" />
+              <path class="t-media" stroke="currentColor" pathLength="1" />
+              <path class="t-audio" stroke="currentColor" pathLength="1" />
+            </svg>
+
+            <div class="node n-script">
+              <div class="node-head t-text"><i></i>剧本</div>
+              <div class="node-body">
+                <p>报纸夹层里掉出一张纸条。</p>
+                <p>纸条上写着：不是自杀。</p>
+              </div>
+              <span class="port out t-text"></span>
+            </div>
+
+            <div class="node n-character">
+              <div class="node-head t-media"><i></i>角色 · 林晚</div>
+              <div class="node-body">
+                <img
+                  src="/media/character.jpg"
+                  alt="角色林晚的设定图：正面、侧面、背面和道具"
+                  width="900"
+                  height="506"
+                />
+              </div>
+              <span class="port out t-media"></span>
+            </div>
+
+            <div class="node n-shots">
+              <div class="node-head t-media"><i></i>镜头图</div>
+              <div class="node-body shots3">
+                <img
+                  src="/media/shot-1.jpg"
+                  alt="雨夜天台，老周拦住林晚"
+                  width="360"
+                  height="640"
+                />
+                <img
+                  src="/media/shot-3.jpg"
+                  alt="铁盒里的工牌、旧报纸和纸条"
+                  width="360"
+                  height="640"
+                />
+                <img src="/media/shot-5.jpg" alt="黑衣人伸手去抢铁盒" width="360" height="640" />
+              </div>
+              <span class="port out t-media"></span>
+            </div>
+
+            <div class="node n-voice">
+              <div class="node-head t-audio"><i></i>配音 · 林晚</div>
+              <div class="node-body">
+                <svg aria-hidden="true"><use href="#wave" /></svg>
+              </div>
+              <span class="port out t-audio"></span>
+            </div>
+
+            <div class="node n-final">
+              <div class="node-head t-media"><i></i>成片 · 28 秒</div>
+              <div class="node-body player">
+                <video
+                  src="/media/final.mp4"
+                  poster="/media/final.jpg"
+                  width="576"
+                  height="1024"
+                  autoplay
+                  muted
+                  loop
+                  playsinline
+                  preload="metadata"
+                  aria-label="用 Plein 制作的竖屏短剧样片《不是自杀》"
+                ></video>
+                <button
+                  class="sound"
+                  type="button"
+                  aria-pressed="false"
+                  data-on="打开声音"
+                  data-off="关闭声音"
+                >
+                  打开声音
+                </button>
+              </div>
+              <span class="port in t-media"></span>
+            </div>
+          </figure>
+        </div>
+      </main>
+    </div>
+
+    <section id="sample">
+      <div class="wrap">
+        <h2>一部样片是这样做出来的</h2>
+        <p class="sub">
+          上面的《不是自杀》从一句创意开始，在一张画布上走完七步。每一步的产物都留在画布上，可以单独修改，下游会提示哪些需要重跑。
+        </p>
+      </div>
+
+      <ol class="chain" tabindex="0" aria-label="样片的制作步骤，可以横向滚动">
+        <li class="step step-idea">
+          <header><b>创意</b><span>第 1 步</span></header>
+          <div class="body">
+            <p>快递员在雨夜天台捡到一个上锁的铁盒，从此被卷进一桩旧案。</p>
+          </div>
+        </li>
+
+        <li class="step step-script">
+          <header><b>剧本</b><span>第 2 步</span></header>
+          <div class="body">
+            <p>对话模型按场次写成竖屏剧本，开头三秒有冲突，结尾留钩子。</p>
+            <p>纸条上写着：<em>不是自杀。</em></p>
+          </div>
+        </li>
+
+        <li class="step step-cards">
+          <header><b>设定卡</b><span>第 3 步</span></header>
+          <div class="body cards2">
+            <img
+              src="/media/character.jpg"
+              alt="角色林晚的设定图"
+              width="900"
+              height="506"
+              loading="lazy"
+            />
+            <img
+              src="/media/prop.jpg"
+              alt="关键道具：铁盒"
+              width="560"
+              height="560"
+              loading="lazy"
+            />
+          </div>
+        </li>
+
+        <li class="step step-board">
+          <header><b>分镜</b><span>第 4 步</span></header>
+          <div class="body">
+            <table>
+              <thead>
+                <tr>
+                  <th>画面</th>
+                  <th>台词</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>天台，黑衣人逼近</td>
+                  <td>你谁啊？</td>
+                </tr>
+                <tr>
+                  <td>铁盒里掉出纸条</td>
+                  <td>—</td>
+                </tr>
+                <tr>
+                  <td>出租屋门外</td>
+                  <td>晚晚，开门。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </li>
+
+        <li class="step step-shots">
+          <header><b>镜头</b><span>第 5 步</span></header>
+          <div class="body shots6">
+            <img
+              src="/media/shot-1.jpg"
+              alt="天台上老周拦住林晚"
+              width="360"
+              height="640"
+              loading="lazy"
+            />
+            <img
+              src="/media/shot-2.jpg"
+              alt="林晚蹲下捡起铁盒"
+              width="360"
+              height="640"
+              loading="lazy"
+            />
+            <img
+              src="/media/shot-3.jpg"
+              alt="铁盒里的工牌和纸条"
+              width="360"
+              height="640"
+              loading="lazy"
+            />
+            <img
+              src="/media/shot-4.jpg"
+              alt="林晚在出租屋门口，老周站在楼道尽头"
+              width="360"
+              height="640"
+              loading="lazy"
+            />
+            <img
+              src="/media/shot-5.jpg"
+              alt="黑衣人伸手去抢铁盒"
+              width="360"
+              height="640"
+              loading="lazy"
+            />
+            <img
+              src="/media/shot-6.jpg"
+              alt="门铃亮起，旧手机收到短信"
+              width="360"
+              height="640"
+              loading="lazy"
+            />
+          </div>
+        </li>
+
+        <li class="step step-voice">
+          <header><b>配音</b><span>第 6 步</span></header>
+          <div class="body">
+            <svg aria-hidden="true"><use href="#wave" /></svg>
+            <p class="line">每句台词按角色绑定的音色单独生成，可以逐句重配。</p>
+          </div>
+        </li>
+
+        <li class="step step-final">
+          <header><b>成片</b><span>第 7 步</span></header>
+          <div class="body">
+            <p>序列编辑器排好镜头、对白和字幕，导出竖屏 MP4。</p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="wrap">
+        <p class="chain-note">样片使用阿里云百炼和豆包语音生成，画面和声音均未经后期修饰。</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="wrap">
+        <h2>为什么用 Plein</h2>
+        <dl class="reasons">
+          <div style="--wire: var(--wire-text)">
+            <dt>先审再花钱</dt>
+            <dd>
+              插入短剧模板只搭骨架，不会自动调用模型。先审分镜和镜头图，再分批生成视频和配音。
+            </dd>
+          </div>
+          <div style="--wire: var(--wire-media)">
+            <dt>改一处，只重做一处</dt>
+            <dd>
+              任何一个镜头都能换候选、重新生成或手动替换。没改动的节点直接用缓存，不重复扣费。
+            </dd>
+          </div>
+          <div style="--wire: var(--wire-audio)">
+            <dt>数据在你自己电脑上</dt>
+            <dd>一个本地服务、一个 SQLite 文件、一个素材目录。平台密钥只存在本机，不进浏览器。</dd>
+          </div>
+          <div style="--wire: var(--mascot)">
+            <dt>让 AI 替你点按钮</dt>
+            <dd>
+              内置智能体「小满」能读画布、建节点、跑分镜；也可以交给本机的 Claude
+              Code、Codex，或通过 MCP 从 Cursor 操作画布。
+            </dd>
+          </div>
+        </dl>
+        <p class="platforms">
+          已接入
+          <strong>火山方舟</strong
+          >、<strong>豆包语音</strong>、<strong>阿里云百炼</strong>、<strong>MiniMax</strong>，节点参数按所选模型自动给出。
+        </p>
+      </div>
+    </section>
+
+    <section id="download">
+      <div class="wrap">
+        <h2>开始使用</h2>
+        <div class="get">
+          <div>
+            <h3>macOS 桌面版</h3>
+            <p>适用于 Apple 芯片的 Mac。已签名并经 Apple 公证，自带 ffmpeg，会自动检查更新。</p>
+            <a class="btn btn-primary" href="https://github.com/hoobnn/plein/releases/latest"
+              >下载安装包</a
+            >
+          </div>
+          <div>
+            <h3>Docker 自部署</h3>
+            <p>在自己的电脑或服务器上运行，打开 localhost:8787 使用。</p>
+            <div class="cmd">
+              <pre>
+git clone https://github.com/hoobnn/plein.git &amp;&amp; cd plein &amp;&amp; docker compose up -d</pre>
+              <button type="button" data-label="复制" data-done="已复制" data-fail="请手动复制">
+                复制
+              </button>
+            </div>
+          </div>
+          <div>
+            <h3>源码</h3>
+            <p>以 AGPL-3.0 开源。欢迎提 Issue，或参与开发新的模型平台和节点插件。</p>
+            <a class="btn btn-ghost" href="https://github.com/hoobnn/plein">打开 GitHub 仓库</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="wrap">
+        <p>Plein 以 GNU AGPL-3.0 许可证开源。</p>
+        <p>
+          <a href="https://github.com/hoobnn/plein">GitHub</a>
+          <a href="https://www.ikuyu.com/">作者博客</a>
+          <a href="/en/" hreflang="en" lang="en">English</a>
+        </p>
+      </div>
+    </footer>
+
+    <script src="/site.js" defer></script>
+  </body>
+</html>
