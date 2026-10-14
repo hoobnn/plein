@@ -161,12 +161,16 @@ function composeArgs(
     mix.push(`[m${j}]`)
   })
   // normalize=0：各轨按设定音量叠加，不因轨数多而整体变小；
-  // 响度标准化到 -14 LUFS（单遍动态模式，自带真峰值限制），loudnorm 内部升采样，再降回来
-  const master = spec.loudnorm
-    ? `loudnorm=I=-14:TP=-1.5:LRA=11,aresample=${RATE}`
-    : mix.length > 1
-      ? 'alimiter=limit=0.95'
-      : 'anull'
+  // 响度标准化到 -14 LUFS（单遍动态模式，自带真峰值限制），loudnorm 内部升采样，再降回来。
+  // 整条都是补的静音时不标准化：loudnorm 会把纯静音放大成极大的样本值，aac 编码直接失败
+  const audible =
+    mix.length > 1 || spec.clips.some((c, i) => infos.clips[i]?.hasAudio && c.volume > 0)
+  const master =
+    spec.loudnorm && audible
+      ? `loudnorm=I=-14:TP=-1.5:LRA=11,aresample=${RATE}`
+      : mix.length > 1
+        ? 'alimiter=limit=0.95'
+        : 'anull'
   filters.push(
     mix.length > 1
       ? `${mix.join('')}amix=inputs=${mix.length}:duration=first:dropout_transition=0:normalize=0,${master}[aout]`

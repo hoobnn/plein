@@ -86,4 +86,29 @@ describe.skipIf(!ffmpeg)('composeVideo', () => {
     expect(integrated).toBeGreaterThan(-17)
     expect(integrated).toBeLessThan(-11)
   }, 60_000)
+
+  it('画面都没有声音、也没有配音配乐时开着响度标准化也能合成', async () => {
+    const dir = tempDir()
+    const clip = join(dir, 'silent.mp4')
+    ff('-f', 'lavfi', '-i', 'testsrc2=s=160x120:d=1:r=25', '-c:v', 'libx264', clip)
+    const spec: ComposeSpec = {
+      width: 160,
+      height: 120,
+      fps: 25,
+      clips: [0, 1].map(() => ({ asset: ref('a', 'video'), in: 0, volume: 1 })),
+      audio: [],
+      loudnorm: true,
+    }
+    const info = { duration: 1, hasVideo: true, hasAudio: false }
+    const out = await composeVideo(
+      spec,
+      { clips: [clip, clip], audio: [] },
+      { clips: [info, info] },
+      dir,
+      {
+        signal: new AbortController().signal,
+      },
+    )
+    expect((await probeMedia(out.file)).hasAudio).toBe(true)
+  }, 60_000)
 })
