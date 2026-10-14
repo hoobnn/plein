@@ -349,6 +349,11 @@ export class Rooms {
     return this.rooms.has(id)
   }
 
+  /** 本次运行中删除过的画布 id：不能再拿来建画布（项目包导入时视为冲突） */
+  wasDropped(id: string) {
+    return this.dropped.has(id)
+  }
+
   /** 画布被删除时通知（停止它的任务和智能体会话） */
   onDrop(fn: (id: string) => void): () => void {
     this.dropListeners.add(fn)

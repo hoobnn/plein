@@ -6,7 +6,7 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { Asset, AssetKind, AssetVariant } from '@plein/protocol'
 import { and, eq } from 'drizzle-orm'
-import type { DB } from '../storage/db'
+import type { Conn, DB } from '../storage/db'
 import { assets } from '../storage/schema'
 import { FILMSTRIP_FRAMES } from '@plein/protocol'
 import {
@@ -97,8 +97,8 @@ export class AssetStore {
   }
 
   /** 新建一个临时目录（在数据目录内，启动时清空） */
-  tempDir() {
-    return mkdtemp(join(this.tmp, 'job-'))
+  tempDir(prefix = 'job-') {
+    return mkdtemp(join(this.tmp, prefix))
   }
 
   originalPath(id: string) {
@@ -153,13 +153,23 @@ export class AssetStore {
       await rm(tmpFile, { force: true })
       return existing
     }
+    const asset = await this.place(tmpFile, id, size, meta)
+    this.insert(this.db, ownerId, asset)
+    return this.get(ownerId, id) ?? asset
+  }
 
-    // 同一内容的文件与衍生物在所有者之间共享；rename 是原子的，并发上传同一内容也安全
+  /**
+   * 把已经算好哈希的本地文件移到内容地址并生成衍生物，不写数据库。
+   * 同一内容的文件与衍生物在所有者之间共享；rename 是原子的，并发写入同一内容也安全。
+   * 文件要在数据目录的同一个文件系统里（tmp 下），rename 才不会跨盘失败。
+   */
+  async place(file: string, id: string, size: number, meta: { mime: string; name: string }) {
+    meta = { ...meta, mime: normalizeMime(meta.mime) }
     const kind = kindOf(meta.mime)
     const variants: AssetVariant[] = []
     let probe: Probe | null = null
     await mkdir(join(this.root, id.slice(0, 2)), { recursive: true })
-    await rename(tmpFile, this.originalPath(id))
+    await rename(file, this.originalPath(id))
 
     const src = this.originalPath(id)
     try {
@@ -181,24 +191,27 @@ export class AssetStore {
       variants,
       createdAt: Date.now(),
     }
-    this.db
-      .insert(assets)
+    return asset
+  }
+
+  /** 登记一条资产记录；同一所有者已有同一内容时保留原记录 */
+  insert(db: Conn, ownerId: string, asset: Asset) {
+    db.insert(assets)
       .values({
-        id,
+        id: asset.id,
         owner_id: ownerId,
-        kind,
+        kind: asset.kind,
         mime: asset.mime,
         name: asset.name,
-        size,
+        size: asset.size,
         width: asset.width ?? null,
         height: asset.height ?? null,
         duration: asset.duration ?? null,
-        variants: JSON.stringify(variants),
+        variants: JSON.stringify(asset.variants),
         created_at: asset.createdAt,
       })
       .onConflictDoNothing()
       .run()
-    return this.get(ownerId, id) ?? asset
   }
 
   /**

@@ -27,6 +27,9 @@ import {
   type NodeRunStarted,
   type PreparedInput,
   type Project,
+  type ProjectImportPreview,
+  type ProjectImportResult,
+  type ProjectPackageSummary,
   type ProviderConfigUpdate,
   type ProviderConfigView,
   type ProviderTestResult,
@@ -114,6 +117,20 @@ export const api = {
     request<Project>(API.project(id), json('PATCH', { title })),
   deleteProject: (id: string) => request<void>(API.project(id), { method: 'DELETE' }),
   projectCanvases: (id: string) => request<Canvas[]>(API.projectCanvases(id)),
+  /** 导出前的概要：范围、数量和大小 */
+  projectPackageSummary: (id: string, history: boolean) =>
+    request<ProjectPackageSummary>(API.projectPackageSummary(id, history)),
+  /** 上传项目包做预检，通过时返回预检结果（还没写入） */
+  inspectProjectPackage: (file: File) =>
+    request<ProjectImportPreview>(API.projectImports, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: file,
+    }),
+  commitProjectImport: (token: string) =>
+    request<ProjectImportResult>(API.projectImport(token), { method: 'POST' }),
+  discardProjectImport: (token: string) =>
+    request<void>(API.projectImport(token), { method: 'DELETE' }),
   canvases: () => request<Canvas[]>(API.canvases),
   createCanvas: (projectId: string, title?: string) =>
     request<Canvas>(API.canvases, json('POST', { projectId, ...(title ? { title } : {}) })),

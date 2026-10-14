@@ -29,11 +29,11 @@ export const toCanvas = (r: CanvasRow): Canvas => ({
   updatedAt: r.updated_at,
 })
 
-function newCanvasId() {
+export function newCanvasId() {
   return `cv_${randomBytes(9).toString('base64url')}`
 }
 
-function newProjectId() {
+export function newProjectId() {
   return `pj_${randomBytes(9).toString('base64url')}`
 }
 

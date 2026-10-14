@@ -20,6 +20,7 @@ import { LibraryStore } from './library/store'
 import { libraryRoutes } from './library/routes'
 import { mediaRoutes } from './assets/media-routes'
 import { projectRoutes } from './projects/routes'
+import { packageRoutes } from './projects/package-routes'
 import { builtinPlugins } from './plugins/builtin'
 import { ProviderConfigStore } from './plugins/config-store'
 import { PluginHost } from './plugins/host'
@@ -102,6 +103,7 @@ export async function createServer(config: Config): Promise<Server> {
   app.use('/sync/*', auth.requireAuth)
   const preview = previewer(db)
   app.route('/', projectRoutes(db, rooms, preview))
+  app.route('/', packageRoutes({ db, rooms, assets, host: plugins, dataDir: config.dataDir }))
   app.route('/', canvasRoutes(db, rooms, preview))
   app.route('/', libraryRoutes(db, library))
   app.route('/', templateRoutes(db))

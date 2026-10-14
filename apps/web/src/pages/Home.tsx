@@ -1,6 +1,6 @@
 import type { Project } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
-import { type MouseEvent, useState } from 'react'
+import { type MouseEvent, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { invalidateProjects, queryClient, queryKeys } from '../api/query'
 import { queueStartNode } from '../canvas/start'
@@ -16,6 +16,8 @@ import { ThemeToggle } from '../ui/ThemeToggle'
 import { EmptyState } from '../ui/EmptyState'
 import { zoomView } from '../ui/viewTransition'
 import { Welcome } from '../features/onboarding/Welcome'
+import { ExportPackageDialog, ImportPackageDialog } from '../features/projects/ProjectPackage'
+import { Presence } from '../ui/Presence'
 
 /** 快速开始：新建项目并在它的第一张画布上放好对应节点、打开生成器 */
 const QUICK_START: Array<{
@@ -54,6 +56,9 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   const [query, setQuery] = useState('')
   const [creating, setCreating] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  const [exporting, setExporting] = useState<Project | null>(null)
+  const [importing, setImporting] = useState<File | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
 
   const create = async (from: Element, start?: string) => {
     if (creating) return
@@ -171,6 +176,27 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
             )}
             <button
               type="button"
+              onClick={() => fileInput.current?.click()}
+              title="导入从另一台电脑或数据目录导出的 .plein 项目包"
+              className="ui-btn ui-btn-secondary ui-btn-lg"
+            >
+              <Icon name="upload" />
+              导入项目包
+            </button>
+            <input
+              ref={fileInput}
+              type="file"
+              accept=".plein"
+              hidden
+              data-testid="project-import-input"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                e.target.value = ''
+                if (file) setImporting(file)
+              }}
+            />
+            <button
+              type="button"
               onClick={(e) => void create(e.currentTarget)}
               disabled={creating}
               className="ui-btn ui-btn-primary ui-btn-lg"
@@ -234,6 +260,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
                 key={p.id}
                 project={p}
                 onRename={(t) => rename(p, t)}
+                onExport={() => setExporting(p)}
                 onDelete={() => remove(p)}
               />
             ))}
@@ -244,6 +271,24 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
         )}
       </main>
       <Welcome />
+      <Presence>
+        {exporting && (
+          <ExportPackageDialog project={exporting} onClose={() => setExporting(null)} />
+        )}
+      </Presence>
+      <Presence>
+        {importing && (
+          <ImportPackageDialog
+            file={importing}
+            onClose={() => setImporting(null)}
+            onImported={async (r) => {
+              setImporting(null)
+              await invalidateProjects()
+              if (r.canvasId) navigate({ name: 'canvas', id: r.canvasId })
+            }}
+          />
+        )}
+      </Presence>
     </div>
   )
 }
@@ -251,10 +296,12 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
 function ProjectCard({
   project: c,
   onRename,
+  onExport,
   onDelete,
 }: {
   project: Project
   onRename(title: string): Promise<void>
+  onExport(): void
   onDelete(): void
 }) {
   const [editing, setEditing] = useState(false)
@@ -307,6 +354,15 @@ function ProjectCard({
             className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
           >
             <Icon name="pencil" size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={onExport}
+            aria-label="导出项目包"
+            title="导出项目包"
+            className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
+          >
+            <Icon name="download" size={14} />
           </button>
           <button
             type="button"

@@ -11,6 +11,16 @@ export const API = {
   project: (id: string) => `/api/projects/${encodeURIComponent(id)}`,
   /** 项目下的画布，按最近修改排序 */
   projectCanvases: (id: string) => `/api/projects/${encodeURIComponent(id)}/canvases`,
+  /** 下载项目包（.plein）；history=1 时带上全部历史候选 */
+  projectPackage: (id: string, history = false) =>
+    `/api/projects/${encodeURIComponent(id)}/package${history ? '?history=1' : ''}`,
+  /** 导出前的概要，返回 ProjectPackageSummary */
+  projectPackageSummary: (id: string, history = false) =>
+    `/api/projects/${encodeURIComponent(id)}/package/summary${history ? '?history=1' : ''}`,
+  /** 导入项目包：POST 包文件本身，校验后返回 ProjectImportPreview */
+  projectImports: '/api/project-imports',
+  /** 预检过的导入：POST 确认写入（返回 ProjectImportResult），DELETE 放弃 */
+  projectImport: (token: string) => `/api/project-imports/${encodeURIComponent(token)}`,
   canvases: '/api/canvases',
   canvas: (id: string) => `/api/canvases/${encodeURIComponent(id)}`,
   /** 资产库：GET 列表（?kind=），POST 新建，body 为 CreateLibraryItem */

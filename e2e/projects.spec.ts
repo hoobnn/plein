@@ -41,3 +41,35 @@ test('项目改名、加画布、首页重命名和删除', async ({ page }) => 
   await page.getByRole('dialog').getByRole('button', { name: '删除' }).click()
   await expect(renamed).toHaveCount(0)
 })
+
+/** 项目包：首页导出（说明范围、可选历史候选），再导入同一个包，作为副本出现并打开画布 */
+test('导出项目包再导入：预检后作为副本导入', async ({ page }) => {
+  const name = `迁移 ${Date.now()}`
+  await newProject(page)
+  await page.getByTitle('重命名项目').click()
+  await page.getByRole('textbox').fill(name)
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name, exact: true })).toBeVisible()
+
+  await page.goto('/')
+  const card = page.getByRole('listitem').filter({ hasText: name })
+  await card.hover()
+  await card.getByRole('button', { name: '导出项目包' }).click()
+  const dialog = page.getByRole('dialog', { name: '导出项目包' })
+  await expect(dialog).toContainText('平台密钥')
+  await expect(dialog).toContainText('1 张画布')
+  await dialog.getByRole('switch', { name: '包含历史候选' }).click()
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    dialog.getByRole('button', { name: '导出' }).click(),
+  ])
+  expect(download.suggestedFilename()).toMatch(/\.plein$/)
+  const file = await download.path()
+
+  await page.getByTestId('project-import-input').setInputFiles(file)
+  const preview = page.getByRole('dialog', { name: `导入「${name}」` })
+  await expect(preview).toContainText('会作为副本导入')
+  await preview.getByRole('button', { name: '作为副本导入' }).click()
+  await waitEngine(page)
+  await expect(page.getByRole('button', { name: `${name}（副本）`, exact: true })).toBeVisible()
+})

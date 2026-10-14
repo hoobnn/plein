@@ -4,6 +4,7 @@
  */
 export * from './identity'
 export * from './projects'
+export * from './project-package'
 export * from './canvases'
 export * from './assets'
 export * from './library'
