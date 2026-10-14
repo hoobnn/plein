@@ -20,7 +20,7 @@ if (!existsSync('stage/ffmpeg/ffmpeg'))
 
 /** @type {import('electron-builder').Configuration} */
 export default {
-  appId: 'app.plein.desktop',
+  appId: 'com.ikuyu.plein',
   productName: 'Plein',
   copyright: 'Copyright © 2026 hoobnn',
   directories: { output: 'release', buildResources: 'resources' },

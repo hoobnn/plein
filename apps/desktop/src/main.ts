@@ -39,7 +39,7 @@ function flushOpen() {
 }
 
 app.setName('plein')
-if (process.platform === 'win32') app.setAppUserModelId('app.plein.desktop')
+if (process.platform === 'win32') app.setAppUserModelId('com.ikuyu.plein')
 const primaryInstance = app.requestSingleInstanceLock()
 if (!primaryInstance) app.quit()
 
