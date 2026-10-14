@@ -1,5 +1,6 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
-import { closeSync, mkdirSync, openSync } from 'node:fs'
+import { closeSync, mkdirSync, mkdtempSync, openSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import {
@@ -22,44 +23,55 @@ import {
  * L4：真实平台跑一部 6 镜头短剧，从模板到导出带字幕的 MP4。
  * 中途在镜头视频生成时强杀服务端再起来，核对任务按原来的远端任务续查、没有重复提交。
  * 产物和日志留在 PLEIN_L4_DATA 里，声画同步、衔接、字幕由人看成片判定。
+ * 第三个用例在出片画布上验收 0.2：实际输入与提交一致、查看影响只重做第三镜头、
+ * 项目包导入全新目录后重新合成、外部应用经 MCP 提修改方案并按范围批准。
  */
 const DATA = process.env.PLEIN_L4_DATA
 const PORT = Number(process.env.PLEIN_L4_PORT)
-const BASE = `http://127.0.0.1:${PORT}`
 const ROOT = join(import.meta.dirname, '../..')
 const SHOTS = 6
+/** 镜头视频用的模型和分辨率；模型给空串就按模板默认 */
+const VIDEO_MODEL = process.env.PLEIN_L4_VIDEO_MODEL ?? 'minimax/api:MiniMax-H3'
+const VIDEO_RESOLUTION = process.env.PLEIN_L4_VIDEO_RESOLUTION ?? '768P'
+const BOARD = '分镜（双击展开镜头）'
 
 test.skip(!DATA, '需要 PLEIN_L4_DATA：配好平台密钥的数据目录（会产生真实费用）')
 
 let server: ChildProcess | null = null
 
-async function startServer() {
-  mkdirSync(join(DATA!, 'logs'), { recursive: true })
-  const log = openSync(join(DATA!, 'logs', 'l4-server.log'), 'a')
-  server = spawn(join(ROOT, 'apps/server/node_modules/.bin/tsx'), ['src/main.ts'], {
+/** 在 dir 上起一个服务端，等它能响应；日志写到 dir/logs/l4-server.log */
+async function spawnServer(dir: string, port: number, env: Record<string, string> = {}) {
+  mkdirSync(join(dir, 'logs'), { recursive: true })
+  const log = openSync(join(dir, 'logs', 'l4-server.log'), 'a')
+  const proc = spawn(join(ROOT, 'apps/server/node_modules/.bin/tsx'), ['src/main.ts'], {
     cwd: join(ROOT, 'apps/server'),
     // 单独的进程组：强杀时连 tsx 起的 node 一起杀掉
     detached: true,
     stdio: ['ignore', log, log],
     env: {
       ...process.env,
-      PLEIN_PORT: String(PORT),
-      PLEIN_DATA_DIR: DATA,
+      PLEIN_PORT: String(port),
+      PLEIN_DATA_DIR: dir,
       PLEIN_WEB_DIST: join(ROOT, 'apps/web/dist-e2e'),
       PLEIN_AGENT: '0',
+      ...env,
     },
   })
   closeSync(log)
   const deadline = Date.now() + 60_000
   while (Date.now() < deadline) {
-    const ok = await fetch(`${BASE}/api/health`).then(
+    const ok = await fetch(`http://127.0.0.1:${port}/api/health`).then(
       (r) => r.ok,
       () => false,
     )
-    if (ok) return
+    if (ok) return proc
     await new Promise((r) => setTimeout(r, 500))
   }
-  throw new Error('服务端没有起来，看 logs/l4-server.log')
+  throw new Error(`服务端没有起来，看 ${dir}/logs/l4-server.log`)
+}
+
+async function startServer() {
+  server = await spawnServer(DATA!, PORT)
 }
 
 /** 模拟崩溃：不给服务端保存和收尾的机会 */
@@ -204,7 +216,7 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
   note('模型', models.join('；'))
 
   // 镜头数改成 6：参数和提示词里的数字一起改
-  const board = await byName(page, '分镜（双击展开镜头）')
+  const board = await byName(page, BOARD)
   await clickElement(page, board.id)
   const prompt = page.getByRole('textbox', { name: '提示词' })
   await prompt.fill((await prompt.inputValue()).replace(/拆成 \d+ 个镜头/, `拆成 ${SHOTS} 个镜头`))
@@ -336,6 +348,23 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
   )
   expect(shots.length).toBeGreaterThan(0)
   expect(shots.filter((e) => e.results === 0).map((e) => e.name)).toEqual([])
+
+  // 像用户在生成器面板里选模型那样，把镜头视频换成指定的模型和分辨率
+  if (VIDEO_MODEL) {
+    await page.evaluate(
+      ({ model, resolution }) => {
+        const doc = window.__plein.engine.doc
+        for (const e of [...doc.elements()])
+          if (e.nodeType === 'plein/video' && e.params?.source) {
+            const params = doc.mutable(e.id)!.get('params') as Map<string, unknown>
+            params.set('model', model)
+            params.set('resolution', resolution)
+          }
+      },
+      { model: VIDEO_MODEL, resolution: VIDEO_RESOLUTION },
+    )
+    note('镜头视频', `${VIDEO_MODEL}，${VIDEO_RESOLUTION}`)
+  }
 
   dialog = await openBoard(page, board.id)
   await dialog.getByRole('button', { name: '批量生成视频' }).click()
@@ -516,4 +545,267 @@ test('资产库：出片画布上的角色、场景、道具存进资产库，�
     }
   }
   note('新项目取用', picks.map((c) => c.name).join('、'))
+})
+
+interface ShotNodes {
+  image?: string
+  video?: string
+  speech: string[]
+}
+
+/** 分镜里每个镜头展开出来的节点（按镜头顺序） */
+function shotNodes(page: Page) {
+  return page.evaluate((BOARD) => {
+    const all = [...window.__plein.engine.doc.elements()]
+    const board = all.find((e) => e.name === BOARD)!
+    return (board.params!.shots as Array<{ id: string }>).map((s) => {
+      const out: ShotNodes = { speech: [] }
+      for (const e of all) {
+        const src = e.params?.source as { shot?: string; role?: string } | undefined
+        if (src?.shot !== s.id) continue
+        if (src.role === 'speech') out.speech.push(e.id)
+        else if (src.role === 'image' || src.role === 'video') out[src.role] = e.id
+      }
+      return out
+    })
+  }, BOARD)
+}
+
+/** 每个节点现在采用的结果和结果数：比对哪些镜头被动过 */
+function adoption(page: Page) {
+  return page.evaluate(() =>
+    Object.fromEntries(
+      [...window.__plein.engine.doc.elements()]
+        .filter((e) => !!e.params?.source)
+        .map((e) => {
+          const el = e as typeof e & { adopted?: string; results?: Array<{ id: string }> }
+          return [e.id, `${el.adopted ?? el.results?.[0]?.id ?? ''}/${el.results?.length ?? 0}`]
+        }),
+    ),
+  )
+}
+
+/** page.evaluate 里读当前结果用（类型只在编译期） */
+type RawResultEl = { adopted?: string; results?: Array<{ id: string; value: unknown }> }
+
+interface Job {
+  id: string
+  nodeId: string
+  nodeType: string
+  status: string
+  createdAt: number
+  input?: { inputHash?: string; refs: Array<{ name: string; sent: string[] }> }
+}
+
+test('0.2：实际输入、查看影响返工、项目包迁移、修改方案', async ({ page }) => {
+  if (!server) await startServer()
+  if (!filmCanvas) {
+    const out = execFileSync(
+      'sqlite3',
+      [join(DATA!, 'plein.db'), 'SELECT id FROM canvases ORDER BY created_at DESC LIMIT 1'],
+      { encoding: 'utf8' },
+    )
+    filmCanvas = out.trim()
+  }
+  const canvas = filmCanvas
+  note('画布', canvas)
+  await page.goto(`/#/c/${canvas}`)
+  await waitEngine(page)
+  const board = await byName(page, BOARD)
+  const shots = await shotNodes(page)
+  expect(shots).toHaveLength(SHOTS)
+  const jobs = async () =>
+    ((await (await page.request.get(`/api/canvases/${canvas}/jobs`)).json()) as { jobs: Job[] })
+      .jobs
+  const paidSince = async (t: number) =>
+    (await jobs()).filter(
+      (j) =>
+        j.createdAt >= t && ['plein/image', 'plein/video', 'plein/speech'].includes(j.nodeType),
+    )
+
+  // W1：生成前预览的实际输入，和上次提交时冻结的一致（预览、缓存判断、提交共用一份准备结果）
+  const history = await jobs()
+  const w1: string[] = []
+  for (const [i, s] of shots.entries()) {
+    const preview = (await (
+      await page.request.get(`/api/canvases/${canvas}/nodes/${s.image}/input`)
+    ).json()) as Job['input'] & { referenceLimit?: number; status: string }
+    const last = history.find((j) => j.nodeId === s.image && j.status === 'succeeded')
+    expect(preview.inputHash, `镜头 ${i + 1} 的实际输入`).toBe(last?.input?.inputHash)
+    const sent = preview.refs.reduce((n, r) => n + r.sent.length, 0)
+    if (preview.referenceLimit) expect(sent).toBeLessThanOrEqual(preview.referenceLimit)
+    w1.push(`${i + 1}：${preview.refs.map((r) => `${r.name}×${r.sent.length}`).join('、')}`)
+  }
+  note('实际输入', w1.join('；'))
+
+  // W2：改第三镜头的台词和分镜图提示词，从分镜表进「查看影响」，按推荐默认只重做受影响的
+  const before = await adoption(page)
+  const t2 = Date.now()
+  let dialog = await openBoard(page, board.id)
+  const line = dialog.getByLabel('台词').nth(2)
+  await line.fill(`${await line.inputValue()}……不，这盒子不是我的。`)
+  const shotPrompt = dialog.getByLabel('分镜图提示词').nth(2)
+  await shotPrompt.fill(`${await shotPrompt.inputValue()}，雨水顺着锁扣往下流`)
+  await dialog.getByLabel('时长').first().click()
+  await dialog.getByRole('button', { name: '查看影响' }).click()
+  const impact = page.getByRole('dialog', { name: '查看影响' })
+  await expect(impact).toBeVisible()
+  await impact.getByRole('button', { name: '查看差异' }).click()
+  const diff = page.getByRole('dialog', { name: '计划差异' })
+  await diff.getByRole('button', { name: '同步计划改动' }).click()
+  await expect(page.locator('.ui-toast')).toContainText('已把计划同步到')
+  await page.keyboard.press('Escape')
+  await expect(diff).toBeHidden()
+  await expect(impact.getByText('分镜表有没同步的改动')).toBeHidden()
+  // 面板在文档变化后停 0.8 秒再重新分析
+  await page.waitForTimeout(2000)
+  await expect(impact.locator('section', { hasText: '镜头 01' })).toHaveCount(0)
+  const rerun = impact.getByRole('button', { name: /^重做选中的 \d+ 个$/ })
+  note('查看影响', (await impact.locator('section').allInnerTexts()).join(' | ').slice(0, 600))
+  await rerun.click()
+  await expect(impact).toBeHidden()
+  await waitIdle(page, 20 * 60_000)
+  const w2 = await paidSince(t2)
+  const after = await adoption(page)
+  const shot3 = new Set([shots[2]!.image, shots[2]!.video, ...shots[2]!.speech])
+  const touched = Object.keys(before).filter((id) => !shot3.has(id) && before[id] !== after[id])
+  note(
+    '局部返工',
+    `付费提交 ${w2.length} 次（${w2.map((j) => `${j.nodeType}:${j.status}`).join('、')}），第三镜头以外被动到 ${touched.length} 个节点`,
+  )
+  expect(touched).toEqual([])
+  expect(w2.every((j) => shot3.has(j.nodeId))).toBe(true)
+  expect(w2.some((j) => j.nodeId === shots[2]!.image)).toBe(true)
+  // 视频建议保留，没有重做
+  expect(w2.some((j) => j.nodeType === 'plein/video')).toBe(false)
+
+  // 只重新导出序列（本地加工，不跑上游）
+  const seq = await byName(page, '序列')
+  const res = await page.request.post(`/api/canvases/${canvas}/nodes/${seq.id}/run`, { data: {} })
+  expect(res.status()).toBe(202)
+  await waitNode(page, seq.id, 20 * 60_000)
+  const cut = (await page.evaluate((id) => {
+    // 结果新的在前；当前采用的是 adopted 指的那个，没指定时是最新的
+    const el = window.__plein.engine.doc.get(id)! as RawResultEl
+    return (el.results!.find((r) => r.id === el.adopted) ?? el.results![0]!).value
+  }, seq.id)) as { assetId: string }
+  note('返工后成片', cut.assetId)
+
+  // W4：导出项目包，在全新数据目录导入，素材齐全、序列能重新合成
+  const project = execFileSync(
+    'sqlite3',
+    [join(DATA!, 'plein.db'), `SELECT project_id FROM canvases WHERE id = '${canvas}'`],
+    { encoding: 'utf8' },
+  ).trim()
+  const pkg = await page.request.get(`/api/projects/${project}/package`)
+  expect(pkg.status()).toBe(200)
+  const bytes = await pkg.body()
+  const fresh = mkdtempSync(join(tmpdir(), 'plein-l4-import-'))
+  const port2 = PORT + 1
+  const other = await spawnServer(fresh, port2)
+  try {
+    const base2 = `http://127.0.0.1:${port2}`
+    const preview = (await (
+      await fetch(`${base2}/api/project-imports`, { method: 'POST', body: new Uint8Array(bytes) })
+    ).json()) as { token: string }
+    expect(preview.token, JSON.stringify(preview)).toBeTruthy()
+    const done = (await (
+      await fetch(`${base2}/api/project-imports/${preview.token}`, { method: 'POST' })
+    ).json()) as { projectId: string; canvasId: string }
+    expect(done.canvasId, JSON.stringify(done)).toBeTruthy()
+    expect((await fetch(`${base2}/api/assets/${cut.assetId}/meta`)).status).toBe(200)
+    await page.goto(`${base2}/#/c/${done.canvasId}`)
+    await waitEngine(page)
+    const seq2 = await byName(page, '序列')
+    const r2 = await fetch(`${base2}/api/canvases/${done.canvasId}/nodes/${seq2.id}/run`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    })
+    expect(r2.status).toBe(202)
+    await waitNode(page, seq2.id, 20 * 60_000)
+    const out2 = (await page.evaluate((id) => {
+      // 结果新的在前；当前采用的是 adopted 指的那个，没指定时是最新的
+      const el = window.__plein.engine.doc.get(id)! as RawResultEl
+      return (el.results!.find((r) => r.id === el.adopted) ?? el.results![0]!).value
+    }, seq2.id)) as { assetId: string }
+    const meta2 = (await (await fetch(`${base2}/api/assets/${out2.assetId}/meta`)).json()) as {
+      width: number
+      height: number
+      duration: number
+    }
+    note(
+      '项目包迁移',
+      `${(bytes.length / 1e6).toFixed(1)} MB，新目录重新合成 ${meta2.width}×${meta2.height}，${meta2.duration.toFixed(1)} 秒`,
+    )
+    expect([meta2.width, meta2.height]).toEqual([1080, 1920])
+  } finally {
+    if (other.pid) process.kill(-other.pid, 'SIGKILL')
+    rmSync(fresh, { recursive: true, force: true })
+  }
+
+  // W5：外部应用经 MCP 提出修改方案，先只改文字（零调用），再只给第四镜头出候选图
+  await page.goto(`/#/c/${canvas}`)
+  await waitEngine(page)
+  await page.getByRole('button', { name: '设置', exact: true }).click()
+  const settings = page.getByRole('dialog', { name: '设置' })
+  await settings.getByRole('button', { name: 'MCP', exact: true }).click()
+  await settings.getByRole('button', { name: '生成连接令牌' }).click()
+  const config = settings.getByTestId('external-mcp-config')
+  const token = /Bearer (plein_[\w-]+)/.exec((await config.textContent()) ?? '')![1]!
+  await page.keyboard.press('Escape')
+  const mcp = async (name: string, args: Record<string, unknown>) => {
+    const r = await page.request.post('/mcp', {
+      headers: { authorization: `Bearer ${token}` },
+      data: {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name, arguments: { canvas_id: canvas, ...args } },
+      },
+    })
+    const body = (await r.json()) as {
+      result: { content: Array<{ text: string }>; isError?: boolean }
+    }
+    expect(body.result.isError, body.result.content[0]?.text).toBeFalsy()
+    return JSON.parse(body.result.content[0]!.text) as {
+      plan_id: string
+      steps: Array<{ id: string; stage: string }>
+      estimate: Record<string, string>
+      status: string
+    }
+  }
+  const shot4 = shots[3]!.image!
+  const prompt4 = () =>
+    page.evaluate((id) => String(window.__plein.engine.doc.get(id)!.params?.prompt ?? ''), shot4)
+  const base4 = await prompt4()
+  const t5 = Date.now()
+  const textPlan = await mcp('propose_edit', {
+    summary: '第四镜头更紧张',
+    edits: [{ id: shot4, params: { prompt: `${base4}，手持镜头轻微晃动，压迫感` } }],
+  })
+  note('修改方案', JSON.stringify(textPlan.estimate))
+  expect(textPlan.steps.some((s) => s.id === shot4)).toBe(true)
+  await mcp('apply_edit_plan', { plan_id: textPlan.plan_id, scope: 'text' })
+  await expect.poll(prompt4).toContain('压迫感')
+  await page.waitForTimeout(3000)
+  expect(await paidSince(t5)).toEqual([])
+
+  const before5 = await adoption(page)
+  const imagePlan = await mcp('propose_edit', {
+    summary: '第四镜头再暗一点',
+    edits: [{ id: shot4, params: { prompt: `${await prompt4()}，夜色更暗` } }],
+  })
+  await mcp('apply_edit_plan', { plan_id: imagePlan.plan_id, scope: 'images', only: [shot4] })
+  await expect
+    .poll(async () => (await paidSince(t5)).length, { timeout: 60_000 })
+    .toBeGreaterThan(0)
+  await waitIdle(page, 20 * 60_000)
+  const w5 = await paidSince(t5)
+  const after5 = await adoption(page)
+  note('只出候选图', w5.map((j) => `${j.nodeType}:${j.status}`).join('、'))
+  expect(w5.map((j) => j.nodeId)).toEqual([shot4])
+  expect(Object.keys(before5).filter((id) => id !== shot4 && before5[id] !== after5[id])).toEqual(
+    [],
+  )
 })

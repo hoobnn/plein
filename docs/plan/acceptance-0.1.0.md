@@ -247,6 +247,9 @@ L4 用例在 `e2e/real/drama.l4.ts`，单独的配置 `e2e/playwright.l4.config.
 
 - 出片：模板改成 6 镜头 → 剧本、抽取、设定卡（核对参考图节点、音色）→ 展开（核对镜头 @ 到角色、场景、道具）→ 批量分镜图 → 批量视频，等至少一个视频已提交到平台后强杀服务端再起来，核对重启前后任务记下的远端调用一致（续查原任务、没有重复提交）→ 批量配音 → 配乐 → 导出。
 - 资产库：出片画布上的卡片存入资产库，在新项目按类别取用。该用例不产生调用费用，可以用 `PLEIN_L4_CANVAS=<画布 id> pnpm e2e:real --grep 资产库` 单独运行。
+- 0.2：在出片画布上核对实际输入与上次提交一致；改第三镜头后从「查看影响」按推荐默认重做（分镜图、配音各一次，视频保留）；导出项目包、在全新数据目录导入并重新合成；外部应用经 MCP 提修改方案，只改文字（零调用）、只给第四镜头出候选图（一次）。可以用 `PLEIN_L4_CANVAS=<画布 id> pnpm e2e:real --grep 0.2` 单独运行。
+
+镜头视频默认用 MiniMax H3、768P（`PLEIN_L4_VIDEO_MODEL` / `PLEIN_L4_VIDEO_RESOLUTION` 可改，模型给空串按模板默认）。
 
 ```bash
 PLEIN_L4_DATA=<配好平台的数据目录> PLEIN_FFMPEG_PATH=<带 libass 的 ffmpeg> PLEIN_FFPROBE_PATH=<ffprobe> pnpm e2e:real

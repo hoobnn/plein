@@ -10,7 +10,7 @@ interface RawElement {
   assetId?: string
   params?: Record<string, unknown>
   run?: { status: string }
-  results?: Array<{ value: Record<string, unknown> }>
+  results?: Array<{ id: string; value: Record<string, unknown> }>
 }
 declare global {
   interface Window {
@@ -20,6 +20,8 @@ declare global {
           elements(): Iterable<RawElement>
           edges(): Iterable<{ from: [string, string]; to: [string, string] }>
           get(id: string): RawElement | undefined
+          /** 元素底层的 Y.Map（只有 L4 用它模拟在面板里改参数） */
+          mutable(id: string): { get(key: string): unknown } | undefined
           worldRect(id: string): { x: number; y: number; w: number; h: number }
         }
         worldToClient(x: number, y: number): { x: number; y: number }
