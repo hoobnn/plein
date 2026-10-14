@@ -125,6 +125,39 @@ function mockAgentStep(input: CapabilityInput<'text.chat'>): ProviderOutput[] {
     if (made && updates === 2) return call('update_plan', { step: 2, status: 'doing' })
     if (ran && updates === 3) return call('update_plan', { step: 2, status: 'done' })
   }
+  if (/更紧张/.test(ask)) {
+    // 修改已有镜头：先找到生成图片节点，出修改方案，等用户选批准范围
+    const found = results.find((m) => m.toolName === 'find_elements')
+    if (!found) return call('find_elements', { node_type: 'plein/image' })
+    const target = (
+      JSON.parse(text(found) || '{}') as {
+        elements?: Array<{ id: string; params?: { prompt?: string } }>
+      }
+    ).elements?.[0]
+    if (!target) return [{ type: 'text', text: '【mock】画布上没有可以改的镜头。' }]
+    const proposed = results.find((m) => m.toolName === 'propose_edit')
+    if (!proposed)
+      return call('propose_edit', {
+        summary: '让画面更紧张',
+        edits: [
+          {
+            id: target.id,
+            params: { prompt: `${target.params?.prompt ?? ''}，手持晃动，压迫感更强` },
+          },
+        ],
+      })
+    const approval = (JSON.parse(text(proposed) || '{}') as { approval_id?: string }).approval_id
+    if (!approval) return [{ type: 'text', text: `【mock】方案没出来：${text(proposed)}` }]
+    const waits = results.filter((m) => m.toolName === 'await_approval')
+    const waited = text(waits.at(-1))
+    if (!waits.length || waited.includes('"pending"'))
+      return call('await_approval', { approval_id: approval })
+    if (waited.includes('"stale"'))
+      return [{ type: 'text', text: '【mock】镜头在批准前变了，旧方案没有执行。' }]
+    if (waited.includes('"applied"'))
+      return [{ type: 'text', text: '【mock】方案已经按你选的范围执行。' }]
+    return [{ type: 'text', text: '【mock】好的，这个方案先不做。' }]
+  }
   if (/图|画/.test(ask) && !made)
     return call('create_node', {
       type: 'plein/image',

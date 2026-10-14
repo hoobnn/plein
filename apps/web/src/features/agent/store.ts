@@ -7,6 +7,7 @@ import {
   type AgentSession,
   type AgentSessionSummary,
   type AgentStatus,
+  type EditScope,
 } from '@plein/protocol'
 import { create } from 'zustand'
 import { api } from '../../api/client'
@@ -50,8 +51,8 @@ interface AgentStore {
   setApproval(mode: AgentApprovalMode): void
   setPlan(plan: boolean): void
   setAccess(access: AgentAccess): void
-  /** 允许或跳过一张确认单 */
-  decide(approvalId: string, allow: boolean): Promise<void>
+  /** 允许或跳过一张确认单；修改方案允许时带上批准范围 */
+  decide(approvalId: string, allow: boolean, scope?: EditScope): Promise<void>
   /** 切换到某块画布（null 表示不在画布里）：读它的会话，接上最近一个 */
   enter(canvasId: string | null): Promise<void>
   select(id: string): Promise<void>
@@ -243,11 +244,11 @@ export const useAgent = create<AgentStore>((set, get) => {
       } catch {}
     },
 
-    async decide(approvalId, allow) {
+    async decide(approvalId, allow, scope) {
       const id = get().session?.id
       if (!id) return
       try {
-        await api.decideAgentApproval(id, approvalId, allow)
+        await api.decideAgentApproval(id, approvalId, allow, scope)
       } catch (err) {
         set({ error: (err as Error).message })
       }

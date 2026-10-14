@@ -43,6 +43,45 @@ test('先出计划，同意后执行并打勾', async ({ page }) => {
   await expect.poll(images).toBe(1)
 })
 
+/** 修改方案：先出方案卡片，只改文字时不调用平台；整轮撤销回退文字，已有结果不丢 */
+test('修改方案按范围批准：只改文字，再整轮撤销', async ({ page }) => {
+  await newProject(page)
+  await page.getByRole('button', { name: '打开助手' }).click()
+  const panel = page.getByRole('complementary', { name: '助手' })
+  const input = panel.getByPlaceholder('让小满帮你做点什么…')
+  await input.fill('画一张雨夜天台')
+  await panel.getByRole('button', { name: '发送' }).click()
+  await expect(panel.getByText('【mock】好了')).toBeVisible()
+  const image = async () => {
+    const id = (await elements(page)).find((e) => e.nodeType === 'plein/image')!.id
+    return page.evaluate((nodeId) => {
+      const el = window.__plein.engine.doc.get(nodeId)!
+      return { prompt: String(el.params?.prompt ?? ''), results: el.results?.length ?? 0 }
+    }, id)
+  }
+  const before = await image()
+  expect(before.results).toBe(1)
+
+  await input.fill('让画面更紧张')
+  await panel.getByRole('button', { name: '发送' }).click()
+  const card = panel.locator('.plein-edit-plan')
+  await expect(card).toContainText('小满的修改方案：让画面更紧张')
+  await expect(card).toContainText('压迫感更强')
+  await expect(card).toContainText('调用平台 1 次 · 价格未知')
+  // 批准之前不动画布
+  expect((await image()).prompt).toBe(before.prompt)
+
+  await card.getByRole('button', { name: '只改文字' }).click()
+  await expect(panel.getByText('【mock】方案已经按你选的范围执行。')).toBeVisible()
+  await expect(card).toContainText('已执行只改文字，没有调用平台')
+  await expect.poll(async () => (await image()).prompt).toContain('压迫感更强')
+  expect((await image()).results).toBe(1)
+
+  await panel.getByRole('button', { name: '撤销这一轮' }).last().click()
+  await expect.poll(async () => (await image()).prompt).toBe(before.prompt)
+  expect((await image()).results).toBe(1)
+})
+
 /** 多选工具条「让小满处理」：打开面板，带上选区，光标在输入框里 */
 test('选区上让小满处理', async ({ page }) => {
   await newProject(page)
