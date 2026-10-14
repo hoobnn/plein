@@ -32,7 +32,7 @@ import { withShortcut } from '../../ui/keys'
 import { mediaOf } from '../../canvas/grid'
 import { ResultActions } from '../../shell/ResultBar'
 import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
-import { InputPreview, useInputPreview } from './InputPreview'
+import { InputPreview, issueText, useInputPreview } from './InputPreview'
 import { Inputs } from './Inputs'
 import { LibrarySave } from './LibrarySave'
 import { ProfileSummary } from './ProfileSummary'
@@ -178,7 +178,7 @@ function Panel({
   const input = useInputPreview(engine, !pure && node.capability ? canvasId : null, el.id)
   // 必需参考用不上这类问题只有服务端准备过才知道；输入刚改、还在重新准备时先不拦
   const blocked =
-    !input.loading && input.data?.blocked.length ? input.data.blocked.join('；') : null
+    !input.loading && input.data?.blocked.length ? issueText(input.data.blocked).join('；') : null
   const own = validate(node, el, ups, catalog)
   const problem = own ?? blocked
   // 只差提示词时不在底栏重复说（输入框的占位文字已经在说），按钮的悬停提示照常给原因
@@ -227,7 +227,7 @@ function Panel({
     else if (!problem)
       void runNode(
         el.id,
-        input.data && !input.loading
+        input.data?.inputHash && !input.loading
           ? { expect: input.data.inputHash, onChanged: input.setData }
           : undefined,
       )

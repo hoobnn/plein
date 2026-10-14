@@ -21,9 +21,10 @@ export type InputRefKind = 'character' | 'scene' | 'prop' | 'style' | 'image' | 
  * 参考图没有（全部）送进模型的原因：
  * - over_limit：超过模型的参考图上限，按优先级舍弃
  * - unsupported：当前节点或模式不收参考图（如生成视频不是「图片参考」模式），只附文字设定
- * - no_image：被引用者没有可用的参考图（还没生成、生成失败或没连），只附文字设定
+ * - no_image：被引用者没有可用的参考图（还没生成或没连），只附文字设定
+ * - failed：被引用者的参考图生成失败，只附文字设定
  */
-export type InputRefReason = 'over_limit' | 'unsupported' | 'no_image'
+export type InputRefReason = 'over_limit' | 'unsupported' | 'no_image' | 'failed'
 
 /** 提示词里 @ 到的一个引用，在本次运行中实际怎么用 */
 export interface InputRef {
@@ -50,18 +51,69 @@ export interface InputValue {
   text?: string
   /** 来源元素：连线的上游或 @ 引用的卡片 */
   source?: string
+  /** 来源是节点时，取的是它哪一个结果、哪一次运行产生的 */
+  resultId?: string
+  runId?: string
+  /** text 只是开头，原文更长 */
+  truncated?: true
 }
+
+/**
+ * 实际输入里的一条提示或阻断。code 供程序判断，message 给人看；与某个引用有关时带 elementId。
+ * - required_no_image / required_failed / required_unsupported / required_over_limit：必需参考用不上
+ * - prepare_failed：准备输入本身失败（上游没结果、@ 重名、音色跨平台等）
+ * - optional_dropped：可选参考超过上限没有送入
+ * - mention_broken：@ 的名字找不到，可能改过名
+ * - profile_miss / profile_conflict：@ 写的档案项不存在或冲突
+ * - voice_unverified / voice_ambiguous：沿用的音色无法校验平台，或引用了多个有音色的角色
+ * - unsupported_refs：当前模式不送参考图，只附文字设定
+ */
+export type InputIssueCode =
+  | 'required_no_image'
+  | 'required_failed'
+  | 'required_unsupported'
+  | 'required_over_limit'
+  | 'prepare_failed'
+  | 'optional_dropped'
+  | 'mention_broken'
+  | 'profile_miss'
+  | 'profile_conflict'
+  | 'voice_unverified'
+  | 'voice_ambiguous'
+  | 'unsupported_refs'
+
+export interface InputIssue {
+  code: InputIssueCode
+  message: string
+  elementId?: string
+}
+
+/** PreparedInput 的格式版本；结构变了递增，读旧执行记录时据此兼容 */
+export const PREPARED_INPUT_VERSION = 1
 
 /**
  * 一个节点的实际输入：预览、缓存判断和提交共用同一份准备结果。
  * 预览不调用付费生成；提交时重新准备，inputHash 不同说明输入在预览后变过。
  */
 export interface PreparedInput {
+  v: typeof PREPARED_INPUT_VERSION
   nodeId: string
   nodeType: string
+  /** 节点定义版本（参数按它迁移） */
+  nodeVersion?: number
+  /** 准备时间（毫秒时间戳） */
+  preparedAt: number
+  /**
+   * ready：可以提交；blocked：准备好了但有阻断；unprepared：准备本身失败，
+   * 只给出能给的部分，没有 inputHash
+   */
+  status: 'ready' | 'blocked' | 'unprepared'
   capability?: string
-  /** 实际使用的模型；自动选择时是当前排第一的已启用模型，没有可用模型时缺省 */
-  model?: { ref: string; provider: string; title: string; auto: boolean }
+  /**
+   * 实际使用的模型；自动选择时是当前排第一的已启用模型，没有可用模型时缺省。
+   * version 是平台声明的模型版本，没声明时缺省
+   */
+  model?: { ref: string; provider: string; title: string; auto: boolean; version?: string }
   /** 模型的参考图上限；没声明时不限 */
   referenceLimit?: number
   /** 展开 @ 并附上设定后的提示词（含上游文本） */
@@ -74,11 +126,14 @@ export interface PreparedInput {
   /** 配音实际使用的音色 */
   voice?: { provider: string; voiceId: string }
   /** 降级与需要用户知道的提示，不阻断运行 */
-  notices: string[]
+  notices: InputIssue[]
   /** 阻断运行的问题（必需参考缺失、音色跨平台、上游没结果等）；非空时提交会失败 */
-  blocked: string[]
-  /** 节点类型、版本、有效参数与实际输入内容的哈希（即缓存键） */
-  inputHash: string
+  blocked: InputIssue[]
+  /**
+   * 缓存键：节点类型与版本、实际模型及其平台插件版本、有效参数与实际输入内容的哈希，带算法版本前缀。
+   * 准备失败（unprepared）时缺省
+   */
+  inputHash?: string
 }
 
 /** 整组运行（Frame）的选项 */

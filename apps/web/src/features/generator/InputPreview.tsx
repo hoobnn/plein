@@ -1,6 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, setParam } from '@plein/doc'
-import type { InputRef, InputRefKind, PreparedInput } from '@plein/protocol'
+import type { InputIssue, InputRef, InputRefKind, PreparedInput } from '@plein/protocol'
 import { useEffect, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
 import { fieldsOf, type NodeInfo } from '../../canvas/nodes'
@@ -51,6 +51,8 @@ const KIND_LABEL: Record<InputRefKind, string> = {
 
 /** 引用的用法标签：送了几张、为什么没送 */
 function refState(r: InputRef): { text: string; tone: string; title?: string } {
+  if (r.reason === 'failed')
+    return { text: '参考图失败', tone: 'ui-tag-warning', title: '参考图生成失败，只附文字设定' }
   if (r.reason === 'no_image')
     return { text: '无参考图', tone: 'ui-tag-warning', title: '还没有可用的参考图，只附文字设定' }
   if (r.reason === 'unsupported')
@@ -64,6 +66,11 @@ function refState(r: InputRef): { text: string; tone: string; title?: string } {
         }
       : { text: '超出上限', tone: 'ui-tag-warning', title: '超过模型的参考图上限，只附文字设定' }
   return { text: `送入 ${r.sent.length} 张`, tone: 'ui-tag-success' }
+}
+
+/** 提示和阻断给人看的文案；同一条提示可能按引用记了多次，只显示一次 */
+export function issueText(issues: InputIssue[]) {
+  return [...new Set(issues.map((i) => i.message))]
 }
 
 /** 摘要一行：模型、参考图张数、降级和阻断数 */
@@ -246,7 +253,7 @@ export function InputPreview({
           )}
           {data.notices.length > 0 && (
             <ul className="flex flex-col gap-1 text-ink-subtle">
-              {data.notices.map((n) => (
+              {issueText(data.notices).map((n) => (
                 <li key={n}>{n}</li>
               ))}
             </ul>

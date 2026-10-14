@@ -218,6 +218,11 @@ export interface ModelSpec {
   title: string
   capabilities: Capability[]
   description?: string
+  /**
+   * 平台公布的模型版本（快照日期或版本号）。声明了就计入缓存键：同名模型换了权重时旧结果算过期；
+   * 平台不公布时不填，模型名不等于不可变的版本
+   */
+  version?: string
   /** 对话模型的额外特性：tools（工具调用，内置智能体要用）、vision（看图） */
   features?: ModelFeature[]
   limits?: ModelLimits

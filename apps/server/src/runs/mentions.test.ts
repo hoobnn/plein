@@ -12,6 +12,8 @@ import { describe, expect, it } from 'vite-plus/test'
 import { addCharacter, addNode } from '../testing'
 import { applyMentions } from './mentions'
 
+const msg = (issues: Array<{ message: string }>) => issues.map((i) => i.message)
+
 /** 造一张角色卡：设定 + 音色（音色按平台存） */
 const character = (doc: PleinDoc, name: string, params: Record<string, unknown>, x = 0) =>
   addCharacter(doc, name, params, { x, w: 10, h: 10 })
@@ -123,7 +125,7 @@ describe('运行前解析 @ 引用', () => {
     expect(framed.inputs.images).toEqual([first])
     expect(framed.params.prompt).toContain('林夏：二十岁，短发')
     expect(framed.refs[0]!.assetIds).toEqual([])
-    expect(framed.notices).toContain(
+    expect(msg(framed.notices)).toContain(
       '@ 引用的参考图只在「图片参考」模式下送入模型，当前模式只附文字设定',
     )
   })
@@ -160,7 +162,9 @@ describe('运行前解析 @ 引用', () => {
     ])
     expect(r.params.prompt).toContain('铁盒：铁盒的设定')
     expect(r.refs.find((x) => x.name === '铁盒')!.assetIds).toEqual([])
-    expect(r.notices).toContain('这个模型最多带 2 张参考图，铁盒 的参考图没有送入，只附了文字设定')
+    expect(msg(r.notices)).toContain(
+      '这个模型最多带 2 张参考图，铁盒 的参考图没有送入，只附了文字设定',
+    )
     expect(hero).toBeTruthy()
   })
 
@@ -216,7 +220,7 @@ describe('重名不静默', () => {
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
     expect(r.params.prompt).toBe('@林夏站在天台')
     expect(r.refs).toEqual([])
-    expect(r.notices[0]).toBe(
+    expect(msg(r.notices)[0]).toBe(
       '提示词里的 @林夏站在天台 找不到同名资产，可能已被改名为「林小夏」，请改过来',
     )
   })
@@ -237,7 +241,7 @@ describe('音色按平台沿用', () => {
     })
     const r = await applyMentions(doc, doc.get(n)!, speechNode, {}, collect(doc))
     expect(r.params.voice).toEqual({ provider: 'plein/mock', voiceId: 'v_linxia' })
-    expect(r.notices).toEqual([])
+    expect(msg(r.notices)).toEqual([])
   })
 
   it('换平台：不沿用，并说清是哪一家、要做什么', async () => {
@@ -254,7 +258,7 @@ describe('音色按平台沿用', () => {
     const { doc, n } = setup('plein/mock:echo-speech', 'v_linxia')
     const r = await applyMentions(doc, doc.get(n)!, speechNode, {}, collect(doc))
     expect(r.params.voice).toEqual({ provider: '', voiceId: 'v_linxia' })
-    expect(r.notices[0]).toContain('没有记录属于哪个平台')
+    expect(msg(r.notices)[0]).toContain('没有记录属于哪个平台')
   })
 
   it('手动选过音色：不动用户的设置', async () => {
@@ -285,7 +289,7 @@ describe('音色按平台沿用', () => {
     })
     const r = await applyMentions(doc, doc.get(n)!, speechNode, {}, collect(doc))
     expect(r.params.voice).toBe('')
-    expect(r.notices[0]).toContain('请在配音节点里手动选择音色')
+    expect(msg(r.notices)[0]).toContain('请在配音节点里手动选择音色')
   })
 })
 
@@ -364,6 +368,6 @@ describe('角色档案：@林夏/少年/校服', () => {
     const n = node(doc, 'plein/image', { prompt: '@林夏/学生装' })
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
     expect(r.params.prompt).toMatch(/^林夏\/学生装/)
-    expect(r.notices.join()).toContain('学生装')
+    expect(msg(r.notices).join()).toContain('学生装')
   })
 })

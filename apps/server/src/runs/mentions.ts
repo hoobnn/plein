@@ -18,7 +18,7 @@ import {
   voiceOf,
 } from '@plein/nodes'
 import { type NodeDefinition, parseModelRef, type PortValue } from '@plein/plugin-sdk'
-import type { InputRef, InputRefKind } from '@plein/protocol'
+import type { InputIssue, InputRef, InputRefKind } from '@plein/protocol'
 import { NodeRunError } from '../plugins/host'
 
 type Inputs = Record<string, PortValue[]>
@@ -42,11 +42,11 @@ export interface AppliedMentions {
   inputs: Inputs
   refs: UsedRef[]
   /** 不阻断运行、但用户该知道的提示（音色无法校验、@ 名字可能已改名、可选参考降级） */
-  notices: string[]
+  notices: InputIssue[]
   /** 每个引用的实际用法：能提供哪些图、送了哪些、没送的原因、是否必需；供实际输入预览与执行记录 */
   details: InputRef[]
   /** 必需参考用不上（缺图、当前模式不收、放不下）：这个镜头不提交 */
-  blocked: string[]
+  blocked: InputIssue[]
 }
 
 /** 画布上可被 @ 引用的东西：资产卡（角色、场景、道具、风格）和有名字的图片元素 */
@@ -144,7 +144,7 @@ export async function applyMentions(
   const targets = mentionTargets(doc)
   const byId = new Map(targets.map((t) => [t.id, t.el]))
   const hit = new Map<string, Hit>()
-  const notices: string[] = []
+  const notices: InputIssue[] = []
   for (const [key, value] of Object.entries(params)) {
     if (typeof value !== 'string' || !value.includes('@')) continue
     const found = findMentions(value, targets).filter((m) => m.id !== el.id)
@@ -162,8 +162,17 @@ export async function applyMentions(
       last = m.end
       if (h) hit.set(hitKey(h), h)
       if (m.profileMiss)
-        notices.push(`「${m.name}」的档案里没有「${m.profileMiss}」，这一段按普通文字处理`)
-      if (m.profileConflict) notices.push(`@${m.name}：${m.profileConflict}，已忽略`)
+        notices.push({
+          code: 'profile_miss',
+          message: `「${m.name}」的档案里没有「${m.profileMiss}」，这一段按普通文字处理`,
+          ...(m.id ? { elementId: m.id } : {}),
+        })
+      if (m.profileConflict)
+        notices.push({
+          code: 'profile_conflict',
+          message: `@${m.name}：${m.profileConflict}，已忽略`,
+          ...(m.id ? { elementId: m.id } : {}),
+        })
     }
     params[key] = text + value.slice(last)
     for (const b of broken) notices.push(brokenNotice(b.name, b.candidates))
@@ -174,9 +183,11 @@ export async function applyMentions(
   const groups: Group[] = []
   const refList: UsedRef[] = []
   const details: InputRef[] = []
-  const blocked: string[] = []
+  const blocked: InputIssue[] = []
   const notes: string[] = []
   const voices: Array<{ name: string; voice: VoiceRef }> = []
+  /** 参考图来自生成失败的上游：和「还没生成或没连」分开提示 */
+  const failedRefs = new Set<string>()
   for (const h of hit.values()) {
     const target = h.el
     const priority = required.get(target.id) ?? -1
@@ -196,6 +207,7 @@ export async function applyMentions(
     if (hasVoice(v)) voices.push({ name: pickLabel(h.name, h.pick), voice: v })
     const own = await collect(target.id)
     const base = (own.references ?? []).filter((v) => v.type === 'image')
+    if (base.length === 0 && referenceFailed(doc, target.id)) failedRefs.add(target.id)
     // 写了档案项：命中项的图排前面，再补卡片的参考图，每个角色截到上限
     const images = pickEmpty(h.pick)
       ? base
@@ -232,27 +244,44 @@ export async function applyMentions(
     def.inputs.some((p) => p.id === port && p.type === 'image') &&
     (!video || params.mode === 'reference')
   if (video && !send && groups.some((g) => g.images.length)) {
-    notices.push('@ 引用的参考图只在「图片参考」模式下送入模型，当前模式只附文字设定')
+    notices.push({
+      code: 'unsupported_refs',
+      message: '@ 引用的参考图只在「图片参考」模式下送入模型，当前模式只附文字设定',
+    })
     for (const r of refList) r.assetIds = []
   }
 
   for (const d of details) {
     if (!d.required) continue
     if (!send)
-      blocked.push(
-        video
+      blocked.push({
+        code: 'required_unsupported',
+        elementId: d.elementId,
+        message: video
           ? `「${d.name}」是必需参考，当前模式不送参考图，请切到「图片参考」或取消必需`
           : `「${d.name}」是必需参考，这个节点不收参考图`,
-      )
+      })
     else if (d.available.length === 0)
-      blocked.push(`「${d.name}」是必需参考，但还没有可用的参考图（未生成、生成失败或没连）`)
+      blocked.push(
+        failedRefs.has(d.elementId)
+          ? {
+              code: 'required_failed',
+              elementId: d.elementId,
+              message: `「${d.name}」是必需参考，但它的参考图生成失败了，请重新生成或取消必需`,
+            }
+          : {
+              code: 'required_no_image',
+              elementId: d.elementId,
+              message: `「${d.name}」是必需参考，但还没有可用的参考图（未生成或没连）`,
+            },
+      )
   }
 
   const own = send ? (inputs[port] ?? []) : []
   const refs = send ? pickRefs(own, groups, refList, details, maxRefs, notices, blocked) : []
   for (const [i, d] of details.entries()) {
     d.sent = send ? refList[i]!.assetIds : []
-    if (d.available.length === 0) d.reason = 'no_image'
+    if (d.available.length === 0) d.reason = failedRefs.has(d.elementId) ? 'failed' : 'no_image'
     else if (!send) d.reason = 'unsupported'
     else if (d.sent.length < d.available.length) d.reason = 'over_limit'
   }
@@ -268,6 +297,16 @@ export async function applyMentions(
         }
       : inputs
   return { params, inputs: merged, refs: refList, notices, details, blocked }
+}
+
+/** 连进卡片参考图端口的上游节点里，有最近一次运行失败的 */
+function referenceFailed(doc: PleinDoc, id: string) {
+  for (const e of doc.edges()) {
+    if (e.to[0] !== id || e.to[1] !== 'references') continue
+    const src = doc.get(e.from[0])
+    if (src?.kind === 'node' && src.run?.status === 'failed') return true
+  }
+  return false
 }
 
 /** 一组 @ 引用带来的参考图；priority 为必需参考的先后（-1 为可选） */
@@ -315,8 +354,8 @@ function pickRefs(
   refList: UsedRef[],
   details: InputRef[],
   max: number | undefined,
-  notices: string[],
-  blocked: string[],
+  notices: InputIssue[],
+  blocked: InputIssue[],
 ): PortValue[] {
   const all = groups.flatMap((g) => g.images)
   if (max === undefined) return all
@@ -339,21 +378,23 @@ function pickRefs(
   }
   for (const g of order) {
     if (take(g.images[0]) || g.priority < 0 || !g.images.length) continue
-    blocked.push(
-      `「${details[g.i]!.name}」是必需参考，但这个模型最多带 ${max} 张参考图，放不下了，请减少必需参考或换模型`,
-    )
+    blocked.push({
+      code: 'required_over_limit',
+      elementId: details[g.i]!.elementId,
+      message: `「${details[g.i]!.name}」是必需参考，但这个模型最多带 ${max} 张参考图，放不下了，请减少必需参考或换模型`,
+    })
   }
   for (const g of order) for (const v of g.images.slice(1)) take(v)
-  const dropped: string[] = []
+  const dropped: UsedRef[] = []
   for (const r of refList) {
     const before = r.assetIds.length
     r.assetIds = r.assetIds.filter((id) => kept.has(id) || ownIds.includes(id))
-    if (before > 0 && r.assetIds.length === 0) dropped.push(r.name)
+    if (before > 0 && r.assetIds.length === 0) dropped.push(r)
   }
-  if (dropped.length)
-    notices.push(
-      `这个模型最多带 ${max} 张参考图，${dropped.join('、')} 的参考图没有送入，只附了文字设定`,
-    )
+  // 一条给人看的汇总，按引用各记一条供程序判断时 message 相同
+  const message = `这个模型最多带 ${max} 张参考图，${dropped.map((r) => r.name).join('、')} 的参考图没有送入，只附了文字设定`
+  for (const r of dropped)
+    notices.push({ code: 'optional_dropped', elementId: r.elementId, message })
   return all.filter((v) => kept.has(imageIds([v])[0] ?? ''))
 }
 
@@ -365,13 +406,14 @@ function pickRefs(
 function applyVoice(
   params: Record<string, unknown>,
   voices: Array<{ name: string; voice: VoiceRef }>,
-  notices: string[],
+  notices: InputIssue[],
 ) {
   if (voices.length === 0) return
   if (voices.length > 1) {
-    notices.push(
-      `引用了 ${voices.length} 个有音色的角色（${voices.map((v) => v.name).join('、')}），请在配音节点里手动选择音色`,
-    )
+    notices.push({
+      code: 'voice_ambiguous',
+      message: `引用了 ${voices.length} 个有音色的角色（${voices.map((v) => v.name).join('、')}），请在配音节点里手动选择音色`,
+    })
     return
   }
   const { name, voice } = voices[0]!
@@ -380,9 +422,10 @@ function applyVoice(
   if (voiceFitsProvider(voice, provider)) return
   // 没选模型或音色没有平台信息：都算「无法校验」，照用但说清楚
   if (provider === '' || voice.provider === '') {
-    notices.push(
-      `沿用了「${name}」的音色 ${voice.voiceId}，它没有记录属于哪个平台，无法校验是否适用于当前模型，请确认`,
-    )
+    notices.push({
+      code: 'voice_unverified',
+      message: `沿用了「${name}」的音色 ${voice.voiceId}，它没有记录属于哪个平台，无法校验是否适用于当前模型，请确认`,
+    })
     return
   }
   throw new NodeRunError(
@@ -391,8 +434,11 @@ function applyVoice(
   )
 }
 
-function brokenNotice(name: string, candidates: string[]) {
-  return `提示词里的 @${name} 找不到同名资产，可能已被改名为「${candidates.join('」「')}」，请改过来`
+function brokenNotice(name: string, candidates: string[]): InputIssue {
+  return {
+    code: 'mention_broken',
+    message: `提示词里的 @${name} 找不到同名资产，可能已被改名为「${candidates.join('」「')}」，请改过来`,
+  }
 }
 
 const imageIds = (values: PortValue[]) =>

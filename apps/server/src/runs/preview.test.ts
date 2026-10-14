@@ -85,6 +85,8 @@ describe('实际输入预览', () => {
         title: 'Mock 图片',
         auto: false,
       })
+      expect(p).toMatchObject({ v: 1, status: 'ready', nodeVersion: 1 })
+      expect(p.inputHash).toMatch(/^v2:/)
       expect(p.referenceLimit).toBe(3)
       expect(p.prompt).toContain('林夏 天台 铁盒 钥匙 推门而入')
       expect(p.prompt).toContain('钥匙：钥匙的设定')
@@ -161,7 +163,9 @@ describe('实际输入预览', () => {
     })
     const seen = captureSubmits()
     const p = await preview(server, id, shot)
-    expect(p.blocked[0]).toContain('「信封」是必需参考')
+    expect(p.blocked[0]).toMatchObject({ code: 'required_no_image', elementId: empty })
+    expect(p.blocked[0]?.message).toContain('「信封」是必需参考')
+    expect(p.status).toBe('blocked')
     expect(p.refs.find((r) => r.elementId === empty)).toMatchObject({ reason: 'no_image' })
     const runId = server.runs.start(id, shot, 'local')
     expect(await server.runs.wait(runId)).toBe('failed')
@@ -169,7 +173,7 @@ describe('实际输入预览', () => {
     expect(doc.get(shot)?.run?.error).toContain('「信封」是必需参考')
     expect(seen).toEqual([])
     // 阻断原因也进了执行记录
-    expect(JSON.parse(server.runs.store.get(runId)!.input!).blocked[0]).toContain('信封')
+    expect(JSON.parse(server.runs.store.get(runId)!.input!).blocked[0]?.message).toContain('信封')
   }, 30_000)
 
   it('上游没有结果：预览照样返回，原因放进阻断', async () => {
@@ -178,7 +182,11 @@ describe('实际输入预览', () => {
     const down = addNode(doc, 'plein/image', { params: { prompt: '下游' }, x: 300, y: 800 })
     connect(doc, [up, 'images'], [down, 'references'])
     const p = await preview(server, id, down)
-    expect(p.blocked[0]).toContain('还没有结果')
+    expect(p.blocked[0]?.message).toContain('还没有结果')
+    // 准备失败算不出真正的缓存键：不给 inputHash，带了旧哈希提交也会被拦下
+    expect(p.blocked[0]?.code).toBe('prepare_failed')
+    expect(p.status).toBe('unprepared')
+    expect(p.inputHash).toBeUndefined()
     // 没选模型：显示自动选中的那个
     expect(p.model).toMatchObject({ provider: 'plein/mock', auto: true })
   }, 30_000)
@@ -204,6 +212,42 @@ describe('实际输入预览', () => {
     const p2 = await preview(server, id, shot)
     expect(p2.refs.find((r) => r.elementId === hero)!.sent).toEqual([assetOf(older)])
     expect(p2.inputHash).not.toBe(p1.inputHash)
+    // 输入记着取的是上游哪个结果
+    const ref = p2.inputs.references?.find((v) => v.assetId === assetOf(older))
+    expect(ref).toMatchObject({ resultId: older!.id, runId: older!.runId })
+  }, 30_000)
+
+  it('自动选模型：实际用的模型换了，缓存键跟着变', async () => {
+    const { server, id, doc } = await boot()
+    const auto = addNode(doc, 'plein/image', { params: { prompt: '天台' }, x: 0, y: 800 })
+    const p1 = await preview(server, id, auto)
+    const first = server.plugins.models('image.generate')[0]!
+    vi.spyOn(server.plugins, 'models').mockReturnValue([{ ...first, ref: 'plein/mock:other' }])
+    const p2 = await preview(server, id, auto)
+    expect(p2.model).toMatchObject({ ref: 'plein/mock:other', auto: true })
+    expect(p2.inputHash).not.toBe(p1.inputHash)
+  }, 30_000)
+
+  it('升级前的缓存键（无版本前缀）仍按旧算法认作有效，不整组重跑', async () => {
+    const { server, id, doc } = await boot()
+    const n = addNode(doc, 'plein/image', { params: { prompt: '天台' }, x: 0, y: 800 })
+    const runId = server.runs.start(id, n, 'local')
+    expect(await server.runs.wait(runId)).toBe('succeeded')
+    await until(() => !server.runs.isRunning(id, n))
+    const stale = async () => (await server.runs.staleNodes(id, 'local')).stale
+    expect(await stale()).not.toContain(n)
+    // 换成旧算法算出的键，模拟升级前的任务记录
+    const runs = server.runs as unknown as {
+      prepare(...a: unknown[]): Promise<unknown>
+      legacyCacheKey(...a: unknown[]): string
+    }
+    const prepared = await runs.prepare(doc, doc.get(n)!, 'local', new AbortController().signal)
+    const legacy = runs.legacyCacheKey(doc.get(n)!, prepared, [])
+    expect(legacy).not.toMatch(/^v2:/)
+    server.runs.store.update(runId, { cache_key: legacy })
+    expect(await stale()).not.toContain(n)
+    setParams(doc, n, { prompt: '天台，夜' })
+    expect(await stale()).toContain(n)
   }, 30_000)
 
   it('整组运行：必需参考缺图的镜头不提交，无关镜头照常完成', async () => {

@@ -39,6 +39,7 @@ import type {
   RunActivity,
   StaleNodes,
 } from '@plein/protocol'
+import { PREPARED_INPUT_VERSION } from '@plein/protocol'
 import { sleep } from '../plugins/limiter'
 import { NodeRunError, type PluginHost, SHUTDOWN } from '../plugins/host'
 import type { DB } from '../storage/db'
@@ -100,7 +101,17 @@ interface Prepared {
   inputs: Record<string, PortValue[]>
   /** @ 引用的实际用法、降级提示与阻断原因；节点没有声明时为空 */
   mentions?: Pick<AppliedMentions, 'details' | 'notices' | 'blocked'>
+  /** 来源是节点时取的是它哪一个结果（按来源元素 id）；只进执行记录，不算缓存内容 */
+  origins?: Map<string, Origin>
 }
+
+interface Origin {
+  resultId: string
+  runId: string
+}
+
+/** 缓存键的算法版本；算法变了递增，旧键由 legacyCacheKey 兼容比对 */
+const CACHE_KEY_VERSION = 'v2:'
 
 /** 输入里的长文本在实际输入摘要里只留开头 */
 const TEXT_PREVIEW = 2_000
@@ -216,7 +227,7 @@ export class NodeRuns {
   ): Promise<{ runId: string } | { changed: PreparedInput }> {
     if (expect) {
       const now = await this.preview(canvasId, nodeId, ownerId)
-      if (now.inputHash !== expect) return { changed: now }
+      if (!now.inputHash || now.inputHash !== expect) return { changed: now }
     }
     return { runId: this.start(canvasId, nodeId, ownerId) }
   }
@@ -232,11 +243,16 @@ export class NodeRuns {
         const prepared = await this.prepare(doc, el, ownerId, new AbortController().signal)
         return this.summarize(el, prepared)
       } catch (err) {
-        // 准备本身就过不去（上游没结果、@ 重名、音色跨平台）：照样给出能给的部分，原因放进阻断
+        // 准备本身就过不去（上游没结果、@ 重名、音色跨平台）：照样给出能给的部分，原因放进阻断；
+        // 这时算不出真正的缓存键，不给 inputHash，免得被当成确认过的版本
         if (!(err instanceof NodeRunError)) throw err
         const def = this.host.registry.latestNode(el.nodeType)?.def
-        const base = this.summarize(el, { def, params: el.params, inputs: {} })
-        return { ...base, blocked: [err.message, ...base.blocked] }
+        const { inputHash: _, ...base } = this.summarize(el, { def, params: el.params, inputs: {} })
+        return {
+          ...base,
+          status: 'unprepared',
+          blocked: [{ code: 'prepare_failed', message: err.message }, ...base.blocked],
+        }
       }
     } finally {
       doc.destroy()
@@ -265,42 +281,74 @@ export class NodeRuns {
     const shown = cacheParams(params)
     for (const k of [promptKey, 'usedRefs', 'requiredRefs', 'voice']) if (k) delete shown[k]
     const voice = voiceOf(params)
-    const limit = this.referenceLimit(params.model, def?.capability)
+    const model = this.resolveModel(params.model, def?.capability)
+    const limit = model?.limit
+    const blocked = p.mentions?.blocked ?? []
     return {
+      v: PREPARED_INPUT_VERSION,
       nodeId: el.id,
       nodeType: el.nodeType!,
+      ...(def ? { nodeVersion: def.version } : {}),
+      preparedAt: Date.now(),
+      status: blocked.length ? 'blocked' : 'ready',
       capability: def?.capability,
-      model: this.modelOf(params.model, def?.capability),
+      ...(model
+        ? {
+            model: {
+              ref: model.ref,
+              provider: model.provider,
+              title: model.title,
+              auto: model.auto,
+              ...(model.version ? { version: model.version } : {}),
+            },
+          }
+        : {}),
       ...(limit === undefined ? {} : { referenceLimit: limit }),
       ...(prompt === undefined ? {} : { prompt }),
       params: shown,
       inputs: Object.fromEntries(
-        Object.entries(p.inputs).map(([port, values]) => [port, values.map(inputValue)]),
+        Object.entries(p.inputs).map(([port, values]) => [
+          port,
+          values.map((v) => inputValue(v, v.source ? p.origins?.get(v.source) : undefined)),
+        ]),
       ),
       refs: p.mentions?.details ?? [],
       ...(def?.capability === 'audio.speech' && hasVoice(voice)
         ? { voice: { provider: voice.provider, voiceId: voice.voiceId } }
         : {}),
       notices: p.mentions?.notices ?? [],
-      blocked: p.mentions?.blocked ?? [],
+      blocked,
       inputHash: this.cacheKey(el, p, []),
     }
   }
 
-  /** 实际使用的模型：选了就是它，没选时按执行器的规则取同能力排第一的已启用模型 */
-  private modelOf(model: unknown, capability: string | undefined): PreparedInput['model'] {
-    if (typeof model === 'string' && model) {
-      const ref = parseModelRef(model)
-      const spec = ref
-        ? this.host.registry.providers.get(ref.provider)?.def.models.find((m) => m.id === ref.model)
-        : undefined
-      return { ref: model, provider: ref?.provider ?? '', title: spec?.title ?? model, auto: false }
+  /**
+   * 实际使用的模型：选了就是它，没选时按执行器的规则取同能力排第一的已启用模型。
+   * 带上参考图上限、平台声明的模型版本和平台插件版本，供预览和缓存键用
+   */
+  private resolveModel(model: unknown, capability: string | undefined) {
+    let ref: string
+    let auto = false
+    if (typeof model === 'string' && model) ref = model
+    else {
+      if (!capability) return undefined
+      const first = this.host.models(capability as Capability)[0]
+      if (!first) return undefined
+      ref = first.ref
+      auto = true
     }
-    if (!capability) return undefined
-    const first = this.host.models(capability as Capability)[0]
-    return first
-      ? { ref: first.ref, provider: first.provider, title: first.title, auto: true }
-      : undefined
+    const parsed = parseModelRef(ref)
+    const entry = parsed ? this.host.registry.providers.get(parsed.provider) : undefined
+    const spec = entry?.def.models.find((m) => m.id === parsed!.model)
+    return {
+      ref,
+      auto,
+      provider: parsed?.provider ?? '',
+      title: spec?.title ?? ref,
+      version: spec?.version,
+      limit: spec?.limits?.references?.max,
+      plugin: entry ? this.host.registry.plugin(entry.plugin)?.manifest.version : undefined,
+    }
   }
 
   /** 等任务结束，返回最终状态 */
@@ -587,7 +635,10 @@ export class NodeRuns {
     try {
       const prepared = await this.prepare(doc, el, ownerId, signal)
       const omit = job.cache_omit ? (JSON.parse(job.cache_omit) as string[]) : []
-      return this.cacheKey(el, prepared, omit) === job.cache_key
+      const key = job.cache_key.startsWith(CACHE_KEY_VERSION)
+        ? this.cacheKey(el, prepared, omit)
+        : this.legacyCacheKey(el, prepared, omit)
+      return key === job.cache_key
     } catch {
       return false
     }
@@ -761,7 +812,8 @@ export class NodeRuns {
     const input = this.summarize(el, prepared)
     this.store.update(a.id, { input: JSON.stringify(input) })
     // 必需参考用不上：不提交，免得花钱生成一张缺了关键角色或道具的图
-    if (input.blocked.length) throw new NodeRunError('invalid_input', input.blocked.join('；'))
+    if (input.blocked.length)
+      throw new NodeRunError('invalid_input', input.blocked.map((b) => b.message).join('；'))
     // 运行中的状态：进度、执行器提示和调用平台的阶段合在一起写回文档
     const live: Omit<NodeRun, 'at'> = { ...base }
     let lastProgress = 0
@@ -815,44 +867,57 @@ export class NodeRuns {
     ownerId: string,
     signal: AbortSignal,
   ): Promise<Prepared> {
-    const collected = await this.collectInputs(doc, el.id, ownerId, signal)
+    const origins = new Map<string, Origin>()
+    const collected = await this.collectInputs(doc, el.id, ownerId, signal, 0, origins)
     const def = this.host.registry.latestNode(el.nodeType!)?.def
-    if (!def) return { def, params: el.params, inputs: collected }
+    if (!def) return { def, params: el.params, inputs: collected, origins }
     const { params, inputs, details, notices, blocked } = await applyMentions(
       doc,
       el,
       def,
       collected,
-      (id) => this.collectInputs(doc, id, ownerId, signal),
-      this.referenceLimit(el.params?.model, def.capability),
+      (id) => this.collectInputs(doc, id, ownerId, signal, 0, origins),
+      this.resolveModel(el.params?.model, def.capability)?.limit,
     )
-    return { def, params, inputs, mentions: { details, notices, blocked } }
+    return { def, params, inputs, mentions: { details, notices, blocked }, origins }
   }
 
   /**
-   * 节点要用的模型最多收几张参考图；没选模型时按执行器自动选的那个（同能力排第一的已启用模型）。
-   * 没声明上限时不限
+   * 缓存键：节点类型与版本、实际模型（自动选择时是解析出的那个）及其版本、平台插件版本、
+   * 有效参数（迁移到最新版本后）和输入内容的哈希，带算法版本前缀
    */
-  private referenceLimit(model: unknown, capability: string | undefined) {
-    if (typeof model === 'string' && model) {
-      const ref = parseModelRef(model)
-      if (!ref) return undefined
-      const entry = this.host.registry.providers.get(ref.provider)
-      return entry?.def.models.find((m) => m.id === ref.model)?.limits?.references?.max
-    }
-    if (!capability) return undefined
-    return this.host.models(capability as Capability)[0]?.limits?.references?.max
+  private cacheKey(el: CanvasElement, p: Prepared, omit: string[]) {
+    const model = this.resolveModel(this.latestParams(el, p)?.model, p.def?.capability)
+    return (
+      CACHE_KEY_VERSION +
+      this.hashKey(el, p, omit, NOT_CONTENT, {
+        model: model ? { ref: model.ref, version: model.version, plugin: model.plugin } : null,
+      })
+    )
   }
 
-  /** 节点类型、版本、参数（迁移到最新版本后）和输入的哈希 */
-  private cacheKey(el: CanvasElement, p: Prepared, omit: string[]) {
-    let params: Record<string, unknown> | undefined = p.params
-    if (p.def) {
-      try {
-        params = resolveParams(p.def, p.params, el.nodeVersion ?? p.def.version)
-      } catch {}
+  /** 加前缀之前的缓存键：不含实际模型与插件版本，usedRefs 计入；只用来认旧任务的结果 */
+  private legacyCacheKey(el: CanvasElement, p: Prepared, omit: string[]) {
+    return this.hashKey(el, p, omit, LEGACY_NOT_CONTENT, {})
+  }
+
+  private latestParams(el: CanvasElement, p: Prepared) {
+    if (!p.def) return p.params
+    try {
+      return resolveParams(p.def, p.params, el.nodeVersion ?? p.def.version)
+    } catch {
+      return p.params
     }
-    const kept = cacheParams(params ?? {}, omit)
+  }
+
+  private hashKey(
+    el: CanvasElement,
+    p: Prepared,
+    omit: string[],
+    notContent: ReadonlySet<string>,
+    extra: Record<string, unknown>,
+  ) {
+    const kept = cacheParams(this.latestParams(el, p) ?? {}, omit, notContent)
     return createHash('sha256')
       .update(
         stableStringify({
@@ -863,6 +928,7 @@ export class NodeRuns {
           inputs: Object.fromEntries(
             Object.entries(p.inputs).map(([k, vs]) => [k, vs.map(({ source: _, ...v }) => v)]),
           ),
+          ...extra,
         }),
       )
       .digest('hex')
@@ -879,6 +945,7 @@ export class NodeRuns {
     ownerId: string,
     signal: AbortSignal,
     depth = 0,
+    origins?: Map<string, Origin>,
   ): Promise<Record<string, PortValue[]>> {
     if (depth > MAX_DEPTH) throw new NodeRunError('invalid_input', '上游连线成环或层级过深')
     const edges = [...doc.edges()].filter((e) => e.to[0] === nodeId)
@@ -893,6 +960,8 @@ export class NodeRuns {
       const src = doc.get(edge.from[0])
       if (!src) continue
       const values = await this.upstreamValues(doc, src, edge.from[1], ownerId, signal, depth)
+      const r = src.kind === 'node' ? currentResult(src, edge.from[1]) : undefined
+      if (r && origins) origins.set(src.id, { resultId: r.id, runId: r.runId })
       const tagged = values.map((v) => ({ ...v, source: src.id }))
       inputs[edge.to[1]] = [...(inputs[edge.to[1]] ?? []), ...tagged]
     }
@@ -961,12 +1030,15 @@ function groupState(g: GroupRow): GroupRunState {
   }
 }
 
-function inputValue(v: PortValue): InputValue {
-  const source = v.source ? { source: v.source } : {}
-  if (v.type === 'text') return { type: 'text', text: v.text.slice(0, TEXT_PREVIEW), ...source }
-  if (v.type === 'json')
-    return { type: 'json', text: JSON.stringify(v.value).slice(0, TEXT_PREVIEW), ...source }
-  return { type: v.type, assetId: v.assetId, ...source }
+function inputValue(v: PortValue, origin?: Origin): InputValue {
+  const meta = { ...(v.source ? { source: v.source } : {}), ...origin }
+  const text = (t: string) =>
+    t.length > TEXT_PREVIEW
+      ? { text: t.slice(0, TEXT_PREVIEW), truncated: true as const }
+      : { text: t }
+  if (v.type === 'text') return { type: 'text', ...text(v.text), ...meta }
+  if (v.type === 'json') return { type: 'json', ...text(JSON.stringify(v.value)), ...meta }
+  return { type: v.type, assetId: v.assetId, ...meta }
 }
 
 function parseInput(raw: string | null): PreparedInput | undefined {
@@ -1002,13 +1074,21 @@ function jobInfo(j: JobRow): JobInfo {
  * - 后加参数取中性值（分辨率留空、语速 1 倍、专属参数为空）时不算：加之前生成的结果不必因此重跑。
  */
 const NEUTRAL: Record<string, unknown> = { resolution: '', speed: 1 }
-/** 不影响送进模型内容的设置：必需参考只决定怎么取舍，取舍结果已经体现在实际输入里 */
-const NOT_CONTENT = new Set(['requiredRefs'])
+/**
+ * 不影响送进模型内容的设置：必需参考只决定怎么取舍，usedRefs 是取舍结果的描述，
+ * 两者的效果都已经体现在实际输入里
+ */
+const NOT_CONTENT: ReadonlySet<string> = new Set(['requiredRefs', 'usedRefs'])
+const LEGACY_NOT_CONTENT: ReadonlySet<string> = new Set(['requiredRefs'])
 
-export function cacheParams(params: Record<string, unknown>, omit: string[] = []) {
+export function cacheParams(
+  params: Record<string, unknown>,
+  omit: string[] = [],
+  notContent: ReadonlySet<string> = NOT_CONTENT,
+) {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(params)) {
-    if (omit.includes(k) || NOT_CONTENT.has(k)) continue
+    if (omit.includes(k) || notContent.has(k)) continue
     if (k in NEUTRAL && NEUTRAL[k] === v) continue
     if (k === 'options' && v && typeof v === 'object' && typeof params.model === 'string') {
       const own = (v as Record<string, Record<string, unknown> | undefined>)[params.model]

@@ -1,16 +1,26 @@
 import { imageNode, videoNode } from '@plein/nodes'
-import { connect, createDoc, createElement, type PleinDoc, updateElement } from '@plein/doc'
+import {
+  connect,
+  createDoc,
+  createElement,
+  type PleinDoc,
+  updateElement,
+  writeRun,
+} from '@plein/doc'
 import type { PortValue } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
 import { addNode } from '../testing'
 import { applyMentions } from './mentions'
 
+const msg = (issues: Array<{ message: string }>) => issues.map((i) => i.message)
+
 /** 资产卡连进来的图就是它的参考图（与 runs.collectInputs 一样带上来源元素） */
 const collect = (doc: PleinDoc) => async (id: string) => {
   const refs: PortValue[] = []
-  for (const e of doc.edges())
-    if (e.to[0] === id)
-      refs.push({ type: 'image', assetId: doc.get(e.from[0])!.assetId!, kind: 'image' })
+  for (const e of doc.edges()) {
+    const assetId = e.to[0] === id ? doc.get(e.from[0])?.assetId : undefined
+    if (assetId) refs.push({ type: 'image', assetId, kind: 'image' })
+  }
   return { references: refs }
 }
 
@@ -71,7 +81,7 @@ describe('必需参考与取舍', () => {
       sent: [asset('d')],
     })
     expect(r.details.find((d) => d.elementId === roof)!.sent).toEqual([asset('b')])
-    expect(r.notices.join()).toContain('铁盒 的参考图没有送入')
+    expect(msg(r.notices).join()).toContain('铁盒 的参考图没有送入')
     expect(r.blocked).toEqual([])
   })
 
@@ -86,7 +96,21 @@ describe('必需参考与取舍', () => {
     const required = shot(doc, 'plein/image', { prompt: '@林夏 @钥匙', requiredRefs: [key] })
     const r2 = await applyMentions(doc, doc.get(required)!, imageNode, {}, collect(doc), 3)
     expect(r2.blocked).toHaveLength(1)
-    expect(r2.blocked[0]).toContain('「钥匙」是必需参考')
+    expect(r2.blocked[0]).toMatchObject({ code: 'required_no_image', elementId: key })
+    expect(r2.blocked[0]?.message).toContain('「钥匙」是必需参考')
+  })
+
+  it('参考图生成失败：记为 failed，和还没生成分开', async () => {
+    const { doc, key } = scene({ keyImage: false })
+    const gen = addNode(doc, 'plein/image', { params: { prompt: '钥匙' }, x: 900, y: -600 })
+    connect(doc, [gen, 'images'], [key, 'references'])
+    writeRun(doc, gen, { id: 'r1', status: 'failed', at: 1 })
+    const optional = shot(doc, 'plein/image', { prompt: '@林夏 @钥匙' })
+    const r1 = await applyMentions(doc, doc.get(optional)!, imageNode, {}, collect(doc), 3)
+    expect(r1.details.find((d) => d.elementId === key)).toMatchObject({ reason: 'failed' })
+    const required = shot(doc, 'plein/image', { prompt: '@林夏 @钥匙', requiredRefs: [key] })
+    const r2 = await applyMentions(doc, doc.get(required)!, imageNode, {}, collect(doc), 3)
+    expect(r2.blocked[0]).toMatchObject({ code: 'required_failed', elementId: key })
   })
 
   it('必需参考超过模型上限：阻断，不悄悄舍弃', async () => {
@@ -98,7 +122,8 @@ describe('必需参考与取舍', () => {
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc), 2)
     expect(r.blocked).toHaveLength(1)
     // 先后顺序：铁盒、天台先放，林夏放不下
-    expect(r.blocked[0]).toContain('「林夏」是必需参考，但这个模型最多带 2 张参考图')
+    expect(r.blocked[0]).toMatchObject({ code: 'required_over_limit', elementId: hero })
+    expect(r.blocked[0]?.message).toContain('「林夏」是必需参考，但这个模型最多带 2 张参考图')
   })
 
   it('生成视频不在「图片参考」模式：可选参考记为 unsupported，必需参考阻断', async () => {
@@ -114,7 +139,8 @@ describe('必需参考与取舍', () => {
       requiredRefs: [box],
     })
     const r2 = await applyMentions(doc, doc.get(required)!, videoNode, {}, collect(doc))
-    expect(r2.blocked[0]).toContain('当前模式不送参考图')
+    expect(r2.blocked[0]).toMatchObject({ code: 'required_unsupported', elementId: box })
+    expect(r2.blocked[0]?.message).toContain('当前模式不送参考图')
   })
 
   it('改名后必需参考仍按元素对应', async () => {
