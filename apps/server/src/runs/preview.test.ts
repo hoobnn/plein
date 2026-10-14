@@ -1,4 +1,4 @@
-import { adoptResult, connect, createElement, type PleinDoc, setParams } from '@plein/doc'
+import { adoptResult, connect, createElement, type PleinDoc, setParams, writeRun } from '@plein/doc'
 import type { AssetRef, ProviderRequest } from '@plein/plugin-sdk'
 import type { JobList, PreparedInput } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
@@ -190,6 +190,23 @@ describe('实际输入预览', () => {
     // 没选模型：显示自动选中的那个
     expect(p.model).toMatchObject({ provider: 'plein/mock', auto: true })
   }, 30_000)
+
+  it('卡片的参考图节点生成失败、没有结果：镜头只带文字设定照常运行，提示参考图失败', async () => {
+    const { server, id, doc, shot } = await boot()
+    const prop = card(doc, 'plein/prop', '证物', null, 1200)
+    const gen = addNode(doc, 'plein/image', { params: { prompt: '证物' }, x: 1200, y: -600 })
+    connect(doc, [gen, 'images'], [prop, 'references'])
+    writeRun(doc, gen, { id: 'r1', status: 'failed', at: 1 })
+    setParams(doc, shot, { prompt: '@林夏 @证物 推门而入' })
+    const p = await preview(server, id, shot)
+    expect(p.status).toBe('ready')
+    expect(p.refs.find((r) => r.name === '证物')).toMatchObject({ sent: [], reason: 'failed' })
+    expect(p.prompt).toContain('证物的设定')
+    const res = await run(server, id, shot)
+    expect(res.status).toBe(202)
+    const { runId } = (await res.json()) as { runId: string }
+    expect(await server.runs.wait(runId)).toBe('succeeded')
+  })
 
   it('换候选：角色卡采用另一张定妆图后，预览里的实际资产跟着换', async () => {
     const { server, id, doc } = await boot()

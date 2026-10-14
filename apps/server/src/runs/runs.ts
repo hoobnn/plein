@@ -1403,7 +1403,8 @@ export class NodeRuns implements BatchHost {
       el,
       def,
       collected,
-      (id) => this.collectInputs(doc, id, ownerId, signal, 0, origins),
+      // @ 引用是软依赖：卡片的参考图节点还没结果（生成失败、被审核拦下）时只附文字设定
+      (id) => this.collectInputs(doc, id, ownerId, signal, 0, origins, true),
       this.resolveModel(el.params?.model, def.capability)?.limit,
     )
     return { def, params, inputs, mentions: { details, notices, blocked }, origins }
@@ -1473,6 +1474,8 @@ export class NodeRuns implements BatchHost {
     signal: AbortSignal,
     depth = 0,
     origins?: Map<string, Origin>,
+    /** 上游节点没有结果时当作没有值，而不是报错 */
+    lenient = false,
   ): Promise<Record<string, PortValue[]>> {
     if (depth > MAX_DEPTH) throw new NodeRunError('invalid_input', '上游连线成环或层级过深')
     const edges = [...doc.edges()].filter((e) => e.to[0] === nodeId)
@@ -1486,7 +1489,15 @@ export class NodeRuns implements BatchHost {
     for (const edge of edges) {
       const src = doc.get(edge.from[0])
       if (!src) continue
-      const values = await this.upstreamValues(doc, src, edge.from[1], ownerId, signal, depth)
+      const values = await this.upstreamValues(
+        doc,
+        src,
+        edge.from[1],
+        ownerId,
+        signal,
+        depth,
+        lenient,
+      )
       const r = src.kind === 'node' ? currentResult(src, edge.from[1]) : undefined
       if (r && origins) origins.set(src.id, { resultId: r.id, runId: r.runId })
       const tagged = values.map((v) => ({ ...v, source: src.id }))
@@ -1502,6 +1513,7 @@ export class NodeRuns implements BatchHost {
     ownerId: string,
     signal: AbortSignal,
     depth: number,
+    lenient = false,
   ): Promise<PortValue[]> {
     const label = src.name ?? '上游'
     switch (src.kind) {
@@ -1520,12 +1532,21 @@ export class NodeRuns implements BatchHost {
             type: src.nodeType!,
             version: src.nodeVersion ?? 1,
             params: src.params,
-            inputs: await this.collectInputs(doc, src.id, ownerId, signal, depth + 1),
+            inputs: await this.collectInputs(
+              doc,
+              src.id,
+              ownerId,
+              signal,
+              depth + 1,
+              undefined,
+              lenient,
+            ),
             ownerId,
             signal,
           })
           return out[port] ?? []
         }
+        if (lenient) return []
         throw new NodeRunError('missing_input', `上游节点「${label}」还没有结果，请先运行它`)
       }
       default:
