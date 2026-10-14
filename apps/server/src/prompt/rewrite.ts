@@ -1,7 +1,5 @@
-import { API, RewritePrompt, type RewritePromptResult } from '@plein/protocol'
+import type { RewritePrompt, RewritePromptResult } from '@plein/protocol'
 import { ProviderError } from '@plein/plugin-sdk'
-import { Hono } from 'hono'
-import type { AuthEnv } from '../auth'
 import type { PluginHost } from '../plugins/host'
 
 /** 没列出名字时 @ 引用的边界，与前端 @ 候选的停止字符一致 */
@@ -133,23 +131,4 @@ export async function rewritePrompt(
     throw new PromptError('bad_output', '模型没有保留引用或占位，请重试或换一个模型', 502)
   if (!out.trim()) throw new PromptError('bad_output', '模型没有返回内容，请重试', 502)
   return { text: out, model }
-}
-
-export function promptRoutes(host: PluginHost) {
-  return new Hono<AuthEnv>().post(API.promptRewrite, async (c) => {
-    if (c.var.principal.role === 'viewer')
-      return c.json({ error: 'forbidden', message: '只读成员不能改写提示词' }, 403)
-    const body = RewritePrompt.safeParse(await c.req.json().catch(() => null))
-    if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
-    try {
-      const result = await rewritePrompt(host, body.data, {
-        ownerId: c.var.principal.id,
-        signal: c.req.raw.signal,
-      })
-      return c.json(result satisfies RewritePromptResult)
-    } catch (err) {
-      if (!(err instanceof PromptError)) throw err
-      return c.json({ error: err.code, message: err.message }, err.status)
-    }
-  })
 }

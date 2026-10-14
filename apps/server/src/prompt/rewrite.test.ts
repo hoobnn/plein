@@ -1,7 +1,7 @@
 import { API, type RewritePrompt, type RewritePromptResult } from '@plein/protocol'
 import { beforeAll, describe, expect, it } from 'vite-plus/test'
 import { startTestServer } from '../testing'
-import { maskPrompt, unmaskPrompt } from './prompt'
+import { maskPrompt, unmaskPrompt } from './rewrite'
 
 describe('maskPrompt / unmaskPrompt', () => {
   it('引用和占位换成标记，再原样换回', () => {

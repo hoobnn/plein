@@ -31,7 +31,7 @@ import {
 import sharp, { type Sharp } from 'sharp'
 import { z } from 'zod'
 import { DeriveError, deriveAsset } from '../assets/derive'
-import { PromptError, rewritePrompt } from '../http/prompt'
+import { PromptError, rewritePrompt } from '../prompt/rewrite'
 import { ffmpegBin, hasFfmpeg } from '../assets/media'
 import type { AssetStore } from '../assets/store'
 import { NodeRunError, type PluginHost } from '../plugins/host'

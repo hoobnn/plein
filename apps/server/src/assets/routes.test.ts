@@ -7,8 +7,8 @@ import { AssetStore } from '../assets/store'
 import type { AuthEnv } from '../auth'
 import { openDb } from '../storage/db'
 import { tempDir } from '../testing'
-import { assetRoutes } from './assets'
-import { renderableInline } from './files'
+import { assetRoutes } from './routes'
+import { renderableInline } from '../http/files'
 
 let store: AssetStore
 let db: ReturnType<typeof openDb>

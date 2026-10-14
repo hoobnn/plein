@@ -2,7 +2,7 @@ import { API, AssetVariant } from '@plein/protocol'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import { type AssetStore, UploadTooLargeError, VARIANT_TYPES } from '../assets/store'
-import { sendFile } from './files'
+import { sendFile } from '../http/files'
 
 const HASH = /^[0-9a-f]{64}$/
 const notFound = { error: 'not_found', message: '资产不存在' }

@@ -14,7 +14,7 @@ import { subtitleFont } from '../assets/fonts'
 import { sequencePackage } from '../assets/interchange'
 import { mediaCaps } from '../assets/media'
 import { type AssetStore, UploadTooLargeError } from '../assets/store'
-import { sendFile } from './files'
+import { sendFile } from '../http/files'
 
 const notFound = { error: 'not_found', message: '资产不存在' }
 
