@@ -193,6 +193,33 @@ describe('远端成功、本地获取失败', () => {
     expect(job(server, id, run).recovery?.state).toBe('adopted')
   })
 
+  it('轮询一直失败、自动重试用完：平台已受理，可以重新获取，不重新提交', async () => {
+    const { server } = await boot()
+    ;(server.runs as unknown as { retryDelays: number[] }).retryDelays = [20, 20]
+    mock(server, { latencyMs: 200 })
+    const submit = vi.spyOn(mockProvider, 'submit')
+    const poll = mockProvider.poll!
+    let broken = true
+    vi.spyOn(mockProvider, 'poll').mockImplementation(async (remoteId, ctx) => {
+      if (broken) throw new ProviderError('unavailable', '模拟轮询网络断开')
+      return poll(remoteId, ctx)
+    })
+    const { id, doc } = await canvas(server)
+    const a = addNode(doc, 'plein/image', { params: { prompt: 'a', count: 1 } })
+    const run = server.runs.start(id, a, 'local')
+    expect(await server.runs.wait(run)).toBe('failed')
+    expect(job(server, id, run).recovery).toMatchObject({
+      state: 'remote_pending',
+      refetchable: true,
+    })
+
+    broken = false
+    expect((await recover(server, id, run, { action: 'refetch' })).status).toBe(200)
+    await until(() => status(server, run) === 'succeeded')
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect(doc.get(a)?.results).toHaveLength(1)
+  })
+
   it('下载失败：结果地址过期时重新查询平台拿新地址，不重新提交', async () => {
     const { server } = await boot()
     mock(server, { latencyMs: 0 })

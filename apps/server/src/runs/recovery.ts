@@ -93,6 +93,13 @@ export function recoveryAfter(
     } else if (calls.some((c) => c.state === 'unknown' || c.state === 'submitting'))
       out.state = 'submit_unknown'
     else if (calls.some((c) => c.state === 'fetched')) out.state = 'fetch_failed'
+  } else if (status === 'failed' && !out.state) {
+    // 平台已受理后轮询一直出错（网络、限流、超时）：任务还在平台上，可以接着取，不必重新提交
+    const pending = calls.find((c) => c.state === 'pending')
+    if (pending?.state === 'pending') {
+      out.state = 'remote_pending'
+      out.remoteId = pending.remoteId
+    }
   }
   return Object.keys(out).length ? out : null
 }
