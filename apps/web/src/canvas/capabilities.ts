@@ -53,6 +53,7 @@ export function localContext(engine: Engine, catalog: Catalog | null): Capabilit
                 .map((m) => ({ ref: `${p.id}:${m.id}`, title: m.title ?? m.id, voices: m.voices }))
             : [],
         ),
+      defaultModel: (capability) => catalog?.defaultModels[capability] ?? '',
       prompts: () => catalog?.prompts ?? [],
     },
     assetMeta: () => undefined,

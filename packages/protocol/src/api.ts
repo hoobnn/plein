@@ -49,6 +49,7 @@ export const API = {
   /** Provider id 形如 vendor/name，直接作为两段路径 */
   providerConfig: (id: string) => `/api/providers/${id}/config`,
   providerTest: (id: string) => `/api/providers/${id}/test`,
+  modelDefaults: '/api/model-defaults',
   /** 运行画布上的一个节点；状态与结果经 Yjs 同步回画布 */
   nodeRun: (canvasId: string, nodeId: string) =>
     `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/run`,

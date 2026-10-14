@@ -38,6 +38,7 @@ function setup(origin?: unknown) {
           : undefined,
       all: () => [{ def: textNode, descriptor: describeNode(textNode, 'test'), runnable: true }],
       models: () => [],
+      defaultModel: () => '',
       prompts: () => [],
     },
     assetMeta: () => undefined,

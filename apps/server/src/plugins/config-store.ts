@@ -11,6 +11,9 @@ export interface ProviderConfig {
 export class ProviderConfigStore {
   private file: string
   private data: Record<string, ProviderConfig>
+  /** 每种模型能力的默认模型（`平台:模型` 引用），新建节点时写进节点 */
+  private defaultsFile: string
+  private defaults: Record<string, string>
 
   constructor(
     dataDir: string,
@@ -21,6 +24,20 @@ export class ProviderConfigStore {
     this.data = existsSync(this.file)
       ? (JSON.parse(readFileSync(this.file, 'utf8')) as Record<string, ProviderConfig>)
       : {}
+    this.defaultsFile = join(dataDir, 'models.json')
+    this.defaults = existsSync(this.defaultsFile)
+      ? (JSON.parse(readFileSync(this.defaultsFile, 'utf8')) as Record<string, string>)
+      : {}
+  }
+
+  defaultModel(capability: string): string | undefined {
+    return this.defaults[capability]
+  }
+
+  setDefaultModel(capability: string, ref: string) {
+    if (this.defaults[capability] === ref) return
+    this.defaults[capability] = ref
+    write(this.defaultsFile, this.defaults)
   }
 
   get(id: string): ProviderConfig {
@@ -54,8 +71,12 @@ export class ProviderConfigStore {
   }
 
   private save() {
-    const tmp = `${this.file}.tmp`
-    writeFileSync(tmp, JSON.stringify(this.data, null, 2), { mode: 0o600 })
-    renameSync(tmp, this.file)
+    write(this.file, this.data)
   }
+}
+
+function write(file: string, data: unknown) {
+  const tmp = `${file}.tmp`
+  writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 })
+  renameSync(tmp, file)
 }

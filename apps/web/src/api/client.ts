@@ -11,6 +11,7 @@ import {
   type Canvas,
   type Catalog,
   type CreateLibraryItem,
+  type DefaultModelUpdate,
   type JobList,
   type JobInfo,
   type BatchItem,
@@ -167,6 +168,8 @@ export const api = {
   providerConfig: (id: string) => request<ProviderConfigView>(API.providerConfig(id)),
   updateProviderConfig: (id: string, body: ProviderConfigUpdate) =>
     request<ProviderConfigView>(API.providerConfig(id), json('PUT', body)),
+  setDefaultModel: (body: DefaultModelUpdate) =>
+    request<{ defaultModels: Catalog['defaultModels'] }>(API.modelDefaults, json('PUT', body)),
   testProvider: (id: string) => request<ProviderTestResult>(API.providerTest(id), json('POST', {})),
   rewritePrompt: (body: RewritePrompt) =>
     request<RewritePromptResult>(API.promptRewrite, json('POST', body)),

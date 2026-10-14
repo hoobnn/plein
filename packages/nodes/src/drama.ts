@@ -259,31 +259,6 @@ export function dramaCapabilities(t: DramaTemplateSpec): string[] {
   return [...new Set(t.elements.map((e) => e.capability).filter((c): c is string => !!c))]
 }
 
-/** catalog 里平台列表的最小结构：这里不依赖 @plein/protocol */
-export interface DramaProviderLike {
-  id: string
-  enabled: boolean
-  models: Array<{ id: string; capabilities: string[] }>
-}
-
-/**
- * 挑一个已启用平台里第一个支持该能力的模型，返回 `平台:模型` 引用。
- * 规则与服务端执行器的自动选模型一致（只看 enabled），挑不到返回空字符串：
- * 模板里模型留空比塞一个没配密钥的模型更诚实。
- */
-export function pickCapabilityModel(
-  providers: readonly DramaProviderLike[] | null | undefined,
-  capability: string,
-): string {
-  for (const p of providers ?? []) {
-    if (!p.enabled) continue
-    for (const m of p.models) {
-      if (m.capabilities.includes(capability)) return `${p.id}:${m.id}`
-    }
-  }
-  return ''
-}
-
 const CAPABILITY_LABELS: Record<string, string> = {
   'text.chat': '文本',
   'image.generate': '图像',
@@ -291,17 +266,8 @@ const CAPABILITY_LABELS: Record<string, string> = {
   'audio.speech': '配音',
   'audio.music': '配乐',
   'audio.sfx': '音效',
+  'audio.transcribe': '语音识别',
 }
 
 /** 能力的中文名，用于「请到设置里启用」的提示 */
 export const capabilityLabel = (capability: string) => CAPABILITY_LABELS[capability] ?? capability
-
-/** 模板需要、但当前没有已启用模型支持的能力（中文名） */
-export function missingCapabilities(
-  t: DramaTemplateSpec,
-  providers: readonly DramaProviderLike[] | null | undefined,
-): string[] {
-  return dramaCapabilities(t)
-    .filter((c) => !pickCapabilityModel(providers, c))
-    .map(capabilityLabel)
-}

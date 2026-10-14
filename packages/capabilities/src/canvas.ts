@@ -92,7 +92,7 @@ export const listNodeTypes = defineCapability({
   name: 'list_node_types',
   title: '查看可用节点',
   description:
-    '列出可以创建的节点类型：用途、输入输出端口、参数 JSON Schema 与默认值，以及当前已启用、可选的模型（model 参数填 ref；留空则自动选择）。',
+    '列出可以创建的节点类型：用途、输入输出端口、参数 JSON Schema 与默认值，以及当前已启用、可选的模型（model 参数填 ref；不填时用 defaults 里的默认模型，没有默认模型就必须填）。',
   group: 'read',
   where: 'doc',
   effect: 'read',

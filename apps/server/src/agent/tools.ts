@@ -21,7 +21,7 @@ import {
   summarize,
 } from '@plein/capabilities'
 import { currentResult, elementMedia, mediaSize, type PleinDoc, setParams } from '@plein/doc'
-import { describeNode, executionOf } from '@plein/plugin-sdk'
+import { describeNode, executionOf, withDefaultModel } from '@plein/plugin-sdk'
 import {
   type AgentApprovalMode,
   type EditPlan,
@@ -110,7 +110,7 @@ export function serverContext(env: ToolEnv): ServerContext {
   const { host } = env
   const info = (key: string, n: NonNullable<ReturnType<typeof host.registry.latestNode>>) => ({
     def: n.def,
-    descriptor: describeNode(n.def, n.plugin),
+    descriptor: withDefaultModel(describeNode(n.def, n.plugin), (c) => host.defaultModel(c)),
     runnable: executionOf(n.def) === 'inline' || host.registry.executors.has(key),
   })
   return {
@@ -131,6 +131,7 @@ export function serverContext(env: ToolEnv): ServerContext {
       },
       models: (capability) =>
         host.models(capability).map((m) => ({ ref: m.ref, title: m.title, voices: m.voices })),
+      defaultModel: (capability) => host.defaultModel(capability),
       prompts: () => [...host.registry.prompts.values()].map((p) => p.def),
     },
     assetMeta: (assetId) => env.assets.get(env.ownerId, assetId) ?? undefined,

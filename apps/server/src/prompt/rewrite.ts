@@ -84,7 +84,7 @@ export class PromptError extends Error {
   }
 }
 
-/** 提示词改写：优化 / 中英互译，用已启用的对话模型。@ 引用和【占位】原样保留 */
+/** 提示词改写：优化 / 中英互译，没指定模型时用默认对话模型。@ 引用和【占位】原样保留 */
 export async function rewritePrompt(
   host: PluginHost,
   input: RewritePrompt,
@@ -93,7 +93,7 @@ export async function rewritePrompt(
   const { text, mode, mentions } = input
   const target = input.target ?? 'image'
   const models = host.models('text.chat')
-  const model = input.model ?? models[0]?.ref
+  const model = input.model ?? host.defaultModel('text.chat')
   if (!model)
     throw new PromptError('no_model', '没有可用的对话模型，请先在设置里启用支持对话的平台', 409)
   if (!models.some((m) => m.ref === model))

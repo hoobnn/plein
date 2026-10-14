@@ -7,6 +7,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createDoc, createElement, type PleinDoc, type Port } from '@plein/doc'
 import { corePlugin } from '@plein/nodes'
+import { nodeElementOf } from '@plein/capabilities'
+import { type Capability, describeNode, modelRef, withDefaultModel } from '@plein/plugin-sdk'
+import { mockProvider } from '@plein/providers'
 import { afterAll, onTestFinished } from 'vite-plus/test'
 import { createServer, type Server } from './app'
 import { type Config, loadConfig } from './config'
@@ -141,6 +144,7 @@ function portsOf(def: { inputs: readonly PortSpec[]; outputs: readonly PortSpec[
 }
 
 const DEFS = new Map(corePlugin.nodes.map((d) => [d.type, d as Parameters<typeof portsOf>[0]]))
+const CAPABILITIES = new Map(corePlugin.nodes.map((d) => [d.type, d.capability]))
 
 /** 第 1 版视频节点的端口（首帧输入）：文档里的旧节点仍是这样，运行前迁移 */
 export const VIDEO_V1_PORTS = {
@@ -164,16 +168,36 @@ export interface NodeOptions {
   parentId?: string
 }
 
-/** 往文档里放一个节点；位置默认 (0, 0)，尺寸 200×200 */
+/** mock 平台里支持该能力的第一个模型，即开发环境的默认模型 */
+export function mockModel(capability: Capability) {
+  const m = mockProvider.models.find((x) => x.capabilities.includes(capability))
+  return m ? modelRef(mockProvider.id, m.id) : ''
+}
+
+/** 按内置节点声明建卡片骨架（展开分镜、建设定卡用），和界面上新建一样写上默认模型（mock） */
+export function makeNode(type: string) {
+  const def = corePlugin.nodes.find((d) => d.type === type)
+  return (
+    def && nodeElementOf(withDefaultModel(describeNode(def, 'plein/core'), (c) => mockModel(c)))
+  )
+}
+
+/**
+ * 往文档里放一个节点；位置默认 (0, 0)，尺寸 200×200。
+ * 调模型的节点没给 model 时按新建节点的规则写上默认模型（mock）
+ */
 export function addNode(doc: PleinDoc, nodeType: string, opts: NodeOptions = {}) {
   const def = DEFS.get(nodeType)
   const { ports = def && portsOf(def), nodeVersion = 1, x = 0, y = 0, w = 200, h = 200 } = opts
+  const cap = CAPABILITIES.get(nodeType)
+  const model = cap && opts.params?.model === undefined ? mockModel(cap) : ''
+  const params = model ? { ...opts.params, model } : opts.params
   return createElement(doc, {
     kind: 'node',
     nodeType,
     nodeVersion,
     ...(opts.name !== undefined ? { name: opts.name } : {}),
-    ...(opts.params ? { params: opts.params } : {}),
+    ...(params ? { params } : {}),
     ...(ports ? { ports } : {}),
     ...(opts.parentId ? { parentId: opts.parentId } : {}),
     x,

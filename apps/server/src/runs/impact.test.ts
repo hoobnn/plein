@@ -1,10 +1,4 @@
-import {
-  expandedNodes,
-  expandShots,
-  nodeElementOf,
-  syncExpanded,
-  type ShotSource,
-} from '@plein/capabilities'
+import { expandedNodes, expandShots, syncExpanded, type ShotSource } from '@plein/capabilities'
 import {
   connect,
   createElement,
@@ -13,25 +7,23 @@ import {
   removeEdges,
   setParams,
 } from '@plein/doc'
-import {
-  corePlugin,
-  SEQUENCE_TYPE,
-  type SequenceClip,
-  type Shot,
-  STORYBOARD_TYPE,
-} from '@plein/nodes'
-import { describeNode, type NodeDefinition } from '@plein/plugin-sdk'
+import { SEQUENCE_TYPE, type SequenceClip, type Shot, STORYBOARD_TYPE } from '@plein/nodes'
 import type { GroupRunStarted, ImpactDecision, ImpactReport, StaleNodes } from '@plein/protocol'
 import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vite-plus/test'
 import type { Server } from '../app'
 import { assets } from '../storage/schema'
-import { addNode, bootServer, createCanvas, mockSettings, request, until } from '../testing'
+import {
+  addNode,
+  bootServer,
+  makeNode,
+  createCanvas,
+  mockSettings,
+  request,
+  until,
+} from '../testing'
 
-const make = (type: string) => {
-  const def = corePlugin.nodes.find((d) => d.type === type) as NodeDefinition | undefined
-  return def && nodeElementOf(describeNode(def, 'plein/core'))
-}
+const make = makeNode
 
 const shot = (no: number): Shot => ({
   id: `shot_${no}`,

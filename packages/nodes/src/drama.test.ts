@@ -1,30 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import {
-  capabilityLabel,
-  DEFAULT_SHOT_COUNT,
-  dramaCapabilities,
-  dramaTemplate,
-  type DramaProviderLike,
-  missingCapabilities,
-  pickCapabilityModel,
-} from './drama'
-
-const providers: DramaProviderLike[] = [
-  {
-    id: 'ark',
-    enabled: true,
-    models: [
-      { id: 'seed', capabilities: ['text.chat'] },
-      { id: 'seedream', capabilities: ['image.generate'] },
-      { id: 'seedance', capabilities: ['video.generate'] },
-    ],
-  },
-  {
-    id: 'doubao-speech',
-    enabled: false,
-    models: [{ id: 'seed-tts', capabilities: ['audio.speech', 'audio.music'] }],
-  },
-]
+import { capabilityLabel, DEFAULT_SHOT_COUNT, dramaCapabilities, dramaTemplate } from './drama'
 
 const byKey = (keys: string[]) => {
   const t = dramaTemplate()
@@ -131,14 +106,6 @@ describe('短剧模板骨架', () => {
       'text.chat',
       'video.generate',
     ])
-
-    expect(pickCapabilityModel(providers, 'text.chat')).toBe('ark:seed')
-    expect(pickCapabilityModel(providers, 'video.generate')).toBe('ark:seedance')
-    // 没启用的平台不算
-    expect(pickCapabilityModel(providers, 'audio.speech')).toBe('')
-    expect(pickCapabilityModel(null, 'text.chat')).toBe('')
-    expect(missingCapabilities(t, providers)).toEqual(['配音', '配乐'])
-    expect(missingCapabilities(t, [])).toEqual(['文本', '图像', '视频', '配音', '配乐'])
     expect(capabilityLabel('text.chat')).toBe('文本')
   })
 

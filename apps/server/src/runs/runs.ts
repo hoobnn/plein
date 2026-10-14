@@ -17,7 +17,6 @@ import {
 import { FlowGraph, runDag, type StepOutcome, stableStringify } from '@plein/flow'
 import {
   executionOf,
-  type Capability,
   type NodeDefinition,
   type NodeOutputs,
   nodeKey,
@@ -49,6 +48,7 @@ import { sleep } from '../plugins/limiter'
 import { type CallRecord, NodeRunError, type PluginHost, SHUTDOWN, stageOf } from '../plugins/host'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
+import { fillModels } from './models'
 import { type AppliedMentions, applyMentions, mentionEdges } from './mentions'
 import { type GroupRow, type JobRow, type JobStatus, JobStore } from './store'
 import {
@@ -207,6 +207,7 @@ export class NodeRuns implements BatchHost {
     this.concurrency = Math.max(1, opts.concurrency ?? 4)
     this.retryDelays = opts.retryDelaysMs ?? [2_000, 8_000]
     rooms.onDrop((id) => this.cancelCanvas(id))
+    rooms.onLoad((id) => rooms.withDoc(id, (doc) => fillModels(doc, host)))
   }
 
   /** 订阅任务动态（桌面端用）；返回取消订阅 */
@@ -373,14 +374,7 @@ export class NodeRuns implements BatchHost {
       input: this.summarize(el, prepared),
       inputs: prepared.inputs,
       params: this.latestParams(el, prepared) ?? {},
-      matches: (job) => {
-        if (!job.cache_key) return false
-        const omit = job.cache_omit ? (JSON.parse(job.cache_omit) as string[]) : []
-        const key = job.cache_key.startsWith(CACHE_KEY_VERSION)
-          ? this.cacheKey(el, prepared, omit)
-          : this.legacyCacheKey(el, prepared, omit)
-        return key === job.cache_key
-      },
+      matches: (job) => this.keyMatches(el, prepared, job),
     }
   }
 
@@ -483,7 +477,7 @@ export class NodeRuns implements BatchHost {
     const shown = cacheParams(params)
     for (const k of [promptKey, 'usedRefs', 'requiredRefs', 'voice']) if (k) delete shown[k]
     const voice = voiceOf(params)
-    const model = this.resolveModel(params.model, def?.capability)
+    const model = this.resolveModel(params.model)
     const limit = model?.limit
     const blocked = p.mentions?.blocked ?? []
     return {
@@ -500,7 +494,6 @@ export class NodeRuns implements BatchHost {
               ref: model.ref,
               provider: model.provider,
               title: model.title,
-              auto: model.auto,
               ...(model.version ? { version: model.version } : {}),
             },
           }
@@ -525,28 +518,18 @@ export class NodeRuns implements BatchHost {
   }
 
   /**
-   * 实际使用的模型：选了就是它，没选时按执行器的规则取同能力排第一的已启用模型。
-   * 带上参考图上限、平台声明的模型版本和平台插件版本，供预览和缓存键用
+   * 节点选的模型（不替用户挑，没选时为空），带上参考图上限、平台声明的模型版本和平台插件版本，
+   * 供预览和缓存键用
    */
-  private resolveModel(model: unknown, capability: string | undefined) {
-    let ref: string
-    let auto = false
-    if (typeof model === 'string' && model) ref = model
-    else {
-      if (!capability) return undefined
-      const first = this.host.models(capability as Capability)[0]
-      if (!first) return undefined
-      ref = first.ref
-      auto = true
-    }
-    const parsed = parseModelRef(ref)
+  private resolveModel(model: unknown) {
+    if (typeof model !== 'string' || !model) return undefined
+    const parsed = parseModelRef(model)
     const entry = parsed ? this.host.registry.providers.get(parsed.provider) : undefined
     const spec = entry?.def.models.find((m) => m.id === parsed!.model)
     return {
-      ref,
-      auto,
+      ref: model,
       provider: parsed?.provider ?? '',
-      title: spec?.title ?? ref,
+      title: spec?.title ?? model,
       version: spec?.version,
       limit: spec?.limits?.references?.max,
       plugin: entry ? this.host.registry.plugin(entry.plugin)?.manifest.version : undefined,
@@ -1042,11 +1025,7 @@ export class NodeRuns implements BatchHost {
     if (job.status !== 'succeeded' || !job.cache_key) return false
     try {
       const prepared = await this.prepare(doc, el, ownerId, signal)
-      const omit = job.cache_omit ? (JSON.parse(job.cache_omit) as string[]) : []
-      const key = job.cache_key.startsWith(CACHE_KEY_VERSION)
-        ? this.cacheKey(el, prepared, omit)
-        : this.legacyCacheKey(el, prepared, omit)
-      return key === job.cache_key
+      return this.keyMatches(el, prepared, job)
     } catch {
       return false
     }
@@ -1405,23 +1384,45 @@ export class NodeRuns implements BatchHost {
       collected,
       // @ 引用是软依赖：卡片的参考图节点还没结果（生成失败、被审核拦下）时只附文字设定
       (id) => this.collectInputs(doc, id, ownerId, signal, 0, origins, true),
-      this.resolveModel(el.params?.model, def.capability)?.limit,
+      this.resolveModel(el.params?.model)?.limit,
     )
     return { def, params, inputs, mentions: { details, notices, blocked }, origins }
   }
 
   /**
-   * 缓存键：节点类型与版本、实际模型（自动选择时是解析出的那个）及其版本、平台插件版本、
+   * 缓存键：节点类型与版本、所选模型及其版本、平台插件版本、
    * 有效参数（迁移到最新版本后）和输入内容的哈希，带算法版本前缀
    */
   private cacheKey(el: CanvasElement, p: Prepared, omit: string[]) {
-    const model = this.resolveModel(this.latestParams(el, p)?.model, p.def?.capability)
+    const model = this.resolveModel(this.latestParams(el, p)?.model)
     return (
       CACHE_KEY_VERSION +
       this.hashKey(el, p, omit, NOT_CONTENT, {
         model: model ? { ref: model.ref, version: model.version, plugin: model.plugin } : null,
       })
     )
+  }
+
+  /**
+   * 某次任务的缓存键是否和现在的输入对得上。以前模型留空时按「自动选中的模型」算键，
+   * 模型参数后来补成了同一个模型的，按留空的参数再算一次也认
+   */
+  private keyMatches(
+    el: CanvasElement,
+    p: Prepared,
+    job: Pick<JobRow, 'cache_key' | 'cache_omit'>,
+  ): boolean {
+    if (!job.cache_key) return false
+    const omit = job.cache_omit ? (JSON.parse(job.cache_omit) as string[]) : []
+    if (!job.cache_key.startsWith(CACHE_KEY_VERSION))
+      return this.legacyCacheKey(el, p, omit) === job.cache_key
+    if (this.cacheKey(el, p, omit) === job.cache_key) return true
+    const params = this.latestParams(el, p)
+    const model = this.resolveModel(params?.model)
+    if (!model) return false
+    const extra = { model: { ref: model.ref, version: model.version, plugin: model.plugin } }
+    const auto = { ...params, model: '' }
+    return CACHE_KEY_VERSION + this.hashKey(el, p, omit, NOT_CONTENT, extra, auto) === job.cache_key
   }
 
   /** 加前缀之前的缓存键：不含实际模型与插件版本，usedRefs 计入；只用来认旧任务的结果 */
@@ -1444,8 +1445,9 @@ export class NodeRuns implements BatchHost {
     omit: string[],
     notContent: ReadonlySet<string>,
     extra: Record<string, unknown>,
+    params = this.latestParams(el, p) ?? {},
   ) {
-    const kept = cacheParams(this.latestParams(el, p) ?? {}, omit, notContent)
+    const kept = cacheParams(params, omit, notContent)
     return createHash('sha256')
       .update(
         stableStringify({

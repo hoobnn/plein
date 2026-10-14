@@ -129,3 +129,21 @@ export function resolveParams<N extends NodeDefinition>(
   }
   return def.params.parse(p) as NodeParams<N>
 }
+
+/** 节点的模型参数名（控件是 model 的那个）；不调模型的节点没有 */
+export function modelParamOf(desc: Pick<NodeDescriptor, 'paramsSchema'>): string | undefined {
+  const props = (desc.paramsSchema as { properties?: Record<string, { widget?: unknown }> })
+    .properties
+  return Object.entries(props ?? {}).find(([, f]) => f.widget === 'model')?.[0]
+}
+
+/** 新建节点用的声明：默认参数里的模型换成该能力的默认模型（没有默认模型时留空） */
+export function withDefaultModel(
+  desc: NodeDescriptor,
+  defaultModel: (capability: Capability) => string,
+): NodeDescriptor {
+  const key = modelParamOf(desc)
+  if (!key || !desc.capability || desc.defaults[key]) return desc
+  const ref = defaultModel(desc.capability)
+  return ref ? { ...desc, defaults: { ...desc.defaults, [key]: ref } } : desc
+}

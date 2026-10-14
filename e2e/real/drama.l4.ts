@@ -369,8 +369,8 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
   expect(shots.length).toBeGreaterThan(0)
   expect(shots.filter((e) => e.results === 0).map((e) => e.name)).toEqual([])
 
-  // 视频平台只在生成视频期间启用：自动选模型按平台顺序取第一个，设定卡的音色也取第一个配音平台，
-  // 一直启用会让其余环节换到它上面、已有结果也随之过期。镜头视频显式指定模型和分辨率
+  // 视频平台只在生成视频期间启用（当初为绕开自动选模型；改成默认模型后已不必要，暂时保留）。
+  // 镜头视频显式指定模型和分辨率
   const vendor = VIDEO_MODEL ? VIDEO_MODEL.split(':')[0]! : ''
   const toggleVideoVendor = async (enabled: boolean) => {
     if (!vendor) return

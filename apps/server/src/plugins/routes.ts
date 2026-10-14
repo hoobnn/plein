@@ -1,14 +1,17 @@
 import {
   type Catalog,
+  DefaultModelUpdate,
   type ProviderConfigView,
   ProviderConfigUpdate,
   type ProviderTestResult,
 } from '@plein/protocol'
 import {
+  Capability,
   describeNode,
   describeProvider,
   providerConfigured,
   ProviderError,
+  withDefaultModel,
 } from '@plein/plugin-sdk'
 import { Hono } from 'hono'
 import { z } from 'zod'
@@ -47,7 +50,7 @@ export function pluginRoutes(host: PluginHost) {
           permissions: p.manifest.permissions,
         })),
         nodes: [...registry.nodes].map(([key, n]) => ({
-          ...describeNode(n.def, n.plugin),
+          ...withDefaultModel(describeNode(n.def, n.plugin), (cap) => host.defaultModel(cap)),
           executable: registry.executors.has(key),
         })),
         providers: [...registry.providers].map(([id, p]) => {
@@ -58,6 +61,7 @@ export function pluginRoutes(host: PluginHost) {
             configured: providerConfigured(p.def, cfg.secrets),
           }
         }),
+        defaultModels: host.defaultModels(),
         templates: [...registry.templates.values()].map((t) => ({ ...t.def, plugin: t.plugin })),
         prompts: [...registry.prompts.values()].map((p) => ({ ...p.def, plugin: p.plugin })),
         elements: [...registry.elements.values()].map((e) => ({
@@ -97,6 +101,17 @@ export function pluginRoutes(host: PluginHost) {
         return c.json({ error: 'invalid', message: `未知的密钥：${unknown.join('、')}` }, 400)
       configs.update(id, body.data)
       return c.json(view(id))
+    })
+    .put('/api/model-defaults', async (c) => {
+      if (c.var.principal.role !== 'owner') return c.json(forbidden, 403)
+      const body = DefaultModelUpdate.safeParse(await c.req.json().catch(() => null))
+      const cap = Capability.safeParse(body.data?.capability)
+      if (!body.success || !cap.success)
+        return c.json({ error: 'invalid', message: '能力或模型不正确' }, 400)
+      if (!host.models(cap.data).some((m) => m.ref === body.data.model))
+        return c.json({ error: 'invalid', message: '模型没启用或不支持这种能力' }, 400)
+      host.configs.setDefaultModel(cap.data, body.data.model)
+      return c.json({ defaultModels: host.defaultModels() })
     })
     .post('/api/providers/:vendor/:name/test', async (c) => {
       if (c.var.principal.role !== 'owner') return c.json(forbidden, 403)

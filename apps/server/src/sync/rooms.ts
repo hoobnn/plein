@@ -292,6 +292,7 @@ export class Rooms {
   /** 已删除的画布：不再重建房间，免得残留任务把写入落到不存在的画布上 */
   private dropped = new Set<string>()
   private dropListeners = new Set<(id: string) => void>()
+  private loadListeners = new Set<(id: string) => void>()
 
   constructor(private store: DocStore) {}
 
@@ -303,6 +304,7 @@ export class Rooms {
       this.rooms.set(id, room)
       // 只被服务端代码短暂打开的房间也要能卸载
       room.scheduleUnload()
+      for (const fn of this.loadListeners) fn(id)
     }
     return room
   }
@@ -355,6 +357,12 @@ export class Rooms {
   }
 
   /** 画布被删除时通知（停止它的任务和智能体会话） */
+  /** 画布从库里载入内存后（还没有连接收到它之前）调用，用来迁移旧数据 */
+  onLoad(fn: (id: string) => void): () => void {
+    this.loadListeners.add(fn)
+    return () => this.loadListeners.delete(fn)
+  }
+
   onDrop(fn: (id: string) => void): () => void {
     this.dropListeners.add(fn)
     return () => this.dropListeners.delete(fn)

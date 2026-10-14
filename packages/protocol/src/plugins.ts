@@ -31,6 +31,8 @@ export interface Catalog {
   plugins: PluginInfo[]
   nodes: Array<NodeDescriptor & { executable: boolean }>
   providers: ProviderInfo[]
+  /** 各模型能力的默认模型（`平台:模型`），新建节点时写进节点；没有可用模型的能力不列出 */
+  defaultModels: Partial<Record<string, string>>
   templates: Array<TemplateDefinition & { plugin: string }>
   prompts: Array<PromptPresetDefinition & { plugin: string }>
   elements: Array<
@@ -47,6 +49,13 @@ export interface ProviderConfigView {
   settings: Record<string, unknown>
   secrets: Record<string, boolean>
 }
+
+/** 设置某能力的默认模型 */
+export const DefaultModelUpdate = z.object({
+  capability: z.string().min(1),
+  model: z.string().min(1),
+})
+export type DefaultModelUpdate = z.infer<typeof DefaultModelUpdate>
 
 export const ProviderConfigUpdate = z.object({
   enabled: z.boolean().optional(),

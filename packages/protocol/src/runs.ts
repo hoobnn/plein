@@ -111,10 +111,10 @@ export interface PreparedInput {
   status: 'ready' | 'blocked' | 'unprepared'
   capability?: string
   /**
-   * 实际使用的模型；自动选择时是当前排第一的已启用模型，没有可用模型时缺省。
-   * version 是平台声明的模型版本，没声明时缺省
+   * 节点选的模型，没选时缺省。version 是平台声明的模型版本，没声明时缺省；
+   * auto 只出现在旧记录里：当时模型留空、由服务端自动选择
    */
-  model?: { ref: string; provider: string; title: string; auto: boolean; version?: string }
+  model?: { ref: string; provider: string; title: string; auto?: boolean; version?: string }
   /** 模型的参考图上限；没声明时不限 */
   referenceLimit?: number
   /** 展开 @ 并附上设定后的提示词（含上游文本） */

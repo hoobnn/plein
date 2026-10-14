@@ -273,8 +273,9 @@ export const mockProvider = defineProvider({
     { name: 'MOCK_API_KEY', title: 'API Key', help: 'mock 不校验密钥，用来演示密钥的存储方式' },
   ],
   models: [
-    { id: 'chat', title: 'Mock 对话', capabilities: ['text.chat'] },
+    // 排第一的是默认对话模型：开发时开箱就能驱动内置智能体，不带工具时和普通对话一样
     { id: 'agent', title: 'Mock 智能体', capabilities: ['text.chat'], features: ['tools'] },
+    { id: 'chat', title: 'Mock 对话', capabilities: ['text.chat'] },
     {
       id: 'image',
       title: 'Mock 图片',

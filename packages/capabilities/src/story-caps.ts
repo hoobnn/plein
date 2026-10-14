@@ -21,6 +21,12 @@ export const nodeFactoryOf =
     return info && nodeElementOf(info.descriptor)
   }
 
+/** 默认配音模型及其音色表：设定卡按它配音色，和新建的配音节点用同一个模型 */
+export function defaultSpeech(ctx: Pick<CapabilityContext, 'nodes'>) {
+  const ref = ctx.nodes.defaultModel('audio.speech')
+  return ref ? ctx.nodes.models('audio.speech').find((m) => m.ref === ref) : undefined
+}
+
 const isBoard = (ctx: CapabilityContext, boardId: string) =>
   ctx.withDoc((doc) => {
     const el = need(doc, boardId)
@@ -47,7 +53,7 @@ export const placeDrama = defineCapability({
     const tops = template.elements.filter((e) => !e.parent)
     const w = Math.max(...tops.map((e) => e.x + e.w))
     const h = Math.max(...tops.map((e) => e.y + e.h))
-    const pick = (c: string) => ctx.nodes.models(c as Capability)[0]?.ref ?? ''
+    const pick = (c: string) => ctx.nodes.defaultModel(c as Capability)
     return ctx.withDoc((doc) => {
       if (a.near) need(doc, a.near)
       const at =
@@ -83,7 +89,7 @@ export const extractCast = defineCapability({
         throw new CapabilityError('这个节点还没有可用的抽取结果（先运行它，或换一个节点）')
       const lib = ctx.library?.()
       const r = applyCast(doc, nodeFactoryOf(ctx), a.id, entries, {
-        speech: ctx.nodes.models('audio.speech')[0],
+        speech: defaultSpeech(ctx),
         library: lib && { ...lib, assetMeta: (assetId) => ctx.assetMeta(assetId) },
       })
       return { ...r, notice: describeCast(r) }

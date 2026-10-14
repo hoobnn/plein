@@ -16,7 +16,7 @@ import {
  */
 
 export interface SelectedModel {
-  /** 节点里存的引用；自动选择时为空 */
+  /** 节点里存的引用 */
   ref: string
   info: ModelInfo & { ref: string }
 }
@@ -26,7 +26,7 @@ function modelKey(node: NodeInfo) {
   return fieldsOf(node).find(([, f]) => f.widget === 'model')?.[0]
 }
 
-/** 节点参数里选中的模型；“自动”按服务端的规则取第一个已启用平台里第一个支持该能力的模型 */
+/** 节点参数里选中的模型；没选或所选平台没启用时为空 */
 export function selectedModel(
   catalog: Catalog | null,
   node: NodeInfo,
@@ -35,6 +35,7 @@ export function selectedModel(
   const key = modelKey(node)
   if (!key) return undefined
   const ref = String(params?.[key] ?? '')
+  if (!ref) return undefined
   const models = (catalog?.providers ?? [])
     .filter((p) => p.enabled)
     .flatMap((p) =>
@@ -42,7 +43,7 @@ export function selectedModel(
         .filter((m) => !node.capability || m.capabilities.includes(node.capability))
         .map((m) => ({ ...m, ref: `${p.id}:${m.id}` })),
     )
-  const info = ref ? models.find((m) => m.ref === ref) : models[0]
+  const info = models.find((m) => m.ref === ref)
   return info ? { ref, info } : undefined
 }
 

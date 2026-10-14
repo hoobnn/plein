@@ -18,6 +18,7 @@ const card = (type: string, title: string) =>
 
 const catalog = {
   nodes: [card('plein/character', '角色'), card('plein/scene', '场景'), card('plein/prop', '道具')],
+  defaultModels: {},
 } as unknown as Catalog
 
 const CAST = `## 角色
@@ -151,6 +152,7 @@ describe('抽取结果落成设定卡', () => {
           models: [{ id: 'tts', title: 'TTS', capabilities: ['audio.speech'], voices }],
         },
       ],
+      defaultModels: { 'audio.speech': 'doubao/speech:tts' },
     } as unknown as Catalog
     const r = applyCast(engine, full, llm, castOf(engine, llm))
     expect(r.portraits).toHaveLength(5)
@@ -195,6 +197,7 @@ describe('抽取结果落成设定卡', () => {
         })),
         image,
       ],
+      defaultModels: {},
     } as unknown as Catalog
     const item = (id: string, name: string, projectId: string | null, kind = 'character') => ({
       id,

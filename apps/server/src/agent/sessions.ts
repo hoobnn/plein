@@ -33,7 +33,7 @@ import { startClaude } from './drivers/claude'
 import { startCodex } from './drivers/codex'
 import { type CliDriver, type PermissionAsk, TOKEN_ENV } from './drivers/types'
 import { brief, childEnv, toolText } from './drivers/util'
-import { builtinModels, runBuiltinTurn } from './builtin'
+import { builtinModel, runBuiltinTurn } from './builtin'
 import { type McpTool, McpServer, type ToolResult } from './mcp'
 import { agentTools } from './tools'
 
@@ -127,7 +127,7 @@ export class AgentSessions {
   }
 
   async status(refresh = false): Promise<AgentStatus> {
-    const model = builtinModels(this.deps.host)[0]
+    const model = builtinModel(this.deps.host)
     const builtin = {
       id: 'builtin' as const,
       name: '内置',
@@ -140,7 +140,7 @@ export class AgentSessions {
         ? { enabled: true, agents: [builtin] }
         : {
             enabled: false,
-            reason: '在设置里启用支持工具调用的对话模型（如百炼的千问）后，就能使用内置智能体',
+            reason: '把默认对话模型设成支持工具调用的模型（如百炼的千问）后，就能使用内置智能体',
             agents: [builtin],
           }
     }
@@ -379,11 +379,11 @@ export class AgentSessions {
 
   /** 内置智能体：在服务端进程里跑模型 ↔ 工具循环，工具与 CLI 走的 MCP 是同一份 */
   private startBuiltin(s: Live, text: string, selection?: string[]) {
-    const model = builtinModels(this.deps.host)[0]
+    const model = builtinModel(this.deps.host)
     if (!model)
       throw new AgentError(
         'not_installed',
-        '没有支持工具调用的对话模型：请先在设置里启用百炼等平台',
+        '默认对话模型不支持工具调用：请在 设置 → 默认模型 里换一个支持的对话模型',
       )
     const history = historyOf(s.items)
     this.beginTurn(s, text, selection)

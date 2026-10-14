@@ -1,4 +1,6 @@
-import type { ProviderConfigView, ProviderInfo, ProviderTestResult } from '@plein/protocol'
+import { capabilityLabel } from '@plein/nodes'
+import type { Capability } from '@plein/plugin-sdk'
+import type { Catalog, ProviderConfigView, ProviderInfo, ProviderTestResult } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { type ReactNode, useEffect, useState } from 'react'
 import { api } from '../../api/client'
@@ -8,6 +10,7 @@ import { useCatalog } from '../../stores/catalog'
 import { useTheme } from '../../stores/theme'
 import { Icon, type IconName } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { Select } from '../../ui/Select'
 import { THEME_OPTIONS } from '../../ui/ThemeToggle'
 import { ExternalMcp } from './ExternalMcp'
 import { LocalClis } from '../agent/LocalClis'
@@ -307,6 +310,14 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
                 <Appearance />
               </Group>
             )}
+            {current.id === 'providers' && catalog && (
+              <Group
+                title="默认模型"
+                hint="新建节点时写进节点的模型；已有的节点不受影响，节点上可以另选"
+              >
+                <DefaultModels catalog={catalog} onSaved={load} />
+              </Group>
+            )}
             {current.id === 'providers' && (
               <Group title="已安装的平台" hint="启用并填好密钥后，节点里才能选到这个平台的模型">
                 {providers.length === 0 ? (
@@ -391,6 +402,68 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
     </Modal>
   )
 }
+
+/** 默认模型：每种能力一项，只列已启用且填好密钥的平台的模型 */
+function DefaultModels({ catalog, onSaved }: { catalog: Catalog; onSaved(): void }) {
+  const [error, setError] = useState<string | null>(null)
+  const ready = catalog.providers.filter((p) => p.enabled && p.configured)
+  const rows = CAPABILITY_ORDER.map((cap) => ({
+    cap,
+    options: ready.flatMap((p) =>
+      p.models
+        .filter((m) => m.capabilities.includes(cap))
+        .map((m) => ({ value: `${p.id}:${m.id}`, label: `${p.title} · ${m.title ?? m.id}` })),
+    ),
+  })).filter((r) => r.options.length > 0)
+  if (rows.length === 0)
+    return <p className="text-sm text-ink-subtle">先在下面启用平台并填好密钥。</p>
+  const save = async (capability: string, model: string) => {
+    setError(null)
+    try {
+      await api.setDefaultModel({ capability, model })
+      onSaved()
+    } catch (err) {
+      setError(`保存失败：${(err as Error).message}`)
+    }
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <ul className="rounded-lg ring-1 ring-line">
+        {rows.map((r) => (
+          <li
+            key={r.cap}
+            className="flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0"
+          >
+            <span className="w-20 flex-none text-sm">{capabilityLabel(r.cap)}</span>
+            <Select
+              aria-label={`默认${capabilityLabel(r.cap)}模型`}
+              value={catalog.defaultModels[r.cap] ?? ''}
+              options={r.options}
+              onChange={(v) => void save(r.cap, v)}
+              className="min-w-0 flex-1"
+            />
+          </li>
+        ))}
+      </ul>
+      {error && (
+        <p className="text-xs text-danger" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** 默认模型的列出顺序 */
+const CAPABILITY_ORDER: Capability[] = [
+  'text.chat',
+  'image.generate',
+  'video.generate',
+  'audio.speech',
+  'audio.music',
+  'audio.sfx',
+  'audio.transcribe',
+]
 
 /** 外观：主题三选一 */
 function Appearance() {

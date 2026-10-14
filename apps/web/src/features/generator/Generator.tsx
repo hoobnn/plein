@@ -155,7 +155,6 @@ function Panel({
   const allOptions = (optionsKey ? params[optionsKey] : undefined) as
     | Record<string, Record<string, unknown>>
     | undefined
-  // 专属参数只在明确选了模型时可设（自动选择时不知道会落到哪个模型）
   const modelOptions: ModelOptions | undefined =
     optionsKey && model?.ref && model.info.optionsSchema
       ? {

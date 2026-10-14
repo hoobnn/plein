@@ -19,12 +19,11 @@ export interface BuiltinModel {
   title: string
 }
 
-/** 可以驱动内置智能体的对话模型：声明了 tools 特性的 */
-export function builtinModels(host: PluginHost): BuiltinModel[] {
-  return host
-    .models('text.chat')
-    .filter((m) => m.features?.includes('tools'))
-    .map((m) => ({ ref: m.ref, title: m.title }))
+/** 驱动内置智能体的模型：默认对话模型，且声明了 tools 特性；不满足时没有 */
+export function builtinModel(host: PluginHost): BuiltinModel | undefined {
+  const ref = host.defaultModel('text.chat')
+  const m = host.models('text.chat').find((x) => x.ref === ref)
+  return m?.features?.includes('tools') ? { ref: m.ref, title: m.title } : undefined
 }
 
 export interface BuiltinTurn {

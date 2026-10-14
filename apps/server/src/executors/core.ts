@@ -21,7 +21,6 @@ import {
   voiceOf,
 } from '@plein/nodes'
 import {
-  type Capability,
   type ChatMessage,
   defineExecutor,
   defineServerPlugin,
@@ -35,16 +34,13 @@ import {
 import { z } from 'zod'
 import { mediaCaps, missingCapability } from '../assets/media'
 
-/** 参数里没选模型时，用已启用平台中第一个支持该能力的模型 */
-function pickModel(ctx: ExecutorContext<{ model: string }>, capability: Capability, label: string) {
+/** 节点选的模型：不替用户挑，没选就报错 */
+function pickModel(ctx: ExecutorContext<{ model: string }>, label: string) {
   if (ctx.params.model) return ctx.params.model
-  const first = ctx.providers.models(capability)[0]
-  if (!first)
-    throw new ProviderError('unavailable', `没有启用支持「${label}」的平台，请先在设置里启用`)
-  return first.ref
+  throw new ProviderError('invalid_input', `还没选「${label}」用的模型，请在节点上选择`)
 }
 
-/** 所选模型的专属参数；自动选模型时没有 */
+/** 所选模型的专属参数 */
 function modelOptions(params: { model: string; options: Record<string, Record<string, unknown>> }) {
   return params.model ? (params.options[params.model] ?? {}) : {}
 }
@@ -95,7 +91,7 @@ const llm = defineExecutor(llmNode, async (ctx) => {
         ]
       : prompt,
   })
-  const res = await ctx.providers.call('text.chat', pickModel(ctx, 'text.chat', '对话'), {
+  const res = await ctx.providers.call('text.chat', pickModel(ctx, '对话'), {
     messages,
     temperature: params.temperature,
   })
@@ -108,17 +104,13 @@ const llm = defineExecutor(llmNode, async (ctx) => {
 const image = defineExecutor(imageNode, async (ctx) => {
   const { params, inputs } = ctx
   sayProgress(ctx)
-  const res = await ctx.providers.call(
-    'image.generate',
-    pickModel(ctx, 'image.generate', '生成图片'),
-    {
-      prompt: requireText(joinText(params.prompt, inputText(inputs, 'prompt')), '提示词'),
-      references: inputAssets(inputs, 'references'),
-      count: params.count,
-      resolution: params.resolution || undefined,
-      extra: { ...modelOptions(params), aspectRatio: params.aspectRatio },
-    },
-  )
+  const res = await ctx.providers.call('image.generate', pickModel(ctx, '生成图片'), {
+    prompt: requireText(joinText(params.prompt, inputText(inputs, 'prompt')), '提示词'),
+    references: inputAssets(inputs, 'references'),
+    count: params.count,
+    resolution: params.resolution || undefined,
+    extra: { ...modelOptions(params), aspectRatio: params.aspectRatio },
+  })
   return { images: res.assets.map((a) => ({ type: 'image' as const, ...a })) }
 })
 
@@ -137,7 +129,7 @@ const video = defineExecutor(videoNode, async (ctx) => {
           ? { references: images }
           : {}
   sayProgress(ctx)
-  const model = pickModel(ctx, 'video.generate', '生成视频')
+  const model = pickModel(ctx, '生成视频')
   const input = {
     prompt: requireText(joinText(params.prompt, inputText(inputs, 'prompt')), '提示词'),
     ...media,
@@ -167,7 +159,7 @@ const speech = defineExecutor(speechNode, async (ctx) => {
   // 音色存的是 { provider, voiceId }，送进平台前只取音色 ID：
   // 各家的音色 ID 只在本家平台有效，平台的入参契约不变
   const voice = voiceOf(params)
-  const model = pickModel(ctx, 'audio.speech', '配音')
+  const model = pickModel(ctx, '配音')
   // 手选的音色标明了平台、却和要用的模型不是一家：送过去多半读不出来，不如先停下
   const provider = parseModelRef(model)?.provider ?? ''
   if (voice.voiceId && voice.provider && provider && voice.provider !== provider)
@@ -197,7 +189,7 @@ const speech = defineExecutor(speechNode, async (ctx) => {
 
 const music = defineExecutor(musicNode, async (ctx) => {
   const { params, inputs } = ctx
-  const res = await ctx.providers.call('audio.music', pickModel(ctx, 'audio.music', '配乐'), {
+  const res = await ctx.providers.call('audio.music', pickModel(ctx, '配乐'), {
     prompt: requireText(joinText(params.prompt, inputText(inputs, 'prompt')), '描述'),
     duration: params.duration,
   })
@@ -221,7 +213,7 @@ const storyboard = defineExecutor(storyboardNode, async (ctx) => {
   ]
     .filter(Boolean)
     .join('\n\n')
-  const res = await ctx.providers.call('text.chat', pickModel(ctx, 'text.chat', '对话'), {
+  const res = await ctx.providers.call('text.chat', pickModel(ctx, '对话'), {
     messages: [
       { role: 'system', content: STORYBOARD_SYSTEM },
       { role: 'user', content: user },
@@ -264,7 +256,7 @@ const effect = defineExecutor(effectNode, async ({ inputs }) => ({
 async function transcribe(ctx: ExecutorContext, arranged: ArrangedClip[]) {
   const todo = arranged.filter((c) => c.dialogue && !c.subtitle?.trim())
   if (!todo.length) return []
-  const model = pickModel(ctx as ExecutorContext<{ model: string }>, 'audio.transcribe', '语音识别')
+  const model = pickModel(ctx as ExecutorContext<{ model: string }>, '语音识别')
   ctx.progress(0, '识别对白…')
   return Promise.all(
     arranged.map(async (c): Promise<TranscriptSegment[] | undefined> => {

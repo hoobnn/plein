@@ -1,6 +1,6 @@
 import { placeDramaTemplate as placeIn } from '@plein/capabilities'
 import type { Engine } from '@plein/canvas-core'
-import { type DramaTemplateSpec, dramaTemplate, pickCapabilityModel } from '@plein/nodes'
+import { type DramaTemplateSpec, dramaTemplate } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { nodeFactory } from './nodes'
 
@@ -16,7 +16,7 @@ export function placeDramaTemplate(
   const result = placeIn(
     engine.doc,
     nodeFactory(catalog),
-    (capability) => pickCapabilityModel(catalog?.providers, capability),
+    (capability) => catalog?.defaultModels[capability] ?? '',
     at,
     template,
   )

@@ -241,7 +241,13 @@ describe('插件宿主', () => {
     expect(types).toEqual(corePlugin.manifest.contributes.nodes)
     expect(catalog.nodes.every((n) => n.executable)).toBe(true)
     const image = catalog.nodes.find((n) => n.type === 'plein/image')!
-    expect(image.defaults).toMatchObject({ model: '', aspectRatio: '16:9', count: 1 })
+    // 新建节点的默认参数带上默认模型（mock 是开发环境里唯一启用的平台）
+    expect(image.defaults).toMatchObject({
+      model: 'plein/mock:image',
+      aspectRatio: '16:9',
+      count: 1,
+    })
+    expect(catalog.defaultModels).toMatchObject({ 'image.generate': 'plein/mock:image' })
     expect(
       (image.paramsSchema.properties as Record<string, { widget?: string }>).model?.widget,
     ).toBe('model')
@@ -249,6 +255,28 @@ describe('插件宿主', () => {
       enabled: true,
       configured: true,
     })
+  })
+
+  it('默认模型：空着时取已启用平台的第一个并记住，之后启用别的平台不变；停用后换成还能用的', async () => {
+    const { host } = s
+    const put = (capability: string, model: string) =>
+      fetch(`${s.base}/api/model-defaults`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ capability, model }),
+      })
+    expect(host.defaultModel('video.generate')).toBe('plein/mock:video')
+    host.configs.update('minimax/api', { enabled: true })
+    try {
+      expect(host.defaultModel('video.generate')).toBe('plein/mock:video')
+      expect((await put('video.generate', 'minimax/api:MiniMax-H3')).status).toBe(200)
+      expect(host.defaultModel('video.generate')).toBe('minimax/api:MiniMax-H3')
+      // 能力对不上的模型不能设成默认
+      expect((await put('image.generate', 'minimax/api:MiniMax-H3')).status).toBe(400)
+    } finally {
+      host.configs.update('minimax/api', { enabled: false })
+    }
+    expect(host.defaultModel('video.generate')).toBe('plein/mock:video')
   })
 
   it('豆包替代鉴权需要完整密钥组；配置检查不声称连接成功', async () => {
@@ -280,7 +308,7 @@ describe('插件宿主', () => {
     const out = await s.host.runNode({
       type: 'plein/image',
       version: 1,
-      params: { count: 2, aspectRatio: '9:16' },
+      params: { model: 'plein/mock:image', count: 2, aspectRatio: '9:16' },
       inputs: { prompt: text.text! },
       ownerId: 'local',
     })
@@ -297,28 +325,28 @@ describe('插件宿主', () => {
     const llm = await s.host.runNode({
       type: 'plein/llm',
       version: 1,
-      params: { prompt: '写一句台词' },
+      params: { model: 'plein/mock:agent', prompt: '写一句台词' },
       ownerId: 'local',
     })
     expect(llm.text?.[0]).toEqual({ type: 'text', text: '【mock】写一句台词' })
     const video = await s.host.runNode({
       type: 'plein/video',
       version: 1,
-      params: { prompt: '镜头推近' },
+      params: { model: 'plein/mock:video', prompt: '镜头推近' },
       ownerId: 'local',
     })
     expect(video.video?.[0]).toMatchObject({ type: 'video', mime: 'video/webm' })
     const speech = await s.host.runNode({
       type: 'plein/speech',
       version: 1,
-      params: { text: '你好' },
+      params: { model: 'plein/mock:audio', text: '你好' },
       ownerId: 'local',
     })
     expect(speech.audio?.[0]).toMatchObject({ type: 'audio', mime: 'audio/wav' })
     const music = await s.host.runNode({
       type: 'plein/music',
       version: 1,
-      params: { prompt: '弦乐' },
+      params: { model: 'plein/mock:audio', prompt: '弦乐' },
       ownerId: 'local',
     })
     expect(music.audio).toHaveLength(1)
@@ -326,16 +354,26 @@ describe('插件宿主', () => {
 
   it('参数和输入不合规时给出可读错误', async () => {
     await expect(
-      s.host.runNode({ type: 'plein/image', version: 1, params: { count: 9 }, ownerId: 'local' }),
+      s.host.runNode({
+        type: 'plein/image',
+        version: 1,
+        params: { model: 'plein/mock:image', count: 9 },
+        ownerId: 'local',
+      }),
     ).rejects.toMatchObject({ code: 'invalid_params' })
     await expect(
-      s.host.runNode({ type: 'plein/image', version: 1, params: {}, ownerId: 'local' }),
+      s.host.runNode({
+        type: 'plein/image',
+        version: 1,
+        params: { model: 'plein/mock:image' },
+        ownerId: 'local',
+      }),
     ).rejects.toMatchObject({ code: 'invalid_input', message: '提示词为空' })
     await expect(
       s.host.runNode({
         type: 'plein/video',
         version: 2,
-        params: { prompt: 'x', mode: 'image' },
+        params: { model: 'plein/mock:video', prompt: 'x', mode: 'image' },
         inputs: { images: [{ type: 'text', text: 'not an image' }] },
         ownerId: 'local',
       }),
@@ -351,7 +389,7 @@ describe('插件宿主', () => {
     const out = await s.host.runNode({
       type: 'plein/llm',
       version: 1,
-      params: { prompt: '慢一点' },
+      params: { model: 'plein/mock:agent', prompt: '慢一点' },
       ownerId: 'local',
       onProgress: (p) => progress.push(p),
     })
@@ -363,7 +401,7 @@ describe('插件宿主', () => {
     const run = s.host.runNode({
       type: 'plein/llm',
       version: 1,
-      params: { prompt: 'x' },
+      params: { model: 'plein/mock:agent', prompt: 'x' },
       ownerId: 'local',
       signal: ac.signal,
     })
@@ -378,14 +416,24 @@ describe('插件宿主', () => {
   it('平台错误按 code 归一化；未启用的平台不可用', async () => {
     s.host.configs.update('plein/mock', { settings: { latencyMs: 0, failWith: 'rate_limit' } })
     await expect(
-      s.host.runNode({ type: 'plein/llm', version: 1, params: { prompt: 'x' }, ownerId: 'local' }),
+      s.host.runNode({
+        type: 'plein/llm',
+        version: 1,
+        params: { model: 'plein/mock:agent', prompt: 'x' },
+        ownerId: 'local',
+      }),
     ).rejects.toMatchObject({ code: 'rate_limit', retryable: true })
     s.host.configs.update('plein/mock', {
       enabled: false,
       settings: { latencyMs: 0, failWith: 'none' },
     })
     await expect(
-      s.host.runNode({ type: 'plein/llm', version: 1, params: { prompt: 'x' }, ownerId: 'local' }),
+      s.host.runNode({
+        type: 'plein/llm',
+        version: 1,
+        params: { model: 'plein/mock:agent', prompt: 'x' },
+        ownerId: 'local',
+      }),
     ).rejects.toMatchObject({ code: 'unavailable' })
     await expect(
       s.host.runNode({
@@ -453,7 +501,7 @@ describe('插件宿主', () => {
     const out = await s.host.runNode({
       type: 'acme/greet',
       version: 1,
-      params: { who: '林夏' },
+      params: { model: 'plein/mock:agent', who: '林夏' },
       ownerId: 'local',
     })
     expect(out.text?.[0]).toEqual({ type: 'text', text: '你好，林夏' })
@@ -497,7 +545,12 @@ describe('插件宿主', () => {
   it('Provider 抛出的普通异常归一化为 unknown', async () => {
     const submit = vi.spyOn(mockProvider, 'submit').mockRejectedValueOnce(new Error('连接被重置'))
     await expect(
-      s.host.runNode({ type: 'plein/llm', version: 1, params: { prompt: 'x' }, ownerId: 'local' }),
+      s.host.runNode({
+        type: 'plein/llm',
+        version: 1,
+        params: { model: 'plein/mock:agent', prompt: 'x' },
+        ownerId: 'local',
+      }),
     ).rejects.toMatchObject({ code: 'unknown', message: '连接被重置', retryable: false })
     submit.mockRestore()
   })

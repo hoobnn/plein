@@ -83,7 +83,6 @@ describe('实际输入预览', () => {
         ref: 'plein/mock:image',
         provider: 'plein/mock',
         title: 'Mock 图片',
-        auto: false,
       })
       expect(p).toMatchObject({ v: 1, status: 'ready', nodeVersion: 1 })
       expect(p.inputHash).toMatch(/^v2:/)
@@ -187,8 +186,6 @@ describe('实际输入预览', () => {
     expect(p.blocked[0]?.code).toBe('prepare_failed')
     expect(p.status).toBe('unprepared')
     expect(p.inputHash).toBeUndefined()
-    // 没选模型：显示自动选中的那个
-    expect(p.model).toMatchObject({ provider: 'plein/mock', auto: true })
   }, 30_000)
 
   it('卡片的参考图节点生成失败、没有结果：镜头只带文字设定照常运行，提示参考图失败', async () => {
@@ -234,15 +231,52 @@ describe('实际输入预览', () => {
     expect(ref).toMatchObject({ resultId: older!.id, runId: older!.runId })
   }, 30_000)
 
-  it('自动选模型：实际用的模型换了，缓存键跟着变', async () => {
+  it('没选模型不运行，也不替用户挑', async () => {
     const { server, id, doc } = await boot()
-    const auto = addNode(doc, 'plein/image', { params: { prompt: '天台' }, x: 0, y: 800 })
-    const p1 = await preview(server, id, auto)
-    const first = server.plugins.models('image.generate')[0]!
-    vi.spyOn(server.plugins, 'models').mockReturnValue([{ ...first, ref: 'plein/mock:other' }])
-    const p2 = await preview(server, id, auto)
-    expect(p2.model).toMatchObject({ ref: 'plein/mock:other', auto: true })
-    expect(p2.inputHash).not.toBe(p1.inputHash)
+    const n = addNode(doc, 'plein/image', { params: { prompt: '天台', model: '' }, x: 0, y: 800 })
+    const p = await preview(server, id, n)
+    expect(p.model).toBeUndefined()
+    const runId = server.runs.start(id, n, 'local')
+    expect(await server.runs.wait(runId)).toBe('failed')
+    const job = server.runs.list(id, 10).jobs.find((j) => j.id === runId)
+    expect(job?.error).toContain('还没选「生成图片」用的模型')
+  }, 30_000)
+
+  it('打开旧画布：留空的模型补成默认模型，当年自动选中同一个模型的结果仍然有效', async () => {
+    const { server, id, doc } = await boot()
+    const n = addNode(doc, 'plein/image', { params: { prompt: '天台' }, x: 0, y: 800 })
+    const runId = server.runs.start(id, n, 'local')
+    expect(await server.runs.wait(runId)).toBe('succeeded')
+    await until(() => !server.runs.isRunning(id, n))
+    // 模拟升级前：模型留空，服务端自动选了 mock 图片，任务按留空的参数记缓存键
+    const runs = server.runs as unknown as {
+      prepare(...a: unknown[]): Promise<unknown>
+      latestParams(...a: unknown[]): Record<string, unknown>
+      resolveModel(ref: string): { ref: string; version?: string; plugin?: string }
+      hashKey(...a: unknown[]): string
+    }
+    const prepared = await runs.prepare(doc, doc.get(n)!, 'local', new AbortController().signal)
+    const params = runs.latestParams(doc.get(n)!, prepared)
+    const m = runs.resolveModel('plein/mock:image')
+    const old =
+      'v2:' +
+      runs.hashKey(
+        doc.get(n)!,
+        prepared,
+        [],
+        new Set(['requiredRefs', 'usedRefs']),
+        { model: { ref: m.ref, version: m.version, plugin: m.plugin } },
+        { ...params, model: '' },
+      )
+    server.runs.store.update(runId, { cache_key: old })
+    setParams(doc, n, { model: '' })
+    // 房间卸载后重新打开，留空的模型补成默认模型
+    server.rooms.unload(id)
+    const reopened = server.rooms.get(id)
+    expect(reopened.doc.getMap('elements').size).toBeGreaterThan(0)
+    expect(server.rooms.withDoc(id, (d) => d.get(n)!.params?.model)).toBe('plein/mock:image')
+    const stale = async () => (await server.runs.staleNodes(id, 'local')).stale
+    expect(await stale()).not.toContain(n)
   }, 30_000)
 
   it('升级前的缓存键（无版本前缀）仍按旧算法认作有效，不整组重跑', async () => {

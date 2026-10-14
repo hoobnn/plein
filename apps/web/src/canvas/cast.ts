@@ -1,4 +1,9 @@
-import { applyCast as applyCastIn, type CastOptions, castOf as castOfIn } from '@plein/capabilities'
+import {
+  applyCast as applyCastIn,
+  type CastOptions,
+  castOf as castOfIn,
+  defaultSpeech,
+} from '@plein/capabilities'
 import type { Engine } from '@plein/canvas-core'
 import type { CastEntry } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
@@ -21,7 +26,7 @@ export function applyCast(
   library?: CastOptions['library'],
 ) {
   const r = applyCastIn(engine.doc, nodeFactory(catalog), sourceId, entries, {
-    speech: localContext(engine, catalog).nodes.models('audio.speech')[0],
+    speech: defaultSpeech(localContext(engine, catalog)),
     library,
   })
   // 套用了资产库条目的记一次使用，资产库「最近使用」里排前面

@@ -6,7 +6,7 @@ import { Popover } from '../../ui/Popover'
 import { Presence } from '../../ui/Presence'
 import { SlidePill, SlideSwap } from '../../ui/Slide'
 
-/** 模型选择：左栏选平台、右栏列该平台的模型；“自动”交给服务端按能力挑 */
+/** 模型选择：左栏选平台、右栏列该平台的模型。不替用户挑，没选时按钮提示去选 */
 export function ModelPicker({
   value,
   node,
@@ -33,10 +33,12 @@ export function ModelPicker({
     onChange(v)
     setAnchor(null)
   }
-  // 打开时停在当前模型所在的平台
+  // 打开时停在当前模型所在的平台；没选时停在默认模型的平台
   const owner = value ? value.slice(0, value.indexOf(':')) : ''
-  const [tab, setTab] = useState(owner)
-  const shown = providers.find((p) => p.id === tab)
+  const fallback = node.capability ? (catalog?.defaultModels[node.capability] ?? '') : ''
+  const home = owner || fallback.slice(0, fallback.indexOf(':'))
+  const [tab, setTab] = useState(home)
+  const shown = providers.find((p) => p.id === tab) ?? providers[0]
 
   const railItem = (id: string, title: string, sub: string) => (
     <button
@@ -78,15 +80,15 @@ export function ModelPicker({
         type="button"
         aria-label="模型"
         aria-expanded={!!anchor}
-        title={current?.title ?? '自动选择模型'}
+        title={current?.title ?? '选择模型'}
         onClick={(e) => {
-          setTab(owner)
+          setTab(home)
           setAnchor(anchor ? null : e.currentTarget)
         }}
         className="ui-btn ui-btn-lg ui-btn-menu min-w-0 max-w-48"
       >
         <Icon name="sparkle" />
-        <span className="truncate">{current?.title ?? '自动'}</span>
+        <span className="truncate">{current?.title ?? '选择模型'}</span>
         <Icon name="chevronDown" size={14} />
       </button>
       <Presence>
@@ -105,25 +107,22 @@ export function ModelPicker({
                   className="ui-slide ui-scrollbar flex w-40 flex-none flex-col gap-0.5 overflow-y-auto border-r border-line pr-1"
                 >
                   <SlidePill variant="menu" />
-                  {railItem('', '自动', '按能力挑选')}
                   {providers.map((p) => railItem(p.id, p.title, `${p.models.length} 个模型`))}
                 </div>
                 <div
                   role="listbox"
-                  aria-label={shown ? `${shown.title} 的模型` : '自动选择'}
+                  aria-label={`${shown!.title} 的模型`}
                   className="ui-scrollbar flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto pl-1"
                 >
                   {/* 平台是竖排的：模型列表按上下方向滑入 */}
                   <SlideSwap
-                    index={shown ? providers.indexOf(shown) + 1 : 0}
+                    index={providers.indexOf(shown!)}
                     axis="y"
                     className="flex flex-col gap-0.5"
                   >
-                    {shown
-                      ? shown.models.map((m) =>
-                          option(`${shown.id}:${m.id}`, m.title, m.description),
-                        )
-                      : option('', '自动选择', '按节点能力使用第一个可用平台里的第一个模型')}
+                    {shown!.models.map((m) =>
+                      option(`${shown!.id}:${m.id}`, m.title, m.description),
+                    )}
                   </SlideSwap>
                 </div>
               </div>

@@ -44,7 +44,7 @@ describe('POST /api/prompt/rewrite', () => {
     })
     expect(res.status).toBe(200)
     const out = (await res.json()) as RewritePromptResult
-    expect(out.model).toBe('plein/mock:chat')
+    expect(out.model).toBe('plein/mock:agent')
     expect(out.text).toBe('【mock】@林夏在【场景】里奔跑')
   })
 

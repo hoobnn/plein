@@ -53,15 +53,15 @@
 
 2026-10-14 实现，L1–L3 通过，L4 真实平台验收通过；同日经评审修订后字段定稿。
 
-- 协议：`packages/protocol/src/runs.ts` 的 `PreparedInput`（模型及是否自动选择、参考图上限、最终提示词、有效参数、各端口实际输入、引用、音色、提示、阻断、`inputHash`）与 `InputRef`（元素 ID、显示名、类别、是否必需、可提供 / 实际送入的资产、原因 `over_limit` / `unsupported` / `no_image`）。`inputHash` 就是缓存键。
+- 协议：`packages/protocol/src/runs.ts` 的 `PreparedInput`（模型、参考图上限、最终提示词、有效参数、各端口实际输入、引用、音色、提示、阻断、`inputHash`）与 `InputRef`（元素 ID、显示名、类别、是否必需、可提供 / 实际送入的资产、原因 `over_limit` / `unsupported` / `no_image`）。`inputHash` 就是缓存键。
 - 服务端：`NodeRuns.prepare` 同时产出缓存键、预览和提交用的输入；`GET /api/canvases/:canvas/nodes/:node/input` 返回预览，不调用平台；任务提交时把同一份实际输入写进 `jobs.input`，任务面板接口随 `JobInfo.input` 返回。
 - 必需参考：图片与视频节点的隐藏参数 `requiredRefs`（元素 ID，按先后为优先级），只决定取舍，不计入缓存键。必需参考先占名额；缺图、当前模式不收参考图或放不下时记为阻断，任务失败且不调用平台，整组运行里无关镜头照常执行。
 - 提交核对：运行接口可带 `expect`（用户看到的 `inputHash`），重新准备后不一致返回 409 `input_changed` 和新的实际输入。
 - 界面：生成器底栏上方的「实际输入」，摘要一行显示模型与参考图张数，展开后列出引用及用法、送入顺序、最终提示词、有效参数和提示；每个引用可切换必需 / 可选；有阻断时生成按钮不可用。
 - 评审修订（定稿）：`PreparedInput` 带格式版本 `v`、`nodeVersion`、`preparedAt` 与 `status`（`ready` / `blocked` / `unprepared`）；准备失败时不给 `inputHash`，带旧哈希提交会被拦下。`notices` / `blocked` 改为 `InputIssue`（`code`、`message`、可选 `elementId`），W2 / W5 按代码和元素判断，不解析文案。`InputValue` 记录来源节点的 `resultId` / `runId`，长文本标 `truncated`。引用原因新增 `failed`（参考图生成失败），与 `no_image`（还没生成或没连）分开。
-- 缓存键 v2：带 `v2:` 前缀，计入实际模型（自动选择时是解析出的那个）、平台插件版本和平台声明的模型版本（`ModelSpec.version`，可选）；`usedRefs` 只是取舍结果的描述，不再计入。升级前无前缀的键按旧算法比对，旧结果不因升级整组重跑。
+- 缓存键 v2：带 `v2:` 前缀，计入所选模型、平台插件版本和平台声明的模型版本（`ModelSpec.version`，可选）；`usedRefs` 只是取舍结果的描述，不再计入。升级前无前缀的键按旧算法比对，旧结果不因升级整组重跑。
 - 留待 W3（已在 W3 完成）：`expect` 原先只在提交时核对，排队期间输入变化不会拦下；现在确认的哈希随任务存下，执行前复核，见 W3 实现记录。
-- 测试：`apps/server/src/runs/mentions.required.test.ts`、`preview.test.ts`，`e2e/assets.spec.ts` 覆盖预览与必需开关。模型切换只在单测里按上限覆盖，mock 只有一个图片模型；自动选模型换了之后缓存键变化、旧缓存键兼容各有一个用例。
+- 测试：`apps/server/src/runs/mentions.required.test.ts`、`preview.test.ts`，`e2e/assets.spec.ts` 覆盖预览与必需开关。模型切换只在单测里按上限覆盖，mock 只有一个图片模型；旧缓存键兼容、模型补上后旧结果仍有效各有一个用例。
 
 ## W2 影响分析与局部返工
 
@@ -185,6 +185,16 @@ Agent 面对“让第三镜头更紧张”等请求，先给出目标 ID、修�
 暂不扩展 Gaussian、手机 WebRTC 运镜、复杂动作、完整时间轴和专用 DCC 插件。Three.js 编辑区域独立挂载，继续复用现有画布与资产系统。
 
 采用同一组镜头比较文字描述与 3D 参考，记录构图接近程度、人物位置与遮挡、达到可采用结果的生成次数，以及摆场景时间。控制模型和参数，记录成本与失败样例，人工审片标准在实验前确定。只有重复创作显示净收益，才规划动态轨迹 / 视频输出；编辑器运行通过不代表生成模型严格复现空间。
+
+## 模型选择
+
+2026-10-14 L4 后调整：启用 MiniMax 后，剧本、分镜、出图、配音都被自动选模型换到它上面，分镜报不支持 JSON Schema 输出。改为不自动选模型。
+
+- 节点必须写明模型；模型留空的节点不运行，执行器报「还没选模型」，界面提示「选择模型」。
+- 设置里每种能力有一个默认模型（`ProviderConfigStore` 存在数据目录的 `models.json`，`GET /api/catalog` 的 `defaultModels`，`PUT /api/model-defaults` 修改）。新建节点（界面、MCP / 智能体建节点、短剧模板、设定卡、展开分镜）时写进节点，设定卡音色按默认配音模型配；提示词改写和内置智能体用默认对话模型，后者要求它支持工具调用。
+- 还没设默认模型、或默认模型的平台已停用时，取已启用平台里第一个支持该能力的模型并记住；之后启用别的平台不改默认。
+- 打开旧画布时（服务端载入房间），模型留空的节点补成当前默认模型。缓存键里有参数中的模型，补上后旧结果的键对不上：比对 `v2:` 键时再按「模型留空、实际用同一个模型」算一次，对得上仍认作有效，不因此过期。
+- 测试：`apps/server/src/plugins/plugins.test.ts`（默认模型的记住与回退）、`apps/server/src/runs/preview.test.ts`（没选模型不运行、旧画布补模型后结果仍有效）。
 
 ## 架构合同与发布指标
 

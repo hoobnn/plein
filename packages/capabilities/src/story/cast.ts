@@ -95,7 +95,7 @@ export interface CastLibraryItem {
 }
 
 export interface CastOptions {
-  /** 默认配音模型（排第一的已启用模型，和执行时自动选的一致）；它声明了音色表才配音色 */
+  /** 默认配音模型（和新建配音节点写进去的一致）；它声明了音色表才配音色 */
   speech?: SpeechModel
   /**
    * 资产库：抽取出的名字在资产库里有同类条目时，直接用条目的设定、参考图和音色建卡，

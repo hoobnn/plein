@@ -22,9 +22,14 @@ const catalog = {
       ],
     },
   ],
+  defaultModels: {
+    'text.chat': 'ark:seed',
+    'image.generate': 'ark:seedream',
+    'video.generate': 'ark:seedance',
+  },
 } as unknown as Catalog
 
-const emptyCatalog = { nodes, providers: [] } as unknown as Catalog
+const emptyCatalog = { nodes, providers: [], defaultModels: {} } as unknown as Catalog
 
 const setup = () => {
   const doc = createDoc(undefined, { schedule: () => {} })
@@ -109,14 +114,14 @@ describe('短剧模板落到画布', () => {
     }
   })
 
-  it('模型 id 由 catalog 决定：一个都没启用时留空并提示', () => {
+  it('模型用设置里的默认模型：没有默认模型的能力留空并提示', () => {
     const { doc, engine } = setup()
     const r = placeDramaTemplate(engine, catalog, { x: 0, y: 0 })
     expect(r.noModel).toEqual(['配音', '配乐'])
     for (const el of kind(doc, 'plein/llm')) expect(el.params?.model).toBe('ark:seed')
     for (const el of kind(doc, 'plein/image')) expect(el.params?.model).toBe('ark:seedream')
     for (const el of kind(doc, 'plein/video')) expect(el.params?.model).toBe('ark:seedance')
-    // 没启用的能力留空，等用户去设置里启用
+    // 没有默认模型的能力留空，等用户去设置里启用平台
     for (const el of [...kind(doc, 'plein/speech'), ...kind(doc, 'plein/music')])
       expect(el.params?.model).toBe('')
     expect(dramaNotice(r)).toContain('请到设置里启用')

@@ -75,6 +75,8 @@ export interface NodeCatalog {
   all(): NodeTypeInfo[]
   /** 已启用、支持该模型能力的模型 */
   models(capability: Capability): Array<{ ref: string; title: string; voices?: VoicePreset[] }>
+  /** 该能力的默认模型（设置里指定，新建节点时写进节点）；没有时为空串 */
+  defaultModel(capability: Capability): string
   /** 提示词预设（内置 + 插件） */
   prompts(): PromptPresetDefinition[]
 }

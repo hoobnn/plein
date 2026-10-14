@@ -1,7 +1,6 @@
-import { expandedNodes, expandShots, nodeElementOf, type ShotSource } from '@plein/capabilities'
+import { expandedNodes, expandShots, type ShotSource } from '@plein/capabilities'
 import { connect, createElement, currentResult, type PleinDoc, setParams } from '@plein/doc'
-import { corePlugin, type Shot, STORYBOARD_TYPE } from '@plein/nodes'
-import { describeNode, type NodeDefinition } from '@plein/plugin-sdk'
+import { type Shot, STORYBOARD_TYPE } from '@plein/nodes'
 import type { EditPlan } from '@plein/protocol'
 import { describe, expect, it } from 'vite-plus/test'
 import { Approvals } from '../agent/approvals'
@@ -9,12 +8,9 @@ import { AgentChanges } from '../agent/changes'
 import { McpServer } from '../agent/mcp'
 import { agentTools, canvasTools, type ToolEnv } from '../agent/tools'
 import type { Server } from '../app'
-import { addNode, bootServer, createCanvas, mockSettings } from '../testing'
+import { addNode, bootServer, makeNode, createCanvas, mockSettings } from '../testing'
 
-const make = (type: string) => {
-  const def = corePlugin.nodes.find((d) => d.type === type) as NodeDefinition | undefined
-  return def && nodeElementOf(describeNode(def, 'plein/core'))
-}
+const make = makeNode
 
 const shot = (no: number): Shot => ({
   id: `shot_${no}`,

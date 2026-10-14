@@ -51,8 +51,9 @@ const catalog = {
 } as unknown as Catalog
 
 describe('按模型处理参数', () => {
-  it('自动选择取第一个模型；按约束收窄字段，不支持的去掉', () => {
-    const m = selectedModel(catalog, node, { model: '' })!
+  it('没选模型时不替用户挑；按所选模型的约束收窄字段，不支持的去掉', () => {
+    expect(selectedModel(catalog, node, { model: '' })).toBeUndefined()
+    const m = selectedModel(catalog, node, { model: 'p/a:fast' })!
     expect(m.info.ref).toBe('p/a:fast')
     const fields = Object.fromEntries(constrainFields(node, fieldsOf(node), m.info.limits))
     expect(fields.duration).toMatchObject({ minimum: 4, maximum: 15 })

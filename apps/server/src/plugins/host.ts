@@ -4,7 +4,7 @@ import { readFile, rm } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import {
   type AssetRef,
-  type Capability,
+  Capability,
   type CapabilityInput,
   type ComposeSpec,
   type ExecutorContext,
@@ -274,6 +274,30 @@ export class PluginHost {
       }
     }
     return out
+  }
+
+  /**
+   * 某能力的默认模型：设置里指定的那个；还没指定，或指定的平台已停用、模型已下架时，
+   * 改为已启用平台里第一个支持该能力的模型并记下来，之后启用别的平台不会再变。没有可用模型时返回空串
+   */
+  defaultModel(capability: Capability): string {
+    const models = this.models(capability)
+    const saved = this.configs.defaultModel(capability)
+    if (saved && models.some((m) => m.ref === saved)) return saved
+    const first = models[0]?.ref
+    if (!first) return ''
+    this.configs.setDefaultModel(capability, first)
+    return first
+  }
+
+  /** 各能力的默认模型；没有可用模型的能力不列出 */
+  defaultModels(): Partial<Record<Capability, string>> {
+    return Object.fromEntries(
+      Capability.options.flatMap((c) => {
+        const ref = this.defaultModel(c)
+        return ref ? [[c, ref]] : []
+      }),
+    )
   }
 
   /** 测试连接：校验配置与密钥；没有 test 方法的平台只校验配置 */

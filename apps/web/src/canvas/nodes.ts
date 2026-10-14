@@ -254,6 +254,8 @@ export function validate(
         p.models.some((m) => m.capabilities.includes(node.capability!)),
     )
     if (!ok) return '没有启用支持这个能力的平台，请先在设置里配置'
+    const key = fieldsOf(node).find(([, f]) => f.widget === 'model')?.[0]
+    if (key && !el.params?.[key]) return '选择模型'
   }
   // 参数按 schema 检查：协作者或旧版本写进文档的值可能越界
   for (const [key, f] of fieldsOf(node)) {

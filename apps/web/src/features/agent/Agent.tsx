@@ -212,7 +212,10 @@ function AgentPanel({ canvasId }: { canvasId: string | null }) {
         <Notice>{status.reason}</Notice>
       ) : available.length === 0 ? (
         <Notice>
-          <p>在设置里启用支持工具调用的对话模型（如百炼的千问），就能直接用内置智能体。</p>
+          <p>
+            在 设置 → 默认模型
+            里把对话模型设成支持工具调用的（如百炼的千问），就能直接用内置智能体。
+          </p>
           <p className="mt-2">也可以安装并登录 Claude Code 或 Codex：</p>
           <pre className="mt-2 rounded-md bg-surface-2 px-3 py-2 text-left text-xs text-ink">
             {'npm i -g @anthropic-ai/claude-code\nnpm i -g @openai/codex'}
