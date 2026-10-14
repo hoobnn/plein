@@ -317,7 +317,8 @@ export interface ProviderDefinition<S extends z.ZodObject = z.ZodObject> {
   cancel?(remoteId: string, ctx: ProviderContext<z.output<S>>): Promise<void>
   /**
    * 按幂等键（ctx.idempotencyKey）查提交过的任务：提交后没收到回应时宿主用它核查。
-   * 找到返回远端任务 ID，平台确认没有这个任务返回 null；查不了就抛错。
+   * 找到返回远端任务 ID，查不到返回 null；查不了就抛错。
+   * 查不到时只有同时声明了 idempotent 宿主才自动重新提交，否则仍交给用户核查。
    * 只有平台官方提供按客户端标识查询的接口时才实现
    */
   lookup?(

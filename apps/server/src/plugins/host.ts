@@ -414,7 +414,7 @@ export class PluginHost {
             return pollUntilDone(recorded.remoteId, 0)
           }
           if (recorded?.state === 'submitting' || recorded?.state === 'unknown') {
-            // 上次提交没收到回应：有查询合同就先查，有幂等合同就用同一个键重新提交，否则不提交
+            // 上次提交没收到回应：有查询合同就先查，查不到或没有查询合同时，只有幂等才用同一个键重新提交
             const found = await this.verifySubmit(def, ctx, idempotencyKey, recorded)
             if (found) {
               remote = found.remoteId
@@ -443,7 +443,7 @@ export class PluginHost {
               const unknown = { state: 'unknown' as const, at: Date.now(), message }
               record(unknown)
               if (opts.signal?.aborted) throw err
-              // 平台有查询或幂等合同：马上核查一次；查到就接着轮询，确认没受理就用同一个键再提交一次
+              // 平台有查询或幂等合同：马上核查一次；查到就接着轮询，幂等时用同一个键再提交一次
               if (verified || !(def.lookup || def.idempotent))
                 throw unknownSubmit(def.title, message, err)
               verified = true
@@ -518,8 +518,10 @@ export class PluginHost {
   }
 
   /**
-   * 提交状态未知时核查：平台实现了 lookup 就按幂等键查，找到返回远端任务，
-   * 平台确认没有这个任务（或声明了幂等提交）返回 null，接着提交；都没有就抛「状态未知」
+   * 提交状态未知时核查：平台实现了 lookup 就按幂等键查，找到返回远端任务。
+   * 返回 null 表示可以用同一个键接着提交，只在平台声明了幂等提交时才会这样：
+   * 查不到不等于没受理（平台的查询可能有延迟），不幂等时重新提交可能重复计费，
+   * 所以仍按「状态未知」交给用户稍后重新核查或确认后重新提交
    */
   private async verifySubmit(
     def: ProviderDefinition,
@@ -529,11 +531,17 @@ export class PluginHost {
   ): Promise<{ remoteId: string } | null> {
     const message = recorded.state === 'unknown' ? recorded.message : '上次提交时服务退出'
     if (key && def.lookup) {
+      let found: { remoteId: string } | null
       try {
-        return await def.lookup(key, ctx)
+        found = await def.lookup(key, ctx)
       } catch (err) {
         throw unknownSubmit(def.title, `${message}；核查失败：${(err as Error).message}`, err)
       }
+      if (found || def.idempotent) return found
+      throw unknownSubmit(
+        def.title,
+        `${message}；平台暂时查不到这个任务，可能还没同步，请稍后重新核查`,
+      )
     }
     if (key && def.idempotent) return null
     throw unknownSubmit(def.title, message)

@@ -90,7 +90,7 @@ export const serverPlugin = defineServerPlugin(plugin, {
 - `submit(request, ctx)`：同步平台直接返回结果；异步平台返回 `remoteId`，宿主按 `pollAfterMs` 调 `poll`
 - `poll(remoteId, ctx)` / `cancel(remoteId, ctx)`：任务被取消或超时时宿主会调 `cancel`
 - `test(ctx)`：设置页的“测试连接”
-- `lookup(idempotencyKey, ctx)`（可选）：按幂等键查提交过的任务，找到返回 `{ remoteId }`，平台确认没有返回 `null`；`idempotent: true`（可选）表示提交按 `ctx.idempotencyKey` 去重。两者都只在平台官方提供对应合同时声明。提交后没收到回应时，宿主有其一才自动核查或用同一个键重放，否则任务记为「提交结果未知」，等用户人工核查
+- `lookup(idempotencyKey, ctx)`（可选）：按幂等键查提交过的任务，找到返回 `{ remoteId }`，查不到返回 `null`（查不到不等于没受理，平台查询可能有延迟，只有同时声明了 `idempotent` 宿主才接着用同一个键提交，否则仍交给用户核查）；`idempotent: true`（可选）表示提交按 `ctx.idempotencyKey` 去重。两者都只在平台官方提供对应合同时声明。提交后没收到回应时，宿主有其一才自动核查或用同一个键重放，否则任务记为「提交结果未知」，等用户人工核查
 
 没有免费远端鉴权探针时，声明 `testScope: 'configuration'`，设置页显示“检查配置”并说明未验证远端连接。不同鉴权方案可用 `credentialAlternatives` 声明任意一组必须完整填写的密钥，例如豆包 API Key 或 App ID + Access Key。
 

@@ -85,6 +85,20 @@ describe('提交状态未知', () => {
     expect(job(server, id, run).recovery?.state).toBe('adopted')
   })
 
+  it('查询查不到、平台又不幂等：不自动重提，仍交给用户核查', async () => {
+    const { server } = await boot()
+    mock(server, { latencyMs: 200 })
+    // 平台查询有延迟：刚受理的任务暂时查不到
+    vi.spyOn(mockProvider, 'lookup').mockResolvedValue(null)
+    const { submit } = loseSubmitResponse()
+    const { id, doc } = await canvas(server)
+    const a = addNode(doc, 'plein/image', { params: { prompt: 'a', count: 1 } })
+    const run = server.runs.start(id, a, 'local')
+    expect(await server.runs.wait(run)).toBe('failed')
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect(job(server, id, run).recovery?.state).toBe('submit_unknown')
+  })
+
   it('没有查询合同：不显示完成、不自动重提；填平台任务 ID 后接着取结果', async () => {
     withoutLookup()
     const { server } = await boot()
