@@ -1,6 +1,6 @@
 # Plein 0.2.0 规划：生成可控与局部返工
 
-2026-10-14；同日调整范围与顺序。状态：W1 已实现并定稿，W2、W3、W4、W5（最小版）已实现（均 L1–L3 通过），其余待实施。
+2026-10-14；同日调整范围与顺序。状态：W1 已实现并定稿，W2、W3、W4、W5（最小版）已实现，均 L1–L3 通过，2026-10-14 L4 真实平台验收通过（见 [验收记录](acceptance-0.1.0.md#l402-验收2026-10-14)）；E1 待实施。
 
 ## 目标与依据
 
@@ -51,7 +51,7 @@
 
 ### W1 实现记录
 
-2026-10-14 实现，L1–L3 通过，真实平台未验收；同日经评审修订后字段定稿。
+2026-10-14 实现，L1–L3 通过，L4 真实平台验收通过；同日经评审修订后字段定稿。
 
 - 协议：`packages/protocol/src/runs.ts` 的 `PreparedInput`（模型及是否自动选择、参考图上限、最终提示词、有效参数、各端口实际输入、引用、音色、提示、阻断、`inputHash`）与 `InputRef`（元素 ID、显示名、类别、是否必需、可提供 / 实际送入的资产、原因 `over_limit` / `unsupported` / `no_image`）。`inputHash` 就是缓存键。
 - 服务端：`NodeRuns.prepare` 同时产出缓存键、预览和提交用的输入；`GET /api/canvases/:canvas/nodes/:node/input` 返回预览，不调用平台；任务提交时把同一份实际输入写进 `jobs.input`，任务面板接口随 `JobInfo.input` 返回。
@@ -86,7 +86,7 @@
 
 ### W2 实现记录
 
-2026-10-14 实现，L1–L3 通过，真实平台未验收；字段可在评审后调整。
+2026-10-14 实现，L1–L3 通过，L4 真实平台验收通过；字段可在评审后调整。
 
 - 协议：`packages/protocol/src/impact.ts` 的 `ImpactReport`（受影响节点、分镜表没同步的镜头、序列检查、汇总、最近的保留决定）。`ImpactNode` 按稳定镜头 ID（`shot.id`，镜号只用来显示）关联，带影响类型 `direct` / `indirect` / `related`、原因 `ImpactCause`、建议 `rerun` / `review` / `keep` / `sync`、当前产物、可沿用的候选、`inputHash`、保留决定与价格。原因对比产生当前结果时的 `JobInfo.input` 与现在的 `PreparedInput`，分 `prompt` / `params` / `model` / `reference` / `input` / `voice` / `plan` / `unknown`。`SequenceIssue` 分 `out_of_range` / `dialogue_overflow` / `transition` / `subtitle`。`ModelSpec.price`（可选）用于估算；内置平台都没配，界面显示价格未知。
 - 服务端：`apps/server/src/runs/impact.ts`。`GET /api/canvases/:canvas/impact` 只读、不调用平台；`POST …/impact/run` 只运行勾选的节点（整组运行 scope `impact`），按依赖先后调度，结果过期时先改用按现在输入生成过的候选，`force` 时全部重新生成；`POST …/impact/keep` 带用户看到的 `inputHash` 记保留，输入在那之后又变了返回 409；`DELETE …/impact/keep/:id` 撤销保留。
@@ -121,7 +121,7 @@
 
 ### W3 实现记录
 
-2026-10-14 实现，L1–L3 通过，真实平台未验收；字段可在评审后调整。
+2026-10-14 实现，L1–L3 通过；L4 真实平台验证了重启后按原远端任务续查和提交结果未知不自动重提，「重新获取」「填平台任务 ID」等恢复操作未在真实平台验收；字段可在评审后调整。
 
 - 协议：`packages/protocol/src/recovery.ts`。`JobInfo.recovery`（`JobRecovery`）的 `state` 为 `remote_failed` / `submit_unknown` / `remote_pending` / `fetch_failed` / `stored` / `adopted` / `review`，带远端任务 ID、平台名、能否自动核查 `verifiable`、能否填任务 ID 续查 `attachable`、能否重新获取 `refetchable`、说明 `note`、这次的结果 `resultIds`、待采用原因 `held`（`canceled` / `input_changed` / `node_deleted` / `superseded`）和 `dismissed`；`JobInfo.canceledBy` 区分 `user` / `remote` / `system`。`BatchItem` 是批次快照的一项：阶段 `run` / `reuse` / `blocked`、原因、批准的 `inputHash`（有待解析依赖时缺省）、待解析依赖 `BatchDependency`（上游节点及启动时的结果）、启动时的实际输入、提交时冻结的 `frozenHash`、任务、结局 `BatchOutcome` 与落定的结果。`GroupInfo.review` 是等重新审查的目标数。插件 SDK 新增可选的 `ProviderDefinition.lookup` / `idempotent`、`ProviderContext.idempotencyKey` 与 `ProviderError.outcome: 'unknown'`。
 - 存储：迁移 `0003_funny_grim_reaper`，新表 `batch_items`，`jobs` 加 `expect`（批准的计划）、`frozen`（提交时的参数与输入值）、`recovery`（恢复状态）。进度仍在运行时状态里，批次快照不写画布文档。项目包不导出这三列和批次快照（远端任务号属于调用日志），迁入的任务照旧只作历史。
@@ -145,7 +145,7 @@
 
 ### W4 实现记录
 
-2026-10-14 实现，L1–L3 通过，真实平台未验收；无数据库迁移。
+2026-10-14 实现，L1–L3 通过，L4 真实平台验收通过；无数据库迁移。
 
 - 格式：单文件 zip（`.plein`），协议在 `packages/protocol/src/project-package.ts`。`manifest.json` 记格式名与版本（当前 1）、候选范围（`current` / `all`）、项目、画布（文件路径、SHA-256、字节数）、素材（资产 id 即内容哈希）、资产库条目、运行记录文件、依赖（模型引用、音色 `{provider, voiceId}`、节点类型与版本及提供插件）和导出时就缺的素材 / 条目（`missing`）。文件只有 `canvases/<序号>.yjs`、`assets/<sha256>`、`history/jobs.json` 三类位置。
 - 导出：`apps/server/src/projects/package.ts` 在文档副本上裁剪结果（默认只留每个节点当前采用那次运行的结果），运行中 / 排队状态改成已取消的历史；运行记录不带调用日志（远端任务号、结果地址），错误信息和运行状态里的数据目录、用户主目录换成省略号。素材只带自己名下且文件在的，资产库条目带归属本项目的和画布卡片引用的。fflate 流式写包，没有 zip64，单包上限 4 GB。
@@ -167,7 +167,7 @@ Agent 面对“让第三镜头更紧张”等请求，先给出目标 ID、修�
 
 ### W5 实现记录
 
-2026-10-14 实现最小版，L1–L3 通过，真实平台未验收；对话内逐项编辑方案留到 0.2.x。
+2026-10-14 实现最小版，L1–L3 通过，L4 真实平台验收通过（经 MCP）；对话内逐项编辑方案留到 0.2.x。
 
 - 协议：`packages/protocol/src/edit-plan.ts` 的 `EditPlan`。`EditTarget` 是要改文字的目标节点：稳定镜头 ID（`shot.id`，镜号只用来显示）、字段前后值 `EditFieldChange`、改完后实际送入的 @ 引用（W1 的 `InputRef`）和阻断 / 提示；`EditStep` 是批准后要运行的节点，带执行阶段 `image` / `video` / `speech` / `other`、最小批准范围 `images` / `full`、来自哪些目标、W2 的原因、能否沿用已有候选和价格；`EditKeep` 列出同一镜头里保留不动的节点及原因，`untouched` 是方案之外不受影响的结果数；`estimate` 按 `text` / `images` / `full` 给出调用次数、沿用数和费用，缺价格计入未知。目标和步骤都带 `EditBinding`（节点参数哈希 + 提出时的 `inputHash`）。会话条目新增 `edit_plan`，确认接口的请求体改为 `DecideAgentApproval`（`allow` + 可选 `scope`）。
 - 服务端：`apps/server/src/runs/edit-plan.ts` 的 `EditPlans`。提出方案时复制画布的 Y.Doc，在副本上套用文字改动，用 `ImpactAnalyzer.analyzeDoc`（W2，新增的只读入口）算出目标和下游（含 @ 引用）里要重做的节点，用 `NodeRuns.inspect` 取改完后的实际输入；不写画布、不调用平台。没有模型的本地加工（如序列导出）不进方案，列为保留。方案存在内存里，一小时后过期。
@@ -201,4 +201,4 @@ Agent 面对“让第三镜头更紧张”等请求，先给出目标 ID、修�
 
 先在 0.1.2 上记录当前基线，再于各工作包验收时对照（mock 下可测的三项已记录在 [0.2.0 发布指标测量](metrics-0.2.0.md)），不以模型数量、节点数量或未经测量的百分比作为成功标准。0.2 发布必须交付 W1–W4 与 W5 最小版，W5 完整交互、E1 与扩展候选不阻塞发布。
 
-L1–L3 与必要 L4 沿用 [四层验收流程](acceptance-0.1.0.md)。每个工作包记录实现版本、对应测试、运行证据、真实平台范围和未验收项；除已标注的 W1 外，本文其余工作包保持“待实施”，验收后再更新状态。
+L1–L3 与必要 L4 沿用 [四层验收流程](acceptance-0.1.0.md)。每个工作包记录实现版本、对应测试、运行证据、真实平台范围和未验收项；各工作包的状态写在各自的实现记录里。
