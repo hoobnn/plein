@@ -638,17 +638,10 @@ export class NodeRuns {
           upstream.push(d)
         }
       }
-      // 用户确认过保留的：决定时的输入和采用的结果都还是现在这样才算
       const kept: string[] = []
-      const active = new Map<string, { result_id: string; input_hash: string }>()
-      for (const d of this.store.decisions(canvasId))
-        if (!d.revoked_at && !active.has(d.node_id)) active.set(d.node_id, d)
       for (const id of [...stale, ...upstream]) {
-        const d = active.get(id)
         const el = doc.get(id)
-        if (!d || !el || currentResult(el)?.id !== d.result_id) continue
-        const now = await this.inspect(canvasId, doc, el, ownerId, signal)
-        if (now.input.inputHash === d.input_hash) kept.push(id)
+        if (el && (await this.isKept(canvasId, doc, el, ownerId, signal))) kept.push(id)
       }
       return { stale, upstream, kept }
     } finally {
@@ -725,6 +718,13 @@ export class NodeRuns {
         if (!jobId) {
           const reuse = !options.force && !rerun.has(nodeId)
           if (reuse && (await this.isFresh(doc, el, g.owner_id, ctrl.signal))) return 'cached'
+          // 用户确认保留的过期结果：整组运行不花钱重跑；在「查看影响」里勾选了才重做
+          if (
+            reuse &&
+            options.scope !== 'impact' &&
+            (await this.isKept(g.canvas_id, doc, el, g.owner_id, ctrl.signal))
+          )
+            return 'cached'
           if (options.candidates && reuse) {
             const now = await this.inspect(g.canvas_id, doc, el, g.owner_id, ctrl.signal)
             const hit = this.cachedCandidate(el, now)
@@ -772,6 +772,23 @@ export class NodeRuns {
       doc.destroy()
       lease.release()
     }
+  }
+
+  /**
+   * 用户在「查看影响」里确认保留了当前结果：决定时的输入和采用的结果都还是现在这样才算。
+   * 不改缓存有效性，结果仍算过期；整组运行据此不重跑它，按影响运行时勾选了照样重做
+   */
+  private async isKept(
+    canvasId: string,
+    doc: PleinDoc,
+    el: CanvasElement,
+    ownerId: string,
+    signal: AbortSignal,
+  ) {
+    const d = this.store.decisions(canvasId).find((x) => x.node_id === el.id && !x.revoked_at)
+    if (!d || currentResult(el)?.id !== d.result_id) return false
+    const now = await this.inspect(canvasId, doc, el, ownerId, signal)
+    return now.input.inputHash === d.input_hash
   }
 
   /**

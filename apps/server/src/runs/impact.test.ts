@@ -26,7 +26,7 @@ import { eq } from 'drizzle-orm'
 import { describe, expect, it } from 'vite-plus/test'
 import type { Server } from '../app'
 import { assets } from '../storage/schema'
-import { addNode, bootServer, createCanvas, mockSettings, request } from '../testing'
+import { addNode, bootServer, createCanvas, mockSettings, request, until } from '../testing'
 
 const make = (type: string) => {
   const def = corePlugin.nodes.find((d) => d.type === type) as NodeDefinition | undefined
@@ -231,6 +231,19 @@ describe('影响分析与局部返工', () => {
     ).json()) as StaleNodes
     expect(stale.stale).toContain(video.nodeId)
     expect(stale.kept).toEqual([video.nodeId])
+    // 整组 / 运行到此处不花钱重跑已保留的结果
+    const videoResults = doc.get(video.nodeId)!.results!.length
+    const flow = await request(server, `/api/canvases/${canvas}/nodes/${video.nodeId}/run-flow`, {
+      method: 'POST',
+      body: JSON.stringify({ scope: 'upstream' }),
+    })
+    const { groupId } = (await flow.json()) as GroupRunStarted
+    const flowSummary = await until(() => {
+      const g = server.runs.groupState(groupId, 'local')!
+      return g.status !== 'running' && g.summary
+    })
+    expect(flowSummary.succeeded).toBe(0)
+    expect(doc.get(video.nodeId)!.results).toHaveLength(videoResults)
 
     // 撤销画面修改：新候选还在，重做时直接改用按原输入生成的旧候选，不调用平台
     const img = byShot(3, 'image')

@@ -88,7 +88,7 @@
 
 - 协议：`packages/protocol/src/impact.ts` 的 `ImpactReport`（受影响节点、分镜表没同步的镜头、序列检查、汇总、最近的保留决定）。`ImpactNode` 按稳定镜头 ID（`shot.id`，镜号只用来显示）关联，带影响类型 `direct` / `indirect` / `related`、原因 `ImpactCause`、建议 `rerun` / `review` / `keep` / `sync`、当前产物、可沿用的候选、`inputHash`、保留决定与价格。原因对比产生当前结果时的 `JobInfo.input` 与现在的 `PreparedInput`，分 `prompt` / `params` / `model` / `reference` / `input` / `voice` / `plan` / `unknown`。`SequenceIssue` 分 `out_of_range` / `dialogue_overflow` / `transition` / `subtitle`。`ModelSpec.price`（可选）用于估算；内置平台都没配，界面显示价格未知。
 - 服务端：`apps/server/src/runs/impact.ts`。`GET /api/canvases/:canvas/impact` 只读、不调用平台；`POST …/impact/run` 只运行勾选的节点（整组运行 scope `impact`），按依赖先后调度，结果过期时先改用按现在输入生成过的候选，`force` 时全部重新生成；`POST …/impact/keep` 带用户看到的 `inputHash` 记保留，输入在那之后又变了返回 409；`DELETE …/impact/keep/:id` 撤销保留。
-- 保留决定：新表 `impact_decisions`（迁移 `0002_glorious_nightcrawler`），只追加，撤销时记 `revoked_at`，记下当时的结果、输入哈希与原因。不改缓存键，整组运行仍按过期处理；输入或采用的结果变了，决定自动不再适用。`/stale` 新增 `kept`，卡片显示「已保留」。
+- 保留决定：新表 `impact_decisions`（迁移 `0002_glorious_nightcrawler`），只追加，撤销时记 `revoked_at`，记下当时的结果、输入哈希与原因。不改缓存键，结果仍算过期；整组运行与运行到此处跳过已保留的结果、不付费重跑（2026-10-14 确认），在「查看影响」里勾选了照样重做；输入或采用的结果变了，决定自动不再适用。`/stale` 新增 `kept`，卡片显示「已保留」。
 - 修改规则：参考图换了，引用它的镜头图建议审查，下游视频建议保留；台词改了，配音建议重做（新配音的 caption 就是字幕），同镜头的画面列为可选、默认不勾；分镜表改了，列出没同步的镜头，节点建议先看差异，面板里打开现有的计划差异，按同步合同处理；序列始终读视频节点当前采用的结果，换候选后原入出点不动，按素材时长提示越界、对白溢出、转场被缩短和手写字幕。
 - 界面：底部工具条和分镜表顶栏的「查看影响」，按镜头分组，默认勾选建议重做的；可以「只改配音 / 字幕」、逐个保留或撤销保留、「保留其余」，再「重做选中的 N 个」。底部显示沿用数、调用平台数和价格估算或未知；「保留记录」列出生效、已撤销和已不适用的决定。
 - 测试：`apps/server/src/runs/impact.test.ts` 覆盖六镜头改第三镜头只跑勾选分支、保留与撤销、撤销修改后沿用旧候选、参考图规则和序列越界；`e2e/impact.spec.ts` 从分镜表改第三镜头开始，查看影响、同步、只重做配音和镜头图，核对其余五个镜头的采用结果、配音和剪辑参数不变，再保留视频、撤销同步，候选不少且可沿用。
