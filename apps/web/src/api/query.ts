@@ -25,6 +25,7 @@ export const queryKeys = {
   groupItems: (groupId: string) => ['groups', groupId, 'items'] as const,
   capabilities: ['capabilities'] as const,
   mcpExternal: ['mcp', 'external'] as const,
+  localPlugins: ['plugins', 'local'] as const,
   localClis: ['agent', 'clis'] as const,
 }
 

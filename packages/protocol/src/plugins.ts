@@ -20,6 +20,29 @@ export interface PluginInfo {
   permissions: PluginManifest['permissions']
 }
 
+/**
+ * 本机第三方插件（数据目录 plugins/ 下的文件夹）：默认不启用，设置里看过权限后再打开。
+ * sandbox 是子进程里实际生效的隔离，按实测如实显示
+ */
+export interface LocalPluginInfo {
+  id: string
+  name: string
+  version: string
+  description?: string
+  author?: string
+  /** 插件所在文件夹 */
+  dir: string
+  enabled: boolean
+  /** disabled 没启用；active 已加载；error 清单不对、加载失败或进程反复崩溃 */
+  status: 'disabled' | 'active' | 'error'
+  error?: string
+  permissions?: PluginManifest['permissions']
+  contributes?: PluginManifest['contributes']
+  sandbox?: { permission: boolean; fsWrite: boolean; net: boolean }
+}
+
+export const LocalPluginUpdate = z.object({ enabled: z.boolean() })
+
 export interface ProviderInfo extends ProviderDescriptor {
   enabled: boolean
   /** 必填密钥是否都已填写 */

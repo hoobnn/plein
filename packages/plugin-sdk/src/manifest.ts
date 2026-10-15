@@ -3,7 +3,8 @@ import { NamespacedId } from './ids'
 
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/
 /** 域名，允许一级通配：`ark.cn-beijing.volces.com`、`*.volces.com` */
-const DOMAIN = /^(\*\.)?([a-z0-9-]+\.)+[a-z]{2,}$/
+/** 域名，或本机服务 localhost（如本机跑的 ComfyUI） */
+const DOMAIN = /^(?:(\*\.)?([a-z0-9-]+\.)+[a-z]{2,}|localhost)$/
 
 /**
  * 插件清单（`plein-plugin.json`）。

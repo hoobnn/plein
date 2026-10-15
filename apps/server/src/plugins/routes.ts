@@ -1,6 +1,7 @@
 import {
   type Catalog,
   DefaultModelUpdate,
+  LocalPluginUpdate,
   type ProviderConfigView,
   ProviderConfigUpdate,
   type ProviderTestResult,
@@ -16,6 +17,7 @@ import {
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AuthEnv } from '../auth'
+import type { ExternalPlugins } from './external'
 import type { PluginHost } from './host'
 
 const notFound = { error: 'not_found', message: '平台不存在' }
@@ -130,5 +132,32 @@ export function pluginRoutes(host: PluginHost) {
           err instanceof ProviderError ? err : new ProviderError('unknown', (err as Error).message)
         return c.json({ ok: false, code: e.code, message: e.message } satisfies ProviderTestResult)
       }
+    })
+}
+
+/** 本机第三方插件：列出数据目录 plugins/ 下的插件，启用、停用、重新加载（只有所有者能改） */
+export function localPluginRoutes(ext: ExternalPlugins) {
+  const forbid = { error: 'forbidden', message: '只有所有者可以管理插件' }
+  const missing = { error: 'not_found', message: '插件不存在' }
+  const id = (c: { req: { param(k: string): string } }) =>
+    `${c.req.param('vendor')}/${c.req.param('name')}`
+  return new Hono<AuthEnv>()
+    .get('/api/plugins/local', (c) => c.json(ext.list()))
+    .post('/api/plugins/local/rescan', (c) => {
+      if (c.var.principal.role !== 'owner') return c.json(forbid, 403)
+      ext.scan()
+      return c.json(ext.list())
+    })
+    .put('/api/plugins/local/:vendor/:name', async (c) => {
+      if (c.var.principal.role !== 'owner') return c.json(forbid, 403)
+      const body = LocalPluginUpdate.safeParse(await c.req.json().catch(() => null))
+      if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
+      const info = await ext.setEnabled(id(c), body.data.enabled)
+      return info ? c.json(info) : c.json(missing, 404)
+    })
+    .post('/api/plugins/local/:vendor/:name/reload', async (c) => {
+      if (c.var.principal.role !== 'owner') return c.json(forbid, 403)
+      const info = await ext.reload(id(c))
+      return info ? c.json(info) : c.json(missing, 404)
     })
 }

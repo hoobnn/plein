@@ -25,7 +25,8 @@ import { builtinPlugins } from './plugins/builtin'
 import { ProviderConfigStore } from './plugins/config-store'
 import { PluginHost } from './plugins/host'
 import { PluginRegistry } from './plugins/registry'
-import { pluginRoutes } from './plugins/routes'
+import { ExternalPlugins } from './plugins/external'
+import { localPluginRoutes, pluginRoutes } from './plugins/routes'
 import { runRoutes } from './runs/routes'
 import { EditPlans } from './runs/edit-plan'
 import { NodeRuns } from './runs/runs'
@@ -67,6 +68,13 @@ export async function createServer(config: Config): Promise<Server> {
     assets,
   )
   plugins.load(builtinPlugins({ mock: config.mockProvider }), true)
+  // 本机第三方插件：数据目录 plugins/ 下，每个一个子进程，默认不启用
+  const local = new ExternalPlugins(
+    plugins,
+    join(config.dataDir, 'plugins'),
+    join(config.dataDir, 'plugins-state.json'),
+  )
+  await local.init()
   const auth = await createAuth(config.auth, db, secrets, { publicUrl: config.publicUrl })
   const runs = new NodeRuns(db, rooms, plugins, { concurrency: config.maxJobs })
   const library = new LibraryStore(db)
@@ -119,6 +127,7 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', mediaRoutes(assets))
   app.route('/', syncRoutes(db, rooms))
   app.route('/', pluginRoutes(plugins))
+  app.route('/', localPluginRoutes(local))
   app.route('/', promptRoutes(plugins))
   app.route('/', runRoutes(db, runs))
   app.route('/', agentRoutes(db, agents))
@@ -164,6 +173,7 @@ export async function createServer(config: Config): Promise<Server> {
     close() {
       agents.close()
       runs.close()
+      local.close()
       rooms.closeAll()
       db.$client.close()
     },

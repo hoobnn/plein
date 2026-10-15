@@ -118,16 +118,38 @@ export const serverPlugin = defineServerPlugin(plugin, {
 | 类型           | 方式                                                                                | 状态       |
 | -------------- | ----------------------------------------------------------------------------------- | ---------- |
 | 内置插件       | 主进程内加载，同一套注册表和权限裁剪                                                | 已完成     |
-| 本地第三方插件 | 放进 `data/plugins/<id>/`，服务端部分在独立子进程运行，宿主代理网络、密钥和资产访问 | M5         |
+| 本地第三方插件 | 放进 `data/plugins/<id>/`，服务端部分在独立子进程运行，宿主代理网络、密钥和资产访问 | 已完成     |
 | MCP 工具节点   | 把 MCP server 的工具包装成节点                                                      | 取消       |
 | 自定义元素渲染 | 沙箱 iframe                                                                         | 0.1.0 之后 |
 
 注册是原子的：清单不合规、贡献冲突、权限不足时整个插件标记为加载失败（设置页可见原因），不影响其他插件和服务启动。
+
+### 本机第三方插件
+
+完整示例在 [`examples/plugins/acme-echo`](../../examples/plugins/acme-echo)：两个节点（不调模型的「大声说」、调平台的「问一句」）、一个对话平台和一个提示词预设。
+
+1. 写法和内置插件一样（`definePlugin` + `defineServerPlugin`），服务端入口最后调用 `servePlugin(serverPlugin)`（从 `@plein/plugin-sdk/child` 导入）。
+2. 打包成一个不依赖 `node_modules` 的 ESM 文件，清单写 `"main": { "server": "dist/server.mjs" }`。示例用 `node examples/plugins/acme-echo/build.mjs <输出目录>` 打包。
+3. 把文件夹（清单 + 入口）放进数据目录的 `plugins/` 下，到 设置 → 插件 → 重新扫描。插件默认不启用，列表里先显示它要的联网域名、密钥和素材权限，用户打开开关后才加载。
+
+运行方式：每个启用的插件一个 Node 子进程，环境变量为空，和宿主之间走 IPC 消息。启动时子进程报上声明（zod schema 转成 JSON Schema），宿主按清单校验后注册；节点参数照样在宿主校验、补默认值。子进程崩溃时在途请求失败，下次请求再拉起；10 分钟内崩溃 3 次就停下，等用户重新加载。取消运行时先通知插件，5 秒没收手就结束进程。
+
+宿主实际管住的：
+
+- 文件：运行时支持 Node 权限模型（`--permission`）时，子进程只能读自己的文件夹，不能写文件、开子进程、起 worker、加载原生模块。设置里按子进程实测的结果显示「已隔离」「文件已隔离 · 网络未隔离」或「未隔离」。
+- 联网和密钥：`ctx.fetch` 交给宿主代发，只放行清单声明的域名，重定向逐跳检查；密钥只按清单和本次调用送进子进程。
+- 素材和模型：`ctx.assets`、`ctx.providers.call` 都经宿主，权限照清单裁剪；执行器只能输出本次运行里入库或输入进来的素材。
+
+还管不住的：Node 25 之前的权限模型不限制网络，插件代码可以绕过 `ctx.fetch` 自己联网（设置里会标「网络未隔离」）；CPU 占用不设上限（内存上限 512 MB）。所以只装信任的插件。
+
+暂不支持：自定义元素类型、能力（⌘K / 智能体操作）、节点的 `migrate` / `applyOutputs`、`ctx.media`。声明了这些的插件拒绝加载或在调用时报错。
 
 ## 接口
 
 - `GET /api/catalog`：已安装的插件、节点（含参数 JSON Schema 与默认值）、平台、模板、元素类型
 - `GET/PUT /api/providers/<vendor>/<name>/config`：平台开关、设置与密钥；密钥只回显是否已填，存在 `data/providers.json`（权限 600）
 - `POST /api/providers/<vendor>/<name>/test`：测试连接
+- `GET /api/plugins/local`：本机第三方插件列表（状态、权限、隔离程度、出错原因）
+- `PUT /api/plugins/local/<vendor>/<name>`：`{ enabled }` 启用或停用；`POST …/reload` 重新加载；`POST /api/plugins/local/rescan` 重新扫描（都只限所有者）
 
 开发时 `pnpm dev` 会加载 mock 平台（`apps/server/.env.development` 里的 `PLEIN_MOCK_PROVIDER=1`），无需任何密钥即可完整运行节点。

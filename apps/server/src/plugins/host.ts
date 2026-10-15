@@ -251,6 +251,8 @@ export class PluginHost {
     private opts: {
       timeoutMs?: number
       log?: (plugin: string, message: string, data?: unknown) => void
+      /** 平台请求用的 fetch；测试里可换掉 */
+      fetch?: typeof fetch
     } = {},
   ) {}
 
@@ -594,7 +596,7 @@ export class PluginHost {
     }
     if (!providerConfigured(def, config.secrets))
       throw new ProviderError('auth', `平台 ${def.title} 缺少一组完整的鉴权密钥`)
-    const fetchScoped = scopedFetch(manifest, providerFetch)
+    const fetchScoped = scopedFetch(manifest, this.opts.fetch ?? providerFetch)
     return {
       settings: settings.data,
       secret: scopedSecrets(manifest, config.secrets),

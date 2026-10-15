@@ -1,0 +1,19 @@
+{
+  "id": "acme/echo",
+  "version": "1.0.0",
+  "name": "Acme 回声",
+  "description": "第三方插件示例：一个文本节点、一个对话平台，演示子进程里的执行器和经宿主代理的联网",
+  "author": "plein",
+  "engines": { "plein": "^0.1.3" },
+  "main": { "server": "dist/server.mjs" },
+  "contributes": {
+    "nodes": ["acme/shout@1", "acme/ask@1"],
+    "providers": ["acme/echo"],
+    "prompts": ["acme/cheer"]
+  },
+  "permissions": {
+    "network": ["localhost"],
+    "secrets": ["ACME_ECHO_KEY"],
+    "assets": "none"
+  }
+}

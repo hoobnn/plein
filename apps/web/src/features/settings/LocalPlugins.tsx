@@ -1,0 +1,190 @@
+import type { LocalPluginInfo } from '@plein/protocol'
+import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { api } from '../../api/client'
+import { queryClient, queryKeys } from '../../api/query'
+import { desktop } from '../../desktop'
+import { useCatalog } from '../../stores/catalog'
+import { Icon } from '../../ui/icons'
+import { Switch } from '../../ui/Switch'
+
+/** 状态标签 */
+function state(p: LocalPluginInfo): { label: string; tone: string } {
+  if (p.status === 'error') return { label: '出错', tone: 'ui-tag-danger' }
+  if (p.status === 'active') return { label: '已加载', tone: 'ui-tag-success' }
+  return { label: '未启用', tone: '' }
+}
+
+/**
+ * 隔离程度：按子进程里实测的权限模型如实写，不夸大。
+ * 网络这一项 Node 还管不住（没有 --allow-net 时），插件可以绕过宿主自己联网
+ */
+function isolation(p: LocalPluginInfo): { label: string; tone: string; hint: string } | null {
+  const s = p.sandbox
+  if (!s || p.status !== 'active') return null
+  if (!s.permission)
+    return {
+      label: '未隔离',
+      tone: 'ui-tag-warning',
+      hint: '当前运行时不支持权限模型：插件进程能读写本机文件',
+    }
+  if (s.net)
+    return {
+      label: '文件已隔离 · 网络未隔离',
+      tone: 'ui-tag-warning',
+      hint: '只能读自己的文件夹，不能写文件、开子进程；但能绕过 Plein 直接联网',
+    }
+  return {
+    label: '已隔离',
+    tone: 'ui-tag-success',
+    hint: '只能读自己的文件夹，联网都经 Plein 代发',
+  }
+}
+
+/** 声明的权限，一项一个标签 */
+function permissionTags(p: LocalPluginInfo) {
+  const perm = p.permissions
+  if (!perm) return []
+  const tags: string[] = []
+  for (const d of perm.network) tags.push(`联网 ${d}`)
+  for (const s of perm.secrets) tags.push(`密钥 ${s}`)
+  if (perm.assets === 'read') tags.push('读素材')
+  if (perm.assets === 'write') tags.push('读写素材')
+  if (perm.media) tags.push('媒体处理')
+  return tags
+}
+
+function contributesText(p: LocalPluginInfo) {
+  const c = p.contributes
+  if (!c) return ''
+  return [
+    c.nodes.length && `${c.nodes.length} 个节点`,
+    c.providers.length && `${c.providers.length} 个平台`,
+    c.prompts.length && `${c.prompts.length} 个预设`,
+    c.templates.length && `${c.templates.length} 个模板`,
+  ]
+    .filter(Boolean)
+    .join('、')
+}
+
+/** 本机插件：数据目录 plugins/ 下的文件夹，默认不启用，看过权限再打开 */
+export function LocalPlugins() {
+  const { data: list } = useQuery({ queryKey: queryKeys.localPlugins, queryFn: api.localPlugins })
+  const [busy, setBusy] = useState<string | null>(null)
+
+  /** 改完刷新列表和目录（节点、平台、预设跟着变） */
+  const act = async (key: string, fn: () => Promise<unknown>) => {
+    setBusy(key)
+    try {
+      await fn()
+    } finally {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.localPlugins })
+      await useCatalog.getState().load()
+      setBusy(null)
+    }
+  }
+
+  if (!list) return null
+  return (
+    <div className="flex flex-col gap-3">
+      {list.length === 0 ? (
+        <p className="text-sm text-ink-subtle">
+          还没有本机插件。把插件文件夹放进数据目录的 plugins/ 里，再点「重新扫描」。
+        </p>
+      ) : (
+        <ul className="rounded-lg ring-1 ring-line" data-testid="local-plugins">
+          {list.map((p) => {
+            const st = state(p)
+            const iso = isolation(p)
+            const tags = permissionTags(p)
+            const what = contributesText(p)
+            return (
+              <li
+                key={p.id}
+                data-plugin={p.id}
+                className="flex flex-col gap-2 border-b border-line px-4 py-3 last:border-b-0"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-2">
+                      <span className="truncate text-sm">{p.name}</span>
+                      <span className={`ui-tag ${st.tone}`}>{st.label}</span>
+                    </span>
+                    <span className="block truncate text-xs text-ink-subtle">
+                      {p.id}
+                      {p.version && ` · ${p.version}`}
+                      {p.author && ` · ${p.author}`}
+                    </span>
+                  </span>
+                  {p.permissions && (
+                    <Switch
+                      label={`启用 ${p.name}`}
+                      checked={p.enabled}
+                      disabled={busy !== null}
+                      onChange={(on) => act(p.id, () => api.setLocalPlugin(p.id, on))}
+                    />
+                  )}
+                </div>
+                {p.description && <p className="text-xs text-ink-muted">{p.description}</p>}
+                {(tags.length > 0 || what) && (
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-subtle">
+                    {what && <span className="mr-1">提供 {what}</span>}
+                    {tags.length > 0 ? (
+                      tags.map((t) => (
+                        <span key={t} className="ui-tag">
+                          {t}
+                        </span>
+                      ))
+                    ) : (
+                      <span>不需要联网、密钥或素材</span>
+                    )}
+                  </div>
+                )}
+                {iso && (
+                  <p className="flex items-center gap-1.5 text-xs text-ink-subtle">
+                    <span className={`ui-tag ${iso.tone}`}>{iso.label}</span>
+                    <span className="min-w-0">{iso.hint}</span>
+                  </p>
+                )}
+                {p.error && <p className="text-xs break-words text-danger">{p.error}</p>}
+                {p.enabled && (
+                  <div>
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn-xs ui-btn-quiet"
+                      disabled={busy !== null}
+                      onClick={() => act(p.id, () => api.reloadLocalPlugin(p.id))}
+                    >
+                      <Icon name="retry" size={12} />
+                      {busy === p.id ? '加载中…' : '重新加载'}
+                    </button>
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="ui-btn ui-btn-secondary"
+          disabled={busy !== null}
+          onClick={() => act('scan', api.rescanLocalPlugins)}
+        >
+          重新扫描
+        </button>
+        {desktop && (
+          <button
+            type="button"
+            className="ui-btn ui-btn-quiet"
+            onClick={() => void desktop?.openDataDir()}
+          >
+            <Icon name="folder" size={14} />
+            打开数据目录
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}

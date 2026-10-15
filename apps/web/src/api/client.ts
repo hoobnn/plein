@@ -54,6 +54,7 @@ import {
   type PluginCapabilityInfo,
   type ExternalMcpStatus,
   type LocalCliInfo,
+  type LocalPluginInfo,
   type LocalCliUpdateResult,
   type ExternalMcpToken,
   type ApplyEditPlan,
@@ -174,6 +175,13 @@ export const api = {
     request<ProviderConfigView>(API.providerConfig(id), json('PUT', body)),
   setDefaultModel: (body: DefaultModelUpdate) =>
     request<{ defaultModels: Catalog['defaultModels'] }>(API.modelDefaults, json('PUT', body)),
+  localPlugins: () => request<LocalPluginInfo[]>(API.localPlugins),
+  setLocalPlugin: (id: string, enabled: boolean) =>
+    request<LocalPluginInfo>(API.localPlugin(id), json('PUT', { enabled })),
+  reloadLocalPlugin: (id: string) =>
+    request<LocalPluginInfo>(`${API.localPlugin(id)}/reload`, json('POST', {})),
+  rescanLocalPlugins: () =>
+    request<LocalPluginInfo[]>(`${API.localPlugins}/rescan`, json('POST', {})),
   testProvider: (id: string) => request<ProviderTestResult>(API.providerTest(id), json('POST', {})),
   rewritePrompt: (body: RewritePrompt) =>
     request<RewritePromptResult>(API.promptRewrite, json('POST', body)),

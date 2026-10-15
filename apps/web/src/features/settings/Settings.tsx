@@ -13,6 +13,7 @@ import { Modal, ModalHeader } from '../../ui/Modal'
 import { Select } from '../../ui/Select'
 import { THEME_OPTIONS } from '../../ui/ThemeToggle'
 import { ExternalMcp } from './ExternalMcp'
+import { LocalPlugins } from './LocalPlugins'
 import { LocalClis } from '../agent/LocalClis'
 import { useAgent } from '../agent/store'
 import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
@@ -354,32 +355,41 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
               </Group>
             )}
             {current.id === 'plugins' && (
-              <Group title="已安装的插件">
+              <Group
+                title="本机插件"
+                hint="数据目录 plugins/ 下的第三方插件。默认不启用，看过它要的权限再打开；启用后在单独的进程里运行"
+              >
+                <LocalPlugins />
+              </Group>
+            )}
+            {current.id === 'plugins' && (
+              <Group title="内置插件">
                 <ul className="rounded-lg ring-1 ring-line">
-                  {plugins.map((p) => (
-                    <li
-                      key={p.id}
-                      className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0"
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm">{p.name}</span>
-                        <span className="block truncate text-xs text-ink-subtle">
-                          {p.id} · {p.version}
-                          {p.builtin ? ' · 内置' : ''}
-                        </span>
-                        {p.error && (
-                          <span className="mt-0.5 block text-xs break-words text-danger">
-                            {p.error}
-                          </span>
-                        )}
-                      </span>
-                      <span
-                        className={`ui-tag ${p.status === 'active' ? 'ui-tag-success' : 'ui-tag-danger'}`}
+                  {plugins
+                    .filter((p) => p.builtin)
+                    .map((p) => (
+                      <li
+                        key={p.id}
+                        className="flex items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-b-0"
                       >
-                        {p.status === 'active' ? '已加载' : '加载失败'}
-                      </span>
-                    </li>
-                  ))}
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm">{p.name}</span>
+                          <span className="block truncate text-xs text-ink-subtle">
+                            {p.id} · {p.version}
+                          </span>
+                          {p.error && (
+                            <span className="mt-0.5 block text-xs break-words text-danger">
+                              {p.error}
+                            </span>
+                          )}
+                        </span>
+                        <span
+                          className={`ui-tag ${p.status === 'active' ? 'ui-tag-success' : 'ui-tag-danger'}`}
+                        >
+                          {p.status === 'active' ? '已加载' : '加载失败'}
+                        </span>
+                      </li>
+                    ))}
                 </ul>
               </Group>
             )}

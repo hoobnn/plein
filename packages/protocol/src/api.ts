@@ -45,6 +45,9 @@ export const API = {
   sequenceExport: '/api/media/sequence-export',
   sequenceExportFile: (token: string) => `/api/media/sequence-export/${encodeURIComponent(token)}`,
   catalog: '/api/catalog',
+  /** 本机第三方插件：列表（GET）、重新扫描（POST …/rescan） */
+  localPlugins: '/api/plugins/local',
+  localPlugin: (id: string) => `/api/plugins/local/${id}`,
   /** 优化 / 翻译提示词，见 RewritePrompt */
   promptRewrite: '/api/prompt/rewrite',
   /** Provider id 形如 vendor/name，直接作为两段路径 */

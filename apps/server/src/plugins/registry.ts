@@ -61,6 +61,22 @@ export class PluginRegistry {
     return entry
   }
 
+  /** 卸下一个插件和它的全部贡献（停用、重新加载第三方插件时用） */
+  unregister(id: string) {
+    this.entries.delete(id)
+    for (const map of [
+      this.nodes,
+      this.executors,
+      this.providers,
+      this.templates,
+      this.elements,
+      this.prompts,
+      this.capabilities,
+    ] as Array<Map<string, Owned<unknown>>>) {
+      for (const [k, v] of map) if (v.plugin === id) map.delete(k)
+    }
+  }
+
   get plugins(): PluginEntry[] {
     return [...this.entries.values()]
   }
