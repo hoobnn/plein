@@ -20,6 +20,7 @@ import {
   mediaCaps,
   probeMedia,
   videoFrame,
+  videoLastFrame,
 } from './media'
 import type { AssetStore } from './store'
 
@@ -310,10 +311,20 @@ async function deriveFrame(
 ): Promise<Made> {
   const srcFile = store.originalPath(src.id)
   const probe = await probeMedia(srcFile)
+  const file = join(dir, 'frame.png')
+  if (input.last) {
+    const name = safeName(input.name?.trim() || `${stem(src.name)}-尾帧`)
+    await videoLastFrame(srcFile, file)
+    if (!existsSync(file)) throw new DeriveError('invalid', '这个视频取不到最后一帧')
+    const at = probe.duration !== undefined ? Number(probe.duration.toFixed(2)) : undefined
+    return {
+      files: [{ file, name: `${name}.png`, mime: 'image/png' }],
+      params: { last: true, ...(at !== undefined ? { at } : {}) },
+    }
+  }
   if (probe.duration !== undefined && input.at > probe.duration)
     throw new DeriveError('invalid', `取帧位置超出素材长度（只有 ${probe.duration.toFixed(1)} 秒）`)
   const name = safeName(input.name?.trim() || `${stem(src.name)}-${fmtSeconds(input.at)}s`)
-  const file = join(dir, 'frame.png')
   await videoFrame(srcFile, file, input.at)
   // 取在最后一帧之后（比如正好等于时长）时 ffmpeg 正常退出却不出图
   if (!existsSync(file)) throw new DeriveError('invalid', '这个时刻取不到画面，往前挪一点再试')

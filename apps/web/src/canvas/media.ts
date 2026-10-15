@@ -138,7 +138,7 @@ export function deriveLabel(op: MediaOp, params: Record<string, unknown>) {
     case 'split':
       return `${(params.segments as unknown[] | undefined)?.length ?? 0} 段`
     case 'frame':
-      return formatTimecode(n('at'))
+      return params.last ? '尾帧' : formatTimecode(n('at'))
     default:
       return ''
   }

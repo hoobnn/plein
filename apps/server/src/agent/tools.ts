@@ -9,7 +9,9 @@ import {
   capabilityFor,
   content,
   editCapabilities,
+  link,
   mentionElements,
+  nodeElementOf,
   promptCapabilities,
   promptField,
   storyCapabilities,
@@ -21,6 +23,7 @@ import {
   summarize,
 } from '@plein/capabilities'
 import { currentResult, elementMedia, mediaSize, type PleinDoc, setParams } from '@plein/doc'
+import { type ContinuesFrom, continueShotParams, nearestAspect } from '@plein/nodes'
 import { describeNode, executionOf, withDefaultModel } from '@plein/plugin-sdk'
 import {
   type AgentApprovalMode,
@@ -332,6 +335,109 @@ const editMedia = serverCapability({
   },
 })
 
+const continueShot = serverCapability({
+  name: 'continue_shot',
+  title: '取帧续镜',
+  description:
+    '取帧续镜：从一段视频（视频素材或视频节点的当前结果）取一帧（不给 at 时取尾帧），在右边接一个图生视频节点，那一帧连成它的首帧，并在新节点上记下父视频；父镜头是同类视频节点时沿用模型、时长、画幅。只建不跑，写好 prompt 后用 run_node 生成。和画布上的「续镜」按钮是同一套规则。',
+  group: 'media',
+  where: 'server',
+  effect: 'edit',
+  input: z.object({
+    element_id: id.describe('父镜头：视频元素或已出视频的节点'),
+    at: z.number().min(0).optional().describe('取帧时刻（秒），不填取尾帧'),
+    prompt: z.string().max(4000).optional().describe('下一个镜头的提示词'),
+    name: z.string().max(100).optional(),
+  }),
+  run: async (ctx, a) => {
+    const src = ctx.withDoc((doc) => {
+      const el = need(doc, a.element_id)
+      const media = elementMedia(el)
+      if (media?.kind !== 'video') throw new CapabilityError(`${a.element_id} 当前没有视频`)
+      const own =
+        a.at === undefined && el.kind === 'node' ? currentResult(el, 'lastFrame') : undefined
+      return {
+        assetId: media.assetId,
+        name: el.name ?? '视频',
+        nodeType: el.kind === 'node' ? el.nodeType : undefined,
+        params: el.params,
+        lastFrame: own?.value.type === 'image' ? own.value.assetId : undefined,
+      }
+    })
+    const same = src.nodeType ? ctx.nodes.latest(src.nodeType) : undefined
+    const info = same?.def.capability === 'video.generate' ? same : ctx.nodes.latest('plein/video')
+    if (!info) throw new CapabilityError('没有能做图生视频的节点')
+    const last = a.at === undefined
+    let frame:
+      | { id: string; name: string; width?: number; height?: number; at?: number }
+      | undefined
+    if (!src.lastFrame) {
+      try {
+        const made = await deriveAsset(ctx.env.assets, ctx.env.ownerId, {
+          op: 'frame',
+          assetId: src.assetId,
+          at: a.at ?? 0,
+          ...(last ? { last: true } : {}),
+          name: `${src.name} · ${last ? '尾帧' : `${a.at}s`}`,
+        })
+        const out = made.assets[0]
+        if (!out) throw new CapabilityError('没取到画面')
+        const at = typeof made.params.at === 'number' ? made.params.at : undefined
+        frame = { id: out.id, name: out.name, width: out.width, height: out.height, at }
+      } catch (err) {
+        if (err instanceof DeriveError) throw new CapabilityError(err.message)
+        throw err
+      }
+    }
+    const from: ContinuesFrom = {
+      elementId: a.element_id,
+      assetId: src.assetId,
+      ...(last ? { last: true } : {}),
+      ...(frame?.at !== undefined ? { at: frame.at } : a.at !== undefined ? { at: a.at } : {}),
+      frameAssetId: frame?.id ?? src.lastFrame,
+    }
+    const { descriptor: desc } = info
+    const props =
+      (desc.paramsSchema as { properties?: Record<string, { enum?: unknown[] }> }).properties ?? {}
+    const aspect = nearestAspect(props.aspectRatio?.enum ?? [], frame?.width, frame?.height)
+    const params = continueShotParams({
+      defaults: desc.defaults,
+      keys: Object.keys(props),
+      parent: same === info ? src.params : undefined,
+      aspect: aspect !== undefined ? { key: 'aspectRatio', value: aspect } : undefined,
+      from,
+      prompt: a.prompt,
+    })
+    return ctx.withDoc((doc) => {
+      need(doc, a.element_id)
+      let fromId = a.element_id
+      let fromPort = 'lastFrame'
+      if (frame) {
+        const size = mediaSize('image', frame.width, frame.height)
+        fromId = placeNew(
+          doc,
+          { near: a.element_id },
+          { kind: 'image', assetId: frame.id, name: frame.name.replace(/\.png$/, ''), ...size },
+        )
+        fromPort = 'image'
+      }
+      const nodeId = placeNew(
+        doc,
+        { near: fromId },
+        { ...nodeElementOf(desc, params), name: a.name ?? `${src.name} · 续镜` },
+      )
+      link(doc, fromId, fromPort, nodeId, 'images')
+      return {
+        id: nodeId,
+        frame_element_id: frame ? fromId : undefined,
+        continues_from: from,
+        element: summarize(doc, need(doc, nodeId), false),
+        next: a.prompt ? '用 run_node 生成' : '先写 prompt（update_element 改参数），再 run_node',
+      }
+    })
+  },
+})
+
 const runFlow = serverCapability({
   name: 'run_flow',
   title: '运行上下游',
@@ -633,6 +739,7 @@ export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   cancelRun,
   viewMedia,
   editMedia,
+  continueShot,
   runFlow,
   runFrame,
   waitForGroup,

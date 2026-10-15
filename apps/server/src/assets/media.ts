@@ -373,6 +373,11 @@ export function audioTempoFilter(
 }
 
 /** 抽帧：取指定时刻的一帧写成 png（落在磁盘上，成为可用的图片资产） */
+/** 最后一帧：从结尾前一秒起逐帧覆盖写同一个文件，留下的就是最后一帧（按时长算 -ss 常常落在最后一帧之后） */
+export async function videoLastFrame(src: string, out: string) {
+  await ffmpeg(['-sseof', '-1', '-i', src, '-update', '1', '-c:v', 'png', out])
+}
+
 export async function videoFrame(src: string, out: string, at: number) {
   await ffmpeg([
     '-ss',

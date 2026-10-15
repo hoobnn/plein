@@ -33,6 +33,7 @@ import { mediaOf } from '../../canvas/grid'
 import { ResultActions } from '../../shell/ResultBar'
 import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
 import { InputPreview, issueText, useInputPreview } from './InputPreview'
+import { ContinuedFrom } from './ContinuedFrom'
 import { Inputs } from './Inputs'
 import { LibrarySave } from './LibrarySave'
 import { ProfileSummary } from './ProfileSummary'
@@ -257,6 +258,7 @@ function Panel({
       {(node.inputs.length > 0 || actions) && (
         <Inputs engine={engine} el={el} node={node} ups={ups} trailing={actions} />
       )}
+      <ContinuedFrom engine={engine} el={el} />
       {node.type === 'plein/character' && canvasId && <ProfileSummary engine={engine} el={el} />}
       {node.type === STORYBOARD_TYPE && (
         <div className="px-4 pt-4">

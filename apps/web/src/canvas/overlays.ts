@@ -247,6 +247,9 @@ export class CanvasOverlays {
   }
 
   private openPlayer(id: string, kind: 'video' | 'audio', assetId: string): Active {
-    return { id, assetId, ...createPlayer(kind, this.opts.originalUrl(assetId)) }
+    const player = createPlayer(kind, this.opts.originalUrl(assetId))
+    // 续镜「从当前画面」靠它找到正在播的那一个
+    player.node.dataset.playerEl = id
+    return { id, assetId, ...player }
   }
 }

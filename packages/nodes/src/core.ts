@@ -40,6 +40,20 @@ const usedRefs = () =>
  */
 const requiredRefs = () =>
   z.array(z.string()).default([]).meta({ title: '必需参考', widget: 'hidden' })
+/**
+ * 续镜来路：这个镜头接在哪段视频后面（父视频的元素、资产和取帧位置）。
+ * 只是记录，首帧照常从连线进来；不进缓存键
+ */
+export const ContinuesFrom = z.object({
+  elementId: z.string(),
+  assetId: z.string(),
+  /** 取帧位置（秒）；last 时是尾帧 */
+  at: z.number().optional(),
+  last: z.boolean().optional(),
+  /** 取出的那一帧图片资产 */
+  frameAssetId: z.string().optional(),
+})
+export type ContinuesFrom = z.infer<typeof ContinuesFrom>
 /** 画幅从宽到高排；auto 为「智能」，交给模型按提示词或素材决定。各模型只显示自己支持的那些 */
 const ASPECTS = ['auto', '21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16'] as const
 
@@ -158,6 +172,9 @@ export const videoNode = defineNode({
     options: modelOptions(),
     usedRefs: usedRefs(),
     requiredRefs: requiredRefs(),
+    continuesFrom: ContinuesFrom.nullable()
+      .default(null)
+      .meta({ title: '续镜来路', widget: 'hidden' }),
   }),
   // v1 的模式由文档迁移（schema v2）按原连线推断写入；这里只兜底
   migrate: (params) => ({ mode: 'text', ...params }),

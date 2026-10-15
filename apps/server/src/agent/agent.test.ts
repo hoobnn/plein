@@ -99,6 +99,37 @@ describe('智能体 MCP', () => {
     expect(wrongKind.error).toBe(true)
   })
 
+  it('取帧续镜：取尾帧接出图生视频节点，记下父视频并沿用设置', async () => {
+    const parent = (
+      await call('create_node', {
+        type: 'plein/video',
+        params: { prompt: '她走到窗边', duration: 8, aspectRatio: '9:16' },
+      })
+    ).json()
+    // 还没出视频时说清楚
+    expect((await call('continue_shot', { element_id: parent.id })).text).toContain('没有视频')
+    const run = (await call('run_node', { id: parent.id, wait_seconds: 20 })).json()
+    expect(run.status).toBe('succeeded')
+
+    const next = await call('continue_shot', { element_id: parent.id, prompt: '她回头' })
+    expect(next.error).toBe(false)
+    const made = next.json()
+    expect(made.frame_element_id).toBeTruthy()
+    expect(made.continues_from).toMatchObject({ elementId: parent.id, last: true })
+    const el = (await call('get_element', { id: made.id })).json()
+    expect(el.params).toMatchObject({
+      mode: 'image',
+      prompt: '她回头',
+      duration: 8,
+      aspectRatio: '9:16',
+    })
+    expect(el.params.continuesFrom.frameAssetId).toBeTruthy()
+    const canvas = (await call('get_canvas')).json()
+    expect(canvas.edges).toContainEqual(
+      expect.stringContaining(`${made.frame_element_id}.image → ${made.id}.images`),
+    )
+  })
+
   it('剧情与提示词能力：铺短剧模板、套预设、改写提示词', async () => {
     const drama = await call('place_drama_template')
     expect(drama.error).toBe(false)

@@ -5,6 +5,13 @@ import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
 import { downloadAsset, mediaOf, splitGrid } from '../canvas/grid'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
+import {
+  continueNodeFor,
+  continueShot,
+  playheadOf,
+  type ContinuePoint,
+} from '../canvas/continueShot'
+import { formatTimecode, parseTimecode } from '../canvas/media'
 import { deriveNode } from '../canvas/presets'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
@@ -117,7 +124,12 @@ export function ResultActions({
   remote: boolean
   variant: 'bar' | 'inline'
 }) {
-  const [open, setOpen] = useState<{ kind: 'presets' | 'grid'; anchor: HTMLElement } | null>(null)
+  const [open, setOpen] = useState<{
+    kind: 'presets' | 'grid' | 'continue'
+    anchor: HTMLElement
+  } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [at, setAt] = useState('')
   const { notify, setImporting, view } = useCanvas.getState()
   const imageNode = nodeFor(catalog, 'image.generate')
   const videoNode = nodeFor(catalog, 'video.generate')
@@ -127,8 +139,30 @@ export function ResultActions({
       )
     : []
   const name = el.name ?? (media.kind === 'image' ? '图片' : '视频')
-  const toggle = (kind: 'presets' | 'grid') => (e: React.MouseEvent<HTMLButtonElement>) =>
-    setOpen(open?.kind === kind ? null : { kind, anchor: e.currentTarget })
+  const toggle =
+    (kind: 'presets' | 'grid' | 'continue') => (e: React.MouseEvent<HTMLButtonElement>) => {
+      if (kind === 'continue' && open?.kind !== kind) {
+        const t = playheadOf(el.id)
+        setAt(t ? formatTimecode(t) : '')
+      }
+      setOpen(open?.kind === kind ? null : { kind, anchor: e.currentTarget })
+    }
+  const continueNode = media.kind === 'video' ? continueNodeFor(catalog, el) : undefined
+
+  const runContinue = async (point: ContinuePoint) => {
+    setOpen(null)
+    setBusy(true)
+    try {
+      await continueShot(engine, catalog, el.id, point)
+      notify(
+        `已从${'last' in point ? '尾帧' : formatTimecode(point.at)}接出下一个镜头，写好提示词就能生成`,
+      )
+    } catch (err) {
+      notify((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const split = async (rows: number, cols: number) => {
     setOpen(null)
@@ -176,6 +210,20 @@ export function ResultActions({
           生成视频
         </button>
       )}
+      {continueNode && remote && (
+        <button
+          type="button"
+          className={`${btn} ui-btn-menu`}
+          aria-expanded={open?.kind === 'continue'}
+          disabled={busy}
+          onClick={toggle('continue')}
+          title="取这段视频的一帧作首帧，在右边接出下一个镜头"
+        >
+          <Icon name="continueShot" size={14} />
+          {busy ? '取帧中…' : '续镜'}
+          <Icon name="chevronDown" size={12} />
+        </button>
+      )}
       {image && remote && (
         <button
           type="button"
@@ -192,7 +240,7 @@ export function ResultActions({
       {remote && (
         <LibraryAdd media={[{ elId: el.id, ...media, name: el.name ?? '' }]} variant={variant} />
       )}
-      {(remote || (image && (imageNode || videoNode))) && (
+      {(remote || (image && (imageNode || videoNode)) || continueNode) && (
         <span aria-hidden="true" className="ui-bar-sep" />
       )}
       <button
@@ -234,6 +282,45 @@ export function ResultActions({
                 </span>
               </button>
             ))}
+          </Popover>
+        )}
+      </Presence>
+      <Presence>
+        {open?.kind === 'continue' && (
+          <Popover anchor={open.anchor} onClose={() => setOpen(null)} label="续镜" width={260}>
+            <div className="ui-menu-label">取一帧作下一个镜头的首帧</div>
+            <button
+              type="button"
+              className="ui-menu-item"
+              onClick={() => void runContinue({ last: true })}
+            >
+              <span className="ui-menu-text">
+                <span>从尾帧续</span>
+                <span className="ui-menu-desc">动作和画面接得最顺</span>
+              </span>
+            </button>
+            <form
+              className="flex items-end gap-2 px-2 pt-1 pb-1"
+              onSubmit={(e) => {
+                e.preventDefault()
+                const t = parseTimecode(at)
+                if (t === null) return notify('时间看不懂，试试 3.5 或 0:03.5')
+                void runContinue({ at: t })
+              }}
+            >
+              <label className="ui-field min-w-0 flex-1">
+                <span className="ui-label">从第几秒续</span>
+                <input
+                  className="ui-input"
+                  value={at}
+                  placeholder="播放到想要的画面再点续镜"
+                  onChange={(e) => setAt(e.target.value)}
+                />
+              </label>
+              <button type="submit" className="ui-btn ui-btn-sm" disabled={!at.trim()}>
+                续
+              </button>
+            </form>
           </Popover>
         )}
       </Presence>

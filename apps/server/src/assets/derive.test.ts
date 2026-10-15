@@ -308,6 +308,22 @@ describe.skipIf(!ffmpegAvailable)('视频与音频加工', () => {
     ).rejects.toThrow(/超出素材长度/)
   })
 
+  it('取尾帧：不用知道时长，落成图片资产并记下是尾帧', async () => {
+    const made = await deriveAsset(store, OWNER, {
+      op: 'frame',
+      assetId: video.id,
+      at: 0,
+      last: true,
+    })
+    const asset = made.assets[0]!
+    expect(asset).toMatchObject({ kind: 'image', mime: 'image/png', width: 320, height: 180 })
+    expect(asset.name).toMatch(/尾帧\.png$/)
+    expect(made.params.last).toBe(true)
+    const first = await deriveAsset(store, OWNER, { op: 'frame', assetId: video.id, at: 0 })
+    // 和第一帧不是同一张图
+    expect(first.assets[0]!.id).not.toBe(asset.id)
+  })
+
   it('视频截取：时长就是区间长度，源视频一个字节都没动', async () => {
     const before = hash(store.originalPath(video.id))
     const made = await deriveAsset(store, OWNER, {

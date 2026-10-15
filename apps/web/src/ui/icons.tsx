@@ -95,6 +95,7 @@ import {
   X,
   ZoomIn,
   ZoomOut,
+  StepForward,
 } from 'lucide'
 
 /**
@@ -190,6 +191,7 @@ const ICONS = {
   // 视频生成模式与音频
   imageToVideo: ImagePlay,
   frames: SquareSplitHorizontal,
+  continueShot: StepForward,
   references: Images,
   sound: Volume2,
   mute: VolumeOff,

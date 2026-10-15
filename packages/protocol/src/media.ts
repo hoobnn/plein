@@ -78,11 +78,12 @@ export const MediaDeriveRequest = z.discriminatedUnion('op', [
   }),
   /** 从视频分离出音频与无声视频两个资产 */
   z.object({ op: z.literal('separate'), assetId: assetIdField, name: deriveName }),
-  /** 抽帧：任意时刻取一帧，落成图片资产 */
+  /** 抽帧：任意时刻取一帧，落成图片资产；last 时取最后一帧（续镜用），忽略 at */
   z.object({
     op: z.literal('frame'),
     assetId: assetIdField,
     at: z.number().min(0),
+    last: z.boolean().optional(),
     name: deriveName,
   }),
 ])

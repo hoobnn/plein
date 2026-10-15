@@ -475,7 +475,8 @@ export class NodeRuns implements BatchHost {
           .join('\n\n')
       : undefined
     const shown = cacheParams(params)
-    for (const k of [promptKey, 'usedRefs', 'requiredRefs', 'voice']) if (k) delete shown[k]
+    for (const k of [promptKey, 'usedRefs', 'requiredRefs', 'continuesFrom', 'voice'])
+      if (k) delete shown[k]
     const voice = voiceOf(params)
     const model = this.resolveModel(params.model)
     const limit = model?.limit
@@ -1630,8 +1631,8 @@ const NEUTRAL: Record<string, unknown> = { resolution: '', speed: 1 }
  * 不影响送进模型内容的设置：必需参考只决定怎么取舍，usedRefs 是取舍结果的描述，
  * 两者的效果都已经体现在实际输入里
  */
-const NOT_CONTENT: ReadonlySet<string> = new Set(['requiredRefs', 'usedRefs'])
-const LEGACY_NOT_CONTENT: ReadonlySet<string> = new Set(['requiredRefs'])
+const NOT_CONTENT: ReadonlySet<string> = new Set(['requiredRefs', 'usedRefs', 'continuesFrom'])
+const LEGACY_NOT_CONTENT: ReadonlySet<string> = new Set(['requiredRefs', 'continuesFrom'])
 
 export function cacheParams(
   params: Record<string, unknown>,
