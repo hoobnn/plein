@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Asset, Canvas, UserTemplate } from '@plein/protocol'
 import sharp from 'sharp'
@@ -124,8 +124,28 @@ describe('server', () => {
     c.provider.destroy()
   })
 
-  it('不存在的画布不能同步', async () => {
-    expect(await handshake(`${s.base.replace('http', 'ws')}/sync/cv_missing`)).toBe(404)
+  it('不存在的画布不能同步：握手后立即以 4404 关闭', async () => {
+    const ws = new WebSocket(`${s.base.replace('http', 'ws')}/sync/cv_missing`)
+    const messages: unknown[] = []
+    ws.on('message', (m) => messages.push(m))
+    const code = await new Promise<number>((resolve) => ws.on('close', resolve))
+    expect(code).toBe(4404)
+    // 不加入房间：连 sync step1 都不发
+    expect(messages).toEqual([])
+  })
+
+  it('前端页面每次回服务端确认，带哈希的产物长期缓存', async () => {
+    const dist = tempDir('plein-web-')
+    mkdirSync(join(dist, 'assets'))
+    writeFileSync(join(dist, 'index.html'), '<!doctype html><title>plein</title>')
+    writeFileSync(join(dist, 'assets', 'index-abc123.js'), '')
+    const web = await start(tempDir(), { webDist: dist })
+    for (const path of ['/', '/index.html', '/c/cv_1'])
+      expect((await fetch(`${web.base}${path}`)).headers.get('cache-control')).toBe('no-cache')
+    expect(
+      (await fetch(`${web.base}/assets/index-abc123.js`)).headers.get('cache-control'),
+    ).toMatch(/immutable/)
+    await web.close()
   })
 
   it('同步握手同样拒绝跨站 Origin', async () => {

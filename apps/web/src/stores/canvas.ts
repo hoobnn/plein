@@ -2,7 +2,21 @@ import type { ArrangeResult, CanvasMenuEvent, Engine, EngineState } from '@plein
 import { create } from 'zustand'
 import { slideView } from '../ui/viewTransition'
 
-export type SyncStatus = 'local' | 'connecting' | 'connected' | 'disconnected'
+/**
+ * 画布文档的同步状态：
+ * - connecting：还没有可显示的内容，等服务端
+ * - cached：先显示的本机缓存，还没和服务端对上
+ * - syncing：连上了，正在交换差异
+ * - connected：已和服务端对齐，之后的改动实时发送
+ * - disconnected：断线；改动留在本机（有缓存时也存进 IndexedDB），重连后自动合并
+ */
+export type SyncStatus =
+  | 'local'
+  | 'connecting'
+  | 'cached'
+  | 'syncing'
+  | 'connected'
+  | 'disconnected'
 
 export interface NoticeAction {
   label: string
@@ -12,6 +26,8 @@ export interface NoticeAction {
 interface CanvasStore extends EngineState {
   engine: Engine | null
   sync: SyncStatus
+  /** 本机缓存（IndexedDB）可用：断线时的改动刷新后还在 */
+  localCache: boolean
   /** 正在导入的文件：已完成 / 总数 */
   importing: { done: number; total: number } | null
   notice: string | null
@@ -41,7 +57,7 @@ interface CanvasStore extends EngineState {
   mode: 'flow' | 'board'
   /** 挂载引擎并把它的运行时状态镜像到 store（只在状态变化时更新，不跟随每帧） */
   attach(engine: Engine): () => void
-  setSync(sync: SyncStatus): void
+  setSync(sync: SyncStatus, localCache?: boolean): void
   setImporting(importing: { done: number; total: number } | null): void
   notify(notice: string | null, action?: NoticeAction): void
   setCanvasId(id: string | null): void
@@ -72,6 +88,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   ...initial,
   engine: null,
   sync: 'local',
+  localCache: true,
   importing: null,
   notice: null,
   noticeAction: null,
@@ -125,7 +142,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   toggleTasks: (open) => set((s) => ({ tasks: open ?? !s.tasks })),
   toggleImpact: (open) => set((s) => ({ impact: open ?? !s.impact })),
   setMode: (mode) => set({ mode, menu: null }),
-  setSync: (sync) => set({ sync }),
+  setSync: (sync, localCache) => set(localCache === undefined ? { sync } : { sync, localCache }),
   setImporting: (importing) => set({ importing }),
   notify(notice, action) {
     clearTimeout(noticeTimer)

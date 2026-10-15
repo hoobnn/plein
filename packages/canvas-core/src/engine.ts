@@ -288,6 +288,12 @@ export class Engine {
     }
   }
 
+  /** 重画全部元素：加载失败的预览图（服务断开时）会重新加载 */
+  reloadMedia() {
+    this.views.refreshAll()
+    this.requestRender()
+  }
+
   /** 引擎之外改了会影响状态的东西（如文档转为只读）时，让外壳重新读取 */
   refreshState() {
     this.emit()

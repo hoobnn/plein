@@ -50,6 +50,9 @@ export interface Server {
   close(): void
 }
 
+/** 文件名带内容哈希的前端产物（apps/web/dist/assets） */
+const IMMUTABLE = 'public, max-age=31536000, immutable'
+
 export async function createServer(config: Config): Promise<Server> {
   setMediaTools({ ffmpeg: config.ffmpegPath, ffprobe: config.ffprobePath })
   setSubtitleFont(config.subtitleFont)
@@ -125,10 +128,23 @@ export async function createServer(config: Config): Promise<Server> {
 
   if (config.webDist) {
     const dist = config.webDist
-    app.use('*', serveStatic({ root: dist }))
+    // 带哈希的构建产物长期缓存；index.html 等每次回服务端确认：升级后不会拿旧页面去找已经不存在的脚本，
+    // 服务没起来时也明确打不开，而不是从浏览器的启发式缓存里拿一个半残的旧页面
+    app.use(
+      '*',
+      serveStatic({
+        root: dist,
+        onFound: (path, c) => {
+          c.header('Cache-Control', /\/assets\//.test(path) ? IMMUTABLE : 'no-cache')
+        },
+      }),
+    )
     // 前端路由回退到 index.html
     const index = await readFile(join(dist, 'index.html'), 'utf8')
-    app.get('*', (c) => c.html(index))
+    app.get('*', (c) => {
+      c.header('Cache-Control', 'no-cache')
+      return c.html(index)
+    })
   }
 
   // 接着跑上次退出时没结束的任务

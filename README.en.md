@@ -182,7 +182,8 @@ The layout is identical across all three and can be copied between them: `plein.
 - [x] 6-shot sample on real platforms, UI tests in CI, auto-update
 - [x] Multi-track timeline, editing-project export, character profiles and turnaround sheets, cross-project asset reuse
 - [x] **0.2.0**: actual-input preview and reference strategies, impact analysis and partial rework, batches and job recovery, project package migration, change plans with scoped approval, default models (2026-10-14, verified on real platforms)
-- [ ] Browser cache and reconnect acceptance; editing change plans item by item in chat
+- [x] Editing change plans item by item in chat: edit fields, tick targets and steps, then approve
+- [x] Browser cache and reconnect acceptance (2026-10-15)
 - [x] Continue a shot from a frame (extension candidate, 2026-10-15)
 - [ ] **Extension candidates**: storyboard groups and collages, region editing, camera / style presets, third-party plugins; static 3D composition validated separately
 - [ ] **Later**: panoramas, 3D director stage, depth references, native segment re-shoot, smart editing

@@ -5,6 +5,7 @@ import { api } from '../api/client'
 import { invalidateProjects, queryClient, queryKeys } from '../api/query'
 import { queueStartNode } from '../canvas/start'
 import { navigate, routeHash } from '../router'
+import { forgetLocalCache } from '../canvas/localCache'
 import { useLibrary } from '../features/library/store'
 import { useSession } from '../stores/session'
 import { Brand, isPlainClick } from '../ui/Brand'
@@ -18,6 +19,8 @@ import { zoomView } from '../ui/viewTransition'
 import { Welcome } from '../features/onboarding/Welcome'
 import { ExportPackageDialog, ImportPackageDialog } from '../features/projects/ProjectPackage'
 import { Presence } from '../ui/Presence'
+import { Toast } from '../ui/Toast'
+import { useCanvas } from '../stores/canvas'
 
 /** 快速开始：新建项目并在它的第一张画布上放好对应节点、打开生成器 */
 const QUICK_START: Array<{
@@ -43,6 +46,7 @@ const QUICK_START: Array<{
 
 /** 项目列表：新建、打开（进入最近的画布）、重命名、删除 */
 export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
+  const notice = useCanvas((s) => s.notice)
   const info = useSession((s) => s.info)
   const refreshSession = useSession((s) => s.refresh)
   // 回到首页时先显示上次的列表，同时重新拉（在画布里改过的标题、更新时间）
@@ -91,7 +95,10 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
       danger: true,
     })
     if (!ok) return
+    // 先记下画布，删完把它们的本机缓存一起清掉
+    const canvases = await api.projectCanvases(p.id).catch(() => [])
     await api.deleteProject(p.id)
+    for (const c of canvases) forgetLocalCache(c.id)
     await invalidateProjects()
   }
   const logout = async () => {
@@ -271,6 +278,8 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
         )}
       </main>
       <Welcome />
+      {/* 画布页留下的提示（如画布已在别处删除，跳回首页时） */}
+      <Presence>{notice && <Toast>{notice}</Toast>}</Presence>
       <Presence>
         {exporting && (
           <ExportPackageDialog project={exporting} onClose={() => setExporting(null)} />

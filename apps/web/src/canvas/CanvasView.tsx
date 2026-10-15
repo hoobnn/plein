@@ -42,8 +42,14 @@ async function videoRatio(assetId: string) {
 /** 打开本地缓存；隐私模式等 IndexedDB 不可用时返回 null，照常等服务端同步 */
 function openLocalCache(canvasId: string, ydoc: Y.Doc) {
   try {
+    // 先同步探一下：被禁用时访问 indexedDB 本身就会抛错，不必再建 y-indexeddb（它内部的 Promise 没接 catch）
+    if (!globalThis.indexedDB) return null
     const local = new IndexeddbPersistence(localCacheName(canvasId), ydoc)
-    ;(local as unknown as { _db?: Promise<unknown> })._db?.catch(() => {})
+    // 打开失败（有的浏览器隐私模式下异步才报错）：按没有缓存算
+    ;(local as unknown as { _db?: Promise<unknown> })._db?.catch(() => {
+      const { sync, setSync } = useCanvas.getState()
+      setSync(sync, false)
+    })
     return local
   } catch {
     return null
@@ -164,29 +170,33 @@ export function CanvasView({ source }: { source: CanvasSource }) {
       start(doc, (id) => urls.get(id))
       cleanups.push(() => doc.destroy())
     } else {
-      setSync('connecting')
       setCanvasId(canvasId)
       const ydoc = new Y.Doc()
       // 本地缓存：上次打开过的画布不等服务端，先用缓存显示，同步完再补齐差异
       const local = openLocalCache(canvasId, ydoc)
+      setSync('connecting', !!local)
       const provider = new WebsocketProvider(syncUrl(), canvasId, ydoc)
       provider.awareness.setLocalStateField('user', { name: '我', color: '#2869f0' })
+      // 断线后 y-websocket 会反复「连接中 → 断开」重试：「连接中」不改状态，免得来回闪
+      let lost = false
       provider.on('status', ({ status }: { status: string }) => {
-        setSync(
-          status === 'connected'
-            ? 'connected'
-            : status === 'connecting'
-              ? 'connecting'
-              : 'disconnected',
-        )
+        if (status === 'disconnected') {
+          lost = true
+          setSync('disconnected')
+        } else if (status === 'connected' && !provider.synced) setSync('syncing')
       })
       provider.on('connection-close', (event: CloseEvent | null) => {
+        if (disposed) return
         if (event?.code === CLOSE_DELETED) {
           provider.disconnect()
-          void local?.clearData()
+          void local?.clearData().catch(() => {})
           notify('画布不存在或已被删除')
           navigate({ name: 'home' })
+          return
         }
+        // 一次都没连上时 y-websocket 不发「断开」状态：服务没起来、从缓存打开的画布也要显示离线
+        lost = true
+        setSync('disconnected')
       })
       let doc: PleinDoc | null = null
       const open = () => {
@@ -196,11 +206,17 @@ export function CanvasView({ source }: { source: CanvasSource }) {
       // 缓存已是当前版本：直接打开，迁移是空操作；旧版本缓存要等服务端完整状态再迁移
       void local?.whenSynced.then(() => {
         if (doc || disposed || provider.synced) return
-        if (ydoc.getMap('meta').get('schemaVersion') === SCHEMA_VERSION) open()
+        if (ydoc.getMap('meta').get('schemaVersion') !== SCHEMA_VERSION) return
+        open()
+        if (!lost) setSync('cached')
       })
       const onSync = (synced: boolean) => {
         if (!synced || disposed) return
+        setSync('connected')
+        lost = false
         if (!doc) return open()
+        // 从缓存打开或断线重连：期间加载失败的预览图重新加载
+        useCanvas.getState().engine?.reloadMedia()
         // 从缓存打开的：服务端状态到齐后再检查一次版本（可能已被更新的客户端升级）
         const wasReadOnly = doc.readOnly
         doc.migrate()
@@ -212,7 +228,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
       provider.on('sync', onSync)
       cleanups.push(() => {
         provider.destroy()
-        void local?.destroy()
+        void local?.destroy().catch(() => {})
         doc?.destroy()
         ydoc.destroy()
       })

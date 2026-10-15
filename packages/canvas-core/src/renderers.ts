@@ -231,7 +231,8 @@ const mediaRenderer: ElementRenderer = (el, ctx) => {
           ctx.onContentSize?.(current.id, tex.width, tex.height)
         })
         .catch(() => {
-          // 加载失败保留占位卡片
+          // 加载失败保留占位卡片；忘掉这次地址，下次刷新（如断线重连后）再试
+          if (loading === url) loading = undefined
         })
     },
     setDetail(next) {
@@ -361,7 +362,8 @@ const nodeRenderer: ElementRenderer = (el, ctx) => {
           ctx.invalidate?.()
         })
         .catch(() => {
-          // 加载失败只显示底板
+          // 加载失败只显示底板；下次刷新再试
+          if (loading === url) loading = undefined
         })
     },
     setDetail(next) {

@@ -41,8 +41,24 @@ import { useShallow } from 'zustand/react/shallow'
 const SYNC_LABELS: Record<SyncStatus, string> = {
   local: '本地演示',
   connecting: '连接中…',
-  connected: '已同步，改动实时保存',
-  disconnected: '离线，恢复连接后自动同步',
+  cached: '本机缓存 · 连接中…',
+  syncing: '同步中…',
+  connected: '已同步',
+  disconnected: '离线 · 改动先存在本机',
+}
+/** 悬停时的完整说明 */
+const SYNC_HINTS: Record<SyncStatus, string> = {
+  local: '本地演示，不保存',
+  connecting: '正在连接本机服务',
+  cached: '先显示上次打开时存在本机的画布，连上服务后补齐差异',
+  syncing: '已连上服务，正在交换差异',
+  connected: '已同步，改动实时保存到本机服务',
+  disconnected: '离线：改动先存在浏览器里，恢复连接后自动同步；没加载过的素材暂时显示不了',
+}
+/** 没有本机缓存（隐私模式等）时断线：改动只在这个页面里 */
+const VOLATILE = {
+  label: '离线 · 改动未保存',
+  hint: '离线：浏览器存不了缓存，改动只在这个页面里，关闭或刷新会丢失；恢复连接后自动同步',
 }
 
 export function Editor({
@@ -258,18 +274,22 @@ function SidebarToggle({ open, disabled }: { open: boolean; disabled: boolean })
 
 /** 同步状态：正常同步时只留一个点，异常才写出来 */
 function SyncDot({ sync }: { sync: SyncStatus }) {
+  const localCache = useCanvas((s) => s.localCache)
+  const volatile = sync === 'disconnected' && !localCache
+  const label = volatile ? VOLATILE.label : SYNC_LABELS[sync]
   return (
     <span
-      className={`flex items-center gap-1.5 px-2 text-xs ${sync === 'disconnected' ? 'text-warning' : 'text-ink-subtle'}`}
-      title={SYNC_LABELS[sync]}
+      className={`flex min-w-0 items-center gap-1.5 px-2 text-xs ${sync === 'disconnected' ? 'text-warning' : 'text-ink-subtle'}`}
+      title={volatile ? VOLATILE.hint : SYNC_HINTS[sync]}
       data-testid="sync-status"
+      data-sync={sync}
     >
       <span
         className={`size-1.5 rounded-full ${sync === 'connected' ? 'bg-success' : sync === 'disconnected' ? 'bg-warning' : 'bg-ink-subtle'}`}
         aria-hidden="true"
       />
-      <span className={sync === 'connected' || sync === 'local' ? 'sr-only' : ''}>
-        {SYNC_LABELS[sync]}
+      <span className={sync === 'connected' || sync === 'local' ? 'sr-only' : 'truncate'}>
+        {label}
       </span>
     </span>
   )
