@@ -458,6 +458,7 @@ function DefaultModels({ catalog, onSaved }: { catalog: Catalog; onSaved(): void
 const CAPABILITY_ORDER: Capability[] = [
   'text.chat',
   'image.generate',
+  'image.edit',
   'video.generate',
   'audio.speech',
   'audio.music',

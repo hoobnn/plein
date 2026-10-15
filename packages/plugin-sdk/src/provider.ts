@@ -6,6 +6,7 @@ import type { AssetRef } from './ports'
 export const Capability = z.enum([
   'text.chat',
   'image.generate',
+  'image.edit',
   'video.generate',
   'audio.speech',
   'audio.music',
@@ -62,6 +63,18 @@ export interface CapabilityInputs {
     height?: number
     /** 分辨率档位，取模型 `limits.resolutions` 里的值；和画幅一起换算成平台尺寸，显式宽高优先 */
     resolution?: string
+    count?: number
+    seed?: number
+  }
+  /**
+   * 局部重绘：只改蒙版白色区域，其余保持原样。声明这项能力的模型必须原生支持蒙版，
+   * 不能用整图重绘或裁切贴回冒充
+   */
+  'image.edit': {
+    image: AssetRef
+    /** PNG，与原图同宽高；白色 = 重绘，黑色 = 保留 */
+    mask: AssetRef
+    prompt: string
     count?: number
     seed?: number
   }

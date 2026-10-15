@@ -117,6 +117,39 @@ export const imageNode = defineNode({
   }),
 })
 
+/** 局部重绘的蒙版：PNG 资产，和原图同宽高；白色 = 重绘，黑色 = 保留 */
+export const EditMask = z.object({
+  assetId: z.string(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  /** 画蒙版时的原图：原图换了蒙版就对不上，要重画 */
+  sourceAssetId: z.string().optional(),
+})
+export type EditMask = z.infer<typeof EditMask>
+
+/** 局部重绘：只改蒙版圈出的区域，其余保持原图。只用原生支持蒙版的模型 */
+export const imageEditNode = defineNode({
+  type: 'plein/image-edit',
+  version: 1,
+  title: '局部重绘',
+  description: '在原图上框选或涂抹要改的区域，按提示词只重绘这块，其余保持不变',
+  category: 'image',
+  capability: 'image.edit',
+  inputs: [
+    { id: 'prompt', label: '提示词', type: 'text', multiple: true },
+    { id: 'image', label: '原图', type: 'image', required: true },
+  ],
+  outputs: [{ id: 'images', label: '图片', type: 'image' }],
+  params: z.object({
+    model: model(),
+    prompt: textarea('提示词', '这块区域改成什么，如：把杯子换成红色马克杯'),
+    count: z.number().int().min(1).max(4).default(1).meta({ title: '张数' }),
+    options: modelOptions(),
+    mask: EditMask.nullable().default(null).meta({ title: '重绘区域', widget: 'hidden' }),
+    usedRefs: usedRefs(),
+  }),
+})
+
 /**
  * 视频生成模式：由用户指定，不按连线猜。连进来的图片按画布位置从上到下编号，模式决定怎么用：
  * 图生视频用第 1 张做首帧，首尾帧用第 1、2 张，图片参考把全部图片当参考主体。
@@ -315,6 +348,7 @@ export const corePlugin = definePlugin({
         'plein/text@1',
         'plein/llm@1',
         'plein/image@1',
+        'plein/image-edit@1',
         'plein/video@2',
         'plein/speech@1',
         'plein/music@1',
@@ -336,6 +370,7 @@ export const corePlugin = definePlugin({
     textNode,
     llmNode,
     imageNode,
+    imageEditNode,
     videoNode,
     speechNode,
     musicNode,

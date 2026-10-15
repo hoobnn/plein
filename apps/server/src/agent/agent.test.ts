@@ -1,4 +1,6 @@
+import { Readable } from 'node:stream'
 import { createElement, type PleinDoc, updateElement } from '@plein/doc'
+import sharp from 'sharp'
 import type { AgentEvent, Canvas } from '@plein/protocol'
 import { beforeAll, describe, expect, it } from 'vite-plus/test'
 import { startTestServer } from '../testing'
@@ -128,6 +130,65 @@ describe('智能体 MCP', () => {
     expect(canvas.edges).toContainEqual(
       expect.stringContaining(`${made.frame_element_id}.image → ${made.id}.images`),
     )
+  })
+
+  it('局部重绘：原图 + 同尺寸蒙版交给原生蒙版模型；没画区域或原图换了时说清楚', async () => {
+    const image = (
+      await call('create_node', { type: 'plein/image', params: { prompt: '书桌' } })
+    ).json()
+    const ran = (await call('run_node', { id: image.id, wait_seconds: 20 })).json()
+    expect(ran.status).toBe('succeeded')
+    const source = ran.results[0].asset_id as string
+    const meta = running.server.assets.get('local', source)!
+    const png = await sharp({
+      create: { width: meta.width!, height: meta.height!, channels: 3, background: '#000' },
+    })
+      .composite([
+        {
+          input: await sharp({
+            create: { width: 10, height: 10, channels: 3, background: '#fff' },
+          })
+            .png()
+            .toBuffer(),
+          left: 0,
+          top: 0,
+        },
+      ])
+      .png()
+      .toBuffer()
+    const mask = await running.server.assets.ingest('local', Readable.from([png]), {
+      mime: 'image/png',
+      name: 'mask.png',
+    })
+
+    const edit = (
+      await call('create_node', {
+        type: 'plein/image-edit',
+        params: { prompt: '换成红色台灯' },
+        inputs: [{ from: image.id, to_port: 'image' }],
+      })
+    ).json()
+    const missing = (await call('run_node', { id: edit.id, wait_seconds: 20 })).json()
+    expect(missing.status).toBe('failed')
+    expect(JSON.stringify(missing)).toContain('还没画重绘区域')
+
+    const params = { mask: { assetId: mask.id, width: meta.width, height: meta.height } }
+    await call('update_element', {
+      id: edit.id,
+      params: { ...params, mask: { ...params.mask, sourceAssetId: 'other' } },
+    })
+    const stale = (await call('run_node', { id: edit.id, wait_seconds: 20 })).json()
+    expect(JSON.stringify(stale)).toContain('原图换过了')
+
+    await call('update_element', {
+      id: edit.id,
+      params: { mask: { ...params.mask, sourceAssetId: source } },
+    })
+    const done = (await call('run_node', { id: edit.id, wait_seconds: 20 })).json()
+    expect(done.status).toBe('succeeded')
+    const out = running.server.assets.get('local', done.results[0].asset_id)!
+    // 结果按原图尺寸出
+    expect([out.width, out.height]).toEqual([meta.width, meta.height])
   })
 
   it('剧情与提示词能力：铺短剧模板、套预设、改写提示词', async () => {

@@ -97,6 +97,10 @@ import {
   ZoomIn,
   ZoomOut,
   StepForward,
+  Brush,
+  Eraser,
+  Paintbrush,
+  SquareDashed,
 } from 'lucide'
 
 /**
@@ -194,6 +198,10 @@ const ICONS = {
   imageToVideo: ImagePlay,
   frames: SquareSplitHorizontal,
   continueShot: StepForward,
+  regionEdit: Paintbrush,
+  brush: Brush,
+  eraser: Eraser,
+  rectSelect: SquareDashed,
   references: Images,
   sound: Volume2,
   mute: VolumeOff,

@@ -2,6 +2,7 @@ import {
   characterNode,
   effectNode,
   corePlugin,
+  imageEditNode,
   imageNode,
   llmNode,
   musicNode,
@@ -111,6 +112,26 @@ const image = defineExecutor(imageNode, async (ctx) => {
     count: params.count,
     resolution: params.resolution || undefined,
     extra: { ...modelOptions(params), aspectRatio: params.aspectRatio },
+  })
+  return { images: res.assets.map((a) => ({ type: 'image' as const, ...a })) }
+})
+
+const imageEdit = defineExecutor(imageEditNode, async (ctx) => {
+  const { params, inputs } = ctx
+  const [source] = inputAssets(inputs, 'image')
+  if (!source) throw new ProviderError('invalid_input', '局部重绘需要连入一张原图')
+  const mask = params.mask
+  if (!mask)
+    throw new ProviderError('invalid_input', '还没画重绘区域：点「画区域」框选或涂抹要改的地方')
+  if (mask.sourceAssetId && mask.sourceAssetId !== source.assetId)
+    throw new ProviderError('invalid_input', '原图换过了，重绘区域对不上：点「画区域」重新画')
+  sayProgress(ctx)
+  const res = await ctx.providers.call('image.edit', pickModel(ctx, '局部重绘'), {
+    image: source,
+    mask: { assetId: mask.assetId, kind: 'image', mime: 'image/png' },
+    prompt: requireText(joinText(params.prompt, inputText(inputs, 'prompt')), '提示词'),
+    count: params.count,
+    extra: modelOptions(params),
   })
   return { images: res.assets.map((a) => ({ type: 'image' as const, ...a })) }
 })
@@ -329,6 +350,7 @@ export const coreServerPlugin = defineServerPlugin(corePlugin, {
     text,
     llm,
     image,
+    imageEdit,
     video,
     speech,
     music,

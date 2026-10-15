@@ -262,6 +262,7 @@ export function dramaCapabilities(t: DramaTemplateSpec): string[] {
 const CAPABILITY_LABELS: Record<string, string> = {
   'text.chat': '文本',
   'image.generate': '图像',
+  'image.edit': '局部重绘',
   'video.generate': '视频',
   'audio.speech': '配音',
   'audio.music': '配乐',

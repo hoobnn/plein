@@ -6,7 +6,7 @@
 | ------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | MiniMax `minimax/api`    | M3 / M2.7 对话、image-01 图片、H3 / H3-Max 视频、speech-2.8 配音、Music 3.0 纯音乐 | `MINIMAX_API_KEY`                                                         |
 | 豆包语音 `doubao/speech` | TTS 2.0、已有复刻音色、Seed Audio 音乐 / 音效、极速录音识别                        | `VOLC_SPEECH_API_KEY`，或 `VOLC_SPEECH_APP_ID` + `VOLC_SPEECH_ACCESS_KEY` |
-| 百炼 `aliyun/bailian`    | 千问对话、Qwen Image / 万相图片、Wan 3.0 视频、Qwen TTS                            | `DASHSCOPE_API_KEY`                                                       |
+| 百炼 `aliyun/bailian`    | 千问对话、Qwen Image / 万相图片、万相局部重绘、Wan 3.0 视频、Qwen TTS              | `DASHSCOPE_API_KEY`                                                       |
 | 方舟 `volc/ark`          | Seed 对话、Seedream 图片、Seedance 视频                                            | `ARK_API_KEY`                                                             |
 
 ## 配置
@@ -32,7 +32,7 @@ SDK 新增了两个字段：`testScope` 用来标出「只检查本地配置」�
 - MiniMax H3 使用 V2：H3 为 4–15 整数秒、768P / 2K；H3-Max 为 5–15 秒、480P / 768P。首尾帧与参考素材互斥，V2 不支持 seed。此适配器视频参考仅接入图片。M2.7 对话仅支持纯文本；当前 MiniMax 对话适配器不支持强制 JSON Schema。
 - MiniMax 图片仅支持单张人物参考图；MiniMax 配音不支持自由语气指令，可通过 `extra.emotion` 指定官方情绪，或使用豆包 / 千问 instruct 模型。
 - Music 3.0 当前生成纯音乐，时长由模型决定。该旧音乐 API 可能仅向原付费用户开放；2026-10-12 本机账号实测返回 HTTP 410。Seed Audio 的目标时长写入提示词，属于软约束。豆包返回内嵌音频，暂不支持仅返回 URL 的音频产物。
-- 百炼 Wan 3.0 的本地参考素材通过官方上传凭证上传 OSS，再交给生成接口。千问配音自然语言指令需要 instruct 模型，单次文本最多 600 字符。对话 JSON Schema 以 JSON mode + 提示词表达，当前不保证强制符合 Schema。
+- 百炼 Wan 3.0 的本地参考素材通过官方上传凭证上传 OSS，再交给生成接口。局部重绘（`image.edit`）用万相通用图像编辑 `wanx2.1-imageedit` 的 `description_edit_with_mask`：原图和蒙版（黑底白区，与原图同尺寸）同样走 OSS 上传，异步任务；目前只有它原生支持蒙版，方舟和 MiniMax 不声明这项能力，界面不会用整图重绘或裁切贴回冒充。还没做真实平台验收。千问配音自然语言指令需要 instruct 模型，单次文本最多 600 字符。对话 JSON Schema 以 JSON mode + 提示词表达，当前不保证强制符合 Schema。
 - 方舟支持本地图片编码为 data URL；本地视频 / 音频参考尚未接入素材库上传。Seedream 的画幅映射为对应模型支持的尺寸；多图生成应选择支持组图的 Lite 模型。Seedream 5 不支持 seed。
 - MiniMax / 方舟仅对排队任务尝试远端取消；运行中任务无法由此接口取消。取消前查询状态，避免对已完成任务调用兼具删除语义的接口。百炼取消受官方排队状态限制。
 - 不自动重试生成 POST；网络断开或缺少 task ID 时不得假定提交失败。宿主通过任务 journal 将异步 ID 存入 SQLite `jobs.calls`，重启后对已记录的 pending 调用继续轮询；机制已有源码实现，真实平台跨进程恢复仍需端到端验收。
@@ -48,5 +48,5 @@ SDK 新增了两个字段：`testScope` 用来标出「只检查本地配置」�
 
 - MiniMax：[对话](https://platform.minimax.cn/docs/api-reference/text-chat-openai)、[图片](https://platform.minimax.cn/docs/api-reference/image-generation-t2i)、[H3 V2](https://platform.minimax.cn/docs/api-reference/video-generation-v2-create)、[配音](https://platform.minimax.cn/docs/api-reference/speech-t2a-http)、[音乐](https://platform.minimax.cn/docs/api-reference/music-generation)。
 - 豆包：[HTTP 配音](https://docs.volcengine.com/docs/DoubaoVoice/unidirectional-streaming-text-to-speech-http?lang=zh)、[Seed Audio](https://docs.volcengine.com/docs/DoubaoVoice/audio-generation-http?lang=zh)、[极速识别](https://www.volcengine.com/docs/6561/1631584?lang=zh)。
-- 百炼：[Qwen Image](https://help.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference)、[Wan 3.0](https://help.aliyun.com/zh/model-studio/wan3-video-generation-api-reference)、[Qwen TTS](https://help.aliyun.com/zh/model-studio/qwen-tts-api)、[异步任务](https://help.aliyun.com/zh/model-studio/manage-asynchronous-tasks)。
+- 百炼：[Qwen Image](https://help.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference)、[Wan 3.0](https://help.aliyun.com/zh/model-studio/wan3-video-generation-api-reference)、[通用图像编辑](https://help.aliyun.com/zh/model-studio/wanx-image-edit)、[Qwen TTS](https://help.aliyun.com/zh/model-studio/qwen-tts-api)、[异步任务](https://help.aliyun.com/zh/model-studio/manage-asynchronous-tasks)。
 - 方舟：[模型列表](https://docs.volcengine.com/docs/ark/model-list?lang=zh)、[图片](https://docs.volcengine.com/docs/ark/image-generation-api?lang=zh)、[视频](https://docs.volcengine.com/docs/ark/create-video-generation-task-api?lang=zh)。

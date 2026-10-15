@@ -13,6 +13,8 @@ import {
 } from '../canvas/continueShot'
 import { formatTimecode, parseTimecode } from '../canvas/media'
 import { deriveNode } from '../canvas/presets'
+import { regionEditNode, startRegionEdit } from '../canvas/regionEdit'
+import { MaskEditor } from '../features/generator/MaskEditor'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
@@ -129,6 +131,8 @@ export function ResultActions({
     anchor: HTMLElement
   } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [masking, setMasking] = useState(false)
+  const editNode = media.kind === 'image' ? regionEditNode(catalog) : undefined
   const [at, setAt] = useState('')
   const { notify, setImporting, view } = useCanvas.getState()
   const imageNode = nodeFor(catalog, 'image.generate')
@@ -210,6 +214,17 @@ export function ResultActions({
           生成视频
         </button>
       )}
+      {editNode && remote && (
+        <button
+          type="button"
+          className={btn}
+          title="框选或涂抹要改的区域，只重画这块，其余保持原图"
+          onClick={() => setMasking(true)}
+        >
+          <Icon name="regionEdit" size={14} />
+          局部重绘
+        </button>
+      )}
       {continueNode && remote && (
         <button
           type="button"
@@ -240,7 +255,7 @@ export function ResultActions({
       {remote && (
         <LibraryAdd media={[{ elId: el.id, ...media, name: el.name ?? '' }]} variant={variant} />
       )}
-      {(remote || (image && (imageNode || videoNode)) || continueNode) && (
+      {(remote || (image && (imageNode || videoNode)) || continueNode || editNode) && (
         <span aria-hidden="true" className="ui-bar-sep" />
       )}
       <button
@@ -283,6 +298,20 @@ export function ResultActions({
               </button>
             ))}
           </Popover>
+        )}
+      </Presence>
+      <Presence>
+        {masking && (
+          <MaskEditor
+            assetId={media.assetId}
+            name={name}
+            onClose={() => setMasking(false)}
+            onSave={(mask) => {
+              setMasking(false)
+              startRegionEdit(engine, catalog, el.id, mask, name)
+              notify('区域画好了，写一句要改成什么就能生成')
+            }}
+          />
         )}
       </Presence>
       <Presence>

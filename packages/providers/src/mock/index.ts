@@ -7,6 +7,7 @@ import {
   defineServerPlugin,
   PLUGIN_API_VERSION,
   ProviderError,
+  type ProviderContext,
   type ProviderOutput,
   type ProviderRequest,
 } from '@plein/plugin-sdk'
@@ -207,6 +208,17 @@ function fakeOutputs(req: ProviderRequest): ProviderOutput[] {
         data: solidPng(w, h, colorOf(`${input.prompt}#${i}#${input.seed ?? ''}`)),
       }))
     }
+    case 'image.edit': {
+      const input = req.input as CapabilityInput<'image.edit'>
+      const [w, h] = (input.extra?.size as [number, number] | undefined) ?? [1024, 1024]
+      return Array.from({ length: input.count ?? 1 }, (_, i) => ({
+        type: 'file' as const,
+        kind: 'image' as const,
+        mime: 'image/png',
+        name: `mock-edit-${i + 1}.png`,
+        data: solidPng(w, h, colorOf(`${input.prompt}#${input.mask.assetId}#${i}`)),
+      }))
+    }
     case 'video.generate':
       return [
         {
@@ -248,6 +260,22 @@ function fakeOutputs(req: ProviderRequest): ProviderOutput[] {
   }
 }
 
+/** PNG 的宽高（IHDR）；不是 PNG 时返回 null */
+function pngSize(data: Uint8Array): [number, number] | null {
+  if (data.length < 24 || data[0] !== 0x89 || data[1] !== 0x50) return null
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+  return [view.getUint32(16), view.getUint32(20)]
+}
+
+async function withEditSize(req: ProviderRequest, ctx: ProviderContext): Promise<ProviderRequest> {
+  const input = req.input as CapabilityInput<'image.edit'>
+  const image = pngSize((await ctx.files.read(input.image)).data)
+  const mask = pngSize((await ctx.files.read(input.mask)).data)
+  if (image && mask && (image[0] !== mask[0] || image[1] !== mask[1]))
+    throw new ProviderError('invalid_input', '模拟：蒙版和原图尺寸不一致')
+  return { ...req, input: { ...input, extra: { ...input.extra, size: image ?? undefined } } }
+}
+
 /** 进行中的模拟异步任务 */
 const pending = new Map<
   string,
@@ -286,6 +314,12 @@ export const mockProvider = defineProvider({
       }),
     },
     {
+      id: 'image-edit',
+      title: 'Mock 局部重绘',
+      capabilities: ['image.edit'],
+      limits: { count: { max: 4 } },
+    },
+    {
       id: 'video',
       title: 'Mock 视频',
       capabilities: ['video.generate'],
@@ -312,6 +346,8 @@ export const mockProvider = defineProvider({
   async submit(req, ctx) {
     const fail = ctx.settings.failWith
     if (fail !== 'none') throw new ProviderError(fail, `模拟错误：${fail}`)
+    // 局部重绘：像真平台一样校验蒙版和原图同尺寸，结果按原图尺寸出
+    if (req.capability === 'image.edit') req = await withEditSize(req, ctx)
     if (ctx.settings.latencyMs === 0) {
       const outputs = fakeOutputs(req)
       // 同步出结果也登记一个已完成的任务，按幂等键能查到
@@ -410,7 +446,7 @@ export const mockPlugin = defineServerPlugin(
       description: '开发与测试用的假模型平台',
       engines: { plein: `^${PLUGIN_API_VERSION}` },
       contributes: { providers: ['plein/mock'], capabilities: ['plein/mock-sticky'] },
-      permissions: { secrets: ['MOCK_API_KEY'] },
+      permissions: { secrets: ['MOCK_API_KEY'], assets: 'read' },
     },
   }),
   { providers: [mockProvider], capabilities: [mockSticky] },

@@ -243,6 +243,7 @@ function file(kind: 'image' | 'video' | 'audio', url: unknown): ProviderOutput {
 const supported: Partial<Record<string, string[]>> = {
   'text.chat': ['qwen3.8-max', 'qwen3.7-plus', 'qwen3.8-flash'],
   'image.generate': ['qwen-image-3.0-pro', 'qwen-image-3.0', 'wan2.7-image-pro'],
+  'image.edit': ['wanx2.1-imageedit'],
   'video.generate': ['wan3.0-video', 'wan3.0-video-prime'],
   'audio.speech': ['qwen3-tts-flash', 'qwen3-tts-instruct-flash'],
 }
@@ -302,6 +303,13 @@ export const bailianProvider = defineProvider({
         thinking_mode: z.boolean().optional().meta({ title: '思考模式' }),
         watermark: z.boolean().optional().meta({ title: '水印' }),
       }),
+    },
+    {
+      id: 'wanx2.1-imageedit',
+      title: '万相图像编辑（局部重绘）',
+      description: '按蒙版只重绘白色区域，原生蒙版能力',
+      capabilities: ['image.edit' as const],
+      limits: { count: { max: 4 } },
     },
     ...['wan3.0-video', 'wan3.0-video-prime'].map((id) => ({
       id,
@@ -427,6 +435,41 @@ export const bailianProvider = defineProvider({
         if (!outputs.length) throw new ProviderError('unknown', '百炼没有返回生成图片')
         return { state: 'succeeded', outputs, usage: usage(data) }
       }
+      case 'image.edit': {
+        const input = req.input as CapabilityInput<'image.edit'>
+        if (!input.prompt.trim()) throw new ProviderError('invalid_input', '局部重绘需要提示词')
+        const count = input.count ?? 1
+        if (!Number.isInteger(count) || count < 1 || count > 4)
+          throw new ProviderError('invalid_input', '万相图像编辑一次生成 1–4 张')
+        // 通用图像编辑的蒙版重绘：白色区域按提示词重画，其余保持原图；异步任务
+        const body = {
+          model: req.model,
+          input: {
+            function: 'description_edit_with_mask',
+            prompt: input.prompt,
+            base_image_url: await upload(input.image, req.model, ctx),
+            mask_image_url: await upload(input.mask, req.model, ctx),
+          },
+          parameters: {
+            ...input.extra,
+            n: count,
+            ...(input.seed !== undefined ? { seed: input.seed } : {}),
+          },
+        }
+        const data = await requestWithOss(
+          ctx,
+          '/api/v1/services/aigc/image2image/image-synthesis',
+          body,
+        )
+        const output = asJson(data.output)
+        if (typeof output.task_id !== 'string' || !output.task_id)
+          throw new ProviderError('unknown', '百炼未返回 task_id；请勿重新提交任务')
+        return {
+          state: 'pending',
+          remoteId: output.task_id,
+          pollAfterMs: ctx.settings.pollIntervalMs,
+        }
+      }
       case 'video.generate': {
         const input = req.input as CapabilityInput<'video.generate'>
         if (!input.prompt.trim() && !input.firstFrame && !input.references?.length)
@@ -535,12 +578,23 @@ export const bailianProvider = defineProvider({
         pollAfterMs: ctx.settings.pollIntervalMs,
         remote: status === 'PENDING' ? 'queued' : 'running',
       }
-    if (status === 'SUCCEEDED')
+    if (status === 'SUCCEEDED') {
+      // 图像编辑的结果是 results 数组（每张一个 url，单张失败的带 code）；视频是 video_url
+      if (Array.isArray(output.results)) {
+        const urls = output.results.map(asJson).filter((r) => typeof r.url === 'string')
+        if (!urls.length) throw new ProviderError('unknown', '百炼没有返回编辑后的图片')
+        return {
+          state: 'succeeded',
+          outputs: urls.map((r) => file('image', r.url)),
+          usage: usage(data),
+        }
+      }
       return {
         state: 'succeeded',
         outputs: [file('video', output.video_url ?? asJson(output.results).video_url)],
         usage: usage(data),
       }
+    }
     if (status === 'CANCELED' || status === 'CANCELLED')
       return { state: 'failed', error: { code: 'cancelled', message: '百炼任务已取消' } }
     const e = remoteError(200, output, ctx)

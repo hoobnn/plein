@@ -36,6 +36,7 @@ import { ResultActions } from '../../shell/ResultBar'
 import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
 import { InputPreview, issueText, useInputPreview } from './InputPreview'
 import { ContinuedFrom } from './ContinuedFrom'
+import { MaskField } from './MaskField'
 import { Inputs } from './Inputs'
 import { LibrarySave } from './LibrarySave'
 import { ProfileSummary } from './ProfileSummary'
@@ -261,6 +262,9 @@ function Panel({
         <Inputs engine={engine} el={el} node={node} ups={ups} trailing={actions} />
       )}
       <ContinuedFrom engine={engine} el={el} />
+      {node.capability === 'image.edit' && (
+        <MaskField engine={engine} el={el} source={ups.get('image')?.[0]} />
+      )}
       {node.type === 'plein/character' && canvasId && <ProfileSummary engine={engine} el={el} />}
       {node.type === STORYBOARD_TYPE && (
         <div className="px-4 pt-4">

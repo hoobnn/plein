@@ -295,6 +295,84 @@ describe('百炼 API 契约', () => {
       new Headers(fetch.mock.calls[2]?.[1]?.headers).get('X-DashScope-OssResourceResolve'),
     ).toBe('enable')
   })
+  it('局部重绘：原图和蒙版上传 OSS，走通用图像编辑的蒙版重绘，轮询取回多张图', async () => {
+    const policy = {
+      upload_host: 'https://dashscope.oss-cn-beijing.aliyuncs.com',
+      upload_dir: 'tmp',
+      oss_access_key_id: 'id',
+      signature: 'sig',
+      policy: 'policy',
+      x_oss_object_acl: 'private',
+      x_oss_forbid_overwrite: 'true',
+    }
+    const { ctx, fetch, body } = setup([
+      { data: policy },
+      {},
+      { data: policy },
+      {},
+      { output: { task_id: 'edit/1', task_status: 'PENDING' } },
+      {
+        output: {
+          task_status: 'SUCCEEDED',
+          results: [
+            { url: 'https://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/e1.png' },
+            { code: 'DataInspectionFailed', message: 'blocked' },
+            { url: 'http://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/e2.png' },
+          ],
+        },
+      },
+    ])
+    expect(
+      await bailianProvider.submit(
+        {
+          capability: 'image.edit',
+          model: 'wanx2.1-imageedit',
+          input: {
+            prompt: '把杯子换成红色',
+            image: { assetId: 'img', kind: 'image' },
+            mask: { assetId: 'mask', kind: 'image' },
+            count: 2,
+            extra: { model: 'evil', n: 9 },
+          },
+        },
+        ctx,
+      ),
+    ).toMatchObject({ state: 'pending', remoteId: 'edit/1' })
+    expect(fetch.mock.calls[4]?.[0]).toMatch(/image2image\/image-synthesis$/)
+    const headers = new Headers(fetch.mock.calls[4]?.[1]?.headers)
+    expect(headers.get('X-DashScope-Async')).toBe('enable')
+    expect(headers.get('X-DashScope-OssResourceResolve')).toBe('enable')
+    const sent = body(4)
+    expect(sent.model).toBe('wanx2.1-imageedit')
+    expect(sent.input).toMatchObject({
+      function: 'description_edit_with_mask',
+      prompt: '把杯子换成红色',
+      base_image_url: expect.stringMatching(/^oss:\/\/tmp\//),
+      mask_image_url: expect.stringMatching(/^oss:\/\/tmp\//),
+    })
+    expect(sent.parameters.n).toBe(2)
+    expect(await bailianProvider.poll?.('edit/1', ctx)).toMatchObject({
+      state: 'succeeded',
+      outputs: [
+        { kind: 'image', url: expect.stringContaining('e1.png') },
+        { kind: 'image', url: expect.stringMatching(/^https:.*e2\.png$/) },
+      ],
+    })
+    await expect(
+      bailianProvider.submit(
+        {
+          capability: 'image.edit',
+          model: 'wanx2.1-imageedit',
+          input: {
+            prompt: ' ',
+            image: { assetId: 'img', kind: 'image' },
+            mask: { assetId: 'mask', kind: 'image' },
+          },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+  })
   it('语音 input 指令、音色和业务空间端点符合 native API', async () => {
     const { ctx, fetch, body } = setup([
       {
