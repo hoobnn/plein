@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vite-plus/test'
 import { corePlugin } from './core'
 import { corePrompts, firstPlaceholder, presetsFor, slashQuery } from './prompts'
+import { shotPresets } from './shotPresets'
 
 describe('/ 提示词预设', () => {
   it('按能力或节点类型筛选', () => {
@@ -30,7 +31,8 @@ describe('/ 提示词预设', () => {
   })
 
   it('清单声明与内置预设一致', () => {
-    expect(corePlugin.manifest.contributes.prompts).toEqual(corePrompts.map((p) => p.id))
-    expect(corePlugin.prompts).toBe(corePrompts)
+    const all = [...corePrompts, ...shotPresets]
+    expect(corePlugin.manifest.contributes.prompts).toEqual(all.map((p) => p.id))
+    expect(corePlugin.prompts).toEqual(all)
   })
 })

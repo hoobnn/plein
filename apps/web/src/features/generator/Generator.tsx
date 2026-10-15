@@ -43,6 +43,7 @@ import { ProfileSummary } from './ProfileSummary'
 import { ModelPicker } from './ModelPicker'
 import { ModePicker } from './ModePicker'
 import { countUnit, isMainField, type ModelOptions, ParamsPill } from './ParamsPill'
+import { ShotPresets } from './ShotPresets'
 import { PromptBox } from './PromptBox'
 import { PromptTools } from './PromptTools'
 
@@ -324,6 +325,9 @@ function Panel({
           }
           onChange={(v) => set(pk, v)}
         />
+      )}
+      {pk && !pure && (
+        <ShotPresets engine={engine} el={el} node={node} catalog={catalog} promptKey={pk} />
       )}
       {pure && Object.keys(rest).length > 0 && (
         <div className="px-4 pb-3">

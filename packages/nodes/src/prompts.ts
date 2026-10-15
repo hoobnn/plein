@@ -72,16 +72,17 @@ export const corePrompts = [
   }),
 ]
 
-/** 某个节点可用的预设 */
-export function presetsFor<P extends { appliesTo?: string[] }>(
+/** 某个节点可用的整段预设（行首 / 和预设菜单用；镜头 / 风格条的选项不算） */
+export function presetsFor<P extends { appliesTo?: string[]; slot?: string }>(
   presets: readonly P[],
   node: { type: string; capability?: string },
 ): P[] {
   return presets.filter(
     (p) =>
-      !p.appliesTo?.length ||
-      p.appliesTo.includes(node.type) ||
-      (!!node.capability && p.appliesTo.includes(node.capability)),
+      !p.slot &&
+      (!p.appliesTo?.length ||
+        p.appliesTo.includes(node.type) ||
+        (!!node.capability && p.appliesTo.includes(node.capability))),
   )
 }
 

@@ -44,11 +44,27 @@ export interface PromptPresetDefinition {
   appliesTo?: string[]
   /** 选用时一并设置的参数；节点没有的参数忽略 */
   params?: Record<string, unknown>
+  /**
+   * 镜头 / 风格条上的一个选项（运镜、景别、角度、光影、风格）：template 是插进提示词的那一小段，
+   * 同一栏单选；不出现在行首 / 预设菜单里。只改写提示词，不是平台的摄影控制参数
+   */
+  slot?: ShotSlot
 }
+
+export const SHOT_SLOTS = [
+  'camera.move',
+  'camera.shot',
+  'camera.angle',
+  'camera.light',
+  'style',
+] as const
+export type ShotSlot = (typeof SHOT_SLOTS)[number]
 
 export function definePromptPreset(def: PromptPresetDefinition): PromptPresetDefinition {
   if (!NAMESPACED_ID.test(def.id)) throw new Error(`提示词预设 id ${def.id} 应为 vendor/name`)
   if (!def.template.trim()) throw new Error(`提示词预设 ${def.id} 的模板为空`)
+  if (def.slot && !SHOT_SLOTS.includes(def.slot))
+    throw new Error(`提示词预设 ${def.id} 的 slot ${def.slot} 不认识`)
   return def
 }
 

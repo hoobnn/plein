@@ -2,6 +2,7 @@ import { defineNode, definePlugin, PLUGIN_API_VERSION } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { CharacterProfile, emptyProfile } from './profile'
 import { corePrompts } from './prompts'
+import { shotPresets } from './shotPresets'
 import { noVoice, VoiceRef } from './refs'
 import { sequenceNode } from './sequence'
 import { stageNode } from './stage'
@@ -361,7 +362,7 @@ export const corePlugin = definePlugin({
         'plein/sequence@1',
         'plein/stage@1',
       ],
-      prompts: corePrompts.map((p) => p.id),
+      prompts: [...corePrompts, ...shotPresets].map((p) => p.id),
     },
     // 序列导出要用宿主的 ffmpeg
     permissions: { media: true },
@@ -383,5 +384,5 @@ export const corePlugin = definePlugin({
     sequenceNode,
     stageNode,
   ],
-  prompts: corePrompts,
+  prompts: [...corePrompts, ...shotPresets],
 })

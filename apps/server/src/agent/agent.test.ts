@@ -197,6 +197,28 @@ describe('智能体 MCP', () => {
     expect([out.width, out.height]).toEqual([meta.width, meta.height])
   })
 
+  it('镜头与风格预设：拼进提示词末尾，只改自己那两行', async () => {
+    const v = (
+      await call('create_node', { type: 'plein/video', params: { prompt: '她回头' } })
+    ).json()
+    const options = (await call('apply_shot_presets', { id: v.id })).json().options
+    expect(options['camera.move']).toContainEqual(expect.stringContaining('plein/cam-push'))
+    const made = (
+      await call('apply_shot_presets', {
+        id: v.id,
+        move: 'plein/cam-orbit',
+        speed: 'slow',
+        style: 'plein/style-film',
+      })
+    ).json()
+    expect(made.prompt).toBe('她回头\n镜头：缓慢环绕主体。\n风格：胶片质感，细腻颗粒，暖色调。')
+    const cleared = (await call('apply_shot_presets', { id: v.id, move: null })).json()
+    expect(cleared.prompt).toBe('她回头\n风格：胶片质感，细腻颗粒，暖色调。')
+    expect(
+      (await call('apply_shot_presets', { id: v.id, move: 'plein/style-film' })).text,
+    ).toContain('不是这个节点')
+  })
+
   it('分镜组：编号、调顺序、排版、拼成大图并如实给出像素', async () => {
     const png = (color: string) =>
       sharp({ create: { width: 64, height: 36, channels: 3, background: color } })

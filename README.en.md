@@ -51,6 +51,7 @@ Idea, script, characters, storyboard, shots, voiceover and the final cut live on
 - Region edit: box-select or paint the area to change and only that area is repainted, the rest stays as is (Bailian Wanx image edit with a native mask)
 - Continue a shot: take the last frame (or any second) of a video and branch the next shot from it, keeping model and aspect ratio and remembering the parent video; if the parent is regenerated you get a one-click refresh
 - Storyboard groups: number the images in a frame in order, reorder them, lay them out in one click and stitch them into one collage labelled with its real pixel size; grid splits become a group automatically and can jump back to the source (local stitching, no model call)
+- Shot and style bar: pick a camera move (with speed), shot size, angle, lighting and style; they become one or two visible, editable lines at the end of the prompt, obvious conflicts are flagged, and a style can be saved as a style card. These are prompt presets only, results vary by model
 - `@` references character / scene / prop / style cards in prompts, with disambiguation for duplicate names; `/` at line start applies presets such as three-view turnaround, expression grid, multi-angle and four-panel story
 - You choose the model: Settings sets a default model per capability, new nodes start with it and each node can pick another; enabling a new platform never switches models behind your back
 - Prompt enhancement and translation; every run keeps candidates and history, and downstream only uses the version you adopt
@@ -186,8 +187,8 @@ The layout is identical across all three and can be copied between them: `plein.
 - [x] **0.2.0**: actual-input preview and reference strategies, impact analysis and partial rework, batches and job recovery, project package migration, change plans with scoped approval, default models (2026-10-14, verified on real platforms)
 - [x] Editing change plans item by item in chat: edit fields, tick targets and steps, then approve
 - [x] Browser cache and reconnect acceptance (2026-10-15)
-- [x] Continue a shot from a frame, region edit, storyboard groups and collages (extension candidates, 2026-10-15)
-- [ ] **Extension candidates**: camera / style presets, third-party plugins; static 3D composition validated separately
+- [x] Continue a shot from a frame, region edit, storyboard groups and collages, camera / style presets (extension candidates, 2026-10-15)
+- [ ] **Extension candidates**: third-party plugins; static 3D composition validated separately
 - [ ] **Later**: panoramas, 3D director stage, depth references, native segment re-shoot, smart editing
 
 0.2.0 scope, implementation notes and acceptance are in the [0.2.0 roadmap](docs/plan/roadmap-0.2.0.md); first-release planning and acceptance are in the [0.1.0 roadmap](docs/plan/roadmap-0.1.0.md) and [acceptance record](docs/plan/acceptance-0.1.0.md) (all Chinese).
