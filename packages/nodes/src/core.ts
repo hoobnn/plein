@@ -4,6 +4,7 @@ import { CharacterProfile, emptyProfile } from './profile'
 import { corePrompts } from './prompts'
 import { noVoice, VoiceRef } from './refs'
 import { sequenceNode } from './sequence'
+import { stageNode } from './stage'
 import { storyboardNode } from './storyboard'
 
 const model = () => z.string().default('').meta({ title: '模型', widget: 'model' })
@@ -324,6 +325,7 @@ export const corePlugin = definePlugin({
         'plein/effect@1',
         'plein/storyboard@1',
         'plein/sequence@1',
+        'plein/stage@1',
       ],
       prompts: corePrompts.map((p) => p.id),
     },
@@ -344,6 +346,7 @@ export const corePlugin = definePlugin({
     effectNode,
     storyboardNode,
     sequenceNode,
+    stageNode,
   ],
   prompts: corePrompts,
 })

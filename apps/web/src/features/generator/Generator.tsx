@@ -5,6 +5,8 @@ import {
   firstPlaceholder,
   presetsFor,
   SEQUENCE_TYPE,
+  STAGE_TYPE,
+  stageSnapshotsOf,
   STORYBOARD_TYPE,
   type VideoMode,
 } from '@plein/nodes'
@@ -280,6 +282,22 @@ function Panel({
           >
             编辑序列（{ups.get('clips')?.length ?? 0} 段镜头）
           </button>
+        </div>
+      )}
+      {node.type === STAGE_TYPE && (
+        <div className="flex flex-col gap-2 px-4 pt-4">
+          <button
+            type="button"
+            onClick={() => useCanvas.getState().openStage(el.id)}
+            className="ui-btn ui-btn-secondary w-full"
+          >
+            打开 3D 构图
+          </button>
+          <p className="ui-help">
+            {stageSnapshotsOf(el.params).length
+              ? `已截 ${stageSnapshotsOf(el.params).length} 张，下游用当前采用的那张；改场景后要重新截图才会更新`
+              : '摆好人物和机位后截图，把「构图」连到图片节点的参考图'}
+          </p>
         </div>
       )}
       {pk && (

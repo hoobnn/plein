@@ -41,6 +41,8 @@ interface CanvasStore extends EngineState {
   storyboard: string | null
   /** 打开编辑器的序列节点 */
   sequence: string | null
+  /** 打开编辑器的 3D 构图节点 */
+  stage: string | null
   /** 全屏查看的图片 / 视频 */
   viewer: { assetId: string; kind: 'image' | 'video'; name: string } | null
   /** 快捷键面板 */
@@ -64,6 +66,7 @@ interface CanvasStore extends EngineState {
   setMenu(menu: CanvasMenuEvent | null): void
   openStoryboard(id: string | null): void
   openSequence(id: string | null): void
+  openStage(id: string | null): void
   view(v: CanvasStore['viewer']): void
   toggleShortcuts(open?: boolean): void
   setArranged(r: ArrangeResult | null): void
@@ -96,6 +99,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   menu: null,
   storyboard: null,
   sequence: null,
+  stage: null,
   viewer: null,
   shortcuts: false,
   arranged: null,
@@ -121,6 +125,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
         menu: null,
         storyboard: null,
         sequence: null,
+        stage: null,
         viewer: null,
         arranged: null,
         history: false,
@@ -135,6 +140,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   setMenu: (menu) => set({ menu }),
   openStoryboard: (storyboard) => set({ storyboard }),
   openSequence: (sequence) => set({ sequence }),
+  openStage: (stage) => set({ stage }),
   view: (viewer) => set({ viewer }),
   toggleShortcuts: (open) => set((s) => ({ shortcuts: open ?? !s.shortcuts })),
   setArranged: (arranged) => set({ arranged }),

@@ -13,6 +13,7 @@ import {
   sequenceSpec,
   speechNode,
   StoryboardDraft,
+  stageNode,
   storyboardNode,
   styleNode,
   textNode,
@@ -252,6 +253,12 @@ const effect = defineExecutor(effectNode, async ({ inputs }) => ({
   videos: inputAssets(inputs, 'references').map((a) => ({ type: 'video' as const, ...a })),
 }))
 
+/**
+ * 3D 构图：截图由网页渲染后作为节点结果写入，下游直接读结果；
+ * 还没截图时没有输出（不报错，实际输入预览里看得到缺这张参考）
+ */
+const stage = defineExecutor(stageNode, async () => ({ image: [] }))
+
 /** 对白逐条做语音识别，取带时间戳的分段；手写了字幕的段不用识别 */
 async function transcribe(ctx: ExecutorContext, arranged: ArrangedClip[]) {
   const todo = arranged.filter((c) => c.dialogue && !c.subtitle?.trim())
@@ -332,5 +339,6 @@ export const coreServerPlugin = defineServerPlugin(corePlugin, {
     effect,
     storyboard,
     sequence,
+    stage,
   ],
 })

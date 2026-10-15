@@ -3,7 +3,7 @@
 /*
  * 设计规范见 docs/dev/design-spec.md：组件只用这里的令牌和通用控件，不写任意值。
  * tokens 令牌 · base 元素基础样式 · controls 通用控件（.ui-*）
- * canvas 画布覆盖层与节点卡片 · editor 编辑器外壳 · sequence 序列剪辑 · home 首页与桌面端窗口 · agent 吉祥物与助手
+ * canvas 画布覆盖层与节点卡片 · editor 编辑器外壳 · sequence 序列剪辑 · stage 3D 构图 · home 首页与桌面端窗口 · agent 吉祥物与助手
  * library 资产库与角色档案
  */
 @import "./styles/tokens.css";
@@ -12,6 +12,7 @@
 @import "./styles/canvas.css";
 @import "./styles/editor.css";
 @import "./styles/sequence.css";
+@import "./styles/stage.css";
 @import "./styles/home.css";
 @import "./styles/agent.css";
 @import "./styles/library.css";

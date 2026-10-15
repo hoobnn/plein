@@ -1,6 +1,6 @@
 import { Engine, isEditableTarget, type PreviewSize } from '@plein/canvas-core'
 import { createDoc, type ElementKind, type PleinDoc, SCHEMA_VERSION } from '@plein/doc'
-import { SEQUENCE_TYPE, STORYBOARD_TYPE } from '@plein/nodes'
+import { SEQUENCE_TYPE, STAGE_TYPE, STORYBOARD_TYPE } from '@plein/nodes'
 import { useEffect, useRef } from 'react'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import { WebsocketProvider } from 'y-websocket'
@@ -107,6 +107,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
             if (el?.kind !== 'node') return
             if (el.nodeType === STORYBOARD_TYPE) return useCanvas.getState().openStoryboard(id)
             if (el.nodeType === SEQUENCE_TYPE) return useCanvas.getState().openSequence(id)
+            if (el.nodeType === STAGE_TYPE) return useCanvas.getState().openStage(id)
             requestAnimationFrame(() =>
               window.dispatchEvent(new CustomEvent('plein:focus-generator', { detail: id })),
             )

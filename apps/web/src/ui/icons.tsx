@@ -6,6 +6,7 @@ import {
   ArrowUpNarrowWide,
   AudioLines,
   Blend,
+  Box,
   Braces,
   Captions,
   Check,
@@ -152,6 +153,7 @@ const ICONS = {
   info: Info,
   // 元素与节点类型
   frame: Frame,
+  cube: Box,
   doc: FileText,
   text: Type,
   image: Image,

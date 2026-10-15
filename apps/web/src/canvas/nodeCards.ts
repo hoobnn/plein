@@ -6,6 +6,7 @@ import {
   profileEmpty,
   profileOf,
   profileSize,
+  STAGE_TYPE,
   STORYBOARD_TYPE,
 } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
@@ -107,6 +108,7 @@ const CARD_GLYPHS: Record<string, IconName> = {
 
 function glyphOf(el: CanvasElement, kind: string): IconName {
   if (el.nodeType === STORYBOARD_TYPE) return 'story'
+  if (el.nodeType === STAGE_TYPE) return 'cube'
   if (el.nodeType && ASSET_NODE_TYPES.has(el.nodeType))
     return CARD_GLYPHS[el.nodeType] ?? 'character'
   return GLYPHS[kind] ?? 'text'
@@ -384,6 +386,12 @@ export class NodeCards {
     icon.className = 'plein-node-empty-icon'
     icon.appendChild(iconElement(glyphOf(el, kind), 24))
     center.appendChild(icon)
+    if (el.nodeType === STAGE_TYPE) {
+      const hint = document.createElement('span')
+      hint.className = 'plein-node-muted'
+      hint.textContent = '双击摆人物和机位，截一张构图'
+      center.appendChild(hint)
+    }
     const room = el.h >= 150 && el.w >= 160
     if (room && presets.length) {
       const tries = document.createElement('div')
