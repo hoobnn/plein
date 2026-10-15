@@ -11,6 +11,7 @@ import type { AuthEnv } from '../auth'
 import { mediaRoutes } from './media-routes'
 import { openDb } from '../storage/db'
 import { tempDir } from '../testing'
+import { collageAssets } from './collage'
 import { deriveAsset, readOrigin } from './derive'
 import { atempoChain, audioTempoFilter, ffmpegBin, hasFfmpeg, mediaCaps } from './media'
 import { AssetStore } from './store'
@@ -621,5 +622,43 @@ describe.skipIf(!ffmpegAvailable)('剪辑工程导出', () => {
       body: JSON.stringify({ spec: spec() }),
     })
     expect(res.status).toBe(404)
+  })
+})
+
+describe('拼图', () => {
+  it('按顺序拼成一张，格子取第一张比例，返回实际像素', async () => {
+    const made = await collageAssets(store, OWNER, {
+      assetIds: [image.id, orientedImage.id, image.id],
+      cols: 2,
+      gap: 4,
+      numbers: false,
+      background: '#000000',
+      name: '分镜',
+    })
+    // 第一张 40×20：两列两行，格子 40×20，外加 3 道 4px 留白
+    expect(made).toMatchObject({ cols: 2, rows: 2, width: 92, height: 52 })
+    expect(made.asset).toMatchObject({ kind: 'image', name: '分镜.png' })
+    const { data, info } = await sharp(store.originalPath(made.asset.id))
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    expect([info.width, info.height]).toEqual([92, 52])
+    const px = (x: number, y: number) => [...data.subarray((y * 92 + x) * 3, (y * 92 + x) * 3 + 3)]
+    // 第一格右半是蓝的；第二格竖图等比缩进格子，两边留黑
+    expect(px(4 + 30, 4 + 10)).toEqual([0, 0, 255])
+    expect(px(48 + 2, 4 + 10)).toEqual([0, 0, 0])
+    // 第四格空着，是底色
+    expect(px(48 + 20, 28 + 10)).toEqual([0, 0, 0])
+  })
+
+  it('打序号、拒绝非图片', async () => {
+    const made = await collageAssets(store, OWNER, {
+      assetIds: [image.id, image.id],
+      cols: 2,
+    })
+    expect(made.asset.kind).toBe('image')
+    if (ffmpegAvailable)
+      await expect(
+        collageAssets(store, OWNER, { assetIds: [image.id, video.id], cols: 2 }),
+      ).rejects.toThrow(/不是图片/)
   })
 })

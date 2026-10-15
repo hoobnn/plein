@@ -22,7 +22,19 @@ import {
   shotsOf,
   summarize,
 } from '@plein/capabilities'
-import { currentResult, elementMedia, mediaSize, type PleinDoc, setParams } from '@plein/doc'
+import {
+  clearShotGroup,
+  currentResult,
+  elementMedia,
+  groupShots,
+  layoutShotGroup,
+  makeShotGroup,
+  mediaSize,
+  moveShot,
+  type PleinDoc,
+  setParams,
+  shotGroupOf,
+} from '@plein/doc'
 import { type ContinuesFrom, continueShotParams, nearestAspect } from '@plein/nodes'
 import { describeNode, executionOf, withDefaultModel } from '@plein/plugin-sdk'
 import {
@@ -35,6 +47,7 @@ import {
 } from '@plein/protocol'
 import sharp, { type Sharp } from 'sharp'
 import { z } from 'zod'
+import { collageAssets } from '../assets/collage'
 import { DeriveError, deriveAsset } from '../assets/derive'
 import { PromptError, rewritePrompt } from '../prompt/rewrite'
 import { ffmpegBin, hasFfmpeg } from '../assets/media'
@@ -438,6 +451,105 @@ const continueShot = serverCapability({
   },
 })
 
+const shotGroup = serverCapability({
+  name: 'shot_group',
+  title: '分镜组',
+  description:
+    '把一个 Frame 设成分镜组：组里的图片按顺序编号（画布上显示角标），能排版、拼成大图。order 给出的元素按给定顺序排在最前；arrange 为 true 时按顺序排成 cols 列网格（只挪位置不改大小，Frame 收到刚好包住）；clear 为 true 时取消分镜组，图片都留着。返回组里镜头的顺序。和 Frame 工具条上的「分镜组」是同一套规则。',
+  group: 'edit',
+  where: 'server',
+  effect: 'edit',
+  input: z.object({
+    frame_id: id.describe('Frame 元素'),
+    order: z.array(id).max(64).optional().describe('想要的镜头顺序（元素 id），没列的接在后面'),
+    arrange: z.boolean().default(false),
+    cols: z.number().int().min(1).max(16).optional(),
+    clear: z.boolean().default(false),
+  }),
+  run: (ctx, a) =>
+    ctx.withDoc((doc) => {
+      const frame = need(doc, a.frame_id)
+      if (frame.kind !== 'frame') throw new CapabilityError(`${a.frame_id} 不是 Frame`)
+      if (a.clear) {
+        clearShotGroup(doc, a.frame_id)
+        return { frame_id: a.frame_id, shot_group: false }
+      }
+      if (!shotGroupOf(frame)) makeShotGroup(doc, a.frame_id, a.cols ? { cols: a.cols } : {})
+      a.order?.forEach((el, i) => moveShot(doc, a.frame_id, el, i))
+      const cols = a.arrange ? layoutShotGroup(doc, a.frame_id, a.cols) : undefined
+      return {
+        frame_id: a.frame_id,
+        shot_group: true,
+        cols: cols ?? shotGroupOf(doc.get(a.frame_id))?.cols,
+        shots: groupShots(doc, a.frame_id).map((el, i) => ({ n: i + 1, id: el.id, name: el.name })),
+      }
+    }),
+})
+
+const makeCollage = serverCapability({
+  name: 'make_collage',
+  title: '拼成大图',
+  description:
+    '把分镜组（不是分镜组的 Frame 先按阅读顺序编号）里的图片按顺序拼成一张大图，放在 Frame 右边；每格大小一致（取第一张的比例），等比放进格子，numbers 为 true 时在左上角印序号。返回新图片元素和实际像素。本地加工，不调模型。',
+  group: 'media',
+  where: 'server',
+  effect: 'edit',
+  input: z.object({
+    frame_id: id.describe('Frame 元素'),
+    cols: z.number().int().min(1).max(16).optional().describe('列数，不填按分镜组记的列数'),
+    numbers: z.boolean().default(true),
+    name: z.string().max(100).optional(),
+  }),
+  run: async (ctx, a) => {
+    const src = ctx.withDoc((doc) => {
+      const frame = need(doc, a.frame_id)
+      if (frame.kind !== 'frame') throw new CapabilityError(`${a.frame_id} 不是 Frame`)
+      const assetIds = groupShots(doc, a.frame_id).flatMap((el) => {
+        const m = elementMedia(el)
+        return m?.kind === 'image' ? [m.assetId] : []
+      })
+      return { assetIds, name: frame.name ?? '分镜组', cols: shotGroupOf(frame)?.cols }
+    })
+    if (src.assetIds.length < 2) throw new CapabilityError('组里至少要两张图才能拼')
+    const cols = a.cols ?? src.cols ?? Math.ceil(Math.sqrt(src.assetIds.length))
+    let made
+    try {
+      made = await collageAssets(ctx.env.assets, ctx.env.ownerId, {
+        assetIds: src.assetIds,
+        cols,
+        numbers: a.numbers,
+        name: a.name ?? `${src.name} · 拼图`,
+      })
+    } catch (err) {
+      if (err instanceof DeriveError) throw new CapabilityError(err.message)
+      throw err
+    }
+    return ctx.withDoc((doc) => {
+      // 画布上和分镜组一样宽
+      const fw = need(doc, a.frame_id).w
+      const size = { w: fw, h: Math.round((fw * made.height) / made.width) }
+      const elId = placeNew(
+        doc,
+        { near: a.frame_id },
+        {
+          kind: 'image',
+          assetId: made.asset.id,
+          name: `${a.name ?? `${src.name} · 拼图`} ${made.width}×${made.height}`,
+          ...size,
+        },
+      )
+      return {
+        id: elId,
+        asset_id: made.asset.id,
+        width: made.width,
+        height: made.height,
+        cols: made.cols,
+        rows: made.rows,
+      }
+    })
+  },
+})
+
 const runFlow = serverCapability({
   name: 'run_flow',
   title: '运行上下游',
@@ -740,6 +852,8 @@ export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   viewMedia,
   editMedia,
   continueShot,
+  shotGroup,
+  makeCollage,
   runFlow,
   runFrame,
   waitForGroup,

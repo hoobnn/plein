@@ -34,6 +34,7 @@ export const API = {
   assetVariant: (id: string, v: AssetVariant) => `/api/assets/${id}/${v}`,
   /** 媒体加工：裁剪 / 旋转 / 镜像 / 截取 / 变速 / 切分 / 音视频分离 / 抽帧，body 为 MediaDeriveRequest */
   mediaDerive: '/api/media/derive',
+  mediaCollage: '/api/media/collage',
   /** 本机媒体能力，返回 MediaCapsInfo */
   mediaCaps: '/api/media/caps',
   /** 字幕字体：导出烧字幕用的那个字体，预览加载同一个文件；返回 SubtitleFontInfo，没有时 404 */

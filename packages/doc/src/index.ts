@@ -12,5 +12,6 @@ export {
 } from './doc'
 export * from './layout'
 export * from './sizes'
+export * from './shotGroup'
 export { SCHEMA_VERSION } from './migrate'
 export * from './types'

@@ -155,6 +155,37 @@ export const MediaDerivation = z.object({
 })
 export type MediaDerivation = z.infer<typeof MediaDerivation>
 
+/**
+ * 拼图：把一组图片按顺序拼成一张大图。每格大小一致（取第一张的比例），图片等比放进格子，
+ * 留白用底色填；结果是新图片资产，原图不动
+ */
+export const MediaCollageRequest = z.object({
+  assetIds: z.array(assetIdField).min(2).max(64),
+  cols: z.number().int().min(1).max(16),
+  /** 格子之间和外边的留白（输出像素） */
+  gap: z.number().int().min(0).max(128).default(16),
+  background: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .default('#ffffff'),
+  /** 每格长边（像素），默认按第一张原图，最大 2048 */
+  cell: z.number().int().min(64).max(2048).optional(),
+  /** 在格子左上角印镜头序号 */
+  numbers: z.boolean().default(true),
+  name: deriveName,
+})
+export type MediaCollageRequest = z.input<typeof MediaCollageRequest>
+
+export const MediaCollage = z.object({
+  asset: Asset,
+  /** 实际像素，界面如实标出 */
+  width: z.number(),
+  height: z.number(),
+  cols: z.number(),
+  rows: z.number(),
+})
+export type MediaCollage = z.infer<typeof MediaCollage>
+
 /** 本机媒体能力，UI 据此隐藏做不到的操作 */
 export interface MediaCapsInfo {
   ffmpeg: boolean

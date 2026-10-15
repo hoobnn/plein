@@ -7,6 +7,31 @@
   transform-origin: 0 0;
 }
 
+/* 分镜组序号：图片左上角的小圆角编号，不挡点击 */
+.plein-shot-badge {
+  pointer-events: none;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 600 14px/1 var(--font-sans, system-ui);
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: rgb(0 0 0 / 0.66);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  animation: plein-shot-badge-in 180ms ease-out;
+}
+
+@keyframes plein-shot-badge-in {
+  from {
+    opacity: 0;
+  }
+}
+
 .plein-md-preview {
   overflow: hidden;
   padding: 16px;

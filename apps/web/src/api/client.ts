@@ -24,6 +24,8 @@ import {
   type GroupRunStarted,
   type GroupRunState,
   type MediaCapsInfo,
+  type MediaCollage,
+  type MediaCollageRequest,
   type MediaDerivation,
   type MediaDeriveRequest,
   type SequenceExportRequest,
@@ -246,6 +248,8 @@ export const api = {
 
   mediaDerive: (body: MediaDeriveRequest) =>
     request<MediaDerivation>(API.mediaDerive, json('POST', body)),
+  mediaCollage: (body: MediaCollageRequest) =>
+    request<MediaCollage>(API.mediaCollage, json('POST', body)),
   /** 剪辑工程（OTIO / FCPXML + 素材）：返回一个短期下载地址 */
   sequenceExport: (body: SequenceExportRequest) =>
     request<{ url: string }>(API.sequenceExport, json('POST', body)),

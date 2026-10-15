@@ -26,7 +26,7 @@ declare global {
         }
         worldToClient(x: number, y: number): { x: number; y: number }
         zoomToFit(ids?: Iterable<string>): void
-        selection: { values(): string[] }
+        selection: { values(): string[]; set(ids: string[]): void }
       }
     }
   }

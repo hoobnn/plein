@@ -1,7 +1,8 @@
 import type { Engine } from '@plein/canvas-core'
-import { updateElement } from '@plein/doc'
+import { shotGroupOf, updateElement } from '@plein/doc'
 import { useState } from 'react'
 import { groupNodes } from '../canvas/groups'
+import { hasShots, setShotGroup } from '../canvas/shotGroup'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
@@ -12,6 +13,7 @@ import { Popover } from '../ui/Popover'
 import { Presence } from '../ui/Presence'
 import { cancelGroup, runFrame } from '../features/runs/run'
 import { saveAsTemplate } from '../features/templates/actions'
+import { ShotGroupPanel } from './ShotGroupPanel'
 
 /** 页头占的高度：Frame 顶到页头时工具条不压住它 */
 const TOP_RESERVED = 64
@@ -43,6 +45,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
   const [force, setForce] = useState(false)
   const runs = useGroupRuns((s) => s.runs)
   const [palette, setPalette] = useState<HTMLElement | null>(null)
+  const [shotsAt, setShotsAt] = useState<HTMLElement | null>(null)
   const ids = engine.selection.values()
   const el = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
   const place = () => {
@@ -62,6 +65,8 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
   const group = runs[el.id] ?? null
   const save = () => saveAsTemplate(engine, el.id, name)
 
+  const isGroup = !!shotGroupOf(el)
+  const canGroup = isGroup || hasShots(engine, el.id)
   const btn = 'ui-bar-btn'
   return (
     <div
@@ -92,6 +97,26 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
       >
         <Icon name="ungroup" size={14} />
         解组
+      </button>
+      <button
+        type="button"
+        className={btn}
+        aria-expanded={!!shotsAt}
+        aria-pressed={isGroup}
+        disabled={!canGroup}
+        title={
+          canGroup
+            ? '把组里的图片按顺序编号，能排版、拼成大图'
+            : '组里没有图片，放几张进来再设为分镜组'
+        }
+        onClick={(e) => {
+          if (shotsAt) return setShotsAt(null)
+          if (!isGroup) setShotGroup(engine, el.id)
+          setShotsAt(e.currentTarget)
+        }}
+      >
+        <Icon name="shotGroup" size={14} />
+        分镜组
       </button>
       {remote && <div className="ui-bar-sep" />}
       {remote && (
@@ -136,6 +161,13 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
           </button>
         </>
       )}
+      <Presence>
+        {shotsAt && (
+          <Popover anchor={shotsAt} onClose={() => setShotsAt(null)} label="分镜组" width={320}>
+            <ShotGroupPanel engine={engine} frameId={el.id} onClose={() => setShotsAt(null)} />
+          </Popover>
+        )}
+      </Presence>
       <Presence>
         {palette && (
           <Popover anchor={palette} onClose={() => setPalette(null)} label="Frame 颜色" width={196}>

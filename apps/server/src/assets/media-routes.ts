@@ -3,12 +3,14 @@ import { Readable } from 'node:stream'
 import type { ComposeSpec } from '@plein/plugin-sdk'
 import {
   API,
+  MediaCollageRequest,
   MediaDeriveRequest,
   SequenceExportRequest,
   type SubtitleFontInfo,
 } from '@plein/protocol'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
+import { collageAssets } from '../assets/collage'
 import { DeriveError, deriveAsset } from '../assets/derive'
 import { subtitleFont } from '../assets/fonts'
 import { sequencePackage } from '../assets/interchange'
@@ -84,6 +86,29 @@ export function mediaRoutes(store: AssetStore) {
           if ((err as { code?: string }).code === 'not_found') return c.json(notFound, 404)
           console.error('[media] 导出剪辑工程失败：', err)
           return c.json({ error: 'internal', message: '导出失败，请查看服务端日志' }, 500)
+        }
+      })
+      .post(API.mediaCollage, async (c) => {
+        const parsed = MediaCollageRequest.safeParse(await c.req.json().catch(() => null))
+        if (!parsed.success)
+          return c.json(
+            {
+              error: 'invalid',
+              message: parsed.error.issues[0]
+                ? `${parsed.error.issues[0].path.join('.') || '参数'}：${parsed.error.issues[0].message}`
+                : '参数不合法',
+            },
+            400,
+          )
+        try {
+          return c.json(await collageAssets(store, c.var.principal.id, parsed.data), 201)
+        } catch (err) {
+          if (err instanceof DeriveError)
+            return c.json({ error: err.code, message: err.message }, statusOf(err.code))
+          if (err instanceof UploadTooLargeError)
+            return c.json({ error: 'too_large', message: `拼图${err.message}` }, 413)
+          console.error('[media] 拼图失败：', err)
+          return c.json({ error: 'internal', message: '拼图失败，请查看服务端日志' }, 500)
         }
       })
       .post(API.mediaDerive, async (c) => {

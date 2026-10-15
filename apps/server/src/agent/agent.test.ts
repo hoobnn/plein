@@ -197,6 +197,44 @@ describe('智能体 MCP', () => {
     expect([out.width, out.height]).toEqual([meta.width, meta.height])
   })
 
+  it('分镜组：编号、调顺序、排版、拼成大图并如实给出像素', async () => {
+    const png = (color: string) =>
+      sharp({ create: { width: 64, height: 36, channels: 3, background: color } })
+        .png()
+        .toBuffer()
+    const assets = await Promise.all(
+      ['#f00', '#0f0', '#00f'].map(async (c, i) =>
+        running.server.assets.ingest('local', Readable.from([await png(c)]), {
+          mime: 'image/png',
+          name: `镜头${i + 1}.png`,
+        }),
+      ),
+    )
+    const ids: string[] = []
+    for (const [i, a] of assets.entries())
+      ids.push(
+        (await call('create_element', { kind: 'image', asset_id: a.id, x: i * 200, y: 0 })).json()
+          .id,
+      )
+    const { frame_id } = (await call('group_elements', { ids, name: '第一场' })).json()
+    const made = (
+      await call('shot_group', { frame_id, order: [ids[2]], arrange: true, cols: 2 })
+    ).json()
+    expect(made.shots.map((s: { id: string }) => s.id)).toEqual([ids[2], ids[0], ids[1]])
+    expect(made.cols).toBe(2)
+
+    const collage = await call('make_collage', { frame_id, numbers: false })
+    expect(collage.error).toBe(false)
+    const out = collage.json()
+    // 每格 64×36，两列两行，四周和格间 16px 留白
+    expect(out).toMatchObject({ cols: 2, rows: 2, width: 64 * 2 + 16 * 3, height: 36 * 2 + 16 * 3 })
+    const el = (await call('get_element', { id: out.id })).json()
+    expect(el.name).toContain(`${out.width}×${out.height}`)
+
+    expect((await call('shot_group', { frame_id, clear: true })).json().shot_group).toBe(false)
+    expect((await call('make_collage', { frame_id: ids[0] })).text).toContain('不是 Frame')
+  })
+
   it('剧情与提示词能力：铺短剧模板、套预设、改写提示词', async () => {
     const drama = await call('place_drama_template')
     expect(drama.error).toBe(false)

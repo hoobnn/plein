@@ -19,6 +19,7 @@ import { abortGroupRuns } from '../features/runs/groupRuns'
 import { watchStale } from '../features/runs/stale'
 import { NodeCards } from './nodeCards'
 import { CanvasOverlays } from './overlays'
+import { ShotBadges } from './shotBadges'
 import { applyPresetToNode } from './presets'
 import { cancelNode, runNode } from '../features/runs/run'
 import { watchVideoAspect } from './videoAspect'
@@ -94,6 +95,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
             originalUrl: assetUrls.original,
             awareness,
           })
+          const badges = new ShotBadges(engine, overlayRoot)
           const cards = new NodeCards(engine, overlayRoot, {
             run: runNode,
             cancel: cancelNode,
@@ -141,6 +143,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
             off()
             offActivate()
             cards.destroy()
+            badges.destroy()
             overlays.destroy()
             detach()
             engine.destroy()

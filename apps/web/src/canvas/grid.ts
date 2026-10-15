@@ -4,6 +4,7 @@ import {
   createElements,
   elementMedia,
   groupElements,
+  makeShotGroup,
   type NewElement,
 } from '@plein/doc'
 import { api, assetUrls } from '../api/client'
@@ -72,6 +73,8 @@ export async function splitGrid(
   bitmap.close()
   const ids = createElements(engine.doc, list)
   const frame = groupElements(engine.doc, ids, { name: `宫格切分 ${rows}×${cols}` })
+  // 切出来的直接是分镜组：按格子顺序编号，记下原图，能从组回到切之前的那张
+  if (frame) makeShotGroup(engine.doc, frame, { cols, source: { elementId: sourceId, rows, cols } })
   engine.selection.set([frame ?? ids[0]!])
   return frame
 }
