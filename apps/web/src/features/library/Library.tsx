@@ -360,7 +360,7 @@ function Card({
   const update = useLibrary((s) => s.update)
   const coverRef = useRef<HTMLDivElement>(null)
   const profile = item.profile ? profileSize(item.profile) : null
-  // 悬停时从底部升起的一排小图：各时期、服饰的首图
+  // 悬停时从底部升起：一行一个时期，后面跟着这个时期的服饰
   const peek = item.profile ? profilePeek(item.profile) : []
   return (
     <li className="home-card lib-card group relative">
@@ -379,15 +379,38 @@ function Card({
           )}
           {peek.length > 0 && (
             <span className="lib-card-peek" aria-hidden="true">
-              {peek.map((id, i) => (
-                <img
-                  key={id}
-                  src={thumb(id)}
-                  alt=""
-                  loading="lazy"
-                  draggable={false}
-                  style={{ '--i': i } as React.CSSProperties}
-                />
+              {peek.map((row, r) => (
+                <span key={row.id} className="lib-card-peek-row">
+                  <span
+                    className="lib-card-peek-period"
+                    style={{ '--i': r * 4 } as React.CSSProperties}
+                  >
+                    {row.image ? (
+                      <img src={thumb(row.image)} alt="" loading="lazy" draggable={false} />
+                    ) : (
+                      <Icon name="period" size={12} />
+                    )}
+                    <span className="truncate">{row.name}</span>
+                  </span>
+                  {row.outfits.map((id, i) => (
+                    <img
+                      key={id}
+                      src={thumb(id)}
+                      alt=""
+                      loading="lazy"
+                      draggable={false}
+                      style={{ '--i': r * 4 + i + 1 } as React.CSSProperties}
+                    />
+                  ))}
+                  {row.more > 0 && (
+                    <span
+                      className="lib-card-peek-more"
+                      style={{ '--i': r * 4 + 4 } as React.CSSProperties}
+                    >
+                      +{row.more}
+                    </span>
+                  )}
+                </span>
               ))}
             </span>
           )}
@@ -395,8 +418,8 @@ function Card({
         <div className="px-3 pt-2.5 pb-3">
           <div className="truncate text-sm font-medium">{item.name}</div>
           <div className="truncate text-xs text-ink-subtle">
-            {profile && (profile.periods || profile.expressions)
-              ? profileLine(profile)
+            {item.profile && profile && (profile.periods || profile.expressions)
+              ? profileLine(item.profile, profile)
               : tagLine(kind, item.tags) || `${item.images.length} 张参考图`}
           </div>
         </div>
@@ -432,25 +455,29 @@ function Card({
   )
 }
 
-/** 卡片底部一行：「3 时期 · 5 服饰 · 8 表情」 */
-function profileLine(n: ReturnType<typeof profileSize>) {
+/** 卡片底部一行：「少年 3 套 · 青年 2 套 · 8 表情」，一眼看出服饰挂在哪个时期 */
+function profileLine(p: NonNullable<LibraryItem['profile']>, n: ReturnType<typeof profileSize>) {
   return [
-    n.periods && `${n.periods} 时期`,
-    n.outfits && `${n.outfits} 服饰`,
+    ...p.periods.map((x) => (x.outfits.length ? `${x.name} ${x.outfits.length} 套` : x.name)),
     n.expressions && `${n.expressions} 表情`,
   ]
     .filter(Boolean)
     .join(' · ')
 }
 
-/** 悬停预览的小图：各时期首图在前，再是服饰、表情，最多 4 张 */
+/** 悬停预览：最多 3 个时期，每个时期带服饰首图，一行放不下 3 张时末格换成「+N」 */
 function profilePeek(p: NonNullable<LibraryItem['profile']>) {
-  const ids = [
-    ...p.periods.flatMap((x) => x.images.slice(0, 1)),
-    ...p.periods.flatMap((x) => x.outfits.flatMap((o) => o.images.slice(0, 1))),
-    ...p.expressions.flatMap((e) => e.images.slice(0, 1)),
-  ]
-  return [...new Set(ids)].slice(0, 4)
+  return p.periods.slice(0, 3).map((x) => {
+    const outfits = x.outfits.flatMap((o) => o.images.slice(0, 1))
+    const shown = outfits.length > 3 ? 2 : 3
+    return {
+      id: x.id,
+      name: x.name,
+      image: x.images[0] ?? null,
+      outfits: outfits.slice(0, shown),
+      more: Math.max(0, x.outfits.length - shown),
+    }
+  })
 }
 
 function OfficialCard({
@@ -653,7 +680,7 @@ function Editor({
   const size = profileSize(draft.profile)
   const tabs: Array<{ value: Tab; label: string; icon: IconName; extra?: number }> = [
     { value: 'basics', label: '设定', icon: 'character' },
-    { value: 'periods', label: '时期', icon: 'period', extra: size.periods || undefined },
+    { value: 'periods', label: '时期与服饰', icon: 'period', extra: size.periods || undefined },
     {
       value: 'expressions',
       label: '表情',
@@ -853,6 +880,7 @@ function Editor({
                   basics
                 ) : tab === 'periods' ? (
                   <PeriodsTab
+                    name={draft.name.trim() || kind.title}
                     profile={draft.profile}
                     onChange={(profile) => patch({ profile })}
                     media={media}

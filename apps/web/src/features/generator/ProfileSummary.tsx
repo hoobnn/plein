@@ -9,7 +9,7 @@ import { Icon } from '../../ui/icons'
 import { thumb } from '../library/LibraryFields'
 
 /**
- * 角色卡的档案摘要：各时期一排小圆图，下面是服饰、表情、次音色的数量和引用写法。
+ * 角色卡的档案摘要：各时期一排小圆图（带这个时期的服饰套数），下面是总数和引用写法。
  * 档案在资产库里编辑：卡片还没存进资产库时先存一次再打开。
  */
 export function ProfileSummary({ engine, el }: { engine: Engine; el: CanvasElement }) {
@@ -77,6 +77,9 @@ export function ProfileSummary({ engine, el }: { engine: Engine; el: CanvasEleme
                       <Icon name="period" size={12} />
                     )}
                     {p.name}
+                    {p.outfits.length > 0 && (
+                      <span className="text-ink-subtle tabular-nums">{p.outfits.length} 套</span>
+                    )}
                   </button>
                 </li>
               ))}

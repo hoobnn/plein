@@ -27,31 +27,74 @@
   transform: scale(1.03);
 }
 
-/* 档案小图：悬停时一张接一张从底部升起 */
+/* 档案小图：悬停时从底部升起，一行一个时期，后面跟着它的服饰 */
 .lib-card-peek {
   position: absolute;
   inset: auto 8px 8px;
   display: flex;
+  flex-direction: column;
   gap: 4px;
   pointer-events: none;
 }
-.lib-card-peek img {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-sm);
-  object-fit: cover;
-  box-shadow:
-    0 0 0 1.5px var(--surface),
-    var(--shadow-2);
+.lib-card-peek-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+.lib-card-peek-row > *,
+.lib-card-peek-period {
   opacity: 0;
   transform: translateY(8px) scale(0.92);
   transition:
     opacity var(--dur-base) var(--ease-standard),
     transform var(--dur-base) var(--ease-spring);
-  transition-delay: calc(var(--i) * 30ms);
+  transition-delay: calc(var(--i) * 20ms);
 }
-.lib-card:hover .lib-card-peek img,
-.lib-card:focus-within .lib-card-peek img {
+.lib-card-peek-period {
+  display: flex;
+  min-width: 0;
+  max-width: 72px;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 2px 2px;
+  border-radius: 999px;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--float);
+  box-shadow: var(--shadow-2);
+}
+.lib-card-peek-period > img {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 999px;
+  object-fit: cover;
+}
+.lib-card-peek-row > img,
+.lib-card-peek-more {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  box-shadow:
+    0 0 0 1.5px var(--surface),
+    var(--shadow-2);
+}
+.lib-card-peek-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-2xs);
+  color: var(--ink-muted);
+  background: var(--float);
+}
+.lib-card:hover .lib-card-peek-row > *,
+.lib-card:focus-within .lib-card-peek-row > * {
   opacity: 1;
   transform: none;
 }
@@ -171,55 +214,66 @@
   box-shadow: 0 0 0 2px var(--accent);
 }
 
-/* ── 时期：横向时间轴 ─────────────────────────── */
+/* ── 时期与服饰：一行一个时期，右边是它的服饰 ─── */
 
-.lib-timeline {
-  overflow-x: auto;
-  margin: 0 -4px;
-  padding: 4px;
-}
-.lib-timeline-track {
+.lib-lanes {
   position: relative;
   display: flex;
-  width: max-content;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
 }
-/* 串起各时期的细线，穿过缩略图中线 */
-.lib-timeline-track::before {
+/* 串起各时期的竖线，穿过左侧圆图中线：时期从上往下按先后排 */
+.lib-lanes::before {
   content: "";
   position: absolute;
-  top: 32px;
-  right: 40px;
-  left: 40px;
-  height: 1px;
+  top: 40px;
+  bottom: 40px;
+  left: 34px;
+  width: 1px;
   background: var(--line-strong);
 }
-.lib-timeline-node {
+.lib-lane {
   position: relative;
-  display: flex;
-  width: 88px;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr);
   align-items: center;
-  gap: 4px;
-  padding: 6px 4px 8px;
+  gap: 8px;
+  padding: 4px;
   border-radius: var(--radius-lg);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.lib-lane[data-active] {
+  background: var(--surface-2);
+}
+.lib-lane-period {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
   color: var(--ink-muted);
+  text-align: left;
   transition:
     background-color var(--dur-fast) var(--ease-standard),
     color var(--dur-fast) var(--ease-standard);
 }
-.lib-timeline-node:hover {
+.lib-lane-period:hover {
   background: var(--hover);
   color: var(--ink);
 }
-.lib-timeline-node[aria-pressed="true"] {
+.lib-lane[data-active] .lib-lane-period {
+  color: var(--ink);
+}
+.lib-lane-period[aria-pressed="true"] {
   background: var(--accent-soft);
   color: var(--accent);
 }
 .lib-timeline-thumb {
   display: flex;
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
+  flex: none;
   align-items: center;
   justify-content: center;
   overflow: hidden;
@@ -228,27 +282,100 @@
   box-shadow:
     0 0 0 3px var(--surface),
     inset 0 0 0 1px var(--line);
-  transition: transform var(--dur-base) var(--ease-spring);
+  transition:
+    transform var(--dur-base) var(--ease-spring),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.lib-lane[data-active] .lib-timeline-thumb {
+  box-shadow:
+    0 0 0 3px var(--surface-2),
+    inset 0 0 0 1px var(--line);
 }
 .lib-timeline-thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
-.lib-timeline-node:hover .lib-timeline-thumb {
+.lib-lane-period:hover .lib-timeline-thumb {
   transform: scale(1.05);
 }
-.lib-timeline-node[aria-pressed="true"] .lib-timeline-thumb {
+.lib-lane-period[aria-pressed="true"] .lib-timeline-thumb {
   box-shadow:
-    0 0 0 3px var(--surface),
+    0 0 0 3px var(--surface-2),
     0 0 0 5px var(--accent);
+}
+
+/* 这个时期的服饰：横排，多了横向滚动 */
+.lib-lane-outfits {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px;
+}
+.lib-lane-outfits > li {
+  width: 68px;
+  flex: none;
+}
+.lib-lane-outfits > li:has(> .lib-add-pop) {
+  width: auto;
+}
+
+/* 「添加时期」：和时期圆图对齐的一行 */
+.lib-lane-add {
+  display: block;
+}
+.lib-lane-add > .lib-timeline-node {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  color: var(--ink-subtle);
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+.lib-lane-add > .lib-timeline-node:hover {
+  background: var(--hover);
+  color: var(--ink);
 }
 .lib-timeline-add .lib-timeline-thumb {
   background: var(--surface);
-  box-shadow:
-    0 0 0 3px var(--surface),
-    inset 0 0 0 1px var(--line-strong);
   border: 1px dashed var(--line-strong);
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+/* 编辑区顶部的位置：时期 › 服饰 */
+.lib-crumbs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+.lib-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink);
+}
+button.lib-crumb:not(:disabled) {
+  color: var(--ink-muted);
+  transition:
+    background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+button.lib-crumb:not(:disabled):hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+button.lib-crumb:disabled {
+  opacity: 1;
+  cursor: default;
 }
 
 /* ── 服饰 / 表情网格 ──────────────────────────── */
@@ -388,4 +515,9 @@
 }
 .lib-look-grid > li:has(> .lib-add-pop) {
   grid-column: 1 / -1;
+}
+
+/* 能放到画布时卡片底部有「添加到画布」按钮，档案小图让到它上面 */
+.lib-card:has(.lib-card-place) .lib-card-peek {
+  bottom: 48px;
 }

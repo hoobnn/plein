@@ -18,11 +18,13 @@ import type { CanvasMedia } from './canvas'
 import { Icon, type IconName } from '../../ui/icons'
 import { SlideSwap } from '../../ui/Slide'
 import { CanvasPick, thumb, uploadAll } from './LibraryFields'
+import { Select } from '../../ui/Select'
 import { VoicePicker } from '../../ui/VoicePicker'
 
 /**
  * 角色档案的编辑：
- * - 时期：横向时间轴，选中一个时期编辑它的设定、参考图、主音色、状态次音色和多套服饰；
+ * - 时期与服饰：一行一个时期，右边排着这个时期的服饰；点时期改样貌、主音色、次音色，
+ *   点服饰改这一套（也能换到别的时期名下）；
  * - 表情：跨时期通用的表情网格。
  * 悬停任意一张图时左侧大图换成它（onPreview），选中的项钉住大图（onPin）。
  */
@@ -55,36 +57,47 @@ function freeName(profile: CharacterProfile, base: string) {
   return `${base}${Date.now() % 1000}`
 }
 
-// ── 时期 ───────────────────────────────────────────────
+// ── 时期与服饰 ─────────────────────────────────────────
+
+/** 选中的是一个时期，或某个时期下的一套服饰 */
+type PeriodSelection = { period: string; outfit?: string }
 
 export function PeriodsTab({
+  name,
   profile,
   onChange,
   media,
   hero,
 }: {
+  /** 角色名，拼引用写法用 */
+  name: string
   profile: CharacterProfile
   onChange(next: CharacterProfile): void
   media: CanvasMedia[]
   hero: HeroControl
 }) {
-  const [selected, setSelected] = useState<string | null>(profile.periods[0]?.id ?? null)
-  const period = profile.periods.find((p) => p.id === selected) ?? profile.periods[0]
+  const [sel, setSel] = useState<PeriodSelection | null>(() =>
+    profile.periods[0] ? { period: profile.periods[0].id } : null,
+  )
+  const period = profile.periods.find((p) => p.id === sel?.period) ?? profile.periods[0]
+  const outfit = period?.outfits.find((o) => o.id === sel?.outfit)
   const index = period ? profile.periods.indexOf(period) : -1
 
-  // 选中的时期钉住大图
+  // 选中项钉住大图：服饰没有图时退回它所属时期的图
   useEffect(() => {
-    hero.onPin(period?.images[0] ?? null, period ? `${period.name}时期` : undefined)
+    if (outfit)
+      hero.onPin(outfit.images[0] ?? period?.images[0] ?? null, `${period?.name} · ${outfit.name}`)
+    else hero.onPin(period?.images[0] ?? null, period ? `${period.name}时期` : undefined)
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- 只跟选中项和它的首图走
-  }, [period?.id, period?.images[0], period?.name])
+  }, [period?.id, period?.images[0], period?.name, outfit?.id, outfit?.images[0], outfit?.name])
 
   const setPeriods = (periods: ProfilePeriod[]) => onChange({ ...profile, periods })
-  const patch = (p: Partial<ProfilePeriod>) =>
-    period && setPeriods(profile.periods.map((x) => (x.id === period.id ? { ...x, ...p } : x)))
-  const add = (name: string) => {
+  const patchPeriod = (id: string, p: Partial<ProfilePeriod>) =>
+    setPeriods(profile.periods.map((x) => (x.id === id ? { ...x, ...p } : x)))
+  const addPeriod = (name: string) => {
     const next = emptyPeriod(freeName(profile, name))
     setPeriods([...profile.periods, next])
-    setSelected(next.id)
+    setSel({ period: next.id })
   }
   const move = (d: -1 | 1) => {
     if (!period) return
@@ -94,28 +107,73 @@ export function PeriodsTab({
     ;[list[index], list[j]] = [list[j]!, list[index]!]
     setPeriods(list)
   }
-  const remove = () => {
+  const removePeriod = () => {
     if (!period) return
     const rest = profile.periods.filter((x) => x.id !== period.id)
     setPeriods(rest)
-    setSelected(rest[Math.max(0, index - 1)]?.id ?? null)
+    const near = rest[Math.max(0, index - 1)]
+    setSel(near ? { period: near.id } : null)
+  }
+  const addOutfit = (owner: ProfilePeriod, name: string) => {
+    const look = emptyLook(freeName(profile, name))
+    patchPeriod(owner.id, { outfits: [...owner.outfits, look] })
+    setSel({ period: owner.id, outfit: look.id })
+  }
+  const patchOutfit = (p: Partial<ProfileLook>) =>
+    period &&
+    outfit &&
+    patchPeriod(period.id, {
+      outfits: period.outfits.map((o) => (o.id === outfit.id ? { ...o, ...p } : o)),
+    })
+  const removeOutfit = () => {
+    if (!period || !outfit) return
+    patchPeriod(period.id, { outfits: period.outfits.filter((o) => o.id !== outfit.id) })
+    setSel({ period: period.id })
+  }
+  /** 服饰换到另一个时期名下：名字在整个档案里唯一，挪过去不用改名 */
+  const moveOutfit = (to: string) => {
+    if (!period || !outfit || to === period.id) return
+    setPeriods(
+      profile.periods.map((p) =>
+        p.id === period.id
+          ? { ...p, outfits: p.outfits.filter((o) => o.id !== outfit.id) }
+          : p.id === to
+            ? { ...p, outfits: [...p.outfits, outfit] }
+            : p,
+      ),
+    )
+    setSel({ period: to, outfit: outfit.id })
   }
   const unused = PERIOD_PRESETS.filter((n) => !profile.periods.some((p) => p.name === n))
   const full = profile.periods.length >= PROFILE_LIMITS.periods
+  const outfitsUsed = new Set(profile.periods.flatMap((p) => p.outfits.map((o) => o.name)))
 
   return (
-    <div className="flex flex-col gap-5">
-      <section aria-label="时间轴" className="lib-timeline ui-scrollbar">
-        <ol className="lib-timeline-track">
-          {profile.periods.map((p) => (
-            <li key={p.id}>
+    <div className="flex flex-col gap-4">
+      {profile.periods.length === 0 ? (
+        <p className="text-sm text-ink-subtle">
+          一个角色通常会经历几个时期：童年、少年、青年……每个时期有自己的样貌、一个主音色和几套服饰。
+          在提示词里写 <code className="ui-kbd">@角色/少年/校服</code> 就能引用。
+        </p>
+      ) : (
+        <p className="text-xs text-ink-subtle">
+          每一行是一个时期，右边是这个时期穿的服饰。点时期改样貌和音色，点服饰改这一套；生成时按「基础设定
+          → 时期 → 服饰」叠加。
+        </p>
+      )}
+
+      <ol aria-label="时期与服饰" className="lib-lanes">
+        {profile.periods.map((p) => {
+          const on = p.id === period?.id
+          return (
+            <li key={p.id} className="lib-lane" data-active={on || undefined}>
               <button
                 type="button"
-                aria-pressed={p.id === period?.id}
-                onClick={() => setSelected(p.id)}
+                aria-pressed={on && !outfit}
+                onClick={() => setSel({ period: p.id })}
                 onPointerEnter={() => hero.onPreview(p.images[0] ?? null, `${p.name}时期`)}
                 onPointerLeave={() => hero.onPreview(null)}
-                className="lib-timeline-node"
+                className="lib-lane-period"
               >
                 <span className="lib-timeline-thumb">
                   {p.images[0] ? (
@@ -124,122 +182,299 @@ export function PeriodsTab({
                     <Icon name="period" size={16} />
                   )}
                 </span>
-                <span className="truncate text-sm font-medium">{p.name}</span>
-                <span className="text-2xs text-ink-subtle">
-                  {p.outfits.length ? `${p.outfits.length} 套服饰` : '没有服饰'}
+                <span className="flex min-w-0 flex-col items-start">
+                  <span className="max-w-full truncate text-sm font-medium">{p.name}</span>
+                  <span className="text-2xs text-ink-subtle tabular-nums">
+                    {p.outfits.length ? `${p.outfits.length} 套服饰` : '还没有服饰'}
+                  </span>
                 </span>
               </button>
+              <ul aria-label={`${p.name}的服饰`} className="lib-lane-outfits ui-scrollbar">
+                {p.outfits.map((o) => (
+                  <li key={o.id}>
+                    <button
+                      type="button"
+                      aria-pressed={on && o.id === outfit?.id}
+                      aria-label={`${p.name} · ${o.name}`}
+                      onClick={() => setSel({ period: p.id, outfit: o.id })}
+                      onPointerEnter={() =>
+                        hero.onPreview(o.images[0] ?? null, `${p.name} · ${o.name}`)
+                      }
+                      onPointerLeave={() => hero.onPreview(null)}
+                      className="lib-look"
+                    >
+                      <span className="lib-look-cover">
+                        {o.images[0] ? (
+                          <img src={thumb(o.images[0])} alt="" loading="lazy" draggable={false} />
+                        ) : (
+                          <Icon name="outfit" size={20} />
+                        )}
+                        {o.images.length > 1 && (
+                          <span className="ui-badge lib-look-count">{o.images.length}</span>
+                        )}
+                      </span>
+                      <span className="truncate px-1 text-xs font-medium">{o.name}</span>
+                    </button>
+                  </li>
+                ))}
+                {p.outfits.length < PROFILE_LIMITS.outfits && (
+                  <li>
+                    <AddMenu
+                      label="加服饰"
+                      presets={OUTFIT_PRESETS.filter((n) => !outfitsUsed.has(n))}
+                      onAdd={(n) => addOutfit(p, n)}
+                      icon="outfit"
+                      tile
+                    />
+                  </li>
+                )}
+              </ul>
             </li>
-          ))}
-          {!full && (
-            <li>
-              <AddMenu
-                label="添加时期"
-                presets={unused}
-                onAdd={add}
-                placeholder="如：大学"
-                icon="period"
-              />
-            </li>
-          )}
-        </ol>
-      </section>
+          )
+        })}
+        {!full && (
+          <li className="lib-lane lib-lane-add">
+            <AddMenu
+              label="添加时期"
+              presets={unused}
+              onAdd={addPeriod}
+              placeholder="如：大学"
+              icon="period"
+            />
+          </li>
+        )}
+      </ol>
 
-      {!period ? (
-        <p className="text-sm text-ink-subtle">
-          一个角色通常会经历几个时期：童年、少年、青年……每个时期有自己的样貌、一个主音色和几套服饰。
-          在提示词里写 <code className="ui-kbd">@角色/少年/校服</code> 就能引用。
-        </p>
-      ) : (
-        <SlideSwap key={period.id} index={index}>
-          <div className="flex flex-col gap-5">
-            <div className="flex items-end gap-2">
-              <NameField
-                label="时期名"
+      {period && (
+        <SlideSwap key={`${period.id}:${outfit?.id ?? ''}`} index={index}>
+          <div className="lib-look-editor">
+            <nav aria-label="当前位置" className="lib-crumbs">
+              <button
+                type="button"
+                disabled={!outfit}
+                onClick={() => setSel({ period: period.id })}
+                className="lib-crumb"
+              >
+                <Icon name="period" size={14} />
+                {period.name}
+              </button>
+              {outfit && (
+                <>
+                  <span className="text-ink-subtle">
+                    <Icon name="chevronRight" size={12} />
+                  </span>
+                  <span className="lib-crumb" aria-current="true">
+                    <Icon name="outfit" size={14} />
+                    {outfit.name}
+                  </span>
+                </>
+              )}
+              <code className="ui-kbd ml-auto truncate">
+                @{name}/{period.name}
+                {outfit ? `/${outfit.name}` : ''}
+              </code>
+            </nav>
+            {outfit ? (
+              <OutfitFields
+                key={outfit.id}
                 profile={profile}
-                item={period}
-                onRename={(name) => patch(renamed(period, name))}
+                period={period}
+                outfit={outfit}
+                media={media}
+                hero={hero}
+                onPatch={patchOutfit}
+                onMove={moveOutfit}
+                onRemove={removeOutfit}
               />
-              <div className="flex flex-none gap-1 pb-0.5">
-                <button
-                  type="button"
-                  aria-label="往前挪"
-                  title="往前挪"
-                  disabled={index === 0}
-                  onClick={() => move(-1)}
-                  className="ui-btn ui-btn-quiet ui-icon-btn"
-                >
-                  <Icon name="chevronLeft" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="往后挪"
-                  title="往后挪"
-                  disabled={index === profile.periods.length - 1}
-                  onClick={() => move(1)}
-                  className="ui-btn ui-btn-quiet ui-icon-btn"
-                >
-                  <Icon name="chevronRight" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={`删除时期「${period.name}」`}
-                  title="删除这个时期"
-                  onClick={remove}
-                  className="ui-btn ui-btn-quiet ui-icon-btn hover:text-danger"
-                >
-                  <Icon name="trash" />
-                </button>
-              </div>
-            </div>
-            <label className="ui-field">
-              <span className="ui-label">这一时期的样子</span>
-              <textarea
-                className="ui-input h-20"
-                value={period.description}
-                maxLength={1000}
-                placeholder="只写和基础设定不一样的地方：年龄、身高、脸型、发型，如：十五岁，扎高马尾，脸更圆"
-                onChange={(e) => patch({ description: e.target.value })}
+            ) : (
+              <PeriodFields
+                profile={profile}
+                period={period}
+                index={index}
+                media={media}
+                hero={hero}
+                onPatch={(p) => patchPeriod(period.id, p)}
+                onMove={move}
+                onRemove={removePeriod}
               />
-            </label>
-            <ImageStrip
-              label="参考图"
-              hint="这一时期的正面全身或半身，生成时排在最前面"
-              images={period.images}
-              media={media}
-              hero={hero}
-              onChange={(images) => patch({ images })}
-            />
-            <div className="ui-field">
-              <span className="ui-label">主音色</span>
-              <VoicePicker
-                value={period.voice ?? noVoice}
-                onChange={(voice) => patch({ voice: voice.voiceId.trim() ? voice : null })}
-              />
-              <span className="text-xs text-ink-subtle">留空则沿用角色的基础音色</span>
-            </div>
-            <VoiceStates
-              profile={profile}
-              states={period.voiceStates}
-              onChange={(voiceStates) => patch({ voiceStates })}
-            />
-            <LookGrid
-              title="服饰造型"
-              icon="outfit"
-              profile={profile}
-              looks={period.outfits}
-              max={PROFILE_LIMITS.outfits}
-              presets={OUTFIT_PRESETS}
-              aspect="portrait"
-              descriptionPlaceholder="款式、颜色、材质、配饰，如：蓝白运动校服，袖口有校徽，白球鞋"
-              media={media}
-              hero={hero}
-              onChange={(outfits) => patch({ outfits })}
-            />
+            )}
           </div>
         </SlideSwap>
       )}
     </div>
+  )
+}
+
+/** 一个时期自己的设定：名字、样貌、参考图、主音色、状态次音色 */
+function PeriodFields({
+  profile,
+  period,
+  index,
+  media,
+  hero,
+  onPatch,
+  onMove,
+  onRemove,
+}: {
+  profile: CharacterProfile
+  period: ProfilePeriod
+  index: number
+  media: CanvasMedia[]
+  hero: HeroControl
+  onPatch(p: Partial<ProfilePeriod>): void
+  onMove(d: -1 | 1): void
+  onRemove(): void
+}) {
+  return (
+    <>
+      <div className="flex items-end gap-2">
+        <NameField
+          label="时期名"
+          profile={profile}
+          item={period}
+          onRename={(name) => onPatch(renamed(period, name))}
+        />
+        <div className="flex flex-none gap-1 pb-0.5">
+          <button
+            type="button"
+            aria-label="往前挪"
+            title="往前挪"
+            disabled={index === 0}
+            onClick={() => onMove(-1)}
+            className="ui-btn ui-btn-quiet ui-icon-btn"
+          >
+            <Icon name="arrowUp" />
+          </button>
+          <button
+            type="button"
+            aria-label="往后挪"
+            title="往后挪"
+            disabled={index === profile.periods.length - 1}
+            onClick={() => onMove(1)}
+            className="ui-btn ui-btn-quiet ui-icon-btn"
+          >
+            <Icon name="arrowDown" />
+          </button>
+          <button
+            type="button"
+            aria-label={`删除时期「${period.name}」`}
+            title={
+              period.outfits.length
+                ? `删除这个时期和它的 ${period.outfits.length} 套服饰`
+                : '删除这个时期'
+            }
+            onClick={onRemove}
+            className="ui-btn ui-btn-quiet ui-icon-btn hover:text-danger"
+          >
+            <Icon name="trash" />
+          </button>
+        </div>
+      </div>
+      <label className="ui-field">
+        <span className="ui-label">这一时期的样子</span>
+        <textarea
+          className="ui-input h-20"
+          value={period.description}
+          maxLength={1000}
+          placeholder="只写和基础设定不一样的地方：年龄、身高、脸型、发型，如：十五岁，扎高马尾，脸更圆"
+          onChange={(e) => onPatch({ description: e.target.value })}
+        />
+      </label>
+      <ImageStrip
+        label="参考图"
+        hint="这一时期的正面全身或半身，生成时排在最前面"
+        images={period.images}
+        media={media}
+        hero={hero}
+        onChange={(images) => onPatch({ images })}
+      />
+      <div className="ui-field">
+        <span className="ui-label">主音色</span>
+        <VoicePicker
+          value={period.voice ?? noVoice}
+          onChange={(voice) => onPatch({ voice: voice.voiceId.trim() ? voice : null })}
+        />
+        <span className="text-xs text-ink-subtle">留空则沿用角色的基础音色</span>
+      </div>
+      <VoiceStates
+        profile={profile}
+        states={period.voiceStates}
+        onChange={(voiceStates) => onPatch({ voiceStates })}
+      />
+    </>
+  )
+}
+
+/** 一套服饰：属于哪个时期、描述、参考图 */
+function OutfitFields({
+  profile,
+  period,
+  outfit,
+  media,
+  hero,
+  onPatch,
+  onMove,
+  onRemove,
+}: {
+  profile: CharacterProfile
+  period: ProfilePeriod
+  outfit: ProfileLook
+  media: CanvasMedia[]
+  hero: HeroControl
+  onPatch(p: Partial<ProfileLook>): void
+  onMove(periodId: string): void
+  onRemove(): void
+}) {
+  return (
+    <>
+      <div className="flex items-end gap-2">
+        <NameField
+          label="服饰名"
+          profile={profile}
+          item={outfit}
+          onRename={(name) => onPatch(renamed(outfit, name))}
+        />
+        <div className="ui-field w-36 flex-none">
+          <span className="ui-label">属于时期</span>
+          <Select
+            aria-label="属于时期"
+            value={period.id}
+            options={profile.periods.map((p) => ({ value: p.id, label: p.name }))}
+            onChange={onMove}
+          />
+        </div>
+        <button
+          type="button"
+          aria-label={`删除服饰「${outfit.name}」`}
+          title="删除这套服饰"
+          onClick={onRemove}
+          className="ui-btn ui-btn-quiet ui-icon-btn mb-0.5 flex-none hover:text-danger"
+        >
+          <Icon name="trash" />
+        </button>
+      </div>
+      <label className="ui-field">
+        <span className="ui-label">这套服饰</span>
+        <textarea
+          className="ui-input h-16"
+          value={outfit.description}
+          maxLength={1000}
+          placeholder="款式、颜色、材质、配饰，如：蓝白运动校服，袖口有校徽，白球鞋"
+          onChange={(e) => onPatch({ description: e.target.value })}
+        />
+        <span className="text-xs text-ink-subtle">
+          穿在「{period.name}」时期的样子上：年龄、发型沿用那个时期，这里只写衣着
+        </span>
+      </label>
+      <ImageStrip
+        label="参考图"
+        hint={`${period.name}时期穿这一套的全身图`}
+        images={outfit.images}
+        media={media}
+        hero={hero}
+        onChange={(images) => onPatch({ images })}
+      />
+    </>
   )
 }
 
