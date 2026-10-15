@@ -8,6 +8,7 @@ interface RawElement {
   nodeType?: string
   parentId: string | null
   assetId?: string
+  text?: string
   params?: Record<string, unknown>
   run?: { status: string }
   results?: Array<{ id: string; value: Record<string, unknown> }>
@@ -22,6 +23,14 @@ declare global {
           get(id: string): RawElement | undefined
           /** 元素底层的 Y.Map（只有 L4 用它模拟在面板里改参数） */
           mutable(id: string): { get(key: string): unknown } | undefined
+          /** markdown 元素正文的 Y.Text（L4 用它换掉模板创意） */
+          getText(id: string):
+            | {
+                length: number
+                delete(i: number, n: number): void
+                insert(i: number, s: string): void
+              }
+            | undefined
           worldRect(id: string): { x: number; y: number; w: number; h: number }
         }
         worldToClient(x: number, y: number): { x: number; y: number }

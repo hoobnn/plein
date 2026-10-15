@@ -1,5 +1,5 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
-import { closeSync, mkdirSync, mkdtempSync, openSync, rmSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
@@ -20,7 +20,8 @@ import {
 } from '../canvas'
 
 /**
- * L4：真实平台跑一部 6 镜头短剧，从模板到导出带字幕的 MP4。
+ * L4：真实平台把同人故事《环太平洋：彼岸》做成一部 6 镜头竖屏短剧，从模板到导出带字幕的 MP4。
+ * 新建项目「环太平洋：彼岸」，铺短剧模板后把「创意 / 梗概」换成这部故事，剧本、设定卡、分镜都由它生成。
  * 中途在镜头视频生成时强杀服务端再起来，核对任务按原来的远端任务续查、没有重复提交。
  * 产物和日志留在 PLEIN_L4_DATA 里，声画同步、衔接、字幕由人看成片判定。
  * 第三个用例在出片画布上验收 0.2：实际输入与提交一致、查看影响只重做第三镜头、
@@ -34,10 +35,46 @@ const SHOTS = 6
 const VIDEO_MODEL = process.env.PLEIN_L4_VIDEO_MODEL ?? 'minimax/api:MiniMax-H3'
 const VIDEO_RESOLUTION = process.env.PLEIN_L4_VIDEO_RESOLUTION ?? '768P'
 const BOARD = '分镜（双击展开镜头）'
+const TITLE = '环太平洋：彼岸'
+
+/** 替换模板「创意 / 梗概」的故事：从长片大纲里截出能在 60–90 秒讲完的一段 */
+const IDEA = `# 创意 / 梗概
+
+一句话故事：2038 年，怪兽再次登陆。真子生前留下的原始记录指向一座藏在裂缝另一侧的设施，可那里也是敌人控制纽特的中继；赫尔曼必须在三台机甲远征的同时，把困在控制里的老朋友带回来。
+
+- 片名：环太平洋：彼岸（同人短片，非官方）
+- 类型：机甲科幻
+- 画幅：竖屏 9:16
+- 节奏：60–90 秒，开场三秒是港口巨物战斗，结尾留钩子：纽特问「如果回来的不是我」
+- 故事线：
+  1. 雨夜港口，怪兽撞向码头起重机；流浪者远征型挡在撤离人群前，一拳击倒怪兽
+  2. 邵丽雯把真子生前要求保全的原始记录交给赫尔曼，纸上有真子用红笔圈出的两个对不上的批次编号
+  3. 隔离监护室里，纽特隔着玻璃求赫尔曼「别连进来」，赫尔曼坐下戴上漂移头盔
+  4. 驾驶舱模拟训练中断，阿玛拉解开固定装置质问杰克：「你又准备一个人留下？」
+  5. 机甲拖着固定好的怪兽遗体沉入海底裂缝，前方是橙色雾霭里的巨大生物工厂
+  6. 监护室监测数值报警，纽特第一次清醒地看着赫尔曼：「如果回来的不是我……」赫尔曼：「我不会只凭你的话判断。」
+- 角色：
+  - 杰克：男，三十多岁，流浪者远征型驾驶员，寸头，眼神倔，总想一个人扛下风险
+  - 阿玛拉：女，二十岁出头，驾驶员兼机械工程师，深色卷发扎高马尾，脸上有机油印
+  - 赫尔曼：男，四十多岁，数学家，拄手杖，一丝不苟的西装和细框眼镜
+  - 纽特：男，四十多岁，生物学家，凌乱头发、手臂满是纹身，眼神时而空洞时而清醒
+- 场景：雨夜港口与倒塌的起重机；昏暗的隔离监护室，冷白灯光与监测屏；海底裂缝与橙色雾霭中的异界工厂
+- 关键道具：真子的原始记录（一沓泛黄的交付单，红笔圈注）；流浪者远征型（蓝灰色新造双人机甲，胸口有核心灯）`
 
 test.skip(!DATA, '需要 PLEIN_L4_DATA：配好平台密钥的数据目录（会产生真实费用）')
 
 let server: ChildProcess | null = null
+
+/**
+ * 序列导出要烧字幕，需要带 libass 的 ffmpeg；Homebrew 默认的没有。
+ * 没指定 PLEIN_FFMPEG_PATH 时用桌面端打包好的（`pnpm --filter @plein/desktop ffmpeg` 构建）
+ */
+function ffmpegEnv(): Record<string, string> {
+  if (process.env.PLEIN_FFMPEG_PATH) return {}
+  const dir = join(ROOT, 'apps/desktop/stage/ffmpeg')
+  if (!existsSync(join(dir, 'ffmpeg'))) return {}
+  return { PLEIN_FFMPEG_PATH: join(dir, 'ffmpeg'), PLEIN_FFPROBE_PATH: join(dir, 'ffprobe') }
+}
 
 /** 在 dir 上起一个服务端，等它能响应；日志写到 dir/logs/l4-server.log */
 async function spawnServer(dir: string, port: number, env: Record<string, string> = {}) {
@@ -54,6 +91,7 @@ async function spawnServer(dir: string, port: number, env: Record<string, string
       PLEIN_DATA_DIR: dir,
       PLEIN_WEB_DIST: join(ROOT, 'apps/web/dist-e2e'),
       PLEIN_AGENT: '0',
+      ...ffmpegEnv(),
       ...env,
     },
   })
@@ -215,12 +253,51 @@ async function prepareBoard(page: Page, id: string) {
 
 test.describe.configure({ mode: 'serial' })
 
-/** 第一个用例出片的画布；单独跑资产库用例时用 PLEIN_L4_CANVAS 指定，不给就取数据目录里最近的画布 */
+/** 数据目录里「环太平洋：彼岸」项目最近的画布 */
+function latestFilmCanvas() {
+  return execFileSync(
+    'sqlite3',
+    [
+      join(DATA!, 'plein.db'),
+      `SELECT c.id FROM canvases c JOIN projects p ON p.id = c.project_id WHERE p.title = '${TITLE}' ORDER BY c.created_at DESC LIMIT 1`,
+    ],
+    { encoding: 'utf8' },
+  ).trim()
+}
+
+/** 第一个用例出片的画布；单独跑后两个用例时用 PLEIN_L4_CANVAS 指定，不给就取「环太平洋：彼岸」最近的画布 */
 let filmCanvas = process.env.PLEIN_L4_CANVAS ?? ''
 /** 接着跑一块已经铺好模板、出过设定卡并展开镜头的画布（前一次在出图之后断了），省掉前面的对话和出图 */
 const RESUME = process.env.PLEIN_L4_RESUME ?? ''
 
-test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务', async ({ page }) => {
+/** 把画布所在项目改名 */
+async function renameProject(page: Page, canvas: string, title: string) {
+  const project = execFileSync(
+    'sqlite3',
+    [join(DATA!, 'plein.db'), `SELECT project_id FROM canvases WHERE id = '${canvas}'`],
+    { encoding: 'utf8' },
+  ).trim()
+  const r = await page.request.patch(`/api/projects/${project}`, { data: { title } })
+  expect(r.status()).toBe(200)
+}
+
+/** 把模板的「创意 / 梗概」整段换成这部故事 */
+async function writeIdea(page: Page) {
+  const idea = await byName(page, '创意 / 梗概')
+  await page.evaluate(
+    ({ id, text }) => {
+      const t = window.__plein.engine.doc.getText(id)!
+      t.delete(0, t.length)
+      t.insert(0, text)
+    },
+    { id: idea.id, text: IDEA },
+  )
+  await expect
+    .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.text ?? '', idea.id))
+    .toContain(TITLE)
+}
+
+test('真实平台：《环太平洋：彼岸》6 镜头短剧从模板到字幕成片，中途重启服务', async ({ page }) => {
   await startServer()
   test.info().annotations.push({ type: '数据目录', description: DATA! })
   if (RESUME) {
@@ -232,6 +309,10 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
     await expect(page.locator('.ui-toast')).toContainText('短剧模板已铺出')
   }
   const canvas = page.url().split('#/c/')[1]!.split(/[/?]/)[0]!
+  if (!RESUME) {
+    await renameProject(page, canvas, TITLE)
+    await writeIdea(page)
+  }
   filmCanvas = canvas
   note('画布', RESUME ? `${canvas}（接着跑）` : canvas)
   const models = await page.evaluate(() =>
@@ -284,7 +365,7 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
   )
   expect(ofType('plein/character').length).toBeGreaterThanOrEqual(2)
   expect(ofType('plein/scene').length).toBeGreaterThanOrEqual(1)
-  // 一个上锁的铁盒贯穿全片，抽取得出道具
+  // 真子的原始记录贯穿全片，抽取得出道具
   expect(ofType('plein/prop').length).toBeGreaterThanOrEqual(1)
   // 每张卡左边配好参考图节点，连进卡片
   const all0 = await elements(page)
@@ -294,11 +375,17 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
     const into = await edgesInto(page, c.id)
     expect(into.map(([from]) => from)).toContain(ref!.id)
   }
-  // 角色都配上音色，男女角色不共用一个声音
+  // 抽取标了男 / 女的角色都配上音色，男女角色不共用一个声音；看不出性别的（比如怪兽）按设计不配
   const chars = ofType('plein/character')
   note('音色', chars.map((c) => `${c.name}=${c.voiceId || '（未配）'}`).join('；'))
-  expect(chars.filter((c) => !c.voiceId).map((c) => c.name)).toEqual([])
-  expect(new Set(chars.map((c) => c.voiceId)).size).toBeGreaterThanOrEqual(2)
+  // 抽取结果按 ### 切成每张卡的一段，段首是名字
+  const sections = entries.split(/^###\s+/m)
+  const gendered = (name: string) =>
+    sections.some(
+      (sec) => sec.replace(/\*\*/g, '').startsWith(name) && /性别[：:]\s*[男女]/.test(sec),
+    )
+  expect(chars.filter((c) => gendered(c.name) && !c.voiceId).map((c) => c.name)).toEqual([])
+  expect(new Set(chars.map((c) => c.voiceId).filter(Boolean)).size).toBeGreaterThanOrEqual(2)
 
   let dialog: Awaited<ReturnType<typeof openBoard>>
   if (!RESUME) {
@@ -468,14 +555,7 @@ test('真实平台：6 镜头短剧从模板到字幕成片，中途重启服务
 
 test('资产库：出片画布上的角色、场景、道具存进资产库，在新项目里取用', async ({ page }) => {
   if (!server) await startServer()
-  if (!filmCanvas) {
-    const out = execFileSync(
-      'sqlite3',
-      [join(DATA!, 'plein.db'), 'SELECT id FROM canvases ORDER BY created_at DESC LIMIT 1'],
-      { encoding: 'utf8' },
-    )
-    filmCanvas = out.trim()
-  }
+  if (!filmCanvas) filmCanvas = latestFilmCanvas()
   note('画布', filmCanvas)
   await page.goto(`/#/c/${filmCanvas}`)
   await waitEngine(page)
@@ -527,7 +607,8 @@ test('资产库：出片画布上的角色、场景、道具存进资产库，�
   for (const c of saved) {
     const i = itemOf(c.name)!
     expect(i.images.length, `${c.name} 的参考图`).toBeGreaterThan(0)
-    if (c.nodeType === 'plein/character') {
+    // 配了音色的角色连音色和性别一起存；怪兽这类没性别的不配音色
+    if (c.nodeType === 'plein/character' && c.voiceId) {
       expect(i.voice?.voiceId).toBe(c.voiceId)
       expect(i.tags.gender).toBeTruthy()
     }
@@ -536,8 +617,9 @@ test('资产库：出片画布上的角色、场景、道具存进资产库，�
   // 换一个项目，从资产库把角色、场景、道具各取一张放到画布：卡片带着设定、参考图和音色
   await newProject(page)
   const panel = page.getByRole('dialog', { name: '资产库' })
+  // 角色取一个配了音色的，核对音色跟着过来
   const picks = ['character', 'scene', 'prop'].map((k) =>
-    saved.find((c) => itemOf(c.name)?.kind === k)!,
+    saved.find((c) => itemOf(c.name)?.kind === k && (k !== 'character' || c.voiceId))!,
   )
   // 添加到画布后面板会收起，每取一项重新打开
   for (const c of picks) {
@@ -628,14 +710,7 @@ interface Job {
 
 test('0.2：实际输入、查看影响返工、项目包迁移、修改方案', async ({ page }) => {
   if (!server) await startServer()
-  if (!filmCanvas) {
-    const out = execFileSync(
-      'sqlite3',
-      [join(DATA!, 'plein.db'), 'SELECT id FROM canvases ORDER BY created_at DESC LIMIT 1'],
-      { encoding: 'utf8' },
-    )
-    filmCanvas = out.trim()
-  }
+  if (!filmCanvas) filmCanvas = latestFilmCanvas()
   const canvas = filmCanvas
   note('画布', canvas)
   await page.goto(`/#/c/${canvas}`)
@@ -672,9 +747,9 @@ test('0.2：实际输入、查看影响返工、项目包迁移、修改方案',
   const t2 = Date.now()
   let dialog = await openBoard(page, board.id)
   const line = dialog.getByLabel('台词').nth(2)
-  await line.fill(`${await line.inputValue()}……不，这盒子不是我的。`)
+  await line.fill(`${await line.inputValue()}……先把记录核对清楚。`)
   const shotPrompt = dialog.getByLabel('分镜图提示词').nth(2)
-  await shotPrompt.fill(`${await shotPrompt.inputValue()}，雨水顺着锁扣往下流`)
+  await shotPrompt.fill(`${await shotPrompt.inputValue()}，监测屏的冷光映在玻璃上`)
   await dialog.getByLabel('时长').first().click()
   await dialog.getByRole('button', { name: '查看影响' }).click()
   const impact = page.getByRole('dialog', { name: '查看影响' })

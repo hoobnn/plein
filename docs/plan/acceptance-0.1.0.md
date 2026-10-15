@@ -304,10 +304,10 @@ pnpm smoke       # 14 项全通过
 | W3 恢复操作（真实平台） | 要真实视频平台，3 段视频计费；2026-10-15 用户决定暂不跑 | `PLEIN_L4_DATA=<数据目录> pnpm --filter @plein/server bench:recovery:real`（`PLEIN_L4_DRY_RUN=1` 先用 mock 演练，已通过） |
 | 完成可用镜头的生成次数  | 要按镜头人工判定可用                                    | 用上次 L4 的数据目录统计，零调用                                                                                          |
 
-L4 用例在 `e2e/real/drama.l4.ts`，单独的配置 `e2e/playwright.l4.config.ts`，不进 `pnpm e2e` 和 CI。它自己起停服务端，分两个用例：
+L4 用例在 `e2e/real/pacific-rim.l4.ts`，单独的配置 `e2e/playwright.l4.config.ts`，不进 `pnpm e2e` 和 CI。样片故事是同人短片《环太平洋：彼岸》：用例新建同名项目，铺短剧模板后把「创意 / 梗概」换成这部故事（此前的记录用的是模板自带的「铁盒」创意）。它自己起停服务端，分三个用例：
 
-- 出片：模板改成 6 镜头 → 剧本、抽取、设定卡（核对参考图节点、音色）→ 展开（核对镜头 @ 到角色、场景、道具）→ 批量分镜图 → 批量视频，等至少一个视频已提交到平台后强杀服务端再起来，核对重启前后任务记下的远端调用一致（续查原任务、没有重复提交）→ 批量配音 → 配乐 → 导出。
-- 资产库：出片画布上的卡片存入资产库，在新项目按类别取用。该用例不产生调用费用，可以用 `PLEIN_L4_CANVAS=<画布 id> pnpm e2e:real --grep 资产库` 单独运行。
+- 出片：换上故事、模板改成 6 镜头 → 剧本、抽取、设定卡（核对参考图节点、音色）→ 展开（核对镜头 @ 到角色、场景、道具）→ 批量分镜图 → 批量视频，等至少一个视频已提交到平台后强杀服务端再起来，核对重启前后任务记下的远端调用一致（续查原任务、没有重复提交）→ 批量配音 → 配乐 → 导出。
+- 资产库：出片画布上的卡片存入资产库，在新项目按类别取用。该用例不产生调用费用，可以用 `pnpm e2e:real --grep 资产库` 单独运行，默认取「环太平洋：彼岸」最近的画布，也可用 `PLEIN_L4_CANVAS=<画布 id>` 指定。
 - 0.2：在出片画布上核对实际输入与上次提交一致；改第三镜头后从「查看影响」按推荐默认重做（分镜图、配音各一次，视频保留）；导出项目包、在全新数据目录导入并重新合成；外部应用经 MCP 提修改方案，只改文字（零调用）、只给第四镜头出候选图（一次）。可以用 `PLEIN_L4_CANVAS=<画布 id> pnpm e2e:real --grep 0.2` 单独运行。
 
 前一次在出图之后断了，可以用 `PLEIN_L4_RESUME=<画布 id>` 接着跑出片用例（跳过剧本、设定卡和展开）。
@@ -317,3 +317,5 @@ L4 用例在 `e2e/real/drama.l4.ts`，单独的配置 `e2e/playwright.l4.config.
 ```bash
 PLEIN_L4_DATA=<配好平台的数据目录> PLEIN_FFMPEG_PATH=<带 libass 的 ffmpeg> PLEIN_FFPROBE_PATH=<ffprobe> pnpm e2e:real
 ```
+
+不给 `PLEIN_FFMPEG_PATH` 时，用例自动用桌面端打包好的 `apps/desktop/stage/ffmpeg`（带 libass，`pnpm --filter @plein/desktop ffmpeg` 构建）；Homebrew 默认的 ffmpeg 没有 libass，序列导出烧字幕会失败。
