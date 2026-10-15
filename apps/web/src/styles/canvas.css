@@ -719,9 +719,7 @@
   color: var(--ink-subtle);
 }
 
-/* 首页画布卡片的预览底：点阵，暂代缩略图 */
+/* 首页画布卡片的预览底：顶部稍亮的柔和渐变，暂代缩略图 */
 .plein-thumb {
-  background:
-    radial-gradient(circle at 1px 1px, var(--line-strong) 1px, transparent 0) 0 0 / 16px 16px,
-    var(--canvas);
+  background: radial-gradient(120% 90% at 50% 0%, var(--hover), transparent 70%), var(--surface-2);
 }

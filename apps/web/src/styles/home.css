@@ -76,15 +76,15 @@
   justify-content: center;
   gap: 6px;
   border-radius: var(--radius-xl);
-  border: 1.5px dashed var(--line-strong);
+  background: var(--hover);
   color: var(--ink-muted);
   transition:
-    border-color var(--dur-fast),
-    background-color var(--dur-fast);
+    background-color var(--dur-fast),
+    color var(--dur-fast);
 }
 .home-new:hover {
-  border-color: var(--ink-subtle);
-  background: var(--hover);
+  background: var(--active);
+  color: var(--ink);
 }
 .home-new-icon {
   display: flex;

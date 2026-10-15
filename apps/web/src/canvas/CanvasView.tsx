@@ -170,7 +170,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
       // 本地缓存：上次打开过的画布不等服务端，先用缓存显示，同步完再补齐差异
       const local = openLocalCache(canvasId, ydoc)
       const provider = new WebsocketProvider(syncUrl(), canvasId, ydoc)
-      provider.awareness.setLocalStateField('user', { name: '我', color: '#4177d0' })
+      provider.awareness.setLocalStateField('user', { name: '我', color: '#2869f0' })
       provider.on('status', ({ status }: { status: string }) => {
         setSync(
           status === 'connected'
