@@ -31,6 +31,7 @@ import {
   Image,
   ImagePlay,
   Images,
+  Info,
   Keyboard,
   Languages,
   Layers,
@@ -147,6 +148,7 @@ const ICONS = {
   transition: Blend,
   speed: Gauge,
   exportFile: FileOutput,
+  info: Info,
   // 元素与节点类型
   frame: Frame,
   doc: FileText,

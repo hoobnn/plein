@@ -107,7 +107,10 @@ test('短剧模板：插入 → 跑骨架 → 展开 → 批量 → 导出', asy
   await expect(editor).toBeVisible()
   await expect(editor.getByText(`${shotVideos.length} 段`).first()).toBeVisible()
   if (!hasLibass()) {
-    await editor.getByRole('checkbox', { name: '字幕', exact: true }).uncheck()
+    await editor.getByRole('button', { name: '成片', exact: true }).click()
+    const subtitles = editor.getByRole('switch', { name: '开启字幕' })
+    if ((await subtitles.getAttribute('aria-checked')) === 'true') await subtitles.click()
+    await expect(subtitles).toHaveAttribute('aria-checked', 'false')
     test
       .info()
       .annotations.push({ type: '降级', description: '本机 ffmpeg 无 libass，导出未烧字幕' })

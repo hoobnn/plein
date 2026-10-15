@@ -13,7 +13,7 @@ import {
   TRANSITIONS,
 } from '@plein/nodes'
 import type { PortValue } from '@plein/plugin-sdk'
-import { useEffect, useRef, useState } from 'react'
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
 import { downloadAsset } from '../../canvas/grid'
 import { useDocVersion } from '../../canvas/hooks'
@@ -25,7 +25,9 @@ import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { Segmented } from '../../ui/Segmented'
 import { Select } from '../../ui/Select'
+import { Switch } from '../../ui/Switch'
 import { SequencePreview } from './SequencePreview'
 import { Presence } from '../../ui/Presence'
 import { EmptyState } from '../../ui/EmptyState'
@@ -116,6 +118,13 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const [playhead] = useState(() => new Playhead())
   useEffect(() => () => playhead.dispose(), [playhead])
   const [selected, setSelected] = useState<string | undefined>()
+  /** 检查器显示选中镜头的设置还是整部成片的设置 */
+  const [tab, setTab] = useState<'clip' | 'film'>('clip')
+  // 在时间线上点了镜头就切回镜头设置
+  const select = (key: string | undefined) => {
+    setSelected(key)
+    if (key) setTab('clip')
+  }
   /** 正在拖动修剪的那段：松手前只改显示，不写文档 */
   const [draft, setDraft] = useState<{ key: string; patch: TrimPatch } | null>(null)
   const rows = read.rows.map((r, i) => {
@@ -307,7 +316,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         title={el?.name ?? '序列'}
         onClose={onClose}
         meta={
-          <span className="ui-chip">
+          <span className="ui-chip tabular-nums">
             {rows.length} 段{total !== undefined && ` · ${total.toFixed(1)} 秒`}
           </span>
         }
@@ -324,7 +333,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         )}
         <button
           type="button"
-          className="ui-btn ui-btn-secondary"
+          className="ui-btn ui-btn-quiet"
           disabled={packing || rows.length === 0 || !known}
           title={
             pending
@@ -339,13 +348,14 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         {filmAsset && !running && (
           <button
             type="button"
-            className="ui-btn ui-btn-secondary"
+            className="ui-btn ui-btn-quiet"
             title="把导出的成片保存到电脑上"
             onClick={() => downloadAsset(filmAsset, `${el?.name ?? '成片'}.mp4`)}
           >
             {desktop ? '另存为…' : '下载成片'}
           </button>
         )}
+        <span aria-hidden="true" className="ui-bar-sep" />
         <button
           type="button"
           className={running ? 'ui-btn ui-btn-secondary' : 'ui-btn ui-btn-primary'}
@@ -376,31 +386,49 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1">
-            <div className="flex min-w-0 flex-1 flex-col p-4">
-              <SequencePreview
-                rows={rows}
-                timeline={timeline}
-                params={params}
-                music={music}
-                playhead={playhead}
-              />
-            </div>
-            {row && (
-              <aside className="seq-inspector w-80 flex-none" aria-label="镜头设置">
-                <Inspector
-                  row={row}
-                  index={current}
-                  count={rows.length}
-                  full={duration(row.clip.assetId)}
-                  length={timeline.clips[current]?.length}
-                  params={params}
-                  dialogue={dialogue}
-                  sfx={sfx}
-                  onMove={(to) => move(current, to)}
-                  onPatch={(p) => patch(row.source, p)}
+            <SequencePreview
+              rows={rows}
+              timeline={timeline}
+              params={params}
+              music={music}
+              playhead={playhead}
+            />
+            <aside className="seq-inspector" aria-label="剪辑设置">
+              <div className="seq-tabs">
+                <Segmented
+                  label="设置范围"
+                  value={tab}
+                  options={[
+                    { value: 'clip', label: '镜头' },
+                    { value: 'film', label: '成片' },
+                  ]}
+                  onChange={setTab}
                 />
-              </aside>
-            )}
+              </div>
+              <div
+                key={tab === 'clip' ? `clip:${selected ?? ''}` : 'film'}
+                className="seq-inspector-body ui-scrollbar"
+              >
+                {tab === 'film' ? (
+                  <FilmSettings params={params} set={set} />
+                ) : row ? (
+                  <ClipSettings
+                    row={row}
+                    index={current}
+                    count={rows.length}
+                    full={duration(row.clip.assetId)}
+                    length={timeline.clips[current]?.length}
+                    params={params}
+                    dialogue={dialogue}
+                    sfx={sfx}
+                    onMove={(to) => move(current, to)}
+                    onPatch={(p) => patch(row.source, p)}
+                  />
+                ) : (
+                  <p className="ui-help">在时间线上点一段镜头，在这里调整它。</p>
+                )}
+              </div>
+            </aside>
           </div>
           <Timeline
             items={items}
@@ -416,19 +444,103 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             }
             playhead={playhead}
             selected={selected}
-            onSelect={setSelected}
+            onSelect={select}
             onMove={move}
             onTrim={trim}
           />
         </div>
       )}
+    </Modal>
+  )
+}
 
-      <footer className="flex flex-wrap items-center gap-x-5 gap-y-3 border-t border-line px-5 py-3 text-xs text-ink-muted">
-        <div className="flex items-center gap-2">
-          画幅
-          <Select
-            aria-label="画幅"
-            className="ui-input"
+/** 检查器里的一组设置：小标题加若干行 */
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="seq-section">
+      <h3 className="ui-section-title">{title}</h3>
+      {children}
+    </section>
+  )
+}
+
+/** 一行设置：左边固定宽的名字，右边控件铺满 */
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="seq-field">
+      <span className="seq-field-label">{label}</span>
+      <div className="seq-field-control">{children}</div>
+    </div>
+  )
+}
+
+/** 开关行：名字和说明在左，开关在右，整行可点 */
+function SwitchRow(props: {
+  label: string
+  help?: string
+  checked: boolean
+  disabled?: boolean
+  onChange(v: boolean): void
+}) {
+  return (
+    <div className="seq-switch-row" data-disabled={props.disabled || undefined}>
+      <div className="min-w-0">
+        <div className="text-sm text-ink">{props.label}</div>
+        {props.help && <div className="ui-help">{props.help}</div>}
+      </div>
+      <Switch
+        label={props.label}
+        checked={props.checked}
+        disabled={props.disabled}
+        onChange={props.onChange}
+      />
+    </div>
+  )
+}
+
+/** 等分分段：选项少的参数（画幅、分辨率、字幕样式），选中底色滑过去 */
+function SegBlock<T extends string>(props: {
+  label: string
+  options: ReadonlyArray<{ value: T; label: string }>
+  value: T
+  onChange(v: T): void
+}) {
+  const i = props.options.findIndex((o) => o.value === props.value)
+  return (
+    <fieldset
+      aria-label={props.label}
+      className="ui-seg ui-seg-block"
+      style={{ '--seg-n': props.options.length, '--seg-i': i } as CSSProperties}
+    >
+      {props.options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={o.value === props.value}
+          className="ui-seg-item"
+          onClick={() => props.onChange(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </fieldset>
+  )
+}
+
+/** 成片的设置：画面、字幕、转场、混音，对所有镜头生效 */
+function FilmSettings({
+  params,
+  set,
+}: {
+  params: SequenceParams
+  set(key: keyof SequenceParams, value: unknown): void
+}) {
+  return (
+    <>
+      <Section title="画面">
+        <Field label="画幅">
+          <SegBlock
+            label="画幅"
             value={params.aspectRatio}
             options={[
               { value: '9:16', label: '竖屏 9:16' },
@@ -436,65 +548,71 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             ]}
             onChange={(v) => set('aspectRatio', v)}
           />
-        </div>
-        <div className="flex items-center gap-2">
-          分辨率
-          <Select
-            aria-label="分辨率"
-            className="ui-input"
+        </Field>
+        <Field label="分辨率">
+          <SegBlock
+            label="分辨率"
             value={params.resolution}
-            options={[{ value: '1080p' }, { value: '720p' }]}
+            options={[
+              { value: '1080p', label: '1080p' },
+              { value: '720p', label: '720p' },
+            ]}
             onChange={(v) => set('resolution', v)}
           />
-        </div>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={params.subtitles}
-            onChange={(e) => set('subtitles', e.target.checked)}
-          />
-          字幕
-        </label>
+        </Field>
+      </Section>
+      <Section title="字幕">
+        <SwitchRow
+          label="开启字幕"
+          help="把台词烧进成片"
+          checked={params.subtitles}
+          onChange={(v) => set('subtitles', v)}
+        />
         {params.subtitles && (
-          <Select
-            aria-label="字幕样式"
-            className="ui-input"
-            value={params.subtitleStyle}
-            options={[{ value: '常规' }, { value: '醒目' }, { value: '底框' }]}
-            onChange={(v) => set('subtitleStyle', v)}
-          />
+          <Field label="样式">
+            <SegBlock
+              label="字幕样式"
+              value={params.subtitleStyle}
+              options={[
+                { value: '常规', label: '常规' },
+                { value: '醒目', label: '醒目' },
+                { value: '底框', label: '底框' },
+              ]}
+              onChange={(v) => set('subtitleStyle', v)}
+            />
+          </Field>
         )}
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={params.asrTiming}
-            disabled={!params.subtitles}
-            onChange={(e) => set('asrTiming', e.target.checked)}
-          />
-          按语音识别对齐字幕
-        </label>
-        <div className="flex items-center gap-2">
-          转场
+        <SwitchRow
+          label="按语音识别对齐字幕"
+          help="导出时按识别出的语音校准字幕时间"
+          checked={params.asrTiming}
+          disabled={!params.subtitles}
+          onChange={(v) => set('asrTiming', v)}
+        />
+      </Section>
+      <Section title="转场">
+        <Field label="默认">
           <Select
             aria-label="转场"
-            className="ui-input"
+            className="ui-input w-full"
             value={params.transition}
             options={TRANSITIONS.map((value) => ({ value }))}
             onChange={(v) => set('transition', v)}
           />
-        </div>
+        </Field>
         {params.transition !== '无' && (
-          <div className="flex items-center gap-2">
-            时长
+          <Field label="时长">
             <NumberField
               label="转场时长（秒）"
               value={params.transitionDuration}
               max={2}
+              unit="秒"
               onChange={(v) => set('transitionDuration', Math.max(0.2, v ?? 0.5))}
             />
-          </div>
+          </Field>
         )}
-        <span aria-hidden="true" className="ui-bar-sep" />
+      </Section>
+      <Section title="混音">
         <Volume label="原声" value={params.clipVolume} onChange={(v) => set('clipVolume', v)} />
         <Volume
           label="对白"
@@ -503,30 +621,25 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         />
         <Volume label="配乐" value={params.musicVolume} onChange={(v) => set('musicVolume', v)} />
         <Volume label="音效" value={params.sfxVolume} onChange={(v) => set('sfxVolume', v)} />
-        <span aria-hidden="true" className="ui-bar-sep" />
-        <label className="flex items-center gap-2" title="有台词的地方配乐自动降低约 10 dB">
-          <input
-            type="checkbox"
-            checked={params.duck}
-            onChange={(e) => set('duck', e.target.checked)}
-          />
-          对白时压低配乐
-        </label>
-        <label className="flex items-center gap-2" title="成片响度统一到 -14 LUFS，只在导出时处理">
-          <input
-            type="checkbox"
-            checked={params.loudnorm}
-            onChange={(e) => set('loudnorm', e.target.checked)}
-          />
-          响度标准化
-        </label>
-      </footer>
-    </Modal>
+        <SwitchRow
+          label="对白时压低配乐"
+          help="有台词的地方配乐自动降低约 10 dB"
+          checked={params.duck}
+          onChange={(v) => set('duck', v)}
+        />
+        <SwitchRow
+          label="响度标准化"
+          help="成片统一到 -14 LUFS，只在导出时处理"
+          checked={params.loudnorm}
+          onChange={(v) => set('loudnorm', v)}
+        />
+      </Section>
+    </>
   )
 }
 
-/** 选中镜头的设置：顺序、入出点、对白、音效、字幕 */
-function Inspector({
+/** 选中镜头的设置：顺序、入出点、速度、转场、声音、字幕 */
+function ClipSettings({
   row,
   index,
   count,
@@ -556,16 +669,22 @@ function Inspector({
       .map((d) => d.caption)
       .filter(Boolean)
       .join(' / ') || undefined
+  const trimmed = length !== undefined && full !== undefined && Math.abs(length - full) > 0.01
   return (
     <>
-      <div className="flex items-center gap-2">
-        <span className="text-xs tabular-nums text-ink-subtle">
-          {String(index + 1).padStart(2, '0')}
-        </span>
-        <span className="min-w-0 truncate text-sm font-medium">
-          {row.el?.name ?? `镜头 ${index + 1}`}
-        </span>
-        <span className="ml-auto flex">
+      <div className="seq-clip-head">
+        <span className="seq-clip-index">{String(index + 1).padStart(2, '0')}</span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium">{row.el?.name ?? `镜头 ${index + 1}`}</div>
+          <div className="text-xs text-ink-subtle tabular-nums">
+            {row.pending
+              ? '还没有生成'
+              : trimmed
+                ? `用 ${seconds(length)}，原 ${seconds(full)}`
+                : `时长 ${seconds(full)}`}
+          </div>
+        </div>
+        <span className="flex flex-none">
           <button
             type="button"
             aria-label="前移"
@@ -589,122 +708,125 @@ function Inspector({
         </span>
       </div>
       {row.pending ? (
-        <p className="text-xs text-ink-subtle">这段镜头还没有生成，生成后可以修剪和配音。</p>
+        <p className="ui-help">这段镜头还没有生成，生成后可以修剪和配音。</p>
       ) : (
         <>
-          <p className="text-xs text-ink-subtle">
-            {length !== undefined && full !== undefined && Math.abs(length - full) > 0.01
-              ? `用 ${seconds(length)}，原 ${seconds(full)}`
-              : `时长 ${seconds(full)}`}
-          </p>
-          <div className="seq-inspector-row">
-            入点
-            <NumberField
-              label="入点（秒）"
-              value={row.in}
-              max={full}
-              onChange={(v) => onPatch({ in: v ?? 0 })}
-            />
-          </div>
-          <div className="seq-inspector-row">
-            出点
-            <NumberField
-              label="出点（秒）"
-              value={row.out}
-              placeholder={full === undefined ? '结尾' : full.toFixed(1)}
-              max={full}
-              onChange={(v) => onPatch({ out: v })}
-            />
-          </div>
-          <div className="seq-inspector-row">
-            速度
-            <Select
-              aria-label="速度"
-              className="ui-input w-20"
-              value={String(row.speed)}
-              options={SPEEDS.map((v) => ({ value: String(v), label: `${v}×` }))}
-              onChange={(v) => onPatch({ speed: Number(v) === 1 ? undefined : Number(v) })}
-            />
-          </div>
-          <Volume
-            label="本段原声"
-            value={row.volume}
-            onChange={(v) => onPatch({ volume: v === 1 ? undefined : v })}
-          />
-          {index > 0 && (
-            <div className="seq-inspector-row">
-              转场
-              <Select
-                aria-label="进入这段的转场"
-                className="ui-input w-36"
-                value={row.transition ?? AUTO}
-                options={[
-                  { value: AUTO, label: `跟随全局（${params.transition}）` },
-                  ...TRANSITIONS.map((value) => ({ value })),
-                ]}
-                onChange={(v) =>
-                  onPatch({
-                    transition: v === AUTO ? undefined : (v as SequenceClip['transition']),
-                  })
-                }
-              />
-            </div>
-          )}
-          {index > 0 && (row.transition ?? params.transition) !== '无' && (
-            <div className="seq-inspector-row">
-              转场时长
+          <Section title="剪辑">
+            <Field label="入点">
               <NumberField
-                label="这段转场时长（秒）"
-                value={row.transitionDuration}
-                placeholder={String(params.transitionDuration)}
-                max={2}
-                onChange={(v) =>
-                  onPatch({ transitionDuration: v === undefined ? undefined : Math.max(0.2, v) })
-                }
+                label="入点（秒）"
+                value={row.in}
+                max={full}
+                unit="秒"
+                onChange={(v) => onPatch({ in: v ?? 0 })}
               />
-            </div>
+            </Field>
+            <Field label="出点">
+              <NumberField
+                label="出点（秒）"
+                value={row.out}
+                placeholder={full === undefined ? '结尾' : full.toFixed(1)}
+                max={full}
+                unit="秒"
+                onChange={(v) => onPatch({ out: v })}
+              />
+            </Field>
+            <Field label="速度">
+              <Select
+                aria-label="速度"
+                className="ui-input w-full"
+                value={String(row.speed)}
+                options={SPEEDS.map((v) => ({ value: String(v), label: `${v}×` }))}
+                onChange={(v) => onPatch({ speed: Number(v) === 1 ? undefined : Number(v) })}
+              />
+            </Field>
+          </Section>
+          {index > 0 && (
+            <Section title="转场">
+              <Field label="进入">
+                <Select
+                  aria-label="进入这段的转场"
+                  className="ui-input w-full"
+                  value={row.transition ?? AUTO}
+                  options={[
+                    { value: AUTO, label: `跟随成片（${params.transition}）` },
+                    ...TRANSITIONS.map((value) => ({ value })),
+                  ]}
+                  onChange={(v) =>
+                    onPatch({
+                      transition: v === AUTO ? undefined : (v as SequenceClip['transition']),
+                    })
+                  }
+                />
+              </Field>
+              {(row.transition ?? params.transition) !== '无' && (
+                <Field label="时长">
+                  <NumberField
+                    label="这段转场时长（秒）"
+                    value={row.transitionDuration}
+                    placeholder={String(params.transitionDuration)}
+                    max={2}
+                    unit="秒"
+                    onChange={(v) =>
+                      onPatch({
+                        transitionDuration: v === undefined ? undefined : Math.max(0.2, v),
+                      })
+                    }
+                  />
+                </Field>
+              )}
+            </Section>
           )}
         </>
       )}
-      {dialogue.length > 0 && (
-        <ChoiceField
-          label="对白"
-          options={dialogue}
-          chosen={chosen?.dialogue}
-          current={row.dialogue?.source}
-          onChange={(v) => onPatch({ dialogue: v })}
-        />
-      )}
-      {clipLines(row).length > 0 && (
-        <div className="seq-inspector-row">
-          台词延后
-          <NumberField
-            label="台词延后（秒）"
-            value={row.lineDelay || undefined}
-            placeholder="0"
-            max={10}
-            onChange={(v) => onPatch({ lineDelay: v ? v : undefined })}
+      <Section title="声音">
+        {!row.pending && (
+          <Volume
+            label="原声"
+            aria="本段原声"
+            value={row.volume}
+            onChange={(v) => onPatch({ volume: v === 1 ? undefined : v })}
           />
-        </div>
-      )}
-      {sfx.length > 0 && (
-        <ChoiceField
-          label="音效"
-          options={sfx}
-          chosen={chosen?.sfx}
-          current={row.sfx?.source}
-          onChange={(v) => onPatch({ sfx: v })}
-        />
-      )}
+        )}
+        {dialogue.length > 0 && (
+          <ChoiceField
+            label="对白"
+            options={dialogue}
+            chosen={chosen?.dialogue}
+            current={row.dialogue?.source}
+            onChange={(v) => onPatch({ dialogue: v })}
+          />
+        )}
+        {clipLines(row).length > 0 && (
+          <Field label="台词延后">
+            <NumberField
+              label="台词延后（秒）"
+              value={row.lineDelay || undefined}
+              placeholder="0"
+              max={10}
+              unit="秒"
+              onChange={(v) => onPatch({ lineDelay: v ? v : undefined })}
+            />
+          </Field>
+        )}
+        {sfx.length > 0 && (
+          <ChoiceField
+            label="音效"
+            options={sfx}
+            chosen={chosen?.sfx}
+            current={row.sfx?.source}
+            onChange={(v) => onPatch({ sfx: v })}
+          />
+        )}
+      </Section>
       {params.subtitles && (
-        <div className="flex flex-col gap-2 text-xs text-ink-muted">
-          字幕
+        <Section title="字幕">
           <SubtitleField
             value={row.subtitle}
             placeholder={caption ? caption : '这段没有字幕，可以在这里写'}
             onChange={(v) => onPatch({ subtitle: v })}
           />
-        </div>
+        </Section>
       )}
     </>
   )
@@ -716,6 +838,8 @@ function NumberField(props: {
   value: number | undefined
   placeholder?: string
   max?: number
+  /** 输入框里靠右的单位 */
+  unit?: string
   onChange(v: number | undefined): void
 }) {
   const [draft, setDraft] = useState<string | null>(null)
@@ -727,21 +851,24 @@ function NumberField(props: {
       props.onChange(n === undefined ? undefined : Math.min(n, props.max ?? n))
   }
   return (
-    <input
-      type="number"
-      aria-label={props.label}
-      min={0}
-      step={0.1}
-      max={props.max}
-      className="ui-input w-20 tabular-nums"
-      value={draft ?? (props.value === undefined ? '' : String(props.value))}
-      placeholder={props.placeholder}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') e.currentTarget.blur()
-      }}
-    />
+    <span className="seq-number">
+      <input
+        type="number"
+        aria-label={props.label}
+        min={0}
+        step={0.1}
+        max={props.max}
+        className="ui-input w-full tabular-nums"
+        value={draft ?? (props.value === undefined ? '' : String(props.value))}
+        placeholder={props.placeholder}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+        }}
+      />
+      {props.unit && <span className="seq-number-unit">{props.unit}</span>}
+    </span>
   )
 }
 
@@ -762,11 +889,10 @@ function ChoiceField(props: {
   const auto = props.options.find((o) => o.value === props.current)
   const value = props.chosen === undefined ? AUTO : props.chosen === '' ? NONE : props.chosen
   return (
-    <div className="flex items-center gap-1.5">
-      {props.label}
+    <Field label={props.label}>
       <Select
         aria-label={props.label}
-        className="ui-input w-40"
+        className="ui-input w-full"
         value={value}
         options={[
           { value: AUTO, label: auto ? `自动（${auto.label}）` : '自动（无）' },
@@ -775,7 +901,7 @@ function ChoiceField(props: {
         ]}
         onChange={(v) => props.onChange(v === AUTO ? undefined : v === NONE ? '' : v)}
       />
-    </div>
+    </Field>
   )
 }
 
@@ -806,31 +932,40 @@ function SubtitleField(props: {
   )
 }
 
-function Volume(props: { label: string; value: number; onChange(v: number): void }) {
+/** 音量：0–200%，松手时写入；滑轨左段按音量填色 */
+function Volume(props: {
+  label: string
+  /** 无障碍名称，默认同 label */
+  aria?: string
+  value: number
+  onChange(v: number): void
+}) {
   const [draft, setDraft] = useState<number | null>(null)
+  const v = draft ?? props.value
   return (
-    <label className="flex items-center gap-2">
-      {props.label}
-      <input
-        type="range"
-        min={0}
-        max={2}
-        step={0.05}
-        className="w-20"
-        value={draft ?? props.value}
-        onChange={(e) => setDraft(Number(e.target.value))}
-        onPointerUp={() => {
-          if (draft !== null) props.onChange(draft)
-          setDraft(null)
-        }}
-        onKeyUp={() => {
-          if (draft !== null) props.onChange(draft)
-          setDraft(null)
-        }}
-      />
-      <span className="w-8 tabular-nums text-ink-subtle">
-        {Math.round((draft ?? props.value) * 100)}%
+    <Field label={props.label}>
+      <span className="seq-volume">
+        <input
+          type="range"
+          aria-label={props.aria ?? props.label}
+          min={0}
+          max={2}
+          step={0.05}
+          className="seq-range"
+          style={{ '--fill': `${(v / 2) * 100}%` } as CSSProperties}
+          value={v}
+          onChange={(e) => setDraft(Number(e.target.value))}
+          onPointerUp={() => {
+            if (draft !== null) props.onChange(draft)
+            setDraft(null)
+          }}
+          onKeyUp={() => {
+            if (draft !== null) props.onChange(draft)
+            setDraft(null)
+          }}
+        />
+        <span className="seq-volume-value">{Math.round(v * 100)}%</span>
       </span>
-    </label>
+    </Field>
   )
 }

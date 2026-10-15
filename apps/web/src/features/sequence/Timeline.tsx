@@ -1,15 +1,16 @@
 import type { Cue } from '@plein/nodes'
 import { type ComposeTransition, overlapping } from '@plein/plugin-sdk'
 import {
+  Children,
   type PointerEvent as ReactPointerEvent,
   useEffect,
   useLayoutEffect,
   useRef,
   useState,
 } from 'react'
-import { Icon } from '../../ui/icons'
+import { Icon, type IconName } from '../../ui/icons'
 import { Filmstrip, Waveform } from './media'
-import { clock, type Playhead, usePlaying } from './playhead'
+import { clock, type Playhead } from './playhead'
 
 /** 时间线上的一段镜头和挂在它上面的声音、字幕（时间都是成片里的秒） */
 export interface TrackItem {
@@ -41,7 +42,8 @@ export interface TrimPatch {
   out?: number
 }
 
-const LABEL = 64
+/** 轨道头宽度，和 .seq-label 一致 */
+const LABEL = 88
 const PAD = 24
 /** 修剪后至少留这么长 */
 const MIN_LEN = 0.2
@@ -88,7 +90,6 @@ export function Timeline({
   const head = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState(0)
   const [zoom, setZoom] = useState(1)
-  const playing = usePlaying(playhead)
 
   useLayoutEffect(() => {
     const el = scroller.current
@@ -181,35 +182,7 @@ export function Timeline({
   return (
     <section className="seq-timeline" aria-label="时间线">
       <div className="seq-toolbar">
-        <button
-          type="button"
-          className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
-          aria-label="回到开头"
-          title="回到开头（Home）"
-          onClick={() => playhead.seek(0)}
-        >
-          <Icon name="skipBack" size={14} />
-        </button>
-        <button
-          type="button"
-          className="ui-btn ui-btn-secondary ui-btn-sm ui-icon-btn"
-          aria-label={playing ? '暂停' : '播放'}
-          title={playing ? '暂停（空格）' : '播放（空格）'}
-          disabled={total <= 0}
-          onClick={() => playhead.toggle()}
-        >
-          <Icon name={playing ? 'pause' : 'play'} size={12} />
-        </button>
-        <button
-          type="button"
-          className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
-          aria-label="跳到结尾"
-          title="跳到结尾（End）"
-          onClick={() => playhead.seek(total)}
-        >
-          <Icon name="skipForward" size={14} />
-        </button>
-        <TimeReadout playhead={playhead} total={total} />
+        <span className="seq-toolbar-hint">拖动镜头换顺序，拖两边修剪，⌘ / Ctrl + 滚轮缩放</span>
         <span className="ml-auto flex items-center gap-1">
           <button
             type="button"
@@ -256,7 +229,13 @@ export function Timeline({
         <div className="seq-content" style={{ width }}>
           <div className="seq-row seq-ruler-row">
             <div className="seq-label" />
-            <div className="seq-ruler" onPointerDown={scrub}>
+            <div
+              className="seq-ruler"
+              style={
+                { '--minor': `${(step * pps) / 5}px`, '--pad': `${PAD}px` } as React.CSSProperties
+              }
+              onPointerDown={scrub}
+            >
               {ticks.map((t) => (
                 <span key={t} className="seq-tick" style={{ left: x(t) }}>
                   {clock(t).replace(/\.0$/, '')}
@@ -276,7 +255,7 @@ export function Timeline({
             onTrim={onTrim}
           />
 
-          <Track label="对白" icon="mic">
+          <Track label="对白" icon="mic" kind="dialogue" empty="把配音连到序列的「对白」端口">
             {items.flatMap((it) =>
               it.lines.map((l) => (
                 <button
@@ -295,7 +274,7 @@ export function Timeline({
             )}
           </Track>
 
-          <Track label="音效" icon="sound">
+          <Track label="音效" icon="sound" kind="sfx" empty="没有音效">
             {items.flatMap((it) =>
               it.sfx
                 ? [
@@ -319,7 +298,7 @@ export function Timeline({
             )}
           </Track>
 
-          <Track label="配乐" icon="music">
+          <Track label="配乐" icon="music" kind="music" empty="把配乐连到序列的「配乐」端口">
             {music && total > 0 && (
               <div
                 className="seq-block seq-block-music"
@@ -351,7 +330,7 @@ export function Timeline({
             )}
           </Track>
 
-          <Track label="字幕" icon="captions">
+          <Track label="字幕" icon="captions" kind="text" empty="没有字幕">
             {items.flatMap((it) =>
               it.cues.map((q) => (
                 <button
@@ -381,34 +360,39 @@ export function Timeline({
   )
 }
 
-function TimeReadout({ playhead, total }: { playhead: Playhead; total: number }) {
-  const ref = useRef<HTMLSpanElement>(null)
-  useEffect(() => {
-    const update = () => {
-      if (ref.current) ref.current.textContent = `${clock(playhead.t)} / ${clock(total)}`
-    }
-    update()
-    return playhead.subscribe(update)
-  }, [playhead, total])
-  return <span ref={ref} className="seq-time" />
-}
-
 function Track({
   label,
   icon,
+  kind,
+  empty,
   children,
 }: {
   label: string
-  icon: 'mic' | 'sound' | 'music' | 'captions' | 'video'
+  icon: 'mic' | 'sound' | 'music' | 'captions'
+  /** 轨道的颜色：.seq-row[data-track] 里给 --track */
+  kind: 'dialogue' | 'sfx' | 'music' | 'text'
+  /** 轨道上什么都没有时的提示 */
+  empty: string
   children: React.ReactNode
 }) {
+  const blank = Children.toArray(children).length === 0
   return (
-    <div className="seq-row">
-      <div className="seq-label">
-        <Icon name={icon} size={12} />
-        {label}
+    <div className="seq-row" data-track={kind}>
+      <TrackLabel icon={icon} label={label} />
+      <div className="seq-lane">
+        {blank ? <span className="seq-lane-empty">{empty}</span> : children}
       </div>
-      <div className="seq-lane">{children}</div>
+    </div>
+  )
+}
+
+function TrackLabel({ icon, label }: { icon: IconName; label: string }) {
+  return (
+    <div className="seq-label">
+      <span className="seq-label-icon">
+        <Icon name={icon} size={12} />
+      </span>
+      {label}
     </div>
   )
 }
@@ -539,11 +523,8 @@ function ClipTrack({
 
   const w = drag ? items[drag.index]!.length * pps : 0
   return (
-    <div className="seq-row seq-row-clips">
-      <div className="seq-label">
-        <Icon name="video" size={12} />
-        画面
-      </div>
+    <div className="seq-row seq-row-clips" data-track="video">
+      <TrackLabel icon="video" label="画面" />
       <div className="seq-lane">
         {items.map((it, i) => {
           let dx = 0
@@ -588,7 +569,7 @@ function ClipTrack({
                   from={it.in}
                   to={it.in + it.length * it.speed}
                   width={width}
-                  height={56}
+                  height={64}
                 />
               )}
               <span className="seq-clip-name">
@@ -631,11 +612,13 @@ function ClipTrack({
                 data-selected={selected === it.key || undefined}
                 aria-label={`${it.name} 的转场`}
                 title={`${TRANSITION_LABELS[tr.type]} ${tr.duration} 秒`}
-                style={{ left: x(from), width: Math.max(tr.duration * pps, 18) }}
+                style={{ left: x(from), width: Math.max(tr.duration * pps, 24) }}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => onSelect(it.key)}
               >
-                <Icon name="transition" size={12} />
+                <span className="seq-transition-chip">
+                  <Icon name="transition" size={12} />
+                </span>
               </button>
             )
           })}

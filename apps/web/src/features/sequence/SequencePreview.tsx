@@ -11,6 +11,7 @@ import { PreviewEngine } from './engine'
 import { type Playhead, usePlayheadTime } from './playhead'
 import { previewScene } from './scene'
 import { SubtitleLayer, type SubtitleMode } from './SubtitleLayer'
+import { Transport } from './Transport'
 
 /**
  * 序列预览：不导出，直接在浏览器里按时间线播放。
@@ -66,8 +67,19 @@ export function SequencePreview({
   // 字幕优先用 libass 渲染（与成片一致），不可用时退回近似的 DOM 字幕
   const cue = subMode === 'fallback' ? cues.find((q) => t >= q.start && t < q.end) : undefined
 
+  const note = [
+    subMode === 'fallback'
+      ? '预览字幕样式是近似的，导出的成片以服务端合成为准。'
+      : '预览按成片的时间、转场、混音和字幕播放，画质略低于导出。',
+    params.asrTiming && '语音识别校准的字幕时间只在导出时生效。',
+    params.loudnorm && '响度标准化只在导出时处理。',
+    rows.some((r) => r.speed !== 1) && '变速镜头的原声预览会变调，导出时不变调。',
+  ]
+    .filter(Boolean)
+    .join('')
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center gap-2">
+    <div className="seq-monitor">
       <div className="seq-viewer">
         <div
           className="seq-stage"
@@ -113,14 +125,7 @@ export function SequencePreview({
           )}
         </div>
       </div>
-      <p className="flex-none text-2xs text-ink-subtle">
-        {subMode === 'fallback'
-          ? '预览字幕样式是近似的，导出的成片以服务端合成为准。'
-          : '预览按成片的时间、转场、混音和字幕播放，画质略低于导出。'}
-        {params.asrTiming && ' 语音识别校准的字幕时间只在导出时生效。'}
-        {params.loudnorm && ' 响度标准化只在导出时处理。'}
-        {rows.some((r) => r.speed !== 1) && ' 变速镜头的原声预览会变调，导出时不变调。'}
-      </p>
+      <Transport playhead={playhead} total={total} note={note} />
     </div>
   )
 }

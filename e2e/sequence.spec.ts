@@ -146,7 +146,7 @@ test('序列时间线：排序、修剪、播放', async ({ page }) => {
   expect(Number(await out.inputValue())).toBeLessThan(2.5)
 
   // 修剪时播放头停在剪切处；Home 回到开头，空格播放，播放头往前走
-  const time = timeline.locator('.seq-time')
+  const time = editor.locator('.seq-time')
   await expect(time).toHaveText(/^0:01\.\d \/ 0:06\.\d$/)
   await page.keyboard.press('Home')
   await expect(time).toHaveText(/^0:00\.0 \//)
