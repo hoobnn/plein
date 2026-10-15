@@ -26,6 +26,7 @@
     "smoke": "pnpm --filter @plein/server exec tsx scripts/smoke.ts",
     "bench:migration": "pnpm --filter @plein/server bench:migration",
     "bench:recovery": "pnpm --filter @plein/server bench:recovery",
+    "bench:e1": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.l4.config.ts e1-composition",
     "bench:rework": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.bench.config.ts",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm smoke",
     "e2e": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.config.ts",

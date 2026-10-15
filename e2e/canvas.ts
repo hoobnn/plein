@@ -28,6 +28,15 @@ declare global {
         zoomToFit(ids?: Iterable<string>): void
         selection: { values(): string[]; set(ids: string[]): void }
       }
+      /** 按节点声明建节点、连线（L4 实验脚本批量搭画布用） */
+      addNode(input: {
+        type: string
+        name: string
+        params: Record<string, unknown>
+        x: number
+        y: number
+      }): string
+      connect(from: [string, string], to: [string, string]): boolean
     }
   }
 }

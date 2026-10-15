@@ -1,5 +1,12 @@
 import { Engine, isEditableTarget, type PreviewSize } from '@plein/canvas-core'
-import { createDoc, type ElementKind, type PleinDoc, SCHEMA_VERSION } from '@plein/doc'
+import {
+  connect,
+  createDoc,
+  createElement,
+  type ElementKind,
+  type PleinDoc,
+  SCHEMA_VERSION,
+} from '@plein/doc'
 import { SEQUENCE_TYPE, STAGE_TYPE, STORYBOARD_TYPE } from '@plein/nodes'
 import { useEffect, useRef } from 'react'
 import { IndexeddbPersistence } from 'y-indexeddb'
@@ -18,6 +25,7 @@ import { localCacheName } from './localCache'
 import { abortGroupRuns } from '../features/runs/groupRuns'
 import { watchStale } from '../features/runs/stale'
 import { NodeCards } from './nodeCards'
+import { findNode, nodeElement } from './nodes'
 import { CanvasOverlays } from './overlays'
 import { ShotBadges } from './shotBadges'
 import { applyPresetToNode } from './presets'
@@ -127,6 +135,26 @@ export function CanvasView({ source }: { source: CanvasSource }) {
                 engine.flash(ids)
                 useAgent.setState({ cursor: { ids, at: Date.now() } })
               },
+              // 真实平台实验脚本（L4）批量搭画布用：按节点声明建节点、连线
+              addNode: (input: {
+                type: string
+                name: string
+                params: Record<string, unknown>
+                x: number
+                y: number
+              }) => {
+                const node = findNode(useCatalog.getState().catalog, input.type)
+                if (!node) throw new Error(`没有节点类型 ${input.type}`)
+                return createElement(engine.doc, {
+                  ...nodeElement(node),
+                  name: input.name,
+                  params: { ...node.defaults, ...input.params },
+                  x: input.x,
+                  y: input.y,
+                })
+              },
+              connect: (from: [string, string], to: [string, string]) =>
+                !!connect(engine.doc, from, to),
             }
           // 开发时方便在控制台调试
           if (import.meta.env.DEV) (window as { plein?: unknown }).plein = engine
