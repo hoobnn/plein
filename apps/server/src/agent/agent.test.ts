@@ -3,6 +3,7 @@ import { createElement, type PleinDoc, updateElement } from '@plein/doc'
 import sharp from 'sharp'
 import type { AgentEvent, Canvas } from '@plein/protocol'
 import { beforeAll, describe, expect, it } from 'vite-plus/test'
+import { hasFfmpeg } from '../assets/media'
 import { startTestServer } from '../testing'
 import { Approvals } from './approvals'
 import { AgentChanges } from './changes'
@@ -114,6 +115,11 @@ describe('智能体 MCP', () => {
     expect(run.status).toBe('succeeded')
 
     const next = await call('continue_shot', { element_id: parent.id, prompt: '她回头' })
+    // 取帧要本机 ffmpeg（CI 的单元测试机没装）：没有时把原因说清楚
+    if (!(await hasFfmpeg())) {
+      expect(next.text).toContain('ffmpeg')
+      return
+    }
     expect(next.error).toBe(false)
     const made = next.json()
     expect(made.frame_element_id).toBeTruthy()
