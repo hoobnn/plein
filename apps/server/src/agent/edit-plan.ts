@@ -70,10 +70,12 @@ export function planBrief(plan: EditPlan) {
       full: cost(plan.estimate.full),
     },
     ...(plan.changed ? { changed: plan.changed } : {}),
+    ...(plan.revised ? { revised_by_user: plan.revised } : {}),
     ...(plan.applied
       ? {
           applied: {
             scope: plan.applied.scope,
+            targets: plan.applied.targets,
             nodes: plan.applied.nodes,
             ...(plan.applied.groupId ? { group_id: plan.applied.groupId } : {}),
           },
@@ -127,7 +129,7 @@ const applyEdit = serverCapability({
   name: APPLY_EDIT,
   title: '执行修改方案',
   description:
-    '按用户批准的范围执行 propose_edit 提出的方案：text 只把文字写进画布（不调用平台），images 写入文字并只重新生成方案里的图片，full 执行全部步骤。only 只批准部分目标（目标节点 id 或镜头 id）。方案绑定的对象在提出后变了时不执行，返回 stale，要重新提出。',
+    '按用户批准的范围执行 propose_edit 提出的方案：text 只把文字写进画布（不调用平台），images 写入文字并只重新生成方案里的图片，full 执行全部步骤。only 只批准部分目标（目标节点 id 或镜头 id），skip 列出用户不想重做的步骤（节点 id）。方案绑定的对象在提出后变了时不执行，返回 stale，要重新提出。',
   group: 'run',
   where: 'server',
   effect: (a) => (a.scope === 'text' ? 'edit' : 'run'),
@@ -135,13 +137,18 @@ const applyEdit = serverCapability({
     plan_id: id,
     scope: EditScope,
     only: z.array(id).min(1).max(200).optional(),
+    skip: z.array(id).max(200).optional(),
   }),
   run: async (ctx, a) => {
     try {
       const plan = await plansOf(ctx).apply(
         a.plan_id,
         ctx.env.ownerId,
-        { scope: a.scope, ...(a.only ? { only: a.only } : {}) },
+        {
+          scope: a.scope,
+          ...(a.only ? { only: a.only } : {}),
+          ...(a.skip ? { skip: a.skip } : {}),
+        },
         { write: (fn) => ctx.withDoc(fn), onGroup: (g) => ctx.env.onGroup?.(g) },
       )
       return { ...planBrief(plan), next: applyNext(plan) }

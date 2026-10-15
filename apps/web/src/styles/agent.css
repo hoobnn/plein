@@ -119,6 +119,38 @@
     background-color var(--dur-base) var(--ease-standard),
     box-shadow var(--dur-base) var(--ease-standard);
 }
+/* 修改方案卡片：不勾的目标 / 步骤变淡；重新检查时内容稍暗，估算跟着平滑换 */
+.plein-edit-target,
+.plein-edit-step,
+.plein-edit-plan-body,
+.plein-edit-cost {
+  transition: opacity var(--dur-base) var(--ease-standard);
+}
+.plein-edit-target[data-off],
+.plein-edit-step[data-off] {
+  opacity: 0.45;
+}
+.plein-edit-plan[data-revising] .plein-edit-plan-body,
+.plein-edit-plan[data-revising] .plein-edit-cost {
+  opacity: 0.6;
+}
+.plein-edit-change .plein-edit-tools {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+.plein-edit-change:hover .plein-edit-tools,
+.plein-edit-change:focus-within .plein-edit-tools {
+  opacity: 1;
+}
+@media (hover: none) {
+  .plein-edit-change .plein-edit-tools {
+    opacity: 1;
+  }
+}
+.plein-edit-change form {
+  --pop-from: translateY(-2px) scale(0.99);
+  animation: ui-pop-in var(--dur-base) var(--ease-spring);
+}
 .plein-plan-step {
   animation: ui-pop-in var(--dur-slow) var(--ease-spring) backwards;
   animation-delay: calc(var(--i) * 40ms);

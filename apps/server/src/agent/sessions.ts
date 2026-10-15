@@ -12,12 +12,13 @@ import type {
   AgentSession,
   AgentSessionSummary,
   AgentStatus,
+  ApplyEditPlan,
   EditPlan,
-  EditScope,
+  ReviseEditPlan,
 } from '@plein/protocol'
 import { type ChatMessage, ProviderError } from '@plein/plugin-sdk'
 import type { AssetStore } from '../assets/store'
-import type { PluginHost } from '../plugins/host'
+import { NodeRunError, type PluginHost } from '../plugins/host'
 import type { EditPlans } from '../runs/edit-plan'
 import type { NodeRuns } from '../runs/runs'
 import type { LibraryStore } from '../library/store'
@@ -206,12 +207,39 @@ export class AgentSessions {
     }
   }
 
-  /** 用户允许或跳过一张确认单；允许后立即执行原调用 */
-  decide(id: string, ownerId: string, approvalId: string, allow: boolean, scope?: EditScope) {
+  /** 用户允许或跳过一张确认单；允许后立即执行原调用。修改方案带上范围和逐项勾选的结果 */
+  decide(id: string, ownerId: string, approvalId: string, allow: boolean, pick?: ApplyEditPlan) {
     const s = this.load(id)
     if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
-    if (!s.approvals.decide(approvalId, allow, scope))
+    if (!s.approvals.decide(approvalId, allow, pick))
       throw new AgentError('not_undoable', '这个确认已经处理过或过期了')
+  }
+
+  /** 逐项编辑方案卡片：按用户改过的字段重新检查方案，卡片换成新方案，确认单不变 */
+  async revisePlan(
+    id: string,
+    ownerId: string,
+    approvalId: string,
+    edits: ReviseEditPlan['edits'],
+  ) {
+    const s = this.load(id)
+    if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
+    const item = s.items.find((i) => i.id === approvalId)
+    const plans = this.deps.plans
+    if (item?.type !== 'edit_plan' || !plans) throw new AgentError('not_found', '方案不存在')
+    if (s.approvals.get(approvalId)?.status !== 'pending')
+      throw new AgentError('not_undoable', '这个方案已经处理过或过期了')
+    try {
+      const plan = await plans.revise(item.plan.id, ownerId, edits)
+      this.showEditPlan(s, approvalId, plan)
+      return plan
+    } catch (err) {
+      if (!(err instanceof NodeRunError)) throw err
+      throw new AgentError(
+        err.code === 'not_found' || err.code === 'busy' ? err.code : 'invalid_input',
+        err.message,
+      )
+    }
   }
 
   /** 撤销某一轮对画布的改动（只能从最近一轮往回撤） */
@@ -720,7 +748,7 @@ export class AgentSessions {
       type: 'edit_plan',
       plan,
       status: a?.status ?? 'pending',
-      ...(a?.choice ? { scope: a.choice as EditScope } : {}),
+      ...(a?.choice ? { scope: (a.choice as ApplyEditPlan).scope } : {}),
       at: prev?.at ?? Date.now(),
     })
   }
@@ -769,7 +797,8 @@ export class AgentError extends Error {
       | 'disabled'
       | 'not_installed'
       | 'not_ready'
-      | 'not_undoable',
+      | 'not_undoable'
+      | 'invalid_input',
     message: string,
   ) {
     super(message)

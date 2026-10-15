@@ -54,7 +54,9 @@ import {
   type LocalCliInfo,
   type LocalCliUpdateResult,
   type ExternalMcpToken,
-  type EditScope,
+  type ApplyEditPlan,
+  type EditPlan,
+  type ReviseEditPlan,
 } from '@plein/protocol'
 
 export class ApiError extends Error {
@@ -187,11 +189,10 @@ export const api = {
     selection?: string[],
     opts: { approval?: AgentApprovalMode; plan?: boolean; access?: AgentAccess } = {},
   ) => request<void>(API.agentMessages(id), json('POST', { text, selection, ...opts })),
-  decideAgentApproval: (id: string, approvalId: string, allow: boolean, scope?: EditScope) =>
-    request<void>(
-      API.agentApproval(id, approvalId),
-      json('POST', { allow, ...(scope ? { scope } : {}) }),
-    ),
+  decideAgentApproval: (id: string, approvalId: string, allow: boolean, pick?: ApplyEditPlan) =>
+    request<void>(API.agentApproval(id, approvalId), json('POST', { allow, ...pick })),
+  reviseAgentEditPlan: (id: string, approvalId: string, edits: ReviseEditPlan['edits']) =>
+    request<EditPlan>(API.agentEditPlan(id, approvalId), json('POST', { edits })),
   stopAgent: (id: string) => request<void>(API.agentStop(id), json('POST', {})),
   undoAgentTurn: (id: string, turn: string) =>
     request<void>(API.agentUndo(id, turn), json('POST', {})),

@@ -7,7 +7,8 @@ import {
   type AgentSession,
   type AgentSessionSummary,
   type AgentStatus,
-  type EditScope,
+  type ApplyEditPlan,
+  type ReviseEditPlan,
 } from '@plein/protocol'
 import { create } from 'zustand'
 import { api } from '../../api/client'
@@ -52,7 +53,9 @@ interface AgentStore {
   setPlan(plan: boolean): void
   setAccess(access: AgentAccess): void
   /** 允许或跳过一张确认单；修改方案允许时带上批准范围 */
-  decide(approvalId: string, allow: boolean, scope?: EditScope): Promise<void>
+  decide(approvalId: string, allow: boolean, pick?: ApplyEditPlan): Promise<void>
+  /** 逐项编辑修改方案：重新检查后卡片经事件流换成新方案；失败时返回原因 */
+  revisePlan(approvalId: string, edits: ReviseEditPlan['edits']): Promise<string | null>
   /** 切换到某块画布（null 表示不在画布里）：读它的会话，接上最近一个 */
   enter(canvasId: string | null): Promise<void>
   select(id: string): Promise<void>
@@ -244,13 +247,24 @@ export const useAgent = create<AgentStore>((set, get) => {
       } catch {}
     },
 
-    async decide(approvalId, allow, scope) {
+    async decide(approvalId, allow, pick) {
       const id = get().session?.id
       if (!id) return
       try {
-        await api.decideAgentApproval(id, approvalId, allow, scope)
+        await api.decideAgentApproval(id, approvalId, allow, pick)
       } catch (err) {
         set({ error: (err as Error).message })
+      }
+    },
+
+    async revisePlan(approvalId, edits) {
+      const id = get().session?.id
+      if (!id) return '会话不存在'
+      try {
+        await api.reviseAgentEditPlan(id, approvalId, edits)
+        return null
+      } catch (err) {
+        return (err as Error).message
       }
     },
 

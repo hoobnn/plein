@@ -1,5 +1,10 @@
 import type { ExternalMcp } from '../mcp/external'
-import { CreateAgentSession, DecideAgentApproval, SendAgentMessage } from '@plein/protocol'
+import {
+  CreateAgentSession,
+  DecideAgentApproval,
+  ReviseEditPlan,
+  SendAgentMessage,
+} from '@plein/protocol'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { AuthEnv } from '../auth'
@@ -15,6 +20,7 @@ const STATUS: Record<AgentError['code'], 400 | 403 | 404 | 409 | 503> = {
   not_installed: 400,
   not_ready: 503,
   not_undoable: 409,
+  invalid_input: 400,
 }
 
 /** 智能体会话接口（需登录态，走 /api 鉴权） */
@@ -94,14 +100,34 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
         const body = DecideAgentApproval.safeParse(await c.req.json().catch(() => null))
         if (!body.success) return c.json({ error: 'invalid_input', message: '参数不对' }, 400)
         try {
+          const { allow, scope, only, skip } = body.data
           agents.decide(
             c.req.param('id'),
             p.id,
             c.req.param('approval'),
-            body.data.allow,
-            body.data.scope,
+            allow,
+            scope ? { scope, ...(only ? { only } : {}), ...(skip ? { skip } : {}) } : undefined,
           )
           return c.body(null, 204)
+        } catch (err) {
+          if (!(err instanceof AgentError)) throw err
+          return c.json({ error: err.code, message: err.message }, STATUS[err.code])
+        }
+      })
+      // 逐项编辑修改方案：改了某个字段或去掉某项改动后重新检查，返回新方案
+      .post('/api/agent/sessions/:id/approvals/:approval/plan', async (c) => {
+        const p = c.var.principal
+        if (p.role === 'viewer') return c.json(forbidden, 403)
+        const body = ReviseEditPlan.safeParse(await c.req.json().catch(() => null))
+        if (!body.success) return c.json({ error: 'invalid_input', message: '参数不对' }, 400)
+        try {
+          const plan = await agents.revisePlan(
+            c.req.param('id'),
+            p.id,
+            c.req.param('approval'),
+            body.data.edits,
+          )
+          return c.json(plan)
         } catch (err) {
           if (!(err instanceof AgentError)) throw err
           return c.json({ error: err.code, message: err.message }, STATUS[err.code])

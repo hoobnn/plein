@@ -160,7 +160,7 @@ describe('智能体修改方案', () => {
     const jobs = jobCount(server, canvas)
     const applied = await mcp('apply_edit_plan', { plan_id: plan.plan_id, scope: 'text' })
     expect(applied.status).toBe('applied')
-    expect(applied.applied).toEqual({ scope: 'text', nodes: [] })
+    expect(applied.applied).toEqual({ scope: 'text', targets: [img3], nodes: [] })
     expect(doc.get(img3)!.params!.prompt).toBe(TENSE)
     expect(jobCount(server, canvas)).toBe(jobs)
     // 方案只能执行一次
@@ -256,6 +256,60 @@ describe('智能体修改方案', () => {
     expect(doc.get(img3)!.params!.prompt).toBe(mine)
   })
 
+  it('逐项编辑：改字段的新值、去掉一个目标后重新检查；批准时跳过视频只出图', async () => {
+    const { server, canvas, doc, byShot, mcp } = await sixShots()
+    const img3 = byShot(3, 'image')
+    const vid3 = byShot(3, 'video')
+    const img4 = byShot(4, 'image')
+    const prompt4 = doc.get(img4)!.params!.prompt
+    const plan = await mcp('propose_edit', {
+      summary: '第三、四镜头更紧张',
+      edits: [
+        { id: img3, params: { prompt: tense(doc, img3) } },
+        { id: img4, params: { prompt: '第 4 镜画面，冷色逆光' } },
+      ],
+    })
+    expect(plan.estimate.full).toBe('调用平台 4 次，价格未知')
+
+    // 用户在卡片上把第三镜头的提示词改成自己的写法，并去掉第四镜头
+    const MINE = `${String(doc.get(img3)!.params!.prompt)}，只留一盏顶灯`
+    const revised = await server.plans.revise(plan.plan_id, 'local', [
+      { id: img3, params: { prompt: MINE } },
+    ])
+    expect(revised.id).toBe(plan.plan_id)
+    expect(revised.revised).toBe(1)
+    expect(revised.status).toBe('pending')
+    expect(revised.targets.map((t) => [t.nodeId, t.changes[0]!.after])).toEqual([[img3, MINE]])
+    expect(revised.steps.map((s) => s.nodeId)).toEqual([img3, vid3])
+    expect(revised.estimate.full.calls).toBe(2)
+    expect(revised.targets[0]!.refs.map((r) => r.name)).toContain('林夏')
+    // 重新检查也不改画布
+    expect(doc.get(img3)!.params!.prompt).not.toBe(MINE)
+
+    // 和现在一样的改动不算方案
+    await expect(
+      server.plans.revise(plan.plan_id, 'local', [{ id: img4, params: { prompt: prompt4 } }]),
+    ).rejects.toThrow('一样')
+
+    const jobs = jobCount(server, canvas)
+    const applied = await mcp('apply_edit_plan', {
+      plan_id: plan.plan_id,
+      scope: 'full',
+      skip: [vid3],
+    })
+    expect(applied).toMatchObject({ status: 'applied', revised_by_user: 1 })
+    expect(applied.applied.nodes).toEqual([img3])
+    await waitGroup(server, applied.applied.group_id)
+    expect(jobCount(server, canvas)).toBe(jobs + 1)
+    expect(jobsOf(server, canvas, vid3)).toBe(1)
+    expect(doc.get(img3)!.params!.prompt).toBe(MINE)
+    expect(doc.get(img4)!.params!.prompt).toBe(prompt4)
+    // 执行过的方案不能再改
+    await expect(
+      server.plans.revise(plan.plan_id, 'local', [{ id: img3, params: { prompt: 'x' } }]),
+    ).rejects.toThrow('已经执行过')
+  })
+
   it('会话里方案卡片按范围批准；整轮撤销回退文字，任务记录和新候选都保留', async () => {
     const { server, canvas, doc, byShot, env } = await sixShots()
     const img3 = byShot(3, 'image')
@@ -295,7 +349,7 @@ describe('智能体修改方案', () => {
     expect(direct.status).toBe('needs_approval')
 
     const jobs = jobCount(server, canvas)
-    expect(approvals.decide(proposed.approval_id, true, 'images')).toBe(true)
+    expect(approvals.decide(proposed.approval_id, true, { scope: 'images' })).toBe(true)
     const done = await call('await_approval', { approval_id: proposed.approval_id })
     expect(done).toMatchObject({ status: 'applied', scope: 'images' })
     await waitGroup(server, done.applied.group_id)

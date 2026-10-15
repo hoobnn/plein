@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { type EditPlan, EditScope } from './edit-plan'
+import { ApplyEditPlan, type EditPlan, EditScope } from './edit-plan'
 
 /**
  * 智能体：
@@ -167,10 +167,15 @@ export const SendAgentMessage = z.object({
 })
 export type SendAgentMessage = z.infer<typeof SendAgentMessage>
 
-/** 用户处理一张确认单；修改方案的卡片允许时带上批准范围 */
+/**
+ * 用户处理一张确认单；修改方案的卡片允许时带上批准范围，
+ * 以及逐项勾选的结果：只批准哪些目标（only）、哪些步骤不运行（skip）
+ */
 export const DecideAgentApproval = z.object({
   allow: z.boolean(),
   scope: EditScope.optional(),
+  only: ApplyEditPlan.shape.only,
+  skip: ApplyEditPlan.shape.skip,
 })
 export type DecideAgentApproval = z.infer<typeof DecideAgentApproval>
 

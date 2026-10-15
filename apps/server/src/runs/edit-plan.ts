@@ -2,17 +2,19 @@ import { createHash } from 'node:crypto'
 import { expandedNodes, type ShotSource, shotsOf } from '@plein/capabilities'
 import { type CanvasElement, createDoc, type PleinDoc, setParams, SYSTEM_ORIGIN } from '@plein/doc'
 import { SEQUENCE_TYPE } from '@plein/nodes'
-import type {
-  ApplyEditPlan,
-  EditBinding,
-  EditEstimate,
-  EditKeep,
-  EditPlan,
-  EditScope,
-  EditStage,
-  EditStep,
-  EditTarget,
-  ImpactNode,
+import {
+  type ApplyEditPlan,
+  type EditBinding,
+  type EditEstimate,
+  type EditKeep,
+  type EditPlan,
+  type EditStage,
+  type EditStep,
+  type EditTarget,
+  estimateSteps,
+  type ImpactNode,
+  pickedTargets,
+  stepsFor,
 } from '@plein/protocol'
 import * as Y from 'yjs'
 import { z } from 'zod'
@@ -75,27 +77,7 @@ const stageOf = (capability: string | undefined): EditStage =>
         ? 'speech'
         : 'other'
 
-const emptyEstimate = (): EditEstimate => ({ calls: 0, cached: 0, cost: { amount: 0, unknown: 0 } })
-
-function estimate(steps: EditStep[]): EditEstimate {
-  const out = emptyEstimate()
-  for (const s of steps) {
-    if (s.cached) {
-      out.cached++
-      continue
-    }
-    out.calls++
-    if (s.price && (!out.cost.currency || out.cost.currency === s.price.currency)) {
-      out.cost.amount += s.price.amount
-      out.cost.currency = s.price.currency
-    } else out.cost.unknown++
-  }
-  return out
-}
-
-/** 某个批准范围会执行的步骤 */
-export const stepsFor = (steps: EditStep[], scope: EditScope) =>
-  scope === 'text' ? [] : scope === 'images' ? steps.filter((s) => s.scope === 'images') : steps
+const emptyEstimate = (): EditEstimate => estimateSteps([])
 
 export class EditPlans {
   private plans = new Map<string, Stored>()
@@ -121,7 +103,12 @@ export class EditPlans {
   }
 
   /** 提出方案：只读，在画布副本上套用改动做分析 */
-  async propose(canvasId: string, ownerId: string, input: ProposeEdit): Promise<EditPlan> {
+  async propose(
+    canvasId: string,
+    ownerId: string,
+    input: ProposeEdit,
+    revise?: { id: string; revised: number },
+  ): Promise<EditPlan> {
     this.sweep()
     const lease = this.runs.rooms.acquire(canvasId)
     const doc = createDoc(lease.room.doc, { origin: SYSTEM_ORIGIN })
@@ -277,7 +264,7 @@ export class EditPlans {
           untouched++
 
       const plan: EditPlan = {
-        id: newId('epl'),
+        id: revise?.id ?? newId('epl'),
         canvasId,
         summary: input.summary,
         targets,
@@ -286,10 +273,11 @@ export class EditPlans {
         untouched,
         estimate: {
           text: emptyEstimate(),
-          images: estimate(stepsFor(steps, 'images')),
-          full: estimate(steps),
+          images: estimateSteps(steps.filter((st) => st.scope === 'images')),
+          full: estimateSteps(steps),
         },
         status: 'pending',
+        ...(revise ? { revised: revise.revised } : {}),
         createdAt: Date.now(),
       }
       this.plans.set(plan.id, { plan, ownerId, edits, expires: Date.now() + PLAN_TTL_MS })
@@ -303,9 +291,32 @@ export class EditPlans {
   }
 
   /**
+   * 逐项编辑：用户在卡片上改了字段的新值或去掉了某项改动，按新的改动重新检查整份方案，
+   * 方案 id 不变，原来的方案作废。edits 是每个目标完整的改动（只含改动的键）
+   */
+  async revise(id: string, ownerId: string, edits: ProposeEdit['edits']): Promise<EditPlan> {
+    const s = this.stored(id, ownerId)
+    if (!s) throw new NodeRunError('not_found', '方案不存在或已经过期，请重新提出')
+    if (s.plan.status !== 'pending')
+      throw new NodeRunError('invalid_input', `方案${STATUS_LABEL[s.plan.status]}，不能再改`)
+    if (s.applying) throw new NodeRunError('busy', '方案正在执行')
+    s.applying = true
+    try {
+      return await this.propose(
+        s.plan.canvasId,
+        ownerId,
+        { summary: s.plan.summary, edits },
+        { id, revised: (s.plan.revised ?? 0) + 1 },
+      )
+    } finally {
+      s.applying = false
+    }
+  }
+
+  /**
    * 按范围执行方案。先检查方案绑定的对象：任何一个的参数或实际输入和提出时不同，
    * 就把方案标成 stale 返回，不写文字也不运行。only 只批准部分目标（目标节点 id 或镜头 id），
-   * 这时只运行这些目标波及的节点
+   * 这时只运行这些目标波及的节点；skip 里的步骤不运行，保留当前结果
    */
   async apply(id: string, ownerId: string, req: ApplyEditPlan, io: EditPlanIO): Promise<EditPlan> {
     const s = this.stored(id, ownerId)
@@ -324,16 +335,9 @@ export class EditPlans {
   private async applyPending(s: Stored, req: ApplyEditPlan, io: EditPlanIO): Promise<EditPlan> {
     const plan = s.plan
     const ownerId = s.ownerId
-    const picked = req.only
-      ? plan.targets.filter(
-          (t) => req.only!.includes(t.nodeId) || (t.shot && req.only!.includes(t.shot.id)),
-        )
-      : plan.targets
+    const picked = pickedTargets(plan, req.only)
     if (!picked.length) throw new NodeRunError('invalid_input', '方案里没有这些目标')
-    const chosen = new Set(picked.map((t) => t.nodeId))
-    const steps = stepsFor(plan.steps, req.scope).filter((st) =>
-      st.targets.some((t) => chosen.has(t)),
-    )
+    const steps = stepsFor(plan, req.scope, req.only, req.skip)
 
     const changed = await this.changed(plan.canvasId, ownerId, [...picked, ...steps])
     if (changed.length) {

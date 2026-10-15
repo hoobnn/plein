@@ -101,9 +101,9 @@ export interface Approval extends ApprovalRequest {
   status: ApprovalStatus
   /** 批准后执行原调用的结果（MCP 工具结果） */
   result?: Promise<unknown>
-  /** 用户批准时选的项（修改方案的批准范围） */
-  choice?: string
-  run: (choice?: string) => Promise<unknown>
+  /** 用户批准时选的项（修改方案的批准范围、选中的目标和跳过的步骤） */
+  choice?: unknown
+  run: (choice?: unknown) => Promise<unknown>
   /** 状态变化时唤醒等待者 */
   wake: Set<() => void>
 }
@@ -114,7 +114,11 @@ export class Approvals {
 
   constructor(private onChange: (a: Approval) => void) {}
 
-  create(tool: string, req: ApprovalRequest, run: (choice?: string) => Promise<unknown>): Approval {
+  create(
+    tool: string,
+    req: ApprovalRequest,
+    run: (choice?: unknown) => Promise<unknown>,
+  ): Approval {
     const a: Approval = {
       id: newId('apv'),
       tool,
@@ -133,7 +137,7 @@ export class Approvals {
   }
 
   /** 用户点了允许 / 跳过（允许时可带上选的项）；不是待确认状态时返回 false */
-  decide(id: string, allow: boolean, choice?: string): boolean {
+  decide(id: string, allow: boolean, choice?: unknown): boolean {
     const a = this.items.get(id)
     if (a?.status !== 'pending') return false
     a.status = allow ? 'approved' : 'denied'

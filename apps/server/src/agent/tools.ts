@@ -25,7 +25,7 @@ import { describeNode, executionOf, withDefaultModel } from '@plein/plugin-sdk'
 import {
   type AgentApprovalMode,
   type EditPlan,
-  EditScope,
+  ApplyEditPlan,
   MediaDeriveRequest,
   type MediaDerivation,
   MediaOp,
@@ -707,13 +707,23 @@ export function agentTools(
         PROPOSE_EDIT,
         { reason: plan.summary, ids: plan.targets.map((t) => t.nodeId) },
         async (choice) => {
-          const scope = EditScope.catch('text').parse(choice)
+          const pick = ApplyEditPlan.catch({ scope: 'text' }).parse(choice)
           try {
             const out = (await registry.invoke(APPLY_EDIT, ctx, {
               plan_id: plan.id,
-              scope,
+              scope: pick.scope,
+              ...(pick.only ? { only: pick.only } : {}),
+              ...(pick.skip ? { skip: pick.skip } : {}),
             })) as Record<string, unknown>
-            return JSON.stringify({ ...out, scope }, null, 1)
+            return JSON.stringify(
+              {
+                ...out,
+                scope: pick.scope,
+                ...(pick.skip?.length ? { skipped_by_user: pick.skip } : {}),
+              },
+              null,
+              1,
+            )
           } catch (err) {
             if (!(err instanceof CapabilityError)) throw err
             return { content: [{ type: 'text', text: err.message }], isError: true }
@@ -729,7 +739,7 @@ export function agentTools(
         status: 'needs_approval',
         approval_id: a.id,
         plan: planBrief(plan),
-        next: '方案卡片已经给用户看了，用户会选只改文字、只出候选图或完整方案。用一句话说明方案要点，然后调用 await_approval 等用户选择；用户批准后服务端直接按范围执行并返回结果，不要再调用 apply_edit_plan。',
+        next: '方案卡片已经给用户看了，用户会选只改文字、只出候选图或完整方案，也可能在卡片上逐项改字段、去掉某个目标或某个步骤。用一句话说明方案要点，然后调用 await_approval 等用户选择；用户批准后服务端直接按范围执行并返回最终方案（以返回里的 targets、applied 为准，revised_by_user / skipped_by_user 表示用户改过），不要再调用 apply_edit_plan。',
       })
     }
   }

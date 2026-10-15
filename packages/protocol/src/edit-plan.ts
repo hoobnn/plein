@@ -110,12 +110,79 @@ export interface EditPlan {
   }
   /** 批准时发现变了的对象 */
   changed?: string[]
+  /** 用户在卡片上改过几次字段（逐项编辑后重新检查过的方案） */
+  revised?: number
   createdAt: number
 }
 
-/** 批准方案：范围，可只批准部分目标（目标节点 id 或镜头 id） */
+const planIds = z.array(z.string().min(1).max(200)).max(200)
+
+/**
+ * 批准方案：范围，可只批准部分目标（目标节点 id 或镜头 id），
+ * skip 列出不运行的步骤（节点 id），这些节点保留当前结果
+ */
 export const ApplyEditPlan = z.object({
   scope: EditScope,
-  only: z.array(z.string().min(1).max(200)).min(1).max(200).optional(),
+  only: planIds.min(1).optional(),
+  skip: planIds.optional(),
 })
 export type ApplyEditPlan = z.infer<typeof ApplyEditPlan>
+
+/**
+ * 逐项编辑方案：用户在卡片上改了某个字段改成什么、或去掉某项改动后，给出每个目标完整的改动，
+ * 服务端按它重新检查（实际参考、要重做的节点、调用估算），方案 id 不变
+ */
+export const ReviseEditPlan = z.object({
+  edits: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(200),
+        params: z.record(z.string(), z.unknown()),
+      }),
+    )
+    .min(1)
+    .max(50),
+})
+export type ReviseEditPlan = z.infer<typeof ReviseEditPlan>
+
+/** 选中的目标：没给 only 时是全部 */
+export function pickedTargets(plan: Pick<EditPlan, 'targets'>, only?: readonly string[]) {
+  if (!only) return plan.targets
+  return plan.targets.filter(
+    (t) => only.includes(t.nodeId) || (t.shot !== undefined && only.includes(t.shot.id)),
+  )
+}
+
+/** 某个批准范围、选中的目标和跳过的步骤下会执行的步骤 */
+export function stepsFor(
+  plan: Pick<EditPlan, 'targets' | 'steps'>,
+  scope: EditScope,
+  only?: readonly string[],
+  skip?: readonly string[],
+): EditStep[] {
+  if (scope === 'text') return []
+  const chosen = new Set(pickedTargets(plan, only).map((t) => t.nodeId))
+  return plan.steps.filter(
+    (s) =>
+      (scope === 'full' || s.scope === 'images') &&
+      !skip?.includes(s.nodeId) &&
+      s.targets.some((t) => chosen.has(t)),
+  )
+}
+
+/** 一组步骤的调用次数、沿用数和费用；缺价格的计入未知 */
+export function estimateSteps(steps: readonly EditStep[]): EditEstimate {
+  const out: EditEstimate = { calls: 0, cached: 0, cost: { amount: 0, unknown: 0 } }
+  for (const s of steps) {
+    if (s.cached) {
+      out.cached++
+      continue
+    }
+    out.calls++
+    if (s.price && (!out.cost.currency || out.cost.currency === s.price.currency)) {
+      out.cost.amount += s.price.amount
+      out.cost.currency = s.price.currency
+    } else out.cost.unknown++
+  }
+  return out
+}

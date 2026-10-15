@@ -101,9 +101,12 @@ export const API = {
   agentSession: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}`,
   agentMessages: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}/messages`,
   agentStop: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}/stop`,
-  /** 允许或跳过一张确认单，body 为 { allow: boolean } */
+  /** 允许或跳过一张确认单，body 为 DecideAgentApproval */
   agentApproval: (id: string, approvalId: string) =>
     `/api/agent/sessions/${encodeURIComponent(id)}/approvals/${encodeURIComponent(approvalId)}`,
+  /** 逐项编辑修改方案卡片：POST { edits }，重新检查后返回新方案 */
+  agentEditPlan: (id: string, approvalId: string) =>
+    `/api/agent/sessions/${encodeURIComponent(id)}/approvals/${encodeURIComponent(approvalId)}/plan`,
   /** 对外开放的 MCP：GET 状态，POST 生成新令牌（旧的作废），DELETE 关闭 */
   mcpExternal: '/api/mcp/external',
   /** 插件贡献的能力，返回 PluginCapabilityInfo[] */
