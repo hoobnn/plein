@@ -1,4 +1,6 @@
 import { type ChildProcess, fork } from 'node:child_process'
+import { realpathSync } from 'node:fs'
+import { isAbsolute, relative, sep } from 'node:path'
 import { fromRpcError, type RpcMessage, toRpcError } from '@plein/plugin-sdk'
 
 /** 子进程反过来请宿主办的事；返回值原样回给子进程 */
@@ -49,10 +51,17 @@ export class PluginProcess {
 
   private spawn() {
     if (this.broken) throw new Error(this.broken)
+    // Node 加载入口时会解析符号链接，权限白名单和入口必须指向同一个真实目录。
+    // 宿主先解析，避免子进程为 /var → /private/var 等别名探测目录外的路径。
+    const dir = realpathSync(this.dir)
+    const entry = realpathSync(this.entry)
+    const path = relative(dir, entry)
+    if (path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path))
+      throw new Error('插件入口必须在插件目录内')
     const execArgv = ['--max-old-space-size=512']
-    if (PERMISSION) execArgv.push(PERMISSION, `--allow-fs-read=${this.dir}`)
-    const child = fork(this.entry, [], {
-      cwd: this.dir,
+    if (PERMISSION) execArgv.push(PERMISSION, `--allow-fs-read=${dir}`)
+    const child = fork(entry, [], {
+      cwd: dir,
       execArgv,
       // 环境变量不带过去（密钥、令牌都在宿主这边）；Electron 里要靠这个变量按 Node 运行
       env: process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {},
