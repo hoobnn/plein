@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
@@ -24,6 +24,10 @@ test.beforeAll(() => {
     'libvpx-vp9',
     join(dir, 'retake.webm'),
   ])
+})
+
+test.afterAll(() => {
+  if (dir) rmSync(dir, { recursive: true, force: true })
 })
 
 const params = (page: Page, id: string) =>
@@ -139,4 +143,49 @@ test('取帧续镜：从尾帧接出下一个镜头，记下父视频；父镜�
   )
   expect(refreshed).not.toBe(oldFrame)
   expect((await params(page, next.id)).continuesFrom).toMatchObject({ assetId: retake })
+
+  // 取帧已在服务端完成、响应尚未到达时手动换图，迟到的响应不能覆盖它。
+  await page.evaluate((id) => {
+    const doc = window.__plein.engine.doc
+    const m = doc.mutable(id) as unknown as { set(k: string, v: unknown): void }
+    m.set('adopted', undefined)
+    // 最早的视频不是刚采用的 retake。
+    const el = doc.get(id)!
+    const first = el.results!.find((r) => r.id !== 'retake')!
+    m.set('adopted', first.id)
+  }, parent!.id)
+  await expect(continued).toContainText('首帧已旧')
+  let release!: () => void
+  let captured!: () => void
+  const ready = new Promise<void>((done) => {
+    captured = done
+  })
+  const gate = new Promise<void>((done) => {
+    release = done
+  })
+  await page.route('**/api/media/derive', async (route) => {
+    const response = await route.fetch()
+    captured()
+    await gate
+    await route.fulfill({ response })
+  })
+  await continued.getByRole('button', { name: '换成新画面' }).click()
+  await ready
+  const before = await params(page, next.id)
+  await page.evaluate(
+    ({ id, assetId }) => {
+      const m = window.__plein.engine.doc.mutable(id) as unknown as {
+        set(k: string, v: unknown): void
+      }
+      m.set('assetId', assetId)
+    },
+    { id: frame.id, assetId: oldFrame! },
+  )
+  release()
+  await expect(page.locator('.ui-toast')).toContainText('续镜内容已经改变')
+  expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.assetId, frame.id)).toBe(
+    oldFrame,
+  )
+  expect(await params(page, next.id)).toEqual(before)
+  await page.unroute('**/api/media/derive')
 })

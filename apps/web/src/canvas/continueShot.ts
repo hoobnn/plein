@@ -4,6 +4,7 @@ import {
   connect,
   createElement,
   currentResult,
+  ReadOnlyDocError,
   setParam,
   updateElement,
   videoAssetOf,
@@ -80,6 +81,7 @@ export async function continueShot(
   sourceId: string,
   point: ContinuePoint,
 ): Promise<string> {
+  if (engine.doc.readOnly) throw new ReadOnlyDocError()
   const source = engine.doc.get(sourceId)
   const assetId = videoAssetOf(source)
   if (!source || !assetId) throw new Error('选中的不是视频')
@@ -103,8 +105,11 @@ export async function continueShot(
         })
   const frameAsset = frame?.assets[0]
   if (frame && !frameAsset) throw new Error('没取到画面')
-  // 抽帧要等服务端，期间源可能被删了
-  if (!engine.doc.get(sourceId)) throw new Error('视频已经不在画布上了')
+  // 只接受仍对应当前视频的抽帧；等待期间的参数编辑则沿用最新值。
+  if (engine.doc.readOnly) throw new ReadOnlyDocError()
+  const latest = engine.doc.get(sourceId)
+  if (!latest) throw new Error('视频已经不在画布上了')
+  if (videoAssetOf(latest) !== assetId) throw new Error('视频已经更换，请重新续镜')
 
   const from: ContinuesFrom = {
     elementId: sourceId,
@@ -120,7 +125,7 @@ export async function continueShot(
         : {}),
   }
   const base = nodeElement(node)
-  const params = continueParams(node, source, from, frameAsset)
+  const params = continueParams(node, latest, from, frameAsset)
 
   const { doc } = engine
   // 取出的帧、新节点和两条连线算一步撤销
@@ -186,15 +191,17 @@ export function continueStale(engine: Engine, nodeId: string): boolean {
 /** 用父镜头当前的视频重新取帧，替换旧的首帧图片（同一个元素换资产，连线不动） */
 export async function refreshContinue(engine: Engine, nodeId: string) {
   const { doc } = engine
+  if (doc.readOnly) throw new ReadOnlyDocError()
   const from = continuesFromOf(doc.get(nodeId))
   const parent = from ? doc.get(from.elementId) : undefined
   const assetId = videoAssetOf(parent)
   if (!from || !parent || !assetId) throw new Error('上一个镜头已经不在画布上了')
-  const frameEl = doc
-    .edgesOf(nodeId)
-    .map((e) => (e.to[0] === nodeId ? doc.get(e.from[0]) : undefined))
-    .find((s) => s?.assetId === from.frameAssetId)
-  if (!frameEl) throw new Error('首帧图片已经断开了')
+  const edge = doc.edgesOf(nodeId).find((e) => {
+    const el = doc.get(e.from[0])
+    return e.to[0] === nodeId && el?.kind === 'image' && el.assetId === from.frameAssetId
+  })
+  const frameEl = edge && doc.get(edge.from[0])
+  if (!edge || !frameEl) throw new Error('首帧图片已经断开了')
   const made = await api.mediaDerive({
     op: 'frame',
     assetId,
@@ -204,6 +211,25 @@ export async function refreshContinue(engine: Engine, nodeId: string) {
   })
   const asset = made.assets[0]
   if (!asset) throw new Error('没取到画面')
+  // 比较与本次取帧相关的状态，避免覆盖等待期间的新视频、手动换图或断线。
+  // 校验必须放在事务前：失败时连首帧、来路和撤销记录都不改。
+  if (doc.readOnly) throw new ReadOnlyDocError()
+  if (
+    videoAssetOf(doc.get(from.elementId)) !== assetId ||
+    JSON.stringify(continuesFromOf(doc.get(nodeId))) !== JSON.stringify(from) ||
+    doc.get(frameEl.id)?.assetId !== from.frameAssetId ||
+    !doc
+      .edgesOf(nodeId)
+      .some(
+        (e) =>
+          e.id === edge.id &&
+          e.from[0] === frameEl.id &&
+          e.from[1] === edge.from[1] &&
+          e.to[0] === nodeId &&
+          e.to[1] === edge.to[1],
+      )
+  )
+    throw new Error('续镜内容已经改变，请重新获取首帧')
   doc.undo.stopCapturing()
   doc.ydoc.transact(() => {
     updateElement(doc, frameEl.id, { assetId: asset.id })
