@@ -60,6 +60,7 @@ export function ImpactPanel() {
     <Presence>
       {open && engine && canvasId && (
         <Panel
+          key={canvasId}
           engine={engine}
           canvasId={canvasId}
           onClose={() => useCanvas.getState().toggleImpact(false)}
@@ -83,47 +84,64 @@ function Panel({
   const [error, setError] = useState<string | null>(null)
   const [picked, setPicked] = useState<Set<string> | null>(null)
   const [busy, setBusy] = useState(false)
+  const [refreshing, setRefreshing] = useState(true)
+  const requestId = useRef(0)
   const [syncing, setSyncing] = useState<{ board: string; shots: string[] } | null>(null)
   /** 上次分析里每个节点的建议与保留状态：变了才重新按建议勾选 */
   const seen = useRef(new Map<string, string>())
 
   const load = useCallback(async () => {
+    const id = ++requestId.current
+    setRefreshing(true)
     try {
       const r = await api.canvasImpact(canvasId)
+      if (id !== requestId.current) return
       setReport(r)
       setError(null)
       // 新出现的节点、建议变了的节点按建议勾选；其余保留用户的勾选，去掉已经不在列表里的
       const before = seen.current
-      seen.current = new Map(r.nodes.map((n) => [n.nodeId, `${n.suggest}/${n.kept?.id ?? ''}`]))
+      const after = new Map(r.nodes.map((n) => [n.nodeId, `${n.suggest}/${n.kept?.id ?? ''}`]))
+      seen.current = after
       setPicked((prev) => {
         const next = new Set<string>()
         const auto = defaults(r)
         for (const n of r.nodes) {
           if (!selectable(n)) continue
-          const same = before.get(n.nodeId) === seen.current.get(n.nodeId)
+          const same = before.get(n.nodeId) === after.get(n.nodeId)
           if (same ? prev?.has(n.nodeId) : auto.has(n.nodeId)) next.add(n.nodeId)
         }
         return next
       })
     } catch (err) {
-      setError((err as Error).message)
+      if (id === requestId.current) setError((err as Error).message)
+    } finally {
+      if (id === requestId.current) setRefreshing(false)
     }
   }, [canvasId])
+
+  const invalidate = useCallback(() => {
+    requestId.current++
+  }, [])
 
   useEffect(() => {
     void load()
     // 文档变了（同步了计划、跑完了节点）停一会儿再重新分析
     let timer: ReturnType<typeof setTimeout> | undefined
     const off = engine.doc.subscribe(() => {
+      // 文档一变就让旧请求失效，防抖等待期间也不能按旧报告执行。
+      invalidate()
+      setRefreshing(true)
       clearTimeout(timer)
       timer = setTimeout(() => void load(), 800)
     })
     return () => {
+      invalidate()
       off()
       clearTimeout(timer)
     }
-  }, [engine, load])
+  }, [engine, load, invalidate])
 
+  const unavailable = busy || refreshing || !!error
   const nodes = useMemo(() => report?.nodes ?? [], [report])
   const groups = useMemo(() => groupByShot(nodes), [nodes])
   const chosen = nodes.filter((n) => picked?.has(n.nodeId))
@@ -151,7 +169,7 @@ function Panel({
 
   const keep = async (list: ImpactNode[]) => {
     const targets = list.filter((n) => n.inputHash && !n.kept && n.impact !== 'related')
-    if (!targets.length) return
+    if (unavailable || !targets.length) return
     setBusy(true)
     try {
       await api.keepResults(canvasId, {
@@ -170,13 +188,14 @@ function Panel({
     }
   }
   const revoke = async (id: string) => {
+    if (unavailable) return
     await api.revokeKeep(canvasId, id).catch((err) => notify((err as Error).message))
     void load()
   }
 
   const rerun = async () => {
     const ids = chosen.map((n) => n.nodeId)
-    if (!ids.length) return
+    if (unavailable || !ids.length) return
     const signal = groupRunSignal()
     onClose()
     try {
@@ -218,10 +237,25 @@ function Panel({
         }
       />
       <div className="ui-scrollbar min-h-0 flex-1 overflow-auto px-5 py-4">
-        {!report ? (
-          <p className="py-6 text-center text-xs text-ink-subtle">
-            {error ? `分析失败：${error}` : '正在分析…'}
+        {error ? (
+          <div role="alert" className="mb-3 flex items-center gap-2 text-xs text-danger">
+            <span>分析失败：{error}。重新分析后再保留或重做。</span>
+            <button
+              type="button"
+              className="ui-btn ui-btn-sm ui-btn-secondary ml-auto flex-none"
+              disabled={refreshing}
+              onClick={() => void load()}
+            >
+              重新分析
+            </button>
+          </div>
+        ) : refreshing && report ? (
+          <p role="status" className="mb-3 text-xs text-ink-subtle">
+            正在重新分析，完成后可保留或重做。
           </p>
+        ) : null}
+        {!report ? (
+          <p className="py-6 text-center text-xs text-ink-subtle">{!error && '正在分析…'}</p>
         ) : nodes.length === 0 && report.sequence.length === 0 ? (
           <EmptyState
             icon="check"
@@ -287,7 +321,7 @@ function Panel({
                       key={n.nodeId}
                       node={n}
                       checked={!!picked?.has(n.nodeId)}
-                      busy={busy}
+                      busy={unavailable}
                       onToggle={(on) => toggle(n.nodeId, on)}
                       onKeep={() => void keep([n])}
                       onRevoke={() => n.kept && void revoke(n.kept.id)}
@@ -337,14 +371,19 @@ function Panel({
                 : ' · 价格未知')}
           </span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <button type="button" className="ui-btn ui-btn-secondary" onClick={speechOnly}>
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary"
+              disabled={unavailable}
+              onClick={speechOnly}
+            >
               <Icon name="mic" />
               只改配音 / 字幕
             </button>
             <button
               type="button"
               className="ui-btn ui-btn-secondary"
-              disabled={busy || !keepable.length}
+              disabled={unavailable || !keepable.length}
               title="没勾选的过期结果记为保留：不改缓存，之后输入再变会重新提示"
               onClick={() => void keep(keepable)}
             >
@@ -353,7 +392,7 @@ function Panel({
             <button
               type="button"
               className="ui-btn ui-btn-primary"
-              disabled={!chosen.length}
+              disabled={unavailable || !chosen.length}
               onClick={() => void rerun()}
             >
               <Icon name="retry" />
@@ -409,7 +448,7 @@ function Row({
         type="checkbox"
         className="mt-0.5"
         aria-label={`重做${role ?? n.name}`}
-        disabled={!selectable(n)}
+        disabled={busy || !selectable(n)}
         checked={checked}
         onChange={(e) => onToggle(e.target.checked)}
       />
