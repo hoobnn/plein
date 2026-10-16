@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import { connect, createDoc, createElement } from '@plein/doc'
+import type { Catalog } from '@plein/protocol'
 import { WebSocket } from 'ws'
 import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
@@ -96,6 +97,9 @@ try {
     `${nodeTypes.length} 个节点`,
   )
 
+  const imageModel = (catalog.body as unknown as Catalog).defaultModels?.['image.generate']
+  check('生成图片默认模型可用', Boolean(imageModel), imageModel ?? '未配置')
+
   const created = await api('/api/canvases', {
     method: 'POST',
     body: JSON.stringify({ title: '冒烟' }),
@@ -132,7 +136,7 @@ try {
       nodeType: 'plein/image',
       nodeVersion: 1,
       name: '分镜图',
-      params: { count: 1 },
+      params: { count: 1, model: imageModel },
       ports: imagePorts,
       x: 300,
       y: 0,
