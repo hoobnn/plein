@@ -21,7 +21,7 @@ import { useCatalog } from '../stores/catalog'
 import { canvasTheme, useTheme } from '../stores/theme'
 import { demoAssetUrls, seedDemo } from './demo'
 import { importFiles, importText } from './import'
-import { localCacheName } from './localCache'
+import { localCacheName, watchCacheWrites } from './localCache'
 import { abortGroupRuns } from '../features/runs/groupRuns'
 import { watchStale } from '../features/runs/stale'
 import { NodeCards } from './nodeCards'
@@ -207,6 +207,25 @@ export function CanvasView({ source }: { source: CanvasSource }) {
       // 本地缓存：上次打开过的画布不等服务端，先用缓存显示，同步完再补齐差异
       const local = openLocalCache(canvasId, ydoc)
       setSync('connecting', !!local)
+      let cachePending = false
+      if (local) {
+        const stop = watchCacheWrites(ydoc, local, (state) => {
+          if (disposed) return
+          cachePending = state !== 'saved'
+          useCanvas.getState().setCacheSaved(!cachePending)
+          if (state === 'failed') setSync(useCanvas.getState().sync, false)
+        })
+        const beforeUnload = (event: BeforeUnloadEvent) => {
+          if (!cachePending || useCanvas.getState().sync !== 'disconnected') return
+          event.preventDefault()
+          event.returnValue = ''
+        }
+        window.addEventListener('beforeunload', beforeUnload)
+        cleanups.push(() => {
+          stop()
+          window.removeEventListener('beforeunload', beforeUnload)
+        })
+      }
       const provider = new WebsocketProvider(syncUrl(), canvasId, ydoc)
       provider.awareness.setLocalStateField('user', { name: '我', color: '#2869f0' })
       // 断线后 y-websocket 会反复「连接中 → 断开」重试：「连接中」不改状态，免得来回闪
@@ -271,6 +290,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
       for (const c of cleanups.reverse()) c()
       abortGroupRuns()
       setSync('local')
+      useCanvas.getState().setCacheSaved(true)
       setCanvasId(null)
     }
   }, [kind, canvasId, count])

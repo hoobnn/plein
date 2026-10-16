@@ -26,8 +26,9 @@ export interface NoticeAction {
 interface CanvasStore extends EngineState {
   engine: Engine | null
   sync: SyncStatus
-  /** 本机缓存（IndexedDB）可用：断线时的改动刷新后还在 */
+  /** 本机缓存（IndexedDB）可用；是否写入完成另由 cacheSaved 表示 */
   localCache: boolean
+  cacheSaved: boolean
   /** 正在导入的文件：已完成 / 总数 */
   importing: { done: number; total: number } | null
   notice: string | null
@@ -60,6 +61,7 @@ interface CanvasStore extends EngineState {
   /** 挂载引擎并把它的运行时状态镜像到 store（只在状态变化时更新，不跟随每帧） */
   attach(engine: Engine): () => void
   setSync(sync: SyncStatus, localCache?: boolean): void
+  setCacheSaved(saved: boolean): void
   setImporting(importing: { done: number; total: number } | null): void
   notify(notice: string | null, action?: NoticeAction): void
   setCanvasId(id: string | null): void
@@ -92,6 +94,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   engine: null,
   sync: 'local',
   localCache: true,
+  cacheSaved: true,
   importing: null,
   notice: null,
   noticeAction: null,
@@ -136,6 +139,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
       })
     }
   },
+  setCacheSaved: (cacheSaved) => set({ cacheSaved }),
   setCanvasId: (canvasId) => set({ canvasId }),
   setMenu: (menu) => set({ menu }),
   openStoryboard: (storyboard) => set({ storyboard }),

@@ -277,14 +277,22 @@ function SidebarToggle({ open, disabled }: { open: boolean; disabled: boolean })
 /** 同步状态：正常同步时只留一个点，异常才写出来 */
 function SyncDot({ sync }: { sync: SyncStatus }) {
   const localCache = useCanvas((s) => s.localCache)
+  const cacheSaved = useCanvas((s) => s.cacheSaved)
   const volatile = sync === 'disconnected' && !localCache
-  const label = volatile ? VOLATILE.label : SYNC_LABELS[sync]
+  const pending = sync === 'disconnected' && localCache && !cacheSaved
+  const label = volatile ? VOLATILE.label : pending ? '离线 · 正在保存到本机' : SYNC_LABELS[sync]
+  const hint = volatile
+    ? VOLATILE.hint
+    : pending
+      ? '离线改动正在写入浏览器缓存，请等待保存完成后再刷新或关闭'
+      : SYNC_HINTS[sync]
   return (
     <span
       className={`flex min-w-0 items-center gap-1.5 px-2 text-xs ${sync === 'disconnected' ? 'text-warning' : 'text-ink-subtle'}`}
-      title={volatile ? VOLATILE.hint : SYNC_HINTS[sync]}
+      title={hint}
       data-testid="sync-status"
       data-sync={sync}
+      data-cache={!localCache ? 'unavailable' : cacheSaved ? 'saved' : 'saving'}
     >
       <span
         className={`size-1.5 rounded-full ${sync === 'connected' ? 'bg-success' : sync === 'disconnected' ? 'bg-warning' : 'bg-ink-subtle'}`}
