@@ -454,6 +454,40 @@ describe('节点结果与端口', () => {
     expect(ids).not.toContain(`r${MAX_RESULTS - 1}`)
   })
 
+  it.each([true, false])(
+    '候选超过上限仍保留当前采用及同次运行的尾帧（显式采用=%s）',
+    (explicit) => {
+      const doc = open()
+      const id = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200, ports: nodePorts })
+      const r = (id: string, port: string, runId: string) => ({
+        id,
+        port,
+        runId,
+        at: 1,
+        value: { type: 'image' as const, assetId: id },
+      })
+      addResults(doc, id, [
+        r('chosen', 'images', 'chosen-run'),
+        r('tail', 'lastFrame', 'chosen-run'),
+      ])
+      if (!explicit) adoptResult(doc, id, null)
+      const pending = Array.from({ length: MAX_RESULTS }, (_, i) =>
+        r(`candidate-${i}`, 'images', `run-${i}`),
+      )
+      addResults(doc, id, pending, { adopt: false })
+      const el = doc.get(id)!
+      expect(el.results).toHaveLength(MAX_RESULTS)
+      expect(currentResult(el)?.id).toBe('chosen')
+      expect(currentResult(el, 'lastFrame')?.id).toBe('tail')
+      expect(el.results!.slice(0, 2).map((r) => r.id)).toEqual(['candidate-0', 'candidate-1'])
+      expect(el.results!.map((r) => r.id)).not.toContain(`candidate-${MAX_RESULTS - 1}`)
+      const restored = open()
+      Y.applyUpdate(restored.ydoc, Y.encodeStateAsUpdate(doc.ydoc))
+      expect(currentResult(restored.get(id)!)?.id).toBe('chosen')
+      expect(currentResult(restored.get(id)!, 'lastFrame')?.id).toBe('tail')
+    },
+  )
+
   it('videoAssetOf：视频元素或当前结果是视频的节点', () => {
     const doc = open()
     const [video, image, n] = createElements(doc, [

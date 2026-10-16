@@ -333,10 +333,23 @@ export function addResults(
     if (!m) return
     const old = Array.isArray(m.get('results')) ? (m.get('results') as NodeResult[]) : []
     const list = [...results, ...old]
-    m.set('results', list.slice(0, MAX_RESULTS))
-    if (opts.adopt !== false) m.set('adopted', results[0]!.id)
-    // 没显式采用过时当前结果是最新的那个：钉住原来的，免得新插进来的顶替它
-    else if (!m.get('adopted') && old[0]) m.set('adopted', old[0].id)
+    const chosen =
+      opts.adopt === false ? (old.find((r) => r.id === m.get('adopted')) ?? old[0]) : results[0]
+    // 候选限额不能挤掉正在使用的结果，也不能拆散其视频 / 尾帧等关联输出。
+    // 先为采用的那次运行留位置，其余按新到旧填满，最终仍按原历史顺序展示。
+    const priority = new Set<string>()
+    if (chosen) {
+      priority.add(chosen.id)
+      for (const r of list) if (r.runId === chosen.runId) priority.add(r.id)
+    }
+    for (const r of list) priority.add(r.id)
+    const keep = new Set([...priority].slice(0, MAX_RESULTS))
+    m.set(
+      'results',
+      list.filter((r) => keep.has(r.id)),
+    )
+    // 无显式采用或旧引用已无效时也钉住实际生效的结果，避免新候选抢占。
+    if (chosen) m.set('adopted', chosen.id)
   }, SYSTEM_ORIGIN)
 }
 

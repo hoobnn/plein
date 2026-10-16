@@ -1,4 +1,6 @@
 import {
+  addResults,
+  MAX_RESULTS,
   connect,
   createDoc,
   createElement,
@@ -270,33 +272,50 @@ describe('远端成功、本地获取失败', () => {
 })
 
 describe('晚返回的结果', () => {
-  it('取消后平台仍生成完：记为用户取消；取回的结果进候选，不覆盖当前结果', async () => {
-    const { server } = await boot()
-    const { id, doc } = await canvas(server)
-    const a = addNode(doc, 'plein/image', { params: { prompt: 'a', count: 1 } })
-    const before = await firstResult(server, id, doc, a)
-    mock(server, { latencyMs: 300 })
-    // 平台取消不了正在生成的任务
-    vi.spyOn(mockProvider, 'cancel').mockResolvedValue()
-    const submit = vi.spyOn(mockProvider, 'submit')
-    const run = server.runs.start(id, a, 'local')
-    await until(() => server.runs.store.get(run)?.calls.includes('pending'))
-    server.runs.cancel(id, a)
-    expect(await server.runs.wait(run)).toBe('canceled')
-    expect(job(server, id, run)).toMatchObject({
-      canceledBy: 'user',
-      recovery: { state: 'remote_pending', refetchable: true },
-    })
+  it.each([1, MAX_RESULTS])(
+    '取消后平台仍生成完：取回结果不覆盖当前采用（原记录 %s 条）',
+    async (historySize) => {
+      const { server } = await boot()
+      const { id, doc } = await canvas(server)
+      const a = addNode(doc, 'plein/image', { params: { prompt: 'a', count: 1 } })
+      const before = await firstResult(server, id, doc, a)
+      if (historySize > 1) {
+        const original = currentResult(doc.get(a)!)!
+        addResults(
+          doc,
+          a,
+          Array.from({ length: historySize - 1 }, (_, i) => ({
+            ...original,
+            id: `candidate-${i}`,
+            runId: `history-${i}`,
+          })),
+          { adopt: false },
+        )
+      }
+      mock(server, { latencyMs: 300 })
+      // 平台取消不了正在生成的任务
+      vi.spyOn(mockProvider, 'cancel').mockResolvedValue()
+      const submit = vi.spyOn(mockProvider, 'submit')
+      const run = server.runs.start(id, a, 'local')
+      await until(() => server.runs.store.get(run)?.calls.includes('pending'))
+      server.runs.cancel(id, a)
+      expect(await server.runs.wait(run)).toBe('canceled')
+      expect(job(server, id, run)).toMatchObject({
+        canceledBy: 'user',
+        recovery: { state: 'remote_pending', refetchable: true },
+      })
 
-    expect((await recover(server, id, run, { action: 'refetch' })).status).toBe(200)
-    await until(
-      () => job(server, id, run).recovery?.state === 'stored' && status(server, run) === 'canceled',
-    )
-    expect(submit).toHaveBeenCalledTimes(1)
-    expect(doc.get(a)?.results).toHaveLength(2)
-    expect(currentResult(doc.get(a)!)?.id).toBe(before)
-    expect(job(server, id, run).recovery).toMatchObject({ state: 'stored', held: 'canceled' })
-  })
+      expect((await recover(server, id, run, { action: 'refetch' })).status).toBe(200)
+      await until(
+        () =>
+          job(server, id, run).recovery?.state === 'stored' && status(server, run) === 'canceled',
+      )
+      expect(submit).toHaveBeenCalledTimes(1)
+      expect(doc.get(a)?.results).toHaveLength(Math.min(MAX_RESULTS, historySize + 1))
+      expect(currentResult(doc.get(a)!)?.id).toBe(before)
+      expect(job(server, id, run).recovery).toMatchObject({ state: 'stored', held: 'canceled' })
+    },
+  )
 
   it('取消时提交请求在途、随后返回：入库待采用，任务仍是已取消', async () => {
     const { server } = await boot()
