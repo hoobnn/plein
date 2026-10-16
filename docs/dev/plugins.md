@@ -99,6 +99,8 @@ export const serverPlugin = defineServerPlugin(plugin, {
 
 错误统一抛 `ProviderError(code, message)`，`code` 为 `auth`、`quota`、`rate_limit`、`invalid_input`、`content_policy`、`timeout`、`unavailable` 等，节点上据此显示原因，`rate_limit` / `unavailable` / `timeout` 默认可重试。请求可能已到平台却没拿到回应（提交时网络断开、响应读不出来）时带 `outcome: 'unknown'`，宿主不会把它当作没提交；共用的 `shared/http.ts` 对 POST 的传输失败已自动标上。
 
+内置适配器通过 `send` 发请求、`readJson` / `readText` 读取完整响应体：收到响应头后断流仍是传输失败，POST 保留提交未知，GET 可以恢复查询；不要用无条件 `catch` 把断流吞成 JSON 格式错误。发出请求后取消 POST 也不能证明平台没受理，调用前已取消则不发请求。`poll` 只有在平台明确返回终止失败状态时才返回 `state: 'failed'`；缺失、未知或无效响应应抛错，宿主据此保留远端 ID。取消前需要查询状态的平台，还应核对响应里的任务 ID。
+
 ### 模型声明参数
 
 每个模型可以声明两样东西，节点表单据此生成，不用为每个平台写界面：

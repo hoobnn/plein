@@ -182,6 +182,15 @@ describe('MiniMax 官方 HTTP 契约', () => {
       expect.objectContaining({ method: 'DELETE' }),
     )
   })
+  it.each([{ task: { id: 'other', status: 'queued' } }, {}])(
+    '取消查询缺少匹配任务时不发 DELETE：%j',
+    async (reply) => {
+      const { ctx, fetch } = setup([reply])
+      await expect(minimaxProvider.cancel!('t1', ctx)).rejects.toMatchObject({ code: 'unknown' })
+      expect(fetch).toHaveBeenCalledTimes(1)
+      expect(fetch.mock.calls[0]?.[1]?.method).toBe('GET')
+    },
+  )
   it('hex 配音转为二进制音频并归一化毫秒用量', async () => {
     const { ctx, body } = setup([
       { data: { audio: '0102ff' }, extra_info: { audio_length: 1500, usage_characters: 2 } },

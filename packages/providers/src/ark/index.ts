@@ -18,6 +18,7 @@ import {
   imageDataUrl,
   type Json,
   type Method,
+  readJson,
   redact,
   send,
   withRetry,
@@ -234,6 +235,10 @@ async function request(
 ): Promise<Json> {
   const key = ctx.secret('ARK_API_KEY')
   if (!key) throw new ProviderError('auth', '请先配置 ARK_API_KEY')
+  const messages = {
+    cancelled: '火山方舟请求已取消',
+    network: '火山方舟网络请求失败；生成提交结果可能未知，不会自动重新提交',
+  }
   const response = await send(
     ctx,
     `${BASE_URL}${path}`,
@@ -242,18 +247,14 @@ async function request(
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       ...(body ? { body: JSON.stringify(body) } : {}),
     },
-    {
-      cancelled: '火山方舟请求已取消',
-      network: '火山方舟网络请求失败；生成提交结果可能未知，不会自动重新提交',
-    },
+    messages,
   )
-  let data: Json
-  try {
-    data = asJson(await response.json())
-  } catch {
+  const value = await readJson(ctx, response, method, messages)
+  if (value === null) {
     if (!response.ok) throw withRetry(errorInfo({}, response.status, key), method)
     throw new ProviderError('unknown', '火山方舟返回无效 JSON；不会自动重新提交')
   }
+  const data = asJson(value)
   if (
     !response.ok ||
     (data.error && !['failed', 'cancelled', 'expired'].includes(String(data.status)))
@@ -325,10 +326,10 @@ async function chat(model: string, input: CapabilityInput<'text.chat'>, ctx: Con
         },
       )
       if (!res.ok) {
-        let data: unknown = {}
-        try {
-          data = await res.json()
-        } catch {}
+        const data = await readJson(ctx, res, 'POST', {
+          cancelled: '火山方舟请求已取消',
+          network: '火山方舟网络请求失败；对话结果可能未知，不会自动重新提交',
+        })
         throw withRetry(errorInfo(asJson(data).error, res.status, key), 'POST')
       }
       return requireSseDone(

@@ -13,6 +13,7 @@ import {
   type PluginManifestInput,
   type PollResult,
   type ProviderRequest,
+  ProviderError,
 } from '@plein/plugin-sdk'
 import type { Catalog, ProviderConfigView, ProviderTestResult } from '@plein/protocol'
 import { beforeAll, describe, expect, it, vi } from 'vite-plus/test'
@@ -638,6 +639,30 @@ describe('模型调用记录', () => {
     expect(records.has('k')).toBe(false)
     await call()
     expect(submit).toHaveBeenCalledTimes(2)
+  })
+
+  it('查询断流或状态未知保留远端记录，恢复不重复提交', async () => {
+    const { submit, poll, records, call } = asyncHost()
+    poll.mockRejectedValueOnce(new ProviderError('unavailable', '响应体中断', { retryable: true }))
+    await expect(call()).rejects.toMatchObject({ code: 'unavailable' })
+    expect(records.get('k')).toMatchObject({ state: 'pending', remoteId: 'r1' })
+    poll.mockRejectedValueOnce(new ProviderError('unknown', '未知任务状态'))
+    await expect(call()).rejects.toMatchObject({ code: 'unknown' })
+    expect(records.get('k')).toMatchObject({ state: 'pending', remoteId: 'r1' })
+    await call()
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect(records.get('k')).toMatchObject({ state: 'done', remoteId: 'r1' })
+  })
+
+  it('提交发出后取消，未知记录不能当成未提交丢弃', async () => {
+    const { submit, records, call } = asyncHost()
+    submit.mockRejectedValueOnce(
+      new ProviderError('cancelled', '读取响应时已取消', { outcome: 'unknown' }),
+    )
+    await expect(call()).rejects.toMatchObject({ outcome: 'unknown', stage: 'submit_unknown' })
+    expect(records.get('k')).toMatchObject({ state: 'unknown' })
+    await expect(call()).rejects.toMatchObject({ stage: 'submit_unknown' })
+    expect(submit).toHaveBeenCalledTimes(1)
   })
 
   it('超时归为 timeout', async () => {

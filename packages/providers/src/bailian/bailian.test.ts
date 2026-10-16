@@ -262,10 +262,7 @@ describe('百炼 API 契约', () => {
     })
     await bailianProvider.cancel?.('task/1', ctx)
     expect(fetch.mock.calls[3]?.[0]).toMatch(/tasks\/task%2F1\/cancel$/)
-    expect(await bailianProvider.poll?.('missing', ctx)).toMatchObject({
-      state: 'failed',
-      error: { code: 'unknown' },
-    })
+    await expect(bailianProvider.poll?.('missing', ctx)).rejects.toMatchObject({ code: 'unknown' })
   })
   it('首尾帧上传 OSS 后启用资源解析请求头', async () => {
     const policy = {

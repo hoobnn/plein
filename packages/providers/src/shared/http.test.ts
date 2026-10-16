@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vite-plus/test'
 import {
   chatMessages,
   imageDataUrl,
+  readJson,
   redact,
   retryableFor,
   send,
@@ -74,6 +75,40 @@ describe('公共请求层的重试规则', () => {
         message: '已取消',
         retryable: false,
       })
+  })
+
+  it('请求已发出后取消 POST 仍保留提交未知，GET 不标记提交未知', () => {
+    const ctx = { signal: aborted() }
+    expect(transportError(ctx, 'POST', new Error('aborted'), messages).outcome).toBe('unknown')
+    expect(transportError(ctx, 'GET', new Error('aborted'), messages).outcome).toBeUndefined()
+  })
+
+  it('调用前已取消不发请求，也不记提交未知', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>()
+    await expect(
+      send({ fetch, signal: aborted() }, 'https://x.test', { method: 'POST' }, messages),
+    ).rejects.toMatchObject({ code: 'cancelled', outcome: undefined })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('完整的非 JSON 响应留给平台解释；响应体断流按传输失败处理', async () => {
+    const ctx = { signal: live() }
+    expect(await readJson(ctx, new Response('<html>gateway</html>'), 'GET', messages)).toBeNull()
+    expect(await readJson(ctx, Response.json({ id: 'r1' }), 'POST', messages)).toEqual({ id: 'r1' })
+    for (const method of ['POST', 'GET'] as const) {
+      const response = new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new TypeError('connection reset'))
+          },
+        }),
+      )
+      await expect(readJson(ctx, response, method, messages)).rejects.toMatchObject({
+        code: 'unavailable',
+        retryable: method === 'GET',
+        outcome: method === 'POST' ? 'unknown' : undefined,
+      })
+    }
   })
 
   it('宿主超时中止 signal 时归为不可重试的 timeout', () => {

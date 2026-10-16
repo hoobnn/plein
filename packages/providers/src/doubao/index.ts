@@ -11,7 +11,7 @@ import {
   type ProviderErrorCode,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
-import { isJson, type Json, redact, send, transportError } from '../shared/http'
+import { isJson, type Json, readText, redact, send } from '../shared/http'
 
 const settings = z.object({
   voice: z.string().min(1).default('zh_female_vv_uranus_bigtts').meta({ title: '默认音色 ID' }),
@@ -98,12 +98,7 @@ async function post(ctx: Context, path: string, body: Json, resource?: string, a
     { method: 'POST', headers: requestHeaders, body: JSON.stringify(body) },
     messages,
   )
-  let raw: string
-  try {
-    raw = await response.text()
-  } catch (cause) {
-    throw transportError(ctx, 'POST', cause, messages)
-  }
+  const raw = await readText(ctx, response, 'POST', messages)
   const status = response.headers.get('X-Api-Status-Code')
   if (!response.ok || (status && status !== '20000000' && !(asr && status === '20000003'))) {
     let detail: Json = {}

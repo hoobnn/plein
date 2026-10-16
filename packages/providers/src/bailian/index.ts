@@ -16,6 +16,7 @@ import {
   imageDataUrl,
   type Json,
   type Method,
+  readJson,
   redact,
   send,
   withRetry,
@@ -87,6 +88,11 @@ function remoteError(status: number, value: unknown, ctx: Context) {
                   : 'unknown'
   return new ProviderError(normalized, message)
 }
+function requestMessages(method: Method) {
+  const failed =
+    method === 'GET' ? '百炼请求中断或网络不可用' : '百炼提交状态未知；请先恢复查询，勿重新生成'
+  return { cancelled: failed, network: failed, timeout: failed }
+}
 async function response(
   ctx: Context,
   path: string,
@@ -94,8 +100,7 @@ async function response(
   asyncTask = false,
 ): Promise<Response> {
   const method: Method = body === undefined ? 'GET' : 'POST'
-  const failed =
-    method === 'GET' ? '百炼请求中断或网络不可用' : '百炼提交状态未知；请先恢复查询，勿重新生成'
+  const messages = requestMessages(method)
   const res = await send(
     ctx,
     host(ctx) + path,
@@ -108,27 +113,20 @@ async function response(
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     },
-    { cancelled: failed, network: failed, timeout: failed },
+    messages,
   )
   if (!res.ok) {
-    let data: unknown
-    try {
-      data = await res.json()
-    } catch {
-      data = {}
-    }
+    const data = await readJson(ctx, res, method, messages)
     throw withRetry(remoteError(res.status, data, ctx), method)
   }
   return res
 }
 async function request(ctx: Context, path: string, body?: Json, asyncTask = false): Promise<Json> {
   const res = await response(ctx, path, body, asyncTask)
-  let value: unknown
-  try {
-    value = await res.json()
-  } catch (e) {
-    throw new ProviderError('unknown', '百炼返回无效 JSON；请勿自动重新提交生成任务', { cause: e })
-  }
+  const method = body === undefined ? 'GET' : 'POST'
+  const value = await readJson(ctx, res, method, requestMessages(method))
+  if (value === null)
+    throw new ProviderError('unknown', '百炼返回无效 JSON；请勿自动重新提交生成任务')
   const data = asJson(value)
   if (Object.keys(data).length === 0) throw new ProviderError('unknown', '百炼返回空响应')
   if (data.code || data.error)
@@ -597,6 +595,9 @@ export const bailianProvider = defineProvider({
     }
     if (status === 'CANCELED' || status === 'CANCELLED')
       return { state: 'failed', error: { code: 'cancelled', message: '百炼任务已取消' } }
+    // 查询异常不等于远端生成失败；抛错让宿主保留任务 ID，避免恢复时再次付费提交。
+    if (status !== 'FAILED')
+      throw new ProviderError('unknown', '百炼返回未知任务状态，请保留原任务并恢复查询')
     const e = remoteError(200, output, ctx)
     return {
       state: 'failed',

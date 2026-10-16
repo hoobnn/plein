@@ -10,7 +10,15 @@ import {
   type ProviderErrorCode,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
-import { chatMessages, imageDataUrl, type Method, redact, retryableFor, send } from '../shared/http'
+import {
+  chatMessages,
+  imageDataUrl,
+  type Method,
+  readJson,
+  redact,
+  retryableFor,
+  send,
+} from '../shared/http'
 import { sizeByLongEdge, tierEdge } from '../size'
 
 const settings = z.object({
@@ -86,6 +94,10 @@ async function request(
   const payload = body === undefined ? undefined : JSON.stringify(body)
   if (payload && Buffer.byteLength(payload) > 64 * 1024 * 1024)
     throw new ProviderError('invalid_input', 'MiniMax 请求体超过 64 MB')
+  const messages = {
+    cancelled: 'MiniMax 请求已取消',
+    network: 'MiniMax 网络请求失败；生成提交状态可能未知，请勿自动重试',
+  }
   const res = await send(
     ctx,
     `${ctx.settings.region === 'cn' ? 'https://api.minimax.cn' : 'https://api.minimax.io'}${path}`,
@@ -94,12 +106,9 @@ async function request(
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: payload,
     },
-    {
-      cancelled: 'MiniMax 请求已取消',
-      network: 'MiniMax 网络请求失败；生成提交状态可能未知，请勿自动重试',
-    },
+    messages,
   )
-  const parsed = responseSchema.safeParse(await res.json().catch(() => null))
+  const parsed = responseSchema.safeParse(await readJson(ctx, res, method, messages))
   if (!parsed.success) {
     const code = res.ok ? 'unknown' : errorCode(res.status)
     // 查询接口遇到网关错误页（502/503 等非 JSON）可以重试；提交接口一律不重试
@@ -478,6 +487,8 @@ export const minimaxProvider = defineProvider({
   },
   async cancel(remoteId, ctx) {
     const result = await request(ctx, `/v2/query/video_generation/${id(remoteId)}`)
+    if (!result.task || String(result.task.id) !== remoteId)
+      throw new ProviderError('unknown', 'MiniMax 查询未返回匹配的任务，未执行取消')
     // DELETE 也会删除已完成记录，因此仅对排队状态发取消请求。
     if (result.task?.status === 'queued')
       await request(ctx, `/v2/video_generation/${id(remoteId)}`, undefined, 'DELETE')
