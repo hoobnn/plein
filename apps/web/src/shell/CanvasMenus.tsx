@@ -71,7 +71,7 @@ function NodePicker({
   const ref = useDismiss(onClose, { wheel: true })
   const pos = placeAt(menu.client.x, menu.client.y, PICKER_H, PICKER_W)
   return (
-    <div ref={ref} className="fixed z-30" style={pos}>
+    <div ref={ref} className="pointer-events-none fixed z-30" style={pos}>
       <AddMenu
         engine={engine}
         from={menu.kind === 'connect' ? menu.from : undefined}

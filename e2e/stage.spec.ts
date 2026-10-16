@@ -12,6 +12,10 @@ test('3D 构图：摆人物、截图成为节点结果', async ({ page }) => {
   await page.keyboard.press('Escape')
   await zoomTo(page, [stage.id])
   const at = await centerOf(page, stage.id)
+  // 添加菜单正在退场时，透明定位容器也不能挡住紧接着的画布双击。
+  expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, at)).toBe(
+    'CANVAS',
+  )
   await page.mouse.dblclick(at.x, at.y)
 
   const dialog = page.getByRole('dialog', { name: '3D 构图' })
