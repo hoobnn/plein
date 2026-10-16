@@ -182,7 +182,9 @@ function Panel({
   const input = useInputPreview(engine, !pure && node.capability ? canvasId : null, el.id)
   // 必需参考用不上这类问题只有服务端准备过才知道；输入刚改、还在重新准备时先不拦
   const blocked =
-    !input.loading && input.data?.blocked.length ? issueText(input.data.blocked).join('；') : null
+    !input.loading && !input.error && input.data?.blocked.length
+      ? issueText(input.data.blocked).join('；')
+      : null
   const own = validate(node, el, ups, catalog)
   const problem = own ?? blocked
   // 只差提示词时不在底栏重复说（输入框的占位文字已经在说），按钮的悬停提示照常给原因
@@ -363,6 +365,8 @@ function Panel({
           node={node}
           data={input.data}
           loading={input.loading}
+          error={input.error}
+          onRetry={input.retry}
         />
       )}
       {!pure && (

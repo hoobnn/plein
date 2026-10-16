@@ -1,7 +1,7 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, setParam } from '@plein/doc'
 import type { InputIssue, InputRef, InputRefKind, PreparedInput } from '@plein/protocol'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
 import { fieldsOf, type NodeInfo } from '../../canvas/nodes'
 import { Icon } from '../../ui/icons'
@@ -16,28 +16,46 @@ const DEBOUNCE_MS = 400
 export function useInputPreview(engine: Engine, canvasId: string | null, nodeId: string) {
   const [data, setData] = useState<PreparedInput | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const requestId = useRef(0)
   const [rev, setRev] = useState(0)
   useEffect(() => engine.doc.subscribe(() => setRev((r) => r + 1)), [engine])
   useEffect(() => {
     if (!canvasId) return
     let live = true
+    const id = ++requestId.current
+    const current = () => live && id === requestId.current
     setLoading(true)
+    setError(null)
     const timer = setTimeout(() => {
       api
         .nodeInput(canvasId, nodeId)
-        .then((r) => live && setData(r))
-        // 预览拿不到不影响生成：保留上一份，提交时服务端照样会准备
-        .catch(() => {})
-        .finally(() => live && setLoading(false))
+        .then((r) => current() && setData(r))
+        // 保留旧输入供查看，但必须标明刷新失败；不能把旧阻断当成现在的状态。
+        .catch((err: unknown) => current() && setError((err as Error).message))
+        .finally(() => current() && setLoading(false))
     }, DEBOUNCE_MS)
     return () => {
       live = false
       clearTimeout(timer)
     }
   }, [canvasId, nodeId, rev])
-  // 换节点时不显示上一个节点的结果
-  useEffect(() => setData(null), [nodeId])
-  return { data: data?.nodeId === nodeId ? data : null, loading, setData }
+  // 换画布或节点时不显示上一个对象的结果。
+  useEffect(() => setData(null), [canvasId, nodeId])
+  const replaceData = useCallback((next: PreparedInput) => {
+    // 提交的 409 回执比此前发出的预览请求新，尚在路上的响应不能覆盖它。
+    requestId.current++
+    setData(next)
+    setError(null)
+    setLoading(false)
+  }, [])
+  return {
+    data: data?.nodeId === nodeId ? data : null,
+    loading,
+    error,
+    retry: () => setRev((r) => r + 1),
+    setData: replaceData,
+  }
 }
 
 const KIND_LABEL: Record<InputRefKind, string> = {
@@ -94,15 +112,43 @@ export function InputPreview({
   node,
   data,
   loading,
+  error,
+  onRetry,
 }: {
   engine: Engine
   el: CanvasElement
   node: NodeInfo
   data: PreparedInput | null
   loading: boolean
+  error: string | null
+  onRetry(): void
 }) {
   const [open, setOpen] = useState(false)
-  if (!data) return null
+  const status = error ? (
+    <div role="alert" className="flex items-start gap-2 text-xs text-warning">
+      <p className="min-w-0 flex-1">
+        读取实际输入失败：{error}。
+        {data ? '下面是上次读取的输入，尚未确认当前状态。' : '尚未取得实际输入。'}
+      </p>
+      <button
+        type="button"
+        className="ui-btn ui-btn-xs ui-btn-secondary flex-none"
+        onClick={onRetry}
+      >
+        重新读取实际输入
+      </button>
+    </div>
+  ) : loading ? (
+    <p role="status" className="text-xs text-ink-subtle">
+      {data ? '正在更新实际输入，下面暂时显示上次读取的输入。' : '正在读取实际输入…'}
+    </p>
+  ) : null
+  if (!data)
+    return status ? (
+      <div className="px-4 pt-3" data-testid="input-preview" aria-busy={loading}>
+        {status}
+      </div>
+    ) : null
   const fields = new Map(fieldsOf(node))
   const canRequire = fields.has('requiredRefs')
   const required = Array.isArray(el.params?.requiredRefs)
@@ -128,7 +174,8 @@ export function InputPreview({
   const issues = data.blocked.length + data.notices.length
 
   return (
-    <div className="px-4 pt-3" data-testid="input-preview">
+    <div className="px-4 pt-3" data-testid="input-preview" aria-busy={loading}>
+      {status}
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -137,7 +184,7 @@ export function InputPreview({
       >
         <span className="flex-none">实际输入</span>
         <span className="truncate text-ink-subtle">{previewSummary(data)}</span>
-        {data.blocked.length > 0 ? (
+        {!loading && !error && data.blocked.length > 0 ? (
           <span className="ui-tag ui-tag-danger">不会提交</span>
         ) : (
           issues > 0 && <span className="ui-tag ui-tag-warning">{issues} 条提示</span>
