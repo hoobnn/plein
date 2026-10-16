@@ -126,7 +126,7 @@ export function Tasks() {
 
   const { active, done, groups, latest } = useMemo(() => {
     const jobs = list?.jobs ?? []
-    // 每个节点最近的一次：只有它失败或取消时才给“重试”，更早的记录只是历史
+    // 每个节点最近的一次：失败或取消后仍需按恢复状态决定操作，更早的记录只是历史
     const latest = new Set<string>()
     const seen = new Set<string>()
     for (const j of jobs) {
@@ -387,8 +387,8 @@ function JobRow(props: {
         {props.latest &&
           el &&
           (job.status === 'failed' || job.status === 'canceled') &&
-          // 提交状态未知时不给一键重试：先核查，免得重复计费
-          job.recovery?.state !== 'submit_unknown' &&
+          // 已受理的任务先恢复原结果，输入变化先审查；只有明确失败才直接重试。
+          (!job.recovery || job.recovery.state === 'remote_failed') &&
           !isActive(el.run?.status ?? '') && (
             <RowButton label="重试" onClick={() => void runNode(job.nodeId)}>
               <Icon name="retry" size={14} />

@@ -54,7 +54,15 @@ export function describeRecovery(job: JobInfo): RecoveryView | null {
               .join(' · '),
             tone: 'muted',
           }
-        : null
+        : job.status === 'failed'
+          ? {
+              title: '平台已受理，结果尚未取回',
+              detail: [r.refetchable ? '可以重新获取，不会重新提交' : r.note, id]
+                .filter(Boolean)
+                .join(' · '),
+              tone: 'warning',
+            }
+          : null
     case 'stored':
       return {
         title: '结果已入库，待采用',
