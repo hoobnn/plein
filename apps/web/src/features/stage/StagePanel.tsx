@@ -162,9 +162,18 @@ export function StagePanel({
     if (!v || busy) return
     setBusy(true)
     try {
+      // PNG 编码是异步的：来源与采用基线在渲染前冻结，不能记录成等待后的新场景。
+      const captured = latest.current
+      const node = engine.doc.get(id)
+      const baseline = { resultId: node ? currentResult(node, 'image')?.id : undefined }
+      v.setScene(captured)
       const blob = await v.snapshot()
-      const shot = await saveSnapshot(engine.doc, id, latest.current, blob)
-      notify(`已截图（第 ${shot.rev} 版场景），下游连线用这张`)
+      const shot = await saveSnapshot(engine.doc, id, captured, blob, baseline)
+      notify(
+        shot.adopted
+          ? `已截图（第 ${shot.rev} 版场景），下游连线用这张`
+          : `已截图（第 ${shot.rev} 版场景），保存为候选，当前采用的画面未改变`,
+      )
     } catch (err) {
       notify(`截图没有成功：${(err as Error).message}`)
     } finally {
