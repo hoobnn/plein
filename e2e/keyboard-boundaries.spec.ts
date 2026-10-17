@@ -49,6 +49,52 @@ test('工具按钮上的 Tab 正常切换焦点，空格正常激活按钮', asy
   await expect(page.getByRole('dialog', { name: '设置', exact: true })).toBeVisible()
 })
 
+test('设置打开后迟到的生成器聚焦请求不夺走焦点或修改背景正文', async ({ page }) => {
+  await newProject(page)
+  await addNode(page, '文本')
+  await page.getByRole('textbox', { name: '提示词' }).fill('设置背后保留的正文')
+  const id = await page.evaluate(() => [...window.__plein.engine.doc.elements()][0]!.id)
+  await page.getByRole('button', { name: '设置', exact: true }).click()
+  const settings = page.getByRole('dialog', { name: '设置', exact: true })
+  const close = settings.getByRole('button', { name: '关闭', exact: true })
+  await close.focus()
+  await page.evaluate(
+    (id) => window.dispatchEvent(new CustomEvent('plein:focus-generator', { detail: id })),
+    id,
+  )
+  await expect(close).toBeFocused()
+  for (const key of ['ControlOrMeta+z', 'ControlOrMeta+Shift+z', 'ControlOrMeta+y']) {
+    await close.press(key)
+    expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.text, id)).toBe(
+      '设置背后保留的正文',
+    )
+    await expect(close).toBeFocused()
+  }
+  await close.click()
+  await expect(settings).toHaveCount(0)
+  await page.evaluate(
+    (id) => window.dispatchEvent(new CustomEvent('plein:focus-generator', { detail: id })),
+    id,
+  )
+  await expect(page.getByRole('textbox', { name: '提示词', exact: true })).toBeFocused()
+})
+
+test('弹层内文本框保留原生撤销重做，按钮上的撤销不会继续改正文', async ({ page }) => {
+  await newProject(page)
+  await addNode(page, '文本')
+  await page.getByRole('textbox', { name: '提示词', exact: true }).fill('放大前正文')
+  await page.getByRole('button', { name: '放大编辑提示词', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '编辑提示词', exact: true })
+  const input = dialog.getByRole('textbox', { name: '提示词', exact: true })
+  await input.fill('弹层内部新正文')
+  await input.press('ControlOrMeta+z')
+  await expect(input).toHaveValue('放大前正文')
+  await input.press('ControlOrMeta+Shift+z')
+  await expect(input).toHaveValue('弹层内部新正文')
+  await dialog.getByRole('button', { name: '关闭', exact: true }).press('ControlOrMeta+z')
+  await expect(input).toHaveValue('弹层内部新正文')
+})
+
 test('侧栏折叠和展开分组不微移画布中的分组', async ({ page }) => {
   await newProject(page)
   await addNode(page, '文本', { x: 500, y: 400 })

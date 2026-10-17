@@ -218,6 +218,13 @@ function Panel({
   useEffect(() => {
     const focus = (e: Event) => {
       if ((e as CustomEvent<string>).detail !== el.id) return
+      // 迟到的编辑请求不能把焦点从后来打开的面板抢回背景画布。
+      if (
+        document.querySelector(
+          '[role="dialog"]:not([data-closing]), [role="alertdialog"]:not([data-closing])',
+        )
+      )
+        return
       const ta = promptRef.current
       if (!ta) return
       ta.focus()

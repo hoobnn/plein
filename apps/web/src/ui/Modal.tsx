@@ -54,6 +54,20 @@ export function Modal({
         >
           <Dialog.Popup
             aria-label={label}
+            onKeyDown={(e) => {
+              // 按钮上的原生撤销可能重新激活并修改背景中最后编辑过的文本框。
+              const target = e.target
+              if (
+                !e.nativeEvent.isComposing &&
+                (e.metaKey || e.ctrlKey) &&
+                ['z', 'y'].includes(e.key.toLowerCase()) &&
+                target instanceof HTMLElement &&
+                !target.isContentEditable &&
+                !(target instanceof HTMLInputElement) &&
+                !(target instanceof HTMLTextAreaElement)
+              )
+                e.preventDefault()
+            }}
             initialFocus={initialFocus}
             data-plein-active={isolateKeys ? '' : undefined}
             {...exit}
