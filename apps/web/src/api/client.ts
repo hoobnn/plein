@@ -183,8 +183,8 @@ export const api = {
   rescanLocalPlugins: () =>
     request<LocalPluginInfo[]>(`${API.localPlugins}/rescan`, json('POST', {})),
   testProvider: (id: string) => request<ProviderTestResult>(API.providerTest(id), json('POST', {})),
-  rewritePrompt: (body: RewritePrompt) =>
-    request<RewritePromptResult>(API.promptRewrite, json('POST', body)),
+  rewritePrompt: (body: RewritePrompt, signal?: AbortSignal) =>
+    request<RewritePromptResult>(API.promptRewrite, { ...json('POST', body), signal }),
 
   agentStatus: (refresh = false) =>
     request<AgentStatus>(refresh ? `${API.agent}?refresh=1` : API.agent),

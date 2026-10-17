@@ -13,7 +13,9 @@ import {
   sortMentionTargets,
 } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { Modal, ModalHeader } from '../../ui/Modal'
+import { Presence } from '../../ui/Presence'
 import { assetUrls } from '../../api/client'
 import { Icon } from '../../ui/icons'
 import { mentionTargets, targetImages } from '../../canvas/nodes'
@@ -37,6 +39,7 @@ export function PromptBox({
   placeholder,
   onChange,
   onPreset,
+  large = false,
 }: {
   ref: React.RefObject<HTMLTextAreaElement | null>
   engine: Engine
@@ -46,7 +49,10 @@ export function PromptBox({
   placeholder: string
   onChange(v: string): void
   onPreset(p: PromptPreset): void
+  large?: boolean
 }) {
+  const [expanded, setExpanded] = useState(false)
+  const expandedRef = useRef<HTMLTextAreaElement>(null)
   const [draft, setDraft] = useState(value)
   const [focused, setFocused] = useState(false)
   // 正在输入的 @ 引用或行首 / 预设
@@ -191,8 +197,45 @@ export function PromptBox({
             setQuery(null)
           }
         }}
-        className="field-sizing-content max-h-60 min-h-24 w-full resize-none bg-transparent px-4 py-3 text-base text-ink outline-none placeholder:text-ink-subtle"
+        className={`field-sizing-content ${large ? 'max-h-[65vh] min-h-80' : 'max-h-60 min-h-24'} w-full resize-none bg-transparent px-4 py-3 text-base text-ink outline-none placeholder:text-ink-subtle`}
       />
+      {!large && (
+        <button
+          type="button"
+          aria-label="放大编辑提示词"
+          title="放大编辑提示词"
+          className="ui-btn ui-btn-quiet absolute top-1 right-1 opacity-60 hover:opacity-100"
+          onClick={() => setExpanded(true)}
+        >
+          <Icon name="expand" size={14} />
+        </button>
+      )}
+      <Presence>
+        {expanded && (
+          <Modal
+            label="编辑提示词"
+            top
+            isolateKeys
+            onClose={() => setExpanded(false)}
+            className="max-w-5xl"
+          >
+            <ModalHeader title="编辑提示词" onClose={() => setExpanded(false)} />
+            <div className="ui-scrollbar overflow-auto">
+              <PromptBox
+                ref={expandedRef}
+                engine={engine}
+                selfId={selfId}
+                value={value}
+                presets={presets}
+                placeholder={placeholder}
+                onChange={onChange}
+                onPreset={onPreset}
+                large
+              />
+            </div>
+          </Modal>
+        )}
+      </Presence>
       {mentions.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2 text-xs text-ink-subtle">
           引用
