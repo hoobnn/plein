@@ -25,7 +25,14 @@ test('低高度窗口选中文本后输出端口仍可直接拖线', async ({ pa
   await expect(page.getByRole('dialog', { name: '添加节点', exact: true })).toBeVisible()
 })
 
-for (const type of ['plein/text', 'plein/image']) {
+for (const type of [
+  'plein/text',
+  'plein/image',
+  'plein/video',
+  'plein/character',
+  'plein/scene',
+  'plein/prop',
+]) {
   test(`${type} 紧凑入口可展开编辑、收起和随窗口切换，正文及选区保留`, async ({ page }) => {
     await page.setViewportSize({ width: 1000, height: 320 })
     await newProject(page)

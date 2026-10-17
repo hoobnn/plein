@@ -18,7 +18,9 @@ test('数值参数保留零值、失焦夹紧范围，清空恢复默认且不�
   page.on('request', (r) => {
     if (r.method() === 'POST' && /\/nodes\/[^/]+\/run$/.test(r.url())) submitted++
   })
-  await page.getByTestId('generator').getByRole('button', { name: '参数', exact: true }).click()
+  const generator = page.getByTestId('generator')
+  await generator.getByRole('button', { name: '编辑LLM', exact: true }).click()
+  await generator.getByRole('button', { name: '参数', exact: true }).click()
   const panel = page.getByRole('dialog', { name: '参数', exact: true })
   await panel.getByRole('button', { name: '更多参数', exact: true }).click()
   const number = panel.getByRole('spinbutton', { name: '温度', exact: true })

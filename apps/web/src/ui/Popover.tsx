@@ -1,5 +1,5 @@
 import { Popover as Base } from '@base-ui/react/popover'
-import type { ReactNode } from 'react'
+import { type ReactNode, useEffect, useRef } from 'react'
 import { useClosing, useExit } from './Presence'
 
 /**
@@ -25,6 +25,19 @@ export function Popover({
 }) {
   const exit = useExit()
   const closing = useClosing()
+  const close = useRef(onClose)
+  close.current = onClose
+  useEffect(() => {
+    if (!anchor || closing) return
+    // 内容保持挂载时，祖先收起仍会让锚点失去布局；Portal 中的浮层应随之关闭。
+    const check = () => {
+      if (!anchor.isConnected || anchor.getClientRects().length === 0) close.current()
+    }
+    const observer = new ResizeObserver(check)
+    observer.observe(anchor)
+    check()
+    return () => observer.disconnect()
+  }, [anchor, closing])
   return (
     <Base.Root
       open={!closing}
