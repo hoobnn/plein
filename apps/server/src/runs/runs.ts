@@ -89,6 +89,17 @@ const MAX_DEPTH = 8
 /** 进度写回文档的最小间隔，避免高频同步 */
 const PROGRESS_INTERVAL_MS = 500
 
+/** 任务的取消事实保留在历史里；已取回并入库的具体结果仍可按输入键沿用。 */
+function reusableResult(job: JobRow, resultId: string): boolean {
+  if (job.status === 'succeeded') return true
+  if (job.status !== 'canceled') return false
+  const recovery = parseRecovery(job.recovery)
+  return (
+    (recovery.state === 'stored' || recovery.state === 'adopted') &&
+    !!recovery.resultIds?.includes(resultId)
+  )
+}
+
 /** 调度用的依赖图：画布上的连线，加上提示词里 @ 引用带来的依赖 */
 export function runGraph(doc: PleinDoc) {
   return new FlowGraph([...doc.edges(), ...mentionEdges(doc)])
@@ -400,7 +411,7 @@ export class NodeRuns implements BatchHost {
     )
     return candidates.find((r) => {
       const job = jobs.get(r.runId)
-      return job?.status === 'succeeded' && inspection.matches(job)
+      return !!job && reusableResult(job, r.id) && inspection.matches(job)
     })?.id
   }
 
@@ -413,7 +424,7 @@ export class NodeRuns implements BatchHost {
     if (!r) return false
     const job = this.store.get(r.runId)
     if (!job) return true
-    return job.status === 'succeeded' && inspection.matches(job)
+    return reusableResult(job, r.id) && inspection.matches(job)
   }
 
   // ── 批次快照用（见 batch.ts）────────────────────────
@@ -1070,7 +1081,7 @@ export class NodeRuns implements BatchHost {
     if (!r) return false
     const job = this.store.get(r.runId)
     if (!job) return true
-    if (job.status !== 'succeeded' || !job.cache_key) return false
+    if (!reusableResult(job, r.id) || !job.cache_key) return false
     try {
       const prepared = await this.prepare(doc, el, ownerId, signal)
       return this.keyMatches(el, prepared, job)

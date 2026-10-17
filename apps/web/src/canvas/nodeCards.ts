@@ -287,6 +287,8 @@ export class NodeCards {
     card.glyph.replaceChildren(iconElement(glyphOf(el, kind), 14))
 
     let status = run ? STATUS_TEXT[run.status] : ''
+    // 任务历史保留取消事实；画布已明确采用该任务取回的结果时展示当前可用状态。
+    if (run?.status === 'canceled' && currentResult(el)?.runId === run.id) status = '已取回'
     if (run && active) {
       const view = describeActive(run, Date.now())
       status = view.retrying ? '重试中' : view.label

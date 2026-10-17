@@ -1,5 +1,6 @@
 import {
   addResults,
+  adoptResult,
   MAX_RESULTS,
   connect,
   createDoc,
@@ -484,6 +485,32 @@ describe('晚返回的结果', () => {
       expect(doc.get(a)?.results).toHaveLength(Math.min(MAX_RESULTS, historySize + 1))
       expect(currentResult(doc.get(a)!)?.id).toBe(before)
       expect(job(server, id, run).recovery).toMatchObject({ state: 'stored', held: 'canceled' })
+      const recovered = doc.get(a)!.results!.find((r) => r.runId === run)!
+      const inspect = () =>
+        server.runs.inspect(doc, doc.get(a)!, 'local', new AbortController().signal)
+      expect(server.runs.cachedCandidate(doc.get(a)!, await inspect())).toBe(recovered.id)
+      adoptResult(doc, a, recovered.id)
+      expect(job(server, id, run).recovery?.state).toBe('adopted')
+      expect(server.runs.resultMatches(doc.get(a)!, await inspect())).toBe(true)
+      expect(
+        await server.runs.isFresh(doc, doc.get(a)!, 'local', new AbortController().signal),
+      ).toBe(true)
+      expect((await server.runs.staleNodes(id, 'local')).stale).not.toContain(a)
+      const group = server.runs.runFlow(id, a, 'local', { scope: 'upstream', force: false })
+      const finished = await until(() => {
+        const state = server.runs.groupState(group.groupId, 'local')
+        return state?.status !== 'running' && state
+      })
+      expect(finished.summary).toMatchObject({ cached: 1, succeeded: 0 })
+      expect(currentResult(doc.get(a)!)?.id).toBe(recovered.id)
+      // 参数真正改变后仍需重跑，不能因为取回过结果就绕过输入一致性检查。
+      setParams(doc, a, { prompt: '改了构图' })
+      expect(server.runs.resultMatches(doc.get(a)!, await inspect())).toBe(false)
+      expect(
+        await server.runs.isFresh(doc, doc.get(a)!, 'local', new AbortController().signal),
+      ).toBe(false)
+      expect(status(server, run)).toBe('canceled')
+      expect(submit).toHaveBeenCalledTimes(1)
     },
   )
 
