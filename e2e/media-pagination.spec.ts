@@ -7,6 +7,129 @@ test.afterEach(async ({ request }) => {
   for (const id of libraries.splice(0)) await request.delete(`/api/library/${id}`)
 })
 
+test('无效素材和来源游标可重新读取首页，保留筛选且不循环重试坏游标', async ({ page }) => {
+  await newProject(page)
+  const prefix = '游标恢复'
+  const assets: string[] = []
+  for (const [index, color] of ['cyan', 'magenta'].entries()) {
+    const data = execFileSync('ffmpeg', [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      `color=c=${color}:s=144x88`,
+      '-frames:v',
+      '1',
+      '-f',
+      'image2pipe',
+      '-vcodec',
+      'png',
+      'pipe:1',
+    ])
+    const response = await page.request.post('/api/assets', {
+      headers: {
+        'content-type': 'image/png',
+        'x-file-name': encodeURIComponent(`${prefix}-${index}.png`),
+      },
+      data,
+    })
+    expect(response.status()).toBe(201)
+    assets.push(((await response.json()) as { id: string }).id)
+  }
+  for (let index = 0; index < 2; index++) {
+    const response = await page.request.post('/api/library', {
+      data: {
+        kind: 'character',
+        name: `游标来源-${index}`,
+        images: [{ slot: 'full_body', assetId: assets[0] }],
+      },
+    })
+    expect(response.status()).toBe(201)
+    libraries.push(((await response.json()) as { id: string }).id)
+  }
+  let triedList = false,
+    triedSource = false
+  const cursors: string[] = []
+  const sourceCursors: string[] = []
+  await page.route(/\/api\/assets\?/, async (route) => {
+    const url = new URL(route.request().url())
+    if (url.searchParams.get('q') !== prefix) return route.continue()
+    url.searchParams.set('limit', '1')
+    const cursor = url.searchParams.get('cursor') ?? ''
+    cursors.push(cursor)
+    if (cursor === 'invalid-list-cursor') triedList = true
+    const response = await route.fetch({ url: url.toString() })
+    if (!cursor && !triedList) {
+      const body = await response.json()
+      return route.fulfill({ response, json: { ...body, nextCursor: 'invalid-list-cursor' } })
+    }
+    await route.fulfill({ response })
+  })
+  await page.route(new RegExp(`/api/assets/${assets[0]}/sources\\?`), async (route) => {
+    const url = new URL(route.request().url())
+    url.searchParams.set('limit', '1')
+    const cursor = url.searchParams.get('cursor')
+    sourceCursors.push(cursor ?? '')
+    if (cursor === 'invalid-source-cursor') triedSource = true
+    const response = await route.fetch({ url: url.toString() })
+    if (!cursor && !triedSource) {
+      const body = await response.json()
+      return route.fulfill({ response, json: { ...body, nextCursor: 'invalid-source-cursor' } })
+    }
+    await route.fulfill({ response })
+  })
+  await page.getByRole('button', { name: '素材', exact: true }).click()
+  const panel = page.getByRole('dialog', { name: '素材', exact: true })
+  await panel.getByRole('combobox', { name: '关联项目' }).click()
+  await page.getByRole('option', { name: '全部项目', exact: true }).click()
+  await panel.getByRole('combobox', { name: '素材类型' }).click()
+  await page.getByRole('option', { name: '图片', exact: true }).click()
+  const search = panel.getByRole('searchbox', { name: '搜索素材' })
+  await search.fill(prefix)
+  const cards = panel.getByRole('button', { name: /^查看素材 / })
+  await expect(cards).toHaveCount(1)
+  const more = panel.getByRole('button', { name: '加载更多素材', exact: true })
+  await more.click()
+  await expect(panel.getByRole('alert')).toContainText('分页游标无效')
+  await expect(more).toHaveCount(0)
+  await panel.screenshot({
+    path: test.info().outputPath('invalid-list-cursor.png'),
+    animations: 'disabled',
+  })
+  await panel.getByRole('button', { name: '重新读取素材', exact: true }).click()
+  await expect(cards).toHaveCount(1)
+  await expect(panel.getByRole('alert')).toHaveCount(0)
+  expect(cursors.at(-1)).toBe('')
+  await expect(search).toHaveValue(prefix)
+  await expect(panel.getByRole('combobox', { name: '素材类型' })).toHaveText('图片')
+  await more.click()
+  await expect(cards).toHaveCount(2)
+  await panel.getByRole('button', { name: `查看素材 ${prefix}-0.png`, exact: true }).click()
+  const section = panel.getByRole('heading', { name: '来源', exact: true }).locator('..')
+  const rows = section.getByRole('listitem')
+  const moreSources = section.getByRole('button', { name: '更多来源', exact: true })
+  await expect(rows).toHaveCount(1)
+  await moreSources.click()
+  await expect(section.getByRole('alert')).toContainText('来源分页无效')
+  await expect(moreSources).toHaveCount(0)
+  await expect(rows).toHaveCount(1)
+  await section.screenshot({
+    path: test.info().outputPath('invalid-source-cursor.png'),
+    animations: 'disabled',
+  })
+  await section.getByRole('button', { name: '重新读取来源', exact: true }).click()
+  await expect(rows).toHaveCount(1)
+  await expect(section.getByRole('alert')).toHaveCount(0)
+  await moreSources.click()
+  await expect(rows).toHaveCount(2)
+  expect(new Set(await rows.allTextContents()).size).toBe(2)
+  expect(cursors.filter((cursor) => cursor === 'invalid-list-cursor')).toHaveLength(1)
+  expect(sourceCursors.filter((cursor) => cursor === 'invalid-source-cursor')).toHaveLength(1)
+  await expect(section.getByRole('alert')).toHaveCount(0)
+})
+
 test('素材来源分页防重复、失败可重试，换素材取消旧来源请求', async ({ page }) => {
   await newProject(page)
   const prefix = '来源分页恢复'

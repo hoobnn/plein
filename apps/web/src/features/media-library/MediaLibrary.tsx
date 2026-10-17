@@ -1,6 +1,6 @@
 import type { MediaLibraryItem, MediaLibraryPage, MediaSource, Project } from '@plein/protocol'
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
-import { api, assetUrls } from '../../api/client'
+import { api, ApiError, assetUrls } from '../../api/client'
 import { elementFor } from '../../canvas/import'
 import { placeElement } from '../../canvas/nodes'
 import { navigate } from '../../router'
@@ -14,6 +14,10 @@ import { Select } from '../../ui/Select'
 import { useLibrary } from '../library/store'
 import { mediaApi } from './client'
 import { useMediaLibrary } from './store'
+
+function invalidCursor(reason: unknown) {
+  return reason instanceof ApiError && reason.status === 400 && reason.code === 'invalid'
+}
 
 export function MediaLibraryPanel() {
   const open = useMediaLibrary((s) => s.open),
@@ -48,7 +52,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [refresh, setRefresh] = useState(0)
-  const [failedMore, setFailedMore] = useState(false)
+  const [failedMore, setFailedMore] = useState<'retry' | 'restart' | null>(null)
   const request = useRef<AbortController | null>(null)
   const engine = useCanvas((s) => s.engine),
     canvasId = useCanvas((s) => s.canvasId)
@@ -76,7 +80,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
     request.current = controller
     setBusy(true)
     setError('')
-    setFailedMore(false)
+    setFailedMore(null)
     setPage({ items: [], nextCursor: null })
     setSelected(null)
     mediaApi
@@ -103,7 +107,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
     request.current = controller
     setBusy(true)
     setError('')
-    setFailedMore(false)
+    setFailedMore(null)
     try {
       const result = await mediaApi.list(
         {
@@ -121,7 +125,9 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
         }))
     } catch (reason) {
       if (!controller.signal.aborted) {
-        setFailedMore(true)
+        const restart = invalidCursor(reason)
+        setFailedMore(restart ? 'restart' : 'retry')
+        if (restart) setPage((old) => ({ ...old, nextCursor: null }))
         setError((reason as Error).message)
       }
     } finally {
@@ -202,11 +208,11 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
               className="ui-btn ui-btn-sm ui-btn-quiet ml-2"
               disabled={busy || searching}
               onClick={() => {
-                if (failedMore) void more()
+                if (failedMore === 'retry') void more()
                 else setRefresh((n) => n + 1)
               }}
             >
-              重试
+              {failedMore === 'restart' ? '重新读取素材' : '重试'}
             </button>
           </div>
         )}
@@ -316,6 +322,7 @@ function MediaDetail({
   const [category, setCategory] = useState('character')
   const [busy, setBusy] = useState(true)
   const [retryCursor, setRetryCursor] = useState<string | undefined>()
+  const [restart, setRestart] = useState(false)
   const request = useRef<AbortController | null>(null)
   const load = useCallback(
     async (next?: string) => {
@@ -324,6 +331,7 @@ function MediaDetail({
       request.current = controller
       setBusy(true)
       setError('')
+      setRestart(false)
       setRetryCursor(next)
       try {
         const result = await mediaApi.sources(asset.id, next, controller.signal)
@@ -332,7 +340,14 @@ function MediaDetail({
           setCursor(result.nextCursor)
         }
       } catch (reason) {
-        if (!controller.signal.aborted) setError((reason as Error).message)
+        if (!controller.signal.aborted) {
+          if (next && invalidCursor(reason)) {
+            setRetryCursor(undefined)
+            setCursor(null)
+            setRestart(true)
+            setError('来源分页无效，请重新读取来源。')
+          } else setError((reason as Error).message)
+        }
       } finally {
         if (request.current === controller) {
           request.current = null
@@ -496,7 +511,7 @@ function MediaDetail({
               disabled={busy}
               onClick={() => void load(retryCursor)}
             >
-              重试来源
+              {restart ? '重新读取来源' : '重试来源'}
             </button>
           </div>
         )}
