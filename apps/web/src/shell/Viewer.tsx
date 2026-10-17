@@ -1,9 +1,10 @@
 import { adoptResult, creativeReviewTarget, currentResult, type NodeResult } from '@plein/doc'
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { assetUrls } from '../api/client'
 import { useCanvas } from '../stores/canvas'
 import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
+import { useClosing } from '../ui/Presence'
 import { CreativeReviewForm } from '../features/storyboard/CreativeReviewForm'
 import { useStale } from '../features/runs/stale'
 
@@ -284,19 +285,8 @@ function Review({ viewer }: { viewer: View }) {
                 />
               )}
             </>
-          ) : kind === 'video' && assetId ? (
-            // oxlint-disable-next-line jsx-a11y/media-has-caption -- 生成素材不一定带字幕轨
-            <video
-              key={assetId}
-              src={assetUrls.original(assetId)}
-              poster={assetUrls.variant(assetId, 'poster')}
-              controls
-              autoPlay
-              className="max-h-full max-w-full"
-            />
-          ) : kind === 'audio' && assetId ? (
-            // oxlint-disable-next-line jsx-a11y/media-has-caption -- 生成音频不一定带字幕
-            <audio key={assetId} src={assetUrls.original(assetId)} controls autoPlay />
+          ) : (kind === 'video' || kind === 'audio') && assetId ? (
+            <ReviewMedia key={assetId} assetId={assetId} kind={kind} />
           ) : value ? (
             <pre className="ui-scrollbar max-h-full w-full overflow-auto whitespace-pre-wrap p-6 text-sm text-white">
               {value.type === 'text'
@@ -312,4 +302,61 @@ function Review({ viewer }: { viewer: View }) {
       </div>
     </Modal>
   )
+}
+
+function ReviewMedia({ assetId, kind }: { assetId: string; kind: 'video' | 'audio' }) {
+  const [failed, setFailed] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const ref = useRef<HTMLMediaElement | null>(null)
+  const current = useRef(attempt)
+  current.current = attempt
+  const closing = useClosing()
+  useEffect(() => {
+    const media = ref.current
+    // StrictMode 会保留 DOM 并重放 effect，清理后需要恢复来源。
+    if (closing) media?.pause()
+    else if (media && !media.getAttribute('src')) media.src = assetUrls.original(assetId)
+    return () => {
+      media?.pause()
+      media?.removeAttribute('src')
+      media?.load()
+    }
+  }, [assetId, attempt, failed, closing])
+  if (failed)
+    return (
+      <div className="flex flex-col items-center gap-3 text-white">
+        <p role="alert">{kind === 'video' ? '视频加载失败' : '音频加载失败'}</p>
+        <button
+          type="button"
+          className="ui-btn ui-btn-secondary"
+          aria-label="重新加载媒体"
+          onClick={() => {
+            setAttempt((value) => value + 1)
+            setFailed(false)
+          }}
+        >
+          <Icon name="retry" />
+          重新加载
+        </button>
+      </div>
+    )
+  const props = {
+    ref: (media: HTMLMediaElement | null) => {
+      ref.current = media
+    },
+    src: assetUrls.original(assetId),
+    controls: true,
+    autoPlay: !closing,
+    className: 'max-h-full max-w-full',
+    onError: () => {
+      if (current.current === attempt) setFailed(true)
+    },
+  }
+  // oxlint-disable jsx-a11y/media-has-caption -- 生成素材不一定带字幕轨
+  return kind === 'video' ? (
+    <video key={attempt} {...props} poster={assetUrls.variant(assetId, 'poster')} />
+  ) : (
+    <audio key={attempt} {...props} />
+  )
+  // oxlint-enable jsx-a11y/media-has-caption
 }
