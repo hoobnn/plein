@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
-import { clickElement, elements, newProject, settle, zoomTo } from './canvas'
+import { clickElement, contextMenu, elements, newProject, settle, zoomTo } from './canvas'
 
 /** 设了就把界面截图存到这个目录（亮色、暗色各一张） */
 const shotDir = process.env.PLEIN_E2E_SHOTS
@@ -46,6 +46,19 @@ test.beforeAll(() => {
     '-frames:v',
     '1',
     join(dir, 'storyboard.png'),
+  ])
+  execFileSync('ffmpeg', [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    'color=c=blue:s=64x48',
+    '-frames:v',
+    '1',
+    join(dir, 'replacement.png'),
   ])
 })
 
@@ -94,6 +107,132 @@ test('宫格切分上传中切换画布取消旧写入，不产生迟到的分�
   await oldDoc.dispose()
 })
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+for (const change of ['replace', 'delete'] as const) {
+  test(`切图上传中${change === 'replace' ? '替换' : '删除'}来源，提示原因且不写入失效分组`, async ({
+    page,
+  }) => {
+    await newProject(page)
+    const chooser = page.waitForEvent('filechooser')
+    await page.getByRole('button', { name: '上传', exact: true }).click()
+    await (await chooser).setFiles(join(dir, 'storyboard.png'))
+    await expect.poll(async () => (await elements(page)).length).toBe(1)
+    const source = (await elements(page))[0]!
+    const replacement = await page.request.post('/api/assets', {
+      headers: { 'content-type': 'image/png' },
+      data: readFileSync(join(dir, 'replacement.png')),
+    })
+    expect(replacement.status()).toBe(201)
+    const asset = (await replacement.json()).id as string
+    let release = () => {}
+    let held = false
+    let uploads = 0
+    await page.route('**/api/assets', async (route) => {
+      if (route.request().method() !== 'POST' || ++uploads < 4) return route.continue()
+      const response = await route.fetch()
+      await new Promise<void>((resolve) => {
+        release = resolve
+        held = true
+      })
+      await route.fulfill({ response })
+    })
+    await clickElement(page, source.id)
+    await page
+      .getByRole('toolbar', { name: '结果操作' })
+      .getByRole('button', { name: '宫格切分' })
+      .click()
+    await page.getByRole('button', { name: /4 宫格/ }).click()
+    await expect.poll(() => held).toBe(true)
+    if (change === 'delete') {
+      await contextMenu(page, source.id, '删除')
+      await expect.poll(async () => (await elements(page)).length).toBe(0)
+    } else
+      await page.evaluate(
+        ({ id, asset }) => {
+          const doc = window.__plein.engine.doc as unknown as {
+            origin: unknown
+            ydoc: { transact(fn: () => void, origin: unknown): void }
+            mutable(id: string): { set(key: string, value: string): void }
+          }
+          doc.ydoc.transact(() => doc.mutable(id).set('assetId', asset), doc.origin)
+        },
+        { id: source.id, asset },
+      )
+    release()
+    await expect(page.getByRole('status')).toContainText(
+      change === 'delete' ? '来源元素已删除' : '来源图片已变化',
+    )
+    expect((await elements(page)).filter((el) => el.kind === 'frame')).toEqual([])
+    expect((await elements(page)).length).toBe(change === 'delete' ? 0 : 1)
+  })
+}
+
+test('切图上传中移动来源并新增障碍，完成时按当前布局避让且整组独立撤销', async ({ page }) => {
+  await newProject(page)
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: '上传', exact: true }).click()
+  await (await chooser).setFiles(join(dir, 'storyboard.png'))
+  await expect.poll(async () => (await elements(page)).length).toBe(1)
+  const source = (await elements(page))[0]!
+  let release = () => {}
+  let held = false
+  let uploads = 0
+  await page.route('**/api/assets', async (route) => {
+    if (route.request().method() !== 'POST' || ++uploads < 4) return route.continue()
+    const response = await route.fetch()
+    await new Promise<void>((resolve) => {
+      release = resolve
+      held = true
+    })
+    await route.fulfill({ response })
+  })
+  await clickElement(page, source.id)
+  await page
+    .getByRole('toolbar', { name: '结果操作' })
+    .getByRole('button', { name: '宫格切分' })
+    .click()
+  await page.getByRole('button', { name: /4 宫格/ }).click()
+  await expect.poll(() => held).toBe(true)
+  const blocker = await page.evaluate((id) => {
+    const e = window.__plein.engine
+    const doc = e.doc as unknown as {
+      origin: unknown
+      ydoc: { transact(fn: () => void, origin: unknown): void }
+      worldRect(id: string): { x: number; y: number; w: number; h: number }
+      mutable(id: string): { get(key: string): unknown; set(key: string, value: number): void }
+    }
+    const before = doc.worldRect(id)
+    doc.ydoc.transact(() => doc.mutable(id).set('x', before.x + 900), doc.origin)
+    const now = doc.worldRect(id)
+    return window.__plein.addNode({
+      type: 'plein/text',
+      name: '切图期间新增的卡片',
+      params: { text: '保留位置，不与切片重叠' },
+      x: now.x + now.w + 120,
+      y: now.y + now.h / 2 - 120,
+    })
+  }, source.id)
+  release()
+  await expect
+    .poll(async () => (await elements(page)).filter((el) => el.kind === 'frame').length)
+    .toBe(1)
+  const frame = (await elements(page)).find((el) => el.kind === 'frame')!
+  const [s, f, b] = await page.evaluate(
+    (ids) => ids.map((id) => window.__plein.engine.doc.worldRect(id)),
+    [source.id, frame.id, blocker],
+  )
+  expect(f!.x).toBeGreaterThanOrEqual(s!.x + s!.w + 40)
+  expect(f!.x < b!.x + b!.w && f!.x + f!.w > b!.x && f!.y < b!.y + b!.h && f!.y + f!.h > b!.y).toBe(
+    false,
+  )
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  expect((await elements(page)).map((el) => el.id).sort()).toEqual([source.id, blocker].sort())
+  expect(await page.evaluate((id) => window.__plein.engine.doc.worldRect(id).x, source.id)).toBe(
+    s!.x,
+  )
+  await page.getByRole('button', { name: '重做', exact: true }).click()
+  expect((await elements(page)).find((el) => el.id === frame.id)?.kind).toBe('frame')
+})
 
 const shotGroup = (page: Page, frameId: string) =>
   page.evaluate(

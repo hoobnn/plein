@@ -6,9 +6,9 @@ import {
   groupElements,
   makeShotGroup,
   type NewElement,
+  spotRightOf,
 } from '@plein/doc'
 import { api, assetUrls } from '../api/client'
-import { freeSpotRight } from './presets'
 
 /** 切出来的每格在画布上的长边 */
 const TILE_SIDE = 240
@@ -42,16 +42,6 @@ export async function splitGrid(
     const k = TILE_SIDE / Math.max(tw, th)
     const w = Math.round(tw * k)
     const h = Math.round(th * k)
-    // 整组（含打组留的边距）在右侧找空位，不压住已有元素
-    const pad = 32
-    const spot = freeSpotRight(
-      engine,
-      sourceId,
-      cols * (w + GAP) - GAP + pad * 2,
-      rows * (h + GAP) - GAP + pad * 2,
-    )
-    const x0 = spot.x + pad
-    const y0 = spot.y + pad
     const list: NewElement[] = []
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
@@ -71,19 +61,39 @@ export async function splitGrid(
           name: `宫格 ${n}`,
           w,
           h,
-          x: Math.round(x0 + c * (w + GAP)),
-          y: Math.round(y0 + r * (h + GAP)),
+          x: c * (w + GAP),
+          y: r * (h + GAP),
         })
         onProgress?.(n, total)
       }
     }
     signal?.throwIfAborted()
     if (!engine.doc.has(sourceId)) throw new Error('来源元素已删除，切图未写入画布')
-    const ids = createElements(engine.doc, list)
+    const current = engine.doc.get(sourceId)!
+    if (mediaOf(current)?.assetId !== assetId)
+      throw new Error('来源图片已变化，切图未写入画布；已上传的切片可在素材中查看')
+    // 上传完成后再按当前文档布局找空位，避免沿用旧相机／场景索引中的位置。
+    const pad = 32
+    const spot = spotRightOf(
+      engine.doc,
+      sourceId,
+      cols * (w + GAP) - GAP + pad * 2,
+      rows * (h + GAP) - GAP + pad * 2,
+    )
+    engine.doc.undo.stopCapturing()
+    const ids = createElements(
+      engine.doc,
+      list.map((el) => ({
+        ...el,
+        x: Math.round(el.x + spot.x + pad),
+        y: Math.round(el.y + spot.y + pad),
+      })),
+    )
     const frame = groupElements(engine.doc, ids, { name: `宫格切分 ${rows}×${cols}` })
     // 切出来的直接是分镜组：按格子顺序编号，记下原图，能从组回到切之前的那张
     if (frame)
       makeShotGroup(engine.doc, frame, { cols, source: { elementId: sourceId, rows, cols } })
+    engine.doc.undo.stopCapturing()
     engine.selection.set([frame ?? ids[0]!])
     return frame
   } finally {
