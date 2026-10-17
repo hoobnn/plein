@@ -1,6 +1,95 @@
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { newProject, zoomTo } from './canvas'
+import { newProject, waitNode, zoomTo } from './canvas'
+
+test('图片平移只处理当前指针，取消、失焦、切换与重置结束拖动', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await newProject(page)
+  const target = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/image',
+      name: '平移边界',
+      params: { model: 'plein/mock:image', prompt: '两个候选', count: 2 },
+      x: 400,
+      y: 300,
+    }),
+  )
+  await page.getByRole('treeitem', { name: '平移边界 定位到画布', exact: true }).click()
+  const generator = page.getByTestId('generator')
+  await generator.getByRole('button', { name: '生成', exact: true }).click()
+  await waitNode(page, target)
+  const adopted = await page.evaluate(
+    (id) => window.__plein.engine.doc.mutable(id)?.get('adopted'),
+    target,
+  )
+  const open = () => generator.getByRole('button', { name: '全屏查看', exact: true }).click()
+  await open()
+  const viewer = page.getByRole('dialog', { name: '查看「平移边界」', exact: true })
+  const surface = viewer.getByRole('img', { name: '平移边界', exact: true }).locator('..')
+  const transform = () => surface.evaluate((node: HTMLElement) => node.style.transform)
+  const box = (await surface.boundingBox())!
+  const x = box.x + box.width / 2,
+    y = box.y + box.height / 2
+  const origin = await transform()
+  await page.mouse.move(x, y)
+  await page.mouse.down({ button: 'right' })
+  await page.mouse.move(x + 40, y)
+  await page.mouse.up({ button: 'right' })
+  expect(await transform()).toBe(origin)
+  const begin = async () => {
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 30, y, { steps: 3 })
+  }
+  await begin()
+  const active = await transform()
+  await surface.dispatchEvent('pointermove', { pointerId: 2, clientX: x + 250, clientY: y })
+  expect(await transform()).toBe(active)
+  await surface.dispatchEvent('pointerup', { pointerId: 2 })
+  await surface.dispatchEvent('pointercancel', { pointerId: 2 })
+  await page.mouse.move(x + 60, y)
+  expect(await transform()).not.toBe(active)
+  const canceled = await transform()
+  await surface.dispatchEvent('pointercancel', { pointerId: 1 })
+  await page.mouse.move(x + 90, y)
+  await page.mouse.up()
+  expect(await transform()).toBe(canceled)
+  for (const end of ['capture', 'blur'] as const) {
+    await begin()
+    const before = await transform()
+    if (end === 'capture') await surface.evaluate((node) => node.releasePointerCapture(1))
+    else await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+    await page.mouse.move(x + 90, y)
+    await page.mouse.up()
+    expect(await transform()).toBe(before)
+    await expect(surface).toHaveCSS('cursor', 'grab')
+  }
+  await begin()
+  await page.keyboard.press('ArrowRight')
+  await page.mouse.move(x + 100, y)
+  await page.mouse.up()
+  expect(await transform()).toBe(origin)
+  await expect(surface).toHaveCSS('cursor', 'grab')
+  await begin()
+  await viewer.getByRole('button', { name: '重置图片视图', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await page.mouse.move(x + 100, y)
+  await page.mouse.up()
+  expect(await transform()).toBe(origin)
+  await begin()
+  await page.keyboard.press('Escape')
+  await expect(viewer).toHaveCount(0)
+  await page.mouse.move(x + 100, y)
+  await page.mouse.up()
+  await open()
+  expect(await transform()).toBe(origin)
+  await expect(surface).toHaveCSS('cursor', 'grab')
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.mutable(id)?.get('adopted'), target),
+  ).toBe(adopted)
+  expect(errors).toEqual([])
+})
 
 test('图片候选与对比图可独立恢复，滑杆和缩放不遮挡重试且不改变采用', async ({ page }) => {
   await newProject(page)

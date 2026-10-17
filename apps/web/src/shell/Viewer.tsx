@@ -1,5 +1,5 @@
 import { adoptResult, creativeReviewTarget, currentResult, type NodeResult } from '@plein/doc'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { assetUrls } from '../api/client'
 import { useCanvas } from '../stores/canvas'
 import { Icon } from '../ui/icons'
@@ -35,7 +35,30 @@ function Review({ viewer }: { viewer: View }) {
   const [split, setSplit] = useState(50)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
-  const [drag, setDrag] = useState<{ x: number; y: number; px: number; py: number } | null>(null)
+  const drag = useRef<{
+    pointerId: number
+    target: HTMLElement
+    x: number
+    y: number
+    px: number
+    py: number
+  } | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const stopDrag = useCallback(() => {
+    const active = drag.current
+    drag.current = null
+    setDragging(false)
+    if (active?.target.hasPointerCapture(active.pointerId))
+      active.target.releasePointerCapture(active.pointerId)
+  }, [])
+  useEffect(() => {
+    window.addEventListener('blur', stopDrag)
+    return () => {
+      window.removeEventListener('blur', stopDrag)
+      stopDrag()
+    }
+  }, [stopDrag])
+  useEffect(() => stopDrag(), [selected, compare, comparison, stopDrag])
   const [imageLoads, setImageLoads] = useState<
     Record<string, { attempt: number; failed: boolean }>
   >({})
@@ -60,8 +83,12 @@ function Review({ viewer }: { viewer: View }) {
     return { onError: () => status(true), onLoad: () => status(false) }
   }
   const adopted = element && result && currentResult(element, result.port)?.id === result.id
-  const close = () => useCanvas.getState().view(null)
+  const close = () => {
+    stopDrag()
+    useCanvas.getState().view(null)
+  }
   const step = (delta: number) => {
+    stopDrag()
     const i = candidates.findIndex((r) => r.id === selected)
     if (candidates.length)
       setSelected(candidates[(i + delta + candidates.length) % candidates.length]!.id)
@@ -190,8 +217,11 @@ function Review({ viewer }: { viewer: View }) {
             </button>
             <button
               type="button"
+              aria-label="重置图片视图"
+              title="重置缩放和位置"
               className="ui-btn ui-btn-secondary"
               onClick={() => {
+                stopDrag()
                 setZoom(1)
                 setPan({ x: 0, y: 0 })
               }}
@@ -253,18 +283,39 @@ function Review({ viewer }: { viewer: View }) {
                 style={{
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
                   touchAction: 'none',
-                  cursor: drag ? 'grabbing' : 'grab',
+                  cursor: dragging ? 'grabbing' : 'grab',
                 }}
                 onPointerDown={(e) => {
+                  if (e.button !== 0 || drag.current) return
+                  e.preventDefault()
                   e.currentTarget.setPointerCapture(e.pointerId)
-                  setDrag({ x: e.clientX, y: e.clientY, px: pan.x, py: pan.y })
+                  drag.current = {
+                    pointerId: e.pointerId,
+                    target: e.currentTarget,
+                    x: e.clientX,
+                    y: e.clientY,
+                    px: pan.x,
+                    py: pan.y,
+                  }
+                  setDragging(true)
                 }}
                 onPointerMove={(e) => {
-                  if (drag)
-                    setPan({ x: drag.px + e.clientX - drag.x, y: drag.py + e.clientY - drag.y })
+                  const active = drag.current
+                  if (active?.pointerId === e.pointerId)
+                    setPan({
+                      x: active.px + e.clientX - active.x,
+                      y: active.py + e.clientY - active.y,
+                    })
                 }}
-                onPointerUp={() => setDrag(null)}
-                onPointerCancel={() => setDrag(null)}
+                onPointerUp={(e) => {
+                  if (drag.current?.pointerId === e.pointerId) stopDrag()
+                }}
+                onPointerCancel={(e) => {
+                  if (drag.current?.pointerId === e.pointerId) stopDrag()
+                }}
+                onLostPointerCapture={(e) => {
+                  if (drag.current?.pointerId === e.pointerId) stopDrag()
+                }}
               >
                 <img
                   key={`${imageKey}:${imageLoads[imageKey]?.attempt ?? 0}`}
