@@ -3,8 +3,9 @@ import { type NoticeAction, useCanvas } from '../stores/canvas'
 import { revealImports } from './import'
 
 /** 用户后续操作优先；记录事件而非只比较最终值，避免切换后又切回来被当成未操作。 */
-export function watchImportView(engine: Engine) {
+export function watchImportView(engine: Engine, signal?: AbortSignal) {
   let changed = false
+  let disposed = false
   const focus = document.activeElement
   const tool = engine.state.tool
   const change = () => {
@@ -19,12 +20,24 @@ export function watchImportView(engine: Engine) {
   ]
   window.addEventListener('input', change, true)
   off.push(() => window.removeEventListener('input', change, true))
+  window.addEventListener('pointerdown', change, true)
+  off.push(() => window.removeEventListener('pointerdown', change, true))
+  window.addEventListener('wheel', change, { capture: true, passive: true })
+  off.push(() => window.removeEventListener('wheel', change, true))
+  const dispose = () => {
+    if (disposed) return
+    disposed = true
+    for (const stop of off) stop()
+  }
+  signal?.addEventListener('abort', dispose, { once: true })
+  off.push(() => signal?.removeEventListener('abort', dispose))
+  if (signal?.aborted) dispose()
   return {
     unchanged: () =>
-      !changed && (document.activeElement === focus || !isEditableTarget(document.activeElement)),
-    dispose: () => {
-      for (const stop of off) stop()
-    },
+      !disposed &&
+      !changed &&
+      (document.activeElement === focus || !isEditableTarget(document.activeElement)),
+    dispose,
   }
 }
 

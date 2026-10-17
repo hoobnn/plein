@@ -342,7 +342,7 @@ function attachImport(engine: Engine, host: HTMLElement) {
     if (!all.length || disposed) return
     const files = all.slice(0, MAX_IMPORT_FILES)
     const batch = beginImport(engine, files.length)
-    const view = watchImportView(engine)
+    const view = watchImportView(engine, batch.signal)
     const notes: string[] = []
     let action: NoticeAction | undefined
     try {

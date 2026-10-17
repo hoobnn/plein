@@ -1,13 +1,14 @@
 import type { Engine } from '@plein/canvas-core'
 import { type HistoryEntry, type NewElement, resultHistory } from '@plein/doc'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { downloadAsset } from '../canvas/grid'
 import { useDocVersion } from '../canvas/hooks'
 import { elementFor, placeImports, revealImports } from '../canvas/import'
 import { beginImport } from '../canvas/importProgress'
+import { importLocation, watchImportView } from '../canvas/importView'
 import { loadAssetMeta } from '../stores/assetMeta'
-import { useCanvas } from '../stores/canvas'
+import { type NoticeAction, useCanvas } from '../stores/canvas'
 import { shortTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
@@ -81,14 +82,19 @@ function HistoryPanel({ engine }: { engine: Engine }) {
   const [size, setSize] = useState(160)
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
   const [busy, setBusy] = useState(false)
+  const mounted = useRef(false)
   const close = () => toggle(false)
 
   useEffect(() => {
+    mounted.current = true
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') useCanvas.getState().toggleHistory(false)
     }
     window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
+    return () => {
+      mounted.current = false
+      window.removeEventListener('keydown', key)
+    }
   }, [])
 
   const counts = useMemo(() => {
@@ -135,7 +141,10 @@ function HistoryPanel({ engine }: { engine: Engine }) {
   const place = async () => {
     setBusy(true)
     const batch = beginImport(engine, selected.length)
+    const view = watchImportView(engine, batch.signal)
+    const viewport = engine.camera.viewRect
     const notes: string[] = []
+    let action: NoticeAction | undefined
     try {
       let done = 0
       const inputs = await Promise.all(
@@ -152,7 +161,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
       const rows: Array<typeof items> = []
       for (let i = 0; i < items.length; i += ROW) rows.push(items.slice(i, i + ROW))
       const rowH = rows.map((r) => Math.max(...r.map((i) => i.h)))
-      const c = engine.camera.viewRect
+      const c = viewport
       let y = c.y + c.h / 2 - rowH.reduce((s, h) => s + h + GAP, -GAP) / 2
       const list: NewElement[] = []
       rows.forEach((row, ri) => {
@@ -168,14 +177,17 @@ function HistoryPanel({ engine }: { engine: Engine }) {
         y += rowH[ri]! + GAP
       })
       const created = placeImports(engine, list)
-      revealImports(engine, created)
-      close()
+      if (mounted.current && view.unchanged()) {
+        revealImports(engine, created)
+        close()
+      } else if (created.length) action = importLocation(engine, created)
       notes.push(`已放到画布上：${created.length} 个素材`)
     } catch (err) {
       if (!batch.signal.aborted) notes.push((err as Error).message)
     } finally {
-      batch.finish(notes)
-      setBusy(false)
+      view.dispose()
+      batch.finish(notes, action)
+      if (mounted.current) setBusy(false)
     }
   }
 
