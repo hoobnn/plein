@@ -792,6 +792,57 @@ function NameField({
   )
 }
 
+function ProfileImage({ id, hero, onRemove }: { id: string; hero: HeroControl; onRemove(): void }) {
+  const [attempt, setAttempt] = useState(0)
+  const [failed, setFailed] = useState(false)
+  const current = useRef(0)
+  return (
+    <div
+      className="lib-strip-tile group"
+      onPointerEnter={() => hero.onPreview(id)}
+      onPointerLeave={() => hero.onPreview(null)}
+    >
+      {failed ? (
+        <div className="flex h-full flex-col items-center justify-end pb-1 text-xs text-ink-subtle">
+          <span role="status">加载失败</span>
+          <button
+            type="button"
+            aria-label="重新加载图片"
+            className="ui-btn ui-btn-quiet ui-btn-xs"
+            onClick={() => {
+              current.current += 1
+              setAttempt(current.current)
+              setFailed(false)
+            }}
+          >
+            <Icon name="retry" size={12} />
+            重试
+          </button>
+        </div>
+      ) : (
+        <img
+          key={attempt}
+          src={thumb(id)}
+          alt=""
+          draggable={false}
+          onError={() => {
+            if (attempt === current.current) setFailed(true)
+          }}
+        />
+      )}
+      <button
+        type="button"
+        aria-label="移除"
+        title="移除"
+        onClick={onRemove}
+        className="ui-btn ui-btn-quiet ui-btn-xs ui-icon-btn absolute top-1 right-1 bg-float opacity-0 group-hover:opacity-100 focus:opacity-100"
+      >
+        <Icon name="x" size={12} />
+      </button>
+    </div>
+  )
+}
+
 /** 最多 4 张的参考图条：72 小图，悬停换大图 */
 function ImageStrip({
   label,
@@ -842,23 +893,12 @@ function ImageStrip({
       </span>
       <div className="flex flex-wrap gap-2">
         {images.map((id) => (
-          <div
+          <ProfileImage
             key={id}
-            className="lib-strip-tile group"
-            onPointerEnter={() => hero.onPreview(id)}
-            onPointerLeave={() => hero.onPreview(null)}
-          >
-            <img src={thumb(id)} alt="" draggable={false} />
-            <button
-              type="button"
-              aria-label="移除"
-              title="移除"
-              onClick={() => onChange(images.filter((x) => x !== id))}
-              className="ui-btn ui-btn-quiet ui-btn-xs ui-icon-btn absolute top-1 right-1 bg-float opacity-0 group-hover:opacity-100 focus:opacity-100"
-            >
-              <Icon name="x" size={12} />
-            </button>
-          </div>
+            id={id}
+            hero={hero}
+            onRemove={() => onChange(images.filter((x) => x !== id))}
+          />
         ))}
         {room > 0 && (
           <button

@@ -284,6 +284,96 @@ test('档案名称校验、Esc 取消与自定义名字退出只影响当前输�
 })
 
 for (const role of ['时期', '服饰', '表情'] as const) {
+  test(`档案${role}参考缩略图失败可重试，恢复不改变档案`, async ({ page }) => {
+    await newProject(page)
+    const ids = await uploadedImages(page, 2)
+    const response = await page.request.post('/api/library', {
+      data: {
+        kind: 'character',
+        name: `档案${role}缩略图恢复`,
+        profile: {
+          periods: [
+            {
+              id: 'youth',
+              name: '少年',
+              aliases: [],
+              description: '',
+              images: role === '时期' ? ids : [],
+              voice: null,
+              voiceStates: [],
+              outfits: [
+                {
+                  id: 'uniform',
+                  name: '校服',
+                  aliases: [],
+                  description: '',
+                  images: role === '服饰' ? ids : [],
+                },
+              ],
+            },
+          ],
+          expressions: [
+            {
+              id: 'happy',
+              name: '开心',
+              aliases: [],
+              description: '',
+              images: role === '表情' ? ids : [],
+            },
+          ],
+        },
+      },
+    })
+    expect(response.status()).toBe(201)
+    const item = (await response.json()) as LibraryItem
+    created.push(item.id)
+    let fail = true
+    await page.route(`**/api/assets/${ids[0]}/thumb-*`, (route) =>
+      fail ? route.fulfill({ status: 503, body: 'unavailable' }) : route.continue(),
+    )
+    const panel = await openLibrary(page)
+    await openItem(panel, item.name)
+    await panel
+      .getByRole('group', { name: '档案分页' })
+      .getByRole('button', { name: role === '表情' ? /^表情/ : /^时期与服饰/ })
+      .click()
+    if (role === '服饰')
+      await panel.getByRole('button', { name: '少年 · 校服', exact: true }).click()
+    if (role === '表情')
+      await panel.getByRole('button', { name: '编辑「开心」', exact: true }).click()
+    const strip = panel.locator('.lib-look-editor .lib-strip-tile')
+    const broken = strip.first()
+    await expect(broken.getByText('加载失败', { exact: true })).toBeVisible()
+    const retry = broken.getByRole('button', { name: '重新加载图片', exact: true })
+    await retry.click()
+    await expect(retry).toBeVisible()
+    if (role === '时期') {
+      await broken.hover()
+      await panel.screenshot({
+        path: test.info().outputPath('profile-image-failed.png'),
+        animations: 'disabled',
+      })
+    }
+    await expect(strip.nth(1).locator('img')).toHaveAttribute('src', new RegExp(ids[1]!))
+    fail = false
+    await retry.click()
+    await expect
+      .poll(() =>
+        broken
+          .locator('img')
+          .evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
+      )
+      .toBe(true)
+    await expect(retry).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
+    expect((await readItem(page, item.id)).profile).toEqual(item.profile)
+    if (role === '时期')
+      await panel.screenshot({
+        path: test.info().outputPath('profile-image-recovered.png'),
+        animations: 'disabled',
+      })
+  })
+
   test(`档案${role}图片上传期间保护保存和导航，失败可重试且保留更名`, async ({ page }) => {
     await newProject(page)
     const [assetId, extraId] = await uploadedImages(page, 2)
