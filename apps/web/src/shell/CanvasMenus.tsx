@@ -1,5 +1,5 @@
 import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
-import { type ReactNode, useEffect } from 'react'
+import { type ReactNode, useEffect, useLayoutEffect, useState } from 'react'
 import { applyCast, castLibrary, castOf, describeCast } from '../canvas/cast'
 import { findNode, type NodeInfo } from '../canvas/nodes'
 import { useCanvas } from '../stores/canvas'
@@ -16,7 +16,7 @@ const MENU_W = 280
 /** 菜单定位：贴着光标，超出视口时往回收 */
 function placeAt(x: number, y: number, h: number, w = MENU_W) {
   return {
-    left: Math.min(x, window.innerWidth - w - 8),
+    left: Math.max(8, Math.min(x, window.innerWidth - w - 8)),
     top: Math.max(8, Math.min(y, window.innerHeight - h - 8)),
   }
 }
@@ -71,7 +71,7 @@ function NodePicker({
   const ref = useDismiss(onClose, { wheel: true })
   const pos = placeAt(menu.client.x, menu.client.y, PICKER_H, PICKER_W)
   return (
-    <div ref={ref} className="pointer-events-none fixed z-30" style={pos}>
+    <div ref={ref} className="pointer-events-none fixed z-35" style={pos}>
       <AddMenu
         engine={engine}
         from={menu.kind === 'connect' ? menu.from : undefined}
@@ -123,6 +123,25 @@ function ContextMenu({
   const ref = useDismiss(onClose, { wheel: true })
   const exit = useExit()
   const closing = useClosing()
+  const [position, setPosition] = useState(() => placeAt(menu.client.x, menu.client.y, 320, 220))
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const update = () => {
+      const next = placeAt(menu.client.x, menu.client.y, el.offsetHeight, el.offsetWidth)
+      setPosition((previous) =>
+        previous.left === next.left && previous.top === next.top ? previous : next,
+      )
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    window.addEventListener('resize', update)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', update)
+    }
+  }, [ref, menu.client.x, menu.client.y])
   useEffect(() => {
     if (closing) {
       // 退场动画保留 DOM，但焦点不能留在已关闭的菜单中拦住下一次画布操作。
@@ -278,8 +297,15 @@ function ContextMenu({
         items[next]?.focus()
       }}
       {...exit}
-      style={{ ...placeAt(menu.client.x, menu.client.y, 320), width: 220 }}
-      className="ui-menu pointer-events-auto fixed z-30"
+      style={{
+        ...position,
+        width: 220,
+        maxWidth: 'calc(100vw - 16px)',
+        maxHeight: 'calc(100dvh - 16px)',
+        overflowY: 'auto',
+        overscrollBehavior: 'contain',
+      }}
+      className="ui-menu pointer-events-auto fixed z-35"
     >
       {items}
     </div>

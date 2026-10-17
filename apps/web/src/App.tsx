@@ -111,7 +111,7 @@ export function App() {
           <button
             type="button"
             aria-label="打开助手"
-            className="plein-mascot-btn pointer-events-auto fixed right-3 bottom-2 z-40 rounded-full"
+            className="plein-mascot-btn pointer-events-auto fixed right-3 bottom-2 z-30 rounded-full"
             onClick={() => useAgent.getState().toggle(true)}
           >
             <Mascot mood="idle" />

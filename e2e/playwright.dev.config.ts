@@ -25,6 +25,7 @@ export default defineConfig({
     'gesture-lifecycle.spec.ts',
     'gesture-concurrency.spec.ts',
     'group-boundaries.spec.ts',
+    'context-menu-boundaries.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },

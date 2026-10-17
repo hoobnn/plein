@@ -132,7 +132,7 @@ export function AgentDock() {
         aria-label={open ? '收起助手' : '打开助手'}
         aria-expanded={open}
         title={open ? undefined : '小满：让本机的 Claude Code / Codex 帮你操作画布'}
-        className="plein-mascot-btn pointer-events-auto fixed right-3 bottom-2 z-40 rounded-full max-sm:bottom-16"
+        className="plein-mascot-btn pointer-events-auto fixed right-3 bottom-2 z-30 rounded-full max-sm:bottom-16"
       >
         <Mascot mood={mood} />
         {unread && (
