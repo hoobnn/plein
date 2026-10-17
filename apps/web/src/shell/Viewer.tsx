@@ -1,49 +1,298 @@
+import { adoptResult, currentResult, type NodeResult } from '@plein/doc'
+import { useState, useSyncExternalStore } from 'react'
 import { assetUrls } from '../api/client'
 import { useCanvas } from '../stores/canvas'
 import { Icon } from '../ui/icons'
+import { Modal, ModalHeader } from '../ui/Modal'
 
-/** 全屏查看图片 / 视频：点空白处或 Esc 关闭 */
+/** 审片状态只在浮层里；只有明确采用才写文档。 */
 export function Viewer() {
   const viewer = useCanvas((s) => s.viewer)
-  const view = useCanvas((s) => s.view)
-  if (!viewer) return null
-  const src = assetUrls.original(viewer.assetId)
+  return viewer ? (
+    <Review key={`${viewer.nodeId ?? ''}/${viewer.resultId ?? viewer.assetId}`} viewer={viewer} />
+  ) : null
+}
+
+type View = NonNullable<ReturnType<typeof useCanvas.getState>['viewer']>
+
+function Review({ viewer }: { viewer: View }) {
+  const engine = useCanvas((s) => s.engine)
+  const doc = engine?.doc
+  useSyncExternalStore(
+    (fn) => doc?.subscribe(fn) ?? (() => {}),
+    () => doc?.get(viewer.nodeId ?? '') ?? null,
+  )
+  const element = doc?.get(viewer.nodeId ?? '')
+  const initial = element?.results?.find((r) => r.id === viewer.resultId)
+  const candidates = element?.results?.filter((r) => r.port === initial?.port) ?? []
+  const [selected, setSelected] = useState(viewer.resultId)
+  const [compare, setCompare] = useState('')
+  const [comparison, setComparison] = useState<'side' | 'slider'>('side')
+  const [split, setSplit] = useState(50)
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [drag, setDrag] = useState<{ x: number; y: number; px: number; py: number } | null>(null)
+  const result = candidates.find((r) => r.id === selected)
+  const value = result?.value
+  const kind = value?.type ?? viewer.kind
+  const assetId = value && 'assetId' in value ? value.assetId : viewer.assetId
+  const other = candidates.find((r) => r.id === compare)
+  const otherId = other?.value.type === 'image' ? other.value.assetId : undefined
+  const adopted = element && result && currentResult(element, result.port)?.id === result.id
+  const close = () => useCanvas.getState().view(null)
+  const step = (delta: number) => {
+    const i = candidates.findIndex((r) => r.id === selected)
+    if (candidates.length)
+      setSelected(candidates[(i + delta + candidates.length) % candidates.length]!.id)
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }
+  const adopt = () => {
+    if (!doc || !element || !result || doc.readOnly || adopted) return
+    doc.undo.stopCapturing()
+    adoptResult(doc, element.id, result.id)
+    doc.undo.stopCapturing()
+  }
+  const label = (r: NodeResult) =>
+    `候选 ${candidates.indexOf(r) + 1}${currentResult(element!, r.port)?.id === r.id ? ' · 已采用' : ''}`
   return (
-    <div
-      role="dialog"
-      aria-label={`查看「${viewer.name}」`}
-      className="fixed inset-0 z-50 flex items-center justify-center p-10"
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') view(null)
-      }}
+    <Modal
+      label={`查看「${viewer.name}」`}
+      onClose={close}
+      top
+      isolateKeys
+      className="h-[90vh] max-w-[96vw]"
     >
-      <button
-        type="button"
-        aria-label="关闭"
+      <div
+        role="group"
+        aria-label="候选审片操作"
         tabIndex={-1}
-        onClick={() => view(null)}
-        className="absolute inset-0 cursor-default bg-black/85 backdrop-blur-sm"
-      />
-      {viewer.kind === 'image' ? (
-        <img
-          src={src}
-          alt={viewer.name}
-          className="relative max-h-full max-w-full rounded-md object-contain"
-        />
-      ) : (
-        // oxlint-disable-next-line jsx-a11y/media-has-caption -- 生成的视频没有字幕轨
-        <video src={src} controls autoPlay className="relative max-h-full max-w-full rounded-md" />
-      )}
-      <button
-        type="button"
-        // oxlint-disable-next-line jsx-a11y/no-autofocus -- 打开即可按 Esc 关闭
-        autoFocus
-        aria-label="关闭"
-        onClick={() => view(null)}
-        className="absolute top-5 right-5 flex size-10 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
+        className="flex min-h-0 flex-1 flex-col"
+        onPointerDown={(e) => {
+          if (
+            !(e.target as HTMLElement).closest(
+              'button,a,[role=button],input,textarea,select,[contenteditable],video,audio',
+            )
+          )
+            e.currentTarget.focus({ preventScroll: true })
+        }}
+        onKeyDown={(e) => {
+          const target = e.target as HTMLElement
+          if (target.closest('input,textarea,select,[contenteditable],video,audio')) return
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault()
+            e.stopPropagation()
+            step(-1)
+          }
+          if (e.key === 'ArrowRight') {
+            e.preventDefault()
+            e.stopPropagation()
+            step(1)
+          }
+          if (e.key === 'Enter') {
+            if (target.closest('button,a,[role=button]')) return
+            e.preventDefault()
+            e.stopPropagation()
+            adopt()
+          }
+        }}
       >
-        <Icon name="x" size={20} />
-      </button>
-    </div>
+        <ModalHeader title={viewer.name} onClose={close}>
+          {candidates.length > 0 && (
+            <>
+              <button
+                type="button"
+                aria-label="预览上一个候选"
+                className="ui-btn ui-btn-secondary"
+                onClick={() => step(-1)}
+              >
+                <Icon name="chevronLeft" />
+              </button>
+              <span className="text-xs text-ink-muted">
+                {result ? label(result) : '候选已移除'} / {candidates.length}
+              </span>
+              <button
+                type="button"
+                aria-label="预览下一个候选"
+                className="ui-btn ui-btn-secondary"
+                onClick={() => step(1)}
+              >
+                <Icon name="chevronRight" />
+              </button>
+              <button
+                type="button"
+                disabled={!result || adopted || doc?.readOnly}
+                className="ui-btn ui-btn-primary"
+                onClick={adopt}
+              >
+                {adopted ? '已采用' : '采用此候选'}
+              </button>
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary"
+                onClick={() => {
+                  if (engine && element) {
+                    engine.selection.set([element.id])
+                    engine.zoomToFit([element.id])
+                    close()
+                  }
+                }}
+              >
+                定位来源
+              </button>
+            </>
+          )}
+        </ModalHeader>
+        {kind === 'image' && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2 text-xs">
+            <button
+              type="button"
+              aria-label="缩小图片"
+              className="ui-btn ui-btn-secondary"
+              onClick={() => setZoom((z) => Math.max(0.25, z / 1.25))}
+            >
+              −
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary"
+              onClick={() => {
+                setZoom(1)
+                setPan({ x: 0, y: 0 })
+              }}
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              type="button"
+              aria-label="放大图片"
+              className="ui-btn ui-btn-secondary"
+              onClick={() => setZoom((z) => Math.min(8, z * 1.25))}
+            >
+              +
+            </button>
+            {candidates.some((r) => r.value.type === 'image' && r.id !== selected) && (
+              <>
+                <select
+                  aria-label="对比候选"
+                  className="ui-input"
+                  value={compare}
+                  onChange={(e) => setCompare(e.target.value)}
+                >
+                  <option value="">不对比</option>
+                  {candidates
+                    .filter((r) => r.value.type === 'image' && r.id !== selected)
+                    .map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {label(r)}
+                      </option>
+                    ))}
+                </select>
+                {otherId && (
+                  <select
+                    aria-label="对比方式"
+                    className="ui-input"
+                    value={comparison}
+                    onChange={(e) => setComparison(e.target.value as 'side' | 'slider')}
+                  >
+                    <option value="side">并排</option>
+                    <option value="slider">滑杆</option>
+                  </select>
+                )}
+              </>
+            )}
+            <span className="text-ink-subtle">滚轮缩放，拖动查看；左右键浏览，Enter 采用</span>
+          </div>
+        )}
+        <div
+          className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black/90 p-4"
+          onWheel={(e) => {
+            if (kind === 'image')
+              setZoom((z) => Math.min(8, Math.max(0.25, z * (e.deltaY < 0 ? 1.1 : 1 / 1.1))))
+          }}
+        >
+          {kind === 'image' && assetId ? (
+            <>
+              <div
+                className={`relative flex h-full w-full items-center justify-center ${otherId && comparison === 'side' ? 'gap-3' : ''}`}
+                style={{
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                  touchAction: 'none',
+                  cursor: drag ? 'grabbing' : 'grab',
+                }}
+                onPointerDown={(e) => {
+                  e.currentTarget.setPointerCapture(e.pointerId)
+                  setDrag({ x: e.clientX, y: e.clientY, px: pan.x, py: pan.y })
+                }}
+                onPointerMove={(e) => {
+                  if (drag)
+                    setPan({ x: drag.px + e.clientX - drag.x, y: drag.py + e.clientY - drag.y })
+                }}
+                onPointerUp={() => setDrag(null)}
+                onPointerCancel={() => setDrag(null)}
+              >
+                <img
+                  src={assetUrls.original(assetId)}
+                  alt={otherId ? '候选 A' : viewer.name}
+                  draggable={false}
+                  className={`max-h-full min-w-0 object-contain ${otherId && comparison === 'side' ? 'w-1/2' : 'max-w-full'}`}
+                />
+                {otherId && (
+                  <img
+                    src={assetUrls.original(otherId)}
+                    alt="候选 B"
+                    draggable={false}
+                    className={
+                      comparison === 'side'
+                        ? 'max-h-full w-1/2 min-w-0 object-contain'
+                        : 'absolute inset-0 h-full w-full object-contain'
+                    }
+                    style={
+                      comparison === 'slider'
+                        ? { clipPath: `inset(0 ${100 - split}% 0 0)` }
+                        : undefined
+                    }
+                  />
+                )}
+              </div>
+              {otherId && comparison === 'slider' && (
+                <input
+                  aria-label="图片对比滑杆"
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={split}
+                  onChange={(e) => setSplit(Number(e.target.value))}
+                  className="absolute right-8 bottom-5 left-8"
+                />
+              )}
+            </>
+          ) : kind === 'video' && assetId ? (
+            // oxlint-disable-next-line jsx-a11y/media-has-caption -- 生成素材不一定带字幕轨
+            <video
+              key={assetId}
+              src={assetUrls.original(assetId)}
+              poster={assetUrls.variant(assetId, 'poster')}
+              controls
+              autoPlay
+              className="max-h-full max-w-full"
+            />
+          ) : kind === 'audio' && assetId ? (
+            // oxlint-disable-next-line jsx-a11y/media-has-caption -- 生成音频不一定带字幕
+            <audio key={assetId} src={assetUrls.original(assetId)} controls autoPlay />
+          ) : value ? (
+            <pre className="ui-scrollbar max-h-full w-full overflow-auto whitespace-pre-wrap p-6 text-sm text-white">
+              {value.type === 'text'
+                ? value.text
+                : value.type === 'json'
+                  ? JSON.stringify(value.value, null, 2)
+                  : '素材不可用'}
+            </pre>
+          ) : (
+            <p className="text-white">候选已移除或素材不可用</p>
+          )}
+        </div>
+      </div>
+    </Modal>
   )
 }

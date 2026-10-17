@@ -45,7 +45,13 @@ interface CanvasStore extends EngineState {
   /** 打开编辑器的 3D 构图节点 */
   stage: string | null
   /** 全屏查看的图片 / 视频 */
-  viewer: { assetId: string; kind: 'image' | 'video'; name: string } | null
+  viewer: {
+    assetId?: string
+    kind: 'image' | 'video' | 'audio' | 'result'
+    name: string
+    nodeId?: string
+    resultId?: string
+  } | null
   /** 快捷键面板 */
   shortcuts: boolean
   /** 刚完成的整理：底部弹“保留 / 还原” */

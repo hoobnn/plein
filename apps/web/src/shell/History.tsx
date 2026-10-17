@@ -1,11 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import {
-  adoptResult,
-  createElements,
-  type HistoryEntry,
-  type NewElement,
-  resultHistory,
-} from '@plein/doc'
+import { createElements, type HistoryEntry, type NewElement, resultHistory } from '@plein/doc'
 import { useEffect, useMemo, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { downloadAsset } from '../canvas/grid'
@@ -65,8 +59,8 @@ function thumbOf(e: HistoryEntry, size: number) {
 /**
  * 生成历史：本画布所有节点的图片 / 视频 / 音频结果。
  * 按类型分栏计数、时间排序、调缩略图大小；
- * 点一项定位到所属节点并采用它，批量选中后可下载或放到画布上。
- * “全部画布”需要服务端结果索引，暂不支持。
+ * 点一项先预览，在审片器中明确采用；批量选中后可下载或放到画布上。
+ * 跨画布素材通过独立的“素材”入口检索。
  */
 export function History() {
   const engine = useCanvas((s) => s.engine)
@@ -122,10 +116,9 @@ function HistoryPanel({ engine }: { engine: Engine }) {
 
   const locate = (e: HistoryEntry) => {
     if (!doc.has(e.elementId)) return
-    close()
-    if (!e.adopted && !doc.readOnly) adoptResult(doc, e.elementId, e.result.id)
-    engine.selection.set([e.elementId])
-    engine.zoomToFit([e.elementId])
+    useCanvas
+      .getState()
+      .view({ kind: 'result', nodeId: e.elementId, resultId: e.result.id, name: nameOf(e) })
   }
 
   const download = async () => {
@@ -189,7 +182,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
         title="生成历史"
         onClose={close}
         meta={
-          <span className="ui-tag" title="“全部画布”需要服务端索引所有画布的结果，暂只支持本画布">
+          <span className="ui-tag" title="这里查看本画布候选；跨画布检索请打开“素材”">
             本画布
           </span>
         }

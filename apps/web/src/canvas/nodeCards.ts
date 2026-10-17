@@ -1,5 +1,6 @@
 import { type Engine, NODE_LAYOUT } from '@plein/canvas-core'
-import { adoptResult, type CanvasElement, currentResult, type RunStatus } from '@plein/doc'
+import { type CanvasElement, currentResult, type RunStatus } from '@plein/doc'
+import { useCanvas } from '../stores/canvas'
 import {
   ASSET_NODE_TYPES,
   presetsFor,
@@ -235,7 +236,10 @@ export class NodeCards {
       const cur = currentResult(el, list[0]?.port)
       const i = list.findIndex((r) => r.id === cur?.id)
       const target = list[(i + d + list.length) % list.length]
-      if (target) adoptResult(this.engine.doc, id, target.id)
+      if (target)
+        useCanvas
+          .getState()
+          .view({ kind: 'result', nodeId: id, resultId: target.id, name: el.name ?? '候选审片' })
     }
     prev.addEventListener('click', () => step(-1))
     next.addEventListener('click', () => step(1))
