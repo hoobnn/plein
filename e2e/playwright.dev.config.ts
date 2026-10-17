@@ -27,6 +27,7 @@ export default defineConfig({
     'group-boundaries.spec.ts',
     'context-menu-boundaries.spec.ts',
     'node-picker-boundaries.spec.ts',
+    'generator-layout.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },

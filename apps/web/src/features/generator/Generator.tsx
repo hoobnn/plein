@@ -73,25 +73,57 @@ function GeneratorHost({ engine }: { engine: Engine }) {
   const ids = engine.selection.values()
   const el = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
   const node = el?.kind === 'node' ? findNode(catalog, el.nodeType) : undefined
-  const place = () => (el ? placeBeside(engine, el.id) : null)
+  if (!el || !node || el.locked || engine.doc.readOnly) return null
+  return <NodeGenerator key={el.id} engine={engine} el={el} node={node} catalog={catalog} />
+}
+
+function NodeGenerator({
+  engine,
+  el,
+  node,
+  catalog,
+}: {
+  engine: Engine
+  el: CanvasElement
+  node: NodeInfo
+  catalog: Catalog | null
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [, resized] = useState(0)
+  useEffect(() => {
+    const resize = () => resized((value) => value + 1)
+    window.addEventListener('resize', resize)
+    return () => window.removeEventListener('resize', resize)
+  }, [])
+  const rect = engine.scene.rect(el.id)!
+  const tl = engine.worldToClient(rect.x, rect.y)
+  const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
+  const cramped =
+    Math.max(tl.y - TITLE_H - TOP_RESERVED, window.innerHeight - BOTTOM_RESERVED - br.y) <
+    MIN_H + GAP
+  const collapsed = cramped && !expanded
+  const place = () => placeBeside(engine, el.id, collapsed)
   const ref = useFollow<HTMLElement>(engine, place)
   const style = place()
-  if (!el || !style || !node || el.locked || engine.doc.readOnly) return null
+  if (!style) return null
   return (
     <Panel
-      key={el.id}
       engine={engine}
       el={el}
       node={node}
       catalog={catalog}
       style={style}
       panelRef={ref}
+      collapsed={collapsed}
+      canCollapse={cramped}
+      onExpand={() => setExpanded(true)}
+      onCollapse={() => setExpanded(false)}
     />
   )
 }
 
 /** 默认放在节点下方；下方实在放不下才放上方，让开标题行 */
-function placeBeside(engine: Engine, id: string) {
+function placeBeside(engine: Engine, id: string, collapsed = false) {
   const rect = engine.scene.rect(id)
   if (!rect) return null
   const tl = engine.worldToClient(rect.x, rect.y)
@@ -108,6 +140,19 @@ function placeBeside(engine: Engine, id: string) {
     minLeft,
     Math.min((tl.x + br.x) / 2 - width / 2, window.innerWidth - width - GAP),
   )
+  if (collapsed) {
+    // 紧凑入口避开两侧端口所在的中线；展开由用户主动接管编辑。
+    const portY = (tl.y + br.y) / 2
+    const height = 44
+    const limit = window.innerHeight - BOTTOM_RESERVED
+    const top = portY + GAP + height <= limit ? portY + GAP : portY - GAP - height
+    return {
+      left,
+      width,
+      top: Math.max(TOP_RESERVED, Math.min(top, limit - height)),
+      maxHeight: height,
+    }
+  }
   return preferBelow
     ? {
         left,
@@ -139,6 +184,10 @@ function Panel({
   catalog,
   style,
   panelRef,
+  collapsed,
+  canCollapse,
+  onExpand,
+  onCollapse,
 }: {
   engine: Engine
   el: CanvasElement
@@ -146,10 +195,15 @@ function Panel({
   catalog: Catalog | null
   style: React.CSSProperties
   panelRef: React.Ref<HTMLElement>
+  collapsed: boolean
+  canCollapse: boolean
+  onExpand(): void
+  onCollapse(): void
 }) {
   const [more, setMore] = useState(false)
   const canvasId = useCanvas((s) => s.canvasId)
   const promptRef = useRef<HTMLTextAreaElement>(null)
+  const pendingFocus = useRef(false)
   const params = { ...node.defaults, ...el.params }
   const ak = aspectKey(node)
   const set = (key: string, value: unknown) => {
@@ -225,15 +279,34 @@ function Panel({
         )
       )
         return
-      const ta = promptRef.current
-      if (!ta) return
-      ta.focus()
-      const hole = firstPlaceholder(ta.value)
-      if (hole) ta.setSelectionRange(hole.start, hole.end)
+      if (collapsed) {
+        pendingFocus.current = true
+        onExpand()
+        return
+      }
+      focusPrompt()
     }
     window.addEventListener('plein:focus-generator', focus)
     return () => window.removeEventListener('plein:focus-generator', focus)
-  }, [el.id])
+  }, [el.id, collapsed, onExpand])
+  function focusPrompt() {
+    if (
+      document.querySelector(
+        '[role="dialog"]:not([data-closing]), [role="alertdialog"]:not([data-closing])',
+      )
+    )
+      return
+    const ta = promptRef.current
+    if (!ta) return
+    ta.focus()
+    const hole = firstPlaceholder(ta.value)
+    if (hole) ta.setSelectionRange(hole.start, hole.end)
+  }
+  useEffect(() => {
+    if (collapsed || !pendingFocus.current) return
+    pendingFocus.current = false
+    focusPrompt()
+  }, [collapsed])
 
   // 已有结果时，预设、生成视频、宫格切分、下载、全屏放在第一行右侧
   const media = running ? null : mediaOf(el)
@@ -265,6 +338,7 @@ function Panel({
       ref={panelRef}
       aria-label={`${node.title} 生成器`}
       data-testid="generator"
+      data-compact={collapsed}
       style={style}
       className="ui-float ui-scrollbar pointer-events-auto fixed z-20 flex flex-col overflow-y-auto rounded-xl"
       onKeyDown={(e) => {
@@ -275,213 +349,231 @@ function Panel({
         }
       }}
     >
-      {ASSET_NODE_TYPES.has(node.type) && (
-        <NameField
-          value={el.name ?? node.title}
-          onChange={(name) => {
-            engine.doc.undo.stopCapturing()
-            updateElement(engine.doc, el.id, { name })
-            engine.doc.undo.stopCapturing()
+      {canCollapse && (
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          onClick={() => {
+            if (collapsed) {
+              pendingFocus.current = true
+              onExpand()
+            } else onCollapse()
           }}
-          hint={`在提示词里输入 @${el.name ?? node.title} 引用`}
-          trailing={canvasId ? <LibrarySave engine={engine} el={el} /> : null}
-        />
+          className="ui-btn ui-btn-quiet sticky top-0 z-10 min-h-11 shrink-0 justify-between rounded-none bg-float px-4"
+        >
+          <span>{collapsed ? `编辑${node.title}` : '收起编辑器'}</span>
+          <Icon name={collapsed ? 'expand' : 'collapse'} size={14} />
+        </button>
       )}
-      {(node.inputs.length > 0 || actions) && (
-        <Inputs engine={engine} el={el} node={node} ups={ups} trailing={actions} />
-      )}
-      <ContinuedFrom engine={engine} el={el} />
-      {node.capability === 'image.edit' && (
-        <MaskField engine={engine} el={el} source={ups.get('image')?.[0]} />
-      )}
-      {node.type === 'plein/character' && canvasId && <ProfileSummary engine={engine} el={el} />}
-      {node.type === STORYBOARD_TYPE && (
-        <div className="px-4 pt-4">
-          <button
-            type="button"
-            onClick={() => useCanvas.getState().openStoryboard(el.id)}
-            className="ui-btn ui-btn-secondary w-full"
-          >
-            编辑分镜表（{shotsOf(el).length} 个镜头）
-          </button>
-        </div>
-      )}
-      {(node.type === SEQUENCE_TYPE || node.type === ANIMATIC_TYPE) && (
-        <div className="px-4 pt-4">
-          <button
-            type="button"
-            onClick={() => useCanvas.getState().openSequence(el.id)}
-            className="ui-btn ui-btn-secondary w-full"
-          >
-            {node.type === ANIMATIC_TYPE
-              ? '编辑节奏样片'
-              : `编辑序列（${ups.get('clips')?.length ?? 0} 段镜头）`}
-          </button>
-        </div>
-      )}
-      {node.type === STAGE_TYPE && (
-        <div className="flex flex-col gap-2 px-4 pt-4">
-          <button
-            type="button"
-            onClick={() => useCanvas.getState().openStage(el.id)}
-            className="ui-btn ui-btn-secondary w-full"
-          >
-            打开 3D 构图
-          </button>
-          <p className="ui-help">
-            {stageSnapshotsOf(el.params).length
-              ? `已截 ${stageSnapshotsOf(el.params).length} 张，下游用当前采用的那张；改场景后要重新截图才会更新`
-              : '摆好人物和机位后截图，把「构图」连到图片节点的参考图'}
-          </p>
-        </div>
-      )}
-      {pk && (
-        <PromptBox
-          ref={promptRef}
-          engine={engine}
-          selfId={el.id}
-          value={String(params[pk] ?? '')}
-          presets={presets}
-          onPreset={(p) => {
-            for (const [k, v] of Object.entries(p.params ?? {})) {
-              if (fields.some(([f]) => f === k)) set(k, v)
-            }
-          }}
-          placeholder={
-            fields.find(([k]) => k === pk)?.[1].placeholder ??
-            (pure
-              ? '写下文本'
-              : `描述你想生成的内容，@ 引用角色或场景${presets.length ? '，行首 / 选预设' : ''}`)
-          }
-          onChange={(v) => set(pk, v)}
-        />
-      )}
-      {pk && !pure && (
-        <ShotPresets engine={engine} el={el} node={node} catalog={catalog} promptKey={pk} />
-      )}
-      {pure && Object.keys(rest).length > 0 && (
-        <div className="px-4 pb-3">
-          <button
-            type="button"
-            onClick={() => setMore(!more)}
-            className="ui-btn ui-btn-quiet ui-btn-sm -ml-2.5"
-            aria-expanded={more}
-          >
-            {more ? '收起设置' : '更多设置'}
-            <span className={`transition-transform ${more ? 'rotate-180' : ''}`}>
-              <Icon name="chevronDown" size={14} />
-            </span>
-          </button>
-          {more && (
-            <div className="pt-2">
-              <SchemaForm
-                dense
-                schema={{ properties: rest }}
-                value={params}
-                onChange={(next) => {
-                  for (const k of Object.keys(rest)) if (next[k] !== params[k]) set(k, next[k])
-                }}
-              />
-            </div>
-          )}
-        </div>
-      )}
-      {!pure && (
-        <InputPreview
-          engine={engine}
-          el={el}
-          node={node}
-          data={input.data}
-          loading={input.loading}
-          error={input.error}
-          onRetry={input.retry}
-        />
-      )}
-      {!pure && (
-        // 底栏吸底：面板被视口截短时生成按钮仍然可见
-        <footer className="sticky bottom-0 flex flex-col gap-2 bg-float px-3 pb-3 pt-1 backdrop-blur-xl">
-          {notes.length > 0 && !problem && (
-            <p className="px-1 text-xs text-ink-subtle">{notes.join('；')}</p>
-          )}
-          {((problem && !onlyPromptMissing) || (!running && el.run?.status === 'failed')) && (
-            <p
-              className={`px-1 text-xs ${problem ? 'text-ink-subtle' : 'text-danger'}`}
-              title={problem ?? el.run?.error ?? undefined}
-            >
-              {problem ?? el.run?.error ?? '生成失败'}
-            </p>
-          )}
-          <div className="flex items-center gap-1">
-            {modelField && (
-              <ModelPicker
-                value={String(params[modelField[0]] ?? '')}
-                node={node}
-                catalog={catalog}
-                onChange={(v) => {
-                  const next = { ...params, [modelField[0]]: v }
-                  const { patch, notes } = adaptToModel(
-                    node,
-                    next,
-                    selectedModel(catalog, node, next)?.info,
-                  )
-                  set(modelField[0], v)
-                  for (const [k, value] of Object.entries(patch)) set(k, value)
-                  setNotes(notes)
-                }}
-              />
-            )}
-            {modeField && (
-              <ModePicker
-                value={params[modeField[0]] as VideoMode}
-                images={ups.get('images')?.length ?? 0}
-                videos={ups.get('videos')?.length ?? 0}
-                audios={ups.get('audios')?.length ?? 0}
-                onChange={(v) => set(modeField[0], v)}
-              />
-            )}
-            {(modelField || modeField) && hasParams && (
-              <span aria-hidden="true" className="ui-bar-sep" />
-            )}
-            {hasParams && (
-              <ParamsPill
-                fields={paramFields}
-                rest={rest}
-                params={params}
-                aspect={ak}
-                options={modelOptions}
-                // 模型只能出 1 张时张数不可选，摘要里照样写出来
-                fixed={
-                  countField && !paramFields.some(([k]) => k === 'count')
-                    ? [`1 ${countUnit(countField[1])}`]
-                    : []
-                }
-                onChange={set}
-              />
-            )}
-            <span className="flex-1" />
-            {pk && (
-              <PromptTools
-                engine={engine}
-                elId={el.id}
-                promptKey={pk}
-                text={String(params[pk] ?? '')}
-                node={node}
-                catalog={catalog}
-              />
-            )}
+      <div className={collapsed ? 'hidden' : 'contents'}>
+        {ASSET_NODE_TYPES.has(node.type) && (
+          <NameField
+            value={el.name ?? node.title}
+            onChange={(name) => {
+              engine.doc.undo.stopCapturing()
+              updateElement(engine.doc, el.id, { name })
+              engine.doc.undo.stopCapturing()
+            }}
+            hint={`在提示词里输入 @${el.name ?? node.title} 引用`}
+            trailing={canvasId ? <LibrarySave engine={engine} el={el} /> : null}
+          />
+        )}
+        {(node.inputs.length > 0 || actions) && (
+          <Inputs engine={engine} el={el} node={node} ups={ups} trailing={actions} />
+        )}
+        <ContinuedFrom engine={engine} el={el} />
+        {node.capability === 'image.edit' && (
+          <MaskField engine={engine} el={el} source={ups.get('image')?.[0]} />
+        )}
+        {node.type === 'plein/character' && canvasId && <ProfileSummary engine={engine} el={el} />}
+        {node.type === STORYBOARD_TYPE && (
+          <div className="px-4 pt-4">
             <button
               type="button"
-              onClick={run}
-              disabled={!running && !!problem}
-              title={problem ?? (running ? runLabel : withShortcut(runLabel, 'mod+enter'))}
-              aria-label={runLabel}
-              className={`ui-btn ui-btn-lg ui-icon-btn ml-1 ${running ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
+              onClick={() => useCanvas.getState().openStoryboard(el.id)}
+              className="ui-btn ui-btn-secondary w-full"
             >
-              <Icon name={running ? 'stop' : 'arrowUp'} size={running ? 14 : 16} />
+              编辑分镜表（{shotsOf(el).length} 个镜头）
             </button>
           </div>
-        </footer>
-      )}
+        )}
+        {(node.type === SEQUENCE_TYPE || node.type === ANIMATIC_TYPE) && (
+          <div className="px-4 pt-4">
+            <button
+              type="button"
+              onClick={() => useCanvas.getState().openSequence(el.id)}
+              className="ui-btn ui-btn-secondary w-full"
+            >
+              {node.type === ANIMATIC_TYPE
+                ? '编辑节奏样片'
+                : `编辑序列（${ups.get('clips')?.length ?? 0} 段镜头）`}
+            </button>
+          </div>
+        )}
+        {node.type === STAGE_TYPE && (
+          <div className="flex flex-col gap-2 px-4 pt-4">
+            <button
+              type="button"
+              onClick={() => useCanvas.getState().openStage(el.id)}
+              className="ui-btn ui-btn-secondary w-full"
+            >
+              打开 3D 构图
+            </button>
+            <p className="ui-help">
+              {stageSnapshotsOf(el.params).length
+                ? `已截 ${stageSnapshotsOf(el.params).length} 张，下游用当前采用的那张；改场景后要重新截图才会更新`
+                : '摆好人物和机位后截图，把「构图」连到图片节点的参考图'}
+            </p>
+          </div>
+        )}
+        {pk && (
+          <PromptBox
+            ref={promptRef}
+            engine={engine}
+            selfId={el.id}
+            value={String(params[pk] ?? '')}
+            presets={presets}
+            onPreset={(p) => {
+              for (const [k, v] of Object.entries(p.params ?? {})) {
+                if (fields.some(([f]) => f === k)) set(k, v)
+              }
+            }}
+            placeholder={
+              fields.find(([k]) => k === pk)?.[1].placeholder ??
+              (pure
+                ? '写下文本'
+                : `描述你想生成的内容，@ 引用角色或场景${presets.length ? '，行首 / 选预设' : ''}`)
+            }
+            onChange={(v) => set(pk, v)}
+          />
+        )}
+        {pk && !pure && (
+          <ShotPresets engine={engine} el={el} node={node} catalog={catalog} promptKey={pk} />
+        )}
+        {pure && Object.keys(rest).length > 0 && (
+          <div className="px-4 pb-3">
+            <button
+              type="button"
+              onClick={() => setMore(!more)}
+              className="ui-btn ui-btn-quiet ui-btn-sm -ml-2.5"
+              aria-expanded={more}
+            >
+              {more ? '收起设置' : '更多设置'}
+              <span className={`transition-transform ${more ? 'rotate-180' : ''}`}>
+                <Icon name="chevronDown" size={14} />
+              </span>
+            </button>
+            {more && (
+              <div className="pt-2">
+                <SchemaForm
+                  dense
+                  schema={{ properties: rest }}
+                  value={params}
+                  onChange={(next) => {
+                    for (const k of Object.keys(rest)) if (next[k] !== params[k]) set(k, next[k])
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+        {!pure && (
+          <InputPreview
+            engine={engine}
+            el={el}
+            node={node}
+            data={input.data}
+            loading={input.loading}
+            error={input.error}
+            onRetry={input.retry}
+          />
+        )}
+        {!pure && (
+          // 底栏吸底：面板被视口截短时生成按钮仍然可见
+          <footer className="sticky bottom-0 flex flex-col gap-2 bg-float px-3 pb-3 pt-1 backdrop-blur-xl">
+            {notes.length > 0 && !problem && (
+              <p className="px-1 text-xs text-ink-subtle">{notes.join('；')}</p>
+            )}
+            {((problem && !onlyPromptMissing) || (!running && el.run?.status === 'failed')) && (
+              <p
+                className={`px-1 text-xs ${problem ? 'text-ink-subtle' : 'text-danger'}`}
+                title={problem ?? el.run?.error ?? undefined}
+              >
+                {problem ?? el.run?.error ?? '生成失败'}
+              </p>
+            )}
+            <div className="flex items-center gap-1">
+              {modelField && (
+                <ModelPicker
+                  value={String(params[modelField[0]] ?? '')}
+                  node={node}
+                  catalog={catalog}
+                  onChange={(v) => {
+                    const next = { ...params, [modelField[0]]: v }
+                    const { patch, notes } = adaptToModel(
+                      node,
+                      next,
+                      selectedModel(catalog, node, next)?.info,
+                    )
+                    set(modelField[0], v)
+                    for (const [k, value] of Object.entries(patch)) set(k, value)
+                    setNotes(notes)
+                  }}
+                />
+              )}
+              {modeField && (
+                <ModePicker
+                  value={params[modeField[0]] as VideoMode}
+                  images={ups.get('images')?.length ?? 0}
+                  videos={ups.get('videos')?.length ?? 0}
+                  audios={ups.get('audios')?.length ?? 0}
+                  onChange={(v) => set(modeField[0], v)}
+                />
+              )}
+              {(modelField || modeField) && hasParams && (
+                <span aria-hidden="true" className="ui-bar-sep" />
+              )}
+              {hasParams && (
+                <ParamsPill
+                  fields={paramFields}
+                  rest={rest}
+                  params={params}
+                  aspect={ak}
+                  options={modelOptions}
+                  // 模型只能出 1 张时张数不可选，摘要里照样写出来
+                  fixed={
+                    countField && !paramFields.some(([k]) => k === 'count')
+                      ? [`1 ${countUnit(countField[1])}`]
+                      : []
+                  }
+                  onChange={set}
+                />
+              )}
+              <span className="flex-1" />
+              {pk && (
+                <PromptTools
+                  engine={engine}
+                  elId={el.id}
+                  promptKey={pk}
+                  text={String(params[pk] ?? '')}
+                  node={node}
+                  catalog={catalog}
+                />
+              )}
+              <button
+                type="button"
+                onClick={run}
+                disabled={!running && !!problem}
+                title={problem ?? (running ? runLabel : withShortcut(runLabel, 'mod+enter'))}
+                aria-label={runLabel}
+                className={`ui-btn ui-btn-lg ui-icon-btn ml-1 ${running ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
+              >
+                <Icon name={running ? 'stop' : 'arrowUp'} size={running ? 14 : 16} />
+              </button>
+            </div>
+          </footer>
+        )}
+      </div>
     </section>
   )
 }
