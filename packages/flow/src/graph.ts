@@ -92,21 +92,41 @@ function walk(start: string, next: (id: string) => ReadonlySet<string>) {
 
 /**
  * 按依赖排出执行顺序（Kahn 算法），同一层可以并发。
- * 成环的节点放进 cycle，不出现在 layers 里。
+ * 成环的节点及被环阻塞的下游放进 cycle，不出现在 layers 里。
  */
 export function topoLayers(deps: ReadonlyMap<string, ReadonlySet<string>>): {
   layers: string[][]
   cycle: string[]
 } {
-  const remaining = new Map<string, Set<string>>()
-  for (const [id, d] of deps) remaining.set(id, new Set([...d].filter((x) => deps.has(x))))
+  const remaining = new Map<string, number>()
+  const down = new Map<string, string[]>()
+  const order = new Map([...deps.keys()].map((id, index) => [id, index]))
+  for (const [id, upstream] of deps) {
+    let count = 0
+    for (const source of upstream) {
+      if (!deps.has(source)) continue
+      count++
+      const targets = down.get(source)
+      if (targets) targets.push(id)
+      else down.set(source, [id])
+    }
+    remaining.set(id, count)
+  }
   const layers: string[][] = []
-  for (;;) {
-    const ready = [...remaining].filter(([, d]) => d.size === 0).map(([id]) => id)
-    if (ready.length === 0) break
+  let ready = [...remaining].filter(([, count]) => count === 0).map(([id]) => id)
+  while (ready.length) {
     layers.push(ready)
-    for (const id of ready) remaining.delete(id)
-    for (const d of remaining.values()) for (const id of ready) d.delete(id)
+    const next: string[] = []
+    for (const id of ready) {
+      remaining.delete(id)
+      for (const target of down.get(id) ?? []) {
+        const count = remaining.get(target)! - 1
+        remaining.set(target, count)
+        if (count === 0) next.push(target)
+      }
+    }
+    // 同层仍按目标集合原顺序，不能受上游完成顺序影响。
+    ready = next.sort((a, b) => order.get(a)! - order.get(b)!)
   }
   return { layers, cycle: [...remaining.keys()] }
 }

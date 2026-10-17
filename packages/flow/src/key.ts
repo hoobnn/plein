@@ -6,7 +6,7 @@ export function stableStringify(value: unknown): string {
   if (value === null || typeof value !== 'object') {
     return value === undefined ? 'null' : JSON.stringify(value)
   }
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
+  if (Array.isArray(value)) return `[${Array.from(value, stableStringify).join(',')}]`
   const entries = Object.entries(value as Record<string, unknown>)
     .filter(([, v]) => v !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
