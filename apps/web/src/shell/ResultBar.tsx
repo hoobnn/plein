@@ -207,7 +207,10 @@ export function ResultActions({
           className={btn}
           title="以这张图为首帧，新建一个视频节点"
           onClick={() =>
-            deriveNode(engine, catalog, el.id, videoNode.type, { name: `${name} · 视频` })
+            deriveNode(engine, catalog, el.id, videoNode.type, {
+              name: `${name} · 视频`,
+              params: { mode: 'image' },
+            })
           }
         >
           <Icon name="video" size={14} />

@@ -98,11 +98,20 @@ export function attachInteractions(host: InteractHost) {
 
   const portCandidates = (x: number, y: number) => {
     const out: Array<[CanvasElement, Rect]> = []
+    const front = scene.hitTest(x, y, (id) => scene.get(id)?.kind !== 'frame')
     for (const id of scene.query(expand({ x, y, w: 0, h: 0 }, portRadius()))) {
       const e = scene.get(id)
       const r = scene.rect(id)
-      if (e && r && edges.portsVisible(e)) out.push([e, r])
+      if (
+        e &&
+        r &&
+        edges.portsVisible(e) &&
+        (!front || front === id || scene.drawOrder(front) < scene.drawOrder(id))
+      )
+        out.push([e, r])
     }
+    // 距离相同时 hitPort 取后者，按实际绘制顺序让最上层端口优先。
+    out.sort(([a], [b]) => scene.drawOrder(a.id) - scene.drawOrder(b.id))
     return out
   }
   /** 光标下或贴近边缘（端口那一圈）的有端口元素，悬停时显示它的端口 */
@@ -144,13 +153,12 @@ export function attachInteractions(host: InteractHost) {
       const f = froms.find((f) => canConnect(f, p))
       if (f) pairs.push({ from: f, target: p })
     })
+    // 同一输出连接点同时提供视频和尾帧等类型时，优先节点声明里的主输出。
+    if (from.side === 'out') pairs.sort((a, b) => froms.indexOf(a.from) - froms.indexOf(b.from))
     const taken = (p: PortRef) =>
+      p.side === 'in' &&
       !p.port.multiple &&
-      [...doc.edges()].some((edge) =>
-        p.side === 'in'
-          ? edge.to[0] === p.elementId && edge.to[1] === p.port.id
-          : edge.from[0] === p.elementId && edge.from[1] === p.port.id,
-      )
+      [...doc.edges()].some((edge) => edge.to[0] === p.elementId && edge.to[1] === p.port.id)
     return pairs.find((p) => !taken(p.target)) ?? pairs[0] ?? null
   }
 

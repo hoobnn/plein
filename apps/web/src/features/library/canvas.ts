@@ -5,9 +5,10 @@ import {
   placeLibraryCard,
   REF_COL_GAP,
   REF_W,
+  refsHeight,
 } from '@plein/capabilities'
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, setParam } from '@plein/doc'
+import { type CanvasElement, setParam, findFreeSpot } from '@plein/doc'
 import {
   type LibraryKindSpec,
   libraryKind,
@@ -53,29 +54,6 @@ export interface PlaceResult {
 export const findPlacedCard = (engine: Engine, libraryId: string) =>
   findPlacedCardIn(engine.doc, libraryId)
 
-/** 从 at 起往右找一块放得下 [x-left, x+w] × [y, y+h] 的空地，返回卡片左上角 */
-function freeSpot(
-  engine: Engine,
-  at: { x: number; y: number; left: number; w: number; h: number },
-) {
-  let { x } = at
-  for (let i = 0; i < 20; i++) {
-    const box = { x: x - at.left, y: at.y, w: at.left + at.w, h: at.h }
-    const hits = (engine.scene.query?.(box) ?? []).filter(
-      (id) => engine.scene.get(id)?.kind !== 'frame',
-    )
-    if (!hits.length) break
-    const right = Math.max(
-      ...hits.map((id) => {
-        const r = engine.scene.rect(id)
-        return r ? r.x + r.w : x
-      }),
-    )
-    x = Math.round(right + 80 + at.left)
-  }
-  return { x, y: at.y }
-}
-
 /** 条目封面：第一张参考图的缩略图，没有图时用参考视频的封面 */
 export function coverOf(item: LibraryItem, kind = libraryKind(item.kind)) {
   const first = kind && orderedImages(kind, item.images)[0]
@@ -115,15 +93,21 @@ export async function placeLibraryItem(
 
   const view = engine.camera.viewRect
   const base = nodeElement(info)
+  const refs: CardRef[] = assets.flatMap((a) =>
+    a.kind === 'image' || a.kind === 'video'
+      ? [{ kind: a.kind, assetId: a.id, name: a.name, width: a.width, height: a.height }]
+      : [],
+  )
   // 卡片 + 左侧素材列一起找空地，从视口中央往右挪，不压住已有元素
   const left = assets.length ? REF_W + REF_COL_GAP : 0
-  const card = freeSpot(engine, {
-    x: Math.round(view.x + view.w / 2 - (base.w - left) / 2),
-    y: Math.round(view.y + view.h / 2 - base.h / 2),
-    left,
-    w: base.w,
-    h: Math.max(base.h, 400),
+  const height = Math.max(base.h, refsHeight(refs))
+  const spot = findFreeSpot(engine.doc, {
+    x: Math.round(view.x + view.w / 2 - (base.w + left) / 2),
+    y: Math.round(view.y + view.h / 2 - height / 2),
+    w: base.w + left,
+    h: height,
   })
+  const card = { x: spot.x + left, y: spot.y + (height - base.h) / 2 }
   const params: Record<string, unknown> = {
     ...base.params,
     description: input.description,
@@ -133,11 +117,6 @@ export async function placeLibraryItem(
   }
   const duplicate = mentionTargets(engine).some((t) => t.name === input.name)
 
-  const refs: CardRef[] = assets.flatMap((a) =>
-    a.kind === 'image' || a.kind === 'video'
-      ? [{ kind: a.kind, assetId: a.id, name: a.name, width: a.width, height: a.height }]
-      : [],
-  )
   const { id: cardId, loose } = placeLibraryCard(
     engine.doc,
     { ...base, name: input.name, params },

@@ -7,6 +7,8 @@ import {
   createDoc,
   createElement,
   inputEdges,
+  groupElements,
+  updateElement,
   setParams,
   type PleinDoc,
 } from '@plein/doc'
@@ -130,6 +132,41 @@ async function fixture() {
 }
 
 describe('跨画布资产库版本同步', () => {
+  it('分组内角色同步参考图使用世界坐标，并避开列位置上的已有卡片', async () => {
+    const f = await fixture()
+    const frame = groupElements(f.a.doc, [f.a.card])!
+    updateElement(f.a.doc, frame, { x: 1400, y: 900 })
+    const cardRect = f.a.doc.worldRect(f.a.card)!
+    const blocker = createElement(f.a.doc, {
+      kind: 'markdown',
+      x: cardRect.x - 260,
+      y: cardRect.y + cardRect.h / 2 - 90,
+      w: 180,
+      h: 180,
+      text: '保留原位置',
+    })
+    f.updated()
+    const report = await f.read()
+    const res = await f.apply({
+      revision: report.revision,
+      targets: [
+        {
+          ...report.cards.find((card) => card.nodeId === f.a.card)!,
+          mode: 'update',
+          fields: ['references'],
+        },
+      ],
+    })
+    expect(res.status).toBe(200)
+    const edge = inputEdges(f.a.doc, f.a.card, 'references')[0]!
+    const ref = f.a.doc.worldRect(edge.from[0])!
+    const obstacle = f.a.doc.worldRect(blocker)!
+    expect(ref.x).toBe(cardRect.x - 260)
+    expect(ref.y).toBeGreaterThanOrEqual(obstacle.y + obstacle.h + 40)
+    expect(referenceAssets(f.a.doc, f.a.doc.get(f.a.card)!, 'image')).toEqual([f.newer.id])
+    expect(f.a.doc.worldRect(f.a.card)).toEqual(cardRect)
+    expect(f.a.doc.get(f.a.ref)?.assetId).toBe(f.old.id)
+  })
   it('同一图片承担多种用途时，已放置卡片没有虚假差异，同步后也只保留一份素材引用', async () => {
     const s = await fixture()
     const images = [

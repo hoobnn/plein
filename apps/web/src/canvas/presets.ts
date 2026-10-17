@@ -73,7 +73,12 @@ export function deriveNode(
   catalog: Catalog | null,
   sourceId: string,
   nodeType: string,
-  opts: { preset?: PromptPreset; inputPort?: string; name?: string } = {},
+  opts: {
+    preset?: PromptPreset
+    inputPort?: string
+    name?: string
+    params?: Record<string, unknown>
+  } = {},
 ): string | null {
   const source = engine.scene.get(sourceId)
   const node = findNode(catalog, nodeType)
@@ -86,13 +91,22 @@ export function deriveNode(
   const spot = freeSpotRight(engine, sourceId, base.w, base.h)
   // placeElement 以中心定位
   const at = { x: spot.x + base.w / 2, y: spot.y + base.h / 2 }
-  const id = placeElement(
-    engine,
-    { ...base, name: opts.name ?? opts.preset?.title ?? base.name },
-    at,
-  )
-  if (out && input) connect(engine.doc, [sourceId, out.id], [id, input.id])
-  if (opts.preset) applyPresetToNode(engine, catalog, id, opts.preset)
-  else focusGenerator(engine, id)
+  let id = ''
+  engine.doc.undo.stopCapturing()
+  engine.doc.ydoc.transact(() => {
+    id = placeElement(
+      engine,
+      {
+        ...base,
+        name: opts.name ?? opts.preset?.title ?? base.name,
+        params: { ...base.params, ...opts.params },
+      },
+      at,
+    )
+    if (out && input) connect(engine.doc, [sourceId, out.id], [id, input.id])
+    if (opts.preset) applyPresetToNode(engine, catalog, id, opts.preset)
+  }, engine.doc.origin)
+  engine.doc.undo.stopCapturing()
+  if (!opts.preset) focusGenerator(engine, id)
   return id
 }

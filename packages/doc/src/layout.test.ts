@@ -4,6 +4,8 @@ import {
   connect,
   createElement,
   groupElements,
+  findFreeSpot,
+  spotRightOf,
   type LayoutItem,
   layoutGraph,
   type Rect,
@@ -22,6 +24,26 @@ function expectNoOverlap(rects: Rect[]) {
 
 const placed = (items: LayoutItem[], pos: Map<string, { x: number; y: number }>) =>
   items.map((it) => ({ ...it, ...pos.get(it.id)! }))
+
+describe('自动放置避让', () => {
+  it('原落点空闲时不移动，拥挤时越过完整障碍并为标题留间距', () => {
+    const doc = open()
+    const rect = { x: 100, y: 200, w: 180, h: 320 }
+    expect(findFreeSpot(doc, rect)).toEqual({ x: 100, y: 200 })
+    const obstacle = createElement(doc, node(rect))
+    const spot = findFreeSpot(doc, rect)
+    expect(spot).toEqual({ x: 320, y: 200 })
+    expectNoOverlap([doc.worldRect(obstacle)!, { ...rect, ...spot }])
+  })
+
+  it('派生节点遇到超过 20 个连续障碍时仍返回真正空位', () => {
+    const doc = open()
+    const source = createElement(doc, node({ x: 0, y: 0, w: 100, h: 80 }))
+    for (let i = 0; i < 45; i++) createElement(doc, node({ x: 180, y: i * 120, w: 100, h: 80 }))
+    const spot = spotRightOf(doc, source, 100, 80)
+    expect(spot).toEqual({ x: 180, y: 45 * 120 })
+  })
+})
 
 describe('layoutGraph', () => {
   it('上游在左、下游在右，同层纵向排开', () => {
@@ -168,5 +190,7 @@ describe('arrangeElements', () => {
     expect(doc.get(c)).toMatchObject({ x: 0, y: 0 })
     expect(doc.get(d)).toMatchObject({ x: 5, y: 5 })
     expectNoOverlap([doc.get(a)!, doc.get(b)!])
+    for (const moved of [a, b])
+      for (const obstacle of [c, d]) expectNoOverlap([doc.get(moved)!, doc.get(obstacle)!])
   })
 })

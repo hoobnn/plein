@@ -17,6 +17,8 @@ import {
   aspectSize,
   updateElement,
   videoAssetOf,
+  findFreeSpot,
+  setParam,
 } from '@plein/doc'
 import { type MentionTarget, mentionName, profileOf } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
@@ -154,18 +156,36 @@ export function placeElement(
   from?: PortFrom,
 ): string {
   const { scene } = engine
-  const frame = scene.hitTest(at.x, at.y, (id) => scene.get(id)?.kind === 'frame')
-  const origin = (frame && scene.rect(frame)) || { x: 0, y: 0 }
   let x = at.x - input.w / 2
   if (from?.side === 'out') x = at.x
   if (from?.side === 'in') x = at.x - input.w
+  const spot =
+    input.kind === 'frame'
+      ? { x, y: at.y - input.h / 2 }
+      : findFreeSpot(
+          engine.doc,
+          { x, y: at.y - input.h / 2, w: input.w, h: input.h },
+          { direction: from?.side === 'in' ? 'down' : 'right' },
+        )
+  // 避让后以实际落点判定所属 Frame，不能把已挪到框外的节点仍写成框内局部坐标。
+  const frame = scene.hitTest(spot.x + input.w / 2, spot.y + input.h / 2, (id) => {
+    if (scene.get(id)?.kind !== 'frame') return false
+    const r = scene.rect(id)!
+    return (
+      spot.x >= r.x &&
+      spot.y >= r.y &&
+      spot.x + input.w <= r.x + r.w &&
+      spot.y + input.h <= r.y + r.h
+    )
+  })
+  const origin = (frame && scene.rect(frame)) || { x: 0, y: 0 }
   // 新建（连同自动连线）单独算一步撤销
   engine.doc.undo.stopCapturing()
   const id = createElement(engine.doc, {
     ...input,
     parentId: frame,
-    x: Math.round(x - origin.x),
-    y: Math.round(at.y - input.h / 2 - origin.y),
+    x: Math.round(spot.x - origin.x),
+    y: Math.round(spot.y - origin.y),
   } as NewElement)
   if (from) {
     const el = engine.doc.get(id)
@@ -173,11 +193,22 @@ export function placeElement(
     // 新节点的第一个能接上的端口，配上连接点里与它类型兼容的那个
     const mine = handlePorts(engine, from)
     const theirs = (from.side === 'out' ? ports?.inputs : ports?.outputs) ?? []
-    for (const p of theirs) {
-      const f = mine.find((m) => portsCompatible(p.type, m.type))
-      if (!f) continue
+    const pairs =
+      from.side === 'out'
+        ? mine.map((f) => ({ f, p: theirs.find((p) => portsCompatible(p.type, f.type)) }))
+        : theirs.map((p) => ({ p, f: mine.find((f) => portsCompatible(p.type, f.type)) }))
+    for (const { f, p } of pairs) {
+      if (!f || !p) continue
       if (from.side === 'out') connect(engine.doc, [from.elementId, f.id], [id, p.id])
       else connect(engine.doc, [id, p.id], [from.elementId, f.id])
+      if (
+        from.side === 'out' &&
+        input.nodeType === 'plein/video' &&
+        (input.params?.mode ?? 'text') === 'text'
+      ) {
+        if (p.type === 'image') setParam(engine.doc, id, 'mode', 'image')
+        if (p.type === 'video' || p.type === 'audio') setParam(engine.doc, id, 'mode', 'reference')
+      }
       break
     }
   }
@@ -186,6 +217,14 @@ export function placeElement(
   engine.doc.flush()
   engine.selection.set([id])
   engine.setTool('select')
+  const view = engine.camera.viewRect
+  if (
+    spot.x + input.w < view.x ||
+    spot.x > view.x + view.w ||
+    spot.y + input.h < view.y ||
+    spot.y > view.y + view.h
+  )
+    engine.camera.centerOn(spot.x + input.w / 2, spot.y + input.h / 2)
   return id
 }
 

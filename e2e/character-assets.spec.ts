@@ -119,6 +119,63 @@ async function screenshotAssets(panel: Locator, path: string) {
   await panel.screenshot({ path, animations: 'disabled' })
 }
 
+test('多张竖图组成的参考列整体避让已有内容，连线和参考顺序保持正确', async ({ page }) => {
+  await newProject(page)
+  const imageIds = await uploadedImages(page, 3)
+  const response = await page.request.post('/api/library', {
+    data: {
+      kind: 'character',
+      name: '竖图列避让回归',
+      description: '高参考列',
+      images: imageIds.map((assetId) => ({ slot: 'extra', assetId })),
+    },
+  })
+  expect(response.status()).toBe(201)
+  const item = (await response.json()) as LibraryItem
+  created.push(item.id)
+  const blocker = await page.evaluate(() => {
+    const e = window.__plein.engine
+    const view = (
+      e as unknown as { camera: { viewRect: { x: number; y: number; w: number; h: number } } }
+    ).camera.viewRect
+    return window.__plein.addNode({
+      type: 'plein/llm',
+      name: '参考列上方的已有卡片',
+      params: {},
+      x: view.x + view.w / 2 - 300,
+      y: view.y + view.h / 2 - 500,
+    })
+  })
+  const before = (await elements(page)).map((el) => el.id)
+  const panel = await openLibrary(page)
+  await openItem(panel, item.name)
+  await panel.getByRole('button', { name: '添加到画布', exact: true }).click()
+  await expect(panel).toBeHidden()
+  const added = (await elements(page)).filter((el) => !before.includes(el.id))
+  expect(added).toHaveLength(4)
+  const overlap = await page.evaluate(
+    ({ blocker, added }) => {
+      const doc = window.__plein.engine.doc
+      const b = doc.worldRect(blocker)
+      return added.some((id) => {
+        const a = doc.worldRect(id)
+        return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+      })
+    },
+    { blocker, added: added.map((el) => el.id) },
+  )
+  expect(overlap).toBe(false)
+  const card = added.find((el) => el.nodeType === 'plein/character')!
+  const sources = (await edgesInto(page, card.id)).map((edge) => edge[0])
+  expect(sources).toHaveLength(3)
+  expect(
+    await page.evaluate(
+      (ids) => ids.map((id) => window.__plein.engine.doc.get(id)?.assetId),
+      sources,
+    ),
+  ).toEqual(imageIds)
+})
+
 test('旧角色图槽兼容四类资产，保存与重分类不丢图，画布保留参考顺序和档案', async ({
   page,
 }, testInfo) => {

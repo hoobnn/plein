@@ -280,7 +280,30 @@ export function arrangeElements(
     if (group.length < 2) continue
     const ox = Math.min(...group.map((el) => el.x))
     const oy = Math.min(...group.map((el) => el.y))
-    place(group, ox, oy)
+    const size = place(group, ox, oy)
+    // 所选集合之外（含锁定元素）的内容不动，整块布局避开它们，保持组内相对拓扑。
+    const excluded = new Set<string>()
+    for (const el of group) {
+      excluded.add(el.id)
+      for (const child of doc.descendants(el.id)) excluded.add(child.id)
+      for (const ancestor of doc.ancestors(el.id)) excluded.add(ancestor.id)
+    }
+    const obstacles = [...doc.elements()].filter((el) => !excluded.has(el.id)).map((el) => el.id)
+    const parentId = doc.effectiveParent(group[0]!)
+    const parent = parentId ? doc.worldRect(parentId)! : { x: 0, y: 0 }
+    const spot = findFreeSpot(
+      doc,
+      { x: ox + parent.x, y: oy + parent.y, ...size },
+      {
+        query: () => obstacles,
+        includeFrames: true,
+      },
+    )
+    for (const el of group) {
+      const r = geo.get(el.id)!
+      r.x += spot.x - ox - parent.x
+      r.y += spot.y - oy - parent.y
+    }
   }
 
   const patches: Array<{ id: string } & ElementPatch> = []
@@ -317,9 +340,44 @@ function scan(doc: PleinDoc): SpatialQuery {
   }
 }
 
+/** 保留初始落点；有内容挡住时沿指定方向找空位。rect 和返回值均为世界坐标。 */
+export function findFreeSpot(
+  doc: PleinDoc,
+  rect: Rect,
+  options: {
+    query?: SpatialQuery
+    direction?: 'right' | 'down'
+    ignore?: string[]
+    gap?: number
+    includeFrames?: boolean
+  } = {},
+): { x: number; y: number } {
+  const { query = scan(doc), direction = 'right', ignore = [], gap = 40 } = options
+  const skip = new Set(ignore)
+  let { x, y } = rect
+  for (;;) {
+    const box = { x: x - gap, y: y - gap, w: rect.w + gap * 2, h: rect.h + gap * 2 }
+    const hits = [...query(box)].flatMap((id) => {
+      if (skip.has(id) || (!options.includeFrames && doc.get(id)?.kind === 'frame')) return []
+      const r = doc.worldRect(id)
+      return r &&
+        box.x < r.x + r.w &&
+        box.x + box.w > r.x &&
+        box.y < r.y + r.h &&
+        box.y + box.h > r.y
+        ? [r]
+        : []
+    })
+    if (!hits.length) return { x, y }
+    // 每一步越过至少一个障碍的右沿或底沿，有限文档内不会停在仍然重叠的位置。
+    if (direction === 'right') x = Math.max(...hits.map((r) => r.x + r.w)) + gap
+    else y = Math.max(...hits.map((r) => r.y + r.h)) + gap
+  }
+}
+
 /**
  * 参照元素右侧找一块 w×h 的空地（世界坐标左上角）：与参照元素垂直居中对齐，
- * 压住别的元素（Frame 除外）就挪到它们下面，最多挪 20 次。
+ * 压住别的元素（Frame 除外）就挪到它们下面。
  */
 export function spotRightOf(
   doc: PleinDoc,
@@ -329,17 +387,15 @@ export function spotRightOf(
   query: SpatialQuery = scan(doc),
 ): { x: number; y: number } {
   const r = doc.worldRect(sourceId) ?? { x: 0, y: 0, w: 0, h: 0 }
-  const x = r.x + r.w + PLACE_GAP
-  let y = r.y + r.h / 2 - h / 2
-  for (let i = 0; i < 20; i++) {
-    const hits = [...query({ x, y, w, h })].filter(
-      (id) => id !== sourceId && doc.get(id)?.kind !== 'frame',
-    )
-    if (!hits.length) break
-    y =
-      Math.max(...hits.map((id) => (doc.worldRect(id)?.y ?? 0) + (doc.worldRect(id)?.h ?? 0))) + 40
-  }
-  return { x, y }
+  return findFreeSpot(
+    doc,
+    { x: r.x + r.w + PLACE_GAP, y: r.y + r.h / 2 - h / 2, w, h },
+    {
+      query,
+      direction: 'down',
+      ignore: [sourceId],
+    },
+  )
 }
 
 /** 没有参照元素时：放在全部顶层内容的右侧，与最上沿对齐，压住了就往下挪 */

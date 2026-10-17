@@ -169,6 +169,12 @@ export class EdgeLayer {
       const r = this.scene.rect(id)
       if (!el || !r || !this.portsVisible(el)) continue
       eachHandle(el, r, (side, ports, at) => {
+        const front = this.scene.hitTest(
+          at.x,
+          at.y,
+          (other) => this.scene.get(other)?.kind !== 'frame',
+        )
+        if (front && front !== id && this.scene.drawOrder(front) > this.scene.drawOrder(id)) return
         const on = active?.elementId === el.id && active.side === side
         // 一侧的端口类型都一样时按类型着色，混着的用中性色
         const types = new Set(ports.map((p) => p.type))

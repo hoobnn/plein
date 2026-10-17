@@ -472,6 +472,8 @@ export class Engine {
     if (this.doc.readOnly) return null
     const count = arrangeElements(this.doc, ids)
     if (count === 0) return null
+    // 通知界面适配视口前先让场景读到新位置，否则会按整理前的包围盒缩放。
+    this.doc.flush()
     const undo = this.doc.undo
     const item = undo.undoStack.at(-1)
     const stale = () => undo.undoStack.at(-1) !== item

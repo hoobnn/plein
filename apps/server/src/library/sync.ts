@@ -229,10 +229,21 @@ export function librarySyncRoutes(deps: Deps) {
     })
 }
 
-import { connect, createElement } from '@plein/doc'
+import { connect, createElement, findFreeSpot } from '@plein/doc'
 import { type CardRef, REF_W, REF_COL_GAP, refsHeight } from '@plein/capabilities'
 function addReferences(doc: PleinDoc, card: CanvasElement, refs: CardRef[]) {
-  let y = card.y + card.h / 2 - refsHeight(refs) / 2
+  const rect = doc.worldRect(card.id)!
+  const spot = findFreeSpot(
+    doc,
+    {
+      x: rect.x - REF_COL_GAP - REF_W,
+      y: rect.y + rect.h / 2 - refsHeight(refs) / 2,
+      w: REF_W,
+      h: refsHeight(refs),
+    },
+    { direction: 'down' },
+  )
+  let y = spot.y
   for (const ref of refs) {
     const h = Math.round(
       REF_W *
@@ -242,7 +253,7 @@ function addReferences(doc: PleinDoc, card: CanvasElement, refs: CardRef[]) {
       kind: ref.kind,
       assetId: ref.assetId,
       name: ref.name,
-      x: card.x - REF_COL_GAP - REF_W,
+      x: spot.x,
       y: Math.round(y),
       w: REF_W,
       h,
