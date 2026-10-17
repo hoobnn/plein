@@ -1,5 +1,5 @@
 import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
-import { type ReactNode, useEffect, useLayoutEffect, useState } from 'react'
+import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useState } from 'react'
 import { applyCast, castLibrary, castOf, describeCast } from '../canvas/cast'
 import { findNode, type NodeInfo } from '../canvas/nodes'
 import { useCanvas } from '../stores/canvas'
@@ -19,6 +19,34 @@ function placeAt(x: number, y: number, h: number, w = MENU_W) {
     left: Math.max(8, Math.min(x, window.innerWidth - w - 8)),
     top: Math.max(8, Math.min(y, window.innerHeight - h - 8)),
   }
+}
+
+/** 按布局尺寸定位，避开进场动画的缩放；搜索结果或视口变化后重新贴合边界。 */
+function useMenuPosition(
+  ref: RefObject<HTMLDivElement | null>,
+  { x, y }: { x: number; y: number },
+  width: number,
+) {
+  const [position, setPosition] = useState(() => placeAt(x, y, 0, width))
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const update = () => {
+      const next = placeAt(x, y, el.offsetHeight, el.offsetWidth)
+      setPosition((previous) =>
+        previous.left === next.left && previous.top === next.top ? previous : next,
+      )
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    window.addEventListener('resize', update)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', update)
+    }
+  }, [ref, x, y])
+  return position
 }
 
 /** 画布菜单：双击空白、拉线到空白弹节点选择器；右键弹上下文菜单 */
@@ -69,16 +97,20 @@ function NodePicker({
   onClose(): void
 }) {
   const ref = useDismiss(onClose, { wheel: true })
-  const pos = placeAt(menu.client.x, menu.client.y, PICKER_H, PICKER_W)
+  const pos = useMenuPosition(ref, menu.client, PICKER_W)
   return (
-    <div ref={ref} className="pointer-events-none fixed z-35" style={pos}>
+    <div
+      ref={ref}
+      className="pointer-events-none fixed z-35"
+      style={{ ...pos, width: PICKER_W, maxWidth: 'calc(100vw - 16px)' }}
+    >
       <AddMenu
         engine={engine}
         from={menu.kind === 'connect' ? menu.from : undefined}
         at={() => menu.world}
         canImport={canImport}
         onClose={onClose}
-        style={{ width: PICKER_W, maxHeight: PICKER_H }}
+        style={{ width: '100%', maxHeight: `min(${PICKER_H}px, calc(100dvh - 16px))` }}
       />
     </div>
   )
@@ -123,25 +155,7 @@ function ContextMenu({
   const ref = useDismiss(onClose, { wheel: true })
   const exit = useExit()
   const closing = useClosing()
-  const [position, setPosition] = useState(() => placeAt(menu.client.x, menu.client.y, 320, 220))
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const update = () => {
-      const next = placeAt(menu.client.x, menu.client.y, el.offsetHeight, el.offsetWidth)
-      setPosition((previous) =>
-        previous.left === next.left && previous.top === next.top ? previous : next,
-      )
-    }
-    update()
-    const observer = new ResizeObserver(update)
-    observer.observe(el)
-    window.addEventListener('resize', update)
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', update)
-    }
-  }, [ref, menu.client.x, menu.client.y])
+  const position = useMenuPosition(ref, menu.client, 220)
   useEffect(() => {
     if (closing) {
       // 退场动画保留 DOM，但焦点不能留在已关闭的菜单中拦住下一次画布操作。
