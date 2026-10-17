@@ -283,6 +283,87 @@ test('档案名称校验、Esc 取消与自定义名字退出只影响当前输�
   ).toBeVisible()
 })
 
+test('时期自定义音色支持先填平台，保存重开后继续填写并可恢复继承', async ({ page }) => {
+  await newProject(page)
+  const response = await page.request.post('/api/library', {
+    data: {
+      kind: 'character',
+      name: '时期音色输入边界',
+      profile: {
+        periods: [
+          {
+            id: 'youth',
+            name: '少年',
+            aliases: [],
+            description: '',
+            images: [],
+            voice: null,
+            voiceStates: [],
+            outfits: [],
+          },
+        ],
+        expressions: [],
+      },
+    },
+  })
+  expect(response.status()).toBe(201)
+  const item = (await response.json()) as LibraryItem
+  created.push(item.id)
+  const panel = await openLibrary(page)
+  await openItem(panel, item.name)
+  const periods = () =>
+    panel
+      .getByRole('group', { name: '档案分页' })
+      .getByRole('button', { name: /^时期与服饰/ })
+      .click()
+  await periods()
+  const picker = panel.getByRole('combobox', { name: '音色', exact: true })
+  await picker.click()
+  await page.getByRole('option', { name: '自定义音色 ID…', exact: true }).click()
+  const provider = panel.getByRole('textbox', { name: '音色所属平台', exact: true })
+  const voice = panel.getByRole('textbox', { name: '音色 ID', exact: true })
+  await provider.fill('plein/mock')
+  await expect(provider).toHaveValue('plein/mock')
+  await expect(voice).toHaveValue('')
+  await save(panel)
+  await panel.getByRole('button', { name: '返回', exact: true }).click()
+  await openItem(panel, item.name)
+  await periods()
+  await expect(provider).toBeVisible()
+  await expect(provider).toHaveValue('plein/mock')
+  await voice.fill('custom-test-voice')
+  await save(panel)
+  expect((await readItem(page, item.id)).profile).toMatchObject({
+    periods: [{ voice: { provider: 'plein/mock', voiceId: 'custom-test-voice' } }],
+  })
+  await picker.click()
+  await page.getByRole('option', { name: '平台默认音色', exact: true }).click()
+  await expect(provider).toHaveCount(0)
+  await save(panel)
+  expect((await readItem(page, item.id)).profile).toMatchObject({ periods: [{ voice: null }] })
+  await picker.click()
+  await page.getByRole('option', { name: '自定义音色 ID…', exact: true }).click()
+  await voice.fill('second-custom-voice')
+  await expect(voice).toHaveValue('second-custom-voice')
+  await expect(provider).toHaveValue('')
+  await provider.fill('plein/mock')
+  await save(panel)
+  expect((await readItem(page, item.id)).profile).toMatchObject({
+    periods: [{ voice: { provider: 'plein/mock', voiceId: 'second-custom-voice' } }],
+  })
+  await panel.screenshot({
+    path: test.info().outputPath('custom-period-voice.png'),
+    animations: 'disabled',
+  })
+  await picker.click()
+  await page.getByRole('option', { name: /Mock 女声/ }).click()
+  await expect(provider).toHaveCount(0)
+  await save(panel)
+  expect((await readItem(page, item.id)).profile).toMatchObject({
+    periods: [{ voice: { provider: 'plein/mock', voiceId: 'mock-female' } }],
+  })
+})
+
 for (const role of ['时期', '服饰', '表情'] as const) {
   test(`档案${role}缩略图与封面同步恢复，移除后更新封面`, async ({ page }) => {
     await newProject(page)

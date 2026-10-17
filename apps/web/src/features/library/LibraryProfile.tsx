@@ -451,7 +451,9 @@ function PeriodFields({
         <span className="ui-label">主音色</span>
         <VoicePicker
           value={period.voice ?? noVoice}
-          onChange={(voice) => onPatch({ voice: voice.voiceId.trim() ? voice : null })}
+          onChange={(voice) =>
+            onPatch({ voice: voice.provider.trim() || voice.voiceId.trim() ? voice : null })
+          }
         />
         <span className="text-xs text-ink-subtle">留空则沿用角色的基础音色</span>
       </div>

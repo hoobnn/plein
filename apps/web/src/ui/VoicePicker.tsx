@@ -48,7 +48,7 @@ export function VoicePicker({
   inputClassName?: string
 }) {
   const presets = voicePresets(useCatalog((s) => s.catalog))
-  const key = value.voiceId ? `${value.provider}|${value.voiceId}` : ''
+  const key = value.provider || value.voiceId ? `${value.provider}|${value.voiceId}` : ''
   const known = !key || presets.some((p) => `${p.provider}|${p.id}` === key)
   const [custom, setCustom] = useState(!known)
   const several = new Set(presets.map((p) => p.provider)).size > 1
