@@ -1,5 +1,6 @@
 import {
   type CharacterProfile,
+  emptyProfile,
   EXPRESSION_PRESETS,
   nameProblem,
   noVoice,
@@ -13,7 +14,7 @@ import {
   VOICE_STATE_PRESETS,
   type VoiceState,
 } from '@plein/nodes'
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useId, useRef, useState } from 'react'
 import type { CanvasMedia } from './canvas'
 import { Icon, type IconName } from '../../ui/icons'
 import { SlideSwap } from '../../ui/Slide'
@@ -727,7 +728,11 @@ function NameField({
 }) {
   const [draft, setDraft] = useState(item.name)
   const [problem, setProblem] = useState<string | undefined>()
-  useEffect(() => setDraft(item.name), [item.name])
+  const problemId = useId()
+  useEffect(() => {
+    setDraft(item.name)
+    setProblem(undefined)
+  }, [item.id, item.name])
   const commit = () => {
     const next = draft.trim()
     if (next === item.name) return setProblem(undefined)
@@ -740,6 +745,8 @@ function NameField({
       className={`ui-input ${compact ? 'w-24' : ''}`}
       aria-label={label}
       aria-invalid={!!problem}
+      aria-describedby={problem ? problemId : undefined}
+      data-library-escape={draft !== item.name || problem ? '' : undefined}
       value={draft}
       maxLength={20}
       onChange={(e) => {
@@ -748,6 +755,13 @@ function NameField({
       }}
       onBlur={commit}
       onKeyDown={(e) => {
+        if (e.nativeEvent.isComposing) return
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          e.stopPropagation()
+          setDraft(item.name)
+          setProblem(undefined)
+        }
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
       }}
     />
@@ -756,6 +770,11 @@ function NameField({
     return (
       <span className="flex flex-none flex-col" title={problem}>
         {input}
+        {problem && (
+          <span id={problemId} role="alert" className="max-w-24 text-xs text-danger">
+            {problem}
+          </span>
+        )}
       </span>
     )
   return (
@@ -763,7 +782,9 @@ function NameField({
       <span className="ui-label">{label}</span>
       {input}
       {problem ? (
-        <span className="text-xs text-danger">{problem}</span>
+        <span id={problemId} role="alert" className="text-xs text-danger">
+          {problem}
+        </span>
       ) : item.aliases.length ? (
         <span className="text-xs text-ink-subtle">旧名 {item.aliases.join('、')} 仍可引用</span>
       ) : null}
@@ -891,6 +912,8 @@ function PresetChips({
   onAdd(name: string): void
 }) {
   const [custom, setCustom] = useState<string | null>(null)
+  const [problem, setProblem] = useState<string | undefined>()
+  const problemId = useId()
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {presets.map((p) => (
@@ -905,27 +928,50 @@ function PresetChips({
           自定义
         </button>
       ) : (
-        <input
-          // oxlint-disable-next-line jsx-a11y/no-autofocus -- 点了「自定义」就是要马上输入
-          autoFocus
-          className="ui-input h-6 w-28 text-xs"
-          aria-label="自定义名字"
-          placeholder="回车添加"
-          value={custom}
-          maxLength={20}
-          onChange={(e) => setCustom(e.target.value)}
-          onBlur={() => setCustom(null)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.stopPropagation()
+        <span className="flex flex-col gap-1">
+          <input
+            // oxlint-disable-next-line jsx-a11y/no-autofocus -- 点了「自定义」就是要马上输入
+            autoFocus
+            className="ui-input h-6 w-28 text-xs"
+            aria-label="自定义名字"
+            aria-invalid={!!problem}
+            aria-describedby={problem ? problemId : undefined}
+            data-library-escape=""
+            placeholder="回车添加"
+            value={custom}
+            maxLength={20}
+            onChange={(e) => {
+              setCustom(e.target.value)
+              setProblem(undefined)
+            }}
+            onBlur={() => {
               setCustom(null)
-            }
-            if (e.key === 'Enter' && custom.trim()) {
-              onAdd(custom.trim().replace(/[/@#\s]/g, ''))
-              setCustom(null)
-            }
-          }}
-        />
+              setProblem(undefined)
+            }}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                e.stopPropagation()
+                setCustom(null)
+                setProblem(undefined)
+              }
+              if (e.key === 'Enter') {
+                const next = custom.trim()
+                const error = nameProblem(emptyProfile(), next)
+                setProblem(error)
+                if (error) return
+                onAdd(next)
+                setCustom(null)
+              }
+            }}
+          />
+          {problem && (
+            <span id={problemId} role="alert" className="max-w-28 text-xs text-danger">
+              {problem}
+            </span>
+          )}
+        </span>
       )}
     </div>
   )

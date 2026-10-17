@@ -151,8 +151,19 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && e.isComposing) {
+        e.stopPropagation()
+        return
+      }
       // 确认框、弹层（下拉框、从画布选）开着时 Esc 归它们
-      if (e.key !== 'Escape' || dialogOpen() || document.querySelector('.ui-menu')) return
+      if (
+        e.key !== 'Escape' ||
+        e.defaultPrevented ||
+        dialogOpen() ||
+        document.querySelector('.ui-menu')
+      )
+        return
+      if (e.target instanceof HTMLElement && e.target.closest('[data-library-escape]')) return
       e.stopPropagation()
       if (editing) back()
       else close()

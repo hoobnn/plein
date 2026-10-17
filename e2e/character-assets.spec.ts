@@ -202,6 +202,87 @@ test('角色大图失败有恢复入口，切换参考图不串用错误状态�
   )
 })
 
+test('档案名称校验、Esc 取消与自定义名字退出只影响当前输入', async ({ page }) => {
+  await newProject(page)
+  const response = await page.request.post('/api/library', {
+    data: {
+      kind: 'character',
+      name: '档案名称边界',
+      profile: {
+        periods: [
+          {
+            id: 'youth',
+            name: '少年',
+            aliases: [],
+            description: '',
+            images: [],
+            voice: null,
+            voiceStates: [],
+            outfits: [{ id: 'uniform', name: '校服', aliases: [], description: '', images: [] }],
+          },
+        ],
+        expressions: [],
+      },
+    },
+  })
+  expect(response.status()).toBe(201)
+  const item = (await response.json()) as LibraryItem
+  created.push(item.id)
+  const panel = await openLibrary(page)
+  await openItem(panel, item.name)
+  await panel
+    .getByRole('group', { name: '档案分页' })
+    .getByRole('button', { name: /^时期与服饰/ })
+    .click()
+  const name = panel.getByRole('textbox', { name: '时期名', exact: true })
+  await name.fill('校服')
+  await name.blur()
+  await expect(name).toHaveAttribute('aria-invalid', 'true')
+  await expect(panel.getByText(/「校服」已经用过了/)).toBeVisible()
+  await name.fill('新/时期')
+  await name.press('Enter')
+  await expect(name).toHaveAttribute('aria-invalid', 'true')
+  await name.focus()
+  await name.press('Escape')
+  await expect(name).toBeVisible()
+  await expect(name).toHaveValue('少年')
+  await expect(name).toHaveAttribute('aria-invalid', 'false')
+  await name.fill('青年')
+  await name.evaluate((input) =>
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: true }),
+    ),
+  )
+  await expect(panel.locator('.lib-lane-period').first()).toContainText('少年')
+  await name.press('Enter')
+  await expect(panel.locator('.lib-lane-period').first()).toContainText('青年')
+  await panel.getByRole('button', { name: '添加时期', exact: true }).click()
+  await panel.locator('.lib-add-pop').getByRole('button', { name: '自定义', exact: true }).click()
+  const custom = panel.getByRole('textbox', { name: '自定义名字', exact: true })
+  await custom.fill('新/时期')
+  await custom.press('Enter')
+  await expect(custom).toHaveAttribute('aria-invalid', 'true')
+  await expect(panel.getByRole('alert')).toContainText('名字里不能有')
+  await custom.fill('临时期')
+  await custom.evaluate((input) =>
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: true }),
+    ),
+  )
+  await expect(custom).toBeVisible()
+  await custom.press('Escape')
+  await expect(custom).toHaveCount(0)
+  await expect(name).toBeVisible()
+  await save(panel)
+  expect((await readItem(page, item.id)).profile).toMatchObject({
+    periods: [{ name: '青年', aliases: ['少年'] }],
+  })
+  await page.keyboard.press('Escape')
+  await expect(
+    panel.locator('header').getByRole('button', { name: '新建角色', exact: true }),
+  ).toBeVisible()
+})
+
 for (const role of ['时期', '服饰', '表情'] as const) {
   test(`档案${role}图片上传期间保护保存和导航，失败可重试且保留更名`, async ({ page }) => {
     await newProject(page)
