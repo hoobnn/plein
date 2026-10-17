@@ -14,14 +14,14 @@ Idea, script, characters, storyboard, shots, voiceover and the final cut live on
 
 [简体中文](README.md) · **English**
 
-[Quick start](#quick-start) · [Features](#features) · [Roadmap](#roadmap) · [Docs](#docs) · [Contributing](CONTRIBUTING.md)
+[Website](https://plein.ikuyu.com/en/) · [Quick start](#quick-start) · [Features](#features) · [Roadmap](#roadmap) · [Docs](#docs) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
 > [!NOTE]
-> Plein is in a **testing and iteration phase**; the latest release is 0.2.0 for macOS (Apple silicon). The full pipeline has been verified end to end on real platforms (Alibaba Cloud Model Studio, Doubao Speech, MiniMax), but the data format and interactions may still change between versions, so export project packages regularly for important work. See the [roadmap](#roadmap).
+> Plein is in a **testing and iteration phase**; the latest release for macOS (Apple silicon) is on [Releases](https://github.com/hoobnn/plein/releases/latest). The full pipeline has been verified end to end on real platforms (Alibaba Cloud Model Studio, Doubao Speech, MiniMax), but the data format and interactions may still change between versions, so export project packages regularly for important work. See the [roadmap](#roadmap).
 >
-> The app identifier changed in 0.2.0. The earlier 0.1.x builds have been withdrawn and may not auto-update to the new version: if you installed one, download 0.2.0 manually and install over it. The data directory stays the same.
+> The app identifier changed in 0.2.0. The earlier 0.1.x builds have been withdrawn and may not auto-update to the new version: if you installed one, download the latest release manually and install over it. The data directory stays the same.
 >
 > The app UI and most docs are currently in Simplified Chinese only.
 
