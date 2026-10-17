@@ -497,16 +497,18 @@ function ClipTrack({
     const full = item.full ?? item.in + item.length
     const in0 = item.in
     const out0 = Math.min(item.out ?? full, full)
+    // 短素材或手动设置过的短区间不能被固定的最短长度推到素材范围外。
+    const minLength = Math.min(MIN_LEN, Math.max(0, out0 - in0))
     let patch: TrimPatch = {}
     const move = (ev: PointerEvent) => {
       // 拖动距离是成片时间，换算成素材时间
       const d = ((ev.clientX - x0) / pps) * item.speed
       if (edge === 'in') {
-        const v = round2(Math.min(Math.max(0, in0 + d), out0 - MIN_LEN))
+        const v = Math.max(0, Math.min(out0 - minLength, round2(in0 + d)))
         patch = { in: v }
         playhead.seek(item.start)
       } else {
-        const v = round2(Math.max(Math.min(full, out0 + d), in0 + MIN_LEN))
+        const v = Math.min(full, Math.max(in0 + minLength, round2(out0 + d)))
         // 拖回素材结尾就是“到结尾”
         patch = { out: v >= full - 0.01 ? undefined : v }
         playhead.seek(item.start + (v - in0) / item.speed - 0.04)

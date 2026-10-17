@@ -48,8 +48,86 @@ test.beforeAll(() => {
     join(dir, 'line.wav'),
   )
   ff('-f', 'lavfi', '-i', 'sine=f=220:d=9', '-af', 'tremolo=f=1.5:d=0.6', join(dir, 'music.wav'))
+  ff(
+    '-f',
+    'lavfi',
+    '-i',
+    'color=c=blue:s=360x640:d=0.1:r=30',
+    '-c:v',
+    'libvpx-vp9',
+    '-deadline',
+    'realtime',
+    join(dir, 'short.webm'),
+  )
 })
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+test('不足 0.2 秒的镜头拖动入点不写入负数，编辑器保持可用', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await newProject(page)
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: '上传' }).click()
+  await (await chooser).setFiles(join(dir, 'short.webm'))
+  await expect
+    .poll(async () => (await elements(page)).filter((e) => e.kind === 'video').length)
+    .toBe(1)
+  const video = (await elements(page)).find((e) => e.kind === 'video')!
+  await addNode(page, '序列', { x: 720, y: 800 })
+  await page.keyboard.press('Escape')
+  const sequence = (await elements(page)).find((e) => e.nodeType === 'plein/sequence')!
+  expect(
+    await page.evaluate(
+      ({ video, sequence }) => window.__plein.connect([video, 'video'], [sequence, 'clips']),
+      { video: video.id, sequence: sequence.id },
+    ),
+  ).toBe(true)
+  await zoomTo(page, [sequence.id])
+  const at = await centerOf(page, sequence.id)
+  await page.mouse.dblclick(at.x, at.y)
+  const editor = page.getByRole('dialog', { name: '序列', exact: true })
+  const clip = editor.locator('.seq-clip').first()
+  await expect(clip).toBeVisible()
+  await clip.hover()
+  const handle = clip.locator('.seq-trim-in')
+  const bounds = (await handle.boundingBox())!
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(bounds.x + 20, bounds.y + bounds.height / 2, { steps: 4 })
+  await page.mouse.up()
+  expect(errors).toEqual([])
+  await expect(editor.getByRole('spinbutton', { name: '入点（秒）', exact: true })).toHaveValue('0')
+  await clip.hover()
+  const end = (await clip.locator('.seq-trim-out').boundingBox())!
+  await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(end.x - 20, end.y + end.height / 2, { steps: 4 })
+  await page.mouse.up()
+  await expect(editor.getByRole('spinbutton', { name: '出点（秒）', exact: true })).toHaveValue('')
+  expect(errors).toEqual([])
+  expect(
+    await page.evaluate((id) => {
+      const clips = window.__plein.engine.doc.get(id)!.params!.clips as {
+        in: number
+        out?: number
+      }[]
+      return { in: clips[0]!.in, out: clips[0]!.out ?? null }
+    }, sequence.id),
+  ).toEqual({ in: 0, out: null })
+  await editor.getByRole('button', { name: '导出 MP4', exact: true }).click()
+  const exported = editor.getByLabel('实际导出 MP4', { exact: true })
+  await expect(exported).toBeVisible({ timeout: 60_000 })
+  await expect
+    .poll(() => exported.evaluate((v: HTMLVideoElement) => Number.isFinite(v.duration)))
+    .toBe(true)
+  const length = await exported.evaluate((v: HTMLVideoElement) => v.duration)
+  expect(length).toBeGreaterThan(0)
+  expect(length).toBeLessThan(0.16)
+  expect(
+    (await page.request.get((await exported.getAttribute('src'))!)).headers()['content-type'],
+  ).toContain('video/mp4')
+  expect(errors).toEqual([])
+})
 
 /** 序列编辑器是多轨时间线：胶片条、波形，拖动换顺序，拖边缘修剪，空格播放 */
 test('序列时间线：排序、修剪、播放', async ({ page }) => {
