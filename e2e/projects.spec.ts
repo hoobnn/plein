@@ -28,6 +28,13 @@ test('项目改名、加画布、首页重命名和删除', async ({ page }) => 
   await page.goto('/')
   const card = page.getByRole('listitem').filter({ hasText: name })
   await expect(card).toContainText('2 张画布')
+  const title = card.getByRole('link', { name, exact: true })
+  // 隐藏操作不占据正文宽度，否则五个按钮会把标题和画布数挤成几个字。
+  expect((await title.boundingBox())!.width).toBeGreaterThan(
+    (await card.boundingBox())!.width * 0.8,
+  )
+  await expect(title).toHaveAttribute('title', name)
+  expect(await title.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
 
   await card.hover()
   await card.getByRole('button', { name: '重命名' }).click()
@@ -35,6 +42,14 @@ test('项目改名、加画布、首页重命名和删除', async ({ page }) => 
   await page.keyboard.press('Enter')
   const renamed = page.getByRole('listitem').filter({ hasText: `${name} 改` })
   await expect(renamed).toBeVisible()
+
+  await page.setViewportSize({ width: 800, height: 900 })
+  const renamedTitle = renamed.getByRole('link', { name: `${name} 改`, exact: true })
+  expect((await renamedTitle.boundingBox())!.width).toBeGreaterThan(
+    (await renamed.boundingBox())!.width * 0.8,
+  )
+  await renamedTitle.focus()
+  await expect(renamed.locator('.home-card-actions')).toHaveCSS('opacity', '1')
 
   await renamed.hover()
   await renamed.getByRole('button', { name: '删除' }).click()

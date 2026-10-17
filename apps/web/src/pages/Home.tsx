@@ -355,6 +355,7 @@ function ProjectCard({
               href={href}
               onClick={open}
               className="block truncate text-base font-medium"
+              title={c.title}
               draggable={false}
             >
               {c.title}
@@ -364,7 +365,7 @@ function ProjectCard({
             {relativeTime(c.updatedAt)}编辑 · {c.canvases} 张画布
           </div>
         </div>
-        <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+        <div className="home-card-actions absolute top-3 right-3 flex gap-0.5 rounded-lg bg-surface p-1 opacity-0 shadow-2 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           <button
             type="button"
             aria-label="项目素材"

@@ -51,6 +51,13 @@
   transform: translateY(-2px);
 }
 
+/* 触屏没有悬停，项目操作始终可见；标题不为隐藏按钮预留横向空间。 */
+@media (hover: none) {
+  .home-card-actions {
+    opacity: 1;
+  }
+}
+
 .home-cover {
   aspect-ratio: 16 / 10;
   overflow: hidden;
