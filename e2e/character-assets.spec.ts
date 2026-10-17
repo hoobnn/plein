@@ -202,6 +202,66 @@ test('角色大图失败有恢复入口，切换参考图不串用错误状态�
   )
 })
 
+for (const action of ['替换', '移除再从画布补入'] as const) {
+  test(`角色图片失败后通过${action}重新选择同一素材，可以恢复大图和卡片`, async ({ page }) => {
+    await newProject(page)
+    await uploadToCanvas(page, 0)
+    const [assetId] = await uploadedImages(page, 1)
+    const response = await page.request.post('/api/library', {
+      data: {
+        kind: 'character',
+        name: `同图恢复${action}`,
+        images: [{ slot: 'full_body', assetId }],
+      },
+    })
+    expect(response.status()).toBe(201)
+    const item = (await response.json()) as LibraryItem
+    created.push(item.id)
+    let fail = true
+    await page.route(`**/api/assets/${assetId}/thumb-1024`, (route) =>
+      fail ? route.fulfill({ status: 503, body: 'unavailable' }) : route.continue(),
+    )
+    const panel = await openLibrary(page)
+    await openItem(panel, item.name)
+    const tile = slot(panel, 'full_body')
+    const hero = panel.locator('.lib-hero')
+    await expect(tile.getByText('图片加载失败', { exact: true })).toBeVisible()
+    await expect(hero.getByRole('alert')).toBeVisible()
+    fail = false
+    if (action === '替换') {
+      const chooser = page.waitForEvent('filechooser')
+      await tile.getByRole('button', { name: '替换', exact: true }).click()
+      await (await chooser).setFiles(file(0))
+    } else {
+      await tile.getByRole('button', { name: '移除', exact: true }).click()
+      await tile.getByRole('button', { name: '从画布选择全身定妆图', exact: true }).click()
+      await page
+        .locator('.ui-menu[aria-label="从画布选"]')
+        .getByTitle('character-0.png', { exact: true })
+        .click()
+    }
+    await expect
+      .poll(() =>
+        tile
+          .locator('img')
+          .evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
+      )
+      .toBe(true)
+    await expect(hero.getByRole('alert')).toHaveCount(0)
+    await expect
+      .poll(() =>
+        hero
+          .locator('img')
+          .last()
+          .evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
+      )
+      .toBe(true)
+    await expect(tile.locator('img')).toHaveAttribute('src', new RegExp(assetId!))
+    await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
+    expect((await readItem(page, item.id)).images).toEqual(item.images)
+  })
+}
+
 test('多张竖图组成的参考列整体避让已有内容，连线和参考顺序保持正确', async ({ page }) => {
   await newProject(page)
   const imageIds = await uploadedImages(page, 3)

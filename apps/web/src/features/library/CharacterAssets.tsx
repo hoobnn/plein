@@ -218,6 +218,11 @@ function CharacterAssetTile({
   const imageKey = `${assetId}:${imageRevision}`
   const currentImage = useRef(imageKey)
   currentImage.current = imageKey
+  const selectImage = (id: string) => {
+    // 内容寻址的同图上传仍返回同一 id；明确选择也应重新尝试图片加载。
+    setImageRevision((revision) => revision + 1)
+    onAdd(id)
+  }
   const upload = async (files: File[]) => {
     if (busy || disabled) return
     setBusy(true)
@@ -225,7 +230,7 @@ function CharacterAssetTile({
     setError(null)
     try {
       const [id] = await uploadAll(files.slice(0, 1), 'image')
-      if (id) onAdd(id)
+      if (id) selectImage(id)
       else setError('请选择图片文件')
     } catch (err) {
       setError((err as Error).message)
@@ -317,7 +322,7 @@ function CharacterAssetTile({
             type="image"
             multiple={false}
             taken={used.filter((id) => id !== assetId)}
-            onPick={onAdd}
+            onPick={selectImage}
           />
           {assetId && (
             <button

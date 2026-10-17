@@ -615,6 +615,7 @@ function Editor({
   const [draft, setDraft] = useState(() => draftOf(kind, item, official, projectId, seed))
   const [busy, setBusy] = useState(false)
   const [pendingUploads, setPendingUploads] = useState(0)
+  const [referenceRevision, setReferenceRevision] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>(
     () => useLibrary.getState().tab ?? (character ? 'assets' : 'basics'),
@@ -866,6 +867,7 @@ function Editor({
       <div className={`ui-scrollbar lib-editor-content ${character ? 'is-character' : ''}`}>
         <aside aria-label="预览" className="lib-hero-col">
           <Hero
+            key={referenceRevision}
             kind={kind}
             assetId={readOnly ? null : shown}
             caption={caption}
@@ -940,7 +942,10 @@ function Editor({
                     media={media}
                     selected={shown}
                     onSelect={hero.onPin}
-                    onChange={(update) => setDraft((d) => ({ ...d, images: update(d.images) }))}
+                    onChange={(update) => {
+                      setDraft((d) => ({ ...d, images: update(d.images) }))
+                      setReferenceRevision((revision) => revision + 1)
+                    }}
                     busy={busy || pendingUploads > 0}
                     onBusyChange={(uploading) =>
                       setPendingUploads((n) => Math.max(0, n + (uploading ? 1 : -1)))
