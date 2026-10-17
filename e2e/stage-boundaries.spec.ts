@@ -670,3 +670,38 @@ test('3D 超过十二张截图后仍能采用旧图并恢复对应场景', async
   await expect(oldest).toHaveAttribute('data-active', 'true')
   expect((await elements(page)).find((e) => e.id === stage.id)!.results).toBe(13)
 })
+
+test('3D 横竖画幅候选切换时卡片跟随采用图，编辑场景独立保留', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  const shoot = dialog.getByRole('button', { name: '截图', exact: true })
+  await shoot.click()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(1)
+  await dialog.locator('.stage-outline .stage-item').filter({ hasText: '35mm' }).click()
+  await dialog.getByRole('button', { name: '9:16', exact: true }).click()
+  await shoot.click()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(2)
+  const ratio = () =>
+    page.evaluate((id) => {
+      const r = window.__plein.engine.doc.worldRect(id)
+      return r.w / r.h
+    }, stage.id)
+  await expect.poll(ratio).toBeCloseTo(9 / 16, 2)
+  const landscape = dialog
+    .locator('.stage-shot')
+    .filter({ has: page.getByRole('img', { name: '第 0 版截图', exact: true }) })
+  await landscape.getByRole('button').first().click()
+  await expect.poll(ratio).toBeCloseTo(16 / 9, 2)
+  const read = async () =>
+    StageScene.parse(
+      await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.scene, stage.id),
+    )
+  expect((await read()).aspect).toBe('9:16')
+  await landscape.getByRole('button', { name: '恢复', exact: true }).click()
+  expect((await read()).aspect).toBe('16:9')
+  const portrait = dialog
+    .locator('.stage-shot')
+    .filter({ has: page.getByRole('img', { name: '第 1 版截图', exact: true }) })
+  await portrait.getByRole('button').first().click()
+  await expect.poll(ratio).toBeCloseTo(9 / 16, 2)
+  expect((await read()).aspect).toBe('16:9')
+})
