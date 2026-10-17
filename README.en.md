@@ -14,12 +14,12 @@ Start from a single idea, lay out the script, storyboard, shots and voiceover on
 
 [简体中文](README.md) · **English**
 
-[Website](https://plein.ikuyu.com/en/) · [Quick start](#quick-start) · [Features](#features) · [Roadmap](#roadmap) · [Docs](#docs) · [Contributing](CONTRIBUTING.md)
+[Website](https://plein.ikuyu.com/en/) · [Quick start](#quick-start) · [Features](#features) · [Docs](#docs) · [Contributing](CONTRIBUTING.md)
 
 </div>
 
 > [!NOTE]
-> Plein is in a **testing and iteration phase**; the latest release for macOS (Apple silicon) is on [Releases](https://github.com/hoobnn/plein/releases/latest). The full pipeline has been verified end to end on real platforms (Alibaba Cloud Model Studio, Doubao Speech, MiniMax), but the data format and interactions may still change between versions, so export project packages regularly for important work. See the [roadmap](#roadmap).
+> Plein is in a **testing and iteration phase**; the latest release for macOS (Apple silicon) is on [Releases](https://github.com/hoobnn/plein/releases/latest). The full pipeline has been verified end to end on real platforms (Alibaba Cloud Model Studio, Doubao Speech, MiniMax), but the data format and interactions may still change between versions, so export project packages regularly for important work.
 >
 > The app identifier changed in 0.2.0. The earlier 0.1.x builds have been withdrawn and may not auto-update to the new version: if you installed one, download the latest release manually and install over it. The data directory stays the same.
 >
@@ -176,26 +176,6 @@ pnpm install && pnpm build && pnpm start   # http://localhost:8787
 The layout is identical across all three and can be copied between them: `plein.db` (SQLite), `assets/` (content-addressed media), `exports/` and the platform key file (mode 600).
 
 </details>
-
-## Roadmap
-
-- [x] Infinite canvas, four media types, projects and asset library
-- [x] Four model platforms, generation nodes, candidates and history
-- [x] Job queue, caching, group runs, restart recovery
-- [x] Short drama template, storyboard sync, staged batch generation, sequence export to MP4
-- [x] Basic image / video / audio processing
-- [x] Agent Xiaoman, local Claude Code / Codex, MCP server
-- [x] macOS desktop installer, signing and notarization pipeline
-- [x] 6-shot sample on real platforms, UI tests in CI, auto-update
-- [x] Multi-track timeline, editing-project export, character profiles and turnaround sheets, cross-project asset reuse
-- [x] **0.2.0**: actual-input preview and reference strategies, impact analysis and partial rework, batches and job recovery, project package migration, change plans with scoped approval, default models (2026-10-14, verified on real platforms)
-- [x] Editing change plans item by item in chat: edit fields, tick targets and steps, then approve
-- [x] Browser cache and reconnect acceptance (2026-10-15)
-- [x] Continue a shot from a frame, region edit, storyboard groups and collages, camera / style presets (extension candidates, 2026-10-15)
-- [ ] **Extension candidates**: third-party plugins; static 3D composition validated separately
-- [ ] **Later**: panoramas, 3D director stage, depth references, native segment re-shoot, smart editing
-
-0.2.0 scope, implementation notes and acceptance are in the [0.2.0 roadmap](docs/plan/roadmap-0.2.0.md); first-release planning and acceptance are in the [0.1.0 roadmap](docs/plan/roadmap-0.1.0.md) and [acceptance record](docs/plan/acceptance-0.1.0.md) (all Chinese).
 
 ## Docs
 
