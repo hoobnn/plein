@@ -45,6 +45,7 @@ import { Timeline, type TrackItem, type TrimPatch } from './Timeline'
 import { SubtitleEditor } from './SubtitleEditor'
 import { refreshAnimatic, relatedSequence } from './animatic'
 import { DeliveryReview } from './DeliveryReview'
+import { MediaReloadContext } from './media'
 
 const seconds = (s: number | undefined) => (s === undefined ? '—' : `${s.toFixed(1)} 秒`)
 
@@ -154,6 +155,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   /** 检查器显示选中镜头的设置还是整部成片的设置 */
   const [tab, setTab] = useState<'clip' | 'film' | 'subtitles'>('clip')
   const [view, setView] = useState<'edit' | 'delivery'>('edit')
+  const [previewRevision, setPreviewRevision] = useState(0)
   const latestDelivery = el?.deliveries?.[0]?.id
   const seenDelivery = useRef(latestDelivery)
   useEffect(() => {
@@ -489,6 +491,20 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           </span>
         }
       >
+        {view === 'edit' && (
+          <button
+            type="button"
+            className="ui-btn ui-btn-quiet"
+            title="重新加载画面、缩略图和波形，保留剪辑设置与播放位置"
+            onClick={() => {
+              playhead.pause()
+              setPreviewRevision((revision) => revision + 1)
+            }}
+          >
+            <Icon name="retry" />
+            重新加载预览
+          </button>
+        )}
         {animatic && (
           <>
             <span className="ui-chip">样片 / 草稿</span>
@@ -620,6 +636,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1">
             <SequencePreview
+              key={previewRevision}
               rows={rows}
               timeline={timeline}
               params={params}
@@ -699,24 +716,26 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
               </div>
             </aside>
           </div>
-          <Timeline
-            items={items}
-            total={timeline.total}
-            music={
-              music
-                ? {
-                    assetId: music,
-                    volume: params.musicVolume,
-                    duck: params.duck ? duckEnvelope(timeline) : [],
-                  }
-                : undefined
-            }
-            playhead={playhead}
-            selected={selected}
-            onSelect={select}
-            onMove={move}
-            onTrim={trim}
-          />
+          <MediaReloadContext.Provider value={previewRevision}>
+            <Timeline
+              items={items}
+              total={timeline.total}
+              music={
+                music
+                  ? {
+                      assetId: music,
+                      volume: params.musicVolume,
+                      duck: params.duck ? duckEnvelope(timeline) : [],
+                    }
+                  : undefined
+              }
+              playhead={playhead}
+              selected={selected}
+              onSelect={select}
+              onMove={move}
+              onTrim={trim}
+            />
+          </MediaReloadContext.Provider>
         </div>
       )}
     </Modal>

@@ -198,6 +198,82 @@ test('手动修剪拒绝交叉入出点，提示原因且清空可恢复整段',
   expect(length).toBeLessThan(2.1)
 })
 
+test('缩略图和波形请求失败可见，重新加载预览恢复且保留剪辑', async ({ page }) => {
+  await newProject(page)
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: '上传' }).click()
+  await (await chooser).setFiles([join(dir, shots[0]!), join(dir, 'line.wav')])
+  await expect
+    .poll(
+      async () =>
+        (await elements(page)).filter((e) => e.kind === 'video' || e.kind === 'audio').length,
+    )
+    .toBe(2)
+  const all = await elements(page)
+  const video = all.find((e) => e.kind === 'video')!
+  const audio = all.find((e) => e.kind === 'audio')!
+  let fail = true
+  const calls = { filmstrip: 0, peaks: 0 }
+  await page.route('**/api/assets/*/filmstrip', (route) => {
+    calls.filmstrip++
+    return fail ? route.fulfill({ status: 503, body: 'unavailable' }) : route.continue()
+  })
+  await page.route('**/api/assets/*/peaks', (route) => {
+    calls.peaks++
+    return fail ? route.fulfill({ status: 503, body: 'unavailable' }) : route.continue()
+  })
+  await addNode(page, '序列', { x: 720, y: 800 })
+  await page.keyboard.press('Escape')
+  const sequence = (await elements(page)).find((e) => e.nodeType === 'plein/sequence')!
+  await page.evaluate(
+    ({ video, audio, sequence }) => {
+      window.__plein.connect([video, 'video'], [sequence, 'clips'])
+      window.__plein.connect([audio, 'audio'], [sequence, 'dialogue'])
+    },
+    { video: video.id, audio: audio.id, sequence: sequence.id },
+  )
+  await zoomTo(page, [sequence.id])
+  const at = await centerOf(page, sequence.id)
+  await page.mouse.dblclick(at.x, at.y)
+  const editor = page.getByRole('dialog', { name: '序列', exact: true })
+  await expect(editor.getByText('缩略图加载失败', { exact: true })).toBeVisible()
+  await expect(editor.getByText('波形加载失败', { exact: true })).toBeVisible()
+  await editor.screenshot({ path: test.info().outputPath('media-failure.png') })
+  await editor.locator('.seq-clip').first().click()
+  const start = editor.getByRole('spinbutton', { name: '入点（秒）', exact: true })
+  await start.fill('0.5')
+  await start.blur()
+  await page.keyboard.press('End')
+  await page.keyboard.press('ArrowLeft')
+  const time = await editor.locator('.seq-time').innerText()
+  const read = () => page.evaluate((id) => window.__plein.engine.doc.get(id)!.params, sequence.id)
+  const before = await read()
+  const retry = editor.getByRole('button', { name: '重新加载预览', exact: true })
+  await retry.click()
+  await expect.poll(() => calls.filmstrip).toBe(2)
+  await expect.poll(() => calls.peaks).toBe(2)
+  await expect(editor.getByText('缩略图加载失败', { exact: true })).toBeVisible()
+  fail = false
+  await retry.click()
+  await expect(editor.locator('.seq-filmstrip > span').first()).toBeVisible()
+  await expect(editor.locator('.seq-wave path').first()).toBeVisible()
+  await expect(editor.getByText('缩略图加载失败', { exact: true })).toHaveCount(0)
+  await expect(editor.getByText('波形加载失败', { exact: true })).toHaveCount(0)
+  await expect(editor.locator('.seq-time')).toHaveText(time)
+  await expect
+    .poll(() =>
+      editor.locator('.seq-stage canvas[data-decoder]').evaluate((canvas: HTMLCanvasElement) => {
+        const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data
+        for (let i = 0; i < data.length; i += 16)
+          if (Math.max(data[i]!, data[i + 1]!, data[i + 2]!) > 40) return true
+        return false
+      }),
+    )
+    .toBe(true)
+  await expect(start).toHaveValue('0.5')
+  expect(await read()).toEqual(before)
+})
+
 for (const cancel of ['pointercancel', 'blur', 'Escape'] as const) {
   test(`时间线 ${cancel} 取消修剪和排序，不保存草稿且可继续拖动`, async ({ page }) => {
     await newProject(page)

@@ -1,6 +1,9 @@
 import { type AudioPeaks, FILMSTRIP_FRAMES } from '@plein/protocol'
-import { useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { assetUrls } from '../../api/client'
+
+/** 用户重新加载预览时，同时重试时间线的衍生素材。 */
+export const MediaReloadContext = createContext(0)
 
 /** 峰值整个会话缓存一份（资产不可变）；取不到的不缓存，下次再试 */
 const peaksCache = new Map<string, Promise<AudioPeaks | null>>()
@@ -22,16 +25,23 @@ function loadPeaks(assetId: string) {
 
 function usePeaks(assetId: string | undefined) {
   const [peaks, setPeaks] = useState<AudioPeaks | null>(null)
+  const [failed, setFailed] = useState(false)
+  const reload = useContext(MediaReloadContext)
   useEffect(() => {
     setPeaks(null)
+    setFailed(false)
     if (!assetId) return
     let live = true
-    void loadPeaks(assetId).then((p) => live && setPeaks(p))
+    void loadPeaks(assetId).then((p) => {
+      if (!live) return
+      setPeaks(p)
+      setFailed(!p)
+    })
     return () => {
       live = false
     }
-  }, [assetId])
-  return peaks
+  }, [assetId, reload])
+  return { peaks, failed }
 }
 
 /** 一条波形最多画这么多根柱子，再放大只是拉宽（矢量，不糊） */
@@ -55,7 +65,16 @@ export function Waveform({
   width: number
   loop?: boolean
 }) {
-  const data = usePeaks(assetId)
+  const { peaks: data, failed } = usePeaks(assetId)
+  if (failed)
+    return (
+      <span
+        className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-danger"
+        title="点击上方“重新加载预览”重试"
+      >
+        波形加载失败
+      </span>
+    )
   if (!data || to <= from || width <= 0) return null
   const { rate, peaks } = data
   const span = peaks.length / rate
@@ -113,17 +132,32 @@ export function Filmstrip({
   height: number
 }) {
   const [ready, setReady] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const reload = useContext(MediaReloadContext)
   const url = assetUrls.variant(assetId, 'filmstrip')
   useEffect(() => {
     setReady(false)
+    setFailed(false)
     let live = true
     const img = new Image()
     img.onload = () => live && setReady(true)
+    img.onerror = () => live && setFailed(true)
     img.src = url
     return () => {
       live = false
+      img.onload = null
+      img.onerror = null
     }
-  }, [url])
+  }, [url, reload])
+  if (failed)
+    return (
+      <span
+        className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-danger"
+        title="点击上方“重新加载预览”重试"
+      >
+        缩略图加载失败
+      </span>
+    )
   if (!ready || !duration || width <= 0) return null
   const tile = Math.max(8, height * aspect)
   const count = Math.min(200, Math.ceil(width / tile))
