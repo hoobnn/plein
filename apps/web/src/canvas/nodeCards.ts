@@ -23,6 +23,7 @@ import {
   RUN_STEPS,
 } from './runStatus'
 import { shotsOf } from '../features/storyboard/model'
+import { clipOverlay } from './occlusion'
 
 type PromptPreset = Catalog['prompts'][number]
 
@@ -173,6 +174,7 @@ export class NodeCards {
       card.root.style.transform = `translate(${rect.x}px, ${rect.y}px)`
       card.root.style.width = `${rect.w}px`
       card.root.style.height = `${rect.h}px`
+      clipOverlay(card.root, engine.scene, id, rect, NODE_LAYOUT.title)
       this.render(card, { ...el, ...rect }, engine.selection.has(id))
     }
     const ticking = [...this.cards.values()].some((c) => c.live)

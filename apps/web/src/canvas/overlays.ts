@@ -8,6 +8,7 @@ import * as Y from 'yjs'
 import { renderMarkdown } from './markdown'
 import { createPlayer } from './player'
 import { assetUrls } from '../api/client'
+import { clipOverlay } from './occlusion'
 
 interface Preview {
   node: HTMLDivElement
@@ -132,6 +133,7 @@ export class CanvasOverlays {
         this.previews.set(id, p)
       }
       place(p.node, rect)
+      clipOverlay(p.node, engine.scene, id, rect)
       if (p.text !== el.text) {
         p.text = el.text
         p.node.innerHTML = renderMarkdown(el.text ?? '')
@@ -143,8 +145,10 @@ export class CanvasOverlays {
       if (!this.active) return
       this.fit(this.active.id)
       const rect = engine.scene.rect(this.active.id)
-      if (rect) place(this.active.node, rect)
-      else this.deactivate()
+      if (rect) {
+        place(this.active.node, rect)
+        clipOverlay(this.active.node, engine.scene, this.active.id, rect)
+      } else this.deactivate()
     }
   }
 
