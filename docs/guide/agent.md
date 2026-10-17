@@ -23,10 +23,18 @@ Plein 里的智能体叫「小满」，在画布右下角。它和画布上的�
 Plein 不读取、也不保存 CLI 的登录凭据，用的就是你在终端里登录的那个账号和额度。
 
 - 只在免登录模式（桌面端或本机部署）下可用。智能体以服务端进程的身份在这台机器上运行，所以一旦开启登录，这个功能会自动关闭。设 `PLEIN_AGENT=0` 也可以手动关掉。
-- 服务端在本机的 `/mcp` 端点提供画布工具（MCP，Streamable HTTP），每个对话分配一个随机令牌；除此之外，CLI 照常加载你自己的账号、MCP、skill 和配置。
-- 每个对话对应一个长驻进程：Claude Code 用 `claude -p --input-format stream-json --output-format stream-json`，Codex 用 `codex app-server`。进程退出后，通过 CLI 自身的会话 id 恢复对话。对话记录存在数据库里，工作目录是 `<数据目录>/agent`。
+- 服务端在本机的 `/mcp` 端点提供画布工具（MCP，Streamable HTTP），每轮分配独立的随机令牌；结束或停止后令牌失效。除此之外，CLI 照常加载你自己的账号、MCP、skill 和配置。
+- 每轮对应一个独立进程：Claude Code 用 `claude -p --input-format stream-json --output-format stream-json`，Codex 用 `codex app-server`。下一轮通过 CLI 自身的会话 id 恢复上下文，旧轮的回调、审批和异步写入不能归到新轮。对话记录存在数据库里，工作目录是 `<数据目录>/agent`。
 - 本机权限分两档。选「本机操作先问我」时，CLI 修改文件或执行命令之前会先在面板里弹出确认卡片（Claude 用 `--permission-prompt-tool stdio`，Codex 用 `on-request` + `workspace-write` 沙箱）；选「本机操作不用问」则对应 `--dangerously-skip-permissions` 和 `never` + `danger-full-access`。
 - 设置 →「本机 AI」里能看到两个 CLI 的路径、版本和登录状态。Plein 会对照 npm 上的 dist-tags 提示新版本（Claude Code 本地版本比 latest 还新时，也会对照 next），可以一键运行更新命令。
+
+## 执行记录与上下文
+
+每轮保存消息、工具调用、审批及执行事实。服务重启后，未正常结束的轮次标为中断；已经提交的任务仍可从任务面板查回，不能确认是否发生的操作保留未知状态，不会自动当成失败重做。面板里的停止表示该轮不再继续，已经提交的远端任务仍按原任务记录跟踪。
+
+内置智能体每轮最多 30 次模型请求和 100 次工具调用；大画布用分页或分区读取，单页 24 KiB、单工具文本 32 KiB、单请求文本 128 KiB。历史按完整轮次保留，最多取最近 32 轮。超过预算时会明确停止，避免截断成不完整的工具对话。
+
+视觉读取只向同时声明工具调用与视觉能力的模型发送图片，每轮累计最多八张、单图 1 MiB、合计 4 MiB。其余模型只得到素材标识与文字信息；模型目录的声明不等于真实账号的视觉能力已经验收。
 
 ## 对外开放 MCP
 

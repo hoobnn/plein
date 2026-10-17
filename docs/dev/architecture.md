@@ -14,6 +14,17 @@ plein 是一块“可执行的画布”：同一个 Yjs 文档里既放图片、
 
 ## 现状
 
+2026-10-17 已落地并通过本地集成验收的稳定输入、媒体资源治理、Agent 执行事实、跨画布素材与检查点，以 [BeefTV 对照优化](../plan/beeftv-optimization.md)及其证据为准。下表是历史快照；真实平台与硬件性能仍按各自的验收边界记录。
+
+本轮实现保留现有引擎和插件边界：
+
+- `doc` schema v3 为输入边保存分数顺序，前后端都通过 `inputEdges` 读取。布局变化不再参与生成语义。
+- `canvas-core` 的 Scene 只因几何字段更新空间索引。每个 Engine 租用共享 `TexturePool`，离屏 body 延迟回收；资源和预览呈现状态通过 `engine.stats` 观测。
+- Agent 用不可变轮次对象约束异步操作，工具与审批事实写入 `agent_turns`。内置模型上下文有字节、图片与调用数上限；CLI 每轮独立进程及令牌，并复用 CLI 会话上下文。
+- SQLite `assets` 是媒体库存事实来源，`media_sources` 为可重建投影。文档增量与对应媒体投影在同一事务写入，失败时保留增量等待重试。启动回填不阻塞既有创作接口。
+- `canvas_checkpoints` 保存完整 Yjs 状态和历史关联，`checkpoint_assets` 固定素材引用。保存用含 DeleteSet 的 Snapshot 检查同步屏障，恢复只创建新画布；有检查点的 `.plein` 包使用 manifest v2，仍可读取 v1。
+- 首页、编辑器与重型面板按需加载，生产构建自动统计首页静态依赖闭包的 gzip 大小。CI 对真实入库媒体运行三轮首屏与交互基准，并硬性检查失败预览和资源退出清理。
+
 下表为 2026-10-12 的架构快照，2026-10-14 补正浏览器缓存状态。0.1 已发布，真实验收以 [验收记录](../plan/acceptance-0.1.0.md) 为准；表中其他性能与工程缺口需实施时重新核对。
 
 | 模块                   | 已有                                                                                                          | 主要缺口                                                                               |
@@ -117,7 +128,7 @@ Y.Doc
 ├─ elements: Y.Map<id, Y.Map>
 │    kind, x, y, w, h, rotation, z, parentId, locked
 │    assetId? · text?: Y.Text · params?: Y.Map · ports? · nodeType?, nodeVersion?
-├─ edges: Y.Map<id, {from:[el,port], to:[el,port]}>
+├─ edges: Y.Map<id, {from:[el,port], to:[el,port], order?:string}>
 └─ runs: Y.Map<elementId, {runId, outputHash, status}>   最后一次成功结果
 ```
 
@@ -131,13 +142,13 @@ Y.Doc
 
 canvas-core 演进为场景引擎：从 doc 得到世界状态，维护场景图和空间索引，对外只暴露工具和事件，不暴露 Pixi 对象。
 
-| 层             | 职责                                                         |
-| -------------- | ------------------------------------------------------------ |
-| SceneSync      | 订阅 doc、按帧归并，维护 `id → SceneNode` 与 R-tree（rbush） |
-| Renderers      | 按 `kind` 注册：图片、视频、Markdown、节点、连线、Frame      |
-| Culling + LOD  | 只渲染视口内元素，按屏幕尺寸切换缩略图级别与 DOM 表单挂载    |
-| Interaction    | 命中测试、工具状态机（选择、框选、变换、连线、平移）、吸附   |
-| TextureManager | 按 assetId + 级别加载纹理，LRU 淘汰，GPU 内存预算            |
+| 层            | 职责                                                                             |
+| ------------- | -------------------------------------------------------------------------------- |
+| SceneSync     | 订阅 doc、按帧归并，维护 `id → SceneNode` 与 R-tree（rbush）                     |
+| Renderers     | 按 `kind` 注册：图片、视频、Markdown、节点、连线、Frame                          |
+| Culling + LOD | 只渲染视口内元素，按屏幕尺寸切换缩略图级别与 DOM 表单挂载                        |
+| Interaction   | 命中测试、工具状态机（选择、框选、变换、连线、平移）、吸附                       |
+| TexturePool   | 按预览 URL 共享纹理，引用计数 lease、并发限流、闲置 LRU/TTL 与来源像素估算软预算 |
 
 关键策略：
 
@@ -191,7 +202,7 @@ canvas-core 演进为场景引擎：从 doc 得到世界状态，维护场景图
 
 ## 横切关注点
 
-**性能预算**（待基准验证）：10 万元素（可见 2000）平移 ≥ 120fps；交互期间 React 重渲染 0 次；1 万元素画布本地打开 < 1.5s；GPU 纹理默认上限 512MB；首屏 JS gzip < 300KB。
+**长期性能目标**（待基准验证）：10 万元素（可见 2000）平移 ≥ 120fps；交互期间 React 重渲染 0 次；1 万元素画布本地打开 < 1.5s。本轮门禁为首页静态 JS gzip ≤300 KiB、真实媒体成功呈现、离屏和退出后资源清理；共享纹理池默认软预算为 512 MiB 来源像素估算，不能据此宣称真实 GPU 显存占用。具体比较规则见 [优化台账](../plan/beeftv-optimization.md)。
 
 **测试**：`doc`、`flow` 用 Vitest（含双 Y.Doc 并发与迁移）；`canvas-core` 用 Playwright 截图与交互测试，合成大画布基准进 CI；服务端基于 mock Provider 运行集成测试。
 
