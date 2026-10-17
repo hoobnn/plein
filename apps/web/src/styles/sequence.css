@@ -155,6 +155,14 @@
   pointer-events: none;
 }
 
+/* 末端时间码向左展开，刻线留在原时刻，避免撑出已铺满的时间线。 */
+.seq-tick:last-child:not(:first-child) {
+  transform: translateX(-100%);
+  padding: 4px 4px 0 0;
+  border-left: 0;
+  border-right: 1px solid var(--line-strong);
+}
+
 /* 画面块：胶片条打底，顶上一道渐暗压名字，右下角时长 */
 .seq-clip {
   position: absolute;

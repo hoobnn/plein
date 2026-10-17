@@ -53,6 +53,8 @@ const MIN_LEN = 0.2
 /** 刻度间隔候选（秒）：取让相邻刻度至少隔 72px 的最小一档 */
 const STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300]
 const ZOOM_MAX = 40
+/** 长时间线放大后仍能查看秒内细节。 */
+const DETAIL_PPS = 160
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
@@ -92,7 +94,7 @@ export function Timeline({
   const scroller = useRef<HTMLDivElement>(null)
   const head = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState(0)
-  const [zoom, setZoom] = useState(1)
+  const [requestedZoom, setZoom] = useState(1)
 
   useLayoutEffect(() => {
     const el = scroller.current
@@ -104,36 +106,43 @@ export function Timeline({
   }, [])
 
   // 缩放 1 = 整条刚好铺满
-  const fit = Math.max(4, (viewport - LABEL - PAD * 2) / Math.max(total, 1))
+  const fit = Math.max(1, viewport - LABEL - PAD * 2) / Math.max(total, 1)
+  const zoomMax = Math.max(ZOOM_MAX, DETAIL_PPS / fit)
+  const zoom = Math.min(requestedZoom, zoomMax)
   const pps = fit * zoom
   const width = LABEL + PAD * 2 + Math.max(total, 1) * pps
   const x = (t: number) => PAD + t * pps
   const step = STEPS.find((s) => s * pps >= 72) ?? STEPS.at(-1)!
 
-  // 播放头直接改 DOM；播放时跟着滚动，别跑出视野
+  // 播放头直接改 DOM；播放和主动定位时按边界跟随，避免点选刻度后整屏跳动。
   const ppsRef = useRef(pps)
   ppsRef.current = pps
   useEffect(() => {
-    const update = () => {
+    const update = (reveal = false) => {
       const el = head.current
       const sc = scroller.current
       if (!el || !sc) return
       const px = LABEL + PAD + playhead.t * ppsRef.current
       el.style.transform = `translateX(${px}px)`
-      if (playhead.playing) {
+      if (playhead.playing || reveal) {
         const right = sc.scrollLeft + sc.clientWidth
-        if (px > right - 48 || px < sc.scrollLeft + LABEL)
-          sc.scrollLeft = Math.max(0, px - LABEL - 48)
+        if (px > right - 48) sc.scrollLeft = Math.max(0, px - sc.clientWidth + 48)
+        else if (px < sc.scrollLeft + LABEL) sc.scrollLeft = Math.max(0, px - LABEL - 48)
       }
     }
     update()
-    return playhead.subscribe(update)
+    const off = playhead.subscribe(update)
+    const offTransport = playhead.onTransport(() => update(true))
+    return () => {
+      off()
+      offTransport()
+    }
   }, [playhead, pps])
 
   /** 以屏幕横坐标 clientX 处为中心缩放，鼠标下的时刻不动 */
   const zoomAt = (next: number, clientX?: number) => {
     const sc = scroller.current
-    const z = Math.min(ZOOM_MAX, Math.max(1, next))
+    const z = Math.min(zoomMax, Math.max(1, next))
     if (!sc) return setZoom(z)
     const rect = sc.getBoundingClientRect()
     const cx = (clientX ?? rect.left + LABEL + (rect.width - LABEL) / 2) - rect.left
@@ -201,7 +210,7 @@ export function Timeline({
             aria-label="缩放"
             className="seq-zoom"
             min={0}
-            max={Math.log(ZOOM_MAX)}
+            max={Math.log(zoomMax)}
             step={0.01}
             value={Math.log(zoom)}
             onChange={(e) => zoomAt(Math.exp(Number(e.target.value)))}
@@ -210,7 +219,7 @@ export function Timeline({
             type="button"
             className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
             aria-label="放大"
-            disabled={zoom >= ZOOM_MAX}
+            disabled={zoom >= zoomMax}
             onClick={() => zoomAt(zoom * 1.5)}
           >
             <Icon name="zoomIn" size={14} />
