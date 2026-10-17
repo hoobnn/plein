@@ -1,8 +1,8 @@
-import { createElement } from '@plein/doc'
 import type { MediaLibraryItem, MediaLibraryPage, MediaSource, Project } from '@plein/protocol'
 import { useEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
 import { elementFor } from '../../canvas/import'
+import { placeElement } from '../../canvas/nodes'
 import { navigate } from '../../router'
 import { useCanvas } from '../../stores/canvas'
 import { EmptyState } from '../../ui/EmptyState'
@@ -127,10 +127,9 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
     const input = elementFor(asset)
     if (!input) return
     const view = engine.camera.viewRect
-    const id = createElement(engine.doc, {
-      ...input,
-      x: Math.round(view.x + view.w / 2 - input.w / 2),
-      y: Math.round(view.y + view.h / 2 - input.h / 2),
+    const id = placeElement(engine, input, {
+      x: view.x + view.w / 2,
+      y: view.y + view.h / 2,
     })
     engine.selection.set([id])
     close()

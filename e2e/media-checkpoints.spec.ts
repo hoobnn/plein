@@ -34,6 +34,20 @@ test('跨项目素材能预览、放入新画布和存为语义资产，不再�
     source.nodeId,
   )
   await newProject(page)
+  const blocker = await page.evaluate(() => {
+    const view = (
+      window.__plein.engine as unknown as {
+        camera: { viewRect: { x: number; y: number; w: number; h: number } }
+      }
+    ).camera.viewRect
+    return window.__plein.addNode({
+      type: 'plein/text',
+      name: '视口中心的原有内容',
+      params: { text: '复用素材不能覆盖这里，也不能把这张卡一起撤销' },
+      x: view.x + view.w / 2 - 100,
+      y: view.y + view.h / 2 - 100,
+    })
+  })
   await page.getByRole('button', { name: '素材', exact: true }).click()
   const panel = page.getByRole('dialog', { name: '素材', exact: true })
   await panel.getByRole('combobox', { name: '关联项目' }).click()
@@ -62,6 +76,22 @@ test('跨项目素材能预览、放入新画布和存为语义资产，不再�
       ),
     )
     .toBe(1)
+  const imported = await page.evaluate((assetId) => {
+    const e = window.__plein.engine
+    const el = [...e.doc.elements()].find((el) => el.assetId === assetId)!
+    return { id: el.id, rect: e.doc.worldRect(el.id) }
+  }, assetId)
+  const original = await page.evaluate((id) => window.__plein.engine.doc.worldRect(id), blocker)
+  const a = imported.rect,
+    b = original
+  expect(a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y).toBe(false)
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  expect(await page.evaluate((id) => !!window.__plein.engine.doc.get(id), imported.id)).toBe(false)
+  expect(await page.evaluate((id) => !!window.__plein.engine.doc.get(id), blocker)).toBe(true)
+  await page.getByRole('button', { name: '重做', exact: true }).click()
+  await expect
+    .poll(() => page.evaluate((id) => !!window.__plein.engine.doc.get(id), imported.id))
+    .toBe(true)
   await page.getByRole('button', { name: '素材', exact: true }).click()
   const reopened = page.getByRole('dialog', { name: '素材', exact: true })
   await reopened
