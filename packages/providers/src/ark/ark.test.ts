@@ -199,6 +199,7 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
       image: 'data:image/png;base64,AQID',
       size: '1024x1024',
       response_format: 'b64_json',
+      watermark: false,
     })
     expect(result).toMatchObject({
       state: 'succeeded',
@@ -207,6 +208,19 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
       ],
       usage: { images: 1 },
     })
+  })
+
+  it.each([true, false])('图片保留显式水印设置 %s', async (watermark) => {
+    const { ctx, body } = harness([{ data: [{ b64_json: 'AQID' }] }])
+    await arkProvider.submit(
+      {
+        capability: 'image.generate',
+        model: IMAGE,
+        input: { prompt: 'cat', extra: { watermark } },
+      },
+      ctx,
+    )
+    expect(body().watermark).toBe(watermark)
   })
 
   it.each([

@@ -42,7 +42,10 @@ const SEEDREAM_ASPECTS = ['auto', '21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2
 const SEEDANCE_ASPECTS = ['auto', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16']
 
 const seedreamOptions = z.object({
-  watermark: z.boolean().optional().meta({ title: '水印', description: '在右下角加 AI 生成水印' }),
+  watermark: z
+    .boolean()
+    .default(false)
+    .meta({ title: '水印', description: '在右下角加 AI 生成水印' }),
   output_format: z
     .enum(['jpeg', 'png'])
     .optional()
@@ -369,6 +372,8 @@ async function image(model: string, input: CapabilityInput<'image.generate'>, ct
   if (refs.length > (lite ? 14 : 10) || (count > 1 && refs.length + count > 15))
     invalid('参考图与生成图片数量超出所选 Seedream 模型限制')
   const body: Json = {
+    // 云端默认开启；作为下游视频参考的图片默认不叠加可见水印。
+    watermark: false,
     ...extraParams(input.extra, [
       'aspectRatio',
       'size',
