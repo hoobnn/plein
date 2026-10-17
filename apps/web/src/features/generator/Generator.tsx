@@ -98,6 +98,9 @@ function placeBeside(engine: Engine, id: string) {
   const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
   const below = window.innerHeight - BOTTOM_RESERVED - br.y
   const above = tl.y - TITLE_H - TOP_RESERVED
+  const preferBelow = below >= PREFER_BELOW || below >= above
+  const availableHeight = Math.max(0, window.innerHeight - TOP_RESERVED - BOTTOM_RESERVED)
+  const maxHeight = Math.min(availableHeight, Math.max(MIN_H, (preferBelow ? below : above) - GAP))
   // 左边让开侧栏；可见区域不够宽时面板跟着变窄
   const minLeft = engine.camera.insets.left + GAP
   const width = Math.max(320, Math.min(PANEL_W, window.innerWidth - minLeft - GAP))
@@ -105,18 +108,27 @@ function placeBeside(engine: Engine, id: string) {
     minLeft,
     Math.min((tl.x + br.x) / 2 - width / 2, window.innerWidth - width - GAP),
   )
-  return below >= PREFER_BELOW || below >= above
+  return preferBelow
     ? {
         left,
         width,
-        top: Math.max(TOP_RESERVED, br.y + GAP),
-        maxHeight: Math.max(MIN_H, below - GAP),
+        top: Math.max(
+          TOP_RESERVED,
+          Math.min(br.y + GAP, window.innerHeight - BOTTOM_RESERVED - maxHeight),
+        ),
+        maxHeight,
       }
     : {
         left,
         width,
-        bottom: window.innerHeight - tl.y + TITLE_H + GAP,
-        maxHeight: Math.max(MIN_H, above - GAP),
+        bottom: Math.max(
+          BOTTOM_RESERVED,
+          Math.min(
+            window.innerHeight - tl.y + TITLE_H + GAP,
+            window.innerHeight - TOP_RESERVED - maxHeight,
+          ),
+        ),
+        maxHeight,
       }
 }
 

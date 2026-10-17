@@ -54,6 +54,7 @@ export function SchemaForm({
         const id = `field-${key}`
         const current = value[key] ?? f.default
         const label = f.title ?? key
+        const help = f.description ?? rangeOf(f)
         let control: React.ReactNode
         // 没有默认值的选项和开关多一个「默认」：不传，用平台自己的默认
         const optional = f.default === undefined
@@ -98,6 +99,7 @@ export function SchemaForm({
             <NumberControl
               id={id}
               field={f}
+              describedBy={help ? `${id}-help` : undefined}
               className={field}
               value={value[key] as number | undefined}
               onChange={(v) => set(key, v)}
@@ -137,13 +139,17 @@ export function SchemaForm({
           )
         }
         return (
-          <label key={key} htmlFor={id} className="ui-field">
-            <span className="ui-label">{label}</span>
+          <div key={key} className="ui-field">
+            <label htmlFor={id} className="ui-label">
+              {label}
+            </label>
             {control}
-            {(f.description || rangeOf(f)) && (
-              <span className="ui-help">{f.description ?? rangeOf(f)}</span>
+            {help && (
+              <span id={`${id}-help`} className="ui-help">
+                {help}
+              </span>
             )}
-          </label>
+          </div>
         )
       })}
     </div>
@@ -177,12 +183,14 @@ function NumberControl({
   className,
   value,
   onChange,
+  describedBy,
 }: {
   id: string
   field: FieldSchema
   className: string
   value: number | undefined
   onChange(v: number | undefined): void
+  describedBy?: string
 }) {
   const [draft, setDraft] = useState<string | null>(null)
   const shown = value ?? (f.default as number | undefined)
@@ -197,6 +205,7 @@ function NumberControl({
   const input = (
     <input
       id={id}
+      aria-describedby={describedBy}
       type="number"
       className={className}
       min={f.minimum}
@@ -222,12 +231,20 @@ function NumberControl({
       <input
         type="range"
         aria-label={f.title}
+        aria-describedby={describedBy}
         className="min-w-0 flex-1"
         min={f.minimum}
         max={f.maximum}
-        step={(f.maximum! - f.minimum!) / 100}
+        step="any"
         value={shown ?? f.minimum}
         onChange={(e) => onChange(Number(e.target.value))}
+        onKeyDown={(e) => {
+          const direction = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key]
+          if (!direction) return
+          e.preventDefault()
+          const next = (shown ?? f.minimum!) + (direction * (f.maximum! - f.minimum!)) / 100
+          onChange(clampNumber(f, Number(next.toPrecision(12))))
+        }}
       />
       <div className="w-20 flex-none">{input}</div>
     </div>
