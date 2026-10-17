@@ -13,6 +13,8 @@ export interface EdgePreview {
   y: number
   /** 光标吸附到的可连端口 */
   target: PortRef | null
+  /** 拾起的旧边只在预览时隐藏，确认前仍保留在文档中。 */
+  picked?: string | null
 }
 
 /**
@@ -120,6 +122,7 @@ export class EdgeLayer {
     this.running = []
     this.connected.clear()
     for (const e of this.scene.doc.edges()) {
+      if (e.id === this.preview?.picked) continue
       const from = this.port(e.from[0], e.from[1], 'out')
       const to = this.port(e.to[0], e.to[1], 'in')
       if (!from || !to) continue

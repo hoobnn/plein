@@ -22,6 +22,7 @@ export default defineConfig({
     'prompt-collaboration.spec.ts',
     'camera-navigation.spec.ts',
     'pan-lifecycle.spec.ts',
+    'gesture-lifecycle.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },

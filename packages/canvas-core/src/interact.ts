@@ -61,7 +61,7 @@ export interface InteractHost {
 
 type Gesture =
   /** picked：从输入端口拾起的已有连线，丢到空白处即删除 */
-  | { kind: 'connect'; from: PortRef; picked: boolean }
+  | { kind: 'connect'; from: PortRef; picked: string | null }
   | { kind: 'press'; id: string; sx: number; sy: number; wx: number; wy: number; toggled: boolean }
   | { kind: 'move'; ids: string[]; starts: Map<string, Rect>; box: Rect; wx: number; wy: number }
   | {
@@ -77,7 +77,7 @@ type Gesture =
       wx: number
       wy: number
     }
-  | { kind: 'marquee'; wx: number; wy: number; base: string[] }
+  | { kind: 'marquee'; wx: number; wy: number; base: string[]; restore: string[] }
 
 /**
  * 选择工具的左键交互（空格/抓手/中键留给相机平移）：
@@ -89,6 +89,33 @@ type Gesture =
 export function attachInteractions(host: InteractHost) {
   const { el, camera, scene, doc, selection, edges, overlay, pan } = host
   let gesture: Gesture | null = null
+  let pointer: number | null = null
+
+  const release = () => {
+    const id = pointer
+    pointer = null
+    if (id !== null && el.hasPointerCapture(id)) el.releasePointerCapture(id)
+  }
+  const cancel = () => {
+    const g = gesture
+    gesture = null
+    release()
+    if (!g) return
+    host.preview(new Map())
+    edges.setPreview(null)
+    overlay.setGuides([])
+    overlay.setMarquee(null)
+    if (g.kind === 'marquee') selection.set(g.restore.filter((id) => doc.has(id)))
+    el.style.cursor = pan.space || pan.hand ? 'grab' : ''
+  }
+  const commit = (write: () => void) => {
+    doc.undo.stopCapturing()
+    try {
+      host.commit(() => doc.ydoc.transact(write, doc.origin))
+    } finally {
+      doc.undo.stopCapturing()
+    }
+  }
 
   const toWorld = (e: PointerEvent) => {
     const rect = el.getBoundingClientRect()
@@ -139,7 +166,7 @@ export function attachInteractions(host: InteractHost) {
    * 连线的两端：每侧只有一个连接点，落在对方的连接点或卡片上都行，
    * 再从两侧端口里挑一对类型兼容的，目标优先还没连线的（或可多连的）。
    */
-  const resolve = (from: PortRef, x: number, y: number) => {
+  const resolve = (from: PortRef, x: number, y: number, picked?: string | null) => {
     const froms = portsOf(from)
     const fits = (p: PortRef) => froms.some((f) => canConnect(f, p))
     const port = findPortAt(x, y, fits)
@@ -158,7 +185,9 @@ export function attachInteractions(host: InteractHost) {
     const taken = (p: PortRef) =>
       p.side === 'in' &&
       !p.port.multiple &&
-      [...doc.edges()].some((edge) => edge.to[0] === p.elementId && edge.to[1] === p.port.id)
+      [...doc.edges()].some(
+        (edge) => edge.id !== picked && edge.to[0] === p.elementId && edge.to[1] === p.port.id,
+      )
     return pairs.find((p) => !taken(p.target)) ?? pairs[0] ?? null
   }
 
@@ -187,7 +216,7 @@ export function attachInteractions(host: InteractHost) {
   // ── 按下 ────────────────────────────────────────────
 
   const onPointerDown = (e: PointerEvent) => {
-    if (e.button !== 0 || pan.space || pan.hand) return
+    if (pointer !== null || e.button !== 0 || pan.space || pan.hand) return
     const w = toWorld(e)
 
     // 端口优先于缩放手柄：单端口节点的端口正好在边的中点手柄上
@@ -220,19 +249,23 @@ export function attachInteractions(host: InteractHost) {
         }
         gesture = { kind: 'press', id, sx: e.clientX, sy: e.clientY, wx: w.x, wy: w.y, toggled }
       } else {
-        const base = e.shiftKey ? selection.values() : []
+        const restore = selection.values()
+        const base = e.shiftKey ? restore : []
         if (!e.shiftKey) selection.clear()
-        gesture = { kind: 'marquee', wx: w.x, wy: w.y, base }
+        gesture = { kind: 'marquee', wx: w.x, wy: w.y, base, restore }
       }
     }
-    if (gesture) el.setPointerCapture(e.pointerId)
+    if (gesture) {
+      pointer = e.pointerId
+      el.setPointerCapture(e.pointerId)
+    }
   }
 
   const startConnect = (x: number, y: number) => {
     const port = findPortAt(x, y)
     if (!port) return false
     let from = port
-    let picked = false
+    let picked: string | null = null
     if (port.side === 'in' && portsOf(port).length === 1 && !port.port.multiple) {
       // 只有一个单连输入端口且已有连线：拾起它，改从上游输出端口继续拖
       const existing = [...doc.edges()].find(
@@ -240,19 +273,19 @@ export function attachInteractions(host: InteractHost) {
       )
       const srcPort = existing && edges.port(existing.from[0], existing.from[1], 'out')
       if (existing && srcPort) {
-        removeEdges(doc, [existing.id])
         from = srcPort
-        picked = true
+        picked = existing.id
       }
     }
     gesture = { kind: 'connect', from, picked }
-    edges.setPreview({ from, x, y, target: null })
+    edges.setPreview({ from, x, y, target: null, picked })
     return true
   }
 
   // ── 移动 ────────────────────────────────────────────
 
   const onPointerMove = (e: PointerEvent) => {
+    if (pointer !== null && pointer !== e.pointerId) return
     const w = toWorld(e)
     if (!gesture) {
       if (pan.space || pan.hand) return
@@ -265,12 +298,13 @@ export function attachInteractions(host: InteractHost) {
     }
     switch (gesture.kind) {
       case 'connect': {
-        const r = resolve(gesture.from, w.x, w.y)
+        const r = resolve(gesture.from, w.x, w.y, gesture.picked)
         edges.setPreview({
           from: r?.from ?? gesture.from,
           x: w.x,
           y: w.y,
           target: r?.target ?? null,
+          picked: gesture.picked,
         })
         break
       }
@@ -361,20 +395,35 @@ export function attachInteractions(host: InteractHost) {
   // ── 松开 ────────────────────────────────────────────
 
   const onPointerUp = (e: PointerEvent) => {
-    if (!gesture) return
+    if (pointer !== e.pointerId) return
     const w = toWorld(e)
     const g = gesture
     gesture = null
-    el.releasePointerCapture(e.pointerId)
+    release()
+    if (!g) return
 
     switch (g.kind) {
       case 'connect': {
-        const r = resolve(g.from, w.x, w.y)
+        const r = resolve(g.from, w.x, w.y, g.picked)
         edges.setPreview(null)
         if (r) {
           const [out, inp] = r.from.side === 'out' ? [r.from, r.target] : [r.target, r.from]
-          connect(doc, [out.elementId, out.port.id], [inp.elementId, inp.port.id])
-        } else if (!g.picked && !scene.hitTest(w.x, w.y)) {
+          const old = g.picked && [...doc.edges()].find((edge) => edge.id === g.picked)
+          if (
+            old &&
+            old.from[0] === out.elementId &&
+            old.from[1] === out.port.id &&
+            old.to[0] === inp.elementId &&
+            old.to[1] === inp.port.id
+          )
+            break
+          commit(() => {
+            if (g.picked) removeEdges(doc, [g.picked])
+            connect(doc, [out.elementId, out.port.id], [inp.elementId, inp.port.id])
+          })
+        } else if (g.picked) {
+          commit(() => removeEdges(doc, [g.picked!]))
+        } else if (!scene.hitTest(w.x, w.y)) {
           host.connectToEmpty?.(g.from, w, { x: e.clientX, y: e.clientY })
         }
         break
@@ -386,8 +435,7 @@ export function attachInteractions(host: InteractHost) {
       case 'move': {
         overlay.setGuides([])
         const patches = g.ids.map((id) => ({ id, ...scene.localRect(id)! }))
-        host.commit(() => {
-          doc.undo.stopCapturing()
+        commit(() => {
           updateElements(doc, patches)
           regroup(g.ids)
         })
@@ -395,8 +443,7 @@ export function attachInteractions(host: InteractHost) {
       }
       case 'resize': {
         const patches = [...g.ids, ...g.kids.keys()].map((id) => ({ id, ...scene.localRect(id)! }))
-        host.commit(() => {
-          doc.undo.stopCapturing()
+        commit(() => {
           updateElements(doc, patches)
         })
         break
@@ -432,18 +479,36 @@ export function attachInteractions(host: InteractHost) {
   }
 
   const onPointerLeave = () => edges.setHoverElement(null)
+  const onCancel = (e: PointerEvent) => {
+    if (e.pointerId === pointer) cancel()
+  }
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (gesture && e.key === 'Escape' && !e.defaultPrevented && !e.isComposing) {
+      e.preventDefault()
+      cancel()
+    }
+  }
+  const offCamera = camera.onChange(cancel)
 
   el.addEventListener('pointerdown', onPointerDown)
   el.addEventListener('pointerleave', onPointerLeave)
   el.addEventListener('pointermove', onPointerMove)
   el.addEventListener('pointerup', onPointerUp)
-  el.addEventListener('pointercancel', onPointerUp)
+  el.addEventListener('pointercancel', onCancel)
+  el.addEventListener('lostpointercapture', onCancel)
+  window.addEventListener('blur', cancel)
+  window.addEventListener('keydown', onKeyDown)
 
   return () => {
+    offCamera()
+    cancel()
     el.removeEventListener('pointerdown', onPointerDown)
     el.removeEventListener('pointerleave', onPointerLeave)
     el.removeEventListener('pointermove', onPointerMove)
     el.removeEventListener('pointerup', onPointerUp)
-    el.removeEventListener('pointercancel', onPointerUp)
+    el.removeEventListener('pointercancel', onCancel)
+    el.removeEventListener('lostpointercapture', onCancel)
+    window.removeEventListener('blur', cancel)
+    window.removeEventListener('keydown', onKeyDown)
   }
 }
