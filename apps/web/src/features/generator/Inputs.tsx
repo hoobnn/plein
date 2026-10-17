@@ -67,7 +67,7 @@ export function Inputs({
         selectedFiles,
         { x: rect.x - UPLOAD_OFFSET, y: rect.y + rect.h / 2 },
         batch.progress,
-        { signal: batch.signal },
+        { signal: batch.signal, select: false },
       )
       if (useCanvas.getState().engine !== engine || !engine.doc.has(el.id)) return
       if (!port.multiple && !target?.edgeId && inputEdges(engine.doc, el.id, port.id).length) {
@@ -101,9 +101,6 @@ export function Inputs({
       if (!batch.signal.aborted) notes.push(error instanceof Error ? error.message : '素材导入失败')
     } finally {
       batch.finish(notes)
-      if (useCanvas.getState().engine === engine) {
-        if (engine.doc.has(el.id)) engine.selection.set([el.id])
-      }
     }
   }
   const pick = (port: InputPort, edgeId?: string) => {

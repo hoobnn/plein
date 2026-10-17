@@ -375,3 +375,46 @@ test('生成历史重复放入避让已有内容，每批独立撤销且不重�
     1,
   )
 })
+
+test('参考图上传期间选中其他卡片，完成后保持当前选择并连回原目标', async ({ page }) => {
+  await newProject(page)
+  const ids = await page.evaluate(() => ({
+    target: window.__plein.addNode({
+      type: 'plein/character',
+      name: '上传参考的角色',
+      params: {},
+      x: 0,
+      y: 0,
+    }),
+    other: window.__plein.addNode({
+      type: 'plein/text',
+      name: '继续编辑的文本',
+      params: { text: '不应跳回原角色' },
+      x: 500,
+      y: 0,
+    }),
+  }))
+  await page.getByRole('treeitem', { name: '上传参考的角色 定位到画布', exact: true }).click()
+  let held = false
+  let release = () => {}
+  await page.route('**/api/assets', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue()
+    const response = await route.fetch()
+    await new Promise<void>((resolve) => {
+      release = resolve
+      held = true
+    })
+    await route.fulfill({ response })
+  })
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByTestId('generator').getByRole('button', { name: '参考图', exact: true }).click()
+  await (await chooser).setFiles(join(dir, 'reference.png'))
+  await expect.poll(() => held).toBe(true)
+  await page.getByRole('treeitem', { name: '继续编辑的文本 定位到画布', exact: true }).click()
+  release()
+  await expect.poll(() => edgesInto(page, ids.target)).toHaveLength(1)
+  expect(await page.evaluate(() => window.__plein.engine.selection.values())).toEqual([ids.other])
+  await expect(
+    page.getByTestId('generator').getByRole('textbox', { name: '提示词', exact: true }),
+  ).toHaveValue('不应跳回原角色')
+})

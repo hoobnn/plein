@@ -73,7 +73,7 @@ export async function importFiles(
   files: File[],
   at: { x: number; y: number },
   onProgress?: (done: number, total: number) => void,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; select?: boolean } = {},
 ): Promise<ImportResult> {
   const { signal } = options
   signal?.throwIfAborted()
@@ -111,7 +111,7 @@ export async function importFiles(
     x += input.w + GAP
   }
   const created = placeImports(engine, list)
-  if (created.length) engine.selection.set(created)
+  if (created.length && options.select !== false) engine.selection.set(created)
   return { created, skipped }
 }
 
