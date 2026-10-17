@@ -108,14 +108,29 @@ export function StagePanel({
   useEffect(() => view.current?.setMode(mode), [mode])
   useEffect(() => view.current?.setTool(tool), [tool])
 
-  // 快捷键：Delete 删选中的对象，W / E 切移动和旋转；输入框里不拦
+  // 快捷键只作用于当前构图面板，不能穿透输入框或菜单。
   const keys = useRef<(e: KeyboardEvent) => void>(() => {})
   keys.current = (e) => {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+    if (e.defaultPrevented || e.isComposing || e.repeat) return
+    const target = e.target
+    if (!(target instanceof HTMLElement) || !host?.closest('[role="dialog"]')?.contains(target))
+      return
+    if (
+      target.isContentEditable ||
+      target.closest('input, textarea, select, [role="menu"], [role="listbox"]')
+    )
+      return
     if (e.metaKey || e.ctrlKey || e.altKey) return
-    if (e.key === 'Delete' || e.key === 'Backspace') removeSelected()
-    else if (e.key === 'w' || e.key === 'W') setTool('move')
-    else if (e.key === 'e' || e.key === 'E') setTool('rotate')
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault()
+      removeSelected()
+    } else if (e.key === 'w' || e.key === 'W') {
+      e.preventDefault()
+      setTool('move')
+    } else if (e.key === 'e' || e.key === 'E') {
+      e.preventDefault()
+      setTool('rotate')
+    }
   }
   useEffect(() => {
     const on = (e: KeyboardEvent) => keys.current(e)
@@ -490,16 +505,30 @@ function NumberField(props: {
   step?: number
   onChange(v: number): void
 }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const commit = () => {
+    if (draft === null) return
+    setDraft(null)
+    if (!draft.trim()) return
+    const v = Number(draft)
+    if (Number.isFinite(v)) props.onChange(Math.max(-50, Math.min(50, v)))
+  }
   return (
     <Field label={props.label}>
       <input
         type="number"
         className="ui-input w-full tabular-nums"
         step={props.step ?? 0.1}
-        value={props.value}
-        onChange={(e) => {
-          const v = Number(e.target.value)
-          if (Number.isFinite(v)) props.onChange(Math.max(-50, Math.min(50, v)))
+        value={draft ?? props.value}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return
+          if (e.key === 'Enter') e.currentTarget.blur()
+          else if (e.key === 'Escape') {
+            e.stopPropagation()
+            setDraft(null)
+          }
         }}
       />
     </Field>
