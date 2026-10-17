@@ -72,12 +72,14 @@ export function ModalHeader({
   title,
   meta,
   onClose,
+  closeDisabled = false,
   divider = true,
   children,
 }: {
   title: ReactNode
   meta?: ReactNode
   onClose(): void
+  closeDisabled?: boolean
   /** 下面是滚动内容时加分隔线 */
   divider?: boolean
   children?: ReactNode
@@ -96,6 +98,7 @@ export function ModalHeader({
           type="button"
           aria-label="关闭"
           title="关闭（Esc）"
+          disabled={closeDisabled}
           onClick={onClose}
           className="ui-btn ui-btn-quiet ui-icon-btn"
         >

@@ -38,7 +38,12 @@ import { SlideSwap } from '../../ui/Slide'
 import { morphView } from '../../ui/viewTransition'
 import { KIND_ICONS } from './LibraryAdd'
 import { SlotField, thumb, VideoField } from './LibraryFields'
-import { ExpressionsTab, type HeroControl, PeriodsTab } from './LibraryProfile'
+import {
+  ExpressionsTab,
+  type HeroControl,
+  PeriodsTab,
+  ProfileUploadContext,
+} from './LibraryProfile'
 import { VoicePicker } from '../../ui/VoicePicker'
 import { LibraryUpdatesPanel } from './LibraryUpdates'
 import { CharacterAssets } from './CharacterAssets'
@@ -93,7 +98,10 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
   const [query, setQuery] = useState('')
   const [tags, setTags] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<Editing | null>(null)
-  const close = () => show(null)
+  const [uploadPending, setUploadPending] = useState(false)
+  const close = () => {
+    if (!uploadPending) show(null)
+  }
   const seed = useLibrary((s) => s.seed)
   const context = useRef({ kindId, projectId })
 
@@ -132,6 +140,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
     )
   /** 返回列表：大图缩回它的卡片 */
   const back = () => {
+    if (uploadPending) return
     const id = editing?.type === 'item' ? editing.id : null
     morphView(
       () => setEditing(null),
@@ -190,18 +199,21 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
       <ModalHeader
         title="资产库"
         onClose={close}
+        closeDisabled={uploadPending}
         meta={
-          <Segmented
-            label="资产类别"
-            size="lg"
-            options={LIBRARY_KINDS.map((k) => ({
-              value: k.id,
-              label: k.title,
-              icon: KIND_ICONS[k.id],
-            }))}
-            value={kindId}
-            onChange={show}
-          />
+          <fieldset disabled={uploadPending} className="contents">
+            <Segmented
+              label="资产类别"
+              size="lg"
+              options={LIBRARY_KINDS.map((k) => ({
+                value: k.id,
+                label: k.title,
+                icon: KIND_ICONS[k.id],
+              }))}
+              value={kindId}
+              onChange={show}
+            />
+          </fieldset>
         }
       >
         {!editing && (
@@ -238,6 +250,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
           projectId={projectId}
           canPlace={canPlace}
           onBack={back}
+          onUploadPendingChange={setUploadPending}
           onCreated={(id) => setEditing({ type: 'item', id })}
           onPlace={place}
         />
@@ -597,6 +610,7 @@ function Editor({
   onBack,
   onCreated,
   onPlace,
+  onUploadPendingChange,
 }: {
   kind: LibraryKindSpec
   item?: LibraryItem
@@ -608,6 +622,7 @@ function Editor({
   onBack(): void
   onCreated(id: string): void
   onPlace(input: PlaceInput): Promise<void>
+  onUploadPendingChange(pending: boolean): void
 }) {
   const lib = useLibrary()
   const readOnly = !!official
@@ -615,6 +630,12 @@ function Editor({
   const [draft, setDraft] = useState(() => draftOf(kind, item, official, projectId, seed))
   const [busy, setBusy] = useState(false)
   const [pendingUploads, setPendingUploads] = useState(0)
+  const trackUpload = (uploading: boolean) =>
+    setPendingUploads((count) => Math.max(0, count + (uploading ? 1 : -1)))
+  useEffect(() => {
+    onUploadPendingChange(pendingUploads > 0)
+    return () => onUploadPendingChange(false)
+  }, [pendingUploads, onUploadPendingChange])
   const [referenceRevision, setReferenceRevision] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>(
@@ -918,60 +939,66 @@ function Editor({
         </aside>
         <section aria-label="设定" className="flex min-w-0 flex-col gap-4">
           {character && !readOnly ? (
-            <>
-              <div className="lib-profile-tabs flex-none">
-                <Segmented
-                  label="档案分页"
-                  options={tabs.map((t) => ({
-                    value: t.value,
-                    label: t.label,
-                    icon: t.icon,
-                    extra: t.extra,
-                  }))}
-                  value={tab}
-                  onChange={(t) => {
-                    setTab(t)
-                    setPin({ id: null })
-                  }}
-                />
-              </div>
-              <SlideSwap index={tabIndex}>
-                {tab === 'assets' ? (
-                  <CharacterAssets
-                    images={draft.images}
-                    media={media}
-                    selected={shown}
-                    onSelect={hero.onPin}
-                    onChange={(update) => {
-                      setDraft((d) => ({ ...d, images: update(d.images) }))
-                      setReferenceRevision((revision) => revision + 1)
+            <fieldset
+              disabled={busy || pendingUploads > 0}
+              className="contents"
+              aria-label="角色档案编辑"
+            >
+              <ProfileUploadContext.Provider
+                value={{ pending: busy || pendingUploads > 0, onBusyChange: trackUpload }}
+              >
+                <div className="lib-profile-tabs flex-none">
+                  <Segmented
+                    label="档案分页"
+                    options={tabs.map((t) => ({
+                      value: t.value,
+                      label: t.label,
+                      icon: t.icon,
+                      extra: t.extra,
+                    }))}
+                    value={tab}
+                    onChange={(t) => {
+                      setTab(t)
+                      setPin({ id: null })
                     }}
-                    busy={busy || pendingUploads > 0}
-                    onBusyChange={(uploading) =>
-                      setPendingUploads((n) => Math.max(0, n + (uploading ? 1 : -1)))
-                    }
                   />
-                ) : tab === 'basics' ? (
-                  basics
-                ) : tab === 'periods' ? (
-                  <PeriodsTab
-                    name={draft.name.trim() || kind.title}
-                    profile={draft.profile}
-                    onChange={(profile) => patch({ profile })}
-                    media={media}
-                    hero={hero}
-                  />
-                ) : (
-                  <ExpressionsTab
-                    profile={draft.profile}
-                    onChange={(profile) => patch({ profile })}
-                    media={media}
-                    hero={hero}
-                    sheet={null}
-                  />
-                )}
-              </SlideSwap>
-            </>
+                </div>
+                <SlideSwap index={tabIndex}>
+                  {tab === 'assets' ? (
+                    <CharacterAssets
+                      images={draft.images}
+                      media={media}
+                      selected={shown}
+                      onSelect={hero.onPin}
+                      onChange={(update) => {
+                        setDraft((d) => ({ ...d, images: update(d.images) }))
+                        setReferenceRevision((revision) => revision + 1)
+                      }}
+                      busy={busy || pendingUploads > 0}
+                      onBusyChange={trackUpload}
+                    />
+                  ) : tab === 'basics' ? (
+                    basics
+                  ) : tab === 'periods' ? (
+                    <PeriodsTab
+                      name={draft.name.trim() || kind.title}
+                      profile={draft.profile}
+                      onChange={(profile) => patch({ profile })}
+                      media={media}
+                      hero={hero}
+                    />
+                  ) : (
+                    <ExpressionsTab
+                      profile={draft.profile}
+                      onChange={(profile) => patch({ profile })}
+                      media={media}
+                      hero={hero}
+                      sheet={null}
+                    />
+                  )}
+                </SlideSwap>
+              </ProfileUploadContext.Provider>
+            </fieldset>
           ) : (
             basics
           )}
@@ -993,6 +1020,7 @@ function Editor({
           <button
             type="button"
             onClick={() => void remove()}
+            disabled={busy || pendingUploads > 0}
             className="ui-btn ui-btn-quiet hover:text-danger"
           >
             <Icon name="trash" />

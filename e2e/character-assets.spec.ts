@@ -202,6 +202,135 @@ test('角色大图失败有恢复入口，切换参考图不串用错误状态�
   )
 })
 
+for (const role of ['时期', '服饰', '表情'] as const) {
+  test(`档案${role}图片上传期间保护保存和导航，失败可重试且保留更名`, async ({ page }) => {
+    await newProject(page)
+    const [assetId, extraId] = await uploadedImages(page, 2)
+    const response = await page.request.post('/api/library', {
+      data: {
+        kind: 'character',
+        name: `档案${role}上传保护`,
+        images: [],
+        profile: {
+          periods: [
+            {
+              id: 'youth',
+              name: '少年',
+              aliases: [],
+              description: '',
+              images: [],
+              voice: null,
+              voiceStates: [],
+              outfits: [{ id: 'uniform', name: '校服', aliases: [], description: '', images: [] }],
+            },
+          ],
+          expressions: [{ id: 'happy', name: '开心', aliases: [], description: '', images: [] }],
+        },
+      },
+    })
+    expect(response.status()).toBe(201)
+    const item = (await response.json()) as LibraryItem
+    created.push(item.id)
+    const panel = await openLibrary(page)
+    await openItem(panel, item.name)
+    const tabs = panel.getByRole('group', { name: '档案分页', exact: true })
+    await tabs.getByRole('button', { name: role === '表情' ? /^表情/ : /^时期与服饰/ }).click()
+    if (role === '服饰')
+      await panel.getByRole('button', { name: '少年 · 校服', exact: true }).click()
+    if (role === '表情')
+      await panel.getByRole('button', { name: '编辑「开心」', exact: true }).click()
+    const name = panel.getByRole('textbox', {
+      name: role === '时期' ? '时期名' : role === '服饰' ? '服饰名' : '名字',
+      exact: true,
+    })
+    await name.fill(`新${role}`)
+    await name.blur()
+    const confirm = panel.getByRole('button', { name: '保存', exact: true })
+    await expect(confirm).toBeEnabled()
+    let release!: () => void
+    let started!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const uploading = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    let rejectNext = false
+    await page.route('**/api/assets', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue()
+      if (rejectNext) {
+        rejectNext = false
+        return route.fulfill({ status: 503, json: { message: '档案上传失败' } })
+      }
+      const response = await route.fetch()
+      started()
+      await gate
+      await route.fulfill({ response })
+    })
+    const chooser = page.waitForEvent('filechooser')
+    await panel
+      .locator('.lib-look-editor')
+      .getByRole('button', { name: '上传', exact: true })
+      .click()
+    await (await chooser).setFiles(file(0))
+    await uploading
+    try {
+      await expect(confirm).toBeDisabled()
+      await expect(panel.getByRole('status')).toHaveText('图片上传中…')
+      await expect(tabs.getByRole('button', { name: /^表情/ })).toBeDisabled()
+      await expect(name).toBeDisabled()
+      await expect(panel.getByRole('button', { name: '返回', exact: true })).toBeDisabled()
+      await expect(panel.getByRole('button', { name: '关闭', exact: true })).toBeDisabled()
+      await page.keyboard.press('Escape')
+      await expect(name).toBeVisible()
+      if (role === '时期')
+        await panel.screenshot({
+          path: test.info().outputPath('profile-upload.png'),
+          animations: 'disabled',
+        })
+    } finally {
+      release()
+    }
+    await expect(panel.getByRole('status')).toHaveCount(0)
+    await expect(panel.locator('.lib-look-editor .lib-strip-tile img')).toHaveAttribute(
+      'src',
+      new RegExp(assetId!),
+    )
+    await expect(confirm).toBeEnabled()
+    await save(panel)
+    const saved = await readItem(page, item.id)
+    const expected = (images: Array<string | undefined>) =>
+      role === '时期'
+        ? { periods: [{ name: '新时期', aliases: ['少年'], images }] }
+        : role === '服饰'
+          ? {
+              periods: [{ name: '少年', outfits: [{ name: '新服饰', aliases: ['校服'], images }] }],
+            }
+          : { expressions: [{ name: '新表情', aliases: ['开心'], images }] }
+    expect(saved.profile).toMatchObject(expected([assetId]))
+    rejectNext = true
+    const uploadAgain = async () => {
+      const chooser = page.waitForEvent('filechooser')
+      await panel
+        .locator('.lib-look-editor')
+        .getByRole('button', { name: '上传', exact: true })
+        .click()
+      await (await chooser).setFiles(file(1))
+    }
+    await uploadAgain()
+    await expect(panel.getByText('档案上传失败', { exact: true })).toBeVisible()
+    await expect(panel.getByRole('status')).toHaveCount(0)
+    await expect(name).toBeEnabled()
+    await expect(panel.getByRole('button', { name: '关闭', exact: true })).toBeEnabled()
+    await uploadAgain()
+    await expect(panel.locator('.lib-look-editor .lib-strip-tile img')).toHaveCount(2)
+    await expect(panel.getByRole('status')).toHaveCount(0)
+    await expect(confirm).toBeEnabled()
+    await save(panel)
+    expect((await readItem(page, item.id)).profile).toMatchObject(expected([assetId, extraId]))
+  })
+}
+
 for (const action of ['替换', '移除再从画布补入'] as const) {
   test(`角色图片失败后通过${action}重新选择同一素材，可以恢复大图和卡片`, async ({ page }) => {
     await newProject(page)

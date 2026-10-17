@@ -13,13 +13,18 @@ import {
   VOICE_STATE_PRESETS,
   type VoiceState,
 } from '@plein/nodes'
-import { useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { CanvasMedia } from './canvas'
 import { Icon, type IconName } from '../../ui/icons'
 import { SlideSwap } from '../../ui/Slide'
 import { CanvasPick, thumb, uploadAll } from './LibraryFields'
 import { Select } from '../../ui/Select'
 import { VoicePicker } from '../../ui/VoicePicker'
+
+export const ProfileUploadContext = createContext<{
+  pending: boolean
+  onBusyChange(busy: boolean): void
+}>({ pending: false, onBusyChange: () => {} })
 
 /**
  * 角色档案的编辑：
@@ -785,9 +790,26 @@ function ImageStrip({
   const ref = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const uploads = useContext(ProfileUploadContext)
   const room = PROFILE_LIMITS.images - images.length
   const add = (ids: string[]) =>
     onChange([...new Set([...images, ...ids])].slice(0, PROFILE_LIMITS.images))
+  const upload = async (files: File[]) => {
+    if (!files.length || busy || uploads.pending) return
+    setBusy(true)
+    uploads.onBusyChange(true)
+    setError(null)
+    try {
+      const ids = await uploadAll(files, 'image')
+      if (ids.length) add(ids)
+      else setError('只能放图片')
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+      uploads.onBusyChange(false)
+    }
+  }
   return (
     <div className="ui-field">
       <span className="ui-label flex min-w-0 items-baseline gap-2" title={hint}>
@@ -823,20 +845,9 @@ function ImageStrip({
             disabled={busy}
             onClick={() => ref.current?.click()}
             onDragOver={(e) => e.preventDefault()}
-            onDrop={async (e) => {
+            onDrop={(e) => {
               e.preventDefault()
-              const files = [...e.dataTransfer.files]
-              setBusy(true)
-              setError(null)
-              try {
-                const ids = await uploadAll(files, 'image')
-                if (ids.length) add(ids)
-                else setError('只能放图片')
-              } catch (err) {
-                setError((err as Error).message)
-              } finally {
-                setBusy(false)
-              }
+              void upload([...e.dataTransfer.files])
             }}
             className="ui-drop-tile lib-strip-add"
           >
@@ -861,21 +872,10 @@ function ImageStrip({
         accept="image/*"
         multiple
         hidden
-        onChange={async (e) => {
+        onChange={(e) => {
           const files = [...(e.target.files ?? [])]
           e.target.value = ''
-          if (!files.length) return
-          setBusy(true)
-          setError(null)
-          try {
-            const ids = await uploadAll(files, 'image')
-            if (ids.length) add(ids)
-            else setError('只能放图片')
-          } catch (err) {
-            setError((err as Error).message)
-          } finally {
-            setBusy(false)
-          }
+          void upload(files)
         }}
       />
     </div>
