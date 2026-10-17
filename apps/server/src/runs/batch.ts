@@ -34,14 +34,13 @@ export function parseExpect(raw: string | null | undefined): JobExpect | undefin
 /** 批次快照需要的运行能力（NodeRuns 提供） */
 export interface BatchHost {
   readonly store: JobStore
-  inspectInput(
-    canvasId: string,
+  inspect(
     doc: PleinDoc,
     el: CanvasElement,
     ownerId: string,
     signal: AbortSignal,
-  ): Promise<PreparedInput>
-  fresh(doc: PleinDoc, el: CanvasElement, ownerId: string, signal: AbortSignal): Promise<boolean>
+  ): Promise<{ input: PreparedInput }>
+  isFresh(doc: PleinDoc, el: CanvasElement, ownerId: string, signal: AbortSignal): Promise<boolean>
   planKey(el: CanvasElement): string
 }
 
@@ -71,7 +70,7 @@ export async function snapshotBatch(
     const reusable = !!el && !opts.force && !opts.rerun.has(id)
     fresh.set(
       id,
-      reusable && ((await host.fresh(doc, el, g.owner_id, signal)) || !!(await opts.kept?.(el))),
+      reusable && ((await host.isFresh(doc, el, g.owner_id, signal)) || !!(await opts.kept?.(el))),
     )
   }
   const now = Date.now()
@@ -85,7 +84,7 @@ export async function snapshotBatch(
       const r = doc.get(u) && currentResult(doc.get(u)!)
       return r ? { nodeId: u, resultId: r.id } : { nodeId: u }
     })
-    const input = await host.inspectInput(g.canvas_id, doc, el, g.owner_id, signal)
+    const { input } = await host.inspect(doc, el, g.owner_id, signal)
     let stage: BatchStage = 'run'
     let reason: string | undefined
     if (fresh.get(id) && !rerunUps.length) {

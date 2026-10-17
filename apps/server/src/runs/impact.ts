@@ -67,7 +67,7 @@ function parseInput(raw: string | null | undefined): PreparedInput | undefined {
  * 对比产生当前结果时冻结的实际输入与现在的，说清楚哪里变了。
  * @ 引用的参考图归到 reference，其余连线送来的值按上游元素归到 input
  */
-export function diffInputs(
+function diffInputs(
   before: PreparedInput | undefined,
   now: PreparedInput,
   names: { element(id: string): string; param(key: string): string },
@@ -208,7 +208,7 @@ export class ImpactAnalyzer {
         const cur = el && currentResult(el)
         if (!el || !cur || !this.runs.isJobNode(el))
           throw new NodeRunError('not_found', '节点不存在或还没有结果')
-        const state = await this.state(canvasId, doc, el, ownerId, signal)
+        const state = await this.state(doc, el, ownerId, signal)
         if (state.now.input.inputHash !== inputHash) {
           changed.push(nodeId)
           continue
@@ -236,13 +236,12 @@ export class ImpactAnalyzer {
   }
 
   private async state(
-    canvasId: string,
     doc: PleinDoc,
     el: CanvasElement,
     ownerId: string,
     signal: AbortSignal,
   ): Promise<NodeState> {
-    const now = await this.runs.inspect(canvasId, doc, el, ownerId, signal)
+    const now = await this.runs.inspect(doc, el, ownerId, signal)
     const r = currentResult(el)
     const job = r ? this.runs.store.get(r.runId) : undefined
     return { el, now, job, fresh: this.runs.resultMatches(el, now) }
@@ -261,7 +260,7 @@ export class ImpactAnalyzer {
     for (const el of doc.elements()) {
       if (!this.runs.isJobNode(el) || !el.results?.length) continue
       if (this.runs.isRunning(canvasId, el.id)) continue
-      states.set(el.id, await this.state(canvasId, doc, el, ownerId, signal))
+      states.set(el.id, await this.state(doc, el, ownerId, signal))
     }
 
     const nodes = new Map<string, ImpactNode>()
@@ -377,7 +376,7 @@ export class ImpactAnalyzer {
     return {
       nodes: list,
       plan: plan.sort((a, b) => a.no - b.no),
-      sequence: await this.sequenceIssues(canvasId, doc, ownerId, states, nodes),
+      sequence: await this.sequenceIssues(doc, ownerId, states, nodes),
       summary: summarize(list),
       decisions: decisions.slice(0, 20).map(decisionOf),
     }
@@ -388,7 +387,6 @@ export class ImpactAnalyzer {
    * 还没导出过的序列查全部。原入出点保留不动，只把越界、对白溢出、转场放不下和手写字幕提示出来
    */
   private async sequenceIssues(
-    canvasId: string,
     doc: PleinDoc,
     ownerId: string,
     states: Map<string, NodeState>,
@@ -405,7 +403,7 @@ export class ImpactAnalyzer {
     for (const el of doc.elements()) {
       if (el.nodeType !== SEQUENCE_TYPE || !this.runs.isJobNode(el)) continue
       const seqId = el.id
-      const s = states.get(seqId) ?? (await this.state(canvasId, doc, el, ownerId, signal))
+      const s = states.get(seqId) ?? (await this.state(doc, el, ownerId, signal))
       const params = s.now.params as SequenceParams
       const arranged = arrangeSequence(params, s.now.inputs)
       // 上次导出时每段用的素材：和现在不同说明换了候选
@@ -491,7 +489,7 @@ function byShot(a: ImpactNode, b: ImpactNode) {
 }
 
 /** 按建议重做时的数量与费用；已保留的不算待执行 */
-export function summarize(nodes: ImpactNode[]): ImpactReport['summary'] {
+function summarize(nodes: ImpactNode[]): ImpactReport['summary'] {
   const cost: ImpactReport['summary']['cost'] = { amount: 0, unknown: 0 }
   let cached = 0
   let pending = 0

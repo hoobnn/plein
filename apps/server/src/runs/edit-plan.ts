@@ -128,7 +128,7 @@ export class EditPlans {
         return { storyboard: src.storyboard, id: src.shot, role: src.role, ...(no ? { no } : {}) }
       }
       const bind = async (el: CanvasElement) => {
-        const now = await this.runs.inspect(canvasId, doc, el, ownerId, signal)
+        const now = await this.runs.inspect(doc, el, ownerId, signal)
         const binding: EditBinding = { version: paramsHash(el) }
         if (now.input.inputHash) binding.inputHash = now.input.inputHash
         return { binding, input: now.input }
@@ -137,7 +137,7 @@ export class EditPlans {
       const targets: EditTarget[] = []
       for (const [id, params] of edits) {
         const el = doc.get(id)!
-        const after = await this.runs.inspect(canvasId, sim, sim.get(id)!, ownerId, signal)
+        const after = await this.runs.inspect(sim, sim.get(id)!, ownerId, signal)
         const { binding } = await bind(el)
         const shot = shotOf(el)
         targets.push({
@@ -392,7 +392,7 @@ export class EditPlans {
           out.push(b.nodeId)
           continue
         }
-        const now = await this.runs.inspect(canvasId, doc, el, ownerId, signal)
+        const now = await this.runs.inspect(doc, el, ownerId, signal)
         if ((now.input.inputHash ?? '') !== (b.inputHash ?? '')) out.push(b.nodeId)
       }
       return [...new Set(out)]

@@ -153,6 +153,48 @@ describe('提交状态未知', () => {
     expect(await server.runs.wait(next)).toBe('succeeded')
   })
 
+  it.each(['attach', 'resubmit'] as const)(
+    '节点已有新任务时拒绝 %s，保留原任务的调用记录和恢复状态',
+    async (action) => {
+      withoutLookup()
+      const { server } = await boot()
+      mock(server, { latencyMs: 0 })
+      const realSubmit = mockProvider.submit
+      const { submit } = loseSubmitResponse()
+      const { id, doc } = await canvas(server)
+      const node = addNode(doc, 'plein/image', { params: { prompt: '待核查的旧任务', count: 1 } })
+      const original = server.runs.start(id, node, 'local')
+      expect(await server.runs.wait(original)).toBe('failed')
+      await until(() => !server.runs.isRunning(id, node))
+      expect((await recover(server, id, original, { action: 'dismiss' })).status).toBe(200)
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      submit.mockImplementationOnce(async (req, ctx) => {
+        await gate
+        return realSubmit(req, ctx)
+      })
+      const current = server.runs.start(id, node, 'local')
+      try {
+        await until(() => doc.get(node)?.run?.phase === 'submitting')
+        const before = server.runs.store.get(original)!
+        const response = await recover(server, id, original, {
+          action,
+          ...(action === 'attach' ? { remoteId: 'old-remote-id' } : {}),
+        })
+        expect(response).toMatchObject({ status: 409, body: { error: 'busy' } })
+        expect(server.runs.store.get(original)).toEqual(before)
+        expect(server.runs.isRunning(id, node)).toBe(true)
+      } finally {
+        server.runs.cancel(id, node)
+        release()
+        await server.runs.wait(current)
+      }
+      expect(status(server, current)).toBe('canceled')
+    },
+  )
+
   it('提交时服务退出：重启后按幂等键核查，提交次数不增加', async () => {
     const first = await boot()
     mock(first.server, { latencyMs: 200 })

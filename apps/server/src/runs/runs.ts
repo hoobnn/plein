@@ -151,8 +151,8 @@ interface Prepared {
   inputs: Record<string, PortValue[]>
   /** @ 引用的实际用法、降级提示与阻断原因；节点没有声明时为空 */
   mentions?: Pick<AppliedMentions, 'details' | 'notices' | 'blocked'>
-  /** 来源是节点时取的是它哪一个结果（按来源元素 id）；只进执行记录，不算缓存内容 */
-  origins?: Map<string, Origin>
+  /** 每个输入值对应的上游结果；按值保留，避免同一节点的多个输出端口相互覆盖 */
+  origins?: WeakMap<PortValue, Origin>
 }
 
 interface Origin {
@@ -334,21 +334,7 @@ export class NodeRuns implements BatchHost {
     try {
       const el = doc.get(nodeId)
       if (el?.kind !== 'node' || !el.nodeType) throw new NodeRunError('not_found', '节点不存在')
-      try {
-        const prepared = await this.prepare(doc, el, ownerId, new AbortController().signal)
-        return this.summarize(el, prepared)
-      } catch (err) {
-        // 准备本身就过不去（上游没结果、@ 重名、音色跨平台）：照样给出能给的部分，原因放进阻断；
-        // 这时算不出真正的缓存键，不给 inputHash，免得被当成确认过的版本
-        if (!(err instanceof NodeRunError)) throw err
-        const def = this.host.registry.latestNode(el.nodeType)?.def
-        const { inputHash: _, ...base } = this.summarize(el, { def, params: el.params, inputs: {} })
-        return {
-          ...base,
-          status: 'unprepared',
-          blocked: [{ code: 'prepare_failed', message: err.message }, ...base.blocked],
-        }
-      }
+      return (await this.inspect(doc, el, ownerId, new AbortController().signal)).input
     } finally {
       doc.destroy()
       lease.release()
@@ -359,10 +345,10 @@ export class NodeRuns implements BatchHost {
 
   /**
    * 准备节点的输入并整理成摘要，不调用付费生成。
-   * 准备不过去时的摘要与预览给出的一致（直接取 preview），key 返回 undefined
+   * 准备不过去时仍从这份文档给出部分摘要，不给 inputHash，也不匹配任何任务。
+   * 修改方案传入的是文档副本，不能重新打开原画布来取得失败摘要
    */
   async inspect(
-    canvasId: string,
     doc: PleinDoc,
     el: CanvasElement,
     ownerId: string,
@@ -373,8 +359,14 @@ export class NodeRuns implements BatchHost {
       prepared = await this.prepare(doc, el, ownerId, signal)
     } catch (err) {
       if (!(err instanceof NodeRunError)) throw err
+      const def = el.nodeType ? this.host.registry.latestNode(el.nodeType)?.def : undefined
+      const { inputHash: _, ...base } = this.summarize(el, { def, params: el.params, inputs: {} })
       return {
-        input: await this.preview(canvasId, el.id, ownerId),
+        input: {
+          ...base,
+          status: 'unprepared',
+          blocked: [{ code: 'prepare_failed', message: err.message }, ...base.blocked],
+        },
         inputs: {},
         params: el.params ?? {},
         matches: () => false,
@@ -419,20 +411,6 @@ export class NodeRuns implements BatchHost {
 
   // ── 批次快照用（见 batch.ts）────────────────────────
 
-  async inspectInput(
-    canvasId: string,
-    doc: PleinDoc,
-    el: CanvasElement,
-    ownerId: string,
-    signal: AbortSignal,
-  ): Promise<PreparedInput> {
-    return (await this.inspect(canvasId, doc, el, ownerId, signal)).input
-  }
-
-  fresh(doc: PleinDoc, el: CanvasElement, ownerId: string, signal: AbortSignal) {
-    return this.isFresh(doc, el, ownerId, signal)
-  }
-
   /** 节点自身参数与实际模型的哈希（不含输入）：上游还没出结果时据此判断计划有没有变 */
   planKey(el: CanvasElement): string {
     const def = el.nodeType ? this.host.registry.latestNode(el.nodeType)?.def : undefined
@@ -469,12 +447,7 @@ export class NodeRuns implements BatchHost {
   /** 把准备结果整理成给人看、也存进执行记录的实际输入 */
   private summarize(el: CanvasElement, p: Prepared): PreparedInput {
     const def = p.def
-    let params: Record<string, unknown> = p.params ?? {}
-    if (def) {
-      try {
-        params = resolveParams(def, p.params, el.nodeVersion ?? def.version) as typeof params
-      } catch {}
-    }
+    const params = this.latestParams(el, p) ?? {}
     const promptKey = ['prompt', 'text'].find((k) => typeof params[k] === 'string')
     const upstreamText = (p.inputs[promptKey ?? 'prompt'] ?? []).flatMap((v) =>
       v.type === 'text' ? [v.text] : v.type === 'json' ? [JSON.stringify(v.value)] : [],
@@ -522,7 +495,7 @@ export class NodeRuns implements BatchHost {
       inputs: Object.fromEntries(
         Object.entries(p.inputs).map(([port, values]) => [
           port,
-          values.map((v) => inputValue(v, v.source ? p.origins?.get(v.source) : undefined)),
+          values.map((v) => inputValue(v, p.origins?.get(v))),
         ]),
       ),
       refs: p.mentions?.details ?? [],
@@ -847,6 +820,8 @@ export class NodeRuns implements BatchHost {
       this.store.update(jobId, { recovery: JSON.stringify({ ...stored, dismissed: true }) })
       return this.jobInfo(this.store.get(jobId)!)
     }
+    if (this.isRunning(canvasId, row.node_id))
+      throw new NodeRunError('busy', '节点正在运行，等它结束后再处理')
     const calls = JSON.parse(row.calls || '{}') as Record<string, CallRecord>
     const unknown = Object.keys(calls).filter(
       (k) => calls[k]!.state === 'unknown' || calls[k]!.state === 'submitting',
@@ -870,8 +845,6 @@ export class NodeRuns implements BatchHost {
 
   /** 按调用记录重新执行一个已结束的任务（不新建任务，结果和费用都记在原任务上） */
   private resume(row: JobRow, stored: StoredRecovery) {
-    if (this.isRunning(row.canvas_id, row.node_id))
-      throw new NodeRunError('busy', '节点正在运行，等它结束后再处理')
     const canceled = stored.canceledBy === 'user' || row.status === 'canceled'
     this.store.update(row.id, {
       status: 'queued',
@@ -961,7 +934,7 @@ export class NodeRuns implements BatchHost {
             return 'cached'
           }
           if (options.candidates && reuse) {
-            const now = await this.inspect(g.canvas_id, doc, el, g.owner_id, ctrl.signal)
+            const now = await this.inspect(doc, el, g.owner_id, ctrl.signal)
             const hit = this.cachedCandidate(el, now)
             if (hit) {
               adoptResult(doc, nodeId, hit)
@@ -1036,7 +1009,7 @@ export class NodeRuns implements BatchHost {
   ) {
     const d = this.store.decisions(canvasId).find((x) => x.node_id === el.id && !x.revoked_at)
     if (!d || currentResult(el)?.id !== d.result_id) return false
-    const now = await this.inspect(canvasId, doc, el, ownerId, signal)
+    const now = await this.inspect(doc, el, ownerId, signal)
     return now.input.inputHash === d.input_hash
   }
 
@@ -1044,7 +1017,7 @@ export class NodeRuns implements BatchHost {
    * 节点当前采用的结果是否仍然有效：产生它的那次运行的缓存键与现在算出的一致。
    * 早于任务记录的结果（没有对应任务）视为有效，避免升级后整组重跑。
    */
-  private async isFresh(doc: PleinDoc, el: CanvasElement, ownerId: string, signal: AbortSignal) {
+  async isFresh(doc: PleinDoc, el: CanvasElement, ownerId: string, signal: AbortSignal) {
     const r = currentResult(el)
     if (!r) return false
     const job = this.store.get(r.runId)
@@ -1400,7 +1373,7 @@ export class NodeRuns implements BatchHost {
     ownerId: string,
     signal: AbortSignal,
   ): Promise<Prepared> {
-    const origins = new Map<string, Origin>()
+    const origins = new WeakMap<PortValue, Origin>()
     const collected = await this.collectInputs(doc, el.id, ownerId, signal, 0, origins)
     const def = this.host.registry.latestNode(el.nodeType!)?.def
     if (!def) return { def, params: el.params, inputs: collected, origins }
@@ -1502,7 +1475,7 @@ export class NodeRuns implements BatchHost {
     ownerId: string,
     signal: AbortSignal,
     depth = 0,
-    origins?: Map<string, Origin>,
+    origins?: WeakMap<PortValue, Origin>,
     /** 上游节点没有结果时当作没有值，而不是报错 */
     lenient = false,
   ): Promise<Record<string, PortValue[]>> {
@@ -1522,9 +1495,10 @@ export class NodeRuns implements BatchHost {
         lenient,
       )
       const r = src.kind === 'node' ? currentResult(src, edge.from[1]) : undefined
-      if (r && origins) origins.set(src.id, { resultId: r.id, runId: r.runId })
       const tagged = values.map((v) => ({ ...v, source: src.id }))
-      inputs[edge.to[1]] = [...(inputs[edge.to[1]] ?? []), ...tagged]
+      if (r && origins) for (const v of tagged) origins.set(v, { resultId: r.id, runId: r.runId })
+      const port = (inputs[edge.to[1]] ??= [])
+      for (const v of tagged) port.push(v)
     }
     return inputs
   }

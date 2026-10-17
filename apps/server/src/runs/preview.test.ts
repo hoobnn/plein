@@ -1,6 +1,8 @@
 import {
+  addResults,
   adoptResult,
   connect,
+  createDoc,
   createElement,
   inputEdges,
   moveElements,
@@ -13,6 +15,7 @@ import type { AssetRef, ProviderRequest } from '@plein/plugin-sdk'
 import type { JobList, PreparedInput } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
+import * as Y from 'yjs'
 import type { Server } from '../app'
 import { addNode, bootServer, createCanvas, mockSettings, request, until } from '../testing'
 
@@ -235,6 +238,45 @@ describe('实际输入预览', () => {
     expect(p.inputHash).toBeUndefined()
   }, 30_000)
 
+  it('分析文档副本时准备失败：摘要保留副本里的改动，不读取原画布', async () => {
+    const { server, id, doc } = await boot()
+    const node = addNode(doc, 'plein/image', { params: { prompt: '原画布提示词' } })
+    const copy = new Y.Doc()
+    Y.applyUpdate(copy, Y.encodeStateAsUpdate(server.rooms.get(id).doc))
+    const sim = createDoc(copy)
+    try {
+      setParams(sim, node, { prompt: '修改方案中的提示词' })
+      const up = addNode(sim, 'plein/image', { name: '副本中缺少结果的上游' })
+      connect(sim, [up, 'images'], [node, 'references'])
+      const seen = captureSubmits()
+      const actual = await server.runs.inspect(
+        sim,
+        sim.get(node)!,
+        'local',
+        new AbortController().signal,
+      )
+      expect(actual.input).toMatchObject({
+        status: 'unprepared',
+        prompt: '修改方案中的提示词',
+        blocked: [
+          { code: 'prepare_failed', message: expect.stringContaining('副本中缺少结果的上游') },
+        ],
+      })
+      expect(actual.input.inputHash).toBeUndefined()
+      expect(actual.inputs).toEqual({})
+      expect(actual.matches({ cache_key: 'old', cache_omit: null })).toBe(false)
+      expect(await preview(server, id, node)).toMatchObject({
+        status: 'ready',
+        prompt: '原画布提示词',
+        blocked: [],
+      })
+      expect(seen).toEqual([])
+    } finally {
+      sim.destroy()
+      copy.destroy()
+    }
+  })
+
   it('卡片的参考图节点生成失败、没有结果：镜头只带文字设定照常运行，提示参考图失败', async () => {
     const { server, id, doc, shot } = await boot()
     const prop = card(doc, 'plein/prop', '证物', null, 1200)
@@ -277,6 +319,33 @@ describe('实际输入预览', () => {
     const ref = p2.inputs.references?.find((v) => v.assetId === assetOf(older))
     expect(ref).toMatchObject({ resultId: older!.id, runId: older!.runId })
   }, 30_000)
+
+  it('同一上游的不同输出端口各自保留结果来源，直接连入和 @ 引用不串值', async () => {
+    const { server, id, doc } = await boot()
+    const up = addNode(doc, 'test/multiple-images', {
+      ports: {
+        inputs: [],
+        outputs: [
+          { id: 'front', label: '正面', type: 'image' },
+          { id: 'side', label: '侧面', type: 'image' },
+        ],
+      },
+    })
+    const results = [
+      { id: 'front', port: 'front', value: { type: 'image' as const, assetId: asset('e') } },
+      { id: 'side', port: 'side', value: { type: 'image' as const, assetId: asset('f') } },
+    ].map((r) => ({ ...r, runId: 'multi-output', at: 1 }))
+    addResults(doc, up, results)
+    const hero = card(doc, 'plein/character', '测试角色', null, 0)
+    expect(connect(doc, [up, 'side'], [hero, 'references'])).not.toBeNull()
+    const shot = addNode(doc, 'plein/image', { params: { prompt: '@测试角色 转身' } })
+    expect(connect(doc, [up, 'front'], [shot, 'references'])).not.toBeNull()
+    const input = await preview(server, id, shot)
+    expect(input.inputs.references).toEqual([
+      { type: 'image', assetId: asset('e'), source: up, resultId: 'front', runId: 'multi-output' },
+      { type: 'image', assetId: asset('f'), source: up, resultId: 'side', runId: 'multi-output' },
+    ])
+  })
 
   it('没选模型不运行，也不替用户挑', async () => {
     const { server, id, doc } = await boot()
