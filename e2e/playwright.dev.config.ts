@@ -30,6 +30,7 @@ export default defineConfig({
     'generator-layout.spec.ts',
     'generator-popovers.spec.ts',
     'generator-camera.spec.ts',
+    'generator-editing.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },

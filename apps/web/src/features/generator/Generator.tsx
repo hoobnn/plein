@@ -367,7 +367,20 @@ function Panel({
           <Icon name={collapsed ? 'expand' : 'collapse'} size={14} />
         </button>
       )}
-      <div className={collapsed ? 'hidden' : 'contents'}>
+      <div
+        className={collapsed ? 'hidden' : 'contents'}
+        onFocusCapture={(event) => {
+          const target = event.target
+          // Portal 中的模型搜索等浮层保持各自生命周期，不锁定主编辑器。
+          if (!event.currentTarget.contains(target)) return
+          if (
+            target instanceof HTMLInputElement ||
+            target instanceof HTMLTextAreaElement ||
+            target.isContentEditable
+          )
+            onExpand()
+        }}
+      >
         {ASSET_NODE_TYPES.has(node.type) && (
           <NameField
             value={el.name ?? node.title}
