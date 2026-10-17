@@ -1,10 +1,10 @@
 import type { Engine } from '@plein/canvas-core'
-import { createElements, type HistoryEntry, type NewElement, resultHistory } from '@plein/doc'
+import { type HistoryEntry, type NewElement, resultHistory } from '@plein/doc'
 import { useEffect, useMemo, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { downloadAsset } from '../canvas/grid'
 import { useDocVersion } from '../canvas/hooks'
-import { elementFor } from '../canvas/import'
+import { elementFor, placeImports } from '../canvas/import'
 import { beginImport } from '../canvas/importProgress'
 import { loadAssetMeta } from '../stores/assetMeta'
 import { useCanvas } from '../stores/canvas'
@@ -167,7 +167,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
         }
         y += rowH[ri]! + GAP
       })
-      const created = list.length ? createElements(doc, list) : []
+      const created = placeImports(engine, list)
       engine.selection.set(created)
       close()
       notes.push(`已放到画布上：${created.length} 个素材`)

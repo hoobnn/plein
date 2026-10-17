@@ -104,33 +104,44 @@ export async function importFiles(
   signal?.throwIfAborted()
   const valid = inputs.filter((input) => input !== null)
   if (!valid.length) return { created: [], skipped }
-  // 整批找空位，保留文件顺序及间距，不让后上传完成的文件覆盖已存在的内容。
-  const height = Math.max(...valid.map((input) => input.h))
-  const spot = findFreeSpot(engine.doc, {
-    x: at.x,
-    y: at.y - height / 2,
-    w: valid.reduce((sum, input) => sum + input.w, 0) + (valid.length - 1) * GAP,
-    h: height,
-  })
-  let x = spot.x
+  let x = at.x
   const list: NewElement[] = []
   for (const input of valid) {
-    const y = spot.y + (height - input.h) / 2
+    list.push({ ...input, x, y: at.y - input.h / 2 } as NewElement)
+    x += input.w + GAP
+  }
+  const created = placeImports(engine, list)
+  if (created.length) engine.selection.set(created)
+  return { created, skipped }
+}
+
+/** 按世界坐标布局整批避让并归组，保留相对位置与一步撤销。 */
+export function placeImports(engine: Engine, list: NewElement[]): string[] {
+  if (!list.length) return []
+  const x0 = Math.min(...list.map((el) => el.x))
+  const y0 = Math.min(...list.map((el) => el.y))
+  const spot = findFreeSpot(engine.doc, {
+    x: x0,
+    y: y0,
+    w: Math.max(...list.map((el) => el.x + el.w)) - x0,
+    h: Math.max(...list.map((el) => el.y + el.h)) - y0,
+  })
+  const placed = list.map((input) => {
+    const x = input.x + spot.x - x0
+    const y = input.y + spot.y - y0
     const parentId = containingFrame(engine, { x, y, w: input.w, h: input.h })
     const origin = (parentId && engine.doc.worldRect(parentId)) || { x: 0, y: 0 }
-    list.push({
+    return {
       ...input,
       parentId,
       x: Math.round(x - origin.x),
       y: Math.round(y - origin.y),
-    } as NewElement)
-    x += input.w + GAP
-  }
+    } as NewElement
+  })
   engine.doc.undo.stopCapturing()
-  const created = createElements(engine.doc, list)
+  const created = createElements(engine.doc, placed)
   engine.doc.undo.stopCapturing()
-  if (created.length) engine.selection.set(created)
-  return { created, skipped }
+  return created
 }
 
 /** 粘贴的纯文本建成 Markdown 元素 */

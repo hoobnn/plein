@@ -298,7 +298,7 @@ for (const first of ['reference', 'toolbar'] as const) {
   })
 }
 
-test('生成历史放入素材正常结束进度且不重新生成', async ({ page }) => {
+test('生成历史重复放入避让已有内容，每批独立撤销且不重新生成', async ({ page }) => {
   await newProject(page)
   const id = await page.evaluate(() =>
     window.__plein.addNode({
@@ -319,19 +319,57 @@ test('生成历史放入素材正常结束进度且不重新生成', async ({ pa
     (await page.request.post(`/api/canvases/${canvas}/nodes/${id}/run`, { data: {} })).status(),
   ).toBe(202)
   await waitNode(page, id)
+  const blocker = await page.evaluate(() => {
+    const e = window.__plein.engine as typeof window.__plein.engine & {
+      camera: { viewRect: { x: number; y: number; w: number; h: number } }
+    }
+    const v = e.camera.viewRect
+    return window.__plein.addNode({
+      type: 'plein/text',
+      name: '历史放置前的卡片',
+      params: { text: '不能被历史素材覆盖或撤销' },
+      x: v.x + v.w / 2 - 100,
+      y: v.y + v.h / 2 - 100,
+    })
+  })
   let submitted = 0
   page.on('request', (request) => {
     if (request.method() === 'POST' && request.url().endsWith('/run')) submitted++
   })
-  await page.getByRole('button', { name: '生成历史', exact: true }).click()
-  const history = page.getByRole('dialog', { name: '生成历史', exact: true })
-  await history.getByRole('checkbox').first().check()
-  await history.getByRole('button', { name: '放到画布上', exact: true }).click()
-  await expect(history).toBeHidden()
-  await expect
-    .poll(async () => (await elements(page)).filter((el) => el.kind === 'image').length)
-    .toBe(1)
+  const imported: string[] = []
+  for (let n = 0; n < 2; n++) {
+    await page.getByRole('button', { name: '生成历史', exact: true }).click()
+    const history = page.getByRole('dialog', { name: '生成历史', exact: true })
+    await history.getByRole('checkbox').first().check()
+    await history.getByRole('button', { name: '放到画布上', exact: true }).click()
+    await expect(history).toBeHidden()
+    await expect
+      .poll(async () => (await elements(page)).filter((el) => el.kind === 'image').length)
+      .toBe(n + 1)
+    imported.push(
+      (await elements(page)).find((el) => el.kind === 'image' && !imported.includes(el.id))!.id,
+    )
+    expect(
+      await page.evaluate(() => {
+        const e = window.__plein.engine
+        const rects = [...e.doc.elements()].map((el) => e.doc.worldRect(el.id))
+        return rects.some((a, i) =>
+          rects
+            .slice(i + 1)
+            .some((b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y),
+        )
+      }),
+    ).toBe(false)
+  }
   await expect(page.getByRole('status')).toContainText('已放到画布上：1 个素材')
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  expect((await elements(page)).map((el) => el.id).sort()).toEqual(
+    [id, blocker, imported[0]!].sort(),
+  )
+  await page.getByRole('button', { name: '重做', exact: true }).click()
+  expect((await elements(page)).map((el) => el.id).sort()).toEqual(
+    [id, blocker, ...imported].sort(),
+  )
   expect(submitted).toBe(0)
   expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.results?.length, id)).toBe(
     1,
