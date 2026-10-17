@@ -134,6 +134,7 @@ export class Engine {
   } | null = null
   /** 动画自身更新相机时不取消自己；其他来源的导航立即接管。 */
   private advancingFlight = false
+  private stopInputMotion = () => {}
   private pan: PanState = { space: false, hand: false }
   private toolValue: Tool = 'select'
   private viewDirty = true
@@ -208,8 +209,10 @@ export class Engine {
     this.app.ticker.remove(this.app.render, this.app)
     this.app.ticker.add(() => this.frame())
 
+    const input = attachInput(host, this.camera, this.pan)
+    this.stopInputMotion = input.cancel
     this.disposers.push(
-      attachInput(host, this.camera, this.pan),
+      input.dispose,
       attachInteractions({
         el: host,
         camera: this.camera,
@@ -590,6 +593,7 @@ export class Engine {
    * 到达后高亮它们。用户一滚轮或按下指针就中断。系统要求减少动态效果时直接跳过去。
    */
   flyTo(ids: Iterable<string>) {
+    this.stopInputMotion()
     this.doc.flush()
     const list = [...ids]
     const box = union(list.map((id) => this.scene.rect(id)).filter((r) => !!r))
