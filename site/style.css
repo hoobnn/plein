@@ -615,6 +615,27 @@ h2 {
   font-weight: 600;
 }
 
+/* 常见问题 */
+
+.faq {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 36px clamp(32px, 5vw, 80px);
+  margin-top: 48px;
+}
+
+.faq h3 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.4;
+}
+
+.faq p {
+  margin: 8px 0 0;
+  color: var(--mute);
+  max-width: 34em;
+}
+
 /* 下载 */
 
 .get {
@@ -754,7 +775,8 @@ footer a + a {
     display: none;
   }
 
-  .reasons {
+  .reasons,
+  .faq {
     grid-template-columns: 1fr;
   }
 

@@ -3,31 +3,51 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Plein — Local-first AI infinite canvas for short drama</title>
+    <title>Plein — Open-source AI infinite canvas where stories unfold</title>
     <meta
       name="description"
-      content="Plein is an open-source, local-first AI tool for making short dramas. Script, characters, storyboard, shots, voiceover and the final cut all live on one infinite canvas, and every step can be reviewed, edited and re-run on its own."
+      content="Start from a single idea, lay out the script, storyboard, shots and voiceover on the canvas, and finish your work together with an AI agent."
     />
     <link rel="canonical" href="https://plein.ikuyu.com/en/" />
     <link rel="alternate" hreflang="zh-CN" href="https://plein.ikuyu.com/" />
     <link rel="alternate" hreflang="en" href="https://plein.ikuyu.com/en/" />
     <link rel="alternate" hreflang="x-default" href="https://plein.ikuyu.com/" />
     <meta name="theme-color" content="#f3f4f1" />
+    <meta
+      name="robots"
+      content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
+    />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Plein" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:locale:alternate" content="zh_CN" />
     <meta property="og:url" content="https://plein.ikuyu.com/en/" />
-    <meta property="og:title" content="Plein — Local-first AI infinite canvas for short drama" />
+    <meta
+      property="og:title"
+      content="Plein — Open-source AI infinite canvas where stories unfold"
+    />
     <meta
       property="og:description"
-      content="Script, storyboard, shots, voiceover and the final cut on one canvas. Open source, runs on your machine."
+      content="Start from a single idea, lay out the script, storyboard, shots and voiceover on the canvas, and finish your work together with an AI agent."
     />
     <meta property="og:image" content="https://plein.ikuyu.com/og.png" />
     <meta property="og:image:width" content="1280" />
     <meta property="og:image:height" content="640" />
+    <meta
+      property="og:image:alt"
+      content="The Plein canvas: script, character, shots and voiceover wired into a vertical short drama"
+    />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Plein — Open-source AI infinite canvas where stories unfold"
+    />
+    <meta
+      name="twitter:description"
+      content="Start from a single idea, lay out the script, storyboard, shots and voiceover on the canvas, and finish your work together with an AI agent."
+    />
+    <meta name="twitter:image" content="https://plein.ikuyu.com/og.png" />
 
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" href="/icon.png" />
@@ -37,20 +57,140 @@
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "Plein",
-        "alternateName": "Plein AI short drama canvas",
-        "description": "A local-first AI infinite canvas for short drama: script, storyboard, shots, voiceover and the final cut on one canvas.",
-        "url": "https://plein.ikuyu.com/en/",
-        "image": "https://plein.ikuyu.com/og.png",
-        "applicationCategory": "MultimediaApplication",
-        "operatingSystem": "macOS 12+ (Apple silicon), Docker",
-        "downloadUrl": "https://github.com/hoobnn/plein/releases/latest",
-        "license": "https://www.gnu.org/licenses/agpl-3.0.html",
-        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-        "author": { "@type": "Person", "name": "hoobnn", "url": "https://github.com/hoobnn" },
-        "sameAs": ["https://github.com/hoobnn/plein"],
-        "inLanguage": "en"
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://plein.ikuyu.com/#website",
+            "url": "https://plein.ikuyu.com/",
+            "name": "Plein",
+            "inLanguage": ["zh-CN", "en"],
+            "publisher": { "@id": "https://plein.ikuyu.com/#author" }
+          },
+          {
+            "@type": "Person",
+            "@id": "https://plein.ikuyu.com/#author",
+            "name": "hoobnn",
+            "url": "https://github.com/hoobnn",
+            "sameAs": ["https://github.com/hoobnn", "https://www.ikuyu.com/"]
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://plein.ikuyu.com/en/#app",
+            "name": "Plein",
+            "alternateName": ["Plein AI short drama canvas", "Plein AI short drama maker"],
+            "description": "Plein is an open-source AI infinite canvas for making short dramas. Idea, script, characters, storyboard, shots, video, voiceover and the final cut are wired nodes on one infinite canvas, and every step can be reviewed, edited and re-run on its own.",
+            "url": "https://plein.ikuyu.com/en/",
+            "image": "https://plein.ikuyu.com/og.png",
+            "screenshot": "https://plein.ikuyu.com/og.png",
+            "applicationCategory": "MultimediaApplication",
+            "applicationSubCategory": "AI short drama and video creation",
+            "operatingSystem": "macOS 12+ (Apple silicon), Docker",
+            "softwareRequirements": "An Apple silicon Mac on macOS 12 or later, or any computer or server that runs Docker; bring your own model platform API keys",
+            "downloadUrl": "https://github.com/hoobnn/plein/releases/latest",
+            "installUrl": "https://github.com/hoobnn/plein/releases/latest",
+            "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+            "isAccessibleForFree": true,
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "featureList": [
+              "Infinite canvas: script, character cards, storyboard, shot images, video, voiceover and sequence are wired nodes",
+              "Short drama template that builds the skeleton without calling models, so you review the storyboard and shot images before generating",
+              "Impact analysis and partial rework: after editing the script or a character, redo only the affected shots; unchanged nodes hit the cache",
+              "Text-to-video, first-frame, first-and-last-frame and multimodal reference video generation, plus continuing from a frame",
+              "Line-by-line voiceover with a voice bound to each character, plus music and sound effects",
+              "Sequence editor for shots, dialogue and subtitles, exporting vertical MP4",
+              "Built-in agent, local Claude Code / Codex, and MCP",
+              "Volcengine Ark, Doubao Speech, Alibaba Cloud Model Studio and MiniMax, extensible with plugins",
+              "Runs locally: SQLite database and asset folder on your machine, API keys never reach the browser"
+            ],
+            "keywords": "AI short drama, AI drama maker, AI video generation, infinite canvas, AI short drama infinite canvas, storyboard, AI voiceover, open source, self-hosted, Seedance, Wan, MiniMax",
+            "author": { "@id": "https://plein.ikuyu.com/#author" },
+            "sameAs": ["https://github.com/hoobnn/plein"],
+            "inLanguage": "en"
+          },
+          {
+            "@type": "SoftwareSourceCode",
+            "name": "Plein",
+            "codeRepository": "https://github.com/hoobnn/plein",
+            "programmingLanguage": "TypeScript",
+            "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+            "targetProduct": { "@id": "https://plein.ikuyu.com/en/#app" }
+          },
+          {
+            "@type": "VideoObject",
+            "@id": "https://plein.ikuyu.com/en/#sample",
+            "name": "Not a Suicide: a vertical AI short drama made with Plein",
+            "description": "A 28-second vertical short drama made on the Plein canvas in seven steps — idea, script, character and prop cards, storyboard, shots, voiceover and final cut — generated with Alibaba Cloud Model Studio and Doubao Speech, with no post-production. Dialogue is in Chinese.",
+            "thumbnailUrl": "https://plein.ikuyu.com/media/final.jpg",
+            "contentUrl": "https://plein.ikuyu.com/media/final.mp4",
+            "uploadDate": "2026-10-14",
+            "duration": "PT28S",
+            "inLanguage": "zh-CN",
+            "isPartOf": { "@id": "https://plein.ikuyu.com/#website" }
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://plein.ikuyu.com/en/#faq",
+            "inLanguage": "en",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "What is Plein?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Plein is an open-source AI tool for making short dramas, built around an infinite canvas: idea, script, characters, storyboard, shot images, video, voiceover and the final cut are wired nodes on the canvas, generated step by step by the models you connect, and every step can be reviewed, edited and re-run on its own."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Is Plein free?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Plein itself is free and open source under AGPL-3.0. Images, video and voiceover are generated with your own model platform accounts, which bill you by usage. Unchanged nodes reuse the cache, so you are never charged twice for the same result."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Which AI models does Plein support?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Four platforms are built in: Volcengine Ark (Doubao Seed chat, Seedream images, Seedance video), Doubao Speech (text to speech, Seed Audio music and sound effects), Alibaba Cloud Model Studio (Qwen, Qwen Image, Wan image and video, Qwen TTS) and MiniMax (M-series chat, image-01, H3 video, speech and music). You choose the model for each capability, and new platforms can be added with plugins."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "What systems does Plein run on?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Apple silicon Macs on macOS 12 or later can install the desktop app, which is signed and notarized by Apple, ships with ffmpeg and updates itself. On other systems, self-host it with Docker on your computer or server and open localhost:8787 in a browser."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Where are my scripts and assets stored?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "On your own computer: one SQLite database and one asset folder, which you can back up or copy to another machine. Plein has no cloud account, and model platform API keys stay in the local server and never reach the browser."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How is Plein different from one-click video generation?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "One-click generation hides the steps in between, so if you don't like the result you start over. Plein keeps every step's output on the canvas: review the storyboard and shot images before paying for video and voiceover, and when you change the script, a line or a character, it lists the affected shots and redoes only the ones you tick."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can an AI agent operate the canvas for me?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. The built-in agent reads the canvas, creates nodes and batch-generates the storyboard. You can also hand the work to Claude Code or Codex signed in on your machine, or let Cursor and Claude Desktop drive the canvas over MCP. Change plans proposed by an agent run only after you approve them."
+                }
+              }
+            ]
+          }
+        ]
       }
     </script>
   </head>
@@ -121,6 +261,7 @@
         <a class="brand" href="/en/"><img src="/icon.png" alt="" width="36" height="36" />Plein</a>
         <nav>
           <a class="hide-sm" href="#sample">Sample</a>
+          <a class="hide-sm" href="#faq">FAQ</a>
           <a class="hide-sm" href="#download">Download</a>
           <a href="https://github.com/hoobnn/plein">GitHub</a>
           <a href="/" hreflang="zh-CN" lang="zh-CN">简体中文</a>
@@ -132,7 +273,7 @@
           <div>
             <h1><span>Lay out a whole</span><span>short drama on</span><span>one canvas</span></h1>
             <p class="lead">
-              Plein is a local-first AI infinite canvas for short drama. Script, characters,
+              Plein is an open-source AI infinite canvas for short drama. Script, characters,
               storyboard, shots, voiceover and the final cut are wired-up nodes on one canvas. Every
               step stays visible and editable, and if one shot is off you redo just that shot.
             </p>
@@ -448,6 +589,76 @@
           <strong>Alibaba Cloud Model Studio</strong> and <strong>MiniMax</strong>. Node parameters
           adapt to the model you pick.
         </p>
+      </div>
+    </section>
+
+    <section id="faq">
+      <div class="wrap">
+        <h2>FAQ</h2>
+        <div class="faq">
+          <div>
+            <h3>What is Plein?</h3>
+            <p>
+              Plein is an open-source AI tool for making short dramas, built around an infinite
+              canvas: idea, script, characters, storyboard, shot images, video, voiceover and the
+              final cut are wired nodes on the canvas, generated step by step by the models you
+              connect, and every step can be reviewed, edited and re-run on its own.
+            </p>
+          </div>
+          <div>
+            <h3>Is Plein free?</h3>
+            <p>
+              Plein itself is free and open source under AGPL-3.0. Images, video and voiceover are
+              generated with your own model platform accounts, which bill you by usage. Unchanged
+              nodes reuse the cache, so you are never charged twice for the same result.
+            </p>
+          </div>
+          <div>
+            <h3>Which AI models does Plein support?</h3>
+            <p>
+              Four platforms are built in: Volcengine Ark (Doubao Seed chat, Seedream images,
+              Seedance video), Doubao Speech (text to speech, Seed Audio music and sound effects),
+              Alibaba Cloud Model Studio (Qwen, Qwen Image, Wan image and video, Qwen TTS) and
+              MiniMax (M-series chat, image-01, H3 video, speech and music). You choose the model
+              for each capability, and new platforms can be added with plugins.
+            </p>
+          </div>
+          <div>
+            <h3>What systems does Plein run on?</h3>
+            <p>
+              Apple silicon Macs on macOS 12 or later can install the desktop app, which is signed
+              and notarized by Apple, ships with ffmpeg and updates itself. On other systems,
+              self-host it with Docker on your computer or server and open localhost:8787 in a
+              browser.
+            </p>
+          </div>
+          <div>
+            <h3>Where are my scripts and assets stored?</h3>
+            <p>
+              On your own computer: one SQLite database and one asset folder, which you can back up
+              or copy to another machine. Plein has no cloud account, and model platform API keys
+              stay in the local server and never reach the browser.
+            </p>
+          </div>
+          <div>
+            <h3>How is Plein different from one-click video generation?</h3>
+            <p>
+              One-click generation hides the steps in between, so if you don't like the result you
+              start over. Plein keeps every step's output on the canvas: review the storyboard and
+              shot images before paying for video and voiceover, and when you change the script, a
+              line or a character, it lists the affected shots and redoes only the ones you tick.
+            </p>
+          </div>
+          <div>
+            <h3>Can an AI agent operate the canvas for me?</h3>
+            <p>
+              Yes. The built-in agent reads the canvas, creates nodes and batch-generates the
+              storyboard. You can also hand the work to Claude Code or Codex signed in on your
+              machine, or let Cursor and Claude Desktop drive the canvas over MCP. Change plans
+              proposed by an agent run only after you approve them.
+            </p>
+          </div>
+        </div>
       </div>
     </section>
 

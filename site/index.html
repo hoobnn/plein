@@ -3,31 +3,45 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Plein — 本地优先的 AI 无限画布，为短剧创作而生</title>
+    <title>Plein — 开源 AI 无限画布，让故事在这里展开</title>
     <meta
       name="description"
-      content="Plein 是开源、本地运行的 AI 短剧创作工具：剧本、角色、分镜、镜头、配音到成片都在一张无限画布上完成，每一步可看可改、可单独返工。支持火山方舟、豆包语音、阿里云百炼、MiniMax。"
+      content="从一句创意开始，剧本、分镜、镜头与配音在画布上铺开，和 AI Agent 一起完成你的作品。"
     />
     <link rel="canonical" href="https://plein.ikuyu.com/" />
     <link rel="alternate" hreflang="zh-CN" href="https://plein.ikuyu.com/" />
     <link rel="alternate" hreflang="en" href="https://plein.ikuyu.com/en/" />
     <link rel="alternate" hreflang="x-default" href="https://plein.ikuyu.com/" />
     <meta name="theme-color" content="#f3f4f1" />
+    <meta
+      name="robots"
+      content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
+    />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Plein" />
     <meta property="og:locale" content="zh_CN" />
     <meta property="og:locale:alternate" content="en_US" />
     <meta property="og:url" content="https://plein.ikuyu.com/" />
-    <meta property="og:title" content="Plein — 本地优先的 AI 无限画布，为短剧创作而生" />
+    <meta property="og:title" content="Plein — 开源 AI 无限画布，让故事在这里展开" />
     <meta
       property="og:description"
-      content="剧本、角色、分镜、镜头、配音到成片，都在一张画布上完成。开源，本地运行。"
+      content="从一句创意开始，剧本、分镜、镜头与配音在画布上铺开，和 AI Agent 一起完成你的作品。"
     />
     <meta property="og:image" content="https://plein.ikuyu.com/og.png" />
     <meta property="og:image:width" content="1280" />
     <meta property="og:image:height" content="640" />
+    <meta
+      property="og:image:alt"
+      content="Plein 画布：剧本、角色、镜头和配音连线汇成一部竖屏短剧"
+    />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Plein — 开源 AI 无限画布，让故事在这里展开" />
+    <meta
+      name="twitter:description"
+      content="从一句创意开始，剧本、分镜、镜头与配音在画布上铺开，和 AI Agent 一起完成你的作品。"
+    />
+    <meta name="twitter:image" content="https://plein.ikuyu.com/og.png" />
 
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" href="/icon.png" />
@@ -37,20 +51,140 @@
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "Plein",
-        "alternateName": "Plein AI 短剧画布",
-        "description": "本地优先的 AI 无限画布，为短剧创作而生：剧本、分镜、镜头、配音到成片都在一张画布上完成。",
-        "url": "https://plein.ikuyu.com/",
-        "image": "https://plein.ikuyu.com/og.png",
-        "applicationCategory": "MultimediaApplication",
-        "operatingSystem": "macOS 12+ (Apple silicon), Docker",
-        "downloadUrl": "https://github.com/hoobnn/plein/releases/latest",
-        "license": "https://www.gnu.org/licenses/agpl-3.0.html",
-        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CNY" },
-        "author": { "@type": "Person", "name": "hoobnn", "url": "https://github.com/hoobnn" },
-        "sameAs": ["https://github.com/hoobnn/plein"],
-        "inLanguage": "zh-CN"
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://plein.ikuyu.com/#website",
+            "url": "https://plein.ikuyu.com/",
+            "name": "Plein",
+            "inLanguage": ["zh-CN", "en"],
+            "publisher": { "@id": "https://plein.ikuyu.com/#author" }
+          },
+          {
+            "@type": "Person",
+            "@id": "https://plein.ikuyu.com/#author",
+            "name": "hoobnn",
+            "url": "https://github.com/hoobnn",
+            "sameAs": ["https://github.com/hoobnn", "https://www.ikuyu.com/"]
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://plein.ikuyu.com/#app",
+            "name": "Plein",
+            "alternateName": ["Plein AI 短剧画布", "Plein AI 短剧创作工具"],
+            "description": "Plein 是开源的 AI 短剧无限画布：创意、剧本、角色、分镜、镜头、视频、配音到成片都是一张无限画布上连好线的节点，每一步可看可改、可单独返工。",
+            "url": "https://plein.ikuyu.com/",
+            "image": "https://plein.ikuyu.com/og.png",
+            "screenshot": "https://plein.ikuyu.com/og.png",
+            "applicationCategory": "MultimediaApplication",
+            "applicationSubCategory": "AI 短剧与视频创作",
+            "operatingSystem": "macOS 12+ (Apple silicon), Docker",
+            "softwareRequirements": "Apple 芯片的 Mac（macOS 12 及以上），或可运行 Docker 的电脑 / 服务器；需要自备模型平台密钥",
+            "downloadUrl": "https://github.com/hoobnn/plein/releases/latest",
+            "installUrl": "https://github.com/hoobnn/plein/releases/latest",
+            "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+            "isAccessibleForFree": true,
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CNY" },
+            "featureList": [
+              "无限画布：剧本、角色卡、分镜表、镜头图、视频、配音、序列都是连线节点",
+              "短剧模板：只搭骨架不自动调用模型，先审分镜和镜头图再分批生成",
+              "影响分析与局部返工：改剧本或角色后只重做受影响的镜头，未改动节点复用缓存",
+              "文生视频、首帧、首尾帧、多模态参考视频生成，取帧续镜",
+              "按角色绑定音色逐句配音，配乐与音效",
+              "序列编辑器排镜头、对白和字幕，导出竖屏 MP4",
+              "内置智能体小满，支持本机 Claude Code / Codex 与 MCP",
+              "接入火山方舟、豆包语音、阿里云百炼、MiniMax，可用插件扩展",
+              "本地运行：SQLite 数据库与素材目录在本机，密钥不进浏览器"
+            ],
+            "keywords": "AI 短剧, AI 短剧制作, AI 视频生成, 无限画布, AI 短剧无限画布, 分镜, AI 配音, 开源, 本地运行, Seedance, 万相, MiniMax",
+            "author": { "@id": "https://plein.ikuyu.com/#author" },
+            "sameAs": ["https://github.com/hoobnn/plein"],
+            "inLanguage": "zh-CN"
+          },
+          {
+            "@type": "SoftwareSourceCode",
+            "name": "Plein",
+            "codeRepository": "https://github.com/hoobnn/plein",
+            "programmingLanguage": "TypeScript",
+            "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+            "targetProduct": { "@id": "https://plein.ikuyu.com/#app" }
+          },
+          {
+            "@type": "VideoObject",
+            "@id": "https://plein.ikuyu.com/#sample",
+            "name": "《不是自杀》：用 Plein 制作的 AI 竖屏短剧样片",
+            "description": "从一句创意开始，在 Plein 画布上经过剧本、设定卡、分镜、镜头、配音、成片七步做出的 28 秒竖屏短剧，使用阿里云百炼和豆包语音生成，画面和声音未经后期修饰。",
+            "thumbnailUrl": "https://plein.ikuyu.com/media/final.jpg",
+            "contentUrl": "https://plein.ikuyu.com/media/final.mp4",
+            "uploadDate": "2026-10-14",
+            "duration": "PT28S",
+            "inLanguage": "zh-CN",
+            "isPartOf": { "@id": "https://plein.ikuyu.com/#website" }
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://plein.ikuyu.com/#faq",
+            "inLanguage": "zh-CN",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Plein 是什么？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Plein 是一款开源的 AI 短剧创作工具，核心是一张无限画布：创意、剧本、角色、分镜、镜头图、视频、配音和成片都是画布上连好线的节点，由你接入的大模型逐步生成，每一步都能查看、修改和单独重做。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Plein 收费吗？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Plein 本身免费，以 AGPL-3.0 开源。生成图片、视频和配音时使用你自己在模型平台开通的账号，费用由平台按用量收取；没有改动的节点直接复用缓存，不会重复计费。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Plein 支持哪些 AI 模型？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "已接入四家平台：火山方舟（Doubao Seed 对话、Seedream 图片、Seedance 视频）、豆包语音（语音合成、Seed Audio 音乐音效）、阿里云百炼（千问、Qwen Image、万相图片与视频、Qwen TTS）和 MiniMax（M 系列对话、image-01、H3 视频、语音与音乐）。每种能力用哪个模型由你指定，新平台可以通过插件接入。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Plein 能在什么系统上使用？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "macOS 12 及以上的 Apple 芯片 Mac 可以直接安装桌面版，安装包已签名并经 Apple 公证，自带 ffmpeg，会自动更新。其他系统可以用 Docker 在本机或服务器上自部署，浏览器打开 localhost:8787 使用。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "我的剧本和素材存在哪里？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "都在你自己的电脑上：一个 SQLite 数据库和一个素材目录，可以直接备份或拷贝到另一台机器。Plein 没有云端账号，模型平台密钥只保存在本机服务端，不会进入浏览器。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Plein 和一键生成视频有什么不同？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "一键生成把中间过程藏起来，不满意只能整段重来。Plein 把每一步的产物留在画布上：先审分镜和镜头图，再付费生成视频和配音；改了剧本、台词或角色设定，会列出受影响的镜头，只重做你勾选的那几个。"
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "可以让 AI 智能体代为操作画布吗？",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "可以。内置智能体「小满」能读取画布、创建节点、批量生成分镜；也可以交给本机已登录的 Claude Code、Codex，或通过 MCP 让 Cursor、Claude Desktop 直接操作画布。智能体提出的修改方案需要你批准后才会执行。"
+                }
+              }
+            ]
+          }
+        ]
       }
     </script>
   </head>
@@ -121,6 +255,7 @@
         <a class="brand" href="/"><img src="/icon.png" alt="" width="36" height="36" />Plein</a>
         <nav>
           <a class="hide-sm" href="#sample">样片</a>
+          <a class="hide-sm" href="#faq">常见问题</a>
           <a class="hide-sm" href="#download">下载</a>
           <a href="https://github.com/hoobnn/plein">GitHub</a>
           <a href="/en/" hreflang="en" lang="en">English</a>
@@ -132,7 +267,7 @@
           <div>
             <h1><span>把一部短剧</span><span>摊在一张画布上</span></h1>
             <p class="lead">
-              Plein 是本地优先的 AI
+              Plein 是开源的 AI
               无限画布，为短剧创作而生。剧本、角色、分镜、镜头、配音和成片都是画布上连好线的节点，每一步都看得见、改得动，哪个镜头不满意就只重做那一个。
             </p>
             <div class="actions">
@@ -408,6 +543,68 @@
           <strong>火山方舟</strong
           >、<strong>豆包语音</strong>、<strong>阿里云百炼</strong>、<strong>MiniMax</strong>，节点参数按所选模型自动给出。
         </p>
+      </div>
+    </section>
+
+    <section id="faq">
+      <div class="wrap">
+        <h2>常见问题</h2>
+        <div class="faq">
+          <div>
+            <h3>Plein 是什么？</h3>
+            <p>
+              Plein 是一款开源的 AI
+              短剧创作工具，核心是一张无限画布：创意、剧本、角色、分镜、镜头图、视频、配音和成片都是画布上连好线的节点，由你接入的大模型逐步生成，每一步都能查看、修改和单独重做。
+            </p>
+          </div>
+          <div>
+            <h3>Plein 收费吗？</h3>
+            <p>
+              Plein 本身免费，以 AGPL-3.0
+              开源。生成图片、视频和配音时使用你自己在模型平台开通的账号，费用由平台按用量收取；没有改动的节点直接复用缓存，不会重复计费。
+            </p>
+          </div>
+          <div>
+            <h3>Plein 支持哪些 AI 模型？</h3>
+            <p>
+              已接入四家平台：火山方舟（Doubao Seed 对话、Seedream 图片、Seedance
+              视频）、豆包语音（语音合成、Seed Audio 音乐音效）、阿里云百炼（千问、Qwen
+              Image、万相图片与视频、Qwen TTS）和 MiniMax（M 系列对话、image-01、H3
+              视频、语音与音乐）。每种能力用哪个模型由你指定，新平台可以通过插件接入。
+            </p>
+          </div>
+          <div>
+            <h3>Plein 能在什么系统上使用？</h3>
+            <p>
+              macOS 12 及以上的 Apple 芯片 Mac 可以直接安装桌面版，安装包已签名并经 Apple 公证，自带
+              ffmpeg，会自动更新。其他系统可以用 Docker 在本机或服务器上自部署，浏览器打开
+              localhost:8787 使用。
+            </p>
+          </div>
+          <div>
+            <h3>我的剧本和素材存在哪里？</h3>
+            <p>
+              都在你自己的电脑上：一个 SQLite
+              数据库和一个素材目录，可以直接备份或拷贝到另一台机器。Plein
+              没有云端账号，模型平台密钥只保存在本机服务端，不会进入浏览器。
+            </p>
+          </div>
+          <div>
+            <h3>Plein 和一键生成视频有什么不同？</h3>
+            <p>
+              一键生成把中间过程藏起来，不满意只能整段重来。Plein
+              把每一步的产物留在画布上：先审分镜和镜头图，再付费生成视频和配音；改了剧本、台词或角色设定，会列出受影响的镜头，只重做你勾选的那几个。
+            </p>
+          </div>
+          <div>
+            <h3>可以让 AI 智能体代为操作画布吗？</h3>
+            <p>
+              可以。内置智能体「小满」能读取画布、创建节点、批量生成分镜；也可以交给本机已登录的
+              Claude Code、Codex，或通过 MCP 让 Cursor、Claude Desktop
+              直接操作画布。智能体提出的修改方案需要你批准后才会执行。
+            </p>
+          </div>
+        </div>
       </div>
     </section>
 

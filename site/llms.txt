@@ -1,0 +1,32 @@
+# Plein
+
+> Plein is an open-source (AGPL-3.0) AI infinite canvas for making short dramas. Idea, script, characters, storyboard, shot images, video, voiceover and the final cut are wired nodes on one canvas; every step can be reviewed, edited and re-run on its own. Plein 是开源的 AI 无限画布，为短剧创作而生。
+
+Key facts:
+
+- Website: https://plein.ikuyu.com/ (简体中文), https://plein.ikuyu.com/en/ (English)
+- Source code: https://github.com/hoobnn/plein
+- Download: https://github.com/hoobnn/plein/releases/latest (macOS 12+, Apple silicon; signed and notarized, ships with ffmpeg, auto-updates)
+- Self-host: `git clone https://github.com/hoobnn/plein.git && cd plein && docker compose up -d`, then open http://localhost:8787
+- Price: Plein is free. Generation uses your own model platform accounts and is billed by those platforms; unchanged nodes reuse the cache.
+- Model platforms: Volcengine Ark 火山方舟 (Doubao Seed, Seedream, Seedance), Doubao Speech 豆包语音 (TTS, Seed Audio), Alibaba Cloud Model Studio 阿里云百炼 (Qwen, Qwen Image, Wan 万相, Qwen TTS), MiniMax (M-series, image-01, H3 video, speech, music). More platforms via plugins.
+- Data: one SQLite database and one asset folder on your machine; no cloud account; API keys stay in the local server and never reach the browser.
+- Workflow: short drama template → script → character / scene / prop cards → storyboard → shot images → video → line-by-line voiceover → sequence editor → vertical MP4. Templates build the skeleton without calling models, so you review before paying; after an edit, impact analysis lists affected shots and only the ticked ones are redone.
+- Agents: built-in agent 小满 (Xiaoman), local Claude Code / Codex, and an MCP server for Cursor or Claude Desktop. Agent change plans run only after approval.
+- Author: hoobnn (https://github.com/hoobnn)
+
+## Docs
+
+- [README (简体中文)](https://raw.githubusercontent.com/hoobnn/plein/main/README.md): features, quick start, model platforms, environment variables, data location, roadmap
+- [README (English)](https://raw.githubusercontent.com/hoobnn/plein/main/README.en.md): the same in English
+- [模型平台接入 Model platforms](https://raw.githubusercontent.com/hoobnn/plein/main/docs/guide/providers.md): capabilities, API key setup, parameter mapping and known limits of each platform
+- [智能体与 MCP Agents and MCP](https://raw.githubusercontent.com/hoobnn/plein/main/docs/guide/agent.md): the built-in agent, local CLI agents and the MCP server
+- [创作、审片与复用 Creation and review](https://raw.githubusercontent.com/hoobnn/plein/main/docs/guide/creation-review.md): reference order, prompt tips, comparing candidates, shot-by-shot review
+- [从分镜样片到交付 From animatic to delivery](https://raw.githubusercontent.com/hoobnn/plein/main/docs/guide/creation-workflow.md): pacing drafts, acceptance, batch lists, continuity and delivery
+- [角色档案 Characters](https://raw.githubusercontent.com/hoobnn/plein/main/docs/guide/characters.md): character profiles and look references
+- [本机数据维护 Local data](https://raw.githubusercontent.com/hoobnn/plein/main/docs/guide/data-maintenance.md): backups, disk usage, restore and asset cleanup
+
+## Optional
+
+- [插件 Plugins](https://raw.githubusercontent.com/hoobnn/plein/main/docs/dev/plugins.md): adding model platforms, nodes and templates
+- [参与开发 Contributing](https://raw.githubusercontent.com/hoobnn/plein/main/CONTRIBUTING.md): development setup and commit conventions

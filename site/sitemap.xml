@@ -1,15 +1,42 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+<urlset
+  xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+  xmlns:xhtml="http://www.w3.org/1999/xhtml"
+  xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
+  xmlns:video="http://www.google.com/schemas/sitemap-video/1.1"
+>
   <url>
     <loc>https://plein.ikuyu.com/</loc>
-    <lastmod>2026-10-14</lastmod>
+    <lastmod>2026-10-17</lastmod>
     <xhtml:link rel="alternate" hreflang="zh-CN" href="https://plein.ikuyu.com/" />
     <xhtml:link rel="alternate" hreflang="en" href="https://plein.ikuyu.com/en/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://plein.ikuyu.com/" />
+    <image:image><image:loc>https://plein.ikuyu.com/og.png</image:loc></image:image>
+    <image:image><image:loc>https://plein.ikuyu.com/media/character.jpg</image:loc></image:image>
+    <image:image><image:loc>https://plein.ikuyu.com/media/shot-1.jpg</image:loc></image:image>
+    <video:video>
+      <video:thumbnail_loc>https://plein.ikuyu.com/media/final.jpg</video:thumbnail_loc>
+      <video:title>《不是自杀》：用 Plein 制作的 AI 竖屏短剧样片</video:title>
+      <video:description>从一句创意开始，在 Plein 画布上经过剧本、设定卡、分镜、镜头、配音、成片七步做出的 28 秒竖屏短剧。</video:description>
+      <video:content_loc>https://plein.ikuyu.com/media/final.mp4</video:content_loc>
+      <video:duration>28</video:duration>
+      <video:publication_date>2026-10-14</video:publication_date>
+    </video:video>
   </url>
   <url>
     <loc>https://plein.ikuyu.com/en/</loc>
-    <lastmod>2026-10-14</lastmod>
+    <lastmod>2026-10-17</lastmod>
     <xhtml:link rel="alternate" hreflang="zh-CN" href="https://plein.ikuyu.com/" />
     <xhtml:link rel="alternate" hreflang="en" href="https://plein.ikuyu.com/en/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://plein.ikuyu.com/" />
+    <image:image><image:loc>https://plein.ikuyu.com/og.png</image:loc></image:image>
+    <video:video>
+      <video:thumbnail_loc>https://plein.ikuyu.com/media/final.jpg</video:thumbnail_loc>
+      <video:title>Not a Suicide: a vertical AI short drama made with Plein</video:title>
+      <video:description>A 28-second vertical short drama made on the Plein canvas in seven steps, from a one-line idea to the final cut.</video:description>
+      <video:content_loc>https://plein.ikuyu.com/media/final.mp4</video:content_loc>
+      <video:duration>28</video:duration>
+      <video:publication_date>2026-10-14</video:publication_date>
+    </video:video>
   </url>
 </urlset>
