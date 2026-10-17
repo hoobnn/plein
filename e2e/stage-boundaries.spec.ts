@@ -85,6 +85,41 @@ async function handlePoint(page: Page, png: Buffer, color: 'red' | 'green') {
   )
 }
 
+async function delayEncoding(page: Page) {
+  await page.evaluate(() => {
+    const state = { ready: false, finish: (_fail = false) => {} }
+    ;(window as Window & { stageEncoding?: typeof state }).stageEncoding = state
+    const original = HTMLCanvasElement.prototype.toBlob
+    HTMLCanvasElement.prototype.toBlob = function (callback, ...args) {
+      HTMLCanvasElement.prototype.toBlob = original
+      original.call(
+        this,
+        (blob) => {
+          state.finish = (fail) => callback(fail ? null : blob)
+          state.ready = true
+        },
+        ...args,
+      )
+    }
+  })
+  return {
+    wait: () =>
+      expect
+        .poll(() =>
+          page.evaluate(
+            () => (window as Window & { stageEncoding?: { ready: boolean } }).stageEncoding?.ready,
+          ),
+        )
+        .toBe(true),
+    finish: (fail = false) =>
+      page.evaluate((fail) => {
+        const win = window as Window & { stageEncoding?: { finish(fail?: boolean): void } }
+        win.stageEncoding?.finish(fail)
+        delete win.stageEncoding
+      }, fail),
+  }
+}
+
 test('3D 坐标允许负数草稿，清空与取消不移动对象', async ({ page }) => {
   const { stage, dialog } = await openStage(page)
   const x = dialog.getByRole('spinbutton', { name: '左右', exact: true })
@@ -514,4 +549,88 @@ test('3D 人物达到上限后禁用添加，删除后可继续添加', async ({
   expect(figures).toHaveLength(12)
   expect(new Set(figures.map((f) => f.name)).size).toBe(12)
   expect(new Set(figures.map((f) => `${f.x},${f.z}`)).size).toBe(12)
+})
+
+test('3D PNG 编码等待时继续编辑和切视角，画面与手柄不冻结', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  const canvas = dialog.locator('canvas.stage-canvas')
+  const before = await figureBounds(page, await canvas.screenshot())
+  const gate = await delayEncoding(page)
+  await dialog.getByRole('button', { name: '截图', exact: true }).click()
+  await gate.wait()
+  await expect(dialog.getByRole('button', { name: '截图', exact: true })).toBeDisabled()
+  await dialog.getByRole('button', { name: '坐', exact: true }).click()
+  await expect
+    .poll(async () => (await figureBounds(page, await canvas.screenshot()))[2]! - before[2]!)
+    .toBeGreaterThan(0.05)
+  await dialog.getByRole('button', { name: '自由视角', exact: true }).click()
+  await handlePoint(page, await canvas.screenshot(), 'red')
+  const free = await figureBounds(page, await canvas.screenshot())
+  await gate.finish()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(1)
+  const after = await figureBounds(page, await canvas.screenshot())
+  for (let i = 0; i < free.length; i++) expect(Math.abs(free[i]! - after[i]!)).toBeLessThan(0.015)
+  await handlePoint(page, await canvas.screenshot(), 'red')
+  const data = await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params, stage.id)
+  const captured = (data!.snapshots as { scene: unknown }[])[0]!.scene
+  expect(StageScene.parse(captured).figures[0]!.pose).toBe('stand')
+  expect(StageScene.parse(data!.scene).figures[0]!.pose).toBe('sit')
+})
+
+test('3D PNG 编码期间关闭重开，旧截图不影响新构图和采用', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  const { stage, dialog } = await openStage(page)
+  const gate = await delayEncoding(page)
+  await dialog.getByRole('button', { name: '截图', exact: true }).click()
+  await gate.wait()
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  const at = await centerOf(page, stage.id)
+  await page.mouse.dblclick(at.x, at.y)
+  const canvas = dialog.locator('canvas.stage-canvas')
+  await expect(canvas).toBeVisible()
+  await dialog.getByRole('button', { name: '坐', exact: true }).click()
+  await dialog.getByRole('button', { name: '截图', exact: true }).click()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(1)
+  const chosen = await page.evaluate(
+    (id) => window.__plein.engine.doc.mutable(id)?.get('adopted'),
+    stage.id,
+  )
+  const visible = await figureBounds(page, await canvas.screenshot())
+  await gate.finish()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(2)
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.mutable(id)?.get('adopted'), stage.id),
+  ).toBe(chosen)
+  const after = await figureBounds(page, await canvas.screenshot())
+  for (let i = 0; i < visible.length; i++)
+    expect(Math.abs(visible[i]! - after[i]!)).toBeLessThan(0.015)
+  await expect(dialog.getByRole('button', { name: /人物 1\s*坐/ })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
+test('3D PNG 编码失败保留正在编辑的画面并可重试', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  const gate = await delayEncoding(page)
+  const shoot = dialog.getByRole('button', { name: '截图', exact: true })
+  await shoot.click()
+  await gate.wait()
+  await dialog.getByRole('button', { name: '坐', exact: true }).click()
+  const canvas = dialog.locator('canvas.stage-canvas')
+  const visible = await figureBounds(page, await canvas.screenshot())
+  await gate.finish(true)
+  await expect(page.locator('.ui-toast')).toContainText('截图没有成功')
+  await expect(shoot).toBeEnabled()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(0)
+  const after = await figureBounds(page, await canvas.screenshot())
+  for (let i = 0; i < visible.length; i++)
+    expect(Math.abs(visible[i]! - after[i]!)).toBeLessThan(0.015)
+  await shoot.click()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(1)
+  const shot = await page.evaluate(
+    (id) => (window.__plein.engine.doc.get(id)!.params!.snapshots as { scene: unknown }[])[0]!,
+    stage.id,
+  )
+  expect(StageScene.parse(shot.scene).figures[0]!.pose).toBe('sit')
 })

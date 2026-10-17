@@ -237,6 +237,7 @@ export class StageView {
     const aspect = this.shot.aspect
     const w = aspect >= 1 ? STAGE_SNAPSHOT_SIDE : Math.round(STAGE_SNAPSHOT_SIDE * aspect)
     const h = aspect >= 1 ? Math.round(STAGE_SNAPSHOT_SIDE / aspect) : STAGE_SNAPSHOT_SIDE
+    const canvas = document.createElement('canvas')
     const target = new THREE.WebGLRenderTarget(w, h, {
       samples: 4,
       colorSpace: THREE.SRGBColorSpace,
@@ -250,7 +251,6 @@ export class StageView {
       this.renderer.render(this.scene, this.shot)
       const pixels = new Uint8Array(w * h * 4)
       this.renderer.readRenderTargetPixels(target, 0, 0, w, h, pixels)
-      const canvas = document.createElement('canvas')
       canvas.width = w
       canvas.height = h
       const ctx = canvas.getContext('2d')!
@@ -259,15 +259,16 @@ export class StageView {
       for (let y = 0; y < h; y++)
         image.data.set(pixels.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4)
       ctx.putImageData(image, 0, 0)
-      const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/png'))
-      if (!blob) throw new Error('截图失败')
-      return blob
     } finally {
       this.renderer.setRenderTarget(null)
       target.dispose()
       hidden.forEach((o, i) => (o.visible = was[i]!))
       this.setSelected(this.selected)
     }
+    // 像素已复制到独立画布：异步编码不占用取景的渲染目标，也不保留临时隐藏状态。
+    const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/png'))
+    if (!blob) throw new Error('截图失败')
+    return blob
   }
 
   dispose() {
