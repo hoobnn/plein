@@ -62,7 +62,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       dialogue: normalizeDialogue(s.id, s.dialogue),
     }))
   const shots = readShots()
-  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [pickedIds, setPicked] = useState<Set<string>>(new Set())
+  // 镜头可能被本地或协作者删除，显示和批量范围均只计算当前计划中的选择。
+  const picked = new Set(shots.filter((shot) => pickedIds.has(shot.id)).map((shot) => shot.id))
   const [syncScope, setSyncScope] = useState<string[] | null>(null)
   const [batchRequest, setBatchRequest] = useState<StoryboardBatchRequest | null>(null)
   const [mode, setMode] = useState<'edit' | 'review'>('edit')

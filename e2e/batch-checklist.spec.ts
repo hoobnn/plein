@@ -118,3 +118,47 @@ test('未就绪视频列为阻塞，可从清单定位，零生成提交', async
   await expect(page.getByTestId('generator')).toBeVisible()
   expect(submits).toBe(0)
 })
+
+test('删除唯一已选镜头后清除失效选区，清单对应剩余镜头', async ({ page }) => {
+  const f = await fixture(page)
+  const board = await f.open()
+  await board.getByRole('checkbox', { name: '选择镜头 1', exact: true }).check()
+  await board.getByRole('button', { name: '删除镜头 1', exact: true }).click()
+  await page.getByRole('button', { name: '删除镜头', exact: true }).click()
+  await expect(board.getByRole('article')).toHaveCount(1)
+  await expect(board.getByRole('toolbar', { name: '分镜批量操作' })).toContainText('作用于全部镜头')
+  await expect(board.getByRole('checkbox', { name: '全选', exact: true })).not.toBeChecked()
+  await board.getByRole('button', { name: '批量出分镜图', exact: true }).click()
+  const checklist = page.getByRole('dialog', { name: '批量生成清单', exact: true })
+  await expect(checklist.getByLabel('清单汇总')).toContainText('生成 1 项')
+  await expect(checklist.getByRole('table')).toContainText('镜头 2')
+  const confirm = checklist.getByRole('button', { name: '确认并开始生成', exact: true })
+  await expect(confirm).toBeEnabled()
+  await confirm.click()
+  await waitNode(page, f.images[1]!)
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.get(id)?.results ?? [], f.images[0]!),
+  ).toHaveLength(0)
+})
+
+test('协作删除部分已选镜头后，全选和批量范围只计现存镜头', async ({ page }) => {
+  const f = await fixture(page)
+  const board = await f.open()
+  await board.getByRole('checkbox', { name: '全选', exact: true }).check()
+  await page.evaluate((id) => {
+    const params = window.__plein.engine.doc.mutable(id)!.get('params') as {
+      get(key: string): unknown[]
+      set(key: string, value: unknown): void
+    }
+    params.set('shots', params.get('shots').slice(1))
+  }, f.board)
+  await expect(board.getByRole('toolbar', { name: '分镜批量操作' })).toContainText(
+    '选中的 1 个镜头',
+  )
+  await expect(board.getByText('已选择 1 / 1 个镜头', { exact: true })).toBeVisible()
+  await expect(board.getByRole('checkbox', { name: '全选', exact: true })).toBeChecked()
+  await board.getByRole('button', { name: '批量出分镜图', exact: true }).click()
+  const checklist = page.getByRole('dialog', { name: '批量生成清单', exact: true })
+  await expect(checklist.getByLabel('清单汇总')).toContainText('生成 1 项')
+  await expect(checklist.getByRole('table')).toContainText('镜头 2')
+})
