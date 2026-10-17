@@ -214,6 +214,29 @@ test('序列时间线：排序、修剪、播放', async ({ page }) => {
     await editor.screenshot({ path: join(shotDir, 'transition.png') })
   }
 
+  // 语音识别是可选的；开启后能明确选择音频模型，并保存到序列参数。
+  await editor.getByRole('button', { name: '成片', exact: true }).click()
+  const asr = editor.getByRole('switch', { name: '按语音识别对齐字幕', exact: true })
+  const model = editor.getByRole('button', { name: '模型', exact: true })
+  await expect(model).toHaveCount(0)
+  await asr.click()
+  await model.click()
+  const picker = page.getByRole('dialog', { name: '选择模型', exact: true })
+  await expect(picker.getByRole('option')).toHaveCount(1)
+  await picker.getByRole('option', { name: /Mock 音频/ }).click()
+  await expect(model).toContainText('Mock 音频')
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.model, seq.id),
+  ).toBe('plein/mock:audio')
+  const subtitles = editor.getByRole('switch', { name: '开启字幕', exact: true })
+  await subtitles.click()
+  await expect(model).toHaveCount(0)
+  await expect(asr).toBeDisabled()
+  await subtitles.click()
+  await expect(model).toContainText('Mock 音频')
+  await asr.click()
+  await expect(model).toHaveCount(0)
+
   // 导出剪辑工程：下载一个 zip（OTIO / FCPXML / 字幕 / 素材）
   const download = page.waitForEvent('download')
   await editor.getByRole('button', { name: '导出工程' }).click()

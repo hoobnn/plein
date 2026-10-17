@@ -284,7 +284,9 @@ const stage = defineExecutor(stageNode, async () => ({ image: [] }))
 async function transcribe(ctx: ExecutorContext, arranged: ArrangedClip[]) {
   const todo = arranged.filter((c) => c.dialogue && !c.subtitle?.trim())
   if (!todo.length) return []
-  const model = pickModel(ctx as ExecutorContext<{ model: string }>, '语音识别')
+  const model = ctx.params.model
+  if (typeof model !== 'string' || !model)
+    throw new ProviderError('invalid_input', '还没选语音识别模型，请在成片的字幕设置中选择')
   ctx.progress(0, '识别对白…')
   return Promise.all(
     arranged.map(async (c): Promise<TranscriptSegment[] | undefined> => {

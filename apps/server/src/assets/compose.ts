@@ -102,8 +102,9 @@ function composeArgs(
     const d = fmt(len)
     const speed = speeds[i]!
     const retime = speed !== 1 ? `setpts=(PTS-STARTPTS)/${fmt(speed)},` : ''
+    // setpts 会清掉帧率声明；fps 放在它后面，xfade 才能收到恒定帧率与统一的时间基准。
     filters.push(
-      `[${i}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,${retime}fps=${fps},format=yuv420p,trim=duration=${d},setpts=PTS-STARTPTS${fades(i, len, 'v')}[v${i}]`,
+      `[${i}:v]scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,${retime}format=yuv420p,trim=duration=${d},setpts=PTS-STARTPTS,fps=${fps}${fades(i, len, 'v')}[v${i}]`,
     )
     if (infos.clips[i]?.hasAudio && c.volume > 0) {
       // 变速不变调（和画面同步拉伸）
@@ -126,8 +127,10 @@ function composeArgs(
     const vo = last ? '[vcat]' : `[vx${i}]`
     const ao = last ? '[acat]' : `[ax${i}]`
     if (tr && overlapping(tr)) {
+      // 累计画面可能刚经过 concat（时间基准为微秒），也要重新归一才能和下一段 xfade。
+      filters.push(`${v}fps=${fps}[xf${i}]`)
       filters.push(
-        `${v}[v${i}]xfade=transition=${XFADE[tr.type as keyof typeof XFADE]}:duration=${fmt(tr.duration)}:offset=${fmt(total - tr.duration)}${vo}`,
+        `[xf${i}][v${i}]xfade=transition=${XFADE[tr.type as keyof typeof XFADE]}:duration=${fmt(tr.duration)}:offset=${fmt(total - tr.duration)}${vo}`,
       )
       filters.push(`${a}[a${i}]acrossfade=d=${fmt(tr.duration)}${ao}`)
       total += durations[i]! - tr.duration
@@ -253,10 +256,7 @@ export async function composeVideo(
     proc.on('error', reject)
     proc.on('close', (code) => {
       if (code === 0) resolve()
-      else
-        reject(
-          new Error(`ffmpeg 合成失败（${code}）：${stderr.trim().split('\n').slice(-3).join(' ')}`),
-        )
+      else reject(new Error(`ffmpeg 合成失败（${code}）：${stderr.trim()}`))
     })
   })
   return { file: out, duration: total }

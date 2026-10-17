@@ -104,6 +104,7 @@ export const sequenceNode = defineNode({
       title: '按语音识别对齐字幕',
       description: '用已启用平台的语音识别校准每句字幕的时间',
     }),
+    model: z.string().default('').meta({ title: '语音识别模型', widget: 'hidden' }),
   }),
 })
 

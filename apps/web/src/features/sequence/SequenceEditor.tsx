@@ -18,7 +18,7 @@ import { api } from '../../api/client'
 import { downloadAsset } from '../../canvas/grid'
 import { useDocVersion } from '../../canvas/hooks'
 import { desktop } from '../../desktop'
-import { upstreams } from '../../canvas/nodes'
+import { findNode, upstreams } from '../../canvas/nodes'
 import { cancelNode, runNode } from '../runs/run'
 import { useAssetMetas } from '../../stores/assetMeta'
 import { useCanvas } from '../../stores/canvas'
@@ -28,6 +28,7 @@ import { Modal, ModalHeader } from '../../ui/Modal'
 import { Segmented } from '../../ui/Segmented'
 import { Select } from '../../ui/Select'
 import { Switch } from '../../ui/Switch'
+import { ModelPicker } from '../generator/ModelPicker'
 import { SequencePreview } from './SequencePreview'
 import { Presence } from '../../ui/Presence'
 import { EmptyState } from '../../ui/EmptyState'
@@ -535,6 +536,8 @@ function FilmSettings({
   params: SequenceParams
   set(key: keyof SequenceParams, value: unknown): void
 }) {
+  const catalog = useCatalog((s) => s.catalog)
+  const node = findNode(catalog, sequenceNode.type)
   return (
     <>
       <Section title="画面">
@@ -589,6 +592,16 @@ function FilmSettings({
           disabled={!params.subtitles}
           onChange={(v) => set('asrTiming', v)}
         />
+        {params.subtitles && params.asrTiming && node && (
+          <Field label="语音识别模型">
+            <ModelPicker
+              value={params.model}
+              node={{ ...node, capability: 'audio.transcribe' }}
+              catalog={catalog}
+              onChange={(v) => set('model', v)}
+            />
+          </Field>
+        )}
       </Section>
       <Section title="转场">
         <Field label="默认">

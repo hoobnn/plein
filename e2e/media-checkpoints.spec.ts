@@ -26,7 +26,7 @@ async function image(page: Page, name: string) {
   return { nodeId, canvasId }
 }
 
-test('跨项目素材能预览、放入新画布和存为语义资产，不再次生成', async ({ page }) => {
+test('跨项目素材能预览、放入新画布和存为语义资产，不再次生成', async ({ page }, testInfo) => {
   await newProject(page)
   const source = await image(page, '素材检索专用海鸟')
   const assetId = await page.evaluate(
@@ -44,7 +44,7 @@ test('跨项目素材能预览、放入新画布和存为语义资产，不再�
     .first()
     .click()
   await expect(panel.getByRole('button', { name: '放入当前画布' })).toBeVisible()
-  await page.screenshot({ path: '/private/tmp/plein-media-library-20261017.png' })
+  await page.screenshot({ path: testInfo.outputPath('media-library.png') })
   await panel.getByRole('button', { name: '放大查看素材' }).click()
   const preview = page.getByRole('dialog', { name: '素材预览' })
   await expect(preview.locator('img')).toBeVisible()
@@ -83,7 +83,7 @@ test('跨项目素材能预览、放入新画布和存为语义资产，不再�
     .toBe(assetId)
 })
 
-test('命名检查点预览只读且恢复新画布保留原版本，原画布继续保留修改', async ({ page }) => {
+test('命名检查点预览只读且恢复新画布保留原版本，原画布继续保留修改', async ({ page }, testInfo) => {
   await newProject(page)
   const source = await image(page, '检查点海鸟镜头')
   const before = await elements(page)
@@ -113,7 +113,7 @@ test('命名检查点预览只读且恢复新画布保留原版本，原画布�
   await expect(panel.getByRole('status')).toContainText('正在等待本机编辑同步')
   release()
   await expect(panel.getByTestId('checkpoint-preview').locator('canvas')).toBeVisible()
-  await page.screenshot({ path: '/private/tmp/plein-checkpoints-20261017.png' })
+  await page.screenshot({ path: testInfo.outputPath('checkpoints.png') })
   expect(submitted).toHaveLength(2)
   expect(submitted[0]).toBe(submitted[1])
   await panel.getByTestId('checkpoint-preview').locator('canvas').click()

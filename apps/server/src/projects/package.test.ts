@@ -485,16 +485,17 @@ describe('项目包校验', () => {
   })
 
   it('清单超过大小上限：说明是清单的问题，不说成哈希不符', async () => {
-    const { server, files, manifest } = await pkg()
-    const text = JSON.stringify(manifest)
-    const padded = `${text.slice(0, -1)}${' '.repeat(65 * 1024 * 1024)}}`
-    const res = await upload(
-      server,
-      zipSync({ ...files, 'manifest.json': [strToU8(padded), { level: 1 }] }, { level: 0 }),
-    )
+    const { server } = await bootServer()
+    // 大小校验先于 JSON / 项目内容校验；直接构造真实上限 + 1 字节，省去素材生成与大字符串编码。
+    const padded = new Uint8Array(64 * 1024 * 1024 + 1).fill(0x20)
+    padded[0] = 0x7b
+    padded[padded.length - 1] = 0x7d
+    const res = await upload(server, zipSync({ 'manifest.json': [padded, { level: 1 }] }))
+    expect(res.status).toBe(422)
     expect(res.body).toMatchObject({ error: 'corrupt' })
     expect(res.body.message).toMatch(/manifest\.json 超过 64 MB/)
-  })
+    // 保留真实 64 MiB 解压与哈希路径，为并发 CI 的大载荷测试留出余量。
+  }, 15_000)
 
   it('越出包目录的路径：拒绝导入', async () => {
     const { server, files, manifest } = await pkg()

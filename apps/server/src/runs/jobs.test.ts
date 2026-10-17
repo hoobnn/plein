@@ -9,6 +9,7 @@ import {
   bootServer,
   createCanvas as canvas,
   mockSettings as mock,
+  mockModel,
   request as call,
   until,
   VIDEO_V1_PORTS,
@@ -425,7 +426,9 @@ describe.skipIf(!ffmpeg)('序列导出', () => {
         { resolution: '720p' },
         ['你来了', '我等你很久了'],
       )
+      const providerCall = vi.spyOn(server.plugins, 'call')
       const r = await runFrame(server, id, frame, { video: true })
+      expect(doc.get(seq)?.run?.error).toBeUndefined()
       expect(r.summary).toMatchObject({ succeeded: 5, failed: 0 })
       expect(doc.get(seq)!.results![0]!.value).toMatchObject({ type: 'video', mime: 'video/mp4' })
       const clip = assetOf(v1)
@@ -433,12 +436,24 @@ describe.skipIf(!ffmpeg)('序列导出', () => {
       expect(assetOf(seq).duration).toBeCloseTo(clip.duration! * 2, 0)
       // 配音结果带台词，导出时用作字幕
       expect(doc.get(speech[0]!)!.results![0]!.value).toMatchObject({ caption: '你来了' })
+      const transcriptions = () =>
+        providerCall.mock.calls.filter(([capability]) => capability === 'audio.transcribe')
+      expect(transcriptions()).toHaveLength(0)
 
       // 叠化 + 按语音识别对齐字幕（mock 平台返回带时间戳的分段）
       setParams(doc, seq, { transition: '叠化', transitionDuration: 0.4, asrTiming: true })
+      const missingModel = await runFrame(server, id, frame, { video: true })
+      expect(missingModel.summary).toMatchObject({ succeeded: 0, failed: 1 })
+      expect(doc.get(seq)?.run?.error).toContain('请在成片的字幕设置中选择')
+      expect(transcriptions()).toHaveLength(0)
+
+      const asrModel = mockModel('audio.transcribe')
+      setParams(doc, seq, { model: asrModel })
       const again = await runFrame(server, id, frame, { video: true })
+      expect(doc.get(seq)?.run?.error).toBeUndefined()
       expect(again.summary).toMatchObject({ succeeded: 1, failed: 0 })
       expect(assetOf(seq).duration).toBeCloseTo(clip.duration! * 2 - 0.4, 0)
+      expect(transcriptions().map(([, model]) => model)).toEqual([asrModel, asrModel])
     },
     60_000,
   )

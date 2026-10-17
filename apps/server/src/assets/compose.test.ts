@@ -4,7 +4,7 @@ import type { AssetRef, ComposeSpec } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
 import { tempDir } from '../testing'
 import { composeVideo, envelopeExpr } from './compose'
-import { ffmpegBin, hasFfmpeg, probeMedia } from './media'
+import { ffmpegBin, h264Args, hasFfmpeg, probeMedia } from './media'
 
 const ffmpeg = await hasFfmpeg()
 const ff = (...args: string[]) =>
@@ -27,12 +27,15 @@ describe('envelopeExpr', () => {
 describe.skipIf(!ffmpeg)('composeVideo', () => {
   it('逐段转场、变速、配乐包络和响度标准化', async () => {
     const dir = tempDir()
-    const clips = [0, 1, 2].map((i) => {
+    const encoder = await h264Args()
+    const clips = [0, 1, 2, 3].map((i) => {
       const file = join(dir, `c${i}.mp4`)
       ff(
         ...['-f', 'lavfi', '-i', `testsrc2=s=320x240:d=2:r=25`],
         ...['-f', 'lavfi', '-i', `sine=f=${300 + i * 200}:d=2`],
-        ...['-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-shortest', file],
+        ...encoder,
+        '-shortest',
+        file,
       )
       return file
     })
@@ -46,6 +49,12 @@ describe.skipIf(!ffmpeg)('composeVideo', () => {
         { asset: ref('a', 'video'), in: 0, volume: 1, speed: 2 },
         { asset: ref('b', 'video'), in: 0, volume: 1, transition: { type: 'wipe', duration: 0.4 } },
         { asset: ref('c', 'video'), in: 0, volume: 1, transition: { type: 'fade', duration: 0.6 } },
+        {
+          asset: ref('d', 'video'),
+          in: 0,
+          volume: 1,
+          transition: { type: 'dissolve', duration: 0.4 },
+        },
       ],
       audio: [
         {
@@ -68,14 +77,14 @@ describe.skipIf(!ffmpeg)('composeVideo', () => {
     const out = await composeVideo(
       spec,
       { clips, audio: [music] },
-      { clips: [info, info, info] },
+      { clips: [info, info, info, info] },
       dir,
       { signal: new AbortController().signal },
     )
-    // 1（两倍速）+ 2 - 0.4（划像重叠）+ 2（经黑场不重叠）
-    expect(out.duration).toBeCloseTo(4.6, 2)
+    // 1（两倍速）+ 2 - 0.4（划像重叠）+ 2（经黑场 concat）+ 2 - 0.4（再叠化）
+    expect(out.duration).toBeCloseTo(6.2, 2)
     const probe = await probeMedia(out.file)
-    expect(probe.duration).toBeCloseTo(4.6, 1)
+    expect(probe.duration).toBeCloseTo(6.2, 1)
     // 成片响度在 -14 LUFS 附近（短片段上单遍 loudnorm 有一两 LU 的误差）
     const { stderr } = spawnSync(
       ffmpegBin(),
@@ -90,7 +99,7 @@ describe.skipIf(!ffmpeg)('composeVideo', () => {
   it('画面都没有声音、也没有配音配乐时开着响度标准化也能合成', async () => {
     const dir = tempDir()
     const clip = join(dir, 'silent.mp4')
-    ff('-f', 'lavfi', '-i', 'testsrc2=s=160x120:d=1:r=25', '-c:v', 'libx264', clip)
+    ff('-f', 'lavfi', '-i', 'testsrc2=s=160x120:d=1:r=25', ...(await h264Args()), clip)
     const spec: ComposeSpec = {
       width: 160,
       height: 120,
