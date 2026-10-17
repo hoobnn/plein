@@ -14,7 +14,7 @@ import {
   sortMentionTargets,
 } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Presence } from '../../ui/Presence'
 import { assetUrls } from '../../api/client'
@@ -30,7 +30,7 @@ const MAX_OPTIONS = 8
 
 /**
  * 主提示词：本地草稿保证输入流畅，每次修改立即写入文档（协作端实时可见）；
- * 未聚焦时跟随文档，其他人改了能看到。
+ * 聚焦时也跟随文档更新，避免继续输入时把同伴的正文替换成旧稿。
  * 输入 @ 弹出画布上的角色、场景和有名字的图片，选中后插入 `@名字`；行首 / 弹出提示词预设。
  */
 export function PromptBox({
@@ -58,10 +58,47 @@ export function PromptBox({
   const expandedRef = useRef<HTMLTextAreaElement>(null)
   const [draft, setDraft] = useState(value)
   const [focused, setFocused] = useState(false)
+  const composing = useRef(false)
+  const previous = useRef(value)
+  const written = useRef<string | null>(null)
+  const selection = useRef<{
+    value: string
+    start: number
+    end: number
+    direction: 'forward' | 'backward' | 'none'
+  } | null>(null)
   // 正在输入的 @ 引用或行首 / 预设
   const [query, setQuery] = useState<{ kind: '@' | '/'; start: number; query: string } | null>(null)
   const [active, setActive] = useState(0)
   const shown = focused ? draft : value
+  useLayoutEffect(() => {
+    if (previous.current === value) return
+    previous.current = value
+    const local = written.current === value
+    written.current = null
+    if (local || composing.current) return
+    const input = ref.current
+    if (input && document.activeElement === input) {
+      const [start, end] = remapSelection(
+        input.value,
+        value,
+        input.selectionStart,
+        input.selectionEnd,
+      )
+      selection.current = { value, start, end, direction: input.selectionDirection }
+    }
+    setDraft(value)
+    setQuery(null)
+    setActive(0)
+  }, [value, ref])
+  useLayoutEffect(() => {
+    const pending = selection.current
+    const input = ref.current
+    if (!pending || !input || input.value !== pending.value) return
+    selection.current = null
+    if (document.activeElement === input)
+      input.setSelectionRange(pending.start, pending.end, pending.direction)
+  })
   // 序号顺序要和 findMentions 一致，否则插进去的 #2 运行时指向另一张卡
   const targets = sortMentionTargets(mentionTargets(engine).filter((t) => t.id !== selfId))
   const q = query?.query.toLowerCase() ?? ''
@@ -122,6 +159,7 @@ export function PromptBox({
   }
   const update = (text: string, caret: number) => {
     setDraft(text)
+    written.current = text
     onChange(text)
     setQuery(detect(text, caret))
     setActive(0)
@@ -188,9 +226,17 @@ export function PromptBox({
           setFocused(true)
         }}
         onBlur={() => {
+          composing.current = false
           setFocused(false)
           // 让候选项的点击先生效
           setTimeout(() => setQuery(null), 150)
+        }}
+        onCompositionStart={() => {
+          composing.current = true
+        }}
+        onCompositionEnd={(e) => {
+          composing.current = false
+          update(e.currentTarget.value, e.currentTarget.selectionStart)
         }}
         onChange={(e) => update(e.target.value, e.target.selectionStart)}
         onKeyDown={(e) => {
@@ -380,6 +426,30 @@ export function PromptBox({
       )}
     </div>
   )
+}
+
+/** 按共同前后缀保留光标与选区的位置；参数文本仍沿用文档的整字段更新规则。 */
+function remapSelection(
+  before: string,
+  after: string,
+  start: number,
+  end: number,
+): [number, number] {
+  let prefix = 0
+  while (prefix < before.length && prefix < after.length && before[prefix] === after[prefix])
+    prefix++
+  let suffix = 0
+  while (
+    suffix < before.length - prefix &&
+    suffix < after.length - prefix &&
+    before[before.length - suffix - 1] === after[after.length - suffix - 1]
+  )
+    suffix++
+  const oldEnd = before.length - suffix
+  const newEnd = after.length - suffix
+  const map = (at: number) =>
+    at < prefix ? at : at >= oldEnd ? at + after.length - before.length : Math.min(at, newEnd)
+  return [map(start), map(end)]
 }
 
 const SLOT_ICONS = {
