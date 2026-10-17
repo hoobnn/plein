@@ -81,7 +81,9 @@ export function Waveform({
   const bars = Math.max(1, Math.min(MAX_BARS, Math.floor(width / 3)))
   const step = (to - from) / bars
   // 整条按最响处归一，轻声的对白也看得出起伏
-  const max = Math.max(0.05, ...peaks)
+  // 长音频有数十万个峰值，不能展开为函数参数，否则会超过引擎调用栈上限。
+  let max = 0.05
+  for (const peak of peaks) max = Math.max(max, peak)
   let d = ''
   for (let i = 0; i < bars; i++) {
     let a = from + i * step

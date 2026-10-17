@@ -274,6 +274,69 @@ test('缩略图和波形请求失败可见，重新加载预览恢复且保留�
   expect(await read()).toEqual(before)
 })
 
+test('三十分钟真实音频的完整峰值可显示和缩放，不使编辑器崩溃', async ({ page }) => {
+  const longAudio = join(dir, 'long.flac')
+  execFileSync('ffmpeg', [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    'sine=frequency=220:sample_rate=8000:duration=1800',
+    '-c:a',
+    'flac',
+    longAudio,
+  ])
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await newProject(page)
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: '上传' }).click()
+  await (await chooser).setFiles([join(dir, shots[0]!), longAudio])
+  await expect
+    .poll(
+      async () =>
+        (await elements(page)).filter((e) => e.kind === 'video' || e.kind === 'audio').length,
+    )
+    .toBe(2)
+  const all = await elements(page)
+  const video = all.find((e) => e.kind === 'video')!
+  const audio = all.find((e) => e.kind === 'audio')!
+  await addNode(page, '序列', { x: 720, y: 800 })
+  await page.keyboard.press('Escape')
+  const sequence = (await elements(page)).find((e) => e.nodeType === 'plein/sequence')!
+  await page.evaluate(
+    ({ video, audio, sequence }) => {
+      window.__plein.connect([video, 'video'], [sequence, 'clips'])
+      window.__plein.connect([audio, 'audio'], [sequence, 'music'])
+    },
+    { video: video.id, audio: audio.id, sequence: sequence.id },
+  )
+  await zoomTo(page, [sequence.id])
+  const at = await centerOf(page, sequence.id)
+  const peaksResponse = page.waitForResponse(
+    (response) => response.url().endsWith('/peaks') && response.ok(),
+  )
+  await page.mouse.dblclick(at.x, at.y)
+  const peaks = (await (await peaksResponse).json()) as { rate: number; peaks: number[] }
+  expect(peaks.rate).toBe(100)
+  expect(peaks.peaks).toHaveLength(180_000)
+  const editor = page.getByRole('dialog', { name: '序列', exact: true })
+  const waveform = editor.locator('.seq-wave path')
+  await expect
+    .poll(async () => ({ errors, paths: await waveform.count() }))
+    .toEqual({ errors: [], paths: 1 })
+  const before = await waveform.getAttribute('d')
+  await editor.getByRole('slider', { name: '缩放', exact: true }).press('End')
+  await expect.poll(() => waveform.getAttribute('d')).not.toBe(before)
+  expect((await waveform.getAttribute('d'))!.match(/M/g)!.length).toBeLessThanOrEqual(1200)
+  await editor.getByRole('button', { name: '重新加载预览', exact: true }).click()
+  await expect(waveform).toBeVisible()
+  expect(errors).toEqual([])
+})
+
 for (const cancel of ['pointercancel', 'blur', 'Escape'] as const) {
   test(`时间线 ${cancel} 取消修剪和排序，不保存草稿且可继续拖动`, async ({ page }) => {
     await newProject(page)
