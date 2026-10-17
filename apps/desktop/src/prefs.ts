@@ -17,7 +17,15 @@ const prefsPath = () => join(app.getPath('userData'), 'desktop.json')
 
 export function readPrefs(): Prefs {
   try {
-    return JSON.parse(readFileSync(prefsPath(), 'utf8')) as Prefs
+    const value: unknown = JSON.parse(readFileSync(prefsPath(), 'utf8'))
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+    const { port, saveDir } = value as Record<string, unknown>
+    return {
+      ...(typeof port === 'number' && Number.isInteger(port) && port > 0 && port <= 65535
+        ? { port }
+        : {}),
+      ...(typeof saveDir === 'string' && saveDir.length > 0 ? { saveDir } : {}),
+    }
   } catch {
     return {}
   }
