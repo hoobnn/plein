@@ -1,5 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import { adoptResult, type PleinDoc } from '@plein/doc'
+import { STORYBOARD_TYPE } from '@plein/nodes'
 import type { Catalog, GroupInfo, JobInfo, JobList, RecoverJobOptions } from '@plein/protocol'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
@@ -78,7 +79,10 @@ function runSignature(doc: PleinDoc) {
 function groupName(g: GroupInfo, doc: PleinDoc, catalog: Catalog | null) {
   const el = doc.get(g.frameId)
   if (g.scope === 'frame') return el?.name ?? 'Frame'
-  if (g.scope === 'impact') return '重做受影响的结果'
+  if (g.scope === 'impact')
+    return el?.nodeType === STORYBOARD_TYPE
+      ? `「${el.name ?? '分镜'}」批量生成`
+      : '重做受影响的结果'
   const name = el?.name ?? findNode(catalog, el?.nodeType)?.title ?? '节点'
   return g.scope === 'upstream' ? `运行到「${name}」` : `从「${name}」往下`
 }

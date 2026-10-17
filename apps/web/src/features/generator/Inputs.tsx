@@ -188,7 +188,7 @@ export function Inputs({
           key={`add-${port.id}`}
           type="button"
           onClick={() => pick(port)}
-          title={`上传${port.label}，也可以从画布上的图片拖线连入`}
+          title={`上传${port.label}，也可以从画布上的对应素材拖线连入`}
           className={`ui-btn ui-btn-sm ui-btn-secondary ${port.required && list.length === 0 ? 'text-danger' : ''}`}
         >
           <Icon name="plus" size={14} />

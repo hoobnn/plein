@@ -82,6 +82,12 @@ test('短剧模板：插入 → 跑骨架 → 展开 → 批量 → 导出', asy
   await expect(page.locator('.ui-toast')).toContainText('已给 1 个镜头补齐')
   for (const role of ['批量出分镜图', '批量生成视频', '批量配音'])
     await runBatch(page, dialog, role)
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: '任务', exact: true }).click()
+  await expect(
+    page.getByRole('button', { name: '「分镜（双击展开镜头）」批量生成', exact: true }).first(),
+  ).toBeVisible()
+  await page.keyboard.press('Escape')
   const all = await elements(page)
   expect(all.filter((e) => e.status === 'failed')).toEqual([])
   // 批量出分镜图时，镜头 @ 到的林晚、老城区天台、铁盒先出了参考图

@@ -55,7 +55,7 @@ export const storyboardNode = defineNode({
   description: '把剧本拆成分镜表（景别、画面、出场角色、台词、提示词），可展开成镜头节点',
   category: 'story',
   capability: 'text.chat',
-  inputs: [{ id: 'script', label: '剧本', type: 'text', multiple: true }],
+  inputs: [{ id: 'script', label: '剧本', type: 'text', multiple: true, required: true }],
   outputs: [{ id: 'shots', label: '分镜', type: 'json' }],
   params: z.object({
     model: model(),

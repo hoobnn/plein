@@ -38,7 +38,9 @@ export function DeliveryReview({ engine, node }: { engine: Engine; node: CanvasE
   const add = () => {
     if (!text.trim()) return
     const time = Math.max(0, Math.min(record.duration || Infinity, video.current?.currentTime ?? 0))
-    const source = record.sources.find((s) => time >= s.start && time < s.end)
+    // 片尾暂停仍属于最后一帧；中间切点继续使用左闭右开，关联下一镜。
+    const at = time === record.duration ? Math.max(0, time - 0.001) : time
+    const source = record.sources.find((s) => at >= s.start && at < s.end)
     save([
       ...record.notes,
       {

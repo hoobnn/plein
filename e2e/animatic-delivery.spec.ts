@@ -112,7 +112,17 @@ test('分镜图片与已有配音预演，零视频生成导出样片并按实�
     editor.getByRole('button', { name: '确认此版草稿已审阅', exact: true }),
   ).toBeDisabled()
   await expect(editor.getByRole('button', { name: '定位镜头返工', exact: true })).toBeVisible()
-  await editor.getByRole('checkbox', { name: '已解决', exact: true }).check()
+  await expect
+    .poll(() => video.evaluate((v: HTMLVideoElement) => Number.isFinite(v.duration)))
+    .toBe(true)
+  await video.evaluate((v: HTMLVideoElement) => {
+    v.currentTime = v.duration
+  })
+  await editor.getByRole('textbox', { name: '成片时间码意见' }).fill('片尾镜头需要复查')
+  await editor.getByRole('button', { name: '在当前时间添加意见', exact: true }).click()
+  await expect(editor.getByRole('button', { name: '定位镜头返工', exact: true })).toHaveCount(2)
+  for (const checkbox of await editor.getByRole('checkbox', { name: '已解决', exact: true }).all())
+    await checkbox.check()
   await editor.getByRole('button', { name: '确认此版草稿已审阅', exact: true }).click()
   await expect(editor.getByText('已人工确认此版本', { exact: false })).toBeVisible()
   await page.reload()
@@ -123,4 +133,5 @@ test('分镜图片与已有配音预演，零视频生成导出样片并按实�
   await page.getByRole('button', { name: '实际 MP4 回看 / 交付', exact: true }).click()
   await expect(page.getByText('已人工确认此版本', { exact: false })).toBeVisible()
   await expect(page.getByText('第一镜停顿需要复查', { exact: true })).toBeVisible()
+  await expect(page.getByText('片尾镜头需要复查', { exact: true })).toBeVisible()
 })

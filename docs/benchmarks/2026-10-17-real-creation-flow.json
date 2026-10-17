@@ -1,0 +1,203 @@
+{
+  "format": "plein-real-creation-acceptance",
+  "version": 1,
+  "recordedAt": "2026-10-17T12:31:30.302616+00:00",
+  "environment": "native-electron-development-with-real-providers",
+  "canvas": {
+    "id": "cv_ryDEchfqJT-h",
+    "name": "全流程验收 1017",
+    "elements": 13
+  },
+  "scope": {
+    "title": "雨停了",
+    "shots": 2,
+    "plannedSeconds": 8,
+    "dialogue": false,
+    "assets": ["小岚 · 实测1017", "雨后木桌 · 实测1017", "透明水杯 · 全流程1017"]
+  },
+  "providers": {
+    "storyboard": "MiniMax M3",
+    "images": "Seedream 5.0 Pro",
+    "videos": "MiniMax-H3"
+  },
+  "checks": [
+    "资产库角色与环境复用，道具设定和真实参考图保存",
+    "LLM两镜头展开并绑定资产，图像实际输入含两份去重参考",
+    "两张真实分镜图生成，视频以对应图作首帧",
+    "生成中刷新保留原runId和remoteId，attempts为1",
+    "后建序列通过更新展开接入两镜，换序并恢复",
+    "DRAFT样片导出与实际MP4播放",
+    "两段视频各修剪4秒，横屏成片实际播放到第二镜和结尾",
+    "片尾意见定位第二镜，解决意见后刷新仍保留"
+  ],
+  "fixes": [
+    "分镜script端口required",
+    "MiniMax结构化输出使用Schema提示与本地严格校验，拒绝截断或无效JSON",
+    "正常分镜批量任务名称",
+    "输入端口素材类型文案",
+    "实际MP4片尾意见来源映射"
+  ],
+  "exports": [
+    {
+      "kind": "animatic",
+      "assetId": "42b529b51a132d1937e9c5a5e88843eb5ec1237cb7577b47a3355419038c0b92",
+      "resultId": "res_mvcdbj4j1uavp8",
+      "width": 1920,
+      "height": 1080,
+      "seconds": 8,
+      "codecs": ["h264", "aac"]
+    },
+    {
+      "kind": "sequence",
+      "assetId": "4015f503557d61aaf21de32b4b3caeacfb01c67cb3a65a4bd01ede1f6a55fc77",
+      "resultId": "res_mvcdh2zpra8njc",
+      "width": 1920,
+      "height": 1080,
+      "seconds": 8,
+      "codecs": ["h264", "aac"]
+    }
+  ],
+  "runs": [
+    {
+      "id": "run_mvcd4v4yzxclgm",
+      "node_id": "el-c4160e0b-5c48-4633-a802-16f7efe31941",
+      "node_type": "plein/storyboard",
+      "status": "failed",
+      "attempts": 1,
+      "started_at": 1792239518626,
+      "finished_at": 1792239518628,
+      "error": "剧本（请连入剧本文本）为空",
+      "calls": [],
+      "elapsedSeconds": 0.002
+    },
+    {
+      "id": "run_mvcd6bol28bpf8",
+      "node_id": "el-c4160e0b-5c48-4633-a802-16f7efe31941",
+      "node_type": "plein/storyboard",
+      "status": "failed",
+      "attempts": 1,
+      "started_at": 1792239586726,
+      "finished_at": 1792239586729,
+      "error": "MiniMax 此适配器不支持 JSON Schema 输出",
+      "calls": [],
+      "elapsedSeconds": 0.003
+    },
+    {
+      "id": "run_mvcd7vnf1351uj",
+      "node_id": "el-c4160e0b-5c48-4633-a802-16f7efe31941",
+      "node_type": "plein/storyboard",
+      "status": "succeeded",
+      "attempts": 1,
+      "started_at": 1792239659260,
+      "finished_at": 1792239666069,
+      "error": null,
+      "calls": [
+        {
+          "state": "done"
+        }
+      ],
+      "elapsedSeconds": 6.809
+    },
+    {
+      "id": "run_mvcd8yfyaka7cn",
+      "node_id": "el-5877e8f8-5870-4836-87ba-c9d945ee692c",
+      "node_type": "plein/image",
+      "status": "succeeded",
+      "attempts": 1,
+      "started_at": 1792239709534,
+      "finished_at": 1792239784108,
+      "error": null,
+      "calls": [
+        {
+          "state": "done"
+        }
+      ],
+      "elapsedSeconds": 74.574
+    },
+    {
+      "id": "run_mvcd8yfzsexaax",
+      "node_id": "el-58c725eb-0215-4bc8-a9ac-47042c9c2e7d",
+      "node_type": "plein/image",
+      "status": "succeeded",
+      "attempts": 1,
+      "started_at": 1792239709535,
+      "finished_at": 1792239773140,
+      "error": null,
+      "calls": [
+        {
+          "state": "done"
+        }
+      ],
+      "elapsedSeconds": 63.605
+    },
+    {
+      "id": "run_mvcdb1linyqsn1",
+      "node_id": "el-d43b5d25-af19-4685-b82c-4f2ac4ea5702",
+      "node_type": "plein/video",
+      "status": "succeeded",
+      "attempts": 1,
+      "started_at": 1792239806934,
+      "finished_at": 1792240048326,
+      "error": null,
+      "calls": [
+        {
+          "state": "done",
+          "remoteId": "453373932970369"
+        }
+      ],
+      "elapsedSeconds": 241.392
+    },
+    {
+      "id": "run_mvcdb1lj9t3z5i",
+      "node_id": "el-030c3ace-06b4-4294-9276-ea2cffc914a4",
+      "node_type": "plein/video",
+      "status": "succeeded",
+      "attempts": 1,
+      "started_at": 1792239806935,
+      "finished_at": 1792240025532,
+      "error": null,
+      "calls": [
+        {
+          "state": "done",
+          "remoteId": "453372255941036"
+        }
+      ],
+      "elapsedSeconds": 218.597
+    },
+    {
+      "id": "run_mvcdbhbkbg3gcf",
+      "node_id": "el-3ddd4fbb-749f-428d-9e11-ad2492f312f2",
+      "node_type": "plein/animatic",
+      "status": "succeeded",
+      "attempts": 1,
+      "started_at": 1792239827312,
+      "finished_at": 1792239829652,
+      "error": null,
+      "calls": [],
+      "elapsedSeconds": 2.34
+    },
+    {
+      "id": "run_mvcdh1l2p8ffwr",
+      "node_id": "el-435ac808-4126-43f8-9e1a-6eabb1af6afc",
+      "node_type": "plein/sequence",
+      "status": "succeeded",
+      "attempts": 1,
+      "started_at": 1792240086855,
+      "finished_at": 1792240088678,
+      "error": null,
+      "calls": [],
+      "elapsedSeconds": 1.823
+    }
+  ],
+  "regression": {
+    "focusedUnitPassed": 73,
+    "nodeAndRunUnitPassed": 211,
+    "skipped": 1,
+    "focusedE2EPassed": 3
+  },
+  "boundaries": [
+    "本次真实短片无对白，未实际调用配音、音乐或语音识别",
+    "交付版本保留待人工确认",
+    "未提交代码"
+  ]
+}
