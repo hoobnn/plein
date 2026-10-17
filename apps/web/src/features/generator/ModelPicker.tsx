@@ -5,6 +5,7 @@ import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
 import { Presence } from '../../ui/Presence'
 import { SlidePill, SlideSwap } from '../../ui/Slide'
+import { useSession } from '../../stores/session'
 
 /** 模型选择：左栏选平台、右栏列该平台的模型。不替用户挑，没选时按钮提示去选 */
 export function ModelPicker({
@@ -19,6 +20,18 @@ export function ModelPicker({
   onChange(v: string): void
 }) {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
+  const [query, setQuery] = useState('')
+  const recentKey = `plein:recent-models:${useSession((s) => s.info?.principal?.id) ?? 'local'}`
+  const [recent, setRecent] = useState<string[]>(() => {
+    try {
+      const stored: unknown = JSON.parse(localStorage.getItem(recentKey) ?? '[]')
+      return Array.isArray(stored)
+        ? stored.filter((v): v is string => typeof v === 'string').slice(0, 6)
+        : []
+    } catch {
+      return []
+    }
+  })
   const providers = (catalog?.providers ?? [])
     .filter((p) => p.enabled && p.configured)
     .map((p) => ({
@@ -30,6 +43,13 @@ export function ModelPicker({
     .flatMap((p) => p.models.map((m) => ({ ref: `${p.id}:${m.id}`, title: m.title })))
     .find((m) => m.ref === value)
   const pick = (v: string) => {
+    const next = [v, ...recent.filter((r) => r !== v)].slice(0, 6)
+    setRecent(next)
+    try {
+      localStorage.setItem(recentKey, JSON.stringify(next))
+    } catch {
+      /* 隐私模式不影响选择 */
+    }
     onChange(v)
     setAnchor(null)
   }
@@ -39,6 +59,11 @@ export function ModelPicker({
   const home = owner || fallback.slice(0, fallback.indexOf(':'))
   const [tab, setTab] = useState(home)
   const shown = providers.find((p) => p.id === tab) ?? providers[0]
+  const all = providers.flatMap((p) =>
+    p.models.map((m) => ({ ...m, ref: `${p.id}:${m.id}`, provider: p.title })),
+  )
+  const q = query.trim().toLowerCase()
+  const matches = all.filter((m) => `${m.provider} ${m.title} ${m.ref}`.toLowerCase().includes(q))
 
   const railItem = (id: string, title: string, sub: string) => (
     <button
@@ -67,7 +92,11 @@ export function ModelPicker({
       className="ui-menu-item items-start"
     >
       <span className="ui-menu-text">
-        <span className="truncate">{title}</span>
+        <span className="truncate">
+          {title}
+          {v === fallback ? ' · 默认' : ''}
+        </span>
+        <span className="ui-menu-desc truncate">{v}</span>
         {description && <span className="ui-menu-desc line-clamp-2">{description}</span>}
       </span>
       {v === value && <Icon name="check" size={14} />}
@@ -83,6 +112,7 @@ export function ModelPicker({
         title={current?.title ?? '选择模型'}
         onClick={(e) => {
           setTab(home)
+          setQuery('')
           setAnchor(anchor ? null : e.currentTarget)
         }}
         className="ui-btn ui-btn-lg ui-btn-menu min-w-0 max-w-48"
@@ -94,36 +124,69 @@ export function ModelPicker({
       <Presence>
         {anchor && (
           <Popover anchor={anchor} onClose={() => setAnchor(null)} label="选择模型" width={460}>
+            <input
+              aria-label="搜索模型"
+              placeholder="搜索平台、模型名称或 ID"
+              className="ui-input mb-2 w-full"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
             {providers.length === 0 ? (
               <p className="px-2 py-3 text-xs text-ink-subtle">
                 还没有可用的模型：在设置的「模型平台」里填写密钥并启用。
               </p>
+            ) : q ? (
+              <div
+                role="listbox"
+                aria-label="搜索结果"
+                className="ui-scrollbar max-h-80 overflow-auto"
+              >
+                {matches.length ? (
+                  matches.map((m) => option(m.ref, `${m.provider} · ${m.title}`, m.description))
+                ) : (
+                  <p className="p-3 text-xs text-ink-muted">没有匹配的模型</p>
+                )}
+              </div>
             ) : (
-              <div className="flex max-h-80 min-h-40">
-                <div
-                  role="tablist"
-                  aria-label="平台"
-                  aria-orientation="vertical"
-                  className="ui-slide ui-scrollbar flex w-40 flex-none flex-col gap-0.5 overflow-y-auto border-r border-line pr-1"
-                >
-                  <SlidePill variant="menu" />
-                  {providers.map((p) => railItem(p.id, p.title, `${p.models.length} 个模型`))}
-                </div>
-                <div
-                  role="listbox"
-                  aria-label={`${shown!.title} 的模型`}
-                  className="ui-scrollbar flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto pl-1"
-                >
-                  {/* 平台是竖排的：模型列表按上下方向滑入 */}
-                  <SlideSwap
-                    index={providers.indexOf(shown!)}
-                    axis="y"
-                    className="flex flex-col gap-0.5"
+              <div>
+                {recent.some((ref) => all.some((m) => m.ref === ref)) && (
+                  <div
+                    role="listbox"
+                    aria-label="最近使用的模型"
+                    className="mb-2 border-b border-line pb-2"
                   >
-                    {shown!.models.map((m) =>
-                      option(`${shown!.id}:${m.id}`, m.title, m.description),
-                    )}
-                  </SlideSwap>
+                    {recent.flatMap((ref) => {
+                      const m = all.find((item) => item.ref === ref)
+                      return m ? [option(m.ref, `最近 · ${m.title}`, m.provider)] : []
+                    })}
+                  </div>
+                )}
+                <div className="flex max-h-80 min-h-40">
+                  <div
+                    role="tablist"
+                    aria-label="平台"
+                    aria-orientation="vertical"
+                    className="ui-slide ui-scrollbar flex w-40 flex-none flex-col gap-0.5 overflow-y-auto border-r border-line pr-1"
+                  >
+                    <SlidePill variant="menu" />
+                    {providers.map((p) => railItem(p.id, p.title, `${p.models.length} 个模型`))}
+                  </div>
+                  <div
+                    role="listbox"
+                    aria-label={`${shown!.title} 的模型`}
+                    className="ui-scrollbar flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto pl-1"
+                  >
+                    {/* 平台是竖排的：模型列表按上下方向滑入 */}
+                    <SlideSwap
+                      index={providers.indexOf(shown!)}
+                      axis="y"
+                      className="flex flex-col gap-0.5"
+                    >
+                      {shown!.models.map((m) =>
+                        option(`${shown!.id}:${m.id}`, m.title, m.description),
+                      )}
+                    </SlideSwap>
+                  </div>
                 </div>
               </div>
             )}

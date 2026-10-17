@@ -28,7 +28,7 @@ export type Section = 'appearance' | 'providers' | 'local' | 'mcp' | 'plugins' |
 function providerState(p: ProviderInfo): { label: string; tone: string } {
   if (!p.enabled) return { label: '已停用', tone: '' }
   if (!p.configured) return { label: '缺少密钥', tone: 'ui-tag-warning' }
-  return { label: '可用', tone: 'ui-tag-success' }
+  return { label: '已配置', tone: 'ui-tag-success' }
 }
 
 /** 单个平台：一行摘要（状态、启用开关），展开后是设置表单（由插件声明的 schema 生成）、密钥、测试连接 */
