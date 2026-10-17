@@ -58,6 +58,50 @@ const DETAIL_PPS = 160
 
 const round2 = (n: number) => Math.round(n * 100) / 100
 
+/** 统一处理时间线手势的指针归属、取消和浮层退场清理。 */
+function usePointerGesture() {
+  const cancelGesture = useRef<(() => void) | null>(null)
+  const closing = useClosing()
+  useLayoutEffect(() => {
+    if (closing) cancelGesture.current?.()
+    return () => cancelGesture.current?.()
+  }, [closing])
+
+  const trackPointer = (
+    pointerId: number,
+    onMove: (event: PointerEvent) => void,
+    onEnd?: () => void,
+    onCancel?: () => void,
+  ) => {
+    const move = (event: PointerEvent) => {
+      if (event.pointerId === pointerId) onMove(event)
+    }
+    const finish = (commit: boolean) => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('blur', blur)
+      cancelGesture.current = null
+      if (commit) onEnd?.()
+      else onCancel?.()
+    }
+    const up = (event: PointerEvent) => {
+      if (event.pointerId === pointerId) finish(true)
+    }
+    const cancel = (event: PointerEvent) => {
+      if (event.pointerId === pointerId) finish(false)
+    }
+    const blur = () => finish(false)
+    cancelGesture.current = blur
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('blur', blur)
+  }
+
+  return { closing, cancel: () => cancelGesture.current?.(), trackPointer }
+}
+
 const TRANSITION_LABELS: Record<ComposeTransition['type'], string> = {
   fade: '淡入淡出',
   dissolve: '叠化',
@@ -95,6 +139,7 @@ export function Timeline({
   const head = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState(0)
   const [requestedZoom, setZoom] = useState(1)
+  const { closing, cancel: cancelScrub, trackPointer: trackScrub } = usePointerGesture()
 
   useLayoutEffect(() => {
     const el = scroller.current
@@ -173,19 +218,15 @@ export function Timeline({
   /** 刻度尺和播放头：按下就定位，拖动跟着走 */
   const scrub = (e: ReactPointerEvent) => {
     const sc = scroller.current
-    if (!sc || e.button !== 0) return
+    if (!sc || e.button !== 0 || closing) return
+    cancelScrub()
     e.preventDefault()
     playhead.pause()
     const at = (clientX: number) =>
       (clientX - sc.getBoundingClientRect().left + sc.scrollLeft - LABEL - PAD) / ppsRef.current
     playhead.seek(at(e.clientX))
     const move = (ev: PointerEvent) => playhead.seek(at(ev.clientX))
-    const up = () => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-    }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
+    trackScrub(e.pointerId, move)
   }
 
   const ticks = []
@@ -443,44 +484,7 @@ function ClipTrack({
   /** 落下后的位移补偿：先停在松手处，下一帧滑回 0 */
   const [settle, setSettle] = useState<{ key: string; dx: number; animate: boolean } | null>(null)
   const [trimming, setTrimming] = useState<string | null>(null)
-  const cancelGesture = useRef<(() => void) | null>(null)
-  const closing = useClosing()
-  useLayoutEffect(() => {
-    if (closing) cancelGesture.current?.()
-    return () => cancelGesture.current?.()
-  }, [closing])
-
-  const trackPointer = (
-    pointerId: number,
-    onMove: (event: PointerEvent) => void,
-    onEnd: () => void,
-    onCancel: () => void,
-  ) => {
-    const move = (event: PointerEvent) => {
-      if (event.pointerId === pointerId) onMove(event)
-    }
-    const finish = (commit: boolean) => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-      window.removeEventListener('pointercancel', cancel)
-      window.removeEventListener('blur', blur)
-      cancelGesture.current = null
-      if (commit) onEnd()
-      else onCancel()
-    }
-    const up = (event: PointerEvent) => {
-      if (event.pointerId === pointerId) finish(true)
-    }
-    const cancel = (event: PointerEvent) => {
-      if (event.pointerId === pointerId) finish(false)
-    }
-    const blur = () => finish(false)
-    cancelGesture.current = blur
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-    window.addEventListener('pointercancel', cancel)
-    window.addEventListener('blur', blur)
-  }
+  const { closing, cancel: cancelGesture, trackPointer } = usePointerGesture()
 
   useLayoutEffect(() => {
     if (!settle || settle.animate) return
@@ -490,7 +494,7 @@ function ClipTrack({
 
   const startDrag = (e: ReactPointerEvent, index: number) => {
     if (e.button !== 0 || closing) return
-    cancelGesture.current?.()
+    cancelGesture()
     const item = items[index]!
     onSelect(item.key)
     const x0 = e.clientX
@@ -537,7 +541,7 @@ function ClipTrack({
 
   const startTrim = (e: ReactPointerEvent, item: TrackItem, edge: 'in' | 'out') => {
     if (e.button !== 0 || item.pending || closing) return
-    cancelGesture.current?.()
+    cancelGesture()
     e.stopPropagation()
     e.preventDefault()
     onSelect(item.key)
