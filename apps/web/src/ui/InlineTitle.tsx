@@ -32,6 +32,7 @@ export function InlineTitle({
       onBlur={() => finish(draft)}
       onKeyDown={(e) => {
         e.stopPropagation()
+        if (e.nativeEvent.isComposing) return
         if (e.key === 'Enter') finish(draft)
         if (e.key === 'Escape') finish(null)
       }}

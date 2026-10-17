@@ -1,6 +1,6 @@
 import type { ClipboardData, NewElement } from '@plein/doc'
 import type { Engine, PortRef } from '@plein/canvas-core'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { dramaNotice, placeDramaTemplate } from '../canvas/drama'
 import { placeTemplate } from '../canvas/groups'
 import {
@@ -113,6 +113,7 @@ export function AddMenu({
   const templates = useTemplates((s) => s.templates)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
+  const listRef = useRef<HTMLDivElement>(null)
 
   const items = useMemo(() => {
     const list: Item[] = []
@@ -198,6 +199,10 @@ export function AddMenu({
       : list
   }, [nodes, catalog, templates, engine, from, query, canImport])
 
+  useEffect(() => {
+    listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [active, items])
+
   const pick = (item: Item | undefined) => {
     if (!item) return
     onClose()
@@ -227,9 +232,10 @@ export function AddMenu({
             setActive(0)
           }}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return
             if (e.key === 'ArrowDown') {
               e.preventDefault()
-              setActive((a) => Math.min(items.length - 1, a + 1))
+              setActive((a) => Math.max(0, Math.min(items.length - 1, a + 1)))
             } else if (e.key === 'ArrowUp') {
               e.preventDefault()
               setActive((a) => Math.max(0, a - 1))
@@ -240,7 +246,7 @@ export function AddMenu({
           }}
         />
       </label>
-      <div role="listbox" className="ui-scrollbar min-h-0 overflow-y-auto">
+      <div ref={listRef} role="listbox" className="ui-scrollbar min-h-0 overflow-y-auto">
         {items.length === 0 && (
           <p className="px-3 pb-3 pt-1 text-sm text-ink-subtle">没有匹配的节点</p>
         )}

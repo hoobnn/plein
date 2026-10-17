@@ -184,6 +184,7 @@ export function PromptBox({
         }}
         onChange={(e) => update(e.target.value, e.target.selectionStart)}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return
           if (!count) return
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault()
@@ -216,6 +217,7 @@ export function PromptBox({
             label="编辑提示词"
             top
             isolateKeys
+            initialFocus={expandedRef}
             onClose={() => setExpanded(false)}
             className="max-w-5xl"
           >

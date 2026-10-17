@@ -19,7 +19,7 @@ export function useDismiss<T extends HTMLElement = HTMLDivElement>(
       if (!ref.current?.contains(e.target as Node)) latest.current()
     }
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') latest.current()
+      if (e.key === 'Escape' && !e.defaultPrevented && !e.isComposing) latest.current()
     }
     window.addEventListener('pointerdown', outside, true)
     window.addEventListener('keydown', key)

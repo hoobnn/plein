@@ -239,7 +239,7 @@ export function Editor({
           <CanvasMenus canImport={source.kind === 'remote'} />
           {/* 底栏从侧栏右边开始，跟侧栏同一条曲线滑动：视图工具条靠左，主工具条在可见画布里居中，空间不够时往右让 */}
           <footer
-            className="plein-follow-sidebar plein-footer pointer-events-none absolute right-0 bottom-0 p-3"
+            className="plein-follow-sidebar plein-footer pointer-events-none absolute right-0 bottom-0 z-30 p-3"
             style={{ left: sidebar ? sidebarWidth + 12 : 0 }}
           >
             <div className="max-sm:hidden">

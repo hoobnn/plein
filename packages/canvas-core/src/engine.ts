@@ -21,7 +21,13 @@ import { Camera } from './camera'
 import { EdgeLayer } from './edges'
 import { union } from './geometry'
 import { DotGrid } from './grid'
-import { attachInput, isEditableTarget, type PanState } from './input'
+import {
+  attachInput,
+  isControlTarget,
+  isEditableTarget,
+  isOverlayTarget,
+  type PanState,
+} from './input'
 import { attachInteractions } from './interact'
 import type { PortRef } from './ports'
 import { HighlightLayer } from './highlight'
@@ -721,14 +727,15 @@ export class Engine {
 
   private attachShortcuts() {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing) return
       if (isEditableTarget(e.target)) {
         // 输入框里的 Esc：退出输入框，焦点回到画布，再按一次才是取消选中。
         // 输入框自己处理过的（关掉候选、取消编辑）不再管；输入法组字时的 Esc 是撤销组字
-        if (e.key === 'Escape' && !e.defaultPrevented && !e.isComposing)
-          (e.target as HTMLElement).blur()
+        if (e.key === 'Escape' && !isOverlayTarget(e.target)) (e.target as HTMLElement).blur()
         return
       }
       const mod = e.metaKey || e.ctrlKey
+      if (!mod && e.key !== 'Escape' && isControlTarget(e.target)) return
       const key = e.key.toLowerCase()
       const step = e.shiftKey ? 10 : 1
       let handled = true

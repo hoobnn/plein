@@ -441,6 +441,8 @@ const LayerRow = memo(function LayerRow({
         if (e.key === 'Enter') onPick(e)
         if (e.key === 'F2') onRename()
         if (el.kind === 'frame' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+          e.preventDefault()
+          e.stopPropagation()
           if (open !== (e.key === 'ArrowRight')) onToggle()
         }
       }}

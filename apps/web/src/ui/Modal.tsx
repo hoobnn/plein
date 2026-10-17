@@ -15,6 +15,7 @@ export function Modal({
   align = 'center',
   top = false,
   isolateKeys = false,
+  initialFocus,
   className = '',
   children,
 }: {
@@ -26,6 +27,8 @@ export function Modal({
   top?: boolean
   /** 焦点在面板里时，画布不响应键盘（删除、方向键等） */
   isolateKeys?: boolean
+  /** 编辑类面板可直接聚焦正文，省去再次点击 */
+  initialFocus?: React.RefObject<HTMLElement | null>
   /** 面板的尺寸和布局 */
   className?: string
   children: ReactNode
@@ -51,6 +54,7 @@ export function Modal({
         >
           <Dialog.Popup
             aria-label={label}
+            initialFocus={initialFocus}
             data-plein-active={isolateKeys ? '' : undefined}
             {...exit}
             className={`ui-dialog relative flex max-h-full w-full flex-col overflow-hidden rounded-2xl bg-surface shadow-4 outline-none ${className}`}

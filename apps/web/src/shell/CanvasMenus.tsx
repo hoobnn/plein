@@ -1,5 +1,5 @@
 import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
-import type { ReactNode } from 'react'
+import { type ReactNode, useEffect } from 'react'
 import { applyCast, castLibrary, castOf, describeCast } from '../canvas/cast'
 import { findNode, type NodeInfo } from '../canvas/nodes'
 import { useCanvas } from '../stores/canvas'
@@ -8,7 +8,7 @@ import { shortcut } from '../ui/keys'
 import { useDismiss } from '../ui/useDismiss'
 import { AddMenu } from './AddMenu'
 import { runFlowFrom, runFrame, runNode } from '../features/runs/run'
-import { Presence, useExit } from '../ui/Presence'
+import { Presence, useClosing, useExit } from '../ui/Presence'
 import { saveAsTemplate } from '../features/templates/actions'
 
 const MENU_W = 280
@@ -122,6 +122,16 @@ function ContextMenu({
 }) {
   const ref = useDismiss(onClose, { wheel: true })
   const exit = useExit()
+  const closing = useClosing()
+  useEffect(() => {
+    if (closing) {
+      // 退场动画保留 DOM，但焦点不能留在已关闭的菜单中拦住下一次画布操作。
+      if (ref.current?.contains(document.activeElement))
+        (document.activeElement as HTMLElement).blur()
+      return
+    }
+    ref.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus()
+  }, [closing, ref])
   const catalog = useCatalog((s) => s.catalog)
   const act = (fn: () => void) => () => {
     onClose()
@@ -241,6 +251,25 @@ function ContextMenu({
     <div
       ref={ref}
       role="menu"
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
+        e.preventDefault()
+        e.stopPropagation()
+        const items = [
+          ...e.currentTarget.querySelectorAll<HTMLButtonElement>(
+            '[role="menuitem"]:not(:disabled)',
+          ),
+        ]
+        const current = items.indexOf(document.activeElement as HTMLButtonElement)
+        const next =
+          e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? items.length - 1
+              : (current + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+        items[next]?.focus()
+      }}
       {...exit}
       style={{ ...placeAt(menu.client.x, menu.client.y, 320), width: 220 }}
       className="ui-menu pointer-events-auto fixed z-30"

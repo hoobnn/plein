@@ -249,6 +249,7 @@ function Panel({
       style={style}
       className="ui-float ui-scrollbar pointer-events-auto fixed z-20 flex flex-col overflow-y-auto rounded-xl"
       onKeyDown={(e) => {
+        if (e.nativeEvent.isComposing) return
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
           e.preventDefault()
           run()
@@ -489,6 +490,7 @@ function NameField({
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return
           if (e.key === 'Enter') e.currentTarget.blur()
         }}
         className="min-w-0 flex-1 rounded-sm bg-transparent text-base font-semibold text-ink outline-none"

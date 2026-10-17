@@ -41,8 +41,10 @@ const isEditableTarget = (target: Element | null) =>
   (target.isContentEditable ||
     target instanceof HTMLInputElement ||
     target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
     target instanceof HTMLMediaElement ||
-    target.closest('[data-plein-active]') !== null)
+    target.closest('[data-plein-active], [role="dialog"], [role="menu"], [role="listbox"]') !==
+      null)
 
 export function App() {
   const [settings, setSettings] = useState<false | Section | undefined>(false)

@@ -90,7 +90,7 @@ function DialogView({ req }: { req: Request }) {
   // Esc 自己处理并停止传播，不交给 Base UI：外层面板的 Esc 处理用 dialogOpen() 让位
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !e.isComposing) {
         e.stopPropagation()
         settle(null)
       }

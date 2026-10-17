@@ -6,14 +6,24 @@ export interface PanState {
   hand: boolean
 }
 
+export const isOverlayTarget = (t: EventTarget | null) =>
+  t instanceof HTMLElement && t.closest('[role="dialog"], [role="menu"], [role="listbox"]') !== null
+
 export const isEditableTarget = (t: EventTarget | null) =>
   t instanceof HTMLElement &&
   (t.isContentEditable ||
     t instanceof HTMLInputElement ||
     t instanceof HTMLTextAreaElement ||
+    t instanceof HTMLSelectElement ||
     t instanceof HTMLMediaElement ||
-    // 覆盖层里正在交互的内容（编辑器、播放器）自己处理键盘
-    t.closest('[data-plein-active]') !== null)
+    // 浮层及编辑器自己处理按键和剪贴板，不能穿透到背后的画布。
+    t.closest('[data-plein-active]') !== null ||
+    isOverlayTarget(t))
+
+/** 控件上的 Tab、空格和方向键保留给浏览器；组合键仍可用于画布命令。 */
+export const isControlTarget = (t: EventTarget | null) =>
+  t instanceof HTMLElement &&
+  t.closest('button, a[href], select, [role="button"], [role="separator"]') !== null
 
 /**
  * 触控板/滚轮/拖拽输入。
@@ -98,7 +108,14 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.code === 'Space' && !e.repeat && !isEditableTarget(e.target)) {
+    if (
+      e.code === 'Space' &&
+      !e.repeat &&
+      !e.defaultPrevented &&
+      !e.isComposing &&
+      !isEditableTarget(e.target) &&
+      !isControlTarget(e.target)
+    ) {
       e.preventDefault()
       pan.space = true
       el.style.cursor = 'grab'
