@@ -55,6 +55,14 @@ export function documentReferences(doc: PleinDoc): AssetReference[] {
     const adopted = currentResult(el)?.id
     for (const r of el.results ?? [])
       if ('assetId' in r.value) add(r.value.assetId, `result/${r.id}`, r.id, r.id === adopted, true)
+    for (const delivery of el.deliveries ?? [])
+      add(
+        delivery.assetId,
+        `delivery/${delivery.id}`,
+        delivery.resultId,
+        delivery.resultId === adopted,
+        true,
+      )
     stringReferences(el.params, (id, path) => add(id, `params${path}`, null, false, false))
   }
   return out

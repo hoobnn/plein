@@ -8,6 +8,7 @@ export interface SceneClip {
   /** 同一素材在序列里出现多次时各自独立解码 */
   key: string
   assetId?: string
+  kind?: 'image' | 'video'
   start: number
   length: number
   in: number
@@ -85,13 +86,33 @@ function drawContain(
 
 /** 一段画面的帧来源 */
 interface Frames {
-  readonly kind: 'webcodecs' | 'element'
+  readonly kind: 'webcodecs' | 'element' | 'image'
   /** 对齐到素材时间 mt；播放中连续出帧，暂停时取精确的那一帧；rate 是播放速度 */
   update(mt: number, playing: boolean, rate: number): void
   /** 不在画面上：停掉解码，释放资源 */
   park(): void
   image(): { source: CanvasImageSource; width: number; height: number } | null
   dispose(): void
+}
+
+class ImageFrames implements Frames {
+  readonly kind = 'image'
+  private el = new Image()
+  constructor(url: string, onFrame: () => void) {
+    this.el.onload = onFrame
+    this.el.src = url
+  }
+  update() {}
+  park() {}
+  image() {
+    return this.el.complete && this.el.naturalWidth
+      ? { source: this.el, width: this.el.naturalWidth, height: this.el.naturalHeight }
+      : null
+  }
+  dispose() {
+    this.el.onload = null
+    this.el.src = ''
+  }
 }
 
 /**
@@ -385,20 +406,22 @@ export class PreviewEngine {
     if (!f) {
       const url = assetUrls.original(clip.assetId)
       const created: Frames =
-        typeof VideoDecoder === 'undefined'
-          ? new ElementFrames(url, this.render)
-          : new CodecFrames(
-              url,
-              previewSize(this.scene.width, this.scene.height),
-              this.render,
-              () => {
-                // 解不了：换成 video 元素（这段已经被换掉或删掉就算了）
-                if (this.frames.get(clip.key) !== created) return
-                created.dispose()
-                this.frames.set(clip.key, new ElementFrames(url, this.render))
-                this.render()
-              },
-            )
+        clip.kind === 'image'
+          ? new ImageFrames(url, this.render)
+          : typeof VideoDecoder === 'undefined'
+            ? new ElementFrames(url, this.render)
+            : new CodecFrames(
+                url,
+                previewSize(this.scene.width, this.scene.height),
+                this.render,
+                () => {
+                  // 解不了：换成 video 元素（这段已经被换掉或删掉就算了）
+                  if (this.frames.get(clip.key) !== created) return
+                  created.dispose()
+                  this.frames.set(clip.key, new ElementFrames(url, this.render))
+                  this.render()
+                },
+              )
       f = created
       this.frames.set(clip.key, f)
     }

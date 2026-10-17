@@ -126,7 +126,7 @@ describe('必需参考与取舍', () => {
     expect(r.blocked[0]?.message).toContain('「林夏」是必需参考，但这个模型最多带 2 张参考图')
   })
 
-  it('生成视频不在「图片参考」模式：可选参考记为 unsupported，必需参考阻断', async () => {
+  it('生成视频不在「多模态参考」模式：可选参考记为 unsupported，必需参考阻断', async () => {
     const { doc, box } = scene()
     const optional = shot(doc, 'plein/video', { prompt: '@林夏 @铁盒', mode: 'text' })
     const r1 = await applyMentions(doc, doc.get(optional)!, videoNode, {}, collect(doc))

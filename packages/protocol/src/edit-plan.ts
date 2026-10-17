@@ -43,7 +43,7 @@ export interface EditTarget extends EditBinding {
 }
 
 /** 执行阶段：按节点输出归类 */
-export type EditStage = 'image' | 'video' | 'speech' | 'other'
+export type EditStage = 'image' | 'video' | 'speech' | 'sfx' | 'other'
 
 /** 批准后要运行的一个节点 */
 export interface EditStep extends EditBinding {

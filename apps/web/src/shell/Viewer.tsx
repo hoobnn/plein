@@ -1,9 +1,11 @@
-import { adoptResult, currentResult, type NodeResult } from '@plein/doc'
+import { adoptResult, creativeReviewTarget, currentResult, type NodeResult } from '@plein/doc'
 import { useState, useSyncExternalStore } from 'react'
 import { assetUrls } from '../api/client'
 import { useCanvas } from '../stores/canvas'
 import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
+import { CreativeReviewForm } from '../features/storyboard/CreativeReviewForm'
+import { useStale } from '../features/runs/stale'
 
 /** 审片状态只在浮层里；只有明确采用才写文档。 */
 export function Viewer() {
@@ -23,6 +25,7 @@ function Review({ viewer }: { viewer: View }) {
     () => doc?.get(viewer.nodeId ?? '') ?? null,
   )
   const element = doc?.get(viewer.nodeId ?? '')
+  const stale = useStale((s) => s.nodes.has(viewer.nodeId ?? ''))
   const initial = element?.results?.find((r) => r.id === viewer.resultId)
   const candidates = element?.results?.filter((r) => r.port === initial?.port) ?? []
   const [selected, setSelected] = useState(viewer.resultId)
@@ -78,7 +81,10 @@ function Review({ viewer }: { viewer: View }) {
         }}
         onKeyDown={(e) => {
           const target = e.target as HTMLElement
-          if (target.closest('input,textarea,select,[contenteditable],video,audio')) return
+          if (
+            target.closest('input,textarea,select,[contenteditable],video,audio,[data-review-node]')
+          )
+            return
           if (e.key === 'ArrowLeft') {
             e.preventDefault()
             e.stopPropagation()
@@ -143,6 +149,17 @@ function Review({ viewer }: { viewer: View }) {
             </>
           )}
         </ModalHeader>
+        {element && doc && result && value && 'assetId' in value && (
+          <div className="max-h-56 shrink-0 overflow-auto border-b border-line px-4 py-2">
+            {creativeReviewTarget(element)?.resultId === result.id ? (
+              <CreativeReviewForm doc={doc} node={element} stale={stale} />
+            ) : (
+              <p className="text-xs text-ink-subtle">
+                正在预览其他候选；采用此候选后可记录创作验收。
+              </p>
+            )}
+          </div>
+        )}
         {kind === 'image' && (
           <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2 text-xs">
             <button

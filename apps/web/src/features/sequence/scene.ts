@@ -39,6 +39,7 @@ export function previewScene(
     return {
       key: `${id}#${n}`,
       assetId: row.pending ? undefined : id,
+      kind: row.clip.type === 'image' ? 'image' : 'video',
       start: c.start,
       length: c.length,
       in: row.in,

@@ -50,6 +50,27 @@ function syncType(msg: Uint8Array) {
 afterEach(() => vi.useRealTimers())
 
 describe('房间生命周期', () => {
+  it('坏连接发送异常不打断文档修改、持久化和其他连接', () => {
+    const store = memoryStore()
+    const rooms = new Rooms(store)
+    const room = rooms.get('broken-recipient')
+    const bad = { send: vi.fn(), close: vi.fn(), readOnly: false }
+    const good = recorder()
+    room.join(bad)
+    room.join(good.conn)
+    good.sent.splice(0)
+    bad.send.mockImplementation(() => {
+      throw new Error('socket gone')
+    })
+    expect(() => room.doc.getMap('content').set('value', 'kept')).not.toThrow()
+    expect(bad.close).toHaveBeenCalledWith(1011, 'send failed')
+    expect(good.sent.length).toBeGreaterThan(0)
+    room.flush()
+    const saved = replay(store, room.id)
+    expect(saved.getMap('content').get('value')).toBe('kept')
+    saved.destroy()
+    rooms.closeAll()
+  })
   it('定时卸载写入失败保留房间并重试，重试成功后再释放文档', () => {
     vi.useFakeTimers()
     const store = memoryStore()

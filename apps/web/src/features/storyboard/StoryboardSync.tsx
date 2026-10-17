@@ -9,12 +9,18 @@ import { EmptyState } from '../../ui/EmptyState'
 import { useCatalog } from '../../stores/catalog'
 import { voicePresets } from '../../ui/VoicePicker'
 
-const ROLE_LABEL: Record<ShotRole, string> = { image: '分镜图', video: '视频', speech: '配音' }
+const ROLE_LABEL: Record<ShotRole, string> = {
+  image: '分镜图',
+  video: '视频',
+  speech: '配音',
+  sfx: '音效',
+}
 const PARAM_LABEL: Record<string, string> = {
   prompt: '提示词',
   duration: '时长',
   text: '台词',
   voice: '音色',
+  instruction: '语气指令',
 }
 
 /** 参数值直接写进界面，空值说成「空」而不是留白 */

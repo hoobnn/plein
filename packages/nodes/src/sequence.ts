@@ -50,6 +50,7 @@ export const SequenceClip = z.object({
   speed: z.number().min(0.25).max(4).optional(),
   /** 台词在镜头开始后多久开始说（秒），默认 0 */
   lineDelay: z.number().min(0).max(10).optional(),
+  lineGap: z.number().min(0).max(10).optional(),
 })
 export type SequenceClip = z.infer<typeof SequenceClip>
 
@@ -64,6 +65,21 @@ export const SUBTITLE_STYLE_IDS: Record<(typeof SUBTITLE_STYLES)[number], Subtit
 
 const volume = (title: string, value: number) =>
   z.number().min(0).max(2).default(value).meta({ title })
+
+/** 字幕使用镜头内的相对秒数，移动镜头时随镜头走；hidden 保留文本和时间供恢复。 */
+export const SequenceSubtitleCue = z.object({
+  id: z.string(),
+  source: z.string(),
+  start: z.number().min(0),
+  end: z.number().min(0),
+  text: z.string(),
+  hidden: z.boolean().default(false),
+})
+export const SequenceSubtitleTrack = z.object({
+  inputKey: z.string(),
+  cues: z.array(SequenceSubtitleCue),
+})
+export type SequenceSubtitleTrack = z.infer<typeof SequenceSubtitleTrack>
 
 /** 序列：把镜头视频按顺序拼成成片，混合对白、配乐、音效，烧录字幕，导出 MP4 */
 export const sequenceNode = defineNode({
@@ -105,6 +121,7 @@ export const sequenceNode = defineNode({
       description: '用已启用平台的语音识别校准每句字幕的时间',
     }),
     model: z.string().default('').meta({ title: '语音识别模型', widget: 'hidden' }),
+    subtitleTrack: SequenceSubtitleTrack.optional().meta({ title: '字幕轨', widget: 'hidden' }),
   }),
 })
 
@@ -134,6 +151,7 @@ export interface ArrangedClip {
   volume: number
   /** 台词延后（秒） */
   lineDelay: number
+  lineGap?: number
   /** 进入这段的转场（不填跟随全局） */
   transition?: TransitionName
   transitionDuration?: number
@@ -187,6 +205,7 @@ export function arrangeSequence(
       speed: s?.speed ?? 1,
       volume: s?.volume ?? 1,
       lineDelay: s?.lineDelay ?? 0,
+      lineGap: s?.lineGap,
       transition: s?.transition,
       transitionDuration: s?.transitionDuration,
     }
@@ -284,6 +303,7 @@ export function sequenceTimeline(
   arranged: ArrangedClip[],
   durations: SequenceDurations,
   transcripts: Array<TranscriptSegment[] | undefined> = [],
+  moreTranscripts: Array<Array<TranscriptSegment[] | undefined>> = [],
 ): Timeline {
   const lengths = arranged.map((c, i) => clipLength(c, durations.clips[i] ?? 0))
   const transitions: Array<ComposeTransition | undefined> = []
@@ -339,7 +359,7 @@ export function sequenceTimeline(
           : durations.more?.[i]?.[c.dialogue ? k - 1 : k]
       const duration = Math.min(d ?? room - at, room - at)
       lines.push({ start: start + at, duration })
-      at += duration + LINE_GAP
+      at += duration + (c.lineGap ?? LINE_GAP)
     })
     let cues: Cue[] = []
     if (params.subtitles) {
@@ -348,8 +368,8 @@ export function sequenceTimeline(
       else
         cues = lines.flatMap((l, k) => {
           const offset = l.start - start
-          // 识别结果只对第一句（dialogue）做
-          const segs = k === 0 && c.dialogue ? transcripts[i] : undefined
+          const segs =
+            k === 0 && c.dialogue ? transcripts[i] : moreTranscripts[i]?.[c.dialogue ? k - 1 : k]
           return dialogueCues((own[k]!.caption ?? '').trim(), segs, l.duration).map((q) => ({
             start: offset + q.start,
             end: offset + q.end,
@@ -368,9 +388,92 @@ export function sequenceTimeline(
       for (let k = 0; k + 1 < cues.length; k++)
         cues[k]!.end = Math.min(cues[k]!.end, Math.max(cues[k]!.start + 0.04, cues[k + 1]!.start))
     }
+    if (params.subtitleTrack && params.subtitles) {
+      cues = params.subtitleTrack.cues
+        .filter((q) => q.source === subtitleSource(c, i) && !q.hidden && q.text.trim())
+        .map((q) => ({ start: start + q.start, end: Math.min(start + q.end, total), text: q.text }))
+        .filter((q) => q.end > q.start)
+    }
     return { start, length, lines, cues, transition }
   })
   return { clips, total }
+}
+
+const subtitleSource = (c: ArrangedClip, i: number) => c.source ?? `clip:${i}:${c.clip.assetId}`
+
+/** 只跟字幕的实际输入相关；混音、样式变化不会再次要求识别。 */
+export function subtitleInputKey(params: SequenceParams, arranged: ArrangedClip[]) {
+  return JSON.stringify({
+    model: params.asrTiming ? params.model : '',
+    transition: params.transition,
+    transitionDuration: params.transitionDuration,
+    clips: arranged.map((c, i) => ({
+      source: subtitleSource(c, i),
+      assetId: c.clip.assetId,
+      in: c.in,
+      out: c.out,
+      speed: c.speed,
+      delay: c.lineDelay,
+      gap: c.lineGap,
+      transition: c.transition,
+      transitionDuration: c.transitionDuration,
+      subtitle: c.subtitle,
+      lines: clipLines(c).map((l) => ({
+        source: l.source,
+        assetId: l.assetId,
+        caption: l.caption,
+      })),
+    })),
+  })
+}
+
+export function subtitleTrackStale(params: SequenceParams, arranged: ArrangedClip[]) {
+  return (
+    !!params.subtitleTrack && params.subtitleTrack.inputKey !== subtitleInputKey(params, arranged)
+  )
+}
+
+/** 创建字幕轨不调用平台；识别结果由显式识别入口提供，全部对白都参与对齐。 */
+export function createSubtitleTrack(
+  params: SequenceParams,
+  arranged: ArrangedClip[],
+  durations: SequenceDurations,
+  transcripts: Record<string, TranscriptSegment[]> = {},
+): SequenceSubtitleTrack {
+  const timeline = sequenceTimeline(
+    { ...params, subtitleTrack: undefined, subtitles: true },
+    arranged,
+    durations,
+    arranged.map((c) => (c.dialogue ? transcripts[c.dialogue.assetId] : undefined)),
+    arranged.map((c) => c.more.map((m) => transcripts[m.assetId])),
+  )
+  return {
+    inputKey: subtitleInputKey(params, arranged),
+    cues: timeline.clips.flatMap((clip, i) =>
+      clip.cues.map((q, k) => ({
+        id: `${subtitleSource(arranged[i]!, i)}:${k}`,
+        source: subtitleSource(arranged[i]!, i),
+        start: Number(Math.max(0, q.start - clip.start).toFixed(3)),
+        end: Number(Math.max(0, q.end - clip.start).toFixed(3)),
+        text: q.text,
+        hidden: false,
+      })),
+    ),
+  }
+}
+
+/** 所有导出入口共用的门禁；绝不在导出时隐式调用付费识别。 */
+export function subtitleExportProblem(params: SequenceParams, arranged: ArrangedClip[]) {
+  if (!params.subtitles) return undefined
+  if (subtitleTrackStale(params, arranged))
+    return '字幕已过期，请在序列编辑器按当前素材重建或重新识别字幕后再导出'
+  if (params.asrTiming && !params.subtitleTrack)
+    return '请先在序列编辑器识别全部对白并检查字幕，再导出'
+  const invalid = params.subtitleTrack?.cues.some(
+    (q) => !q.hidden && (q.end <= q.start || !q.text.trim()),
+  )
+  if (invalid) return '有字幕的结束时间不晚于开始时间，或文本为空，请修正或隐藏后再导出'
+  return undefined
 }
 
 /**
@@ -406,6 +509,8 @@ export function sequenceSpec(
   name?: string,
   transcripts?: Array<TranscriptSegment[] | undefined>,
 ): ComposeSpec {
+  const problem = subtitleExportProblem(params, arranged)
+  if (problem) throw new Error(problem)
   const { width, height } = sequenceSize(params)
   const tl = sequenceTimeline(params, arranged, durations, transcripts)
   const audio: ComposeAudio[] = []

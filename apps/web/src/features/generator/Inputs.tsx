@@ -131,6 +131,8 @@ export function Inputs({
   // 生成视频的图片按模式标注用途：图生视频第 1 张是首帧，首尾帧第 1、2 张分别是首帧、尾帧
   const mode = node.capability === 'video.generate' ? el.params?.mode : undefined
   const roleOf = (port: InputPort, i: number) => {
+    if (port.id === 'videos' || port.id === 'audios')
+      return mode === 'reference' ? port.label : '当前模式不使用'
     if (port.id !== 'images') return undefined
     if (mode === 'image') return i === 0 ? '首帧' : '未使用'
     if (mode === 'frames') return ['首帧', '尾帧'][i] ?? '未使用'

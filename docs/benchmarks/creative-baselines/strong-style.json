@@ -1,0 +1,66 @@
+{
+  "format": "plein-creative-baseline",
+  "version": 1,
+  "id": "strong-style",
+  "title": "强风格",
+  "brief": "黑白木刻风格的雨夜城市，一名戴宽檐帽的信使找到发光路牌，穿过巷口后在旧桥停下。全片保持刻线、纸张和高反差风格。",
+  "aspectRatio": "9:16",
+  "trialShotId": "strong-style-1",
+  "shots": [
+    {
+      "id": "strong-style-1",
+      "no": 1,
+      "duration": 5,
+      "shotSize": "中景",
+      "description": "黑白木刻街景，信使出现在画面左侧",
+      "characters": ["信使"],
+      "emotion": "",
+      "lighting": "",
+      "sfx": "",
+      "dialogue": [],
+      "imagePrompt": "黑白木刻街景，信使出现在画面左侧",
+      "motionPrompt": "缓慢推近，雨线沿木刻纹理落下"
+    },
+    {
+      "id": "strong-style-2",
+      "no": 2,
+      "duration": 5,
+      "shotSize": "中景",
+      "description": "发光路牌近景，刻线清晰，纸纹可见",
+      "characters": ["信使"],
+      "emotion": "",
+      "lighting": "",
+      "sfx": "",
+      "dialogue": [],
+      "imagePrompt": "发光路牌近景，刻线清晰，纸纹可见",
+      "motionPrompt": "信使抬手触碰路牌，光只改变局部留白"
+    },
+    {
+      "id": "strong-style-3",
+      "no": 3,
+      "duration": 5,
+      "shotSize": "中景",
+      "description": "旧桥远景，信使站在桥边",
+      "characters": ["信使"],
+      "emotion": "",
+      "lighting": "",
+      "sfx": "",
+      "dialogue": [],
+      "imagePrompt": "旧桥远景，信使站在桥边",
+      "motionPrompt": "镜头拉远，保持纯黑白和同一种木刻刻线"
+    }
+  ],
+  "manualChecks": [
+    "三镜保持同一种刻线和纸纹",
+    "角色宽檐帽与剪影保持辨识度",
+    "不存在突然切换成摄影或彩色画面"
+  ],
+  "measurement": {
+    "runId": null,
+    "firstShotComplete": null,
+    "humanActions": null,
+    "videoSubmits": null,
+    "evidence": [],
+    "quality": "pending-manual"
+  }
+}

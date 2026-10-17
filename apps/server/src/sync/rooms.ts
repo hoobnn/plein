@@ -254,7 +254,20 @@ export class Room {
   }
 
   private broadcast(data: Uint8Array, except?: unknown) {
-    for (const conn of this.conns.keys()) if (conn !== except) conn.send(data)
+    for (const conn of this.conns.keys()) {
+      if (conn === except) continue
+      try {
+        conn.send(data)
+      } catch {
+        // A broken browser connection must not abort the document mutation or its other recipients.
+        this.leave(conn)
+        try {
+          conn.close(1011, 'send failed')
+        } catch {
+          /* Already disconnected. */
+        }
+      }
+    }
   }
 }
 

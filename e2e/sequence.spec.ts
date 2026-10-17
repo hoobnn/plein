@@ -248,3 +248,224 @@ test('序列时间线：排序、修剪、播放', async ({ page }) => {
   await page.keyboard.press('Escape')
   await expect(editor).toBeHidden()
 })
+
+test('字幕持久轨：全部对白、逐句编辑、工程一致与异步覆盖保护', async ({ page }) => {
+  await newProject(page)
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: '上传' }).click()
+  await (
+    await chooser
+  ).setFiles(['shot-c.webm', 'line.wav', 'music.wav'].map((name) => join(dir, name)))
+  await expect
+    .poll(
+      async () =>
+        (await elements(page)).filter((e) => e.kind === 'audio' || e.kind === 'video').length,
+    )
+    .toBe(3)
+  const seq = await page.evaluate(() => {
+    const all = [...window.__plein.engine.doc.elements()]
+    const video = all.find((e) => e.name === 'shot-c.webm')!
+    const d1 = all.find((e) => e.name === 'line.wav')!
+    const d2 = all.find((e) => e.name === 'music.wav')!
+    const id = window.__plein.addNode({
+      type: 'plein/sequence',
+      name: '字幕回归',
+      x: 800,
+      y: 500,
+      params: {
+        model: 'plein/mock:audio',
+        clips: [{ source: video.id, dialogue: d1.id, more: [d2.id] }],
+      },
+    })
+    window.__plein.connect([video.id, 'video'], [id, 'clips'])
+    window.__plein.connect([d1.id, 'audio'], [id, 'dialogue'])
+    window.__plein.connect([d2.id, 'audio'], [id, 'dialogue'])
+    return id
+  })
+  const open = async () => {
+    await zoomTo(page, [seq])
+    const point = await centerOf(page, seq)
+    await page.mouse.dblclick(point.x, point.y)
+    await page
+      .getByRole('dialog', { name: '序列' })
+      .getByRole('button', { name: '字幕', exact: true })
+      .click()
+  }
+  await open()
+  const editor = page.getByRole('dialog', { name: '序列' })
+  const recognize = editor.getByRole('button', { name: '识别全部对白并重建字幕' })
+  await expect(recognize).toBeEnabled()
+  const response = page.waitForResponse(
+    (r) => r.url().includes('/subtitle-recognize') && r.status() === 200,
+  )
+  await recognize.click()
+  const recognized = (await (await response).json()) as { transcripts: Record<string, unknown> }
+  expect(Object.keys(recognized.transcripts)).toHaveLength(2)
+  const text = editor.getByRole('textbox', { name: '镜头 1 字幕 1 文本', exact: true })
+  await expect(text).toBeVisible()
+  await expect(editor.getByRole('textbox', { name: /镜头 1 字幕 \d 文本/ })).toHaveCount(4)
+  await text.fill('人工修订的第一句')
+  await editor.getByRole('spinbutton', { name: '镜头 1 字幕 1 开始（秒）' }).fill('0.25')
+  await editor.getByRole('checkbox', { name: '显示字幕 2', exact: true }).uncheck()
+  await expect(editor.locator('.seq-block-text')).toHaveCount(3)
+  await expect(editor.locator('.seq-block-text').first()).toContainText('人工修订的第一句')
+  const request = page.waitForRequest(
+    (r) => r.url().endsWith('/sequence-export') && r.method() === 'POST',
+  )
+  const download = page.waitForEvent('download')
+  await editor.getByRole('button', { name: '导出工程', exact: true }).click()
+  const spec = (await request).postDataJSON().spec as {
+    subtitles: { cues: Array<{ start: number; text: string }> }
+  }
+  expect(spec.subtitles.cues).toHaveLength(3)
+  expect(spec.subtitles.cues[0]).toMatchObject({ start: 0.25, text: '人工修订的第一句' })
+  expect(
+    readFileSync((await (await download).path())!).includes(Buffer.from('subtitles.srt')),
+  ).toBe(true)
+  await editor.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.reload()
+  await page.waitForFunction(() => !!window.__plein)
+  await open()
+  await expect(text).toHaveValue('人工修订的第一句')
+  await expect(editor.getByRole('checkbox', { name: '显示字幕 2', exact: true })).not.toBeChecked()
+  await page.evaluate((id) => {
+    const doc = window.__plein.engine.doc
+    const clips = doc.get(id)!.params!.clips as Array<Record<string, unknown>>
+    const params = doc.mutable(id)!.get('params') as { set(key: string, value: unknown): void }
+    params.set(
+      'clips',
+      clips.map((c) => ({ ...c, lineDelay: 0.25 })),
+    )
+  }, seq)
+  await expect(editor.getByRole('button', { name: '导出工程', exact: true })).toBeDisabled()
+  await expect(editor.getByText(/字幕已过期/).first()).toBeVisible()
+
+  let release!: () => void
+  let fetched!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const ready = new Promise<void>((resolve) => {
+    fetched = resolve
+  })
+  await page.route('**/api/media/subtitle-recognize', async (route) => {
+    const result = await route.fetch()
+    fetched()
+    await gate
+    await route.fulfill({ response: result })
+  })
+  await recognize.click()
+  await ready
+  await text.fill('识别等待期间继续编辑')
+  release()
+  await expect(editor.getByRole('alert')).toContainText('未覆盖编辑')
+  await expect(text).toHaveValue('识别等待期间继续编辑')
+  await expect(editor.getByRole('button', { name: '导出工程', exact: true })).toBeDisabled()
+  await page.unroute('**/api/media/subtitle-recognize')
+  // 未知状态的展示与显式恢复操作使用接口夹具；持久 journal/续查在服务端专项用真 host 验证。
+  const recoveringAsset = Object.keys(recognized.transcripts)[0]!
+  const recoveryInfo = {
+    model: 'plein/mock:audio',
+    assetId: recoveringAsset,
+    expected: 'unknown-revision',
+    recovery: { state: 'submit_unknown', attachable: true, note: '提交状态未知，请先在平台核查' },
+  }
+  await page.route('**/api/media/subtitle-recognition?**', (route) =>
+    route.fulfill({
+      json:
+        new URL(route.request().url()).searchParams.get('assetId') === recoveringAsset
+          ? recoveryInfo
+          : null,
+    }),
+  )
+  let recoveryBody: Record<string, unknown> | undefined
+  let newRecognitions = 0
+  await page.route('**/api/media/subtitle-recover', (route) => {
+    recoveryBody = route.request().postDataJSON()
+    return route.fulfill({ json: { ok: true } })
+  })
+  await page.route('**/api/media/subtitle-recognize', (route) => {
+    newRecognitions++
+    return route.fulfill({ json: recognized })
+  })
+  await page.reload()
+  await page.waitForFunction(() => !!window.__plein)
+  await open()
+  const recoveryControls = editor.locator('[aria-label="字幕识别恢复"]')
+  await expect(recoveryControls).toBeVisible()
+  await expect(
+    recoveryControls.getByRole('button', { name: '确认未受理，重新提交识别' }),
+  ).toBeDisabled()
+  expect(newRecognitions).toBe(0)
+  await recoveryControls
+    .getByRole('textbox', { name: '字幕识别平台任务 ID' })
+    .fill('platform-asr-123')
+  await recoveryControls.getByRole('button', { name: '关联任务并续查' }).click()
+  await expect
+    .poll(() => recoveryBody)
+    .toMatchObject({
+      expected: 'unknown-revision',
+      operation: { action: 'attach', remoteId: 'platform-asr-123' },
+    })
+  await expect.poll(() => newRecognitions).toBe(1)
+  await expect(editor.getByRole('button', { name: '导出工程', exact: true })).toBeEnabled()
+})
+
+test('普通音频工具自定义切点与区间：预览后生成新素材，拒绝无效计划', async ({ page }) => {
+  await newProject(page)
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: '上传' }).click()
+  await (await chooser).setFiles(join(dir, 'music.wav'))
+  await expect
+    .poll(async () => (await elements(page)).filter((e) => e.kind === 'audio').length)
+    .toBe(1)
+  const audio = (await elements(page)).find((e) => e.kind === 'audio')!
+  const requests: unknown[] = []
+  page.on('request', (request) => {
+    if (request.url().endsWith('/media/derive') && request.method() === 'POST')
+      requests.push(request.postDataJSON())
+  })
+  const openTools = async () => {
+    await page.keyboard.press('Escape')
+    await zoomTo(page, [audio.id])
+    const point = await centerOf(page, audio.id)
+    await page.mouse.click(point.x, point.y)
+    await page
+      .getByRole('toolbar', { name: '结果操作' })
+      .getByRole('button', { name: '媒体工具' })
+      .click()
+    await page.getByRole('button', { name: '手动切分' }).click()
+  }
+  await openTools()
+  await page.getByRole('combobox', { name: '分段方式' }).selectOption('cuts')
+  await page.getByRole('textbox', { name: '音频切点' }).fill('1.2, 4.5')
+  await expect(page.locator('[aria-label="切分区间预览"]')).toContainText('将生成 3 段')
+  await page.getByRole('button', { name: '开始加工' }).click()
+  await expect
+    .poll(async () => (await elements(page)).filter((e) => e.kind === 'audio').length)
+    .toBe(4)
+  expect(requests).toHaveLength(1)
+  expect(requests[0]).toMatchObject({
+    op: 'split',
+    segments: [
+      { start: 0, end: 1.2 },
+      { start: 1.2, end: 4.5 },
+      { start: 4.5, end: 9 },
+    ],
+  })
+  await openTools()
+  await page.getByRole('combobox', { name: '分段方式' }).selectOption('ranges')
+  await page.getByRole('textbox', { name: '音频区间' }).fill('0 - 1\n2 - 4')
+  await expect(page.locator('[aria-label="切分区间预览"]')).toContainText('将生成 2 段')
+  await page.getByRole('button', { name: '开始加工' }).click()
+  await expect
+    .poll(async () => (await elements(page)).filter((e) => e.kind === 'audio').length)
+    .toBe(6)
+  expect(requests).toHaveLength(2)
+  await openTools()
+  await page.getByRole('combobox', { name: '分段方式' }).selectOption('cuts')
+  await page.getByRole('textbox', { name: '音频切点' }).fill('3, 1')
+  await page.getByRole('button', { name: '开始加工' }).click()
+  await expect(page.locator('.ui-toast')).toContainText('切点需严格递增')
+  expect(requests).toHaveLength(2)
+})

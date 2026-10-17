@@ -152,7 +152,11 @@ export function serverContext(env: ToolEnv): ServerContext {
   }
   const info = (key: string, n: NonNullable<ReturnType<typeof host.registry.latestNode>>) => ({
     def: n.def,
-    descriptor: withDefaultModel(describeNode(n.def, n.plugin), (c) => host.defaultModel(c)),
+    descriptor: withDefaultModel(
+      describeNode(n.def, n.plugin),
+      (c) => host.defaultModel(c),
+      (cap, ref) => host.models(cap).find((m) => m.ref === ref)?.limits,
+    ),
     runnable: executionOf(n.def) === 'inline' || host.registry.executors.has(key),
   })
   return {
@@ -820,13 +824,13 @@ const runStoryboard = serverCapability({
   name: 'run_storyboard',
   title: '批量运行分镜',
   description:
-    '批量运行分镜展开出来的某一类节点：image（分镜图）、video（镜头视频，要等分镜图有结果）、speech（配音）。会产生费用，需要用户确认。image 作为一组运行：镜头 @ 到的角色、场景卡还没出定妆图的先出，返回 group_id，用 wait_for_group 等结果；video、speech 返回发起的运行和跳过的原因，之后用 wait_for_run 逐个等结果。',
+    '批量运行分镜展开出来的某一类节点：image（分镜图）、video（镜头视频，要等分镜图有结果）、speech（配音）、sfx（镜头音效）。会产生费用，需要用户确认。image 作为一组运行：镜头 @ 到的角色、场景卡还没出定妆图的先出，返回 group_id，用 wait_for_group 等结果；video、speech、sfx 返回发起的运行和跳过的原因，之后用 wait_for_run 逐个等结果。',
   group: 'run',
   where: 'server',
   effect: 'run',
   input: z.object({
     id: id.describe('分镜节点'),
-    role: z.enum(['image', 'video', 'speech']),
+    role: z.enum(['image', 'video', 'speech', 'sfx']),
     shot_ids: z.array(z.string()).optional().describe('只跑这些镜头；不填跑全部'),
   }),
   run: (ctx, a) => {

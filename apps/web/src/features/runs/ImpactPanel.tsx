@@ -12,7 +12,7 @@ import { Presence } from '../../ui/Presence'
 import { StoryboardSync } from '../storyboard/StoryboardSync'
 import { groupRunSignal } from './groupRuns'
 
-const ROLE_LABEL = { image: '镜头图', video: '视频', speech: '配音' } as const
+const ROLE_LABEL = { image: '镜头图', video: '视频', speech: '配音', sfx: '音效' } as const
 
 const SUGGEST: Record<ImpactSuggestion, string> = {
   rerun: '建议重做',

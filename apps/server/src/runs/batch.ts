@@ -1,4 +1,6 @@
 import { type CanvasElement, currentResult, type PleinDoc } from '@plein/doc'
+import { createHash } from 'node:crypto'
+import { stableStringify } from '@plein/flow'
 import type {
   BatchDependency,
   BatchItem,
@@ -20,6 +22,28 @@ export interface JobExpect {
   inputHash?: string
   planHash?: string
   deps?: BatchDependency[]
+}
+
+/** 只冻结会改变输入的文档事实，排除布局、运行进度、审核及交付意见。 */
+export function batchSourceKey(doc: PleinDoc, el: CanvasElement): string {
+  return createHash('sha256')
+    .update(
+      stableStringify({
+        name: el.name,
+        kind: el.kind,
+        nodeType: el.nodeType,
+        version: el.nodeVersion,
+        params: el.params,
+        assetId: el.assetId,
+        text: el.text,
+        ports: el.ports,
+        edges: [...doc.edges()]
+          .filter((edge) => edge.to[0] === el.id)
+          .map(({ id, from, to, order }) => ({ id, from, to, order }))
+          .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+      }),
+    )
+    .digest('hex')
 }
 
 export function parseExpect(raw: string | null | undefined): JobExpect | undefined {
@@ -117,7 +141,7 @@ export async function snapshotBatch(
 /** 批次里一个目标提交时带的计划 */
 export function expectOf(item: BatchItemRow): JobExpect {
   const deps = JSON.parse(item.deps) as BatchDependency[]
-  if (item.input_hash && !deps.length) return { inputHash: item.input_hash }
+  if (item.input_hash) return { inputHash: item.input_hash, ...(deps.length ? { deps } : {}) }
   return { ...(item.plan_hash ? { planHash: item.plan_hash } : {}), deps }
 }
 
@@ -130,11 +154,13 @@ export function planChange(
   now: { inputHash?: string; planHash: string },
   ctx: { doc: PleinDoc; groupId?: string | null; store: JobStore },
 ): string | undefined {
-  if (expect.inputHash !== undefined)
-    return now.inputHash === expect.inputHash ? undefined : '实际输入与确认时不同'
+  if (expect.inputHash !== undefined && now.inputHash !== expect.inputHash)
+    return '实际输入与确认时不同'
   if (expect.planHash && expect.planHash !== now.planHash) return '节点的参数或模型与确认时不同'
   for (const dep of expect.deps ?? []) {
     const up = ctx.doc.get(dep.nodeId)
+    if (dep.sourceKey && (!up || batchSourceKey(ctx.doc, up) !== dep.sourceKey))
+      return `「${up?.name ?? dep.nodeId}」的内容或连线与清单不同`
     const r = up && currentResult(up)
     if (!r || r.id === dep.resultId) continue
     if (ctx.groupId) {

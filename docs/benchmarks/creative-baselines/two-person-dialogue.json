@@ -1,0 +1,88 @@
+{
+  "format": "plein-creative-baseline",
+  "version": 1,
+  "id": "two-person-dialogue",
+  "title": "双人对白",
+  "brief": "地铁末班车前，甲把迟到的告别交给乙。两人轮流说话，角色与音色保持一致。",
+  "aspectRatio": "9:16",
+  "trialShotId": "two-person-dialogue-1",
+  "shots": [
+    {
+      "id": "two-person-dialogue-1",
+      "no": 1,
+      "duration": 5,
+      "shotSize": "中景",
+      "description": "站台双人中景，甲递出旧票根",
+      "characters": ["甲", "乙"],
+      "emotion": "",
+      "lighting": "",
+      "sfx": "",
+      "dialogue": [
+        {
+          "id": "two-person-dialogue-1-line-1",
+          "character": "甲",
+          "line": "这张票，我一直留着。"
+        },
+        {
+          "id": "two-person-dialogue-1-line-2",
+          "character": "乙",
+          "line": "原来你也没走远。"
+        }
+      ],
+      "imagePrompt": "站台双人中景，甲递出旧票根",
+      "motionPrompt": "甲递出车票，乙先看车票再抬头"
+    },
+    {
+      "id": "two-person-dialogue-2",
+      "no": 2,
+      "duration": 5,
+      "shotSize": "中景",
+      "description": "乙近景，背景车门即将合上",
+      "characters": ["甲", "乙"],
+      "emotion": "",
+      "lighting": "",
+      "sfx": "",
+      "dialogue": [
+        {
+          "id": "two-person-dialogue-2-line-1",
+          "character": "乙",
+          "line": "这次我们一起走。"
+        },
+        {
+          "id": "two-person-dialogue-2-line-2",
+          "character": "甲",
+          "line": "好，我不再迟到。"
+        }
+      ],
+      "imagePrompt": "乙近景，背景车门即将合上",
+      "motionPrompt": "乙轻轻点头，甲不抢对白"
+    },
+    {
+      "id": "two-person-dialogue-3",
+      "no": 3,
+      "duration": 5,
+      "shotSize": "中景",
+      "description": "两人并肩走向车厢，背影全景",
+      "characters": ["甲", "乙"],
+      "emotion": "",
+      "lighting": "",
+      "sfx": "",
+      "dialogue": [],
+      "imagePrompt": "两人并肩走向车厢，背影全景",
+      "motionPrompt": "保持从左向右进车的运动方向"
+    }
+  ],
+  "manualChecks": [
+    "两名角色身份和音色不串位",
+    "四句台词都出现且先后顺序正确",
+    "字幕与对应说话角色一致"
+  ],
+  "measurement": {
+    "runId": null,
+    "firstShotComplete": null,
+    "humanActions": null,
+    "videoSubmits": null,
+    "evidence": [],
+    "quality": "pending-manual"
+  }
+}

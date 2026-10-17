@@ -208,7 +208,7 @@ describe('提交状态未知', () => {
     const a = addNode(doc, 'plein/image', { params: { prompt: 'a', count: 1 } })
     const run = first.server.runs.start(id, a, 'local')
     await until(() => first.server.runs.store.get(run)?.calls.includes('submitting'))
-    first.close()
+    await first.close()
 
     const second = await bootServer({ dataDir: first.dataDir })
     const doc2 = createDoc(second.server.rooms.get(id).doc, { schedule: () => {} })

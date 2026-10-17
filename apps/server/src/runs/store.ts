@@ -229,6 +229,14 @@ export class JobStore {
     this.db.insert(batchItems).values(rows).run()
   }
 
+  /** 清单确认与批准输入同一事务落库，进程重启也不会丢失批准边界。 */
+  insertApprovedGroup(group: Parameters<JobStore['insertGroup']>[0], items: BatchItemRow[]) {
+    this.db.transaction(() => {
+      this.insertGroup(group)
+      this.insertBatchItems(items)
+    })
+  }
+
   batchItems(groupId: string): BatchItemRow[] {
     return this.db
       .select()

@@ -11,6 +11,7 @@ import {
 import {
   diffPlan,
   matchLines,
+  newDialogueId,
   type PlanContext,
   type PlanDiff,
   planParams,
@@ -18,6 +19,7 @@ import {
   SEQUENCE_TYPE,
   type SequenceClip,
   type Shot,
+  Shot as ShotSchema,
   type ShotPlan,
   type ShotRole,
   syncPlan,
@@ -26,6 +28,8 @@ import {
   voiceOf,
 } from '@plein/nodes'
 import { mentionElements, type NodeFactory } from './nodes'
+import { bindShotAssets, resolveShotAsset, shotAssetMention } from './bindings'
+import { activeShotNodes } from './activeShotNodes'
 
 /** 展开出来的节点记下来源，重新展开、批量运行、同步都按它找 */
 export interface ShotSource {
@@ -33,10 +37,10 @@ export interface ShotSource {
   shot: string
   role: ShotRole
   /**
-   * 配音节点上次对上的台词在 dialogue 里的序号。只作兜底：
-   * 表格增删台词后按内容重新对应（见 matchLines），同步时回写新序号
+   * 配音节点上次对应的台词序号。新节点以 dialogueId 为准；仅旧数据迁移时兜底。
    */
   line?: number
+  dialogueId?: string
   /** 展开时的分镜版本与写进节点的参数快照：表格改动后据此算差异 */
   plan?: ShotPlan
   /** 分镜行被删除：节点和产物保留，只是不再跟随计划更新 */
@@ -45,9 +49,42 @@ export interface ShotSource {
 
 const sourceOf = (el: CanvasElement) => el.params?.source as ShotSource | undefined
 
+/** 兼容旧客户端整行写回没有 id 的台词；已有稳定 id 的编辑完全绕过启发式。 */
+function migrateShot(doc: PleinDoc, boardId: string, shot: Shot): Shot {
+  if (shot.dialogue.every((d) => d.id)) return bindShotAssets(doc, shot)
+  const nodes = [...doc.elements()].filter((el) => {
+    const source = sourceOf(el)
+    return source?.storyboard === boardId && source.shot === shot.id && source.role === 'speech'
+  })
+  if (!nodes.length) return bindShotAssets(doc, shot)
+  const matched = matchLines(
+    nodes.map((el, i) => ({
+      id: el.id,
+      line: sourceOf(el)?.line ?? i,
+      text: String(sourceOf(el)?.plan?.params.text ?? el.params?.text ?? ''),
+    })),
+    shot.dialogue,
+  )
+  const ids = new Map<number, string>()
+  for (const el of nodes) {
+    const at = matched.get(el.id)
+    const id = sourceOf(el)?.dialogueId
+    if (at !== undefined && id) ids.set(at, id)
+  }
+  return bindShotAssets(doc, {
+    ...shot,
+    dialogue: shot.dialogue.map((d, i) => (d.id ? d : { ...d, id: ids.get(i) ?? newDialogueId() })),
+  })
+}
+
 export function shotsOf(el: CanvasElement | undefined): Shot[] {
   const list = el?.params?.shots
-  return Array.isArray(list) ? (list as Shot[]) : []
+  return Array.isArray(list)
+    ? list.flatMap((value) => {
+        const parsed = ShotSchema.safeParse(value)
+        return parsed.success ? [parsed.data] : []
+      })
+    : []
 }
 
 /** 某个分镜表已展开的节点，按镜头 id 分组 */
@@ -75,23 +112,27 @@ interface PlanEnv {
   version: string
   mentions(shot: Shot): string
   /** 连平台一起取，换了配音模型才判断得出音色能不能用 */
-  voice(character: string): VoiceRef
+  voice(shot: Shot, line: number): VoiceRef
 }
 
 const planEnv = (doc: PleinDoc, boardId: string): PlanEnv => {
-  const targets = mentionElements(doc)
-  // 重名的角色卡不猜：分镜里只写了名字，指不出是哪一个，跳过并告诉用户，
-  // 好过悄悄把另一张卡的设定和参考图送进模型
-  const single = (name: string) =>
-    targets.get(name)?.length === 1 ? targets.get(name)![0] : undefined
   return {
     version: planVersion(shotsOf(doc.get(boardId))),
     mentions: (shot) =>
       shot.characters
-        .filter((c) => single(c))
-        .map((c) => `@${c}`)
+        .map((c) => resolveShotAsset(doc, c, shot.assetBindings?.[c]))
+        .filter((el): el is CanvasElement => !!el)
+        .map((el) => shotAssetMention(doc, el))
         .join(' '),
-    voice: (character) => voiceOf(single(character)?.params),
+    voice: (shot, line) => {
+      const d = shot.dialogue[line]
+      return voiceOf(
+        d
+          ? resolveShotAsset(doc, d.character, d.speaker ?? shot.assetBindings?.[d.character])
+              ?.params
+          : undefined,
+      )
+    },
   }
 }
 
@@ -100,7 +141,12 @@ function ambiguousCharacters(doc: PleinDoc, boardId: string, shotIds: string[]):
   const targets = mentionElements(doc)
   const out = new Set<string>()
   for (const shot of shotsOf(doc.get(boardId)).filter((s) => shotIds.includes(s.id)))
-    for (const name of shot.characters) if ((targets.get(name)?.length ?? 0) > 1) out.add(name)
+    for (const name of shot.characters)
+      if (
+        !resolveShotAsset(doc, name, shot.assetBindings?.[name]) &&
+        (targets.get(name)?.length ?? 0) > 1
+      )
+        out.add(name)
   return [...out]
 }
 
@@ -110,6 +156,7 @@ const actualOf = (el: CanvasElement): Record<string, unknown> => ({
   duration: el.params?.duration,
   text: el.params?.text,
   voice: el.params?.voice,
+  instruction: el.params?.instruction,
 })
 
 /**
@@ -125,6 +172,7 @@ function linesOf(list: CanvasElement[], shot: Shot) {
         id: el.id,
         line: src.line ?? i,
         text: String(src.plan?.params.text ?? el.params?.text ?? ''),
+        dialogueId: src.dialogueId,
       }
     }),
     shot.dialogue,
@@ -143,7 +191,7 @@ const contextOf = (el: CanvasElement, env: PlanEnv, shot: Shot, line: number): P
     wanted: planParams(shot, src.role, {
       mentions: env.mentions(shot),
       line,
-      voice: env.voice(shot.dialogue[line]?.character ?? ''),
+      voice: env.voice(shot, line),
     }),
     actual: actualOf(el),
   }
@@ -214,7 +262,12 @@ export function syncExpanded(
   shotIds: string[],
   mode: SyncMode,
 ): SyncResult {
-  const shots = new Map(shotsOf(doc.get(boardId)).map((s) => [s.id, s]))
+  const all = shotsOf(doc.get(boardId)).map((s) =>
+    shotIds.includes(s.id) ? migrateShot(doc, boardId, s) : s,
+  )
+  if (JSON.stringify(all) !== JSON.stringify(shotsOf(doc.get(boardId))))
+    setParams(doc, boardId, { shots: all })
+  const shots = new Map(all.map((s) => [s.id, s]))
   const env = planEnv(doc, boardId)
   let nodes = 0
   let fields = 0
@@ -232,10 +285,15 @@ export function syncExpanded(
       const sync = syncPlan(src.role, mode, ctx)
       const patch = Object.keys(sync.params)
       // 台词增删后对应到了新位置：序号一并回写，下次兜底才不会错
-      const moved = src.role === 'speech' && src.line !== line
+      const moved =
+        src.role === 'speech' && (src.line !== line || src.dialogueId !== shot.dialogue[line]?.id)
       const settled = JSON.stringify(sync.plan) !== JSON.stringify(src.plan ?? null)
       if (!patch.length && !settled && !moved) continue
-      const next = { ...src, plan: sync.plan, ...(src.role === 'speech' ? { line } : {}) }
+      const next = {
+        ...src,
+        plan: sync.plan,
+        ...(src.role === 'speech' ? { line, dialogueId: shot.dialogue[line]?.id } : {}),
+      }
       setParams(doc, el.id, { ...sync.params, source: next })
       if (patch.length) {
         nodes++
@@ -297,7 +355,7 @@ function sequenceAspect(doc: PleinDoc): string | undefined {
  */
 function linkSequence(
   doc: PleinDoc,
-  shots: Array<{ video: string; speeches: string[] }>,
+  shots: Array<{ video: string; speeches: string[]; sfx?: string }>,
 ): SequenceLink {
   const seqs = [...doc.elements()].filter((e) => e.kind === 'node' && e.nodeType === SEQUENCE_TYPE)
   if (seqs.length !== 1) return seqs.length ? 'ambiguous' : 'none'
@@ -311,6 +369,7 @@ function linkSequence(
     if (!has(s.video, 'clips')) connect(doc, [s.video, 'video'], [seq.id, 'clips'])
     for (const sp of s.speeches)
       if (!has(sp, 'dialogue')) connect(doc, [sp, 'audio'], [seq.id, 'dialogue'])
+    if (s.sfx && !has(s.sfx, 'sfx')) connect(doc, [s.sfx, 'audio'], [seq.id, 'sfx'])
     const at = clips.findIndex((c) => c.source === s.video)
     if (at < 0) {
       const [first, ...rest] = s.speeches
@@ -319,14 +378,30 @@ function linkSequence(
         in: 0,
         dialogue: first ?? '',
         ...(rest.length ? { more: rest } : {}),
+        ...(s.sfx ? { sfx: s.sfx } : {}),
       })
       continue
     }
     const c = clips[at]!
-    const dialogue = c.dialogue || s.speeches[0] || c.dialogue
-    const used = new Set([dialogue, ...(c.more ?? [])])
-    const more = [...(c.more ?? []), ...s.speeches.filter((sp) => !used.has(sp))]
-    clips[at] = { ...c, dialogue, ...(more.length ? { more } : {}) }
+    const videoSource = sourceOf(doc.get(s.video)!)
+    const managed = (id: string | undefined, role: ShotRole) => {
+      const el = id ? doc.get(id) : undefined
+      const source = el && sourceOf(el)
+      return (
+        source?.role === role &&
+        source.storyboard === videoSource?.storyboard &&
+        source.shot === videoSource?.shot
+      )
+    }
+    const dialogue =
+      !c.dialogue || managed(c.dialogue, 'speech') ? (s.speeches[0] ?? '') : c.dialogue
+    const retained = (c.more ?? []).filter((id) => !managed(id, 'speech'))
+    const more = [...new Set([...s.speeches.filter((sp) => sp !== dialogue), ...retained])]
+    const sound = c.sfx && !managed(c.sfx, 'sfx') ? c.sfx : (s.sfx ?? '')
+    const next = { ...c, dialogue, ...(s.sfx || managed(c.sfx, 'sfx') ? { sfx: sound } : {}) }
+    if (more.length) next.more = more
+    else delete next.more
+    clips[at] = next
   }
   setParams(doc, seq.id, { clips })
   return 'linked'
@@ -359,6 +434,7 @@ export function expandShots(
   const image = make('plein/image')
   const video = make('plein/video')
   const speech = make('plein/speech')
+  const soundEffect = make('plein/sfx')
   const empty: ExpandResult = {
     frames: [],
     created: 0,
@@ -369,7 +445,7 @@ export function expandShots(
   }
   if (!board || !boardRect || !image || !video || !speech) return empty
   const done = expandedNodes(doc, boardId)
-  const all = shotsOf(board)
+  const all = shotsOf(board).map((shot) => migrateShot(doc, boardId, shot))
   const picked = all.filter((s) => shotIds.includes(s.id))
   if (picked.length === 0) return empty
   const shots = options.mode === 'update' ? picked : picked.filter((s) => !done.has(s.id))
@@ -397,7 +473,6 @@ export function expandShots(
     x = right + 120
   }
 
-  const env = planEnv(doc, boardId)
   // 镜头图和视频跟随要接入的序列的画幅（竖屏短剧是 9:16），否则按节点默认值出图，拼进成片会带黑边
   const aspect = sequenceAspect(doc)
   const framing = aspect ? { aspectRatio: aspect } : {}
@@ -406,16 +481,18 @@ export function expandShots(
   let updated = 0
   let skipped = 0
   // 按表格顺序记下每个镜头的视频和首句配音，最后统一接到序列
-  const linked: Array<{ video: string; speeches: string[] }> = []
+  const linked: Array<{ video: string; speeches: string[]; sfx?: string }> = []
   let sequence: SequenceLink = 'none'
   doc.ydoc.transact(() => {
+    setParams(doc, boardId, { shots: all })
+    const env = planEnv(doc, boardId)
     for (const shot of shots) {
       const existing = done.get(shot.id) ?? []
       const ctxBase = { mentions: env.mentions(shot) }
       const lineAt = (i: number) => ({
         ...ctxBase,
         line: i,
-        voice: env.voice(shot.dialogue[i]?.character ?? ''),
+        voice: env.voice(shot, i),
       })
       // 台词序号按 shot.dialogue 的位置记，增删台词后由 matchLines 按内容重新对应
       const lines = shot.dialogue.map((d, i) => ({ ...d, i })).filter((d) => d.line.trim())
@@ -448,7 +525,12 @@ export function expandShots(
 
       if (existing.length === 0) {
         const w = PAD * 2 + image.w + GAP + video.w
-        const h = HEAD + image.h + PAD + lines.length * (speech.h + ROW_GAP)
+        const h =
+          HEAD +
+          image.h +
+          PAD +
+          lines.length * (speech.h + ROW_GAP) +
+          (soundEffect && shot.sfx.trim() ? soundEffect.h + ROW_GAP : 0)
         const frame = createElement(doc, {
           kind: 'frame',
           name: `镜头 ${String(shot.no).padStart(2, '0')} · ${shot.shotSize}`,
@@ -482,13 +564,26 @@ export function expandShots(
             frame,
             [PAD, HEAD + image.h + PAD + i * (speech.h + ROW_GAP)],
             {
-              source: source('speech', { line: d.i, plan: snapshot(params) }),
+              source: source('speech', { line: d.i, dialogueId: d.id, plan: snapshot(params) }),
               ...params,
             },
           )
           spoken.push(id)
         })
-        linked.push({ video: vid, speeches: spoken })
+        let sfxId: string | undefined
+        if (soundEffect && shot.sfx.trim()) {
+          const params = planParams(shot, 'sfx')
+          sfxId = add(
+            soundEffect,
+            frame,
+            [PAD, HEAD + image.h + PAD + lines.length * (speech.h + ROW_GAP)],
+            {
+              source: source('sfx', { plan: snapshot(params) }),
+              ...params,
+            },
+          )
+        }
+        linked.push({ video: vid, speeches: spoken, sfx: sfxId })
         continue
       }
 
@@ -540,22 +635,32 @@ export function expandShots(
       }
       // 已有的和新补的配音按台词顺序排好，一起接进序列
       const order = linesOf(speechNodes, shot)
-      const speeches: Array<[string, number]> = speechNodes.map((el) => [
-        el.id,
-        order.get(el.id) ?? Number.POSITIVE_INFINITY,
-      ])
+      const speeches: Array<[string, number]> = speechNodes.flatMap((el) => {
+        const at = order.get(el.id)
+        return at === undefined ? [] : [[el.id, at] as [string, number]]
+      })
       lines.forEach((d) => {
         if (spokenLines.has(d.i)) return
         const params = planParams(shot, 'speech', lineAt(d.i))
         const id = addMissing(
           { ...speech, name: `台词 · ${d.character || '旁白'}` },
           params,
-          source('speech', { line: d.i, plan: snapshot(params) }),
+          source('speech', { line: d.i, dialogueId: d.id, plan: snapshot(params) }),
         )
         speeches.push([id, d.i])
       })
       speeches.sort((a, b) => a[1] - b[1])
-      if (vidId) linked.push({ video: vidId, speeches: speeches.map(([id]) => id) })
+      let sfxId = byRole('sfx')[0]?.id
+      if (!sfxId && soundEffect && shot.sfx.trim()) {
+        const params = planParams(shot, 'sfx')
+        sfxId = addMissing(soundEffect, params, source('sfx', { plan: snapshot(params) }))
+      }
+      if (vidId)
+        linked.push({
+          video: vidId,
+          speeches: speeches.map(([id]) => id),
+          sfx: shot.sfx.trim() ? sfxId : undefined,
+        })
       if (created > before) updated++
       else skipped++
     }
@@ -602,11 +707,19 @@ export function runExpanded(
     skipped++
   }
   for (const id of shotIds) {
-    const nodes = (groups.get(id) ?? []).filter((el) => sourceOf(el)?.role === role)
+    const shot = shots.get(id)
+    const nodes = (shot ? activeShotNodes(shot, groups.get(id) ?? []) : []).filter(
+      (el) => sourceOf(el)?.role === role,
+    )
     if (nodes.length === 0) {
-      const shot = shots.get(id)
       const spoken = shot?.dialogue.some((d) => d.line.trim()) ?? false
-      skip(role === 'speech' && !spoken ? '没有台词' : '还没展开成节点')
+      skip(
+        role === 'speech' && !spoken
+          ? '没有台词'
+          : role === 'sfx' && !shot?.sfx.trim()
+            ? '没有音效描述'
+            : '还没展开成节点',
+      )
       continue
     }
     for (const el of nodes) {
@@ -624,6 +737,10 @@ export function runExpanded(
       }
       if (role === 'speech' && !String(el.params?.text ?? '').trim()) {
         skip('没有台词')
+        continue
+      }
+      if (role === 'sfx' && !String(el.params?.prompt ?? '').trim()) {
+        skip('没有音效描述')
         continue
       }
       run(el.id)

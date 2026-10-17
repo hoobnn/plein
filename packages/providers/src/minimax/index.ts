@@ -1,3 +1,4 @@
+import { videoReferences } from '../shared/video-references'
 import {
   type AssetRef,
   type CapabilityInput,
@@ -203,6 +204,7 @@ export const minimaxProvider = defineProvider({
         seed: false,
         audio: false,
         references: { max: 9 },
+        referenceMedia: { video: 3, audio: 3 },
       },
     },
     {
@@ -216,6 +218,7 @@ export const minimaxProvider = defineProvider({
         seed: false,
         audio: false,
         references: { max: 9 },
+        referenceMedia: { video: 3, audio: 3 },
       },
     },
     ...['speech-2.8-hd', 'speech-2.8-turbo'].map((id) => ({
@@ -356,18 +359,28 @@ export const minimaxProvider = defineProvider({
         const frames = Boolean(input.firstFrame || input.lastFrame)
         if (frames && input.references?.length)
           throw new ProviderError('invalid_input', 'H3 首尾帧和参考图不能混用')
-        if ((input.references?.length ?? 0) > 9)
+        if ((input.references ?? []).filter((ref) => ref.kind === 'image').length > 9)
           throw new ProviderError('invalid_input', 'H3 最多支持 9 张参考图')
         if (input.seed !== undefined) throw new ProviderError('invalid_input', 'H3 V2 不支持 seed')
         const content: unknown[] = [{ type: 'text', text: input.prompt }]
         for (const [role, refs] of [
           ['first_frame', input.firstFrame ? [input.firstFrame] : []],
           ['last_frame', input.lastFrame ? [input.lastFrame] : []],
-          ['reference_image', input.references ?? []],
         ] as const) {
           for (const ref of refs)
             content.push({ type: 'image_url', image_url: { url: await imageData(ctx, ref) }, role })
         }
+        if (input.references?.length)
+          content.push(
+            ...(await videoReferences(input.references, ctx, {
+              image: 9,
+              video: 3,
+              audio: 3,
+              duration: 15,
+              allowAudioOnly: true,
+              platform: 'minimax',
+            })),
+          )
         const result = await request(ctx, '/v2/video_generation', {
           model: req.model,
           content,

@@ -3,6 +3,7 @@ import * as Y from 'yjs'
 import { type ElementMap, type PleinDoc, SYSTEM_ORIGIN } from './doc'
 import { newId } from './ids'
 import { inputEdges } from './inputs'
+import { creativeReviewKey, isCreativeReview } from './review-types'
 import {
   type CanvasElement,
   CONTAINER_KINDS,
@@ -52,6 +53,7 @@ const PATCH_KEYS = [
   'ports',
   'nodeType',
   'nodeVersion',
+  'deliveries',
 ] as const satisfies ReadonlyArray<keyof ElementPatch>
 
 const MIN_SIZE = 1
@@ -114,6 +116,7 @@ export function createElements(doc: PleinDoc, inputs: NewElement[]): string[] {
         ports: input.ports,
         nodeType: input.nodeType,
         nodeVersion: input.nodeVersion,
+        deliveries: input.deliveries,
       })
       if (input.text !== undefined || input.kind === 'markdown') {
         m.set('text', new Y.Text(input.text ?? ''))
@@ -123,6 +126,13 @@ export function createElements(doc: PleinDoc, inputs: NewElement[]): string[] {
       }
       if (input.results?.length) m.set('results', input.results)
       if (input.adopted) m.set('adopted', input.adopted)
+      if (input.reviews?.length)
+        m.set(
+          'reviews',
+          new Y.Map(
+            input.reviews.filter(isCreativeReview).map((r) => [creativeReviewKey(r.target), r]),
+          ),
+        )
       return id
     })
   })

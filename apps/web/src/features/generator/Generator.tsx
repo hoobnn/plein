@@ -2,6 +2,7 @@ import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, setParam, updateElement } from '@plein/doc'
 import {
   ASSET_NODE_TYPES,
+  ANIMATIC_TYPE,
   firstPlaceholder,
   presetsFor,
   SEQUENCE_TYPE,
@@ -150,6 +151,7 @@ function Panel({
     node,
     fieldsOf(node).filter(([, f]) => f.widget !== 'hidden'),
     model?.info.limits,
+    params,
   )
   // 换模型时自动校正了哪些参数
   const [notes, setNotes] = useState<string[]>([])
@@ -280,14 +282,16 @@ function Panel({
           </button>
         </div>
       )}
-      {node.type === SEQUENCE_TYPE && (
+      {(node.type === SEQUENCE_TYPE || node.type === ANIMATIC_TYPE) && (
         <div className="px-4 pt-4">
           <button
             type="button"
             onClick={() => useCanvas.getState().openSequence(el.id)}
             className="ui-btn ui-btn-secondary w-full"
           >
-            编辑序列（{ups.get('clips')?.length ?? 0} 段镜头）
+            {node.type === ANIMATIC_TYPE
+              ? '编辑节奏样片'
+              : `编辑序列（${ups.get('clips')?.length ?? 0} 段镜头）`}
           </button>
         </div>
       )}
@@ -406,6 +410,8 @@ function Panel({
               <ModePicker
                 value={params[modeField[0]] as VideoMode}
                 images={ups.get('images')?.length ?? 0}
+                videos={ups.get('videos')?.length ?? 0}
+                audios={ups.get('audios')?.length ?? 0}
                 onChange={(v) => set(modeField[0], v)}
               />
             )}

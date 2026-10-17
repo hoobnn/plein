@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { gzipSync } from 'node:zlib'
 import { expect, test, type Page } from '@playwright/test'
 import type { PreparedInput } from '../packages/protocol/src/runs'
-import { clickElement, newProject, waitEngine, waitNode } from './canvas'
+import { clickElement, confirmBatchChecklist, newProject, waitEngine, waitNode } from './canvas'
 
 const canvasId = (page: Page) => /#\/c\/([^/?]+)/.exec(page.url())![1]!
 const promptOf = (page: Page, id: string) =>
@@ -484,10 +484,10 @@ test('分镜批量默认沿用已有结果，选中只生成目标，全重生�
   ).toBe(202)
   await waitNode(page, images[0]!)
   const original = await adoptedOf(page, images[0]!)
-  const submissions: string[][] = []
+  let submissions = 0
   page.on('request', (request) => {
-    if (request.method() === 'POST' && request.url().endsWith(`/nodes/${boardId}/run-batch`))
-      submissions.push((request.postDataJSON() as { nodes: string[] }).nodes)
+    if (request.method() === 'POST' && request.url().endsWith('/storyboard-batch/commit'))
+      submissions++
   })
   const counts = () =>
     page.evaluate(
@@ -496,34 +496,37 @@ test('分镜批量默认沿用已有结果，选中只生成目标，全重生�
     )
   dialog = await openStoryboard(page, boardId)
   await dialog.getByRole('button', { name: '批量出分镜图', exact: true }).click()
-  await expect.poll(() => submissions).toEqual([[images[1]]])
+  expect(submissions).toBe(0)
+  await confirmBatchChecklist(page)
+  expect(submissions).toBe(1)
   await expect.poll(counts).toEqual([1, 1])
   expect(await adoptedOf(page, images[0]!)).toBe(original)
-  const jobs = page.waitForResponse((r) => r.url().endsWith('/jobs/latest') && r.ok())
   await dialog.getByRole('button', { name: '批量出分镜图', exact: true }).click()
-  await jobs
+  const checklist = page.getByRole('dialog', { name: '批量生成清单', exact: true })
+  await expect(checklist.getByLabel('清单汇总')).toContainText('沿用 2 项')
   await expect(
-    page.getByRole('status', { includeHidden: true }).filter({ hasText: '沿用 2 个已有结果' }),
-  ).toHaveCount(1)
-  expect(submissions).toEqual([[images[1]]])
+    checklist.getByRole('button', { name: '确认并开始生成', exact: true }),
+  ).toBeDisabled()
+  await checklist.getByRole('button', { name: '取消', exact: true }).click()
+  expect(submissions).toBe(1)
   await dialog.getByRole('checkbox', { name: '选择镜头 1', exact: true }).check()
   await dialog.getByRole('button', { name: '批量出分镜图', exact: true }).click()
-  await expect.poll(() => submissions).toEqual([[images[1]], [images[0]]])
+  await confirmBatchChecklist(page)
+  expect(submissions).toBe(2)
   await expect.poll(counts).toEqual([2, 1])
   await dialog.getByRole('checkbox', { name: '选择镜头 1', exact: true }).uncheck()
   await dialog.locator('summary').filter({ hasText: '全部重新生成' }).click()
   await dialog.getByRole('button', { name: '分镜图', exact: true }).click()
-  const confirmation = page.getByRole('dialog', { name: '全部重新生成？', exact: true })
-  await expect(confirmation).toContainText('全部镜头')
-  expect(submissions).toHaveLength(2)
-  await confirmation.getByRole('button', { name: '取消', exact: true }).click()
-  await expect(confirmation).toBeHidden()
-  expect(submissions).toHaveLength(2)
+  await expect(checklist.getByLabel('清单汇总')).toContainText('生成 2 项')
+  expect(submissions).toBe(2)
+  await checklist.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(checklist).toBeHidden()
+  expect(submissions).toBe(2)
   await dialog.getByRole('button', { name: '分镜图', exact: true }).click()
-  await expect(confirmation).toBeVisible()
-  expect(submissions).toHaveLength(2)
-  await confirmation.getByRole('button', { name: '重新生成', exact: true }).click()
-  await expect.poll(() => submissions).toEqual([[images[1]], [images[0]], images])
+  await expect(checklist).toBeVisible()
+  expect(submissions).toBe(2)
+  await confirmBatchChecklist(page)
+  expect(submissions).toBe(3)
   await expect.poll(counts).toEqual([3, 2])
   expect(
     await page.evaluate(

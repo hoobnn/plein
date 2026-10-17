@@ -1,0 +1,66 @@
+{
+  "format": "plein-creative-baseline",
+  "version": 1,
+  "id": "action-continuity",
+  "title": "动作衔接",
+  "brief": "快递员从桌上拿起红色信封，转身穿过门口，把信封交给门外同伴。保持手、信封和运动方向连续。",
+  "aspectRatio": "16:9",
+  "trialShotId": "action-continuity-1",
+  "shots": [
+    {
+      "id": "action-continuity-1",
+      "no": 1,
+      "duration": 5,
+      "shotSize": "中景",
+      "description": "桌前中景，红信封放在主角右手边",
+      "characters": ["快递员", "同伴"],
+      "emotion": "",
+      "lighting": "",
+      "sfx": "",
+      "dialogue": [],
+      "imagePrompt": "桌前中景，红信封放在主角右手边",
+      "motionPrompt": "主角右手拿起红信封后起身"
+    },
+    {
+      "id": "action-continuity-2",
+      "no": 2,
+      "duration": 5,
+      "shotSize": "中景",
+      "description": "侧面跟拍，主角右手持红信封朝门口走",
+      "characters": ["快递员", "同伴"],
+      "emotion": "",
+      "lighting": "",
+      "sfx": "",
+      "dialogue": [],
+      "imagePrompt": "侧面跟拍，主角右手持红信封朝门口走",
+      "motionPrompt": "镜头从左向右跟随，不切换持物手"
+    },
+    {
+      "id": "action-continuity-3",
+      "no": 3,
+      "duration": 5,
+      "shotSize": "中景",
+      "description": "门口双人中景，主角递出红信封",
+      "characters": ["快递员", "同伴"],
+      "emotion": "",
+      "lighting": "",
+      "sfx": "",
+      "dialogue": [],
+      "imagePrompt": "门口双人中景，主角递出红信封",
+      "motionPrompt": "主角从右手递出，门外同伴左手接住"
+    }
+  ],
+  "manualChecks": [
+    "相邻镜头动作起止可接续",
+    "信封保持红色且不消失或复制",
+    "持物手和运动方向符合计划"
+  ],
+  "measurement": {
+    "runId": null,
+    "firstShotComplete": null,
+    "humanActions": null,
+    "videoSubmits": null,
+    "evidence": [],
+    "quality": "pending-manual"
+  }
+}

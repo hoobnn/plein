@@ -475,13 +475,14 @@ const PLAN_LABEL: Record<string, string> = {
   duration: '时长',
   text: '台词',
   voice: '音色',
+  instruction: '语气指令',
 }
 
 const sec = (v: number) => `${Number(v.toFixed(1))} 秒`
 
 /** 按镜号、角色排：同一镜头的节点挨在一起，不属于镜头的在后面 */
 function byShot(a: ImpactNode, b: ImpactNode) {
-  const order = { image: 0, video: 1, speech: 2 }
+  const order = { image: 0, video: 1, speech: 2, sfx: 3 }
   const na = a.shot?.no ?? Number.POSITIVE_INFINITY
   const nb = b.shot?.no ?? Number.POSITIVE_INFINITY
   if (na !== nb) return na - nb

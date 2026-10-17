@@ -19,6 +19,7 @@ const STAGE_LABELS: Record<EditStage, string> = {
   image: '镜头图',
   video: '视频',
   speech: '配音',
+  sfx: '音效',
   other: '其他',
 }
 

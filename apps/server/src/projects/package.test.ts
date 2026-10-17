@@ -296,7 +296,7 @@ describe('项目包导入', () => {
     delete legacy.checkpoints
     files['manifest.json'] = strToU8(JSON.stringify(legacy))
     const data = zipSync(files)
-    s.close()
+    await s.close()
     renameSync(s.dataDir, `${s.dataDir}-gone`)
 
     const { server } = await bootServer({ dataDir: tempDir() })
@@ -546,7 +546,7 @@ describe.skipIf(!ffmpeg)('项目包迁移后导出成片', () => {
     await runNode(a.server, canvasId, v1)
     await runNode(a.server, canvasId, v2)
     const data = await download(a.server, canvas.projectId)
-    a.close()
+    await a.close()
     renameSync(a.dataDir, `${a.dataDir}-gone`)
 
     const { server } = await bootServer({ dataDir: tempDir() })

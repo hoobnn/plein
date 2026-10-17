@@ -1,3 +1,9 @@
+import { imageProcessParams, videoModeProblem, type VideoMode } from '@plein/nodes'
+import {
+  appendDeliveryRecord,
+  freezeDeliveryOrigins,
+  type DeliveryOrigins,
+} from '../executors/delivery'
 import { newId } from '../ids'
 import { createHash } from 'node:crypto'
 import {
@@ -133,6 +139,7 @@ interface Frozen {
   params: Record<string, unknown> | undefined
   inputs: Record<string, PortValue[]>
   inputHash?: string
+  deliveryOrigins?: DeliveryOrigins
 }
 
 function parseFrozen(raw: string | null | undefined): Frozen | undefined {
@@ -660,6 +667,47 @@ export class NodeRuns implements BatchHost {
     const id = newId('grp')
     const stored: StoredGroupOptions = { video: true, force: false, rerun: nodeIds }
     this.store.insertGroup({ id, ownerId, canvasId, frameId: sourceId, options: stored, targets })
+    void this.orchestrate(this.store.group(id)!)
+    return { groupId: id, total: targets.length }
+  }
+
+  /** 按已审阅清单精确排队，不再隐式扩大目标；批准输入和依赖随组持久化。 */
+  runReviewedBatch(
+    canvasId: string,
+    sourceId: string,
+    ownerId: string,
+    items: Array<{ nodeId: string; input: PreparedInput; expect: JobExpect }>,
+  ): GroupRunStarted {
+    if (!items.length) throw new NodeRunError('invalid_input', '清单中没有需要生成的项目')
+    const id = newId('grp')
+    const now = Date.now()
+    const targets = items.map((item) => item.nodeId)
+    this.store.insertApprovedGroup(
+      {
+        id,
+        ownerId,
+        canvasId,
+        frameId: sourceId,
+        options: { video: true, force: false, scope: 'impact', rerun: targets },
+        targets,
+      },
+      items.map((item, seq) => ({
+        group_id: id,
+        node_id: item.nodeId,
+        seq,
+        stage: 'run',
+        reason: null,
+        input_hash: item.expect.inputHash ?? null,
+        plan_hash: item.expect.planHash ?? null,
+        deps: JSON.stringify(item.expect.deps ?? []),
+        input: JSON.stringify(item.input),
+        frozen_hash: null,
+        job_id: null,
+        outcome: 'pending',
+        result_id: null,
+        updated_at: now,
+      })),
+    )
     void this.orchestrate(this.store.group(id)!)
     return { groupId: id, total: targets.length }
   }
@@ -1276,7 +1324,14 @@ export class NodeRuns implements BatchHost {
       // 必需参考用不上：不提交，免得花钱生成一张缺了关键角色或道具的图
       if (input.blocked.length)
         throw new NodeRunError('invalid_input', input.blocked.map((b) => b.message).join('；'))
-      frozen = { params: prepared.params, inputs: prepared.inputs, inputHash: input.inputHash }
+      frozen = {
+        params: prepared.params,
+        inputs: prepared.inputs,
+        inputHash: input.inputHash,
+        ...(['plein/sequence', 'plein/animatic'].includes(el.nodeType)
+          ? { deliveryOrigins: freezeDeliveryOrigins(doc, prepared.inputs) }
+          : {}),
+      }
       this.store.update(a.id, { frozen: JSON.stringify(frozen) })
       if (a.groupId)
         this.store.updateBatchItem(a.groupId, a.nodeId, { frozen_hash: input.inputHash ?? null })
@@ -1330,6 +1385,15 @@ export class NodeRuns implements BatchHost {
       return { state: 'stored', held, assets }
     }
     addResults(doc, el.id, results, { adopt: !held })
+    appendDeliveryRecord(
+      doc,
+      el.id,
+      results,
+      frozen.params,
+      frozen.inputs,
+      (id) => this.host.assetInfo(a.ownerId, id),
+      frozen.deliveryOrigins ?? {},
+    )
     const patch = held ? undefined : patchFor()
     if (patch) setParams(doc, el.id, patch)
     const omit = patch ? Object.keys(patch) : []
@@ -1386,7 +1450,57 @@ export class NodeRuns implements BatchHost {
       (id) => this.collectInputs(doc, id, ownerId, signal, 0, origins, true),
       this.resolveModel(el.params?.model)?.limit,
     )
-    return { def, params, inputs, mentions: { details, notices, blocked }, origins }
+    const modelRef = typeof params.model === 'string' ? parseModelRef(params.model) : null
+    const limits =
+      modelRef &&
+      this.host.registry.providers
+        .get(modelRef.provider)
+        ?.def.models.find((m) => m.id === modelRef.model)?.limits
+    const effective = this.latestParams(el, { def, params, inputs }) ?? {}
+    if (def.capability === 'video.generate') {
+      const images = inputs.images?.length ?? 0
+      const videos = inputs.videos?.length ?? 0
+      const audios = inputs.audios?.length ?? 0
+      const mode = String(effective.mode ?? 'text') as VideoMode
+      const problem = videoModeProblem(
+        mode,
+        mode === 'reference' ? images + videos + audios : images,
+      )
+      if (problem) blocked.push({ code: 'prepare_failed', message: problem })
+      if (mode === 'reference' && limits?.references && images > limits.references.max)
+        blocked.push({
+          code: 'prepare_failed',
+          message: `当前模型最多支持 ${limits.references.max} 张参考图，现在连了 ${images} 张`,
+        })
+      if (mode !== 'reference' && (videos || audios))
+        blocked.push({ code: 'prepare_failed', message: '视频和音频参考需要选择多模态参考模式' })
+      if (
+        videos > ((limits && limits.referenceMedia?.video) || 0) ||
+        audios > ((limits && limits.referenceMedia?.audio) || 0)
+      )
+        blocked.push({
+          code: 'prepare_failed',
+          message: '当前模型不支持这些参考素材或数量超过上限',
+        })
+    }
+    if (
+      def.capability === 'image.process' &&
+      !(
+        limits &&
+        limits.imageOperations?.includes(effective.operation as 'upscale' | 'outpaint' | 'cutout')
+      )
+    )
+      blocked.push({ code: 'prepare_failed', message: '当前模型不支持这项精修操作' })
+    if (
+      def.capability === 'image.process' &&
+      inputs.image?.filter((v) => v.type === 'image').length !== 1
+    )
+      blocked.push({ code: 'prepare_failed', message: '图片精修需要连入一张原图' })
+    const orderedInputs = Object.fromEntries([
+      ...def.inputs.filter((port) => inputs[port.id]).map((port) => [port.id, inputs[port.id]!]),
+      ...Object.entries(inputs).filter(([id]) => !def.inputs.some((port) => port.id === id)),
+    ])
+    return { def, params, inputs: orderedInputs, mentions: { details, notices, blocked }, origins }
   }
 
   /**
@@ -1433,7 +1547,8 @@ export class NodeRuns implements BatchHost {
   private latestParams(el: CanvasElement, p: Prepared) {
     if (!p.def) return p.params
     try {
-      return resolveParams(p.def, p.params, el.nodeVersion ?? p.def.version)
+      const params = resolveParams(p.def, p.params, el.nodeVersion ?? p.def.version)
+      return p.def.capability === 'image.process' ? imageProcessParams(params) : params
     } catch {
       return p.params
     }

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { NAMESPACED_ID } from './ids'
 import { PortSpec } from './ports'
-import type { Capability } from './provider'
+import type { Capability, ModelLimits } from './provider'
 
 export const NodeCategory = z.enum(['input', 'text', 'image', 'video', 'audio', 'story', 'util'])
 export type NodeCategory = z.infer<typeof NodeCategory>
@@ -141,9 +141,17 @@ export function modelParamOf(desc: Pick<NodeDescriptor, 'paramsSchema'>): string
 export function withDefaultModel(
   desc: NodeDescriptor,
   defaultModel: (capability: Capability) => string,
+  modelLimits?: (capability: Capability, ref: string) => ModelLimits | undefined,
 ): NodeDescriptor {
   const key = modelParamOf(desc)
-  if (!key || !desc.capability || desc.defaults[key]) return desc
-  const ref = defaultModel(desc.capability)
-  return ref ? { ...desc, defaults: { ...desc.defaults, [key]: ref } } : desc
+  if (!key || !desc.capability) return desc
+  const ref = String(desc.defaults[key] || defaultModel(desc.capability))
+  if (!ref) return desc
+  const operations = modelLimits?.(desc.capability, ref)?.imageOperations
+  const operation = desc.defaults.operation as 'upscale' | 'outpaint' | 'cutout'
+  const patch =
+    desc.capability === 'image.process' && operations?.length && !operations.includes(operation)
+      ? { operation: operations[0] }
+      : {}
+  return { ...desc, defaults: { ...desc.defaults, [key]: ref, ...patch } }
 }

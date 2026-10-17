@@ -43,6 +43,9 @@ export const API = {
     `/api/media/subtitle-font/file?v=${encodeURIComponent(version)}`,
   /** 导出剪辑工程：POST SequenceExportRequest，返回 { url }，再 GET 那个地址下载 zip */
   sequenceExport: '/api/media/sequence-export',
+  subtitleRecognize: '/api/media/subtitle-recognize',
+  subtitleRecognition: '/api/media/subtitle-recognition',
+  subtitleRecover: '/api/media/subtitle-recover',
   sequenceExportFile: (token: string) => `/api/media/sequence-export/${encodeURIComponent(token)}`,
   catalog: '/api/catalog',
   /** 本机第三方插件：列表（GET）、重新扫描（POST …/rescan） */
@@ -68,6 +71,10 @@ export const API = {
   /** 批量运行，body 为 BatchRunOptions，返回 GroupRunStarted */
   nodeBatchRun: (canvasId: string, nodeId: string) =>
     `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/run-batch`,
+  storyboardBatchPreview: (canvasId: string, nodeId: string) =>
+    `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/storyboard-batch/preview`,
+  storyboardBatchCommit: (canvasId: string, nodeId: string) =>
+    `/api/canvases/${encodeURIComponent(canvasId)}/nodes/${encodeURIComponent(nodeId)}/storyboard-batch/commit`,
   /** 需要重跑的节点，返回 StaleNodes */
   canvasStale: (canvasId: string) => `/api/canvases/${encodeURIComponent(canvasId)}/stale`,
   /** 修改的影响，返回 ImpactReport；只读，不调用付费平台 */

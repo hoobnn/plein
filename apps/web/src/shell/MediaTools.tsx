@@ -1,3 +1,5 @@
+import { useCatalog } from '../stores/catalog'
+import { deriveNode } from '../canvas/presets'
 import type { Engine } from '@plein/canvas-core'
 import type {
   Asset,
@@ -12,7 +14,6 @@ import {
   clampRange,
   clampSpeed,
   cropRect,
-  evenSegments,
   formatTimecode,
   mediaCaps,
   opLabel,
@@ -26,6 +27,7 @@ import { useCanvas } from '../stores/canvas'
 import { Icon } from '../ui/icons'
 import { Popover } from '../ui/Popover'
 import { Presence } from '../ui/Presence'
+import { audioSplitPlan } from './audioSegments'
 
 /** 一次加工的目标：一个画布元素 + 它背后的资产 */
 export interface MediaTarget {
@@ -85,6 +87,36 @@ function num(value: string) {
   if (value.trim() === '') return Number.NaN
   const n = Number(value)
   return Number.isFinite(n) ? n : Number.NaN
+}
+
+function SplitPreview({
+  duration,
+  mode,
+  value,
+  count,
+}: {
+  duration?: number
+  mode: string
+  value: string
+  count: number
+}) {
+  let plan: Array<{ start: number; end: number }> = []
+  let errorMessage: string | undefined
+  try {
+    plan = audioSplitPlan(duration, mode, value, count)
+  } catch (error) {
+    errorMessage = (error as Error).message
+  }
+  return errorMessage ? (
+    <p className="ui-help">{errorMessage}</p>
+  ) : (
+    <div aria-label="切分区间预览" className="ui-help">
+      将生成 {plan.length} 段：
+      {plan
+        .map((range) => `${formatTimecode(range.start)} – ${formatTimecode(range.end)}`)
+        .join('；')}
+    </div>
+  )
 }
 
 /**
@@ -185,8 +217,18 @@ export function MediaTools({
       return
     }
     if (form === 'split') {
-      const count = Math.max(2, Math.round(num(values.count ?? '2')))
-      const segments = evenSegments(meta?.duration ?? count, count)
+      let segments: Array<{ start: number; end: number }>
+      try {
+        segments = audioSplitPlan(
+          meta?.duration,
+          values.splitMode ?? 'even',
+          values.intervals ?? '',
+          num(values.count ?? '2'),
+        )
+      } catch (error) {
+        notify((error as Error).message)
+        return
+      }
       await runAll((t) => ({ op: 'split', assetId: t.assetId, segments }))
       return
     }
@@ -282,7 +324,53 @@ export function MediaTools({
                     )}
                   </>
                 )}
-                {form === 'split' && field('count', '切成几段', '2')}
+                {form === 'split' && (
+                  <>
+                    <label className="ui-field">
+                      <span className="ui-label">分段方式</span>
+                      <select
+                        aria-label="分段方式"
+                        className="ui-input"
+                        value={values.splitMode ?? 'even'}
+                        onChange={(e) => {
+                          set('splitMode', e.target.value)
+                          set('intervals', '')
+                        }}
+                      >
+                        <option value="even">等分</option>
+                        <option value="cuts">自定义切点</option>
+                        <option value="ranges">自定义区间</option>
+                      </select>
+                    </label>
+                    {(values.splitMode ?? 'even') === 'even' ? (
+                      field('count', '切成几段', '2')
+                    ) : (
+                      <label className="ui-field">
+                        <span className="ui-label">
+                          {values.splitMode === 'cuts'
+                            ? '切点（秒或时间码，逗号分隔）'
+                            : '区间（每行：开始 - 结束）'}
+                        </span>
+                        <textarea
+                          aria-label={values.splitMode === 'cuts' ? '音频切点' : '音频区间'}
+                          className="ui-input"
+                          rows={3}
+                          value={values.intervals ?? ''}
+                          placeholder={
+                            values.splitMode === 'cuts' ? '1.2, 3.5, 0:08' : '0 - 1.2\n1.2 - 3.5'
+                          }
+                          onChange={(e) => set('intervals', e.target.value)}
+                        />
+                      </label>
+                    )}
+                    <SplitPreview
+                      duration={meta?.duration}
+                      mode={values.splitMode ?? 'even'}
+                      value={values.intervals ?? ''}
+                      count={num(values.count ?? '2')}
+                    />
+                  </>
+                )}
                 {form === 'frame' && field('at', '第几秒', '0:00')}
                 <div className="flex gap-2 pt-3">
                   <button
@@ -311,6 +399,27 @@ export function MediaTools({
                   {list.length > 1 ? `对 ${list.length} 个素材` : '加工'}
                   {!sameKind && '（类型不同，只用第一个的操作）'}
                 </div>
+                {first.kind === 'image' && list.length === 1 && (
+                  <button
+                    type="button"
+                    className="ui-menu-item"
+                    onClick={() => {
+                      const id = deriveNode(
+                        engine,
+                        useCatalog.getState().catalog,
+                        first.elId,
+                        'plein/image-process',
+                        { inputPort: 'image', name: '图片精修' },
+                      )
+                      if (id) {
+                        setOpen(false)
+                        engine.selection.set([id])
+                      }
+                    }}
+                  >
+                    AI 精修（放大 / 扩图 / 抠图）
+                  </button>
+                )}
                 {actions.includes('crop') && (
                   <button
                     type="button"

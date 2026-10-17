@@ -16,7 +16,7 @@ const RATE = 48000
 /** 每段从素材里取多长（秒，素材时间） */
 function sourceLengths(spec: ComposeSpec, infos: MediaInfo[]) {
   return spec.clips.map((c, i) => {
-    const total = infos[i]?.duration ?? 0
+    const total = c.asset.kind === 'image' ? (c.out ?? 1) : (infos[i]?.duration ?? 0)
     const end = Math.min(c.out ?? total, total)
     return Math.max(0, end - c.in)
   })
@@ -76,6 +76,7 @@ function composeArgs(
   const filters: string[] = []
 
   spec.clips.forEach((c, i) => {
+    if (c.asset.kind === 'image') args.push('-loop', '1', '-framerate', String(fps))
     args.push('-ss', fmt(c.in), '-t', fmt(sources[i]!), '-i', files.clips[i]!)
   })
   spec.audio.forEach((a, i) => {

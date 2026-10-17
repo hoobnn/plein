@@ -47,7 +47,7 @@ Idea, script, characters, storyboard, shots, voiceover and the final cut live on
 ### Generation nodes
 
 - Text, chat (LLM), image, video, voiceover and music nodes; forms are generated from the selected model, 9 aspect ratios
-- You choose the video mode: text-to-video, first frame, first + last frame or multi-image reference, with candidate count and synced audio
+- You choose the video mode: text-to-video, first frame, first + last frame or multimodal reference, with candidate count and synced audio
 - Region edit: box-select or paint the area to change and only that area is repainted, the rest stays as is (Bailian Wanx image edit with a native mask)
 - Continue a shot: take the last frame (or any second) of a video and branch the next shot from it, keeping model and aspect ratio and remembering the parent video; if the parent is regenerated you get a one-click refresh
 - Storyboard groups: number the images in a frame in order, reorder them, lay them out in one click and stitch them into one collage labelled with its real pixel size; grid splits become a group automatically and can jump back to the source (local stitching, no model call)
@@ -55,6 +55,7 @@ Idea, script, characters, storyboard, shots, voiceover and the final cut live on
 - `@` references character / scene / prop / style cards in prompts, with disambiguation for duplicate names; `/` at line start applies presets such as three-view turnaround, expression grid, multi-angle and four-panel story
 - You choose the model: Settings sets a default model per capability, new nodes start with it and each node can pick another; enabling a new platform never switches models behind your back
 - Prompt enhancement and translation; every run keeps candidates and history, and downstream only uses the version you adopt
+- AI image refinement: native upscaling / outpainting with Bailian and transparent subject layers with Seedream; video nodes accept image, video and audio references according to the selected model's capabilities
 
 ### Short drama pipeline
 
@@ -68,6 +69,8 @@ Idea, script, characters, storyboard, shots, voiceover and the final cut live on
 - Sequence editor: ordering, in / out points, a five-track timeline (picture, dialogue, SFX, music, subtitles), per-clip transitions and speed, music ducking, loudness normalization, subtitle styles, in-browser preview on the export timeline
 - Server-side ffmpeg export to MP4 (9:16 / 16:9, 1080p / 720p) with burned-in Chinese subtitles, optionally aligned by speech recognition
 - Export editing projects (OTIO / FCPXML / SRT) together with their assets
+- Edit subtitle text, timing and visibility sentence by sentence; recognition covers all dialogue, and preview and exports share the saved track. Stable dialogue IDs, speaker bindings and SFX nodes carry through storyboard edits
+- Build a separate animatic from storyboard images and existing dialogue, then export a local draft. Guided next steps, candidate-specific creative reviews, batch checklists, adjacent-shot continuity and rendered-file delivery records are covered in [From animatic to delivery](docs/guide/creation-workflow.md) (Chinese)
 
 ### Media processing
 
@@ -80,6 +83,7 @@ Every result is a new asset with its source recorded; originals are never touche
 ### Projects and asset library
 
 - One project is one film, and it can hold several canvases
+- Review asset updates by canvas and field, or pin a card to its current version; local automatic backups, storage usage, restore copies and unused-asset recycling are described in [Local data maintenance](docs/guide/data-maintenance.md) (Chinese)
 - The asset library holds characters, scenes, props, styles and effects, reusable across canvases and projects. Characters have full-body / half-body / turnaround / emotion-grid slots, tags and a voice; canvas cards and the library sync both ways
 - Project packages (.plein): export a whole project from the home page (canvases, the assets they use, library items, adopted results and run history, optionally all past candidates) and import it on another machine or data directory; imports check the format version and file hashes first and list missing models, voices and plugins. Platform keys and sign-in data are never included
 

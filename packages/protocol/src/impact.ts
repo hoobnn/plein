@@ -43,7 +43,7 @@ export interface ImpactNode {
   name: string
   nodeType: string
   /** 分镜展开的节点：按稳定镜头 id 关联，镜号只用来显示 */
-  shot?: { storyboard: string; id: string; no?: number; role: 'image' | 'video' | 'speech' }
+  shot?: { storyboard: string; id: string; no?: number; role: 'image' | 'video' | 'speech' | 'sfx' }
   /**
    * direct：自己的输入或参数变了；indirect：上游要重做，跟着受影响；
    * related：同一镜头里没受影响、可以顺带重做的（台词改了时的画面）

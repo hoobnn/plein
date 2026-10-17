@@ -71,7 +71,13 @@ export async function sequencePackage(
       file,
       path,
       name: base,
-      duration: info.duration ?? asset.duration ?? 0,
+      duration:
+        asset.kind === 'image'
+          ? Math.max(
+              0,
+              ...spec.clips.filter((c) => c.asset.assetId === asset.id).map((c) => c.out ?? 1),
+            )
+          : (info.duration ?? asset.duration ?? 0),
       hasVideo: info.hasVideo,
       hasAudio: info.hasAudio,
     })

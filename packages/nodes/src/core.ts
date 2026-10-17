@@ -5,8 +5,11 @@ import { corePrompts } from './prompts'
 import { shotPresets } from './shotPresets'
 import { noVoice, VoiceRef } from './refs'
 import { sequenceNode } from './sequence'
+import { animaticNode } from './animatic'
 import { stageNode } from './stage'
 import { storyboardNode } from './storyboard'
+import { imageProcessNode } from './imageProcess'
+import { sfxNode, transcribeNode } from './audioNodes'
 
 const model = () => z.string().default('').meta({ title: '模型', widget: 'model' })
 /** 分辨率：选项随所选模型变化，空字符串用平台默认 */
@@ -161,7 +164,7 @@ export const VIDEO_MODE_LABELS: Record<VideoMode, string> = {
   text: '文生视频',
   image: '图生视频',
   frames: '首尾帧',
-  reference: '图片参考',
+  reference: '多模态参考',
 }
 
 /** 按模式检查连入的图片数，返回问题（null 表示可以运行）；前后端共用 */
@@ -172,21 +175,23 @@ export function videoModeProblem(mode: VideoMode, images: number): string | null
       : '图生视频需要连入 1 张图作首帧'
   if (mode === 'frames' && images !== 2)
     return `首尾帧需要连入 2 张图（上面的作首帧、下面的作尾帧），现在连了 ${images} 张`
-  if (mode === 'reference' && images === 0) return '图片参考需要连入至少 1 张参考图'
+  if (mode === 'reference' && images === 0) return '多模态参考需要连入至少 1 份图片、视频或音频参考'
   return null
 }
 
-/** 生成视频：文生视频 / 图生视频 / 首尾帧 / 图片参考，模式由参数指定 */
+/** 生成视频：文生视频 / 图生视频 / 首尾帧 / 多模态参考，模式由参数指定 */
 export const videoNode = defineNode({
   type: 'plein/video',
   version: 2,
   title: '生成视频',
-  description: '文生视频、图生视频、首尾帧、图片参考；在生成器里选模式，连入的图片按模式使用',
+  description: '文生视频、图生视频、首尾帧、多模态参考；在生成器里选模式，连入的图片按模式使用',
   category: 'video',
   capability: 'video.generate',
   inputs: [
     { id: 'prompt', label: '提示词', type: 'text', multiple: true },
     { id: 'images', label: '图片', type: 'image', multiple: true },
+    { id: 'videos', label: '参考视频', type: 'video', multiple: true },
+    { id: 'audios', label: '参考音频', type: 'audio', multiple: true },
   ],
   outputs: [
     { id: 'video', label: '视频', type: 'video' },
@@ -318,7 +323,7 @@ export const styleNode = defineNode({
 
 /**
  * 特效卡：运镜 / 转场 / 视觉特效的做法。
- * 描述在 @ 引用时并入视频提示词；参考视频只给人看——视频节点没有视频参考输入，不会送进模型。
+ * 描述在 @ 引用时并入视频提示词；参考视频可手动连到视频生成器的参考视频端口，@ 本身只引用描述。
  */
 export const effectNode = defineNode({
   type: 'plein/effect',
@@ -350,9 +355,12 @@ export const corePlugin = definePlugin({
         'plein/llm@1',
         'plein/image@1',
         'plein/image-edit@1',
+        'plein/image-process@1',
         'plein/video@2',
         'plein/speech@1',
         'plein/music@1',
+        'plein/sfx@1',
+        'plein/transcribe@1',
         'plein/character@1',
         'plein/scene@1',
         'plein/prop@1',
@@ -360,21 +368,25 @@ export const corePlugin = definePlugin({
         'plein/effect@1',
         'plein/storyboard@1',
         'plein/sequence@1',
+        'plein/animatic@1',
         'plein/stage@1',
       ],
       prompts: [...corePrompts, ...shotPresets].map((p) => p.id),
     },
     // 序列导出要用宿主的 ffmpeg
-    permissions: { media: true },
+    permissions: { media: true, assets: 'write' },
   },
   nodes: [
     textNode,
     llmNode,
     imageNode,
     imageEditNode,
+    imageProcessNode,
     videoNode,
     speechNode,
     musicNode,
+    sfxNode,
+    transcribeNode,
     characterNode,
     sceneNode,
     propNode,
@@ -382,6 +394,7 @@ export const corePlugin = definePlugin({
     effectNode,
     storyboardNode,
     sequenceNode,
+    animaticNode,
     stageNode,
   ],
   prompts: [...corePrompts, ...shotPresets],

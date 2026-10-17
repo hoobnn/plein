@@ -1,37 +1,34 @@
 import type { Engine } from '@plein/canvas-core'
-import { currentResult, setParam } from '@plein/doc'
-import { dropShot, newShotId, SHOT_SIZES, type Shot, type ShotRole } from '@plein/nodes'
+import { setParam } from '@plein/doc'
+import {
+  dropShot,
+  newShotId,
+  normalizeDialogue,
+  SHOT_SIZES,
+  type Shot,
+  type ShotRole,
+} from '@plein/nodes'
 import { useEffect, useState } from 'react'
 import { useDocVersion } from '../../canvas/hooks'
-import { detachShot, expandedNodes, expandShots, planDiffs, runExpanded, shotsOf } from './model'
+import { detachShot, expandedNodes, expandShots, planDiffs, shotsOf } from './model'
+import type { StoryboardBatchRequest } from '@plein/protocol'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { confirmDialog, dialogOpen } from '../../ui/Dialog'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Select } from '../../ui/Select'
-import { runBatch, runNode } from '../runs/run'
 import { StoryboardSync } from './StoryboardSync'
 import { Presence } from '../../ui/Presence'
 import { EmptyState } from '../../ui/EmptyState'
 import { StoryboardReview } from './StoryboardReview'
-import { api } from '../../api/client'
+import { BatchChecklist } from './BatchChecklist'
+import { openAnimatic } from '../sequence/animatic'
+import { AssetBindingSelect, DialogueCell } from './ShotBindings'
 
 const cell =
   'w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
 
-/** 台词在表格里写成“角色：台词”一行一句 */
-const dialogueText = (s: Shot) =>
-  s.dialogue.map((d) => (d.character ? `${d.character}：${d.line}` : d.line)).join('\n')
-const parseDialogue = (text: string) =>
-  text
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .map((l) => {
-      const m = /^([^：:]{1,12})[：:](.*)$/.exec(l)
-      return m ? { character: m[1]!.trim(), line: m[2]!.trim() } : { character: '', line: l }
-    })
 const splitNames = (text: string) =>
   text
     .split(/[、,，\s]+/)
@@ -57,9 +54,10 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const notify = useCanvas((s) => s.notify)
   const canvasId = useCanvas((s) => s.canvasId)
   const el = engine.doc.get(id)
-  const shots = shotsOf(el)
+  const shots = shotsOf(el).map((s) => ({ ...s, dialogue: normalizeDialogue(s.id, s.dialogue) }))
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [syncScope, setSyncScope] = useState<string[] | null>(null)
+  const [batchRequest, setBatchRequest] = useState<StoryboardBatchRequest | null>(null)
   const [mode, setMode] = useState<'edit' | 'review'>('edit')
   const expanded = expandedNodes(engine, id)
   const diffs = planDiffs(engine, id)
@@ -76,11 +74,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       if (useCanvas.getState().viewer) return
       e.stopPropagation()
       // 差异面板或确认框开着时 Esc 关它们，不连带关掉表格
-      if (e.key === 'Escape' && !syncScope && !dialogOpen()) onClose()
+      if (e.key === 'Escape' && !syncScope && !batchRequest && !dialogOpen()) onClose()
     }
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
-  }, [onClose, syncScope])
+  }, [onClose, syncScope, batchRequest])
 
   const write = (next: Shot[]) => setParam(engine.doc, id, 'shots', next)
   const patch = (shotId: string, p: Partial<Shot>) =>
@@ -168,55 +166,12 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       engine.zoomToFit([id, ...frames])
     }
   }
-  const batch = async (role: ShotRole, force = false) => {
-    if (
-      force &&
-      !(await confirmDialog({
-        title: '全部重新生成？',
-        message: `将为${scope}创建新候选。已有结果会保留在历史里。`,
-        confirmLabel: '重新生成',
-      }))
-    )
-      return
-    let history
-    try {
-      const nodes = targetIds.flatMap((shotId) =>
-        (expanded.get(shotId) ?? [])
-          .filter((n) => (n.params?.source as { role?: string } | undefined)?.role === role)
-          .map((n) => n.id),
-      )
-      history = canvasId ? await api.canvasNodeJobs(canvasId, nodes) : null
-    } catch {
-      notify('无法核对已有任务，请恢复连接后再运行')
+  const batch = (role: ShotRole, force = false) => {
+    if (!canvasId) {
+      notify('请先连接服务再检查批量清单')
       return
     }
-    const images: string[] = []
-    let reused = 0,
-      recovery = 0
-    const { started: considered, skipped } = runExpanded(engine, id, targetIds, role, (n) => {
-      const job = history?.jobs.find((j) => j.nodeId === n)
-      if (
-        job?.recovery &&
-        !job.recovery.dismissed &&
-        ['submit_unknown', 'remote_pending', 'fetch_failed'].includes(job.recovery.state)
-      ) {
-        recovery++
-        return
-      }
-      if (!force && !picked.size && currentResult(engine.doc.get(n)!)) {
-        reused++
-        return
-      }
-      if (role === 'image') images.push(n)
-      else void runNode(n)
-    })
-    const total = images.length ? await runBatch(id, images) : 0
-    if (total === null) return
-    const label = role === 'image' ? '分镜图' : role === 'video' ? '视频' : '配音'
-    const started = considered - reused - recovery
-    notify(
-      `已开始生成 ${started} 个${label}${reused ? `；沿用 ${reused} 个已有结果` : ''}${skipped ? `；跳过 ${skipped} 个未就绪项` : ''}${recovery ? `；${recovery} 个请在审核视图恢复原任务` : ''}`,
-    )
+    setBatchRequest({ shotIds: targetIds, role, reuseExisting: !force && !picked.size })
   }
 
   const btn = 'ui-btn ui-btn-secondary'
@@ -247,6 +202,17 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             审核镜头
           </button>
         </div>
+        <button
+          type="button"
+          className={btn}
+          disabled={!shots.length}
+          onClick={() => {
+            openAnimatic(engine, id)
+            onClose()
+          }}
+        >
+          节奏样片
+        </button>
         <span className="mr-1 text-xs text-ink-subtle">作用于{scope}</span>
         <button type="button" className={btn} onClick={addShot}>
           <Icon name="plus" />
@@ -275,14 +241,14 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         <details className="relative">
           <summary className={btn}>全部重新生成</summary>
           <div className="absolute z-20 flex w-44 flex-col gap-1 rounded-lg bg-surface p-2 shadow-3">
-            {(['image', 'video', 'speech'] as const).map((role) => (
+            {(['image', 'video', 'speech', 'sfx'] as const).map((role) => (
               <button
                 key={role}
                 type="button"
                 className="ui-btn ui-btn-quiet"
-                onClick={() => void batch(role, true)}
+                onClick={() => batch(role, true)}
               >
-                {role === 'image' ? '分镜图' : role === 'video' ? '视频' : '配音'}
+                {{ image: '分镜图', video: '视频', speech: '配音', sfx: '音效' }[role]}
               </button>
             ))}
           </div>
@@ -291,7 +257,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           type="button"
           className={btn}
           disabled={!expanded.size}
-          onClick={() => void batch('image')}
+          onClick={() => batch('image')}
         >
           <Icon name="image" />
           批量出分镜图
@@ -300,7 +266,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           type="button"
           className={btn}
           disabled={!expanded.size}
-          onClick={() => void batch('video')}
+          onClick={() => batch('video')}
         >
           <Icon name="video" />
           批量生成视频
@@ -309,10 +275,18 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           type="button"
           className="ui-btn ui-btn-primary"
           disabled={!expanded.size}
-          onClick={() => void batch('speech')}
+          onClick={() => batch('speech')}
         >
           <Icon name="mic" />
           批量配音
+        </button>
+        <button
+          type="button"
+          className={btn}
+          disabled={!expanded.size}
+          onClick={() => batch('sfx')}
+        >
+          批量音效
         </button>
         <button
           type="button"
@@ -379,6 +353,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                 <th className="w-12 px-2 py-2 font-normal">镜号</th>
                 <th className="w-16 px-2 py-2 font-normal">时长</th>
                 <th className="w-20 px-2 py-2 font-normal">景别</th>
+                <th className="w-32 px-2 py-2 font-normal">光影</th>
+                <th className="w-28 px-2 py-2 font-normal">情绪 / 语气</th>
+                <th className="w-40 px-2 py-2 font-normal">音效</th>
                 <th className="px-2 py-2 font-normal">画面</th>
                 <th className="w-32 px-2 py-2 font-normal">出场</th>
                 <th className="w-56 px-2 py-2 font-normal">台词（角色：台词）</th>
@@ -427,6 +404,17 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                     />
                   </td>
                   <TextCell
+                    value={s.lighting}
+                    label="光影"
+                    onChange={(lighting) => patch(s.id, { lighting })}
+                  />
+                  <TextCell
+                    value={s.emotion}
+                    label="情绪 / 语气"
+                    onChange={(emotion) => patch(s.id, { emotion })}
+                  />
+                  <TextCell value={s.sfx} label="音效" onChange={(sfx) => patch(s.id, { sfx })} />
+                  <TextCell
                     value={s.description}
                     label="画面"
                     onChange={(v) => patch(s.id, { description: v })}
@@ -435,11 +423,26 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                     value={s.characters.join('、')}
                     label="出场"
                     onChange={(v) => patch(s.id, { characters: splitNames(v) })}
-                  />
-                  <TextCell
-                    value={dialogueText(s)}
-                    label="台词"
-                    onChange={(v) => patch(s.id, { dialogue: parseDialogue(v) })}
+                  >
+                    {s.characters.map((name) => (
+                      <AssetBindingSelect
+                        key={name}
+                        engine={engine}
+                        name={name}
+                        binding={s.assetBindings?.[name]}
+                        onChange={(binding) => {
+                          const assetBindings = { ...s.assetBindings }
+                          if (binding) assetBindings[name] = binding
+                          else delete assetBindings[name]
+                          patch(s.id, { assetBindings })
+                        }}
+                      />
+                    ))}
+                  </TextCell>
+                  <DialogueCell
+                    engine={engine}
+                    shot={s}
+                    onChange={(dialogue) => patch(s.id, { dialogue })}
                   />
                   <TextCell
                     value={s.imagePrompt}
@@ -494,6 +497,27 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           onClose={() => setSyncScope(null)}
         />
       )}
+      {batchRequest && canvasId && (
+        <BatchChecklist
+          engine={engine}
+          canvasId={canvasId}
+          boardId={id}
+          request={batchRequest}
+          onClose={() => setBatchRequest(null)}
+          onLocate={(row) => {
+            setBatchRequest(null)
+            if (row.nodeId) {
+              engine.selection.set([row.nodeId])
+              engine.zoomToFit([row.nodeId])
+              onClose()
+            }
+          }}
+          onStarted={(total) => {
+            setBatchRequest(null)
+            notify(`已按清单开始 ${total} 项生成；沿用、阻塞和跳过项保持原状`)
+          }}
+        />
+      )}
     </Modal>
   )
 }
@@ -503,10 +527,12 @@ function TextCell({
   value,
   label,
   onChange,
+  children,
 }: {
   value: string
   label: string
   onChange(v: string): void
+  children?: React.ReactNode
 }) {
   const [draft, setDraft] = useState(value)
   const [focused, setFocused] = useState(false)
@@ -530,6 +556,7 @@ function TextCell({
           if (draft !== value) onChange(draft)
         }}
       />
+      {children}
     </td>
   )
 }

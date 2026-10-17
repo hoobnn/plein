@@ -8,7 +8,11 @@ import {
   sequenceNode,
   sequenceSpec,
   sequenceTimeline,
+  createSubtitleTrack,
+  subtitleExportProblem,
+  subtitleTrackStale,
 } from './sequence'
+import { subtitleSrt } from './interchange'
 
 const video = (source: string): PortValue => ({
   type: 'video',
@@ -26,6 +30,61 @@ const audio = (source: string, caption?: string): PortValue => ({
 const params = (p: Record<string, unknown> = {}) => sequenceNode.params.parse(p)
 
 describe('序列', () => {
+  it('全部对白形成持久字幕轨；逐句编辑和隐藏同时供预览、MP4 与 SRT 使用', () => {
+    const p = params({
+      asrTiming: true,
+      model: 'mock:asr',
+      clips: [{ source: 'a', dialogue: 'd1', more: ['d2'] }],
+    })
+    const arranged = arrangeSequence(p, {
+      clips: [video('a')],
+      dialogue: [audio('d1', '一。二。'), audio('d2', '三。四。')],
+    })
+    const durations = { clips: [8], dialogue: [2], more: [[2]] }
+    expect(subtitleExportProblem(p, arranged)).toContain('先')
+    const segments = [
+      { start: 0.1, end: 0.5, text: 'x' },
+      { start: 1, end: 1.5, text: 'y' },
+    ]
+    const track = createSubtitleTrack(p, arranged, durations, {
+      'a-d1': segments,
+      'a-d2': segments,
+    })
+    expect(track.cues.map((q) => [q.start, q.text])).toEqual([
+      [0.1, '一。'],
+      [1, '二。'],
+      [2.3, '三。'],
+      [3.2, '四。'],
+    ])
+    track.cues[0] = { ...track.cues[0]!, text: '修订字幕', start: 0.25, end: 0.75 }
+    track.cues[1]!.hidden = true
+    const saved = params({ ...p, subtitleTrack: JSON.parse(JSON.stringify(track)) })
+    const preview = sequenceTimeline(saved, arranged, durations).clips.flatMap((c) => c.cues)
+    const output = sequenceSpec(saved, arranged, durations, undefined).subtitles!.cues
+    expect(output).toEqual(preview)
+    expect(output).toHaveLength(3)
+    expect(subtitleSrt(output)).toContain('00:00:00,250 --> 00:00:00,750\n修订字幕')
+    expect(subtitleExportProblem(saved, arranged)).toBeUndefined()
+    expect(subtitleTrackStale({ ...saved, musicVolume: 0.5 }, arranged)).toBe(false)
+    const changed = arranged.map((c) => ({ ...c, clip: { ...c.clip, assetId: 'new-audio' } }))
+    expect(subtitleTrackStale(saved, changed)).toBe(true)
+    expect(() => sequenceSpec(saved, changed, durations, undefined)).toThrow('字幕已过期')
+  })
+
+  it('隐藏全部字幕不恢复默认台词；非法时间需显式修正，关闭字幕允许无字幕导出', () => {
+    const p = params()
+    const arranged = arrangeSequence(p, { clips: [video('a')], dialogue: [audio('d1', '台词')] })
+    const durations = { clips: [4], dialogue: [2] }
+    const track = createSubtitleTrack(p, arranged, durations)
+    track.cues[0]!.hidden = true
+    const saved = params({ subtitleTrack: track })
+    expect(sequenceSpec(saved, arranged, durations, undefined).subtitles).toBeUndefined()
+    track.cues[0] = { ...track.cues[0]!, hidden: false, start: 3, end: 1 }
+    expect(subtitleExportProblem(params({ subtitleTrack: track }), arranged)).toContain('结束时间')
+    expect(
+      subtitleExportProblem(params({ subtitles: false, subtitleTrack: track }), arranged),
+    ).toBeUndefined()
+  })
   it('参数里的顺序在前，新连入的按画布顺序排在后面；对白按顺序对应', () => {
     const inputs = {
       clips: [video('a'), video('b'), video('c')],

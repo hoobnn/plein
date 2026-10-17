@@ -98,6 +98,11 @@ function previewSummary(p: PreparedInput) {
     .filter((v) => v.type === 'image').length
   const parts = [p.model ? `${p.model.title}${p.model.auto ? '（自动）' : ''}` : '未选模型']
   if (refs) parts.push(`${refs} 张参考图`)
+  const values = Object.values(p.inputs).flat()
+  const videos = values.filter((value) => value.type === 'video').length
+  const audios = values.filter((value) => value.type === 'audio').length
+  if (videos) parts.push(`${videos} 段参考视频`)
+  if (audios) parts.push(`${audios} 段参考音频`)
   if (p.voice) parts.push(`音色 ${p.voice.voiceId}`)
   return parts.join(' · ')
 }
@@ -166,7 +171,9 @@ export function InputPreview({
     data.refs.find((r) => assetId && r.sent.includes(assetId))?.name ??
     ((source && engine.doc.get(source)?.name) || '连入')
   const images = Object.entries(data.inputs).flatMap(([port, values]) =>
-    values.filter((v) => v.type === 'image').map((v) => ({ ...v, port })),
+    values
+      .filter((v) => v.type === 'image' || v.type === 'video' || v.type === 'audio')
+      .map((v) => ({ ...v, port })),
   )
   const params = Object.entries(data.params).filter(
     ([k, v]) => k !== 'model' && v !== '' && v !== undefined && typeof v !== 'object',
@@ -264,14 +271,24 @@ export function InputPreview({
                     title={nameOf(v.assetId, v.source)}
                   >
                     <span className="relative size-12 overflow-hidden rounded-md bg-surface-2 shadow-1">
-                      <img
-                        src={assetUrls.variant(v.assetId!, 'thumb-256')}
-                        alt=""
-                        className="size-full object-cover"
-                      />
+                      {v.type === 'audio' ? (
+                        <span className="flex size-full items-center justify-center">
+                          <Icon name="sound" size={20} />
+                        </span>
+                      ) : (
+                        <img
+                          src={assetUrls.variant(
+                            v.assetId!,
+                            v.type === 'video' ? 'poster' : 'thumb-256',
+                          )}
+                          alt=""
+                          className="size-full object-cover"
+                        />
+                      )}
                       <span className="ui-badge absolute top-1 left-1 tabular-nums">{i + 1}</span>
                     </span>
                     <figcaption className="w-full truncate text-center">
+                      {v.type === 'video' ? '视频 · ' : v.type === 'audio' ? '音频 · ' : ''}
                       {nameOf(v.assetId, v.source)}
                     </figcaption>
                   </figure>

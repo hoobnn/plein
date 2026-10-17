@@ -2,19 +2,27 @@ import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, currentResult, setParam, setParams } from '@plein/doc'
 import {
   type ArrangedClip,
+  ANIMATIC_TYPE,
+  animaticNode,
+  arrangeAnimatic,
+  type AnimaticShot,
   arrangeSequence,
   clipLines,
+  createSubtitleTrack,
   duckEnvelope,
   type SequenceClip,
   sequenceNode,
   type SequenceParams,
   sequenceSpec,
   sequenceTimeline,
+  subtitleExportProblem,
+  subtitleInputKey,
   TRANSITIONS,
 } from '@plein/nodes'
 import type { PortValue } from '@plein/plugin-sdk'
+import type { RecoverJobOptions, SubtitleRecognitionInfo } from '@plein/protocol'
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 'react'
-import { api } from '../../api/client'
+import { ApiError, api } from '../../api/client'
 import { downloadAsset } from '../../canvas/grid'
 import { useDocVersion } from '../../canvas/hooks'
 import { desktop } from '../../desktop'
@@ -34,6 +42,9 @@ import { Presence } from '../../ui/Presence'
 import { EmptyState } from '../../ui/EmptyState'
 import { Playhead } from './playhead'
 import { Timeline, type TrackItem, type TrimPatch } from './Timeline'
+import { SubtitleEditor } from './SubtitleEditor'
+import { refreshAnimatic, relatedSequence } from './animatic'
+import { DeliveryReview } from './DeliveryReview'
 
 const seconds = (s: number | undefined) => (s === undefined ? '—' : `${s.toFixed(1)} 秒`)
 
@@ -47,6 +58,23 @@ interface Row extends ArrangedClip {
 function readSequence(engine: Engine, id: string) {
   const catalog = useCatalog.getState().catalog
   const el = engine.doc.get(id)
+  if (el?.nodeType === ANIMATIC_TYPE) {
+    const params = animaticNode.params.parse(el.params)
+    const rows: Row[] = arrangeAnimatic(params).map((c) => ({
+      ...c,
+      el: c.clip.source ? engine.doc.get(c.clip.source) : undefined,
+      pending: !c.clip.assetId,
+    }))
+    return {
+      el,
+      params,
+      rows,
+      dialogue: [],
+      sfx: [],
+      music: undefined as string | undefined,
+      animatic: params,
+    }
+  }
   const params = sequenceNode.params.parse(el?.params ?? {}) as SequenceParams
   const ups = upstreams(engine, id, catalog)
   const values = (port: string): PortValue[] =>
@@ -84,6 +112,7 @@ function readSequence(engine: Engine, id: string) {
     dialogue: options('dialogue'),
     sfx: options('sfx'),
     music: music && 'assetId' in music ? music.assetId : undefined,
+    animatic: undefined,
   }
 }
 
@@ -94,7 +123,9 @@ export function SequenceEditor() {
   const close = () => useCanvas.getState().openSequence(null)
   return (
     <Presence>
-      {engine && id && engine.doc.get(id) && <Editor engine={engine} id={id} onClose={close} />}
+      {engine && id && engine.doc.get(id) && (
+        <Editor key={id} engine={engine} id={id} onClose={close} />
+      )}
     </Presence>
   )
 }
@@ -115,12 +146,24 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   // 协作者改了顺序也能看到
   useDocVersion(engine.doc)
   const read = readSequence(engine, id)
-  const { el, params, dialogue, sfx, music } = read
+  const { el, params, dialogue, sfx, music, animatic } = read
+  const filmSequence = animatic ? relatedSequence(engine, id) : undefined
   const [playhead] = useState(() => new Playhead())
   useEffect(() => () => playhead.dispose(), [playhead])
   const [selected, setSelected] = useState<string | undefined>()
   /** 检查器显示选中镜头的设置还是整部成片的设置 */
-  const [tab, setTab] = useState<'clip' | 'film'>('clip')
+  const [tab, setTab] = useState<'clip' | 'film' | 'subtitles'>('clip')
+  const [view, setView] = useState<'edit' | 'delivery'>('edit')
+  const latestDelivery = el?.deliveries?.[0]?.id
+  const seenDelivery = useRef(latestDelivery)
+  useEffect(() => {
+    if (latestDelivery && latestDelivery !== seenDelivery.current) setView('delivery')
+    seenDelivery.current = latestDelivery
+  }, [latestDelivery])
+  const [recognizing, setRecognizing] = useState(false)
+  const [subtitleError, setSubtitleError] = useState<string | null>(null)
+  const [subtitleRecovery, setSubtitleRecovery] = useState<SubtitleRecognitionInfo | null>(null)
+  const subtitleStateRevision = useRef(0)
   // 在时间线上点了镜头就切回镜头设置
   const select = (key: string | undefined) => {
     setSelected(key)
@@ -146,12 +189,40 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const pending = rows.filter((r) => r.pending).length
   // 时间线、预览和导出用同一套排法；还没生成的镜头先按固定长度占位
   const timeline = sequenceTimeline(params, rows, {
-    clips: rows.map((r) => (r.pending ? PENDING_LENGTH : (duration(r.clip.assetId) ?? 0))),
+    clips: rows.map((r) =>
+      animatic ? (r.out ?? 0) : r.pending ? PENDING_LENGTH : (duration(r.clip.assetId) ?? 0),
+    ),
     dialogue: rows.map((r) => (r.dialogue ? duration(r.dialogue.assetId) : undefined)),
     more: rows.map((r) => r.more.map((m) => duration(m.assetId))),
   })
-  const known = rows.every((r) => !r.pending && duration(r.clip.assetId) !== undefined)
+  const known =
+    !!animatic || rows.every((r) => !r.pending && duration(r.clip.assetId) !== undefined)
+  const subtitleKnown =
+    known && rows.every((r) => clipLines(r).every((l) => duration(l.assetId) !== undefined))
   const total = known ? timeline.total : undefined
+  const recognitionKey = JSON.stringify([
+    params.model,
+    ...new Set(read.rows.flatMap((r) => clipLines(r).map((l) => l.assetId)).filter(Boolean)),
+  ])
+  useEffect(() => {
+    const revision = ++subtitleStateRevision.current
+    let disposed = false
+    const [model, ...assetIds] = JSON.parse(recognitionKey) as string[]
+    setSubtitleRecovery(null)
+    if (tab !== 'subtitles' || !model) return
+    void Promise.all(assetIds.map((assetId) => api.subtitleRecognition(model, assetId)))
+      .then((states) => {
+        if (!disposed && subtitleStateRevision.current === revision)
+          setSubtitleRecovery(states.find((state) => !!state) ?? null)
+      })
+      .catch((error) => {
+        if (!disposed && subtitleStateRevision.current === revision)
+          setSubtitleError(`读取识别恢复状态失败：${(error as Error).message}`)
+      })
+    return () => {
+      disposed = true
+    }
+  }, [tab, recognitionKey])
   playhead.setTotal(timeline.total)
 
   const current = rows.findIndex((r, i) => rowKey(r, i) === selected)
@@ -222,6 +293,14 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   }
   const move = (from: number, to: number) => {
     if (to < 0 || to >= rows.length || from === to) return
+    if (animatic) {
+      const next = [...animatic.shots]
+      const [shot] = next.splice(from, 1)
+      next.splice(to, 0, shot!)
+      setParam(engine.doc, id, 'shots', next)
+      engine.doc.flush()
+      return
+    }
     const next = [...read.rows]
     const [r] = next.splice(from, 1)
     next.splice(to, 0, r!)
@@ -230,6 +309,92 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const set = (key: keyof SequenceParams, value: unknown) => {
     setParams(engine.doc, id, { [key]: value })
     engine.doc.flush()
+  }
+  const subtitleDurations = () => ({
+    clips: read.rows.map((r) => (animatic ? (r.out ?? 0) : (duration(r.clip.assetId) ?? 0))),
+    dialogue: read.rows.map((r) => (r.dialogue ? duration(r.dialogue.assetId) : undefined)),
+    more: read.rows.map((r) => r.more.map((m) => duration(m.assetId))),
+  })
+  const buildSubtitles = () => {
+    const next = { ...params, asrTiming: false }
+    setParams(engine.doc, id, {
+      asrTiming: false,
+      subtitleTrack: createSubtitleTrack(next, read.rows, subtitleDurations()),
+    })
+    engine.doc.flush()
+    setSubtitleError(null)
+  }
+  const recognizeSubtitles = async () => {
+    if (recognizing || !subtitleKnown) return
+    if (!params.model) {
+      setSubtitleError('请先在成片设置中选择语音识别模型')
+      return
+    }
+    const assetIds = [...new Set(read.rows.flatMap((r) => clipLines(r).map((l) => l.assetId)))]
+    if (!assetIds.length) {
+      setSubtitleError('没有连入对白，可按当前台词创建字幕后手动编辑')
+      return
+    }
+    const snapshot = { ...params, asrTiming: true }
+    const inputKey = subtitleInputKey(snapshot, read.rows)
+    const originalTrack = JSON.stringify(params.subtitleTrack)
+    setRecognizing(true)
+    subtitleStateRevision.current++
+    setSubtitleRecovery(null)
+    setSubtitleError(null)
+    try {
+      const { transcripts } = await api.subtitleRecognize({ model: params.model, assetIds })
+      const latest = readSequence(engine, id)
+      if (
+        !engine.doc.get(id) ||
+        engine.doc.readOnly ||
+        latest.params.asrTiming !== params.asrTiming ||
+        subtitleInputKey({ ...latest.params, asrTiming: true }, latest.rows) !== inputKey ||
+        JSON.stringify(latest.params.subtitleTrack) !== originalTrack
+      ) {
+        setSubtitleError(
+          '识别期间素材或字幕已修改，本次结果已缓存，未覆盖编辑；请按当前内容重新识别（相同音频不重复提交）',
+        )
+        return
+      }
+      const track = createSubtitleTrack(snapshot, read.rows, subtitleDurations(), transcripts)
+      setParams(engine.doc, id, { asrTiming: true, subtitleTrack: track })
+      engine.doc.flush()
+    } catch (error) {
+      setSubtitleError((error as Error).message)
+      if (error instanceof ApiError)
+        setSubtitleRecovery(
+          (error.body as { recovery?: SubtitleRecognitionInfo | null })?.recovery ?? null,
+        )
+    } finally {
+      setRecognizing(false)
+    }
+  }
+  const recoverSubtitles = async (operation: RecoverJobOptions, confirmedNotAccepted = false) => {
+    if (!subtitleRecovery || recognizing) return
+    const inputKey = subtitleInputKey(params, read.rows)
+    setRecognizing(true)
+    subtitleStateRevision.current++
+    try {
+      await api.subtitleRecover({
+        model: subtitleRecovery.model,
+        assetId: subtitleRecovery.assetId,
+        expected: subtitleRecovery.expected,
+        operation,
+        confirmedNotAccepted,
+      })
+      setSubtitleRecovery(null)
+      const latest = readSequence(engine, id)
+      if (subtitleInputKey(latest.params, latest.rows) !== inputKey) {
+        setSubtitleError('素材在恢复期间已变化，恢复记录已保存，请重新检查字幕后再识别')
+        return
+      }
+      await recognizeSubtitles()
+    } catch (error) {
+      setSubtitleError((error as Error).message)
+    } finally {
+      setRecognizing(false)
+    }
   }
   const trim = (key: string, p: TrimPatch, done: boolean) => {
     if (!done) return setDraft({ key, patch: p })
@@ -249,7 +414,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         params,
         rows,
         {
-          clips: rows.map((r) => duration(r.clip.assetId) ?? 0),
+          clips: rows.map((r) => (animatic ? (r.out ?? 0) : (duration(r.clip.assetId) ?? 0))),
           dialogue: rows.map((r) => (r.dialogue ? duration(r.dialogue.assetId) : undefined)),
           more: rows.map((r) => r.more.map((m) => duration(m.assetId))),
         },
@@ -277,6 +442,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const progress = el?.run?.status === 'running' ? el.run.progress : undefined
   const film = el && currentResult(el)?.value
   const filmAsset = film && film.type === 'video' ? film.assetId : undefined
+  const subtitleProblem = subtitleExportProblem(params, read.rows)
 
   const items: TrackItem[] = rows.map((r, i) => {
     const t = timeline.clips[i]!
@@ -287,6 +453,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       index: i,
       name: r.el?.name ?? `镜头 ${i + 1}`,
       assetId: r.clip.assetId,
+      kind: animatic ? 'image' : 'video',
       pending: r.pending,
       start: t.start,
       length: t.length,
@@ -322,6 +489,27 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           </span>
         }
       >
+        {animatic && (
+          <>
+            <span className="ui-chip">样片 / 草稿</span>
+            <button
+              className="ui-btn ui-btn-quiet"
+              type="button"
+              onClick={() => refreshAnimatic(engine, id)}
+            >
+              更新已有素材
+            </button>
+            {filmSequence && (
+              <button
+                className="ui-btn ui-btn-quiet"
+                type="button"
+                onClick={() => useCanvas.getState().openSequence(filmSequence)}
+              >
+                切回成片
+              </button>
+            )}
+          </>
+        )}
         {el?.run?.status === 'failed' && !running && (
           <span className="max-w-80 truncate text-xs text-danger" title={el.run.error}>
             {el.run.error ?? '导出失败'}
@@ -335,18 +523,27 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         <button
           type="button"
           className="ui-btn ui-btn-quiet"
-          disabled={packing || rows.length === 0 || !known}
+          disabled={
+            packing ||
+            rows.length === 0 ||
+            !known ||
+            !!subtitleProblem ||
+            (!!animatic && pending > 0)
+          }
           title={
             pending
-              ? `还有 ${pending} 段镜头没有生成`
-              : '导出 OTIO / FCPXML 剪辑工程（连同素材打包），在达芬奇、Final Cut 里接着剪'
+              ? animatic
+                ? `缺少 ${pending} 张分镜图；样片 MP4 可用占位，工程导出需要补齐素材`
+                : `还有 ${pending} 段镜头没有生成`
+              : (subtitleProblem ??
+                '导出 OTIO / FCPXML 剪辑工程（连同素材打包），在达芬奇、Final Cut 里接着剪')
           }
           onClick={() => void exportProject()}
         >
           <Icon name="exportFile" />
           {packing ? '打包中…' : '导出工程'}
         </button>
-        {filmAsset && !running && (
+        {filmAsset && !running && view === 'edit' && (
           <button
             type="button"
             className="ui-btn ui-btn-quiet"
@@ -360,8 +557,16 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         <button
           type="button"
           className={running ? 'ui-btn ui-btn-secondary' : 'ui-btn ui-btn-primary'}
-          disabled={!running && (rows.length === 0 || pending > 0)}
-          title={pending ? `还有 ${pending} 段镜头没有生成` : undefined}
+          disabled={
+            !running && (rows.length === 0 || (!animatic && pending > 0) || !!subtitleProblem)
+          }
+          title={
+            animatic
+              ? (subtitleProblem ?? '仅本地合成草稿；不生成视频、配音或自动识别字幕')
+              : pending
+                ? `还有 ${pending} 段镜头没有生成`
+                : subtitleProblem
+          }
           onClick={exportVideo}
         >
           {running ? (
@@ -372,13 +577,40 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           ) : (
             <>
               <Icon name="download" />
-              {el?.results?.length ? '重新导出' : '导出 MP4'}
+              {el?.results?.length ? '重新导出' : animatic ? '导出样片 MP4' : '导出 MP4'}
             </>
           )}
         </button>
       </ModalHeader>
+      {animatic && (
+        <p className="px-4 text-xs text-muted">
+          仅使用创建或更新时已有的分镜图、配音。调整时长与对白节奏只改变样片；原生成结果保留。
+          {pending > 0 && ` ${pending} 镜缺图，将显示占位。`}
+        </p>
+      )}
+      {subtitleProblem && (
+        <p role="status" className="px-4 text-sm text-danger">
+          {subtitleProblem}{' '}
+          <button type="button" className="underline" onClick={() => setTab('subtitles')}>
+            编辑字幕
+          </button>
+        </p>
+      )}
 
-      {rows.length === 0 ? (
+      <div className="px-4 py-2">
+        <Segmented
+          label="序列视图"
+          value={view}
+          options={[
+            { value: 'edit', label: animatic ? '样片编辑预览' : '剪辑预览' },
+            { value: 'delivery', label: '实际 MP4 回看 / 交付' },
+          ]}
+          onChange={setView}
+        />
+      </div>
+      {view === 'delivery' && el ? (
+        <DeliveryReview engine={engine} node={el} />
+      ) : rows.length === 0 ? (
         <EmptyState
           icon="video"
           title="还没有镜头"
@@ -393,6 +625,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
               params={params}
               music={music}
               playhead={playhead}
+              draft={!!animatic}
             />
             <aside className="seq-inspector" aria-label="剪辑设置">
               <div className="seq-tabs">
@@ -402,6 +635,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                   options={[
                     { value: 'clip', label: '镜头' },
                     { value: 'film', label: '成片' },
+                    { value: 'subtitles', label: '字幕' },
                   ]}
                   onChange={setTab}
                 />
@@ -410,8 +644,41 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                 key={tab === 'clip' ? `clip:${selected ?? ''}` : 'film'}
                 className="seq-inspector-body ui-scrollbar"
               >
-                {tab === 'film' ? (
+                {tab === 'subtitles' ? (
+                  <SubtitleEditor
+                    params={params}
+                    rows={read.rows}
+                    busy={recognizing || !subtitleKnown}
+                    error={subtitleError}
+                    onBuild={buildSubtitles}
+                    onRecognize={() => void recognizeSubtitles()}
+                    onChange={(track) => set('subtitleTrack', track)}
+                    onModelChange={(model) => set('model', model)}
+                    recovery={subtitleRecovery}
+                    onRecover={(operation, confirmed) =>
+                      void recoverSubtitles(operation, confirmed)
+                    }
+                  />
+                ) : tab === 'film' ? (
                   <FilmSettings params={params} set={set} />
+                ) : row && animatic ? (
+                  <AnimaticSettings
+                    shot={animatic.shots[current]!}
+                    index={current}
+                    count={rows.length}
+                    onMove={(to) => move(current, to)}
+                    onChange={(patch) => {
+                      setParam(
+                        engine.doc,
+                        id,
+                        'shots',
+                        animatic.shots.map((s) =>
+                          s.shotId === row.source ? { ...s, ...patch } : s,
+                        ),
+                      )
+                      engine.doc.flush()
+                    }}
+                  />
                 ) : row ? (
                   <ClipSettings
                     row={row}
@@ -587,7 +854,7 @@ function FilmSettings({
         )}
         <SwitchRow
           label="按语音识别对齐字幕"
-          help="导出时按识别出的语音校准字幕时间"
+          help="先在字幕页显式识别全部对白，检查后再导出；导出不会自动调用识别"
           checked={params.asrTiming}
           disabled={!params.subtitles}
           onChange={(v) => set('asrTiming', v)}
@@ -834,11 +1101,15 @@ function ClipSettings({
       </Section>
       {params.subtitles && (
         <Section title="字幕">
-          <SubtitleField
-            value={row.subtitle}
-            placeholder={caption ? caption : '这段没有字幕，可以在这里写'}
-            onChange={(v) => onPatch({ subtitle: v })}
-          />
+          {params.subtitleTrack ? (
+            <p className="ui-help">已使用可编辑字幕轨，请切到「字幕」逐句调整文字与时间。</p>
+          ) : (
+            <SubtitleField
+              value={row.subtitle}
+              placeholder={caption ? caption : '这段没有字幕，可以在这里写'}
+              onChange={(v) => onPatch({ subtitle: v })}
+            />
+          )}
         </Section>
       )}
     </>
@@ -980,5 +1251,70 @@ function Volume(props: {
         <span className="seq-volume-value">{Math.round(v * 100)}%</span>
       </span>
     </Field>
+  )
+}
+
+function AnimaticSettings({
+  shot,
+  index,
+  count,
+  onMove,
+  onChange,
+}: {
+  shot: AnimaticShot
+  index: number
+  count: number
+  onMove(to: number): void
+  onChange(patch: Partial<AnimaticShot>): void
+}) {
+  return (
+    <div className="space-y-4">
+      <p className="ui-help">
+        样片镜头 {index + 1} · {shot.dialogue.length} 句已有配音
+      </p>
+      {(
+        [
+          ['duration', '样片镜头时长（秒）', 0.2, 300],
+          ['lineDelay', '对白起始延迟（秒）', 0, 30],
+          ['lineGap', '对白句间停顿（秒）', 0, 10],
+        ] as const
+      ).map(([key, label, min, max]) => (
+        <label className="block space-y-1 text-xs" key={key}>
+          <span>{label}</span>
+          <input
+            aria-label={label}
+            className="ui-input w-full"
+            type="number"
+            min={min}
+            max={max}
+            step="0.1"
+            value={shot[key]}
+            onChange={(e) => {
+              const value = Number(e.target.value)
+              if (Number.isFinite(value) && value >= min && value <= max) onChange({ [key]: value })
+            }}
+          />
+        </label>
+      ))}
+      <p className="ui-help">超出镜头时长的对白会按镜头边界裁切，请在预览中检查节奏。</p>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="ui-btn ui-btn-quiet"
+          disabled={index === 0}
+          onClick={() => onMove(index - 1)}
+        >
+          前移
+        </button>
+        <button
+          type="button"
+          className="ui-btn ui-btn-quiet"
+          disabled={index === count - 1}
+          onClick={() => onMove(index + 1)}
+        >
+          后移
+        </button>
+      </div>
+    </div>
   )
 }

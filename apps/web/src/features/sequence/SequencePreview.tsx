@@ -24,6 +24,7 @@ export function SequencePreview({
   params,
   music,
   playhead,
+  draft = false,
 }: {
   /** pending 的镜头没有素材，轮到它时显示占位 */
   rows: Array<ArrangedClip & { pending?: boolean }>
@@ -31,6 +32,7 @@ export function SequencePreview({
   params: SequenceParams
   music?: string
   playhead: Playhead
+  draft?: boolean
 }) {
   const [subMode, setSubMode] = useState<SubtitleMode>('loading')
   const size = sequenceSize(params)
@@ -63,7 +65,7 @@ export function SequencePreview({
     subMode === 'fallback'
       ? '预览字幕样式是近似的，导出的成片以服务端合成为准。'
       : '预览按成片的时间、转场、混音和字幕播放，画质略低于导出。',
-    params.asrTiming && '语音识别校准的字幕时间只在导出时生效。',
+    params.subtitleTrack && '字幕按保存的字幕轨预览，与 MP4 和工程 SRT 共用。',
     params.loudnorm && '响度标准化只在导出时处理。',
     rows.some((r) => r.speed !== 1) && '变速镜头的原声预览会变调，导出时不变调。',
   ]
@@ -79,6 +81,11 @@ export function SequencePreview({
           data-subtitles={params.subtitles ? subMode : undefined}
         >
           <canvas ref={canvas} className="absolute inset-0 h-full w-full" />
+          {draft && (
+            <div className="absolute inset-x-0 top-0 z-30 bg-black/70 px-3 py-2 text-xs text-white">
+              样片 / 草稿 · 已有分镜图与配音节奏预演
+            </div>
+          )}
           {params.subtitles && (
             <SubtitleLayer
               build={(font) =>
@@ -100,6 +107,7 @@ export function SequencePreview({
             cues={subMode === 'fallback' ? cues : []}
             portrait={portrait}
             subtitleStyle={params.subtitleStyle}
+            draft={draft}
           />
         </div>
       </div>
@@ -116,6 +124,7 @@ function PlaybackOverlay({
   cues,
   portrait,
   subtitleStyle,
+  draft,
 }: {
   playhead: Playhead
   rows: Array<{ pending?: boolean }>
@@ -123,6 +132,7 @@ function PlaybackOverlay({
   cues: Timeline['clips'][number]['cues']
   portrait: boolean
   subtitleStyle: SequenceParams['subtitleStyle']
+  draft: boolean
 }) {
   const placeholder = useSyncExternalStore(playhead.subscribe, () =>
     timeline.clips.some(
@@ -159,7 +169,11 @@ function PlaybackOverlay({
       )}
       {(timeline.total === 0 || placeholder) && (
         <div className="absolute inset-0 z-30 flex items-center justify-center text-xs text-white/70">
-          {timeline.total === 0 ? '没有可播放的镜头' : '这段镜头还没有生成'}
+          {timeline.total === 0
+            ? '没有可播放的镜头'
+            : draft
+              ? '缺少分镜图 · 保留镜头时长与已有配音'
+              : '这段镜头还没有生成'}
         </div>
       )}
     </>

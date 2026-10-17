@@ -9,6 +9,8 @@
 | [模型平台接入](guide/providers.md)           | 四家平台的能力、密钥配置、参数映射与已知限制           |
 | [智能体与 MCP](guide/agent.md)               | 小满的三种用法：内置智能体、本机 CLI、对外 MCP         |
 | [创作、审片与复用](guide/creation-review.md) | 参考顺序、提示词建议、候选对比、逐镜审核、素材与检查点 |
+| [本机数据维护](guide/data-maintenance.md)    | 自动备份、空间统计、恢复副本与素材回收                 |
+| [从样片到交付](guide/creation-workflow.md)   | 持续引导、节奏样片、创作验收、批量清单、连续性与交付   |
 
 ## 开发
 
@@ -23,6 +25,10 @@
 | [画布性能样本](benchmarks/2026-10-17-canvas-perf.json) | 1000 个媒体、三轮冷热打开与五个交互场景的本机报告 |
 
 ## 规划
+
+本轮创作功能补齐见 [八项工作包与验收](plan/feature-completion-2026-10-17.md)。
+
+后续创作流程优化见 [六项工作包与验收](plan/creation-workflow-2026-10-17.md)，固定案例见 [创作基线](benchmarks/creative-baselines/README.md)。
 
 | 文档                                             | 内容                                         |
 | ------------------------------------------------ | -------------------------------------------- |

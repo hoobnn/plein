@@ -105,7 +105,7 @@ describe('运行前解析 @ 引用', () => {
     ])
   })
 
-  it('视频节点：图片参考模式把 @ 角色的参考图并入图片；其他模式不送图并提示', async () => {
+  it('视频节点：多模态参考模式把 @ 角色的参考图并入图片；其他模式不送图并提示', async () => {
     const { doc, photo } = setup()
     const n = node(doc, 'plein/video', { prompt: '@林夏回头', mode: 'reference' })
     const ref = await applyMentions(doc, doc.get(n)!, videoNode, {}, collect(doc))
@@ -126,7 +126,7 @@ describe('运行前解析 @ 引用', () => {
     expect(framed.params.prompt).toContain('林夏：二十岁，短发')
     expect(framed.refs[0]!.assetIds).toEqual([])
     expect(msg(framed.notices)).toContain(
-      '@ 引用的参考图只在「图片参考」模式下送入模型，当前模式只附文字设定',
+      '@ 引用的参考图只在「多模态参考」模式下送入模型，当前模式只附文字设定',
     )
   })
 

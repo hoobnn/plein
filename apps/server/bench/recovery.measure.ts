@@ -346,7 +346,7 @@ describe('失败恢复', { timeout: 60_000 }, () => {
     const runId = await runNode(first.server, first.canvasId, first.node)
     await until(() => first.server.runs.store.get(runId)?.calls.includes('pending'), WAIT_MS)
     const at = Date.now()
-    first.close()
+    await first.close()
     const second = await bootServer({ dataDir: first.dataDir })
     const { createDoc } = await import('@plein/doc')
     const doc = createDoc(second.server.rooms.get(first.canvasId).doc, { schedule: () => {} })

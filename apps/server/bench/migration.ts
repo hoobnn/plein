@@ -1351,7 +1351,7 @@ let passed = false
 try {
   passed = await main()
 } finally {
-  for (const s of servers) s.close()
+  for (const s of servers) await s.close()
   if (process.env.PLEIN_KEEP_DATA) process.stderr.write(`数据保留在 ${ROOT}\n`)
   else rmSync(ROOT, { recursive: true, force: true })
 }

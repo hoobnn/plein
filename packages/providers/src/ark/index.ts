@@ -1,3 +1,4 @@
+import { videoReferences } from '../shared/video-references'
 import {
   type AssetRef,
   type CapabilityInput,
@@ -95,8 +96,9 @@ const models: ModelSpec[] = [
   {
     id: 'doubao-seedream-5-0-pro-260628',
     title: 'Seedream 5.0 Pro',
-    capabilities: ['image.generate'],
+    capabilities: ['image.generate', 'image.process'],
     limits: {
+      imageOperations: ['cutout'],
       aspectRatios: SEEDREAM_ASPECTS,
       resolutions: ['1K', '1.5K', '2K'],
       count: { max: 1 },
@@ -107,8 +109,9 @@ const models: ModelSpec[] = [
   {
     id: 'doubao-seedream-5-0-flash-260915',
     title: 'Seedream 5.0 Flash',
-    capabilities: ['image.generate'],
+    capabilities: ['image.generate', 'image.process'],
     limits: {
+      imageOperations: ['cutout'],
       aspectRatios: SEEDREAM_ASPECTS,
       resolutions: ['1K', '1.5K', '2K'],
       count: { max: 1 },
@@ -137,6 +140,7 @@ const models: ModelSpec[] = [
       duration: { min: 4, max: 30 },
       seed: false,
       references: { max: 30 },
+      referenceMedia: { video: 0, audio: 10 },
     },
     options: seedanceOptions(true),
   },
@@ -150,6 +154,7 @@ const models: ModelSpec[] = [
       duration: { min: 4, max: 15 },
       seed: false,
       references: { max: 9 },
+      referenceMedia: { video: 0, audio: 3 },
     },
     options: seedanceOptions(false),
   },
@@ -163,6 +168,7 @@ const models: ModelSpec[] = [
       duration: { min: 4, max: 15 },
       seed: false,
       references: { max: 9 },
+      referenceMedia: { video: 0, audio: 3 },
     },
     options: seedanceOptions(false),
   },
@@ -176,6 +182,7 @@ const models: ModelSpec[] = [
       duration: { min: 4, max: 15 },
       seed: false,
       references: { max: 9 },
+      referenceMedia: { video: 0, audio: 3 },
     },
     options: seedanceOptions(false),
   },
@@ -235,6 +242,9 @@ async function request(
 ): Promise<Json> {
   const key = ctx.secret('ARK_API_KEY')
   if (!key) throw new ProviderError('auth', '请先配置 ARK_API_KEY')
+  const encoded = body ? JSON.stringify(body) : undefined
+  if (encoded && Buffer.byteLength(encoded, 'utf8') > 64 * 1024 * 1024)
+    invalid('火山方舟请求体超过 64 MB，请缩小参考素材')
   const messages = {
     cancelled: '火山方舟请求已取消',
     network: '火山方舟网络请求失败；生成提交结果可能未知，不会自动重新提交',
@@ -245,7 +255,7 @@ async function request(
     {
       method,
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      ...(body ? { body: JSON.stringify(body) } : {}),
+      ...(encoded ? { body: encoded } : {}),
     },
     messages,
   )
@@ -485,6 +495,94 @@ async function image(model: string, input: CapabilityInput<'image.generate'>, ct
   return { state: 'succeeded' as const, outputs, usage: { images: outputs.length } }
 }
 
+async function cutout(model: string, input: CapabilityInput<'image.process'>, ctx: Context) {
+  if (input.operation !== 'cutout') invalid('当前 Seedream 精修仅支持透明图层抠图')
+  if (input.image.kind !== 'image') invalid('图层抠图需要图片原图')
+  const source = await ctx.files.read(input.image)
+  if (!['image/png', 'image/jpeg'].includes(source.mime)) invalid('图层抠图需要 PNG 或 JPEG 原图')
+  const { width, height } = source
+  if (!source.data.length || source.data.length > 30 * 1024 * 1024)
+    invalid('图层抠图原图必须非空且不超过 30 MB')
+  if (
+    typeof width !== 'number' ||
+    typeof height !== 'number' ||
+    !Number.isInteger(width) ||
+    !Number.isInteger(height) ||
+    width <= 0 ||
+    height <= 0 ||
+    width / height < 1 / 16 ||
+    width / height > 16 ||
+    width * height < 262144 ||
+    width * height > 36000000
+  )
+    invalid('图层抠图原图需要有效尺寸，宽高比为 1/16–16，总像素为 262144–36000000')
+  const data = await request(ctx, '/images/generations', {
+    model,
+    image: `data:${source.mime};base64,${Buffer.from(source.data).toString('base64')}`,
+    prompt: input.prompt || '将主体与背景拆分，主体作为独立透明图层，保留边缘细节',
+    layer_decomposition: true,
+    output_format: 'png',
+    response_format: 'b64_json',
+  })
+  if (!Array.isArray(data.data)) throw new ProviderError('unknown', '未返回图层结果')
+  const layers = data.data.map(asJson)
+  const indices = new Set<number>()
+  for (const layer of layers) {
+    if (
+      typeof layer.z_index !== 'number' ||
+      !Number.isInteger(layer.z_index) ||
+      layer.z_index < 0 ||
+      layer.z_index > 16 ||
+      indices.has(layer.z_index)
+    )
+      throw new ProviderError('unknown', '图层顺序信息无效；不会自动重提')
+    indices.add(layer.z_index)
+    if (layer.bounding_box !== undefined) {
+      const box = asJson(layer.bounding_box)
+      for (const coordinates of [box.absolute, box.normalized]) {
+        if (
+          coordinates !== undefined &&
+          (!Array.isArray(coordinates) ||
+            coordinates.length !== 4 ||
+            coordinates.some((v) => typeof v !== 'number' || !Number.isFinite(v)))
+        )
+          throw new ProviderError('unknown', '图层边界信息无效；不会自动重提')
+      }
+    }
+  }
+  const outputs: ProviderOutput[] = layers
+    .filter((layer) => typeof layer.z_index === 'number' && layer.z_index > 0)
+    .map((layer) => {
+      if (typeof layer.b64_json === 'string') {
+        const encoded = layer.b64_json.replace(/^data:image\/png;base64,/, '')
+        if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded) || encoded.length % 4 === 1)
+          throw new ProviderError('unknown', '图层图片数据无效')
+        return {
+          type: 'file',
+          kind: 'image',
+          mime: 'image/png',
+          data: new Uint8Array(Buffer.from(encoded, 'base64')),
+          name: typeof layer.name === 'string' ? layer.name + '.png' : '主体图层.png',
+        }
+      }
+      return remoteFile(layer.url, 'image', 'image/png')
+    })
+  if (!outputs.length)
+    throw new ProviderError('unknown', '未返回独立透明图层，请在平台核对结果；不会自动重提')
+  outputs.push({
+    type: 'json',
+    value: {
+      layers: layers.map(({ z_index, bounding_box, name, description }) => ({
+        z_index,
+        bounding_box,
+        name,
+        description,
+      })),
+    },
+  })
+  return { state: 'succeeded' as const, outputs }
+}
+
 async function video(model: string, input: CapabilityInput<'video.generate'>, ctx: Context) {
   if (!input.prompt.trim() && !input.firstFrame && !input.references?.length)
     invalid('视频需要提示词或图片参考')
@@ -535,7 +633,11 @@ async function video(model: string, input: CapabilityInput<'video.generate'>, ct
   if (current && !resolutions.includes(String(body.resolution))) invalid('Seedance 不支持该分辨率')
   if (v25 && input.firstFrame && body.ratio !== 'adaptive')
     invalid('Seedance 2.5 首尾帧模式需要 adaptive 宽高比')
-  if (current && (input.references?.length ?? 0) > (v25 ? 30 : 9)) invalid('Seedance 参考图片过多')
+  if (
+    current &&
+    (input.references ?? []).filter((ref) => ref.kind === 'image').length > (v25 ? 30 : 9)
+  )
+    invalid('Seedance 参考图片过多')
   if (body.draft && (!v25 || body.resolution !== '480p'))
     invalid('draft 仅支持 Seedance 2.5 的 480p 输出')
   if (
@@ -548,10 +650,25 @@ async function video(model: string, input: CapabilityInput<'video.generate'>, ct
   for (const [ref, role] of [
     [input.firstFrame, 'first_frame'],
     [input.lastFrame, 'last_frame'],
-    ...(input.references ?? []).map((ref) => [ref, 'reference_image'] as const),
   ] as Array<readonly [AssetRef | undefined, string]>) {
     if (ref)
       content.push({ type: 'image_url', image_url: { url: await imageData(ref, ctx) }, role })
+  }
+  if (input.references?.length) {
+    if (input.references.some((ref) => ref.kind === 'video'))
+      invalid('火山方舟本地视频参考需要先上传至平台素材库；请改用支持本地视频参考的模型')
+    if (!current && input.references.some((ref) => ref.kind !== 'image'))
+      invalid('当前模型不支持视频或音频参考')
+    content.push(
+      ...(await videoReferences(input.references, ctx, {
+        image: v25 ? 30 : 9,
+        video: 0,
+        audio: current ? (v25 ? 10 : 3) : 0,
+        duration: v25 ? 30 : 15,
+        allowAudioOnly: v25,
+        platform: 'ark',
+      })),
+    )
   }
   body.content = content
   const data = await request(ctx, '/contents/generations/tasks', body)
@@ -589,6 +706,8 @@ export const arkProvider = defineProvider({
       return chat(model, req.input as CapabilityInput<'text.chat'>, ctx)
     if (req.capability === 'image.generate')
       return image(model, req.input as CapabilityInput<'image.generate'>, ctx)
+    if (req.capability === 'image.process')
+      return cutout(model, req.input as CapabilityInput<'image.process'>, ctx)
     if (req.capability === 'video.generate')
       return video(model, req.input as CapabilityInput<'video.generate'>, ctx)
     return invalid('火山方舟不支持此能力')

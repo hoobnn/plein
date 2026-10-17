@@ -182,7 +182,19 @@ export function AddMenu({
     }
     const q = query.trim().toLowerCase()
     return q
-      ? list.filter((i) => `${i.title} ${i.hint ?? ''} ${i.id}`.toLowerCase().includes(q))
+      ? list
+          .filter((i) => `${i.title} ${i.hint ?? ''} ${i.id}`.toLowerCase().includes(q))
+          .sort((a, b) => {
+            const score = (title: string) =>
+              title.toLowerCase() === q || title.toLowerCase().replace(/^生成/, '') === q
+                ? 0
+                : title.toLowerCase().startsWith(q)
+                  ? 1
+                  : title.toLowerCase().includes(q)
+                    ? 2
+                    : 3
+            return score(a.title) - score(b.title)
+          })
       : list
   }, [nodes, catalog, templates, engine, from, query, canImport])
 

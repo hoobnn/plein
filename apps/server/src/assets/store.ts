@@ -9,6 +9,7 @@ import { and, eq } from 'drizzle-orm'
 import type { Conn, DB } from '../storage/db'
 import { assets } from '../storage/schema'
 import { FILMSTRIP_FRAMES } from '@plein/protocol'
+import { DataActivity } from '../maintenance/activity'
 import {
   audioPeaks,
   audioWaveform,
@@ -76,6 +77,7 @@ function kindOf(mime: string): AssetKind {
  * 衍生物放在旁边（<哈希>.<衍生物>.<扩展名>）。同一内容只存一份。
  */
 export class AssetStore {
+  readonly activity = new DataActivity()
   private root: string
   private tmp: string
   /** 正在生成的按需衍生物，同一个只跑一次 */
@@ -119,7 +121,11 @@ export class AssetStore {
   }
 
   /** 流式写入临时文件并计算哈希，再移动到内容地址；已存在则直接复用 */
-  async ingest(
+  ingest(...args: Parameters<AssetStore['ingestActive']>) {
+    return this.activity.run(() => this.ingestActive(...args))
+  }
+
+  private async ingestActive(
     ownerId: string,
     body: ReadableStream<Uint8Array> | Readable,
     meta: { mime: string; name: string },
@@ -163,7 +169,16 @@ export class AssetStore {
    * 同一内容的文件与衍生物在所有者之间共享；rename 是原子的，并发写入同一内容也安全。
    * 文件要在数据目录的同一个文件系统里（tmp 下），rename 才不会跨盘失败。
    */
-  async place(file: string, id: string, size: number, meta: { mime: string; name: string }) {
+  place(...args: Parameters<AssetStore['placeActive']>) {
+    return this.activity.run(() => this.placeActive(...args))
+  }
+
+  private async placeActive(
+    file: string,
+    id: string,
+    size: number,
+    meta: { mime: string; name: string },
+  ) {
     meta = { ...meta, mime: normalizeMime(meta.mime) }
     const kind = kindOf(meta.mime)
     const variants: AssetVariant[] = []
@@ -218,7 +233,11 @@ export class AssetStore {
    * 确保按需衍生物存在：已有直接返回 true；资产类型不对、没有 ffmpeg 或生成失败返回 false。
    * 生成后记进所有持有该内容的记录里（同一内容的衍生物本来就是共享的）。
    */
-  async ensureVariant(asset: Asset, v: AssetVariant): Promise<boolean> {
+  ensureVariant(asset: Asset, v: AssetVariant): Promise<boolean> {
+    return this.activity.run(() => this.ensureVariantActive(asset, v))
+  }
+
+  private async ensureVariantActive(asset: Asset, v: AssetVariant): Promise<boolean> {
     if (asset.variants.includes(v)) return true
     if (!LAZY_VARIANTS[v]?.includes(asset.kind) || !(await hasFfmpeg())) return false
     const key = `${asset.id}.${v}`

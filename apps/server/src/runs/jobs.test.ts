@@ -1,4 +1,5 @@
 import { connect, createDoc, createElement, type PleinDoc, setParams } from '@plein/doc'
+import { arrangeSequence, createSubtitleTrack, sequenceNode } from '@plein/nodes'
 import type { JobList, RunActivity, StaleNodes } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
@@ -252,7 +253,7 @@ describe('任务队列', () => {
     await until(() => first.server.runs.store.get(run)?.calls.includes('pending'))
     expect(submit).toHaveBeenCalledTimes(1)
     // 退出：任务保持“运行中”，调用记录保留
-    first.close()
+    await first.close()
 
     const second = await bootServer({ dataDir: first.dataDir })
     const doc2 = createDoc(second.server.rooms.get(id).doc, { schedule: () => {} })
@@ -440,20 +441,49 @@ describe.skipIf(!ffmpeg)('序列导出', () => {
         providerCall.mock.calls.filter(([capability]) => capability === 'audio.transcribe')
       expect(transcriptions()).toHaveLength(0)
 
-      // 叠化 + 按语音识别对齐字幕（mock 平台返回带时间戳的分段）
+      // 导出不隐式调识别；先显式识别、保存字幕轨，再用同一轨合成。
       setParams(doc, seq, { transition: '叠化', transitionDuration: 0.4, asrTiming: true })
       const missingModel = await runFrame(server, id, frame, { video: true })
       expect(missingModel.summary).toMatchObject({ succeeded: 0, failed: 1 })
-      expect(doc.get(seq)?.run?.error).toContain('请在成片的字幕设置中选择')
+      expect(doc.get(seq)?.run?.error).toContain('请先在序列编辑器识别全部对白')
       expect(transcriptions()).toHaveLength(0)
 
       const asrModel = mockModel('audio.transcribe')
       setParams(doc, seq, { model: asrModel })
+      const inspection = await server.runs.inspect(
+        doc,
+        doc.get(seq)!,
+        'local',
+        new AbortController().signal,
+      )
+      const p = sequenceNode.params.parse(inspection.params)
+      const arranged = arrangeSequence(p, inspection.inputs)
+      const assetIds = arranged.flatMap((c) => (c.dialogue ? [c.dialogue.assetId] : []))
+      const recognized = await call(server, '/api/media/subtitle-recognize', {
+        method: 'POST',
+        body: JSON.stringify({ model: asrModel, assetIds }),
+      })
+      expect(recognized.status).toBe(200)
+      const { transcripts } = (await recognized.json()) as {
+        transcripts: Parameters<typeof createSubtitleTrack>[3]
+      }
+      const track = createSubtitleTrack(
+        p,
+        arranged,
+        {
+          clips: arranged.map((c) => server.assets.get('local', c.clip.assetId)!.duration!),
+          dialogue: arranged.map((c) =>
+            c.dialogue ? server.assets.get('local', c.dialogue.assetId)!.duration : undefined,
+          ),
+        },
+        transcripts,
+      )
+      setParams(doc, seq, { subtitleTrack: track })
       const again = await runFrame(server, id, frame, { video: true })
       expect(doc.get(seq)?.run?.error).toBeUndefined()
       expect(again.summary).toMatchObject({ succeeded: 1, failed: 0 })
       expect(assetOf(seq).duration).toBeCloseTo(clip.duration! * 2 - 0.4, 0)
-      expect(transcriptions().map(([, model]) => model)).toEqual([asrModel, asrModel])
+      expect(transcriptions().length).toBe(new Set(assetIds).size)
     },
     60_000,
   )

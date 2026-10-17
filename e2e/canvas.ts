@@ -268,11 +268,7 @@ export async function runBatch(page: Page, dialog: Locator, label: string, timeo
   if (!noun) throw new Error(`不认识的批量按钮：${label}`)
   const seen = new Set((await jobs(page)).map((j) => j.id))
   await dialog.getByRole('button', { name: label }).click()
-  const toast = page.locator('.ui-toast', { hasText: new RegExp(`已开始生成 \\d+ 个${noun}`) })
-  await expect(toast).toBeVisible()
-  const started = Number(
-    new RegExp(`已开始生成 (\\d+) 个${noun}`).exec(await toast.innerText())![1],
-  )
+  const started = await confirmBatchChecklist(page)
   await expect
     .poll(
       async () => {
@@ -285,4 +281,21 @@ export async function runBatch(page: Page, dialog: Locator, label: string, timeo
     .toBe(true)
   await waitIdle(page, timeout)
   return started
+}
+
+/** 批量按钮先只预检；测试也必须显式审阅和确认，不能绕过清单入口。 */
+export async function confirmBatchChecklist(page: Page) {
+  const checklist = page.getByRole('dialog', { name: '批量生成清单', exact: true })
+  await expect(checklist).toBeVisible()
+  const confirm = checklist.getByRole('button', { name: '确认并开始生成', exact: true })
+  await expect(confirm).toBeEnabled()
+  const response = page.waitForResponse(
+    (res) => res.url().endsWith('/storyboard-batch/commit') && res.request().method() === 'POST',
+  )
+  await confirm.click()
+  const result = await response
+  expect(result.status(), await result.text()).toBe(202)
+  const { total } = (await result.json()) as { total: number }
+  await expect(checklist).toBeHidden()
+  return total
 }

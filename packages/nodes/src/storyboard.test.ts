@@ -72,9 +72,9 @@ describe('展开时的计划快照', () => {
       ['路人', '别过去'],
     )
     expect(planParams(s, 'image', { mentions: '@林夏' })).toEqual({
-      prompt: '@林夏 低机位',
+      prompt: '@林夏 低机位 景别：中景',
     })
-    expect(planParams(s, 'video')).toEqual({ prompt: '缓慢推近', duration: 7 })
+    expect(planParams(s, 'video')).toEqual({ prompt: '缓慢推近 景别：中景', duration: 7 })
     // 音色连平台一起落进节点，展开出来的配音才受跨平台约束
     expect(
       planParams(s, 'speech', {
@@ -84,34 +84,40 @@ describe('展开时的计划快照', () => {
     ).toEqual({
       text: '别过去',
       voice: { provider: 'doubao-speech', voiceId: 'v_linxia' },
+      instruction: '',
     })
     // 旧画布里的裸字符串音色也能吃，平台标为未确认
     expect(planParams(s, 'speech', { line: 1, voice: 'v_linxia' })).toEqual({
       text: '别过去',
       voice: { provider: '', voiceId: 'v_linxia' },
+      instruction: '',
     })
     // 没有分镜图提示词时退回画面描述；越界时长收敛到 1–30
-    expect(planParams(shot(1, '雨夜天台'), 'image')).toEqual({ prompt: '雨夜天台' })
+    expect(planParams(shot(1, '雨夜天台'), 'image')).toEqual({ prompt: '雨夜天台 景别：中景' })
     expect(planParams({ ...shot(1, 'x'), duration: 99 }, 'video').duration).toBe(30)
   })
 })
 
 describe('节点与计划的差异', () => {
   const base = shot(1, '雨夜天台')
-  const plan: ShotPlan = { version: 'v1', params: { prompt: '雨夜天台', duration: 5 }, keep: [] }
+  const plan: ShotPlan = {
+    version: 'v1',
+    params: { prompt: '雨夜天台 景别：中景', duration: 5 },
+    keep: [],
+  }
 
   it('分镜改了：提示词 stale；没改的字段不算差异', () => {
     const diffs = diffPlan('video', {
       plan,
       version: 'v2',
       wanted: planParams({ ...base, description: '雨夜天台，霓虹反光' }, 'video'),
-      actual: { prompt: '雨夜天台', duration: 5 },
+      actual: { prompt: '雨夜天台 景别：中景', duration: 5 },
     })
     const prompt = diffs.find((d) => d.key === 'prompt')!
     expect(prompt.stale).toBe(true)
     expect(prompt.overridden).toBe(false)
-    expect(prompt.wanted).toBe('雨夜天台，霓虹反光')
-    expect(prompt.actual).toBe('雨夜天台')
+    expect(prompt.wanted).toBe('雨夜天台，霓虹反光 景别：中景')
+    expect(prompt.actual).toBe('雨夜天台 景别：中景')
     expect(diffs.find((d) => d.key === 'duration')!.stale).toBe(false)
   })
 

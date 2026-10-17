@@ -67,7 +67,7 @@ export const useLibrary = create<LibraryStore>((set, get) => {
     },
     show(open, seed) {
       set({ open, seed: open ? (seed ?? null) : null })
-      if (open && !get().loaded) void get().load()
+      if (open) void get().load()
     },
     edit(item, tab) {
       set({ open: item.kind, seed: null, focus: item.id, tab: tab ?? null })

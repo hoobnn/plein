@@ -7,7 +7,7 @@ import {
   type PleinDoc,
   SCHEMA_VERSION,
 } from '@plein/doc'
-import { SEQUENCE_TYPE, STAGE_TYPE, STORYBOARD_TYPE } from '@plein/nodes'
+import { ANIMATIC_TYPE, SEQUENCE_TYPE, STAGE_TYPE, STORYBOARD_TYPE } from '@plein/nodes'
 import { useEffect, useRef } from 'react'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import { WebsocketProvider } from 'y-websocket'
@@ -32,6 +32,7 @@ import { applyPresetToNode } from './presets'
 import { cancelNode, runNode } from '../features/runs/run'
 import { watchVideoAspect } from './videoAspect'
 import { droppedFiles, MAX_IMPORT_FILES } from './dropped'
+import { CreationGuide } from '../features/creation-guide/CreationGuide'
 
 export type CanvasSource = { kind: 'remote'; canvasId: string } | { kind: 'demo'; count: number }
 
@@ -72,6 +73,7 @@ const CLOSE_DELETED = 4404
 export function CanvasView({ source }: { source: CanvasSource }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
+  const openTextRef = useRef<((id: string) => void) | null>(null)
   const kind = source.kind
   const canvasId = source.kind === 'remote' ? source.canvasId : ''
   const count = source.kind === 'demo' ? source.count : 0
@@ -103,6 +105,8 @@ export function CanvasView({ source }: { source: CanvasSource }) {
             originalUrl: assetUrls.original,
             awareness,
           })
+          const openText = (id: string) => overlays.activate(id)
+          openTextRef.current = openText
           const badges = new ShotBadges(engine, overlayRoot)
           const cards = new NodeCards(engine, overlayRoot, {
             run: runNode,
@@ -116,7 +120,8 @@ export function CanvasView({ source }: { source: CanvasSource }) {
             const el = engine.scene.get(id)
             if (el?.kind !== 'node') return
             if (el.nodeType === STORYBOARD_TYPE) return useCanvas.getState().openStoryboard(id)
-            if (el.nodeType === SEQUENCE_TYPE) return useCanvas.getState().openSequence(id)
+            if (el.nodeType === SEQUENCE_TYPE || el.nodeType === ANIMATIC_TYPE)
+              return useCanvas.getState().openSequence(id)
             if (el.nodeType === STAGE_TYPE) return useCanvas.getState().openStage(id)
             requestAnimationFrame(() =>
               window.dispatchEvent(new CustomEvent('plein:focus-generator', { detail: id })),
@@ -172,6 +177,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
             offActivate()
             cards.destroy()
             badges.destroy()
+            if (openTextRef.current === openText) openTextRef.current = null
             overlays.destroy()
             detach()
             engine.destroy()
@@ -306,6 +312,13 @@ export function CanvasView({ source }: { source: CanvasSource }) {
         className="absolute inset-0 touch-none select-none outline-none"
       />
       {/* DOM 覆盖层：Markdown 正文、编辑器、播放器，跟随相机变换 */}
+      {kind === 'remote' && (
+        <CreationGuide
+          key={canvasId}
+          canvasId={canvasId}
+          onOpenText={(id) => openTextRef.current?.(id)}
+        />
+      )}
       <div
         ref={overlayRef}
         className="plein-overlay pointer-events-none absolute left-0 top-0 origin-top-left"

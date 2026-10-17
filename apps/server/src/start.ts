@@ -40,13 +40,15 @@ export async function startServer(config: Config): Promise<RunningServer> {
     port,
     url: `http://${host}:${port}`,
     close() {
-      closing ??= new Promise<void>((resolve) => {
+      closing ??= (async () => {
         for (const ws of wss.clients) ws.close(1001, 'server shutdown')
-        server.close()
-        http.close(() => resolve())
-        // 长连接不肯断开时不无限等待
-        setTimeout(resolve, 3000).unref()
-      })
+        await server.close()
+        await new Promise<void>((resolve) => {
+          http.close(() => resolve())
+          // Only bound HTTP draining; never close SQLite underneath a backup.
+          setTimeout(resolve, 3000).unref()
+        })
+      })()
       return closing
     },
   }

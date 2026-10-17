@@ -8,18 +8,22 @@ const MODES: Record<VideoMode, { icon: IconName; hint: string }> = {
   text: { icon: 'text', hint: '只用提示词，不使用连入的图片' },
   image: { icon: 'imageToVideo', hint: '连入 1 张图作首帧' },
   frames: { icon: 'frames', hint: '连入 2 张图，上面的作首帧、下面的作尾帧' },
-  reference: { icon: 'references', hint: '连入的图片都作参考主体，可连多张' },
+  reference: { icon: 'references', hint: '使用连入的图片、视频与音频，按所选模型能力校验' },
 }
 
 /** 视频生成模式：由用户指定，连入的图片按模式使用 */
 export function ModePicker({
   value,
   images,
+  videos = 0,
+  audios = 0,
   onChange,
 }: {
   value: VideoMode
   /** 已连入的图片数，用来提示每种模式还差什么 */
   images: number
+  videos?: number
+  audios?: number
   onChange(v: VideoMode): void
 }) {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
@@ -59,7 +63,9 @@ export function ModePicker({
                     <span className="truncate">{VIDEO_MODE_LABELS[m]}</span>
                     <span className="ui-menu-desc">
                       {MODES[m].hint}
-                      {m !== 'text' && `（已连 ${images} 张）`}
+                      {m === 'reference'
+                        ? `（${images} 张图、${videos} 段视频、${audios} 段音频）`
+                        : m !== 'text' && `（已连 ${images} 张）`}
                     </span>
                   </span>
                   {m === value && <Icon name="check" size={14} />}

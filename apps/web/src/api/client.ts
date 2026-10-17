@@ -19,7 +19,12 @@ import {
   type RecoverJobOptions,
   type LibraryItem,
   type LibraryKind,
+  type LibraryUpdates,
+  type LibrarySyncResult,
+  type ApplyLibraryUpdates,
   type BatchRunOptions,
+  type StoryboardBatchRequest,
+  type StoryboardBatchPlan,
   type FlowRunOptions,
   type GroupRunOptions,
   type GroupRunStarted,
@@ -30,6 +35,10 @@ import {
   type MediaDerivation,
   type MediaDeriveRequest,
   type SequenceExportRequest,
+  type SubtitleRecognizeRequest,
+  type SubtitleRecognizeResult,
+  type SubtitleRecognitionInfo,
+  type SubtitleRecoverRequest,
   type NodeRunOptions,
   type NodeRunStarted,
   type PreparedInput,
@@ -115,6 +124,10 @@ const json = (method: string, body?: unknown): RequestInit => ({
 })
 
 export const api = {
+  storyboardBatchPreview: (canvasId: string, boardId: string, body: StoryboardBatchRequest) =>
+    request<StoryboardBatchPlan>(API.storyboardBatchPreview(canvasId, boardId), json('POST', body)),
+  storyboardBatchCommit: (canvasId: string, boardId: string, token: string) =>
+    request<GroupRunStarted>(API.storyboardBatchCommit(canvasId, boardId), json('POST', { token })),
   session: () => request<SessionInfo>(API.session),
   /** 首次创建所有者账号（Better Auth 注册，成功后即登录） */
   setup: (input: { name: string; email: string; password: string }) =>
@@ -167,6 +180,13 @@ export const api = {
     request<LibraryItem>(API.libraryItem(id), json('PATCH', body)),
   deleteLibraryItem: (id: string) => request<void>(API.libraryItem(id), { method: 'DELETE' }),
   markLibraryUsed: (id: string) => request<void>(API.libraryUse(id), json('POST', {})),
+  libraryUpdates: (id: string) =>
+    request<LibraryUpdates>(`/api/library/${encodeURIComponent(id)}/updates`),
+  applyLibraryUpdates: (id: string, body: ApplyLibraryUpdates) =>
+    request<LibrarySyncResult>(
+      `/api/library/${encodeURIComponent(id)}/updates`,
+      json('POST', body),
+    ),
 
   catalog: () => request<Catalog>(API.catalog),
   /** 画布最近的运行记录（任务面板） */
@@ -275,6 +295,14 @@ export const api = {
   /** 剪辑工程（OTIO / FCPXML + 素材）：返回一个短期下载地址 */
   sequenceExport: (body: SequenceExportRequest) =>
     request<{ url: string }>(API.sequenceExport, json('POST', body)),
+  subtitleRecognize: (body: SubtitleRecognizeRequest) =>
+    request<SubtitleRecognizeResult>(API.subtitleRecognize, json('POST', body)),
+  subtitleRecognition: (model: string, assetId: string) =>
+    request<SubtitleRecognitionInfo | null>(
+      `${API.subtitleRecognition}?${new URLSearchParams({ model, assetId })}`,
+    ),
+  subtitleRecover: (body: SubtitleRecoverRequest) =>
+    request<{ ok: true }>(API.subtitleRecover, json('POST', body)),
   mediaCaps: () => request<MediaCapsInfo>(API.mediaCaps),
 
   assetMeta: (id: string) => request<Asset>(API.assetMeta(id)),

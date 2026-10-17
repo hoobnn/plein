@@ -1,3 +1,6 @@
+import type { CreativeReview } from './review-types'
+import type { DeliveryRecord } from './delivery'
+
 /** 画布元素类型。工作流节点统一为 `node`，具体节点由 `nodeType` 区分。 */
 export type ElementKind = 'image' | 'video' | 'audio' | 'markdown' | 'node' | 'frame' | 'sequence'
 
@@ -77,6 +80,9 @@ export interface CanvasElement extends Rect {
   results?: NodeResult[]
   /** 当前采用的结果 id：卡片显示它，下游读取它；未设置时用最新结果 */
   adopted?: string
+  /** 人工验收按具体候选保存，独立于生成参数与采用状态。 */
+  reviews?: CreativeReview[]
+  deliveries?: DeliveryRecord[]
   run?: NodeRun
 }
 
@@ -165,6 +171,8 @@ export interface NewElement extends Rect {
   /** 复制节点时带上结果 */
   results?: NodeResult[]
   adopted?: string
+  reviews?: CreativeReview[]
+  deliveries?: DeliveryRecord[]
 }
 
 /** 可直接覆盖的元素字段；z、parentId、text、params 走专门的命令 */
@@ -183,6 +191,7 @@ export type ElementPatch = Partial<
     | 'ports'
     | 'nodeType'
     | 'nodeVersion'
+    | 'deliveries'
   >
 >
 

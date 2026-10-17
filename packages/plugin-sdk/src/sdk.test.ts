@@ -15,6 +15,7 @@ import {
   PluginManifest,
   providerConfigured,
   resolveParams,
+  withDefaultModel,
 } from '.'
 
 const base = {
@@ -27,6 +28,31 @@ const base = {
 }
 
 describe('plugin-sdk', () => {
+  it('精修新节点跟随默认模型支持的操作，保留原描述与用户已支持的操作', () => {
+    const def = defineNode({
+      ...base,
+      capability: 'image.process',
+      params: z.object({
+        model: z.string().default('').meta({ widget: 'model' }),
+        operation: z.enum(['upscale', 'cutout']).default('upscale'),
+      }),
+    })
+    const descriptor = describeNode(def, 'acme/p')
+    const selected = withDefaultModel(
+      descriptor,
+      () => 'p:cutout',
+      () => ({ imageOperations: ['cutout'] }),
+    )
+    expect(selected.defaults).toMatchObject({ model: 'p:cutout', operation: 'cutout' })
+    expect(descriptor.defaults).toEqual({ model: '', operation: 'upscale' })
+    expect(
+      withDefaultModel(
+        descriptor,
+        () => 'p:upscale',
+        () => ({ imageOperations: ['upscale', 'cutout'] }),
+      ).defaults.operation,
+    ).toBe('upscale')
+  })
   it('解析节点键与模型引用', () => {
     expect(parseNodeKey('plein/image@1')).toEqual({ type: 'plein/image', version: 1 })
     expect(parseNodeKey('plein/image')).toBeNull()

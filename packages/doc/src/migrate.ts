@@ -1,9 +1,10 @@
 import { generateNKeysBetween } from 'fractional-indexing'
 import * as Y from 'yjs'
 import { CONTAINER_KINDS, type Edge } from './types'
+import { migrateStoryboardIdentity } from './migrate-storyboard'
 
 /** 当前文档 schema 版本 */
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 export interface MigrateResult {
   version: number
@@ -14,7 +15,7 @@ export interface MigrateResult {
 type Migration = (ydoc: Y.Doc) => void
 
 /** MIGRATIONS[n] 把 n 版升到 n + 1 版 */
-const MIGRATIONS: Migration[] = [v0ToV1, v1ToV2, v2ToV3]
+const MIGRATIONS: Migration[] = [v0ToV1, v1ToV2, v2ToV3, migrateStoryboardIdentity]
 
 /**
  * 顺序执行迁移。新文档直接标为当前版本；

@@ -244,6 +244,11 @@ function fetchFailed(err: unknown, remoteId: string | undefined, requery: boolea
 export class PluginHost {
   private limiters = new Map<string, Limiter>()
 
+  /** 本地导出记录使用实际入库元数据，不访问平台。 */
+  assetInfo(ownerId: string, assetId: string) {
+    return this.assets.get(ownerId, assetId) ?? undefined
+  }
+
   constructor(
     readonly registry: PluginRegistry,
     readonly configs: ProviderConfigStore,
@@ -805,6 +810,9 @@ export class PluginHost {
     return {
       data: new Uint8Array(await readFile(this.assets.originalPath(asset.id))),
       mime: asset.mime,
+      duration: asset.duration,
+      width: asset.width,
+      height: asset.height,
     }
   }
 

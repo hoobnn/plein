@@ -16,6 +16,9 @@ export interface FakeOptions {
   secret?: string | Record<string, string | undefined>
   /** files.read 返回的 MIME；内容固定为 [1, 2, 3] */
   mime?: string
+  width?: number
+  height?: number
+  duration?: number
 }
 
 export function fakeContext<T>(
@@ -40,6 +43,9 @@ export function fakeContext<T>(
       read: vi.fn(async () => ({
         data: new Uint8Array([1, 2, 3]),
         mime: opts.mime ?? 'image/png',
+        width: opts.width ?? 1024,
+        height: opts.height ?? 1024,
+        duration: opts.duration,
       })),
     },
   }

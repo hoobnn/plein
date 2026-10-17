@@ -109,11 +109,13 @@ export const serverPlugin = defineServerPlugin(plugin, {
 - `options`（zod object）：专属参数，字段名就是 `extra` 的键。字段都写成可选、不给默认值，表单会多一个「默认」选项，用户没改的不传，平台用自己的默认值；枚举可用 `.meta({ labels: { 值: '显示名' } })`。目录接口把它转成 `optionsSchema` 下发。
 - `voices`（`VoicePreset[]`）：配音模型的预置音色，每个写明 `id`、`title`、`gender`（`female` / `male`）和可选的 `age`（`young` / `mature`）。生成设定卡时，宿主按角色的性别、年龄从排第一的配音模型的音色表里挑音色，同类音色轮着分，尽量一人一个声音；不声明的话角色卡的音色只能手填。
 
+`referenceMedia { video, audio }` 分别声明视频生成模型支持的视频、音频参考数量，未声明时不接受相应类型的参考输入。`imageOperations` 声明 `image.process` 支持的 `upscale`、`outpaint`、`cutout` 操作，新建精修节点只选择模型支持的默认操作。平台特有的格式、尺寸、时长、纯音频参考和编码体积约束仍由适配器在发送请求前校验。
+
 缓存键只算所选模型那份专属参数；分辨率留空、专属参数为空时不计入。
 
-能力的输出约定：`audio.transcribe` 返回 `{ type: 'text' }` 全文，能给出时间轴时再加一条 `{ type: 'json', value: { segments } }`（`TranscriptSegment[]`，`start`、`end` 单位秒）；序列节点用它校字幕时间。`video.generate` 可以在视频之外再返回一张图片作为尾帧（如 Seedance 开了「返回尾帧」），生成视频节点从「尾帧」端口输出，可连到下一个镜头的首帧。`ctx.media.compose` 的 `transition` 支持 `fade`（经黑场，不改时长）和 `dissolve`（叠化，相邻镜头重叠）。
+能力的输出约定：`audio.transcribe` 返回 `{ type: 'text' }` 全文，能给出时间轴时再加一条 `{ type: 'json', value: { segments } }`（`TranscriptSegment[]`，`start`、`end` 单位秒）；序列编辑器显式识别并保存字幕轨，导出不会隐式调用识别。`image.process` 返回图片文件；透明图层还可返回一条包含位置、层级和说明的 JSON 输出，由精修节点的图层信息端口传出。`video.generate` 可以在视频之外再返回一张图片作为尾帧（如 Seedance 开了「返回尾帧」），生成视频节点从「尾帧」端口输出，可连到下一个镜头的首帧。`ctx.media.compose` 的 `transition` 支持 `fade`（经黑场，不改时长）和 `dissolve`（叠化，相邻镜头重叠）。
 
-`ctx.fetch` 只能访问清单声明的域名，`ctx.secret(name)` 只能读声明过的密钥，`ctx.files.read` 需要 `assets` 权限。
+`ctx.fetch` 只能访问清单声明的域名，`ctx.secret(name)` 只能读声明过的密钥，`ctx.files.read` 需要 `assets` 权限，返回素材字节、MIME 以及可用的 `width`、`height`、`duration` 元数据；适配器不得把本机绝对路径发送给平台。
 
 ## 加载与隔离
 

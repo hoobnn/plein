@@ -124,7 +124,7 @@ function checkMention(m: Mention, byId: Map<string, CanvasElement>): Hit | undef
 /**
  * 运行前处理提示词里的 @ 引用：
  * - 文本里的 `@林夏` 换成 `林夏`；对话、图片、视频节点在主提示词后附上被引用者的设定；
- * - 被引用者的参考图并入节点的 `references` 输入（去重）；生成视频只在「图片参考」模式并入 `images`；
+ * - 被引用者的参考图并入节点的 `references` 输入（去重）；生成视频只在「多模态参考」模式并入 `images`；
  * - 配音节点没选音色、且只引用了一个有音色的角色时用它的音色——但只有同一家平台才沿用，
  *   跨平台的音色 ID 送过去多半是乱读，宁可停下来让用户重选；
  * - 模型声明了参考图上限（maxRefs）时，节点自己连入的图先占位，再按角色、场景、道具的顺序
@@ -237,7 +237,7 @@ export async function applyMentions(
   if (def.capability === 'audio.speech' && !hasVoice(voiceOf(params)))
     applyVoice(params, voices, notices)
 
-  // 参考图并到哪个输入：图片节点等是 references；生成视频只有「图片参考」模式才把图当参考主体
+  // 参考图并到哪个输入：图片节点等是 references；生成视频只有「多模态参考」模式才把图当参考主体
   const video = def.capability === 'video.generate'
   const port = video ? 'images' : 'references'
   const send =
@@ -246,7 +246,7 @@ export async function applyMentions(
   if (video && !send && groups.some((g) => g.images.length)) {
     notices.push({
       code: 'unsupported_refs',
-      message: '@ 引用的参考图只在「图片参考」模式下送入模型，当前模式只附文字设定',
+      message: '@ 引用的参考图只在「多模态参考」模式下送入模型，当前模式只附文字设定',
     })
     for (const r of refList) r.assetIds = []
   }
@@ -258,7 +258,7 @@ export async function applyMentions(
         code: 'required_unsupported',
         elementId: d.elementId,
         message: video
-          ? `「${d.name}」是必需参考，当前模式不送参考图，请切到「图片参考」或取消必需`
+          ? `「${d.name}」是必需参考，当前模式不送参考图，请切到「多模态参考」或取消必需`
           : `「${d.name}」是必需参考，这个节点不收参考图`,
       })
     else if (d.available.length === 0)

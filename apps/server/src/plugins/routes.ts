@@ -52,7 +52,11 @@ export function pluginRoutes(host: PluginHost) {
           permissions: p.manifest.permissions,
         })),
         nodes: [...registry.nodes].map(([key, n]) => ({
-          ...withDefaultModel(describeNode(n.def, n.plugin), (cap) => host.defaultModel(cap)),
+          ...withDefaultModel(
+            describeNode(n.def, n.plugin),
+            (cap) => host.defaultModel(cap),
+            (cap, ref) => host.models(cap).find((m) => m.ref === ref)?.limits,
+          ),
           executable: registry.executors.has(key),
         })),
         providers: [...registry.providers].map(([id, p]) => {

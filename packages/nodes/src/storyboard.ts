@@ -1,6 +1,12 @@
 import { defineNode } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { type VoiceRef, voiceOf } from './refs'
+import {
+  normalizeDialogue,
+  reconcileDialogue,
+  ShotAssetBinding,
+  ShotDialogue,
+} from './storyIdentity'
 
 export const SHOT_SIZES = ['远景', '全景', '中景', '近景', '特写'] as const
 
@@ -17,10 +23,11 @@ export const Shot = z.object({
     .array(z.string())
     .default([])
     .describe('这个镜头出场的角色、所在场景、画面里的关键道具的名字'),
+  assetBindings: z.record(z.string(), ShotAssetBinding).optional(),
   emotion: z.string().default(''),
   lighting: z.string().default(''),
   sfx: z.string().default(''),
-  dialogue: z.array(z.object({ character: z.string(), line: z.string() })).default([]),
+  dialogue: z.array(ShotDialogue).default([]),
   /** 分镜图提示词 */
   imagePrompt: z.string().default(''),
   /** 视频运动提示词 */
@@ -31,7 +38,9 @@ export const Shot = z.object({
 export type Shot = z.infer<typeof Shot>
 
 /** 交给模型的结构：不含 id 和 edited，由宿主补上 */
-export const ShotDraft = Shot.omit({ id: true, edited: true })
+export const ShotDraft = Shot.omit({ id: true, edited: true, assetBindings: true }).extend({
+  dialogue: z.array(ShotDialogue.omit({ id: true, speaker: true })).default([]),
+})
 export const StoryboardDraft = z.object({ shots: z.array(ShotDraft) })
 
 const model = () => z.string().default('').meta({ title: '模型', widget: 'model' })
@@ -78,15 +87,16 @@ export const newShotId = () =>
  * 「计划变了」和「用户在节点上改过」——前者可以同步，后者默认保留。
  * ------------------------------------------------------------------ */
 
-/** 展开出来的节点按角色分三类：分镜图、视频、配音 */
-export const SHOT_ROLES = ['image', 'video', 'speech'] as const
+/** 每个镜头的生成阶段；音效独立于视频和配音执行。 */
+export const SHOT_ROLES = ['image', 'video', 'speech', 'sfx'] as const
 export type ShotRole = (typeof SHOT_ROLES)[number]
 
 /** 每种角色从分镜取哪些节点参数：同步与差异只看这几个键，节点自己的模型、种子等不动 */
 export const PLAN_PARAMS: Record<ShotRole, readonly string[]> = {
   image: ['prompt'],
   video: ['prompt', 'duration'],
-  speech: ['text', 'voice'],
+  speech: ['text', 'voice', 'instruction'],
+  sfx: ['prompt', 'duration'],
 }
 
 /** 推导某个角色的节点按当前分镜该有的参数值。资产 @ 引用和音色要找画布上的卡片，由调用方给出 */
@@ -105,15 +115,25 @@ export function planParams(
         : typeof ctx.voice === 'string'
           ? voiceOf({ voice: ctx.voice })
           : ctx.voice
-    return { text: line?.line ?? '', voice }
+    return { text: line?.line ?? '', voice, instruction: shot.emotion.trim() }
   }
+  if (role === 'sfx') return { prompt: shot.sfx, duration: shot.duration }
+  const direction = [
+    shot.shotSize && `景别：${shot.shotSize}`,
+    shot.lighting.trim() && `光影：${shot.lighting.trim()}`,
+    shot.emotion.trim() && `情绪：${shot.emotion.trim()}`,
+  ]
+    .filter(Boolean)
+    .join('；')
   if (role === 'image') {
     return {
-      prompt: [ctx.mentions, shot.imagePrompt || shot.description].filter(Boolean).join(' '),
+      prompt: [ctx.mentions, shot.imagePrompt || shot.description, direction]
+        .filter(Boolean)
+        .join(' '),
     }
   }
   return {
-    prompt: shot.motionPrompt || shot.description,
+    prompt: [shot.motionPrompt || shot.description, direction].filter(Boolean).join(' '),
     duration: Math.max(1, Math.min(30, Math.round(shot.duration))),
   }
 }
@@ -141,10 +161,19 @@ export function planVersion(shots: Shot[]): string {
       s.shotSize,
       s.description,
       s.characters,
+      Object.entries(s.assetBindings ?? {})
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([name, binding]) => [name, binding.elementId ?? '', binding.libraryId ?? '']),
       s.emotion,
       s.lighting,
       s.sfx,
-      s.dialogue,
+      s.dialogue.map((d) => [
+        d.id ?? '',
+        d.character,
+        d.line,
+        d.speaker?.elementId ?? '',
+        d.speaker?.libraryId ?? '',
+      ]),
       s.imagePrompt,
       s.motionPrompt,
       s.edited ?? false,
@@ -256,11 +285,11 @@ export interface SpokenNode {
   id: string
   line: number
   text: string
+  dialogueId?: string
 }
 
 /**
- * 配音节点对应到当前的哪一句台词。台词没有稳定 id（表格里按行解析），
- * 只按序号对应的话，删一句或插一句后面的节点就全错位了，所以：
+ * 新配音节点只按 dialogueId 对应。没有 id 的旧数据兼容路径：
  * 1. 先按内容对：节点记下的台词还在，就跟着它走（同文多句时取离原序号最近的）；
  * 2. 再按原序号对：原位置的台词没被别的节点认领，当成原地改了字；
  * 3. 都对不上说明那句台词删了，返回 undefined，节点留着但不再参与同步。
@@ -274,7 +303,15 @@ export function matchLines(
   const claimed = new Set<number>()
   const spoken = (i: number) => (dialogue[i]?.line.trim() ?? '') !== ''
   const ordered = [...nodes].sort((a, b) => a.line - b.line)
+  // 新节点只按稳定 id 对应；原台词删除时不能回退认领另一句。
   for (const n of ordered) {
+    if (!n.dialogueId || !dialogue.some((d) => d.id)) continue
+    const at = dialogue.findIndex((d, i) => d.id === n.dialogueId && spoken(i) && !claimed.has(i))
+    if (at >= 0) claimed.add(at)
+    out.set(n.id, at >= 0 ? at : undefined)
+  }
+  for (const n of ordered) {
+    if (out.has(n.id)) continue
     const text = n.text.trim()
     if (!text) continue
     let best: number | undefined
@@ -318,7 +355,13 @@ export function mergeShots(current: Shot[], drafts: Array<z.input<typeof ShotDra
     const draft = ShotDraft.parse({ ...d, no: d.no ?? i + 1 })
     const old = byNo.get(draft.no)
     if (old?.edited) return old
-    return { ...draft, id: old?.id ?? newShotId() }
+    const id = old?.id ?? newShotId()
+    return {
+      ...draft,
+      id,
+      dialogue: reconcileDialogue(normalizeDialogue(id, old?.dialogue ?? []), draft.dialogue),
+      ...(old?.assetBindings ? { assetBindings: old.assetBindings } : {}),
+    }
   })
   // 手改过但新结果里没有的镜头也保留
   const seen = new Set(out.map((s) => s.no))

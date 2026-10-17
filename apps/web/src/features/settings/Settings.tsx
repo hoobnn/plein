@@ -1,3 +1,4 @@
+import { DataMaintenance } from './DataMaintenance'
 import { capabilityLabel } from '@plein/nodes'
 import type { Capability } from '@plein/plugin-sdk'
 import type { Catalog, ProviderConfigView, ProviderInfo, ProviderTestResult } from '@plein/protocol'
@@ -269,7 +270,7 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
     // 对外开放 MCP 只在本机模式可用：其他模式下接口返回 403，不显示这一栏
     ...(externalMcp ? [{ id: 'mcp' as const, label: 'MCP', icon: 'plug' as const }] : []),
     { id: 'plugins', label: '插件', icon: 'puzzle', badge: plugins.length },
-    ...(desktop ? [{ id: 'data' as const, label: '数据', icon: 'folder' as const }] : []),
+    { id: 'data' as const, label: '数据', icon: 'folder' as const },
   ]
   const current = sections.find((s) => s.id === section) ?? sections[0]!
 
@@ -393,7 +394,8 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
                 </ul>
               </Group>
             )}
-            {current.id === 'data' && (
+            {current.id === 'data' && <DataMaintenance />}
+            {current.id === 'data' && desktop && (
               <Group title="数据目录" hint="画布、素材和平台密钥都保存在本机的数据目录里">
                 <div>
                   <button

@@ -1,3 +1,6 @@
+import { subtitleRoutes } from './subtitles/routes'
+import { createMaintenanceService, type MaintenanceService } from './maintenance/service'
+import { maintenanceRoutes } from './maintenance/routes'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
@@ -18,6 +21,7 @@ import { previewer } from './storage/previews'
 import { desktopGuard, originGuard } from './http/guard'
 import { LibraryStore } from './library/store'
 import { libraryRoutes } from './library/routes'
+import { librarySyncRoutes } from './library/sync'
 import { mediaRoutes } from './assets/media-routes'
 import { projectRoutes } from './projects/routes'
 import { packageRoutes } from './projects/package-routes'
@@ -54,7 +58,8 @@ export interface Server {
   library: LibraryStore
   mediaIndex: MediaIndex
   checkpoints: CheckpointService
-  close(): void
+  maintenance: MaintenanceService | null
+  close(): Promise<void>
 }
 
 /** 文件名带内容哈希的前端产物（apps/web/dist/assets） */
@@ -88,6 +93,10 @@ export async function createServer(config: Config): Promise<Server> {
   mediaIndex = createMediaIndex({ db, rooms })
   mediaIndex.install()
   const checkpoints = createCheckpointService({ db, rooms, assets, index: mediaIndex })
+  const maintenance =
+    config.auth === 'none'
+      ? await createMaintenanceService({ db, rooms, assets, dataDir: config.dataDir })
+      : null
   const index = mediaIndex
   const offJobs = runs.store.onChange((id) => index.refreshJobSafely(id))
   const offLibrary = library.onChange((id) => index.refreshLibrarySafely(id))
@@ -137,7 +146,10 @@ export async function createServer(config: Config): Promise<Server> {
     packageRoutes({ db, rooms, assets, host: plugins, dataDir: config.dataDir, mediaIndex }),
   )
   app.route('/', canvasRoutes(db, rooms, preview))
+  if (maintenance) app.route('/', maintenanceRoutes(maintenance))
+  app.route('/', subtitleRoutes({ db, host: plugins, assets, dataDir: config.dataDir }))
   app.route('/', libraryRoutes(db, library))
+  app.route('/', librarySyncRoutes({ db, library, rooms, assets }))
   app.route('/', templateRoutes(db))
   app.route('/', mediaLibraryRoutes(mediaIndex))
   app.route('/', checkpointRoutes(checkpoints))
@@ -179,6 +191,7 @@ export async function createServer(config: Config): Promise<Server> {
   // 接着跑上次退出时没结束的任务
   runs.recover()
 
+  let closeWork: Promise<void> | null = null
   return {
     app,
     db,
@@ -192,15 +205,20 @@ export async function createServer(config: Config): Promise<Server> {
     library,
     mediaIndex,
     checkpoints,
+    maintenance,
     close() {
-      agents.close()
-      runs.close()
-      offJobs()
-      offLibrary()
-      mediaIndex.close()
-      local.close()
-      rooms.closeAll()
-      db.$client.close()
+      closeWork ??= (async () => {
+        await maintenance?.close()
+        agents.close()
+        runs.close()
+        offJobs()
+        offLibrary()
+        mediaIndex.close()
+        local.close()
+        rooms.closeAll()
+        db.$client.close()
+      })()
+      return closeWork
     },
   }
 }

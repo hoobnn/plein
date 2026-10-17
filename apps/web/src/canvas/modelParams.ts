@@ -67,10 +67,18 @@ export function constrainFields(
   node: NodeInfo,
   fields: Array<[string, FieldSchema]>,
   limits: ModelLimits = NONE,
+  params?: Record<string, unknown>,
 ): Array<[string, FieldSchema]> {
   const ak = aspectKey(node)
   return fields.flatMap(([k, f]): Array<[string, FieldSchema]> => {
     if (f.widget === 'modelOptions') return []
+    if (node.capability === 'image.process' && params?.operation) {
+      if (k === 'scale' && params.operation !== 'upscale') return []
+      if (['top', 'bottom', 'left', 'right'].includes(k) && params.operation !== 'outpaint')
+        return []
+    }
+    if (k === 'operation' && node.capability === 'image.process' && limits.imageOperations)
+      return [[k, { ...f, enum: limits.imageOperations }]]
     if (f.widget === 'resolution')
       return limits.resolutions?.length ? [[k, { ...f, enum: ['', ...limits.resolutions] }]] : []
     if (k === ak && f.enum) {
@@ -118,7 +126,15 @@ export function adaptToModel(
   const name = model?.title ?? '所选模型'
   for (const [k, f] of fieldsOf(node)) {
     const v = params[k] ?? f.default
-    if (f.widget === 'resolution' && v && !limits.resolutions?.includes(String(v))) {
+    if (
+      k === 'operation' &&
+      node.capability === 'image.process' &&
+      limits.imageOperations?.length &&
+      !limits.imageOperations.includes(v as 'upscale' | 'outpaint' | 'cutout')
+    ) {
+      patch[k] = limits.imageOperations[0]
+      notes.push('已切换为所选模型支持的精修操作')
+    } else if (f.widget === 'resolution' && v && !limits.resolutions?.includes(String(v))) {
       patch[k] = ''
       notes.push(`分辨率已改回默认（${name} 不支持 ${String(v)}）`)
     } else if (k === aspectKey(node) && v !== undefined) {
@@ -165,10 +181,28 @@ export function modelProblem(
   const video = node.capability === 'video.generate'
   const mode = String(params.mode ?? 'text') as VideoMode
   if (video) {
-    const problem = videoModeProblem(mode, ups.get('images')?.length ?? 0)
+    const imageCount = ups.get('images')?.length ?? 0
+    const videos = ups.get('videos')?.length ?? 0
+    const audios = ups.get('audios')?.length ?? 0
+    if (mode !== 'reference' && (videos || audios)) return '视频或音频参考需要选择多模态参考模式'
+    if (
+      model &&
+      (videos > (model.limits?.referenceMedia?.video ?? 0) ||
+        audios > (model.limits?.referenceMedia?.audio ?? 0))
+    )
+      return '当前模型不支持这些参考素材或数量超过上限'
+    const problem = videoModeProblem(
+      mode,
+      mode === 'reference' ? imageCount + videos + audios : imageCount,
+    )
     if (problem) return problem
   }
   if (!model) return null
+  if (
+    node.capability === 'image.process' &&
+    !model.limits?.imageOperations?.includes(params.operation as 'upscale' | 'outpaint' | 'cutout')
+  )
+    return '当前模型不支持这项精修操作，请更换模型'
   const { patch } = adaptToModel(node, params, model)
   const limits = model.limits ?? NONE
   const name = model.title

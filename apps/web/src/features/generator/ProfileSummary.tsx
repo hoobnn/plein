@@ -22,7 +22,7 @@ export function ProfileSummary({ engine, el }: { engine: Engine; el: CanvasEleme
     setBusy(true)
     try {
       const lib = useLibrary.getState()
-      if (!lib.loaded) await lib.load()
+      await lib.load()
       const current = engine.doc.get(el.id) ?? el
       const linked = useLibrary.getState().items.find((i) => i.id === current.params?.libraryId)
       const item =

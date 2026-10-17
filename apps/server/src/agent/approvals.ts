@@ -56,7 +56,8 @@ export function approvalFor(
   }
   if (cap.name === 'run_storyboard') {
     const board = String(input.id)
-    const what = { image: '分镜图', video: '镜头视频', speech: '配音' }[String(input.role)] ?? ''
+    const what =
+      { image: '分镜图', video: '镜头视频', speech: '配音', sfx: '音效' }[String(input.role)] ?? ''
     return { reason: `批量生成${name(board)}的${what}`, ids: [board] }
   }
   // 智能体自己执行修改方案（没经过方案卡片）：要生成就先问，范围写进确认

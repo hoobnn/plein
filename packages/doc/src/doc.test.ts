@@ -337,7 +337,12 @@ describe('迁移', () => {
     const doc = open(ydoc)
     expect(doc.schemaVersion).toBe(SCHEMA_VERSION)
     expect(doc.get('v1')).toMatchObject({ nodeVersion: 2, params: { prompt: 'p', mode: 'frames' } })
-    expect(doc.get('v1')!.ports!.inputs.map((p) => p.id)).toEqual(['prompt', 'images'])
+    expect(doc.get('v1')!.ports!.inputs.map((p) => p.id)).toEqual([
+      'prompt',
+      'images',
+      'videos',
+      'audios',
+    ])
     expect([...ydoc.getMap<{ to: string[] }>('edges').values()].map((e) => e.to)).toEqual([
       ['v1', 'images'],
       ['v1', 'images'],
@@ -367,7 +372,7 @@ describe('迁移', () => {
     wire('e', 'a', ['v', 'firstFrame'])
     const doc = open(ydoc)
     expect(doc.get('v')!.params).toEqual({ prompt: 'p' })
-    expect(doc.get('v')!.ports!.inputs).toHaveLength(4)
+    expect(doc.get('v')!.ports!.inputs).toHaveLength(6)
     expect(edges.get('e')!.to).toEqual(['v', 'firstFrame'])
   })
 

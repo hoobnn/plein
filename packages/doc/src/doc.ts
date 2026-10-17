@@ -1,5 +1,7 @@
 import * as Y from 'yjs'
 import { migrate } from './migrate'
+import { isCreativeReview } from './review-types'
+import { isDeliveryRecord } from './delivery'
 import {
   type CanvasElement,
   type DocChange,
@@ -331,6 +333,11 @@ function readElement(id: string, m: ElementMap): CanvasElement | undefined {
   if (Array.isArray(results)) el.results = results.filter(isResult)
   const adopted = str(m.get('adopted'))
   if (adopted !== undefined) el.adopted = adopted
+  const reviews = m.get('reviews')
+  const reviewValues = reviews instanceof Y.Map ? [...reviews.values()] : reviews
+  if (Array.isArray(reviewValues)) el.reviews = reviewValues.filter(isCreativeReview)
+  const deliveries = m.get('deliveries')
+  if (Array.isArray(deliveries)) el.deliveries = deliveries.filter(isDeliveryRecord)
   const run = m.get('run') as NodeRun | undefined
   if (run && typeof run === 'object' && typeof run.status === 'string') el.run = run
   return el

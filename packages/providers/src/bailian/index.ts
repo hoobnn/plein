@@ -167,14 +167,20 @@ function inline(ref: AssetRef, ctx: Context) {
     allowEmpty: true,
   })
 }
-async function upload(ref: AssetRef, model: string, ctx: Context) {
-  const { data, mime } = await ctx.files.read(ref)
+async function upload(
+  ref: AssetRef,
+  model: string,
+  ctx: Context,
+  source?: Awaited<ReturnType<Context['files']['read']>>,
+) {
+  const { data, mime } = source ?? (await ctx.files.read(ref))
   const ext = (
     {
       'image/png': 'png',
       'image/jpeg': 'jpg',
       'image/webp': 'webp',
       'image/bmp': 'bmp',
+      'image/tiff': 'tiff',
       'audio/wav': 'wav',
       'audio/x-wav': 'wav',
       'audio/mpeg': 'mp3',
@@ -242,6 +248,7 @@ const supported: Partial<Record<string, string[]>> = {
   'text.chat': ['qwen3.8-max', 'qwen3.7-plus', 'qwen3.8-flash'],
   'image.generate': ['qwen-image-3.0-pro', 'qwen-image-3.0', 'wan2.7-image-pro'],
   'image.edit': ['wanx2.1-imageedit'],
+  'image.process': ['wanx2.1-imageedit'],
   'video.generate': ['wan3.0-video', 'wan3.0-video-prime'],
   'audio.speech': ['qwen3-tts-flash', 'qwen3-tts-instruct-flash'],
 }
@@ -306,8 +313,8 @@ export const bailianProvider = defineProvider({
       id: 'wanx2.1-imageedit',
       title: '万相图像编辑（局部重绘）',
       description: '按蒙版只重绘白色区域，原生蒙版能力',
-      capabilities: ['image.edit' as const],
-      limits: { count: { max: 4 } },
+      capabilities: ['image.edit' as const, 'image.process' as const],
+      limits: { count: { max: 4 }, imageOperations: ['upscale' as const, 'outpaint' as const] },
     },
     ...['wan3.0-video', 'wan3.0-video-prime'].map((id) => ({
       id,
@@ -318,6 +325,7 @@ export const bailianProvider = defineProvider({
         resolutions: ['480P', '720P', '1080P'],
         duration: { min: 2, max: 30 },
         references: { max: 10 },
+        referenceMedia: { video: 3, audio: 3 },
       },
       options: z.object({
         prompt_extend: z
@@ -432,6 +440,78 @@ export const bailianProvider = defineProvider({
           .map((p) => file('image', p.image))
         if (!outputs.length) throw new ProviderError('unknown', '百炼没有返回生成图片')
         return { state: 'succeeded', outputs, usage: usage(data) }
+      }
+      case 'image.process': {
+        const input = req.input as CapabilityInput<'image.process'>
+        if (!['upscale', 'outpaint'].includes(input.operation))
+          throw new ProviderError('invalid_input', '万相精修支持 AI 放大和扩图')
+        if (input.image.kind !== 'image')
+          throw new ProviderError('invalid_input', '万相精修需要图片原图')
+        if (input.prompt && input.prompt.length > 800)
+          throw new ProviderError('invalid_input', '万相精修提示词不能超过 800 字')
+        const parameters: Record<string, unknown> = { n: 1 }
+        if (input.operation === 'upscale') {
+          const factor = input.scale ?? 2
+          if (!Number.isFinite(factor) || factor < 1 || factor > 4)
+            throw new ProviderError('invalid_input', 'AI 放大倍数须为 1–4')
+          parameters.upscale_factor = factor
+        } else {
+          const expansion = input.expansion ?? { top: 1, bottom: 1, left: 1.5, right: 1.5 }
+          for (const side of ['top', 'bottom', 'left', 'right'] as const) {
+            if (!Number.isFinite(expansion[side]) || expansion[side] < 1 || expansion[side] > 2)
+              throw new ProviderError('invalid_input', '扩图比例须为 1–2')
+            parameters[side + '_scale'] = expansion[side]
+          }
+        }
+        const source = await ctx.files.read(input.image)
+        if (
+          !['image/jpeg', 'image/png', 'image/bmp', 'image/tiff', 'image/webp'].includes(
+            source.mime,
+          ) ||
+          !source.data.length ||
+          source.data.length > 10 * 1024 * 1024
+        )
+          throw new ProviderError(
+            'invalid_input',
+            '万相精修原图格式须为 JPEG/PNG/BMP/TIFF/WEBP，非空且不超过 10 MB',
+          )
+        if (
+          typeof source.width !== 'number' ||
+          typeof source.height !== 'number' ||
+          !Number.isInteger(source.width) ||
+          !Number.isInteger(source.height) ||
+          source.width < 512 ||
+          source.width > 4096 ||
+          source.height < 512 ||
+          source.height > 4096
+        )
+          throw new ProviderError(
+            'invalid_input',
+            '万相精修原图需要可读取的尺寸，宽高须为 512–4096 像素',
+          )
+        const data = await requestWithOss(
+          ctx,
+          '/api/v1/services/aigc/image2image/image-synthesis',
+          {
+            model: req.model,
+            input: {
+              function: input.operation === 'upscale' ? 'super_resolution' : 'expand',
+              prompt:
+                input.prompt?.trim() ||
+                (input.operation === 'upscale' ? '图像超分' : '自然延展原图场景'),
+              base_image_url: await upload(input.image, req.model, ctx, source),
+            },
+            parameters,
+          },
+        )
+        const output = asJson(data.output)
+        if (typeof output.task_id !== 'string' || !output.task_id)
+          throw new ProviderError('unknown', '百炼未返回 task_id；请勿重新提交任务')
+        return {
+          state: 'pending',
+          remoteId: output.task_id,
+          pollAfterMs: ctx.settings.pollIntervalMs,
+        }
       }
       case 'image.edit': {
         const input = req.input as CapabilityInput<'image.edit'>

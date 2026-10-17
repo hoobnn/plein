@@ -7,6 +7,7 @@ export const Capability = z.enum([
   'text.chat',
   'image.generate',
   'image.edit',
+  'image.process',
   'video.generate',
   'audio.speech',
   'audio.music',
@@ -77,6 +78,13 @@ export interface CapabilityInputs {
     prompt: string
     count?: number
     seed?: number
+  }
+  'image.process': {
+    image: AssetRef
+    operation: 'upscale' | 'outpaint' | 'cutout'
+    prompt?: string
+    scale?: number
+    expansion?: { top: number; bottom: number; left: number; right: number }
   }
   'video.generate': {
     prompt: string
@@ -221,6 +229,9 @@ export interface ModelLimits {
   seed?: boolean
   /** 参考图最多几张 */
   references?: { max: number }
+  /** Supported reference media for video generation; absent means images only. */
+  referenceMedia?: { video: number; audio: number }
+  imageOperations?: Array<'upscale' | 'outpaint' | 'cutout'>
   /** 语速范围（倍速）；false 表示不支持，表单隐藏，宿主不传 */
   speed?: { min: number; max: number } | false
   /** false 表示不支持自然语言语气指令，表单隐藏，宿主不传 */
@@ -295,7 +306,13 @@ export interface ProviderContext<S = Record<string, unknown>> {
   log(message: string, data?: Record<string, unknown>): void
   files: {
     /** 读取资产内容（如把参考图转成 base64 传给平台） */
-    read(ref: AssetRef): Promise<{ data: Uint8Array; mime: string }>
+    read(ref: AssetRef): Promise<{
+      data: Uint8Array
+      mime: string
+      duration?: number
+      width?: number
+      height?: number
+    }>
   }
   /** 流式输出：text.chat 边生成边回调文本增量（宿主没要求时为空，平台照常一次返回） */
   stream?(delta: { text: string }): void

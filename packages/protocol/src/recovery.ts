@@ -98,6 +98,8 @@ export interface BatchDependency {
   nodeId: string
   /** 启动时上游当前的结果（没有时缺省）；结果换成别处来的就要重新审查 */
   resultId?: string
+  /** 预检批准的上游内容与连线；移动画布、审片元数据不使它改变。 */
+  sourceKey?: string
 }
 
 /** 批次快照里的一个目标；持久化在服务端任务层，不写进画布文档 */

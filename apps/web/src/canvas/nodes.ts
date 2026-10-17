@@ -284,7 +284,7 @@ export function validate(
     if (pending) return `上游「${pending.source.name ?? '节点'}」还没有结果`
   }
   const key = promptKey(node)
-  if (key) {
+  if (key && node.capability !== 'image.process') {
     const own = String(el.params?.[key] ?? '').trim()
     const textPort = node.inputs.find((p) => p.type === 'text')
     const upstreamText = textPort

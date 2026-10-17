@@ -139,7 +139,7 @@ describe('展开时记下计划版本', () => {
     expect(result.created).toBe(4)
     expect(result.frames).toHaveLength(1)
 
-    const version = planVersion([s])
+    const version = planVersion(shotsOf(engine.doc.get(board)))
     const nodes = nodesOf(engine, board, s.id)
     expect(nodes.map(roleOf).sort()).toEqual(['image', 'speech', 'speech', 'video'])
     for (const el of nodes) {
@@ -148,9 +148,9 @@ describe('展开时记下计划版本', () => {
       for (const [k, v] of Object.entries(plan.params)) expect(el.params?.[k]).toEqual(v)
     }
     const image = nodes.find((el) => roleOf(el) === 'image')!
-    expect(image.params?.prompt).toBe('@林夏 低机位仰拍')
+    expect(image.params?.prompt).toBe('@林夏 低机位仰拍 景别：中景')
     const video = nodes.find((el) => roleOf(el) === 'video')!
-    expect(video.params).toMatchObject({ prompt: '缓慢推近', duration: 7 })
+    expect(video.params).toMatchObject({ prompt: '缓慢推近 景别：中景', duration: 7 })
     const speech = nodes.filter((el) => roleOf(el) === 'speech')
     expect(speech.map((el) => String(el.params?.text)).sort()).toEqual(['你终于来了', '别过去'])
     // 音色连平台一起写进配音节点：换成别家模型时服务端能判定不兼容
@@ -280,7 +280,7 @@ describe('表格改动 → 差异 → 用户选择同步', () => {
     const diffs = planDiffs(engine, board).get(s.id) ?? []
     const video = diffs.find((d) => d.role === 'video')!
     const prompt = video.diffs.find((f) => f.key === 'prompt')!
-    expect([prompt.expanded, prompt.wanted]).toEqual(['缓慢推近', '雨夜天台'])
+    expect([prompt.expanded, prompt.wanted]).toEqual(['缓慢推近 景别：中景', '雨夜天台 景别：中景'])
     expect(prompt.stale).toBe(true)
     expect(video.diffs.map((f) => f.key).sort()).toEqual(['duration', 'prompt'])
   })
@@ -303,7 +303,7 @@ describe('表格改动 → 差异 → 用户选择同步', () => {
     expect(result.kept).toBe(1)
     expect(engine.doc.get(image.id)?.params?.prompt).toBe('我自己写的画面')
     expect(engine.doc.get(video.id)?.params?.duration).toBe(9)
-    expect(engine.doc.get(video.id)?.params?.prompt).toBe('雨夜天台')
+    expect(engine.doc.get(video.id)?.params?.prompt).toBe('雨夜天台 景别：中景')
     // 只写计划管的参数，节点自己的模型等保持不动
     expect(engine.doc.get(video.id)?.params?.model).toBeUndefined()
     // 下游不回写分镜表
@@ -357,13 +357,13 @@ describe('表格改动 → 差异 → 用户选择同步', () => {
     expect(diffs).toHaveLength(1)
     expect(diffs[0]!.diffs[0]).toMatchObject({
       key: 'prompt',
-      wanted: '俯拍',
-      actual: '低机位',
+      wanted: '俯拍 景别：中景',
+      actual: '低机位 景别：中景',
       overridden: false,
       legacy: true,
     })
     expect(syncExpanded(engine, board, ['s1'], 'unmodified').fields).toBe(1)
-    expect(engine.doc.get(image.id)?.params?.prompt).toBe('俯拍')
+    expect(engine.doc.get(image.id)?.params?.prompt).toBe('俯拍 景别：中景')
     expect(planDiffs(engine, board).size).toBe(0)
   })
 })
@@ -450,7 +450,7 @@ describe('画布上有重名资产卡时不猜', () => {
     const result = expandShots(engine, board, [s.id], catalog)
     expect(result.ambiguous).toEqual(['林夏'])
     const image = nodesOf(engine, board, s.id).find((el) => roleOf(el) === 'image')!
-    expect(image.params?.prompt).toBe('低机位')
+    expect(image.params?.prompt).toBe('低机位 景别：中景')
     expect(image.params?.prompt).not.toContain('@林夏')
   })
 
@@ -460,7 +460,7 @@ describe('画布上有重名资产卡时不猜', () => {
     const result = expandShots(engine, board, [s.id], catalog)
     expect(result.ambiguous).toEqual([])
     const image = nodesOf(engine, board, s.id).find((el) => roleOf(el) === 'image')!
-    expect(image.params?.prompt).toBe('@林夏 低机位')
+    expect(image.params?.prompt).toBe('@林夏 低机位 景别：中景')
   })
 })
 

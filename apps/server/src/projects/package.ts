@@ -6,7 +6,13 @@ import { join } from 'node:path'
 import { PassThrough, type Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { once } from 'node:events'
-import { createDoc, currentResult, type NodeResult, type NodeRun } from '@plein/doc'
+import {
+  createDoc,
+  currentResult,
+  type DeliveryRecord,
+  type NodeResult,
+  type NodeRun,
+} from '@plein/doc'
 import { parseModelRef } from '@plein/plugin-sdk'
 import {
   type Asset,
@@ -218,6 +224,8 @@ async function planExport(
           const where = `${row.title} / ${el.name ?? el.nodeType ?? el.kind}`
           const m = doc.mutable(el.id)!
           if (el.assetId) refAsset(el.assetId, where, true)
+          for (const delivery of el.deliveries ?? [])
+            refAsset(delivery.assetId, `${where} / 交付 ${delivery.version}`, true)
           if (el.results?.length) {
             const cur = currentResult(el)
             const kept =
@@ -929,6 +937,13 @@ export function remapDoc(data: Uint8Array, map: ReadonlyMap<string, string>): Ui
           }
         }
         const results = m.get('results')
+        const deliveries = m.get('deliveries')
+        if (Array.isArray(deliveries)) {
+          const next = (deliveries as DeliveryRecord[]).map((r) =>
+            r && typeof r === 'object' && map.has(r.runId) ? { ...r, runId: map.get(r.runId)! } : r,
+          )
+          if (next.some((r, i) => r !== deliveries[i])) m.set('deliveries', next)
+        }
         if (Array.isArray(results)) {
           const next = (results as NodeResult[]).map((r) =>
             r && typeof r === 'object' && map.has(r.runId) ? { ...r, runId: map.get(r.runId)! } : r,
@@ -953,7 +968,15 @@ export function remapDoc(data: Uint8Array, map: ReadonlyMap<string, string>): Ui
  * 确认导入：重新检查冲突并决定 id 映射，素材进内容存储，然后在一个事务里写入
  * 素材记录、项目、画布与文档、资产库条目和运行记录。暂存区随后删除。
  */
-export async function commitImport(
+export function commitImport(
+  deps: PackageDeps,
+  owner: string,
+  token: string,
+): Promise<ProjectImportResult | null> {
+  return deps.assets.activity.run(() => commitImportActive(deps, owner, token))
+}
+
+async function commitImportActive(
   deps: PackageDeps,
   owner: string,
   token: string,

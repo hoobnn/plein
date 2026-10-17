@@ -1,3 +1,4 @@
+import { imageProcess } from './image-process'
 import {
   characterNode,
   effectNode,
@@ -8,10 +9,10 @@ import {
   musicNode,
   propNode,
   sceneNode,
-  type ArrangedClip,
   arrangeSequence,
   sequenceNode,
   sequenceSpec,
+  subtitleExportProblem,
   speechNode,
   StoryboardDraft,
   stageNode,
@@ -31,10 +32,11 @@ import {
   inputText,
   ProviderError,
   parseModelRef,
-  type TranscriptSegment,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { mediaCaps, missingCapability } from '../assets/media'
+import { animaticExecutor } from './animatic'
+import { sfx, transcription, speechDirection } from './audio'
 
 /** 节点选的模型：不替用户挑，没选就报错 */
 function pickModel(ctx: ExecutorContext<{ model: string }>, label: string) {
@@ -139,7 +141,13 @@ const imageEdit = defineExecutor(imageEditNode, async (ctx) => {
 const video = defineExecutor(videoNode, async (ctx) => {
   const { params, inputs } = ctx
   const images = inputAssets(inputs, 'images')
-  const problem = videoModeProblem(params.mode, images.length)
+  const references = [...images, ...inputAssets(inputs, 'videos'), ...inputAssets(inputs, 'audios')]
+  if (params.mode !== 'reference' && references.length > images.length)
+    throw new ProviderError('invalid_input', '视频或音频参考需要选择多模态参考模式')
+  const problem = videoModeProblem(
+    params.mode,
+    params.mode === 'reference' ? references.length : images.length,
+  )
   if (problem) throw new ProviderError('invalid_input', problem)
   // 文生视频不送图；其余按模式取用连入的图片
   const media =
@@ -148,7 +156,7 @@ const video = defineExecutor(videoNode, async (ctx) => {
       : params.mode === 'frames'
         ? { firstFrame: images[0], lastFrame: images[1] }
         : params.mode === 'reference'
-          ? { references: images }
+          ? { references }
           : {}
   sayProgress(ctx)
   const model = pickModel(ctx, '生成视频')
@@ -197,13 +205,19 @@ const speech = defineExecutor(speechNode, async (ctx) => {
       ? `音色 ${voice.voiceId} 未标明所属平台，请确认它适用于当前模型`
       : '',
   )
+  const direction = speechDirection(
+    model,
+    params.instruction,
+    modelOptions(params),
+    ctx.providers.models('audio.speech').find((spec) => spec.ref === model),
+  )
   const res = await ctx.providers.call('audio.speech', model, {
     text,
     voice: voice.voiceId || undefined,
-    instruction: params.instruction || undefined,
+    instruction: direction.instruction,
     // 1 倍是平台默认，不传：有的平台（千问）不接受语速参数
     speed: params.speed === 1 ? undefined : params.speed,
-    extra: modelOptions(params),
+    extra: direction.extra,
   })
   // 台词随语音一起往下游传，序列导出时用作字幕
   return { audio: res.assets.map((a) => ({ type: 'audio' as const, ...a, caption: text })) }
@@ -280,48 +294,20 @@ const effect = defineExecutor(effectNode, async ({ inputs }) => ({
  */
 const stage = defineExecutor(stageNode, async () => ({ image: [] }))
 
-/** 对白逐条做语音识别，取带时间戳的分段；手写了字幕的段不用识别 */
-async function transcribe(ctx: ExecutorContext, arranged: ArrangedClip[]) {
-  const todo = arranged.filter((c) => c.dialogue && !c.subtitle?.trim())
-  if (!todo.length) return []
-  const model = ctx.params.model
-  if (typeof model !== 'string' || !model)
-    throw new ProviderError('invalid_input', '还没选语音识别模型，请在成片的字幕设置中选择')
-  ctx.progress(0, '识别对白…')
-  return Promise.all(
-    arranged.map(async (c): Promise<TranscriptSegment[] | undefined> => {
-      if (!c.dialogue || c.subtitle?.trim()) return undefined
-      const res = await ctx.providers.call('audio.transcribe', model, {
-        audio: { assetId: c.dialogue.assetId, kind: 'audio', mime: c.dialogue.mime },
-      })
-      for (const o of res.outputs) {
-        const segments =
-          o.type === 'json' ? (o.value as { segments?: unknown }).segments : undefined
-        if (Array.isArray(segments))
-          return segments.filter(
-            (s): s is TranscriptSegment =>
-              typeof s?.start === 'number' &&
-              typeof s?.end === 'number' &&
-              typeof s?.text === 'string',
-          )
-      }
-      return undefined
-    }),
-  )
-}
-
 /** 序列：探测各段时长，排好时间线，交给宿主的 ffmpeg 合成 */
 const sequence = defineExecutor(sequenceNode, async (ctx) => {
   const { params, inputs } = ctx
   const arranged = arrangeSequence(params, inputs)
   if (arranged.length === 0) throw new ProviderError('invalid_input', '没有连入镜头视频')
+  const subtitleProblem = subtitleExportProblem(params, arranged)
+  if (subtitleProblem)
+    throw new ProviderError('invalid_input', subtitleProblem, { retryable: false })
   ctx.progress(0, '读取素材…')
   const [clips, dialogue, more] = await Promise.all([
     Promise.all(arranged.map((c) => ctx.media.probe(c.clip))),
     Promise.all(arranged.map(async (c) => (c.dialogue ? ctx.media.probe(c.dialogue) : undefined))),
     Promise.all(arranged.map((c) => Promise.all(c.more.map((m) => ctx.media.probe(m))))),
   ])
-  const transcripts = params.asrTiming && params.subtitles ? await transcribe(ctx, arranged) : []
   const spec = sequenceSpec(
     params,
     arranged,
@@ -332,7 +318,6 @@ const sequence = defineExecutor(sequenceNode, async (ctx) => {
     },
     inputs.music,
     undefined,
-    transcripts,
   )
   if (spec.clips.length === 0)
     throw new ProviderError('invalid_input', '各段时长都是 0，检查入点和出点')
@@ -353,9 +338,12 @@ export const coreServerPlugin = defineServerPlugin(corePlugin, {
     llm,
     image,
     imageEdit,
+    imageProcess,
     video,
     speech,
     music,
+    sfx,
+    transcription,
     character,
     scene,
     prop,
@@ -363,6 +351,7 @@ export const coreServerPlugin = defineServerPlugin(corePlugin, {
     effect,
     storyboard,
     sequence,
+    animaticExecutor,
     stage,
   ],
 })

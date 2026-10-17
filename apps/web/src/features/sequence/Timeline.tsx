@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react'
 import { Icon, type IconName } from '../../ui/icons'
+import { assetUrls } from '../../api/client'
 import { Filmstrip, Waveform } from './media'
 import { clock, type Playhead } from './playhead'
 
@@ -19,6 +20,7 @@ export interface TrackItem {
   name: string
   /** 还没生成时为空 */
   assetId: string
+  kind?: 'image' | 'video'
   pending: boolean
   start: number
   length: number
@@ -561,7 +563,14 @@ function ClipTrack({
               // 键盘 Tab 到哪段就选中哪段；选中样式就是焦点样式
               onFocus={() => onSelect(it.key)}
             >
-              {!it.pending && (
+              {!it.pending && it.kind === 'image' && (
+                <img
+                  src={assetUrls.original(it.assetId)}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              )}
+              {!it.pending && it.kind !== 'image' && (
                 <Filmstrip
                   assetId={it.assetId}
                   duration={it.full}
@@ -573,7 +582,8 @@ function ClipTrack({
                 />
               )}
               <span className="seq-clip-name">
-                {String(i + 1).padStart(2, '0')} {it.pending ? '还没有生成' : it.name}
+                {String(i + 1).padStart(2, '0')}{' '}
+                {it.pending ? (it.kind === 'image' ? '缺少分镜图' : '还没有生成') : it.name}
               </span>
               {!it.pending && (
                 <span className="seq-clip-len">
@@ -581,7 +591,7 @@ function ClipTrack({
                   {it.length.toFixed(1)}s
                 </span>
               )}
-              {!it.pending && (
+              {!it.pending && it.kind !== 'image' && (
                 <>
                   <span
                     className="seq-trim seq-trim-in"

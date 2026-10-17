@@ -1,5 +1,7 @@
 import {
   BatchRunOptions,
+  CommitStoryboardBatch,
+  StoryboardBatchRequest,
   FlowRunOptions,
   GroupRunOptions,
   type ImpactReport,
@@ -21,6 +23,7 @@ import { NodeRunError } from '../plugins/host'
 import type { DB } from '../storage/db'
 import { ImpactAnalyzer } from './impact'
 import type { NodeRuns } from './runs'
+import { StoryboardBatches } from './storyboard-batch'
 
 const STATUS: Record<string, 404 | 409 | 400> = {
   not_found: 404,
@@ -34,8 +37,46 @@ export function runRoutes(db: DB, runs: NodeRuns) {
   const notFound = { error: 'not_found', message: '画布不存在' }
   const forbidden = { error: 'forbidden', message: '只读成员不能运行节点' }
   const impact = new ImpactAnalyzer(db, runs)
+  const storyBatches = new StoryboardBatches(runs)
 
   return new Hono<AuthEnv>()
+    .post('/api/canvases/:canvas/nodes/:node/storyboard-batch/preview', async (c) => {
+      const { canvas, node } = c.req.param()
+      const p = c.var.principal
+      if (!ownsCanvas(db, p.id, canvas)) return c.json(notFound, 404)
+      const body = StoryboardBatchRequest.safeParse(await c.req.json().catch(() => null))
+      if (!body.success) return c.json({ error: 'invalid', message: '清单参数不合法' }, 400)
+      try {
+        return c.json(await storyBatches.preview(canvas, node, p.id, body.data))
+      } catch (err) {
+        if (!(err instanceof NodeRunError)) throw err
+        return c.json({ error: err.code, message: err.message }, STATUS[err.code] ?? 400)
+      }
+    })
+    .post('/api/canvases/:canvas/nodes/:node/storyboard-batch/commit', async (c) => {
+      const { canvas, node } = c.req.param()
+      const p = c.var.principal
+      if (p.role === 'viewer') return c.json(forbidden, 403)
+      if (!ownsCanvas(db, p.id, canvas)) return c.json(notFound, 404)
+      const body = CommitStoryboardBatch.safeParse(await c.req.json().catch(() => null))
+      if (!body.success) return c.json({ error: 'invalid', message: '清单确认参数不合法' }, 400)
+      try {
+        const result = await storyBatches.commit(canvas, node, p.id, body.data.token)
+        if ('changed' in result)
+          return c.json(
+            {
+              error: 'input_changed',
+              message: '输入或任务已变化，请重新审阅清单',
+              plan: result.changed,
+            },
+            409,
+          )
+        return c.json(result.started, 202)
+      } catch (err) {
+        if (!(err instanceof NodeRunError)) throw err
+        return c.json({ error: err.code, message: err.message }, STATUS[err.code] ?? 400)
+      }
+    })
     .post('/api/canvases/:canvas/nodes/:node/run', async (c) => {
       const { canvas, node } = c.req.param()
       const p = c.var.principal

@@ -1,7 +1,5 @@
-import { setParam } from '@plein/doc'
 import {
   type CharacterProfile,
-  emptyProfile,
   LIBRARY_KINDS,
   type LibraryKindSpec,
   libraryKind,
@@ -20,7 +18,6 @@ import {
   type CanvasMedia,
   canvasMedia,
   coverOf,
-  findPlacedCard,
   placeInputOf,
   placeLibraryItem,
   type PlaceInput,
@@ -41,6 +38,7 @@ import { KIND_ICONS } from './LibraryAdd'
 import { SlotField, thumb, VideoField } from './LibraryFields'
 import { ExpressionsTab, type HeroControl, PeriodsTab } from './LibraryProfile'
 import { VoicePicker } from '../../ui/VoicePicker'
+import { LibraryUpdatesPanel } from './LibraryUpdates'
 
 /**
  * 资产库面板：
@@ -639,7 +637,6 @@ function Editor({
           : item
         : await lib.create({ kind: kind.id, ...body() })
       if (!item) onCreated(saved.id)
-      if (character) syncPlacedProfile(saved)
       return saved
     } catch (err) {
       setError((err as Error).message)
@@ -912,6 +909,7 @@ function Editor({
           ) : (
             basics
           )}
+          {item && !readOnly && <LibraryUpdatesPanel item={item} />}
           {error && <p className="text-sm text-danger">{error}</p>}
         </section>
       </div>
@@ -1027,15 +1025,4 @@ function Hero({
       </div>
     </div>
   )
-}
-
-/** 资产库里改了档案：当前画布上从这条资产放下的角色卡跟着同步，@ 引用马上用上新的 */
-function syncPlacedProfile(item: LibraryItem) {
-  const engine = useCanvas.getState().engine
-  if (!engine || engine.doc.readOnly) return
-  const card = findPlacedCard(engine, item.id)
-  if (!card) return
-  const next = item.profile ?? emptyProfile()
-  if (JSON.stringify(profileOf(card.params?.profile)) === JSON.stringify(profileOf(next))) return
-  setParam(engine.doc, card.id, 'profile', next)
 }

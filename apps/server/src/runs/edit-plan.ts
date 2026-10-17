@@ -76,7 +76,9 @@ const stageOf = (capability: string | undefined): EditStage =>
       ? 'video'
       : capability === 'audio.speech'
         ? 'speech'
-        : 'other'
+        : capability === 'audio.sfx'
+          ? 'sfx'
+          : 'other'
 
 const emptyEstimate = (): EditEstimate => estimateSteps([])
 

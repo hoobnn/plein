@@ -234,6 +234,18 @@ function fakeOutputs(req: ProviderRequest): ProviderOutput[] {
         data: solidPng(w, h, colorOf(`${input.prompt}#${i}#${input.seed ?? ''}`)),
       }))
     }
+    case 'image.process': {
+      const input = req.input as CapabilityInput<'image.process'>
+      return [
+        {
+          type: 'file',
+          kind: 'image',
+          mime: 'image/png',
+          name: 'mock-process.png',
+          data: solidPng(256, 256, colorOf(input.operation + input.image.assetId)),
+        },
+      ]
+    }
     case 'image.edit': {
       const input = req.input as CapabilityInput<'image.edit'>
       const [w, h] = (input.extra?.size as [number, number] | undefined) ?? [1024, 1024]
@@ -346,6 +358,12 @@ export const mockProvider = defineProvider({
       }),
     },
     {
+      id: 'image-process',
+      title: 'Mock 图片精修',
+      capabilities: ['image.process'],
+      limits: { imageOperations: ['upscale', 'outpaint', 'cutout'] },
+    },
+    {
       id: 'image-edit',
       title: 'Mock 局部重绘',
       capabilities: ['image.edit'],
@@ -356,6 +374,7 @@ export const mockProvider = defineProvider({
       title: 'Mock 视频',
       capabilities: ['video.generate'],
       limits: {
+        referenceMedia: { video: 10, audio: 10 },
         resolutions: ['480p', '720p', '1080p'],
         duration: { min: 2, max: 10 },
         seed: false,
