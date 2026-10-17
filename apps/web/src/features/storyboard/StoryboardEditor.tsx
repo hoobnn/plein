@@ -418,19 +418,10 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       镜头 {String(s.no).padStart(2, '0')}
                     </button>
                   </h3>
-                  <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-ink-muted">
-                    时长
-                    <input
-                      type="number"
-                      min={1}
-                      max={30}
-                      aria-label="时长"
-                      className={`${cell} w-16 bg-surface-2`}
-                      value={s.duration}
-                      onChange={(e) => patch(s.id, { duration: Number(e.target.value) || 1 })}
-                    />
-                    秒
-                  </label>
+                  <DurationCell
+                    value={s.duration}
+                    onChange={(duration) => patch(s.id, { duration })}
+                  />
                   <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-ink-muted">
                     景别
                     <Select
@@ -579,6 +570,32 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         />
       )}
     </Modal>
+  )
+}
+
+/** 保留清空、负号等输入草稿，文档里的时长始终符合镜头约束。 */
+function DurationCell({ value, onChange }: { value: number; onChange(value: number): void }) {
+  const [draft, setDraft] = useState<string | null>(null)
+  return (
+    <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-ink-muted">
+      时长
+      <input
+        type="number"
+        min={1}
+        max={30}
+        step="any"
+        aria-label="时长"
+        className={`${cell} w-16 bg-surface-2`}
+        value={draft ?? value}
+        onChange={(event) => {
+          setDraft(event.target.value)
+          const next = event.currentTarget.valueAsNumber
+          if (Number.isFinite(next)) onChange(Math.max(1, Math.min(30, next)))
+        }}
+        onBlur={() => setDraft(null)}
+      />
+      秒
+    </label>
   )
 }
 

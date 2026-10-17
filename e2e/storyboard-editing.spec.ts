@@ -46,6 +46,45 @@ test('同一帧内提交分镜文本并调整另一行时长，两处改动都�
   })
 })
 
+test('分镜时长超出范围、清空重输不会让镜头消失或丢失文本', async ({ page }) => {
+  const { boardId, dialog } = await openBoard(page)
+  const count = await dialog.getByRole('article').count()
+  const shot = dialog.getByRole('article').first()
+  const description = await shot.getByLabel('画面', { exact: true }).inputValue()
+  const duration = shot.getByLabel('时长', { exact: true })
+  await duration.fill('31')
+  await duration.blur()
+  await expect(dialog.getByRole('article')).toHaveCount(count)
+  await expect(duration).toHaveValue('30')
+  await duration.fill('-2')
+  await duration.blur()
+  await expect(duration).toHaveValue('1')
+  await duration.fill('')
+  await expect(duration).toHaveValue('')
+  await duration.blur()
+  await expect(duration).toHaveValue('1')
+  await duration.fill('2.5')
+  await duration.blur()
+  await expect(duration).toHaveValue('2.5')
+  await expect(shot.getByLabel('画面', { exact: true })).toHaveValue(description)
+  expect(
+    await page.evaluate((id) => {
+      const shots = window.__plein.engine.doc.get(id)!.params!.shots as { duration: number }[]
+      return shots[0]!.duration
+    }, boardId),
+  ).toBe(2.5)
+  const second = dialog.getByRole('article').nth(1).getByLabel('画面', { exact: true })
+  await second.fill('其他镜头编辑后仍保留第一镜')
+  await second.blur()
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  const at = await centerOf(page, boardId)
+  await page.mouse.dblclick(at.x, at.y)
+  await expect(dialog.getByRole('article')).toHaveCount(count)
+  await expect(duration).toHaveValue('2.5')
+  await expect(shot.getByLabel('画面', { exact: true })).toHaveValue(description)
+})
+
 test('同一镜头两句台词在下一帧前连续提交，保留两句修改和身份', async ({ page }) => {
   const { boardId, dialog } = await openBoard(page)
   const row = dialog.getByRole('article').first()
