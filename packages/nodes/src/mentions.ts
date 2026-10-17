@@ -16,6 +16,14 @@ const STOP = /[\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]/
 /** 序号：`@林夏#2`，一到三位数字 */
 const INDEX = /^#(\d{1,3})/
 
+/** 邮件中的 @ 和显式转义（\@、@@）保持普通文字；展示与实际生成共用此边界。 */
+export function isMentionStart(text: string, at: number): boolean {
+  if (at < 0 || text[at] !== '@' || /[a-zA-Z0-9._%+@-]/.test(text[at - 1] ?? '')) return false
+  let slashes = 0
+  for (let i = at - 1; i >= 0 && text[i] === '\\'; i--) slashes++
+  return slashes % 2 === 0
+}
+
 /** 一个可被 @ 引用的目标：名字可能重复，靠 id 区分 */
 export interface MentionTarget {
   id: string
@@ -86,6 +94,7 @@ export function findMentions(text: string, targets: readonly MentionTarget[]): A
   const names = [...byName.keys()].sort((a, b) => b.length - a.length)
   const out: Array<Mention> = []
   for (let i = text.indexOf('@'); i >= 0; i = text.indexOf('@', i + 1)) {
+    if (!isMentionStart(text, i)) continue
     const rest = text.slice(i + 1)
     const name = names.find((n) => rest.startsWith(n))
     if (!name) continue
@@ -143,7 +152,7 @@ export function findBrokenMentions(
   const names = [...groupByName(targets).keys()]
   const out: Array<BrokenMention> = []
   for (let i = text.indexOf('@'); i >= 0; i = text.indexOf('@', i + 1)) {
-    if (hit.has(i)) continue
+    if (hit.has(i) || !isMentionStart(text, i)) continue
     const word = text
       .slice(i + 1)
       .match(/^[^\s@#，。,.!！?？:：;；、（）()【】[\]「」"'“”]{1,12}/)?.[0]
@@ -192,7 +201,7 @@ export function mentionQuery(
 ): { start: number; query: string; candidates: MentionCandidate[] } | null {
   const before = text.slice(0, caret)
   const at = before.lastIndexOf('@')
-  if (at < 0) return null
+  if (!isMentionStart(text, at)) return null
   const query = before.slice(at + 1)
   if (
     STOP.test(query) &&

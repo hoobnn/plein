@@ -1,6 +1,16 @@
 import { expect, test } from 'vite-plus/test'
 import { mentionParts } from './mentionText'
 
+test('已有同名素材也不把邮箱和转义说明标为引用或缺失', () => {
+  const text = 'test@example.com；\\@旧角色；@@旧角色；\\@林夏；看着@林夏'
+  const parts = mentionParts(text, [
+    { id: 'domain', name: 'example.com' },
+    { id: 'role', name: '林夏' },
+  ])
+  expect(parts.map((p) => p.text).join('')).toBe(text)
+  expect(parts.filter((p) => p.mention).map((p) => [p.text, p.id])).toEqual([['@林夏', 'role']])
+})
+
 test('有效、缺失、中文相邻和带空格的引用保持原文及偏移，邮件不误报', () => {
   const text = '联系 test@example.com。看着@旧角色，@小岚 · 测试 与 @Missing#2/青年。'
   const parts = mentionParts(text, [{ id: 'role', name: '小岚 · 测试' }])

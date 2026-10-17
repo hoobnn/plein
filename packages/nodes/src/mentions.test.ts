@@ -9,6 +9,18 @@ import {
 } from './mentions'
 
 describe('@ 引用', () => {
+  it('邮箱和转义的 @ 不触发素材引用、断链提示或补全，中文相邻引用仍生效', () => {
+    const targets = [
+      { id: 'domain', name: 'example.com' },
+      { id: 'role', name: '林夏' },
+    ]
+    const literal = '联系 test@example.com；说明 \\@林夏 和 @@林夏'
+    expect(findMentions(literal, targets)).toEqual([])
+    expect(findBrokenMentions('test@林旧名 \\@林旧名 @@林旧名', targets)).toEqual([])
+    for (const text of ['test@exam', '\\@林', '@@林'])
+      expect(mentionQuery(text, text.length, targets)).toBeNull()
+    expect(findMentions('看着@林夏，\\\\@林夏', targets).map((m) => m.id)).toEqual(['role', 'role'])
+  })
   it('含空格的角色名可以继续补全档案，正文空白不延长查询', () => {
     const spaced = [{ id: 'a', name: '小岚 · 引用' }]
     expect(mentionQuery('@小岚 · 引用/少', 10, spaced)?.query).toBe('小岚 · 引用/少')

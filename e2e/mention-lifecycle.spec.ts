@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { clickElement, newProject } from './canvas'
+import { clickElement, newProject, waitNode } from './canvas'
 
 async function setup(page: Page) {
   await newProject(page)
@@ -33,6 +33,46 @@ const field = (page: Page) => generator(page).getByRole('textbox', { name: '提�
 const mark = (page: Page) => generator(page).getByTestId('mention-highlights').locator('mark')
 const openText = (page: Page) =>
   page.getByRole('treeitem', { name: '引用测试正文 定位到画布', exact: true }).click()
+
+test('邮箱及转义说明不触发引用补全、失效提示或实际生成素材', async ({ page }) => {
+  await setup(page)
+  const id = await page.evaluate(() => {
+    window.__plein.addNode({
+      type: 'plein/prop',
+      name: 'example.com',
+      params: { description: '不应送入的设定' },
+      x: -800,
+      y: 600,
+    })
+    return window.__plein.addNode({
+      type: 'plein/image',
+      name: '普通文字边界',
+      params: { model: 'plein/mock:image' },
+      x: 700,
+      y: 0,
+    })
+  })
+  await page.getByRole('treeitem', { name: '普通文字边界 定位到画布', exact: true }).click()
+  const text = '联系 test@example.com；说明 \\@小岚 · 引用；@@不存在'
+  await field(page).fill(text)
+  await expect(mark(page)).toHaveCount(0)
+  await expect(generator(page).getByRole('listbox')).toHaveCount(0)
+  await expect(generator(page)).not.toContainText('未找到：')
+  const canvas = decodeURIComponent(page.url().split('#/c/')[1]!.split('?')[0]!)
+  await expect
+    .poll(async () => {
+      const response = await page.request.get(`/api/canvases/${canvas}/nodes/${id}/input`)
+      if (!response.ok()) return null
+      const input = await response.json()
+      return { prompt: input.prompt, refs: input.refs }
+    })
+    .toEqual({ prompt: text, refs: [] })
+  await generator(page).getByRole('button', { name: '生成', exact: true }).click()
+  await waitNode(page, id)
+  expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.results?.length, id)).toBe(
+    1,
+  )
+})
 
 test('正文引用普通点击编辑，组合点击和卡片引用点击准确定位且不改文案', async ({ page }) => {
   const ids = await setup(page)

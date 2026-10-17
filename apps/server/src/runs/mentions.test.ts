@@ -52,6 +52,18 @@ describe('运行前解析 @ 引用', () => {
     return { doc, photo, hero }
   }
 
+  it('邮箱和转义文案不引入同名角色设定、参考图或断链提示', async () => {
+    const { doc, hero } = setup()
+    updateElement(doc, hero, { name: 'example.com' })
+    const prompt = '联系 test@example.com；说明 \\@example.com；@@example.com'
+    const n = node(doc, 'plein/image', { prompt })
+    const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
+    expect(r.params.prompt).toBe(prompt)
+    expect(r.refs).toEqual([])
+    expect(r.inputs).toEqual({})
+    expect(r.notices).toEqual([])
+  })
+
   it('图片节点：替换名字、附设定、并入参考图并去重', async () => {
     const { doc, photo } = setup()
     const n = node(doc, 'plein/image', { prompt: '@林夏站在天台，参考@定妆照' })
