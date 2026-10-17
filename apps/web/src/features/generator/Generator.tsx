@@ -12,7 +12,7 @@ import {
   type VideoMode,
 } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useEngineVersion, useFollow } from '../../canvas/hooks'
 import { adaptToModel, constrainFields, selectedModel } from '../../canvas/modelParams'
 import {
@@ -271,7 +271,11 @@ function Panel({
       {ASSET_NODE_TYPES.has(node.type) && (
         <NameField
           value={el.name ?? node.title}
-          onChange={(name) => updateElement(engine.doc, el.id, { name })}
+          onChange={(name) => {
+            engine.doc.undo.stopCapturing()
+            updateElement(engine.doc, el.id, { name })
+            engine.doc.undo.stopCapturing()
+          }}
           hint={`在提示词里输入 @${el.name ?? node.title} 引用`}
           trailing={canvasId ? <LibrarySave engine={engine} el={el} /> : null}
         />
@@ -487,28 +491,71 @@ function NameField({
   trailing?: React.ReactNode
   onChange(v: string): void
 }) {
-  const [draft, setDraft] = useState(value)
-  useEffect(() => setDraft(value), [value])
+  const [edit, setEdit] = useState({ base: value, draft: value })
+  const conflictId = useId()
+  useEffect(() => {
+    setEdit((prev) =>
+      prev.draft === prev.base || prev.draft === value ? { base: value, draft: value } : prev,
+    )
+  }, [value])
+  const { draft, base } = edit
+  const conflict = base !== value && draft.trim() !== value
+  const reset = () => setEdit({ base: value, draft: value })
   const commit = () => {
     const v = draft.trim()
-    if (v && v !== value) onChange(v)
-    else setDraft(value)
+    if (v && v !== value) {
+      setEdit({ base: v, draft: v })
+      onChange(v)
+    } else reset()
   }
   return (
-    <div className="flex items-center gap-2 border-b border-line px-4 py-3">
-      <input
-        aria-label="节点名称"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.nativeEvent.isComposing) return
-          if (e.key === 'Enter') e.currentTarget.blur()
-        }}
-        className="min-w-0 flex-1 rounded-sm bg-transparent text-base font-semibold text-ink outline-none"
-      />
-      {hint && <span className="flex-none text-xs text-ink-subtle">{hint}</span>}
-      {trailing}
+    <div className="border-b border-line">
+      <div className="flex items-center gap-2 px-4 py-3">
+        <input
+          aria-label="节点名称"
+          aria-describedby={conflict ? conflictId : undefined}
+          value={draft}
+          onChange={(e) => setEdit({ base, draft: e.target.value })}
+          onBlur={() => {
+            if (!conflict) commit()
+          }}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return
+            if (e.key === 'Escape' && draft !== value) {
+              e.preventDefault()
+              e.stopPropagation()
+              reset()
+            }
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              if (conflict) commit()
+              e.currentTarget.blur()
+            }
+          }}
+          className="min-w-0 flex-1 rounded-sm bg-transparent text-base font-semibold text-ink outline-none"
+        />
+        {hint && (
+          <span title={hint} className="max-w-1/2 truncate text-xs text-ink-subtle">
+            {hint}
+          </span>
+        )}
+        {trailing}
+      </div>
+      {conflict && (
+        <div className="space-y-2 px-4 pb-3">
+          <p id={conflictId} role="status" className="break-words text-xs text-ink-subtle">
+            名称已在其他位置更新为「{value}」。请选择要使用的名称。
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="ui-btn ui-btn-secondary" onClick={reset}>
+              使用更新后的名称
+            </button>
+            <button type="button" className="ui-btn ui-btn-secondary" onClick={commit}>
+              保留当前输入
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

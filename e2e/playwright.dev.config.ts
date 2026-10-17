@@ -18,6 +18,7 @@ export default defineConfig({
     'media-search.spec.ts',
     'media-offline.spec.ts',
     'offline.spec.ts',
+    'collaboration-fields.spec.ts',
   ],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },
   webServer: [
