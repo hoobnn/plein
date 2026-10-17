@@ -21,6 +21,7 @@ import { duration, relativeTime } from '../../ui/format'
 import { Icon } from '../../ui/icons'
 import { cancelGroup, cancelNode, runNode } from './run'
 import { BATCH_OUTCOME, BATCH_STAGE, CANCELED_BY, describeRecovery } from './recovery'
+import { useRecoveryRequests } from './recoveryRequests'
 import { Presence, useExit } from '../../ui/Presence'
 import { EmptyState } from '../../ui/EmptyState'
 
@@ -593,14 +594,14 @@ export function RecoveryBlock(props: {
   const r = job.recovery!
   const canvasId = useCanvas((s) => s.canvasId)
   const client = useQueryClient()
-  const [busy, setBusy] = useState(false)
+  const requestKey = JSON.stringify([canvasId, job.id])
+  const busy = useRecoveryRequests((s) => s.pending.has(requestKey))
   const [attach, setAttach] = useState<string | null>(null)
   const [confirm, setConfirm] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const el = doc.get(job.nodeId)
   const act = async (body: RecoverJobOptions) => {
-    if (!canvasId) return
-    setBusy(true)
+    if (!canvasId || !useRecoveryRequests.getState().begin(requestKey)) return
     setError(null)
     try {
       await api.recoverJob(canvasId, job.id, body)
@@ -613,7 +614,7 @@ export function RecoveryBlock(props: {
       const current = useCanvas.getState()
       if (current.canvasId === canvasId) current.notify(message)
     } finally {
-      setBusy(false)
+      useRecoveryRequests.getState().end(requestKey)
     }
   }
   const pick = r.resultIds?.find((id) => el?.results?.some((x) => x.id === id))
@@ -628,6 +629,11 @@ export function RecoveryBlock(props: {
     <div className="mt-1 flex flex-col gap-1" data-testid="job-recovery">
       <p className={`text-xs ${tone}`}>{view.title}</p>
       {view.detail && <p className="text-2xs text-ink-subtle">{view.detail}</p>}
+      {busy && (
+        <p role="status" className="text-2xs text-ink-subtle">
+          正在处理恢复请求…
+        </p>
+      )}
       {error && (
         <p role="alert" className="break-words text-xs text-danger">
           {error}
