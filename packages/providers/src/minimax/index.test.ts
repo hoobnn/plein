@@ -86,6 +86,53 @@ describe('MiniMax 官方 HTTP 契约', () => {
     ).rejects.toMatchObject({ code: 'invalid_input' })
     expect(fetch).not.toHaveBeenCalled()
   })
+  it('结构化生成把 Schema 写入指令并校验返回的 JSON', async () => {
+    const { ctx, body } = setup([
+      { choices: [{ message: { content: '```json\n{"shots":["雨停了"]}\n```' } }] },
+    ])
+    const result = await minimaxProvider.submit(
+      {
+        capability: 'text.chat',
+        model: 'MiniMax-M3',
+        input: {
+          messages: [{ role: 'user', content: '写分镜' }],
+          jsonSchema: {
+            type: 'object',
+            properties: { shots: { type: 'array', items: { type: 'string' } } },
+            required: ['shots'],
+          },
+        },
+      },
+      ctx,
+    )
+    expect(body().messages[0]).toMatchObject({ role: 'system' })
+    expect(body().messages[0].content).toContain('"shots"')
+    expect(result).toMatchObject({ outputs: [{ type: 'json', value: { shots: ['雨停了'] } }] })
+  })
+  it.each([
+    ['not JSON', 'stop'],
+    ['{"shots":4}', 'stop'],
+    ['{"shots":[]}', 'length'],
+  ])('拒绝无效或截断的结构化输出：%s / %s', async (content, finish_reason) => {
+    const { ctx } = setup([{ choices: [{ message: { content }, finish_reason }] }])
+    await expect(
+      minimaxProvider.submit(
+        {
+          capability: 'text.chat',
+          model: 'MiniMax-M3',
+          input: {
+            messages: [{ role: 'user', content: '写分镜' }],
+            jsonSchema: {
+              type: 'object',
+              properties: { shots: { type: 'array', items: { type: 'string' } } },
+              required: ['shots'],
+            },
+          },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'unknown', retryable: false })
+  })
   it('参考图编码为 data URI；保留核心节点的 aspectRatio', async () => {
     const { ctx, body } = setup([{ data: { image_urls: ['https://cdn.hailuoai.com/image.jpg'] } }])
     await minimaxProvider.submit(

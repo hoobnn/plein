@@ -265,13 +265,20 @@ export const minimaxProvider = defineProvider({
     switch (req.capability) {
       case 'text.chat': {
         const input = req.input as CapabilityInput<'text.chat'>
-        if (input.jsonSchema)
-          throw new ProviderError('invalid_input', 'MiniMax 此适配器不支持 JSON Schema 输出')
+        // 未使用平台的严格结构化参数：把 Schema 作为指令发送，返回后仍须校验。
+        const schema = input.jsonSchema
+          ? z.fromJSONSchema(input.jsonSchema as Parameters<typeof z.fromJSONSchema>[0])
+          : null
         const messages = await chatMessages(input.messages, (ref) => {
           if (req.model !== 'MiniMax-M3')
             throw new ProviderError('invalid_input', 'M2.7 只支持纯文本，请使用 M3 处理图片')
           return imageData(ctx, ref)
         })
+        if (schema)
+          messages.unshift({
+            role: 'system',
+            content: `Return only valid JSON matching this schema, without Markdown or explanation: ${JSON.stringify(input.jsonSchema)}`,
+          })
         const result = await request(ctx, '/v1/chat/completions', {
           model: req.model,
           messages,
@@ -288,9 +295,27 @@ export const minimaxProvider = defineProvider({
           throw new ProviderError('content_policy', 'MiniMax 内容审核未通过')
         const text = result.choices?.[0]?.message.content
         if (!text) throw new ProviderError('unknown', 'MiniMax 响应缺少文本', { retryable: false })
+        let value: unknown
+        if (schema) {
+          if (result.choices?.[0]?.finish_reason === 'length')
+            throw new ProviderError('unknown', 'MiniMax 结构化输出被截断，请增加输出长度', {
+              retryable: false,
+            })
+          try {
+            value = schema.parse(JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')))
+          } catch {
+            throw new ProviderError(
+              'unknown',
+              'MiniMax 返回的 JSON 不符合要求，请修改要求或换模型',
+              {
+                retryable: false,
+              },
+            )
+          }
+        }
         return {
           state: 'succeeded',
-          outputs: [{ type: 'text', text }],
+          outputs: schema ? [{ type: 'json', value }] : [{ type: 'text', text }],
           usage: {
             inputTokens: result.usage?.prompt_tokens,
             outputTokens: result.usage?.completion_tokens,
