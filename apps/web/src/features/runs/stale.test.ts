@@ -73,6 +73,21 @@ describe('过期节点', () => {
     expect(nodes()).toEqual({ b: 'self', c: 'kept' })
   })
 
+  it('防抖等待期间也不接受改动前的旧应答', async () => {
+    const pending = answers()
+    const { engine, change } = fakeEngine()
+    const stop = watchStale(engine, 'c1')
+    change()
+    pending[0]!({ stale: ['old'], upstream: [], kept: [] })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nodes()).toEqual({})
+    await vi.advanceTimersByTimeAsync(1200)
+    pending[1]!({ stale: ['new'], upstream: [], kept: [] })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nodes()).toEqual({ new: 'self' })
+    stop()
+  })
+
   it('停止后清空、退订，晚到的应答也不再写入', async () => {
     const pending = answers()
     const { engine, change, listeners } = fakeEngine()

@@ -39,6 +39,8 @@ export function watchStale(engine: Engine, canvasId: string) {
     } catch {}
   }
   const schedule = () => {
+    // 改动发生时旧查询就已失效，不等防抖结束才拒绝它。
+    seq++
     clearTimeout(timer)
     timer = setTimeout(load, 1200)
   }

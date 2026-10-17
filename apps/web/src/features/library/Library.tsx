@@ -81,7 +81,7 @@ export function LibraryPanel() {
 }
 
 function Panel({ kind: kindId }: { kind: LibraryKind }) {
-  const { items, loaded, projectId, show } = useLibrary()
+  const { items, loaded, error, projectId, show, load } = useLibrary()
   const engine = useCanvas((s) => s.engine)
   const canvasId = useCanvas((s) => s.canvasId)
   // 只有打开了远端画布时才能放到画布上
@@ -264,6 +264,18 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
                   官方{kind.title}只包含提示词，不带模型或
                   LoRA；放到画布上后可以连参考图加强约束，效果取决于所选模型。
                 </p>
+              )}
+              {error && scope !== 'official' && (
+                <div role="alert" className="mb-4 flex items-center gap-2 text-xs text-warning">
+                  <p className="flex-1">读取资产库失败：{error}</p>
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn-secondary ui-btn-xs"
+                    onClick={() => void load()}
+                  >
+                    重新读取
+                  </button>
+                </div>
               )}
               {!loaded && scope !== 'official' ? null : shown.length === 0 ? (
                 <Empty kind={kind} scope={scope} onCreate={() => setEditing({ type: 'new' })} />
