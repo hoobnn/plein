@@ -46,19 +46,21 @@ export function previewScene(
       transition: c.transition,
     }
   })
-  const real = clips.filter((c) => c.length > 0)
+  const real = clips.flatMap((c, i) => (c.length > 0 ? [i] : []))
   const sounds: SceneSound[] = []
   // 转场两侧的原声：重叠转场交叉淡化整个重叠段，经黑场各淡一半
   const edge = (tr: SceneClip['transition']) =>
     !tr ? 0 : overlapping(tr) ? tr.duration : tr.duration / 2
-  real.forEach((c, k) => {
-    const row = rows[clips.indexOf(c)]!
+  real.forEach((i, k) => {
+    const c = clips[i]!
+    const row = rows[i]!
     const gain = params.clipVolume * row.volume
     if (!c.assetId || gain <= 0) return
     const end = c.start + c.length
     const env: Array<[number, number]> = []
     const into = edge(c.transition)
-    const out = edge(real[k + 1]?.transition)
+    const next = real[k + 1]
+    const out = edge(next === undefined ? undefined : clips[next]?.transition)
     if (into) env.push([c.start, 0], [c.start + into, 1])
     if (out) env.push([end - out, 1], [end, 0])
     sounds.push({

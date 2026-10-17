@@ -46,7 +46,8 @@ export class Playhead {
   }
 
   setClock(clock: ClockSource | null) {
-    const t = this.t
+    const t = this.position()
+    this.t = t
     this.clock = clock ?? pageClock
     this.base = { clock: this.clock.now(), t }
   }
@@ -112,9 +113,6 @@ export class Playhead {
     this.transports.clear()
   }
 }
-
-/** 订阅播放头的时间（每帧变化，只在小组件里用） */
-export const usePlayheadTime = (p: Playhead) => useSyncExternalStore(p.subscribe, () => p.t)
 
 export const usePlaying = (p: Playhead) => useSyncExternalStore(p.subscribe, () => p.playing)
 

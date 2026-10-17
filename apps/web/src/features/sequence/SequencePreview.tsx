@@ -6,9 +6,9 @@ import {
   subtitleAss,
   type Timeline,
 } from '@plein/nodes'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { PreviewEngine } from './engine'
-import { type Playhead, usePlayheadTime } from './playhead'
+import type { Playhead } from './playhead'
 import { previewScene } from './scene'
 import { SubtitleLayer, type SubtitleMode } from './SubtitleLayer'
 import { Transport } from './Transport'
@@ -32,7 +32,6 @@ export function SequencePreview({
   music?: string
   playhead: Playhead
 }) {
-  const t = usePlayheadTime(playhead)
   const [subMode, setSubMode] = useState<SubtitleMode>('loading')
   const size = sequenceSize(params)
   const cues = params.subtitles ? timeline.clips.flatMap((c) => c.cues) : []
@@ -59,13 +58,6 @@ export function SequencePreview({
   useEffect(() => {
     engine.current?.setScene(sceneRef.current)
   }, [sceneKey])
-
-  const placeholder = timeline.clips.some(
-    (c, i) => rows[i]?.pending && c.length > 0 && t >= c.start && t < c.start + c.length,
-  )
-
-  // 字幕优先用 libass 渲染（与成片一致），不可用时退回近似的 DOM 字幕
-  const cue = subMode === 'fallback' ? cues.find((q) => t >= q.start && t < q.end) : undefined
 
   const note = [
     subMode === 'fallback'
@@ -101,31 +93,75 @@ export function SequencePreview({
               onMode={setSubMode}
             />
           )}
-          {cue && (
-            <div
-              className={`pointer-events-none absolute inset-x-4 z-20 flex justify-center ${portrait ? 'bottom-[12%]' : 'bottom-[7%]'}`}
-            >
-              <span
-                className={`whitespace-pre-line text-center text-white ${
-                  params.subtitleStyle === '底框'
-                    ? 'rounded-xs bg-black/40 px-2 py-0.5 text-sm'
-                    : params.subtitleStyle === '醒目'
-                      ? 'text-base font-semibold [text-shadow:0_0_3px_#000,0_0_3px_#000,0_0_3px_#000]'
-                      : 'text-sm [text-shadow:0_0_2px_#000,0_0_2px_#000]'
-                }`}
-              >
-                {cue.text}
-              </span>
-            </div>
-          )}
-          {(total === 0 || placeholder) && (
-            <div className="absolute inset-0 z-30 flex items-center justify-center text-xs text-white/70">
-              {total === 0 ? '没有可播放的镜头' : '这段镜头还没有生成'}
-            </div>
-          )}
+          <PlaybackOverlay
+            playhead={playhead}
+            rows={rows}
+            timeline={timeline}
+            cues={subMode === 'fallback' ? cues : []}
+            portrait={portrait}
+            subtitleStyle={params.subtitleStyle}
+          />
         </div>
       </div>
       <Transport playhead={playhead} total={total} note={note} />
     </div>
+  )
+}
+
+/** 只有字幕文本或占位状态变化才重绘，不因逐帧推进重建场景、序列化或重新生成 ASS。 */
+function PlaybackOverlay({
+  playhead,
+  rows,
+  timeline,
+  cues,
+  portrait,
+  subtitleStyle,
+}: {
+  playhead: Playhead
+  rows: Array<{ pending?: boolean }>
+  timeline: Timeline
+  cues: Timeline['clips'][number]['cues']
+  portrait: boolean
+  subtitleStyle: SequenceParams['subtitleStyle']
+}) {
+  const placeholder = useSyncExternalStore(playhead.subscribe, () =>
+    timeline.clips.some(
+      (c, i) =>
+        rows[i]?.pending &&
+        c.length > 0 &&
+        playhead.t >= c.start &&
+        playhead.t < c.start + c.length,
+    ),
+  )
+  // 字幕优先用 libass 渲染，不可用时退回近似的 DOM 字幕。
+  const text = useSyncExternalStore(
+    playhead.subscribe,
+    () => cues.find((q) => playhead.t >= q.start && playhead.t < q.end)?.text,
+  )
+  return (
+    <>
+      {text && (
+        <div
+          className={`pointer-events-none absolute inset-x-4 z-20 flex justify-center ${portrait ? 'bottom-[12%]' : 'bottom-[7%]'}`}
+        >
+          <span
+            className={`whitespace-pre-line text-center text-white ${
+              subtitleStyle === '底框'
+                ? 'rounded-xs bg-black/40 px-2 py-0.5 text-sm'
+                : subtitleStyle === '醒目'
+                  ? 'text-base font-semibold [text-shadow:0_0_3px_#000,0_0_3px_#000,0_0_3px_#000]'
+                  : 'text-sm [text-shadow:0_0_2px_#000,0_0_2px_#000]'
+            }`}
+          >
+            {text}
+          </span>
+        </div>
+      )}
+      {(timeline.total === 0 || placeholder) && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center text-xs text-white/70">
+          {timeline.total === 0 ? '没有可播放的镜头' : '这段镜头还没有生成'}
+        </div>
+      )}
+    </>
   )
 }
