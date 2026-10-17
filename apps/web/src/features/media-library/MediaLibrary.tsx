@@ -1,5 +1,11 @@
-import type { MediaLibraryItem, MediaLibraryPage, MediaSource, Project } from '@plein/protocol'
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
+import {
+  MEDIA_SEARCH_MAX_LENGTH,
+  type MediaLibraryItem,
+  type MediaLibraryPage,
+  type MediaSource,
+  type Project,
+} from '@plein/protocol'
+import { type CSSProperties, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { api, ApiError, assetUrls } from '../../api/client'
 import { elementFor } from '../../canvas/import'
 import { placeElement } from '../../canvas/nodes'
@@ -47,6 +53,8 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
   const [kind, setKind] = useState(''),
     [query, setQuery] = useState(''),
     [debounced, setDebounced] = useState('')
+  const queryTooLong = query.trim().length > MEDIA_SEARCH_MAX_LENGTH
+  const queryProblemId = useId()
   const [page, setPage] = useState<MediaLibraryPage>({ items: [], nextCursor: null })
   const [selected, setSelected] = useState<MediaLibraryItem | null>(null)
   const [busy, setBusy] = useState(false),
@@ -58,7 +66,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
     canvasId = useCanvas((s) => s.canvasId)
   const [preview, setPreview] = useState(false)
   const searching = query.trim() !== debounced
-  const visibleItems = searching ? [] : page.items
+  const visibleItems = searching || queryTooLong ? [] : page.items
   useEffect(() => () => request.current?.abort(), [])
   useEffect(() => {
     const controller = new AbortController()
@@ -83,6 +91,10 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
     setFailedMore(null)
     setPage({ items: [], nextCursor: null })
     setSelected(null)
+    if (debounced.length > MEDIA_SEARCH_MAX_LENGTH) {
+      setBusy(false)
+      return () => controller.abort()
+    }
     mediaApi
       .list(
         { projectId: projectId || undefined, kind: kind || undefined, q: debounced },
@@ -160,7 +172,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
             type="button"
             className="ui-btn ui-btn-secondary"
             onClick={() => setRefresh((n) => n + 1)}
-            disabled={busy}
+            disabled={busy || searching || queryTooLong}
           >
             <Icon name="retry" />
             刷新
@@ -175,6 +187,8 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
               onChange={(event) => setQuery(event.target.value)}
               placeholder="搜索素材名称或来源"
               aria-label="搜索素材"
+              aria-invalid={queryTooLong}
+              aria-describedby={queryTooLong ? queryProblemId : undefined}
             />
           </label>
           <Select
@@ -200,7 +214,16 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
             className="w-28"
           />
         </div>
-        {error && (
+        {queryTooLong && (
+          <p
+            id={queryProblemId}
+            role="alert"
+            className="border-b border-line px-5 py-2 text-xs text-danger"
+          >
+            搜索内容最多 {MEDIA_SEARCH_MAX_LENGTH} 个字符，修改后会自动重新搜索。
+          </p>
+        )}
+        {error && !queryTooLong && (
           <div role="alert" className="px-5 py-3 text-sm text-danger">
             {error}
             <button
@@ -223,16 +246,24 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
           >
             {!visibleItems.length ? (
               <EmptyState
-                icon="library"
+                icon={queryTooLong ? 'search' : 'library'}
                 title={
-                  busy || searching ? '正在读取素材…' : error ? '素材读取失败' : '没有找到素材'
+                  queryTooLong
+                    ? '搜索内容过长'
+                    : busy || searching
+                      ? '正在读取素材…'
+                      : error
+                        ? '素材读取失败'
+                        : '没有找到素材'
                 }
                 hint={
-                  busy || searching
-                    ? undefined
-                    : error
-                      ? '可以点击上方重试，或调整筛选后重新读取。'
-                      : '可以调整筛选；导入和生成的图片、视频、音频都会在这里。'
+                  queryTooLong
+                    ? '修改后会自动重新搜索。'
+                    : busy || searching
+                      ? undefined
+                      : error
+                        ? '可以点击上方重试，或调整筛选后重新读取。'
+                        : '可以调整筛选；导入和生成的图片、视频、音频都会在这里。'
                 }
               />
             ) : (
@@ -282,7 +313,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
               </button>
             )}
           </div>
-          {selected && (
+          {selected && !queryTooLong && (
             <div className="ui-scrollbar w-80 flex-none overflow-y-auto border-l border-line p-4">
               <MediaDetail
                 key={selected.id}

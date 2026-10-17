@@ -1,10 +1,12 @@
 import { z } from 'zod'
 import type { Asset } from './assets'
 
+export const MEDIA_SEARCH_MAX_LENGTH = 200
+
 export const MediaLibraryQuery = z.object({
   projectId: z.string().min(1).max(100).optional(),
   kind: z.enum(['image', 'video', 'audio']).optional(),
-  q: z.string().trim().max(200).default(''),
+  q: z.string().trim().max(MEDIA_SEARCH_MAX_LENGTH).default(''),
   cursor: z.string().max(2048).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 })
