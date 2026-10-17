@@ -20,6 +20,42 @@ function setup() {
 }
 
 describe('Scene', () => {
+  it('内容和 z 序更新保留自身与后代的几何对象，仍通知内容重画', () => {
+    const { doc, scene, sync } = setup()
+    const frame = createElement(doc, box({ kind: 'frame', w: 500, h: 500 }))
+    const child = createElement(doc, box({ parentId: frame, x: 10, y: 20 }))
+    sync()
+    const beforeFrame = scene.rect(frame)
+    const beforeChild = scene.rect(child)
+    doc.mutable(frame)!.set('name', '新场景')
+    const update = sync()
+    expect(update?.changed.has(frame)).toBe(true)
+    expect(scene.rect(frame)).toBe(beforeFrame)
+    expect(scene.rect(child)).toBe(beforeChild)
+    bringToFront(doc, [child])
+    sync()
+    expect(scene.rect(child)).toBe(beforeChild)
+    expect(scene.hitTest(20, 30)).toBe(child)
+  })
+
+  it('同一批父子几何变化只按最终局部位置计算，预览清除仍正确', () => {
+    const { doc, scene, sync } = setup()
+    const frame = createElement(doc, box({ kind: 'frame', w: 500, h: 500 }))
+    const child = createElement(doc, box({ parentId: frame, x: 10, y: 20 }))
+    sync()
+    scene.setTransient(new Map([[frame, { x: 200 }]]))
+    doc.mutable(frame)!.set('x', 100)
+    doc.mutable(child)!.set('x', 30)
+    sync()
+    expect(scene.rect(child)?.x).toBe(230)
+    scene.clearTransient()
+    expect(scene.rect(child)?.x).toBe(130)
+    setParent(doc, [child], null)
+    sync()
+    expect(scene.parent(child)).toBeNull()
+    expect(scene.query(scene.rect(child)!)).toContain(child)
+  })
+
   it('子元素世界坐标随父元素移动，R-tree 同步更新', () => {
     const { doc, scene, sync } = setup()
     const frame = createElement(doc, box({ kind: 'frame', w: 500, h: 500 }))

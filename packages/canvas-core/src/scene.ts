@@ -28,6 +28,7 @@ export interface SceneUpdate {
  */
 export class Scene {
   private rects = new Map<string, Rect>()
+  private localGeometry = new Map<string, Rect>()
   private items = new Map<string, Item>()
   private tree = new RBush<Item>()
   private parentOf = new Map<string, string | null>()
@@ -46,6 +47,7 @@ export class Scene {
   rebuild(): SceneUpdate {
     const removed = new Set(this.rects.keys())
     this.rects.clear()
+    this.localGeometry.clear()
     this.items.clear()
     this.parentOf.clear()
     this.zOf.clear()
@@ -55,6 +57,7 @@ export class Scene {
       removed.delete(el.id)
       this.link(el.id, this.doc.effectiveParent(el))
       this.zOf.set(el.id, el.z)
+      this.localGeometry.set(el.id, { x: el.x, y: el.y, w: el.w, h: el.h })
     }
     for (const el of els) this.computeRect(el.id)
     this.tree.clear()
@@ -67,9 +70,12 @@ export class Scene {
   apply(change: DocChange): SceneUpdate {
     const update: SceneUpdate = { changed: new Set(), removed: new Set(), structure: false }
     const geometry = new Set<string>()
+    const visited = new Set<string>()
     const queue = [...change.elements]
     for (let i = 0; i < queue.length; i++) {
       const id = queue[i]!
+      if (visited.has(id)) continue
+      visited.add(id)
       const el = this.doc.get(id)
       if (!el) {
         if (!this.parentOf.has(id)) continue
@@ -78,6 +84,7 @@ export class Scene {
         this.unlink(id)
         this.removeItem(id)
         this.rects.delete(id)
+        this.localGeometry.delete(id)
         this.zOf.delete(id)
         this.transient.delete(id)
         update.removed.add(id)
@@ -85,7 +92,8 @@ export class Scene {
         continue
       }
       const parent = this.doc.effectiveParent(el)
-      if (!this.parentOf.has(id) || this.parentOf.get(id) !== parent) {
+      const parentChanged = !this.parentOf.has(id) || this.parentOf.get(id) !== parent
+      if (parentChanged) {
         this.unlink(id)
         this.link(id, parent)
         update.structure = true
@@ -96,9 +104,24 @@ export class Scene {
         update.structure = true
       }
       update.changed.add(id)
-      geometry.add(id)
+      const previous = this.localGeometry.get(id)
+      if (
+        parentChanged ||
+        !previous ||
+        previous.x !== el.x ||
+        previous.y !== el.y ||
+        previous.w !== el.w ||
+        previous.h !== el.h
+      ) {
+        geometry.add(id)
+        this.localGeometry.set(id, { x: el.x, y: el.y, w: el.w, h: el.h })
+      }
     }
-    for (const id of geometry) this.refreshSubtree(id)
+    for (const id of geometry) {
+      let parent = this.parent(id)
+      while (parent !== null && !geometry.has(parent)) parent = this.parent(parent)
+      if (parent === null) this.refreshSubtree(id)
+    }
     return update
   }
 

@@ -24,3 +24,12 @@ export {
 export { Scene, type SceneUpdate, type Transient } from './scene'
 export { Selection } from './selection'
 export { type CanvasTheme, DARK_THEME, LIGHT_THEME } from './theme'
+export {
+  estimateTextureBytes,
+  previewTextures,
+  type TextureLease,
+  type TextureOwner,
+  TexturePool,
+  type TexturePoolOptions,
+  type TexturePoolStats,
+} from './textures'

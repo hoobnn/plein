@@ -31,10 +31,11 @@ import { Scene, type Transient } from './scene'
 import { Selection } from './selection'
 import { type CanvasTheme, theme } from './theme'
 import { ElementViews } from './views'
+import { previewTextures } from './textures'
 
 export type Tool = 'select' | 'hand'
 
-export interface EngineOptions extends RenderContext {
+export interface EngineOptions extends Omit<RenderContext, 'initialDetail' | 'textures'> {
   host: HTMLElement
   doc: PleinDoc
   /** DOM 覆盖层，跟随相机变换 */
@@ -111,6 +112,7 @@ export class Engine {
   private world = new Container({ sortableChildren: true })
   private grid = new DotGrid()
   private views: ElementViews
+  private textureOwner = previewTextures.createOwner()
   private edges: EdgeLayer
   private overlay: SelectionOverlay
   private highlight: HighlightLayer
@@ -125,6 +127,8 @@ export class Engine {
   private viewDirty = true
   /** 画面有变化、下一帧要渲染；静止时不重画，省 GPU 和电量 */
   private renderDirty = true
+  private previewRevision = 0
+  private renderedPreviewRevision = 0
   /** 相机变了、还没应用到显示树：同一帧里的多次滚轮 / 拖动只处理一次 */
   private cameraDirty = true
   /** 上次应用时的缩放：只平移时状态不用通知 */
@@ -149,8 +153,12 @@ export class Engine {
     this.scene = new Scene(opts.doc)
     this.views = new ElementViews(this.scene, opts.renderers ?? new RendererRegistry(), {
       assetUrl: opts.assetUrl,
+      textures: this.textureOwner,
       onContentSize: (id, w, h) => this.fitMedia(id, w, h),
-      invalidate: () => this.requestRender(),
+      invalidate: () => {
+        this.previewRevision++
+        this.requestRender()
+      },
     })
     this.edges = new EdgeLayer(this.scene, this.camera, this.selection)
     this.overlay = new SelectionOverlay(this.scene, this.selection, this.camera)
@@ -393,7 +401,15 @@ export class Engine {
   }
 
   get stats() {
-    return { elements: this.scene.size, visible: this.views.visibleCount, fps: this.app.ticker.FPS }
+    return {
+      elements: this.scene.size,
+      visible: this.views.visibleCount,
+      fps: this.app.ticker?.FPS ?? 0,
+      ...this.views.stats,
+      textures: previewTextures.stats,
+      previewRevision: this.previewRevision,
+      renderedPreviewRevision: this.renderedPreviewRevision,
+    }
   }
 
   // ── 命令 ────────────────────────────────────────────
@@ -627,6 +643,7 @@ export class Engine {
     if (this.renderDirty) {
       this.renderDirty = false
       this.app.render()
+      this.renderedPreviewRevision = this.previewRevision
     }
   }
 
@@ -796,6 +813,7 @@ export class Engine {
       d()
     })
     this.views.destroy()
+    this.textureOwner.dispose()
     this.edges.destroy()
     this.overlay.destroy()
     this.grid.destroy()

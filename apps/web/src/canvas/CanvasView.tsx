@@ -19,7 +19,7 @@ import { loadAssetMeta } from '../stores/assetMeta'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { canvasTheme, useTheme } from '../stores/theme'
-import { demoAssetUrls, seedDemo } from './demo'
+import { demoAssetUrls, releaseDemoAssetUrls, seedDemo } from './demo'
 import { importFiles, importText } from './import'
 import { localCacheName, watchCacheWrites } from './localCache'
 import { abortGroupRuns } from '../features/runs/groupRuns'
@@ -200,7 +200,10 @@ export function CanvasView({ source }: { source: CanvasSource }) {
       seedDemo(doc, count)
       const urls = demoAssetUrls()
       start(doc, (id) => urls.get(id))
-      cleanups.push(() => doc.destroy())
+      cleanups.push(() => {
+        doc.destroy()
+        releaseDemoAssetUrls(urls)
+      })
     } else {
       setCanvasId(canvasId)
       const ydoc = new Y.Doc()

@@ -38,6 +38,11 @@ export function demoAssetUrls(): Map<string, string> {
   return urls
 }
 
+/** Called after the demo engine releases its texture leases. */
+export function releaseDemoAssetUrls(urls: ReadonlyMap<string, string>) {
+  for (const url of urls.values()) URL.revokeObjectURL(url)
+}
+
 const W = 240
 const H = 180
 const GAP = 40

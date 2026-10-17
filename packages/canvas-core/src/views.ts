@@ -23,6 +23,8 @@ function contentKey({ x: _x, y: _y, z: _z, parentId: _p, ...rest }: CanvasElemen
 const CULL_MARGIN_PX = 200
 /** 低于这个缩放只画色块，不画文字等细节 */
 const DETAIL_ZOOM = 0.3
+export const OFFSCREEN_BODY_MS = 2000
+export const OFFSCREEN_BODY_LIMIT = 256
 
 /**
  * 元素显示树：容器嵌套与文档父子关系一致，同级按 z 排序。
@@ -33,6 +35,9 @@ export class ElementViews {
   private nodes = new Map<string, ViewNode>()
   private visible = new Set<string>()
   private highDetail = true
+  private offscreen = new Map<string, number>()
+  private resident = 0
+  private cleanupTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor(
     private scene: Scene,
@@ -59,6 +64,10 @@ export class ElementViews {
       if (!node || !local || !el) continue
       node.root.position.set(local.x, local.y)
       if (!node.body) continue
+      if (!node.inView) {
+        if (force) node.drawn = null
+        continue
+      }
       const d = node.drawn
       if (!force && d && d.w === local.w && d.h === local.h) {
         // 文档快照按元素缓存，没变时是同一个对象；变了也可能只是挪了位置（拖完松手、协作者拖动）
@@ -86,7 +95,6 @@ export class ElementViews {
     let changed = high !== this.highDetail
     if (high !== this.highDetail) {
       this.highDetail = high
-      for (const n of this.nodes.values()) n.body?.setDetail?.(high)
     }
     const m = CULL_MARGIN_PX / zoom
     const next = new Set(
@@ -102,9 +110,10 @@ export class ElementViews {
       if (!this.visible.has(id)) {
         this.setInView(id, true)
         changed = true
-      }
+      } else if (changed) this.nodes.get(id)?.body?.setDetail?.(high)
     }
     this.visible = next
+    this.pruneOffscreen()
     return changed
   }
 
@@ -121,10 +130,31 @@ export class ElementViews {
     return this.highDetail
   }
 
+  get stats() {
+    const previews = { total: 0, ready: 0, pending: 0, failed: 0 }
+    for (const id of this.visible) {
+      const status = this.nodes.get(id)?.body?.previewStatus?.()
+      if (!status?.requested) continue
+      previews.total++
+      if (status.ready) previews.ready++
+      if (status.pending) previews.pending++
+      if (status.failed) previews.failed++
+    }
+    return {
+      residentBodies: this.resident,
+      visibleBodies: this.resident - this.offscreen.size,
+      offscreenBodies: this.offscreen.size,
+      previews,
+    }
+  }
+
   destroy() {
-    for (const n of this.nodes.values()) n.body?.destroy()
+    clearTimeout(this.cleanupTimer)
+    for (const n of this.nodes.values()) this.destroyBody(n)
     this.layer.destroy({ children: true })
     this.nodes.clear()
+    this.visible.clear()
+    this.offscreen.clear()
   }
 
   private createNode(): ViewNode {
@@ -139,18 +169,56 @@ export class ElementViews {
     const node = this.nodes.get(id)
     if (!node) return
     node.inView = inView
+    if (inView) this.offscreen.delete(id)
+    else if (node.body) this.offscreen.set(id, Date.now())
     if (inView && !node.body) {
       const el = this.scene.get(id)
       const local = this.scene.localRect(id)
       if (el && local) {
-        node.body = this.registry.create({ ...el, ...local }, this.ctx)
+        node.body = this.registry.create(
+          { ...el, ...local },
+          { ...this.ctx, initialDetail: this.highDetail },
+        )
+        this.resident++
         node.drawn = { el, key: contentKey(el), w: local.w, h: local.h }
         node.body.setDetail?.(this.highDetail)
         node.root.addChildAt(node.body.display, 0)
       }
     }
+    if (inView && node.body) {
+      node.body.setDetail?.(this.highDetail)
+      this.refresh([id])
+    }
     if (node.body) node.body.display.visible = inView
     this.updateVisibility(node)
+  }
+
+  private destroyBody(node: ViewNode) {
+    if (!node.body) return
+    node.body.display.removeFromParent()
+    node.body.destroy()
+    node.body = null
+    node.drawn = null
+    this.resident--
+  }
+
+  private pruneOffscreen() {
+    clearTimeout(this.cleanupTimer)
+    this.cleanupTimer = undefined
+    const now = Date.now()
+    for (const [id, leftAt] of this.offscreen) {
+      if (this.offscreen.size > OFFSCREEN_BODY_LIMIT || now - leftAt >= OFFSCREEN_BODY_MS) {
+        const node = this.nodes.get(id)
+        if (node) this.destroyBody(node)
+        this.offscreen.delete(id)
+      } else {
+        this.cleanupTimer = setTimeout(
+          () => this.pruneOffscreen(),
+          Math.max(1, leftAt + OFFSCREEN_BODY_MS - now),
+        )
+        break
+      }
+    }
   }
 
   /** 叶子元素出视口时整个容器隐藏；有子元素的容器保留，子元素各自裁剪 */
@@ -177,9 +245,10 @@ export class ElementViews {
     if (!node) return
     // 子容器若仍挂着别的元素，restructure 会把它们移走；这里先摘下再销毁
     for (const child of [...node.kids.children]) this.layer.addChild(child)
-    node.body?.destroy()
+    this.destroyBody(node)
     node.root.destroy({ children: true })
     this.nodes.delete(id)
     this.visible.delete(id)
+    this.offscreen.delete(id)
   }
 }

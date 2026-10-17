@@ -7,6 +7,7 @@ import { yCollab } from 'y-codemirror.next'
 import * as Y from 'yjs'
 import { renderMarkdown } from './markdown'
 import { createPlayer } from './player'
+import { assetUrls } from '../api/client'
 
 interface Preview {
   node: HTMLDivElement
@@ -247,7 +248,11 @@ export class CanvasOverlays {
   }
 
   private openPlayer(id: string, kind: 'video' | 'audio', assetId: string): Active {
-    const player = createPlayer(kind, this.opts.originalUrl(assetId))
+    const player = createPlayer(
+      kind,
+      this.opts.originalUrl(assetId),
+      kind === 'video' ? { poster: assetUrls.variant(assetId, 'poster') } : {},
+    )
     // 续镜「从当前画面」靠它找到正在播的那一个
     player.node.dataset.playerEl = id
     return { id, assetId, ...player }

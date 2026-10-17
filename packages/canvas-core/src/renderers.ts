@@ -1,11 +1,16 @@
 import { type CanvasElement, currentResult, type ElementKind } from '@plein/doc'
-import { Assets, Container, Graphics, Text, type Texture } from 'pixi.js'
+import { Container, Graphics, Text, type Texture } from 'pixi.js'
 import { theme } from './theme'
+import { previewTextures, type TextureOwner, TextureSlot } from './textures'
 
 /** 预览图档位：缩得很小时用小图，省下载、解码和显存 */
 export type PreviewSize = 'small' | 'large'
 
 export interface RenderContext {
+  /** Applied before the first update, so distant elements never request the large preview first. */
+  initialDetail?: boolean
+  /** Engine-owned leases into the shared Pixi preview cache. */
+  textures?: TextureOwner
   /** 资产在画布上的预览图 URL：图片缩略图、视频封面、音频波形 */
   assetUrl?: (assetId: string, kind: ElementKind, size: PreviewSize) => string | undefined
   /** 媒体预览加载后报告其像素尺寸，用来按内容校正元素尺寸 */
@@ -20,6 +25,8 @@ export interface ElementView {
   update(el: CanvasElement): void
   /** 细节层级：缩得很小时隐藏文字等细节，减少绘制开销 */
   setDetail?(high: boolean): void
+  /** Available only on views that request a media preview. */
+  previewStatus?(): { requested: boolean; ready: boolean; pending: boolean; failed: boolean }
   destroy(): void
 }
 
@@ -146,11 +153,6 @@ const frameRenderer: ElementRenderer = (el) => {
   return view
 }
 
-/** 加载预览纹理；URL 没有扩展名，显式指定解析器 */
-function loadTexture(url: string) {
-  return Assets.load<Texture>({ src: url, parser: 'texture' })
-}
-
 /**
  * 媒体元素：底板 + 预览纹理（图片缩略图 / 视频封面 / 音频波形）。
  * 纹理未加载或加载失败时显示占位卡片。
@@ -162,18 +164,18 @@ const mediaRenderer: ElementRenderer = (el, ctx) => {
   const label = new Text({ text: '', style: labelStyle, resolution: 2 })
   label.position.set(12, 10)
   display.addChild(bg, glyph, label)
-  let texture: Texture | undefined
-  let loading: string | undefined
+  const owner = ctx.textures ?? previewTextures.createOwner()
+  const slot = new TextureSlot(owner)
   /** 已加载过大图：缩小时不再换回小图 */
   let large = false
   /** 已按哪个资产的大图校正过尺寸，不再重复写文档 */
   let sized: string | undefined
-  let destroyed = false
-  let high = true
+  let high = ctx.initialDetail ?? true
   let current = el
 
   const draw = (next: CanvasElement) => {
     const { w, h, kind } = next
+    const texture = slot.texture
     bg.clear().roundRect(0, 0, w, h, RADIUS).fill({ color: theme.surface })
     if (texture) {
       // 纹理按形状包围盒铺满（textureSpace: local），省掉昂贵的遮罩
@@ -210,30 +212,22 @@ const mediaRenderer: ElementRenderer = (el, ctx) => {
 
   const view: ElementView = {
     display,
+    previewStatus: () => slot.status,
     update(next) {
       if (next.assetId !== current.assetId) large = false
       current = next
-      draw(next)
       const size = high || large ? 'large' : 'small'
       const url = next.assetId ? ctx.assetUrl?.(next.assetId, next.kind, size) : undefined
-      if (!url || url === loading) return
-      loading = url
-      loadTexture(url)
-        .then((tex) => {
-          if (destroyed || loading !== url) return
-          texture = tex
-          if (size === 'large') large = true
-          draw(current)
-          ctx.invalidate?.()
-          // 按大图校正比例：小图边长取整后比例有误差
-          if (size !== 'large' || sized === current.assetId) return
-          sized = current.assetId
-          ctx.onContentSize?.(current.id, tex.width, tex.height)
-        })
-        .catch(() => {
-          // 加载失败保留占位卡片；忘掉这次地址，下次刷新（如断线重连后）再试
-          if (loading === url) loading = undefined
-        })
+      slot.setSource(next.assetId, url, (tex) => {
+        if (size === 'large') large = true
+        draw(current)
+        ctx.invalidate?.()
+        // 按大图校正比例：小图边长取整后比例有误差
+        if (size !== 'large' || sized === current.assetId) return
+        sized = current.assetId
+        ctx.onContentSize?.(current.id, tex.width, tex.height)
+      })
+      draw(next)
     },
     setDetail(next) {
       if (next === high) return
@@ -242,7 +236,8 @@ const mediaRenderer: ElementRenderer = (el, ctx) => {
       view.update(current)
     },
     destroy() {
-      destroyed = true
+      slot.destroy()
+      if (!ctx.textures) owner.dispose()
       display.destroy({ children: true })
     },
   }
@@ -299,16 +294,16 @@ const nodeRenderer: ElementRenderer = (el, ctx) => {
   const display = new Container()
   const bg = new Graphics()
   display.addChild(bg)
-  let texture: Texture | undefined
-  let loading: string | undefined
+  const owner = ctx.textures ?? previewTextures.createOwner()
+  const slot = new TextureSlot(owner)
   /** 当前结果已加载过大图：缩小时不再换回小图 */
   let largeOf: string | undefined
-  let destroyed = false
-  let high = true
+  let high = ctx.initialDetail ?? true
   let current = el
 
   const draw = (next: CanvasElement) => {
     const { w, h } = next
+    const texture = slot.texture
     const status = next.run?.status
     const accent = (status && theme.status[status]) ?? theme.kinds.node
     const loud = status === 'running' || status === 'failed' || status === 'queued'
@@ -339,6 +334,7 @@ const nodeRenderer: ElementRenderer = (el, ctx) => {
 
   const view: ElementView = {
     display,
+    previewStatus: () => slot.status,
     update(next) {
       current = next
       const r = currentResult(next)
@@ -346,25 +342,12 @@ const nodeRenderer: ElementRenderer = (el, ctx) => {
       const media = v && v.type !== 'text' && v.type !== 'json' ? v : undefined
       const size = high || largeOf === media?.assetId ? 'large' : 'small'
       const url = media ? ctx.assetUrl?.(media.assetId, media.type, size) : undefined
-      if (!url) {
-        texture = undefined
-        loading = undefined
-      }
+      slot.setSource(media?.assetId, url, () => {
+        if (size === 'large') largeOf = media?.assetId
+        draw(current)
+        ctx.invalidate?.()
+      })
       draw(next)
-      if (!url || url === loading) return
-      loading = url
-      loadTexture(url)
-        .then((tex) => {
-          if (destroyed || loading !== url) return
-          texture = tex
-          if (size === 'large') largeOf = media?.assetId
-          draw(current)
-          ctx.invalidate?.()
-        })
-        .catch(() => {
-          // 加载失败只显示底板；下次刷新再试
-          if (loading === url) loading = undefined
-        })
     },
     setDetail(next) {
       if (next === high) return
@@ -372,7 +355,8 @@ const nodeRenderer: ElementRenderer = (el, ctx) => {
       view.update(current)
     },
     destroy() {
-      destroyed = true
+      slot.destroy()
+      if (!ctx.textures) owner.dispose()
       display.destroy({ children: true })
     },
   }
