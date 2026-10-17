@@ -6,6 +6,7 @@ import {
   CapabilityRegistry,
   type ContentBlock,
   canvasCapabilities,
+  readViewCapabilities,
   capabilityFor,
   content,
   editCapabilities,
@@ -64,11 +65,14 @@ import { libraryCapabilities } from './library'
 import type { AgentPlan } from './plan'
 import { pluginCapabilities } from './plugin-caps'
 import { capabilityTools, type McpTool, type ToolResult } from './mcp'
+import type { TurnExecution } from './execution'
 
 const exec = promisify(execFile)
 
 /** 能力运行时绑定的画布与身份 */
 export interface ToolEnv {
+  /** Present only for session tools; captured once per turn, never retargeted. */
+  execution?: TurnExecution
   canvasId: string
   ownerId: string
   rooms: Rooms
@@ -124,14 +128,39 @@ const serverCapability = capabilityFor<ServerContext>()
 
 export function serverContext(env: ToolEnv): ServerContext {
   const { host } = env
+  const guard = env.execution?.assertOpen
+  const scoped = <T extends object>(value: T): T =>
+    guard
+      ? new Proxy(value, {
+          get(target, key) {
+            const member = Reflect.get(target, key, target)
+            return typeof member === 'function'
+              ? (...args: unknown[]) => {
+                  guard()
+                  return member.apply(target, args)
+                }
+              : member
+          },
+        })
+      : value
+  const safeEnv = {
+    ...env,
+    runs: scoped(env.runs),
+    host: scoped(env.host),
+    assets: scoped(env.assets),
+    library: env.library ? scoped(env.library) : undefined,
+  }
   const info = (key: string, n: NonNullable<ReturnType<typeof host.registry.latestNode>>) => ({
     def: n.def,
     descriptor: withDefaultModel(describeNode(n.def, n.plugin), (c) => host.defaultModel(c)),
     runnable: executionOf(n.def) === 'inline' || host.registry.executors.has(key),
   })
   return {
-    env,
-    withDoc: (fn) => env.rooms.withDoc(env.canvasId, fn, undefined, env.origin),
+    env: safeEnv,
+    withDoc: (fn) => {
+      guard?.()
+      return env.rooms.withDoc(env.canvasId, fn, undefined, env.origin)
+    },
     nodes: {
       latest: (type) => {
         const n = host.registry.latestNode(type)
@@ -246,7 +275,7 @@ const viewMedia = serverCapability({
     if (!assetId) throw new CapabilityError('需要 asset_id，或一个有媒体内容的 element_id')
     const meta = asset(ctx, assetId)
     const src = ctx.env.assets.originalPath(assetId)
-    const info = `${meta.kind}，${meta.mime}${meta.width ? `，${meta.width}×${meta.height}` : ''}${meta.duration ? `，${meta.duration.toFixed(1)} 秒` : ''}`
+    const info = `${meta.kind}，${meta.mime}${meta.width ? `，${meta.width}×${meta.height}` : ''}${meta.duration ? `，${meta.duration.toFixed(1)} 秒` : ''}；source_asset_id=${assetId}${a.element_id ? `；element_id=${a.element_id}` : ''}`
     if (meta.kind === 'image') {
       return content([{ type: 'text', text: info }, await jpeg(sharp(src).rotate())])
     }
@@ -770,7 +799,13 @@ const rewrite = serverCapability({
       const out = await rewritePrompt(
         ctx.env.host,
         { text, mode: a.mode, target, mentions },
-        { ownerId: ctx.env.ownerId, signal: AbortSignal.timeout(120_000) },
+        {
+          ownerId: ctx.env.ownerId,
+          signal: AbortSignal.any([
+            AbortSignal.timeout(120_000),
+            ...(ctx.env.execution ? [ctx.env.execution.abort.signal] : []),
+          ]),
+        },
       )
       if (a.apply) ctx.withDoc((doc) => setParams(doc, a.id, { [key]: out.text }))
       return { [key]: out.text, applied: a.apply }
@@ -839,6 +874,7 @@ const runStoryboard = serverCapability({
 /** 服务端可用的全部能力：画布读写（前后端共用）+ 运行、媒体 */
 export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   ...(canvasCapabilities as never[]),
+  ...(readViewCapabilities as never[]),
   ...(editCapabilities as never[]),
   ...(storyCapabilities as never[]),
   ...(promptCapabilities as never[]),
@@ -908,7 +944,13 @@ export function agentTools(
     if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
     const req = approvalFor(opts.mode(), cap, args, ctx, opts.changes)
     if (!req) return null
-    const a = opts.approvals.create(cap.name, req, run)
+    const approved = async () => {
+      env.execution?.assertOpen()
+      return run()
+    }
+    const a = opts.approvals.create(cap.name, req, () =>
+      env.execution ? env.execution.serialize(approved) : approved(),
+    )
     return JSON.stringify({
       status: 'needs_approval',
       approval_id: a.id,
@@ -930,12 +972,18 @@ export function agentTools(
         async (choice) => {
           const pick = ApplyEditPlan.catch({ scope: 'text' }).parse(choice)
           try {
-            const out = (await registry.invoke(APPLY_EDIT, ctx, {
-              plan_id: plan.id,
-              scope: pick.scope,
-              ...(pick.only ? { only: pick.only } : {}),
-              ...(pick.skip ? { skip: pick.skip } : {}),
-            })) as Record<string, unknown>
+            const apply = async () => {
+              env.execution?.assertOpen()
+              return registry.invoke(APPLY_EDIT, ctx, {
+                plan_id: plan.id,
+                scope: pick.scope,
+                ...(pick.only ? { only: pick.only } : {}),
+                ...(pick.skip ? { skip: pick.skip } : {}),
+              })
+            }
+            const out = (await (env.execution
+              ? env.execution.serialize(apply)
+              : apply())) as Record<string, unknown>
             return JSON.stringify(
               {
                 ...out,
@@ -988,5 +1036,16 @@ export function agentTools(
       }
     },
   })
-  return tools
+  if (!env.execution) return tools
+  const execution = env.execution
+  return tools.map((tool) => ({
+    ...tool,
+    run: async (args) => {
+      const invoke = () => execution.invoke(tool.name, args, async () => tool.run(args))
+      const cap = registry.get(tool.name)
+      return cap && registry.effectOf(cap, args, ctx) !== 'read'
+        ? execution.serialize(invoke)
+        : invoke()
+    },
+  }))
 }

@@ -45,13 +45,13 @@ export interface DriverOptions {
   instructions: string
 }
 
-/** 一个长驻的 CLI 进程：同一个会话里的多轮对话都发给它 */
+/** 一个轮次的 CLI 进程；下一轮通过 resume 延续原 CLI 会话。 */
 export interface CliDriver {
   readonly access: AgentAccess
   readonly alive: boolean
   /** 开始新的一轮 */
   send(prompt: string): void
-  /** 打断这一轮（进程保留，之后还能接着聊） */
+  /** 打断这一轮，收尾后关闭进程 */
   interrupt(): void
   /** 结束进程 */
   close(): void

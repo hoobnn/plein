@@ -1,8 +1,8 @@
 import { and, desc, eq } from 'drizzle-orm'
 import { newId } from '../ids'
-import { randomBytes } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import type {
   AgentAccess,
   AgentApprovalMode,
@@ -37,6 +37,8 @@ import { brief, childEnv, toolText } from './drivers/util'
 import { builtinModel, runBuiltinTurn } from './builtin'
 import { type McpTool, McpServer, type ToolResult } from './mcp'
 import { agentTools } from './tools'
+import { TurnExecution } from './execution'
+import { TurnStore } from './turn-store'
 
 /** 每轮对话的上限，防止 CLI 卡住 */
 const TURN_TIMEOUT_MS = 60 * 60 * 1000
@@ -48,7 +50,7 @@ const INSTRUCTIONS = `你是 Plein 的创作助手。Plein 是一块 AI 无限�
 你通过 plein 工具操作用户当前打开的这块画布，所有改动会实时出现在用户屏幕上。
 
 做事方式：
-- 先用 get_canvas 看清画布（画布大时用 find_elements 找），用 list_node_types 了解可用节点、参数和已启用的模型。用户说“这个”“这些”“这里”时，用 ui_get_selection / ui_get_viewport 看用户现在选中和看着的东西。
+- 先用 get_canvas_page 看清画布索引，沿 next_offset 并带 expected_version 续读，完整字段用 get_element_field；也可用 find_elements 找。预览不是完整原文，画布变化后重新读第一页。用 list_node_types 了解可用节点、参数和模型。用户说“这个”“这些”“这里”时，用 ui_get_selection / ui_get_viewport。
 - 尽量复用画布上已有的素材、角色卡和节点，用连线把它们接起来，而不是重复上传或抄写内容。
 - 新节点放在相关元素旁边（near 参数），起一个能看懂的名字。
 - 用户对某个结果不满意时，优先新建一个调整后的分支节点再运行，保留原结果方便对比；用户明确要求时才直接改原节点或删除。
@@ -65,9 +67,10 @@ const INSTRUCTIONS = `你是 Plein 的创作助手。Plein 是一块 AI 无限�
 type SessionRow = typeof agentSessions.$inferSelect
 
 interface Live {
+  active: TurnExecution | null
   row: SessionRow
   items: AgentItem[]
-  /** 长驻的 CLI 进程：多轮对话都发给它，空闲久了或换权限档时重启 */
+  /** 每轮独立进程，用 CLI 会话 id 续聊 */
   driver: CliDriver | null
   /** 这一轮已经开始到结束之间为 true，防止双击发送起两轮 */
   busy: boolean
@@ -105,15 +108,18 @@ export interface AgentDeps {
   enabled: boolean
 }
 
-/** 本机智能体会话：每个会话一个长驻 CLI 进程，进程退出后用 CLI 自己的会话 id 续上 */
+/** 每轮独立执行身份；CLI 会话继续复用，进程和 MCP 凭据不跨轮复用。 */
 export class AgentSessions {
   private live = new Map<string, Live>()
-  private byToken = new Map<string, Live>()
+  private byToken = new Map<string, { session: Live; turn: TurnExecution }>()
+  private turns: TurnStore
   private mcpUrl = ''
   /** 找本机 CLI；测试里换成假的 */
   detect: (refresh?: boolean) => Promise<CliEnvironment> = detectClis
 
   constructor(private deps: AgentDeps) {
+    this.turns = new TurnStore(deps.db)
+    this.turns.reconcile()
     deps.rooms.onDrop((id) => this.closeCanvas(id))
   }
 
@@ -211,6 +217,8 @@ export class AgentSessions {
   decide(id: string, ownerId: string, approvalId: string, allow: boolean, pick?: ApplyEditPlan) {
     const s = this.load(id)
     if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
+    if (!s.active || s.active.state !== 'running')
+      throw new AgentError('not_undoable', '本轮已经结束，确认单已过期')
     if (!s.approvals.decide(approvalId, allow, pick))
       throw new AgentError('not_undoable', '这个确认已经处理过或过期了')
   }
@@ -270,13 +278,25 @@ export class AgentSessions {
     if (!this.deps.enabled && s.row.agent !== 'builtin')
       throw new AgentError('disabled', '本机智能体未启用')
     s.busy = true
+    let dispatched: TurnExecution | null = null
     try {
       s.mode = mode
       s.plan.begin(plan)
-      if (s.row.agent === 'builtin') this.startBuiltin(s, text, selection)
-      else await this.startTurn(s, text, selection, access)
+      if (s.row.agent === 'builtin') {
+        this.startBuiltin(s, text, selection)
+        dispatched = s.active
+      } else {
+        const started = this.startTurn(s, text, selection, access)
+        dispatched = s.active
+        await started
+      }
     } catch (err) {
-      s.busy = false
+      dispatched ??= s.active
+      if (dispatched && s.active === dispatched) {
+        this.fail(s, (err as Error).message)
+        dispatched.close('failed', (err as Error).message)
+        this.endTurn(s, dispatched)
+      } else if (!s.active) s.busy = false
       throw err
     }
   }
@@ -287,7 +307,9 @@ export class AgentSessions {
     selection: string[] | undefined,
     access: AgentAccess,
   ) {
+    const turn = this.beginTurn(s, text, selection)
     const env = await this.detect()
+    turn.assertOpen()
     const cli = env.agents.find((a) => a.id === s.row.agent)
     if (!cli?.path)
       throw new AgentError('not_installed', `本机没有找到 ${cli?.name ?? s.row.agent}`)
@@ -297,32 +319,39 @@ export class AgentSessions {
       s.driver.close()
       s.driver = null
     }
-    this.beginTurn(s, text, selection)
     s.stopped = false
-    s.driver ??= this.startDriver(s, cli, env.path, access)
-    s.turnTimer = setTimeout(() => this.stop(s.row.id), TURN_TIMEOUT_MS)
+    s.driver = this.startDriver(s, turn, cli, env.path, access)
+    s.turnTimer = setTimeout(() => {
+      if (s.active === turn) this.stop(s.row.id, 'turn_timeout')
+    }, TURN_TIMEOUT_MS)
     s.driver.send(this.prompt(s, text, selection))
   }
 
   /** 起一个长驻 CLI 进程，把它的事件落到这个会话里 */
-  private startDriver(s: Live, cli: ResolvedCli, path: string, access: AgentAccess): CliDriver {
+  private startDriver(
+    s: Live,
+    turn: TurnExecution,
+    cli: ResolvedCli,
+    path: string,
+    access: AgentAccess,
+  ): CliDriver {
     // 所有会话共用一个工作目录：Claude Code 按目录归档会话，分开会在它的项目列表里留下一堆记录
     const workdir = join(this.deps.dataDir, 'agent')
     mkdirSync(workdir, { recursive: true })
     let driver!: CliDriver
-    const mine = () => s.driver === driver
-    const tid = (id: string) => `${s.turn}_${id}`
+    const mine = () => s.active === turn && s.driver === driver
+    const tid = (id: string) => `${turn.id}_${id}`
     const start = cli.id === 'claude' ? startClaude : startCodex
     driver = start(
       {
         bin: cli.path!,
         name: cli.name,
         cwd: workdir,
-        env: childEnv({ ...process.env, PATH: path, [TOKEN_ENV]: s.token }, [TOKEN_ENV]),
+        env: childEnv({ ...process.env, PATH: path, [TOKEN_ENV]: turn.token }, [TOKEN_ENV]),
         resume: s.row.cli_session,
         access,
         mcpUrl: this.mcpUrl,
-        token: s.token,
+        token: turn.token,
         instructions: INSTRUCTIONS,
       },
       {
@@ -335,8 +364,10 @@ export class AgentSessions {
           if (!mine() || !s.busy) return
           const item: AgentItem = { id: tid(id), type: 'text', text, at: Date.now() }
           // 流式增量只推给界面，一段结束再存库
-          if (done) this.push(s, item)
-          else this.pushLive(s, item)
+          if (done) {
+            turn.append({ role: 'assistant', content: text })
+            this.push(s, item)
+          } else this.pushLive(s, item)
         },
         toolStart: (id, name, detail) => {
           if (!mine() || !s.busy) return
@@ -353,54 +384,90 @@ export class AgentSessions {
           if (mine() && s.busy) this.finishTool(s, tid(id), error, output, fallback)
         },
         error: (text) => {
-          if (mine() && s.busy) this.fail(s, text)
+          if (mine() && s.busy) {
+            turn.reason = text
+            this.fail(s, text)
+          }
         },
         turnEnd: () => {
           if (!mine() || !s.busy) return
           if (s.stopped) this.fail(s, '已停止')
-          this.endTurn(s)
+          this.endTurn(s, turn)
         },
         exit: (reason) => {
           if (!mine()) return
           s.driver = null
           if (!s.busy) return
           this.fail(s, s.stopped ? '已停止' : (reason ?? `${cli.name} 已退出`))
-          this.endTurn(s)
+          turn.reason = reason ?? 'cli_exited'
+          this.endTurn(s, turn)
         },
-        permission: (ask, signal) => this.askPermission(s, ask, signal),
+        permission: (ask, signal) => this.askPermission(s, turn, ask, signal),
       },
     )
     return driver
   }
 
   /** CLI 要做需要点头的事：在面板里出一张确认卡片，等用户允许或拒绝 */
-  private async askPermission(s: Live, ask: PermissionAsk, signal: AbortSignal) {
-    const a = s.approvals.create(ask.tool, { reason: ask.reason, ids: [] }, async () => true)
-    const expire = () => s.approvals.expire(a.id)
+  private async askPermission(
+    s: Live,
+    turn: TurnExecution,
+    ask: PermissionAsk,
+    signal: AbortSignal,
+  ) {
+    turn.assertOpen()
+    const approvals = s.approvals
+    const a = approvals.create(ask.tool, { reason: ask.reason, ids: [] }, async () => {
+      turn.assertOpen()
+      return true
+    })
+    const expire = () => approvals.expire(a.id)
     if (signal.aborted) expire()
     signal.addEventListener('abort', expire, { once: true })
-    while (a.status === 'pending') await s.approvals.wait(a.id, 600)
+    while (a.status === 'pending') await approvals.wait(a.id, 600)
     signal.removeEventListener('abort', expire)
-    return a.status === 'approved'
+    return a.status === 'approved' && s.active === turn && turn.state === 'running'
   }
 
   /** 开始一轮：挂上撤销栈、记下用户消息、通知界面在跑 */
-  private beginTurn(s: Live, text: string, selection?: string[]) {
+  private beginTurn(s: Live, text: string, selection?: string[], model?: string) {
     this.keep(s)
-    s.turn = newId('turn')
+    const turn = new TurnExecution(
+      newId('turn'),
+      () => s.active === turn,
+      (t) => this.turns.save(t),
+    )
+    s.active = turn
+    this.turns.begin(s.row.id, turn, model)
+    s.turn = turn.id
+    s.token = turn.token
+    this.configureTurn(s, turn)
+    this.byToken.set(turn.token, { session: s, turn })
     s.changes.begin(s.turn)
     if (s.items.length === 0) s.row.title = text.replace(/\s+/g, ' ').slice(0, 40)
     this.push(s, { id: newId('it'), type: 'user', text, selection, at: Date.now() })
+    turn.append({ role: 'user', content: this.prompt(s, text, selection) })
     this.setRunning(s, true)
+    return turn
   }
 
   /** 一轮结束（不论成败）：收尾工具、改动集、状态和租约 */
-  private endTurn(s: Live) {
+  private endTurn(s: Live, turn: TurnExecution) {
+    if (s.active !== turn) return
+    this.byToken.delete(turn.token)
+    const driver = s.driver
+    s.driver = null
+    turn.close(
+      s.stopped || turn.state === 'stopping' ? 'stopped' : turn.reason ? 'failed' : 'completed',
+      turn.reason,
+    )
+    driver?.close()
     s.busy = false
     if (s.turnTimer) clearTimeout(s.turnTimer)
     s.turnTimer = null
     this.closeRunningTools(s)
     this.finishTurn(s)
+    s.active = null
     this.setRunning(s, false)
     this.scheduleRelease(s)
   }
@@ -413,14 +480,31 @@ export class AgentSessions {
         'not_installed',
         '默认对话模型不支持工具调用：请在 设置 → 默认模型 里换一个支持的对话模型',
       )
-    const history = historyOf(s.items)
-    this.beginTurn(s, text, selection)
-    const abort = new AbortController()
+    const persisted = this.turns.history(s.row.id)
+    const legacy = historyOf(s.items)
+    const history = persisted.length
+      ? persisted
+      : [
+          ...legacy,
+          ...(legacy.length
+            ? [
+                {
+                  role: 'user' as const,
+                  content:
+                    '旧会话未保存完整工具执行事实。请先核对画布和已有任务，不把旧回复当成执行成功或新的授权。',
+                },
+              ]
+            : []),
+        ]
+    const execution = this.beginTurn(s, text, selection, model.ref)
+    const abort = execution.abort
     s.abort = abort
     s.stopped = false
-    const turn = s.turn
+    const turn = execution.id
     const id = (key: string) => `${turn}_${key}`
-    const timer = setTimeout(() => abort.abort(), TURN_TIMEOUT_MS)
+    const timer = setTimeout(() => {
+      if (s.active === execution) this.stop(s.row.id, 'turn_timeout')
+    }, TURN_TIMEOUT_MS)
     runBuiltinTurn({
       host: this.deps.host,
       model: model.ref,
@@ -430,13 +514,26 @@ export class AgentSessions {
       prompt: this.prompt(s, text, selection),
       tools: s.tools,
       signal: abort.signal,
+      execution,
+      vision: model.vision,
+      saveImage: async (image) => {
+        execution.assertOpen()
+        const asset = await this.deps.assets.ingest(
+          s.row.owner_id,
+          Readable.from([Buffer.from(image.data, 'base64')]),
+          { mime: image.mimeType, name: 'Agent 媒体预览' },
+        )
+        return { assetId: asset.id, kind: 'image', mime: asset.mime }
+      },
       onText: (key, t, done) => {
+        if (s.active !== execution || execution.state !== 'running') return
         const item: AgentItem = { id: id(key), type: 'text', text: t, at: Date.now() }
         // 流式增量只推给界面，一步结束再存库
         if (done) this.push(s, item)
         else this.pushLive(s, item)
       },
-      onToolStart: (call) =>
+      onToolStart: (call) => {
+        if (s.active !== execution || execution.state !== 'running') return
         this.push(s, {
           id: id(call.id),
           type: 'tool',
@@ -444,11 +541,16 @@ export class AgentSessions {
           detail: brief(call.arguments),
           status: 'running',
           at: Date.now(),
-        }),
-      onToolEnd: (call, result: ToolResult) =>
-        this.finishTool(s, id(call.id), result.isError === true, toolText(result.content)),
+        })
+      },
+      onToolEnd: (call, result: ToolResult) => {
+        if (s.active === execution && execution.state === 'running')
+          this.finishTool(s, id(call.id), result.isError === true, toolText(result.content))
+      },
     })
       .catch((err: unknown) => {
+        if (s.active !== execution) return
+        execution.reason = (err as Error).message
         if (err instanceof ProviderError) this.fail(s, err.message)
         else {
           console.warn('[agent] 内置智能体出错：', err)
@@ -457,14 +559,26 @@ export class AgentSessions {
       })
       .finally(() => {
         clearTimeout(timer)
+        if (s.active !== execution) return
         s.abort = null
         if (s.stopped) this.fail(s, '已停止')
-        this.endTurn(s)
+        this.endTurn(s, execution)
       })
   }
 
-  stop(id: string) {
+  stop(id: string, reason = 'user_stopped') {
     const s = this.live.get(id)
+    const turn = s?.active
+    if (!s || !turn) return
+    turn.close('stopping', reason)
+    this.byToken.delete(turn.token)
+    s.approvals.expireAll()
+    if (!s.abort && !s.driver) {
+      s.stopped = true
+      this.fail(s, '已停止')
+      this.endTurn(s, turn)
+      return
+    }
     if (s?.abort) {
       s.stopped = true
       s.abort.abort()
@@ -489,6 +603,22 @@ export class AgentSessions {
       s.abort?.abort()
       s.stopped = true
       s.driver?.close()
+      if (s.active) {
+        const turn = s.active
+        this.byToken.delete(turn.token)
+        turn.close('interrupted', 'server_shutdown')
+        s.approvals.expireAll()
+        this.closeRunningTools(s)
+        this.finishTurn(s)
+        turn.detach()
+        s.active = null
+      }
+      if (s.turnTimer) clearTimeout(s.turnTimer)
+      s.turnTimer = null
+      s.driver = null
+      s.abort = null
+      s.busy = false
+      s.changes.release()
     }
   }
 
@@ -496,9 +626,10 @@ export class AgentSessions {
 
   /** 智能体调用画布工具的入口；令牌对应到会话所在的画布和用户 */
   async handleMcp(token: string, body: unknown) {
-    const s = this.byToken.get(token)
-    if (!s) return undefined
-    return s.mcp.handle(body)
+    const binding = this.byToken.get(token)
+    if (!binding || binding.session.active !== binding.turn || binding.turn.state !== 'running')
+      return undefined
+    return binding.session.mcp.handle(body)
   }
 
   // ── 提示词 ──────────────────────────────────────
@@ -628,7 +759,11 @@ export class AgentSessions {
   }
 
   private setRunning(s: Live, running: boolean) {
-    this.emit(s, { type: 'status', status: running ? 'running' : 'idle' })
+    this.emit(s, {
+      type: 'status',
+      status: running ? 'running' : 'idle',
+      lastTurn: this.turns.last(s.row.id),
+    })
   }
 
   private emit(s: Live, e: AgentEvent) {
@@ -645,21 +780,21 @@ export class AgentSessions {
       .run()
   }
 
-  private load(id: string): Live | null {
-    const cached = this.live.get(id)
-    if (cached) return cached
-    const row = this.deps.db.select().from(agentSessions).where(eq(agentSessions.id, id)).get()
-    if (!row) return null
-    const token = randomBytes(24).toString('hex')
+  private configureTurn(s: Live, turn: TurnExecution) {
     const { rooms, runs, host, assets, library } = this.deps
-    let s!: Live
-    const changes = new AgentChanges(row.id, row.canvas_id, row.owner_id, rooms, runs, (ids) =>
-      this.emit(s, { type: 'touch', ids }),
-    )
-    const plan = new AgentPlan((item) => this.push(s, item))
     const approvals = new Approvals((a) => {
-      // 计划的确认单显示成计划卡片，修改方案的显示成方案卡片
-      if (a.tool === PLAN_TOOL) return plan.onApproval(a)
+      if (s.active !== turn) return
+      const prev = turn.facts.approvals.findIndex((item) => item.id === a.id)
+      const item = {
+        id: a.id,
+        tool: a.tool,
+        status: a.status,
+        ...(a.choice === undefined ? {} : { choice: a.choice }),
+      }
+      if (prev < 0) turn.facts.approvals.push(item)
+      else turn.facts.approvals[prev] = item
+      turn.persist()
+      if (a.tool === PLAN_TOOL) return s.plan.onApproval(a)
       if (a.tool === PROPOSE_EDIT) return this.editPlanDecided(s, a)
       this.push(s, {
         id: a.id,
@@ -671,57 +806,107 @@ export class AgentSessions {
         at: Date.now(),
       })
     })
+    s.approvals = approvals
     const tools = agentTools(
       {
-        canvasId: row.canvas_id,
-        ownerId: row.owner_id,
+        canvasId: s.row.canvas_id,
+        ownerId: s.row.owner_id,
         rooms,
         runs,
         host,
         assets,
         library,
         plans: this.deps.plans,
-        origin: changes.origin,
-        onRun: (nodeId, runId) => changes.recordRun(nodeId, runId),
-        onGroup: (groupId) => changes.recordGroup(groupId),
+        origin: s.changes.origin,
+        execution: turn,
+        onRun: (nodeId, runId) => {
+          turn.assertOpen()
+          turn.facts.runs.push({ nodeId, runId })
+          turn.persist()
+          s.changes.recordRun(nodeId, runId)
+        },
+        onGroup: (groupId) => {
+          turn.assertOpen()
+          turn.facts.groups.push(groupId)
+          turn.persist()
+          s.changes.recordGroup(groupId)
+        },
         ui: (action, ids) => {
+          turn.assertOpen()
           if (!s.listeners.size) return false
           this.emit(s, { type: 'ui', action, ids })
           return true
         },
       },
       {
-        changes,
+        changes: s.changes,
         approvals,
         mode: () => s.mode,
-        plan,
-        onEditPlan: (approvalId, p) => this.showEditPlan(s, approvalId, p),
+        plan: s.plan,
+        onEditPlan: (approvalId, p) => {
+          turn.assertOpen()
+          const record = turn.facts.approvals.find((a) => a.id === approvalId)
+          if (record) {
+            record.plan = p
+            turn.persist()
+          }
+          this.showEditPlan(s, approvalId, p)
+        },
       },
     )
-    const mcp = new McpServer(
-      { name: 'plein', version: '0.1.0', instructions: '操作用户当前打开的 Plein 画布' },
+    s.tools = tools
+    s.mcp = new McpServer(
+      {
+        name: 'plein',
+        version: '0.2.0',
+        instructions: '操作本轮绑定的 Plein 画布；轮次结束后凭据失效',
+      },
       tools,
     )
+  }
+
+  private load(id: string): Live | null {
+    const cached = this.live.get(id)
+    if (cached) return cached
+    const row = this.deps.db.select().from(agentSessions).where(eq(agentSessions.id, id)).get()
+    if (!row) return null
+    const { rooms, runs } = this.deps
+    let s!: Live
+    const changes = new AgentChanges(row.id, row.canvas_id, row.owner_id, rooms, runs, (ids) =>
+      this.emit(s, { type: 'touch', ids }),
+    )
+    const plan = new AgentPlan((item) => this.push(s, item))
+    // History loading cannot grant executable tools or credentials.
+    const approvals = new Approvals(() => {})
+    const tools: McpTool[] = []
+    const mcp = new McpServer({ name: 'plein', version: '0.2.0' }, tools)
     let items: AgentItem[] = []
     try {
       items = JSON.parse(row.items) as AgentItem[]
     } catch {}
     // 撤销栈只在内存里：重新加载的会话，之前的改动都不能再撤销
     items = items.map((it) =>
-      it.type === 'changes' && it.undoable
-        ? { ...it, undoable: false }
-        : (it.type === 'approval' || it.type === 'plan' || it.type === 'edit_plan') &&
-            it.status === 'pending'
-          ? { ...it, status: 'expired' }
-          : it,
+      it.type === 'tool' && it.status === 'running'
+        ? {
+            ...it,
+            status: 'error',
+            output: '对话被中断，执行结果需要核对；已有生成任务仍由任务系统管理',
+          }
+        : it.type === 'changes' && it.undoable
+          ? { ...it, undoable: false }
+          : (it.type === 'approval' || it.type === 'plan' || it.type === 'edit_plan') &&
+              it.status === 'pending'
+            ? { ...it, status: 'expired' }
+            : it,
     )
     s = {
+      active: null,
       row,
       items,
       driver: null,
       busy: false,
       turnTimer: null,
-      token,
+      token: '',
       mcp,
       tools,
       abort: null,
@@ -735,12 +920,16 @@ export class AgentSessions {
       releaseTimer: null,
     }
     this.live.set(id, s)
-    this.byToken.set(token, s)
     return s
   }
 
   /** 方案卡片：出现时和方案执行完后刷新 */
   private showEditPlan(s: Live, approvalId: string, plan: EditPlan) {
+    const record = s.active?.facts.approvals.find((a) => a.id === approvalId)
+    if (record) {
+      record.plan = plan
+      s.active!.persist()
+    }
     const a = s.approvals.get(approvalId)
     const prev = s.items.find((i) => i.id === approvalId)
     this.push(s, {
@@ -770,6 +959,9 @@ export class AgentSessions {
     s.changes.release()
     this.live.delete(s.row.id)
     this.byToken.delete(s.token)
+    s.active?.detach()
+    s.active = null
+    if (s.turnTimer) clearTimeout(s.turnTimer)
   }
 
   private summary(row: SessionRow): AgentSessionSummary {
@@ -781,6 +973,7 @@ export class AgentSessions {
       status: this.live.get(row.id)?.busy ? 'running' : 'idle',
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      lastTurn: this.turns.last(row.id),
     }
   }
 

@@ -1,4 +1,4 @@
-import type { AgentSession, AgentSessionSummary } from '@plein/protocol'
+import type { AgentEvent, AgentSession, AgentSessionSummary } from '@plein/protocol'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { api } from '../../api/client'
 import { useAgent } from './store'
@@ -24,11 +24,15 @@ class FakeEventSource {
   static CLOSED = 2
   static all: FakeEventSource[] = []
   closed = false
+  onmessage: ((event: { data: string }) => void) | null = null
   constructor(readonly url: string) {
     FakeEventSource.all.push(this)
   }
   close() {
     this.closed = true
+  }
+  emit(event: AgentEvent) {
+    this.onmessage?.({ data: JSON.stringify(event) })
   }
 }
 
@@ -46,6 +50,42 @@ afterEach(() => {
 })
 
 describe('智能体会话', () => {
+  it('保存轮次清算状态，停止和中断不显示为生成失败；旧事件流不会覆盖当前会话', async () => {
+    vi.mocked(api.agentSession).mockImplementation(async (id) => session(id))
+    vi.mocked(api.agentSessions).mockResolvedValue([])
+    useAgent.setState({ canvasId: 'c1' })
+    await useAgent.getState().select('a')
+    const first = FakeEventSource.all.at(-1)!
+    first.emit({
+      type: 'status',
+      status: 'running',
+      lastTurn: { id: 't1', state: 'running', runs: [], groups: [] },
+    })
+    first.emit({
+      type: 'status',
+      status: 'idle',
+      lastTurn: { id: 't1', state: 'stopped', runs: [{ nodeId: 'n', runId: 'r' }], groups: ['g'] },
+    })
+    expect(useAgent.getState()).toMatchObject({
+      mood: 'idle',
+      session: {
+        status: 'idle',
+        lastTurn: { state: 'stopped', runs: [{ runId: 'r' }], groups: ['g'] },
+      },
+    })
+    await useAgent.getState().select('b')
+    first.emit({ type: 'session', session: session('a') })
+    expect(useAgent.getState().session?.id).toBe('b')
+    const current = FakeEventSource.all.at(-1)!
+    current.emit({
+      type: 'session',
+      session: {
+        ...session('b'),
+        lastTurn: { id: 't2', state: 'interrupted', runs: [], groups: [] },
+      },
+    })
+    expect(useAgent.getState().session?.lastTurn?.state).toBe('interrupted')
+  })
   it('连点两个会话，先点的晚到也不会盖掉后点的', async () => {
     const pending = { a: deferred<AgentSession>(), b: deferred<AgentSession>() }
     vi.mocked(api.agentSession).mockImplementation((id) => pending[id as 'a' | 'b'].promise)

@@ -1,4 +1,10 @@
-import type { AgentAccess, AgentApprovalMode, AgentCli, AgentItem } from '@plein/protocol'
+import type {
+  AgentAccess,
+  AgentApprovalMode,
+  AgentCli,
+  AgentItem,
+  AgentTurnSummary,
+} from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../api/client'
@@ -18,6 +24,8 @@ import { Select } from '../../ui/Select'
 
 const TOOL_LABELS: Record<string, string> = {
   get_canvas: '查看画布',
+  get_canvas_page: '分页查看画布',
+  get_element_field: '读取原文字段',
   get_element: '查看元素',
   find_elements: '查找元素',
   list_node_types: '查看可用节点',
@@ -230,6 +238,7 @@ function AgentPanel({ canvasId }: { canvasId: string | null }) {
             running={running}
             intro={intro}
             worker={worker}
+            lastTurn={session?.lastTurn}
           />
           {error && <p className="px-4 pb-2 text-xs text-danger">{error}</p>}
           <Composer running={running} />
@@ -317,6 +326,7 @@ function Transcript({
   running,
   intro,
   worker,
+  lastTurn,
 }: {
   items: AgentItem[]
   running: boolean
@@ -324,6 +334,7 @@ function Transcript({
   intro: string
   /** 「…正在处理」里的名字 */
   worker: string
+  lastTurn?: AgentTurnSummary
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -333,7 +344,7 @@ function Transcript({
   useEffect(() => {
     const el = ref.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
-  }, [items, running])
+  }, [items, running, lastTurn])
   // oxlint-enable react-hooks/exhaustive-deps
 
   if (items.length === 0) {
@@ -378,6 +389,40 @@ function Transcript({
           {worker} 正在处理…
         </div>
       )}
+      {!running && lastTurn && <TurnStatusCard turn={lastTurn} />}
+    </div>
+  )
+}
+
+function TurnStatusCard({ turn }: { turn: AgentTurnSummary }) {
+  if (turn.state !== 'stopped' && turn.state !== 'interrupted') return null
+  const runs = new Set(turn.runs.map((run) => run.runId)).size
+  const groups = new Set(turn.groups).size
+  return (
+    <div
+      role="status"
+      className="rounded-lg border border-line bg-surface-2 px-3 py-2 text-xs text-ink-muted"
+    >
+      <p className="font-medium text-ink">
+        {turn.state === 'stopped' ? '本轮对话已停止' : '本轮对话被中断'}
+      </p>
+      <p className="mt-1">
+        已完成的改动保留。
+        {runs || groups
+          ? `已提交 ${runs} 次节点运行、${groups} 组运行，状态以任务面板为准。`
+          : '继续前会核对画布和已有任务。'}
+      </p>
+      <p className="mt-1">对话结束不代表生成任务失败，已提交的任务不会自动重发。</p>
+      <button
+        type="button"
+        className="ui-btn ui-btn-secondary ui-btn-sm mt-2"
+        onClick={() => {
+          useCanvas.getState().toggleTasks(true)
+          useAgent.getState().toggle(false)
+        }}
+      >
+        查看任务
+      </button>
     </div>
   )
 }

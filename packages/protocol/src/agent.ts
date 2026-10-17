@@ -147,6 +147,15 @@ export interface AgentSession {
   createdAt: number
   updatedAt: number
   items: AgentItem[]
+  lastTurn?: AgentTurnSummary
+}
+
+export interface AgentTurnSummary {
+  id: string
+  state: 'running' | 'stopping' | 'completed' | 'failed' | 'stopped' | 'interrupted'
+  reason?: string
+  runs: Array<{ nodeId: string; runId: string }>
+  groups: string[]
 }
 
 export type AgentSessionSummary = Omit<AgentSession, 'items'>
@@ -183,7 +192,7 @@ export type DecideAgentApproval = z.infer<typeof DecideAgentApproval>
 export type AgentEvent =
   | { type: 'session'; session: AgentSession }
   | { type: 'item'; item: AgentItem }
-  | { type: 'status'; status: AgentSession['status'] }
+  | { type: 'status'; status: AgentSession['status']; lastTurn?: AgentTurnSummary }
   /** 智能体刚改动了这些元素（画布上短暂高亮） */
   | { type: 'touch'; ids: string[] }
   /** 智能体请用户的画布执行界面动作：平滑定位到元素 / 选中元素 */

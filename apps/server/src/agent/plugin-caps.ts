@@ -36,14 +36,35 @@ export function pluginCapabilities(host: PluginHost, builtin: CapabilityRegistry
       effect: def.effect,
       input: def.input,
       run: async (ctx, input) => {
-        const signal = AbortSignal.timeout(TIMEOUT_MS)
+        ctx.env.execution?.assertOpen()
+        const signal = AbortSignal.any([
+          AbortSignal.timeout(TIMEOUT_MS),
+          ...(ctx.env.execution ? [ctx.env.execution.abort.signal] : []),
+        ])
+        const services = host.services(manifest, { ownerId: ctx.env.ownerId, signal })
+        const guardServices = <T extends object>(service: T): T =>
+          new Proxy(service, {
+            get(target, key) {
+              const member = Reflect.get(target, key, target)
+              return typeof member === 'function'
+                ? (...args: unknown[]) => {
+                    ctx.env.execution?.assertOpen()
+                    return member.apply(target, args)
+                  }
+                : member
+            },
+          })
         const pctx: PluginCapabilityContext = {
           canvasId: ctx.env.canvasId,
           selection: ctx.env.selection ?? viewOf(ctx.env.rooms, ctx.env.canvasId)?.selection ?? [],
           signal,
           call: (name, raw) => callBuiltin(builtin, ctx, def, name, raw),
           log: (message, data) => console.log(`[plugin ${plugin}] ${message}`, data ?? ''),
-          ...host.services(manifest, { ownerId: ctx.env.ownerId, signal }),
+          ...{
+            providers: guardServices(services.providers),
+            assets: guardServices(services.assets),
+            media: guardServices(services.media),
+          },
         }
         try {
           return await def.run(pctx, input)
@@ -65,6 +86,7 @@ async function callBuiltin(
   name: string,
   raw: Record<string, unknown> = {},
 ) {
+  ctx.env.execution?.assertOpen()
   const cap = builtin.get(name)
   if (!cap) throw new CapabilityError(`没有自带能力 ${name}`)
   const parsed = cap.input.safeParse(raw)

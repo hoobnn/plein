@@ -149,7 +149,11 @@ const applyEdit = serverCapability({
           ...(a.only ? { only: a.only } : {}),
           ...(a.skip ? { skip: a.skip } : {}),
         },
-        { write: (fn) => ctx.withDoc(fn), onGroup: (g) => ctx.env.onGroup?.(g) },
+        {
+          write: (fn) => ctx.withDoc(fn),
+          onGroup: (g) => ctx.env.onGroup?.(g),
+          assertOpen: ctx.env.execution?.assertOpen,
+        },
       )
       return { ...planBrief(plan), next: applyNext(plan) }
     } catch (err) {

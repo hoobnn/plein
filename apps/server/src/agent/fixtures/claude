@@ -11,7 +11,7 @@ const say = (text) =>
   out({ type: 'assistant', message: { id: `msg_${Math.random().toString(36).slice(2)}`, content: [{ type: 'text', text }] } })
 const done = (subtype = 'success') => out({ type: 'result', subtype, is_error: subtype !== 'success', result: '' })
 
-let turns = 0
+let turns = process.env.FAKE_CLI_LOG ? fs.readFileSync(process.env.FAKE_CLI_LOG, 'utf8').trim().split('\n').filter(line => Array.isArray(JSON.parse(line))).length - 1 : 0
 let waiting = null
 out({ type: 'system', subtype: 'init' })
 readline.createInterface({ input: process.stdin }).on('line', (line) => {

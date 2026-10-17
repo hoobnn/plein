@@ -45,6 +45,7 @@ export interface ProposeEdit {
 
 /** 执行时写文档、登记运行的方式：智能体会话用自己的 origin，撤销按它归属 */
 export interface EditPlanIO {
+  assertOpen?(): void
   write<T>(fn: (doc: PleinDoc) => T): T
   onGroup?(groupId: string): void
 }
@@ -340,16 +341,19 @@ export class EditPlans {
     const steps = stepsFor(plan, req.scope, req.only, req.skip)
 
     const changed = await this.changed(plan.canvasId, ownerId, [...picked, ...steps])
+    io.assertOpen?.()
     if (changed.length) {
       s.plan = { ...plan, status: 'stale', changed }
       return s.plan
     }
 
+    io.assertOpen?.()
     io.write((doc) => {
       for (const t of picked) setParams(doc, t.nodeId, s.edits.get(t.nodeId)!)
     })
     let groupId: string | undefined
     if (steps.length) {
+      io.assertOpen?.()
       const started = this.runs.runImpact(plan.canvasId, ownerId, {
         nodes: steps.map((st) => st.nodeId),
         force: false,

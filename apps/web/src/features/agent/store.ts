@@ -122,6 +122,7 @@ export const useAgent = create<AgentStore>((set, get) => {
         set({ error: '与智能体的连接已断开，请重新打开对话' })
     }
     es.onmessage = (msg) => {
+      if (source !== es) return
       let e: AgentEvent
       try {
         e = JSON.parse(msg.data) as AgentEvent
@@ -156,13 +157,18 @@ export const useAgent = create<AgentStore>((set, get) => {
         set({ session: { ...cur, items, updatedAt: Date.now() } })
       } else if (e.type === 'status') {
         const wasRunning = cur.status === 'running'
-        set({ session: { ...cur, status: e.status } })
+        set({ session: { ...cur, status: e.status, lastTurn: e.lastTurn ?? cur.lastTurn } })
         if (e.status === 'running') {
           clearTimeout(moodTimer)
           set({ mood: 'working' })
         } else if (wasRunning) {
-          const failed = get().session?.items.at(-1)?.type === 'error'
-          set({ mood: failed ? 'sad' : 'happy', unread: !get().open })
+          const state = e.lastTurn?.state
+          const failed = state ? state === 'failed' : get().session?.items.at(-1)?.type === 'error'
+          set({
+            mood:
+              state === 'stopped' || state === 'interrupted' ? 'idle' : failed ? 'sad' : 'happy',
+            unread: !get().open,
+          })
           clearTimeout(moodTimer)
           moodTimer = setTimeout(() => set({ mood: 'idle' }), 4000)
           void refreshList()

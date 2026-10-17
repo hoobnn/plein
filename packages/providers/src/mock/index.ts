@@ -186,6 +186,32 @@ function fakeOutputs(req: ProviderRequest): ProviderOutput[] {
   switch (req.capability as Capability) {
     case 'text.chat': {
       const input = req.input as CapabilityInput<'text.chat'>
+      if (req.model === 'agent-vision' && input.tools?.length) {
+        const images = input.messages.flatMap((m) =>
+          typeof m.content === 'string' ? [] : m.content.filter((p) => p.type === 'image'),
+        )
+        if (images.length)
+          return [{ type: 'text', text: `【mock vision】实际收到 ${images.length} 张素材图片` }]
+        const result = input.messages.findLast(
+          (m) => m.role === 'tool' && m.toolName === 'view_media',
+        )
+        if (result)
+          return [
+            {
+              type: 'text',
+              text: `【mock vision】${typeof result.content === 'string' ? result.content : ''}`,
+            },
+          ]
+        const assetId = /ASSET=([a-f0-9]{64})/.exec(lastUserText(input))?.[1]
+        if (assetId)
+          return [
+            {
+              type: 'tool_calls',
+              calls: [{ id: 'vision-view', name: 'view_media', arguments: { asset_id: assetId } }],
+            },
+          ]
+        return [{ type: 'text', text: '【mock vision】请提供 ASSET=素材ID' }]
+      }
       if (req.model === 'agent' && input.tools?.length) return mockAgentStep(input)
       const text = lastUserText(input)
       if (input.jsonSchema && 'shots' in ((input.jsonSchema.properties as object) ?? {}))
@@ -303,6 +329,12 @@ export const mockProvider = defineProvider({
   models: [
     // 排第一的是默认对话模型：开发时开箱就能驱动内置智能体，不带工具时和普通对话一样
     { id: 'agent', title: 'Mock 智能体', capabilities: ['text.chat'], features: ['tools'] },
+    {
+      id: 'agent-vision',
+      title: 'Mock 视觉智能体',
+      capabilities: ['text.chat'],
+      features: ['tools', 'vision'],
+    },
     { id: 'chat', title: 'Mock 对话', capabilities: ['text.chat'] },
     {
       id: 'image',
@@ -346,6 +378,16 @@ export const mockProvider = defineProvider({
   async submit(req, ctx) {
     const fail = ctx.settings.failWith
     if (fail !== 'none') throw new ProviderError(fail, `模拟错误：${fail}`)
+    if (req.model === 'agent-vision' && req.capability === 'text.chat') {
+      for (const message of (req.input as CapabilityInput<'text.chat'>).messages)
+        if (Array.isArray(message.content))
+          for (const part of message.content)
+            if (part.type === 'image') {
+              const file = await ctx.files.read(part.image)
+              if (!file.data.length || !file.mime.startsWith('image/'))
+                throw new ProviderError('invalid_input', 'mock vision 图片不可读')
+            }
+    }
     // 局部重绘：像真平台一样校验蒙版和原图同尺寸，结果按原图尺寸出
     if (req.capability === 'image.edit') req = await withEditSize(req, ctx)
     if (ctx.settings.latencyMs === 0) {
