@@ -7,11 +7,22 @@
  * 容器里的 Chromium 用软件光栅（SwiftShader），GPU 帧率不可信；
  * 这里只看主线程：每帧脚本 / 布局 / 样式耗时、长任务、DOM 写入次数，以及打开画布的耗时。
  */
-import { type ChildProcess, spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { type CDPSession, chromium, type Page } from '@playwright/test'
+import { dirname, join } from 'node:path'
+import { type Browser, type CDPSession, chromium, type Page } from '@playwright/test'
+import { createMediaFixture, MEDIA_FIXTURE_VERSION, seedMediaCanvas } from './fixtures'
+import {
+  installFunctionSerialization,
+  installOpenProbe,
+  type OpenSample,
+  readOpenSample,
+  resetOpenProbe,
+  watchAssetRequests,
+} from './probe'
+import { comparePerfReports, type PerfReport } from './report'
 
 /** 被测的仓库根目录：服务端和前端构建都从这里取；对比改动前后时指向另一个检出 */
 const ROOT = process.env.PERF_ROOT ?? join(import.meta.dirname, '../..')
@@ -20,6 +31,28 @@ const BASE = `http://127.0.0.1:${PORT}`
 const N = Number(process.env.PERF_N ?? 1000)
 /** 每个场景跑几轮取中位数 */
 const ROUNDS = Number(process.env.PERF_ROUNDS ?? 3)
+const WEB_DIST = process.env.PERF_DIST ?? join(ROOT, 'apps/web/dist-e2e')
+const failureContext: Record<string, unknown> = {
+  environment: {
+    runtime: `node ${process.versions.node}`,
+    platform: `${process.platform}/${process.arch}`,
+    renderMode: process.env.PERF_RENDERER ?? 'software',
+  },
+  fixture: { version: MEDIA_FIXTURE_VERSION, elements: N },
+  rounds: ROUNDS,
+}
+
+function writeReport(value: unknown) {
+  if (!process.env.PERF_OUTPUT) return
+  mkdirSync(dirname(process.env.PERF_OUTPUT), { recursive: true })
+  writeFileSync(process.env.PERF_OUTPUT, `${JSON.stringify(value, null, 2)}\n`)
+}
+
+function buildFingerprint() {
+  return createHash('sha256')
+    .update(readFileSync(join(WEB_DIST, 'index.html')))
+    .digest('hex')
+}
 
 interface Engine {
   camera: { zoom: number; viewRect: { x: number; y: number; w: number; h: number } }
@@ -57,7 +90,7 @@ async function startServer() {
       ...process.env,
       PLEIN_PORT: String(PORT),
       PLEIN_DATA_DIR: dataDir,
-      PLEIN_WEB_DIST: process.env.PERF_DIST ?? join(ROOT, 'apps/web/dist-e2e'),
+      PLEIN_WEB_DIST: WEB_DIST,
       PLEIN_MOCK_PROVIDER: '1',
       PLEIN_AGENT: '0',
     },
@@ -71,13 +104,28 @@ async function startServer() {
     } catch {}
     await new Promise((r) => setTimeout(r, 500))
   }
+  await stopServer(proc, dataDir)
   throw new Error('服务没有起来')
 }
 
-function stopServer(proc: ChildProcess, dataDir: string) {
+async function stopServer(proc: ChildProcess, dataDir: string) {
+  const stopped = new Promise<void>((resolve) => {
+    if (proc.exitCode !== null || proc.signalCode !== null) return resolve()
+    const timer = setTimeout(() => {
+      try {
+        process.kill(-proc.pid!, 'SIGKILL')
+      } catch {}
+      resolve()
+    }, 3000)
+    proc.once('exit', () => {
+      clearTimeout(timer)
+      resolve()
+    })
+  })
   try {
     process.kill(-proc.pid!, 'SIGTERM')
   } catch {}
+  await stopped
   rmSync(dataDir, { recursive: true, force: true })
 }
 
@@ -278,17 +326,55 @@ async function pickVisible(page: Page, kind: string | null, count = 1) {
 type Scenario = (page: Page) => Promise<void>
 
 async function main() {
+  if (!Number.isSafeInteger(N) || N < 1 || !Number.isSafeInteger(ROUNDS) || ROUNDS < 1)
+    throw new Error('PERF_N and PERF_ROUNDS must be positive integers')
+  const renderMode = process.env.PERF_RENDERER ?? 'software'
+  if (!['software', 'hardware'].includes(renderMode))
+    throw new Error('PERF_RENDERER must be software or hardware')
+  const fingerprint = buildFingerprint()
+  failureContext.buildFingerprint = fingerprint
   const { proc, dataDir } = await startServer()
-  const cleanup = () => stopServer(proc, dataDir)
+  const cleanup = () => {
+    void stopServer(proc, dataDir)
+  }
   process.once('SIGINT', cleanup)
   process.once('SIGTERM', cleanup)
-  const browser = await chromium.launch({
-    executablePath: process.env.PERF_CHROMIUM ?? '/opt/pw-browsers/chromium',
-    args: ['--enable-unsafe-swiftshader'],
-  })
+  let browser: Browser | undefined
+  const viewport = { width: 1440, height: 900 }
+  let browserVersion = ''
+  let renderer = 'unobserved'
   const report: Record<string, Result | number> = {}
+  const openSamples: { cold: OpenSample[]; warm: OpenSample[] } = { cold: [], warm: [] }
+  let fixture: PerfReport['fixture'] = {
+    version: MEDIA_FIXTURE_VERSION,
+    elements: N,
+    imageAssets: 0,
+    videoAssets: 0,
+    audioAssets: 0,
+    serializedBytes: 0,
+  }
+  failureContext.fixture = fixture
+  failureContext.details = { openSamples, interactions: report }
+  const observeRenderer = (page: Page) =>
+    page.evaluate(() => {
+      const canvas = document.querySelector('canvas')
+      const gl = canvas?.getContext('webgl2')
+      if (!gl) throw new Error('Performance fixture requires a WebGL2 canvas')
+      const debug = gl.getExtension('WEBGL_debug_renderer_info')
+      return String(gl.getParameter(debug?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER))
+    })
   try {
-    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+    browser = await chromium.launch({
+      executablePath: process.env.PERF_CHROMIUM,
+      args:
+        renderMode === 'software'
+          ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']
+          : [],
+    })
+    browserVersion = browser.version()
+    Object.assign(failureContext.environment as object, { browserVersion, viewport })
+    const ctx = await browser.newContext({ viewport })
+    await installFunctionSerialization(ctx)
     const page = await ctx.newPage()
     const cdp = await ctx.newCDPSession(page)
     await cdp.send('Performance.enable')
@@ -296,64 +382,69 @@ async function main() {
     // ── 打开画布 ──────────────────────────────────────
     const profileOpen = process.env.PERF_PROFILE === '打开'
     if ((!process.env.PERF_PROFILE || profileOpen) && !process.env.PERF_SKIP_OPEN) {
-      // 用演示数据填一个远端画布，再量冷开、热开（同会话二次打开）到首帧有内容的耗时
-      await page.goto(`${BASE}/#/demo?n=${N}`)
-      await engineReady(page)
-      const data = await page.evaluate(() => {
-        const e = (window as unknown as PerfWindow).__plein!.engine
-        e.selectAll()
-        return e.copy()
+      const media = await createMediaFixture(BASE, {
+        elements: N,
+        imageAssets: Number(process.env.PERF_MEDIA_ASSETS ?? 32),
       })
-      const created = await (
-        await fetch(`${BASE}/api/canvases`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ title: 'perf' }),
-        })
-      ).json()
-      const canvasId = created.id as string
-      await page.goto(`${BASE}/#/c/${canvasId}`)
-      await engineReady(page)
-      await page.evaluate((d) => (window as unknown as PerfWindow).__plein!.engine.paste(d), data)
-      // 等同步到服务端并落盘
-      await page.waitForTimeout(2000)
-
-      const openTimes: number[] = []
-      const warmTimes: number[] = []
+      const { data: _data, ...metadata } = media
+      fixture = metadata
+      failureContext.fixture = fixture
+      const canvasId = await seedMediaCanvas(page, BASE, media)
+      renderer = await observeRenderer(page)
+      Object.assign(failureContext.environment as object, { renderer })
+      await page.goto(`${BASE}/#/`)
       for (let i = 0; i < ROUNDS; i++) {
         // 冷开：全新的浏览器上下文（没有任何本地缓存）
-        const cold = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+        const cold = await browser.newContext({ viewport })
+        await installFunctionSerialization(cold)
         const p = await cold.newPage()
         const pcdp = profileOpen ? await cold.newCDPSession(p) : null
-        if (pcdp) await startProfile(pcdp)
-        const t0 = Date.now()
-        await p.goto(`${BASE}/#/c/${canvasId}`)
-        await engineReady(p)
-        await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))))
-        openTimes.push(Date.now() - t0)
-        if (pcdp) {
-          const { self } = await stopProfile(pcdp)
-          console.log(`冷开 ${openTimes[0]} ms`)
-          printTop(self)
-          return
+        const network = watchAssetRequests(p)
+        try {
+          await installOpenProbe(p, N)
+          if (pcdp) await startProfile(pcdp)
+          await p.goto(`${BASE}/#/c/${canvasId}`)
+          openSamples.cold.push(await readOpenSample(p, network.requests))
+          console.error(`[perf] cold ${i + 1}/${ROUNDS}`, JSON.stringify(openSamples.cold.at(-1)))
+          network.stop()
+          if (pcdp) {
+            const { self } = await stopProfile(pcdp)
+            console.log(`冷开首个预览 ${openSamples.cold[0]!.firstVisiblePreviewMs.toFixed(0)} ms`)
+            printTop(self)
+            return
+          }
+          // Warm route: reuse the browser's HTTP/IndexedDB caches after releasing the old engine.
+          await p.evaluate(() => {
+            location.hash = '#/'
+          })
+          await p.waitForFunction(() => !(window as unknown as PerfWindow).__plein)
+          const warmNetwork = watchAssetRequests(p)
+          try {
+            await resetOpenProbe(p, N)
+            await p.evaluate((id) => {
+              location.hash = `#/c/${id}`
+            }, canvasId)
+            openSamples.warm.push(await readOpenSample(p, warmNetwork.requests))
+            console.error(`[perf] warm ${i + 1}/${ROUNDS}`, JSON.stringify(openSamples.warm.at(-1)))
+          } finally {
+            warmNetwork.stop()
+          }
+        } finally {
+          network.stop()
+          await cold.close()
         }
-        // 热开：回首页再进来（本地已有缓存时可以直接显示）
-        await p.goto(`${BASE}/#/`)
-        await p.waitForTimeout(300)
-        const t1 = Date.now()
-        await p.evaluate((id) => {
-          location.hash = `#/c/${id}`
-        }, canvasId)
-        await engineReady(p)
-        await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))))
-        warmTimes.push(Date.now() - t1)
-        await cold.close()
       }
-      openTimes.sort((a, b) => a - b)
-      warmTimes.sort((a, b) => a - b)
-      report['打开画布（新页面）ms'] = openTimes[Math.floor(openTimes.length / 2)]!
-      report['再次打开画布 ms'] = warmTimes[Math.floor(warmTimes.length / 2)]!
-      console.error('[perf] 打开', openTimes, warmTimes)
+      for (const mode of ['cold', 'warm'] as const) {
+        for (const key of [
+          'engineReadyMs',
+          'firstVisiblePreviewMs',
+          'visibleMediaSettledMs',
+        ] as const) {
+          const values = openSamples[mode].map((sample) => sample[key]).sort((a, b) => a - b)
+          report[`${mode}.${key}`] = values[Math.floor(values.length / 2)]!
+        }
+      }
+      console.error('[perf] 真实媒体冷开/热开', JSON.stringify(report))
     }
 
     // ── 交互场景（演示画布，纯前端）────────────────────
@@ -427,6 +518,8 @@ async function main() {
         await page.goto(`${BASE}/#/`)
         await page.goto(`${BASE}/#/demo?n=${N}`)
         await engineReady(page)
+        if (renderer === 'unobserved') renderer = await observeRenderer(page)
+        Object.assign(failureContext.environment as object, { renderer })
         await page.evaluate(() => (window as unknown as PerfWindow).__plein!.engine.zoomTo(1))
         await page.waitForTimeout(500)
         rs.push(await measure(page, cdp, () => run(page)))
@@ -435,9 +528,19 @@ async function main() {
       report[name] = median(rs)
     }
   } finally {
-    await browser.close()
-    stopServer(proc, dataDir)
+    try {
+      await browser?.close()
+    } finally {
+      await stopServer(proc, dataDir)
+      process.off('SIGINT', cleanup)
+      process.off('SIGTERM', cleanup)
+    }
   }
+
+  if (buildFingerprint() !== fingerprint)
+    throw new Error(
+      'Frontend build changed during measurement; discard this run and repeat against a frozen build',
+    )
 
   console.log(`\n元素数 ${N}，每项 ${ROUNDS} 轮取中位数`)
   for (const [k, v] of Object.entries(report)) {
@@ -448,7 +551,61 @@ async function main() {
           `原生（软件光栅）${v.native.toFixed(1)} ms，长任务 ${v.long.toFixed(0)} ms，DOM 变动 ${v.mutations.toFixed(1)}/帧`,
       )
   }
-  if (process.env.PERF_JSON) console.log(JSON.stringify(report))
+  const metrics: Record<string, number> = {}
+  for (const [name, result] of Object.entries(report)) {
+    if (typeof result === 'number') metrics[name] = result
+    else metrics[`${name}.jsMs`] = result.js
+  }
+  const git = (...args: string[]) =>
+    execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim()
+  const output: PerfReport = {
+    formatVersion: 1,
+    status: 'complete',
+    buildFingerprint: fingerprint,
+    sourceCommit: git('rev-parse', 'HEAD'),
+    sourceDirty: !!git('status', '--porcelain'),
+    measuredAt: new Date().toISOString(),
+    environment: {
+      runtime: `node ${process.versions.node}`,
+      platform: `${process.platform}/${process.arch}`,
+      browserVersion,
+      renderer,
+      renderMode,
+      viewport,
+    },
+    fixture,
+    rounds: ROUNDS,
+    metrics,
+    details: { openSamples, interactions: report },
+  }
+  Object.assign(failureContext, output)
+  const baseline = process.env.PERF_BASELINE
+  const regressions = baseline
+    ? comparePerfReports(output, JSON.parse(readFileSync(baseline, 'utf8')) as PerfReport)
+    : []
+  const complete = { ...output, baselineCompared: !!baseline, regressions }
+  const json = JSON.stringify(complete, null, 2)
+  writeReport(complete)
+  if (process.env.PERF_JSON) console.log(json)
+  if (regressions.length) {
+    console.error('Performance regression:', JSON.stringify(regressions))
+    process.exitCode = 1
+  }
 }
 
-await main()
+await main().catch((error: unknown) => {
+  const failure = {
+    ...failureContext,
+    formatVersion: 1,
+    status: 'failed',
+    measuredAt: new Date().toISOString(),
+    error:
+      error instanceof Error
+        ? { name: error.name, message: error.message }
+        : { message: String(error) },
+  }
+  writeReport(failure)
+  console.error(error)
+  if (process.env.PERF_JSON) console.log(JSON.stringify(failure, null, 2))
+  process.exitCode = 1
+})

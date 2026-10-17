@@ -31,7 +31,7 @@
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm smoke",
     "e2e": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.config.ts",
     "e2e:real": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.l4.config.ts",
-    "perf": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && node --experimental-strip-types e2e/perf/bench.ts"
+    "perf": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && pnpm --filter @plein/server exec node --import tsx ../../e2e/perf/bench.ts"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.3",

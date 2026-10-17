@@ -178,16 +178,18 @@ async function syncPlan(page: Page, op: Op) {
 
 test.describe.configure({ mode: 'serial' })
 
-test('分镜表批量按钮重跑', async ({ page }) => {
-  const row = await measure(page, '分镜表批量按钮', async ({ op, openBoard }) => {
+test('分镜表选中第三镜头后批量重跑', async ({ page }) => {
+  const row = await measure(page, '分镜表选中第三镜头后批量按钮', async ({ op, openBoard }) => {
     const dialog = await openBoard()
     await editShot3(dialog, op)
     await op(() => dialog.getByRole('button', { name: /^查看差异/ }).click())
     await syncPlan(page, op)
+    await op(() => dialog.getByRole('checkbox', { name: '选择镜头 3', exact: true }).check())
     for (const role of ['批量出分镜图', '批量生成视频', '批量配音'])
       await op(() => runBatch(page, dialog, role))
   })
   expect(row.replaced).toContain('image')
+  expect(row.touched).toBe(0)
 })
 
 test('右键只跑第三镜头', async ({ page }) => {
