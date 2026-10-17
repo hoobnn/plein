@@ -129,6 +129,7 @@ async function boot() {
   app.setAboutPanelOptions({
     applicationName: 'Plein',
     applicationVersion: app.getVersion(),
+    credits: '开源 AI 无限画布，让故事在这里展开',
     iconPath: appIconPath(),
   })
   installMenu(showWindow, setupUpdater(() => window).check)

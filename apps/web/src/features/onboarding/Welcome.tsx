@@ -86,7 +86,7 @@ function WelcomeDialog({ onClose }: { onClose(): void }) {
         <div className="min-w-0 flex-1">
           <h2 className="text-lg font-semibold">欢迎使用 Plein</h2>
           <p className="mt-0.5 text-sm text-ink-subtle">
-            在一张无限画布上，把创意一步步做成带字幕的短片。
+            从一句创意开始，剧本、分镜、镜头与配音在画布上铺开，和 AI Agent 一起完成你的作品。
           </p>
         </div>
         <button
