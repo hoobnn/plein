@@ -21,7 +21,7 @@ import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { canvasTheme, useTheme } from '../stores/theme'
 import { demoAssetUrls, releaseDemoAssetUrls, seedDemo } from './demo'
-import { importFiles, importText } from './import'
+import { importFiles, importText, revealImports } from './import'
 import { beginImport } from './importProgress'
 import { localCacheName, watchCacheWrites } from './localCache'
 import { abortGroupRuns } from '../features/runs/groupRuns'
@@ -345,6 +345,7 @@ function attachImport(engine: Engine, host: HTMLElement) {
     try {
       const res = await importFiles(engine, files, at, batch.progress, { signal: batch.signal })
       if (disposed) return
+      revealImports(engine, res.created)
       if (res.skipped.length) {
         const shown = res.skipped.slice(0, 3).map((s) => `${s.name}（${s.reason}）`)
         notes.push(

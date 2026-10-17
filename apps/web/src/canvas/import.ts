@@ -144,6 +144,31 @@ export function placeImports(engine: Engine, list: NewElement[]): string[] {
   return created
 }
 
+/** 成功放入后保留选择；新内容超出可见区域时让用户立即找到它。参考图上传不调用此入口。 */
+export function revealImports(engine: Engine, ids: string[]) {
+  if (!ids.length) return
+  engine.doc.flush()
+  engine.selection.set(ids)
+  engine.setTool('select')
+  const rects = ids.map((id) => engine.doc.worldRect(id)).filter((r) => !!r)
+  if (!rects.length) return
+  const x = Math.min(...rects.map((r) => r.x))
+  const y = Math.min(...rects.map((r) => r.y))
+  const w = Math.max(...rects.map((r) => r.x + r.w)) - x
+  const h = Math.max(...rects.map((r) => r.y + r.h)) - y
+  const camera = engine.camera
+  const tl = camera.worldToScreen(x, y)
+  const br = camera.worldToScreen(x + w, y + h)
+  const left = camera.insets.left + 12
+  const right = camera.width - camera.insets.right - 12
+  const top = Math.max(64, camera.insets.top)
+  const bottom = camera.height - Math.max(64, camera.insets.bottom)
+  if (tl.x >= left && br.x <= right && tl.y >= top && br.y <= bottom) return
+  if (w * camera.zoom <= right - left && h * camera.zoom <= bottom - top)
+    camera.centerOn(x + w / 2, y + h / 2)
+  else engine.zoomToFit(ids)
+}
+
 /** 粘贴的纯文本建成 Markdown 元素 */
 export function importText(engine: Engine, text: string, at: { x: number; y: number }) {
   const [w, h] = markdownSize(text)

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { downloadAsset } from '../canvas/grid'
 import { useDocVersion } from '../canvas/hooks'
-import { elementFor, placeImports } from '../canvas/import'
+import { elementFor, placeImports, revealImports } from '../canvas/import'
 import { beginImport } from '../canvas/importProgress'
 import { loadAssetMeta } from '../stores/assetMeta'
 import { useCanvas } from '../stores/canvas'
@@ -168,7 +168,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
         y += rowH[ri]! + GAP
       })
       const created = placeImports(engine, list)
-      engine.selection.set(created)
+      revealImports(engine, created)
       close()
       notes.push(`已放到画布上：${created.length} 个素材`)
     } catch (err) {
