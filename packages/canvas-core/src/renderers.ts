@@ -180,14 +180,17 @@ const mediaRenderer: ElementRenderer = (el, ctx) => {
     if (texture) {
       // 纹理按形状包围盒铺满（textureSpace: local），省掉昂贵的遮罩
       bg.roundRect(0, 0, w, h, RADIUS).fill({ texture, textureSpace: 'local' })
-    } else {
-      bg.stroke({ color: theme.line.color, alpha: theme.line.alpha, width: 1 })
-      if (high)
-        bg.roundRect(12, h - 16, Math.min(40, w - 24), 3, 1.5).fill({
-          color: theme.kinds[kind],
-          alpha: 0.8,
-        })
-    }
+    } else if (high)
+      bg.roundRect(12, h - 16, Math.min(40, w - 24), 3, 1.5).fill({
+        color: theme.kinds[kind],
+        alpha: 0.8,
+      })
+    // 描边在预览之上：浅色图片和透明素材也保留与其他卡片一致的边界。
+    bg.roundRect(0, 0, w, h, RADIUS).stroke({
+      color: theme.line.color,
+      alpha: theme.line.alpha,
+      width: 1,
+    })
     glyph.clear()
     if (kind === 'video' && high && texture) {
       const r = Math.min(24, w / 6, h / 6)
@@ -308,12 +311,6 @@ const nodeRenderer: ElementRenderer = (el, ctx) => {
     const accent = (status && theme.status[status]) ?? theme.kinds.node
     const loud = status === 'running' || status === 'failed' || status === 'queued'
     bg.clear().roundRect(0, 0, w, h, RADIUS).fill({ color: theme.surface })
-    if (!texture || loud)
-      bg.stroke({
-        color: loud ? accent : theme.line.color,
-        alpha: loud ? 0.9 : theme.line.alpha,
-        width: loud ? 1.5 : 1,
-      })
     if (texture && w > 0 && h > 0) {
       const k = Math.min(w / texture.width, h / texture.height)
       const tw = texture.width * k
@@ -330,6 +327,11 @@ const nodeRenderer: ElementRenderer = (el, ctx) => {
       // 缩小时用色条示意节点类型和状态
       bg.roundRect(12, 12, Math.min(48, w - 24), 6, 3).fill({ color: accent, alpha: 0.8 })
     }
+    bg.roundRect(0, 0, w, h, RADIUS).stroke({
+      color: loud ? accent : theme.line.color,
+      alpha: loud ? 0.9 : theme.line.alpha,
+      width: loud ? 1.5 : 1,
+    })
   }
 
   const view: ElementView = {
