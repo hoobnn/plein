@@ -179,3 +179,75 @@ test('连续粘贴普通文本避让已有内容，每次粘贴独立撤销', as
   await page.getByRole('button', { name: '重做', exact: true }).click()
   expect(await content()).toEqual(['第一段粘贴正文', '第二段粘贴正文'])
 })
+
+test('上传期间切换画布不会把迟到结果写入已关闭文档或清掉新画布进度', async ({ page }) => {
+  await newProject(page)
+  const oldDoc = await page.evaluateHandle(() => window.__plein.engine.doc)
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  const releases: Array<() => void> = []
+  let completed = 0
+  await page.route('**/api/assets', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue()
+    const response = await route.fetch()
+    await new Promise<void>((resolve) => releases.push(resolve))
+    await route.fulfill({ response })
+    completed++
+  })
+  const upload = async () => {
+    const chooser = page.waitForEvent('filechooser')
+    await page.getByRole('button', { name: '上传', exact: true }).click()
+    await (await chooser).setFiles(join(dir, 'still.png'))
+  }
+  await upload()
+  await expect.poll(() => releases.length).toBe(1)
+  await page.getByRole('button', { name: '切换画布' }).click()
+  await page.getByRole('button', { name: '新建画布' }).click()
+  await page.getByRole('dialog').getByRole('textbox').fill('上传切换边界')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: '切换画布' })).toHaveText('上传切换边界')
+  await waitEngine(page)
+  await upload()
+  await expect.poll(() => releases.length).toBe(2)
+  releases[0]!()
+  await expect.poll(() => completed).toBe(1)
+  await expect(page.getByRole('status')).toContainText('正在导入 0/1')
+  expect(await oldDoc.evaluate((doc) => [...doc.elements()].length)).toBe(0)
+  expect(await elements(page)).toEqual([])
+  releases[1]!()
+  await expect.poll(async () => (await elements(page)).length).toBe(1)
+  expect(errors).toEqual([])
+  await oldDoc.dispose()
+})
+
+test('并发导入合并进度，先失败的批次提示不会在另一批完成前过期', async ({ page }) => {
+  await newProject(page)
+  await page.clock.install()
+  const releases: Array<() => void> = []
+  await page.route('**/api/assets', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue()
+    const index = releases.length
+    await new Promise<void>((resolve) => releases.push(resolve))
+    if (index === 0)
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: '第一批上传失败' }),
+      })
+    else await route.continue()
+  })
+  for (let n = 0; n < 2; n++) {
+    const chooser = page.waitForEvent('filechooser')
+    await page.getByRole('button', { name: '上传', exact: true }).click()
+    await (await chooser).setFiles(join(dir, 'still.png'))
+    await expect.poll(() => releases.length).toBe(n + 1)
+  }
+  await expect(page.getByRole('status')).toContainText('正在导入 0/2')
+  releases[0]!()
+  await expect(page.getByRole('status')).toContainText('正在导入 1/2')
+  await page.clock.fastForward(5000)
+  await expect(page.getByRole('status')).toContainText('正在导入 1/2')
+  releases[1]!()
+  await expect.poll(async () => (await elements(page)).length).toBe(1)
+  await expect(page.getByRole('status')).toContainText('第一批上传失败')
+})

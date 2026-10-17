@@ -338,19 +338,54 @@ function attachImport(
     notify(msg: string | null): void
   },
 ) {
+  let disposed = false
+  const batches = new Map<
+    AbortController,
+    { done: number; total: number; finished: boolean; notes: string[] }
+  >()
+  const progress = () => {
+    if (disposed) return
+    if ([...batches.values()].every((b) => b.finished)) {
+      const notes = [...batches.values()].flatMap((b) => b.notes)
+      batches.clear()
+      if (notes.length) ui.notify(notes.join('；'))
+    }
+    const values = [...batches.values()]
+    ui.setImporting(
+      values.length
+        ? values.reduce((sum, b) => ({ done: sum.done + b.done, total: sum.total + b.total }), {
+            done: 0,
+            total: 0,
+          })
+        : null,
+    )
+  }
   const center = () => {
     const r = engine.camera.viewRect
     return { x: r.x + r.w / 2, y: r.y + r.h / 2 }
   }
   const run = async (all: File[], at: { x: number; y: number }) => {
-    if (!all.length) return
+    if (!all.length || disposed) return
     const files = all.slice(0, MAX_IMPORT_FILES)
-    ui.setImporting({ done: 0, total: files.length })
+    const controller = new AbortController()
+    const batch = { done: 0, total: files.length, finished: false, notes: [] as string[] }
+    batches.set(controller, batch)
+    ui.notify(null)
+    progress()
     try {
-      const res = await importFiles(engine, files, at, (done, total) =>
-        ui.setImporting({ done, total }),
+      const res = await importFiles(
+        engine,
+        files,
+        at,
+        (done, total) => {
+          batch.done = done
+          batch.total = total
+          progress()
+        },
+        { signal: controller.signal },
       )
-      const notes: string[] = []
+      if (disposed) return
+      const notes = batch.notes
       if (res.skipped.length) {
         const shown = res.skipped.slice(0, 3).map((s) => `${s.name}（${s.reason}）`)
         notes.push(
@@ -361,9 +396,12 @@ function attachImport(
         notes.push(
           `一次最多导入 ${MAX_IMPORT_FILES} 个文件，其余 ${all.length - files.length} 个没有导入`,
         )
-      if (notes.length) ui.notify(notes.join('；'))
+    } catch (error) {
+      if (!disposed && !controller.signal.aborted)
+        batch.notes.push(error instanceof Error ? error.message : '素材导入失败')
     } finally {
-      ui.setImporting(null)
+      batch.finished = true
+      progress()
     }
   }
 
@@ -381,7 +419,7 @@ function attachImport(
   }
   const onPaste = (e: ClipboardEvent) => {
     // 引擎已处理 plein 自己的剪贴板格式
-    if (e.defaultPrevented || isEditableTarget(e.target)) return
+    if (e.defaultPrevented || isEditableTarget(e.target) || engine.doc.readOnly) return
     const files = [...(e.clipboardData?.files ?? [])]
     if (files.length) {
       e.preventDefault()
@@ -401,6 +439,10 @@ function attachImport(
   window.addEventListener('paste', onPaste)
   window.addEventListener('plein:import', onImportRequest)
   return () => {
+    disposed = true
+    for (const controller of batches.keys()) controller.abort()
+    batches.clear()
+    ui.setImporting(null)
     host.removeEventListener('dragover', onDragOver)
     host.removeEventListener('drop', onDrop)
     window.removeEventListener('paste', onPaste)

@@ -67,6 +67,7 @@ export function Inputs({
         (done, total) => {
           if (useCanvas.getState().engine === engine) setImporting({ done, total })
         },
+        { canCommit: () => useCanvas.getState().engine === engine },
       )
       if (useCanvas.getState().engine !== engine || !engine.doc.has(el.id)) return
       if (!port.multiple && !target?.edgeId && inputEdges(engine.doc, el.id, port.id).length) {

@@ -73,17 +73,22 @@ export async function importFiles(
   files: File[],
   at: { x: number; y: number },
   onProgress?: (done: number, total: number) => void,
+  options: { signal?: AbortSignal; canCommit?: () => boolean } = {},
 ): Promise<ImportResult> {
+  const { signal, canCommit } = options
+  signal?.throwIfAborted()
+  if (engine.doc.readOnly) throw new Error('当前画布只读，无法导入素材')
   const skipped: ImportResult['skipped'] = []
   let done = 0
   const inputs = await mapLimit(files, CONCURRENCY, async (file) => {
     try {
+      signal?.throwIfAborted()
       if (isTextFile(file)) {
         const text = await file.text()
         const [w, h] = markdownSize(text)
         return { kind: 'markdown', w, h, text, name: file.name } as Omit<NewElement, 'x' | 'y'>
       }
-      const asset = await api.upload(file)
+      const asset = await api.upload(file, signal)
       const input = elementFor(asset)
       if (!input) skipped.push({ name: file.name, reason: '暂不支持这种文件' })
       return input
@@ -91,10 +96,13 @@ export async function importFiles(
       skipped.push({ name: file.name, reason: (err as Error).message })
       return null
     } finally {
-      onProgress?.(++done, files.length)
+      done++
+      if (!signal?.aborted) onProgress?.(done, files.length)
     }
   })
 
+  signal?.throwIfAborted()
+  if (canCommit && !canCommit()) throw new DOMException('目标画布已关闭', 'AbortError')
   const valid = inputs.filter((input) => input !== null)
   if (!valid.length) return { created: [], skipped }
   // 整批找空位，保留文件顺序及间距，不让后上传完成的文件覆盖已存在的内容。
