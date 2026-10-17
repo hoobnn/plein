@@ -537,6 +537,17 @@
   height: 100%;
   object-fit: cover;
 }
+.lib-cover-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-subtle);
+  font-size: 10px;
+}
+.lib-timeline-thumb .lib-cover-error > span {
+  display: none;
+}
 .lib-lane-period:hover .lib-timeline-thumb {
   transform: scale(1.05);
 }

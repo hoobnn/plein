@@ -14,7 +14,15 @@ import {
   VOICE_STATE_PRESETS,
   type VoiceState,
 } from '@plein/nodes'
-import { createContext, useContext, useEffect, useId, useRef, useState } from 'react'
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react'
 import type { CanvasMedia } from './canvas'
 import { Icon, type IconName } from '../../ui/icons'
 import { SlideSwap } from '../../ui/Slide'
@@ -26,6 +34,51 @@ export const ProfileUploadContext = createContext<{
   pending: boolean
   onBusyChange(busy: boolean): void
 }>({ pending: false, onBusyChange: () => {} })
+
+const ImageAttempts = createContext<{
+  attempts: Record<string, number>
+  retry(id: string): void
+}>({ attempts: {}, retry: () => {} })
+
+export function ProfileImageScope({ children }: { children: ReactNode }) {
+  const [attempts, setAttempts] = useState<Record<string, number>>({})
+  return (
+    <ImageAttempts.Provider
+      value={{
+        attempts,
+        retry: (id) => setAttempts((old) => ({ ...old, [id]: (old[id] ?? 0) + 1 })),
+      }}
+    >
+      {children}
+    </ImageAttempts.Provider>
+  )
+}
+
+function ProfileCover({ id }: { id: string }) {
+  const { attempts } = useContext(ImageAttempts)
+  const token = `${id}:${attempts[id] ?? 0}`
+  const current = useRef(token)
+  current.current = token
+  const [failed, setFailed] = useState<string>()
+  const hint = '参考图加载失败，进入编辑后重试'
+  return failed === token ? (
+    <span role="img" aria-label={hint} title={hint} className="lib-cover-error">
+      <Icon name="warning" size={16} />
+      <span aria-hidden="true">加载失败</span>
+    </span>
+  ) : (
+    <img
+      key={token}
+      src={thumb(id)}
+      alt=""
+      loading="lazy"
+      draggable={false}
+      onError={() => {
+        if (current.current === token) setFailed(token)
+      }}
+    />
+  )
+}
 
 /**
  * 角色档案的编辑：
@@ -183,7 +236,7 @@ export function PeriodsTab({
               >
                 <span className="lib-timeline-thumb">
                   {p.images[0] ? (
-                    <img src={thumb(p.images[0])} alt="" draggable={false} />
+                    <ProfileCover id={p.images[0]} />
                   ) : (
                     <Icon name="period" size={16} />
                   )}
@@ -211,7 +264,7 @@ export function PeriodsTab({
                     >
                       <span className="lib-look-cover">
                         {o.images[0] ? (
-                          <img src={thumb(o.images[0])} alt="" loading="lazy" draggable={false} />
+                          <ProfileCover id={o.images[0]} />
                         ) : (
                           <Icon name="outfit" size={20} />
                         )}
@@ -646,11 +699,7 @@ function LookGrid({
               className="lib-look"
             >
               <span className="lib-look-cover">
-                {l.images[0] ? (
-                  <img src={thumb(l.images[0])} alt="" loading="lazy" draggable={false} />
-                ) : (
-                  <Icon name={icon} size={20} />
-                )}
+                {l.images[0] ? <ProfileCover id={l.images[0]} /> : <Icon name={icon} size={20} />}
                 {l.images.length > 1 && (
                   <span className="ui-badge lib-look-count">{l.images.length}</span>
                 )}
@@ -793,27 +842,25 @@ function NameField({
 }
 
 function ProfileImage({ id, hero, onRemove }: { id: string; hero: HeroControl; onRemove(): void }) {
-  const [attempt, setAttempt] = useState(0)
-  const [failed, setFailed] = useState(false)
-  const current = useRef(0)
+  const { attempts, retry } = useContext(ImageAttempts)
+  const attempt = attempts[id] ?? 0
+  const [failed, setFailed] = useState<number>()
+  const current = useRef(attempt)
+  current.current = attempt
   return (
     <div
       className="lib-strip-tile group"
       onPointerEnter={() => hero.onPreview(id)}
       onPointerLeave={() => hero.onPreview(null)}
     >
-      {failed ? (
+      {failed === attempt ? (
         <div className="flex h-full flex-col items-center justify-end pb-1 text-xs text-ink-subtle">
           <span role="status">加载失败</span>
           <button
             type="button"
             aria-label="重新加载图片"
             className="ui-btn ui-btn-quiet ui-btn-xs"
-            onClick={() => {
-              current.current += 1
-              setAttempt(current.current)
-              setFailed(false)
-            }}
+            onClick={() => retry(id)}
           >
             <Icon name="retry" size={12} />
             重试
@@ -826,7 +873,7 @@ function ProfileImage({ id, hero, onRemove }: { id: string; hero: HeroControl; o
           alt=""
           draggable={false}
           onError={() => {
-            if (attempt === current.current) setFailed(true)
+            if (attempt === current.current) setFailed(attempt)
           }}
         />
       )}

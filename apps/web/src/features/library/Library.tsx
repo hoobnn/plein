@@ -42,6 +42,7 @@ import {
   ExpressionsTab,
   type HeroControl,
   PeriodsTab,
+  ProfileImageScope,
   ProfileUploadContext,
 } from './LibraryProfile'
 import { VoicePicker } from '../../ui/VoicePicker'
@@ -958,56 +959,58 @@ function Editor({
               <ProfileUploadContext.Provider
                 value={{ pending: busy || pendingUploads > 0, onBusyChange: trackUpload }}
               >
-                <div className="lib-profile-tabs flex-none">
-                  <Segmented
-                    label="档案分页"
-                    options={tabs.map((t) => ({
-                      value: t.value,
-                      label: t.label,
-                      icon: t.icon,
-                      extra: t.extra,
-                    }))}
-                    value={tab}
-                    onChange={(t) => {
-                      setTab(t)
-                      setPin({ id: null })
-                    }}
-                  />
-                </div>
-                <SlideSwap index={tabIndex}>
-                  {tab === 'assets' ? (
-                    <CharacterAssets
-                      images={draft.images}
-                      media={media}
-                      selected={shown}
-                      onSelect={hero.onPin}
-                      onChange={(update) => {
-                        setDraft((d) => ({ ...d, images: update(d.images) }))
-                        setReferenceRevision((revision) => revision + 1)
+                <ProfileImageScope>
+                  <div className="lib-profile-tabs flex-none">
+                    <Segmented
+                      label="档案分页"
+                      options={tabs.map((t) => ({
+                        value: t.value,
+                        label: t.label,
+                        icon: t.icon,
+                        extra: t.extra,
+                      }))}
+                      value={tab}
+                      onChange={(t) => {
+                        setTab(t)
+                        setPin({ id: null })
                       }}
-                      busy={busy || pendingUploads > 0}
-                      onBusyChange={trackUpload}
                     />
-                  ) : tab === 'basics' ? (
-                    basics
-                  ) : tab === 'periods' ? (
-                    <PeriodsTab
-                      name={draft.name.trim() || kind.title}
-                      profile={draft.profile}
-                      onChange={(profile) => patch({ profile })}
-                      media={media}
-                      hero={hero}
-                    />
-                  ) : (
-                    <ExpressionsTab
-                      profile={draft.profile}
-                      onChange={(profile) => patch({ profile })}
-                      media={media}
-                      hero={hero}
-                      sheet={null}
-                    />
-                  )}
-                </SlideSwap>
+                  </div>
+                  <SlideSwap index={tabIndex}>
+                    {tab === 'assets' ? (
+                      <CharacterAssets
+                        images={draft.images}
+                        media={media}
+                        selected={shown}
+                        onSelect={hero.onPin}
+                        onChange={(update) => {
+                          setDraft((d) => ({ ...d, images: update(d.images) }))
+                          setReferenceRevision((revision) => revision + 1)
+                        }}
+                        busy={busy || pendingUploads > 0}
+                        onBusyChange={trackUpload}
+                      />
+                    ) : tab === 'basics' ? (
+                      basics
+                    ) : tab === 'periods' ? (
+                      <PeriodsTab
+                        name={draft.name.trim() || kind.title}
+                        profile={draft.profile}
+                        onChange={(profile) => patch({ profile })}
+                        media={media}
+                        hero={hero}
+                      />
+                    ) : (
+                      <ExpressionsTab
+                        profile={draft.profile}
+                        onChange={(profile) => patch({ profile })}
+                        media={media}
+                        hero={hero}
+                        sheet={null}
+                      />
+                    )}
+                  </SlideSwap>
+                </ProfileImageScope>
               </ProfileUploadContext.Provider>
             </fieldset>
           ) : (

@@ -284,7 +284,7 @@ test('档案名称校验、Esc 取消与自定义名字退出只影响当前输�
 })
 
 for (const role of ['时期', '服饰', '表情'] as const) {
-  test(`档案${role}参考缩略图失败可重试，恢复不改变档案`, async ({ page }) => {
+  test(`档案${role}缩略图与封面同步恢复，移除后更新封面`, async ({ page }) => {
     await newProject(page)
     const ids = await uploadedImages(page, 2)
     const response = await page.request.post('/api/library', {
@@ -337,23 +337,30 @@ for (const role of ['时期', '服饰', '表情'] as const) {
       .getByRole('group', { name: '档案分页' })
       .getByRole('button', { name: role === '表情' ? /^表情/ : /^时期与服饰/ })
       .click()
-    if (role === '服饰')
-      await panel.getByRole('button', { name: '少年 · 校服', exact: true }).click()
-    if (role === '表情')
-      await panel.getByRole('button', { name: '编辑「开心」', exact: true }).click()
+    const entry =
+      role === '时期'
+        ? panel.locator('.lib-lane-period').first()
+        : panel.getByRole('button', {
+            name: role === '服饰' ? '少年 · 校服' : '编辑「开心」',
+            exact: true,
+          })
+    const cover = entry.locator(role === '时期' ? '.lib-timeline-thumb' : '.lib-look-cover')
+    await expect(cover.getByRole('img', { name: '参考图加载失败，进入编辑后重试' })).toBeVisible()
+    await entry.focus()
+    await entry.press('Enter')
     const strip = panel.locator('.lib-look-editor .lib-strip-tile')
     const broken = strip.first()
     await expect(broken.getByText('加载失败', { exact: true })).toBeVisible()
     const retry = broken.getByRole('button', { name: '重新加载图片', exact: true })
     await retry.click()
     await expect(retry).toBeVisible()
-    if (role === '时期') {
-      await broken.hover()
-      await panel.screenshot({
-        path: test.info().outputPath('profile-image-failed.png'),
-        animations: 'disabled',
-      })
-    }
+    await panel.locator('.lib-editor-content').evaluate((node) => {
+      node.scrollTop = 0
+    })
+    await panel.screenshot({
+      path: test.info().outputPath('profile-cover-failed.png'),
+      animations: 'disabled',
+    })
     await expect(strip.nth(1).locator('img')).toHaveAttribute('src', new RegExp(ids[1]!))
     fail = false
     await retry.click()
@@ -365,8 +372,33 @@ for (const role of ['时期', '服饰', '表情'] as const) {
       )
       .toBe(true)
     await expect(retry).toHaveCount(0)
+    await expect
+      .poll(() =>
+        cover
+          .locator('img')
+          .evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
+      )
+      .toBe(true)
     await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
     expect((await readItem(page, item.id)).profile).toEqual(item.profile)
+    await broken.hover()
+    await broken.getByRole('button', { name: '移除', exact: true }).click()
+    await expect(cover.locator('img')).toHaveAttribute('src', new RegExp(ids[1]!))
+    await expect
+      .poll(() =>
+        cover
+          .locator('img')
+          .evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
+      )
+      .toBe(true)
+    await save(panel)
+    expect((await readItem(page, item.id)).profile).toMatchObject(
+      role === '时期'
+        ? { periods: [{ images: [ids[1]] }] }
+        : role === '服饰'
+          ? { periods: [{ outfits: [{ images: [ids[1]] }] }] }
+          : { expressions: [{ images: [ids[1]] }] },
+    )
     if (role === '时期')
       await panel.screenshot({
         path: test.info().outputPath('profile-image-recovered.png'),
