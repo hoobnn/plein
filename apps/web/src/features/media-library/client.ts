@@ -1,9 +1,21 @@
 import type { MediaLibraryPage, MediaSourcesPage } from '@plein/protocol'
 import { ApiError, api } from '../../api/client'
 
-/** 与主客户端共用 ApiError 和登录失效处理；仅由两个按需加载的素材面板使用。 */
+/** 素材与检查点共用 ApiError、登录失效及网络错误提示。 */
 export async function mediaRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, { credentials: 'same-origin', ...init })
+  let response: Response
+  try {
+    response = await fetch(path, { credentials: 'same-origin', ...init })
+  } catch (reason) {
+    if (reason instanceof TypeError && !init.signal?.aborted) {
+      const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+      throw new TypeError(
+        offline ? '当前离线，请恢复网络连接。' : '无法连接服务，请检查网络或本地服务状态。',
+        { cause: reason },
+      )
+    }
+    throw reason
+  }
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
       error?: string

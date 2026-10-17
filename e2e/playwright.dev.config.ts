@@ -16,6 +16,7 @@ export default defineConfig({
     'viewer-media.spec.ts',
     'media-pagination.spec.ts',
     'media-search.spec.ts',
+    'media-offline.spec.ts',
   ],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },
   webServer: [

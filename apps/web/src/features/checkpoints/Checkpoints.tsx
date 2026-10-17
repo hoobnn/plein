@@ -41,6 +41,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
     [loading, setLoading] = useState(false),
     [error, setError] = useState(''),
     [revision, setRevision] = useState(0)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [name, setName] = useState(''),
     [saving, setSaving] = useState(false),
     [waiting, setWaiting] = useState(false),
@@ -59,6 +60,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
+    setLoadFailed(false)
     setError('')
     setPage({ items: [], nextCursor: null })
     checkpointApi
@@ -68,7 +70,10 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
           if (!controller.signal.aborted) setPage(result)
         },
         (reason: Error) => {
-          if (!controller.signal.aborted) setError(reason.message)
+          if (!controller.signal.aborted) {
+            setLoadFailed(true)
+            setError(reason.message)
+          }
         },
       )
       .finally(() => {
@@ -250,11 +255,15 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
           {!page.items.length ? (
             <EmptyState
               icon="history"
-              title={loading ? '正在读取检查点…' : '还没有命名检查点'}
+              title={
+                loading ? '正在读取检查点…' : loadFailed ? '检查点读取失败' : '还没有命名检查点'
+              }
               hint={
-                canSave
-                  ? '给当前画布保存一个名字，之后可以恢复为独立新画布。'
-                  : '打开画布后可以保存检查点。'
+                loadFailed
+                  ? '恢复连接或服务后，点击上方刷新。'
+                  : canSave
+                    ? '给当前画布保存一个名字，之后可以恢复为独立新画布。'
+                    : '打开画布后可以保存检查点。'
               }
             />
           ) : (
