@@ -1064,6 +1064,7 @@ function Hero({
   const [layers, setLayers] = useState<Array<{ id: string | null; key: number }>>([
     { id: assetId, key: 0 },
   ])
+  const [failedKey, setFailedKey] = useState(-1)
   const top = layers[layers.length - 1]!
   if (top.id !== assetId) setLayers([top, { id: assetId, key: top.key + 1 }])
   return (
@@ -1077,6 +1078,7 @@ function Hero({
             draggable={false}
             data-enter={i === layers.length - 1 && layers.length > 1 ? '' : undefined}
             onAnimationEnd={() => setLayers((ls) => ls.slice(-1))}
+            onError={() => setFailedKey((previous) => Math.max(previous, l.key))}
           />
         ) : (
           <span
@@ -1091,6 +1093,20 @@ function Hero({
               : '还没有参考图'}
           </span>
         ),
+      )}
+      {assetId && failedKey === top.key && (
+        <span role="alert" className="lib-hero-empty">
+          <Icon name="image" size={24} />
+          <span>参考图加载失败</span>
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary"
+            onClick={() => setLayers([{ id: assetId, key: top.key + 1 }])}
+          >
+            <Icon name="retry" size={14} />
+            重新加载参考图
+          </button>
+        </span>
       )}
       {assetId && (
         <a

@@ -119,6 +119,89 @@ async function screenshotAssets(panel: Locator, path: string) {
   await panel.screenshot({ path, animations: 'disabled' })
 }
 
+test('角色大图失败有恢复入口，切换参考图不串用错误状态且保存不丢内容', async ({ page }) => {
+  await newProject(page)
+  const ids = await uploadedImages(page, 2)
+  const description = '角色的长基础设定与外形细节。'.repeat(200)
+  const response = await page.request.post('/api/library', {
+    data: {
+      kind: 'character',
+      name: '角色预览失败恢复',
+      description,
+      images: [
+        { slot: 'full_body', assetId: ids[0] },
+        { slot: 'portrait', assetId: ids[1] },
+      ],
+    },
+  })
+  expect(response.status()).toBe(201)
+  const item = (await response.json()) as LibraryItem
+  created.push(item.id)
+  let fail = true
+  await page.route(`**/api/assets/${ids[0]}/thumb-1024`, (route) =>
+    fail ? route.fulfill({ status: 503, body: 'unavailable' }) : route.continue(),
+  )
+  const panel = await openLibrary(page)
+  await openItem(panel, item.name)
+  const hero = panel.locator('.lib-hero')
+  await expect(hero.getByRole('alert')).toContainText('参考图加载失败')
+  await expect(slot(panel, 'full_body').getByText('图片加载失败', { exact: true })).toBeVisible()
+  await panel.screenshot({
+    path: test.info().outputPath('reference-failure.png'),
+    animations: 'disabled',
+  })
+  const retry = hero.getByRole('button', { name: '重新加载参考图', exact: true })
+  await retry.click()
+  await expect(hero.getByRole('alert')).toBeVisible()
+  expect((await page.request.get(`/api/assets/${ids[0]}`)).ok()).toBe(true)
+  await panel.getByRole('button', { name: '预览肖像／半身图', exact: true }).click()
+  await expect(hero.getByRole('alert')).toHaveCount(0)
+  await expect
+    .poll(() =>
+      hero
+        .locator('img')
+        .last()
+        .evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
+    )
+    .toBe(true)
+  await expect(hero.locator('img').last()).toHaveAttribute('src', new RegExp(ids[1]!))
+  await panel.getByRole('button', { name: '预览全身定妆图', exact: true }).click()
+  await expect(hero.getByRole('alert')).toBeVisible()
+  fail = false
+  await retry.click()
+  await expect(hero.getByRole('alert')).toHaveCount(0)
+  await expect
+    .poll(() =>
+      hero
+        .locator('img')
+        .last()
+        .evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
+    )
+    .toBe(true)
+  await expect(hero.locator('img').last()).toHaveAttribute('src', new RegExp(ids[0]!))
+  await slot(panel, 'full_body')
+    .getByRole('button', { name: '重新加载全身定妆图', exact: true })
+    .click()
+  await expect
+    .poll(() =>
+      slot(panel, 'full_body')
+        .locator('img')
+        .evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0),
+    )
+    .toBe(true)
+  await panel
+    .getByRole('group', { name: '档案分页', exact: true })
+    .getByRole('button', { name: '基础设定', exact: true })
+    .click()
+  await panel.getByRole('textbox', { name: /^基础设定/ }).fill(description + '恢复后补充')
+  await save(panel)
+  const saved = await readItem(page, item.id)
+  expect(saved.images).toEqual(item.images)
+  expect((saved as LibraryItem & { description: string }).description).toBe(
+    description + '恢复后补充',
+  )
+})
+
 test('多张竖图组成的参考列整体避让已有内容，连线和参考顺序保持正确', async ({ page }) => {
   await newProject(page)
   const imageIds = await uploadedImages(page, 3)

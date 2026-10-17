@@ -213,6 +213,11 @@ function CharacterAssetTile({
   const input = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [imageRevision, setImageRevision] = useState(0)
+  const [failedImage, setFailedImage] = useState<string | null>(null)
+  const imageKey = `${assetId}:${imageRevision}`
+  const currentImage = useRef(imageKey)
+  currentImage.current = imageKey
   const upload = async (files: File[]) => {
     if (busy || disabled) return
     setBusy(true)
@@ -251,7 +256,22 @@ function CharacterAssetTile({
         className="lib-character-tile-preview"
       >
         {assetId ? (
-          <img src={assetUrls.variant(assetId, 'thumb-1024')} alt={slot.label} draggable={false} />
+          failedImage === imageKey ? (
+            <span className="lib-character-tile-empty">
+              <Icon name="image" size={24} />
+              <span>图片加载失败</span>
+            </span>
+          ) : (
+            <img
+              key={imageKey}
+              src={assetUrls.variant(assetId, 'thumb-1024')}
+              alt={slot.label}
+              draggable={false}
+              onError={() => {
+                if (currentImage.current === imageKey) setFailedImage(imageKey)
+              }}
+            />
+          )
         ) : (
           <span className="lib-character-tile-empty">
             <Icon name={SLOT_ICONS[slot.id] ?? 'image'} size={24} />
@@ -268,6 +288,18 @@ function CharacterAssetTile({
         <h4>{slot.label}</h4>
         <p>{slot.hint}</p>
         <div className="lib-character-tile-actions">
+          {failedImage === imageKey && (
+            <button
+              type="button"
+              disabled={busy || disabled}
+              aria-label={`重新加载${slot.label}`}
+              className="ui-btn ui-btn-quiet ui-btn-xs"
+              onClick={() => setImageRevision((revision) => revision + 1)}
+            >
+              <Icon name="retry" size={12} />
+              重新加载
+            </button>
+          )}
           <button
             type="button"
             disabled={busy || disabled}
