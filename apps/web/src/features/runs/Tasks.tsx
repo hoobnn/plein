@@ -610,7 +610,8 @@ export function RecoveryBlock(props: {
     } catch (err) {
       const message = (err as Error).message
       setError(message)
-      useCanvas.getState().notify(message)
+      const current = useCanvas.getState()
+      if (current.canvasId === canvasId) current.notify(message)
     } finally {
       setBusy(false)
     }
