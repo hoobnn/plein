@@ -6,6 +6,8 @@ import { useState } from 'react'
 import { downloadAsset, mediaOf, splitGrid } from '../canvas/grid'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
 import { beginImport } from '../canvas/importProgress'
+import { importLocation, watchImportView } from '../canvas/importView'
+import { revealImports } from '../canvas/import'
 import {
   continueNodeFor,
   continueShot,
@@ -16,7 +18,7 @@ import { formatTimecode, parseTimecode } from '../canvas/media'
 import { deriveNode } from '../canvas/presets'
 import { regionEditNode, startRegionEdit } from '../canvas/regionEdit'
 import { MaskEditor } from '../features/generator/MaskEditor'
-import { useCanvas } from '../stores/canvas'
+import { type NoticeAction, useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { Popover } from '../ui/Popover'
@@ -172,13 +174,31 @@ export function ResultActions({
   const split = async (rows: number, cols: number) => {
     setOpen(null)
     const batch = beginImport(engine, rows * cols)
+    const view = watchImportView(engine, batch.signal)
     const notes: string[] = []
+    let action: NoticeAction | undefined
     try {
-      await splitGrid(engine, el.id, media.assetId, rows, cols, batch.progress, batch.signal)
+      const frame = await splitGrid(
+        engine,
+        el.id,
+        media.assetId,
+        rows,
+        cols,
+        batch.progress,
+        batch.signal,
+      )
+      if (frame) {
+        if (view.unchanged()) revealImports(engine, [frame])
+        else {
+          notes.push(`已完成 ${rows * cols} 个镜头切分`)
+          action = importLocation(engine, [frame])
+        }
+      }
     } catch (err) {
       if (!batch.signal.aborted) notes.push((err as Error).message)
     } finally {
-      batch.finish(notes)
+      view.dispose()
+      batch.finish(notes, action)
     }
   }
 

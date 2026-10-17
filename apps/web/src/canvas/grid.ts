@@ -104,7 +104,6 @@ export async function splitGrid(
     if (frame)
       makeShotGroup(engine.doc, frame, { cols, source: { elementId: sourceId, rows, cols } })
     engine.doc.undo.stopCapturing()
-    engine.selection.set([frame ?? ids[0]!])
     return frame
   } finally {
     bitmap.close()
