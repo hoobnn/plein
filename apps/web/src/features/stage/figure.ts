@@ -88,7 +88,7 @@ const POSES: Record<StagePose, Pose> = {
 const rad = THREE.MathUtils.degToRad
 
 /** 灰模材质：哑光、不反光；人物按自己的颜色淡淡上色，方便分辨 */
-export function clay(color: string | number = 0xb8bcc4) {
+function clay(color: string | number = 0xb8bcc4) {
   const c = new THREE.Color(color)
   // 往中性灰靠一些，颜色只用来区分人物，不抢构图
   c.lerp(new THREE.Color(0xb8bcc4), 0.35)

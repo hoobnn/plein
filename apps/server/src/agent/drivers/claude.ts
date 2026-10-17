@@ -11,7 +11,7 @@ import { brief, explain, JsonLines, toolText } from './util'
 const TOOL_PREFIX = `mcp__${MCP_NAME}__`
 
 /** 用户自己装的 MCP 工具 mcp__<服务>__<工具> 显示成「服务 · 工具」 */
-export function claudeToolName(name: string) {
+function claudeToolName(name: string) {
   if (name.startsWith(TOOL_PREFIX)) return name.slice(TOOL_PREFIX.length)
   const m = /^mcp__(.+?)__(.+)$/.exec(name)
   return m ? `${m[1]} · ${m[2]}` : name

@@ -11,7 +11,7 @@ import { brief, explain, JsonLines, toolText } from './util'
 type Msg = Record<string, unknown>
 
 /** Codex 的工具名：Plein 自己的画布工具直接用工具名，用户自己的 MCP 显示成「服务 · 工具」 */
-export function codexToolName(server: unknown, tool: unknown) {
+function codexToolName(server: unknown, tool: unknown) {
   return server === MCP_NAME || !server ? String(tool) : `${server} · ${tool}`
 }
 

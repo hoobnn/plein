@@ -16,7 +16,7 @@ import {
 } from '@plein/plugin-sdk'
 import semver from 'semver'
 
-export type PluginStatus = 'active' | 'error'
+type PluginStatus = 'active' | 'error'
 
 export interface PluginEntry {
   manifest: PluginManifest

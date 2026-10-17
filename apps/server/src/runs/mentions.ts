@@ -27,7 +27,7 @@ type Inputs = Record<string, PortValue[]>
 const DESCRIBE: ReadonlySet<string> = new Set(['text.chat', 'image.generate', 'video.generate'])
 
 /** 本次运行真正送进模型的资产引用，用于「执行前展示实际引用映射」 */
-export interface UsedRef {
+interface UsedRef {
   /** 提示词里写的名字 */
   name: string
   /** 画布上的元素 id */

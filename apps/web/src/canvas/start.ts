@@ -5,7 +5,6 @@ import { dramaNotice, placeDramaTemplate } from './drama'
 import { findNode, nodeElement, placeElement } from './nodes'
 import { focusGenerator } from './presets'
 import { DRAMA_START, takeStartNode } from './startQueue'
-export { DRAMA_START, queueStartNode } from './startQueue'
 
 /** 新画布上铺短剧模板（首次启动引导的“从短剧模板开始”） */
 

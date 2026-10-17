@@ -12,7 +12,7 @@ import { useLibrary } from '../features/library/store'
 import { localContext } from './capabilities'
 import { nodeFactory } from './nodes'
 
-export { type CastResult, describeCast } from '@plein/capabilities'
+export { describeCast } from '@plein/capabilities'
 
 /** 节点当前采用的文本结果；不是文本节点或还没跑过时为空 */
 export const castOf = (engine: Engine, id: string) => castOfIn(engine.doc, id)

@@ -16,13 +16,9 @@ import { nodeFactory } from '../../canvas/nodes'
 /** 分镜展开 / 同步 / 批量运行的逻辑在 @plein/capabilities（纯文档操作，智能体也用），这里只接上画布 */
 
 export {
-  type BatchResult,
   type ExpandOptions,
   type ExpandResult,
-  type SequenceLink,
-  type ShotNodeDiff,
   type ShotSource,
-  type SyncResult,
   shotsOf,
 } from '@plein/capabilities'
 

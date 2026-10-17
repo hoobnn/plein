@@ -101,7 +101,7 @@ function drawTinted(ctx: CanvasRenderingContext2D, image: CanvasImageSource, col
 }
 
 /** 有没有圈出任何区域（全黑的蒙版提交了也没用） */
-export function hasCoverage(data: Uint8ClampedArray) {
+function hasCoverage(data: Uint8ClampedArray) {
   for (let i = 0; i < data.length; i += 4) if (data[i]! > 127) return true
   return false
 }

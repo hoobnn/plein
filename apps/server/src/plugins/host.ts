@@ -84,7 +84,7 @@ export function stageOf(err: unknown): FailureStage | undefined {
 }
 
 /** 文件结果在调用记录里的样子：直接给的字节转成 base64，过大时丢掉（只能重新查询平台） */
-export type RecordedOutput =
+type RecordedOutput =
   | Exclude<ProviderOutput, { type: 'file' }>
   | (Omit<Extract<ProviderOutput, { type: 'file' }>, 'data'> & { base64?: string; dropped?: true })
 

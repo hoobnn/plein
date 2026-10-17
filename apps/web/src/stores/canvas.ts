@@ -18,7 +18,7 @@ export type SyncStatus =
   | 'connected'
   | 'disconnected'
 
-export interface NoticeAction {
+interface NoticeAction {
   label: string
   run(): void
 }

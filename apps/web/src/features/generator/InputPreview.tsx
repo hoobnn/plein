@@ -92,7 +92,7 @@ export function issueText(issues: InputIssue[]) {
 }
 
 /** 摘要一行：模型、参考图张数、降级和阻断数 */
-export function previewSummary(p: PreparedInput) {
+function previewSummary(p: PreparedInput) {
   const refs = Object.values(p.inputs)
     .flat()
     .filter((v) => v.type === 'image').length

@@ -48,11 +48,9 @@ export function layoutGraph(
   const rank = new Map(order.map((it, i) => [it.id, i]))
 
   const out = new Map<string, Set<string>>(items.map((it) => [it.id, new Set()]))
-  const into = new Map<string, Set<string>>(items.map((it) => [it.id, new Set()]))
   for (const [a, b] of links) {
     if (a === b || !byId.has(a) || !byId.has(b)) continue
     out.get(a)!.add(b)
-    into.get(b)!.add(a)
   }
 
   // 弱连通分量（并查集），按分量里最靠前的元素排序
@@ -152,10 +150,9 @@ function layoutComponent(
       if (indeg.get(n) === 0) queue.push(n)
     }
   }
-  const succs = new Map<string, string[]>(comp.map((it) => [it.id, [...dag.get(it.id)!]]))
   // 下游紧跟在最近的上游后面，避免源头被拉到很靠左
   for (const id of [...queue].reverse()) {
-    const s = succs.get(id)!
+    const s = dag.get(id)!
     if (preds.get(id)!.length === 0 && s.length > 0) {
       layer.set(id, Math.min(...s.map((n) => layer.get(n)!)) - 1)
     }
@@ -193,7 +190,7 @@ function layoutComponent(
   }
   for (let pass = 0; pass < 4; pass++) {
     for (let i = 1; i < count; i++) sweep(layers[i]!, preds)
-    for (let i = count - 2; i >= 0; i--) sweep(layers[i]!, succs)
+    for (let i = count - 2; i >= 0; i--) sweep(layers[i]!, dag)
   }
 
   const pos = new Map<string, { x: number; y: number }>()

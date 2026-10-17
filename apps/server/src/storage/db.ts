@@ -8,7 +8,7 @@ import * as schema from './schema'
 /** Drizzle 实例；底层的 better-sqlite3 连接在 db.$client */
 export type DB = BetterSQLite3Database<typeof schema> & { $client: Database.Database }
 /** 事务里的连接，和 DB 一样能读写 */
-export type Tx = Parameters<Parameters<DB['transaction']>[0]>[0]
+type Tx = Parameters<Parameters<DB['transaction']>[0]>[0]
 /** 既能在事务外也能在事务里调用的函数用它 */
 export type Conn = DB | Tx
 
