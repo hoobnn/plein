@@ -118,6 +118,6 @@ export const usePlaying = (p: Playhead) => useSyncExternalStore(p.subscribe, () 
 
 /** 0:03.4 这样的时间 */
 export const clock = (t: number) => {
-  const s = Math.max(0, t)
-  return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`
+  const tenths = Math.max(0, Math.round(t * 10))
+  return `${Math.floor(tenths / 600)}:${((tenths % 600) / 10).toFixed(1).padStart(4, '0')}`
 }

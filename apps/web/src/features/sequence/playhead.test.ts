@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
-import { type ClockSource, Playhead } from './playhead'
+import { clock, type ClockSource, Playhead } from './playhead'
 
 let frames: Map<number, FrameRequestCallback>
 let nextFrame: number
@@ -35,6 +35,19 @@ beforeEach(() => {
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
 })
 afterEach(() => vi.unstubAllGlobals())
+
+describe('序列时间码', () => {
+  it.each([
+    [0, '0:00.0'],
+    [-1, '0:00.0'],
+    [59.94, '0:59.9'],
+    [59.96, '1:00.0'],
+    [1799.966666, '30:00.0'],
+    [3599.999, '60:00.0'],
+  ] as const)('显示 %s 秒时正确向分钟进位', (seconds, expected) => {
+    expect(clock(seconds)).toBe(expected)
+  })
+})
 
 describe('序列播放头', () => {
   it('按时钟推进；逐帧通知不重新排声音，暂停取当前时刻并取消下一帧', () => {
