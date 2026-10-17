@@ -36,12 +36,29 @@ function Review({ viewer }: { viewer: View }) {
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [drag, setDrag] = useState<{ x: number; y: number; px: number; py: number } | null>(null)
+  const [imageLoads, setImageLoads] = useState<
+    Record<string, { attempt: number; failed: boolean }>
+  >({})
   const result = candidates.find((r) => r.id === selected)
   const value = result?.value
   const kind = value?.type ?? viewer.kind
   const assetId = value && 'assetId' in value ? value.assetId : viewer.assetId
   const other = candidates.find((r) => r.id === compare)
   const otherId = other?.value.type === 'image' ? other.value.assetId : undefined
+  const imageKey = `a:${assetId ?? ''}`
+  const otherImageKey = `b:${otherId ?? ''}`
+  const imageLabels = new Map<string, string>()
+  if (assetId) imageLabels.set(imageKey, otherId ? '候选 A' : '图片')
+  if (otherId) imageLabels.set(otherImageKey, '候选 B')
+  const imageEvents = (id: string) => {
+    const attempt = imageLoads[id]?.attempt ?? 0
+    const status = (failed: boolean) =>
+      setImageLoads((old) => {
+        if ((old[id]?.attempt ?? 0) !== attempt || !!old[id]?.failed === failed) return old
+        return { ...old, [id]: { attempt, failed } }
+      })
+    return { onError: () => status(true), onLoad: () => status(false) }
+  }
   const adopted = element && result && currentResult(element, result.port)?.id === result.id
   const close = () => useCanvas.getState().view(null)
   const step = (delta: number) => {
@@ -250,27 +267,59 @@ function Review({ viewer }: { viewer: View }) {
                 onPointerCancel={() => setDrag(null)}
               >
                 <img
+                  key={`${imageKey}:${imageLoads[imageKey]?.attempt ?? 0}`}
                   src={assetUrls.original(assetId)}
                   alt={otherId ? '候选 A' : viewer.name}
                   draggable={false}
+                  {...imageEvents(imageKey)}
+                  style={{ visibility: imageLoads[imageKey]?.failed ? 'hidden' : undefined }}
                   className={`max-h-full min-w-0 object-contain ${otherId && comparison === 'side' ? 'w-1/2' : 'max-w-full'}`}
                 />
                 {otherId && (
                   <img
+                    key={`${otherImageKey}:${imageLoads[otherImageKey]?.attempt ?? 0}`}
                     src={assetUrls.original(otherId)}
                     alt="候选 B"
                     draggable={false}
+                    {...imageEvents(otherImageKey)}
                     className={
                       comparison === 'side'
                         ? 'max-h-full w-1/2 min-w-0 object-contain'
                         : 'absolute inset-0 h-full w-full object-contain'
                     }
-                    style={
-                      comparison === 'slider'
-                        ? { clipPath: `inset(0 ${100 - split}% 0 0)` }
-                        : undefined
-                    }
+                    style={{
+                      visibility: imageLoads[otherImageKey]?.failed ? 'hidden' : undefined,
+                      clipPath:
+                        comparison === 'slider' ? `inset(0 ${100 - split}% 0 0)` : undefined,
+                    }}
                   />
+                )}
+              </div>
+              <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
+                {[...imageLabels].map(
+                  ([id, label]) =>
+                    imageLoads[id]?.failed && (
+                      <div
+                        key={id}
+                        className="flex items-center gap-3 rounded-lg bg-float p-3 text-sm text-ink shadow-lg"
+                      >
+                        <p role="alert">{label}加载失败</p>
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn-secondary"
+                          aria-label={`重新加载${label}`}
+                          onClick={() =>
+                            setImageLoads((old) => ({
+                              ...old,
+                              [id]: { attempt: (old[id]?.attempt ?? 0) + 1, failed: false },
+                            }))
+                          }
+                        >
+                          <Icon name="retry" />
+                          重试
+                        </button>
+                      </div>
+                    ),
                 )}
               </div>
               {otherId && comparison === 'slider' && (
