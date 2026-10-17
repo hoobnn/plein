@@ -77,9 +77,16 @@ test('六镜头项目改第三镜头：查看影响、只重做勾选的分支�
   const rows = dialog.getByRole('button', { name: /^删除镜头 \d+$/ })
   while ((await rows.count()) > 6) await rows.last().click()
   await expect(rows).toHaveCount(6)
+  const durations = () =>
+    dialog
+      .getByLabel('时长')
+      .evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value))
+  const originalDurations = await durations()
   await dialog.getByLabel('台词').nth(0).fill('林晚：雨这么大，谁会来天台？')
+  await dialog.getByLabel('台词').nth(0).blur()
   await dialog.getByLabel('台词').nth(2).fill('林晚：铁盒是谁放在这儿的？')
-  await dialog.getByLabel('时长').first().click()
+  await dialog.getByLabel('台词').nth(2).blur()
+  expect(await durations()).toEqual(originalDurations)
   await dialog.getByRole('button', { name: '展开为节点' }).click()
   await expect(page.locator('.ui-toast')).toContainText('已展开 6 个镜头')
 
@@ -94,16 +101,29 @@ test('六镜头项目改第三镜头：查看影响、只重做勾选的分支�
   // 改第三镜头的台词和分镜图提示词，从分镜表进「查看影响」
   dialog = await openBoard()
   await dialog.getByLabel('台词').nth(2).fill('林晚：这盒子不是我的。')
+  await dialog.getByLabel('台词').nth(2).blur()
   await dialog.getByLabel('分镜图提示词').nth(2).fill('铁盒特写，雨水顺着锁扣往下流')
-  await dialog.getByLabel('时长').first().click()
+  await dialog.getByLabel('分镜图提示词').nth(2).blur()
+  await expect(dialog.getByLabel('分镜图提示词').nth(2)).toHaveValue('铁盒特写，雨水顺着锁扣往下流')
+  expect(await durations()).toEqual(originalDurations)
   await dialog.getByRole('button', { name: '查看影响' }).click()
   const impact = page.getByRole('dialog', { name: '查看影响' })
   await expect(impact).toBeVisible()
 
   // 分镜表的改动还没同步到节点：先看差异，按现有同步合同写进去
   await expect(impact.getByText('分镜表有没同步的改动')).toBeVisible()
-  await impact.getByRole('button', { name: '查看差异' }).click()
+  const plan = impact.locator('section').filter({
+    has: page.getByRole('heading', { name: '分镜表有没同步的改动', exact: true }),
+  })
+  await expect(plan.getByRole('listitem')).toHaveCount(1)
+  await plan
+    .getByRole('listitem')
+    .filter({ has: page.getByText('镜头 03', { exact: true }) })
+    .getByRole('button', { name: '查看差异', exact: true })
+    .click()
   const diff = page.getByRole('dialog', { name: '计划差异' })
+  await expect(diff.getByText('镜头 03', { exact: true })).toBeVisible()
+  await expect(diff.getByText('计划已改', { exact: true })).toHaveCount(2)
   await diff.getByRole('button', { name: '同步计划改动' }).click()
   await expect(page.locator('.ui-toast')).toContainText('已把计划同步到 2 个节点')
   await page.keyboard.press('Escape')

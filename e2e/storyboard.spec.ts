@@ -55,16 +55,32 @@ test('分镜表改了之后同步到已展开的节点：计划改的写进去�
 
   // 分镜表里两个镜头的分镜图提示词都改了
   dialog = await openBoard()
+  const durations = () =>
+    dialog
+      .getByLabel('时长')
+      .evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value))
+  const originalDurations = await durations()
   const prompts = dialog.getByLabel('分镜图提示词')
   await prompts.nth(0).fill('雨夜天台，林晚抱着铁盒回头')
+  await prompts.nth(0).blur()
   await prompts.nth(1).fill('铁盒特写，锁扣崩开')
-  await dialog.getByLabel('时长').first().click()
+  await prompts.nth(1).blur()
+  await expect(prompts.nth(0)).toHaveValue('雨夜天台，林晚抱着铁盒回头')
+  await expect(prompts.nth(1)).toHaveValue('铁盒特写，锁扣崩开')
+  expect(await durations()).toEqual(originalDurations)
 
   await dialog.getByRole('button', { name: /^查看差异/ }).click()
   const diff = page.getByRole('dialog', { name: '计划差异' })
-  await expect(diff.getByText('镜头 01')).toBeVisible()
-  await expect(diff.getByText('计划已改', { exact: true })).toBeVisible()
-  await expect(diff.getByText('你改过', { exact: true })).toBeVisible()
+  const shot1 = diff
+    .getByRole('listitem')
+    .filter({ has: page.getByText('镜头 01', { exact: true }) })
+  const shot2 = diff
+    .getByRole('listitem')
+    .filter({ has: page.getByText('镜头 02', { exact: true }) })
+  await expect(shot1.getByText('计划已改', { exact: true })).toBeVisible()
+  await expect(shot2.getByText('你改过', { exact: true })).toBeVisible()
+  await expect(diff.getByText('计划已改', { exact: true })).toHaveCount(1)
+  await expect(diff.getByText('你改过', { exact: true })).toHaveCount(1)
   await diff.getByRole('button', { name: '同步计划改动' }).click()
   await expect(page.locator('.ui-toast')).toContainText(
     '已把计划同步到 1 个节点的 1 个字段，保留 1 处手改',

@@ -68,48 +68,52 @@ export function DialogueCell({
 }: {
   engine: Engine
   shot: Shot
-  onChange(dialogue: ShotDialogue[]): void
+  onChange(update: (dialogue: ShotDialogue[]) => ShotDialogue[]): void
 }) {
   const lines = normalizeDialogue(shot.id, shot.dialogue)
-  const change = (index: number, value: string) => {
-    const previous = lines[index]
-    if (!value.trim()) {
-      onChange(lines.filter((_, i) => i !== index))
-      return
-    }
-    const next = value
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map((s, i) => {
-        const match = /^([^：:]{1,40})[：:](.*)$/.exec(s)
-        const character = match?.[1]?.trim() ?? ''
-        const line = match ? match[2]!.trim() : s
-        return {
-          id: i === 0 ? (previous?.id ?? newDialogueId()) : newDialogueId(),
-          character,
-          line,
-          ...(i === 0 && previous?.character === character && previous.speaker
-            ? { speaker: previous.speaker }
-            : {}),
-        }
-      })
-    onChange([...lines.slice(0, index), ...next, ...lines.slice(index + 1)])
-  }
-  const move = (i: number, delta: number) => {
-    const next = [...lines]
-    const j = i + delta
-    if (j < 0 || j >= next.length) return
-    ;[next[i], next[j]] = [next[j]!, next[i]!]
-    onChange(next)
-  }
+  // 同一帧内其他台词可能已提交、移动或删除，按稳定 id 更新父级传入的最新数组。
+  const change = (lineId: string, value: string) =>
+    onChange((current) => {
+      const found = current.findIndex((line) => line.id === lineId)
+      if (found < 0 && lineId !== 'empty') return current
+      const index = found < 0 ? current.length : found
+      const previous = current[index]
+      if (!value.trim()) return current.filter((line) => line.id !== lineId)
+      const next = value
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((s, i) => {
+          const match = /^([^：:]{1,40})[：:](.*)$/.exec(s)
+          const character = match?.[1]?.trim() ?? ''
+          const line = match ? match[2]!.trim() : s
+          return {
+            id: i === 0 ? (previous?.id ?? newDialogueId()) : newDialogueId(),
+            character,
+            line,
+            ...(i === 0 && previous?.character === character && previous.speaker
+              ? { speaker: previous.speaker }
+              : {}),
+          }
+        })
+      return [...current.slice(0, index), ...next, ...current.slice(index + 1)]
+    })
+  const move = (lineId: string, delta: number) =>
+    onChange((current) => {
+      const i = current.findIndex((line) => line.id === lineId)
+      const j = i + delta
+      if (i < 0 || j < 0 || j >= current.length) return current
+      const next = [...current]
+      ;[next[i], next[j]] = [next[j]!, next[i]!]
+      return next
+    })
   return (
     <td className="px-1 py-1">
       {(lines.length ? lines : [{ id: 'empty', character: '', line: '' }]).map((line, i) => (
         <div key={line.id} className="mb-2 space-y-1">
           <DialogueInput
             value={line.character ? `${line.character}：${line.line}` : line.line}
-            onChange={(value) => change(i, value)}
+            onChange={(value) => change(line.id!, value)}
           />
           {line.character && (
             <AssetBindingSelect
@@ -118,7 +122,9 @@ export function DialogueCell({
               binding={line.speaker}
               speaker
               onChange={(speaker) =>
-                onChange(lines.map((d, j) => (j === i ? { ...d, speaker } : d)))
+                onChange((current) =>
+                  current.map((d) => (d.id === line.id ? { ...d, speaker } : d)),
+                )
               }
             />
           )}
@@ -129,7 +135,7 @@ export function DialogueCell({
                 className="ui-btn ui-btn-xs ui-btn-quiet"
                 aria-label={`上移第 ${i + 1} 句`}
                 disabled={i === 0}
-                onClick={() => move(i, -1)}
+                onClick={() => move(line.id!, -1)}
               >
                 上移
               </button>
@@ -138,7 +144,7 @@ export function DialogueCell({
                 className="ui-btn ui-btn-xs ui-btn-quiet"
                 aria-label={`下移第 ${i + 1} 句`}
                 disabled={i === lines.length - 1}
-                onClick={() => move(i, 1)}
+                onClick={() => move(line.id!, 1)}
               >
                 下移
               </button>
@@ -146,7 +152,7 @@ export function DialogueCell({
                 type="button"
                 className="ui-btn ui-btn-xs ui-btn-quiet"
                 aria-label={`删除第 ${i + 1} 句`}
-                onClick={() => onChange(lines.filter((_, j) => i !== j))}
+                onClick={() => onChange((current) => current.filter((d) => d.id !== line.id))}
               >
                 删除
               </button>
@@ -157,7 +163,9 @@ export function DialogueCell({
       <button
         type="button"
         className="ui-btn ui-btn-xs ui-btn-quiet"
-        onClick={() => onChange([...lines, { id: newDialogueId(), character: '', line: '' }])}
+        onClick={() =>
+          onChange((current) => [...current, { id: newDialogueId(), character: '', line: '' }])
+        }
       >
         添加台词
       </button>

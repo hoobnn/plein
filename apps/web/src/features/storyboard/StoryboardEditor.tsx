@@ -54,7 +54,12 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const notify = useCanvas((s) => s.notify)
   const canvasId = useCanvas((s) => s.canvasId)
   const el = engine.doc.get(id)
-  const shots = shotsOf(el).map((s) => ({ ...s, dialogue: normalizeDialogue(s.id, s.dialogue) }))
+  const readShots = () =>
+    shotsOf(engine.doc.get(id)).map((s) => ({
+      ...s,
+      dialogue: normalizeDialogue(s.id, s.dialogue),
+    }))
+  const shots = readShots()
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [syncScope, setSyncScope] = useState<string[] | null>(null)
   const [batchRequest, setBatchRequest] = useState<StoryboardBatchRequest | null>(null)
@@ -81,12 +86,18 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   }, [onClose, syncScope, batchRequest])
 
   const write = (next: Shot[]) => setParam(engine.doc, id, 'shots', next)
-  const patch = (shotId: string, p: Partial<Shot>) =>
-    write(shots.map((s) => (s.id === shotId ? { ...s, ...p, edited: true } : s)))
+  // 文档订阅按帧通知；失焦和数字变更可在重绘前连续提交，合并时必须读最新文档。
+  const patch = (shotId: string, p: Partial<Shot> | ((current: Shot) => Partial<Shot>)) =>
+    write(
+      readShots().map((s) =>
+        s.id === shotId ? { ...s, ...(typeof p === 'function' ? p(s) : p), edited: true } : s,
+      ),
+    )
   const addShot = () => {
-    const no = (shots.at(-1)?.no ?? 0) + 1
+    const current = readShots()
+    const no = (current.at(-1)?.no ?? 0) + 1
     write([
-      ...shots,
+      ...current,
       {
         id: newShotId(),
         no,
@@ -120,7 +131,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       })
       if (!ok) return
     }
-    const next = dropShot(shots, shotId)
+    const next = dropShot(readShots(), shotId)
     engine.doc.ydoc.transact(() => {
       setParam(engine.doc, id, 'shots', next.shots)
       detachShot(engine, id, shotId)
@@ -431,10 +442,12 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                         name={name}
                         binding={s.assetBindings?.[name]}
                         onChange={(binding) => {
-                          const assetBindings = { ...s.assetBindings }
-                          if (binding) assetBindings[name] = binding
-                          else delete assetBindings[name]
-                          patch(s.id, { assetBindings })
+                          patch(s.id, (current) => {
+                            const assetBindings = { ...current.assetBindings }
+                            if (binding) assetBindings[name] = binding
+                            else delete assetBindings[name]
+                            return { assetBindings }
+                          })
                         }}
                       />
                     ))}
@@ -442,7 +455,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                   <DialogueCell
                     engine={engine}
                     shot={s}
-                    onChange={(dialogue) => patch(s.id, { dialogue })}
+                    onChange={(update) =>
+                      patch(s.id, (current) => ({ dialogue: update(current.dialogue) }))
+                    }
                   />
                   <TextCell
                     value={s.imagePrompt}

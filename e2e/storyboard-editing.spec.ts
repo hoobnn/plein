@@ -1,0 +1,79 @@
+import { expect, type Page, test } from '@playwright/test'
+import { addNode, byName, centerOf, contextMenu, newProject, waitNode, zoomTo } from './canvas'
+
+async function openBoard(page: Page) {
+  await newProject(page)
+  await addNode(page, '短剧')
+  const { id: boardId } = await byName(page, '分镜（双击展开镜头）')
+  await zoomTo(page, [boardId])
+  await contextMenu(page, boardId, '运行到此处')
+  await waitNode(page, boardId)
+  await expect(page.locator('.ui-toast')).toContainText('运行到「分镜（双击展开镜头）」运行完成')
+  await zoomTo(page, [boardId])
+  const center = await centerOf(page, boardId)
+  await page.mouse.dblclick(center.x, center.y)
+  const dialog = page.getByRole('dialog', { name: '分镜表' })
+  await expect(dialog).toBeVisible()
+  return { boardId, dialog }
+}
+
+test('同一帧内提交分镜文本并调整另一行时长，两处改动都保留', async ({ page }) => {
+  const { boardId, dialog } = await openBoard(page)
+  await dialog.getByLabel('分镜图提示词').nth(2).fill('铁盒特写，雨水顺着锁扣往下流')
+
+  // number spinner 的一次操作会先让文本失焦，再提交数字变更；两次写入可早于文档的下一帧通知。
+  await dialog
+    .getByLabel('时长')
+    .first()
+    .evaluate((input) => {
+      ;(document.activeElement as HTMLTextAreaElement).blur()
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+      setValue.call(input, '3')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+  const read = () =>
+    page.evaluate((id) => {
+      const shots = window.__plein.engine.doc.get(id)!.params!.shots as Array<{
+        duration: number
+        imagePrompt: string
+      }>
+      return { duration: shots[0]!.duration, imagePrompt: shots[2]!.imagePrompt }
+    }, boardId)
+  await expect.poll(read).toEqual({
+    duration: 3,
+    imagePrompt: '铁盒特写，雨水顺着锁扣往下流',
+  })
+})
+
+test('同一镜头两句台词在下一帧前连续提交，保留两句修改和身份', async ({ page }) => {
+  const { boardId, dialog } = await openBoard(page)
+  const row = dialog.locator('tbody tr').first()
+  await row.getByLabel('台词').first().fill('林晚：第一句\n老周：第二句')
+  await row.getByLabel('台词').first().blur()
+  await expect(row.getByLabel('台词')).toHaveCount(2)
+  const read = () =>
+    page.evaluate((id) => {
+      const shots = window.__plein.engine.doc.get(id)!.params!.shots as Array<{
+        dialogue: Array<{ id: string; character: string; line: string }>
+      }>
+      return shots[0]!.dialogue
+    }, boardId)
+  const before = await read()
+  await row.getByLabel('台词').first().fill('林晚：第一句已修改')
+  await row.evaluate(async (element) => {
+    const inputs = element.querySelectorAll<HTMLTextAreaElement>('textarea[aria-label="台词"]')
+    inputs[0]!.blur()
+    inputs[1]!.focus()
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!
+    setValue.call(inputs[1], '老周：第二句已修改')
+    inputs[1]!.dispatchEvent(new Event('input', { bubbles: true }))
+    // React 提交第二句的本地草稿，但文档的 requestAnimationFrame 通知尚未到来。
+    await Promise.resolve()
+    inputs[1]!.blur()
+  })
+  await expect.poll(read).toEqual([
+    { ...before[0], line: '第一句已修改' },
+    { ...before[1], line: '第二句已修改' },
+  ])
+})
