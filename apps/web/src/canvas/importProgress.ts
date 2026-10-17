@@ -1,11 +1,12 @@
 import type { Engine } from '@plein/canvas-core'
-import { useCanvas } from '../stores/canvas'
+import { type NoticeAction, useCanvas } from '../stores/canvas'
 
 interface Batch {
   done: number
   total: number
   finished: boolean
   notes: string[]
+  action?: NoticeAction
 }
 
 const groups = new Map<Engine, Set<Batch>>()
@@ -27,18 +28,24 @@ export function beginImport(engine: Engine, total: number) {
       }),
     )
   }
-  const finish = (notes: string[] = []) => {
+  const finish = (notes: string[] = [], action?: NoticeAction) => {
     if (batch.finished) return
     batch.finished = true
     batch.done = batch.total
     batch.notes = notes
+    batch.action = action
     off()
     if ([...group].every((b) => b.finished)) {
       groups.delete(engine)
       if (useCanvas.getState().engine !== engine) return
       useCanvas.getState().setImporting(null)
       const messages = [...group].flatMap((b) => b.notes)
-      if (messages.length) useCanvas.getState().notify(messages.join('；'))
+      const action = [...group]
+        .map((b) => b.action)
+        .filter((a) => !!a)
+        .at(-1)
+      if (messages.length || action)
+        useCanvas.getState().notify(messages.join('；') || '素材已就绪', action)
     } else publish()
   }
   if (useCanvas.getState().engine !== engine) {

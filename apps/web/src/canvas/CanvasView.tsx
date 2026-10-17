@@ -17,12 +17,13 @@ import { assetUrls, syncUrl } from '../api/client'
 import { navigate } from '../router'
 import { useAgent } from '../features/agent/store'
 import { loadAssetMeta } from '../stores/assetMeta'
-import { useCanvas } from '../stores/canvas'
+import { type NoticeAction, useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { canvasTheme, useTheme } from '../stores/theme'
 import { demoAssetUrls, releaseDemoAssetUrls, seedDemo } from './demo'
 import { importFiles, importText, revealImports } from './import'
 import { beginImport } from './importProgress'
+import { importLocation, watchImportView } from './importView'
 import { localCacheName, watchCacheWrites } from './localCache'
 import { abortGroupRuns } from '../features/runs/groupRuns'
 import { watchStale } from '../features/runs/stale'
@@ -341,11 +342,20 @@ function attachImport(engine: Engine, host: HTMLElement) {
     if (!all.length || disposed) return
     const files = all.slice(0, MAX_IMPORT_FILES)
     const batch = beginImport(engine, files.length)
+    const view = watchImportView(engine)
     const notes: string[] = []
+    let action: NoticeAction | undefined
     try {
-      const res = await importFiles(engine, files, at, batch.progress, { signal: batch.signal })
+      const res = await importFiles(engine, files, at, batch.progress, {
+        signal: batch.signal,
+        select: false,
+      })
       if (disposed) return
-      revealImports(engine, res.created)
+      if (view.unchanged()) revealImports(engine, res.created)
+      else if (res.created.length) {
+        notes.push(`已导入 ${res.created.length} 个素材`)
+        action = importLocation(engine, res.created)
+      }
       if (res.skipped.length) {
         const shown = res.skipped.slice(0, 3).map((s) => `${s.name}（${s.reason}）`)
         notes.push(
@@ -360,7 +370,8 @@ function attachImport(engine: Engine, host: HTMLElement) {
       if (!disposed && !batch.signal.aborted)
         notes.push(error instanceof Error ? error.message : '素材导入失败')
     } finally {
-      batch.finish(notes)
+      view.dispose()
+      batch.finish(notes, action)
     }
   }
 

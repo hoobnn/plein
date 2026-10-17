@@ -18,7 +18,7 @@ export type SyncStatus =
   | 'connected'
   | 'disconnected'
 
-interface NoticeAction {
+export interface NoticeAction {
   label: string
   run(): void
 }
@@ -129,8 +129,12 @@ export const useCanvas = create<CanvasStore>((set) => ({
       off()
       offMenu()
       offArrange()
+      clearTimeout(noticeTimer)
       set({
         engine: null,
+        importing: null,
+        notice: null,
+        noticeAction: null,
         menu: null,
         storyboard: null,
         sequence: null,

@@ -113,3 +113,127 @@ test('新文件已在可见区域时保持用户当前缩放和视角', async ({
     }),
   ).toEqual(before)
 })
+
+for (const steering of ['selection', 'zoom', 'typing', 'drop-typing', 'notice-reset'] as const) {
+  test(`上传期间${steering} 后保留新上下文，并允许手动定位导入结果`, async ({ page }, testInfo) => {
+    await newProject(page)
+    await page.evaluate(() =>
+      window.__plein.addNode({
+        type: 'plein/text',
+        name: '用户继续操作的卡片',
+        params: { text: '编辑中的内容' },
+        x: 1000,
+        y: 0,
+      }),
+    )
+    if (steering === 'typing' || steering === 'drop-typing')
+      await page
+        .getByRole('treeitem', { name: '用户继续操作的卡片 定位到画布', exact: true })
+        .click()
+    let held = false
+    let release = () => {}
+    await page.route('**/api/assets', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue()
+      const response = await route.fetch()
+      await new Promise<void>((resolve) => {
+        release = resolve
+        held = true
+      })
+      await route.fulfill({ response })
+    })
+    if (steering === 'drop-typing') {
+      const prompt = page
+        .getByTestId('generator')
+        .getByRole('textbox', { name: '提示词', exact: true })
+      await prompt.focus()
+      await page
+        .locator('canvas')
+        .first()
+        .evaluate(
+          (canvas, bytes) => {
+            const data = new DataTransfer()
+            data.items.add(
+              new File([new Uint8Array(bytes)], '拖入的图片.png', { type: 'image/png' }),
+            )
+            canvas.dispatchEvent(
+              new DragEvent('drop', {
+                bubbles: true,
+                cancelable: true,
+                clientX: 850,
+                clientY: 400,
+                dataTransfer: data,
+              }),
+            )
+          },
+          [...png],
+        )
+    } else {
+      const chooser = page.waitForEvent('filechooser')
+      await page.getByRole('button', { name: '上传', exact: true }).click()
+      await (
+        await chooser
+      ).setFiles({ name: '稍后完成的文件.png', mimeType: 'image/png', buffer: png })
+    }
+    await expect.poll(() => held).toBe(true)
+    if (steering === 'selection' || steering === 'notice-reset')
+      await page
+        .getByRole('treeitem', { name: '用户继续操作的卡片 定位到画布', exact: true })
+        .click()
+    else if (steering === 'zoom') {
+      await page.getByRole('button', { name: '缩放选项', exact: true }).click()
+      await page
+        .getByRole('dialog', { name: '缩放', exact: true })
+        .getByRole('button', { name: /^缩小/ })
+        .click()
+    } else
+      await page
+        .getByTestId('generator')
+        .getByRole('textbox', { name: '提示词', exact: true })
+        .fill('上传期间继续编辑')
+    const before = await page.evaluate(() => {
+      const e = window.__plein.engine as typeof window.__plein.engine & {
+        camera: { x: number; y: number; zoom: number }
+      }
+      return {
+        selection: e.selection.values(),
+        camera: { x: e.camera.x, y: e.camera.y, zoom: e.camera.zoom },
+      }
+    })
+    release()
+    await expect
+      .poll(async () => (await elements(page)).filter((el) => el.kind === 'image').length)
+      .toBe(1)
+    expect(
+      await page.evaluate(() => {
+        const e = window.__plein.engine as typeof window.__plein.engine & {
+          camera: { x: number; y: number; zoom: number }
+        }
+        return {
+          selection: e.selection.values(),
+          camera: { x: e.camera.x, y: e.camera.y, zoom: e.camera.zoom },
+        }
+      }),
+    ).toEqual(before)
+    const imported = (await elements(page)).find((el) => el.kind === 'image')!
+    await expect(page.getByRole('button', { name: '定位新素材', exact: true })).toBeVisible()
+    if (steering === 'notice-reset') {
+      await page.getByRole('button', { name: '切换画布' }).click()
+      await page.getByRole('button', { name: '新建画布' }).click()
+      await page.getByRole('dialog').getByRole('textbox').fill('清空旧通知的画布')
+      await page.keyboard.press('Enter')
+      await expect(page.getByRole('button', { name: '切换画布' })).toHaveText('清空旧通知的画布')
+      await expect(page.getByRole('button', { name: '定位新素材', exact: true })).toHaveCount(0)
+      await expect(page.getByRole('status').filter({ hasText: '已导入' })).toHaveCount(0)
+      return
+    }
+    if (steering === 'typing')
+      await page.screenshot({
+        path: testInfo.outputPath('late-import.png'),
+        animations: 'disabled',
+      })
+    await page.getByRole('button', { name: '定位新素材', exact: true }).click()
+    expect(await page.evaluate(() => window.__plein.engine.selection.values())).toEqual([
+      imported.id,
+    ])
+  })
+}

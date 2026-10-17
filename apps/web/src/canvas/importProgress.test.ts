@@ -5,7 +5,25 @@ import { beginImport } from './importProgress'
 
 afterEach(() => {
   useCanvas.setState({ engine: null, importing: null, notice: null })
+  useCanvas.getState().notify(null)
   vi.useRealTimers()
+})
+
+it('定位操作等所有批次结束后才展示，早先错误与操作都不会提前过期', () => {
+  vi.useFakeTimers()
+  const engine = {} as Engine
+  useCanvas.setState({ engine })
+  const file = beginImport(engine, 1)
+  const other = beginImport(engine, 1)
+  const action = { label: '定位新素材', run: vi.fn() }
+  file.finish(['已导入 1 个素材'], action)
+  vi.advanceTimersByTime(9000)
+  expect(useCanvas.getState().noticeAction).toBeNull()
+  other.finish(['其他文件上传失败'])
+  expect(useCanvas.getState().notice).toBe('已导入 1 个素材；其他文件上传失败')
+  expect(useCanvas.getState().noticeAction).toBe(action)
+  useCanvas.getState().noticeAction!.run()
+  expect(action.run).toHaveBeenCalledOnce()
 })
 
 it('切换画布取消所有旧入口，已结束及未结束任务的迟到回调都不覆盖新进度', () => {
