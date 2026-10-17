@@ -32,6 +32,7 @@ export default defineConfig({
     'generator-camera.spec.ts',
     'generator-editing.spec.ts',
     'recovery-drafts.spec.ts',
+    'review-recovery-context.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },

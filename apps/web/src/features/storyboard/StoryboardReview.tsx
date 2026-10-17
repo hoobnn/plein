@@ -346,6 +346,7 @@ export function StoryboardReview({
                                 )}
                                 {job && recovery && (
                                   <RecoveryBlock
+                                    key={job.id}
                                     job={job}
                                     view={recovery}
                                     doc={engine.doc}
