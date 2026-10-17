@@ -40,12 +40,23 @@ export function BatchChecklist({
   const invalidate = useCallback(() => {
     version.current++
   }, [])
+  useEffect(() => {
+    if (online) return
+    // 同步中断后不能继续信任旧预检，连同断线前尚未返回的请求一起作废。
+    invalidate()
+    setStale(true)
+    setLoading(false)
+  }, [online, invalidate])
   const requestKey = JSON.stringify(request)
   const load = useCallback(async () => {
     const mine = ++version.current
     setLoading(true)
     setStale(true)
     setError(null)
+    if (useCanvas.getState().sync !== 'connected') {
+      setLoading(false)
+      return
+    }
     try {
       const next = await api.storyboardBatchPreview(
         canvasId,

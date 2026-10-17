@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 import { clickElement, newProject, waitNode } from './canvas'
 
 async function fixture(page: Page) {
@@ -214,4 +214,71 @@ test('部分镜头失败后补齐批量只重试未完成项，保留成功镜�
   expect(
     await page.evaluate((id) => window.__plein.engine.doc.get(id)!.results, f.images[1]!),
   ).toHaveLength(1)
+})
+
+test('清单断线重连后必须重新预检，断线前的迟到响应不能恢复提交', async ({ page, context }) => {
+  let online = true
+  let commits = 0
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/storyboard-batch/commit')) commits++
+  })
+  const sockets = new Set<WebSocketRoute>()
+  await context.routeWebSocket(/\/sync\//, (socket) => {
+    if (!online) return void socket.close()
+    socket.connectToServer()
+    sockets.add(socket)
+    socket.onClose(() => sockets.delete(socket))
+  })
+  const f = await fixture(page)
+  const board = await f.open()
+  await board.getByRole('button', { name: '批量出分镜图', exact: true }).click()
+  const checklist = page.getByRole('dialog', { name: '批量生成清单', exact: true })
+  const confirm = checklist.getByRole('button', { name: '确认并开始生成', exact: true })
+  const refresh = checklist.getByRole('button', { name: '重新检查清单', exact: true })
+  await expect(confirm).toBeEnabled()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let waiting = false
+  await page.route('**/storyboard-batch/preview', async (route) => {
+    const response = await route.fetch()
+    waiting = true
+    await gate
+    await route.fulfill({ response })
+  })
+  await refresh.click()
+  await expect.poll(() => waiting).toBe(true)
+  online = false
+  for (const socket of sockets) await socket.close()
+  await expect(page.getByTestId('sync-status')).toHaveAttribute('data-sync', 'disconnected')
+  await expect(confirm).toBeDisabled()
+  online = true
+  await expect(page.getByTestId('sync-status')).toHaveAttribute('data-sync', 'connected', {
+    timeout: 30_000,
+  })
+  const late = page.waitForResponse('**/storyboard-batch/preview')
+  release()
+  await (await late).finished()
+  await expect(refresh).toBeEnabled()
+  // 等断线前请求的响应更新落地，不能在它仍未处理时提前通过。
+  await page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+  )
+  await expect(confirm).toBeDisabled()
+  await expect(checklist).toContainText('请重新检查清单')
+  await refresh.click()
+  await expect(confirm).toBeEnabled()
+  // 已完成的清单同样需要在下一次重连后重新检查。
+  online = false
+  for (const socket of sockets) await socket.close()
+  await expect(page.getByTestId('sync-status')).toHaveAttribute('data-sync', 'disconnected')
+  online = true
+  await expect(page.getByTestId('sync-status')).toHaveAttribute('data-sync', 'connected', {
+    timeout: 30_000,
+  })
+  await expect(confirm).toBeDisabled()
+  await refresh.click()
+  await expect(confirm).toBeEnabled()
+  expect(commits).toBe(0)
 })
