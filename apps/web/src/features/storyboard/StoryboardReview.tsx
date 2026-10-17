@@ -12,6 +12,7 @@ import { api, assetUrls } from '../../api/client'
 import { queryKeys } from '../../api/query'
 import { upstreams } from '../../canvas/nodes'
 import { useDocVersion } from '../../canvas/hooks'
+import { describeFailure, openProviderSettings } from '../../canvas/runStatus'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { runNode } from '../runs/run'
@@ -234,6 +235,10 @@ export function StoryboardReview({
                             const v = r?.value
                             const job = jobs.data?.jobs.find((j) => j.nodeId === node.id)
                             const recovery = job && describeRecovery(job)
+                            const failure =
+                              !recovery && node.run?.status === 'failed'
+                                ? describeFailure(node.run)
+                                : null
                             return (
                               <div
                                 key={node.id}
@@ -278,6 +283,23 @@ export function StoryboardReview({
                                           ? '当前采用'
                                           : '未完成'}
                                 </p>
+                                {failure && (
+                                  <div role="alert" className="text-xs text-danger">
+                                    <p>{failure.title}</p>
+                                    {failure.detail && (
+                                      <p className="mt-1 break-words">{failure.detail}</p>
+                                    )}
+                                    {failure.settings && (
+                                      <button
+                                        type="button"
+                                        className="ui-btn ui-btn-secondary ui-btn-xs mt-2"
+                                        onClick={openProviderSettings}
+                                      >
+                                        打开模型平台设置
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                                 <CreativeReviewForm
                                   doc={engine.doc}
                                   node={node}

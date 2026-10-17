@@ -162,3 +162,56 @@ test('协作删除部分已选镜头后，全选和批量范围只计现存镜�
   await expect(checklist.getByLabel('清单汇总')).toContainText('生成 1 项')
   await expect(checklist.getByRole('table')).toContainText('镜头 2')
 })
+
+test('部分镜头失败后补齐批量只重试未完成项，保留成功镜头的结果', async ({ page, request }) => {
+  const mock = '/api/providers/plein/mock/config'
+  const f = await fixture(page)
+  const board = await f.open()
+  const picked = board.getByRole('checkbox', { name: '选择镜头 1', exact: true })
+  const checklist = page.getByRole('dialog', { name: '批量生成清单', exact: true })
+  const batch = board.getByRole('button', { name: '批量出分镜图', exact: true })
+  const confirm = checklist.getByRole('button', { name: '确认并开始生成', exact: true })
+  await picked.check()
+  await batch.click()
+  await expect(checklist.getByLabel('清单汇总')).toContainText('生成 1 项')
+  await confirm.click()
+  await waitNode(page, f.images[0]!)
+  const original = await page.evaluate(
+    (id) => window.__plein.engine.doc.get(id)!.results,
+    f.images[0]!,
+  )
+  await picked.uncheck()
+  try {
+    expect((await request.put(mock, { data: { settings: { failWith: 'auth' } } })).ok()).toBe(true)
+    await batch.click()
+    await expect(checklist.getByLabel('清单汇总')).toContainText('生成 1 项 · 沿用 1 项')
+    await confirm.click()
+    await expect
+      .poll(() =>
+        page.evaluate((id) => window.__plein.engine.doc.get(id)?.run?.status, f.images[1]!),
+      )
+      .toBe('failed')
+    await board.getByRole('button', { name: '审核镜头', exact: true }).click()
+    await expect(board).toContainText('密钥无效')
+    await expect(board.getByRole('alert')).toBeInViewport()
+    await board.screenshot({ path: test.info().outputPath('batch-failure.png') })
+    await board.getByRole('button', { name: '打开模型平台设置', exact: true }).click()
+    const settings = page.getByRole('dialog', { name: '设置', exact: true })
+    await expect(settings.getByText('火山方舟').first()).toBeVisible()
+    await settings.getByRole('button', { name: '关闭', exact: true }).click()
+    await expect(settings).toBeHidden()
+  } finally {
+    expect((await request.put(mock, { data: { settings: { failWith: 'none' } } })).ok()).toBe(true)
+  }
+  await board.getByRole('button', { name: '编辑分镜', exact: true }).click()
+  await batch.click()
+  await expect(checklist.getByLabel('清单汇总')).toContainText('生成 1 项 · 沿用 1 项')
+  await confirm.click()
+  await waitNode(page, f.images[1]!)
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.get(id)!.results, f.images[0]!),
+  ).toEqual(original)
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.get(id)!.results, f.images[1]!),
+  ).toHaveLength(1)
+})
