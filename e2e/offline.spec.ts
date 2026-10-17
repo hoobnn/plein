@@ -86,6 +86,179 @@ test('断线编辑，断线时刷新从本机缓存恢复，重连后合并到�
   await expect.poll(() => serverNodes(context, url)).toBe(2)
 })
 
+test('离线正文撤销重做与在线同伴修改合并，刷新和无缓存客户端保持一致', async ({
+  page,
+  context,
+}) => {
+  const net = await syncSwitch(context)
+  await newProject(page)
+  await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected')
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/text',
+      name: '离线正文',
+      params: { text: '初始正文' },
+      x: 400,
+      y: 300,
+    }),
+  )
+  const read = (target: Page) =>
+    target.evaluate((id) => {
+      const doc = window.__plein.engine.doc
+      const el = doc.get(id)
+      return { name: el?.name, text: el?.params?.text, count: [...doc.elements()].length }
+    }, id)
+  const peerContext = await context.browser()!.newContext()
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  try {
+    const peer = await peerContext.newPage()
+    peer.on('pageerror', (error) => errors.push(error.message))
+    await peer.goto(page.url())
+    await waitEngine(peer)
+    await expect(syncStatus(peer)).toHaveAttribute('data-sync', 'connected')
+    await expect.poll(() => read(peer)).toEqual({ name: '离线正文', text: '初始正文', count: 1 })
+
+    net.offline()
+    await expect(syncStatus(page)).toHaveAttribute('data-sync', 'disconnected')
+    await page.getByRole('treeitem', { name: '离线正文 定位到画布', exact: true }).click()
+    const prompt = page.getByRole('textbox', { name: '提示词', exact: true })
+    await prompt.fill('离线修改后的正文')
+    await expect
+      .poll(() => read(page))
+      .toEqual({ name: '离线正文', text: '离线修改后的正文', count: 1 })
+    await expect(syncStatus(page)).toHaveAttribute('data-cache', 'saved')
+    expect(await read(peer)).toEqual({ name: '离线正文', text: '初始正文', count: 1 })
+
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    await expect(prompt).toHaveValue('初始正文')
+    await page.getByRole('button', { name: '重做', exact: true }).click()
+    await expect(prompt).toHaveValue('离线修改后的正文')
+    await page.screenshot({ path: 'test-results/offline-edit-before-reconnect.png' })
+
+    // 修改不同字段，验证真实远端事务不会被本机撤销历史吞掉。
+    await peer.getByRole('treeitem', { name: '离线正文 定位到画布', exact: true }).dblclick()
+    const name = peer.getByRole('tree').getByRole('textbox', { name: '画布名称' })
+    await name.fill('同伴重命名')
+    await name.press('Enter')
+    await addNode(peer, '文本', { x: 950, y: 450 })
+    await peer.keyboard.press('Escape')
+    await expect.poll(() => read(peer)).toEqual({ name: '同伴重命名', text: '初始正文', count: 2 })
+    expect(await read(page)).toEqual({ name: '离线正文', text: '离线修改后的正文', count: 1 })
+
+    net.online()
+    await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected', { timeout: 30_000 })
+    const merged = { name: '同伴重命名', text: '离线修改后的正文', count: 2 }
+    await expect.poll(() => read(page)).toEqual(merged)
+    await expect.poll(() => read(peer)).toEqual(merged)
+    await expect(prompt).toHaveValue('离线修改后的正文')
+    await expect(
+      page.getByRole('treeitem', { name: '同伴重命名 定位到画布', exact: true }),
+    ).toBeVisible()
+    await page.screenshot({ path: 'test-results/offline-edit-after-reconnect.png' })
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    await expect.poll(() => read(page)).toEqual({ ...merged, text: '初始正文' })
+    await expect.poll(() => read(peer)).toEqual({ ...merged, text: '初始正文' })
+    await page.getByRole('button', { name: '重做', exact: true }).click()
+    await expect.poll(() => read(peer)).toEqual(merged)
+    await expect(syncStatus(page)).toHaveAttribute('data-cache', 'saved')
+    await page.reload()
+    await waitEngine(page)
+    await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected')
+    await expect.poll(() => read(page)).toEqual(merged)
+
+    const freshContext = await context.browser()!.newContext()
+    try {
+      const fresh = await freshContext.newPage()
+      await fresh.goto(page.url())
+      await waitEngine(fresh)
+      await expect(syncStatus(fresh)).toHaveAttribute('data-sync', 'connected')
+      await expect.poll(() => read(fresh)).toEqual(merged)
+    } finally {
+      await freshContext.close()
+    }
+    expect(errors).toEqual([])
+  } finally {
+    await peerContext.close()
+  }
+})
+
+test('同伴删除离线正在编辑的节点后关闭编辑器，隐藏并发新连线且不复活节点', async ({
+  page,
+  context,
+}) => {
+  const net = await syncSwitch(context)
+  await newProject(page)
+  await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected')
+  const source = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/text',
+      name: '待删除正文',
+      params: { text: '原文' },
+      x: 100,
+      y: 100,
+    }),
+  )
+  const read = (target: Page) =>
+    target.evaluate((id) => {
+      const doc = window.__plein.engine.doc
+      return {
+        exists: !!doc.get(id),
+        count: [...doc.elements()].length,
+        edges: [...doc.edges()].length,
+      }
+    }, source)
+  const peerContext = await context.browser()!.newContext()
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  try {
+    const peer = await peerContext.newPage()
+    await peer.goto(page.url())
+    await waitEngine(peer)
+    await expect(syncStatus(peer)).toHaveAttribute('data-sync', 'connected')
+    await expect.poll(() => read(peer)).toEqual({ exists: true, count: 1, edges: 0 })
+    net.offline()
+    await expect(syncStatus(page)).toHaveAttribute('data-sync', 'disconnected')
+    await page.getByRole('treeitem', { name: '待删除正文 定位到画布', exact: true }).click()
+    await page.getByRole('textbox', { name: '提示词', exact: true }).fill('尚未同步的正文')
+    // 模拟离线中新建依赖；同伴删除时尚不知道这条边的存在。
+    await page.evaluate((id) => {
+      const target = window.__plein.addNode({
+        type: 'plein/image',
+        name: '保留的图片',
+        params: {},
+        x: 800,
+        y: 100,
+      })
+      if (!window.__plein.connect([id, 'text'], [target, 'prompt'])) throw new Error('连线失败')
+    }, source)
+    await expect.poll(() => read(page)).toEqual({ exists: true, count: 2, edges: 1 })
+    await peer.getByRole('treeitem', { name: '待删除正文 定位到画布', exact: true }).click()
+    await peer.keyboard.press('Delete')
+    await expect.poll(() => read(peer)).toEqual({ exists: false, count: 0, edges: 0 })
+    net.online()
+    await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected', { timeout: 30_000 })
+    const merged = { exists: false, count: 1, edges: 0 }
+    await expect.poll(() => read(page)).toEqual(merged)
+    await expect.poll(() => read(peer)).toEqual(merged)
+    await expect(page.getByRole('region', { name: '文本 生成器', exact: true })).toHaveCount(0)
+    await expect(
+      page.getByRole('treeitem', { name: '待删除正文 定位到画布', exact: true }),
+    ).toHaveCount(0)
+    await expect(
+      page.getByRole('treeitem', { name: '保留的图片 定位到画布', exact: true }),
+    ).toBeVisible()
+    await expect(syncStatus(page)).toHaveAttribute('data-cache', 'saved')
+    await page.reload()
+    await waitEngine(page)
+    await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected')
+    await expect.poll(() => read(page)).toEqual(merged)
+    expect(errors).toEqual([])
+  } finally {
+    await peerContext.close()
+  }
+})
+
 test('离线缓存尚未落盘时保护刷新，事务完成后才显示已保存', async ({ page, context }) => {
   const net = await syncSwitch(context)
   await newProject(page)
