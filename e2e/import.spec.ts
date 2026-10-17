@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { elements, newProject, waitEngine } from './canvas'
+import { elements, newProject, waitEngine, zoomTo } from './canvas'
 
 let dir = ''
 const files = () => ['still.png', 'clip.mp4', 'voice.wav', 'notes.md'].map((f) => join(dir, f))
@@ -44,4 +44,138 @@ test('导入图片、视频、音频、Markdown，刷新后都还在', async ({ 
   await page.reload()
   await waitEngine(page)
   await expect.poll(kinds).toEqual(['audio', 'image', 'markdown', 'video'])
+})
+
+test('重复批量导入避让原有内容和前一批，一次撤销只移除本批文件', async ({ page }) => {
+  await newProject(page)
+  const blocker = await page.evaluate(() => {
+    const e = window.__plein.engine as typeof window.__plein.engine & {
+      camera: { viewRect: { x: number; y: number; w: number; h: number } }
+    }
+    const v = e.camera.viewRect
+    return window.__plein.addNode({
+      type: 'plein/text',
+      name: '导入前的原有卡片',
+      params: { text: '保留此内容' },
+      x: v.x + v.w / 2,
+      y: v.y + v.h / 2 - 100,
+    })
+  })
+  const batches: string[][] = []
+  for (let n = 0; n < 2; n++) {
+    const before = new Set((await elements(page)).map((el) => el.id))
+    const chooser = page.waitForEvent('filechooser')
+    await page.getByRole('button', { name: '上传', exact: true }).click()
+    await (await chooser).setFiles([join(dir, 'still.png'), join(dir, 'notes.md')])
+    await expect.poll(async () => (await elements(page)).length).toBe(3 + n * 2)
+    const added = (await elements(page)).filter((el) => !before.has(el.id)).map((el) => el.id)
+    batches.push(added)
+    const overlaps = await page.evaluate(() => {
+      const e = window.__plein.engine
+      const all = [...e.doc.elements()].map((el) => e.doc.worldRect(el.id))
+      return all.some((a, i) =>
+        all
+          .slice(i + 1)
+          .some((b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y),
+      )
+    })
+    expect(overlaps, '导入文件不得遮住原有卡片或前一批导入').toBe(false)
+  }
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  expect((await elements(page)).map((el) => el.id).sort()).toEqual([blocker, ...batches[0]!].sort())
+  await page.getByRole('button', { name: '重做', exact: true }).click()
+  expect((await elements(page)).map((el) => el.id).sort()).toEqual(
+    [blocker, ...batches.flat()].sort(),
+  )
+})
+
+test('导入落在分组内时保留父级，撤销不移除分组', async ({ page }) => {
+  await newProject(page)
+  const frame = await page.evaluate(() => {
+    const e = window.__plein.engine as typeof window.__plein.engine & { paste(data: unknown): void }
+    e.paste({
+      plein: 1,
+      elements: [
+        {
+          id: 'import-frame',
+          kind: 'frame',
+          name: '导入素材分组',
+          parentId: null,
+          x: 0,
+          y: 0,
+          w: 1600,
+          h: 1000,
+          rotation: 0,
+          locked: false,
+        },
+      ],
+      edges: [],
+    })
+    return [...e.doc.elements()].find((el) => el.kind === 'frame')!.id
+  })
+  await zoomTo(page, [frame])
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: '上传', exact: true }).click()
+  await (await chooser).setFiles(join(dir, 'still.png'))
+  await expect.poll(async () => (await elements(page)).length).toBe(2)
+  const imported = (await elements(page)).find((el) => el.kind === 'image')!
+  expect(imported.parentId).toBe(frame)
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  expect((await elements(page)).map((el) => el.id)).toEqual([frame])
+})
+
+test('部分上传失败保留成功文件并提示原因，重新导入失败文件可恢复', async ({ page }) => {
+  await newProject(page)
+  let attempts = 0
+  await page.route('**/api/assets', async (route) => {
+    if (route.request().method() !== 'POST' || ++attempts > 1) return route.continue()
+    await route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: '上传暂不可用' }),
+    })
+  })
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: '上传', exact: true }).click()
+  await (await chooser).setFiles([join(dir, 'still.png'), join(dir, 'notes.md')])
+  await expect.poll(async () => (await elements(page)).map((el) => el.kind)).toEqual(['markdown'])
+  await expect(page.getByRole('status')).toContainText('still.png（上传暂不可用）')
+  const retry = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: '上传', exact: true }).click()
+  await (await retry).setFiles(join(dir, 'still.png'))
+  await expect
+    .poll(async () => (await elements(page)).map((el) => el.kind).sort())
+    .toEqual(['image', 'markdown'])
+  expect(attempts).toBe(2)
+})
+
+test('连续粘贴普通文本避让已有内容，每次粘贴独立撤销', async ({ page }) => {
+  await newProject(page)
+  for (const text of ['第一段粘贴正文', '第二段粘贴正文']) {
+    await page
+      .locator('canvas')
+      .first()
+      .evaluate((canvas, text) => {
+        const data = new DataTransfer()
+        data.setData('text/plain', text)
+        canvas.dispatchEvent(
+          new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }),
+        )
+      }, text)
+  }
+  await expect.poll(async () => (await elements(page)).length).toBe(2)
+  const content = () =>
+    page.evaluate(() => [...window.__plein.engine.doc.elements()].map((el) => el.text))
+  expect(await content()).toEqual(['第一段粘贴正文', '第二段粘贴正文'])
+  expect(
+    await page.evaluate(() => {
+      const e = window.__plein.engine
+      const [a, b] = [...e.doc.elements()].map((el) => e.doc.worldRect(el.id))
+      return a!.x < b!.x + b!.w && a!.x + a!.w > b!.x && a!.y < b!.y + b!.h && a!.y + a!.h > b!.y
+    }),
+  ).toBe(false)
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  expect(await content()).toEqual(['第一段粘贴正文'])
+  await page.getByRole('button', { name: '重做', exact: true }).click()
+  expect(await content()).toEqual(['第一段粘贴正文', '第二段粘贴正文'])
 })

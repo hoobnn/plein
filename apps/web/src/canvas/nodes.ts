@@ -8,6 +8,7 @@ import {
   currentResult,
   elementPorts,
   type NewElement,
+  type Rect,
   nodeSize,
   parseAspect,
   type Port,
@@ -125,6 +126,17 @@ export function nodeElement(node: NodeInfo): Omit<NewElement, 'x' | 'y'> {
 
 type PortFrom = { elementId: string; port: Port; side: 'in' | 'out' }
 
+/** 按最终世界坐标找能完整容纳元素的最上层 Frame。 */
+export function containingFrame(engine: Engine, rect: Rect): string | null {
+  return engine.scene.hitTest(rect.x + rect.w / 2, rect.y + rect.h / 2, (id) => {
+    if (engine.scene.get(id)?.kind !== 'frame') return false
+    const r = engine.scene.rect(id)!
+    return (
+      rect.x >= r.x && rect.y >= r.y && rect.x + rect.w <= r.x + r.w && rect.y + rect.h <= r.y + r.h
+    )
+  })
+}
+
 /** 连接点上的全部端口：每侧只有一个连接点，拉线时按类型挑其中能接上的 */
 export function handlePorts(engine: Engine, from: PortFrom): Port[] {
   const el = engine.doc.get(from.elementId)
@@ -168,16 +180,7 @@ export function placeElement(
           { direction: from?.side === 'in' ? 'down' : 'right' },
         )
   // 避让后以实际落点判定所属 Frame，不能把已挪到框外的节点仍写成框内局部坐标。
-  const frame = scene.hitTest(spot.x + input.w / 2, spot.y + input.h / 2, (id) => {
-    if (scene.get(id)?.kind !== 'frame') return false
-    const r = scene.rect(id)!
-    return (
-      spot.x >= r.x &&
-      spot.y >= r.y &&
-      spot.x + input.w <= r.x + r.w &&
-      spot.y + input.h <= r.y + r.h
-    )
-  })
+  const frame = containingFrame(engine, { ...spot, w: input.w, h: input.h })
   const origin = (frame && scene.rect(frame)) || { x: 0, y: 0 }
   // 新建（连同自动连线）单独算一步撤销
   engine.doc.undo.stopCapturing()

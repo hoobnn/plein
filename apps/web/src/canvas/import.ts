@@ -1,7 +1,8 @@
 import type { Engine } from '@plein/canvas-core'
-import { AUDIO_SIZE, createElements, type NewElement } from '@plein/doc'
+import { AUDIO_SIZE, createElements, findFreeSpot, type NewElement } from '@plein/doc'
 import type { Asset } from '@plein/protocol'
 import { api } from '../api/client'
+import { containingFrame, placeElement } from './nodes'
 
 const TEXT_EXT = /\.(md|markdown|mdown|txt)$/i
 const MAX_SIDE = 480
@@ -94,14 +95,33 @@ export async function importFiles(
     }
   })
 
-  let x = at.x
+  const valid = inputs.filter((input) => input !== null)
+  if (!valid.length) return { created: [], skipped }
+  // 整批找空位，保留文件顺序及间距，不让后上传完成的文件覆盖已存在的内容。
+  const height = Math.max(...valid.map((input) => input.h))
+  const spot = findFreeSpot(engine.doc, {
+    x: at.x,
+    y: at.y - height / 2,
+    w: valid.reduce((sum, input) => sum + input.w, 0) + (valid.length - 1) * GAP,
+    h: height,
+  })
+  let x = spot.x
   const list: NewElement[] = []
-  for (const input of inputs) {
-    if (!input) continue
-    list.push({ ...input, x: Math.round(x), y: Math.round(at.y - input.h / 2) } as NewElement)
+  for (const input of valid) {
+    const y = spot.y + (height - input.h) / 2
+    const parentId = containingFrame(engine, { x, y, w: input.w, h: input.h })
+    const origin = (parentId && engine.doc.worldRect(parentId)) || { x: 0, y: 0 }
+    list.push({
+      ...input,
+      parentId,
+      x: Math.round(x - origin.x),
+      y: Math.round(y - origin.y),
+    } as NewElement)
     x += input.w + GAP
   }
-  const created = list.length ? createElements(engine.doc, list) : []
+  engine.doc.undo.stopCapturing()
+  const created = createElements(engine.doc, list)
+  engine.doc.undo.stopCapturing()
   if (created.length) engine.selection.set(created)
   return { created, skipped }
 }
@@ -109,8 +129,6 @@ export async function importFiles(
 /** 粘贴的纯文本建成 Markdown 元素 */
 export function importText(engine: Engine, text: string, at: { x: number; y: number }) {
   const [w, h] = markdownSize(text)
-  const [id] = createElements(engine.doc, [
-    { kind: 'markdown', text, w, h, x: Math.round(at.x - w / 2), y: Math.round(at.y - h / 2) },
-  ])
+  const id = placeElement(engine, { kind: 'markdown', text, w, h }, at)
   if (id) engine.selection.set([id])
 }
