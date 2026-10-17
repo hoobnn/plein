@@ -1,0 +1,57 @@
+import { defaultStageScene, StageBlock, StageScene } from '@plein/nodes'
+import { describe, expect, it } from 'vite-plus/test'
+import { stageObjectName, stageObjectPosition } from './placement'
+
+describe('3D 新对象放置', () => {
+  it('保留手动名称，跳过已占用编号并复用删除后的空号', () => {
+    const scene = defaultStageScene()
+    scene.figures.push({ ...scene.figures[0]!, id: 'third', name: '人物 3' })
+    expect(stageObjectName(scene, '人物')).toBe('人物 2')
+    scene.blocks.push(StageBlock.parse({ id: 'table', kind: 'table', name: ' 人物 2 ' }))
+    expect(stageObjectName(scene, '人物')).toBe('人物 4')
+  })
+
+  it('连加 12 人保留站位间距，并保持场景可以解析', () => {
+    const scene = defaultStageScene()
+    for (let i = 1; i < 12; i++) {
+      const at = stageObjectPosition(scene, { x: 0, z: 0, w: 0.68, d: 0.68 })!
+      expect(at).toBeDefined()
+      for (const f of scene.figures) {
+        expect(Math.abs(at.x - f.x) >= 0.93 || Math.abs(at.z - f.z) >= 0.93).toBe(true)
+      }
+      scene.figures.push({
+        ...scene.figures[0]!,
+        id: `added-${i}`,
+        name: stageObjectName(scene, '人物'),
+        ...at,
+      })
+    }
+    expect(scene.figures).toHaveLength(12)
+    expect(new Set(scene.figures.map((f) => f.name)).size).toBe(12)
+    expect(StageScene.safeParse(scene).success).toBe(true)
+  })
+
+  it('旋转墙的占地以及地面边缘均参与避让', () => {
+    const scene = defaultStageScene()
+    scene.figures = []
+    scene.blocks = [
+      StageBlock.parse({ id: 'wall', kind: 'wall', x: 50, z: 0, w: 4, d: 0.2, facing: 90 }),
+    ]
+    const at = stageObjectPosition(scene, { x: 50, z: 0, w: 0.68, d: 0.68 })!
+    expect(Math.abs(at.x)).toBeLessThanOrEqual(50)
+    expect(Math.abs(at.z)).toBeLessThanOrEqual(50)
+    // 墙旋转后沿 z 延伸四米；人物不能放到它的包围盒里。
+    expect(Math.abs(at.x - 50) >= 0.69 || Math.abs(at.z) >= 2.59).toBe(true)
+  })
+
+  it('地面被大场景件占满时不返回重叠落点', () => {
+    const scene = defaultStageScene()
+    scene.figures = []
+    scene.blocks = [-45, -15, 15, 45].flatMap((x) =>
+      [-45, -15, 15, 45].map((z) =>
+        StageBlock.parse({ id: `${x},${z}`, kind: 'box', x, z, w: 30, d: 30 }),
+      ),
+    )
+    expect(stageObjectPosition(scene, { x: 0, z: 0, w: 0.68, d: 0.68 })).toBeUndefined()
+  })
+})

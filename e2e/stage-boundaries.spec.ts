@@ -124,3 +124,82 @@ test('3D 添加菜单中的按键不删除背后的对象', async ({ page }) => 
   await page.keyboard.press('Delete')
   await expect(dialog.getByRole('button', { name: /人物 1/ })).toHaveCount(0)
 })
+
+test('3D 删除后再添加人物仍能按名字区分且不重叠', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  await dialog.getByRole('button', { name: '添加人物', exact: true }).click()
+  await dialog.getByRole('button', { name: '添加人物', exact: true }).click()
+  await dialog.getByRole('button', { name: /人物 2/ }).click()
+  await dialog.getByRole('button', { name: '删除', exact: true }).click()
+  await dialog.getByRole('button', { name: '添加人物', exact: true }).click()
+  const labels = await dialog.locator('.stage-outline .stage-item').allTextContents()
+  const people = labels.filter((label) => label.includes('人物'))
+  expect(new Set(people).size).toBe(3)
+  const positions = await page.evaluate((id) => {
+    return (
+      window.__plein.engine.doc.get(id)!.params!.scene as { figures: { x: number; z: number }[] }
+    ).figures.map((f) => `${f.x},${f.z}`)
+  }, stage.id)
+  expect(new Set(positions).size).toBe(3)
+})
+
+test('3D 连续添加场景件可区分名称且不堆在同一位置', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  for (let i = 0; i < 2; i++) {
+    await dialog.getByRole('button', { name: '添加场景件', exact: true }).click()
+    await page.getByRole('menuitem', { name: '桌子', exact: true }).click()
+  }
+  const data = await page.evaluate((id) => {
+    return (
+      window.__plein.engine.doc.get(id)!.params!.scene as {
+        blocks: { name?: string; x: number; z: number; w: number; d: number }[]
+      }
+    ).blocks
+  }, stage.id)
+  expect(new Set(data.map((b) => b.name)).size).toBe(2)
+  const [a, b] = data
+  expect(
+    Math.abs(a!.x - b!.x) >= (a!.w + b!.w) / 2 || Math.abs(a!.z - b!.z) >= (a!.d + b!.d) / 2,
+  ).toBe(true)
+})
+
+test('3D 截图等待时关闭重开，新截图的采用不被旧请求覆盖', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  const { stage, dialog } = await openStage(page)
+  let release!: () => void
+  const delayed = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let waiting = false
+  let first = true
+  await page.route('**/api/assets', async (route) => {
+    if (route.request().method() !== 'POST' || !first) return route.continue()
+    first = false
+    const response = await route.fetch()
+    waiting = true
+    await delayed
+    await route.fulfill({ response })
+  })
+  await dialog.getByRole('button', { name: '截图', exact: true }).click()
+  await expect.poll(() => waiting).toBe(true)
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  const at = await centerOf(page, stage.id)
+  await page.mouse.dblclick(at.x, at.y)
+  await expect(dialog.locator('canvas.stage-canvas')).toBeVisible()
+  await dialog.getByRole('button', { name: '坐', exact: true }).click()
+  await dialog.getByRole('button', { name: '截图', exact: true }).click()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(1)
+  const adopted = await page.evaluate(
+    (id) => window.__plein.engine.doc.mutable(id)?.get('adopted'),
+    stage.id,
+  )
+  release()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(2)
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.mutable(id)?.get('adopted'), stage.id),
+  ).toBe(adopted)
+  await expect(dialog.getByRole('button', { name: /人物 1\s*坐/ })).toBeVisible()
+  expect(errors).toEqual([])
+})

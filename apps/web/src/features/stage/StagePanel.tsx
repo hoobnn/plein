@@ -22,9 +22,10 @@ import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Segmented } from '../../ui/Segmented'
 import { saveSnapshot } from './snapshot'
+import { stageObjectName, stageObjectPosition } from './placement'
 import { type StageMode, type StageTool, StageView } from './view'
 
-/** 人物颜色：灰模上区分人物，按添加顺序轮换 */
+/** 人物颜色：灰模上区分人物，优先使用未占用的颜色 */
 const FIGURE_COLORS = ['#7aa2ff', '#ff8a7a', '#6fd3a8', '#f2c14e', '#b18cff', '#5cc8e0']
 
 /** 常用焦距：广角到长焦 */
@@ -143,12 +144,15 @@ export function StagePanel({
 
   const addFigure = () => {
     const n = scene.figures.length
+    const at = stageObjectPosition(scene, { x: 0, z: 0, w: 0.68, d: 0.68 })
+    if (!at) return notify('附近没有足够的站位，请先挪动已有对象')
     const f: StageFigure = {
       id: uid('fig'),
-      name: `人物 ${n + 1}`,
-      color: FIGURE_COLORS[n % FIGURE_COLORS.length]!,
-      x: Math.round((n % 2 ? 1 : -1) * Math.ceil(n / 2) * 0.9 * 100) / 100,
-      z: 0,
+      name: stageObjectName(scene, '人物'),
+      color:
+        FIGURE_COLORS.find((color) => !scene.figures.some((f) => f.color === color)) ??
+        FIGURE_COLORS[n % FIGURE_COLORS.length]!,
+      ...at,
       facing: 0,
       pose: 'stand',
       height: 1.7,
@@ -159,7 +163,18 @@ export function StagePanel({
   const addBlock = (kind: StageBlockKind) => {
     const def = STAGE_BLOCKS.find((b) => b.id === kind)!
     const [w, h, d] = def.size
-    const b: StageBlock = { id: uid('blk'), kind, x: 0, z: -1.5, facing: 0, w, h, d }
+    const at = stageObjectPosition(scene, { x: 0, z: -1.5, w, d })
+    if (!at) return notify('附近没有足够的空间，请先挪动已有对象')
+    const b: StageBlock = {
+      id: uid('blk'),
+      kind,
+      name: stageObjectName(scene, def.label),
+      ...at,
+      facing: 0,
+      w,
+      h,
+      d,
+    }
     commit({ ...scene, blocks: [...scene.blocks, b] })
     setSelected(b.id)
   }
