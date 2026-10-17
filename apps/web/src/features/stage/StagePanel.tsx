@@ -65,31 +65,36 @@ export function StagePanel({
   // 面板挂在弹层里，第一次渲染时节点还没进页面：用回调 ref 拿到再建视口
   const [host, setHost] = useState<HTMLDivElement | null>(null)
   const view = useRef<StageView | null>(null)
-  // 回调里拿最新的场景：拖动结束时文档可能已被协作者改过
+  // 视口 effect 使用最近一次渲染的场景，宿主变化时才重建 WebGL 上下文
   const latest = useRef(scene)
   latest.current = scene
 
-  const commit = (next: Omit<StageScene, 'rev'>) =>
-    setParam(engine.doc, id, 'scene', { ...next, rev: latest.current.rev + 1 })
+  const readScene = () => stageSceneOf(engine.doc.get(id)?.params)
+  const commit = (change: (current: StageScene) => StageScene) => {
+    // 属性编辑前先确认当前视角；确认可能同步写入新机位，随后必须重新读文档。
+    view.current?.finishCamera()
+    const current = readScene()
+    setParam(engine.doc, id, 'scene', { ...change(current), rev: current.rev + 1 })
+  }
   const patchFigure = (fid: string, patch: Partial<StageFigure>) =>
-    commit({
-      ...latest.current,
-      figures: latest.current.figures.map((f) => (f.id === fid ? { ...f, ...patch } : f)),
-    })
+    commit((current) => ({
+      ...current,
+      figures: current.figures.map((f) => (f.id === fid ? { ...f, ...patch } : f)),
+    }))
   const patchBlock = (bid: string, patch: Partial<StageBlock>) =>
-    commit({
-      ...latest.current,
-      blocks: latest.current.blocks.map((b) => (b.id === bid ? { ...b, ...patch } : b)),
-    })
+    commit((current) => ({
+      ...current,
+      blocks: current.blocks.map((b) => (b.id === bid ? { ...b, ...patch } : b)),
+    }))
   const patchCamera = (patch: Partial<StageCamera>) =>
-    commit({ ...latest.current, camera: { ...latest.current.camera, ...patch } })
+    commit((current) => ({ ...current, camera: { ...current.camera, ...patch } }))
 
   useEffect(() => {
     if (!host) return
     const v = new StageView(host, {
       onSelect: (sid) => setSelected(sid),
       onMove: (oid, at) => {
-        const s = latest.current
+        const s = readScene()
         if (s.figures.some((f) => f.id === oid)) patchFigure(oid, at)
         else patchBlock(oid, at)
       },
@@ -144,48 +149,52 @@ export function StagePanel({
   const block = scene.blocks.find((b) => b.id === selected)
 
   const addFigure = () => {
-    const n = scene.figures.length
-    const at = stageObjectPosition(scene, { x: 0, z: 0, w: 0.68, d: 0.68 })
+    const current = readScene()
+    const n = current.figures.length
+    if (n >= 12) return
+    const at = stageObjectPosition(current, { x: 0, z: 0, w: 0.68, d: 0.68 })
     if (!at) return notify('附近没有足够的站位，请先挪动已有对象')
     const f: StageFigure = {
       id: uid('fig'),
-      name: stageObjectName(scene, '人物'),
+      name: stageObjectName(current, '人物'),
       color:
-        FIGURE_COLORS.find((color) => !scene.figures.some((f) => f.color === color)) ??
+        FIGURE_COLORS.find((color) => !current.figures.some((f) => f.color === color)) ??
         FIGURE_COLORS[n % FIGURE_COLORS.length]!,
       ...at,
       facing: 0,
       pose: 'stand',
       height: 1.7,
     }
-    commit({ ...scene, figures: [...scene.figures, f] })
+    commit((current) => ({ ...current, figures: [...current.figures, f] }))
     setSelected(f.id)
   }
   const addBlock = (kind: StageBlockKind) => {
+    const current = readScene()
+    if (current.blocks.length >= 60) return
     const def = STAGE_BLOCKS.find((b) => b.id === kind)!
     const [w, h, d] = def.size
-    const at = stageObjectPosition(scene, { x: 0, z: -1.5, w, d })
+    const at = stageObjectPosition(current, { x: 0, z: -1.5, w, d })
     if (!at) return notify('附近没有足够的空间，请先挪动已有对象')
     const b: StageBlock = {
       id: uid('blk'),
       kind,
-      name: stageObjectName(scene, def.label),
+      name: stageObjectName(current, def.label),
       ...at,
       facing: 0,
       w,
       h,
       d,
     }
-    commit({ ...scene, blocks: [...scene.blocks, b] })
+    commit((current) => ({ ...current, blocks: [...current.blocks, b] }))
     setSelected(b.id)
   }
   const removeSelected = () => {
     if (!selected || selected === CAMERA_ID) return
-    commit({
-      ...scene,
-      figures: scene.figures.filter((f) => f.id !== selected),
-      blocks: scene.blocks.filter((b) => b.id !== selected),
-    })
+    commit((current) => ({
+      ...current,
+      figures: current.figures.filter((f) => f.id !== selected),
+      blocks: current.blocks.filter((b) => b.id !== selected),
+    }))
     setSelected(null)
   }
   const close = () => {
@@ -314,7 +323,7 @@ export function StagePanel({
                         type="button"
                         className="stage-link"
                         title="把场景和机位恢复成截这张图时的样子"
-                        onClick={() => commit(s.scene)}
+                        onClick={() => commit(() => s.scene)}
                       >
                         恢复
                       </button>
@@ -384,7 +393,7 @@ export function StagePanel({
             <CameraInspector
               scene={scene}
               mode={mode}
-              onAspect={(aspect) => commit({ ...scene, aspect })}
+              onAspect={(aspect) => commit((current) => ({ ...current, aspect }))}
               onChange={patchCamera}
               onFromView={() => {
                 const cam = view.current?.viewAsCamera()

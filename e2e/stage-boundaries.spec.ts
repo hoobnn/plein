@@ -47,6 +47,44 @@ async function figureBounds(page: Page, png: Buffer) {
   }, png.toString('base64'))
 }
 
+async function handlePoint(page: Page, png: Buffer, color: 'red' | 'green') {
+  return page.evaluate(
+    async ({ base64, color }) => {
+      const image = await createImageBitmap(
+        new Blob([Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))], { type: 'image/png' }),
+      )
+      const canvas = document.createElement('canvas')
+      canvas.width = image.width
+      canvas.height = image.height
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(image, 0, 0)
+      image.close()
+      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+      const points: { x: number; y: number }[] = []
+      let right = 0
+      for (let y = 0; y < canvas.height; y++)
+        for (let x = 0; x < canvas.width; x++) {
+          const i = (y * canvas.width + x) * 4
+          const match =
+            color === 'red'
+              ? data[i]! > 180 && data[i + 1]! < 140 && data[i + 2]! < 140
+              : data[i + 1]! > 180 && data[i]! < 140 && data[i + 2]! < 140
+          if (match) {
+            points.push({ x, y })
+            right = Math.max(right, x)
+          }
+        }
+      const edge = points.filter((p) => p.x >= right - 1)
+      if (!edge.length) throw new Error(`未找到 ${color} 操纵手柄`)
+      return {
+        x: edge.reduce((sum, p) => sum + p.x, 0) / edge.length / canvas.width,
+        y: edge.reduce((sum, p) => sum + p.y, 0) / edge.length / canvas.height,
+      }
+    },
+    { base64: png.toString('base64'), color },
+  )
+}
+
 test('3D 坐标允许负数草稿，清空与取消不移动对象', async ({ page }) => {
   const { stage, dialog } = await openStage(page)
   const x = dialog.getByRole('spinbutton', { name: '左右', exact: true })
@@ -380,4 +418,100 @@ test('3D 平移后立即切换视角不丢失注视目标', async ({ page }) => 
   expect(adopted.tx).toBeCloseTo(aimed.tx, 2)
   expect(adopted.ty).toBeCloseTo(aimed.ty, 2)
   expect(adopted.tz).toBeCloseTo(aimed.tz, 2)
+})
+
+test('3D 用真实手柄移动和旋转人物，不误动机位', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  const canvas = dialog.locator('canvas.stage-canvas')
+  const read = async () =>
+    StageScene.parse(
+      await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.scene, stage.id),
+    )
+  const before = await read()
+  const drag = async (color: 'red' | 'green', dx: number, dy: number) => {
+    const at = await handlePoint(page, await canvas.screenshot(), color)
+    const rect = (await canvas.boundingBox())!
+    const x = rect.x + at.x * rect.width
+    const y = rect.y + at.y * rect.height
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + dx, y + dy, { steps: 10 })
+    await page.mouse.up()
+  }
+  await drag('red', 80, 0)
+  await expect.poll(async () => (await read()).figures[0]!.x).toBeGreaterThan(0.1)
+  const moved = await read()
+  expect(moved.camera).toEqual(before.camera)
+  expect(moved.figures[0]!.z).toBeCloseTo(before.figures[0]!.z, 2)
+  await dialog.getByRole('button', { name: '旋转（E）', exact: true }).click()
+  await drag('green', -20, -35)
+  await expect.poll(async () => (await read()).figures[0]!.facing).not.toBe(0)
+  const rotated = await read()
+  expect(rotated.camera).toEqual(before.camera)
+  expect(rotated.figures[0]!.x).toBeCloseTo(moved.figures[0]!.x, 2)
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  const at = await centerOf(page, stage.id)
+  await page.mouse.dblclick(at.x, at.y)
+  await expect(canvas).toBeVisible()
+  expect((await read()).figures).toEqual(rotated.figures)
+})
+
+test('3D 拖动后立即改焦距保留当前机位', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  await dialog.locator('.stage-outline .stage-item').filter({ hasText: '35mm' }).click()
+  const rect = (await dialog.locator('canvas.stage-canvas').boundingBox())!
+  await page.mouse.move(rect.x + rect.width * 0.2, rect.y + rect.height * 0.3)
+  await page.mouse.down()
+  await page.mouse.move(rect.x + rect.width * 0.4, rect.y + rect.height * 0.2, { steps: 3 })
+  await page.mouse.up()
+  await dialog.getByRole('button', { name: '85', exact: true }).click()
+  const read = async () =>
+    StageScene.parse(
+      await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.scene, stage.id),
+    )
+  await expect.poll(async () => Math.abs((await read()).camera.x)).toBeGreaterThan(0.1)
+  expect((await read()).camera.focal).toBe(85)
+})
+
+test('3D 拖动手柄到地面范围之外不重置场景', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  const canvas = dialog.locator('canvas.stage-canvas')
+  const rect = (await canvas.boundingBox())!
+  await page.mouse.move(rect.x + rect.width * 0.2, rect.y + rect.height * 0.3)
+  await page.mouse.wheel(0, 20000)
+  const read = async () =>
+    StageScene.parse(
+      await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.scene, stage.id),
+    )
+  await expect.poll(async () => (await read()).camera.z).toBe(50)
+  const at = await handlePoint(page, await canvas.screenshot(), 'red')
+  await page.mouse.move(rect.x + at.x * rect.width, rect.y + at.y * rect.height)
+  await page.mouse.down()
+  await page.mouse.move(1430, rect.y + at.y * rect.height, { steps: 12 })
+  await page.mouse.up()
+  await expect.poll(async () => (await read()).figures[0]!.x).toBe(50)
+  expect((await read()).figures[0]!.id).toBe('fig-1')
+  await expect(dialog.getByRole('spinbutton', { name: '左右', exact: true })).toHaveValue('50')
+})
+
+test('3D 人物达到上限后禁用添加，删除后可继续添加', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  const add = dialog.getByRole('button', { name: '添加人物', exact: true })
+  for (let i = 0; i < 11; i++) await add.click()
+  await expect(add).toBeDisabled()
+  const read = async () =>
+    StageScene.parse(
+      await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.scene, stage.id),
+    )
+  expect((await read()).figures).toHaveLength(12)
+  await dialog.getByRole('button', { name: /人物 6/ }).click()
+  await dialog.getByRole('button', { name: '删除', exact: true }).click()
+  await expect(add).toBeEnabled()
+  await add.click()
+  await expect(add).toBeDisabled()
+  const figures = (await read()).figures
+  expect(figures).toHaveLength(12)
+  expect(new Set(figures.map((f) => f.name)).size).toBe(12)
+  expect(new Set(figures.map((f) => `${f.x},${f.z}`)).size).toBe(12)
 })
