@@ -73,6 +73,39 @@ export default defineConfig({
     ignorePatterns: ['pnpm-lock.yaml', 'apps/server/drizzle/**', '**/dist/**', '**/dist-e2e/**'],
   },
   test: {
-    projects: ['packages/*', 'apps/server', 'apps/web'],
+    projects: ['packages/*', 'apps/*'],
+    coverage: {
+      include: ['apps/*/src/**/*.{ts,tsx}', 'packages/*/src/**/*.{ts,tsx}'],
+      exclude: ['**/*.test.{ts,tsx}', '**/*.d.ts', '**/*.gen.ts', '**/testing.ts'],
+      reporter: ['text-summary', 'html', 'json-summary'],
+      reportOnFailure: true,
+      thresholds: {
+        lines: 52,
+        statements: 49,
+        functions: 42,
+        branches: 42,
+        'packages/flow/src/{graph,key,schedule}.ts': {
+          perFile: true,
+          lines: 100,
+          statements: 95,
+          functions: 100,
+          branches: 90,
+        },
+        'apps/server/src/runs/runs.ts': {
+          lines: 95,
+          statements: 90,
+          functions: 95,
+          branches: 80,
+        },
+        'apps/web/src/api/listSnapshot.ts': { 100: true },
+        'apps/desktop/src/{prefs,preload,activity,downloads,window-state}.ts': {
+          perFile: true,
+          lines: 100,
+          statements: 100,
+          functions: 100,
+          branches: 90,
+        },
+      },
+    },
   },
 })

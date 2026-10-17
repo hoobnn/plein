@@ -15,20 +15,23 @@ pnpm dev                 # 前端 http://localhost:5173 + 服务端 :8787（数�
 
 ## 常用命令
 
-| 命令             | 作用                                                                                   |
-| ---------------- | -------------------------------------------------------------------------------------- |
-| `pnpm lint`      | Vite+ 检查（Oxfmt 格式 + Oxlint 规则）加 markdownlint；CI 在 PR 和推送 main 时自动运行 |
-| `pnpm format`    | 格式化代码，并应用能安全自动修复的规则，包括 markdownlint 能自动修的项                 |
-| `pnpm typecheck` | 全部包的类型检查                                                                       |
-| `pnpm test`      | Vitest 单测与集成测试                                                                  |
-| `pnpm smoke`     | 启动真实服务，经 HTTP 和 Yjs WebSocket 读写，重启后确认数据没丢                        |
-| `pnpm verify`    | 依次运行以上四项，合并前必须通过                                                       |
-| `pnpm e2e`       | Playwright 界面冒烟：基于 mock 平台覆盖从短剧模板到导出的完整流程                      |
-| `pnpm perf`      | 画布渲染性能基准                                                                       |
+| 命令                 | 作用                                                                                    |
+| -------------------- | --------------------------------------------------------------------------------------- |
+| `pnpm lint`          | Vite+ 检查（Oxfmt 格式 + Oxlint 规则）加 markdownlint；CI 在 PR 和推送 main 时自动运行  |
+| `pnpm format`        | 格式化代码，并应用能安全自动修复的规则，包括 markdownlint 能自动修的项                  |
+| `pnpm typecheck`     | 全部包的类型检查                                                                        |
+| `pnpm test`          | Vitest 单测与集成测试                                                                   |
+| `pnpm test:coverage` | 统计全部应用及公共包源码覆盖率，执行覆盖率门槛，输出 `coverage/index.html` 与 JSON 汇总 |
+| `pnpm smoke`         | 启动真实服务，经 HTTP 和 Yjs WebSocket 读写，重启后确认数据没丢                         |
+| `pnpm verify`        | 依次运行 lint、typecheck、test:coverage、smoke，合并前必须通过                          |
+| `pnpm e2e`           | Playwright 界面冒烟：基于 mock 平台覆盖从短剧模板到导出的完整流程                       |
+| `pnpm perf`          | 画布渲染性能基准                                                                        |
 
 验收分四层：单测、集成、启动冒烟、真实样例，各层的准入和写法见 [docs/acceptance-0.1.0.md](docs/plan/acceptance-0.1.0.md)。
 
 工具链是 [Vite+](https://viteplus.dev)（命令 `vp`）：Oxfmt 负责格式化代码、样式、Markdown、YAML 和 HTML，Oxlint 做代码检查（含类型感知规则），Vitest 运行单元测试，`vp pack`（tsdown）打包服务端和桌面端。规则和格式选项都写在根目录的 `vite.config.ts`。
+
+覆盖率包括未被测试导入的 `apps/*/src` 和 `packages/*/src` 源码，只排除测试、类型声明、生成代码及测试辅助文件。桌面端也属于测试项目。CI 和 `pnpm verify` 使用同一套覆盖率门槛：全局底线防止回退，本次收敛的调度、输入准备、列表快照及桌面状态模块另设更高门槛。单元测试覆盖率和浏览器端到端测试分别计数，不能把 mock 平台通过解释为真实平台验收。当前范围、证据和覆盖缺口见[结构优化记录](docs/dev/refactoring-2026-10-17.md)。
 
 格式化遵循 `.gitignore`，排除构建产物；`pnpm-lock.yaml` 保留 pnpm 自己生成的格式。Markdown 段落不强制折行，代码块和 HTML 里内嵌的代码不做二次格式化。Markdown 规则另由 markdownlint 检查，配置在 `.markdownlint.jsonc`，VS Code 的 markdownlint 插件读取同一份配置。
 

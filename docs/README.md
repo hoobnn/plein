@@ -18,6 +18,7 @@
 | [插件](dev/plugins.md)                                 | 插件清单、节点、Provider、执行器与能力            |
 | [桌面端](dev/desktop.md)                               | Electron 方案、进程结构、打包、签名与发布         |
 | [界面设计规范](dev/design-spec.md)                     | 令牌、尺寸、颜色、图标与通用组件                  |
+| [结构优化与测试覆盖](dev/refactoring-2026-10-17.md)    | 重构范围、回归验证、覆盖率门槛与剩余缺口          |
 | [BeefTV 源码对照](research/beeftv-2026-10-17.md)       | 六个子系统的证据、借鉴设计与兼容边界              |
 | [画布性能样本](benchmarks/2026-10-17-canvas-perf.json) | 1000 个媒体、三轮冷热打开与五个交互场景的本机报告 |
 

@@ -18,10 +18,17 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fontconfig fonts-noto-cjk
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
-      - run: pnpm test
+      - run: pnpm test:coverage
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
+          retention-days: 14
       - run: pnpm build
 
   # 界面冒烟：mock 平台起真服务，Playwright 驱动 Chromium 走完模板到导出。
