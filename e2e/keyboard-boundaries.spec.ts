@@ -119,3 +119,36 @@ test('中文组字的确认和取消不结束侧栏重命名或关闭输入对�
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
 })
+
+test('侧栏重命名有独立撤销边界，不连带撤销刚完成的位置修改', async ({ page }) => {
+  await newProject(page)
+  await addNode(page, '文本')
+  const row = page.getByRole('treeitem', { name: '文本 定位到画布', exact: true })
+  const id = await page.evaluate(() => [...window.__plein.engine.doc.elements()][0]!.id)
+  await row.dblclick()
+  const rename = page.getByRole('tree').getByRole('textbox', { name: '画布名称' })
+  await rename.fill('改名后的文本')
+  // 与提交紧邻的一次位置事务，避免用睡眠跨过 Yjs 的默认捕获窗口掩盖问题。
+  await page.evaluate((id) => {
+    const doc = window.__plein.engine.doc as unknown as {
+      origin: unknown
+      ydoc: { transact(fn: () => void, origin: unknown): void }
+      mutable(id: string): { set(k: string, v: number): void }
+    }
+    doc.ydoc.transact(() => doc.mutable(id).set('x', 101), doc.origin)
+  }, id)
+  await rename.press('Enter')
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect
+    .poll(() =>
+      page.evaluate((id) => {
+        const el = window.__plein.engine.doc.get(id)
+        return { name: el?.name, x: el && window.__plein.engine.doc.worldRect(id).x }
+      }, id),
+    )
+    .toEqual({ name: '文本', x: 101 })
+  await page.getByRole('button', { name: '重做', exact: true }).click()
+  await expect(
+    page.getByRole('treeitem', { name: '改名后的文本 定位到画布', exact: true }),
+  ).toBeVisible()
+})

@@ -279,7 +279,11 @@ function Layers({ engine }: { engine: Engine }) {
   }
   const rename = (id: string, name: string | null) => {
     setRenaming(null)
-    if (name !== null) updateElement(engine.doc, id, { name })
+    if (name !== null && name !== engine.doc.get(id)?.name) {
+      engine.doc.undo.stopCapturing()
+      updateElement(engine.doc, id, { name })
+      engine.doc.undo.stopCapturing()
+    }
   }
   // 行组件 memo 过：回调保持同一引用，选中变化时只重渲染选中状态变了的行
   const latest = useRef<LayerActions>(null!)
