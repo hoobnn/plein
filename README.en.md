@@ -4,8 +4,8 @@
 
 # Plein
 
-**A local-first AI infinite canvas for short drama.**<br/>
-Idea, script, characters, storyboard, shots, voiceover and the final cut live on one infinite canvas. Every step stays visible, editable and re-runnable on its own.
+**Open-source AI infinite canvas where stories unfold.**<br/>
+Start from a single idea, lay out the script, storyboard, shots and voiceover on the canvas, and finish your work together with an AI agent.
 
 [![CI](https://github.com/hoobnn/plein/actions/workflows/ci.yml/badge.svg)](https://github.com/hoobnn/plein/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)

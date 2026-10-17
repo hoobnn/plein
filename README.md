@@ -4,8 +4,8 @@
 
 # Plein
 
-**本地优先的 AI 无限画布，为短剧创作而生。**<br/>
-把创意、剧本、角色、分镜、镜头、配音和成片放在同一张无限画布上，每一步都能看、能改、能单独返工。
+**开源 AI 无限画布，让故事在这里展开。**<br/>
+从一句创意开始，剧本、分镜、镜头与配音在画布上铺开，和 AI Agent 一起完成你的作品。
 
 [![CI](https://github.com/hoobnn/plein/actions/workflows/ci.yml/badge.svg)](https://github.com/hoobnn/plein/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
