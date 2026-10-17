@@ -1,5 +1,5 @@
 import type { MediaLibraryItem, MediaLibraryPage, MediaSource, Project } from '@plein/protocol'
-import { type CSSProperties, useEffect, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
 import { elementFor } from '../../canvas/import'
 import { placeElement } from '../../canvas/nodes'
@@ -314,28 +314,41 @@ function MediaDetail({
     [cursor, setCursor] = useState<string | null>(null),
     [error, setError] = useState('')
   const [category, setCategory] = useState('character')
+  const [busy, setBusy] = useState(true)
+  const [retryCursor, setRetryCursor] = useState<string | undefined>()
+  const request = useRef<AbortController | null>(null)
+  const load = useCallback(
+    async (next?: string) => {
+      if (request.current) return
+      const controller = new AbortController()
+      request.current = controller
+      setBusy(true)
+      setError('')
+      setRetryCursor(next)
+      try {
+        const result = await mediaApi.sources(asset.id, next, controller.signal)
+        if (!controller.signal.aborted) {
+          setSources((old) => (next ? [...old, ...result.items] : result.items))
+          setCursor(result.nextCursor)
+        }
+      } catch (reason) {
+        if (!controller.signal.aborted) setError((reason as Error).message)
+      } finally {
+        if (request.current === controller) {
+          request.current = null
+          if (!controller.signal.aborted) setBusy(false)
+        }
+      }
+    },
+    [asset.id],
+  )
   useEffect(() => {
-    const controller = new AbortController()
-    mediaApi.sources(asset.id, undefined, controller.signal).then(
-      (result) => {
-        setSources(result.items)
-        setCursor(result.nextCursor)
-      },
-      (reason: Error) => {
-        if (!controller.signal.aborted) setError(reason.message)
-      },
-    )
-    return () => controller.abort()
-  }, [asset.id])
-  const more = async () => {
-    try {
-      const result = await mediaApi.sources(asset.id, cursor ?? undefined)
-      setSources((old) => [...old, ...result.items])
-      setCursor(result.nextCursor)
-    } catch (reason) {
-      setError((reason as Error).message)
+    void load()
+    return () => {
+      request.current?.abort()
+      request.current = null
     }
-  }
+  }, [load])
   const locate = (source: MediaSource) => {
     if (!source.locatable || !source.canvasId || !source.nodeId) return
     useMediaLibrary.getState().locate(source)
@@ -416,58 +429,76 @@ function MediaDetail({
       )}
       <section className="flex flex-col gap-2">
         <h4 className="ui-section-title">来源</h4>
-        {sources.length ? (
-          sources.map((source) => (
-            <div
-              key={`${source.type}/${source.id}/${source.locator}`}
-              className="rounded-lg bg-surface-2 p-2.5 text-xs"
-            >
-              <span className="block break-words">
-                {source.type === 'checkpoint'
-                  ? '检查点 · '
-                  : source.type === 'library'
-                    ? '资产库 · '
-                    : ''}
-                {source.label}
-              </span>
-              <span className="mt-1 flex items-center gap-2 text-ink-subtle">
-                {source.adopted && <span>采用中</span>}
-                {source.locatable ? (
-                  <button
-                    type="button"
-                    className="ui-btn ui-btn-xs ui-btn-quiet"
-                    onClick={() => locate(source)}
-                  >
-                    定位来源
-                  </button>
-                ) : (
-                  <span>
-                    {source.type === 'job'
-                      ? '来源节点已删除'
-                      : source.type === 'checkpoint'
-                        ? '保存在检查点'
-                        : '素材引用'}
-                  </span>
-                )}
-              </span>
-            </div>
-          ))
-        ) : (
-          <p className="text-xs text-ink-subtle">未关联到现存项目，文件仍可复用。</p>
+        {busy && (
+          <p role="status" className="text-xs text-ink-subtle">
+            正在读取来源…
+          </p>
         )}
+        {sources.length ? (
+          <div role="list" aria-label="素材来源" className="flex flex-col gap-2">
+            {sources.map((source) => (
+              <div
+                role="listitem"
+                key={`${source.type}/${source.id}/${source.locator}`}
+                className="rounded-lg bg-surface-2 p-2.5 text-xs"
+              >
+                <span className="block break-words">
+                  {source.type === 'checkpoint'
+                    ? '检查点 · '
+                    : source.type === 'library'
+                      ? '资产库 · '
+                      : ''}
+                  {source.label}
+                </span>
+                <span className="mt-1 flex items-center gap-2 text-ink-subtle">
+                  {source.adopted && <span>采用中</span>}
+                  {source.locatable ? (
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn-xs ui-btn-quiet"
+                      onClick={() => locate(source)}
+                    >
+                      定位来源
+                    </button>
+                  ) : (
+                    <span>
+                      {source.type === 'job'
+                        ? '来源节点已删除'
+                        : source.type === 'checkpoint'
+                          ? '保存在检查点'
+                          : '素材引用'}
+                    </span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : !busy && !error ? (
+          <p className="text-xs text-ink-subtle">未关联到现存项目，文件仍可复用。</p>
+        ) : null}
         {cursor && (
           <button
             type="button"
+            aria-label="更多来源"
             className="ui-btn ui-btn-sm ui-btn-secondary"
-            onClick={() => void more()}
+            disabled={busy}
+            onClick={() => void load(cursor ?? undefined)}
           >
-            更多来源
+            {busy ? '读取中…' : '更多来源'}
           </button>
         )}
         {error && (
-          <p role="alert" className="text-xs text-danger">
-            {error}
-          </p>
+          <div role="alert" className="flex flex-col items-start gap-2 text-xs text-danger">
+            <p>{error}</p>
+            <button
+              type="button"
+              className="ui-btn ui-btn-sm ui-btn-secondary"
+              disabled={busy}
+              onClick={() => void load(retryCursor)}
+            >
+              重试来源
+            </button>
+          </div>
         )}
       </section>
     </div>

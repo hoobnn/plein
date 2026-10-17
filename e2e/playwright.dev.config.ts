@@ -11,7 +11,7 @@ const root = join(import.meta.dirname, '..')
 
 export default defineConfig({
   ...base,
-  testMatch: ['library-navigation.spec.ts', 'viewer-media.spec.ts'],
+  testMatch: ['library-navigation.spec.ts', 'viewer-media.spec.ts', 'media-pagination.spec.ts'],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },
   webServer: [
     { ...backend, cwd: root },
