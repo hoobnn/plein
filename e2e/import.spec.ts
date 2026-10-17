@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { elements, newProject, waitEngine, zoomTo } from './canvas'
+import { edgesInto, elements, newProject, waitEngine, waitNode, zoomTo } from './canvas'
 
 let dir = ''
 const files = () => ['still.png', 'clip.mp4', 'voice.wav', 'notes.md'].map((f) => join(dir, f))
@@ -13,6 +13,7 @@ test.beforeAll(() => {
   const ff = (...args: string[]) =>
     execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args])
   ff('-f', 'lavfi', '-i', 'color=c=orange:s=64x48', '-frames:v', '1', join(dir, 'still.png'))
+  ff('-f', 'lavfi', '-i', 'color=c=blue:s=64x48', '-frames:v', '1', join(dir, 'reference.png'))
   ff('-f', 'lavfi', '-i', 'testsrc=s=96x160:d=1:r=10', '-pix_fmt', 'yuv420p', join(dir, 'clip.mp4'))
   ff('-f', 'lavfi', '-i', 'sine=f=440:d=1', join(dir, 'voice.wav'))
   writeFileSync(join(dir, 'notes.md'), '# 角色小传\n\n林晚，二十岁。\n')
@@ -250,4 +251,89 @@ test('并发导入合并进度，先失败的批次提示不会在另一批完�
   releases[1]!()
   await expect.poll(async () => (await elements(page)).length).toBe(1)
   await expect(page.getByRole('status')).toContainText('第一批上传失败')
+})
+
+for (const first of ['reference', 'toolbar'] as const) {
+  test(`参考图与工具栏同时上传，${first === 'reference' ? '参考图' : '工具栏'}先完成不清掉另一入口进度`, async ({
+    page,
+  }) => {
+    await newProject(page)
+    const target = await page.evaluate(() =>
+      window.__plein.addNode({
+        type: 'plein/character',
+        name: '混合上传角色',
+        params: {},
+        x: 0,
+        y: 0,
+      }),
+    )
+    await page.getByRole('treeitem', { name: '混合上传角色 定位到画布', exact: true }).click()
+    const releases: Array<() => void> = []
+    await page.route('**/api/assets', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue()
+      const response = await route.fetch()
+      await new Promise<void>((resolve) => releases.push(resolve))
+      await route.fulfill({ response })
+    })
+    const reference = page.waitForEvent('filechooser')
+    await page.getByTestId('generator').getByRole('button', { name: '参考图', exact: true }).click()
+    await (await reference).setFiles(join(dir, 'reference.png'))
+    await expect.poll(() => releases.length).toBe(1)
+    const toolbar = page.waitForEvent('filechooser')
+    await page.getByRole('button', { name: '上传', exact: true }).click()
+    await (await toolbar).setFiles(join(dir, 'still.png'))
+    await expect.poll(() => releases.length).toBe(2)
+    await expect(page.getByRole('status')).toContainText('正在导入 0/2')
+    releases[first === 'reference' ? 0 : 1]!()
+    await expect(page.getByRole('status')).toContainText('正在导入 1/2')
+    releases[first === 'reference' ? 1 : 0]!()
+    await expect
+      .poll(async () => (await elements(page)).filter((el) => el.kind === 'image').length)
+      .toBe(2)
+    await expect.poll(() => edgesInto(page, target)).toHaveLength(1)
+    const id = (await edgesInto(page, target))[0]![0]
+    expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, id!)).toBe(
+      'reference.png',
+    )
+  })
+}
+
+test('生成历史放入素材正常结束进度且不重新生成', async ({ page }) => {
+  await newProject(page)
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/image',
+      name: '历史放置检查',
+      params: { model: 'plein/mock:image', prompt: '海鸟' },
+      x: 0,
+      y: 0,
+    }),
+  )
+  const canvas = decodeURIComponent(page.url().split('#/c/')[1]!)
+  await expect
+    .poll(async () =>
+      (await page.request.get(`/api/canvases/${canvas}/nodes/${id}/input`)).status(),
+    )
+    .toBe(200)
+  expect(
+    (await page.request.post(`/api/canvases/${canvas}/nodes/${id}/run`, { data: {} })).status(),
+  ).toBe(202)
+  await waitNode(page, id)
+  let submitted = 0
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/run')) submitted++
+  })
+  await page.getByRole('button', { name: '生成历史', exact: true }).click()
+  const history = page.getByRole('dialog', { name: '生成历史', exact: true })
+  await history.getByRole('checkbox').first().check()
+  await history.getByRole('button', { name: '放到画布上', exact: true }).click()
+  await expect(history).toBeHidden()
+  await expect
+    .poll(async () => (await elements(page)).filter((el) => el.kind === 'image').length)
+    .toBe(1)
+  await expect(page.getByRole('status')).toContainText('已放到画布上：1 个素材')
+  expect(submitted).toBe(0)
+  expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.results?.length, id)).toBe(
+    1,
+  )
 })

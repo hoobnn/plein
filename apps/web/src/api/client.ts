@@ -307,7 +307,8 @@ export const api = {
 
   assetMeta: (id: string) => request<Asset>(API.assetMeta(id)),
   /** 资产原文件 */
-  assetBlob: async (id: string) => (await send(API.asset(id))).blob(),
+  assetBlob: async (id: string, signal?: AbortSignal) =>
+    (await send(API.asset(id), { signal })).blob(),
   upload: (file: File, signal?: AbortSignal) =>
     request<Asset>(API.assets, {
       method: 'POST',

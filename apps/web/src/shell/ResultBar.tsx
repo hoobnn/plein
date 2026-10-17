@@ -5,6 +5,7 @@ import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
 import { downloadAsset, mediaOf, splitGrid } from '../canvas/grid'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
+import { beginImport } from '../canvas/importProgress'
 import {
   continueNodeFor,
   continueShot,
@@ -134,7 +135,7 @@ export function ResultActions({
   const [masking, setMasking] = useState(false)
   const editNode = media.kind === 'image' ? regionEditNode(catalog) : undefined
   const [at, setAt] = useState('')
-  const { notify, setImporting, view } = useCanvas.getState()
+  const { notify, view } = useCanvas.getState()
   const imageNode = nodeFor(catalog, 'image.generate')
   const videoNode = nodeFor(catalog, 'video.generate')
   const presets = imageNode
@@ -170,15 +171,14 @@ export function ResultActions({
 
   const split = async (rows: number, cols: number) => {
     setOpen(null)
-    setImporting({ done: 0, total: rows * cols })
+    const batch = beginImport(engine, rows * cols)
+    const notes: string[] = []
     try {
-      await splitGrid(engine, el.id, media.assetId, rows, cols, (done, total) =>
-        setImporting({ done, total }),
-      )
+      await splitGrid(engine, el.id, media.assetId, rows, cols, batch.progress, batch.signal)
     } catch (err) {
-      notify((err as Error).message)
+      if (!batch.signal.aborted) notes.push((err as Error).message)
     } finally {
-      setImporting(null)
+      batch.finish(notes)
     }
   }
 

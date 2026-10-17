@@ -73,9 +73,9 @@ export async function importFiles(
   files: File[],
   at: { x: number; y: number },
   onProgress?: (done: number, total: number) => void,
-  options: { signal?: AbortSignal; canCommit?: () => boolean } = {},
+  options: { signal?: AbortSignal } = {},
 ): Promise<ImportResult> {
-  const { signal, canCommit } = options
+  const { signal } = options
   signal?.throwIfAborted()
   if (engine.doc.readOnly) throw new Error('当前画布只读，无法导入素材')
   const skipped: ImportResult['skipped'] = []
@@ -102,7 +102,6 @@ export async function importFiles(
   })
 
   signal?.throwIfAborted()
-  if (canCommit && !canCommit()) throw new DOMException('目标画布已关闭', 'AbortError')
   const valid = inputs.filter((input) => input !== null)
   if (!valid.length) return { created: [], skipped }
   // 整批找空位，保留文件顺序及间距，不让后上传完成的文件覆盖已存在的内容。

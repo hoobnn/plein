@@ -48,6 +48,51 @@ test.beforeAll(() => {
     join(dir, 'storyboard.png'),
   ])
 })
+
+test('宫格切分上传中切换画布取消旧写入，不产生迟到的分组或错误', async ({ page }) => {
+  await newProject(page)
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: '上传', exact: true }).click()
+  await (await chooser).setFiles(join(dir, 'storyboard.png'))
+  await expect.poll(async () => (await elements(page)).length).toBe(1)
+  const source = (await elements(page))[0]!
+  const oldDoc = await page.evaluateHandle(() => window.__plein.engine.doc)
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  let release = () => {}
+  let started = false
+  let completed = false
+  await page.route('**/api/assets', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue()
+    const response = await route.fetch()
+    await new Promise<void>((resolve) => {
+      release = resolve
+      started = true
+    })
+    await route.fulfill({ response })
+    completed = true
+  })
+  await clickElement(page, source.id)
+  await page
+    .getByRole('toolbar', { name: '结果操作' })
+    .getByRole('button', { name: '宫格切分' })
+    .click()
+  await page.getByRole('button', { name: /4 宫格/ }).click()
+  await expect.poll(() => started).toBe(true)
+  await page.getByRole('button', { name: '切换画布' }).click()
+  await page.getByRole('button', { name: '新建画布' }).click()
+  await page.getByRole('dialog').getByRole('textbox').fill('取消切图后的画布')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: '切换画布' })).toHaveText('取消切图后的画布')
+  release()
+  await expect.poll(() => completed).toBe(true)
+  expect(await oldDoc.evaluate((doc) => [...doc.elements()].map((el) => el.id))).toEqual([
+    source.id,
+  ])
+  expect(await elements(page)).toEqual([])
+  expect(errors).toEqual([])
+  await oldDoc.dispose()
+})
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 const shotGroup = (page: Page, frameId: string) =>

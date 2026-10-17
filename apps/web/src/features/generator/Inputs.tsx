@@ -12,6 +12,7 @@ import {
 import { useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { importFiles } from '../../canvas/import'
+import { beginImport } from '../../canvas/importProgress'
 import type { NodeInfo, Upstream } from '../../canvas/nodes'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
@@ -57,21 +58,20 @@ export function Inputs({
     const rect = engine.scene.rect(el.id)
     if (!port || !rect || !files.length) return
     const expected = target?.edgeId ? engine.doc.getEdge(target.edgeId) : undefined
-    const { setImporting, notify } = useCanvas.getState()
-    setImporting({ done: 0, total: files.length })
+    const selectedFiles = port.multiple && !target?.edgeId ? files : files.slice(0, 1)
+    const batch = beginImport(engine, selectedFiles.length)
+    const notes: string[] = []
     try {
       const res = await importFiles(
         engine,
-        port.multiple && !target?.edgeId ? files : files.slice(0, 1),
+        selectedFiles,
         { x: rect.x - UPLOAD_OFFSET, y: rect.y + rect.h / 2 },
-        (done, total) => {
-          if (useCanvas.getState().engine === engine) setImporting({ done, total })
-        },
-        { canCommit: () => useCanvas.getState().engine === engine },
+        batch.progress,
+        { signal: batch.signal },
       )
       if (useCanvas.getState().engine !== engine || !engine.doc.has(el.id)) return
       if (!port.multiple && !target?.edgeId && inputEdges(engine.doc, el.id, port.id).length) {
-        notify('这个输入已接入其他参考，上传的素材保留在画布上，没有覆盖新参考')
+        notes.push('这个输入已接入其他参考，上传的素材保留在画布上，没有覆盖新参考')
         return
       }
       if (target?.edgeId) {
@@ -82,7 +82,7 @@ export function Inputs({
           current.from[0] !== expected.from[0] ||
           current.from[1] !== expected.from[1]
         ) {
-          notify('参考槽位已变化，上传的素材保留在画布上，没有覆盖新参考')
+          notes.push('参考槽位已变化，上传的素材保留在画布上，没有覆盖新参考')
           return
         }
       }
@@ -96,13 +96,12 @@ export function Inputs({
           engine.doc.undo.stopCapturing()
         }
       }
-      if (res.skipped.length) notify(`${res.skipped.map((s) => s.name).join('，')} 未导入`)
+      if (res.skipped.length) notes.push(`${res.skipped.map((s) => s.name).join('，')} 未导入`)
     } catch (error) {
-      if (useCanvas.getState().engine === engine)
-        notify(error instanceof Error ? error.message : '素材导入失败')
+      if (!batch.signal.aborted) notes.push(error instanceof Error ? error.message : '素材导入失败')
     } finally {
+      batch.finish(notes)
       if (useCanvas.getState().engine === engine) {
-        setImporting(null)
         if (engine.doc.has(el.id)) engine.selection.set([el.id])
       }
     }

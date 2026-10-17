@@ -5,6 +5,7 @@ import { assetUrls } from '../api/client'
 import { downloadAsset } from '../canvas/grid'
 import { useDocVersion } from '../canvas/hooks'
 import { elementFor } from '../canvas/import'
+import { beginImport } from '../canvas/importProgress'
 import { loadAssetMeta } from '../stores/assetMeta'
 import { useCanvas } from '../stores/canvas'
 import { shortTime } from '../ui/format'
@@ -69,7 +70,7 @@ export function History() {
 }
 
 function HistoryPanel({ engine }: { engine: Engine }) {
-  const { toggleHistory: toggle, notify, setImporting } = useCanvas.getState()
+  const { toggleHistory: toggle } = useCanvas.getState()
   const doc = engine.doc
   const version = useDocVersion(doc)
   // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化
@@ -133,17 +134,19 @@ function HistoryPanel({ engine }: { engine: Engine }) {
 
   const place = async () => {
     setBusy(true)
-    setImporting({ done: 0, total: selected.length })
+    const batch = beginImport(engine, selected.length)
+    const notes: string[] = []
     try {
       let done = 0
       const inputs = await Promise.all(
         selected.map(async (e) => {
           const asset = await loadAssetMeta(e.result.value.assetId)
-          setImporting({ done: ++done, total: selected.length })
+          batch.progress(++done)
           const input = elementFor(asset)
           return input && { ...input, name: nameOf(e) }
         }),
       )
+      batch.signal.throwIfAborted()
       // 以视口中央为中心排成网格，每行 ROW 个，一次写入（一步撤销）
       const items = inputs.filter((i) => i !== null)
       const rows: Array<typeof items> = []
@@ -167,11 +170,11 @@ function HistoryPanel({ engine }: { engine: Engine }) {
       const created = list.length ? createElements(doc, list) : []
       engine.selection.set(created)
       close()
-      notify(`已放到画布上：${created.length} 个素材`)
+      notes.push(`已放到画布上：${created.length} 个素材`)
     } catch (err) {
-      notify((err as Error).message)
+      if (!batch.signal.aborted) notes.push((err as Error).message)
     } finally {
-      setImporting(null)
+      batch.finish(notes)
       setBusy(false)
     }
   }

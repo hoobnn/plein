@@ -22,6 +22,7 @@ import { useCatalog } from '../stores/catalog'
 import { canvasTheme, useTheme } from '../stores/theme'
 import { demoAssetUrls, releaseDemoAssetUrls, seedDemo } from './demo'
 import { importFiles, importText } from './import'
+import { beginImport } from './importProgress'
 import { localCacheName, watchCacheWrites } from './localCache'
 import { abortGroupRuns } from '../features/runs/groupRuns'
 import { watchStale } from '../features/runs/stale'
@@ -82,7 +83,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
   useEffect(() => {
     const host = hostRef.current!
     const overlayRoot = overlayRef.current!
-    const { attach, setSync, setImporting, notify, setCanvasId } = useCanvas.getState()
+    const { attach, setSync, notify, setCanvasId } = useCanvas.getState()
     let disposed = false
     const cleanups: Array<() => void> = []
 
@@ -165,7 +166,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
             }
           // 开发时方便在控制台调试
           if (import.meta.env.DEV) (window as { plein?: unknown }).plein = engine
-          const off = attachImport(engine, host, { setImporting, notify })
+          const off = attachImport(engine, host)
           const offView = awareness ? publishView(engine, awareness as ViewAwareness) : () => {}
           const offTheme = useTheme.subscribe((s, prev) => {
             if (s.name !== prev.name) engine.setTheme(canvasTheme(s.name))
@@ -330,36 +331,8 @@ export function CanvasView({ source }: { source: CanvasSource }) {
 }
 
 /** 拖入文件、粘贴文件或文本导入到画布 */
-function attachImport(
-  engine: Engine,
-  host: HTMLElement,
-  ui: {
-    setImporting(v: { done: number; total: number } | null): void
-    notify(msg: string | null): void
-  },
-) {
+function attachImport(engine: Engine, host: HTMLElement) {
   let disposed = false
-  const batches = new Map<
-    AbortController,
-    { done: number; total: number; finished: boolean; notes: string[] }
-  >()
-  const progress = () => {
-    if (disposed) return
-    if ([...batches.values()].every((b) => b.finished)) {
-      const notes = [...batches.values()].flatMap((b) => b.notes)
-      batches.clear()
-      if (notes.length) ui.notify(notes.join('；'))
-    }
-    const values = [...batches.values()]
-    ui.setImporting(
-      values.length
-        ? values.reduce((sum, b) => ({ done: sum.done + b.done, total: sum.total + b.total }), {
-            done: 0,
-            total: 0,
-          })
-        : null,
-    )
-  }
   const center = () => {
     const r = engine.camera.viewRect
     return { x: r.x + r.w / 2, y: r.y + r.h / 2 }
@@ -367,25 +340,11 @@ function attachImport(
   const run = async (all: File[], at: { x: number; y: number }) => {
     if (!all.length || disposed) return
     const files = all.slice(0, MAX_IMPORT_FILES)
-    const controller = new AbortController()
-    const batch = { done: 0, total: files.length, finished: false, notes: [] as string[] }
-    batches.set(controller, batch)
-    ui.notify(null)
-    progress()
+    const batch = beginImport(engine, files.length)
+    const notes: string[] = []
     try {
-      const res = await importFiles(
-        engine,
-        files,
-        at,
-        (done, total) => {
-          batch.done = done
-          batch.total = total
-          progress()
-        },
-        { signal: controller.signal },
-      )
+      const res = await importFiles(engine, files, at, batch.progress, { signal: batch.signal })
       if (disposed) return
-      const notes = batch.notes
       if (res.skipped.length) {
         const shown = res.skipped.slice(0, 3).map((s) => `${s.name}（${s.reason}）`)
         notes.push(
@@ -397,11 +356,10 @@ function attachImport(
           `一次最多导入 ${MAX_IMPORT_FILES} 个文件，其余 ${all.length - files.length} 个没有导入`,
         )
     } catch (error) {
-      if (!disposed && !controller.signal.aborted)
-        batch.notes.push(error instanceof Error ? error.message : '素材导入失败')
+      if (!disposed && !batch.signal.aborted)
+        notes.push(error instanceof Error ? error.message : '素材导入失败')
     } finally {
-      batch.finished = true
-      progress()
+      batch.finish(notes)
     }
   }
 
@@ -440,9 +398,6 @@ function attachImport(
   window.addEventListener('plein:import', onImportRequest)
   return () => {
     disposed = true
-    for (const controller of batches.keys()) controller.abort()
-    batches.clear()
-    ui.setImporting(null)
     host.removeEventListener('dragover', onDragOver)
     host.removeEventListener('drop', onDrop)
     window.removeEventListener('paste', onPaste)
