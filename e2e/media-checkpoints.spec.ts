@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { expect, type Page, test } from '@playwright/test'
 import { byName, elements, newProject, waitEngine, waitNode } from './canvas'
 
@@ -229,3 +230,64 @@ test('素材缩略图失败仍可查看原图，刷新和原图重试可恢复�
     .poll(() => preview.locator('img').evaluate((img) => (img as HTMLImageElement).naturalWidth))
     .toBeGreaterThan(0)
 })
+
+for (const kind of ['video', 'audio'] as const) {
+  test(`${kind === 'video' ? '视频' : '音频'}原文件加载失败后可重试并实际播放`, async ({
+    page,
+  }, testInfo) => {
+    await newProject(page)
+    const video = kind === 'video'
+    const media = execFileSync('ffmpeg', [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      video ? 'color=c=blue:s=96x64:d=2:r=10' : 'sine=f=440:d=2',
+      ...(video
+        ? ['-pix_fmt', 'yuv420p', '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4']
+        : ['-f', 'wav']),
+      'pipe:1',
+    ])
+    const name = video ? '故障恢复视频.mp4' : '故障恢复音频.wav'
+    const upload = await page.request.post('/api/assets', {
+      headers: {
+        'content-type': video ? 'video/mp4' : 'audio/wav',
+        'x-file-name': encodeURIComponent(name),
+      },
+      data: media,
+    })
+    expect(upload.status()).toBe(201)
+    const asset = (await upload.json()).id as string
+    let failed = true
+    await page.route(`**/api/assets/${asset}`, (route) =>
+      failed ? route.fulfill({ status: 503 }) : route.continue(),
+    )
+    await page.getByRole('button', { name: '素材', exact: true }).click()
+    const panel = page.getByRole('dialog', { name: '素材', exact: true })
+    await panel.getByRole('combobox', { name: '关联项目' }).click()
+    await page.getByRole('option', { name: '全部项目', exact: true }).click()
+    await panel.getByRole('searchbox', { name: '搜索素材' }).fill(name)
+    await panel.getByRole('button', { name: `查看素材 ${name}`, exact: true }).click()
+    if (video) await panel.getByRole('button', { name: '放大查看素材' }).click()
+    const surface = video ? page.getByRole('dialog', { name: '素材预览' }) : panel
+    await expect(surface.getByRole('alert')).toContainText(video ? '视频加载失败' : '音频加载失败')
+    await page.screenshot({
+      path: testInfo.outputPath(`${kind}-failure.png`),
+      animations: 'disabled',
+    })
+    failed = false
+    await surface.getByRole('button', { name: '重试加载', exact: true }).click()
+    const player = surface.locator(kind)
+    await expect
+      .poll(() => player.evaluate((el) => (el as HTMLMediaElement).readyState))
+      .toBeGreaterThanOrEqual(1)
+    await player.evaluate((el) => (el as HTMLMediaElement).play())
+    await expect
+      .poll(() => player.evaluate((el) => (el as HTMLMediaElement).currentTime))
+      .toBeGreaterThan(0)
+    expect(await player.evaluate((el) => (el as HTMLMediaElement).error)).toBeNull()
+    await player.evaluate((el) => (el as HTMLMediaElement).pause())
+  })
+}

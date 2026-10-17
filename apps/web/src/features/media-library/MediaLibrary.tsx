@@ -348,8 +348,7 @@ function MediaDetail({
     <div className="flex flex-col gap-4">
       <h3 className="break-words text-base font-medium">{asset.name}</h3>
       {asset.kind === 'audio' ? (
-        // oxlint-disable-next-line jsx-a11y/media-has-caption -- 用户素材没有可用字幕轨
-        <audio src={assetUrls.original(asset.id)} controls className="w-full" />
+        <MediaPlayer asset={asset} className="w-full" />
       ) : (
         <button
           type="button"
@@ -496,13 +495,7 @@ function MediaPreview({ asset, onClose }: { asset: MediaLibraryItem; onClose(): 
       </ModalHeader>
       <div className="ui-scrollbar flex min-h-0 flex-1 items-center justify-center overflow-auto bg-canvas p-4">
         {asset.kind === 'video' ? (
-          // oxlint-disable-next-line jsx-a11y/media-has-caption -- 用户素材没有可用字幕轨
-          <video
-            src={assetUrls.original(asset.id)}
-            controls
-            autoPlay
-            className="max-h-full max-w-full"
-          />
+          <MediaPlayer asset={asset} className="max-h-full max-w-full" />
         ) : (
           <MediaImage
             src={assetUrls.original(asset.id)}
@@ -534,22 +527,11 @@ function MediaImage({
   const [failed, setFailed] = useState(false)
   if (failed)
     return (
-      <span
-        role={retry ? 'alert' : undefined}
-        className="flex min-h-24 w-full flex-col items-center justify-center gap-2 p-3 text-sm text-ink-subtle"
-      >
-        <Icon name="image" size={24} />
-        <span>{retry ? '素材加载失败' : '缩略图暂不可用'}</span>
-        {retry && (
-          <button
-            type="button"
-            className="ui-btn ui-btn-sm ui-btn-secondary"
-            onClick={() => setFailed(false)}
-          >
-            重试加载
-          </button>
-        )}
-      </span>
+      <MediaFailure
+        icon="image"
+        label={retry ? '素材加载失败' : '缩略图暂不可用'}
+        onRetry={retry ? () => setFailed(false) : undefined}
+      />
     )
   return (
     <img
@@ -560,5 +542,53 @@ function MediaImage({
       style={style}
       onError={() => setFailed(true)}
     />
+  )
+}
+
+function MediaPlayer({ asset, className }: { asset: MediaLibraryItem; className: string }) {
+  const [failed, setFailed] = useState(false)
+  const video = asset.kind === 'video'
+  if (failed)
+    return (
+      <MediaFailure
+        icon={video ? 'video' : 'audio'}
+        label={video ? '视频加载失败' : '音频加载失败'}
+        onRetry={() => setFailed(false)}
+      />
+    )
+  const props = {
+    src: assetUrls.original(asset.id),
+    controls: true,
+    preload: 'metadata',
+    className,
+    onError: () => setFailed(true),
+  } as const
+  // oxlint-disable jsx-a11y/media-has-caption -- 用户素材没有可用字幕轨
+  return video ? <video {...props} autoPlay /> : <audio {...props} />
+  // oxlint-enable jsx-a11y/media-has-caption
+}
+
+function MediaFailure({
+  icon,
+  label,
+  onRetry,
+}: {
+  icon: 'image' | 'video' | 'audio'
+  label: string
+  onRetry?: () => void
+}) {
+  return (
+    <span
+      role={onRetry ? 'alert' : undefined}
+      className="flex min-h-24 w-full flex-col items-center justify-center gap-2 p-3 text-sm text-ink-subtle"
+    >
+      <Icon name={icon} size={24} />
+      <span>{label}</span>
+      {onRetry && (
+        <button type="button" className="ui-btn ui-btn-sm ui-btn-secondary" onClick={onRetry}>
+          重试加载
+        </button>
+      )}
+    </span>
   )
 }
