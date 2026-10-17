@@ -9,7 +9,6 @@ import {
 } from '@plein/doc'
 import {
   aspectRatio,
-  MAX_STAGE_SNAPSHOTS,
   STAGE_RENDER_VERSION,
   STAGE_TYPE,
   type StageScene,
@@ -69,7 +68,14 @@ export async function saveSnapshot(
       { adopt },
     )
     const prev = stageSnapshotsOf(doc.get(id)?.params)
-    setParam(doc, id, 'snapshots', [entry, ...prev].slice(0, MAX_STAGE_SNAPSHOTS))
+    // 结果保留策略会优先保住正在采用的旧图，来源必须跟随同一名单，不能独立截取最新 N 条。
+    const retained = new Set(doc.get(id)?.results?.map((r) => r.id))
+    setParam(
+      doc,
+      id,
+      'snapshots',
+      [entry, ...prev].filter((s) => retained.has(s.resultId)),
+    )
     // 卡片跟着截图的画幅走，和图片节点一样
     if (adopt) fitAspect(doc, id, aspectRatio(scene.aspect))
   }, SYSTEM_ORIGIN)

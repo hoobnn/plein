@@ -299,9 +299,9 @@ export function StagePanel({
             />
           </OutlineGroup>
           {snapshots.length > 0 && (
-            <OutlineGroup title="截图">
+            <OutlineGroup title={`截图（${snapshots.length}）`}>
               <div className="stage-shots">
-                {snapshots.slice(0, 12).map((s) => (
+                {snapshots.map((s) => (
                   <figure
                     key={s.resultId}
                     className="stage-shot"
@@ -309,10 +309,12 @@ export function StagePanel({
                   >
                     <button
                       type="button"
+                      aria-pressed={s.resultId === adopted}
                       title={`第 ${s.rev} 版 · ${s.scene.camera.focal}mm · ${s.scene.aspect}，点一下让下游用这张`}
                       onClick={() => adoptResult(engine.doc, id, s.resultId)}
                     >
                       <img
+                        loading="lazy"
                         src={assetUrls.variant(s.assetId, 'thumb-256')}
                         alt={`第 ${s.rev} 版截图`}
                       />

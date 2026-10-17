@@ -6,7 +6,8 @@ import {
   deleteElements,
   setParam,
 } from '@plein/doc'
-import { defaultStageScene, STAGE_TYPE, stageSnapshotsOf } from '@plein/nodes'
+import { defaultStageScene, MAX_STAGE_SNAPSHOTS, STAGE_TYPE, stageSnapshotsOf } from '@plein/nodes'
+import * as Y from 'yjs'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { api } from '../../api/client'
 import { saveSnapshot } from './snapshot'
@@ -56,6 +57,32 @@ function setup() {
 }
 
 describe('3D 截图保存', () => {
+  it('候选达到上限时保留已采用截图的来源，来源列表与保留结果一致且可重新打开', async () => {
+    const { doc, id, scene } = setup()
+    vi.mocked(api.upload).mockResolvedValue({ id: 'uploaded' } as Awaited<
+      ReturnType<typeof api.upload>
+    >)
+    const original = { ...scene, aspect: '9:16' as const }
+    const adopted = await saveSnapshot(doc, id, original, new Blob())
+    for (let rev = 1; rev <= MAX_STAGE_SNAPSHOTS; rev++) {
+      await saveSnapshot(doc, id, { ...scene, rev }, new Blob(), { resultId: 'older-baseline' })
+    }
+    const results = doc.get(id)!.results!
+    const snapshots = stageSnapshotsOf(doc.get(id)?.params)
+    expect(results).toHaveLength(MAX_STAGE_SNAPSHOTS)
+    expect(snapshots).toHaveLength(MAX_STAGE_SNAPSHOTS)
+    expect(currentResult(doc.get(id)!)?.id).toBe(adopted.resultId)
+    expect(snapshots.find((s) => s.resultId === adopted.resultId)?.scene).toEqual(original)
+    expect(snapshots.map((s) => s.resultId).sort()).toEqual(results.map((r) => r.id).sort())
+    const raw = new Y.Doc()
+    Y.applyUpdate(raw, Y.encodeStateAsUpdate(doc.ydoc))
+    const reopened = createDoc(raw)
+    expect(stageSnapshotsOf(reopened.get(id)?.params)).toEqual(snapshots)
+    expect(currentResult(reopened.get(id)!)?.id).toBe(adopted.resultId)
+    reopened.destroy()
+    doc.destroy()
+  })
+
   it('上传期间手动采用其他画面，迟到截图仅保存为候选，不能改变画幅或当前画面', async () => {
     const { doc, id, scene, finish } = setup()
     const run = saveSnapshot(doc, id, { ...scene, aspect: '9:16' }, new Blob())

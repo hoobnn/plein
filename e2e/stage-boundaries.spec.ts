@@ -634,3 +634,39 @@ test('3D PNG 编码失败保留正在编辑的画面并可重试', async ({ page
   )
   expect(StageScene.parse(shot.scene).figures[0]!.pose).toBe('sit')
 })
+
+test('3D 超过十二张截图后仍能采用旧图并恢复对应场景', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  const shoot = dialog.getByRole('button', { name: '截图', exact: true })
+  for (let i = 0; i < 13; i++) {
+    if (i) await dialog.getByRole('button', { name: i % 2 ? '坐' : '站立', exact: true }).click()
+    await shoot.click()
+    await expect
+      .poll(async () => (await elements(page)).find((e) => e.id === stage.id)!.results)
+      .toBe(i + 1)
+  }
+  await expect(dialog.locator('.stage-shot')).toHaveCount(13)
+  await expect(dialog.getByRole('heading', { name: '截图（13）', exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: '奔跑', exact: true }).click()
+  const oldest = dialog
+    .locator('.stage-shot')
+    .filter({ has: page.getByRole('img', { name: '第 0 版截图', exact: true }) })
+  await oldest.getByRole('button').first().click()
+  await expect
+    .poll(() => oldest.getByRole('img').evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .toBeGreaterThan(0)
+  await expect(oldest).toHaveAttribute('data-active', 'true')
+  await expect(oldest.getByRole('button').first()).toHaveAttribute('aria-pressed', 'true')
+  const read = async () =>
+    StageScene.parse(
+      await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.scene, stage.id),
+    )
+  expect((await read()).figures[0]!.pose).toBe('run')
+  const before = (await read()).rev
+  await oldest.getByRole('button', { name: '恢复', exact: true }).click()
+  const restored = await read()
+  expect(restored.figures[0]!.pose).toBe('stand')
+  expect(restored.rev).toBeGreaterThan(before)
+  await expect(oldest).toHaveAttribute('data-active', 'true')
+  expect((await elements(page)).find((e) => e.id === stage.id)!.results).toBe(13)
+})
