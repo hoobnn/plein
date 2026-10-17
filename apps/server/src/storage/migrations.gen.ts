@@ -63,4 +63,20 @@ export const MIGRATIONS: Migration[] = [
       'ALTER TABLE `jobs` ADD `recovery` text;',
     ],
   },
+  {
+    tag: '0004_motionless_thaddeus_ross',
+    when: 1792198025272,
+    hash: '7c1d3a03419d43dfd84f715c0f9a5ce0f2e0b34b9e590a5005d4663ab11b7026',
+    statements: [
+      "CREATE TABLE `agent_turns` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`session_id` text NOT NULL,\n\t`state` text NOT NULL,\n\t`model_ref` text,\n\t`transcript` text DEFAULT '[]' NOT NULL,\n\t`execution` text DEFAULT '{}' NOT NULL,\n\t`reason` text,\n\t`created_at` integer NOT NULL,\n\t`closed_at` integer,\n\tFOREIGN KEY (`session_id`) REFERENCES `agent_sessions`(`id`) ON UPDATE no action ON DELETE cascade\n);",
+      'CREATE INDEX `agent_turns_session` ON `agent_turns` (`session_id`,`created_at`);',
+      "CREATE TABLE `canvas_checkpoints` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`owner_id` text NOT NULL,\n\t`project_id` text NOT NULL,\n\t`source_canvas_id` text,\n\t`source_canvas_title` text NOT NULL,\n\t`name` text NOT NULL,\n\t`state` blob NOT NULL,\n\t`history` text DEFAULT '[]' NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`content_hash` text NOT NULL,\n\tFOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade,\n\tFOREIGN KEY (`source_canvas_id`) REFERENCES `canvases`(`id`) ON UPDATE no action ON DELETE set null\n);",
+      'CREATE INDEX `canvas_checkpoints_project` ON `canvas_checkpoints` (`owner_id`,`project_id`,`created_at`);',
+      'CREATE TABLE `checkpoint_assets` (\n\t`checkpoint_id` text NOT NULL,\n\t`owner_id` text NOT NULL,\n\t`asset_id` text NOT NULL,\n\tPRIMARY KEY(`checkpoint_id`, `owner_id`, `asset_id`),\n\tFOREIGN KEY (`checkpoint_id`) REFERENCES `canvas_checkpoints`(`id`) ON UPDATE no action ON DELETE cascade,\n\tFOREIGN KEY (`owner_id`,`asset_id`) REFERENCES `assets`(`owner_id`,`id`) ON UPDATE no action ON DELETE restrict\n);',
+      'CREATE TABLE `media_index_meta` (\n\t`id` integer PRIMARY KEY NOT NULL,\n\t`version` integer NOT NULL,\n\t`completed_at` integer\n);',
+      'CREATE TABLE `media_sources` (\n\t`owner_id` text NOT NULL,\n\t`asset_id` text NOT NULL,\n\t`source_type` text NOT NULL,\n\t`source_id` text NOT NULL,\n\t`locator` text NOT NULL,\n\t`project_id` text,\n\t`canvas_id` text,\n\t`node_id` text,\n\t`result_id` text,\n\t`label` text NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`adopted` integer DEFAULT 0 NOT NULL,\n\tPRIMARY KEY(`owner_id`, `asset_id`, `source_type`, `source_id`, `locator`)\n);',
+      'CREATE INDEX `media_sources_project` ON `media_sources` (`owner_id`,`project_id`,`asset_id`);',
+      'CREATE INDEX `media_sources_source` ON `media_sources` (`owner_id`,`source_type`,`source_id`);',
+    ],
+  },
 ]

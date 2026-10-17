@@ -52,7 +52,16 @@ const dataOf = (i: LibraryData): string =>
 
 /** 资产库条目的增删改查，按所有者隔离；HTTP 路由和智能体能力共用 */
 export class LibraryStore {
+  private listeners = new Set<(id: string) => void>()
   constructor(private db: DB) {}
+
+  onChange(fn: (id: string) => void) {
+    this.listeners.add(fn)
+    return () => this.listeners.delete(fn)
+  }
+  private changed(id: string) {
+    for (const fn of this.listeners) fn(id)
+  }
 
   private mine(owner: string, id: string) {
     return and(eq(libraryItems.id, id), eq(libraryItems.owner_id, owner))
@@ -100,6 +109,7 @@ export class LibraryStore {
         updated_at: now,
       })
       .run()
+    this.changed(id)
     return this.get(owner, id)!
   }
 
@@ -120,6 +130,7 @@ export class LibraryStore {
       })
       .where(this.mine(owner, id))
       .run()
+    this.changed(id)
     return this.get(owner, id)
   }
 
@@ -133,6 +144,8 @@ export class LibraryStore {
   }
 
   remove(owner: string, id: string): boolean {
-    return this.db.delete(libraryItems).where(this.mine(owner, id)).run().changes > 0
+    const changed = this.db.delete(libraryItems).where(this.mine(owner, id)).run().changes > 0
+    if (changed) this.changed(id)
+    return changed
   }
 }

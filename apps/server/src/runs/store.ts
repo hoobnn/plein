@@ -30,7 +30,17 @@ type JobPatch = Partial<
 
 /** 任务与整组运行的持久化 */
 export class JobStore {
+  private listeners = new Set<(id: string) => void>()
   constructor(private db: DB) {}
+
+  onChange(fn: (id: string) => void) {
+    this.listeners.add(fn)
+    return () => this.listeners.delete(fn)
+  }
+
+  private changed(id: string) {
+    for (const fn of this.listeners) fn(id)
+  }
 
   insert(job: {
     id: string
@@ -67,6 +77,7 @@ export class JobStore {
     // 显式传 undefined 的字段写成 NULL（与改用 Drizzle 前一致）
     const set = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, v ?? null]))
     this.db.update(jobs).set(set).where(eq(jobs.id, id)).run()
+    if ('status' in patch || 'recovery' in patch) this.changed(id)
   }
 
   /** 服务重启时还没结束的任务，按创建顺序 */
@@ -100,12 +111,14 @@ export class JobStore {
   /** 模型调用记录：读写这个任务的 calls 列 */
   journal(id: string): CallJournal {
     const read = (): Record<string, CallRecord> => JSON.parse(this.get(id)?.calls ?? '{}')
-    const write = (calls: Record<string, CallRecord>) =>
+    const write = (calls: Record<string, CallRecord>) => {
       this.db
         .update(jobs)
         .set({ calls: JSON.stringify(calls) })
         .where(eq(jobs.id, id))
         .run()
+      this.changed(id)
+    }
     return {
       id,
       get: (key) => read()[key],

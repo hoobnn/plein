@@ -46,6 +46,7 @@ export class Room {
   /** 还没写库的增量 */
   private buffer: Uint8Array[] = []
   private bufferBytes = 0
+  private flushing = false
   private writeTimer: NodeJS.Timeout | null = null
   private unloadTimer: NodeJS.Timeout | null = null
 
@@ -161,12 +162,17 @@ export class Room {
   }
 
   /** 空闲时安排卸载；连接或租约回来会取消 */
-  scheduleUnload() {
+  scheduleUnload(delay = UNLOAD_DELAY_MS) {
     if (!this.idle || this.unloadTimer) return
     this.unloadTimer = setTimeout(() => {
       this.unloadTimer = null
-      this.onEmpty(this)
-    }, UNLOAD_DELAY_MS)
+      try {
+        this.onEmpty(this)
+      } catch (error) {
+        console.error('[sync] 房间快照尚未写入，将重试卸载', error)
+        this.scheduleUnload(1000)
+      }
+    }, delay)
     this.unloadTimer.unref?.()
   }
 
@@ -182,10 +188,20 @@ export class Room {
     this.buffer.push(update)
     this.bufferBytes += update.byteLength
     if (this.bufferBytes >= WRITE_MAX_BYTES) this.flush()
-    else if (!this.writeTimer) {
-      this.writeTimer = setTimeout(() => this.flush(), WRITE_DELAY_MS)
-      this.writeTimer.unref?.()
-    }
+    else this.scheduleWrite()
+  }
+
+  private scheduleWrite(delay = WRITE_DELAY_MS) {
+    if (this.writeTimer) return
+    this.writeTimer = setTimeout(() => {
+      this.writeTimer = null
+      try {
+        this.flush()
+      } catch (err) {
+        console.error('[sync] 文档尚未写入，将重试', err)
+      }
+    }, delay)
+    this.writeTimer.unref?.()
   }
 
   /** 把缓冲的增量合并成一条写库；攒够条数再整体合并成快照 */
@@ -194,12 +210,23 @@ export class Room {
       clearTimeout(this.writeTimer)
       this.writeTimer = null
     }
-    if (this.buffer.length === 0) return
+    if (this.flushing || this.buffer.length === 0) return
+    this.flushing = true
+    const count = this.buffer.length
+    const size = this.bufferBytes
     const merged = this.buffer.length === 1 ? this.buffer[0]! : Y.mergeUpdates(this.buffer)
-    this.buffer = []
-    this.bufferBytes = 0
-    this.store.append(this.id, merged)
-    if (++this.pending >= COMPACT_AFTER) this.compact()
+    try {
+      this.store.append(this.id, merged)
+      this.buffer.splice(0, count)
+      this.bufferBytes -= size
+      if (++this.pending >= COMPACT_AFTER) this.compact()
+    } catch (err) {
+      this.scheduleWrite(1000)
+      throw err
+    } finally {
+      this.flushing = false
+      if (this.buffer.length) this.scheduleWrite()
+    }
   }
 
   /**
@@ -209,9 +236,9 @@ export class Room {
   compact() {
     if (this.writeTimer) clearTimeout(this.writeTimer)
     this.writeTimer = null
+    this.store.replace(this.id, Y.encodeStateAsUpdate(this.doc))
     this.buffer = []
     this.bufferBytes = 0
-    this.store.replace(this.id, Y.encodeStateAsUpdate(this.doc))
     this.pending = 0
   }
 
@@ -238,7 +265,7 @@ export interface DocStore {
   replace(canvasId: string, state: Uint8Array): void
 }
 
-export function sqliteDocStore(db: DB): DocStore {
+export function sqliteDocStore(db: DB, onPersist?: (canvasId: string) => void): DocStore {
   // 每次编辑都会走 append：预编译语句，不在热路径上重复生成 SQL
   const select = db
     .select({ data: docUpdates.data })
@@ -263,8 +290,11 @@ export function sqliteDocStore(db: DB): DocStore {
     load: (id) => select.all({ id }).map((r) => new Uint8Array(r.data)),
     append(id, update) {
       const at = Date.now()
-      insert.run({ id, data: Buffer.from(update), at })
-      touch.run({ id, at })
+      db.transaction(() => {
+        insert.run({ id, data: Buffer.from(update), at })
+        touch.run({ id, at })
+        onPersist?.(id)
+      })
     },
     replace: (id, state) =>
       db.transaction((tx) => {
@@ -272,6 +302,7 @@ export function sqliteDocStore(db: DB): DocStore {
         tx.insert(docUpdates)
           .values({ canvas_id: id, data: Buffer.from(state), created_at: Date.now() })
           .run()
+        onPersist?.(id)
       }),
   }
 }

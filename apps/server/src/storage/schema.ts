@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import {
   blob,
   customType,
+  foreignKey,
   index,
   integer,
   primaryKey,
@@ -259,6 +260,95 @@ export const libraryItems = sqliteTable(
     updated_at: integer().notNull(),
   },
   (t) => [index('library_owner').on(t.owner_id, t.kind, t.updated_at)],
+)
+
+/** 一轮智能体执行的原始交换与业务回执；展示摘要仍在 agent_sessions.items。 */
+export const agentTurns = sqliteTable(
+  'agent_turns',
+  {
+    id: text().primaryKey(),
+    session_id: text()
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: 'cascade' }),
+    state: text()
+      .$type<'running' | 'stopping' | 'completed' | 'failed' | 'stopped' | 'interrupted'>()
+      .notNull(),
+    model_ref: text(),
+    transcript: text().notNull().default('[]'),
+    execution: text().notNull().default('{}'),
+    reason: text(),
+    created_at: integer().notNull(),
+    closed_at: integer(),
+  },
+  (t) => [index('agent_turns_session').on(t.session_id, t.created_at)],
+)
+
+/** 可重建的媒体来源投影，资产拥有权仍由 assets 决定。 */
+export const mediaSources = sqliteTable(
+  'media_sources',
+  {
+    owner_id: text().notNull(),
+    asset_id: text().notNull(),
+    source_type: text().notNull(),
+    source_id: text().notNull(),
+    locator: text().notNull(),
+    project_id: text(),
+    canvas_id: text(),
+    node_id: text(),
+    result_id: text(),
+    label: text().notNull(),
+    created_at: integer().notNull(),
+    adopted: integer().notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.owner_id, t.asset_id, t.source_type, t.source_id, t.locator] }),
+    index('media_sources_project').on(t.owner_id, t.project_id, t.asset_id),
+    index('media_sources_source').on(t.owner_id, t.source_type, t.source_id),
+  ],
+)
+
+export const mediaIndexMeta = sqliteTable('media_index_meta', {
+  id: integer().primaryKey(),
+  version: integer().notNull(),
+  completed_at: integer(),
+})
+
+/** 命名创作检查点随项目保留，删除原画布不删除检查点。 */
+export const canvasCheckpoints = sqliteTable(
+  'canvas_checkpoints',
+  {
+    id: text().primaryKey(),
+    owner_id: text().notNull(),
+    project_id: text()
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    source_canvas_id: text().references(() => canvases.id, { onDelete: 'set null' }),
+    source_canvas_title: text().notNull(),
+    name: text().notNull(),
+    state: blob({ mode: 'buffer' }).notNull(),
+    history: text().notNull().default('[]'),
+    created_at: integer().notNull(),
+    content_hash: text().notNull(),
+  },
+  (t) => [index('canvas_checkpoints_project').on(t.owner_id, t.project_id, t.created_at)],
+)
+
+export const checkpointAssets = sqliteTable(
+  'checkpoint_assets',
+  {
+    checkpoint_id: text()
+      .notNull()
+      .references(() => canvasCheckpoints.id, { onDelete: 'cascade' }),
+    owner_id: text().notNull(),
+    asset_id: text().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.checkpoint_id, t.owner_id, t.asset_id] }),
+    foreignKey({
+      columns: [t.owner_id, t.asset_id],
+      foreignColumns: [assets.owner_id, assets.id],
+    }).onDelete('restrict'),
+  ],
 )
 
 // ---- Better Auth（drizzle 适配器）----
