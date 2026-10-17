@@ -32,21 +32,31 @@ export async function splitGrid(
   const bitmap = await createImageBitmap(await api.assetBlob(assetId, signal))
   try {
     signal?.throwIfAborted()
-    const tw = Math.floor(bitmap.width / cols)
-    const th = Math.floor(bitmap.height / rows)
+    if (bitmap.width < cols || bitmap.height < rows)
+      throw new Error(
+        `图片只有 ${bitmap.width}×${bitmap.height} 像素，无法切成 ${rows}×${cols}；请使用至少 ${cols}×${rows} 像素的图片`,
+      )
+    // 用每条分界线划分原图，余数归入后续格子，不丢弃右侧或底部像素。
+    const xs = Array.from({ length: cols + 1 }, (_, c) => Math.floor((c * bitmap.width) / cols))
+    const ys = Array.from({ length: rows + 1 }, (_, r) => Math.floor((r * bitmap.height) / rows))
+    const k = TILE_SIDE / Math.max(Math.ceil(bitmap.width / cols), Math.ceil(bitmap.height / rows))
+    const widths = Array.from({ length: cols }, (_, c) =>
+      Math.max(1, Math.round((xs[c + 1]! - xs[c]!) * k)),
+    )
+    const heights = Array.from({ length: rows }, (_, r) =>
+      Math.max(1, Math.round((ys[r + 1]! - ys[r]!) * k)),
+    )
     const canvas = document.createElement('canvas')
-    canvas.width = tw
-    canvas.height = th
     const ctx = canvas.getContext('2d')!
     const total = rows * cols
-    const k = TILE_SIDE / Math.max(tw, th)
-    const w = Math.round(tw * k)
-    const h = Math.round(th * k)
     const list: NewElement[] = []
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        ctx.clearRect(0, 0, tw, th)
-        ctx.drawImage(bitmap, c * tw, r * th, tw, th, 0, 0, tw, th)
+        const tw = xs[c + 1]! - xs[c]!
+        const th = ys[r + 1]! - ys[r]!
+        canvas.width = tw
+        canvas.height = th
+        ctx.drawImage(bitmap, xs[c]!, ys[r]!, tw, th, 0, 0, tw, th)
         const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/png'))
         if (!blob) throw new Error('切图失败')
         const n = r * cols + c + 1
@@ -59,10 +69,10 @@ export async function splitGrid(
           kind: 'image',
           assetId: asset.id,
           name: `宫格 ${n}`,
-          w,
-          h,
-          x: c * (w + GAP),
-          y: r * (h + GAP),
+          w: widths[c]!,
+          h: heights[r]!,
+          x: widths.slice(0, c).reduce((sum, w) => sum + w, 0) + c * GAP,
+          y: heights.slice(0, r).reduce((sum, h) => sum + h, 0) + r * GAP,
         })
         onProgress?.(n, total)
       }
@@ -77,8 +87,8 @@ export async function splitGrid(
     const spot = spotRightOf(
       engine.doc,
       sourceId,
-      cols * (w + GAP) - GAP + pad * 2,
-      rows * (h + GAP) - GAP + pad * 2,
+      widths.reduce((sum, w) => sum + w, 0) + (cols - 1) * GAP + pad * 2,
+      heights.reduce((sum, h) => sum + h, 0) + (rows - 1) * GAP + pad * 2,
     )
     engine.doc.undo.stopCapturing()
     const ids = createElements(
