@@ -33,7 +33,7 @@ export function useEngineVersion(engine: Engine) {
 }
 
 /** 跟随时会改的定位属性；place 没给的清掉（面板在元素上方 / 下方之间切换时） */
-const FOLLOW_KEYS = ['top', 'left', 'right', 'bottom', 'maxHeight'] as const
+const FOLLOW_KEYS = ['top', 'left', 'right', 'bottom', 'width', 'maxHeight'] as const
 type FollowStyle = Pick<CSSProperties, (typeof FOLLOW_KEYS)[number]>
 
 /**

@@ -1,5 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import { groupShots, shotGroupOf } from '@plein/doc'
+import { clipOverlay } from './occlusion'
 
 /** 序号角标离图片左上角的距离（世界坐标） */
 const INSET = 8
@@ -61,6 +62,12 @@ export class ShotBadges {
       const text = String(n)
       if (node.textContent !== text) node.textContent = text
       node.style.transform = `translate(${rect.x + INSET}px, ${rect.y + INSET}px)`
+      clipOverlay(node, engine.scene, id, {
+        x: rect.x + INSET,
+        y: rect.y + INSET,
+        w: node.offsetWidth,
+        h: node.offsetHeight,
+      })
     }
   }
 

@@ -1,6 +1,6 @@
 import { activeShotNodes, expandedNodes, shotsOf, type ShotSource } from '@plein/capabilities'
 import type { Engine } from '@plein/canvas-core'
-import { createElement, currentResult, setParam, type PleinDoc } from '@plein/doc'
+import { createElement, currentResult, setParam, spotRightOf, type PleinDoc } from '@plein/doc'
 import { ANIMATIC_TYPE, animaticNode, matchLines, type AnimaticShot } from '@plein/nodes'
 import { findNode, nodeElement } from '../../canvas/nodes'
 import { useCanvas } from '../../stores/canvas'
@@ -89,13 +89,16 @@ export function openAnimatic(engine: Engine, boardId: string): string | undefine
     subtitles: true,
     asrTiming: false,
   })
+  const base = nodeElement(def)
+  const spot = spotRightOf(engine.doc, boardId, base.w, base.h)
+  engine.doc.undo.stopCapturing()
   const id = createElement(engine.doc, {
-    ...nodeElement(def),
-    x: board.x + board.w + 80,
-    y: board.y,
+    ...base,
+    ...spot,
     name: `${board.name ?? '分镜'} · 样片草稿`,
     params,
   })
+  engine.doc.undo.stopCapturing()
   engine.doc.flush()
   useCanvas.getState().openSequence(id)
   return id

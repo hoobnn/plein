@@ -79,6 +79,11 @@
   box-shadow: none;
 }
 
+.plein-player:fullscreen {
+  /* 全屏脱离画布层级，不能沿用内联的世界坐标裁剪路径。 */
+  clip-path: none !important;
+}
+
 /* 控制条：视频浮在画面底部（深色渐变，明暗主题一致），音频占满卡片 */
 .plein-player-bar {
   position: absolute;
