@@ -188,14 +188,19 @@ export function StagePanel({
     })
     setSelected(null)
   }
+  const close = () => {
+    view.current?.finishCamera()
+    onClose()
+  }
   const shoot = async () => {
     const v = view.current
     if (!v || busy) return
     setBusy(true)
     try {
       // PNG 编码是异步的：来源与采用基线在渲染前冻结，不能记录成等待后的新场景。
-      const captured = latest.current
+      v.finishCamera()
       const node = engine.doc.get(id)
+      const captured = stageSceneOf(node?.params)
       const baseline = { resultId: node ? currentResult(node, 'image')?.id : undefined }
       v.setScene(captured)
       const blob = await v.snapshot()
@@ -213,10 +218,10 @@ export function StagePanel({
   }
 
   return (
-    <Modal label="3D 构图" onClose={onClose} className="h-full max-w-7xl" isolateKeys>
+    <Modal label="3D 构图" onClose={close} className="h-full max-w-7xl" isolateKeys>
       <ModalHeader
         title={el?.name ?? '3D 构图'}
-        onClose={onClose}
+        onClose={close}
         meta={<span className="ui-chip">实验</span>}
       >
         <span className="text-xs text-ink-subtle tabular-nums">第 {scene.rev} 版</span>

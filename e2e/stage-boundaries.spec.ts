@@ -15,6 +15,38 @@ async function openStage(page: Page) {
   return { stage, dialog }
 }
 
+async function figureBounds(page: Page, png: Buffer) {
+  return page.evaluate(async (base64) => {
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+    const image = await createImageBitmap(new Blob([bytes], { type: 'image/png' }))
+    const canvas = document.createElement('canvas')
+    canvas.width = image.width
+    canvas.height = image.height
+    const ctx = canvas.getContext('2d')!
+    ctx.drawImage(image, 0, 0)
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    let left = canvas.width,
+      right = 0,
+      top = canvas.height,
+      bottom = 0,
+      count = 0
+    for (let y = 0; y < canvas.height; y++)
+      for (let x = 0; x < canvas.width; x++) {
+        const i = (y * canvas.width + x) * 4
+        if (data[i]! < 190 && data[i + 2]! > data[i]! + 40 && data[i + 2]! > data[i + 1]! + 20) {
+          left = Math.min(left, x)
+          right = Math.max(right, x)
+          top = Math.min(top, y)
+          bottom = Math.max(bottom, y)
+          count++
+        }
+      }
+    image.close()
+    if (!count) throw new Error('取景图中没有找到蓝色人物')
+    return [left / canvas.width, right / canvas.width, top / canvas.height, bottom / canvas.height]
+  }, png.toString('base64'))
+}
+
 test('3D 坐标允许负数草稿，清空与取消不移动对象', async ({ page }) => {
   const { stage, dialog } = await openStage(page)
   const x = dialog.getByRole('spinbutton', { name: '左右', exact: true })
@@ -244,4 +276,108 @@ test('3D 连续大幅缩放不写入无效机位或重置已有场景', async ({
   const camera = StageScene.parse(await read()).camera
   expect(camera.y).toBeLessThanOrEqual(Number(await height.getAttribute('max')))
   expect(camera.y).toBeGreaterThanOrEqual(Number(await height.getAttribute('min')))
+})
+
+test('3D 拖动机位后截图及重新打开保持所见构图', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  await dialog.locator('.stage-outline .stage-item').filter({ hasText: '35mm' }).click()
+  const canvas = dialog.locator('canvas.stage-canvas')
+  const rect = (await canvas.boundingBox())!
+  await page.mouse.move(rect.x + rect.width * 0.25, rect.y + rect.height * 0.3)
+  await page.mouse.down()
+  await page.mouse.move(rect.x + rect.width * 0.5, rect.y + rect.height * 0.15, { steps: 8 })
+  await page.mouse.up()
+  let previous: Buffer | undefined
+  await expect
+    .poll(
+      async () => {
+        const current = await canvas.screenshot()
+        const stable = previous?.equals(current) ?? false
+        previous = current
+        return stable
+      },
+      { intervals: [100, 200, 400] },
+    )
+    .toBe(true)
+  const visible = await figureBounds(page, previous!)
+  await dialog.getByRole('button', { name: '截图', exact: true }).click()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(1)
+  const asset = await page.evaluate((id) => {
+    return (window.__plein.engine.doc.get(id)!.params!.snapshots as { assetId: string }[])[0]!
+      .assetId
+  }, stage.id)
+  const response = await page.request.get(`/api/assets/${asset}`)
+  expect(response.ok()).toBe(true)
+  const captured = await figureBounds(page, await response.body())
+  for (let i = 0; i < visible.length; i++)
+    expect(Math.abs(visible[i]! - captured[i]!)).toBeLessThan(0.015)
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  const at = await centerOf(page, stage.id)
+  await page.mouse.dblclick(at.x, at.y)
+  await expect(canvas).toBeVisible()
+  await dialog.locator('.stage-outline .stage-item').filter({ hasText: '35mm' }).click()
+  const reopened = await figureBounds(page, await canvas.screenshot())
+  for (let i = 0; i < visible.length; i++)
+    expect(Math.abs(visible[i]! - reopened[i]!)).toBeLessThan(0.015)
+})
+
+test('3D 缓动中立即截图，来源机位与重新打开的画面一致', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  await dialog.locator('.stage-outline .stage-item').filter({ hasText: '35mm' }).click()
+  const canvas = dialog.locator('canvas.stage-canvas')
+  const rect = (await canvas.boundingBox())!
+  await page.mouse.move(rect.x + rect.width * 0.2, rect.y + rect.height * 0.3)
+  await page.mouse.down()
+  await page.mouse.move(rect.x + rect.width * 0.4, rect.y + rect.height * 0.2, { steps: 3 })
+  await page.mouse.up()
+  await dialog.getByRole('button', { name: '截图', exact: true }).click()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(1)
+  const shot = await page.evaluate((id) => {
+    return (
+      window.__plein.engine.doc.get(id)!.params!.snapshots as {
+        assetId: string
+        scene: { camera: unknown }
+      }[]
+    )[0]!
+  }, stage.id)
+  const current = await page.evaluate(
+    (id) => window.__plein.engine.doc.get(id)!.params!.scene,
+    stage.id,
+  )
+  expect(shot.scene.camera).toEqual(StageScene.parse(current).camera)
+  const response = await page.request.get(`/api/assets/${shot.assetId}`)
+  expect(response.ok()).toBe(true)
+  const captured = await figureBounds(page, await response.body())
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  const at = await centerOf(page, stage.id)
+  await page.mouse.dblclick(at.x, at.y)
+  await expect(canvas).toBeVisible()
+  await dialog.locator('.stage-outline .stage-item').filter({ hasText: '35mm' }).click()
+  const reopened = await figureBounds(page, await canvas.screenshot())
+  for (let i = 0; i < captured.length; i++)
+    expect(Math.abs(captured[i]! - reopened[i]!)).toBeLessThan(0.015)
+})
+
+test('3D 平移后立即切换视角不丢失注视目标', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  await dialog.locator('.stage-outline .stage-item').filter({ hasText: '35mm' }).click()
+  const rect = (await dialog.locator('canvas.stage-canvas').boundingBox())!
+  await page.mouse.move(rect.x + rect.width * 0.2, rect.y + rect.height * 0.3)
+  await page.mouse.down({ button: 'right' })
+  await page.mouse.move(rect.x + rect.width * 0.4, rect.y + rect.height * 0.35, { steps: 3 })
+  await page.mouse.up({ button: 'right' })
+  await dialog.getByRole('button', { name: '自由视角', exact: true }).click()
+  const readCamera = async () =>
+    StageScene.parse(
+      await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.scene, stage.id),
+    ).camera
+  const aimed = await readCamera()
+  expect(Math.abs(aimed.tx)).toBeGreaterThan(0.01)
+  await dialog.getByRole('button', { name: '设为机位', exact: true }).click()
+  const adopted = await readCamera()
+  expect(adopted.tx).toBeCloseTo(aimed.tx, 2)
+  expect(adopted.ty).toBeCloseTo(aimed.ty, 2)
+  expect(adopted.tz).toBeCloseTo(aimed.tz, 2)
 })

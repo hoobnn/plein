@@ -29,6 +29,8 @@ const FLOOR = 0xcfd2d7
 
 const round = (n: number, step = 0.01) => Math.round(n / step) * step
 const deg = THREE.MathUtils.radToDeg
+const sameCamera = (a: StageCamera, b: StageCamera | undefined) =>
+  (['x', 'y', 'z', 'tx', 'ty', 'tz', 'focal'] as const).every((key) => a[key] === b?.[key])
 
 /**
  * 3D 构图视口：一个 WebGL 上下文，只在打开构图时存在，关闭即销毁，不影响画布。
@@ -51,6 +53,10 @@ export class StageView {
   private mode: StageMode = 'shot'
   private selected: string | null = null
   private dragging = false
+  private orbitInteracting = false
+  private pendingCamera = false
+  private orbitPosition = new THREE.Vector3()
+  private orbitTarget = new THREE.Vector3()
   private frame = 0
   private size = { w: 1, h: 1 }
   private observer: ResizeObserver
@@ -111,8 +117,12 @@ export class StageView {
     // 防止极端滚轮输入使半径溢出，或缩到相机与目标重合。
     this.orbit.minDistance = 0.25
     this.orbit.maxDistance = 100
+    this.orbit.addEventListener('start', () => {
+      this.orbitInteracting = true
+    })
     this.orbit.addEventListener('end', () => {
-      if (this.mode === 'shot') this.events.onCamera(this.cameraData())
+      this.orbitInteracting = false
+      if (this.mode === 'shot') this.pendingCamera = true
     })
 
     this.gizmo = new TransformControls(this.shot, canvas)
@@ -137,6 +147,7 @@ export class StageView {
 
   /** 按场景数据对账：新的建、没了的删、变了的更新 */
   setScene(next: StageScene) {
+    const cameraChanged = !sameCamera(next.camera, this.data?.camera)
     this.data = next
     const keep = new Set<string>()
     for (const f of next.figures) {
@@ -160,7 +171,13 @@ export class StageView {
       } else if (!this.isDragging(b.id)) updateBlock(obj, b)
     }
     for (const id of [...this.objects.keys()]) if (!keep.has(id)) this.remove(id)
-    if (!(this.mode === 'shot' && this.orbitBusy())) this.applyCamera(next.camera)
+    if (!(this.mode === 'shot' && this.orbitBusy() && !cameraChanged)) {
+      if (cameraChanged && this.mode === 'shot') {
+        this.stopOrbit()
+        this.pendingCamera = false
+      }
+      this.applyCamera(next.camera)
+    }
     this.shot.aspect = aspectRatio(next.aspect)
     this.shot.fov = verticalFov(next.camera.focal, this.shot.aspect)
     this.shot.updateProjectionMatrix()
@@ -177,6 +194,8 @@ export class StageView {
 
   setMode(mode: StageMode) {
     if (mode === this.mode) return
+    this.finishCamera()
+    this.stopOrbit()
     this.mode = mode
     const cam = mode === 'shot' ? this.shot : this.free
     this.orbit.object = cam
@@ -197,6 +216,7 @@ export class StageView {
 
   /** 自由视角下「把机位放到这里」：当前编辑相机的位置和看向的点 */
   viewAsCamera(): StageCamera {
+    this.stopOrbit()
     const t = this.orbit.target
     return stageCameraBounds({
       ...(this.data?.camera ?? { focal: 35 }),
@@ -270,8 +290,44 @@ export class StageView {
 
   private loop = () => {
     this.frame = requestAnimationFrame(this.loop)
+    this.orbitPosition.copy(this.orbit.object.position)
+    this.orbitTarget.copy(this.orbit.target)
     this.orbit.update()
+    // 控制器在最小距离附近可能因浮点抖动一直报告 change，以实际移动量判断缓动收尾。
+    if (
+      this.pendingCamera &&
+      !this.orbitInteracting &&
+      this.orbit.object.position.distanceToSquared(this.orbitPosition) < 1e-10 &&
+      this.orbit.target.distanceToSquared(this.orbitTarget) < 1e-10
+    )
+      this.finishCamera()
     this.renderer.render(this.scene, this.mode === 'shot' ? this.shot : this.free)
+  }
+
+  /** 截图、关闭或切视角前，确认当前所见机位；正常拖动则等缓动结束再写一次。 */
+  finishCamera() {
+    if (this.mode !== 'shot' || !this.pendingCamera) return
+    this.stopOrbit()
+    this.pendingCamera = false
+    const camera = this.cameraData()
+    if (!sameCamera(camera, this.data?.camera)) {
+      // 文档订阅稍后才回送：先记住已提交机位，避免旧回送打断紧接着的下一次操作。
+      if (this.data) this.data = { ...this.data, camera }
+      this.events.onCamera(camera)
+    }
+  }
+
+  /** 清掉控制器剩余的缓动量，并保留当前画面的位置和目标。 */
+  private stopOrbit() {
+    const position = this.orbit.object.position.clone()
+    const target = this.orbit.target.clone()
+    const damping = this.orbit.enableDamping
+    this.orbit.enableDamping = false
+    this.orbit.update()
+    this.orbit.object.position.copy(position)
+    this.orbit.target.copy(target)
+    this.orbit.update()
+    this.orbit.enableDamping = damping
   }
 
   /** 机位视角按画幅留出取景框，自由视角铺满 */
@@ -321,7 +377,7 @@ export class StageView {
   }
 
   private orbitBusy() {
-    return this.down !== null && !this.dragging
+    return this.orbitInteracting || this.pendingCamera
   }
 
   private isDragging(id: string) {
