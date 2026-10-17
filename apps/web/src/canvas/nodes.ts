@@ -3,6 +3,7 @@ import type { Engine } from '@plein/canvas-core'
 import {
   type CanvasElement,
   connect,
+  inputEdges,
   createElement,
   currentResult,
   elementPorts,
@@ -196,7 +197,7 @@ export interface Upstream {
   value?: ResultValue
 }
 
-/** 节点各输入端口的上游，按画布位置从上到下排列（与服务端收集顺序一致） */
+/** 节点各输入端口的上游，按文档中的稳定顺序排列。 */
 export function upstreams(
   engine: Engine,
   id: string,
@@ -204,9 +205,7 @@ export function upstreams(
 ): Map<string, Upstream[]> {
   const { doc } = engine
   const out = new Map<string, Upstream[]>()
-  const edges = [...doc.edges()].filter((e) => e.to[0] === id)
-  const pos = (eid: string) => doc.worldRect(eid) ?? { x: 0, y: 0 }
-  edges.sort((a, b) => pos(a.from[0]).y - pos(b.from[0]).y || pos(a.from[0]).x - pos(b.from[0]).x)
+  const edges = inputEdges(doc, id)
   for (const e of edges) {
     const source = doc.get(e.from[0])
     if (!source) continue

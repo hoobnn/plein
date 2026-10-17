@@ -1,5 +1,14 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, connect, removeEdges, type ResultValue } from '@plein/doc'
+import {
+  type CanvasElement,
+  connect,
+  elementPorts,
+  inputEdges,
+  removeEdges,
+  reorderInputs,
+  replaceInput,
+  type ResultValue,
+} from '@plein/doc'
 import { useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { importFiles } from '../../canvas/import'
@@ -31,7 +40,9 @@ export function Inputs({
   trailing?: React.ReactNode
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const [target, setTarget] = useState<InputPort | null>(null)
+  const [target, setTarget] = useState<{ port: InputPort; edgeId?: string } | null>(null)
+  const [replacing, setReplacing] = useState<{ port: InputPort; edgeId: string } | null>(null)
+  const [dragged, setDragged] = useState<string | null>(null)
   const media = node.inputs.filter((p) => p.type !== 'text')
   const texts = node.inputs.filter((p) => p.type === 'text').flatMap((p) => ups.get(p.id) ?? [])
   const locate = (u: Upstream) => {
@@ -42,32 +53,79 @@ export function Inputs({
 
   /** 上传文件到节点左侧，连到指定输入端口，然后选回节点 */
   const upload = async (files: File[]) => {
-    const port = target
+    const port = target?.port
     const rect = engine.scene.rect(el.id)
     if (!port || !rect || !files.length) return
+    const expected = target?.edgeId ? engine.doc.getEdge(target.edgeId) : undefined
     const { setImporting, notify } = useCanvas.getState()
     setImporting({ done: 0, total: files.length })
     try {
       const res = await importFiles(
         engine,
-        port.multiple ? files : files.slice(0, 1),
+        port.multiple && !target?.edgeId ? files : files.slice(0, 1),
         { x: rect.x - UPLOAD_OFFSET, y: rect.y + rect.h / 2 },
-        (done, total) => setImporting({ done, total }),
+        (done, total) => {
+          if (useCanvas.getState().engine === engine) setImporting({ done, total })
+        },
       )
+      if (useCanvas.getState().engine !== engine || !engine.doc.has(el.id)) return
+      if (!port.multiple && !target?.edgeId && inputEdges(engine.doc, el.id, port.id).length) {
+        notify('这个输入已接入其他参考，上传的素材保留在画布上，没有覆盖新参考')
+        return
+      }
+      if (target?.edgeId) {
+        const current = engine.doc.getEdge(target.edgeId)
+        if (
+          !expected ||
+          !current ||
+          current.from[0] !== expected.from[0] ||
+          current.from[1] !== expected.from[1]
+        ) {
+          notify('参考槽位已变化，上传的素材保留在画布上，没有覆盖新参考')
+          return
+        }
+      }
       for (const id of res.created) {
         const src = engine.doc.get(id)
         const out = src && (src.kind === 'image' || src.kind === 'video' || src.kind === 'audio')
-        if (out) connect(engine.doc, [id, src.kind], [el.id, port.id])
+        if (out) {
+          engine.doc.undo.stopCapturing()
+          if (target?.edgeId) replaceInput(engine.doc, target.edgeId, [id, src.kind])
+          else connect(engine.doc, [id, src.kind], [el.id, port.id])
+          engine.doc.undo.stopCapturing()
+        }
       }
       if (res.skipped.length) notify(`${res.skipped.map((s) => s.name).join('，')} 未导入`)
+    } catch (error) {
+      if (useCanvas.getState().engine === engine)
+        notify(error instanceof Error ? error.message : '素材导入失败')
     } finally {
-      setImporting(null)
-      engine.selection.set([el.id])
+      if (useCanvas.getState().engine === engine) {
+        setImporting(null)
+        if (engine.doc.has(el.id)) engine.selection.set([el.id])
+      }
     }
   }
-  const pick = (port: InputPort) => {
-    setTarget(port)
+  const pick = (port: InputPort, edgeId?: string) => {
+    setTarget({ port, edgeId })
     requestAnimationFrame(() => fileRef.current?.click())
+  }
+  const move = (port: InputPort, id: string, before: string) => {
+    const ids = inputEdges(engine.doc, el.id, port.id).map((e) => e.id)
+    if (!ids.includes(id) || !ids.includes(before) || id === before) return
+    ids.splice(ids.indexOf(id), 1)
+    ids.splice(ids.indexOf(before), 0, id)
+    engine.doc.undo.stopCapturing()
+    reorderInputs(engine.doc, [el.id, port.id], ids)
+    engine.doc.undo.stopCapturing()
+  }
+  const previewUpstream = (up: Upstream) => {
+    const v = up.value
+    if (v && (v.type === 'image' || v.type === 'video' || v.type === 'audio'))
+      useCanvas
+        .getState()
+        .view({ assetId: v.assetId, kind: v.type, name: up.source.name ?? '参考素材' })
+    else locate(up)
   }
 
   // 生成视频的图片按模式标注用途：图生视频第 1 张是首帧，首尾帧第 1、2 张分别是首帧、尾帧
@@ -96,7 +154,29 @@ export function Inputs({
           up={u}
           caption={roleOf(port, i) ?? caption}
           onLocate={() => locate(u)}
+          onPreview={() => previewUpstream(u)}
           onRemove={() => disconnect(u)}
+          onReplace={() => setReplacing({ port, edgeId: u.edgeId })}
+          onUpload={() => pick(port, u.edgeId)}
+          draggable={!!port.multiple}
+          onDragStart={() => setDragged(u.edgeId)}
+          onDragEnd={() => setDragged(null)}
+          onDrop={() => {
+            if (dragged) move(port, dragged, u.edgeId)
+            setDragged(null)
+          }}
+          onMove={(delta) => {
+            const ids = list.map((item) => item.edgeId)
+            const j = i + delta
+            if (j < 0 || j >= ids.length) return
+            const ordered = [...ids]
+            ;[ordered[i], ordered[j]] = [ordered[j]!, ordered[i]!]
+            engine.doc.undo.stopCapturing()
+            reorderInputs(engine.doc, [el.id, port.id], ordered)
+            engine.doc.undo.stopCapturing()
+          }}
+          canPrevious={i > 0}
+          canNext={i < list.length - 1}
         />,
       )
     }
@@ -133,6 +213,44 @@ export function Inputs({
           {tiles}
         </div>
       )}
+      {replacing && (
+        <div className="flex items-center gap-2 rounded-lg bg-surface-2 p-2">
+          <select
+            aria-label="替换参考素材"
+            className="ui-input min-w-0 flex-1"
+            value=""
+            onChange={(e) => {
+              const [id, portId] = JSON.parse(e.target.value) as [string, string]
+              engine.doc.undo.stopCapturing()
+              const ok = replaceInput(engine.doc, replacing.edgeId, [id, portId])
+              engine.doc.undo.stopCapturing()
+              if (!ok) useCanvas.getState().notify('无法替换：素材重复或类型不匹配')
+              setReplacing(null)
+            }}
+          >
+            <option value="" disabled>
+              从当前画布选择素材…
+            </option>
+            {[...engine.doc.elements()].flatMap((source) =>
+              source.id === el.id
+                ? []
+                : (elementPorts(source)?.outputs ?? [])
+                    .filter((p) => p.type === replacing.port.type || p.type === 'any')
+                    .map((p) => (
+                      <option
+                        key={`${source.id}/${p.id}`}
+                        value={JSON.stringify([source.id, p.id])}
+                      >
+                        {source.name ?? source.id} · {p.label}
+                      </option>
+                    )),
+            )}
+          </select>
+          <button type="button" className="ui-btn ui-btn-quiet" onClick={() => setReplacing(null)}>
+            取消
+          </button>
+        </div>
+      )}
       {texts.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-subtle">
           上游文本
@@ -150,8 +268,8 @@ export function Inputs({
         ref={fileRef}
         type="file"
         hidden
-        multiple={target?.multiple}
-        accept={target ? `${target.type}/*` : undefined}
+        multiple={target?.port.multiple && !target.edgeId}
+        accept={target ? `${target.port.type}/*` : undefined}
         onChange={(e) => {
           const files = [...(e.target.files ?? [])]
           e.target.value = ''
@@ -176,22 +294,63 @@ function RefTile({
   caption,
   onLocate,
   onRemove,
+  onPreview,
+  onReplace,
+  onUpload,
+  draggable,
+  onDragStart,
+  onDragEnd,
+  onDrop,
+  onMove,
+  canPrevious,
+  canNext,
 }: {
   index: number
   up: Upstream
   caption?: string
   onLocate(): void
   onRemove(): void
+  onPreview(): void
+  onReplace(): void
+  onUpload(): void
+  draggable: boolean
+  onDragStart(): void
+  onDragEnd(): void
+  onDrop(): void
+  onMove(delta: number): void
+  canPrevious: boolean
+  canNext: boolean
 }) {
   const v = up.value
   const img = preview(v)
   const name = up.source.name ?? '上游'
   return (
-    <div className="group relative flex flex-none flex-col items-center gap-1 text-2xs text-ink-subtle">
+    <div
+      role="group"
+      aria-label={`参考 ${index}：${name}`}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault()
+        onDrop()
+      }}
+      className="group relative flex flex-none flex-col items-center gap-1 text-2xs text-ink-subtle"
+    >
       <button
         type="button"
-        onClick={onLocate}
-        title={v ? `定位到「${name}」` : `「${name}」还没有结果`}
+        onClick={onPreview}
+        title={v ? `预览「${name}」` : `「${name}」还没有结果`}
+        draggable={draggable}
+        onDragStart={(e) => {
+          e.dataTransfer.setData('application/x-plein-input', up.edgeId)
+          onDragStart()
+        }}
+        onDragEnd={onDragEnd}
+        onKeyDown={(e) => {
+          if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+            e.preventDefault()
+            onMove(e.key === 'ArrowLeft' ? -1 : 1)
+          }
+        }}
         className="relative size-12 overflow-hidden rounded-md bg-surface-2 shadow-1"
       >
         {img ? (
@@ -216,6 +375,57 @@ function RefTile({
         <Icon name="x" size={12} />
       </button>
       {caption && <span>{caption}</span>}
+      <div className="flex gap-0.5">
+        {draggable && (
+          <>
+            <button
+              type="button"
+              className="ui-btn ui-btn-quiet p-0.5"
+              disabled={!canPrevious}
+              aria-label={`向前移动参考 ${index}`}
+              onClick={() => onMove(-1)}
+            >
+              ←
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn-quiet p-0.5"
+              disabled={!canNext}
+              aria-label={`向后移动参考 ${index}`}
+              onClick={() => onMove(1)}
+            >
+              →
+            </button>
+          </>
+        )}
+        <button
+          type="button"
+          className="ui-btn ui-btn-quiet p-0.5"
+          aria-label={`替换参考 ${index}`}
+          title="从画布替换"
+          onClick={onReplace}
+        >
+          <Icon name="retry" size={12} />
+        </button>
+        <button
+          type="button"
+          className="ui-btn ui-btn-quiet p-0.5"
+          aria-label={`上传替换参考 ${index}`}
+          title="上传替换"
+          onClick={onUpload}
+        >
+          <Icon name="upload" size={12} />
+        </button>
+        <button
+          type="button"
+          className="ui-btn ui-btn-quiet p-0.5"
+          aria-label={`定位参考 ${index}`}
+          title="定位上游"
+          onClick={onLocate}
+        >
+          <Icon name="locate" size={12} />
+        </button>
+      </div>
     </div>
   )
 }

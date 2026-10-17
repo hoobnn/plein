@@ -1,5 +1,13 @@
 import type { Engine } from '@plein/canvas-core'
-import { addResults, type CanvasElement, connect, createDoc, createElement } from '@plein/doc'
+import {
+  addResults,
+  type CanvasElement,
+  connect,
+  createDoc,
+  createElement,
+  moveElements,
+  reorderInputs,
+} from '@plein/doc'
 import type { Catalog } from '@plein/protocol'
 import { describe, expect, it } from 'vite-plus/test'
 import { type NodeInfo, nodeElement, type Upstream, upstreams, validate } from './nodes'
@@ -133,18 +141,28 @@ describe('上游', () => {
     return { doc, engine, at, target, md }
   }
 
-  it('按画布位置从上到下、同一行从左到右排列', () => {
+  it('按显式输入顺序读取，移动来源不改变顺序，重排立即生效', () => {
     const { doc, engine, target, md } = setup()
+    const sources: string[] = [],
+      edges: string[] = []
     for (const [text, x, y] of [
       ['下', 0, 200],
       ['右上', 100, 0],
       ['左上', 0, 0],
-    ] as const)
-      connect(doc, [md(text, x, y), 'text'], [target, 'prompt'])
-    const texts = upstreams(engine, target, null)
-      .get('prompt')!
-      .map((u) => (u.value?.type === 'text' ? u.value.text : null))
-    expect(texts).toEqual(['左上', '右上', '下'])
+    ] as const) {
+      const source = md(text, x, y)
+      sources.push(source)
+      edges.push(connect(doc, [source, 'text'], [target, 'prompt'])!.id)
+    }
+    const texts = () =>
+      upstreams(engine, target, null)
+        .get('prompt')!
+        .map((u) => (u.value?.type === 'text' ? u.value.text : null))
+    expect(texts()).toEqual(['下', '右上', '左上'])
+    moveElements(doc, [sources[0]!], 0, -1000)
+    expect(texts()).toEqual(['下', '右上', '左上'])
+    reorderInputs(doc, [target, 'prompt'], [...edges].reverse())
+    expect(texts()).toEqual(['左上', '右上', '下'])
   })
 
   it('素材元素给资产，节点给当前结果，非纯节点没结果时为空', () => {

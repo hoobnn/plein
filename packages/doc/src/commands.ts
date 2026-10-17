@@ -2,6 +2,7 @@ import { generateNKeysBetween } from 'fractional-indexing'
 import * as Y from 'yjs'
 import { type ElementMap, type PleinDoc, SYSTEM_ORIGIN } from './doc'
 import { newId } from './ids'
+import { inputEdges } from './inputs'
 import {
   type CanvasElement,
   CONTAINER_KINDS,
@@ -531,9 +532,50 @@ export function connect(doc: PleinDoc, from: PortAddress, to: PortAddress): Edge
       if (e.from[0] === from[0] && e.from[1] === from[1]) return null
       if (!target.multiple) doc.edgeMap.delete(id)
     }
-    const edge: Edge = { id: newId('edge'), from: [...from], to: [...to] }
+    const previous = inputEdges(doc, to[0], to[1])
+      .filter((e) => e.order)
+      .at(-1)?.order
+    const edge: Edge = {
+      id: newId('edge'),
+      from: [...from],
+      to: [...to],
+      order: generateNKeysBetween(previous ?? null, null, 1)[0]!,
+    }
     doc.edgeMap.set(edge.id, edge)
     return edge
+  })
+}
+
+/** 一次显式排序只影响同一输入端口，缺项/重复/多项均拒绝。 */
+export function reorderInputs(doc: PleinDoc, to: PortAddress, ids: readonly string[]): boolean {
+  const edges = inputEdges(doc, to[0], to[1])
+  if (edges.length !== ids.length || new Set(ids).size !== ids.length) return false
+  const byId = new Map(edges.map((e) => [e.id, e]))
+  if (ids.some((id) => !byId.has(id))) return false
+  if (edges.every((e, i) => e.id === ids[i])) return false
+  return write(doc, () => {
+    const keys = generateNKeysBetween(null, null, ids.length)
+    ids.forEach((id, i) => doc.edgeMap.set(id, { ...byId.get(id)!, order: keys[i]! }))
+    return true
+  })
+}
+
+/** 替换槽位保留边 ID 与顺序；不修改旧素材元素或删除文件。 */
+export function replaceInput(doc: PleinDoc, edgeId: string, from: PortAddress): boolean {
+  const edge = doc.getEdge(edgeId)
+  if (!edge || edge.to[0] === from[0]) return false
+  const source = findPort(doc.get(from[0]), from[1], 'outputs')
+  const target = findPort(doc.get(edge.to[0]), edge.to[1], 'inputs')
+  if (!source || !target || !portsCompatible(source.type, target.type)) return false
+  if (
+    inputEdges(doc, edge.to[0], edge.to[1]).some(
+      (e) => e.from[0] === from[0] && e.from[1] === from[1],
+    )
+  )
+    return false
+  return write(doc, () => {
+    doc.edgeMap.set(edgeId, { ...edge, from: [...from] })
+    return true
   })
 }
 

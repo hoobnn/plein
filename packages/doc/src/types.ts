@@ -143,6 +143,8 @@ export interface Edge {
   id: string
   from: PortAddress
   to: PortAddress
+  /** 目标端口内的稳定顺序；旧文档升级时一次性固化空间顺序。 */
+  order?: string
 }
 
 /** 新建元素的输入：未给的字段取默认值 */

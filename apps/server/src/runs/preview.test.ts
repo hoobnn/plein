@@ -1,4 +1,14 @@
-import { adoptResult, connect, createElement, type PleinDoc, setParams, writeRun } from '@plein/doc'
+import {
+  adoptResult,
+  connect,
+  createElement,
+  inputEdges,
+  moveElements,
+  reorderInputs,
+  type PleinDoc,
+  setParams,
+  writeRun,
+} from '@plein/doc'
 import type { AssetRef, ProviderRequest } from '@plein/plugin-sdk'
 import type { JobList, PreparedInput } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
@@ -8,6 +18,43 @@ import { addNode, bootServer, createCanvas, mockSettings, request, until } from 
 
 afterEach(() => {
   vi.restoreAllMocks()
+})
+
+it('布局移动不改变首尾帧实际输入与缓存；显式重排才改变', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const first = createElement(doc, {
+    kind: 'image',
+    assetId: 'a'.repeat(64),
+    x: 0,
+    y: 400,
+    w: 100,
+    h: 100,
+  })
+  const last = createElement(doc, {
+    kind: 'image',
+    assetId: 'b'.repeat(64),
+    x: 0,
+    y: -400,
+    w: 100,
+    h: 100,
+  })
+  const video = addNode(doc, 'plein/video', {
+    params: { model: 'plein/mock:video', mode: 'frames', prompt: '开门' },
+  })
+  connect(doc, [first, 'image'], [video, 'images'])
+  connect(doc, [last, 'image'], [video, 'images'])
+  const before = await preview(server, id, video)
+  moveElements(doc, [first], 800, -2000)
+  const moved = await preview(server, id, video)
+  expect(moved.inputHash).toBe(before.inputHash)
+  expect(moved.inputs).toEqual(before.inputs)
+  const ordered = inputEdges(doc, video, 'images')
+  reorderInputs(doc, [video, 'images'], ordered.map((e) => e.id).reverse())
+  const changed = await preview(server, id, video)
+  expect(changed.inputHash).not.toBe(before.inputHash)
+  expect(changed.inputs.images?.map((v) => v.assetId)).toEqual(['b'.repeat(64), 'a'.repeat(64)])
 })
 
 const asset = (c: string) => c.repeat(64)

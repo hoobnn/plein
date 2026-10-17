@@ -6,6 +6,7 @@ import {
   type CanvasElement,
   createDoc,
   currentResult,
+  inputEdges,
   type NodeResult,
   type NodeRun,
   type PleinDoc,
@@ -1475,7 +1476,7 @@ export class NodeRuns implements BatchHost {
   /**
    * 按输入端口收集上游值：节点取当前采用的结果，素材元素取资产，Markdown 取正文。
    * 上游是还没结果的纯节点（不调模型，如文本节点）时就地计算。
-   * 同一端口的多个上游按画布位置从上到下、从左到右排序。
+   * 同一端口的多个上游按文档中的稳定顺序排序，布局不改变输入。
    */
   private async collectInputs(
     doc: PleinDoc,
@@ -1488,13 +1489,7 @@ export class NodeRuns implements BatchHost {
     lenient = false,
   ): Promise<Record<string, PortValue[]>> {
     if (depth > MAX_DEPTH) throw new NodeRunError('invalid_input', '上游连线成环或层级过深')
-    const edges = [...doc.edges()].filter((e) => e.to[0] === nodeId)
-    const pos = (id: string) => doc.worldRect(id) ?? { x: 0, y: 0 }
-    edges.sort((a, b) => {
-      const pa = pos(a.from[0])
-      const pb = pos(b.from[0])
-      return pa.y - pb.y || pa.x - pb.x
-    })
+    const edges = inputEdges(doc, nodeId)
     const inputs: Record<string, PortValue[]> = {}
     for (const edge of edges) {
       const src = doc.get(edge.from[0])

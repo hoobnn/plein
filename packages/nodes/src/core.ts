@@ -152,7 +152,7 @@ export const imageEditNode = defineNode({
 })
 
 /**
- * 视频生成模式：由用户指定，不按连线猜。连进来的图片按画布位置从上到下编号，模式决定怎么用：
+ * 视频生成模式：由用户指定，不按连线猜。连进来的图片按输入边的显式顺序编号，模式决定怎么用：
  * 图生视频用第 1 张做首帧，首尾帧用第 1、2 张，图片参考把全部图片当参考主体。
  */
 export const VIDEO_MODES = ['text', 'image', 'frames', 'reference'] as const

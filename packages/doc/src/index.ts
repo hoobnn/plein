@@ -11,6 +11,7 @@ export {
   SYSTEM_ORIGIN,
 } from './doc'
 export * from './layout'
+export * from './inputs'
 export * from './sizes'
 export * from './shotGroup'
 export { SCHEMA_VERSION } from './migrate'

@@ -1,8 +1,9 @@
 import { generateNKeysBetween } from 'fractional-indexing'
 import * as Y from 'yjs'
+import { CONTAINER_KINDS, type Edge } from './types'
 
 /** 当前文档 schema 版本 */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 export interface MigrateResult {
   version: number
@@ -13,7 +14,7 @@ export interface MigrateResult {
 type Migration = (ydoc: Y.Doc) => void
 
 /** MIGRATIONS[n] 把 n 版升到 n + 1 版 */
-const MIGRATIONS: Migration[] = [v0ToV1, v1ToV2]
+const MIGRATIONS: Migration[] = [v0ToV1, v1ToV2, v2ToV3]
 
 /**
  * 顺序执行迁移。新文档直接标为当前版本；
@@ -109,7 +110,7 @@ const VIDEO_MODE = { lastFrame: 'frames', firstFrame: 'image', references: 'refe
 /**
  * v1 → v2：生成视频节点（plein/video@1）的首帧 / 尾帧 / 参考图三个输入并成一个「图片」输入，
  * 怎么用改由参数 mode 指定（首尾帧 / 图生视频 / 图片参考 / 文生视频），节点升到 2 版。
- * 模式按原来连了哪个口推断；图片顺序按画布位置从上到下，和运行时收集输入的顺序一致。
+ * 模式按原来连了哪个口推断；旧版按空间位置收集输入，随后 v2 → v3 会将该顺序固化。
  */
 function v1ToV2(ydoc: Y.Doc) {
   const elements = ydoc.getMap<unknown>('elements')
@@ -142,5 +143,57 @@ function v1ToV2(ydoc: Y.Doc) {
     }
     ;(params as Y.Map<unknown>).set('mode', used ? VIDEO_MODE[used] : 'text')
     m.set('nodeVersion', 2)
+  }
+}
+
+/** v2 → v3：只在迁移时按旧世界坐标排序，之后布局不再决定生成输入。 */
+function v2ToV3(ydoc: Y.Doc) {
+  const elements = ydoc.getMap<Y.Map<unknown>>('elements')
+  const edges = ydoc.getMap<Edge>('edges')
+  const groups = new Map<string, Edge[]>()
+  const positions = new Map<string, { x: number; y: number }>()
+  const parentOf = (id: string): string | null => {
+    const el = elements.get(id)
+    const p = el?.get('parentId')
+    const parent = typeof p === 'string' ? elements.get(p) : undefined
+    if (!(parent instanceof Y.Map) || !CONTAINER_KINDS.has(parent.get('kind') as 'frame'))
+      return null
+    const seen = new Set([id])
+    let cur: unknown = p
+    while (typeof cur === 'string') {
+      if (seen.has(cur)) return null
+      seen.add(cur)
+      cur = elements.get(cur)?.get('parentId')
+    }
+    return p as string
+  }
+  const position = (id: string): { x: number; y: number } => {
+    const cached = positions.get(id)
+    if (cached) return cached
+    const el = elements.get(id)
+    const p = parentOf(id)
+    const offset = p ? position(p) : { x: 0, y: 0 }
+    const result = {
+      x: Number(el?.get('x') ?? 0) + offset.x,
+      y: Number(el?.get('y') ?? 0) + offset.y,
+    }
+    positions.set(id, result)
+    return result
+  }
+  for (const edge of edges.values()) {
+    const key = JSON.stringify(edge.to)
+    const list = groups.get(key) ?? []
+    list.push(edge)
+    groups.set(key, list)
+  }
+  for (const list of groups.values()) {
+    // JS stable sort 保持坐标相同时旧 Y.Map 的遍历顺序。
+    list.sort(
+      (a, b) =>
+        position(a.from[0]).y - position(b.from[0]).y ||
+        position(a.from[0]).x - position(b.from[0]).x,
+    )
+    const keys = generateNKeysBetween(null, null, list.length)
+    list.forEach((edge, i) => edges.set(edge.id, { ...edge, order: keys[i]! }))
   }
 }

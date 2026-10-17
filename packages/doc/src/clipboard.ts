@@ -1,6 +1,7 @@
 import { createElements, ReadOnlyDocError, topLevel } from './commands'
 import { compareZ, type PleinDoc } from './doc'
 import { newId } from './ids'
+import { generateNKeysBetween } from 'fractional-indexing'
 import type { CanvasElement, Edge, NewElement } from './types'
 
 /** 复制粘贴的序列化格式，可放进系统剪贴板 */
@@ -87,12 +88,32 @@ export function importElements(
         pending.splice(pending.indexOf(e), 1)
       }
     }
+    const legacy = new Map<string, Edge[]>()
     for (const e of data.edges) {
       const from = remap.get(e.from[0])
       const to = remap.get(e.to[0])
       if (!from || !to) continue
-      const edge: Edge = { id: newId('edge'), from: [from, e.from[1]], to: [to, e.to[1]] }
+      const edge: Edge = {
+        id: newId('edge'),
+        from: [from, e.from[1]],
+        to: [to, e.to[1]],
+        ...(e.order ? { order: e.order } : {}),
+      }
       doc.edgeMap.set(edge.id, edge)
+      if (!edge.order) {
+        const key = JSON.stringify(edge.to)
+        const list = legacy.get(key) ?? []
+        list.push(edge)
+        legacy.set(key, list)
+      }
+    }
+    for (const list of legacy.values()) {
+      const pos = (id: string) => doc.worldRect(id) ?? { x: 0, y: 0 }
+      list.sort(
+        (a, b) => pos(a.from[0]).y - pos(b.from[0]).y || pos(a.from[0]).x - pos(b.from[0]).x,
+      )
+      const keys = generateNKeysBetween(null, null, list.length)
+      list.forEach((edge, i) => doc.edgeMap.set(edge.id, { ...edge, order: keys[i]! }))
     }
   }, doc.origin)
   return roots
