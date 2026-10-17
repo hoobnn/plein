@@ -99,4 +99,17 @@ describe('构图采用画幅', () => {
     expect(ratio()).toBeCloseTo(16 / 9, 2)
     doc.destroy()
   })
+
+  it('来源素材与实际采用图片不匹配时不借用错误画幅', () => {
+    const { doc, id, snapshots, ratio } = setup()
+    setParam(doc, id, 'snapshots', [
+      { ...snapshots[0]!, assetId: 'different-image' },
+      snapshots[1]!,
+    ])
+    const off = watchStageAspect(doc)
+    doc.flush()
+    expect(ratio()).toBeCloseTo(9 / 16, 2)
+    off()
+    doc.destroy()
+  })
 })

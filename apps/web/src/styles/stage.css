@@ -93,6 +93,9 @@
   box-shadow: inset 0 0 0 1px var(--line);
   transition: box-shadow var(--dur-base) var(--ease-standard);
 }
+.stage-shot > button:disabled {
+  cursor: not-allowed;
+}
 .stage-shot > button img {
   display: block;
   width: 100%;
@@ -122,6 +125,15 @@
 .stage-link:hover,
 .stage-link[data-active] {
   color: var(--accent);
+}
+.stage-link:disabled {
+  color: var(--ink-subtle);
+  cursor: not-allowed;
+}
+.stage-record-note {
+  color: var(--ink-subtle);
+  font-size: var(--text-xs);
+  line-height: 1.5;
 }
 
 .stage-viewport {

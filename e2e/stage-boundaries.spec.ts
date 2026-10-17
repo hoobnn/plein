@@ -764,3 +764,74 @@ test('3D 连续名字输入归并，按钮撤销按操作区分且输入框快�
   expect((await read()).pose).toBe('sit')
   await expect(dialog).toBeVisible()
 })
+
+test('3D 旧来源损坏或候选移除时保留可恢复场景，不提供无效采用', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  const shoot = dialog.getByRole('button', { name: '截图', exact: true })
+  await shoot.click()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(1)
+  await dialog.getByRole('button', { name: '坐', exact: true }).click()
+  await shoot.click()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(2)
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  // 用两次真实截图构造旧项目：采用图无来源、旧来源无候选，并混入坏记录及重复记录。
+  const adopted = await page.evaluate((id) => {
+    const doc = window.__plein.engine.doc
+    const el = doc.get(id)!
+    const old = (el.params!.snapshots as { resultId: string }[]).at(-1)!
+    const map = doc.mutable(id)! as {
+      get(key: string): unknown
+      set(key: string, value: unknown): void
+    }
+    const params = map.get('params') as { set(key: string, value: unknown): void }
+    params.set('snapshots', [old, { resultId: 'broken', scene: null }, old])
+    map.set(
+      'results',
+      el.results!.filter((r) => r.id !== old.resultId),
+    )
+    return map.get('adopted')
+  }, stage.id)
+  const at = await centerOf(page, stage.id)
+  await page.mouse.dblclick(at.x, at.y)
+  await expect(
+    dialog.getByText('当前采用截图缺少构图来源，仍可作为输出使用。', { exact: true }),
+  ).toBeVisible()
+  const missing = dialog
+    .locator('.stage-shot')
+    .filter({ has: page.getByRole('img', { name: /来源缺失/ }) })
+  await expect(missing.getByRole('button', { name: '恢复', exact: true })).toBeDisabled()
+  await expect
+    .poll(() => missing.getByRole('img').evaluate((img: HTMLImageElement) => img.naturalWidth))
+    .toBeGreaterThan(0)
+  if (process.env.STAGE_SHOTS)
+    await page.screenshot({ path: `${process.env.STAGE_SHOTS}/legacy.png`, animations: 'disabled' })
+  const orphan = dialog
+    .locator('.stage-shot')
+    .filter({ has: page.getByRole('img', { name: '第 0 版截图', exact: true }) })
+  await expect(orphan.getByRole('button').first()).toBeDisabled()
+  await orphan.getByRole('button', { name: '恢复', exact: true }).click()
+  const scene = StageScene.parse(
+    await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.scene, stage.id),
+  )
+  expect(scene.figures[0]!.pose).toBe('stand')
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.mutable(id)?.get('adopted'), stage.id),
+  ).toBe(adopted)
+  expect((await elements(page)).find((e) => e.id === stage.id)!.results).toBe(1)
+  await shoot.click()
+  await expect
+    .poll(async () => (await elements(page)).find((e) => e.id === stage.id)!.results)
+    .toBe(2)
+  await expect(orphan).toHaveCount(0)
+  await expect(missing.getByRole('button', { name: '恢复', exact: true })).toBeDisabled()
+  await missing.getByRole('button').first().click()
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.mutable(id)?.get('adopted'), stage.id),
+  ).toBe(adopted)
+  expect(
+    StageScene.parse(
+      await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.scene, stage.id),
+    ).figures[0]!.pose,
+  ).toBe('stand')
+})

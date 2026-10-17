@@ -137,8 +137,27 @@ export function stageSceneOf(params: Record<string, unknown> | undefined): Stage
 }
 
 export function stageSnapshotsOf(params: Record<string, unknown> | undefined): StageSnapshot[] {
-  const parsed = z.array(StageSnapshot).safeParse(params?.snapshots)
-  return parsed.success ? parsed.data : []
+  if (!Array.isArray(params?.snapshots)) return []
+  const seen = new Set<string>()
+  const snapshots: StageSnapshot[] = []
+  for (const value of params.snapshots) {
+    const parsed = StageSnapshot.safeParse(value)
+    if (!parsed.success || seen.has(parsed.data.resultId)) continue
+    seen.add(parsed.data.resultId)
+    snapshots.push(parsed.data)
+  }
+  return snapshots
+}
+
+/** 只读取指定候选的首条有效来源，避免尺寸监听反复解析其他历史场景。 */
+export function stageSnapshotFor(params: Record<string, unknown> | undefined, resultId: string) {
+  if (!Array.isArray(params?.snapshots)) return undefined
+  for (const value of params.snapshots) {
+    if (value?.resultId !== resultId) continue
+    const parsed = StageSnapshot.safeParse(value)
+    if (parsed.success) return parsed.data
+  }
+  return undefined
 }
 
 /**

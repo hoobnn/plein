@@ -12,7 +12,6 @@ import {
   type StageFigure,
   type StageScene,
   stageSceneOf,
-  stageSnapshotsOf,
 } from '@plein/nodes'
 import { Menu } from '@base-ui/react/menu'
 import { useEffect, useRef, useState } from 'react'
@@ -23,6 +22,7 @@ import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Segmented } from '../../ui/Segmented'
 import { saveSnapshot } from './snapshot'
+import { stageRecordsOf } from './records'
 import { applyStageHistory, canStageHistory, writeStageEdit } from './history'
 import { stageObjectName, stageObjectPosition } from './placement'
 import { type StageMode, type StageTool, StageView } from './view'
@@ -59,8 +59,7 @@ export function StagePanel({
   const notify = useCanvas((s) => s.notify)
   const el = engine.doc.get(id)
   const scene = stageSceneOf(el?.params)
-  const snapshots = stageSnapshotsOf(el?.params)
-  const adopted = el ? currentResult(el, 'image')?.id : undefined
+  const records = stageRecordsOf(el)
   const [selected, setSelected] = useState<string | null>(scene.figures[0]?.id ?? null)
   const selectedRef = useRef(selected)
   selectedRef.current = selected
@@ -365,43 +364,88 @@ export function StagePanel({
               label={`${scene.camera.focal}mm · ${scene.aspect}`}
             />
           </OutlineGroup>
-          {snapshots.length > 0 && (
-            <OutlineGroup title={`截图（${snapshots.length}）`}>
+          {records.length > 0 && (
+            <OutlineGroup title={`截图（${records.length}）`}>
+              {records.some((r) => r.adopted && !r.snapshot) && (
+                <p className="stage-empty" role="status">
+                  当前采用截图缺少构图来源，仍可作为输出使用。
+                </p>
+              )}
               <div className="stage-shots">
-                {snapshots.map((s) => (
+                {records.map((record, index) => (
                   <figure
-                    key={s.resultId}
+                    key={record.key}
                     className="stage-shot"
-                    data-active={s.resultId === adopted || undefined}
+                    data-active={record.adopted || undefined}
                   >
                     <button
                       type="button"
-                      aria-pressed={s.resultId === adopted}
-                      title={`第 ${s.rev} 版 · ${s.scene.camera.focal}mm · ${s.scene.aspect}，点一下让下游用这张`}
+                      aria-pressed={record.adopted}
+                      disabled={!record.available || engine.doc.readOnly}
+                      title={
+                        !record.available
+                          ? '候选不可用，仅能恢复场景'
+                          : record.snapshot
+                            ? `第 ${record.snapshot.rev} 版 · ${record.snapshot.scene.camera.focal}mm · ${record.snapshot.scene.aspect}，点一下让下游用这张`
+                            : '采用此截图（缺少构图来源，不能恢复场景）'
+                      }
                       onClick={() => {
+                        if (!record.available || engine.doc.readOnly) return
                         view.current?.finishCamera()
+                        const result = engine.doc
+                          .get(id)
+                          ?.results?.find((r) => r.id === record.resultId)
+                        if (
+                          result?.port !== 'image' ||
+                          result?.value.type !== 'image' ||
+                          result.value.assetId !== record.assetId
+                        )
+                          return
                         writeStageEdit(engine.doc, id, () =>
-                          adoptResult(engine.doc, id, s.resultId),
+                          adoptResult(engine.doc, id, record.resultId),
                         )
                       }}
                     >
                       <img
                         loading="lazy"
-                        src={assetUrls.variant(s.assetId, 'thumb-256')}
-                        alt={`第 ${s.rev} 版截图`}
+                        src={assetUrls.variant(record.assetId, 'thumb-256')}
+                        alt={
+                          record.snapshot
+                            ? `第 ${record.snapshot.rev} 版截图`
+                            : `第 ${index + 1} 张截图（来源缺失）`
+                        }
                       />
                     </button>
                     <figcaption>
-                      <span className="tabular-nums">第 {s.rev} 版</span>
+                      <span className="tabular-nums">
+                        {record.snapshot ? `第 ${record.snapshot.rev} 版` : '来源缺失'}
+                      </span>
                       <button
                         type="button"
                         className="stage-link"
-                        title="把场景和机位恢复成截这张图时的样子"
-                        onClick={() => commit(() => s.scene)}
+                        disabled={!record.snapshot || engine.doc.readOnly}
+                        title={
+                          record.snapshot
+                            ? '把场景和机位恢复成截这张图时的样子'
+                            : '没有保存可恢复的构图来源'
+                        }
+                        onClick={() => {
+                          const captured = record.snapshot?.scene
+                          if (captured && !engine.doc.readOnly) commit(() => captured)
+                        }}
                       >
                         恢复
                       </button>
                     </figcaption>
+                    {record.issue && (
+                      <p className="stage-record-note">
+                        {record.issue === 'missing'
+                          ? '缺少来源，不能恢复场景。'
+                          : record.issue === 'removed'
+                            ? '候选已移除，可恢复后重新截图。'
+                            : '与候选不匹配，可恢复后重新截图。'}
+                      </p>
+                    )}
                   </figure>
                 ))}
               </div>
