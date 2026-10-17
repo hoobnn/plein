@@ -48,6 +48,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [refresh, setRefresh] = useState(0)
+  const [failedMore, setFailedMore] = useState(false)
   const request = useRef<AbortController | null>(null)
   const engine = useCanvas((s) => s.engine),
     canvasId = useCanvas((s) => s.canvasId)
@@ -75,6 +76,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
     request.current = controller
     setBusy(true)
     setError('')
+    setFailedMore(false)
     setPage({ items: [], nextCursor: null })
     setSelected(null)
     mediaApi
@@ -101,6 +103,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
     request.current = controller
     setBusy(true)
     setError('')
+    setFailedMore(false)
     try {
       const result = await mediaApi.list(
         {
@@ -117,7 +120,10 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
           nextCursor: result.nextCursor,
         }))
     } catch (reason) {
-      if (!controller.signal.aborted) setError((reason as Error).message)
+      if (!controller.signal.aborted) {
+        setFailedMore(true)
+        setError((reason as Error).message)
+      }
     } finally {
       if (!controller.signal.aborted) setBusy(false)
     }
@@ -194,7 +200,11 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
             <button
               type="button"
               className="ui-btn ui-btn-sm ui-btn-quiet ml-2"
-              onClick={() => setRefresh((n) => n + 1)}
+              disabled={busy || searching}
+              onClick={() => {
+                if (failedMore) void more()
+                else setRefresh((n) => n + 1)
+              }}
             >
               重试
             </button>
@@ -208,11 +218,15 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
             {!visibleItems.length ? (
               <EmptyState
                 icon="library"
-                title={busy || searching ? '正在读取素材…' : '没有找到素材'}
+                title={
+                  busy || searching ? '正在读取素材…' : error ? '素材读取失败' : '没有找到素材'
+                }
                 hint={
                   busy || searching
                     ? undefined
-                    : '可以调整筛选；导入和生成的图片、视频、音频都会在这里。'
+                    : error
+                      ? '可以点击上方重试，或调整筛选后重新读取。'
+                      : '可以调整筛选；导入和生成的图片、视频、音频都会在这里。'
                 }
               />
             ) : (
