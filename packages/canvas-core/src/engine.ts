@@ -132,6 +132,8 @@ export class Engine {
     to: { x: number; y: number; zoom: number }
     start: number
   } | null = null
+  /** 动画自身更新相机时不取消自己；其他来源的导航立即接管。 */
+  private advancingFlight = false
   private pan: PanState = { space: false, hand: false }
   private toolValue: Tool = 'select'
   private viewDirty = true
@@ -223,6 +225,7 @@ export class Engine {
           this.emitMenu({ kind: 'connect', from, world, client }),
       }),
       this.camera.onChange(() => {
+        if (!this.advancingFlight) this.flight = null
         this.cameraDirty = true
       }),
       this.selection.onChange(() => {
@@ -615,7 +618,16 @@ export class Engine {
     const t = Math.min(1, (now - f.start) / FLIGHT_MS)
     const e = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
     const zoom = Math.exp(Math.log(f.from.zoom) + (Math.log(f.to.zoom) - Math.log(f.from.zoom)) * e)
-    this.camera.lookAt(f.from.x + (f.to.x - f.from.x) * e, f.from.y + (f.to.y - f.from.y) * e, zoom)
+    this.advancingFlight = true
+    try {
+      this.camera.lookAt(
+        f.from.x + (f.to.x - f.from.x) * e,
+        f.from.y + (f.to.y - f.from.y) * e,
+        zoom,
+      )
+    } finally {
+      this.advancingFlight = false
+    }
     if (t >= 1) {
       this.flight = null
       this.flash(this.flightIds)

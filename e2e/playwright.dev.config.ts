@@ -20,6 +20,7 @@ export default defineConfig({
     'offline.spec.ts',
     'collaboration-fields.spec.ts',
     'prompt-collaboration.spec.ts',
+    'camera-navigation.spec.ts',
   ],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },
   webServer: [
