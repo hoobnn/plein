@@ -704,4 +704,63 @@ test('3D 横竖画幅候选切换时卡片跟随采用图，编辑场景独立�
   await portrait.getByRole('button').first().click()
   await expect.poll(ratio).toBeCloseTo(9 / 16, 2)
   expect((await read()).aspect).toBe('16:9')
+  await dialog.getByRole('button', { name: '撤销构图操作', exact: true }).click()
+  await expect.poll(ratio).toBeCloseTo(16 / 9, 2)
+  await dialog.getByRole('button', { name: '重做构图操作', exact: true }).click()
+  await expect.poll(ratio).toBeCloseTo(9 / 16, 2)
+  expect((await read()).aspect).toBe('16:9')
+})
+
+test('3D 编辑器内撤销重做场景，不撤销节点创建且保留截图', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  const undo = dialog.getByRole('button', { name: '撤销构图操作', exact: true })
+  await expect(undo).toBeDisabled()
+  const sit = dialog.getByRole('button', { name: '坐', exact: true })
+  await sit.click()
+  await dialog.getByRole('button', { name: '截图', exact: true }).click()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(1)
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(dialog).toHaveCount(0)
+  const at = await centerOf(page, stage.id)
+  await page.mouse.dblclick(at.x, at.y)
+  await expect(undo).toBeEnabled()
+  await sit.focus()
+  await page.keyboard.press('ControlOrMeta+z')
+  const pose = () =>
+    page.evaluate((id) => {
+      return (window.__plein.engine.doc.get(id)!.params!.scene as { figures: { pose: string }[] })
+        .figures[0]!.pose
+    }, stage.id)
+  await expect.poll(pose).toBe('stand')
+  await expect(undo).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: '重做构图操作', exact: true })).toBeEnabled()
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect.poll(pose).toBe('sit')
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(pose).toBe('stand')
+  await page.keyboard.press('ControlOrMeta+z')
+  expect((await elements(page)).some((e) => e.id === stage.id)).toBe(true)
+  await expect(dialog.locator('.stage-shot')).toHaveCount(1)
+})
+
+test('3D 连续名字输入归并，按钮撤销按操作区分且输入框快捷键不穿透', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  await dialog.getByRole('button', { name: '坐', exact: true }).click()
+  const name = dialog.getByRole('textbox', { name: '名字', exact: true })
+  await name.fill('')
+  await name.pressSequentially('AB')
+  await dialog.getByRole('button', { name: '指向', exact: true }).click()
+  const read = async () =>
+    StageScene.parse(
+      await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.scene, stage.id),
+    ).figures[0]!
+  const undo = dialog.getByRole('button', { name: '撤销构图操作', exact: true })
+  await undo.click()
+  expect(await read()).toMatchObject({ name: 'AB', pose: 'sit' })
+  await undo.click()
+  expect(await read()).toMatchObject({ name: '人物 1', pose: 'sit' })
+  await name.focus()
+  await page.keyboard.press('ControlOrMeta+z')
+  expect((await read()).pose).toBe('sit')
+  await expect(dialog).toBeVisible()
 })

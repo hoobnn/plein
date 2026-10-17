@@ -23,6 +23,7 @@ import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Segmented } from '../../ui/Segmented'
 import { saveSnapshot } from './snapshot'
+import { applyStageHistory, canStageHistory, writeStageEdit } from './history'
 import { stageObjectName, stageObjectPosition } from './placement'
 import { type StageMode, type StageTool, StageView } from './view'
 
@@ -39,6 +40,10 @@ const focalHint = (f: number) =>
   f < 22 ? '超广角' : f < 32 ? '广角' : f < 60 ? '标准' : f < 110 ? '中长焦' : '长焦'
 
 const uid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 9)}`
+const continuousGroup = (prefix: string, patch: object, fields: readonly string[]) => {
+  const keys = Object.keys(patch)
+  return keys.length === 1 && fields.includes(keys[0]!) ? `${prefix}:${keys[0]}` : null
+}
 
 /** 3D 构图编辑器：左边列对象，中间是取景，右边改选中的对象；截图写成节点的新结果 */
 export function StagePanel({
@@ -69,25 +74,62 @@ export function StagePanel({
   const latest = useRef(scene)
   latest.current = scene
 
+  const [, refreshHistory] = useState(0)
+  useEffect(() => {
+    const undo = engine.doc.undo
+    const refresh = () => refreshHistory((n) => n + 1)
+    undo.stopCapturing()
+    undo.on('stack-item-added', refresh)
+    undo.on('stack-item-updated', refresh)
+    undo.on('stack-item-popped', refresh)
+    undo.on('stack-cleared', refresh)
+    return () => {
+      undo.stopCapturing()
+      undo.off('stack-item-added', refresh)
+      undo.off('stack-item-updated', refresh)
+      undo.off('stack-item-popped', refresh)
+      undo.off('stack-cleared', refresh)
+    }
+  }, [engine])
+
   const readScene = () => stageSceneOf(engine.doc.get(id)?.params)
-  const commit = (change: (current: StageScene) => StageScene) => {
+  const commit = (change: (current: StageScene) => StageScene, group: string | null = null) => {
     // 属性编辑前先确认当前视角；确认可能同步写入新机位，随后必须重新读文档。
     view.current?.finishCamera()
     const current = readScene()
-    setParam(engine.doc, id, 'scene', { ...change(current), rev: current.rev + 1 })
+    writeStageEdit(
+      engine.doc,
+      id,
+      () => setParam(engine.doc, id, 'scene', { ...change(current), rev: current.rev + 1 }),
+      group,
+    )
   }
   const patchFigure = (fid: string, patch: Partial<StageFigure>) =>
-    commit((current) => ({
-      ...current,
-      figures: current.figures.map((f) => (f.id === fid ? { ...f, ...patch } : f)),
-    }))
+    commit(
+      (current) => ({
+        ...current,
+        figures: current.figures.map((f) => (f.id === fid ? { ...f, ...patch } : f)),
+      }),
+      continuousGroup(`figure:${fid}`, patch, ['name', 'height', 'facing']),
+    )
   const patchBlock = (bid: string, patch: Partial<StageBlock>) =>
-    commit((current) => ({
-      ...current,
-      blocks: current.blocks.map((b) => (b.id === bid ? { ...b, ...patch } : b)),
-    }))
+    commit(
+      (current) => ({
+        ...current,
+        blocks: current.blocks.map((b) => (b.id === bid ? { ...b, ...patch } : b)),
+      }),
+      continuousGroup(`block:${bid}`, patch, ['name', 'w', 'h', 'd', 'facing']),
+    )
   const patchCamera = (patch: Partial<StageCamera>) =>
-    commit((current) => ({ ...current, camera: { ...current.camera, ...patch } }))
+    commit(
+      (current) => ({ ...current, camera: { ...current.camera, ...patch } }),
+      continuousGroup('camera', patch, ['focal', 'y']),
+    )
+
+  const history = (direction: 'undo' | 'redo') => {
+    view.current?.finishCamera()
+    applyStageHistory(engine.doc, id, direction)
+  }
 
   useEffect(() => {
     if (!host) return
@@ -127,7 +169,15 @@ export function StagePanel({
       target.closest('input, textarea, select, [role="menu"], [role="listbox"]')
     )
       return
-    if (e.metaKey || e.ctrlKey || e.altKey) return
+    if ((e.metaKey || e.ctrlKey) && !e.altKey) {
+      const key = e.key.toLowerCase()
+      if (key === 'z' || key === 'y') {
+        e.preventDefault()
+        history(key === 'y' || e.shiftKey ? 'redo' : 'undo')
+      }
+      return
+    }
+    if (e.altKey) return
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault()
       removeSelected()
@@ -234,6 +284,23 @@ export function StagePanel({
         meta={<span className="ui-chip">实验</span>}
       >
         <span className="text-xs text-ink-subtle tabular-nums">第 {scene.rev} 版</span>
+        {(['undo', 'redo'] as const).map((direction) => (
+          <button
+            key={direction}
+            type="button"
+            className="ui-btn ui-btn-quiet ui-icon-btn"
+            aria-label={direction === 'undo' ? '撤销构图操作' : '重做构图操作'}
+            title={
+              direction === 'undo'
+                ? '撤销当前构图操作（⌘/Ctrl Z）'
+                : '重做当前构图操作（⌘/Ctrl Shift Z）'
+            }
+            disabled={!canStageHistory(engine.doc, id, direction)}
+            onClick={() => history(direction)}
+          >
+            <Icon name={direction} size={16} />
+          </button>
+        ))}
         <button
           type="button"
           className="ui-btn ui-btn-primary"
@@ -245,7 +312,7 @@ export function StagePanel({
           截图
         </button>
       </ModalHeader>
-      <div className="stage-body">
+      <div className="stage-body" onPointerDownCapture={() => engine.doc.undo.stopCapturing()}>
         <aside className="stage-outline ui-scrollbar" aria-label="场景对象">
           <OutlineGroup
             title="人物"
@@ -311,7 +378,12 @@ export function StagePanel({
                       type="button"
                       aria-pressed={s.resultId === adopted}
                       title={`第 ${s.rev} 版 · ${s.scene.camera.focal}mm · ${s.scene.aspect}，点一下让下游用这张`}
-                      onClick={() => adoptResult(engine.doc, id, s.resultId)}
+                      onClick={() => {
+                        view.current?.finishCamera()
+                        writeStageEdit(engine.doc, id, () =>
+                          adoptResult(engine.doc, id, s.resultId),
+                        )
+                      }}
                     >
                       <img
                         loading="lazy"
