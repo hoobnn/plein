@@ -27,10 +27,11 @@ function Review({ viewer }: { viewer: View }) {
   )
   const element = doc?.get(viewer.nodeId ?? '')
   const stale = useStale((s) => s.nodes.has(viewer.nodeId ?? ''))
-  const initial = element?.results?.find((r) => r.id === viewer.resultId)
-  const candidates = element?.results?.filter((r) => r.port === initial?.port) ?? []
+  const [port] = useState(() => element?.results?.find((r) => r.id === viewer.resultId)?.port)
+  const candidates = element?.results?.filter((r) => r.port === port) ?? []
   const [selected, setSelected] = useState(viewer.resultId)
   const [compare, setCompare] = useState('')
+  const [comparisonMissing, setComparisonMissing] = useState(false)
   const [comparison, setComparison] = useState<'side' | 'slider'>('side')
   const [split, setSplit] = useState(50)
   const [zoom, setZoom] = useState(1)
@@ -58,7 +59,6 @@ function Review({ viewer }: { viewer: View }) {
       stopDrag()
     }
   }, [stopDrag])
-  useEffect(() => stopDrag(), [selected, compare, comparison, stopDrag])
   const [imageLoads, setImageLoads] = useState<
     Record<string, { attempt: number; failed: boolean }>
   >({})
@@ -68,6 +68,13 @@ function Review({ viewer }: { viewer: View }) {
   const assetId = value && 'assetId' in value ? value.assetId : viewer.assetId
   const other = candidates.find((r) => r.id === compare)
   const otherId = other?.value.type === 'image' ? other.value.assetId : undefined
+  useEffect(() => stopDrag(), [selected, compare, comparison, assetId, kind, stopDrag])
+  useEffect(() => {
+    if (compare && !other) {
+      setCompare('')
+      setComparisonMissing(true)
+    }
+  }, [compare, other])
   const imageKey = `a:${assetId ?? ''}`
   const otherImageKey = `b:${otherId ?? ''}`
   const imageLabels = new Map<string, string>()
@@ -89,9 +96,11 @@ function Review({ viewer }: { viewer: View }) {
   }
   const step = (delta: number) => {
     stopDrag()
+    setComparisonMissing(false)
     const i = candidates.findIndex((r) => r.id === selected)
+    const start = i >= 0 ? i : delta > 0 ? -1 : 0
     if (candidates.length)
-      setSelected(candidates[(i + delta + candidates.length) % candidates.length]!.id)
+      setSelected(candidates[(start + delta + candidates.length) % candidates.length]!.id)
     setZoom(1)
     setPan({ x: 0, y: 0 })
   }
@@ -242,7 +251,10 @@ function Review({ viewer }: { viewer: View }) {
                   aria-label="对比候选"
                   className="ui-input"
                   value={compare}
-                  onChange={(e) => setCompare(e.target.value)}
+                  onChange={(e) => {
+                    setCompare(e.target.value)
+                    setComparisonMissing(false)
+                  }}
                 >
                   <option value="">不对比</option>
                   {candidates
@@ -267,6 +279,7 @@ function Review({ viewer }: { viewer: View }) {
               </>
             )}
             <span className="text-ink-subtle">滚轮缩放，拖动查看；左右键浏览，Enter 采用</span>
+            {comparisonMissing && <span role="status">对比候选已移除，已退出对比。</span>}
           </div>
         )}
         <div

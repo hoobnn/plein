@@ -2,6 +2,144 @@ import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { newProject, waitNode, zoomTo } from './canvas'
 
+test('审片候选被移除后保留同端口浏览，退出失效对比并结束拖动', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await newProject(page)
+  const target = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/image',
+      name: '候选删除恢复',
+      params: { model: 'plein/mock:image', prompt: '四个候选', count: 4 },
+      x: 400,
+      y: 300,
+    }),
+  )
+  await page.getByRole('treeitem', { name: '候选删除恢复 定位到画布', exact: true }).click()
+  const generator = page.getByTestId('generator')
+  await generator.getByRole('button', { name: '生成', exact: true }).click()
+  await waitNode(page, target)
+  const records = await page.evaluate((id) => {
+    const mutable = window.__plein.engine.doc.mutable(id) as unknown as {
+      get(key: string): unknown
+      set(key: string, value: unknown): void
+    }
+    const results = mutable.get('results') as Array<{
+      id: string
+      port: string
+      value: { assetId: string }
+    }>
+    mutable.set('results', [
+      ...results,
+      {
+        id: 'metadata-only',
+        runId: 'fixture-run',
+        port: 'metadata',
+        value: { type: 'text', text: '不应出现在图片候选里的元数据' },
+        at: 1,
+      },
+    ])
+    return results
+  }, target)
+  expect(records).toHaveLength(4)
+  const adopted = await page.evaluate(
+    (id) => window.__plein.engine.doc.mutable(id)?.get('adopted'),
+    target,
+  )
+  const remove = (ids: string[]) =>
+    page.evaluate(
+      ({ target, ids }) => {
+        const mutable = window.__plein.engine.doc.mutable(target) as unknown as {
+          get(key: string): unknown
+          set(key: string, value: unknown): void
+        }
+        mutable.set(
+          'results',
+          (mutable.get('results') as Array<{ id: string }>).filter((r) => !ids.includes(r.id)),
+        )
+      },
+      { target, ids },
+    )
+  const restore = (index: number) =>
+    page.evaluate(
+      ({ target, record }) => {
+        const mutable = window.__plein.engine.doc.mutable(target) as unknown as {
+          get(key: string): unknown
+          set(key: string, value: unknown): void
+        }
+        mutable.set('results', [
+          record,
+          ...(mutable.get('results') as Array<{ id: string }>).filter((r) => r.id !== record.id),
+        ])
+      },
+      { target, record: records[index]! },
+    )
+  await generator.getByRole('button', { name: '全屏查看', exact: true }).click()
+  const viewer = page.getByRole('dialog', { name: '查看「候选删除恢复」', exact: true })
+  const image = viewer.getByRole('img', { name: '候选删除恢复', exact: true })
+  await viewer.getByRole('button', { name: '预览下一个候选', exact: true }).click()
+  await expect(image).toHaveAttribute('src', new RegExp(records[1]!.value.assetId))
+  await remove([records[0]!.id])
+  await expect(image).toHaveAttribute('src', new RegExp(records[1]!.value.assetId))
+  const compare = viewer.getByRole('combobox', { name: '对比候选', exact: true })
+  await compare.selectOption(records[2]!.id)
+  await expect(viewer.getByRole('img', { name: '候选 B', exact: true })).toBeVisible()
+  await remove([records[2]!.id])
+  await expect(compare).toHaveValue('')
+  await expect(viewer.getByText('对比候选已移除，已退出对比。', { exact: true })).toBeVisible()
+  await viewer.screenshot({
+    path: test.info().outputPath('comparison-removed.png'),
+    animations: 'disabled',
+  })
+  await expect(viewer.getByRole('img', { name: '候选 B', exact: true })).toHaveCount(0)
+  await restore(2)
+  await compare.selectOption(records[2]!.id)
+  await expect(viewer.getByText('对比候选已移除，已退出对比。', { exact: true })).toHaveCount(0)
+  await compare.selectOption('')
+  const surface = image.locator('..')
+  const box = (await surface.boundingBox())!
+  const x = box.x + box.width / 2,
+    y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + 30, y, { steps: 3 })
+  const before = await surface.evaluate((node: HTMLElement) => node.style.transform)
+  await remove([records[1]!.id])
+  await expect(viewer.getByText('候选已移除或素材不可用', { exact: true })).toBeVisible()
+  await expect(viewer.getByRole('button', { name: '采用此候选', exact: true })).toBeDisabled()
+  await viewer.getByRole('group', { name: '候选审片操作', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.mutable(id)?.get('adopted'), target),
+  ).toBe(adopted)
+  await viewer.screenshot({
+    path: test.info().outputPath('candidate-removed.png'),
+    animations: 'disabled',
+  })
+  await restore(1)
+  await expect(image).toBeVisible()
+  await page.mouse.move(x + 100, y)
+  await page.mouse.up()
+  await expect(surface).toHaveCSS('cursor', 'grab')
+  expect(await surface.evaluate((node: HTMLElement) => node.style.transform)).toBe(before)
+  await remove([records[1]!.id])
+  await expect(viewer.getByRole('button', { name: '采用此候选', exact: true })).toBeDisabled()
+  await viewer.getByRole('button', { name: '预览上一个候选', exact: true }).click()
+  await expect(image).toHaveAttribute('src', new RegExp(records[3]!.value.assetId))
+  await viewer.getByRole('button', { name: '预览下一个候选', exact: true }).click()
+  await expect(image).toHaveAttribute('src', new RegExp(records[2]!.value.assetId))
+  await remove([records[2]!.id, records[3]!.id])
+  await expect(viewer.getByText('候选已移除或素材不可用', { exact: true })).toBeVisible()
+  await expect(viewer.getByRole('button', { name: '预览下一个候选', exact: true })).toHaveCount(0)
+  await expect(viewer.getByText('不应出现在图片候选里的元数据', { exact: true })).toHaveCount(0)
+  await viewer.getByRole('group', { name: '候选审片操作', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.mutable(id)?.get('adopted'), target),
+  ).toBe(adopted)
+  expect(errors).toEqual([])
+})
+
 test('图片平移只处理当前指针，取消、失焦、切换与重置结束拖动', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
