@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { setParam } from '@plein/doc'
+import { currentResult, setParam } from '@plein/doc'
 import { dropShot, newShotId, SHOT_SIZES, type Shot, type ShotRole } from '@plein/nodes'
 import { useEffect, useState } from 'react'
 import { useDocVersion } from '../../canvas/hooks'
@@ -14,6 +14,8 @@ import { runBatch, runNode } from '../runs/run'
 import { StoryboardSync } from './StoryboardSync'
 import { Presence } from '../../ui/Presence'
 import { EmptyState } from '../../ui/EmptyState'
+import { StoryboardReview } from './StoryboardReview'
+import { api } from '../../api/client'
 
 const cell =
   'w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
@@ -58,6 +60,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const shots = shotsOf(el)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [syncScope, setSyncScope] = useState<string[] | null>(null)
+  const [mode, setMode] = useState<'edit' | 'review'>('edit')
   const expanded = expandedNodes(engine, id)
   const diffs = planDiffs(engine, id)
   const targets = picked.size ? shots.filter((s) => picked.has(s.id)) : shots
@@ -70,6 +73,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   useEffect(() => {
     // 捕获阶段拦下按键：表格打开时画布的快捷键（删除、方向键等）不生效
     const key = (e: KeyboardEvent) => {
+      if (useCanvas.getState().viewer) return
       e.stopPropagation()
       // 差异面板或确认框开着时 Esc 关它们，不连带关掉表格
       if (e.key === 'Escape' && !syncScope && !dialogOpen()) onClose()
@@ -164,27 +168,55 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       engine.zoomToFit([id, ...frames])
     }
   }
-  const batch = async (role: ShotRole) => {
-    // 分镜图一起交给服务端排：@ 到的角色、场景卡还没出定妆图的，先出定妆图再出分镜图
-    const picked: string[] = []
-    const { started, skipped, reasons } = runExpanded(engine, id, targetIds, role, (n) =>
-      role === 'image' ? picked.push(n) : void runNode(n),
+  const batch = async (role: ShotRole, force = false) => {
+    if (
+      force &&
+      !(await confirmDialog({
+        title: '全部重新生成？',
+        message: `将为${scope}创建新候选。已有结果会保留在历史里。`,
+        confirmLabel: '重新生成',
+      }))
     )
-    const total = picked.length ? await runBatch(id, picked) : 0
+      return
+    let history
+    try {
+      const nodes = targetIds.flatMap((shotId) =>
+        (expanded.get(shotId) ?? [])
+          .filter((n) => (n.params?.source as { role?: string } | undefined)?.role === role)
+          .map((n) => n.id),
+      )
+      history = canvasId ? await api.canvasNodeJobs(canvasId, nodes) : null
+    } catch {
+      notify('无法核对已有任务，请恢复连接后再运行')
+      return
+    }
+    const images: string[] = []
+    let reused = 0,
+      recovery = 0
+    const { started: considered, skipped } = runExpanded(engine, id, targetIds, role, (n) => {
+      const job = history?.jobs.find((j) => j.nodeId === n)
+      if (
+        job?.recovery &&
+        !job.recovery.dismissed &&
+        ['submit_unknown', 'remote_pending', 'fetch_failed'].includes(job.recovery.state)
+      ) {
+        recovery++
+        return
+      }
+      if (!force && !picked.size && currentResult(engine.doc.get(n)!)) {
+        reused++
+        return
+      }
+      if (role === 'image') images.push(n)
+      else void runNode(n)
+    })
+    const total = images.length ? await runBatch(id, images) : 0
     if (total === null) return
     const label = role === 'image' ? '分镜图' : role === 'video' ? '视频' : '配音'
-    const before = total - picked.length
-    if (!started && !skipped) notify(`先把镜头展开成节点，再批量生成${label}`)
-    else
-      notify(
-        `已开始生成 ${started} 个${label}${before > 0 ? `（先出 ${before} 张定妆图）` : ''}${
-          skipped
-            ? `；跳过 ${skipped} 个（${Object.entries(reasons)
-                .map(([k, n]) => `${k} ${n}`)
-                .join('、')}）`
-            : ''
-        }`,
-      )
+    const started = considered - reused - recovery
+    notify(
+      `已开始生成 ${started} 个${label}${reused ? `；沿用 ${reused} 个已有结果` : ''}${skipped ? `；跳过 ${skipped} 个未就绪项` : ''}${recovery ? `；${recovery} 个请在审核视图恢复原任务` : ''}`,
+    )
   }
 
   const btn = 'ui-btn ui-btn-secondary'
@@ -199,6 +231,22 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           </span>
         }
       >
+        <div role="group" aria-label="分镜视图" className="flex gap-1">
+          <button
+            type="button"
+            className={mode === 'edit' ? 'ui-btn ui-btn-primary' : btn}
+            onClick={() => setMode('edit')}
+          >
+            编辑分镜
+          </button>
+          <button
+            type="button"
+            className={mode === 'review' ? 'ui-btn ui-btn-primary' : btn}
+            onClick={() => setMode('review')}
+          >
+            审核镜头
+          </button>
+        </div>
         <span className="mr-1 text-xs text-ink-subtle">作用于{scope}</span>
         <button type="button" className={btn} onClick={addShot}>
           <Icon name="plus" />
@@ -224,6 +272,21 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           更新展开
         </button>
         <span aria-hidden="true" className="ui-bar-sep" />
+        <details className="relative">
+          <summary className={btn}>全部重新生成</summary>
+          <div className="absolute z-20 flex w-44 flex-col gap-1 rounded-lg bg-surface p-2 shadow-3">
+            {(['image', 'video', 'speech'] as const).map((role) => (
+              <button
+                key={role}
+                type="button"
+                className="ui-btn ui-btn-quiet"
+                onClick={() => void batch(role, true)}
+              >
+                {role === 'image' ? '分镜图' : role === 'video' ? '视频' : '配音'}
+              </button>
+            ))}
+          </div>
+        </details>
         <button
           type="button"
           className={btn}
@@ -282,6 +345,21 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           icon="frames"
           title="还没有镜头"
           hint="把剧本连到分镜节点后点“生成”，或手动添加镜头。"
+        />
+      ) : mode === 'review' ? (
+        <StoryboardReview
+          engine={engine}
+          boardId={id}
+          shots={shots}
+          picked={picked}
+          onPick={(sid, on) =>
+            setPicked((previous) => {
+              const next = new Set(previous)
+              if (on) next.add(sid)
+              else next.delete(sid)
+              return next
+            })
+          }
         />
       ) : (
         <div className="ui-scrollbar min-h-0 overflow-auto">
