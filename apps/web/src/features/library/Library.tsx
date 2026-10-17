@@ -1,11 +1,13 @@
 import {
   type CharacterProfile,
+  CHARACTER_IMAGE_SLOTS,
   LIBRARY_KINDS,
   type LibraryKindSpec,
   libraryKind,
   OFFICIAL_LIBRARY,
   type OfficialLibraryItem,
   orderedImages,
+  normalizeLibraryImages,
   profileEmpty,
   profileOf,
   profileSize,
@@ -39,6 +41,7 @@ import { SlotField, thumb, VideoField } from './LibraryFields'
 import { ExpressionsTab, type HeroControl, PeriodsTab } from './LibraryProfile'
 import { VoicePicker } from '../../ui/VoicePicker'
 import { LibraryUpdatesPanel } from './LibraryUpdates'
+import { CharacterAssets } from './CharacterAssets'
 
 /**
  * 资产库面板：
@@ -179,7 +182,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
   const media = useMemo(() => (canPlace && engine ? canvasMedia(engine) : []), [canPlace, engine])
 
   return (
-    <Modal label="资产库" onClose={close} isolateKeys top className="h-[min(820px,100%)] max-w-6xl">
+    <Modal label="资产库" onClose={close} isolateKeys top className="h-[min(860px,100%)] max-w-6xl">
       <ModalHeader
         title="资产库"
         onClose={close}
@@ -372,6 +375,10 @@ function Card({
   const profile = item.profile ? profileSize(item.profile) : null
   // 悬停时从底部升起：一行一个时期，后面跟着这个时期的服饰
   const peek = item.profile ? profilePeek(item.profile) : []
+  const characterImages = kind.id === 'character' ? normalizeLibraryImages(kind, item.images) : []
+  const imageKinds = CHARACTER_IMAGE_SLOTS.filter((slot) =>
+    characterImages.some((image) => image.slot === slot.id),
+  ).length
   return (
     <li className="home-card lib-card group relative">
       <button
@@ -379,7 +386,7 @@ function Card({
         onClick={() => onOpen(coverRef.current)}
         className="block w-full text-left"
       >
-        <div ref={coverRef} data-lib-cover={item.id} className="lib-card-cover">
+        <div ref={coverRef} data-lib-cover={item.id} data-kind={kind.id} className="lib-card-cover">
           {cover ? (
             <img src={cover} alt="" loading="lazy" draggable={false} />
           ) : (
@@ -434,6 +441,11 @@ function Card({
           </div>
         </div>
       </button>
+      {kind.id === 'character' && (
+        <span className="ui-badge lib-card-completeness" title="已添加的角色图片类型">
+          {imageKinds} / 4 形象
+        </span>
+      )}
       <button
         type="button"
         aria-label={item.favorite ? '取消收藏' : '收藏'}
@@ -551,7 +563,10 @@ function draftOf(
     description: item?.description ?? official?.description ?? '',
     tags: { ...(item?.tags ?? official?.tags) },
     voice: item?.voice ?? { provider: '', voiceId: '' },
-    images: item?.images ?? (seed ? slotImages(kind, seed.images) : []),
+    images: normalizeLibraryImages(
+      kind,
+      item?.images ?? (seed ? slotImages(kind, seed.images) : []),
+    ),
     video: item?.video ?? (kind.video ? (seed?.videos[0] ?? null) : null),
     models: (item?.models ?? official?.models ?? []).join('，'),
     profile: profileOf(item?.profile),
@@ -561,10 +576,7 @@ function draftOf(
 }
 
 /** 角色编辑页的分页 */
-type Tab = 'basics' | 'periods' | 'expressions'
-
-/** 情绪九宫格是表情的总览图，放到「表情」页，不在「设定」页的槽位里重复出现 */
-const SHEET_SLOT = 'emotions'
+type Tab = 'assets' | 'basics' | 'periods' | 'expressions'
 
 /**
  * 条目编辑（档案式）：左边一张大图，悬停或选中任何一张图时交叉淡入成它；
@@ -598,8 +610,11 @@ function Editor({
   const character = kind.id === 'character'
   const [draft, setDraft] = useState(() => draftOf(kind, item, official, projectId, seed))
   const [busy, setBusy] = useState(false)
+  const [pendingUploads, setPendingUploads] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  const [tab, setTab] = useState<Tab>(() => useLibrary.getState().takeTab() ?? 'basics')
+  const [tab, setTab] = useState<Tab>(
+    () => useLibrary.getState().takeTab() ?? (character ? 'assets' : 'basics'),
+  )
   const [preview, setPreview] = useState<{ id: string | null; caption?: string } | null>(null)
   const [pin, setPin] = useState<{ id: string | null; caption?: string }>({ id: null })
   const initial = useMemo(
@@ -628,6 +643,8 @@ function Editor({
 
   /** 保存并返回条目；官方条目复制一份成自己的。画布上已经放下的这张角色卡跟着同步档案 */
   const save = async (): Promise<LibraryItem | null> => {
+    if (pendingUploads > 0) return null
+    const submitted = draft
     setBusy(true)
     setError(null)
     try {
@@ -637,6 +654,10 @@ function Editor({
           : item
         : await lib.create({ kind: kind.id, ...body() })
       if (!item) onCreated(saved.id)
+      else
+        setDraft((current) =>
+          current === submitted ? draftOf(kind, saved, undefined, projectId) : current,
+        )
       return saved
     } catch (err) {
       setError((err as Error).message)
@@ -678,6 +699,9 @@ function Editor({
   }
 
   const ordered = orderedImages(kind, draft.images)
+  const thumbnails = ordered.filter(
+    (image, index) => ordered.findIndex((entry) => entry.assetId === image.assetId) === index,
+  )
   const cover = ordered[0]?.assetId ?? null
   // 悬停中的图优先，其次是选中项钉住的图，最后是封面；悬停到没有图的项时不换
   const shown = preview?.id ?? pin.id ?? cover
@@ -688,7 +712,8 @@ function Editor({
   }
   const size = profileSize(draft.profile)
   const tabs: Array<{ value: Tab; label: string; icon: IconName; extra?: number }> = [
-    { value: 'basics', label: '设定', icon: 'character' },
+    { value: 'assets', label: '角色资产', icon: 'image' },
+    { value: 'basics', label: '基础设定', icon: 'character' },
     { value: 'periods', label: '时期与服饰', icon: 'period', extra: size.periods || undefined },
     {
       value: 'expressions',
@@ -723,17 +748,19 @@ function Editor({
 
   const basics = (
     <div className="flex flex-col gap-4">
-      <label className="ui-field">
-        <span className="ui-label">名称</span>
-        <input
-          className="ui-input"
-          value={draft.name}
-          readOnly={readOnly}
-          maxLength={60}
-          placeholder={`${kind.title}名，提示词里用 @名称 引用`}
-          onChange={(e) => patch({ name: e.target.value })}
-        />
-      </label>
+      {!character && (
+        <label className="ui-field">
+          <span className="ui-label">名称</span>
+          <input
+            className="ui-input"
+            value={draft.name}
+            readOnly={readOnly}
+            maxLength={60}
+            placeholder={`${kind.title}名，提示词里用 @名称 引用`}
+            onChange={(e) => patch({ name: e.target.value })}
+          />
+        </label>
+      )}
       {kind.tags.length > 0 && (
         <div className="grid grid-cols-2 gap-3">
           {kind.tags.map((t) => (
@@ -778,10 +805,8 @@ function Editor({
           </span>
         </div>
       )}
-      {!readOnly && (
-        <div className="grid grid-cols-2 gap-4">
-          {kind.slots.filter((s) => !character || s.id !== SHEET_SLOT).map(slotField)}
-        </div>
+      {!readOnly && !character && (
+        <div className="grid grid-cols-2 gap-4">{kind.slots.map(slotField)}</div>
       )}
       {kind.video && !readOnly && (
         <VideoField value={draft.video} media={media} onChange={(video) => patch({ video })} />
@@ -811,11 +836,27 @@ function Editor({
     </div>
   )
 
-  const sheet = kind.slots.find((s) => s.id === SHEET_SLOT)
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="ui-scrollbar grid min-h-0 flex-1 gap-6 overflow-y-auto p-5 md:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+      {character && !readOnly && (
+        <div className="lib-character-heading">
+          <label className="ui-field min-w-0 flex-1">
+            <span className="sr-only">名称</span>
+            <input
+              className="lib-character-name"
+              aria-label="名称"
+              value={draft.name}
+              maxLength={60}
+              placeholder="给角色起个名字"
+              onChange={(e) => patch({ name: e.target.value })}
+            />
+          </label>
+          <span className="text-xs text-ink-subtle">
+            {tagLine(kind, draft.tags) || '创建并复用角色的形象、造型与音色'}
+          </span>
+        </div>
+      )}
+      <div className={`ui-scrollbar lib-editor-content ${character ? 'is-character' : ''}`}>
         <aside aria-label="预览" className="lib-hero-col">
           <Hero
             kind={kind}
@@ -823,11 +864,12 @@ function Editor({
             caption={caption}
             name={draft.name.trim() || `新${kind.title}`}
             readOnly={readOnly}
+            completeImage={character}
           />
-          {!readOnly && ordered.length > 1 && (
+          {!readOnly && thumbnails.length > 1 && (
             <ul className="lib-hero-strip" aria-label="参考图">
-              {ordered.map((img) => (
-                <li key={`${img.slot}:${img.assetId}`}>
+              {thumbnails.map((img) => (
+                <li key={img.assetId}>
                   <button
                     type="button"
                     aria-label={kind.slots.find((s) => s.id === img.slot)?.label ?? '参考图'}
@@ -868,7 +910,7 @@ function Editor({
         <section aria-label="设定" className="flex min-w-0 flex-col gap-4">
           {character && !readOnly ? (
             <>
-              <div className="flex-none">
+              <div className="lib-profile-tabs flex-none">
                 <Segmented
                   label="档案分页"
                   options={tabs.map((t) => ({
@@ -885,7 +927,19 @@ function Editor({
                 />
               </div>
               <SlideSwap index={tabIndex}>
-                {tab === 'basics' ? (
+                {tab === 'assets' ? (
+                  <CharacterAssets
+                    images={draft.images}
+                    media={media}
+                    selected={shown}
+                    onSelect={hero.onPin}
+                    onChange={(update) => setDraft((d) => ({ ...d, images: update(d.images) }))}
+                    busy={busy || pendingUploads > 0}
+                    onBusyChange={(uploading) =>
+                      setPendingUploads((n) => Math.max(0, n + (uploading ? 1 : -1)))
+                    }
+                  />
+                ) : tab === 'basics' ? (
                   basics
                 ) : tab === 'periods' ? (
                   <PeriodsTab
@@ -901,7 +955,7 @@ function Editor({
                     onChange={(profile) => patch({ profile })}
                     media={media}
                     hero={hero}
-                    sheet={sheet ? slotField(sheet) : null}
+                    sheet={null}
                   />
                 )}
               </SlideSwap>
@@ -914,7 +968,12 @@ function Editor({
         </section>
       </div>
       <footer className="flex flex-none flex-wrap items-center gap-2 border-t border-line px-5 py-3">
-        <button type="button" onClick={onBack} className="ui-btn ui-btn-quiet">
+        <button
+          type="button"
+          disabled={busy || pendingUploads > 0}
+          onClick={onBack}
+          className="ui-btn ui-btn-quiet"
+        >
           <Icon name="chevronLeft" />
           返回
         </button>
@@ -929,6 +988,11 @@ function Editor({
           </button>
         )}
         <div className="ml-auto flex gap-2">
+          {pendingUploads > 0 && (
+            <span role="status" className="self-center text-xs text-ink-subtle">
+              图片上传中…
+            </span>
+          )}
           {readOnly ? (
             <button
               type="button"
@@ -950,7 +1014,7 @@ function Editor({
           ) : (
             <button
               type="button"
-              disabled={busy || (!!item && !dirty)}
+              disabled={busy || pendingUploads > 0 || (!!item && !dirty)}
               onClick={() => void save()}
               className={`ui-btn ${placeable ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
             >
@@ -960,7 +1024,7 @@ function Editor({
           {placeable && (
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || pendingUploads > 0}
               onClick={() => void place()}
               className="ui-btn ui-btn-primary"
             >
@@ -980,12 +1044,14 @@ function Hero({
   caption,
   name,
   readOnly,
+  completeImage = false,
 }: {
   kind: LibraryKindSpec
   assetId: string | null
   caption?: string
   name: string
   readOnly: boolean
+  completeImage?: boolean
 }) {
   // 叠两层：下面是上一张，上面是新的一张从透明淡入，换得再快也不闪白
   const [layers, setLayers] = useState<Array<{ id: string | null; key: number }>>([
@@ -994,7 +1060,7 @@ function Hero({
   const top = layers[layers.length - 1]!
   if (top.id !== assetId) setLayers([top, { id: assetId, key: top.key + 1 }])
   return (
-    <div className="lib-hero">
+    <div className="lib-hero" data-complete-image={completeImage || undefined}>
       {layers.map((l, i) =>
         l.id ? (
           <img
@@ -1018,6 +1084,18 @@ function Hero({
               : '还没有参考图'}
           </span>
         ),
+      )}
+      {assetId && (
+        <a
+          href={assetUrls.original(assetId)}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="查看原图"
+          title="查看原图"
+          className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn lib-hero-original"
+        >
+          <Icon name="expand" size={14} />
+        </a>
       )}
       <div className="lib-hero-caption">
         <span className="truncate text-base font-semibold">{name}</span>

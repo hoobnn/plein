@@ -267,7 +267,7 @@ export const characterNode = defineNode({
   type: 'plein/character',
   version: 1,
   title: '角色',
-  description: '角色设定卡：连入 2–4 张多角度参考图，在提示词里 @ 角色名即可引用',
+  description: '角色设定卡：连入全身定妆、肖像、角色设定与情绪参考图，在提示词里 @ 角色名即可引用',
   category: 'story',
   inputs: [{ id: 'references', label: '参考图', type: 'image', multiple: true }],
   outputs: [{ id: 'images', label: '参考图', type: 'image' }],

@@ -8,7 +8,12 @@ import {
 } from '@plein/capabilities'
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, setParam } from '@plein/doc'
-import { type LibraryKindSpec, libraryKind, orderedImages } from '@plein/nodes'
+import {
+  type LibraryKindSpec,
+  libraryKind,
+  orderedImages,
+  preserveLibraryImageSlots,
+} from '@plein/nodes'
 import type { Asset, Catalog, CreateLibraryItem, LibraryItem } from '@plein/protocol'
 import { assetUrls } from '../../api/client'
 import { loadAssetMeta } from '../../stores/assetMeta'
@@ -104,8 +109,9 @@ export async function placeLibraryItem(
   if (!info) return { id: null, notice: `当前没有「${kind.title}」卡片节点，无法放到画布上` }
 
   const imageIds = orderedImages(kind, input.images ?? []).map((i) => i.assetId)
-  const assets = await metas([...new Set(imageIds), ...(input.video ? [input.video] : [])])
-  const missing = imageIds.length + (input.video ? 1 : 0) - assets.length
+  const requested = [...new Set([...imageIds, ...(input.video ? [input.video] : [])])]
+  const assets = await metas(requested)
+  const missing = requested.length - assets.length
 
   const view = engine.camera.viewRect
   const base = nodeElement(info)
@@ -177,8 +183,7 @@ export async function saveCardToLibrary(
   const { body } = snap
   const linked = lib.items.find((i) => i.id === el.params?.libraryId)
   if (linked) {
-    const slots = new Map(linked.images.map((i) => [i.assetId, i.slot]))
-    const images = body.images?.map((i) => ({ ...i, slot: slots.get(i.assetId) ?? i.slot }))
+    const images = preserveLibraryImageSlots(linked.kind, body.images ?? [], linked.images)
     const item = await lib.update(linked.id, {
       name: body.name,
       description: body.description,

@@ -23,6 +23,17 @@
   object-fit: cover;
   transition: transform var(--dur-move) var(--ease-spring);
 }
+.lib-card-cover[data-kind="character"] > img {
+  object-fit: contain;
+}
+.lib-card-completeness {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  color: var(--ink-muted);
+  background: var(--float);
+  pointer-events: none;
+}
 .lib-card:hover .lib-card-cover > img {
   transform: scale(1.03);
 }
@@ -114,6 +125,39 @@
 
 /* ── 编辑页：大图 ─────────────────────────────── */
 
+.lib-editor-content {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+  gap: 24px;
+  overflow-y: auto;
+  padding: 20px;
+}
+.lib-editor-content.is-character {
+  grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
+}
+.lib-character-heading {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.lib-character-name {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  outline-offset: 4px;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--ink);
+  background: transparent;
+}
+
 .lib-hero-col {
   display: flex;
   flex-direction: column;
@@ -142,6 +186,16 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+.lib-hero[data-complete-image] > img {
+  object-fit: contain;
+}
+.lib-hero-original {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  color: var(--ink);
+  background: var(--float);
 }
 .lib-hero > [data-enter] {
   animation: lib-hero-in var(--dur-slow) var(--ease-spring) both;
@@ -212,6 +266,193 @@
 }
 .lib-hero-thumb[aria-pressed="true"] {
   box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* ── 角色资产：三张竖图与一张横向设定图 ──────── */
+
+.lib-character-assets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 12px;
+}
+.lib-profile-tabs {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.lib-character-tile {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.lib-character-tile[data-selected] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.lib-character-tile[data-character-slot="character_3view"] {
+  grid-column: 1 / -1;
+}
+.lib-character-tile-preview {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 192px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.lib-character-tile-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.lib-character-tile[data-character-slot="character_3view"] .lib-character-tile-preview {
+  height: 160px;
+}
+.lib-character-tile-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-xs);
+  color: var(--ink-subtle);
+}
+.lib-character-tile-check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--ink-muted);
+  background: var(--float);
+}
+.lib-character-tile[data-selected] .lib-character-tile-check {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.lib-character-tile-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: start;
+  padding: 12px;
+}
+.lib-character-tile-info h4 {
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.lib-character-tile-info > p {
+  margin-top: 4px;
+  font-size: var(--text-2xs);
+  color: var(--ink-subtle);
+}
+.lib-character-tile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+.lib-character-tile-actions .ui-btn {
+  padding-inline: 4px;
+}
+.lib-character-extras {
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.lib-character-extras summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  list-style: none;
+}
+.lib-character-extras summary::-webkit-details-marker {
+  display: none;
+}
+.lib-character-extras summary > svg {
+  margin-left: auto;
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.lib-character-extras[open] summary > svg {
+  transform: rotate(180deg);
+}
+.lib-character-extras > p,
+.lib-character-extras > .ui-field {
+  margin-block: 8px;
+}
+.lib-character-extra-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-block: 12px;
+}
+.lib-character-extra-list > li {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+.lib-character-extra-preview {
+  width: 48px;
+  height: 48px;
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+}
+.lib-character-extra-preview > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+@media (max-width: 900px) {
+  .lib-editor-content,
+  .lib-editor-content.is-character {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lib-editor-content.is-character .lib-hero-col {
+    position: static;
+  }
+  .lib-editor-content.is-character .lib-hero {
+    height: 240px;
+    aspect-ratio: auto;
+  }
+}
+@media (max-width: 540px) {
+  .lib-character-heading {
+    align-items: start;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .lib-character-heading > .ui-field {
+    width: 100%;
+  }
+  .lib-character-assets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .lib-character-tile[data-character-slot="face_grid"] {
+    grid-column: 1 / -1;
+  }
+  .lib-character-extra-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ── 时期与服饰：一行一个时期，右边是它的服饰 ─── */

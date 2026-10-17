@@ -288,6 +288,43 @@ describe('项目包导出', () => {
 })
 
 describe('项目包导入', () => {
+  it('旧角色图片槽位在导出与导入时兼容规范化，重复用途和未知槽位仍完整往返', async () => {
+    const s = await seed()
+    const legacyImages = [
+      { slot: 'main', assetId: s.face.id },
+      { slot: 'half', assetId: s.face.id },
+      { slot: 'portrait', assetId: s.photo.id },
+      { slot: 'head_3view', assetId: s.photo.id },
+    ]
+    const canonicalImages = [
+      { slot: 'full_body', assetId: s.face.id },
+      { slot: 'portrait', assetId: s.face.id },
+      { slot: 'extra', assetId: s.photo.id },
+      { slot: 'head_3view', assetId: s.photo.id },
+    ]
+    s.server.db.$client
+      .prepare('UPDATE library_items SET data=? WHERE id=?')
+      .run(JSON.stringify({ images: legacyImages }), s.item.id)
+    const data = await download(s.server, s.projectId)
+    const manifest = manifestOf(data)
+    expect(manifest.library[0]?.images).toEqual(canonicalImages)
+    expect(manifest.assets.map((asset) => asset.id)).toEqual(
+      expect.arrayContaining([s.face.id, s.photo.id]),
+    )
+
+    // 模拟旧版本项目包，直接经过导入事务写入时也要规范化。
+    const files = unzipSync(data)
+    manifest.library[0]!.images = legacyImages
+    files['manifest.json'] = strToU8(JSON.stringify(manifest))
+    const target = await bootServer({ dataDir: tempDir() })
+    await importInto(target.server, zipSync(files))
+    expect(target.server.library.get('local', s.item.id)?.images).toEqual(canonicalImages)
+    const row = target.server.db.$client
+      .prepare('SELECT data FROM library_items WHERE id=?')
+      .get(s.item.id) as { data: string }
+    expect(JSON.parse(row.data).images).toEqual(canonicalImages)
+  })
+
   it('迁入另一个数据目录：画布、素材、资产库与运行记录齐全，原目录不可访问也能打开', async () => {
     const s = await seed()
     const files = unzipSync(await download(s.server, s.projectId))

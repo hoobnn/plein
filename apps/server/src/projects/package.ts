@@ -13,6 +13,7 @@ import {
   type NodeResult,
   type NodeRun,
 } from '@plein/doc'
+import { normalizeLibraryImages } from '@plein/nodes'
 import { parseModelRef } from '@plein/plugin-sdk'
 import {
   type Asset,
@@ -348,7 +349,7 @@ async function planExport(
       description: d.description ?? '',
       tags: d.tags ?? {},
       voice: d.voice ?? null,
-      images: d.images ?? [],
+      images: normalizeLibraryImages(r.kind, d.images ?? []),
       video: d.video ?? null,
       models: d.models ?? [],
       profile: d.profile ?? null,
@@ -1067,7 +1068,7 @@ async function commitImportActive(
             project_id: lp === m.project.id ? projectId : null,
             kind,
             name,
-            data: JSON.stringify(data),
+            data: JSON.stringify({ ...data, images: normalizeLibraryImages(kind, data.images) }),
             favorite: favorite ? 1 : 0,
             created_at: createdAt,
             updated_at: updatedAt,

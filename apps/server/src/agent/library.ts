@@ -12,7 +12,7 @@ import {
   placeLibraryCard,
 } from '@plein/capabilities'
 import { setParam, spotAfterContent, spotRightOf } from '@plein/doc'
-import { libraryKind, orderedImages } from '@plein/nodes'
+import { libraryKind, libraryReferenceImageIds, preserveLibraryImageSlots } from '@plein/nodes'
 import { LibraryKind } from '@plein/protocol'
 import { z } from 'zod'
 import type { ServerContext } from './tools'
@@ -88,13 +88,14 @@ export const placeLibraryItem = serverCapability({
     const info = kind && ctx.nodes.latest(kind.nodeType)
     if (!kind || !info) throw new CapabilityError(`当前没有「${kind?.title ?? item.kind}」卡片节点`)
     const base = nodeElementOf(info.descriptor)
-    const refs: CardRef[] = [
-      ...orderedImages(kind, item.images).map((i) => ({
+    const requested: CardRef[] = [
+      ...libraryReferenceImageIds(kind, item.images).map((assetId) => ({
         kind: 'image' as const,
-        assetId: i.assetId,
+        assetId,
       })),
       ...(item.video ? [{ kind: 'video' as const, assetId: item.video }] : []),
-    ].flatMap((r) => {
+    ]
+    const refs = requested.flatMap((r) => {
       const meta = ctx.assetMeta(r.assetId)
       return meta ? [{ ...r, width: meta.width, height: meta.height }] : []
     })
@@ -130,7 +131,7 @@ export const placeLibraryItem = serverCapability({
       return { ...card, existed: false }
     })
     if (!result.existed) library(ctx).markUsed(ctx.env.ownerId, item.id)
-    const skipped = item.images.length + (item.video ? 1 : 0) - refs.length
+    const skipped = requested.length - refs.length
     return {
       id: result.id,
       existed: result.existed,
@@ -159,7 +160,6 @@ export const saveToLibrary = serverCapability({
     const { body } = snap
     if (linked) {
       // 保留已有图片的槽位、标签和收藏
-      const slots = new Map(linked.images.map((i) => [i.assetId, i.slot]))
       const item = lib.update(ctx.env.ownerId, linked.id, {
         name: body.name,
         description: body.description,
@@ -168,7 +168,7 @@ export const saveToLibrary = serverCapability({
           ...body.tags,
           ...Object.fromEntries(Object.entries(linked.tags).filter(([, v]) => v)),
         },
-        images: body.images.map((i) => ({ ...i, slot: slots.get(i.assetId) ?? i.slot })),
+        images: preserveLibraryImageSlots(linked.kind, body.images, linked.images),
         video: body.video,
         voice: body.voice,
         profile: body.profile,

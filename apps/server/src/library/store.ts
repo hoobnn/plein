@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import { normalizeLibraryImages } from '@plein/nodes'
 import type {
   CreateLibraryItem,
   LibraryItem,
@@ -28,7 +29,7 @@ const toItem = (r: LibraryRow): LibraryItem => {
     description: d.description ?? '',
     tags: d.tags ?? {},
     voice: d.voice ?? null,
-    images: d.images ?? [],
+    images: normalizeLibraryImages(r.kind, d.images ?? []),
     video: d.video ?? null,
     models: d.models ?? [],
     profile: d.profile ?? null,
@@ -39,12 +40,12 @@ const toItem = (r: LibraryRow): LibraryItem => {
   }
 }
 
-const dataOf = (i: LibraryData): string =>
+const dataOf = (kind: LibraryKind, i: LibraryData): string =>
   JSON.stringify({
     description: i.description,
     tags: i.tags,
     voice: i.voice,
-    images: i.images,
+    images: normalizeLibraryImages(kind, i.images),
     video: i.video,
     models: i.models,
     profile: i.profile,
@@ -104,7 +105,7 @@ export class LibraryStore {
         project_id: projectId,
         kind,
         name,
-        data: dataOf(data),
+        data: dataOf(kind, data),
         created_at: now,
         updated_at: now,
       })
@@ -124,7 +125,7 @@ export class LibraryStore {
       .set({
         name: name ?? cur.name,
         project_id: projectId === undefined ? cur.projectId : projectId,
-        data: dataOf({ ...cur, ...patch }),
+        data: dataOf(cur.kind, { ...cur, ...patch }),
         favorite: (favorite ?? cur.favorite) ? 1 : 0,
         updated_at: edited ? Date.now() : cur.updatedAt,
       })

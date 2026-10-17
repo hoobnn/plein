@@ -130,6 +130,33 @@ async function fixture() {
 }
 
 describe('跨画布资产库版本同步', () => {
+  it('同一图片承担多种用途时，已放置卡片没有虚假差异，同步后也只保留一份素材引用', async () => {
+    const s = await fixture()
+    const images = [
+      { slot: 'full_body', assetId: s.old.id },
+      { slot: 'portrait', assetId: s.old.id },
+      { slot: 'head_3view', assetId: s.old.id },
+    ]
+    s.server.library.update('local', s.item.id, { images })
+    const unchanged = await s.read()
+    expect(unchanged.cards.every((card) => card.changes.length === 0)).toBe(true)
+
+    const updatedImages = images.map((image) => ({ ...image, assetId: s.newer.id }))
+    s.server.library.update('local', s.item.id, { images: updatedImages })
+    const report = await s.read()
+    const target = report.cards.find((card) => card.nodeId === s.a.card)!
+    expect(target.changes.find((change) => change.field === 'references')?.after).toEqual([
+      s.newer.id,
+    ])
+    expect(
+      (await s.apply({ revision: report.revision, targets: [{ ...target, mode: 'update' }] }))
+        .status,
+    ).toBe(200)
+    expect(referenceAssets(s.a.doc, s.a.doc.get(s.a.card)!, 'image')).toEqual([s.newer.id])
+    expect((await s.read()).cards.find((card) => card.nodeId === s.a.card)?.changes).toEqual([])
+    expect(s.server.library.get('local', s.item.id)?.images).toEqual(updatedImages)
+  })
+
   it('已固定卡片不能直接update，必须先解除固定再明确同步', async () => {
     const s = await fixture()
     s.updated()

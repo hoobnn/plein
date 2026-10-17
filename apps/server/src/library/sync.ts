@@ -13,7 +13,7 @@ import {
   findMentions,
   mentionName,
   libraryKind,
-  orderedImages,
+  libraryReferenceImageIds,
   profileOf,
   voiceOf,
 } from '@plein/nodes'
@@ -45,7 +45,7 @@ function projection(item: LibraryItem) {
       ? item.video
         ? [item.video]
         : []
-      : orderedImages(kind, item.images).map((x) => x.assetId),
+      : libraryReferenceImageIds(kind, item.images),
   }
 }
 function actual(doc: PleinDoc, card: CanvasElement, item: LibraryItem) {

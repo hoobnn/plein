@@ -7,7 +7,11 @@ import { z } from 'zod'
 export const LibraryKind = z.enum(['character', 'scene', 'prop', 'style', 'effect'])
 export type LibraryKind = z.infer<typeof LibraryKind>
 
-/** 一张参考图放在哪个位置：槽位由各类资产自己定义（全身、半身、设定图、多角度……），见 @plein/nodes 的 LIBRARY_KINDS */
+/**
+ * 一张参考图的用途，见 @plein/nodes 的 LIBRARY_KINDS。
+ * 角色核心槽位：full_body / portrait / character_3view / face_grid；extra 放其他参考。
+ * 保持开放字符串，以无损读取旧槽位、项目包和扩展用途；兼容规范化由 nodes 与服务端完成。
+ */
 export const LibraryImage = z.object({
   slot: z.string().trim().min(1).max(40),
   assetId: z.string().regex(/^[0-9a-f]{64}$/, '资产 id 不合法'),

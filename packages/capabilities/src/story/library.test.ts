@@ -26,7 +26,7 @@ describe('资产卡快照', () => {
     const el = doc.get(card)!
     expect(referenceAssets(doc, el, 'image')).toEqual(['image-b', 'image-a'])
     expect(cardSnapshot(doc, el, null)!.body.images).toEqual([
-      { slot: 'main', assetId: 'image-b' },
+      { slot: 'full_body', assetId: 'image-b' },
       { slot: 'extra', assetId: 'image-a' },
     ])
     doc.destroy()

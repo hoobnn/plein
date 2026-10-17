@@ -13,7 +13,7 @@ import {
   type CastEntry,
   hasVoice,
   libraryKind,
-  orderedImages,
+  libraryReferenceImageIds,
   parseCast,
   speakerTraits,
   type VoiceRef,
@@ -289,11 +289,11 @@ function libraryRefs(
 ): CardRef[] {
   const kind = libraryKind(item.kind)
   if (!kind) return []
-  return orderedImages(kind, item.images).map((i) => {
-    const m = meta?.(i.assetId)
+  return libraryReferenceImageIds(kind, item.images).map((assetId) => {
+    const m = meta?.(assetId)
     return {
       kind: 'image' as const,
-      assetId: i.assetId,
+      assetId,
       name: `${item.name} · 参考图`,
       width: m?.width,
       height: m?.height,

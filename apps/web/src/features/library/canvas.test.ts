@@ -97,10 +97,35 @@ describe('资产库 ↔ 画布', () => {
       description: '二十岁，黑长直',
       voice: { provider: 'plein/doubao-speech', voiceId: 'S_1' },
       images: [
-        { slot: 'main', assetId: A },
+        { slot: 'full_body', assetId: A },
         { slot: 'extra', assetId: B },
       ],
     })
+  })
+
+  it('同一图用于多个角色分类时只放一次，存回资产库仍保留全部用途', async () => {
+    const { doc, engine } = setup()
+    const original = item({
+      images: [
+        { slot: 'full_body', assetId: A },
+        { slot: 'portrait', assetId: A },
+        { slot: 'character_3view', assetId: B },
+        { slot: 'face_grid', assetId: B },
+        { slot: 'head_3view', assetId: A },
+      ],
+    })
+    const placed = await placeLibraryItem(engine, catalog, placeInputOf(original)!)
+    expect(placed.notice).not.toContain('找不到')
+    const references = [...doc.edges()].filter((edge) => edge.to[0] === placed.id)
+    expect(references.map((edge) => doc.get(edge.from[0])?.assetId)).toEqual([A, B])
+    const update = vi.fn(async (_id: string, body) => ({ ...original, ...body }) as LibraryItem)
+    const saved = await saveCardToLibrary(engine, doc.get(placed.id!)!, null, {
+      items: [original],
+      create: vi.fn(),
+      update,
+    })
+    expect(saved.item.images).toHaveLength(5)
+    expect(saved.item.images).toEqual(expect.arrayContaining(original.images))
   })
 
   it('同一条资产已在画布上时只选中，不重复铺；找不到的素材跳过并说明', async () => {

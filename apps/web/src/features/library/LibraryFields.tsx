@@ -30,6 +30,9 @@ export function CanvasPick({
   multiple,
   taken,
   onPick,
+  compact = false,
+  label = '从画布选',
+  disabled = false,
 }: {
   media: CanvasMedia[]
   type: 'image' | 'video'
@@ -37,6 +40,9 @@ export function CanvasPick({
   /** 已经用在条目里的资产，列表里标出来、不能重复选 */
   taken: string[]
   onPick(assetId: string): void
+  compact?: boolean
+  label?: string
+  disabled?: boolean
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const list = media.filter((m) => m.kind === type)
@@ -45,13 +51,14 @@ export function CanvasPick({
     <>
       <button
         type="button"
+        aria-label={label}
         aria-expanded={!!anchor}
-        disabled={!list.length}
+        disabled={disabled || !list.length}
         title={list.length ? undefined : `画布上没有${type === 'image' ? '图片' : '视频'}`}
         onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
-        className="ui-drop-tile"
+        className={compact ? 'ui-btn ui-btn-quiet ui-btn-xs' : 'ui-drop-tile'}
       >
-        <Icon name="board" size={16} />
+        <Icon name="board" size={compact ? 12 : 16} />
         从画布选
       </button>
       <Presence>
@@ -116,6 +123,8 @@ export function SlotField({
   media,
   onAdd,
   onRemove,
+  disabled = false,
+  onBusyChange,
 }: {
   slot: LibraryKindSpec['slots'][number]
   images: LibraryImage[]
@@ -124,12 +133,16 @@ export function SlotField({
   media: CanvasMedia[]
   onAdd(ids: string[]): void
   onRemove(assetId: string): void
+  disabled?: boolean
+  onBusyChange?(busy: boolean): void
 }) {
   const ref = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const pick = async (files: File[]) => {
+    if (busy || disabled) return
     setBusy(true)
+    onBusyChange?.(true)
     setError(null)
     try {
       const ids = await uploadAll(files, 'image')
@@ -139,6 +152,7 @@ export function SlotField({
       setError((err as Error).message)
     } finally {
       setBusy(false)
+      onBusyChange?.(false)
     }
   }
   const canAdd = slot.multiple || images.length === 0
@@ -168,6 +182,7 @@ export function SlotField({
               aria-label="移除"
               title="移除"
               onClick={() => onRemove(img.assetId)}
+              disabled={busy || disabled}
               className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn absolute top-1 right-1 bg-float opacity-0 group-hover:opacity-100 focus:opacity-100"
             >
               <Icon name="x" size={12} />
@@ -177,7 +192,7 @@ export function SlotField({
         {canAdd && (
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || disabled}
             onClick={() => ref.current?.click()}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
@@ -192,6 +207,7 @@ export function SlotField({
         )}
         {canAdd && (
           <CanvasPick
+            disabled={busy || disabled}
             media={media}
             type="image"
             multiple={!!slot.multiple}

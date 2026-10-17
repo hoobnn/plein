@@ -41,21 +41,36 @@ export interface LibraryKindSpec {
 
 const ERA = ['现代', '古风', '民国', '仙侠', '科幻', '奇幻']
 
+/** 角色基础形象的四种图片；全身图继续作为生成时的第一参考。 */
+export const CHARACTER_IMAGE_SLOTS = [
+  {
+    id: 'full_body',
+    label: '全身定妆图',
+    hint: '白底或干净背景的正面全身照，固定体型与服装，作为第一参考',
+  },
+  { id: 'portrait', label: '肖像／半身图', hint: '清晰展示脸部、发型与上半身，固定人物身份' },
+  { id: 'character_3view', label: '角色设定图', hint: '正面、侧面与背面，固定多角度造型细节' },
+  { id: 'face_grid', label: '情绪九宫格', hint: '同一人物的多种表情，作为情绪与表演参考' },
+] as const satisfies readonly LibrarySlot[]
+
+const CHARACTER_SLOT_ALIASES = new Map([
+  ['main', 'full_body'],
+  ['half', 'portrait'],
+  ['emotions', 'face_grid'],
+  ['sheet', 'character_3view'],
+])
+const CHARACTER_SLOT_IDS = new Set<string>(CHARACTER_IMAGE_SLOTS.map((slot) => slot.id))
+
 export const LIBRARY_KINDS: readonly LibraryKindSpec[] = [
   {
     id: 'character',
     title: '角色',
     nodeType: 'plein/character',
-    description: '角色造型：全身主图、半身、设定图、情绪九宫格与音色，跨画布保持同一个人',
+    description:
+      '角色造型：全身定妆图、肖像／半身图、情绪九宫格、角色设定图与音色，跨画布保持同一个人',
     descriptionLabel: '设定',
     placeholder: '外貌、发型、服装、性格，如：二十岁，黑长直，浅蓝卫衣配白色阔腿裤，爱笑',
-    slots: [
-      { id: 'main', label: '全身主图', hint: '白底或干净背景的正面全身照，作为第一参考' },
-      { id: 'half', label: '半身图' },
-      { id: 'sheet', label: '设定图', hint: '三视图 / 四视图' },
-      { id: 'emotions', label: '情绪九宫格' },
-      { id: 'extra', label: '其他参考', multiple: true },
-    ],
+    slots: [...CHARACTER_IMAGE_SLOTS, { id: 'extra', label: '其他参考', multiple: true }],
     tags: [
       { id: 'gender', label: '性别', options: ['女', '男', '其他'] },
       { id: 'age', label: '年龄段', options: ['儿童', '少年', '青年', '中年', '老年'] },
@@ -346,20 +361,72 @@ export const OFFICIAL_LIBRARY: readonly OfficialLibraryItem[] = [
   ),
 ]
 
-/** 卡片上用的参考图顺序：按槽位定义的顺序排，未知槽位放最后 */
+/**
+ * 旧角色槽位兼容到四种基础图片。单张槽位多出来的图片放入其他参考，未知槽位原样保留。
+ * 不按 assetId 去重：同一张图可以承担不同用途，历史图片也不能在迁移时被吞掉。
+ */
+export function normalizeLibraryImages<T extends { slot: string }>(
+  kind: LibraryKindSpec | string,
+  images: readonly T[],
+): T[] {
+  if ((typeof kind === 'string' ? kind : kind.id) !== 'character') return [...images]
+  const used = new Set<string>()
+  return images.map((image) => {
+    let slot = CHARACTER_SLOT_ALIASES.get(image.slot) ?? image.slot
+    if (CHARACTER_SLOT_IDS.has(slot)) {
+      if (used.has(slot)) slot = 'extra'
+      else used.add(slot)
+    }
+    return slot === image.slot ? image : { ...image, slot }
+  })
+}
+
+/**
+ * 从画布存回已关联的条目时，保留当前仍被引用图片的全部原槽位。
+ * 同一素材可同时用于肖像和全身图，不能用 assetId → 单个槽位的 Map 覆盖其中一种用途。
+ */
+export function preserveLibraryImageSlots<T extends { slot: string; assetId: string }>(
+  kind: LibraryKindSpec | string,
+  current: readonly T[],
+  previous: readonly T[],
+): T[] {
+  const slots = new Map<string, T[]>()
+  for (const image of previous) {
+    const list = slots.get(image.assetId) ?? []
+    list.push(image)
+    slots.set(image.assetId, list)
+  }
+  const seen = new Set<string>()
+  const images = current.flatMap((image) => {
+    if (seen.has(image.assetId)) return []
+    seen.add(image.assetId)
+    return slots.get(image.assetId) ?? [image]
+  })
+  return normalizeLibraryImages(kind, images)
+}
+
+/** 卡片上用的参考图顺序：兼容旧角色槽位，按槽位定义的顺序排，未知槽位放最后 */
 export function orderedImages<T extends { slot: string }>(
   kind: LibraryKindSpec,
   images: readonly T[],
 ) {
   const rank = new Map(kind.slots.map((s, i) => [s.id, i]))
-  return [...images].sort(
+  return normalizeLibraryImages(kind, images).sort(
     (a, b) => (rank.get(a.slot) ?? kind.slots.length) - (rank.get(b.slot) ?? kind.slots.length),
   )
 }
 
+/** 用到画布上的图片素材：保持槽位顺序，同一张图承担多种用途时只连入一次。 */
+export function libraryReferenceImageIds(
+  kind: LibraryKindSpec,
+  images: readonly { slot: string; assetId: string }[],
+): string[] {
+  return [...new Set(orderedImages(kind, images).map((image) => image.assetId))]
+}
+
 /**
  * 画布卡片连入的参考图分到槽位：第一张放第一个槽位，其余放最后一个可多张的槽位
- * （角色：全身主图 + 其他参考）。用户可以在资产库里再调。
+ * （角色：全身定妆图 + 其他参考）。用户可以在资产库里再调。
  */
 export function slotImages(kind: LibraryKindSpec, assetIds: readonly string[]) {
   const first = kind.slots[0]!

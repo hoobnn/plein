@@ -1,4 +1,5 @@
 import { Readable } from 'node:stream'
+import { referenceAssets } from '@plein/capabilities'
 import { createElement, type PleinDoc, updateElement } from '@plein/doc'
 import sharp from 'sharp'
 import type { AgentEvent, Canvas } from '@plein/protocol'
@@ -281,6 +282,15 @@ describe('智能体 MCP', () => {
 
   it('资产库：搜索、用到画布上、存回去', async () => {
     const lib = running.server.library
+    const photo = await running.server.assets.ingest(
+      'local',
+      Readable.from([
+        await sharp({ create: { width: 8, height: 8, channels: 3, background: '#67a' } })
+          .png()
+          .toBuffer(),
+      ]),
+      { name: '角色参考.png', mime: 'image/png' },
+    )
     const made = lib.create('local', {
       kind: 'character',
       name: '林夏',
@@ -288,7 +298,11 @@ describe('智能体 MCP', () => {
       description: '短发，白衬衫',
       tags: {},
       voice: null,
-      images: [],
+      images: [
+        { slot: 'main', assetId: photo.id },
+        { slot: 'half', assetId: photo.id },
+        { slot: 'head_3view', assetId: photo.id },
+      ],
       video: null,
       models: [],
       profile: null,
@@ -297,6 +311,12 @@ describe('智能体 MCP', () => {
     expect(found.items.map((i: { id: string }) => i.id)).toContain(made.id)
     const placed = (await call('place_library_item', { item_id: made.id })).json()
     expect(placed.existed).toBe(false)
+    expect(placed.skipped_assets).toBeUndefined()
+    expect(
+      running.server.rooms.withDoc(canvasId, (doc) =>
+        referenceAssets(doc, doc.get(placed.id)!, 'image'),
+      ),
+    ).toEqual([photo.id])
     expect((await call('place_library_item', { item_id: made.id })).json()).toMatchObject({
       id: placed.id,
       existed: true,
@@ -305,6 +325,7 @@ describe('智能体 MCP', () => {
     const saved = (await call('save_to_library', { id: placed.id })).json()
     expect(saved).toEqual({ item_id: made.id, created: false })
     expect(lib.get('local', made.id)?.description).toBe('短发，红裙子')
+    expect(lib.get('local', made.id)?.images).toEqual(made.images)
   })
 
   it('参数不对、元素不存在时把原因告诉模型', async () => {
