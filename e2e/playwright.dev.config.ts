@@ -29,6 +29,7 @@ export default defineConfig({
     'node-picker-boundaries.spec.ts',
     'generator-layout.spec.ts',
     'generator-popovers.spec.ts',
+    'generator-camera.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },

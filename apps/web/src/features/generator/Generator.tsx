@@ -12,7 +12,7 @@ import {
   type VideoMode,
 } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { useEngineVersion, useFollow } from '../../canvas/hooks'
 import { adaptToModel, constrainFields, selectedModel } from '../../canvas/modelParams'
 import {
@@ -89,18 +89,20 @@ function NodeGenerator({
   catalog: Catalog | null
 }) {
   const [expanded, setExpanded] = useState(false)
-  const [, resized] = useState(0)
-  useEffect(() => {
-    const resize = () => resized((value) => value + 1)
-    window.addEventListener('resize', resize)
-    return () => window.removeEventListener('resize', resize)
-  }, [])
-  const rect = engine.scene.rect(el.id)!
-  const tl = engine.worldToClient(rect.x, rect.y)
-  const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
-  const cramped =
-    Math.max(tl.y - TITLE_H - TOP_RESERVED, window.innerHeight - BOTTOM_RESERVED - br.y) <
-    MIN_H + GAP
+  // 平移不经过 React 的引擎状态订阅；只有可用空间跨过阈值时才重渲染面板。
+  const cramped = useSyncExternalStore(
+    useCallback((notify: () => void) => engine.onMove(notify), [engine]),
+    () => {
+      const rect = engine.scene.rect(el.id)
+      if (!rect) return false
+      const tl = engine.worldToClient(rect.x, rect.y)
+      const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
+      return (
+        Math.max(tl.y - TITLE_H - TOP_RESERVED, window.innerHeight - BOTTOM_RESERVED - br.y) <
+        MIN_H + GAP
+      )
+    },
+  )
   const collapsed = cramped && !expanded
   const place = () => placeBeside(engine, el.id, collapsed)
   const ref = useFollow<HTMLElement>(engine, place)
