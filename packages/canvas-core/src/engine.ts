@@ -468,16 +468,30 @@ export class Engine {
   /** 用 Frame 包住选中元素（⌘G） */
   groupSelection() {
     if (this.selection.size === 0) return
-    const frame = groupElements(this.doc, this.selection.values())
-    if (frame) this.selection.set([frame])
+    this.discreteEdit(() => {
+      const frame = groupElements(this.doc, this.selection.values())
+      if (frame) this.selection.set([frame])
+    })
   }
 
   /** 解组选中的 Frame（⇧⌘G），选中原来的子元素 */
   ungroupSelection() {
     const frames = this.selection.values().filter((id) => this.scene.get(id)?.kind === 'frame')
     if (frames.length === 0) return
-    const kids = frames.flatMap((id) => ungroupElements(this.doc, id))
-    this.selection.set(kids)
+    this.discreteEdit(() => {
+      const kids = frames.flatMap((id) => ungroupElements(this.doc, id))
+      this.selection.set(kids)
+    })
+  }
+
+  /** 离散编辑单独撤销，多对象操作也只产生一个事务。 */
+  private discreteEdit(write: () => void) {
+    this.doc.undo.stopCapturing()
+    try {
+      this.doc.ydoc.transact(write, this.doc.origin)
+    } finally {
+      this.doc.undo.stopCapturing()
+    }
   }
 
   /**
