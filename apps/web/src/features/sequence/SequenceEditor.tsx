@@ -397,7 +397,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
   }
   const trim = (key: string, p: TrimPatch, done: boolean) => {
-    if (!done) return setDraft({ key, patch: p })
+    if (!done) return setDraft('in' in p || 'out' in p ? { key, patch: p } : null)
     setDraft(null)
     const r = read.rows.find((x, i) => rowKey(x, i) === key)
     patch(r?.source, p)

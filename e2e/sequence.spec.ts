@@ -198,6 +198,103 @@ test('手动修剪拒绝交叉入出点，提示原因且清空可恢复整段',
   expect(length).toBeLessThan(2.1)
 })
 
+for (const cancel of ['pointercancel', 'blur', 'Escape'] as const) {
+  test(`时间线 ${cancel} 取消修剪和排序，不保存草稿且可继续拖动`, async ({ page }) => {
+    await newProject(page)
+    const chooser = page.waitForEvent('filechooser')
+    await page.getByRole('button', { name: '上传' }).click()
+    await (await chooser).setFiles(shots.slice(0, 2).map((file) => join(dir, file)))
+    await expect
+      .poll(async () => (await elements(page)).filter((e) => e.kind === 'video').length)
+      .toBe(2)
+    const videos = (await elements(page)).filter((e) => e.kind === 'video')
+    await addNode(page, '序列', { x: 720, y: 800 })
+    await page.keyboard.press('Escape')
+    const sequence = (await elements(page)).find((e) => e.nodeType === 'plein/sequence')!
+    await page.evaluate(
+      ({ videos, sequence }) => {
+        for (const video of videos) window.__plein.connect([video.id, 'video'], [sequence, 'clips'])
+      },
+      { videos, sequence: sequence.id },
+    )
+    await zoomTo(page, [sequence.id])
+    const at = await centerOf(page, sequence.id)
+    await page.mouse.dblclick(at.x, at.y)
+    const editor = page.getByRole('dialog', { name: '序列', exact: true })
+    const clips = editor.locator('.seq-clip')
+    await expect(clips).toHaveCount(2)
+    const read = () =>
+      page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.clips, sequence.id)
+    const before = await read()
+    const cancelGesture = async () => {
+      if (cancel === 'Escape') {
+        await page.keyboard.press('Escape')
+        // 不等待退场动画；松手不能把关闭前的草稿保存下来。
+        await page.mouse.up()
+        await expect(editor).toBeHidden()
+        await page.mouse.dblclick(at.x, at.y)
+        await expect(editor).toBeVisible()
+        return
+      }
+      await page.evaluate((kind) => {
+        window.dispatchEvent(
+          kind === 'blur' ? new Event('blur') : new PointerEvent('pointercancel', { pointerId: 1 }),
+        )
+      }, cancel)
+    }
+    await clips.first().hover()
+    const handle = (await clips.first().locator('.seq-trim-out').boundingBox())!
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(handle.x - 50, handle.y + handle.height / 2, { steps: 5 })
+    await expect(editor.locator('[data-trimming]')).toHaveCount(1)
+    await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 2 })))
+    await expect(editor.locator('[data-trimming]')).toHaveCount(1)
+    await cancelGesture()
+    await expect(editor.locator('[data-trimming]')).toHaveCount(0)
+    await page.mouse.move(handle.x - 80, handle.y + handle.height / 2)
+    await page.mouse.up()
+    expect(await read()).toEqual(before)
+    await expect(editor.getByRole('spinbutton', { name: '出点（秒）', exact: true })).toHaveValue(
+      '',
+    )
+    const order = () =>
+      clips.evaluateAll((els) =>
+        els
+          .map((el) => ({ name: el.getAttribute('aria-label'), x: el.getBoundingClientRect().x }))
+          .sort((a, b) => a.x - b.x)
+          .map((el) => el.name),
+      )
+    const original = await order()
+    const first = (await clips.first().boundingBox())!
+    const second = (await clips.nth(1).boundingBox())!
+    const drag = async () => {
+      await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(second.x + second.width - 12, first.y + first.height / 2, { steps: 8 })
+    }
+    await drag()
+    await expect(editor.locator('[data-moving]')).toHaveCount(1)
+    await page.evaluate(() =>
+      window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 2 })),
+    )
+    await expect(editor.locator('[data-moving]')).toHaveCount(1)
+    await cancelGesture()
+    await expect(editor.locator('[data-moving]')).toHaveCount(0)
+    await page.mouse.up()
+    expect(await read()).toEqual(before)
+    await expect.poll(order).toEqual(original)
+    await expect
+      .poll(() =>
+        clips.evaluateAll((els) => els.every((el) => getComputedStyle(el).transform === 'none')),
+      )
+      .toBe(true)
+    await drag()
+    await page.mouse.up()
+    await expect.poll(order).toEqual([...original].reverse())
+  })
+}
+
 /** 序列编辑器是多轨时间线：胶片条、波形，拖动换顺序，拖边缘修剪，空格播放 */
 test('序列时间线：排序、修剪、播放', async ({ page }) => {
   await newProject(page)

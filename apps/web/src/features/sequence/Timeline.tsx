@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { Icon, type IconName } from '../../ui/icons'
 import { assetUrls } from '../../api/client'
+import { useClosing } from '../../ui/Presence'
 import { Filmstrip, Waveform } from './media'
 import { clock, type Playhead } from './playhead'
 
@@ -433,6 +434,44 @@ function ClipTrack({
   /** 落下后的位移补偿：先停在松手处，下一帧滑回 0 */
   const [settle, setSettle] = useState<{ key: string; dx: number; animate: boolean } | null>(null)
   const [trimming, setTrimming] = useState<string | null>(null)
+  const cancelGesture = useRef<(() => void) | null>(null)
+  const closing = useClosing()
+  useLayoutEffect(() => {
+    if (closing) cancelGesture.current?.()
+    return () => cancelGesture.current?.()
+  }, [closing])
+
+  const trackPointer = (
+    pointerId: number,
+    onMove: (event: PointerEvent) => void,
+    onEnd: () => void,
+    onCancel: () => void,
+  ) => {
+    const move = (event: PointerEvent) => {
+      if (event.pointerId === pointerId) onMove(event)
+    }
+    const finish = (commit: boolean) => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', cancel)
+      window.removeEventListener('blur', blur)
+      cancelGesture.current = null
+      if (commit) onEnd()
+      else onCancel()
+    }
+    const up = (event: PointerEvent) => {
+      if (event.pointerId === pointerId) finish(true)
+    }
+    const cancel = (event: PointerEvent) => {
+      if (event.pointerId === pointerId) finish(false)
+    }
+    const blur = () => finish(false)
+    cancelGesture.current = blur
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('blur', blur)
+  }
 
   useLayoutEffect(() => {
     if (!settle || settle.animate) return
@@ -441,7 +480,8 @@ function ClipTrack({
   }, [settle])
 
   const startDrag = (e: ReactPointerEvent, index: number) => {
-    if (e.button !== 0) return
+    if (e.button !== 0 || closing) return
+    cancelGesture.current?.()
     const item = items[index]!
     onSelect(item.key)
     const x0 = e.clientX
@@ -459,8 +499,6 @@ function ClipTrack({
       setDrag(current)
     }
     const up = () => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
       setDrag(null)
       if (!moved) {
         playhead.pause()
@@ -482,12 +520,15 @@ function ClipTrack({
         onMove(index, current.target)
       } else setSettle({ key: item.key, dx: current.dx, animate: false })
     }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
+    trackPointer(e.pointerId, move, up, () => {
+      setDrag(null)
+      setSettle(null)
+    })
   }
 
   const startTrim = (e: ReactPointerEvent, item: TrackItem, edge: 'in' | 'out') => {
-    if (e.button !== 0 || item.pending) return
+    if (e.button !== 0 || item.pending || closing) return
+    cancelGesture.current?.()
     e.stopPropagation()
     e.preventDefault()
     onSelect(item.key)
@@ -516,13 +557,13 @@ function ClipTrack({
       onTrim(item.key, patch, false)
     }
     const up = () => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
       setTrimming(null)
       if ('in' in patch || 'out' in patch) onTrim(item.key, patch, true)
     }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
+    trackPointer(e.pointerId, move, up, () => {
+      setTrimming(null)
+      onTrim(item.key, {}, false)
+    })
   }
 
   const w = drag ? items[drag.index]!.length * pps : 0
