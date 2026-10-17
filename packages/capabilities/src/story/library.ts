@@ -4,6 +4,7 @@ import {
   createElement,
   currentResult,
   elementPorts,
+  inputEdges,
   type NewElement,
   type PleinDoc,
 } from '@plein/doc'
@@ -102,14 +103,12 @@ export function addCardWithRefs(
 
 /** 卡片连入 references 的素材：素材元素或上游节点当前采用的结果 */
 export function referenceAssets(doc: PleinDoc, el: CanvasElement, type: 'image' | 'video') {
-  return [...doc.edges()]
-    .filter((e) => e.to[0] === el.id && e.to[1] === 'references')
-    .flatMap((e) => {
-      const src = doc.get(e.from[0])
-      if (src?.kind === type && src.assetId) return [src.assetId]
-      const r = src?.kind === 'node' ? currentResult(src, e.from[1])?.value : undefined
-      return r?.type === type ? [r.assetId] : []
-    })
+  return inputEdges(doc, el.id, 'references').flatMap((e) => {
+    const src = doc.get(e.from[0])
+    if (src?.kind === type && src.assetId) return [src.assetId]
+    const r = src?.kind === 'node' ? currentResult(src, e.from[1])?.value : undefined
+    return r?.type === type ? [r.assetId] : []
+  })
 }
 
 /** 卡片当前内容，整理成资产库条目；不是资产卡时返回 null */
