@@ -225,6 +225,13 @@ function ContextMenu({
           onClick={act(() => engine.duplicateSelection())}
         />
         <Item label="打组" hint={shortcut('mod+g')} onClick={act(() => engine.groupSelection())} />
+        {ids.some((id) => engine.scene.get(id)?.kind === 'frame') && (
+          <Item
+            label="解组"
+            hint={shortcut('mod+shift+g')}
+            onClick={act(() => engine.ungroupSelection())}
+          />
+        )}
         <Item
           label="缩放到选中"
           hint={shortcut('shift+2')}

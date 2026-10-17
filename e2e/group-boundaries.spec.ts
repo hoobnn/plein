@@ -163,3 +163,78 @@ for (const command of ['group', 'ungroup'] as const) {
     })
   }
 }
+
+for (const nested of [false, true]) {
+  for (const reverse of [false, true]) {
+    test(`批量解组 ${nested ? '嵌套' : '同级'} 分组，${reverse ? '逆序' : '正序'} 选取可一步撤销重做`, async ({
+      page,
+    }) => {
+      const ids = await setup(page, true)
+      const prepared = await page.evaluate(
+        ({ ids, nested, reverse }) => {
+          const engine = window.__plein.engine as GroupEngine
+          const firstFrame = [...engine.doc.elements()].find((el) => el.kind === 'frame')!.id
+          const third = window.__plein.addNode({
+            type: 'plein/text',
+            name: '第三个节点',
+            params: { text: '不能丢失' },
+            x: 1400,
+            y: 300,
+          })
+          engine.selection.set(nested ? [firstFrame, third] : [third])
+          engine.groupSelection()
+          engine.doc.flush()
+          const frames = [...engine.doc.elements()]
+            .filter((el) => el.kind === 'frame')
+            .map((el) => el.id)
+          engine.selection.set(reverse ? frames.reverse() : frames)
+          engine.doc.undo.stopCapturing()
+          ;(engine.doc.undo as unknown as { captureTimeout: number }).captureTimeout = 0
+          return [ids.first, ids.second, third]
+        },
+        { ids, nested, reverse },
+      )
+      const original = await snapshot(page)
+      await page.keyboard.press('ControlOrMeta+Shift+g')
+      await expect
+        .poll(async () => (await snapshot(page)).filter((el) => el.kind === 'frame'))
+        .toEqual([])
+      const ungrouped = await snapshot(page)
+      expect(ungrouped.map((el) => el.id).sort()).toEqual([...prepared].sort())
+      for (const el of ungrouped)
+        expect(el.rect).toEqual(original.find((before) => before.id === el.id)!.rect)
+      await expect
+        .poll(() => page.evaluate(() => window.__plein.engine.selection.values().sort()))
+        .toEqual([...prepared].sort())
+      await page.getByRole('button', { name: '撤销', exact: true }).click()
+      await expect.poll(() => snapshot(page)).toEqual(original)
+      await page.getByRole('button', { name: '重做', exact: true }).click()
+      await expect.poll(() => snapshot(page)).toEqual(ungrouped)
+    })
+  }
+}
+
+test('分组右键菜单可发现解组入口，执行后可撤销恢复', async ({ page }) => {
+  await setup(page, true)
+  const original = await snapshot(page)
+  const point = await page.evaluate(() => {
+    const { engine } = window.__plein
+    const frame = [...engine.doc.elements()].find((el) => el.kind === 'frame')!
+    const r = engine.doc.worldRect(frame.id)
+    return engine.worldToClient(r.x + 80, r.y + 16)
+  })
+  await page.mouse.click(point.x, point.y, { button: 'right' })
+  const action = page.getByRole('menuitem', { name: /^解组/ })
+  await expect(action).toBeVisible()
+  await expect(page.getByRole('menu')).toHaveCSS('opacity', '1')
+  await page.screenshot({ path: 'test-results/group-context-menu.png' })
+  await action.click()
+  await expect
+    .poll(async () => (await snapshot(page)).filter((el) => el.kind === 'frame'))
+    .toEqual([])
+  await expect
+    .poll(() => page.evaluate(() => window.__plein.engine.selection.values().length))
+    .toBe(2)
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect.poll(() => snapshot(page)).toEqual(original)
+})
