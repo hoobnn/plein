@@ -8,3 +8,5 @@ export * from './story'
 export * from './story-caps'
 export * from './prompt-caps'
 export * from './read-view'
+
+export * from './clipboard'

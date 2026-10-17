@@ -4,12 +4,12 @@ import {
   bringToFront,
   type ClipboardData,
   deleteElements,
-  duplicateElements,
   exportElements,
   fitElementSize,
   groupElements,
   importElements,
   isClipboardData,
+  type ImportOptions,
   moveElements,
   type PleinDoc,
   type Rect,
@@ -52,6 +52,10 @@ export interface EngineOptions extends Omit<RenderContext, 'initialDetail' | 'te
   /** 默认 WebGL；WebGPU 待基准与兼容性验证后再切默认 */
   renderer?: 'webgl' | 'webgpu'
   renderers?: RendererRegistry
+  clipboard?: {
+    copy(doc: PleinDoc, ids: Iterable<string>): ClipboardData
+    paste(doc: PleinDoc, data: ClipboardData, opts: ImportOptions): string[]
+  }
 }
 
 /** 引擎对外的运行时状态快照，供 UI 外壳展示 */
@@ -441,7 +445,10 @@ export class Engine {
 
   duplicateSelection() {
     if (this.selection.size === 0) return
-    this.selection.set(duplicateElements(this.doc, this.selection.values()))
+    const data = (this.opts.clipboard?.copy ?? exportElements)(this.doc, this.selection.values())
+    this.selection.set(
+      (this.opts.clipboard?.paste ?? importElements)(this.doc, data, { dx: 24, dy: 24 }),
+    )
   }
 
   nudge(dx: number, dy: number) {
@@ -502,13 +509,15 @@ export class Engine {
   copy(): ClipboardData | null {
     if (this.selection.size === 0) return null
     this.pasteCount = 0
-    return exportElements(this.doc, this.selection.values())
+    return (this.opts.clipboard?.copy ?? exportElements)(this.doc, this.selection.values())
   }
 
   paste(data: ClipboardData) {
     this.pasteCount++
     const d = PASTE_OFFSET * this.pasteCount
-    this.selection.set(importElements(this.doc, data, { dx: d, dy: d }))
+    this.selection.set(
+      (this.opts.clipboard?.paste ?? importElements)(this.doc, data, { dx: d, dy: d }),
+    )
   }
 
   /** 缩放到包住指定元素（默认全部） */

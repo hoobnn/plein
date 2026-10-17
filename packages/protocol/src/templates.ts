@@ -8,6 +8,7 @@ export const TemplateData = z.object({
     .min(1)
     .max(500),
   edges: z.array(z.looseObject({ id: z.string() })).max(2000),
+  extensions: z.record(z.string(), z.unknown()).optional(),
 })
 export const CreateTemplate = z.object({
   title: z.string().trim().min(1).max(60),

@@ -1,5 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
-import { type ClipboardData, exportElements, importElements } from '@plein/doc'
+import { type ClipboardData } from '@plein/doc'
+import { referenceClipboard } from '@plein/capabilities'
 import type { Catalog, FlowRunOptions, GroupRunStarted, GroupRunState } from '@plein/protocol'
 import { ApiError, api } from '../api/client'
 import { findNode, isPure } from './nodes'
@@ -163,7 +164,7 @@ function describeRun(title: string, r: GroupRun) {
 
 /** 导出 Frame 为模板数据：去掉生成结果和运行状态，只留结构和参数 */
 export function templateData(engine: Engine, frameId: string): ClipboardData {
-  const data = exportElements(engine.doc, [frameId])
+  const data = referenceClipboard.copy(engine.doc, [frameId])
   return {
     ...data,
     elements: data.elements.map(({ results: _r, adopted: _a, run: _run, ...el }) => el),
@@ -173,7 +174,7 @@ export function templateData(engine: Engine, frameId: string): ClipboardData {
 /** 在世界坐标 at 铺出模板（Frame 左上角对齐 at），返回新的顶层 id */
 export function placeTemplate(engine: Engine, data: ClipboardData, at: { x: number; y: number }) {
   const root = data.elements[0]
-  const ids = importElements(engine.doc, data, {
+  const ids = referenceClipboard.paste(engine.doc, data, {
     dx: Math.round(at.x - (root?.x ?? 0)),
     dy: Math.round(at.y - (root?.y ?? 0)),
   })

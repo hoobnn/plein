@@ -1,3 +1,4 @@
+import { referenceClipboard } from '@plein/capabilities'
 import { Engine, isEditableTarget, type PreviewSize } from '@plein/canvas-core'
 import {
   connect,
@@ -94,6 +95,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
         host,
         doc,
         overlay: overlayRoot,
+        clipboard: referenceClipboard,
         assetUrl,
         theme: canvasTheme(useTheme.getState().name),
       })

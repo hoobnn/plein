@@ -1,0 +1,107 @@
+{
+  "format": "plein-reference-copy-acceptance",
+  "version": 1,
+  "recordedAt": "2026-10-17T13:07:53.588287+00:00",
+  "environment": "native-electron-development-with-real-provider",
+  "sourceCanvas": "cv_ryDEchfqJT-h",
+  "canvas": {
+    "id": "cv_uy4LB4D7m_dH",
+    "name": "跨画布引用验收 1017"
+  },
+  "run": {
+    "id": "run_mvcerp4c1p47dp",
+    "nodeId": "el-3afb85ab-7a52-4691-a9c6-d43afc06c8f6",
+    "status": "succeeded",
+    "error": null,
+    "attempts": 1,
+    "elapsedMs": 68295,
+    "model": {
+      "ref": "volc/ark:doubao-seedream-5-0-pro-260628",
+      "provider": "volc/ark",
+      "title": "Seedream 5.0 Pro"
+    },
+    "prompt": "小岚 · 实测1017（青年·日常·开心） 站在雨后木桌 · 实测1017旁，低头看着透明水杯 · 全流程1017。保留参考图中的黑色短发、圆框眼镜和橙色雨衣，安静微笑，自然写实摄影，中景，雨后清晨柔光，横屏16:9。\n\n设定：\n小岚 · 实测1017#2（青年·日常·开心）：虚构成年女性，26岁，黑色短发，圆框眼镜，橙色轻便雨衣，温和好奇。自然写实摄影，固定人物身份。\n服饰「日常」：橙色轻便雨衣，深蓝色长裤，白色运动鞋，不戴帽子。\n表情「开心」：嘴角自然上扬，轻松微笑。\n雨后木桌 · 实测1017：雨后清晨，户外小木桌，木面有水珠，透明玻璃杯盛清水，柔和晨光与折射光斑，安静写实。\n透明水杯 · 全流程1017：透明无色直筒玻璃水杯，盛有清水，杯壁少量水珠，无花纹无文字。固定道具外形与材质，使用雨后木桌参考图中的水杯。",
+    "refs": [
+      {
+        "elementId": "el-e38e9939-1d58-40d8-b447-354504f6f210",
+        "name": "小岚 · 实测1017#2（青年·日常·开心）",
+        "kind": "character",
+        "required": false,
+        "available": ["8a45e8c0348217b1ef3da6889a97ab3ba5fb0dde3280b36128ffd34a922bed94"],
+        "sent": ["8a45e8c0348217b1ef3da6889a97ab3ba5fb0dde3280b36128ffd34a922bed94"]
+      },
+      {
+        "elementId": "el-60672f84-c484-4080-8d2e-8be6a9c63fcc",
+        "name": "雨后木桌 · 实测1017",
+        "kind": "scene",
+        "required": false,
+        "available": ["4bb9aff965e9347ae8670b31b67b21dfd6cf07fb7e533d29b44f82007d482d9d"],
+        "sent": ["4bb9aff965e9347ae8670b31b67b21dfd6cf07fb7e533d29b44f82007d482d9d"]
+      },
+      {
+        "elementId": "el-b35a5ab1-8112-4a23-b789-e1a055bdcfaa",
+        "name": "透明水杯 · 全流程1017",
+        "kind": "prop",
+        "required": false,
+        "available": ["4bb9aff965e9347ae8670b31b67b21dfd6cf07fb7e533d29b44f82007d482d9d"],
+        "sent": ["4bb9aff965e9347ae8670b31b67b21dfd6cf07fb7e533d29b44f82007d482d9d"]
+      }
+    ],
+    "inputs": {
+      "references": [
+        {
+          "type": "image",
+          "assetId": "8a45e8c0348217b1ef3da6889a97ab3ba5fb0dde3280b36128ffd34a922bed94",
+          "source": "el-44254dba-4c56-43ea-a3e1-bc00adc8b6b1"
+        },
+        {
+          "type": "image",
+          "assetId": "4bb9aff965e9347ae8670b31b67b21dfd6cf07fb7e533d29b44f82007d482d9d",
+          "source": "el-49074b94-0227-4941-9709-523fc523e501"
+        }
+      ]
+    },
+    "calls": [
+      {
+        "key": "c11bb52d549b110a909746b7bdd866f79902375075f7127644db3519965fcdcd#0",
+        "state": "done",
+        "assets": [
+          {
+            "assetId": "27ccc0cb83a7ff4f1c5de6b9f59a73617d611e9938715c081fde78476bfc3c3b",
+            "kind": "image",
+            "mime": "image/jpeg"
+          }
+        ],
+        "usage": {
+          "images": 1
+        }
+      }
+    ]
+  },
+  "checks": [
+    "在真实界面复制全流程选区到新画布，素材与连线随副本导入",
+    "目标画布再复制出同名角色，原镜头引用自动消歧",
+    "明确使用 #2/青年/日常/开心，实际输入预览包含序号和档案",
+    "冻结执行输入的角色 elementId 指向原角色副本，包含原肖像与场景两张去重素材",
+    "Seedream 实际执行成功，attempts=1，界面显示新候选",
+    "视觉核对短黑发、眼镜、橙色雨衣、木桌与水杯",
+    "点击带序号的引用准确定位到有原肖像输入的角色，刷新后提示词与结果保留"
+  ],
+  "boundaries": [
+    "真实生成验证现有青年/日常/开心档案；不同角色与时期的差异素材选择由隔离回归验证",
+    "未进行人工创作验收或交付确认",
+    "未提交代码"
+  ],
+  "automatedChecks": {
+    "unitTests": 95,
+    "browserCases": 22,
+    "coverage": [
+      "结构化跨画布剪贴板、撤销重做和刷新",
+      "同名角色及不同档案时期的差异素材",
+      "必需参考、分镜绑定与序列来源 id 映射",
+      "缺失外部引用不会借用同名素材，生成预检阻断",
+      "档案缩略图与重名序号显示",
+      "用户模板保存与重新铺出保留引用元数据"
+    ]
+  }
+}

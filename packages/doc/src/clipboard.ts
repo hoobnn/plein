@@ -11,6 +11,8 @@ export interface ClipboardData {
   elements: CanvasElement[]
   /** 两端都在 elements 里的边 */
   edges: Edge[]
+  /** 产品层的可选复制元数据；旧剪贴板仍可读取 */
+  extensions?: Record<string, unknown>
 }
 
 export function isClipboardData(v: unknown): v is ClipboardData {
@@ -48,6 +50,8 @@ export interface ImportOptions {
   dy?: number
   /** 顶层元素放进的容器；坐标会换算为它的局部坐标 */
   parentId?: string | null
+  /** 内部 id 已重映射，仍在同一次撤销事务内 */
+  onImport?: (ids: ReadonlyMap<string, string>) => void
 }
 
 /** 以新 id 导入，保留层级、相对顺序和内部连线。返回顶层元素的新 id */
@@ -115,6 +119,7 @@ export function importElements(
       const keys = generateNKeysBetween(null, null, list.length)
       list.forEach((edge, i) => doc.edgeMap.set(edge.id, { ...edge, order: keys[i]! }))
     }
+    opts.onImport?.(remap)
   }, doc.origin)
   return roots
 }

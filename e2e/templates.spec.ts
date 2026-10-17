@@ -30,7 +30,12 @@ test('分组存为模板，从「我的模板」铺回画布，不要了可以�
   await contextMenu(page, frame.id, '存为模板…')
   const dialog = page.getByRole('dialog', { name: '存为模板' })
   await dialog.getByRole('textbox').fill(name)
+  const saved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith('/api/templates') && response.request().method() === 'POST',
+  )
   await dialog.getByRole('button', { name: '保存' }).click()
+  expect((await (await saved).json()).data.extensions).toHaveProperty('plein/mentions')
   await expect(page.locator('.ui-toast')).toContainText(`已存为模板「${name}」`)
 
   const before = (await elements(page)).length
