@@ -1,6 +1,6 @@
 # Plein
 
-> Plein is an open-source (AGPL-3.0) AI infinite canvas for making short dramas. Idea, script, characters, storyboard, shot images, video, voiceover and the final cut are wired nodes on one canvas; every step can be reviewed, edited and re-run on its own. Plein 是开源的 AI 无限画布，为短剧创作而生。
+> Plein is an open-source (AGPL-3.0) AI infinite canvas where stories unfold, currently built for making short dramas. Idea, script, characters, storyboard, shot images, video, voiceover and the final cut are wired nodes on one canvas; every step can be reviewed, edited and re-run on its own. Plein：开源 AI 无限画布，让故事在这里展开。从一句创意开始，剧本、分镜、镜头与配音在画布上铺开，和 AI Agent 一起完成你的作品。
 
 Key facts:
 
