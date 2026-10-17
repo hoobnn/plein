@@ -177,3 +177,55 @@ test('命名检查点预览只读且恢复新画布保留原版本，原画布�
     await page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.prompt, source.nodeId),
   ).toBe('保存后的第二版提示词')
 })
+
+test('素材缩略图失败仍可查看原图，刷新和原图重试可恢复预览', async ({ page }, testInfo) => {
+  await newProject(page)
+  const source = await image(page, '缩略图失败恢复专用')
+  const assetId = await page.evaluate(
+    (id) => window.__plein.engine.doc.get(id)!.results![0]!.value.assetId as string,
+    source.nodeId,
+  )
+  let thumbnailFailed = true
+  let originalFailed = true
+  await page.route(`**/api/assets/${assetId}/thumb-*`, (route) =>
+    thumbnailFailed ? route.fulfill({ status: 503 }) : route.continue(),
+  )
+  await page.route(`**/api/assets/${assetId}`, (route) =>
+    originalFailed ? route.fulfill({ status: 503 }) : route.continue(),
+  )
+  await page.getByRole('button', { name: '素材', exact: true }).click()
+  const panel = page.getByRole('dialog', { name: '素材', exact: true })
+  await panel.getByRole('searchbox', { name: '搜索素材' }).fill('缩略图失败恢复专用')
+  const card = panel.getByRole('button', { name: /查看素材 / }).first()
+  await expect(card).toContainText('缩略图暂不可用')
+  await card.click()
+  const openPreview = panel.getByRole('button', { name: '放大查看素材' })
+  await expect(openPreview).toContainText('缩略图暂不可用')
+  await page.screenshot({
+    path: testInfo.outputPath('thumbnail-failure.png'),
+    animations: 'disabled',
+  })
+  await openPreview.click()
+  const preview = page.getByRole('dialog', { name: '素材预览' })
+  await expect(preview.getByRole('alert')).toContainText('素材加载失败')
+  await page.screenshot({
+    path: testInfo.outputPath('original-failure.png'),
+    animations: 'disabled',
+  })
+  originalFailed = false
+  await preview.getByRole('button', { name: '重试加载', exact: true }).click()
+  await expect
+    .poll(() => preview.locator('img').evaluate((img) => (img as HTMLImageElement).naturalWidth))
+    .toBeGreaterThan(0)
+  await preview.getByRole('button', { name: '关闭', exact: true }).click()
+  thumbnailFailed = false
+  await panel.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect
+    .poll(() => card.locator('img').evaluate((img) => (img as HTMLImageElement).naturalWidth))
+    .toBeGreaterThan(0)
+  await card.click()
+  await openPreview.click()
+  await expect
+    .poll(() => preview.locator('img').evaluate((img) => (img as HTMLImageElement).naturalWidth))
+    .toBeGreaterThan(0)
+})

@@ -1,5 +1,5 @@
 import type { MediaLibraryItem, MediaLibraryPage, MediaSource, Project } from '@plein/protocol'
-import { useEffect, useRef, useState } from 'react'
+import { type CSSProperties, useEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
 import { elementFor } from '../../canvas/import'
 import { placeElement } from '../../canvas/nodes'
@@ -230,13 +230,12 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
                       {asset.kind === 'audio' ? (
                         <Icon name="audio" size={24} />
                       ) : (
-                        <img
+                        <MediaImage
                           src={assetUrls.variant(
                             asset.id,
                             asset.kind === 'video' ? 'poster' : 'thumb-256',
                           )}
                           alt=""
-                          loading="lazy"
                           className="h-full w-full object-contain"
                         />
                       )}
@@ -358,7 +357,7 @@ function MediaDetail({
           onClick={onPreview}
           className="overflow-hidden rounded-lg bg-canvas"
         >
-          <img
+          <MediaImage
             src={assetUrls.variant(asset.id, asset.kind === 'video' ? 'poster' : 'thumb-1024')}
             alt={asset.name}
             className="max-h-52 w-full object-contain"
@@ -505,14 +504,61 @@ function MediaPreview({ asset, onClose }: { asset: MediaLibraryItem; onClose(): 
             className="max-h-full max-w-full"
           />
         ) : (
-          <img
+          <MediaImage
             src={assetUrls.original(asset.id)}
             alt={asset.name}
+            retry
             style={{ width: `${scale * 100}%`, maxWidth: 'none' }}
             className="flex-none object-contain"
           />
         )}
       </div>
     </Modal>
+  )
+}
+
+/** 缩略图失败不妨碍打开原文件；原图失败时提供显式重试，避免空白预览。 */
+function MediaImage({
+  src,
+  alt,
+  className,
+  style,
+  retry = false,
+}: {
+  src: string
+  alt: string
+  className: string
+  style?: CSSProperties
+  retry?: boolean
+}) {
+  const [failed, setFailed] = useState(false)
+  if (failed)
+    return (
+      <span
+        role={retry ? 'alert' : undefined}
+        className="flex min-h-24 w-full flex-col items-center justify-center gap-2 p-3 text-sm text-ink-subtle"
+      >
+        <Icon name="image" size={24} />
+        <span>{retry ? '素材加载失败' : '缩略图暂不可用'}</span>
+        {retry && (
+          <button
+            type="button"
+            className="ui-btn ui-btn-sm ui-btn-secondary"
+            onClick={() => setFailed(false)}
+          >
+            重试加载
+          </button>
+        )}
+      </span>
+    )
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      className={className}
+      style={style}
+      onError={() => setFailed(true)}
+    />
   )
 }
