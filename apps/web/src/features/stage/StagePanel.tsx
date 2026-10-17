@@ -276,6 +276,9 @@ export function StagePanel({
     const v = view.current
     if (!v || busy) return
     setBusy(true)
+    const report = (message: string) => {
+      if (useCanvas.getState().engine === engine) notify(message)
+    }
     try {
       // PNG 编码是异步的：来源与采用基线在渲染前冻结，不能记录成等待后的新场景。
       v.finishCamera()
@@ -285,13 +288,13 @@ export function StagePanel({
       v.setScene(captured)
       const blob = await v.snapshot()
       const shot = await saveSnapshot(engine.doc, id, captured, blob, baseline)
-      notify(
+      report(
         shot.adopted
           ? `已截图（第 ${shot.rev} 版场景），下游连线用这张`
           : `已截图（第 ${shot.rev} 版场景），保存为候选，当前采用的画面未改变`,
       )
     } catch (err) {
-      notify(`截图没有成功：${(err as Error).message}`)
+      report(`截图没有成功：${(err as Error).message}`)
     } finally {
       setBusy(false)
     }

@@ -33,6 +33,7 @@ export async function saveSnapshot(
   baseline = { resultId: doc.get(id) ? currentResult(doc.get(id)!, 'image')?.id : undefined },
 ) {
   const writable = () => {
+    if (doc.ydoc.isDestroyed) throw new Error('画布已经关闭，请重新打开构图后截图')
     if (doc.readOnly) throw new ReadOnlyDocError()
     if (doc.get(id)?.nodeType !== STAGE_TYPE) throw new Error('3D 构图节点已经不在画布上了')
   }

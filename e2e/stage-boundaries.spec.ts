@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { StageScene, stageSceneOf } from '../packages/nodes/src/stage'
-import { addNode, centerOf, elements, newProject, zoomTo } from './canvas'
+import { addNode, centerOf, elements, newProject, waitEngine, zoomTo } from './canvas'
 
 async function openStage(page: Page) {
   await newProject(page)
@@ -957,4 +957,44 @@ test('3D 快速关闭后打开另一个节点，选择和操作不串场景', as
   await dialog.getByRole('button', { name: '指向', exact: true }).click()
   expect((await read(second.id)).figures[0]!.pose).toBe('point')
   expect(await read(first.id)).toEqual(before)
+})
+
+test('3D 编码期间切换画布，旧任务不上传、不提示新画布且可重新截图', async ({ page }) => {
+  const errors: string[] = []
+  const uploads: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/assets')
+      uploads.push(request.url())
+  })
+  const { stage, dialog } = await openStage(page)
+  const firstUrl = page.url()
+  const gate = await delayEncoding(page)
+  await dialog.getByRole('button', { name: '截图', exact: true }).click()
+  await gate.wait()
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.getByRole('button', { name: '切换画布' }).click()
+  await page.getByRole('button', { name: '新建画布', exact: true }).click()
+  await page.getByRole('dialog').getByRole('textbox').fill('截图等待后切换')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('button', { name: '切换画布' })).toHaveText('截图等待后切换')
+  await waitEngine(page)
+  await gate.finish()
+  // 微任务中的旧截图恢复后不应向新画布报成功或失败。
+  await expect(page.getByText(/截图没有成功|已截图（/)).toHaveCount(0)
+  expect(await elements(page)).toHaveLength(0)
+  expect(uploads).toHaveLength(0)
+  await page.evaluate((url) => {
+    location.hash = new URL(url).hash
+  }, firstUrl)
+  await waitEngine(page)
+  await zoomTo(page, [stage.id])
+  const at = await centerOf(page, stage.id)
+  await page.mouse.dblclick(at.x, at.y)
+  await expect(dialog.locator('canvas.stage-canvas')).toBeVisible()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(0)
+  await dialog.getByRole('button', { name: '截图', exact: true }).click()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(1)
+  expect(uploads).toHaveLength(1)
+  expect(errors).toEqual([])
 })

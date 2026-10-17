@@ -57,6 +57,25 @@ function setup() {
 }
 
 describe('3D 截图保存', () => {
+  it('编码期间关闭画布，拒绝上传到已经销毁的文档', async () => {
+    const { doc, id, scene } = setup()
+    doc.destroy()
+    doc.ydoc.destroy()
+    await expect(saveSnapshot(doc, id, scene, new Blob())).rejects.toThrow('画布已经关闭')
+    expect(api.upload).not.toHaveBeenCalled()
+  })
+
+  it('上传期间关闭画布，迟到结果不再写入已断开的文档', async () => {
+    const { doc, id, scene, finish } = setup()
+    const run = saveSnapshot(doc, id, scene, new Blob())
+    const before = Y.encodeStateAsUpdate(doc.ydoc)
+    doc.destroy()
+    doc.ydoc.destroy()
+    finish()
+    await expect(run).rejects.toThrow('画布已经关闭')
+    expect(Y.encodeStateAsUpdate(doc.ydoc)).toEqual(before)
+  })
+
   it('候选达到上限时保留已采用截图的来源，来源列表与保留结果一致且可重新打开', async () => {
     const { doc, id, scene } = setup()
     vi.mocked(api.upload).mockResolvedValue({ id: 'uploaded' } as Awaited<
