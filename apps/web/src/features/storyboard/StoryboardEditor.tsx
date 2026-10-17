@@ -10,6 +10,8 @@ import {
 } from '@plein/nodes'
 import { useEffect, useState } from 'react'
 import { useDocVersion } from '../../canvas/hooks'
+import { mentionTargets } from '../../canvas/nodes'
+import { MentionTextarea } from '../../ui/MentionTextarea'
 import { detachShot, expandedNodes, expandShots, planDiffs, shotsOf } from './model'
 import type { StoryboardBatchRequest } from '@plein/protocol'
 import { useCanvas } from '../../stores/canvas'
@@ -549,6 +551,7 @@ function TextCell({
   onChange(v: string): void
   children?: React.ReactNode
 }) {
+  const engine = useCanvas((s) => s.engine)
   const [draft, setDraft] = useState(value)
   const [focused, setFocused] = useState(false)
   useEffect(() => {
@@ -556,7 +559,14 @@ function TextCell({
   }, [value, focused])
   return (
     <td className="px-1 py-1">
-      <textarea
+      <MentionTextarea
+        targets={engine ? mentionTargets(engine) : []}
+        onLocate={(id) => {
+          if (!engine?.doc.has(id)) return
+          useCanvas.getState().openStoryboard(null)
+          engine.selection.set([id])
+          engine.zoomToFit([id])
+        }}
         aria-label={label}
         rows={2}
         className={`${cell} field-sizing-content min-h-9`}

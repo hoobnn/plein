@@ -9,12 +9,14 @@ import {
   profileSize,
   STAGE_TYPE,
   STORYBOARD_TYPE,
+  type MentionTarget,
 } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useCatalog } from '../stores/catalog'
 import { type StaleKind, useStale } from '../features/runs/stale'
 import { type IconName, iconElement } from '../ui/icons'
-import { findNode, isPure, promptKey, targetImages } from './nodes'
+import { findNode, isPure, promptKey, targetImages, mentionTargets } from './nodes'
+import { renderMentionText } from './mentionText'
 import {
   clock,
   describeActive,
@@ -124,6 +126,8 @@ function glyphOf(el: CanvasElement, kind: string): IconName {
  * 卡片本身不接收指针事件（拖动、选择照常交给画布），只有按钮可点。
  */
 export class NodeCards {
+  private mentions: MentionTarget[] = []
+  private mentionKey = ''
   private cards = new Map<string, Card>()
   private disposers: Array<() => void> = []
   /** 有节点在运行时每秒走一次：已用时长、重试倒计时 */
@@ -149,6 +153,10 @@ export class NodeCards {
 
   sync(content = true) {
     const { engine } = this
+    if (content) {
+      this.mentions = mentionTargets(engine)
+      this.mentionKey = JSON.stringify(this.mentions)
+    }
     const want = new Set<string>()
     if (engine.highDetail) {
       for (const id of engine.visibleIds) {
@@ -273,6 +281,9 @@ export class NodeCards {
       Boolean(info),
       board ? el.params?.shots : undefined,
       el.params?.profile,
+      key || info?.outputs[0]?.type === 'text' || ASSET_NODE_TYPES.has(el.nodeType ?? '')
+        ? this.mentionKey
+        : undefined,
     ])
     if (sig === card.sig) return
     card.sig = sig
@@ -327,7 +338,15 @@ export class NodeCards {
       }
       if (!thumbs.length) strip.textContent = '从左侧连入 2–4 张多角度参考图'
       const text = document.createElement('div')
-      text.textContent = String(el.params?.description ?? '') || '在下方写设定'
+      renderMentionText(
+        text,
+        String(el.params?.description ?? '') || '在下方写设定',
+        this.mentions.filter((t) => t.id !== el.id),
+        (id) => {
+          this.engine.selection.set([id])
+          this.engine.zoomToFit([id])
+        },
+      )
       text.className = el.params?.description ? '' : 'plein-node-muted'
       card.body.replaceChildren(strip, ...profileRow(el), text)
       card.body.classList.add('is-text')
@@ -354,7 +373,15 @@ export class NodeCards {
       card.body.classList.add('is-text')
     } else if (key) {
       const text = String(el.params?.[key] ?? '')
-      card.body.textContent = text || '双击写下文本，连到下游节点'
+      renderMentionText(
+        card.body,
+        text || '双击写下文本，连到下游节点',
+        this.mentions.filter((t) => t.id !== el.id),
+        (id) => {
+          this.engine.selection.set([id])
+          this.engine.zoomToFit([id])
+        },
+      )
       card.body.classList.add('is-text')
       card.body.classList.toggle('is-hint', !text)
     } else if (active) {
@@ -362,7 +389,15 @@ export class NodeCards {
     } else if (run?.status === 'failed') {
       this.renderFailed(card, el, run)
     } else if (v?.type === 'text') {
-      card.body.textContent = v.text
+      renderMentionText(
+        card.body,
+        v.text,
+        this.mentions.filter((t) => t.id !== el.id),
+        (id) => {
+          this.engine.selection.set([id])
+          this.engine.zoomToFit([id])
+        },
+      )
       card.body.classList.add('is-text')
     } else if (v?.type === 'json') {
       card.body.textContent = JSON.stringify(v.value, null, 2)

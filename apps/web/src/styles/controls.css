@@ -1,3 +1,51 @@
+/* 轻量行内标签，不增加字宽，保持与原生输入完全相同的换行。 */
+.plein-mention {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent);
+  text-decoration: none;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.plein-mention[data-state="warning"],
+.plein-mention[data-state="missing"] {
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+  color: var(--warning);
+  outline: 1px dashed color-mix(in srgb, var(--warning) 35%, transparent);
+  outline-offset: -1px;
+}
+.plein-mention[role="button"] {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.plein-mention[role="button"]:hover,
+.plein-mention[role="button"]:focus-visible {
+  background: var(--accent-soft);
+  outline: 1px solid var(--accent);
+}
+.plein-mention-input textarea {
+  color: transparent;
+  caret-color: var(--ink);
+}
+.plein-mention-layer {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--ink);
+}
+.plein-mention-layer > div {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+@media (forced-colors: active) {
+  .plein-mention-input textarea {
+    color: CanvasText;
+  }
+  .plein-mention-layer {
+    display: none;
+  }
+}
+
 /* ── 通用控件 ─────────────────────────────────────── */
 @layer components {
   /* 浮动材质：页头、底部工具条、生成器、结果工具条 */

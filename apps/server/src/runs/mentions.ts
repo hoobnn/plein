@@ -197,14 +197,14 @@ export async function applyMentions(
         priority,
         images: [{ type: 'image', assetId: target.assetId, kind: 'image', source: target.id }],
       })
-      refList.push({ name: h.name, elementId: target.id, assetIds: [target.assetId] })
-      details.push(detail(target, h.name, priority, [target.assetId]))
+      refList.push({ name: label(h), elementId: target.id, assetIds: [target.assetId] })
+      details.push(detail(target, label(h), priority, [target.assetId]))
       continue
     }
     const description = pickNotes(String(target.params?.description ?? ''), h.pick)
     if (description) notes.push(`${label(h)}：${description}`)
     const v = pickVoice(h.pick, voiceOf(target.params))
-    if (hasVoice(v)) voices.push({ name: pickLabel(h.name, h.pick), voice: v })
+    if (hasVoice(v)) voices.push({ name: label(h), voice: v })
     const own = await collect(target.id)
     const base = (own.references ?? []).filter((v) => v.type === 'image')
     if (base.length === 0 && referenceFailed(doc, target.id)) failedRefs.add(target.id)
@@ -223,11 +223,11 @@ export async function applyMentions(
     const rank = RANK.indexOf(target.nodeType ?? '')
     groups.push({ rank: rank < 0 ? RANK.length : rank, priority, images })
     refList.push({
-      name: pickLabel(h.name, h.pick),
+      name: label(h),
       elementId: target.id,
       assetIds: imageIds(images),
     })
-    details.push(detail(target, pickLabel(h.name, h.pick), priority, imageIds(images)))
+    details.push(detail(target, label(h), priority, imageIds(images)))
   }
 
   const prompt = ['prompt', 'text'].find((k) => typeof params[k] === 'string')

@@ -9,6 +9,16 @@ import {
 } from './mentions'
 
 describe('@ 引用', () => {
+  it('含空格的角色名可以继续补全档案，正文空白不延长查询', () => {
+    const spaced = [{ id: 'a', name: '小岚 · 引用' }]
+    expect(mentionQuery('@小岚 · 引用/少', 10, spaced)?.query).toBe('小岚 · 引用/少')
+    expect(mentionQuery('@小岚 · 引用 走来', 11, spaced)).toBeNull()
+    expect(
+      findMentions('@小岚/不存在', [
+        { id: 'a', name: '小岚', profile: { periods: [], expressions: [] } },
+      ])[0]?.profileMiss,
+    ).toBe('不存在')
+  })
   const targets: MentionTarget[] = [
     { id: 'a', name: '林夏' },
     { id: 'b', name: '林夏夏' },

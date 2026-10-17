@@ -7,6 +7,7 @@ import {
   matchProfile,
   mentionQuery,
   pickLabel,
+  pickImages,
   profileOptions,
   SLOT_LABELS,
   slashQuery,
@@ -18,6 +19,8 @@ import { Modal, ModalHeader } from '../../ui/Modal'
 import { Presence } from '../../ui/Presence'
 import { assetUrls } from '../../api/client'
 import { Icon } from '../../ui/icons'
+import { MentionTextarea } from '../../ui/MentionTextarea'
+import { mentionParts } from '../../canvas/mentionText'
 import { mentionTargets, targetImages } from '../../canvas/nodes'
 
 export type PromptPreset = Catalog['prompts'][number]
@@ -109,11 +112,12 @@ export function PromptBox({
       : []
   const count = mentionOptions.length + presetOptions.length + profileOpts.length
   const mentions = findMentions(shown, targets)
+  const missing = mentionParts(shown, targets).filter((p) => p.missing)
 
   const detect = (text: string, caret: number) => {
     const slash = presets.length ? slashQuery(text, caret) : null
     if (slash) return { kind: '/' as const, ...slash }
-    const at = mentionQuery(text, caret)
+    const at = mentionQuery(text, caret, targets)
     return at && { kind: '@' as const, ...at }
   }
   const update = (text: string, caret: number) => {
@@ -167,7 +171,13 @@ export function PromptBox({
 
   return (
     <div className="relative">
-      <textarea
+      <MentionTextarea
+        targets={targets}
+        onLocate={(id) => {
+          if (!engine.doc.has(id)) return
+          engine.selection.set([id])
+          engine.zoomToFit([id])
+        }}
         ref={ref}
         aria-label="提示词"
         value={shown}
@@ -238,9 +248,19 @@ export function PromptBox({
           </Modal>
         )}
       </Presence>
-      {mentions.length > 0 && (
+      {(mentions.length > 0 || missing.length > 0) && (
         <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2 text-xs text-ink-subtle">
           引用
+          {[...new Map(missing.map((p) => [p.text, p])).values()].map((part) => (
+            <span
+              key={part.text}
+              title={part.warning}
+              className="inline-flex items-center gap-1 text-warning"
+            >
+              <Icon name="warning" size={12} />
+              未找到：{part.text}
+            </span>
+          ))}
           {[
             ...new Map(
               mentions.flatMap((m) => [
@@ -262,13 +282,18 @@ export function PromptBox({
             }
             const target = engine.doc.get(m.id)
             if (!target) return null
-            const label = pickLabel(m.name, m.pick ?? {})
+            const label = pickLabel(m.total > 1 ? `${m.name}#${m.index}` : m.name, m.pick ?? {})
             const warn = m.profileMiss
               ? `「${m.name}」的档案里没有「${m.profileMiss}」`
               : m.profileConflict
             return (
               <span key={`${m.id}:${label}`} className="contents">
-                <MentionChip engine={engine} name={label} target={target} />
+                <MentionChip
+                  engine={engine}
+                  name={label}
+                  target={target}
+                  imageId={pickImages(m.pick ?? {}, targetImages(engine, target))[0]}
+                />
                 {warn && (
                   <span className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-1.5 py-0.5 text-warning">
                     <Icon name="warning" size={12} />
@@ -367,12 +392,23 @@ const SLOT_ICONS = {
 function targetKind(t: CanvasElement) {
   if (t.nodeType === 'plein/character') return '角色'
   if (t.nodeType === 'plein/scene') return '场景'
+  if (t.nodeType === 'plein/prop') return '道具'
+  if (t.nodeType === 'plein/style') return '风格'
+  if (t.nodeType === 'plein/effect') return '特效'
   return '图片'
 }
 
 /** 被引用资产的 24 小图：第一张参考图，没有时是灰底占位 */
-function Thumb({ engine, target }: { engine: Engine; target: CanvasElement }) {
-  const id = targetImages(engine, target)[0]
+function Thumb({
+  engine,
+  target,
+  imageId,
+}: {
+  engine: Engine
+  target: CanvasElement
+  imageId?: string
+}) {
+  const id = imageId ?? targetImages(engine, target)[0]
   return id ? (
     <img
       src={assetUrls.variant(id, 'thumb-256')}
@@ -389,10 +425,12 @@ function MentionChip({
   engine,
   name,
   target,
+  imageId,
 }: {
   engine: Engine
   name: string
   target: CanvasElement
+  imageId?: string
 }) {
   return (
     <button
@@ -402,9 +440,9 @@ function MentionChip({
         engine.selection.set([target.id])
         engine.zoomToFit([target.id])
       }}
-      className="flex h-7 items-center gap-1.5 rounded-md bg-accent-soft pr-2 pl-0.5 text-accent hover:brightness-110"
+      className="flex h-7 items-center gap-1.5 rounded-md bg-surface-2 pr-2 pl-0.5 text-ink-muted hover:bg-accent-soft hover:text-accent"
     >
-      <Thumb engine={engine} target={target} />
+      <Thumb engine={engine} target={target} imageId={imageId} />
       {name}
     </button>
   )

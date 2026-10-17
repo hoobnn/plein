@@ -207,7 +207,8 @@ describe('重名不静默', () => {
     const r = await applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc))
     const desc = doc.get(second!)!.params!.description
     expect(r.params.prompt).toBe(`林夏站在天台\n\n设定：\n林夏#2：${desc}`)
-    expect(r.refs).toEqual([{ name: '林夏', elementId: second, assetIds: [] }])
+    expect(r.refs).toEqual([{ name: '林夏#2', elementId: second, assetIds: [] }])
+    expect(r.details[0]?.name).toBe('林夏#2')
     expect(doc.get(a)!.name).toBe('林夏')
   })
 

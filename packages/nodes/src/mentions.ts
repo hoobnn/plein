@@ -4,11 +4,11 @@
  * 中文没有空格分词，取 @ 后能匹配上的最长名字。
  *
  * 重名必须显式消歧：画布上有两个“林夏”时，`@林夏` 不猜哪个生效，
- * 要写成 `@林夏#2`（序号按画布上元素的先后，1 起）。名字被改掉后引用会断链，
+ * 要写成 `@林夏#2`（序号按元素 id 排序，1 起）。名字被改掉后引用会断链，
  * 这时把可能的新名字找出来提示用户改，而不是悄悄当成普通文字。
  */
 
-import { type CharacterProfile, matchProfile, type ProfilePick, profileEmpty } from './profile'
+import { type CharacterProfile, matchProfile, type ProfilePick } from './profile'
 
 /** @ 后到这些字符为止 */
 const STOP = /[\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]/
@@ -96,10 +96,7 @@ export function findMentions(text: string, targets: readonly MentionTarget[]): A
     // 重名又没写序号时不猜：id 留空，交给调用方提示用户消歧
     const target = picked ?? (index === undefined && list.length === 1 ? list[0] : undefined)
     const end = i + 1 + name.length + (asked ? asked[0].length : 0)
-    const profile =
-      target?.profile && !profileEmpty(target.profile)
-        ? matchProfile(text.slice(end), target.profile)
-        : undefined
+    const profile = target?.profile ? matchProfile(text.slice(end), target.profile) : undefined
     out.push({
       start: i,
       end: end + (profile?.length ?? 0),
@@ -197,7 +194,16 @@ export function mentionQuery(
   const at = before.lastIndexOf('@')
   if (at < 0) return null
   const query = before.slice(at + 1)
-  if (STOP.test(query)) return null
+  if (
+    STOP.test(query) &&
+    !targets.some(
+      (t) =>
+        !/[\r\n]/.test(query) &&
+        (t.name.startsWith(query) ||
+          (query.startsWith(t.name) && !STOP.test(query.slice(t.name.length)))),
+    )
+  )
+    return null
   const byName = groupByName(targets)
   const candidates: MentionCandidate[] = []
   // 重名时一个目标给一条候选：用户要指明是哪一个，光给名字没用
