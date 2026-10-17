@@ -14,7 +14,12 @@ export function StageEditor() {
     <Presence>
       {engine && id && engine.doc.get(id) && (
         <Suspense fallback={null}>
-          <StagePanel engine={engine} id={id} onClose={close} />
+          <StagePanel
+            key={`${engine.doc.ydoc.guid}:${id}`}
+            engine={engine}
+            id={id}
+            onClose={close}
+          />
         </Suspense>
       )}
     </Presence>

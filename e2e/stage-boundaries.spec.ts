@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { StageScene } from '../packages/nodes/src/stage'
+import { StageScene, stageSceneOf } from '../packages/nodes/src/stage'
 import { addNode, centerOf, elements, newProject, zoomTo } from './canvas'
 
 async function openStage(page: Page) {
@@ -921,4 +921,40 @@ test('3D 混合场景件改尺寸旋转后可截图，删除及撤销保留构�
   await dialog.getByRole('button', { name: '撤销构图操作', exact: true }).click()
   expect((await read()).blocks).toEqual(scene.blocks)
   await expect(dialog.locator('.stage-shot')).toHaveCount(1)
+})
+
+test('3D 快速关闭后打开另一个节点，选择和操作不串场景', async ({ page }) => {
+  await newProject(page)
+  await addNode(page, '3D 构图')
+  const first = (await elements(page)).find((e) => e.nodeType === 'plein/stage')!
+  await page.keyboard.press('Escape')
+  await addNode(page, '3D 构图')
+  const second = (await elements(page)).find(
+    (e) => e.nodeType === 'plein/stage' && e.id !== first.id,
+  )!
+  await page.keyboard.press('Escape')
+  await zoomTo(page, [first.id, second.id])
+  const a = await centerOf(page, first.id)
+  const b = await centerOf(page, second.id)
+  await page.mouse.dblclick(a.x, a.y)
+  const dialog = page.getByRole('dialog', { name: '3D 构图' })
+  await expect(dialog.locator('canvas.stage-canvas')).toBeVisible()
+  await dialog.getByRole('button', { name: '添加人物', exact: true }).click()
+  await dialog.getByRole('textbox', { name: '名字', exact: true }).fill('甲的第二个人物')
+  await dialog.getByRole('button', { name: '坐', exact: true }).click()
+  await dialog.getByRole('button', { name: '自由视角', exact: true }).click()
+  const read = async (id: string) =>
+    stageSceneOf(await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params, id))
+  const before = await read(first.id)
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  // 不等待上一面板的退场动画，直接打开另一个节点。
+  await page.mouse.dblclick(b.x, b.y)
+  await expect(dialog.getByRole('textbox', { name: '名字', exact: true })).toHaveValue('人物 1')
+  await expect(dialog.getByRole('button', { name: '机位视角', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await dialog.getByRole('button', { name: '指向', exact: true }).click()
+  expect((await read(second.id)).figures[0]!.pose).toBe('point')
+  expect(await read(first.id)).toEqual(before)
 })
