@@ -4,22 +4,17 @@ import { useCanvas } from '../stores/canvas'
 import { dramaNotice, placeDramaTemplate } from './drama'
 import { findNode, nodeElement, placeElement } from './nodes'
 import { focusGenerator } from './presets'
+import { DRAMA_START, takeStartNode } from './startQueue'
+export { DRAMA_START, queueStartNode } from './startQueue'
 
 /** 新画布上铺短剧模板（首次启动引导的“从短剧模板开始”） */
-export const DRAMA_START = 'builtin/drama'
 
 /** 首页“快速开始”：新建画布后要放下的节点，打开画布时取走（同一页面内跳转，放内存即可） */
-const pending = new Map<string, string>()
-
-export function queueStartNode(canvasId: string, nodeType: string) {
-  pending.set(canvasId, nodeType)
-}
 
 /** 画布和节点目录都就绪后调用：在视口中央放下节点、选中并聚焦生成器 */
 export function placeStartNode(engine: Engine, catalog: Catalog, canvasId: string) {
-  const type = pending.get(canvasId)
+  const type = takeStartNode(canvasId)
   if (!type) return
-  pending.delete(canvasId)
   if (type === DRAMA_START) {
     const c = engine.camera.viewRect
     const r = placeDramaTemplate(engine, catalog, { x: c.x + 80, y: c.y + 80 })

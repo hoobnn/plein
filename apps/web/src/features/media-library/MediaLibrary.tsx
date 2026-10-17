@@ -1,0 +1,519 @@
+import { createElement } from '@plein/doc'
+import type { MediaLibraryItem, MediaLibraryPage, MediaSource, Project } from '@plein/protocol'
+import { useEffect, useRef, useState } from 'react'
+import { api, assetUrls } from '../../api/client'
+import { elementFor } from '../../canvas/import'
+import { navigate } from '../../router'
+import { useCanvas } from '../../stores/canvas'
+import { EmptyState } from '../../ui/EmptyState'
+import { bytes, fullTime } from '../../ui/format'
+import { Icon } from '../../ui/icons'
+import { Modal, ModalHeader } from '../../ui/Modal'
+import { Presence } from '../../ui/Presence'
+import { Select } from '../../ui/Select'
+import { useLibrary } from '../library/store'
+import { mediaApi } from './client'
+import { useMediaLibrary } from './store'
+
+export function MediaLibraryPanel() {
+  const open = useMediaLibrary((s) => s.open),
+    target = useMediaLibrary((s) => s.target)
+  const engine = useCanvas((s) => s.engine),
+    canvasId = useCanvas((s) => s.canvasId),
+    sync = useCanvas((s) => s.sync)
+  useEffect(() => {
+    if (!target?.canvasId || target.canvasId !== canvasId || !engine || sync !== 'connected') return
+    if (target.nodeId && engine.doc.has(target.nodeId)) {
+      engine.selection.set([target.nodeId])
+      engine.zoomToFit([target.nodeId])
+    } else useCanvas.getState().notify('来源节点已不在画布上')
+    useMediaLibrary.getState().locate(null)
+  }, [target, engine, canvasId, sync])
+  return (
+    <Presence>
+      {open && <Panel key={open.projectId ?? 'all'} projectId={open.projectId} />}
+    </Presence>
+  )
+}
+
+function Panel({ projectId: initialProject }: { projectId?: string }) {
+  const close = () => useMediaLibrary.getState().close()
+  const [projectId, setProjectId] = useState(initialProject ?? '')
+  const [projects, setProjects] = useState<Project[]>([])
+  const [kind, setKind] = useState(''),
+    [query, setQuery] = useState(''),
+    [debounced, setDebounced] = useState('')
+  const [page, setPage] = useState<MediaLibraryPage>({ items: [], nextCursor: null })
+  const [selected, setSelected] = useState<MediaLibraryItem | null>(null)
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState(''),
+    [refresh, setRefresh] = useState(0)
+  const request = useRef<AbortController | null>(null)
+  const engine = useCanvas((s) => s.engine),
+    canvasId = useCanvas((s) => s.canvasId)
+  const [preview, setPreview] = useState(false)
+  const searching = query.trim() !== debounced
+  const visibleItems = searching ? [] : page.items
+  useEffect(() => () => request.current?.abort(), [])
+  useEffect(() => {
+    const controller = new AbortController()
+    api.projects().then(
+      (rows) => {
+        if (!controller.signal.aborted) setProjects(rows)
+      },
+      () => {},
+    )
+    return () => controller.abort()
+  }, [])
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(query.trim()), 250)
+    return () => clearTimeout(timer)
+  }, [query])
+  useEffect(() => {
+    request.current?.abort()
+    const controller = new AbortController()
+    request.current = controller
+    setBusy(true)
+    setError('')
+    setPage({ items: [], nextCursor: null })
+    setSelected(null)
+    mediaApi
+      .list(
+        { projectId: projectId || undefined, kind: kind || undefined, q: debounced },
+        controller.signal,
+      )
+      .then(
+        (result) => {
+          if (!controller.signal.aborted) setPage(result)
+        },
+        (reason: Error) => {
+          if (!controller.signal.aborted) setError(reason.message)
+        },
+      )
+      .finally(() => {
+        if (!controller.signal.aborted) setBusy(false)
+      })
+    return () => controller.abort()
+  }, [projectId, kind, debounced, refresh])
+  const more = async () => {
+    if (!page.nextCursor || busy) return
+    const controller = new AbortController()
+    request.current = controller
+    setBusy(true)
+    setError('')
+    try {
+      const result = await mediaApi.list(
+        {
+          projectId: projectId || undefined,
+          kind: kind || undefined,
+          q: debounced,
+          cursor: page.nextCursor,
+        },
+        controller.signal,
+      )
+      if (!controller.signal.aborted)
+        setPage((old) => ({
+          items: [...old.items, ...result.items],
+          nextCursor: result.nextCursor,
+        }))
+    } catch (reason) {
+      if (!controller.signal.aborted) setError((reason as Error).message)
+    } finally {
+      if (!controller.signal.aborted) setBusy(false)
+    }
+  }
+  const place = (asset: MediaLibraryItem) => {
+    if (!engine || !canvasId || engine.doc.readOnly) return
+    const input = elementFor(asset)
+    if (!input) return
+    const view = engine.camera.viewRect
+    const id = createElement(engine.doc, {
+      ...input,
+      x: Math.round(view.x + view.w / 2 - input.w / 2),
+      y: Math.round(view.y + view.h / 2 - input.h / 2),
+    })
+    engine.selection.set([id])
+    close()
+    engine.zoomToFit([id])
+    useCanvas.getState().notify(`已放入画布：${asset.name}`)
+  }
+  return (
+    <>
+      <Modal label="素材" onClose={close} isolateKeys className="h-[min(840px,100%)] max-w-6xl">
+        <ModalHeader
+          title="素材"
+          onClose={close}
+          meta={<span className="ui-tag">跨画布与项目复用</span>}
+        >
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary"
+            onClick={() => setRefresh((n) => n + 1)}
+            disabled={busy}
+          >
+            <Icon name="retry" />
+            刷新
+          </button>
+        </ModalHeader>
+        <div className="flex flex-wrap gap-2 border-b border-line px-5 py-3">
+          <label className="home-search flex-1">
+            <Icon name="search" />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索素材名称或来源"
+              aria-label="搜索素材"
+            />
+          </label>
+          <Select
+            aria-label="关联项目"
+            value={projectId}
+            onChange={setProjectId}
+            options={[
+              { value: '', label: '全部项目' },
+              ...projects.map((p) => ({ value: p.id, label: p.title })),
+            ]}
+            className="w-48"
+          />
+          <Select
+            aria-label="素材类型"
+            value={kind}
+            onChange={setKind}
+            options={[
+              { value: '', label: '全部类型' },
+              { value: 'image', label: '图片' },
+              { value: 'video', label: '视频' },
+              { value: 'audio', label: '音频' },
+            ]}
+            className="w-28"
+          />
+        </div>
+        {error && (
+          <div role="alert" className="px-5 py-3 text-sm text-danger">
+            {error}
+            <button
+              type="button"
+              className="ui-btn ui-btn-sm ui-btn-quiet ml-2"
+              onClick={() => setRefresh((n) => n + 1)}
+            >
+              重试
+            </button>
+          </div>
+        )}
+        <div className="flex min-h-0 flex-1">
+          <div
+            className="ui-scrollbar min-w-0 flex-1 overflow-y-auto p-5"
+            aria-busy={busy || searching}
+          >
+            {!visibleItems.length ? (
+              <EmptyState
+                icon="library"
+                title={busy || searching ? '正在读取素材…' : '没有找到素材'}
+                hint={
+                  busy || searching
+                    ? undefined
+                    : '可以调整筛选；导入和生成的图片、视频、音频都会在这里。'
+                }
+              />
+            ) : (
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+                {visibleItems.map((asset) => (
+                  <button
+                    type="button"
+                    key={asset.id}
+                    aria-label={`查看素材 ${asset.name}`}
+                    aria-pressed={selected?.id === asset.id}
+                    onClick={() => setSelected(asset)}
+                    className={`overflow-hidden rounded-xl border bg-surface-2 text-left transition-colors ${selected?.id === asset.id ? 'border-accent' : 'border-line hover:border-ink-subtle'}`}
+                  >
+                    <div className="flex aspect-video items-center justify-center overflow-hidden bg-canvas">
+                      {asset.kind === 'audio' ? (
+                        <Icon name="audio" size={24} />
+                      ) : (
+                        <img
+                          src={assetUrls.variant(
+                            asset.id,
+                            asset.kind === 'video' ? 'poster' : 'thumb-256',
+                          )}
+                          alt=""
+                          loading="lazy"
+                          className="h-full w-full object-contain"
+                        />
+                      )}
+                    </div>
+                    <div className="p-3">
+                      <span className="block truncate text-sm font-medium">{asset.name}</span>
+                      <span className="mt-1 block truncate text-xs text-ink-subtle">
+                        {bytes(asset.size)} ·{' '}
+                        {asset.sourceCount ? `${asset.sourceCount} 处来源` : '未关联到现存项目'}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            {page.nextCursor && !searching && (
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary mx-auto mt-5"
+                onClick={() => void more()}
+                disabled={busy}
+              >
+                {busy ? '读取中…' : '加载更多素材'}
+              </button>
+            )}
+          </div>
+          {selected && (
+            <div className="ui-scrollbar w-80 flex-none overflow-y-auto border-l border-line p-4">
+              <MediaDetail
+                key={selected.id}
+                asset={selected}
+                onPreview={() => setPreview(true)}
+                onPlace={() => place(selected)}
+                canPlace={!!engine && !!canvasId && !engine.doc.readOnly}
+                onClose={close}
+              />
+            </div>
+          )}
+        </div>
+      </Modal>
+      <Presence>
+        {preview && selected && <MediaPreview asset={selected} onClose={() => setPreview(false)} />}
+      </Presence>
+    </>
+  )
+}
+
+function MediaDetail({
+  asset,
+  onPreview,
+  onPlace,
+  canPlace,
+  onClose,
+}: {
+  asset: MediaLibraryItem
+  onPreview(): void
+  onPlace(): void
+  canPlace: boolean
+  onClose(): void
+}) {
+  const [sources, setSources] = useState<MediaSource[]>(asset.sources),
+    [cursor, setCursor] = useState<string | null>(null),
+    [error, setError] = useState('')
+  const [category, setCategory] = useState('character')
+  useEffect(() => {
+    const controller = new AbortController()
+    mediaApi.sources(asset.id, undefined, controller.signal).then(
+      (result) => {
+        setSources(result.items)
+        setCursor(result.nextCursor)
+      },
+      (reason: Error) => {
+        if (!controller.signal.aborted) setError(reason.message)
+      },
+    )
+    return () => controller.abort()
+  }, [asset.id])
+  const more = async () => {
+    try {
+      const result = await mediaApi.sources(asset.id, cursor ?? undefined)
+      setSources((old) => [...old, ...result.items])
+      setCursor(result.nextCursor)
+    } catch (reason) {
+      setError((reason as Error).message)
+    }
+  }
+  const locate = (source: MediaSource) => {
+    if (!source.locatable || !source.canvasId || !source.nodeId) return
+    useMediaLibrary.getState().locate(source)
+    if (useCanvas.getState().canvasId !== source.canvasId)
+      navigate({ name: 'canvas', id: source.canvasId })
+  }
+  const save = () => {
+    if (asset.kind === 'audio') return
+    onClose()
+    useLibrary
+      .getState()
+      .show(
+        asset.kind === 'video'
+          ? 'effect'
+          : (category as 'character' | 'scene' | 'prop' | 'style' | 'effect'),
+        {
+          name: asset.name,
+          images: asset.kind === 'image' ? [asset.id] : [],
+          videos: asset.kind === 'video' ? [asset.id] : [],
+        },
+      )
+  }
+  return (
+    <div className="flex flex-col gap-4">
+      <h3 className="break-words text-base font-medium">{asset.name}</h3>
+      {asset.kind === 'audio' ? (
+        // oxlint-disable-next-line jsx-a11y/media-has-caption -- 用户素材没有可用字幕轨
+        <audio src={assetUrls.original(asset.id)} controls className="w-full" />
+      ) : (
+        <button
+          type="button"
+          aria-label="放大查看素材"
+          onClick={onPreview}
+          className="overflow-hidden rounded-lg bg-canvas"
+        >
+          <img
+            src={assetUrls.variant(asset.id, asset.kind === 'video' ? 'poster' : 'thumb-1024')}
+            alt={asset.name}
+            className="max-h-52 w-full object-contain"
+          />
+        </button>
+      )}
+      <p className="text-xs text-ink-subtle">
+        {bytes(asset.size)}
+        {asset.width && asset.height ? ` · ${asset.width} × ${asset.height}` : ''}
+        {asset.duration ? ` · ${asset.duration.toFixed(1)} 秒` : ''}
+        <br />
+        {fullTime(asset.createdAt)}
+      </p>
+      <button
+        type="button"
+        className="ui-btn ui-btn-primary"
+        disabled={!canPlace}
+        title={canPlace ? undefined : '打开一张画布后可以放入'}
+        onClick={onPlace}
+      >
+        放入当前画布
+      </button>
+      {asset.kind !== 'audio' && (
+        <div className="flex flex-col gap-2">
+          {asset.kind === 'image' && (
+            <Select
+              aria-label="存为资产类别"
+              value={category}
+              onChange={setCategory}
+              options={[
+                { value: 'character', label: '角色' },
+                { value: 'scene', label: '场景' },
+                { value: 'prop', label: '道具' },
+                { value: 'style', label: '风格' },
+                { value: 'effect', label: '特效' },
+              ]}
+            />
+          )}
+          <button type="button" className="ui-btn ui-btn-secondary" onClick={save}>
+            存入资产库
+          </button>
+        </div>
+      )}
+      <section className="flex flex-col gap-2">
+        <h4 className="ui-section-title">来源</h4>
+        {sources.length ? (
+          sources.map((source) => (
+            <div
+              key={`${source.type}/${source.id}/${source.locator}`}
+              className="rounded-lg bg-surface-2 p-2.5 text-xs"
+            >
+              <span className="block break-words">
+                {source.type === 'checkpoint'
+                  ? '检查点 · '
+                  : source.type === 'library'
+                    ? '资产库 · '
+                    : ''}
+                {source.label}
+              </span>
+              <span className="mt-1 flex items-center gap-2 text-ink-subtle">
+                {source.adopted && <span>采用中</span>}
+                {source.locatable ? (
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn-xs ui-btn-quiet"
+                    onClick={() => locate(source)}
+                  >
+                    定位来源
+                  </button>
+                ) : (
+                  <span>
+                    {source.type === 'job'
+                      ? '来源节点已删除'
+                      : source.type === 'checkpoint'
+                        ? '保存在检查点'
+                        : '素材引用'}
+                  </span>
+                )}
+              </span>
+            </div>
+          ))
+        ) : (
+          <p className="text-xs text-ink-subtle">未关联到现存项目，文件仍可复用。</p>
+        )}
+        {cursor && (
+          <button
+            type="button"
+            className="ui-btn ui-btn-sm ui-btn-secondary"
+            onClick={() => void more()}
+          >
+            更多来源
+          </button>
+        )}
+        {error && (
+          <p role="alert" className="text-xs text-danger">
+            {error}
+          </p>
+        )}
+      </section>
+    </div>
+  )
+}
+
+function MediaPreview({ asset, onClose }: { asset: MediaLibraryItem; onClose(): void }) {
+  const [scale, setScale] = useState(1)
+  return (
+    <Modal
+      label="素材预览"
+      onClose={onClose}
+      top
+      isolateKeys
+      className="h-[min(860px,100%)] max-w-6xl"
+    >
+      <ModalHeader title={asset.name} onClose={onClose}>
+        {asset.kind === 'image' && (
+          <>
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary"
+              aria-label="缩小"
+              onClick={() => setScale((s) => Math.max(0.5, s - 0.25))}
+            >
+              −
+            </button>
+            <span className="text-xs tabular-nums">{Math.round(scale * 100)}%</span>
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary"
+              aria-label="放大"
+              onClick={() => setScale((s) => Math.min(8, s + 0.25))}
+            >
+              +
+            </button>
+          </>
+        )}
+      </ModalHeader>
+      <div className="ui-scrollbar flex min-h-0 flex-1 items-center justify-center overflow-auto bg-canvas p-4">
+        {asset.kind === 'video' ? (
+          // oxlint-disable-next-line jsx-a11y/media-has-caption -- 用户素材没有可用字幕轨
+          <video
+            src={assetUrls.original(asset.id)}
+            controls
+            autoPlay
+            className="max-h-full max-w-full"
+          />
+        ) : (
+          <img
+            src={assetUrls.original(asset.id)}
+            alt={asset.name}
+            style={{ width: `${scale * 100}%`, maxWidth: 'none' }}
+            className="flex-none object-contain"
+          />
+        )}
+      </div>
+    </Modal>
+  )
+}

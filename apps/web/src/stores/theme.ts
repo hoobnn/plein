@@ -1,4 +1,4 @@
-import { type CanvasTheme, DARK_THEME, LIGHT_THEME } from '@plein/canvas-core'
+import { type CanvasTheme, DARK_THEME, LIGHT_THEME } from '@plein/canvas-core/theme'
 import { create } from 'zustand'
 
 /** 主题偏好：跟随系统，或固定浅色 / 深色 */

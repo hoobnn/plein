@@ -53,12 +53,19 @@ function PackageDialog({
   )
 }
 
-const counts = (c: { canvases: number; assets: number; library: number; jobs: number }) =>
+const counts = (c: {
+  canvases: number
+  assets: number
+  library: number
+  jobs: number
+  checkpoints?: number
+}) =>
   [
     `${c.canvases} 张画布`,
     `${c.assets} 个素材`,
     c.library && `${c.library} 个资产库条目`,
     c.jobs && `${c.jobs} 条运行记录`,
+    c.checkpoints && `${c.checkpoints} 个检查点`,
   ]
     .filter(Boolean)
     .join(' · ')
@@ -103,7 +110,7 @@ export function ExportPackageDialog({ project, onClose }: { project: Project; on
       <div className="flex flex-col gap-1.5">
         <div className="ui-section-title">包含</div>
         <p className="leading-5">
-          全部画布、画布用到的素材、资产库条目、每个节点当前采用的结果和运行记录（只作历史，导入后不会续查或重新提交）。
+          全部画布、画布用到的素材、资产库条目、每个节点当前采用的结果和运行记录，以及全部命名检查点和检查点保留的素材。运行记录只作历史，导入后不会续查或重新提交。
         </p>
         <div className="ui-section-title mt-2">不包含</div>
         <p className="leading-5">
@@ -113,7 +120,7 @@ export function ExportPackageDialog({ project, onClose }: { project: Project; on
       <div className="flex items-center justify-between gap-4">
         <span>
           <span className="block">包含历史候选</span>
-          <span className="ui-help">每个节点生成过的全部结果，包会更大</span>
+          <span className="ui-help">增加当前画布的全部生成结果；检查点始终完整保留</span>
         </span>
         <Switch checked={history} label="包含历史候选" onChange={setHistory} />
       </div>

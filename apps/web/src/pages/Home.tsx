@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { type MouseEvent, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { invalidateProjects, queryClient, queryKeys } from '../api/query'
-import { queueStartNode } from '../canvas/start'
+import { queueStartNode } from '../canvas/startQueue'
 import { navigate, routeHash } from '../router'
 import { forgetLocalCache } from '../canvas/localCache'
 import { useLibrary } from '../features/library/store'
@@ -21,6 +21,8 @@ import { ExportPackageDialog, ImportPackageDialog } from '../features/projects/P
 import { Presence } from '../ui/Presence'
 import { Toast } from '../ui/Toast'
 import { useCanvas } from '../stores/canvas'
+import { useMediaLibrary } from '../features/media-library/store'
+import { useCheckpoints } from '../features/checkpoints/store'
 
 /** 快速开始：新建项目并在它的第一张画布上放好对应节点、打开生成器 */
 const QUICK_START: Array<{
@@ -124,6 +126,14 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
             <Brand />
           </div>
           <div className="app-actions ui-bar ui-bar-bare -mr-1">
+            <button
+              type="button"
+              className="ui-bar-btn gap-1.5"
+              onClick={() => useMediaLibrary.getState().show()}
+            >
+              <Icon name="image" />
+              素材
+            </button>
             <button
               type="button"
               onClick={() => useLibrary.getState().show('character')}
@@ -355,6 +365,24 @@ function ProjectCard({
           </div>
         </div>
         <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+          <button
+            type="button"
+            aria-label="项目素材"
+            title="项目素材"
+            className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
+            onClick={() => useMediaLibrary.getState().show({ projectId: c.id })}
+          >
+            <Icon name="image" size={14} />
+          </button>
+          <button
+            type="button"
+            aria-label="项目检查点"
+            title="项目检查点"
+            className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
+            onClick={() => useCheckpoints.getState().show({ projectId: c.id })}
+          >
+            <Icon name="history" size={14} />
+          </button>
           <button
             type="button"
             onClick={() => setEditing(true)}

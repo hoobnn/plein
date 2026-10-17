@@ -1,23 +1,57 @@
-import { isEditableTarget } from '@plein/canvas-core'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { desktop } from './desktop'
-import { AgentDock } from './features/agent/Agent'
+import { useAgent } from './features/agent/store'
 import { DesktopEvents } from './shell/DesktopEvents'
-import { type Section, SettingsDialog } from './features/settings/Settings'
+import type { Section } from './features/settings/Settings'
 import { DialogHost } from './ui/Dialog'
 import { TooltipHost } from './ui/Tooltip'
 import { useCanvas } from './stores/canvas'
-import { Editor } from './pages/Editor'
-import { Home } from './pages/Home'
-import { Login } from './pages/Login'
-import { ProjectOpen } from './pages/ProjectOpen'
-import { LibraryPanel } from './features/library/Library'
+import { useLibrary } from './features/library/store'
 import { useRoute } from './router'
 import { useSession } from './stores/session'
 import { Presence } from './ui/Presence'
+import { Mascot } from './ui/Mascot'
+import { useMediaLibrary } from './features/media-library/store'
+import { useCheckpoints } from './features/checkpoints/store'
+
+const Editor = lazy(() => import('./pages/Editor').then((m) => ({ default: m.Editor })))
+const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })))
+const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })))
+const ProjectOpen = lazy(() =>
+  import('./pages/ProjectOpen').then((m) => ({ default: m.ProjectOpen })),
+)
+const AgentDock = lazy(() =>
+  import('./features/agent/Agent').then((m) => ({ default: m.AgentDock })),
+)
+const LibraryPanel = lazy(() =>
+  import('./features/library/Library').then((m) => ({ default: m.LibraryPanel })),
+)
+const SettingsDialog = lazy(() =>
+  import('./features/settings/Settings').then((m) => ({ default: m.SettingsDialog })),
+)
+const MediaLibraryPanel = lazy(() =>
+  import('./features/media-library/MediaLibrary').then((m) => ({ default: m.MediaLibraryPanel })),
+)
+const CheckpointsPanel = lazy(() =>
+  import('./features/checkpoints/Checkpoints').then((m) => ({ default: m.CheckpointsPanel })),
+)
+
+const isEditableTarget = (target: Element | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLMediaElement ||
+    target.closest('[data-plein-active]') !== null)
 
 export function App() {
   const [settings, setSettings] = useState<false | Section | undefined>(false)
+  const route = useRoute()
+  const agentOpen = useAgent((s) => s.open)
+  const libraryOpen = useLibrary((s) => s.open)
+  const mediaOpen = useMediaLibrary((s) => !!s.open || !!s.target)
+  const checkpointsOpen = useCheckpoints((s) => !!s.open)
+  const ready = useSession((s) => s.status === 'ready' && !!s.info?.principal)
   // 卡片、任务面板上的“去设置”（如密钥无效）直接打开对应分区
   useEffect(() => {
     const open = (e: Event) =>
@@ -59,14 +93,37 @@ export function App() {
 
   return (
     <>
-      <AppContent onOpenSettings={() => setSettings(undefined)} />
-      <AgentDock />
-      <LibraryPanel />
-      <Presence>
-        {settings !== false && (
-          <SettingsDialog initial={settings} onClose={() => setSettings(false)} />
-        )}
-      </Presence>
+      <Suspense
+        fallback={
+          <div role="status" className="p-6 text-sm text-ink-muted">
+            正在打开工作区…
+          </div>
+        }
+      >
+        <AppContent onOpenSettings={() => setSettings(undefined)} />
+      </Suspense>
+      <Suspense fallback={null}>
+        {ready && (route.name === 'canvas' || agentOpen) ? (
+          <AgentDock />
+        ) : ready && route.name !== 'demo' ? (
+          <button
+            type="button"
+            aria-label="打开助手"
+            className="plein-mascot-btn pointer-events-auto fixed right-3 bottom-2 z-40 rounded-full"
+            onClick={() => useAgent.getState().toggle(true)}
+          >
+            <Mascot mood="idle" />
+          </button>
+        ) : null}
+        {libraryOpen && <LibraryPanel />}
+        {mediaOpen && <MediaLibraryPanel />}
+        {checkpointsOpen && <CheckpointsPanel />}
+        <Presence>
+          {settings !== false && (
+            <SettingsDialog initial={settings} onClose={() => setSettings(false)} />
+          )}
+        </Presence>
+      </Suspense>
       <DialogHost />
       <TooltipHost />
       <DesktopEvents />

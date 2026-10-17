@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vp dev",
-    "build": "tsc -p . && vp build",
+    "build": "tsc -p . && vp build && node scripts/check-home-bundle.mjs",
     "preview": "vp preview",
     "typecheck": "tsc -p . && tsc -p tsconfig.node.json"
   },

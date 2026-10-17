@@ -10,6 +10,7 @@ export default defineConfig({
   // JASSUB 用 new URL(..., import.meta.url) 找自己的 worker 和 wasm，预构建会打乱相对路径
   optimizeDeps: { exclude: ['jassub'] },
   worker: { format: 'es' },
+  build: { manifest: true },
   server: {
     port: 5173,
     proxy: {

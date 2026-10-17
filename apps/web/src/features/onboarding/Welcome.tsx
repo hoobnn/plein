@@ -1,7 +1,7 @@
 import type { ProviderInfo } from '@plein/protocol'
 import { useEffect, useState } from 'react'
 import { api } from '../../api/client'
-import { DRAMA_START, queueStartNode } from '../../canvas/start'
+import { DRAMA_START, queueStartNode } from '../../canvas/startQueue'
 import { navigate } from '../../router'
 import { useCatalog } from '../../stores/catalog'
 import { Icon, type IconName } from '../../ui/icons'

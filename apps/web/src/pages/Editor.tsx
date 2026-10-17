@@ -38,6 +38,8 @@ import { Presence } from '../ui/Presence'
 import { zoomView } from '../ui/viewTransition'
 import { Toast } from '../ui/Toast'
 import { useShallow } from 'zustand/react/shallow'
+import { useMediaLibrary } from '../features/media-library/store'
+import { useCheckpoints } from '../features/checkpoints/store'
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
   local: '本地演示',
@@ -152,6 +154,28 @@ export function Editor({
         <div className="app-actions ui-bar pointer-events-auto">
           {source.kind === 'remote' && (
             <>
+              <button
+                type="button"
+                className="ui-bar-btn gap-1.5"
+                onClick={() =>
+                  useMediaLibrary.getState().show({ projectId: canvas?.projectId ?? undefined })
+                }
+              >
+                <Icon name="image" />
+                素材
+              </button>
+              <button
+                type="button"
+                className="ui-bar-btn gap-1.5"
+                disabled={!canvas?.projectId}
+                onClick={() => {
+                  if (canvas?.projectId && canvasId)
+                    useCheckpoints.getState().show({ projectId: canvas.projectId, canvasId })
+                }}
+              >
+                <Icon name="history" />
+                检查点
+              </button>
               <button
                 type="button"
                 onClick={() => useLibrary.getState().show('character')}
