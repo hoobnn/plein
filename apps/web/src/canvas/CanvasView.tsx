@@ -35,6 +35,7 @@ import { applyPresetToNode } from './presets'
 import { cancelNode, runNode } from '../features/runs/run'
 import { watchVideoAspect } from './videoAspect'
 import { watchStageAspect } from './stageAspect'
+import { watchStageHistory } from '../features/stage/history'
 import { droppedFiles, MAX_IMPORT_FILES } from './dropped'
 import { CreationGuide } from '../features/creation-guide/CreationGuide'
 
@@ -135,6 +136,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
           const offStale = canvasId ? watchStale(engine, canvasId) : () => {}
           const offAspect = canvasId ? watchVideoAspect(engine, videoRatio) : () => {}
           const offStageAspect = watchStageAspect(doc)
+          const offStageHistory = watchStageHistory(doc)
           const detach = attach(engine)
           // 端到端测试读画布状态、换算节点屏幕坐标用；只有 e2e 构建（--mode e2e）才有，正式构建会被摇掉
           const e2e = import.meta.env.MODE === 'e2e'
@@ -179,6 +181,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
             offStale()
             offAspect()
             offStageAspect()
+            offStageHistory()
             offTheme()
             off()
             offActivate()
