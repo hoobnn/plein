@@ -50,10 +50,13 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
   const close = () => useMediaLibrary.getState().close()
   const [projectId, setProjectId] = useState(initialProject ?? '')
   const [projects, setProjects] = useState<Project[]>([])
+  // query 保留组词草稿，searchQuery 只包含已确认的搜索内容。
   const [kind, setKind] = useState(''),
     [query, setQuery] = useState(''),
+    [searchQuery, setSearchQuery] = useState(''),
     [debounced, setDebounced] = useState('')
-  const queryTooLong = query.trim().length > MEDIA_SEARCH_MAX_LENGTH
+  const composing = useRef(false)
+  const queryTooLong = searchQuery.trim().length > MEDIA_SEARCH_MAX_LENGTH
   const queryProblemId = useId()
   const [page, setPage] = useState<MediaLibraryPage>({ items: [], nextCursor: null })
   const [selected, setSelected] = useState<MediaLibraryItem | null>(null)
@@ -65,7 +68,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
   const engine = useCanvas((s) => s.engine),
     canvasId = useCanvas((s) => s.canvasId)
   const [preview, setPreview] = useState(false)
-  const searching = query.trim() !== debounced
+  const searching = searchQuery.trim() !== debounced
   const visibleItems = searching || queryTooLong ? [] : page.items
   useEffect(() => () => request.current?.abort(), [])
   useEffect(() => {
@@ -79,9 +82,9 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
     return () => controller.abort()
   }, [])
   useEffect(() => {
-    const timer = setTimeout(() => setDebounced(query.trim()), 250)
+    const timer = setTimeout(() => setDebounced(searchQuery.trim()), 250)
     return () => clearTimeout(timer)
-  }, [query])
+  }, [searchQuery])
   useEffect(() => {
     request.current?.abort()
     const controller = new AbortController()
@@ -184,7 +187,25 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
             <input
               type="search"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setQuery(event.target.value)
+                if (!composing.current && !(event.nativeEvent as InputEvent).isComposing)
+                  setSearchQuery(event.target.value)
+              }}
+              onCompositionStart={() => {
+                composing.current = true
+              }}
+              onCompositionEnd={(event) => {
+                composing.current = false
+                setQuery(event.currentTarget.value)
+                setSearchQuery(event.currentTarget.value)
+              }}
+              onBlur={(event) => {
+                if (!composing.current) return
+                composing.current = false
+                setQuery(event.currentTarget.value)
+                setSearchQuery(event.currentTarget.value)
+              }}
               placeholder="搜索素材名称或来源"
               aria-label="搜索素材"
               aria-invalid={queryTooLong}

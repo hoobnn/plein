@@ -2,6 +2,110 @@ import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
 
+test('素材搜索组词期间保留结果和详情，确认只查一次，取消与失焦可恢复', async ({ page }) => {
+  await newProject(page)
+  const names = ['组词检索-旧.png', '组词检索-新.png', '组词检索-完成.png']
+  for (const [index, color] of ['brown', 'lime', 'navy'].entries()) {
+    const data = execFileSync('ffmpeg', [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      `color=c=${color}:s=200x112`,
+      '-frames:v',
+      '1',
+      '-f',
+      'image2pipe',
+      '-vcodec',
+      'png',
+      'pipe:1',
+    ])
+    const response = await page.request.post('/api/assets', {
+      headers: { 'content-type': 'image/png', 'x-file-name': encodeURIComponent(names[index]!) },
+      data,
+    })
+    expect(response.status()).toBe(201)
+  }
+  const requests: string[] = []
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === '/api/assets' && request.method() === 'GET')
+      requests.push(url.searchParams.get('q') ?? '')
+  })
+  await page.getByRole('button', { name: '素材', exact: true }).click()
+  const panel = page.getByRole('dialog', { name: '素材', exact: true })
+  await panel.getByRole('combobox', { name: '关联项目' }).click()
+  await page.getByRole('option', { name: '全部项目', exact: true }).click()
+  const search = panel.getByRole('searchbox', { name: '搜索素材' })
+  const card = (index: number) =>
+    panel.getByRole('button', { name: `查看素材 ${names[index]}`, exact: true })
+  await search.fill('组词检索-旧')
+  await expect(card(0)).toBeVisible()
+  await card(0).click()
+  await page.clock.install()
+  const count = requests.length
+  await search.dispatchEvent('compositionstart', { data: '' })
+  await search.fill('组词检索-xin')
+  await page.clock.fastForward(1000)
+  await expect(card(0)).toBeVisible()
+  await expect(panel.getByRole('heading', { name: names[0], exact: true })).toBeVisible()
+  expect(requests.length).toBe(count)
+  await panel.screenshot({
+    path: test.info().outputPath('search-composing.png'),
+    animations: 'disabled',
+  })
+  await search.fill('组词检索-新')
+  await search.dispatchEvent('compositionend', { data: '新' })
+  await search.fill('组词检索-新')
+  await page.clock.fastForward(1000)
+  await expect(card(1)).toBeVisible()
+  expect(requests.filter((q) => q === '组词检索-新')).toHaveLength(1)
+  await card(1).click()
+  const confirmed = requests.length
+  await search.dispatchEvent('compositionstart', { data: '' })
+  await search.fill('组词检索-weiqueren')
+  await page.clock.fastForward(1000)
+  await search.press('Escape')
+  await expect(panel).toBeVisible()
+  await search.fill('组词检索-新')
+  await search.dispatchEvent('compositionend', { data: '' })
+  await page.clock.fastForward(1000)
+  await expect(card(1)).toBeVisible()
+  await expect(panel.getByRole('heading', { name: names[1], exact: true })).toBeVisible()
+  expect(requests.length).toBe(confirmed)
+  await search.dispatchEvent('compositionstart', { data: '' })
+  await search.fill('组词检索-完成')
+  await page.clock.fastForward(1000)
+  expect(requests.length).toBe(confirmed)
+  await search.blur()
+  await page.clock.fastForward(1000)
+  await expect(card(2)).toBeVisible()
+  expect(requests.filter((q) => q === '组词检索-完成')).toHaveLength(1)
+  await search.fill('组词检索-旧')
+  await page.clock.fastForward(1000)
+  await expect(card(0)).toBeVisible()
+  const beforeLong = requests.length
+  await search.dispatchEvent('compositionstart', { data: '' })
+  await search.fill('界'.repeat(201))
+  await page.clock.fastForward(1000)
+  await expect(search).toHaveAttribute('aria-invalid', 'false')
+  await expect(card(0)).toBeVisible()
+  expect(requests.length).toBe(beforeLong)
+  await search.dispatchEvent('compositionend', { data: '界' })
+  await page.clock.fastForward(1000)
+  await expect(search).toHaveAttribute('aria-invalid', 'true')
+  expect(requests.length).toBe(beforeLong)
+  await search.fill('组词检索-旧')
+  await page.clock.fastForward(1000)
+  await expect(card(0)).toBeVisible()
+  await expect(search).toHaveAttribute('aria-invalid', 'false')
+  await expect(panel.getByRole('alert')).toHaveCount(0)
+  await search.press('Escape')
+  await expect(panel).toHaveCount(0)
+})
+
 test('素材搜索校验长度且保留输入，支持完整表情、字面特殊字符和筛选恢复', async ({ page }) => {
   await newProject(page)
   const boundary = `${'界'.repeat(198)}🎬`
