@@ -28,7 +28,7 @@ import {
   type ServerPluginDefinition,
 } from '@plein/plugin-sdk'
 import { stableStringify } from '@plein/flow'
-import { Agent } from 'undici'
+import { Agent, Dispatcher1Wrapper } from 'undici'
 import { composeVideo } from '../assets/compose'
 import { hasFfmpeg, probeMedia } from '../assets/media'
 import type { AssetStore } from '../assets/store'
@@ -45,7 +45,8 @@ const DEFAULT_TIMEOUT_MS = 30 * 60_000
  * Node fetch 默认等响应头最多 5 分钟，同步出图在平台排队时会超过，被掐断后成了「提交状态未知」；
  * 一次调用多久算超时由上面的调用超时（signal）统一管
  */
-const providerDispatcher = new Agent({ headersTimeout: 0, bodyTimeout: 0 })
+// Electron 内置 fetch 仍使用 undici 7 的处理器协议；包装后兼容 undici 8 的连接池。
+const providerDispatcher = new Dispatcher1Wrapper(new Agent({ headersTimeout: 0, bodyTimeout: 0 }))
 const providerFetch = ((input: Request, init?: RequestInit) =>
   fetch(input, { ...init, dispatcher: providerDispatcher } as RequestInit)) as typeof fetch
 const DEFAULT_POLL_MS = 2_000

@@ -16,6 +16,7 @@ import {
   ProviderError,
 } from '@plein/plugin-sdk'
 import type { Catalog, ProviderConfigView, ProviderTestResult } from '@plein/protocol'
+import { Agent } from 'undici'
 import { beforeAll, describe, expect, it, vi } from 'vite-plus/test'
 import { z } from 'zod'
 import { startTestServer, tempDir } from '../testing'
@@ -297,6 +298,83 @@ describe('插件宿主', () => {
     s.host.configs.update('doubao/speech', {
       secrets: { VOLC_SPEECH_APP_ID: null, VOLC_SPEECH_ACCESS_KEY: null },
     })
+  })
+
+  it('默认平台请求兼容 Electron 内置 fetch 的旧版 dispatcher 协议', async () => {
+    const provider = defineProvider({
+      id: 'acme/legacy-fetch',
+      title: 'Legacy fetch',
+      settings: z.object({}),
+      secrets: [],
+      models: [],
+      submit: vi.fn(),
+      test: async (ctx) => {
+        const response = await ctx.fetch('https://api.acme.com/models', {
+          headers: { 'x-probe': 'legacy-fetch' },
+        })
+        expect(await response.text()).toBe('ok')
+      },
+    })
+    s.host.load(
+      [
+        defineServerPlugin(
+          definePlugin({
+            manifest: manifest({
+              id: 'acme/legacy-fetch',
+              contributes: { providers: ['acme/legacy-fetch'] },
+              permissions: { network: ['api.acme.com'] },
+            }),
+          }),
+          { providers: [provider] },
+        ),
+      ],
+      false,
+    )
+    const transport = vi.spyOn(Agent.prototype, 'dispatch').mockImplementation((_opts, handler) => {
+      // undici 8 只接受 v2 回调；裸 Agent 收到旧 fetch 的 v1 回调时必须让此用例失败。
+      expect(handler.onRequestStart).toBeTypeOf('function')
+      const controller = {
+        aborted: false,
+        paused: false,
+        reason: null,
+        abort: vi.fn(),
+        pause: vi.fn(),
+        resume: vi.fn(),
+      }
+      handler.onRequestStart!(controller, null)
+      handler.onResponseStart!(controller, 200, {}, 'OK')
+      handler.onResponseEnd!(controller, {})
+      return true
+    })
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      expect(input).toBeInstanceOf(Request)
+      const request = input as Request
+      expect(request.url).toBe('https://api.acme.com/models')
+      expect(request.headers.get('x-probe')).toBe('legacy-fetch')
+      expect(init?.redirect).toBe('manual')
+      const dispatcher = (init as RequestInit & { dispatcher: Agent }).dispatcher
+      return new Promise<Response>((resolve, reject) => {
+        // 模拟 Electron 的 undici 7 fetch，不借用当前 Node 26 的 v2 handler。
+        dispatcher.dispatch(
+          { origin: new URL(request.url).origin, path: '/models', method: request.method },
+          {
+            onConnect: vi.fn(),
+            onHeaders: () => true,
+            onComplete: () => resolve(new Response('ok')),
+            onError: reject,
+          } as unknown as Parameters<Agent['dispatch']>[1],
+        )
+      })
+    })
+    try {
+      await s.host.testProvider('acme/legacy-fetch', 'local')
+      expect(fetch).toHaveBeenCalledOnce()
+      expect(transport).toHaveBeenCalledOnce()
+      expect(provider.submit).not.toHaveBeenCalled()
+    } finally {
+      fetch.mockRestore()
+      transport.mockRestore()
+    }
   })
 
   it('文本节点 → 生成图片：结果存入资产库', async () => {
