@@ -98,7 +98,8 @@ interface Frames {
 class ImageFrames implements Frames {
   readonly kind = 'image'
   private el = new Image()
-  constructor(url: string, onFrame: () => void) {
+  constructor(url: string, onFrame: () => void, onFail: () => void) {
+    this.el.onerror = onFail
     this.el.onload = onFrame
     this.el.src = url
   }
@@ -111,6 +112,7 @@ class ImageFrames implements Frames {
   }
   dispose() {
     this.el.onload = null
+    this.el.onerror = null
     this.el.src = ''
   }
 }
@@ -271,8 +273,13 @@ class ElementFrames implements Frames {
   readonly kind = 'element'
   private el = document.createElement('video')
 
-  constructor(url: string, onFrame: () => void) {
+  constructor(
+    url: string,
+    private onFrame: () => void,
+    onFail: () => void,
+  ) {
     const el = this.el
+    el.onerror = onFail
     el.muted = true
     el.playsInline = true
     el.preload = 'auto'
@@ -309,6 +316,9 @@ class ElementFrames implements Frames {
 
   dispose() {
     this.el.pause()
+    this.el.onerror = null
+    this.el.removeEventListener('seeked', this.onFrame)
+    this.el.removeEventListener('loadeddata', this.onFrame)
     this.el.removeAttribute('src')
     this.el.load()
   }
@@ -333,7 +343,15 @@ export class PreviewEngine {
   private off: Array<() => void> = []
   private clock: ClockSource | null = null
 
-  constructor(private playhead: Playhead) {
+  private disposed = false
+  private failedFrames = new Set<string>()
+  private failedSounds = new Set<string>()
+  private issueCount = 0
+
+  constructor(
+    private playhead: Playhead,
+    private onIssues: (count: number) => void = () => {},
+  ) {
     this.off.push(playhead.subscribe(this.render), playhead.onTransport(this.transport))
     if (typeof AudioContext !== 'undefined') {
       const ctx = new AudioContext({ latencyHint: 'interactive' })
@@ -375,6 +393,10 @@ export class PreviewEngine {
         this.frames.delete(key)
       }
     }
+    for (const key of this.failedFrames) if (!keep.has(key)) this.failedFrames.delete(key)
+    const sounds = new Set(scene.sounds.map((s) => s.assetId))
+    for (const id of this.failedSounds) if (!sounds.has(id)) this.failedSounds.delete(id)
+    this.reportIssues()
     const soundsKey = JSON.stringify(scene.sounds)
     if (soundsKey !== this.soundsKey) {
       this.soundsKey = soundsKey
@@ -384,6 +406,7 @@ export class PreviewEngine {
   }
 
   dispose() {
+    this.disposed = true
     for (const off of this.off) off()
     this.stopAudio()
     for (const f of this.frames.values()) f.dispose()
@@ -400,32 +423,83 @@ export class PreviewEngine {
     if (c.height !== height) c.height = height
   }
 
+  /** 只重新加载失败的来源；已成功解码的素材和当前播放位置保留。 */
+  retryFailed() {
+    if (this.disposed) return
+    const frames = new Set(this.failedFrames)
+    const sounds = [...this.failedSounds]
+    this.failedFrames.clear()
+    this.failedSounds.clear()
+    for (const key of frames) {
+      this.frames.get(key)?.dispose()
+      this.frames.delete(key)
+    }
+    for (const id of sounds) this.buffers.delete(id)
+    this.reportIssues()
+    for (const clip of this.scene.clips)
+      if (frames.has(clip.key)) this.framesFor(clip)?.update(clip.in, false, clip.speed)
+    for (const id of sounds) void this.buffer(id)
+    this.render()
+  }
+
+  private reportIssues() {
+    if (this.disposed) return
+    const count = this.failedFrames.size + this.failedSounds.size
+    if (count === this.issueCount) return
+    this.issueCount = count
+    this.onIssues(count)
+  }
+
   private framesFor(clip: SceneClip): Frames | null {
     if (!clip.assetId) return null
-    let f = this.frames.get(clip.key)
-    if (!f) {
-      const url = assetUrls.original(clip.assetId)
-      const created: Frames =
-        clip.kind === 'image'
-          ? new ImageFrames(url, this.render)
-          : typeof VideoDecoder === 'undefined'
-            ? new ElementFrames(url, this.render)
-            : new CodecFrames(
-                url,
-                previewSize(this.scene.width, this.scene.height),
-                this.render,
-                () => {
-                  // 解不了：换成 video 元素（这段已经被换掉或删掉就算了）
-                  if (this.frames.get(clip.key) !== created) return
-                  created.dispose()
-                  this.frames.set(clip.key, new ElementFrames(url, this.render))
-                  this.render()
-                },
-              )
-      f = created
-      this.frames.set(clip.key, f)
+    const existing = this.frames.get(clip.key)
+    if (existing) return existing
+    const url = assetUrls.original(clip.assetId)
+    const ready = (frame: Frames) => {
+      if (this.disposed || this.frames.get(clip.key) !== frame) return
+      if (frame.image()) this.failedFrames.delete(clip.key)
+      this.reportIssues()
+      this.render()
     }
-    return f
+    const fail = (frame: Frames) => {
+      if (this.disposed || this.frames.get(clip.key) !== frame) return
+      this.failedFrames.add(clip.key)
+      this.reportIssues()
+      this.playhead.pause()
+    }
+    const element = () => {
+      const frame: Frames = new ElementFrames(
+        url,
+        () => ready(frame),
+        () => fail(frame),
+      )
+      return frame
+    }
+    let created: Frames
+    if (clip.kind === 'image') {
+      const frame: Frames = new ImageFrames(
+        url,
+        () => ready(frame),
+        () => fail(frame),
+      )
+      created = frame
+    } else if (typeof VideoDecoder === 'undefined') created = element()
+    else {
+      const frame: Frames = new CodecFrames(
+        url,
+        previewSize(this.scene.width, this.scene.height),
+        () => ready(frame),
+        () => {
+          if (this.disposed || this.frames.get(clip.key) !== frame) return
+          frame.dispose()
+          this.frames.set(clip.key, element())
+          this.render()
+        },
+      )
+      created = frame
+    }
+    this.frames.set(clip.key, created)
+    return created
   }
 
   /**
@@ -585,11 +659,40 @@ export class PreviewEngine {
     let p = this.buffers.get(assetId)
     if (!p) {
       const ctx = this.audio!
+      const current = () =>
+        !this.disposed &&
+        this.buffers.get(assetId) === p &&
+        this.scene.sounds.some((s) => s.assetId === assetId)
+      const fail = () => {
+        if (!current()) return
+        this.failedSounds.add(assetId)
+        this.reportIssues()
+        this.playhead.pause()
+      }
       p = fetch(assetUrls.original(assetId))
-        .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
-        .then((b) => ctx.decodeAudioData(b))
-        // 没有声轨的视频解不出来，当作静音
-        .catch(() => null)
+        .then((r) => {
+          if (!r.ok) throw new Error(String(r.status))
+          return r.arrayBuffer()
+        })
+        .catch(() => {
+          fail()
+          return null
+        })
+        .then(async (b) => {
+          if (!b) return null
+          try {
+            const buffer = await ctx.decodeAudioData(b)
+            if (current()) {
+              this.failedSounds.delete(assetId)
+              this.reportIssues()
+            }
+            return buffer
+          } catch {
+            // 视频可以没有声轨；独立配音、音效与配乐解码失败需要提示。
+            if (!this.scene.clips.some((c) => c.assetId === assetId)) fail()
+            return null
+          }
+        })
       this.buffers.set(assetId, p)
     }
     return p

@@ -35,6 +35,7 @@ export function SequencePreview({
   draft?: boolean
 }) {
   const [subMode, setSubMode] = useState<SubtitleMode>('loading')
+  const [failed, setFailed] = useState(0)
   const size = sequenceSize(params)
   const cues = params.subtitles ? timeline.clips.flatMap((c) => c.cues) : []
   const { total } = timeline
@@ -47,7 +48,8 @@ export function SequencePreview({
   sceneRef.current = scene
 
   useEffect(() => {
-    const e = new PreviewEngine(playhead)
+    setFailed(0)
+    const e = new PreviewEngine(playhead, setFailed)
     engine.current = e
     e.setScene(sceneRef.current)
     e.attach(canvas.current)
@@ -111,6 +113,21 @@ export function SequencePreview({
           />
         </div>
       </div>
+      {failed > 0 && (
+        <div
+          role="alert"
+          className="flex shrink-0 items-center justify-between gap-2 px-3 py-2 text-xs text-danger"
+        >
+          <span>预览素材读取失败，画面或声音可能不完整。</span>
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary ui-btn-xs"
+            onClick={() => engine.current?.retryFailed()}
+          >
+            重试失败素材
+          </button>
+        </div>
+      )}
       <Transport playhead={playhead} total={total} note={note} />
     </div>
   )
