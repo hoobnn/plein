@@ -395,6 +395,9 @@ export class PreviewEngine {
     }
     for (const key of this.failedFrames) if (!keep.has(key)) this.failedFrames.delete(key)
     const sounds = new Set(scene.sounds.map((s) => s.assetId))
+    // 移出的来源释放缓存（包括失败和读取中的 Promise）；恢复后要重新读取，
+    // 旧请求的回调也不能把错误写进恢复后的同一素材。
+    for (const id of this.buffers.keys()) if (!sounds.has(id)) this.buffers.delete(id)
     for (const id of this.failedSounds) if (!sounds.has(id)) this.failedSounds.delete(id)
     this.reportIssues()
     const soundsKey = JSON.stringify(scene.sounds)
