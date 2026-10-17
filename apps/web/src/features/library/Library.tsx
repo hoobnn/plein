@@ -95,9 +95,13 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
   const [editing, setEditing] = useState<Editing | null>(null)
   const close = () => show(null)
   const seed = useLibrary((s) => s.seed)
+  const context = useRef({ kindId, projectId })
 
   // 换类别时重置筛选；从画布带来的新建内容跟着换到新类别，方便选错了类别再改
   useEffect(() => {
+    // 初次挂载的状态已按当前类别初始化；StrictMode 重放 effect 时也不清掉已接手的编辑目标。
+    if (context.current.kindId === kindId && context.current.projectId === projectId) return
+    context.current = { kindId, projectId }
     setScope(hasOfficial(kindId) ? 'official' : projectId ? 'project' : 'mine')
     setTags({})
     setQuery('')
@@ -613,8 +617,11 @@ function Editor({
   const [pendingUploads, setPendingUploads] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<Tab>(
-    () => useLibrary.getState().takeTab() ?? (character ? 'assets' : 'basics'),
+    () => useLibrary.getState().tab ?? (character ? 'assets' : 'basics'),
   )
+  useEffect(() => {
+    useLibrary.getState().takeTab()
+  }, [])
   const [preview, setPreview] = useState<{ id: string | null; caption?: string } | null>(null)
   const [pin, setPin] = useState<{ id: string | null; caption?: string }>({ id: null })
   const initial = useMemo(
