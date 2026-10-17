@@ -522,6 +522,7 @@ export class Engine {
 
   /** 缩放到包住指定元素（默认全部） */
   zoomToFit(ids?: Iterable<string>) {
+    this.doc.flush()
     const list = ids ? [...ids] : [...this.scene.children(null)]
     const box = union(list.map((id) => this.scene.rect(id)).filter((r) => !!r))
     if (box) this.camera.fit(box)
@@ -586,6 +587,7 @@ export class Engine {
    * 到达后高亮它们。用户一滚轮或按下指针就中断。系统要求减少动态效果时直接跳过去。
    */
   flyTo(ids: Iterable<string>) {
+    this.doc.flush()
     const list = [...ids]
     const box = union(list.map((id) => this.scene.rect(id)).filter((r) => !!r))
     if (!box) return
