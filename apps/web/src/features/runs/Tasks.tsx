@@ -596,19 +596,23 @@ export function RecoveryBlock(props: {
   const [busy, setBusy] = useState(false)
   const [attach, setAttach] = useState<string | null>(null)
   const [confirm, setConfirm] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const el = doc.get(job.nodeId)
   const act = async (body: RecoverJobOptions) => {
     if (!canvasId) return
     setBusy(true)
+    setError(null)
     try {
       await api.recoverJob(canvasId, job.id, body)
       await client.invalidateQueries({ queryKey: queryKeys.canvasJobs(canvasId) })
-    } catch (err) {
-      useCanvas.getState().notify((err as Error).message)
-    } finally {
-      setBusy(false)
       setAttach(null)
       setConfirm(false)
+    } catch (err) {
+      const message = (err as Error).message
+      setError(message)
+      useCanvas.getState().notify(message)
+    } finally {
+      setBusy(false)
     }
   }
   const pick = r.resultIds?.find((id) => el?.results?.some((x) => x.id === id))
@@ -623,6 +627,11 @@ export function RecoveryBlock(props: {
     <div className="mt-1 flex flex-col gap-1" data-testid="job-recovery">
       <p className={`text-xs ${tone}`}>{view.title}</p>
       {view.detail && <p className="text-2xs text-ink-subtle">{view.detail}</p>}
+      {error && (
+        <p role="alert" className="break-words text-xs text-danger">
+          {error}
+        </p>
+      )}
       <div className="flex flex-wrap gap-1">
         {r.refetchable && (
           <button
@@ -686,6 +695,7 @@ export function RecoveryBlock(props: {
             className="ui-input h-7 min-w-0 flex-1 text-xs"
             placeholder={`${r.provider ?? '平台'}控制台里的任务 ID`}
             aria-label="平台任务 ID"
+            disabled={busy}
             value={attach}
             onChange={(e) => setAttach(e.target.value)}
           />
@@ -695,6 +705,7 @@ export function RecoveryBlock(props: {
           <button
             type="button"
             className="ui-btn ui-btn-quiet ui-btn-xs"
+            disabled={busy}
             onClick={() => setAttach(null)}
           >
             取消
@@ -719,6 +730,7 @@ export function RecoveryBlock(props: {
             <button
               type="button"
               className="ui-btn ui-btn-quiet ui-btn-xs"
+              disabled={busy}
               onClick={() => setConfirm(false)}
             >
               取消
