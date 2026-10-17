@@ -27,6 +27,8 @@ import {
   VIDEO_V1_PORTS,
 } from '../testing'
 import { remapDoc } from './package'
+import { createCheckpointService } from '../checkpoints/service'
+import { createMediaIndex } from '../media-index/service'
 
 const SECRET = 'sk-plein-test-secret-0123456789'
 
@@ -135,6 +137,96 @@ const manifestOf = (data: Uint8Array) =>
 const openDoc = (server: Server, canvasId: string) =>
   createDoc(server.rooms.get(canvasId).doc, { schedule: () => {} })
 
+const checkpointService = (server: Server) =>
+  createCheckpointService({
+    db: server.db,
+    rooms: server.rooms,
+    assets: server.assets,
+    index: createMediaIndex({ db: server.db, rooms: server.rooms }),
+  })
+
+describe('命名检查点项目包迁移', () => {
+  it('v2默认完整保留检查点候选与独有素材，在新数据目录导入后可恢复且不续跑', async () => {
+    const s = await seed()
+    const service = checkpointService(s.server)
+    const cp = service.create('local', s.canvasId, {
+      name: '全部候选',
+      expectedSnapshot: Buffer.from(Y.encodeSnapshot(Y.snapshot(s.doc.ydoc))).toString('base64'),
+    })
+    const saved = service.detail('local', cp.id)
+    // 当前画布不再引用最旧候选；检查点仍必须带它迁移。
+    const node = s.doc.get(s.gen)!
+    const keep = node.results![0]!
+    s.doc.mutable(s.gen)!.set('results', [keep])
+    s.doc.mutable(s.gen)!.set('adopted', keep.id)
+    const bytes = await download(s.server, s.projectId)
+    const manifest = manifestOf(bytes)
+    expect(manifest.formatVersion).toBe(2)
+    expect(manifest.checkpoints).toHaveLength(1)
+    const savedDoc = createDoc()
+    Y.applyUpdate(savedDoc.ydoc, Buffer.from(saved.state, 'base64'))
+    for (const result of savedDoc.get(s.gen)!.results!)
+      if ('assetId' in result.value)
+        expect(manifest.assets.map((a) => a.id)).toContain(result.value.assetId)
+    const target = await bootServer({ dataDir: tempDir() })
+    const imported = await importInto(target.server, bytes)
+    expect(imported.preview.counts.checkpoints).toBe(1)
+    const restoredService = checkpointService(target.server)
+    const migrated = restoredService.list('local', imported.result.projectId, { limit: 50 })
+      .items[0]!
+    const restored = restoredService.restore('local', migrated.id)
+    const doc = openDoc(target.server, restored.canvasId)
+    expect(doc.get(s.gen)!.results).toHaveLength(2)
+    expect(doc.get(s.gen)!.run).toBeUndefined()
+    const rows = target.server.db.$client
+      .prepare('SELECT calls,status FROM jobs WHERE canvas_id=?')
+      .all(restored.canvasId) as Array<{ calls: string; status: string }>
+    expect(rows).toHaveLength(2)
+    expect(rows.every((r) => r.calls === '{}' && r.status === 'succeeded')).toBe(true)
+    expect(
+      target.server.db.$client
+        .prepare('SELECT * FROM checkpoint_assets WHERE checkpoint_id=?')
+        .all(migrated.id).length,
+    ).toBeGreaterThan(0)
+    doc.destroy()
+    savedDoc.destroy()
+  })
+
+  it('检查点文件坏哈希拒绝导入；检查点写入失败时项目、画布和pin整体回滚', async () => {
+    const s = await seed(),
+      service = checkpointService(s.server)
+    service.create('local', s.canvasId, {
+      name: '版本',
+      expectedSnapshot: Buffer.from(Y.encodeSnapshot(Y.snapshot(s.doc.ydoc))).toString('base64'),
+    })
+    const bytes = await download(s.server, s.projectId)
+    const files = unzipSync(bytes),
+      manifest = manifestOf(bytes)
+    files[manifest.checkpoints[0]!.file.path] = strToU8('broken')
+    const target = await bootServer({ dataDir: tempDir() })
+    const broken = await upload(target.server, zipSync(files))
+    expect(broken.status).toBe(422)
+    expect(broken.body.error).toBe('hash_mismatch')
+    const preview = await upload(target.server, bytes)
+    expect(preview.status).toBe(201)
+    target.server.db.$client.exec(
+      "CREATE TRIGGER reject_checkpoint BEFORE INSERT ON canvas_checkpoints BEGIN SELECT RAISE(FAIL,'checkpoint test failure'); END",
+    )
+    const result = await request(target.server, `/api/project-imports/${preview.body.token}`, {
+      method: 'POST',
+    })
+    expect(result.status).toBe(500)
+    expect(target.server.db.$client.prepare('SELECT * FROM projects').all()).toHaveLength(0)
+    expect(target.server.db.$client.prepare('SELECT * FROM canvases').all()).toHaveLength(0)
+    expect(target.server.db.$client.prepare('SELECT * FROM canvas_checkpoints').all()).toHaveLength(
+      0,
+    )
+    expect(target.server.db.$client.prepare('SELECT * FROM checkpoint_assets').all()).toHaveLength(
+      0,
+    )
+  })
+})
+
 describe('项目包导出', () => {
   it('默认只带当前采用的候选；清单列出素材、资产库条目、哈希和依赖；不含密钥和本机路径', async () => {
     const s = await seed()
@@ -198,12 +290,18 @@ describe('项目包导出', () => {
 describe('项目包导入', () => {
   it('迁入另一个数据目录：画布、素材、资产库与运行记录齐全，原目录不可访问也能打开', async () => {
     const s = await seed()
-    const data = await download(s.server, s.projectId)
+    const files = unzipSync(await download(s.server, s.projectId))
+    const legacy = JSON.parse(strFromU8(files['manifest.json']!)) as Record<string, unknown>
+    expect(legacy.formatVersion).toBe(1)
+    delete legacy.checkpoints
+    files['manifest.json'] = strToU8(JSON.stringify(legacy))
+    const data = zipSync(files)
     s.close()
     renameSync(s.dataDir, `${s.dataDir}-gone`)
 
     const { server } = await bootServer({ dataDir: tempDir() })
     const { preview, result } = await importInto(server, data)
+    expect(preview.counts.checkpoints).toBe(0)
     expect(preview).toMatchObject({
       copy: false,
       counts: { canvases: 1, library: 1, jobs: 2 },

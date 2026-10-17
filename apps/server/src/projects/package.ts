@@ -16,6 +16,7 @@ import {
   type PackageAsset,
   type PackageCandidates,
   type PackageCanvas,
+  type PackageCheckpoint,
   type PackageFile,
   type PackageLibraryItem,
   type PackageMissing,
@@ -33,6 +34,15 @@ import * as Y from 'yjs'
 import { z } from 'zod'
 import { safeName } from '../assets/interchange'
 import type { AssetStore } from '../assets/store'
+import {
+  checkpointArchive,
+  checkpointAssetIds,
+  checkpointRows,
+  parseCheckpointArchive,
+  type CheckpointArchive,
+} from '../checkpoints/archive'
+import { documentReferences, readDocument } from '../media-index/references'
+import type { MediaIndex } from '../media-index/service'
 import type { PluginHost } from '../plugins/host'
 import { newCanvasId, newProjectId } from '../storage/canvases'
 import type { DB } from '../storage/db'
@@ -55,6 +65,7 @@ export interface PackageDeps {
   assets: AssetStore
   host: PluginHost
   dataDir: string
+  mediaIndex?: MediaIndex
 }
 
 /** fflate 写的 zip 不带 zip64，单个包不超过 4 GB */
@@ -264,6 +275,44 @@ async function planExport(
     }
   })
 
+  const packageCheckpoints: PackageCheckpoint[] = []
+  for (const [i, checkpoint] of checkpointRows(db, owner, projectId).entries()) {
+    // 命名保存的候选不能被当前画布的 current/all 选项删掉。
+    readDocument(checkpoint.state, (doc) => {
+      for (const ref of documentReferences(doc))
+        refAsset(ref.assetId, `检查点 ${checkpoint.name} / ${ref.label}`, ref.explicit)
+      for (const el of doc.elements()) {
+        if (el.params) {
+          eachVoice(el.params, refVoice)
+          const { libraryId, model } = el.params
+          if (typeof libraryId === 'string' && libraryId)
+            libraryRefs.set(libraryId, `检查点 / ${checkpoint.name}`)
+          if (typeof model === 'string' && model.trim()) models.add(model.trim())
+        }
+        if (el.nodeType) {
+          const version = el.nodeVersion ?? 1
+          nodes.set(`${el.nodeType}@${version}`, {
+            type: el.nodeType,
+            version,
+            plugin: host.registry.latestNode(el.nodeType)?.plugin,
+          })
+        }
+      }
+    })
+    const archive = checkpointArchive(checkpoint)
+    const data = strToU8(scrub(JSON.stringify(archive)))
+    const path = `checkpoints/${i + 1}.json`
+    blobs.set(path, data)
+    packageCheckpoints.push({
+      id: checkpoint.id,
+      sourceCanvasId: checkpoint.source_canvas_id,
+      sourceCanvasTitle: checkpoint.source_canvas_title,
+      name: checkpoint.name,
+      createdAt: checkpoint.created_at,
+      file: { path, sha256: sha(data), size: data.byteLength },
+    })
+  }
+
   // 资产库：归属这个项目的条目，加上画布上卡片引用的（可能是不归属任何项目的全局条目）
   const owned = db
     .select()
@@ -375,11 +424,12 @@ async function planExport(
 
   const manifest: ProjectPackageManifest = {
     format: PROJECT_PACKAGE_FORMAT,
-    formatVersion: PROJECT_PACKAGE_VERSION,
+    formatVersion: packageCheckpoints.length ? PROJECT_PACKAGE_VERSION : 1,
     createdAt: Date.now(),
     candidates,
     project: { id: project.id, title: project.title, createdAt: project.created_at },
     canvases: packageCanvases,
+    checkpoints: packageCheckpoints,
     assets: packageAssets,
     library,
     history,
@@ -406,6 +456,7 @@ export async function packageSummary(
   return {
     candidates,
     canvases: m.canvases.length,
+    checkpoints: m.checkpoints.length,
     assets: m.assets.length,
     library: m.library.length,
     jobs: plan.jobs,
@@ -467,6 +518,7 @@ interface Pending {
   staged: Map<string, string>
   docs: Map<string, Uint8Array>
   jobs: PackageJob[]
+  checkpoints: Map<string, CheckpointArchive>
   expires: number
 }
 
@@ -686,6 +738,7 @@ export async function inspectPackage(
     // 逐个文件：在包里、大小和哈希都对得上
     const declared: PackageFile[] = [
       ...manifest.canvases.map((c) => c.file),
+      ...manifest.checkpoints.map((c) => c.file),
       ...manifest.assets.map((a) => a.file),
       ...(manifest.history ? [manifest.history] : []),
     ]
@@ -756,9 +809,21 @@ export async function inspectPackage(
       jobList = res.data.filter((j) => canvasIds.has(j.canvasId))
     }
 
+    const checkpoints = new Map<string, CheckpointArchive>()
+    for (const checkpoint of manifest.checkpoints) {
+      try {
+        const archive = parseCheckpointArchive(
+          JSON.parse(new TextDecoder().decode(blobs.get(checkpoint.file.path))),
+        )
+        checkpoints.set(checkpoint.id, archive)
+      } catch {
+        throw new PackageError('corrupt', `检查点「${checkpoint.name}」内容已损坏，${reexport}`)
+      }
+    }
+
     const token = randomUUID()
     const expires = Date.now() + PENDING_TTL
-    pending.set(token, { owner, dir, manifest, staged, docs, jobs: jobList, expires })
+    pending.set(token, { owner, dir, manifest, staged, docs, jobs: jobList, checkpoints, expires })
 
     const hit = conflicts(deps, owner, manifest, jobList)
     const { host } = deps
@@ -770,6 +835,8 @@ export async function inspectPackage(
     if (manifest.candidates === 'current')
       notices.push('导出时只带了每个节点当前采用的结果，没有历史候选')
     if (newer) notices.push(`${newer} 张画布来自更新版本的 Plein，导入后只读打开`)
+    if (manifest.checkpoints.length)
+      notices.push(`${manifest.checkpoints.length} 个命名检查点和它们引用的素材会完整迁入`)
     return {
       token,
       expiresAt: expires,
@@ -778,6 +845,7 @@ export async function inspectPackage(
       candidates: manifest.candidates,
       counts: {
         canvases: manifest.canvases.length,
+        checkpoints: manifest.checkpoints.length,
         assets: manifest.assets.length,
         library: manifest.library.length,
         jobs: jobList.length,
@@ -817,6 +885,7 @@ function checkManifest(m: ProjectPackageManifest) {
     paths.add(path)
   }
   for (const c of m.canvases) use(c.file.path, /^canvases\/\d{1,6}\.yjs$/.test(c.file.path))
+  for (const c of m.checkpoints) use(c.file.path, /^checkpoints\/\d{1,6}\.json$/.test(c.file.path))
   for (const a of m.assets) use(a.file.path, a.file.path === `assets/${a.id}`)
   if (m.history) use(m.history.path, m.history.path === HISTORY)
   if (bad.length)
@@ -827,6 +896,7 @@ function checkManifest(m: ProjectPackageManifest) {
   const dup = (ids: string[]) => new Set(ids).size !== ids.length
   if (
     dup(m.canvases.map((c) => c.id)) ||
+    dup(m.checkpoints.map((c) => c.id)) ||
     dup(m.assets.map((a) => a.id)) ||
     dup(m.library.map((l) => l.id)) ||
     m.assets.some((a) => a.file.sha256 !== a.id || a.file.size !== a.size)
@@ -909,6 +979,16 @@ export async function commitImport(
     for (const j of p.jobs)
       if (hit.project || hit.jobs.has(j.id))
         map.set(j.id, `run_${Date.now().toString(36)}${randomBytes(4).toString('hex')}`)
+    const checkpointIds = new Map<string, string>()
+    for (const checkpoint of m.checkpoints) {
+      const exists = db.$client
+        .prepare('SELECT id FROM canvas_checkpoints WHERE id=?')
+        .get(checkpoint.id)
+      checkpointIds.set(
+        checkpoint.id,
+        exists || hit.project ? `cp_${randomBytes(12).toString('base64url')}` : checkpoint.id,
+      )
+    }
     const id = (old: string) => map.get(old) ?? old
 
     const placed: Asset[] = []
@@ -991,6 +1071,45 @@ export async function commitImport(
           })
           .run()
       }
+      for (const checkpoint of m.checkpoints) {
+        const archive = p.checkpoints.get(checkpoint.id)!
+        const state = Buffer.from(remapDoc(Buffer.from(archive.state, 'base64'), map))
+        const checkpointId = checkpointIds.get(checkpoint.id)!
+        const history = archive.history.map((job) => ({
+          ...job,
+          id: id(job.id),
+          canvasId: id(job.canvasId),
+        }))
+        const sourceCanvasId =
+          checkpoint.sourceCanvasId && m.canvases.some((cv) => cv.id === checkpoint.sourceCanvasId)
+            ? id(checkpoint.sourceCanvasId)
+            : null
+        db.$client
+          .prepare(
+            'INSERT INTO canvas_checkpoints(id,owner_id,project_id,source_canvas_id,source_canvas_title,name,state,history,created_at,content_hash) VALUES(?,?,?,?,?,?,?,?,?,?)',
+          )
+          .run(
+            checkpointId,
+            owner,
+            projectId,
+            sourceCanvasId,
+            checkpoint.sourceCanvasTitle,
+            checkpoint.name,
+            state,
+            JSON.stringify(history),
+            checkpoint.createdAt,
+            sha(state),
+          )
+        const refs = checkpointAssetIds(state, (asset) => !!store.get(owner, asset))
+        const pin = db.$client.prepare(
+          'INSERT INTO checkpoint_assets(checkpoint_id,owner_id,asset_id) VALUES(?,?,?)',
+        )
+        for (const asset of refs.ids) pin.run(checkpointId, owner, asset)
+        deps.mediaIndex?.refreshCheckpoint(checkpointId)
+      }
+      for (const canvas of m.canvases) deps.mediaIndex?.refreshCanvas(id(canvas.id))
+      for (const job of p.jobs) deps.mediaIndex?.refreshJob(id(job.id))
+      for (const library of m.library) deps.mediaIndex?.refreshLibrary(id(library.id))
     })
     const latest = [...m.canvases].sort((a, b) => b.updatedAt - a.updatedAt)[0]
     return { projectId, title, canvasId: latest ? id(latest.id) : null }

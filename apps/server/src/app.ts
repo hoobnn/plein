@@ -36,6 +36,10 @@ import { Rooms, sqliteDocStore } from './sync/rooms'
 import { syncRoutes } from './sync/routes'
 import { promptRoutes } from './prompt/routes'
 import { templateRoutes } from './templates/routes'
+import { createMediaIndex, type MediaIndex } from './media-index/service'
+import { mediaLibraryRoutes } from './media-index/routes'
+import { createCheckpointService, type CheckpointService } from './checkpoints/service'
+import { checkpointRoutes } from './checkpoints/routes'
 
 export interface Server {
   app: Hono<AuthEnv>
@@ -48,6 +52,8 @@ export interface Server {
   plans: EditPlans
   agents: AgentSessions
   library: LibraryStore
+  mediaIndex: MediaIndex
+  checkpoints: CheckpointService
   close(): void
 }
 
@@ -59,7 +65,8 @@ export async function createServer(config: Config): Promise<Server> {
   setSubtitleFont(config.subtitleFont)
   const db = openDb(config.dataDir)
   const secrets = loadSecrets(config.dataDir)
-  const rooms = new Rooms(sqliteDocStore(db))
+  let mediaIndex: MediaIndex | undefined
+  const rooms = new Rooms(sqliteDocStore(db, (id) => mediaIndex?.refreshPersistedCanvas(id)))
   const assets = new AssetStore(config.dataDir, db, config.maxUpload)
   await assets.init()
   const plugins = new PluginHost(
@@ -78,6 +85,12 @@ export async function createServer(config: Config): Promise<Server> {
   const auth = await createAuth(config.auth, db, secrets, { publicUrl: config.publicUrl })
   const runs = new NodeRuns(db, rooms, plugins, { concurrency: config.maxJobs })
   const library = new LibraryStore(db)
+  mediaIndex = createMediaIndex({ db, rooms })
+  mediaIndex.install()
+  const checkpoints = createCheckpointService({ db, rooms, assets, index: mediaIndex })
+  const index = mediaIndex
+  const offJobs = runs.store.onChange((id) => index.refreshJobSafely(id))
+  const offLibrary = library.onChange((id) => index.refreshLibrarySafely(id))
   // 修改方案：内置智能体、本机 CLI 和对外 MCP 共用一份
   const plans = new EditPlans(db, runs, plugins)
   const agents = new AgentSessions({
@@ -119,10 +132,15 @@ export async function createServer(config: Config): Promise<Server> {
   app.use('/sync/*', auth.requireAuth)
   const preview = previewer(db)
   app.route('/', projectRoutes(db, rooms, preview))
-  app.route('/', packageRoutes({ db, rooms, assets, host: plugins, dataDir: config.dataDir }))
+  app.route(
+    '/',
+    packageRoutes({ db, rooms, assets, host: plugins, dataDir: config.dataDir, mediaIndex }),
+  )
   app.route('/', canvasRoutes(db, rooms, preview))
   app.route('/', libraryRoutes(db, library))
   app.route('/', templateRoutes(db))
+  app.route('/', mediaLibraryRoutes(mediaIndex))
+  app.route('/', checkpointRoutes(checkpoints))
   app.route('/', assetRoutes(assets))
   app.route('/', mediaRoutes(assets))
   app.route('/', syncRoutes(db, rooms))
@@ -156,6 +174,8 @@ export async function createServer(config: Config): Promise<Server> {
     })
   }
 
+  // 来源索引可重建；旧数据回填期间只有新素材检索返回 503，既有创作与任务恢复继续可用。
+  void mediaIndex.rebuild().catch((error) => console.error('[media-index] rebuild failed', error))
   // 接着跑上次退出时没结束的任务
   runs.recover()
 
@@ -170,9 +190,14 @@ export async function createServer(config: Config): Promise<Server> {
     plans,
     agents,
     library,
+    mediaIndex,
+    checkpoints,
     close() {
       agents.close()
       runs.close()
+      offJobs()
+      offLibrary()
+      mediaIndex.close()
       local.close()
       rooms.closeAll()
       db.$client.close()

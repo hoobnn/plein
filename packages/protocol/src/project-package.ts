@@ -14,7 +14,7 @@ import { CreateLibraryItem } from './library'
  */
 export const PROJECT_PACKAGE_FORMAT = 'plein-project'
 /** 当前写出、也是能读的最高格式版本；结构有不兼容变化时加一 */
-export const PROJECT_PACKAGE_VERSION = 1
+export const PROJECT_PACKAGE_VERSION = 2
 export const PROJECT_PACKAGE_EXT = '.plein'
 
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/, '哈希不合法')
@@ -44,6 +44,17 @@ export const PackageCanvas = z.object({
   file: PackageFile,
 })
 export type PackageCanvas = z.infer<typeof PackageCanvas>
+
+/** 命名检查点始终完整迁移，不受 current/all 候选选项裁剪。 */
+export const PackageCheckpoint = z.object({
+  id: recordId,
+  sourceCanvasId: recordId.nullable(),
+  sourceCanvasTitle: z.string().max(200),
+  name: z.string().trim().min(1).max(100),
+  createdAt: z.number(),
+  file: PackageFile,
+})
+export type PackageCheckpoint = z.infer<typeof PackageCheckpoint>
 
 export const PackageAsset = z.object({
   id: sha256,
@@ -121,6 +132,7 @@ export const ProjectPackageManifest = z.object({
   candidates: PackageCandidates,
   project: z.object({ id: recordId, title: z.string().max(200), createdAt: z.number() }),
   canvases: z.array(PackageCanvas).max(1000),
+  checkpoints: z.array(PackageCheckpoint).max(10_000).default([]),
   assets: z.array(PackageAsset).max(100_000),
   library: z.array(PackageLibraryItem).max(10_000),
   history: PackageFile.nullable(),
@@ -133,6 +145,7 @@ export type ProjectPackageManifest = z.infer<typeof ProjectPackageManifest>
 export interface ProjectPackageSummary {
   candidates: PackageCandidates
   canvases: number
+  checkpoints: number
   assets: number
   library: number
   jobs: number
@@ -156,7 +169,14 @@ export interface ProjectImportPreview {
   formatVersion: number
   title: string
   candidates: PackageCandidates
-  counts: { canvases: number; assets: number; library: number; jobs: number; bytes: number }
+  counts: {
+    canvases: number
+    assets: number
+    library: number
+    jobs: number
+    bytes: number
+    checkpoints: number
+  }
   /**
    * 本机已有同一个项目（同一个包导入过，或就是从这里导出的）：作为新副本导入，
    * 项目及其画布、项目自己的条目、运行记录全部换新 id
