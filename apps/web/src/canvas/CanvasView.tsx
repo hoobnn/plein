@@ -102,6 +102,9 @@ export function CanvasView({ source }: { source: CanvasSource }) {
         clipboard: referenceClipboard,
         assetUrl,
         theme: canvasTheme(useTheme.getState().name),
+        onInteractionInterrupted: () => {
+          if (!disposed) notify('节点或连线已更新，本次操作已取消')
+        },
       })
       // StrictMode 下 effect 会执行两次：init 未完成前不能 destroy
       engine.init().then(

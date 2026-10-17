@@ -57,6 +57,8 @@ export interface InteractHost {
     world: { x: number; y: number },
     client: { x: number; y: number },
   ): void
+  /** 对象变化导致在途手势失效，由外壳提供简短反馈。 */
+  onInterrupted?(): void
 }
 
 type Gesture =
@@ -90,22 +92,58 @@ export function attachInteractions(host: InteractHost) {
   const { el, camera, scene, doc, selection, edges, overlay, pan } = host
   let gesture: Gesture | null = null
   let pointer: number | null = null
+  let selecting = false
+  const bases = new Map<string, CanvasElement>()
+  let edgeBase: ReturnType<PleinDoc['getEdge']>
+  const geometryKeys = ['x', 'y', 'w', 'h', 'parentId', 'locked'] as const
+
+  const valid = () => {
+    for (const [id, base] of bases) {
+      const now = doc.get(id)
+      if (!now || geometryKeys.some((key) => now[key] !== base[key])) return false
+    }
+    return (
+      gesture?.kind !== 'connect' || !gesture.picked || doc.getEdge(gesture.picked) === edgeBase
+    )
+  }
+  const capture = (g: Gesture) => {
+    bases.clear()
+    edgeBase = g.kind === 'connect' && g.picked ? doc.getEdge(g.picked) : undefined
+    const ids =
+      g.kind === 'press'
+        ? [g.id, ...editableTops()]
+        : g.kind === 'move'
+          ? g.ids
+          : g.kind === 'resize'
+            ? [...g.ids, ...g.kids.keys()]
+            : g.kind === 'connect'
+              ? [g.from.elementId, ...(edgeBase ? [edgeBase.to[0]] : [])]
+              : []
+    for (const id of ids) {
+      const element = doc.get(id)
+      if (element) bases.set(id, element)
+      for (const parent of doc.ancestors(id)) bases.set(parent.id, parent)
+    }
+  }
 
   const release = () => {
     const id = pointer
     pointer = null
     if (id !== null && el.hasPointerCapture(id)) el.releasePointerCapture(id)
   }
-  const cancel = () => {
+  const cancel = (restoreSelection = true) => {
     const g = gesture
     gesture = null
+    bases.clear()
+    edgeBase = undefined
     release()
     if (!g) return
     host.preview(new Map())
     edges.setPreview(null)
     overlay.setGuides([])
     overlay.setMarquee(null)
-    if (g.kind === 'marquee') selection.set(g.restore.filter((id) => doc.has(id)))
+    if (restoreSelection && g.kind === 'marquee')
+      selection.set(g.restore.filter((id) => doc.has(id)))
     el.style.cursor = pan.space || pan.hand ? 'grab' : ''
   }
   const commit = (write: () => void) => {
@@ -115,6 +153,11 @@ export function attachInteractions(host: InteractHost) {
     } finally {
       doc.undo.stopCapturing()
     }
+  }
+  const interrupt = () => {
+    if (!gesture) return
+    cancel(false)
+    host.onInterrupted?.()
   }
 
   const toWorld = (e: PointerEvent) => {
@@ -217,6 +260,7 @@ export function attachInteractions(host: InteractHost) {
 
   const onPointerDown = (e: PointerEvent) => {
     if (pointer !== null || e.button !== 0 || pan.space || pan.hand) return
+    doc.flush()
     const w = toWorld(e)
 
     // 端口优先于缩放手柄：单端口节点的端口正好在边的中点手柄上
@@ -256,6 +300,7 @@ export function attachInteractions(host: InteractHost) {
       }
     }
     if (gesture) {
+      capture(gesture)
       pointer = e.pointerId
       el.setPointerCapture(e.pointerId)
     }
@@ -286,6 +331,10 @@ export function attachInteractions(host: InteractHost) {
 
   const onPointerMove = (e: PointerEvent) => {
     if (pointer !== null && pointer !== e.pointerId) return
+    if (gesture && !valid()) {
+      interrupt()
+      return
+    }
     const w = toWorld(e)
     if (!gesture) {
       if (pan.space || pan.hand) return
@@ -343,7 +392,12 @@ export function attachInteractions(host: InteractHost) {
       case 'marquee': {
         const rect = fromPoints(gesture.wx, gesture.wy, w.x, w.y)
         overlay.setMarquee(rect)
-        selection.set([...gesture.base, ...marqueeHits(rect)])
+        selecting = true
+        try {
+          selection.set([...gesture.base.filter((id) => doc.has(id)), ...marqueeHits(rect)])
+        } finally {
+          selecting = false
+        }
         break
       }
     }
@@ -396,9 +450,17 @@ export function attachInteractions(host: InteractHost) {
 
   const onPointerUp = (e: PointerEvent) => {
     if (pointer !== e.pointerId) return
+    doc.flush()
+    if (pointer !== e.pointerId) return
+    if (!valid()) {
+      interrupt()
+      return
+    }
     const w = toWorld(e)
     const g = gesture
     gesture = null
+    bases.clear()
+    edgeBase = undefined
     release()
     if (!g) return
 
@@ -450,6 +512,10 @@ export function attachInteractions(host: InteractHost) {
       }
       case 'marquee':
         overlay.setMarquee(null)
+        selection.set([
+          ...g.base.filter((id) => doc.has(id)),
+          ...marqueeHits(fromPoints(g.wx, g.wy, w.x, w.y)),
+        ])
         break
     }
   }
@@ -488,7 +554,17 @@ export function attachInteractions(host: InteractHost) {
       cancel()
     }
   }
-  const offCamera = camera.onChange(cancel)
+  const onBlur = () => cancel()
+  const offCamera = camera.onChange(() => cancel())
+  const offSelection = selection.onChange(() => {
+    if (gesture && !selecting) {
+      if (valid()) cancel(false)
+      else interrupt()
+    }
+  })
+  const offDoc = doc.subscribe(() => {
+    if (gesture && !valid()) interrupt()
+  })
 
   el.addEventListener('pointerdown', onPointerDown)
   el.addEventListener('pointerleave', onPointerLeave)
@@ -496,19 +572,21 @@ export function attachInteractions(host: InteractHost) {
   el.addEventListener('pointerup', onPointerUp)
   el.addEventListener('pointercancel', onCancel)
   el.addEventListener('lostpointercapture', onCancel)
-  window.addEventListener('blur', cancel)
+  window.addEventListener('blur', onBlur)
   window.addEventListener('keydown', onKeyDown)
 
   return () => {
     offCamera()
-    cancel()
+    offSelection()
+    offDoc()
+    cancel(false)
     el.removeEventListener('pointerdown', onPointerDown)
     el.removeEventListener('pointerleave', onPointerLeave)
     el.removeEventListener('pointermove', onPointerMove)
     el.removeEventListener('pointerup', onPointerUp)
     el.removeEventListener('pointercancel', onCancel)
     el.removeEventListener('lostpointercapture', onCancel)
-    window.removeEventListener('blur', cancel)
+    window.removeEventListener('blur', onBlur)
     window.removeEventListener('keydown', onKeyDown)
   }
 }

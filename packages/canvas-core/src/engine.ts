@@ -52,6 +52,8 @@ export interface EngineOptions extends Omit<RenderContext, 'initialDetail' | 'te
   /** 默认 WebGL；WebGPU 待基准与兼容性验证后再切默认 */
   renderer?: 'webgl' | 'webgpu'
   renderers?: RendererRegistry
+  /** 元素变化使在途手势失效时，由外壳提示用户。 */
+  onInteractionInterrupted?(): void
   clipboard?: {
     copy(doc: PleinDoc, ids: Iterable<string>): ClipboardData
     paste(doc: PleinDoc, data: ClipboardData, opts: ImportOptions): string[]
@@ -224,6 +226,7 @@ export class Engine {
         pan: this.pan,
         preview: (patches) => this.preview(patches),
         commit: (write) => this.commit(write),
+        onInterrupted: () => this.opts.onInteractionInterrupted?.(),
         connectToEmpty: (from, world, client) =>
           this.emitMenu({ kind: 'connect', from, world, client }),
       }),

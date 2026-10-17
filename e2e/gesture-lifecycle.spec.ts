@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { centerOf, clickElement, handleOf, newProject } from './canvas'
+import { centerOf, clickElement, handleOf, newProject, waitEngine } from './canvas'
 
 const pageErrors = new WeakMap<Page, string[]>()
 test.beforeEach(({ page }) => {
@@ -300,4 +300,33 @@ test('分组左上角缩放取消恢复全部预览，确认与撤销保持子�
   await page.getByRole('button', { name: '撤销', exact: true }).click()
   await expect.poll(() => geometry(page, id)).toEqual(before)
   expect(await Promise.all(children.map((child) => geometry(page, child)))).toEqual(childBefore)
+})
+
+test('拾线期间同伴删除原边，旧手势不会在松手时重新接出连线', async ({ page, context }) => {
+  const ids = await connections(page)
+  const peerContext = await context.browser()!.newContext()
+  try {
+    const peer = await peerContext.newPage()
+    peer.on('pageerror', (error) => pageErrors.get(page)!.push(error.message))
+    await peer.goto(page.url())
+    await waitEngine(peer)
+    await expect(peer.getByTestId('sync-status')).toHaveAttribute('data-sync', 'connected')
+    const from = await handleOf(page, ids.a, 'in')
+    await page.mouse.move(from.x, from.y)
+    await page.mouse.down()
+    await page.mouse.move(from.x - 80, from.y + 40, { steps: 4 })
+    const remote = await handleOf(peer, ids.a, 'in')
+    await peer.mouse.move(remote.x, remote.y)
+    await peer.mouse.down()
+    await peer.mouse.move(1360, 110, { steps: 6 })
+    await peer.mouse.up()
+    await expect.poll(() => edges(page)).toEqual([])
+    const to = await handleOf(page, ids.b, 'in')
+    await page.mouse.move(to.x, to.y, { steps: 4 })
+    await page.mouse.up()
+    expect(await edges(page)).toEqual([])
+    expect(await edges(peer)).toEqual([])
+  } finally {
+    await peerContext.close()
+  }
 })
