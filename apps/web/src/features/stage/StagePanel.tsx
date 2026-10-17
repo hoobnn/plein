@@ -3,6 +3,7 @@ import { adoptResult, currentResult, setParam } from '@plein/doc'
 import {
   STAGE_ASPECTS,
   STAGE_BLOCKS,
+  STAGE_BOUNDS,
   STAGE_POSES,
   type StageAspect,
   type StageBlock,
@@ -758,8 +759,8 @@ function CameraInspector(props: {
         <Slider
           label="机位高"
           value={c.y}
-          min={0.1}
-          max={8}
+          min={STAGE_BOUNDS.cameraHeight.min}
+          max={STAGE_BOUNDS.cameraHeight.max}
           step={0.05}
           unit=" 米"
           onChange={(y) => props.onChange({ y })}

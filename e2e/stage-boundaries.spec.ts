@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { StageScene } from '../packages/nodes/src/stage'
 import { addNode, centerOf, elements, newProject, zoomTo } from './canvas'
 
 async function openStage(page: Page) {
@@ -202,4 +203,45 @@ test('3D 截图等待时关闭重开，新截图的采用不被旧请求覆盖',
   ).toBe(adopted)
   await expect(dialog.getByRole('button', { name: /人物 1\s*坐/ })).toBeVisible()
   expect(errors).toEqual([])
+})
+
+test('3D 连续大幅缩放不写入无效机位或重置已有场景', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  await dialog.getByRole('button', { name: '坐', exact: true }).click()
+  await dialog.getByRole('button', { name: '添加人物', exact: true }).click()
+  const canvas = dialog.locator('canvas.stage-canvas')
+  const rect = (await canvas.boundingBox())!
+  await page.mouse.move(rect.x + rect.width * 0.2, rect.y + rect.height * 0.3)
+  await page.mouse.wheel(0, 20000)
+  const read = () =>
+    page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.scene, stage.id)
+  await expect
+    .poll(async () => {
+      const data = await read()
+      const parsed = StageScene.safeParse(data)
+      return parsed.success ? parsed.data.camera.z : JSON.stringify(data)
+    })
+    .not.toBe(4.5)
+  const scene = StageScene.safeParse(await read())
+  expect(scene.success, JSON.stringify(await read())).toBe(true)
+  expect(scene.data!.figures).toHaveLength(2)
+  expect(scene.data!.figures[0]!.pose).toBe('sit')
+  await expect(dialog.getByRole('button', { name: /人物 1\s*坐/ })).toBeVisible()
+  await page.mouse.wheel(0, -20000)
+  await expect.poll(async () => StageScene.parse(await read()).camera.z).toBeLessThan(1)
+  await dialog.getByRole('button', { name: '自由视角', exact: true }).click()
+  await page.mouse.move(rect.x + rect.width * 0.2, rect.y + rect.height * 0.3)
+  await page.mouse.wheel(0, 20000)
+  await dialog.locator('.stage-outline .stage-item').filter({ hasText: '35mm' }).click()
+  await dialog.getByRole('button', { name: '设为机位', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: '机位视角', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  expect(StageScene.safeParse(await read()).success).toBe(true)
+  expect(StageScene.parse(await read()).figures).toHaveLength(2)
+  const height = dialog.getByRole('slider', { name: '机位高', exact: true })
+  const camera = StageScene.parse(await read()).camera
+  expect(camera.y).toBeLessThanOrEqual(Number(await height.getAttribute('max')))
+  expect(camera.y).toBeGreaterThanOrEqual(Number(await height.getAttribute('min')))
 })

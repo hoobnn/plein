@@ -9,6 +9,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { TransformControls } from 'three/addons/controls/TransformControls.js'
 import { blockKey, buildBlock, buildFigure, disposeTree, updateBlock, updateFigure } from './figure'
+import { stageCameraBounds, stageGround } from './constraints'
 
 export type StageMode = 'shot' | 'free'
 export type StageTool = 'move' | 'rotate'
@@ -107,6 +108,9 @@ export class StageView {
     this.orbit = new OrbitControls(this.shot, canvas)
     this.orbit.enableDamping = true
     this.orbit.dampingFactor = 0.12
+    // 防止极端滚轮输入使半径溢出，或缩到相机与目标重合。
+    this.orbit.minDistance = 0.25
+    this.orbit.maxDistance = 100
     this.orbit.addEventListener('end', () => {
       if (this.mode === 'shot') this.events.onCamera(this.cameraData())
     })
@@ -194,15 +198,15 @@ export class StageView {
   /** 自由视角下「把机位放到这里」：当前编辑相机的位置和看向的点 */
   viewAsCamera(): StageCamera {
     const t = this.orbit.target
-    return {
+    return stageCameraBounds({
       ...(this.data?.camera ?? { focal: 35 }),
-      x: round(this.free.position.x),
-      y: round(Math.max(0.05, this.free.position.y)),
-      z: round(this.free.position.z),
-      tx: round(t.x),
-      ty: round(t.y),
-      tz: round(t.z),
-    } as StageCamera
+      x: this.free.position.x,
+      y: this.free.position.y,
+      z: this.free.position.z,
+      tx: t.x,
+      ty: t.y,
+      tz: t.z,
+    })
   }
 
   /**
@@ -305,15 +309,15 @@ export class StageView {
   private cameraData(): StageCamera {
     const t = this.orbit.target
     const p = this.shot.position
-    return {
+    return stageCameraBounds({
       focal: this.data?.camera.focal ?? 35,
-      x: round(p.x),
-      y: round(Math.max(0.05, p.y)),
-      z: round(p.z),
-      tx: round(t.x),
-      ty: round(t.y),
-      tz: round(t.z),
-    }
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      tx: t.x,
+      ty: t.y,
+      tz: t.z,
+    })
   }
 
   private orbitBusy() {
@@ -359,6 +363,8 @@ export class StageView {
     if (!obj || !id) return
     // 拖动只在地面上：高度固定在 0，只绕竖直轴转
     obj.position.y = 0
+    obj.position.x = stageGround(obj.position.x)
+    obj.position.z = stageGround(obj.position.z)
     const facing = round(((deg(obj.rotation.y) + 540) % 360) - 180, 1)
     this.events.onMove(id, { x: round(obj.position.x), z: round(obj.position.z), facing })
   }

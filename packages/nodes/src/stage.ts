@@ -46,9 +46,16 @@ export type StageAspect = (typeof STAGE_ASPECTS)[number]
 /** 截图长边像素 */
 export const STAGE_SNAPSHOT_SIDE = 1536
 
+/** 场景坐标的持久化边界，构图工具的交互写回也遵守同一范围。 */
+export const STAGE_BOUNDS = {
+  ground: { min: -50, max: 50 },
+  cameraHeight: { min: 0.05, max: 30 },
+  targetHeight: { min: -10, max: 30 },
+} as const
+
 const meters = (min: number, max: number) => z.number().min(min).max(max)
 /** 地面上的位置（米），场景限定在 ±50 米内 */
-const ground = () => meters(-50, 50)
+const ground = () => meters(STAGE_BOUNDS.ground.min, STAGE_BOUNDS.ground.max)
 /** 朝向（度），0 朝向镜头默认方向（+z） */
 const facing = () => z.number().min(-360).max(360).default(0)
 
@@ -84,10 +91,10 @@ export type StageBlock = z.infer<typeof StageBlock>
 /** 机位：位置、看向的点和焦距（全画幅等效毫米） */
 export const StageCamera = z.object({
   x: ground().default(0),
-  y: meters(0.05, 30).default(1.5),
+  y: meters(STAGE_BOUNDS.cameraHeight.min, STAGE_BOUNDS.cameraHeight.max).default(1.5),
   z: ground().default(4.5),
   tx: ground().default(0),
-  ty: meters(-10, 30).default(1.2),
+  ty: meters(STAGE_BOUNDS.targetHeight.min, STAGE_BOUNDS.targetHeight.max).default(1.2),
   tz: ground().default(0),
   focal: z.number().min(12).max(200).default(35),
 })
