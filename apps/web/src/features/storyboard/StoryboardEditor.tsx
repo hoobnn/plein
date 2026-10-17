@@ -29,7 +29,7 @@ import { openAnimatic } from '../sequence/animatic'
 import { AssetBindingSelect, DialogueCell } from './ShotBindings'
 
 const cell =
-  'w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
+  'resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
 
 const splitNames = (text: string) =>
   text
@@ -37,7 +37,7 @@ const splitNames = (text: string) =>
     .map((s) => s.replace(/^@/, '').trim())
     .filter(Boolean)
 
-/** 分镜表格编辑器：全屏浮层，改单元格即写入文档并标记为手改 */
+/** 逐镜头分区编辑：叙事内容与生成提示词并列，窄窗口自动堆叠。 */
 export function StoryboardEditor() {
   const engine = useCanvas((s) => s.engine)
   const id = useCanvas((s) => s.storyboard)
@@ -66,6 +66,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const [syncScope, setSyncScope] = useState<string[] | null>(null)
   const [batchRequest, setBatchRequest] = useState<StoryboardBatchRequest | null>(null)
   const [mode, setMode] = useState<'edit' | 'review'>('edit')
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const allCollapsed = shots.length > 0 && shots.every((s) => collapsed.has(s.id))
   const expanded = expandedNodes(engine, id)
   const diffs = planDiffs(engine, id)
   const targets = picked.size ? shots.filter((s) => picked.has(s.id)) : shots
@@ -189,7 +191,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
 
   const btn = 'ui-btn ui-btn-secondary'
   return (
-    <Modal label="分镜表" onClose={onClose} className="max-w-350">
+    <Modal label="分镜表" onClose={onClose} className="storyboard-editor max-w-350">
       <ModalHeader
         title={el?.name ?? '分镜'}
         onClose={onClose}
@@ -226,11 +228,17 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         >
           节奏样片
         </button>
-        <span className="mr-1 text-xs text-ink-subtle">作用于{scope}</span>
         <button type="button" className={btn} onClick={addShot}>
           <Icon name="plus" />
           添加镜头
         </button>
+      </ModalHeader>
+      <div
+        role="toolbar"
+        aria-label="分镜批量操作"
+        className="flex flex-none flex-wrap items-center gap-2 border-b border-line px-5 py-3"
+      >
+        <span className="mr-1 text-xs text-ink-subtle">作用于{scope}</span>
         <button
           type="button"
           className={btn}
@@ -326,7 +334,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             查看影响
           </button>
         )}
-      </ModalHeader>
+      </div>
       {shots.length === 0 ? (
         <EmptyState
           icon="frames"
@@ -349,129 +357,91 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           }
         />
       ) : (
-        <div className="ui-scrollbar min-h-0 overflow-auto">
-          <table className="w-full min-w-300 border-collapse text-left text-sm">
-            <thead className="sticky top-0 z-10 bg-surface-2 text-xs font-medium text-ink-subtle">
-              <tr>
-                <th className="w-12 py-2 pl-5 pr-2">
+        <div
+          className="ui-scrollbar min-h-0 overflow-auto bg-surface-2 p-4 sm:p-5"
+          data-testid="storyboard-shots"
+        >
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <label className="flex w-fit items-center gap-2 text-xs text-ink-muted">
+              <input
+                type="checkbox"
+                aria-label="全选"
+                checked={picked.size > 0 && picked.size === shots.length}
+                onChange={(e) => setPicked(new Set(e.target.checked ? shots.map((s) => s.id) : []))}
+              />
+              {picked.size ? `已选择 ${picked.size} / ${shots.length} 个镜头` : '选择全部镜头'}
+            </label>
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary ui-btn-xs"
+              onClick={() => setCollapsed(new Set(allCollapsed ? [] : shots.map((s) => s.id)))}
+            >
+              {allCollapsed ? '展开全部镜头' : '收起全部镜头'}
+            </button>
+          </div>
+          <div className="space-y-4">
+            {shots.map((s) => (
+              <article
+                key={s.id}
+                aria-label={`镜头 ${String(s.no).padStart(2, '0')}`}
+                className="storyboard-shot rounded-xl border border-line bg-surface"
+              >
+                <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3">
                   <input
                     type="checkbox"
-                    aria-label="全选"
-                    checked={picked.size > 0 && picked.size === shots.length}
-                    onChange={(e) =>
-                      setPicked(new Set(e.target.checked ? shots.map((s) => s.id) : []))
-                    }
+                    aria-label={`选择镜头 ${s.no}`}
+                    checked={picked.has(s.id)}
+                    onChange={(e) => {
+                      const next = new Set(picked)
+                      if (e.target.checked) next.add(s.id)
+                      else next.delete(s.id)
+                      setPicked(next)
+                    }}
                   />
-                </th>
-                <th className="w-12 px-2 py-2 font-normal">镜号</th>
-                <th className="w-16 px-2 py-2 font-normal">时长</th>
-                <th className="w-20 px-2 py-2 font-normal">景别</th>
-                <th className="w-32 px-2 py-2 font-normal">光影</th>
-                <th className="w-28 px-2 py-2 font-normal">情绪 / 语气</th>
-                <th className="w-40 px-2 py-2 font-normal">音效</th>
-                <th className="px-2 py-2 font-normal">画面</th>
-                <th className="w-32 px-2 py-2 font-normal">出场</th>
-                <th className="w-56 px-2 py-2 font-normal">台词（角色：台词）</th>
-                <th className="px-2 py-2 font-normal">分镜图提示词</th>
-                <th className="w-48 px-2 py-2 font-normal">运动提示词</th>
-                <th className="w-20 py-2 pl-2 pr-5" />
-              </tr>
-            </thead>
-            <tbody>
-              {shots.map((s) => (
-                <tr key={s.id} className="border-t border-line align-top hover:bg-hover">
-                  <td className="py-2.5 pl-5 pr-2">
-                    <input
-                      type="checkbox"
-                      aria-label={`选择镜头 ${s.no}`}
-                      checked={picked.has(s.id)}
-                      onChange={(e) => {
-                        const next = new Set(picked)
-                        if (e.target.checked) next.add(s.id)
-                        else next.delete(s.id)
-                        setPicked(next)
-                      }}
-                    />
-                  </td>
-                  <td className="px-2 py-2.5 tabular-nums text-ink-muted">
-                    {String(s.no).padStart(2, '0')}
-                  </td>
-                  <td className="px-1 py-1">
+                  <h3 className="mr-2 font-semibold tabular-nums">
+                    <button
+                      type="button"
+                      className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-hover"
+                      aria-label={`${collapsed.has(s.id) ? '展开' : '收起'}镜头 ${s.no}`}
+                      aria-expanded={!collapsed.has(s.id)}
+                      aria-controls={`shot-content-${s.id}`}
+                      onClick={() =>
+                        setCollapsed((previous) => {
+                          const next = new Set(previous)
+                          if (next.has(s.id)) next.delete(s.id)
+                          else next.add(s.id)
+                          return next
+                        })
+                      }
+                    >
+                      <Icon name={collapsed.has(s.id) ? 'chevronRight' : 'chevronDown'} size={14} />
+                      镜头 {String(s.no).padStart(2, '0')}
+                    </button>
+                  </h3>
+                  <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-ink-muted">
+                    时长
                     <input
                       type="number"
                       min={1}
                       max={30}
                       aria-label="时长"
-                      className={cell}
+                      className={`${cell} w-16 bg-surface-2`}
                       value={s.duration}
                       onChange={(e) => patch(s.id, { duration: Number(e.target.value) || 1 })}
                     />
-                  </td>
-                  <td className="px-1 py-1">
+                    秒
+                  </label>
+                  <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-ink-muted">
+                    景别
                     <Select
                       aria-label="景别"
-                      className="h-8 w-full bg-transparent shadow-none hover:bg-hover"
+                      className="w-28"
                       value={s.shotSize}
                       options={SHOT_SIZES.map((o) => ({ value: o }))}
                       onChange={(v) => patch(s.id, { shotSize: v as Shot['shotSize'] })}
                     />
-                  </td>
-                  <TextCell
-                    value={s.lighting}
-                    label="光影"
-                    onChange={(lighting) => patch(s.id, { lighting })}
-                  />
-                  <TextCell
-                    value={s.emotion}
-                    label="情绪 / 语气"
-                    onChange={(emotion) => patch(s.id, { emotion })}
-                  />
-                  <TextCell value={s.sfx} label="音效" onChange={(sfx) => patch(s.id, { sfx })} />
-                  <TextCell
-                    value={s.description}
-                    label="画面"
-                    onChange={(v) => patch(s.id, { description: v })}
-                  />
-                  <TextCell
-                    value={s.characters.join('、')}
-                    label="出场"
-                    onChange={(v) => patch(s.id, { characters: splitNames(v) })}
-                  >
-                    {s.characters.map((name) => (
-                      <AssetBindingSelect
-                        key={name}
-                        engine={engine}
-                        name={name}
-                        binding={s.assetBindings?.[name]}
-                        onChange={(binding) => {
-                          patch(s.id, (current) => {
-                            const assetBindings = { ...current.assetBindings }
-                            if (binding) assetBindings[name] = binding
-                            else delete assetBindings[name]
-                            return { assetBindings }
-                          })
-                        }}
-                      />
-                    ))}
-                  </TextCell>
-                  <DialogueCell
-                    engine={engine}
-                    shot={s}
-                    onChange={(update) =>
-                      patch(s.id, (current) => ({ dialogue: update(current.dialogue) }))
-                    }
-                  />
-                  <TextCell
-                    value={s.imagePrompt}
-                    label="分镜图提示词"
-                    onChange={(v) => patch(s.id, { imagePrompt: v })}
-                  />
-                  <TextCell
-                    value={s.motionPrompt}
-                    label="运动提示词"
-                    onChange={(v) => patch(s.id, { motionPrompt: v })}
-                  />
-                  <td className="py-2 pr-5 pl-2">
+                  </div>
+                  <div className="ml-auto">
                     <div className="flex flex-col items-end gap-1">
                       <div className="flex items-center gap-1">
                         {expanded.has(s.id) && (
@@ -499,11 +469,84 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       </div>
                       {s.edited && <span className="ui-tag ui-tag-accent">手改</span>}
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+                <div
+                  id={`shot-content-${s.id}`}
+                  hidden={collapsed.has(s.id)}
+                  className={`storyboard-shot-content ${collapsed.has(s.id) ? 'hidden' : 'grid'} gap-5 p-4`}
+                >
+                  <section aria-label="镜头内容" className="min-w-0 space-y-4">
+                    <TextCell
+                      value={s.description}
+                      label="画面"
+                      onChange={(v) => patch(s.id, { description: v })}
+                    />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <TextCell
+                        value={s.lighting}
+                        label="光影"
+                        onChange={(lighting) => patch(s.id, { lighting })}
+                      />
+                      <TextCell
+                        value={s.emotion}
+                        label="情绪 / 语气"
+                        onChange={(emotion) => patch(s.id, { emotion })}
+                      />
+                    </div>
+                    <TextCell
+                      value={s.characters.join('、')}
+                      label="出场"
+                      onChange={(v) => patch(s.id, { characters: splitNames(v) })}
+                    >
+                      {s.characters.map((name) => (
+                        <AssetBindingSelect
+                          key={name}
+                          engine={engine}
+                          name={name}
+                          binding={s.assetBindings?.[name]}
+                          onChange={(binding) => {
+                            patch(s.id, (current) => {
+                              const assetBindings = { ...current.assetBindings }
+                              if (binding) assetBindings[name] = binding
+                              else delete assetBindings[name]
+                              return { assetBindings }
+                            })
+                          }}
+                        />
+                      ))}
+                    </TextCell>
+                    <div className="min-w-0">
+                      <div className="mb-1 text-xs font-medium text-ink-muted">台词</div>
+                      <DialogueCell
+                        engine={engine}
+                        shot={s}
+                        onChange={(update) =>
+                          patch(s.id, (current) => ({ dialogue: update(current.dialogue) }))
+                        }
+                      />
+                    </div>
+                    <TextCell value={s.sfx} label="音效" onChange={(sfx) => patch(s.id, { sfx })} />
+                  </section>
+                  <section aria-label="生成提示词" className="min-w-0 space-y-4">
+                    <div className="text-xs font-medium text-ink-subtle">
+                      生成提示词 · 可独立编辑
+                    </div>
+                    <TextCell
+                      value={s.imagePrompt}
+                      label="分镜图提示词"
+                      onChange={(v) => patch(s.id, { imagePrompt: v })}
+                    />
+                    <TextCell
+                      value={s.motionPrompt}
+                      label="运动提示词"
+                      onChange={(v) => patch(s.id, { motionPrompt: v })}
+                    />
+                  </section>
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
       )}
       {syncScope && (
@@ -558,7 +601,8 @@ function TextCell({
     if (!focused) setDraft(value)
   }, [value, focused])
   return (
-    <td className="px-1 py-1">
+    <div className="min-w-0">
+      <div className="mb-1 text-xs font-medium text-ink-muted">{label}</div>
       <MentionTextarea
         targets={engine ? mentionTargets(engine) : []}
         onLocate={(id) => {
@@ -569,7 +613,7 @@ function TextCell({
         }}
         aria-label={label}
         rows={2}
-        className={`${cell} field-sizing-content min-h-9`}
+        className={`${cell} w-full field-sizing-content min-h-12 max-h-80 overflow-y-auto bg-surface-2 leading-relaxed`}
         value={focused ? draft : value}
         onFocus={() => {
           setDraft(value)
@@ -581,7 +625,7 @@ function TextCell({
           if (draft !== value) onChange(draft)
         }}
       />
-      {children}
-    </td>
+      {children && <div className="mt-2 grid gap-2 sm:grid-cols-2">{children}</div>}
+    </div>
   )
 }

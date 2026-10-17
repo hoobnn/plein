@@ -365,3 +365,16 @@
   background: var(--active);
   color: var(--ink);
 }
+
+/* 分镜按实际内容宽度切换分区，长提示词不再争抢表格列宽。 */
+.storyboard-editor {
+  container-type: inline-size;
+}
+.storyboard-shot-content {
+  grid-template-columns: minmax(0, 1fr);
+}
+@container (min-width: 900px) {
+  .storyboard-shot-content {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}

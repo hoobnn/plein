@@ -108,7 +108,7 @@ export function DialogueCell({
       return next
     })
   return (
-    <td className="px-1 py-1">
+    <div className="min-w-0 rounded-lg bg-surface-2 p-2">
       {(lines.length ? lines : [{ id: 'empty', character: '', line: '' }]).map((line, i) => (
         <div key={line.id} className="mb-2 space-y-1">
           <DialogueInput
@@ -169,7 +169,7 @@ export function DialogueCell({
       >
         添加台词
       </button>
-    </td>
+    </div>
   )
 }
 
