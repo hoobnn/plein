@@ -328,6 +328,7 @@ export function ViewControls() {
   const canRedo = useCanvas((s) => s.canRedo)
   const edgesHidden = useCanvas((s) => s.edgesHidden)
   const [minimap, setMinimap] = useState(false)
+  const [legend, setLegend] = useState<HTMLElement | null>(null)
   if (!engine) return null
   return (
     <div className="pointer-events-none flex flex-col items-start gap-2">
@@ -371,8 +372,51 @@ export function ViewControls() {
           <Icon name="edges" />
         </Button>
         <Divider />
+        <Button
+          label="连线说明"
+          expanded={!!legend}
+          onClick={(e) => setLegend(legend ? null : e.currentTarget)}
+        >
+          <span className="text-xs">图例</span>
+        </Button>
         <ZoomMenu engine={engine} zoom={zoom} />
       </div>
+      <Presence>
+        {legend && (
+          <Popover anchor={legend} onClose={() => setLegend(null)} label="连线说明" width={280}>
+            <div className="space-y-3 p-3 text-xs">
+              <div className="font-medium">颜色表示传递的数据</div>
+              <div className="grid grid-cols-3 gap-3">
+                {(['text', 'image', 'video', 'audio', 'json'] as const).map((type) => (
+                  <span key={type} className="flex items-center gap-2">
+                    <span className={`edge-legend-${type} h-2 w-2 rounded-full`} />
+                    {
+                      {
+                        text: '文本',
+                        image: '图片',
+                        video: '视频',
+                        audio: '音频',
+                        json: '结构数据',
+                      }[type]
+                    }
+                  </span>
+                ))}
+              </div>
+              <div className="border-t border-line pt-3 space-y-2 text-ink-muted">
+                <div className="flex items-center gap-2">
+                  <span className="w-8 border-t border-current" />
+                  实线：内容输入
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-8 border-t border-dashed border-current" />
+                  虚线：参考素材
+                </div>
+                <p>悬停或选中节点可突出关联连线，箭头指向下游；流动的虚线表示下游正在生成。</p>
+              </div>
+            </div>
+          </Popover>
+        )}
+      </Presence>
     </div>
   )
 }

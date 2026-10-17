@@ -753,3 +753,19 @@
 .plein-thumb {
   background: radial-gradient(120% 90% at 50% 0%, var(--hover), transparent 70%), var(--surface-2);
 }
+
+.edge-legend-text {
+  background: var(--port-text);
+}
+.edge-legend-image {
+  background: var(--port-image);
+}
+.edge-legend-video {
+  background: var(--port-video);
+}
+.edge-legend-audio {
+  background: var(--port-audio);
+}
+.edge-legend-json {
+  background: var(--port-json);
+}

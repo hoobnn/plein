@@ -76,9 +76,8 @@ export class EdgeLayer {
   setHoverElement(id: string | null) {
     if (id === this.hoverEl) return
     this.hoverEl = id
-    // 悬停只影响端口；隐藏连线模式下悬停元素的线才露出来，要整层重画
-    if (this.hidden) this.markDirty()
-    else this.portsDirty = true
+    // 悬停节点时强调关联路径，连线和端口一起更新。
+    this.markDirty()
   }
 
   /**
@@ -127,20 +126,41 @@ export class EdgeLayer {
       this.connected.add(`${e.from[0]}:out`)
       this.connected.add(`${e.to[0]}:in`)
       // 按数据类型着色；连着选中元素的线加重
-      const on = this.selection.has(e.from[0]) || this.selection.has(e.to[0])
+      const on =
+        this.selection.has(e.from[0]) ||
+        this.selection.has(e.to[0]) ||
+        this.hoverEl === e.from[0] ||
+        this.hoverEl === e.to[0]
       const status = this.scene.get(e.to[0])?.run?.status
       const running = status === 'running' || status === 'queued'
       if (this.hidden && !on && !running && this.hoverEl !== e.from[0] && this.hoverEl !== e.to[0])
         continue
       const color = portColor(from.port.type)
-      bezier(g, from.x, from.y, to.x, to.y)
+      const reference = to.port.id === 'references'
+      if (reference) dashedBezier(g, from.x, from.y, to.x, to.y, 5 * px, 5 * px, 0)
+      else bezier(g, from.x, from.y, to.x, to.y)
       if (running) {
         // 下游正在生成：淡底线 + 流动的虚线（虚线在 flow 层逐帧画）
         g.stroke({ color, alpha: 0.18, width: 2 * px })
         this.running.push({ x1: from.x, y1: from.y, x2: to.x, y2: to.y })
         continue
       }
-      g.stroke({ color, alpha: on ? 0.95 : 0.45, width: (on ? 2 : 1.5) * px })
+      g.stroke({
+        color,
+        alpha: on ? 0.95 : this.selection.size ? 0.16 : 0.4,
+        width: (on ? 2 : reference ? 1.25 : 1.5) * px,
+      })
+      // 方向沿曲线切线，回接或交叉时仍能看出从素材流向下游。
+      if (on) {
+        const a = bezierPoint(from.x, from.y, to.x, to.y, 0.55)
+        const b = bezierPoint(from.x, from.y, to.x, to.y, 0.56)
+        const angle = Math.atan2(b.y - a.y, b.x - a.x)
+        const size = 6 * px
+        g.moveTo(b.x - Math.cos(angle - 0.5) * size, b.y - Math.sin(angle - 0.5) * size)
+          .lineTo(b.x, b.y)
+          .lineTo(b.x - Math.cos(angle + 0.5) * size, b.y - Math.sin(angle + 0.5) * size)
+          .stroke({ color, alpha: 0.95, width: 2 * px })
+      }
     }
   }
 
