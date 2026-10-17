@@ -107,4 +107,70 @@ describe('构图撤销范围', () => {
     off()
     doc.destroy()
   })
+
+  it('同一指针手势跨过时间窗仍归并，手势结束后恢复普通输入窗口', () => {
+    const { doc, id, off } = setup()
+    const name = (value: string, gesture: boolean) =>
+      writeStageEdit(doc, id, () => setParam(doc, id, 'label', value), 'name', gesture)
+    const timeout = doc.undo.captureTimeout
+    name('A', true)
+    doc.undo.lastChange = 1 // 模拟归并窗口已经过去。
+    name('AB', true)
+    expect(doc.undo.captureTimeout).toBe(timeout)
+    applyStageHistory(doc, id, 'undo')
+    expect(doc.get(id)!.params!.label).toBeUndefined()
+    applyStageHistory(doc, id, 'redo')
+    doc.undo.lastChange = 1
+    name('ABC', false)
+    applyStageHistory(doc, id, 'undo')
+    expect(doc.get(id)!.params!.label).toBe('AB')
+    off()
+    doc.destroy()
+  })
+
+  it('手势不能跨越其他画布操作归并', () => {
+    const { doc, id, off } = setup()
+    const name = (value: string) =>
+      writeStageEdit(doc, id, () => setParam(doc, id, 'label', value), 'name', true)
+    name('A')
+    const other = createElement(doc, {
+      kind: 'markdown',
+      x: 600,
+      y: 0,
+      w: 100,
+      h: 100,
+      text: 'other',
+    })
+    name('AB')
+    applyStageHistory(doc, id, 'undo')
+    expect(doc.get(id)!.params!.label).toBe('A')
+    applyStageHistory(doc, id, 'undo')
+    expect(doc.get(other)).toBeDefined()
+    off()
+    doc.destroy()
+  })
+
+  it('手势写入失败也恢复全局归并窗口', () => {
+    const { doc, id, off } = setup()
+    writeStageEdit(doc, id, () => setParam(doc, id, 'label', 'A'), 'name', true)
+    const timeout = doc.undo.captureTimeout
+    expect(() =>
+      writeStageEdit(
+        doc,
+        id,
+        () => {
+          throw new Error('failed edit')
+        },
+        'name',
+        true,
+      ),
+    ).toThrow('failed edit')
+    expect(doc.undo.captureTimeout).toBe(timeout)
+    doc.undo.lastChange = 1
+    writeStageEdit(doc, id, () => setParam(doc, id, 'label', 'AB'), 'name')
+    applyStageHistory(doc, id, 'undo')
+    expect(doc.get(id)!.params!.label).toBe('A')
+    off()
+    doc.destroy()
+  })
 })

@@ -835,3 +835,90 @@ test('3D 旧来源损坏或候选移除时保留可恢复场景，不提供无�
     ).figures[0]!.pose,
   ).toBe('stand')
 })
+
+test('3D 场景件尺寸拖动中停顿仍只需一步撤销，重建后手柄可用', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  await dialog.getByRole('button', { name: '添加场景件', exact: true }).click()
+  await page.getByRole('menuitem', { name: '桌子', exact: true }).click()
+  const read = async () =>
+    StageScene.parse(
+      await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.scene, stage.id),
+    )
+  const initial = (await read()).blocks[0]!
+  const slider = dialog.getByRole('slider', { name: '宽', exact: true })
+  const rect = (await slider.boundingBox())!
+  const min = Number(await slider.getAttribute('min'))
+  const max = Number(await slider.getAttribute('max'))
+  const thumbX = rect.x + 8 + (rect.width - 16) * ((initial.w - min) / (max - min))
+  const y = rect.y + rect.height / 2
+  await page.mouse.move(thumbX, y)
+  await page.mouse.down()
+  await page.mouse.move(rect.x + rect.width * 0.35, y, { steps: 4 })
+  // 同一手势里停顿超过文档 300ms 归并窗口，仍应按整次拖动撤销。
+  await page.waitForTimeout(450)
+  await page.mouse.move(rect.x + rect.width * 0.65, y, { steps: 4 })
+  await page.mouse.up()
+  expect((await read()).blocks[0]!.w).toBeGreaterThan(initial.w)
+  const undo = dialog.getByRole('button', { name: '撤销构图操作', exact: true })
+  await undo.click()
+  expect((await read()).blocks[0]!.w).toBe(initial.w)
+  await slider.focus()
+  await slider.press('ArrowRight')
+  const keyed = (await read()).blocks[0]!.w
+  await page.waitForTimeout(450)
+  await slider.press('ArrowRight')
+  await undo.click()
+  expect((await read()).blocks[0]!.w).toBe(keyed)
+  await undo.click()
+  expect((await read()).blocks[0]!.w).toBe(initial.w)
+  const canvas = dialog.locator('canvas.stage-canvas')
+  const handle = await handlePoint(page, await canvas.screenshot(), 'red')
+  const viewport = (await canvas.boundingBox())!
+  const x = viewport.x + handle.x * viewport.width
+  const hy = viewport.y + handle.y * viewport.height
+  const camera = (await read()).camera
+  await page.mouse.move(x, hy)
+  await page.mouse.down()
+  await page.mouse.move(x + 45, hy, { steps: 8 })
+  await page.mouse.up()
+  await expect.poll(async () => (await read()).blocks[0]!.x).not.toBe(initial.x)
+  expect((await read()).camera).toEqual(camera)
+})
+
+test('3D 混合场景件改尺寸旋转后可截图，删除及撤销保留构图', async ({ page }) => {
+  const { stage, dialog } = await openStage(page)
+  for (const name of ['方块', '墙', '桌子', '椅子', '门', '床']) {
+    await dialog.getByRole('button', { name: '添加场景件', exact: true }).click()
+    await page.getByRole('menuitem', { name, exact: true }).click()
+  }
+  await dialog.getByRole('textbox', { name: '名字', exact: true }).fill('自定义床')
+  await dialog.getByRole('slider', { name: '宽', exact: true }).press('End')
+  const facing = dialog.getByRole('slider', { name: '朝向', exact: true })
+  const r = (await facing.boundingBox())!
+  await facing.click({ position: { x: 8 + (r.width - 16) * 0.75, y: r.height / 2 } })
+  const read = async () =>
+    StageScene.parse(
+      await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.scene, stage.id),
+    )
+  const scene = await read()
+  expect(scene.blocks).toHaveLength(6)
+  expect(scene.blocks.at(-1)).toMatchObject({ name: '自定义床', w: 12 })
+  expect(scene.blocks.at(-1)!.facing).toBeGreaterThan(70)
+  expect(scene.blocks.at(-1)!.facing).toBeLessThan(110)
+  await dialog.getByRole('button', { name: '截图', exact: true }).click()
+  await expect(dialog.locator('.stage-shot')).toHaveCount(1)
+  const captured = await page.evaluate(
+    (id) =>
+      (window.__plein.engine.doc.get(id)!.params!.snapshots as { scene: unknown }[])[0]!.scene,
+    stage.id,
+  )
+  expect(StageScene.parse(captured)).toEqual(scene)
+  await dialog.getByRole('button', { name: '自由视角', exact: true }).click()
+  if (process.env.STAGE_SHOTS)
+    await page.screenshot({ path: `${process.env.STAGE_SHOTS}/mixed.png`, animations: 'disabled' })
+  await dialog.getByRole('button', { name: '删除', exact: true }).click()
+  expect((await read()).blocks).toHaveLength(5)
+  await dialog.getByRole('button', { name: '撤销构图操作', exact: true }).click()
+  expect((await read()).blocks).toEqual(scene.blocks)
+  await expect(dialog.locator('.stage-shot')).toHaveCount(1)
+})

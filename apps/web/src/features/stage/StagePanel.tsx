@@ -72,17 +72,38 @@ export function StagePanel({
   // 视口 effect 使用最近一次渲染的场景，宿主变化时才重建 WebGL 上下文
   const latest = useRef(scene)
   latest.current = scene
+  const rangeGesture = useRef<{ pointerId: number } | null>(null)
 
   const [, refreshHistory] = useState(0)
   useEffect(() => {
     const undo = engine.doc.undo
     const refresh = () => refreshHistory((n) => n + 1)
+    const finishRange = () => {
+      if (!rangeGesture.current) return
+      rangeGesture.current = null
+      undo.stopCapturing()
+    }
+    const endRange = (event: PointerEvent) => {
+      const gesture = rangeGesture.current
+      if (gesture?.pointerId !== event.pointerId) return
+      // 让原生滑杆在 pointerup 的默认动作中提交最后一个值，再结束归并。
+      queueMicrotask(() => {
+        if (rangeGesture.current === gesture) finishRange()
+      })
+    }
+    window.addEventListener('pointerup', endRange, true)
+    window.addEventListener('pointercancel', endRange, true)
+    window.addEventListener('blur', finishRange)
     undo.stopCapturing()
     undo.on('stack-item-added', refresh)
     undo.on('stack-item-updated', refresh)
     undo.on('stack-item-popped', refresh)
     undo.on('stack-cleared', refresh)
     return () => {
+      finishRange()
+      window.removeEventListener('pointerup', endRange, true)
+      window.removeEventListener('pointercancel', endRange, true)
+      window.removeEventListener('blur', finishRange)
       undo.stopCapturing()
       undo.off('stack-item-added', refresh)
       undo.off('stack-item-updated', refresh)
@@ -101,6 +122,7 @@ export function StagePanel({
       id,
       () => setParam(engine.doc, id, 'scene', { ...change(current), rev: current.rev + 1 }),
       group,
+      rangeGesture.current !== null,
     )
   }
   const patchFigure = (fid: string, patch: Partial<StageFigure>) =>
@@ -311,7 +333,18 @@ export function StagePanel({
           截图
         </button>
       </ModalHeader>
-      <div className="stage-body" onPointerDownCapture={() => engine.doc.undo.stopCapturing()}>
+      <div
+        className="stage-body"
+        onPointerDownCapture={(event) => {
+          engine.doc.undo.stopCapturing()
+          rangeGesture.current =
+            event.button === 0 &&
+            event.target instanceof HTMLInputElement &&
+            event.target.type === 'range'
+              ? { pointerId: event.pointerId }
+              : null
+        }}
+      >
         <aside className="stage-outline ui-scrollbar" aria-label="场景对象">
           <OutlineGroup
             title="人物"

@@ -55,11 +55,20 @@ export function writeStageEdit(
   id: string,
   action: () => void,
   group: string | null = null,
+  gesture = false,
 ) {
   const previous = scopeOf(doc.undo.undoStack.at(-1))
-  if (!group || previous?.id !== id || previous.group !== group) doc.undo.stopCapturing()
-  doc.ydoc.transact(action, new StageEdit({ id, group }))
-  if (!group) doc.undo.stopCapturing()
+  const sameGroup = !!group && previous?.id === id && previous.group === group
+  if (!sameGroup) doc.undo.stopCapturing()
+  const timeout = doc.undo.captureTimeout
+  // 同一指针手势允许停顿，不能越过其他字段、构图或画布操作；时间窗只在本次同步写入内调整。
+  if (gesture && sameGroup) doc.undo.captureTimeout = Infinity
+  try {
+    doc.ydoc.transact(action, new StageEdit({ id, group }))
+  } finally {
+    doc.undo.captureTimeout = timeout
+    if (!group) doc.undo.stopCapturing()
+  }
 }
 
 export function canStageHistory(doc: PleinDoc, id: string, direction: 'undo' | 'redo') {
