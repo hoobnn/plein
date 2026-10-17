@@ -234,3 +234,12 @@ export interface JobList {
   jobs: JobInfo[]
   groups: GroupInfo[]
 }
+
+/** 按节点读取各自最新任务，不受画布最近任务窗口影响；每次最多 100 个。 */
+export const LatestNodeJobsOptions = z.object({
+  nodes: z.array(z.string().min(1).max(128)).max(100),
+})
+export type LatestNodeJobsOptions = z.infer<typeof LatestNodeJobsOptions>
+export interface LatestNodeJobs {
+  jobs: JobInfo[]
+}

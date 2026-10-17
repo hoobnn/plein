@@ -39,6 +39,7 @@ import type {
   InputValue,
   JobInfo,
   JobList,
+  LatestNodeJobs,
   PreparedInput,
   RecoverJobOptions,
   RunActivity,
@@ -276,6 +277,14 @@ export class NodeRuns implements BatchHost {
     return this.rooms.withDoc(canvasId, (doc) => {
       const el = doc.get(nodeId)
       if (el?.kind !== 'node' || !el.nodeType) throw new NodeRunError('not_found', '节点不存在')
+      const previous = this.store.latestForNodes(canvasId, [nodeId])[0]
+      const recovery = previous && this.jobInfo(previous, doc).recovery
+      if (
+        recovery &&
+        !recovery.dismissed &&
+        ['submit_unknown', 'remote_pending', 'fetch_failed'].includes(recovery.state)
+      )
+        throw new NodeRunError('recovery_required', '原任务尚待核查或取回，请先恢复或标记已处理')
       const id = newId('run')
       this.store.insert({
         id,
@@ -791,6 +800,15 @@ export class NodeRuns implements BatchHost {
         createdAt: g.created_at,
         finishedAt: g.finished_at ?? undefined,
       })),
+    }
+  }
+
+  latestForNodes(canvasId: string, nodes: readonly string[]): LatestNodeJobs {
+    const rows = this.store.latestForNodes(canvasId, nodes)
+    return {
+      jobs:
+        this.rooms.withDoc(canvasId, (doc) => rows.map((row) => this.jobInfo(row, doc)), null) ??
+        rows.map((row) => this.jobInfo(row)),
     }
   }
 

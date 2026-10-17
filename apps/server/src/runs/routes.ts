@@ -5,6 +5,7 @@ import {
   type ImpactReport,
   ImpactRunOptions,
   type JobList,
+  LatestNodeJobsOptions,
   KeepResults,
   type JobInfo,
   NodeRunOptions,
@@ -25,6 +26,7 @@ const STATUS: Record<string, 404 | 409 | 400> = {
   not_found: 404,
   not_installed: 404,
   busy: 409,
+  recovery_required: 409,
 }
 
 /** 节点运行接口：单节点开始 / 取消，整组运行 Frame */
@@ -167,6 +169,13 @@ export function runRoutes(db: DB, runs: NodeRuns) {
       const canvas = c.req.param('canvas')
       if (!ownsCanvas(db, c.var.principal.id, canvas)) return c.json(notFound, 404)
       return c.json(runs.list(canvas) satisfies JobList)
+    })
+    .post('/api/canvases/:canvas/jobs/latest', async (c) => {
+      const canvas = c.req.param('canvas')
+      if (!ownsCanvas(db, c.var.principal.id, canvas)) return c.json(notFound, 404)
+      const body = LatestNodeJobsOptions.safeParse(await c.req.json().catch(() => null))
+      if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
+      return c.json(runs.latestForNodes(canvas, body.data.nodes))
     })
     .post('/api/canvases/:canvas/jobs/:job/recover', async (c) => {
       const { canvas, job } = c.req.param()

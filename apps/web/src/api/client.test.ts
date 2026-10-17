@@ -50,4 +50,23 @@ describe('请求', () => {
     vi.stubGlobal('fetch', reply(200, '[{"id":"p1"}]'))
     await expect(api.projects()).resolves.toEqual([{ id: 'p1' }])
   })
+
+  it('按节点读最新任务去重并按 100 个分块，空集合不请求，任何分块失败都拒绝', async () => {
+    const batches: string[][] = []
+    const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const nodes = (JSON.parse(String(init.body)) as { nodes: string[] }).nodes
+      batches.push(nodes)
+      return Response.json({ jobs: nodes.map((nodeId) => ({ nodeId })) })
+    })
+    vi.stubGlobal('fetch', fetch)
+    expect(await api.canvasNodeJobs('canvas', [])).toEqual({ jobs: [] })
+    expect(fetch).not.toHaveBeenCalled()
+    const nodes = Array.from({ length: 205 }, (_, i) => `node-${i}`)
+    const result = await api.canvasNodeJobs('canvas', [...nodes, nodes[0]!])
+    expect(batches.map((batch) => batch.length)).toEqual([100, 100, 5])
+    expect(result.jobs.map((job) => job.nodeId)).toEqual(nodes)
+    fetch.mockImplementationOnce(async () => Response.json({ jobs: [] }))
+    fetch.mockImplementationOnce(async () => new Response('offline', { status: 503 }))
+    await expect(api.canvasNodeJobs('canvas', nodes)).rejects.toBeInstanceOf(ApiError)
+  })
 })

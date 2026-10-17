@@ -578,7 +578,7 @@ function BatchItems(props: {
  * 任务的恢复提示与操作：重新获取、人工核查（填任务 ID / 确认未受理后重新提交 / 标记已处理）、
  * 采用待采用的结果、去重新审查
  */
-function RecoveryBlock(props: {
+export function RecoveryBlock(props: {
   job: JobInfo
   view: NonNullable<ReturnType<typeof describeRecovery>>
   doc: PleinDoc
@@ -640,7 +640,8 @@ function RecoveryBlock(props: {
             确认未受理，重新提交
           </button>
         )}
-        {r.state === 'submit_unknown' && (
+        {(r.state === 'submit_unknown' ||
+          ((r.state === 'fetch_failed' || r.state === 'remote_pending') && !r.refetchable)) && (
           <button
             type="button"
             className="ui-btn ui-btn-quiet ui-btn-xs"

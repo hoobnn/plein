@@ -13,6 +13,7 @@ import {
   type CreateLibraryItem,
   type DefaultModelUpdate,
   type JobList,
+  type LatestNodeJobs,
   type JobInfo,
   type BatchItem,
   type RecoverJobOptions,
@@ -170,6 +171,19 @@ export const api = {
   catalog: () => request<Catalog>(API.catalog),
   /** 画布最近的运行记录（任务面板） */
   canvasJobs: (id: string) => request<JobList>(API.canvasJobs(id)),
+  /** 调用方可传整张分镜；每个请求最多 100 个，服务端只返回各节点最新一条。 */
+  canvasNodeJobs: async (id: string, nodeIds: readonly string[]): Promise<LatestNodeJobs> => {
+    const nodes = [...new Set(nodeIds)]
+    const jobs: JobInfo[] = []
+    for (let offset = 0; offset < nodes.length; offset += 100) {
+      const result = await request<LatestNodeJobs>(
+        `${API.canvasJobs(id)}/latest`,
+        json('POST', { nodes: nodes.slice(offset, offset + 100) }),
+      )
+      jobs.push(...result.jobs)
+    }
+    return { jobs }
+  },
   providerConfig: (id: string) => request<ProviderConfigView>(API.providerConfig(id)),
   updateProviderConfig: (id: string, body: ProviderConfigUpdate) =>
     request<ProviderConfigView>(API.providerConfig(id), json('PUT', body)),

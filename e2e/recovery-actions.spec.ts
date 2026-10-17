@@ -6,6 +6,8 @@ for (const state of [
   'fetch_failed',
   'remote_pending',
   'pending_failed',
+  'fetch_unavailable',
+  'pending_unavailable',
   'submit_unknown',
   'review',
   'remote_failed',
@@ -19,7 +21,10 @@ for (const state of [
       id: 'recover-fixture',
       nodeId: node.id,
       nodeType: node.nodeType!,
-      status: state === 'remote_pending' || state === 'review' ? 'canceled' : 'failed',
+      status:
+        state === 'remote_pending' || state === 'pending_unavailable' || state === 'review'
+          ? 'canceled'
+          : 'failed',
       attempts: 1,
       error: '请求没有完成',
       createdAt: Date.now(),
@@ -27,7 +32,12 @@ for (const state of [
         ? {}
         : {
             recovery: {
-              state: state === 'pending_failed' ? 'remote_pending' : state,
+              state:
+                state === 'pending_failed' || state === 'pending_unavailable'
+                  ? 'remote_pending'
+                  : state === 'fetch_unavailable'
+                    ? 'fetch_failed'
+                    : state,
               refetchable:
                 state === 'fetch_failed' ||
                 state === 'remote_pending' ||
@@ -42,7 +52,9 @@ for (const state of [
       route.fulfill({ json: { jobs: [job], groups: [] } }),
     )
     await page.route('**/api/canvases/*/jobs/recover-fixture/recover', async (route) => {
-      calls.push(route.request().postDataJSON())
+      const action = route.request().postDataJSON() as { action: string }
+      calls.push(action)
+      if (action.action === 'dismiss') job.recovery = { ...job.recovery!, dismissed: true }
       await route.fulfill({ json: { ok: true } })
     })
     await page.route('**/api/canvases/*/nodes/*/run', async (route) => {
@@ -68,6 +80,19 @@ for (const state of [
         await expect(panel.getByRole('button', { name: '去审查' })).toBeVisible()
       if (state === 'submit_unknown')
         await expect(panel.getByRole('button', { name: '确认未受理，重新提交' })).toBeVisible()
+      if (state === 'fetch_unavailable' || state === 'pending_unavailable') {
+        await expect(panel.getByRole('button', { name: '重新获取', exact: true })).toHaveCount(0)
+        await panel.getByRole('button', { name: '标记已处理', exact: true }).click()
+        await expect.poll(() => calls).toEqual([{ action: 'dismiss' }])
+        await expect(panel.getByTestId('job-recovery')).toHaveCount(0)
+        expect(submissions).toBe(0)
+        await page.getByRole('button', { name: '任务', exact: true }).click()
+        const generator = page.getByTestId('generator')
+        await generator.locator('textarea').first().fill('明确处理旧任务后生成')
+        await generator.getByRole('button', { name: '生成', exact: true }).click()
+        await expect.poll(() => submissions).toBe(1)
+        expect(calls).toEqual([{ action: 'dismiss' }])
+      }
     }
   })
 }

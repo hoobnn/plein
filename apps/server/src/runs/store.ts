@@ -142,6 +142,21 @@ export class JobStore {
       .all()
   }
 
+  /** 使用 jobs_node 索引，每个节点最多读一行；同毫秒用插入顺序区分。 */
+  latestForNodes(canvasId: string, nodeIds: readonly string[]): JobRow[] {
+    if (nodeIds.length > 100) throw new RangeError('每次最多查询 100 个节点')
+    return [...new Set(nodeIds)].flatMap((nodeId) => {
+      const row = this.db
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.canvas_id, canvasId), eq(jobs.node_id, nodeId)))
+        .orderBy(desc(jobs.created_at), sql`rowid DESC`)
+        .limit(1)
+        .get()
+      return row ? [row] : []
+    })
+  }
+
   recentGroups(canvasId: string, limit: number): GroupRow[] {
     return this.db
       .select()

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import type { JobList } from '../packages/protocol/src/runs'
 import { addNode, contextMenu, deselect, elements, newProject } from './canvas'
 
 const MOCK = '/api/providers/plein/mock/config'
@@ -50,7 +51,7 @@ test('分组存为模板，从「我的模板」铺回画布，不要了可以�
   expect((await elements(page)).length).toBe(before + 3)
 })
 
-test('生成中途取消：节点标为已取消，任务面板里记着，之后能重新生成', async ({ page, request }) => {
+test('生成中途取消：记录已取消，核查原远端任务结束后能重新生成', async ({ page, request }) => {
   await request.put(MOCK, { data: { settings: { latencyMs: 20_000 } } })
   await newProject(page)
   await addNode(page, '生成图片')
@@ -61,6 +62,14 @@ test('生成中途取消：节点标为已取消，任务面板里记着，之�
   await expect
     .poll(async () => (await elements(page)).find((e) => e.id === node!.id)?.status)
     .toBe('running')
+  const canvasId = /#\/c\/([^/?]+)/.exec(page.url())![1]!
+  const latest = async () => {
+    const response = await request.get(`/api/canvases/${canvasId}/jobs`)
+    return ((await response.json()) as JobList).jobs.find((job) => job.nodeId === node!.id)!
+  }
+  // Wait for remote acceptance: cancel is best effort, not proof the platform has stopped.
+  await expect.poll(async () => (await latest())?.recovery?.state).toBe('remote_pending')
+  const original = (await latest()).id
 
   await generator.getByRole('button', { name: '取消' }).click()
   await expect
@@ -69,6 +78,19 @@ test('生成中途取消：节点标为已取消，任务面板里记着，之�
   await page.getByRole('button', { name: '任务' }).click()
   const tasks = page.getByRole('complementary', { name: '任务' })
   await expect(tasks.getByText('已取消').first()).toBeVisible()
+  await expect(tasks.getByTestId('job-recovery')).toContainText('平台上的任务可能仍在生成')
+  const recovery = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/jobs/${original}/recover`) &&
+      response.request().method() === 'POST',
+  )
+  await tasks.getByRole('button', { name: '重新获取', exact: true }).click()
+  const recovered = await recovery
+  expect(recovered.status()).toBe(200)
+  expect(recovered.request().postDataJSON()).toEqual({ action: 'refetch' })
+  // The real mock cancel removed its remote task; polling confirms terminal failure without resubmission.
+  await expect.poll(async () => (await latest()).recovery?.state).toBe('remote_failed')
+  expect((await latest()).id).toBe(original)
   await page.getByRole('button', { name: '任务' }).click()
 
   await request.put(MOCK, { data: { settings: { latencyMs: 0 } } })

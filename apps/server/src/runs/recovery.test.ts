@@ -9,7 +9,7 @@ import {
   setParams,
 } from '@plein/doc'
 import { ProviderError } from '@plein/plugin-sdk'
-import type { BatchItem, JobInfo } from '@plein/protocol'
+import type { BatchItem, JobInfo, LatestNodeJobs } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
 import sharp from 'sharp'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vite-plus/test'
@@ -137,6 +137,8 @@ describe('提交状态未知', () => {
     const b = addNode(doc, 'plein/image', { params: { prompt: 'b', count: 1 }, x: 300 })
     const run = server.runs.start(id, a, 'local')
     expect(await server.runs.wait(run)).toBe('failed')
+    await until(() => !server.runs.isRunning(id, a))
+    expect(() => server.runs.start(id, a, 'local')).toThrow('原任务尚待核查或取回')
     expect((await recover(server, id, run, { action: 'resubmit' })).status).toBe(200)
     await until(() => status(server, run) === 'succeeded')
     expect(lost.submit).toHaveBeenCalledTimes(2)
@@ -144,8 +146,11 @@ describe('提交状态未知', () => {
     loseSubmitResponse()
     const other = server.runs.start(id, b, 'local')
     expect(await server.runs.wait(other)).toBe('failed')
+    await until(() => !server.runs.isRunning(id, b))
     const r = await recover(server, id, other, { action: 'dismiss' })
     expect(r.body.recovery).toMatchObject({ state: 'submit_unknown', dismissed: true })
+    const next = server.runs.start(id, b, 'local')
+    expect(await server.runs.wait(next)).toBe('succeeded')
   })
 
   it('提交时服务退出：重启后按幂等键核查，提交次数不增加', async () => {
@@ -172,6 +177,103 @@ describe('提交状态未知', () => {
 })
 
 describe('远端成功、本地获取失败', () => {
+  it.each(['fetch_failed', 'remote_pending'] as const)(
+    '%s 无法重新查询时，明确标记已处理只解锁生成，不重提原任务',
+    async (state) => {
+      const { server } = await boot()
+      mock(server, { latencyMs: 0 })
+      const submit = vi.spyOn(mockProvider, 'submit')
+      const { id, doc } = await canvas(server)
+      const node = addNode(doc, 'plein/image', {
+        params: { prompt: '放弃无法取回的结果', count: 1 },
+      })
+      server.runs.store.insert({
+        id: 'unrefetchable',
+        ownerId: 'local',
+        canvasId: id,
+        nodeId: node,
+        nodeType: 'plein/image',
+      })
+      server.runs.store.update('unrefetchable', {
+        status: 'failed',
+        recovery: JSON.stringify({ state }),
+      })
+      expect(server.runs.latestForNodes(id, [node]).jobs[0]?.recovery).toMatchObject({
+        state,
+        refetchable: false,
+      })
+      expect(() => server.runs.start(id, node, 'local')).toThrow('原任务尚待核查或取回')
+      const response = await recover(server, id, 'unrefetchable', { action: 'dismiss' })
+      expect(response.status).toBe(200)
+      expect(response.body.recovery).toMatchObject({ state, dismissed: true })
+      expect(submit).not.toHaveBeenCalled()
+      const next = server.runs.start(id, node, 'local')
+      expect(await server.runs.wait(next)).toBe('succeeded')
+      expect(submit).toHaveBeenCalledTimes(1)
+      expect(doc.get(node)?.results).toHaveLength(1)
+      expect(server.runs.store.get('unrefetchable')?.status).toBe('failed')
+    },
+  )
+
+  it('超过 100 条其他任务仍按节点读到原恢复任务，普通生成被阻止，恢复不重复提交', async () => {
+    const { server } = await boot()
+    mock(server, { latencyMs: 0 })
+    const submit = vi.spyOn(mockProvider, 'submit')
+    vi.spyOn(server.assets, 'ingest').mockRejectedValueOnce(new Error('磁盘已满'))
+    const { id, doc } = await canvas(server)
+    const target = addNode(doc, 'plein/image', { params: { prompt: '待恢复镜头', count: 1 } })
+    const noise = addNode(doc, 'plein/image', { params: { prompt: '其他镜头', count: 1 } })
+    const original = server.runs.start(id, target, 'local')
+    expect(await server.runs.wait(original)).toBe('failed')
+    await until(() => !server.runs.isRunning(id, target))
+    for (let i = 0; i < 105; i++) {
+      const jobId = `latest-noise-${i}`
+      server.runs.store.insert({
+        id: jobId,
+        ownerId: 'local',
+        canvasId: id,
+        nodeId: noise,
+        nodeType: 'plein/image',
+      })
+      server.runs.store.update(jobId, { status: 'succeeded' })
+    }
+    const legacy = await call(server, `/api/canvases/${id}/jobs`)
+    const legacyBody = (await legacy.json()) as { jobs: JobInfo[]; groups: unknown[] }
+    expect(Object.keys(legacyBody).sort()).toEqual(['groups', 'jobs'])
+    expect(legacyBody.jobs).toHaveLength(100)
+    expect(legacyBody.jobs.some((job) => job.id === original)).toBe(false)
+    const latest = async (nodes: string[]) =>
+      call(server, `/api/canvases/${id}/jobs/latest`, {
+        method: 'POST',
+        body: JSON.stringify({ nodes }),
+      })
+    const response = await latest([target, noise, target, 'missing'])
+    expect(response.status).toBe(200)
+    expect(((await response.json()) as LatestNodeJobs).jobs).toMatchObject([
+      { id: original, nodeId: target, recovery: { state: 'fetch_failed' } },
+      { id: 'latest-noise-104', nodeId: noise },
+    ])
+    expect(((await (await latest([])).json()) as LatestNodeJobs).jobs).toEqual([])
+    expect((await latest(Array.from({ length: 101 }, (_, i) => `node-${i}`))).status).toBe(400)
+    const otherCanvas = await canvas(server)
+    const isolation = await call(server, `/api/canvases/${otherCanvas.id}/jobs/latest`, {
+      method: 'POST',
+      body: JSON.stringify({ nodes: [target] }),
+    })
+    expect(((await isolation.json()) as LatestNodeJobs).jobs).toEqual([])
+    const rejected = await call(server, `/api/canvases/${id}/nodes/${target}/run`, {
+      method: 'POST',
+      body: '{}',
+    })
+    expect(rejected.status).toBe(409)
+    expect(((await rejected.json()) as { error: string }).error).toBe('recovery_required')
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect((await recover(server, id, original, { action: 'refetch' })).status).toBe(200)
+    await until(() => status(server, original) === 'succeeded')
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect(doc.get(target)?.results).toHaveLength(1)
+  })
+
   it('保存失败：不算完成；重新获取后入库，不重新提交', async () => {
     const { server } = await boot()
     mock(server, { latencyMs: 0 })
@@ -272,6 +374,32 @@ describe('远端成功、本地获取失败', () => {
 })
 
 describe('晚返回的结果', () => {
+  it('取消请求不是停机确认：核查前阻止新生成，原任务被平台确认结束后允许重新生成', async () => {
+    const { server } = await boot()
+    mock(server, { latencyMs: 20_000 })
+    const submit = vi.spyOn(mockProvider, 'submit')
+    const { id, doc } = await canvas(server)
+    const node = addNode(doc, 'plein/image', { params: { prompt: '取消后核查', count: 1 } })
+    const original = server.runs.start(id, node, 'local')
+    await until(() => server.runs.store.get(original)?.calls.includes('pending'))
+    server.runs.cancel(id, node)
+    expect(await server.runs.wait(original)).toBe('canceled')
+    await until(() => !server.runs.isRunning(id, node))
+    expect(job(server, id, original).recovery?.state).toBe('remote_pending')
+    expect(() => server.runs.start(id, node, 'local')).toThrow('原任务尚待核查或取回')
+    expect((await recover(server, id, original, { action: 'refetch' })).status).toBe(200)
+    expect(await server.runs.wait(original)).toBe('failed')
+    await until(() => !server.runs.isRunning(id, node))
+    expect(job(server, id, original).recovery?.state).toBe('remote_failed')
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect(doc.get(node)?.run).toMatchObject({ id: original, status: 'failed' })
+    mock(server, { latencyMs: 0 })
+    const next = server.runs.start(id, node, 'local')
+    expect(await server.runs.wait(next)).toBe('succeeded')
+    expect(submit).toHaveBeenCalledTimes(2)
+    expect(doc.get(node)?.results).toHaveLength(1)
+  })
+
   it.each([1, MAX_RESULTS])(
     '取消后平台仍生成完：取回结果不覆盖当前采用（原记录 %s 条）',
     async (historySize) => {
