@@ -681,6 +681,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                   />
                 ) : row ? (
                   <ClipSettings
+                    key={rowKey(row, current)}
                     row={row}
                     index={current}
                     count={rows.length}
@@ -950,6 +951,24 @@ function ClipSettings({
       .filter(Boolean)
       .join(' / ') || undefined
   const trimmed = length !== undefined && full !== undefined && Math.abs(length - full) > 0.01
+  const [trimError, setTrimError] = useState<string | null>(null)
+  const changeIn = (value: number | undefined) => {
+    const start = value ?? 0
+    if (start >= (row.out ?? full ?? Infinity)) {
+      setTrimError('入点需要早于出点，已保留原设置')
+      return
+    }
+    setTrimError(null)
+    onPatch({ in: start })
+  }
+  const changeOut = (value: number | undefined) => {
+    if ((value ?? full ?? Infinity) <= row.in) {
+      setTrimError('出点需要晚于入点，已保留原设置')
+      return
+    }
+    setTrimError(null)
+    onPatch({ out: value })
+  }
   return (
     <>
       <div className="seq-clip-head">
@@ -998,7 +1017,7 @@ function ClipSettings({
                 value={row.in}
                 max={full}
                 unit="秒"
-                onChange={(v) => onPatch({ in: v ?? 0 })}
+                onChange={changeIn}
               />
             </Field>
             <Field label="出点">
@@ -1008,7 +1027,7 @@ function ClipSettings({
                 placeholder={full === undefined ? '结尾' : full.toFixed(1)}
                 max={full}
                 unit="秒"
-                onChange={(v) => onPatch({ out: v })}
+                onChange={changeOut}
               />
             </Field>
             <Field label="速度">
@@ -1020,6 +1039,11 @@ function ClipSettings({
                 onChange={(v) => onPatch({ speed: Number(v) === 1 ? undefined : Number(v) })}
               />
             </Field>
+            {trimError && (
+              <p role="alert" className="text-xs text-danger">
+                {trimError}
+              </p>
+            )}
           </Section>
           {index > 0 && (
             <Section title="转场">

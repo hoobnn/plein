@@ -129,6 +129,75 @@ test('不足 0.2 秒的镜头拖动入点不写入负数，编辑器保持可用
   expect(errors).toEqual([])
 })
 
+test('手动修剪拒绝交叉入出点，提示原因且清空可恢复整段', async ({ page }) => {
+  await newProject(page)
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: '上传' }).click()
+  await (await chooser).setFiles(join(dir, shots[0]!))
+  await expect
+    .poll(async () => (await elements(page)).filter((e) => e.kind === 'video').length)
+    .toBe(1)
+  const video = (await elements(page)).find((e) => e.kind === 'video')!
+  await addNode(page, '序列', { x: 720, y: 800 })
+  await page.keyboard.press('Escape')
+  const sequence = (await elements(page)).find((e) => e.nodeType === 'plein/sequence')!
+  expect(
+    await page.evaluate(
+      ({ video, sequence }) => window.__plein.connect([video, 'video'], [sequence, 'clips']),
+      { video: video.id, sequence: sequence.id },
+    ),
+  ).toBe(true)
+  await zoomTo(page, [sequence.id])
+  const at = await centerOf(page, sequence.id)
+  await page.mouse.dblclick(at.x, at.y)
+  const editor = page.getByRole('dialog', { name: '序列', exact: true })
+  await editor.locator('.seq-clip').first().click()
+  const start = editor.getByRole('spinbutton', { name: '入点（秒）', exact: true })
+  const end = editor.getByRole('spinbutton', { name: '出点（秒）', exact: true })
+  await start.fill('1.5')
+  await start.blur()
+  await end.fill('1')
+  await end.blur()
+  await expect(end).toHaveValue('')
+  await expect(editor.getByRole('alert')).toContainText('出点需要晚于入点')
+  await start.fill('3')
+  await start.blur()
+  await expect(start).toHaveValue('1.5')
+  await expect(editor.getByRole('alert')).toContainText('入点需要早于出点')
+  await expect(editor.getByRole('alert')).toBeInViewport()
+  await editor
+    .locator('.seq-inspector')
+    .screenshot({ path: test.info().outputPath('trim-validation.png') })
+  await end.fill('1.8')
+  await end.blur()
+  await expect(end).toHaveValue('1.8')
+  await expect(editor.getByRole('alert')).toHaveCount(0)
+  await end.fill('')
+  await end.blur()
+  await start.fill('')
+  await start.blur()
+  await expect(start).toHaveValue('0')
+  await expect(end).toHaveValue('')
+  expect(
+    await page.evaluate((id) => {
+      const clips = window.__plein.engine.doc.get(id)!.params!.clips as {
+        in: number
+        out?: number
+      }[]
+      return { in: clips[0]!.in, out: clips[0]!.out ?? null }
+    }, sequence.id),
+  ).toEqual({ in: 0, out: null })
+  await editor.getByRole('button', { name: '导出 MP4', exact: true }).click()
+  const exported = editor.getByLabel('实际导出 MP4', { exact: true })
+  await expect(exported).toBeVisible({ timeout: 60_000 })
+  await expect
+    .poll(() => exported.evaluate((v: HTMLVideoElement) => Number.isFinite(v.duration)))
+    .toBe(true)
+  const length = await exported.evaluate((v: HTMLVideoElement) => v.duration)
+  expect(length).toBeGreaterThan(1.95)
+  expect(length).toBeLessThan(2.1)
+})
+
 /** 序列编辑器是多轨时间线：胶片条、波形，拖动换顺序，拖边缘修剪，空格播放 */
 test('序列时间线：排序、修剪、播放', async ({ page }) => {
   await newProject(page)
