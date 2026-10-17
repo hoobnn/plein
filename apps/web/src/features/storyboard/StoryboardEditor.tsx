@@ -44,7 +44,9 @@ export function StoryboardEditor() {
   const close = () => useCanvas.getState().openStoryboard(null)
   return (
     <Presence>
-      {engine && id && engine.doc.get(id) && <Editor engine={engine} id={id} onClose={close} />}
+      {engine && id && engine.doc.get(id) && (
+        <Editor key={`${engine.doc.ydoc.guid}:${id}`} engine={engine} id={id} onClose={close} />
+      )}
     </Presence>
   )
 }

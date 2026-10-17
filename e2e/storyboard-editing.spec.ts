@@ -158,3 +158,68 @@ test('长分镜按内容分区，窄窗口不压缩成竖排且操作可见', as
   await expect(dialog.getByRole('button', { name: /^收起镜头 \d/ })).toHaveCount(total)
   await expect(prompt).toHaveValue(long)
 })
+
+test('快速切换复制的分镜计划，不沿用另一份计划的选择和折叠状态', async ({ page }) => {
+  await newProject(page)
+  const ids = await page.evaluate(() => {
+    const shots = [1, 2].map((no) => ({
+      id: `copied-shot-${no}`,
+      no,
+      duration: 3,
+      description: `原画面${no}`,
+    }))
+    return [0, 1].map((i) =>
+      window.__plein.addNode({
+        type: 'plein/storyboard',
+        name: `分镜计划${i + 1}`,
+        x: 200 + i * 700,
+        y: 200,
+        params: { shots },
+      }),
+    )
+  })
+  await zoomTo(page, ids)
+  const a = await centerOf(page, ids[0]!)
+  const b = await centerOf(page, ids[1]!)
+  const dialog = page.getByRole('dialog', { name: '分镜表', exact: true })
+  await page.mouse.dblclick(a.x, a.y)
+  await dialog.getByRole('checkbox', { name: '选择镜头 1', exact: true }).check()
+  await dialog.getByRole('button', { name: '收起全部镜头', exact: true }).click()
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  // 退场过程中直接切换；复制的计划合法保留镜头 ID，但编辑状态属于各自节点。
+  await page.mouse.dblclick(b.x, b.y)
+  await expect(dialog.getByRole('heading', { name: '分镜计划2', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('checkbox', { name: '选择镜头 1', exact: true })).not.toBeChecked()
+  await expect(dialog.getByRole('toolbar', { name: '分镜批量操作' })).toContainText(
+    '作用于全部镜头',
+  )
+  await expect(dialog.getByRole('button', { name: '收起镜头 1', exact: true })).toBeVisible()
+  await dialog
+    .getByRole('article')
+    .first()
+    .getByLabel('画面', { exact: true })
+    .fill('第二份计划的修改')
+  await dialog.getByRole('article').first().getByLabel('画面', { exact: true }).blur()
+  expect(
+    await page.evaluate(
+      (ids) =>
+        ids.map((id) => {
+          const shots = window.__plein.engine.doc.get(id)!.params!.shots as {
+            description: string
+          }[]
+          return shots[0]!.description
+        }),
+      ids,
+    ),
+  ).toEqual(['原画面1', '第二份计划的修改'])
+  await dialog.getByRole('button', { name: '审核镜头', exact: true }).click()
+  await expect(dialog.getByRole('table', { name: '逐镜审核', exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.mouse.dblclick(a.x, a.y)
+  await expect(dialog.getByRole('heading', { name: '分镜计划1', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('article')).toHaveCount(2)
+  await expect(dialog.getByRole('checkbox', { name: '选择镜头 1', exact: true })).not.toBeChecked()
+  await expect(dialog.getByRole('article').first().getByLabel('画面', { exact: true })).toHaveValue(
+    '原画面1',
+  )
+})
