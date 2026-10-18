@@ -90,6 +90,7 @@ export default defineConfig({
     'history-selection.spec.ts',
     'history-media-recovery.spec.ts',
     'history-preview.spec.ts',
+    'viewer-action-targets.spec.ts',
     'history-context.spec.ts',
     'single-download-recovery.spec.ts',
     'single-download-large.spec.ts',

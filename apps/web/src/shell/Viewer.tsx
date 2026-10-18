@@ -1,4 +1,4 @@
-import { adoptResult, creativeReviewTarget, currentResult, type NodeResult } from '@plein/doc'
+import { creativeReviewTarget, currentResult, type NodeResult } from '@plein/doc'
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { assetUrls } from '../api/client'
 import { useCanvas } from '../stores/canvas'
@@ -7,6 +7,7 @@ import { Modal, ModalHeader } from '../ui/Modal'
 import { useClosing } from '../ui/Presence'
 import { CreativeReviewForm } from '../features/storyboard/CreativeReviewForm'
 import { useStale } from '../features/runs/stale'
+import { isCurrentReview, runReviewAction } from './reviewActions'
 
 /** 审片状态只在浮层里；只有明确采用才写文档。 */
 export function Viewer() {
@@ -20,6 +21,8 @@ type View = NonNullable<ReturnType<typeof useCanvas.getState>['viewer']>
 
 function Review({ viewer }: { viewer: View }) {
   const engine = useCanvas((s) => s.engine)
+  const canvasId = useCanvas((s) => s.canvasId)
+  const [actionError, setActionError] = useState<string | null>(null)
   const doc = engine?.doc
   useSyncExternalStore(
     (fn) => doc?.subscribe(fn) ?? (() => {}),
@@ -91,10 +94,13 @@ function Review({ viewer }: { viewer: View }) {
   }
   const adopted = element && result && currentResult(element, result.port)?.id === result.id
   const close = () => {
+    if (!isCurrentReview({ engine, canvasId, viewer })) return
     stopDrag()
     useCanvas.getState().view(null)
   }
   const step = (delta: number) => {
+    if (!isCurrentReview({ engine, canvasId, viewer })) return
+    setActionError(null)
     stopDrag()
     setComparisonMissing(false)
     const i = candidates.findIndex((r) => r.id === selected)
@@ -104,12 +110,14 @@ function Review({ viewer }: { viewer: View }) {
     setZoom(1)
     setPan({ x: 0, y: 0 })
   }
-  const adopt = () => {
-    if (!doc || !element || !result || doc.readOnly || adopted) return
-    doc.undo.stopCapturing()
-    adoptResult(doc, element.id, result.id)
-    doc.undo.stopCapturing()
+  const act = (action: 'adopt' | 'locate') => {
+    const target = { engine, canvasId, viewer, result }
+    const error = runReviewAction(target, action)
+    if (!isCurrentReview(target)) return
+    setActionError(error)
+    if (!error && action === 'locate') close()
   }
+  const adopt = () => act('adopt')
   const label = (r: NodeResult) =>
     `候选 ${candidates.indexOf(r) + 1}${currentResult(element!, r.port)?.id === r.id ? ' · 已采用' : ''}`
   return (
@@ -190,20 +198,23 @@ function Review({ viewer }: { viewer: View }) {
               <button
                 type="button"
                 className="ui-btn ui-btn-secondary"
-                onClick={() => {
-                  if (engine && element) {
-                    useCanvas.getState().toggleHistory(false)
-                    engine.selection.set([element.id])
-                    engine.zoomToFit([element.id])
-                    close()
-                  }
-                }}
+                onClick={() => act('locate')}
               >
                 定位来源
               </button>
             </>
           )}
         </ModalHeader>
+        {actionError && (
+          <p role="alert" className="border-b border-line px-4 py-2 text-sm text-ink-muted">
+            {actionError}
+          </p>
+        )}
+        {viewer.nodeId && !element && !actionError && (
+          <p role="status" className="border-b border-line px-4 py-2 text-sm text-ink-muted">
+            来源节点已删除，恢复节点后可继续审片。
+          </p>
+        )}
         {element && doc && result && value && 'assetId' in value && (
           <div className="max-h-56 shrink-0 overflow-auto border-b border-line px-4 py-2">
             {creativeReviewTarget(element)?.resultId === result.id ? (
