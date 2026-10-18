@@ -1,6 +1,32 @@
 import { expect, type Page, test } from '@playwright/test'
 import { newProject } from './canvas'
 
+test('320px 下资产类别可用键盘逐项访问，导航不撑出面板', async ({ page }) => {
+  await newProject(page)
+  await page.setViewportSize({ width: 320, height: 700 })
+  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  const panel = page.getByRole('dialog', { name: '资产库', exact: true })
+  const categories = panel.getByRole('group', { name: '资产类别', exact: true })
+  const buttons = categories.getByRole('button')
+  await expect(buttons).toHaveCount(5)
+  await buttons.first().focus()
+  for (let i = 0; i < 5; i++) {
+    const button = buttons.nth(i)
+    if (i > 0) await page.keyboard.press('Tab')
+    await expect(button).toBeFocused()
+    await expect(button).toBeInViewport({ ratio: 1 })
+    await page.keyboard.press('Enter')
+    await expect(button).toHaveAttribute('aria-pressed', 'true')
+    await expect(panel.getByRole('button', { name: '关闭', exact: true })).toBeInViewport()
+    expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+  }
+  await expect(categories.getByRole('button', { name: '特效', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await panel.screenshot({ path: test.info().outputPath('library-categories-320.png') })
+})
+
 async function fixture(page: Page, count = 2) {
   await newProject(page)
   const canvas = await (

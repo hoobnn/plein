@@ -233,17 +233,25 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
         closeDisabled={uploadPending}
         meta={
           <fieldset disabled={uploadPending} className="contents">
-            <Segmented
-              label="资产类别"
-              size="lg"
-              options={LIBRARY_KINDS.map((k) => ({
-                value: k.id,
-                label: k.title,
-                icon: KIND_ICONS[k.id],
-              }))}
-              value={kindId}
-              onChange={show}
-            />
+            <div
+              className="ui-scrollbar min-w-0 max-w-full overflow-x-auto"
+              onFocusCapture={(event) => {
+                if (event.target instanceof HTMLElement)
+                  event.target.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+              }}
+            >
+              <Segmented
+                label="资产类别"
+                size="lg"
+                options={LIBRARY_KINDS.map((k) => ({
+                  value: k.id,
+                  label: k.title,
+                  icon: KIND_ICONS[k.id],
+                }))}
+                value={kindId}
+                onChange={show}
+              />
+            </div>
           </fieldset>
         }
       >
