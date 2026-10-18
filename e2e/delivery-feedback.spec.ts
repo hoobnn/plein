@@ -8,6 +8,38 @@ import { centerOf, newProject, zoomTo } from './canvas'
 
 let dir = ''
 
+test('实际 MP4 未加载时不把意见误存到零秒，恢复后保留草稿并使用真实时间', async ({ page }) => {
+  let fail = true
+  const f = await fixture(page, async (assets) => {
+    await page.route(`**/api/assets/${assets[0]}`, (route) =>
+      fail ? route.fulfill({ status: 503, body: 'unavailable' }) : route.continue(),
+    )
+  })
+  const original = await f.read()
+  await expect(f.panel.getByRole('alert')).toContainText('实际 MP4 加载失败')
+  await f.field.fill('加载恢复后按正确时间保存')
+  await f.add.click()
+  expect(await f.read()).toEqual(original)
+  await expect(f.field).toHaveValue('加载恢复后按正确时间保存')
+  await expect(f.panel.getByRole('alert').filter({ hasText: '尚未就绪' })).toBeVisible()
+  fail = false
+  await f.panel.getByRole('button', { name: '重新加载实际 MP4', exact: true }).click()
+  await expect
+    .poll(() => f.video.evaluate((video: HTMLVideoElement) => video.readyState))
+    .toBeGreaterThanOrEqual(2)
+  await f.video.evaluate((video: HTMLVideoElement) => {
+    video.currentTime = 1.25
+  })
+  await f.add.click()
+  await expect(f.panel.getByRole('alert')).toHaveCount(0)
+  await expect(f.field).toHaveValue('')
+  expect((await f.read())[1]!.notes.at(-1)).toMatchObject({
+    text: '加载恢复后按正确时间保存',
+    time: 1.25,
+    source: f.ids.boards[0],
+  })
+})
+
 test('实际 MP4 加载失败可连续重试，恢复播放保留版本草稿和交付记录', async ({ page }) => {
   let fail = true
   let requests = 0

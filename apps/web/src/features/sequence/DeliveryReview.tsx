@@ -149,7 +149,17 @@ export function DeliveryReview({
   }
   const add = () => {
     if (!text.trim()) return
-    const time = Math.max(0, Math.min(record.duration || Infinity, video.current?.currentTime ?? 0))
+    const player = video.current
+    if (
+      !player ||
+      player.readyState < HTMLMediaElement.HAVE_METADATA ||
+      player.error ||
+      !Number.isFinite(player.currentTime)
+    ) {
+      setError('实际 MP4 尚未就绪，意见草稿已保留；请加载后再记录时间码')
+      return
+    }
+    const time = Math.max(0, Math.min(record.duration || Infinity, player.currentTime))
     // 片尾暂停仍属于最后一帧；中间切点继续使用左闭右开，关联下一镜。
     const at = time === record.duration ? Math.max(0, time - 0.001) : time
     const source = record.sources.find((s) => at >= s.start && at < s.end)
