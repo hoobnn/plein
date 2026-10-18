@@ -36,9 +36,24 @@ export function Modal({
   const exit = useExit()
   const closing = useClosing()
   const menuEscapes = useRef(new WeakSet<Event>())
+  const popup = useRef<HTMLDivElement>(null)
+  const escapeOwners = useRef(new WeakMap<Event, HTMLElement>())
   useEffect(() => {
     // 在 Base UI 的 document 监听之前记录归属；回调时菜单可能已经收起。
     const capture = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        // 同级 React 根中的弹窗并不构成 Base UI 的嵌套树，按实际显示层级确定归属。
+        // 在按键开始时固定，避免顶层收起后同一次按键又关闭下一层。
+        const layers = [...document.querySelectorAll<HTMLElement>('[data-plein-modal-layer]')]
+        const owner = layers.reduce<HTMLElement | undefined>(
+          (top, el) =>
+            !top || Number(el.dataset.pleinModalLayer) >= Number(top.dataset.pleinModalLayer)
+              ? el
+              : top,
+          undefined,
+        )
+        if (owner) escapeOwners.current.set(event, owner)
+      }
       if (
         event.key === 'Escape' &&
         !event.isComposing &&
@@ -53,6 +68,12 @@ export function Modal({
     <Dialog.Root
       open={!closing}
       onOpenChange={(open, details) => {
+        const owner = escapeOwners.current.get(details.event)
+        if (!open && details.reason === 'escape-key' && owner && owner !== popup.current) {
+          details.cancel()
+          details.allowPropagation()
+          return
+        }
         // 同一个 Esc 只关闭按键开始时最上层的菜单，不影响之后退出父面板。
         if (!open && details.reason === 'escape-key' && menuEscapes.current.has(details.event)) {
           details.cancel()
@@ -72,6 +93,8 @@ export function Modal({
           } ${align === 'bottom' ? 'items-end pb-16 sm:pb-16' : 'items-center'}`}
         >
           <Dialog.Popup
+            ref={popup}
+            data-plein-modal-layer={closing ? undefined : top ? 50 : 40}
             aria-label={label}
             onKeyDown={(e) => {
               // 按钮上的原生撤销可能重新激活并修改背景中最后编辑过的文本框。

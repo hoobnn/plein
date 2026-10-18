@@ -89,13 +89,8 @@ function HistoryPanel({ engine }: { engine: Engine }) {
 
   useEffect(() => {
     mounted.current = true
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') useCanvas.getState().toggleHistory(false)
-    }
-    window.addEventListener('keydown', key)
     return () => {
       mounted.current = false
-      window.removeEventListener('keydown', key)
     }
   }, [])
 
