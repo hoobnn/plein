@@ -1,5 +1,43 @@
 import { expect, type Route, test } from '@playwright/test'
-import { addNode, byName, deselect, newProject, waitNode } from './canvas'
+import { addNode, byName, clickElement, deselect, newProject, waitNode } from './canvas'
+
+test('视频实际输入使用模式标签和音频开关说明，保留原始参数类型', async ({ page }) => {
+  await newProject(page)
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/video',
+      name: '视频参数说明',
+      params: { model: 'plein/mock:video', mode: 'image', audio: false, prompt: '雨后水杯' },
+      x: 400,
+      y: 200,
+    }),
+  )
+  await clickElement(page, id)
+  const preview = page.getByTestId('input-preview')
+  await preview.getByRole('button', { name: /实际输入/ }).click()
+  await expect(preview.locator('.ui-chip').filter({ hasText: '生成模式' })).toHaveText(
+    '生成模式 图生视频',
+  )
+  await expect(preview.locator('.ui-chip').filter({ hasText: '生成音频' })).toHaveText(
+    '生成音频 关闭',
+  )
+  await page.evaluate((id) => {
+    const params = window.__plein.engine.doc.mutable(id)!.get('params') as {
+      set(key: string, value: unknown): void
+    }
+    params.set('mode', 'text')
+    params.set('audio', true)
+  }, id)
+  await expect(preview.locator('.ui-chip').filter({ hasText: '生成模式' })).toHaveText(
+    '生成模式 文生视频',
+  )
+  await expect(preview.locator('.ui-chip').filter({ hasText: '生成音频' })).toHaveText(
+    '生成音频 开启',
+  )
+  const canvas = new URL(page.url()).hash.split('/').at(-1)!
+  const input = await (await page.request.get(`/api/canvases/${canvas}/nodes/${id}/input`)).json()
+  expect(input.params).toMatchObject({ mode: 'text', audio: true })
+})
 
 test('实际输入首次读取失败可见，重试只刷新预览不生成', async ({ page }) => {
   await newProject(page)

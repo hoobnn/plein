@@ -310,7 +310,9 @@ export function InputPreview({
               {data.voice && <span className="ui-chip">音色 {data.voice.voiceId}</span>}
               {params.map(([k, v]) => (
                 <span key={k} className="ui-chip">
-                  {fields.get(k)?.title ?? k} {String(v)}
+                  {fields.get(k)?.title ?? k}{' '}
+                  {fields.get(k)?.labels?.[String(v)] ??
+                    (typeof v === 'boolean' ? (v ? '开启' : '关闭') : String(v))}
                 </span>
               ))}
             </section>

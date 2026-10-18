@@ -84,6 +84,7 @@ export default defineConfig({
     'generator-layout.spec.ts',
     'generator-popovers.spec.ts',
     'tooltip-lifecycle.spec.ts',
+    'input-preview.spec.ts',
     'generator-camera.spec.ts',
     'generator-editing.spec.ts',
     'candidate-lifecycle.spec.ts',

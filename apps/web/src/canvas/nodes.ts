@@ -35,6 +35,7 @@ export interface FieldSchema {
   placeholder?: string
   widget?: string
   enum?: unknown[]
+  labels?: Record<string, string>
   minimum?: number
   maximum?: number
   default?: unknown
