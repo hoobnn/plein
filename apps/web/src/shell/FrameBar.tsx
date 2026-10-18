@@ -7,6 +7,7 @@ import { useEngineVersion, useFollow } from '../canvas/hooks'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useGroupRuns } from '../features/runs/groupRuns'
+import { groupCancelRequestKey, useCancelRequests } from '../features/runs/cancelRequests'
 import { Icon } from '../ui/icons'
 import { withShortcut } from '../ui/keys'
 import { Popover } from '../ui/Popover'
@@ -44,6 +45,8 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
   const [video, setVideo] = useState(false)
   const [force, setForce] = useState(false)
   const runs = useGroupRuns((s) => s.runs)
+  const canvasId = useCanvas((s) => s.canvasId)
+  const pending = useCancelRequests((s) => s.pending)
   const [palette, setPalette] = useState<HTMLElement | null>(null)
   const [shotsAt, setShotsAt] = useState<HTMLElement | null>(null)
   const ids = engine.selection.values()
@@ -63,6 +66,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
   const name = el.name ?? 'Frame'
   const busy = el.id in runs
   const group = runs[el.id] ?? null
+  const canceling = !!group && pending.has(groupCancelRequestKey(canvasId, group))
   const save = () => saveAsTemplate(engine, el.id, name)
 
   const isGroup = !!shotGroupOf(el)
@@ -136,12 +140,16 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
             <button
               type="button"
               className={btn}
-              disabled={!group}
+              aria-label="停止运行"
+              aria-busy={canceling}
+              disabled={!group || canceling}
               title="停止整组：正在跑和排队的节点一起取消"
               onClick={() => group && void cancelGroup(group)}
             >
-              <Icon name="stop" size={12} />
-              停止运行
+              {canceling ? <span className="ui-spinner size-3" /> : <Icon name="stop" size={12} />}
+              <span role={canceling ? 'status' : undefined}>
+                {canceling ? '正在停止整组…' : '停止运行'}
+              </span>
             </button>
           ) : (
             <button

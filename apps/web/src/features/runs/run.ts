@@ -3,7 +3,7 @@ import { ApiError, api } from '../../api/client'
 import * as groups from '../../canvas/groups'
 import { useCanvas } from '../../stores/canvas'
 import { groupRunSignal, useGroupRuns } from './groupRuns'
-import { cancelRequestKey, useCancelRequests } from './cancelRequests'
+import { cancelRequestKey, groupCancelRequestKey, useCancelRequests } from './cancelRequests'
 
 /** 界面上的运行操作：取当前画布、发起请求，把结果和错误提示给用户 */
 
@@ -59,7 +59,17 @@ export async function cancelNode(id: string, runId?: string) {
 }
 
 export async function cancelGroup(groupId: string) {
-  await api.cancelGroup(groupId).catch(fail)
+  const { canvasId } = useCanvas.getState()
+  if (!canvasId) return
+  const key = groupCancelRequestKey(canvasId, groupId)
+  if (!useCancelRequests.getState().begin(key)) return
+  try {
+    await api.cancelGroup(groupId)
+  } catch (err) {
+    if (useCanvas.getState().canvasId === canvasId) fail(err)
+  } finally {
+    useCancelRequests.getState().end(key)
+  }
 }
 
 /** 整组运行 Frame，结束后提示结果；同一个 Frame 已在运行时不重复发起 */

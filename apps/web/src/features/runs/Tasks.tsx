@@ -22,7 +22,7 @@ import { Icon } from '../../ui/icons'
 import { cancelGroup, cancelNode, runNode } from './run'
 import { BATCH_OUTCOME, BATCH_STAGE, CANCELED_BY, describeRecovery } from './recovery'
 import { useRecoveryRequests } from './recoveryRequests'
-import { cancelRequestKey, useCancelRequests } from './cancelRequests'
+import { cancelRequestKey, groupCancelRequestKey, useCancelRequests } from './cancelRequests'
 import { Presence, useExit } from '../../ui/Presence'
 import { EmptyState } from '../../ui/EmptyState'
 
@@ -573,6 +573,8 @@ function GroupRow(props: {
   onLocateNode: (id: string) => void
 }) {
   const { group: g, now } = props
+  const canvasId = useCanvas((s) => s.canvasId)
+  const canceling = useCancelRequests((s) => s.pending.has(groupCancelRequestKey(canvasId, g.id)))
   const exists = props.doc.has(g.frameId)
   const [open, setOpen] = useState(false)
   const s = g.summary
@@ -611,6 +613,11 @@ function GroupRow(props: {
           </span>
         </div>
         <p className="truncate text-xs text-ink-muted">{detail}</p>
+        {canceling && (
+          <p role="status" className="mt-0.5 text-xs text-ink-muted">
+            正在停止整组…
+          </p>
+        )}
         <button
           type="button"
           aria-expanded={open}
@@ -629,8 +636,8 @@ function GroupRow(props: {
         )}
       </div>
       {g.status === 'running' && (
-        <RowButton label="停止整组" onClick={() => void cancelGroup(g.id)}>
-          <Icon name="stop" size={14} />
+        <RowButton label="停止整组" busy={canceling} onClick={() => void cancelGroup(g.id)}>
+          {canceling ? <span className="ui-spinner size-3" /> : <Icon name="stop" size={14} />}
         </RowButton>
       )}
     </li>
