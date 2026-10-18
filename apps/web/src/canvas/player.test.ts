@@ -128,6 +128,7 @@ beforeEach(() => {
   frames = new Map()
   nextFrame = 0
   vi.stubGlobal('document', dom)
+  vi.stubGlobal('window', new EventTarget())
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
     const id = ++nextFrame
     frames.set(id, callback)

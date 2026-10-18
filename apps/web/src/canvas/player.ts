@@ -208,6 +208,7 @@ export function createPlayer(
   }
 
   let scrubbing = false
+  let scrubPointer: number | undefined
   const render = () => {
     const d = media.duration
     const t = media.currentTime
@@ -253,20 +254,35 @@ export function createPlayer(
     render()
   }
   track.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return
+    if (e.button !== 0 || scrubbing) return
     track.focus({ preventScroll: true })
     scrubbing = true
+    scrubPointer = e.pointerId
     track.setPointerCapture(e.pointerId)
     node.classList.add('is-scrubbing')
     seekTo(e)
   })
-  track.addEventListener('pointermove', (e) => scrubbing && seekTo(e))
+  track.addEventListener('pointermove', (e) => {
+    if (!scrubbing || e.pointerId !== scrubPointer) return
+    // 捕获在首次生效前被释放时，浏览器可能不会发 lostpointercapture。
+    if (!track.hasPointerCapture(e.pointerId)) return endScrub()
+    seekTo(e)
+  })
   const endScrub = () => {
     scrubbing = false
+    const pointer = scrubPointer
+    scrubPointer = undefined
     node.classList.remove('is-scrubbing')
+    if (pointer !== undefined && track.hasPointerCapture(pointer))
+      track.releasePointerCapture(pointer)
   }
-  track.addEventListener('pointerup', endScrub)
-  track.addEventListener('pointercancel', endScrub)
+  const endPointer = (e: PointerEvent) => {
+    if (e.pointerId === scrubPointer) endScrub()
+  }
+  track.addEventListener('pointerup', endPointer)
+  track.addEventListener('pointercancel', endPointer)
+  track.addEventListener('lostpointercapture', endPointer)
+  window.addEventListener('blur', endScrub)
 
   play.addEventListener('click', toggle)
   mute.addEventListener('click', () => (media.muted = !media.muted))
@@ -356,6 +372,8 @@ export function createPlayer(
       disposed = true
       cancelPresentation()
       clearTimeout(idle)
+      window.removeEventListener('blur', endScrub)
+      endScrub()
       document.removeEventListener('fullscreenchange', onFullscreen)
       if (document.fullscreenElement === node) void document.exitFullscreen()
       media.pause()

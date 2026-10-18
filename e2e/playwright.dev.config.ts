@@ -61,6 +61,7 @@ export default defineConfig({
     'markdown-history.spec.ts',
     'player-keyboard.spec.ts',
     'player-recovery.spec.ts',
+    'player-seeking.spec.ts',
     'editor-select-keyboard.spec.ts',
     'voice-picker-state.spec.ts',
     'parameter-boundaries.spec.ts',
