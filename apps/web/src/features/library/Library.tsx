@@ -843,7 +843,7 @@ function Editor({
           .filter(Boolean)
       : [],
     profile: character && !profileEmpty(draft.profile) ? draft.profile : null,
-    projectId: draft.inProject ? (item?.projectId ?? projectId) : null,
+    projectId: draft.inProject ? (draft.projectTarget ?? projectId) : null,
   })
 
   /** 保存并返回条目；官方条目复制一份成自己的。画布上已经放下的这张角色卡跟着同步档案 */
@@ -1085,7 +1085,7 @@ function Editor({
             checked={draft.inProject}
             onChange={(e) => patch({ inProject: e.target.checked })}
           />
-          {item?.projectId && item.projectId !== projectId
+          {draft.projectTarget && draft.projectTarget !== projectId
             ? '保留在来源项目（不勾选则不归属任何项目）'
             : '归到当前项目（「本项目」里能看到；不勾选则不归属任何项目）'}
         </label>

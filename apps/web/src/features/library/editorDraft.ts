@@ -23,8 +23,10 @@ export interface Draft {
   video: string | null
   models: string
   profile: CharacterProfile
-  /** 归属当前项目 */
+  /** 是否保留项目归属 */
   inProject: boolean
+  /** 已有条目的来源；null 表示选择当前项目，避免保存应答改变草稿的目标。 */
+  projectTarget: string | null
 }
 
 export function draftOf(
@@ -48,6 +50,7 @@ export function draftOf(
     profile: profileOf(item?.profile),
     // 新建的角色 / 场景 / 道具默认归到当前项目；风格、特效默认全局
     inProject: item ? item.projectId !== null : !!projectId && !kind.video && kind.id !== 'style',
+    projectTarget: item?.projectId ?? null,
   }
 }
 

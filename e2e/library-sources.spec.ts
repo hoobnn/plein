@@ -81,7 +81,7 @@ async function setup(page: Page) {
     await panel.getByRole('searchbox', { name: '搜索道具', exact: true }).fill(name)
     return panel
   }
-  return { ids, assets, open, other: project.id, prefix, name }
+  return { ids, assets, open, other: project.id, current: canvas.projectId, prefix, name }
 }
 
 test('跨项目同名资产显示来源，按来源选择后放入正确设定', async ({ page }) => {
@@ -189,3 +189,84 @@ test('项目来源读取失败可重试，资产仍可浏览且恢复后显示�
     0,
   )
 })
+
+test('解除来源归属再归到当前项目，列表和实际记录保持一致', async ({ page }) => {
+  const f = await setup(page)
+  const panel = await f.open()
+  const card = panel.locator(`[data-library-id="${f.ids[1]}"]`)
+  await card.getByRole('button').first().click()
+  await panel
+    .getByRole('checkbox', { name: '保留在来源项目（不勾选则不归属任何项目）', exact: true })
+    .uncheck()
+  await panel.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
+  expect((await (await page.request.get(`/api/library/${f.ids[1]}`)).json()).projectId).toBeNull()
+  const current = panel.getByRole('checkbox', { name: /^归到当前项目/ })
+  await expect(current).not.toBeChecked()
+  await current.check()
+  await panel.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
+  expect((await (await page.request.get(`/api/library/${f.ids[1]}`)).json()).projectId).toBe(
+    f.current,
+  )
+  await panel.getByRole('button', { name: '返回', exact: true }).click()
+  await expect(card).toContainText('来源甲')
+})
+
+for (const action of ['保存', '保存并添加到画布'] as const) {
+  test(`解除归属 ${action} 期间重新勾选来源，不能静默改成当前项目`, async ({ page }) => {
+    const f = await setup(page)
+    const panel = await f.open()
+    await panel.locator(`[data-library-id="${f.ids[1]}"]`).getByRole('button').first().click()
+    if (action !== '保存') await page.setViewportSize({ width: 390, height: 700 })
+    let release!: () => void, arrived!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const stored = new Promise<void>((resolve) => {
+      arrived = resolve
+    })
+    let writes = 0
+    await page.route(`**/api/library/${f.ids[1]}`, async (route) => {
+      if (route.request().method() !== 'PATCH' || writes++ > 0) return route.continue()
+      const response = await route.fetch()
+      arrived()
+      await gate
+      await route.fulfill({ response })
+    })
+    try {
+      const association = panel.getByRole('checkbox')
+      await association.uncheck()
+      await panel.getByRole('button', { name: action, exact: true }).click()
+      await stored
+      await association.check()
+      release()
+      const save = panel.getByRole('button', { name: '保存', exact: true })
+      await expect(save).toBeEnabled()
+      const retained = panel.getByRole('checkbox', {
+        name: '保留在来源项目（不勾选则不归属任何项目）',
+        exact: true,
+      })
+      await expect(retained).toBeChecked()
+      if (action !== '保存') {
+        await expect(
+          panel.getByText('已保存提交时的内容，仍有新修改，请再次保存后添加到画布。', {
+            exact: true,
+          }),
+        ).toBeVisible()
+        await expect(retained).toBeInViewport({ ratio: 1 })
+        expect(await page.evaluate(() => [...window.__plein.engine.doc.elements()].length)).toBe(0)
+        await panel.screenshot({ path: test.info().outputPath('ownership-pending-390.png') })
+      }
+      await panel.getByRole('button', { name: action, exact: true }).click()
+      if (action === '保存')
+        await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
+      else await expect(panel).toBeHidden()
+      expect((await (await page.request.get(`/api/library/${f.ids[1]}`)).json()).projectId).toBe(
+        f.other,
+      )
+    } finally {
+      release()
+    }
+  })
+}
