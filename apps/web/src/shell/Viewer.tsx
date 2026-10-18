@@ -2,6 +2,8 @@ import { creativeReviewTarget, currentResult, type NodeResult } from '@plein/doc
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { assetUrls } from '../api/client'
 import { useCanvas } from '../stores/canvas'
+import { useCatalog } from '../stores/catalog'
+import { outlineTitle } from '../canvas/outline'
 import { Icon } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { useClosing } from '../ui/Presence'
@@ -29,12 +31,17 @@ function Review({ viewer }: { viewer: View }) {
     () => doc?.get(viewer.nodeId ?? '') ?? null,
   )
   const element = doc?.get(viewer.nodeId ?? '')
+  const catalog = useCatalog((s) => s.catalog)
+  const liveName = element ? outlineTitle(element, catalog) : null
+  const [knownName, setKnownName] = useState(viewer.name)
+  if (liveName !== null && liveName !== knownName) setKnownName(liveName)
+  const name = liveName ?? knownName
   const stale = useStale((s) => s.nodes.has(viewer.nodeId ?? ''))
   const [port] = useState(() => element?.results?.find((r) => r.id === viewer.resultId)?.port)
   const candidates = element?.results?.filter((r) => r.port === port) ?? []
   const [selected, setSelected] = useState(viewer.resultId)
   const [compare, setCompare] = useState('')
-  const [comparisonMissing, setComparisonMissing] = useState(false)
+  const [comparisonNotice, setComparisonNotice] = useState<string | null>(null)
   const [comparison, setComparison] = useState<'side' | 'slider'>('side')
   const [split, setSplit] = useState(50)
   const [zoom, setZoom] = useState(1)
@@ -69,15 +76,27 @@ function Review({ viewer }: { viewer: View }) {
   const value = result?.value
   const kind = value?.type ?? viewer.kind
   const assetId = value && 'assetId' in value ? value.assetId : viewer.assetId
-  const other = candidates.find((r) => r.id === compare)
+  const comparisonTarget = candidates.find((r) => r.id === compare)
+  const other =
+    comparisonTarget?.id !== selected && comparisonTarget?.value.type === 'image'
+      ? comparisonTarget
+      : undefined
   const otherId = other?.value.type === 'image' ? other.value.assetId : undefined
-  useEffect(() => stopDrag(), [selected, compare, comparison, assetId, kind, stopDrag])
+  useEffect(() => stopDrag(), [selected, compare, comparison, assetId, otherId, kind, stopDrag])
   useEffect(() => {
-    if (compare && !other) {
+    if (!compare) return
+    const notice = !comparisonTarget
+      ? '对比候选已移除，已退出对比。'
+      : comparisonTarget.value.type !== 'image'
+        ? '对比候选已不再是图片，已退出对比。'
+        : compare === selected
+          ? '当前候选与对比候选相同，已退出对比。'
+          : null
+    if (notice) {
       setCompare('')
-      setComparisonMissing(true)
+      setComparisonNotice(notice)
     }
-  }, [compare, other])
+  }, [compare, comparisonTarget, selected])
   const imageKey = `a:${assetId ?? ''}`
   const otherImageKey = `b:${otherId ?? ''}`
   const imageLabels = new Map<string, string>()
@@ -108,7 +127,7 @@ function Review({ viewer }: { viewer: View }) {
     }
     setActionError(null)
     stopDrag()
-    setComparisonMissing(false)
+    setComparisonNotice(null)
     setSelected((current) => {
       const i = latest.findIndex((r) => r.id === current)
       const start = i >= 0 ? i : delta > 0 ? -1 : 0
@@ -129,7 +148,7 @@ function Review({ viewer }: { viewer: View }) {
     `候选 ${candidates.indexOf(r) + 1}${currentResult(element!, r.port)?.id === r.id ? ' · 已采用' : ''}`
   return (
     <Modal
-      label={`查看「${viewer.name}」`}
+      label={`查看「${name}」`}
       onClose={close}
       top
       isolateKeys
@@ -181,7 +200,7 @@ function Review({ viewer }: { viewer: View }) {
           }
         }}
       >
-        <ModalHeader title={viewer.name} onClose={close}>
+        <ModalHeader title={name} onClose={close}>
           {candidates.length > 0 && (
             <>
               <button
@@ -283,7 +302,7 @@ function Review({ viewer }: { viewer: View }) {
                   value={compare}
                   onChange={(e) => {
                     setCompare(e.target.value)
-                    setComparisonMissing(false)
+                    setComparisonNotice(null)
                   }}
                 >
                   <option value="">不对比</option>
@@ -316,7 +335,7 @@ function Review({ viewer }: { viewer: View }) {
                   ? '；Enter 采用'
                   : null}
             </span>
-            {comparisonMissing && <span role="status">对比候选已移除，已退出对比。</span>}
+            {comparisonNotice && <span role="status">{comparisonNotice}</span>}
           </div>
         )}
         <div
@@ -370,7 +389,7 @@ function Review({ viewer }: { viewer: View }) {
                 <img
                   key={`${imageKey}:${imageLoads[imageKey]?.attempt ?? 0}`}
                   src={assetUrls.original(assetId)}
-                  alt={otherId ? '候选 A' : viewer.name}
+                  alt={otherId ? '候选 A' : name}
                   draggable={false}
                   {...imageEvents(imageKey)}
                   style={{ visibility: imageLoads[imageKey]?.failed ? 'hidden' : undefined }}

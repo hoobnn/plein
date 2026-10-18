@@ -92,6 +92,7 @@ export default defineConfig({
     'history-preview.spec.ts',
     'viewer-action-targets.spec.ts',
     'viewer-browse-keys.spec.ts',
+    'viewer-live-comparison.spec.ts',
     'viewer-single-keys.spec.ts',
     'history-context.spec.ts',
     'single-download-recovery.spec.ts',
