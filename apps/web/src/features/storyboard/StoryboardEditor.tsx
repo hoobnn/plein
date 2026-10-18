@@ -86,6 +86,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     const key = (e: KeyboardEvent) => {
       if (useCanvas.getState().viewer) return
       e.stopPropagation()
+      if (e.isComposing || e.keyCode === 229) return
       // 差异面板或确认框开着时 Esc 关它们，不连带关掉表格
       if (e.key === 'Escape' && !syncScope && !batchRequest && !dialogOpen()) onClose()
     }
