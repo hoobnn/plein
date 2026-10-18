@@ -36,7 +36,7 @@ type PromptPreset = Catalog['prompts'][number]
 export interface NodeCardActions {
   canvasId: string | null
   play(id: string): void
-  run(id: string): void
+  run(id: string, check?: { retryOf: string }): void
   cancel(id: string, runId?: string): void
   /** 空节点上的“尝试”：套用提示词预设并聚焦生成器 */
   applyPreset(id: string, preset: PromptPreset): void
@@ -629,7 +629,7 @@ export class NodeCards {
       e.stopPropagation()
       this.engine.selection.set([el.id])
       if (recovery) useCanvas.getState().toggleTasks(true)
-      else this.actions.run(el.id)
+      else this.actions.run(el.id, { retryOf: run.id })
     })
     actions.appendChild(retry)
     if (view.settings) {

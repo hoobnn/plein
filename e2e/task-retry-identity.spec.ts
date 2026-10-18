@@ -271,10 +271,27 @@ test('重试等待期间阻止重复请求，重开面板仍显示等待，失�
     )
     await panel.getByRole('button', { name: '关闭', exact: true }).click()
     await clickElement(page, id)
+    const oldRetry = await page
+      .locator('.plein-node')
+      .getByRole('button', { name: '重试', exact: true })
+      .elementHandle()
     await page.locator('.plein-node').getByRole('button', { name: '重试', exact: true }).click()
-    expect((await response).status()).toBe(202)
+    const retried = await response
+    expect(retried.status()).toBe(202)
+    expect(retried.request().postDataJSON()).toMatchObject({ retryOf: (await jobs()).jobs[1]!.id })
     expect(calls).toBe(2)
     await expect.poll(async () => (await jobs()).jobs.length).toBe(2)
+    await expect.poll(async () => (await jobs()).jobs[0]?.status).toBe('failed')
+    await expect(
+      page.locator('.plein-node').getByRole('button', { name: '重试', exact: true }),
+    ).toBeEnabled()
+    const before = (await jobs()).jobs.map((job) => job.id)
+    const stale = page.waitForResponse(
+      (res) => res.url().endsWith(`/nodes/${id}/run`) && res.request().method() === 'POST',
+    )
+    await oldRetry!.evaluate((button) => (button as HTMLButtonElement).click())
+    expect((await stale).status()).toBe(409)
+    expect((await jobs()).jobs.map((job) => job.id)).toEqual(before)
   } finally {
     release()
   }
