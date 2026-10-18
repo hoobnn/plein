@@ -341,15 +341,17 @@ function Panel({
       remote={!!canvasId}
       variant="inline"
     />
-  ) : audio && audio.value.type === 'audio' ? (
+  ) : result ? (
     <>
-      <AssetDownloadButton
-        engine={engine}
-        assetId={audio.value.assetId}
-        name={el.name ?? node.title}
-        className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
-        iconOnly
-      />
+      {audio && audio.value.type === 'audio' && (
+        <AssetDownloadButton
+          engine={engine}
+          assetId={audio.value.assetId}
+          name={el.name ?? node.title}
+          className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
+          iconOnly
+        />
+      )}
       <button
         type="button"
         className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
@@ -359,7 +361,7 @@ function Panel({
           useCanvas.getState().view({
             kind: 'result',
             nodeId: el.id,
-            resultId: audio.id,
+            resultId: result.id,
             name: el.name ?? node.title,
           })
         }

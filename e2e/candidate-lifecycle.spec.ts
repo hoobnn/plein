@@ -115,3 +115,44 @@ for (const kind of ['image', 'video', 'speech'] as const) {
     ).toBe(2)
   })
 }
+
+test('LLM 长文本候选在窄屏完整换行，明确采用后可从生成器重新查看', async ({ page }) => {
+  await newProject(page)
+  const token = 'SceneDescription'.repeat(40)
+  const id = await page.evaluate(
+    (token) =>
+      window.__plein.addNode({
+        type: 'plein/llm',
+        name: '文本候选预览',
+        params: { model: 'plein/mock:chat', prompt: `雨后镜头\n${token}\n保留结尾。` },
+        x: 400,
+        y: 300,
+      }),
+    token,
+  )
+  await clickElement(page, id)
+  const generator = page.getByTestId('generator')
+  await generator.getByRole('button', { name: '生成', exact: true }).click()
+  await waitNode(page, id)
+  await generator.getByRole('button', { name: '重新生成', exact: true }).click()
+  await expect
+    .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.results?.length, id))
+    .toBe(2)
+  await page.locator('.plein-node').getByRole('button', { name: '下一个结果', exact: true }).click()
+  const viewer = page.getByRole('dialog', { name: '查看「文本候选预览」', exact: true })
+  await page.setViewportSize({ width: 320, height: 700 })
+  const text = viewer.locator('pre')
+  await expect(text).toContainText(token)
+  await expect(text).toContainText('保留结尾。')
+  const layout = await text.evaluate((el) => ({ width: el.clientWidth, content: el.scrollWidth }))
+  expect(layout.content).toBeLessThanOrEqual(layout.width)
+  await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
+  await viewer.screenshot({
+    path: test.info().outputPath('llm-preview-320.png'),
+    animations: 'disabled',
+  })
+  await viewer.getByRole('button', { name: '关闭', exact: true }).click()
+  await generator.getByRole('button', { name: '全屏查看', exact: true }).click()
+  await expect(viewer.getByRole('button', { name: '已采用', exact: true })).toBeDisabled()
+  await expect(text).toContainText(token)
+})

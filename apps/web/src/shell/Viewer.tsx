@@ -457,7 +457,7 @@ function Review({ viewer }: { viewer: View }) {
           ) : (kind === 'video' || kind === 'audio') && assetId ? (
             <ReviewMedia key={assetId} assetId={assetId} kind={kind} />
           ) : value ? (
-            <pre className="ui-scrollbar max-h-full w-full overflow-auto whitespace-pre-wrap p-6 text-sm text-white">
+            <pre className="ui-scrollbar max-h-full w-full overflow-auto whitespace-pre-wrap break-words p-6 text-sm text-white">
               {value.type === 'text'
                 ? value.text
                 : value.type === 'json'
