@@ -10,7 +10,7 @@ import {
   pickedTargets,
   stepsFor,
 } from '@plein/protocol'
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { useAgent } from './store'
@@ -90,6 +90,8 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
   )
   const revising = useAgent((s) => !!s.pendingActions[`${s.session?.id}/revise/${item.id}`])
   const composing = useRef(false)
+  const root = useRef<HTMLDivElement>(null)
+  const returnTo = useRef<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   /** 不勾的目标 / 步骤（节点 id） */
   const [off, setOff] = useState<ReadonlySet<string>>(new Set())
@@ -100,6 +102,18 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
   const { plan } = item
   const pending = item.status === 'pending' && plan.status === 'pending'
   const locked = busy || revising
+  useLayoutEffect(() => {
+    if (editing || !returnTo.current) return
+    const key = returnTo.current
+    returnTo.current = null
+    root.current
+      ?.querySelector<HTMLButtonElement>(`[data-edit-field="${CSS.escape(key)}"]`)
+      ?.focus()
+  }, [editing])
+  const closeEditing = (restore = true) => {
+    if (editing && restore) returnTo.current = `${editing.nodeId}/${editing.key}`
+    setEditing(null)
+  }
   const ids = plan.targets.map((t) => t.nodeId).filter((id) => engine?.doc.get(id))
 
   const only = plan.targets.some((t) => off.has(t.nodeId))
@@ -118,11 +132,15 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
     await useAgent.getState().decide(item.id, allow, pick)
   }
   const revise = async (patch: Parameters<typeof editsOf>[1]) => {
+    const form = root.current?.querySelector('form')
     setError(null)
     const failed = await useAgent.getState().revisePlan(item.id, editsOf(plan.targets, patch))
     if (failed === undefined) return
     if (failed) setError(failed)
-    else setEditing(null)
+    else
+      closeEditing(
+        document.activeElement === document.body || !!form?.contains(document.activeElement),
+      )
   }
   const toggle = (set: typeof setOff, id: string) =>
     set((prev) => {
@@ -158,6 +176,7 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
 
   return (
     <div
+      ref={root}
       className={`plein-agent-approval plein-edit-plan flex flex-col gap-2 rounded-lg px-3 py-2.5 text-xs ring-1 ring-inset ${pending ? 'bg-accent-soft/50 text-ink ring-accent/40' : 'text-ink ring-line'}`}
       data-status={plan.status}
       data-revising={revising || undefined}
@@ -229,6 +248,7 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
                             <button
                               type="button"
                               aria-label={`改${c.label}`}
+                              data-edit-field={`${t.nodeId}/${c.key}`}
                               title="改成别的写法"
                               className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn"
                               disabled={locked}
@@ -299,7 +319,7 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
                             }
                             if (e.key === 'Escape') {
                               e.stopPropagation()
-                              setEditing(null)
+                              closeEditing()
                             }
                             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                               e.preventDefault()
@@ -312,7 +332,7 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
                             type="button"
                             className="ui-btn ui-btn-xs ui-btn-quiet"
                             disabled={revising}
-                            onClick={() => setEditing(null)}
+                            onClick={() => closeEditing()}
                           >
                             取消
                           </button>

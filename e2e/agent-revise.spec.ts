@@ -18,6 +18,50 @@ async function setup(page: Page) {
   return { panel, input, card, field }
 }
 
+test('取消逐项编辑回到原入口，可用键盘重新编辑，取消内容不提交', async ({ page }) => {
+  const { panel, card, field } = await setup(page)
+  const original = await field.inputValue()
+  await field.fill('这段取消的文字不能进入方案')
+  await field.press('Escape')
+  await expect(field).toHaveCount(0)
+  const trigger = card.getByRole('button', { name: '改提示词', exact: true })
+  await expect(trigger).toBeFocused()
+  await trigger.press('Enter')
+  await expect(field).toBeFocused()
+  await expect(field).toHaveValue(original)
+  await card.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(trigger).toBeFocused()
+  await expect(panel).toBeVisible()
+})
+
+test('重新检查完成后恢复编辑入口，用户已移开的焦点不被抢回', async ({ page }) => {
+  const { input, card, field } = await setup(page)
+  await field.fill('第一次重新检查后的文字')
+  await field.press('ControlOrMeta+Enter')
+  const trigger = card.getByRole('button', { name: '改提示词', exact: true })
+  await expect(trigger).toBeFocused()
+  await trigger.press('Enter')
+  await expect(field).toBeFocused()
+  await field.fill('第二次重新检查后的文字')
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route('**/api/agent/sessions/*/approvals/*/plan', async (route) => {
+    await gate
+    await route.continue()
+  })
+  await field.press('ControlOrMeta+Enter')
+  await expect(field).toBeDisabled()
+  await input.focus()
+  await input.fill('继续写自己的输入')
+  release()
+  await expect(field).toHaveCount(0)
+  await expect(card).toContainText('第二次重新检查后的文字')
+  await expect(input).toBeFocused()
+  await expect(input).toHaveValue('继续写自己的输入')
+})
+
 test('方案逐项编辑的组字取消与确认键保留草稿，正常快捷键才重新检查', async ({ page }) => {
   const { panel, card, field } = await setup(page)
   await field.fill('雨后只留一盏灯')
