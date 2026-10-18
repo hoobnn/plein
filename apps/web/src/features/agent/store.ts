@@ -383,8 +383,8 @@ export const useAgent = create<AgentStore>((set, get) => {
       set({ error: null, sending: { ...get().sending, [canvasId]: true } })
       try {
         let session = get().session
-        // 换了 CLI 就开新对话：两家的会话不能互相续
-        if (!session || session.agent !== agent) {
+        // 历史会话继续使用自己的智能体；显式切换智能体时界面会先重置会话。
+        if (!session) {
           session = await api.createAgentSession(canvasId, agent)
           if (get().canvasId !== canvasId || mine !== selectSeq || get().agent !== agent) return
           mine = ++selectSeq

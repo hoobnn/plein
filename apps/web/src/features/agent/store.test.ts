@@ -164,6 +164,32 @@ describe('助手草稿与发送生命周期', () => {
 })
 
 describe('智能体会话', () => {
+  it('打开其他智能体历史后续聊原会话，新对话仍使用用户默认选择', async () => {
+    useAgent.setState({ canvasId: 'c1', agent: 'builtin' })
+    vi.mocked(api.agentSession).mockResolvedValue({ ...session('history'), agent: 'codex' })
+    vi.mocked(api.createAgentSession).mockResolvedValue({ ...session('new'), agent: 'builtin' })
+    vi.mocked(api.sendAgentMessage).mockResolvedValue(undefined)
+    vi.mocked(api.agentSessions).mockResolvedValue([])
+    await useAgent.getState().select('history')
+    await useAgent.getState().send('继续刚才的讨论')
+    expect(api.createAgentSession).not.toHaveBeenCalled()
+    expect(api.sendAgentMessage).toHaveBeenLastCalledWith(
+      'history',
+      '继续刚才的讨论',
+      undefined,
+      expect.any(Object),
+    )
+    expect(useAgent.getState().agent).toBe('builtin')
+    useAgent.getState().reset()
+    await useAgent.getState().send('另开一段')
+    expect(api.createAgentSession).toHaveBeenCalledWith('c1', 'builtin')
+    expect(api.sendAgentMessage).toHaveBeenLastCalledWith(
+      'new',
+      '另开一段',
+      undefined,
+      expect.any(Object),
+    )
+  })
   it('重新检查期间不接受重复检查或批准，迟到失败不返回旧错误', async () => {
     useAgent.setState({ canvasId: 'c1', session: session('s1') })
     const pending = deferred<void>()
