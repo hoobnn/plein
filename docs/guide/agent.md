@@ -27,6 +27,7 @@ Plein 不读取、也不保存 CLI 的登录凭据，用的就是你在终端里
 - 每轮对应一个独立进程：Claude Code 用 `claude -p --input-format stream-json --output-format stream-json`，Codex 用 `codex app-server`。下一轮通过 CLI 自身的会话 id 恢复上下文，旧轮的回调、审批和异步写入不能归到新轮。对话记录存在数据库里，工作目录是 `<数据目录>/agent`。
 - 本机权限分两档。选「本机操作先问我」时，CLI 修改文件或执行命令之前会先在面板里弹出确认卡片（Claude 用 `--permission-prompt-tool stdio`，Codex 用 `on-request` + `workspace-write` 沙箱）；选「本机操作不用问」则对应 `--dangerously-skip-permissions` 和 `never` + `danger-full-access`。
 - 设置 →「本机 AI」里能看到两个 CLI 的路径、版本和登录状态。Plein 会对照 npm 上的 dist-tags 提示新版本（Claude Code 本地版本比 latest 还新时，也会对照 next），可以一键运行更新命令。
+- 更新会沿用检测到的安装方式：Homebrew、npm 全局安装，以及 macOS/Linux 上的 Codex 官方独立安装包。独立安装包会重新运行[官方安装器](https://developers.openai.com/codex/cli/#getting-started)，保留原来的包目录和命令入口；无法确认安装来源时提示手动更新。
 
 ## 执行记录与上下文
 

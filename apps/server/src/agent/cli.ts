@@ -211,15 +211,20 @@ async function loggedIn(id: CliKind, bin: string, path: string): Promise<boolean
   }
 }
 
-/** 按安装方式决定更新命令：Homebrew 用 brew，npm 全局用 npm，Claude Code 其余情况用它自带的 update */
-async function updateCommandOf(id: CliKind, bin: string): Promise<string[] | undefined> {
+interface UpdateCommand {
+  args: string[]
+  env?: Record<string, string>
+}
+
+/** 按安装方式更新；Codex standalone 重跑官方安装器，保留原来的包目录与命令入口。 */
+async function updateCommandOf(id: CliKind, bin: string): Promise<UpdateCommand | undefined> {
   const real = await realpath(bin).catch(() => bin)
   if (real.includes(`${sep}Caskroom${sep}`) || real.includes(`${sep}Cellar${sep}`)) {
     const brew = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew'].find((b) =>
       real.startsWith(dirname(dirname(b))),
     )
     const formula = id === 'claude' ? 'claude-code' : 'codex'
-    return [brew ?? 'brew', 'upgrade', formula]
+    return { args: [brew ?? 'brew', 'upgrade', formula] }
   }
   const marker = `${sep}lib${sep}node_modules${sep}`
   const i = real.indexOf(marker)
@@ -230,14 +235,48 @@ async function updateCommandOf(id: CliKind, bin: string): Promise<string[] | und
       () => true,
       () => false,
     )
-    return [ok ? npm : 'npm', 'install', '-g', `${SPECS[id].pkg}@latest`]
+    return { args: [ok ? npm : 'npm', 'install', '-g', `${SPECS[id].pkg}@latest`] }
   }
-  if (id === 'claude') return [bin, 'update']
+  if (id === 'claude') return { args: [bin, 'update'] }
+  const codexHome =
+    process.platform !== 'win32'
+      ? real.match(/^(.*)\/packages\/standalone\/releases\/[^/]+\/(?:bin\/)?codex$/)?.[1]
+      : undefined
+  if (codexHome) {
+    const installDir = dirname(bin)
+    const realDir = await realpath(installDir).catch(() => installDir)
+    const standalone = join(codexHome, 'packages', 'standalone')
+    // 安装器会替换命令入口；直接调用 current/release 内的二进制时不能覆盖包自身。
+    if ([installDir, realDir].some((d) => d === standalone || d.startsWith(standalone + sep)))
+      return undefined
+    return {
+      args: [
+        'bash',
+        '-o',
+        'pipefail',
+        '-c',
+        'curl -fsSL https://chatgpt.com/codex/install.sh | sh -s -- --release latest',
+      ],
+      env: {
+        CODEX_HOME: codexHome,
+        CODEX_INSTALL_DIR: installDir,
+        CODEX_NON_INTERACTIVE: '1',
+      },
+    }
+  }
   return undefined
 }
 
 const quote = (parts: string[]) =>
-  parts.map((p) => (/[\s"'$]/.test(p) ? JSON.stringify(p) : p)).join(' ')
+  parts
+    .map((p) =>
+      /^[\w./:@=+-]+$/.test(p)
+        ? p
+        : process.platform === 'win32'
+          ? JSON.stringify(p)
+          : `'${p.replaceAll("'", "'\\''")}'`,
+    )
+    .join(' ')
 
 /** 设置页用：每个 CLI 的安装、登录、版本和能否一键更新 */
 export async function cliDetails(refresh = false): Promise<LocalCliInfo[]> {
@@ -265,7 +304,16 @@ async function detailOf(id: CliKind, env: CliEnvironment, refresh: boolean) {
     loggedIn: login,
     ...(tags?.latest ? { latest: newer ?? tags.latest } : {}),
     updateAvailable: !!newer,
-    ...(update ? { updateCommand: quote(update) } : {}),
+    ...(update
+      ? {
+          updateCommand: quote([
+            ...(update.env
+              ? ['env', ...Object.entries(update.env).map(([k, v]) => `${k}=${v}`)]
+              : []),
+            ...update.args,
+          ]),
+        }
+      : {}),
   } satisfies LocalCliInfo
 }
 
@@ -292,8 +340,8 @@ async function runUpdate(id: CliKind): Promise<LocalCliUpdateResult> {
   }
   const { ok, output } = await new Promise<{ ok: boolean; output: string }>((resolve) => {
     let out = ''
-    const child = spawn(cmd[0]!, cmd.slice(1), {
-      env: { ...process.env, PATH: env.path, CI: '1' },
+    const child = spawn(cmd.args[0]!, cmd.args.slice(1), {
+      env: { ...process.env, PATH: env.path, CI: '1', ...cmd.env },
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     })
