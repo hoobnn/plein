@@ -17,6 +17,7 @@ export default defineConfig({
     'library-placement.spec.ts',
     'library-mutations.spec.ts',
     'library-favorites.spec.ts',
+    'library-focus.spec.ts',
     'viewer-media.spec.ts',
     'media-pagination.spec.ts',
     'media-search.spec.ts',

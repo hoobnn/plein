@@ -14,7 +14,7 @@ import {
   slotImages,
 } from '@plein/nodes'
 import type { LibraryImage, LibraryItem, LibraryKind } from '@plein/protocol'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { type CanvasMedia, canvasMedia, coverOf, placeInputOf, type PlaceInput } from './canvas'
 import { useCanvas } from '../../stores/canvas'
@@ -42,6 +42,7 @@ import { LibraryUpdatesPanel } from './LibraryUpdates'
 import { CharacterAssets } from './CharacterAssets'
 import { LibraryReadStatus } from './LibraryReadStatus'
 import { useLibraryPlacement } from './useLibraryPlacement'
+import { listFocusTarget } from './listFocus'
 
 /**
  * 资产库面板：
@@ -96,11 +97,19 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
   const [tags, setTags] = useState<Record<string, string>>({})
   const [editing, setEditing] = useState<Editing | null>(null)
   const [uploadPending, setUploadPending] = useState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const returnFocus = useRef<string | null | undefined>(undefined)
+  const focusedCard = useRef<{ id: string; index: number } | null>(null)
   const close = () => {
     if (!uploadPending) show(null)
   }
   const seed = useLibrary((s) => s.seed)
   const context = useRef({ kindId, projectId })
+  const parkFocus = () =>
+    document
+      .querySelector<HTMLElement>('[role="dialog"][aria-label="资产库"]')
+      ?.focus({ preventScroll: true })
 
   // 换类别时重置筛选；从画布带来的新建内容跟着换到新类别，方便选错了类别再改
   useEffect(() => {
@@ -129,16 +138,21 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
   }, [focus])
 
   /** 卡片封面长成档案大图 */
-  const openItem = (id: string, cover: HTMLElement | null) =>
+  const openItem = (id: string, cover: HTMLElement | null) => {
+    parkFocus()
     morphView(
       () => setEditing({ type: 'item', id }),
       cover,
       () => document.querySelector('.lib-hero'),
     )
+  }
   /** 返回列表：大图缩回它的卡片 */
   const back = () => {
     if (uploadPending) return
-    const id = editing?.type === 'item' ? editing.id : null
+    parkFocus()
+    const id =
+      editing?.type === 'item' ? editing.id : editing?.type === 'official' ? editing.item.id : null
+    returnFocus.current = id
     morphView(
       () => setEditing(null),
       document.querySelector('.lib-hero'),
@@ -191,6 +205,23 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
     if (r?.id) close()
   }
 
+  const shownKey = shown.map((item) => item.id).join(',')
+  useLayoutEffect(() => {
+    if (editing || open !== kindId) return
+    const cards = [...(listRef.current?.querySelectorAll<HTMLElement>('[data-library-id]') ?? [])]
+    const id = listFocusTarget(
+      cards.map((card) => card.dataset.libraryId!),
+      returnFocus.current,
+      focusedCard.current,
+      document.activeElement === document.body,
+    )
+    returnFocus.current = undefined
+    if (id !== undefined) {
+      const target = cards.find((card) => card.dataset.libraryId === id)
+      ;(target?.querySelector('button') ?? searchRef.current)?.focus()
+    }
+  }, [editing, shownKey, open, kindId])
+
   const scopes = SCOPES[preset ? 'preset' : 'asset'].filter((s) => s.id !== 'project' || projectId)
   const slideIndex =
     LIBRARY_KINDS.findIndex((k) => k.id === kindId) * 10 + scopes.findIndex((s) => s.id === scope)
@@ -226,6 +257,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
             <label className="home-search w-48">
               <Icon name="search" />
               <input
+                ref={searchRef}
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -235,7 +267,10 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
             </label>
             <button
               type="button"
-              onClick={() => setEditing({ type: 'new' })}
+              onClick={() => {
+                parkFocus()
+                setEditing({ type: 'new' })
+              }}
               className="ui-btn ui-btn-primary"
             >
               <Icon name="plus" />
@@ -262,7 +297,10 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
           placing={placement.placing}
           onBack={back}
           onUploadPendingChange={setUploadPending}
-          onCreated={(id) => setEditing({ type: 'item', id })}
+          onCreated={(id) => {
+            parkFocus()
+            setEditing({ type: 'item', id })
+          }}
           onPlace={place}
         />
       ) : (
@@ -299,10 +337,30 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
               )}
               {!loaded && scope !== 'official' ? null : shown.length === 0 ? (
                 scope !== 'official' && (loading || error) ? null : (
-                  <Empty kind={kind} scope={scope} onCreate={() => setEditing({ type: 'new' })} />
+                  <Empty
+                    kind={kind}
+                    scope={scope}
+                    onCreate={() => {
+                      parkFocus()
+                      setEditing({ type: 'new' })
+                    }}
+                  />
                 )
               ) : (
-                <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                <ul
+                  ref={listRef}
+                  onFocusCapture={(event) => {
+                    const card = (event.target as HTMLElement).closest<HTMLElement>(
+                      '[data-library-id]',
+                    )
+                    if (card)
+                      focusedCard.current = {
+                        id: card.dataset.libraryId!,
+                        index: [...event.currentTarget.children].indexOf(card),
+                      }
+                  }}
+                  className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+                >
                   {shown.map((it) =>
                     'favorite' in it ? (
                       <Card
@@ -327,7 +385,10 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
                           name: it.name,
                           description: it.description,
                         })}
-                        onOpen={() => setEditing({ type: 'official', item: it })}
+                        onOpen={() => {
+                          parkFocus()
+                          setEditing({ type: 'official', item: it })
+                        }}
                         onPlace={() =>
                           void place({ kind, name: it.name, description: it.description })
                         }
@@ -433,12 +494,12 @@ function Card({
     characterImages.some((image) => image.slot === slot.id),
   ).length
   return (
-    <li className="home-card lib-card group relative">
+    <li data-library-id={item.id} className="home-card lib-card group relative">
       <div className="relative">
         <button
           type="button"
           onClick={() => onOpen(coverRef.current)}
-          className="block w-full text-left"
+          className="lib-card-open block w-full text-left"
         >
           <div
             ref={coverRef}
@@ -580,8 +641,8 @@ function OfficialCard({
   onPlace(): void
 }) {
   return (
-    <li className="home-card lib-card group relative">
-      <button type="button" onClick={onOpen} className="block w-full text-left">
+    <li data-library-id={item.id} className="home-card lib-card group relative">
+      <button type="button" onClick={onOpen} className="lib-card-open block w-full text-left">
         <div className="plein-thumb flex aspect-[4/3] flex-col justify-end gap-1 p-3">
           <span className="ui-chip self-start">{Object.values(item.tags)[0]}</span>
           <span className="line-clamp-3 text-xs text-ink-muted">{item.description}</span>

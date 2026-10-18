@@ -5,6 +5,11 @@
 
 /* ── 列表卡片 ─────────────────────────────────── */
 
+.lib-card:has(.lib-card-open:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .lib-card-cover {
   position: relative;
   display: flex;
