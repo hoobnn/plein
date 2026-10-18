@@ -1,4 +1,10 @@
-import { activeShotNodes, expandedNodes, shotsOf, type ShotSource } from '@plein/capabilities'
+import {
+  activeShotNodes,
+  expandedNodes,
+  linkedShotSequences,
+  shotsOf,
+  type ShotSource,
+} from '@plein/capabilities'
 import type { Engine } from '@plein/canvas-core'
 import { createElement, currentResult, setParam, spotRightOf, type PleinDoc } from '@plein/doc'
 import { ANIMATIC_TYPE, animaticNode, matchLines, type AnimaticShot } from '@plein/nodes'
@@ -123,28 +129,12 @@ export function relatedSequences(engine: Engine, id: string) {
   const board = engine.doc.get(boardId)
   const groups = expandedNodes(engine.doc, boardId)
   const savedShots = new Set(params.shots.map((shot) => shot.shotId))
-  const active = new Set(
-    (board?.nodeType === 'plein/storyboard'
+  const active =
+    board?.nodeType === 'plein/storyboard'
       ? shotsOf(board).flatMap((shot) => activeShotNodes(shot, groups.get(shot.id) ?? []))
       : [...groups.values()].flat().filter((node) => {
           const source = node.params?.source as ShotSource
           return !source.detached && savedShots.has(source.shot)
         })
-    ).map((node) => node.id),
-  )
-  const ports: Partial<Record<ShotSource['role'], string>> = {
-    video: 'clips',
-    speech: 'dialogue',
-    sfx: 'sfx',
-  }
-  const links = new Set(
-    [...engine.doc.edges()]
-      .filter((edge) => {
-        const source = engine.doc.get(edge.from[0])?.params?.source as ShotSource | undefined
-        return active.has(edge.from[0]) && !!source && ports[source.role] === edge.to[1]
-      })
-      .map((edge) => edge.to[0]),
-  )
-  const candidates = [...engine.doc.elements()].filter((n) => n.nodeType === 'plein/sequence')
-  return candidates.filter((node) => links.has(node.id))
+  return linkedShotSequences(engine.doc, active)
 }
