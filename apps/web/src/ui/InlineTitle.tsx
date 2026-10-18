@@ -7,10 +7,14 @@ import { useRef, useState } from 'react'
 export function InlineTitle({
   value,
   className = '',
+  label = '画布名称',
+  autoFocus = true,
   onDone,
 }: {
   value: string
   className?: string
+  label?: string
+  autoFocus?: boolean
   onDone(title: string | null): void
 }) {
   const [draft, setDraft] = useState(value)
@@ -23,10 +27,10 @@ export function InlineTitle({
   return (
     <input
       // oxlint-disable-next-line jsx-a11y/no-autofocus -- 点了「重命名」就是要输入
-      autoFocus
+      autoFocus={autoFocus}
       value={draft}
       maxLength={200}
-      aria-label="画布名称"
+      aria-label={label}
       onFocus={(e) => e.currentTarget.select()}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => finish(draft)}

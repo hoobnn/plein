@@ -13,6 +13,7 @@ export default defineConfig({
   ...base,
   testMatch: [
     'project-switcher-navigation.spec.ts',
+    'project-rename-recovery.spec.ts',
     'projects.spec.ts',
     'library-navigation.spec.ts',
     'library.spec.ts',

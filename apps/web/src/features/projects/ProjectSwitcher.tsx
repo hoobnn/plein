@@ -125,6 +125,7 @@ export function ProjectSwitcher({
       {renaming && project ? (
         <InlineTitle
           value={project.title}
+          label="项目名称"
           onDone={renameProject}
           className="h-9 w-44 rounded-md px-2 text-sm font-medium"
         />

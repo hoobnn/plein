@@ -324,6 +324,28 @@ function ProjectCard({
   onDelete(): void
 }) {
   const [editing, setEditing] = useState(false)
+  const [renameDraft, setRenameDraft] = useState(c.title)
+  const [renaming, setRenaming] = useState(false)
+  const [renameError, setRenameError] = useState<string | null>(null)
+  const [renameFocus, setRenameFocus] = useState(true)
+  const finishRename = async (title: string | null) => {
+    if (renaming) return
+    setEditing(false)
+    setRenameError(null)
+    if (!title || title === c.title) return
+    setRenameDraft(title)
+    setRenaming(true)
+    try {
+      await onRename(title)
+    } catch (err) {
+      setRenameError((err as Error).message)
+      // 等待期间已去操作其他控件时，恢复草稿不抢走用户当前焦点。
+      setRenameFocus(document.activeElement === document.body)
+      setEditing(true)
+    } finally {
+      setRenaming(false)
+    }
+  }
   const covers = c.covers ?? []
   const href = routeHash({ name: 'project', id: c.id })
   // 有最近画布就直接进去，封面放大成画布；没有画布的项目照旧走打开项目（会先建一张）
@@ -343,12 +365,12 @@ function ProjectCard({
         <div className="min-w-0 flex-1">
           {editing ? (
             <InlineTitle
-              value={c.title}
+              value={renameDraft}
+              label="项目名称"
+              // oxlint-disable-next-line jsx-a11y/no-autofocus -- 明确改名时聚焦；迟到失败不抢占其他控件。
+              autoFocus={renameFocus}
               className="-mx-1 h-6 w-full rounded-sm px-1 text-base font-medium"
-              onDone={async (t) => {
-                setEditing(false)
-                if (t && t !== c.title) await onRename(t)
-              }}
+              onDone={finishRename}
             />
           ) : (
             <a
@@ -364,6 +386,16 @@ function ProjectCard({
           <div className="truncate text-xs text-ink-subtle" title={fullTime(c.updatedAt)}>
             {relativeTime(c.updatedAt)}编辑 · {c.canvases} 张画布
           </div>
+          {renaming && (
+            <p role="status" className="mt-1 text-xs text-ink-muted">
+              正在保存项目名称…
+            </p>
+          )}
+          {renameError && (
+            <p role="alert" className="mt-1 break-words text-xs text-danger">
+              {renameError}
+            </p>
+          )}
         </div>
         <div className="home-card-actions absolute top-3 right-3 flex gap-0.5 rounded-lg bg-surface p-1 opacity-0 shadow-2 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
           <button
@@ -386,7 +418,13 @@ function ProjectCard({
           </button>
           <button
             type="button"
-            onClick={() => setEditing(true)}
+            onClick={() => {
+              setRenameDraft(c.title)
+              setRenameError(null)
+              setRenameFocus(true)
+              setEditing(true)
+            }}
+            disabled={renaming || editing}
             aria-label="重命名"
             title="重命名"
             className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
