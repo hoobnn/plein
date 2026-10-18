@@ -14,6 +14,7 @@ import { clipOverlay } from './occlusion'
 
 interface Preview {
   node: HTMLDivElement
+  content: HTMLDivElement
   text: string | undefined
 }
 
@@ -70,6 +71,7 @@ const editorTheme = EditorView.theme(
  */
 export class CanvasOverlays {
   private previews = new Map<string, Preview>()
+  private previewSizer: ResizeObserver
   private active: Active | null = null
   /** 隐藏的量高节点：按元素宽度排版正文，量出自适应高度 */
   private measurer: HTMLDivElement
@@ -83,6 +85,14 @@ export class CanvasOverlays {
     private host: HTMLElement,
     private opts: OverlayOptions,
   ) {
+    this.previewSizer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const id = (entry.target as HTMLElement).dataset.markdownId
+        if (!id || this.previews.get(id)?.content !== entry.target) continue
+        this.fitted.delete(id)
+        this.fit(id)
+      }
+    })
     this.measurer = document.createElement('div')
     this.measurer.className = 'plein-md plein-md-preview'
     this.measurer.style.visibility = 'hidden'
@@ -125,6 +135,7 @@ export class CanvasOverlays {
     }
     for (const [id, p] of this.previews) {
       if (!want.has(id)) {
+        this.previewSizer.unobserve(p.content)
         p.node.remove()
         this.previews.delete(id)
       }
@@ -138,15 +149,20 @@ export class CanvasOverlays {
       if (!p) {
         const node = document.createElement('div')
         node.className = 'plein-md plein-md-preview'
+        const content = document.createElement('div')
+        content.className = 'plein-md-content'
+        content.dataset.markdownId = id
+        node.appendChild(content)
         this.root.appendChild(node)
-        p = { node, text: undefined }
+        p = { node, content, text: undefined }
         this.previews.set(id, p)
+        this.previewSizer.observe(content)
       }
       place(p.node, rect)
       clipOverlay(p.node, engine.scene, id, rect)
       if (p.text !== el.text) {
         p.text = el.text
-        p.node.innerHTML = renderMarkdown(el.text ?? '')
+        p.content.innerHTML = renderMarkdown(el.text ?? '')
       }
       this.fit(id)
     }
@@ -170,6 +186,16 @@ export class CanvasOverlays {
     const key = `${el.w}\n${text}`
     if (this.fitted.get(id) === key) return
     this.fitted.set(id, key)
+    const preview = this.previews.get(id)
+    if (preview) {
+      const style = getComputedStyle(preview.node)
+      const height =
+        preview.content.offsetHeight +
+        parseFloat(style.paddingTop) +
+        parseFloat(style.paddingBottom)
+      this.engine.fitContent(id, el.w, Math.max(MD_MIN_H, Math.ceil(height)))
+      return
+    }
     const m = this.measurer
     m.style.width = `${el.w}px`
     m.innerHTML = renderMarkdown(text)
@@ -247,6 +273,7 @@ export class CanvasOverlays {
 
   destroy() {
     this.deactivate()
+    this.previewSizer.disconnect()
     for (const d of this.disposers) d()
     for (const p of this.previews.values()) p.node.remove()
     this.previews.clear()

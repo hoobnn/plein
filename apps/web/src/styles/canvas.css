@@ -37,6 +37,12 @@
   padding: 16px;
   pointer-events: none;
 }
+.plein-md-preview a {
+  pointer-events: auto;
+}
+.plein-md-content {
+  display: flow-root;
+}
 
 .plein-md-editor,
 .plein-player {
@@ -221,7 +227,8 @@
   color: var(--ink);
   overflow-wrap: anywhere;
 }
-.plein-md > :first-child {
+.plein-md > :first-child,
+.plein-md-content > :first-child {
   margin-top: 0;
 }
 .plein-md h1,
@@ -260,6 +267,11 @@
 .plein-md a {
   color: var(--accent);
   text-decoration: underline;
+}
+.plein-md img {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 .plein-md code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

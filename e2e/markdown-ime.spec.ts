@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { centerOf, elements, newProject } from './canvas'
+import { centerOf, elements, newProject, settle } from './canvas'
 
 for (const mode of ['composing', 'legacy', 'legacy-27', 'end-229'] as const) {
   test(`画布便签 IME Escape 不退出编辑，${mode}，组字后仍可保存和正常退出`, async ({ page }) => {
@@ -18,6 +18,7 @@ for (const mode of ['composing', 'legacy', 'legacy-27', 'end-229'] as const) {
       .poll(async () => (await elements(page)).filter((el) => el.kind === 'markdown').length)
       .toBe(1)
     const note = (await elements(page)).find((el) => el.kind === 'markdown')!
+    await settle(page, note.id)
     const point = await centerOf(page, note.id)
     await page.mouse.dblclick(point.x, point.y)
     const editor = page.locator('.plein-md-editor .cm-content')
@@ -82,6 +83,7 @@ test('便签 Esc 先取消文本选择，再退出编辑，正文和画布选择
     .poll(async () => (await elements(page)).filter((el) => el.kind === 'markdown').length)
     .toBe(1)
   const note = (await elements(page)).find((el) => el.kind === 'markdown')!
+  await settle(page, note.id)
   const point = await centerOf(page, note.id)
   await page.mouse.dblclick(point.x, point.y)
   const editor = page.locator('.plein-md-editor .cm-content')

@@ -59,6 +59,7 @@ export default defineConfig({
     'ime-editor.spec.ts',
     'markdown-ime.spec.ts',
     'markdown-history.spec.ts',
+    'markdown-rendering.spec.ts',
     'player-keyboard.spec.ts',
     'player-recovery.spec.ts',
     'player-seeking.spec.ts',
