@@ -67,6 +67,7 @@ export default defineConfig({
     'provider-catalog-recovery.spec.ts',
     'provider-navigation-drafts.spec.ts',
     'provider-number-validation.spec.ts',
+    'sidebar-search.spec.ts',
     'plugins.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],

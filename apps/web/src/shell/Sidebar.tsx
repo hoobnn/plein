@@ -192,6 +192,19 @@ function Layers({ engine }: { engine: Engine }) {
   const [type, setType] = useState<TypeFilter>('all')
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [renaming, setRenaming] = useState<string | null>(null)
+  const searchButton = useRef<HTMLButtonElement>(null)
+  const restoreSearchFocus = useRef(false)
+  useEffect(() => {
+    if (!searching && restoreSearchFocus.current) {
+      restoreSearchFocus.current = false
+      searchButton.current?.focus()
+    }
+  }, [searching])
+  const closeSearch = () => {
+    restoreSearchFocus.current = true
+    setQuery('')
+    setSearching(false)
+  }
   const listRef = useRef<HTMLDivElement>(null)
   const prevRows = useRef(new Map<string, Row>())
   const q = query.trim().toLowerCase()
@@ -320,9 +333,10 @@ function Layers({ engine }: { engine: Engine }) {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 e.stopPropagation()
+                if (e.nativeEvent.isComposing || e.keyCode === 229) return
                 if (e.key === 'Escape') {
-                  setQuery('')
-                  setSearching(false)
+                  e.preventDefault()
+                  closeSearch()
                 }
               }}
               className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-subtle"
@@ -330,10 +344,7 @@ function Layers({ engine }: { engine: Engine }) {
             <button
               type="button"
               aria-label="关闭搜索"
-              onClick={() => {
-                setQuery('')
-                setSearching(false)
-              }}
+              onClick={closeSearch}
               className="flex text-ink-subtle hover:text-ink"
             >
               <Icon name="x" size={14} />
@@ -342,6 +353,7 @@ function Layers({ engine }: { engine: Engine }) {
         ) : (
           <>
             <button
+              ref={searchButton}
               type="button"
               aria-label="搜索"
               title="搜索"
