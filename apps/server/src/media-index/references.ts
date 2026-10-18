@@ -1,4 +1,4 @@
-import { createDoc, currentResult, type PleinDoc } from '@plein/doc'
+import { createDoc, adoptedResultIds, type PleinDoc } from '@plein/doc'
 import * as Y from 'yjs'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
@@ -52,15 +52,16 @@ export function documentReferences(doc: PleinDoc): AssetReference[] {
         explicit,
       })
     if (el.assetId) add(el.assetId, 'asset', null, true, true)
-    const adopted = currentResult(el)?.id
+    const adopted = adoptedResultIds(el)
     for (const r of el.results ?? [])
-      if ('assetId' in r.value) add(r.value.assetId, `result/${r.id}`, r.id, r.id === adopted, true)
+      if ('assetId' in r.value)
+        add(r.value.assetId, `result/${r.id}`, r.id, adopted.has(r.id), true)
     for (const delivery of el.deliveries ?? [])
       add(
         delivery.assetId,
         `delivery/${delivery.id}`,
         delivery.resultId,
-        delivery.resultId === adopted,
+        adopted.has(delivery.resultId),
         true,
       )
     stringReferences(el.params, (id, path) => add(id, `params${path}`, null, false, false))

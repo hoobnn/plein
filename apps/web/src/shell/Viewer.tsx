@@ -256,8 +256,8 @@ function Review({ viewer }: { viewer: View }) {
         )}
         {element && doc && result && value && 'assetId' in value && (
           <div className="max-h-56 shrink-0 overflow-auto border-b border-line px-4 py-2">
-            {creativeReviewTarget(element)?.resultId === result.id ? (
-              <CreativeReviewForm doc={doc} node={element} stale={stale} />
+            {creativeReviewTarget(element, result.port)?.resultId === result.id ? (
+              <CreativeReviewForm doc={doc} node={element} stale={stale} port={result.port} />
             ) : (
               <p className="text-xs text-ink-subtle">
                 正在预览其他候选；采用此候选后可记录创作验收。

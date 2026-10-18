@@ -447,8 +447,18 @@ export function fitAspect(doc: PleinDoc, id: string, ratio: number): boolean {
 export interface HistoryEntry {
   elementId: string
   result: NodeResult & { value: Extract<NodeResult['value'], { assetId: string }> }
-  /** 是否是节点当前采用的结果 */
+  /** 是否是该输出端口当前生效的结果 */
   adopted: boolean
+}
+
+/** 各输出端口当前生效的结果；同一候选的主输出和副输出可同时生效。 */
+export function adoptedResultIds(el: CanvasElement): Set<string> {
+  const ids = new Set<string>()
+  for (const port of new Set(el.results?.map((r) => r.port))) {
+    const result = currentResult(el, port)
+    if (result) ids.add(result.id)
+  }
+  return ids
 }
 
 /** 全画布节点的图片 / 视频 / 音频结果，按生成时间新到旧（同一时间按节点内顺序） */
@@ -456,10 +466,14 @@ export function resultHistory(doc: PleinDoc): HistoryEntry[] {
   const out: HistoryEntry[] = []
   for (const el of doc.elements()) {
     if (el.kind !== 'node' || !el.results?.length) continue
-    const current = currentResult(el)?.id
+    const current = adoptedResultIds(el)
     for (const r of el.results) {
       if (r.value.type === 'text' || r.value.type === 'json') continue
-      out.push({ elementId: el.id, result: r as HistoryEntry['result'], adopted: r.id === current })
+      out.push({
+        elementId: el.id,
+        result: r as HistoryEntry['result'],
+        adopted: current.has(r.id),
+      })
     }
   }
   return out.sort((a, b) => b.result.at - a.result.at)

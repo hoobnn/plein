@@ -33,15 +33,20 @@ export function CreativeReviewForm({
   node,
   stale = false,
   defaultOpen = false,
+  port,
 }: {
   doc: PleinDoc
   node: CanvasElement
   stale?: boolean
   defaultOpen?: boolean
+  /** 审片器按正在查看的输出端口记录；其他入口默认核对主输出。 */
+  port?: string
 }) {
-  const target = creativeReviewTarget(node)
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+  const target = creativeReviewTarget(node, port)
   if (!target) return <p className="text-xs text-ink-subtle">有产物后可记录创作验收</p>
   const review = getCreativeReview(node, target)
+  const targetKey = creativeReviewKey(target)
   return (
     <ReviewDraft
       key={`${creativeReviewKey(target)}/${review?.at ?? 0}`}
@@ -50,7 +55,10 @@ export function CreativeReviewForm({
       target={target}
       review={review}
       stale={stale}
-      defaultOpen={defaultOpen}
+      expanded={expanded[targetKey] ?? defaultOpen}
+      onExpanded={(open) =>
+        setExpanded((old) => (old[targetKey] === open ? old : { ...old, [targetKey]: open }))
+      }
     />
   )
 }
@@ -61,14 +69,16 @@ function ReviewDraft({
   target,
   review,
   stale,
-  defaultOpen,
+  expanded,
+  onExpanded,
 }: {
   doc: PleinDoc
   node: CanvasElement
   target: CreativeReviewTarget
   review?: CreativeReview
   stale: boolean
-  defaultOpen: boolean
+  expanded: boolean
+  onExpanded(open: boolean): void
 }) {
   const [note, setNote] = useState(review?.note ?? '')
   const [tags, setTags] = useState(review?.tags ?? [])
@@ -82,7 +92,8 @@ function ReviewDraft({
   }
   return (
     <details
-      open={defaultOpen || undefined}
+      open={expanded}
+      onToggle={(event) => onExpanded(event.currentTarget.open)}
       className="rounded border border-line px-2 py-1.5 text-xs"
       data-review-node={node.id}
     >
@@ -145,7 +156,7 @@ function ReviewDraft({
         )}
         {older.length > 0 && (
           <details className="text-ink-subtle">
-            <summary className="cursor-pointer">其他候选的验收记录（{older.length}）</summary>
+            <summary className="cursor-pointer">其他产物的验收记录（{older.length}）</summary>
             {older.map((r) => (
               <p className="mt-1 whitespace-pre-wrap" key={creativeReviewKey(r.target)}>
                 {r.target.resultId?.slice(-8) ?? r.target.assetId.slice(0, 8)} ·{' '}

@@ -1,5 +1,5 @@
 import * as Y from 'yjs'
-import { currentResult, ReadOnlyDocError } from './commands'
+import { currentResult, primaryResult, ReadOnlyDocError } from './commands'
 import type { PleinDoc } from './doc'
 import {
   creativeReviewKey,
@@ -17,7 +17,7 @@ export function creativeReviewTarget(
   if (!el) return undefined
   if (el.kind === 'image' || el.kind === 'video' || el.kind === 'audio')
     return el.assetId ? { kind: el.kind, assetId: el.assetId } : undefined
-  const result = currentResult(el, port)
+  const result = port === undefined ? primaryResult(el) : currentResult(el, port)
   const value = result?.value
   return result &&
     value &&
@@ -42,7 +42,11 @@ export function recordCreativeReview(
 ): boolean {
   if (doc.readOnly) throw new ReadOnlyDocError()
   const el = doc.get(id)
-  if (!sameCreativeReviewTarget(creativeReviewTarget(el), input.target)) return false
+  const port =
+    el?.kind === 'node'
+      ? el.results?.find((result) => result.id === input.target.resultId)?.port
+      : undefined
+  if (!sameCreativeReviewTarget(creativeReviewTarget(el, port), input.target)) return false
   const review: CreativeReview = {
     target: { ...input.target },
     status: input.status,

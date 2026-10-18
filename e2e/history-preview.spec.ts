@@ -187,6 +187,57 @@ test('采用旧视频的尾帧后，主视频预览、撤销重做和刷新保�
     })
     .toContain(videoAsset)
   await page.screenshot({ path: test.info().outputPath('video-after-tail-adoption.png') })
+
+  // 主视频与尾帧均生效；历史、跨画布素材来源和验收表单须认同一份状态。
+  for (const asset of [videoAsset, tailAsset]) {
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(`/api/assets/${asset}/sources`)
+        if (!response.ok()) return []
+        const sources = (await response.json()) as {
+          items: Array<{ nodeId: string; adopted: boolean; resultId: string }>
+        }
+        return sources.items
+          .filter((item) => item.nodeId === id && item.adopted)
+          .map((item) => item.resultId)
+      })
+      .toHaveLength(1)
+  }
+  await page.getByRole('button', { name: '生成历史', exact: true }).click()
+  await history.getByRole('button', { name: /^图片/ }).click()
+  const adoptedCard = () => history.getByRole('listitem').filter({ hasText: '采用中' })
+  await expect(adoptedCard()).toHaveCount(1)
+  await adoptedCard().getByRole('button').first().click()
+  const review = viewer.locator('[data-review-node]')
+  await review.locator('summary').first().click()
+  const note = review.getByRole('textbox', { name: '创作验收备注 · 视频与尾帧', exact: true })
+  await note.fill('尾帧需要调整水杯边缘')
+  await review.getByRole('button', { name: '保存为需修改', exact: true }).click()
+  await expect(review).toContainText('创作验收：需修改')
+  await viewer.getByRole('button', { name: '关闭', exact: true }).click()
+  await history.getByRole('button', { name: /^视频/ }).click()
+  await expect(adoptedCard()).toHaveCount(1)
+  await adoptedCard().getByRole('button').first().click()
+  await review.locator('summary').first().click()
+  await expect(note).toHaveValue('')
+  await note.fill('主视频运动可用')
+  await review.getByRole('button', { name: '保存为可用', exact: true }).click()
+  await expect(review).toContainText('创作验收：可用')
+  await expect(note).toBeVisible()
+  await expect(note).toHaveValue('主视频运动可用')
+  await viewer.screenshot({ path: test.info().outputPath('port-review-video.png') })
+  await viewer.getByRole('button', { name: '关闭', exact: true }).click()
+  await history.getByRole('button', { name: /^图片/ }).click()
+  await adoptedCard().getByRole('button').first().click()
+  await review.locator('summary').first().click()
+  await expect(note).toHaveValue('尾帧需要调整水杯边缘')
+  await viewer.screenshot({ path: test.info().outputPath('port-review-tail.png') })
+  await page.reload()
+  await waitEngine(page)
+  await clickElement(page, id)
+  await generator.getByRole('button', { name: '全屏查看', exact: true }).click()
+  await review.locator('summary').first().click()
+  await expect(note).toHaveValue('主视频运动可用')
 })
 
 for (const action of ['escape', 'locate'] as const) {

@@ -11,7 +11,7 @@ import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { canvasState, documentReferences, readDocument, stringReferences } from './references'
 
-const INDEX_VERSION = 1
+const INDEX_VERSION = 2
 type SqlRow = Record<string, unknown>
 type SourceKind = MediaSource['type']
 type SourceRow = {
