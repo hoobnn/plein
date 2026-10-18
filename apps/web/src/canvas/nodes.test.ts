@@ -117,6 +117,20 @@ describe('运行前校验', () => {
     expect(validate(required, el(ok), ups(), null)).toBe('需要连入参考图')
     const pending = ups({ references: [up('A', { type: 'image', assetId: 'x' }), up('B')] })
     expect(validate(image, el(ok), pending, null)).toBe('上游「B」还没有结果')
+    const held = up('B')
+    held.source.adopted = null
+    held.source.results = [
+      {
+        id: 'held',
+        runId: 'run',
+        port: 'images',
+        at: 1,
+        value: { type: 'image', assetId: 'held-asset' },
+      },
+    ]
+    expect(validate(image, el(ok), ups({ references: [held] }), null)).toBe(
+      '上游节点「B」有候选待采用，请先查看并采用结果',
+    )
   })
 
   it('提示词为空时，上游有非空文本也算填了', () => {

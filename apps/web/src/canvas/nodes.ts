@@ -236,7 +236,7 @@ export function placeElement(
 export interface Upstream {
   edgeId: string
   source: CanvasElement
-  /** 上游当前能提供的值；为空表示还没有结果 */
+  /** 上游当前能提供的值；为空表示没有生效结果（未生成或待采用） */
   value?: ResultValue
 }
 
@@ -324,7 +324,11 @@ export function validate(
     const list = ups.get(port.id) ?? []
     if (port.required && list.length === 0) return `需要连入${port.label}`
     const pending = list.find((u) => !u.value)
-    if (pending) return `上游「${pending.source.name ?? '节点'}」还没有结果`
+    if (pending) {
+      if (pending.source.adopted === null && pending.source.results?.length)
+        return `上游节点「${pending.source.name ?? '节点'}」有候选待采用，请先查看并采用结果`
+      return `上游「${pending.source.name ?? '节点'}」还没有结果`
+    }
   }
   const key = promptKey(node)
   if (key && node.capability !== 'image.process') {

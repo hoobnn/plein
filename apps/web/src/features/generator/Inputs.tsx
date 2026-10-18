@@ -323,6 +323,11 @@ function RefTile({
   const v = up.value
   const img = preview(v)
   const name = up.source.name ?? '上游'
+  const previewLabel = v
+    ? `预览「${name}」`
+    : up.source.adopted === null && up.source.results?.length
+      ? `「${name}」有候选待采用，点击定位来源`
+      : `「${name}」还没有结果，点击定位来源`
   return (
     <div
       role="group"
@@ -337,7 +342,8 @@ function RefTile({
       <button
         type="button"
         onClick={onPreview}
-        title={v ? `预览「${name}」` : `「${name}」还没有结果`}
+        aria-label={previewLabel}
+        title={previewLabel}
         draggable={draggable}
         onDragStart={(e) => {
           e.dataTransfer.setData('application/x-plein-input', up.edgeId)

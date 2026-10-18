@@ -1,4 +1,6 @@
 import {
+  addResults,
+  adoptResult,
   connect,
   createDoc,
   createElement,
@@ -6,7 +8,7 @@ import {
   type PleinDoc,
   writeRun,
 } from '@plein/doc'
-import type { Canvas } from '@plein/protocol'
+import type { Canvas, PreparedInput } from '@plein/protocol'
 import { beforeAll, describe, expect, it } from 'vite-plus/test'
 import { addNode, startTestServer, until } from '../testing'
 
@@ -61,6 +63,45 @@ describe('节点运行接口', () => {
     const el = await waitFor(doc, b, (s) => s === 'failed' || s === 'succeeded')
     expect(el.run).toMatchObject({ status: 'failed' })
     expect(el.run?.error).toContain('角色图')
+  })
+
+  it('上游候选待采用时引导采用而非重新生成，采用后下游读取同一素材', async () => {
+    const { canvas, doc } = await newCanvas()
+    const a = addNode(doc, 'plein/image', { name: '角色图' })
+    const b = addNode(doc, 'plein/image', { params: { prompt: '换个角度' }, x: 300 })
+    addResults(
+      doc,
+      a,
+      [
+        {
+          id: 'held',
+          port: 'images',
+          runId: 'held-run',
+          at: 1,
+          value: { type: 'image', assetId: 'held-asset' },
+        },
+      ],
+      { adopt: false },
+    )
+    connect(doc, [a, 'images'], [b, 'references'])
+    const input = () => fetch(`${base}/api/canvases/${canvas.id}/nodes/${b}/input`)
+    const blocked = await input()
+    expect(blocked.status).toBe(200)
+    expect(await blocked.json()).toMatchObject({
+      status: 'unprepared',
+      blocked: [
+        { code: 'prepare_failed', message: '上游节点「角色图」有候选待采用，请先查看并采用结果' },
+      ],
+    })
+    expect(doc.get(a)?.run).toBeUndefined()
+    expect(doc.get(b)?.run).toBeUndefined()
+    adoptResult(doc, a, 'held')
+    const ready = await input()
+    expect(ready.status).toBe(200)
+    const prepared = (await ready.json()) as PreparedInput
+    expect(prepared.inputs.references).toMatchObject([
+      { type: 'image', assetId: 'held-asset', source: a },
+    ])
   })
   it('旧任务重试不能在节点已有新成功任务后再次提交', async () => {
     const { canvas, doc } = await newCanvas()

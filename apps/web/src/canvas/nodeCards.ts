@@ -320,6 +320,9 @@ export class NodeCards {
 
     const run = el.run
     const active = run?.status === 'running' || run?.status === 'queued'
+    const list = primaryResults(el)
+    const cur = currentResult(el, list[0]?.port)
+    const awaitingAdoption = !active && run?.status !== 'failed' && !cur && list.length > 0
     const kind = info?.outputs[0]?.type ?? ''
     card.root.dataset.status = run?.status ?? 'idle'
     card.root.dataset.kind = kind
@@ -338,16 +341,19 @@ export class NodeCards {
     const stale =
       active || run?.status === 'failed' ? undefined : useStale.getState().nodes.get(el.id)
     if (stale) status = STALE_TEXT[stale]
+    if (awaitingAdoption) status = '待采用'
     card.root.dataset.stale = stale ?? ''
-    card.status.title = stale ? STALE_HINT[stale] : ''
+    card.status.title = awaitingAdoption
+      ? '候选尚未采用，下游暂不使用；查看候选后选择采用'
+      : stale
+        ? STALE_HINT[stale]
+        : ''
     card.status.textContent = status
     // 不知道进度时进度条换成来回流动的光，一眼能看出没卡住
     const known = active && run?.status === 'running' && run.phase !== 'retrying' && !!run.progress
     card.progress.classList.toggle('is-indeterminate', active && !known)
     card.progress.style.width = known ? `${Math.max(4, run!.progress! * 100)}%` : active ? '' : '0'
 
-    const list = primaryResults(el)
-    const cur = currentResult(el, list[0]?.port)
     const v = cur?.value
     card.nav.hidden = list.length < 2
     card.count.textContent = cur

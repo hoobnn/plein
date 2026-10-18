@@ -1686,6 +1686,11 @@ export class NodeRuns implements BatchHost {
           return out[port] ?? []
         }
         if (lenient) return []
+        if (src.adopted === null && src.results?.length)
+          throw new NodeRunError(
+            'missing_input',
+            `上游节点「${label}」有候选待采用，请先查看并采用结果`,
+          )
         throw new NodeRunError('missing_input', `上游节点「${label}」还没有结果，请先运行它`)
       }
       default:
