@@ -57,6 +57,7 @@ export default defineConfig({
     'storyboard-mention-navigation.spec.ts',
     'storyboard-dialogue-collaboration.spec.ts',
     'ime-editor.spec.ts',
+    'markdown-ime.spec.ts',
     'editor-select-keyboard.spec.ts',
     'voice-picker-state.spec.ts',
     'parameter-boundaries.spec.ts',

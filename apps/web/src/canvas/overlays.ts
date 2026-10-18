@@ -202,9 +202,29 @@ export class CanvasOverlays {
     else if (m && m.kind !== 'image') this.active = this.openPlayer(id, m.kind, m.assetId)
     if (this.active) {
       this.active.node.dataset.pleinActive = ''
+      let composing = false
+      this.active.node.addEventListener(
+        'compositionstart',
+        () => {
+          composing = true
+        },
+        true,
+      )
+      this.active.node.addEventListener(
+        'compositionend',
+        () => {
+          composing = false
+        },
+        true,
+      )
       // Esc 退出；其余按键留给编辑器 / 播放器
       this.active.node.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
+          if (e.isComposing || e.keyCode === 229 || composing) {
+            e.stopPropagation()
+            return
+          }
+          if (e.defaultPrevented) return
           e.preventDefault()
           this.deactivate()
         }
