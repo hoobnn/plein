@@ -82,6 +82,8 @@ export default defineConfig({
     'task-mobile-locate.spec.ts',
     'selection-toolbar-layout.spec.ts',
     'template-save-targets.spec.ts',
+    'selection-library-targets.spec.ts',
+    'selection-download.spec.ts',
     'templates.spec.ts',
     'right-panel-switching.spec.ts',
     'sequence-load-recovery.spec.ts',

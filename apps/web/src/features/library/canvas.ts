@@ -283,3 +283,18 @@ export function seedOf(media: readonly CanvasMedia[]): LibrarySeed {
     videos: media.filter((m) => m.kind === 'video').map((m) => m.assetId),
   }
 }
+
+/** 类别菜单绑定素材身份和顺序；改名不改变素材，预填时再读最新名称。 */
+export function mediaSelectionKey(media: readonly CanvasMedia[]) {
+  return JSON.stringify(media.map((item) => [item.elId, item.assetId, item.kind]))
+}
+
+/** 点击菜单时再读当前文档与选区，拒绝旧菜单在同一帧里提交已变化的素材。 */
+export function selectionSeed(
+  engine: Engine,
+  expected: readonly CanvasMedia[],
+): LibrarySeed | null {
+  if (!expected.length) return null
+  const current = mediaIn(engine, engine.selection.values())
+  return mediaSelectionKey(current) === mediaSelectionKey(expected) ? seedOf(current) : null
+}

@@ -1,11 +1,13 @@
 import { LIBRARY_KINDS } from '@plein/nodes'
+import type { Engine } from '@plein/canvas-core'
 import type { LibraryKind } from '@plein/protocol'
 import { useState } from 'react'
-import { type CanvasMedia, seedOf } from './canvas'
+import { type CanvasMedia, mediaSelectionKey, selectionSeed } from './canvas'
 import { useLibrary } from './store'
 import { Icon, type IconName } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
 import { Presence } from '../../ui/Presence'
+import { useCanvas } from '../../stores/canvas'
 
 export const KIND_ICONS: Record<LibraryKind, IconName> = {
   character: 'character',
@@ -27,21 +29,42 @@ const KIND_HINTS: Record<LibraryKind, string> = {
  * 画布上的图片 / 视频「存入资产库」：先选存成哪类资产，
  * 再打开资产库里预填好的新建表单，名称、标签、槽位确认后再保存。
  */
-export function LibraryAdd({
-  media,
-  variant,
-}: {
+interface LibraryAddProps {
   media: readonly CanvasMedia[]
   /** bar：浮动工具条按钮；inline：生成器第一行的安静按钮 */
   variant: 'bar' | 'inline'
-}) {
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+}
+
+export function LibraryAdd(props: LibraryAddProps) {
+  const canvasId = useCanvas((s) => s.canvasId)
+  return (
+    <LibraryAddMenu key={JSON.stringify([canvasId, mediaSelectionKey(props.media)])} {...props} />
+  )
+}
+
+function LibraryAddMenu({ media, variant }: LibraryAddProps) {
+  const [opened, setOpened] = useState<{
+    anchor: HTMLElement
+    engine: Engine | null
+    canvasId: string | null
+  } | null>(null)
   if (!media.length) return null
   const images = media.filter((m) => m.kind === 'image').length
   const videos = media.length - images
   const pick = (kind: LibraryKind) => {
-    setAnchor(null)
-    useLibrary.getState().show(kind, seedOf(media))
+    const current = useCanvas.getState()
+    const seed = current.engine && selectionSeed(current.engine, media)
+    setOpened(null)
+    if (
+      !opened ||
+      current.engine !== opened.engine ||
+      current.canvasId !== opened.canvasId ||
+      !seed
+    ) {
+      current.notify('素材已变化，请重新打开存入资产库')
+      return
+    }
+    useLibrary.getState().show(kind, seed)
   }
   const btn = variant === 'inline' ? 'ui-btn ui-btn-sm ui-btn-quiet' : 'ui-bar-btn'
   return (
@@ -49,10 +72,13 @@ export function LibraryAdd({
       <button
         type="button"
         className={`${btn} ui-btn-menu`}
-        aria-expanded={!!anchor}
+        aria-expanded={!!opened}
         aria-label="存入资产库"
         title="存入资产库：存成角色、场景、道具、风格或特效，跨画布、跨项目复用"
-        onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
+        onClick={(e) => {
+          const { engine, canvasId } = useCanvas.getState()
+          setOpened(opened ? null : { anchor: e.currentTarget, engine, canvasId })
+        }}
       >
         <Icon name="library" size={14} />
         {/* 生成器第一行已经很挤，只放图标 */}
@@ -60,8 +86,13 @@ export function LibraryAdd({
         <Icon name="chevronDown" size={12} />
       </button>
       <Presence>
-        {anchor && (
-          <Popover anchor={anchor} onClose={() => setAnchor(null)} label="存入资产库" width={260}>
+        {opened && (
+          <Popover
+            anchor={opened.anchor}
+            onClose={() => setOpened(null)}
+            label="存入资产库"
+            width={260}
+          >
             <div className="ui-menu-label">
               {media.length > 1
                 ? `把 ${images ? `${images} 张图片` : ''}${images && videos ? '、' : ''}${
