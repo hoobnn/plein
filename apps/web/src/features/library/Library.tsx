@@ -1,5 +1,4 @@
 import {
-  type CharacterProfile,
   CHARACTER_IMAGE_SLOTS,
   LIBRARY_KINDS,
   type LibraryKindSpec,
@@ -9,11 +8,9 @@ import {
   orderedImages,
   normalizeLibraryImages,
   profileEmpty,
-  profileOf,
   profileSize,
-  slotImages,
 } from '@plein/nodes'
-import type { LibraryImage, LibraryItem, LibraryKind } from '@plein/protocol'
+import type { LibraryItem, LibraryKind } from '@plein/protocol'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { type CanvasMedia, canvasMedia, coverOf, placeInputOf, type PlaceInput } from './canvas'
@@ -43,6 +40,8 @@ import { CharacterAssets } from './CharacterAssets'
 import { LibraryReadStatus } from './LibraryReadStatus'
 import { useLibraryPlacement } from './useLibraryPlacement'
 import { listFocusTarget } from './listFocus'
+import { settleSavedDraft } from './savedDraft'
+import { createdEditing, draftOf, editorKeyOf, type Draft, type Editing } from './editorDraft'
 
 /**
  * 资产库面板：
@@ -70,12 +69,6 @@ const SCOPES: Record<'asset' | 'preset', Array<{ id: Scope; label: string }>> = 
 }
 
 const hasOfficial = (kind: LibraryKind) => OFFICIAL_LIBRARY.some((o) => o.kind === kind)
-
-/** 编辑中的条目：已有条目、官方条目（只读）或新建草稿 */
-type Editing =
-  | { type: 'item'; id: string }
-  | { type: 'official'; item: OfficialLibraryItem }
-  | { type: 'new'; seed?: LibrarySeed }
 
 export function LibraryPanel() {
   const open = useLibrary((s) => s.open)
@@ -227,6 +220,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
     LIBRARY_KINDS.findIndex((k) => k.id === kindId) * 10 + scopes.findIndex((s) => s.id === scope)
 
   const editingItem = editing?.type === 'item' ? items.find((i) => i.id === editing.id) : undefined
+
   // 「从画布选」的候选：打开着画布时取画布上的图片和视频
   const media = useMemo(() => (canPlace && engine ? canvasMedia(engine) : []), [canPlace, engine])
 
@@ -286,7 +280,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
       )}
       {editing ? (
         <Editor
-          key={`${kindId}:${editing.type === 'item' ? editing.id : editing.type}`}
+          key={editorKeyOf(kindId, editing)}
           kind={kind}
           item={editingItem}
           official={editing.type === 'official' ? editing.item : undefined}
@@ -298,8 +292,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
           onBack={back}
           onUploadPendingChange={setUploadPending}
           onCreated={(id) => {
-            parkFocus()
-            setEditing({ type: 'item', id })
+            setEditing(createdEditing(editing, id))
           }}
           onPlace={place}
         />
@@ -666,43 +659,6 @@ function OfficialCard({
   )
 }
 
-interface Draft {
-  name: string
-  description: string
-  tags: Record<string, string>
-  voice: { provider: string; voiceId: string }
-  images: LibraryImage[]
-  video: string | null
-  models: string
-  profile: CharacterProfile
-  /** 归属当前项目 */
-  inProject: boolean
-}
-
-function draftOf(
-  kind: LibraryKindSpec,
-  item: LibraryItem | undefined,
-  official: OfficialLibraryItem | undefined,
-  projectId: string | null,
-  seed?: LibrarySeed,
-): Draft {
-  return {
-    name: item?.name ?? official?.name ?? seed?.name?.replace(/\.[a-z0-9]{2,5}$/i, '') ?? '',
-    description: item?.description ?? official?.description ?? '',
-    tags: { ...(item?.tags ?? official?.tags) },
-    voice: item?.voice ?? { provider: '', voiceId: '' },
-    images: normalizeLibraryImages(
-      kind,
-      item?.images ?? (seed ? slotImages(kind, seed.images) : []),
-    ),
-    video: item?.video ?? (kind.video ? (seed?.videos[0] ?? null) : null),
-    models: (item?.models ?? official?.models ?? []).join('，'),
-    profile: profileOf(item?.profile),
-    // 新建的角色 / 场景 / 道具默认归到当前项目；风格、特效默认全局
-    inProject: item ? item.projectId !== null : !!projectId && !kind.video && kind.id !== 'style',
-  }
-}
-
 /** 角色编辑页的分页 */
 type Tab = 'assets' | 'basics' | 'periods' | 'expressions'
 
@@ -741,6 +697,9 @@ function Editor({
   const readOnly = !!official
   const character = kind.id === 'character'
   const [draft, setDraft] = useState(() => draftOf(kind, item, official, projectId, seed))
+  const latestDraft = useRef(draft)
+  latestDraft.current = draft
+  const [saveNotice, setSaveNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const mutation = useRef(false)
   const lifetime = useRef({ active: true })
@@ -798,6 +757,7 @@ function Editor({
     mutation.current = true
     setBusy(true)
     setError(null)
+    setSaveNotice(null)
     return lifetime.current
   }
   const current = (session: { active: boolean }) =>
@@ -808,7 +768,7 @@ function Editor({
     mutation.current = false
     if (session.active) setBusy(false)
   }
-  const save = async (): Promise<LibraryItem | null> => {
+  const save = async (placingAfterSave = false): Promise<LibraryItem | null> => {
     const session = beginMutation()
     if (!session) return null
     const submitted = draft
@@ -819,12 +779,12 @@ function Editor({
           : item
         : await lib.create({ kind: kind.id, ...body() })
       if (!current(session)) return null
+      const normalized = draftOf(kind, saved, undefined, projectId)
+      const outcome = settleSavedDraft(submitted, latestDraft.current, normalized, placingAfterSave)
+      setDraft((current) => settleSavedDraft(submitted, current, normalized, false).draft)
+      setSaveNotice(outcome.notice)
       if (!item) onCreated(saved.id)
-      else
-        setDraft((current) =>
-          current === submitted ? draftOf(kind, saved, undefined, projectId) : current,
-        )
-      return saved
+      return outcome.continuePlacement ? saved : null
     } catch (err) {
       if (current(session)) setError((err as Error).message)
       return null
@@ -838,7 +798,7 @@ function Editor({
       await onPlace({ kind, name: official.name, description: official.description })
       return
     }
-    const saved = await save()
+    const saved = await save(true)
     const input = saved && placeInputOf(saved)
     if (input) await onPlace(input)
   }
@@ -1007,6 +967,14 @@ function Editor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {saveNotice && (
+        <p
+          role="status"
+          className="mx-5 my-3 rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-subtle"
+        >
+          {saveNotice}
+        </p>
+      )}
       {error && (
         <p role="alert" className="mx-5 my-3 rounded-lg bg-danger/5 px-3 py-2 text-sm text-danger">
           {error}
