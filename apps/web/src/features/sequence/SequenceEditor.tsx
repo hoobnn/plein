@@ -504,7 +504,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const row = current >= 0 ? rows[current] : undefined
 
   return (
-    <Modal label="序列" onClose={onClose} className="h-full max-w-7xl">
+    <Modal label="序列" onClose={onClose} className="seq-editor h-full max-w-7xl">
       <ModalHeader
         title={el?.name ?? '序列'}
         onClose={onClose}
@@ -664,8 +664,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           hint="把视频节点的输出连到序列的「镜头」端口，配音连到「对白」，配乐连到「配乐」。"
         />
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-1">
+        <div className="seq-edit-body flex min-h-0 flex-1 flex-col">
+          <div className="seq-edit-top flex min-h-0 flex-1">
             <SequencePreview
               key={previewRevision}
               rows={rows}

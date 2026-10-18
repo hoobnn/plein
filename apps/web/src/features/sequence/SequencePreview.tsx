@@ -191,11 +191,13 @@ function PlaybackOverlay({
       )}
       {(timeline.total === 0 || placeholder) && (
         <div className="absolute inset-0 z-30 flex items-center justify-center text-xs text-white/70">
-          {timeline.total === 0
-            ? '没有可播放的镜头'
-            : draft
-              ? '缺少分镜图 · 保留镜头时长与已有配音'
-              : '这段镜头还没有生成'}
+          <span className="min-w-0 break-words px-3 text-center">
+            {timeline.total === 0
+              ? '没有可播放的镜头'
+              : draft
+                ? '缺少分镜图 · 保留镜头时长与已有配音'
+                : '这段镜头还没有生成'}
+          </span>
         </div>
       )}
     </>

@@ -705,3 +705,56 @@
 .seq-range::-moz-range-track {
   background: linear-gradient(to right, var(--ink-muted) var(--fill), var(--surface-3) var(--fill));
 }
+
+/* 小窗口在编辑区内纵向滚动，预览与时间线不再被固定轨道挤成零高度。 */
+@media (width < 768px), (height < 650px) {
+  .seq-editor .seq-edit-body {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+  .seq-editor .seq-edit-top {
+    min-height: 260px;
+    flex: none;
+  }
+  .seq-editor .seq-monitor {
+    min-height: 260px;
+  }
+  .seq-editor .seq-monitor:has(.seq-stage[data-portrait]) {
+    min-height: 360px;
+  }
+  .seq-editor .seq-inspector {
+    max-height: 360px;
+  }
+}
+
+@media (width < 768px) {
+  .seq-editor > header > div {
+    min-width: 0;
+    max-width: 100%;
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+  .seq-editor > header > h2 {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .seq-editor .seq-edit-top {
+    flex-direction: column;
+  }
+  .seq-editor .seq-monitor {
+    width: 100%;
+    flex: none;
+  }
+  .seq-editor .seq-inspector {
+    width: 100%;
+    height: 280px;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+  .seq-editor .seq-transport {
+    grid-template-columns: 1fr auto;
+  }
+  .seq-editor .seq-transport-note {
+    display: none;
+  }
+}
