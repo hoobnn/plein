@@ -85,7 +85,9 @@ function editsOf(
  */
 export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_plan' }> }) {
   const engine = useCanvas((s) => s.engine)
-  const [busy, setBusy] = useState(false)
+  const busy = useAgent(
+    (s) => !!s.pendingActions[`${s.session?.id}/decide/${item.id}`] || !!s.selecting,
+  )
   const [revising, setRevising] = useState(false)
   const [error, setError] = useState<string | null>(null)
   /** 不勾的目标 / 步骤（节点 id） */
@@ -109,12 +111,10 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
   const changeCount = plan.targets.reduce((n, t) => n + t.changes.length, 0)
 
   const decide = async (allow: boolean, scope?: EditScope) => {
-    setBusy(true)
     const pick: ApplyEditPlan | undefined = scope
       ? { scope, ...(only ? { only } : {}), ...(skipped.length ? { skip: skipped } : {}) }
       : undefined
     await useAgent.getState().decide(item.id, allow, pick)
-    setBusy(false)
   }
   const revise = async (patch: Parameters<typeof editsOf>[1]) => {
     setRevising(true)
@@ -161,7 +161,7 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
       className={`plein-agent-approval plein-edit-plan flex flex-col gap-2 rounded-lg px-3 py-2.5 text-xs ring-1 ring-inset ${pending ? 'bg-accent-soft/50 text-ink ring-accent/40' : 'text-ink ring-line'}`}
       data-status={plan.status}
       data-revising={revising || undefined}
-      aria-busy={revising || undefined}
+      aria-busy={locked || undefined}
       onPointerEnter={() => {
         if (ids.length) engine?.flash(ids)
       }}

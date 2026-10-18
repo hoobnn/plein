@@ -290,13 +290,9 @@ export const useAgent = create<AgentStore>((set, get) => {
     },
 
     async decide(approvalId, allow, pick) {
-      const id = get().session?.id
-      if (!id) return
-      try {
-        await api.decideAgentApproval(id, approvalId, allow, pick)
-      } catch (err) {
-        set({ error: (err as Error).message })
-      }
+      await sessionAction(`decide/${approvalId}`, (id) =>
+        api.decideAgentApproval(id, approvalId, allow, pick),
+      )
     },
 
     async revisePlan(approvalId, edits) {

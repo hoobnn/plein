@@ -40,6 +40,7 @@ export default defineConfig({
     'agent-drafts.spec.ts',
     'agent-history.spec.ts',
     'agent-actions.spec.ts',
+    'agent-decisions.spec.ts',
     'pan-lifecycle.spec.ts',
     'gesture-lifecycle.spec.ts',
     'gesture-concurrency.spec.ts',

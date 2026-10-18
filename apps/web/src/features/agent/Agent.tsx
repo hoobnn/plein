@@ -534,19 +534,20 @@ const PLAN_STATUS: Record<string, string> = {
 
 /** 计划卡片：同意后小满按步骤执行，每一步做完打勾 */
 function PlanRow({ item }: { item: Extract<AgentItem, { type: 'plan' }> }) {
-  const [busy, setBusy] = useState(false)
+  const busy = useAgent(
+    (s) => !!s.pendingActions[`${s.session?.id}/decide/${item.id}`] || !!s.selecting,
+  )
   const pending = item.status === 'pending'
   const done = item.steps.filter((s) => s.status === 'done' || s.status === 'skipped').length
   const decide = async (allow: boolean) => {
-    setBusy(true)
     await useAgent.getState().decide(item.id, allow)
-    setBusy(false)
   }
 
   return (
     <div
       className={`plein-agent-approval plein-agent-plan flex flex-col gap-2 rounded-lg px-3 py-2.5 text-xs ring-1 ring-inset ${pending ? 'bg-accent-soft/50 text-ink ring-accent/40' : 'text-ink ring-line'}`}
       data-status={item.status}
+      aria-busy={busy}
     >
       <div className="flex items-center gap-2 text-ink-muted">
         <Icon name="tasks" size={14} />
@@ -617,19 +618,20 @@ const APPROVAL_DONE: Record<string, string> = {
 /** 等用户确认的操作：允许后服务端直接执行；悬停时在画布上高亮相关元素 */
 function ApprovalRow({ item }: { item: Extract<AgentItem, { type: 'approval' }> }) {
   const engine = useCanvas((s) => s.engine)
-  const [busy, setBusy] = useState(false)
+  const busy = useAgent(
+    (s) => !!s.pendingActions[`${s.session?.id}/decide/${item.id}`] || !!s.selecting,
+  )
   const pending = item.status === 'pending'
   const ids = item.ids.filter((id) => engine?.doc.get(id))
   const decide = async (allow: boolean) => {
-    setBusy(true)
     await useAgent.getState().decide(item.id, allow)
-    setBusy(false)
   }
 
   return (
     <div
       className={`plein-agent-approval flex flex-col gap-2 rounded-lg px-3 py-2 text-xs ring-1 ring-inset ${pending ? 'bg-accent-soft/50 text-ink ring-accent/40' : 'text-ink-muted ring-line'}`}
       data-status={item.status}
+      aria-busy={busy}
       onPointerEnter={() => {
         if (ids.length) engine?.flash(ids)
       }}
