@@ -45,11 +45,15 @@ export function DataMaintenance() {
   const [restored, setRestored] = useState<string | null>(null)
   const feedback = useRef<HTMLDivElement>(null)
   const cleanupPreview = useRef<HTMLDivElement>(null)
+  const inspectButton = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (message || error) feedback.current?.scrollIntoView({ block: 'nearest' })
   }, [message, error])
   useEffect(() => {
-    if (preview) cleanupPreview.current?.scrollIntoView({ block: 'nearest' })
+    if (preview) {
+      cleanupPreview.current?.scrollIntoView({ block: 'nearest' })
+      cleanupPreview.current?.focus({ preventScroll: true })
+    }
   }, [preview])
   const perform = async (fn: () => Promise<string | void>) => {
     setBusy(true)
@@ -291,6 +295,7 @@ export function DataMaintenance() {
           </>
         )}
         <button
+          ref={inspectButton}
           type="button"
           className="ui-btn ui-btn-secondary self-start"
           disabled={locked}
@@ -307,36 +312,51 @@ export function DataMaintenance() {
             ref={cleanupPreview}
             role="region"
             aria-label="清理预览"
+            tabIndex={-1}
             className="flex flex-col gap-2 rounded-lg bg-surface-2 p-3 text-xs"
           >
-            <p>
-              将 {preview.assets} 个登记和修改时间都超过 {preview.unusedDays} 天、且未引用的素材（
-              {bytes(preview.bytes)}
-              ）移入回收站。保留 {preview.protectedAssets} 个被引用的素材。
-            </p>
-            <p className="text-ink-subtle">
-              回收站到期后才释放磁盘空间，到期前可以恢复。确认前数据有变化会要求重新检查。
-            </p>
+            {preview.assets === 0 ? (
+              <p role="status">
+                暂无可清理素材。被引用或未超过 {preview.unusedDays} 天保留期的素材不会清理。
+              </p>
+            ) : (
+              <>
+                <p>
+                  将 {preview.assets} 个登记和修改时间都超过 {preview.unusedDays}{' '}
+                  天、且未引用的素材（
+                  {bytes(preview.bytes)}
+                  ）移入回收站。保留 {preview.protectedAssets} 个被引用的素材。
+                </p>
+                <p className="text-ink-subtle">
+                  回收站到期后才释放磁盘空间，到期前可以恢复。确认前数据有变化会要求重新检查。
+                </p>
+              </>
+            )}
             <div className="flex gap-2">
-              <button
-                type="button"
-                className="ui-btn ui-btn-secondary"
-                disabled={locked || preview.assets === 0}
-                onClick={() =>
-                  void perform(async () => {
-                    const result = await maintenanceApi.cleanup(preview.token)
-                    setPreview(null)
-                    return `已将 ${result.assets} 个素材移入回收站`
-                  })
-                }
-              >
-                确认移入回收站
-              </button>
+              {preview.assets > 0 && (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-secondary"
+                  disabled={locked}
+                  onClick={() =>
+                    void perform(async () => {
+                      const result = await maintenanceApi.cleanup(preview.token)
+                      setPreview(null)
+                      return `已将 ${result.assets} 个素材移入回收站`
+                    })
+                  }
+                >
+                  确认移入回收站
+                </button>
+              )}
               <button
                 type="button"
                 className="ui-btn ui-btn-ghost"
                 disabled={locked}
-                onClick={() => setPreview(null)}
+                onClick={() => {
+                  setPreview(null)
+                  inspectButton.current?.focus()
+                }}
               >
                 取消
               </button>

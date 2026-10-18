@@ -61,6 +61,7 @@ export default defineConfig({
     'maintenance-settings-sync.spec.ts',
     'maintenance-restore-feedback.spec.ts',
     'maintenance-cleanup-interactions.spec.ts',
+    'maintenance-cleanup-keyboard.spec.ts',
     'plugins.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
