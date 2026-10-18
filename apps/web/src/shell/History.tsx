@@ -361,43 +361,80 @@ function Card(props: {
 }) {
   const { entry, picked } = props
   const { type } = entry.result.value
-  const [broken, setBroken] = useState(false)
+  const preview = useRef<HTMLButtonElement>(null)
+  const [load, setLoad] = useState({ src: props.thumb, attempt: 0, broken: false })
+  const current = load.src === props.thumb ? load : { src: props.thumb, attempt: 0, broken: false }
+  if (load.src !== props.thumb) setLoad(current)
   return (
     <li className="group relative flex flex-col gap-1.5">
-      <button
-        type="button"
-        onClick={(e) =>
-          props.selecting || e.metaKey || e.ctrlKey || e.shiftKey ? props.onPick() : props.onOpen()
-        }
-        title={props.selecting ? '选择' : '定位到节点并采用这个结果'}
-        className={`relative flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-surface-2 outline-offset-2 transition-shadow ${
-          picked ? 'ring-2 ring-accent' : 'shadow-1 hover:shadow-2'
-        }`}
+      <div
+        className={`relative aspect-square rounded-lg bg-surface-2 ${picked ? 'ring-2 ring-accent' : 'shadow-1 hover:shadow-2'}`}
       >
-        {broken ? (
-          <span className="text-ink-subtle">
-            <Icon name={type} size={24} />
-          </span>
-        ) : (
-          <img
-            src={props.thumb}
-            alt=""
-            loading="lazy"
-            draggable={false}
-            onError={() => setBroken(true)}
-            className={`h-full w-full ${type === 'audio' ? 'object-fill px-3' : 'object-contain'}`}
-          />
+        <button
+          ref={preview}
+          type="button"
+          aria-label={`${props.selecting ? '选择' : '预览'}「${props.name}」`}
+          onClick={(e) =>
+            props.selecting || e.metaKey || e.ctrlKey || e.shiftKey
+              ? props.onPick()
+              : props.onOpen()
+          }
+          title={props.selecting ? '选择' : '预览结果，审片确认后再采用'}
+          className="relative flex size-full items-center justify-center overflow-hidden rounded-lg outline-offset-2"
+        >
+          {current.broken ? (
+            <span
+              role="img"
+              aria-label={`「${props.name}」缩略图加载失败`}
+              className="flex flex-col items-center gap-2 text-xs text-ink-subtle"
+            >
+              <Icon name={type} size={24} />
+              缩略图加载失败
+            </span>
+          ) : (
+            <img
+              key={JSON.stringify([current.src, current.attempt])}
+              src={current.src}
+              alt=""
+              loading="lazy"
+              draggable={false}
+              onError={() =>
+                setLoad((old) =>
+                  old.src === current.src && old.attempt === current.attempt
+                    ? { ...old, broken: true }
+                    : old,
+                )
+              }
+              className={`h-full w-full ${type === 'audio' ? 'object-fill px-3' : 'object-contain'}`}
+            />
+          )}
+          {type !== 'image' && (
+            <span className="ui-badge absolute bottom-2 left-2">
+              <Icon name={type} size={12} />
+              {TYPE_LABEL[type]}
+            </span>
+          )}
+          {entry.adopted && (
+            <span className="ui-badge absolute top-2 right-2 bg-primary text-on-primary">
+              采用中
+            </span>
+          )}
+        </button>
+        {current.broken && (
+          <button
+            type="button"
+            aria-label={`重新加载「${props.name}」缩略图`}
+            title="只重新加载缩略图，不改变选择或采用结果"
+            className="ui-btn ui-btn-xs ui-btn-quiet absolute right-2 bottom-2"
+            onClick={() => {
+              preview.current?.focus()
+              setLoad((old) => ({ ...old, attempt: old.attempt + 1, broken: false }))
+            }}
+          >
+            重试
+          </button>
         )}
-        {type !== 'image' && (
-          <span className="ui-badge absolute bottom-2 left-2">
-            <Icon name={type} size={12} />
-            {TYPE_LABEL[type]}
-          </span>
-        )}
-        {entry.adopted && (
-          <span className="ui-badge absolute top-2 right-2 bg-primary text-on-primary">采用中</span>
-        )}
-      </button>
+      </div>
       <input
         type="checkbox"
         aria-label={`选择「${props.name}」`}

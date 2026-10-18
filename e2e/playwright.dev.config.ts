@@ -88,6 +88,8 @@ export default defineConfig({
     'selection-download-recovery.spec.ts',
     'history-download-recovery.spec.ts',
     'history-selection.spec.ts',
+    'history-media-recovery.spec.ts',
+    'history-preview.spec.ts',
     'history-context.spec.ts',
     'single-download-recovery.spec.ts',
     'single-download-large.spec.ts',
