@@ -21,6 +21,7 @@ export default defineConfig({
     'checkpoint-preview-recovery.spec.ts',
     'checkpoint-delete-lifecycle.spec.ts',
     'checkpoint-render-lifecycle.spec.ts',
+    'checkpoint-pagination.spec.ts',
     'media-checkpoints.spec.ts',
     'project-rename-recovery.spec.ts',
     'project-delete-recovery.spec.ts',

@@ -41,6 +41,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
   const removing = useCheckpoints((s) => s.removing)
   const [page, setPage] = useState<CheckpointPage>({ items: [], nextCursor: null }),
     [loading, setLoading] = useState(false),
+    [paging, setPaging] = useState(false),
     [error, setError] = useState(''),
     [revision, setRevision] = useState(0)
   const [loadFailed, setLoadFailed] = useState(false)
@@ -55,6 +56,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
   const engine = useCanvas((s) => s.engine),
     currentId = useCanvas((s) => s.canvasId)
   const saveController = useRef<AbortController | null>(null)
+  const listController = useRef<AbortController | null>(null)
   const canSave = !!canvasId && canvasId === currentId && !!engine && !engine.doc.readOnly
   useEffect(
     () => () => saveController.current?.abort(new DOMException('已取消等待', 'AbortError')),
@@ -71,8 +73,11 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
     [],
   )
   useEffect(() => {
+    listController.current?.abort()
     const controller = new AbortController()
+    listController.current = controller
     setLoading(true)
+    setPaging(false)
     setLoadFailed(false)
     setError('')
     checkpointApi
@@ -90,9 +95,16 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
         },
       )
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false)
+        if (!controller.signal.aborted && listController.current === controller) {
+          listController.current = null
+          setLoading(false)
+        }
       })
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      listController.current?.abort()
+      listController.current = null
+    }
   }, [projectId, revision, removal])
   useEffect(() => {
     setDetail(null)
@@ -156,16 +168,38 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
     setWaiting(false)
   }
   const more = async () => {
-    if (!page.nextCursor || loading) return
+    const cursor = page.nextCursor
+    if (!cursor || loading || listController.current) return
+    const controller = new AbortController()
+    listController.current = controller
+    const current = () =>
+      !controller.signal.aborted &&
+      listController.current === controller &&
+      useCheckpoints.getState().removal === removal
     setLoading(true)
+    setPaging(true)
+    setError('')
     try {
-      const result = await checkpointApi.list(projectId, page.nextCursor)
-      if (useCheckpoints.getState().removal !== removal) return
-      setPage((old) => ({ items: [...old.items, ...result.items], nextCursor: result.nextCursor }))
+      const result = await checkpointApi.list(projectId, cursor, controller.signal)
+      if (!current()) return
+      setPage((old) =>
+        old.nextCursor !== cursor
+          ? old
+          : {
+              items: [
+                ...new Map([...old.items, ...result.items].map((item) => [item.id, item])).values(),
+              ],
+              nextCursor: result.nextCursor,
+            },
+      )
     } catch (reason) {
-      setError((reason as Error).message)
+      if (current()) setError((reason as Error).message)
     } finally {
-      setLoading(false)
+      if (current()) {
+        listController.current = null
+        setLoading(false)
+        setPaging(false)
+      }
     }
   }
   const restore = async (checkpoint: CanvasCheckpoint) => {
@@ -369,7 +403,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
               disabled={loading}
               onClick={() => void more()}
             >
-              加载更多检查点
+              {paging ? '正在加载更多…' : '加载更多检查点'}
             </button>
           )}
         </div>
