@@ -10,6 +10,8 @@ vi.mock('../../api/client', () => ({
     deleteAgentSession: vi.fn(),
     createAgentSession: vi.fn(),
     sendAgentMessage: vi.fn(),
+    stopAgent: vi.fn(),
+    undoAgentTurn: vi.fn(),
   },
 }))
 
@@ -55,6 +57,8 @@ afterEach(() => {
   vi.mocked(api.deleteAgentSession).mockReset()
   vi.mocked(api.createAgentSession).mockReset()
   vi.mocked(api.sendAgentMessage).mockReset()
+  vi.mocked(api.stopAgent).mockReset()
+  vi.mocked(api.undoAgentTurn).mockReset()
 })
 
 describe('助手草稿与发送生命周期', () => {
@@ -144,6 +148,49 @@ describe('助手草稿与发送生命周期', () => {
 })
 
 describe('智能体会话', () => {
+  it('停止失败显示错误，待处理时不重复停止，状态释放后允许手动再试', async () => {
+    useAgent.setState({ canvasId: 'c1', session: session('s1') })
+    const pending = deferred<void>()
+    vi.mocked(api.stopAgent).mockReturnValue(
+      pending.promise.then(() => {
+        throw new Error('停止失败')
+      }),
+    )
+    const first = useAgent.getState().stop()
+    const second = useAgent.getState().stop()
+    expect(api.stopAgent).toHaveBeenCalledTimes(1)
+    pending.resolve()
+    await Promise.all([first, second])
+    expect(useAgent.getState().error).toBe('停止失败')
+    vi.mocked(api.stopAgent).mockResolvedValue(undefined)
+    await useAgent.getState().stop()
+    expect(api.stopAgent).toHaveBeenCalledTimes(2)
+    expect(useAgent.getState().error).toBeNull()
+  })
+
+  it('旧会话的停止或撤销失败不覆盖切换后的会话，重复撤销只提交一次', async () => {
+    vi.mocked(api.agentSession).mockImplementation(async (id) => session(id))
+    for (const action of ['stop', 'undo']) {
+      useAgent.setState({ canvasId: 'c1', session: session('s1') })
+      const pending = deferred<void>()
+      const failed = pending.promise.then(() => {
+        throw new Error('旧会话操作失败')
+      })
+      vi.mocked(api.stopAgent).mockReturnValue(failed)
+      vi.mocked(api.undoAgentTurn).mockReturnValue(failed)
+      const run = () =>
+        action === 'stop' ? useAgent.getState().stop() : useAgent.getState().undoTurn('t1')
+      const first = run()
+      const duplicate = run()
+      expect(action === 'stop' ? api.stopAgent : api.undoAgentTurn).toHaveBeenCalledTimes(1)
+      await useAgent.getState().select('s2')
+      pending.resolve()
+      await Promise.all([first, duplicate])
+      expect(useAgent.getState().error).toBeNull()
+      vi.mocked(api.stopAgent).mockClear()
+      vi.mocked(api.undoAgentTurn).mockClear()
+    }
+  })
   it('删除当前会话不取消用户正在打开的另一会话', async () => {
     const pending = deferred<AgentSession>()
     vi.mocked(api.agentSession).mockReturnValue(pending.promise)

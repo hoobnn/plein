@@ -29,6 +29,7 @@ interface AgentStore {
   sending: Record<string, boolean>
   selecting: string | null
   removing: Record<string, boolean>
+  pendingActions: Record<string, boolean>
   setDraft(canvasId: string, text: string): void
   status: AgentStatus | null
   /** 新建对话用的 CLI，记在本机 */
@@ -192,12 +193,31 @@ export const useAgent = create<AgentStore>((set, get) => {
     } catch {}
   }
 
+  const sessionAction = async (name: string, run: (id: string) => Promise<void>) => {
+    const id = get().session?.id
+    if (!id || get().selecting) return
+    const key = `${id}/${name}`
+    if (get().pendingActions[key]) return
+    const mine = selectSeq
+    set({ error: null, pendingActions: { ...get().pendingActions, [key]: true } })
+    try {
+      await run(id)
+    } catch (err) {
+      if (mine === selectSeq && get().session?.id === id) set({ error: (err as Error).message })
+    } finally {
+      const pendingActions = { ...get().pendingActions }
+      delete pendingActions[key]
+      set({ pendingActions })
+    }
+  }
+
   return {
     open: false,
     drafts: {},
     sending: {},
     selecting: null,
     removing: {},
+    pendingActions: {},
     setDraft(canvasId, text) {
       const drafts = { ...get().drafts }
       if (text) drafts[canvasId] = { text }
@@ -370,19 +390,11 @@ export const useAgent = create<AgentStore>((set, get) => {
     },
 
     async stop() {
-      const id = get().session?.id
-      if (id) await api.stopAgent(id).catch(() => {})
+      await sessionAction('stop', (id) => api.stopAgent(id))
     },
 
     async undoTurn(turn) {
-      const id = get().session?.id
-      if (!id) return
-      set({ error: null })
-      try {
-        await api.undoAgentTurn(id, turn)
-      } catch (err) {
-        set({ error: (err as Error).message })
-      }
+      await sessionAction(`undo/${turn}`, (id) => api.undoAgentTurn(id, turn))
     },
 
     async remove(id) {

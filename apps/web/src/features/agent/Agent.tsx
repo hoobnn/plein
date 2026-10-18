@@ -282,7 +282,11 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
             worker={worker}
             lastTurn={session?.lastTurn}
           />
-          {error && <p className="px-4 pb-2 text-xs text-danger">{error}</p>}
+          {error && (
+            <p role="alert" className="px-4 pb-2 text-xs text-danger">
+              {error}
+            </p>
+          )}
           <Composer key={canvasId} canvasId={canvasId} running={running} />
         </>
       )}
@@ -676,7 +680,8 @@ function ApprovalRow({ item }: { item: Extract<AgentItem, { type: 'approval' }> 
 function ChangesRow({ item }: { item: Extract<AgentItem, { type: 'changes' }> }) {
   const engine = useCanvas((s) => s.engine)
   const running = useAgent((s) => s.session?.status === 'running')
-  const [busy, setBusy] = useState(false)
+  const busy = useAgent((s) => !!s.pendingActions[`${s.session?.id}/undo/${item.turn}`])
+  const selecting = useAgent((s) => !!s.selecting)
   const parts = [
     item.created.length && `新建 ${item.created.length}`,
     item.updated.length && `修改 ${item.updated.length}`,
@@ -717,15 +722,13 @@ function ChangesRow({ item }: { item: Extract<AgentItem, { type: 'changes' }> })
         <button
           type="button"
           className="ui-btn ui-btn-xs ui-btn-secondary"
-          disabled={busy || running}
+          disabled={busy || running || selecting}
+          aria-busy={busy}
+          aria-label="撤销这一轮"
           title="撤销小满这一轮对画布的改动；之后你手动改过的地方会保留。已提交的生成任务和费用记录会保留，撤销不会退还平台费用"
-          onClick={async () => {
-            setBusy(true)
-            await useAgent.getState().undoTurn(item.turn)
-            setBusy(false)
-          }}
+          onClick={() => void useAgent.getState().undoTurn(item.turn)}
         >
-          撤销这一轮
+          {busy ? '正在撤销…' : '撤销这一轮'}
         </button>
       )}
     </div>
@@ -808,6 +811,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
   const text = useAgent((s) => s.drafts[canvasId]?.text ?? '')
   const sending = useAgent((s) => !!s.sending[canvasId])
   const selecting = useAgent((s) => !!s.selecting)
+  const stopping = useAgent((s) => !!s.pendingActions[`${s.session?.id}/stop`])
   const setText = (value: string) => useAgent.getState().setDraft(canvasId, value)
   const [withSelection, setWithSelection] = useState(true)
   const selected = useCanvas((s) => s.selection)
@@ -898,6 +902,8 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
           <button
             type="button"
             aria-label="停止"
+            aria-busy={stopping}
+            disabled={stopping || selecting}
             title="停止"
             className="ui-btn ui-btn-lg ui-btn-secondary ui-icon-btn"
             onClick={() => void useAgent.getState().stop()}
@@ -921,6 +927,11 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
       {sending && (
         <p role="status" className="mt-2 text-xs text-ink-subtle">
           正在发送…
+        </p>
+      )}
+      {stopping && (
+        <p role="status" className="mt-2 text-xs text-ink-subtle">
+          正在停止…
         </p>
       )}
       {selecting && (
