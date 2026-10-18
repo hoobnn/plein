@@ -5,7 +5,7 @@ import type { Engine } from '@plein/canvas-core'
 import { currentResult, elementMedia, type Rect } from '@plein/doc'
 import { ANIMATIC_TYPE, SEQUENCE_TYPE } from '@plein/nodes'
 import { useCanvas } from '../stores/canvas'
-import { yCollab } from 'y-codemirror.next'
+import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 import * as Y from 'yjs'
 import { renderMarkdown } from './markdown'
 import { createPlayer } from './player'
@@ -264,7 +264,7 @@ export class CanvasOverlays {
       doc: ytext.toString(),
       extensions: [
         yCollab(ytext, this.opts.awareness ?? null, { undoManager }),
-        keymap.of(defaultKeymap),
+        keymap.of([...yUndoManagerKeymap, ...defaultKeymap]),
         drawSelection(),
         markdown(),
         EditorView.lineWrapping,
