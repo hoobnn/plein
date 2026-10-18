@@ -91,6 +91,8 @@ export default defineConfig({
     'history-media-recovery.spec.ts',
     'history-preview.spec.ts',
     'viewer-action-targets.spec.ts',
+    'viewer-browse-keys.spec.ts',
+    'viewer-single-keys.spec.ts',
     'history-context.spec.ts',
     'single-download-recovery.spec.ts',
     'single-download-large.spec.ts',

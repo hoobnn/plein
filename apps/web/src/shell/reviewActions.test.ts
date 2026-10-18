@@ -2,7 +2,7 @@ import type { Engine } from '@plein/canvas-core'
 import { addResults, createDoc, createElement, deleteElements, type NodeResult } from '@plein/doc'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { useCanvas } from '../stores/canvas'
-import { isCurrentReview, runReviewAction } from './reviewActions'
+import { currentReviewCandidates, isCurrentReview, runReviewAction } from './reviewActions'
 
 const initial = useCanvas.getState()
 const docs: ReturnType<typeof createDoc>[] = []
@@ -51,6 +51,7 @@ for (const change of ['engine', 'canvas', 'viewer'] as const) {
     if (change === 'canvas') useCanvas.setState({ canvasId: 'other' })
     if (change === 'viewer') useCanvas.setState({ viewer: { ...target.viewer } })
     expect(isCurrentReview(target)).toBe(false)
+    expect(currentReviewCandidates(target, 'image')).toEqual([])
     expect(runReviewAction(target, 'adopt')).toContain('上下文已变化')
     expect(runReviewAction(target, 'locate')).toContain('上下文已变化')
     expect(doc.get(id)?.adopted).toBe('a')
@@ -86,6 +87,21 @@ it('来源删除后不选择不存在的节点，恢复后可重新定位', () =
   expect(select).toHaveBeenCalledWith([id])
   expect(zoom).toHaveBeenCalledWith([id])
   expect(useCanvas.getState().history).toBe(false)
+})
+
+it('实时浏览列表只取原端口，移除、恢复与新增立即反映到结果', () => {
+  const { doc, id, results, target } = setup()
+  expect(currentReviewCandidates(target, 'image').map((result) => result.id)).toEqual(['a', 'b'])
+  doc.mutable(id)!.set('results', [{ ...results[0], id: 'foreign', port: 'metadata' }, results[1]])
+  expect(currentReviewCandidates(target, 'image').map((result) => result.id)).toEqual(['b'])
+  doc.mutable(id)!.set('results', [])
+  expect(currentReviewCandidates(target, 'image')).toEqual([])
+  doc.mutable(id)!.set('results', [{ ...results[0], id: 'new' }, ...results])
+  expect(currentReviewCandidates(target, 'image').map((result) => result.id)).toEqual([
+    'new',
+    'a',
+    'b',
+  ])
 })
 it('实时只读状态拒绝采用，仍允许定位', () => {
   const { doc, id, target } = setup()

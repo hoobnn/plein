@@ -7,7 +7,7 @@ import { Modal, ModalHeader } from '../ui/Modal'
 import { useClosing } from '../ui/Presence'
 import { CreativeReviewForm } from '../features/storyboard/CreativeReviewForm'
 import { useStale } from '../features/runs/stale'
-import { isCurrentReview, runReviewAction } from './reviewActions'
+import { currentReviewCandidates, isCurrentReview, runReviewAction } from './reviewActions'
 
 /** 审片状态只在浮层里；只有明确采用才写文档。 */
 export function Viewer() {
@@ -100,13 +100,20 @@ function Review({ viewer }: { viewer: View }) {
   }
   const step = (delta: number) => {
     if (!isCurrentReview({ engine, canvasId, viewer })) return
+    const latest = currentReviewCandidates({ engine, canvasId, viewer }, port)
+    if (!latest.length) return
+    if (latest.length === 1 && latest[0]!.id === selected) {
+      setSelected(latest[0]!.id)
+      return
+    }
     setActionError(null)
     stopDrag()
     setComparisonMissing(false)
-    const i = candidates.findIndex((r) => r.id === selected)
-    const start = i >= 0 ? i : delta > 0 ? -1 : 0
-    if (candidates.length)
-      setSelected(candidates[(start + delta + candidates.length) % candidates.length]!.id)
+    setSelected((current) => {
+      const i = latest.findIndex((r) => r.id === current)
+      const start = i >= 0 ? i : delta > 0 ? -1 : 0
+      return latest[(start + delta + latest.length) % latest.length]!.id
+    })
     setZoom(1)
     setPan({ x: 0, y: 0 })
   }
@@ -142,6 +149,15 @@ function Review({ viewer }: { viewer: View }) {
             e.currentTarget.focus({ preventScroll: true })
         }}
         onKeyDown={(e) => {
+          if (
+            e.nativeEvent.isComposing ||
+            e.nativeEvent.keyCode === 229 ||
+            e.ctrlKey ||
+            e.metaKey ||
+            e.altKey ||
+            e.shiftKey
+          )
+            return
           const target = e.target as HTMLElement
           if (
             target.closest('input,textarea,select,[contenteditable],video,audio,[data-review-node]')
@@ -158,7 +174,7 @@ function Review({ viewer }: { viewer: View }) {
             step(1)
           }
           if (e.key === 'Enter') {
-            if (target.closest('button,a,[role=button]')) return
+            if (!candidates.length || target.closest('button,a,[role=button]')) return
             e.preventDefault()
             e.stopPropagation()
             adopt()
@@ -171,6 +187,7 @@ function Review({ viewer }: { viewer: View }) {
               <button
                 type="button"
                 aria-label="预览上一个候选"
+                disabled={candidates.length === 1 && !!result}
                 className="ui-btn ui-btn-secondary"
                 onClick={() => step(-1)}
               >
@@ -182,6 +199,7 @@ function Review({ viewer }: { viewer: View }) {
               <button
                 type="button"
                 aria-label="预览下一个候选"
+                disabled={candidates.length === 1 && !!result}
                 className="ui-btn ui-btn-secondary"
                 onClick={() => step(1)}
               >
@@ -290,7 +308,14 @@ function Review({ viewer }: { viewer: View }) {
                 )}
               </>
             )}
-            <span className="text-ink-subtle">滚轮缩放，拖动查看；左右键浏览，Enter 采用</span>
+            <span className="text-ink-subtle">
+              滚轮缩放，拖动查看
+              {candidates.length > 1
+                ? '；左右键浏览，Enter 采用'
+                : candidates.length === 1
+                  ? '；Enter 采用'
+                  : null}
+            </span>
             {comparisonMissing && <span role="status">对比候选已移除，已退出对比。</span>}
           </div>
         )}

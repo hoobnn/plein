@@ -19,6 +19,14 @@ export function isCurrentReview(target: ReviewActionTarget) {
   )
 }
 
+/** 浏览也读实时同端口列表，不让旧按钮选中已移除的结果。 */
+export function currentReviewCandidates(target: ReviewActionTarget, port: string | undefined) {
+  if (!isCurrentReview(target)) return []
+  const node =
+    target.engine && target.viewer.nodeId ? target.engine.doc.get(target.viewer.nodeId) : undefined
+  return node?.results?.filter((result) => result.port === port) ?? []
+}
+
 /** 按钮与键盘共用实时校验，拒绝旧浮层、旧来源或内容已变化的候选。 */
 export function runReviewAction(
   target: ReviewActionTarget,
