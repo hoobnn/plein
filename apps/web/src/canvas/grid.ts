@@ -126,10 +126,51 @@ export function mediaOf(el: CanvasElement): { assetId: string; kind: 'image' | '
   return m && m.kind !== 'audio' ? { assetId: m.assetId, kind: m.kind } : null
 }
 
-/** 批量下载：逐个触发，间隔一点免得浏览器吞掉；返回下载的个数 */
-export function downloadAll(items: Array<{ assetId: string; name: string }>) {
-  items.forEach((it, i) => {
-    setTimeout(() => downloadAsset(it.assetId, it.name), i * 250)
-  })
-  return items.length
+export interface DownloadItem {
+  assetId: string
+  name: string
+}
+
+/** 逐个读取原文件再交给浏览器，读取失败保留重试队列，不把 HTTP 错误页存成素材。 */
+export async function downloadAll(
+  items: readonly DownloadItem[],
+  signal: AbortSignal,
+  onProgress: (started: number, failed: number) => void,
+) {
+  let started = 0
+  const failed: DownloadItem[] = []
+  let index = 0
+  for (; index < items.length; index++) {
+    if (signal.aborted) break
+    const item = items[index]!
+    try {
+      const blob = await api.assetBlob(
+        item.assetId,
+        AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
+      )
+      signal.throwIfAborted()
+      const url = URL.createObjectURL(blob)
+      try {
+        const a = document.createElement('a')
+        a.href = url
+        a.download = item.name
+        document.body.appendChild(a)
+        try {
+          a.click()
+        } finally {
+          a.remove()
+        }
+      } finally {
+        // 给浏览器接手 Blob 的时间；不在整个批次结束前积存所有文件。
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+      }
+      started++
+    } catch {
+      if (signal.aborted) break
+      failed.push(item)
+    }
+    onProgress(started, failed.length)
+    if (index + 1 < items.length) await new Promise<void>((resolve) => setTimeout(resolve, 250))
+  }
+  return { started, failed, remaining: [...failed, ...items.slice(index)] }
 }

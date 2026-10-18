@@ -75,5 +75,5 @@ test('多选含分组、重复图片和音频时逐个下载原文件，显式�
     expect(readFileSync((await download.path())!)).toEqual(expected.get(name))
   }
   expect(names.sort()).toEqual([...expected.keys()].sort())
-  await expect(page.locator('.ui-toast')).toContainText('开始下载 4 个文件')
+  await expect(page.locator('.ui-toast')).toContainText('已交给浏览器下载 4 个文件')
 })

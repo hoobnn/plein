@@ -85,6 +85,7 @@ export default defineConfig({
     'selection-library-targets.spec.ts',
     'selection-library-capacity.spec.ts',
     'selection-download.spec.ts',
+    'selection-download-recovery.spec.ts',
     'templates.spec.ts',
     'right-panel-switching.spec.ts',
     'sequence-load-recovery.spec.ts',
