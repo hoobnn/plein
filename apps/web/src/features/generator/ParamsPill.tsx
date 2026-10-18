@@ -13,6 +13,7 @@ export interface ModelOptions {
   schema: ObjectSchema
   value: Record<string, unknown>
   onChange(next: Record<string, unknown>): void
+  readValue?(): Record<string, unknown>
 }
 
 /** 模型、枚举、音频开关和小范围整数放进参数胶囊，其余进“更多参数” */
@@ -40,6 +41,7 @@ export function ParamsPill({
   fields,
   rest,
   params,
+  readParams,
   aspect,
   options,
   fixed = [],
@@ -48,6 +50,7 @@ export function ParamsPill({
   fields: Array<[string, FieldSchema]>
   rest: Record<string, FieldSchema>
   params: Record<string, unknown>
+  readParams?(): Record<string, unknown>
   aspect?: string
   /** 不可调、但摘要里要写出来的值 */
   fixed?: string[]
@@ -121,6 +124,7 @@ export function ParamsPill({
                           dense
                           schema={options.schema}
                           value={options.value}
+                          readValue={options.readValue}
                           onChange={options.onChange}
                         />
                       )}
@@ -129,6 +133,7 @@ export function ParamsPill({
                           dense
                           schema={{ properties: rest }}
                           value={params}
+                          readValue={readParams}
                           onChange={(next) => {
                             for (const k of Object.keys(rest))
                               if (next[k] !== params[k]) onChange(k, next[k])

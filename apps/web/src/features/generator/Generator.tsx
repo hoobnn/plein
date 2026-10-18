@@ -236,8 +236,18 @@ function Panel({
           title: model.info.title,
           schema: model.info.optionsSchema as ObjectSchema,
           value: allOptions?.[model.ref] ?? {},
+          readValue: () =>
+            (
+              (engine.doc.get(el.id)?.params?.[optionsKey] ?? {}) as Record<
+                string,
+                Record<string, unknown>
+              >
+            )[model.ref] ?? {},
           onChange: (next: Record<string, unknown>) =>
-            set(optionsKey, { ...allOptions, [model.ref]: next }),
+            set(optionsKey, {
+              ...((engine.doc.get(el.id)?.params?.[optionsKey] ?? {}) as Record<string, unknown>),
+              [model.ref]: next,
+            }),
         }
       : undefined
   const main = fields.filter(([k, f]) => k !== pk && f.widget !== 'videoMode' && isMainField(k, f))
@@ -484,6 +494,7 @@ function Panel({
                   dense
                   schema={{ properties: rest }}
                   value={params}
+                  readValue={() => engine.doc.get(el.id)?.params ?? {}}
                   onChange={(next) => {
                     for (const k of Object.keys(rest)) if (next[k] !== params[k]) set(k, next[k])
                   }}
@@ -553,6 +564,7 @@ function Panel({
                   fields={paramFields}
                   rest={rest}
                   params={params}
+                  readParams={() => engine.doc.get(el.id)?.params ?? {}}
                   aspect={ak}
                   options={modelOptions}
                   // 模型只能出 1 张时张数不可选，摘要里照样写出来

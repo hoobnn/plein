@@ -3,8 +3,9 @@
  * 插件不写 UI：平台设置、以后的节点参数都用它渲染。
  */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { voiceOf } from '@plein/nodes'
+import { clampNumber, type NumberDraft, resolveNumberDraft } from './numberDraft'
 import { Select } from './Select'
 import { VoicePicker } from './VoicePicker'
 
@@ -30,11 +31,13 @@ export function SchemaForm({
   schema,
   value,
   onChange,
+  readValue,
   dense = false,
 }: {
   schema: ObjectSchema
   value: Record<string, unknown>
   onChange(next: Record<string, unknown>): void
+  readValue?(): Record<string, unknown>
   /** 弹层里用 32 高的控件；默认是设置页的 36 高 */
   dense?: boolean
 }) {
@@ -43,7 +46,7 @@ export function SchemaForm({
   if (props.length === 0) return null
   // 设为 undefined 即删掉这个键：没有默认值的字段表示“交给平台默认”
   const set = (key: string, v: unknown) => {
-    const next = { ...value, [key]: v }
+    const next = { ...(readValue ? readValue() : value), [key]: v }
     if (v === undefined) delete next[key]
     onChange(next)
   }
@@ -102,6 +105,7 @@ export function SchemaForm({
               describedBy={help ? `${id}-help` : undefined}
               className={field}
               value={value[key] as number | undefined}
+              readValue={readValue ? () => readValue()[key] as number | undefined : undefined}
               onChange={(v) => set(key, v)}
             />
           )
@@ -165,14 +169,6 @@ function rangeOf(f: FieldSchema) {
   return f.minimum !== undefined ? `不小于 ${f.minimum}` : `不大于 ${f.maximum}`
 }
 
-/** 按 schema 收拢数值：超出范围的夹到边界，整数取整 */
-function clampNumber(f: FieldSchema, n: number) {
-  let v = f.type === 'integer' ? Math.round(n) : n
-  if (f.minimum !== undefined) v = Math.max(f.minimum, v)
-  if (f.maximum !== undefined) v = Math.min(f.maximum, v)
-  return v
-}
-
 /**
  * 数值输入：输入时只改草稿，失焦或回车时夹到范围内再写入；清空表示用默认值（没有默认值时如种子为“随机”）。
  * 有上下限的小数（温度、音量）配一个滑块。
@@ -183,6 +179,7 @@ function NumberControl({
   className,
   value,
   onChange,
+  readValue,
   describedBy,
 }: {
   id: string
@@ -190,9 +187,13 @@ function NumberControl({
   className: string
   value: number | undefined
   onChange(v: number | undefined): void
+  readValue?(): number | undefined
   describedBy?: string
 }) {
-  const [draft, setDraft] = useState<string | null>(null)
+  const [draft, setDraft] = useState<NumberDraft | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const current = readValue ? readValue() : value
+  const conflict = draft !== null && !Object.is(draft.base, current)
   const [invalid, setInvalid] = useState(false)
   const errorId = `${id}-error`
   const choose = (v: number | undefined) => {
@@ -201,24 +202,28 @@ function NumberControl({
     onChange(v)
   }
   const shown = value ?? (f.default as number | undefined)
-  const commit = (input: HTMLInputElement) => {
+  const commit = (input: HTMLInputElement, force = false) => {
     if (draft === null) return
+    const result = resolveNumberDraft(
+      draft,
+      readValue ? readValue() : value,
+      f,
+      input.validity.badInput,
+      force,
+    )
+    if (result.kind === 'conflict') return setDraft({ ...draft })
     setDraft(null)
-    // 未完成的指数或负号也会得到空字符串，不能当成用户主动清空。
-    if (input.validity.badInput) {
-      setInvalid(true)
-      return
-    }
-    const t = draft.trim()
-    if (t === '') return choose(undefined)
-    const n = Number(t)
-    if (Number.isFinite(n)) choose(clampNumber(f, n))
+    if (result.kind === 'invalid') return setInvalid(true)
+    choose(result.value)
   }
   const input = (
     <input
       id={id}
+      ref={inputRef}
       aria-describedby={
-        [describedBy, invalid ? errorId : undefined].filter(Boolean).join(' ') || undefined
+        [describedBy, invalid ? errorId : undefined, conflict ? `${id}-conflict` : undefined]
+          .filter(Boolean)
+          .join(' ') || undefined
       }
       aria-invalid={invalid || undefined}
       type="number"
@@ -227,10 +232,14 @@ function NumberControl({
       max={f.maximum}
       step={f.type === 'integer' ? 1 : 'any'}
       placeholder={f.placeholder ?? (f.default === undefined ? '随机' : String(f.default))}
-      value={draft ?? (value === undefined ? '' : String(value))}
+      value={draft?.text ?? (value === undefined ? '' : String(value))}
       onChange={(e) => {
         setInvalid(false)
-        setDraft(e.target.value)
+        const text = e.target.value
+        setDraft((previous) => ({
+          text,
+          base: previous ? previous.base : readValue ? readValue() : value,
+        }))
       }}
       onBlur={(e) => commit(e.currentTarget)}
       onKeyDown={(e) => {
@@ -243,6 +252,39 @@ function NumberControl({
       请输入有效数字，已保留原值
     </span>
   )
+  const resolution = conflict && (
+    <div id={`${id}-conflict`} className="flex flex-col gap-2 rounded-lg bg-fill p-2">
+      <p role="status" className="ui-help">
+        参数已更新为 {String(current ?? f.default ?? '默认')}，当前草稿尚未保存。
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="ui-btn ui-btn-secondary ui-btn-sm"
+          onClick={() => {
+            inputRef.current?.focus()
+            setDraft(null)
+            setInvalid(false)
+          }}
+        >
+          使用最新数值
+        </button>
+        <button
+          type="button"
+          className="ui-btn ui-btn-secondary ui-btn-sm"
+          onClick={() => {
+            const input = inputRef.current
+            if (input) {
+              input.focus()
+              commit(input, true)
+            }
+          }}
+        >
+          保留当前数值
+        </button>
+      </div>
+    </div>
+  )
   const slider =
     f.type === 'number' &&
     f.minimum !== undefined &&
@@ -253,6 +295,7 @@ function NumberControl({
       <>
         {input}
         {error}
+        {resolution}
       </>
     )
   return (
@@ -279,6 +322,7 @@ function NumberControl({
         <div className="w-20 flex-none">{input}</div>
       </div>
       {error}
+      {resolution}
     </div>
   )
 }
