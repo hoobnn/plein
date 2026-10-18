@@ -115,5 +115,7 @@ export function previewScene(
       envelope: envelope.length ? envelope : undefined,
     })
   }
-  return { ...sequenceSize(params), total, clips, sounds }
+  // 静音来源不参与预览解码；读取失败不能阻止其余画面和声音播放。
+  // 音量恢复后会重新进入场景，由引擎重新读取并报告实际失败。
+  return { ...sequenceSize(params), total, clips, sounds: sounds.filter((s) => s.gain > 0) }
 }
