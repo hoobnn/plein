@@ -273,8 +273,8 @@ export function CanvasView({
         if (event?.code === CLOSE_DELETED) {
           provider.disconnect()
           void local?.clearData().catch(() => {})
-          notify('画布不存在或已被删除')
-          navigate({ name: 'home' })
+          notify('画布不存在或已被删除', undefined, 'app')
+          navigate({ name: 'home' }, { replace: true })
           return
         }
         // 一次都没连上时 y-websocket 不发「断开」状态：服务没起来、从缓存打开的画布也要显示离线

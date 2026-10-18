@@ -32,6 +32,7 @@ interface CanvasStore extends EngineState {
   /** 正在导入的文件：已完成 / 总数 */
   importing: { done: number; total: number } | null
   notice: string | null
+  noticeScope: 'canvas' | 'app'
   /** 提示上的按钮（如“撤销”） */
   noticeAction: NoticeAction | null
   /** 远端画布 id；本地演示时为空（不能运行节点） */
@@ -69,7 +70,7 @@ interface CanvasStore extends EngineState {
   setSync(sync: SyncStatus, localCache?: boolean): void
   setCacheSaved(saved: boolean): void
   setImporting(importing: { done: number; total: number } | null): void
-  notify(notice: string | null, action?: NoticeAction): void
+  notify(notice: string | null, action?: NoticeAction, scope?: 'canvas' | 'app'): void
   setCanvasId(id: string | null): void
   setMenu(menu: CanvasMenuEvent | null): void
   openStoryboard(id: string | null): void
@@ -95,7 +96,7 @@ const initial: EngineState = {
 
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
 
-export const useCanvas = create<CanvasStore>((set) => ({
+export const useCanvas = create<CanvasStore>((set, get) => ({
   ...initial,
   engine: null,
   sync: 'local',
@@ -103,6 +104,7 @@ export const useCanvas = create<CanvasStore>((set) => ({
   cacheSaved: true,
   importing: null,
   notice: null,
+  noticeScope: 'canvas',
   noticeAction: null,
   canvasId: null,
   menu: null,
@@ -129,12 +131,14 @@ export const useCanvas = create<CanvasStore>((set) => ({
       off()
       offMenu()
       offArrange()
-      clearTimeout(noticeTimer)
+      const keepNotice = get().noticeScope === 'app'
+      if (!keepNotice) clearTimeout(noticeTimer)
       set({
         engine: null,
         importing: null,
-        notice: null,
-        noticeAction: null,
+        ...(!keepNotice
+          ? { notice: null, noticeAction: null, noticeScope: 'canvas' as const }
+          : {}),
         menu: null,
         storyboard: null,
         sequence: null,
@@ -164,13 +168,13 @@ export const useCanvas = create<CanvasStore>((set) => ({
   setMode: (mode) => set({ mode, menu: null }),
   setSync: (sync, localCache) => set(localCache === undefined ? { sync } : { sync, localCache }),
   setImporting: (importing) => set({ importing }),
-  notify(notice, action) {
+  notify(notice, action, scope = 'canvas') {
     clearTimeout(noticeTimer)
-    set({ notice, noticeAction: action ?? null })
+    set({ notice, noticeAction: action ?? null, noticeScope: scope })
     // 带按钮的多留一会儿，来得及点
     if (notice)
       noticeTimer = setTimeout(
-        () => set({ notice: null, noticeAction: null }),
+        () => set({ notice: null, noticeAction: null, noticeScope: 'canvas' }),
         action ? 8000 : 4000,
       )
   },
