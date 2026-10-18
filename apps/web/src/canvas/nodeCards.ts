@@ -1,5 +1,5 @@
 import { type Engine, NODE_LAYOUT } from '@plein/canvas-core'
-import { type CanvasElement, currentResult, type RunStatus } from '@plein/doc'
+import { type CanvasElement, currentResult, type Rect, type RunStatus } from '@plein/doc'
 import { useCanvas } from '../stores/canvas'
 import {
   ANIMATIC_TYPE,
@@ -132,6 +132,7 @@ export class NodeCards {
   private mentions: MentionTarget[] = []
   private mentionKey = ''
   private cards = new Map<string, Card>()
+  private viewport: Rect | undefined
   private disposers: Array<() => void> = []
   /** 有节点在运行时每秒走一次：已用时长、重试倒计时 */
   private ticker: ReturnType<typeof setInterval> | undefined
@@ -144,6 +145,18 @@ export class NodeCards {
     this.disposers.push(
       // 只是平移出入视口：已有的卡片不动，只增删
       engine.onViewChange(({ content }) => this.sync(content)),
+      engine.onMove(() => {
+        const next = engine.camera.viewRect
+        const prev = this.viewport
+        if (
+          !prev ||
+          next.x !== prev.x ||
+          next.y !== prev.y ||
+          next.w !== prev.w ||
+          next.h !== prev.h
+        )
+          this.sync(false)
+      }),
       engine.selection.onChange(() => this.sync()),
       useCatalog.subscribe(() => {
         for (const c of this.cards.values()) c.sig = ''
@@ -156,6 +169,8 @@ export class NodeCards {
 
   sync(content = true) {
     const { engine } = this
+    const viewport = engine.camera.viewRect
+    this.viewport = viewport
     if (content) {
       this.mentions = mentionTargets(engine)
       this.mentionKey = JSON.stringify(this.mentions)
@@ -177,7 +192,10 @@ export class NodeCards {
       const rect = engine.scene.rect(id)
       if (!rect) continue
       let card = this.cards.get(id)
-      if (card && !content) continue
+      if (card && !content) {
+        clipOverlay(card.root, engine.scene, id, rect, NODE_LAYOUT.title, viewport)
+        continue
+      }
       if (!card) {
         card = this.create(id)
         this.cards.set(id, card)
@@ -186,7 +204,7 @@ export class NodeCards {
       card.root.style.width = `${rect.w}px`
       card.root.style.height = `${rect.h}px`
       this.render(card, { ...el, ...rect }, engine.selection.has(id))
-      clipOverlay(card.root, engine.scene, id, rect, NODE_LAYOUT.title)
+      clipOverlay(card.root, engine.scene, id, rect, NODE_LAYOUT.title, viewport)
     }
     const ticking = [...this.cards.values()].some((c) => c.live)
     if (ticking && !this.ticker) this.ticker = setInterval(() => this.tick(), 1000)

@@ -29,6 +29,7 @@ function fixture() {
   let covers: Rect[] = [{ x: 10, y: 20, w: 60, h: 40 }]
   let fullscreen = false
   let frame = false
+  let viewport: Rect | undefined
   const bounds = { x: 10, y: 20, w: 100, h: 80 }
   const fragment = (left: number) => ({ left, top: 220, width: 40, height: 20 })
   const hidden = { inert: false, getClientRects: () => [fragment(120)] }
@@ -56,7 +57,10 @@ function fixture() {
     shown,
     multiline,
     bounds,
-    clip: () => clipOverlay(root as unknown as HTMLElement, scene, 'note', bounds),
+    clip: () => clipOverlay(root as unknown as HTMLElement, scene, 'note', bounds, 0, viewport),
+    viewport: (value: Rect) => {
+      viewport = value
+    },
     covers: (value: Rect[]) => {
       covers = value
     },
@@ -70,6 +74,52 @@ function fixture() {
 }
 
 describe('遮挡与焦点状态', () => {
+  it('无节点遮挡时也排除视口外控件，移回后恢复且不增加 CSS 裁剪', () => {
+    const f = fixture()
+    f.covers([])
+    f.viewport({ x: 10, y: 20, w: 50, h: 80 })
+    f.clip()
+    expect(f.hidden.inert).toBe(false)
+    expect(f.shown.inert).toBe(true)
+    expect(f.multiline.inert).toBe(false)
+    expect(f.root.style.clipPath).toBe('')
+    f.viewport(f.bounds)
+    f.clip()
+    expect(f.shown.inert).toBe(false)
+  })
+  it('视口与节点遮挡共同决定控件是否有可见部分', () => {
+    const f = fixture()
+    f.viewport({ x: 10, y: 20, w: 50, h: 80 })
+    f.clip()
+    expect(f.hidden.inert).toBe(true)
+    expect(f.shown.inert).toBe(true)
+    expect(f.multiline.inert).toBe(true)
+    expect(f.root.inert).toBe(false)
+  })
+  it('完整移出视口禁用整层，全屏例外，移回后恢复', () => {
+    const f = fixture()
+    f.covers([])
+    f.viewport({ x: 1000, y: 1000, w: 100, h: 80 })
+    f.clip()
+    expect(f.root.inert).toBe(true)
+    f.fullscreen(true)
+    f.clip()
+    expect(f.root.inert).toBe(false)
+    f.fullscreen(false)
+    f.viewport(f.bounds)
+    f.clip()
+    expect(f.root.inert).toBe(false)
+  })
+  it('仅贴视口边缘的控件不可聚焦，有可见面积时保留', () => {
+    const f = fixture()
+    f.covers([])
+    f.viewport({ x: 40, y: 20, w: 70, h: 80 })
+    f.clip()
+    expect(f.hidden.inert).toBe(true)
+    f.viewport({ x: 30, y: 20, w: 80, h: 80 })
+    f.clip()
+    expect(f.hidden.inert).toBe(false)
+  })
   it('换算相机缩放并保留有可见片段的控件，无遮挡时恢复', () => {
     const f = fixture()
     f.clip()

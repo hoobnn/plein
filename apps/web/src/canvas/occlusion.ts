@@ -64,7 +64,14 @@ export function visibleRects(bounds: Rect, covers: Rect[]): Rect[] {
 }
 
 /** DOM 正文和 GPU 底板共享绘制顺序，避免低层文字穿过高层图片、视频或节点。 */
-export function clipOverlay(node: HTMLElement, scene: Scene, id: string, rect: Rect, title = 0) {
+export function clipOverlay(
+  node: HTMLElement,
+  scene: Scene,
+  id: string,
+  rect: Rect,
+  title = 0,
+  viewport?: Rect,
+) {
   const order = scene.drawOrder(id)
   node.style.zIndex = String(order)
   const bounds = { x: rect.x, y: rect.y - title, w: rect.w, h: rect.h + title }
@@ -72,7 +79,13 @@ export function clipOverlay(node: HTMLElement, scene: Scene, id: string, rect: R
     .query(bounds)
     .filter((other) => scene.drawOrder(other) > order && scene.get(other)?.kind !== 'frame')
     .map((other) => scene.rect(other)!)
-  if (!covers.length) {
+  const contained =
+    !viewport ||
+    (bounds.x >= viewport.x &&
+      bounds.y >= viewport.y &&
+      bounds.x + bounds.w <= viewport.x + viewport.w &&
+      bounds.y + bounds.h <= viewport.y + viewport.h)
+  if (!covers.length && contained) {
     node.style.clipPath = ''
     restoreControls(node)
     return
@@ -85,6 +98,20 @@ export function clipOverlay(node: HTMLElement, scene: Scene, id: string, rect: R
       return `M${x},${y}h${r.w}v${r.h}h${-r.w}Z`
     })
     .join(' ')
-  node.style.clipPath = `path("${path || 'M0,0Z'}")`
-  clipControls(node, rect, visible)
+  node.style.clipPath = covers.length ? `path("${path || 'M0,0Z'}")` : ''
+  const interactive = viewport
+    ? visible
+        .map((r) => {
+          const x = Math.max(r.x, viewport.x)
+          const y = Math.max(r.y, viewport.y)
+          return {
+            x,
+            y,
+            w: Math.max(0, Math.min(r.x + r.w, viewport.x + viewport.w) - x),
+            h: Math.max(0, Math.min(r.y + r.h, viewport.y + viewport.h) - y),
+          }
+        })
+        .filter((r) => r.w > 0 && r.h > 0)
+    : visible
+  clipControls(node, rect, interactive)
 }

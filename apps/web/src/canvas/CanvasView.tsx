@@ -319,7 +319,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
   }, [kind, canvasId, count])
 
   return (
-    <div className="absolute inset-0 isolate overflow-hidden">
+    <div className="absolute inset-0 isolate overflow-clip">
       <div
         ref={hostRef}
         tabIndex={-1}

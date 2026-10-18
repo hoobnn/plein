@@ -71,6 +71,7 @@ const editorTheme = EditorView.theme(
  */
 export class CanvasOverlays {
   private previews = new Map<string, Preview>()
+  private viewport: Rect | undefined
   private previewSizer: ResizeObserver
   private active: Active | null = null
   /** 隐藏的量高节点：按元素宽度排版正文，量出自适应高度 */
@@ -100,6 +101,18 @@ export class CanvasOverlays {
     root.appendChild(this.measurer)
     this.disposers.push(
       engine.onViewChange(({ content }) => this.sync(content)),
+      engine.onMove(() => {
+        const next = engine.camera.viewRect
+        const prev = this.viewport
+        if (
+          !prev ||
+          next.x !== prev.x ||
+          next.y !== prev.y ||
+          next.w !== prev.w ||
+          next.h !== prev.h
+        )
+          this.sync(false)
+      }),
       engine.onActivate((id) => {
         const el = engine.scene.get(id)
         // 序列与样片的双击由 CanvasView 打开编辑器，播放仅走封面按钮。
@@ -126,9 +139,11 @@ export class CanvasOverlays {
     return this.active?.id ?? null
   }
 
-  /** content 为 false：只有元素进出视口，已显示的正文不用重新定位和量高 */
+  /** content 为 false：只同步交互可用范围，已显示的正文不重画和量高 */
   sync(content = true) {
     const { engine } = this
+    const viewport = engine.camera.viewRect
+    this.viewport = viewport
     const show = engine.highDetail
     const want = new Set<string>()
     if (show) {
@@ -148,7 +163,10 @@ export class CanvasOverlays {
       const rect = engine.scene.rect(id)
       if (!rect) continue
       let p = this.previews.get(id)
-      if (p && !content) continue
+      if (p && !content) {
+        clipOverlay(p.node, engine.scene, id, rect, 0, viewport)
+        continue
+      }
       if (!p) {
         const node = document.createElement('div')
         node.className = 'plein-md plein-md-preview'
@@ -219,7 +237,7 @@ export class CanvasOverlays {
         p.text = el.text
         p.content.innerHTML = renderMarkdown(el.text ?? '')
       }
-      clipOverlay(p.node, engine.scene, id, rect)
+      clipOverlay(p.node, engine.scene, id, rect, 0, viewport)
       this.fit(id)
     }
     if (this.active) {
@@ -229,7 +247,7 @@ export class CanvasOverlays {
       const rect = engine.scene.rect(this.active.id)
       if (rect) {
         place(this.active.node, rect)
-        clipOverlay(this.active.node, engine.scene, this.active.id, rect)
+        clipOverlay(this.active.node, engine.scene, this.active.id, rect, 0, viewport)
       } else this.deactivate()
     }
   }
