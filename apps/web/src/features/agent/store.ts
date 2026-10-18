@@ -44,6 +44,8 @@ interface AgentStore {
   access: AgentAccess
   canvasId: string | null
   sessions: AgentSessionSummary[]
+  /** 本次应用会话内已确认删除的 ID，防止迟到列表快照恢复它们。 */
+  deletedSessions: Record<string, true>
   session: AgentSession | null
   /** 面板关着时有新回复 */
   unread: boolean
@@ -191,7 +193,8 @@ export const useAgent = create<AgentStore>((set, get) => {
     if (!canvasId) return
     try {
       const sessions = await api.agentSessions(canvasId)
-      if (get().canvasId === canvasId) set({ sessions })
+      if (get().canvasId === canvasId)
+        set({ sessions: sessions.filter((s) => !get().deletedSessions[s.id]) })
     } catch {}
   }
 
@@ -217,6 +220,7 @@ export const useAgent = create<AgentStore>((set, get) => {
     open: false,
     drafts: {},
     excludedSelections: {},
+    deletedSessions: {},
     setExcludedSelection(canvasId, signature) {
       if (get().excludedSelections[canvasId] === signature) return
       const excludedSelections = { ...get().excludedSelections }
@@ -336,8 +340,9 @@ export const useAgent = create<AgentStore>((set, get) => {
       set({ canvasId, sessions: [], session: null, selecting: null, error: null, mood: 'idle' })
       if (!canvasId) return
       try {
-        const sessions = await api.agentSessions(canvasId)
+        const fetched = await api.agentSessions(canvasId)
         if (mine !== selectSeq) return
+        const sessions = fetched.filter((s) => !get().deletedSessions[s.id])
         set({ sessions })
         if (sessions[0]) await get().select(sessions[0].id)
       } catch (err) {
@@ -422,6 +427,7 @@ export const useAgent = create<AgentStore>((set, get) => {
       set({ removing: { ...get().removing, [id]: true } })
       try {
         await api.deleteAgentSession(id)
+        set({ deletedSessions: { ...get().deletedSessions, [id]: true } })
         if (get().canvasId !== canvasId) return
         if (get().selecting === id) {
           selectSeq++

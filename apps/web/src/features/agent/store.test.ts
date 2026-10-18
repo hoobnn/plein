@@ -164,6 +164,45 @@ describe('助手草稿与发送生命周期', () => {
 })
 
 describe('智能体会话', () => {
+  it('删除会话后，删除前发出的列表刷新不能恢复已删除项', async () => {
+    const pending = deferred<AgentSessionSummary[]>()
+    vi.mocked(api.agentSession).mockResolvedValue({ ...session('current'), agent: 'builtin' })
+    vi.mocked(api.agentSessions).mockReturnValue(pending.promise)
+    vi.mocked(api.sendAgentMessage).mockResolvedValue(undefined)
+    vi.mocked(api.deleteAgentSession).mockResolvedValue(undefined)
+    useAgent.setState({
+      canvasId: 'c1',
+      agent: 'builtin',
+      sessions: [summary('current'), summary('old')],
+    })
+    await useAgent.getState().select('current')
+    await useAgent.getState().send('继续')
+    await useAgent.getState().remove('old')
+    expect(useAgent.getState().sessions).toEqual([summary('current')])
+    pending.resolve([summary('current'), summary('old')])
+    await pending.promise
+    expect(useAgent.getState().sessions).toEqual([summary('current')])
+    expect(useAgent.getState().session?.id).toBe('current')
+  })
+  it('删除期间切换画布，返回后旧列表过滤确认删除项且保留其他会话', async () => {
+    const pending = deferred<void>()
+    vi.mocked(api.deleteAgentSession).mockReturnValue(pending.promise)
+    vi.mocked(api.agentSessions).mockImplementation(async (id) =>
+      id === 'c1' ? [summary('deleted'), summary('kept')] : [summary('other-canvas')],
+    )
+    vi.mocked(api.agentSession).mockImplementation(async (id) => session(id))
+    useAgent.setState({ canvasId: 'c1', sessions: [summary('deleted'), summary('kept')] })
+    const removing = useAgent.getState().remove('deleted')
+    await useAgent.getState().enter('c2')
+    pending.resolve()
+    await removing
+    expect(useAgent.getState().sessions).toEqual([summary('other-canvas')])
+    expect(useAgent.getState().session?.id).toBe('other-canvas')
+    await useAgent.getState().enter('c1')
+    expect(useAgent.getState().sessions).toEqual([summary('kept')])
+    expect(useAgent.getState().session?.id).toBe('kept')
+    expect(api.agentSession).not.toHaveBeenCalledWith('deleted')
+  })
   it('打开其他智能体历史后续聊原会话，新对话仍使用用户默认选择', async () => {
     useAgent.setState({ canvasId: 'c1', agent: 'builtin' })
     vi.mocked(api.agentSession).mockResolvedValue({ ...session('history'), agent: 'codex' })
@@ -408,6 +447,7 @@ describe('智能体会话', () => {
     vi.mocked(api.deleteAgentSession).mockRejectedValueOnce(new Error('忙'))
     await useAgent.getState().remove('s1')
     expect(useAgent.getState()).toMatchObject({ session: { id: 's1' }, error: '忙' })
+    expect(useAgent.getState().deletedSessions).toEqual({})
     vi.mocked(api.deleteAgentSession).mockResolvedValueOnce(undefined)
     await useAgent.getState().remove('s1')
     const s = useAgent.getState()
