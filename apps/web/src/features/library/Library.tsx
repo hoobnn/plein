@@ -647,6 +647,15 @@ function Editor({
   const character = kind.id === 'character'
   const [draft, setDraft] = useState(() => draftOf(kind, item, official, projectId, seed))
   const [busy, setBusy] = useState(false)
+  const mutation = useRef(false)
+  const lifetime = useRef({ active: true })
+  useEffect(() => {
+    const session = { active: true }
+    lifetime.current = session
+    return () => {
+      session.active = false
+    }
+  }, [])
   const [pendingUploads, setPendingUploads] = useState(0)
   const trackUpload = (uploading: boolean) =>
     setPendingUploads((count) => Math.max(0, count + (uploading ? 1 : -1)))
@@ -689,17 +698,32 @@ function Editor({
   })
 
   /** 保存并返回条目；官方条目复制一份成自己的。画布上已经放下的这张角色卡跟着同步档案 */
-  const save = async (): Promise<LibraryItem | null> => {
-    if (pendingUploads > 0) return null
-    const submitted = draft
+  const beginMutation = () => {
+    if (mutation.current || pendingUploads > 0) return null
+    mutation.current = true
     setBusy(true)
     setError(null)
+    return lifetime.current
+  }
+  const current = (session: { active: boolean }) =>
+    session.active &&
+    useLibrary.getState().open === kind.id &&
+    useLibrary.getState().projectId === projectId
+  const finishMutation = (session: { active: boolean }) => {
+    mutation.current = false
+    if (session.active) setBusy(false)
+  }
+  const save = async (): Promise<LibraryItem | null> => {
+    const session = beginMutation()
+    if (!session) return null
+    const submitted = draft
     try {
       const saved = item
         ? dirty
           ? await lib.update(item.id, body())
           : item
         : await lib.create({ kind: kind.id, ...body() })
+      if (!current(session)) return null
       if (!item) onCreated(saved.id)
       else
         setDraft((current) =>
@@ -707,10 +731,10 @@ function Editor({
         )
       return saved
     } catch (err) {
-      setError((err as Error).message)
+      if (current(session)) setError((err as Error).message)
       return null
     } finally {
-      setBusy(false)
+      finishMutation(session)
     }
   }
 
@@ -729,20 +753,23 @@ function Editor({
 
   const remove = async () => {
     if (!item) return
-    const ok = await confirmDialog({
-      title: `删除${kind.title}「${item.name}」？`,
-      message: '只删除资产库里的条目；画布上已经放下的卡片和素材文件保留。',
-      confirmLabel: '删除',
-      danger: true,
-    })
-    if (!ok) return
+    const session = beginMutation()
+    if (!session) return
     try {
+      const ok = await confirmDialog({
+        title: `删除${kind.title}「${item.name}」？`,
+        message: '只删除资产库里的条目；画布上已经放下的卡片和素材文件保留。',
+        confirmLabel: '删除',
+        danger: true,
+      })
+      if (!ok || !current(session)) return
       await lib.remove(item.id)
+      if (current(session)) onBack()
     } catch (err) {
-      setError((err as Error).message)
-      return
+      if (current(session)) setError((err as Error).message)
+    } finally {
+      finishMutation(session)
     }
-    onBack()
   }
 
   const ordered = orderedImages(kind, draft.images)
@@ -885,6 +912,11 @@ function Editor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {error && (
+        <p role="alert" className="mx-5 my-3 rounded-lg bg-danger/5 px-3 py-2 text-sm text-danger">
+          {error}
+        </p>
+      )}
       {character && !readOnly && (
         <div className="lib-character-heading">
           <label className="ui-field min-w-0 flex-1">
@@ -1023,7 +1055,6 @@ function Editor({
             basics
           )}
           {item && !readOnly && <LibraryUpdatesPanel item={item} />}
-          {error && <p className="text-sm text-danger">{error}</p>}
         </section>
       </div>
       <footer className="flex flex-none flex-wrap items-center gap-2 border-t border-line px-5 py-3">
@@ -1048,6 +1079,11 @@ function Editor({
           </button>
         )}
         <div className="ml-auto flex gap-2">
+          {busy && (
+            <span role="status" className="self-center text-xs text-ink-subtle">
+              正在处理…
+            </span>
+          )}
           {pendingUploads > 0 && (
             <span role="status" className="self-center text-xs text-ink-subtle">
               图片上传中…
@@ -1057,15 +1093,7 @@ function Editor({
             <button
               type="button"
               disabled={busy}
-              onClick={async () => {
-                const created = await lib
-                  .create({ kind: kind.id, ...body() })
-                  .catch((err: Error) => {
-                    setError(err.message)
-                    return null
-                  })
-                if (created) onCreated(created.id)
-              }}
+              onClick={() => void save()}
               className="ui-btn ui-btn-secondary"
             >
               <Icon name="copy" />
