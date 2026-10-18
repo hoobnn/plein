@@ -417,12 +417,42 @@ describe('本机数据维护', () => {
     const result = await f.service.cleanup((await f.service.preview()).token)
     const doc = f.canvas()
     createElement(doc, { kind: 'image', assetId: keep.id, x: 0, y: 0, w: 10, h: 10 })
+    // 本例检查稳定引用的恢复；先落盘，避免 50ms 缓冲写入使扫描按设计中止。
+    for (const id of f.rooms.loaded()) f.rooms.get(id).flush()
     f.advance(DAY + 1)
     await f.service.tick()
     // 批次里任一素材被新引用，整批恢复，宁可多留不误删。
     expect(f.assets.get('local', keep.id)).toBeTruthy()
     expect(f.assets.get('local', remove.id)).toBeTruthy()
     expect(existsSync(join(f.root, 'maintenance', 'trash', result.id!))).toBe(false)
+    doc.destroy()
+  })
+
+  it('到期扫描遇到并发写入时保留回收站，下次稳定维护恢复新引用', async () => {
+    const f = await fixture(),
+      keep = await f.asset()
+    await f.service.settings(MaintenanceSettings.parse({ autoBackup: false, trashDays: 1 }))
+    const result = await f.service.cleanup((await f.service.preview()).token)
+    const doc = f.canvas('canvas')
+    createElement(doc, { kind: 'image', assetId: keep.id, x: 0, y: 0, w: 10, h: 10 })
+    f.rooms.get('canvas').flush()
+    f.advance(DAY + 1)
+    let timer: NodeJS.Immediate
+    const write = () => {
+      f.db.$client.prepare('UPDATE canvases SET updated_at=updated_at+1 WHERE id=?').run('canvas')
+      timer = setImmediate(write)
+    }
+    timer = setImmediate(write)
+    try {
+      await f.service.tick()
+      expect((await f.service.status()).lastError).toContain('数据已变化')
+      expect(existsSync(join(f.root, 'maintenance', 'trash', result.id!))).toBe(true)
+    } finally {
+      clearImmediate(timer)
+    }
+    await f.service.tick()
+    expect(f.assets.get('local', keep.id)).toBeTruthy()
+    expect(existsSync(f.assets.originalPath(keep.id))).toBe(true)
     doc.destroy()
   })
 
