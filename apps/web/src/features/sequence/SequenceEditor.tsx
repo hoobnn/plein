@@ -252,6 +252,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       e.stopPropagation()
       return
     }
+    if (e.target instanceof Element && e.target.closest('.ui-select, .ui-menu')) return
     // 输入框里的按键照常交给输入框（回车提交、Esc 由面板关闭）；画布的快捷键本来就不管输入框
     if (typing(e.target)) return
     e.stopPropagation()

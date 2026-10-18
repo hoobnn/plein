@@ -85,8 +85,13 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     // 捕获阶段拦下按键：表格打开时画布的快捷键（删除、方向键等）不生效
     const key = (e: KeyboardEvent) => {
       if (useCanvas.getState().viewer) return
+      if (e.isComposing || e.keyCode === 229) {
+        e.stopPropagation()
+        return
+      }
+      // 下拉触发器和菜单自己处理方向键、确认及 Esc，不能连带关闭分镜表。
+      if (e.target instanceof Element && e.target.closest('.ui-select, .ui-menu')) return
       e.stopPropagation()
-      if (e.isComposing || e.keyCode === 229) return
       // 差异面板或确认框开着时 Esc 关它们，不连带关掉表格
       if (e.key === 'Escape' && !syncScope && !batchRequest && !dialogOpen()) onClose()
     }
