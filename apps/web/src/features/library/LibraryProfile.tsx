@@ -10,6 +10,7 @@ import {
   type ProfileLook,
   type ProfilePeriod,
   profileId,
+  profileNames,
   renamed,
   VOICE_STATE_PRESETS,
   type VoiceState,
@@ -137,9 +138,19 @@ const emptyPeriod = (name: string): ProfilePeriod => ({
 
 /** 同一个角色里不重名：预设名被占用时加序号 */
 function freeName(profile: CharacterProfile, base: string) {
-  if (!nameProblem(profile, base)) return base
-  for (let i = 2; i < 100; i++) if (!nameProblem(profile, `${base}${i}`)) return `${base}${i}`
-  return `${base}${Date.now() % 1000}`
+  // 调用方已校验基础名；自动序号也必须遵守 20 字符上限并避开全部旧名。
+  const used = profileNames(profile)
+  if (!used.has(base)) return base
+  const stem = Array.from(
+    new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(base),
+    (part) => part.segment,
+  )
+  for (let i = 2; ; i++) {
+    const suffix = String(i)
+    while (stem.join('').length + suffix.length > 20) stem.pop()
+    const next = `${stem.join('')}${suffix}`
+    if (!used.has(next)) return next
+  }
 }
 
 // ── 时期与服饰 ─────────────────────────────────────────
