@@ -179,6 +179,8 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
     loadStatus,
     loadingHistory,
     historyError,
+    selectionError,
+    selectionTitle,
     selecting,
   } = useAgent(
     useShallow((s) => ({
@@ -190,6 +192,8 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
       loadStatus: s.loadStatus,
       loadingHistory: s.loadingHistory,
       historyError: s.historyError,
+      selectionError: s.selectionError,
+      selectionTitle: s.sessions.find((item) => item.id === s.selectionError?.id)?.title,
       selecting: s.selecting,
     })),
   )
@@ -246,7 +250,7 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
               aria-label="新对话"
               title="新对话"
               className="ui-btn ui-btn-quiet ui-icon-btn"
-              disabled={!session && !historyError}
+              disabled={!session && !historyError && !selectionError}
               onClick={() => useAgent.getState().reset()}
             >
               <Icon name="plus" />
@@ -298,10 +302,12 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
               <span className="ui-spinner size-3" />
               正在读取历史对话…
             </div>
-          ) : historyError ? (
+          ) : historyError || selectionError ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-xs">
               <p role="alert" className="text-danger">
-                读取历史对话失败：{historyError}
+                {selectionError
+                  ? `打开「${selectionTitle ?? '所选对话'}」失败：${selectionError.message}`
+                  : `读取历史对话失败：${historyError}`}
               </p>
               <div className="flex gap-2">
                 <button
@@ -309,12 +315,26 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
                   className="ui-btn ui-btn-secondary ui-btn-sm"
                   onClick={(e) => {
                     const input = e.currentTarget.closest('aside')?.querySelector('textarea')
-                    void useAgent.getState().enter(canvasId, true)
+                    if (selectionError) void useAgent.getState().select(selectionError.id)
+                    else void useAgent.getState().enter(canvasId, true)
                     input?.focus()
                   }}
                 >
                   重新读取
                 </button>
+                {selectionError && session && (
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn-quiet ui-btn-sm"
+                    onClick={(e) => {
+                      const input = e.currentTarget.closest('aside')?.querySelector('textarea')
+                      useAgent.getState().cancelSelection()
+                      input?.focus()
+                    }}
+                  >
+                    返回原对话
+                  </button>
+                )}
                 <button
                   type="button"
                   className="ui-btn ui-btn-quiet ui-btn-sm"
@@ -903,7 +923,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
   const text = useAgent((s) => s.drafts[canvasId]?.text ?? '')
   const sending = useAgent((s) => !!s.sending[canvasId])
   const selecting = useAgent((s) => !!s.selecting)
-  const historyBlocked = useAgent((s) => s.loadingHistory || !!s.historyError)
+  const historyBlocked = useAgent((s) => s.loadingHistory || !!s.historyError || !!s.selectionError)
   const stopping = useAgent((s) => !!s.pendingActions[`${s.session?.id}/stop`])
   const setText = (value: string) => useAgent.getState().setDraft(canvasId, value)
   const engine = useCanvas((s) => (s.canvasId === canvasId ? s.engine : null))

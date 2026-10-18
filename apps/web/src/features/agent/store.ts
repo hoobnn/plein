@@ -48,6 +48,7 @@ interface AgentStore {
   deletedSessions: Record<string, true>
   loadingHistory: boolean
   historyError: string | null
+  selectionError: { id: string; message: string } | null
   session: AgentSession | null
   /** 面板关着时有新回复 */
   unread: boolean
@@ -72,6 +73,8 @@ interface AgentStore {
   /** 切换到某块画布（null 表示不在画布里）：读它的会话，接上最近一个 */
   enter(canvasId: string | null, retry?: boolean): Promise<void>
   select(id: string): Promise<void>
+  /** 放弃失败的历史切换，明确继续原会话。 */
+  cancelSelection(): void
   /** 开一个空白对话（发第一条消息时才真正创建） */
   reset(): void
   send(text: string, selection?: string[]): Promise<void>
@@ -202,7 +205,7 @@ export const useAgent = create<AgentStore>((set, get) => {
 
   const sessionAction = async (name: string, run: (id: string) => Promise<void>) => {
     const id = get().session?.id
-    if (!id || get().selecting) return
+    if (!id || get().selecting || get().selectionError) return
     const key = `${id}/${name}`
     if (get().pendingActions[key]) return
     const mine = selectSeq
@@ -225,6 +228,7 @@ export const useAgent = create<AgentStore>((set, get) => {
     deletedSessions: {},
     loadingHistory: false,
     historyError: null,
+    selectionError: null,
     setExcludedSelection(canvasId, signature) {
       if (get().excludedSelections[canvasId] === signature) return
       const excludedSelections = { ...get().excludedSelections }
@@ -319,7 +323,7 @@ export const useAgent = create<AgentStore>((set, get) => {
     async revisePlan(approvalId, edits) {
       const id = get().session?.id
       if (!id) return '会话不存在'
-      if (get().selecting) return undefined
+      if (get().selecting || get().selectionError) return undefined
       const key = `${id}/revise/${approvalId}`
       if (get().pendingActions[key] || get().pendingActions[`${id}/decide/${approvalId}`])
         return '方案正在处理中'
@@ -350,6 +354,7 @@ export const useAgent = create<AgentStore>((set, get) => {
         mood: 'idle',
         loadingHistory: !!canvasId,
         historyError: null,
+        selectionError: null,
       })
       if (!canvasId) return
       try {
@@ -366,9 +371,10 @@ export const useAgent = create<AgentStore>((set, get) => {
     },
 
     async select(id) {
+      if (get().selecting === id) return
       const mine = ++selectSeq
       const canvasId = get().canvasId
-      set({ selecting: id })
+      set({ selecting: id, selectionError: null, error: null })
       try {
         const session = await api.agentSession(id)
         // 等应答期间换了画布或又点了别的会话
@@ -376,10 +382,15 @@ export const useAgent = create<AgentStore>((set, get) => {
         set({ session, error: null, mood: session.status === 'running' ? 'working' : 'idle' })
         connect(id)
       } catch (err) {
-        if (mine === selectSeq) set({ error: (err as Error).message })
+        if (mine === selectSeq) set({ selectionError: { id, message: (err as Error).message } })
       } finally {
         if (mine === selectSeq) set({ selecting: null })
       }
+    },
+
+    cancelSelection() {
+      selectSeq++
+      set({ selecting: null, selectionError: null, error: null })
     },
 
     reset() {
@@ -392,6 +403,7 @@ export const useAgent = create<AgentStore>((set, get) => {
         mood: 'idle',
         loadingHistory: false,
         historyError: null,
+        selectionError: null,
       })
     },
 
@@ -401,6 +413,7 @@ export const useAgent = create<AgentStore>((set, get) => {
         !canvasId ||
         get().loadingHistory ||
         get().historyError ||
+        get().selectionError ||
         get().selecting ||
         get().sending[canvasId] ||
         get().session?.status === 'running'
@@ -453,6 +466,7 @@ export const useAgent = create<AgentStore>((set, get) => {
         await api.deleteAgentSession(id)
         set({ deletedSessions: { ...get().deletedSessions, [id]: true } })
         if (get().canvasId !== canvasId) return
+        if (get().selectionError?.id === id) set({ selectionError: null })
         if (get().selecting === id) {
           selectSeq++
           set({ selecting: null })

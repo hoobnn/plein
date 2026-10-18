@@ -164,6 +164,56 @@ describe('助手草稿与发送生命周期', () => {
 })
 
 describe('智能体会话', () => {
+  it.each([false, true])('详情读取失败阻止误发和误建，已有会话=%s', async (hasCurrent) => {
+    useAgent.setState({
+      canvasId: 'detail-canvas',
+      agent: 'builtin',
+      session: hasCurrent ? { ...session('old'), agent: 'builtin' } : null,
+    })
+    vi.mocked(api.agentSession).mockRejectedValue(new Error('目标详情不可读'))
+    vi.mocked(api.createAgentSession).mockResolvedValue({
+      ...session('unexpected'),
+      agent: 'builtin',
+    })
+    vi.mocked(api.sendAgentMessage).mockResolvedValue(undefined)
+    await useAgent.getState().select('target')
+    expect(useAgent.getState().selectionError).toEqual({ id: 'target', message: '目标详情不可读' })
+    await useAgent.getState().send('发给目标的消息')
+    expect(api.createAgentSession).not.toHaveBeenCalled()
+    expect(api.sendAgentMessage).not.toHaveBeenCalled()
+  })
+  it('详情重试去重，明确返回原对话后迟到详情不能切换会话', async () => {
+    const pending = deferred<AgentSession>()
+    useAgent.setState({
+      canvasId: 'detail-canvas',
+      agent: 'builtin',
+      session: { ...session('old'), agent: 'builtin' },
+    })
+    vi.mocked(api.agentSession)
+      .mockRejectedValueOnce(new Error('详情暂不可读'))
+      .mockReturnValue(pending.promise)
+    vi.mocked(api.sendAgentMessage).mockResolvedValue(undefined)
+    vi.mocked(api.agentSessions).mockResolvedValue([])
+    await useAgent.getState().select('target')
+    const retry = useAgent.getState().select('target')
+    await useAgent.getState().select('target')
+    expect(api.agentSession).toHaveBeenCalledTimes(2)
+    useAgent.getState().cancelSelection()
+    pending.resolve({ ...session('target'), agent: 'builtin' })
+    await retry
+    expect(useAgent.getState()).toMatchObject({
+      session: { id: 'old' },
+      selectionError: null,
+      selecting: null,
+    })
+    await useAgent.getState().send('明确继续原对话')
+    expect(api.sendAgentMessage).toHaveBeenCalledWith(
+      'old',
+      '明确继续原对话',
+      undefined,
+      expect.any(Object),
+    )
+  })
   it('首次历史列表未返回时保留草稿并阻止创建和发送', async () => {
     const pending = deferred<AgentSessionSummary[]>()
     vi.mocked(api.agentSessions).mockReturnValue(pending.promise)
