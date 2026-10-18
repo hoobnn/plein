@@ -344,6 +344,10 @@ function Layers({ engine }: { engine: Engine }) {
   const rename = (id: string, name: string | null) => {
     setRenaming(null)
     if (name !== null && name !== engine.doc.get(id)?.name) {
+      if (engine.doc.readOnly) {
+        useCanvas.getState().notify('画布已变为只读，名称未保存')
+        return
+      }
       const row = listRef.current?.querySelector(`[data-id="${CSS.escape(id)}"]`)
       if (searching && row?.contains(document.activeElement))
         pendingRenameFocus.current = { id, version }
@@ -593,6 +597,7 @@ const LayerRow = memo(function LayerRow({
       {renaming ? (
         <InlineTitle
           value={el.name ?? title}
+          label="元素名称"
           onDone={onRenamed}
           className="h-7 min-w-0 flex-1 rounded-md px-1.5 text-sm"
         />

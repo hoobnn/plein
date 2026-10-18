@@ -114,3 +114,40 @@ test('侧栏类型与名称组合筛选实时响应重命名和删除，并能�
   await expect(sidebar.getByRole('treeitem')).toHaveCount(0)
   expect(await page.evaluate((id) => !!window.__plein.engine.doc.get(id), ids[0]!)).toBe(false)
 })
+
+for (const commit of ['Enter', 'blur']) {
+  test(`侧栏改名期间变为只读，${commit} 不写入也不抛错，恢复后可重新编辑`, async ({ page }) => {
+    const { sidebar, ids } = await fixture(page)
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    const row = sidebar.locator(`[role="treeitem"][data-id="${ids[0]}"]`)
+    await row.press('F2')
+    const rename = row.getByRole('textbox', { name: '元素名称', exact: true })
+    await rename.fill('只读期间不应保存')
+    await page.evaluate(() => {
+      ;(
+        window.__plein.engine.doc as typeof window.__plein.engine.doc & { readOnly: boolean }
+      ).readOnly = true
+    })
+    if (commit === 'Enter') await rename.press('Enter')
+    else await sidebar.getByRole('button', { name: '搜索', exact: true }).click()
+    await expect(rename).toHaveCount(0)
+    await expect(page.getByText('画布已变为只读，名称未保存', { exact: true })).toBeVisible()
+    expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, ids[0]!)).toBe(
+      '海边文本',
+    )
+    expect(errors).toEqual([])
+    await page.evaluate(() => {
+      ;(
+        window.__plein.engine.doc as typeof window.__plein.engine.doc & { readOnly: boolean }
+      ).readOnly = false
+    })
+    await row.press('F2')
+    await rename.fill('恢复后保存')
+    await rename.press('Enter')
+    await expect(row).toContainText('恢复后保存')
+    expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, ids[0]!)).toBe(
+      '恢复后保存',
+    )
+  })
+}
