@@ -15,6 +15,8 @@ catalog:
   vite-plus: 1.1.0
 overrides:
   vite@*: "catalog:"
+patchedDependencies:
+  pixi.js@8.22.0: patches/pixi.js@8.22.0.patch
 peerDependencyRules:
   allowAny:
     - vite

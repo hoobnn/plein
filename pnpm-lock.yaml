@@ -199,6 +199,9 @@ catalogs:
 overrides:
   vite@*: npm:@voidzero-dev/vite-plus-core@1.1.0
 
+patchedDependencies:
+  pixi.js@8.22.0: dde46599357b4045b58d7012ce3bcdf71cbf91b88b2034ed5fbaae8c94bb6d52
+
 importers:
 
   .:
@@ -462,7 +465,7 @@ importers:
         version: link:../doc
       pixi.js:
         specifier: ^8.22.0
-        version: 8.22.0
+        version: 8.22.0(patch_hash=dde46599357b4045b58d7012ce3bcdf71cbf91b88b2034ed5fbaae8c94bb6d52)
       rbush:
         specifier: ^4.0.1
         version: 4.0.1
@@ -7785,7 +7788,7 @@ snapshots:
 
   picomatch@4.0.7: {}
 
-  pixi.js@8.22.0:
+  pixi.js@8.22.0(patch_hash=dde46599357b4045b58d7012ce3bcdf71cbf91b88b2034ed5fbaae8c94bb6d52):
     dependencies:
       '@pixi/colord': 2.9.6
       '@types/earcut': 3.0.0

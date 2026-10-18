@@ -1,0 +1,2 @@
+# 补丁上下文中的空行保留一个空格，这是 diff 格式的一部分。
+patches/*.patch whitespace=-blank-at-eol
