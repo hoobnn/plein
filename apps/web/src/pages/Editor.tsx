@@ -115,11 +115,16 @@ export function Editor({
   const sidebarWidth = useSidebar((s) => s.width)
   const assistantOpen = useAgent((s) => s.open)
   const tasksOpen = useCanvas((s) => s.tasks)
-  const rightPanelWidth = assistantOpen ? 424 : tasksOpen ? 372 : 0
+  const externalRightPanelWidth = assistantOpen ? 424 : tasksOpen ? 372 : 0
+  const [guideWidth, setGuideWidth] = useState(0)
+  const rightPanelWidth = externalRightPanelWidth || guideWidth
   const [sidebarOverlay, setSidebarOverlay] = useState(false)
   const roomForPanels = usePanelSpace(sidebarWidth, rightPanelWidth)
   const sidebar =
     mode === 'flow' && sidebarOpen && (roomForPanels || (sidebarOverlay && !rightPanelWidth))
+  const roomForGuide = usePanelSpace(sidebar ? sidebarWidth : 0, 0, 960)
+  const guidePresentation =
+    mode === 'flow' && roomForGuide && !externalRightPanelWidth ? 'floating' : 'modal'
   useEffect(() => {
     if (rightPanelWidth) setSidebarOverlay(false)
   }, [rightPanelWidth])
@@ -151,7 +156,11 @@ export function Editor({
 
   return (
     <div className="app-stage relative h-full w-full">
-      <CanvasView source={source} />
+      <CanvasView
+        source={source}
+        guidePresentation={guidePresentation}
+        onGuideWidthChange={setGuideWidth}
+      />
       <Board />
       {/* 侧栏是浮在画布左侧的面板：开关只滑入滑出，顶栏和画布都不动 */}
       {mode === 'flow' && <Sidebar open={sidebar} />}
@@ -161,6 +170,7 @@ export function Editor({
           <SidebarToggle open={sidebar} disabled={mode !== 'flow'} onToggle={toggleSidebar} />
           <div className="ui-bar-sep" />
           <Brand
+            compactOnMobile
             onClick={(e) => {
               if (!isPlainClick(e)) return
               e.preventDefault()
@@ -188,6 +198,7 @@ export function Editor({
           <SyncDot sync={sync} />
           <div className="ui-bar-sep" />
           <ModeSwitch />
+          <span id="plein-creation-guide-entry" className="inline-flex empty:hidden" />
         </div>
         <div className="app-actions ui-bar pointer-events-auto">
           {source.kind === 'remote' && (
@@ -304,10 +315,10 @@ export function Editor({
 const SIDEBAR_KEY = 'mod+\\'
 
 /** 两侧面板之间至少保留 320px 画布；临时隐藏不改写侧栏偏好。 */
-function usePanelSpace(sidebarWidth: number, rightPanelWidth: number) {
+function usePanelSpace(sidebarWidth: number, rightPanelWidth: number, canvasWidth = 320) {
   const media = useMemo(
-    () => window.matchMedia(`(min-width: ${sidebarWidth + 12 + rightPanelWidth + 320}px)`),
-    [sidebarWidth, rightPanelWidth],
+    () => window.matchMedia(`(min-width: ${sidebarWidth + 12 + rightPanelWidth + canvasWidth}px)`),
+    [sidebarWidth, rightPanelWidth, canvasWidth],
   )
   const subscribe = useCallback(
     (notify: () => void) => {
@@ -436,7 +447,7 @@ function ModeSwitch() {
           title={m.label}
           aria-pressed={mode === m.mode}
           onClick={() => switchMode(m.mode)}
-          className="ui-bar-btn"
+          className={`ui-bar-btn ${m.mode === mode ? 'max-sm:hidden' : ''}`}
         >
           <Icon name={m.icon} />
         </button>

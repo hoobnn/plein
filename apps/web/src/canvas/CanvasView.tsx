@@ -75,7 +75,15 @@ function openLocalCache(canvasId: string, ydoc: Y.Doc) {
 const CLOSE_DELETED = 4404
 
 /** React 只负责挂载；相机与渲染完全脱离 React 渲染周期。 */
-export function CanvasView({ source }: { source: CanvasSource }) {
+export function CanvasView({
+  source,
+  guidePresentation = 'floating',
+  onGuideWidthChange,
+}: {
+  source: CanvasSource
+  guidePresentation?: 'floating' | 'modal'
+  onGuideWidthChange?(width: number): void
+}) {
   const hostRef = useRef<HTMLDivElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
   const openTextRef = useRef<((id: string) => void) | null>(null)
@@ -331,6 +339,8 @@ export function CanvasView({ source }: { source: CanvasSource }) {
         <CreationGuide
           key={canvasId}
           canvasId={canvasId}
+          presentation={guidePresentation}
+          onWidthChange={onGuideWidthChange}
           onOpenText={(id) => openTextRef.current?.(id)}
         />
       )}

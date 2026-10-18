@@ -235,6 +235,94 @@ describe('持续创作引导的事实推导', () => {
     expect(step(doc, 'batch').state).toBe('ready')
   })
 
+  it('显式试做镜头移除后不替换为其他已完成镜头，恢复原镜头后继续原状态', () => {
+    const doc = open(),
+      id = board(doc, [shot(1), shot(2)])
+    for (const no of [1, 2])
+      for (const role of ['image', 'video'] as const)
+        approve(doc, generated(doc, id, role, `shot-${no}`))
+    const options = { trialShotId: 'shot-2' }
+    expect(step(doc, 'review', options).state).toBe('done')
+    setParams(doc, id, { shots: [shot(1)] })
+    expect(creationGuideFacts(doc, options).trialShot).toBeUndefined()
+    expect(step(doc, 'trial', options)).toMatchObject({ state: 'attention', target: undefined })
+    expect(step(doc, 'review', options)).toMatchObject({ state: 'attention', target: undefined })
+    expect(step(doc, 'batch', options).state).toBe('done')
+    setParams(doc, id, { shots: [shot(1), shot(2)] })
+    expect(creationGuideFacts(doc, options).trialShot?.id).toBe('shot-2')
+    expect(step(doc, 'review', options).state).toBe('done')
+  })
+
+  it('试做镜头删空时保留待检查而不指向历史产物，新增其他镜头也需明确选择', () => {
+    const doc = open(),
+      id = board(doc)
+    generated(doc, id, 'image')
+    generated(doc, id, 'video')
+    setParams(doc, id, { shots: [] })
+    expect(step(doc, 'trial', { trialShotId: 'shot-1' }).target).toBeUndefined()
+    expect(step(doc, 'review', { trialShotId: 'shot-1' }).state).toBe('attention')
+    setParams(doc, id, { shots: [shot(2)] })
+    expect(creationGuideFacts(doc, { trialShotId: 'shot-1' }).trialShot).toBeUndefined()
+    expect(creationGuideFacts(doc, { trialShotId: 'shot-2' }).trialShot?.id).toBe('shot-2')
+  })
+
+  for (const role of ['speech', 'sfx'] as const) {
+    it(`${role} 只沿对应声音端口关联，清空后不回落到唯一历史序列`, () => {
+      const doc = open(),
+        id = board(doc, [
+          shot(1, {
+            dialogue: role === 'speech' ? [{ id: 'line', character: '甲', line: '你好' }] : [],
+            sfx: role === 'sfx' ? '关门' : '',
+          }),
+        ])
+      const audio = generated(doc, id, role, 'shot-1', { dialogueId: 'line', line: 0 })
+      updateElement(doc, audio, {
+        ports: { inputs: [], outputs: [{ id: 'audio', label: '声音', type: 'audio' }] },
+      })
+      const films = [role === 'speech' ? 'dialogue' : 'sfx', 'music'].map((port) => {
+        const film = node(doc, SEQUENCE_TYPE)
+        updateElement(doc, film, {
+          ports: {
+            inputs: [{ id: port, label: port, type: 'audio', multiple: true }],
+            outputs: [],
+          },
+        })
+        expect(connect(doc, [audio, 'audio'], [film, port])).toBeTruthy()
+        return film
+      })
+      expect(creationGuideFacts(doc).sequences.map((film) => film.id)).toEqual([films[0]])
+      deleteElements(doc, [films[1]!])
+      setParams(doc, id, { shots: [shot(1)] })
+      expect(creationGuideFacts(doc).sequences).toEqual([])
+      expect(step(doc, 'delivery').target).toMatchObject({ kind: 'storyboard', nodeId: id })
+      expect(step(doc, 'delivery', { sequenceId: films[0] }).detail).toContain(
+        '原交付序列已移除或不再关联',
+      )
+    })
+  }
+
+  it('未展开单分镜模板可定位唯一序列，展开后只认当前镜头有效连线', () => {
+    const doc = open(),
+      id = board(doc),
+      film = node(doc, SEQUENCE_TYPE)
+    expect(creationGuideFacts(doc).sequence?.id).toBe(film)
+    generated(doc, id, 'video')
+    expect(creationGuideFacts(doc).sequence).toBeUndefined()
+    expect(step(doc, 'delivery').target).toMatchObject({ kind: 'storyboard', nodeId: id })
+  })
+
+  it('其他分镜删除后的残留连线不触发唯一序列回退', () => {
+    const doc = open(),
+      current = board(doc),
+      old = board(doc)
+    const video = generated(doc, old, 'video')
+    sequence(doc, video)
+    deleteElements(doc, [old])
+    expect(creationGuideFacts(doc).board?.id).toBe(current)
+    expect(creationGuideFacts(doc).sequences).toEqual([])
+    expect(step(doc, 'delivery').target).toMatchObject({ kind: 'storyboard', nodeId: current })
+  })
+
   it('脱离计划的历史节点不计入；重复生成节点也不擅自挑一个', () => {
     const doc = open(),
       id = board(doc)

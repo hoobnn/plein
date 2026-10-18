@@ -101,6 +101,8 @@ export default defineConfig({
     'delivery-feedback.spec.ts',
     'creation-guide.spec.ts',
     'creation-guide-boundaries.spec.ts',
+    'creation-guide-progress.spec.ts',
+    'creation-guide-layout.spec.ts',
     'animatic-refresh.spec.ts',
     'animatic-navigation.spec.ts',
     'templates.spec.ts',

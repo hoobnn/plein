@@ -276,6 +276,7 @@ test('只读创作引导可打开已有样片，新建受限时说明原因并�
 test('同名分镜与成片按短 ID 消歧，改名后仍定位原身份', async ({ page }) => {
   const f = await fixture(page, 2, 2, true)
   await page.setViewportSize({ width: 390, height: 700 })
+  await page.getByRole('button', { name: '展开创作引导', exact: true }).click()
   const boards = guide(page).getByRole('combobox', { name: '创作引导分镜', exact: true })
   await boards.click()
   await page.getByRole('option', { name: `同名分镜 · ${f.board.slice(-6)}`, exact: true }).click()

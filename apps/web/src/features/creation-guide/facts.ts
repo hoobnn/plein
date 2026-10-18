@@ -1,4 +1,10 @@
-import { activeShotNodes, expandedNodes, shotsOf, type ShotSource } from '@plein/capabilities'
+import {
+  activeShotNodes,
+  expandedNodes,
+  linkedShotSequences,
+  shotsOf,
+  type ShotSource,
+} from '@plein/capabilities'
 import { currentResult, getCreativeReview, type CanvasElement, type PleinDoc } from '@plein/doc'
 import { matchLines, planVersion, SEQUENCE_TYPE, STORYBOARD_TYPE, type Shot } from '@plein/nodes'
 
@@ -200,22 +206,28 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
       ]),
   )
   const mediaNodes = [...groups.values()].flat()
-  const nodeIds = new Set(mediaNodes.map((el) => el.id))
-  const linked = new Set(
-    [...doc.edges()].filter((edge) => nodeIds.has(edge.from[0])).map((edge) => edge.to[0]),
-  )
-  const sequences = elements.filter((el) => el.nodeType === SEQUENCE_TYPE && linked.has(el.id))
-  // 无展开连线的单分镜模板，可定位唯一成片序列；多分镜时只接受明确连线。
-  if (!sequences.length && boards.length === 1) {
+  const sequences = linkedShotSequences(doc, mediaNodes)
+  // 尚未展开的单分镜模板保留空序列入口；展开后只接受当前镜头的有效连线。
+  if (!sequences.length && boards.length === 1 && expanded.size === 0) {
     const all = elements.filter((el) => el.nodeType === SEQUENCE_TYPE)
-    if (all.length === 1) sequences.push(all[0]!)
+    if (
+      all.length === 1 &&
+      ![...doc.edges()].some((edge) => {
+        const upstream = doc.get(edge.from[0])
+        return edge.to[0] === all[0]!.id && !!upstream && !!sourceOf(upstream)?.storyboard
+      })
+    )
+      sequences.push(all[0]!)
   }
   const sequence = options.sequenceId
     ? sequences.find((el) => el.id === options.sequenceId)
     : sequences.length === 1
       ? sequences[0]
       : undefined
-  const trialShot = shots.find((shot) => shot.id === options.trialShotId) ?? shots[0]
+  const trialShot = options.trialShotId
+    ? shots.find((shot) => shot.id === options.trialShotId)
+    : shots[0]
+  const trialMissing = !!options.trialShotId && !trialShot
   const staleIds = options.staleIds ?? new Set<string>()
   const progress = shots.map((shot) => ({
     shot,
@@ -229,9 +241,11 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
   const reviewSignature = options.reviewedPlan ?? options.reviewedPlans?.[board.id]
   const reviewedPlan = shots.length > 0 && reviewSignature === planSignature
   const boardTarget: GuideTarget = { kind: 'storyboard', nodeId: board.id }
-  const trialTarget: GuideTarget = sample?.missing
-    ? { kind: 'generator', nodeId: sample.missing.id }
-    : boardTarget
+  const trialTarget: GuideTarget | undefined = trialMissing
+    ? undefined
+    : sample?.missing
+      ? { kind: 'generator', nodeId: sample.missing.id }
+      : boardTarget
   const reviewNode =
     sample?.nodes.find(
       (el) =>
@@ -286,46 +300,54 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
     {
       id: 'trial',
       title: '试做一镜',
-      state: sample?.complete
-        ? 'done'
-        : sample?.running
-          ? 'working'
+      state: trialMissing
+        ? 'attention'
+        : sample?.complete
+          ? 'done'
+          : sample?.running
+            ? 'working'
+            : sample?.ambiguous
+              ? 'attention'
+              : shots.length
+                ? 'ready'
+                : 'todo',
+      detail: trialMissing
+        ? '原试做镜头已移除，请重新选择；没有镜头时可补充或撤销删除'
+        : sample?.complete
+          ? `镜头 ${trialShot!.no} 的画面、视频及所需声音已有采用结果`
           : sample?.ambiguous
-            ? 'attention'
-            : shots.length
-              ? 'ready'
-              : 'todo',
-      detail: sample?.complete
-        ? `镜头 ${trialShot!.no} 的画面、视频及所需声音已有采用结果`
-        : sample?.ambiguous
-          ? '试做镜头有重复生成节点，请在分镜表检查'
-          : animation
-            ? '已有低成本样片计划；也可先只做选定的一镜'
-            : '先展开并只试做选定镜头，避免整批试错',
+            ? '试做镜头有重复生成节点，请在分镜表检查'
+            : animation
+              ? '已有低成本样片计划；也可先只做选定的一镜'
+              : '先展开并只试做选定镜头，避免整批试错',
       target: trialTarget,
     },
     {
       id: 'review',
       title: '审核样片',
       state:
-        sample?.stale || sample?.needsChanges
+        trialMissing || sample?.stale || sample?.needsChanges
           ? 'attention'
           : sample?.approved
             ? 'done'
             : sample?.complete
               ? 'ready'
               : 'todo',
-      detail: sample?.stale
-        ? '试做镜头输入已变化，请先查看下游影响'
-        : sample?.needsChanges
-          ? '当前采用项有人工作出的需修改结论'
-          : sample?.approved
-            ? '试做镜头当前采用的画面与声音均已人工确认可用'
-            : '逐项试听、看片并标记可用；生成完成不代表审核通过',
+      detail: trialMissing
+        ? '先重新选择要审核的试做镜头'
+        : sample?.stale
+          ? '试做镜头输入已变化，请先查看下游影响'
+          : sample?.needsChanges
+            ? '当前采用项有人工作出的需修改结论'
+            : sample?.approved
+              ? '试做镜头当前采用的画面与声音均已人工确认可用'
+              : '逐项试听、看片并标记可用；生成完成不代表审核通过',
       target:
-        reviewNode && reviewResult
+        !trialMissing && reviewNode && reviewResult
           ? { kind: 'review', nodeId: reviewNode.id, resultId: reviewResult.id }
-          : boardTarget,
+          : trialMissing
+            ? undefined
+            : boardTarget,
     },
     {
       id: 'batch',
@@ -354,13 +376,15 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
         ? '序列输入已有变化，先检查当前成片是否仍适合交付'
         : confirmed
           ? '当前成片版本已人工确认，修改意见均已处理'
-          : sequences.length && !sequence
-            ? options.sequenceId
-              ? '原交付序列已移除或不再关联，请重新选择'
-              : '先选择这份分镜要交付的成片序列'
-            : sequence
-              ? '打开序列检查成片、修改意见与当前版本的交付确认'
-              : '展开镜头并连接成片序列后，可在序列中导出交付',
+          : options.sequenceId && !sequence && !sequences.length
+            ? '原交付序列已移除或不再关联，请先检查当前镜头连线'
+            : sequences.length && !sequence
+              ? options.sequenceId
+                ? '原交付序列已移除或不再关联，请重新选择'
+                : '先选择这份分镜要交付的成片序列'
+              : sequence
+                ? '打开序列检查成片、修改意见与当前版本的交付确认'
+                : '展开镜头并连接成片序列后，可在序列中导出交付',
       target: sequence
         ? { kind: 'sequence', nodeId: sequence.id }
         : sequences.length
