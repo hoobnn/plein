@@ -14,6 +14,7 @@ import {
   libraryKind,
   orderedImages,
   preserveLibraryImageSlots,
+  slotImages,
 } from '@plein/nodes'
 import type {
   Asset,
@@ -282,6 +283,16 @@ export function seedOf(media: readonly CanvasMedia[]): LibrarySeed {
     images: media.filter((m) => m.kind === 'image').map((m) => m.assetId),
     videos: media.filter((m) => m.kind === 'video').map((m) => m.assetId),
   }
+}
+
+/** 预填前检查类别容量，不让草稿初始化静默丢弃选中的素材。 */
+export function librarySeedIssue(kind: LibraryKindSpec, seed: LibrarySeed): string | null {
+  const videos = new Set(seed.videos).size
+  if (videos && !kind.video) return `${kind.title}只收图片，请先取消选择视频`
+  if (videos > 1) return `每条${kind.title}只能保存 1 个参考视频，请先只选 1 个视频`
+  if (slotImages(kind, seed.images).length < new Set(seed.images).size)
+    return `每条${kind.title}只能保存 1 张${kind.slots[0]!.label}，请先只选 1 张图片`
+  return null
 }
 
 /** 类别菜单绑定素材身份和顺序；改名不改变素材，预填时再读最新名称。 */

@@ -83,6 +83,7 @@ export default defineConfig({
     'selection-toolbar-layout.spec.ts',
     'template-save-targets.spec.ts',
     'selection-library-targets.spec.ts',
+    'selection-library-capacity.spec.ts',
     'selection-download.spec.ts',
     'templates.spec.ts',
     'right-panel-switching.spec.ts',

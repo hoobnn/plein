@@ -2,7 +2,13 @@ import { LIBRARY_KINDS } from '@plein/nodes'
 import type { Engine } from '@plein/canvas-core'
 import type { LibraryKind } from '@plein/protocol'
 import { useState } from 'react'
-import { type CanvasMedia, mediaSelectionKey, selectionSeed } from './canvas'
+import {
+  type CanvasMedia,
+  librarySeedIssue,
+  mediaSelectionKey,
+  seedOf,
+  selectionSeed,
+} from './canvas'
 import { useLibrary } from './store'
 import { Icon, type IconName } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
@@ -64,6 +70,14 @@ function LibraryAddMenu({ media, variant }: LibraryAddProps) {
       current.notify('素材已变化，请重新打开存入资产库')
       return
     }
+    const issue = librarySeedIssue(
+      LIBRARY_KINDS.find((k) => k.id === kind)!,
+      seed,
+    )
+    if (issue) {
+      current.notify(issue)
+      return
+    }
     useLibrary.getState().show(kind, seed)
   }
   const btn = variant === 'inline' ? 'ui-btn ui-btn-sm ui-btn-quiet' : 'ui-bar-btn'
@@ -100,24 +114,24 @@ function LibraryAddMenu({ media, variant }: LibraryAddProps) {
                   }存为`
                 : '存为'}
             </div>
+            <div className="px-3 pb-2 text-xs text-ink-subtle">每次保存为一条资产</div>
             {LIBRARY_KINDS.map((k) => {
-              // 视频只有特效收；只选了视频时其他类别存不进东西
-              const usable = images > 0 || !!k.video
+              const issue = librarySeedIssue(k, seedOf(media))
               return (
                 <button
                   key={k.id}
                   type="button"
-                  className="ui-menu-item items-start"
-                  disabled={!usable}
-                  title={usable ? undefined : `${k.title}只收图片`}
+                  className="ui-menu-item items-start disabled:opacity-100"
+                  disabled={!!issue}
+                  title={issue ?? undefined}
                   onClick={() => pick(k.id)}
                 >
                   <span className="mt-0.5">
                     <Icon name={KIND_ICONS[k.id]} size={14} />
                   </span>
                   <span className="flex min-w-0 flex-col">
-                    <span>{k.title}</span>
-                    <span className="truncate text-xs text-ink-subtle">{KIND_HINTS[k.id]}</span>
+                    <span className={issue ? 'text-ink-subtle' : undefined}>{k.title}</span>
+                    <span className="text-xs text-ink-subtle">{issue ?? KIND_HINTS[k.id]}</span>
                   </span>
                 </button>
               )
