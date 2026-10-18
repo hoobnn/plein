@@ -1,4 +1,4 @@
-import type { LibraryItem } from '@plein/protocol'
+import type { LibraryItem, SaveLibraryCard, SaveLibraryCardResult } from '@plein/protocol'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { api } from '../../api/client'
 import { useLibrary } from './store'
@@ -7,6 +7,7 @@ vi.mock('../../api/client', () => ({
   api: {
     library: vi.fn(),
     createLibraryItem: vi.fn(),
+    saveLibraryCard: vi.fn(),
     updateLibraryItem: vi.fn(),
     deleteLibraryItem: vi.fn(),
     markLibraryUsed: vi.fn(),
@@ -55,6 +56,103 @@ beforeEach(() => {
 })
 
 describe('资产库列表生命周期', () => {
+  it('同一卡片的存档入口共用请求，失败释放锁，重试后只插入一次', async () => {
+    const body: SaveLibraryCard = {
+      canvasId: 'c',
+      nodeId: 'n',
+      expectedLibraryId: null,
+      snapshot: { kind: 'character', name: '提交名称' },
+    }
+    vi.mocked(api.saveLibraryCard).mockRejectedValueOnce(new Error('离线'))
+    const first = useLibrary.getState().saveCard(body)
+    expect(useLibrary.getState().saveCard(body)).toBe(first)
+    await expect(first).rejects.toThrow('离线')
+    vi.mocked(api.saveLibraryCard).mockResolvedValueOnce({
+      item: item('new'),
+      created: true,
+      persistence: 'saved',
+    })
+    const retry = useLibrary.getState().saveCard(body)
+    body.snapshot.name = '等待时的新草稿'
+    await retry
+    expect(api.saveLibraryCard).toHaveBeenLastCalledWith(
+      expect.objectContaining({ snapshot: expect.objectContaining({ name: '提交名称' }) }),
+    )
+    expect(useLibrary.getState().items).toEqual([item('new')])
+    expect(api.saveLibraryCard).toHaveBeenCalledTimes(2)
+  })
+
+  it('卡片存档与条目编辑按顺序写入，保留最近使用时间，独立来源不阻塞', async () => {
+    useLibrary.setState({ items: [item('a')] })
+    let finish!: (value: SaveLibraryCardResult) => void
+    vi.mocked(api.saveLibraryCard).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    vi.mocked(api.saveLibraryCard).mockResolvedValueOnce({
+      item: item('b'),
+      created: true,
+      persistence: 'saved',
+    })
+    vi.mocked(api.updateLibraryItem).mockResolvedValueOnce({
+      ...item('a', '稍后改名'),
+      favorite: true,
+    })
+    const save = useLibrary.getState().saveCard({
+      canvasId: 'c',
+      nodeId: 'a',
+      expectedLibraryId: 'a',
+      snapshot: { kind: 'character', name: '卡片名称' },
+    })
+    const update = useLibrary.getState().update('a', { name: '稍后改名' })
+    await vi.waitFor(() => expect(api.saveLibraryCard).toHaveBeenCalledTimes(1))
+    expect(api.updateLibraryItem).not.toHaveBeenCalled()
+    await useLibrary.getState().saveCard({
+      canvasId: 'c',
+      nodeId: 'b',
+      expectedLibraryId: null,
+      snapshot: { kind: 'character', name: 'b' },
+    })
+    vi.mocked(api.markLibraryUsed).mockResolvedValueOnce(undefined)
+    useLibrary.getState().markUsed('a')
+    const usedAt = useLibrary.getState().items.find((entry) => entry.id === 'a')!.usedAt
+    finish({ item: item('a', '卡片名称'), created: false, persistence: 'saved' })
+    await save
+    await update
+    expect(useLibrary.getState().items.find((entry) => entry.id === 'a')).toMatchObject({
+      name: '稍后改名',
+      usedAt,
+    })
+  })
+
+  it('等待条目编辑失败后仍可存档，等待时删除的记录不复活', async () => {
+    useLibrary.setState({ items: [item('a')] })
+    vi.mocked(api.updateLibraryItem).mockRejectedValueOnce(new Error('暂不可用'))
+    let finish!: (value: SaveLibraryCardResult) => void
+    vi.mocked(api.saveLibraryCard).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    vi.mocked(api.deleteLibraryItem).mockResolvedValueOnce(undefined)
+    const update = useLibrary.getState().update('a', { favorite: true })
+    const save = useLibrary.getState().saveCard({
+      canvasId: 'c',
+      nodeId: 'a',
+      expectedLibraryId: 'a',
+      snapshot: { kind: 'character', name: '存档' },
+    })
+    await expect(update).rejects.toThrow('暂不可用')
+    await vi.waitFor(() => expect(api.saveLibraryCard).toHaveBeenCalledTimes(1))
+    await useLibrary.getState().remove('a')
+    finish({ item: item('a'), created: false, persistence: 'pending' })
+    await save
+    expect(useLibrary.getState().items).toEqual([])
+  })
+
   it('某条目等待更新不阻塞其他条目', async () => {
     useLibrary.setState({ items: [item('a'), item('b')] })
     let resolve!: (value: LibraryItem) => void

@@ -3,6 +3,8 @@ import type {
   LibraryItem,
   LibraryKind,
   UpdateLibraryItem,
+  SaveLibraryCard,
+  SaveLibraryCardResult,
 } from '@plein/protocol'
 import { create } from 'zustand'
 import { api } from '../../api/client'
@@ -41,6 +43,7 @@ interface LibraryStore {
   takeTab(): LibraryStore['tab']
   load(): Promise<void>
   create(body: CreateLibraryItem): Promise<LibraryItem>
+  saveCard(body: SaveLibraryCard): Promise<SaveLibraryCardResult>
   update(id: string, body: UpdateLibraryItem): Promise<LibraryItem>
   remove(id: string): Promise<void>
   /** 记一次用到画布上（失败不影响插入） */
@@ -54,7 +57,8 @@ const replace = (items: LibraryItem[], item: LibraryItem) =>
 export const useLibrary = create<LibraryStore>((set, get) => {
   let loading: Promise<void> | undefined
   let removed: Set<string> | undefined
-  const updates = new Map<string, Promise<LibraryItem>>()
+  const updates = new Map<string, Promise<unknown>>()
+  const archives = new Map<string, Promise<SaveLibraryCardResult>>()
   return {
     items: [],
     loaded: false,
@@ -113,6 +117,37 @@ export const useLibrary = create<LibraryStore>((set, get) => {
       const item = await api.createLibraryItem(body)
       set({ items: [item, ...get().items.filter((i) => i.id !== item.id)] })
       return item
+    },
+    saveCard(body) {
+      const key = `${body.canvasId}:${body.nodeId}:${body.expectedLibraryId ?? ''}`
+      const existing = archives.get(key)
+      if (existing) return existing
+      const submitted = structuredClone(body)
+      const write = async () => {
+        const result = await api.saveLibraryCard(submitted)
+        const usedAt = get().items.find((item) => item.id === result.item.id)?.usedAt
+        const item =
+          usedAt != null && (result.item.usedAt === null || usedAt > result.item.usedAt)
+            ? { ...result.item, usedAt }
+            : result.item
+        if (get().items.some((entry) => entry.id === item.id))
+          set({ items: replace(get().items, item) })
+        else if (item.id !== submitted.expectedLibraryId) set({ items: [item, ...get().items] })
+        return { ...result, item }
+      }
+      const id = body.expectedLibraryId
+      const operation = (id ? (updates.get(id) ?? Promise.resolve()) : Promise.resolve()).then(
+        write,
+        write,
+      )
+      archives.set(key, operation)
+      if (id) updates.set(id, operation)
+      const clear = () => {
+        if (archives.get(key) === operation) archives.delete(key)
+        if (id && updates.get(id) === operation) updates.delete(id)
+      }
+      void operation.then(clear, clear)
+      return operation
     },
     update(id, body) {
       const submitted = structuredClone(body)

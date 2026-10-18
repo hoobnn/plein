@@ -2,7 +2,6 @@ import {
   type CardRef,
   CapabilityError,
   capabilityFor,
-  cardSnapshot,
   clip,
   findPlacedCard,
   need,
@@ -11,11 +10,12 @@ import {
   REF_W,
   placeLibraryCard,
 } from '@plein/capabilities'
-import { setParam, spotAfterContent, spotRightOf } from '@plein/doc'
-import { libraryKind, libraryReferenceImageIds, preserveLibraryImageSlots } from '@plein/nodes'
+import { spotAfterContent, spotRightOf } from '@plein/doc'
+import { libraryKind, libraryReferenceImageIds } from '@plein/nodes'
 import { LibraryKind } from '@plein/protocol'
 import { z } from 'zod'
 import type { ServerContext } from './tools'
+import { archiveLibraryCard } from '../library/archive'
 
 /** 资产库能力：搜索、用到画布上、存回资产库。与资产库面板、卡片菜单是同一套逻辑 */
 
@@ -153,31 +153,10 @@ export const saveToLibrary = serverCapability({
   run: (ctx, a) => {
     const lib = library(ctx)
     const project = lib.projectOf(ctx.env.ownerId, ctx.env.canvasId)
-    const snap = ctx.withDoc((doc) => cardSnapshot(doc, need(doc, a.id), project))
-    if (!snap) throw new CapabilityError('这个节点不是设定卡，不能存入资产库')
-    const linkedId = ctx.withDoc((doc) => doc.get(a.id)?.params?.libraryId)
-    const linked = typeof linkedId === 'string' ? lib.get(ctx.env.ownerId, linkedId) : null
-    const { body } = snap
-    if (linked) {
-      // 保留已有图片的槽位、标签和收藏
-      const item = lib.update(ctx.env.ownerId, linked.id, {
-        name: body.name,
-        description: body.description,
-        // 资产库里手选过的标签优先，没选的按设定补上
-        tags: {
-          ...body.tags,
-          ...Object.fromEntries(Object.entries(linked.tags).filter(([, v]) => v)),
-        },
-        images: preserveLibraryImageSlots(linked.kind, body.images, linked.images),
-        video: body.video,
-        voice: body.voice,
-        profile: body.profile,
-      })!
-      return { item_id: item.id, created: false }
-    }
-    const item = lib.create(ctx.env.ownerId, { ...body, models: [] })
-    ctx.withDoc((doc) => setParam(doc, a.id, 'libraryId', item.id))
-    return { item_id: item.id, created: true }
+    const result = ctx.withDoc((doc) =>
+      archiveLibraryCard(doc, a.id, ctx.env.ownerId, project, lib),
+    )
+    return { item_id: result.item.id, created: result.created }
   },
 })
 

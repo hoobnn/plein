@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { createDoc } from '@plein/doc'
+import { createDoc, setParam, deleteElements } from '@plein/doc'
 import { corePlugin, libraryKind } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
 import type { Asset, Catalog, LibraryItem } from '@plein/protocol'
@@ -75,6 +75,59 @@ const item = (patch: Partial<LibraryItem> = {}): LibraryItem => ({
 })
 
 describe('资产库 ↔ 画布', () => {
+  it.each(['current', 'left', 'deleted', 'relinked', 'readonly'] as const)(
+    '服务端存档返回后只为仍有效来源补关联：%s',
+    async (state) => {
+      const { doc, engine } = setup()
+      const placed = await placeLibraryItem(engine, catalog, {
+        kind: libraryKind('scene')!,
+        name: '天台',
+        description: '提交设定',
+        images: [],
+      })
+      let finish!: (value: { item: LibraryItem; created: boolean; persistence: 'saved' }) => void
+      const lib = {
+        items: [],
+        create: vi.fn(),
+        update: vi.fn(),
+        saveCard: vi.fn(
+          () =>
+            new Promise<{ item: LibraryItem; created: boolean; persistence: 'saved' }>(
+              (resolve) => {
+                finish = resolve
+              },
+            ),
+        ),
+      }
+      const saving = saveCardToLibrary(engine, doc.get(placed.id!)!, 'project', lib, {
+        canvasId: 'source',
+        current: () => state !== 'left',
+      })
+      expect(lib.saveCard).toHaveBeenCalledWith(
+        expect.objectContaining({
+          canvasId: 'source',
+          nodeId: placed.id,
+          expectedLibraryId: null,
+          snapshot: expect.objectContaining({ name: '天台', description: '提交设定' }),
+        }),
+      )
+      if (state === 'deleted') deleteElements(doc, [placed.id!])
+      if (state === 'relinked') setParam(doc, placed.id!, 'libraryId', 'other')
+      if (state === 'readonly') doc.readOnly = true
+      finish({ item: item(), created: true, persistence: 'saved' })
+      await saving
+      expect(doc.get(placed.id!)?.params?.libraryId).toBe(
+        state === 'current' ? 'lib_1' : state === 'relinked' ? 'other' : undefined,
+      )
+      expect(lib.create).not.toHaveBeenCalled()
+      expect(lib.update).not.toHaveBeenCalled()
+      if (state === 'readonly')
+        await expect(saveCardToLibrary(engine, doc.get(placed.id!)!, null, lib)).rejects.toThrow(
+          '只读',
+        )
+    },
+  )
+
   it.each([403, 429, 503, 'network'])(
     '素材读取失败 %s 不降级为空参考卡片，重试后完整放入',
     async (status) => {

@@ -1,7 +1,7 @@
 import type { Engine } from '@plein/canvas-core'
 import type { CanvasElement } from '@plein/doc'
 import { profileEmpty, profileOf, profileSize } from '@plein/nodes'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { saveCardToLibrary } from '../library/canvas'
 import { useCanvas } from '../../stores/canvas'
 import { useLibrary } from '../library/store'
@@ -14,25 +14,49 @@ import { thumb } from '../library/LibraryFields'
  */
 export function ProfileSummary({ engine, el }: { engine: Engine; el: CanvasElement }) {
   const [busy, setBusy] = useState(false)
+  const session = useMemo(
+    () => ({ engine, nodeId: el.id, active: true, pending: false }),
+    [engine, el.id],
+  )
+  useEffect(() => {
+    session.active = true
+    return () => {
+      session.active = false
+    }
+  }, [session])
   const profile = profileOf(el.params?.profile)
   const size = profileSize(profile)
   const name = el.name?.trim() || '角色'
 
   const open = async (tab: 'periods' | 'expressions') => {
+    if (session.pending) return
+    const canvasId = useCanvas.getState().canvasId
+    const currentEngine = () => useCanvas.getState().engine === session.engine
+    const active = () => session.active && currentEngine()
+    if (!canvasId || !active()) return
+    session.pending = true
     setBusy(true)
     try {
       const lib = useLibrary.getState()
       await lib.load()
-      const current = engine.doc.get(el.id) ?? el
+      if (!active()) return
+      const current = engine.doc.get(session.nodeId)
+      if (!current) throw new Error('来源卡片已删除')
       const linked = useLibrary.getState().items.find((i) => i.id === current.params?.libraryId)
       const item =
         linked ??
-        (await saveCardToLibrary(engine, current, lib.projectId, useLibrary.getState())).item
-      useLibrary.getState().edit(item, tab)
+        (
+          await saveCardToLibrary(engine, current, lib.projectId, useLibrary.getState(), {
+            canvasId,
+            current: currentEngine,
+          })
+        ).item
+      if (active()) useLibrary.getState().edit(item, tab)
     } catch (err) {
-      useCanvas.getState().notify(`打不开角色档案：${(err as Error).message}`)
+      if (active()) useCanvas.getState().notify(`打不开角色档案：${(err as Error).message}`)
     } finally {
-      setBusy(false)
+      session.pending = false
+      if (session.active) setBusy(false)
     }
   }
 
@@ -46,7 +70,7 @@ export function ProfileSummary({ engine, el }: { engine: Engine; el: CanvasEleme
           onClick={() => void open('periods')}
           className="ui-btn ui-btn-quiet ui-btn-xs ml-auto"
         >
-          {profileEmpty(profile) ? '添加时期、服饰、表情' : '编辑档案'}
+          {busy ? '打开中…' : profileEmpty(profile) ? '添加时期、服饰、表情' : '编辑档案'}
           <Icon name="chevronRight" size={12} />
         </button>
       </div>

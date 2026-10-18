@@ -1,7 +1,7 @@
 import type { Engine } from '@plein/canvas-core'
 import type { CanvasElement } from '@plein/doc'
 import { libraryKindOfNode } from '@plein/nodes'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { saveCardToLibrary } from '../library/canvas'
 import { useCanvas } from '../../stores/canvas'
 import { useLibrary } from '../library/store'
@@ -12,28 +12,55 @@ export function LibrarySave({ engine, el }: { engine: Engine; el: CanvasElement 
   const items = useLibrary((s) => s.items)
   const loaded = useLibrary((s) => s.loaded)
   const [busy, setBusy] = useState(false)
+  const session = useMemo(
+    () => ({ engine, nodeId: el.id, active: true, pending: false }),
+    [engine, el.id],
+  )
+  useEffect(() => {
+    session.active = true
+    return () => {
+      session.active = false
+    }
+  }, [session])
   const kind = libraryKindOfNode(el.nodeType)
   if (!kind || !loaded) return null
   const linked = items.some((i) => i.id === el.params?.libraryId)
 
   const save = async () => {
+    if (session.pending) return
+    const canvasId = useCanvas.getState().canvasId
+    const currentEngine = () => useCanvas.getState().engine === session.engine
+    if (!canvasId || !currentEngine()) return
+    session.pending = true
     setBusy(true)
     try {
       const lib = useLibrary.getState()
       // 输入框失焦时才写回文档，点按钮那一刻 props 里的 el 可能还是旧的
-      const current = engine.doc.get(el.id) ?? el
-      const { item, created } = await saveCardToLibrary(engine, current, lib.projectId, lib)
+      const current = engine.doc.get(session.nodeId)
+      if (!current) throw new Error('来源卡片已删除')
+      const { item, created, persistence } = await saveCardToLibrary(
+        engine,
+        current,
+        lib.projectId,
+        lib,
+        { canvasId, current: currentEngine },
+      )
+      if (!session.active || !currentEngine()) return
       useCanvas
         .getState()
         .notify(
-          created
-            ? `已存入资产库：${kind.title}「${item.name}」，其他画布可以直接取用`
-            : `已更新资产库里的${kind.title}「${item.name}」`,
+          persistence === 'pending'
+            ? `已存入资产库，来源画布正在重试保存：${item.name}`
+            : created
+              ? `已存入资产库：${kind.title}「${item.name}」，其他画布可以直接取用`
+              : `已更新资产库里的${kind.title}「${item.name}」`,
         )
     } catch (err) {
-      useCanvas.getState().notify(`存入资产库失败：${(err as Error).message}`)
+      if (session.active && currentEngine())
+        useCanvas.getState().notify(`存入资产库失败：${(err as Error).message}`)
     } finally {
-      setBusy(false)
+      session.pending = false
+      if (session.active) setBusy(false)
     }
   }
 
@@ -41,7 +68,8 @@ export function LibrarySave({ engine, el }: { engine: Engine; el: CanvasElement 
     <div className="flex flex-none items-center gap-0.5">
       <button
         type="button"
-        disabled={busy}
+        disabled={busy || engine.doc.readOnly}
+        aria-busy={busy}
         onClick={() => void save()}
         title={
           linked
@@ -51,7 +79,7 @@ export function LibrarySave({ engine, el }: { engine: Engine; el: CanvasElement 
         className="ui-btn ui-btn-quiet ui-btn-sm"
       >
         <Icon name="library" size={14} />
-        {linked ? '更新资产库' : '存入资产库'}
+        {busy ? '保存中…' : linked ? '更新资产库' : '存入资产库'}
       </button>
       <button
         type="button"

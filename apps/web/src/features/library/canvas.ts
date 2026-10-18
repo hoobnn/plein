@@ -15,7 +15,14 @@ import {
   orderedImages,
   preserveLibraryImageSlots,
 } from '@plein/nodes'
-import type { Asset, Catalog, CreateLibraryItem, LibraryItem } from '@plein/protocol'
+import type {
+  Asset,
+  Catalog,
+  CreateLibraryItem,
+  LibraryItem,
+  SaveLibraryCard,
+  SaveLibraryCardResult,
+} from '@plein/protocol'
 import { ApiError, assetUrls } from '../../api/client'
 import { loadAssetMeta } from '../../stores/assetMeta'
 import type { LibrarySeed } from './store'
@@ -174,11 +181,31 @@ export async function saveCardToLibrary(
     items: LibraryItem[]
     create(body: CreateLibraryItem): Promise<LibraryItem>
     update(id: string, body: Partial<CreateLibraryItem>): Promise<LibraryItem>
+    saveCard?(body: SaveLibraryCard): Promise<SaveLibraryCardResult>
   },
-): Promise<{ item: LibraryItem; created: boolean }> {
+  source?: { canvasId: string; current(): boolean },
+): Promise<{ item: LibraryItem; created: boolean; persistence?: 'saved' | 'pending' }> {
+  if (engine.doc.readOnly) throw new Error('当前画布只读，不能存入资产库')
   const snap = cardSnapshot(engine, el, projectId)
   if (!snap) throw new Error('这个节点不是资产卡')
   const { body } = snap
+  if (source && lib.saveCard) {
+    const expectedLibraryId = typeof el.params?.libraryId === 'string' ? el.params.libraryId : null
+    const saved = await lib.saveCard({
+      canvasId: source.canvasId,
+      nodeId: el.id,
+      expectedLibraryId,
+      snapshot: body,
+    })
+    if (source.current() && !engine.doc.readOnly) {
+      const current = engine.doc.get(el.id)
+      const linked =
+        typeof current?.params?.libraryId === 'string' ? current.params.libraryId : null
+      if (current?.nodeType === el.nodeType && linked === expectedLibraryId)
+        setParam(engine.doc, el.id, 'libraryId', saved.item.id)
+    }
+    return saved
+  }
   const linked = lib.items.find((i) => i.id === el.params?.libraryId)
   if (linked) {
     const images = preserveLibraryImageSlots(linked.kind, body.images ?? [], linked.images)

@@ -19,6 +19,7 @@ import {
 } from '@plein/nodes'
 import {
   ApplyLibraryUpdates,
+  SaveLibraryCard,
   type LibraryItem,
   type LibrarySyncField,
   type LibraryUpdates,
@@ -29,6 +30,7 @@ import type { AssetStore } from '../assets/store'
 import { listCanvases } from '../storage/canvases'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
+import { archiveLibraryCard, LibraryArchiveConflict } from './archive'
 import type { LibraryStore } from './store'
 
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -73,6 +75,40 @@ interface Deps {
 /** Read and apply are deliberately separate: library edits never overwrite another canvas. */
 export function librarySyncRoutes(deps: Deps) {
   return new Hono<AuthEnv>()
+    .post('/api/library/save-card', async (c) => {
+      const owner = c.var.principal.id
+      if (c.var.principal.role === 'viewer')
+        return c.json({ error: 'forbidden', message: '只读成员不能存入资产库' }, 403)
+      const input = SaveLibraryCard.safeParse(await c.req.json().catch(() => null))
+      if (!input.success) return c.json({ error: 'invalid', message: '存档参数不合法' }, 400)
+      const source = listCanvases(deps.db, owner).find(
+        (canvas) => canvas.id === input.data.canvasId,
+      )
+      if (!source) return c.json({ error: 'not_found', message: '来源画布不存在' }, 404)
+      try {
+        const saved = deps.rooms.withDoc(source.id, (doc) =>
+          archiveLibraryCard(
+            doc,
+            input.data.nodeId,
+            owner,
+            source.projectId,
+            deps.library,
+            input.data.snapshot,
+            input.data.expectedLibraryId,
+          ),
+        )
+        try {
+          deps.rooms.get(source.id).flush()
+        } catch {
+          return c.json({ ...saved, persistence: 'pending' as const }, 202)
+        }
+        return c.json({ ...saved, persistence: 'saved' as const })
+      } catch (error) {
+        if (error instanceof LibraryArchiveConflict)
+          return c.json({ error: 'conflict', message: error.message }, 409)
+        throw error
+      }
+    })
     .get('/api/library/:id/updates', (c) => {
       const owner = c.var.principal.id
       const item = deps.library.get(owner, c.req.param('id'))

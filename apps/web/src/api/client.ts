@@ -22,6 +22,8 @@ import {
   type LibraryUpdates,
   type LibrarySyncResult,
   type ApplyLibraryUpdates,
+  type SaveLibraryCard,
+  type SaveLibraryCardResult,
   type BatchRunOptions,
   type StoryboardBatchRequest,
   type StoryboardBatchPlan,
@@ -176,6 +178,8 @@ export const api = {
     request<LibraryItem[]>(kind ? `${API.library}?kind=${kind}` : API.library),
   createLibraryItem: (body: CreateLibraryItem) =>
     request<LibraryItem>(API.library, json('POST', body)),
+  saveLibraryCard: (body: SaveLibraryCard) =>
+    request<SaveLibraryCardResult>('/api/library/save-card', json('POST', body)),
   updateLibraryItem: (id: string, body: UpdateLibraryItem) =>
     request<LibraryItem>(API.libraryItem(id), json('PATCH', body)),
   deleteLibraryItem: (id: string) => request<void>(API.libraryItem(id), { method: 'DELETE' }),
