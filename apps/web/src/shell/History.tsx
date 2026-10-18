@@ -112,13 +112,18 @@ function HistoryPanel({ engine }: { engine: Engine }) {
 
   // 结果被删或筛掉后，选择里只保留还看得见的
   const visible = new Set(shown.map(keyOf))
-  const selected = shown.filter((e) => picked.has(keyOf(e)))
+  const retained = new Set([...picked].filter((key) => visible.has(key)))
+  // 同步清掉状态里的旧身份，筛选返回或撤销恢复时不自动勾回已离开的结果。
+  if (retained.size !== picked.size) setPicked(retained)
+  const selected = shown.filter((e) => retained.has(keyOf(e)))
   const togglePick = (e: HistoryEntry) => {
-    const next = new Set([...picked].filter((k) => visible.has(k)))
-    const k = keyOf(e)
-    if (next.has(k)) next.delete(k)
-    else next.add(k)
-    setPicked(next)
+    setPicked((previous) => {
+      const next = new Set([...previous].filter((key) => visible.has(key)))
+      const key = keyOf(e)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
   }
 
   const nameOf = (e: HistoryEntry) => doc.get(e.elementId)?.name ?? TYPE_LABEL[e.result.value.type]
@@ -265,7 +270,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
                 entry={e}
                 name={nameOf(e)}
                 thumb={thumbOf(e, size)}
-                picked={picked.has(keyOf(e))}
+                picked={retained.has(keyOf(e))}
                 selecting={selected.length > 0}
                 onPick={() => togglePick(e)}
                 onOpen={() => locate(e)}
