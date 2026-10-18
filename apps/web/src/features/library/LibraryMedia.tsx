@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Icon } from '../../ui/icons'
 
 interface ThumbnailProps {
@@ -9,6 +9,82 @@ interface ThumbnailProps {
   selected?: boolean
   disabled?: boolean
   onSelect?(): void
+}
+
+/** 档案参考条：悬停只预览，点击才固定；恢复小图不改变大图选择。 */
+export function ReferenceThumbnail({
+  src,
+  label,
+  selected,
+  onPreview,
+  onSelect,
+}: {
+  src: string
+  label: string
+  selected: boolean
+  onPreview(active: boolean): void
+  onSelect(): void
+}) {
+  const [attempt, setAttempt] = useState(0)
+  const token = `${src}:${attempt}`
+  const current = useRef(token)
+  current.current = token
+  const [failedToken, setFailedToken] = useState<string>()
+  const failed = failedToken === token
+  const select = useRef<HTMLButtonElement>(null)
+  const previewing = useRef(false)
+  return (
+    <div className="lib-hero-thumb" data-failed={failed || undefined}>
+      <button
+        ref={select}
+        type="button"
+        aria-label={label}
+        title={failed ? `${label}加载失败，仍可预览大图` : label}
+        aria-pressed={selected}
+        onPointerMove={() => {
+          // 重试按钮消失会使预览区出现在原指针下面；仅真实移动才开始悬停。
+          if (previewing.current) return
+          previewing.current = true
+          onPreview(true)
+        }}
+        onPointerLeave={() => {
+          previewing.current = false
+          onPreview(false)
+        }}
+        onClick={onSelect}
+        className="lib-hero-thumb-preview"
+      >
+        {failed ? (
+          <span role="img" aria-label={`${label}加载失败`} className="text-xs text-ink-subtle">
+            加载失败
+          </span>
+        ) : (
+          <img
+            key={token}
+            src={src}
+            alt=""
+            draggable={false}
+            onError={() => {
+              if (current.current === token) setFailedToken(token)
+            }}
+          />
+        )}
+      </button>
+      {failed && (
+        <button
+          type="button"
+          aria-label={`重新加载${label}`}
+          className="ui-btn ui-btn-xs ui-btn-quiet lib-hero-thumb-retry"
+          onClick={() => {
+            setAttempt((n) => n + 1)
+            select.current?.focus()
+          }}
+        >
+          重试
+        </button>
+      )}
+    </div>
+  )
 }
 
 /** 重试与选择是两个独立操作；失败的缩略图仍可选择，重试不改变素材。 */

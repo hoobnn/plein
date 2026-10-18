@@ -27,6 +27,7 @@ import { SlideSwap } from '../../ui/Slide'
 import { morphView } from '../../ui/viewTransition'
 import { KIND_ICONS } from './LibraryAdd'
 import { SlotField, thumb, VideoField } from './LibraryFields'
+import { ReferenceThumbnail } from './LibraryMedia'
 import {
   ExpressionsTab,
   type HeroControl,
@@ -1033,28 +1034,27 @@ function Editor({
             <ul className="lib-hero-strip" aria-label="参考图">
               {thumbnails.map((img) => (
                 <li key={img.assetId}>
-                  <button
-                    type="button"
-                    aria-label={kind.slots.find((s) => s.id === img.slot)?.label ?? '参考图'}
-                    title={kind.slots.find((s) => s.id === img.slot)?.label}
-                    aria-pressed={shown === img.assetId}
-                    onPointerEnter={() =>
-                      setPreview({
-                        id: img.assetId,
-                        caption: kind.slots.find((s) => s.id === img.slot)?.label,
-                      })
+                  <ReferenceThumbnail
+                    src={thumb(img.assetId)}
+                    label={kind.slots.find((s) => s.id === img.slot)?.label ?? '参考图'}
+                    selected={shown === img.assetId}
+                    onPreview={(active) =>
+                      setPreview(
+                        active
+                          ? {
+                              id: img.assetId,
+                              caption: kind.slots.find((s) => s.id === img.slot)?.label,
+                            }
+                          : null,
+                      )
                     }
-                    onPointerLeave={() => setPreview(null)}
-                    onClick={() =>
+                    onSelect={() =>
                       setPin({
                         id: img.assetId,
                         caption: kind.slots.find((s) => s.id === img.slot)?.label,
                       })
                     }
-                    className="lib-hero-thumb"
-                  >
-                    <img src={thumb(img.assetId)} alt="" draggable={false} />
-                  </button>
+                  />
                 </li>
               ))}
             </ul>

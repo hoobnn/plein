@@ -66,6 +66,94 @@ async function openItem(page: Page, label: string, name: string) {
   return panel
 }
 
+for (const kind of ['scene', 'character'] as const) {
+  test(`${kind} 大图下方参考条失败可独立重试，键盘固定预览且保存状态不变`, async ({ page }) => {
+    await newProject(page)
+    await page.setViewportSize({ width: kind === 'scene' ? 800 : 390, height: 700 })
+    const base = await asset(page, 'reference-0.png')
+    const second = await asset(page, 'reference-1.png')
+    const labels = kind === 'scene' ? ['主场景图', '多角度'] : ['全身定妆图', '肖像／半身图']
+    const original = [
+      { slot: kind === 'scene' ? 'main' : 'full_body', assetId: base },
+      { slot: kind === 'scene' ? 'angle' : 'portrait', assetId: second },
+    ]
+    const name = `${kind} 参考条恢复`
+    const created = await page.request.post('/api/library', {
+      data: { kind, name, images: original },
+    })
+    expect(created.status()).toBe(201)
+    const item = await created.json()
+    let fail = true
+    let requests = 0
+    await page.route(`**/api/assets/${second}/thumb-256`, (route) => {
+      requests++
+      return fail ? route.fulfill({ status: 503, body: 'unavailable' }) : route.continue()
+    })
+    const panel = await openItem(page, kind === 'scene' ? '场景' : '角色', name)
+    const strip = panel.getByRole('list', { name: '参考图', exact: true })
+    const first = strip.getByRole('button', { name: labels[0], exact: true })
+    const select = strip.getByRole('button', { name: labels[1], exact: true })
+    const retry = strip.getByRole('button', { name: `重新加载${labels[1]}`, exact: true })
+    await expect(retry).toBeVisible()
+    const shown = () => panel.locator('.lib-hero img').last()
+    await expect(shown()).toHaveAttribute('src', new RegExp(base))
+    const beforeRetry = requests
+    await retry.click()
+    await expect.poll(() => requests).toBeGreaterThan(beforeRetry)
+    await expect(retry).toBeVisible()
+    await expect(select).toBeFocused()
+    await expect(shown()).toHaveAttribute('src', new RegExp(base))
+    await retry.focus()
+    await page.keyboard.press('Enter')
+    await expect(retry).toBeVisible()
+    await expect(shown()).toHaveAttribute('src', new RegExp(base))
+    await select.focus()
+    await page.keyboard.press('Enter')
+    await expect(shown()).toHaveAttribute('src', new RegExp(second))
+    await first.hover()
+    await expect(shown()).toHaveAttribute('src', new RegExp(base))
+    await page.mouse.move(5, 5)
+    await expect(shown()).toHaveAttribute('src', new RegExp(second))
+    await retry.scrollIntoViewIfNeeded()
+    await panel.screenshot({
+      path: test.info().outputPath(`${kind}-strip-failed.png`),
+      animations: 'disabled',
+    })
+    await first.focus()
+    await page.keyboard.press('Enter')
+    await expect(shown()).toHaveAttribute('src', new RegExp(base))
+    fail = false
+    if (kind === 'scene') await retry.click()
+    else {
+      await retry.focus()
+      await page.keyboard.press('Enter')
+    }
+    await expect(retry).toHaveCount(0)
+    await expect(select).toBeFocused()
+    await expect(select).toHaveAttribute('aria-pressed', 'false')
+    await expect
+      .poll(() =>
+        select
+          .locator('img')
+          .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
+      )
+      .toBe(true)
+    await expect(shown()).toHaveAttribute('src', new RegExp(base))
+    await page.mouse.move(5, 5)
+    await select.focus()
+    await page.keyboard.press('Enter')
+    await expect(shown()).toHaveAttribute('src', new RegExp(second))
+    await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
+    expect((await (await page.request.get(`/api/library/${item.id}`)).json()).images).toEqual(
+      original,
+    )
+    await panel.screenshot({
+      path: test.info().outputPath(`${kind}-strip-recovered.png`),
+      animations: 'disabled',
+    })
+  })
+}
+
 test('场景缩略图失败可反复重试，不改素材列表或已保存状态', async ({ page }) => {
   await newProject(page)
   const id = await asset(page, 'reference-0.png')
