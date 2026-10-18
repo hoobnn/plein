@@ -103,6 +103,7 @@ export class CanvasOverlays {
     root.appendChild(this.measurer)
     this.disposers.push(
       engine.onViewChange(({ content }) => this.sync(content)),
+      engine.camera.onInsetsChange(() => this.sync(false)),
       engine.onMove(() => {
         const next = engine.camera.viewRect
         const prev = this.viewport
@@ -363,6 +364,7 @@ export class CanvasOverlays {
     const node = document.createElement('div')
     node.className = 'plein-md-editor'
     const undoManager = new Y.UndoManager(ytext)
+    let scrollFrame = 0
     const view = new EditorView({
       parent: node,
       doc: ytext.toString(),
@@ -372,6 +374,18 @@ export class CanvasOverlays {
         drawSelection(),
         markdown(),
         EditorView.lineWrapping,
+        EditorView.domEventHandlers({
+          focus: (_event, editor) => {
+            cancelAnimationFrame(scrollFrame)
+            scrollFrame = requestAnimationFrame(() => editor.dispatch({ scrollIntoView: true }))
+          },
+        }),
+        EditorView.updateListener.of((update) => {
+          if (!update.geometryChanged) return
+          cancelAnimationFrame(scrollFrame)
+          // 换行高度可能经过多轮测量，按最终布局恢复当前选区。
+          scrollFrame = requestAnimationFrame(() => update.view.dispatch({ scrollIntoView: true }))
+        }),
         editorTheme,
       ],
     })
@@ -398,6 +412,7 @@ export class CanvasOverlays {
         view.requestMeasure()
       },
       dispose() {
+        cancelAnimationFrame(scrollFrame)
         view.destroy()
         undoManager.destroy()
       },

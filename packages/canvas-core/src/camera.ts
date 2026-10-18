@@ -17,6 +17,14 @@ export class Camera {
   insets = { left: 0, top: 0, right: 0, bottom: 0 }
 
   private listeners = new Set<() => void>()
+  private insetListeners = new Set<() => void>()
+
+  onInsetsChange(fn: () => void) {
+    this.insetListeners.add(fn)
+    return () => {
+      this.insetListeners.delete(fn)
+    }
+  }
 
   onChange(fn: () => void) {
     this.listeners.add(fn)
@@ -56,9 +64,18 @@ export class Camera {
     this.zoomAt(this.width / 2, this.height / 2, zoom / this.zoom)
   }
 
-  /** 只改记录，不重绘：挡住的区域变了不影响当前画面 */
+  /** 面板边距只通知布局订阅者，不移动相机或触发画面变化。 */
   setInsets(insets: Partial<Camera['insets']>) {
-    this.insets = { ...this.insets, ...insets }
+    const next = { ...this.insets, ...insets }
+    if (
+      next.left === this.insets.left &&
+      next.top === this.insets.top &&
+      next.right === this.insets.right &&
+      next.bottom === this.insets.bottom
+    )
+      return
+    this.insets = next
+    for (const fn of this.insetListeners) fn()
   }
 
   /** 去掉挡住部分后的可见区域（屏幕像素） */

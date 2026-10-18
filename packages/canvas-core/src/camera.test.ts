@@ -4,6 +4,34 @@ import { Camera } from './camera'
 const camera = (x = 0, y = 0, zoom = 1) => Object.assign(new Camera(), { x, y, zoom })
 
 describe('Camera', () => {
+  it('边距变化单独通知布局，保留位置和普通相机通知语义', () => {
+    const cam = camera(5, 6, 2)
+    let moved = 0
+    const seen: (typeof cam.insets)[] = []
+    cam.onChange(() => moved++)
+    const off = cam.onInsetsChange(() => seen.push({ ...cam.insets }))
+    cam.setInsets({ left: 200 })
+    cam.setInsets({ right: 320 })
+    expect(seen).toEqual([
+      { left: 200, right: 0, top: 0, bottom: 0 },
+      { left: 200, right: 320, top: 0, bottom: 0 },
+    ])
+    expect(cam).toMatchObject({ x: 5, y: 6, zoom: 2 })
+    expect(moved).toBe(0)
+    off()
+    cam.setInsets({ left: 100 })
+    expect(seen).toHaveLength(2)
+    expect(cam.insets.left).toBe(100)
+  })
+  it('相同边距不重复发送布局通知', () => {
+    const cam = camera()
+    let count = 0
+    cam.onInsetsChange(() => count++)
+    cam.setInsets({})
+    cam.setInsets({ left: 20 })
+    cam.setInsets({ left: 20, right: 0 })
+    expect(count).toBe(1)
+  })
   it.each([2, 0.5, 1000, 1e-6])('按光标缩放 ×%s：光标下的世界点不动，倍数夹在范围内', (factor) => {
     const cam = camera(10, 20)
     const before = cam.screenToWorld(300, 200)
