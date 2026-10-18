@@ -51,6 +51,7 @@ export function DataMaintenance() {
     setBusy(true)
     setError(null)
     setMessage(null)
+    setRestored(null)
     try {
       setMessage((await fn()) ?? null)
       await Promise.all([status.refetch(), space.refetch()])
@@ -103,6 +104,17 @@ export function DataMaintenance() {
             <p role="status" className="text-xs text-ink-muted">
               {message}
             </p>
+          )}
+          {restored && (
+            <div className="rounded-lg bg-surface-2 p-3 text-xs">
+              <p>
+                已恢复到：<code className="break-all">{restored}</code>
+              </p>
+              <p className="mt-2 text-ink-subtle">
+                当前数据仍在使用。先关闭 Plein，再以此目录作为 PLEIN_DATA_DIR
+                启动服务；桌面端可将副本中的文件复制到原数据目录。不要在运行时覆盖数据库。
+              </p>
+            </div>
           )}
           {error && (
             <p role="alert" className="text-xs text-danger">
@@ -354,17 +366,6 @@ export function DataMaintenance() {
             </button>
           </div>
         ))}
-        {restored && (
-          <div className="rounded-lg bg-surface-2 p-3 text-xs">
-            <p>
-              已恢复到：<code className="break-all">{restored}</code>
-            </p>
-            <p className="mt-2 text-ink-subtle">
-              当前数据仍在使用。先关闭 Plein，再以此目录作为 PLEIN_DATA_DIR
-              启动服务；桌面端可将副本中的文件复制到原数据目录。不要在运行时覆盖数据库。
-            </p>
-          </div>
-        )}
       </section>
       {status.data.trash.length > 0 && (
         <section className="flex flex-col gap-2" aria-label="回收站">
