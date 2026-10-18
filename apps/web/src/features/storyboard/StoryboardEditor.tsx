@@ -313,8 +313,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           className={btn}
           disabled={!shots.length}
           onClick={() => {
-            openAnimatic(engine, id)
-            onClose()
+            if (openAnimatic(engine, id)) onClose()
           }}
         >
           节奏样片

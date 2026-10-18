@@ -58,24 +58,34 @@ export function snapshotAnimatic(
   })
 }
 
-export function refreshAnimatic(engine: Engine, id: string) {
+export function refreshAnimatic(engine: Engine, id: string): string | null {
   const el = engine.doc.get(id)
-  if (el?.nodeType !== ANIMATIC_TYPE) return
+  if (el?.nodeType !== ANIMATIC_TYPE) return '样片来源已变化，本次更新未执行'
+  if (engine.doc.readOnly) return '画布已变为只读，本次更新未执行'
   const params = animaticNode.params.parse(el.params)
+  if (engine.doc.get(params.boardId)?.nodeType !== 'plein/storyboard')
+    return '来源分镜已删除或不再是分镜，本次更新未执行；已有样片与节奏已保留'
+  engine.doc.undo.stopCapturing()
   setParam(engine.doc, id, 'shots', snapshotAnimatic(engine.doc, params.boardId, params.shots))
+  engine.doc.undo.stopCapturing()
   engine.doc.flush()
+  return null
 }
 
 /** 从分镜打开已存在的草稿；首次创建快照。后续素材更新必须显式刷新。 */
 export function openAnimatic(engine: Engine, boardId: string): string | undefined {
   const board = engine.doc.get(boardId)
-  if (!board || engine.doc.readOnly) return
+  if (!board) return
   const existing = [...engine.doc.elements()].find(
     (n) => n.nodeType === ANIMATIC_TYPE && n.params?.boardId === boardId,
   )
   if (existing) {
     useCanvas.getState().openSequence(existing.id)
     return existing.id
+  }
+  if (engine.doc.readOnly) {
+    useCanvas.getState().notify('画布为只读，不能创建新样片；已有样片仍可打开查看')
+    return
   }
   const def = findNode(useCatalog.getState().catalog, ANIMATIC_TYPE)
   if (!def) {

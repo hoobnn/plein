@@ -167,6 +167,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const [tab, setTab] = useState<'clip' | 'film' | 'subtitles'>('clip')
   const [view, setView] = useState<'edit' | 'delivery'>('edit')
   const [previewRevision, setPreviewRevision] = useState(0)
+  const [animaticError, setAnimaticError] = useState<string | null>(null)
   const latestDelivery = el?.deliveries?.[0]?.id
   const seenDelivery = useRef(latestDelivery)
   useEffect(() => {
@@ -533,7 +534,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             <button
               className="ui-btn ui-btn-quiet"
               type="button"
-              onClick={() => refreshAnimatic(engine, id)}
+              onClick={() => setAnimaticError(refreshAnimatic(engine, id))}
             >
               更新已有素材
             </button>
@@ -623,6 +624,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           )}
         </button>
       </ModalHeader>
+      {animaticError && (
+        <p role="alert" className="flex-none border-b border-line px-5 py-3 text-sm text-danger">
+          {animaticError}
+        </p>
+      )}
       {animatic && (
         <p className="px-4 text-xs text-muted">
           仅使用创建或更新时已有的分镜图、配音。调整时长与对白节奏只改变样片；原生成结果保留。
