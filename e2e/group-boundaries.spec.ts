@@ -238,3 +238,86 @@ test('分组右键菜单可发现解组入口，执行后可撤销恢复', async
   await page.getByRole('button', { name: '撤销', exact: true }).click()
   await expect.poll(() => snapshot(page)).toEqual(original)
 })
+
+test('快速连续复制嵌套分组，每次复制可独立撤销且内部层级保持完整', async ({ page }) => {
+  const ids = await setup(page, true)
+  const original = await page.evaluate((source) => {
+    const engine = window.__plein.engine as GroupEngine
+    const inner = [...engine.doc.elements()].find((el) => el.kind === 'frame')!.id
+    const third = window.__plein.addNode({
+      type: 'plein/image',
+      name: '外层子节点',
+      params: { model: 'plein/mock:image' },
+      x: 1400,
+      y: 300,
+    })
+    if (!window.__plein.connect([source, 'text'], [third, 'prompt']))
+      throw new Error('connect failed')
+    engine.selection.set([inner, third])
+    engine.groupSelection()
+    engine.doc.flush()
+    return [...engine.doc.elements()].length
+  }, ids.first)
+  const first = await page.evaluate(() => {
+    const engine = window.__plein.engine as GroupEngine & { duplicateSelection(): void }
+    engine.duplicateSelection()
+    const first = engine.selection.values()[0]!
+    engine.duplicateSelection()
+    return first
+  })
+  await expect.poll(async () => (await snapshot(page)).length).toBe(original * 3)
+  const copied = await snapshot(page)
+  const inspect = () =>
+    page.evaluate(() => {
+      const { engine } = window.__plein
+      const elements = [...engine.doc.elements()]
+      const roots = elements.filter((el) => el.parentId === null)
+      const rootOf = (id: string): string => {
+        const parent = engine.doc.get(id)?.parentId
+        return parent ? rootOf(parent) : id
+      }
+      return {
+        roots: roots.map((root) => ({
+          rect: engine.doc.worldRect(root.id),
+          direct: elements
+            .filter((el) => el.parentId === root.id)
+            .map((el) => el.kind)
+            .sort(),
+          nested: elements.filter((el) => el.id !== root.id && rootOf(el.id) === root.id).length,
+          edges: [...engine.doc.edges()].filter(
+            (edge) => rootOf(edge.from[0]) === root.id && rootOf(edge.to[0]) === root.id,
+          ).length,
+        })),
+        edges: [...engine.doc.edges()].length,
+      }
+    })
+  const structure = await inspect()
+  expect(structure.edges).toBe(3)
+  expect(structure.roots).toHaveLength(3)
+  for (const root of structure.roots) {
+    expect(root.direct).toEqual(['frame', 'node'])
+    expect(root.nested).toBe(4)
+    expect(root.edges).toBe(1)
+  }
+  const positions = structure.roots.map((root) => root.rect.x).sort((a, b) => a - b)
+  expect(positions).toEqual([positions[0], positions[0]! + 24, positions[0]! + 48])
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect.poll(async () => (await snapshot(page)).length).toBe(original * 2)
+  expect((await snapshot(page)).some((el) => el.id === first)).toBe(true)
+  await page.getByRole('button', { name: '重做', exact: true }).click()
+  await expect.poll(async () => (await snapshot(page)).length).toBe(original * 3)
+  expect(await snapshot(page)).toEqual(copied)
+  expect(await inspect()).toEqual(structure)
+  const top = await page.evaluate(() => {
+    const { engine } = window.__plein
+    const texts = [...engine.doc.elements()].filter((el) => el.name === '分组子一')
+    const top = texts.sort(
+      (a, b) => engine.doc.worldRect(b.id).x - engine.doc.worldRect(a.id).x,
+    )[0]!.id
+    engine.zoomToFit()
+    return top
+  })
+  await clickElement(page, top)
+  expect(await page.evaluate(() => window.__plein.engine.selection.values())).toEqual([top])
+  await page.screenshot({ path: test.info().outputPath('nested-copy-hit.png') })
+})
