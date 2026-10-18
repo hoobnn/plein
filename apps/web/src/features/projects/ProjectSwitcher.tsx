@@ -2,7 +2,7 @@ import type { Canvas } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../../api/client'
-import { cacheProject, invalidateProjects, queryKeys } from '../../api/query'
+import { cacheCanvas, cacheProject, invalidateProjects, queryKeys } from '../../api/query'
 import { navigate } from '../../router'
 import { useCanvas } from '../../stores/canvas'
 import { confirmDialog, promptDialog } from '../../ui/Dialog'
@@ -27,13 +27,7 @@ const captureCanvasVisit = (canvasId: string) => {
  * 页头的「项目 / 画布 ▾」：
  * 点项目名改名；画布下拉里切换同项目的其他画布、新建、改名、删除当前画布。
  */
-export function ProjectSwitcher({
-  canvas,
-  onCanvas,
-}: {
-  canvas: Canvas
-  onCanvas(c: Canvas): void
-}) {
+export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
   // 侧栏展开收起、切故事板时会换位置重新挂载，查询缓存里有上次读到的，项目名不会闪成「…」
   const project =
     useQuery({
@@ -103,20 +97,21 @@ export function ProjectSwitcher({
     }
   }
   const renameCanvas = async () => {
+    const isCurrent = captureCanvasVisit(canvas.id)
     close()
-    const title = await promptDialog({
+    await promptDialog({
       title: '重命名画布',
       defaultValue: canvas.title,
       placeholder: '画布名称',
+      maxLength: 200,
       confirmLabel: '保存',
+      onConfirm: async (title) => {
+        if (!isCurrent()) throw new Error('画布已切换，请关闭窗口后重新操作')
+        if (title === canvas.title) return
+        await cacheCanvas(await api.renameCanvas(canvas.id, title))
+        void invalidateProjects()
+      },
     })
-    if (!title || title === canvas.title) return
-    try {
-      onCanvas(await api.renameCanvas(canvas.id, title))
-      await invalidateProjects()
-    } catch (err) {
-      fail(err)
-    }
   }
   const removeCanvas = async () => {
     const isCurrent = captureCanvasVisit(canvas.id)

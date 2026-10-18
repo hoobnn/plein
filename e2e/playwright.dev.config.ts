@@ -14,6 +14,7 @@ export default defineConfig({
   testMatch: [
     'project-switcher-navigation.spec.ts',
     'project-switcher-list.spec.ts',
+    'canvas-rename-recovery.spec.ts',
     'project-rename-recovery.spec.ts',
     'project-delete-recovery.spec.ts',
     'project-list-recovery.spec.ts',

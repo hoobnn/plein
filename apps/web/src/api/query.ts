@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query'
-import type { Project } from '@plein/protocol'
+import type { Canvas, Project } from '@plein/protocol'
 import { ApiError } from './client'
 
 /**
@@ -22,6 +22,7 @@ export const queryKeys = {
   projects: ['projects'] as const,
   project: (id: string) => ['projects', id] as const,
   projectCanvases: (id: string) => ['projects', id, 'canvases'] as const,
+  canvas: (id: string) => ['canvases', id] as const,
   canvasJobs: (canvasId: string) => ['canvases', canvasId, 'jobs'] as const,
   groupItems: (groupId: string) => ['groups', groupId, 'items'] as const,
   capabilities: ['capabilities'] as const,
@@ -35,6 +36,19 @@ export function cacheProject(project: Project) {
   queryClient.setQueryData(queryKeys.project(project.id), project)
   queryClient.setQueryData<Project[]>(queryKeys.projects, (items) =>
     items?.map((item) => (item.id === project.id ? { ...item, ...project } : item)),
+  )
+}
+
+/** 当前页及切换后重新打开的页面都读取同一份已确认画布名称。 */
+export async function cacheCanvas(canvas: Canvas) {
+  await queryClient.cancelQueries({ queryKey: queryKeys.canvas(canvas.id), exact: true })
+  await queryClient.cancelQueries({
+    queryKey: queryKeys.projectCanvases(canvas.projectId),
+    exact: true,
+  })
+  queryClient.setQueryData(queryKeys.canvas(canvas.id), canvas)
+  queryClient.setQueryData<Canvas[]>(queryKeys.projectCanvases(canvas.projectId), (items) =>
+    items?.map((item) => (item.id === canvas.id ? { ...item, ...canvas } : item)),
   )
 }
 

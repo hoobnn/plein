@@ -1,4 +1,4 @@
-import type { Canvas } from '@plein/protocol'
+import { useQuery } from '@tanstack/react-query'
 import {
   useCallback,
   useEffect,
@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { api } from '../api/client'
+import { queryKeys } from '../api/query'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { placeStartNode } from '../canvas/start'
 import { CanvasMenus } from '../shell/CanvasMenus'
@@ -89,8 +90,13 @@ export function Editor({
       mode: s.mode,
     })),
   )
-  const [canvas, setCanvas] = useState<Canvas | null>(null)
   const canvasId = source.kind === 'remote' ? source.canvasId : null
+  const canvas =
+    useQuery({
+      queryKey: queryKeys.canvas(canvasId ?? ''),
+      queryFn: () => api.canvas(canvasId!),
+      enabled: !!canvasId,
+    }).data ?? null
 
   const engine = useCanvas((s) => s.engine)
   const catalog = useCatalog((s) => s.catalog)
@@ -100,7 +106,6 @@ export function Editor({
 
   useEffect(() => {
     if (!canvasId) return
-    api.canvas(canvasId).then(setCanvas, () => setCanvas(null))
     void useCatalog.getState().load()
     void useTemplates.getState().load()
     void useLibrary.getState().load()
@@ -189,7 +194,7 @@ export function Editor({
             /
           </span>
           {canvas ? (
-            <ProjectSwitcher canvas={canvas} onCanvas={setCanvas} />
+            <ProjectSwitcher canvas={canvas} />
           ) : (
             <span className="ui-bar-btn block max-w-60 truncate font-medium text-ink">
               {source.kind === 'demo' ? `演示（${source.count} 个元素）` : '…'}
