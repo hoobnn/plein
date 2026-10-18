@@ -119,20 +119,6 @@ export function AgentDock() {
     if (ready) void enter(canvasId)
   }, [ready, canvasId, enter])
 
-  // 面板浮在画布右侧：告诉相机右边被挡住多少，小满带你看结果时不会落在面板下面
-  const engine = useCanvas((s) => s.engine)
-  useEffect(() => {
-    if (!engine) return
-    const desktop = window.matchMedia('(min-width: 640px)')
-    const sync = () => engine.camera.setInsets({ right: open && desktop.matches ? 424 : 0 })
-    sync()
-    desktop.addEventListener('change', sync)
-    return () => {
-      desktop.removeEventListener('change', sync)
-      engine.camera.setInsets({ right: 0 })
-    }
-  }, [engine, open])
-
   // Esc 关闭面板（输入框里的 Esc 也算）
   useEffect(() => {
     if (!open) return

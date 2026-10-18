@@ -14,6 +14,7 @@ import {
 import type { Catalog } from '@plein/protocol'
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { useEngineVersion, useFollow } from '../../canvas/hooks'
+import { fitFloatingPanel } from '../../canvas/floatingPanel'
 import { adaptToModel, constrainFields, selectedModel } from '../../canvas/modelParams'
 import {
   applyAspect,
@@ -136,13 +137,10 @@ function placeBeside(engine: Engine, id: string, collapsed = false) {
   const preferBelow = below >= PREFER_BELOW || below >= above
   const availableHeight = Math.max(0, window.innerHeight - TOP_RESERVED - BOTTOM_RESERVED)
   const maxHeight = Math.min(availableHeight, Math.max(MIN_H, (preferBelow ? below : above) - GAP))
-  // 左边让开侧栏；可见区域不够宽时面板跟着变窄
+  // 让开两侧面板；可见区域不够宽时面板跟着变窄。
   const minLeft = engine.camera.insets.left + GAP
-  const width = Math.max(320, Math.min(PANEL_W, window.innerWidth - minLeft - GAP))
-  const left = Math.max(
-    minLeft,
-    Math.min((tl.x + br.x) / 2 - width / 2, window.innerWidth - width - GAP),
-  )
+  const right = window.innerWidth - engine.camera.insets.right - GAP
+  const { left, width } = fitFloatingPanel((tl.x + br.x) / 2, PANEL_W, minLeft, right)
   if (collapsed) {
     // 紧凑入口避开两侧端口所在的中线；展开由用户主动接管编辑。
     const portY = (tl.y + br.y) / 2

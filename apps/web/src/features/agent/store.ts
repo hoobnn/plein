@@ -290,6 +290,7 @@ export const useAgent = create<AgentStore>((set, get) => {
 
     toggle(open) {
       const next = open ?? !get().open
+      if (next) useCanvas.getState().toggleTasks(false)
       set({ open: next, ...(next ? { unread: false } : {}) })
       if (next && !get().status) void get().loadStatus()
     },

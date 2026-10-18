@@ -1,6 +1,13 @@
 import type { Engine } from '@plein/canvas-core'
 import type { PleinDoc } from '@plein/doc'
-import { type CSSProperties, useEffect, useRef, useSyncExternalStore } from 'react'
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+} from 'react'
 
 /** 订阅一组事件源，任一触发就递增版本号，驱动组件重渲染 */
 function useVersion(subscribe: (bump: () => void) => () => void) {
@@ -33,7 +40,7 @@ export function useEngineVersion(engine: Engine) {
 }
 
 /** 跟随时会改的定位属性；place 没给的清掉（面板在元素上方 / 下方之间切换时） */
-const FOLLOW_KEYS = ['top', 'left', 'right', 'bottom', 'width', 'maxHeight'] as const
+const FOLLOW_KEYS = ['top', 'left', 'right', 'bottom', 'width', 'maxWidth', 'maxHeight'] as const
 type FollowStyle = Pick<CSSProperties, (typeof FOLLOW_KEYS)[number]>
 
 /**
@@ -44,20 +51,33 @@ export function useFollow<T extends HTMLElement>(engine: Engine, place: () => Fo
   const ref = useRef<T>(null)
   const placeRef = useRef(place)
   placeRef.current = place
-  useEffect(
-    () =>
-      engine.onMove(() => {
-        const node = ref.current
-        const style = node && placeRef.current()
-        if (!node || !style) return
-        for (const key of FOLLOW_KEYS) {
-          const v = style[key]
-          const css = v === undefined ? '' : typeof v === 'number' ? `${v}px` : String(v)
-          if (node.style[key] !== css) node.style[key] = css
-        }
-      }),
-    [engine],
-  )
+  const sync = useCallback(() => {
+    const node = ref.current
+    const style = node && placeRef.current()
+    if (!node || !style) return
+    for (const key of FOLLOW_KEYS) {
+      const v = style[key]
+      const css = v === undefined ? '' : typeof v === 'number' ? `${v}px` : String(v)
+      if (node.style[key] !== css) node.style[key] = css
+    }
+  }, [])
+  useEffect(() => {
+    const offMove = engine.onMove(sync)
+    const offInsets = engine.camera.onInsetsChange(sync)
+    return () => {
+      offMove()
+      offInsets()
+    }
+  }, [engine, sync])
+  // 选区为空时没有 DOM；之后挂载或换行改变高度，也要立即重新放置。
+  useLayoutEffect(() => {
+    const node = ref.current
+    if (!node) return
+    sync()
+    const resize = new ResizeObserver(sync)
+    resize.observe(node)
+    return () => resize.disconnect()
+  })
   return ref
 }
 

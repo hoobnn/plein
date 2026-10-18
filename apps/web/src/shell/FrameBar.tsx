@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { groupNodes } from '../canvas/groups'
 import { hasShots, setShotGroup } from '../canvas/shotGroup'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
+import { fitFrameToolbar } from '../canvas/floatingPanel'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useGroupRuns } from '../features/runs/groupRuns'
@@ -15,9 +16,6 @@ import { Presence } from '../ui/Presence'
 import { cancelGroup, runFrame } from '../features/runs/run'
 import { saveAsTemplate } from '../features/templates/actions'
 import { ShotGroupPanel } from './ShotGroupPanel'
-
-/** 页头占的高度：Frame 顶到页头时工具条不压住它 */
-const TOP_RESERVED = 64
 
 /** Frame 预设色：写进元素的 color，GPU 渲染据此画底色和边框 */
 const COLORS: Array<{ label: string; value: string | undefined }> = [
@@ -51,12 +49,19 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
   const [shotsAt, setShotsAt] = useState<HTMLElement | null>(null)
   const ids = engine.selection.values()
   const el = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
-  const place = () => {
+  const place = (): { right: number; top: number; maxWidth: number } | null => {
     const rect = el?.kind === 'frame' ? engine.scene.rect(el.id) : undefined
     if (!rect) return null
     const tr = engine.worldToClient(rect.x + rect.w, rect.y)
-    // 贴在 Frame 右上角外侧，离 Frame 8；Frame 顶到页头时不压住页头
-    return { right: window.innerWidth - tr.x, top: Math.max(TOP_RESERVED, tr.y - 48) }
+    // 保持在两侧面板之间，窄窗口换行后仍在 Frame 上方。
+    return fitFrameToolbar(
+      tr,
+      {
+        width: ref.current?.offsetWidth ?? window.innerWidth,
+        height: ref.current?.offsetHeight ?? 40,
+      },
+      { width: window.innerWidth, ...engine.camera.insets },
+    )
   }
   const ref = useFollow<HTMLDivElement>(engine, place)
   const style = place()
@@ -78,7 +83,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
       ref={ref}
       aria-label="Frame 操作"
       style={style}
-      className="ui-bar ui-bar-sm pointer-events-auto fixed z-20"
+      className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 h-auto w-max flex-wrap"
     >
       <button
         type="button"

@@ -25,6 +25,7 @@ import { useRecoveryRequests } from './recoveryRequests'
 import { cancelRequestKey, groupCancelRequestKey, useCancelRequests } from './cancelRequests'
 import { Presence, useExit } from '../../ui/Presence'
 import { EmptyState } from '../../ui/EmptyState'
+import { useAgent } from '../agent/store'
 
 const STATUS: Record<JobInfo['status'], string> = {
   queued: '排队中',
@@ -122,6 +123,9 @@ export function Tasks() {
   const engine = useCanvas((s) => s.engine)
   const canvasId = useCanvas((s) => s.canvasId)
   const catalog = useCatalog((s) => s.catalog)
+  useEffect(() => {
+    if (open) useAgent.getState().toggle(false)
+  }, [open])
   const sig = useSyncExternalStore(
     (notify) => engine?.doc.subscribe(notify) ?? (() => {}),
     () => (engine ? runSignature(engine.doc) : ''),
