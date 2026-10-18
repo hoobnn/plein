@@ -21,6 +21,7 @@ import { FrameBar } from '../shell/FrameBar'
 import { Generator } from '../features/generator/Generator'
 import { History } from '../shell/History'
 import { ProjectSwitcher } from '../features/projects/ProjectSwitcher'
+import { CanvasInfo } from '../features/projects/CanvasInfo'
 import { ResultBar } from '../shell/ResultBar'
 import { Viewer } from '../shell/Viewer'
 import { SelectionBar } from '../shell/SelectionBar'
@@ -91,12 +92,12 @@ export function Editor({
     })),
   )
   const canvasId = source.kind === 'remote' ? source.canvasId : null
-  const canvas =
-    useQuery({
-      queryKey: queryKeys.canvas(canvasId ?? ''),
-      queryFn: () => api.canvas(canvasId!),
-      enabled: !!canvasId,
-    }).data ?? null
+  const canvasQuery = useQuery({
+    queryKey: queryKeys.canvas(canvasId ?? ''),
+    queryFn: () => api.canvas(canvasId!),
+    enabled: !!canvasId,
+  })
+  const canvas = canvasQuery.data ?? null
 
   const engine = useCanvas((s) => s.engine)
   const catalog = useCatalog((s) => s.catalog)
@@ -195,11 +196,12 @@ export function Editor({
           </span>
           {canvas ? (
             <ProjectSwitcher canvas={canvas} />
-          ) : (
+          ) : source.kind === 'demo' ? (
             <span className="ui-bar-btn block max-w-60 truncate font-medium text-ink">
-              {source.kind === 'demo' ? `演示（${source.count} 个元素）` : '…'}
+              {`演示（${source.count} 个元素）`}
             </span>
-          )}
+          ) : null}
+          {source.kind === 'remote' && <CanvasInfo query={canvasQuery} />}
           <SyncDot sync={sync} />
           <div className="ui-bar-sep" />
           <ModeSwitch />
