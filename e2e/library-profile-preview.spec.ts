@@ -63,6 +63,86 @@ async function save(panel: Locator) {
   await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
 }
 
+for (const kind of ['scene', 'prop'] as const) {
+  test(`${kind} 移除选中参考图立即回退，重新上传后保存与放入画布一致`, async ({ page }) => {
+    await newProject(page)
+    const [base, angle, other] = await images(page)
+    const name = `${kind} 参考图移除回退`
+    const created = await page.request.post('/api/library', {
+      data: {
+        kind,
+        name,
+        images: [
+          { slot: 'main', assetId: base },
+          { slot: 'angle', assetId: angle },
+          { slot: 'angle', assetId: other },
+        ],
+      },
+    })
+    expect(created.status()).toBe(201)
+    const item = await created.json()
+    await page.getByRole('button', { name: '资产库', exact: true }).click()
+    const panel = page.getByRole('dialog', { name: '资产库', exact: true })
+    await panel
+      .getByRole('button', { name: kind === 'scene' ? '场景' : '道具', exact: true })
+      .click()
+    await panel
+      .getByRole('group', { name: '范围' })
+      .getByRole('button', { name: '全部', exact: true })
+      .click()
+    await panel.getByRole('listitem').filter({ hasText: name }).getByRole('button').first().click()
+    await panel
+      .getByRole('list', { name: '参考图', exact: true })
+      .getByRole('button', { name: '多角度', exact: true })
+      .first()
+      .click()
+    await page.mouse.move(5, 5)
+    await hero(panel, angle!)
+    const fields = panel.locator('.ui-field').filter({ has: page.locator('input[type="file"]') })
+    const angleField = fields.filter({ hasText: '多角度' })
+    await angleField.getByRole('button', { name: '移除', exact: true }).nth(1).click()
+    await page.mouse.move(5, 5)
+    await hero(panel, angle!)
+    await angleField.getByRole('button', { name: '移除', exact: true }).click()
+    await page.mouse.move(5, 5)
+    await hero(panel, base!)
+    await expect(panel.locator('.lib-hero-caption')).not.toContainText('多角度')
+    const mainField = fields.filter({ hasText: kind === 'scene' ? '主场景图' : '主图' })
+    await mainField.getByRole('button', { name: '移除', exact: true }).click()
+    await expect(panel.locator('.lib-hero img')).toHaveCount(0)
+    await mainField.locator('input[type="file"]').setInputFiles(join(dir, 'green.png'))
+    await expect(mainField.getByRole('button', { name: '移除', exact: true })).toBeVisible()
+    await save(panel)
+    const saved = await (await page.request.get(`/api/library/${item.id}`)).json()
+    expect(saved.images).toHaveLength(1)
+    expect(saved.images[0].slot).toBe('main')
+    expect([base, angle]).not.toContain(saved.images[0].assetId)
+    await hero(panel, saved.images[0].assetId)
+    await panel.getByRole('button', { name: '返回', exact: true }).click()
+    await panel.getByRole('listitem').filter({ hasText: name }).getByRole('button').first().click()
+    await hero(panel, saved.images[0].assetId)
+    await panel.screenshot({
+      path: test.info().outputPath(`${kind}-reference-replaced.png`),
+      animations: 'disabled',
+    })
+    await panel.getByRole('button', { name: '添加到画布', exact: true }).click()
+    await expect(panel).not.toBeVisible()
+    await expect
+      .poll(() =>
+        page.evaluate((id) => {
+          const { doc } = window.__plein.engine
+          const card = [...doc.elements()].find((el) => el.params?.libraryId === id)
+          return card
+            ? [...doc.edges()]
+                .filter((edge) => edge.to[0] === card.id)
+                .map((edge) => doc.get(edge.from[0])?.assetId)
+            : []
+        }, item.id),
+      )
+      .toEqual([saved.images[0].assetId])
+  })
+}
+
 test('表情重命名同步大图标题，收起与删除后不残留旧预览', async ({ page }) => {
   await newProject(page)
   const [base, happy, sad] = await images(page)

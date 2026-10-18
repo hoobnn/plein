@@ -873,11 +873,14 @@ function Editor({
           return { ...current, images: [...retained, ...added] }
         })
       }
-      onRemove={(assetId) =>
-        patch({
-          images: draft.images.filter((i) => !(i.slot === slot.id && i.assetId === assetId)),
-        })
-      }
+      onRemove={(assetId) => {
+        setDraft((current) => ({
+          ...current,
+          images: current.images.filter((i) => !(i.slot === slot.id && i.assetId === assetId)),
+        }))
+        setPreview((current) => (current?.id === assetId ? null : current))
+        setPin((current) => (current.id === assetId ? { id: null } : current))
+      }}
     />
   )
 
