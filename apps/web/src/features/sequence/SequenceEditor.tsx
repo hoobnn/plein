@@ -26,10 +26,12 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
 } from 'react'
+import { flushSync } from 'react-dom'
 import { ApiError, api } from '../../api/client'
 import { downloadAsset } from '../../canvas/grid'
 import { useDocVersion } from '../../canvas/hooks'
@@ -726,6 +728,12 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           </div>
           <MediaReloadContext.Provider value={previewRevision}>
             <Timeline
+              onBeforeInteract={() => {
+                const active = document.activeElement
+                if (active instanceof HTMLElement && active.closest('.seq-inspector'))
+                  // 先提交字段并重算时间线，再处理选择／拖动，避免丢草稿或沿用旧起点。
+                  flushSync(() => active.blur())
+              }}
               items={items}
               total={timeline.total}
               music={
@@ -1355,6 +1363,85 @@ function Volume(props: {
   )
 }
 
+/** 必填秒数保留逐字草稿，回车／失焦后校验；不把清空过程当作 0。 */
+function RequiredSecondsField({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  onChange(value: number): void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const pending = useRef<string | null>(null)
+  const errorId = useId()
+  const closing = useClosing()
+  useLayoutEffect(() => {
+    pending.current = null
+    setDraft(null)
+    setError(null)
+    return () => {
+      pending.current = null
+    }
+  }, [value, closing])
+  const commit = () => {
+    const raw = pending.current
+    pending.current = null
+    setDraft(null)
+    if (raw === null || closing) return
+    const next = raw.trim() === '' ? NaN : Number(raw)
+    if (!Number.isFinite(next) || next < min || next > max) {
+      setError(`请输入 ${min}–${max} 秒，已保留原设置`)
+      return
+    }
+    setError(null)
+    if (next !== value) onChange(next)
+  }
+  return (
+    <label className="block space-y-1 text-xs">
+      <span>{label}</span>
+      <input
+        aria-label={label}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
+        className="ui-input w-full"
+        type="number"
+        required
+        min={min}
+        max={max}
+        step="0.1"
+        value={draft ?? value}
+        onChange={(e) => {
+          pending.current = e.currentTarget.value
+          setDraft(pending.current)
+          setError(null)
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            e.currentTarget.blur()
+          } else if (e.key === 'Escape') {
+            pending.current = null
+            setDraft(null)
+          }
+        }}
+      />
+      {error && (
+        <span id={errorId} role="alert" className="block text-danger">
+          {error}
+        </span>
+      )}
+    </label>
+  )
+}
+
 function AnimaticSettings({
   shot,
   index,
@@ -1380,22 +1467,14 @@ function AnimaticSettings({
           ['lineGap', '对白句间停顿（秒）', 0, 10],
         ] as const
       ).map(([key, label, min, max]) => (
-        <label className="block space-y-1 text-xs" key={key}>
-          <span>{label}</span>
-          <input
-            aria-label={label}
-            className="ui-input w-full"
-            type="number"
-            min={min}
-            max={max}
-            step="0.1"
-            value={shot[key]}
-            onChange={(e) => {
-              const value = Number(e.target.value)
-              if (Number.isFinite(value) && value >= min && value <= max) onChange({ [key]: value })
-            }}
-          />
-        </label>
+        <RequiredSecondsField
+          key={key}
+          label={label}
+          value={shot[key]}
+          min={min}
+          max={max}
+          onChange={(value) => onChange({ [key]: value })}
+        />
       ))}
       <p className="ui-help">超出镜头时长的对白会按镜头边界裁切，请在预览中检查节奏。</p>
       <div className="flex gap-2">

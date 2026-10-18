@@ -123,6 +123,7 @@ export function Timeline({
   onSelect,
   onMove,
   onTrim,
+  onBeforeInteract,
 }: {
   items: TrackItem[]
   total: number
@@ -134,6 +135,7 @@ export function Timeline({
   onMove(from: number, to: number): void
   /** 拖动中 done = false（只预览），松手时 done = true（写入） */
   onTrim(key: string, patch: TrimPatch, done: boolean): void
+  onBeforeInteract?(): void
 }) {
   const scroller = useRef<HTMLDivElement>(null)
   const head = useRef<HTMLDivElement>(null)
@@ -233,7 +235,7 @@ export function Timeline({
   for (let t = 0; t <= Math.max(total, 1) + 1e-6; t += step) ticks.push(t)
 
   return (
-    <section className="seq-timeline" aria-label="时间线">
+    <section className="seq-timeline" aria-label="时间线" onPointerDownCapture={onBeforeInteract}>
       <div className="seq-toolbar">
         <span className="seq-toolbar-hint">拖动镜头换顺序，拖两边修剪，⌘ / Ctrl + 滚轮缩放</span>
         <span className="ml-auto flex items-center gap-1">
