@@ -70,6 +70,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const [syncScope, setSyncScope] = useState<string[] | null>(null)
   const [batchRequest, setBatchRequest] = useState<StoryboardBatchRequest | null>(null)
   const [mode, setMode] = useState<'edit' | 'review'>('edit')
+  const [structureError, setStructureError] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const allCollapsed = shots.length > 0 && shots.every((s) => collapsed.has(s.id))
   const expanded = expandedNodes(engine, id)
@@ -92,12 +93,39 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       // 下拉触发器和菜单自己处理方向键、确认及 Esc，不能连带关闭分镜表。
       if (e.target instanceof Element && e.target.closest('.ui-select, .ui-menu')) return
       e.stopPropagation()
+      const target = e.target instanceof HTMLElement ? e.target : null
+      const typing =
+        target?.isContentEditable ||
+        target?.closest(
+          'input, textarea, select, audio, video, [role="textbox"], [role="combobox"]',
+        )
+      const key = e.key.toLowerCase()
+      const state = useCanvas.getState()
+      if (
+        !e.defaultPrevented &&
+        !e.altKey &&
+        (e.metaKey || e.ctrlKey) &&
+        (key === 'z' || key === 'y') &&
+        !typing &&
+        !syncScope &&
+        !batchRequest &&
+        !dialogOpen() &&
+        !engine.doc.readOnly &&
+        state.engine === engine &&
+        state.canvasId === canvasId &&
+        state.storyboard === id &&
+        target?.closest('[role="dialog"]')?.classList.contains('storyboard-editor')
+      ) {
+        e.preventDefault()
+        if (key === 'y' || e.shiftKey) engine.redo()
+        else engine.undo()
+      }
       // 差异面板或确认框开着时 Esc 关它们，不连带关掉表格
       if (e.key === 'Escape' && !syncScope && !batchRequest && !dialogOpen()) onClose()
     }
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
-  }, [onClose, syncScope, batchRequest])
+  }, [onClose, syncScope, batchRequest, engine, id, canvasId])
 
   const write = (next: Shot[]) => setParam(engine.doc, id, 'shots', next)
   const textValue = (
@@ -122,8 +150,14 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       ),
     )
   const addShot = () => {
+    setStructureError(null)
+    if (engine.doc.readOnly) {
+      setStructureError('画布已变为只读，本次添加未执行')
+      return
+    }
     const current = readShots()
     const no = (current.at(-1)?.no ?? 0) + 1
+    engine.doc.undo.stopCapturing()
     write([
       ...current,
       {
@@ -142,14 +176,35 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         edited: true,
       },
     ])
+    engine.doc.undo.stopCapturing()
   }
   /**
    * 删镜头：只从计划里去掉这一行。已经展开出来的节点和它们的产物留在画布上，
    * 只是标记成脱离计划、不再跟着表格更新；删行和标记在同一次撤销里。
    */
   const remove = async (shotId: string) => {
-    const nodes = expanded.get(shotId)?.length ?? 0
-    const no = shots.find((s) => s.id === shotId)?.no
+    const current = () => {
+      const state = useCanvas.getState()
+      return (
+        state.engine === engine &&
+        state.canvasId === canvasId &&
+        state.storyboard === id &&
+        engine.doc.get(id)?.nodeType === 'plein/storyboard'
+      )
+    }
+    if (!current()) return
+    setStructureError(null)
+    if (engine.doc.readOnly) {
+      setStructureError('画布已变为只读，本次删除未执行')
+      return
+    }
+    const shot = readShots().find((s) => s.id === shotId)
+    if (!shot) return
+    const nodeIds = () =>
+      (expandedNodes(engine, id).get(shotId) ?? []).map((node) => node.id).sort()
+    const snapshot = JSON.stringify([shot, nodeIds()])
+    const nodes = nodeIds().length
+    const no = shot.no
     if (nodes > 0) {
       const ok = await confirmDialog({
         title: `删除镜头 ${String(no ?? '').padStart(2, '0')}？`,
@@ -159,12 +214,24 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       })
       if (!ok) return
     }
+    // 确认框内等待期间仍可能收到协作编辑或重新展开，不能删除未经核对的新内容。
+    if (!current()) return
+    if (engine.doc.readOnly) {
+      setStructureError('画布已变为只读，本次删除未执行')
+      return
+    }
+    if (snapshot !== JSON.stringify([readShots().find((s) => s.id === shotId), nodeIds()])) {
+      setStructureError('镜头内容或展开结构已变化，本次删除未执行；请检查后重新删除')
+      return
+    }
     const next = dropShot(readShots(), shotId)
+    engine.doc.undo.stopCapturing()
     engine.doc.ydoc.transact(() => {
       setParam(engine.doc, id, 'shots', next.shots)
       detachShot(engine, id, shotId)
     }, engine.doc.origin)
     engine.doc.flush()
+    engine.doc.undo.stopCapturing()
     notify(nodes ? `已删除镜头，${nodes} 个节点保留在画布上（Ctrl+Z 可撤销）` : '已删除镜头')
   }
   const scope = picked.size ? `选中的 ${picked.size} 个镜头` : '全部镜头'
@@ -257,6 +324,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           添加镜头
         </button>
       </ModalHeader>
+      {structureError && (
+        <p role="alert" className="flex-none border-b border-line px-5 py-3 text-sm text-danger">
+          {structureError}
+        </p>
+      )}
       <div
         role="toolbar"
         aria-label="分镜批量操作"

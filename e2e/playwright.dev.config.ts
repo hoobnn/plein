@@ -105,6 +105,8 @@ export default defineConfig({
     'sequence-preview-lifecycle.spec.ts',
     'animatic-number-editing.spec.ts',
     'storyboard-text-collaboration.spec.ts',
+    'storyboard-structure.spec.ts',
+    'storyboard-editing.spec.ts',
     'storyboard-mention-navigation.spec.ts',
     'storyboard-dialogue-collaboration.spec.ts',
     'ime-editor.spec.ts',
