@@ -862,11 +862,15 @@ function Editor({
       disabled={busy || pendingUploads > 0}
       onBusyChange={trackUpload}
       onAdd={(ids) =>
-        patch({
-          images: [
-            ...(slot.multiple ? draft.images : draft.images.filter((i) => i.slot !== slot.id)),
-            ...ids.map((assetId) => ({ slot: slot.id, assetId })),
-          ],
+        setDraft((current) => {
+          const retained = slot.multiple
+            ? current.images
+            : current.images.filter((i) => i.slot !== slot.id)
+          const used = new Set(retained.map((image) => image.assetId))
+          const added = [...new Set(ids)]
+            .filter((id) => !used.has(id))
+            .map((assetId) => ({ slot: slot.id, assetId }))
+          return { ...current, images: [...retained, ...added] }
         })
       }
       onRemove={(assetId) =>
@@ -937,7 +941,12 @@ function Editor({
         </div>
       )}
       {!readOnly && !character && (
-        <div className="grid grid-cols-2 gap-4">{kind.slots.map(slotField)}</div>
+        <>
+          <div className="grid grid-cols-2 gap-4">{kind.slots.map(slotField)}</div>
+          {draft.images.length >= 24 && (
+            <p className="text-xs text-ink-subtle">已达到 24 张参考图上限，请先移除部分图片。</p>
+          )}
+        </>
       )}
       {kind.video && !readOnly && (
         <VideoField

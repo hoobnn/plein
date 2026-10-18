@@ -1,5 +1,5 @@
 import { Dialog } from '@base-ui/react/dialog'
-import type { ReactNode } from 'react'
+import { type ReactNode, useEffect, useRef } from 'react'
 import { Icon } from './icons'
 import { useClosing, useExit } from './Presence'
 
@@ -35,10 +35,29 @@ export function Modal({
 }) {
   const exit = useExit()
   const closing = useClosing()
+  const menuEscapes = useRef(new WeakSet<Event>())
+  useEffect(() => {
+    // 在 Base UI 的 document 监听之前记录归属；回调时菜单可能已经收起。
+    const capture = (event: KeyboardEvent) => {
+      if (
+        event.key === 'Escape' &&
+        !event.isComposing &&
+        document.querySelector('.ui-menu:not([data-closed]):not([data-closing])')
+      )
+        menuEscapes.current.add(event)
+    }
+    window.addEventListener('keydown', capture, true)
+    return () => window.removeEventListener('keydown', capture, true)
+  }, [])
   return (
     <Dialog.Root
       open={!closing}
-      onOpenChange={(open) => {
+      onOpenChange={(open, details) => {
+        // 同一个 Esc 只关闭按键开始时最上层的菜单，不影响之后退出父面板。
+        if (!open && details.reason === 'escape-key' && menuEscapes.current.has(details.event)) {
+          details.cancel()
+          return
+        }
         if (!open) onClose()
       }}
     >

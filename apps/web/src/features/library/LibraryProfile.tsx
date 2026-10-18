@@ -26,7 +26,8 @@ import {
 import type { CanvasMedia } from './canvas'
 import { Icon, type IconName } from '../../ui/icons'
 import { SlideSwap } from '../../ui/Slide'
-import { CanvasPick, thumb, uploadAll } from './LibraryFields'
+import { CanvasPick, thumb, uploadAll, UploadFeedback } from './LibraryFields'
+import type { UploadNotice } from './uploadBatch'
 import { Select } from '../../ui/Select'
 import { VoicePicker } from '../../ui/VoicePicker'
 
@@ -910,7 +911,7 @@ function ImageStrip({
 }) {
   const ref = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<UploadNotice | null>(null)
   const uploads = useContext(ProfileUploadContext)
   const room = PROFILE_LIMITS.images - images.length
   const add = (ids: string[]) =>
@@ -919,13 +920,13 @@ function ImageStrip({
     if (!files.length || busy || uploads.pending) return
     setBusy(true)
     uploads.onBusyChange(true)
-    setError(null)
+    setFeedback(null)
     try {
-      const ids = await uploadAll(files, 'image')
-      if (ids.length) add(ids)
-      else setError('只能放图片')
+      const result = await uploadAll(files, 'image', { capacity: room, used: images })
+      if (result.ids.length) add(result.ids)
+      setFeedback(result)
     } catch (err) {
-      setError((err as Error).message)
+      setFeedback({ message: (err as Error).message, failed: true })
     } finally {
       setBusy(false)
       uploads.onBusyChange(false)
@@ -967,21 +968,26 @@ function ImageStrip({
         )}
         {room > 0 && (
           <CanvasPick
+            disabled={busy || uploads.pending || room <= 0}
             media={media}
             type="image"
             multiple
             taken={images}
-            onPick={(id) => add([id])}
+            onPick={(id) => {
+              setFeedback(null)
+              add([id])
+            }}
           />
         )}
       </div>
-      {error && <span className="text-xs text-danger">{error}</span>}
+      <UploadFeedback value={feedback} />
       <input
         ref={ref}
         type="file"
         accept="image/*"
         multiple
         hidden
+        disabled={busy || uploads.pending || room <= 0}
         onChange={(e) => {
           const files = [...(e.target.files ?? [])]
           e.target.value = ''

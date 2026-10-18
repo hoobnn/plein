@@ -5,7 +5,8 @@ import { assetUrls } from '../../api/client'
 import { Icon, type IconName } from '../../ui/icons'
 import { Select } from '../../ui/Select'
 import type { CanvasMedia } from './canvas'
-import { CanvasPick, SlotField, thumb, uploadAll } from './LibraryFields'
+import { CanvasPick, SlotField, thumb, uploadAll, UploadFeedback } from './LibraryFields'
+import type { UploadNotice } from './uploadBatch'
 import { LibraryThumbnail } from './LibraryMedia'
 
 type ChangeImages = (update: (images: LibraryImage[]) => LibraryImage[]) => void
@@ -213,14 +214,14 @@ function CharacterAssetTile({
 }) {
   const input = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<UploadNotice | null>(null)
   const [imageRevision, setImageRevision] = useState(0)
   const [failedImage, setFailedImage] = useState<string | null>(null)
   const imageKey = `${assetId}:${imageRevision}`
   const currentImage = useRef(imageKey)
   currentImage.current = imageKey
   const selectImage = (id: string) => {
-    setError(null)
+    setFeedback(null)
     // 内容寻址的同图上传仍返回同一 id；明确选择也应重新尝试图片加载。
     setImageRevision((revision) => revision + 1)
     onAdd(id)
@@ -229,13 +230,14 @@ function CharacterAssetTile({
     if (busy || disabled) return
     setBusy(true)
     onBusyChange(true)
-    setError(null)
+    setFeedback(null)
     try {
-      const [id] = await uploadAll(files.slice(0, 1), 'image')
+      const result = await uploadAll(files, 'image', { capacity: 1 })
+      const [id] = result.ids
       if (id) selectImage(id)
-      else setError('请选择图片文件')
+      setFeedback(result)
     } catch (err) {
-      setError((err as Error).message)
+      setFeedback({ message: (err as Error).message, failed: true })
     } finally {
       setBusy(false)
       onBusyChange(false)
@@ -337,11 +339,7 @@ function CharacterAssetTile({
             </button>
           )}
         </div>
-        {error && (
-          <p role="alert" className="text-xs text-danger">
-            {error}
-          </p>
-        )}
+        <UploadFeedback value={feedback} />
       </div>
       <input
         ref={input}

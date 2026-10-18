@@ -7,6 +7,7 @@ import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
 import { Presence } from '../../ui/Presence'
 import { LibraryThumbnail, ReferenceVideo } from './LibraryMedia'
+import { uploadBatch, type UploadNotice } from './uploadBatch'
 
 /** 资产库编辑页的图片字段：上传、从画布选、槽位与参考视频 */
 
@@ -14,14 +15,23 @@ import { LibraryThumbnail, ReferenceVideo } from './LibraryMedia'
 export const thumb = (assetId: string) => assetUrls.variant(assetId, 'thumb-256')
 
 /** 上传文件进资产存储，返回资产 id；kind 不对的文件跳过 */
-export async function uploadAll(files: File[], want: 'image' | 'video') {
-  const out: string[] = []
-  for (const f of files) {
-    if (!f.type.startsWith(`${want}/`)) continue
-    const a = await api.upload(f)
-    out.push(a.id)
-  }
-  return out
+export function uploadAll(
+  files: File[],
+  want: 'image' | 'video',
+  options?: { capacity?: number; used?: string[] },
+) {
+  return uploadBatch(files, want, api.upload, options)
+}
+
+export function UploadFeedback({ value }: { value: UploadNotice | null }) {
+  return value?.message ? (
+    <span
+      role={value.failed ? 'alert' : 'status'}
+      className={`min-w-0 break-words text-xs ${value.failed ? 'text-danger' : 'text-ink-subtle'}`}
+    >
+      {value.message}
+    </span>
+  ) : null
 }
 
 /** 「从画布选」：列出当前画布上的图片 / 视频，单张槽位点一下就选中，多张槽位可以连续点 */
@@ -130,24 +140,28 @@ export function SlotField({
 }) {
   const ref = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<UploadNotice | null>(null)
+  const room = Math.max(0, 24 - used.length)
   const pick = async (files: File[]) => {
     if (busy || disabled) return
     setBusy(true)
     onBusyChange?.(true)
-    setError(null)
+    setFeedback(null)
     try {
-      const ids = await uploadAll(files, 'image')
-      if (ids.length) onAdd(slot.multiple ? ids : ids.slice(0, 1))
-      else setError('只能放图片')
+      const result = await uploadAll(files, 'image', {
+        capacity: slot.multiple ? room : Math.min(1, room),
+        used,
+      })
+      if (result.ids.length) onAdd(result.ids)
+      setFeedback(result)
     } catch (err) {
-      setError((err as Error).message)
+      setFeedback({ message: (err as Error).message, failed: true })
     } finally {
       setBusy(false)
       onBusyChange?.(false)
     }
   }
-  const canAdd = slot.multiple || images.length === 0
+  const canAdd = room > 0 && (slot.multiple || images.length === 0)
   return (
     <div className="ui-field">
       {/* 标签和提示只占一行：提示折行会把这一格的上传框挤下去，跟同一行另一格对不齐 */}
@@ -204,19 +218,20 @@ export function SlotField({
             multiple={!!slot.multiple}
             taken={used}
             onPick={(id) => {
-              setError(null)
+              setFeedback(null)
               onAdd([id])
             }}
           />
         )}
       </div>
-      {error && <span className="text-xs text-danger">{error}</span>}
+      <UploadFeedback value={feedback} />
       <input
         ref={ref}
         type="file"
         accept="image/*"
         multiple={slot.multiple}
         hidden
+        disabled={busy || disabled || !canAdd}
         onChange={(e) => {
           const files = [...(e.target.files ?? [])]
           e.target.value = ''
@@ -242,7 +257,7 @@ export function VideoField({
 }) {
   const ref = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<UploadNotice | null>(null)
   return (
     <div className="ui-field">
       <span className="ui-label">
@@ -279,13 +294,13 @@ export function VideoField({
             multiple={false}
             taken={[]}
             onPick={(id) => {
-              setError(null)
+              setFeedback(null)
               onChange(id)
             }}
           />
         </div>
       )}
-      {error && <span className="text-xs text-danger">{error}</span>}
+      <UploadFeedback value={feedback} />
       <input
         ref={ref}
         type="file"
@@ -298,13 +313,14 @@ export function VideoField({
           if (!files.length || busy || disabled) return
           setBusy(true)
           onBusyChange?.(true)
-          setError(null)
+          setFeedback(null)
           try {
-            const [id] = await uploadAll(files, 'video')
+            const result = await uploadAll(files, 'video', { capacity: 1 })
+            const [id] = result.ids
             if (id) onChange(id)
-            else setError('只能放视频')
+            setFeedback(result)
           } catch (err) {
-            setError((err as Error).message)
+            setFeedback({ message: (err as Error).message, failed: true })
           } finally {
             setBusy(false)
             onBusyChange?.(false)
