@@ -1,7 +1,9 @@
 import { expect, type Locator, type Page } from '@playwright/test'
+import type { DeliveryRecord } from '../packages/doc/src/delivery'
 
 /** e2e 构建在 window 上暴露的只读入口（见 apps/web/src/canvas/CanvasView.tsx），这里只声明用到的部分 */
 interface RawElement {
+  deliveries?: DeliveryRecord[]
   id: string
   kind: string
   name?: string

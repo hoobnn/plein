@@ -98,6 +98,7 @@ export default defineConfig({
     'single-download-recovery.spec.ts',
     'single-download-large.spec.ts',
     'animatic-delivery.spec.ts',
+    'delivery-feedback.spec.ts',
     'animatic-refresh.spec.ts',
     'animatic-navigation.spec.ts',
     'templates.spec.ts',

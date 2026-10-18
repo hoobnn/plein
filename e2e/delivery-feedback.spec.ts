@@ -1,0 +1,365 @@
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { expect, type Page, test } from '@playwright/test'
+import type { DeliveryRecord } from '../packages/doc/src/delivery'
+import { centerOf, newProject, zoomTo } from './canvas'
+
+let dir = ''
+test.beforeAll(() => {
+  dir = mkdtempSync(join(tmpdir(), 'plein-delivery-feedback-'))
+  for (const [name, color, duration] of [
+    ['old', 'blue', '2'],
+    ['new', 'green', '4'],
+  ])
+    execFileSync('ffmpeg', [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      `color=c=${color}:s=160x90:d=${duration}:r=10`,
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      join(dir, `${name}.mp4`),
+    ])
+})
+test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+async function fixture(page: Page) {
+  await newProject(page)
+  const assets: string[] = []
+  for (const name of ['old', 'new']) {
+    const response = await page.request.post('/api/assets', {
+      headers: { 'content-type': 'video/mp4', 'x-file-name': `${name}.mp4` },
+      data: readFileSync(join(dir, `${name}.mp4`)),
+    })
+    expect(response.status()).toBe(201)
+    assets.push((await response.json()).id)
+  }
+  const ids = await page.evaluate((assets) => {
+    const boards = [1, 2].map((n) =>
+      window.__plein.addNode({
+        type: 'plein/storyboard',
+        name: `交付来源${n}`,
+        x: n * 500,
+        y: 0,
+        params: { shots: [{ id: `shot-${n}`, no: n, duration: n * 2 }] },
+      }),
+    )
+    const id = window.__plein.addNode({
+      type: 'plein/sequence',
+      name: '交付反馈测试',
+      x: 300,
+      y: 700,
+      params: {},
+    })
+    const records: DeliveryRecord[] = [2, 1].map((n) => ({
+      id: `r${n}`,
+      resultId: `result-${n}`,
+      runId: `run-${n}`,
+      assetId: assets[n - 1]!,
+      kind: 'film',
+      version: `v${n}`,
+      createdAt: n * 1000,
+      width: 160,
+      height: 90,
+      duration: n * 2,
+      sources: [{ source: boards[n - 1]!, shotId: `shot-${n}`, start: 0, end: n * 2 }],
+      notes:
+        n === 1
+          ? [
+              {
+                id: 'first',
+                time: 0.5,
+                text: '第一条原始意见',
+                resolved: false,
+                source: boards[0],
+                shotId: 'shot-1',
+              },
+              {
+                id: 'second',
+                time: 1,
+                text: '第二条原始意见',
+                resolved: false,
+                source: boards[0],
+                shotId: 'shot-1',
+              },
+            ]
+          : [],
+    }))
+    ;(
+      window.__plein.engine.doc.mutable(id)! as unknown as {
+        set(key: string, value: unknown): void
+      }
+    ).set('deliveries', records)
+    return { id, boards }
+  }, assets)
+  await zoomTo(page, [ids.id])
+  const at = await centerOf(page, ids.id)
+  await page.mouse.dblclick(at.x, at.y)
+  const editor = page.getByRole('dialog', { name: '序列', exact: true })
+  await editor.getByRole('button', { name: '实际 MP4 回看 / 交付', exact: true }).click()
+  const panel = editor.locator('[aria-label="成片回看与交付"]')
+  const versions = panel.getByRole('combobox', { name: '交付版本', exact: true })
+  await versions.selectOption('r1')
+  const video = panel.getByLabel('实际导出 MP4', { exact: true })
+  await expect
+    .poll(() =>
+      video.evaluate((el: HTMLVideoElement) => el.readyState >= 2 && Number.isFinite(el.duration)),
+    )
+    .toBe(true)
+  const field = panel.getByRole('textbox', { name: '成片时间码意见', exact: true })
+  const add = panel.getByRole('button', { name: '在当前时间添加意见', exact: true })
+  const read = () =>
+    page.evaluate((id) => window.__plein.engine.doc.get(id)!.deliveries as DeliveryRecord[], ids.id)
+  return { ids, assets, editor, panel, versions, video, field, add, read }
+}
+
+test('新导出到达时保留正在回看的旧版本与意见草稿，添加仍绑定旧版时间码', async ({ page }) => {
+  const f = await fixture(page)
+  await f.field.fill('正在审阅旧版的意见')
+  await f.video.evaluate((video: HTMLVideoElement) => {
+    video.currentTime = 0.75
+  })
+  await page.evaluate((id) => {
+    const { doc } = window.__plein.engine
+    const records = doc.get(id)!.deliveries as DeliveryRecord[]
+    ;(doc.mutable(id)! as unknown as { set(key: string, value: unknown): void }).set('deliveries', [
+      { ...records[0]!, id: 'r3', resultId: 'result-3', version: 'v3', createdAt: 3000, notes: [] },
+      ...records,
+    ])
+  }, f.ids.id)
+  await expect(f.versions.getByRole('option', { name: /^v3/ })).toHaveCount(1)
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  )
+  await expect(f.versions).toHaveValue('r1')
+  await expect(f.field).toHaveValue('正在审阅旧版的意见')
+  await expect(f.video).toHaveAttribute('src', new RegExp(f.assets[0]!))
+  await f.add.click()
+  const records = await f.read()
+  expect(records.find((r) => r.id === 'r1')!.notes.at(-1)).toMatchObject({
+    text: '正在审阅旧版的意见',
+    time: 0.75,
+    source: f.ids.boards[0],
+    shotId: 'shot-1',
+  })
+  expect(records.find((r) => r.id === 'r3')!.notes).toEqual([])
+})
+
+test('不同交付版本的未提交草稿互不覆盖，保存一版不清除另一版草稿', async ({ page }) => {
+  const f = await fixture(page)
+  await f.field.fill('旧版草稿')
+  await f.versions.selectOption('r2')
+  await f.field.fill('新版草稿')
+  await f.versions.selectOption('r1')
+  await expect(f.field).toHaveValue('旧版草稿')
+  await f.add.click()
+  await expect(f.field).toHaveValue('')
+  await f.versions.selectOption('r2')
+  await expect(f.field).toHaveValue('新版草稿')
+  expect((await f.read()).find((r) => r.id === 'r2')!.notes).toEqual([])
+})
+
+for (const action of ['add', 'resolve', 'delete'] as const) {
+  test(`同帧 ${action} 意见合并最新列表，保留同伴新增与其他意见修改`, async ({ page }) => {
+    const f = await fixture(page)
+    await f.field.fill('本地新增意见')
+    const button =
+      action === 'add'
+        ? f.add
+        : action === 'resolve'
+          ? f.panel.getByRole('checkbox', { name: '已解决', exact: true }).first()
+          : f.panel.getByRole('button', { name: '删除', exact: true }).first()
+    await button.evaluate((button, id) => {
+      const { doc } = window.__plein.engine
+      const records = doc.get(id)!.deliveries as DeliveryRecord[]
+      ;(doc.mutable(id)! as unknown as { set(key: string, value: unknown): void }).set(
+        'deliveries',
+        records.map((r) =>
+          r.id === 'r1'
+            ? {
+                ...r,
+                notes: [
+                  ...r.notes.map((note) =>
+                    note.id === 'second' ? { ...note, text: '同伴修改的第二条' } : note,
+                  ),
+                  { id: 'remote', time: 1.5, text: '同伴新增意见', resolved: false },
+                ],
+              }
+            : r,
+        ),
+      )
+      ;(button as HTMLElement).click()
+    }, f.ids.id)
+    const notes = (await f.read()).find((r) => r.id === 'r1')!.notes
+    expect(notes.find((note) => note.id === 'remote')?.text).toBe('同伴新增意见')
+    expect(notes.find((note) => note.id === 'second')?.text).toBe('同伴修改的第二条')
+    if (action === 'add') expect(notes.at(-1)?.text).toBe('本地新增意见')
+    else if (action === 'resolve')
+      expect(notes.find((note) => note.id === 'first')?.resolved).toBe(true)
+    else expect(notes.some((note) => note.id === 'first')).toBe(false)
+  })
+}
+
+test('同帧修改目标意见后不盲目标记解决，核对更新内容后可重试', async ({ page }) => {
+  const f = await fixture(page)
+  const before = await f.panel
+    .getByRole('checkbox', { name: '已解决', exact: true })
+    .first()
+    .evaluate((checkbox, id) => {
+      const { doc } = window.__plein.engine
+      const records = (doc.get(id)!.deliveries as DeliveryRecord[]).map((r) =>
+        r.id === 'r1'
+          ? {
+              ...r,
+              notes: r.notes.map((note) =>
+                note.id === 'first' ? { ...note, text: '目标意见刚被改写' } : note,
+              ),
+            }
+          : r,
+      )
+      ;(doc.mutable(id)! as unknown as { set(key: string, value: unknown): void }).set(
+        'deliveries',
+        records,
+      )
+      ;(checkbox as HTMLInputElement).click()
+      return records
+    }, f.ids.id)
+  expect(await f.read()).toEqual(before)
+  await expect(f.panel.getByRole('alert')).toContainText('意见已变化')
+  await f.panel.getByRole('checkbox', { name: '已解决', exact: true }).first().check()
+  expect((await f.read()).find((r) => r.id === 'r1')!.notes[0]).toMatchObject({
+    text: '目标意见刚被改写',
+    resolved: true,
+  })
+})
+
+test('交付操作变为只读后保留草稿并说明原因，恢复后可保存', async ({ page }) => {
+  const f = await fixture(page)
+  await f.field.fill('只读拒绝后保留的草稿')
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await f.add.evaluate((button) => {
+    ;(
+      window.__plein.engine.doc as typeof window.__plein.engine.doc & { readOnly: boolean }
+    ).readOnly = true
+    ;(button as HTMLButtonElement).click()
+  })
+  expect(errors).toEqual([])
+  await expect(f.panel.getByRole('alert')).toContainText('只读')
+  await expect(f.field).toHaveValue('只读拒绝后保留的草稿')
+  await page.evaluate((id) => {
+    ;(
+      window.__plein.engine.doc as typeof window.__plein.engine.doc & { readOnly: boolean }
+    ).readOnly = false
+    ;(
+      window.__plein.engine.doc.mutable(id)! as unknown as {
+        set(key: string, value: unknown): void
+      }
+    ).set('name', '恢复写入的交付')
+  }, f.ids.id)
+  await f.add.click()
+  expect((await f.read()).find((r) => r.id === 'r1')!.notes.at(-1)?.text).toBe(
+    '只读拒绝后保留的草稿',
+  )
+})
+
+test('同 ID 导出内容替换时拒绝旧添加并保留草稿，新画面就绪后按新来源保存', async ({ page }) => {
+  const f = await fixture(page)
+  await f.field.fill('核对新版内容后保存')
+  const before = await f.add.evaluate((button, id) => {
+    const { doc } = window.__plein.engine
+    const records = doc.get(id)!.deliveries as DeliveryRecord[]
+    const next = records.map((r) =>
+      r.id === 'r1'
+        ? { ...r, assetId: records[0]!.assetId, duration: 4, sources: records[0]!.sources }
+        : r,
+    )
+    ;(doc.mutable(id)! as unknown as { set(key: string, value: unknown): void }).set(
+      'deliveries',
+      next,
+    )
+    ;(button as HTMLButtonElement).click()
+    return next
+  }, f.ids.id)
+  expect(await f.read()).toEqual(before)
+  await expect(f.panel.getByRole('alert')).toContainText('版本内容已变化')
+  await expect(f.field).toHaveValue('核对新版内容后保存')
+  await expect(f.video).toHaveAttribute('src', new RegExp(f.assets[1]!))
+  await expect
+    .poll(() => f.video.evaluate((video: HTMLVideoElement) => video.readyState >= 2))
+    .toBe(true)
+  await f.add.click()
+  expect((await f.read()).find((r) => r.id === 'r1')!.notes.at(-1)).toMatchObject({
+    text: '核对新版内容后保存',
+    source: f.ids.boards[1],
+    shotId: 'shot-2',
+  })
+})
+
+test('窄窗口实际 MP4 与版本意见均可查看和操作', async ({ page }) => {
+  const f = await fixture(page)
+  await page.setViewportSize({ width: 390, height: 700 })
+  await expect.poll(async () => (await f.video.boundingBox())?.width ?? 0).toBeGreaterThan(240)
+  await f.video.evaluate(async (video: HTMLVideoElement) => {
+    await video.play()
+    await new Promise<void>((resolve) => video.requestVideoFrameCallback(() => resolve()))
+    video.pause()
+  })
+  await f.editor.screenshot({
+    path: test.info().outputPath('delivery-narrow-video.png'),
+    animations: 'disabled',
+  })
+  await f.field.scrollIntoViewIfNeeded()
+  const text = '窄窗口意见 https://example.com/' + 'a'.repeat(200)
+  await f.field.fill(text)
+  await f.add.click()
+  const note = f.panel.getByText(text, { exact: true })
+  await note.scrollIntoViewIfNeeded()
+  await expect(note).toBeInViewport()
+  await expect(f.editor.getByRole('button', { name: '关闭', exact: true })).toBeInViewport()
+  expect(await f.panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+  await f.editor.screenshot({
+    path: test.info().outputPath('delivery-narrow-feedback.png'),
+    animations: 'disabled',
+  })
+})
+
+test('时间码跳转和来源删除提示可恢复，定位返工打开正确历史来源', async ({ page }) => {
+  const f = await fixture(page)
+  await f.panel.getByRole('button', { name: '00:00.5', exact: true }).click()
+  await expect
+    .poll(() => f.video.evaluate((video: HTMLVideoElement) => video.currentTime))
+    .toBe(0.5)
+  await page.evaluate((id) => {
+    const engine = window.__plein.engine as typeof window.__plein.engine & {
+      deleteSelection(): void
+      doc: { undo: { stopCapturing(): void } }
+    }
+    engine.doc.undo.stopCapturing()
+    engine.selection.set([id])
+    engine.deleteSelection()
+    engine.doc.undo.stopCapturing()
+  }, f.ids.boards[0]!)
+  await f.panel.getByRole('button', { name: '定位镜头返工', exact: true }).first().click()
+  await expect(f.panel.getByRole('alert')).toContainText('已不在画布')
+  await page.evaluate(() =>
+    (window.__plein.engine as typeof window.__plein.engine & { undo(): void }).undo(),
+  )
+  await f.panel.getByRole('button', { name: '定位镜头返工', exact: true }).first().click()
+  await expect(
+    page
+      .getByRole('dialog', { name: '分镜表', exact: true })
+      .getByRole('heading', { name: '交付来源1', exact: true }),
+  ).toBeVisible()
+})
