@@ -182,3 +182,62 @@ test('保存等待时继续编辑不丢掉新草稿，下一次保存提交最�
   const saved = await (await page.request.get('/api/library')).json()
   expect(saved.find((entry: { id: string }) => entry.id === item.id).name).toBe('保留的新名称')
 })
+
+test('关闭后重开同条目继续保存，旧应答不覆盖新草稿且写入按提交顺序完成', async ({ page }) => {
+  await newProject(page)
+  const canvas = await (
+    await page.request.get(`/api/canvases/${page.url().split('/').at(-1)}`)
+  ).json()
+  const item = await (
+    await page.request.post('/api/library', {
+      data: { kind: 'prop', name: '跨会话保存基线', projectId: canvas.projectId },
+    })
+  ).json()
+  const panel = page.getByRole('dialog', { name: '资产库', exact: true })
+  const open = async () => {
+    await page.getByRole('button', { name: '资产库', exact: true }).click()
+    await panel.getByRole('button', { name: '道具', exact: true }).click()
+    await panel.locator(`[data-library-id="${item.id}"]`).getByRole('button').first().click()
+  }
+  await open()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const submitted: string[] = []
+  await page.route(`**/api/library/${item.id}`, async (route) => {
+    if (route.request().method() !== 'PATCH') return route.continue()
+    submitted.push(route.request().postDataJSON().name)
+    if (submitted.length === 1) await gate
+    await route.continue()
+  })
+  const name = panel.getByRole('textbox', { name: '名称', exact: true })
+  try {
+    await name.fill('旧会话已提交')
+    await panel.getByRole('button', { name: '保存', exact: true }).click()
+    await expect.poll(() => submitted.length).toBe(1)
+    await panel.getByRole('button', { name: '关闭', exact: true }).click()
+    await expect(panel).toBeHidden()
+    await open()
+    await name.fill('新会话已提交')
+    await panel.getByRole('button', { name: '保存', exact: true }).click()
+    await expect(panel.getByRole('status')).toContainText('正在处理')
+    expect(submitted).toEqual(['旧会话已提交'])
+    await name.fill('新会话尚未提交')
+    release()
+    await expect(panel.getByRole('status')).toHaveCount(0)
+    await expect(name).toHaveValue('新会话尚未提交')
+    expect(submitted).toEqual(['旧会话已提交', '新会话已提交'])
+    expect((await (await page.request.get(`/api/library/${item.id}`)).json()).name).toBe(
+      '新会话已提交',
+    )
+    await panel.getByRole('button', { name: '保存', exact: true }).click()
+    await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
+    expect((await (await page.request.get(`/api/library/${item.id}`)).json()).name).toBe(
+      '新会话尚未提交',
+    )
+    expect(submitted).toHaveLength(3)
+  } finally {
+    release()
+  }
+})
