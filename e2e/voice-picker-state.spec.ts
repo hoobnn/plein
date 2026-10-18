@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { clickElement, newProject } from './canvas'
+import { clickElement, newProject, waitNode } from './canvas'
 
 for (const initial of ['mock-female', 'initial-custom']) {
   test(`角色音色从 ${initial} 跟随外部切换，默认选择可以撤销恢复`, async ({ page }) => {
@@ -103,4 +103,37 @@ test('手动自定义音色清空或输入预置 ID 时保持编辑入口', asyn
   expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.voice, id)).toEqual(
     { provider: 'plein/mock', voiceId: 'mock-female' },
   )
+})
+
+test('复制空白的音色在界面、生成预检与实际配音执行中保持一致', async ({ page }) => {
+  await newProject(page)
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/speech',
+      name: '复制音色配音',
+      x: 400,
+      y: 200,
+      params: {
+        model: 'plein/mock:audio',
+        text: '这是音色边界检查。',
+        voice: { provider: ' plein/mock ', voiceId: ' mock-female\t' },
+      },
+    }),
+  )
+  await clickElement(page, id)
+  await page.getByRole('button', { name: '参数', exact: true }).click()
+  await page.getByRole('button', { name: '更多参数', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: '音色', exact: true })).toContainText('Mock 女声')
+  const canvas = /#\/c\/([^/?]+)/.exec(page.url())![1]
+  const endpoint = `/api/canvases/${canvas}/nodes/${id}`
+  const prepared = await (await page.request.get(`${endpoint}/input`)).json()
+  expect(prepared.voice).toEqual({ provider: 'plein/mock', voiceId: 'mock-female' })
+  const response = await page.request.post(`${endpoint}/run`, {
+    data: { expect: prepared.inputHash },
+  })
+  expect(response.status()).toBe(202)
+  await waitNode(page, id)
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.get(id)!.results!.length, id),
+  ).toBeGreaterThan(0)
 })

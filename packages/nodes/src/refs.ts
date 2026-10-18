@@ -11,8 +11,8 @@ import { z } from 'zod'
 /** 音色引用：属于哪个平台、用哪个音色 ID */
 export const VoiceRef = z.object({
   /** Provider id，形如 `vendor/name`；空字符串表示「未指定平台」，只作展示与手动填写 */
-  provider: z.string().default(''),
-  voiceId: z.string().default(''),
+  provider: z.string().trim().default(''),
+  voiceId: z.string().trim().default(''),
 })
 export type VoiceRef = z.infer<typeof VoiceRef>
 

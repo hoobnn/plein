@@ -46,6 +46,30 @@ describe('分镜语气与配音模型能力', () => {
     } as unknown as ExecutorContext
     return { ctx, submit, model }
   }
+  it('历史音色复制空白在调用前归一，空白 ID 使用默认，其他平台仍阻断', async () => {
+    for (const voice of [
+      { provider: ' minimax/api\n', voiceId: '\t copied-voice \u3000' },
+      { provider: 'minimax/api', voiceId: '  ' },
+    ]) {
+      const f = fixture('')
+      // 不先 parse，覆盖历史画布读取路径。
+      f.ctx.params.voice = voice
+      await speech.run(f.ctx)
+      expect(f.submit).toHaveBeenCalledWith(
+        'audio.speech',
+        f.model,
+        expect.objectContaining({ voice: voice.voiceId.trim() || undefined }),
+      )
+      expect(speechNode.params.parse(f.ctx.params).voice).toEqual({
+        provider: voice.provider.trim(),
+        voiceId: voice.voiceId.trim(),
+      })
+    }
+    const other = fixture('')
+    other.ctx.params.voice = { provider: ' other/provider ', voiceId: ' copied-voice ' }
+    await expect(speech.run(other.ctx)).rejects.toMatchObject({ code: 'invalid_input' })
+    expect(other.submit).not.toHaveBeenCalled()
+  })
   it('MiniMax 仅把官方情绪标签精确映射为 emotion，在 host.call 前完成', async () => {
     for (const [instruction, emotion] of [
       ['高兴', 'happy'],

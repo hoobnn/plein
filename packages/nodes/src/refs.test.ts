@@ -9,6 +9,12 @@ describe('音色引用', () => {
       { voice: { provider: 'a/b', voiceId: 'v' } },
       { provider: 'a/b', voiceId: 'v' },
     ],
+    [
+      '新版引用清理复制时附带的空白',
+      { voice: { provider: ' a/b\n', voiceId: '\t v \u3000' } },
+      { provider: 'a/b', voiceId: 'v' },
+    ],
+    ['空白引用归一为空串', { voice: { provider: '  ', voiceId: '\n\t' } }, noVoice],
     ['缺字段补空串', { voice: { voiceId: 'v' } }, { provider: '', voiceId: 'v' }],
     ['没有音色', {}, noVoice],
     ['参数为空', null, noVoice],
