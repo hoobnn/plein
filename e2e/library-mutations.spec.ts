@@ -51,6 +51,16 @@ test('删除等待期间锁定编辑操作，失败后保留内容并可重试',
     resume()
   }
   await expect(panel.getByRole('alert')).toContainText('删除暂不可用')
+  const name = panel.getByRole('textbox', { name: '名称', exact: true })
+  await expect(name).toBeInViewport({ ratio: 1 })
+  expect(
+    await name.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      return (
+        document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === element
+      )
+    }),
+  ).toBe(true)
   await panel.screenshot({
     path: test.info().outputPath('library-delete-error.png'),
     animations: 'disabled',

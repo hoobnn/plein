@@ -427,11 +427,11 @@
   .lib-editor-content.is-character {
     grid-template-columns: minmax(0, 1fr);
   }
-  .lib-editor-content.is-character .lib-hero-col {
+  .lib-editor-content .lib-hero-col {
     position: static;
   }
-  .lib-editor-content.is-character .lib-hero {
-    height: 240px;
+  .lib-editor-content .lib-hero {
+    height: clamp(120px, 28dvh, 240px);
     aspect-ratio: auto;
   }
 }
