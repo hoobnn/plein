@@ -87,7 +87,9 @@ for (const mode of ['removed', 'replaced', 'deleted', 'readonly', 'normal'] as c
         { id, selected: before.results[1]!, first: before.results[0]!, mode },
       )
       if (mode === 'deleted') {
-        expect(await page.evaluate(() => window.__plein.engine.selection.values())).toEqual([])
+        await expect
+          .poll(() => page.evaluate(() => window.__plein.engine.selection.values()))
+          .toEqual([])
         await expect(viewer).toBeVisible()
         await expect(viewer.getByRole('alert')).toContainText('本次定位未执行')
         await viewer.screenshot({
