@@ -225,7 +225,13 @@ export function AddMenu({
           // oxlint-disable-next-line jsx-a11y/no-autofocus -- 弹出即可打字搜索
           autoFocus
           value={query}
-          placeholder={from ? `连接「${from.port.label}」` : '添加节点'}
+          placeholder={
+            from
+              ? `连接「${handlePorts(engine, from)
+                  .map((port) => port.label)
+                  .join(' / ')}」`
+              : '添加节点'
+          }
           aria-label="搜索节点"
           onChange={(e) => {
             setQuery(e.target.value)

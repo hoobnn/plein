@@ -1,6 +1,37 @@
 import { expect, test } from '@playwright/test'
 import { clickElement, deselect, edgesInto, elements, handleOf, newProject } from './canvas'
 
+test('视频共用连接点列出视频和尾帧，创建序列连接主视频输出', async ({ page }) => {
+  await newProject(page)
+  const source = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/video',
+      name: '多输出连接来源',
+      params: {},
+      x: 400,
+      y: 200,
+    }),
+  )
+  await clickElement(page, source)
+  await deselect(page)
+  const point = await handleOf(page, source, 'out')
+  await page.mouse.move(point.x, point.y)
+  await page.mouse.down()
+  await page.mouse.move(1150, 500, { steps: 5 })
+  await page.mouse.up()
+  const menu = page.getByRole('dialog', { name: '添加节点', exact: true })
+  const search = menu.getByRole('textbox', { name: '搜索节点' })
+  await expect(search).toHaveAttribute('placeholder', '连接「视频 / 尾帧」')
+  await search.fill('序列')
+  await menu.getByRole('option', { name: '序列', exact: true }).click()
+  const target = (await elements(page)).find((el) => el.nodeType === 'plein/sequence')!
+  await expect.poll(() => edgesInto(page, target.id)).toEqual([[source, 'video', 'clips']])
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect.poll(async () => (await elements(page)).length).toBe(1)
+  await page.getByRole('button', { name: '重做', exact: true }).click()
+  await expect.poll(() => edgesInto(page, target.id)).toEqual([[source, 'video', 'clips']])
+})
+
 for (const resize of [false, true]) {
   test(`添加节点菜单${resize ? '打开后缩小窗口' : '在低高度窗口打开'}，搜索和候选均可操作`, async ({
     page,
