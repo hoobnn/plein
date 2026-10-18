@@ -275,6 +275,7 @@ export class ExternalPlugins {
   /** 重新读目录：新放进来的出现，删掉的（没在运行的）消失；已在运行的不动 */
   scan() {
     const seen = new Set<string>()
+    const previousIds = new Map([...this.found.values()].map((f) => [f.dir, f.id]))
     const dirs = existsSync(this.root)
       ? readdirSync(this.root, { withFileTypes: true }).filter((d) => d.isDirectory())
       : []
@@ -292,7 +293,8 @@ export class ExternalPlugins {
       } catch (err) {
         error = `清单读不出来：${(err as Error).message}`
       }
-      const id = manifest?.id ?? d.name
+      // 已知插件的坏清单不能把身份换成目录名，否则重载后无法再停用或恢复。
+      const id = manifest?.id ?? previousIds.get(dir) ?? d.name
       seen.add(id)
       const prev = this.found.get(id)
       if (prev?.proc) continue
@@ -365,7 +367,6 @@ export class ExternalPlugins {
     const f = this.found.get(id)
     if (!f) return null
     this.stop(f)
-    this.found.delete(id)
     this.scan()
     const next = this.found.get(id)
     if (!next) return null

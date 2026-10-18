@@ -62,3 +62,37 @@ describe('插件读取状态', () => {
     expect(html).not.toContain('正在读取本机插件')
   })
 })
+
+it('已启用但清单不可读的插件仍可停用，错误可被辅助技术识别', () => {
+  const html = render([
+    {
+      id: 'acme/echo',
+      name: 'acme/echo',
+      version: '',
+      dir: '/tmp/plugin',
+      enabled: true,
+      status: 'error',
+      error: '清单读不出来',
+    },
+  ])
+  expect(html).toContain('role="switch"')
+  expect(html).toContain('aria-checked="true"')
+  expect(html).toContain('role="alert"')
+  expect(html).toContain('重新加载')
+})
+
+it('未启用且清单不可读时不能越过缺失权限声明直接启用', () => {
+  const html = render([
+    {
+      id: 'broken',
+      name: 'broken',
+      version: '',
+      dir: '/tmp/plugin',
+      enabled: false,
+      status: 'error',
+      error: '清单读不出来',
+    },
+  ])
+  expect(html).not.toContain('role="switch"')
+  expect(html).not.toContain('重新加载')
+})

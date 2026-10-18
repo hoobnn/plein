@@ -155,7 +155,7 @@ export function LocalPlugins() {
                       {p.author && ` · ${p.author}`}
                     </span>
                   </span>
-                  {p.permissions && (
+                  {(p.permissions || p.enabled) && (
                     <Switch
                       label={`启用 ${p.name}`}
                       checked={p.enabled}
@@ -185,7 +185,11 @@ export function LocalPlugins() {
                     <span className="min-w-0">{iso.hint}</span>
                   </p>
                 )}
-                {p.error && <p className="text-xs break-words text-danger">{p.error}</p>}
+                {p.error && (
+                  <p role="alert" className="text-xs break-words text-danger">
+                    {p.error}
+                  </p>
+                )}
                 {p.enabled && (
                   <div>
                     <button

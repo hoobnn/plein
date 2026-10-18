@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
@@ -127,4 +127,41 @@ describe('本机第三方插件', () => {
       text: [{ type: 'text', text: 'OK!' }],
     })
   }, 30_000)
+})
+
+it.each(['reload', 'disable'] as const)('损坏清单后保留插件身份，可 %s 恢复', async (action) => {
+  const manifest = join(root, 'acme-echo', 'plein-plugin.json')
+  const original = readFileSync(manifest, 'utf8')
+  try {
+    await plugins.setEnabled('acme/echo', true)
+    writeFileSync(manifest, '{ invalid json')
+    const broken = await plugins.reload('acme/echo')
+    expect(broken).toMatchObject({ id: 'acme/echo', enabled: true, status: 'error' })
+    expect(broken?.error).toContain('清单读不出来')
+    expect(plugins.list().some((plugin) => plugin.id === 'acme-echo')).toBe(false)
+    expect(host.registry.latestNode('acme/shout')).toBeUndefined()
+    if (action === 'disable') {
+      expect(await plugins.setEnabled('acme/echo', false)).toMatchObject({
+        enabled: false,
+        status: 'error',
+      })
+    }
+    writeFileSync(manifest, original)
+    if (action === 'reload')
+      expect(await plugins.reload('acme/echo')).toMatchObject({ enabled: true, status: 'active' })
+    else {
+      plugins.scan()
+      expect(await plugins.setEnabled('acme/echo', true)).toMatchObject({
+        enabled: true,
+        status: 'active',
+      })
+    }
+    expect(await run('acme/shout', { text: 'repaired' })).toEqual({
+      text: [{ type: 'text', text: 'REPAIRED!' }],
+    })
+  } finally {
+    writeFileSync(manifest, original)
+    plugins.scan()
+    await plugins.setEnabled('acme/echo', false)
+  }
 })

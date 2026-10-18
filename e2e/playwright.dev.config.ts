@@ -52,6 +52,7 @@ export default defineConfig({
     'mcp-recovery.spec.ts',
     'mcp.spec.ts',
     'plugins-recovery.spec.ts',
+    'plugins-manifest-recovery.spec.ts',
     'plugins.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
