@@ -6,7 +6,7 @@ import {
   type DeliveryNote,
   type DeliveryRecord,
 } from '@plein/doc'
-import { useEffect, useRef, useState } from 'react'
+import { type RefObject, useEffect, useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { AssetDownloadButton } from '../../shell/AssetDownloadButton'
 import { useCanvas } from '../../stores/canvas'
@@ -163,14 +163,10 @@ export function DeliveryReview({ engine, node }: { engine: Engine; node: CanvasE
       aria-label="成片回看与交付"
     >
       <div className="min-w-0 flex-none lg:flex-1">
-        {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 实际导出的字幕已烧录在画面内 */}
-        <video
-          key={record.id}
-          ref={video}
+        <DeliveryVideo
+          key={recordIdentity(record)}
+          video={video}
           src={assetUrls.original(record.assetId)}
-          controls
-          className="max-h-[65vh] w-full bg-black"
-          aria-label="实际导出 MP4"
         />
         <p className="mt-2 text-xs text-ink-subtle">
           实际导出 · {record.kind === 'animatic' ? '样片 / 草稿' : '成片'} · {record.version} ·{' '}
@@ -314,5 +310,51 @@ export function DeliveryReview({ engine, node }: { engine: Engine; node: CanvasE
         )}
       </aside>
     </div>
+  )
+}
+
+function DeliveryVideo({ src, video }: { src: string; video: RefObject<HTMLVideoElement | null> }) {
+  const [attempt, setAttempt] = useState(0)
+  return (
+    <DeliveryVideoAttempt
+      key={attempt}
+      src={src}
+      video={video}
+      onRetry={() => setAttempt((n) => n + 1)}
+    />
+  )
+}
+
+/** 来源变化或重试时重新挂载，避免旧视频事件污染当前版本的错误状态。 */
+function DeliveryVideoAttempt({
+  src,
+  video,
+  onRetry,
+}: {
+  src: string
+  video: RefObject<HTMLVideoElement | null>
+  onRetry(): void
+}) {
+  const [failed, setFailed] = useState(false)
+  return (
+    <>
+      {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 实际导出的字幕已烧录在画面内 */}
+      <video
+        ref={video}
+        src={src}
+        controls
+        onError={() => setFailed(true)}
+        className="max-h-[65vh] w-full bg-black"
+        aria-label="实际导出 MP4"
+      />
+      {failed && (
+        <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-sm text-danger">
+          <span>实际 MP4 加载失败，请重新加载后继续回看。</span>
+          <button type="button" className="ui-btn ui-btn-secondary ui-btn-sm" onClick={onRetry}>
+            重新加载实际 MP4
+          </button>
+        </div>
+      )}
+    </>
   )
 }

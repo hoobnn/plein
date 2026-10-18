@@ -7,6 +7,80 @@ import type { DeliveryRecord } from '../packages/doc/src/delivery'
 import { centerOf, newProject, zoomTo } from './canvas'
 
 let dir = ''
+
+test('实际 MP4 加载失败可连续重试，恢复播放保留版本草稿和交付记录', async ({ page }) => {
+  let fail = true
+  let requests = 0
+  const f = await fixture(page, async (assets) => {
+    await page.route(`**/api/assets/${assets[0]}`, (route) => {
+      requests++
+      return fail ? route.fulfill({ status: 503, body: 'unavailable' }) : route.continue()
+    })
+  })
+  const original = await f.read()
+  await f.field.fill('加载恢复后继续检查')
+  const alert = f.panel.getByRole('alert').filter({ hasText: '实际 MP4 加载失败' })
+  await expect(alert).toBeVisible()
+  const retry = alert.getByRole('button', { name: '重新加载实际 MP4', exact: true })
+  const firstRequests = requests
+  await retry.focus()
+  await retry.press('Space')
+  await expect.poll(() => requests).toBeGreaterThan(firstRequests)
+  await expect(alert).toBeVisible()
+  await f.editor.screenshot({ path: test.info().outputPath('delivery-video-failed.png') })
+  fail = false
+  await retry.click()
+  await expect(alert).toHaveCount(0)
+  await expect
+    .poll(() => f.video.evaluate((v: HTMLVideoElement) => v.readyState))
+    .toBeGreaterThanOrEqual(2)
+  await f.video.evaluate(async (v: HTMLVideoElement) => {
+    await v.play()
+  })
+  await expect
+    .poll(() => f.video.evaluate((v: HTMLVideoElement) => v.currentTime))
+    .toBeGreaterThan(0)
+  await f.video.evaluate((v: HTMLVideoElement) => v.pause())
+  await expect(f.field).toHaveValue('加载恢复后继续检查')
+  await expect(f.versions).toHaveValue('r1')
+  expect(await f.read()).toEqual(original)
+})
+
+test('失败版本切换到可播放版本后清理错误，返回仍可重试且分版保留草稿', async ({ page }) => {
+  const f = await fixture(page, async (assets) => {
+    await page.route(`**/api/assets/${assets[0]}`, (route) =>
+      route.fulfill({ status: 503, body: 'unavailable' }),
+    )
+  })
+  const original = await f.read()
+  await page.setViewportSize({ width: 390, height: 700 })
+  await expect(f.panel.getByRole('alert')).toContainText('实际 MP4 加载失败')
+  await expect(
+    f.panel.getByRole('button', { name: '重新加载实际 MP4', exact: true }),
+  ).toBeInViewport()
+  await f.editor.screenshot({ path: test.info().outputPath('delivery-video-narrow-failed.png') })
+  await f.field.fill('失败版草稿')
+  await f.versions.selectOption('r2')
+  await expect(f.panel.getByRole('alert')).toHaveCount(0)
+  await expect
+    .poll(() => f.video.evaluate((v: HTMLVideoElement) => v.readyState))
+    .toBeGreaterThanOrEqual(2)
+  await f.video.evaluate(async (v: HTMLVideoElement) => {
+    await v.play()
+  })
+  await expect
+    .poll(() => f.video.evaluate((v: HTMLVideoElement) => v.currentTime))
+    .toBeGreaterThan(0)
+  await f.field.fill('可播放版草稿')
+  await f.versions.selectOption('r1')
+  await expect(f.panel.getByRole('alert')).toContainText('实际 MP4 加载失败')
+  await expect(f.field).toHaveValue('失败版草稿')
+  await f.versions.selectOption('r2')
+  await expect(f.field).toHaveValue('可播放版草稿')
+  await expect(f.panel.getByRole('alert')).toHaveCount(0)
+  expect(await f.read()).toEqual(original)
+})
+
 test.beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'plein-delivery-feedback-'))
   for (const [name, color, duration] of [
@@ -31,7 +105,7 @@ test.beforeAll(() => {
 })
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
-async function fixture(page: Page) {
+async function fixture(page: Page, beforeOpen?: (assets: string[]) => Promise<void>) {
   await newProject(page)
   const assets: string[] = []
   for (const name of ['old', 'new']) {
@@ -100,6 +174,7 @@ async function fixture(page: Page) {
     ).set('deliveries', records)
     return { id, boards }
   }, assets)
+  await beforeOpen?.(assets)
   await zoomTo(page, [ids.id])
   const at = await centerOf(page, ids.id)
   await page.mouse.dblclick(at.x, at.y)
@@ -109,11 +184,14 @@ async function fixture(page: Page) {
   const versions = panel.getByRole('combobox', { name: '交付版本', exact: true })
   await versions.selectOption('r1')
   const video = panel.getByLabel('实际导出 MP4', { exact: true })
-  await expect
-    .poll(() =>
-      video.evaluate((el: HTMLVideoElement) => el.readyState >= 2 && Number.isFinite(el.duration)),
-    )
-    .toBe(true)
+  if (!beforeOpen)
+    await expect
+      .poll(() =>
+        video.evaluate(
+          (el: HTMLVideoElement) => el.readyState >= 2 && Number.isFinite(el.duration),
+        ),
+      )
+      .toBe(true)
   const field = panel.getByRole('textbox', { name: '成片时间码意见', exact: true })
   const add = panel.getByRole('button', { name: '在当前时间添加意见', exact: true })
   const read = () =>

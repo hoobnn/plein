@@ -292,6 +292,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     if (typing(e.target)) return
     e.stopPropagation()
     if (e.key === 'Escape') return onClose()
+    // 回看页使用原生视频与按钮的按键行为，不控制已经卸载的编辑预览。
+    if (view === 'delivery') return
     if (e.metaKey || e.ctrlKey || e.altKey) return
     const step = e.shiftKey ? 1 : FRAME
     if (e.key === ' ') {
