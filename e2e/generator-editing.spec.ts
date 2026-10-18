@@ -266,3 +266,63 @@ test('运行已受理但应答未返回时仍可取消，不被提交等待锁�
     await page.request.put(config, { data: { settings: original.settings } })
   }
 })
+
+for (const mode of ['composition', 'legacy229'] as const) {
+  for (const key of ['Enter', 'Escape']) {
+    test(`角色名称 ${mode} 的 ${key} 不提交或清除草稿，正式改名后引用随撤销重做恢复`, async ({
+      page,
+    }) => {
+      await newProject(page)
+      const ids = await page.evaluate(() => ({
+        role: window.__plein.addNode({
+          type: 'plein/character',
+          name: '组字角色',
+          params: {},
+          x: 400,
+          y: 200,
+        }),
+        text: window.__plein.addNode({
+          type: 'plein/text',
+          name: '名称引用正文',
+          params: { text: '@组字角色 拿起水杯' },
+          x: 900,
+          y: 200,
+        }),
+      }))
+      await clickElement(page, ids.role)
+      const generator = page.getByTestId('generator')
+      const name = generator.getByRole('textbox', { name: '节点名称', exact: true })
+      await name.fill('角色新名')
+      await name.evaluate(
+        (el, { key, mode }) =>
+          el.dispatchEvent(
+            new KeyboardEvent('keydown', {
+              key,
+              code: key,
+              bubbles: true,
+              cancelable: true,
+              isComposing: mode === 'composition',
+              keyCode: mode === 'legacy229' ? 229 : key === 'Enter' ? 13 : 27,
+            }),
+          ),
+        { key, mode },
+      )
+      await expect(name).toBeFocused()
+      await expect(name).toHaveValue('角色新名')
+      expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, ids.role)).toBe(
+        '组字角色',
+      )
+      await name.press('Enter')
+      await expect
+        .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, ids.role))
+        .toBe('角色新名')
+      await clickElement(page, ids.text)
+      const mark = generator.getByTestId('mention-highlights').locator('mark')
+      await expect(mark).toHaveAttribute('data-state', 'missing')
+      await page.getByRole('button', { name: '撤销', exact: true }).click()
+      await expect(mark).toHaveAttribute('data-state', 'resolved')
+      await page.getByRole('button', { name: '重做', exact: true }).click()
+      await expect(mark).toHaveAttribute('data-state', 'missing')
+    })
+  }
+}

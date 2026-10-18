@@ -104,7 +104,7 @@ test('重命名、删除显示失效，撤销重做和刷新还原对应引用�
   const ids = await setup(page)
   const tree = page.getByRole('tree', { name: '画布元素' })
   await tree.getByRole('treeitem', { name: '小岚 · 引用 定位到画布', exact: true }).dblclick()
-  const rename = tree.getByRole('textbox', { name: '画布名称' })
+  const rename = tree.getByRole('textbox', { name: '元素名称' })
   await rename.fill('小岚 · 新名称')
   await rename.press('Enter')
   await openText(page)

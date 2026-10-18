@@ -698,7 +698,10 @@ function NameField({
             if (!conflict) commit()
           }}
           onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return
+            if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) {
+              e.stopPropagation()
+              return
+            }
             if (e.key === 'Escape' && draft !== value) {
               e.preventDefault()
               e.stopPropagation()

@@ -86,6 +86,7 @@ export default defineConfig({
     'generator-camera.spec.ts',
     'generator-editing.spec.ts',
     'candidate-lifecycle.spec.ts',
+    'mention-lifecycle.spec.ts',
     'recovery-drafts.spec.ts',
     'review-recovery-context.spec.ts',
     'recovery-navigation.spec.ts',
