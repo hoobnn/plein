@@ -39,6 +39,7 @@ export default defineConfig({
     'sequence-sound-controls.spec.ts',
     'sequence-preview-lifecycle.spec.ts',
     'animatic-number-editing.spec.ts',
+    'storyboard-text-collaboration.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },

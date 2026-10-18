@@ -8,7 +8,7 @@ import {
   type Shot,
   type ShotRole,
 } from '@plein/nodes'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useDocVersion } from '../../canvas/hooks'
 import { mentionTargets } from '../../canvas/nodes'
 import { MentionTextarea } from '../../ui/MentionTextarea'
@@ -94,6 +94,20 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   }, [onClose, syncScope, batchRequest])
 
   const write = (next: Shot[]) => setParam(engine.doc, id, 'shots', next)
+  const textValue = (
+    shotId: string,
+    key:
+      | 'description'
+      | 'lighting'
+      | 'emotion'
+      | 'characters'
+      | 'sfx'
+      | 'imagePrompt'
+      | 'motionPrompt',
+  ) => {
+    const value = readShots().find((shot) => shot.id === shotId)?.[key]
+    return Array.isArray(value) ? value.join('、') : (value ?? '')
+  }
   // 文档订阅按帧通知；失焦和数字变更可在重绘前连续提交，合并时必须读最新文档。
   const patch = (shotId: string, p: Partial<Shot> | ((current: Shot) => Partial<Shot>)) =>
     write(
@@ -474,23 +488,27 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                   <section aria-label="镜头内容" className="min-w-0 space-y-4">
                     <TextCell
                       value={s.description}
+                      readValue={() => textValue(s.id, 'description')}
                       label="画面"
                       onChange={(v) => patch(s.id, { description: v })}
                     />
                     <div className="grid gap-3 sm:grid-cols-2">
                       <TextCell
                         value={s.lighting}
+                        readValue={() => textValue(s.id, 'lighting')}
                         label="光影"
                         onChange={(lighting) => patch(s.id, { lighting })}
                       />
                       <TextCell
                         value={s.emotion}
+                        readValue={() => textValue(s.id, 'emotion')}
                         label="情绪 / 语气"
                         onChange={(emotion) => patch(s.id, { emotion })}
                       />
                     </div>
                     <TextCell
                       value={s.characters.join('、')}
+                      readValue={() => textValue(s.id, 'characters')}
                       label="出场"
                       onChange={(v) => patch(s.id, { characters: splitNames(v) })}
                     >
@@ -521,7 +539,12 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                         }
                       />
                     </div>
-                    <TextCell value={s.sfx} label="音效" onChange={(sfx) => patch(s.id, { sfx })} />
+                    <TextCell
+                      value={s.sfx}
+                      readValue={() => textValue(s.id, 'sfx')}
+                      label="音效"
+                      onChange={(sfx) => patch(s.id, { sfx })}
+                    />
                   </section>
                   <section aria-label="生成提示词" className="min-w-0 space-y-4">
                     <div className="text-xs font-medium text-ink-subtle">
@@ -529,11 +552,13 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                     </div>
                     <TextCell
                       value={s.imagePrompt}
+                      readValue={() => textValue(s.id, 'imagePrompt')}
                       label="分镜图提示词"
                       onChange={(v) => patch(s.id, { imagePrompt: v })}
                     />
                     <TextCell
                       value={s.motionPrompt}
+                      readValue={() => textValue(s.id, 'motionPrompt')}
                       label="运动提示词"
                       onChange={(v) => patch(s.id, { motionPrompt: v })}
                     />
@@ -606,25 +631,42 @@ function DurationCell({ value, onChange }: { value: number; onChange(value: numb
 /** 单元格：失焦时写入，避免每个按键都改一次文档并标记手改 */
 function TextCell({
   value,
+  readValue,
   label,
   onChange,
   children,
 }: {
   value: string
+  readValue(): string
   label: string
   onChange(v: string): void
   children?: React.ReactNode
 }) {
   const engine = useCanvas((s) => s.engine)
-  const [draft, setDraft] = useState(value)
-  const [focused, setFocused] = useState(false)
+  const [edit, setEdit] = useState({ base: value, draft: value })
+  const conflictId = useId()
+  const input = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
-    if (!focused) setDraft(value)
-  }, [value, focused])
+    setEdit((prev) =>
+      prev.draft === prev.base || prev.draft === value ? { base: value, draft: value } : prev,
+    )
+  }, [value])
+  const { base, draft } = edit
+  const dirty = draft !== base
+  const conflict = dirty && base !== value && draft !== value
+  const reset = () => {
+    const latest = readValue()
+    setEdit({ base: latest, draft: latest })
+  }
+  const commit = () => {
+    setEdit({ base: draft, draft })
+    if (draft !== readValue()) onChange(draft)
+  }
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" data-storyboard-field={label}>
       <div className="mb-1 text-xs font-medium text-ink-muted">{label}</div>
       <MentionTextarea
+        ref={input}
         targets={engine ? mentionTargets(engine) : []}
         onLocate={(id) => {
           if (!engine?.doc.has(id)) return
@@ -633,19 +675,56 @@ function TextCell({
           engine.zoomToFit([id])
         }}
         aria-label={label}
+        aria-describedby={conflict ? conflictId : undefined}
         rows={2}
         className={`${cell} w-full field-sizing-content min-h-12 max-h-80 overflow-y-auto bg-surface-2 leading-relaxed`}
-        value={focused ? draft : value}
+        value={draft}
         onFocus={() => {
-          setDraft(value)
-          setFocused(true)
+          if (!dirty) reset()
         }}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => setEdit({ base: dirty ? base : readValue(), draft: e.target.value })}
         onBlur={() => {
-          setFocused(false)
-          if (draft !== value) onChange(draft)
+          const latest = readValue()
+          if (!dirty) reset()
+          // 文档按帧通知；失焦时读最新值，不能只依赖尚未刷新的 props。
+          else if (base === latest || draft === latest) commit()
         }}
       />
+      {conflict && (
+        <div className="mt-2 space-y-2 rounded-md border border-line bg-surface-2 p-2">
+          <p id={conflictId} role="status" className="text-xs text-ink-muted">
+            {label}已在其他位置更新。请选择要使用的内容。
+          </p>
+          <p
+            aria-label={`${label}的最新内容`}
+            className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words text-xs text-ink-muted"
+          >
+            {value || '（空）'}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary ui-btn-sm"
+              onClick={() => {
+                reset()
+                input.current?.focus()
+              }}
+            >
+              使用最新内容
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary ui-btn-sm"
+              onClick={() => {
+                commit()
+                input.current?.focus()
+              }}
+            >
+              保留当前输入
+            </button>
+          </div>
+        </div>
+      )}
       {children && <div className="mt-2 grid gap-2 sm:grid-cols-2">{children}</div>}
     </div>
   )
