@@ -1,5 +1,12 @@
 import type { Canvas } from '@plein/protocol'
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import { api } from '../api/client'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { placeStartNode } from '../canvas/start'
@@ -109,22 +116,28 @@ export function Editor({
   const assistantOpen = useAgent((s) => s.open)
   const tasksOpen = useCanvas((s) => s.tasks)
   const rightPanelWidth = assistantOpen ? 424 : tasksOpen ? 372 : 0
+  const [sidebarOverlay, setSidebarOverlay] = useState(false)
   const roomForPanels = usePanelSpace(sidebarWidth, rightPanelWidth)
-  const sidebar = mode === 'flow' && sidebarOpen && (!rightPanelWidth || roomForPanels)
+  const sidebar =
+    mode === 'flow' && sidebarOpen && (roomForPanels || (sidebarOverlay && !rightPanelWidth))
+  useEffect(() => {
+    if (rightPanelWidth) setSidebarOverlay(false)
+  }, [rightPanelWidth])
   const toggleSidebar = useCallback(() => {
     if (!sidebar && !roomForPanels) {
       useAgent.getState().toggle(false)
       useCanvas.getState().toggleTasks(false)
     }
+    setSidebarOverlay(!sidebar && !roomForPanels)
     useSidebar.getState().toggle(!sidebar)
   }, [sidebar, roomForPanels])
   // 侧栏浮在画布上：告诉相机左边被挡住多少，适应画布、定位时把内容放在右边的可见区域
-  useEffect(() => {
+  useLayoutEffect(() => {
     engine?.camera.setInsets({ left: sidebar ? sidebarWidth + 12 : 0 })
   }, [engine, sidebar, sidebarWidth])
 
   // 右侧浮动面板共用可见区域，避免各自清理时覆盖另一面板的边距。
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!engine) return
     const desktop = window.matchMedia('(min-width: 640px)')
     const sync = () => engine.camera.setInsets({ right: desktop.matches ? rightPanelWidth : 0 })

@@ -14,7 +14,7 @@ import {
 import type { Catalog } from '@plein/protocol'
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { useEngineVersion, useFollow } from '../../canvas/hooks'
-import { fitFloatingPanel } from '../../canvas/floatingPanel'
+import { canvasBottomSpace, fitFloatingPanel } from '../../canvas/floatingPanel'
 import { adaptToModel, constrainFields, selectedModel } from '../../canvas/modelParams'
 import {
   applyAspect,
@@ -54,8 +54,9 @@ const PANEL_W = 600
 const GAP = 12
 /** 节点标题行在卡片上方，面板放上方时让开它 */
 const TITLE_H = 30
-/** 面板离视口底边的最小距离：让开底部工具条（12 边距 + 44 高 + 8 间隔） */
-const BOTTOM_RESERVED = 64
+/** 让开底部工具条及画布剩余宽度不足时上移的助手入口。 */
+const bottomReserved = (engine: Engine) =>
+  canvasBottomSpace(window.innerWidth, engine.camera.insets.left).generator
 /** 顶部页头占的高度 */
 const TOP_RESERVED = 64
 /** 下方剩余空间不少于这么高时总放在下方 */
@@ -100,7 +101,10 @@ function NodeGenerator({
       const tl = engine.worldToClient(rect.x, rect.y)
       const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
       return (
-        Math.max(tl.y - TITLE_H - TOP_RESERVED, window.innerHeight - BOTTOM_RESERVED - br.y) <
+        Math.max(
+          tl.y - TITLE_H - TOP_RESERVED,
+          window.innerHeight - bottomReserved(engine) - br.y,
+        ) <
         MIN_H + GAP
       )
     },
@@ -132,10 +136,11 @@ function placeBeside(engine: Engine, id: string, collapsed = false) {
   if (!rect) return null
   const tl = engine.worldToClient(rect.x, rect.y)
   const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
-  const below = window.innerHeight - BOTTOM_RESERVED - br.y
+  const bottom = bottomReserved(engine)
+  const below = window.innerHeight - bottom - br.y
   const above = tl.y - TITLE_H - TOP_RESERVED
   const preferBelow = below >= PREFER_BELOW || below >= above
-  const availableHeight = Math.max(0, window.innerHeight - TOP_RESERVED - BOTTOM_RESERVED)
+  const availableHeight = Math.max(0, window.innerHeight - TOP_RESERVED - bottom)
   const maxHeight = Math.min(availableHeight, Math.max(MIN_H, (preferBelow ? below : above) - GAP))
   // 让开两侧面板；可见区域不够宽时面板跟着变窄。
   const minLeft = engine.camera.insets.left + GAP
@@ -145,7 +150,7 @@ function placeBeside(engine: Engine, id: string, collapsed = false) {
     // 紧凑入口避开两侧端口所在的中线；展开由用户主动接管编辑。
     const portY = (tl.y + br.y) / 2
     const height = 44
-    const limit = window.innerHeight - BOTTOM_RESERVED
+    const limit = window.innerHeight - bottom
     const top = portY + GAP + height <= limit ? portY + GAP : portY - GAP - height
     return {
       left,
@@ -158,17 +163,14 @@ function placeBeside(engine: Engine, id: string, collapsed = false) {
     ? {
         left,
         width,
-        top: Math.max(
-          TOP_RESERVED,
-          Math.min(br.y + GAP, window.innerHeight - BOTTOM_RESERVED - maxHeight),
-        ),
+        top: Math.max(TOP_RESERVED, Math.min(br.y + GAP, window.innerHeight - bottom - maxHeight)),
         maxHeight,
       }
     : {
         left,
         width,
         bottom: Math.max(
-          BOTTOM_RESERVED,
+          bottom,
           Math.min(
             window.innerHeight - tl.y + TITLE_H + GAP,
             window.innerHeight - TOP_RESERVED - maxHeight,

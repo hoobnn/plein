@@ -79,6 +79,7 @@ export default defineConfig({
     'batch-read-recovery.spec.ts',
     'group-cancel-pending.spec.ts',
     'task-viewport-layout.spec.ts',
+    'task-mobile-locate.spec.ts',
     'right-panel-switching.spec.ts',
     'sequence-load-recovery.spec.ts',
     'sequence-sound-controls.spec.ts',

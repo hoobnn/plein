@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useShallow } from 'zustand/react/shallow'
 import { api } from '../../api/client'
 import { queryKeys } from '../../api/query'
+import { canvasBottomSpace } from '../../canvas/floatingPanel'
 import { renderMarkdown } from '../../canvas/markdown'
 import { useRoute } from '../../router'
 import { EditPlanRow } from './EditPlanCard'
@@ -114,6 +115,21 @@ export function AgentDock() {
     trigger.current?.focus()
   }, [toggle])
   const canvasId = route.name === 'canvas' ? route.id : null
+  const engine = useCanvas((s) => s.engine)
+  const mascotBottom = useSyncExternalStore(
+    useCallback(
+      (notify: () => void) => {
+        const off = engine?.camera.onInsetsChange(notify)
+        window.addEventListener('resize', notify)
+        return () => {
+          off?.()
+          window.removeEventListener('resize', notify)
+        }
+      },
+      [engine],
+    ),
+    () => canvasBottomSpace(window.innerWidth, engine?.camera.insets.left ?? 0).mascot,
+  )
 
   useEffect(() => {
     if (ready) void enter(canvasId)
@@ -144,7 +160,8 @@ export function AgentDock() {
         aria-label={open ? '收起助手' : '打开助手'}
         aria-expanded={open}
         title={open ? undefined : '小满：让本机的 Claude Code / Codex 帮你操作画布'}
-        className="plein-mascot-btn pointer-events-auto fixed right-3 bottom-2 z-30 rounded-full max-sm:bottom-16"
+        style={{ bottom: mascotBottom }}
+        className="plein-mascot-btn pointer-events-auto fixed right-3 z-30 rounded-full"
       >
         <Mascot mood={mood} />
         {unread && (

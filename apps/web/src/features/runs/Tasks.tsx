@@ -26,6 +26,7 @@ import { cancelRequestKey, groupCancelRequestKey, useCancelRequests } from './ca
 import { Presence, useExit } from '../../ui/Presence'
 import { EmptyState } from '../../ui/EmptyState'
 import { useAgent } from '../agent/store'
+import { locateTaskTarget } from './taskNavigation'
 
 const STATUS: Record<JobInfo['status'], string> = {
   queued: '排队中',
@@ -191,11 +192,7 @@ export function Tasks() {
 
   const nameOf = (j: JobInfo) =>
     doc.get(j.nodeId)?.name ?? findNode(catalog, j.nodeType)?.title ?? j.nodeType
-  const locate = (id: string) => {
-    if (!doc.has(id)) return
-    engine.selection.set([id])
-    engine.zoomToFit([id])
-  }
+  const locate = locateTaskTarget
 
   return (
     <Presence>
