@@ -15,6 +15,7 @@ export default defineConfig({
     'project-switcher-navigation.spec.ts',
     'project-rename-recovery.spec.ts',
     'project-delete-recovery.spec.ts',
+    'project-list-recovery.spec.ts',
     'projects.spec.ts',
     'library-navigation.spec.ts',
     'library.spec.ts',

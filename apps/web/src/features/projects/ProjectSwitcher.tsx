@@ -2,7 +2,7 @@ import type { Canvas } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../../api/client'
-import { invalidateProjects, queryClient, queryKeys } from '../../api/query'
+import { cacheProject, invalidateProjects, queryKeys } from '../../api/query'
 import { navigate } from '../../router'
 import { useCanvas } from '../../stores/canvas'
 import { confirmDialog, promptDialog } from '../../ui/Dialog'
@@ -54,7 +54,7 @@ export function ProjectSwitcher({
     if (project && title && title !== project.title) {
       try {
         const next = await api.renameProject(project.id, title)
-        queryClient.setQueryData(queryKeys.project(next.id), next)
+        cacheProject(next)
         void invalidateProjects()
       } catch (err) {
         fail(err)

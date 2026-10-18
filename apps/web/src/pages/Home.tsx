@@ -2,7 +2,7 @@ import type { Project } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { type MouseEvent, useRef, useState } from 'react'
 import { api } from '../api/client'
-import { invalidateProjects, queryClient, queryKeys } from '../api/query'
+import { cacheProject, invalidateProjects, queryClient, queryKeys } from '../api/query'
 import { queueStartNode } from '../canvas/startQueue'
 import { navigate, routeHash } from '../router'
 import { forgetLocalCache } from '../canvas/localCache'
@@ -59,12 +59,24 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   })
   const projects = list.data ?? null
   const [error, setError] = useState<string | null>(null)
+  const [retryError, setRetryError] = useState<Error | null>(null)
   const [query, setQuery] = useState('')
   const [creating, setCreating] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const [exporting, setExporting] = useState<Project | null>(null)
   const [importing, setImporting] = useState<File | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const listError = list.error ?? retryError
+  const reloadProjects = async () => {
+    if (list.isFetching) return
+    // 首次加载重试会立即清空查询错误；保留提示区直到这次读取结束。
+    setRetryError(list.error)
+    try {
+      await list.refetch({ throwOnError: false })
+    } finally {
+      setRetryError(null)
+    }
+  }
 
   const create = async (from: Element, start?: string) => {
     if (creating) return
@@ -86,15 +98,18 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
     }
   }
   const rename = async (p: Project, title: string) => {
-    await api.renameProject(p.id, title)
-    await invalidateProjects()
+    cacheProject(await api.renameProject(p.id, title))
+    void invalidateProjects()
   }
   const remove = async (p: Project) => {
     // 先记下画布，删完把它们的本机缓存一起清掉
     const canvases = await api.projectCanvases(p.id)
     await api.deleteProject(p.id)
     for (const c of canvases) forgetLocalCache(c.id)
-    await invalidateProjects()
+    queryClient.setQueryData<Project[]>(queryKeys.projects, (items) =>
+      items?.filter((item) => item.id !== p.id),
+    )
+    void invalidateProjects()
   }
   const logout = async () => {
     await api.logout()
@@ -116,16 +131,17 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
           {/* 和画布顶栏同一套尺寸（44 高的工具条、36 的按钮），只是不带底色；
               -mx 抵掉工具条和按钮的内边距，Logo 与右侧按钮仍和正文左右对齐 */}
           <div className="ui-bar ui-bar-bare -ml-3.5">
-            <Brand />
+            <Brand compactOnMobile />
           </div>
-          <div className="app-actions ui-bar ui-bar-bare -mr-1">
+          <div className="app-actions ui-bar ui-bar-bare -mr-1 max-sm:h-auto max-sm:min-w-0 max-sm:flex-1 max-sm:flex-wrap max-sm:justify-end">
             <button
               type="button"
               className="ui-bar-btn gap-1.5"
+              title="素材"
               onClick={() => useMediaLibrary.getState().show()}
             >
               <Icon name="image" />
-              素材
+              <span className="max-sm:sr-only">素材</span>
             </button>
             <button
               type="button"
@@ -134,7 +150,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
               className="ui-bar-btn gap-1.5"
             >
               <Icon name="library" />
-              资产库
+              <span className="max-sm:sr-only">资产库</span>
             </button>
             <div className="ui-bar-sep" />
             <ThemeToggle />
@@ -149,9 +165,14 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
               <Icon name="settings" />
             </button>
             {info?.authRequired && (
-              <button type="button" onClick={logout} className="ui-bar-btn gap-1.5">
+              <button
+                type="button"
+                onClick={logout}
+                title="退出登录"
+                className="ui-bar-btn gap-1.5"
+              >
                 <Icon name="logout" />
-                退出登录
+                <span className="max-sm:sr-only">退出登录</span>
               </button>
             )}
           </div>
@@ -241,8 +262,26 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
           ))}
         </section>
 
-        {(error ?? list.error) && (
-          <p className="text-sm text-danger">加载失败：{error ?? list.error?.message}</p>
+        {error && (
+          <p role="alert" className="text-sm text-danger">
+            操作失败：{error}
+          </p>
+        )}
+        {listError && (
+          <div role="alert" className="flex flex-wrap items-center gap-2 text-sm text-danger">
+            <p>
+              {projects ? '项目列表刷新失败' : '项目列表加载失败'}：{listError.message}
+            </p>
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary ui-btn-sm"
+              aria-label="重新加载项目"
+              disabled={list.isFetching}
+              onClick={() => void reloadProjects()}
+            >
+              {list.isFetching ? '正在重试…' : '重新加载'}
+            </button>
+          </div>
         )}
 
         {shown && (
