@@ -20,6 +20,7 @@ export interface LibrarySeed {
 interface LibraryStore {
   items: LibraryItem[]
   loaded: boolean
+  loading: boolean
   error: string | null
   /** 资产库面板：打开哪一类；null 为关闭 */
   open: LibraryKind | null
@@ -56,6 +57,7 @@ export const useLibrary = create<LibraryStore>((set, get) => {
   return {
     items: [],
     loaded: false,
+    loading: false,
     error: null,
     open: null,
     seed: null,
@@ -91,7 +93,7 @@ export const useLibrary = create<LibraryStore>((set, get) => {
       if (loading) return loading
       const before = get().items
       removed = new Set()
-      set({ error: null })
+      set({ error: null, loading: true })
       loading = api
         .library()
         .then(
@@ -102,6 +104,7 @@ export const useLibrary = create<LibraryStore>((set, get) => {
         .finally(() => {
           loading = undefined
           removed = undefined
+          set({ loading: false })
         })
       return loading
     },

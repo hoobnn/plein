@@ -48,6 +48,7 @@ import {
 import { VoicePicker } from '../../ui/VoicePicker'
 import { LibraryUpdatesPanel } from './LibraryUpdates'
 import { CharacterAssets } from './CharacterAssets'
+import { LibraryReadStatus } from './LibraryReadStatus'
 
 /**
  * 资产库面板：
@@ -88,7 +89,7 @@ export function LibraryPanel() {
 }
 
 function Panel({ kind: kindId }: { kind: LibraryKind }) {
-  const { items, loaded, error, projectId, show, load } = useLibrary()
+  const { items, loaded, loading, error, projectId, show, load } = useLibrary()
   const engine = useCanvas((s) => s.engine)
   const canvasId = useCanvas((s) => s.canvasId)
   // 只有打开了远端画布时才能放到画布上
@@ -295,20 +296,13 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
                   LoRA；放到画布上后可以连参考图加强约束，效果取决于所选模型。
                 </p>
               )}
-              {error && scope !== 'official' && (
-                <div role="alert" className="mb-4 flex items-center gap-2 text-xs text-warning">
-                  <p className="flex-1">读取资产库失败：{error}</p>
-                  <button
-                    type="button"
-                    className="ui-btn ui-btn-secondary ui-btn-xs"
-                    onClick={() => void load()}
-                  >
-                    重新读取
-                  </button>
-                </div>
+              {scope !== 'official' && (
+                <LibraryReadStatus loaded={loaded} loading={loading} error={error} load={load} />
               )}
               {!loaded && scope !== 'official' ? null : shown.length === 0 ? (
-                <Empty kind={kind} scope={scope} onCreate={() => setEditing({ type: 'new' })} />
+                scope !== 'official' && (loading || error) ? null : (
+                  <Empty kind={kind} scope={scope} onCreate={() => setEditing({ type: 'new' })} />
+                )
               ) : (
                 <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                   {shown.map((it) =>

@@ -25,6 +25,7 @@ import { SlidePill, SlideSwap } from '../ui/Slide'
 import { KIND_ICONS } from '../features/library/LibraryAdd'
 import { EmptyState } from '../ui/EmptyState'
 import { startSidebarResize } from './sidebarResize'
+import { LibraryReadStatus } from '../features/library/LibraryReadStatus'
 
 const TABS: Array<{ id: SidebarTab; label: string }> = [
   { id: 'layers', label: '画布' },
@@ -91,7 +92,7 @@ export function Sidebar({ open }: { open: boolean }) {
       </SlideSwap>
       {engine && (
         <footer className="flex h-10 flex-none items-center border-t border-line px-4">
-          <Count engine={engine} />
+          {current === 'assets' ? <AssetCount /> : <Count engine={engine} />}
         </footer>
       )}
       <ResizeHandle active={open} />
@@ -153,6 +154,16 @@ function Count({ engine }: { engine: Engine }) {
   )
   // oxlint-enable react-hooks/exhaustive-deps
   return <span className="px-2 text-xs text-ink-subtle tabular-nums">共 {n} 个元素</span>
+}
+
+function AssetCount() {
+  const { items, projectId, loaded } = useLibrary()
+  const n = items.filter((item) => projectId && item.projectId === projectId).length
+  return (
+    <span className="px-2 text-xs text-ink-subtle tabular-nums">
+      {loaded ? `共 ${n} 项资产` : '项目资产'}
+    </span>
+  )
 }
 
 /** 元素中心是否落在没被侧栏等浮层挡住的视口里 */
@@ -653,7 +664,7 @@ function Thumb({ el, type }: { el: CanvasElement; type: OutlineType }) {
 // ── 资产页签：本项目的资产库条目 ─────────────────────
 
 function Assets({ engine }: { engine: Engine | null }) {
-  const { items, loaded, projectId, show } = useLibrary()
+  const { items, loaded, loading, error, load, projectId, show } = useLibrary()
   const version = useDocVersion(engine?.doc ?? NO_DOC)
   const canPlace = !!engine && !engine.doc.readOnly
   const mine = items.filter((i) => projectId && i.projectId === projectId)
@@ -680,6 +691,7 @@ function Assets({ engine }: { engine: Engine | null }) {
   return (
     <>
       <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        <LibraryReadStatus loaded={loaded} loading={loading} error={error} load={load} />
         {groups.map((g) => (
           <section key={g.kind.id} className="pb-3">
             <h3 className="flex h-8 items-center gap-2 px-2 text-xs font-medium text-ink-subtle">
@@ -725,7 +737,7 @@ function Assets({ engine }: { engine: Engine | null }) {
             })}
           </section>
         ))}
-        {loaded && !groups.length && (
+        {loaded && !loading && !error && !groups.length && (
           <EmptyState
             compact
             icon="library"

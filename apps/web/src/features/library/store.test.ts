@@ -44,19 +44,32 @@ function pendingList() {
 
 beforeEach(() => {
   vi.resetAllMocks()
-  useLibrary.setState({ items: [], loaded: false, error: null, open: null, seed: null })
+  useLibrary.setState({
+    items: [],
+    loaded: false,
+    loading: false,
+    error: null,
+    open: null,
+    seed: null,
+  })
 })
 
 describe('资产库列表生命周期', () => {
   it('并发入口共用一次读取，后续显式刷新仍会取最新列表', async () => {
     const resolve = pendingList()
     const first = useLibrary.getState().load()
+    expect(useLibrary.getState()).toMatchObject({ loading: true, loaded: false })
     useLibrary.getState().show('character')
     const second = useLibrary.getState().load()
     expect(api.library).toHaveBeenCalledTimes(1)
     resolve([item('a')])
     await Promise.all([first, second])
-    expect(useLibrary.getState()).toMatchObject({ items: [item('a')], loaded: true, error: null })
+    expect(useLibrary.getState()).toMatchObject({
+      items: [item('a')],
+      loaded: true,
+      loading: false,
+      error: null,
+    })
     vi.mocked(api.library).mockResolvedValueOnce([item('b')])
     await useLibrary.getState().load()
     expect(api.library).toHaveBeenCalledTimes(2)
@@ -98,11 +111,12 @@ describe('资产库列表生命周期', () => {
   it('失败不伪装成成功；再次打开能够重试，刷新失败保留已有列表', async () => {
     vi.mocked(api.library).mockRejectedValueOnce(new Error('离线'))
     await useLibrary.getState().load()
-    expect(useLibrary.getState()).toMatchObject({ loaded: false, error: '离线' })
+    expect(useLibrary.getState()).toMatchObject({ loaded: false, loading: false, error: '离线' })
     const resolve = pendingList()
     useLibrary.getState().show('character')
     const retry = useLibrary.getState().load()
     expect(useLibrary.getState().error).toBeNull()
+    expect(useLibrary.getState().loading).toBe(true)
     resolve([item('a')])
     await retry
     vi.mocked(api.library).mockRejectedValueOnce(new Error('暂不可用'))
@@ -110,6 +124,7 @@ describe('资产库列表生命周期', () => {
     expect(useLibrary.getState()).toMatchObject({
       items: [item('a')],
       loaded: true,
+      loading: false,
       error: '暂不可用',
     })
   })

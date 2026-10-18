@@ -13,6 +13,7 @@ export default defineConfig({
   ...base,
   testMatch: [
     'library-navigation.spec.ts',
+    'library.spec.ts',
     'viewer-media.spec.ts',
     'media-pagination.spec.ts',
     'media-search.spec.ts',
@@ -71,6 +72,7 @@ export default defineConfig({
     'sidebar-filter-recovery.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
     'sidebar-resize.spec.ts',
+    'sidebar-assets-recovery.spec.ts',
     'plugins.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
