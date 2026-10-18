@@ -90,15 +90,8 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
     await invalidateProjects()
   }
   const remove = async (p: Project) => {
-    const ok = await confirmDialog({
-      title: `删除项目「${p.title}」？`,
-      message: `项目里的 ${p.canvases} 张画布会一并删除；素材文件和资产库里的角色、场景等保留。`,
-      confirmLabel: '删除',
-      danger: true,
-    })
-    if (!ok) return
     // 先记下画布，删完把它们的本机缓存一起清掉
-    const canvases = await api.projectCanvases(p.id).catch(() => [])
+    const canvases = await api.projectCanvases(p.id)
     await api.deleteProject(p.id)
     for (const c of canvases) forgetLocalCache(c.id)
     await invalidateProjects()
@@ -321,15 +314,40 @@ function ProjectCard({
   project: Project
   onRename(title: string): Promise<void>
   onExport(): void
-  onDelete(): void
+  onDelete(): Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
   const [renameDraft, setRenameDraft] = useState(c.title)
   const [renaming, setRenaming] = useState(false)
   const [renameError, setRenameError] = useState<string | null>(null)
   const [renameFocus, setRenameFocus] = useState(true)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const deletePending = useRef(false)
+  const remove = async () => {
+    if (deletePending.current || renaming || editing) return
+    deletePending.current = true
+    try {
+      const ok = await confirmDialog({
+        title: `删除项目「${c.title}」？`,
+        message: `项目里的 ${c.canvases} 张画布会一并删除；素材文件和资产库里的角色、场景等保留。`,
+        confirmLabel: '删除',
+        danger: true,
+      })
+      if (!ok) return
+      setDeleteError(null)
+      setRenameError(null)
+      setDeleting(true)
+      await onDelete()
+    } catch (err) {
+      setDeleteError((err as Error).message)
+    } finally {
+      deletePending.current = false
+      setDeleting(false)
+    }
+  }
   const finishRename = async (title: string | null) => {
-    if (renaming) return
+    if (renaming || deleting) return
     setEditing(false)
     setRenameError(null)
     if (!title || title === c.title) return
@@ -350,6 +368,10 @@ function ProjectCard({
   const href = routeHash({ name: 'project', id: c.id })
   // 有最近画布就直接进去，封面放大成画布；没有画布的项目照旧走打开项目（会先建一张）
   const open = (e: MouseEvent<HTMLAnchorElement>) => {
+    if (deleting) {
+      e.preventDefault()
+      return
+    }
     const id = c.lastCanvasId
     if (!id || !isPlainClick(e)) return
     e.preventDefault()
@@ -358,7 +380,14 @@ function ProjectCard({
   }
   return (
     <li className="home-card group" data-project={c.id}>
-      <a href={href} onClick={open} className="block" draggable={false}>
+      <a
+        href={href}
+        onClick={open}
+        onAuxClick={deleting ? (e) => e.preventDefault() : undefined}
+        aria-disabled={deleting || undefined}
+        className="block"
+        draggable={false}
+      >
         <Cover covers={covers} empty={c.canvases === 0} />
       </a>
       <div className="flex items-center gap-2 px-3 pb-3 pt-2.5">
@@ -376,6 +405,8 @@ function ProjectCard({
             <a
               href={href}
               onClick={open}
+              onAuxClick={deleting ? (e) => e.preventDefault() : undefined}
+              aria-disabled={deleting || undefined}
               className="block truncate text-base font-medium"
               title={c.title}
               draggable={false}
@@ -391,9 +422,19 @@ function ProjectCard({
               正在保存项目名称…
             </p>
           )}
+          {deleting && (
+            <p role="status" className="mt-1 text-xs text-ink-muted">
+              正在删除项目…
+            </p>
+          )}
           {renameError && (
             <p role="alert" className="mt-1 break-words text-xs text-danger">
               {renameError}
+            </p>
+          )}
+          {deleteError && (
+            <p role="alert" className="mt-1 break-words text-xs text-danger">
+              {deleteError}
             </p>
           )}
         </div>
@@ -401,6 +442,7 @@ function ProjectCard({
           <button
             type="button"
             aria-label="项目素材"
+            disabled={deleting}
             title="项目素材"
             className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
             onClick={() => useMediaLibrary.getState().show({ projectId: c.id })}
@@ -410,6 +452,7 @@ function ProjectCard({
           <button
             type="button"
             aria-label="项目检查点"
+            disabled={deleting}
             title="项目检查点"
             className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
             onClick={() => useCheckpoints.getState().show({ projectId: c.id })}
@@ -421,10 +464,11 @@ function ProjectCard({
             onClick={() => {
               setRenameDraft(c.title)
               setRenameError(null)
+              setDeleteError(null)
               setRenameFocus(true)
               setEditing(true)
             }}
-            disabled={renaming || editing}
+            disabled={renaming || editing || deleting}
             aria-label="重命名"
             title="重命名"
             className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
@@ -434,6 +478,7 @@ function ProjectCard({
           <button
             type="button"
             onClick={onExport}
+            disabled={deleting}
             aria-label="导出项目包"
             title="导出项目包"
             className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
@@ -442,7 +487,8 @@ function ProjectCard({
           </button>
           <button
             type="button"
-            onClick={onDelete}
+            onClick={() => void remove()}
+            disabled={deleting || renaming || editing}
             aria-label="删除"
             title="删除"
             className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn hover:text-danger"

@@ -69,6 +69,7 @@ test('首页项目改名保存中有反馈并禁止重复提交，成功后恢�
     await expect.poll(() => writes).toBe(1)
     await expect(card.getByRole('status')).toContainText('正在保存项目名称')
     await expect(rename).toBeDisabled()
+    await expect(card.getByRole('button', { name: '删除', exact: true })).toBeDisabled()
     release()
     await expect(card.getByRole('link', { name: '等待保存的项目', exact: true })).toBeVisible()
     await expect(rename).toBeEnabled()
