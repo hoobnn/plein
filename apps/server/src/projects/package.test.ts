@@ -1,6 +1,17 @@
 import { renameSync } from 'node:fs'
 import { Readable } from 'node:stream'
-import { connect, createDoc, createElement, setParam } from '@plein/doc'
+import {
+  addResults,
+  adoptResult,
+  connect,
+  createDoc,
+  createElement,
+  creativeReviewTarget,
+  currentResult,
+  getCreativeReview,
+  recordCreativeReview,
+  setParam,
+} from '@plein/doc'
 import type {
   Canvas,
   LibraryItem,
@@ -146,6 +157,106 @@ const checkpointService = (server: Server) =>
   })
 
 describe('命名检查点项目包迁移', () => {
+  it('当前候选项目包保留选中视频及其尾帧、关联键和各自验收，导入不串配对', async () => {
+    const s = await seed()
+    const video = addNode(s.doc, 'plein/video', {
+      params: { model: 'plein/mock:video', mode: 'text', prompt: '两个水杯视频', count: 2 },
+    })
+    await runNode(s.server, s.canvasId, video)
+    const videos = s.doc.get(video)!.results!
+    expect(videos).toHaveLength(2)
+    const tails = await Promise.all(
+      ['#048', '#840'].map(async (color) =>
+        s.server.assets.ingest('local', Readable.from([await png(color)]), {
+          mime: 'image/png',
+          name: '尾帧.png',
+        }),
+      ),
+    )
+    addResults(
+      s.doc,
+      video,
+      videos.map((result, i) => ({
+        id: `tail-${i}`,
+        port: 'lastFrame',
+        runId: result.runId,
+        outputGroup: result.outputGroup,
+        at: result.at,
+        value: { type: 'image', assetId: tails[i]!.id },
+      })),
+      { adopt: false },
+    )
+    adoptResult(s.doc, video, 'tail-1')
+    const mainTarget = creativeReviewTarget(s.doc.get(video))!
+    const tailTarget = creativeReviewTarget(s.doc.get(video), 'lastFrame')!
+    expect(
+      recordCreativeReview(s.doc, video, {
+        target: mainTarget,
+        status: 'usable',
+        note: '视频可用',
+      }),
+    ).toBe(true)
+    expect(
+      recordCreativeReview(s.doc, video, {
+        target: tailTarget,
+        status: 'changes',
+        note: '尾帧待修改',
+      }),
+    ).toBe(true)
+    const bytes = await download(s.server, s.projectId)
+    const manifest = manifestOf(bytes)
+    expect(manifest.assets.map((asset) => asset.id)).toContain(tails[1]!.id)
+    expect(manifest.assets.map((asset) => asset.id)).not.toContain(tails[0]!.id)
+    const target = await bootServer({ dataDir: tempDir() })
+    const imported = await importInto(target.server, bytes)
+    const restored = openDoc(target.server, imported.result.canvasId!).get(video)!
+    expect(restored.results!.map((r) => r.id).sort()).toEqual([videos[1]!.id, 'tail-1'].sort())
+    expect(restored.results!.every((r) => r.outputGroup === videos[1]!.outputGroup)).toBe(true)
+    expect(currentResult(restored, 'video')?.id).toBe(videos[1]!.id)
+    expect(currentResult(restored, 'lastFrame')?.id).toBe('tail-1')
+    expect(getCreativeReview(restored)?.note).toBe('视频可用')
+    expect(getCreativeReview(restored, tailTarget)?.note).toBe('尾帧待修改')
+  })
+  it.each([false, true])(
+    '默认导出只保留真正采用的候选，不因同次运行或无采用而携带其他候选（待采用=%s）',
+    async (held) => {
+      const s = await seed()
+      setParam(s.doc, s.gen, 'prompt', '同次两个不同水杯')
+      setParam(s.doc, s.gen, 'count', 2)
+      await runNode(s.server, s.canvasId, s.gen)
+      const before = s.doc.get(s.gen)!
+      expect(before.results).toHaveLength(4)
+      if (held) s.doc.mutable(s.gen)!.set('adopted', null)
+      const bytes = await download(s.server, s.projectId)
+      const manifest = manifestOf(bytes)
+      const snapshot = new Y.Doc()
+      Y.applyUpdate(snapshot, unzipSync(bytes)[manifest.canvases[0]!.file.path]!)
+      const packed = createDoc(snapshot)
+      const result = packed.get(s.gen)!
+      expect(result.results ?? []).toEqual(held ? [] : [before.results![0]])
+      const assets = manifest.assets.map((a) => a.id)
+      for (const candidate of before.results!) {
+        if ('assetId' in candidate.value)
+          expect(assets.includes(candidate.value.assetId)).toBe(
+            !held && candidate.id === before.results![0]!.id,
+          )
+      }
+      expect(s.doc.get(s.gen)!.results).toHaveLength(4)
+      const target = await bootServer({ dataDir: tempDir() })
+      const imported = await importInto(target.server, bytes)
+      const restored = openDoc(target.server, imported.result.canvasId!)
+      expect(restored.get(s.gen)?.results ?? []).toHaveLength(held ? 0 : 1)
+      expect(currentResult(restored.get(s.gen)!)?.id).toBe(
+        held ? undefined : before.results![0]!.id,
+      )
+      if (held) expect(restored.get(s.gen)?.adopted).toBeNull()
+      const all = await download(s.server, s.projectId, true)
+      const allManifest = manifestOf(all)
+      const allState = new Y.Doc()
+      Y.applyUpdate(allState, unzipSync(all)[allManifest.canvases[0]!.file.path]!)
+      expect(createDoc(allState).get(s.gen)?.results).toHaveLength(4)
+    },
+  )
   it('v2默认完整保留检查点候选与独有素材，在新数据目录导入后可恢复且不续跑', async () => {
     const s = await seed()
     const service = checkpointService(s.server)

@@ -8,7 +8,7 @@ import { pipeline } from 'node:stream/promises'
 import { once } from 'node:events'
 import {
   createDoc,
-  currentResult,
+  adoptedResultIds,
   type DeliveryRecord,
   type NodeResult,
   type NodeRun,
@@ -228,11 +228,9 @@ async function planExport(
           for (const delivery of el.deliveries ?? [])
             refAsset(delivery.assetId, `${where} / 交付 ${delivery.version}`, true)
           if (el.results?.length) {
-            const cur = currentResult(el)
+            const adopted = adoptedResultIds(el)
             const kept =
-              candidates === 'all' || !cur
-                ? el.results
-                : el.results.filter((r) => r.runId === cur.runId)
+              candidates === 'all' ? el.results : el.results.filter((r) => adopted.has(r.id))
             if (kept.length !== el.results.length) m.set('results', kept)
             for (const r of kept) if ('assetId' in r.value) refAsset(r.value.assetId, where, true)
           }
