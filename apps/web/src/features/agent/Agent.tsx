@@ -837,7 +837,20 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
   const selecting = useAgent((s) => !!s.selecting)
   const stopping = useAgent((s) => !!s.pendingActions[`${s.session?.id}/stop`])
   const setText = (value: string) => useAgent.getState().setDraft(canvasId, value)
-  const [withSelection, setWithSelection] = useState(true)
+  const engine = useCanvas((s) => (s.canvasId === canvasId ? s.engine : null))
+  const excluded = useAgent((s) => s.excludedSelections[canvasId])
+  const subscribeSelection = useCallback(
+    (notify: () => void) =>
+      engine?.selection.onChange(() => {
+        useAgent.getState().setExcludedSelection(canvasId)
+        notify()
+      }) ?? (() => {}),
+    [engine, canvasId],
+  )
+  const selectionKey = useSyncExternalStore(subscribeSelection, () =>
+    JSON.stringify(engine?.selection.values().sort() ?? []),
+  )
+  const withSelection = excluded !== selectionKey
   const selected = useCanvas((s) => s.selection)
   const approval = useAgent((s) => s.approval)
   const plan = useAgent((s) => s.plan)
@@ -853,10 +866,14 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
     ref.current?.focus()
   }, [focusSeq])
   // oxlint-enable react-hooks/exhaustive-deps
-  // 选区变了就默认重新带上
-  // oxlint-disable react-hooks/exhaustive-deps -- 选区数量变化时重置
-  useEffect(() => setWithSelection(true), [selected])
-  // oxlint-enable react-hooks/exhaustive-deps
+  // 同数量更换目标也属于新选区；Selection 不为相同集合的顺序变化发事件。
+  useEffect(() => {
+    if (!engine || useCanvas.getState().engine !== engine) return
+    const reset = () => useAgent.getState().setExcludedSelection(canvasId)
+    const stored = useAgent.getState().excludedSelections[canvasId]
+    if (stored !== undefined && stored !== JSON.stringify(engine?.selection.values().sort() ?? []))
+      reset()
+  }, [engine, canvasId])
 
   useEffect(() => {
     const el = ref.current
@@ -884,7 +901,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
               aria-label="不带选中元素"
               title="不带选中元素"
               className="ui-chip-remove"
-              onClick={() => setWithSelection(false)}
+              onClick={() => useAgent.getState().setExcludedSelection(canvasId, selectionKey)}
             >
               <Icon name="x" size={12} />
             </button>

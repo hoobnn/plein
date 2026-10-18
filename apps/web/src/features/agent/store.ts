@@ -26,6 +26,8 @@ interface AgentStore {
   open: boolean
   /** 本次应用会话内按画布保留；关闭面板不丢失，不跨画布显示。 */
   drafts: Record<string, { text: string }>
+  excludedSelections: Record<string, string>
+  setExcludedSelection(canvasId: string, signature?: string): void
   sending: Record<string, boolean>
   selecting: string | null
   removing: Record<string, boolean>
@@ -214,6 +216,14 @@ export const useAgent = create<AgentStore>((set, get) => {
   return {
     open: false,
     drafts: {},
+    excludedSelections: {},
+    setExcludedSelection(canvasId, signature) {
+      if (get().excludedSelections[canvasId] === signature) return
+      const excludedSelections = { ...get().excludedSelections }
+      if (signature === undefined) delete excludedSelections[canvasId]
+      else excludedSelections[canvasId] = signature
+      set({ excludedSelections })
+    },
     sending: {},
     selecting: null,
     removing: {},
@@ -239,6 +249,8 @@ export const useAgent = create<AgentStore>((set, get) => {
     focusSeq: 0,
 
     ask() {
+      const canvasId = get().canvasId
+      if (canvasId) get().setExcludedSelection(canvasId)
       get().toggle(true)
       set({ focusSeq: get().focusSeq + 1 })
     },

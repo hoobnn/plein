@@ -66,6 +66,18 @@ afterEach(() => {
 })
 
 describe('助手草稿与发送生命周期', () => {
+  it('关闭重开保留当前画布的参考排除，主动处理选区只重置当前画布', () => {
+    useAgent.setState({ canvasId: 'c1', status: { enabled: true, agents: [] } })
+    useAgent.getState().setExcludedSelection('c1', '["a"]')
+    useAgent.getState().setExcludedSelection('c2', '["b"]')
+    useAgent.getState().toggle(false)
+    useAgent.getState().toggle(true)
+    expect(useAgent.getState().excludedSelections).toEqual({ c1: '["a"]', c2: '["b"]' })
+    const focus = useAgent.getState().focusSeq
+    useAgent.getState().ask()
+    expect(useAgent.getState().excludedSelections).toEqual({ c2: '["b"]' })
+    expect(useAgent.getState().focusSeq).toBe(focus + 1)
+  })
   it('按画布保留草稿，关闭面板和切换画布不覆盖其他草稿，空草稿移除', async () => {
     vi.mocked(api.agentSessions).mockResolvedValue([])
     await useAgent.getState().enter('c1')
