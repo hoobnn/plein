@@ -26,7 +26,7 @@ export interface ServerPaths {
   cwd: string
   /** 前端构建产物；开发模式下由 Vite 提供，不需要 */
   webDist?: string
-  /** 随安装包附带的 ffmpeg / ffprobe，不存在时服务端从 PATH 查找 */
+  /** 安装包或本地 stage 中的 ffmpeg / ffprobe，不存在时服务端从 PATH 查找 */
   ffmpeg?: string
   ffprobe?: string
   /** 随安装包附带的字幕字体，导出和预览共用 */
@@ -55,11 +55,17 @@ export function serverPaths(): ServerPaths {
     }
   }
   const server = join(repoRoot, 'apps/server')
+  const mediaDir = join(repoRoot, 'apps/desktop/stage/ffmpeg')
+  const media = {
+    ffmpeg: process.env.PLEIN_FFMPEG_PATH || bundled(mediaDir, 'ffmpeg'),
+    ffprobe: process.env.PLEIN_FFPROBE_PATH || bundled(mediaDir, 'ffprobe'),
+  }
   if (isDev) {
     // 开发模式直接跑源码（经 tsx），改服务端代码后重启桌面端即可生效
     return {
       entry: join(repoRoot, 'apps/desktop/scripts/dev-server.mjs'),
       cwd: server,
+      ...media,
       subtitleFont: existing(join(repoRoot, 'apps/desktop/stage/fonts', SUBTITLE_FONT)),
     }
   }
@@ -67,6 +73,7 @@ export function serverPaths(): ServerPaths {
     entry: join(server, 'dist/main.mjs'),
     cwd: server,
     webDist: join(repoRoot, 'apps/web/dist'),
+    ...media,
     subtitleFont: existing(join(repoRoot, 'apps/desktop/stage/fonts', SUBTITLE_FONT)),
   }
 }

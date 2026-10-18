@@ -65,6 +65,7 @@ Electron 主进程（apps/desktop）
 ## 打包（2026-10-13）
 
 - `pnpm --filter @plein/desktop ffmpeg`：从源码构建 ffmpeg / ffprobe 到 `apps/desktop/stage/ffmpeg`（需要 `brew install meson ninja pkgconf`）。LGPL 构建，静态链接 libass、freetype、fribidi、harfbuzz，字体走 CoreText，只依赖系统框架；没有 libx264，服务端的 `h264Args()` 在这种情况下改用 `h264_videotoolbox`（按码率，`-allow_sw` 兜底）。
+- 未打包桌面（含开发模式）优先使用显式 `PLEIN_FFMPEG_PATH` / `PLEIN_FFPROBE_PATH`，否则使用已存在的 `apps/desktop/stage/ffmpeg` 工具；尚未构建时仍由服务端按 PATH 查找。安装包使用随包工具。工具选择在启动时确定，构建或修改配置后重启桌面生效。
 - `pnpm dist:desktop`：构建前端，`scripts/stage-server.mjs` 把服务端连同全部依赖打成一个 `main.mjs`，只有 better-sqlite3、sharp 两个原生模块按当前平台从已安装的依赖复制（约 40 MB）；再由 `electron-builder.config.mjs` 出 `release/Plein-<版本>-arm64.dmg` 和 zip。extraResources 会跳过 node_modules，原生模块在 afterPack 里补进去，签名时一并签上。
 - 打包后的服务端可以单独验证：`PLEIN_E2E_SERVER="node --no-experimental-webstorage apps/desktop/stage/server/main.mjs" pnpm e2e`。
 - CI：`.github/workflows/release.yml`（推送 `v*` 标签发布 GitHub Release；手动运行只出 Artifacts，可取消 `sign` 试运行，不需要凭据）。`ci.yml` 检查与 `build` job 并行：`build` 用 setup-node 和 ffmpeg 缓存（按脚本内容）打出 ad-hoc 签名的 `Plein.app`，以 tar 上传；再调用 [hoobnn/ci-workflows](https://github.com/hoobnn/ci-workflows) 的 `macos-release.yml@v1`（`app-artifact`），用 `inner-binaries: auto` 和 `inner-entitlements` 由内向外重签 Helper、Framework、原生模块和 ffmpeg，公证后出 `Plein-<版本>-macOS-arm64.zip`、`.dmg` 和 `.sha256`。Helper 缺 `allow-jit` 会崩溃，所以内层签名必须带 entitlements。凭据与其他 macOS 应用相同，见 ci-workflows 的 README。本机 `pnpm dist:desktop` 照旧，没有证书时 ad-hoc 签名。
