@@ -236,3 +236,30 @@ test('同步等待时切换编辑目标，操作可完成但迟到结果不通�
     updates.getByRole('button', { name: '查看画布中的版本', exact: true }),
   ).toHaveAttribute('aria-expanded', 'false')
 })
+
+test('窄屏长画布名称与差异展开不撑出面板，选择字段和同步仍可操作', async ({ page }) => {
+  const { updates, sync, canvas, current } = await fixture(page, { rename: true })
+  const title = 'Canvas'.repeat(33)
+  expect((await page.request.patch(`/api/canvases/${canvas.id}`, { data: { title } })).ok()).toBe(
+    true,
+  )
+  await page.setViewportSize({ width: 320, height: 700 })
+  await updates.getByRole('button', { name: '刷新差异', exact: true }).click()
+  await expect(updates.getByText(`${title} · 版本同步水杯`, { exact: true })).toBeVisible()
+  await updates.locator('summary').filter({ hasText: '设定' }).click()
+  await expect(updates.getByText('最初设定', { exact: true })).toBeVisible()
+  await expect(updates.getByText('新版设定', { exact: true })).toBeVisible()
+  const layout = await updates.evaluate((el) => ({
+    width: el.clientWidth,
+    content: el.scrollWidth,
+  }))
+  expect(layout.content).toBeLessThanOrEqual(layout.width)
+  const name = updates.getByRole('checkbox', { name: '名称', exact: true })
+  await name.uncheck()
+  await sync.scrollIntoViewIfNeeded()
+  await expect(sync).toBeInViewport({ ratio: 1 })
+  await updates.screenshot({ path: test.info().outputPath('library-updates-320.png') })
+  await sync.click()
+  await expect.poll(async () => (await current())?.params?.description).toBe('新版设定')
+  expect((await current())?.name).toBe('版本同步水杯')
+})

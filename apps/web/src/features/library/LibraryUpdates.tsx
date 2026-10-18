@@ -135,7 +135,7 @@ export function LibraryUpdatesPanel({ item }: { item: LibraryItem }) {
           <fieldset disabled={busy || !ready} className="contents">
             {data?.cards.map((card) => (
               <div key={key(card)} className="rounded-lg border border-line p-3">
-                <p className="text-sm font-medium">
+                <p className="text-sm font-medium break-words">
                   {card.canvasTitle} · {card.name}
                   {card.pinned ? ' · 已固定' : ''}
                 </p>
