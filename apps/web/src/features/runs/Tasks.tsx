@@ -782,6 +782,20 @@ export function RecoveryBlock(props: {
     setAttach(null)
   }
   const [confirm, setConfirm] = useState(false)
+  const confirmTrigger = useRef<HTMLButtonElement>(null)
+  const confirmCancel = useRef<HTMLButtonElement>(null)
+  const restoreConfirmFocus = useRef(false)
+  useLayoutEffect(() => {
+    if (confirm) confirmCancel.current?.focus()
+    else if (restoreConfirmFocus.current) {
+      restoreConfirmFocus.current = false
+      confirmTrigger.current?.focus()
+    }
+  }, [confirm])
+  const cancelConfirm = () => {
+    restoreConfirmFocus.current = true
+    setConfirm(false)
+  }
   const [error, setError] = useState<string | null>(null)
   const el = doc.get(job.nodeId)
   const act = async (body: RecoverJobOptions) => {
@@ -846,7 +860,13 @@ export function RecoveryBlock(props: {
           </button>
         )}
         {r.state === 'submit_unknown' && !confirm && (
-          <button type="button" className={btn} disabled={busy} onClick={() => setConfirm(true)}>
+          <button
+            ref={confirmTrigger}
+            type="button"
+            className={btn}
+            disabled={busy}
+            onClick={() => setConfirm(true)}
+          >
             确认未受理，重新提交
           </button>
         )}
@@ -936,7 +956,23 @@ export function RecoveryBlock(props: {
         </form>
       )}
       {confirm && (
-        <div className="flex flex-col gap-1 rounded-md bg-hover px-2 py-1.5">
+        <div
+          role="group"
+          aria-label="重新提交确认"
+          className="flex flex-col gap-1 rounded-md bg-hover px-2 py-1.5"
+          onKeyDown={(e) => {
+            if (
+              e.key !== 'Escape' ||
+              e.defaultPrevented ||
+              e.nativeEvent.isComposing ||
+              e.keyCode === 229
+            )
+              return
+            e.preventDefault()
+            e.stopPropagation()
+            if (!busy) cancelConfirm()
+          }}
+        >
           <p className="text-2xs text-ink-muted">
             只在确认{r.provider ?? '平台'}
             上没有这次任务时重新提交；平台若其实已受理，会再生成一次、可能重复计费。
@@ -951,10 +987,11 @@ export function RecoveryBlock(props: {
               重新提交
             </button>
             <button
+              ref={confirmCancel}
               type="button"
               className="ui-btn ui-btn-quiet ui-btn-xs"
               disabled={busy}
-              onClick={() => setConfirm(false)}
+              onClick={cancelConfirm}
             >
               取消
             </button>

@@ -127,3 +127,25 @@ test('任务表单自动聚焦、尊重已处理 Escape，取消与上层设置�
     animations: 'disabled',
   })
 })
+
+for (const close of ['Escape', 'button'] as const) {
+  test(`重新提交确认通过 ${close} 取消，只退出确认并返回原入口`, async ({ page }) => {
+    const f = await setup(page)
+    await f.input.press('Escape')
+    const trigger = f.panel.getByRole('button', { name: '确认未受理，重新提交', exact: true })
+    await trigger.click()
+    const resubmit = f.panel.getByRole('button', { name: '重新提交', exact: true })
+    const cancel = f.panel.getByRole('button', { name: '取消', exact: true })
+    await expect(resubmit).toBeVisible()
+    await expect(cancel).toBeFocused()
+    if (close === 'Escape') await page.keyboard.press('Escape')
+    else await cancel.click()
+    await expect(f.panel).toBeVisible()
+    await expect(resubmit).toHaveCount(0)
+    await expect(trigger).toBeFocused()
+    expect(f.calls).toEqual([])
+    await page.keyboard.press('Escape')
+    await expect(f.panel).toHaveCount(0)
+    await expect(f.toolbar).toBeFocused()
+  })
+}
