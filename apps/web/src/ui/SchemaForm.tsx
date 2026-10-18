@@ -193,19 +193,34 @@ function NumberControl({
   describedBy?: string
 }) {
   const [draft, setDraft] = useState<string | null>(null)
+  const [invalid, setInvalid] = useState(false)
+  const errorId = `${id}-error`
+  const choose = (v: number | undefined) => {
+    setDraft(null)
+    setInvalid(false)
+    onChange(v)
+  }
   const shown = value ?? (f.default as number | undefined)
-  const commit = () => {
+  const commit = (input: HTMLInputElement) => {
     if (draft === null) return
     setDraft(null)
+    // 未完成的指数或负号也会得到空字符串，不能当成用户主动清空。
+    if (input.validity.badInput) {
+      setInvalid(true)
+      return
+    }
     const t = draft.trim()
-    if (t === '') return onChange(undefined)
+    if (t === '') return choose(undefined)
     const n = Number(t)
-    if (Number.isFinite(n)) onChange(clampNumber(f, n))
+    if (Number.isFinite(n)) choose(clampNumber(f, n))
   }
   const input = (
     <input
       id={id}
-      aria-describedby={describedBy}
+      aria-describedby={
+        [describedBy, invalid ? errorId : undefined].filter(Boolean).join(' ') || undefined
+      }
+      aria-invalid={invalid || undefined}
       type="number"
       className={className}
       min={f.minimum}
@@ -213,40 +228,57 @@ function NumberControl({
       step={f.type === 'integer' ? 1 : 'any'}
       placeholder={f.placeholder ?? (f.default === undefined ? '随机' : String(f.default))}
       value={draft ?? (value === undefined ? '' : String(value))}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
+      onChange={(e) => {
+        setInvalid(false)
+        setDraft(e.target.value)
+      }}
+      onBlur={(e) => commit(e.currentTarget)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') e.currentTarget.blur()
       }}
     />
+  )
+  const error = invalid && (
+    <span id={errorId} role="alert" className="ui-help text-danger">
+      请输入有效数字，已保留原值
+    </span>
   )
   const slider =
     f.type === 'number' &&
     f.minimum !== undefined &&
     f.maximum !== undefined &&
     f.maximum - f.minimum <= 10
-  if (!slider) return input
+  if (!slider)
+    return (
+      <>
+        {input}
+        {error}
+      </>
+    )
   return (
-    <div className="flex items-center gap-3">
-      <input
-        type="range"
-        aria-label={f.title}
-        aria-describedby={describedBy}
-        className="min-w-0 flex-1"
-        min={f.minimum}
-        max={f.maximum}
-        step="any"
-        value={shown ?? f.minimum}
-        onChange={(e) => onChange(Number(e.target.value))}
-        onKeyDown={(e) => {
-          const direction = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key]
-          if (!direction) return
-          e.preventDefault()
-          const next = (shown ?? f.minimum!) + (direction * (f.maximum! - f.minimum!)) / 100
-          onChange(clampNumber(f, Number(next.toPrecision(12))))
-        }}
-      />
-      <div className="w-20 flex-none">{input}</div>
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-3">
+        <input
+          type="range"
+          aria-label={f.title}
+          aria-describedby={describedBy}
+          className="min-w-0 flex-1"
+          min={f.minimum}
+          max={f.maximum}
+          step="any"
+          value={shown ?? f.minimum}
+          onChange={(e) => choose(Number(e.target.value))}
+          onKeyDown={(e) => {
+            const direction = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key]
+            if (!direction) return
+            e.preventDefault()
+            const next = (shown ?? f.minimum!) + (direction * (f.maximum! - f.minimum!)) / 100
+            choose(clampNumber(f, Number(next.toPrecision(12))))
+          }}
+        />
+        <div className="w-20 flex-none">{input}</div>
+      </div>
+      {error}
     </div>
   )
 }

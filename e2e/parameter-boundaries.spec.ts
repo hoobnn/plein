@@ -81,11 +81,73 @@ test('平台整数设置夹紧上下界并取整，清空可恢复平台默认',
     await expect(input).toHaveValue(expected)
   }
   await input.fill('')
+  await input.pressSequentially('-')
+  await input.press('Tab')
+  await expect(input).toHaveValue('2')
+  await expect(settings.getByRole('alert')).toContainText('请输入有效数字')
+  await input.fill('')
   await input.press('Tab')
   await expect(input).toHaveValue('')
+  await expect(settings.getByRole('alert')).toHaveCount(0)
   await settings.getByRole('button', { name: '保存', exact: true }).click()
   await expect(settings.getByText('已保存', { exact: true })).toBeVisible()
   const config = await (await page.request.get('/api/providers/plein/mock/config')).json()
   // 配置保存用户覆盖项；清空后删掉覆盖，由 Provider 的 schema 默认值接管。
   expect(config.settings.latencyMs).toBeUndefined()
 })
+
+for (const incomplete of ['1e', '-']) {
+  test(`数值草稿 ${incomplete} 不误当清空，失焦保留已有参数并可恢复输入`, async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 560 })
+    await newProject(page)
+    const id = await page.evaluate(() =>
+      window.__plein.addNode({
+        type: 'plein/llm',
+        name: '未完成数值',
+        x: 0,
+        y: 0,
+        params: { model: 'plein/mock:chat', prompt: '保留已有参数', temperature: 1.1 },
+      }),
+    )
+    await page.getByRole('treeitem', { name: '未完成数值 定位到画布', exact: true }).click()
+    await page
+      .getByTestId('generator')
+      .getByRole('button', { name: '编辑LLM', exact: true })
+      .click()
+    await page.getByRole('button', { name: '参数', exact: true }).click()
+    const panel = page.getByRole('dialog', { name: '参数', exact: true })
+    await panel.getByRole('button', { name: '更多参数', exact: true }).click()
+    const number = panel.getByRole('spinbutton', { name: '温度', exact: true })
+    await number.fill('')
+    await number.pressSequentially(incomplete)
+    expect(await number.evaluate((el: HTMLInputElement) => el.validity.badInput)).toBe(true)
+    await number.press('Tab')
+    expect(
+      await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.temperature, id),
+    ).toBe(1.1)
+    await expect(number).toHaveValue('1.1')
+    await expect(number).toHaveAttribute('aria-invalid', 'true')
+    await expect(panel.getByRole('alert')).toContainText('请输入有效数字')
+    await expect(number).toHaveAccessibleDescription(/请输入有效数字/)
+    if (incomplete === '1e')
+      await panel.screenshot({
+        path: test.info().outputPath('invalid-number.png'),
+        animations: 'disabled',
+      })
+    await number.fill('1.3')
+    await number.press('Enter')
+    expect(
+      await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.temperature, id),
+    ).toBe(1.3)
+    await expect(panel.getByRole('alert')).toHaveCount(0)
+    await expect(number).not.toHaveAttribute('aria-invalid', 'true')
+    await number.fill('')
+    await number.pressSequentially(incomplete)
+    await number.press('Tab')
+    const slider = panel.getByRole('slider', { name: '温度', exact: true })
+    await slider.focus()
+    await slider.press('ArrowRight')
+    await expect(number).toHaveValue('1.32')
+    await expect(panel.getByRole('alert')).toHaveCount(0)
+  })
+}
