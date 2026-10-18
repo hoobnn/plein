@@ -1090,6 +1090,7 @@ function Editor({
                       value={tab}
                       onChange={(t) => {
                         setTab(t)
+                        setPreview(null)
                         setPin({ id: null })
                       }}
                     />

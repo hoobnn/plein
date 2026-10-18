@@ -26,6 +26,7 @@ export default defineConfig({
     'library-upload-batches.spec.ts',
     'library-profile-upload-batches.spec.ts',
     'library-profile-structure.spec.ts',
+    'library-profile-preview.spec.ts',
     'viewer-media.spec.ts',
     'media-pagination.spec.ts',
     'media-search.spec.ts',

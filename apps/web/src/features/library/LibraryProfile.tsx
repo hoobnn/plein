@@ -96,6 +96,30 @@ export interface HeroControl {
   onPin(assetId: string | null, caption?: string): void
 }
 
+/** 按条目身份保留悬停，名称和图片始终从当前草稿读取；删除后自动撤下预览。 */
+function useProfileHover(
+  items: Array<{ id: string; assetId?: string; caption: string }>,
+  hero: HeroControl,
+) {
+  const [id, setId] = useState<string | null>(null)
+  const current = items.find((item) => item.id === id)
+  useEffect(() => {
+    if (id !== null) hero.onPreview(current?.assetId ?? null, current?.caption)
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- 依赖当前条目的身份与显示数据，避免新回调触发循环
+  }, [id, current?.id, current?.assetId, current?.caption])
+  return {
+    enter: (id: string) => {
+      setId(id)
+      const item = items.find((item) => item.id === id)
+      hero.onPreview(item?.assetId ?? null, item?.caption)
+    },
+    leave: () => {
+      setId(null)
+      hero.onPreview(null)
+    },
+  }
+}
+
 const emptyLook = (name: string): ProfileLook => ({
   id: profileId(),
   name,
@@ -143,6 +167,17 @@ export function PeriodsTab({
   const period = profile.periods.find((p) => p.id === sel?.period) ?? profile.periods[0]
   const outfit = period?.outfits.find((o) => o.id === sel?.outfit)
   const index = period ? profile.periods.indexOf(period) : -1
+  const hover = useProfileHover(
+    profile.periods.flatMap((p) => [
+      { id: `period:${p.id}`, assetId: p.images[0], caption: `${p.name}时期` },
+      ...p.outfits.map((o) => ({
+        id: `outfit:${p.id}:${o.id}`,
+        assetId: o.images[0],
+        caption: `${p.name} · ${o.name}`,
+      })),
+    ]),
+    hero,
+  )
 
   // 选中项钉住大图：服饰没有图时退回它所属时期的图
   useEffect(() => {
@@ -226,8 +261,8 @@ export function PeriodsTab({
                 type="button"
                 aria-pressed={on && !outfit}
                 onClick={() => setSel({ period: p.id })}
-                onPointerEnter={() => hero.onPreview(p.images[0] ?? null, `${p.name}时期`)}
-                onPointerLeave={() => hero.onPreview(null)}
+                onPointerEnter={() => hover.enter(`period:${p.id}`)}
+                onPointerLeave={hover.leave}
                 className="lib-lane-period"
               >
                 <span className="lib-timeline-thumb">
@@ -252,10 +287,8 @@ export function PeriodsTab({
                       aria-pressed={on && o.id === outfit?.id}
                       aria-label={`${p.name} · ${o.name}`}
                       onClick={() => setSel({ period: p.id, outfit: o.id })}
-                      onPointerEnter={() =>
-                        hero.onPreview(o.images[0] ?? null, `${p.name} · ${o.name}`)
-                      }
-                      onPointerLeave={() => hero.onPreview(null)}
+                      onPointerEnter={() => hover.enter(`outfit:${p.id}:${o.id}`)}
+                      onPointerLeave={hover.leave}
                       className="lib-look"
                     >
                       <span className="lib-look-cover">
@@ -669,6 +702,10 @@ function LookGrid({
 }) {
   const [open, setOpen] = useState<string | null>(null)
   const current = looks.find((l) => l.id === open)
+  const hover = useProfileHover(
+    looks.map((look) => ({ id: look.id, assetId: look.images[0], caption: look.name })),
+    hero,
+  )
   const set = (id: string, p: Partial<ProfileLook>) =>
     onChange(looks.map((l) => (l.id === id ? { ...l, ...p } : l)))
   const unused = presets.filter((n) => !looks.some((l) => l.name === n))
@@ -679,9 +716,9 @@ function LookGrid({
   }
 
   useEffect(() => {
-    if (current) hero.onPin(current.images[0] ?? null, current.name)
-    // oxlint-disable-next-line react-hooks/exhaustive-deps -- 只跟展开项和它的首图走
-  }, [current?.id, current?.images[0]])
+    hero.onPin(current?.images[0] ?? null, current?.name)
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- 跟展开项、首图及名称走，收起时清除固定预览
+  }, [current?.id, current?.images[0], current?.name])
 
   return (
     <div className="ui-field">
@@ -699,8 +736,8 @@ function LookGrid({
               aria-pressed={l.id === open}
               aria-label={`编辑「${l.name}」`}
               onClick={() => setOpen(l.id === open ? null : l.id)}
-              onPointerEnter={() => hero.onPreview(l.images[0] ?? null, l.name)}
-              onPointerLeave={() => hero.onPreview(null)}
+              onPointerEnter={() => hover.enter(l.id)}
+              onPointerLeave={hover.leave}
               className="lib-look"
             >
               <span className="lib-look-cover">
