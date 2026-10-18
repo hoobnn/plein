@@ -18,6 +18,7 @@ export function Select({
   value,
   options,
   onChange,
+  disabled = false,
   className = '',
   'aria-label': ariaLabel,
 }: {
@@ -25,6 +26,7 @@ export function Select({
   value: string
   options: SelectOption[]
   onChange(value: string): void
+  disabled?: boolean
   className?: string
   'aria-label'?: string
 }) {
@@ -32,6 +34,7 @@ export function Select({
   const popup = useRef<HTMLDivElement>(null)
   return (
     <Base.Root
+      disabled={disabled}
       value={value}
       items={items}
       modal={false}

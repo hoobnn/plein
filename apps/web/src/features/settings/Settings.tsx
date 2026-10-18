@@ -3,7 +3,7 @@ import { capabilityLabel } from '@plein/nodes'
 import type { Capability } from '@plein/plugin-sdk'
 import type { Catalog, ProviderConfigView, ProviderInfo, ProviderTestResult } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
 import { queryKeys } from '../../api/query'
 import { desktop } from '../../desktop'
@@ -43,7 +43,7 @@ export function ProviderRow({
   provider: ProviderInfo
   open: boolean
   onToggleOpen(): void
-  onSaved(): void
+  onSaved(): void | Promise<void>
   /** 保存时顺带启用（首次启动引导里填完密钥就能用） */
   enableOnSave?: boolean
 }) {
@@ -56,6 +56,11 @@ export function ProviderRow({
   const [configError, setConfigError] = useState<string | null>(null)
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [numberEditing, setNumberEditing] = useState(false)
+  const closedFeedback = useRef<HTMLParagraphElement>(null)
+  useEffect(() => {
+    if (!open && (busy || status?.error))
+      closedFeedback.current?.scrollIntoView({ block: 'nearest' })
+  }, [open, busy, status])
   const clearFeedback = () => {
     setStatus(null)
     setTest(null)
@@ -95,7 +100,7 @@ export function ProviderRow({
       setSecrets({})
       setNumberEditing(false)
       setStatus({ message: '已保存' })
-      onSaved()
+      await onSaved()
     } catch (err) {
       setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
     } finally {
@@ -109,7 +114,7 @@ export function ProviderRow({
     try {
       const next = await api.updateProviderConfig(provider.id, { enabled })
       if (config) setConfig(next)
-      onSaved()
+      await onSaved()
     } catch (err) {
       setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
     } finally {
@@ -173,6 +178,15 @@ export function ProviderRow({
           onChange={setEnabled}
         />
       </div>
+      {!open && (busy || status?.error) && (
+        <p
+          ref={closedFeedback}
+          className={`px-4 pb-3 text-xs ${busy ? 'text-ink-muted' : 'text-danger'}`}
+          role={busy ? 'status' : 'alert'}
+        >
+          {busy ? '处理中…' : status?.message}
+        </p>
+      )}
       {/* 展开的内容和标题文字对齐：左边距 16 + 箭头 14 + 间距 12 */}
       {open && (
         <div id={bodyId} className="flex flex-col gap-4 px-4 pb-4 pl-10.5">
@@ -477,8 +491,16 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
 }
 
 /** 默认模型：每种能力一项，只列已启用且填好密钥的平台的模型 */
-function DefaultModels({ catalog, onSaved }: { catalog: Catalog; onSaved(): void }) {
+function DefaultModels({
+  catalog,
+  onSaved,
+}: {
+  catalog: Catalog
+  onSaved(): void | Promise<void>
+}) {
   const [error, setError] = useState<string | null>(null)
+  const inFlight = useRef(new Set<Capability>())
+  const [saving, setSaving] = useState<Capability[]>([])
   const ready = catalog.providers.filter((p) => p.enabled && p.configured)
   const rows = CAPABILITY_ORDER.map((cap) => ({
     cap,
@@ -490,13 +512,19 @@ function DefaultModels({ catalog, onSaved }: { catalog: Catalog; onSaved(): void
   })).filter((r) => r.options.length > 0)
   if (rows.length === 0)
     return <p className="text-sm text-ink-subtle">先在下面启用平台并填好密钥。</p>
-  const save = async (capability: string, model: string) => {
+  const save = async (capability: Capability, model: string) => {
+    if (inFlight.current.has(capability)) return
+    inFlight.current.add(capability)
+    setSaving([...inFlight.current])
     setError(null)
     try {
       await api.setDefaultModel({ capability, model })
-      onSaved()
+      await onSaved()
     } catch (err) {
       setError(`保存失败：${(err as Error).message}`)
+    } finally {
+      inFlight.current.delete(capability)
+      setSaving([...inFlight.current])
     }
   }
   return (
@@ -509,6 +537,7 @@ function DefaultModels({ catalog, onSaved }: { catalog: Catalog; onSaved(): void
           >
             <span className="w-20 flex-none text-sm">{capabilityLabel(r.cap)}</span>
             <Select
+              disabled={saving.includes(r.cap)}
               aria-label={`默认${capabilityLabel(r.cap)}模型`}
               value={catalog.defaultModels[r.cap] ?? ''}
               options={r.options}
@@ -518,6 +547,11 @@ function DefaultModels({ catalog, onSaved }: { catalog: Catalog; onSaved(): void
           </li>
         ))}
       </ul>
+      {saving.map((capability) => (
+        <p key={capability} role="status" className="text-xs text-ink-muted">
+          正在保存{capabilityLabel(capability)}默认模型…
+        </p>
+      ))}
       {error && (
         <p className="text-xs text-danger" role="alert">
           {error}
