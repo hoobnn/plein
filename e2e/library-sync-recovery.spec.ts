@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { newProject } from './canvas'
+import { newProject, waitEngine } from './canvas'
 
 test('删除库条目保留已有卡片与参考图，再存入时创建新关联', async ({ page }) => {
   const { panel, item, current, asset, canvas } = await fixture(page, { image: true })
@@ -262,4 +262,53 @@ test('窄屏长画布名称与差异展开不撑出面板，选择字段和同�
   await sync.click()
   await expect.poll(async () => (await current())?.params?.description).toBe('新版设定')
   expect((await current())?.name).toBe('版本同步水杯')
+})
+
+test('资产同步与固定不混入本地撤销，重做和刷新后版本保持一致', async ({ page }) => {
+  const { panel, updates, sync, current } = await fixture(page)
+  const local = await page.evaluate(() => {
+    const id = window.__plein.addNode({
+      type: 'plein/text',
+      name: '独立的本地操作',
+      params: { text: '保留正文' },
+      x: 1700,
+      y: 400,
+    })
+    return id
+  })
+  await sync.click()
+  await expect.poll(async () => (await current())?.params?.description).toBe('新版设定')
+  await updates.getByRole('button', { name: '固定当前版本', exact: true }).click()
+  await expect(updates.getByRole('button', { name: '解除固定', exact: true })).toBeEnabled()
+  const synced = await current()
+  expect(synced?.params?.libraryPinned).toBe(true)
+  await panel.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(panel).toBeHidden()
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect
+    .poll(() => page.evaluate((id) => !!window.__plein.engine.doc.get(id), local))
+    .toBe(false)
+  expect(await current()).toEqual(synced)
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect
+    .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.text, local))
+    .toBe('保留正文')
+  expect(await current()).toEqual(synced)
+  await page.reload()
+  await waitEngine(page)
+  await expect.poll(current).toEqual(synced)
+  expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.text, local)).toBe(
+    '保留正文',
+  )
+  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await panel.getByRole('button', { name: '道具', exact: true }).click()
+  await panel
+    .locator(`[data-library-id="${synced!.params!.libraryId}"]`)
+    .getByRole('button')
+    .first()
+    .click()
+  await updates.getByRole('button', { name: '查看画布中的版本', exact: true }).click()
+  await expect(updates.getByText('与资产库一致', { exact: true })).toBeVisible()
+  await expect(updates.getByRole('button', { name: '解除固定', exact: true })).toBeEnabled()
+  await expect(updates.getByRole('button', { name: '同步选中的字段', exact: true })).toBeDisabled()
 })
