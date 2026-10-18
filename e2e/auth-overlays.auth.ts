@@ -23,6 +23,38 @@ async function login(page: Page) {
   await page.getByRole('button', { name: '登录', exact: true }).click()
 }
 
+test('密码登录成功但会话读取失败，手动重试回到原画布且不重复登录', async ({ page }) => {
+  const project = await authenticated(page)
+  expect(
+    (
+      await page.request.post('/api/auth/sign-out', {
+        data: {},
+        headers: { origin: new URL(page.url()).origin },
+      })
+    ).ok(),
+  ).toBe(true)
+  await page.goto(`/#/c/${project.lastCanvasId}`)
+  await expect(page.getByRole('heading', { name: '登录 Plein' })).toBeVisible()
+  let failing = true
+  let logins = 0
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && r.url().endsWith('/api/auth/sign-in/email')) logins++
+  })
+  await page.route('**/api/session', (route) =>
+    failing
+      ? route.fulfill({ status: 503, json: { message: '登录后的会话读取暂不可用' } })
+      : route.continue(),
+  )
+  await login(page)
+  await expect(page.getByRole('alert')).toContainText('登录后的会话读取暂不可用')
+  expect((await page.request.get(`/api/projects/${project.id}`)).ok()).toBe(true)
+  failing = false
+  await page.getByRole('button', { name: '重试', exact: true }).click()
+  await waitEngine(page)
+  expect(new URL(page.url()).hash).toBe(`#/c/${project.lastCanvasId}`)
+  expect(logins).toBe(1)
+})
+
 for (const label of ['资产库', '素材', '创作检查点', '设置']) {
   test(`${label} 读取遇到真实会话失效时不覆盖登录，重新登录也不残留旧窗口`, async ({ page }) => {
     const project = await authenticated(page)

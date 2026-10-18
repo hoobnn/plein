@@ -39,6 +39,7 @@ describe('请求', () => {
     // 密码错也是 401，不能把登录页再刷一遍
     const err = await failure(api.login({ email: 'a@b.c', password: 'x' }))
     expect(err.status).toBe(401)
+    expect((await failure(api.session())).status).toBe(401)
     expect(onUnauthorized).toHaveBeenCalledTimes(1)
   })
 

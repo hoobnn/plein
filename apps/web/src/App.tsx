@@ -150,10 +150,12 @@ export function App() {
 
 function AppContent({ onOpenSettings }: { onOpenSettings(): void }) {
   const route = useRoute()
-  const { status, info, refresh } = useSession()
+  const { status, info, error, refreshing, refresh } = useSession()
 
   useEffect(() => {
-    void refresh()
+    // StrictMode 与 Suspense 的 effect 重放不应重复启动读取或隐式重试。
+    const session = useSession.getState()
+    if (session.status === 'loading' && !session.refreshing) void refresh()
   }, [refresh])
 
   // 本地演示不依赖服务端，可用于性能测试：#/demo?n=1000
@@ -166,13 +168,33 @@ function AppContent({ onOpenSettings }: { onOpenSettings(): void }) {
       />
     )
   }
-  if (status === 'loading') return null
+  if (status === 'loading')
+    return (
+      <div
+        className="flex h-full items-center justify-center gap-2 p-4 text-sm text-ink-muted"
+        role="status"
+      >
+        <span className="ui-spinner size-4" />
+        正在连接 Plein…
+      </div>
+    )
   if (status === 'offline') {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-4 text-center text-sm text-ink-muted">
-        <p>连不上 Plein 服务端。开发时请先运行 pnpm dev:server。</p>
-        <button type="button" onClick={refresh} className="ui-btn ui-btn-secondary">
-          重试
+        <p className="max-w-lg break-words" role="alert">
+          无法连接 Plein{error ? `：${error}` : ''}
+        </p>
+        <p className="text-xs text-ink-subtle">请检查网络连接，确认 Plein 服务已启动后重试。</p>
+        <button
+          type="button"
+          onClick={() => {
+            if (!useSession.getState().refreshing) void refresh()
+          }}
+          disabled={refreshing}
+          aria-busy={refreshing}
+          className="ui-btn ui-btn-secondary"
+        >
+          {refreshing ? '正在重试…' : '重试'}
         </button>
       </div>
     )

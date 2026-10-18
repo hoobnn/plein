@@ -9,6 +9,7 @@ interface SessionStore {
   status: Status
   info: SessionInfo | null
   error: string | null
+  refreshing: boolean
   signingOut: boolean
   logout(): Promise<void>
   refresh(): Promise<void>
@@ -21,11 +22,12 @@ export const useSession = create<SessionStore>((set, get) => ({
   status: 'loading',
   info: null,
   error: null,
+  refreshing: false,
   signingOut: false,
   logout() {
     if (logoutPending) return logoutPending
     refreshVersion++
-    set({ signingOut: true })
+    set({ signingOut: true, refreshing: false })
     logoutPending = (async () => {
       await api.logout()
       queryClient.clear()
@@ -38,11 +40,14 @@ export const useSession = create<SessionStore>((set, get) => ({
   },
   async refresh() {
     const version = ++refreshVersion
+    set({ refreshing: true })
     try {
       const info = await api.session()
       if (version === refreshVersion) set({ info, status: 'ready', error: null })
     } catch (err) {
       if (version === refreshVersion) set({ status: 'offline', error: (err as Error).message })
+    } finally {
+      if (version === refreshVersion) set({ refreshing: false })
     }
   },
 }))

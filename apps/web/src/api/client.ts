@@ -105,7 +105,9 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
       message?: string
       code?: string
     } | null
-    if (res.status === 401 && !path.startsWith(API.auth)) reportUnauthorized()
+    // 会话读取自身失败由调用方处理，否则会再次读取会话、形成递归刷新。
+    if (res.status === 401 && path !== API.session && !path.startsWith(API.auth))
+      reportUnauthorized()
     throw new ApiError(
       res.status,
       body?.error ?? body?.code ?? 'http_error',
