@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 /**
  * 全局悬停提示：接管页面上所有 `title` 属性，换成与应用一致的提示气泡，不再弹系统原生的黄色小框。
  * 指针移入时把 title 暂存到 data-tip（浏览器就不会再弹原生提示），移出时还原，
- * 这样 React 管理的 title 属性在静止时保持原样。
+ * 悬停期间同步 React 对 title 的更新，移出时还原最新说明。
  */
 const SHOW_DELAY = 450
 /** 刚关掉一个提示后，移到相邻按钮时立即显示 */
@@ -22,10 +22,14 @@ export function TooltipHost() {
     let target: HTMLElement | null = null
     let timer = 0
     let lastHidden = 0
+    let observer: MutationObserver | null = null
 
     const restore = () => {
+      observer?.disconnect()
+      observer = null
       if (target?.dataset.tip !== undefined) {
-        target.setAttribute('title', target.dataset.tip)
+        // React 刚更新、观察回调尚未执行时，也不能用旧提示覆盖新值。
+        if (!target.hasAttribute('title')) target.setAttribute('title', target.dataset.tip)
         delete target.dataset.tip
       }
       target = null
@@ -53,8 +57,19 @@ export function TooltipHost() {
       if (!el.hasAttribute('aria-label') && !el.textContent?.trim())
         el.setAttribute('aria-label', text)
       const show = () => {
-        if (target === el && el.isConnected) setTip({ text, rect: el.getBoundingClientRect() })
+        const latest = el.dataset.tip?.trim()
+        if (target === el && el.isConnected && latest)
+          setTip({ text: latest, rect: el.getBoundingClientRect() })
       }
+      observer = new MutationObserver(() => {
+        if (target !== el || !el.hasAttribute('title')) return
+        const latest = el.getAttribute('title') ?? ''
+        el.dataset.tip = latest
+        el.removeAttribute('title')
+        if (!latest.trim()) hide()
+        else setTip((current) => (current ? { ...current, text: latest.trim() } : null))
+      })
+      observer.observe(el, { attributes: true, attributeFilter: ['title'] })
       if (performance.now() - lastHidden < WARM_WINDOW) show()
       else timer = window.setTimeout(show, SHOW_DELAY)
     }

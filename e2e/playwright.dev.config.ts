@@ -83,6 +83,7 @@ export default defineConfig({
     'node-picker-boundaries.spec.ts',
     'generator-layout.spec.ts',
     'generator-popovers.spec.ts',
+    'tooltip-lifecycle.spec.ts',
     'generator-camera.spec.ts',
     'generator-editing.spec.ts',
     'candidate-lifecycle.spec.ts',
