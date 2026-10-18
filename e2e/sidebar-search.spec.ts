@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { centerOf, contextMenu, newProject, settle } from './canvas'
+import { centerOf, contextMenu, newProject, settle, waitEngine } from './canvas'
 
 async function fixture(page: Page) {
   await newProject(page)
@@ -150,4 +150,46 @@ for (const commit of ['Enter', 'blur']) {
       '恢复后保存',
     )
   })
+}
+
+for (const commit of ['Enter', 'blur'] as const) {
+  for (const dirty of [false, true]) {
+    test(`侧栏改名${dirty ? '已有草稿' : '仅聚焦'}时同伴改名，${commit} 不静默覆盖远端名称`, async ({
+      page,
+      context,
+    }) => {
+      const { sidebar, ids } = await fixture(page)
+      const row = sidebar.locator(`[role="treeitem"][data-id="${ids[0]}"]`)
+      const peerContext = await context.browser()!.newContext()
+      try {
+        const peer = await peerContext.newPage()
+        await peer.goto(page.url())
+        await waitEngine(peer)
+        const peerRow = peer.locator(`[role="treeitem"][data-id="${ids[0]}"]`)
+        await expect(peerRow).toBeVisible()
+        await row.press('F2')
+        const input = row.getByRole('textbox', { name: '元素名称', exact: true })
+        if (dirty) await input.fill('本机尚未提交')
+        await peerRow.press('F2')
+        const peerInput = peerRow.getByRole('textbox', { name: '元素名称', exact: true })
+        await peerInput.fill('同伴已保存')
+        await peerInput.press('Enter')
+        const name = () => page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, ids[0]!)
+        await expect.poll(name).toBe('同伴已保存')
+        if (commit === 'Enter') await input.press('Enter')
+        else await sidebar.getByRole('button', { name: '搜索', exact: true }).click()
+        expect(await name()).toBe('同伴已保存')
+        if (dirty) {
+          await expect(input).toHaveValue('本机尚未提交')
+          await expect(
+            page.getByText('名称已在其他位置更新，已保留输入；请确认后再次保存', { exact: true }),
+          ).toBeVisible()
+          await input.press('Enter')
+          await expect.poll(name).toBe('本机尚未提交')
+        } else await expect(input).toHaveCount(0)
+      } finally {
+        await peerContext.close()
+      }
+    })
+  }
 }

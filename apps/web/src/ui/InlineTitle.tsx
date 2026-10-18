@@ -15,29 +15,42 @@ export function InlineTitle({
   className?: string
   label?: string
   autoFocus?: boolean
-  onDone(title: string | null): void
+  /** 返回最新基线时保留输入，供用户确认后再次提交。 */
+  onDone(title: string | null, expected: string): { expected: string } | void | Promise<void>
 }) {
-  const [draft, setDraft] = useState(value)
+  const [editing, setEditing] = useState({ draft: value, source: value, baseline: value })
+  if (editing.source !== value) {
+    const pristine = editing.draft === editing.source
+    setEditing({
+      source: value,
+      draft: pristine ? value : editing.draft,
+      baseline: pristine ? value : editing.baseline,
+    })
+  }
   const settled = useRef(false)
   const finish = (title: string | null) => {
     if (settled.current) return
     settled.current = true
-    onDone(title?.trim() || null)
+    const conflict = onDone(title?.trim() || null, editing.baseline)
+    if (conflict && 'expected' in conflict) {
+      setEditing((current) => ({ ...current, baseline: conflict.expected }))
+      settled.current = false
+    }
   }
   return (
     <input
       // oxlint-disable-next-line jsx-a11y/no-autofocus -- 点了「重命名」就是要输入
       autoFocus={autoFocus}
-      value={draft}
+      value={editing.draft}
       maxLength={200}
       aria-label={label}
       onFocus={(e) => e.currentTarget.select()}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => finish(draft)}
+      onChange={(e) => setEditing({ ...editing, draft: e.target.value })}
+      onBlur={() => finish(editing.draft)}
       onKeyDown={(e) => {
         e.stopPropagation()
         if (e.nativeEvent.isComposing) return
-        if (e.key === 'Enter') finish(draft)
+        if (e.key === 'Enter') finish(editing.draft)
         if (e.key === 'Escape') finish(null)
       }}
       className={`bg-surface-2 outline-none ring-1 ring-accent ${className}`}

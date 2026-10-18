@@ -341,12 +341,21 @@ function Layers({ engine }: { engine: Engine }) {
       }
     }
   }
-  const rename = (id: string, name: string | null) => {
-    setRenaming(null)
-    if (name !== null && name !== engine.doc.get(id)?.name) {
+  const rename = (id: string, name: string | null, expected: string) => {
+    const current = engine.doc.get(id)
+    if (name !== null && current && name !== current.name) {
       if (engine.doc.readOnly) {
+        setRenaming(null)
         useCanvas.getState().notify('画布已变为只读，名称未保存')
         return
+      }
+      if ((current.name ?? outlineTitle(current, catalog)) !== expected) {
+        if (name === expected) {
+          setRenaming(null)
+          return
+        }
+        useCanvas.getState().notify('名称已在其他位置更新，已保留输入；请确认后再次保存')
+        return { expected: current.name ?? outlineTitle(current, catalog) }
       }
       const row = listRef.current?.querySelector(`[data-id="${CSS.escape(id)}"]`)
       if (searching && row?.contains(document.activeElement))
@@ -355,6 +364,7 @@ function Layers({ engine }: { engine: Engine }) {
       updateElement(engine.doc, id, { name })
       engine.doc.undo.stopCapturing()
     }
+    setRenaming(null)
   }
   // 行组件 memo 过：回调保持同一引用，选中变化时只重渲染选中状态变了的行
   const latest = useRef<LayerActions>(null!)
@@ -373,7 +383,7 @@ function Layers({ engine }: { engine: Engine }) {
       toggle: (id) => latest.current.toggle(id),
       locate: (id) => latest.current.locate(id),
       startRename: (id) => latest.current.startRename(id),
-      rename: (id, name) => latest.current.rename(id, name),
+      rename: (id, name, expected) => latest.current.rename(id, name, expected),
       focus: (id) => latest.current.focus(id),
       navigate: (id, key) => latest.current.navigate(id, key),
     }),
@@ -499,7 +509,7 @@ interface LayerActions {
   toggle(id: string): void
   locate(id: string): void
   startRename(id: string): void
-  rename(id: string, name: string | null): void
+  rename(id: string, name: string | null, expected: string): { expected: string } | void
   focus(id: string): void
   navigate(id: string, key: TreeNavigationKey): void
 }
@@ -526,7 +536,7 @@ const LayerRow = memo(function LayerRow({
   const onToggle = () => actions.toggle(el.id)
   const onLocate = () => actions.locate(el.id)
   const onRename = () => actions.startRename(el.id)
-  const onRenamed = (name: string | null) => actions.rename(el.id, name)
+  const onRenamed = (name: string | null, expected: string) => actions.rename(el.id, name, expected)
   const running = el.run?.status === 'running' || el.run?.status === 'queued'
   const failed = el.run?.status === 'failed'
   return (
