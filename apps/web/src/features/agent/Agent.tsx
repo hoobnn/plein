@@ -14,6 +14,7 @@ import { renderMarkdown } from '../../canvas/markdown'
 import { useRoute } from '../../router'
 import { EditPlanRow } from './EditPlanCard'
 import { useAgent } from './store'
+import { existingTargets, useAgentTargets } from './targets'
 import { useCanvas } from '../../stores/canvas'
 import { useSession } from '../../stores/session'
 import { shortTime } from '../../ui/format'
@@ -617,12 +618,11 @@ const APPROVAL_DONE: Record<string, string> = {
 
 /** 等用户确认的操作：允许后服务端直接执行；悬停时在画布上高亮相关元素 */
 function ApprovalRow({ item }: { item: Extract<AgentItem, { type: 'approval' }> }) {
-  const engine = useCanvas((s) => s.engine)
+  const { engine, ids } = useAgentTargets(item.ids)
   const busy = useAgent(
     (s) => !!s.pendingActions[`${s.session?.id}/decide/${item.id}`] || !!s.selecting,
   )
   const pending = item.status === 'pending'
-  const ids = item.ids.filter((id) => engine?.doc.get(id))
   const decide = async (allow: boolean) => {
     await useAgent.getState().decide(item.id, allow)
   }
@@ -633,7 +633,8 @@ function ApprovalRow({ item }: { item: Extract<AgentItem, { type: 'approval' }> 
       data-status={item.status}
       aria-busy={busy}
       onPointerEnter={() => {
-        if (ids.length) engine?.flash(ids)
+        const live = existingTargets(engine?.doc, ids)
+        if (live.length) engine?.flash(live)
       }}
     >
       <div className="flex items-center gap-2">
@@ -648,7 +649,10 @@ function ApprovalRow({ item }: { item: Extract<AgentItem, { type: 'approval' }> 
             aria-label="在画布上查看"
             title="在画布上查看"
             className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn"
-            onClick={() => engine.flyTo(ids)}
+            onClick={() => {
+              const live = existingTargets(engine.doc, ids)
+              if (live.length) engine.flyTo(live)
+            }}
           >
             <Icon name="locate" size={14} />
           </button>
@@ -680,7 +684,7 @@ function ApprovalRow({ item }: { item: Extract<AgentItem, { type: 'approval' }> 
 
 /** 一轮对话的改动摘要：在画布上定位，或整轮撤销 */
 function ChangesRow({ item }: { item: Extract<AgentItem, { type: 'changes' }> }) {
-  const engine = useCanvas((s) => s.engine)
+  const { engine, ids: shown } = useAgentTargets([...item.created, ...item.updated])
   const running = useAgent((s) => s.session?.status === 'running')
   const busy = useAgent((s) => !!s.pendingActions[`${s.session?.id}/undo/${item.turn}`])
   const selecting = useAgent((s) => !!s.selecting)
@@ -691,13 +695,13 @@ function ChangesRow({ item }: { item: Extract<AgentItem, { type: 'changes' }> })
     item.edges && `连线 ${item.edges}`,
     item.runs && `运行 ${item.runs}`,
   ].filter(Boolean)
-  const shown = [...item.created, ...item.updated].filter((id) => engine?.doc.get(id))
 
   return (
     <div
       className={`plein-agent-changes flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ring-1 ring-line ring-inset ${item.undone ? 'text-ink-subtle' : 'text-ink-muted'}`}
       onPointerEnter={() => {
-        if (!item.undone && shown.length) engine?.flash(shown)
+        const live = existingTargets(engine?.doc, shown)
+        if (!item.undone && live.length) engine?.flash(live)
       }}
     >
       <Icon name={item.undone ? 'undo' : 'sparkle'} size={14} />
@@ -713,8 +717,10 @@ function ChangesRow({ item }: { item: Extract<AgentItem, { type: 'changes' }> })
           title="在画布上查看改动"
           className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn"
           onClick={() => {
-            engine.selection.set(shown)
-            engine.flyTo(shown)
+            const live = existingTargets(engine.doc, shown)
+            if (!live.length) return
+            engine.selection.set(live)
+            engine.flyTo(live)
           }}
         >
           <Icon name="locate" size={14} />

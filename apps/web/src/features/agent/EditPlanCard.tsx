@@ -11,9 +11,9 @@ import {
   stepsFor,
 } from '@plein/protocol'
 import { useLayoutEffect, useRef, useState } from 'react'
-import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { useAgent } from './store'
+import { existingTargets, useAgentTargets } from './targets'
 
 const STAGE_LABELS: Record<EditStage, string> = {
   image: '镜头图',
@@ -84,7 +84,7 @@ function editsOf(
  * 不勾某个目标或某个步骤（只影响这次批准的范围和估算），再按范围批准：只改文字 / 只出候选图 / 完整方案
  */
 export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_plan' }> }) {
-  const engine = useCanvas((s) => s.engine)
+  const { engine, ids } = useAgentTargets(item.plan.targets.map((t) => t.nodeId))
   const busy = useAgent(
     (s) => !!s.pendingActions[`${s.session?.id}/decide/${item.id}`] || !!s.selecting,
   )
@@ -114,7 +114,6 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
     if (editing && restore) returnTo.current = `${editing.nodeId}/${editing.key}`
     setEditing(null)
   }
-  const ids = plan.targets.map((t) => t.nodeId).filter((id) => engine?.doc.get(id))
 
   const only = plan.targets.some((t) => off.has(t.nodeId))
     ? plan.targets.filter((t) => !off.has(t.nodeId)).map((t) => t.nodeId)
@@ -182,7 +181,8 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
       data-revising={revising || undefined}
       aria-busy={locked || undefined}
       onPointerEnter={() => {
-        if (ids.length) engine?.flash(ids)
+        const live = existingTargets(engine?.doc, ids)
+        if (live.length) engine?.flash(live)
       }}
     >
       <div className="flex items-center gap-2 text-ink-muted">
@@ -205,7 +205,10 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
             aria-label="在画布上查看"
             title="在画布上查看"
             className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn"
-            onClick={() => engine.flyTo(ids)}
+            onClick={() => {
+              const live = existingTargets(engine.doc, ids)
+              if (live.length) engine.flyTo(live)
+            }}
           >
             <Icon name="locate" size={14} />
           </button>
