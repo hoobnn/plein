@@ -18,6 +18,21 @@ export function placeStartNode(engine: Engine, catalog: Catalog, canvasId: strin
     const c = engine.camera.viewRect
     const r = placeDramaTemplate(engine, catalog, { x: c.x + 80, y: c.y + 80 })
     engine.zoomToFit()
+    // 新分镜会挂载创作引导栏；等 React 完成布局后按新的可见区域再适配。
+    // 用户已经移动视图或离开文档时，不让迟到的适配打断操作。
+    const { x, y, zoom } = engine.camera
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (
+          useCanvas.getState().engine === engine &&
+          engine.camera.x === x &&
+          engine.camera.y === y &&
+          engine.camera.zoom === zoom &&
+          r.frames.some((id) => engine.doc.get(id))
+        )
+          engine.zoomToFit()
+      }),
+    )
     useCanvas.getState().notify(dramaNotice(r))
     return
   }

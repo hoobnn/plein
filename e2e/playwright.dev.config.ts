@@ -33,6 +33,7 @@ export default defineConfig({
     'projects.spec.ts',
     'welcome.spec.ts',
     'welcome-lifecycle.spec.ts',
+    'start-intent-lifecycle.spec.ts',
     'project-open-recovery.spec.ts',
     'project-create-lifecycle.spec.ts',
     'project-search-layout.spec.ts',

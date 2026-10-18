@@ -11,6 +11,7 @@ import { api } from '../api/client'
 import { queryKeys } from '../api/query'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { placeStartNode } from '../canvas/start'
+import { watchStartNode } from '../canvas/startQueue'
 import { CanvasMenus } from '../shell/CanvasMenus'
 import { AgentCursor } from '../features/agent/AgentCursor'
 import { useAgent } from '../features/agent/store'
@@ -102,7 +103,14 @@ export function Editor({
   const engine = useCanvas((s) => s.engine)
   const catalog = useCatalog((s) => s.catalog)
   useEffect(() => {
-    if (engine && catalog && canvasId) placeStartNode(engine, catalog, canvasId)
+    if (!engine || !catalog || !canvasId) return
+    const place = () => {
+      const current = useCanvas.getState()
+      if (current.engine === engine && current.canvasId === canvasId && !engine.doc.readOnly)
+        placeStartNode(engine, catalog, canvasId)
+    }
+    place()
+    return watchStartNode(canvasId, place)
   }, [engine, catalog, canvasId])
 
   useEffect(() => {
