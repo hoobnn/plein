@@ -4,7 +4,13 @@ import { api } from '../../api/client'
 import { useAgent } from './store'
 
 vi.mock('../../api/client', () => ({
-  api: { agentSessions: vi.fn(), agentSession: vi.fn(), deleteAgentSession: vi.fn() },
+  api: {
+    agentSessions: vi.fn(),
+    agentSession: vi.fn(),
+    deleteAgentSession: vi.fn(),
+    createAgentSession: vi.fn(),
+    sendAgentMessage: vi.fn(),
+  },
 }))
 
 /** 手动放行的应答：按顺序控制谁先到 */
@@ -47,6 +53,94 @@ afterEach(() => {
   vi.mocked(api.agentSession).mockReset()
   vi.mocked(api.agentSessions).mockReset()
   vi.mocked(api.deleteAgentSession).mockReset()
+  vi.mocked(api.createAgentSession).mockReset()
+  vi.mocked(api.sendAgentMessage).mockReset()
+})
+
+describe('助手草稿与发送生命周期', () => {
+  it('按画布保留草稿，关闭面板和切换画布不覆盖其他草稿，空草稿移除', async () => {
+    vi.mocked(api.agentSessions).mockResolvedValue([])
+    await useAgent.getState().enter('c1')
+    useAgent.getState().setDraft('c1', '第一块画布')
+    useAgent.getState().toggle(false)
+    await useAgent.getState().enter('c2')
+    useAgent.getState().setDraft('c2', '第二块画布')
+    expect(useAgent.getState().drafts).toEqual({
+      c1: { text: '第一块画布' },
+      c2: { text: '第二块画布' },
+    })
+    useAgent.getState().setDraft('c2', '')
+    expect(useAgent.getState().drafts).toEqual({ c1: { text: '第一块画布' } })
+  })
+
+  it('待提交时阻止重复请求，冻结发送选项，迟到成功不清除修改后又相同的草稿', async () => {
+    useAgent.setState({ canvasId: 'c1', agent: 'builtin', approval: 'rules', plan: false })
+    useAgent.getState().setDraft('c1', '原稿')
+    const pending = deferred<AgentSession>()
+    vi.mocked(api.createAgentSession).mockReturnValue(pending.promise)
+    vi.mocked(api.sendAgentMessage).mockResolvedValue(undefined)
+    vi.mocked(api.agentSessions).mockResolvedValue([])
+    const task = useAgent.getState().send('原稿', ['n1'])
+    await useAgent.getState().send('重复发送')
+    expect(api.createAgentSession).toHaveBeenCalledTimes(1)
+    expect(useAgent.getState().sending.c1).toBe(true)
+    useAgent.setState({ plan: true })
+    useAgent.getState().setDraft('c1', '修改稿')
+    useAgent.getState().setDraft('c1', '原稿')
+    pending.resolve({ ...session('s1'), agent: 'builtin' })
+    await task
+    expect(api.sendAgentMessage).toHaveBeenCalledWith(
+      's1',
+      '原稿',
+      ['n1'],
+      expect.objectContaining({ plan: false }),
+    )
+    expect(useAgent.getState().drafts.c1?.text).toBe('原稿')
+    expect(useAgent.getState().sending.c1).toBeUndefined()
+  })
+
+  it('失败保留原稿并释放发送状态，用户再次发送成功才清空', async () => {
+    vi.useFakeTimers()
+    try {
+      useAgent.setState({ canvasId: 'c1', agent: 'builtin' })
+      useAgent.getState().setDraft('c1', ' 原稿 ')
+      vi.mocked(api.createAgentSession).mockRejectedValueOnce(new Error('发送失败'))
+      await useAgent.getState().send('原稿')
+      expect(useAgent.getState()).toMatchObject({
+        error: '发送失败',
+        sending: {},
+        drafts: { c1: { text: ' 原稿 ' } },
+      })
+      vi.mocked(api.createAgentSession).mockResolvedValue({ ...session('s1'), agent: 'builtin' })
+      vi.mocked(api.sendAgentMessage).mockResolvedValue(undefined)
+      vi.mocked(api.agentSessions).mockResolvedValue([])
+      await useAgent.getState().send('原稿')
+      expect(useAgent.getState().drafts).toEqual({})
+      expect(useAgent.getState().sending).toEqual({})
+    } finally {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
+
+  it('创建会话期间换画布或重置会话，不发送旧请求，也不清除原画布草稿', async () => {
+    vi.mocked(api.agentSessions).mockResolvedValue([])
+    for (const change of ['canvas', 'reset']) {
+      useAgent.setState({ canvasId: 'c1', session: null, agent: 'builtin' })
+      useAgent.getState().setDraft('c1', '原画布草稿')
+      const pending = deferred<AgentSession>()
+      vi.mocked(api.createAgentSession).mockReturnValue(pending.promise)
+      const task = useAgent.getState().send('原画布草稿')
+      if (change === 'canvas') await useAgent.getState().enter('c2')
+      else useAgent.getState().reset()
+      pending.resolve({ ...session('s1'), agent: 'builtin' })
+      await task
+      expect(api.sendAgentMessage).not.toHaveBeenCalled()
+      expect(useAgent.getState().session).toBeNull()
+      expect(useAgent.getState().drafts.c1?.text).toBe('原画布草稿')
+      expect(useAgent.getState().sending).toEqual({})
+    }
+  })
 })
 
 describe('智能体会话', () => {

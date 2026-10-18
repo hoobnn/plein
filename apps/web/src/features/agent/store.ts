@@ -24,6 +24,10 @@ const ACCESS_KEY = 'plein:agent-access'
 
 interface AgentStore {
   open: boolean
+  /** 本次应用会话内按画布保留；关闭面板不丢失，不跨画布显示。 */
+  drafts: Record<string, { text: string }>
+  sending: Record<string, boolean>
+  setDraft(canvasId: string, text: string): void
   status: AgentStatus | null
   /** 新建对话用的 CLI，记在本机 */
   agent: AgentKind
@@ -188,6 +192,14 @@ export const useAgent = create<AgentStore>((set, get) => {
 
   return {
     open: false,
+    drafts: {},
+    sending: {},
+    setDraft(canvasId, text) {
+      const drafts = { ...get().drafts }
+      if (text) drafts[canvasId] = { text }
+      else delete drafts[canvasId]
+      set({ drafts })
+    },
     status: null,
     agent: savedAgent(),
     approval: savedApproval(),
@@ -312,28 +324,35 @@ export const useAgent = create<AgentStore>((set, get) => {
 
     async send(text, selection) {
       const { canvasId, agent } = get()
-      if (!canvasId) return
-      set({ error: null })
+      if (!canvasId || get().sending[canvasId] || get().session?.status === 'running') return
+      let mine = selectSeq
+      const draft = get().drafts[canvasId]
+      const options = { approval: get().approval, plan: get().plan, access: get().access }
+      set({ error: null, sending: { ...get().sending, [canvasId]: true } })
       try {
         let session = get().session
         // 换了 CLI 就开新对话：两家的会话不能互相续
         if (!session || session.agent !== agent) {
           session = await api.createAgentSession(canvasId, agent)
-          if (get().canvasId !== canvasId) return
-          selectSeq++
+          if (get().canvasId !== canvasId || mine !== selectSeq || get().agent !== agent) return
+          mine = ++selectSeq
           set({ session })
           connect(session.id)
         }
-        await api.sendAgentMessage(session.id, text, selection, {
-          approval: get().approval,
-          plan: get().plan,
-          access: get().access,
-        })
-        void refreshList()
+        await api.sendAgentMessage(session.id, text, selection, options)
+        if (draft && draft.text.trim() === text && get().drafts[canvasId] === draft)
+          get().setDraft(canvasId, '')
+        if (get().canvasId === canvasId && mine === selectSeq) void refreshList()
       } catch (err) {
-        set({ error: (err as Error).message, mood: 'sad' })
-        clearTimeout(moodTimer)
-        moodTimer = setTimeout(() => set({ mood: 'idle' }), 4000)
+        if (get().canvasId === canvasId && mine === selectSeq) {
+          set({ error: (err as Error).message, mood: 'sad' })
+          clearTimeout(moodTimer)
+          moodTimer = setTimeout(() => set({ mood: 'idle' }), 4000)
+        }
+      } finally {
+        const sending = { ...get().sending }
+        delete sending[canvasId]
+        set({ sending })
       }
     },
 

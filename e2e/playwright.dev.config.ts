@@ -37,6 +37,7 @@ export default defineConfig({
     'camera-navigation.spec.ts',
     'agent-layout.spec.ts',
     'agent-keyboard.spec.ts',
+    'agent-drafts.spec.ts',
     'pan-lifecycle.spec.ts',
     'gesture-lifecycle.spec.ts',
     'gesture-concurrency.spec.ts',

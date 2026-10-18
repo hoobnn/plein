@@ -7,6 +7,7 @@ import type {
 } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { api } from '../../api/client'
 import { queryKeys } from '../../api/query'
 import { renderMarkdown } from '../../canvas/markdown'
@@ -97,7 +98,15 @@ const SUGGESTIONS = [
 export function AgentDock() {
   const route = useRoute()
   const ready = useSession((s) => s.status === 'ready' && !!s.info?.principal)
-  const { open, mood, unread, toggle, enter } = useAgent()
+  const { open, mood, unread, toggle, enter } = useAgent(
+    useShallow((s) => ({
+      open: s.open,
+      mood: s.mood,
+      unread: s.unread,
+      toggle: s.toggle,
+      enter: s.enter,
+    })),
+  )
   const trigger = useRef<HTMLButtonElement>(null)
   const close = useCallback(() => {
     toggle(false)
@@ -160,7 +169,16 @@ export function AgentDock() {
 }
 
 function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose(): void }) {
-  const { status, agent, session, error, setAgent, loadStatus } = useAgent()
+  const { status, agent, session, error, setAgent, loadStatus } = useAgent(
+    useShallow((s) => ({
+      status: s.status,
+      agent: s.agent,
+      session: s.session,
+      error: s.error,
+      setAgent: s.setAgent,
+      loadStatus: s.loadStatus,
+    })),
+  )
   const running = session?.status === 'running'
   const available = status?.agents.filter((a) => a.available) ?? []
   const current = session?.agent ?? agent
@@ -265,7 +283,7 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
             lastTurn={session?.lastTurn}
           />
           {error && <p className="px-4 pb-2 text-xs text-danger">{error}</p>}
-          <Composer running={running} />
+          <Composer key={canvasId} canvasId={canvasId} running={running} />
         </>
       )}
     </aside>
@@ -282,7 +300,14 @@ function Notice({ children }: { children: React.ReactNode }) {
 
 /** 历史对话 */
 function SessionMenu() {
-  const { sessions, session, select, remove } = useAgent()
+  const { sessions, session, select, remove } = useAgent(
+    useShallow((s) => ({
+      sessions: s.sessions,
+      session: s.session,
+      select: s.select,
+      remove: s.remove,
+    })),
+  )
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
   return (
     <>
@@ -764,8 +789,10 @@ function ToolRow({ item }: { item: Extract<AgentItem, { type: 'tool' }> }) {
   )
 }
 
-function Composer({ running }: { running: boolean }) {
-  const [text, setText] = useState('')
+function Composer({ canvasId, running }: { canvasId: string; running: boolean }) {
+  const text = useAgent((s) => s.drafts[canvasId]?.text ?? '')
+  const sending = useAgent((s) => !!s.sending[canvasId])
+  const setText = (value: string) => useAgent.getState().setDraft(canvasId, value)
   const [withSelection, setWithSelection] = useState(true)
   const selected = useCanvas((s) => s.selection)
   const approval = useAgent((s) => s.approval)
@@ -787,11 +814,17 @@ function Composer({ running }: { running: boolean }) {
   useEffect(() => setWithSelection(true), [selected])
   // oxlint-enable react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [text])
+
   const submit = () => {
     const t = text.trim()
-    if (!t || running) return
+    if (!t || running || sending) return
     const sel = withSelection ? useCanvas.getState().engine?.selection.values() : undefined
-    setText('')
     void useAgent.getState().send(t, sel?.length ? sel : undefined)
   }
 
@@ -832,9 +865,6 @@ function Composer({ running }: { running: boolean }) {
           }}
           onChange={(e) => {
             setText(e.target.value)
-            const el = e.target
-            el.style.height = 'auto'
-            el.style.height = `${el.scrollHeight}px`
           }}
           onKeyDown={(e) => {
             if (composing.current || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) {
@@ -864,13 +894,19 @@ function Composer({ running }: { running: boolean }) {
             aria-label="发送"
             title="发送（Enter）"
             className="ui-btn ui-btn-lg ui-btn-primary ui-icon-btn"
-            disabled={!text.trim()}
+            disabled={!text.trim() || sending}
+            aria-busy={sending}
             onClick={submit}
           >
             <Icon name="arrowUp" size={16} />
           </button>
         )}
       </div>
+      {sending && (
+        <p role="status" className="mt-2 text-xs text-ink-subtle">
+          正在发送…
+        </p>
+      )}
       <div className="mt-2 flex items-center gap-1">
         <button
           type="button"
