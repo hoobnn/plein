@@ -141,11 +141,32 @@ test('LLM 长文本候选在窄屏完整换行，明确采用后可从生成器�
   await page.locator('.plein-node').getByRole('button', { name: '下一个结果', exact: true }).click()
   const viewer = page.getByRole('dialog', { name: '查看「文本候选预览」', exact: true })
   await page.setViewportSize({ width: 320, height: 700 })
-  const text = viewer.locator('pre')
+  const text = viewer.getByRole('textbox', { name: '候选正文', exact: true })
   await expect(text).toContainText(token)
   await expect(text).toContainText('保留结尾。')
   const layout = await text.evaluate((el) => ({ width: el.clientWidth, content: el.scrollWidth }))
   expect(layout.content).toBeLessThanOrEqual(layout.width)
+  const beforeReading = await page.evaluate(
+    (id) => window.__plein.engine.doc.mutable(id)?.get('adopted'),
+    id,
+  )
+  await text.focus()
+  await expect(text).toBeFocused()
+  await text.press('PageDown')
+  await expect.poll(() => text.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+  await text.press('ControlOrMeta+a')
+  expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(
+    await text.textContent(),
+  )
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await text.press('ControlOrMeta+c')
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await text.textContent())
+  await text.press('ArrowRight')
+  await text.press('Enter')
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.mutable(id)?.get('adopted'), id),
+  ).toBe(beforeReading)
+  await expect(viewer.getByRole('button', { name: '采用此候选', exact: true })).toBeEnabled()
   await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
   await viewer.screenshot({
     path: test.info().outputPath('llm-preview-320.png'),

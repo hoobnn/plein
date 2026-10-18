@@ -162,7 +162,7 @@ function Review({ viewer }: { viewer: View }) {
         onPointerDown={(e) => {
           if (
             !(e.target as HTMLElement).closest(
-              'button,a,[role=button],input,textarea,select,[contenteditable],video,audio',
+              'button,a,[role=button],input,textarea,select,[contenteditable],video,audio,[data-review-text]',
             )
           )
             e.currentTarget.focus({ preventScroll: true })
@@ -179,7 +179,9 @@ function Review({ viewer }: { viewer: View }) {
             return
           const target = e.target as HTMLElement
           if (
-            target.closest('input,textarea,select,[contenteditable],video,audio,[data-review-node]')
+            target.closest(
+              'input,textarea,select,[contenteditable],video,audio,[data-review-text],[data-review-node]',
+            )
           )
             return
           if (e.key === 'ArrowLeft') {
@@ -457,13 +459,33 @@ function Review({ viewer }: { viewer: View }) {
           ) : (kind === 'video' || kind === 'audio') && assetId ? (
             <ReviewMedia key={assetId} assetId={assetId} kind={kind} />
           ) : value ? (
-            <pre className="ui-scrollbar max-h-full w-full overflow-auto whitespace-pre-wrap break-words p-6 text-sm text-white">
+            <div
+              data-review-text=""
+              role="textbox"
+              aria-readonly="true"
+              aria-multiline="true"
+              aria-label="候选正文"
+              tabIndex={0}
+              className="ui-scrollbar max-h-full w-full overflow-auto whitespace-pre-wrap break-words p-6 font-mono text-sm text-white outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+              onKeyDown={(e) => {
+                if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
+                if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'a') {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  const selection = window.getSelection()
+                  const range = document.createRange()
+                  range.selectNodeContents(e.currentTarget)
+                  selection?.removeAllRanges()
+                  selection?.addRange(range)
+                }
+              }}
+            >
               {value.type === 'text'
                 ? value.text
                 : value.type === 'json'
                   ? JSON.stringify(value.value, null, 2)
                   : '素材不可用'}
-            </pre>
+            </div>
           ) : (
             <p className="text-white">候选已移除或素材不可用</p>
           )}
