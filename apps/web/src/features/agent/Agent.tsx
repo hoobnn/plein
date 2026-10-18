@@ -300,15 +300,21 @@ function Notice({ children }: { children: React.ReactNode }) {
 
 /** 历史对话 */
 function SessionMenu() {
-  const { sessions, session, select, remove } = useAgent(
+  const { sessions, session, select, remove, removing } = useAgent(
     useShallow((s) => ({
       sessions: s.sessions,
       session: s.session,
       select: s.select,
       remove: s.remove,
+      removing: s.removing,
     })),
   )
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (!anchor || sessions.length) return
+    setAnchor(null)
+    if (anchor.isConnected) anchor.closest('aside')?.querySelector('textarea')?.focus()
+  }, [anchor, sessions.length])
   return (
     <>
       <button
@@ -339,6 +345,8 @@ function SessionMenu() {
                 >
                   <button
                     type="button"
+                    disabled={!!removing[s.id]}
+                    aria-pressed={s.id === session?.id}
                     className="min-w-0 flex-1 px-2.5 py-2 text-left"
                     onClick={() => {
                       setAnchor(null)
@@ -347,13 +355,20 @@ function SessionMenu() {
                   >
                     <span className="block truncate text-sm">{s.title}</span>
                     <span className="text-xs text-ink-subtle">
-                      {s.agent === 'codex' ? 'Codex' : 'Claude Code'} · {shortTime(s.updatedAt)}
+                      {s.agent === 'builtin'
+                        ? '内置智能体'
+                        : s.agent === 'codex'
+                          ? 'Codex'
+                          : 'Claude Code'}{' '}
+                      · {shortTime(s.updatedAt)}
                       {s.status === 'running' && ' · 进行中'}
                     </span>
                   </button>
                   <button
                     type="button"
-                    aria-label="删除对话"
+                    aria-label={`删除对话：${s.title}`}
+                    disabled={!!removing[s.id]}
+                    aria-busy={!!removing[s.id]}
                     title="删除对话"
                     className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn mr-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                     onClick={() => void remove(s.id)}
@@ -792,6 +807,7 @@ function ToolRow({ item }: { item: Extract<AgentItem, { type: 'tool' }> }) {
 function Composer({ canvasId, running }: { canvasId: string; running: boolean }) {
   const text = useAgent((s) => s.drafts[canvasId]?.text ?? '')
   const sending = useAgent((s) => !!s.sending[canvasId])
+  const selecting = useAgent((s) => !!s.selecting)
   const setText = (value: string) => useAgent.getState().setDraft(canvasId, value)
   const [withSelection, setWithSelection] = useState(true)
   const selected = useCanvas((s) => s.selection)
@@ -823,7 +839,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
 
   const submit = () => {
     const t = text.trim()
-    if (!t || running || sending) return
+    if (!t || running || sending || selecting) return
     const sel = withSelection ? useCanvas.getState().engine?.selection.values() : undefined
     void useAgent.getState().send(t, sel?.length ? sel : undefined)
   }
@@ -894,7 +910,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
             aria-label="发送"
             title="发送（Enter）"
             className="ui-btn ui-btn-lg ui-btn-primary ui-icon-btn"
-            disabled={!text.trim() || sending}
+            disabled={!text.trim() || sending || selecting}
             aria-busy={sending}
             onClick={submit}
           >
@@ -905,6 +921,11 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
       {sending && (
         <p role="status" className="mt-2 text-xs text-ink-subtle">
           正在发送…
+        </p>
+      )}
+      {selecting && (
+        <p role="status" className="mt-2 text-xs text-ink-subtle">
+          正在打开对话…
         </p>
       )}
       <div className="mt-2 flex items-center gap-1">

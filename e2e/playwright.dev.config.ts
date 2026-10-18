@@ -38,6 +38,7 @@ export default defineConfig({
     'agent-layout.spec.ts',
     'agent-keyboard.spec.ts',
     'agent-drafts.spec.ts',
+    'agent-history.spec.ts',
     'pan-lifecycle.spec.ts',
     'gesture-lifecycle.spec.ts',
     'gesture-concurrency.spec.ts',

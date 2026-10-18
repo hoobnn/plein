@@ -27,6 +27,8 @@ interface AgentStore {
   /** 本次应用会话内按画布保留；关闭面板不丢失，不跨画布显示。 */
   drafts: Record<string, { text: string }>
   sending: Record<string, boolean>
+  selecting: string | null
+  removing: Record<string, boolean>
   setDraft(canvasId: string, text: string): void
   status: AgentStatus | null
   /** 新建对话用的 CLI，记在本机 */
@@ -194,6 +196,8 @@ export const useAgent = create<AgentStore>((set, get) => {
     open: false,
     drafts: {},
     sending: {},
+    selecting: null,
+    removing: {},
     setDraft(canvasId, text) {
       const drafts = { ...get().drafts }
       if (text) drafts[canvasId] = { text }
@@ -290,7 +294,7 @@ export const useAgent = create<AgentStore>((set, get) => {
       if (canvasId === get().canvasId) return
       const mine = ++selectSeq
       connect(null)
-      set({ canvasId, sessions: [], session: null, error: null, mood: 'idle' })
+      set({ canvasId, sessions: [], session: null, selecting: null, error: null, mood: 'idle' })
       if (!canvasId) return
       try {
         const sessions = await api.agentSessions(canvasId)
@@ -305,6 +309,7 @@ export const useAgent = create<AgentStore>((set, get) => {
     async select(id) {
       const mine = ++selectSeq
       const canvasId = get().canvasId
+      set({ selecting: id })
       try {
         const session = await api.agentSession(id)
         // 等应答期间换了画布或又点了别的会话
@@ -313,18 +318,26 @@ export const useAgent = create<AgentStore>((set, get) => {
         connect(id)
       } catch (err) {
         if (mine === selectSeq) set({ error: (err as Error).message })
+      } finally {
+        if (mine === selectSeq) set({ selecting: null })
       }
     },
 
     reset() {
       selectSeq++
       connect(null)
-      set({ session: null, error: null, mood: 'idle' })
+      set({ session: null, selecting: null, error: null, mood: 'idle' })
     },
 
     async send(text, selection) {
       const { canvasId, agent } = get()
-      if (!canvasId || get().sending[canvasId] || get().session?.status === 'running') return
+      if (
+        !canvasId ||
+        get().selecting ||
+        get().sending[canvasId] ||
+        get().session?.status === 'running'
+      )
+        return
       let mine = selectSeq
       const draft = get().drafts[canvasId]
       const options = { approval: get().approval, plan: get().plan, access: get().access }
@@ -373,14 +386,30 @@ export const useAgent = create<AgentStore>((set, get) => {
     },
 
     async remove(id) {
+      if (get().removing[id]) return
+      const canvasId = get().canvasId
+      set({ removing: { ...get().removing, [id]: true } })
       try {
         await api.deleteAgentSession(id)
+        if (get().canvasId !== canvasId) return
+        if (get().selecting === id) {
+          selectSeq++
+          set({ selecting: null })
+        }
+        if (get().session?.id === id) {
+          if (get().selecting) {
+            connect(null)
+            set({ session: null, error: null, mood: 'idle' })
+          } else get().reset()
+        }
+        set({ sessions: get().sessions.filter((s) => s.id !== id) })
       } catch (err) {
-        set({ error: (err as Error).message })
-        return
+        if (get().canvasId === canvasId) set({ error: (err as Error).message })
+      } finally {
+        const removing = { ...get().removing }
+        delete removing[id]
+        set({ removing })
       }
-      if (get().session?.id === id) get().reset()
-      set({ sessions: get().sessions.filter((s) => s.id !== id) })
     },
   }
 })

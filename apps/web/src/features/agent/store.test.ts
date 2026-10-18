@@ -144,6 +144,68 @@ describe('助手草稿与发送生命周期', () => {
 })
 
 describe('智能体会话', () => {
+  it('删除当前会话不取消用户正在打开的另一会话', async () => {
+    const pending = deferred<AgentSession>()
+    vi.mocked(api.agentSession).mockReturnValue(pending.promise)
+    vi.mocked(api.deleteAgentSession).mockResolvedValue(undefined)
+    useAgent.setState({ canvasId: 'c1', session: session('old') })
+    const opening = useAgent.getState().select('next')
+    await useAgent.getState().remove('old')
+    pending.resolve(session('next'))
+    await opening
+    expect(useAgent.getState().session?.id).toBe('next')
+  })
+  it('删除正在打开的会话后，迟到内容不再恢复已删除会话', async () => {
+    const pending = deferred<AgentSession>()
+    vi.mocked(api.agentSession).mockReturnValue(pending.promise)
+    vi.mocked(api.deleteAgentSession).mockResolvedValue(undefined)
+    useAgent.setState({ canvasId: 'c1', sessions: [summary('s1')] })
+    const opening = useAgent.getState().select('s1')
+    await useAgent.getState().remove('s1')
+    pending.resolve(session('s1'))
+    await opening
+    expect(useAgent.getState().session).toBeNull()
+    expect(useAgent.getState().sessions).toEqual([])
+  })
+
+  it('切换会话期间不向旧会话发送，删除请求等待中不重复删除', async () => {
+    const opening = deferred<AgentSession>()
+    const removing = deferred<void>()
+    vi.mocked(api.agentSession).mockReturnValue(opening.promise)
+    vi.mocked(api.deleteAgentSession).mockReturnValue(removing.promise)
+    useAgent.setState({
+      canvasId: 'c1',
+      agent: 'builtin',
+      session: { ...session('old'), agent: 'builtin' },
+    })
+    const selectTask = useAgent.getState().select('next')
+    await useAgent.getState().send('不能发到旧会话')
+    expect(api.sendAgentMessage).not.toHaveBeenCalled()
+    const removeTask = useAgent.getState().remove('other')
+    const duplicate = useAgent.getState().remove('other')
+    expect(api.deleteAgentSession).toHaveBeenCalledTimes(1)
+    removing.resolve()
+    await Promise.all([removeTask, duplicate])
+    opening.resolve(session('next'))
+    await selectTask
+    expect(useAgent.getState().session?.id).toBe('next')
+  })
+
+  it('删除失败的旧画布应答不污染当前画布', async () => {
+    const pending = deferred<void>()
+    vi.mocked(api.deleteAgentSession).mockReturnValue(
+      pending.promise.then(() => {
+        throw new Error('旧画布删除失败')
+      }),
+    )
+    vi.mocked(api.agentSessions).mockResolvedValue([])
+    useAgent.setState({ canvasId: 'c1' })
+    const task = useAgent.getState().remove('old')
+    await useAgent.getState().enter('c2')
+    pending.resolve()
+    await task
+    expect(useAgent.getState().error).toBeNull()
+  })
   it('保存轮次清算状态，停止和中断不显示为生成失败；旧事件流不会覆盖当前会话', async () => {
     vi.mocked(api.agentSession).mockImplementation(async (id) => session(id))
     vi.mocked(api.agentSessions).mockResolvedValue([])
