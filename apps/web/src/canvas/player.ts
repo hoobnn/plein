@@ -90,8 +90,11 @@ export function createPlayer(
 
   const track = document.createElement('div')
   track.className = 'plein-player-track'
+  track.tabIndex = 0
   track.setAttribute('role', 'slider')
   track.setAttribute('aria-label', '播放进度')
+  track.setAttribute('aria-valuemin', '0')
+  track.setAttribute('aria-valuemax', '100')
   const buffered = document.createElement('div')
   buffered.className = 'plein-player-buffered'
   const fill = document.createElement('div')
@@ -204,6 +207,8 @@ export function createPlayer(
     thumb.style.left = `${p * 100}%`
     time.textContent = `${clock(t)} / ${clock(d)}`
     track.setAttribute('aria-valuenow', String(Math.round(p * 100)))
+    track.setAttribute('aria-valuetext', `${clock(t)} / ${clock(d)}`)
+    track.setAttribute('aria-disabled', String(!Number.isFinite(d) || d <= 0))
     const b = media.buffered
     const end = b.length ? b.end(b.length - 1) : 0
     buffered.style.width = `${Number.isFinite(d) && d > 0 ? (end / d) * 100 : 0}%`
@@ -220,12 +225,14 @@ export function createPlayer(
 
   // 播放中鼠标停住就收起控制条；暂停时一直显示
   let idle: ReturnType<typeof setTimeout> | undefined
+  const controlFocused = () =>
+    document.activeElement !== node && node.contains(document.activeElement)
   const wake = () => {
     node.classList.remove('is-idle')
     clearTimeout(idle)
     if (disposed) return
     idle = setTimeout(() => {
-      if (!media.paused && !scrubbing) node.classList.add('is-idle')
+      if (!media.paused && !scrubbing && !controlFocused()) node.classList.add('is-idle')
     }, IDLE_MS)
   }
 
@@ -238,6 +245,7 @@ export function createPlayer(
   }
   track.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return
+    track.focus({ preventScroll: true })
     scrubbing = true
     track.setPointerCapture(e.pointerId)
     node.classList.add('is-scrubbing')
@@ -260,14 +268,40 @@ export function createPlayer(
   if (kind === 'video') media.addEventListener('click', toggle)
 
   node.addEventListener('pointermove', wake)
+  node.addEventListener('focusin', wake)
+  node.addEventListener('focusout', wake)
   node.addEventListener('pointerleave', () => {
-    if (!media.paused) node.classList.add('is-idle')
+    if (!media.paused && !scrubbing && !controlFocused()) node.classList.add('is-idle')
   })
   node.addEventListener('keydown', (e) => {
-    const k = e.key
+    if (
+      e.defaultPrevented ||
+      e.isComposing ||
+      e.keyCode === 229 ||
+      e.ctrlKey ||
+      e.metaKey ||
+      e.altKey
+    )
+      return
+    const k = e.key.toLowerCase()
+    // 空格交给当前按钮的原生激活行为，不能误触发播放器的播放快捷键。
+    if (k === ' ' && (e.target as Element).closest('button')) return
+    const onTrack = e.target === track
+    if (onTrack && ['home', 'end', 'arrowup', 'arrowdown'].includes(k)) {
+      if (k === 'home') seekBy(-media.currentTime)
+      else if (k === 'end') seekBy(media.duration)
+      else seekBy(k === 'arrowup' ? 5 : -5)
+      e.preventDefault()
+      wake()
+      return
+    }
+    if (e.repeat && [' ', 'k', 'm', 'f'].includes(k)) {
+      e.preventDefault()
+      return
+    }
     if (k === ' ' || k === 'k') toggle()
-    else if (k === 'ArrowLeft') seekBy(-5)
-    else if (k === 'ArrowRight') seekBy(5)
+    else if (k === 'arrowleft') seekBy(-5)
+    else if (k === 'arrowright') seekBy(5)
     else if (k === 'm') media.muted = !media.muted
     else if (k === 'f' && full) full.click()
     else return

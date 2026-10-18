@@ -59,6 +59,7 @@ export default defineConfig({
     'ime-editor.spec.ts',
     'markdown-ime.spec.ts',
     'markdown-history.spec.ts',
+    'player-keyboard.spec.ts',
     'editor-select-keyboard.spec.ts',
     'voice-picker-state.spec.ts',
     'parameter-boundaries.spec.ts',
