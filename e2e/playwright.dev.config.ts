@@ -31,6 +31,7 @@ export default defineConfig({
     'project-delete-recovery.spec.ts',
     'project-list-recovery.spec.ts',
     'projects.spec.ts',
+    'project-package-recovery.spec.ts',
     'library-navigation.spec.ts',
     'library-sources.spec.ts',
     'library.spec.ts',

@@ -96,7 +96,7 @@ export function ExportPackageDialog({ project, onClose }: { project: Project; on
           <button
             type="button"
             className="ui-btn ui-btn-primary ui-btn-lg"
-            disabled={!s || s.tooLarge}
+            disabled={!s || s.tooLarge || summary.isFetching || !!summary.error}
             onClick={download}
           >
             导出
@@ -120,17 +120,29 @@ export function ExportPackageDialog({ project, onClose }: { project: Project; on
       <div className="flex items-center justify-between gap-4">
         <span>
           <span className="block">包含历史候选</span>
-          <span className="ui-help">增加当前画布的全部生成结果；检查点始终完整保留</span>
+          <span className="ui-help">包含未采用的候选；检查点始终完整保留</span>
         </span>
         <Switch checked={history} label="包含历史候选" onChange={setHistory} />
       </div>
       <div className="text-xs text-ink-subtle" aria-live="polite">
-        {summary.error
-          ? `读取失败：${summary.error.message}`
-          : s
-            ? `${counts(s)} · 约 ${bytes(s.bytes)}`
-            : '正在统计…'}
+        {summary.isFetching
+          ? '正在统计…'
+          : summary.error
+            ? `读取失败：${summary.error.message}`
+            : s
+              ? `${counts(s)} · 约 ${bytes(s.bytes)}`
+              : '正在统计…'}
       </div>
+      {summary.error && (
+        <button
+          type="button"
+          className="ui-btn ui-btn-secondary self-start"
+          disabled={summary.isFetching}
+          onClick={() => void summary.refetch()}
+        >
+          {summary.isFetching ? '正在统计…' : '重新统计'}
+        </button>
+      )}
       {s?.tooLarge && (
         <p className="text-danger">项目包超过 4 GB：关掉「包含历史候选」再试，或者整目录备份。</p>
       )}
