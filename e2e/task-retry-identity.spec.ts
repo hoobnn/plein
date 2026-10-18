@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { JobList } from '../packages/protocol/src/runs'
-import { newProject } from './canvas'
+import { newProject, waitEngine } from './canvas'
 
 for (const stale of [false, true]) {
   test(`${stale ? '旧失败历史' : '当前失败任务'}重试核对运行身份并保留已有结果`, async ({
@@ -90,3 +90,108 @@ for (const stale of [false, true]) {
     }
   })
 }
+
+test('重试应答失败前切换画布，不把旧错误通知新画布，返回后仍可重试', async ({ page }) => {
+  await newProject(page)
+  const original = page.url()
+  const canvas = new URL(original).hash.split('/').at(-1)!
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/image',
+      name: '跨画布重试目标',
+      params: { prompt: '水杯', model: 'not-installed:missing' },
+      x: 300,
+      y: 200,
+    }),
+  )
+  await expect
+    .poll(async () =>
+      (await page.request.get(`/api/canvases/${canvas}/nodes/${id}/input`)).status(),
+    )
+    .toBe(200)
+  const first = await page.request.post(`/api/canvases/${canvas}/nodes/${id}/run`, { data: {} })
+  expect(first.status()).toBe(202)
+  const jobs = async () =>
+    (await (await page.request.get(`/api/canvases/${canvas}/jobs`)).json()) as JobList
+  await expect.poll(async () => (await jobs()).jobs[0]?.status).toBe('failed')
+  await page.getByRole('button', { name: '任务', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: '任务', exact: true })
+  const retry = panel.getByRole('button', { name: '重试', exact: true })
+  await expect(retry).toBeEnabled()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let requested = false
+  await page.route(
+    `**/api/canvases/${canvas}/nodes/${id}/run`,
+    async (route) => {
+      requested = true
+      await gate
+      await route.fulfill({
+        status: 503,
+        json: { error: 'retry_test', message: '旧画布重试迟到失败' },
+      })
+    },
+    { times: 1 },
+  )
+  const next = await (
+    await page.request.post('/api/projects', { data: { title: '继续工作的画布' } })
+  ).json()
+  try {
+    await retry.click()
+    await expect.poll(() => requested).toBe(true)
+    await page.evaluate((id) => {
+      location.hash = `#/c/${id}`
+    }, next.lastCanvasId)
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (id) => location.hash === `#/c/${id}` && !!window.__plein?.engine,
+          next.lastCanvasId,
+        ),
+      )
+      .toBe(true)
+    await waitEngine(page)
+    await expect
+      .poll(() => page.evaluate(() => [...window.__plein.engine.doc.elements()].length))
+      .toBe(0)
+    const settled = page.waitForResponse(
+      (res) => res.url().endsWith(`/nodes/${id}/run`) && res.status() === 503,
+    )
+    await page.evaluate(() => {
+      const notices: string[] = []
+      const observer = new MutationObserver(() => {
+        for (const el of document.querySelectorAll('.ui-toast'))
+          if (el.textContent?.includes('旧画布重试迟到失败')) notices.push(el.textContent)
+      })
+      observer.observe(document.body, { childList: true, subtree: true, characterData: true })
+      ;(window as unknown as { retryNotices(): string[] }).retryNotices = () => {
+        observer.disconnect()
+        return notices
+      }
+    })
+    release()
+    await settled
+    await page.waitForLoadState('networkidle')
+    expect(
+      await page.evaluate(() => (window as unknown as { retryNotices(): string[] }).retryNotices()),
+    ).toEqual([])
+    await expect(page.locator('.ui-toast').filter({ hasText: '旧画布重试迟到失败' })).toHaveCount(0)
+    expect(await page.evaluate(() => [...window.__plein.engine.doc.elements()].length)).toBe(0)
+    await page.evaluate((url) => {
+      location.hash = new URL(url).hash
+    }, original)
+    await waitEngine(page)
+    await page.getByRole('button', { name: '任务', exact: true }).click()
+    await expect(panel.getByRole('button', { name: '跨画布重试目标', exact: true })).toBeVisible()
+    const response = page.waitForResponse(
+      (res) => res.url().endsWith(`/nodes/${id}/run`) && res.request().method() === 'POST',
+    )
+    await retry.click()
+    expect((await response).status()).toBe(202)
+    await expect.poll(async () => (await jobs()).jobs.length).toBe(2)
+  } finally {
+    release()
+  }
+})

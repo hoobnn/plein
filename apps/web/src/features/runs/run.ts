@@ -30,10 +30,13 @@ export async function runNode(
 ): Promise<string | null> {
   const canvasId = remoteCanvas()
   if (!canvasId) return null
+  const engine = useCanvas.getState().engine
   try {
     return (await api.runNode(canvasId, id, { expect: check?.expect, retryOf: check?.retryOf }))
       .runId
   } catch (err) {
+    const current = useCanvas.getState()
+    if (current.canvasId !== canvasId || current.engine !== engine) return null
     const input = (err instanceof ApiError && err.code === 'input_changed' && err.body) as
       | { input?: PreparedInput }
       | false
