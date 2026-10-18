@@ -31,6 +31,8 @@ export default defineConfig({
     'project-delete-recovery.spec.ts',
     'project-list-recovery.spec.ts',
     'projects.spec.ts',
+    'welcome.spec.ts',
+    'welcome-lifecycle.spec.ts',
     'project-open-recovery.spec.ts',
     'project-create-lifecycle.spec.ts',
     'project-search-layout.spec.ts',

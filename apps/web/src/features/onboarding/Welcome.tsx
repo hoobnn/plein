@@ -1,12 +1,14 @@
-import type { ProviderInfo } from '@plein/protocol'
-import { useEffect, useState } from 'react'
+import type { Project, ProviderInfo } from '@plein/protocol'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
+import { invalidateProjects, queryClient, queryKeys } from '../../api/query'
 import { DRAMA_START, queueStartNode } from '../../canvas/startQueue'
 import { navigate } from '../../router'
 import { useCatalog } from '../../stores/catalog'
+import { useCanvas } from '../../stores/canvas'
 import { Icon, type IconName } from '../../ui/icons'
 import { Modal } from '../../ui/Modal'
-import { Presence } from '../../ui/Presence'
+import { Presence, useClosing } from '../../ui/Presence'
 import { SlideSwap } from '../../ui/Slide'
 import { ProviderRow } from '../settings/Settings'
 
@@ -57,6 +59,19 @@ function WelcomeDialog({ onClose }: { onClose(): void }) {
   const [openProvider, setOpenProvider] = useState<string | null>(RECOMMENDED[0]!)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const pending = useRef(false)
+  const active = useRef(true)
+  const closing = useClosing()
+  useEffect(() => {
+    active.current = !closing
+    return () => {
+      active.current = false
+    }
+  }, [closing])
+  const dismiss = () => {
+    active.current = false
+    onClose()
+  }
 
   const providers = [...(catalog?.providers ?? [])]
     .filter((p) => p.id !== 'plein/mock')
@@ -64,23 +79,35 @@ function WelcomeDialog({ onClose }: { onClose(): void }) {
   const ready = (catalog?.providers ?? []).filter(usable)
 
   const start = async (type?: string) => {
-    if (creating) return
+    if (pending.current || !active.current || closing) return
+    pending.current = true
     setCreating(true)
     setError(null)
     try {
       const p = await api.createProject()
       if (!p.lastCanvasId) throw new Error('项目建好了，但没有画布')
       if (type) queueStartNode(p.lastCanvasId, type)
-      onClose()
-      navigate({ name: 'canvas', id: p.lastCanvasId })
+      queryClient.setQueryData<Project[]>(queryKeys.projects, (items) => [
+        p,
+        ...(items ?? []).filter((item) => item.id !== p.id),
+      ])
+      void invalidateProjects()
+      if (active.current) {
+        dismiss()
+        navigate({ name: 'canvas', id: p.lastCanvasId })
+      } else useCanvas.getState().notify(`已创建项目「${p.title}」`)
     } catch (err) {
-      setError((err as Error).message)
-      setCreating(false)
+      pending.current = false
+      void invalidateProjects()
+      if (active.current) {
+        setError((err as Error).message)
+        setCreating(false)
+      } else useCanvas.getState().notify(`创建项目未获确认：${(err as Error).message}`)
     }
   }
 
   return (
-    <Modal label="欢迎使用 Plein" onClose={onClose} className="max-w-150">
+    <Modal label="欢迎使用 Plein" onClose={dismiss} className="max-w-150">
       <header className="flex flex-none items-start gap-3 px-6 pt-6 pb-4">
         <span className="plein-logo size-9 flex-none" aria-hidden="true" />
         <div className="min-w-0 flex-1">
@@ -93,7 +120,7 @@ function WelcomeDialog({ onClose }: { onClose(): void }) {
           type="button"
           aria-label="关闭"
           title="关闭（Esc）"
-          onClick={onClose}
+          onClick={dismiss}
           className="ui-btn ui-btn-quiet ui-icon-btn"
         >
           <Icon name="x" />
@@ -171,7 +198,20 @@ function WelcomeDialog({ onClose }: { onClose(): void }) {
                   onClick={() => void start()}
                 />
               </div>
-              {error && <p className="text-sm text-danger">创建失败：{error}</p>}
+              {creating && (
+                <div className="space-y-1">
+                  <p role="status" className="flex items-center gap-2 text-sm text-ink-muted">
+                    <span className="ui-spinner size-4" />
+                    正在创建项目…
+                  </p>
+                  <p className="ui-help">关闭引导不会取消创建，可稍后在项目列表查看结果。</p>
+                </div>
+              )}
+              {error && (
+                <p role="alert" className="text-sm text-danger">
+                  创建失败：{error}
+                </p>
+              )}
             </>
           )}
         </SlideSwap>
@@ -198,12 +238,13 @@ function WelcomeDialog({ onClose }: { onClose(): void }) {
             <button
               type="button"
               onClick={() => setStep(0)}
+              disabled={creating}
               className="ui-btn ui-btn-quiet mr-auto"
             >
               <Icon name="chevronLeft" />
               上一步
             </button>
-            <button type="button" onClick={onClose} className="ui-btn ui-btn-quiet">
+            <button type="button" onClick={dismiss} className="ui-btn ui-btn-quiet">
               先看看项目列表
             </button>
           </>
