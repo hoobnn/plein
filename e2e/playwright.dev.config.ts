@@ -49,6 +49,8 @@ export default defineConfig({
     'number-collaboration.spec.ts',
     'enum-parameters.spec.ts',
     'schema-field-identity.spec.ts',
+    'mcp-recovery.spec.ts',
+    'mcp.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },

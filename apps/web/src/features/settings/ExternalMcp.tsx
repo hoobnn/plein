@@ -1,36 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../../api/client'
 import { queryClient, queryKeys } from '../../api/query'
 import { Icon } from '../../ui/icons'
 import { Segmented } from '../../ui/Segmented'
-
-type Client = 'claude-code' | 'json' | 'claude-desktop'
-
-/** mcp-remote 从环境变量取请求头，避免参数里的空格在部分系统上被拆开 */
-const AUTH_ARG = ['Authorization:$', '{AUTH_HEADER}'].join('')
+import { type Client, snippet } from './externalMcpConfig'
 
 const CLIENTS: Array<{ value: Client; label: string }> = [
   { value: 'claude-code', label: 'Claude Code' },
   { value: 'json', label: 'Cursor 等' },
   { value: 'claude-desktop', label: 'Claude Desktop' },
 ]
-
-/** 各家客户端的接入配置 */
-function snippet(client: Client, url: string, token: string) {
-  if (client === 'claude-code')
-    return `claude mcp add --transport http plein ${url} --header "Authorization: Bearer ${token}"`
-  const server =
-    client === 'json'
-      ? { url, headers: { Authorization: `Bearer ${token}` } }
-      : // Claude Desktop 的配置文件只接本机命令，经 mcp-remote 转到 HTTP
-        {
-          command: 'npx',
-          args: ['-y', 'mcp-remote', url, '--header', AUTH_ARG],
-          env: { AUTH_HEADER: `Bearer ${token}` },
-        }
-  return JSON.stringify({ mcpServers: { plein: server } }, null, 2)
-}
 
 const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.mcpExternal })
 
@@ -40,33 +20,51 @@ export function ExternalMcp() {
   const [token, setToken] = useState<string | null>(null)
   const [client, setClient] = useState<Client>('claude-code')
   const [busy, setBusy] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copiedText, setCopiedText] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    if (copiedText === null) return
+    const timer = setTimeout(() => setCopiedText(null), 1500)
+    return () => clearTimeout(timer)
+  }, [copiedText])
   const url = `${window.location.origin}/mcp`
 
   const issue = async () => {
     setBusy(true)
+    setError(null)
     try {
       setToken((await api.issueExternalMcp()).token)
       await refresh()
+    } catch (err) {
+      setError(`生成令牌失败：${(err as Error).message}`)
     } finally {
       setBusy(false)
     }
   }
   const revoke = async () => {
     setBusy(true)
+    setError(null)
     try {
       await api.revokeExternalMcp()
       setToken(null)
       await refresh()
+    } catch (err) {
+      setError(`关闭连接失败：${(err as Error).message}`)
     } finally {
       setBusy(false)
     }
   }
   const text = token ? snippet(client, url, token) : ''
+  const copied = copiedText === text
   const copy = async () => {
-    await navigator.clipboard.writeText(text).catch(() => {})
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+    setError(null)
+    setCopiedText(null)
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedText(text)
+    } catch {
+      setError('复制失败，请手动选择并复制上方配置。')
+    }
   }
 
   if (!status) return null
@@ -103,6 +101,11 @@ export function ExternalMcp() {
         <p className="text-sm text-ink-subtle">
           开启后，Claude Code、Cursor、Claude Desktop 这类应用可以连到本机的
           Plein，用和小满一样的工具操作画布。
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="text-sm text-danger">
+          {error}
         </p>
       )}
       <div className="flex gap-2">
