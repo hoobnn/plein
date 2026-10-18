@@ -44,6 +44,7 @@ export default defineConfig({
     'storyboard-dialogue-collaboration.spec.ts',
     'ime-editor.spec.ts',
     'editor-select-keyboard.spec.ts',
+    'voice-picker-state.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },

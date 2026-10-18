@@ -50,7 +50,9 @@ export function VoicePicker({
   const presets = voicePresets(useCatalog((s) => s.catalog))
   const key = value.provider || value.voiceId ? `${value.provider}|${value.voiceId}` : ''
   const known = !key || presets.some((p) => `${p.provider}|${p.id}` === key)
-  const [custom, setCustom] = useState(!known)
+  // 手动选择自定义是本地编辑意图；外部传入的未知音色始终显示可编辑字段。
+  const [custom, setCustom] = useState(false)
+  const showCustom = custom || !known
   const several = new Set(presets.map((p) => p.provider)).size > 1
   const inputs = (
     <div className="flex gap-2">
@@ -84,7 +86,7 @@ export function VoicePicker({
       <Select
         id={id}
         aria-label="音色"
-        value={custom ? CUSTOM : key}
+        value={showCustom ? CUSTOM : key}
         options={[
           { value: '', label: '平台默认音色' },
           ...presets.map((p) => ({
@@ -101,7 +103,7 @@ export function VoicePicker({
           onChange({ provider, voiceId })
         }}
       />
-      {custom && inputs}
+      {showCustom && inputs}
     </div>
   )
 }
