@@ -192,6 +192,7 @@ function Review({ viewer }: { viewer: View }) {
                 className="ui-btn ui-btn-secondary"
                 onClick={() => {
                   if (engine && element) {
+                    useCanvas.getState().toggleHistory(false)
                     engine.selection.set([element.id])
                     engine.zoomToFit([element.id])
                     close()
