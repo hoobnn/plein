@@ -54,6 +54,7 @@ const replace = (items: LibraryItem[], item: LibraryItem) =>
 export const useLibrary = create<LibraryStore>((set, get) => {
   let loading: Promise<void> | undefined
   let removed: Set<string> | undefined
+  const updates = new Map<string, Promise<LibraryItem>>()
   return {
     items: [],
     loaded: false,
@@ -113,10 +114,26 @@ export const useLibrary = create<LibraryStore>((set, get) => {
       set({ items: [item, ...get().items.filter((i) => i.id !== item.id)] })
       return item
     },
-    async update(id, body) {
-      const item = await api.updateLibraryItem(id, body)
-      set({ items: replace(get().items, item) })
-      return item
+    update(id, body) {
+      const submitted = structuredClone(body)
+      const write = async () => {
+        const item = await api.updateLibraryItem(id, submitted)
+        const usedAt = get().items.find((entry) => entry.id === id)?.usedAt
+        const saved =
+          usedAt != null && (item.usedAt === null || usedAt > item.usedAt)
+            ? { ...item, usedAt }
+            : item
+        set({ items: replace(get().items, saved) })
+        return saved
+      }
+      // 同一条目按用户提交顺序写入；失败不阻塞后续编辑，其他条目仍可并行。
+      const operation = (updates.get(id) ?? Promise.resolve()).then(write, write)
+      updates.set(id, operation)
+      const clear = () => {
+        if (updates.get(id) === operation) updates.delete(id)
+      }
+      void operation.then(clear, clear)
+      return operation
     },
     async remove(id) {
       await api.deleteLibraryItem(id)

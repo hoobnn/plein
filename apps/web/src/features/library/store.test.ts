@@ -55,6 +55,110 @@ beforeEach(() => {
 })
 
 describe('资产库列表生命周期', () => {
+  it('某条目等待更新不阻塞其他条目', async () => {
+    useLibrary.setState({ items: [item('a'), item('b')] })
+    let resolve!: (value: LibraryItem) => void
+    vi.mocked(api.updateLibraryItem).mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    )
+    vi.mocked(api.updateLibraryItem).mockResolvedValueOnce(item('b', '新 b'))
+    const first = useLibrary.getState().update('a', { name: '新 a' })
+    try {
+      await expect(useLibrary.getState().update('b', { name: '新 b' })).resolves.toEqual(
+        item('b', '新 b'),
+      )
+      expect(useLibrary.getState().items[0]!.name).toBe('a')
+    } finally {
+      resolve(item('a', '新 a'))
+      await first
+    }
+  })
+
+  it('失败后继续同条目的后续写入，排队时固定提交内容', async () => {
+    useLibrary.setState({ items: [item('a')] })
+    const failure = new Error('暂不可用')
+    vi.mocked(api.updateLibraryItem).mockRejectedValueOnce(failure)
+    vi.mocked(api.updateLibraryItem).mockResolvedValueOnce(item('a', '提交名称'))
+    const first = useLibrary.getState().update('a', { favorite: true })
+    const body = { name: '提交名称', tags: { era: '现代' } }
+    const second = useLibrary.getState().update('a', body)
+    body.name = '后来输入'
+    body.tags.era = '古代'
+    await expect(first).rejects.toBe(failure)
+    await second
+    expect(api.updateLibraryItem).toHaveBeenNthCalledWith(2, 'a', {
+      name: '提交名称',
+      tags: { era: '现代' },
+    })
+    expect(useLibrary.getState().items[0]!.name).toBe('提交名称')
+    vi.mocked(api.updateLibraryItem).mockResolvedValueOnce(item('a', '恢复后的下一次'))
+    await useLibrary.getState().update('a', { name: '恢复后的下一次' })
+    expect(api.updateLibraryItem).toHaveBeenCalledTimes(3)
+  })
+
+  it('更新等待期间删除的条目不会被成功响应重新插入', async () => {
+    useLibrary.setState({ items: [item('a')] })
+    let resolve!: (value: LibraryItem) => void
+    vi.mocked(api.updateLibraryItem).mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    )
+    vi.mocked(api.deleteLibraryItem).mockResolvedValueOnce(undefined)
+    const updating = useLibrary.getState().update('a', { name: '新 a' })
+    await vi.waitFor(() => expect(api.updateLibraryItem).toHaveBeenCalledTimes(1))
+    await useLibrary.getState().remove('a')
+    resolve(item('a', '新 a'))
+    await updating
+    expect(useLibrary.getState().items).toEqual([])
+  })
+  it('同一条目的收藏和改名按调用顺序发送，旧快照不能撤销新名称', async () => {
+    useLibrary.setState({ items: [item('a')] })
+    let resolve!: (value: LibraryItem) => void
+    vi.mocked(api.updateLibraryItem).mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    )
+    vi.mocked(api.updateLibraryItem).mockResolvedValueOnce({
+      ...item('a', '新名称'),
+      favorite: true,
+    })
+    const favorite = useLibrary.getState().update('a', { favorite: true })
+    const rename = useLibrary.getState().update('a', { name: '新名称' })
+    try {
+      await vi.waitFor(() => expect(api.updateLibraryItem).toHaveBeenCalledTimes(1))
+    } finally {
+      resolve({ ...item('a'), favorite: true })
+      await Promise.all([favorite, rename])
+    }
+    expect(api.updateLibraryItem).toHaveBeenNthCalledWith(2, 'a', { name: '新名称' })
+    expect(useLibrary.getState().items).toEqual([{ ...item('a', '新名称'), favorite: true }])
+  })
+
+  it('等待更新响应时记录的最近使用时间不会被旧快照清空', async () => {
+    useLibrary.setState({ items: [item('a')] })
+    let resolve!: (value: LibraryItem) => void
+    vi.mocked(api.updateLibraryItem).mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    )
+    vi.mocked(api.markLibraryUsed).mockResolvedValueOnce(undefined)
+    const update = useLibrary.getState().update('a', { favorite: true })
+    await vi.waitFor(() => expect(api.updateLibraryItem).toHaveBeenCalledTimes(1))
+    useLibrary.getState().markUsed('a')
+    const usedAt = useLibrary.getState().items[0]!.usedAt
+    resolve({ ...item('a'), favorite: true })
+    await update
+    expect(useLibrary.getState().items[0]).toMatchObject({ favorite: true, usedAt })
+  })
   it('并发入口共用一次读取，后续显式刷新仍会取最新列表', async () => {
     const resolve = pendingList()
     const first = useLibrary.getState().load()
