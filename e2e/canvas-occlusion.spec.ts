@@ -222,7 +222,7 @@ test('创作引导不会盖住所选节点的生成器和按钮', async ({ page 
         const top = Math.max(box.y, guide.y)
         const right = Math.min(box.x + box.width, guide.x + guide.width)
         const bottom = Math.min(box.y + box.height, guide.y + guide.height)
-        if (right - left < 8 || bottom - top < 8) return false
+        if (right - left < 8 || bottom - top < 8) return true
         return page.evaluate(
           ({ x, y }) => !!document.elementFromPoint(x, y)?.closest('[data-testid="generator"]'),
           { x: (left + right) / 2, y: (top + bottom) / 2 },
@@ -231,6 +231,16 @@ test('创作引导不会盖住所选节点的生成器和按钮', async ({ page 
       { timeout: 3000 },
     )
     .toBe(true)
+  const reference = page
+    .getByTestId('generator')
+    .getByRole('button', { name: '参考图', exact: true })
+  await expect(reference).toBeVisible()
+  expect(
+    await reference.evaluate((el) => {
+      const r = el.getBoundingClientRect()
+      return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
+    }),
+  ).toBe(true)
 })
 
 for (const grouped of [false, true]) {
