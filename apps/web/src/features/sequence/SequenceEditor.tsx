@@ -366,6 +366,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   // 去掉值为 undefined 的键（清空入出点、改回自动）
   // 写完立即派发：复选框、下拉是受控的，等批量通知才重渲染会先弹回旧值再变过来
   const write = (clips: SequenceClip[]) => {
+    if (engine.doc.readOnly) return
     setParam(
       engine.doc,
       id,
@@ -379,6 +380,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     write(settings(read.rows).map((c) => (c.source === source ? { ...c, ...p } : c)))
   }
   const move = (from: number, to: number) => {
+    if (engine.doc.readOnly) return
     if (to < 0 || to >= rows.length || from === to) return
     if (animatic) {
       const next = [...animatic.shots]
@@ -394,6 +396,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     write(settings(next))
   }
   const set = (key: keyof SequenceParams, value: unknown) => {
+    if (engine.doc.readOnly) return
     setParams(engine.doc, id, { [key]: value })
     engine.doc.flush()
   }
@@ -403,6 +406,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     more: read.rows.map((r) => r.more.map((m) => duration(m.assetId))),
   })
   const buildSubtitles = () => {
+    if (engine.doc.readOnly) return
     const next = { ...params, asrTiming: false }
     setParams(engine.doc, id, {
       asrTiming: false,
@@ -412,7 +416,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     setSubtitleError(null)
   }
   const recognizeSubtitles = async () => {
-    if (recognizing || !subtitleKnown) return
+    if (engine.doc.readOnly || recognizing || !subtitleKnown) return
     if (!params.model) {
       setSubtitleError('请先在成片设置中选择语音识别模型')
       return
@@ -458,7 +462,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
   }
   const recoverSubtitles = async (operation: RecoverJobOptions, confirmedNotAccepted = false) => {
-    if (!subtitleRecovery || recognizing) return
+    if (engine.doc.readOnly || !subtitleRecovery || recognizing) return
     const inputKey = subtitleInputKey(params, read.rows)
     setRecognizing(true)
     subtitleStateRevision.current++
@@ -484,6 +488,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
   }
   const trim = (key: string, p: TrimPatch, done: boolean) => {
+    if (engine.doc.readOnly) return setDraft(null)
     if (!done) return setDraft('in' in p || 'out' in p ? { key, patch: p } : null)
     setDraft(null)
     const r = read.rows.find((x, i) => rowKey(x, i) === key)
@@ -525,7 +530,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const exportVideo = () => {
     if (canceling) return
     if (running) void cancelNode(id, el?.run?.id)
-    else void runNode(id)
+    else if (!engine.doc.readOnly) void runNode(id)
   }
   const progress = el?.run?.status === 'running' ? el.run.progress : undefined
   const film = el && currentResult(el)?.value
@@ -671,7 +676,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           className={running ? 'ui-btn ui-btn-secondary' : 'ui-btn ui-btn-primary'}
           disabled={
             canceling ||
-            (!running && (rows.length === 0 || (!animatic && pending > 0) || !!subtitleProblem))
+            (!running &&
+              (engine.doc.readOnly ||
+                rows.length === 0 ||
+                (!animatic && pending > 0) ||
+                !!subtitleProblem))
           }
           aria-busy={canceling}
           aria-label={running || canceling ? '停止导出' : undefined}
@@ -699,6 +708,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           )}
         </button>
       </ModalHeader>
+      {engine.doc.readOnly && (
+        <p role="status" className="px-4 py-2 text-sm text-muted">
+          当前画布为只读，仍可预览，暂不能修改或生成新成片。
+        </p>
+      )}
       {animaticError && (
         <p role="alert" className="flex-none border-b border-line px-5 py-3 text-sm text-danger">
           {animaticError}
@@ -767,64 +781,69 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                 key={tab === 'clip' ? `clip:${selected ?? ''}` : 'film'}
                 className="seq-inspector-body ui-scrollbar"
               >
-                {tab === 'subtitles' ? (
-                  <SubtitleEditor
-                    params={params}
-                    rows={read.rows}
-                    busy={recognizing || !subtitleKnown}
-                    error={subtitleError}
-                    onBuild={buildSubtitles}
-                    onRecognize={() => void recognizeSubtitles()}
-                    onChange={(track) => set('subtitleTrack', track)}
-                    onEditBoundary={() => engine.doc.undo.stopCapturing()}
-                    onModelChange={(model) => set('model', model)}
-                    recovery={subtitleRecovery}
-                    onRecover={(operation, confirmed) =>
-                      void recoverSubtitles(operation, confirmed)
-                    }
-                  />
-                ) : tab === 'film' ? (
-                  <FilmSettings params={params} set={set} />
-                ) : row && animatic ? (
-                  <AnimaticSettings
-                    shot={animatic.shots[current]!}
-                    index={current}
-                    count={rows.length}
-                    onMove={(to) => move(current, to)}
-                    onChange={(patch) => {
-                      setParam(
-                        engine.doc,
-                        id,
-                        'shots',
-                        animatic.shots.map((s) =>
-                          s.shotId === row.source ? { ...s, ...patch } : s,
-                        ),
-                      )
-                      engine.doc.flush()
-                    }}
-                  />
-                ) : row ? (
-                  <ClipSettings
-                    key={rowKey(row, current)}
-                    row={row}
-                    index={current}
-                    count={rows.length}
-                    full={duration(row.clip.assetId)}
-                    length={timeline.clips[current]?.length}
-                    params={params}
-                    dialogue={dialogue}
-                    sfx={sfx}
-                    onMove={(to) => move(current, to)}
-                    onPatch={(p) => patch(row.source, p)}
-                  />
-                ) : (
-                  <p className="ui-help">在时间线上点一段镜头，在这里调整它。</p>
-                )}
+                <fieldset disabled={engine.doc.readOnly} className="m-0 min-w-0 border-0 p-0">
+                  <legend className="sr-only">剪辑参数</legend>
+                  {tab === 'subtitles' ? (
+                    <SubtitleEditor
+                      params={params}
+                      rows={read.rows}
+                      busy={recognizing || !subtitleKnown}
+                      error={subtitleError}
+                      onBuild={buildSubtitles}
+                      onRecognize={() => void recognizeSubtitles()}
+                      onChange={(track) => set('subtitleTrack', track)}
+                      onEditBoundary={() => engine.doc.undo.stopCapturing()}
+                      onModelChange={(model) => set('model', model)}
+                      recovery={subtitleRecovery}
+                      onRecover={(operation, confirmed) =>
+                        void recoverSubtitles(operation, confirmed)
+                      }
+                    />
+                  ) : tab === 'film' ? (
+                    <FilmSettings params={params} set={set} />
+                  ) : row && animatic ? (
+                    <AnimaticSettings
+                      shot={animatic.shots[current]!}
+                      index={current}
+                      count={rows.length}
+                      onMove={(to) => move(current, to)}
+                      onChange={(patch) => {
+                        if (engine.doc.readOnly) return
+                        setParam(
+                          engine.doc,
+                          id,
+                          'shots',
+                          animatic.shots.map((s) =>
+                            s.shotId === row.source ? { ...s, ...patch } : s,
+                          ),
+                        )
+                        engine.doc.flush()
+                      }}
+                    />
+                  ) : row ? (
+                    <ClipSettings
+                      key={rowKey(row, current)}
+                      row={row}
+                      index={current}
+                      count={rows.length}
+                      full={duration(row.clip.assetId)}
+                      length={timeline.clips[current]?.length}
+                      params={params}
+                      dialogue={dialogue}
+                      sfx={sfx}
+                      onMove={(to) => move(current, to)}
+                      onPatch={(p) => patch(row.source, p)}
+                    />
+                  ) : (
+                    <p className="ui-help">在时间线上点一段镜头，在这里调整它。</p>
+                  )}
+                </fieldset>
               </div>
             </aside>
           </div>
           <MediaReloadContext.Provider value={previewRevision}>
             <Timeline
+              readOnly={engine.doc.readOnly}
               onBeforeInteract={() => {
                 const active = document.activeElement
                 if (active instanceof HTMLElement && active.closest('.seq-inspector'))

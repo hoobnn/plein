@@ -10,7 +10,7 @@ const font = readFileSync(
 async function setup(
   page: Page,
   fault: { info?: boolean; file?: boolean; gate?: Promise<void>; gateFileOnly?: boolean } = {},
-  source: { script?: string } = {},
+  source: { script?: string; secondShot?: boolean } = {},
 ) {
   await page.route('**/api/media/subtitle-font', async (route) => {
     if (!fault.gateFileOnly) await fault.gate
@@ -28,7 +28,10 @@ async function setup(
   const params = animaticNode.params.parse({
     subtitles: true,
     aspectRatio: '16:9',
-    shots: [{ shotId: 'one', duration: 6, dialogue: [], subtitle: source.script }],
+    shots: [
+      { shotId: 'one', duration: 6, dialogue: [], subtitle: source.script },
+      ...(source.secondShot ? [{ shotId: 'two', duration: 4, dialogue: [] }] : []),
+    ],
   })
   params.subtitleTrack = {
     inputKey: subtitleInputKey(params, arrangeAnimatic(params)),
@@ -364,4 +367,58 @@ test('按台词重建字幕可独立撤销并完整恢复手改轨道', async ({
   const stage = f.editor.locator('.seq-stage')
   await expect(stage).toHaveAttribute('data-subtitles', 'libass')
   await expect.poll(async () => lit(page, await stage.screenshot())).toBeGreaterThan(50)
+})
+
+test('只读序列可预览，字幕编辑控件明确不可写且没有异常', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  const f = await setup(page, {}, { secondShot: true })
+  await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(f.editor).toHaveCount(0)
+  await page.evaluate(() => {
+    const doc = window.__plein.engine.doc as typeof window.__plein.engine.doc & {
+      readOnly: boolean
+    }
+    doc.readOnly = true
+  })
+  const editor = await f.open()
+  await expect(editor.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'libass')
+  await editor.getByRole('button', { name: '字幕', exact: true }).click()
+  await expect(
+    editor.getByRole('textbox', { name: '镜头 1 字幕 1 文本', exact: true }),
+  ).toBeDisabled()
+  await expect(editor.getByRole('checkbox', { name: '显示字幕 1', exact: true })).toBeDisabled()
+  await expect(editor.getByRole('button', { name: '新增字幕', exact: true }).first()).toBeDisabled()
+  await expect(
+    editor.getByRole('button', { name: '按当前台词重建字幕（替换手改）', exact: true }),
+  ).toBeDisabled()
+  await expect(
+    editor.getByText('当前画布为只读，仍可预览，暂不能修改或生成新成片。', { exact: true }),
+  ).toBeVisible()
+  await expect(editor.getByRole('button', { name: '播放', exact: true })).toBeEnabled()
+  await expect(editor.getByRole('button', { name: '导出样片 MP4', exact: true })).toBeDisabled()
+  await editor.getByRole('button', { name: '成片', exact: true }).click()
+  await expect(editor.getByRole('switch', { name: '开启字幕', exact: true })).toBeDisabled()
+  await editor.getByRole('button', { name: '镜头', exact: true }).click()
+  await expect(
+    editor.getByRole('spinbutton', { name: '样片镜头时长（秒）', exact: true }),
+  ).toBeDisabled()
+  const clips = editor.locator('.seq-clip')
+  const a = (await clips.nth(0).boundingBox())!
+  const b = (await clips.nth(1).boundingBox())!
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(b.x + b.width - 10, b.y + b.height / 2, { steps: 6 })
+  await page.mouse.up()
+  await clips.nth(1).click()
+  await expect(editor.locator('.seq-time')).toContainText('0:06.0')
+  await editor.getByRole('button', { name: '播放', exact: true }).click()
+  await expect(editor.getByRole('button', { name: '暂停', exact: true })).toBeEnabled()
+  await editor.getByRole('button', { name: '暂停', exact: true }).click()
+  await page.setViewportSize({ width: 390, height: 700 })
+  await expect(editor.getByRole('button', { name: '关闭', exact: true })).toBeInViewport()
+  expect(await editor.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+  await editor.screenshot({ path: test.info().outputPath('sequence-readonly-390.png') })
+  expect(await page.evaluate(() => [...window.__plein.engine.doc.elements()])).toEqual(f.original)
+  expect(errors).toEqual([])
 })

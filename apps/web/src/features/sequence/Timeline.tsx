@@ -115,6 +115,7 @@ const TRANSITION_LABELS: Record<ComposeTransition['type'], string> = {
  * 拖动画面块换顺序，拖两边修剪入出点；点刻度尺或拖播放头定位；⌘/Ctrl + 滚轮缩放。
  */
 export function Timeline({
+  readOnly = false,
   items,
   total,
   music,
@@ -125,6 +126,7 @@ export function Timeline({
   onTrim,
   onBeforeInteract,
 }: {
+  readOnly?: boolean
   items: TrackItem[]
   total: number
   /** 配乐和它的音量包络（对白时压低的地方画成凹下去） */
@@ -237,7 +239,11 @@ export function Timeline({
   return (
     <section className="seq-timeline" aria-label="时间线" onPointerDownCapture={onBeforeInteract}>
       <div className="seq-toolbar">
-        <span className="seq-toolbar-hint">拖动镜头换顺序，拖两边修剪，⌘ / Ctrl + 滚轮缩放</span>
+        <span className="seq-toolbar-hint">
+          {readOnly
+            ? '只读时间线 · 点击镜头定位，⌘ / Ctrl + 滚轮缩放'
+            : '拖动镜头换顺序，拖两边修剪，⌘ / Ctrl + 滚轮缩放'}
+        </span>
         <span className="ml-auto flex items-center gap-1">
           <button
             type="button"
@@ -300,6 +306,7 @@ export function Timeline({
           </div>
 
           <ClipTrack
+            readOnly={readOnly}
             items={items}
             pps={pps}
             x={x}
@@ -464,6 +471,7 @@ interface Drag {
  * 落下时块从松手处滑到新位置（FLIP），不是瞬移。
  */
 function ClipTrack({
+  readOnly,
   items,
   pps,
   x,
@@ -473,6 +481,7 @@ function ClipTrack({
   onMove,
   onTrim,
 }: {
+  readOnly: boolean
   items: TrackItem[]
   pps: number
   x(t: number): number
@@ -489,6 +498,10 @@ function ClipTrack({
   const { closing, cancel: cancelGesture, trackPointer } = usePointerGesture()
 
   useLayoutEffect(() => {
+    if (readOnly) cancelGesture()
+  }, [readOnly, cancelGesture])
+
+  useLayoutEffect(() => {
     if (!settle || settle.animate) return
     const raf = requestAnimationFrame(() => setSettle({ ...settle, dx: 0, animate: true }))
     return () => cancelAnimationFrame(raf)
@@ -499,6 +512,11 @@ function ClipTrack({
     cancelGesture()
     const item = items[index]!
     onSelect(item.key)
+    if (readOnly) {
+      playhead.pause()
+      playhead.seek(item.start)
+      return
+    }
     const x0 = e.clientX
     let moved = false
     let current: Drag = { index, dx: 0, target: index }
@@ -542,7 +560,7 @@ function ClipTrack({
   }
 
   const startTrim = (e: ReactPointerEvent, item: TrackItem, edge: 'in' | 'out') => {
-    if (e.button !== 0 || item.pending || closing) return
+    if (e.button !== 0 || item.pending || closing || readOnly) return
     cancelGesture()
     e.stopPropagation()
     e.preventDefault()
@@ -616,6 +634,7 @@ function ClipTrack({
                 width,
                 transform: dx ? `translateX(${dx}px)` : undefined,
                 transition: animate ? undefined : 'none',
+                cursor: readOnly ? 'pointer' : undefined,
               }}
               onPointerDown={(e) => startDrag(e, i)}
               // 键盘 Tab 到哪段就选中哪段；选中样式就是焦点样式
@@ -649,7 +668,7 @@ function ClipTrack({
                   {it.length.toFixed(1)}s
                 </span>
               )}
-              {!it.pending && it.kind !== 'image' && (
+              {!readOnly && !it.pending && it.kind !== 'image' && (
                 <>
                   <span
                     className="seq-trim seq-trim-in"
