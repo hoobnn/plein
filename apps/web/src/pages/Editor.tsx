@@ -1,10 +1,11 @@
 import type { Canvas } from '@plein/protocol'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { api } from '../api/client'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { placeStartNode } from '../canvas/start'
 import { CanvasMenus } from '../shell/CanvasMenus'
 import { AgentCursor } from '../features/agent/AgentCursor'
+import { useAgent } from '../features/agent/store'
 import { CommandPalette } from '../shell/CommandPalette'
 import { ArrangeToast } from '../shell/ArrangeToast'
 import { Board } from '../shell/Board'
@@ -105,7 +106,13 @@ export function Editor({
 
   const sidebarOpen = useSidebar((s) => s.open)
   const sidebarWidth = useSidebar((s) => s.width)
-  const sidebar = mode === 'flow' && sidebarOpen
+  const assistantOpen = useAgent((s) => s.open)
+  const roomForPanels = usePanelSpace(sidebarWidth)
+  const sidebar = mode === 'flow' && sidebarOpen && (!assistantOpen || roomForPanels)
+  const toggleSidebar = useCallback(() => {
+    if (!sidebar && !roomForPanels) useAgent.getState().toggle(false)
+    useSidebar.getState().toggle(!sidebar)
+  }, [sidebar, roomForPanels])
   // 侧栏浮在画布上：告诉相机左边被挡住多少，适应画布、定位时把内容放在右边的可见区域
   useEffect(() => {
     engine?.camera.setInsets({ left: sidebar ? sidebarWidth + 12 : 0 })
@@ -116,11 +123,11 @@ export function Editor({
       <CanvasView source={source} />
       <Board />
       {/* 侧栏是浮在画布左侧的面板：开关只滑入滑出，顶栏和画布都不动 */}
-      {mode === 'flow' && <Sidebar open={sidebarOpen} />}
+      {mode === 'flow' && <Sidebar open={sidebar} />}
       <header className="app-titlebar app-viewbar pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 p-3">
         <div className="app-drag ui-bar pointer-events-auto">
           {/* 故事板没有侧栏，开关保留但禁用，切换视图时后面的按钮不挪位置 */}
-          <SidebarToggle open={sidebar} disabled={mode !== 'flow'} />
+          <SidebarToggle open={sidebar} disabled={mode !== 'flow'} onToggle={toggleSidebar} />
           <div className="ui-bar-sep" />
           <Brand
             onClick={(e) => {
@@ -265,8 +272,32 @@ export function Editor({
 
 const SIDEBAR_KEY = 'mod+\\'
 
+/** 两侧面板之间至少保留 320px 画布；临时隐藏不改写侧栏偏好。 */
+function usePanelSpace(sidebarWidth: number) {
+  const media = useMemo(
+    () => window.matchMedia(`(min-width: ${sidebarWidth + 12 + 424 + 320}px)`),
+    [sidebarWidth],
+  )
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      media.addEventListener('change', notify)
+      return () => media.removeEventListener('change', notify)
+    },
+    [media],
+  )
+  return useSyncExternalStore(subscribe, () => media.matches)
+}
+
 /** 侧栏开关：工作流左上工具条的第一个按钮，快捷键 ⌘\ */
-function SidebarToggle({ open, disabled }: { open: boolean; disabled: boolean }) {
+function SidebarToggle({
+  open,
+  disabled,
+  onToggle,
+}: {
+  open: boolean
+  disabled: boolean
+  onToggle(): void
+}) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (
@@ -278,16 +309,16 @@ function SidebarToggle({ open, disabled }: { open: boolean; disabled: boolean })
         return
       if (useCanvas.getState().mode !== 'flow') return
       e.preventDefault()
-      useSidebar.getState().toggle()
+      onToggle()
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [])
+  }, [onToggle])
   const label = open ? '收起侧栏' : '展开侧栏'
   return (
     <button
       type="button"
-      onClick={() => useSidebar.getState().toggle()}
+      onClick={onToggle}
       disabled={disabled}
       aria-label={label}
       title={disabled ? '侧栏只在工作流里显示' : withShortcut(label, SIDEBAR_KEY)}
