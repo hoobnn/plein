@@ -3,7 +3,7 @@ import { adoptResult, type PleinDoc } from '@plein/doc'
 import { STORYBOARD_TYPE } from '@plein/nodes'
 import type { Catalog, GroupInfo, JobInfo, JobList, RecoverJobOptions } from '@plein/protocol'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { api } from '../../api/client'
 import { queryKeys } from '../../api/query'
 import { findNode } from '../../canvas/nodes'
@@ -92,6 +92,25 @@ function groupName(g: GroupInfo, doc: PleinDoc, catalog: Catalog | null) {
 const hasActive = (list: JobList) =>
   list.jobs.some((j) => isActive(j.status)) || list.groups.some((g) => g.status === 'running')
 
+function closeTasks() {
+  useCanvas.getState().toggleTasks(false)
+  document.querySelector<HTMLButtonElement>('button[aria-label="任务"]')?.focus()
+}
+
+function dismissTasksKey(e: KeyboardEvent) {
+  if (
+    e.key !== 'Escape' ||
+    e.defaultPrevented ||
+    e.isComposing ||
+    e.keyCode === 229 ||
+    document.querySelector('[role="dialog"]')
+  )
+    return false
+  e.preventDefault()
+  closeTasks()
+  return true
+}
+
 /** 右侧任务面板：整组运行、排队和运行中的任务、最近结束的任务 */
 export function Tasks() {
   const open = useCanvas((s) => s.tasks)
@@ -124,7 +143,7 @@ export function Tasks() {
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') useCanvas.getState().toggleTasks(false)
+      dismissTasksKey(e)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -169,6 +188,12 @@ export function Tasks() {
       {open && (
         <Panel
           aria-label="任务"
+          onKeyDown={(e) => {
+            if (dismissTasksKey(e.nativeEvent)) {
+              e.preventDefault()
+              e.stopPropagation()
+            }
+          }}
           className="ui-float ui-pop ui-pop-right pointer-events-auto absolute inset-y-16 right-3 z-30 flex w-90 flex-col rounded-xl max-sm:left-3 max-sm:w-auto"
         >
           <header className="flex h-12 flex-none items-center gap-2 border-b border-line pr-2 pl-4">
@@ -188,7 +213,7 @@ export function Tasks() {
               aria-label="关闭"
               title="关闭（Esc）"
               className="ui-btn ui-btn-quiet ui-icon-btn ml-auto"
-              onClick={() => useCanvas.getState().toggleTasks(false)}
+              onClick={closeTasks}
             >
               <Icon name="x" />
             </button>
@@ -621,6 +646,25 @@ export function RecoveryBlock(props: {
   const requestKey = JSON.stringify([canvasId, job.id])
   const busy = useRecoveryRequests((s) => s.pending.has(requestKey))
   const [attach, setAttach] = useState<string | null>(null)
+  const attachTrigger = useRef<HTMLButtonElement>(null)
+  const attachInput = useRef<HTMLInputElement>(null)
+  const composing = useRef(false)
+  const imeKey = useRef(false)
+  const restoreAttachFocus = useRef(false)
+  const attachOpen = attach !== null
+  useLayoutEffect(() => {
+    if (attachOpen) attachInput.current?.focus()
+    else if (restoreAttachFocus.current) {
+      restoreAttachFocus.current = false
+      attachTrigger.current?.focus()
+    }
+  }, [attachOpen])
+  const cancelAttach = () => {
+    composing.current = false
+    imeKey.current = false
+    restoreAttachFocus.current = true
+    setAttach(null)
+  }
   const [confirm, setConfirm] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const el = doc.get(job.nodeId)
@@ -675,7 +719,13 @@ export function RecoveryBlock(props: {
           </button>
         )}
         {r.state === 'submit_unknown' && r.attachable && attach === null && (
-          <button type="button" className={btn} disabled={busy} onClick={() => setAttach('')}>
+          <button
+            ref={attachTrigger}
+            type="button"
+            className={btn}
+            disabled={busy}
+            onClick={() => setAttach('')}
+          >
             填写平台任务 ID
           </button>
         )}
@@ -717,18 +767,44 @@ export function RecoveryBlock(props: {
       {attach !== null && (
         <form
           className="flex gap-1"
+          onKeyDown={(e) => {
+            if (e.defaultPrevented) return
+            imeKey.current =
+              composing.current || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229
+            if (imeKey.current) {
+              e.stopPropagation()
+              return
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              e.stopPropagation()
+              if (!busy) cancelAttach()
+            }
+          }}
           onSubmit={(e) => {
             e.preventDefault()
+            if (busy || composing.current || imeKey.current) return
             if (attach.trim()) void act({ action: 'attach', remoteId: attach.trim() })
           }}
         >
           <input
+            ref={attachInput}
             className="ui-input h-7 min-w-0 flex-1 text-xs"
             placeholder={`${r.provider ?? '平台'}控制台里的任务 ID`}
             aria-label="平台任务 ID"
             disabled={busy}
             value={attach}
             onChange={(e) => setAttach(e.target.value)}
+            onCompositionStart={() => {
+              composing.current = true
+            }}
+            onCompositionEnd={() => {
+              composing.current = false
+            }}
+            onBlur={() => {
+              composing.current = false
+              imeKey.current = false
+            }}
           />
           <button type="submit" className={btn} disabled={busy || !attach.trim()}>
             接着取结果
@@ -737,7 +813,7 @@ export function RecoveryBlock(props: {
             type="button"
             className="ui-btn ui-btn-quiet ui-btn-xs"
             disabled={busy}
-            onClick={() => setAttach(null)}
+            onClick={cancelAttach}
           >
             取消
           </button>
