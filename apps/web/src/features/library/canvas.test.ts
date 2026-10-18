@@ -70,6 +70,41 @@ const item = (patch: Partial<LibraryItem> = {}): LibraryItem => ({
 })
 
 describe('资产库 ↔ 画布', () => {
+  it('并发放入同一条资产只创建一张卡片和一组素材连线', async () => {
+    const { doc, engine } = setup()
+    const [first, second] = await Promise.all([
+      placeLibraryItem(engine, catalog, placeInputOf(item())!),
+      placeLibraryItem(engine, catalog, placeInputOf(item())!),
+    ])
+    expect(second.id).toBe(first.id)
+    expect([...doc.elements()].filter((el) => el.params?.libraryId === 'lib_1')).toHaveLength(1)
+    expect([...doc.edges()]).toHaveLength(2)
+  })
+  it.each(['left', 'readonly'])('等待素材时 %s 不创建节点、连线或改选区', async (reason) => {
+    const { doc, engine, selected } = setup()
+    let current = true
+    const placing = placeLibraryItem(engine, catalog, placeInputOf(item())!, () => current)
+    if (reason === 'left') current = false
+    else doc.readOnly = true
+    const result = await placing
+    expect(result.id).toBeNull()
+    expect(result.notice).toBe(reason === 'left' ? '' : '当前画布只读，无法放入资产')
+    expect([...doc.elements()]).toEqual([])
+    expect([...doc.edges()]).toEqual([])
+    expect(selected()).toEqual([])
+  })
+  it('开始时已失效或只读也不放置，重新获得写入权限后可正常重试', async () => {
+    const { doc, engine } = setup()
+    expect(
+      (await placeLibraryItem(engine, catalog, placeInputOf(item())!, () => false)).id,
+    ).toBeNull()
+    doc.readOnly = true
+    expect((await placeLibraryItem(engine, catalog, placeInputOf(item())!)).notice).toContain(
+      '只读',
+    )
+    doc.readOnly = false
+    expect((await placeLibraryItem(engine, catalog, placeInputOf(item())!)).id).toBeTruthy()
+  })
   it('角色展开成卡片 + 连好的参考图，主图在前，再存回去内容一致', async () => {
     const { doc, engine, selected } = setup()
     const r = await placeLibraryItem(engine, catalog, placeInputOf(item())!)

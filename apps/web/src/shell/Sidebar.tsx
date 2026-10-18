@@ -1,12 +1,11 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, updateElement } from '@plein/doc'
 import { LIBRARY_KINDS, libraryKindOfNode } from '@plein/nodes'
-import type { LibraryItem } from '@plein/protocol'
 import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { mediaOf } from '../canvas/grid'
 import { useDocVersion, useSelectionVersion } from '../canvas/hooks'
-import { coverOf, findPlacedCard, placeInputOf, placeLibraryItem } from '../features/library/canvas'
+import { coverOf, findPlacedCard, placeInputOf } from '../features/library/canvas'
 import {
   OUTLINE_TYPES,
   type OutlineType,
@@ -26,6 +25,7 @@ import { KIND_ICONS } from '../features/library/LibraryAdd'
 import { EmptyState } from '../ui/EmptyState'
 import { startSidebarResize } from './sidebarResize'
 import { LibraryReadStatus } from '../features/library/LibraryReadStatus'
+import { useLibraryPlacement } from '../features/library/useLibraryPlacement'
 
 const TABS: Array<{ id: SidebarTab; label: string }> = [
   { id: 'layers', label: '画布' },
@@ -664,6 +664,7 @@ function Thumb({ el, type }: { el: CanvasElement; type: OutlineType }) {
 // ── 资产页签：本项目的资产库条目 ─────────────────────
 
 function Assets({ engine }: { engine: Engine | null }) {
+  const placement = useLibraryPlacement(engine)
   const { items, loaded, loading, error, load, projectId, show } = useLibrary()
   const version = useDocVersion(engine?.doc ?? NO_DOC)
   const canPlace = !!engine && !engine.doc.readOnly
@@ -680,14 +681,6 @@ function Assets({ engine }: { engine: Engine | null }) {
   )
   // oxlint-enable react-hooks/exhaustive-deps
 
-  const place = async (item: LibraryItem) => {
-    const input = placeInputOf(item)
-    if (!engine || !input) return
-    const r = await placeLibraryItem(engine, useCatalog.getState().catalog, input)
-    if (r.id) useLibrary.getState().markUsed(item.id)
-    useCanvas.getState().notify(r.notice)
-  }
-
   return (
     <>
       <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-2">
@@ -702,12 +695,14 @@ function Assets({ engine }: { engine: Engine | null }) {
             {g.items.map((item) => {
               const cover = coverOf(item)
               const on = placed.has(item.id)
+              const input = placeInputOf(item)
+              const busy = !!input && placement.isPlacing(input)
               return (
                 <button
                   key={item.id}
                   type="button"
-                  disabled={!canPlace}
-                  onClick={() => void place(item)}
+                  disabled={!canPlace || busy}
+                  onClick={() => input && void placement.place(input)}
                   title={on ? '已在画布上，点击选中' : '添加到画布'}
                   className="plein-layer group w-full text-left"
                 >
@@ -725,7 +720,11 @@ function Assets({ engine }: { engine: Engine | null }) {
                     )}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm">{item.name}</span>
-                  {on ? (
+                  {busy ? (
+                    <span role="status" className="px-1 text-2xs text-ink-subtle">
+                      正在放入…
+                    </span>
+                  ) : on ? (
                     <span className="px-1 text-2xs text-ink-subtle">已在画布</span>
                   ) : (
                     <span className="plein-layer-action">

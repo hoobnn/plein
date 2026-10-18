@@ -72,10 +72,16 @@ export async function placeLibraryItem(
   engine: Engine,
   catalog: Catalog | null,
   input: PlaceInput,
+  isCurrent: () => boolean = () => true,
 ): Promise<PlaceResult> {
   const { kind } = input
-  if (input.libraryId) {
-    const placed = findPlacedCard(engine, input.libraryId)
+  const unavailable = (): PlaceResult => ({
+    id: null,
+    notice: isCurrent() ? '当前画布只读，无法放入资产' : '',
+  })
+  if (!isCurrent() || engine.doc.readOnly) return unavailable()
+  const selectPlaced = (): PlaceResult | undefined => {
+    const placed = input.libraryId && findPlacedCard(engine, input.libraryId)
     if (placed) {
       engine.selection.set([placed.id])
       const r = engine.scene.rect(placed.id)
@@ -83,12 +89,18 @@ export async function placeLibraryItem(
       return { id: placed.id, notice: `「${placed.name}」已经在画布上，已为你选中` }
     }
   }
+  const existing = selectPlaced()
+  if (existing) return existing
   const info = findNode(catalog, kind.nodeType)
   if (!info) return { id: null, notice: `当前没有「${kind.title}」卡片节点，无法放到画布上` }
 
   const imageIds = orderedImages(kind, input.images ?? []).map((i) => i.assetId)
   const requested = [...new Set([...imageIds, ...(input.video ? [input.video] : [])])]
   const assets = await metas(requested)
+  // 元信息等待期间可能离开画布、变为只读，或另一入口已完成放置。
+  if (!isCurrent() || engine.doc.readOnly) return unavailable()
+  const concurrent = selectPlaced()
+  if (concurrent) return concurrent
   const missing = requested.length - assets.length
 
   const view = engine.camera.viewRect

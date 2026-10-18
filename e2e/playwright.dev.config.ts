@@ -14,6 +14,7 @@ export default defineConfig({
   testMatch: [
     'library-navigation.spec.ts',
     'library.spec.ts',
+    'library-placement.spec.ts',
     'viewer-media.spec.ts',
     'media-pagination.spec.ts',
     'media-search.spec.ts',

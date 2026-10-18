@@ -16,16 +16,8 @@ import {
 import type { LibraryImage, LibraryItem, LibraryKind } from '@plein/protocol'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
-import {
-  type CanvasMedia,
-  canvasMedia,
-  coverOf,
-  placeInputOf,
-  placeLibraryItem,
-  type PlaceInput,
-} from './canvas'
+import { type CanvasMedia, canvasMedia, coverOf, placeInputOf, type PlaceInput } from './canvas'
 import { useCanvas } from '../../stores/canvas'
-import { useCatalog } from '../../stores/catalog'
 import { type LibrarySeed, useLibrary } from './store'
 import { confirmDialog, dialogOpen } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
@@ -49,6 +41,7 @@ import { VoicePicker } from '../../ui/VoicePicker'
 import { LibraryUpdatesPanel } from './LibraryUpdates'
 import { CharacterAssets } from './CharacterAssets'
 import { LibraryReadStatus } from './LibraryReadStatus'
+import { useLibraryPlacement } from './useLibraryPlacement'
 
 /**
  * 资产库面板：
@@ -91,6 +84,8 @@ export function LibraryPanel() {
 function Panel({ kind: kindId }: { kind: LibraryKind }) {
   const { items, loaded, loading, error, projectId, show, load } = useLibrary()
   const engine = useCanvas((s) => s.engine)
+  const open = useLibrary((s) => s.open)
+  const placement = useLibraryPlacement(engine, open)
   const canvasId = useCanvas((s) => s.canvasId)
   // 只有打开了远端画布时才能放到画布上
   const canPlace = !!engine && !!canvasId && !engine.doc.readOnly
@@ -192,11 +187,8 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
             : mine
 
   const place = async (input: PlaceInput) => {
-    if (!engine) return
-    const r = await placeLibraryItem(engine, useCatalog.getState().catalog, input)
-    if (input.libraryId && r.id) useLibrary.getState().markUsed(input.libraryId)
-    useCanvas.getState().notify(r.notice)
-    if (r.id) close()
+    const r = await placement.place(input)
+    if (r?.id) close()
   }
 
   const scopes = SCOPES[preset ? 'preset' : 'asset'].filter((s) => s.id !== 'project' || projectId)
@@ -262,6 +254,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
           media={media}
           projectId={projectId}
           canPlace={canPlace}
+          placing={placement.placing}
           onBack={back}
           onUploadPendingChange={setUploadPending}
           onCreated={(id) => setEditing({ type: 'item', id })}
@@ -312,6 +305,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
                         kind={kind}
                         item={it}
                         canPlace={canPlace}
+                        placing={placement.isPlacing(placeInputOf(it)!)}
                         onOpen={(cover) => openItem(it.id, cover)}
                         onPlace={() => {
                           const input = placeInputOf(it)
@@ -323,6 +317,11 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
                         key={it.id}
                         item={it}
                         canPlace={canPlace}
+                        placing={placement.isPlacing({
+                          kind,
+                          name: it.name,
+                          description: it.description,
+                        })}
                         onOpen={() => setEditing({ type: 'official', item: it })}
                         onPlace={() =>
                           void place({ kind, name: it.name, description: it.description })
@@ -383,12 +382,14 @@ function Card({
   kind,
   item,
   canPlace,
+  placing,
   onOpen,
   onPlace,
 }: {
   kind: LibraryKindSpec
   item: LibraryItem
   canPlace: boolean
+  placing: boolean
   onOpen(cover: HTMLElement | null): void
   onPlace(): void
 }) {
@@ -491,9 +492,10 @@ function Card({
         <button
           type="button"
           onClick={onPlace}
+          disabled={placing}
           className="ui-btn ui-btn-primary ui-btn-sm lib-card-place absolute bottom-16 left-1/2"
         >
-          添加到画布
+          {placing ? '正在放入…' : '添加到画布'}
         </button>
       )}
     </li>
@@ -528,11 +530,13 @@ function profilePeek(p: NonNullable<LibraryItem['profile']>) {
 function OfficialCard({
   item,
   canPlace,
+  placing,
   onOpen,
   onPlace,
 }: {
   item: OfficialLibraryItem
   canPlace: boolean
+  placing: boolean
   onOpen(): void
   onPlace(): void
 }) {
@@ -552,9 +556,10 @@ function OfficialCard({
         <button
           type="button"
           onClick={onPlace}
+          disabled={placing}
           className="ui-btn ui-btn-primary ui-btn-sm lib-card-place absolute bottom-16 left-1/2"
         >
-          添加到画布
+          {placing ? '正在放入…' : '添加到画布'}
         </button>
       )}
     </li>
@@ -613,6 +618,7 @@ function Editor({
   media,
   projectId,
   canPlace,
+  placing,
   onBack,
   onCreated,
   onPlace,
@@ -625,6 +631,7 @@ function Editor({
   media: CanvasMedia[]
   projectId: string | null
   canPlace: boolean
+  placing: boolean
   onBack(): void
   onCreated(id: string): void
   onPlace(input: PlaceInput): Promise<void>
@@ -1072,11 +1079,11 @@ function Editor({
           {placeable && (
             <button
               type="button"
-              disabled={busy || pendingUploads > 0}
+              disabled={busy || placing || pendingUploads > 0}
               onClick={() => void place()}
               className="ui-btn ui-btn-primary"
             >
-              {readOnly || !dirty ? '添加到画布' : '保存并添加到画布'}
+              {placing ? '正在放入…' : readOnly || !dirty ? '添加到画布' : '保存并添加到画布'}
             </button>
           )}
         </div>
