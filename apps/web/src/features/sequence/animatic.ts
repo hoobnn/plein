@@ -114,16 +114,37 @@ export function openAnimatic(engine: Engine, boardId: string): string | undefine
   return id
 }
 
-export function relatedSequence(engine: Engine, id: string): string | undefined {
+/** 仅把当前镜头的有效视频、配音和音效连线算作成片关联；多个版本由用户选择。 */
+export function relatedSequences(engine: Engine, id: string) {
   const el = engine.doc.get(id)
-  const boardId = el?.nodeType === ANIMATIC_TYPE ? el.params?.boardId : undefined
-  if (typeof boardId !== 'string') return
+  if (el?.nodeType !== ANIMATIC_TYPE) return []
+  const params = animaticNode.params.parse(el.params)
+  const boardId = params.boardId
+  const board = engine.doc.get(boardId)
+  const groups = expandedNodes(engine.doc, boardId)
+  const savedShots = new Set(params.shots.map((shot) => shot.shotId))
+  const active = new Set(
+    (board?.nodeType === 'plein/storyboard'
+      ? shotsOf(board).flatMap((shot) => activeShotNodes(shot, groups.get(shot.id) ?? []))
+      : [...groups.values()].flat().filter((node) => {
+          const source = node.params?.source as ShotSource
+          return !source.detached && savedShots.has(source.shot)
+        })
+    ).map((node) => node.id),
+  )
+  const ports: Partial<Record<ShotSource['role'], string>> = {
+    video: 'clips',
+    speech: 'dialogue',
+    sfx: 'sfx',
+  }
+  const links = new Set(
+    [...engine.doc.edges()]
+      .filter((edge) => {
+        const source = engine.doc.get(edge.from[0])?.params?.source as ShotSource | undefined
+        return active.has(edge.from[0]) && !!source && ports[source.role] === edge.to[1]
+      })
+      .map((edge) => edge.to[0]),
+  )
   const candidates = [...engine.doc.elements()].filter((n) => n.nodeType === 'plein/sequence')
-  return candidates.find((n) =>
-    [...engine.doc.edges()].some(
-      (e) =>
-        e.to[0] === n.id &&
-        (engine.doc.get(e.from[0])?.params?.source as ShotSource)?.storyboard === boardId,
-    ),
-  )?.id
+  return candidates.filter((node) => links.has(node.id))
 }

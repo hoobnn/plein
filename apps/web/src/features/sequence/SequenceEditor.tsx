@@ -54,7 +54,7 @@ import { EmptyState } from '../../ui/EmptyState'
 import { Playhead } from './playhead'
 import { Timeline, type TrackItem, type TrimPatch } from './Timeline'
 import { SubtitleEditor } from './SubtitleEditor'
-import { refreshAnimatic, relatedSequence } from './animatic'
+import { refreshAnimatic, relatedSequences } from './animatic'
 import { DeliveryReview } from './DeliveryReview'
 import { MediaReloadContext } from './media'
 
@@ -159,7 +159,25 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   useDocVersion(engine.doc)
   const read = readSequence(engine, id)
   const { el, params, dialogue, sfx, music, animatic } = read
-  const filmSequence = animatic ? relatedSequence(engine, id) : undefined
+  const filmSequences = animatic ? relatedSequences(engine, id) : []
+  const filmNames = filmSequences.map((film) => film.name?.trim() || '成片序列')
+  const filmOptions = filmSequences.map((film, index) => {
+    const name = filmNames[index]!
+    let suffix = 6
+    while (
+      filmSequences.some(
+        (other) => other.id !== film.id && other.id.slice(-suffix) === film.id.slice(-suffix),
+      )
+    )
+      suffix++
+    return {
+      value: film.id,
+      label:
+        filmNames.filter((n) => n === name).length > 1
+          ? `${name} · ${film.id.slice(-suffix)}`
+          : name,
+    }
+  })
   const [playhead] = useState(() => new Playhead())
   useEffect(() => () => playhead.dispose(), [playhead])
   const [selected, setSelected] = useState<string | undefined>()
@@ -201,6 +219,17 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const duration = (assetId: string | undefined) => meta(assetId)?.duration
   const running = el?.run?.status === 'running' || el?.run?.status === 'queued'
   const canvasId = useCanvas((s) => s.canvasId)
+  const openFilm = (target: string, explicit = false) => {
+    if (!target) return
+    const state = useCanvas.getState()
+    if (state.engine !== engine || state.canvasId !== canvasId || state.sequence !== id) return
+    const current = relatedSequences(engine, id)
+    if ((!explicit && current.length !== 1) || !current.some((film) => film.id === target)) {
+      setAnimaticError('关联成片已变化，本次切换未执行；请重新选择有效成片')
+      return
+    }
+    state.openSequence(target)
+  }
   const canceling = useCancelRequests((s) =>
     s.pending.has(cancelRequestKey(canvasId, id, el?.run?.id)),
   )
@@ -538,14 +567,26 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             >
               更新已有素材
             </button>
-            {filmSequence && (
+            {filmSequences.length === 1 && (
               <button
                 className="ui-btn ui-btn-quiet"
                 type="button"
-                onClick={() => useCanvas.getState().openSequence(filmSequence)}
+                onClick={() => openFilm(filmSequences[0]!.id)}
               >
                 切回成片
               </button>
+            )}
+            {filmSequences.length > 1 && (
+              <Select
+                aria-label="选择成片序列"
+                className="max-w-52"
+                value=""
+                options={[
+                  { value: '', label: `选择成片序列（${filmSequences.length}）`, disabled: true },
+                  ...filmOptions,
+                ]}
+                onChange={(target) => openFilm(target, true)}
+              />
             )}
           </>
         )}

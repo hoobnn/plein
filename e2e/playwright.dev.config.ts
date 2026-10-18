@@ -99,6 +99,7 @@ export default defineConfig({
     'single-download-large.spec.ts',
     'animatic-delivery.spec.ts',
     'animatic-refresh.spec.ts',
+    'animatic-navigation.spec.ts',
     'templates.spec.ts',
     'right-panel-switching.spec.ts',
     'sequence-load-recovery.spec.ts',
