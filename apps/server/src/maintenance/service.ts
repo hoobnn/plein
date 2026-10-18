@@ -224,15 +224,15 @@ export class MaintenanceService {
   }
 
   async settings(input: MaintenanceSettings) {
-    return this.perform('settings', async () => {
+    await this.perform('settings', async () => {
       this.state.settings = MaintenanceSettings.parse(input)
       this.state.nextBackupAt = this.state.settings.autoBackup
         ? this.now() + this.state.settings.intervalHours * 3_600_000
         : null
       await this.saveState()
       this.plans.clear()
-      return this.status()
     })
+    return this.status()
   }
 
   async backup(): Promise<LocalBackup> {

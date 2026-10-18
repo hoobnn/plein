@@ -74,7 +74,8 @@ for (const [key, label, bad] of fields) {
       await page.unroute('**/api/maintenance/settings')
     }
     await save.click()
-    await expect(settings.getByRole('status')).toContainText('维护设置已保存')
+    await expect(settings.getByRole('status').filter({ hasText: '维护设置已保存' })).toBeVisible()
+    await expect(save).toBeEnabled()
     expect((await (await request.get('/api/maintenance/status')).json()).settings[key]).toBe(12)
     await expect(field).not.toHaveAttribute('aria-invalid', 'true')
     if (key === 'intervalHours') {

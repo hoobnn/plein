@@ -65,3 +65,22 @@ describe('维护接口与关闭生命周期', () => {
     expect((await viewer.request('/api/maintenance/backups', { method: 'POST' })).status).toBe(403)
   })
 })
+
+it('设置保存完成后的响应报告空闲状态', async () => {
+  const f = await bootServer()
+  const settings = {
+    autoBackup: false,
+    intervalHours: 12,
+    keepBackups: 4,
+    unusedDays: 20,
+    trashDays: 10,
+  }
+  const response = await request(f.server, '/api/maintenance/settings', {
+    method: 'PUT',
+    body: JSON.stringify(settings),
+  })
+  expect(response.status).toBe(200)
+  const status = (await response.json()) as { settings: typeof settings; running: string | null }
+  expect(status.settings).toEqual(settings)
+  expect(status.running).toBeNull()
+})

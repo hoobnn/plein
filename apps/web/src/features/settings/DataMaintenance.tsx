@@ -1,7 +1,8 @@
-import type { CleanupPreview, MaintenanceSettings } from '@plein/protocol'
+import type { CleanupPreview } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useId, useRef, useState } from 'react'
 import { Switch } from '../../ui/Switch'
+import { queryClient } from '../../api/query'
 import { maintenanceApi } from './maintenance-client'
 
 const numberFields = [
@@ -11,6 +12,7 @@ const numberFields = [
   ['trashDays', '回收站保留（天）', 1, 365],
 ] as const
 type NumberKey = (typeof numberFields)[number][0]
+const statusKey = ['maintenance', 'status'] as const
 
 const bytes = (value: number) => {
   const unit = value >= 1024 ** 3 ? 'GB' : value >= 1024 ** 2 ? 'MB' : 'KB'
@@ -22,7 +24,7 @@ const date = (value: number | null) =>
 /** 设置中的数据维护；接口仅在本机模式开放。 */
 export function DataMaintenance() {
   const status = useQuery({
-    queryKey: ['maintenance', 'status'],
+    queryKey: statusKey,
     queryFn: maintenanceApi.status,
     refetchInterval: (query) => (query.state.error ? false : 10_000),
   })
@@ -31,7 +33,8 @@ export function DataMaintenance() {
     queryFn: maintenanceApi.space,
     retry: false,
   })
-  const [settings, setSettings] = useState<MaintenanceSettings | null>(null)
+  const settings = status.data?.settings
+  const [autoBackupDraft, setAutoBackupDraft] = useState<boolean | null>(null)
   const formId = useId()
   const [drafts, setDrafts] = useState<Partial<Record<NumberKey, string>>>({})
   const [invalid, setInvalid] = useState<Partial<Record<NumberKey, boolean>>>({})
@@ -44,9 +47,6 @@ export function DataMaintenance() {
   useEffect(() => {
     if (message || error) feedback.current?.scrollIntoView({ block: 'nearest' })
   }, [message, error])
-  useEffect(() => {
-    if (status.data && !settings) setSettings(status.data.settings)
-  }, [status.data, settings])
   const perform = async (fn: () => Promise<string | void>) => {
     setBusy(true)
     setError(null)
@@ -125,12 +125,14 @@ export function DataMaintenance() {
           aria-label="维护设置"
           onSubmit={(event) => {
             event.preventDefault()
-            const next = { ...settings }
+            const next = { ...settings, autoBackup: autoBackupDraft ?? settings.autoBackup }
             for (const [key] of numberFields)
               if (drafts[key] !== undefined) next[key] = Number(drafts[key])
             void perform(async () => {
               const saved = await maintenanceApi.settings(next)
-              setSettings(saved.settings)
+              // 保存响应可能在关闭重开后才到达；共享状态也必须采用成功保存的值。
+              queryClient.setQueryData(statusKey, saved)
+              setAutoBackupDraft(null)
               setDrafts({})
               setInvalid({})
               setPreview(null)
@@ -142,10 +144,10 @@ export function DataMaintenance() {
             <h3 className="text-sm font-medium">自动备份</h3>
             <Switch
               label="启用自动备份"
-              checked={settings.autoBackup}
+              checked={autoBackupDraft ?? settings.autoBackup}
               disabled={locked}
               onChange={(autoBackup) => {
-                setSettings({ ...settings, autoBackup })
+                setAutoBackupDraft(autoBackup)
                 setMessage(null)
                 setError(null)
               }}

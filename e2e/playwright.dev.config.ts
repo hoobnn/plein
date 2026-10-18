@@ -58,6 +58,7 @@ export default defineConfig({
     'plugins-catalog-recovery.spec.ts',
     'maintenance-status-recovery.spec.ts',
     'maintenance-number-editing.spec.ts',
+    'maintenance-settings-sync.spec.ts',
     'plugins.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
