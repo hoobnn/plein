@@ -2,6 +2,62 @@ import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { clickElement, newProject, waitEngine, waitNode } from './canvas'
 
+test('首次生成期间修改输入，结果只进候选，查看采用及撤销刷新不隐式生效', async ({ page }) => {
+  await newProject(page)
+  const config = '/api/providers/plein/mock/config'
+  const original = await (await page.request.get(config)).json()
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/image',
+      name: '首次待采用候选',
+      params: { prompt: '透明水杯', model: 'plein/mock:image' },
+      x: 400,
+      y: 200,
+    }),
+  )
+  try {
+    expect(
+      (
+        await page.request.put(config, {
+          data: { settings: { ...original.settings, latencyMs: 3000 } },
+        })
+      ).ok(),
+    ).toBe(true)
+    await clickElement(page, id)
+    const generator = page.getByTestId('generator')
+    await generator.getByRole('button', { name: '生成', exact: true }).click()
+    await expect(generator.getByRole('button', { name: '取消', exact: true })).toBeEnabled()
+    await generator.getByRole('textbox', { name: '提示词', exact: true }).fill('改为陶瓷水杯')
+    await waitNode(page, id)
+    const adopted = () => page.evaluate((id) => window.__plein.engine.doc.get(id)?.adopted, id)
+    await expect.poll(adopted).toBeNull()
+    await expect(
+      page.locator('.plein-node').getByText('1 个候选待采用，当前没有生效的结果'),
+    ).toBeVisible()
+    await page
+      .locator('.plein-node')
+      .screenshot({ path: test.info().outputPath('held-first-candidate.png') })
+    const open = () => page.getByRole('button', { name: '查看待采用候选', exact: true }).click()
+    await open()
+    const viewer = page.getByRole('dialog', { name: '查看「首次待采用候选」', exact: true })
+    await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
+    const chosen = await adopted()
+    expect(typeof chosen).toBe('string')
+    await viewer.getByRole('button', { name: '关闭', exact: true }).click()
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    await expect.poll(adopted).toBeNull()
+    await page.reload()
+    await waitEngine(page)
+    await expect.poll(adopted).toBeNull()
+    await open()
+    await expect(viewer.getByRole('button', { name: '采用此候选', exact: true })).toBeEnabled()
+    await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
+    await expect.poll(adopted).toBe(chosen)
+  } finally {
+    await page.request.put(config, { data: { settings: original.settings } })
+  }
+})
+
 for (const kind of ['image', 'video', 'speech'] as const) {
   test(`${kind} 连续生成候选后，卡片浏览、采用、撤销重做与刷新保持一致`, async ({ page }) => {
     await newProject(page)

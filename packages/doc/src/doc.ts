@@ -331,7 +331,7 @@ function readElement(id: string, m: ElementMap): CanvasElement | undefined {
   if (typeof nodeVersion === 'number') el.nodeVersion = nodeVersion
   const results = m.get('results')
   if (Array.isArray(results)) el.results = results.filter(isResult)
-  const adopted = str(m.get('adopted'))
+  const adopted = m.get('adopted') === null ? null : str(m.get('adopted'))
   if (adopted !== undefined) el.adopted = adopted
   const reviews = m.get('reviews')
   const reviewValues = reviews instanceof Y.Map ? [...reviews.values()] : reviews

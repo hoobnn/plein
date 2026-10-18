@@ -78,8 +78,8 @@ export interface CanvasElement extends Rect {
   nodeVersion?: number
   /** 节点结果，新到旧 */
   results?: NodeResult[]
-  /** 当前采用的结果 id：卡片显示它，下游读取它；未设置时用最新结果 */
-  adopted?: string
+  /** 当前采用的结果 id；null 表示候选均待采用，未设置时兼容使用最新结果 */
+  adopted?: string | null
   /** 人工验收按具体候选保存，独立于生成参数与采用状态。 */
   reviews?: CreativeReview[]
   deliveries?: DeliveryRecord[]
@@ -170,7 +170,7 @@ export interface NewElement extends Rect {
   nodeVersion?: number
   /** 复制节点时带上结果 */
   results?: NodeResult[]
-  adopted?: string
+  adopted?: string | null
   reviews?: CreativeReview[]
   deliveries?: DeliveryRecord[]
 }

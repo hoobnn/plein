@@ -125,7 +125,7 @@ export function createElements(doc: PleinDoc, inputs: NewElement[]): string[] {
         m.set('params', new Y.Map(Object.entries(input.params ?? {})))
       }
       if (input.results?.length) m.set('results', input.results)
-      if (input.adopted) m.set('adopted', input.adopted)
+      if (input.adopted !== undefined) m.set('adopted', input.adopted)
       if (input.reviews?.length)
         m.set(
           'reviews',
@@ -305,7 +305,7 @@ export function setText(doc: PleinDoc, id: string, text: string) {
 /** 每个节点最多保留的结果数，超出时丢弃最旧的 */
 export const MAX_RESULTS = 48
 
-/** 采用某个结果：卡片显示它，下游读取它（用户操作，可撤销） */
+/** 采用某个结果（可撤销）；resultId=null 沿用旧约定，清除显式选择并回到最新结果。 */
 export function adoptResult(doc: PleinDoc, id: string, resultId: string | null) {
   write(doc, () => {
     const m = doc.mutable(id)
@@ -345,7 +345,11 @@ export function addResults(
     const old = Array.isArray(m.get('results')) ? (m.get('results') as NodeResult[]) : []
     const list = [...results, ...old]
     const chosen =
-      opts.adopt === false ? (old.find((r) => r.id === m.get('adopted')) ?? old[0]) : results[0]
+      opts.adopt === false
+        ? m.get('adopted') === null
+          ? undefined
+          : (old.find((r) => r.id === m.get('adopted')) ?? old[0])
+        : results[0]
     // 候选限额不能挤掉正在使用的结果，也不能拆散其视频 / 尾帧等关联输出。
     // 先为采用的那次运行留位置，其余按新到旧填满，最终仍按原历史顺序展示。
     const priority = new Set<string>()
@@ -360,16 +364,17 @@ export function addResults(
       list.filter((r) => keep.has(r.id)),
     )
     // 无显式采用或旧引用已无效时也钉住实际生效的结果，避免新候选抢占。
-    if (chosen) m.set('adopted', chosen.id)
+    m.set('adopted', chosen?.id ?? null)
   }, SYSTEM_ORIGIN)
 }
 
 /**
- * 当前生效的结果：采用的那个，否则最新的；可按输出端口筛选。
+ * 当前生效的结果：显式 null 表示尚未采用；未指定时使用最新的，可按输出端口筛选。
  * 按端口取时跟着采用的那次运行走：那次没产出这个端口（如没开「返回尾帧」）就是没有，
  * 不拿更早一次的结果凑数。
  */
 export function currentResult(el: CanvasElement, port?: string): NodeResult | undefined {
+  if (el.adopted === null) return undefined
   const all = el.results ?? []
   const list = all.filter((r) => port === undefined || r.port === port)
   const own = list.find((r) => r.id === el.adopted)

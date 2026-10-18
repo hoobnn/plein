@@ -287,6 +287,28 @@ describe('变更通知', () => {
 })
 
 describe('迁移', () => {
+  it('v4 升级保留旧版默认最新语义与显式待采用标记', () => {
+    const source = open()
+    const id = createElement(source, { kind: 'node', x: 0, y: 0, w: 200, h: 200 })
+    addResults(source, id, [
+      { id: 'r', port: 'images', runId: 'run', at: 1, value: { type: 'image', assetId: 'asset' } },
+    ])
+    source.mutable(id)!.delete('adopted')
+    source.ydoc.getMap('meta').set('schemaVersion', 4)
+    const copy = new Y.Doc()
+    Y.applyUpdate(copy, Y.encodeStateAsUpdate(source.ydoc))
+    const restored = open(copy)
+    expect(restored.schemaVersion).toBe(5)
+    expect(currentResult(restored.get(id)!)?.id).toBe('r')
+    source.mutable(id)!.set('adopted', null)
+    const pending = new Y.Doc()
+    Y.applyUpdate(pending, Y.encodeStateAsUpdate(source.ydoc))
+    const restoredPending = open(pending)
+    expect(restoredPending.schemaVersion).toBe(5)
+    expect(restoredPending.get(id)!.adopted).toBeNull()
+    expect(currentResult(restoredPending.get(id)!)).toBeUndefined()
+  })
+
   it('v0 整对象元素升级为嵌套 Y.Map', () => {
     const ydoc = new Y.Doc()
     const legacy = ydoc.getMap<unknown>('elements')
@@ -492,6 +514,40 @@ describe('节点结果与端口', () => {
       expect(currentResult(restored.get(id)!, 'lastFrame')?.id).toBe('tail')
     },
   )
+
+  it('首批待采用候选没有当前输出，序列化与复制保留待采用状态，明确采用可撤销', () => {
+    const doc = open()
+    const id = createElement(doc, { kind: 'node', x: 0, y: 0, w: 200, h: 200, ports: nodePorts })
+    const result = (id: string) => ({
+      id,
+      port: 'images',
+      runId: id,
+      at: 1,
+      value: { type: 'image' as const, assetId: id },
+    })
+    addResults(doc, id, [result('first')], { adopt: false })
+    addResults(doc, id, [result('second')], { adopt: false })
+    const held = doc.get(id)!
+    expect(held.adopted).toBeNull()
+    expect(currentResult(held)).toBeUndefined()
+    expect(currentResult(held, 'images')).toBeUndefined()
+    expect(elementMedia(held)).toBeNull()
+    expect(resultHistory(doc).every((entry) => !entry.adopted)).toBe(true)
+    const restored = open()
+    Y.applyUpdate(restored.ydoc, Y.encodeStateAsUpdate(doc.ydoc))
+    expect(restored.get(id)!.adopted).toBeNull()
+    expect(currentResult(restored.get(id)!)).toBeUndefined()
+    const copy = createElement(doc, { ...held, x: 500 })
+    expect(doc.get(copy)!.adopted).toBeNull()
+    expect(currentResult(doc.get(copy)!)).toBeUndefined()
+    doc.undo.stopCapturing()
+    adoptResult(doc, id, 'first')
+    expect(currentResult(doc.get(id)!)?.id).toBe('first')
+    doc.undo.undo()
+    expect(currentResult(doc.get(id)!)).toBeUndefined()
+    addResults(doc, id, [result('fresh')])
+    expect(currentResult(doc.get(id)!)?.id).toBe('fresh')
+  })
 
   it('videoAssetOf：视频元素或当前结果是视频的节点', () => {
     const doc = open()

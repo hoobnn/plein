@@ -10,6 +10,7 @@ interface RawElement {
   nodeType?: string
   parentId: string | null
   assetId?: string
+  adopted?: string | null
   text?: string
   params?: Record<string, unknown>
   run?: { status: string }

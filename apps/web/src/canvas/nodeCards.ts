@@ -273,7 +273,8 @@ export class NodeCards {
       const list = primaryResults(el)
       const cur = currentResult(el, list[0]?.port)
       const i = list.findIndex((r) => r.id === cur?.id)
-      const target = list[(i + d + list.length) % list.length]
+      const target =
+        list[i < 0 ? (d > 0 ? 0 : list.length - 1) : (i + d + list.length) % list.length]
       if (target)
         useCanvas
           .getState()
@@ -349,7 +350,9 @@ export class NodeCards {
     const cur = currentResult(el, list[0]?.port)
     const v = cur?.value
     card.nav.hidden = list.length < 2
-    card.count.textContent = `${list.findIndex((r) => r.id === cur?.id) + 1}/${list.length}`
+    card.count.textContent = cur
+      ? `${list.findIndex((r) => r.id === cur.id) + 1}/${list.length}`
+      : `待采用 · ${list.length}`
 
     const editHint =
       el.nodeType === SEQUENCE_TYPE
@@ -424,6 +427,28 @@ export class NodeCards {
       this.renderRunning(card, el)
     } else if (run?.status === 'failed') {
       this.renderFailed(card, el, run)
+    } else if (!cur && list.length) {
+      const pending = document.createElement('div')
+      pending.className = 'plein-node-empty'
+      const hint = document.createElement('p')
+      hint.textContent = `${list.length} 个候选待采用，当前没有生效的结果`
+      const review = button('plein-node-action', '查看待采用候选', {
+        text: '查看候选',
+      })
+      for (const event of ['pointerdown', 'pointerup', 'dblclick'])
+        review.addEventListener(event, (e) => e.stopPropagation())
+      review.addEventListener('click', (e) => {
+        e.stopPropagation()
+        useCanvas.getState().view({
+          kind: 'result',
+          nodeId: el.id,
+          resultId: list[0]!.id,
+          name: el.name ?? '候选审片',
+        })
+      })
+      pending.append(hint, review)
+      card.body.replaceChildren(pending)
+      card.body.classList.add('is-hint')
     } else if (v?.type === 'text') {
       renderMentionText(
         card.body,

@@ -157,7 +157,11 @@ export function describeRecovery(
       // 早于恢复状态的成功任务、结果已被清掉：不给状态
       if (!stored.state) return base
     }
-    const adopted = !!el && currentResult(el)?.runId === row.id
+    // 旧文档的首个待采用候选可能没有 adopted 字段，不能用“默认最新”覆盖入库记录。
+    const adopted =
+      !!el &&
+      (stored.state !== 'stored' || typeof el.adopted === 'string') &&
+      currentResult(el)?.runId === row.id
     if (adopted) return { ...base, recovery: { ...common('adopted'), resultIds } }
     return {
       ...base,

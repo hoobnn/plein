@@ -539,20 +539,37 @@ describe('晚返回的结果', () => {
     expect(job(server, id, run).recovery).toMatchObject({ state: 'stored', held: 'canceled' })
   })
 
-  it('生成期间改了输入：结果进候选，当前结果不变', async () => {
-    const { server } = await boot()
-    const { id, doc } = await canvas(server)
-    const a = addNode(doc, 'plein/image', { params: { prompt: 'a', count: 1 } })
-    const before = await firstResult(server, id, doc, a)
-    mock(server, { latencyMs: 300 })
-    const run = server.runs.start(id, a, 'local')
-    await until(() => server.runs.store.get(run)?.calls.includes('pending'))
-    setParams(doc, a, { prompt: '改过的' })
-    expect(await server.runs.wait(run)).toBe('succeeded')
-    expect(doc.get(a)?.results).toHaveLength(2)
-    expect(currentResult(doc.get(a)!)?.id).toBe(before)
-    expect(job(server, id, run).recovery).toMatchObject({ state: 'stored', held: 'input_changed' })
-  })
+  it.each([false, true])(
+    '生成期间改了输入：结果进候选，当前结果不变（已有结果=%s）',
+    async (existing) => {
+      const { server } = await boot()
+      const { id, doc } = await canvas(server)
+      const a = addNode(doc, 'plein/image', { params: { prompt: 'a', count: 1 } })
+      const before = existing ? await firstResult(server, id, doc, a) : undefined
+      mock(server, { latencyMs: 300 })
+      const run = server.runs.start(id, a, 'local')
+      await until(() => server.runs.store.get(run)?.calls.includes('pending'))
+      setParams(doc, a, { prompt: '改过的' })
+      expect(await server.runs.wait(run)).toBe('succeeded')
+      expect(doc.get(a)?.results).toHaveLength(existing ? 2 : 1)
+      expect(currentResult(doc.get(a)!)?.id).toBe(before)
+      expect(job(server, id, run).recovery).toMatchObject({
+        state: 'stored',
+        held: 'input_changed',
+      })
+      if (!existing) {
+        expect(doc.get(a)?.adopted).toBeNull()
+        // 旧版首个候选未写采用字段，恢复接口仍应尊重持久化的待采用记录。
+        doc.mutable(a)!.delete('adopted')
+        expect(job(server, id, run).recovery).toMatchObject({
+          state: 'stored',
+          held: 'input_changed',
+        })
+      }
+      adoptResult(doc, a, doc.get(a)!.results![0]!.id)
+      expect(job(server, id, run).recovery?.state).toBe('adopted')
+    },
+  )
 })
 
 describe('批准的计划', () => {

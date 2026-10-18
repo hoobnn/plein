@@ -4,7 +4,7 @@ import { CONTAINER_KINDS, type Edge } from './types'
 import { migrateStoryboardIdentity } from './migrate-storyboard'
 
 /** 当前文档 schema 版本 */
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 
 export interface MigrateResult {
   version: number
@@ -15,7 +15,12 @@ export interface MigrateResult {
 type Migration = (ydoc: Y.Doc) => void
 
 /** MIGRATIONS[n] 把 n 版升到 n + 1 版 */
-const MIGRATIONS: Migration[] = [v0ToV1, v1ToV2, v2ToV3, migrateStoryboardIdentity]
+const MIGRATIONS: Migration[] = [v0ToV1, v1ToV2, v2ToV3, migrateStoryboardIdentity, v4ToV5]
+
+/** v5 增加 adopted=null 的明确待采用状态；旧文档未设置时的“默认最新”保持不变。 */
+function v4ToV5(_ydoc: Y.Doc) {
+  // 无需重写旧候选；版本提升让不识别此状态的旧客户端按现有机制只读打开。
+}
 
 /**
  * 顺序执行迁移。新文档直接标为当前版本；
