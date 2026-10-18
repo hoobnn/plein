@@ -1,6 +1,6 @@
 import type { Project } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
-import { type MouseEvent, useRef, useState } from 'react'
+import { type MouseEvent, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { cacheProject, invalidateProjects, queryClient, queryKeys } from '../api/query'
 import { queueStartNode } from '../canvas/startQueue'
@@ -62,6 +62,14 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   const [retryError, setRetryError] = useState<Error | null>(null)
   const [query, setQuery] = useState('')
   const [creating, setCreating] = useState(false)
+  const createPending = useRef(false)
+  const active = useRef(true)
+  useEffect(() => {
+    active.current = true
+    return () => {
+      active.current = false
+    }
+  }, [])
   const [scrolled, setScrolled] = useState(false)
   const [exporting, setExporting] = useState<Project | null>(null)
   const [importing, setImporting] = useState<File | null>(null)
@@ -79,22 +87,41 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   }
 
   const create = async (from: Element, start?: string) => {
-    if (creating) return
+    if (createPending.current) return
+    createPending.current = true
+    setError(null)
     setCreating(true)
     try {
       const p = await api.createProject()
       if (!p.lastCanvasId) throw new Error('项目建好了，但没有画布')
       if (start) queueStartNode(p.lastCanvasId, start)
       // 先把新项目塞进列表缓存：从画布回首页时它的卡片立刻就在，画布能缩回去
-      queryClient.setQueryData<Project[]>(queryKeys.projects, (prev) => prev && [p, ...prev])
+      queryClient.setQueryData<Project[]>(queryKeys.projects, (prev) => [
+        p,
+        ...(prev ?? []).filter((item) => item.id !== p.id),
+      ])
+      void invalidateProjects()
+      if (!active.current) {
+        useCanvas.getState().notify(`已创建项目「${p.title}」`)
+        return
+      }
       const id = p.lastCanvasId
-      zoomView('enter', () => navigate({ name: 'canvas', id }), {
-        from,
-        shape: from.classList.contains('home-new') ? undefined : 'rect',
-      })
+      zoomView(
+        'enter',
+        () => {
+          if (active.current) navigate({ name: 'canvas', id })
+        },
+        {
+          from,
+          shape: from.classList.contains('home-new') ? undefined : 'rect',
+        },
+      )
     } catch (err) {
-      setError((err as Error).message)
-      setCreating(false)
+      createPending.current = false
+      if (active.current) {
+        setError((err as Error).message)
+        setCreating(false)
+      } else useCanvas.getState().notify(`创建项目未获确认：${(err as Error).message}`)
     }
   }
   const rename = async (p: Project, title: string) => {
@@ -262,6 +289,12 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
           ))}
         </section>
 
+        {creating && (
+          <p role="status" className="flex items-center gap-2 text-sm text-ink-muted">
+            <span className="ui-spinner size-4" />
+            正在创建项目…
+          </p>
+        )}
         {error && (
           <p role="alert" className="text-sm text-danger">
             操作失败：{error}

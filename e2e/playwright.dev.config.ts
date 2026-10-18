@@ -32,6 +32,7 @@ export default defineConfig({
     'project-list-recovery.spec.ts',
     'projects.spec.ts',
     'project-open-recovery.spec.ts',
+    'project-create-lifecycle.spec.ts',
     'project-package-recovery.spec.ts',
     'project-import-lifecycle.spec.ts',
     'library-navigation.spec.ts',
