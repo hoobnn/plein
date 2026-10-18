@@ -69,14 +69,26 @@ function contributesText(p: LocalPluginInfo) {
 
 /** 本机插件：数据目录 plugins/ 下的文件夹，默认不启用，看过权限再打开 */
 export function LocalPlugins() {
-  const { data: list } = useQuery({ queryKey: queryKeys.localPlugins, queryFn: api.localPlugins })
+  const {
+    data: list,
+    error: loadError,
+    refetch,
+    isFetching,
+  } = useQuery({
+    queryKey: queryKeys.localPlugins,
+    queryFn: api.localPlugins,
+  })
   const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   /** 改完刷新列表和目录（节点、平台、预设跟着变） */
   const act = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key)
+    setError(null)
     try {
       await fn()
+    } catch (err) {
+      setError(`插件操作失败：${(err as Error).message}`)
     } finally {
       await queryClient.invalidateQueries({ queryKey: queryKeys.localPlugins })
       await useCatalog.getState().load()
@@ -84,9 +96,36 @@ export function LocalPlugins() {
     }
   }
 
-  if (!list) return null
+  const retry = (
+    <button
+      type="button"
+      className="ui-btn ui-btn-secondary self-start"
+      disabled={isFetching}
+      onClick={() => void refetch()}
+    >
+      重试读取插件
+    </button>
+  )
+  if (!list)
+    return (
+      <div className="flex flex-col gap-3">
+        <p
+          role={loadError ? 'alert' : 'status'}
+          className={loadError ? 'text-sm text-danger' : 'ui-help'}
+        >
+          {loadError ? `读取插件失败：${loadError.message}` : '正在读取本机插件…'}
+        </p>
+        {loadError && retry}
+      </div>
+    )
   return (
     <div className="flex flex-col gap-3">
+      {(error || loadError) && (
+        <p role="alert" className="text-sm text-danger">
+          {error ?? `读取插件失败：${loadError!.message}`}
+        </p>
+      )}
+      {loadError && retry}
       {list.length === 0 ? (
         <p className="text-sm text-ink-subtle">
           还没有本机插件。把插件文件夹放进数据目录的 plugins/ 里，再点「重新扫描」。
