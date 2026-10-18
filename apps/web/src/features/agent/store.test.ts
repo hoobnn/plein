@@ -166,6 +166,55 @@ describe('助手草稿与发送生命周期', () => {
 })
 
 describe('智能体会话', () => {
+  it('重连快照显示新轮次运行中时，旧完成反馈计时器不把心情恢复为空闲', async () => {
+    vi.useFakeTimers()
+    try {
+      useAgent.setState({ canvasId: 'timer-canvas' })
+      vi.mocked(api.agentSession).mockResolvedValue(session('active'))
+      vi.mocked(api.agentSessions).mockResolvedValue([])
+      await useAgent.getState().select('active')
+      const stream = FakeEventSource.all.at(-1)!
+      stream.emit({ type: 'status', status: 'running' })
+      stream.emit({ type: 'status', status: 'idle' })
+      expect(useAgent.getState().mood).toBe('happy')
+      stream.emit({ type: 'session', session: { ...session('active'), status: 'running' } })
+      vi.advanceTimersByTime(5000)
+      expect(useAgent.getState().mood).toBe('working')
+    } finally {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
+  it.each([
+    ['completed', 'happy'],
+    ['failed', 'sad'],
+    ['stopped', 'idle'],
+    ['interrupted', 'idle'],
+  ] as const)('自动重连快照补回 %s 的通知与列表，不重复提示', async (state, mood) => {
+    vi.useFakeTimers()
+    try {
+      useAgent.setState({ canvasId: 'reconnect-canvas', open: false })
+      vi.mocked(api.agentSession).mockResolvedValue({ ...session('active'), status: 'running' })
+      vi.mocked(api.agentSessions).mockResolvedValue([summary('active')])
+      await useAgent.getState().select('active')
+      const stream = FakeEventSource.all.at(-1)!
+      const snapshot = {
+        ...session('active'),
+        lastTurn: { id: 'finished-turn', state, runs: [], groups: [] },
+      }
+      stream.emit({ type: 'session', session: snapshot })
+      expect(useAgent.getState()).toMatchObject({ unread: true, mood, session: { status: 'idle' } })
+      await Promise.resolve()
+      expect(api.agentSessions).toHaveBeenCalledTimes(1)
+      useAgent.setState({ open: true, unread: false })
+      stream.emit({ type: 'session', session: snapshot })
+      expect(useAgent.getState().unread).toBe(false)
+      expect(api.agentSessions).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    }
+  })
   it('连接彻底关闭后只重连订阅，重复重连与旧流迟到事件不影响新状态', async () => {
     vi.mocked(api.agentSession).mockResolvedValue({ ...session('stream'), agent: 'builtin' })
     useAgent.setState({ canvasId: 'c1' })
@@ -193,7 +242,7 @@ describe('智能体会话', () => {
     current.emit({ type: 'session', session: { ...session('stream'), title: '补回最新状态' } })
     expect(useAgent.getState()).toMatchObject({
       reconnecting: false,
-      mood: 'idle',
+      mood: 'happy',
       connectionError: null,
       session: { title: '补回最新状态' },
     })

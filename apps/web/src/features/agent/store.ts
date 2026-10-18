@@ -128,6 +128,18 @@ function savedAgent(): AgentKind {
 }
 
 export const useAgent = create<AgentStore>((set, get) => {
+  const completeFeedback = (session: AgentSession, turn: AgentSession['lastTurn']) => {
+    const state = turn?.state
+    const failed = state ? state === 'failed' : session.items.at(-1)?.type === 'error'
+    set({
+      mood: state === 'stopped' || state === 'interrupted' ? 'idle' : failed ? 'sad' : 'happy',
+      unread: !get().open,
+    })
+    clearTimeout(moodTimer)
+    moodTimer = setTimeout(() => set({ mood: 'idle' }), 4000)
+    void refreshList()
+  }
+
   /** 订阅会话事件流；同一时间只连一个会话 */
   const connect = (id: string | null, reconnecting = false) => {
     source?.close()
@@ -151,12 +163,15 @@ export const useAgent = create<AgentStore>((set, get) => {
       }
       const cur = get().session
       if (e.type === 'session') {
+        clearTimeout(moodTimer)
         set({
           session: e.session,
           mood: e.session.status === 'running' ? 'working' : 'idle',
           connectionError: null,
           reconnecting: false,
         })
+        if (cur?.id === e.session.id && cur.status === 'running' && e.session.status === 'idle')
+          completeFeedback(e.session, e.session.lastTurn)
         return
       }
       if (!cur || cur.id !== id) return
@@ -182,22 +197,12 @@ export const useAgent = create<AgentStore>((set, get) => {
         set({ session: { ...cur, items, updatedAt: Date.now() } })
       } else if (e.type === 'status') {
         const wasRunning = cur.status === 'running'
-        set({ session: { ...cur, status: e.status, lastTurn: e.lastTurn ?? cur.lastTurn } })
+        const next = { ...cur, status: e.status, lastTurn: e.lastTurn ?? cur.lastTurn }
+        set({ session: next })
         if (e.status === 'running') {
           clearTimeout(moodTimer)
           set({ mood: 'working' })
-        } else if (wasRunning) {
-          const state = e.lastTurn?.state
-          const failed = state ? state === 'failed' : get().session?.items.at(-1)?.type === 'error'
-          set({
-            mood:
-              state === 'stopped' || state === 'interrupted' ? 'idle' : failed ? 'sad' : 'happy',
-            unread: !get().open,
-          })
-          clearTimeout(moodTimer)
-          moodTimer = setTimeout(() => set({ mood: 'idle' }), 4000)
-          void refreshList()
-        }
+        } else if (wasRunning) completeFeedback(next, e.lastTurn)
       }
     }
   }

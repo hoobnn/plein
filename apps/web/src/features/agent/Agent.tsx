@@ -162,7 +162,11 @@ export function AgentDock() {
       >
         <Mascot mood={mood} />
         {unread && (
-          <span className="absolute top-1 right-1 size-2.5 rounded-full bg-accent ring-2 ring-canvas" />
+          <span
+            role="img"
+            aria-label="助手有新回复"
+            className="absolute top-1 right-1 size-2.5 rounded-full bg-accent ring-2 ring-canvas"
+          />
         )}
       </button>
     </>
