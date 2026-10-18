@@ -178,6 +178,12 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
   })
 
   const q = query.trim().toLowerCase()
+  const filtered = !!q || Object.values(tags).some(Boolean)
+  const clearFilters = () => {
+    setQuery('')
+    setTags({})
+    searchRef.current?.focus()
+  }
   const matches = (name: string, description: string, t: Record<string, string>) =>
     (!q || name.toLowerCase().includes(q) || description.toLowerCase().includes(q)) &&
     Object.entries(tags).every(([k, v]) => !v || t[k] === v)
@@ -324,6 +330,16 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
                 className="w-28"
               />
             ))}
+            {filtered && (
+              <button
+                type="button"
+                className="ui-btn ui-btn-quiet ui-btn-sm"
+                onClick={clearFilters}
+                title="清空搜索和所有标签，保留当前范围"
+              >
+                重置筛选
+              </button>
+            )}
           </div>
           <div className="ui-scrollbar min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-5">
             {/* 换类别或范围时内容按切换方向滑入 */}
@@ -342,6 +358,8 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
                   <Empty
                     kind={kind}
                     scope={scope}
+                    filtered={filtered}
+                    onClear={clearFilters}
                     onCreate={() => {
                       parkFocus()
                       setEditing({ type: 'new' })
@@ -410,14 +428,19 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
 function Empty({
   kind,
   scope,
+  filtered,
+  onClear,
   onCreate,
 }: {
   kind: LibraryKindSpec
   scope: Scope
+  filtered: boolean
+  onClear(): void
   onCreate(): void
 }) {
-  const text =
-    scope === 'favorite'
+  const text = filtered
+    ? `没有符合条件的${kind.title}`
+    : scope === 'favorite'
       ? `还没有收藏的${kind.title}`
       : scope === 'recent'
         ? `还没有用过的${kind.title}`
@@ -426,13 +449,21 @@ function Empty({
           : `还没有${kind.title}`
   return (
     <EmptyState
-      icon="library"
+      icon={filtered ? 'search' : 'library'}
       title={text}
-      hint={`${kind.description}。也可以在画布上选中图片${kind.video ? '或视频' : ''}，点工具条上的「存入资产库」。`}
+      hint={
+        filtered
+          ? '试试其他关键词，或清空搜索和筛选。'
+          : `${kind.description}。也可以在画布上选中图片${kind.video ? '或视频' : ''}，点工具条上的「存入资产库」。`
+      }
       action={
-        <button type="button" onClick={onCreate} className="ui-btn ui-btn-secondary">
-          <Icon name="plus" />
-          新建{kind.title}
+        <button
+          type="button"
+          onClick={filtered ? onClear : onCreate}
+          className="ui-btn ui-btn-secondary"
+        >
+          <Icon name={filtered ? 'retry' : 'plus'} />
+          {filtered ? '清空搜索和筛选' : `新建${kind.title}`}
         </button>
       }
     />
