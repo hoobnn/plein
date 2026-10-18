@@ -193,3 +193,99 @@ for (const commit of ['Enter', 'blur'] as const) {
     })
   }
 }
+
+for (const filtered of [false, true]) {
+  test(`同伴删除正在改名的元素，${filtered ? '空筛选返回搜索' : '其余元素承接焦点'}，撤销后可重新改名`, async ({
+    page,
+    context,
+  }) => {
+    const { sidebar, ids } = await fixture(page)
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    const peerContext = await context.browser()!.newContext()
+    try {
+      const peer = await peerContext.newPage()
+      await peer.goto(page.url())
+      await waitEngine(peer)
+      const peerRow = peer.locator(`[role="treeitem"][data-id="${ids[0]}"]`)
+      await expect(peerRow).toBeVisible()
+      if (filtered) {
+        await sidebar.getByRole('button', { name: '搜索', exact: true }).click()
+        await sidebar.getByRole('textbox', { name: '搜索画布元素', exact: true }).fill('海边文本')
+        await expect(sidebar.getByRole('treeitem')).toHaveCount(1)
+      }
+      const row = sidebar.locator(`[role="treeitem"][data-id="${ids[0]}"]`)
+      await row.press('F2')
+      await row.getByRole('textbox', { name: '元素名称', exact: true }).fill('未保存的旧草稿')
+      const index = await row.evaluate((el) =>
+        [...el.parentElement!.querySelectorAll('[role="treeitem"]')].indexOf(el),
+      )
+      await peerRow.click()
+      await peer.keyboard.press('Delete')
+      await expect(row).toHaveCount(0)
+      const target = filtered
+        ? sidebar.getByRole('textbox', { name: '搜索画布元素', exact: true })
+        : sidebar.getByRole('treeitem').nth(Math.min(index, 1))
+      await expect(target).toBeFocused()
+      expect(errors).toEqual([])
+      await peer.getByRole('button', { name: '撤销', exact: true }).click()
+      await expect(row).toBeVisible()
+      await row.press('F2')
+      const restored = row.getByRole('textbox', { name: '元素名称', exact: true })
+      await expect(restored).toHaveValue('海边文本')
+      await restored.fill('恢复后的名称')
+      await restored.press('Enter')
+      await expect
+        .poll(() => peer.evaluate((id) => window.__plein.engine.doc.get(id)?.name, ids[0]!))
+        .toBe('恢复后的名称')
+      expect(errors).toEqual([])
+    } finally {
+      await peerContext.close()
+    }
+  })
+}
+
+for (const elsewhere of [false, true]) {
+  test(`同伴删除侧栏行后${elsewhere ? '不抢走搜索输入焦点' : '空列表可从搜索入口继续导航'}`, async ({
+    page,
+    context,
+  }) => {
+    const { sidebar, ids } = await fixture(page)
+    const peerContext = await context.browser()!.newContext()
+    try {
+      const peer = await peerContext.newPage()
+      await peer.goto(page.url())
+      await waitEngine(peer)
+      if (!elsewhere) {
+        for (const id of ids.slice(1)) {
+          await peer.locator(`[role="treeitem"][data-id="${id}"]`).click()
+          await peer.keyboard.press('Delete')
+        }
+        await expect(sidebar.getByRole('treeitem')).toHaveCount(1)
+      }
+      const row = sidebar.locator(`[role="treeitem"][data-id="${ids[0]}"]`)
+      await row.focus()
+      if (elsewhere) {
+        await sidebar.getByRole('button', { name: '搜索', exact: true }).click()
+        await sidebar.getByRole('textbox', { name: '搜索画布元素', exact: true }).fill('海边')
+      }
+      await peer.locator(`[role="treeitem"][data-id="${ids[0]}"]`).click()
+      await peer.keyboard.press('Delete')
+      await expect(row).toHaveCount(0)
+      if (elsewhere) {
+        const query = sidebar.getByRole('textbox', { name: '搜索画布元素', exact: true })
+        await expect(sidebar.getByRole('treeitem')).toHaveCount(1)
+        await expect(query).toBeFocused()
+        await expect(query).toHaveValue('海边')
+      } else {
+        await expect(sidebar.getByRole('button', { name: '搜索', exact: true })).toBeFocused()
+        await page.keyboard.press('Enter')
+        await expect(
+          sidebar.getByRole('textbox', { name: '搜索画布元素', exact: true }),
+        ).toBeFocused()
+      }
+    } finally {
+      await peerContext.close()
+    }
+  })
+}

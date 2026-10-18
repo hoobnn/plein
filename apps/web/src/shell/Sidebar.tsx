@@ -1,7 +1,7 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, updateElement } from '@plein/doc'
 import { LIBRARY_KINDS, libraryKindOfNode } from '@plein/nodes'
-import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { mediaOf } from '../canvas/grid'
 import { useDocVersion, useSelectionVersion } from '../canvas/hooks'
@@ -212,6 +212,7 @@ function Layers({ engine }: { engine: Engine }) {
     setSearching(false)
   }
   const listRef = useRef<HTMLDivElement>(null)
+  const activeRow = useRef<{ element: HTMLElement; index: number } | null>(null)
   const prevRows = useRef(new Map<string, Row>())
   const q = query.trim().toLowerCase()
   const filtering = !!q || type !== 'all'
@@ -262,6 +263,21 @@ function Layers({ engine }: { engine: Engine }) {
     rows.find((row) => row.el.id === focused)?.el.id ??
     rows.find((row) => engine.selection.has(row.el.id))?.el.id ??
     rows[0]?.el.id
+  useLayoutEffect(() => {
+    const previous = activeRow.current
+    if (!previous || previous.element.isConnected || document.activeElement !== document.body)
+      return
+    activeRow.current = null
+    const next = rows[Math.min(previous.index, rows.length - 1)]
+    const target = next
+      ? listRef.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(next.el.id)}"]`)
+      : (searchInput.current ?? searchButton.current)
+    target?.focus({ preventScroll: true })
+    target?.scrollIntoView({ block: 'nearest' })
+  }, [rows])
+  useEffect(() => {
+    if (renaming && !engine.doc.get(renaming)) setRenaming(null)
+  }, [engine, version, renaming])
   useEffect(() => {
     const pending = pendingRenameFocus.current
     if (!pending || pending.version === version) return
@@ -475,6 +491,24 @@ function Layers({ engine }: { engine: Engine }) {
       )}
       <div
         ref={listRef}
+        onFocusCapture={(event) => {
+          const element = (event.target as HTMLElement).closest<HTMLElement>('[role="treeitem"]')
+          if (element)
+            activeRow.current = {
+              element,
+              index: rows.findIndex((row) => row.el.id === element.dataset.id),
+            }
+        }}
+        onBlurCapture={(event) => {
+          if (
+            event.target.isConnected &&
+            !(
+              event.relatedTarget instanceof Node &&
+              event.currentTarget.contains(event.relatedTarget)
+            )
+          )
+            activeRow.current = null
+        }}
         role="tree"
         aria-label="画布元素"
         aria-multiselectable="true"
