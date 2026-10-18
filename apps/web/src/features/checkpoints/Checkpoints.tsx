@@ -37,6 +37,8 @@ const base64 = (data: Uint8Array) => {
 
 function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }) {
   const close = () => useCheckpoints.getState().close()
+  const removal = useCheckpoints((s) => s.removal)
+  const removing = useCheckpoints((s) => s.removing)
   const [page, setPage] = useState<CheckpointPage>({ items: [], nextCursor: null }),
     [loading, setLoading] = useState(false),
     [error, setError] = useState(''),
@@ -58,17 +60,27 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
     () => () => saveController.current?.abort(new DOMException('已取消等待', 'AbortError')),
     [],
   )
+  useEffect(
+    () =>
+      useCheckpoints.subscribe((state, previous) => {
+        if (!state.removal || state.removal === previous.removal) return
+        const id = state.removal.id
+        setPage((old) => ({ ...old, items: old.items.filter((item) => item.id !== id) }))
+        setSelected((current) => (current?.id === id ? null : current))
+      }),
+    [],
+  )
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
     setLoadFailed(false)
     setError('')
-    setPage({ items: [], nextCursor: null })
     checkpointApi
       .list(projectId, undefined, controller.signal)
       .then(
         (result) => {
-          if (!controller.signal.aborted) setPage(result)
+          if (!controller.signal.aborted && useCheckpoints.getState().removal === removal)
+            setPage(result)
         },
         (reason: Error) => {
           if (!controller.signal.aborted) {
@@ -81,7 +93,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
         if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
-  }, [projectId, revision])
+  }, [projectId, revision, removal])
   useEffect(() => {
     setDetail(null)
     setPreviewError('')
@@ -97,6 +109,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
     )
     return () => controller.abort()
   }, [selected, previewRevision])
+  const deleting = page.items.some((item) => removing.has(item.id))
   const save = async () => {
     if (!canSave || !name.trim() || saving) return
     const controller = new AbortController()
@@ -147,6 +160,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
     setLoading(true)
     try {
       const result = await checkpointApi.list(projectId, page.nextCursor)
+      if (useCheckpoints.getState().removal !== removal) return
       setPage((old) => ({ items: [...old.items, ...result.items], nextCursor: result.nextCursor }))
     } catch (reason) {
       setError((reason as Error).message)
@@ -192,16 +206,16 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
       confirmLabel: '删除检查点',
       danger: true,
     })
-    if (!accepted) return
+    if (!accepted || !useCheckpoints.getState().beginRemove(checkpoint.id)) return
     setWorking({ id: checkpoint.id, kind: 'remove' })
     setError('')
     try {
       await checkpointApi.remove(checkpoint.id)
-      if (selected?.id === checkpoint.id) setSelected(null)
-      setRevision((n) => n + 1)
+      useCheckpoints.getState().finishRemove(checkpoint.id, true)
     } catch (reason) {
       setError((reason as Error).message)
     } finally {
+      useCheckpoints.getState().finishRemove(checkpoint.id, false)
       setWorking(null)
     }
   }
@@ -267,6 +281,11 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
           正在恢复为新画布…关闭窗口后仍会继续执行。
         </p>
       )}
+      {deleting && (
+        <p role="status" className="px-5 py-3 text-sm text-ink-muted">
+          正在删除检查点…关闭窗口后仍会继续执行。
+        </p>
+      )}
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div
           className={`ui-scrollbar min-h-0 overflow-y-auto p-4 ${selected ? 'max-md:max-h-36 max-md:flex-none md:w-80 md:flex-none md:border-r md:border-line' : 'flex-1'}`}
@@ -322,7 +341,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
                     <button
                       type="button"
                       className="ui-btn ui-btn-sm ui-btn-secondary"
-                      disabled={!!working || saving}
+                      disabled={!!working || saving || removing.has(checkpoint.id)}
                       onClick={() => void restore(checkpoint)}
                     >
                       {working?.kind === 'restore' && working.id === checkpoint.id
@@ -333,7 +352,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
                       type="button"
                       aria-label={`删除检查点 ${checkpoint.name}`}
                       className="ui-btn ui-btn-sm ui-btn-quiet ui-icon-btn hover:text-danger"
-                      disabled={!!working || saving}
+                      disabled={!!working || saving || removing.has(checkpoint.id)}
                       onClick={() => void remove(checkpoint)}
                     >
                       <Icon name="trash" size={14} />
