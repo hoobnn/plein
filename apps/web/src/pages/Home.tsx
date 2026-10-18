@@ -332,9 +332,9 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
           <ImportPackageDialog
             file={importing}
             onClose={() => setImporting(null)}
-            onImported={async (r) => {
+            onImported={(r) => {
               setImporting(null)
-              await invalidateProjects()
+              void invalidateProjects()
               if (r.canvasId) navigate({ name: 'canvas', id: r.canvasId })
             }}
           />

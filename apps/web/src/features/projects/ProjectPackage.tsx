@@ -8,7 +8,9 @@ import {
 } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
-import { api } from '../../api/client'
+import { api, ApiError } from '../../api/client'
+import { invalidateProjects } from '../../api/query'
+import { useCanvas } from '../../stores/canvas'
 import { useClosing, useExit } from '../../ui/Presence'
 import { bytes } from '../../ui/format'
 import { Switch } from '../../ui/Switch'
@@ -23,16 +25,25 @@ function PackageDialog({
   onClose,
   children,
   actions,
+  dismissible = true,
 }: {
   title: string
   onClose(): void
   children: ReactNode
   actions: ReactNode
+  dismissible?: boolean
 }) {
   const closing = useClosing()
   const exit = useExit()
   return (
-    <Dialog.Root open={!closing} onOpenChange={(open) => !open && onClose()}>
+    <Dialog.Root
+      open={!closing}
+      onOpenChange={(open, details) => {
+        if (open) return
+        if (!dismissible) details.cancel()
+        else onClose()
+      }}
+    >
       <Dialog.Portal>
         <Dialog.Backdrop {...exit} className="ui-dialog-scrim fixed inset-0 z-60 bg-scrim" />
         <Dialog.Viewport className="fixed inset-0 z-60 flex items-center justify-center p-6">
@@ -183,8 +194,25 @@ function DependencyRow({ label, status }: { label: string; status: DependencySta
 
 type ImportState =
   | { step: 'checking' }
-  | { step: 'error'; message: string }
+  | { step: 'error'; message: string; retryable?: boolean; unconfirmed?: boolean }
   | { step: 'preview'; preview: ProjectImportPreview; busy?: boolean }
+
+interface ImportAttempt {
+  file: File
+  active: boolean
+  token: string | null
+  confirming: boolean
+  done: boolean
+}
+
+function abandonImport(attempt: ImportAttempt) {
+  attempt.active = false
+  if (attempt.token && !attempt.confirming && !attempt.done) {
+    const token = attempt.token
+    attempt.token = null
+    void api.discardProjectImport(token).catch(() => {})
+  }
+}
 
 /** 选好文件后：上传预检 → 展示结果 → 确认导入或放弃 */
 export function ImportPackageDialog({
@@ -196,50 +224,122 @@ export function ImportPackageDialog({
   onClose(): void
   onImported(result: ProjectImportResult): void
 }) {
-  const [state, setState] = useState<ImportState>({ step: 'checking' })
-  const token = useRef<string | null>(null)
-  const done = useRef(false)
+  const [stored, setState] = useState<ImportState & { file: File }>({ step: 'checking', file })
+  const [revision, setRevision] = useState(0)
+  const current = useRef<ImportAttempt | null>(null)
+  const latestFile = useRef(file)
+  latestFile.current = file
+  const closing = useClosing()
+  const state: ImportState = stored.file === file ? stored : { step: 'checking' }
 
   useEffect(() => {
-    let alive = true
+    if (closing) return
+    const attempt: ImportAttempt = {
+      file,
+      active: true,
+      token: null,
+      confirming: false,
+      done: false,
+    }
+    current.current = attempt
+    setState({ step: 'checking', file })
     api.inspectProjectPackage(file).then(
       (preview) => {
-        token.current = preview.token
-        if (alive) setState({ step: 'preview', preview })
-        else void api.discardProjectImport(preview.token).catch(() => {})
+        if (attempt.active && current.current === attempt && latestFile.current === file) {
+          attempt.token = preview.token
+          setState({ step: 'preview', preview, file })
+        } else void api.discardProjectImport(preview.token).catch(() => {})
       },
-      (err: Error) => alive && setState({ step: 'error', message: err.message }),
+      (err: Error) => {
+        if (attempt.active && current.current === attempt && latestFile.current === file)
+          setState({
+            step: 'error',
+            message: err.message,
+            retryable:
+              !(err instanceof ApiError) ||
+              err.status >= 500 ||
+              err.status === 408 ||
+              err.status === 429,
+            file,
+          })
+      },
     )
-    return () => {
-      alive = false
-    }
-  }, [file])
+    return () => abandonImport(attempt)
+  }, [file, revision, closing])
 
   const cancel = () => {
-    if (token.current && !done.current) void api.discardProjectImport(token.current).catch(() => {})
+    const attempt = current.current
+    if (attempt?.confirming) return
+    if (attempt) abandonImport(attempt)
     onClose()
   }
+  const retry = () => {
+    const attempt = current.current
+    if (!attempt?.active || attempt.file !== file || attempt.confirming || closing) return
+    abandonImport(attempt)
+    setState({ step: 'checking', file })
+    setRevision((value) => value + 1)
+  }
   const confirm = async (preview: ProjectImportPreview) => {
-    setState({ step: 'preview', preview, busy: true })
+    const attempt = current.current
+    if (
+      !attempt?.active ||
+      attempt.file !== file ||
+      attempt.token !== preview.token ||
+      attempt.confirming ||
+      attempt.done ||
+      closing
+    )
+      return
+    attempt.confirming = true
+    setState({ step: 'preview', preview, busy: true, file })
+    let result: ProjectImportResult
     try {
-      const result = await api.commitProjectImport(preview.token)
-      done.current = true
-      onImported(result)
+      result = await api.commitProjectImport(preview.token)
     } catch (err) {
-      done.current = true
-      setState({ step: 'error', message: (err as Error).message })
+      attempt.confirming = false
+      void invalidateProjects()
+      if (attempt.active && current.current === attempt && latestFile.current === file)
+        setState({ step: 'error', message: (err as Error).message, unconfirmed: true, file })
+      else {
+        abandonImport(attempt)
+        useCanvas
+          .getState()
+          .notify(
+            `未收到项目包「${file.name}」的导入确认：${(err as Error).message}，请在首页检查项目列表`,
+          )
+      }
+      return
+    }
+    attempt.confirming = false
+    attempt.done = true
+    attempt.token = null
+    if (attempt.active && current.current === attempt && latestFile.current === file)
+      onImported(result)
+    else {
+      void invalidateProjects()
+      useCanvas.getState().notify(`已导入项目「${result.title}」`)
     }
   }
 
   if (state.step !== 'preview')
     return (
       <PackageDialog
-        title={state.step === 'checking' ? '导入项目包' : '无法导入'}
+        title={
+          state.step === 'checking' ? '导入项目包' : state.unconfirmed ? '导入未获确认' : '无法导入'
+        }
         onClose={cancel}
         actions={
-          <button type="button" className="ui-btn ui-btn-secondary ui-btn-lg" onClick={cancel}>
-            {state.step === 'checking' ? '取消' : '关闭'}
-          </button>
+          <>
+            {state.step === 'error' && state.retryable && (
+              <button type="button" className="ui-btn ui-btn-primary ui-btn-lg" onClick={retry}>
+                重新校验
+              </button>
+            )}
+            <button type="button" className="ui-btn ui-btn-secondary ui-btn-lg" onClick={cancel}>
+              {state.step === 'checking' ? '取消' : '关闭'}
+            </button>
+          </>
         }
       >
         {state.step === 'checking' ? (
@@ -248,7 +348,12 @@ export function ImportPackageDialog({
             正在校验 {file.name}…
           </p>
         ) : (
-          <p className="leading-5 text-danger">{state.message}</p>
+          <>
+            <p className="leading-5 text-danger">{state.message}</p>
+            {state.unconfirmed && (
+              <p className="ui-help">请先在首页检查是否已经导入，再决定是否重新选择项目包。</p>
+            )}
+          </>
         )}
       </PackageDialog>
     )
@@ -260,9 +365,15 @@ export function ImportPackageDialog({
     <PackageDialog
       title={`导入「${p.title}」`}
       onClose={cancel}
+      dismissible={!busy}
       actions={
         <>
-          <button type="button" className="ui-btn ui-btn-secondary ui-btn-lg" onClick={cancel}>
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary ui-btn-lg"
+            onClick={cancel}
+            disabled={busy}
+          >
             取消
           </button>
           <button
