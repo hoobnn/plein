@@ -62,6 +62,7 @@ export default defineConfig({
     'player-keyboard.spec.ts',
     'player-recovery.spec.ts',
     'player-seeking.spec.ts',
+    'player-candidates.spec.ts',
     'editor-select-keyboard.spec.ts',
     'voice-picker-state.spec.ts',
     'parameter-boundaries.spec.ts',
