@@ -648,42 +648,76 @@ function BatchItems(props: {
     queryKey: queryKeys.groupItems(props.groupId),
     queryFn: () => api.groupItems(props.groupId),
     staleTime: 0,
-    refetchInterval: 2000,
+    refetchInterval: (q) => (q.state.error ? 5000 : 2000),
   })
-  if (!query.data)
-    return (
-      <p className="mt-1 text-2xs text-ink-subtle">
-        {query.error ? `读取失败：${query.error.message}` : '加载中…'}
-      </p>
-    )
-  if (!query.data.length)
-    return <p className="mt-1 text-2xs text-ink-subtle">这次运行没有批次记录</p>
   return (
-    <ul className="mt-1 flex flex-col gap-0.5" aria-label="批次记录">
-      {query.data.map((it) => (
-        <li key={it.nodeId} className="flex min-w-0 items-baseline gap-1.5 text-2xs">
+    <div className="mt-1 space-y-1">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          aria-label="刷新批次记录"
+          aria-busy={query.isFetching}
+          disabled={query.isFetching}
+          className="ui-btn ui-btn-quiet ui-btn-xs"
+          onClick={() => void query.refetch({ cancelRefetch: false })}
+        >
+          {query.isFetching ? '正在读取…' : '刷新记录'}
+        </button>
+      </div>
+      {query.error && (
+        <div role="alert" className="space-y-1 rounded bg-surface-2 p-2 text-2xs">
+          <p className="break-words text-danger">
+            {query.data ? '刷新批次记录失败' : '读取批次记录失败'}：{query.error.message}
+          </p>
+          {query.data && <p className="text-ink-muted">以下仍为上次读取的批次记录。</p>}
           <button
             type="button"
-            disabled={!props.doc.has(it.nodeId)}
-            title={props.doc.has(it.nodeId) ? '在画布上定位' : '节点已删除'}
-            onClick={() => props.onLocate(it.nodeId)}
-            className={`min-w-0 truncate text-left ${props.doc.has(it.nodeId) ? 'text-ink-muted hover:underline' : 'text-ink-subtle line-through'}`}
+            aria-label="重新读取批次记录"
+            aria-busy={query.isFetching}
+            disabled={query.isFetching}
+            className="ui-btn ui-btn-secondary ui-btn-xs"
+            onClick={() => void query.refetch({ cancelRefetch: false })}
           >
-            {props.nameOf(it.nodeId)}
+            {query.isFetching ? '正在读取…' : '重新读取'}
           </button>
-          <span className="shrink-0 text-ink-subtle">
-            {BATCH_STAGE[it.stage]}
-            {it.deps.length > 0 && ` · 等 ${it.deps.length} 个上游`}
-          </span>
-          <span
-            className={`ml-auto shrink-0 ${it.outcome === 'review' || it.outcome === 'failed' ? 'text-warning' : 'text-ink-subtle'}`}
-            title={it.reason}
-          >
-            {BATCH_OUTCOME[it.outcome]}
-          </span>
-        </li>
-      ))}
-    </ul>
+        </div>
+      )}
+      {!query.data ? (
+        !query.error && (
+          <p role="status" className="text-2xs text-ink-subtle">
+            加载批次记录中…
+          </p>
+        )
+      ) : !query.data.length ? (
+        <p className="text-2xs text-ink-subtle">这次运行没有批次记录</p>
+      ) : (
+        <ul className="mt-1 flex flex-col gap-0.5" aria-label="批次记录">
+          {query.data.map((it) => (
+            <li key={it.nodeId} className="flex min-w-0 items-baseline gap-1.5 text-2xs">
+              <button
+                type="button"
+                disabled={!props.doc.has(it.nodeId)}
+                title={props.doc.has(it.nodeId) ? '在画布上定位' : '节点已删除'}
+                onClick={() => props.onLocate(it.nodeId)}
+                className={`min-w-0 truncate text-left ${props.doc.has(it.nodeId) ? 'text-ink-muted hover:underline' : 'text-ink-subtle line-through'}`}
+              >
+                {props.nameOf(it.nodeId)}
+              </button>
+              <span className="shrink-0 text-ink-subtle">
+                {BATCH_STAGE[it.stage]}
+                {it.deps.length > 0 && ` · 等 ${it.deps.length} 个上游`}
+              </span>
+              <span
+                className={`ml-auto shrink-0 ${it.outcome === 'review' || it.outcome === 'failed' ? 'text-warning' : 'text-ink-subtle'}`}
+                title={it.reason}
+              >
+                {BATCH_OUTCOME[it.outcome]}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
 

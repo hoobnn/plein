@@ -76,6 +76,7 @@ export default defineConfig({
     'task-retry-identity.spec.ts',
     'task-document-targets.spec.ts',
     'task-batch-targets.spec.ts',
+    'batch-read-recovery.spec.ts',
     'sequence-load-recovery.spec.ts',
     'sequence-sound-controls.spec.ts',
     'sequence-preview-lifecycle.spec.ts',
