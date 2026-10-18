@@ -129,6 +129,7 @@ export default defineConfig({
     'sequence-load-recovery.spec.ts',
     'sequence-sound-controls.spec.ts',
     'sequence-preview-lifecycle.spec.ts',
+    'sequence-subtitle-renderer.spec.ts',
     'sequence-mobile-layout.spec.ts',
     'animatic-number-editing.spec.ts',
     'storyboard-text-collaboration.spec.ts',
