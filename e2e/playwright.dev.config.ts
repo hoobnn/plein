@@ -47,6 +47,7 @@ export default defineConfig({
     'voice-picker-state.spec.ts',
     'parameter-boundaries.spec.ts',
     'number-collaboration.spec.ts',
+    'enum-parameters.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },

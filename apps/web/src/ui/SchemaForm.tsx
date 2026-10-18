@@ -7,6 +7,7 @@ import { useRef, useState } from 'react'
 import { voiceOf } from '@plein/nodes'
 import { clampNumber, type NumberDraft, resolveNumberDraft } from './numberDraft'
 import { Select } from './Select'
+import { enumField } from './enumField'
 import { VoicePicker } from './VoicePicker'
 
 interface FieldSchema {
@@ -55,23 +56,24 @@ export function SchemaForm({
     <div className="flex flex-col gap-3">
       {props.map(([key, f]) => {
         const id = `field-${key}`
-        const current = value[key] ?? f.default
+        const current = value[key] === undefined ? f.default : value[key]
         const label = f.title ?? key
         const help = f.description ?? rangeOf(f)
         let control: React.ReactNode
         // 没有默认值的选项和开关多一个「默认」：不传，用平台自己的默认
         const optional = f.default === undefined
         if (f.enum) {
+          const enumeration = enumField(f.enum, current, f.labels)
           control = (
             <Select
               id={id}
               className={field}
-              value={current === undefined ? DEFAULT : String(current)}
+              value={enumeration.value}
               options={[
-                ...(optional ? [{ value: DEFAULT, label: '默认' }] : []),
-                ...f.enum.map((o) => ({ value: String(o), label: f.labels?.[String(o)] })),
+                ...(optional ? [{ value: 'default', label: '默认' }] : []),
+                ...enumeration.options,
               ]}
-              onChange={(v) => set(key, v === DEFAULT ? undefined : v)}
+              onChange={(v) => set(key, enumeration.read(v))}
             />
           )
         } else if (f.type === 'boolean' && optional) {
