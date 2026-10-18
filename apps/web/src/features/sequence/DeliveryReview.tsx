@@ -2,7 +2,7 @@ import type { Engine } from '@plein/canvas-core'
 import { currentResult, editDelivery, type CanvasElement, type DeliveryNote } from '@plein/doc'
 import { useEffect, useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
-import { downloadAsset } from '../../canvas/grid'
+import { AssetDownloadButton } from '../../shell/AssetDownloadButton'
 import { useCanvas } from '../../stores/canvas'
 import { CreativeReviewForm } from '../storyboard/CreativeReviewForm'
 
@@ -115,15 +115,12 @@ export function DeliveryReview({ engine, node }: { engine: Engine; node: CanvasE
         <p className="text-sm">
           {record.confirmedAt ? '已人工确认此版本' : '待人工确认'} · {unresolved} 条未解决意见
         </p>
-        <button
-          type="button"
-          className="ui-btn ui-btn-quiet"
-          onClick={() =>
-            downloadAsset(record.assetId, `${node.name ?? '成片'}-${record.version}.mp4`)
-          }
-        >
-          下载此版 MP4
-        </button>
+        <AssetDownloadButton
+          engine={engine}
+          assetId={record.assetId}
+          name={`${node.name ?? '成片'}-${record.version}.mp4`}
+          label="下载此版 MP4"
+        />
         <textarea
           aria-label="成片时间码意见"
           className="ui-input min-h-20 w-full"

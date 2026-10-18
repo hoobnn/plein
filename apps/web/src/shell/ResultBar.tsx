@@ -3,7 +3,7 @@ import { type CanvasElement, currentResult, elementMedia } from '@plein/doc'
 import { presetsFor } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
-import { downloadAsset, mediaOf, splitGrid } from '../canvas/grid'
+import { mediaOf, splitGrid } from '../canvas/grid'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
 import { beginImport } from '../canvas/importProgress'
 import { importLocation, watchImportView } from '../canvas/importView'
@@ -25,6 +25,7 @@ import { Popover } from '../ui/Popover'
 import { Presence } from '../ui/Presence'
 import { LibraryAdd } from '../features/library/LibraryAdd'
 import { MediaTools } from './MediaTools'
+import { AssetDownloadButton } from './AssetDownloadButton'
 
 const BAR_H = 40
 const BOTTOM_RESERVED = 64
@@ -281,15 +282,13 @@ export function ResultActions({
       {(remote || (image && (imageNode || videoNode)) || continueNode || editNode) && (
         <span aria-hidden="true" className="ui-bar-sep" />
       )}
-      <button
-        type="button"
+      <AssetDownloadButton
+        engine={engine}
+        assetId={media.assetId}
+        name={name}
         className={icon}
-        aria-label="下载"
-        title="下载原文件"
-        onClick={() => downloadAsset(media.assetId, name)}
-      >
-        <Icon name="download" size={14} />
-      </button>
+        iconOnly
+      />
       <button
         type="button"
         className={icon}

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 import { centerOf, elements, newProject, waitNode, zoomTo } from './canvas'
 
@@ -106,6 +107,33 @@ test('分镜图片与已有配音预演，零视频生成导出样片并按实�
   const assetUrl = await video.getAttribute('src')
   expect(assetUrl).toMatch(/\/api\/assets\/[a-f0-9]{64}/)
   expect((await page.request.get(assetUrl!)).headers()['content-type']).toContain('video/mp4')
+  const expectedFile = await (await page.request.get(assetUrl!)).body()
+  let failDownload = true
+  await page.route(`**${assetUrl}`, (route) =>
+    route.request().resourceType() === 'fetch' && failDownload
+      ? route.fulfill({ status: 503, body: 'temporarily unavailable' })
+      : route.continue(),
+  )
+  await editor.getByRole('button', { name: '下载此版 MP4', exact: true }).click()
+  await expect(editor.getByRole('status').filter({ hasText: '原文件读取失败' })).toBeVisible()
+  await editor.screenshot({
+    path: test.info().outputPath('delivery-download-failed.png'),
+    animations: 'disabled',
+  })
+  failDownload = false
+  const downloaded = page.waitForEvent('download')
+  await editor.getByRole('button', { name: '重试下载', exact: true }).click()
+  const file = await downloaded
+  expect(await file.failure()).toBeNull()
+  expect(readFileSync((await file.path())!)).toEqual(expectedFile)
+  await expect(editor.getByRole('button', { name: '下载此版 MP4', exact: true })).toBeEnabled()
+  await editor.getByRole('button', { name: '样片编辑预览', exact: true }).click()
+  const currentDownload = page.waitForEvent('download')
+  await editor.getByRole('button', { name: '下载成片', exact: true }).click()
+  const currentFile = await currentDownload
+  expect(await currentFile.failure()).toBeNull()
+  expect(readFileSync((await currentFile.path())!)).toEqual(expectedFile)
+  await editor.getByRole('button', { name: '实际 MP4 回看 / 交付', exact: true }).click()
   await editor.getByRole('textbox', { name: '成片时间码意见' }).fill('第一镜停顿需要复查')
   await editor.getByRole('button', { name: '在当前时间添加意见', exact: true }).click()
   await expect(

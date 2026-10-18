@@ -33,7 +33,7 @@ import {
 } from 'react'
 import { flushSync } from 'react-dom'
 import { ApiError, api } from '../../api/client'
-import { downloadAsset } from '../../canvas/grid'
+import { AssetDownloadButton } from '../../shell/AssetDownloadButton'
 import { useDocVersion } from '../../canvas/hooks'
 import { desktop } from '../../desktop'
 import { findNode, upstreams } from '../../canvas/nodes'
@@ -582,14 +582,12 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           {packing ? '打包中…' : '导出工程'}
         </button>
         {filmAsset && !running && view === 'edit' && (
-          <button
-            type="button"
-            className="ui-btn ui-btn-quiet"
-            title="把导出的成片保存到电脑上"
-            onClick={() => downloadAsset(filmAsset, `${el?.name ?? '成片'}.mp4`)}
-          >
-            {desktop ? '另存为…' : '下载成片'}
-          </button>
+          <AssetDownloadButton
+            engine={engine}
+            assetId={filmAsset}
+            name={`${el?.name ?? '成片'}.mp4`}
+            label={desktop ? '另存为…' : '下载成片'}
+          />
         )}
         <span aria-hidden="true" className="ui-bar-sep" />
         <button
