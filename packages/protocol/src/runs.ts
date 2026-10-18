@@ -12,6 +12,8 @@ export const NodeRunOptions = z.object({
    * 返回 409 input_changed 和新的实际输入，让用户看过再提交
    */
   expect: z.string().max(128).optional(),
+  /** 重试用户看到的失败任务；任务已更新时拒绝提交。 */
+  retryOf: z.string().min(1).max(256).optional(),
 })
 export type NodeRunOptions = z.infer<typeof NodeRunOptions>
 

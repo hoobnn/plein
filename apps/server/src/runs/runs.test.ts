@@ -62,6 +62,59 @@ describe('节点运行接口', () => {
     expect(el.run).toMatchObject({ status: 'failed' })
     expect(el.run?.error).toContain('角色图')
   })
+  it('旧任务重试不能在节点已有新成功任务后再次提交', async () => {
+    const { canvas, doc } = await newCanvas()
+    const id = addNode(doc, 'plein/image', { params: { prompt: '已完成的水杯' } })
+    const latest = server.runs.start(canvas.id, id, 'local')
+    expect(await server.runs.wait(latest)).toBe('succeeded')
+    const before = doc.get(id)?.results?.length
+    const response = await fetch(`${base}/api/canvases/${canvas.id}/nodes/${id}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ retryOf: 'obsolete-failed-run' }),
+    })
+    expect(response.status).toBe(409)
+    expect(doc.get(id)?.run).toMatchObject({ id: latest, status: 'succeeded' })
+    expect(doc.get(id)?.results).toHaveLength(before!)
+  })
+
+  it('修复输入后可重试当前失败任务，同一旧重试不能重复生成', async () => {
+    const { canvas, doc } = await newCanvas()
+    const id = addNode(doc, 'plein/image', {
+      params: { prompt: '透明水杯', model: 'not-installed:missing' },
+    })
+    const failed = server.runs.start(canvas.id, id, 'local')
+    expect(await server.runs.wait(failed)).toBe('failed')
+    const params = doc.mutable(id)!.get('params') as { set(key: string, value: unknown): void }
+    params.set('model', 'plein/mock:image')
+    const retry = () =>
+      fetch(`${base}/api/canvases/${canvas.id}/nodes/${id}/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ retryOf: failed }),
+      })
+    const response = await retry()
+    expect(response.status).toBe(202)
+    const { runId } = (await response.json()) as { runId: string }
+    expect(await server.runs.wait(runId)).toBe('succeeded')
+    expect((await retry()).status).toBe(409)
+    expect(doc.get(id)?.results).toHaveLength(1)
+    expect(doc.get(id)?.run).toMatchObject({ id: runId, status: 'succeeded' })
+  })
+
+  it('损坏的重试参数不能降级为无条件生成', async () => {
+    const { canvas, doc } = await newCanvas()
+    const id = addNode(doc, 'plein/image')
+    for (const body of ['{"retryOf":', '{"retryOf":12}', '{"retryOf":""}']) {
+      const response = await fetch(`${base}/api/canvases/${canvas.id}/nodes/${id}/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      })
+      expect(response.status).toBe(400)
+      expect(doc.get(id)?.run).toBeUndefined()
+    }
+  })
 
   it('取消残留的运行中状态', async () => {
     const { canvas, doc } = await newCanvas()

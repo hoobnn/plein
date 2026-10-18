@@ -475,11 +475,12 @@ function JobRow(props: {
         )}
         {props.latest &&
           el &&
+          (!el.run?.id || el.run.id === job.id) &&
           (job.status === 'failed' || job.status === 'canceled') &&
           // 已受理的任务先恢复原结果，输入变化先审查；只有明确失败才直接重试。
           (!job.recovery || job.recovery.state === 'remote_failed') &&
           !isActive(el.run?.status ?? '') && (
-            <RowButton label="重试" onClick={() => void runNode(job.nodeId)}>
+            <RowButton label="重试" onClick={() => void runNode(job.nodeId, { retryOf: job.id })}>
               <Icon name="retry" size={14} />
             </RowButton>
           )}

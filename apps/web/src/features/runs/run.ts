@@ -26,17 +26,18 @@ function remoteCanvas() {
  */
 export async function runNode(
   id: string,
-  check?: { expect: string; onChanged(input: PreparedInput): void },
+  check?: { expect?: string; onChanged?(input: PreparedInput): void; retryOf?: string },
 ): Promise<string | null> {
   const canvasId = remoteCanvas()
   if (!canvasId) return null
   try {
-    return (await api.runNode(canvasId, id, check ? { expect: check.expect } : {})).runId
+    return (await api.runNode(canvasId, id, { expect: check?.expect, retryOf: check?.retryOf }))
+      .runId
   } catch (err) {
     const input = (err instanceof ApiError && err.code === 'input_changed' && err.body) as
       | { input?: PreparedInput }
       | false
-    if (check && input && input.input) check.onChanged(input.input)
+    if (check && input && input.input) check.onChanged?.(input.input)
     fail(err)
     return null
   }

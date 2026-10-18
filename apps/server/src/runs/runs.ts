@@ -290,6 +290,7 @@ export class NodeRuns implements BatchHost {
     groupId?: string,
     /** 批准的计划：执行前重新准备，对不上就不提交（见 JobExpect） */
     expect?: JobExpect,
+    retryOf?: string,
   ): string {
     if (this.isRunning(canvasId, nodeId)) throw new NodeRunError('busy', '节点正在运行')
     return this.rooms.withDoc(canvasId, (doc) => {
@@ -297,6 +298,14 @@ export class NodeRuns implements BatchHost {
       if (el?.kind !== 'node' || !el.nodeType) throw new NodeRunError('not_found', '节点不存在')
       const previous = this.store.latestForNodes(canvasId, [nodeId])[0]
       const recovery = previous && this.jobInfo(previous, doc).recovery
+      if (
+        retryOf &&
+        (previous?.id !== retryOf ||
+          !['failed', 'canceled'].includes(previous.status) ||
+          (el.run?.id && el.run.id !== retryOf) ||
+          (recovery && recovery.state !== 'remote_failed'))
+      )
+        throw new NodeRunError('run_changed', '任务已变化，旧重试请求未执行')
       if (
         recovery &&
         !recovery.dismissed &&
@@ -329,6 +338,7 @@ export class NodeRuns implements BatchHost {
     nodeId: string,
     ownerId: string,
     expect?: string,
+    retryOf?: string,
   ): Promise<{ runId: string } | { changed: PreparedInput }> {
     if (expect) {
       const now = await this.preview(canvasId, nodeId, ownerId)
@@ -341,6 +351,7 @@ export class NodeRuns implements BatchHost {
         ownerId,
         undefined,
         expect ? { inputHash: expect } : undefined,
+        retryOf,
       ),
     }
   }

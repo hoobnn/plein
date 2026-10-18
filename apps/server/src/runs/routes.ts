@@ -84,10 +84,17 @@ export function runRoutes(db: DB, runs: NodeRuns) {
       const p = c.var.principal
       if (p.role === 'viewer') return c.json(forbidden, 403)
       if (!ownsCanvas(db, p.id, canvas)) return c.json(notFound, 404)
-      const body = NodeRunOptions.safeParse(await c.req.json().catch(() => ({})))
+      const raw = await c.req.text()
+      let input: unknown
+      try {
+        input = raw.trim() ? JSON.parse(raw) : {}
+      } catch {
+        return c.json({ error: 'invalid', message: '运行请求格式无效' }, 400)
+      }
+      const body = NodeRunOptions.safeParse(input)
       if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
       try {
-        const r = await runs.startChecked(canvas, node, p.id, body.data.expect)
+        const r = await runs.startChecked(canvas, node, p.id, body.data.expect, body.data.retryOf)
         if ('changed' in r)
           return c.json(
             {
