@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, currentResult, elementMedia } from '@plein/doc'
+import { type CanvasElement, primaryResult, elementMedia } from '@plein/doc'
 import { presetsFor } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
@@ -295,7 +295,7 @@ export function ResultActions({
         aria-label="全屏查看"
         title="全屏查看"
         onClick={() => {
-          const result = el.kind === 'node' ? currentResult(el) : undefined
+          const result = el.kind === 'node' ? primaryResult(el) : undefined
           view(
             result
               ? { kind: 'result', nodeId: el.id, resultId: result.id, name }

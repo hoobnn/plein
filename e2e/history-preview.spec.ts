@@ -1,5 +1,93 @@
 import { expect, test } from '@playwright/test'
-import { newProject, waitNode } from './canvas'
+import { clickElement, newProject, waitEngine, waitNode } from './canvas'
+import { solidPng } from '../packages/providers/src/mock/media'
+import type { NodeResult } from '../packages/doc/src/types'
+
+test('采用旧视频的尾帧后，主视频预览、撤销重做和刷新保持对应运行', async ({ page }) => {
+  await newProject(page)
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/video',
+      name: '视频与尾帧',
+      params: { model: 'plein/mock:video', prompt: '雨后水杯', mode: 'text' },
+      x: 400,
+      y: 200,
+    }),
+  )
+  const canvas = /#\/c\/([^/?]+)/.exec(page.url())![1]
+  expect(
+    (await page.request.post(`/api/canvases/${canvas}/nodes/${id}/run`, { data: {} })).status(),
+  ).toBe(202)
+  await waitNode(page, id)
+  const upload = await page.request.post('/api/assets', {
+    headers: { 'content-type': 'image/png' },
+    data: Buffer.from(solidPng(64, 64, [80, 150, 210])),
+  })
+  expect(upload.status()).toBe(201)
+  const { id: tailAsset } = await upload.json()
+  // Mock 默认只返回主视频；补入受控的副输出与较新候选，验证真实媒体加载和用户采用链。
+  const videoAsset = await page.evaluate(
+    ({ id, tailAsset }) => {
+      const map = window.__plein.engine.doc.mutable(id)! as {
+        get(key: string): unknown
+        set(key: string, value: unknown): void
+      }
+      const old = (map.get('results') as NodeResult[])[0]!
+      map.set('results', [
+        { ...old, id: 'video-new', runId: 'new-run', at: old.at + 1 },
+        old,
+        {
+          id: 'tail-old',
+          port: 'lastFrame',
+          runId: old.runId,
+          at: old.at,
+          value: { type: 'image', assetId: tailAsset },
+        },
+      ])
+      map.set('adopted', 'video-new')
+      return old.value.type === 'video' ? old.value.assetId : ''
+    },
+    { id, tailAsset },
+  )
+  await page.getByRole('button', { name: '生成历史', exact: true }).click()
+  const history = page.getByRole('dialog', { name: '生成历史', exact: true })
+  await history.getByRole('button', { name: /^图片/ }).click()
+  await history.getByRole('button', { name: '预览「视频与尾帧」', exact: true }).click()
+  const viewer = page.getByRole('dialog', { name: '查看「视频与尾帧」', exact: true })
+  await expect(viewer.getByRole('img', { name: '视频与尾帧', exact: true })).toBeVisible()
+  await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
+  await viewer.getByRole('button', { name: '定位来源', exact: true }).click()
+  const generator = page.getByTestId('generator')
+  await expect(generator.getByRole('button', { name: '生成视频', exact: true })).toHaveCount(0)
+  const check = async (candidate: number) => {
+    await generator.getByRole('button', { name: '全屏查看', exact: true }).click()
+    await expect(viewer).toContainText(`候选 ${candidate} · 已采用 / 2`)
+    await expect(viewer.locator('video')).toBeVisible()
+    await expect
+      .poll(() => viewer.locator('video').evaluate((el) => (el as HTMLVideoElement).readyState))
+      .toBeGreaterThanOrEqual(2)
+    await viewer.getByRole('button', { name: '关闭', exact: true }).click()
+  }
+  await check(2)
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await check(1)
+  await page.getByRole('button', { name: '重做', exact: true }).click()
+  await check(2)
+  await page.reload()
+  await waitEngine(page)
+  await clickElement(page, id)
+  await check(2)
+  await expect
+    .poll(async () => {
+      const list = (await (await page.request.get('/api/canvases')).json()) as Array<{
+        id: string
+        covers?: string[]
+      }>
+      return list.find((item) => item.id === canvas)?.covers?.join(' ')
+    })
+    .toContain(videoAsset)
+  await page.screenshot({ path: test.info().outputPath('video-after-tail-adoption.png') })
+})
 
 for (const action of ['escape', 'locate'] as const) {
   test(`历史审片 ${action} 按浮层层级退出并保留明确采用`, async ({ page }) => {

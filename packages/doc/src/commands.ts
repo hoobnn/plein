@@ -383,12 +383,17 @@ export function currentResult(el: CanvasElement, port?: string): NodeResult | un
   return adopted ? list.find((r) => r.runId === adopted.runId) : list[0]
 }
 
-/** 元素当前展示的媒体：素材元素取自身资产，节点取采用的图片 / 视频 / 音频结果；没有时为 null */
+/** 节点展示与播放入口使用主输出；采用副输出时仍取同次运行的主输出。无端口声明时兼容旧结果。 */
+export function primaryResult(el: CanvasElement): NodeResult | undefined {
+  return currentResult(el, el.ports?.outputs[0]?.id)
+}
+
+/** 元素当前展示的媒体：素材元素取自身资产，节点取主输出的图片 / 视频 / 音频结果。 */
 export function elementMedia(
   el: CanvasElement,
 ): { assetId: string; kind: 'image' | 'video' | 'audio' } | null {
   if (el.kind === 'node') {
-    const v = currentResult(el)?.value
+    const v = primaryResult(el)?.value
     return v && (v.type === 'image' || v.type === 'video' || v.type === 'audio')
       ? { assetId: v.assetId, kind: v.type }
       : null

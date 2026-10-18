@@ -562,7 +562,7 @@ describe('节点结果与端口', () => {
     expect(videoAssetOf(doc.get(n!))).toBeUndefined()
     const result = (id: string, type: 'image' | 'video') => ({
       id,
-      port: 'out',
+      port: 'images',
       value: { type, assetId: id },
       runId: id,
       at: 0,
@@ -571,6 +571,67 @@ describe('节点结果与端口', () => {
     expect(videoAssetOf(doc.get(n!))).toBeUndefined()
     addResults(doc, n!, [result('vid', 'video')])
     expect(videoAssetOf(doc.get(n!))).toBe('vid')
+  })
+
+  it('采用旧尾帧仍展示和提供同次运行的主视频，不把节点当成图片', () => {
+    const doc = open()
+    const id = createElement(doc, {
+      kind: 'node',
+      x: 0,
+      y: 0,
+      w: 200,
+      h: 200,
+      ports: {
+        inputs: [],
+        outputs: [
+          { id: 'video', label: '视频', type: 'video' },
+          { id: 'lastFrame', label: '尾帧', type: 'image' },
+        ],
+      },
+    })
+    addResults(doc, id, [
+      {
+        id: 'video-old',
+        port: 'video',
+        runId: 'old',
+        at: 1,
+        value: { type: 'video', assetId: 'old-video' },
+      },
+      {
+        id: 'tail-old',
+        port: 'lastFrame',
+        runId: 'old',
+        at: 1,
+        value: { type: 'image', assetId: 'old-tail' },
+      },
+    ])
+    addResults(doc, id, [
+      {
+        id: 'video-new',
+        port: 'video',
+        runId: 'new',
+        at: 2,
+        value: { type: 'video', assetId: 'new-video' },
+      },
+    ])
+    doc.undo.stopCapturing()
+    adoptResult(doc, id, 'tail-old')
+    expect(currentResult(doc.get(id)!, 'lastFrame')?.id).toBe('tail-old')
+    expect(elementMedia(doc.get(id)!)).toEqual({ assetId: 'old-video', kind: 'video' })
+    expect(videoAssetOf(doc.get(id))).toBe('old-video')
+    doc.undo.undo()
+    expect(videoAssetOf(doc.get(id))).toBe('new-video')
+    addResults(doc, id, [
+      {
+        id: 'orphan-tail',
+        port: 'lastFrame',
+        runId: 'orphan',
+        at: 3,
+        value: { type: 'image', assetId: 'orphan-tail' },
+      },
+    ])
+    expect(elementMedia(doc.get(id)!)).toBeNull()
+    expect(videoAssetOf(doc.get(id))).toBeUndefined()
   })
 
   it('elementMedia：素材取自身资产，节点取当前媒体结果，文本和空素材没有', () => {
@@ -585,11 +646,11 @@ describe('节点结果与端口', () => {
     expect(elementMedia(doc.get(empty!)!)).toBeNull()
     expect(elementMedia(doc.get(md!)!)).toBeNull()
     addResults(doc, n!, [
-      { id: 't', port: 'out', value: { type: 'text', text: 'hi' }, runId: 't', at: 0 },
+      { id: 't', port: 'images', value: { type: 'text', text: 'hi' }, runId: 't', at: 0 },
     ])
     expect(elementMedia(doc.get(n!)!)).toBeNull()
     addResults(doc, n!, [
-      { id: 's', port: 'out', value: { type: 'audio', assetId: 's' }, runId: 's', at: 1 },
+      { id: 's', port: 'images', value: { type: 'audio', assetId: 's' }, runId: 's', at: 1 },
     ])
     expect(elementMedia(doc.get(n!)!)).toEqual({ assetId: 's', kind: 'audio' })
   })

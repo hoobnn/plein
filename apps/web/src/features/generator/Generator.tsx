@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, currentResult, setParam, updateElement } from '@plein/doc'
+import { type CanvasElement, primaryResult, setParam, updateElement } from '@plein/doc'
 import {
   ASSET_NODE_TYPES,
   ANIMATIC_TYPE,
@@ -330,7 +330,7 @@ function Panel({
 
   // 已有结果时，预设、生成视频、宫格切分、下载、全屏放在第一行右侧
   const media = running ? null : mediaOf(el)
-  const result = running ? undefined : currentResult(el)
+  const result = running ? undefined : primaryResult(el)
   const audio = result?.value.type === 'audio' ? result : undefined
   const actions = media ? (
     <ResultActions

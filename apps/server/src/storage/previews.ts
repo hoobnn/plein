@@ -1,4 +1,4 @@
-import { createDoc, currentResult } from '@plein/doc'
+import { createDoc, primaryResult } from '@plein/doc'
 import { API, type Canvas } from '@plein/protocol'
 import * as Y from 'yjs'
 import { and, asc, eq, sql } from 'drizzle-orm'
@@ -44,7 +44,7 @@ export function previewer(db: DB) {
       for (const el of doc.elements()) {
         elements++
         if (el.kind === 'node') {
-          const r = currentResult(el)
+          const r = primaryResult(el)
           if (r && (r.value.type === 'image' || r.value.type === 'video'))
             generated.push({ assetId: r.value.assetId, at: r.at })
         } else if ((el.kind === 'image' || el.kind === 'video') && el.assetId) {

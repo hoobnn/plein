@@ -1,4 +1,4 @@
-import { type CanvasElement, currentResult, type ElementKind } from '@plein/doc'
+import { type CanvasElement, elementMedia, type ElementKind } from '@plein/doc'
 import { Container, Graphics, Text, type Texture } from 'pixi.js'
 import { theme } from './theme'
 import { previewTextures, type TextureOwner, TextureSlot } from './textures'
@@ -339,11 +339,9 @@ const nodeRenderer: ElementRenderer = (el, ctx) => {
     previewStatus: () => slot.status,
     update(next) {
       current = next
-      const r = currentResult(next)
-      const v = r?.value
-      const media = v && v.type !== 'text' && v.type !== 'json' ? v : undefined
+      const media = elementMedia(next)
       const size = high || largeOf === media?.assetId ? 'large' : 'small'
-      const url = media ? ctx.assetUrl?.(media.assetId, media.type, size) : undefined
+      const url = media ? ctx.assetUrl?.(media.assetId, media.kind, size) : undefined
       slot.setSource(media?.assetId, url, () => {
         if (size === 'large') largeOf = media?.assetId
         draw(current)
