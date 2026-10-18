@@ -8,7 +8,7 @@ import {
   type NewElement,
   spotRightOf,
 } from '@plein/doc'
-import { api, assetUrls } from '../api/client'
+import { api } from '../api/client'
 
 /** 切出来的每格在画布上的长边 */
 const TILE_SIDE = 240
@@ -108,16 +108,6 @@ export async function splitGrid(
   } finally {
     bitmap.close()
   }
-}
-
-/** 下载资产原文件（浏览器另存为） */
-export function downloadAsset(assetId: string, name: string) {
-  const a = document.createElement('a')
-  a.href = assetUrls.original(assetId)
-  a.download = name
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
 }
 
 /** 元素当前展示的图片或视频（不含音频） */

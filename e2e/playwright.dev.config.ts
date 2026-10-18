@@ -86,6 +86,8 @@ export default defineConfig({
     'selection-library-capacity.spec.ts',
     'selection-download.spec.ts',
     'selection-download-recovery.spec.ts',
+    'history-download-recovery.spec.ts',
+    'history-context.spec.ts',
     'single-download-recovery.spec.ts',
     'single-download-large.spec.ts',
     'animatic-delivery.spec.ts',

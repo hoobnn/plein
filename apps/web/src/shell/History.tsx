@@ -2,7 +2,7 @@ import type { Engine } from '@plein/canvas-core'
 import { type HistoryEntry, type NewElement, resultHistory } from '@plein/doc'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
-import { downloadAsset } from '../canvas/grid'
+import { useBatchDownload } from './useBatchDownload'
 import { useDocVersion } from '../canvas/hooks'
 import { elementFor, placeImports, revealImports } from '../canvas/import'
 import { beginImport } from '../canvas/importProgress'
@@ -13,7 +13,7 @@ import { shortTime } from '../ui/format'
 import { Icon, type IconName } from '../ui/icons'
 import { Modal, ModalHeader } from '../ui/Modal'
 import { Segmented } from '../ui/Segmented'
-import { Presence } from '../ui/Presence'
+import { Presence, useClosing } from '../ui/Presence'
 import { EmptyState } from '../ui/EmptyState'
 
 type MediaType = 'image' | 'video' | 'audio'
@@ -72,6 +72,8 @@ export function History() {
 
 function HistoryPanel({ engine }: { engine: Engine }) {
   const { toggleHistory: toggle } = useCanvas.getState()
+  const closing = useClosing()
+  const downloads = useBatchDownload(engine, !closing)
   const doc = engine.doc
   const version = useDocVersion(doc)
   // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化
@@ -128,14 +130,14 @@ function HistoryPanel({ engine }: { engine: Engine }) {
       .view({ kind: 'result', nodeId: e.elementId, resultId: e.result.id, name: nameOf(e) })
   }
 
-  const download = async () => {
-    for (const [i, e] of selected.entries()) {
-      const ext = EXT[e.result.value.mime ?? '']
-      const base = selected.length > 1 ? `${nameOf(e)}-${i + 1}` : nameOf(e)
-      downloadAsset(e.result.value.assetId, ext ? `${base}.${ext}` : base)
-      // 连续触发下载时留点间隔，浏览器才不会吞掉后面的
-      await new Promise((ok) => setTimeout(ok, 250))
-    }
+  const download = () => {
+    void downloads.start(
+      selected.map((entry, i) => {
+        const ext = EXT[entry.result.value.mime ?? '']
+        const base = selected.length > 1 ? `${nameOf(entry)}-${i + 1}` : nameOf(entry)
+        return { assetId: entry.result.value.assetId, name: ext ? `${base}.${ext}` : base }
+      }),
+    )
   }
 
   const place = async () => {
@@ -228,7 +230,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3">
         <div className="flex items-center gap-2">
-          <span className="text-xs text-ink-subtle">类型</span>
+          <span className="hidden shrink-0 text-xs text-ink-subtle sm:block">类型</span>
           <Segmented
             label="类型"
             options={TYPES.map((t) => ({
@@ -273,7 +275,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
         )}
       </div>
 
-      {selected.length > 0 && (
+      {(selected.length > 0 || downloads.total > 0) && (
         <footer className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-3 text-sm">
           <span className="mr-1">已选 {selected.length} 项</span>
           <button
@@ -290,21 +292,53 @@ function HistoryPanel({ engine }: { engine: Engine }) {
           >
             取消选择
           </button>
-          <div className="ml-auto flex items-center gap-2">
-            <button type="button" className="ui-btn ui-btn-secondary" onClick={download}>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {downloads.running && (
+              <button type="button" className="ui-btn ui-btn-quiet" onClick={downloads.cancel}>
+                取消下载
+              </button>
+            )}
+            {!downloads.running && downloads.remaining.length > 0 && (
+              <button
+                type="button"
+                className="ui-btn ui-btn-quiet"
+                onClick={() => void downloads.start(downloads.remaining)}
+              >
+                {downloads.cancelled ? '继续下载' : '重试未下载'}（{downloads.remaining.length}）
+              </button>
+            )}
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary"
+              disabled={downloads.running || !selected.length}
+              onClick={download}
+            >
               <Icon name="download" />
-              下载
+              {downloads.running
+                ? `正在读取（${Math.min(downloads.done + downloads.failed + 1, downloads.total)}/${downloads.total}）`
+                : '下载'}
             </button>
             <button
               type="button"
               className="ui-btn ui-btn-primary"
-              disabled={busy || doc.readOnly}
+              disabled={busy || !selected.length || doc.readOnly}
               onClick={() => void place()}
             >
               <Icon name="upload" />
               放到画布上
             </button>
           </div>
+          {downloads.total > 0 && !downloads.running && (
+            <span
+              role="status"
+              className="w-full text-xs text-ink-muted"
+              title={downloads.remaining.map((item) => item.name).join('、')}
+            >
+              {downloads.remaining.length
+                ? `${downloads.remaining.length} 个文件${downloads.cancelled ? '未下载' : '读取失败'}`
+                : `已交给浏览器下载 ${downloads.done} 个文件，请在浏览器中查看保存状态`}
+            </span>
+          )}
         </footer>
       )}
     </Modal>
