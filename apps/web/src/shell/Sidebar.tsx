@@ -31,6 +31,7 @@ const TABS: Array<{ id: SidebarTab; label: string }> = [
 ]
 
 type TypeFilter = OutlineType | 'all'
+type TreeNavigationKey = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'Home' | 'End'
 const TYPE_FILTERS: Array<{ value: TypeFilter; label: string }> = [
   { value: 'all', label: '全部类型' },
   ...OUTLINE_TYPES.map((t) => ({ value: t.type, label: t.label })),
@@ -192,6 +193,7 @@ function Layers({ engine }: { engine: Engine }) {
   const [type, setType] = useState<TypeFilter>('all')
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [renaming, setRenaming] = useState<string | null>(null)
+  const [focused, setFocused] = useState<string | null>(null)
   const searchButton = useRef<HTMLButtonElement>(null)
   const searchInput = useRef<HTMLInputElement>(null)
   const typeHintId = useId()
@@ -255,6 +257,10 @@ function Layers({ engine }: { engine: Engine }) {
   }, [engine, catalog, version, q, type, collapsed, filtering])
   // oxlint-enable react-hooks/exhaustive-deps
   const nested = rows.some((r) => r.parent)
+  const tabStop =
+    rows.find((row) => row.el.id === focused)?.el.id ??
+    rows.find((row) => engine.selection.has(row.el.id))?.el.id ??
+    rows[0]?.el.id
   useEffect(() => {
     const pending = pendingRenameFocus.current
     if (!pending || pending.version === version) return
@@ -300,6 +306,40 @@ function Layers({ engine }: { engine: Engine }) {
     engine.selection.set([id])
     engine.zoomToFit([id])
   }
+  const focusRow = (id: string) => {
+    const element = listRef.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(id)}"]`)
+    element?.focus({ preventScroll: true })
+    element?.scrollIntoView({ block: 'nearest' })
+  }
+  const navigate = (id: string, key: TreeNavigationKey) => {
+    const index = rows.findIndex((row) => row.el.id === id)
+    const row = rows[index]
+    if (!row) return
+    if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'Home' || key === 'End') {
+      const target =
+        key === 'Home'
+          ? 0
+          : key === 'End'
+            ? rows.length - 1
+            : Math.max(0, Math.min(rows.length - 1, index + (key === 'ArrowDown' ? 1 : -1)))
+      focusRow(rows[target]!.el.id)
+    } else if (key === 'ArrowLeft') {
+      if (row.el.kind === 'frame' && row.parent && !filtering && !collapsed.has(id)) {
+        toggleFolder(id)
+        focusRow(id)
+      } else {
+        const parent = engine.scene.parent(id)
+        if (parent && rows.some((row) => row.el.id === parent)) focusRow(parent)
+      }
+    } else if (row.el.kind === 'frame' && row.parent) {
+      if (!filtering && collapsed.has(id)) {
+        toggleFolder(id)
+        focusRow(id)
+      } else if (rows[index + 1] && rows[index + 1]!.depth > row.depth) {
+        focusRow(rows[index + 1]!.el.id)
+      }
+    }
+  }
   const rename = (id: string, name: string | null) => {
     setRenaming(null)
     if (name !== null && name !== engine.doc.get(id)?.name) {
@@ -319,6 +359,8 @@ function Layers({ engine }: { engine: Engine }) {
     locate,
     startRename: (id) => !engine.doc.readOnly && setRenaming(id),
     rename,
+    focus: setFocused,
+    navigate,
   }
   const actions = useMemo<LayerActions>(
     () => ({
@@ -327,6 +369,8 @@ function Layers({ engine }: { engine: Engine }) {
       locate: (id) => latest.current.locate(id),
       startRename: (id) => latest.current.startRename(id),
       rename: (id, name) => latest.current.rename(id, name),
+      focus: (id) => latest.current.focus(id),
+      navigate: (id, key) => latest.current.navigate(id, key),
     }),
     [],
   )
@@ -418,6 +462,7 @@ function Layers({ engine }: { engine: Engine }) {
         ref={listRef}
         role="tree"
         aria-label="画布元素"
+        aria-multiselectable="true"
         className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-2"
       >
         {rows.map((r) => (
@@ -426,6 +471,7 @@ function Layers({ engine }: { engine: Engine }) {
             row={r}
             caret={nested}
             selected={engine.selection.has(r.el.id)}
+            tabStop={r.el.id === tabStop}
             open={filtering || !collapsed.has(r.el.id)}
             renaming={renaming === r.el.id}
             actions={actions}
@@ -449,12 +495,15 @@ interface LayerActions {
   locate(id: string): void
   startRename(id: string): void
   rename(id: string, name: string | null): void
+  focus(id: string): void
+  navigate(id: string, key: TreeNavigationKey): void
 }
 
 const LayerRow = memo(function LayerRow({
   row: { el, depth, title, type, parent },
   caret,
   selected,
+  tabStop,
   open,
   renaming,
   actions,
@@ -463,6 +512,7 @@ const LayerRow = memo(function LayerRow({
   /** 列表里有可展开的分组时才给每行留出箭头的位置，否则整列不缩进 */
   caret: boolean
   selected: boolean
+  tabStop: boolean
   open: boolean
   renaming: boolean
   actions: LayerActions
@@ -477,21 +527,46 @@ const LayerRow = memo(function LayerRow({
   return (
     <div
       role="treeitem"
-      tabIndex={0}
+      tabIndex={tabStop ? 0 : -1}
       data-id={el.id}
       aria-level={depth + 1}
       aria-selected={selected}
       aria-expanded={el.kind === 'frame' ? open : undefined}
       onClick={onPick}
       onDoubleClick={onRename}
+      onFocus={() => actions.focus(el.id)}
       onKeyDown={(e) => {
         if (renaming) return
-        if (e.key === 'Enter') onPick(e)
-        if (e.key === 'F2') onRename()
-        if (el.kind === 'frame' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        if (e.nativeEvent.isComposing || e.keyCode === 229) {
           e.preventDefault()
           e.stopPropagation()
-          if (open !== (e.key === 'ArrowRight')) onToggle()
+          return
+        }
+        const key = e.key
+        if (key === 'Tab') {
+          e.stopPropagation()
+          return
+        }
+        if ((key === 'Enter' || key === ' ') && e.target === e.currentTarget) {
+          e.preventDefault()
+          e.stopPropagation()
+          onPick(e)
+        } else if (key === 'F2') {
+          e.preventDefault()
+          e.stopPropagation()
+          onRename()
+        } else if (
+          key === 'ArrowUp' ||
+          key === 'ArrowDown' ||
+          key === 'ArrowLeft' ||
+          key === 'ArrowRight' ||
+          key === 'Home' ||
+          key === 'End'
+        ) {
+          if (e.altKey || e.metaKey || e.ctrlKey) return
+          e.preventDefault()
+          e.stopPropagation()
+          actions.navigate(el.id, key)
         }
       }}
       style={{ paddingLeft: 4 + depth * 20 }}
