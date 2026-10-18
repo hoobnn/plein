@@ -70,6 +70,7 @@ export default defineConfig({
     'sidebar-search.spec.ts',
     'sidebar-filter-recovery.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
+    'sidebar-resize.spec.ts',
     'plugins.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],

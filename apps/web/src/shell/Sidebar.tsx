@@ -24,6 +24,7 @@ import { MenuSelect } from '../ui/MenuSelect'
 import { SlidePill, SlideSwap } from '../ui/Slide'
 import { KIND_ICONS } from '../features/library/LibraryAdd'
 import { EmptyState } from '../ui/EmptyState'
+import { startSidebarResize } from './sidebarResize'
 
 const TABS: Array<{ id: SidebarTab; label: string }> = [
   { id: 'layers', label: '画布' },
@@ -93,39 +94,28 @@ export function Sidebar({ open }: { open: boolean }) {
           <Count engine={engine} />
         </footer>
       )}
-      <ResizeHandle />
+      <ResizeHandle active={open} />
     </aside>
   )
 }
 
 /** 右边缘拖动改宽度；双击恢复默认，聚焦后方向键微调 */
-function ResizeHandle() {
+function ResizeHandle({ active }: { active: boolean }) {
   const width = useSidebar((s) => s.width)
   const setWidth = useSidebar((s) => s.setWidth)
   const [dragging, setDragging] = useState(false)
+  const cancel = useRef<(() => void) | null>(null)
+  // 收起侧栏或离开画布都可能发生在指针松开前。
+  useEffect(() => () => cancel.current?.(), [active])
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return
+    if (!active || e.button !== 0 || cancel.current) return
     e.preventDefault()
-    const handle = e.currentTarget
-    handle.setPointerCapture(e.pointerId)
-    const startX = e.clientX
-    const startW = useSidebar.getState().width
     setDragging(true)
-    // 拖动期间整页保持调整光标、不选中文字
-    document.documentElement.classList.add('plein-resizing')
-    const move = (ev: PointerEvent) => setWidth(startW + ev.clientX - startX, false)
-    const up = (ev: PointerEvent) => {
-      setWidth(startW + ev.clientX - startX)
+    cancel.current = startSidebarResize(e.currentTarget, e.nativeEvent, () => {
+      cancel.current = null
       setDragging(false)
-      document.documentElement.classList.remove('plein-resizing')
-      handle.removeEventListener('pointermove', move)
-      handle.removeEventListener('pointerup', up)
-      handle.removeEventListener('pointercancel', up)
-    }
-    handle.addEventListener('pointermove', move)
-    handle.addEventListener('pointerup', up)
-    handle.addEventListener('pointercancel', up)
+    })
   }
 
   return (
