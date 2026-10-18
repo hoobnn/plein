@@ -115,6 +115,28 @@ describe('角色档案', () => {
     expect(nameProblem(profile, 'a/b')).toBeDefined()
   })
 
+  it('连续改名超过八次仍保留最近旧名及引用，优先淘汰最早旧名', () => {
+    let current = look('recent', '最初', { images: [img('f')], description: '蓝色造型' })
+    for (let i = 1; i <= 9; i++) current = renamed(current, `名字${i}`)
+    expect(current.aliases).toEqual([
+      '名字8',
+      '名字7',
+      '名字6',
+      '名字5',
+      '名字4',
+      '名字3',
+      '名字2',
+      '名字1',
+    ])
+    const recent = { ...profile, expressions: [current] }
+    expect(matchProfile('/名字8', recent).pick.expression?.id).toBe('recent')
+    expect(pickImages(matchProfile('/名字8', recent).pick, [])).toEqual([img('f')])
+    expect(matchProfile('/最初', recent).pick.expression).toBeUndefined()
+    const restored = renamed(current, '名字8')
+    expect(restored.aliases[0]).toBe('名字9')
+    expect(restored.aliases).not.toContain('名字8')
+  })
+
   it('补全只给还没写的那一类，服饰限定在写明的时期', () => {
     const { pick } = matchProfile('/青年', profile)
     const opts = profileOptions(profile, pick)

@@ -131,7 +131,7 @@ export function profileNames(p: CharacterProfile, exceptId?: string): Set<string
 export function renamed<T extends { name: string; aliases: string[] }>(item: T, next: string): T {
   const to = next.trim()
   if (!to || to === item.name) return item
-  const aliases = [...new Set([item.name, ...item.aliases])].filter((a) => a !== to).slice(-8)
+  const aliases = [...new Set([item.name, ...item.aliases])].filter((a) => a !== to).slice(0, 8)
   return { ...item, name: to, aliases }
 }
 
