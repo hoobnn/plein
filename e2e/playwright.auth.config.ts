@@ -7,7 +7,7 @@ const config = process.env.PLEIN_E2E_AUTH_DEV === '1' ? development : base
 const servers = Array.isArray(config.webServer) ? config.webServer : [config.webServer!]
 export default defineConfig({
   ...config,
-  testMatch: 'auth-lifecycle.auth.ts',
+  testMatch: 'auth-*.auth.ts',
   webServer: servers.map((server, index) =>
     index === 0 ? { ...server, env: { ...server.env, PLEIN_AUTH: 'password' } } : server,
   ),

@@ -54,6 +54,19 @@ export function App() {
   const mediaOpen = useMediaLibrary((s) => !!s.open || !!s.target)
   const checkpointsOpen = useCheckpoints((s) => !!s.open)
   const ready = useSession((s) => s.status === 'ready' && !!s.info?.principal)
+  const unauthenticated = useSession(
+    (s) => s.status === 'ready' && !!s.info?.authRequired && !s.info.principal,
+  )
+  useEffect(() => {
+    if (!unauthenticated) return
+    setSettings(false)
+    useLibrary.getState().show(null)
+    useMediaLibrary.getState().close()
+    useMediaLibrary.getState().locate(null)
+    useCheckpoints.getState().close()
+    useAgent.getState().toggle(false)
+    void useAgent.getState().enter(null)
+  }, [unauthenticated])
   // 卡片、任务面板上的“去设置”（如密钥无效）直接打开对应分区
   useEffect(() => {
     const open = (e: Event) =>
@@ -117,17 +130,19 @@ export function App() {
             <Mascot mood="idle" />
           </button>
         ) : null}
-        {libraryOpen && <LibraryPanel />}
-        {mediaOpen && <MediaLibraryPanel />}
-        {checkpointsOpen && <CheckpointsPanel />}
-        <Presence>
-          {settings !== false && (
-            <SettingsDialog initial={settings} onClose={() => setSettings(false)} />
-          )}
-        </Presence>
+        {ready && libraryOpen && <LibraryPanel />}
+        {ready && mediaOpen && <MediaLibraryPanel />}
+        {ready && checkpointsOpen && <CheckpointsPanel />}
+        {(ready || route.name === 'demo') && (
+          <Presence>
+            {settings !== false && (
+              <SettingsDialog initial={settings} onClose={() => setSettings(false)} />
+            )}
+          </Presence>
+        )}
       </Suspense>
-      <DialogHost />
-      <TooltipHost />
+      <DialogHost active={ready || route.name === 'demo'} />
+      {(ready || route.name === 'demo') && <TooltipHost />}
       <DesktopEvents />
     </>
   )

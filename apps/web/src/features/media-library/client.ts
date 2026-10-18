@@ -1,5 +1,5 @@
 import type { MediaLibraryPage, MediaSourcesPage } from '@plein/protocol'
-import { ApiError, api } from '../../api/client'
+import { ApiError, reportUnauthorized } from '../../api/client'
 
 /** 素材与检查点共用 ApiError、登录失效及网络错误提示。 */
 export async function mediaRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -21,7 +21,7 @@ export async function mediaRequest<T>(path: string, init: RequestInit = {}): Pro
       error?: string
       message?: string
     } | null
-    if (response.status === 401) void api.session().catch(() => {})
+    if (response.status === 401) reportUnauthorized()
     throw new ApiError(
       response.status,
       body?.error ?? 'http_error',

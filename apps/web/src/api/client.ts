@@ -92,6 +92,9 @@ let onUnauthorized: (() => void) | null = null
 export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn
 }
+export function reportUnauthorized() {
+  onUnauthorized?.()
+}
 
 /** 发请求并把非 2xx 统一转成 ApiError */
 async function send(path: string, init: RequestInit = {}): Promise<Response> {
@@ -102,7 +105,7 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
       message?: string
       code?: string
     } | null
-    if (res.status === 401 && !path.startsWith(API.auth)) onUnauthorized?.()
+    if (res.status === 401 && !path.startsWith(API.auth)) reportUnauthorized()
     throw new ApiError(
       res.status,
       body?.error ?? body?.code ?? 'http_error',

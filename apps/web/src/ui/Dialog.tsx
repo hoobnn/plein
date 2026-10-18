@@ -72,7 +72,7 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
   return new Promise((resolve) => open({ kind: 'prompt', options, resolve }))
 }
 
-export function DialogHost() {
+export function DialogHost({ active = true }: { active?: boolean } = {}) {
   const req = useSyncExternalStore(
     (l) => {
       listeners.add(l)
@@ -80,6 +80,10 @@ export function DialogHost() {
     },
     () => current,
   )
+  useEffect(() => {
+    if (!active && req) settle(null)
+  }, [active, req])
+  if (!active) return null
   return <Presence>{req && <DialogView key={req.id} req={req} />}</Presence>
 }
 

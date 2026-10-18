@@ -1,5 +1,23 @@
 import { expect, test } from '@playwright/test'
-import { addNode, centerOf, deselect, elements, newProject } from './canvas'
+import { addNode, centerOf, deselect, elements, newProject, waitEngine } from './canvas'
+
+test('本地演示在会话服务离线时仍可切换主题并编辑节点', async ({ page }) => {
+  await page.route('**/api/session', (route) =>
+    route.fulfill({ status: 503, json: { message: '会话服务离线' } }),
+  )
+  await page.goto('/#/demo?n=2')
+  await waitEngine(page)
+  const theme = page.getByRole('button', { name: '深色', exact: true })
+  await theme.click()
+  await expect(theme).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('treeitem').first().dblclick()
+  const rename = page.getByRole('tree').getByRole('textbox')
+  await rename.fill('离线演示改名')
+  await rename.press('Enter')
+  await expect
+    .poll(async () => (await elements(page)).some((el) => el.name === '离线演示改名'))
+    .toBe(true)
+})
 
 test('设置中的删除、复制粘贴和撤销按键不修改背后的画布', async ({ page }) => {
   await newProject(page)
@@ -148,7 +166,7 @@ test('中文组字的确认和取消不结束侧栏重命名或关闭输入对�
   await addNode(page, '文本')
   const tree = page.getByRole('tree', { name: '画布元素' })
   await tree.getByRole('treeitem').dblclick()
-  const name = tree.getByRole('textbox', { name: '画布名称' })
+  const name = tree.getByRole('textbox', { name: '元素名称' })
   await name.fill('中文节点名称')
   for (const key of ['Enter', 'Escape']) {
     await name.dispatchEvent('keydown', { key, isComposing: true })
@@ -172,7 +190,7 @@ test('侧栏重命名有独立撤销边界，不连带撤销刚完成的位置�
   const row = page.getByRole('treeitem', { name: '文本 定位到画布', exact: true })
   const id = await page.evaluate(() => [...window.__plein.engine.doc.elements()][0]!.id)
   await row.dblclick()
-  const rename = page.getByRole('tree').getByRole('textbox', { name: '画布名称' })
+  const rename = page.getByRole('tree').getByRole('textbox', { name: '元素名称' })
   await rename.fill('改名后的文本')
   // 与提交紧邻的一次位置事务，避免用睡眠跨过 Yjs 的默认捕获窗口掩盖问题。
   await page.evaluate((id) => {

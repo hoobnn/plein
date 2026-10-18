@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { ApiError, api, setUnauthorizedHandler } from './client'
+import { checkpointApi } from '../features/checkpoints/client'
+import { mediaApi } from '../features/media-library/client'
 
 const reply = (status: number, body?: string, statusText = '') =>
   vi.fn(async () => new Response(body ?? null, { status, statusText }))
@@ -22,6 +24,14 @@ const failure = (p: Promise<unknown>) =>
   )
 
 describe('请求', () => {
+  it('素材和检查点的 401 通知同一个会话处理器，不发无效的独立会话查询', async () => {
+    const fetch = reply(401, '{"error":"unauthorized","message":"请先登录"}')
+    vi.stubGlobal('fetch', fetch)
+    expect((await failure(mediaApi.list({}))).status).toBe(401)
+    expect((await failure(checkpointApi.list('project'))).message).toBe('请先登录')
+    expect(onUnauthorized).toHaveBeenCalledTimes(2)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
   it('普通接口 401 时回登录页；登录相关接口 401 只报错', async () => {
     vi.stubGlobal('fetch', reply(401, '{"error":"unauthorized"}'))
     await failure(api.projects())
