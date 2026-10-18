@@ -534,6 +534,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       <DialogueCell
                         engine={engine}
                         shot={s}
+                        readDialogue={() =>
+                          readShots().find((shot) => shot.id === s.id)?.dialogue ?? []
+                        }
                         onChange={(update) =>
                           patch(s.id, (current) => ({ dialogue: update(current.dialogue) }))
                         }

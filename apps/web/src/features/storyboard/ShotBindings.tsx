@@ -8,11 +8,13 @@ import {
   type ShotAssetBinding,
   type ShotDialogue,
 } from '@plein/nodes'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Select } from '../../ui/Select'
 
 const inputClass =
   'w-full resize-none rounded-md bg-transparent px-2 py-1.5 text-sm outline-none ring-1 ring-transparent hover:ring-line focus:bg-surface-2 focus:ring-accent'
+const dialogueText = (line: ShotDialogue) =>
+  line.character ? `${line.character}：${line.line}` : line.line
 
 export function AssetBindingSelect({
   engine,
@@ -64,10 +66,12 @@ export function AssetBindingSelect({
 export function DialogueCell({
   engine,
   shot,
+  readDialogue,
   onChange,
 }: {
   engine: Engine
   shot: Shot
+  readDialogue(): ShotDialogue[]
   onChange(update: (dialogue: ShotDialogue[]) => ShotDialogue[]): void
 }) {
   const lines = normalizeDialogue(shot.id, shot.dialogue)
@@ -110,9 +114,18 @@ export function DialogueCell({
   return (
     <div className="min-w-0 rounded-lg bg-surface-2 p-2">
       {(lines.length ? lines : [{ id: 'empty', character: '', line: '' }]).map((line, i) => (
-        <div key={line.id} className="mb-2 space-y-1">
+        <div key={line.id} data-dialogue-id={line.id} className="mb-2 space-y-1">
           <DialogueInput
-            value={line.character ? `${line.character}：${line.line}` : line.line}
+            value={dialogueText(line)}
+            readValue={() => {
+              const current = readDialogue()
+              const latest = current.find((d) => d.id === line.id)
+              return latest
+                ? dialogueText(latest)
+                : line.id === 'empty' && !current.length
+                  ? ''
+                  : undefined
+            }}
             onChange={(value) => change(line.id!, value)}
           />
           {line.character && (
@@ -173,28 +186,90 @@ export function DialogueCell({
   )
 }
 
-function DialogueInput({ value, onChange }: { value: string; onChange(value: string): void }) {
-  const [draft, setDraft] = useState(value)
-  const [focused, setFocused] = useState(false)
+function DialogueInput({
+  value,
+  readValue,
+  onChange,
+}: {
+  value: string
+  readValue(): string | undefined
+  onChange(value: string): void
+}) {
+  const [edit, setEdit] = useState({ base: value, draft: value })
+  const input = useRef<HTMLTextAreaElement>(null)
+  const conflictId = useId()
   useEffect(() => {
-    if (!focused) setDraft(value)
-  }, [value, focused])
+    setEdit((prev) =>
+      prev.draft === prev.base || prev.draft === value ? { base: value, draft: value } : prev,
+    )
+  }, [value])
+  const { base, draft } = edit
+  const dirty = draft !== base
+  const conflict = dirty && base !== value && draft !== value
+  const reset = () => {
+    const latest = readValue()
+    if (latest !== undefined) setEdit({ base: latest, draft: latest })
+  }
+  const commit = () => {
+    const latest = readValue()
+    if (latest === undefined) return // 同伴已删除这句，不复活旧台词。
+    setEdit({ base: draft, draft })
+    if (draft !== latest) onChange(draft)
+  }
   return (
-    <textarea
-      aria-label="台词"
-      placeholder="角色：台词"
-      rows={2}
-      className={inputClass}
-      value={focused ? draft : value}
-      onFocus={() => {
-        setDraft(value)
-        setFocused(true)
-      }}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        setFocused(false)
-        if (draft !== value) onChange(draft)
-      }}
-    />
+    <div>
+      <textarea
+        ref={input}
+        aria-label="台词"
+        aria-describedby={conflict ? conflictId : undefined}
+        placeholder="角色：台词"
+        rows={2}
+        className={inputClass}
+        value={draft}
+        onFocus={() => {
+          if (!dirty) reset()
+        }}
+        onChange={(e) =>
+          setEdit({ base: dirty ? base : (readValue() ?? value), draft: e.target.value })
+        }
+        onBlur={() => {
+          const latest = readValue()
+          if (!dirty) reset()
+          else if (latest !== undefined && (base === latest || draft === latest)) commit()
+        }}
+      />
+      {conflict && (
+        <div className="mt-2 space-y-2 rounded-md border border-line bg-surface p-2">
+          <p id={conflictId} role="status" className="text-xs text-ink-muted">
+            台词已在其他位置更新。请选择要使用的内容。
+          </p>
+          <p className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words text-xs text-ink-muted">
+            {value || '（空）'}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary ui-btn-sm"
+              onClick={() => {
+                reset()
+                input.current?.focus()
+              }}
+            >
+              使用最新台词
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary ui-btn-sm"
+              onClick={() => {
+                commit()
+                input.current?.focus()
+              }}
+            >
+              保留当前台词
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
