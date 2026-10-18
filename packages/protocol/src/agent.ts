@@ -75,6 +75,8 @@ export interface AgentStatus {
 export type AgentItem =
   | { id: string; type: 'user'; text: string; selection?: string[]; at: number }
   | { id: string; type: 'text'; text: string; at: number }
+  /** 正常停止等状态通知，不代表执行失败。 */
+  | { id: string; type: 'notice'; text: string; at: number }
   | {
       id: string
       type: 'tool'
@@ -82,7 +84,7 @@ export type AgentItem =
       name: string
       /** 参数摘要，给人看 */
       detail?: string
-      status: 'running' | 'done' | 'error'
+      status: 'running' | 'done' | 'error' | 'stopped'
       /** 结果摘要 */
       output?: string
       at: number

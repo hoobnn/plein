@@ -176,7 +176,8 @@ describe.each(['claude', 'codex'] as const)('本机 CLI：%s', (agent) => {
     const items = await turn('慢慢来', 'auto', (item) => {
       if (item.type === 'text' && item.text === '开始了') agents.stop(id)
     })
-    expect(items.at(-1)).toMatchObject({ type: 'error', text: '已停止' })
+    expect(items.at(-1)).toMatchObject({ type: 'notice', text: '已停止' })
+    expect(items.some((i) => i.type === 'error' && i.text === '已停止')).toBe(false)
     const next = await turn('还在吗')
     expect(texts(next).at(-1)).toBe('第 2 轮：还在吗')
     expect(launches().filter((a) => Array.isArray(a))).toHaveLength(2)

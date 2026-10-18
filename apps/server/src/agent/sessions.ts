@@ -381,25 +381,28 @@ export class AgentSessions {
           })
         },
         toolEnd: (id, error, output, fallback) => {
-          if (mine() && s.busy) this.finishTool(s, tid(id), error, output, fallback)
+          if (mine() && s.busy && !s.stopped) this.finishTool(s, tid(id), error, output, fallback)
         },
         error: (text) => {
-          if (mine() && s.busy) {
+          if (mine() && s.busy && !s.stopped) {
             turn.reason = text
             this.fail(s, text)
           }
         },
         turnEnd: () => {
           if (!mine() || !s.busy) return
-          if (s.stopped) this.fail(s, '已停止')
+          if (s.stopped) this.notice(s, '已停止')
           this.endTurn(s, turn)
         },
         exit: (reason) => {
           if (!mine()) return
           s.driver = null
           if (!s.busy) return
-          this.fail(s, s.stopped ? '已停止' : (reason ?? `${cli.name} 已退出`))
-          turn.reason = reason ?? 'cli_exited'
+          if (s.stopped) this.notice(s, '已停止')
+          else {
+            this.fail(s, reason ?? `${cli.name} 已退出`)
+            turn.reason = reason ?? 'cli_exited'
+          }
           this.endTurn(s, turn)
         },
         permission: (ask, signal) => this.askPermission(s, turn, ask, signal),
@@ -465,7 +468,7 @@ export class AgentSessions {
     s.busy = false
     if (s.turnTimer) clearTimeout(s.turnTimer)
     s.turnTimer = null
-    this.closeRunningTools(s)
+    this.closeRunningTools(s, turn.state === 'stopped' ? 'stopped' : 'error')
     this.finishTurn(s)
     s.active = null
     this.setRunning(s, false)
@@ -550,6 +553,7 @@ export class AgentSessions {
     })
       .catch((err: unknown) => {
         if (s.active !== execution) return
+        if (s.stopped || execution.state === 'stopping') return
         execution.reason = (err as Error).message
         if (err instanceof ProviderError) this.fail(s, err.message)
         else {
@@ -561,7 +565,7 @@ export class AgentSessions {
         clearTimeout(timer)
         if (s.active !== execution) return
         s.abort = null
-        if (s.stopped) this.fail(s, '已停止')
+        if (s.stopped) this.notice(s, '已停止')
         this.endTurn(s, execution)
       })
   }
@@ -575,7 +579,7 @@ export class AgentSessions {
     s.approvals.expireAll()
     if (!s.abort && !s.driver) {
       s.stopped = true
-      this.fail(s, '已停止')
+      this.notice(s, '已停止')
       this.endTurn(s, turn)
       return
     }
@@ -608,7 +612,7 @@ export class AgentSessions {
         this.byToken.delete(turn.token)
         turn.close('interrupted', 'server_shutdown')
         s.approvals.expireAll()
-        this.closeRunningTools(s)
+        this.closeRunningTools(s, 'stopped')
         this.finishTurn(s)
         turn.detach()
         s.active = null
@@ -682,10 +686,10 @@ export class AgentSessions {
     this.push(s, { ...base, status: error ? 'error' : 'done', output: output?.slice(0, 600) })
   }
 
-  /** 进程意外结束时还在“运行中”的工具标为出错 */
-  private closeRunningTools(s: Live) {
+  /** 区分正常停止与进程失败，保留工具结果的不确定性。 */
+  private closeRunningTools(s: Live, status: 'error' | 'stopped' = 'error') {
     for (const it of s.items) {
-      if (it.type === 'tool' && it.status === 'running') this.push(s, { ...it, status: 'error' })
+      if (it.type === 'tool' && it.status === 'running') this.push(s, { ...it, status })
     }
   }
 
@@ -738,6 +742,10 @@ export class AgentSessions {
 
   private fail(s: Live, text: string) {
     this.push(s, { id: newId('err'), type: 'error', text, at: Date.now() })
+  }
+
+  private notice(s: Live, text: string) {
+    this.push(s, { id: newId('notice'), type: 'notice', text, at: Date.now() })
   }
 
   /** 新增或按 id 替换一项，存库并推送 */

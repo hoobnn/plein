@@ -44,6 +44,7 @@ for (const choice of ['允许', '跳过', '停止'] as const) {
     } else {
       await expect(panel.getByText('本轮对话已停止', { exact: true })).toBeVisible()
       await expect(panel.getByText(/已过期：/)).toBeVisible()
+      await expect(panel.locator('.bg-danger-soft')).toHaveCount(0)
       expect((await elements(page)).find((e) => e.id === id)?.results).toBe(0)
     }
     await page.screenshot({

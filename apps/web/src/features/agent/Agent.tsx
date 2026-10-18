@@ -510,6 +510,16 @@ function Item({ item }: { item: AgentItem }) {
     )
   }
   if (item.type === 'text') return <Markdown text={item.text} />
+  if (item.type === 'notice' || (item.type === 'error' && item.text === '已停止')) {
+    return (
+      <p
+        role="status"
+        className="rounded-md bg-surface-2 px-3 py-2 text-xs whitespace-pre-wrap text-ink-muted"
+      >
+        {item.text}
+      </p>
+    )
+  }
   if (item.type === 'error') {
     return (
       <p className="rounded-md bg-danger-soft px-3 py-2 text-xs whitespace-pre-wrap text-danger">
@@ -781,11 +791,15 @@ function ToolRow({ item }: { item: Extract<AgentItem, { type: 'tool' }> }) {
     TOOL_LABELS[item.name] ?? plugins?.find((c) => c.name === item.name)?.title ?? item.name
 
   return (
-    <div className="text-xs">
+    <div className="text-xs" data-tool-status={item.status}>
       <div className="flex items-center gap-2 text-ink-muted">
         <span className="flex size-4 flex-none items-center justify-center">
           {item.status === 'running' ? (
             <span className="ui-spinner size-3" />
+          ) : item.status === 'stopped' ? (
+            <span className="text-ink-subtle">
+              <Icon name="stop" size={14} />
+            </span>
           ) : item.status === 'error' ? (
             <span className="text-danger">
               <Icon name="x" size={14} />
