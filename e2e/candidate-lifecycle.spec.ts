@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test'
+import { readFileSync } from 'node:fs'
 import { clickElement, newProject, waitEngine, waitNode } from './canvas'
 
-for (const kind of ['image', 'video'] as const) {
+for (const kind of ['image', 'video', 'speech'] as const) {
   test(`${kind} 连续生成候选后，卡片浏览、采用、撤销重做与刷新保持一致`, async ({ page }) => {
     await newProject(page)
     const id = await page.evaluate(
@@ -9,7 +10,11 @@ for (const kind of ['image', 'video'] as const) {
         window.__plein.addNode({
           type: `plein/${kind}`,
           name: '候选生命周期',
-          params: { prompt: '雨后透明水杯', model: `plein/mock:${kind}` },
+          params: {
+            prompt: '雨后透明水杯',
+            text: '雨后，拿起透明水杯。',
+            model: `plein/mock:${kind === 'speech' ? 'audio' : kind}`,
+          },
           x: 400,
           y: 300,
         }),
@@ -44,17 +49,33 @@ for (const kind of ['image', 'video'] as const) {
         .poll(() => image.evaluate((el) => (el as HTMLImageElement).naturalWidth))
         .toBeGreaterThan(0)
     } else {
-      const video = viewer.locator('video')
+      const video = viewer.locator(kind === 'video' ? 'video' : 'audio')
       await expect(video).toBeVisible()
       await expect
-        .poll(() => video.evaluate((el) => (el as HTMLVideoElement).readyState))
+        .poll(() => video.evaluate((el) => (el as HTMLMediaElement).readyState))
         .toBeGreaterThanOrEqual(2)
     }
     await viewer.screenshot({
       path: test.info().outputPath('candidate-preview.png'),
       animations: 'disabled',
     })
+    const playing =
+      kind === 'image'
+        ? null
+        : await viewer.locator(kind === 'video' ? 'video' : 'audio').elementHandle()
+    if (playing) {
+      await playing.evaluate(async (el) => {
+        const media = el as HTMLMediaElement
+        media.loop = true
+        await media.play()
+      })
+      expect(await playing.evaluate((el) => (el as HTMLMediaElement).paused)).toBe(false)
+    }
     await viewer.getByRole('button', { name: '关闭', exact: true }).click()
+    if (playing) {
+      await expect.poll(() => playing.evaluate((el) => (el as HTMLMediaElement).paused)).toBe(true)
+      await expect.poll(() => playing.evaluate((el) => el.getAttribute('src'))).toBeNull()
+    }
     await page.getByRole('button', { name: '撤销', exact: true }).click()
     await expect.poll(adopted).toBe(original)
     await page.getByRole('button', { name: '重做', exact: true }).click()
@@ -68,6 +89,25 @@ for (const kind of ['image', 'video'] as const) {
     await waitEngine(page)
     await expect.poll(adopted).toBe(chosen)
     await clickElement(page, id)
+    if (kind === 'speech') {
+      const assetId = await page.evaluate(
+        ({ id, chosen }) =>
+          window.__plein.engine.doc.get(id)!.results!.find((result) => result.id === chosen)!.value
+            .assetId,
+        { id, chosen },
+      )
+      const downloaded = page.waitForEvent('download')
+      await generator.getByRole('button', { name: '下载', exact: true }).click()
+      const file = await downloaded
+      expect(await file.failure()).toBeNull()
+      const originalFile = await page.request.get(`/api/assets/${assetId}`)
+      expect(originalFile.ok()).toBe(true)
+      expect(readFileSync((await file.path())!)).toEqual(await originalFile.body())
+      await generator.screenshot({
+        path: test.info().outputPath('audio-result-actions.png'),
+        animations: 'disabled',
+      })
+    }
     await generator.getByRole('button', { name: '全屏查看', exact: true }).click()
     await expect(viewer.getByRole('button', { name: '已采用', exact: true })).toBeDisabled()
     expect(

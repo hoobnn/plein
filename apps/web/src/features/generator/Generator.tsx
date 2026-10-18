@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, setParam, updateElement } from '@plein/doc'
+import { type CanvasElement, currentResult, setParam, updateElement } from '@plein/doc'
 import {
   ASSET_NODE_TYPES,
   ANIMATIC_TYPE,
@@ -37,6 +37,7 @@ import { Icon } from '../../ui/icons'
 import { withShortcut } from '../../ui/keys'
 import { mediaOf } from '../../canvas/grid'
 import { ResultActions } from '../../shell/ResultBar'
+import { AssetDownloadButton } from '../../shell/AssetDownloadButton'
 import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
 import { InputPreview, issueText, useInputPreview } from './InputPreview'
 import { ContinuedFrom } from './ContinuedFrom'
@@ -329,7 +330,9 @@ function Panel({
 
   // 已有结果时，预设、生成视频、宫格切分、下载、全屏放在第一行右侧
   const media = running ? null : mediaOf(el)
-  const actions = media && (
+  const result = running ? undefined : currentResult(el)
+  const audio = result?.value.type === 'audio' ? result : undefined
+  const actions = media ? (
     <ResultActions
       engine={engine}
       el={el}
@@ -338,7 +341,33 @@ function Panel({
       remote={!!canvasId}
       variant="inline"
     />
-  )
+  ) : audio && audio.value.type === 'audio' ? (
+    <>
+      <AssetDownloadButton
+        engine={engine}
+        assetId={audio.value.assetId}
+        name={el.name ?? node.title}
+        className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
+        iconOnly
+      />
+      <button
+        type="button"
+        className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
+        aria-label="全屏查看"
+        title="全屏查看"
+        onClick={() =>
+          useCanvas.getState().view({
+            kind: 'result',
+            nodeId: el.id,
+            resultId: audio.id,
+            name: el.name ?? node.title,
+          })
+        }
+      >
+        <Icon name="expand" size={14} />
+      </button>
+    </>
+  ) : null
 
   const run = () => {
     if (canceling || awaitingAcceptance) return
