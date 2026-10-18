@@ -77,6 +77,8 @@ export function LocalPlugins() {
   } = useQuery({
     queryKey: queryKeys.localPlugins,
     queryFn: api.localPlugins,
+    // 子进程可在设置操作之外崩溃；面板可见且有已启用插件时跟进运行状态。
+    refetchInterval: (query) => (query.state.data?.some((plugin) => plugin.enabled) ? 2000 : false),
   })
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
