@@ -6,12 +6,13 @@ import {
   subtitleAss,
   type Timeline,
 } from '@plein/nodes'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { PreviewEngine } from './engine'
 import type { Playhead } from './playhead'
 import { previewScene } from './scene'
 import { SubtitleLayer, type SubtitleMode } from './SubtitleLayer'
 import { Transport } from './Transport'
+import { useClosing } from '../../ui/Presence'
 
 /**
  * 序列预览：不导出，直接在浏览器里按时间线播放。
@@ -36,6 +37,7 @@ export function SequencePreview({
 }) {
   const [subMode, setSubMode] = useState<SubtitleMode>('loading')
   const [failed, setFailed] = useState(0)
+  const closing = useClosing()
   const size = sequenceSize(params)
   const cues = params.subtitles ? timeline.clips.flatMap((c) => c.cues) : []
   const { total } = timeline
@@ -47,7 +49,8 @@ export function SequencePreview({
   const sceneRef = useRef(scene)
   sceneRef.current = scene
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (closing) return
     setFailed(0)
     const e = new PreviewEngine(playhead, setFailed)
     engine.current = e
@@ -55,9 +58,11 @@ export function SequencePreview({
     e.attach(canvas.current)
     return () => {
       engine.current = null
+      // 退场开始或切到成片回看时立即停播，不等待浮层动画结束。
+      playhead.pause()
       e.dispose()
     }
-  }, [playhead])
+  }, [playhead, closing])
 
   useEffect(() => {
     engine.current?.setScene(sceneRef.current)

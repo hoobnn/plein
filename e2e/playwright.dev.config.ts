@@ -37,6 +37,7 @@ export default defineConfig({
     'recovery-pending.spec.ts',
     'sequence-load-recovery.spec.ts',
     'sequence-sound-controls.spec.ts',
+    'sequence-preview-lifecycle.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
   use: { ...base.use, baseURL: `http://127.0.0.1:${webPort}` },
