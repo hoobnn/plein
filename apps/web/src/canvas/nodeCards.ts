@@ -185,8 +185,8 @@ export class NodeCards {
       card.root.style.transform = `translate(${rect.x}px, ${rect.y}px)`
       card.root.style.width = `${rect.w}px`
       card.root.style.height = `${rect.h}px`
-      clipOverlay(card.root, engine.scene, id, rect, NODE_LAYOUT.title)
       this.render(card, { ...el, ...rect }, engine.selection.has(id))
+      clipOverlay(card.root, engine.scene, id, rect, NODE_LAYOUT.title)
     }
     const ticking = [...this.cards.values()].some((c) => c.live)
     if (ticking && !this.ticker) this.ticker = setInterval(() => this.tick(), 1000)

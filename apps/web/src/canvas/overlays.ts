@@ -116,6 +116,9 @@ export class CanvasOverlays {
     const onPointerDown = () => this.deactivate()
     host.addEventListener('pointerdown', onPointerDown, true)
     this.disposers.push(() => host.removeEventListener('pointerdown', onPointerDown, true))
+    const fullscreen = () => this.sync()
+    document.addEventListener('fullscreenchange', fullscreen)
+    this.disposers.push(() => document.removeEventListener('fullscreenchange', fullscreen))
     this.sync()
   }
 
@@ -212,11 +215,11 @@ export class CanvasOverlays {
         this.previewSizer.observe(content)
       }
       place(p.node, rect)
-      clipOverlay(p.node, engine.scene, id, rect)
       if (p.text !== el.text) {
         p.text = el.text
         p.content.innerHTML = renderMarkdown(el.text ?? '')
       }
+      clipOverlay(p.node, engine.scene, id, rect)
       this.fit(id)
     }
     if (this.active) {

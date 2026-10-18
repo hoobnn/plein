@@ -133,20 +133,24 @@ test('画布内播放器全屏时不保留节点的遮挡裁剪，退出后恢�
       name: '局部覆盖播放器',
       params: { text: '' },
       x: r.x,
-      y: r.y,
+      y: r.y + r.h - 52,
     })
     const m = window.__plein.engine.doc.mutable(cover) as unknown as {
       set(k: string, v: number): void
     }
     m.set('w', 60)
-    m.set('h', 60)
+    m.set('h', 52)
   }, id)
   await expect.poll(() => player.evaluate((el) => el.style.clipPath)).not.toBe('')
+  const play = player.locator('.plein-player-btn').first()
+  await expect.poll(() => play.evaluate((el: HTMLElement) => el.inert)).toBe(true)
   await player.getByRole('button', { name: '全屏', exact: true }).click()
   await expect(player).toHaveClass(/is-fullscreen/)
+  await expect.poll(() => play.evaluate((el: HTMLElement) => el.inert)).toBe(false)
   await expect.poll(() => player.evaluate((el) => getComputedStyle(el).clipPath)).toBe('none')
   await player.getByRole('button', { name: '退出全屏', exact: true }).click()
   await expect.poll(() => player.evaluate((el) => getComputedStyle(el).clipPath)).not.toBe('none')
+  await expect.poll(() => play.evaluate((el: HTMLElement) => el.inert)).toBe(true)
 })
 
 test('窗口缩窄后生成器同步变窄，操作区不被窗口和侧栏裁掉', async ({ page }) => {

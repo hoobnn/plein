@@ -62,6 +62,8 @@ export default defineConfig({
     'markdown-rendering.spec.ts',
     'markdown-scroll.spec.ts',
     'markdown-input.spec.ts',
+    'markdown-occlusion-focus.spec.ts',
+    'canvas-occlusion.spec.ts',
     'player-keyboard.spec.ts',
     'player-recovery.spec.ts',
     'player-seeking.spec.ts',
