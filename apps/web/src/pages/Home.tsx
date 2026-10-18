@@ -51,7 +51,8 @@ const QUICK_START: Array<{
 export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   const notice = useCanvas((s) => s.notice)
   const info = useSession((s) => s.info)
-  const refreshSession = useSession((s) => s.refresh)
+  const signOut = useSession((s) => s.logout)
+  const signingOut = useSession((s) => s.signingOut)
   // 回到首页时先显示上次的列表，同时重新拉（在画布里改过的标题、更新时间）
   const list = useQuery({
     queryKey: queryKeys.projects,
@@ -140,9 +141,14 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
     void invalidateProjects()
   }
   const logout = async () => {
-    await api.logout()
-    queryClient.clear()
-    await refreshSession()
+    if (useSession.getState().signingOut) return
+    setError(null)
+    try {
+      await signOut()
+    } catch (err) {
+      if (active.current) setError((err as Error).message)
+      else useCanvas.getState().notify(`退出登录失败：${(err as Error).message}`)
+    }
   }
 
   const q = query.trim().toLowerCase()
@@ -197,11 +203,13 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
               <button
                 type="button"
                 onClick={logout}
-                title="退出登录"
+                title={signingOut ? '正在退出…' : '退出登录'}
+                disabled={signingOut}
+                aria-busy={signingOut}
                 className="ui-bar-btn gap-1.5"
               >
                 <Icon name="logout" />
-                <span className="max-sm:sr-only">退出登录</span>
+                <span className="max-sm:sr-only">{signingOut ? '正在退出…' : '退出登录'}</span>
               </button>
             )}
           </div>
