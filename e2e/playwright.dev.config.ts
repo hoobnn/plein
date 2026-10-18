@@ -12,6 +12,8 @@ const root = join(import.meta.dirname, '..')
 export default defineConfig({
   ...base,
   testMatch: [
+    'project-switcher-navigation.spec.ts',
+    'projects.spec.ts',
     'library-navigation.spec.ts',
     'library.spec.ts',
     'library-placement.spec.ts',

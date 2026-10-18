@@ -14,6 +14,15 @@ import { forgetLocalCache } from '../../canvas/localCache'
 
 const fail = (err: unknown) => useCanvas.getState().notify((err as Error).message)
 
+/** 同一画布离开再返回也是新会话，旧请求只完成数据更新，不再接管导航。 */
+const captureCanvasVisit = (canvasId: string) => {
+  const engine = useCanvas.getState().engine
+  return () => {
+    const current = useCanvas.getState()
+    return current.canvasId === canvasId && current.engine === engine
+  }
+}
+
 /**
  * 页头的「项目 / 画布 ▾」：
  * 点项目名改名；画布下拉里切换同项目的其他画布、新建、改名、删除当前画布。
@@ -53,6 +62,7 @@ export function ProjectSwitcher({
     }
   }
   const addCanvas = async () => {
+    const isCurrent = captureCanvasVisit(canvas.id)
     close()
     const title = await promptDialog({
       title: '新建画布',
@@ -61,13 +71,13 @@ export function ProjectSwitcher({
       placeholder: '画布名称',
       confirmLabel: '新建',
     })
-    if (!title) return
+    if (!title || !isCurrent()) return
     try {
       const c = await api.createCanvas(canvas.projectId, title)
       void invalidateProjects()
-      navigate({ name: 'canvas', id: c.id })
+      if (isCurrent()) navigate({ name: 'canvas', id: c.id })
     } catch (err) {
-      fail(err)
+      if (isCurrent()) fail(err)
     }
   }
   const renameCanvas = async () => {
@@ -87,6 +97,7 @@ export function ProjectSwitcher({
     }
   }
   const removeCanvas = async () => {
+    const isCurrent = captureCanvasVisit(canvas.id)
     close()
     const ok = await confirmDialog({
       title: `删除画布「${canvas.title}」？`,
@@ -94,14 +105,17 @@ export function ProjectSwitcher({
       confirmLabel: '删除',
       danger: true,
     })
-    if (!ok) return
+    if (!ok || !isCurrent()) return
     try {
       await api.deleteCanvas(canvas.id)
       forgetLocalCache(canvas.id)
       void invalidateProjects()
     } catch (err) {
-      return fail(err)
+      if (isCurrent()) fail(err)
+      return
     }
+    // 已回到原画布时仍需离开刚被删除的文档；停留在其他画布则保持当前位置。
+    if (useCanvas.getState().canvasId !== canvas.id) return
     const next = canvases.find((c) => c.id !== canvas.id)
     navigate(next ? { name: 'canvas', id: next.id } : { name: 'home' }, { replace: true })
   }
