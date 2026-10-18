@@ -6,6 +6,7 @@ import { Icon } from './icons'
 export interface SelectOption {
   value: string
   label?: string
+  disabled?: boolean
 }
 
 /**
@@ -30,7 +31,11 @@ export function Select({
   className?: string
   'aria-label'?: string
 }) {
-  const items = options.map((o) => ({ value: o.value, label: o.label ?? o.value }))
+  const items = options.map((o) => ({
+    value: o.value,
+    label: o.label ?? o.value,
+    disabled: o.disabled,
+  }))
   const popup = useRef<HTMLDivElement>(null)
   return (
     <Base.Root
@@ -101,7 +106,12 @@ export function Select({
           >
             <Base.List aria-label={ariaLabel}>
               {items.map((o) => (
-                <Base.Item key={o.value} value={o.value} className="ui-menu-item ui-select-item">
+                <Base.Item
+                  key={o.value}
+                  value={o.value}
+                  disabled={o.disabled}
+                  className="ui-menu-item ui-select-item"
+                >
                   <Base.ItemText className="min-w-0 flex-1 truncate">{o.label}</Base.ItemText>
                   <Base.ItemIndicator className="text-accent">
                     <Icon name="check" size={14} />

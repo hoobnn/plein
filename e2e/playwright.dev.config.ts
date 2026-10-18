@@ -25,6 +25,7 @@ export default defineConfig({
     'library-preview-recovery.spec.ts',
     'library-upload-batches.spec.ts',
     'library-profile-upload-batches.spec.ts',
+    'library-profile-structure.spec.ts',
     'viewer-media.spec.ts',
     'media-pagination.spec.ts',
     'media-search.spec.ts',

@@ -30,6 +30,7 @@ import { CanvasPick, thumb, uploadAll, UploadFeedback } from './LibraryFields'
 import type { UploadNotice } from './uploadBatch'
 import { Select } from '../../ui/Select'
 import { VoicePicker } from '../../ui/VoicePicker'
+import { moveProfileOutfit } from './profileMoves'
 
 export const ProfileUploadContext = createContext<{
   pending: boolean
@@ -193,15 +194,9 @@ export function PeriodsTab({
   /** 服饰换到另一个时期名下：名字在整个档案里唯一，挪过去不用改名 */
   const moveOutfit = (to: string) => {
     if (!period || !outfit || to === period.id) return
-    setPeriods(
-      profile.periods.map((p) =>
-        p.id === period.id
-          ? { ...p, outfits: p.outfits.filter((o) => o.id !== outfit.id) }
-          : p.id === to
-            ? { ...p, outfits: [...p.outfits, outfit] }
-            : p,
-      ),
-    )
+    const next = moveProfileOutfit(profile, period.id, outfit.id, to)
+    if (!next) return
+    onChange(next)
     setSel({ period: to, outfit: outfit.id })
   }
   const unused = PERIOD_PRESETS.filter((n) => !profile.periods.some((p) => p.name === n))
@@ -501,7 +496,14 @@ function OutfitFields({
           <Select
             aria-label="属于时期"
             value={period.id}
-            options={profile.periods.map((p) => ({ value: p.id, label: p.name }))}
+            options={profile.periods.map((p) => ({
+              value: p.id,
+              label:
+                p.id !== period.id && p.outfits.length >= PROFILE_LIMITS.outfits
+                  ? `${p.name}（服饰已满 ${PROFILE_LIMITS.outfits} 套）`
+                  : p.name,
+              disabled: p.id !== period.id && p.outfits.length >= PROFILE_LIMITS.outfits,
+            }))}
             onChange={onMove}
           />
         </div>

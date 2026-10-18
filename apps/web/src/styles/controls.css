@@ -505,7 +505,8 @@
   .ui-menu-item[aria-checked="true"] {
     background: var(--active);
   }
-  .ui-menu-item:disabled {
+  .ui-menu-item:disabled,
+  .ui-menu-item[aria-disabled="true"] {
     opacity: 0.4;
   }
   .ui-menu-item > svg {
