@@ -36,6 +36,7 @@ export function SequencePreview({
   draft?: boolean
 }) {
   const [subMode, setSubMode] = useState<SubtitleMode>('loading')
+  const [subtitleAttempt, setSubtitleAttempt] = useState(0)
   const [failed, setFailed] = useState(0)
   const closing = useClosing()
   const size = sequenceSize(params)
@@ -93,8 +94,9 @@ export function SequencePreview({
               样片 / 草稿 · 已有分镜图与配音节奏预演
             </div>
           )}
-          {params.subtitles && (
+          {params.subtitles && !closing && (
             <SubtitleLayer
+              key={subtitleAttempt}
               build={(font) =>
                 subtitleAss(
                   { ...size, subtitles: { cues, style: SUBTITLE_STYLE_IDS[params.subtitleStyle] } },
@@ -111,13 +113,37 @@ export function SequencePreview({
             playhead={playhead}
             rows={rows}
             timeline={timeline}
-            cues={subMode === 'fallback' ? cues : []}
+            cues={subMode !== 'libass' ? cues : []}
             portrait={portrait}
             subtitleStyle={params.subtitleStyle}
             draft={draft}
           />
         </div>
       </div>
+      {params.subtitles && subMode !== 'libass' && (
+        <div
+          role="status"
+          className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted"
+        >
+          <span>
+            {subMode === 'loading'
+              ? '正在加载字幕样式，暂用近似样式预览。'
+              : '字幕样式加载失败，已使用近似样式预览。'}
+          </span>
+          {subMode === 'fallback' && (
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary ui-btn-xs"
+              onClick={() => {
+                setSubMode('loading')
+                setSubtitleAttempt((attempt) => attempt + 1)
+              }}
+            >
+              重试字幕预览
+            </button>
+          )}
+        </div>
+      )}
       {failed > 0 && (
         <div
           role="alert"

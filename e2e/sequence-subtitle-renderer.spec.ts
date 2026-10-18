@@ -9,10 +9,10 @@ const font = readFileSync(
 )
 async function setup(
   page: Page,
-  fault: { info?: boolean; file?: boolean; gate?: Promise<void> } = {},
+  fault: { info?: boolean; file?: boolean; gate?: Promise<void>; gateFileOnly?: boolean } = {},
 ) {
   await page.route('**/api/media/subtitle-font', async (route) => {
-    await fault.gate
+    if (!fault.gateFileOnly) await fault.gate
     return fault.info
       ? route.fulfill({ status: 503, json: { message: '字体信息暂不可用' } })
       : route.fulfill({ json: { family: 'Liberation Sans', version: 'subtitle-e2e' } })
@@ -120,4 +120,107 @@ test('实际 libass 字幕按时间出现消失，关闭重开可继续渲染且
   expect(await page.evaluate(() => [...window.__plein.engine.doc.elements()])).toEqual(f.original)
   expect(warnings).toEqual([])
   expect(errors).toEqual([])
+})
+
+for (const [kind, width] of [
+  ['info', 320],
+  ['file', 390],
+] as const) {
+  test(`${kind} 失败可原地重试，${width}px 下入口完整可用且重复失败不留 worker`, async ({
+    page,
+  }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    const fault: { info?: boolean; file?: boolean; gate?: Promise<void> } = { [kind]: true }
+    const f = await setup(page, fault)
+    await page.setViewportSize({ width, height: 700 })
+    const stage = f.editor.locator('.seq-stage')
+    const retry = f.editor.getByRole('button', { name: '重试字幕预览', exact: true })
+    await expect(stage).toHaveAttribute('data-subtitles', 'fallback')
+    await expect(retry).toBeInViewport()
+    await f.editor.screenshot({ path: test.info().outputPath(`subtitle-fallback-${width}.png`) })
+    await retry.click()
+    await expect(stage).toHaveAttribute('data-subtitles', 'fallback')
+    await expect.poll(() => page.workers().length).toBe(0)
+    let release!: () => void
+    fault.gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await retry.click()
+    await expect(stage).toHaveAttribute('data-subtitles', 'loading')
+    await expect(retry).toHaveCount(0)
+    await expect(stage.getByText('Subtitle ready', { exact: true })).toBeVisible()
+    fault[kind] = false
+    release()
+    await expect(stage).toHaveAttribute('data-subtitles', 'libass')
+    expect(await f.editor.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    )
+    await f.editor.screenshot({ path: test.info().outputPath(`subtitle-retry-${width}.png`) })
+    // 在标准宽度核对实际字形，避免窄屏缩放抗锯齿左右像素阈值。
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await expect.poll(async () => lit(page, await stage.screenshot())).toBeGreaterThan(50)
+    await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
+    await expect(f.editor).toHaveCount(0)
+    await expect.poll(() => page.workers().length).toBe(0)
+    expect(await page.evaluate(() => [...window.__plein.engine.doc.elements()])).toEqual(f.original)
+    expect(errors).toEqual([])
+  })
+}
+
+test('字体下载等待期间关闭，迟到结果不能创建 worker 或干扰重开', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  let release!: () => void
+  let requested!: () => void
+  const request = new Promise<void>((resolve) => {
+    requested = resolve
+  })
+  const fault: { gate?: Promise<void>; gateFileOnly: boolean } = { gateFileOnly: true }
+  fault.gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  page.on('request', (r) => {
+    if (r.url().includes('/api/media/subtitle-font/file?')) requested()
+  })
+  const f = await setup(page, fault)
+  await request
+  await expect(f.editor.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'loading')
+  await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(f.editor).toHaveCount(0)
+  release()
+  fault.gate = undefined
+  await expect.poll(() => page.workers().length).toBe(0)
+  const again = await f.open()
+  await expect(again.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'libass')
+  await expect
+    .poll(async () => lit(page, await again.locator('.seq-stage').screenshot()))
+    .toBeGreaterThan(50)
+  expect(errors).toEqual([])
+})
+
+test('字体信息临时失败后重开可恢复真实字幕', async ({ page }) => {
+  const fault = { info: true }
+  const f = await setup(page, fault)
+  await expect(f.editor.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'fallback')
+  await expect(
+    f.editor.locator('.seq-stage').getByText('Subtitle ready', { exact: true }),
+  ).toBeVisible()
+  fault.info = false
+  await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(f.editor).toHaveCount(0)
+  const again = await f.open()
+  await expect(again.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'libass')
+  await expect
+    .poll(async () => lit(page, await again.locator('.seq-stage').screenshot()))
+    .toBeGreaterThan(50)
+})
+
+test('字体文件失败显示近似字幕并释放 worker', async ({ page }) => {
+  const f = await setup(page, { file: true })
+  await expect(f.editor.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'fallback')
+  await expect(
+    f.editor.locator('.seq-stage').getByText('Subtitle ready', { exact: true }),
+  ).toBeVisible()
+  await expect.poll(() => page.workers().length).toBe(0)
 })
