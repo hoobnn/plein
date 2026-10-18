@@ -102,6 +102,7 @@ export function CheckpointPreview({ state }: { state: string }) {
           dispose()
           return
         }
+        engine.setTool('hand')
         const camera = engine.camera
         const snapshot = () => ({
           width: camera.width,

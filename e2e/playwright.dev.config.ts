@@ -20,6 +20,7 @@ export default defineConfig({
     'checkpoint-restore-lifecycle.spec.ts',
     'checkpoint-preview-recovery.spec.ts',
     'checkpoint-preview-resize.spec.ts',
+    'checkpoint-preview-drag.spec.ts',
     'checkpoint-delete-lifecycle.spec.ts',
     'checkpoint-render-lifecycle.spec.ts',
     'checkpoint-pagination.spec.ts',
