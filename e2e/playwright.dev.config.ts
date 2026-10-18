@@ -60,6 +60,7 @@ export default defineConfig({
     'maintenance-number-editing.spec.ts',
     'maintenance-settings-sync.spec.ts',
     'maintenance-restore-feedback.spec.ts',
+    'maintenance-cleanup-interactions.spec.ts',
     'plugins.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],

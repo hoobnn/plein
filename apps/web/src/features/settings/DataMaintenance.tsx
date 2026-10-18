@@ -44,9 +44,13 @@ export function DataMaintenance() {
   const [preview, setPreview] = useState<CleanupPreview | null>(null)
   const [restored, setRestored] = useState<string | null>(null)
   const feedback = useRef<HTMLDivElement>(null)
+  const cleanupPreview = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (message || error) feedback.current?.scrollIntoView({ block: 'nearest' })
   }, [message, error])
+  useEffect(() => {
+    if (preview) cleanupPreview.current?.scrollIntoView({ block: 'nearest' })
+  }, [preview])
   const perform = async (fn: () => Promise<string | void>) => {
     setBusy(true)
     setError(null)
@@ -299,7 +303,12 @@ export function DataMaintenance() {
           检查可清理素材
         </button>
         {preview && (
-          <div className="flex flex-col gap-2 rounded-lg bg-surface-2 p-3 text-xs">
+          <div
+            ref={cleanupPreview}
+            role="region"
+            aria-label="清理预览"
+            className="flex flex-col gap-2 rounded-lg bg-surface-2 p-3 text-xs"
+          >
             <p>
               将 {preview.assets} 个登记和修改时间都超过 {preview.unusedDays} 天、且未引用的素材（
               {bytes(preview.bytes)}
@@ -326,6 +335,7 @@ export function DataMaintenance() {
               <button
                 type="button"
                 className="ui-btn ui-btn-ghost"
+                disabled={locked}
                 onClick={() => setPreview(null)}
               >
                 取消
