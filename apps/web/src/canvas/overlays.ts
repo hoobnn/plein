@@ -11,6 +11,7 @@ import { renderMarkdown } from './markdown'
 import { createPlayer } from './player'
 import { assetUrls } from '../api/client'
 import { clipOverlay } from './occlusion'
+import { editorViewport } from './editorViewport'
 
 interface Preview {
   node: HTMLDivElement
@@ -25,6 +26,7 @@ interface Active {
   assetId?: string
   /** 挂到页面后调用 */
   focus?(): void
+  layout?(rect: Rect, viewport: Rect): void
   dispose(): void
 }
 
@@ -247,6 +249,7 @@ export class CanvasOverlays {
       const rect = engine.scene.rect(this.active.id)
       if (rect) {
         place(this.active.node, rect)
+        this.active.layout?.(rect, viewport)
         clipOverlay(this.active.node, engine.scene, this.active.id, rect, 0, viewport)
       } else this.deactivate()
     }
@@ -372,10 +375,28 @@ export class CanvasOverlays {
         editorTheme,
       ],
     })
+    view.dom.style.position = 'absolute'
+    let layoutKey = ''
     return {
       id,
       node,
       focus: () => view.focus(),
+      layout: (rect, viewport) => {
+        const { zoom, insets } = this.engine.camera
+        const area = editorViewport(rect, viewport, insets, zoom)
+        const key = JSON.stringify(area)
+        if (key === layoutKey) return
+        layoutKey = key
+        view.dom.style.visibility = area ? '' : 'hidden'
+        if (area)
+          Object.assign(view.dom.style, {
+            left: `${area.x}px`,
+            top: `${area.y}px`,
+            width: `${area.w}px`,
+            height: `${area.h}px`,
+          })
+        view.requestMeasure()
+      },
       dispose() {
         view.destroy()
         undoManager.destroy()

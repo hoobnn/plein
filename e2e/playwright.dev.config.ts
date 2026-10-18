@@ -59,6 +59,7 @@ export default defineConfig({
     'ime-editor.spec.ts',
     'markdown-ime.spec.ts',
     'markdown-history.spec.ts',
+    'markdown-long-edit.spec.ts',
     'markdown-rendering.spec.ts',
     'markdown-scroll.spec.ts',
     'markdown-input.spec.ts',
