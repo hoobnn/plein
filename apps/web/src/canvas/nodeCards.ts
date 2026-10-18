@@ -609,7 +609,12 @@ export class NodeCards {
     }
     const actions = document.createElement('span')
     actions.className = 'plein-node-failed-actions'
-    const retry = button('plein-node-action', '重试', { text: '重试' })
+    const recovery = ['submit_unknown', 'fetch_failed', 'input_changed'].includes(
+      run.errorCode ?? '',
+    )
+    const retry = button('plein-node-action', recovery ? '查看任务' : '重试', {
+      text: recovery ? '查看任务' : '重试',
+    })
     retry.disabled = submitting
     retry.setAttribute('aria-busy', String(submitting))
     if (submitting) {
@@ -623,7 +628,8 @@ export class NodeCards {
     retry.addEventListener('click', (e) => {
       e.stopPropagation()
       this.engine.selection.set([el.id])
-      this.actions.run(el.id)
+      if (recovery) useCanvas.getState().toggleTasks(true)
+      else this.actions.run(el.id)
     })
     actions.appendChild(retry)
     if (view.settings) {

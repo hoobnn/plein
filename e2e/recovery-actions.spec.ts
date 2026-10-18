@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { JobInfo } from '../packages/protocol/src/runs'
-import { addNode, elements, newProject } from './canvas'
+import { addNode, clickElement, elements, newProject } from './canvas'
 
 for (const state of [
   'fetch_failed',
@@ -94,5 +94,80 @@ for (const state of [
         expect(calls).toEqual([{ action: 'dismiss' }])
       }
     }
+  })
+}
+
+for (const code of ['submit_unknown', 'fetch_failed', 'input_changed'] as const) {
+  test(`失败卡片 ${code} 引导任务恢复，不直接重新提交`, async ({ page }) => {
+    await newProject(page)
+    const id = await page.evaluate((code) => {
+      const id = window.__plein.addNode({
+        type: 'plein/image',
+        name: '需要恢复的图片',
+        params: { prompt: '水杯' },
+        x: 400,
+        y: 200,
+      })
+      ;(
+        window.__plein.engine.doc.mutable(id) as unknown as {
+          set(key: string, value: unknown): void
+        }
+      ).set('run', {
+        id: 'card-recovery',
+        status: 'failed',
+        errorCode: code,
+        error: '恢复测试',
+        at: Date.now(),
+      })
+      return id
+    }, code)
+    let submissions = 0
+    await page.route('**/api/canvases/*/nodes/*/run', async (route) => {
+      submissions++
+      await route.abort()
+    })
+    await page.route('**/api/canvases/*/jobs', (route) =>
+      route.fulfill({
+        json: {
+          jobs: [
+            {
+              id: 'card-recovery',
+              nodeId: id,
+              nodeType: 'plein/image',
+              status: 'failed',
+              attempts: 1,
+              createdAt: Date.now(),
+              recovery: {
+                state: code === 'input_changed' ? 'review' : code,
+                refetchable: code === 'fetch_failed',
+              },
+            },
+          ],
+          groups: [],
+        },
+      }),
+    )
+    await clickElement(page, id)
+    const card = page.locator('.plein-node')
+    await expect(card.getByRole('button', { name: '重试', exact: true })).toHaveCount(0)
+    await card.screenshot({
+      path: test.info().outputPath('card-recovery.png'),
+      animations: 'disabled',
+    })
+    await card.getByRole('button', { name: '查看任务', exact: true }).click()
+    const panel = page.getByRole('complementary', { name: '任务', exact: true })
+    await expect(panel.getByTestId('job-recovery')).toBeVisible()
+    await expect(
+      panel.getByRole('button', {
+        name:
+          code === 'submit_unknown'
+            ? '确认未受理，重新提交'
+            : code === 'fetch_failed'
+              ? '重新获取'
+              : '去审查',
+        exact: true,
+      }),
+    ).toBeVisible()
+    expect(submissions).toBe(0)
   })
 }
