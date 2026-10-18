@@ -77,6 +77,11 @@ function runSignature(doc: PleinDoc) {
   return parts.join('|')
 }
 
+/** 名称和目标存在状态只更新界面，不触发任务重新读取。 */
+function targetSignature(doc: PleinDoc) {
+  return JSON.stringify(Array.from(doc.elements(), (el) => [el.id, el.name]))
+}
+
 /** 整组运行显示 Frame 名；运行到此处 / 运行下游显示出发的节点 */
 function groupName(g: GroupInfo, doc: PleinDoc, catalog: Catalog | null) {
   const el = doc.get(g.frameId)
@@ -120,6 +125,10 @@ export function Tasks() {
   const sig = useSyncExternalStore(
     (notify) => engine?.doc.subscribe(notify) ?? (() => {}),
     () => (engine ? runSignature(engine.doc) : ''),
+  )
+  useSyncExternalStore(
+    (notify) => engine?.doc.subscribe(notify) ?? (() => {}),
+    () => (engine ? targetSignature(engine.doc) : ''),
   )
   // 打开时轮询：有任务在跑时每秒一次，否则慢一点；节点状态变化（sig）时立即刷新
   const query = useQuery({
