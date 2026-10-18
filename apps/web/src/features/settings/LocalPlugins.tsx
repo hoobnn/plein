@@ -1,6 +1,6 @@
 import type { LocalPluginInfo } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
 import { queryClient, queryKeys } from '../../api/query'
 import { desktop } from '../../desktop'
@@ -77,11 +77,18 @@ export function LocalPlugins() {
   } = useQuery({
     queryKey: queryKeys.localPlugins,
     queryFn: api.localPlugins,
-    // 子进程可在设置操作之外崩溃；面板可见且有已启用插件时跟进运行状态。
-    refetchInterval: (query) => (query.state.data?.some((plugin) => plugin.enabled) ? 2000 : false),
+    // 面板可见时跟进其他客户端的启停；读取失败时保留提示，等待重试。
+    refetchInterval: (query) => (query.state.data && !query.state.error ? 2000 : false),
   })
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const lastList = useRef<string | undefined>(undefined)
+  const listKey = list ? JSON.stringify(list) : undefined
+  useEffect(() => {
+    if (busy !== null || listKey === undefined || lastList.current === listKey) return
+    lastList.current = listKey
+    void useCatalog.getState().load()
+  }, [listKey, busy])
 
   /** 改完刷新列表和目录（节点、平台、预设跟着变） */
   const act = async (key: string, fn: () => Promise<unknown>) => {
@@ -93,6 +100,7 @@ export function LocalPlugins() {
       setError(`插件操作失败：${(err as Error).message}`)
     } finally {
       await queryClient.invalidateQueries({ queryKey: queryKeys.localPlugins })
+      lastList.current = JSON.stringify(queryClient.getQueryData(queryKeys.localPlugins))
       await useCatalog.getState().load()
       setBusy(null)
     }
