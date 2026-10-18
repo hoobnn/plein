@@ -44,6 +44,7 @@ export default defineConfig({
     'agent-revise.spec.ts',
     'agent-targets.spec.ts',
     'agent-approval-boundaries.spec.ts',
+    'agent-multi-targets.spec.ts',
     'pan-lifecycle.spec.ts',
     'gesture-lifecycle.spec.ts',
     'gesture-concurrency.spec.ts',
