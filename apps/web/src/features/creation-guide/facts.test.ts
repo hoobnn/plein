@@ -4,6 +4,7 @@ import {
   connect,
   createDoc,
   createElement,
+  deleteElements,
   creativeReviewTarget,
   recordCreativeReview,
   setParams,
@@ -97,6 +98,34 @@ describe('持续创作引导的事实推导', () => {
     expect(creationGuideFacts(doc, { boardId: 'deleted' }).steps).toEqual([])
     expect(step(doc, 'trial', { boardId: a }).state).toBe('done')
     expect(step(doc, 'trial', { boardId: b }).state).toBe('ready')
+  })
+
+  it('已选分镜删除后即使仅剩另一份也不替用户更换，恢复后继续原选择', () => {
+    const doc = open(),
+      a = board(doc),
+      b = board(doc)
+    doc.undo.stopCapturing()
+    deleteElements(doc, [b])
+    expect(creationGuideFacts(doc, { boardId: b }).board).toBeUndefined()
+    expect(creationGuideFacts(doc, { boardId: b }).steps).toEqual([])
+    expect(creationGuideFacts(doc, { boardId: a }).board?.id).toBe(a)
+    doc.undo.undo()
+    expect(creationGuideFacts(doc, { boardId: b }).board?.id).toBe(b)
+  })
+
+  it('失效交付序列选择不回落到唯一剩余版本，也不显示成已确认', () => {
+    const doc = open(),
+      id = board(doc),
+      video = generated(doc, id, 'video')
+    const a = sequence(doc, video),
+      b = sequence(doc, video)
+    deleteElements(doc, [b])
+    const facts = creationGuideFacts(doc, { sequenceId: b })
+    expect(facts.sequences.map((sequence) => sequence.id)).toEqual([a])
+    expect(facts.sequence).toBeUndefined()
+    expect(facts.steps.find((s) => s.id === 'delivery')?.target).toBeUndefined()
+    expect(facts.steps.find((s) => s.id === 'delivery')?.detail).toContain('原交付序列已移除')
+    expect(creationGuideFacts(doc, { sequenceId: a }).sequence?.id).toBe(a)
   })
 
   it('只有接入当前分镜的文字算梗概，文字入口定位到真正输入而非其他游离文字', () => {

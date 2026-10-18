@@ -172,8 +172,11 @@ function deliveryConfirmed(sequence: CanvasElement | undefined) {
 export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): GuideFacts {
   const elements = [...doc.elements()]
   const boards = elements.filter((el) => el.kind === 'node' && el.nodeType === STORYBOARD_TYPE)
-  const board =
-    boards.find((el) => el.id === options.boardId) ?? (boards.length === 1 ? boards[0] : undefined)
+  const board = options.boardId
+    ? boards.find((el) => el.id === options.boardId)
+    : boards.length === 1
+      ? boards[0]
+      : undefined
   const result: GuideFacts = {
     boards: boards.map((el) => ({ id: el.id, name: el.name ?? '分镜' })),
     board,
@@ -207,9 +210,11 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
     const all = elements.filter((el) => el.nodeType === SEQUENCE_TYPE)
     if (all.length === 1) sequences.push(all[0]!)
   }
-  const sequence =
-    sequences.find((el) => el.id === options.sequenceId) ??
-    (sequences.length === 1 ? sequences[0] : undefined)
+  const sequence = options.sequenceId
+    ? sequences.find((el) => el.id === options.sequenceId)
+    : sequences.length === 1
+      ? sequences[0]
+      : undefined
   const trialShot = shots.find((shot) => shot.id === options.trialShotId) ?? shots[0]
   const staleIds = options.staleIds ?? new Set<string>()
   const progress = shots.map((shot) => ({
@@ -349,8 +354,10 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
         ? '序列输入已有变化，先检查当前成片是否仍适合交付'
         : confirmed
           ? '当前成片版本已人工确认，修改意见均已处理'
-          : sequences.length > 1 && !sequence
-            ? '先选择这份分镜要交付的成片序列'
+          : sequences.length && !sequence
+            ? options.sequenceId
+              ? '原交付序列已移除或不再关联，请重新选择'
+              : '先选择这份分镜要交付的成片序列'
             : sequence
               ? '打开序列检查成片、修改意见与当前版本的交付确认'
               : '展开镜头并连接成片序列后，可在序列中导出交付',

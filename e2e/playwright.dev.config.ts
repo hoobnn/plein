@@ -99,6 +99,8 @@ export default defineConfig({
     'single-download-large.spec.ts',
     'animatic-delivery.spec.ts',
     'delivery-feedback.spec.ts',
+    'creation-guide.spec.ts',
+    'creation-guide-boundaries.spec.ts',
     'animatic-refresh.spec.ts',
     'animatic-navigation.spec.ts',
     'templates.spec.ts',

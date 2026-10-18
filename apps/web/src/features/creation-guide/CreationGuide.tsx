@@ -1,12 +1,12 @@
 import type { Engine } from '@plein/canvas-core'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useDocVersion } from '../../canvas/hooks'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Select } from '../../ui/Select'
 import { useStale } from '../runs/stale'
 import { openAnimatic } from '../sequence/animatic'
-import { creationGuideFacts, type GuideState, type GuideTarget } from './facts'
+import { creationGuideFacts, type GuideState, type GuideStepId, type GuideTarget } from './facts'
 import { readGuidePreferences, writeGuidePreferences, type GuidePreferences } from './preferences'
 
 const states: Record<GuideState, string> = {
@@ -17,6 +17,23 @@ const states: Record<GuideState, string> = {
   attention: '待检查',
   skipped: '可跳过',
 }
+
+const targetOptions = (items: Array<{ id: string; name: string }>) =>
+  items.map((item) => {
+    let suffix = 6
+    while (
+      items.some(
+        (other) => other.id !== item.id && other.id.slice(-suffix) === item.id.slice(-suffix),
+      )
+    )
+      suffix++
+    return {
+      value: item.id,
+      label: items.some((other) => other.id !== item.id && other.name === item.name)
+        ? `${item.name} · ${item.id.slice(-suffix)}`
+        : item.name,
+    }
+  })
 
 export function CreationGuide({
   canvasId,
@@ -44,12 +61,16 @@ function Guide({
   const sync = useCanvas((s) => s.sync)
   const stale = useStale((s) => s.nodes)
   const [preferences, setPreferences] = useState(() => readGuidePreferences(canvasId))
-  const update = (patch: Partial<GuidePreferences>) =>
-    setPreferences((before) => {
-      const next = { ...before, ...patch }
-      writeGuidePreferences(canvasId, next)
-      return next
-    })
+  const preferencesRef = useRef(preferences)
+  preferencesRef.current = preferences
+  const [error, setError] = useState('')
+  const update = (patch: Partial<GuidePreferences>) => {
+    const next = { ...preferencesRef.current, ...patch }
+    preferencesRef.current = next
+    writeGuidePreferences(canvasId, next)
+    setPreferences(next)
+    setError('')
+  }
   const facts = creationGuideFacts(engine.doc, {
     ...preferences,
     staleIds: new Set([...stale].filter(([, kind]) => kind !== 'kept').map(([id]) => id)),
@@ -58,8 +79,40 @@ function Guide({
   if (!facts.boards.length) return null
   const next = facts.steps.find((step) => step.id === facts.next)
   const online = sync === 'connected'
-  const locate = (target: GuideTarget | undefined) => {
-    if (!target || !engine.doc.get(target.nodeId)) return
+  const readCurrent = (plan = false) => {
+    const state = useCanvas.getState()
+    if (state.engine !== engine || state.canvasId !== canvasId) {
+      setError('画布已切换，本次操作未执行')
+      return null
+    }
+    const current = creationGuideFacts(engine.doc, {
+      ...preferencesRef.current,
+      staleIds: new Set(
+        [...useStale.getState().nodes].filter(([, kind]) => kind !== 'kept').map(([id]) => id),
+      ),
+    })
+    if (!current.board || current.board.id !== facts.board?.id) {
+      setError('分镜选择已变化，请重新选择后继续')
+      return null
+    }
+    if (plan && current.planSignature !== facts.planSignature) {
+      setError('分镜计划已变化，请核对新计划后重试')
+      return null
+    }
+    return current
+  }
+  const locate = (stepId: GuideStepId, target: GuideTarget | undefined) => {
+    const current = readCurrent()
+    if (!current) return
+    if (
+      !target ||
+      JSON.stringify(current.steps.find((step) => step.id === stepId)?.target) !==
+        JSON.stringify(target)
+    ) {
+      setError('定位目标已变化，请核对当前步骤后重试')
+      return
+    }
+    setError('')
     const state = useCanvas.getState()
     state.setMode('flow')
     state.openStoryboard(null)
@@ -80,7 +133,12 @@ function Guide({
       })
     else
       requestAnimationFrame(() => {
-        if (useCanvas.getState().engine === engine && engine.doc.get(target.nodeId))
+        const latest = readCurrent()
+        if (
+          latest &&
+          JSON.stringify(latest.steps.find((step) => step.id === stepId)?.target) ===
+            JSON.stringify(target)
+        )
           window.dispatchEvent(new CustomEvent('plein:focus-generator', { detail: target.nodeId }))
       })
   }
@@ -103,6 +161,11 @@ function Guide({
           <Icon name={preferences.collapsed ? 'chevronDown' : 'arrowUp'} size={14} />
         </button>
       </div>
+      {error && (
+        <p role="alert" className="px-3 pb-2 text-xs text-danger">
+          {error}
+        </p>
+      )}
       {preferences.collapsed ? (
         <button
           type="button"
@@ -118,25 +181,28 @@ function Guide({
         </button>
       ) : (
         <div className="ui-scrollbar flex flex-col gap-3 overflow-y-auto px-3 pb-3">
-          {facts.boards.length > 1 && (
+          {(facts.boards.length > 1 || !facts.board) && (
             <label className="ui-field" htmlFor={`${canvasId}-guide-board`}>
               <span className="ui-label">继续哪份分镜</span>
               <Select
                 id={`${canvasId}-guide-board`}
                 aria-label="创作引导分镜"
                 value={facts.board?.id ?? ''}
-                options={[
-                  { value: '', label: '请选择分镜' },
-                  ...facts.boards.map((board) => ({ value: board.id, label: board.name })),
-                ]}
-                onChange={(boardId) =>
+                options={[{ value: '', label: '请选择分镜' }, ...targetOptions(facts.boards)]}
+                onChange={(boardId) => {
+                  // 选项移除时控件会回报当前空值；这不是用户改选，不能清掉失效身份。
+                  if (boardId === (facts.board?.id ?? '')) return
                   update({ boardId, trialShotId: undefined, sequenceId: undefined })
-                }
+                }}
               />
             </label>
           )}
           {!facts.board ? (
-            <p className="text-xs text-ink-subtle">画布有多份分镜，选定后再显示对应进度。</p>
+            <p className="text-xs text-ink-subtle">
+              {preferences.boardId
+                ? '原分镜选择已失效，请重新选择后继续。'
+                : '画布有多份分镜，选定后再显示对应进度。'}
+            </p>
           ) : (
             <>
               {facts.boards.length === 1 && (
@@ -157,7 +223,8 @@ function Guide({
                   />
                 </label>
               )}
-              {facts.sequences.length > 1 && (
+              {(facts.sequences.length > 1 ||
+                (preferences.sequenceId && !facts.sequence && facts.sequences.length > 0)) && (
                 <label className="ui-field" htmlFor={`${canvasId}-guide-sequence`}>
                   <span className="ui-label">成片交付序列</span>
                   <Select
@@ -166,12 +233,11 @@ function Guide({
                     value={facts.sequence?.id ?? ''}
                     options={[
                       { value: '', label: '请选择成片序列' },
-                      ...facts.sequences.map((sequence) => ({
-                        value: sequence.id,
-                        label: sequence.name,
-                      })),
+                      ...targetOptions(facts.sequences),
                     ]}
-                    onChange={(sequenceId) => update({ sequenceId })}
+                    onChange={(sequenceId) => {
+                      if (sequenceId !== (facts.sequence?.id ?? '')) update({ sequenceId })
+                    }}
                   />
                 </label>
               )}
@@ -189,9 +255,17 @@ function Guide({
                 <button
                   type="button"
                   className="ui-btn ui-btn-secondary ui-btn-sm"
-                  disabled={engine.doc.readOnly}
                   onClick={() => {
-                    if (facts.board) openAnimatic(engine, facts.board.id)
+                    const current = readCurrent(true)
+                    if (!current?.board) return
+                    const opened = openAnimatic(engine, current.board.id)
+                    setError(
+                      opened
+                        ? ''
+                        : engine.doc.readOnly
+                          ? '画布为只读，不能创建新样片；已有样片仍可打开查看'
+                          : '样片未打开，请根据通知检查后重试',
+                    )
                   }}
                 >
                   打开低成本分镜样片
@@ -205,7 +279,7 @@ function Guide({
                       disabled={!step.target}
                       aria-current={facts.next === step.id ? 'step' : undefined}
                       className={`flex w-full gap-2 rounded-lg p-2 text-left transition-colors hover:bg-hover disabled:opacity-60 ${facts.next === step.id ? 'bg-accent-soft' : ''}`}
-                      onClick={() => locate(step.target)}
+                      onClick={() => locate(step.id, step.target)}
                     >
                       <span
                         className={`flex size-5 shrink-0 items-center justify-center rounded-full text-2xs ${step.state === 'done' ? 'bg-accent text-white' : 'bg-surface-2 text-ink-muted'}`}
@@ -237,11 +311,12 @@ function Guide({
                     type="button"
                     className="ui-btn ui-btn-secondary ui-btn-sm"
                     onClick={() => {
-                      if (facts.board && facts.planSignature)
+                      const current = readCurrent(true)
+                      if (current?.board && current.planSignature)
                         update({
                           reviewedPlans: {
-                            ...preferences.reviewedPlans,
-                            [facts.board.id]: facts.planSignature,
+                            ...preferencesRef.current.reviewedPlans,
+                            [current.board.id]: current.planSignature,
                           },
                         })
                     }}
