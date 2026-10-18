@@ -108,8 +108,14 @@ export function AgentDock() {
   const engine = useCanvas((s) => s.engine)
   useEffect(() => {
     if (!engine) return
-    engine.camera.setInsets({ right: open && window.innerWidth >= 640 ? 424 : 0 })
-    return () => engine.camera.setInsets({ right: 0 })
+    const desktop = window.matchMedia('(min-width: 640px)')
+    const sync = () => engine.camera.setInsets({ right: open && desktop.matches ? 424 : 0 })
+    sync()
+    desktop.addEventListener('change', sync)
+    return () => {
+      desktop.removeEventListener('change', sync)
+      engine.camera.setInsets({ right: 0 })
+    }
   }, [engine, open])
 
   // Esc 关闭面板（输入框里的 Esc 也算）

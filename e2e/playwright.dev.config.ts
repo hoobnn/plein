@@ -35,6 +35,7 @@ export default defineConfig({
     'collaboration-fields.spec.ts',
     'prompt-collaboration.spec.ts',
     'camera-navigation.spec.ts',
+    'agent-layout.spec.ts',
     'pan-lifecycle.spec.ts',
     'gesture-lifecycle.spec.ts',
     'gesture-concurrency.spec.ts',
