@@ -282,6 +282,7 @@ export function Tasks() {
                       <GroupRow
                         key={g.id}
                         group={g}
+                        doc={doc}
                         name={groupName(g, doc, catalog)}
                         now={now}
                         onLocate={() => locate(g.frameId)}
@@ -564,6 +565,7 @@ function ActiveDetail({
 
 function GroupRow(props: {
   group: GroupInfo
+  doc: PleinDoc
   name: string
   now: number
   onLocate: () => void
@@ -571,6 +573,7 @@ function GroupRow(props: {
   onLocateNode: (id: string) => void
 }) {
   const { group: g, now } = props
+  const exists = props.doc.has(g.frameId)
   const [open, setOpen] = useState(false)
   const s = g.summary
   const detail =
@@ -596,9 +599,10 @@ function GroupRow(props: {
         <div className="flex items-baseline gap-2">
           <button
             type="button"
+            disabled={!exists}
             onClick={props.onLocate}
-            title="在画布上定位"
-            className="min-w-0 truncate text-left text-sm hover:underline"
+            title={exists ? '在画布上定位' : '目标已删除'}
+            className={`min-w-0 truncate text-left text-sm ${exists ? 'hover:underline' : 'text-ink-subtle line-through'}`}
           >
             {props.name}
           </button>
@@ -615,7 +619,14 @@ function GroupRow(props: {
         >
           {open ? '收起批次记录' : '批次记录'}
         </button>
-        {open && <BatchItems groupId={g.id} nameOf={props.nameOf} onLocate={props.onLocateNode} />}
+        {open && (
+          <BatchItems
+            groupId={g.id}
+            doc={props.doc}
+            nameOf={props.nameOf}
+            onLocate={props.onLocateNode}
+          />
+        )}
       </div>
       {g.status === 'running' && (
         <RowButton label="停止整组" onClick={() => void cancelGroup(g.id)}>
@@ -629,6 +640,7 @@ function GroupRow(props: {
 /** 批次快照：启动时定下的每个目标、阶段与结局；待解析的依赖和原因 */
 function BatchItems(props: {
   groupId: string
+  doc: PleinDoc
   nameOf: (id: string) => string
   onLocate: (id: string) => void
 }) {
@@ -652,8 +664,10 @@ function BatchItems(props: {
         <li key={it.nodeId} className="flex min-w-0 items-baseline gap-1.5 text-2xs">
           <button
             type="button"
+            disabled={!props.doc.has(it.nodeId)}
+            title={props.doc.has(it.nodeId) ? '在画布上定位' : '节点已删除'}
             onClick={() => props.onLocate(it.nodeId)}
-            className="min-w-0 truncate text-left text-ink-muted hover:underline"
+            className={`min-w-0 truncate text-left ${props.doc.has(it.nodeId) ? 'text-ink-muted hover:underline' : 'text-ink-subtle line-through'}`}
           >
             {props.nameOf(it.nodeId)}
           </button>
