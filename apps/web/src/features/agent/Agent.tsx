@@ -6,7 +6,7 @@ import type {
   AgentTurnSummary,
 } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../../api/client'
 import { queryKeys } from '../../api/query'
 import { renderMarkdown } from '../../canvas/markdown'
@@ -98,6 +98,11 @@ export function AgentDock() {
   const route = useRoute()
   const ready = useSession((s) => s.status === 'ready' && !!s.info?.principal)
   const { open, mood, unread, toggle, enter } = useAgent()
+  const trigger = useRef<HTMLButtonElement>(null)
+  const close = useCallback(() => {
+    toggle(false)
+    trigger.current?.focus()
+  }, [toggle])
   const canvasId = route.name === 'canvas' ? route.id : null
 
   useEffect(() => {
@@ -122,7 +127,11 @@ export function AgentDock() {
   useEffect(() => {
     if (!open) return
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !document.querySelector('[role=dialog]')) toggle(false)
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return
+      if (e.key === 'Escape' && !document.querySelector('[role=dialog]')) {
+        e.preventDefault()
+        toggle(false)
+      }
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
@@ -131,8 +140,9 @@ export function AgentDock() {
   if (!ready || route.name === 'demo') return null
   return (
     <>
-      <Presence>{open && <AgentPanel canvasId={canvasId} />}</Presence>
+      <Presence>{open && <AgentPanel canvasId={canvasId} onClose={close} />}</Presence>
       <button
+        ref={trigger}
         type="button"
         onClick={() => toggle()}
         aria-label={open ? '收起助手' : '打开助手'}
@@ -149,8 +159,8 @@ export function AgentDock() {
   )
 }
 
-function AgentPanel({ canvasId }: { canvasId: string | null }) {
-  const { status, agent, session, error, setAgent, loadStatus, toggle } = useAgent()
+function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose(): void }) {
+  const { status, agent, session, error, setAgent, loadStatus } = useAgent()
   const running = session?.status === 'running'
   const available = status?.agents.filter((a) => a.available) ?? []
   const current = session?.agent ?? agent
@@ -167,6 +177,14 @@ function AgentPanel({ canvasId }: { canvasId: string | null }) {
   return (
     <aside
       aria-label="助手"
+      onKeyDown={(e) => {
+        if (e.defaultPrevented || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
+        if (e.key === 'Escape' && !document.querySelector('[role=dialog]')) {
+          e.preventDefault()
+          e.stopPropagation()
+          onClose()
+        }
+      }}
       {...exit}
       className="plein-agent-panel ui-float pointer-events-auto fixed top-16 right-3 bottom-21 z-40 flex w-100 flex-col overflow-hidden rounded-xl max-sm:inset-x-3 max-sm:bottom-35 max-sm:w-auto"
     >
@@ -206,7 +224,7 @@ function AgentPanel({ canvasId }: { canvasId: string | null }) {
             aria-label="关闭"
             title="关闭（Esc）"
             className="ui-btn ui-btn-quiet ui-icon-btn"
-            onClick={() => toggle(false)}
+            onClick={onClose}
           >
             <Icon name="x" />
           </button>
@@ -756,6 +774,7 @@ function Composer({ running }: { running: boolean }) {
   const local = useAgent((s) => (s.session?.agent ?? s.agent) !== 'builtin')
   const focusSeq = useAgent((s) => s.focusSeq)
   const ref = useRef<HTMLTextAreaElement>(null)
+  const composing = useRef(false)
 
   // 打开时、点「让小满处理」时把光标放进输入框
   // oxlint-disable react-hooks/exhaustive-deps -- focusSeq 变化即重新聚焦
@@ -802,6 +821,15 @@ function Composer({ running }: { running: boolean }) {
           rows={1}
           placeholder="让小满帮你做点什么…"
           className="ui-input ui-input-lg ui-scrollbar max-h-40 min-h-9 flex-1 resize-none"
+          onCompositionStart={() => {
+            composing.current = true
+          }}
+          onCompositionEnd={() => {
+            composing.current = false
+          }}
+          onBlur={() => {
+            composing.current = false
+          }}
           onChange={(e) => {
             setText(e.target.value)
             const el = e.target
@@ -809,7 +837,12 @@ function Composer({ running }: { running: boolean }) {
             el.style.height = `${el.scrollHeight}px`
           }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+            if (composing.current || e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) {
+              // 保留输入法默认行为，阻止画布快捷键把输入框失焦。
+              e.stopPropagation()
+              return
+            }
+            if (e.key === 'Enter' && !e.shiftKey && !e.defaultPrevented) {
               e.preventDefault()
               submit()
             }
