@@ -40,6 +40,18 @@ export function createPlayer(
   const node = document.createElement('div')
   node.className = `plein-player plein-player-${kind}`
   node.tabIndex = -1
+  // 封面按钮第一次点击会挂载播放器；后续双击不能误点新出现的暂停/静音控件。
+  node.addEventListener(
+    'click',
+    (e) => {
+      if (e.detail > 1) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    },
+    true,
+  )
+  node.addEventListener('dblclick', (e) => e.stopPropagation())
 
   const media = document.createElement(kind)
   media.src = src

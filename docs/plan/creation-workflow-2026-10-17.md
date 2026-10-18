@@ -55,3 +55,22 @@
 整包检查同时发现并修复空间统计与后台文档落盘竞态：建立新统计和预检时最多完整重扫三次，执行清理、旧令牌和逐文件校验不放宽。持续写入仍拒绝发出预检令牌。
 
 本轮没有真实付费生成、真人可用性测试、人工成片质量验收或重新安装桌面包的结论；未提交或发布。使用入口见 [从分镜样片到交付](../guide/creation-workflow.md)。
+
+## 2026-10-18 序列与节奏样片的编辑 / 播放隔离
+
+序列和节奏样片生成前后均以双击进入对应编辑器；已有视频结果的封面分别提供「播放成片」「播放样片」独立按钮，提示分别为「双击编辑序列」「双击编辑节奏样片」。保留 Generator 的显式编辑入口。普通视频和音频仍双击播放。
+
+画布覆盖层排除这两种节点的双击播放，并监听统一的 `sequence` 状态：任意 `openSequence` 入口进入编辑都会调用播放器释放流程（暂停、移除 `src`、重新 `load()`、移除 DOM）。编辑器打开期间不能重新创建画布播放器。播放按钮隔离指针、单击和双击；播放器同时吞掉连续点击的第二下，防止封面按钮被播放器替换后误点静音或暂停。
+
+验证使用本地 FFmpeg 合成的 30 秒带音轨 MP4，不调用生成平台。新增 `e2e/sequence-activation.spec.ts`，覆盖生成前后双击、独立按钮单击 / 双击、键盘触发 Generator 编辑（排除画布 pointerdown 提前停播造成的假通过）、播放时双击另一序列进入编辑、节点位置不变和普通视频 / 音频回归。持有旧媒体 DOM 引用核对 `paused === true`、`src` 已移除且 `isConnected === false`。
+
+| 检查                                                                                                       | 结果                        |
+| ---------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `pnpm exec vp check`（本次源码与测试路径）                                                                 | 格式与 lint 通过            |
+| `pnpm exec tsc -p apps/web`、`pnpm exec tsc -p .`                                                          | 前端与 E2E 类型检查通过     |
+| `pnpm exec vp test run apps/web/src/canvas/player.test.ts apps/web/src/features/sequence/animatic.test.ts` | 2 个文件、8 项通过          |
+| 开发态 Chromium（临时专项配置，复用 `playwright.dev.config.ts`）                                           | 3 / 3 通过，含 StrictMode   |
+| `pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e`                                      | 构建通过                    |
+| `pnpm exec playwright test -c e2e/playwright.config.ts e2e/sequence-activation.spec.ts`                    | 构建态 Chromium，3 / 3 通过 |
+
+本次仅完成专项检查，没有重跑全仓 `pnpm verify`、全部 E2E、真实付费生成或安装桌面包验收。临时专项测试配置已删除；未提交、推送或发布。

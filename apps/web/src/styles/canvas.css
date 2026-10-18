@@ -429,6 +429,7 @@
 }
 
 .plein-node-body.is-media {
+  gap: 8px;
   display: flex;
   align-items: flex-end;
   justify-content: flex-end;

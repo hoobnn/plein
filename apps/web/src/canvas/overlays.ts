@@ -3,6 +3,8 @@ import { markdown } from '@codemirror/lang-markdown'
 import { EditorView, drawSelection, keymap } from '@codemirror/view'
 import type { Engine } from '@plein/canvas-core'
 import { currentResult, elementMedia, type Rect } from '@plein/doc'
+import { ANIMATIC_TYPE, SEQUENCE_TYPE } from '@plein/nodes'
+import { useCanvas } from '../stores/canvas'
 import { yCollab } from 'y-codemirror.next'
 import * as Y from 'yjs'
 import { renderMarkdown } from './markdown'
@@ -88,7 +90,15 @@ export class CanvasOverlays {
     root.appendChild(this.measurer)
     this.disposers.push(
       engine.onViewChange(({ content }) => this.sync(content)),
-      engine.onActivate((id) => this.activate(id)),
+      engine.onActivate((id) => {
+        const el = engine.scene.get(id)
+        // 序列与样片的双击由 CanvasView 打开编辑器，播放仅走封面按钮。
+        if (el?.nodeType === SEQUENCE_TYPE || el?.nodeType === ANIMATIC_TYPE) return
+        this.activate(id)
+      }),
+      useCanvas.subscribe((state, previous) => {
+        if (state.sequence && state.sequence !== previous.sequence) this.deactivate()
+      }),
       engine.selection.onChange(() => {
         if (this.active && !engine.selection.has(this.active.id)) this.deactivate()
       }),
@@ -181,6 +191,7 @@ export class CanvasOverlays {
   }
 
   activate(id: string) {
+    if (useCanvas.getState().sequence) return
     if (this.active?.id === id) return
     this.deactivate()
     const el = this.engine.scene.get(id)

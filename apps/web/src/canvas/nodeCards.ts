@@ -2,6 +2,8 @@ import { type Engine, NODE_LAYOUT } from '@plein/canvas-core'
 import { type CanvasElement, currentResult, type RunStatus } from '@plein/doc'
 import { useCanvas } from '../stores/canvas'
 import {
+  ANIMATIC_TYPE,
+  SEQUENCE_TYPE,
   ASSET_NODE_TYPES,
   presetsFor,
   profileEmpty,
@@ -30,6 +32,7 @@ import { clipOverlay } from './occlusion'
 type PromptPreset = Catalog['prompts'][number]
 
 export interface NodeCardActions {
+  play(id: string): void
   run(id: string): void
   cancel(id: string): void
   /** 空节点上的“尝试”：套用提示词预设并聚焦生成器 */
@@ -322,6 +325,13 @@ export class NodeCards {
     card.nav.hidden = list.length < 2
     card.count.textContent = `${list.findIndex((r) => r.id === cur?.id) + 1}/${list.length}`
 
+    const editHint =
+      el.nodeType === SEQUENCE_TYPE
+        ? '双击编辑序列'
+        : el.nodeType === ANIMATIC_TYPE
+          ? '双击编辑节奏样片'
+          : undefined
+    card.root.title = editHint ?? ''
     card.body.className = 'plein-node-body'
     if (!info) {
       card.body.textContent = `未安装的节点类型：${el.nodeType ?? '未知'}`
@@ -408,8 +418,21 @@ export class NodeCards {
       if (v.type === 'video') {
         const tag = document.createElement('span')
         tag.className = 'ui-badge'
-        tag.append(iconElement('play', 12), '双击播放')
+        tag.append(iconElement('play', 12), editHint ?? '双击播放')
         card.body.appendChild(tag)
+        if (editHint) {
+          const label = el.nodeType === SEQUENCE_TYPE ? '播放成片' : '播放样片'
+          const play = button('plein-node-action ui-badge', label, { text: label })
+          play.prepend(iconElement('play', 14))
+          // 独立控件不进入画布的节点激活、选择或拖动路径。
+          for (const event of ['pointerdown', 'pointerup', 'dblclick'])
+            play.addEventListener(event, (e) => e.stopPropagation())
+          play.addEventListener('click', (e) => {
+            e.stopPropagation()
+            this.actions.play(el.id)
+          })
+          card.body.appendChild(play)
+        }
       }
       card.body.classList.add('is-media')
     } else {
@@ -429,6 +452,12 @@ export class NodeCards {
     icon.className = 'plein-node-empty-icon'
     icon.appendChild(iconElement(glyphOf(el, kind), 24))
     center.appendChild(icon)
+    if (el.nodeType === SEQUENCE_TYPE || el.nodeType === ANIMATIC_TYPE) {
+      const hint = document.createElement('span')
+      hint.className = 'plein-node-muted'
+      hint.textContent = el.nodeType === SEQUENCE_TYPE ? '双击编辑序列' : '双击编辑节奏样片'
+      center.appendChild(hint)
+    }
     if (el.nodeType === STAGE_TYPE) {
       const hint = document.createElement('span')
       hint.className = 'plein-node-muted'
