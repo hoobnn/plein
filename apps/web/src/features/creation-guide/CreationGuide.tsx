@@ -113,6 +113,8 @@ function Guide({
   // 自由画布不出现剧本任务，也不自动创建结构或运行任何节点。
   if (!facts.boards.length) return null
   const next = facts.steps.find((step) => step.id === facts.next)
+  const boardListKey = JSON.stringify(facts.boards.map((board) => board.id))
+  const sequenceListKey = JSON.stringify([facts.board?.id, facts.sequences.map((item) => item.id)])
   const shotListKey = JSON.stringify(facts.shots.map((shot) => shot.id))
   const online = sync === 'connected'
   const readCurrent = (plan = false) => {
@@ -214,13 +216,18 @@ function Guide({
           <label className="ui-field" htmlFor={`${canvasId}-guide-board`}>
             <span className="ui-label">继续哪份分镜</span>
             <Select
+              key={boardListKey}
               id={`${canvasId}-guide-board`}
               aria-label="创作引导分镜"
               value={facts.board?.id ?? ''}
               options={[{ value: '', label: '请选择分镜' }, ...targetOptions(facts.boards)]}
               onChange={(boardId) => {
-                // 选项移除时控件会回报当前空值；这不是用户改选，不能清掉失效身份。
-                if (boardId === (facts.board?.id ?? '')) return
+                const state = useCanvas.getState()
+                if (state.engine !== engine || state.canvasId !== canvasId) return
+                const latest = creationGuideFacts(engine.doc, preferencesRef.current)
+                if (JSON.stringify(latest.boards.map((board) => board.id)) !== boardListKey) return
+                // 列表变更时保留失效身份，不接受旧实例恢复初始值或清空选择。
+                if (!boardId || boardId === facts.board?.id) return
                 update({ boardId, trialShotId: undefined, sequenceId: undefined })
               }}
             />
@@ -273,6 +280,7 @@ function Guide({
               <label className="ui-field" htmlFor={`${canvasId}-guide-sequence`}>
                 <span className="ui-label">成片交付序列</span>
                 <Select
+                  key={sequenceListKey}
                   id={`${canvasId}-guide-sequence`}
                   aria-label="创作引导交付序列"
                   value={facts.sequence?.id ?? ''}
@@ -281,7 +289,17 @@ function Guide({
                     ...targetOptions(facts.sequences),
                   ]}
                   onChange={(sequenceId) => {
-                    if (sequenceId !== (facts.sequence?.id ?? '')) update({ sequenceId })
+                    const state = useCanvas.getState()
+                    if (state.engine !== engine || state.canvasId !== canvasId) return
+                    const latest = creationGuideFacts(engine.doc, preferencesRef.current)
+                    if (
+                      JSON.stringify([
+                        latest.board?.id,
+                        latest.sequences.map((item) => item.id),
+                      ]) !== sequenceListKey
+                    )
+                      return
+                    if (sequenceId && sequenceId !== facts.sequence?.id) update({ sequenceId })
                   }}
                 />
               </label>

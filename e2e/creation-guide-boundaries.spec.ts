@@ -65,6 +65,41 @@ async function remove(page: Page, id: string) {
   }, id)
 }
 
+for (const kind of ['board', 'sequence'] as const) {
+  test(`收起重开后改选${kind === 'board' ? '分镜' : '成片'}再删除，不恢复打开时的旧选择`, async ({
+    page,
+  }) => {
+    const f = await fixture(page, kind === 'board' ? 2 : 1, kind === 'sequence' ? 2 : 1)
+    const name = kind === 'board' ? '创作引导分镜' : '创作引导交付序列'
+    const label = kind === 'board' ? '引导分镜' : '引导成片'
+    const ids = kind === 'board' ? f.boards : f.films
+    const choose = guide(page).getByRole('combobox', { name, exact: true })
+    await choose.click()
+    await page.getByRole('option', { name: `${label}1`, exact: true }).click()
+    await guide(page).getByRole('button', { name: '收起创作引导', exact: true }).click()
+    await expect(guide(page)).toHaveCount(0)
+    await page.getByRole('button', { name: '展开创作引导', exact: true }).click()
+    await expect(choose).toContainText(`${label}1`)
+    await choose.click()
+    await page.getByRole('option', { name: `${label}2`, exact: true }).click()
+    await remove(page, ids[1]!)
+    await expect(guide(page)).toContainText(
+      kind === 'board' ? '原分镜选择已失效' : '原交付序列已移除或不再关联',
+    )
+    expect(
+      await page.evaluate(({ key, field }) => JSON.parse(localStorage.getItem(key)!)[field], {
+        key: `plein:creation-guide:v1:${canvasId(page)}`,
+        field: kind === 'board' ? 'boardId' : 'sequenceId',
+      }),
+    ).toBe(ids[1])
+    await page.evaluate(() =>
+      (window.__plein.engine as typeof window.__plein.engine & { undo(): void }).undo(),
+    )
+    await expect(choose).toContainText(`${label}2`)
+    expect(f.submitted).toEqual([])
+  })
+}
+
 test('已选分镜删除后不自动切到剩余分镜，撤销恢复与重新选择均可继续', async ({ page }) => {
   const f = await fixture(page, 2)
   const choose = guide(page).getByRole('combobox', { name: '创作引导分镜', exact: true })
