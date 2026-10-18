@@ -104,6 +104,18 @@ function mockAgentStep(input: CapabilityInput<'text.chat'>): ProviderOutput[] {
     typeof m?.content === 'string' ? m.content : ''
   if (results.length === 0) return call('get_canvas', {})
   const made = results.find((m) => m.toolName === 'create_node')
+  const runIndex = results.findIndex((m) => m.toolName === 'run_node')
+  let gated: { status?: string; approval_id?: string } | undefined
+  try {
+    gated = JSON.parse(text(results[runIndex]) || '{}') as typeof gated
+  } catch {
+    // 非 JSON 工具结果不代表需要确认。
+  }
+  const runReply = text(
+    results.slice(runIndex + 1).findLast((m) => m.toolName === 'await_approval'),
+  )
+  const runApproval = gated?.status === 'needs_approval' ? gated.approval_id : undefined
+  const waitingForRun = !!runApproval && (!runReply || runReply.includes('"pending"'))
   if (/计划模式/.test(raw)) {
     // 先出计划，等用户同意，再边做边打勾
     const plan = results.find((m) => m.toolName === 'propose_plan')
@@ -112,7 +124,11 @@ function mockAgentStep(input: CapabilityInput<'text.chat'>): ProviderOutput[] {
         summary: '新建一个生成图片节点并出图',
         steps: ['新建生成图片节点', '运行出图'],
       })
-    const waits = results.filter((m) => m.toolName === 'await_approval')
+    const firstUpdate = results.findIndex((m) => m.toolName === 'update_plan')
+    // 后续运行可能有自己的确认，不能把它的结果当成计划答复。
+    const waits = results
+      .slice(0, firstUpdate < 0 ? undefined : firstUpdate)
+      .filter((m) => m.toolName === 'await_approval')
     const waited = text(waits.at(-1))
     if (!waits.length || waited.includes('pending'))
       return call('await_approval', {
@@ -120,11 +136,15 @@ function mockAgentStep(input: CapabilityInput<'text.chat'>): ProviderOutput[] {
       })
     if (!waited.includes('同意')) return [{ type: 'text', text: '【mock】好的，这个计划先不做。' }]
     const updates = results.filter((m) => m.toolName === 'update_plan').length
-    const ran = results.some((m) => m.toolName === 'run_node')
+    const ran = runIndex >= 0 && !waitingForRun
     if (updates === 0) return call('update_plan', { step: 1, status: 'doing' })
     if (made && updates === 1) return call('update_plan', { step: 1, status: 'done' })
     if (made && updates === 2) return call('update_plan', { step: 2, status: 'doing' })
-    if (ran && updates === 3) return call('update_plan', { step: 2, status: 'done' })
+    if (ran && updates === 3)
+      return call('update_plan', {
+        step: 2,
+        status: /用户跳过|过期/.test(runReply) ? 'skipped' : 'done',
+      })
   }
   if (/更紧张/.test(ask)) {
     // 修改已有镜头：先找到生成图片节点，出修改方案，等用户选批准范围
@@ -168,6 +188,11 @@ function mockAgentStep(input: CapabilityInput<'text.chat'>): ProviderOutput[] {
   const madeId = made && (JSON.parse(text(made) || '{}') as { id?: string }).id
   if (madeId && !results.some((m) => m.toolName === 'run_node'))
     return call('run_node', { id: madeId, wait_seconds: 10 })
+  if (runApproval) {
+    if (waitingForRun) return call('await_approval', { approval_id: runApproval })
+    if (/用户跳过|过期/.test(runReply))
+      return [{ type: 'text', text: '【mock】这次运行没有执行，已保留创建的节点。' }]
+  }
   // 做完把用户的镜头带到结果上
   if (madeId && !results.some((m) => m.toolName === 'ui_focus'))
     return call('ui_focus', { ids: [madeId] })
