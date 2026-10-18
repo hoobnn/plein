@@ -706,6 +706,7 @@ function Editor({
   const readOnly = !!official
   const character = kind.id === 'character'
   const [draft, setDraft] = useState(() => draftOf(kind, item, official, projectId, seed))
+  const editor = useRef<HTMLDivElement>(null)
   const latestDraft = useRef(draft)
   latestDraft.current = draft
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
@@ -761,8 +762,19 @@ function Editor({
   })
 
   /** 保存并返回条目；官方条目复制一份成自己的。画布上已经放下的这张角色卡跟着同步档案 */
-  const beginMutation = () => {
+  const beginMutation = (validateDraft = false) => {
     if (mutation.current || pendingUploads > 0) return null
+    const invalid = editor.current?.querySelector<HTMLElement>('[aria-invalid="true"]')
+    if (validateDraft && invalid) {
+      setError('请先修正标记的输入，再保存或添加到画布。')
+      // 错误条会压缩编辑区；等布局提交后再定位，不能只聚焦到被页脚遮住的字段。
+      requestAnimationFrame(() => {
+        if (!editor.current?.contains(invalid)) return
+        invalid.focus()
+        invalid.scrollIntoView({ block: 'center', inline: 'nearest' })
+      })
+      return null
+    }
     mutation.current = true
     setBusy(true)
     setError(null)
@@ -778,7 +790,7 @@ function Editor({
     if (session.active) setBusy(false)
   }
   const save = async (placingAfterSave = false): Promise<LibraryItem | null> => {
-    const session = beginMutation()
+    const session = beginMutation(true)
     if (!session) return null
     const submitted = draft
     try {
@@ -995,7 +1007,7 @@ function Editor({
   )
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div ref={editor} className="flex min-h-0 flex-1 flex-col">
       {saveNotice && (
         <p
           role="status"
