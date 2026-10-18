@@ -32,6 +32,7 @@ export default defineConfig({
     'project-list-recovery.spec.ts',
     'projects.spec.ts',
     'library-navigation.spec.ts',
+    'library-sources.spec.ts',
     'library.spec.ts',
     'library-placement.spec.ts',
     'library-mutations.spec.ts',

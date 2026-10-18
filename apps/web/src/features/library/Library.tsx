@@ -11,8 +11,10 @@ import {
   profileSize,
 } from '@plein/nodes'
 import type { LibraryItem, LibraryKind } from '@plein/protocol'
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { assetUrls } from '../../api/client'
+import { api, assetUrls } from '../../api/client'
+import { queryKeys } from '../../api/query'
 import { type CanvasMedia, canvasMedia, coverOf, placeInputOf, type PlaceInput } from './canvas'
 import { useCanvas } from '../../stores/canvas'
 import { type LibrarySeed, useLibrary } from './store'
@@ -78,6 +80,31 @@ export function LibraryPanel() {
 
 function Panel({ kind: kindId }: { kind: LibraryKind }) {
   const { items, loaded, loading, error, projectId, show, load } = useLibrary()
+  const projects = useQuery({
+    queryKey: queryKeys.projects,
+    queryFn: api.projects,
+    refetchOnMount: 'always',
+  })
+  const sources = useMemo(() => {
+    const rows = projects.data ?? []
+    const ids = [
+      ...new Set([
+        ...rows.map((p) => p.id),
+        ...items.flatMap((item) => (item.projectId ? [item.projectId] : [])),
+      ]),
+    ]
+    const counts = new Map<string, number>()
+    for (const project of rows) counts.set(project.title, (counts.get(project.title) ?? 0) + 1)
+    return new Map(
+      ids.map((id) => {
+        const project = rows.find((p) => p.id === id)
+        if (project && counts.get(project.title) === 1) return [id, project.title]
+        let size = 6
+        while (ids.some((other) => other !== id && other.slice(-size) === id.slice(-size))) size++
+        return [id, `${project?.title ?? '项目'} · ${id.slice(-size)}`]
+      }),
+    )
+  }, [items, projects.data])
   const engine = useCanvas((s) => s.engine)
   const open = useLibrary((s) => s.open)
   const placement = useLibraryPlacement(engine, open)
@@ -293,6 +320,23 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
           {placement.error}。请重试放入。
         </p>
       )}
+      {!editing && scope !== 'project' && scope !== 'official' && projects.isError && (
+        <div
+          role="alert"
+          className="mx-5 my-2 flex flex-wrap items-center gap-2 text-xs text-danger"
+        >
+          <span>来源项目读取失败，可重试更新名称。</span>
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary ui-btn-xs"
+            disabled={projects.isFetching}
+            aria-busy={projects.isFetching}
+            onClick={() => void projects.refetch()}
+          >
+            重试来源项目
+          </button>
+        </div>
+      )}
       {editing ? (
         <Editor
           key={editorKeyOf(kindId, editing)}
@@ -387,6 +431,13 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
                         key={it.id}
                         kind={kind}
                         item={it}
+                        source={
+                          scope === 'project'
+                            ? undefined
+                            : it.projectId
+                              ? sources.get(it.projectId)
+                              : '未归属项目'
+                        }
                         canPlace={canPlace}
                         placing={placement.isPlacing(placeInputOf(it)!)}
                         onOpen={(cover) => openItem(it.id, cover)}
@@ -480,6 +531,7 @@ function tagLine(kind: LibraryKindSpec, tags: Record<string, string>) {
 function Card({
   kind,
   item,
+  source,
   canPlace,
   placing,
   onOpen,
@@ -487,6 +539,7 @@ function Card({
 }: {
   kind: LibraryKindSpec
   item: LibraryItem
+  source?: string
   canPlace: boolean
   placing: boolean
   onOpen(cover: HTMLElement | null): void
@@ -587,7 +640,8 @@ function Card({
           </div>
           <div className="px-3 pt-2.5 pb-3">
             <div className="truncate text-sm font-medium">{item.name}</div>
-            <div className="truncate text-xs text-ink-subtle">
+            <div className="truncate text-xs text-ink-subtle" title={source}>
+              {source && <>{source} · </>}
               {item.profile && profile && (profile.periods || profile.expressions)
                 ? profileLine(item.profile, profile)
                 : tagLine(kind, item.tags) || `${item.images.length} 张参考图`}
@@ -1031,7 +1085,9 @@ function Editor({
             checked={draft.inProject}
             onChange={(e) => patch({ inProject: e.target.checked })}
           />
-          归到当前项目（「本项目」里能看到；不勾选则不归属任何项目）
+          {item?.projectId && item.projectId !== projectId
+            ? '保留在来源项目（不勾选则不归属任何项目）'
+            : '归到当前项目（「本项目」里能看到；不勾选则不归属任何项目）'}
         </label>
       )}
     </div>
