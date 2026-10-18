@@ -1,6 +1,6 @@
 import type { CleanupPreview, MaintenanceSettings } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Switch } from '../../ui/Switch'
 import { maintenanceApi } from './maintenance-client'
 
@@ -16,7 +16,7 @@ export function DataMaintenance() {
   const status = useQuery({
     queryKey: ['maintenance', 'status'],
     queryFn: maintenanceApi.status,
-    refetchInterval: 10_000,
+    refetchInterval: (query) => (query.state.error ? false : 10_000),
   })
   const space = useQuery({
     queryKey: ['maintenance', 'space'],
@@ -29,6 +29,10 @@ export function DataMaintenance() {
   const [error, setError] = useState<string | null>(null)
   const [preview, setPreview] = useState<CleanupPreview | null>(null)
   const [restored, setRestored] = useState<string | null>(null)
+  const feedback = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (message || error) feedback.current?.scrollIntoView({ block: 'nearest' })
+  }, [message, error])
   useEffect(() => {
     if (status.data && !settings) setSettings(status.data.settings)
   }, [status.data, settings])
@@ -46,17 +50,27 @@ export function DataMaintenance() {
       setBusy(false)
     }
   }
-  if (status.error)
-    return (
-      <p role="alert" className="text-sm text-danger">
-        {status.error.message}
-      </p>
-    )
+  const retryStatus = (
+    <button
+      type="button"
+      className="ui-btn ui-btn-secondary self-start"
+      disabled={busy || status.isFetching}
+      onClick={() => void status.refetch()}
+    >
+      重试读取维护状态
+    </button>
+  )
   if (!status.data || !settings)
     return (
-      <p role="status" className="text-sm text-ink-subtle">
-        读取数据维护状态…
-      </p>
+      <div className="flex flex-col gap-3">
+        <p
+          role={status.error ? 'alert' : 'status'}
+          className={status.error ? 'text-sm text-danger' : 'text-sm text-ink-subtle'}
+        >
+          {status.error ? `读取维护状态失败：${status.error.message}` : '读取数据维护状态…'}
+        </p>
+        {status.error && retryStatus}
+      </div>
     )
   const locked = busy || status.data.running != null
   const updateNumber = (
@@ -65,6 +79,33 @@ export function DataMaintenance() {
   ) => setSettings({ ...settings, [key]: Number(value) })
   return (
     <div className="flex flex-col gap-6">
+      {(locked || message || error || status.error) && (
+        <div ref={feedback} className="flex flex-col gap-3">
+          {locked && (
+            <p role="status" className="text-xs text-ink-subtle">
+              维护处理中…
+            </p>
+          )}
+          {message && (
+            <p role="status" className="text-xs text-ink-muted">
+              {message}
+            </p>
+          )}
+          {error && (
+            <p role="alert" className="text-xs text-danger">
+              {error}
+            </p>
+          )}
+          {status.error && (
+            <div className="flex flex-col gap-3">
+              <p role="alert" className="text-sm text-danger">
+                维护状态更新失败：{status.error.message}
+              </p>
+              {retryStatus}
+            </div>
+          )}
+        </div>
+      )}
       <section className="flex flex-col gap-3" aria-label="自动备份">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-medium">自动备份</h3>
@@ -333,21 +374,6 @@ export function DataMaintenance() {
             </div>
           ))}
         </section>
-      )}
-      {locked && (
-        <p role="status" className="text-xs text-ink-subtle">
-          维护处理中…
-        </p>
-      )}
-      {message && (
-        <p role="status" className="text-xs text-ink-muted">
-          {message}
-        </p>
-      )}
-      {error && (
-        <p role="alert" className="text-xs text-danger">
-          {error}
-        </p>
       )}
     </div>
   )
