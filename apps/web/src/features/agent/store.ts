@@ -61,8 +61,8 @@ interface AgentStore {
   setAccess(access: AgentAccess): void
   /** 允许或跳过一张确认单；修改方案允许时带上批准范围 */
   decide(approvalId: string, allow: boolean, pick?: ApplyEditPlan): Promise<void>
-  /** 逐项编辑修改方案：重新检查后卡片经事件流换成新方案；失败时返回原因 */
-  revisePlan(approvalId: string, edits: ReviseEditPlan['edits']): Promise<string | null>
+  /** 逐项编辑方案：成功返回 null，失败返回原因，上下文变化返回 undefined 并忽略旧结果。 */
+  revisePlan(approvalId: string, edits: ReviseEditPlan['edits']): Promise<string | null | undefined>
   /** 切换到某块画布（null 表示不在画布里）：读它的会话，接上最近一个 */
   enter(canvasId: string | null): Promise<void>
   select(id: string): Promise<void>
@@ -290,6 +290,7 @@ export const useAgent = create<AgentStore>((set, get) => {
     },
 
     async decide(approvalId, allow, pick) {
+      if (get().pendingActions[`${get().session?.id}/revise/${approvalId}`]) return
       await sessionAction(`decide/${approvalId}`, (id) =>
         api.decideAgentApproval(id, approvalId, allow, pick),
       )
@@ -298,11 +299,21 @@ export const useAgent = create<AgentStore>((set, get) => {
     async revisePlan(approvalId, edits) {
       const id = get().session?.id
       if (!id) return '会话不存在'
+      if (get().selecting) return undefined
+      const key = `${id}/revise/${approvalId}`
+      if (get().pendingActions[key] || get().pendingActions[`${id}/decide/${approvalId}`])
+        return '方案正在处理中'
+      const mine = selectSeq
+      set({ pendingActions: { ...get().pendingActions, [key]: true } })
       try {
         await api.reviseAgentEditPlan(id, approvalId, edits)
-        return null
+        return mine === selectSeq && get().session?.id === id ? null : undefined
       } catch (err) {
-        return (err as Error).message
+        return mine === selectSeq && get().session?.id === id ? (err as Error).message : undefined
+      } finally {
+        const pendingActions = { ...get().pendingActions }
+        delete pendingActions[key]
+        set({ pendingActions })
       }
     },
 

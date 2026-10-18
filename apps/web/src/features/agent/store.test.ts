@@ -13,6 +13,7 @@ vi.mock('../../api/client', () => ({
     stopAgent: vi.fn(),
     undoAgentTurn: vi.fn(),
     decideAgentApproval: vi.fn(),
+    reviseAgentEditPlan: vi.fn(),
   },
 }))
 
@@ -61,6 +62,7 @@ afterEach(() => {
   vi.mocked(api.stopAgent).mockReset()
   vi.mocked(api.undoAgentTurn).mockReset()
   vi.mocked(api.decideAgentApproval).mockReset()
+  vi.mocked(api.reviseAgentEditPlan).mockReset()
 })
 
 describe('助手草稿与发送生命周期', () => {
@@ -150,6 +152,26 @@ describe('助手草稿与发送生命周期', () => {
 })
 
 describe('智能体会话', () => {
+  it('重新检查期间不接受重复检查或批准，迟到失败不返回旧错误', async () => {
+    useAgent.setState({ canvasId: 'c1', session: session('s1') })
+    const pending = deferred<void>()
+    vi.mocked(api.reviseAgentEditPlan).mockReturnValue(
+      pending.promise.then(() => {
+        throw new Error('旧方案失败')
+      }),
+    )
+    vi.mocked(api.agentSession).mockImplementation(async (id) => session(id))
+    const first = useAgent.getState().revisePlan('approval', [])
+    const second = useAgent.getState().revisePlan('approval', [])
+    const approval = useAgent.getState().decide('approval', true)
+    expect(api.reviseAgentEditPlan).toHaveBeenCalledTimes(1)
+    expect(api.decideAgentApproval).not.toHaveBeenCalled()
+    await useAgent.getState().select('s2')
+    pending.resolve()
+    const [result] = await Promise.all([first, second, approval])
+    expect(result).toBeUndefined()
+    expect(useAgent.getState().pendingActions).toEqual({})
+  })
   it('确认期间不重复提交相反选择，切换会话后迟到错误不串入', async () => {
     useAgent.setState({ canvasId: 'c1', session: session('s1') })
     const pending = deferred<void>()

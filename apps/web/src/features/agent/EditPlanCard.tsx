@@ -10,7 +10,7 @@ import {
   pickedTargets,
   stepsFor,
 } from '@plein/protocol'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { useAgent } from './store'
@@ -88,7 +88,8 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
   const busy = useAgent(
     (s) => !!s.pendingActions[`${s.session?.id}/decide/${item.id}`] || !!s.selecting,
   )
-  const [revising, setRevising] = useState(false)
+  const revising = useAgent((s) => !!s.pendingActions[`${s.session?.id}/revise/${item.id}`])
+  const composing = useRef(false)
   const [error, setError] = useState<string | null>(null)
   /** 不勾的目标 / 步骤（节点 id） */
   const [off, setOff] = useState<ReadonlySet<string>>(new Set())
@@ -117,10 +118,9 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
     await useAgent.getState().decide(item.id, allow, pick)
   }
   const revise = async (patch: Parameters<typeof editsOf>[1]) => {
-    setRevising(true)
     setError(null)
     const failed = await useAgent.getState().revisePlan(item.id, editsOf(plan.targets, patch))
-    setRevising(false)
+    if (failed === undefined) return
     if (failed) setError(failed)
     else setEditing(null)
   }
@@ -278,8 +278,25 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
                           // oxlint-disable-next-line jsx-a11y/no-autofocus -- 点了编辑才出现，直接接着写
                           autoFocus
                           disabled={revising}
+                          onCompositionStart={() => {
+                            composing.current = true
+                          }}
+                          onCompositionEnd={() => {
+                            composing.current = false
+                          }}
+                          onBlur={() => {
+                            composing.current = false
+                          }}
                           onChange={(e) => setEditing({ ...editing, draft: e.target.value })}
                           onKeyDown={(e) => {
+                            if (
+                              composing.current ||
+                              e.nativeEvent.isComposing ||
+                              e.nativeEvent.keyCode === 229
+                            ) {
+                              e.stopPropagation()
+                              return
+                            }
                             if (e.key === 'Escape') {
                               e.stopPropagation()
                               setEditing(null)
@@ -334,7 +351,11 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
           )
         })}
       </ul>
-      {error && <p className="text-danger">{error}</p>}
+      {error && (
+        <p role="alert" className="text-danger">
+          {error}
+        </p>
+      )}
       {pending && plan.steps.length > 0 && (
         <div className="flex flex-col gap-1">
           <span className="text-ink-subtle">批准后会运行</span>
