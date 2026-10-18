@@ -26,6 +26,7 @@ export function ProviderRow({
   onSaved,
   enableOnSave = false,
   disabled = false,
+  active = true,
 }: {
   provider: ProviderInfo
   open: boolean
@@ -34,6 +35,7 @@ export function ProviderRow({
   /** 保存时顺带启用（首次启动引导里填完密钥就能用） */
   enableOnSave?: boolean
   disabled?: boolean
+  active?: boolean
 }) {
   const [config, setConfig] = useState<ProviderConfigView | null>(null)
   const [settings, setSettings] = useState<Record<string, unknown>>({})
@@ -47,9 +49,9 @@ export function ProviderRow({
   const [numberEditing, setNumberEditing] = useState(false)
   const closedFeedback = useRef<HTMLParagraphElement>(null)
   useEffect(() => {
-    if (!open && (busy || status?.error))
+    if (active && !open && (busy || status?.error))
       closedFeedback.current?.scrollIntoView({ block: 'nearest' })
-  }, [open, busy, status])
+  }, [active, open, busy, status])
   const clearFeedback = () => {
     setStatus(null)
     setTest(null)
@@ -57,7 +59,7 @@ export function ProviderRow({
 
   // 展开时才读配置
   useEffect(() => {
-    if (!open || config) return
+    if (!active || !open || config) return
     let cancelled = false
     setConfigError(null)
     api.providerConfig(provider.id).then(
@@ -73,7 +75,7 @@ export function ProviderRow({
     return () => {
       cancelled = true
     }
-  }, [open, config, provider.id, loadAttempt])
+  }, [active, open, config, provider.id, loadAttempt])
 
   const save = async () => {
     setBusy(true)
@@ -289,19 +291,21 @@ export function ProviderSettings({
   load,
   openProvider,
   onToggleOpen,
+  active = true,
 }: {
   catalog: Catalog | null
   catalogError: string | null
   load(): Promise<void>
   openProvider: string | null
   onToggleOpen(id: string): void
+  active?: boolean
 }) {
   const [updatingCatalog, setUpdatingCatalog] = useState(false)
   const catalogFeedback = useRef<HTMLDivElement>(null)
   const providersBlocked = !!catalogError || updatingCatalog
   useEffect(() => {
-    if (catalogError) catalogFeedback.current?.scrollIntoView({ block: 'nearest' })
-  }, [catalogError])
+    if (active && catalogError) catalogFeedback.current?.scrollIntoView({ block: 'nearest' })
+  }, [active, catalogError])
   const retryCatalog = async () => {
     setUpdatingCatalog(true)
     try {
@@ -354,6 +358,7 @@ export function ProviderSettings({
                   onToggleOpen={() => onToggleOpen(p.id)}
                   onSaved={load}
                   disabled={providersBlocked}
+                  active={active}
                 />
               ))}
             </ul>

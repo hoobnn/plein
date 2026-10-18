@@ -97,21 +97,27 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
         <ModalHeader title={current.label} onClose={onClose} divider={false} />
         <div className="ui-scrollbar flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-5 pt-2 pb-5">
           {/* 分区导航是竖排的：内容按上下方向滑入 */}
-          <SlideSwap index={sections.indexOf(current)} axis="y" className="flex flex-col gap-8">
+          <SlideSwap
+            index={sections.indexOf(current)}
+            axis="y"
+            className="flex flex-col gap-8"
+            preserveState
+          >
             {current.id === 'appearance' && (
               <Group title="主题" hint="跟随系统时，会随系统的浅色 / 深色自动切换">
                 <Appearance />
               </Group>
             )}
-            {current.id === 'providers' && (
+            <div hidden={current.id !== 'providers'}>
               <ProviderSettings
                 catalog={catalog}
                 catalogError={catalogError}
                 load={load}
                 openProvider={openProvider}
                 onToggleOpen={(id) => setOpenProvider(openProvider === id ? null : id)}
+                active={current.id === 'providers'}
               />
-            )}
+            </div>
             {current.id === 'local' && (
               <Group
                 title="命令行 AI"

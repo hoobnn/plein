@@ -65,25 +65,36 @@ export function SlidePill({
 
 /**
  * 内容切换：index 变大时新内容从右（或下）滑入，变小时从左（或上）滑入。
- * 用 key 换掉整块内容，所以子树会重新挂载。
+ * 默认用 key 换掉内容；preserveState 保留子树并重新播放切换动画。
  */
 export function SlideSwap({
   index,
   axis = 'x',
   className = '',
+  preserveState = false,
   children,
 }: {
   index: number
   axis?: 'x' | 'y'
   className?: string
+  preserveState?: boolean
   children: ReactNode
 }) {
   const [state, setState] = useState({ index, dir: 0 })
+  const root = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (!preserveState) return
+    for (const animation of root.current?.getAnimations() ?? []) {
+      animation.cancel()
+      animation.play()
+    }
+  }, [index, preserveState])
   if (state.index !== index) setState({ index, dir: index > state.index ? 1 : -1 })
   const from = state.dir === 0 ? '' : state.dir > 0 ? 'next' : 'prev'
   return (
     <div
-      key={index}
+      ref={root}
+      key={preserveState ? 'persistent' : index}
       data-slide-from={from || undefined}
       data-slide-axis={axis}
       className={`ui-slide-swap ${className}`}
