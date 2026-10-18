@@ -4,6 +4,7 @@ import * as groups from '../../canvas/groups'
 import { useCanvas } from '../../stores/canvas'
 import { groupRunSignal, useGroupRuns } from './groupRuns'
 import { cancelRequestKey, groupCancelRequestKey, useCancelRequests } from './cancelRequests'
+import { runRequestKey, useRunRequests } from './runRequests'
 
 /** 界面上的运行操作：取当前画布、发起请求，把结果和错误提示给用户 */
 
@@ -31,6 +32,8 @@ export async function runNode(
   const canvasId = remoteCanvas()
   if (!canvasId) return null
   const engine = useCanvas.getState().engine
+  const requestKey = runRequestKey(canvasId, id)
+  if (!useRunRequests.getState().begin(requestKey)) return null
   try {
     return (await api.runNode(canvasId, id, { expect: check?.expect, retryOf: check?.retryOf }))
       .runId
@@ -43,6 +46,8 @@ export async function runNode(
     if (check && input && input.input) check.onChanged?.(input.input)
     fail(err)
     return null
+  } finally {
+    useRunRequests.getState().end(requestKey)
   }
 }
 

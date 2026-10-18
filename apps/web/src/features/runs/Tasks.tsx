@@ -27,6 +27,7 @@ import { Presence, useExit } from '../../ui/Presence'
 import { EmptyState } from '../../ui/EmptyState'
 import { useAgent } from '../agent/store'
 import { locateTaskTarget } from './taskNavigation'
+import { runRequestKey, useRunRequests } from './runRequests'
 
 const STATUS: Record<JobInfo['status'], string> = {
   queued: '排队中',
@@ -382,6 +383,7 @@ function JobRow(props: {
 }) {
   const { job, doc, now } = props
   const canvasId = useCanvas((s) => s.canvasId)
+  const submitting = useRunRequests((s) => s.pending.has(runRequestKey(canvasId, job.nodeId)))
   const canceling = useCancelRequests((s) =>
     s.pending.has(cancelRequestKey(canvasId, job.nodeId, job.id)),
   )
@@ -449,6 +451,11 @@ function JobRow(props: {
             正在停止任务…
           </p>
         )}
+        {submitting && !active && (
+          <p role="status" className="mt-0.5 text-xs text-ink-muted">
+            正在提交重试…
+          </p>
+        )}
         {failure && (
           <>
             {failure.detail && (
@@ -491,8 +498,16 @@ function JobRow(props: {
           // 已受理的任务先恢复原结果，输入变化先审查；只有明确失败才直接重试。
           (!job.recovery || job.recovery.state === 'remote_failed') &&
           !isActive(el.run?.status ?? '') && (
-            <RowButton label="重试" onClick={() => void runNode(job.nodeId, { retryOf: job.id })}>
-              <Icon name="retry" size={14} />
+            <RowButton
+              label="重试"
+              busy={submitting}
+              onClick={() => void runNode(job.nodeId, { retryOf: job.id })}
+            >
+              {submitting ? (
+                <span className="ui-spinner size-3" />
+              ) : (
+                <Icon name="retry" size={14} />
+              )}
             </RowButton>
           )}
       </div>

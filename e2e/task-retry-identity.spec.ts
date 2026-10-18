@@ -195,3 +195,74 @@ test('重试应答失败前切换画布，不把旧错误通知新画布，返�
     release()
   }
 })
+
+test('重试等待期间阻止重复请求，重开面板仍显示等待，失败后可再次提交', async ({ page }) => {
+  await newProject(page)
+  const canvas = new URL(page.url()).hash.split('/').at(-1)!
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/image',
+      name: '重试等待目标',
+      params: { model: 'not-installed:missing' },
+      x: 300,
+      y: 200,
+    }),
+  )
+  await expect
+    .poll(async () =>
+      (await page.request.get(`/api/canvases/${canvas}/nodes/${id}/input`)).status(),
+    )
+    .toBe(200)
+  expect(
+    (await page.request.post(`/api/canvases/${canvas}/nodes/${id}/run`, { data: {} })).status(),
+  ).toBe(202)
+  const jobs = async () =>
+    (await (await page.request.get(`/api/canvases/${canvas}/jobs`)).json()) as JobList
+  await expect.poll(async () => (await jobs()).jobs[0]?.status).toBe('failed')
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let calls = 0
+  await page.route(`**/api/canvases/${canvas}/nodes/${id}/run`, async (route) => {
+    if (++calls === 1) {
+      await gate
+      return route.fulfill({
+        status: 503,
+        json: { error: 'retry_wait', message: '重试请求暂不可用' },
+      })
+    }
+    await route.continue()
+  })
+  await page.getByRole('button', { name: '任务', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: '任务', exact: true })
+  const retry = panel.getByRole('button', { name: '重试', exact: true })
+  try {
+    await retry.evaluate((button) => {
+      ;(button as HTMLButtonElement).click()
+      ;(button as HTMLButtonElement).click()
+    })
+    await expect.poll(() => calls).toBe(1)
+    await expect(retry).toBeDisabled()
+    await panel.getByRole('button', { name: '关闭', exact: true }).click()
+    await page.getByRole('button', { name: '任务', exact: true }).click()
+    await expect(retry).toBeDisabled()
+    await expect(panel.getByRole('status').filter({ hasText: '正在提交重试…' })).toBeVisible()
+    await panel.screenshot({
+      path: test.info().outputPath('retry-pending.png'),
+      animations: 'disabled',
+    })
+    release()
+    await expect(page.getByText('重试请求暂不可用', { exact: true })).toBeVisible()
+    await expect(retry).toBeEnabled()
+    const response = page.waitForResponse(
+      (res) => res.url().endsWith(`/nodes/${id}/run`) && res.request().method() === 'POST',
+    )
+    await retry.click()
+    expect((await response).status()).toBe(202)
+    expect(calls).toBe(2)
+    await expect.poll(async () => (await jobs()).jobs.length).toBe(2)
+  } finally {
+    release()
+  }
+})
