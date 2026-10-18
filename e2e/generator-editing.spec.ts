@@ -326,3 +326,49 @@ for (const mode of ['composition', 'legacy229'] as const) {
     })
   }
 }
+
+for (const commit of ['Enter', 'blur']) {
+  test(`角色改名中变为只读，${commit} 不抛错且保留原名，恢复后可编辑`, async ({ page }) => {
+    await newProject(page)
+    const id = await page.evaluate(() =>
+      window.__plein.addNode({
+        type: 'plein/character',
+        name: '只读前角色',
+        params: {},
+        x: 400,
+        y: 200,
+      }),
+    )
+    await clickElement(page, id)
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    const generator = page.getByTestId('generator')
+    const input = generator.getByRole('textbox', { name: '节点名称', exact: true })
+    await input.fill('不应写入的角色名')
+    await page.evaluate(() => {
+      ;(
+        window.__plein.engine.doc as typeof window.__plein.engine.doc & { readOnly: boolean }
+      ).readOnly = true
+    })
+    if (commit === 'Enter') await input.press('Enter')
+    else await page.getByRole('button', { name: '任务', exact: true }).click()
+    await expect(page.getByText('画布已变为只读，名称未保存', { exact: true })).toBeVisible()
+    await expect(generator).toBeHidden()
+    expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, id)).toBe(
+      '只读前角色',
+    )
+    expect(errors).toEqual([])
+    await page.evaluate(() => {
+      ;(
+        window.__plein.engine.doc as typeof window.__plein.engine.doc & { readOnly: boolean }
+      ).readOnly = false
+    })
+    await clickElement(page, id)
+    await input.fill('恢复后角色名')
+    await input.press('Enter')
+    await expect
+      .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, id))
+      .toBe('恢复后角色名')
+    expect(errors).toEqual([])
+  })
+}

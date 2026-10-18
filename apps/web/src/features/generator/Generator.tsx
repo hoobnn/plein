@@ -432,6 +432,10 @@ function Panel({
           <NameField
             value={el.name ?? node.title}
             onChange={(name) => {
+              if (engine.doc.readOnly) {
+                useCanvas.getState().notify('画布已变为只读，名称未保存')
+                return false
+              }
               engine.doc.undo.stopCapturing()
               updateElement(engine.doc, el.id, { name })
               engine.doc.undo.stopCapturing()
@@ -667,7 +671,7 @@ function NameField({
   value: string
   hint?: string
   trailing?: React.ReactNode
-  onChange(v: string): void
+  onChange(v: string): boolean | void
 }) {
   const [edit, setEdit] = useState({ base: value, draft: value })
   const conflictId = useId()
@@ -682,8 +686,8 @@ function NameField({
   const commit = () => {
     const v = draft.trim()
     if (v && v !== value) {
-      setEdit({ base: v, draft: v })
-      onChange(v)
+      if (onChange(v) === false) reset()
+      else setEdit({ base: v, draft: v })
     } else reset()
   }
   return (
