@@ -190,3 +190,39 @@ for (const finish of ['Enter', 'Escape']) {
     )
   })
 }
+
+for (const mode of ['composition', 'legacy229'] as const) {
+  for (const key of ['Enter', 'Escape']) {
+    test(`侧栏就地改名 ${mode} 的 ${key} 保留草稿和编辑焦点`, async ({ page }) => {
+      const { sidebar, ids } = await fixture(page)
+      const row = sidebar.locator(`[role="treeitem"][data-id="${ids.first}"]`)
+      await row.press('F2')
+      const input = row.getByRole('textbox', { name: '元素名称', exact: true })
+      await input.fill('尚未确认的中文名称')
+      await input.evaluate(
+        (el, { mode, key }) =>
+          el.dispatchEvent(
+            new KeyboardEvent('keydown', {
+              key,
+              code: key,
+              bubbles: true,
+              cancelable: true,
+              isComposing: mode === 'composition',
+              keyCode: mode === 'legacy229' ? 229 : key === 'Enter' ? 13 : 27,
+            }),
+          ),
+        { mode, key },
+      )
+      await expect(input).toBeFocused()
+      await expect(input).toHaveValue('尚未确认的中文名称')
+      expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, ids.first)).toBe(
+        '组内一',
+      )
+      await input.press('Enter')
+      await expect(row).toBeFocused()
+      await expect(row).toContainText('尚未确认的中文名称')
+      await page.getByRole('button', { name: '撤销', exact: true }).click()
+      await expect(row).toContainText('组内一')
+    })
+  }
+}

@@ -134,3 +134,44 @@ test('改名迟到失败恢复草稿，但不抢走用户已移到搜索框的�
     release()
   }
 })
+
+for (const key of ['Enter', 'Escape']) {
+  test(`项目名称组字结束的 ${key} 229 不提交或取消，普通确认只保存一次`, async ({ page }) => {
+    const { card, projectId } = await fixture(page)
+    const original = (await (await page.request.get(`/api/projects/${projectId}`)).json()).title
+    let writes = 0
+    await page.route(`**/api/projects/${projectId}`, async (route) => {
+      if (route.request().method() === 'PATCH') writes++
+      await route.continue()
+    })
+    await card.getByRole('button', { name: '重命名', exact: true }).click()
+    const input = card.getByRole('textbox', { name: '项目名称', exact: true })
+    await input.fill('组字后的项目名称')
+    await input.evaluate(
+      (el, key) =>
+        el.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key,
+            code: key,
+            keyCode: 229,
+            isComposing: false,
+            bubbles: true,
+            cancelable: true,
+          }),
+        ),
+      key,
+    )
+    await expect(input).toBeFocused()
+    await expect(input).toHaveValue('组字后的项目名称')
+    expect(writes).toBe(0)
+    expect((await (await page.request.get(`/api/projects/${projectId}`)).json()).title).toBe(
+      original,
+    )
+    await input.press('Enter')
+    await expect(card.getByRole('link', { name: '组字后的项目名称', exact: true })).toBeVisible()
+    expect(writes).toBe(1)
+    expect((await (await page.request.get(`/api/projects/${projectId}`)).json()).title).toBe(
+      '组字后的项目名称',
+    )
+  })
+}

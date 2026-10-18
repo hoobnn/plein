@@ -49,7 +49,7 @@ export function InlineTitle({
       onBlur={() => finish(editing.draft)}
       onKeyDown={(e) => {
         e.stopPropagation()
-        if (e.nativeEvent.isComposing) return
+        if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
         if (e.key === 'Enter') finish(editing.draft)
         if (e.key === 'Escape') finish(null)
       }}
