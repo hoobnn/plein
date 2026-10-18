@@ -38,6 +38,7 @@ import { useDocVersion } from '../../canvas/hooks'
 import { desktop } from '../../desktop'
 import { findNode, upstreams } from '../../canvas/nodes'
 import { cancelNode, runNode } from '../runs/run'
+import { cancelRequestKey, useCancelRequests } from '../runs/cancelRequests'
 import { useAssetMetas } from '../../stores/assetMeta'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
@@ -198,6 +199,10 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   ])
   const duration = (assetId: string | undefined) => meta(assetId)?.duration
   const running = el?.run?.status === 'running' || el?.run?.status === 'queued'
+  const canvasId = useCanvas((s) => s.canvasId)
+  const canceling = useCancelRequests((s) =>
+    s.pending.has(cancelRequestKey(canvasId, id, el?.run?.id)),
+  )
   const pending = rows.filter((r) => r.pending).length
   // 时间线、预览和导出用同一套排法；还没生成的镜头先按固定长度占位
   const timeline = sequenceTimeline(params, rows, {
@@ -454,6 +459,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   }
 
   const exportVideo = () => {
+    if (canceling) return
     if (running) void cancelNode(id, el?.run?.id)
     else void runNode(id)
   }
@@ -590,8 +596,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           type="button"
           className={running ? 'ui-btn ui-btn-secondary' : 'ui-btn ui-btn-primary'}
           disabled={
-            !running && (rows.length === 0 || (!animatic && pending > 0) || !!subtitleProblem)
+            canceling ||
+            (!running && (rows.length === 0 || (!animatic && pending > 0) || !!subtitleProblem))
           }
+          aria-busy={canceling}
+          aria-label={running || canceling ? '停止导出' : undefined}
           title={
             animatic
               ? (subtitleProblem ?? '仅本地合成草稿；不生成视频、配音或自动识别字幕')
@@ -601,7 +610,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           }
           onClick={exportVideo}
         >
-          {running ? (
+          {canceling ? (
+            <span role="status">正在停止任务…</span>
+          ) : running ? (
             <>
               <Icon name="stop" size={14} />
               {`导出中${progress ? ` ${Math.round(progress * 100)}%` : '…'}`}

@@ -28,13 +28,15 @@ import {
 } from './runStatus'
 import { shotsOf } from '../features/storyboard/model'
 import { clipOverlay } from './occlusion'
+import { cancelRequestKey, useCancelRequests } from '../features/runs/cancelRequests'
 
 type PromptPreset = Catalog['prompts'][number]
 
 export interface NodeCardActions {
+  canvasId: string | null
   play(id: string): void
   run(id: string): void
-  cancel(id: string): void
+  cancel(id: string, runId?: string): void
   /** 空节点上的“尝试”：套用提示词预设并聚焦生成器 */
   applyPreset(id: string, preset: PromptPreset): void
   /** 资产卡上参考图缩略图的地址 */
@@ -57,6 +59,8 @@ interface Card {
 }
 
 interface LiveBox {
+  nodeId: string
+  cancel: HTMLButtonElement
   box: HTMLDivElement
   label: HTMLSpanElement
   detail: HTMLSpanElement
@@ -163,6 +167,7 @@ export class NodeCards {
         this.sync()
       }),
       useStale.subscribe(() => this.sync()),
+      useCancelRequests.subscribe(() => this.tick()),
     )
     this.sync()
   }
@@ -533,12 +538,12 @@ export class NodeCards {
       const cancel = button('plein-node-action', '取消生成', { text: '取消' })
       cancel.addEventListener('click', (e) => {
         e.stopPropagation()
-        this.actions.cancel(el.id)
+        this.actions.cancel(el.id, cancel.dataset.runId)
       })
       foot.append(time, cancel)
       box.append(spin, label, detail, steps, foot)
       card.body.replaceChildren(box)
-      card.live = { box, label, detail, steps, time }
+      card.live = { box, label, detail, steps, time, cancel, nodeId: el.id }
     }
     // 卡片太矮时只留转圈、标签和取消
     card.live.box.dataset.compact = String(el.h < 150 || el.w < 160)
@@ -548,8 +553,17 @@ export class NodeCards {
   private updateLive(card: Card, run: NonNullable<CanvasElement['run']>) {
     const live = card.live!
     const view = describeActive(run, Date.now())
+    const canceling = useCancelRequests
+      .getState()
+      .pending.has(cancelRequestKey(this.actions.canvasId, live.nodeId, run.id))
+    live.cancel.dataset.runId = run.id
+    live.cancel.disabled = canceling
+    live.cancel.setAttribute('aria-busy', String(canceling))
+    live.cancel.textContent = canceling ? '正在停止…' : '取消'
+    live.cancel.title = canceling ? '正在停止任务…' : '取消生成'
     live.box.dataset.phase = run.status === 'queued' ? 'local' : (run.phase ?? 'generating')
-    if (live.label.textContent !== view.label) live.label.textContent = view.label
+    const label = canceling ? '正在停止任务…' : view.label
+    if (live.label.textContent !== label) live.label.textContent = label
     const detail = view.detail ?? ''
     if (live.detail.textContent !== detail) {
       live.detail.textContent = detail

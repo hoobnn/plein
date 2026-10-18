@@ -22,6 +22,7 @@ import { Icon } from '../../ui/icons'
 import { cancelGroup, cancelNode, runNode } from './run'
 import { BATCH_OUTCOME, BATCH_STAGE, CANCELED_BY, describeRecovery } from './recovery'
 import { useRecoveryRequests } from './recoveryRequests'
+import { cancelRequestKey, useCancelRequests } from './cancelRequests'
 import { Presence, useExit } from '../../ui/Presence'
 import { EmptyState } from '../../ui/EmptyState'
 
@@ -278,12 +279,19 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-function RowButton(props: { label: string; onClick: () => void; children: React.ReactNode }) {
+function RowButton(props: {
+  label: string
+  onClick: () => void
+  children: React.ReactNode
+  busy?: boolean
+}) {
   return (
     <button
       type="button"
       title={props.label}
       aria-label={props.label}
+      aria-busy={props.busy || undefined}
+      disabled={props.busy}
       onClick={props.onClick}
       className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn shrink-0"
     >
@@ -302,6 +310,10 @@ function JobRow(props: {
   onLocate: () => void
 }) {
   const { job, doc, now } = props
+  const canvasId = useCanvas((s) => s.canvasId)
+  const canceling = useCancelRequests((s) =>
+    s.pending.has(cancelRequestKey(canvasId, job.nodeId, job.id)),
+  )
   const el = doc.get(job.nodeId)
   // 运行中的阶段、进度和重试只写在文档里，按当前这次运行读
   const run = el?.run?.id === job.id ? el.run : undefined
@@ -361,6 +373,11 @@ function JobRow(props: {
             {failure ? failure.title : detail}
           </p>
         )}
+        {canceling && (
+          <p role="status" className="mt-0.5 text-xs text-ink-muted">
+            正在停止任务…
+          </p>
+        )}
         {failure && (
           <>
             {failure.detail && (
@@ -383,8 +400,12 @@ function JobRow(props: {
       </div>
       <div className="flex shrink-0 items-center">
         {active && (
-          <RowButton label="停止" onClick={() => void cancelNode(job.nodeId, job.id)}>
-            <Icon name="stop" size={14} />
+          <RowButton
+            label="停止"
+            busy={canceling}
+            onClick={() => void cancelNode(job.nodeId, job.id)}
+          >
+            {canceling ? <span className="ui-spinner size-3" /> : <Icon name="stop" size={14} />}
           </RowButton>
         )}
         {failure?.settings && props.latest && (

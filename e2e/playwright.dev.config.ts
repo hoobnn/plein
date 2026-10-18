@@ -70,6 +70,7 @@ export default defineConfig({
     'recovery-pending.spec.ts',
     'recovery-actions.spec.ts',
     'task-cancel-identity.spec.ts',
+    'task-cancel-pending.spec.ts',
     'sequence-load-recovery.spec.ts',
     'sequence-sound-controls.spec.ts',
     'sequence-preview-lifecycle.spec.ts',

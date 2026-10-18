@@ -27,6 +27,7 @@ import {
   validate,
 } from '../../canvas/nodes'
 import { cancelNode, runNode } from '../runs/run'
+import { cancelRequestKey, useCancelRequests } from '../runs/cancelRequests'
 import { shotsOf } from '../storyboard/model'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
@@ -271,6 +272,9 @@ function Panel({
   const onlyPromptMissing =
     !!own && !!pk && !validate(node, { ...el, params: { ...el.params, [pk]: '-' } }, ups, catalog)
   const running = el.run?.status === 'running' || el.run?.status === 'queued'
+  const canceling = useCancelRequests((s) =>
+    s.pending.has(cancelRequestKey(canvasId, el.id, el.run?.id)),
+  )
   const modelField = main.find(([, f]) => f.widget === 'model')
   // 画幅放最前：摘要读起来是“16:9 · 5s”
   const paramFields = main
@@ -334,6 +338,7 @@ function Panel({
   )
 
   const run = () => {
+    if (canceling) return
     if (running) void cancelNode(el.id, el.run?.id)
     // 带上用户看到的实际输入：提交时输入已经变了就不运行，换成新的预览
     else if (!problem)
@@ -590,14 +595,24 @@ function Panel({
               <button
                 type="button"
                 onClick={run}
-                disabled={!running && !!problem}
+                disabled={canceling || (!running && !!problem)}
+                aria-busy={canceling}
                 title={problem ?? (running ? runLabel : withShortcut(runLabel, 'mod+enter'))}
                 aria-label={runLabel}
                 className={`ui-btn ui-btn-lg ui-icon-btn ml-1 ${running ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
               >
-                <Icon name={running ? 'stop' : 'arrowUp'} size={running ? 14 : 16} />
+                {canceling ? (
+                  <span className="ui-spinner size-3" />
+                ) : (
+                  <Icon name={running ? 'stop' : 'arrowUp'} size={running ? 14 : 16} />
+                )}
               </button>
             </div>
+            {canceling && (
+              <p role="status" className="text-xs text-ink-muted">
+                正在停止任务…
+              </p>
+            )}
           </footer>
         )}
       </div>

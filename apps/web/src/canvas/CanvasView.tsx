@@ -118,6 +118,7 @@ export function CanvasView({ source }: { source: CanvasSource }) {
           openTextRef.current = openText
           const badges = new ShotBadges(engine, overlayRoot)
           const cards = new NodeCards(engine, overlayRoot, {
+            canvasId: canvasId || null,
             play: (id) => overlays.activate(id),
             run: runNode,
             cancel: cancelNode,
