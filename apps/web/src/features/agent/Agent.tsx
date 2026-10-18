@@ -6,7 +6,7 @@ import type {
   AgentTurnSummary,
 } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { api } from '../../api/client'
 import { queryKeys } from '../../api/query'
@@ -747,8 +747,23 @@ function Markdown({ text }: { text: string }) {
 function ToolRow({ item }: { item: Extract<AgentItem, { type: 'tool' }> }) {
   const [open, setOpen] = useState(false)
   const engine = useCanvas((s) => s.engine)
-  const target = item.detail && engine?.doc.get(item.detail.split(' · ')[0]!)
-  const detail = target ? (target.name ?? target.kind) : item.detail
+  const targetId = item.detail?.split(' · ')[0]
+  const target = useSyncExternalStore(
+    (notify) =>
+      engine && targetId
+        ? engine.doc.subscribe((change) => {
+            if (change.elements.has(targetId)) notify()
+          })
+        : () => {},
+    () => (targetId ? engine?.doc.get(targetId) : undefined),
+  )
+  const known = useRef<{ id: string; name: string } | null>(null)
+  if (target) known.current = { id: target.id, name: target.name ?? target.kind }
+  const detail = target
+    ? (target.name ?? target.kind)
+    : engine && known.current && known.current.id === targetId
+      ? `${known.current.name}（已删除）`
+      : item.detail
   // 插件能力的名字从插件来
   const { data: plugins } = useQuery({
     queryKey: queryKeys.capabilities,
@@ -792,6 +807,7 @@ function ToolRow({ item }: { item: Extract<AgentItem, { type: 'tool' }> }) {
             title="在画布上定位"
             className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn"
             onClick={() => {
+              if (!engine.doc.get(target.id)) return
               engine.selection.set([target.id])
               engine.zoomToFit([target.id])
             }}

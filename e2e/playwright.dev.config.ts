@@ -42,6 +42,7 @@ export default defineConfig({
     'agent-actions.spec.ts',
     'agent-decisions.spec.ts',
     'agent-revise.spec.ts',
+    'agent-targets.spec.ts',
     'pan-lifecycle.spec.ts',
     'gesture-lifecycle.spec.ts',
     'gesture-concurrency.spec.ts',
