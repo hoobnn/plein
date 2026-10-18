@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { canvasBottomSpace, fitFloatingPanel, fitFrameToolbar } from './floatingPanel'
+import { canvasBottomSpace, fitCanvasToolbar, fitFloatingPanel } from './floatingPanel'
 
 describe('浮动操作区避让侧栏与任务面板', () => {
   it('底部空间按实际画布宽度计算，侧栏展开后也不能盖住生成器或快捷键', () => {
@@ -25,18 +25,28 @@ describe('浮动操作区避让侧栏与任务面板', () => {
   })
   it('分组工具条换行增高后仍留在组标题上方，并避开顶栏', () => {
     expect(
-      fitFrameToolbar(
+      fitCanvasToolbar(
         { x: 464, y: 408 },
         { width: 512, height: 72 },
         { width: 900, left: 0, right: 372 },
       ),
     ).toEqual({ right: 380, top: 328, maxWidth: 512 })
     expect(
-      fitFrameToolbar(
+      fitCanvasToolbar(
         { x: 1004, y: 64 },
         { width: 614, height: 40 },
         { width: 1440, left: 284, right: 372 },
       ),
     ).toEqual({ right: 436, top: 64, maxWidth: 768 })
+  })
+  it('多选工具条居中锚定时仍让开两侧面板，并按换行高度放在选区标题上方', () => {
+    expect(
+      fitCanvasToolbar(
+        { x: 264, y: 350 },
+        { width: 700, height: 72 },
+        { width: 900, left: 0, right: 372 },
+        'center',
+      ),
+    ).toEqual({ right: 380, top: 270, maxWidth: 512 })
   })
 })

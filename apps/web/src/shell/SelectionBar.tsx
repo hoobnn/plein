@@ -3,6 +3,7 @@ import { elementMedia } from '@plein/doc'
 import { downloadAll } from '../canvas/grid'
 import { mediaIn } from '../features/library/canvas'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
+import { fitCanvasToolbar } from '../canvas/floatingPanel'
 import { LibraryAdd } from '../features/library/LibraryAdd'
 import { type MediaTarget, MediaBatchTools } from './MediaTools'
 import { useAgent } from '../features/agent/store'
@@ -13,8 +14,6 @@ import { saveAsTemplate } from '../features/templates/actions'
 
 /** 节点标题在卡片外上方，工具条要让开它 */
 const TITLE_H = 30
-const BAR_H = 40
-const TOP_RESERVED = 64
 
 /** 选中 2 个及以上元素时浮在选区上方 */
 export function SelectionBar({ remote }: { remote: boolean }) {
@@ -27,12 +26,20 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
   useEngineVersion(engine)
   const notify = useCanvas((s) => s.notify)
   const ids = engine.selection.values()
-  const place = () => {
+  const place = (): { top: number; right: number; maxWidth: number } | null => {
     const box = union(ids.map((id) => engine.scene.rect(id)).filter((r) => !!r))
     if (!box) return null
     const tl = engine.worldToClient(box.x, box.y)
     const tr = engine.worldToClient(box.x + box.w, box.y)
-    return { top: Math.max(TOP_RESERVED, tl.y - TITLE_H - BAR_H - 8), left: (tl.x + tr.x) / 2 }
+    return fitCanvasToolbar(
+      { x: (tl.x + tr.x) / 2, y: tl.y - TITLE_H },
+      {
+        width: ref.current?.offsetWidth ?? window.innerWidth,
+        height: ref.current?.offsetHeight ?? 40,
+      },
+      { width: window.innerWidth, ...engine.camera.insets },
+      'center',
+    )
   }
   const ref = useFollow<HTMLDivElement>(engine, place)
   const style = place()
@@ -70,7 +77,7 @@ function SelectionBarHost({ engine, remote }: { engine: Engine; remote: boolean 
       ref={ref}
       aria-label="多选操作"
       style={style}
-      className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 -translate-x-1/2"
+      className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 h-auto w-max flex-wrap"
     >
       <span className="ui-bar-text">已选 {ids.length}</span>
       <div className="ui-bar-sep" />

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { groupNodes } from '../canvas/groups'
 import { hasShots, setShotGroup } from '../canvas/shotGroup'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
-import { fitFrameToolbar } from '../canvas/floatingPanel'
+import { fitCanvasToolbar } from '../canvas/floatingPanel'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { useGroupRuns } from '../features/runs/groupRuns'
@@ -54,7 +54,7 @@ function FrameBarHost({ engine, remote }: { engine: Engine; remote: boolean }) {
     if (!rect) return null
     const tr = engine.worldToClient(rect.x + rect.w, rect.y)
     // 保持在两侧面板之间，窄窗口换行后仍在 Frame 上方。
-    return fitFrameToolbar(
+    return fitCanvasToolbar(
       tr,
       {
         width: ref.current?.offsetWidth ?? window.innerWidth,
