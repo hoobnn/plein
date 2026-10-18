@@ -29,6 +29,7 @@ import {
 } from '../../canvas/nodes'
 import { cancelNode, runNode } from '../runs/run'
 import { cancelRequestKey, useCancelRequests } from '../runs/cancelRequests'
+import { runRequestKey, useRunRequests } from '../runs/runRequests'
 import { shotsOf } from '../storyboard/model'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
@@ -272,6 +273,8 @@ function Panel({
   const onlyPromptMissing =
     !!own && !!pk && !validate(node, { ...el, params: { ...el.params, [pk]: '-' } }, ups, catalog)
   const running = el.run?.status === 'running' || el.run?.status === 'queued'
+  const submitting = useRunRequests((s) => s.pending.has(runRequestKey(canvasId, el.id)))
+  const awaitingAcceptance = submitting && !running
   const canceling = useCancelRequests((s) =>
     s.pending.has(cancelRequestKey(canvasId, el.id, el.run?.id)),
   )
@@ -338,7 +341,7 @@ function Panel({
   )
 
   const run = () => {
-    if (canceling) return
+    if (canceling || awaitingAcceptance) return
     if (running) void cancelNode(el.id, el.run?.id)
     // 带上用户看到的实际输入：提交时输入已经变了就不运行，换成新的预览
     else if (!problem)
@@ -595,13 +598,13 @@ function Panel({
               <button
                 type="button"
                 onClick={run}
-                disabled={canceling || (!running && !!problem)}
-                aria-busy={canceling}
+                disabled={canceling || awaitingAcceptance || (!running && !!problem)}
+                aria-busy={canceling || awaitingAcceptance}
                 title={problem ?? (running ? runLabel : withShortcut(runLabel, 'mod+enter'))}
                 aria-label={runLabel}
                 className={`ui-btn ui-btn-lg ui-icon-btn ml-1 ${running ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
               >
-                {canceling ? (
+                {canceling || awaitingAcceptance ? (
                   <span className="ui-spinner size-3" />
                 ) : (
                   <Icon name={running ? 'stop' : 'arrowUp'} size={running ? 14 : 16} />
@@ -611,6 +614,11 @@ function Panel({
             {canceling && (
               <p role="status" className="text-xs text-ink-muted">
                 正在停止任务…
+              </p>
+            )}
+            {awaitingAcceptance && (
+              <p role="status" className="text-xs text-ink-muted">
+                正在提交生成请求…
               </p>
             )}
           </footer>

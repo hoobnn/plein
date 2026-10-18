@@ -138,3 +138,131 @@ test('角色名称草稿在平移时不失焦或提前提交，手动收起后�
   await panel.getByRole('button', { name: '编辑角色', exact: true }).click()
   await expect(name).toHaveValue('尚未提交的角色草稿')
 })
+
+test('生成受理等待时按钮与快捷键共享保护，重开生成器保留等待和新草稿，失败后可生成', async ({
+  page,
+}) => {
+  await newProject(page)
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/image',
+      name: '受理等待图片',
+      params: { prompt: '透明水杯', model: 'plein/mock:image' },
+      x: 400,
+      y: 200,
+    }),
+  )
+  await clickElement(page, id)
+  const generator = page.getByTestId('generator')
+  const submit = generator.getByRole('button', { name: '生成', exact: true })
+  await expect(submit).toBeEnabled()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let calls = 0
+  await page.route(`**/nodes/${id}/run`, async (route) => {
+    if (++calls === 1) {
+      await gate
+      return route.fulfill({
+        status: 503,
+        json: { error: 'submit_wait', message: '生成受理暂不可用' },
+      })
+    }
+    await route.continue()
+  })
+  try {
+    await submit.click()
+    await expect.poll(() => calls).toBe(1)
+    await expect(submit).toBeDisabled()
+    await expect(submit).toHaveAttribute('aria-busy', 'true')
+    await expect(
+      generator.getByRole('status').filter({ hasText: '正在提交生成请求…' }),
+    ).toBeVisible()
+    const prompt = generator.getByRole('textbox', { name: '提示词', exact: true })
+    await prompt.fill('等待期间继续编辑的蓝色水杯')
+    await prompt.press('ControlOrMeta+Enter')
+    expect(calls).toBe(1)
+    await page.evaluate(() => window.__plein.engine.selection.set([]))
+    await expect(generator).toBeHidden()
+    await clickElement(page, id)
+    await expect(submit).toBeDisabled()
+    await expect(prompt).toHaveValue('等待期间继续编辑的蓝色水杯')
+    await generator.screenshot({
+      path: test.info().outputPath('generator-submit-wait.png'),
+      animations: 'disabled',
+    })
+    release()
+    await expect(page.getByText('生成受理暂不可用', { exact: true })).toBeVisible()
+    await expect(submit).toBeEnabled()
+    await page.waitForLoadState('networkidle')
+    const response = page.waitForResponse(
+      (res) => res.url().endsWith(`/nodes/${id}/run`) && res.request().method() === 'POST',
+    )
+    await submit.click()
+    expect((await response).status()).toBe(202)
+    await expect
+      .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.results?.length, id))
+      .toBe(1)
+    expect(calls).toBe(2)
+  } finally {
+    release()
+  }
+})
+
+test('运行已受理但应答未返回时仍可取消，不被提交等待锁住', async ({ page }) => {
+  await newProject(page)
+  const config = '/api/providers/plein/mock/config'
+  const original = await (await page.request.get(config)).json()
+  expect(
+    (
+      await page.request.put(config, {
+        data: { settings: { ...original.settings, latencyMs: 20000 } },
+      })
+    ).ok(),
+  ).toBe(true)
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/image',
+      name: '受理后取消',
+      params: { prompt: '透明水杯', model: 'plein/mock:image' },
+      x: 400,
+      y: 200,
+    }),
+  )
+  const canvas = new URL(page.url()).hash.split('/').at(-1)!
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let accepted = false
+  await page.route(`**/nodes/${id}/run`, async (route) => {
+    const response = await route.fetch()
+    accepted = response.status() === 202
+    await gate
+    await route.fulfill({ response })
+  })
+  try {
+    await clickElement(page, id)
+    const generator = page.getByTestId('generator')
+    await generator.getByRole('button', { name: '生成', exact: true }).click()
+    await expect.poll(() => accepted).toBe(true)
+    const cancel = generator.getByRole('button', { name: '取消', exact: true })
+    await expect(cancel).toBeEnabled()
+    await expect(cancel).toHaveAttribute('aria-busy', 'false')
+    await expect(generator.getByText('正在提交生成请求…', { exact: true })).toHaveCount(0)
+    await cancel.click()
+    await expect
+      .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.run?.status, id))
+      .toBe('canceled')
+    release()
+    await expect(generator.getByRole('button', { name: '生成', exact: true })).toBeEnabled()
+    expect(
+      await page.evaluate((id) => window.__plein.engine.doc.get(id)?.results?.length ?? 0, id),
+    ).toBe(0)
+  } finally {
+    release()
+    await page.request.post(`/api/canvases/${canvas}/nodes/${id}/cancel`)
+    await page.request.put(config, { data: { settings: original.settings } })
+  }
+})
