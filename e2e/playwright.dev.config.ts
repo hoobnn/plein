@@ -72,6 +72,7 @@ export default defineConfig({
     'task-cancel-identity.spec.ts',
     'task-cancel-pending.spec.ts',
     'task-keyboard.spec.ts',
+    'task-read-recovery.spec.ts',
     'sequence-load-recovery.spec.ts',
     'sequence-sound-controls.spec.ts',
     'sequence-preview-lifecycle.spec.ts',

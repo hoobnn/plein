@@ -127,7 +127,8 @@ export function Tasks() {
     queryFn: () => api.canvasJobs(canvasId!),
     enabled: open && !!canvasId,
     staleTime: 0,
-    refetchInterval: (q) => (q.state.data && hasActive(q.state.data) ? 1000 : 5000),
+    refetchInterval: (q) =>
+      !q.state.error && q.state.data && hasActive(q.state.data) ? 1000 : 5000,
     refetchIntervalInBackground: true,
   })
   const list = query.data ?? null
@@ -210,19 +211,53 @@ export function Tasks() {
             )}
             <button
               type="button"
+              aria-label="刷新任务"
+              title="刷新任务"
+              aria-busy={query.isFetching}
+              disabled={query.isFetching}
+              className="ui-btn ui-btn-quiet ui-icon-btn ml-auto"
+              onClick={() => void refetch({ cancelRefetch: false })}
+            >
+              {query.isFetching ? <span className="ui-spinner size-3" /> : <Icon name="retry" />}
+            </button>
+            <button
+              type="button"
               aria-label="关闭"
               title="关闭（Esc）"
-              className="ui-btn ui-btn-quiet ui-icon-btn ml-auto"
+              className="ui-btn ui-btn-quiet ui-icon-btn"
               onClick={closeTasks}
             >
               <Icon name="x" />
             </button>
           </header>
           <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-2">
+            {error && (
+              <div
+                role="alert"
+                className="mb-2 flex flex-col gap-2 rounded-md bg-surface-2 px-3 py-2 text-xs"
+              >
+                <p className="break-words text-danger">
+                  {list ? '刷新任务失败' : '读取任务失败'}：{error}
+                </p>
+                {list && <p className="text-ink-muted">以下仍为上次读取的任务状态。</p>}
+                <button
+                  type="button"
+                  aria-label="重新读取"
+                  aria-busy={query.isFetching}
+                  disabled={query.isFetching}
+                  className="ui-btn ui-btn-secondary ui-btn-xs self-start"
+                  onClick={() => void refetch({ cancelRefetch: false })}
+                >
+                  {query.isFetching ? '正在读取…' : '重新读取'}
+                </button>
+              </div>
+            )}
             {!list ? (
-              <p className="px-2 py-6 text-center text-xs text-ink-subtle">
-                {error ? `读取任务失败：${error}` : '加载中…'}
-              </p>
+              !error && (
+                <p role="status" className="px-2 py-6 text-center text-xs text-ink-subtle">
+                  加载任务中…
+                </p>
+              )
             ) : list.jobs.length === 0 && groups.length === 0 ? (
               <EmptyState
                 compact
