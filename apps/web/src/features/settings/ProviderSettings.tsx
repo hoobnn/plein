@@ -47,6 +47,7 @@ export function ProviderRow({
   const [configError, setConfigError] = useState<string | null>(null)
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [numberEditing, setNumberEditing] = useState(false)
+  const formFields = useRef<HTMLFieldSetElement>(null)
   const closedFeedback = useRef<HTMLParagraphElement>(null)
   useEffect(() => {
     if (active && !open && (busy || status?.error))
@@ -78,6 +79,11 @@ export function ProviderRow({
   }, [active, open, config, provider.id, loadAttempt])
 
   const save = async () => {
+    const invalid = formFields.current?.querySelector<HTMLElement>('[aria-invalid="true"]')
+    if (invalid) {
+      invalid.focus()
+      return
+    }
     setBusy(true)
     clearFeedback()
     try {
@@ -179,7 +185,7 @@ export function ProviderRow({
         </p>
       )}
       {/* 展开的内容和标题文字对齐：左边距 16 + 箭头 14 + 间距 12 */}
-      {open && (
+      <div hidden={!open}>
         <div id={bodyId} className="flex flex-col gap-4 px-4 pb-4 pl-10.5">
           {provider.models.length > 0 && (
             <div className="flex flex-wrap gap-1">
@@ -210,7 +216,11 @@ export function ProviderRow({
             </div>
           ) : (
             <>
-              <fieldset disabled={locked} className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
+              <fieldset
+                ref={formFields}
+                disabled={locked}
+                className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
+              >
                 {provider.secrets.map((s) => (
                   <label key={s.name} className="ui-field">
                     <span className="ui-label">
@@ -264,6 +274,17 @@ export function ProviderRow({
                 <button
                   type="button"
                   disabled={locked}
+                  onPointerDown={(event) => {
+                    if (event.button !== 0) return
+                    const input = formFields.current?.querySelector<HTMLInputElement>(
+                      'input[type="number"]:focus',
+                    )
+                    if (input?.validity.badInput) {
+                      event.preventDefault()
+                      input.blur()
+                      input.focus()
+                    }
+                  }}
                   onClick={() => save()}
                   className="ui-btn ui-btn-primary"
                 >
@@ -279,7 +300,7 @@ export function ProviderRow({
             </>
           )}
         </div>
-      )}
+      </div>
     </li>
   )
 }
