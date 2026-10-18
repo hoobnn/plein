@@ -322,7 +322,10 @@ function JobRow(props: {
   if (!active && job.attempts > 1) detail += ` · 第 ${job.attempts} 次尝试`
 
   return (
-    <li className="group flex items-start gap-2.5 rounded-md px-2 py-2 hover:bg-hover">
+    <li
+      data-job-id={job.id}
+      className="group flex items-start gap-2.5 rounded-md px-2 py-2 hover:bg-hover"
+    >
       {view ? (
         <span
           className={`ui-spinner mt-1 size-3 shrink-0 ${view.retrying ? 'text-warning' : job.status === 'queued' ? 'text-ink-subtle' : 'text-accent'}`}
@@ -380,7 +383,7 @@ function JobRow(props: {
       </div>
       <div className="flex shrink-0 items-center">
         {active && (
-          <RowButton label="停止" onClick={() => void cancelNode(job.nodeId)}>
+          <RowButton label="停止" onClick={() => void cancelNode(job.nodeId, job.id)}>
             <Icon name="stop" size={14} />
           </RowButton>
         )}

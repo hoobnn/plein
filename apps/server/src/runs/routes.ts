@@ -11,6 +11,7 @@ import {
   KeepResults,
   type JobInfo,
   NodeRunOptions,
+  NodeCancelOptions,
   type NodeRunStarted,
   type PreparedInput,
   RecoverJobOptions,
@@ -30,6 +31,7 @@ const STATUS: Record<string, 404 | 409 | 400> = {
   not_installed: 404,
   busy: 409,
   recovery_required: 409,
+  run_changed: 409,
 }
 
 /** 节点运行接口：单节点开始 / 取消，整组运行 Frame */
@@ -113,12 +115,26 @@ export function runRoutes(db: DB, runs: NodeRuns) {
         return c.json({ error: err.code, message: err.message }, STATUS[err.code] ?? 400)
       }
     })
-    .post('/api/canvases/:canvas/nodes/:node/cancel', (c) => {
+    .post('/api/canvases/:canvas/nodes/:node/cancel', async (c) => {
       const { canvas, node } = c.req.param()
       const p = c.var.principal
       if (p.role === 'viewer') return c.json(forbidden, 403)
       if (!ownsCanvas(db, p.id, canvas)) return c.json(notFound, 404)
-      runs.cancel(canvas, node)
+      const raw = await c.req.text()
+      let input: unknown
+      try {
+        input = raw.trim() ? JSON.parse(raw) : {}
+      } catch {
+        return c.json({ error: 'invalid', message: '停止请求格式无效' }, 400)
+      }
+      const body = NodeCancelOptions.safeParse(input)
+      if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
+      try {
+        runs.cancel(canvas, node, body.data.runId)
+      } catch (err) {
+        if (!(err instanceof NodeRunError)) throw err
+        return c.json({ error: err.code, message: err.message }, STATUS[err.code] ?? 400)
+      }
       return c.body(null, 204)
     })
     .post('/api/canvases/:canvas/nodes/:node/run-flow', async (c) => {

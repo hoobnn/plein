@@ -454,7 +454,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   }
 
   const exportVideo = () => {
-    if (running) void cancelNode(id)
+    if (running) void cancelNode(id, el?.run?.id)
     else void runNode(id)
   }
   const progress = el?.run?.status === 'running' ? el.run.progress : undefined

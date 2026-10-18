@@ -41,10 +41,14 @@ export async function runNode(
   }
 }
 
-export async function cancelNode(id: string) {
-  const { canvasId } = useCanvas.getState()
+export async function cancelNode(id: string, runId?: string) {
+  const { canvasId, engine } = useCanvas.getState()
   if (!canvasId) return
-  await api.cancelNode(canvasId, id).catch(fail)
+  await api
+    .cancelNode(canvasId, id, { runId: runId ?? engine?.doc.get(id)?.run?.id })
+    .catch((err) => {
+      if (useCanvas.getState().canvasId === canvasId) fail(err)
+    })
 }
 
 export async function cancelGroup(groupId: string) {

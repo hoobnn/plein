@@ -111,6 +111,30 @@ describe('任务队列', () => {
     expect(events.filter((e) => e.type === 'job-finished' && e.groupId === groupId).length).toBe(2)
   })
 
+  it('旧任务 ID 不取消活跃或排队的新任务，正确 ID 仍可停止', async () => {
+    const { server } = await boot({ PLEIN_MAX_JOBS: '1' })
+    mock(server, { latencyMs: 60_000 })
+    const { id, doc } = await canvas(server)
+    const a = addNode(doc, 'plein/image', { params: { prompt: 'a' } })
+    const b = addNode(doc, 'plein/image', { params: { prompt: 'b' } })
+    const ra = server.runs.start(id, a, 'local')
+    await until(() => doc.get(a)?.run?.status === 'running')
+    const rb = server.runs.start(id, b, 'local')
+    try {
+      expect(() => server.runs.cancel(id, a, 'old-a')).toThrow('旧停止请求未执行')
+      expect(() => server.runs.cancel(id, b, 'old-b')).toThrow('旧停止请求未执行')
+      expect(doc.get(a)?.run).toMatchObject({ id: ra, status: 'running' })
+      expect(doc.get(b)?.run).toMatchObject({ id: rb, status: 'queued' })
+      server.runs.cancel(id, b, rb)
+      server.runs.cancel(id, a, ra)
+      expect(await server.runs.wait(rb)).toBe('canceled')
+      expect(await server.runs.wait(ra)).toBe('canceled')
+    } finally {
+      server.runs.cancel(id, a)
+      server.runs.cancel(id, b)
+    }
+  })
+
   it('取消排队中的任务', async () => {
     const { server } = await boot({ PLEIN_MAX_JOBS: '1' })
     mock(server, { latencyMs: 300 })

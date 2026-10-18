@@ -68,6 +68,8 @@ export default defineConfig({
     'review-recovery-context.spec.ts',
     'recovery-navigation.spec.ts',
     'recovery-pending.spec.ts',
+    'recovery-actions.spec.ts',
+    'task-cancel-identity.spec.ts',
     'sequence-load-recovery.spec.ts',
     'sequence-sound-controls.spec.ts',
     'sequence-preview-lifecycle.spec.ts',

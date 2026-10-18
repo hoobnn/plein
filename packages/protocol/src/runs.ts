@@ -15,6 +15,10 @@ export const NodeRunOptions = z.object({
 })
 export type NodeRunOptions = z.infer<typeof NodeRunOptions>
 
+/** 停止用户看见的那次运行；不携带 runId 时兼容旧客户端。 */
+export const NodeCancelOptions = z.object({ runId: z.string().min(1).max(256).optional() })
+export type NodeCancelOptions = z.infer<typeof NodeCancelOptions>
+
 /** @ 引用的资产卡类别；直接 @ 的图片元素是 image */
 export type InputRefKind = 'character' | 'scene' | 'prop' | 'style' | 'image' | 'other'
 

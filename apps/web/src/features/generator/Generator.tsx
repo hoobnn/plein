@@ -334,7 +334,7 @@ function Panel({
   )
 
   const run = () => {
-    if (running) void cancelNode(el.id)
+    if (running) void cancelNode(el.id, el.run?.id)
     // 带上用户看到的实际输入：提交时输入已经变了就不运行，换成新的预览
     else if (!problem)
       void runNode(

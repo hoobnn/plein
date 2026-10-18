@@ -553,8 +553,13 @@ export class NodeRuns implements BatchHost {
   }
 
   /** 取消；没有在跑的任务（例如服务重启过）时把残留的“运行中”标为已取消 */
-  cancel(canvasId: string, nodeId: string) {
+  cancel(canvasId: string, nodeId: string, expectedRunId?: string) {
     const a = this.active.get(this.key(canvasId, nodeId))
+    if (expectedRunId) {
+      const current = a?.id ?? this.rooms.withDoc(canvasId, (doc) => doc.get(nodeId)?.run?.id)
+      if (current !== expectedRunId)
+        throw new NodeRunError('run_changed', '此节点已开始其他任务，旧停止请求未执行')
+    }
     if (a) {
       if (a.started) a.ctrl.abort(USER_CANCEL)
       else {

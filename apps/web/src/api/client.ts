@@ -42,6 +42,7 @@ import {
   type SubtitleRecognitionInfo,
   type SubtitleRecoverRequest,
   type NodeRunOptions,
+  type NodeCancelOptions,
   type NodeRunStarted,
   type PreparedInput,
   type Project,
@@ -262,8 +263,8 @@ export const api = {
   /** 节点的实际输入预览（不调用付费生成） */
   nodeInput: (canvasId: string, nodeId: string) =>
     request<PreparedInput>(API.nodeInput(canvasId, nodeId)),
-  cancelNode: (canvasId: string, nodeId: string) =>
-    request<void>(API.nodeCancel(canvasId, nodeId), { method: 'POST' }),
+  cancelNode: (canvasId: string, nodeId: string, opts: NodeCancelOptions = {}) =>
+    request<void>(API.nodeCancel(canvasId, nodeId), json('POST', opts)),
   /** 整组运行 Frame 里的节点 */
   runFrame: (canvasId: string, frameId: string, body: GroupRunOptions) =>
     request<GroupRunStarted>(API.frameRun(canvasId, frameId), json('POST', body)),

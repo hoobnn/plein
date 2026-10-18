@@ -73,6 +73,37 @@ describe('节点运行接口', () => {
     expect(res.status).toBe(204)
     expect(doc.get(id)?.run?.status).toBe('canceled')
   })
+  it('旧任务的停止请求不取消节点的新任务，匹配的请求仍可停止', async () => {
+    const { canvas, doc } = await newCanvas()
+    const id = addNode(doc, 'plein/image')
+    writeRun(doc, id, { id: 'new-run', status: 'running', at: 1 })
+    const cancel = (runId: string) =>
+      fetch(`${base}/api/canvases/${canvas.id}/nodes/${id}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ runId }),
+      })
+    const stale = await cancel('old-run')
+    expect(stale.status).toBe(409)
+    expect(doc.get(id)?.run).toMatchObject({ id: 'new-run', status: 'running' })
+    expect((await cancel('new-run')).status).toBe(204)
+    expect(doc.get(id)?.run).toMatchObject({ id: 'new-run', status: 'canceled' })
+  })
+
+  it('无效停止参数不能降级为不核对任务身份的取消', async () => {
+    const { canvas, doc } = await newCanvas()
+    const id = addNode(doc, 'plein/image')
+    writeRun(doc, id, { id: 'kept-run', status: 'running', at: 1 })
+    for (const body of ['{"runId":', '{"runId":12}', '{"runId":""}']) {
+      const response = await fetch(`${base}/api/canvases/${canvas.id}/nodes/${id}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      })
+      expect(response.status).toBe(400)
+      expect(doc.get(id)?.run).toMatchObject({ id: 'kept-run', status: 'running' })
+    }
+  })
 
   it('分镜节点：剧本拆成镜头写回参数', async () => {
     const { canvas, doc } = await newCanvas()
