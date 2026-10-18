@@ -3,7 +3,7 @@
  * 插件不写 UI：平台设置、以后的节点参数都用它渲染。
  */
 
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { voiceOf } from '@plein/nodes'
 import { clampNumber, type NumberDraft, resolveNumberDraft } from './numberDraft'
 import { Select } from './Select'
@@ -42,6 +42,7 @@ export function SchemaForm({
   /** 弹层里用 32 高的控件；默认是设置页的 36 高 */
   dense?: boolean
 }) {
+  const formId = useId()
   const field = dense ? 'ui-input w-full' : 'ui-input ui-input-lg w-full'
   const props = Object.entries(schema.properties ?? {})
   if (props.length === 0) return null
@@ -55,7 +56,7 @@ export function SchemaForm({
   return (
     <div className="flex flex-col gap-3">
       {props.map(([key, f]) => {
-        const id = `field-${key}`
+        const id = `${formId}-field-${key}`
         const current = value[key] === undefined ? f.default : value[key]
         const label = f.title ?? key
         const help = f.description ?? rangeOf(f)
@@ -67,6 +68,7 @@ export function SchemaForm({
           control = (
             <Select
               id={id}
+              aria-label={label}
               className={field}
               value={enumeration.value}
               options={[
@@ -80,6 +82,7 @@ export function SchemaForm({
           control = (
             <Select
               id={id}
+              aria-label={label}
               className={field}
               value={current === undefined ? DEFAULT : String(current)}
               options={[
