@@ -400,6 +400,30 @@ function Card({
 }) {
   const cover = coverOf(item, kind)
   const update = useLibrary((s) => s.update)
+  const favoritePending = useRef(false)
+  const favoriteLive = useRef(false)
+  const [favoriteBusy, setFavoriteBusy] = useState(false)
+  const [favoriteError, setFavoriteError] = useState<string | null>(null)
+  useEffect(() => {
+    favoriteLive.current = true
+    return () => {
+      favoriteLive.current = false
+    }
+  }, [])
+  const toggleFavorite = async () => {
+    if (favoritePending.current) return
+    favoritePending.current = true
+    setFavoriteBusy(true)
+    setFavoriteError(null)
+    try {
+      await update(item.id, { favorite: !item.favorite })
+    } catch (error) {
+      if (favoriteLive.current) setFavoriteError(`收藏未更改：${(error as Error).message}`)
+    } finally {
+      favoritePending.current = false
+      if (favoriteLive.current) setFavoriteBusy(false)
+    }
+  }
   const coverRef = useRef<HTMLDivElement>(null)
   const profile = item.profile ? profileSize(item.profile) : null
   // 悬停时从底部升起：一行一个时期，后面跟着这个时期的服饰
@@ -410,98 +434,108 @@ function Card({
   ).length
   return (
     <li className="home-card lib-card group relative">
-      <button
-        type="button"
-        onClick={() => onOpen(coverRef.current)}
-        className="block w-full text-left"
-      >
-        <div ref={coverRef} data-lib-cover={item.id} data-kind={kind.id} className="lib-card-cover">
-          {cover ? (
-            <img src={cover} alt="" loading="lazy" draggable={false} />
-          ) : (
-            <span className="line-clamp-6 px-4 text-xs text-ink-subtle">
-              {item.description || '没有参考图'}
-            </span>
-          )}
-          {peek.length > 0 && (
-            <span className="lib-card-peek" aria-hidden="true">
-              {peek.map((row, r) => (
-                <span key={row.id} className="lib-card-peek-row">
-                  <span
-                    className="lib-card-peek-period"
-                    style={{ '--i': r * 4 } as React.CSSProperties}
-                  >
-                    {row.image ? (
-                      <img src={thumb(row.image)} alt="" loading="lazy" draggable={false} />
-                    ) : (
-                      <Icon name="period" size={12} />
-                    )}
-                    <span className="truncate">{row.name}</span>
-                  </span>
-                  {row.outfits.map((id, i) => (
-                    <img
-                      key={id}
-                      src={thumb(id)}
-                      alt=""
-                      loading="lazy"
-                      draggable={false}
-                      style={{ '--i': r * 4 + i + 1 } as React.CSSProperties}
-                    />
-                  ))}
-                  {row.more > 0 && (
-                    <span
-                      className="lib-card-peek-more"
-                      style={{ '--i': r * 4 + 4 } as React.CSSProperties}
-                    >
-                      +{row.more}
-                    </span>
-                  )}
-                </span>
-              ))}
-            </span>
-          )}
-        </div>
-        <div className="px-3 pt-2.5 pb-3">
-          <div className="truncate text-sm font-medium">{item.name}</div>
-          <div className="truncate text-xs text-ink-subtle">
-            {item.profile && profile && (profile.periods || profile.expressions)
-              ? profileLine(item.profile, profile)
-              : tagLine(kind, item.tags) || `${item.images.length} 张参考图`}
-          </div>
-        </div>
-      </button>
-      {kind.id === 'character' && (
-        <span className="ui-badge lib-card-completeness" title="已添加的角色图片类型">
-          {imageKinds} / 4 形象
-        </span>
-      )}
-      <button
-        type="button"
-        aria-label={item.favorite ? '取消收藏' : '收藏'}
-        aria-pressed={item.favorite}
-        title={item.favorite ? '取消收藏' : '收藏'}
-        onClick={() =>
-          update(item.id, { favorite: !item.favorite }).catch((err) =>
-            useCanvas.getState().notify(`收藏没改成：${(err as Error).message}`),
-          )
-        }
-        className={`ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn absolute top-2 right-2 bg-float ${
-          item.favorite
-            ? 'text-warning'
-            : 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'
-        }`}
-      >
-        <Icon name="star" size={14} />
-      </button>
-      {canPlace && (
+      <div className="relative">
         <button
           type="button"
-          onClick={onPlace}
-          disabled={placing}
-          className="ui-btn ui-btn-primary ui-btn-sm lib-card-place absolute bottom-16 left-1/2"
+          onClick={() => onOpen(coverRef.current)}
+          className="block w-full text-left"
         >
-          {placing ? '正在放入…' : '添加到画布'}
+          <div
+            ref={coverRef}
+            data-lib-cover={item.id}
+            data-kind={kind.id}
+            className="lib-card-cover"
+          >
+            {cover ? (
+              <img src={cover} alt="" loading="lazy" draggable={false} />
+            ) : (
+              <span className="line-clamp-6 px-4 text-xs text-ink-subtle">
+                {item.description || '没有参考图'}
+              </span>
+            )}
+            {peek.length > 0 && (
+              <span className="lib-card-peek" aria-hidden="true">
+                {peek.map((row, r) => (
+                  <span key={row.id} className="lib-card-peek-row">
+                    <span
+                      className="lib-card-peek-period"
+                      style={{ '--i': r * 4 } as React.CSSProperties}
+                    >
+                      {row.image ? (
+                        <img src={thumb(row.image)} alt="" loading="lazy" draggable={false} />
+                      ) : (
+                        <Icon name="period" size={12} />
+                      )}
+                      <span className="truncate">{row.name}</span>
+                    </span>
+                    {row.outfits.map((id, i) => (
+                      <img
+                        key={id}
+                        src={thumb(id)}
+                        alt=""
+                        loading="lazy"
+                        draggable={false}
+                        style={{ '--i': r * 4 + i + 1 } as React.CSSProperties}
+                      />
+                    ))}
+                    {row.more > 0 && (
+                      <span
+                        className="lib-card-peek-more"
+                        style={{ '--i': r * 4 + 4 } as React.CSSProperties}
+                      >
+                        +{row.more}
+                      </span>
+                    )}
+                  </span>
+                ))}
+              </span>
+            )}
+          </div>
+          <div className="px-3 pt-2.5 pb-3">
+            <div className="truncate text-sm font-medium">{item.name}</div>
+            <div className="truncate text-xs text-ink-subtle">
+              {item.profile && profile && (profile.periods || profile.expressions)
+                ? profileLine(item.profile, profile)
+                : tagLine(kind, item.tags) || `${item.images.length} 张参考图`}
+            </div>
+          </div>
         </button>
+        {kind.id === 'character' && (
+          <span className="ui-badge lib-card-completeness" title="已添加的角色图片类型">
+            {imageKinds} / 4 形象
+          </span>
+        )}
+        <button
+          type="button"
+          aria-label={item.favorite ? '取消收藏' : '收藏'}
+          aria-pressed={item.favorite}
+          title={item.favorite ? '取消收藏' : '收藏'}
+          disabled={favoriteBusy}
+          aria-busy={favoriteBusy || undefined}
+          onClick={() => void toggleFavorite()}
+          className={`ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn absolute top-2 right-2 bg-float ${
+            item.favorite
+              ? 'text-warning'
+              : 'opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'
+          }`}
+        >
+          <Icon name="star" size={14} />
+        </button>
+        {canPlace && (
+          <button
+            type="button"
+            onClick={onPlace}
+            disabled={placing}
+            className="ui-btn ui-btn-primary ui-btn-sm lib-card-place absolute bottom-16 left-1/2"
+          >
+            {placing ? '正在放入…' : '添加到画布'}
+          </button>
+        )}
+      </div>
+      {favoriteError && (
+        <p role="alert" className="mx-3 mb-3 rounded-lg bg-danger/5 px-2 py-2 text-xs text-danger">
+          {favoriteError}。点击星标重试。
+        </p>
       )}
     </li>
   )
