@@ -1,8 +1,8 @@
 import type { Engine } from '@plein/canvas-core'
 import { useDocVersion } from '../../canvas/hooks'
-import { planDiffs, syncExpanded } from './model'
+import { planDiffs, shotsOf, syncExpanded } from './model'
 import { type ShotRole, type SyncMode, voiceOf } from '@plein/nodes'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useCanvas } from '../../stores/canvas'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { EmptyState } from '../../ui/EmptyState'
@@ -22,6 +22,21 @@ const PARAM_LABEL: Record<string, string> = {
   voice: '音色',
   instruction: '语气指令',
 }
+
+const diffSnapshot = (
+  shots: Array<{ id: string; no: number }>,
+  diffs: ReturnType<typeof planDiffs>,
+  ids: string[],
+) =>
+  JSON.stringify(
+    shots
+      .filter((s) => ids.includes(s.id) && diffs.has(s.id))
+      .map((s) => [
+        s.id,
+        s.no,
+        diffs.get(s.id)!.map((d) => [d.el.id, d.el.name, d.role, d.line, d.version, d.diffs]),
+      ]),
+  )
 
 /** 参数值直接写进界面，空值说成「空」而不是留白 */
 const show = (v: unknown) => {
@@ -60,6 +75,8 @@ export function StoryboardSync({
 }) {
   useDocVersion(engine.doc)
   const notify = useCanvas((s) => s.notify)
+  const canvasId = useCanvas((s) => s.canvasId)
+  const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     // 分镜表浮层还开着时，本面板自己处理 Esc（见 StoryboardEditor 的按键拦截）
     const key = (e: KeyboardEvent) => {
@@ -70,12 +87,47 @@ export function StoryboardSync({
     return () => window.removeEventListener('keydown', key, true)
   }, [onClose])
   const board = engine.doc.get(boardId)
-  const shots = board?.params?.shots as { id: string; no: number }[] | undefined
+  const shots = shotsOf(board)
   const diffs = planDiffs(engine, boardId)
-  const rows = (shots ?? []).filter((s) => shotIds.includes(s.id) && diffs.has(s.id))
+  const rows = shots.filter((s) => shotIds.includes(s.id) && diffs.has(s.id))
+  const displayed = diffSnapshot(shots, diffs, shotIds)
 
   const sync = (mode: SyncMode) => {
-    const { nodes, fields, kept } = syncExpanded(engine, boardId, shotIds, mode)
+    const state = useCanvas.getState()
+    if (
+      state.engine !== engine ||
+      state.canvasId !== canvasId ||
+      state.storyboard !== boardId ||
+      engine.doc.get(boardId)?.nodeType !== 'plein/storyboard'
+    )
+      return
+    if (engine.doc.readOnly) {
+      setError('画布已变为只读，本次操作未执行')
+      return
+    }
+    if (
+      displayed !==
+      diffSnapshot(shotsOf(engine.doc.get(boardId)), planDiffs(engine, boardId), shotIds)
+    ) {
+      setError('差异已变化，本次操作未执行；请核对更新后的内容再操作')
+      return
+    }
+    if (!rows.length) return
+    setError(null)
+    let result!: ReturnType<typeof syncExpanded>
+    engine.doc.undo.stopCapturing()
+    try {
+      engine.doc.ydoc.transact(() => {
+        result = syncExpanded(engine, boardId, shotIds, mode)
+      }, engine.doc.origin)
+      engine.doc.flush()
+    } catch (error) {
+      setError(`操作失败：${(error as Error).message}`)
+      return
+    } finally {
+      engine.doc.undo.stopCapturing()
+    }
+    const { nodes, fields, kept } = result
     if (mode === 'unmodified')
       notify(
         fields
@@ -92,7 +144,7 @@ export function StoryboardSync({
         <button
           type="button"
           className={btn}
-          disabled={!rows.length}
+          disabled={!rows.length || engine.doc.readOnly}
           title="节点一个字段都不改，这版差异记为已确认、不再提示"
           onClick={() => sync('keep-overrides')}
         >
@@ -101,13 +153,18 @@ export function StoryboardSync({
         <button
           type="button"
           className="ui-btn ui-btn-primary"
-          disabled={!rows.length}
+          disabled={!rows.length || engine.doc.readOnly}
           title="把分镜表的改动写进节点；你在节点上改过的字段保留"
           onClick={() => sync('unmodified')}
         >
           同步计划改动
         </button>
       </ModalHeader>
+      {error && (
+        <p role="alert" className="flex-none px-5 pb-3 text-sm text-danger">
+          {error}
+        </p>
+      )}
       {rows.length > 0 && (
         <p className="px-5 pb-3 text-xs text-ink-subtle">
           「同步计划改动」只改标着「计划已改」的字段，标着「你改过」的保留你的值；同步后的节点需要重新生成。
@@ -161,6 +218,11 @@ export function StoryboardSync({
                               <span className="ui-tag ui-tag-warning">计划已改</span>
                             )}
                             {f.legacy && <span className="ui-tag">没有展开快照</span>}
+                            {f.overridden && (
+                              <span className="min-w-0 basis-full break-words text-xs text-ink-subtle">
+                                计划：{show(f.wanted)}
+                              </span>
+                            )}
                           </li>
                         ))}
                       </ul>

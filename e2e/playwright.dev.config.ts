@@ -106,6 +106,8 @@ export default defineConfig({
     'animatic-number-editing.spec.ts',
     'storyboard-text-collaboration.spec.ts',
     'storyboard-structure.spec.ts',
+    'storyboard-sync-boundaries.spec.ts',
+    'storyboard.spec.ts',
     'storyboard-editing.spec.ts',
     'storyboard-mention-navigation.spec.ts',
     'storyboard-dialogue-collaboration.spec.ts',
