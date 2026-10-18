@@ -219,9 +219,9 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
               一个项目一部片子，下面可以分多张画布；角色、场景、风格存进资产库跨画布复用
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {projects && projects.length > 1 && (
-              <label className="home-search">
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">
+            {projects && (projects.length > 1 || query) && (
+              <label className="home-search max-sm:basis-full">
                 <Icon name="search" />
                 <input
                   type="search"
@@ -236,7 +236,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
               type="button"
               onClick={() => fileInput.current?.click()}
               title="导入从另一台电脑或数据目录导出的 .plein 项目包"
-              className="ui-btn ui-btn-secondary ui-btn-lg"
+              className="ui-btn ui-btn-secondary ui-btn-lg max-sm:flex-1"
             >
               <Icon name="upload" />
               导入项目包
@@ -257,7 +257,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
               type="button"
               onClick={(e) => void create(e.currentTarget)}
               disabled={creating}
-              className="ui-btn ui-btn-primary ui-btn-lg"
+              className="ui-btn ui-btn-primary ui-btn-lg max-sm:flex-1"
             >
               <Icon name="plus" />
               新建项目

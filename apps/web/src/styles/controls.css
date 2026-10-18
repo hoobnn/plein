@@ -657,6 +657,8 @@
     padding: 40px 16px;
   }
   .ui-empty-title {
+    max-width: 100%;
+    overflow-wrap: anywhere;
     font-size: var(--text-sm);
     color: var(--ink-muted);
   }

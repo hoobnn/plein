@@ -114,6 +114,8 @@
   display: flex;
   height: var(--h-lg);
   width: 240px;
+  min-width: 0;
+  max-width: 100%;
   align-items: center;
   gap: 8px;
   padding: 0 12px;
