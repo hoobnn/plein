@@ -25,10 +25,12 @@ export interface AssetRef {
   mime?: string
 }
 
-/** 端口值的附加信息，由宿主填写 */
+/** 端口值的附加信息 */
 export interface PortValueMeta {
   /** 来自画布上的哪个元素：同一端口有多个上游时，执行器靠它对应参数里的设置 */
   source?: string
+  /** 执行器输出的候选关联键，同一候选的主输出和副输出共用；仅在本次运行内有效。 */
+  outputGroup?: string
 }
 
 /** 端口上流动的值 */

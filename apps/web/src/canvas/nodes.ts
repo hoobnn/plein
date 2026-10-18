@@ -236,6 +236,8 @@ export function placeElement(
 export interface Upstream {
   edgeId: string
   source: CanvasElement
+  /** 连线读取的上游输出标签，用于说明当前候选缺少哪个输出。 */
+  outputLabel?: string
   /** 上游当前能提供的值；为空表示没有生效结果（未生成或待采用） */
   value?: ResultValue
 }
@@ -270,7 +272,12 @@ export function upstreams(
     )
       value = { type: source.kind, assetId: source.assetId }
     const list = out.get(e.to[1]) ?? []
-    list.push({ edgeId: e.id, source, value })
+    list.push({
+      edgeId: e.id,
+      source,
+      value,
+      outputLabel: source.ports?.outputs.find((p) => p.id === e.from[1])?.label ?? e.from[1],
+    })
     out.set(e.to[1], list)
   }
   return out
@@ -327,6 +334,8 @@ export function validate(
     if (pending) {
       if (pending.source.adopted === null && pending.source.results?.length)
         return `上游节点「${pending.source.name ?? '节点'}」有候选待采用，请先查看并采用结果`
+      if (currentResult(pending.source) && pending.outputLabel)
+        return `上游节点「${pending.source.name ?? '节点'}」当前候选没有可确认的「${pending.outputLabel}」输出，请检查所选候选`
       return `上游「${pending.source.name ?? '节点'}」还没有结果`
     }
   }

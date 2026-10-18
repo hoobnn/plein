@@ -327,7 +327,9 @@ function RefTile({
     ? `预览「${name}」`
     : up.source.adopted === null && up.source.results?.length
       ? `「${name}」有候选待采用，点击定位来源`
-      : `「${name}」还没有结果，点击定位来源`
+      : up.source.results?.length && up.outputLabel
+        ? `「${name}」当前候选缺少可确认的「${up.outputLabel}」输出，点击定位来源`
+        : `「${name}」还没有结果，点击定位来源`
   return (
     <div
       role="group"

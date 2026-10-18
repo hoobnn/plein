@@ -1393,7 +1393,16 @@ export class NodeRuns implements BatchHost {
     })
     const at = Date.now()
     const results: NodeResult[] = Object.entries(outputs).flatMap(([port, values]) =>
-      values.map((v) => ({ id: newId('res'), port, value: toResultValue(v), runId: a.id, at })),
+      values.map((v) => ({
+        id: newId('res'),
+        port,
+        value: toResultValue(v),
+        runId: a.id,
+        at,
+        ...(typeof v.outputGroup === 'string' && v.outputGroup
+          ? { outputGroup: v.outputGroup }
+          : {}),
+      })),
     )
     // 运行结果写回的参数不计入缓存键，否则节点一跑完就“过期”
     const patchFor = () => {
@@ -1691,6 +1700,13 @@ export class NodeRuns implements BatchHost {
             'missing_input',
             `上游节点「${label}」有候选待采用，请先查看并采用结果`,
           )
+        if (currentResult(src)) {
+          const output = src.ports?.outputs.find((p) => p.id === port)?.label ?? port
+          throw new NodeRunError(
+            'missing_input',
+            `上游节点「${label}」当前候选没有可确认的「${output}」输出，请检查所选候选`,
+          )
+        }
         throw new NodeRunError('missing_input', `上游节点「${label}」还没有结果，请先运行它`)
       }
       default:

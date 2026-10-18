@@ -173,7 +173,9 @@ const video = defineExecutor(videoNode, async (ctx) => {
   const results = await Promise.all(
     Array.from({ length: params.count }, () => ctx.providers.call('video.generate', model, input)),
   )
-  const assets = results.flatMap((r) => r.assets)
+  const assets = results.flatMap((r, index) =>
+    r.assets.map((asset) => ({ ...asset, outputGroup: String(index) })),
+  )
   return {
     video: assets.filter((a) => a.kind === 'video').map((a) => ({ type: 'video' as const, ...a })),
     // 开了「返回尾帧」的模型多给一张图

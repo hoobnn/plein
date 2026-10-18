@@ -370,20 +370,32 @@ export function addResults(
 
 /**
  * 当前生效的结果：显式 null 表示尚未采用；未指定时使用最新的，可按输出端口筛选。
- * 按端口取时跟着采用的那次运行走：那次没产出这个端口（如没开「返回尾帧」）就是没有，
- * 不拿更早一次的结果凑数。
+ * 按端口取时跟随采用候选的关联组；旧结果只有跨端口唯一配对时才兼容按运行关联。
+ * 候选没有对应输出时就是没有，不拿同次其他候选或更早的结果凑数。
  */
 export function currentResult(el: CanvasElement, port?: string): NodeResult | undefined {
   if (el.adopted === null) return undefined
   const all = el.results ?? []
-  const list = all.filter((r) => port === undefined || r.port === port)
-  const own = list.find((r) => r.id === el.adopted)
-  if (own) return own
-  const adopted = el.adopted ? all.find((r) => r.id === el.adopted) : undefined
-  return adopted ? list.find((r) => r.runId === adopted.runId) : list[0]
+  const chosen = all.find((r) => r.id === el.adopted) ?? all[0]
+  if (!chosen || port === undefined || chosen.port === port) return chosen
+  const related = all.filter((r) => r.runId === chosen.runId)
+  const list = related.filter((r) => r.port === port)
+  if (chosen.outputGroup !== undefined) {
+    const group = related.filter((r) => r.outputGroup === chosen.outputGroup)
+    const outputs = group.filter((r) => r.port === port)
+    return group.filter((r) => r.port === chosen.port).length === 1 && outputs.length === 1
+      ? outputs[0]
+      : undefined
+  }
+  // 旧数据没有候选关联键，多个同端口结果之间无法确认对应关系，不能猜第一条。
+  return related.filter((r) => r.port === chosen.port).length === 1 &&
+    list.length === 1 &&
+    list[0]!.outputGroup === undefined
+    ? list[0]
+    : undefined
 }
 
-/** 节点展示与播放入口使用主输出；采用副输出时仍取同次运行的主输出。无端口声明时兼容旧结果。 */
+/** 节点展示与播放入口使用主输出；采用副输出时仍取同一候选的主输出。无端口声明时兼容旧结果。 */
 export function primaryResult(el: CanvasElement): NodeResult | undefined {
   return currentResult(el, el.ports?.outputs[0]?.id)
 }

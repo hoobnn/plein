@@ -106,6 +106,8 @@ export interface NodeResult {
   value: ResultValue
   /** 同一次运行的结果共享 runId */
   runId: string
+  /** 本次运行内的候选关联键，例如一条视频与它自己的尾帧。 */
+  outputGroup?: string
   at: number
 }
 

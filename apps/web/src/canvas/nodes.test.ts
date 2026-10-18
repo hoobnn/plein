@@ -117,6 +117,20 @@ describe('运行前校验', () => {
     expect(validate(required, el(ok), ups(), null)).toBe('需要连入参考图')
     const pending = ups({ references: [up('A', { type: 'image', assetId: 'x' }), up('B')] })
     expect(validate(image, el(ok), pending, null)).toBe('上游「B」还没有结果')
+    const missingOutput = up('镜头')
+    missingOutput.outputLabel = '尾帧'
+    missingOutput.source.results = [
+      {
+        id: 'video',
+        runId: 'run',
+        port: 'video',
+        at: 1,
+        value: { type: 'video', assetId: 'video' },
+      },
+    ]
+    expect(validate(image, el(ok), ups({ references: [missingOutput] }), null)).toBe(
+      '上游节点「镜头」当前候选没有可确认的「尾帧」输出，请检查所选候选',
+    )
     const held = up('B')
     held.source.adopted = null
     held.source.results = [

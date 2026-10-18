@@ -3,6 +3,105 @@ import { clickElement, newProject, waitEngine, waitNode } from './canvas'
 import { solidPng } from '../packages/providers/src/mock/media'
 import type { NodeResult } from '../packages/doc/src/types'
 
+for (const hasTail of [false, true]) {
+  test(`同次两个视频切换采用后读取各自尾帧，撤销刷新保持一致（第二条有尾帧=${hasTail}）`, async ({
+    page,
+  }) => {
+    await newProject(page)
+    const source = await page.evaluate(() =>
+      window.__plein.addNode({
+        type: 'plein/video',
+        name: '同次多候选视频',
+        params: { model: 'plein/mock:video', prompt: '雨后水杯', mode: 'text', count: 2 },
+        x: 400,
+        y: 200,
+      }),
+    )
+    const canvas = /#\/c\/([^/?]+)/.exec(page.url())![1]
+    expect(
+      (
+        await page.request.post(`/api/canvases/${canvas}/nodes/${source}/run`, { data: {} })
+      ).status(),
+    ).toBe(202)
+    await waitNode(page, source)
+    const tails: string[] = []
+    for (const color of [
+      [210, 80, 40],
+      [40, 120, 210],
+    ] as [number, number, number][]) {
+      const response = await page.request.post('/api/assets', {
+        headers: { 'content-type': 'image/png' },
+        data: Buffer.from(solidPng(64, 64, color)),
+      })
+      expect(response.status()).toBe(201)
+      tails.push((await response.json()).id)
+    }
+    const target = await page.evaluate(
+      ({ source, tails, hasTail }) => {
+        const map = window.__plein.engine.doc.mutable(source)! as {
+          get(key: string): unknown
+          set(key: string, value: unknown): void
+        }
+        const videos = map.get('results') as NodeResult[]
+        // 视频候选及关联键由真实 Mock 执行产生；受控补入不同颜色的尾帧，避免相同视频字节掩盖串用。
+        map.set('results', [
+          ...videos,
+          ...videos.slice(0, hasTail ? 2 : 1).map((video, i) => ({
+            id: `tail-${i}`,
+            port: 'lastFrame',
+            runId: video.runId,
+            outputGroup: video.outputGroup,
+            at: video.at,
+            value: { type: 'image', assetId: tails[i] },
+          })),
+        ])
+        const target = window.__plein.addNode({
+          type: 'plein/image',
+          name: '尾帧参考图片',
+          params: { model: 'plein/mock:image', prompt: '沿用当前视频尾帧' },
+          x: 1000,
+          y: 200,
+        })
+        window.__plein.connect([source, 'lastFrame'], [target, 'references'])
+        window.__plein.engine.zoomToFit()
+        return target
+      },
+      { source, tails, hasTail },
+    )
+    const input = async () =>
+      (await page.request.get(`/api/canvases/${canvas}/nodes/${target}/input`)).json()
+    const asset = async () => (await input()).inputs.references?.[0]?.assetId
+    await expect.poll(asset).toBe(tails[0])
+    await clickElement(page, source)
+    const generator = page.getByTestId('generator')
+    await generator.getByRole('button', { name: '全屏查看', exact: true }).click()
+    const viewer = page.getByRole('dialog', { name: '查看「同次多候选视频」', exact: true })
+    await viewer.getByRole('button', { name: '预览下一个候选', exact: true }).click()
+    await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
+    await viewer.getByRole('button', { name: '关闭', exact: true }).click()
+    await clickElement(page, target)
+    await expect.poll(asset).toBe(hasTail ? tails[1] : undefined)
+    if (hasTail) {
+      await expect(
+        generator
+          .getByRole('group', { name: '参考 1：同次多候选视频', exact: true })
+          .locator('img'),
+      ).toHaveAttribute('src', new RegExp(tails[1]!))
+    } else {
+      await expect(generator).toContainText('当前候选没有可确认的「尾帧」输出')
+      await expect(generator.getByRole('button', { name: '生成', exact: true })).toBeDisabled()
+    }
+    await generator.screenshot({ path: test.info().outputPath('paired-tail-input.png') })
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    await expect.poll(asset).toBe(tails[0])
+    await page.getByRole('button', { name: '重做', exact: true }).click()
+    await expect.poll(asset).toBe(hasTail ? tails[1] : undefined)
+    await page.reload()
+    await waitEngine(page)
+    await expect.poll(asset).toBe(hasTail ? tails[1] : undefined)
+  })
+}
+
 test('采用旧视频的尾帧后，主视频预览、撤销重做和刷新保持对应运行', async ({ page }) => {
   await newProject(page)
   const id = await page.evaluate(() =>
@@ -40,6 +139,7 @@ test('采用旧视频的尾帧后，主视频预览、撤销重做和刷新保�
           id: 'tail-old',
           port: 'lastFrame',
           runId: old.runId,
+          outputGroup: old.outputGroup,
           at: old.at,
           value: { type: 'image', assetId: tailAsset },
         },

@@ -298,13 +298,13 @@ describe('迁移', () => {
     const copy = new Y.Doc()
     Y.applyUpdate(copy, Y.encodeStateAsUpdate(source.ydoc))
     const restored = open(copy)
-    expect(restored.schemaVersion).toBe(5)
+    expect(restored.schemaVersion).toBe(SCHEMA_VERSION)
     expect(currentResult(restored.get(id)!)?.id).toBe('r')
     source.mutable(id)!.set('adopted', null)
     const pending = new Y.Doc()
     Y.applyUpdate(pending, Y.encodeStateAsUpdate(source.ydoc))
     const restoredPending = open(pending)
-    expect(restoredPending.schemaVersion).toBe(5)
+    expect(restoredPending.schemaVersion).toBe(SCHEMA_VERSION)
     expect(restoredPending.get(id)!.adopted).toBeNull()
     expect(currentResult(restoredPending.get(id)!)).toBeUndefined()
   })
@@ -428,6 +428,88 @@ describe('节点结果与端口', () => {
     ],
     outputs: [{ id: 'images', label: '图片', type: 'image' as const }],
   }
+
+  it.each([false, true])(
+    '同次多个视频按候选分组读取尾帧，缺帧不借用其他候选（第二条有尾帧=%s）',
+    (hasTail) => {
+      const doc = open()
+      const id = createElement(doc, {
+        kind: 'node',
+        x: 0,
+        y: 0,
+        w: 200,
+        h: 200,
+        ports: {
+          inputs: [],
+          outputs: [
+            { id: 'video', label: '视频', type: 'video' },
+            { id: 'lastFrame', label: '尾帧', type: 'image' },
+          ],
+        },
+      })
+      const result = (id: string, port: string, outputGroup: string) => ({
+        id,
+        port,
+        outputGroup,
+        runId: 'same-run',
+        at: 1,
+        value: { type: (port === 'video' ? 'video' : 'image') as 'video' | 'image', assetId: id },
+      })
+      addResults(doc, id, [
+        result('video-1', 'video', 'a'),
+        result('video-2', 'video', 'b'),
+        result('tail-1', 'lastFrame', 'a'),
+        ...(hasTail ? [result('tail-2', 'lastFrame', 'b')] : []),
+      ])
+      adoptResult(doc, id, 'video-2')
+      expect(currentResult(doc.get(id)!, 'lastFrame')?.id).toBe(hasTail ? 'tail-2' : undefined)
+      if (hasTail) {
+        adoptResult(doc, id, 'tail-2')
+        expect(videoAssetOf(doc.get(id))).toBe('video-2')
+      }
+      const restored = open()
+      Y.applyUpdate(restored.ydoc, Y.encodeStateAsUpdate(doc.ydoc))
+      expect(currentResult(restored.get(id)!, 'lastFrame')?.id).toBe(hasTail ? 'tail-2' : undefined)
+      const [copy] = importElements(restored, exportElements(doc, [id]))
+      expect(currentResult(restored.get(copy!)!, 'lastFrame')?.id).toBe(
+        hasTail ? 'tail-2' : undefined,
+      )
+      // 重复关联键同样不能成为“取第一条”的理由。
+      restored.mutable(copy!)!.set(
+        'results',
+        restored.get(copy!)!.results!.map((r) => ({ ...r, outputGroup: 'duplicate' })),
+      )
+      expect(currentResult(restored.get(copy!)!, hasTail ? 'video' : 'lastFrame')).toBeUndefined()
+    },
+  )
+
+  it.each([1, 2])('v5 旧结果只接受唯一的跨端口配对，不猜测缺失关联（视频数=%s）', (count) => {
+    const source = open()
+    const id = createElement(source, { kind: 'node', x: 0, y: 0, w: 200, h: 200 })
+    addResults(source, id, [
+      ...Array.from({ length: count }, (_, i) => ({
+        id: `v${i}`,
+        port: 'video',
+        runId: 'run',
+        at: 1,
+        value: { type: 'video' as const, assetId: `v${i}` },
+      })),
+      {
+        id: 'tail',
+        port: 'lastFrame',
+        runId: 'run',
+        at: 1,
+        value: { type: 'image', assetId: 'tail' },
+      },
+    ])
+    source.ydoc.getMap('meta').set('schemaVersion', 5)
+    const snapshot = new Y.Doc()
+    Y.applyUpdate(snapshot, Y.encodeStateAsUpdate(source.ydoc))
+    const restored = open(snapshot)
+    expect(restored.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(restored.get(id)!.results).toEqual(source.get(id)!.results)
+    expect(currentResult(restored.get(id)!, 'lastFrame')?.id).toBe(count === 1 ? 'tail' : undefined)
+  })
 
   it('结果追加后自动采用，采用可撤销，系统写入不进撤销栈', () => {
     const doc = open()
