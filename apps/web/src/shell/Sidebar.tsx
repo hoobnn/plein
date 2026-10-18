@@ -685,6 +685,11 @@ function Assets({ engine }: { engine: Engine | null }) {
     <>
       <div className="ui-scrollbar min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <LibraryReadStatus loaded={loaded} loading={loading} error={error} load={load} />
+        {placement.error && (
+          <p role="alert" className="mb-3 rounded-lg bg-danger/5 px-3 py-2 text-xs text-danger">
+            {placement.error}。点击条目重试。
+          </p>
+        )}
         {groups.map((g) => (
           <section key={g.kind.id} className="pb-3">
             <h3 className="flex h-8 items-center gap-2 px-2 text-xs font-medium text-ink-subtle">

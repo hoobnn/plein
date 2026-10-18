@@ -1,7 +1,7 @@
 import { expect, type Page, test } from '@playwright/test'
 import { newProject, waitEngine } from './canvas'
 
-async function fixture(page: Page) {
+async function fixture(page: Page, failure?: 'http' | 'network') {
   await newProject(page)
   const canvasId = page.url().split('/').at(-1)!
   const canvas = await (await page.request.get(`/api/canvases/${canvasId}`)).json()
@@ -39,6 +39,12 @@ async function fixture(page: Page) {
   await page.route(`**/api/assets/${asset}/meta`, async (route) => {
     requested = true
     await held
+    if (failure === 'http')
+      return route.fulfill({
+        status: 503,
+        json: { error: 'temporary_failure', message: '素材服务暂不可用' },
+      })
+    if (failure === 'network') return route.abort('failed')
     await route.continue()
   })
   const cards = () =>
@@ -49,7 +55,90 @@ async function fixture(page: Page) {
           .map((el) => el.id),
       item.id,
     )
-  return { row, sidebar, item, asset, resume, requested: () => requested, cards }
+  return {
+    row,
+    sidebar,
+    item,
+    asset,
+    resume,
+    recover: () => {
+      failure = undefined
+    },
+    requested: () => requested,
+    cards,
+  }
+}
+
+for (const failure of ['http', 'network'] as const) {
+  test(`素材 ${failure} 失败不丢失参考图，反馈失败后可直接重试`, async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 560 })
+    const f = await fixture(page, failure)
+    const resize = f.sidebar.getByRole('separator', { name: '调整侧栏宽度', exact: true })
+    await resize.focus()
+    await page.keyboard.press('Shift+ArrowLeft')
+    await page.keyboard.press('Shift+ArrowLeft')
+    f.resume()
+    await f.row.click()
+    await expect(page.locator('.ui-toast')).toContainText('放入资产失败')
+    await expect(f.sidebar.getByRole('alert')).toContainText('点击条目重试')
+    await expect(f.row).toBeEnabled()
+    await expect(f.row).not.toContainText('已在画布')
+    expect(await f.cards()).toEqual([])
+    expect(await page.evaluate(() => [...window.__plein.engine.doc.elements()].length)).toBe(0)
+    await f.sidebar.screenshot({
+      path: test.info().outputPath('placement-read-failure.png'),
+      animations: 'disabled',
+    })
+    f.recover()
+    await f.row.click()
+    await expect.poll(f.cards).toHaveLength(1)
+    await expect(f.sidebar.getByRole('alert')).toHaveCount(0)
+    const [id] = await f.cards()
+    expect(
+      await page.evaluate((id) => {
+        const { doc } = window.__plein.engine
+        return [...doc.edges()]
+          .filter((edge) => edge.to[0] === id)
+          .map((edge) => doc.get(edge.from[0])?.assetId)
+      }, id!),
+    ).toEqual([f.asset])
+  })
+}
+
+for (const entry of ['列表', '编辑档案']) {
+  test(`资产库${entry}放入失败在面板内展示错误，重试后带完整参考图关闭面板`, async ({ page }) => {
+    const f = await fixture(page, 'http')
+    f.resume()
+    await f.sidebar.getByRole('button', { name: '打开资产库', exact: true }).click()
+    const panel = page.getByRole('dialog', { name: '资产库', exact: true })
+    await panel.getByRole('button', { name: '道具', exact: true }).click()
+    await panel.getByRole('button', { name: '本项目', exact: true }).click()
+    const card = panel.getByRole('listitem').filter({ hasText: f.item.name })
+    if (entry === '编辑档案') await card.getByRole('button').first().click()
+    else await card.hover()
+    const place = panel.getByRole('button', { name: '添加到画布', exact: true })
+    await place.click()
+    await expect(panel.getByRole('alert')).toContainText('素材服务暂不可用')
+    await expect(place).toBeEnabled()
+    expect(await f.cards()).toEqual([])
+    await panel.screenshot({
+      path: test.info().outputPath('library-placement-read-failure.png'),
+      animations: 'disabled',
+    })
+    f.recover()
+    await place.click()
+    await expect(panel).toBeHidden()
+    await expect.poll(f.cards).toHaveLength(1)
+    const [id] = await f.cards()
+    expect(
+      await page.evaluate((id) => {
+        const { doc } = window.__plein.engine
+        return [...doc.edges()]
+          .filter((edge) => edge.to[0] === id)
+          .map((edge) => doc.get(edge.from[0])?.assetId)
+      }, id!),
+    ).toEqual([f.asset])
+  })
 }
 
 test('慢速素材读取期间重复点击不重复铺卡，显示放入进度并关联正确素材', async ({ page }) => {

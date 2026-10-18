@@ -244,6 +244,11 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
           </>
         )}
       </ModalHeader>
+      {placement.error && (
+        <p role="alert" className="mx-5 my-3 rounded-lg bg-danger/5 px-3 py-2 text-sm text-danger">
+          {placement.error}。请重试放入。
+        </p>
+      )}
       {editing ? (
         <Editor
           key={`${kindId}:${editing.type === 'item' ? editing.id : editing.type}`}

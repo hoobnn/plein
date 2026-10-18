@@ -4,30 +4,35 @@ import { corePlugin, libraryKind } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
 import type { Asset, Catalog, LibraryItem } from '@plein/protocol'
 import { describe, expect, it, vi } from 'vite-plus/test'
+import { ApiError, api } from '../../api/client'
 
 const A = 'a'.repeat(64)
 const B = 'b'.repeat(64)
 const V = 'c'.repeat(64)
 
-vi.mock('../../api/client', () => ({
-  api: {
-    assetMeta: async (id: string): Promise<Asset> => {
-      if (id === 'f'.repeat(64)) throw new Error('not found')
-      const video = id === V
-      return {
-        id,
-        kind: video ? 'video' : 'image',
-        mime: video ? 'video/mp4' : 'image/png',
-        name: id.slice(0, 4),
-        size: 1,
-        width: 400,
-        height: 600,
-        variants: [],
-        createdAt: 0,
-      }
+vi.mock('../../api/client', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../api/client')>()
+  return {
+    ...original,
+    api: {
+      assetMeta: vi.fn(async (id: string): Promise<Asset> => {
+        if (id === 'f'.repeat(64)) throw new original.ApiError(404, 'not_found', 'not found')
+        const video = id === V
+        return {
+          id,
+          kind: video ? 'video' : 'image',
+          mime: video ? 'video/mp4' : 'image/png',
+          name: id.slice(0, 4),
+          size: 1,
+          width: 400,
+          height: 600,
+          variants: [],
+          createdAt: 0,
+        }
+      }),
     },
-  },
-}))
+  }
+})
 
 const { cardSnapshot, placeLibraryItem, placeInputOf, saveCardToLibrary } = await import('./canvas')
 
@@ -70,6 +75,34 @@ const item = (patch: Partial<LibraryItem> = {}): LibraryItem => ({
 })
 
 describe('资产库 ↔ 画布', () => {
+  it.each([403, 429, 503, 'network'])(
+    '素材读取失败 %s 不降级为空参考卡片，重试后完整放入',
+    async (status) => {
+      const { doc, engine, selected } = setup()
+      const asset =
+        typeof status === 'number' ? status.toString(16).padStart(64, '0') : 'e'.repeat(64)
+      const error =
+        typeof status === 'number'
+          ? new ApiError(status, 'test_failure', '素材读取失败')
+          : new TypeError('Failed to fetch')
+      vi.mocked(api.assetMeta).mockRejectedValueOnce(error)
+      const input = placeInputOf(
+        item({
+          images: [
+            { slot: 'main', assetId: A },
+            { slot: 'extra', assetId: asset },
+          ],
+        }),
+      )!
+      await expect(placeLibraryItem(engine, catalog, input)).rejects.toBe(error)
+      expect([...doc.elements()]).toEqual([])
+      expect([...doc.edges()]).toEqual([])
+      expect(selected()).toEqual([])
+      const result = await placeLibraryItem(engine, catalog, input)
+      expect(result.id).toBeTruthy()
+      expect([...doc.edges()].map((edge) => doc.get(edge.from[0])?.assetId)).toEqual([A, asset])
+    },
+  )
   it('并发放入同一条资产只创建一张卡片和一组素材连线', async () => {
     const { doc, engine } = setup()
     const [first, second] = await Promise.all([

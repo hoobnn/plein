@@ -16,7 +16,7 @@ import {
   preserveLibraryImageSlots,
 } from '@plein/nodes'
 import type { Asset, Catalog, CreateLibraryItem, LibraryItem } from '@plein/protocol'
-import { assetUrls } from '../../api/client'
+import { ApiError, assetUrls } from '../../api/client'
 import { loadAssetMeta } from '../../stores/assetMeta'
 import type { LibrarySeed } from './store'
 import { mediaOf } from '../../canvas/grid'
@@ -63,7 +63,14 @@ export function coverOf(item: LibraryItem, kind = libraryKind(item.kind)) {
 }
 
 async function metas(ids: string[]) {
-  const out = await Promise.all(ids.map((id) => loadAssetMeta(id).catch(() => null)))
+  const out = await Promise.all(
+    ids.map((id) =>
+      loadAssetMeta(id).catch((error: unknown) => {
+        if (error instanceof ApiError && error.status === 404) return null
+        throw error
+      }),
+    ),
+  )
   return out.filter((a): a is Asset => a !== null)
 }
 
