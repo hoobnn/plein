@@ -288,6 +288,37 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       return
     }
     if (e.target instanceof Element && e.target.closest('.ui-select, .ui-menu')) return
+    const target = e.target instanceof HTMLElement ? e.target : null
+    const key = e.key.toLowerCase()
+    const nativeEditing =
+      target?.isContentEditable ||
+      target?.closest('textarea, select, audio, video, [role="textbox"], [role="combobox"]') ||
+      (target instanceof HTMLInputElement &&
+        !['checkbox', 'radio', 'button', 'submit', 'reset'].includes(target.type))
+    if (
+      !e.defaultPrevented &&
+      !e.altKey &&
+      (e.metaKey || e.ctrlKey) &&
+      (key === 'z' || key === 'y') &&
+      !nativeEditing
+    ) {
+      // 子面板保留自己的撤销归属；按钮与复选框上的撤销不回到最近编辑过的文本框。
+      if (!target?.closest('[role="dialog"]')?.classList.contains('seq-editor')) return
+      e.stopPropagation()
+      e.preventDefault()
+      const state = useCanvas.getState()
+      if (
+        !engine.doc.readOnly &&
+        state.engine === engine &&
+        state.canvasId === canvasId &&
+        state.sequence === id &&
+        engine.doc.has(id)
+      ) {
+        if (key === 'y' || e.shiftKey) engine.redo()
+        else engine.undo()
+      }
+      return
+    }
     // 输入框里的按键照常交给输入框（回车提交、Esc 由面板关闭）；画布的快捷键本来就不管输入框
     if (typing(e.target)) return
     e.stopPropagation()

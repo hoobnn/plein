@@ -105,6 +105,134 @@ test.beforeAll(() => {
 })
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
+test('交付新增意见可从按钮独立撤销重做，不撤回紧邻的改名或丢失草稿', async ({ page }) => {
+  const f = await fixture(page)
+  const before = await f.read()
+  await f.field.fill('新增意见的撤销边界')
+  await f.add.evaluate((button, id) => {
+    const { doc } = window.__plein.engine as typeof window.__plein.engine & {
+      doc: { origin: unknown; ydoc: { transact(fn: () => void, origin: unknown): void } }
+    }
+    doc.ydoc.transact(() => {
+      ;(doc.mutable(id)! as unknown as { set(key: string, value: unknown): void }).set(
+        'name',
+        '保留的交付改名',
+      )
+    }, doc.origin)
+    ;(button as HTMLButtonElement).click()
+  }, f.ids.id)
+  await expect.poll(async () => (await f.read())[1]!.notes.length).toBe(3)
+  const added = await f.read()
+  await f.field.fill('撤销期间保留的草稿')
+  const versionDownload = f.panel.getByRole('button', { name: '下载此版 MP4', exact: true })
+  await versionDownload.focus()
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(f.read).toEqual(before)
+  expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)!.name, f.ids.id)).toBe(
+    '保留的交付改名',
+  )
+  await expect(f.field).toHaveValue('撤销期间保留的草稿')
+  await f.editor.getByRole('button', { name: '剪辑预览', exact: true }).click()
+  await f.editor.getByRole('button', { name: '剪辑预览', exact: true }).focus()
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect.poll(f.read).toEqual(added)
+  await f.editor.getByRole('button', { name: '实际 MP4 回看 / 交付', exact: true }).click()
+  await f.versions.selectOption('r1')
+  await expect(f.panel.getByText('新增意见的撤销边界', { exact: true })).toBeVisible()
+})
+
+test('已解决复选框和删除按钮聚焦时撤销重做对应意见操作', async ({ page }) => {
+  const f = await fixture(page)
+  const before = await f.read()
+  const resolved = f.panel.getByRole('checkbox', { name: '已解决', exact: true }).first()
+  await resolved.check()
+  const checked = await f.read()
+  await resolved.focus()
+  await page.keyboard.press('Control+z')
+  await expect.poll(f.read).toEqual(before)
+  await expect(resolved).not.toBeChecked()
+  await page.keyboard.press('Control+y')
+  await expect.poll(f.read).toEqual(checked)
+  await expect(resolved).toBeChecked()
+  await f.panel.getByRole('button', { name: '删除', exact: true }).first().click()
+  await expect.poll(async () => (await f.read())[1]!.notes.length).toBe(1)
+  const removed = await f.read()
+  await f.panel.getByRole('button', { name: '删除', exact: true }).first().focus()
+  await page.keyboard.press('Meta+z')
+  await expect.poll(f.read).toEqual(checked)
+  await page.keyboard.press('Meta+Shift+z')
+  await expect.poll(f.read).toEqual(removed)
+})
+
+test('交付确认撤销重做遵循实际操作顺序，切换版本不把确认写到当前版', async ({ page }) => {
+  const f = await fixture(page)
+  for (const box of await f.panel.getByRole('checkbox', { name: '已解决', exact: true }).all())
+    await box.check()
+  const unconfirmed = await f.read()
+  await f.panel.getByRole('button', { name: '确认此版本可交付', exact: true }).click()
+  const firstConfirmed = await f.read()
+  await f.versions.selectOption('r2')
+  await f.panel.getByRole('button', { name: '确认此版本可交付', exact: true }).click()
+  const bothConfirmed = await f.read()
+  await f.field.fill('当前新版的未提交意见')
+  await f.panel.getByRole('button', { name: '撤回此版确认', exact: true }).focus()
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(f.read).toEqual(firstConfirmed)
+  await expect(f.panel.getByText('待人工确认', { exact: false })).toBeVisible()
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(f.read).toEqual(unconfirmed)
+  await expect(f.versions).toHaveValue('r2')
+  await expect(f.video).toHaveAttribute('src', `/api/assets/${f.assets[1]}`)
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect.poll(f.read).toEqual(firstConfirmed)
+  await page.keyboard.press('Control+y')
+  await expect.poll(f.read).toEqual(bothConfirmed)
+  await expect(f.panel.getByText('已人工确认此版本', { exact: false })).toBeVisible()
+  await expect(f.field).toHaveValue('当前新版的未提交意见')
+})
+
+test('草稿保留原生撤销，实时只读阻止按钮撤销且恢复后可继续', async ({ page }) => {
+  const f = await fixture(page)
+  const before = await f.read()
+  await f.field.fill('用于只读检查的已保存意见')
+  await f.add.click()
+  const saved = await f.read()
+  await f.field.fill('草稿')
+  await f.field.press('End')
+  await f.field.pressSequentially('B')
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(f.field).toHaveValue('草稿')
+  expect(await f.read()).toEqual(saved)
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect(f.field).toHaveValue('草稿B')
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await f.add.focus()
+  await page.evaluate(() => {
+    ;(
+      window.__plein.engine.doc as typeof window.__plein.engine.doc & { readOnly: boolean }
+    ).readOnly = true
+  })
+  await page.keyboard.press('ControlOrMeta+z')
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  )
+  expect(await f.read()).toEqual(saved)
+  await expect(f.field).toHaveValue('草稿B')
+  await page.evaluate(() => {
+    ;(
+      window.__plein.engine.doc as typeof window.__plein.engine.doc & { readOnly: boolean }
+    ).readOnly = false
+  })
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(f.read).toEqual(before)
+  await expect(f.field).toHaveValue('草稿B')
+  expect(errors).toEqual([])
+})
+
 async function fixture(page: Page, beforeOpen?: (assets: string[]) => Promise<void>) {
   await newProject(page)
   const assets: string[] = []
