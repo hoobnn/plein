@@ -64,6 +64,7 @@ export default defineConfig({
     'maintenance-cleanup-keyboard.spec.ts',
     'provider-settings-recovery.spec.ts',
     'provider-default-models.spec.ts',
+    'provider-catalog-recovery.spec.ts',
     'plugins.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
