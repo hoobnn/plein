@@ -81,6 +81,8 @@ export default defineConfig({
     'task-viewport-layout.spec.ts',
     'task-mobile-locate.spec.ts',
     'selection-toolbar-layout.spec.ts',
+    'template-save-targets.spec.ts',
+    'templates.spec.ts',
     'right-panel-switching.spec.ts',
     'sequence-load-recovery.spec.ts',
     'sequence-sound-controls.spec.ts',
