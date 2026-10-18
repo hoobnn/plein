@@ -646,6 +646,7 @@ function TextCell({
   const [edit, setEdit] = useState({ base: value, draft: value })
   const conflictId = useId()
   const input = useRef<HTMLTextAreaElement>(null)
+  const [locateBlocked, setLocateBlocked] = useState(false)
   useEffect(() => {
     setEdit((prev) =>
       prev.draft === prev.base || prev.draft === value ? { base: value, draft: value } : prev,
@@ -654,6 +655,13 @@ function TextCell({
   const { base, draft } = edit
   const dirty = draft !== base
   const conflict = dirty && base !== value && draft !== value
+  useEffect(() => {
+    if (!locateBlocked) return
+    if (conflict) {
+      document.getElementById(conflictId)?.parentElement?.scrollIntoView({ block: 'nearest' })
+      setLocateBlocked(false)
+    } else if (!dirty) setLocateBlocked(false)
+  }, [locateBlocked, conflict, conflictId, dirty])
   const reset = () => {
     const latest = readValue()
     setEdit({ base: latest, draft: latest })
@@ -661,6 +669,13 @@ function TextCell({
   const commit = () => {
     setEdit({ base: draft, draft })
     if (draft !== readValue()) onChange(draft)
+  }
+  const saveIfSafe = () => {
+    const latest = readValue()
+    if (!dirty) reset()
+    else if (base === latest || draft === latest) commit()
+    else return false
+    return true
   }
   return (
     <div className="min-w-0" data-storyboard-field={label}>
@@ -670,6 +685,11 @@ function TextCell({
         targets={engine ? mentionTargets(engine) : []}
         onLocate={(id) => {
           if (!engine?.doc.has(id)) return
+          // 组合点击仍在同一文本框内，不会触发 blur，离开前必须主动保存。
+          if (!saveIfSafe()) {
+            setLocateBlocked(true)
+            return
+          }
           useCanvas.getState().openStoryboard(null)
           engine.selection.set([id])
           engine.zoomToFit([id])
@@ -684,10 +704,8 @@ function TextCell({
         }}
         onChange={(e) => setEdit({ base: dirty ? base : readValue(), draft: e.target.value })}
         onBlur={() => {
-          const latest = readValue()
-          if (!dirty) reset()
           // 文档按帧通知；失焦时读最新值，不能只依赖尚未刷新的 props。
-          else if (base === latest || draft === latest) commit()
+          saveIfSafe()
         }}
       />
       {conflict && (
