@@ -170,7 +170,17 @@ export function AgentDock() {
 }
 
 function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose(): void }) {
-  const { status, agent, session, error, setAgent, loadStatus } = useAgent(
+  const {
+    status,
+    agent,
+    session,
+    error,
+    setAgent,
+    loadStatus,
+    loadingHistory,
+    historyError,
+    selecting,
+  } = useAgent(
     useShallow((s) => ({
       status: s.status,
       agent: s.agent,
@@ -178,6 +188,9 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
       error: s.error,
       setAgent: s.setAgent,
       loadStatus: s.loadStatus,
+      loadingHistory: s.loadingHistory,
+      historyError: s.historyError,
+      selecting: s.selecting,
     })),
   )
   const running = session?.status === 'running'
@@ -213,6 +226,7 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
           <Select
             aria-label="使用的智能体"
             value={current}
+            disabled={loadingHistory || !!selecting}
             options={available.map((a) => ({ value: a.id, label: label(a) }))}
             onChange={(v) => {
               setAgent(v as typeof agent)
@@ -232,7 +246,7 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
               aria-label="新对话"
               title="新对话"
               className="ui-btn ui-btn-quiet ui-icon-btn"
-              disabled={!session}
+              disabled={!session && !historyError}
               onClick={() => useAgent.getState().reset()}
             >
               <Icon name="plus" />
@@ -276,13 +290,53 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
         <Notice>打开一块画布，我就能帮你搭工作流、生成素材，或者修改不满意的片段。</Notice>
       ) : (
         <>
-          <Transcript
-            items={session?.items ?? []}
-            running={running}
-            intro={intro}
-            worker={worker}
-            lastTurn={session?.lastTurn}
-          />
+          {loadingHistory ? (
+            <div
+              role="status"
+              className="flex flex-1 items-center justify-center gap-2 px-4 text-xs text-ink-muted"
+            >
+              <span className="ui-spinner size-3" />
+              正在读取历史对话…
+            </div>
+          ) : historyError ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-xs">
+              <p role="alert" className="text-danger">
+                读取历史对话失败：{historyError}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-secondary ui-btn-sm"
+                  onClick={(e) => {
+                    const input = e.currentTarget.closest('aside')?.querySelector('textarea')
+                    void useAgent.getState().enter(canvasId, true)
+                    input?.focus()
+                  }}
+                >
+                  重新读取
+                </button>
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-quiet ui-btn-sm"
+                  onClick={(e) => {
+                    const input = e.currentTarget.closest('aside')?.querySelector('textarea')
+                    useAgent.getState().reset()
+                    input?.focus()
+                  }}
+                >
+                  开始新对话
+                </button>
+              </div>
+            </div>
+          ) : (
+            <Transcript
+              items={session?.items ?? []}
+              running={running}
+              intro={intro}
+              worker={worker}
+              lastTurn={session?.lastTurn}
+            />
+          )}
           {error && (
             <p role="alert" className="px-4 pb-2 text-xs text-danger">
               {error}
@@ -849,6 +903,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
   const text = useAgent((s) => s.drafts[canvasId]?.text ?? '')
   const sending = useAgent((s) => !!s.sending[canvasId])
   const selecting = useAgent((s) => !!s.selecting)
+  const historyBlocked = useAgent((s) => s.loadingHistory || !!s.historyError)
   const stopping = useAgent((s) => !!s.pendingActions[`${s.session?.id}/stop`])
   const setText = (value: string) => useAgent.getState().setDraft(canvasId, value)
   const engine = useCanvas((s) => (s.canvasId === canvasId ? s.engine : null))
@@ -898,7 +953,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
 
   const submit = () => {
     const t = text.trim()
-    if (!t || running || sending || selecting) return
+    if (!t || running || sending || selecting || historyBlocked) return
     const sel = withSelection ? useCanvas.getState().engine?.selection.values() : undefined
     void useAgent.getState().send(t, sel?.length ? sel : undefined)
   }
@@ -971,7 +1026,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
             aria-label="发送"
             title="发送（Enter）"
             className="ui-btn ui-btn-lg ui-btn-primary ui-icon-btn"
-            disabled={!text.trim() || sending || selecting}
+            disabled={!text.trim() || sending || selecting || historyBlocked}
             aria-busy={sending}
             onClick={submit}
           >

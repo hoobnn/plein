@@ -46,6 +46,8 @@ interface AgentStore {
   sessions: AgentSessionSummary[]
   /** 本次应用会话内已确认删除的 ID，防止迟到列表快照恢复它们。 */
   deletedSessions: Record<string, true>
+  loadingHistory: boolean
+  historyError: string | null
   session: AgentSession | null
   /** 面板关着时有新回复 */
   unread: boolean
@@ -68,7 +70,7 @@ interface AgentStore {
   /** 逐项编辑方案：成功返回 null，失败返回原因，上下文变化返回 undefined 并忽略旧结果。 */
   revisePlan(approvalId: string, edits: ReviseEditPlan['edits']): Promise<string | null | undefined>
   /** 切换到某块画布（null 表示不在画布里）：读它的会话，接上最近一个 */
-  enter(canvasId: string | null): Promise<void>
+  enter(canvasId: string | null, retry?: boolean): Promise<void>
   select(id: string): Promise<void>
   /** 开一个空白对话（发第一条消息时才真正创建） */
   reset(): void
@@ -221,6 +223,8 @@ export const useAgent = create<AgentStore>((set, get) => {
     drafts: {},
     excludedSelections: {},
     deletedSessions: {},
+    loadingHistory: false,
+    historyError: null,
     setExcludedSelection(canvasId, signature) {
       if (get().excludedSelections[canvasId] === signature) return
       const excludedSelections = { ...get().excludedSelections }
@@ -333,20 +337,31 @@ export const useAgent = create<AgentStore>((set, get) => {
       }
     },
 
-    async enter(canvasId) {
-      if (canvasId === get().canvasId) return
+    async enter(canvasId, retry = false) {
+      if (canvasId === get().canvasId && (!retry || get().loadingHistory)) return
       const mine = ++selectSeq
       connect(null)
-      set({ canvasId, sessions: [], session: null, selecting: null, error: null, mood: 'idle' })
+      set({
+        canvasId,
+        sessions: [],
+        session: null,
+        selecting: null,
+        error: null,
+        mood: 'idle',
+        loadingHistory: !!canvasId,
+        historyError: null,
+      })
       if (!canvasId) return
       try {
         const fetched = await api.agentSessions(canvasId)
         if (mine !== selectSeq) return
         const sessions = fetched.filter((s) => !get().deletedSessions[s.id])
-        set({ sessions })
+        set({ sessions, loadingHistory: false })
         if (sessions[0]) await get().select(sessions[0].id)
       } catch (err) {
-        if (mine === selectSeq) set({ error: (err as Error).message })
+        if (mine === selectSeq) set({ historyError: (err as Error).message })
+      } finally {
+        if (mine === selectSeq) set({ loadingHistory: false })
       }
     },
 
@@ -370,13 +385,22 @@ export const useAgent = create<AgentStore>((set, get) => {
     reset() {
       selectSeq++
       connect(null)
-      set({ session: null, selecting: null, error: null, mood: 'idle' })
+      set({
+        session: null,
+        selecting: null,
+        error: null,
+        mood: 'idle',
+        loadingHistory: false,
+        historyError: null,
+      })
     },
 
     async send(text, selection) {
       const { canvasId, agent } = get()
       if (
         !canvasId ||
+        get().loadingHistory ||
+        get().historyError ||
         get().selecting ||
         get().sending[canvasId] ||
         get().session?.status === 'running'

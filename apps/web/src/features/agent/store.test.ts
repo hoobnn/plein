@@ -164,6 +164,52 @@ describe('助手草稿与发送生命周期', () => {
 })
 
 describe('智能体会话', () => {
+  it('首次历史列表未返回时保留草稿并阻止创建和发送', async () => {
+    const pending = deferred<AgentSessionSummary[]>()
+    vi.mocked(api.agentSessions).mockReturnValue(pending.promise)
+    vi.mocked(api.agentSession).mockResolvedValue({ ...session('history'), agent: 'builtin' })
+    vi.mocked(api.createAgentSession).mockResolvedValue({
+      ...session('unexpected'),
+      agent: 'builtin',
+    })
+    vi.mocked(api.sendAgentMessage).mockResolvedValue(undefined)
+    const entering = useAgent.getState().enter('loading-canvas')
+    useAgent.getState().setDraft('loading-canvas', '等待期间的草稿')
+    await useAgent.getState().send('等待期间的草稿')
+    expect(api.createAgentSession).not.toHaveBeenCalled()
+    expect(api.sendAgentMessage).not.toHaveBeenCalled()
+    pending.resolve([summary('history')])
+    await entering
+    expect(useAgent.getState().session?.id).toBe('history')
+    expect(useAgent.getState().drafts['loading-canvas']?.text).toBe('等待期间的草稿')
+  })
+  it('历史失败后阻止误发，重复重试不重复加载，主动新对话使迟到历史失效', async () => {
+    const pending = deferred<AgentSessionSummary[]>()
+    vi.mocked(api.agentSessions)
+      .mockRejectedValueOnce(new Error('历史暂不可读'))
+      .mockReturnValue(pending.promise)
+    await useAgent.getState().enter('failed-canvas')
+    expect(useAgent.getState()).toMatchObject({
+      loadingHistory: false,
+      historyError: '历史暂不可读',
+    })
+    useAgent.getState().setDraft('failed-canvas', '失败后保留的草稿')
+    await useAgent.getState().send('失败后保留的草稿')
+    expect(api.createAgentSession).not.toHaveBeenCalled()
+    const retry = useAgent.getState().enter('failed-canvas', true)
+    await useAgent.getState().enter('failed-canvas', true)
+    expect(api.agentSessions).toHaveBeenCalledTimes(2)
+    useAgent.getState().reset()
+    pending.resolve([summary('old-history')])
+    await retry
+    expect(useAgent.getState()).toMatchObject({
+      loadingHistory: false,
+      historyError: null,
+      session: null,
+    })
+    expect(useAgent.getState().drafts['failed-canvas']?.text).toBe('失败后保留的草稿')
+    expect(api.agentSession).not.toHaveBeenCalled()
+  })
   it('删除会话后，删除前发出的列表刷新不能恢复已删除项', async () => {
     const pending = deferred<AgentSessionSummary[]>()
     vi.mocked(api.agentSession).mockResolvedValue({ ...session('current'), agent: 'builtin' })
