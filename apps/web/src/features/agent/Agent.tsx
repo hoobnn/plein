@@ -112,7 +112,9 @@ export function AgentDock() {
   const trigger = useRef<HTMLButtonElement>(null)
   const close = useCallback(() => {
     toggle(false)
-    trigger.current?.focus()
+    const target =
+      trigger.current ?? document.querySelector<HTMLButtonElement>('[data-agent-trigger]')
+    target?.focus()
   }, [toggle])
   const canvasId = route.name === 'canvas' ? route.id : null
   const engine = useCanvas((s) => s.engine)
@@ -142,36 +144,38 @@ export function AgentDock() {
       if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return
       if (e.key === 'Escape' && !document.querySelector('[role=dialog]')) {
         e.preventDefault()
-        toggle(false)
+        close()
       }
     }
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
-  }, [open, toggle])
+  }, [open, close])
 
   if (!ready || route.name === 'demo') return null
   return (
     <>
       <Presence>{open && <AgentPanel canvasId={canvasId} onClose={close} />}</Presence>
-      <button
-        ref={trigger}
-        type="button"
-        onClick={() => toggle()}
-        aria-label={open ? '收起助手' : '打开助手'}
-        aria-expanded={open}
-        title={open ? undefined : '小满：让本机的 Claude Code / Codex 帮你操作画布'}
-        style={{ bottom: mascotBottom }}
-        className="plein-mascot-btn pointer-events-auto fixed right-3 z-30 rounded-full"
-      >
-        <Mascot mood={mood} />
-        {unread && (
-          <span
-            role="img"
-            aria-label="助手有新回复"
-            className="absolute top-1 right-1 size-2.5 rounded-full bg-accent ring-2 ring-canvas"
-          />
-        )}
-      </button>
+      {route.name !== 'home' && (
+        <button
+          ref={trigger}
+          type="button"
+          onClick={() => toggle()}
+          aria-label={open ? '收起助手' : '打开助手'}
+          aria-expanded={open}
+          title={open ? undefined : '小满：让本机的 Claude Code / Codex 帮你操作画布'}
+          style={{ bottom: mascotBottom }}
+          className="plein-mascot-btn pointer-events-auto fixed right-3 z-30 rounded-full"
+        >
+          <Mascot mood={mood} />
+          {unread && (
+            <span
+              role="img"
+              aria-label="助手有新回复"
+              className="absolute top-1 right-1 size-2.5 rounded-full bg-accent ring-2 ring-canvas"
+            />
+          )}
+        </button>
+      )}
     </>
   )
 }

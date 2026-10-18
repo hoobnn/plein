@@ -23,6 +23,7 @@ import { Toast } from '../ui/Toast'
 import { useCanvas } from '../stores/canvas'
 import { useMediaLibrary } from '../features/media-library/store'
 import { useCheckpoints } from '../features/checkpoints/store'
+import { HomeAgentTrigger } from '../features/agent/HomeAgentTrigger'
 
 /** 快速开始：新建项目并在它的第一张画布上放好对应节点、打开生成器 */
 const QUICK_START: Array<{
@@ -161,6 +162,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
             <Brand compactOnMobile />
           </div>
           <div className="app-actions ui-bar ui-bar-bare -mr-1 max-sm:h-auto max-sm:min-w-0 max-sm:flex-1 max-sm:flex-wrap max-sm:justify-end">
+            <HomeAgentTrigger />
             <button
               type="button"
               className="ui-bar-btn gap-1.5"

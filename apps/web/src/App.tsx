@@ -107,7 +107,7 @@ export function App() {
       <Suspense fallback={null}>
         {ready && (route.name === 'canvas' || agentOpen) ? (
           <AgentDock />
-        ) : ready && route.name !== 'demo' ? (
+        ) : ready && route.name !== 'demo' && route.name !== 'home' ? (
           <button
             type="button"
             aria-label="打开助手"

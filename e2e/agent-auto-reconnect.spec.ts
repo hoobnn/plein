@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { AgentSession } from '../packages/protocol/src/agent'
-import { newProject } from './canvas'
+import { newProject, waitEngine } from './canvas'
 
 test('原生自动重试补回断线期间的完成状态，关闭面板有未读提示且历史恢复空闲', async ({ page }) => {
   await newProject(page)
@@ -70,6 +70,22 @@ test('原生自动重试补回断线期间的完成状态，关闭面板有未�
     path: test.info().outputPath('auto-reconnected-unread.png'),
     animations: 'disabled',
   })
+  await page.evaluate(() => {
+    location.hash = '/'
+  })
+  const homeTrigger = page
+    .getByRole('banner')
+    .getByRole('button', { name: '打开助手', exact: true })
+  await expect(homeTrigger.getByRole('img', { name: '助手有新回复', exact: true })).toBeVisible()
+  await homeTrigger.click()
+  await expect(panel).toContainText('打开一块画布，我就能帮你搭工作流')
+  await expect(page.getByRole('img', { name: '助手有新回复', exact: true })).toHaveCount(0)
+  await panel.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(homeTrigger).toBeFocused()
+  await page.evaluate((canvas) => {
+    location.hash = `/c/${canvas}`
+  }, canvas)
+  await waitEngine(page)
   await open.click()
   await expect(unread).toHaveCount(0)
   await expect(

@@ -62,6 +62,7 @@ export default defineConfig({
     'prompt-collaboration.spec.ts',
     'camera-navigation.spec.ts',
     'agent-layout.spec.ts',
+    'home-agent-layout.spec.ts',
     'agent-keyboard.spec.ts',
     'agent-drafts.spec.ts',
     'agent-history.spec.ts',
