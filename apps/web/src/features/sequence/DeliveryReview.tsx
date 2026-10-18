@@ -36,15 +36,33 @@ const noteIdentity = (note: DeliveryNote) =>
   JSON.stringify([note.id, note.time, note.text, note.source, note.shotId])
 const NO_RECORDS: DeliveryRecord[] = []
 
+/** 会话归属于序列编辑器，切换视图不会丢失尚未提交的审阅内容。 */
+export function useDeliveryReviewSession() {
+  const [selected, setSelected] = useState<string | undefined>()
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const positions = useRef(new Map<string, number>()).current
+  const identities = useRef(new Map<string, string>()).current
+  return { selected, setSelected, drafts, setDrafts, positions, identities }
+}
+
 /** 回看真实导出的资产；编辑预览与交付确认分开。 */
-export function DeliveryReview({ engine, node }: { engine: Engine; node: CanvasElement }) {
+export function DeliveryReview({
+  engine,
+  node,
+  session,
+}: {
+  engine: Engine
+  node: CanvasElement
+  session: ReturnType<typeof useDeliveryReviewSession>
+}) {
   const records = node.deliveries ?? NO_RECORDS
-  const [selected, setSelected] = useState<string | undefined>(records[0]?.id)
+  const { selected, setSelected, drafts, setDrafts, positions, identities } = session
   const record = records.find((r) => r.id === selected) ?? records[0]
+  const identity = record ? recordIdentity(record) : ''
+  const recordId = record?.id
   const active = useRef(record?.id)
   active.current = record?.id
   const video = useRef<HTMLVideoElement>(null)
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
   const text = record ? (drafts[record.id] ?? '') : ''
   const [error, setError] = useState('')
   const canvasId = useCanvas((s) => s.canvasId)
@@ -52,7 +70,14 @@ export function DeliveryReview({ engine, node }: { engine: Engine; node: CanvasE
     if (!records.length || records.some((r) => r.id === selected)) return
     setSelected(records[0]!.id)
     if (selected) setError('原交付版本已移除，已显示最新版本；原版本草稿仍保留在本次会话中')
-  }, [records, selected])
+  }, [records, selected, setSelected])
+  useEffect(() => {
+    if (!recordId) return
+    const previous = identities.get(recordId)
+    identities.set(recordId, identity)
+    if (previous && previous !== identity)
+      setError('版本内容已变化，请核对当前实际 MP4 后再提交保留的草稿')
+  }, [identities, recordId, identity])
   if (!record) return <p className="ui-help p-4">导出成功后，这里回看实际 MP4 并记录交付意见。</p>
   const unresolved = record.notes.filter((n) => !n.resolved).length
   const readTarget = (writable = false) => {
@@ -164,9 +189,11 @@ export function DeliveryReview({ engine, node }: { engine: Engine; node: CanvasE
     >
       <div className="min-w-0 flex-none lg:flex-1">
         <DeliveryVideo
-          key={recordIdentity(record)}
+          key={identity}
           video={video}
           src={assetUrls.original(record.assetId)}
+          identity={identity}
+          positions={positions}
         />
         <p className="mt-2 text-xs text-ink-subtle">
           实际导出 · {record.kind === 'animatic' ? '样片 / 草稿' : '成片'} · {record.version} ·{' '}
@@ -203,6 +230,11 @@ export function DeliveryReview({ engine, node }: { engine: Engine; node: CanvasE
             ))}
           </select>
         </label>
+        {error && (
+          <p role="alert" className="text-xs text-danger">
+            {error}
+          </p>
+        )}
         <p className="text-sm">
           {record.confirmedAt ? '已人工确认此版本' : '待人工确认'} · {unresolved} 条未解决意见
         </p>
@@ -303,39 +335,43 @@ export function DeliveryReview({ engine, node }: { engine: Engine; node: CanvasE
         <p className="ui-help">
           确认只绑定这份实际 MP4。重新导出创建新版本，不继承旧确认；新增或修改意见会撤回确认。
         </p>
-        {error && (
-          <p role="alert" className="text-xs text-danger">
-            {error}
-          </p>
-        )}
       </aside>
     </div>
   )
 }
 
-function DeliveryVideo({ src, video }: { src: string; video: RefObject<HTMLVideoElement | null> }) {
+interface DeliveryVideoProps {
+  src: string
+  video: RefObject<HTMLVideoElement | null>
+  identity: string
+  positions: Map<string, number>
+}
+
+function DeliveryVideo(props: DeliveryVideoProps) {
   const [attempt, setAttempt] = useState(0)
-  return (
-    <DeliveryVideoAttempt
-      key={attempt}
-      src={src}
-      video={video}
-      onRetry={() => setAttempt((n) => n + 1)}
-    />
-  )
+  return <DeliveryVideoAttempt key={attempt} {...props} onRetry={() => setAttempt((n) => n + 1)} />
 }
 
 /** 来源变化或重试时重新挂载，避免旧视频事件污染当前版本的错误状态。 */
 function DeliveryVideoAttempt({
   src,
   video,
+  identity,
+  positions,
   onRetry,
-}: {
-  src: string
-  video: RefObject<HTMLVideoElement | null>
+}: DeliveryVideoProps & {
   onRetry(): void
 }) {
   const [failed, setFailed] = useState(false)
+  useEffect(() => {
+    const element = video.current
+    return () => {
+      if (!element) return
+      if (element.readyState >= 1 && Number.isFinite(element.currentTime))
+        positions.set(identity, element.currentTime)
+      element.pause()
+    }
+  }, [video, identity, positions])
   return (
     <>
       {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 实际导出的字幕已烧录在画面内 */}
@@ -344,6 +380,11 @@ function DeliveryVideoAttempt({
         src={src}
         controls
         onError={() => setFailed(true)}
+        onLoadedMetadata={(e) => {
+          const at = positions.get(identity)
+          if (at !== undefined && Number.isFinite(e.currentTarget.duration))
+            e.currentTarget.currentTime = Math.max(0, Math.min(at, e.currentTarget.duration))
+        }}
         className="max-h-[65vh] w-full bg-black"
         aria-label="实际导出 MP4"
       />

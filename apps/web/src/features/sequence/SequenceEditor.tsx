@@ -55,7 +55,7 @@ import { Playhead } from './playhead'
 import { Timeline, type TrackItem, type TrimPatch } from './Timeline'
 import { SubtitleEditor } from './SubtitleEditor'
 import { refreshAnimatic, relatedSequences } from './animatic'
-import { DeliveryReview } from './DeliveryReview'
+import { DeliveryReview, useDeliveryReviewSession } from './DeliveryReview'
 import { MediaReloadContext } from './media'
 
 const seconds = (s: number | undefined) => (s === undefined ? '—' : `${s.toFixed(1)} 秒`)
@@ -184,6 +184,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   /** 检查器显示选中镜头的设置还是整部成片的设置 */
   const [tab, setTab] = useState<'clip' | 'film' | 'subtitles'>('clip')
   const [view, setView] = useState<'edit' | 'delivery'>('edit')
+  const deliverySession = useDeliveryReviewSession()
   const [previewRevision, setPreviewRevision] = useState(0)
   const [animaticError, setAnimaticError] = useState<string | null>(null)
   const latestDelivery = el?.deliveries?.[0]?.id
@@ -730,7 +731,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         />
       </div>
       {view === 'delivery' && el ? (
-        <DeliveryReview engine={engine} node={el} />
+        <DeliveryReview engine={engine} node={el} session={deliverySession} />
       ) : rows.length === 0 ? (
         <EmptyState
           icon="video"

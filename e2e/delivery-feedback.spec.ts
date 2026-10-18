@@ -569,3 +569,185 @@ test('时间码跳转和来源删除提示可恢复，定位返工打开正确�
       .getByRole('heading', { name: '交付来源1', exact: true }),
   ).toBeVisible()
 })
+
+test('切换剪辑再回看保留版本、草稿和时间码，离开的实际视频立即暂停', async ({ page }) => {
+  const f = await fixture(page)
+  await f.field.fill('对照剪辑后继续记录旧版意见')
+  await f.video.evaluate(async (video: HTMLVideoElement) => {
+    ;(
+      window as typeof window & { previousDeliveryVideo?: HTMLVideoElement }
+    ).previousDeliveryVideo = video
+    video.currentTime = 0.5
+    await video.play()
+  })
+  await f.editor.getByRole('button', { name: '剪辑预览', exact: true }).click()
+  expect(
+    await page.evaluate(
+      () =>
+        (window as typeof window & { previousDeliveryVideo?: HTMLVideoElement })
+          .previousDeliveryVideo!.paused,
+    ),
+  ).toBe(true)
+  const stoppedAt = await page.evaluate(
+    () =>
+      (window as typeof window & { previousDeliveryVideo?: HTMLVideoElement })
+        .previousDeliveryVideo!.currentTime,
+  )
+  await f.editor.getByRole('button', { name: '实际 MP4 回看 / 交付', exact: true }).click()
+  await expect(f.versions).toHaveValue('r1')
+  await expect(f.field).toHaveValue('对照剪辑后继续记录旧版意见')
+  await expect
+    .poll(() => f.video.evaluate((v: HTMLVideoElement) => v.readyState))
+    .toBeGreaterThanOrEqual(2)
+  await expect
+    .poll(async () =>
+      Math.abs((await f.video.evaluate((v: HTMLVideoElement) => v.currentTime)) - stoppedAt),
+    )
+    .toBeLessThan(0.1)
+  expect(await f.video.evaluate((v: HTMLVideoElement) => v.paused)).toBe(true)
+  await f.add.click()
+  const note = (await f.read())[1]!.notes.at(-1)!
+  expect(note.text).toBe('对照剪辑后继续记录旧版意见')
+  expect(note.time).toBeCloseTo(stoppedAt, 1)
+  expect(note.source).toBe(f.ids.boards[0])
+})
+
+test('分版草稿和播放位置跨剪辑视图保留，重复切换不串版', async ({ page }) => {
+  const f = await fixture(page)
+  const original = await f.read()
+  await f.field.fill('旧版待补充')
+  await f.video.evaluate((v: HTMLVideoElement) => {
+    v.currentTime = 0.5
+  })
+  await f.versions.selectOption('r2')
+  await expect
+    .poll(() => f.video.evaluate((v: HTMLVideoElement) => v.readyState))
+    .toBeGreaterThanOrEqual(2)
+  await f.field.fill('新版待补充')
+  await f.video.evaluate((v: HTMLVideoElement) => {
+    v.currentTime = 2
+  })
+  for (let i = 0; i < 2; i++) {
+    await f.editor.getByRole('button', { name: '剪辑预览', exact: true }).click()
+    await f.editor.getByRole('button', { name: '实际 MP4 回看 / 交付', exact: true }).click()
+    await expect(f.versions).toHaveValue('r2')
+    await expect(f.field).toHaveValue('新版待补充')
+    await expect
+      .poll(() => f.video.evaluate((v: HTMLVideoElement) => v.currentTime))
+      .toBeCloseTo(2, 1)
+    await f.versions.selectOption('r1')
+    await expect(f.field).toHaveValue('旧版待补充')
+    await expect
+      .poll(() => f.video.evaluate((v: HTMLVideoElement) => v.currentTime))
+      .toBeCloseTo(0.5, 1)
+    await f.versions.selectOption('r2')
+  }
+  expect(await f.read()).toEqual(original)
+})
+
+test('编辑期间全部交付版本移除后显示空态，原版本恢复仍保留本次草稿', async ({ page }) => {
+  const f = await fixture(page)
+  const original = await f.read()
+  await f.field.fill('暂时移除的历史版草稿')
+  await f.editor.getByRole('button', { name: '剪辑预览', exact: true }).click()
+  await page.evaluate((id) => {
+    ;(
+      window.__plein.engine.doc.mutable(id)! as unknown as {
+        set(key: string, value: unknown): void
+      }
+    ).set('deliveries', [])
+  }, f.ids.id)
+  await f.editor.getByRole('button', { name: '实际 MP4 回看 / 交付', exact: true }).click()
+  await expect(
+    f.editor.getByText('导出成功后，这里回看实际 MP4 并记录交付意见。', { exact: true }),
+  ).toBeVisible()
+  await page.evaluate(
+    ({ id, records }) => {
+      ;(
+        window.__plein.engine.doc.mutable(id)! as unknown as {
+          set(key: string, value: unknown): void
+        }
+      ).set('deliveries', records)
+    },
+    { id: f.ids.id, records: original },
+  )
+  await expect(f.versions).toHaveValue('r1')
+  await expect(f.field).toHaveValue('暂时移除的历史版草稿')
+  expect(await f.read()).toEqual(original)
+})
+
+test('离开回看期间同 ID 视频内容替换时保留草稿并提示核对，不沿用旧播放位置', async ({ page }) => {
+  const f = await fixture(page)
+  await f.field.fill('需要核对旧视频的草稿')
+  await f.video.evaluate((v: HTMLVideoElement) => {
+    v.currentTime = 0.75
+  })
+  await f.editor.getByRole('button', { name: '剪辑预览', exact: true }).click()
+  await page.setViewportSize({ width: 390, height: 700 })
+  await page.evaluate((id) => {
+    const { doc } = window.__plein.engine
+    const records = doc.get(id)!.deliveries!
+    ;(doc.mutable(id)! as unknown as { set(key: string, value: unknown): void }).set(
+      'deliveries',
+      records.map((r) =>
+        r.id === 'r1'
+          ? { ...r, assetId: records[0]!.assetId, duration: 4, sources: records[0]!.sources }
+          : r,
+      ),
+    )
+  }, f.ids.id)
+  await f.editor.getByRole('button', { name: '实际 MP4 回看 / 交付', exact: true }).click()
+  await expect(f.versions).toHaveValue('r1')
+  await expect(f.field).toHaveValue('需要核对旧视频的草稿')
+  await expect(f.panel.getByRole('alert')).toContainText('版本内容已变化')
+  await expect(f.panel.getByRole('alert')).toBeInViewport()
+  await f.editor.screenshot({ path: test.info().outputPath('delivery-replaced-session.png') })
+  await expect(f.video).toHaveAttribute('src', `/api/assets/${f.assets[1]}`)
+  await expect
+    .poll(() => f.video.evaluate((v: HTMLVideoElement) => v.readyState))
+    .toBeGreaterThanOrEqual(2)
+  expect(await f.video.evaluate((v: HTMLVideoElement) => v.currentTime)).toBe(0)
+  expect(await f.video.evaluate((v: HTMLVideoElement) => v.paused)).toBe(true)
+  await f.video.evaluate((v: HTMLVideoElement) => {
+    v.currentTime = 1.25
+  })
+  await f.add.click()
+  await expect(f.panel.getByRole('alert')).toHaveCount(0)
+  const note = (await f.read())[1]!.notes.at(-1)!
+  expect(note.time).toBeCloseTo(1.25, 1)
+  expect(note.source).toBe(f.ids.boards[1])
+})
+
+test('关闭重开隔离旧草稿与位置，首次回看前新导出到达时打开最新版本', async ({ page }) => {
+  const f = await fixture(page)
+  await f.field.fill('仅属于上次窗口的草稿')
+  await f.video.evaluate((v: HTMLVideoElement) => {
+    v.currentTime = 0.75
+  })
+  await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(page.locator('.seq-editor')).toHaveCount(0)
+  await zoomTo(page, [f.ids.id])
+  const point = await centerOf(page, f.ids.id)
+  await page.mouse.dblclick(point.x, point.y)
+  await expect(f.editor.getByRole('button', { name: '剪辑预览', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await page.evaluate((id) => {
+    const { doc } = window.__plein.engine
+    const records = doc.get(id)!.deliveries!
+    ;(doc.mutable(id)! as unknown as { set(key: string, value: unknown): void }).set('deliveries', [
+      { ...records[0]!, id: 'r3', resultId: 'result-3', version: 'v3', createdAt: 3000, notes: [] },
+      ...records,
+    ])
+  }, f.ids.id)
+  await expect(f.versions.getByRole('option', { name: /^v3/ })).toHaveCount(1)
+  await expect(f.versions).toHaveValue('r3')
+  await expect(f.field).toHaveValue('')
+  await f.versions.selectOption('r1')
+  await expect(f.field).toHaveValue('')
+  await expect
+    .poll(() => f.video.evaluate((v: HTMLVideoElement) => v.readyState))
+    .toBeGreaterThanOrEqual(2)
+  expect(await f.video.evaluate((v: HTMLVideoElement) => v.currentTime)).toBe(0)
+})
