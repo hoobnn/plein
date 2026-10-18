@@ -48,7 +48,8 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
     [working, setWorking] = useState<{ id: string; kind: 'restore' | 'remove' } | null>(null)
   const [selected, setSelected] = useState<CanvasCheckpoint | null>(null),
     [detail, setDetail] = useState<CheckpointDetail | null>(null),
-    [previewError, setPreviewError] = useState('')
+    [previewError, setPreviewError] = useState(''),
+    [previewRevision, setPreviewRevision] = useState(0)
   const engine = useCanvas((s) => s.engine),
     currentId = useCanvas((s) => s.canvasId)
   const saveController = useRef<AbortController | null>(null)
@@ -95,7 +96,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
       },
     )
     return () => controller.abort()
-  }, [selected])
+  }, [selected, previewRevision])
   const save = async () => {
     if (!canSave || !name.trim() || saving) return
     const controller = new AbortController()
@@ -268,7 +269,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
       )}
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div
-          className={`ui-scrollbar min-h-0 overflow-y-auto p-4 ${selected ? 'md:w-80 md:flex-none md:border-r md:border-line' : 'flex-1'}`}
+          className={`ui-scrollbar min-h-0 overflow-y-auto p-4 ${selected ? 'max-md:max-h-36 max-md:flex-none md:w-80 md:flex-none md:border-r md:border-line' : 'flex-1'}`}
           aria-busy={loading}
         >
           {!page.items.length ? (
@@ -310,7 +311,11 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
                     <button
                       type="button"
                       className="ui-btn ui-btn-sm ui-btn-secondary"
-                      onClick={() => setSelected(checkpoint)}
+                      disabled={selected?.id === checkpoint.id && !detail && !previewError}
+                      onClick={() => {
+                        if (selected?.id === checkpoint.id) setPreviewRevision((n) => n + 1)
+                        else setSelected(checkpoint)
+                      }}
                     >
                       只读预览
                     </button>
@@ -354,8 +359,19 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
             className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-4"
             aria-label={`预览检查点 ${selected.name}`}
           >
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="truncate font-medium">{selected.name}</h3>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="min-w-0 flex-1 truncate font-medium max-sm:basis-full">
+                {selected.name}
+              </h3>
+              <button
+                type="button"
+                className="ui-btn ui-btn-sm ui-btn-secondary"
+                disabled={!detail && !previewError}
+                onClick={() => setPreviewRevision((n) => n + 1)}
+              >
+                <Icon name="retry" size={14} />
+                重新加载预览
+              </button>
               <button
                 type="button"
                 className="ui-btn ui-btn-sm ui-btn-quiet"

@@ -18,8 +18,16 @@ export function CheckpointPreview({ state }: { state: string }) {
   const [error, setError] = useState(''),
     [ready, setReady] = useState(false)
   useEffect(() => {
+    setError('')
+    setReady(false)
     const ydoc = new Y.Doc()
-    Y.applyUpdate(ydoc, decode(state))
+    try {
+      Y.applyUpdate(ydoc, decode(state))
+    } catch {
+      ydoc.destroy()
+      setError('检查点预览数据无法读取，请重新加载预览。')
+      return
+    }
     const doc = createDoc(ydoc)
     doc.readOnly = true
     const engine = new Engine({
@@ -86,8 +94,6 @@ export function CheckpointPreview({ state }: { state: string }) {
       ydoc.destroy()
       labels.clear()
     }
-    setError('')
-    setReady(false)
     void engine.init().then(
       () => {
         initialized = true
@@ -114,7 +120,7 @@ export function CheckpointPreview({ state }: { state: string }) {
   }, [state])
   return (
     <div
-      className="relative flex min-h-80 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-canvas"
+      className="relative flex min-h-40 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-canvas md:min-h-80"
       data-testid="checkpoint-preview"
     >
       <div className="flex flex-none items-center justify-between border-b border-line bg-surface px-3 py-2 text-xs">
