@@ -2,7 +2,7 @@ import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, updateElement } from '@plein/doc'
 import { LIBRARY_KINDS, libraryKindOfNode } from '@plein/nodes'
 import type { LibraryItem } from '@plein/protocol'
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { mediaOf } from '../canvas/grid'
 import { useDocVersion, useSelectionVersion } from '../canvas/hooks'
@@ -193,6 +193,9 @@ function Layers({ engine }: { engine: Engine }) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [renaming, setRenaming] = useState<string | null>(null)
   const searchButton = useRef<HTMLButtonElement>(null)
+  const searchInput = useRef<HTMLInputElement>(null)
+  const typeHintId = useId()
+  const pendingRenameFocus = useRef<{ id: string; version: number } | null>(null)
   const restoreSearchFocus = useRef(false)
   useEffect(() => {
     if (!searching && restoreSearchFocus.current) {
@@ -209,6 +212,7 @@ function Layers({ engine }: { engine: Engine }) {
   const prevRows = useRef(new Map<string, Row>())
   const q = query.trim().toLowerCase()
   const filtering = !!q || type !== 'all'
+  const typeLabel = TYPE_FILTERS.find((option) => option.value === type)?.label ?? '其他'
 
   // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化
   const { rows, frames } = useMemo(() => {
@@ -251,6 +255,12 @@ function Layers({ engine }: { engine: Engine }) {
   }, [engine, catalog, version, q, type, collapsed, filtering])
   // oxlint-enable react-hooks/exhaustive-deps
   const nested = rows.some((r) => r.parent)
+  useEffect(() => {
+    const pending = pendingRenameFocus.current
+    if (!pending || pending.version === version) return
+    pendingRenameFocus.current = null
+    if (searching && !rows.some((row) => row.el.id === pending.id)) searchInput.current?.focus()
+  }, [rows, version, searching])
 
   // 在画布上选中时：展开所在分组，并把它滚进可视范围
   // oxlint-disable react-hooks/exhaustive-deps -- selVersion 变化即选中变化
@@ -293,6 +303,9 @@ function Layers({ engine }: { engine: Engine }) {
   const rename = (id: string, name: string | null) => {
     setRenaming(null)
     if (name !== null && name !== engine.doc.get(id)?.name) {
+      const row = listRef.current?.querySelector(`[data-id="${CSS.escape(id)}"]`)
+      if (searching && row?.contains(document.activeElement))
+        pendingRenameFocus.current = { id, version }
       engine.doc.undo.stopCapturing()
       updateElement(engine.doc, id, { name })
       engine.doc.undo.stopCapturing()
@@ -325,11 +338,13 @@ function Layers({ engine }: { engine: Engine }) {
           <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md bg-surface-2 px-2 text-ink-subtle">
             <Icon name="search" size={14} />
             <input
+              ref={searchInput}
               // oxlint-disable-next-line jsx-a11y/no-autofocus -- 点了搜索就是要输入
               autoFocus
               value={query}
               placeholder="搜索名称"
               aria-label="搜索画布元素"
+              aria-describedby={type !== 'all' ? typeHintId : undefined}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 e.stopPropagation()
@@ -382,6 +397,23 @@ function Layers({ engine }: { engine: Engine }) {
           </>
         )}
       </div>
+      {searching && type !== 'all' && (
+        <div className="flex flex-none px-3 pb-2">
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary ui-btn-sm gap-1.5"
+            aria-label={`清除类型筛选：${typeLabel}`}
+            onClick={() => {
+              setType('all')
+              searchInput.current?.focus()
+            }}
+          >
+            <Icon name="filter" size={12} />
+            <span id={typeHintId}>类型：{typeLabel}</span>
+            <Icon name="x" size={12} />
+          </button>
+        </div>
+      )}
       <div
         ref={listRef}
         role="tree"
