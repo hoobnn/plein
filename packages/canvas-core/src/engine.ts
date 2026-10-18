@@ -870,6 +870,7 @@ export class Engine {
     this.edges.destroy()
     this.overlay.destroy()
     this.grid.destroy()
-    this.app.destroy(true, { children: true })
+    // 主画布与只读预览可同时存在；销毁单个引擎不能释放其他 renderer 的全局资源。
+    this.app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true })
   }
 }
