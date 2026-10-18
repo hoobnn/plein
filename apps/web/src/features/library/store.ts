@@ -59,6 +59,7 @@ export const useLibrary = create<LibraryStore>((set, get) => {
   let removed: Set<string> | undefined
   const updates = new Map<string, Promise<unknown>>()
   const archives = new Map<string, Promise<SaveLibraryCardResult>>()
+  const uses = new Map<string, { at: number }>()
   return {
     items: [],
     loaded: false,
@@ -97,13 +98,23 @@ export const useLibrary = create<LibraryStore>((set, get) => {
     load() {
       if (loading) return loading
       const before = get().items
+      // 读取期间提交完成也不能让旧列表覆盖这次真实使用。
+      const usedBefore = new Map(uses)
       removed = new Set()
       set({ error: null, loading: true })
       loading = api
         .library()
         .then(
           (items) =>
-            set({ items: reconcileList(items, before, get().items, removed), loaded: true }),
+            set({
+              items: reconcileList(items, before, get().items, removed).map((item) => {
+                const usedAt = (uses.get(item.id) ?? usedBefore.get(item.id))?.at
+                return usedAt !== undefined && (item.usedAt === null || usedAt > item.usedAt)
+                  ? { ...item, usedAt }
+                  : item
+              }),
+              loaded: true,
+            }),
           (err: unknown) => set({ error: (err as Error).message }),
         )
         .finally(() => {
@@ -172,13 +183,21 @@ export const useLibrary = create<LibraryStore>((set, get) => {
     },
     async remove(id) {
       await api.deleteLibraryItem(id)
+      uses.delete(id)
       removed?.add(id)
       set({ items: get().items.filter((i) => i.id !== id) })
     },
     markUsed(id) {
       const now = Date.now()
+      const use = { at: now }
+      uses.set(id, use)
       set({ items: get().items.map((i) => (i.id === id ? { ...i, usedAt: now } : i)) })
-      api.markLibraryUsed(id).catch(() => {})
+      void api
+        .markLibraryUsed(id)
+        .catch(() => {})
+        .finally(() => {
+          if (uses.get(id) === use) uses.delete(id)
+        })
     },
   }
 })

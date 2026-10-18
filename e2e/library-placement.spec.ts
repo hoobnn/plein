@@ -85,6 +85,7 @@ for (const failure of ['http', 'network'] as const) {
     await expect(f.row).not.toContainText('已在画布')
     expect(await f.cards()).toEqual([])
     expect(await page.evaluate(() => [...window.__plein.engine.doc.elements()].length)).toBe(0)
+    expect((await (await page.request.get(`/api/library/${f.item.id}`)).json()).usedAt).toBeNull()
     await f.sidebar.screenshot({
       path: test.info().outputPath('placement-read-failure.png'),
       animations: 'disabled',
@@ -93,6 +94,12 @@ for (const failure of ['http', 'network'] as const) {
     await f.row.click()
     await expect.poll(f.cards).toHaveLength(1)
     await expect(f.sidebar.getByRole('alert')).toHaveCount(0)
+    await expect
+      .poll(
+        async () =>
+          (await (await page.request.get(`/api/library/${f.item.id}`)).json()).usedAt ?? 0,
+      )
+      .toBeGreaterThan(0)
     const [id] = await f.cards()
     expect(
       await page.evaluate((id) => {
@@ -104,6 +111,66 @@ for (const failure of ['http', 'network'] as const) {
     ).toEqual([f.asset])
   })
 }
+
+test('放入后使用记录仍在提交，刷新列表不能丢失最近使用项', async ({ page }) => {
+  const f = await fixture(page)
+  f.resume()
+  let release!: () => void
+  let requested!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const started = new Promise<void>((resolve) => {
+    requested = resolve
+  })
+  await page.route(`**/api/library/${f.item.id}/use`, async (route) => {
+    requested()
+    await gate
+    await route.continue()
+  })
+  try {
+    await f.row.click()
+    await expect.poll(f.cards).toHaveLength(1)
+    await started
+    expect((await (await page.request.get(`/api/library/${f.item.id}`)).json()).usedAt).toBeNull()
+    const list = page.waitForResponse(
+      (r) => r.request().method() === 'GET' && new URL(r.url()).pathname === '/api/library',
+    )
+    await page.getByRole('button', { name: '资产库', exact: true }).click()
+    await list
+    const panel = page.getByRole('dialog', { name: '资产库', exact: true })
+    await panel
+      .getByRole('group', { name: '资产类别', exact: true })
+      .getByRole('button', { name: '道具', exact: true })
+      .click()
+    await panel
+      .getByRole('group', { name: '范围', exact: true })
+      .getByRole('button', { name: '最近使用', exact: true })
+      .click()
+    const usedCard = panel.locator(`[data-library-id="${f.item.id}"]`)
+    await expect(usedCard).toHaveCount(1)
+    const saved = page.waitForResponse(
+      (r) => r.url().endsWith(`/api/library/${f.item.id}/use`) && r.status() === 204,
+    )
+    release()
+    await saved
+    await page.reload()
+    await waitEngine(page)
+    await page.getByRole('button', { name: '资产库', exact: true }).click()
+    await panel
+      .getByRole('group', { name: '资产类别', exact: true })
+      .getByRole('button', { name: '道具', exact: true })
+      .click()
+    await panel
+      .getByRole('group', { name: '范围', exact: true })
+      .getByRole('button', { name: '最近使用', exact: true })
+      .click()
+    await expect(usedCard).toHaveCount(1)
+    await expect.poll(f.cards).toHaveLength(1)
+  } finally {
+    release()
+  }
+})
 
 for (const entry of ['列表', '编辑档案']) {
   test(`资产库${entry}放入失败在面板内展示错误，重试后带完整参考图关闭面板`, async ({ page }) => {
@@ -241,6 +308,7 @@ for (const entry of ['列表', '编辑档案']) {
     await page.waitForLoadState('networkidle')
     await expect(panel).toBeVisible()
     expect(await f.cards()).toEqual([])
+    expect((await (await page.request.get(`/api/library/${f.item.id}`)).json()).usedAt).toBeNull()
     await panel.getByRole('button', { name: '关闭', exact: true }).click()
     await f.row.click()
     await expect.poll(f.cards).toHaveLength(1)

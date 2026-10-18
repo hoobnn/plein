@@ -56,6 +56,62 @@ beforeEach(() => {
 })
 
 describe('资产库列表生命周期', () => {
+  for (const outcome of ['成功', '失败'] as const) {
+    it(`使用记录${outcome}后到达的旧列表不回退最近使用，后续读取仍采纳服务端`, async () => {
+      useLibrary.setState({ items: [item('used')], loaded: true })
+      let finish!: () => void
+      vi.mocked(api.markLibraryUsed).mockReturnValueOnce(
+        new Promise<void>((resolve, reject) => {
+          finish = outcome === '成功' ? resolve : () => reject(new Error('使用记录服务暂不可用'))
+        }),
+      )
+      useLibrary.getState().markUsed('used')
+      const usedAt = useLibrary.getState().items[0]!.usedAt
+      const reply = pendingList()
+      const load = useLibrary.getState().load()
+      finish()
+      // 下一轮任务前，提交 promise 的所有完成回调均已执行。
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      reply([{ ...item('used'), description: '服务端新描述' }])
+      await load
+      expect(useLibrary.getState().items[0]).toMatchObject({ usedAt, description: '服务端新描述' })
+      vi.mocked(api.library).mockResolvedValueOnce([item('used')])
+      await useLibrary.getState().load()
+      expect(useLibrary.getState().items[0]!.usedAt).toBeNull()
+    })
+  }
+
+  it('先前的使用提交结束不会解除同条目下一次提交的保护', async () => {
+    const time = vi.spyOn(Date, 'now').mockReturnValueOnce(10).mockReturnValueOnce(20)
+    let first!: () => void, second!: () => void
+    vi.mocked(api.markLibraryUsed)
+      .mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          first = resolve
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          second = resolve
+        }),
+      )
+    try {
+      useLibrary.setState({ items: [item('used')], loaded: true })
+      useLibrary.getState().markUsed('used')
+      useLibrary.getState().markUsed('used')
+      first()
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      vi.mocked(api.library).mockResolvedValueOnce([item('used')])
+      await useLibrary.getState().load()
+      expect(useLibrary.getState().items[0]!.usedAt).toBe(20)
+    } finally {
+      first()
+      second()
+      time.mockRestore()
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    }
+  })
+
   it('同一卡片的存档入口共用请求，失败释放锁，重试后只插入一次', async () => {
     const body: SaveLibraryCard = {
       canvasId: 'c',
