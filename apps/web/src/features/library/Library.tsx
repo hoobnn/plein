@@ -859,6 +859,8 @@ function Editor({
       images={draft.images.filter((i) => i.slot === slot.id)}
       used={draft.images.map((i) => i.assetId)}
       media={media}
+      disabled={busy || pendingUploads > 0}
+      onBusyChange={trackUpload}
       onAdd={(ids) =>
         patch({
           images: [
@@ -938,7 +940,13 @@ function Editor({
         <div className="grid grid-cols-2 gap-4">{kind.slots.map(slotField)}</div>
       )}
       {kind.video && !readOnly && (
-        <VideoField value={draft.video} media={media} onChange={(video) => patch({ video })} />
+        <VideoField
+          value={draft.video}
+          media={media}
+          onChange={(video) => patch({ video })}
+          disabled={busy || pendingUploads > 0}
+          onBusyChange={trackUpload}
+        />
       )}
       {kind.video && (
         <label className="ui-field">
@@ -1115,7 +1123,9 @@ function Editor({
               </ProfileUploadContext.Provider>
             </fieldset>
           ) : (
-            basics
+            <fieldset disabled={pendingUploads > 0} className="contents" aria-label="资产设定编辑">
+              {basics}
+            </fieldset>
           )}
           {item && !readOnly && <LibraryUpdatesPanel key={item.id} item={item} />}
         </section>
@@ -1149,7 +1159,7 @@ function Editor({
           )}
           {pendingUploads > 0 && (
             <span role="status" className="self-center text-xs text-ink-subtle">
-              图片上传中…
+              {kind.video ? '素材上传中…' : '图片上传中…'}
             </span>
           )}
           {readOnly ? (

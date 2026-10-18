@@ -237,10 +237,14 @@ export function VideoField({
   value,
   media,
   onChange,
+  disabled = false,
+  onBusyChange,
 }: {
   value: string | null
   media: CanvasMedia[]
   onChange(v: string | null): void
+  disabled?: boolean
+  onBusyChange?(busy: boolean): void
 }) {
   const ref = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
@@ -262,6 +266,7 @@ export function VideoField({
           <button
             type="button"
             onClick={() => onChange(null)}
+            disabled={busy || disabled}
             className="ui-btn ui-btn-quiet ui-btn-sm"
           >
             移除
@@ -271,14 +276,21 @@ export function VideoField({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || disabled}
             onClick={() => ref.current?.click()}
             className="ui-drop-tile"
           >
             <Icon name="upload" size={16} />
             {busy ? '上传中' : '上传视频'}
           </button>
-          <CanvasPick media={media} type="video" multiple={false} taken={[]} onPick={onChange} />
+          <CanvasPick
+            disabled={busy || disabled}
+            media={media}
+            type="video"
+            multiple={false}
+            taken={[]}
+            onPick={onChange}
+          />
         </div>
       )}
       {error && <span className="text-xs text-danger">{error}</span>}
@@ -287,11 +299,13 @@ export function VideoField({
         type="file"
         accept="video/*"
         hidden
+        disabled={busy || disabled}
         onChange={async (e) => {
           const files = [...(e.target.files ?? [])]
           e.target.value = ''
-          if (!files.length) return
+          if (!files.length || busy || disabled) return
           setBusy(true)
+          onBusyChange?.(true)
           setError(null)
           try {
             const [id] = await uploadAll(files, 'video')
@@ -301,6 +315,7 @@ export function VideoField({
             setError((err as Error).message)
           } finally {
             setBusy(false)
+            onBusyChange?.(false)
           }
         }}
       />

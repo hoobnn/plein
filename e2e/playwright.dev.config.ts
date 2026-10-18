@@ -21,6 +21,7 @@ export default defineConfig({
     'library-create-drafts.spec.ts',
     'library-sync-recovery.spec.ts',
     'library-save-lifecycle.spec.ts',
+    'library-upload-lifecycle.spec.ts',
     'viewer-media.spec.ts',
     'media-pagination.spec.ts',
     'media-search.spec.ts',
