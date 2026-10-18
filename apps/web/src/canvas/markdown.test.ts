@@ -41,4 +41,15 @@ describe('canvas Markdown content', () => {
     expect(html).toContain('src="/figure.png"')
     expect(html).toContain('alt="参考&quot;图片"')
   })
+
+  it('keeps fenced and indented code in labelled keyboard scroll regions', () => {
+    for (const text of ['```text\n<literal>\n```', '    <literal>']) {
+      const html = renderMarkdown(text)
+      expect(html).toContain('role="region" aria-label="代码块"')
+      expect(html).toContain('tabindex="0"')
+      expect(html).toContain('&lt;literal&gt;')
+      expect(html).not.toContain('<literal>')
+    }
+    expect(renderMarkdown('| 列 |\n| --- |\n| 值 |')).toContain('role="region" aria-label="表格"')
+  })
 })

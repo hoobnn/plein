@@ -149,6 +149,35 @@ export class CanvasOverlays {
       if (!p) {
         const node = document.createElement('div')
         node.className = 'plein-md plein-md-preview'
+        node.addEventListener(
+          'wheel',
+          (event) => {
+            if (event.defaultPrevented) return
+            const scroll = (event.target as Element).closest<HTMLElement>('[data-plein-scroll]')
+            if (
+              scroll &&
+              !event.ctrlKey &&
+              !event.metaKey &&
+              (event.deltaX || event.shiftKey) &&
+              scroll.scrollWidth > scroll.clientWidth
+            ) {
+              if (event.shiftKey && !event.deltaX) {
+                const unit =
+                  event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scroll.clientWidth : 1
+                scroll.scrollLeft += event.deltaY * unit
+                event.preventDefault()
+              }
+              event.stopPropagation()
+              return
+            }
+            // DOM 预览与画布宿主是兄弟层，未消费的滚轮需要转交给画布输入。
+            const canvasEvent = new WheelEvent('wheel', event)
+            this.host.dispatchEvent(canvasEvent)
+            if (canvasEvent.defaultPrevented) event.preventDefault()
+            event.stopPropagation()
+          },
+          { passive: false },
+        )
         const content = document.createElement('div')
         content.className = 'plein-md-content'
         content.dataset.markdownId = id

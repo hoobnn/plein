@@ -60,6 +60,7 @@ export default defineConfig({
     'markdown-ime.spec.ts',
     'markdown-history.spec.ts',
     'markdown-rendering.spec.ts',
+    'markdown-scroll.spec.ts',
     'player-keyboard.spec.ts',
     'player-recovery.spec.ts',
     'player-seeking.spec.ts',

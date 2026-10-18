@@ -17,7 +17,7 @@ export const isEditableTarget = (t: EventTarget | null) =>
     t instanceof HTMLSelectElement ||
     t instanceof HTMLMediaElement ||
     // 浮层及编辑器自己处理按键和剪贴板，不能穿透到背后的画布。
-    t.closest('[data-plein-active]') !== null ||
+    t.closest('[data-plein-active], [data-plein-scroll]') !== null ||
     isOverlayTarget(t))
 
 /** 控件上的 Tab、空格和方向键保留给浏览器；组合键仍可用于画布命令。 */

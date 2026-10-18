@@ -282,8 +282,27 @@
 }
 .plein-md pre code {
   display: block;
+  width: max-content;
+  min-width: 100%;
   padding: 0.6em 0.8em;
+}
+.plein-md-scroll {
+  max-width: 100%;
+  margin-bottom: 0.7em;
   overflow-x: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+}
+.plein-md .plein-md-scroll pre,
+.plein-md .plein-md-scroll table {
+  margin: 0;
+}
+.plein-md-scroll table {
+  min-width: 100%;
+}
+.plein-md-scroll th,
+.plein-md-scroll td {
+  min-width: 6em;
 }
 .plein-md blockquote {
   border-left: 3px solid var(--line);

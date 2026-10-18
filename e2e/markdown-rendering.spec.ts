@@ -139,3 +139,39 @@ test('延迟加载的大图适应便签宽度，加载后卡片增高并完整�
     release()
   }
 })
+
+test('图片加载失败仍显示替代文字和后文，编辑为有效地址后可恢复排版', async ({ page }) => {
+  await page.route('**/markdown-missing.svg', (route) =>
+    route.fulfill({ status: 503, body: 'fixture offline' }),
+  )
+  await page.route('**/markdown-recovered.svg', (route) =>
+    route.fulfill({
+      contentType: 'image/svg+xml',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400"><rect width="800" height="400" fill="orange"/></svg>',
+    }),
+  )
+  const { id, preview } = await pasteNote(
+    page,
+    '![参考图暂不可用](/markdown-missing.svg)\n\n图片之后的正文。',
+  )
+  const image = preview.getByRole('img', { name: '参考图暂不可用' })
+  await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.complete)).toBe(true)
+  expect(await image.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(0)
+  const footer = preview.getByText('图片之后的正文。', { exact: true })
+  const outer = (await preview.boundingBox())!
+  const end = (await footer.boundingBox())!
+  expect(end.y + end.height).toBeLessThanOrEqual(outer.y + outer.height)
+  await preview.screenshot({ path: test.info().outputPath('markdown-image-failed.png') })
+  const at = await centerOf(page, id)
+  await page.mouse.dblclick(at.x, at.y)
+  const editor = page.locator('.plein-md-editor .cm-content')
+  await expect(editor).toBeFocused()
+  await editor.press('ControlOrMeta+a')
+  await page.keyboard.insertText('![恢复后的参考图](/markdown-recovered.svg)\n\n图片之后的正文。')
+  await editor.press('Escape')
+  await expect(editor).toHaveCount(0)
+  const recovered = preview.getByRole('img', { name: '恢复后的参考图' })
+  await expect.poll(() => recovered.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(800)
+  await expect.poll(() => preview.evaluate((el) => el.scrollHeight <= el.clientHeight)).toBe(true)
+  expect((await elements(page)).map((e) => e.id)).toEqual([id])
+})
