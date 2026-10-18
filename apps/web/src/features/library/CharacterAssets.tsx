@@ -6,6 +6,7 @@ import { Icon, type IconName } from '../../ui/icons'
 import { Select } from '../../ui/Select'
 import type { CanvasMedia } from './canvas'
 import { CanvasPick, SlotField, thumb, uploadAll } from './LibraryFields'
+import { LibraryThumbnail } from './LibraryMedia'
 
 type ChangeImages = (update: (images: LibraryImage[]) => LibraryImage[]) => void
 
@@ -100,14 +101,14 @@ export function CharacterAssets({
           <ul className="lib-character-extra-list">
             {extraEntries.map(({ image, key }, index) => (
               <li key={key}>
-                <button
-                  type="button"
-                  aria-label={`预览其他参考 ${index + 1}`}
-                  onClick={() => onSelect(image.assetId, '其他参考')}
-                  className="lib-character-extra-preview"
-                >
-                  <img src={thumb(image.assetId)} alt="" draggable={false} />
-                </button>
+                <div className="lib-character-extra-preview">
+                  <LibraryThumbnail
+                    src={thumb(image.assetId)}
+                    label={`预览其他参考 ${index + 1}`}
+                    contain
+                    onSelect={() => onSelect(image.assetId, '其他参考')}
+                  />
+                </div>
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                   <fieldset disabled={busy}>
                     <Select
@@ -219,6 +220,7 @@ function CharacterAssetTile({
   const currentImage = useRef(imageKey)
   currentImage.current = imageKey
   const selectImage = (id: string) => {
+    setError(null)
     // 内容寻址的同图上传仍返回同一 id；明确选择也应重新尝试图片加载。
     setImageRevision((revision) => revision + 1)
     onAdd(id)

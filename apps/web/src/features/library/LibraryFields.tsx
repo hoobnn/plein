@@ -6,6 +6,7 @@ import type { CanvasMedia } from './canvas'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
 import { Presence } from '../../ui/Presence'
+import { LibraryThumbnail, ReferenceVideo } from './LibraryMedia'
 
 /** 资产库编辑页的图片字段：上传、从画布选、槽位与参考视频 */
 
@@ -77,35 +78,26 @@ export function CanvasPick({
               {list.map((m) => {
                 const on = taken.includes(m.assetId)
                 return (
-                  <button
+                  <div
                     key={m.assetId}
-                    type="button"
-                    title={m.name || undefined}
-                    aria-pressed={on}
-                    disabled={on}
-                    onClick={() => {
-                      onPick(m.assetId)
-                      if (!multiple) setAnchor(null)
-                    }}
                     className={`relative aspect-square overflow-hidden rounded-md bg-surface-2 ${
                       on ? 'opacity-40' : 'hover:ring-2 hover:ring-accent'
                     }`}
                   >
-                    <img
+                    <LibraryThumbnail
                       src={
                         type === 'image' ? thumb(m.assetId) : assetUrls.variant(m.assetId, 'poster')
                       }
-                      alt=""
-                      loading="lazy"
-                      draggable={false}
-                      className="size-full object-cover"
+                      label={`选择${type === 'image' ? '图片' : '视频'}「${m.name || '未命名素材'}」`}
+                      title={m.name || undefined}
+                      selected={on}
+                      disabled={disabled}
+                      onSelect={() => {
+                        onPick(m.assetId)
+                        if (!multiple) setAnchor(null)
+                      }}
                     />
-                    {on && (
-                      <span className="absolute inset-0 flex items-center justify-center text-ink">
-                        <Icon name="check" size={16} />
-                      </span>
-                    )}
-                  </button>
+                  </div>
                 )
               })}
             </div>
@@ -166,16 +158,15 @@ export function SlotField({
         )}
       </span>
       <div className="flex flex-wrap gap-2">
-        {images.map((img) => (
+        {images.map((img, index) => (
           <div
             key={img.assetId}
             className="group relative size-24 overflow-hidden rounded-lg bg-surface-2"
           >
-            <img
+            <LibraryThumbnail
               src={thumb(img.assetId)}
-              alt=""
-              draggable={false}
-              className="size-full object-cover"
+              label={`${slot.label} ${index + 1}`}
+              disabled={busy || disabled}
             />
             <button
               type="button"
@@ -212,7 +203,10 @@ export function SlotField({
             type="image"
             multiple={!!slot.multiple}
             taken={used}
-            onPick={(id) => onAdd([id])}
+            onPick={(id) => {
+              setError(null)
+              onAdd([id])
+            }}
           />
         )}
       </div>
@@ -257,12 +251,7 @@ export function VideoField({
       </span>
       {value ? (
         <div className="flex items-start gap-2">
-          {/* oxlint-disable-next-line jsx-a11y/media-has-caption -- 参考视频没有字幕 */}
-          <video
-            src={assetUrls.original(value)}
-            controls
-            className="max-h-56 w-full rounded-lg bg-black"
-          />
+          <ReferenceVideo src={assetUrls.original(value)} disabled={busy || disabled} />
           <button
             type="button"
             onClick={() => onChange(null)}
@@ -289,7 +278,10 @@ export function VideoField({
             type="video"
             multiple={false}
             taken={[]}
-            onPick={onChange}
+            onPick={(id) => {
+              setError(null)
+              onChange(id)
+            }}
           />
         </div>
       )}

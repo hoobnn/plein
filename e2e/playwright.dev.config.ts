@@ -22,6 +22,7 @@ export default defineConfig({
     'library-sync-recovery.spec.ts',
     'library-save-lifecycle.spec.ts',
     'library-upload-lifecycle.spec.ts',
+    'library-preview-recovery.spec.ts',
     'viewer-media.spec.ts',
     'media-pagination.spec.ts',
     'media-search.spec.ts',
