@@ -776,6 +776,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                     onBuild={buildSubtitles}
                     onRecognize={() => void recognizeSubtitles()}
                     onChange={(track) => set('subtitleTrack', track)}
+                    onEditBoundary={() => engine.doc.undo.stopCapturing()}
                     onModelChange={(model) => set('model', model)}
                     recovery={subtitleRecovery}
                     onRecover={(operation, confirmed) =>

@@ -63,8 +63,13 @@ export function SubtitleLayer({
   useEffect(() => {
     let live = true
     let sub: JASSUB | null = null
+    let observer: ResizeObserver | null = null
+    let resizeFrame = 0
     const controller = new AbortController()
     const dispose = () => {
+      observer?.disconnect()
+      observer = null
+      cancelAnimationFrame(resizeFrame)
       const retired = sub
       sub = null
       instance.current = null
@@ -112,6 +117,17 @@ export function SubtitleLayer({
         // 字体先加载完再开始画：按需加载的话第一帧是空的，暂停时又不会再画
         await sub.renderer.addFonts([bytes])
         if (!live) return
+        const current = sub
+        observer = new ResizeObserver(() => {
+          cancelAnimationFrame(resizeFrame)
+          // canvas 模式没有 paused video；JASSUB 自动 resize 不会强制刷新字形。
+          // 等它完成尺寸同步，再重画，避免校验提示等布局变化留下旧尺寸的缓存帧。
+          resizeFrame = requestAnimationFrame(() => {
+            if (instance.current === current)
+              void current.resize(true).catch((error) => failRef.current(current, error))
+          })
+        })
+        observer.observe(host.current!)
         setReady(true)
         modeRef.current('libass')
       } catch (err) {

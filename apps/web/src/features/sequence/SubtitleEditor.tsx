@@ -9,7 +9,7 @@ import { findNode } from '../../canvas/nodes'
 import { useCatalog } from '../../stores/catalog'
 import { ModelPicker } from '../generator/ModelPicker'
 import type { RecoverJobOptions, SubtitleRecognitionInfo } from '@plein/protocol'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 /** 字幕编辑的是保存到文档的同一条轨；隐藏不删除，方便逐句恢复。 */
 export function SubtitleEditor({
@@ -20,6 +20,7 @@ export function SubtitleEditor({
   onBuild,
   onRecognize,
   onChange,
+  onEditBoundary,
   onModelChange,
   recovery,
   onRecover,
@@ -31,10 +32,12 @@ export function SubtitleEditor({
   onBuild(): void
   onRecognize(): void
   onChange(track: SequenceSubtitleTrack): void
+  onEditBoundary(): void
   onModelChange(model: string): void
   recovery: SubtitleRecognitionInfo | null
   onRecover(operation: RecoverJobOptions, confirmed?: boolean): void
 }) {
+  const validationId = useId()
   const catalog = useCatalog((s) => s.catalog)
   const node = findNode(catalog, sequenceNode.type)
   const track = params.subtitleTrack
@@ -44,7 +47,16 @@ export function SubtitleEditor({
       onChange({ ...track, cues: track.cues.map((q) => (q.id === id ? { ...q, ...value } : q)) })
   }
   return (
-    <div className="flex flex-col gap-3" aria-label="逐句字幕编辑">
+    <div
+      className="flex flex-col gap-3"
+      aria-label="逐句字幕编辑"
+      onFocusCapture={onEditBoundary}
+      onBlurCapture={onEditBoundary}
+      onClickCapture={(event) => {
+        // 连续点击按钮或空格切换复选框也应各自独立撤销。
+        if ((event.target as Element).closest('button, input[type="checkbox"]')) onEditBoundary()
+      }}
+    >
       <p className="ui-help">
         时间相对所属镜头开始。这里保存的文字与时间供预览、MP4 和工程 SRT 共用。
       </p>
@@ -99,44 +111,66 @@ export function SubtitleEditor({
           return (
             <section key={source} className="seq-section">
               <h3 className="ui-section-title">镜头 {index + 1}</h3>
-              {cues.map((q, i) => (
-                <div key={q.id} className="mb-3 flex flex-col gap-2 rounded border border-line p-2">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={!q.hidden}
-                      onChange={(e) => patch(q.id, { hidden: !e.target.checked })}
+              {cues.map((q, i) => {
+                const empty = !q.hidden && !q.text.trim()
+                const invalidTime = !q.hidden && q.end <= q.start
+                const textError = `${validationId}-${encodeURIComponent(q.id)}-text`
+                const timeError = `${validationId}-${encodeURIComponent(q.id)}-time`
+                return (
+                  <div
+                    key={q.id}
+                    className="mb-3 flex flex-col gap-2 rounded border border-line p-2"
+                  >
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={!q.hidden}
+                        onChange={(e) => patch(q.id, { hidden: !e.target.checked })}
+                      />
+                      显示字幕 {i + 1}
+                    </label>
+                    <textarea
+                      aria-label={`镜头 ${index + 1} 字幕 ${i + 1} 文本`}
+                      className="ui-input w-full"
+                      value={q.text}
+                      aria-invalid={empty || undefined}
+                      aria-describedby={empty ? textError : undefined}
+                      onChange={(e) => patch(q.id, { text: e.target.value })}
                     />
-                    显示字幕 {i + 1}
-                  </label>
-                  <textarea
-                    aria-label={`镜头 ${index + 1} 字幕 ${i + 1} 文本`}
-                    className="ui-input w-full"
-                    value={q.text}
-                    onChange={(e) => patch(q.id, { text: e.target.value })}
-                  />
-                  <div className="flex gap-2">
-                    {(['start', 'end'] as const).map((field) => (
-                      <label key={field} className="min-w-0 flex-1 text-xs">
-                        {field === 'start' ? '开始' : '结束'}（秒）
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          className="ui-input w-full"
-                          value={q[field]}
-                          aria-label={`镜头 ${index + 1} 字幕 ${i + 1} ${field === 'start' ? '开始' : '结束'}（秒）`}
-                          aria-invalid={(!q.hidden && q.end <= q.start) || undefined}
-                          onChange={(e) => {
-                            const n = Number(e.target.value)
-                            if (Number.isFinite(n) && n >= 0) patch(q.id, { [field]: n })
-                          }}
-                        />
-                      </label>
-                    ))}
+                    {empty && (
+                      <p id={textError} className="text-xs text-danger">
+                        请输入字幕文本，或关闭这句字幕的显示。
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      {(['start', 'end'] as const).map((field) => (
+                        <label key={field} className="min-w-0 flex-1 text-xs">
+                          {field === 'start' ? '开始' : '结束'}（秒）
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            className="ui-input w-full"
+                            value={q[field]}
+                            aria-label={`镜头 ${index + 1} 字幕 ${i + 1} ${field === 'start' ? '开始' : '结束'}（秒）`}
+                            aria-invalid={invalidTime || undefined}
+                            aria-describedby={invalidTime ? timeError : undefined}
+                            onChange={(e) => {
+                              const n = Number(e.target.value)
+                              if (Number.isFinite(n) && n >= 0) patch(q.id, { [field]: n })
+                            }}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    {invalidTime && (
+                      <p id={timeError} className="text-xs text-danger">
+                        结束时间需要晚于开始时间。
+                      </p>
+                    )}
                   </div>
-                </div>
-              ))}
+                )
+              })}
               <button
                 type="button"
                 className="ui-btn ui-btn-quiet ui-btn-sm"
