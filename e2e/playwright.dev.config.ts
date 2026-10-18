@@ -39,6 +39,7 @@ export default defineConfig({
     'agent-keyboard.spec.ts',
     'agent-drafts.spec.ts',
     'agent-history.spec.ts',
+    'agent-stop-recovery.spec.ts',
     'agent-actions.spec.ts',
     'agent-decisions.spec.ts',
     'agent-revise.spec.ts',
