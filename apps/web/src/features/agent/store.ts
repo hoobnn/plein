@@ -49,6 +49,9 @@ interface AgentStore {
   loadingHistory: boolean
   historyError: string | null
   selectionError: { id: string; message: string } | null
+  connectionError: string | null
+  reconnecting: boolean
+  reconnect(): void
   session: AgentSession | null
   /** 面板关着时有新回复 */
   unread: boolean
@@ -126,16 +129,17 @@ function savedAgent(): AgentKind {
 
 export const useAgent = create<AgentStore>((set, get) => {
   /** 订阅会话事件流；同一时间只连一个会话 */
-  const connect = (id: string | null) => {
+  const connect = (id: string | null, reconnecting = false) => {
     source?.close()
     source = null
+    set({ connectionError: null, reconnecting: !!id && reconnecting })
     if (!id) return
     const es = new EventSource(API.agentEvents(id))
     source = es
     es.onerror = () => {
       // 浏览器会自动重连；连接彻底关闭时才算断开
       if (source === es && es.readyState === EventSource.CLOSED)
-        set({ error: '与智能体的连接已断开，请重新打开对话' })
+        set({ connectionError: '与对话的连接已断开，请重新连接。', reconnecting: false })
     }
     es.onmessage = (msg) => {
       if (source !== es) return
@@ -147,7 +151,12 @@ export const useAgent = create<AgentStore>((set, get) => {
       }
       const cur = get().session
       if (e.type === 'session') {
-        set({ session: e.session, mood: e.session.status === 'running' ? 'working' : get().mood })
+        set({
+          session: e.session,
+          mood: e.session.status === 'running' ? 'working' : 'idle',
+          connectionError: null,
+          reconnecting: false,
+        })
         return
       }
       if (!cur || cur.id !== id) return
@@ -229,6 +238,13 @@ export const useAgent = create<AgentStore>((set, get) => {
     loadingHistory: false,
     historyError: null,
     selectionError: null,
+    connectionError: null,
+    reconnecting: false,
+    reconnect() {
+      const { session, connectionError, reconnecting, selecting } = get()
+      if (!session || !connectionError || reconnecting || selecting) return
+      connect(session.id, true)
+    },
     setExcludedSelection(canvasId, signature) {
       if (get().excludedSelections[canvasId] === signature) return
       const excludedSelections = { ...get().excludedSelections }
@@ -414,6 +430,8 @@ export const useAgent = create<AgentStore>((set, get) => {
         get().loadingHistory ||
         get().historyError ||
         get().selectionError ||
+        get().connectionError ||
+        get().reconnecting ||
         get().selecting ||
         get().sending[canvasId] ||
         get().session?.status === 'running'

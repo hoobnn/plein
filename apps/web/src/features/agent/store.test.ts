@@ -34,6 +34,8 @@ class FakeEventSource {
   static CLOSED = 2
   static all: FakeEventSource[] = []
   closed = false
+  readyState = 1
+  onerror: (() => void) | null = null
   onmessage: ((event: { data: string }) => void) | null = null
   constructor(readonly url: string) {
     FakeEventSource.all.push(this)
@@ -164,6 +166,41 @@ describe('助手草稿与发送生命周期', () => {
 })
 
 describe('智能体会话', () => {
+  it('连接彻底关闭后只重连订阅，重复重连与旧流迟到事件不影响新状态', async () => {
+    vi.mocked(api.agentSession).mockResolvedValue({ ...session('stream'), agent: 'builtin' })
+    useAgent.setState({ canvasId: 'c1' })
+    await useAgent.getState().select('stream')
+    useAgent.getState().setDraft('c1', '重连草稿')
+    const first = FakeEventSource.all.at(-1)!
+    first.readyState = FakeEventSource.CLOSED
+    first.onerror?.()
+    expect(useAgent.getState().connectionError).toContain('连接已断开')
+    await useAgent.getState().send('重连草稿')
+    expect(api.sendAgentMessage).not.toHaveBeenCalled()
+    useAgent.getState().reconnect()
+    useAgent.getState().reconnect()
+    expect(FakeEventSource.all).toHaveLength(2)
+    expect(first.closed).toBe(true)
+    first.onerror?.()
+    first.emit({ type: 'session', session: session('obsolete') })
+    expect(useAgent.getState()).toMatchObject({
+      reconnecting: true,
+      connectionError: null,
+      session: { id: 'stream' },
+    })
+    const current = FakeEventSource.all.at(-1)!
+    useAgent.setState({ mood: 'working', session: { ...session('stream'), status: 'running' } })
+    current.emit({ type: 'session', session: { ...session('stream'), title: '补回最新状态' } })
+    expect(useAgent.getState()).toMatchObject({
+      reconnecting: false,
+      mood: 'idle',
+      connectionError: null,
+      session: { title: '补回最新状态' },
+    })
+    expect(useAgent.getState().drafts.c1?.text).toBe('重连草稿')
+    expect(api.sendAgentMessage).not.toHaveBeenCalled()
+    expect(api.createAgentSession).not.toHaveBeenCalled()
+  })
   it.each([false, true])('详情读取失败阻止误发和误建，已有会话=%s', async (hasCurrent) => {
     useAgent.setState({
       canvasId: 'detail-canvas',

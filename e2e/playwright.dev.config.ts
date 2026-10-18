@@ -43,6 +43,7 @@ export default defineConfig({
     'agent-history-refresh.spec.ts',
     'agent-history-loading.spec.ts',
     'agent-history-detail.spec.ts',
+    'agent-connection-recovery.spec.ts',
     'agent-stop-recovery.spec.ts',
     'agent-actions.spec.ts',
     'agent-decisions.spec.ts',

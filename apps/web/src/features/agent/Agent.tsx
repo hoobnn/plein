@@ -181,6 +181,8 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
     historyError,
     selectionError,
     selectionTitle,
+    connectionError,
+    reconnecting,
     selecting,
   } = useAgent(
     useShallow((s) => ({
@@ -194,6 +196,8 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
       historyError: s.historyError,
       selectionError: s.selectionError,
       selectionTitle: s.sessions.find((item) => item.id === s.selectionError?.id)?.title,
+      connectionError: s.connectionError,
+      reconnecting: s.reconnecting,
       selecting: s.selecting,
     })),
   )
@@ -356,6 +360,30 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
               worker={worker}
               lastTurn={session?.lastTurn}
             />
+          )}
+          {(connectionError || reconnecting) && (
+            <div
+              role={reconnecting ? 'status' : 'alert'}
+              className="mx-4 mb-2 flex items-center gap-2 rounded-md bg-surface-2 px-3 py-2 text-xs text-ink-muted"
+            >
+              <span className="min-w-0 flex-1">
+                {reconnecting ? '正在重新连接对话…' : connectionError}
+              </span>
+              <button
+                type="button"
+                aria-label="重新连接"
+                aria-busy={reconnecting}
+                disabled={reconnecting || !!selecting}
+                className="ui-btn ui-btn-secondary ui-btn-xs flex-none"
+                onClick={(e) => {
+                  const input = e.currentTarget.closest('aside')?.querySelector('textarea')
+                  useAgent.getState().reconnect()
+                  input?.focus()
+                }}
+              >
+                {reconnecting ? '连接中…' : '重新连接'}
+              </button>
+            </div>
           )}
           {error && (
             <p role="alert" className="px-4 pb-2 text-xs text-danger">
@@ -923,7 +951,14 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
   const text = useAgent((s) => s.drafts[canvasId]?.text ?? '')
   const sending = useAgent((s) => !!s.sending[canvasId])
   const selecting = useAgent((s) => !!s.selecting)
-  const historyBlocked = useAgent((s) => s.loadingHistory || !!s.historyError || !!s.selectionError)
+  const historyBlocked = useAgent(
+    (s) =>
+      s.loadingHistory ||
+      !!s.historyError ||
+      !!s.selectionError ||
+      !!s.connectionError ||
+      s.reconnecting,
+  )
   const stopping = useAgent((s) => !!s.pendingActions[`${s.session?.id}/stop`])
   const setText = (value: string) => useAgent.getState().setDraft(canvasId, value)
   const engine = useCanvas((s) => (s.canvasId === canvasId ? s.engine : null))
