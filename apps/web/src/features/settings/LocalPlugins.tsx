@@ -69,6 +69,7 @@ function contributesText(p: LocalPluginInfo) {
 
 /** 本机插件：数据目录 plugins/ 下的文件夹，默认不启用，看过权限再打开 */
 export function LocalPlugins() {
+  const catalogError = useCatalog((state) => state.error)
   const {
     data: list,
     error: loadError,
@@ -106,6 +107,15 @@ export function LocalPlugins() {
     }
   }
 
+  const retryCatalog = async () => {
+    setBusy('catalog')
+    try {
+      await useCatalog.getState().load()
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const retry = (
     <button
       type="button"
@@ -136,6 +146,21 @@ export function LocalPlugins() {
         </p>
       )}
       {loadError && retry}
+      {catalogError && (
+        <div className="flex flex-col items-start gap-2">
+          <p role="alert" className="text-sm text-danger">
+            节点目录更新失败：{catalogError}
+          </p>
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary"
+            disabled={busy !== null}
+            onClick={retryCatalog}
+          >
+            {busy === 'catalog' ? '正在更新目录…' : '重试更新节点目录'}
+          </button>
+        </div>
+      )}
       {list.length === 0 ? (
         <p className="text-sm text-ink-subtle">
           还没有本机插件。把插件文件夹放进数据目录的 plugins/ 里，再点「重新扫描」。

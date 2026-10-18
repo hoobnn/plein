@@ -55,6 +55,7 @@ export default defineConfig({
     'plugins-manifest-recovery.spec.ts',
     'plugins-crash-recovery.spec.ts',
     'plugins-collaboration.spec.ts',
+    'plugins-catalog-recovery.spec.ts',
     'plugins.spec.ts',
     'keyboard-boundaries.spec.ts',
   ],
