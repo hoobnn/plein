@@ -44,9 +44,9 @@ for (const width of [1440, 900, 390, 320]) {
       const side = (await sidebar.boundingBox())!
       const left = (await sidebar.getAttribute('aria-hidden')) === 'true' ? 0 : side.x + side.width
       const tasks = page.getByRole('complementary', { name: '任务', exact: true })
-      const right = (await tasks.count())
-        ? (await tasks.boundingBox())!.x
-        : page.viewportSize()!.width
+      const right = await tasks.evaluateAll(
+        (panels) => panels[0]?.getBoundingClientRect().x ?? window.innerWidth,
+      )
       return box.x >= left + 4 && box.x + box.width <= right - 4 && box.y >= 64
     }
     await expect.poll(fits, { timeout: 1500 }).toBe(true)

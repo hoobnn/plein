@@ -80,7 +80,7 @@ test('生成中途取消：记录已取消，核查原远端任务结束后能�
   await expect
     .poll(async () => (await elements(page)).find((e) => e.id === node!.id)?.status)
     .toBe('canceled')
-  await page.getByRole('button', { name: '任务' }).click()
+  await page.getByRole('button', { name: '任务', exact: true }).click()
   const tasks = page.getByRole('complementary', { name: '任务' })
   await expect(tasks.getByText('已取消').first()).toBeVisible()
   await expect(tasks.getByTestId('job-recovery')).toContainText('平台上的任务可能仍在生成')
@@ -96,7 +96,7 @@ test('生成中途取消：记录已取消，核查原远端任务结束后能�
   // The real mock cancel removed its remote task; polling confirms terminal failure without resubmission.
   await expect.poll(async () => (await latest()).recovery?.state).toBe('remote_failed')
   expect((await latest()).id).toBe(original)
-  await page.getByRole('button', { name: '任务' }).click()
+  await page.getByRole('button', { name: '任务', exact: true }).click()
 
   await request.put(MOCK, { data: { settings: { latencyMs: 0 } } })
   await generator.getByRole('button', { name: '生成', exact: true }).click()
