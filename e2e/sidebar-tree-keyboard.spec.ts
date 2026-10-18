@@ -164,3 +164,29 @@ for (const mode of ['composition', 'legacy229']) {
     expect(await snapshot(page)).toEqual(before)
   })
 }
+
+for (const finish of ['Enter', 'Escape']) {
+  test(`侧栏键盘改名通过 ${finish} 退出后回到原行，方向键继续浏览而不移动节点`, async ({
+    page,
+  }) => {
+    const { sidebar, ids } = await fixture(page)
+    const row = sidebar.locator(`[role="treeitem"][data-id="${ids.first}"]`)
+    await row.focus()
+    await page.keyboard.press('F2')
+    const input = row.getByRole('textbox', { name: '元素名称', exact: true })
+    await input.fill('键盘改名完成')
+    await input.press(finish)
+    await expect(input).toHaveCount(0)
+    await expect(row).toBeFocused()
+    const before = await snapshot(page)
+    const index = await row.evaluate((el) =>
+      [...el.parentElement!.querySelectorAll('[role="treeitem"]')].indexOf(el),
+    )
+    await page.keyboard.press('ArrowUp')
+    await expect(sidebar.getByRole('treeitem').nth(Math.max(0, index - 1))).toBeFocused()
+    expect(await snapshot(page)).toEqual(before)
+    expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, ids.first)).toBe(
+      finish === 'Enter' ? '键盘改名完成' : '组内一',
+    )
+  })
+}

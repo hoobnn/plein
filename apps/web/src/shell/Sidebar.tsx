@@ -198,7 +198,7 @@ function Layers({ engine }: { engine: Engine }) {
   const searchButton = useRef<HTMLButtonElement>(null)
   const searchInput = useRef<HTMLInputElement>(null)
   const typeHintId = useId()
-  const pendingRenameFocus = useRef<{ id: string; version: number } | null>(null)
+  const pendingRenameFocus = useRef<{ id: string; version?: number } | null>(null)
   const restoreSearchFocus = useRef(false)
   useEffect(() => {
     if (!searching && restoreSearchFocus.current) {
@@ -278,12 +278,15 @@ function Layers({ engine }: { engine: Engine }) {
   useEffect(() => {
     if (renaming && !engine.doc.get(renaming)) setRenaming(null)
   }, [engine, version, renaming])
-  useEffect(() => {
+  useLayoutEffect(() => {
     const pending = pendingRenameFocus.current
-    if (!pending || pending.version === version) return
+    if (!pending || renaming === pending.id || pending.version === version) return
     pendingRenameFocus.current = null
-    if (searching && !rows.some((row) => row.el.id === pending.id)) searchInput.current?.focus()
-  }, [rows, version, searching])
+    if (document.activeElement !== document.body) return
+    const row = listRef.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(pending.id)}"]`)
+    ;(row ?? searchInput.current ?? searchButton.current)?.focus({ preventScroll: true })
+    row?.scrollIntoView({ block: 'nearest' })
+  }, [rows, version, renaming])
 
   // 在画布上选中时：展开所在分组，并把它滚进可视范围
   // oxlint-disable react-hooks/exhaustive-deps -- selVersion 变化即选中变化
@@ -358,29 +361,36 @@ function Layers({ engine }: { engine: Engine }) {
     }
   }
   const rename = (id: string, name: string | null, expected: string) => {
+    const finish = (changed = false) => {
+      const row = listRef.current?.querySelector(`[data-id="${CSS.escape(id)}"]`)
+      if (row?.contains(document.activeElement)) {
+        activeRow.current = null
+        pendingRenameFocus.current = { id, ...(changed ? { version } : {}) }
+      }
+      setRenaming(null)
+    }
     const current = engine.doc.get(id)
     if (name !== null && current && name !== current.name) {
       if (engine.doc.readOnly) {
-        setRenaming(null)
+        finish()
         useCanvas.getState().notify('画布已变为只读，名称未保存')
         return
       }
       if ((current.name ?? outlineTitle(current, catalog)) !== expected) {
         if (name === expected) {
-          setRenaming(null)
+          finish()
           return
         }
         useCanvas.getState().notify('名称已在其他位置更新，已保留输入；请确认后再次保存')
         return { expected: current.name ?? outlineTitle(current, catalog) }
       }
-      const row = listRef.current?.querySelector(`[data-id="${CSS.escape(id)}"]`)
-      if (searching && row?.contains(document.activeElement))
-        pendingRenameFocus.current = { id, version }
       engine.doc.undo.stopCapturing()
       updateElement(engine.doc, id, { name })
       engine.doc.undo.stopCapturing()
+      finish(true)
+      return
     }
-    setRenaming(null)
+    finish()
   }
   // 行组件 memo 过：回调保持同一引用，选中变化时只重渲染选中状态变了的行
   const latest = useRef<LayerActions>(null!)

@@ -132,6 +132,11 @@ for (const commit of ['Enter', 'blur']) {
     if (commit === 'Enter') await rename.press('Enter')
     else await sidebar.getByRole('button', { name: '搜索', exact: true }).click()
     await expect(rename).toHaveCount(0)
+    await expect(
+      commit === 'Enter'
+        ? row
+        : sidebar.getByRole('textbox', { name: '搜索画布元素', exact: true }),
+    ).toBeFocused()
     await expect(page.getByText('画布已变为只读，名称未保存', { exact: true })).toBeVisible()
     expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, ids[0]!)).toBe(
       '海边文本',
