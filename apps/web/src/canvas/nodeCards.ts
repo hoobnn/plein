@@ -29,6 +29,7 @@ import {
 import { shotsOf } from '../features/storyboard/model'
 import { clipOverlay } from './occlusion'
 import { cancelRequestKey, useCancelRequests } from '../features/runs/cancelRequests'
+import { runRequestKey, useRunRequests } from '../features/runs/runRequests'
 
 type PromptPreset = Catalog['prompts'][number]
 
@@ -168,6 +169,7 @@ export class NodeCards {
       }),
       useStale.subscribe(() => this.sync()),
       useCancelRequests.subscribe(() => this.tick()),
+      useRunRequests.subscribe(() => this.sync()),
     )
     this.sync()
   }
@@ -298,6 +300,7 @@ export class NodeCards {
       el.h,
       el.name,
       el.run,
+      useRunRequests.getState().pending.has(runRequestKey(this.actions.canvasId, el.id)),
       useStale.getState().nodes.get(el.id),
       el.adopted,
       el.results?.length,
@@ -586,6 +589,9 @@ export class NodeCards {
 
   /** 失败：一句人话的原因，平台原话在下面；密钥、余额问题给“去设置” */
   private renderFailed(card: Card, el: CanvasElement, run: NonNullable<CanvasElement['run']>) {
+    const submitting = useRunRequests
+      .getState()
+      .pending.has(runRequestKey(this.actions.canvasId, el.id))
     const view = describeFailure(run)
     const box = document.createElement('div')
     box.className = 'plein-node-failed'
@@ -604,6 +610,16 @@ export class NodeCards {
     const actions = document.createElement('span')
     actions.className = 'plein-node-failed-actions'
     const retry = button('plein-node-action', '重试', { text: '重试' })
+    retry.disabled = submitting
+    retry.setAttribute('aria-busy', String(submitting))
+    if (submitting) {
+      retry.textContent = '正在提交…'
+      const waiting = document.createElement('span')
+      waiting.className = 'plein-node-muted'
+      waiting.setAttribute('role', 'status')
+      waiting.textContent = '正在提交重试…'
+      box.appendChild(waiting)
+    }
     retry.addEventListener('click', (e) => {
       e.stopPropagation()
       this.engine.selection.set([el.id])

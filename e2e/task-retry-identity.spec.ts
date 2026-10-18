@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { JobList } from '../packages/protocol/src/runs'
-import { newProject, waitEngine } from './canvas'
+import { clickElement, newProject, waitEngine } from './canvas'
 
 for (const stale of [false, true]) {
   test(`${stale ? '旧失败历史' : '当前失败任务'}重试核对运行身份并保留已有结果`, async ({
@@ -245,6 +245,14 @@ test('重试等待期间阻止重复请求，重开面板仍显示等待，失�
     await expect.poll(() => calls).toBe(1)
     await expect(retry).toBeDisabled()
     await panel.getByRole('button', { name: '关闭', exact: true }).click()
+    await clickElement(page, id)
+    const card = page.locator('.plein-node')
+    await expect(card.getByRole('button', { name: '重试', exact: true })).toBeDisabled()
+    await expect(card.getByRole('status').filter({ hasText: '正在提交重试…' })).toBeVisible()
+    await card.screenshot({
+      path: test.info().outputPath('card-retry-pending.png'),
+      animations: 'disabled',
+    })
     await page.getByRole('button', { name: '任务', exact: true }).click()
     await expect(retry).toBeDisabled()
     await expect(panel.getByRole('status').filter({ hasText: '正在提交重试…' })).toBeVisible()
@@ -255,10 +263,15 @@ test('重试等待期间阻止重复请求，重开面板仍显示等待，失�
     release()
     await expect(page.getByText('重试请求暂不可用', { exact: true })).toBeVisible()
     await expect(retry).toBeEnabled()
+    await expect(
+      page.locator('.plein-node').getByRole('button', { name: '重试', exact: true }),
+    ).toBeEnabled()
     const response = page.waitForResponse(
       (res) => res.url().endsWith(`/nodes/${id}/run`) && res.request().method() === 'POST',
     )
-    await retry.click()
+    await panel.getByRole('button', { name: '关闭', exact: true }).click()
+    await clickElement(page, id)
+    await page.locator('.plein-node').getByRole('button', { name: '重试', exact: true }).click()
     expect((await response).status()).toBe(202)
     expect(calls).toBe(2)
     await expect.poll(async () => (await jobs()).jobs.length).toBe(2)
