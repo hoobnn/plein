@@ -32,12 +32,15 @@ export function SchemaForm({
   schema,
   value,
   onChange,
+  onNumberEdit,
   readValue,
   dense = false,
 }: {
   schema: ObjectSchema
   value: Record<string, unknown>
   onChange(next: Record<string, unknown>): void
+  /** 数字草稿开始编辑；正式值仍在失焦或回车时提交。 */
+  onNumberEdit?(): void
   readValue?(): Record<string, unknown>
   /** 弹层里用 32 高的控件；默认是设置页的 36 高 */
   dense?: boolean
@@ -112,6 +115,7 @@ export function SchemaForm({
               value={value[key] as number | undefined}
               readValue={readValue ? () => readValue()[key] as number | undefined : undefined}
               onChange={(v) => set(key, v)}
+              onEdit={onNumberEdit}
             />
           )
         } else if (f.widget === 'textarea') {
@@ -184,6 +188,7 @@ function NumberControl({
   className,
   value,
   onChange,
+  onEdit,
   readValue,
   describedBy,
 }: {
@@ -192,6 +197,7 @@ function NumberControl({
   className: string
   value: number | undefined
   onChange(v: number | undefined): void
+  onEdit?(): void
   readValue?(): number | undefined
   describedBy?: string
 }) {
@@ -245,6 +251,7 @@ function NumberControl({
           text,
           base: previous ? previous.base : readValue ? readValue() : value,
         }))
+        onEdit?.()
       }}
       onBlur={(e) => commit(e.currentTarget)}
       onKeyDown={(e) => {

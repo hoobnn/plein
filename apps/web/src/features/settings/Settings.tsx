@@ -50,25 +50,40 @@ export function ProviderRow({
   const [config, setConfig] = useState<ProviderConfigView | null>(null)
   const [settings, setSettings] = useState<Record<string, unknown>>({})
   const [secrets, setSecrets] = useState<Record<string, string>>({})
-  const [status, setStatus] = useState<string | null>(null)
+  const [status, setStatus] = useState<{ message: string; error?: boolean } | null>(null)
   const [test, setTest] = useState<ProviderTestResult | null>(null)
   const [busy, setBusy] = useState(false)
+  const [configError, setConfigError] = useState<string | null>(null)
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const [numberEditing, setNumberEditing] = useState(false)
+  const clearFeedback = () => {
+    setStatus(null)
+    setTest(null)
+  }
 
   // 展开时才读配置
   useEffect(() => {
     if (!open || config) return
+    let cancelled = false
+    setConfigError(null)
     api.providerConfig(provider.id).then(
       (c) => {
+        if (cancelled) return
         setConfig(c)
         setSettings(c.settings)
       },
-      (err) => setStatus(`读取配置失败：${(err as Error).message}`),
+      (err) => {
+        if (!cancelled) setConfigError(`读取配置失败：${(err as Error).message}`)
+      },
     )
-  }, [open, config, provider.id])
+    return () => {
+      cancelled = true
+    }
+  }, [open, config, provider.id, loadAttempt])
 
   const save = async () => {
     setBusy(true)
-    setStatus(null)
+    clearFeedback()
     try {
       const next = await api.updateProviderConfig(provider.id, {
         ...(enableOnSave ? { enabled: true } : {}),
@@ -78,10 +93,11 @@ export function ProviderRow({
       })
       setConfig(next)
       setSecrets({})
-      setStatus('已保存')
+      setNumberEditing(false)
+      setStatus({ message: '已保存' })
       onSaved()
     } catch (err) {
-      setStatus(`保存失败：${(err as Error).message}`)
+      setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
     } finally {
       setBusy(false)
     }
@@ -89,19 +105,20 @@ export function ProviderRow({
 
   const setEnabled = async (enabled: boolean) => {
     setBusy(true)
+    clearFeedback()
     try {
       const next = await api.updateProviderConfig(provider.id, { enabled })
       if (config) setConfig(next)
       onSaved()
     } catch (err) {
-      setStatus(`保存失败：${(err as Error).message}`)
+      setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
     } finally {
       setBusy(false)
     }
   }
 
   const runTest = async () => {
-    setTest(null)
+    clearFeedback()
     setBusy(true)
     try {
       setTest(await api.testProvider(provider.id))
@@ -114,6 +131,17 @@ export function ProviderRow({
 
   const state = providerState(provider)
   const bodyId = `provider-${provider.id}`
+  const dirty =
+    numberEditing ||
+    (!!config &&
+      (Object.values(secrets).some((value) => value !== '') ||
+        JSON.stringify(settings) !== JSON.stringify(config.settings)))
+  const feedback = test
+    ? {
+        message: test.ok ? (test.message ?? '连接正常') : `检查失败：${test.message ?? '未知错误'}`,
+        error: !test.ok,
+      }
+    : status
 
   return (
     <li className="border-b border-line last:border-b-0" data-provider={provider.id}>
@@ -158,44 +186,71 @@ export function ProviderRow({
             </div>
           )}
           {!config ? (
-            <p className="text-xs text-ink-subtle" role="status">
-              {status ?? '读取中…'}
-            </p>
+            <div className="flex flex-col gap-2">
+              <p
+                className={configError ? 'text-xs text-danger' : 'text-xs text-ink-subtle'}
+                role={configError ? 'alert' : 'status'}
+              >
+                {configError ?? '读取中…'}
+              </p>
+              {configError && (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-secondary self-start"
+                  onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+                >
+                  重试读取配置
+                </button>
+              )}
+            </div>
           ) : (
             <>
-              {provider.secrets.map((s) => (
-                <label key={s.name} className="ui-field">
-                  <span className="ui-label">
-                    {s.title}
-                    {s.required ? '' : '（可选）'}
-                  </span>
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    className={input}
-                    placeholder={config.secrets[s.name] ? '已填写，留空表示不修改' : '未填写'}
-                    value={secrets[s.name] ?? ''}
-                    onChange={(e) => setSecrets({ ...secrets, [s.name]: e.target.value })}
-                  />
-                  {s.help && <span className="ui-help">{s.help}</span>}
-                </label>
-              ))}
-              <SchemaForm
-                schema={provider.settingsSchema as ObjectSchema}
-                value={settings}
-                onChange={setSettings}
-              />
+              <fieldset disabled={busy} className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0">
+                {provider.secrets.map((s) => (
+                  <label key={s.name} className="ui-field">
+                    <span className="ui-label">
+                      {s.title}
+                      {s.required ? '' : '（可选）'}
+                    </span>
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      className={input}
+                      placeholder={config.secrets[s.name] ? '已填写，留空表示不修改' : '未填写'}
+                      value={secrets[s.name] ?? ''}
+                      onChange={(e) => {
+                        clearFeedback()
+                        setSecrets({ ...secrets, [s.name]: e.target.value })
+                      }}
+                    />
+                    {s.help && <span className="ui-help">{s.help}</span>}
+                  </label>
+                ))}
+                <SchemaForm
+                  schema={provider.settingsSchema as ObjectSchema}
+                  value={settings}
+                  onNumberEdit={() => {
+                    clearFeedback()
+                    setNumberEditing(true)
+                  }}
+                  onChange={(next) => {
+                    clearFeedback()
+                    setNumberEditing(false)
+                    setSettings(next)
+                  }}
+                />
+              </fieldset>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="mr-auto text-xs text-ink-muted" role="status">
-                  {test
-                    ? test.ok
-                      ? (test.message ?? '连接正常')
-                      : `检查失败：${test.message}`
-                    : status}
+                <span
+                  className={`mr-auto text-xs ${feedback?.error ? 'text-danger' : 'text-ink-muted'}`}
+                  role={feedback?.error ? 'alert' : 'status'}
+                >
+                  {busy ? '处理中…' : feedback?.message}
                 </span>
                 <button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || dirty}
+                  aria-describedby={dirty ? `${bodyId}-unsaved` : undefined}
                   onClick={runTest}
                   className="ui-btn ui-btn-secondary"
                 >
@@ -210,6 +265,12 @@ export function ProviderRow({
                   保存
                 </button>
               </div>
+              {dirty && (
+                <p id={`${bodyId}-unsaved`} className="text-xs text-ink-muted">
+                  修改尚未保存，请先保存再
+                  {provider.testScope === 'configuration' ? '检查配置' : '测试连接'}。
+                </p>
+              )}
             </>
           )}
         </div>
