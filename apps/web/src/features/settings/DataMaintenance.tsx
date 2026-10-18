@@ -1,8 +1,16 @@
 import type { CleanupPreview, MaintenanceSettings } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Switch } from '../../ui/Switch'
 import { maintenanceApi } from './maintenance-client'
+
+const numberFields = [
+  ['intervalHours', '备份间隔（小时）', 1, 720],
+  ['keepBackups', '保留最近几份', 1, 100],
+  ['unusedDays', '未引用素材保留（天）', 1, 3650],
+  ['trashDays', '回收站保留（天）', 1, 365],
+] as const
+type NumberKey = (typeof numberFields)[number][0]
 
 const bytes = (value: number) => {
   const unit = value >= 1024 ** 3 ? 'GB' : value >= 1024 ** 2 ? 'MB' : 'KB'
@@ -24,6 +32,9 @@ export function DataMaintenance() {
     retry: false,
   })
   const [settings, setSettings] = useState<MaintenanceSettings | null>(null)
+  const formId = useId()
+  const [drafts, setDrafts] = useState<Partial<Record<NumberKey, string>>>({})
+  const [invalid, setInvalid] = useState<Partial<Record<NumberKey, boolean>>>({})
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -73,10 +84,12 @@ export function DataMaintenance() {
       </div>
     )
   const locked = busy || status.data.running != null
-  const updateNumber = (
-    key: 'intervalHours' | 'keepBackups' | 'unusedDays' | 'trashDays',
-    value: string,
-  ) => setSettings({ ...settings, [key]: Number(value) })
+  const updateNumber = (key: NumberKey, value: string) => {
+    setDrafts((previous) => ({ ...previous, [key]: value }))
+    setInvalid((previous) => ({ ...previous, [key]: false }))
+    setMessage(null)
+    setError(null)
+  }
   return (
     <div className="flex flex-col gap-6">
       {(locked || message || error || status.error) && (
@@ -107,105 +120,110 @@ export function DataMaintenance() {
         </div>
       )}
       <section className="flex flex-col gap-3" aria-label="自动备份">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-medium">自动备份</h3>
-          <Switch
-            label="启用自动备份"
-            checked={settings.autoBackup}
-            disabled={locked}
-            onChange={(autoBackup) => setSettings({ ...settings, autoBackup })}
-          />
-        </div>
-        <p className="text-xs text-ink-subtle">
-          备份含全部项目、素材、历史、平台密钥和本机插件，仅保存在本机。服务运行期间按间隔执行；关闭后会在下次启动补做已到期的备份。
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="ui-field">
-            <span className="ui-label">备份间隔（小时）</span>
-            <input
-              className="ui-input w-full"
-              type="number"
-              min={1}
-              max={720}
-              value={settings.intervalHours}
+        <form
+          className="flex flex-col gap-3"
+          aria-label="维护设置"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const next = { ...settings }
+            for (const [key] of numberFields)
+              if (drafts[key] !== undefined) next[key] = Number(drafts[key])
+            void perform(async () => {
+              const saved = await maintenanceApi.settings(next)
+              setSettings(saved.settings)
+              setDrafts({})
+              setInvalid({})
+              setPreview(null)
+              return '维护设置已保存'
+            })
+          }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-medium">自动备份</h3>
+            <Switch
+              label="启用自动备份"
+              checked={settings.autoBackup}
               disabled={locked}
-              onChange={(e) => updateNumber('intervalHours', e.target.value)}
+              onChange={(autoBackup) => {
+                setSettings({ ...settings, autoBackup })
+                setMessage(null)
+                setError(null)
+              }}
             />
-          </label>
-          <label className="ui-field">
-            <span className="ui-label">保留最近几份</span>
-            <input
-              className="ui-input w-full"
-              type="number"
-              min={1}
-              max={100}
-              value={settings.keepBackups}
-              disabled={locked}
-              onChange={(e) => updateNumber('keepBackups', e.target.value)}
-            />
-          </label>
-          <label className="ui-field">
-            <span className="ui-label">未引用素材保留（天）</span>
-            <input
-              className="ui-input w-full"
-              type="number"
-              min={1}
-              max={3650}
-              value={settings.unusedDays}
-              disabled={locked}
-              onChange={(e) => updateNumber('unusedDays', e.target.value)}
-            />
-          </label>
-          <label className="ui-field">
-            <span className="ui-label">回收站保留（天）</span>
-            <input
-              className="ui-input w-full"
-              type="number"
-              min={1}
-              max={365}
-              value={settings.trashDays}
-              disabled={locked}
-              onChange={(e) => updateNumber('trashDays', e.target.value)}
-            />
-          </label>
-        </div>
-        <p className="text-xs text-ink-subtle">
-          最近成功：{date(status.data.lastBackupAt)} · 下次：{date(status.data.nextBackupAt)}
-        </p>
-        {status.data.lastError && (
-          <p role="alert" className="text-xs text-danger">
-            最近维护失败：{status.data.lastError}
+          </div>
+          <p className="text-xs text-ink-subtle">
+            备份含全部项目、素材、历史、平台密钥和本机插件，仅保存在本机。服务运行期间按间隔执行；关闭后会在下次启动补做已到期的备份。
           </p>
-        )}
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="ui-btn ui-btn-primary"
-            disabled={locked}
-            onClick={() =>
-              void perform(async () => {
-                await maintenanceApi.settings(settings)
-                setPreview(null)
-                return '维护设置已保存'
-              })
-            }
-          >
-            保存设置
-          </button>
-          <button
-            type="button"
-            className="ui-btn ui-btn-secondary"
-            disabled={locked}
-            onClick={() =>
-              void perform(async () => {
-                const backup = await maintenanceApi.backup()
-                return `备份完成：${bytes(backup.bytes)}`
-              })
-            }
-          >
-            立即备份
-          </button>
-        </div>
+          <div className="grid grid-cols-2 gap-3">
+            {numberFields.map(([key, title, minimum, maximum]) => {
+              const id = `${formId}-${key}`
+              const hint = `请输入 ${minimum}–${maximum} 之间的整数`
+              return (
+                <div key={key} className="ui-field">
+                  <label htmlFor={id} className="ui-label">
+                    {title}
+                  </label>
+                  <input
+                    id={id}
+                    className="ui-input w-full"
+                    type="number"
+                    required
+                    step={1}
+                    min={minimum}
+                    max={maximum}
+                    value={drafts[key] ?? settings[key]}
+                    disabled={locked}
+                    aria-invalid={invalid[key] || undefined}
+                    aria-describedby={invalid[key] ? `${id}-error` : undefined}
+                    onChange={(event) => {
+                      event.currentTarget.setCustomValidity('')
+                      updateNumber(key, event.target.value)
+                    }}
+                    onInvalid={(event) => {
+                      event.preventDefault()
+                      event.currentTarget.setCustomValidity(hint)
+                      setInvalid((previous) => ({ ...previous, [key]: true }))
+                      event.currentTarget.form
+                        ?.querySelector<HTMLInputElement>('input:invalid')
+                        ?.focus()
+                    }}
+                  />
+                  {invalid[key] && (
+                    <span id={`${id}-error`} className="ui-help text-danger">
+                      {hint}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <p className="text-xs text-ink-subtle">
+            最近成功：{date(status.data.lastBackupAt)} · 下次：{date(status.data.nextBackupAt)}
+          </p>
+          {status.data.lastError && (
+            <p role="alert" className="text-xs text-danger">
+              最近维护失败：{status.data.lastError}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button type="submit" className="ui-btn ui-btn-primary" disabled={locked}>
+              保存设置
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary"
+              disabled={locked}
+              onClick={() =>
+                void perform(async () => {
+                  const backup = await maintenanceApi.backup()
+                  return `备份完成：${bytes(backup.bytes)}`
+                })
+              }
+            >
+              立即备份
+            </button>
+          </div>
+        </form>
       </section>
       <section className="flex flex-col gap-3" aria-label="存储空间">
         <div className="flex items-center justify-between">
