@@ -45,7 +45,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
   const [name, setName] = useState(''),
     [saving, setSaving] = useState(false),
     [waiting, setWaiting] = useState(false),
-    [working, setWorking] = useState<string | null>(null)
+    [working, setWorking] = useState<{ id: string; kind: 'restore' | 'remove' } | null>(null)
   const [selected, setSelected] = useState<CanvasCheckpoint | null>(null),
     [detail, setDetail] = useState<CheckpointDetail | null>(null),
     [previewError, setPreviewError] = useState('')
@@ -154,17 +154,31 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
     }
   }
   const restore = async (checkpoint: CanvasCheckpoint) => {
-    if (working || saving) return
-    setWorking(checkpoint.id)
+    const visit = useCheckpoints.getState().open
+    const source = useCanvas.getState()
+    const current = () => {
+      const state = useCanvas.getState()
+      return (
+        !!visit &&
+        useCheckpoints.getState().open === visit &&
+        visit.projectId === projectId &&
+        visit.canvasId === canvasId &&
+        state.engine === source.engine &&
+        state.canvasId === source.canvasId
+      )
+    }
+    if (working || saving || !current()) return
+    setWorking({ id: checkpoint.id, kind: 'restore' })
     setError('')
     try {
       const result = await checkpointApi.restore(checkpoint.id)
       await invalidateProjects()
+      if (!current()) return
       close()
       navigate({ name: 'canvas', id: result.canvasId })
       useCanvas.getState().notify(`已从「${checkpoint.name}」创建新画布`)
     } catch (reason) {
-      setError((reason as Error).message)
+      if (current()) setError((reason as Error).message)
     } finally {
       setWorking(null)
     }
@@ -178,7 +192,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
       danger: true,
     })
     if (!accepted) return
-    setWorking(checkpoint.id)
+    setWorking({ id: checkpoint.id, kind: 'remove' })
     setError('')
     try {
       await checkpointApi.remove(checkpoint.id)
@@ -247,6 +261,11 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
           {error}
         </p>
       )}
+      {working?.kind === 'restore' && (
+        <p role="status" className="px-5 py-3 text-sm text-ink-muted">
+          正在恢复为新画布…关闭窗口后仍会继续执行。
+        </p>
+      )}
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <div
           className={`ui-scrollbar min-h-0 overflow-y-auto p-4 ${selected ? 'md:w-80 md:flex-none md:border-r md:border-line' : 'flex-1'}`}
@@ -301,7 +320,9 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
                       disabled={!!working || saving}
                       onClick={() => void restore(checkpoint)}
                     >
-                      恢复为新画布
+                      {working?.kind === 'restore' && working.id === checkpoint.id
+                        ? '恢复中…'
+                        : '恢复为新画布'}
                     </button>
                     <button
                       type="button"

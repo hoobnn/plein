@@ -17,6 +17,8 @@ export default defineConfig({
     'canvas-rename-recovery.spec.ts',
     'canvas-info-recovery.spec.ts',
     'canvas-info-cached.spec.ts',
+    'checkpoint-restore-lifecycle.spec.ts',
+    'media-checkpoints.spec.ts',
     'project-rename-recovery.spec.ts',
     'project-delete-recovery.spec.ts',
     'project-list-recovery.spec.ts',
