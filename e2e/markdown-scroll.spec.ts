@@ -60,6 +60,22 @@ for (const kind of ['代码块', '表格']) {
     ).toBe(false)
     await page.keyboard.press('ArrowRight')
     await expect.poll(() => region.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0)
+    // 原生方向键滚动有动画；等它结束再重置，避免与下一次滚轮测试相互覆盖。
+    await region.evaluate(
+      (el) =>
+        new Promise<void>((done) => {
+          let last = el.scrollLeft
+          let same = 0
+          const tick = () => {
+            const now = el.scrollLeft
+            same = now === last ? same + 1 : 0
+            last = now
+            if (same >= 5) done()
+            else requestAnimationFrame(tick)
+          }
+          requestAnimationFrame(tick)
+        }),
+    )
     await region.evaluate((el) => {
       el.scrollLeft = 0
     })

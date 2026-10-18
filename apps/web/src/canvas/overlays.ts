@@ -158,10 +158,10 @@ export class CanvasOverlays {
               scroll &&
               !event.ctrlKey &&
               !event.metaKey &&
-              (event.deltaX || event.shiftKey) &&
+              (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) &&
               scroll.scrollWidth > scroll.clientWidth
             ) {
-              if (event.shiftKey && !event.deltaX) {
+              if (event.shiftKey && Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
                 const unit =
                   event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scroll.clientWidth : 1
                 scroll.scrollLeft += event.deltaY * unit
@@ -178,6 +178,30 @@ export class CanvasOverlays {
           },
           { passive: false },
         )
+        node.addEventListener('keydown', (event) => {
+          if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return
+          const scroll = (event.target as Element).closest<HTMLElement>('[data-plein-scroll]')
+          if (!scroll) return
+          const selection = window.getSelection()
+          if (
+            (event.metaKey || event.ctrlKey) &&
+            !event.altKey &&
+            !event.shiftKey &&
+            event.key.toLowerCase() === 'a'
+          ) {
+            selection?.selectAllChildren(scroll)
+            event.preventDefault()
+          } else if (
+            event.key === 'Escape' &&
+            selection &&
+            !selection.isCollapsed &&
+            scroll.contains(selection.anchorNode) &&
+            scroll.contains(selection.focusNode)
+          ) {
+            selection.collapseToEnd()
+            event.preventDefault()
+          }
+        })
         const content = document.createElement('div')
         content.className = 'plein-md-content'
         content.dataset.markdownId = id
