@@ -1117,7 +1117,7 @@ function Editor({
           ) : (
             basics
           )}
-          {item && !readOnly && <LibraryUpdatesPanel item={item} />}
+          {item && !readOnly && <LibraryUpdatesPanel key={item.id} item={item} />}
         </section>
       </div>
       <footer className="flex flex-none flex-wrap items-center gap-2 border-t border-line px-5 py-3">
