@@ -69,7 +69,7 @@ export function createPlayer(
   }
   const feedback = document.createElement('div')
   feedback.className =
-    'absolute inset-0 z-[1] flex flex-col items-center justify-center gap-3 bg-black/40 px-4 pb-12 text-center text-sm text-white'
+    'plein-player-feedback absolute inset-0 z-[1] flex flex-col items-center justify-center gap-3 bg-black/40 px-4 pb-12 text-center text-sm text-white'
   feedback.setAttribute('role', 'status')
   const message = document.createElement('span')
   const retry = document.createElement('button')
@@ -128,6 +128,7 @@ export function createPlayer(
     animationFrames.clear()
   }
   const showFeedback = (text: string, canRetry = false) => {
+    node.classList.toggle('has-feedback', !!text)
     feedback.style.display = text ? 'flex' : 'none'
     message.textContent = text
     retry.hidden = !canRetry
@@ -144,7 +145,12 @@ export function createPlayer(
     failed = true
     cancelPresentation()
     media.pause()
-    showFeedback('暂时无法播放，请重新加载。原文件仍可下载和使用。', true)
+    showFeedback(
+      kind === 'audio'
+        ? '暂时无法播放，原文件仍可用。'
+        : '暂时无法播放，请重新加载。原文件仍可下载和使用。',
+      true,
+    )
   }
   const waitForFrame = () => {
     if (disposed || failed) return
@@ -152,7 +158,8 @@ export function createPlayer(
     if (frameCallback !== undefined || animationFrames.size) return
     const token = generation
     const video = media as HTMLVideoElement
-    if (typeof video.requestVideoFrameCallback === 'function') {
+    // 暂停时可能不会再提交视频帧回调；已有当前帧数据后等两次绘制即可呈现。
+    if (typeof video.requestVideoFrameCallback === 'function' && !media.paused) {
       frameCallback = video.requestVideoFrameCallback(() => {
         frameCallback = undefined
         if (token === generation) present()
@@ -171,7 +178,9 @@ export function createPlayer(
   const start = () => {
     if (disposed) return
     const token = generation
-    void media.play().catch(() => {
+    void media.play().catch((error: unknown) => {
+      // 加载尚未结束时主动暂停会中止 play()，这不是媒体加载失败。
+      if (error instanceof DOMException && error.name === 'AbortError') return
       if (token === generation) fail()
     })
   }
@@ -319,6 +328,12 @@ export function createPlayer(
   for (const ev of ['timeupdate', 'durationchange', 'loadedmetadata', 'progress', 'seeked'])
     media.addEventListener(ev, render)
   for (const ev of ['play', 'pause', 'ended']) media.addEventListener(ev, renderState)
+  media.addEventListener('pause', () => {
+    if (!disposed && !failed && !presented && media.readyState >= 2) {
+      cancelPresentation()
+      waitForFrame()
+    }
+  })
   media.addEventListener('volumechange', renderVolume)
   media.addEventListener('error', fail)
   media.addEventListener('loadeddata', waitForFrame)
