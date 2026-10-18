@@ -1,4 +1,5 @@
 import type { Camera } from './camera'
+import { attachTouchNavigation } from './touch'
 
 /** 平移模式：空格按住、或当前是抓手工具时，左键拖拽平移画布 */
 export interface PanState {
@@ -56,12 +57,14 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
   }
   const cancel = () => {
     stopInertia()
+    touch.cancel()
     const id = pointer
     pointer = null
     vx = vy = 0
     if (id !== null && el.hasPointerCapture(id)) el.releasePointerCapture(id)
     el.style.cursor = idleCursor()
   }
+  const touch = attachTouchNavigation(el, camera, { enabled: () => pan.hand, begin: cancel, move })
   // 侧栏、小地图、缩放或动画等外部导航接管时，不再沿用旧平移。
   const offCamera = camera.onChange(() => {
     if (!movingCamera) cancel()
@@ -83,10 +86,12 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
   }
 
   const onPointerDown = (e: PointerEvent) => {
+    if (e.pointerType === 'touch' && pan.hand) return
     if (pointer !== null) return
     stopInertia()
     const panning = e.button === 1 || (e.button === 0 && (pan.space || pan.hand))
     if (!panning) return
+    touch.cancel()
     pointer = e.pointerId
     lastX = e.clientX
     lastY = e.clientY
@@ -181,6 +186,7 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
     dispose: () => {
       offCamera()
       cancel()
+      touch.dispose()
       el.style.cursor = ''
       el.removeEventListener('wheel', onWheel)
       el.removeEventListener('pointerdown', onPointerDown)

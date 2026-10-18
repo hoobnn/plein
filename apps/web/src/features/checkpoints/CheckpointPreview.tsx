@@ -173,7 +173,7 @@ export function CheckpointPreview({ state }: { state: string }) {
           适应画布
         </button>
       </div>
-      <div ref={host} className="relative min-h-0 flex-1 overflow-hidden">
+      <div ref={host} className="relative min-h-0 flex-1 touch-none overflow-hidden">
         <div ref={overlay} className="pointer-events-none absolute top-0 left-0 origin-top-left" />
       </div>
       {error && (
