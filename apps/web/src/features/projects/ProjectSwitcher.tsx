@@ -47,6 +47,28 @@ export function ProjectSwitcher({
   const canvases = canvasList.data ?? []
   const [renaming, setRenaming] = useState(false)
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const [retryError, setRetryError] = useState<Error | null>(null)
+  const listError = canvasList.error ?? retryError
+  const loadCanvases = async () => {
+    if (canvasList.isFetching) return
+    setRetryError(canvasList.error)
+    try {
+      await canvasList.refetch({ throwOnError: false })
+    } finally {
+      setRetryError(null)
+    }
+  }
+  const suffixFor = (item: Canvas) => {
+    if (!canvases.some((other) => other.id !== item.id && other.title === item.title)) return ''
+    let size = 6
+    while (
+      canvases.some(
+        (other) => other.id !== item.id && other.id.slice(-size) === item.id.slice(-size),
+      )
+    )
+      size++
+    return item.id.slice(-size)
+  }
 
   const close = () => setAnchor(null)
   const renameProject = async (title: string | null) => {
@@ -150,7 +172,7 @@ export function ProjectSwitcher({
         onClick={(e) => {
           if (anchor) return close()
           setAnchor(e.currentTarget)
-          void canvasList.refetch()
+          void loadCanvases()
         }}
         className="ui-bar-btn max-w-52 gap-1 font-medium text-ink"
       >
@@ -161,22 +183,62 @@ export function ProjectSwitcher({
         {anchor && (
           <Popover anchor={anchor} onClose={close} label="画布" width={240} placement="below">
             <div className="ui-menu-label">画布</div>
-            <div className="ui-scrollbar max-h-72 overflow-y-auto">
-              {canvases.map((c) => (
+            {canvasList.isFetching && !listError && (
+              <p role="status" className="px-3 py-2 text-xs text-ink-subtle">
+                {canvasList.data ? '正在刷新画布…' : '正在加载画布…'}
+              </p>
+            )}
+            {listError && (
+              <div role="alert" className="flex flex-col gap-2 px-3 py-2 text-xs text-danger">
+                <p className="break-words">
+                  {canvasList.data ? '画布列表刷新失败' : '画布列表加载失败'}：{listError.message}
+                </p>
                 <button
-                  key={c.id}
                   type="button"
-                  aria-current={c.id === canvas.id || undefined}
-                  onClick={() => {
-                    close()
-                    if (c.id !== canvas.id) navigate({ name: 'canvas', id: c.id })
-                  }}
-                  className="ui-menu-item"
+                  className="ui-btn ui-btn-secondary ui-btn-sm self-start"
+                  aria-label="重新加载画布"
+                  disabled={canvasList.isFetching}
+                  onClick={() => void loadCanvases()}
                 >
-                  <span className="flex-1 truncate">{c.title}</span>
-                  {c.id === canvas.id && <Icon name="check" size={14} />}
+                  {canvasList.isFetching ? '正在重试…' : '重新加载'}
                 </button>
-              ))}
+              </div>
+            )}
+            {!canvasList.isFetching && !listError && canvasList.data && !canvases.length && (
+              <p className="px-3 py-2 text-xs text-ink-subtle">
+                暂无可切换的画布，可新建画布后继续。
+              </p>
+            )}
+            <div className="ui-scrollbar max-h-72 overflow-y-auto">
+              {canvases.map((c) => {
+                const suffix = suffixFor(c)
+                const label = suffix ? `${c.title} · ${suffix}` : c.title
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    aria-label={label}
+                    title={label}
+                    aria-current={c.id === canvas.id || undefined}
+                    onClick={() => {
+                      close()
+                      if (c.id !== canvas.id) navigate({ name: 'canvas', id: c.id })
+                    }}
+                    className="ui-menu-item"
+                  >
+                    <span className="flex-1 truncate">{c.title}</span>
+                    {suffix && (
+                      <span
+                        aria-hidden="true"
+                        className="shrink-0 font-mono text-xs text-ink-subtle"
+                      >
+                        {suffix}
+                      </span>
+                    )}
+                    {c.id === canvas.id && <Icon name="check" size={14} />}
+                  </button>
+                )
+              })}
             </div>
             <div className="ui-sep" />
             <button type="button" onClick={() => void addCanvas()} className="ui-menu-item">
