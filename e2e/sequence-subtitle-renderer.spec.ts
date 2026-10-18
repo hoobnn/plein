@@ -10,6 +10,7 @@ const font = readFileSync(
 async function setup(
   page: Page,
   fault: { info?: boolean; file?: boolean; gate?: Promise<void>; gateFileOnly?: boolean } = {},
+  source: { script?: string } = {},
 ) {
   await page.route('**/api/media/subtitle-font', async (route) => {
     if (!fault.gateFileOnly) await fault.gate
@@ -27,7 +28,7 @@ async function setup(
   const params = animaticNode.params.parse({
     subtitles: true,
     aspectRatio: '16:9',
-    shots: [{ shotId: 'one', duration: 6, dialogue: [] }],
+    shots: [{ shotId: 'one', duration: 6, dialogue: [], subtitle: source.script }],
   })
   params.subtitleTrack = {
     inputKey: subtitleInputKey(params, arrangeAnimatic(params)),
@@ -311,4 +312,56 @@ test('字幕时间边界与空文本指出具体字段，隐藏后解除导出�
   await f.editor.getByRole('checkbox', { name: '显示字幕 1', exact: true }).uncheck()
   await expect(text).not.toHaveAttribute('aria-invalid', 'true')
   await expect(output).toBeEnabled()
+})
+
+test('连续新增字幕与修改可逐步撤销，重做保持独立条目', async ({ page }) => {
+  const f = await setup(page)
+  await f.editor.getByRole('button', { name: '字幕', exact: true }).click()
+  const fields = f.editor.getByRole('textbox', { name: /镜头 1 字幕 \d+ 文本/ })
+  const add = f.editor.getByRole('button', { name: '新增字幕', exact: true })
+  await add.click()
+  await add.click()
+  await expect(fields).toHaveCount(4)
+  await fields.nth(3).fill('New independent subtitle')
+  await f.editor.getByRole('button', { name: '回到开头', exact: true }).focus()
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(fields.nth(3)).toHaveValue('新字幕')
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(fields).toHaveCount(3)
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(fields).toHaveCount(2)
+  await expect(fields.first()).toHaveValue('Subtitle ready')
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect(fields).toHaveCount(3)
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect(fields).toHaveCount(4)
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect(fields.nth(3)).toHaveValue('New independent subtitle')
+})
+
+test('按台词重建字幕可独立撤销并完整恢复手改轨道', async ({ page }) => {
+  const f = await setup(page, {}, { script: 'Automatic script subtitle' })
+  await f.editor.getByRole('button', { name: '字幕', exact: true }).click()
+  const fields = f.editor.getByRole('textbox', { name: /镜头 1 字幕 \d+ 文本/ })
+  const original = await page.evaluate(
+    (id) => window.__plein.engine.doc.get(id)!.params!.subtitleTrack,
+    f.id,
+  )
+  await f.editor
+    .getByRole('button', { name: '按当前台词重建字幕（替换手改）', exact: true })
+    .click()
+  await expect(fields).toHaveCount(1)
+  await expect(fields.first()).toHaveValue('Automatic script subtitle')
+  await f.editor.getByRole('button', { name: '回到开头', exact: true }).focus()
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(fields).toHaveCount(2)
+  expect(
+    await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.subtitleTrack, f.id),
+  ).toEqual(original)
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect(fields).toHaveCount(1)
+  await expect(fields.first()).toHaveValue('Automatic script subtitle')
+  const stage = f.editor.locator('.seq-stage')
+  await expect(stage).toHaveAttribute('data-subtitles', 'libass')
+  await expect.poll(async () => lit(page, await stage.screenshot())).toBeGreaterThan(50)
 })
