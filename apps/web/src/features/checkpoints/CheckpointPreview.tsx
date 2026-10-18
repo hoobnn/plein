@@ -14,7 +14,7 @@ function decode(value: string) {
 export function CheckpointPreview({ state }: { state: string }) {
   const host = useRef<HTMLDivElement>(null),
     overlay = useRef<HTMLDivElement>(null),
-    engineRef = useRef<Engine | null>(null)
+    fitRef = useRef<(() => void) | null>(null)
   const [error, setError] = useState(''),
     [ready, setReady] = useState(false)
   useEffect(() => {
@@ -47,7 +47,6 @@ export function CheckpointPreview({ state }: { state: string }) {
                 : 'thumb-1024',
         ),
     })
-    engineRef.current = engine
     let disposed = false,
       initialized = false
     const labels = new Map<string, HTMLElement>()
@@ -86,9 +85,11 @@ export function CheckpointPreview({ state }: { state: string }) {
         label.style.lineHeight = '1.6'
       }
     }
-    let off = () => {}
+    let off = () => {},
+      offCamera = () => {}
     const dispose = () => {
       off()
+      offCamera()
       engine.destroy()
       doc.destroy()
       ydoc.destroy()
@@ -101,8 +102,45 @@ export function CheckpointPreview({ state }: { state: string }) {
           dispose()
           return
         }
+        const camera = engine.camera
+        const snapshot = () => ({
+          width: camera.width,
+          height: camera.height,
+          x: camera.x,
+          y: camera.y,
+          zoom: camera.zoom,
+          center: camera.center,
+        })
+        let previous = snapshot(),
+          followingFit = true,
+          adjusting = false
+        const fit = () => {
+          adjusting = true
+          followingFit = true
+          // 小预览不沿用主画布的固定大留白，避免压到最低缩放并隐藏正文。
+          engine.zoomToFit(undefined, Math.min(32, camera.width / 8, camera.height / 8))
+          previous = snapshot()
+          adjusting = false
+        }
+        offCamera = camera.onChange(() => {
+          if (adjusting) return
+          if (camera.width !== previous.width || camera.height !== previous.height) {
+            if (followingFit) fit()
+            else {
+              adjusting = true
+              camera.lookAt(previous.center.x, previous.center.y, previous.zoom)
+              previous = snapshot()
+              adjusting = false
+            }
+          } else {
+            if (camera.x !== previous.x || camera.y !== previous.y || camera.zoom !== previous.zoom)
+              followingFit = false
+            previous = snapshot()
+          }
+        })
+        fitRef.current = fit
         off = engine.onViewChange(sync)
-        engine.zoomToFit()
+        fit()
         sync()
         setReady(true)
       },
@@ -114,7 +152,7 @@ export function CheckpointPreview({ state }: { state: string }) {
     )
     return () => {
       disposed = true
-      engineRef.current = null
+      fitRef.current = null
       if (initialized) dispose()
     }
   }, [state])
@@ -129,7 +167,7 @@ export function CheckpointPreview({ state }: { state: string }) {
           type="button"
           className="ui-btn ui-btn-xs ui-btn-secondary"
           disabled={!ready}
-          onClick={() => engineRef.current?.zoomToFit()}
+          onClick={() => fitRef.current?.()}
         >
           适应画布
         </button>

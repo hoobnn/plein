@@ -544,11 +544,11 @@ export class Engine {
   }
 
   /** 缩放到包住指定元素（默认全部） */
-  zoomToFit(ids?: Iterable<string>) {
+  zoomToFit(ids?: Iterable<string>, padding = 64) {
     this.doc.flush()
     const list = ids ? [...ids] : [...this.scene.children(null)]
     const box = union(list.map((id) => this.scene.rect(id)).filter((r) => !!r))
-    if (box) this.camera.fit(box)
+    if (box) this.camera.fit(box, padding)
   }
 
   /** 切换配色：背景、点阵、全部元素、连线和选择层一起重画 */

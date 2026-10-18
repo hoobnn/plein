@@ -19,6 +19,7 @@ export default defineConfig({
     'canvas-info-cached.spec.ts',
     'checkpoint-restore-lifecycle.spec.ts',
     'checkpoint-preview-recovery.spec.ts',
+    'checkpoint-preview-resize.spec.ts',
     'checkpoint-delete-lifecycle.spec.ts',
     'checkpoint-render-lifecycle.spec.ts',
     'checkpoint-pagination.spec.ts',
