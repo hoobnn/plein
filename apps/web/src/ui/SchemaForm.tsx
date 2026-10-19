@@ -55,7 +55,6 @@ export function SchemaForm({
     if (v === undefined) delete next[key]
     onChange(next)
   }
-  const DEFAULT = '__default'
   return (
     <div className="flex flex-col gap-3">
       {props.map(([key, f]) => {
@@ -66,8 +65,12 @@ export function SchemaForm({
         let control: React.ReactNode
         // 没有默认值的选项和开关多一个「默认」：不传，用平台自己的默认
         const optional = f.default === undefined
-        if (f.enum) {
-          const enumeration = enumField(f.enum, current, f.labels)
+        if (f.enum || (f.type === 'boolean' && optional)) {
+          const enumeration = enumField(
+            f.enum ?? [true, false],
+            current,
+            f.enum ? f.labels : { true: '开', false: '关' },
+          )
           control = (
             <Select
               id={id}
@@ -79,21 +82,6 @@ export function SchemaForm({
                 ...enumeration.options,
               ]}
               onChange={(v) => set(key, enumeration.read(v))}
-            />
-          )
-        } else if (f.type === 'boolean' && optional) {
-          control = (
-            <Select
-              id={id}
-              aria-label={label}
-              className={field}
-              value={current === undefined ? DEFAULT : String(current)}
-              options={[
-                { value: DEFAULT, label: '默认' },
-                { value: 'true', label: '开' },
-                { value: 'false', label: '关' },
-              ]}
-              onChange={(v) => set(key, v === DEFAULT ? undefined : v === 'true')}
             />
           )
         } else if (f.type === 'boolean') {

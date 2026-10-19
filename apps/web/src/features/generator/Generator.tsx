@@ -66,6 +66,13 @@ const PREFER_BELOW = 280
 const MIN_H = 180
 
 /** 选中单个节点时浮在它下方的生成器：参考素材、主提示词、模型与参数、生成 */
+/** 损坏的历史值仅在显示时按空表单呈现；用户明确修改或恢复默认才写回。 */
+function optionRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
 export function Generator() {
   const engine = useCanvas((s) => s.engine)
   if (!engine) return null
@@ -238,25 +245,18 @@ function Panel({
   useEffect(() => setNotes([]), [el.id])
   // oxlint-enable react-hooks/exhaustive-deps
   const optionsKey = fieldsOf(node).find(([, f]) => f.widget === 'modelOptions')?.[0]
-  const allOptions = (optionsKey ? params[optionsKey] : undefined) as
-    | Record<string, Record<string, unknown>>
-    | undefined
+  const allOptions = optionRecord(optionsKey ? params[optionsKey] : undefined)
   const modelOptions: ModelOptions | undefined =
     optionsKey && model?.ref && model.info.optionsSchema
       ? {
           title: model.info.title,
           schema: model.info.optionsSchema as ObjectSchema,
-          value: allOptions?.[model.ref] ?? {},
+          value: optionRecord(allOptions[model.ref]),
           readValue: () =>
-            (
-              (engine.doc.get(el.id)?.params?.[optionsKey] ?? {}) as Record<
-                string,
-                Record<string, unknown>
-              >
-            )[model.ref] ?? {},
+            optionRecord(optionRecord(engine.doc.get(el.id)?.params?.[optionsKey])[model.ref]),
           onChange: (next: Record<string, unknown>) =>
             set(optionsKey, {
-              ...((engine.doc.get(el.id)?.params?.[optionsKey] ?? {}) as Record<string, unknown>),
+              ...optionRecord(engine.doc.get(el.id)?.params?.[optionsKey]),
               [model.ref]: next,
             }),
         }

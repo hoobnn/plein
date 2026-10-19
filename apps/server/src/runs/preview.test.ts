@@ -143,6 +143,54 @@ it('分辨率按实际模型提前校验，修正后的预览和提交一致', a
   expect(submit.mock.calls[0]![0].input).toMatchObject({ resolution: '1080p' })
 }, 30_000)
 
+it('专属参数只校验所选模型，不把字符串 false 当成布尔值或自动修改原值', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const model = 'plein/mock:image'
+  const n = addNode(doc, 'plein/image', {
+    params: { model, prompt: '检查参数类型', options: { [model]: { watermark: 'false' } } },
+  })
+  const blocked = await preview(server, id, n)
+  expect(blocked.status).toBe('blocked')
+  expect(blocked.blocked[0]?.message).toContain('水印')
+  expect(doc.get(n)!.params!.options).toEqual({ [model]: { watermark: 'false' } })
+  for (const options of [null, [], { [model]: null }, { [model]: [] }]) {
+    setParams(doc, n, { options })
+    const invalid = await preview(server, id, n)
+    expect(invalid.status).toBe('blocked')
+    expect(invalid.blocked[0]?.message).toContain('参数格式')
+  }
+  setParams(doc, n, { options: { [model]: { watermark: 'false' } } })
+  const submit = vi.spyOn(mockProvider, 'submit')
+  const failed = server.runs.start(id, n, 'local')
+  expect(await server.runs.wait(failed)).toBe('failed')
+  expect(submit).not.toHaveBeenCalled()
+  await until(() => !server.runs.isRunning(id, n))
+  setParams(doc, n, {
+    options: {
+      [model]: { watermark: false, customExtension: 'preserved' },
+      'minimax/api:speech-2.8-hd': { emotion: '无效的其他模型参数' },
+    },
+  })
+  const ready = await preview(server, id, n)
+  expect(ready.status).toBe('ready')
+  const res = await run(server, id, n, ready.inputHash)
+  const { runId } = (await res.json()) as { runId: string }
+  expect(await server.runs.wait(runId)).toBe('succeeded')
+  expect(submit).toHaveBeenCalledTimes(1)
+  expect(submit.mock.calls[0]![0].input).toMatchObject({
+    extra: { watermark: false, customExtension: 'preserved' },
+  })
+  await until(() => !server.runs.isRunning(id, n))
+  setParams(doc, n, { options: { [model]: {} } })
+  const reset = await preview(server, id, n)
+  expect(reset.status).toBe('ready')
+  const resetRun = server.runs.start(id, n, 'local')
+  expect(await server.runs.wait(resetRun)).toBe('succeeded')
+  expect(submit.mock.calls[1]![0].input.extra).not.toHaveProperty('watermark')
+}, 30_000)
+
 it('不支持自由语气的配音模型在预览时阻断，官方情绪标签仍可准备', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})
@@ -164,8 +212,18 @@ it('不支持自由语气的配音模型在预览时阻断，官方情绪标签�
   expect(invalid.status).toBe('blocked')
   expect(invalid.blocked).toContainEqual({
     code: 'prepare_failed',
-    message: expect.stringContaining('需要选择官方情绪值'),
+    message: expect.stringContaining('情绪（emotion）'),
   })
+  setParams(doc, n, { instruction: '' })
+  expect((await preview(server, id, n)).status).toBe('blocked')
+  const execute = vi.spyOn(server.plugins, 'runNode')
+  const invalidRun = server.runs.start(id, n, 'local')
+  expect(await server.runs.wait(invalidRun)).toBe('failed')
+  expect(execute).not.toHaveBeenCalled()
+  expect(server.runs.store.get(invalidRun)?.error).toContain('情绪（emotion）')
+  await until(() => !server.runs.isRunning(id, n))
+  setParams(doc, n, { options: { [model]: { emotion: 'calm' } } })
+  expect((await preview(server, id, n)).status).toBe('ready')
   setParams(doc, n, { options: {}, instruction: '', model: 'plein/mock:audio' })
   const ready = await preview(server, id, n)
   expect(ready.status).toBe('ready')
@@ -177,6 +235,37 @@ it('不支持自由语气的配音模型在预览时阻断，官方情绪标签�
   expect(submit.mock.calls[0]![0].input).toMatchObject({ text: '你好。' })
   expect(submit.mock.calls[0]![0].input).not.toHaveProperty('instruction', '低声哭腔')
 }, 30_000)
+
+it('已受理的历史参数按冻结记录恢复，不因新增校验阻断取回或重新提交', async () => {
+  const first = await bootServer()
+  mockSettings(first.server, { latencyMs: 500 })
+  const { id, doc } = await createCanvas(first.server)
+  const model = mockProvider.models.find((m) => m.id === 'image')!
+  const schema = model.options
+  const submit = vi.spyOn(mockProvider, 'submit')
+  try {
+    // 模拟旧版本尚未声明该字段类型时已经受理的任务。
+    model.options = undefined
+    const node = addNode(doc, 'plein/image', {
+      params: {
+        model: 'plein/mock:image',
+        prompt: '历史任务',
+        options: { 'plein/mock:image': { watermark: 'false' } },
+      },
+    })
+    const run = first.server.runs.start(id, node, 'local')
+    await until(() => first.server.runs.store.get(run)?.calls.includes('pending'))
+    await first.close()
+    model.options = schema
+    const second = await bootServer({ dataDir: first.dataDir })
+    expect(await second.server.runs.wait(run)).toBe('succeeded')
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect((await preview(second.server, id, node)).status).toBe('blocked')
+  } finally {
+    model.options = schema
+    submit.mockRestore()
+  }
+})
 
 it('手选跨平台音色在预览时阻止提交，修正音色后执行使用修正后的 ID', async () => {
   const { server } = await bootServer()

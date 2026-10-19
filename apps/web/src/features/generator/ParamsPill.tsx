@@ -106,17 +106,28 @@ export function ParamsPill({
               ))}
               {(hasRest || options) && (
                 <div className="border-t border-line pt-3">
-                  <button
-                    type="button"
-                    onClick={() => setMore(!more)}
-                    aria-expanded={more}
-                    className="flex w-full items-center justify-between text-xs text-ink-muted transition-colors hover:text-ink"
-                  >
-                    更多参数
-                    <span className={`transition-transform ${more ? 'rotate-180' : ''}`}>
-                      <Icon name="chevronDown" size={14} />
-                    </span>
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setMore(!more)}
+                      aria-expanded={more}
+                      className="flex min-w-0 flex-1 items-center justify-between text-xs text-ink-muted transition-colors hover:text-ink"
+                    >
+                      更多参数
+                      <span className={`transition-transform ${more ? 'rotate-180' : ''}`}>
+                        <Icon name="chevronDown" size={14} />
+                      </span>
+                    </button>
+                    {more && options && (
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn-xs ui-btn-secondary flex-none"
+                        onClick={() => options.onChange({})}
+                      >
+                        恢复模型默认参数
+                      </button>
+                    )}
+                  </div>
                   {more && (
                     <div className="flex flex-col gap-3 pt-3">
                       {options && (

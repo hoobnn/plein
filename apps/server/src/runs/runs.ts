@@ -1,5 +1,6 @@
 import { imageProcessParams, videoModeProblem, type VideoMode } from '@plein/nodes'
 import { speechDirection, speechVoice } from '../executors/audio'
+import { modelOptionsProblem } from './model-options'
 import {
   appendDeliveryRecord,
   freezeDeliveryOrigins,
@@ -1525,6 +1526,16 @@ export class NodeRuns implements BatchHost {
         ?.def.models.find((m) => m.id === modelRef.model)
     const limits = spec?.limits
     const effective = this.latestParams(el, { def, params, inputs }) ?? {}
+    const options = effective.options
+    const selectedOptions =
+      options && typeof options === 'object' && !Array.isArray(options)
+        ? (options as Record<string, unknown>)[String(effective.model ?? '')]
+        : options
+    const optionProblem = modelOptionsProblem(
+      spec || undefined,
+      selectedOptions === undefined ? {} : selectedOptions,
+    )
+    if (optionProblem) blocked.push({ code: 'prepare_failed', message: optionProblem })
     if (
       (def.capability === 'image.generate' || def.capability === 'video.generate') &&
       effective.resolution &&
@@ -1543,12 +1554,13 @@ export class NodeRuns implements BatchHost {
       const model = String(effective.model ?? '')
       const options = effective.options as Record<string, Record<string, unknown>> | undefined
       try {
-        speechDirection(
-          model,
-          String(effective.instruction ?? ''),
-          options?.[model] ?? {},
-          spec || undefined,
-        )
+        if (!optionProblem)
+          speechDirection(
+            model,
+            String(effective.instruction ?? ''),
+            options?.[model] ?? {},
+            spec || undefined,
+          )
       } catch (err) {
         if (!(err instanceof ProviderError) || err.code !== 'invalid_input') throw err
         blocked.push({ code: 'prepare_failed', message: err.message })

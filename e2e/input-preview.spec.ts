@@ -1,6 +1,102 @@
 import { expect, type Route, test } from '@playwright/test'
 import { addNode, byName, clickElement, deselect, newProject, waitNode } from './canvas'
 
+test('专属开关的字符串历史值不伪装成关闭，可修正、撤销重做和恢复默认', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 560 })
+  await newProject(page)
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/image',
+      name: '专属参数恢复',
+      x: 400,
+      y: 200,
+      params: {
+        model: 'plein/mock:image',
+        prompt: '保留布尔类型',
+        options: {
+          'plein/mock:image': { watermark: 'false' },
+          'minimax/api:speech-2.8-hd': { emotion: '保留其他模型数据' },
+        },
+      },
+    }),
+  )
+  await clickElement(page, id)
+  const generator = page.getByTestId('generator')
+  await generator.getByRole('button', { name: '编辑生成图片', exact: true }).click()
+  const preview = page.getByTestId('input-preview')
+  await preview.getByRole('button', { name: /实际输入/ }).click()
+  await expect(preview).toContainText('水印（watermark）')
+  const generate = generator.getByRole('button', { name: '生成', exact: true })
+  await expect(generate).toBeDisabled()
+  await generator.getByRole('button', { name: '参数', exact: true }).click()
+  const params = page.getByRole('dialog', { name: '参数', exact: true })
+  await params.getByRole('button', { name: '更多参数', exact: true }).click()
+  const watermark = params.getByRole('combobox', { name: '水印', exact: true })
+  await expect(watermark).toHaveText('false')
+  await expect(
+    params.getByRole('button', { name: '恢复模型默认参数', exact: true }),
+  ).toBeInViewport({ ratio: 1 })
+  await params.screenshot({ path: test.info().outputPath('invalid-model-boolean.png') })
+  await watermark.click()
+  await page.getByRole('option', { name: '关', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await expect(preview).not.toContainText('不会提交')
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect(preview).toContainText('不会提交')
+  await page.getByRole('button', { name: '重做', exact: true }).click()
+  await expect(generate).toBeEnabled()
+  await generate.click()
+  await waitNode(page, id)
+  const canvas = /#\/c\/([^/?]+)/.exec(page.url())![1]
+  const jobs = await (await page.request.get(`/api/canvases/${canvas}/jobs`)).json()
+  expect(jobs.jobs[0].input.params.options.watermark).toBe(false)
+  await generator.getByRole('button', { name: '参数', exact: true }).click()
+  const more = params.getByRole('button', { name: '更多参数', exact: true })
+  if ((await more.getAttribute('aria-expanded')) === 'false') await more.click()
+  await watermark.click()
+  await page.getByRole('option', { name: '默认', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await expect
+    .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.options, id))
+    .toEqual({
+      'plein/mock:image': {},
+      'minimax/api:speech-2.8-hd': { emotion: '保留其他模型数据' },
+    })
+  await expect(preview).not.toContainText('不会提交')
+  for (const broken of [
+    { 'plein/mock:image': null, 'minimax/api:speech-2.8-hd': { emotion: '保留其他模型数据' } },
+    '损坏的整份参数',
+  ]) {
+    await page.evaluate(
+      ({ id, broken }) => {
+        const params = window.__plein.engine.doc.mutable(id)!.get('params') as {
+          set(key: string, value: unknown): void
+        }
+        params.set('options', broken)
+      },
+      { id, broken },
+    )
+    await expect(preview).toContainText('参数格式')
+    await generator.getByRole('button', { name: '参数', exact: true }).click()
+    if ((await more.getAttribute('aria-expanded')) === 'false') await more.click()
+    await params.getByRole('button', { name: '恢复模型默认参数', exact: true }).click()
+    await page.keyboard.press('Escape')
+    await expect(preview).not.toContainText('不会提交')
+    await expect
+      .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.options, id))
+      .toEqual({
+        ...(typeof broken === 'object'
+          ? { 'minimax/api:speech-2.8-hd': { emotion: '保留其他模型数据' } }
+          : {}),
+        'plein/mock:image': {},
+      })
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    await expect(preview).toContainText('不会提交')
+    await page.getByRole('button', { name: '重做', exact: true }).click()
+    await expect(preview).not.toContainText('不会提交')
+  }
+})
+
 test('旧数据的无效分辨率提前显示支持值，修正后可生成并保留实际取值', async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 560 })
   await newProject(page)
