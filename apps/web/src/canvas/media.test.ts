@@ -98,13 +98,33 @@ describe('裁剪框', () => {
     ).toEqual({ left: 0, top: 0, width: 1920, height: 1080 })
   })
 
-  it('超出图片范围的部分收回来，不产生非法请求', () => {
+  it('明确超出范围的尺寸和起点报告到对应字段，不改写裁剪框', () => {
     expect(
       cropRect({ left: 1900, top: 1000, width: 400, height: 400 }, { width: 1920, height: 1080 }),
-    ).toEqual({ left: 1900, top: 1000, width: 20, height: 80 })
+    ).toMatchObject({ field: 'width', error: expect.stringContaining('超出图片宽度') })
     expect(
       cropRect({ left: 30, top: 30, width: 20, height: 20 }, { width: 40, height: 20 }),
-    ).toEqual({ left: 30, top: 19, width: 10, height: 1 })
+    ).toMatchObject({ field: 'top', error: expect.stringContaining('小于图片高度') })
+    expect(
+      cropRect({ left: 40, top: 0, width: Number.NaN, height: 20 }, { width: 40, height: 20 }),
+    ).toMatchObject({ field: 'left' })
+    expect(
+      cropRect({ left: 0, top: 0, width: 20, height: 21 }, { width: 40, height: 20 }),
+    ).toMatchObject({ field: 'height' })
+  })
+  it('拒绝负数、小数、非有限值及零尺寸，不把它们改成一像素', () => {
+    const valid = { left: 0, top: 0, width: 40, height: 20 }
+    for (const field of ['left', 'top', 'width', 'height'] as const) {
+      for (const value of [-1, 0.5, Number.NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])
+        expect(cropRect({ ...valid, [field]: value }, {})).toMatchObject({ field })
+    }
+    for (const field of ['width', 'height'] as const)
+      expect(cropRect({ ...valid, [field]: 0 }, {})).toMatchObject({ field })
+  })
+  it('允许最后一像素和未知尺寸时明确填写的合法区域，服务端仍校验真实尺寸', () => {
+    const last = { left: 39, top: 19, width: 1, height: 1 }
+    expect(cropRect(last, { width: 40, height: 20 })).toEqual(last)
+    expect(cropRect(last, {})).toEqual(last)
   })
 })
 

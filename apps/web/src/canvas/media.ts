@@ -77,21 +77,35 @@ export function validSpeed(speed: number) {
     : null
 }
 
-/** 裁剪框默认值：整张图；再夹一次，保证不会超过摆正后的尺寸 */
+type CropRect = { left: number; top: number; width: number; height: number }
+
+/** 校验真实像素范围，不把无效输入悄悄改成其他裁剪区域。 */
 export function cropRect(
-  rect: { left: number; top: number; width: number; height: number },
+  rect: CropRect,
   size: { width?: number; height?: number },
-) {
-  const w = size.width ?? Number.POSITIVE_INFINITY
-  const h = size.height ?? Number.POSITIVE_INFINITY
-  const width = Math.max(1, Math.min(Math.round(rect.width), w - Math.max(0, rect.left)))
-  const height = Math.max(1, Math.min(Math.round(rect.height), h - Math.max(0, rect.top)))
-  return {
-    left: Math.max(0, Math.min(Math.round(rect.left), w - 1)),
-    top: Math.max(0, Math.min(Math.round(rect.top), h - 1)),
-    width,
-    height,
+): CropRect | { field: keyof CropRect; error: string } {
+  for (const [field, label, minimum] of [
+    ['left', '左侧坐标', 0],
+    ['top', '顶部坐标', 0],
+    ['width', '宽度', 1],
+    ['height', '高度', 1],
+  ] as const) {
+    if (!Number.isSafeInteger(rect[field]) || rect[field] < minimum)
+      return { field, error: `${label}需为${minimum ? '大于 0' : '不小于 0'}的整数` }
+    if (field === 'left' && size.width !== undefined && rect.left >= size.width)
+      return { field: 'left', error: `左侧坐标需小于图片宽度（${size.width} 像素）` }
+    if (field === 'top' && size.height !== undefined && rect.top >= size.height)
+      return { field: 'top', error: `顶部坐标需小于图片高度（${size.height} 像素）` }
   }
+  if (size.width !== undefined) {
+    if (rect.left + rect.width > size.width)
+      return { field: 'width', error: `裁剪区域超出图片宽度（${size.width} 像素）` }
+  }
+  if (size.height !== undefined) {
+    if (rect.top + rect.height > size.height)
+      return { field: 'height', error: `裁剪区域超出图片高度（${size.height} 像素）` }
+  }
+  return rect
 }
 
 /** 某种素材能做哪些加工：UI 只显示做得到的，能力缺失（比如没有 ffmpeg）时先说清楚 */

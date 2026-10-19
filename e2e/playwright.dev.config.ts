@@ -132,6 +132,7 @@ export default defineConfig({
     'media-tools-lifecycle.spec.ts',
     'media-batch-mixed.spec.ts',
     'media-tool-parameters.spec.ts',
+    'media-image-video-parameters.spec.ts',
     'media-group-placement.spec.ts',
     'continue.spec.ts',
     'template-save-targets.spec.ts',

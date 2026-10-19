@@ -85,7 +85,7 @@ export function MediaTools({
   const [error, setError] = useState<{
     key: string
     message: string
-    waitingForDuration: boolean
+    waitingFor?: 'duration' | 'imageSize'
   } | null>(null)
   const errorId = useId()
   const inputs = useRef(new Map<string, HTMLInputElement>())
@@ -93,8 +93,8 @@ export function MediaTools({
     setError(null)
     setFormState(next)
   }
-  const invalid = (key: string, message: string, waitingForDuration = false) => {
-    setError({ key, message, waitingForDuration })
+  const invalid = (key: string, message: string, waitingFor?: 'duration' | 'imageSize') => {
+    setError({ key, message, waitingFor })
     inputs.current.get(key)?.focus()
   }
   const [loadedMeta, setMeta] = useState<{ assetId: string; asset: Asset } | null>(null)
@@ -121,9 +121,21 @@ export function MediaTools({
   const metaAssetId = formTargets[0]?.assetId
   const meta = loadedMeta && loadedMeta.assetId === metaAssetId ? loadedMeta.asset : null
   useEffect(() => {
-    if (meta?.duration !== undefined)
-      setError((previous) => (previous?.waitingForDuration ? null : previous))
-  }, [meta?.duration])
+    setError((previous) =>
+      (previous?.waitingFor === 'duration' && meta?.duration !== undefined) ||
+      (previous?.waitingFor === 'imageSize' &&
+        meta?.width !== undefined &&
+        meta?.height !== undefined)
+        ? null
+        : previous,
+    )
+  }, [meta?.duration, meta?.width, meta?.height])
+  const remaining = (size: number | undefined, offset: number) =>
+    size !== undefined && Number.isSafeInteger(offset) && offset >= 0 && offset < size
+      ? String(size - offset)
+      : ''
+  const cropWidth = remaining(meta?.width, num(values.left ?? '0'))
+  const cropHeight = remaining(meta?.height, num(values.top ?? '0'))
   const scopeText = (op: MediaOp) => {
     const targets = applicable(op),
       kinds = new Set(targets.map((t) => t.kind))
@@ -182,13 +194,20 @@ export function MediaTools({
         {
           left: num(values.left ?? '0'),
           top: num(values.top ?? '0'),
-          // 宽高留空表示到边缘，用素材信息补；信息还没到时 NaN 会被下面拦住
-          width: num(values.width || String(meta?.width ?? '')),
-          height: num(values.height || String(meta?.height ?? '')),
+          // 宽高留空表示从当前偏移到边缘，保留用户明确填写的尺寸。
+          width: num(values.width?.trim() || cropWidth),
+          height: num(values.height?.trim() || cropHeight),
         },
         { width: meta?.width, height: meta?.height },
       )
-      if (!rect.width || !rect.height) return notify('裁剪区域不对')
+      if ('error' in rect) {
+        if (
+          (rect.field === 'width' && !values.width?.trim() && meta?.width === undefined) ||
+          (rect.field === 'height' && !values.height?.trim() && meta?.height === undefined)
+        )
+          return invalid(rect.field, '正在读取图片尺寸，请稍后再试', 'imageSize')
+        return invalid(rect.field, rect.error)
+      }
       await runAll('crop', (t) => ({ op: 'crop', assetId: t.assetId, ...rect }))
       return
     }
@@ -202,7 +221,7 @@ export function MediaTools({
           meta?.duration === undefined && values.end === undefined
             ? '正在读取素材时长，请稍后再试'
             : '出点时间看不懂，试试 12.5 或 1:02',
-          meta?.duration === undefined && values.end === undefined,
+          meta?.duration === undefined && values.end === undefined ? 'duration' : undefined,
         )
       if (meta?.duration !== undefined && end > meta.duration + 0.05)
         return invalid('end', `出点超出素材长度（只有 ${meta.duration} 秒）`)
@@ -240,7 +259,10 @@ export function MediaTools({
     }
     if (form === 'frame') {
       const at = parseTimecode(values.at ?? '0')
-      if (at === null) return notify('时间看不懂，试试 12.5 或 1:02')
+      if (at === null) return invalid('at', '时间看不懂，试试 12.5 或 1:02')
+      // 批量目标各有时长，不拿首项的边界拦下其他可成功的素材。
+      if (formTargets.length === 1 && meta?.duration !== undefined && at >= meta.duration)
+        return invalid('at', `取帧时间需早于视频末尾（${meta.duration} 秒）`)
       await runAll('frame', (t) => ({ op: 'frame', assetId: t.assetId, at }))
     }
   }
@@ -334,12 +356,20 @@ export function MediaTools({
                   </p>
                 )}
                 {form === 'crop' && (
-                  <div className="grid grid-cols-2 gap-2">
-                    {field('left', '左', '0')}
-                    {field('top', '上', '0')}
-                    {field('width', '宽', String(meta?.width ?? ''))}
-                    {field('height', '高', String(meta?.height ?? ''))}
-                  </div>
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      {field('left', '左', '0')}
+                      {field('top', '上', '0')}
+                      {field('width', '宽', cropWidth, cropWidth)}
+                      {field('height', '高', cropHeight, cropHeight)}
+                    </div>
+                    <p className="ui-help pt-1">
+                      {meta?.width !== undefined &&
+                        meta?.height !== undefined &&
+                        `图片 ${meta.width} × ${meta.height} 像素。`}
+                      宽高留空时裁到右侧和下侧边缘。
+                    </p>
+                  </>
                 )}
                 {form === 'trim' && (
                   <div className="grid grid-cols-2 gap-2">
@@ -482,12 +512,7 @@ export function MediaTools({
                     type="button"
                     className="ui-menu-item justify-between"
                     onClick={() => {
-                      setValues({
-                        left: '0',
-                        top: '0',
-                        width: String(meta?.width ?? ''),
-                        height: String(meta?.height ?? ''),
-                      })
+                      setValues({ left: '0', top: '0' })
                       setForm('crop')
                     }}
                   >
