@@ -2,7 +2,7 @@ import { Dialog } from '@base-ui/react/dialog'
 import { type ReactNode, useEffect, useRef } from 'react'
 import { Icon } from './icons'
 import { useClosing, useExit } from './Presence'
-import { claimMenuEscape, isMenuEscape } from './menuEscape'
+import { claimMenuEscape, hasMenuEscapeLayer, isMenuEscape } from './menuEscape'
 
 /**
  * 盖住整个窗口的面板（设置、生成历史、分镜表、序列、快捷键），基于 Base UI Dialog：
@@ -39,7 +39,7 @@ export function Modal({
   const popup = useRef<HTMLDivElement>(null)
   const escapeOwners = useRef(new WeakMap<Event, HTMLElement>())
   useEffect(() => {
-    // 在 Base UI 的 document 监听之前记录归属；回调时菜单可能已经收起。
+    // 在 Base UI 的 document 监听之前记录归属；退场动画中的菜单仍拥有本次 Esc。
     const capture = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         // 同级 React 根中的弹窗并不构成 Base UI 的嵌套树，按实际显示层级确定归属。
@@ -54,13 +54,7 @@ export function Modal({
         )
         if (owner) escapeOwners.current.set(event, owner)
       }
-      if (
-        event.key === 'Escape' &&
-        !event.isComposing &&
-        document.querySelector(
-          '.ui-menu:not([data-closed]):not([data-closing]), [role="combobox"][aria-expanded="true"]',
-        )
-      )
+      if (event.key === 'Escape' && !event.isComposing && hasMenuEscapeLayer())
         claimMenuEscape(event)
     }
     window.addEventListener('keydown', capture, true)

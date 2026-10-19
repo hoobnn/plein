@@ -22,7 +22,7 @@ import { confirmDialog, dialogOpen } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
 import { Icon, type IconName } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
-import { isMenuEscape } from '../../ui/menuEscape'
+import { hasMenuEscapeLayer, isMenuEscape } from '../../ui/menuEscape'
 import { Presence } from '../../ui/Presence'
 import { Segmented } from '../../ui/Segmented'
 import { Select } from '../../ui/Select'
@@ -199,7 +199,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
         e.defaultPrevented ||
         dialogOpen() ||
         isMenuEscape(e) ||
-        document.querySelector('.ui-menu, [role="combobox"][aria-expanded="true"]')
+        hasMenuEscapeLayer()
       )
         return
       if (e.target instanceof HTMLElement && e.target.closest('[data-library-escape]')) return

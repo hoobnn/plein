@@ -82,7 +82,7 @@ async function full(f: Awaited<ReturnType<typeof fixture>>) {
   )
 }
 
-test('画布补齐第24张后整个添加字段退出，焦点移到刚加入的参考图', async ({ page }) => {
+test('画布补齐第24张后添加入口退出，焦点移到刚加入的参考图', async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 650 })
   const f = await fixture(page, 23)
   await f.extras.getByRole('button', { name: '从画布选', exact: true }).click()
@@ -195,4 +195,93 @@ test('最后一张上传失败保留字段焦点，修正后可继续键盘上�
   await page.keyboard.press('Enter')
   await (await chooser).setFiles(files[23]!)
   await full(f)
+})
+
+for (const count of [23, 22]) {
+  test(`从${count}张混合拖入至满额后保留跳过说明，移除重传后清除旧说明`, async ({ page }) => {
+    if (count === 22) await page.setViewportSize({ width: 800, height: 650 })
+    const f = await fixture(page, count)
+    const button = f.extras.getByRole('button', { name: '上传', exact: true })
+    await button.focus()
+    const payload = files.slice(count, 24).map((file) => ({
+      name: file.name,
+      type: file.mimeType,
+      body: file.buffer.toString('base64'),
+    }))
+    payload.unshift({
+      name: 'note.txt',
+      type: 'text/plain',
+      body: Buffer.from('备注').toString('base64'),
+    })
+    const transfer = await page.evaluateHandle((payload) => {
+      const data = new DataTransfer()
+      for (const file of payload)
+        data.items.add(
+          new File([Uint8Array.from(atob(file.body), (c) => c.charCodeAt(0))], file.name, {
+            type: file.type,
+          }),
+        )
+      return data
+    }, payload)
+    try {
+      await button.dispatchEvent('drop', { dataTransfer: transfer })
+    } finally {
+      await transfer.dispose()
+    }
+    await expect(f.extras.getByText('已达到 24 张参考图上限。', { exact: true })).toBeVisible()
+    await expect(f.extras.getByRole('status')).toContainText('已跳过 1 个非图片文件')
+    if (count === 23)
+      await f.panel.screenshot({
+        path: test.info().outputPath('capacity-upload-notice.png'),
+        animations: 'disabled',
+      })
+    await full(f)
+    await expect(f.extras.getByRole('status')).toContainText('已跳过 1 个非图片文件')
+    await f.extras.getByRole('button', { name: '移除其他参考 24', exact: true }).click()
+    await upload(page, f, [24])
+    await expect(f.extras.getByText('已达到 24 张参考图上限。', { exact: true })).toBeVisible()
+    await expect(f.extras.getByRole('status')).toHaveCount(0)
+    await expect(
+      f.extras.getByRole('button', { name: '预览其他参考 24', exact: true }),
+    ).toBeFocused()
+    expect((await f.save()).images).toEqual(
+      [...assets.slice(0, 23), assets[24]].map((assetId) => ({ slot: 'extra', assetId })),
+    )
+  })
+}
+
+test('最后一个画布候选自动收起期间 Esc 不穿透，收起后可正常返回与关闭', async ({ page }) => {
+  const f = await fixture(page, 1)
+  const trigger = f.extras.getByRole('button', { name: '从画布选', exact: true })
+  await trigger.click()
+  const picker = page.getByRole('dialog', { name: '从画布选', exact: true })
+  // 只用 DOM 的退场标记固定事件发生在动画内，不依赖机器速度猜测间隔。
+  await picker.evaluate((el) => {
+    const anchor = document.querySelector<HTMLButtonElement>(
+      '.lib-character-extras button[aria-label="从画布选"]',
+    )!
+    const observer = new MutationObserver(() => {
+      if (!el.hasAttribute('data-closing')) return
+      observer.disconnect()
+      anchor.setAttribute('data-close-escape', 'sent')
+      anchor.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      )
+    })
+    observer.observe(el, { attributes: true, attributeFilter: ['data-closing'] })
+  })
+  await picker.getByRole('button', { name: '选择图片「补齐最后一张」', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await expect(trigger).toHaveAttribute('data-close-escape', 'sent')
+  await expect(picker).toHaveCount(0)
+  await expect(trigger).toBeFocused()
+  await expect(f.panel.getByRole('textbox', { name: '名称', exact: true })).toBeVisible()
+  expect((await f.save()).images).toEqual(
+    [assets[0], assets[23]].map((assetId) => ({ slot: 'extra', assetId })),
+  )
+  await page.keyboard.press('Escape')
+  await expect(f.panel.getByRole('textbox', { name: '名称', exact: true })).toHaveCount(0)
+  await expect(f.panel).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(f.panel).toHaveCount(0)
 })

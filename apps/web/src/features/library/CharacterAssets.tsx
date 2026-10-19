@@ -194,36 +194,34 @@ export function CharacterAssets({
             ))}
           </ul>
         )}
-        {images.length < 24 ? (
-          <SlotField
-            slot={{ id: 'extra', label: '添加补充参考', multiple: true }}
-            images={[]}
-            used={used}
-            media={media}
-            disabled={busy}
-            onBusyChange={onBusyChange}
-            focusFallback={focus.props.ref}
-            onAdd={(ids) => {
-              if (images.length + ids.length > 24) {
-                setError('每个角色最多保存 24 张基础参考图，请减少本次添加的图片。')
-                return
-              }
-              setError(null)
-              if (
-                images.length + ids.length === 24 &&
-                document.activeElement === focus.props.ref.current
-              )
-                nextFocus.current = `预览其他参考 ${extras.length + ids.length}`
-              change((current) => [
-                ...current,
-                ...ids.map((assetId) => ({ slot: 'extra', assetId })),
-              ])
-            }}
-            onRemove={() => {}}
-          />
-        ) : (
-          <p className="text-xs text-ink-subtle">已达到 24 张参考图上限。</p>
-        )}
+        <SlotField
+          slot={{
+            id: 'extra',
+            label: images.length < 24 ? '添加补充参考' : '补充参考',
+            multiple: true,
+          }}
+          images={[]}
+          used={used}
+          media={media}
+          disabled={busy}
+          onBusyChange={onBusyChange}
+          focusFallback={focus.props.ref}
+          onAdd={(ids) => {
+            if (images.length + ids.length > 24) {
+              setError('每个角色最多保存 24 张基础参考图，请减少本次添加的图片。')
+              return
+            }
+            setError(null)
+            if (
+              images.length + ids.length === 24 &&
+              document.activeElement === focus.props.ref.current
+            )
+              nextFocus.current = `预览其他参考 ${extras.length + ids.length}`
+            change((current) => [...current, ...ids.map((assetId) => ({ slot: 'extra', assetId }))])
+          }}
+          onRemove={() => {}}
+        />
+        {images.length >= 24 && <p className="text-xs text-ink-subtle">已达到 24 张参考图上限。</p>}
         {error && (
           <p role="alert" className="text-xs text-danger">
             {error}

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
+import { openLibraryPanel } from './library-ui'
 
 let dir = ''
 const file = (i: number) => join(dir, `profile-batch-${i}.png`)
@@ -47,8 +48,7 @@ test('档案选图弹层打开时拖入上传，候选在上传期间禁用且�
     },
   })
   const item = await created.json()
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
-  const panel = page.getByRole('dialog', { name: '资产库', exact: true })
+  const panel = await openLibraryPanel(page)
   await panel
     .getByRole('group', { name: '范围' })
     .getByRole('button', { name: '全部', exact: true })
@@ -112,8 +112,8 @@ test('档案选图弹层打开时拖入上传，候选在上传期间禁用且�
   await expect(select).toBeEnabled()
   await select.click()
   await expect(field.locator('.lib-strip-tile img')).toHaveCount(2)
-  await page.keyboard.press('Escape')
-  await expect(picker).toBeHidden()
+  await expect(picker).toHaveCount(0)
+  await expect(field.getByRole('button', { name: '从画布选', exact: true })).toBeFocused()
   await expect(panel).toBeVisible()
   await panel.getByRole('button', { name: '保存', exact: true }).click()
   await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
@@ -143,8 +143,7 @@ for (const role of ['时期', '服饰', '表情'] as const) {
       },
     })
     const item = await response.json()
-    await page.getByRole('button', { name: '资产库', exact: true }).click()
-    const panel = page.getByRole('dialog', { name: '资产库', exact: true })
+    const panel = await openLibraryPanel(page)
     await panel
       .getByRole('group', { name: '范围' })
       .getByRole('button', { name: '全部', exact: true })
