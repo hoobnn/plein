@@ -210,6 +210,7 @@ export default defineConfig({
     'filter-menu-layers.spec.ts',
     'board-lifecycle.spec.ts',
     'board-candidates.spec.ts',
+    'board-playback.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
     'sidebar-resize.spec.ts',
     'sidebar-assets-recovery.spec.ts',

@@ -57,7 +57,7 @@ function contentOf(el: CanvasElement): Content {
  * 故事板视图（左上角的“工作流 / 故事板”切换）：
  * 画布上的内容按类型分成并排的几栏（文本、图片、视频、音频），每栏按画布上的阅读顺序
  * （先上后下、先左后右）排列，显示当前结果或“待生成”，适合检查一组镜头的进度。
- * 单栏可以展开铺满；点名称回到画布并定位，点图片 / 视频全屏查看。
+ * 单栏可以展开铺满；点名称回到画布并定位，点媒体查看或播放。
  */
 export function Board() {
   const engine = useCanvas((s) => s.engine)
@@ -264,7 +264,7 @@ function MediaItem({
       return
     }
     const media = elementMedia(latest)
-    if (media && (media.kind === 'image' || media.kind === 'video')) {
+    if (media) {
       const current = latest.kind === 'node' ? primaryResult(latest) : undefined
       state.view(
         current
@@ -316,13 +316,18 @@ function MediaItem({
           </>
         )}
         {assetId && type === 'audio' && (
-          <img
-            src={assetUrls.variant(assetId, 'waveform')}
-            alt=""
-            loading="lazy"
-            draggable={false}
-            className="size-full object-contain p-4 opacity-80"
-          />
+          <>
+            <img
+              src={assetUrls.variant(assetId, 'waveform')}
+              alt=""
+              loading="lazy"
+              draggable={false}
+              className="size-full object-contain p-4 opacity-80"
+            />
+            <span className="board-play">
+              <Icon name="play" size={20} />
+            </span>
+          </>
         )}
         {!assetId && (
           <span className="flex flex-col items-center gap-2 text-sm text-ink-subtle">

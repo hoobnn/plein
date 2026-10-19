@@ -498,6 +498,7 @@ function Review({ viewer }: { viewer: View }) {
 function ReviewMedia({ assetId, kind }: { assetId: string; kind: 'video' | 'audio' }) {
   const [failed, setFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  const [waveformFailed, setWaveformFailed] = useState(false)
   const ref = useRef<HTMLMediaElement | null>(null)
   const current = useRef(attempt)
   current.current = attempt
@@ -547,7 +548,17 @@ function ReviewMedia({ assetId, kind }: { assetId: string; kind: 'video' | 'audi
   return kind === 'video' ? (
     <video key={attempt} {...props} poster={assetUrls.variant(assetId, 'poster')} />
   ) : (
-    <audio key={attempt} {...props} />
+    <div className="flex w-full max-w-3xl flex-col items-center gap-6 px-8">
+      {!waveformFailed && (
+        <img
+          src={assetUrls.variant(assetId, 'waveform')}
+          alt=""
+          className="max-h-48 w-full object-contain opacity-80"
+          onError={() => setWaveformFailed(true)}
+        />
+      )}
+      <audio key={attempt} {...props} className="w-full max-w-xl" />
+    </div>
   )
   // oxlint-enable jsx-a11y/media-has-caption
 }
