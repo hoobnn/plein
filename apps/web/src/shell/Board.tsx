@@ -12,6 +12,7 @@ import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { MenuSelect } from '../ui/MenuSelect'
 import { EmptyState } from '../ui/EmptyState'
+import { boardReadingOrder } from './boardReadingOrder'
 
 /** 故事板卡片的最大高度 */
 const MEDIA_MAX_H = 320
@@ -98,13 +99,15 @@ function BoardPanel({
   const columns = useMemo(() => {
     const items = [...engine.doc.elements()]
       .filter((el) => el.kind !== 'frame' && el.kind !== 'sequence')
-      .map((el) => ({ el, r: engine.scene.rect(el.id)! }))
-      .filter((n) => n.r)
-      .sort((a, b) => (Math.abs(a.r.y - b.r.y) > 80 ? a.r.y - b.r.y : a.r.x - b.r.x))
-      .map((n) => n.el)
+      .flatMap((el) => {
+        const r = engine.scene.rect(el.id)
+        return r ? [{ el, id: el.id, x: r.x, y: r.y }] : []
+      })
     return COLUMNS.map((c) => ({
       ...c,
-      items: items.filter((el) => outlineType(el) === c.type),
+      items: boardReadingOrder(items.filter(({ el }) => outlineType(el) === c.type)).map(
+        ({ el }) => el,
+      ),
     })).filter((c) => c.items.length > 0)
   }, [engine, catalog, version])
   // oxlint-enable react-hooks/exhaustive-deps
