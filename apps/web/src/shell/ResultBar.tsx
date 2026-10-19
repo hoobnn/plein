@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, primaryResult, elementMedia } from '@plein/doc'
+import { type CanvasElement, primaryResult, elementMedia, videoAssetOf } from '@plein/doc'
 import { presetsFor } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
@@ -16,7 +16,12 @@ import {
   type ContinuePoint,
 } from '../canvas/continueShot'
 import { formatTimecode, parseTimecode } from '../canvas/media'
-import { deriveNode } from '../canvas/presets'
+import { deriveNode, focusGenerator } from '../canvas/presets'
+import {
+  beginContinueRequest,
+  continueRequestKey,
+  useContinueRequest,
+} from '../features/generator/continueRequests'
 import { regionEditNode, startRegionEdit } from '../canvas/regionEdit'
 import { MaskEditor } from '../features/generator/MaskEditor'
 import { type NoticeAction, useCanvas } from '../stores/canvas'
@@ -155,7 +160,10 @@ export function ResultActions({
     kind: 'presets' | 'grid' | 'continue'
     anchor: HTMLElement
   } | null>(null)
-  const [busy, setBusy] = useState(false)
+  const requestKey = continueRequestKey(engine, 'create', el.id, media.assetId)
+  const continuation = useContinueRequest(requestKey)
+  const { pending } = continuation
+  const busy = !!pending
   const [masking, setMasking] = useState(false)
   const editNode = media.kind === 'image' ? regionEditNode(catalog) : undefined
   const [at, setAt] = useState('')
@@ -179,17 +187,31 @@ export function ResultActions({
   const continueNode = media.kind === 'video' ? continueNodeFor(catalog, el) : undefined
 
   const runContinue = async (point: ContinuePoint) => {
+    const request = beginContinueRequest(engine, requestKey)
+    if (!request) return
     setOpen(null)
-    setBusy(true)
+    const view = watchImportView(engine, request.signal)
+    const current = () => request.current() && videoAssetOf(engine.doc.get(el.id)) === media.assetId
     try {
-      await continueShot(engine, catalog, el.id, point)
+      const id = await continueShot(engine, catalog, el.id, point, {
+        signal: request.signal,
+        focus: false,
+      })
+      if (!current() || request.signal.aborted) return
+      const unchanged = view.unchanged()
+      if (unchanged) {
+        revealImports(engine, [id])
+        focusGenerator(engine, id)
+      }
       notify(
         `已从${'last' in point ? '尾帧' : formatTimecode(point.at)}接出下一个镜头，写好提示词就能生成`,
+        unchanged ? undefined : importLocation(engine, [id]),
       )
     } catch (err) {
-      notify((err as Error).message)
+      if (current()) notify(request.signal.aborted ? '已取消取帧' : (err as Error).message)
     } finally {
-      setBusy(false)
+      view.dispose()
+      request.finish()
     }
   }
 
@@ -276,12 +298,23 @@ export function ResultActions({
           className={`${btn} ui-btn-menu`}
           aria-expanded={open?.kind === 'continue'}
           disabled={busy}
+          ref={continuation.trigger}
           onClick={toggle('continue')}
           title="取这段视频的一帧作首帧，在右边接出下一个镜头"
         >
           <Icon name="continueShot" size={14} />
           {busy ? '取帧中…' : '续镜'}
           <Icon name="chevronDown" size={12} />
+        </button>
+      )}
+      {busy && (
+        <button
+          type="button"
+          className={btn}
+          disabled={pending.signal.aborted}
+          onClick={(event) => continuation.cancel(event.currentTarget)}
+        >
+          {pending.signal.aborted ? '取消中…' : '取消取帧'}
         </button>
       )}
       {image && remote && (

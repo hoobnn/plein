@@ -80,7 +80,9 @@ export async function continueShot(
   catalog: Catalog | null,
   sourceId: string,
   point: ContinuePoint,
+  options: { signal?: AbortSignal; focus?: boolean } = {},
 ): Promise<string> {
+  options.signal?.throwIfAborted()
   if (engine.doc.readOnly) throw new ReadOnlyDocError()
   const source = engine.doc.get(sourceId)
   const assetId = videoAssetOf(source)
@@ -96,13 +98,17 @@ export async function continueShot(
   const frame =
     own?.type === 'image'
       ? null
-      : await api.mediaDerive({
-          op: 'frame',
-          assetId,
-          at: last ? 0 : point.at,
-          ...(last ? { last: true } : {}),
-          name: `${name} · ${last ? '尾帧' : formatTimecode(point.at)}`,
-        })
+      : await api.mediaDerive(
+          {
+            op: 'frame',
+            assetId,
+            at: last ? 0 : point.at,
+            ...(last ? { last: true } : {}),
+            name: `${name} · ${last ? '尾帧' : formatTimecode(point.at)}`,
+          },
+          options.signal,
+        )
+  options.signal?.throwIfAborted()
   const frameAsset = frame?.assets[0]
   if (frame && !frameAsset) throw new Error('没取到画面')
   // 只接受仍对应当前视频的抽帧；等待期间的参数编辑则沿用最新值。
@@ -162,7 +168,7 @@ export async function continueShot(
     if (ak) applyAspect(engine, id, params[ak])
   }, doc.origin)
   doc.undo.stopCapturing()
-  focusGenerator(engine, id)
+  if (options.focus !== false) focusGenerator(engine, id)
   return id
 }
 
@@ -189,7 +195,8 @@ export function continueStale(engine: Engine, nodeId: string): boolean {
 }
 
 /** 用父镜头当前的视频重新取帧，替换旧的首帧图片（同一个元素换资产，连线不动） */
-export async function refreshContinue(engine: Engine, nodeId: string) {
+export async function refreshContinue(engine: Engine, nodeId: string, signal?: AbortSignal) {
+  signal?.throwIfAborted()
   const { doc } = engine
   if (doc.readOnly) throw new ReadOnlyDocError()
   const from = continuesFromOf(doc.get(nodeId))
@@ -202,13 +209,17 @@ export async function refreshContinue(engine: Engine, nodeId: string) {
   })
   const frameEl = edge && doc.get(edge.from[0])
   if (!edge || !frameEl) throw new Error('首帧图片已经断开了')
-  const made = await api.mediaDerive({
-    op: 'frame',
-    assetId,
-    at: from.last ? 0 : (from.at ?? 0),
-    ...(from.last ? { last: true } : {}),
-    name: frameEl.name,
-  })
+  const made = await api.mediaDerive(
+    {
+      op: 'frame',
+      assetId,
+      at: from.last ? 0 : (from.at ?? 0),
+      ...(from.last ? { last: true } : {}),
+      name: frameEl.name,
+    },
+    signal,
+  )
+  signal?.throwIfAborted()
   const asset = made.assets[0]
   if (!asset) throw new Error('没取到画面')
   // 比较与本次取帧相关的状态，避免覆盖等待期间的新视频、手动换图或断线。

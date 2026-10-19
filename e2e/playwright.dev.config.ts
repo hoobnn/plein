@@ -124,6 +124,8 @@ export default defineConfig({
     'result-toolbar-layout.spec.ts',
     'mask-editor-lifecycle.spec.ts',
     'region-edit.spec.ts',
+    'continue-lifecycle.spec.ts',
+    'continue.spec.ts',
     'template-save-targets.spec.ts',
     'selection-library-targets.spec.ts',
     'selection-library-capacity.spec.ts',

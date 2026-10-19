@@ -230,3 +230,29 @@ describe('续镜异步取帧的保存边界', () => {
     doc.destroy()
   })
 })
+
+describe('取帧请求取消的最终写入保护', () => {
+  it.each(['create', 'refresh'] as const)('%s 即使传输迟到返回也不写入取消结果', async (kind) => {
+    const { doc, engine, parent, next } = continuation()
+    const finish = pendingFrame()
+    const controller = new AbortController()
+    const before = [...doc.elements()]
+    const undo = doc.undo.undoStack.length
+    const operation =
+      kind === 'create'
+        ? continueShot(
+            engine,
+            { nodes: [video] } as never,
+            parent,
+            { last: true },
+            { signal: controller.signal },
+          )
+        : refreshContinue(engine, next, controller.signal)
+    controller.abort()
+    finish()
+    await expect(operation).rejects.toMatchObject({ name: 'AbortError' })
+    expect([...doc.elements()]).toEqual(before)
+    expect(doc.undo.undoStack).toHaveLength(undo)
+    doc.destroy()
+  })
+})

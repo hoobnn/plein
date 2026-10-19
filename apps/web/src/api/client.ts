@@ -298,8 +298,8 @@ export const api = {
   runImpact: (canvasId: string, body: ImpactRunOptions) =>
     request<GroupRunStarted>(API.impactRun(canvasId), json('POST', body)),
 
-  mediaDerive: (body: MediaDeriveRequest) =>
-    request<MediaDerivation>(API.mediaDerive, json('POST', body)),
+  mediaDerive: (body: MediaDeriveRequest, signal?: AbortSignal) =>
+    request<MediaDerivation>(API.mediaDerive, { ...json('POST', body), signal }),
   mediaCollage: (body: MediaCollageRequest) =>
     request<MediaCollage>(API.mediaCollage, json('POST', body)),
   /** 剪辑工程（OTIO / FCPXML + 素材）：返回一个短期下载地址 */
