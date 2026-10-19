@@ -130,6 +130,73 @@ test('重新生成菜单方向键导航、点击外部及窄屏定位', async ({
   await expect(editor).toBeVisible()
 })
 
+test('快速取消后反复打开并改选生成类型，清单取消不锁住下一次操作', async ({ page }) => {
+  const { editor } = await fixture(page)
+  const trigger = editor.getByRole('button', { name: '全部重新生成', exact: true })
+  const menu = page.getByRole('menu', { name: '全部重新生成', exact: true })
+  const rawMenu = page.getByRole('menu', { name: '全部重新生成', exact: true, includeHidden: true })
+  const description = editor.getByRole('textbox', { name: '画面', exact: true })
+  let commits = 0
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/storyboard-batch/commit')) commits++
+  })
+  for (const [label, role] of [
+    ['分镜图', 'image'],
+    ['配音', 'speech'],
+    ['音效', 'sfx'],
+  ] as const) {
+    await description.fill(`本轮检查${label}`)
+    await description.blur()
+    await trigger.click()
+    await page.keyboard.press('Escape')
+    await expect(rawMenu).toHaveCount(0)
+    await expect(editor).toHaveCSS('opacity', '1')
+    await trigger.click()
+    await expect(menu).toBeVisible()
+    const response = page.waitForResponse((response) =>
+      response.url().endsWith('/storyboard-batch/preview'),
+    )
+    await menu.getByRole('menuitem', { name: label, exact: true }).click()
+    const plan = (await (await response).json()) as StoryboardBatchPlan
+    expect(plan.request.role).toBe(role)
+    expect(plan.request.reuseExisting).toBe(false)
+    const checklist = page.getByRole('dialog', { name: '批量生成清单', exact: true })
+    await checklist.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(checklist).toHaveCount(0)
+    await expect(editor).toHaveCSS('opacity', '1')
+    await expect(trigger).toBeFocused()
+  }
+  expect(commits).toBe(0)
+})
+
+test('菜单尚在打开等待时叠加设置，不迟到遮挡也不抢走设置按键', async ({ page }) => {
+  const { editor } = await fixture(page)
+  const description = editor.getByRole('textbox', { name: '画面', exact: true })
+  await description.fill('打开设置前保存的画面')
+  await description.blur()
+  const trigger = editor.getByRole('button', { name: '全部重新生成', exact: true })
+  await trigger.click()
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('plein:open-settings')))
+  const settings = page.getByRole('dialog', { name: '设置', exact: true })
+  await expect(settings).toBeVisible()
+  await settings.getByRole('button', { name: '关闭', exact: true }).focus()
+  await expect(
+    page.getByRole('menu', { name: '全部重新生成', exact: true, includeHidden: true }),
+  ).toBeHidden()
+  await page.keyboard.press('Escape')
+  await expect(settings).toHaveCount(0)
+  await expect(editor).toHaveCSS('opacity', '1')
+  await expect(description).toHaveValue('打开设置前保存的画面')
+  await trigger.click()
+  const menu = page.getByRole('menu', { name: '全部重新生成', exact: true })
+  await expect(menu).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(
+    page.getByRole('menu', { name: '全部重新生成', exact: true, includeHidden: true }),
+  ).toHaveCount(0)
+  await expect(editor).toHaveCSS('opacity', '1')
+})
+
 for (const [label, role] of [
   ['分镜图', 'image'],
   ['视频', 'video'],
