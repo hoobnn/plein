@@ -1,3 +1,4 @@
+import { openLibraryPanel } from './library-ui'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -52,8 +53,7 @@ async function asset(page: Page, file: string) {
   return (await response.json()).id as string
 }
 async function openItem(page: Page, label: string, name: string) {
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
-  const panel = page.getByRole('dialog', { name: '资产库', exact: true })
+  const panel = await openLibraryPanel(page)
   await panel
     .getByRole('group', { name: '资产类别' })
     .getByRole('button', { name: label, exact: true })

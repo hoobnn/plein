@@ -1,3 +1,4 @@
+import { openLibraryPanel } from './library-ui'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -37,8 +38,7 @@ async function images(page: Page) {
   return ids
 }
 async function open(page: Page, name: string, tab: RegExp) {
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
-  const panel = page.getByRole('dialog', { name: '资产库', exact: true })
+  const panel = await openLibraryPanel(page)
   await panel
     .getByRole('group', { name: '范围' })
     .getByRole('button', { name: '全部', exact: true })
@@ -81,8 +81,7 @@ for (const kind of ['scene', 'prop'] as const) {
     })
     expect(created.status()).toBe(201)
     const item = await created.json()
-    await page.getByRole('button', { name: '资产库', exact: true }).click()
-    const panel = page.getByRole('dialog', { name: '资产库', exact: true })
+    const panel = await openLibraryPanel(page)
     await panel
       .getByRole('button', { name: kind === 'scene' ? '场景' : '道具', exact: true })
       .click()

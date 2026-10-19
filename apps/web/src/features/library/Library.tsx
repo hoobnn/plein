@@ -803,6 +803,10 @@ function Editor({
   const character = kind.id === 'character'
   const [draft, setDraft] = useState(() => draftOf(kind, item, official, projectId, seed))
   const editor = useRef<HTMLDivElement>(null)
+  const actions = useRef<HTMLElement>(null)
+  const parkActionFocus = (button: HTMLButtonElement) => {
+    if (document.activeElement === button) actions.current?.focus({ preventScroll: true })
+  }
   const latestDraft = useRef(draft)
   latestDraft.current = draft
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
@@ -1261,7 +1265,13 @@ function Editor({
           {item && !readOnly && <LibraryUpdatesPanel key={item.id} item={item} />}
         </section>
       </div>
-      <footer className="flex flex-none flex-wrap items-center gap-2 border-t border-line px-5 py-3">
+      <footer
+        ref={actions}
+        role="group"
+        aria-label="资产操作"
+        tabIndex={-1}
+        className="lib-focus-region flex flex-none flex-wrap items-center gap-2 border-t border-line px-5 py-3"
+      >
         <button
           type="button"
           disabled={busy || pendingUploads > 0}
@@ -1297,7 +1307,10 @@ function Editor({
             <button
               type="button"
               disabled={busy}
-              onClick={() => void save()}
+              onClick={(event) => {
+                parkActionFocus(event.currentTarget)
+                void save()
+              }}
               className="ui-btn ui-btn-secondary"
             >
               <Icon name="copy" />
@@ -1307,7 +1320,10 @@ function Editor({
             <button
               type="button"
               disabled={busy || pendingUploads > 0 || (!!item && !dirty)}
-              onClick={() => void save()}
+              onClick={(event) => {
+                parkActionFocus(event.currentTarget)
+                void save()
+              }}
               className={`ui-btn ${placeable ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
             >
               {item ? (dirty ? '保存' : '已保存') : '保存'}
@@ -1317,7 +1333,10 @@ function Editor({
             <button
               type="button"
               disabled={busy || placing || pendingUploads > 0}
-              onClick={() => void place()}
+              onClick={(event) => {
+                parkActionFocus(event.currentTarget)
+                void place()
+              }}
               className="ui-btn ui-btn-primary"
             >
               {placing ? '正在放入…' : readOnly || !dirty ? '添加到画布' : '保存并添加到画布'}

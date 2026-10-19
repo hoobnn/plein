@@ -213,6 +213,7 @@ function CharacterAssetTile({
   onBusyChange(busy: boolean): void
 }) {
   const input = useRef<HTMLInputElement>(null)
+  const preview = useRef<HTMLButtonElement>(null)
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<UploadNotice | null>(null)
   const [imageRevision, setImageRevision] = useState(0)
@@ -251,6 +252,7 @@ function CharacterAssetTile({
       aria-label={slot.label}
     >
       <button
+        ref={preview}
         type="button"
         aria-label={assetId ? `预览${slot.label}` : `添加${slot.label}`}
         aria-pressed={!!assetId && selected === assetId}
@@ -262,7 +264,7 @@ function CharacterAssetTile({
           e.preventDefault()
           void upload([...e.dataTransfer.files])
         }}
-        className="lib-character-tile-preview"
+        className="lib-character-tile-preview lib-focus-region"
       >
         {assetId ? (
           failedImage === imageKey ? (
@@ -303,7 +305,10 @@ function CharacterAssetTile({
               disabled={busy || disabled}
               aria-label={`重新加载${slot.label}`}
               className="ui-btn ui-btn-quiet ui-btn-xs"
-              onClick={() => setImageRevision((revision) => revision + 1)}
+              onClick={(event) => {
+                if (document.activeElement === event.currentTarget) preview.current?.focus()
+                setImageRevision((revision) => revision + 1)
+              }}
             >
               <Icon name="retry" size={12} />
               重新加载

@@ -895,6 +895,7 @@ function NameField({
 }
 
 function ProfileImage({ id, hero, onRemove }: { id: string; hero: HeroControl; onRemove(): void }) {
+  const group = useRef<HTMLDivElement>(null)
   const { attempts, retry } = useContext(ImageAttempts)
   const attempt = attempts[id] ?? 0
   const [failed, setFailed] = useState<number>()
@@ -902,7 +903,11 @@ function ProfileImage({ id, hero, onRemove }: { id: string; hero: HeroControl; o
   current.current = attempt
   return (
     <div
-      className="lib-strip-tile group"
+      ref={group}
+      role="group"
+      aria-label="档案参考图"
+      tabIndex={-1}
+      className="lib-strip-tile lib-focus-region group"
       onPointerEnter={() => hero.onPreview(id)}
       onPointerLeave={() => hero.onPreview(null)}
     >
@@ -913,7 +918,10 @@ function ProfileImage({ id, hero, onRemove }: { id: string; hero: HeroControl; o
             type="button"
             aria-label="重新加载图片"
             className="ui-btn ui-btn-quiet ui-btn-xs"
-            onClick={() => retry(id)}
+            onClick={(event) => {
+              if (document.activeElement === event.currentTarget) group.current?.focus()
+              retry(id)
+            }}
           >
             <Icon name="retry" size={12} />
             重试

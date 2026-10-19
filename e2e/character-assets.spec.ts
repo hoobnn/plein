@@ -1,3 +1,4 @@
+import { openLibraryPanel } from './library-ui'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -78,8 +79,7 @@ async function uploadToCanvas(page: Page, index: number) {
 }
 
 async function openLibrary(page: Page) {
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
-  const panel = page.getByRole('dialog', { name: '资产库', exact: true })
+  const panel = await openLibraryPanel(page)
   await panel
     .getByRole('group', { name: '范围', exact: true })
     .getByRole('button', { name: '全部', exact: true })
@@ -277,6 +277,7 @@ test('档案名称校验、Esc 取消与自定义名字退出只影响当前输�
   expect((await readItem(page, item.id)).profile).toMatchObject({
     periods: [{ name: '青年', aliases: ['少年'] }],
   })
+  await expect(panel.getByRole('group', { name: '资产操作', exact: true })).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(
     panel.locator('header').getByRole('button', { name: '新建角色', exact: true }),

@@ -736,6 +736,15 @@ button.lib-crumb:disabled {
   gap: 8px;
 }
 
+/* 内描边绘制在子图片之上，避免焦点的 inset shadow 被图片覆盖。 */
+.lib-focus-region {
+  outline: none;
+}
+.lib-focus-region:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .lib-strip-tile {
   position: relative;
   width: 72px;

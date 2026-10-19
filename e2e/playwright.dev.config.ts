@@ -55,6 +55,7 @@ export default defineConfig({
     'library-save-lifecycle.spec.ts',
     'library-upload-lifecycle.spec.ts',
     'library-preview-recovery.spec.ts',
+    'library-retry-focus.spec.ts',
     'library-upload-batches.spec.ts',
     'library-profile-upload-batches.spec.ts',
     'library-profile-structure.spec.ts',
