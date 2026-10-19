@@ -283,10 +283,18 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
   })
   // 素材时长（秒）
-  const meta = useAssetMetas([
-    ...rows.map((r) => r.clip.assetId),
-    ...rows.flatMap((r) => clipLines(r).map((d) => d.assetId)),
-  ])
+  const metadata = useAssetMetas(
+    [
+      ...rows.map((r) => r.clip.assetId),
+      ...rows.flatMap((r) => clipLines(r).map((d) => d.assetId)),
+    ],
+    previewRevision,
+  )
+  const meta = metadata.get
+  const reloadPreview = () => {
+    playhead.pause()
+    setPreviewRevision((revision) => revision + 1)
+  }
   const duration = (assetId: string | undefined) => meta(assetId)?.duration
   const running = el?.run?.status === 'running' || el?.run?.status === 'queued'
   const canvasId = useCanvas((s) => s.canvasId)
@@ -769,11 +777,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           <button
             type="button"
             className="ui-btn ui-btn-quiet"
-            title="重新加载画面、缩略图和波形，保留剪辑设置与播放位置"
-            onClick={() => {
-              playhead.pause()
-              setPreviewRevision((revision) => revision + 1)
-            }}
+            title="重新加载素材信息、画面、缩略图和波形，保留剪辑设置与播放位置"
+            onClick={reloadPreview}
           >
             <Icon name="retry" />
             重新加载预览
@@ -897,6 +902,37 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         <p role="status" className="px-4 py-2 text-sm text-muted">
           当前画布为只读，仍可预览，暂不能修改或生成新成片。
         </p>
+      )}
+      {view === 'edit' && metadata.loading && !packing && (
+        <p
+          role="status"
+          aria-label="素材信息加载"
+          className="flex-none px-4 py-2 text-xs text-ink-muted"
+        >
+          正在读取素材时长与尺寸，预览排布可能暂不完整。
+        </p>
+      )}
+      {view === 'edit' && metadata.errors.length > 0 && (
+        <div
+          role="alert"
+          aria-label="素材信息读取失败"
+          className="flex-none border-b border-line px-4 py-3 text-sm"
+        >
+          <p className="font-medium text-danger">
+            素材信息读取失败，预览时长或声音排布可能不完整。
+          </p>
+          <div className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
+            {[...new Set(metadata.errors.map((error) => error.message))].join('\n')}
+          </div>
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary ui-btn-xs mt-2"
+            onClick={reloadPreview}
+          >
+            重试素材信息
+          </button>
+          <p className="mt-1 text-xs text-ink-muted">重试保留剪辑设置与播放位置。</p>
+        </div>
       )}
       {packError && (
         <div

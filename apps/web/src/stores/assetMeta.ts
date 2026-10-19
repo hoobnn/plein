@@ -45,24 +45,45 @@ export function useAssetMeta(id: string | undefined): Asset | null {
   return meta
 }
 
-/** 一组资产的元信息，按 id 取；还没到或读不到时为 undefined */
-export function useAssetMetas(ids: string[]): (id: string | undefined) => Asset | undefined {
-  const [, setV] = useState(0)
-  const key = ids.join(',')
-  // oxlint-disable react-hooks/exhaustive-deps -- key 即 ids
+/** 一组资产的元信息；reload 只重试尚未成功读取的项，保留不可变资产缓存。 */
+export function useAssetMetas(ids: string[], reload = 0) {
+  const key = JSON.stringify([...new Set(ids.filter(Boolean))])
+  const [state, setState] = useState<{ key: string; errors: Record<string, string> }>({
+    key: '',
+    errors: {},
+  })
   useEffect(() => {
+    const current = JSON.parse(key) as string[]
     let live = true
-    for (const id of ids) {
-      if (!id || loaded.has(id)) continue
+    setState({ key, errors: {} })
+    for (const id of current) {
+      if (loaded.has(id)) continue
       loadAssetMeta(id).then(
-        () => live && setV((x) => x + 1),
-        () => {},
+        () => {
+          if (live) setState((s) => ({ ...s }))
+        },
+        (error: unknown) => {
+          if (live)
+            setState((s) => ({
+              key,
+              errors: {
+                ...s.errors,
+                [id]: error instanceof Error ? error.message : '素材信息读取失败',
+              },
+            }))
+        },
       )
     }
     return () => {
       live = false
     }
-  }, [key])
-  // oxlint-enable react-hooks/exhaustive-deps
-  return (id) => (id ? loaded.get(id) : undefined)
+  }, [key, reload])
+  const errors = Object.entries(state.key === key ? state.errors : {})
+    .filter(([id]) => !loaded.has(id))
+    .map(([id, message]) => ({ id, message }))
+  return {
+    get: (id: string | undefined) => (id ? loaded.get(id) : undefined),
+    errors,
+    loading: ids.some((id) => id && !loaded.has(id) && !errors.some((error) => error.id === id)),
+  }
 }

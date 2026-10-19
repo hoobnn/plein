@@ -180,6 +180,7 @@ export default defineConfig({
     'sequence-invalid-parameters.spec.ts',
     'sequence-sound-controls.spec.ts',
     'sequence-preview-lifecycle.spec.ts',
+    'sequence-metadata-recovery.spec.ts',
     'sequence-subtitle-renderer.spec.ts',
     'sequence-readonly.spec.ts',
     'sequence-settings-collaboration.spec.ts',
