@@ -74,6 +74,7 @@ import {
   type EditPlan,
   type ReviseEditPlan,
 } from '@plein/protocol'
+import { validateProjectZip } from './projectZip'
 
 export class ApiError extends Error {
   constructor(
@@ -303,8 +304,28 @@ export const api = {
   mediaCollage: (body: MediaCollageRequest) =>
     request<MediaCollage>(API.mediaCollage, json('POST', body)),
   /** 剪辑工程（OTIO / FCPXML + 素材）：返回一个短期下载地址 */
-  sequenceExport: (body: SequenceExportRequest) =>
-    request<{ url: string }>(API.sequenceExport, json('POST', body)),
+  sequenceExport: (body: SequenceExportRequest, signal?: AbortSignal) =>
+    request<{ url: string }>(API.sequenceExport, { ...json('POST', body), signal }),
+  sequenceExportFile: async (url: string, signal?: AbortSignal) => {
+    try {
+      const response = await send(url, { signal })
+      if (
+        response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() !==
+        'application/zip'
+      ) {
+        await response.body?.cancel()
+        throw new Error('没有收到有效的 ZIP 工程文件，请重新导出')
+      }
+      const blob = await response.blob()
+      await validateProjectZip(blob)
+      signal?.throwIfAborted()
+      return blob
+    } catch (error) {
+      if (!signal?.aborted && error instanceof TypeError)
+        throw new Error('工程文件读取中断，请检查连接后重新导出', { cause: error })
+      throw error
+    }
+  },
   subtitleRecognize: (body: SubtitleRecognizeRequest) =>
     request<SubtitleRecognizeResult>(API.subtitleRecognize, json('POST', body)),
   subtitleRecognition: (model: string, assetId: string) =>

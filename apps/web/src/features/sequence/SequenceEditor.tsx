@@ -131,6 +131,17 @@ function readSequence(engine: Engine, id: string, catalog = useCatalog.getState(
   }
 }
 
+/** 工程内容身份不包含节点运行进度、画布位置等无关变化。 */
+function projectSourceKey(read: ReturnType<typeof readSequence>) {
+  return JSON.stringify({
+    type: read.el?.nodeType,
+    name: read.el?.name,
+    params: read.params,
+    rows: read.rows.map(({ el: _, ...row }) => row),
+    music: read.music,
+  })
+}
+
 /** 序列编辑器：调整镜头顺序、入出点，指定每段的对白、音效和字幕，导出成片 */
 export function SequenceEditor() {
   const engine = useCanvas((s) => s.engine)
@@ -569,11 +580,59 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   /** 导出剪辑工程：和成片同一套合成参数，服务端打包成 OTIO / FCPXML + 素材的 zip */
   const [packing, setPacking] = useState(false)
   const [packError, setPackError] = useState<string | null>(null)
+  const [packNotice, setPackNotice] = useState<string | null>(null)
+  const packRequest = useRef<{ controller: AbortController; key: string } | null>(null)
+  const closing = useClosing()
+  const packKey = projectSourceKey(read)
+  const cancelProject = useCallback((silent = false) => {
+    const pending = packRequest.current
+    packRequest.current = null
+    pending?.controller.abort()
+    setPacking(false)
+    setPackError(null)
+    if (silent) setPackNotice(null)
+    else if (pending) setPackNotice('已取消工程文件读取，可重新导出')
+  }, [])
+  useLayoutEffect(() => {
+    cancelProject(true)
+    return () => {
+      const pending = packRequest.current
+      packRequest.current = null
+      pending?.controller.abort()
+    }
+  }, [engine, id, canvasId, closing, cancelProject])
+  useLayoutEffect(() => {
+    if (packRequest.current && packRequest.current.key !== packKey) {
+      cancelProject(true)
+      setPackError('剪辑内容已变化，本次工程未下载；请检查后重新导出')
+    }
+  }, [packKey, cancelProject])
   const exportProject = async () => {
-    if (packing || inputProblem) return
+    if (packing || packRequest.current || inputProblem || closing) return
+    const pending = { controller: new AbortController(), key: packKey }
+    packRequest.current = pending
+    const signal = AbortSignal.any([pending.controller.signal, AbortSignal.timeout(10 * 60_000)])
+    const active = () => {
+      const state = useCanvas.getState()
+      return (
+        packRequest.current === pending &&
+        !pending.controller.signal.aborted &&
+        state.engine === engine &&
+        state.canvasId === canvasId &&
+        state.sequence === id
+      )
+    }
+    const current = () => {
+      if (!active()) return false
+      if (projectSourceKey(readSequence(engine, id)) !== pending.key)
+        throw new Error('剪辑内容已变化，本次工程未下载；请检查后重新导出')
+      return true
+    }
     setPacking(true)
     setPackError(null)
+    setPackNotice(null)
     try {
+      if (!current()) return
       const spec = sequenceSpec(
         params,
         rows,
@@ -585,17 +644,37 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         music ? [{ type: 'audio', assetId: music, kind: 'audio' }] : undefined,
         el?.name,
       )
-      const { url } = await api.sequenceExport({ spec })
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${(el?.name ?? '序列').replace(/[\\/:*?"<>|]/g, '_')}.zip`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
+      const { url } = await api.sequenceExport({ spec }, signal)
+      if (!current()) return
+      const blob = await api.sequenceExportFile(url, signal)
+      if (!current()) return
+      const local = URL.createObjectURL(blob)
+      try {
+        const a = document.createElement('a')
+        a.href = local
+        a.download = `${(el?.name ?? '序列').replace(/[\\/:*?"<>|]/g, '_')}.zip`
+        document.body.appendChild(a)
+        try {
+          a.click()
+        } finally {
+          a.remove()
+        }
+      } finally {
+        setTimeout(() => URL.revokeObjectURL(local), 1000)
+      }
+      setPackNotice('工程文件已交给浏览器下载，请查看保存状态')
     } catch (err) {
-      setPackError((err as Error).message || '导出工程失败')
+      if (active())
+        setPackError(
+          signal.aborted
+            ? '工程文件读取超时，请检查连接后重新导出'
+            : (err as Error).message || '导出工程失败',
+        )
     } finally {
-      setPacking(false)
+      if (packRequest.current === pending) {
+        packRequest.current = null
+        setPacking(false)
+      }
     }
   }
 
@@ -702,11 +781,6 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             )}
           </>
         )}
-        {packError && (
-          <span className="max-w-80 truncate text-xs text-danger" title={packError}>
-            {packError}
-          </span>
-        )}
         <button
           type="button"
           className="ui-btn ui-btn-quiet"
@@ -730,8 +804,13 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           onClick={() => void exportProject()}
         >
           <Icon name="exportFile" />
-          {packing ? '打包中…' : '导出工程'}
+          {packing ? '正在读取工程…' : '导出工程'}
         </button>
+        {packing && (
+          <button type="button" className="ui-btn ui-btn-quiet" onClick={() => cancelProject()}>
+            取消工程导出
+          </button>
+        )}
         {filmAsset && !running && view === 'edit' && (
           <AssetDownloadButton
             engine={engine}
@@ -785,6 +864,24 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       {engine.doc.readOnly && (
         <p role="status" className="px-4 py-2 text-sm text-muted">
           当前画布为只读，仍可预览，暂不能修改或生成新成片。
+        </p>
+      )}
+      {packError && (
+        <div
+          role="alert"
+          aria-label="工程导出失败"
+          className="flex-none border-b border-line px-4 py-3 text-sm"
+        >
+          <p className="font-medium text-danger">工程导出失败</p>
+          <p className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
+            {packError}
+          </p>
+          <p className="mt-1 text-xs text-ink-muted">修正后可再次点击“导出工程”重试。</p>
+        </div>
+      )}
+      {packNotice && (
+        <p role="status" className="flex-none px-4 py-2 text-sm text-ink-muted">
+          {packNotice}
         </p>
       )}
       {el?.run?.status === 'failed' && !running && (
