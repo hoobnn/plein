@@ -405,6 +405,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
     // 输入框里的按键照常交给输入框（回车提交、Esc 由面板关闭）；画布的快捷键本来就不管输入框
     if (typing(e.target)) return
+    // 镜头卡片负责自己的回车激活，避免捕获阶段挡住目标处理器。
+    if (e.key === 'Enter' && target?.closest('.seq-clip')) return
     if (e.key === ' ' && target?.closest('button, a[href], [role="button"]')) return
     e.stopPropagation()
     if (e.key === 'Escape') return onClose()

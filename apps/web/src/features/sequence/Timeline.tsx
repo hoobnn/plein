@@ -526,14 +526,20 @@ function ClipTrack({
     return () => cancelAnimationFrame(raf)
   }, [settle])
 
+  const activate = (item: TrackItem) => {
+    if (closing) return
+    onSelect(item.key)
+    playhead.pause()
+    playhead.seek(item.start)
+  }
+
   const startDrag = (e: ReactPointerEvent, index: number) => {
     if (e.button !== 0 || closing) return
     cancelGesture()
     const item = items[index]!
     onSelect(item.key)
     if (readOnly) {
-      playhead.pause()
-      playhead.seek(item.start)
+      activate(item)
       return
     }
     const x0 = e.clientX
@@ -554,8 +560,7 @@ function ClipTrack({
     const up = () => {
       setDrag(null)
       if (!moved) {
-        playhead.pause()
-        playhead.seek(item.start)
+        activate(item)
         return
       }
       if (current.target !== index) {
@@ -657,7 +662,27 @@ function ClipTrack({
                 transition: animate ? undefined : 'none',
                 cursor: readOnly ? 'pointer' : undefined,
               }}
+              title="定位到镜头开头（Enter / 空格）"
               onPointerDown={(e) => startDrag(e, i)}
+              onClick={(e) => {
+                // 辅助技术和程序化激活没有指针序列；普通点击已在拖动结束时处理。
+                if (e.detail === 0) activate(it)
+              }}
+              onKeyDown={(e) => {
+                if (
+                  (e.key !== 'Enter' && e.key !== ' ') ||
+                  e.altKey ||
+                  e.ctrlKey ||
+                  e.metaKey ||
+                  e.shiftKey ||
+                  e.nativeEvent.isComposing ||
+                  closing
+                )
+                  return
+                e.preventDefault()
+                e.stopPropagation()
+                if (!e.repeat) activate(it)
+              }}
               // 键盘 Tab 到哪段就选中哪段；选中样式就是焦点样式
               onFocus={() => onSelect(it.key)}
             >

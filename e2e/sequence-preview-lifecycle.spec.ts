@@ -416,3 +416,65 @@ test('真实视频快速播放暂停与连续定位，暂停画面始终落在�
   await expect(canvas).toHaveAttribute('data-decoder', 'webcodecs')
   expect(errors).toEqual([])
 })
+
+for (const key of ['Enter', 'Space'] as const) {
+  test(`镜头键盘 ${key} 激活切换真实预览素材，不仅更新时间码`, async ({ page }) => {
+    await newProject(page)
+    const images: string[] = []
+    for (const file of ['red.png', 'blue.png']) {
+      const uploaded = await page.request.post('/api/assets', {
+        headers: { 'content-type': 'image/png', 'x-file-name': file },
+        data: readFileSync(join(dir, file)),
+      })
+      expect(uploaded.status()).toBe(201)
+      images.push((await uploaded.json()).id)
+    }
+    const id = await page.evaluate(
+      (images) =>
+        window.__plein.addNode({
+          type: 'plein/animatic',
+          name: '键盘素材定位',
+          x: 400,
+          y: 200,
+          params: {
+            subtitles: false,
+            aspectRatio: '16:9',
+            shots: images.map((imageAssetId, i) => ({
+              shotId: `shot-${i}`,
+              imageAssetId,
+              duration: 30,
+              dialogue: [],
+            })),
+          },
+        }),
+      images,
+    )
+    const editor = await open(page, id)
+    const screen = editor.locator('.seq-stage canvas').first()
+    const pixel = () =>
+      screen.evaluate((canvas: HTMLCanvasElement) =>
+        Array.from(
+          canvas
+            .getContext('2d')!
+            .getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data,
+        ),
+      )
+    await expect.poll(async () => (await pixel())[0]).toBeGreaterThan(180)
+    await expect.poll(async () => (await pixel())[2]).toBeLessThan(90)
+    await editor.getByRole('button', { name: '播放', exact: true }).click()
+    await expect(editor.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
+    const clips = editor.locator('.seq-clip')
+    await clips.first().focus()
+    await page.keyboard.press('Tab')
+    await expect(clips.nth(1)).toBeFocused()
+    expect((await pixel())[0]).toBeGreaterThan(180)
+    await expect(editor.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
+    await page.keyboard.press(key)
+    await expect(editor.locator('.seq-time')).toHaveText('0:30.0 / 1:00.0')
+    await expect.poll(async () => (await pixel())[2]).toBeGreaterThan(180)
+    await expect.poll(async () => (await pixel())[0]).toBeLessThan(90)
+    await expect(editor.getByRole('button', { name: '播放', exact: true })).toBeVisible()
+    await expect(editor.getByText('样片镜头 2 · 0 句已有配音', { exact: true })).toBeVisible()
+    await editor.screenshot({ path: test.info().outputPath(`keyboard-clip-${key}.png`) })
+  })
+}

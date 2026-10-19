@@ -1,25 +1,37 @@
 import { expect, type Page, test } from '@playwright/test'
 import { centerOf, clickElement, newProject } from './canvas'
 
-async function fixture(page: Page, readOnly = false) {
+async function fixture(page: Page, readOnly = false, multiple = false) {
   await newProject(page)
-  const id = await page.evaluate((readOnly) => {
-    const id = window.__plein.addNode({
-      type: 'plein/animatic',
-      name: '时间线焦点',
-      x: 400,
-      y: 200,
-      params: { subtitles: false, shots: [{ shotId: 'placeholder', duration: 30, dialogue: [] }] },
-    })
-    ;(window.__plein.engine.doc as unknown as { readOnly: boolean }).readOnly = readOnly
-    return id
-  }, readOnly)
+  const id = await page.evaluate(
+    ({ readOnly, multiple }) => {
+      const id = window.__plein.addNode({
+        type: 'plein/animatic',
+        name: '时间线焦点',
+        x: 400,
+        y: 200,
+        params: {
+          subtitles: false,
+          shots: multiple
+            ? [
+                { shotId: 'first', duration: 10, dialogue: [] },
+                { shotId: 'second', duration: 10, dialogue: [] },
+              ]
+            : [{ shotId: 'placeholder', duration: 30, dialogue: [] }],
+        },
+      })
+      ;(window.__plein.engine.doc as unknown as { readOnly: boolean }).readOnly = readOnly
+      return id
+    },
+    { readOnly, multiple },
+  )
   await clickElement(page, id)
   const at = await centerOf(page, id)
   await page.mouse.dblclick(at.x, at.y)
   const editor = page.getByRole('dialog', { name: '序列', exact: true })
   await expect(editor).toHaveCSS('opacity', '1')
   return {
+    id,
     editor,
     timeline: editor.getByRole('region', { name: '时间线', exact: true }),
     zoom: editor.getByRole('slider', { name: '缩放', exact: true }),
@@ -94,3 +106,41 @@ test('缩放滑杆保留原生 Home End 和方向键，不移动播放头', asyn
   await expect(zoom).toBeFocused()
   await expect(editor.locator('.seq-time')).toHaveText('0:30.0 / 0:30.0')
 })
+
+for (const readOnly of [false, true]) {
+  for (const key of ['Enter', 'Space', 'assistive'] as const) {
+    test(`Tab 选择镜头后 ${key} 定位对应开头，只读=${readOnly}`, async ({ page }) => {
+      const { id, editor, timeline } = await fixture(page, readOnly, true)
+      let runs = 0
+      page.on('request', (request) => {
+        if (request.method() === 'POST' && /\/nodes\/[^/]+\/run$/.test(request.url())) runs++
+      })
+      const saved = () => page.evaluate((id) => window.__plein.engine.doc.get(id)?.params, id)
+      const before = await saved()
+      const clips = timeline.locator('.seq-clip')
+      await editor.getByRole('button', { name: '回到开头', exact: true }).focus()
+      for (let i = 0; i < 5; i++) await page.keyboard.press('Shift+ArrowRight')
+      await expect(editor.locator('.seq-time')).toHaveText('0:05.0 / 0:20.0')
+      await clips.first().focus()
+      await page.keyboard.press('Tab')
+      await expect(clips.nth(1)).toBeFocused()
+      await expect(clips.nth(1)).toHaveAttribute('aria-pressed', 'true')
+      await expect(editor.locator('.seq-time')).toHaveText('0:05.0 / 0:20.0')
+      if (key === 'assistive') await clips.nth(1).evaluate((el: HTMLElement) => el.click())
+      else await page.keyboard.press(key)
+      await expect(editor.locator('.seq-time')).toHaveText('0:10.0 / 0:20.0')
+      await expect(editor.getByRole('button', { name: '播放', exact: true })).toBeVisible()
+      await expect(clips.nth(1)).toBeFocused()
+      await page.keyboard.press('Shift+ArrowRight')
+      await expect(editor.locator('.seq-time')).toHaveText('0:11.0 / 0:20.0')
+      await clips
+        .nth(1)
+        .dispatchEvent('keydown', { key: key === 'Space' ? ' ' : 'Enter', repeat: true })
+      await page.keyboard.press('Control+Enter')
+      await clips.nth(1).dispatchEvent('keydown', { key: 'Enter', isComposing: true })
+      await expect(editor.locator('.seq-time')).toHaveText('0:11.0 / 0:20.0')
+      expect(await saved()).toEqual(before)
+      expect(runs).toBe(0)
+    })
+  }
+}
