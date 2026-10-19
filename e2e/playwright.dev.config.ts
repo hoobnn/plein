@@ -214,6 +214,7 @@ export default defineConfig({
     'board-thumbnail-recovery.spec.ts',
     'editor-header-layout.spec.ts',
     'header-project-rename.spec.ts',
+    'header-project-read.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
     'sidebar-resize.spec.ts',
     'sidebar-assets-recovery.spec.ts',

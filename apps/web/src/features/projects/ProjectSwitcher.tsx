@@ -10,6 +10,7 @@ import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
 import { Presence } from '../../ui/Presence'
 import { forgetLocalCache } from '../../canvas/localCache'
+import { ProjectTitle } from './ProjectTitle'
 
 const fail = (err: unknown) => useCanvas.getState().notify((err as Error).message)
 
@@ -28,11 +29,11 @@ const captureCanvasVisit = (canvasId: string) => {
  */
 export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
   // 侧栏展开收起、切故事板时会换位置重新挂载，查询缓存里有上次读到的，项目名不会闪成「…」
-  const project =
-    useQuery({
-      queryKey: queryKeys.project(canvas.projectId),
-      queryFn: () => api.project(canvas.projectId),
-    }).data ?? null
+  const projectQuery = useQuery({
+    queryKey: queryKeys.project(canvas.projectId),
+    queryFn: () => api.project(canvas.projectId),
+  })
+  const project = projectQuery.data ?? null
   const canvasList = useQuery({
     queryKey: queryKeys.projectCanvases(canvas.projectId),
     queryFn: () => api.projectCanvases(canvas.projectId),
@@ -144,14 +145,11 @@ export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => void renameProject()}
-        title="重命名项目"
-        className="ui-bar-btn block max-w-44 truncate font-medium text-ink"
-      >
-        {project?.title ?? '…'}
-      </button>
+      <ProjectTitle
+        key={canvas.projectId}
+        query={projectQuery}
+        onRename={() => void renameProject()}
+      />
       <span className="text-ink-subtle" aria-hidden="true">
         /
       </span>
