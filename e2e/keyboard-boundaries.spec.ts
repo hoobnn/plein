@@ -216,3 +216,23 @@ test('侧栏重命名有独立撤销边界，不连带撤销刚完成的位置�
     page.getByRole('treeitem', { name: '改名后的文本 定位到画布', exact: true }),
   ).toBeVisible()
 })
+
+for (const label of ['生成历史', '快捷键']) {
+  test(`${label} 上方设置只消费一次 Esc，关闭后保留原窗口和焦点`, async ({ page }) => {
+    await newProject(page)
+    await page.getByRole('button', { name: label, exact: true }).click()
+    const panel = page.getByRole('dialog', { name: label, exact: true })
+    const close = panel.getByRole('button', { name: '关闭', exact: true })
+    await close.focus()
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('plein:open-settings')))
+    const settings = page.getByRole('dialog', { name: '设置', exact: true })
+    await expect(settings).toBeVisible()
+    await settings.getByRole('button', { name: '关闭', exact: true }).focus()
+    await page.keyboard.press('Escape')
+    await expect(settings).toHaveCount(0)
+    await expect(panel).toBeVisible()
+    await expect(close).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(panel).toHaveCount(0)
+  })
+}

@@ -130,9 +130,11 @@ export function App() {
             <Mascot mood="idle" />
           </button>
         ) : null}
-        {ready && libraryOpen && <LibraryPanel />}
-        {ready && mediaOpen && <MediaLibraryPanel />}
-        {ready && checkpointsOpen && <CheckpointsPanel />}
+      </Suspense>
+      <Suspense fallback={null}>{ready && libraryOpen && <LibraryPanel />}</Suspense>
+      <Suspense fallback={null}>{ready && mediaOpen && <MediaLibraryPanel />}</Suspense>
+      <Suspense fallback={null}>{ready && checkpointsOpen && <CheckpointsPanel />}</Suspense>
+      <Suspense fallback={null}>
         {(ready || route.name === 'demo') && (
           <Presence>
             {settings !== false && (

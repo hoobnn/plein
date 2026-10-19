@@ -183,6 +183,11 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (
+        !(e.target instanceof Element) ||
+        !e.target.closest('[role="dialog"]')?.classList.contains('lib-dialog')
+      )
+        return
       if (e.key === 'Escape' && e.isComposing) {
         e.stopPropagation()
         return
@@ -259,7 +264,13 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
   const media = useMemo(() => (canPlace && engine ? canvasMedia(engine) : []), [canPlace, engine])
 
   return (
-    <Modal label="资产库" onClose={close} isolateKeys top className="h-[min(860px,100%)] max-w-6xl">
+    <Modal
+      label="资产库"
+      onClose={close}
+      isolateKeys
+      top
+      className="lib-dialog h-[min(860px,100%)] max-w-6xl"
+    >
       <ModalHeader
         title="资产库"
         onClose={close}

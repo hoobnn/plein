@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { newProject } from './canvas'
+import { newProject, waitEngine } from './canvas'
 
 test('320px 下资产类别可用键盘逐项访问，导航不撑出面板', async ({ page }) => {
   await newProject(page)
@@ -27,8 +27,16 @@ test('320px 下资产类别可用键盘逐项访问，导航不撑出面板', as
   await panel.screenshot({ path: test.info().outputPath('library-categories-320.png') })
 })
 
-async function fixture(page: Page, count = 2) {
-  await newProject(page)
+async function fixture(page: Page, count = 2, cold = false) {
+  if (cold) {
+    const response = await page.request.post('/api/projects', {
+      data: { title: '画布直达加载验证' },
+    })
+    expect(response.ok()).toBe(true)
+    const project = await response.json()
+    await page.goto(`/#/c/${project.lastCanvasId}`)
+    await waitEngine(page)
+  } else await newProject(page)
   const canvas = await (
     await page.request.get(`/api/canvases/${page.url().split('/').at(-1)}`)
   ).json()
@@ -146,4 +154,67 @@ test('收藏列表取消当前卡片后聚焦下一项，最后一项消失后�
   await page.keyboard.press('Space')
   await expect(remaining).toHaveCount(0)
   await expect(search).toBeFocused()
+})
+
+for (const profile of [false, true]) {
+  test(`资产库${profile ? '档案' : '列表'}叠加设置，Esc 只关闭设置并恢复原焦点`, async ({
+    page,
+  }) => {
+    const { panel, search, prefix } = await fixture(page)
+    let control = search
+    if (profile) {
+      await panel
+        .getByRole('listitem')
+        .filter({ hasText: '焦点测试一' })
+        .getByRole('button')
+        .first()
+        .click()
+      control = panel.getByRole('textbox', { name: '名称', exact: true })
+      await expect(control).toHaveValue(`${prefix} 焦点测试一`)
+    }
+    await control.focus()
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('plein:open-settings')))
+    const settings = page.getByRole('dialog', { name: '设置', exact: true })
+    await expect(settings).toBeVisible()
+    await settings.getByRole('button', { name: '关闭', exact: true }).focus()
+    await page.keyboard.press('Escape')
+    await expect(settings).toHaveCount(0)
+    await expect(panel).toBeVisible()
+    await expect(control).toBeFocused()
+    await expect(control).toHaveValue(profile ? `${prefix} 焦点测试一` : `${prefix} 焦点测试`)
+    if (!profile) await expect(panel.getByRole('listitem')).toHaveCount(2)
+  })
+}
+
+test('首次设置代码加载等待不隐藏资产库，仍能搜索并在关闭设置后继续编辑', async ({ page }) => {
+  const { panel, search, prefix } = await fixture(page, 2, true)
+  let release!: () => void
+  let entered = false
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route(/\/Settings(?:-[^/]+)?\.(?:tsx|js)(?:\?.*)?$/, async (route) => {
+    entered = true
+    await gate
+    await route.continue()
+  })
+  try {
+    await search.focus()
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('plein:open-settings')))
+    await expect.poll(() => entered).toBe(true)
+    await expect(panel).toBeVisible()
+    await expect(search).toBeFocused()
+    await search.fill(`${prefix} 焦点测试一`)
+    await expect(panel.getByRole('listitem')).toHaveCount(1)
+    release()
+    const settings = page.getByRole('dialog', { name: '设置', exact: true })
+    await expect(settings).toBeVisible()
+    await settings.getByRole('button', { name: '关闭', exact: true }).click()
+    await expect(settings).toHaveCount(0)
+    await expect(search).toHaveValue(`${prefix} 焦点测试一`)
+    await expect(search).toBeFocused()
+    await expect(panel.getByRole('listitem')).toHaveCount(1)
+  } finally {
+    release()
+  }
 })
