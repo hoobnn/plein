@@ -7,7 +7,13 @@ import {
 } from '@plein/capabilities'
 import type { Engine } from '@plein/canvas-core'
 import { createElement, currentResult, setParam, spotRightOf, type PleinDoc } from '@plein/doc'
-import { ANIMATIC_TYPE, animaticNode, matchLines, type AnimaticShot } from '@plein/nodes'
+import {
+  ANIMATIC_TYPE,
+  animaticNode,
+  matchLines,
+  storyboardNode,
+  type AnimaticShot,
+} from '@plein/nodes'
 import { findNode, nodeElement } from '../../canvas/nodes'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
@@ -18,13 +24,28 @@ export function snapshotAnimatic(
   boardId: string,
   previous: AnimaticShot[] = [],
 ): AnimaticShot[] {
+  const source = storyboardNode.params.shape.shots.safeParse(doc.get(boardId)?.params?.shots)
+  if (!source.success) {
+    const index = source.error.issues[0]?.path[0]
+    throw new Error(
+      typeof index === 'number'
+        ? `来源分镜第 ${index + 1} 镜参数无效，请先修正分镜`
+        : '来源分镜的镜头列表格式无效，请先修正分镜',
+    )
+  }
+  const ids = new Set<string>()
+  for (const [index, shot] of source.data.entries()) {
+    if (!shot.id.trim()) throw new Error(`来源分镜第 ${index + 1} 镜缺少有效镜头标识，请先修正分镜`)
+    if (ids.has(shot.id)) throw new Error('来源分镜的镜头标识重复，请先修正分镜')
+    ids.add(shot.id)
+  }
   const groups = expandedNodes(doc, boardId)
   // 样片是独立剪辑，刷新素材不能覆盖人工排序；新镜头按分镜顺序追加。
   const order = new Map(previous.map((shot, index) => [shot.shotId, index]))
-  const shots = shotsOf(doc.get(boardId)).sort(
+  const shots = source.data.sort(
     (a, b) => (order.get(a.id) ?? previous.length) - (order.get(b.id) ?? previous.length),
   )
-  return shots.map((shot) => {
+  const snapshot = shots.map((shot) => {
     const nodes = activeShotNodes(shot, groups.get(shot.id) ?? [])
     const image = nodes.find((n) => (n.params?.source as ShotSource)?.role === 'image')
     const imageValue = image && currentResult(image)?.value
@@ -67,17 +88,39 @@ export function snapshotAnimatic(
       }),
     }
   })
+  const checked = animaticNode.params.shape.shots.safeParse(snapshot)
+  if (!checked.success) {
+    const path = checked.error.issues[0]?.path ?? []
+    const index = typeof path[0] === 'number' ? path[0] + 1 : 1
+    const field = path[1]
+    throw new Error(
+      field === 'imageAssetId'
+        ? `第 ${index} 镜已采用的分镜图数据无效，请重新选择有效结果`
+        : field === 'dialogue'
+          ? `第 ${index} 镜已采用的配音数据无效，请重新选择有效结果`
+          : `第 ${index} 镜样片参数无效，请先修正剪辑参数`,
+    )
+  }
+  return checked.data
 }
 
 export function refreshAnimatic(engine: Engine, id: string): string | null {
   const el = engine.doc.get(id)
   if (el?.nodeType !== ANIMATIC_TYPE) return '样片来源已变化，本次更新未执行'
   if (engine.doc.readOnly) return '画布已变为只读，本次更新未执行'
-  const params = animaticNode.params.parse(el.params)
+  const parsed = animaticNode.params.safeParse(el.params)
+  if (!parsed.success) return '样片参数已变化，本次更新未执行；请重新打开样片修复参数'
+  const params = parsed.data
   if (engine.doc.get(params.boardId)?.nodeType !== 'plein/storyboard')
     return '来源分镜已删除或不再是分镜，本次更新未执行；已有样片与节奏已保留'
+  let shots: AnimaticShot[]
+  try {
+    shots = snapshotAnimatic(engine.doc, params.boardId, params.shots)
+  } catch (error) {
+    return `${error instanceof Error ? error.message : '素材读取失败'}；本次更新未执行，已有样片与节奏已保留`
+  }
   engine.doc.undo.stopCapturing()
-  setParam(engine.doc, id, 'shots', snapshotAnimatic(engine.doc, params.boardId, params.shots))
+  setParam(engine.doc, id, 'shots', shots)
   engine.doc.undo.stopCapturing()
   engine.doc.flush()
   return null
@@ -103,13 +146,26 @@ export function openAnimatic(engine: Engine, boardId: string): string | undefine
     useCanvas.getState().notify('分镜样片节点尚未加载，请刷新后重试')
     return
   }
-  const params = animaticNode.params.parse({
+  let shots: AnimaticShot[]
+  try {
+    shots = snapshotAnimatic(engine.doc, boardId)
+  } catch (error) {
+    useCanvas
+      .getState()
+      .notify(`无法创建样片：${error instanceof Error ? error.message : '素材读取失败'}`)
+    return
+  }
+  const parsed = animaticNode.params.safeParse({
     boardId,
-    shots: snapshotAnimatic(engine.doc, boardId),
+    shots,
     aspectRatio: board.params?.aspectRatio ?? '16:9',
     subtitles: true,
     asrTiming: false,
   })
+  if (!parsed.success) {
+    useCanvas.getState().notify('无法创建样片：分镜画幅参数无效，请修正后重试')
+    return
+  }
   const base = nodeElement(def)
   const spot = spotRightOf(engine.doc, boardId, base.w, base.h)
   engine.doc.undo.stopCapturing()
@@ -117,7 +173,7 @@ export function openAnimatic(engine: Engine, boardId: string): string | undefine
     ...base,
     ...spot,
     name: `${board.name ?? '分镜'} · 样片草稿`,
-    params,
+    params: parsed.data,
   })
   engine.doc.undo.stopCapturing()
   engine.doc.flush()

@@ -6,6 +6,53 @@ import { previewScene } from './scene'
 
 const image = 'a'.repeat(64)
 const audio = 'b'.repeat(64)
+it('来源列表损坏或镜头标识冲突时拒绝快照，不能当作删除或空分镜', () => {
+  const doc = createDoc()
+  const valid = { id: 'one', no: 1, duration: 3 }
+  const board = createElement(doc, { kind: 'node', x: 0, y: 0, w: 10, h: 10 })
+  for (const shots of [
+    null,
+    'broken',
+    [valid, { id: 'two', no: 2, duration: -1 }],
+    [valid, { id: 'one', no: 2 }],
+    [{ id: '', no: 1 }],
+  ]) {
+    setParam(doc, board, 'shots', shots)
+    expect(() => snapshotAnimatic(doc, board)).toThrow(/来源分镜/)
+    expect(doc.get(board)!.params!.shots).toEqual(shots)
+  }
+  doc.destroy()
+})
+
+it('当前采用的图像或配音标识损坏时不产出无法打开的样片参数', () => {
+  for (const role of ['image', 'speech']) {
+    const doc = createDoc()
+    const board = createElement(doc, {
+      kind: 'node',
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+      params: {
+        shots: [{ id: 'one', no: 1, dialogue: [{ id: 'line', character: '人', line: '你好' }] }],
+      },
+    })
+    const type = role === 'image' ? 'image' : 'audio'
+    createElement(doc, {
+      kind: 'node',
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+      params: { source: { storyboard: board, shot: 'one', role, dialogueId: 'line' } },
+      results: [{ id: 'bad', runId: 'bad', port: type, at: 1, value: { type, assetId: 'broken' } }],
+      adopted: 'bad',
+    })
+    expect(() => snapshotAnimatic(doc, board)).toThrow(/已采用/)
+    doc.destroy()
+  }
+})
+
 it('素材刷新保留人工镜头顺序，追加新镜头并移除已删除镜头', () => {
   const doc = createDoc()
   const board = createElement(doc, {

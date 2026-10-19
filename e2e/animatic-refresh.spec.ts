@@ -117,7 +117,172 @@ async function fixture(page: Page) {
       },
       { image, assetId: assets[1] },
     )
-  return { ...f, boardId: f.id, id, editor, read, update, assets, submissions }
+  return { ...f, boardId: f.id, id, image, editor, read, update, assets, submissions }
+}
+
+test('来源或采用结果损坏时拒绝整个刷新，修正后可重试且保留剪辑', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  const f = await fixture(page)
+  await page.setViewportSize({ width: 800, height: 560 })
+  const valid = [
+    { id: 'one', no: 1, duration: 3 },
+    { id: 'two', no: 2, duration: 2 },
+  ]
+  const refresh = f.editor.getByRole('button', { name: '更新已有素材', exact: true })
+  for (const change of ['partial', 'list', 'duplicate', 'asset'] as const) {
+    const before = await f.read()
+    await page.evaluate(
+      ({ boardId, image, valid, change }) => {
+        const doc = window.__plein.engine.doc
+        const params = doc.mutable(boardId)!.get('params') as { set(k: string, v: unknown): void }
+        if (change === 'asset') {
+          const node = doc.mutable(image)! as unknown as { set(k: string, v: unknown): void }
+          node.set('results', [
+            {
+              id: 'broken',
+              runId: 'broken',
+              port: 'image',
+              at: 3,
+              value: { type: 'image', assetId: 'broken' },
+            },
+          ])
+          node.set('adopted', 'broken')
+        } else
+          params.set(
+            'shots',
+            change === 'list'
+              ? null
+              : change === 'partial'
+                ? [valid[0], { id: 'two', no: 2, duration: -1 }]
+                : [valid[0], { id: 'one', no: 2, duration: 2 }],
+          )
+      },
+      { boardId: f.boardId, image: f.image, valid, change },
+    )
+    await refresh.click()
+    await expect(f.editor.getByRole('alert')).toContainText(
+      change === 'asset' ? '已采用' : '来源分镜',
+    )
+    await expect(f.editor.getByRole('alert')).toContainText('已保留')
+    expect(await f.read()).toEqual(before)
+    expect(errors).toEqual([])
+    await expect(f.editor.getByRole('alert')).toBeInViewport()
+    expect(await f.editor.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+    if (change === 'partial' || change === 'asset')
+      await f.editor.screenshot({
+        path: test.info().outputPath(`${change}-snapshot-refused.png`),
+        animations: 'disabled',
+      })
+    if (change === 'partial') {
+      await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
+      await expect(f.editor).not.toBeVisible()
+      await f.open()
+      await page.getByRole('button', { name: '节奏样片', exact: true }).click()
+      await expect(f.editor).toBeVisible()
+      expect(await f.read()).toEqual(before)
+      expect(
+        await page.evaluate(
+          () =>
+            [...window.__plein.engine.doc.elements()].filter(
+              (el) => el.nodeType === 'plein/animatic',
+            ).length,
+        ),
+      ).toBe(1)
+    }
+    await page.evaluate(
+      ({ boardId, valid }) => {
+        const params = window.__plein.engine.doc.mutable(boardId)!.get('params') as {
+          set(k: string, v: unknown): void
+        }
+        params.set('shots', valid)
+      },
+      { boardId: f.boardId, valid },
+    )
+    await f.update()
+    await refresh.click()
+    await expect(f.editor.getByRole('alert')).toHaveCount(0)
+    expect((await f.read())!.shots).toMatchObject([
+      { shotId: 'one', duration: 7, lineDelay: 0.5, lineGap: 0.8, imageAssetId: f.assets[1] },
+      { shotId: 'two', duration: 2 },
+    ])
+  }
+  expect(f.submissions).toEqual([])
+})
+
+for (const change of ['source', 'asset'] as const) {
+  test(`首次创建样片遇到 ${change} 损坏不写入半成品，修复后可重试`, async ({ page }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    const f = await board(page)
+    const image = await page.evaluate(
+      ({ boardId, change }) => {
+        if (change === 'source') {
+          const params = window.__plein.engine.doc.mutable(boardId)!.get('params') as {
+            set(k: string, v: unknown): void
+          }
+          params.set('shots', [
+            { id: 'one', no: 1 },
+            { id: 'two', no: 2, duration: -1 },
+          ])
+          return ''
+        }
+        const id = window.__plein.addNode({
+          type: 'plein/image',
+          name: '损坏的采用结果',
+          x: 900,
+          y: 200,
+          params: { source: { storyboard: boardId, shot: 'one', role: 'image' } },
+        })
+        const node = window.__plein.engine.doc.mutable(id)! as unknown as {
+          set(k: string, v: unknown): void
+        }
+        node.set('results', [
+          {
+            id: 'broken',
+            runId: 'broken',
+            port: 'image',
+            at: 1,
+            value: { type: 'image', assetId: 'broken' },
+          },
+        ])
+        node.set('adopted', 'broken')
+        return id
+      },
+      { boardId: f.id, change },
+    )
+    await page.getByRole('button', { name: '节奏样片', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: '分镜表', exact: true })).toBeVisible()
+    await expect(page.locator('.ui-toast')).toContainText('无法创建样片')
+    const drafts = () =>
+      page.evaluate(
+        () =>
+          [...window.__plein.engine.doc.elements()].filter((el) => el.nodeType === 'plein/animatic')
+            .length,
+      )
+    expect(await drafts()).toBe(0)
+    expect(errors).toEqual([])
+    await page.evaluate(
+      ({ boardId, image }) => {
+        const doc = window.__plein.engine.doc
+        const params = doc.mutable(boardId)!.get('params') as { set(k: string, v: unknown): void }
+        params.set('shots', [
+          { id: 'one', no: 1, duration: 3 },
+          { id: 'two', no: 2, duration: 2 },
+        ])
+        if (image) {
+          const node = doc.mutable(image)! as unknown as { set(k: string, v: unknown): void }
+          node.set('results', [])
+          node.set('adopted', undefined)
+        }
+      },
+      { boardId: f.id, image },
+    )
+    await page.getByRole('button', { name: '节奏样片', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: '序列', exact: true })).toBeVisible()
+    expect(await drafts()).toBe(1)
+    expect(errors).toEqual([])
+  })
 }
 
 test('样片素材刷新保留人工顺序，新增镜头追加且删除镜头不复活', async ({ page }) => {
