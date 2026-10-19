@@ -245,12 +245,20 @@ function Panel({
   useEffect(() => setNotes([]), [el.id])
   // oxlint-enable react-hooks/exhaustive-deps
   const optionsKey = fieldsOf(node).find(([, f]) => f.widget === 'modelOptions')?.[0]
-  const allOptions = optionRecord(optionsKey ? params[optionsKey] : undefined)
+  const rawOptions = optionsKey ? params[optionsKey] : undefined
+  const allOptions = optionRecord(rawOptions)
+  // 没有专属表单的模型也可能读到旧参数；仍需提供显式恢复入口。
+  const storedOptions =
+    rawOptions !== undefined &&
+    (!rawOptions ||
+      typeof rawOptions !== 'object' ||
+      Array.isArray(rawOptions) ||
+      (model?.ref && Object.hasOwn(allOptions, model.ref)))
   const modelOptions: ModelOptions | undefined =
-    optionsKey && model?.ref && model.info.optionsSchema
+    optionsKey && model?.ref && (model.info.optionsSchema || storedOptions)
       ? {
           title: model.info.title,
-          schema: model.info.optionsSchema as ObjectSchema,
+          schema: (model.info.optionsSchema ?? { properties: {} }) as ObjectSchema,
           value: optionRecord(allOptions[model.ref]),
           readValue: () =>
             optionRecord(optionRecord(engine.doc.get(el.id)?.params?.[optionsKey])[model.ref]),

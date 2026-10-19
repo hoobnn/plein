@@ -17,7 +17,8 @@ const resolution = () => z.string().default('').meta({ title: '分辨率', widge
 /** 模型专属参数：按模型引用分开存，换模型再换回来时还在；执行时只取所选模型那份 */
 const modelOptions = () =>
   z
-    .record(z.string(), z.record(z.string(), z.unknown()))
+    // 每个模型的历史值原样保留；执行时只校验当前模型，不能让未选项阻断生成。
+    .record(z.string(), z.unknown())
     .default({})
     .meta({ title: '模型专属参数', widget: 'modelOptions' })
 const textarea = (title: string, placeholder?: string) =>

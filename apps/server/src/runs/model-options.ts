@@ -2,6 +2,8 @@ import type { ModelSpec } from '@plein/plugin-sdk'
 
 /** 只检查所选模型声明的参数，不转换类型、不填默认值或删除扩展字段。 */
 export function modelOptionsProblem(spec: ModelSpec | undefined, value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return `${spec?.title ?? '当前模型'} 的模型专属参数无效：参数格式。请在「参数 → 更多参数」中修正或恢复默认`
   const result = spec?.options?.safeParse(value)
   if (!result || result.success) return
   const fields = [

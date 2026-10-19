@@ -44,8 +44,12 @@ function pickModel(ctx: ExecutorContext<{ model: string }>, label: string) {
 }
 
 /** 所选模型的专属参数 */
-function modelOptions(params: { model: string; options: Record<string, Record<string, unknown>> }) {
-  return params.model ? (params.options[params.model] ?? {}) : {}
+function modelOptions(params: { model: string; options: Record<string, unknown> }) {
+  const value = params.model ? params.options[params.model] : undefined
+  if (value === undefined) return {}
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new ProviderError('invalid_input', '当前模型的专属参数格式无效，请修正或恢复默认')
+  return value as Record<string, unknown>
 }
 
 /** 参数里的文本与上游文本合并：两者都有时参数在前 */
