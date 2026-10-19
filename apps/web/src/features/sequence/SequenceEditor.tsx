@@ -702,11 +702,6 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             )}
           </>
         )}
-        {el?.run?.status === 'failed' && !running && (
-          <span className="max-w-80 truncate text-xs text-danger" title={el.run.error}>
-            {el.run.error ?? '导出失败'}
-          </span>
-        )}
         {packError && (
           <span className="max-w-80 truncate text-xs text-danger" title={packError}>
             {packError}
@@ -791,6 +786,27 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         <p role="status" className="px-4 py-2 text-sm text-muted">
           当前画布为只读，仍可预览，暂不能修改或生成新成片。
         </p>
+      )}
+      {el?.run?.status === 'failed' && !running && (
+        <div
+          role="alert"
+          aria-label="成片导出失败"
+          className="flex-none border-b border-line px-4 py-3 text-sm"
+        >
+          <p className="font-medium text-danger">成片导出失败</p>
+          {filmAsset && <p className="mt-1 text-ink-muted">已有成片与交付记录已保留。</p>}
+          <p className="mt-1 text-ink-muted">
+            检查素材或导出设置，修正后可用右上角的导出按钮重试。
+          </p>
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs underline underline-offset-2">
+              查看错误详情
+            </summary>
+            <pre className="mt-2 max-h-32 overflow-auto rounded-md bg-surface-2 p-2 text-xs whitespace-pre-wrap select-text [overflow-wrap:anywhere]">
+              {el.run.error || '未返回具体错误原因。'}
+            </pre>
+          </details>
+        </div>
       )}
       {animaticError && (
         <p role="alert" className="flex-none border-b border-line px-5 py-3 text-sm text-danger">
