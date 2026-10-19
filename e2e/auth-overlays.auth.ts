@@ -23,6 +23,28 @@ async function login(page: Page) {
   await page.getByRole('button', { name: '登录', exact: true }).click()
 }
 
+test('损坏链接在密码模式先要求登录，认证后显示可恢复错误而不白屏', async ({ page }) => {
+  await authenticated(page)
+  expect(
+    (
+      await page.request.post('/api/auth/sign-out', {
+        data: {},
+        headers: { origin: new URL(page.url()).origin },
+      })
+    ).ok(),
+  ).toBe(true)
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto('/#/p/%')
+  await page.reload()
+  await expect(page.getByRole('heading', { name: '登录 Plein' })).toBeVisible()
+  await login(page)
+  await expect(page.getByRole('alert')).toContainText('链接格式不正确')
+  await page.getByRole('link', { name: '回到项目列表', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '我的项目' })).toBeVisible()
+  expect(errors).toEqual([])
+})
+
 test('密码登录成功但会话读取失败，手动重试回到原画布且不重复登录', async ({ page }) => {
   const project = await authenticated(page)
   expect(

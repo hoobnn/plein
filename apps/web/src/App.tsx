@@ -200,6 +200,16 @@ function AppContent({ onOpenSettings }: { onOpenSettings(): void }) {
     )
   }
   if (info?.authRequired && !info.principal) return <Login setup={info.needsSetup} />
+  if (route.name === 'invalid')
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-4 text-center text-sm text-ink-muted">
+        <p role="alert">链接格式不正确，无法打开此页面。</p>
+        <p className="text-xs text-ink-subtle">请检查链接是否完整，或返回项目列表。</p>
+        <a href="#/" className="ui-btn ui-btn-secondary">
+          回到项目列表
+        </a>
+      </div>
+    )
   if (route.name === 'project') return <ProjectOpen key={route.id} id={route.id} />
   if (route.name === 'canvas')
     return (

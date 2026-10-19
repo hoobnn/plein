@@ -36,6 +36,7 @@ export default defineConfig({
     'start-intent-lifecycle.spec.ts',
     'project-open-recovery.spec.ts',
     'deleted-navigation.spec.ts',
+    'route-boundaries.spec.ts',
     'session-recovery.spec.ts',
     'project-create-lifecycle.spec.ts',
     'project-search-layout.spec.ts',
