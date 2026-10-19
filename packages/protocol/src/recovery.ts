@@ -29,8 +29,14 @@ export type CanceledBy = 'user' | 'remote' | 'system'
  * - input_changed：节点的输入在提交后改过
  * - node_deleted：节点已删除，结果只留在执行记录里
  * - superseded：节点已经有更新一次运行的结果
+ * - candidate_only：用户只要求生成候选，没有批准替换当前结果
  */
-export type HeldReason = 'canceled' | 'input_changed' | 'node_deleted' | 'superseded'
+export type HeldReason =
+  | 'canceled'
+  | 'input_changed'
+  | 'node_deleted'
+  | 'superseded'
+  | 'candidate_only'
 
 export interface JobRecovery {
   state: RecoveryState

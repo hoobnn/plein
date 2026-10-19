@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { newProject } from './canvas'
+import { clickElement, elements, newProject, waitEngine, waitNode } from './canvas'
 
 async function setup(page: Page) {
   await newProject(page)
@@ -17,6 +17,53 @@ async function setup(page: Page) {
   await expect(field).toBeFocused()
   return { panel, input, card, field }
 }
+
+test('只出候选图保留采用结果，刷新后仍需手动采用且可撤销重做', async ({ page }) => {
+  const { panel, input, card, field } = await setup(page)
+  await field.press('Escape')
+  const id = (await elements(page)).find((el) => el.nodeType === 'plein/image')!.id
+  const adopted = () => page.evaluate((id) => window.__plein.engine.doc.get(id)?.adopted, id)
+  const original = await adopted()
+  await card.getByRole('button', { name: '只出候选图', exact: true }).click()
+  await expect(panel.getByText('【mock】方案已经按你选的范围执行。')).toBeVisible()
+  await waitNode(page, id)
+  expect(await adopted()).toBe(original)
+  const candidate = await page.evaluate(
+    ({ id, original }) =>
+      window.__plein.engine.doc.get(id)?.results?.find((r) => r.id !== original),
+    { id, original },
+  )
+  expect(candidate).toBeDefined()
+  const canvas = /#\/c\/([^/?]+)/.exec(page.url())![1]
+  const jobs = await (await page.request.get(`/api/canvases/${canvas}/jobs`)).json()
+  expect(jobs.jobs.find((j: { id: string }) => j.id === candidate!.runId)?.recovery).toMatchObject({
+    state: 'stored',
+    held: 'candidate_only',
+  })
+  await input.press('Escape')
+  await page.getByRole('button', { name: '任务', exact: true }).click()
+  const tasks = page.getByRole('complementary', { name: '任务', exact: true })
+  await expect(tasks).toContainText('仅生成候选，保留原采用结果')
+  await tasks.screenshot({ path: test.info().outputPath('candidate-only-task-state.png') })
+  await tasks.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.reload()
+  await waitEngine(page)
+  expect(await adopted()).toBe(original)
+  await clickElement(page, id)
+  await page.locator('.plein-node').getByRole('button', { name: '下一个结果', exact: true }).click()
+  const viewer = page.getByRole('dialog', { name: /查看「/ })
+  const adopt = viewer.getByRole('button', { name: '采用此候选', exact: true })
+  await expect(adopt).toBeEnabled()
+  expect(await adopted()).toBe(original)
+  await adopt.click()
+  expect(await adopted()).toBe(candidate!.id)
+  await viewer.screenshot({ path: test.info().outputPath('candidate-only-manual-adoption.png') })
+  await viewer.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.getByRole('button', { name: '撤销', exact: true }).click()
+  await expect.poll(adopted).toBe(original)
+  await page.getByRole('button', { name: '重做', exact: true }).click()
+  await expect.poll(adopted).toBe(candidate!.id)
+})
 
 test('取消逐项编辑回到原入口，可用键盘重新编辑，取消内容不提交', async ({ page }) => {
   const { panel, card, field } = await setup(page)

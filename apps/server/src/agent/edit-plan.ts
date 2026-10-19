@@ -89,6 +89,8 @@ export function applyNext(plan: EditPlan) {
   if (plan.status === 'stale')
     return '批准后目标变了，旧方案没有执行。重新看一下这些节点，再用 propose_edit 提出新方案。'
   if (!plan.applied?.groupId) return '文字已经写进画布，没有调用平台。'
+  if (plan.applied.scope === 'images')
+    return '文字已经写进画布，仅生成候选图，保留原采用结果。用 wait_for_group 等结果，再用 view_media 审阅；是否采用由用户决定。'
   return '文字已经写进画布，方案里的节点开始运行：用 wait_for_group 等结果，跑完用 view_media 看效果。'
 }
 
@@ -129,7 +131,7 @@ const applyEdit = serverCapability({
   name: APPLY_EDIT,
   title: '执行修改方案',
   description:
-    '按用户批准的范围执行 propose_edit 提出的方案：text 只把文字写进画布（不调用平台），images 写入文字并只重新生成方案里的图片，full 执行全部步骤。only 只批准部分目标（目标节点 id 或镜头 id），skip 列出用户不想重做的步骤（节点 id）。方案绑定的对象在提出后变了时不执行，返回 stale，要重新提出。',
+    '按用户批准的范围执行 propose_edit 提出的方案：text 只把文字写进画布（不调用平台），images 写入文字并只生成候选图、保留原采用结果，full 执行全部步骤。only 只批准部分目标（目标节点 id 或镜头 id），skip 列出用户不想重做的步骤（节点 id）。方案绑定的对象在提出后变了时不执行，返回 stale，要重新提出。',
   group: 'run',
   where: 'server',
   effect: (a) => (a.scope === 'text' ? 'edit' : 'run'),

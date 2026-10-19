@@ -14,7 +14,7 @@ interface RawElement {
   text?: string
   params?: Record<string, unknown>
   run?: { status: string }
-  results?: Array<{ id: string; value: Record<string, unknown> }>
+  results?: Array<{ id: string; runId: string; value: Record<string, unknown> }>
 }
 declare global {
   interface Window {

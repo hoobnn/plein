@@ -12,6 +12,7 @@ const HELD: Record<HeldReason, string> = {
   input_changed: '提交后输入改过',
   node_deleted: '节点已删除，只留在执行记录里',
   superseded: '节点已有更新的结果',
+  candidate_only: '仅生成候选，保留原采用结果',
 }
 
 export const CANCELED_BY: Record<CanceledBy, string> = {

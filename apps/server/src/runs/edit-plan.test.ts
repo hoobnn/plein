@@ -1,14 +1,22 @@
 import { expandedNodes, expandShots, type ShotSource } from '@plein/capabilities'
-import { connect, createElement, currentResult, type PleinDoc, setParams } from '@plein/doc'
+import {
+  connect,
+  createDoc,
+  createElement,
+  currentResult,
+  type PleinDoc,
+  setParams,
+} from '@plein/doc'
 import { type Shot, STORYBOARD_TYPE } from '@plein/nodes'
 import type { EditPlan } from '@plein/protocol'
-import { describe, expect, it } from 'vite-plus/test'
+import { mockProvider } from '@plein/providers'
+import { describe, expect, it, vi } from 'vite-plus/test'
 import { Approvals } from '../agent/approvals'
 import { AgentChanges } from '../agent/changes'
 import { McpServer } from '../agent/mcp'
 import { agentTools, canvasTools, type ToolEnv } from '../agent/tools'
 import type { Server } from '../app'
-import { addNode, bootServer, makeNode, createCanvas, mockSettings } from '../testing'
+import { addNode, bootServer, makeNode, createCanvas, mockSettings, until } from '../testing'
 
 const make = makeNode
 
@@ -120,6 +128,95 @@ const tense = (doc: PleinDoc, id: string) =>
   `${String(doc.get(id)!.params!.prompt)}，手持晃动，压迫感更强`
 
 describe('智能体修改方案', () => {
+  it('仅候选方案不接管正在运行的其他任务，也不先改写文字', async () => {
+    const { server } = await bootServer()
+    mockSettings(server, { latencyMs: 1000 })
+    const { id, doc } = await createCanvas(server)
+    const node = addNode(doc, 'plein/image', { params: { prompt: '保留原文' } })
+    const plan = await server.plans.propose(id, 'local', {
+      summary: '只出候选',
+      edits: [{ id: node, params: { prompt: '候选新文字' } }],
+    })
+    const running = server.runs.start(id, node, 'local')
+    await until(() => server.runs.store.get(running)?.calls.includes('pending'))
+    await expect(
+      server.plans.apply(
+        plan.id,
+        'local',
+        { scope: 'images' },
+        {
+          write: (fn) => server.rooms.withDoc(id, fn),
+        },
+      ),
+    ).rejects.toThrow('目标节点正在运行')
+    expect(doc.get(node)!.params!.prompt).toBe('保留原文')
+    const group = server.runs.runImpact(id, 'local', {
+      nodes: [node],
+      force: true,
+      candidateOnly: true,
+    })
+    await waitGroup(server, group.groupId)
+    expect(server.runs.batchItems(group.groupId, 'local')?.[0]).toMatchObject({ outcome: 'review' })
+    expect(jobCount(server, id)).toBe(1)
+    server.runs.cancel(id, node)
+    await server.runs.wait(running)
+  })
+
+  it.each(['failed', 'canceled', 'restart'] as const)(
+    '仅候选任务 %s 后保留原采用，恢复成功也只入候选',
+    async (mode) => {
+      const first = await bootServer()
+      const { server } = first
+      mockSettings(server, {})
+      const { id, doc } = await createCanvas(server)
+      const node = addNode(doc, 'plein/image', { params: { prompt: '原画面' } })
+      expect(await server.runs.wait(server.runs.start(id, node, 'local'))).toBe('succeeded')
+      await until(() => !server.runs.isRunning(id, node))
+      const original = currentResult(doc.get(node)!)!.id
+      const plan = await server.plans.propose(id, 'local', {
+        summary: '只出新候选',
+        edits: [{ id: node, params: { prompt: '新画面' } }],
+      })
+      mockSettings(server, mode === 'failed' ? { failWith: 'auth' } : { latencyMs: 1000 })
+      const submit = vi.spyOn(mockProvider, 'submit')
+      try {
+        const applied = await server.plans.apply(
+          plan.id,
+          'local',
+          { scope: 'images' },
+          {
+            write: (fn) => server.rooms.withDoc(id, fn),
+          },
+        )
+        const group = applied.applied!.groupId!
+        if (mode !== 'failed')
+          await until(
+            () => server.runs.list(id).jobs.find((j) => j.groupId === group)?.recovery?.remoteId,
+          )
+        if (mode === 'canceled') server.runs.cancelGroup(group, 'local')
+        let active = server
+        let current = doc
+        if (mode === 'restart') {
+          await first.close()
+          active = (await bootServer({ dataDir: first.dataDir })).server
+          current = createDoc(active.rooms.get(id).doc, { schedule: () => {} })
+        }
+        await waitGroup(active, group)
+        expect(currentResult(current.get(node)!)?.id).toBe(original)
+        const job = active.runs.list(id).jobs.find((j) => j.groupId === group)!
+        expect(job.status).toBe(mode === 'restart' ? 'succeeded' : mode)
+        if (mode === 'restart') {
+          expect(job.recovery).toMatchObject({ state: 'stored', held: 'candidate_only' })
+          expect(current.get(node)!.results).toHaveLength(2)
+          current.destroy()
+        }
+        expect(submit).toHaveBeenCalledTimes(1)
+      } finally {
+        submit.mockRestore()
+      }
+    },
+  )
+
   it('方案列出目标、字段前后值、实际参考、执行阶段与保留项；只批准文字修改时零调用', async () => {
     const { server, canvas, doc, byShot, mcp } = await sixShots()
     const img3 = byShot(3, 'image')
@@ -212,6 +309,9 @@ describe('智能体修改方案', () => {
     })
     expect(plan.estimate.images).toBe('调用平台 2 次，价格未知')
     const jobs = jobCount(server, canvas)
+    const original = currentResult(doc.get(img3)!)!.id
+    const observed: Array<string | undefined> = []
+    const unsubscribe = doc.subscribe(() => observed.push(currentResult(doc.get(img3)!)?.id))
     const applied = await mcp('apply_edit_plan', {
       plan_id: plan.plan_id,
       scope: 'images',
@@ -219,10 +319,40 @@ describe('智能体修改方案', () => {
     })
     expect(applied.applied.nodes).toEqual([img3])
     await waitGroup(server, applied.applied.group_id)
+    unsubscribe()
+    expect(currentResult(doc.get(img3)!)?.id).toBe(original)
+    expect(observed.every((id) => id === original)).toBe(true)
+    const candidate = doc.get(img3)!.results!.find((r) => r.id !== original)!
+    expect(candidate).toBeDefined()
+    const job = server.runs.list(canvas, 1000).jobs.find((j) => j.id === candidate.runId)!
+    expect(job.recovery).toMatchObject({ state: 'stored', held: 'candidate_only' })
+    const downstream = await server.runs.preview(canvas, byShot(3, 'video'), 'local')
+    expect(
+      Object.values(downstream.inputs)
+        .flat()
+        .find((v) => v.source === img3)?.resultId,
+    ).toBe(original)
+    expect(server.runs.batchItems(applied.applied.group_id, 'local')?.[0]?.resultId).toBe(
+      candidate.id,
+    )
     expect(jobCount(server, canvas)).toBe(jobs + 1)
     expect(jobsOf(server, canvas, byShot(3, 'video'))).toBe(1)
     expect(jobsOf(server, canvas, img4)).toBe(1)
     expect(doc.get(img4)!.params!.prompt).toBe(prompt4)
+    // 同样输入已存在候选时沿用它，但依然不能自动采用。
+    setParams(doc, img3, { prompt: `${TENSE}，临时修改` })
+    const again = await mcp('propose_edit', {
+      summary: '再次只查看第三镜头候选',
+      edits: [{ id: img3, params: { prompt: TENSE } }],
+    })
+    const reused = await mcp('apply_edit_plan', { plan_id: again.plan_id, scope: 'images' })
+    await waitGroup(server, reused.applied.group_id)
+    expect(jobCount(server, canvas)).toBe(jobs + 1)
+    expect(currentResult(doc.get(img3)!)?.id).toBe(original)
+    expect(server.runs.batchItems(reused.applied.group_id, 'local')?.[0]).toMatchObject({
+      outcome: 'cached',
+      resultId: candidate.id,
+    })
   })
 
   it('批准前目标变了：不执行旧方案，要求重新检查', async () => {

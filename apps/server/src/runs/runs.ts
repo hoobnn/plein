@@ -745,7 +745,11 @@ export class NodeRuns implements BatchHost {
    * 现在的结果还有效的沿用；已有候选里有按现在的输入生成过的直接改用它（如撤销修改之后），
    * 都不调用平台；force 时勾选的全部重新生成。
    */
-  runImpact(canvasId: string, ownerId: string, options: ImpactRunOptions): GroupRunStarted {
+  runImpact(
+    canvasId: string,
+    ownerId: string,
+    options: ImpactRunOptions & { candidateOnly?: boolean },
+  ): GroupRunStarted {
     const targets = this.rooms.withDoc(canvasId, (doc) =>
       [...new Set(options.nodes)].filter((id) => this.isJobNode(doc.get(id))),
     )
@@ -756,6 +760,7 @@ export class NodeRuns implements BatchHost {
       force: options.force,
       scope: 'impact',
       candidates: !options.force,
+      candidateOnly: options.candidateOnly,
     }
     this.store.insertGroup({
       id,
@@ -994,6 +999,13 @@ export class NodeRuns implements BatchHost {
         // 重启后继续：这次整组里已经成功的不再跑
         if (this.store.succeededInGroup(g.id, nodeId)) return 'succeeded'
         let jobId = this.active.get(this.key(g.canvas_id, nodeId))?.id
+        if (options.candidateOnly && jobId && this.store.get(jobId)?.group_id !== g.id) {
+          this.store.updateBatchItem(g.id, nodeId, {
+            outcome: 'review',
+            reason: '节点已有其他运行，请等待完成后重新检查候选方案',
+          })
+          return 'failed'
+        }
         if (!jobId) {
           const reuse = !options.force && !rerun.has(nodeId)
           if (reuse && (await this.isFresh(doc, el, g.owner_id, ctrl.signal))) {
@@ -1013,22 +1025,36 @@ export class NodeRuns implements BatchHost {
             const now = await this.inspect(doc, el, g.owner_id, ctrl.signal)
             const hit = this.cachedCandidate(el, now)
             if (hit) {
-              adoptResult(doc, nodeId, hit)
+              if (!options.candidateOnly) adoptResult(doc, nodeId, hit)
               settle(nodeId, 'cached', hit)
               return 'cached'
             }
           }
           // 判断新旧要等一会儿，期间另一组可能已经发起了同一个节点（几组共用一张定妆图）：跟着等它
           const item = this.store.batchItem(g.id, nodeId)
+          if (options.candidateOnly && this.isRunning(g.canvas_id, nodeId)) {
+            this.store.updateBatchItem(g.id, nodeId, {
+              outcome: 'review',
+              reason: '节点已有其他运行，请等待完成后重新检查候选方案',
+            })
+            return 'failed'
+          }
           jobId =
             this.active.get(this.key(g.canvas_id, nodeId))?.id ??
             this.start(g.canvas_id, nodeId, g.owner_id, g.id, item ? expectOf(item) : undefined)
           this.store.updateBatchItem(g.id, nodeId, { job_id: jobId, outcome: 'running' })
         }
         const status = await this.wait(jobId)
-        const outcome = outcomeOf(this.store.get(jobId))
+        const job = this.store.get(jobId)
+        const outcome = outcomeOf(job)
         const now = doc.get(nodeId)
-        settle(nodeId, outcome, outcome === 'succeeded' && now ? currentResult(now)?.id : undefined)
+        settle(
+          nodeId,
+          outcome,
+          outcome === 'succeeded'
+            ? (parseRecovery(job?.recovery).resultIds?.[0] ?? (now && currentResult(now)?.id))
+            : undefined,
+        )
         if (status === 'succeeded') return 'succeeded'
         return status === 'canceled' ? 'canceled' : 'failed'
       }
@@ -1413,7 +1439,11 @@ export class NodeRuns implements BatchHost {
         outputs,
       )
     }
-    const held = await this.heldReason(doc, a, el, frozen.inputHash, row?.created_at ?? 0, signal)
+    const group = a.groupId ? this.store.group(a.groupId) : undefined
+    const candidateOnly = group && (JSON.parse(group.options) as StoredGroupOptions).candidateOnly
+    const held =
+      (await this.heldReason(doc, a, el, frozen.inputHash, row?.created_at ?? 0, signal)) ??
+      (candidateOnly ? 'candidate_only' : undefined)
     const resultIds = results.map((r) => r.id)
     if (held === 'node_deleted') {
       // 节点没了：产物只留在执行记录里
@@ -1760,6 +1790,8 @@ interface StoredGroupOptions extends GroupRunOptions {
   rerun?: string[]
   /** 结果过期时先找按现在的输入生成过的候选，有就改用它（按影响运行） */
   candidates?: boolean
+  /** 仅收候选，任务恢复及缓存命中也不替换当前采用结果。 */
+  candidateOnly?: boolean
 }
 
 function groupState(g: GroupRow): GroupRunState {

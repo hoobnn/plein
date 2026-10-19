@@ -349,6 +349,9 @@ export class EditPlans {
       return s.plan
     }
 
+    if (req.scope === 'images' && steps.some((st) => this.runs.isRunning(plan.canvasId, st.nodeId)))
+      throw new NodeRunError('busy', '目标节点正在运行，请等待完成后重新检查候选方案')
+
     io.assertOpen?.()
     io.write((doc) => {
       for (const t of picked) setParams(doc, t.nodeId, s.edits.get(t.nodeId)!)
@@ -359,6 +362,7 @@ export class EditPlans {
       const started = this.runs.runImpact(plan.canvasId, ownerId, {
         nodes: steps.map((st) => st.nodeId),
         force: false,
+        candidateOnly: req.scope === 'images',
       })
       groupId = started.groupId
       io.onGroup?.(groupId)
