@@ -5,6 +5,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   useEffect,
   useLayoutEffect,
+  useId,
   useRef,
   useState,
 } from 'react'
@@ -23,6 +24,8 @@ export interface TrackItem {
   assetId: string
   kind?: 'image' | 'video'
   pending: boolean
+  /** 本镜头及前序镜头的排布时长是否已经确定。 */
+  timingReady: boolean
   start: number
   length: number
   /** 素材入点、出点和总时长 */
@@ -254,6 +257,11 @@ export function Timeline({
       aria-label="时间线"
       onPointerDownCapture={onBeforeInteract}
     >
+      {items.some((item) => !item.timingReady) && (
+        <p role="status" aria-label="镜头定位暂不可用" className="ui-help shrink-0 px-3 py-2">
+          部分镜头或前序镜头的时长未就绪，相关镜头暂不能定位、重排或拖边修剪。可先查看设置，等待加载或修复素材信息。
+        </p>
+      )}
       <div className="seq-toolbar">
         <span className="seq-toolbar-hint">
           {readOnly
@@ -510,6 +518,7 @@ function ClipTrack({
   onTrim(key: string, patch: TrimPatch, done: boolean): void
   onFocusTimeline(): void
 }) {
+  const descriptionId = useId()
   const [drag, setDrag] = useState<Drag | null>(null)
   /** 落下后的位移补偿：先停在松手处，下一帧滑回 0 */
   const [settle, setSettle] = useState<{ key: string; dx: number; animate: boolean } | null>(null)
@@ -529,6 +538,7 @@ function ClipTrack({
   const activate = (item: TrackItem) => {
     if (closing) return
     onSelect(item.key)
+    if (!item.timingReady) return
     playhead.pause()
     playhead.seek(item.start)
   }
@@ -538,6 +548,7 @@ function ClipTrack({
     cancelGesture()
     const item = items[index]!
     onSelect(item.key)
+    if (!item.timingReady) return
     if (readOnly) {
       activate(item)
       return
@@ -585,7 +596,7 @@ function ClipTrack({
   }
 
   const startTrim = (e: ReactPointerEvent, item: TrackItem, edge: 'in' | 'out') => {
-    if (e.button !== 0 || item.pending || closing || readOnly) return
+    if (e.button !== 0 || item.pending || !item.timingReady || closing || readOnly) return
     cancelGesture()
     e.stopPropagation()
     e.preventDefault()
@@ -649,6 +660,8 @@ function ClipTrack({
               role="button"
               tabIndex={0}
               aria-label={it.name}
+              aria-describedby={`${descriptionId}-${i}`}
+              aria-disabled={!it.timingReady || undefined}
               aria-pressed={selected === it.key}
               className="seq-clip"
               data-selected={selected === it.key || undefined}
@@ -660,9 +673,13 @@ function ClipTrack({
                 width,
                 transform: dx ? `translateX(${dx}px)` : undefined,
                 transition: animate ? undefined : 'none',
-                cursor: readOnly ? 'pointer' : undefined,
+                cursor: readOnly || !it.timingReady ? 'pointer' : undefined,
               }}
-              title="定位到镜头开头（Enter / 空格）"
+              title={
+                it.timingReady
+                  ? '定位到镜头开头（Enter / 空格）'
+                  : '前序或本镜头时长未就绪，可先查看设置'
+              }
               onPointerDown={(e) => startDrag(e, i)}
               onClick={(e) => {
                 // 辅助技术和程序化激活没有指针序列；普通点击已在拖动结束时处理。
@@ -686,6 +703,12 @@ function ClipTrack({
               // 键盘 Tab 到哪段就选中哪段；选中样式就是焦点样式
               onFocus={() => onSelect(it.key)}
             >
+              <span id={`${descriptionId}-${i}`} className="sr-only">
+                第 {i + 1} 个镜头，共 {items.length} 个。
+                {it.timingReady
+                  ? '回车或空格定位到镜头开头。'
+                  : '前序或本镜头时长未就绪，暂不能定位或拖动。'}
+              </span>
               {!it.pending && it.kind === 'image' && (
                 <img
                   src={assetUrls.original(it.assetId)}
@@ -710,11 +733,12 @@ function ClipTrack({
               </span>
               {!it.pending && (
                 <span className="seq-clip-len">
-                  {it.speed !== 1 && `${it.speed}× · `}
-                  {it.length.toFixed(1)}s
+                  {it.timingReady
+                    ? `${it.speed !== 1 ? `${it.speed}× · ` : ''}${it.length.toFixed(1)}s`
+                    : '等待时长'}
                 </span>
               )}
-              {!readOnly && !it.pending && it.kind !== 'image' && (
+              {!readOnly && !it.pending && it.timingReady && it.kind !== 'image' && (
                 <>
                   <span
                     className="seq-trim seq-trim-in"

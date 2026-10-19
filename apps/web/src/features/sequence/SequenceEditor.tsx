@@ -211,7 +211,7 @@ function GuardedEditor({ engine, id, onClose }: { engine: Engine; id: string; on
   )
 }
 
-/** 还没生成的镜头在时间线上先占这么长，生成后换成真实时长 */
+/** 未生成或时长尚未读到的镜头先占这么长，信息就绪后换成真实时长。 */
 const PENDING_LENGTH = 2
 /** 方向键逐帧移动（按 30 帧） */
 const FRAME = 1 / 30
@@ -296,6 +296,10 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     setPreviewRevision((revision) => revision + 1)
   }
   const duration = (assetId: string | undefined) => meta(assetId)?.duration
+  const videoDuration = (assetId: string) => {
+    const value = duration(assetId)
+    return value !== undefined && Number.isFinite(value) && value > 0 ? value : undefined
+  }
   const running = el?.run?.status === 'running' || el?.run?.status === 'queued'
   const canvasId = useCanvas((s) => s.canvasId)
   const openFilm = (target: string, explicit = false) => {
@@ -316,13 +320,17 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   // 时间线、预览和导出用同一套排法；还没生成的镜头先按固定长度占位
   const timeline = sequenceTimeline(params, rows, {
     clips: rows.map((r) =>
-      animatic ? (r.out ?? 0) : r.pending ? PENDING_LENGTH : (duration(r.clip.assetId) ?? 0),
+      animatic
+        ? (r.out ?? 0)
+        : r.pending
+          ? PENDING_LENGTH
+          : (videoDuration(r.clip.assetId) ?? PENDING_LENGTH),
     ),
     dialogue: rows.map((r) => (r.dialogue ? duration(r.dialogue.assetId) : undefined)),
     more: rows.map((r) => r.more.map((m) => duration(m.assetId))),
   })
   const known =
-    !!animatic || rows.every((r) => !r.pending && duration(r.clip.assetId) !== undefined)
+    !!animatic || rows.every((r) => !r.pending && videoDuration(r.clip.assetId) !== undefined)
   const subtitleKnown =
     known && rows.every((r) => clipLines(r).every((l) => duration(l.assetId) !== undefined))
   const total = known ? timeline.total : undefined
@@ -730,12 +738,16 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const filmAsset = film && film.type === 'video' ? film.assetId : undefined
   const subtitleProblem = subtitleExportProblem(params, read.rows)
 
+  let timingReady = true
   const items: TrackItem[] = rows.map((r, i) => {
     const t = timeline.clips[i]!
     const m = meta(r.clip.assetId)
     const own = clipLines(r)
+    timingReady =
+      timingReady && (!!animatic || r.pending || videoDuration(r.clip.assetId) !== undefined)
     return {
       key: rowKey(r, i),
+      timingReady,
       index: i,
       name: r.el?.name ?? `镜头 ${i + 1}`,
       assetId: r.clip.assetId,
