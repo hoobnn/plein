@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
-import { centerOf, newProject, zoomTo } from './canvas'
+import { centerOf, deselect, newProject, zoomTo } from './canvas'
 
 let dir = ''
 test.beforeAll(() => {
@@ -177,8 +177,10 @@ test('来源或采用结果损坏时拒绝整个刷新，修正后可重试且�
     if (change === 'partial') {
       await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
       await expect(f.editor).not.toBeVisible()
-      await f.open()
-      await page.getByRole('button', { name: '节奏样片', exact: true }).click()
+      await deselect(page)
+      await zoomTo(page, [f.id])
+      const at = await centerOf(page, f.id)
+      await page.mouse.dblclick(at.x, at.y)
       await expect(f.editor).toBeVisible()
       expect(await f.read()).toEqual(before)
       expect(
@@ -215,8 +217,8 @@ for (const change of ['source', 'asset'] as const) {
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
     const f = await board(page)
-    const image = await page.evaluate(
-      ({ boardId, change }) => {
+    const image = await page.getByRole('button', { name: '节奏样片', exact: true }).evaluate(
+      (button, { boardId, change }) => {
         if (change === 'source') {
           const params = window.__plein.engine.doc.mutable(boardId)!.get('params') as {
             set(k: string, v: unknown): void
@@ -225,6 +227,7 @@ for (const change of ['source', 'asset'] as const) {
             { id: 'one', no: 1 },
             { id: 'two', no: 2, duration: -1 },
           ])
+          ;(button as HTMLButtonElement).click()
           return ''
         }
         const id = window.__plein.addNode({
@@ -247,12 +250,17 @@ for (const change of ['source', 'asset'] as const) {
           },
         ])
         node.set('adopted', 'broken')
+        ;(button as HTMLButtonElement).click()
         return id
       },
       { boardId: f.id, change },
     )
-    await page.getByRole('button', { name: '节奏样片', exact: true }).click()
-    await expect(page.getByRole('dialog', { name: '分镜表', exact: true })).toBeVisible()
+    await expect(
+      page.getByRole('dialog', {
+        name: change === 'source' ? '分镜数据问题' : '分镜表',
+        exact: true,
+      }),
+    ).toBeVisible()
     await expect(page.locator('.ui-toast')).toContainText('无法创建样片')
     const drafts = () =>
       page.evaluate(

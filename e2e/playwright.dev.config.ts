@@ -184,6 +184,7 @@ export default defineConfig({
     'animatic-number-editing.spec.ts',
     'storyboard-text-collaboration.spec.ts',
     'storyboard-structure.spec.ts',
+    'storyboard-data-recovery.spec.ts',
     'storyboard-sync-boundaries.spec.ts',
     'storyboard-diff-layout.spec.ts',
     'batch-checklist.spec.ts',

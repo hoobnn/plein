@@ -29,6 +29,8 @@ import { openAnimatic } from '../sequence/animatic'
 import { AssetBindingSelect, DialogueCell } from './ShotBindings'
 import { Menu } from '@base-ui/react/menu'
 import { useDialogMenu } from '../../ui/useDialogMenu'
+import { StoryboardDataGuard } from './StoryboardDataGuard'
+import { storyboardDataProblem } from './dataRecovery'
 
 const cell =
   'resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
@@ -47,7 +49,14 @@ export function StoryboardEditor() {
   return (
     <Presence>
       {engine && id && engine.doc.get(id) && (
-        <Editor key={`${engine.doc.ydoc.guid}:${id}`} engine={engine} id={id} onClose={close} />
+        <StoryboardDataGuard
+          key={`${engine.doc.ydoc.guid}:${id}`}
+          engine={engine}
+          id={id}
+          onClose={close}
+        >
+          <Editor engine={engine} id={id} onClose={close} />
+        </StoryboardDataGuard>
       )}
     </Presence>
   )
@@ -162,7 +171,17 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     return () => window.removeEventListener('keydown', key, true)
   }, [onClose, syncScope, batchRequest, regenerate.open, engine, id, canvasId])
 
-  const write = (next: Shot[]) => setParam(engine.doc, id, 'shots', next)
+  const writable = () =>
+    !engine.doc.readOnly &&
+    engine.doc.get(id)?.nodeType === 'plein/storyboard' &&
+    !storyboardDataProblem(engine.doc.get(id)?.params?.shots)
+  const write = (next: Shot[]) => {
+    if (!writable()) {
+      notify('分镜数据或可写状态已变化，本次修改未执行；请检查后重试')
+      return
+    }
+    setParam(engine.doc, id, 'shots', next)
+  }
   const textValue = (
     shotId: string,
     key:
@@ -227,7 +246,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         state.engine === engine &&
         state.canvasId === canvasId &&
         state.storyboard === id &&
-        engine.doc.get(id)?.nodeType === 'plein/storyboard'
+        engine.doc.get(id)?.nodeType === 'plein/storyboard' &&
+        !storyboardDataProblem(engine.doc.get(id)?.params?.shots)
       )
     }
     if (!current()) return
@@ -279,6 +299,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const scope = picked.size ? `选中的 ${picked.size} 个镜头` : '全部镜头'
 
   const expand = (mode: 'new' | 'update') => {
+    if (!writable()) return
     const { frames, created, updated, skipped, ambiguous, sequence } = expandShots(
       engine,
       id,
@@ -315,6 +336,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
   }
   const batch = (role: ShotRole, force = false) => {
+    if (!writable()) return
     if (!canvasId) {
       notify('请先连接服务再检查批量清单')
       return
