@@ -1,11 +1,12 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, elementMedia, primaryResult } from '@plein/doc'
+import type { MentionTarget } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { useDocVersion } from '../canvas/hooks'
 import { selectedModel } from '../canvas/modelParams'
-import { findNode, isPure, promptKey } from '../canvas/nodes'
+import { findNode, isPure, promptKey, mentionTargets } from '../canvas/nodes'
 import { type OutlineType, outlineIcon, outlineTitle, outlineType } from '../canvas/outline'
 import { useAssetMeta } from '../stores/assetMeta'
 import { switchMode, useCanvas } from '../stores/canvas'
@@ -13,6 +14,7 @@ import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { MenuSelect } from '../ui/MenuSelect'
 import { EmptyState } from '../ui/EmptyState'
+import { BoardTextPreview } from './BoardTextPreview'
 import { boardReadingOrder } from './boardReadingOrder'
 
 /** 故事板卡片的最大高度 */
@@ -143,6 +145,7 @@ function BoardPanel({
     })
   }
 
+  const targets = mentionTargets(engine)
   const shown = expanded ? columns.filter((c) => c.type === expanded) : columns
   return (
     <div className="absolute inset-0 z-10 flex gap-3 overflow-x-auto bg-canvas px-3 pt-17 pb-3">
@@ -152,6 +155,7 @@ function BoardPanel({
           type={c.type}
           label={c.label}
           items={c.items}
+          targets={targets}
           filter={filters[c.type] ?? 'all'}
           onFilter={(value) => onFilter(c.type, value)}
           expanded={expanded === c.type}
@@ -173,10 +177,12 @@ function BoardColumn({
   onLocate,
   filter,
   onFilter,
+  targets,
 }: {
   type: Column
   label: string
   items: CanvasElement[]
+  targets: readonly MentionTarget[]
   expanded: boolean
   onExpand(): void
   onLocate(id: string): void
@@ -216,7 +222,7 @@ function BoardColumn({
       >
         {shown.map((el) =>
           type === 'text' ? (
-            <TextItem key={el.id} el={el} onLocate={() => onLocate(el.id)} />
+            <TextItem key={el.id} el={el} targets={targets} onLocate={onLocate} />
           ) : (
             <MediaItem key={el.id} el={el} type={type} onLocate={() => onLocate(el.id)} />
           ),
@@ -229,28 +235,47 @@ function BoardColumn({
   )
 }
 
-function TextItem({ el, onLocate }: { el: CanvasElement; onLocate(): void }) {
+function TextItem({
+  el,
+  targets,
+  onLocate,
+}: {
+  el: CanvasElement
+  targets: readonly MentionTarget[]
+  onLocate(id: string): void
+}) {
   const catalog = useCatalog((s) => s.catalog)
   const c = contentOf(el, catalog)
+  const source = useRef<HTMLButtonElement>(null)
   const status = el.run && STATUS[el.run.status]
   return (
     <li>
-      <button type="button" onClick={onLocate} className="board-text group">
+      <div className="board-text group relative">
         <span className="board-text-icon">
           <Icon name={outlineIcon('text')} size={14} />
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-sm">{outlineTitle(el, catalog)}</span>
+            <button
+              ref={source}
+              type="button"
+              onClick={() => onLocate(el.id)}
+              className="min-w-0 flex-1 truncate text-left text-sm after:absolute after:inset-0 after:rounded-[inherit]"
+            >
+              {outlineTitle(el, catalog)}
+            </button>
             {status && <span className={`ui-tag ${status.tone}`}>{status.label}</span>}
           </span>
           {c?.type === 'text' && (
-            <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed break-words whitespace-pre-line text-ink-subtle">
-              {c.text}
-            </span>
+            <BoardTextPreview
+              text={c.text}
+              targets={targets.filter((t) => t.id !== el.id)}
+              onLocate={onLocate}
+              source={source}
+            />
           )}
         </span>
-      </button>
+      </div>
     </li>
   )
 }

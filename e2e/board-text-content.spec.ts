@@ -26,12 +26,13 @@ test('手写文本直接显示正文，编辑与撤销后预览和筛选同步',
       ydoc: { transact(fn: () => void, origin: unknown): void }
     }
     doc.undo.stopCapturing()
-    const node = doc.mutable(id) as unknown as {
-      set(key: string, value: unknown): void
-    }
-    doc.ydoc.transact(() => node.set('params', { text: '   \n  ' }), doc.origin)
+    const params = doc.mutable(id)!.get('params') as { set(key: string, value: unknown): void }
+    doc.ydoc.transact(() => params.set('text', '   \n  '), doc.origin)
   }, id)
   await expect(card).toHaveCount(0)
+  expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.text, id)).toBe(
+    '   \n  ',
+  )
   await page.evaluate(() =>
     (window.__plein.engine as typeof window.__plein.engine & { undo(): void }).undo(),
   )
