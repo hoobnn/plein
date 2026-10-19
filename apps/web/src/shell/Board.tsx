@@ -11,6 +11,7 @@ import { type OutlineType, outlineIcon, outlineTitle, outlineType } from '../can
 import { useAssetMeta } from '../stores/assetMeta'
 import { switchMode, useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
+import { type StaleKind, STALE_TEXT, STALE_HINT, useStale } from '../features/runs/stale'
 import { Icon } from '../ui/icons'
 import { MenuSelect } from '../ui/MenuSelect'
 import { EmptyState } from '../ui/EmptyState'
@@ -37,7 +38,9 @@ const FILTERS: Array<{ value: Filter; label: string }> = [
   { value: 'todo', label: '待生成' },
 ]
 
-const STATUS: Record<string, { label: string; tone: string }> = {
+type Status = { label: string; tone: string; hint?: string }
+
+const STATUS: Record<string, Status> = {
   queued: { label: '排队中', tone: '' },
   running: { label: '生成中', tone: 'ui-tag-accent' },
   failed: { label: '失败', tone: 'ui-tag-danger' },
@@ -51,7 +54,13 @@ function candidatesOf(el: CanvasElement) {
   return (el.results ?? []).filter((result) => result.port === port)
 }
 
-function statusOf(el: CanvasElement) {
+function statusOf(el: CanvasElement, stale?: StaleKind): Status | undefined {
+  if (stale && !['queued', 'running', 'failed'].includes(el.run?.status ?? ''))
+    return {
+      label: STALE_TEXT[stale],
+      hint: STALE_HINT[stale],
+      tone: stale === 'kept' ? '' : 'ui-tag-warning',
+    }
   if (el.run?.status === 'canceled' && primaryResult(el)?.runId === el.run.id)
     return { label: '已取回', tone: 'ui-tag-accent' }
   return el.run && STATUS[el.run.status]
@@ -260,7 +269,8 @@ function TextItem({
   const catalog = useCatalog((s) => s.catalog)
   const c = contentOf(el, catalog)
   const source = useRef<HTMLButtonElement>(null)
-  const status = statusOf(el)
+  const stale = useStale((s) => s.nodes.get(el.id))
+  const status = statusOf(el, stale)
   return (
     <li>
       <div className="board-text group relative">
@@ -277,7 +287,14 @@ function TextItem({
             >
               {outlineTitle(el, catalog)}
             </button>
-            {status && <span className={`ui-tag ${status.tone}`}>{status.label}</span>}
+            {status && (
+              <span
+                title={status.hint}
+                className={`ui-tag ${status.hint ? 'relative z-10 cursor-help' : ''} ${status.tone}`}
+              >
+                {status.label}
+              </span>
+            )}
           </span>
           {c?.type === 'text' && (
             <BoardTextPreview
@@ -308,7 +325,8 @@ function MediaItem({
   const localUrl = useCanvas((s) => s.localAssetUrls?.get(assetId ?? ''))
   const meta = useAssetMeta(localUrl ? undefined : assetId)
   const title = outlineTitle(el, catalog)
-  const status = statusOf(el)
+  const stale = useStale((s) => s.nodes.get(el.id))
+  const status = statusOf(el, stale)
 
   const candidates = candidatesOf(el).filter((result) => result.value.type === type)
   const preview = useRef<HTMLButtonElement>(null)
@@ -463,7 +481,11 @@ function MediaItem({
               {c}
             </span>
           ))}
-          {status && <span className={`ui-tag ${status.tone}`}>{status.label}</span>}
+          {status && (
+            <span title={status.hint} className={`ui-tag ${status.tone}`}>
+              {status.label}
+            </span>
+          )}
         </div>
       )}
     </li>

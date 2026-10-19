@@ -10,6 +10,7 @@ import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Presence } from '../../ui/Presence'
 import { StoryboardSync } from '../storyboard/StoryboardSync'
+import { refreshStale } from './stale'
 import { groupRunSignal } from './groupRuns'
 
 const ROLE_LABEL = { image: '镜头图', video: '视频', speech: '配音', sfx: '音效' } as const
@@ -175,6 +176,7 @@ function Panel({
       await api.keepResults(canvasId, {
         nodes: targets.map((n) => ({ nodeId: n.nodeId, inputHash: n.inputHash! })),
       })
+      refreshStale(engine, canvasId)
       notify(`已保留 ${targets.length} 个结果，记录在「保留记录」里`)
     } catch (err) {
       notify(
@@ -189,7 +191,12 @@ function Panel({
   }
   const revoke = async (id: string) => {
     if (unavailable) return
-    await api.revokeKeep(canvasId, id).catch((err) => notify((err as Error).message))
+    try {
+      await api.revokeKeep(canvasId, id)
+      refreshStale(engine, canvasId)
+    } catch (err) {
+      notify((err as Error).message)
+    }
     void load()
   }
 

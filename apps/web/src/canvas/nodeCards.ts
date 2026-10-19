@@ -15,7 +15,7 @@ import {
 } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useCatalog } from '../stores/catalog'
-import { type StaleKind, useStale } from '../features/runs/stale'
+import { STALE_TEXT, STALE_HINT, useStale } from '../features/runs/stale'
 import { type IconName, iconElement } from '../ui/icons'
 import { findNode, isPure, promptKey, targetImages, mentionTargets } from './nodes'
 import { renderMentionText } from './mentionText'
@@ -75,18 +75,6 @@ const STATUS_TEXT: Record<RunStatus, string> = {
   succeeded: '',
   failed: '失败',
   canceled: '已取消',
-}
-
-/** 结果过期时卡片上的状态与悬停说明 */
-const STALE_TEXT: Record<StaleKind, string> = {
-  self: '需要重跑',
-  upstream: '上游已改',
-  kept: '已保留',
-}
-const STALE_HINT: Record<StaleKind, string> = {
-  self: '参数或输入改过，当前结果不是按现在的设置生成的',
-  upstream: '上游节点改过，重跑上游后这里也要重跑',
-  kept: '结果已过期，你在「查看影响」里确认过先保留',
 }
 
 /** 按输出类型的图标，标题前和空节点中央用 */

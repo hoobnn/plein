@@ -6,6 +6,26 @@ import { api } from '../../api/client'
 /** kept：过期但用户确认过保留（缓存判断不变，整组运行仍会重跑） */
 export type StaleKind = 'self' | 'upstream' | 'kept'
 
+/** 工作流与故事板共享的过期提示。 */
+export const STALE_TEXT: Record<StaleKind, string> = {
+  self: '需要重跑',
+  upstream: '上游已改',
+  kept: '已保留',
+}
+export const STALE_HINT: Record<StaleKind, string> = {
+  self: '参数或输入改过，当前结果不是按现在的设置生成的',
+  upstream: '上游节点改过，重跑上游后这里也要重跑',
+  kept: '结果已过期，你在「查看影响」里确认过先保留',
+}
+
+type Watch = { engine: Engine; canvasId: string; refresh(): void }
+let activeWatch: Watch | undefined
+
+/** 保留决定不修改文档，成功后显式刷新；旧面板不能刷新其他画布。 */
+export function refreshStale(engine: Engine, canvasId: string) {
+  if (activeWatch?.engine === engine && activeWatch.canvasId === canvasId) activeWatch.refresh()
+}
+
 interface StaleStore {
   /** 节点 id → 自己过期 / 上游过期 / 已确认保留 */
   nodes: ReadonlyMap<string, StaleKind>
@@ -35,7 +55,7 @@ export function watchStale(engine: Engine, canvasId: string) {
     const mine = ++seq
     try {
       const stale = await api.canvasStale(canvasId)
-      if (mine === seq) useStale.getState().set(stale)
+      if (mine === seq && activeWatch === watcher) useStale.getState().set(stale)
     } catch {}
   }
   const schedule = () => {
@@ -44,12 +64,25 @@ export function watchStale(engine: Engine, canvasId: string) {
     clearTimeout(timer)
     timer = setTimeout(load, 1200)
   }
+  const watcher: Watch = {
+    engine,
+    canvasId,
+    refresh() {
+      clearTimeout(timer)
+      void load()
+    },
+  }
+  activeWatch = watcher
+  useStale.getState().set(null)
   const off = engine.doc.subscribe(schedule)
   void load()
   return () => {
     off()
     clearTimeout(timer)
     seq++
-    useStale.getState().set(null)
+    if (activeWatch === watcher) {
+      activeWatch = undefined
+      useStale.getState().set(null)
+    }
   }
 }

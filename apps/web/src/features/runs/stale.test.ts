@@ -2,7 +2,7 @@ import type { Engine } from '@plein/canvas-core'
 import type { StaleNodes } from '@plein/protocol'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { api } from '../../api/client'
-import { useStale, watchStale } from './stale'
+import { refreshStale, useStale, watchStale } from './stale'
 
 vi.mock('../../api/client', () => ({ api: { canvasStale: vi.fn() } }))
 
@@ -99,5 +99,49 @@ describe('过期节点', () => {
     await vi.advanceTimersByTimeAsync(5000)
     expect(nodes()).toEqual({})
     expect(api.canvasStale).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('保留决定后的显式刷新', () => {
+  it('立即刷新并取消等待中的防抖，旧响应不能覆盖新的保留状态', async () => {
+    const pending = answers()
+    const { engine, change } = fakeEngine()
+    const stop = watchStale(engine, 'c1')
+    change()
+    refreshStale(engine, 'c1')
+    expect(api.canvasStale).toHaveBeenCalledTimes(2)
+    pending[1]!({ stale: ['a'], upstream: [], kept: ['a'] })
+    await vi.advanceTimersByTimeAsync(0)
+    pending[0]!({ stale: ['a'], upstream: [], kept: [] })
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(nodes()).toEqual({ a: 'kept' })
+    expect(api.canvasStale).toHaveBeenCalledTimes(2)
+    stop()
+    refreshStale(engine, 'c1')
+    expect(api.canvasStale).toHaveBeenCalledTimes(2)
+  })
+
+  it('旧引擎的清理和旧画布的刷新不干扰新画布', async () => {
+    const pending = answers()
+    const old = fakeEngine()
+    const current = fakeEngine()
+    const stopOld = watchStale(old.engine, 'old')
+    useStale.getState().set({ stale: ['old'], upstream: [], kept: [] })
+    const stop = watchStale(current.engine, 'current')
+    expect(nodes()).toEqual({})
+    pending[1]!({ stale: ['new'], upstream: [], kept: [] })
+    await vi.advanceTimersByTimeAsync(0)
+    stopOld()
+    refreshStale(old.engine, 'old')
+    refreshStale(current.engine, 'old')
+    pending[0]!({ stale: ['old'], upstream: [], kept: [] })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nodes()).toEqual({ new: 'self' })
+    expect(api.canvasStale).toHaveBeenCalledTimes(2)
+    refreshStale(current.engine, 'current')
+    pending[2]!({ stale: ['new'], upstream: [], kept: ['new'] })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(nodes()).toEqual({ new: 'kept' })
+    stop()
   })
 })

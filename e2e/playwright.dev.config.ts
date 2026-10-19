@@ -222,6 +222,8 @@ export default defineConfig({
     'board-text-content.spec.ts',
     'board-mentions.spec.ts',
     'board-pending-results.spec.ts',
+    'board-stale-results.spec.ts',
+    'impact-refresh.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
     'sidebar-resize.spec.ts',
     'sidebar-assets-recovery.spec.ts',
