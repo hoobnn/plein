@@ -1,10 +1,13 @@
 import type { Engine } from '@plein/canvas-core'
+import { elementMedia } from '@plein/doc'
 import { Icon } from '../ui/icons'
 import { useBatchDownload } from './useBatchDownload'
 
 interface Props {
   engine: Engine
   assetId: string
+  /** 当前选中元素的下载：读取完成时再核对文档，避免帧通知前交出旧素材。 */
+  elementId?: string
   name: string
   label?: string
   className?: string
@@ -19,12 +22,23 @@ export function AssetDownloadButton(props: Props) {
 function DownloadSession({
   engine,
   assetId,
+  elementId,
   name,
   label = '下载',
   className = 'ui-btn ui-btn-quiet',
   iconOnly = false,
 }: Props) {
-  const download = useBatchDownload(engine)
+  const download = useBatchDownload(engine, true, () => {
+    if (!elementId) return true
+    const selected = engine.selection.values()
+    const source = engine.doc.get(elementId)
+    return (
+      selected.length === 1 &&
+      selected[0] === elementId &&
+      !!source &&
+      elementMedia(source)?.assetId === assetId
+    )
+  })
   const retry = download.remaining.length > 0
   const text = download.running
     ? '正在读取原文件'

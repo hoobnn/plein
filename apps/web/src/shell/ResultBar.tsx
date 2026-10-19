@@ -305,6 +305,7 @@ export function ResultActions({
       )}
       <AssetDownloadButton
         engine={engine}
+        elementId={el.id}
         assetId={media.assetId}
         name={name}
         className={icon}

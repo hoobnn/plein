@@ -3,7 +3,7 @@ import { expect, test, type Download } from '@playwright/test'
 import { sineWav, solidPng } from '../packages/providers/src/mock/media'
 import { clickElement, newProject } from './canvas'
 
-for (const mode of ['failure', 'cancel', 'switch', 'replace'] as const) {
+for (const mode of ['failure', 'cancel', 'switch', 'replace', 'replace-before-render'] as const) {
   test(`单文件下载 ${mode} 可恢复且保持素材身份`, async ({ page }) => {
     await newProject(page)
     const bytes = [
@@ -83,31 +83,74 @@ for (const mode of ['failure', 'cancel', 'switch', 'replace'] as const) {
           release()
           await bar.getByRole('button', { name: '继续下载', exact: true }).click()
         } else {
-          if (mode === 'replace')
+          if (mode.startsWith('replace'))
             await page.evaluate(
-              ({ id, assetId }) => {
+              ({ id, assetId, freeze }) => {
+                const doc = window.__plein.engine.doc as typeof window.__plein.engine.doc & {
+                  schedule(flush: () => void): void
+                  flush(): void
+                  restoreDownloadTest?(): void
+                }
+                if (freeze) {
+                  doc.flush()
+                  const schedule = doc.schedule
+                  doc.schedule = () => {}
+                  doc.restoreDownloadTest = () => {
+                    doc.schedule = schedule
+                    doc.flush()
+                    delete doc.restoreDownloadTest
+                  }
+                }
                 const node = window.__plein.engine.doc.mutable(id) as unknown as {
                   set(key: string, value: unknown): void
                 }
                 node.set('assetId', assetId)
               },
-              { id: ids[0]!, assetId: assets[1]! },
+              { id: ids[0]!, assetId: assets[1]!, freeze: mode === 'replace-before-render' },
             )
           else await page.evaluate((id) => window.__plein.engine.selection.set([id]), ids[1]!)
+          const oldResponse =
+            mode === 'replace-before-render'
+              ? page.waitForResponse(
+                  (response) =>
+                    response.url().endsWith(`/api/assets/${assets[0]}`) &&
+                    response.request().resourceType() === 'fetch',
+                )
+              : null
           release()
+          if (oldResponse) {
+            await (await oldResponse).finished()
+            await page.evaluate(
+              () =>
+                new Promise((resolve) =>
+                  requestAnimationFrame(() => requestAnimationFrame(resolve)),
+                ),
+            )
+            expect(downloads).toHaveLength(0)
+            await page.evaluate(() =>
+              (
+                window.__plein.engine.doc as unknown as { restoreDownloadTest?(): void }
+              ).restoreDownloadTest?.(),
+            )
+          }
           await expect(bar.getByRole('button', { name: '下载', exact: true })).toBeVisible()
           await bar.getByRole('button', { name: '下载', exact: true }).click()
         }
       }
       await expect.poll(() => downloads.length).toBe(1)
-      const expected = mode === 'switch' || mode === 'replace' ? 1 : 0
+      const expected = mode === 'switch' || mode.startsWith('replace') ? 1 : 0
       expect(await downloads[0]!.failure()).toBeNull()
       expect(downloads[0]!.suggestedFilename()).toMatch(
-        new RegExp(`^单图${mode === 'replace' ? 0 : expected}`),
+        new RegExp(`^单图${mode.startsWith('replace') ? 0 : expected}`),
       )
       expect(readFileSync((await downloads[0]!.path())!)).toEqual(bytes[expected])
     } finally {
       release()
+      await page.evaluate(() =>
+        (
+          window.__plein.engine.doc as unknown as { restoreDownloadTest?(): void }
+        ).restoreDownloadTest?.(),
+      )
     }
   })
 }

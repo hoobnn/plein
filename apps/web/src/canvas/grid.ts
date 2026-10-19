@@ -126,12 +126,13 @@ export async function downloadAll(
   items: readonly DownloadItem[],
   signal: AbortSignal,
   onProgress: (started: number, failed: number) => void,
+  canDownload: () => boolean = () => true,
 ) {
   let started = 0
   const failed: DownloadItem[] = []
   let index = 0
   for (; index < items.length; index++) {
-    if (signal.aborted) break
+    if (signal.aborted || !canDownload()) break
     const item = items[index]!
     try {
       const blob = await api.assetBlob(
@@ -139,6 +140,7 @@ export async function downloadAll(
         AbortSignal.any([signal, AbortSignal.timeout(60_000)]),
       )
       signal.throwIfAborted()
+      if (!canDownload()) break
       const url = URL.createObjectURL(blob)
       try {
         const a = document.createElement('a')

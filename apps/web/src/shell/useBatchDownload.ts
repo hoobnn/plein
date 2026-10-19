@@ -21,7 +21,9 @@ const empty: State = {
 }
 
 /** 固定点击时的素材快照；选区变化不替换队列，换画布则中止后续读取。 */
-export function useBatchDownload(engine: Engine, enabled = true) {
+export function useBatchDownload(engine: Engine, enabled = true, isCurrent?: () => boolean) {
+  const sourceCurrent = useRef(isCurrent)
+  sourceCurrent.current = isCurrent
   const [state, setState] = useState(empty)
   const canvasId = useCanvas((s) => s.canvasId)
   const pending = useRef<AbortController | null>(null)
@@ -54,11 +56,21 @@ export function useBatchDownload(engine: Engine, enabled = true) {
       useCanvas.getState().engine === engine &&
       useCanvas.getState().canvasId === canvasId
     setState({ ...empty, running: true, total: snapshot.length })
-    const result = await downloadAll(snapshot, controller.signal, (done, failed) => {
-      if (active()) setState((s) => ({ ...s, done, failed }))
-    })
+    const valid = () => active() && (sourceCurrent.current?.() ?? true)
+    const result = await downloadAll(
+      snapshot,
+      controller.signal,
+      (done, failed) => {
+        if (valid()) setState((s) => ({ ...s, done, failed }))
+      },
+      valid,
+    )
     if (!active()) return
     pending.current = null
+    if (!(sourceCurrent.current?.() ?? true)) {
+      setState(empty)
+      return
+    }
     const cancelled = controller.signal.aborted
     setState({
       running: false,

@@ -347,6 +347,7 @@ function Panel({
       {audio && audio.value.type === 'audio' && (
         <AssetDownloadButton
           engine={engine}
+          elementId={el.id}
           assetId={audio.value.assetId}
           name={el.name ?? node.title}
           className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"

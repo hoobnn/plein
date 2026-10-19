@@ -74,3 +74,18 @@ it('文件已交出后取消只保留尚未处理的文件，不重复下载成�
   await vi.advanceTimersByTimeAsync(1000)
   expect(revoke).toHaveBeenCalledTimes(1)
 })
+
+it('来源在读取完成前失效时不交出旧文件，保留队列且不创建 Blob URL', async () => {
+  let current = true
+  vi.spyOn(api, 'assetBlob').mockImplementation(async () => {
+    current = false
+    return new Blob(['old'])
+  })
+  expect(await downloadAll(items, new AbortController().signal, vi.fn(), () => current)).toEqual({
+    started: 0,
+    failed: [],
+    remaining: items,
+  })
+  expect(click).not.toHaveBeenCalled()
+  expect(URL.createObjectURL).not.toHaveBeenCalled()
+})
