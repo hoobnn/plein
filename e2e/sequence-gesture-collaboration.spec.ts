@@ -292,3 +292,143 @@ for (const mode of ['rendered', 'same-frame'] as const) {
     })
   }
 }
+
+for (const change of [
+  'wheel',
+  'resize',
+  'same-frame-wheel',
+  'same-frame-width',
+  'noop-wheel',
+] as const) {
+  test(`修剪中视图变化 ${change} 不提交旧坐标且可以重新操作`, async ({ page }) => {
+    const f = await videoFixture(page)
+    const clip = f.editor.locator('.seq-clip').first()
+    await clip.hover()
+    const box = (await clip.boundingBox())!
+    const edge = (await clip.locator('.seq-trim-out').boundingBox())!
+    await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(edge.x - box.width * 0.25, edge.y + edge.height / 2, { steps: 4 })
+    expect((await f.saved()).out).toBe(1.8)
+    if (change === 'wheel') {
+      await page.keyboard.down('Control')
+      await page.mouse.wheel(0, -50)
+      await page.keyboard.up('Control')
+      await expect(f.editor.getByRole('status', { name: '时间线操作已取消' })).toBeVisible()
+    } else if (change === 'resize') await page.setViewportSize({ width: 1000, height: 800 })
+    else
+      await f.editor.locator('.seq-scroll').evaluate((el, change) => {
+        if (change === 'same-frame-width') el.style.width = '700px'
+        else
+          el.dispatchEvent(
+            new WheelEvent('wheel', {
+              ctrlKey: true,
+              deltaY: change === 'noop-wheel' ? 0 : -50,
+              clientX: el.getBoundingClientRect().left + 200,
+              bubbles: true,
+              cancelable: true,
+            }),
+          )
+        if (change.startsWith('same-frame'))
+          window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1 }))
+      }, change)
+    await page.mouse.up()
+    const notice = f.editor.getByRole('status', { name: '时间线操作已取消' })
+    if (change === 'noop-wheel') {
+      expect(Number((await f.saved()).out)).toBeLessThan(1.8)
+      await expect(notice).toHaveCount(0)
+      return
+    }
+    expect((await f.saved()).out).toBe(1.8)
+    await expect(notice).toContainText('已取消本次拖动')
+    await expect(f.editor.locator('.seq-clip[data-trimming]')).toHaveCount(0)
+    if (change === 'wheel')
+      await f.editor.screenshot({ path: test.info().outputPath('zoom-cancelled.png') })
+    const fit = f.editor.getByRole('button', { name: '铺满', exact: true })
+    if (await fit.isEnabled()) await fit.click()
+    await clip.hover()
+    const nextBox = (await clip.boundingBox())!
+    const nextEdge = (await clip.locator('.seq-trim-out').boundingBox())!
+    await page.mouse.move(nextEdge.x + nextEdge.width / 2, nextEdge.y + nextEdge.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(nextEdge.x - nextBox.width * 0.15, nextEdge.y + nextEdge.height / 2, {
+      steps: 4,
+    })
+    await page.mouse.up()
+    expect(Number((await f.saved()).out)).toBeLessThan(1.8)
+    await expect(notice).toHaveCount(0)
+  })
+}
+
+for (const change of ['wheel', 'resize', 'same-frame-wheel', 'noop-wheel'] as const) {
+  test(`重排中视图变化 ${change} 保留顺序且可以重新操作`, async ({ page }) => {
+    await newProject(page)
+    const id = await page.evaluate(() =>
+      window.__plein.addNode({
+        type: 'plein/animatic',
+        name: '视图重排',
+        x: 400,
+        y: 200,
+        params: {
+          subtitles: false,
+          shots: ['a', 'b', 'c'].map((shotId) => ({ shotId, duration: 5, dialogue: [] })),
+        },
+      }),
+    )
+    const editor = await open(page, id)
+    const clips = editor.locator('.seq-clip')
+    const dragLast = async () => {
+      const first = (await clips.first().boundingBox())!
+      const last = (await clips.last().boundingBox())!
+      await page.mouse.move(last.x + last.width / 2, last.y + last.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2, { steps: 6 })
+      await expect(editor.locator('.seq-clip[data-moving]')).toHaveCount(1)
+    }
+    const order = () =>
+      page.evaluate(
+        (id) =>
+          (window.__plein.engine.doc.get(id)!.params!.shots as Array<{ shotId: string }>).map(
+            (s) => s.shotId,
+          ),
+        id,
+      )
+    await dragLast()
+    if (change === 'resize') await page.setViewportSize({ width: 1000, height: 800 })
+    else
+      await editor.locator('.seq-scroll').evaluate((el, change) => {
+        el.dispatchEvent(
+          new WheelEvent('wheel', {
+            ctrlKey: true,
+            deltaY: change === 'noop-wheel' ? 0 : -50,
+            clientX: el.getBoundingClientRect().left + 200,
+            bubbles: true,
+            cancelable: true,
+          }),
+        )
+        if (change === 'same-frame-wheel')
+          window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1 }))
+      }, change)
+    await page.mouse.up()
+    const notice = editor.getByRole('status', { name: '时间线操作已取消' })
+    if (change === 'noop-wheel') {
+      await expect.poll(order).toEqual(['c', 'a', 'b'])
+      await expect(notice).toHaveCount(0)
+      return
+    }
+    await expect.poll(order).toEqual(['a', 'b', 'c'])
+    await expect(notice).toBeVisible()
+    await expect(editor.locator('.seq-clip[data-moving]')).toHaveCount(0)
+    const fit = editor.getByRole('button', { name: '铺满', exact: true })
+    if (await fit.isEnabled()) await fit.click()
+    await dragLast()
+    await page.mouse.up()
+    await expect.poll(order).toEqual(['c', 'a', 'b'])
+    await expect(notice).toHaveCount(0)
+    await editor.getByRole('button', { name: '重新加载预览', exact: true }).focus()
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect.poll(order).toEqual(['a', 'b', 'c'])
+    await page.keyboard.press('ControlOrMeta+Shift+z')
+    await expect.poll(order).toEqual(['c', 'a', 'b'])
+  })
+}

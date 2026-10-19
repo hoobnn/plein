@@ -171,6 +171,9 @@ export function Timeline({
   const head = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState(0)
   const [requestedZoom, setZoom] = useState(1)
+  // 原生 wheel 与 pointerup 可在同一帧发生，不能等 React 提交后再更新交互身份。
+  const requestedZoomRef = useRef(requestedZoom)
+  requestedZoomRef.current = requestedZoom
   const [gestureNotice, setGestureNotice] = useState<string | null>(null)
   const { closing, cancel: cancelScrub, trackPointer: trackScrub } = usePointerGesture()
 
@@ -221,6 +224,8 @@ export function Timeline({
   const zoomAt = (next: number, clientX?: number) => {
     const sc = scroller.current
     const z = Math.min(zoomMax, Math.max(1, next))
+    if (z === requestedZoomRef.current) return
+    requestedZoomRef.current = z
     if (!sc) return setZoom(z)
     const rect = sc.getBoundingClientRect()
     const cx = (clientX ?? rect.left + LABEL + (rect.width - LABEL) / 2) - rect.left
@@ -361,8 +366,15 @@ export function Timeline({
 
           <ClipTrack
             readOnly={readOnly}
-            interactionKey={interactionKey}
-            readInteractionKey={readInteractionKey}
+            // 不包含 pps／total：自身修剪草稿也会改变它们，不应取消有效修剪。
+            interactionKey={JSON.stringify([interactionKey, viewport, requestedZoom])}
+            readInteractionKey={() =>
+              JSON.stringify([
+                readInteractionKey(),
+                scroller.current?.clientWidth ?? 0,
+                requestedZoomRef.current,
+              ])
+            }
             onGestureNotice={setGestureNotice}
             items={items}
             pps={pps}
@@ -573,9 +585,11 @@ function ClipTrack({
       return false
     }
   }
-  const invalid = () => onGestureNotice('剪辑内容已更新，已取消本次拖动；请按当前内容重新操作。')
+  const invalid = () =>
+    onGestureNotice('剪辑内容或视图已更新，已取消本次拖动；请按当前内容重新操作。')
   useLayoutEffect(() => {
-    if (cancelGesture()) onGestureNotice('剪辑内容已更新，已取消本次拖动；请按当前内容重新操作。')
+    if (cancelGesture())
+      onGestureNotice('剪辑内容或视图已更新，已取消本次拖动；请按当前内容重新操作。')
   }, [interactionKey, readOnly, cancelGesture, onGestureNotice])
 
   useLayoutEffect(() => {
