@@ -13,6 +13,13 @@ import { StoryboardSync } from '../storyboard/StoryboardSync'
 import { refreshStale } from './stale'
 import { groupRunSignal } from './groupRuns'
 
+/** 保留决定不写文档；当前打开的同画布面板仍需获知后台完成的变更。 */
+const impactChanges = new Set<(engine: Engine, canvasId: string) => void>()
+const impactChanged = (engine: Engine, canvasId: string) => {
+  refreshStale(engine, canvasId)
+  for (const notify of impactChanges) notify(engine, canvasId)
+}
+
 const ROLE_LABEL = { image: '镜头图', video: '视频', speech: '配音', sfx: '音效' } as const
 
 const SUGGEST: Record<ImpactSuggestion, string> = {
@@ -81,6 +88,19 @@ function Panel({
   onClose(): void
 }) {
   const notify = useCanvas((s) => s.notify)
+  const open = useCanvas((s) => s.impact)
+  const mounted = useRef(true)
+  const actionPending = useRef(false)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const isCurrent = useCallback(() => {
+    const state = useCanvas.getState()
+    return mounted.current && state.impact && state.engine === engine && state.canvasId === canvasId
+  }, [engine, canvasId])
   const [report, setReport] = useState<ImpactReport | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [picked, setPicked] = useState<Set<string> | null>(null)
@@ -92,11 +112,12 @@ function Panel({
   const seen = useRef(new Map<string, string>())
 
   const load = useCallback(async () => {
+    if (!isCurrent()) return
     const id = ++requestId.current
     setRefreshing(true)
     try {
       const r = await api.canvasImpact(canvasId)
-      if (id !== requestId.current) return
+      if (id !== requestId.current || !isCurrent()) return
       setReport(r)
       setError(null)
       // 新出现的节点、建议变了的节点按建议勾选；其余保留用户的勾选，去掉已经不在列表里的
@@ -114,17 +135,18 @@ function Panel({
         return next
       })
     } catch (err) {
-      if (id === requestId.current) setError((err as Error).message)
+      if (id === requestId.current && isCurrent()) setError((err as Error).message)
     } finally {
-      if (id === requestId.current) setRefreshing(false)
+      if (id === requestId.current && isCurrent()) setRefreshing(false)
     }
-  }, [canvasId])
+  }, [canvasId, isCurrent])
 
   const invalidate = useCallback(() => {
     requestId.current++
   }, [])
 
   useEffect(() => {
+    if (!open) return
     void load()
     // 文档变了（同步了计划、跑完了节点）停一会儿再重新分析
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -135,14 +157,21 @@ function Panel({
       clearTimeout(timer)
       timer = setTimeout(() => void load(), 800)
     })
+    const changed = (source: Engine, canvas: string) => {
+      if (source !== engine || canvas !== canvasId || actionPending.current) return
+      clearTimeout(timer)
+      void load()
+    }
+    impactChanges.add(changed)
     return () => {
       invalidate()
       off()
+      impactChanges.delete(changed)
       clearTimeout(timer)
     }
-  }, [engine, load, invalidate])
+  }, [open, engine, canvasId, load, invalidate])
 
-  const unavailable = busy || refreshing || !!error
+  const unavailable = !open || busy || refreshing || !!error
   const nodes = useMemo(() => report?.nodes ?? [], [report])
   const groups = useMemo(() => groupByShot(nodes), [nodes])
   const chosen = nodes.filter((n) => picked?.has(n.nodeId))
@@ -168,36 +197,49 @@ function Panel({
       ),
     )
 
+  const beginAction = () => {
+    if (unavailable || actionPending.current || !isCurrent()) return false
+    actionPending.current = true
+    setBusy(true)
+    return true
+  }
+  const finishAction = () => {
+    actionPending.current = false
+    if (mounted.current) setBusy(false)
+    if (isCurrent()) void load()
+  }
+
   const keep = async (list: ImpactNode[]) => {
     const targets = list.filter((n) => n.inputHash && !n.kept && n.impact !== 'related')
-    if (unavailable || !targets.length) return
-    setBusy(true)
+    if (!targets.length || !beginAction()) return
     try {
       await api.keepResults(canvasId, {
         nodes: targets.map((n) => ({ nodeId: n.nodeId, inputHash: n.inputHash! })),
       })
-      refreshStale(engine, canvasId)
+      impactChanged(engine, canvasId)
+      if (!isCurrent()) return
       notify(`已保留 ${targets.length} 个结果，记录在「保留记录」里`)
     } catch (err) {
+      if (!isCurrent()) return
       notify(
         err instanceof ApiError && err.code === 'input_changed'
           ? '有节点的输入刚刚又变了，已重新分析，请再确认一次'
           : (err as Error).message,
       )
     } finally {
-      setBusy(false)
-      void load()
+      finishAction()
     }
   }
   const revoke = async (id: string) => {
-    if (unavailable) return
+    if (!beginAction()) return
     try {
       await api.revokeKeep(canvasId, id)
-      refreshStale(engine, canvasId)
+      impactChanged(engine, canvasId)
     } catch (err) {
-      notify((err as Error).message)
+      if (isCurrent()) notify((err as Error).message)
+    } finally {
+      finishAction()
     }
-    void load()
   }
 
   const rerun = async () => {
@@ -369,13 +411,19 @@ function Panel({
       </div>
       {nodes.length > 0 && (
         <footer className="flex flex-none flex-wrap items-center gap-2 border-t border-line px-5 py-3">
-          <span className="text-xs text-ink-subtle tabular-nums">
-            已选 {chosen.length} 个{reuse > 0 && ` · ${reuse} 个沿用已有候选`}
-            {calls.length > 0 && ` · ${calls.length} 个调用平台`}
-            {calls.length > 0 &&
-              (priced.length
-                ? ` · 预估 ${amount.toFixed(2)} ${currency}${unknown ? `，${unknown} 个价格未知` : ''}`
-                : ' · 价格未知')}
+          <span role="status" className="text-xs text-ink-subtle tabular-nums">
+            {busy ? (
+              '正在更新保留决定…'
+            ) : (
+              <>
+                已选 {chosen.length} 个{reuse > 0 && ` · ${reuse} 个沿用已有候选`}
+                {calls.length > 0 && ` · ${calls.length} 个调用平台`}
+                {calls.length > 0 &&
+                  (priced.length
+                    ? ` · 预估 ${amount.toFixed(2)} ${currency}${unknown ? `，${unknown} 个价格未知` : ''}`
+                    : ' · 价格未知')}
+              </>
+            )}
           </span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <button
