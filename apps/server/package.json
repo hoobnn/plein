@@ -14,7 +14,7 @@
     "db:generate": "drizzle-kit generate && tsx scripts/embed-migrations.ts && vp fmt src/storage/migrations.gen.ts"
   },
   "dependencies": {
-    "@hono/node-server": "^2.1.4",
+    "@hono/node-server": "^2.1.5",
     "@plein/capabilities": "workspace:*",
     "@plein/doc": "workspace:*",
     "@plein/flow": "workspace:*",
@@ -22,7 +22,7 @@
     "@plein/plugin-sdk": "workspace:*",
     "@plein/protocol": "workspace:*",
     "@plein/providers": "workspace:*",
-    "better-auth": "^1.7.7",
+    "better-auth": "^1.7.10",
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.4",
     "fflate": "^0.8.2",
@@ -30,11 +30,11 @@
     "lib0": "^0.2.119",
     "semver": "^7.8.5",
     "sharp": "^0.35.5",
-    "undici": "8.11.2",
+    "undici": "8.12.2",
     "ws": "^8.22.0",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.33",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
