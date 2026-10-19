@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test'
 import { newProject, waitEngine } from './canvas'
+import { openLibraryPanel } from './library-ui'
 
 test('删除库条目保留已有卡片与参考图，再存入时创建新关联', async ({ page }) => {
   const { panel, item, current, asset, canvas } = await fixture(page, { image: true })
@@ -60,15 +61,14 @@ async function fixture(page: Page, options: { rename?: boolean; image?: boolean 
       },
     })
   ).json()
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
-  const panel = page.getByRole('dialog', { name: '资产库', exact: true })
+  const panel = await openLibraryPanel(page)
   await panel.getByRole('button', { name: '道具', exact: true }).click()
   await panel.getByRole('button', { name: '本项目', exact: true }).click()
   const card = panel.getByRole('listitem').filter({ hasText: item.name })
   await card.hover()
   await card.getByRole('button', { name: '添加到画布', exact: true }).click()
   await expect(panel).toBeHidden()
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   await panel.getByRole('button', { name: '道具', exact: true }).click()
   await panel.getByRole('button', { name: '本项目', exact: true }).click()
   await card.getByRole('button').first().click()
@@ -300,7 +300,7 @@ test('资产同步与固定不混入本地撤销，重做和刷新后版本保�
   expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.text, local)).toBe(
     '保留正文',
   )
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   await panel.getByRole('button', { name: '道具', exact: true }).click()
   await panel
     .locator(`[data-library-id="${synced!.params!.libraryId}"]`)
