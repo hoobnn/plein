@@ -162,6 +162,7 @@ export default defineConfig({
     'storyboard-editing.spec.ts',
     'storyboard-mention-navigation.spec.ts',
     'storyboard-dialogue-collaboration.spec.ts',
+    'storyboard-dialogue-structure.spec.ts',
     'ime-editor.spec.ts',
     'markdown-ime.spec.ts',
     'markdown-history.spec.ts',

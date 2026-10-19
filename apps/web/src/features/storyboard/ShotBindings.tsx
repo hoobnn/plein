@@ -74,7 +74,26 @@ export function DialogueCell({
   readDialogue(): ShotDialogue[]
   onChange(update: (dialogue: ShotDialogue[]) => ShotDialogue[]): void
 }) {
-  const lines = normalizeDialogue(shot.id, shot.dialogue)
+  // 本地结构操作会先重绘本组件，父级的文档订阅按帧更新；渲染也读取最新数组。
+  const lines = normalizeDialogue(shot.id, readDialogue())
+  const rows = useRef(new Map<string, HTMLDivElement>())
+  const [focusId, setFocusId] = useState<string | null>(null)
+  useEffect(() => {
+    if (!focusId) return
+    // 目标可能已经被撤销或删除，不把这次请求留给后续重做。
+    setFocusId(null)
+    const input = rows.current.get(focusId)?.querySelector('textarea')
+    input?.focus({ preventScroll: true })
+    input?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [focusId])
+  const structure = (update: (current: ShotDialogue[]) => ShotDialogue[]) => {
+    engine.doc.undo.stopCapturing()
+    try {
+      onChange(update)
+    } finally {
+      engine.doc.undo.stopCapturing()
+    }
+  }
   // 同一帧内其他台词可能已提交、移动或删除，按稳定 id 更新父级传入的最新数组。
   const change = (lineId: string, value: string) =>
     onChange((current) => {
@@ -102,8 +121,8 @@ export function DialogueCell({
         })
       return [...current.slice(0, index), ...next, ...current.slice(index + 1)]
     })
-  const move = (lineId: string, delta: number) =>
-    onChange((current) => {
+  const move = (lineId: string, delta: number) => {
+    structure((current) => {
       const i = current.findIndex((line) => line.id === lineId)
       const j = i + delta
       if (i < 0 || j < 0 || j >= current.length) return current
@@ -111,10 +130,27 @@ export function DialogueCell({
       ;[next[i], next[j]] = [next[j]!, next[i]!]
       return next
     })
+    setFocusId(lineId)
+  }
+  const remove = (lineId: string) => {
+    const current = readDialogue()
+    const i = current.findIndex((line) => line.id === lineId)
+    const remaining = current.filter((line) => line.id !== lineId)
+    structure((latest) => latest.filter((line) => line.id !== lineId))
+    setFocusId((remaining[i] ?? remaining[i - 1])?.id ?? 'empty')
+  }
   return (
     <div className="min-w-0 rounded-lg bg-surface-2 p-2">
       {(lines.length ? lines : [{ id: 'empty', character: '', line: '' }]).map((line, i) => (
-        <div key={line.id} data-dialogue-id={line.id} className="mb-2 space-y-1">
+        <div
+          key={line.id}
+          ref={(node) => {
+            if (node) rows.current.set(line.id!, node)
+            else rows.current.delete(line.id!)
+          }}
+          data-dialogue-id={line.id}
+          className="mb-2 space-y-1"
+        >
           <DialogueInput
             value={dialogueText(line)}
             readValue={() => {
@@ -165,7 +201,7 @@ export function DialogueCell({
                 type="button"
                 className="ui-btn ui-btn-xs ui-btn-quiet"
                 aria-label={`删除第 ${i + 1} 句`}
-                onClick={() => onChange((current) => current.filter((d) => d.id !== line.id))}
+                onClick={() => remove(line.id!)}
               >
                 删除
               </button>
@@ -176,9 +212,11 @@ export function DialogueCell({
       <button
         type="button"
         className="ui-btn ui-btn-xs ui-btn-quiet"
-        onClick={() =>
-          onChange((current) => [...current, { id: newDialogueId(), character: '', line: '' }])
-        }
+        onClick={() => {
+          const id = newDialogueId()
+          structure((current) => [...current, { id, character: '', line: '' }])
+          setFocusId(id)
+        }}
       >
         添加台词
       </button>
