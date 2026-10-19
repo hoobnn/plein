@@ -28,6 +28,7 @@ import { BatchChecklist } from './BatchChecklist'
 import { openAnimatic } from '../sequence/animatic'
 import { AssetBindingSelect, DialogueCell } from './ShotBindings'
 import { Menu } from '@base-ui/react/menu'
+import { useDialogMenu } from '../../ui/useDialogMenu'
 
 const cell =
   'resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
@@ -73,22 +74,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const [mode, setMode] = useState<'edit' | 'review'>('edit')
   const [structureError, setStructureError] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  const [regenerateOpen, setRegenerateOpen] = useState(false)
-  const regenerateEscapes = useRef(new WeakSet<Event>())
-  const regeneratePending = useRef(false)
-  const regenerateCancelledAt = useRef(-Infinity)
-  const regenerateTrigger = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (!regenerateOpen) return
-    const focus = () => {
-      const active = document.activeElement?.closest('[role="dialog"]')
-      if (active && active !== regenerateTrigger.current?.closest('[role="dialog"]'))
-        setRegenerateOpen(false)
-    }
-    document.addEventListener('focusin', focus)
-    focus()
-    return () => document.removeEventListener('focusin', focus)
-  }, [regenerateOpen])
+  const regenerate = useDialogMenu()
   const shotElements = useRef(new Map<string, HTMLElement>())
   const addButton = useRef<HTMLButtonElement>(null)
   const [focusTarget, setFocusTarget] = useState<{
@@ -122,28 +108,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   useEffect(() => {
     // 捕获阶段拦下按键：表格打开时画布的快捷键（删除、方向键等）不生效
     const key = (e: KeyboardEvent) => {
-      if (useCanvas.getState().viewer) return
-      if (
-        e.key === 'Escape' &&
-        !e.isComposing &&
-        e.keyCode !== 229 &&
-        regeneratePending.current &&
-        e.target instanceof Node &&
-        regenerateTrigger.current?.contains(e.target)
-      ) {
-        regeneratePending.current = false
-        regenerateCancelledAt.current = e.timeStamp
-        e.preventDefault()
-        e.stopPropagation()
-        setRegenerateOpen(false)
-        return
-      }
-      // 菜单可能先于本监听卸载，不能再靠 DOM 判断同一个 Esc 的归属。
-      if (regenerateEscapes.current.has(e)) {
-        e.preventDefault()
-        e.stopPropagation()
-        return
-      }
+      if (e.defaultPrevented || useCanvas.getState().viewer) return
       if (
         !(e.target instanceof Element) ||
         !e.target.closest('[role="dialog"]')?.classList.contains('storyboard-editor')
@@ -158,7 +123,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         e.target instanceof Element &&
         (e.target.closest('.ui-select, .ui-menu') ||
           (e.target.closest('[aria-haspopup="menu"]') &&
-            (regenerateOpen ||
+            (regenerate.open ||
               !((e.metaKey || e.ctrlKey) && ['z', 'y'].includes(e.key.toLowerCase())))))
       )
         return
@@ -195,7 +160,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
-  }, [onClose, syncScope, batchRequest, regenerateOpen, engine, id, canvasId])
+  }, [onClose, syncScope, batchRequest, regenerate.open, engine, id, canvasId])
 
   const write = (next: Shot[]) => setParam(engine.doc, id, 'shots', next)
   const textValue = (
@@ -431,32 +396,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           更新展开
         </button>
         <span aria-hidden="true" className="ui-bar-sep" />
-        <Menu.Root
-          modal={false}
-          open={regenerateOpen}
-          onOpenChange={(open, details) => {
-            regeneratePending.current = false
-            // Base UI 可能延迟处理触发器点击；Esc 已取消的旧点击不能再次打开。
-            if (open && details.event.timeStamp <= regenerateCancelledAt.current) {
-              details.cancel()
-              return
-            }
-            if (!open && details.reason === 'escape-key')
-              regenerateEscapes.current.add(details.event)
-            setRegenerateOpen(open)
-          }}
-        >
-          <Menu.Trigger
-            ref={regenerateTrigger}
-            className={btn}
-            disabled={!expanded.size}
-            onPointerDownCapture={(event) => {
-              if (event.button === 0) regeneratePending.current = true
-            }}
-            onPointerCancel={() => {
-              regeneratePending.current = false
-            }}
-          >
+        <Menu.Root modal={false} open={regenerate.open} onOpenChange={regenerate.onOpenChange}>
+          <Menu.Trigger {...regenerate.triggerProps} className={btn} disabled={!expanded.size}>
             全部重新生成
             <Icon name="chevronDown" size={12} />
           </Menu.Trigger>

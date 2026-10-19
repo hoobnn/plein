@@ -21,6 +21,7 @@ import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Segmented } from '../../ui/Segmented'
+import { useDialogMenu } from '../../ui/useDialogMenu'
 import { saveSnapshot } from './snapshot'
 import { stageRecordsOf } from './records'
 import { applyStageHistory, canStageHistory, writeStageEdit } from './history'
@@ -187,7 +188,9 @@ export function StagePanel({
       return
     if (
       target.isContentEditable ||
-      target.closest('input, textarea, select, [role="menu"], [role="listbox"]')
+      target.closest(
+        'input, textarea, select, [role="menu"], [role="listbox"], [aria-haspopup="menu"][aria-expanded="true"]',
+      )
     )
       return
     if ((e.metaKey || e.ctrlKey) && !e.altKey) {
@@ -212,8 +215,8 @@ export function StagePanel({
   }
   useEffect(() => {
     const on = (e: KeyboardEvent) => keys.current(e)
-    window.addEventListener('keydown', on)
-    return () => window.removeEventListener('keydown', on)
+    window.addEventListener('keydown', on, true)
+    return () => window.removeEventListener('keydown', on, true)
   }, [])
 
   const figure = scene.figures.find((f) => f.id === selected)
@@ -564,9 +567,11 @@ export function StagePanel({
 
 /** 添加场景件：加号弹出种类菜单 */
 function AddBlock({ onPick, disabled }: { onPick(kind: StageBlockKind): void; disabled: boolean }) {
+  const menu = useDialogMenu()
   return (
-    <Menu.Root modal={false}>
+    <Menu.Root modal={false} open={menu.open} onOpenChange={menu.onOpenChange}>
       <Menu.Trigger
+        {...menu.triggerProps}
         aria-label="添加场景件"
         title="添加场景件"
         disabled={disabled}

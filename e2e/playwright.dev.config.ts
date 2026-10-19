@@ -98,6 +98,8 @@ export default defineConfig({
     'tooltip-lifecycle.spec.ts',
     'input-preview.spec.ts',
     'generator-camera.spec.ts',
+    'stage-menu.spec.ts',
+    'stage-boundaries.spec.ts',
     'generator-editing.spec.ts',
     'candidate-lifecycle.spec.ts',
     'mention-cross-canvas.spec.ts',
