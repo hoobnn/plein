@@ -56,7 +56,8 @@ for (const [kind, brokenWaveform] of [
       exact: true,
     })
     const card = column.getByRole('button', { name: `查看${name}`, exact: true })
-    await expect(card.locator('.board-play')).toBeVisible()
+    if (brokenWaveform) await expect(card).toContainText('缩略图加载失败')
+    else await expect(card.locator('.board-play')).toBeVisible()
     await card.click()
     const viewer = page.getByRole('dialog', { name: `查看「${name}」`, exact: true })
     await expect(viewer).toBeVisible()

@@ -211,6 +211,7 @@ export default defineConfig({
     'board-lifecycle.spec.ts',
     'board-candidates.spec.ts',
     'board-playback.spec.ts',
+    'board-thumbnail-recovery.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
     'sidebar-resize.spec.ts',
     'sidebar-assets-recovery.spec.ts',

@@ -1,6 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, elementMedia, primaryResult } from '@plein/doc'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { useDocVersion } from '../canvas/hooks'
 import { selectedModel } from '../canvas/modelParams'
@@ -234,6 +234,16 @@ function MediaItem({
 
   const result = el.kind === 'node' ? primaryResult(el) : undefined
   const candidates = result ? (el.results?.filter((r) => r.port === result.port).length ?? 0) : 0
+  const preview = useRef<HTMLButtonElement>(null)
+  const thumb = assetId
+    ? assetUrls.variant(
+        assetId,
+        type === 'image' ? 'thumb-1024' : type === 'video' ? 'poster' : 'waveform',
+      )
+    : undefined
+  const [load, setLoad] = useState({ src: thumb, attempt: 0, broken: false })
+  const current = load.src === thumb ? load : { src: thumb, attempt: 0, broken: false }
+  if (load.src !== thumb) setLoad(current)
 
   // 卡片比例：有素材按素材，没有按画布上的卡片形状（视频节点卡片跟随所选比例）
   const ratio =
@@ -285,6 +295,7 @@ function MediaItem({
         {title}
       </button>
       <button
+        ref={preview}
         type="button"
         onClick={open}
         aria-label={assetId ? `查看${title}` : `定位${title}`}
@@ -292,42 +303,37 @@ function MediaItem({
         style={{ aspectRatio: aspect, width: `min(100%, ${Math.round(MEDIA_MAX_H * aspect)}px)` }}
         className="board-media group"
       >
-        {assetId && type === 'image' && (
-          <img
-            src={assetUrls.variant(assetId, 'thumb-1024')}
-            alt=""
-            loading="lazy"
-            draggable={false}
-            className="size-full object-cover"
-          />
-        )}
-        {assetId && type === 'video' && (
-          <>
+        {assetId &&
+          (current.broken ? (
+            <span
+              role="img"
+              aria-label={`「${title}」缩略图加载失败`}
+              className="flex flex-col items-center gap-2 text-xs text-ink-subtle"
+            >
+              <Icon name={outlineIcon(type)} size={24} />
+              缩略图加载失败
+            </span>
+          ) : (
             <img
-              src={assetUrls.variant(assetId, 'poster')}
+              key={JSON.stringify([current.src, current.attempt])}
+              src={current.src}
               alt=""
               loading="lazy"
               draggable={false}
-              className="size-full object-cover"
+              onError={() =>
+                setLoad((old) =>
+                  old.src === current.src && old.attempt === current.attempt
+                    ? { ...old, broken: true }
+                    : old,
+                )
+              }
+              className={`size-full ${type === 'audio' ? 'object-contain p-4 opacity-80' : 'object-cover'}`}
             />
-            <span className="board-play">
-              <Icon name="play" size={20} />
-            </span>
-          </>
-        )}
-        {assetId && type === 'audio' && (
-          <>
-            <img
-              src={assetUrls.variant(assetId, 'waveform')}
-              alt=""
-              loading="lazy"
-              draggable={false}
-              className="size-full object-contain p-4 opacity-80"
-            />
-            <span className="board-play">
-              <Icon name="play" size={20} />
-            </span>
-          </>
+          ))}
+        {assetId && type !== 'image' && !current.broken && (
+          <span className="board-play">
+            <Icon name="play" size={20} />
+          </span>
         )}
         {!assetId && (
           <span className="flex flex-col items-center gap-2 text-sm text-ink-subtle">
@@ -341,6 +347,21 @@ function MediaItem({
           </span>
         )}
       </button>
+      {current.broken && (
+        <button
+          type="button"
+          aria-label={`重新加载「${title}」缩略图`}
+          title="只重新加载缩略图，不改变采用结果"
+          className="ui-btn ui-btn-secondary ui-btn-sm"
+          onClick={() => {
+            preview.current?.focus()
+            setLoad((old) => ({ ...old, attempt: old.attempt + 1, broken: false }))
+          }}
+        >
+          <Icon name="retry" size={14} />
+          重试缩略图
+        </button>
+      )}
       {(chips.length > 0 || status) && (
         <div className="flex flex-wrap items-center gap-1.5">
           {chips.map((c, i) => (
