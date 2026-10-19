@@ -259,11 +259,14 @@ class CodecFrames implements Frames {
     if (!sink || this.stillBusy || this.stillDone === this.want) return
     this.stillBusy = true
     const gen = this.gen
+    let requested = this.want
     void (async () => {
       while (gen === this.gen && this.mode === 'still' && this.stillDone !== this.want) {
         const want = this.want
+        requested = want
         const frame = await sink.getCanvas(this.first + Math.max(0, want))
         if (gen !== this.gen) break
+        if (want !== this.want) continue
         this.stillDone = want
         if (frame) {
           this.cur = frame
@@ -274,6 +277,13 @@ class CodecFrames implements Frames {
       .catch(() => {})
       .finally(() => {
         this.stillBusy = false
+        // 旧读取占用期间的新暂停位置不能等下一次交互才补发。
+        if (
+          !this.disposed &&
+          this.mode === 'still' &&
+          (gen !== this.gen || requested !== this.want)
+        )
+          this.still()
       })
   }
 }

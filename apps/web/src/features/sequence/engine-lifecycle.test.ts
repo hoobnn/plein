@@ -8,6 +8,8 @@ const calls = vi.hoisted(() => ({
   timestamp: vi.fn(),
   sink: vi.fn(),
   dispose: vi.fn(),
+  canvas: vi.fn(),
+  draw: vi.fn(),
 }))
 vi.mock('mediabunny', () => ({
   ALL_FORMATS: [],
@@ -24,8 +26,11 @@ vi.mock('mediabunny', () => ({
     constructor() {
       calls.sink()
     }
-    async getCanvas() {
-      return null
+    getCanvas(time: number) {
+      return calls.canvas(time)
+    }
+    async *canvases() {
+      yield* []
     }
   },
 }))
@@ -48,6 +53,12 @@ beforeEach(() => {
   calls.primary.mockResolvedValue(track)
   calls.decode.mockResolvedValue(true)
   calls.timestamp.mockResolvedValue(0)
+  calls.canvas.mockResolvedValue(null)
+  vi.stubGlobal(
+    'requestAnimationFrame',
+    vi.fn(() => 1),
+  )
+  vi.stubGlobal('cancelAnimationFrame', vi.fn())
   vi.stubGlobal('VideoDecoder', class {})
   vi.stubGlobal('AudioContext', undefined)
   vi.stubGlobal('document', { createElement: createVideo })
@@ -58,13 +69,13 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
-function open() {
-  const engine = new PreviewEngine(new Playhead())
+function open(playhead = new Playhead(), total = 2) {
+  const engine = new PreviewEngine(playhead)
   engines.push(engine)
   engine.setScene({
     width: 96,
     height: 64,
-    total: 2,
+    total,
     sounds: [],
     clips: [{ key: 'clip', assetId: 'asset', kind: 'video', start: 0, length: 2, in: 0, speed: 1 }],
   })
@@ -72,7 +83,7 @@ function open() {
     width: 0,
     height: 0,
     dataset: {},
-    getContext: () => ({}),
+    getContext: () => ({ fillRect: vi.fn(), drawImage: calls.draw }),
   } as unknown as HTMLCanvasElement)
   return engine
 }
@@ -119,4 +130,74 @@ describe('视频解码初始化与释放', () => {
     expect(warn).not.toHaveBeenCalled()
     expect(createVideo).not.toHaveBeenCalled()
   })
+})
+
+describe('等待中的暂停画面切换', () => {
+  for (const action of ['pause', 'park'] as const) {
+    for (const rejected of [false, true]) {
+      it(`${action} 后旧帧迟到${rejected ? '失败' : '成功'}，无需额外操作就继续获取新位置`, async () => {
+        let release!: () => void
+        let fail!: (error: Error) => void
+        calls.canvas.mockReturnValueOnce(
+          new Promise((resolve, reject) => {
+            release = () => resolve(null)
+            fail = reject
+          }),
+        )
+        const playhead = new Playhead()
+        playhead.setTotal(4)
+        open(playhead, 4)
+        await vi.waitFor(() => expect(calls.canvas).toHaveBeenCalledOnce())
+        if (action === 'pause') {
+          playhead.play()
+          playhead.pause()
+        } else playhead.seek(3)
+        playhead.seek(1)
+        if (rejected) fail(new Error('old frame canceled'))
+        else release()
+        await settle()
+        expect(calls.canvas).toHaveBeenCalledTimes(2)
+        expect(calls.canvas).toHaveBeenLastCalledWith(1)
+      })
+    }
+  }
+  for (const rejected of [false, true]) {
+    it(`暂停时连续定位，旧位置${rejected ? '失败' : '画面'}不阻断或覆盖新位置`, async () => {
+      let release!: (frame: unknown) => void
+      let fail!: (error: Error) => void
+      calls.canvas.mockReturnValueOnce(
+        new Promise((resolve, reject) => {
+          release = resolve
+          fail = reject
+        }),
+      )
+      const playhead = new Playhead()
+      playhead.setTotal(2)
+      open(playhead)
+      await vi.waitFor(() => expect(calls.canvas).toHaveBeenCalledOnce())
+      playhead.seek(1)
+      if (rejected) fail(new Error('old position failed'))
+      else release({ canvas: { width: 96, height: 64 }, timestamp: 0, duration: 0.04 })
+      await settle()
+      expect(calls.draw).not.toHaveBeenCalled()
+      expect(calls.canvas).toHaveBeenCalledTimes(2)
+      expect(calls.canvas).toHaveBeenLastCalledWith(1)
+    })
+  }
+  for (const disposed of [false, true]) {
+    it(`${disposed ? '释放后' : '当前位置'}的读取失败不自动无限重试`, async () => {
+      let fail!: (error: Error) => void
+      calls.canvas.mockReturnValueOnce(
+        new Promise((_, reject) => {
+          fail = reject
+        }),
+      )
+      const engine = open()
+      await vi.waitFor(() => expect(calls.canvas).toHaveBeenCalledOnce())
+      if (disposed) engine.dispose()
+      fail(new Error('decode failed'))
+      await settle()
+      expect(calls.canvas).toHaveBeenCalledOnce()
+    })
+  }
 })

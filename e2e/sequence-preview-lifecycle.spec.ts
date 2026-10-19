@@ -17,6 +17,23 @@ test.beforeAll(() => {
     '-f',
     'lavfi',
     '-i',
+    'color=c=red:s=96x64:d=1:r=8',
+    '-f',
+    'lavfi',
+    '-i',
+    'color=c=blue:s=96x64:d=1:r=8',
+    '-filter_complex',
+    '[0:v][1:v]concat=n=2:v=1:a=0',
+    '-c:v',
+    'libvpx-vp9',
+    '-deadline',
+    'realtime',
+    join(dir, 'cut.webm'),
+  )
+  ff(
+    '-f',
+    'lavfi',
+    '-i',
     'color=c=red:s=96x64:d=3:r=8',
     '-c:v',
     'libvpx-vp9',
@@ -348,3 +365,54 @@ for (const action of ['reopen', 'resize'] as const) {
     }
   })
 }
+
+test('真实视频快速播放暂停与连续定位，暂停画面始终落在最终位置', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await newProject(page)
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: '上传', exact: true }).click()
+  await (await chooser).setFiles(join(dir, 'cut.webm'))
+  await expect
+    .poll(async () => (await elements(page)).filter((e) => e.kind === 'video').length)
+    .toBe(1)
+  const video = (await elements(page)).find((e) => e.kind === 'video')!
+  const id = await page.evaluate((source) => {
+    const id = window.__plein.addNode({
+      type: 'plein/sequence',
+      name: '暂停定位画面',
+      x: 3000,
+      y: 1000,
+      params: { subtitles: false, aspectRatio: '16:9', clipVolume: 0 },
+    })
+    window.__plein.connect([source, 'video'], [id, 'clips'])
+    return id
+  }, video.id)
+  const editor = await open(page, id)
+  const monitor = editor.locator('.seq-monitor')
+  const canvas = monitor.locator('.seq-stage > canvas')
+  const color = () =>
+    canvas.evaluate((canvas: HTMLCanvasElement) => {
+      const p = canvas
+        .getContext('2d')!
+        .getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data
+      return p[0]! > 150 && p[2]! < 80 ? 'red' : p[2]! > 150 && p[0]! < 80 ? 'blue' : 'other'
+    })
+  await expect.poll(color).toBe('red')
+  for (let i = 0; i < 3; i++) {
+    await monitor.getByRole('button', { name: '播放', exact: true }).click()
+    await monitor.getByRole('button', { name: '暂停', exact: true }).click()
+    await monitor.getByRole('button', { name: '回到开头', exact: true }).click()
+    for (const key of ['Shift+ArrowRight', 'Shift+ArrowLeft', 'Shift+ArrowRight'])
+      await page.keyboard.press(key)
+    await expect(monitor.locator('.seq-time > span').first()).toHaveText('0:01.0')
+    await expect.poll(color).toBe('blue')
+    if (i === 0)
+      await monitor.screenshot({ path: test.info().outputPath('paused-blue-position.png') })
+    await page.keyboard.press('Shift+ArrowLeft')
+    await expect.poll(color).toBe('red')
+    await expect(monitor.getByRole('button', { name: '播放', exact: true })).toBeVisible()
+  }
+  await expect(canvas).toHaveAttribute('data-decoder', 'webcodecs')
+  expect(errors).toEqual([])
+})
