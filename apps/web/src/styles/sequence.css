@@ -112,6 +112,8 @@
 
 /* 轨道：凹槽，左端和轨道头之间留 4 */
 .seq-lane {
+  /* 卡片内的文字和转场只在轨道内分层，不越过左侧固定标签。 */
+  isolation: isolate;
   position: relative;
   flex: 1;
   margin-right: 8px;

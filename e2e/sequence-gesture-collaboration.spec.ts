@@ -432,3 +432,152 @@ for (const change of ['wheel', 'resize', 'same-frame-wheel', 'noop-wheel'] as co
     await expect.poll(order).toEqual(['c', 'a', 'b'])
   })
 }
+
+for (const mode of ['native', 'same-frame', 'noop'] as const) {
+  test(`修剪中横向滚动 ${mode} 不保存旧坐标`, async ({ page }) => {
+    const f = await videoFixture(page)
+    await f.editor.getByRole('button', { name: '放大', exact: true }).click()
+    const scroller = f.editor.locator('.seq-scroll')
+    await scroller.evaluate((el) => {
+      el.scrollLeft = el.scrollWidth
+    })
+    const clip = f.editor.locator('.seq-clip').first()
+    await clip.hover({ position: { x: 1000, y: 30 } })
+    const edge = clip.locator('.seq-trim-out')
+    await edge.scrollIntoViewIfNeeded()
+    const handle = (await edge.boundingBox())!
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
+    await page.mouse.down()
+    const previewScroll = await scroller.evaluate((el) => el.scrollLeft)
+    await page.mouse.move(handle.x - 40, handle.y + handle.height / 2, { steps: 4 })
+    await expect(f.editor.locator('.seq-clip[data-trimming]')).toHaveCount(1)
+    expect(await scroller.evaluate((el) => el.scrollLeft)).toBe(previewScroll)
+    expect((await f.saved()).out).toBe(1.8)
+    const before = await scroller.evaluate((el) => el.scrollLeft)
+    if (mode === 'native') {
+      await page.mouse.wheel(-120, 0)
+      await expect.poll(() => scroller.evaluate((el) => el.scrollLeft)).toBeLessThan(before)
+    } else
+      await scroller.evaluate((el, mode) => {
+        if (mode !== 'noop') el.scrollLeft -= 120
+        window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1 }))
+      }, mode)
+    await page.mouse.up()
+    const notice = f.editor.getByRole('status', { name: '时间线操作已取消' })
+    if (mode === 'noop') {
+      expect(Number((await f.saved()).out)).toBeLessThan(1.8)
+      await expect(notice).toHaveCount(0)
+    } else {
+      expect((await f.saved()).out).toBe(1.8)
+      await expect(notice).toBeVisible()
+      await expect(f.editor.locator('.seq-clip[data-trimming]')).toHaveCount(0)
+      await edge.scrollIntoViewIfNeeded()
+      const next = (await edge.boundingBox())!
+      await page.mouse.move(next.x + next.width / 2, next.y + next.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(next.x - 50, next.y + next.height / 2, { steps: 4 })
+      await page.mouse.up()
+      expect(Number((await f.saved()).out)).toBeLessThan(1.8)
+      await expect(notice).toHaveCount(0)
+    }
+  })
+}
+
+for (const mode of ['native', 'same-frame', 'noop'] as const) {
+  test(`重排中横向滚动 ${mode} 保留顺序并恢复操作`, async ({ page }) => {
+    await newProject(page)
+    const id = await page.evaluate(() =>
+      window.__plein.addNode({
+        type: 'plein/animatic',
+        name: '滚动重排',
+        x: 400,
+        y: 200,
+        params: {
+          subtitles: false,
+          shots: ['a', 'b', 'c'].map((shotId) => ({ shotId, duration: 5, dialogue: [] })),
+        },
+      }),
+    )
+    const editor = await open(page, id)
+    await editor.getByRole('button', { name: '放大', exact: true }).click()
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    )
+    const scroller = editor.locator('.seq-scroll')
+    await scroller.evaluate((el) => {
+      el.scrollLeft = 0
+    })
+    await expect.poll(() => scroller.evaluate((el) => el.scrollLeft)).toBe(0)
+    const clips = editor.locator('.seq-clip')
+    const drag = async () => {
+      const first = (await clips.first().boundingBox())!
+      const second = (await clips.nth(1).boundingBox())!
+      await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(second.x + second.width / 2 + 20, second.y + second.height / 2, {
+        steps: 6,
+      })
+      await expect(editor.locator('.seq-clip[data-moving]')).toHaveCount(1)
+    }
+    const order = () =>
+      page.evaluate(
+        (id) =>
+          (window.__plein.engine.doc.get(id)!.params!.shots as Array<{ shotId: string }>).map(
+            (s) => s.shotId,
+          ),
+        id,
+      )
+    if (mode === 'noop') {
+      await editor.getByRole('button', { name: '播放', exact: true }).click()
+      await expect(editor.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
+    }
+    await drag()
+    await expect(editor.getByRole('button', { name: '播放', exact: true })).toBeVisible()
+    if (mode === 'native') {
+      await page.mouse.wheel(120, 0)
+      await expect.poll(() => scroller.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0)
+    } else
+      await scroller.evaluate((el, mode) => {
+        if (mode !== 'noop') el.scrollLeft += 120
+        window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1 }))
+      }, mode)
+    await page.mouse.up()
+    const notice = editor.getByRole('status', { name: '时间线操作已取消' })
+    if (mode === 'noop') {
+      await expect.poll(order).toEqual(['b', 'a', 'c'])
+      await expect(notice).toHaveCount(0)
+      return
+    }
+    await expect.poll(order).toEqual(['a', 'b', 'c'])
+    await expect(notice).toBeVisible()
+    await expect(editor.locator('.seq-clip[data-moving]')).toHaveCount(0)
+    if (mode === 'native') {
+      const labelOnTop = await editor.locator('.seq-row-clips').evaluate((row) => {
+        const name = row.querySelector<HTMLElement>('.seq-clip-name')!
+        const label = row.querySelector<HTMLElement>('.seq-label')!
+        name.style.pointerEvents = 'auto'
+        const bounds = name.getBoundingClientRect()
+        const at = label.getBoundingClientRect()
+        const hit = document.elementFromPoint(at.left + 30, bounds.top + 8)
+        name.style.pointerEvents = ''
+        return label.contains(hit)
+      })
+      expect(labelOnTop).toBe(true)
+      await editor.screenshot({ path: test.info().outputPath('scroll-cancelled.png') })
+    }
+    await scroller.evaluate((el) => {
+      el.scrollLeft = 0
+    })
+    await expect.poll(() => scroller.evaluate((el) => el.scrollLeft)).toBe(0)
+    await drag()
+    await page.mouse.up()
+    await expect.poll(order).toEqual(['b', 'a', 'c'])
+    await expect(notice).toHaveCount(0)
+    await editor.getByRole('button', { name: '重新加载预览', exact: true }).focus()
+    await page.keyboard.press('ControlOrMeta+z')
+    await expect.poll(order).toEqual(['a', 'b', 'c'])
+  })
+}

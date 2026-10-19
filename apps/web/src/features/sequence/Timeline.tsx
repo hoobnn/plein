@@ -76,7 +76,7 @@ function usePointerGesture() {
     onMove: (event: PointerEvent) => void,
     onEnd?: () => void,
     onCancel?: () => void,
-    guard?: { current(): boolean; invalid(): void },
+    guard?: { current(): boolean; invalid(): void; scrollTarget?: HTMLElement | null },
   ) => {
     const move = (event: PointerEvent) => {
       if (event.pointerId !== pointerId) return
@@ -92,6 +92,7 @@ function usePointerGesture() {
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', cancel)
       window.removeEventListener('blur', blur)
+      guard?.scrollTarget?.removeEventListener('scroll', scroll)
       cancelGesture.current = null
       if (commit) onEnd?.()
       else onCancel?.()
@@ -109,6 +110,13 @@ function usePointerGesture() {
       if (event.pointerId === pointerId) finish(false)
     }
     const blur = () => finish(false)
+    const scroll = () => {
+      if (guard && !guard.current()) {
+        finish(false)
+        guard.invalid()
+      }
+    }
+    guard?.scrollTarget?.addEventListener('scroll', scroll)
     cancelGesture.current = blur
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
@@ -170,6 +178,7 @@ export function Timeline({
   const scroller = useRef<HTMLDivElement>(null)
   const head = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState(0)
+  const preserveViewport = useRef(false)
   const [requestedZoom, setZoom] = useState(1)
   // 原生 wheel 与 pointerup 可在同一帧发生，不能等 React 提交后再更新交互身份。
   const requestedZoomRef = useRef(requestedZoom)
@@ -205,7 +214,7 @@ export function Timeline({
       if (!el || !sc) return
       const px = LABEL + PAD + playhead.t * ppsRef.current
       el.style.transform = `translateX(${px}px)`
-      if (playhead.playing || reveal) {
+      if (!preserveViewport.current && (playhead.playing || reveal)) {
         const right = sc.scrollLeft + sc.clientWidth
         if (px > right - 48) sc.scrollLeft = Math.max(0, px - sc.clientWidth + 48)
         else if (px < sc.scrollLeft + LABEL) sc.scrollLeft = Math.max(0, px - LABEL - 48)
@@ -274,6 +283,17 @@ export function Timeline({
     playhead.seek(at(e.clientX))
     const move = (ev: PointerEvent) => playhead.seek(at(ev.clientX))
     trackScrub(e.pointerId, move)
+  }
+
+  // 修剪预览只更新画面与播放头；自动跟随不能移动正在操作的手柄。
+  const previewSeek = (t: number) => {
+    preserveViewport.current = true
+    try {
+      playhead.pause()
+      playhead.seek(t)
+    } finally {
+      preserveViewport.current = false
+    }
   }
 
   const ticks = []
@@ -385,6 +405,8 @@ export function Timeline({
             onMove={onMove}
             onTrim={onTrim}
             onFocusTimeline={() => timeline.current?.focus({ preventScroll: true })}
+            onPreviewSeek={previewSeek}
+            readScroller={() => scroller.current}
           />
 
           <Track label="对白" icon="mic" kind="dialogue" empty="把配音连到序列的「对白」端口">
@@ -554,6 +576,8 @@ function ClipTrack({
   onMove,
   onTrim,
   onFocusTimeline,
+  onPreviewSeek,
+  readScroller,
 }: {
   readOnly: boolean
   interactionKey: string
@@ -568,6 +592,8 @@ function ClipTrack({
   onMove(from: number, to: number): void
   onTrim(key: string, patch: TrimPatch, done: boolean): void
   onFocusTimeline(): void
+  onPreviewSeek(t: number): void
+  readScroller(): HTMLElement | null
 }) {
   const descriptionId = useId()
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -608,6 +634,17 @@ function ClipTrack({
     playhead.seek(item.start)
   }
 
+  // 只在手势存活时观察滚动；播放中的自动跟随仍直接更新 DOM。
+  const scrollGuard = () => {
+    const scrollTarget = readScroller()
+    const left = scrollTarget?.scrollLeft
+    return {
+      current: () => isCurrent() && scrollTarget?.scrollLeft === left,
+      invalid,
+      scrollTarget,
+    }
+  }
+
   const startDrag = (e: ReactPointerEvent, index: number) => {
     if (e.button !== 0 || closing || !isCurrent()) return
     cancelGesture()
@@ -627,7 +664,10 @@ function ClipTrack({
     const move = (ev: PointerEvent) => {
       const dx = ev.clientX - x0
       if (!moved && Math.abs(dx) < 4) return
-      if (!moved) onFocusTimeline()
+      if (!moved) {
+        onFocusTimeline()
+        onPreviewSeek(playhead.t)
+      }
       moved = true
       const mine = center(item) + dx
       let target = items.filter((it, i) => i !== index && center(it) < mine).length
@@ -665,7 +705,7 @@ function ClipTrack({
         setDrag(null)
         setSettle(null)
       },
-      { current: isCurrent, invalid },
+      scrollGuard(),
     )
   }
 
@@ -679,7 +719,7 @@ function ClipTrack({
     e.preventDefault()
     onFocusTimeline()
     onSelect(item.key)
-    playhead.pause()
+    onPreviewSeek(playhead.t)
     setTrimming(item.key)
     const x0 = e.clientX
     const full = item.full ?? item.in + item.length
@@ -694,12 +734,12 @@ function ClipTrack({
       if (edge === 'in') {
         const v = Math.max(0, Math.min(out0 - minLength, round2(in0 + d)))
         patch = { in: v }
-        playhead.seek(item.start)
+        onPreviewSeek(item.start)
       } else {
         const v = Math.min(full, Math.max(in0 + minLength, round2(out0 + d)))
         // 拖回素材结尾就是“到结尾”
         patch = { out: v >= full - 0.01 ? undefined : v }
-        playhead.seek(item.start + (v - in0) / item.speed - 0.04)
+        onPreviewSeek(item.start + (v - in0) / item.speed - 0.04)
       }
       onTrim(item.key, patch, false)
     }
@@ -716,7 +756,7 @@ function ClipTrack({
         setTrimming(null)
         onTrim(item.key, {}, false)
       },
-      { current: isCurrent, invalid },
+      scrollGuard(),
     )
   }
 
