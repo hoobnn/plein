@@ -36,7 +36,7 @@ import { ApiError, api } from '../../api/client'
 import { AssetDownloadButton } from '../../shell/AssetDownloadButton'
 import { useDocVersion } from '../../canvas/hooks'
 import { desktop } from '../../desktop'
-import { findNode, upstreams } from '../../canvas/nodes'
+import { findNode, upstreams, validate } from '../../canvas/nodes'
 import { cancelNode, runNode } from '../runs/run'
 import { cancelRequestKey, useCancelRequests } from '../runs/cancelRequests'
 import { useAssetMetas } from '../../stores/assetMeta'
@@ -67,8 +67,7 @@ interface Row extends ArrangedClip {
 }
 
 /** 从画布连线读出各端口的值，交给与服务端相同的 arrangeSequence 排序；没结果的上游先占位 */
-function readSequence(engine: Engine, id: string) {
-  const catalog = useCatalog.getState().catalog
+function readSequence(engine: Engine, id: string, catalog = useCatalog.getState().catalog) {
   const el = engine.doc.get(id)
   if (el?.nodeType === ANIMATIC_TYPE) {
     const params = animaticNode.params.parse(el.params)
@@ -85,6 +84,7 @@ function readSequence(engine: Engine, id: string) {
       sfx: [],
       music: undefined as string | undefined,
       animatic: params,
+      inputProblem: null,
     }
   }
   const params = sequenceNode.params.parse(el?.params ?? {}) as SequenceParams
@@ -117,6 +117,7 @@ function readSequence(engine: Engine, id: string) {
       caption: u.value && 'caption' in u.value ? u.value.caption : undefined,
     }))
   const music = values('music').find((v) => 'assetId' in v && v.assetId)
+  const node = findNode(catalog, el?.nodeType)
   return {
     el,
     params,
@@ -125,6 +126,7 @@ function readSequence(engine: Engine, id: string) {
     sfx: options('sfx'),
     music: music && 'assetId' in music ? music.assetId : undefined,
     animatic: undefined,
+    inputProblem: el && node ? validate(node, el, ups, catalog) : null,
   }
 }
 
@@ -157,8 +159,9 @@ const typing = (target: EventTarget | null) =>
 function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose(): void }) {
   // 协作者改了顺序也能看到
   useDocVersion(engine.doc)
-  const read = readSequence(engine, id)
-  const { el, params, dialogue, sfx, music, animatic } = read
+  const catalog = useCatalog((s) => s.catalog)
+  const read = readSequence(engine, id, catalog)
+  const { el, params, dialogue, sfx, music, animatic, inputProblem } = read
   const filmSequences = animatic ? relatedSequences(engine, id) : []
   const filmNames = filmSequences.map((film) => film.name?.trim() || '成片序列')
   const filmOptions = filmSequences.map((film, index) => {
@@ -511,6 +514,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const [packing, setPacking] = useState(false)
   const [packError, setPackError] = useState<string | null>(null)
   const exportProject = async () => {
+    if (packing || inputProblem) return
     setPacking(true)
     setPackError(null)
     try {
@@ -542,7 +546,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const exportVideo = () => {
     if (canceling) return
     if (running) void cancelNode(id, el?.run?.id)
-    else if (!engine.doc.readOnly) void runNode(id)
+    else if (!engine.doc.readOnly && !inputProblem) void runNode(id)
   }
   const progress = el?.run?.status === 'running' ? el.run.progress : undefined
   const film = el && currentResult(el)?.value
@@ -658,16 +662,18 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             packing ||
             rows.length === 0 ||
             !known ||
+            !!inputProblem ||
             !!subtitleProblem ||
             (!!animatic && pending > 0)
           }
           title={
-            pending
+            inputProblem ??
+            (pending
               ? animatic
                 ? `缺少 ${pending} 张分镜图；样片 MP4 可用占位，工程导出需要补齐素材`
                 : `还有 ${pending} 段镜头没有生成`
               : (subtitleProblem ??
-                '导出 OTIO / FCPXML 剪辑工程（连同素材打包），在达芬奇、Final Cut 里接着剪')
+                '导出 OTIO / FCPXML 剪辑工程（连同素材打包），在达芬奇、Final Cut 里接着剪'))
           }
           onClick={() => void exportProject()}
         >
@@ -690,6 +696,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             canceling ||
             (!running &&
               (engine.doc.readOnly ||
+                !!inputProblem ||
                 rows.length === 0 ||
                 (!animatic && pending > 0) ||
                 !!subtitleProblem))
@@ -697,11 +704,14 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           aria-busy={canceling}
           aria-label={running || canceling ? '停止导出' : undefined}
           title={
-            animatic
-              ? (subtitleProblem ?? '仅本地合成草稿；不生成视频、配音或自动识别字幕')
-              : pending
-                ? `还有 ${pending} 段镜头没有生成`
-                : subtitleProblem
+            running
+              ? '停止当前导出任务'
+              : (inputProblem ??
+                (animatic
+                  ? (subtitleProblem ?? '仅本地合成草稿；不生成视频、配音或自动识别字幕')
+                  : pending
+                    ? `还有 ${pending} 段镜头没有生成`
+                    : subtitleProblem))
           }
           onClick={exportVideo}
         >
@@ -734,6 +744,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         <p className="px-4 text-xs text-muted">
           仅使用创建或更新时已有的分镜图、配音。调整时长与对白节奏只改变样片；原生成结果保留。
           {pending > 0 && ` ${pending} 镜缺图，将显示占位。`}
+        </p>
+      )}
+      {inputProblem && (
+        <p role="status" className="px-4 py-2 text-sm text-danger [overflow-wrap:anywhere]">
+          {inputProblem}。请先补齐结果或断开不需要的连线后再导出。
         </p>
       )}
       {subtitleProblem && (
