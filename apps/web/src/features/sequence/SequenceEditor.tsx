@@ -283,6 +283,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   // 捕获阶段拦下按键：编辑器打开时画布的快捷键不生效；播放控制在这里处理
   const keys = useRef<(e: KeyboardEvent) => void>(() => {})
   keys.current = (e) => {
+    if (
+      !(e.target instanceof Element) ||
+      !e.target.closest('[role="dialog"]')?.classList.contains('seq-editor')
+    )
+      return
     // 输入法候选键不交给字段提交、关闭或播放快捷键；保留浏览器默认组词行为。
     if (e.isComposing || e.keyCode === 229) {
       e.stopPropagation()
@@ -322,6 +327,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
     // 输入框里的按键照常交给输入框（回车提交、Esc 由面板关闭）；画布的快捷键本来就不管输入框
     if (typing(e.target)) return
+    if (e.key === ' ' && target?.closest('button, a[href], [role="button"]')) return
     e.stopPropagation()
     if (e.key === 'Escape') return onClose()
     // 回看页使用原生视频与按钮的按键行为，不控制已经卸载的编辑预览。

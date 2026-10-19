@@ -86,6 +86,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     // 捕获阶段拦下按键：表格打开时画布的快捷键（删除、方向键等）不生效
     const key = (e: KeyboardEvent) => {
       if (useCanvas.getState().viewer) return
+      if (
+        !(e.target instanceof Element) ||
+        !e.target.closest('[role="dialog"]')?.classList.contains('storyboard-editor')
+      )
+        return
       if (e.isComposing || e.keyCode === 229) {
         e.stopPropagation()
         return
