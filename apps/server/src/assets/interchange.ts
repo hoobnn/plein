@@ -92,12 +92,18 @@ export async function sequencePackage(
   if (spec.subtitles?.cues.length) texts.push(['subtitles.srt', subtitleSrt(spec.subtitles.cues)])
 
   const out = new PassThrough()
+  const controller = new AbortController()
   const zip = new Zip((err, data, final) => {
+    if (out.destroyed) return
     if (err) out.destroy(err)
     else {
       out.write(data)
       if (final) out.end()
     }
+  })
+  out.once('close', () => {
+    controller.abort()
+    zip.terminate()
   })
   void (async () => {
     for (const [path, text] of texts) {
@@ -106,11 +112,12 @@ export async function sequencePackage(
       entry.push(strToU8(text), true)
     }
     for (const m of media.values()) {
+      controller.signal.throwIfAborted()
       const entry = new ZipPassThrough(`${name}/${m.path}`)
       zip.add(entry)
-      for await (const chunk of createReadStream(m.file)) {
+      for await (const chunk of createReadStream(m.file, { signal: controller.signal })) {
         entry.push(chunk as Uint8Array)
-        if (out.writableNeedDrain) await once(out, 'drain')
+        if (out.writableNeedDrain) await once(out, 'drain', { signal: controller.signal })
       }
       entry.push(new Uint8Array(0), true)
     }
