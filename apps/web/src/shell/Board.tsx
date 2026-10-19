@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, currentResult, elementMedia } from '@plein/doc'
+import { type CanvasElement, elementMedia, primaryResult } from '@plein/doc'
 import { useMemo, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { useDocVersion } from '../canvas/hooks'
@@ -47,7 +47,7 @@ type Content =
 
 function contentOf(el: CanvasElement): Content {
   if (el.kind === 'markdown') return el.text?.trim() ? { type: 'text', text: el.text } : null
-  const v = el.kind === 'node' ? currentResult(el)?.value : undefined
+  const v = el.kind === 'node' ? primaryResult(el)?.value : undefined
   if (v?.type === 'text') return { type: 'text', text: v.text }
   const m = elementMedia(el)
   return m && { type: m.kind, assetId: m.assetId }
@@ -232,6 +232,9 @@ function MediaItem({
   const title = outlineTitle(el, catalog)
   const status = el.run && STATUS[el.run.status]
 
+  const result = el.kind === 'node' ? primaryResult(el) : undefined
+  const candidates = result ? (el.results?.filter((r) => r.port === result.port).length ?? 0) : 0
+
   // 卡片比例：有素材按素材，没有按画布上的卡片形状（视频节点卡片跟随所选比例）
   const ratio =
     type === 'audio'
@@ -254,9 +257,21 @@ function MediaItem({
   ].filter((s): s is string => !!s)
 
   const open = () => {
-    if (assetId && (type === 'image' || type === 'video'))
-      useCanvas.getState().view({ assetId, kind: type, name: title })
-    else onLocate()
+    const state = useCanvas.getState()
+    const latest = state.engine?.doc.get(el.id)
+    if (!latest || state.mode !== 'board') {
+      onLocate()
+      return
+    }
+    const media = elementMedia(latest)
+    if (media && (media.kind === 'image' || media.kind === 'video')) {
+      const current = latest.kind === 'node' ? primaryResult(latest) : undefined
+      state.view(
+        current
+          ? { kind: 'result', nodeId: latest.id, resultId: current.id, name: title }
+          : { assetId: media.assetId, kind: media.kind, name: title },
+      )
+    } else onLocate()
   }
 
   return (
@@ -315,8 +330,10 @@ function MediaItem({
             {el.run?.status === 'running' || el.run?.status === 'queued' ? '生成中…' : '待生成'}
           </span>
         )}
-        {(el.results?.length ?? 0) > 1 && (
-          <span className="ui-badge absolute top-2 right-2">{el.results!.length}</span>
+        {candidates > 1 && (
+          <span className="ui-badge absolute top-2 right-2" aria-label={`${candidates} 个候选`}>
+            {candidates}
+          </span>
         )}
       </button>
       {(chips.length > 0 || status) && (

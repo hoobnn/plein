@@ -1,6 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import { adoptResult, currentResult, type NodeResult } from '@plein/doc'
-import { useCanvas } from '../stores/canvas'
+import { switchMode, useCanvas } from '../stores/canvas'
 
 type View = NonNullable<ReturnType<typeof useCanvas.getState>['viewer']>
 export interface ReviewActionTarget {
@@ -39,6 +39,7 @@ export function runReviewAction(
   if (!engine || !node) return `来源节点已删除，本次${operation}未执行`
   if (action === 'locate') {
     useCanvas.getState().toggleHistory(false)
+    switchMode('flow')
     engine.selection.set([node.id])
     engine.zoomToFit([node.id])
     return null
