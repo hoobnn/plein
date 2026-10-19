@@ -226,6 +226,7 @@ export default defineConfig({
     'impact-refresh.spec.ts',
     'impact-mutations.spec.ts',
     'impact-navigation.spec.ts',
+    'impact-storyboard-sources.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
     'sidebar-resize.spec.ts',
     'sidebar-assets-recovery.spec.ts',

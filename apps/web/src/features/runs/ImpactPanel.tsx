@@ -1,7 +1,9 @@
 import type { Engine } from '@plein/canvas-core'
 import type { ImpactNode, ImpactReport, ImpactSuggestion, SequenceIssue } from '@plein/protocol'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ApiError, api } from '../../api/client'
+import { useDocVersion } from '../../canvas/hooks'
+import { storyboardLabels } from '../storyboard/sourceLabels'
 import { describeImpactRun, runImpact } from '../../canvas/groups'
 import { useCanvas } from '../../stores/canvas'
 import { EmptyState } from '../../ui/EmptyState'
@@ -44,7 +46,7 @@ const defaults = (r: ImpactReport) =>
 
 /** 按镜头分组：同一镜头的节点放在一起，不属于镜头的归到最后 */
 function groupByShot(nodes: ImpactNode[]) {
-  const out: Array<{ key: string; title: string; nodes: ImpactNode[] }> = []
+  const out: Array<{ key: string; title: string; nodes: ImpactNode[]; storyboard?: string }> = []
   for (const n of nodes) {
     const key = n.shot ? `${n.shot.storyboard}/${n.shot.id}` : 'other'
     const title = n.shot
@@ -54,7 +56,7 @@ function groupByShot(nodes: ImpactNode[]) {
       : '其他节点'
     const g = out.find((x) => x.key === key)
     if (g) g.nodes.push(n)
-    else out.push({ key, title, nodes: [n] })
+    else out.push({ key, title, nodes: [n], storyboard: n.shot?.storyboard })
   }
   return out
 }
@@ -87,6 +89,8 @@ function Panel({
   canvasId: string
   onClose(): void
 }) {
+  useDocVersion(engine.doc)
+  const sources = storyboardLabels(engine.doc)
   const notify = useCanvas((s) => s.notify)
   const open = useCanvas((s) => s.impact)
   const mounted = useRef(true)
@@ -326,20 +330,14 @@ function Panel({
                 <h3 className="ui-section-title mb-2">分镜表有没同步的改动</h3>
                 <ul className="flex flex-col gap-1.5">
                   {report.plan.map((p) => (
-                    <li
+                    <PlanRow
                       key={`${p.storyboard}/${p.shot}`}
-                      className="flex items-center gap-2 text-sm"
-                    >
-                      <span className="text-ink">镜头 {String(p.no).padStart(2, '0')}</span>
-                      <span className="text-xs text-ink-subtle">{p.fields} 个字段</span>
-                      <button
-                        type="button"
-                        className="ui-btn ui-btn-sm ui-btn-secondary ml-auto"
-                        onClick={() => setSyncing({ board: p.storyboard, shots: [p.shot] })}
-                      >
-                        查看差异
-                      </button>
-                    </li>
+                      source={sources.get(p.storyboard) ?? '已删除的分镜'}
+                      no={p.no}
+                      fields={p.fields}
+                      disabled={!sources.has(p.storyboard)}
+                      onOpen={() => setSyncing({ board: p.storyboard, shots: [p.shot] })}
+                    />
                   ))}
                 </ul>
               </section>
@@ -368,7 +366,17 @@ function Panel({
             )}
             {groups.map((g) => (
               <section key={g.key} className="rounded-lg border border-line">
-                <h3 className="ui-section-title border-b border-line px-3 py-2">{g.title}</h3>
+                <h3 className="ui-section-title min-w-0 border-b border-line px-3 py-2">
+                  {g.storyboard && (
+                    <span
+                      className="mb-0.5 block truncate text-xs font-normal text-ink-muted"
+                      title={sources.get(g.storyboard) ?? '已删除的分镜'}
+                    >
+                      {sources.get(g.storyboard) ?? '已删除的分镜'}
+                    </span>
+                  )}
+                  {g.title}
+                </h3>
                 <ul className="divide-y divide-line">
                   {g.nodes.map((n) => (
                     <Row
@@ -564,6 +572,45 @@ function Row({
           </button>
         )
       )}
+    </li>
+  )
+}
+
+function PlanRow({
+  source,
+  no,
+  fields,
+  disabled,
+  onOpen,
+}: {
+  source: string
+  no: number
+  fields: number
+  disabled: boolean
+  onOpen(): void
+}) {
+  const description = useId()
+  const shot = `镜头 ${String(no).padStart(2, '0')}`
+  return (
+    <li aria-label={`${source} · ${shot}`} className="flex min-w-0 items-center gap-2 text-sm">
+      <div id={description} className="min-w-0 flex-1">
+        <p className="truncate text-xs text-ink-muted" title={source}>
+          {source}
+        </p>
+        <p>
+          <span className="text-ink">{shot}</span>
+          <span className="ml-2 text-xs text-ink-subtle">{fields} 个字段</span>
+        </p>
+      </div>
+      <button
+        type="button"
+        aria-describedby={description}
+        disabled={disabled}
+        className="ui-btn ui-btn-sm ui-btn-secondary flex-none"
+        onClick={onOpen}
+      >
+        查看差异
+      </button>
     </li>
   )
 }

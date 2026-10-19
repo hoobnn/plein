@@ -5,6 +5,7 @@ import { type ShotRole, type SyncMode, voiceOf } from '@plein/nodes'
 import { useState } from 'react'
 import { useCanvas } from '../../stores/canvas'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { storyboardLabels } from './sourceLabels'
 import { EmptyState } from '../../ui/EmptyState'
 import { useCatalog } from '../../stores/catalog'
 import { voicePresets } from '../../ui/VoicePicker'
@@ -80,6 +81,7 @@ export function StoryboardSync({
   const notify = useCanvas((s) => s.notify)
   const canvasId = useCanvas((s) => s.canvasId)
   const [error, setError] = useState<string | null>(null)
+  const source = storyboardLabels(engine.doc).get(boardId) ?? '已删除的分镜'
   const board = engine.doc.get(boardId)
   const shots = shotsOf(board)
   const diffs = planDiffs(engine, boardId)
@@ -154,6 +156,13 @@ export function StoryboardSync({
           同步计划改动
         </button>
       </ModalHeader>
+      <p
+        data-testid="storyboard-source"
+        title={source}
+        className="min-w-0 flex-none truncate px-5 pt-3 text-xs text-ink-muted"
+      >
+        分镜：{source}
+      </p>
       {error && (
         <p role="alert" className="flex-none px-5 pb-3 text-sm text-danger">
           {error}
@@ -181,12 +190,12 @@ export function StoryboardSync({
                 <ul className="flex flex-col gap-2">
                   {(diffs.get(s.id) ?? []).map((d) => (
                     <li key={d.el.id} className="text-sm">
-                      <p className="text-xs text-ink-muted">
+                      <p
+                        className="text-xs text-ink-muted"
+                        title={d.version ? `展开时的计划版本：${d.version}` : undefined}
+                      >
                         {d.el.name ?? ROLE_LABEL[d.role]}
                         {d.role === 'speech' && d.line !== undefined && ` · 第 ${d.line + 1} 句`}
-                        {d.version && (
-                          <span className="ml-2 text-ink-subtle">展开于 {d.version}</span>
-                        )}
                       </p>
                       <ul className="mt-1 flex flex-col gap-1">
                         {d.diffs.map((f) => (
