@@ -943,9 +943,17 @@ export function agentTools(
 ): McpTool[] {
   const ctx = serverContext(env)
   const registry = capabilitiesOf(env.host)
-  const tools = capabilityTools(registry, ctx, (cap, args, run) => {
+  const tools = capabilityTools(registry, ctx, async (cap, args, run) => {
     const blocked = opts.plan?.blocked(registry.effectOf(cap, args, ctx))
     if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
+    if (cap.name === 'run_node') {
+      const input = await env.runs.preview(env.canvasId, String(args.id), env.ownerId)
+      if (input.status !== 'ready')
+        return {
+          content: [{ type: 'text', text: input.blocked.map((b) => b.message).join('\n') }],
+          isError: true,
+        }
+    }
     const req = approvalFor(opts.mode(), cap, args, ctx, opts.changes)
     if (!req) return null
     const approved = async () => {

@@ -203,6 +203,13 @@ export function InputPreview({
       </button>
       {open && (
         <div className="flex flex-col gap-3 pt-2 pb-1 text-xs">
+          {!loading && !error && data.blocked.length > 0 && (
+            <ul role="alert" className="space-y-1 text-danger [overflow-wrap:anywhere]">
+              {issueText(data.blocked).map((message) => (
+                <li key={message}>{message}</li>
+              ))}
+            </ul>
+          )}
           {data.refs.length > 0 && (
             <section className="flex flex-col gap-1.5">
               <h4 className="ui-section-title">

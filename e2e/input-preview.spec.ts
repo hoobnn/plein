@@ -1,6 +1,43 @@
 import { expect, type Route, test } from '@playwright/test'
 import { addNode, byName, clickElement, deselect, newProject, waitNode } from './canvas'
 
+test('旧数据的无效分辨率提前显示支持值，修正后可生成并保留实际取值', async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 560 })
+  await newProject(page)
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/video',
+      name: '分辨率恢复',
+      params: { model: 'plein/mock:video', prompt: '水杯特写', resolution: '2K' },
+      x: 400,
+      y: 200,
+    }),
+  )
+  await clickElement(page, id)
+  const generator = page.getByTestId('generator')
+  const expand = generator.getByRole('button', { name: /^编辑/ })
+  if (await expand.isVisible()) await expand.click()
+  const preview = page.getByTestId('input-preview')
+  await preview.getByRole('button', { name: /实际输入/ }).click()
+  await expect(preview).toContainText('请选择 480p、720p、1080p')
+  await expect(preview).toContainText('不会提交')
+  const generate = generator.getByRole('button', { name: '生成', exact: true })
+  await expect(generate).toBeDisabled()
+  expect(await preview.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+  await generator.screenshot({ path: test.info().outputPath('resolution-blocked.png') })
+  await generator.getByRole('button', { name: '参数', exact: true }).click()
+  await page.getByRole('button', { name: '1080p', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await expect(preview).not.toContainText('不会提交')
+  await expect(generate).toBeEnabled()
+  await generate.click()
+  await waitNode(page, id)
+  const canvas = /#\/c\/([^/?]+)/.exec(page.url())![1]
+  const jobs = await (await page.request.get(`/api/canvases/${canvas}/jobs`)).json()
+  expect(jobs.jobs[0].input.params.resolution).toBe('1080p')
+  expect(jobs.jobs[0].attempts).toBe(1)
+})
+
 test('视频实际输入使用模式标签和音频开关说明，保留原始参数类型', async ({ page }) => {
   await newProject(page)
   const id = await page.evaluate(() =>

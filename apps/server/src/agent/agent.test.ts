@@ -508,6 +508,27 @@ describe('确认关卡与界面能力', () => {
     return { id, rooms, changes, approvals, decided, ui, call }
   }
 
+  it('不兼容的分辨率在审批前返回问题，修正后才请求批准', async () => {
+    const { call, approvals, decided, changes } = await setup()
+    const video = (
+      await call('create_node', {
+        type: 'plein/video',
+        params: { model: 'minimax/api:MiniMax-H3', prompt: '水杯特写', resolution: '1080p' },
+      })
+    ).json()
+    const blocked = await call('run_node', { id: video.id, wait_seconds: 0 })
+    expect(blocked.error).toBe(true)
+    expect(blocked.text).toContain('768P、2K')
+    expect(decided).toEqual([])
+    await call('update_element', { id: video.id, params: { resolution: '2K' } })
+    const gated = (await call('run_node', { id: video.id, wait_seconds: 0 })).json()
+    expect(gated.status).toBe('needs_approval')
+    expect(decided).toEqual(['run_node:pending'])
+    // 真实平台能力校验；不批准、不提交外部生成。
+    approvals.decide(gated.approval_id, false)
+    changes.release()
+  })
+
   it('视频生成要确认，允许后直接执行并由 await_approval 返回结果', async () => {
     const { call, approvals, changes } = await setup()
     const text = (

@@ -1495,6 +1495,16 @@ export class NodeRuns implements BatchHost {
         ?.def.models.find((m) => m.id === modelRef.model)
     const limits = spec?.limits
     const effective = this.latestParams(el, { def, params, inputs }) ?? {}
+    if (
+      (def.capability === 'image.generate' || def.capability === 'video.generate') &&
+      effective.resolution &&
+      limits?.resolutions?.length &&
+      !limits.resolutions.includes(String(effective.resolution))
+    )
+      blocked.push({
+        code: 'prepare_failed',
+        message: `${spec?.title ?? '当前模型'} 不支持分辨率 ${String(effective.resolution)}；请选择 ${limits.resolutions.join('、')}，或使用默认分辨率`,
+      })
     if (def.capability === 'audio.speech') {
       const check = speechVoice(String(effective.model ?? ''), voiceOf(effective))
       if (check.problem) blocked.push({ code: 'prepare_failed', message: check.problem })

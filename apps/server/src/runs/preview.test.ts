@@ -108,6 +108,41 @@ const run = (server: Server, canvas: string, node: string, expect?: string) =>
     body: JSON.stringify(expect ? { expect } : {}),
   })
 
+it('分辨率按实际模型提前校验，修正后的预览和提交一致', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const n = addNode(doc, 'plein/video', {
+    params: { model: 'minimax/api:MiniMax-H3', prompt: '水杯特写', resolution: '1080p' },
+  })
+  const blocked = await preview(server, id, n)
+  expect(blocked.status).toBe('blocked')
+  expect(blocked.blocked).toContainEqual({
+    code: 'prepare_failed',
+    message: 'MiniMax-H3 不支持分辨率 1080p；请选择 768P、2K，或使用默认分辨率',
+  })
+  setParams(doc, n, { resolution: '2K' })
+  expect((await preview(server, id, n)).status).toBe('ready')
+  setParams(doc, n, { model: 'minimax/api:MiniMax-H3-Max' })
+  expect((await preview(server, id, n)).blocked[0]?.message).toContain('480P、768P')
+  setParams(doc, n, { resolution: '' })
+  expect((await preview(server, id, n)).status).toBe('ready')
+  setParams(doc, n, { model: 'plein/mock:video', resolution: '2K' })
+  const submit = vi.spyOn(mockProvider, 'submit')
+  const failed = server.runs.start(id, n, 'local')
+  expect(await server.runs.wait(failed)).toBe('failed')
+  expect(submit).not.toHaveBeenCalled()
+  await until(() => !server.runs.isRunning(id, n))
+  setParams(doc, n, { resolution: '1080p' })
+  const ready = await preview(server, id, n)
+  expect(ready.status).toBe('ready')
+  const res = await run(server, id, n, ready.inputHash)
+  const { runId } = (await res.json()) as { runId: string }
+  expect(await server.runs.wait(runId)).toBe('succeeded')
+  expect(submit).toHaveBeenCalledTimes(1)
+  expect(submit.mock.calls[0]![0].input).toMatchObject({ resolution: '1080p' })
+}, 30_000)
+
 it('不支持自由语气的配音模型在预览时阻断，官方情绪标签仍可准备', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})

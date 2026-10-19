@@ -51,7 +51,7 @@ export type ToolGate<C extends CapabilityContext> = (
   cap: CapabilityDefinition<z.ZodObject, C>,
   args: Record<string, unknown>,
   run: () => Promise<ToolResult | string>,
-) => ToolResult | string | null
+) => ToolResult | string | null | Promise<ToolResult | string | null>
 
 /** 把能力注册表转成 MCP 工具：输入 schema 同一份，结果按 MCP content 序列化 */
 export function capabilityTools<C extends CapabilityContext>(
@@ -65,7 +65,7 @@ export function capabilityTools<C extends CapabilityContext>(
     input: cap.input,
     run: async (args) => {
       const run = async () => toToolResult(await registry.invoke(cap.name, ctx, args))
-      return gate?.(cap, args, run) ?? run()
+      return (await gate?.(cap, args, run)) ?? run()
     },
   }))
 }
