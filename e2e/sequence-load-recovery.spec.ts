@@ -26,8 +26,8 @@ test.beforeAll(() => {
 })
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
-for (const kind of ['image', 'video', 'audio', 'audio-decode'] as const) {
-  test(`序列 ${kind} 原文件读取失败有提示，重试实际恢复画面或声音`, async ({ page }) => {
+for (const kind of ['image', 'video', 'video-runtime', 'audio', 'audio-decode'] as const) {
+  test(`序列 ${kind} 读取或解码失败有提示，重试实际恢复画面或声音`, async ({ page }) => {
     await newProject(page)
     const upload = async (file: string, mime: string) => {
       const response = await page.request.post('/api/assets', {
@@ -41,20 +41,37 @@ for (const kind of ['image', 'video', 'audio', 'audio-decode'] as const) {
     const bad =
       kind === 'image'
         ? image
-        : kind === 'video'
+        : kind.startsWith('video')
           ? await upload('video.webm', 'video/webm')
           : await upload('audio.wav', 'audio/wav')
     let blocked = true
     let reads = 0
     await page.route(`**/api/assets/${bad}`, (route) => {
       reads++
-      return blocked
+      return blocked && (kind !== 'video-runtime' || route.request().resourceType() === 'media')
         ? route.fulfill({
             status: kind === 'audio-decode' ? 200 : 503,
             body: 'temporarily unavailable',
           })
         : route.continue()
     })
+    if (kind === 'video-runtime')
+      await page.evaluate(() => {
+        const configure = VideoDecoder.prototype.configure
+        VideoDecoder.prototype.configure = function () {
+          document.body.dataset.runtimeDecoderFailures = String(
+            Number(document.body.dataset.runtimeDecoderFailures ?? 0) + 1,
+          )
+          throw new Error('测试：视频解码器中途失败')
+        }
+        window.addEventListener(
+          'restore-video-codec',
+          () => {
+            VideoDecoder.prototype.configure = configure
+          },
+          { once: true },
+        )
+      })
     await page.evaluate(() => {
       const start = AudioBufferSourceNode.prototype.start
       AudioBufferSourceNode.prototype.start = function (...args: Parameters<typeof start>) {
@@ -66,7 +83,7 @@ for (const kind of ['image', 'video', 'audio', 'audio-decode'] as const) {
     })
     const id = await page.evaluate(
       ({ image, bad, kind }) => {
-        if (kind !== 'video')
+        if (!kind.startsWith('video'))
           return window.__plein.addNode({
             type: 'plein/animatic',
             name: '样片读取恢复',
@@ -161,9 +178,18 @@ for (const kind of ['image', 'video', 'audio', 'audio-decode'] as const) {
       await expect(monitor.getByRole('alert')).toContainText('预览素材读取失败')
       await expect(monitor.getByRole('button', { name: '播放', exact: true })).toBeVisible()
     }
+    if (kind === 'video-runtime') {
+      await expect
+        .poll(() => page.evaluate(() => Number(document.body.dataset.runtimeDecoderFailures ?? 0)))
+        .toBeGreaterThan(0)
+      await expect(monitor.locator('canvas').first()).toHaveAttribute('data-decoder', 'element')
+      await monitor.screenshot({ path: test.info().outputPath('runtime-video-error.png') })
+    }
     const time = await monitor.locator('.seq-time').innerText()
     const before = reads
     blocked = false
+    if (kind === 'video-runtime')
+      await page.evaluate(() => window.dispatchEvent(new Event('restore-video-codec')))
     await monitor.getByRole('button', { name: '重试失败素材', exact: true }).click()
     await expect.poll(() => reads).toBeGreaterThan(before)
     await expect(monitor.getByRole('alert')).toHaveCount(0)

@@ -10,6 +10,7 @@ const calls = vi.hoisted(() => ({
   dispose: vi.fn(),
   canvas: vi.fn(),
   draw: vi.fn(),
+  next: vi.fn(),
 }))
 vi.mock('mediabunny', () => ({
   ALL_FORMATS: [],
@@ -29,8 +30,11 @@ vi.mock('mediabunny', () => ({
     getCanvas(time: number) {
       return calls.canvas(time)
     }
-    async *canvases() {
-      yield* []
+    canvases() {
+      return {
+        next: () => calls.next(),
+        return: async () => ({ done: true, value: undefined }),
+      }
     }
   },
 }))
@@ -39,6 +43,7 @@ const track = { canDecode: () => calls.decode(), getFirstTimestamp: () => calls.
 const engines: PreviewEngine[] = []
 let warn: ReturnType<typeof vi.spyOn>
 const createVideo = vi.fn(() => ({
+  onerror: null as (() => void) | null,
   paused: true,
   readyState: 0,
   currentTime: 0,
@@ -46,6 +51,7 @@ const createVideo = vi.fn(() => ({
   removeEventListener: vi.fn(),
   removeAttribute: vi.fn(),
   pause: vi.fn(),
+  play: vi.fn(async () => {}),
   load: vi.fn(),
 }))
 beforeEach(() => {
@@ -54,6 +60,7 @@ beforeEach(() => {
   calls.decode.mockResolvedValue(true)
   calls.timestamp.mockResolvedValue(0)
   calls.canvas.mockResolvedValue(null)
+  calls.next.mockResolvedValue({ done: true, value: undefined })
   vi.stubGlobal(
     'requestAnimationFrame',
     vi.fn(() => 1),
@@ -69,8 +76,8 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
-function open(playhead = new Playhead(), total = 2) {
-  const engine = new PreviewEngine(playhead)
+function open(playhead = new Playhead(), total = 2, onIssues: (count: number) => void = () => {}) {
+  const engine = new PreviewEngine(playhead, onIssues)
   engines.push(engine)
   engine.setScene({
     width: 96,
@@ -158,6 +165,8 @@ describe('等待中的暂停画面切换', () => {
         await settle()
         expect(calls.canvas).toHaveBeenCalledTimes(2)
         expect(calls.canvas).toHaveBeenLastCalledWith(1)
+        expect(createVideo).not.toHaveBeenCalled()
+        expect(warn).not.toHaveBeenCalled()
       })
     }
   }
@@ -182,6 +191,8 @@ describe('等待中的暂停画面切换', () => {
       expect(calls.draw).not.toHaveBeenCalled()
       expect(calls.canvas).toHaveBeenCalledTimes(2)
       expect(calls.canvas).toHaveBeenLastCalledWith(1)
+      expect(createVideo).not.toHaveBeenCalled()
+      expect(warn).not.toHaveBeenCalled()
     })
   }
   for (const disposed of [false, true]) {
@@ -198,6 +209,33 @@ describe('等待中的暂停画面切换', () => {
       fail(new Error('decode failed'))
       await settle()
       expect(calls.canvas).toHaveBeenCalledOnce()
+    })
+  }
+})
+
+describe('已初始化视频的读取失败', () => {
+  for (const playing of [false, true]) {
+    it(`${playing ? '播放迭代' : '暂停取帧'}失败会降级，回退也失败时可见且可重试`, async () => {
+      const issues = vi.fn()
+      const playhead = new Playhead()
+      playhead.setTotal(2)
+      if (!playing) calls.canvas.mockRejectedValueOnce(new Error('frame decode failed'))
+      const engine = open(playhead, 2, issues)
+      await settle()
+      if (playing) {
+        calls.next.mockRejectedValueOnce(new Error('iterator decode failed'))
+        playhead.play()
+        await settle()
+      }
+      expect(createVideo).toHaveBeenCalledOnce()
+      expect(warn).toHaveBeenCalledOnce()
+      expect(calls.dispose).toHaveBeenCalledOnce()
+      createVideo.mock.results[0]!.value.onerror?.()
+      expect(issues).toHaveBeenLastCalledWith(1)
+      engine.retryFailed()
+      await settle()
+      expect(issues).toHaveBeenLastCalledWith(0)
+      expect(calls.primary).toHaveBeenCalledTimes(2)
     })
   }
 })

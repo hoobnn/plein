@@ -144,7 +144,7 @@ class CodecFrames implements Frames {
     url: string,
     box: { width: number; height: number },
     private onFrame: () => void,
-    onFail: () => void,
+    private onFail: () => void,
   ) {
     const input = new Input({ source: new UrlSource(url), formats: ALL_FORMATS })
     this.input = input
@@ -160,11 +160,13 @@ class CodecFrames implements Frames {
       this.first = first
       this.sink = new CanvasSink(track, { ...box, fit: 'contain', poolSize: 4 })
       this.restart()
-    })().catch((err) => {
-      if (this.disposed) return
-      console.warn('[预览] WebCodecs 解码不可用，退回 video 元素：', err)
-      onFail()
-    })
+    })().catch((err) => this.fail(err))
+  }
+
+  private fail(error: unknown, gen = this.gen) {
+    if (this.disposed || gen !== this.gen) return
+    console.warn('[预览] WebCodecs 解码不可用，退回 video 元素：', error)
+    this.onFail()
   }
 
   update(mt: number, playing: boolean) {
@@ -247,7 +249,7 @@ class CodecFrames implements Frames {
         this.next = r.value
       }
     })()
-      .catch(() => {})
+      .catch((err) => this.fail(err, gen))
       .finally(() => {
         if (this.pumping === gen) this.pumping = -1
       })
@@ -274,7 +276,9 @@ class CodecFrames implements Frames {
         }
       }
     })()
-      .catch(() => {})
+      .catch((err) => {
+        if (requested === this.want) this.fail(err, gen)
+      })
       .finally(() => {
         this.stillBusy = false
         // 旧读取占用期间的新暂停位置不能等下一次交互才补发。
