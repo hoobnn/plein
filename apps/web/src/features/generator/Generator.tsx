@@ -112,7 +112,7 @@ function NodeGenerator({
     },
   )
   const collapsed = cramped && !expanded
-  const place = () => placeBeside(engine, el.id, collapsed)
+  const place = () => placeBeside(engine, el.id, collapsed, cramped && expanded)
   const ref = useFollow<HTMLElement>(engine, place)
   const style = place()
   if (!style) return null
@@ -133,7 +133,7 @@ function NodeGenerator({
 }
 
 /** 默认放在节点下方；下方实在放不下才放上方，让开标题行 */
-function placeBeside(engine: Engine, id: string, collapsed = false) {
+function placeBeside(engine: Engine, id: string, collapsed = false, expanded = false) {
   const rect = engine.scene.rect(id)
   if (!rect) return null
   const tl = engine.worldToClient(rect.x, rect.y)
@@ -143,7 +143,10 @@ function placeBeside(engine: Engine, id: string, collapsed = false) {
   const above = tl.y - TITLE_H - TOP_RESERVED
   const preferBelow = below >= PREFER_BELOW || below >= above
   const availableHeight = Math.max(0, window.innerHeight - TOP_RESERVED - bottom)
-  const maxHeight = Math.min(availableHeight, Math.max(MIN_H, (preferBelow ? below : above) - GAP))
+  // 空间不足时，用户主动展开应能使用窗口内的可用高度，不能仍挤在节点旁的窄缝里。
+  const maxHeight = expanded
+    ? availableHeight
+    : Math.min(availableHeight, Math.max(MIN_H, (preferBelow ? below : above) - GAP))
   // 让开两侧面板；可见区域不够宽时面板跟着变窄。
   const minLeft = engine.camera.insets.left + GAP
   const right = window.innerWidth - engine.camera.insets.right - GAP
@@ -217,6 +220,11 @@ function Panel({
   }
   const pk = promptKey(node)
   const model = selectedModel(catalog, node, params)
+  const hiddenInstruction =
+    node.capability === 'audio.speech' &&
+    model?.info.limits?.instruction === false &&
+    typeof params.instruction === 'string' &&
+    params.instruction.trim() !== ''
   // 选项和范围跟着所选模型走，模型不支持的参数不显示
   const fields = constrainFields(
     node,
@@ -562,6 +570,26 @@ function Panel({
         {!pure && (
           // 底栏吸底：面板被视口截短时生成按钮仍然可见
           <footer className="sticky bottom-0 flex flex-col gap-2 bg-float px-3 pb-3 pt-1 backdrop-blur-xl">
+            {hiddenInstruction && (
+              <div className="flex items-start gap-2 px-1 text-xs text-ink-muted">
+                <p
+                  className="min-w-0 flex-1 line-clamp-2 break-words"
+                  title={String(params.instruction)}
+                >
+                  当前模型不支持自由语气，已保留指令：{String(params.instruction)}
+                </p>
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-xs ui-btn-secondary shrink-0"
+                  onClick={() => {
+                    focusPrompt()
+                    set('instruction', '')
+                  }}
+                >
+                  清空语气指令
+                </button>
+              </div>
+            )}
             {notes.length > 0 && !problem && (
               <p className="px-1 text-xs text-ink-subtle">{notes.join('；')}</p>
             )}

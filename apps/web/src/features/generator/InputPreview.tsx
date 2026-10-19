@@ -307,12 +307,20 @@ export function InputPreview({
           {(params.length > 0 || data.voice) && (
             <section className="flex flex-wrap items-center gap-1.5">
               <h4 className="ui-section-title mr-1">有效参数</h4>
-              {data.voice && <span className="ui-chip">音色 {data.voice.voiceId}</span>}
+              {data.voice && (
+                <span className="ui-chip h-auto max-w-full min-h-[var(--h-xs)] py-0.5">
+                  <span className="ui-scrollbar min-w-0 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
+                    音色 {data.voice.voiceId}
+                  </span>
+                </span>
+              )}
               {params.map(([k, v]) => (
-                <span key={k} className="ui-chip">
-                  {fields.get(k)?.title ?? k}{' '}
-                  {fields.get(k)?.labels?.[String(v)] ??
-                    (typeof v === 'boolean' ? (v ? '开启' : '关闭') : String(v))}
+                <span key={k} className="ui-chip h-auto max-w-full min-h-[var(--h-xs)] py-0.5">
+                  <span className="ui-scrollbar min-w-0 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
+                    {fields.get(k)?.title ?? k}{' '}
+                    {fields.get(k)?.labels?.[String(v)] ??
+                      (typeof v === 'boolean' ? (v ? '开启' : '关闭') : String(v))}
+                  </span>
                 </span>
               ))}
             </section>

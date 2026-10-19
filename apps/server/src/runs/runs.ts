@@ -1,5 +1,5 @@
 import { imageProcessParams, videoModeProblem, type VideoMode } from '@plein/nodes'
-import { speechVoice } from '../executors/audio'
+import { speechDirection, speechVoice } from '../executors/audio'
 import {
   appendDeliveryRecord,
   freezeDeliveryOrigins,
@@ -1488,17 +1488,31 @@ export class NodeRuns implements BatchHost {
       this.resolveModel(el.params?.model)?.limit,
     )
     const modelRef = typeof params.model === 'string' ? parseModelRef(params.model) : null
-    const limits =
+    const spec =
       modelRef &&
       this.host.registry.providers
         .get(modelRef.provider)
-        ?.def.models.find((m) => m.id === modelRef.model)?.limits
+        ?.def.models.find((m) => m.id === modelRef.model)
+    const limits = spec?.limits
     const effective = this.latestParams(el, { def, params, inputs }) ?? {}
     if (def.capability === 'audio.speech') {
       const check = speechVoice(String(effective.model ?? ''), voiceOf(effective))
       if (check.problem) blocked.push({ code: 'prepare_failed', message: check.problem })
       if (check.notice && !notices.some((n) => n.code === 'voice_unverified'))
         notices.push({ code: 'voice_unverified', message: check.notice })
+      const model = String(effective.model ?? '')
+      const options = effective.options as Record<string, Record<string, unknown>> | undefined
+      try {
+        speechDirection(
+          model,
+          String(effective.instruction ?? ''),
+          options?.[model] ?? {},
+          spec || undefined,
+        )
+      } catch (err) {
+        if (!(err instanceof ProviderError) || err.code !== 'invalid_input') throw err
+        blocked.push({ code: 'prepare_failed', message: err.message })
+      }
     }
     if (def.capability === 'video.generate') {
       const images = inputs.images?.length ?? 0

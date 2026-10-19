@@ -108,6 +108,41 @@ const run = (server: Server, canvas: string, node: string, expect?: string) =>
     body: JSON.stringify(expect ? { expect } : {}),
   })
 
+it('不支持自由语气的配音模型在预览时阻断，官方情绪标签仍可准备', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const model = 'minimax/api:speech-2.8-hd'
+  const n = addNode(doc, 'plein/speech', {
+    params: { model, text: '你好。', instruction: '低声哭腔' },
+  })
+  const blocked = await preview(server, id, n)
+  expect(blocked.status).toBe('blocked')
+  expect(blocked.blocked).toContainEqual({
+    code: 'prepare_failed',
+    message: expect.stringContaining('不支持这段语气指令'),
+  })
+  setParams(doc, n, { instruction: '悲伤' })
+  expect((await preview(server, id, n)).status).toBe('ready')
+  setParams(doc, n, { options: { [model]: { emotion: '自定义' } } })
+  const invalid = await preview(server, id, n)
+  expect(invalid.status).toBe('blocked')
+  expect(invalid.blocked).toContainEqual({
+    code: 'prepare_failed',
+    message: expect.stringContaining('需要选择官方情绪值'),
+  })
+  setParams(doc, n, { options: {}, instruction: '', model: 'plein/mock:audio' })
+  const ready = await preview(server, id, n)
+  expect(ready.status).toBe('ready')
+  const submit = vi.spyOn(mockProvider, 'submit')
+  const res = await run(server, id, n, ready.inputHash)
+  expect(res.status).toBe(202)
+  const { runId } = (await res.json()) as { runId: string }
+  expect(await server.runs.wait(runId)).toBe('succeeded')
+  expect(submit.mock.calls[0]![0].input).toMatchObject({ text: '你好。' })
+  expect(submit.mock.calls[0]![0].input).not.toHaveProperty('instruction', '低声哭腔')
+}, 30_000)
+
 it('手选跨平台音色在预览时阻止提交，修正音色后执行使用修正后的 ID', async () => {
   const { server } = await bootServer()
   mockSettings(server, {})

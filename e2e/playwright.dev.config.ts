@@ -205,6 +205,7 @@ export default defineConfig({
     'player-candidates.spec.ts',
     'editor-select-keyboard.spec.ts',
     'voice-picker-state.spec.ts',
+    'speech-instruction-recovery.spec.ts',
     'parameter-boundaries.spec.ts',
     'number-collaboration.spec.ts',
     'enum-parameters.spec.ts',
