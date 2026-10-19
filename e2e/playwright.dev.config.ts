@@ -219,6 +219,7 @@ export default defineConfig({
     'demo-media.spec.ts',
     'board-filter-retention.spec.ts',
     'board-reading-order.spec.ts',
+    'board-text-content.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
     'sidebar-resize.spec.ts',
     'sidebar-assets-recovery.spec.ts',

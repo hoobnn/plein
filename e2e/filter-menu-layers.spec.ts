@@ -3,9 +3,9 @@ import { clickElement, newProject } from './canvas'
 
 async function fixture(page: Page, board: boolean) {
   await newProject(page)
-  const ids = await page.evaluate(() => {
+  const ids = await page.evaluate((board) => {
     const done = window.__plein.addNode({
-      type: 'plein/text',
+      type: board ? 'plein/llm' : 'plein/text',
       name: '已完成文本',
       params: {},
       x: 300,
@@ -33,7 +33,7 @@ async function fixture(page: Page, board: boolean) {
     ])
     node.set('adopted', 'done-result')
     return { done, pending }
-  })
+  }, board)
   if (board) await page.getByRole('button', { name: '故事板', exact: true }).click()
   const container = board
     ? page.getByRole('region', { name: '文本', exact: true })

@@ -1,10 +1,11 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, elementMedia, primaryResult } from '@plein/doc'
+import type { Catalog } from '@plein/protocol'
 import { useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { useDocVersion } from '../canvas/hooks'
 import { selectedModel } from '../canvas/modelParams'
-import { findNode } from '../canvas/nodes'
+import { findNode, isPure, promptKey } from '../canvas/nodes'
 import { type OutlineType, outlineIcon, outlineTitle, outlineType } from '../canvas/outline'
 import { useAssetMeta } from '../stores/assetMeta'
 import { switchMode, useCanvas } from '../stores/canvas'
@@ -47,10 +48,16 @@ type Content =
   | { type: 'image' | 'video' | 'audio'; assetId: string }
   | null
 
-function contentOf(el: CanvasElement): Content {
+function contentOf(el: CanvasElement, catalog: Catalog | null): Content {
   if (el.kind === 'markdown') return el.text?.trim() ? { type: 'text', text: el.text } : null
+  const info = el.kind === 'node' ? findNode(catalog, el.nodeType) : undefined
+  // 就地计算的文本参数即正文；历史运行结果可能已经过期。
+  if (info && isPure(info) && info.outputs[0]?.type === 'text') {
+    const text = el.params?.[promptKey(info) ?? 'text']
+    return typeof text === 'string' && text.trim() ? { type: 'text', text } : null
+  }
   const v = el.kind === 'node' ? primaryResult(el)?.value : undefined
-  if (v?.type === 'text') return { type: 'text', text: v.text }
+  if (v?.type === 'text') return v.text.trim() ? { type: 'text', text: v.text } : null
   const m = elementMedia(el)
   return m && { type: m.kind, assetId: m.assetId }
 }
@@ -176,10 +183,11 @@ function BoardColumn({
   filter: Filter
   onFilter(value: Filter): void
 }) {
+  const catalog = useCatalog((s) => s.catalog)
   const shown = items.filter((el) =>
-    filter === 'all' ? true : (contentOf(el) !== null) === (filter === 'done'),
+    filter === 'all' ? true : (contentOf(el, catalog) !== null) === (filter === 'done'),
   )
-  const done = items.filter((el) => contentOf(el)).length
+  const done = items.filter((el) => contentOf(el, catalog)).length
   return (
     <section aria-label={label} className="board-col">
       <header className="flex h-14 flex-none items-center gap-2 pr-3 pl-5">
@@ -223,7 +231,7 @@ function BoardColumn({
 
 function TextItem({ el, onLocate }: { el: CanvasElement; onLocate(): void }) {
   const catalog = useCatalog((s) => s.catalog)
-  const c = contentOf(el)
+  const c = contentOf(el, catalog)
   const status = el.run && STATUS[el.run.status]
   return (
     <li>
@@ -237,7 +245,7 @@ function TextItem({ el, onLocate }: { el: CanvasElement; onLocate(): void }) {
             {status && <span className={`ui-tag ${status.tone}`}>{status.label}</span>}
           </span>
           {c?.type === 'text' && (
-            <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-ink-subtle">
+            <span className="mt-0.5 line-clamp-2 text-xs leading-relaxed break-words whitespace-pre-line text-ink-subtle">
               {c.text}
             </span>
           )}
@@ -257,7 +265,7 @@ function MediaItem({
   onLocate(): void
 }) {
   const catalog = useCatalog((s) => s.catalog)
-  const c = contentOf(el)
+  const c = contentOf(el, catalog)
   const assetId = c && c.type !== 'text' ? c.assetId : undefined
   const localUrl = useCanvas((s) => s.localAssetUrls?.get(assetId ?? ''))
   const meta = useAssetMeta(localUrl ? undefined : assetId)

@@ -5,7 +5,7 @@ async function fixture(page: Page) {
   await newProject(page)
   const ids = await page.evaluate(() => {
     const text = ['已完成文本', '待生成文本'].map((name, i) =>
-      window.__plein.addNode({ type: 'plein/text', name, params: {}, x: 300, y: i * 400 }),
+      window.__plein.addNode({ type: 'plein/llm', name, params: {}, x: 300, y: i * 400 }),
     )
     const image = window.__plein.addNode({
       type: 'plein/image',
