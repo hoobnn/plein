@@ -628,10 +628,10 @@ function Card({
                       )}
                       <span className="truncate">{row.name}</span>
                     </span>
-                    {row.outfits.map((id, i) => (
+                    {row.outfits.map((outfit, i) => (
                       <img
-                        key={id}
-                        src={thumb(id)}
+                        key={outfit.id}
+                        src={thumb(outfit.assetId)}
                         alt=""
                         loading="lazy"
                         draggable={false}
@@ -715,14 +715,16 @@ function profileLine(p: NonNullable<LibraryItem['profile']>, n: ReturnType<typeo
 /** 悬停预览：最多 3 个时期，每个时期带服饰首图，一行放不下 3 张时末格换成「+N」 */
 function profilePeek(p: NonNullable<LibraryItem['profile']>) {
   return p.periods.slice(0, 3).map((x) => {
-    const outfits = x.outfits.flatMap((o) => o.images.slice(0, 1))
-    const shown = outfits.length > 3 ? 2 : 3
+    const outfits = x.outfits.flatMap((o) =>
+      o.images.slice(0, 1).map((assetId) => ({ id: o.id, assetId })),
+    )
+    const shown = outfits.slice(0, x.outfits.length > 3 ? 2 : 3)
     return {
       id: x.id,
       name: x.name,
       image: x.images[0] ?? null,
-      outfits: outfits.slice(0, shown),
-      more: Math.max(0, x.outfits.length - shown),
+      outfits: shown,
+      more: x.outfits.length - shown.length,
     }
   })
 }

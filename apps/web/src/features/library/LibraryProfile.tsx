@@ -238,6 +238,7 @@ export function PeriodsTab({
     const list = [...profile.periods]
     const j = index + d
     if (j < 0 || j >= list.length) return
+    focus.to(profileControl('period', period.id))
     ;[list[index], list[j]] = [list[j]!, list[index]!]
     setPeriods(list)
   }
@@ -272,6 +273,7 @@ export function PeriodsTab({
     if (!period || !outfit || to === period.id) return
     const next = moveProfileOutfit(profile, period.id, outfit.id, to)
     if (!next) return
+    focus.to('input[aria-label="服饰名"]')
     onChange(next)
     setSel({ period: to, outfit: outfit.id })
   }
@@ -575,6 +577,7 @@ function OutfitFields({
           <span className="ui-label">属于时期</span>
           <Select
             aria-label="属于时期"
+            restoreFocusOnSelect={false}
             value={period.id}
             options={profile.periods.map((p) => ({
               value: p.id,
@@ -1052,6 +1055,7 @@ function ImageStrip({
     onChange([...new Set([...images, ...ids])].slice(0, PROFILE_LIMITS.images))
   const upload = async (files: File[]) => {
     if (!files.length || busy || uploads.pending) return
+    if (focus.props.ref.current?.contains(document.activeElement)) focus.park()
     setBusy(true)
     uploads.onBusyChange(true)
     setFeedback(null)
