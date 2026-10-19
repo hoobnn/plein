@@ -1,5 +1,5 @@
 import { Popover as Base } from '@base-ui/react/popover'
-import { type ReactNode, useEffect, useRef } from 'react'
+import { type ReactNode, useEffect, useLayoutEffect, useRef } from 'react'
 import { useClosing, useExit } from './Presence'
 
 /**
@@ -14,6 +14,7 @@ export function Popover({
   width = 320,
   label,
   placement = 'above',
+  scrollKey,
   children,
 }: {
   anchor: HTMLElement | null
@@ -21,10 +22,16 @@ export function Popover({
   width?: number
   label: string
   placement?: 'above' | 'below'
+  /** 内容步骤切换时回到顶部，输入字段变化不影响用户滚动。 */
+  scrollKey?: string
   children: ReactNode
 }) {
   const exit = useExit()
   const closing = useClosing()
+  const popup = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (scrollKey !== undefined) popup.current?.scrollTo({ top: 0 })
+  }, [scrollKey])
   const close = useRef(onClose)
   close.current = onClose
   useEffect(() => {
@@ -64,10 +71,11 @@ export function Popover({
           className="z-70"
         >
           <Base.Popup
+            ref={popup}
             aria-label={label}
             {...exit}
-            style={{ width }}
-            className="ui-menu ui-scrollbar pointer-events-auto max-h-[min(480px,70vh)] overflow-y-auto outline-none"
+            style={{ width, maxHeight: 'min(480px, 70vh, var(--available-height, 70vh))' }}
+            className="ui-menu ui-scrollbar pointer-events-auto overflow-y-auto outline-none"
           >
             {children}
           </Base.Popup>

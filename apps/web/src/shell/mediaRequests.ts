@@ -36,7 +36,11 @@ export function useMediaDeriver(engine: Engine, targets: MediaTarget[]) {
       trigger.current?.focus()
   }, [busy])
 
-  const run = async (list: MediaTarget[], make: (t: MediaTarget) => MediaDeriveRequest) => {
+  const run = async (
+    list: MediaTarget[],
+    make: (t: MediaTarget) => MediaDeriveRequest,
+    { skipped = 0 }: { skipped?: number } = {},
+  ) => {
     const owner = useCanvas.getState()
     const requestKeys = list.map((t) => targetKey(engine, t))
     if (
@@ -61,12 +65,13 @@ export function useMediaDeriver(engine: Engine, targets: MediaTarget[]) {
     try {
       for (const t of list) {
         if (controller.signal.aborted) break
+        const name = engine.doc.get(t.elId)?.name?.trim() || '未命名素材'
         try {
           const input = make(t)
           op = input.op
           made.push(await applyDerivation(engine, input, t.elId, controller.signal))
         } catch (error) {
-          if (!controller.signal.aborted) errors.push((error as Error).message)
+          if (!controller.signal.aborted) errors.push(`${name}：${(error as Error).message}`)
         }
       }
       if (!current()) return true
@@ -87,7 +92,10 @@ export function useMediaDeriver(engine: Engine, targets: MediaTarget[]) {
               : null
       useCanvas
         .getState()
-        .notify(message, ids.length && !unchanged ? importLocation(engine, ids) : undefined)
+        .notify(
+          message && skipped ? `${message}；${skipped} 个不适用素材未处理` : message,
+          ids.length && !unchanged ? importLocation(engine, ids) : undefined,
+        )
       return true
     } finally {
       view.dispose()

@@ -1,7 +1,7 @@
 import { useCatalog } from '../stores/catalog'
 import { deriveNode } from '../canvas/presets'
 import type { Engine } from '@plein/canvas-core'
-import type { Asset, MediaCapsInfo, MediaDeriveRequest } from '@plein/protocol'
+import type { Asset, MediaCapsInfo, MediaDeriveRequest, MediaOp } from '@plein/protocol'
 import { useEffect, useState } from 'react'
 import {
   clampRange,
@@ -12,7 +12,8 @@ import {
   opLabel,
   opsFor,
   parseTimecode,
-  quickOpsFor,
+  batchMediaOps,
+  mediaTargetsFor,
   SPEEDS,
 } from '../canvas/media'
 import { loadAssetMeta } from '../stores/assetMeta'
@@ -75,13 +76,13 @@ export function MediaTools({
   engine: Engine
   target: MediaTarget | MediaTarget[]
   label?: string
-  /** 多选时只给一键操作；默认按素材类型给全量 */
+  /** 多选时限制可批量操作的项目；默认按素材类型给全量 */
   ops?: ReturnType<typeof opsFor>
 }) {
   const notify = useCanvas((s) => s.notify)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState<string | null>(null)
-  const [meta, setMeta] = useState<Asset | null>(null)
+  const [loadedMeta, setMeta] = useState<{ assetId: string; asset: Asset } | null>(null)
   const [values, setValues] = useState<Record<string, string>>({})
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
 
@@ -99,9 +100,26 @@ export function MediaTools({
     }
   }, [])
   // 本机做不到的操作不显示（比如没装 ffmpeg 时的音视频加工）
-  const allowed = opsFor(first.kind, caps)
-  const actions = (ops ?? allowed).filter((op) => allowed.includes(op))
-  const sameKind = list.every((t) => t.kind === first.kind)
+  const applicable = (op: MediaOp) => mediaTargetsFor(list, op, caps)
+  const actions = (ops ?? opsFor(first.kind, caps)).filter((op) => applicable(op).length > 0)
+  const formTargets = form ? applicable(form as MediaOp) : list
+  const metaAssetId = formTargets[0]?.assetId
+  const meta = loadedMeta && loadedMeta.assetId === metaAssetId ? loadedMeta.asset : null
+  const scopeText = (op: MediaOp) => {
+    const targets = applicable(op),
+      kinds = new Set(targets.map((t) => t.kind))
+    if (!targets.length) return '无可用素材'
+    const type = kinds.has('image')
+      ? '张图片'
+      : kinds.size > 1
+        ? '段音视频'
+        : kinds.has('video')
+          ? '段视频'
+          : '段音频'
+    return `${targets.length} ${type}`
+  }
+  const scope = (op: MediaOp) =>
+    list.length > 1 ? <span className="text-xs text-ink-muted">{scopeText(op)}</span> : null
 
   // 打开时读一次资产元信息：裁剪要有像素尺寸，抽帧和截取要知道时长
   const toggle = () => {
@@ -110,11 +128,11 @@ export function MediaTools({
     setAnchorEl(btnRef.current)
   }
   useEffect(() => {
-    if (!open || meta) return
+    if (!open || meta || !metaAssetId) return
     let alive = true
-    loadAssetMeta(first.assetId)
+    loadAssetMeta(metaAssetId)
       .then((asset) => {
-        if (alive) setMeta(asset)
+        if (alive) setMeta({ assetId: metaAssetId, asset })
       })
       .catch(() => {
         if (alive) notify('读不到素材信息')
@@ -122,18 +140,20 @@ export function MediaTools({
     return () => {
       alive = false
     }
-  }, [open, meta, first.assetId, notify])
+  }, [open, meta, metaAssetId, notify])
 
   const set = (key: string, value: string) => setValues((v) => ({ ...v, [key]: value }))
 
   /** 多选时按目标顺序逐个加工，失败的跳过并如实报数；上一轮还没完时不重复发起 */
-  const runAll = async (make: (t: MediaTarget) => MediaDeriveRequest) => {
-    const pending = run(list, make)
+  const runAll = async (op: MediaOp, make: (t: MediaTarget) => MediaDeriveRequest) => {
+    const targets = applicable(op)
+    if (!targets.length) return notify('所选素材不支持此操作')
+    const pending = run(targets, make, { skipped: list.length - targets.length })
     setOpen(false)
     await pending
   }
 
-  // 批量时每个目标用自己的 assetId；区间、尺寸类参数按第一个素材的信息校验
+  // 批量时每个目标用自己的 assetId；区间、尺寸类参数按首个适用素材的信息校验
   const submit = async () => {
     if (form === 'crop') {
       const rect = cropRect(
@@ -147,7 +167,7 @@ export function MediaTools({
         { width: meta?.width, height: meta?.height },
       )
       if (!rect.width || !rect.height) return notify('裁剪区域不对')
-      await runAll((t) => ({ op: 'crop', assetId: t.assetId, ...rect }))
+      await runAll('crop', (t) => ({ op: 'crop', assetId: t.assetId, ...rect }))
       return
     }
     if (form === 'trim') {
@@ -157,12 +177,12 @@ export function MediaTools({
         meta?.duration,
       )
       if (!range) return notify('区间不对：出点要大于入点，且不能超出素材长度')
-      await runAll((t) => ({ op: 'trim', assetId: t.assetId, ...range }))
+      await runAll('trim', (t) => ({ op: 'trim', assetId: t.assetId, ...range }))
       return
     }
     if (form === 'speed') {
       const speed = clampSpeed(num(values.speed ?? '1'))
-      await runAll((t) => ({
+      await runAll('speed', (t) => ({
         op: 'speed',
         assetId: t.assetId,
         speed,
@@ -183,19 +203,19 @@ export function MediaTools({
         notify((error as Error).message)
         return
       }
-      await runAll((t) => ({ op: 'split', assetId: t.assetId, segments }))
+      await runAll('split', (t) => ({ op: 'split', assetId: t.assetId, segments }))
       return
     }
     if (form === 'frame') {
       const at = parseTimecode(values.at ?? '0')
       if (at === null) return notify('时间看不懂，试试 12.5 或 1:02')
-      await runAll((t) => ({ op: 'frame', assetId: t.assetId, at }))
+      await runAll('frame', (t) => ({ op: 'frame', assetId: t.assetId, at }))
     }
   }
 
   /** 直接就能做的操作 */
   const quick = (op: 'rotate' | 'flip' | 'separate') =>
-    runAll((t) =>
+    runAll(op, (t) =>
       op === 'rotate'
         ? { op: 'rotate', assetId: t.assetId, angle: 90 }
         : op === 'flip'
@@ -224,7 +244,11 @@ export function MediaTools({
         aria-expanded={open}
         disabled={busy || !actions.length}
         onClick={toggle}
-        title="裁剪、变速、抽帧等本地加工，结果是新素材，原素材不变"
+        title={
+          actions.length
+            ? '裁剪、变速、抽帧等本地加工，结果是新素材，原素材不变'
+            : '当前环境暂不支持所选素材的加工'
+        }
       >
         <Icon name="sliders" size={14} />
         {label}
@@ -248,10 +272,24 @@ export function MediaTools({
 
       <Presence>
         {open && (
-          <Popover anchor={anchorEl} onClose={() => setOpen(false)} label={label} width={280}>
+          <Popover
+            anchor={anchorEl}
+            onClose={() => setOpen(false)}
+            label={label}
+            width={280}
+            scrollKey={form ?? 'actions'}
+          >
             {form ? (
               <>
-                <div className="ui-menu-label">{opLabel(form as never)}</div>
+                <div className="ui-menu-label">
+                  {opLabel(form as MediaOp)}
+                  {list.length > 1 && ` · ${scopeText(form as MediaOp)}`}
+                </div>
+                {!formTargets.length && (
+                  <p role="alert" className="ui-help">
+                    当前环境暂不支持此操作，请返回选择其他操作。
+                  </p>
+                )}
                 {form === 'crop' && (
                   <div className="grid grid-cols-2 gap-2">
                     {field('left', '左', '0')}
@@ -281,14 +319,15 @@ export function MediaTools({
                       ))}
                     </div>
                     {field('speed', '倍数', '2')}
-                    {first.kind === 'audio' && (
+                    {formTargets.some((t) => t.kind === 'audio') && (
                       <label className="flex items-center gap-2 pt-2 text-sm">
                         <input
                           type="checkbox"
                           checked={values.keepPitch !== 'no'}
                           onChange={(e) => set('keepPitch', e.target.checked ? 'yes' : 'no')}
                         />
-                        保音调（改的是素材本身，不是合成时的语速）
+                        保留音频素材的音调
+                        {formTargets.some((t) => t.kind === 'video') && '（视频始终保留音调）'}
                       </label>
                     )}
                   </>
@@ -355,7 +394,7 @@ export function MediaTools({
                   <button
                     type="button"
                     className="ui-btn ui-btn-sm ui-btn-primary flex-1"
-                    disabled={busy}
+                    disabled={busy || !formTargets.length}
                     onClick={() => void submit()}
                   >
                     {busy ? '处理中…' : '开始加工'}
@@ -365,13 +404,13 @@ export function MediaTools({
             ) : (
               <>
                 <div className="ui-menu-label">
-                  {list.length > 1 ? `对 ${list.length} 个素材` : '加工'}
-                  {!sameKind && '（类型不同，只用第一个的操作）'}
+                  {list.length > 1 ? `已选择 ${list.length} 个素材` : '加工'}
                 </div>
+                {list.length > 1 && <p className="ui-help px-2 pb-2">每项操作仅处理适用的素材。</p>}
                 {first.kind === 'image' && list.length === 1 && (
                   <button
                     type="button"
-                    className="ui-menu-item"
+                    className="ui-menu-item justify-between"
                     onClick={() => {
                       const id = deriveNode(
                         engine,
@@ -392,7 +431,7 @@ export function MediaTools({
                 {actions.includes('crop') && (
                   <button
                     type="button"
-                    className="ui-menu-item"
+                    className="ui-menu-item justify-between"
                     onClick={() => {
                       setValues({
                         left: '0',
@@ -413,40 +452,40 @@ export function MediaTools({
                       type="button"
                       className="ui-menu-item justify-between"
                       onClick={() =>
-                        void runAll((t) => ({ op: 'rotate', assetId: t.assetId, angle }))
+                        void runAll('rotate', (t) => ({ op: 'rotate', assetId: t.assetId, angle }))
                       }
                     >
-                      旋转 {angle}°
+                      旋转 {angle}° {scope('rotate')}
                     </button>
                   ))}
                 {actions.includes('flip') && (
                   <>
                     <button
                       type="button"
-                      className="ui-menu-item"
+                      className="ui-menu-item justify-between"
                       onClick={() => void quick('flip')}
                     >
-                      左右翻转
+                      左右翻转 {scope('flip')}
                     </button>
                     <button
                       type="button"
-                      className="ui-menu-item"
+                      className="ui-menu-item justify-between"
                       onClick={() =>
-                        void runAll((t) => ({
+                        void runAll('flip', (t) => ({
                           op: 'flip',
                           assetId: t.assetId,
                           axis: 'vertical',
                         }))
                       }
                     >
-                      上下翻转
+                      上下翻转 {scope('flip')}
                     </button>
                   </>
                 )}
                 {actions.includes('trim') && (
                   <button
                     type="button"
-                    className="ui-menu-item"
+                    className="ui-menu-item justify-between"
                     onClick={() => {
                       setValues({ start: '0:00', end: formatTimecode(meta?.duration ?? 0) })
                       setForm('trim')
@@ -458,19 +497,19 @@ export function MediaTools({
                 {actions.includes('speed') && (
                   <button
                     type="button"
-                    className="ui-menu-item"
+                    className="ui-menu-item justify-between"
                     onClick={() => {
                       setValues({ speed: '2', keepPitch: 'yes' })
                       setForm('speed')
                     }}
                   >
-                    变速
+                    变速 {scope('speed')}
                   </button>
                 )}
                 {actions.includes('split') && (
                   <button
                     type="button"
-                    className="ui-menu-item"
+                    className="ui-menu-item justify-between"
                     onClick={() => {
                       setValues({ count: '2' })
                       setForm('split')
@@ -482,27 +521,25 @@ export function MediaTools({
                 {actions.includes('separate') && (
                   <button
                     type="button"
-                    className="ui-menu-item"
+                    className="ui-menu-item justify-between"
                     onClick={() => void quick('separate')}
                   >
-                    分离音频与画面
+                    分离音频与画面 {scope('separate')}
                   </button>
                 )}
                 {actions.includes('frame') && (
                   <button
                     type="button"
-                    className="ui-menu-item"
+                    className="ui-menu-item justify-between"
                     onClick={() => {
                       setValues({ at: '0:00' })
                       setForm('frame')
                     }}
                   >
-                    抽帧成图片
+                    抽帧成图片 {scope('frame')}
                   </button>
                 )}
-                <div className="ui-help px-2 pt-2">
-                  加工在服务端跑 ffmpeg / sharp，产出新素材，原素材不动。
-                </div>
+                <div className="ui-help px-2 pt-2">加工后会创建新素材，原素材保持不变。</div>
               </>
             )}
           </Popover>
@@ -512,9 +549,9 @@ export function MediaTools({
   )
 }
 
-/** 多选时的一键加工：只给不用填参数的操作，逐个素材跑 */
+/** 多选素材的批量加工：逐个处理适用素材，共用变速或抽帧设置 */
 export function MediaBatchTools({ engine, targets }: { engine: Engine; targets: MediaTarget[] }) {
-  const ops = [...new Set(targets.flatMap((t) => quickOpsFor(t.kind)))]
+  const ops = batchMediaOps(targets)
   if (!targets.length || !ops.length) return null
   return (
     <MediaTools

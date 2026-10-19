@@ -208,6 +208,18 @@ for (const { width, height } of [
       )
       await fits(page)
     }
+    await f.bar.getByRole('button', { name: '媒体工具', exact: true }).click()
+    const tools = page.getByRole('dialog', { name: '媒体工具', exact: true })
+    await tools.getByRole('button', { name: '上下翻转', exact: true }).scrollIntoViewIfNeeded()
+    await expect
+      .poll(async () => {
+        const r = (await tools.boundingBox())!
+        return r.x >= 0 && r.y >= 0 && r.x + r.width <= width && r.y + r.height <= height
+      })
+      .toBe(true)
+    await page.keyboard.press('Escape')
+    await expect(tools).toHaveCount(0)
+    await expect(f.bar.getByRole('button', { name: '媒体工具', exact: true })).toBeFocused()
     expect(await page.evaluate((id) => window.__plein.engine.doc.get(id), f.id)).toEqual(before)
   })
 }

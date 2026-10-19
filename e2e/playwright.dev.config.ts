@@ -130,6 +130,7 @@ export default defineConfig({
     'concurrent-placement.spec.ts',
     'frame-placement.spec.ts',
     'media-tools-lifecycle.spec.ts',
+    'media-batch-mixed.spec.ts',
     'media-group-placement.spec.ts',
     'continue.spec.ts',
     'template-save-targets.spec.ts',

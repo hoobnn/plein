@@ -338,7 +338,7 @@ test('批量加工取消后保留已完成的素材，不写入后续结果或�
     await page.getByRole('button', { name: '批量加工', exact: true }).click()
     await page
       .getByRole('dialog', { name: '批量加工', exact: true })
-      .getByRole('button', { name: '旋转 90°', exact: true })
+      .getByRole('button', { name: '旋转 90° 2 张图片', exact: true })
       .click()
     await expect.poll(() => ready).toBe(true)
     await expect

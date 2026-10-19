@@ -1,6 +1,9 @@
 import type { Asset } from '@plein/protocol'
 import { describe, expect, it } from 'vite-plus/test'
 import {
+  batchMediaOps,
+  mediaTargetsFor,
+  type MediaTarget,
   clampRange,
   clampSpeed,
   cropRect,
@@ -139,5 +142,42 @@ describe('画布元素尺寸', () => {
       h: 480,
     })
     expect(elementSize(asset({ kind: 'file' }))).toBeNull()
+  })
+})
+
+describe('混合批量加工的作用范围', () => {
+  const targets: MediaTarget[] = ['image', 'video', 'audio'].map((kind) => ({
+    elId: kind,
+    assetId: `asset-${kind}`,
+    kind: kind as MediaTarget['kind'],
+  }))
+  it.each(['image', 'video', 'audio'])(
+    '以 %s 开头时菜单顺序一致，各操作只保留适用来源且不改原选择',
+    (first) => {
+      const ordered = [
+        ...targets.filter((t) => t.kind === first),
+        ...targets.filter((t) => t.kind !== first),
+      ]
+      const before = structuredClone(ordered)
+      expect(batchMediaOps(ordered)).toEqual(['rotate', 'flip', 'speed', 'separate', 'frame'])
+      expect(mediaTargetsFor(ordered, 'rotate').map((t) => t.elId)).toEqual(['image'])
+      expect(mediaTargetsFor(ordered, 'speed').map((t) => t.elId)).toEqual(
+        ordered.filter((t) => t.kind !== 'image').map((t) => t.elId),
+      )
+      expect(mediaTargetsFor(ordered, 'frame').map((t) => t.elId)).toEqual(['video'])
+      expect(ordered).toEqual(before)
+    },
+  )
+  it('没有 ffmpeg 时仅保留图片加工，不因首项音视频把图片操作一起隐藏', () => {
+    const caps = { ffmpeg: false, subtitles: false, rubberband: false }
+    const ordered = [targets[2]!, targets[1]!, targets[0]!]
+    expect(batchMediaOps(ordered, caps)).toEqual(['rotate', 'flip'])
+    expect(mediaTargetsFor(ordered, 'speed', caps)).toEqual([])
+    expect(mediaTargetsFor(ordered, 'rotate', caps)).toEqual([targets[0]])
+  })
+  it('空选择和不支持的文件不产生加工目标或空菜单操作', () => {
+    expect(batchMediaOps([])).toEqual([])
+    expect(batchMediaOps([{ elId: 'pdf', assetId: 'pdf', kind: 'file' }])).toEqual([])
+    expect(mediaTargetsFor(targets, 'split')).toEqual([targets[2]])
   })
 })

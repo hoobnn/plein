@@ -101,12 +101,32 @@ export function opsFor(kind: AssetKind, caps?: MediaCapsInfo | null): MediaOp[] 
   return []
 }
 
-/** 多选时的一键操作：不需要填参数的那几个 */
+/** 多选时可批量处理的操作；变速和抽帧共用设置 */
 export function quickOpsFor(kind: AssetKind): MediaOp[] {
   if (kind === 'image') return ['rotate', 'flip']
   if (kind === 'audio') return ['speed']
   if (kind === 'video') return ['speed', 'separate', 'frame']
   return []
+}
+
+/** 按当前本机能力筛选，每项操作只处理适用素材，保持来源顺序。 */
+export function mediaTargetsFor(
+  targets: readonly MediaTarget[],
+  op: MediaOp,
+  caps?: MediaCapsInfo | null,
+) {
+  return targets.filter((target) => opsFor(target.kind, caps).includes(op))
+}
+
+/** 固定菜单顺序，不让第一个选中素材决定其他类型能做什么。 */
+export function batchMediaOps(
+  targets: readonly MediaTarget[],
+  caps?: MediaCapsInfo | null,
+): MediaOp[] {
+  const requested = new Set(targets.flatMap((target) => quickOpsFor(target.kind)))
+  return (['rotate', 'flip', 'speed', 'separate', 'frame'] as const).filter(
+    (op) => requested.has(op) && mediaTargetsFor(targets, op, caps).length > 0,
+  )
 }
 
 const OP_LABEL: Record<MediaOp, string> = {
