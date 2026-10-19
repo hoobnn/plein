@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
@@ -69,7 +69,7 @@ async function fixture(page: Page, subtitles = false) {
         )[0]!,
       id,
     )
-  return { id, editor, input, saved }
+  return { id, source: video.id, editor, input, saved }
 }
 
 for (const kind of ['conflict', 'other-field', 'cross-in', 'cross-out'] as const) {
@@ -224,4 +224,125 @@ test('镜头字幕正常提交可撤销重做，主动清空恢复自动台词�
   const at = await centerOf(page, f.id)
   await page.mouse.dblclick(at.x, at.y)
   await expect(input).toHaveValue('')
+})
+
+for (const mode of ['rendered', 'same-frame'] as const) {
+  for (const field of ['in', 'out'] as const) {
+    test(`镜头素材变更 ${mode} 不把旧 ${field} 草稿写入新素材`, async ({ page }) => {
+      const f = await fixture(page)
+      const file = join(dir, `short-${mode}-${field}.webm`)
+      execFileSync('ffmpeg', [
+        '-v',
+        'error',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=blue:s=96x64:d=0.2:r=10',
+        '-c:v',
+        'libvpx-vp9',
+        '-deadline',
+        'realtime',
+        file,
+      ])
+      const uploaded = await page.request.post('/api/assets', {
+        headers: { 'content-type': 'video/webm', 'x-file-name': 'short.webm' },
+        data: readFileSync(file),
+      })
+      expect(uploaded.status()).toBe(201)
+      const replacement = (await uploaded.json()).id as string
+      const input =
+        field === 'in'
+          ? f.input
+          : f.editor.getByRole('spinbutton', { name: '出点（秒）', exact: true })
+      await input.fill(field === 'in' ? '0.4' : '0.5')
+      await input.evaluate(
+        (input: HTMLInputElement, { source, replacement, mode }) => {
+          const doc = window.__plein.engine
+            .doc as unknown as import('../packages/doc/src/doc').PleinDoc
+          doc.undo.stopCapturing()
+          doc.ydoc.transact(() => doc.mutable(source)!.set('assetId', replacement), doc.origin)
+          if (mode === 'same-frame') input.blur()
+        },
+        { source: f.source, replacement, mode },
+      )
+      await expect(f.editor.locator('.ui-chip').first()).toContainText('0.2 秒')
+      if (mode === 'rendered') await input.blur()
+      expect((await f.saved()).in).toBe(0)
+      await expect(f.input).toHaveValue('0')
+      expect((await f.saved()).out).toBe(1.8)
+      await f.editor.getByRole('button', { name: '重新加载预览', exact: true }).focus()
+      await page.keyboard.press('ControlOrMeta+z')
+      await expect(f.editor.locator('.ui-chip').first()).toContainText('1.8 秒')
+      await expect(f.input).toHaveValue('0')
+      await page.keyboard.press('ControlOrMeta+Shift+z')
+      await expect(f.editor.locator('.ui-chip').first()).toContainText('0.2 秒')
+      await expect(f.input).toHaveValue('0')
+      // 已保存出点超过新素材结尾时，仍不能把入点设到有效结尾。
+      await f.input.fill('0.2')
+      await f.input.blur()
+      expect((await f.saved()).in).toBe(0)
+      const error = f.editor.getByRole('alert').filter({ hasText: '入点需要早于出点和素材结尾' })
+      await expect(error).toBeVisible()
+      if (mode === 'rendered' && field === 'in') {
+        await page.setViewportSize({ width: 390, height: 700 })
+        await error.scrollIntoViewIfNeeded()
+        expect(await error.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+        await f.editor.screenshot({ path: test.info().outputPath('trim-end-error-390.png') })
+        await page.setViewportSize({ width: 1440, height: 900 })
+      }
+      await f.editor.getByRole('button', { name: '导出 MP4', exact: true }).click()
+      const exported = f.editor.getByLabel('实际导出 MP4', { exact: true })
+      await expect(exported).toBeVisible({ timeout: 60_000 })
+      await expect
+        .poll(() => exported.evaluate((v: HTMLVideoElement) => Number.isFinite(v.duration)))
+        .toBe(true)
+      const duration = await exported.evaluate((v: HTMLVideoElement) => v.duration)
+      expect(duration).toBeGreaterThanOrEqual(0.2)
+      expect(duration).toBeLessThan(0.3)
+    })
+  }
+}
+
+test('更换镜头素材不清除未提交字幕，提交后可重新打开', async ({ page }) => {
+  const f = await fixture(page, true)
+  const input = f.editor.getByRole('textbox', { name: '字幕', exact: true })
+  await input.fill('仍在编辑的字幕')
+  const file = join(dir, 'short-subtitle.webm')
+  execFileSync('ffmpeg', [
+    '-v',
+    'error',
+    '-f',
+    'lavfi',
+    '-i',
+    'color=c=blue:s=96x64:d=0.2:r=10',
+    '-c:v',
+    'libvpx-vp9',
+    '-deadline',
+    'realtime',
+    file,
+  ])
+  const uploaded = await page.request.post('/api/assets', {
+    headers: { 'content-type': 'video/webm', 'x-file-name': 'short-subtitle.webm' },
+    data: readFileSync(file),
+  })
+  expect(uploaded.status()).toBe(201)
+  const replacement = (await uploaded.json()).id as string
+  await page.evaluate(
+    ({ source, replacement }) => {
+      const doc = window.__plein.engine.doc as unknown as import('../packages/doc/src/doc').PleinDoc
+      doc.ydoc.transact(() => doc.mutable(source)!.set('assetId', replacement), doc.origin)
+    },
+    { source: f.source, replacement },
+  )
+  await expect(f.editor.locator('.ui-chip').first()).toContainText('0.2 秒')
+  await expect(input).toHaveValue('仍在编辑的字幕')
+  expect((await f.saved()).subtitle).toBe('初始字幕')
+  await input.blur()
+  expect(await f.saved()).toMatchObject({ in: 0, out: 1.8, subtitle: '仍在编辑的字幕' })
+  await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(f.editor).toBeHidden()
+  await clickElement(page, f.id)
+  const at = await centerOf(page, f.id)
+  await page.mouse.dblclick(at.x, at.y)
+  await expect(input).toHaveValue('仍在编辑的字幕')
 })

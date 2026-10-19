@@ -1381,12 +1381,13 @@ function ClipSettings({
       .join(' / ') || undefined
   const trimmed = length !== undefined && full !== undefined && Math.abs(length - full) > 0.01
   const [trimError, setTrimError] = useState<string | null>(null)
+  useLayoutEffect(() => setTrimError(null), [row.clip.assetId])
   const changeIn = (value: number | undefined) => {
     const latest = readRow()
-    if (!latest) return
+    if (!latest || latest.clip.assetId !== row.clip.assetId) return
     const start = value ?? 0
-    if (start >= (latest.out ?? full ?? Infinity)) {
-      setTrimError('入点需要早于出点，已保留原设置')
+    if (start >= Math.min(latest.out ?? Infinity, full ?? Infinity)) {
+      setTrimError('入点需要早于出点和素材结尾，已保留原设置')
       return
     }
     setTrimError(null)
@@ -1394,7 +1395,7 @@ function ClipSettings({
   }
   const changeOut = (value: number | undefined) => {
     const latest = readRow()
-    if (!latest) return
+    if (!latest || latest.clip.assetId !== row.clip.assetId) return
     if ((value ?? full ?? Infinity) <= latest.in) {
       setTrimError('出点需要晚于入点，已保留原设置')
       return
@@ -1446,6 +1447,7 @@ function ClipSettings({
           <Section title="剪辑">
             <Field label="入点">
               <NumberField
+                key={row.clip.assetId}
                 label="入点（秒）"
                 value={row.in}
                 readValue={() => readRow()?.in}
@@ -1456,6 +1458,7 @@ function ClipSettings({
             </Field>
             <Field label="出点">
               <NumberField
+                key={row.clip.assetId}
                 label="出点（秒）"
                 value={row.out}
                 readValue={() => readRow()?.out}
