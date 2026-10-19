@@ -39,7 +39,7 @@ import { desktop } from '../../desktop'
 import { findNode, upstreams, validate } from '../../canvas/nodes'
 import { cancelNode, runNode } from '../runs/run'
 import { cancelRequestKey, useCancelRequests } from '../runs/cancelRequests'
-import { useAssetMetas } from '../../stores/assetMeta'
+import { loadAssetMeta, useAssetMetas } from '../../stores/assetMeta'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { Icon } from '../../ui/icons'
@@ -633,6 +633,36 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     setPackNotice(null)
     try {
       if (!current()) return
+      const required = [
+        ...new Set(
+          rows.flatMap((row) => [
+            ...(animatic ? [] : [row.clip.assetId]),
+            ...clipLines(row).map((line) => line.assetId),
+          ]),
+        ),
+      ]
+      setPackNotice('正在读取素材时长，完成后继续导出工程…')
+      signal.throwIfAborted()
+      await new Promise<void>((resolve, reject) => {
+        const aborted = () => reject(signal.reason)
+        signal.addEventListener('abort', aborted, { once: true })
+        // 元信息缓存由预览等界面共享，取消本次等待不取消共享读取。
+        void Promise.all(
+          required.map(async (assetId) => {
+            const asset = await loadAssetMeta(assetId)
+            if (
+              asset.duration === undefined ||
+              !Number.isFinite(asset.duration) ||
+              asset.duration <= 0
+            )
+              throw new Error(`素材“${asset.name || assetId}”缺少有效时长，无法导出工程`)
+          }),
+        )
+          .then(() => resolve(), reject)
+          .finally(() => signal.removeEventListener('abort', aborted))
+      })
+      if (!current()) return
+      setPackNotice(null)
       const spec = sequenceSpec(
         params,
         rows,
@@ -664,12 +694,14 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       }
       setPackNotice('工程文件已交给浏览器下载，请查看保存状态')
     } catch (err) {
-      if (active())
+      if (active()) {
+        setPackNotice(null)
         setPackError(
           signal.aborted
             ? '工程文件读取超时，请检查连接后重新导出'
             : (err as Error).message || '导出工程失败',
         )
+      }
     } finally {
       if (packRequest.current === pending) {
         packRequest.current = null

@@ -33,7 +33,7 @@ async function fixture(page: Page) {
   })
   expect(response.status()).toBe(201)
   const asset = (await response.json()).id as string
-  const id = await page.evaluate((asset) => {
+  const { id, source } = await page.evaluate((asset) => {
     const source = window.__plein.addNode({
       type: 'plein/video',
       name: '工程已有视频',
@@ -60,7 +60,7 @@ async function fixture(page: Page) {
       params: { subtitles: false, aspectRatio: '16:9', resolution: '720p' },
     })
     window.__plein.connect([source, 'video'], [id, 'clips'])
-    return id
+    return { id, source }
   }, asset)
   const open = async () => {
     await clickElement(page, id)
@@ -71,7 +71,7 @@ async function fixture(page: Page) {
   const editor = page.getByRole('dialog', { name: '序列', exact: true })
   const downloads: string[] = []
   page.on('download', (download) => downloads.push(download.suggestedFilename()))
-  return { id, asset, editor, open, downloads }
+  return { id, source, asset, editor, open, downloads }
 }
 
 for (const mode of ['unavailable', 'not-zip', 'truncated', 'disconnected'] as const) {
@@ -321,3 +321,150 @@ test('较大真实工程不复制整包 ArrayBuffer，下载 ZIP 和素材 CRC �
     contentType: 'application/json',
   })
 })
+
+for (const mode of ['delayed', 'failed', 'missing-duration', 'cancel', 'close'] as const) {
+  test(`工程对白时长 ${mode} 安全等待与恢复，保留同镜头每句声音`, async ({ page }) => {
+    const f = await fixture(page)
+    const voices: string[] = []
+    for (const [name, frequency] of [
+      ['first', 440],
+      ['second', 880],
+    ] as const) {
+      const path = join(dir, `${name}.wav`)
+      execFileSync('ffmpeg', [
+        '-y',
+        '-v',
+        'error',
+        '-f',
+        'lavfi',
+        '-i',
+        `sine=f=${frequency}:d=0.1`,
+        path,
+      ])
+      const uploaded = await page.request.post('/api/assets', {
+        headers: { 'content-type': 'audio/wav', 'x-file-name': `${name}.wav` },
+        data: readFileSync(path),
+      })
+      expect(uploaded.status()).toBe(201)
+      voices.push((await uploaded.json()).id)
+    }
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let entered!: () => void
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let broken = mode === 'failed'
+    await page.route(`**/api/assets/${voices[0]}/meta`, async (route) => {
+      entered()
+      await gate
+      if (broken)
+        await route.fulfill({
+          status: 503,
+          json: { error: 'unavailable', message: '对白信息暂不可用' },
+        })
+      else if (mode === 'missing-duration') {
+        const response = await route.fetch()
+        const data = await response.json()
+        delete data.duration
+        await route.fulfill({ response, json: data })
+      } else await route.continue()
+    })
+    let submits = 0
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().endsWith('/api/media/sequence-export'))
+        submits++
+    })
+    try {
+      await page.evaluate(
+        ({ voices, sequence, clip }) => {
+          const sources = voices.map((assetId, i) => {
+            const source = window.__plein.addNode({
+              type: 'plein/speech',
+              name: `对白 ${i + 1}`,
+              x: -400,
+              y: 700 + i * 200,
+              params: {},
+            })
+            const node = window.__plein.engine.doc.mutable(source)! as unknown as {
+              set(k: string, v: unknown): void
+            }
+            node.set('results', [
+              {
+                id: 'voice',
+                runId: 'fixture',
+                port: 'audio',
+                at: 1,
+                value: { type: 'audio', assetId },
+              },
+            ])
+            window.__plein.connect([source, 'audio'], [sequence, 'dialogue'])
+            return source
+          })
+          const node = window.__plein.engine.doc.mutable(sequence)! as unknown as {
+            get(k: string): { set(k: string, v: unknown): void }
+          }
+          node
+            .get('params')
+            .set('clips', [{ source: clip, dialogue: sources[0], more: [sources[1]], lineGap: 0 }])
+        },
+        { voices, sequence: f.id, clip: f.source },
+      )
+      await reading
+      await f.editor.getByRole('button', { name: '导出工程', exact: true }).click()
+      await expect(
+        f.editor.getByRole('button', { name: '取消工程导出', exact: true }),
+      ).toBeVisible()
+      expect(submits).toBe(0)
+      await expect(
+        f.editor.getByRole('status').filter({ hasText: '正在读取素材时长' }),
+      ).toBeVisible()
+      if (mode === 'cancel') {
+        await f.editor.getByRole('button', { name: '取消工程导出', exact: true }).click()
+        await expect(
+          f.editor.getByRole('status').filter({ hasText: '已取消工程文件读取' }),
+        ).toBeVisible()
+      } else if (mode === 'close') {
+        await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
+        await expect(f.editor).not.toBeVisible()
+      }
+      if (mode === 'failed' || mode === 'missing-duration') {
+        release()
+        await expect(f.editor.getByRole('alert', { name: '工程导出失败' })).toContainText(
+          mode === 'failed' ? '对白信息暂不可用' : '缺少有效时长',
+        )
+        expect(submits).toBe(0)
+        expect(f.downloads).toEqual([])
+        if (mode === 'missing-duration') {
+          await page.setViewportSize({ width: 390, height: 700 })
+          await expect(f.editor.getByRole('button', { name: '关闭', exact: true })).toBeInViewport()
+          await expect(f.editor.getByRole('alert', { name: '工程导出失败' })).toContainText(
+            'first.wav',
+          )
+          await page.screenshot({ path: test.info().outputPath('missing-duration-390.png') })
+          return
+        }
+        broken = false
+      }
+      if (mode === 'close') await f.open()
+      const downloaded = page.waitForEvent('download')
+      if (mode === 'cancel' || mode === 'close' || mode === 'failed')
+        await f.editor.getByRole('button', { name: '导出工程', exact: true }).click()
+      release()
+      const file = await downloaded
+      expect(await file.failure()).toBeNull()
+      const path = (await file.path())!
+      const list = execFileSync('unzip', ['-l', path], { encoding: 'utf8' })
+      expect(list).toContain('first.wav')
+      expect(list).toContain('second.wav')
+      expect(execFileSync('unzip', ['-t', path], { encoding: 'utf8' })).toContain(
+        'No errors detected',
+      )
+      expect(submits).toBe(1)
+    } finally {
+      release()
+    }
+  })
+}
