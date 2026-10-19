@@ -1,6 +1,100 @@
 import { expect, type Page, test } from '@playwright/test'
 import { newProject } from './canvas'
 
+test('提交未知可复制核查信息，复制失败可重试且不提交或恢复任务', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await newProject(page)
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/speech',
+      name: '核查信息复制',
+      params: {},
+      x: 400,
+      y: 200,
+    }),
+  )
+  let mutations = 0
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/(?:run|recover)$/.test(request.url())) mutations++
+  })
+  await page.route('**/api/canvases/*/jobs', (route) =>
+    route.fulfill({
+      json: {
+        groups: [],
+        jobs: [
+          {
+            id: 'copy-evidence-fixture',
+            nodeId: id,
+            nodeType: 'plein/speech',
+            status: 'failed',
+            attempts: 1,
+            createdAt: 1792425426642,
+            startedAt: 1792425581695,
+            finishedAt: 1792425881805,
+            error:
+              '模拟 504（客户端请求 ID 11111111-1111-4111-8111-111111111111；平台日志 ID platform-fixture-log）',
+            input: {
+              v: 1,
+              nodeId: id,
+              nodeType: 'plein/speech',
+              status: 'ready',
+              preparedAt: 1792425581695,
+              model: {
+                ref: 'doubao/speech:seed-tts-2.0',
+                provider: 'doubao/speech',
+                title: '豆包语音合成 2.0',
+              },
+              prompt: '此正文不应复制',
+              params: { example: '此参数不应复制' },
+              refs: [],
+              inputs: {},
+              notices: [],
+              blocked: [],
+            },
+            recovery: {
+              state: 'submit_unknown',
+              provider: '豆包语音',
+              attachable: false,
+              refetchable: false,
+            },
+          },
+        ],
+      },
+    }),
+  )
+  await page.getByRole('button', { name: '任务', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: '任务', exact: true })
+  const copy = panel.getByRole('button', { name: '复制核查信息', exact: true })
+  await expect(copy).toBeVisible()
+  await expect(panel.getByRole('button', { name: '填写平台任务 ID', exact: true })).toHaveCount(0)
+  await page.evaluate(() =>
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: () => Promise.reject(new DOMException('fixture denied', 'NotAllowedError')),
+      },
+    }),
+  )
+  await copy.click()
+  await expect(panel.getByRole('alert')).toHaveText('复制核查信息失败，请重试')
+  await expect(copy).toBeEnabled()
+  await page.evaluate(() => Reflect.deleteProperty(navigator, 'clipboard'))
+  await copy.click()
+  await expect(page.getByText('核查信息已复制', { exact: true })).toBeVisible()
+  const text = await page.evaluate(() => navigator.clipboard.readText())
+  expect(text).toContain('copy-evidence-fixture（不是平台任务 ID）')
+  expect(text).toContain('doubao/speech:seed-tts-2.0')
+  expect(text).toContain('2026-10-19T15:59:41.695Z')
+  expect(text).toContain('平台任务 ID：未记录')
+  expect(text).toContain('11111111-1111-4111-8111-111111111111')
+  expect(text).toContain('platform-fixture-log')
+  expect(text).not.toContain('此正文不应复制')
+  expect(text).not.toContain('此参数不应复制')
+  await expect(panel.getByRole('alert')).toHaveCount(0)
+  expect(mutations).toBe(0)
+  await panel.screenshot({ path: test.info().outputPath('copy-recovery-evidence.png') })
+})
+
 async function setup(page: Page) {
   await newProject(page)
   const id = await page.evaluate(() =>

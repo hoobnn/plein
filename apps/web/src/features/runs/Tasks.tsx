@@ -22,6 +22,7 @@ import { Icon } from '../../ui/icons'
 import { cancelGroup, cancelNode, runNode } from './run'
 import { BATCH_OUTCOME, BATCH_STAGE, CANCELED_BY, describeRecovery } from './recovery'
 import { useRecoveryRequests } from './recoveryRequests'
+import { recoveryEvidence } from './recoveryEvidence'
 import { cancelRequestKey, groupCancelRequestKey, useCancelRequests } from './cancelRequests'
 import { Presence, useExit } from '../../ui/Presence'
 import { EmptyState } from '../../ui/EmptyState'
@@ -804,6 +805,20 @@ export function RecoveryBlock(props: {
   }
   const [error, setError] = useState<string | null>(null)
   const el = doc.get(job.nodeId)
+  const [copying, setCopying] = useState(false)
+  const copyEvidence = async () => {
+    if (copying) return
+    setCopying(true)
+    setError(null)
+    try {
+      await navigator.clipboard.writeText(recoveryEvidence(job))
+      useCanvas.getState().notify('核查信息已复制')
+    } catch {
+      setError('复制核查信息失败，请重试')
+    } finally {
+      setCopying(false)
+    }
+  }
   const act = async (body: RecoverJobOptions) => {
     if (!canvasId || !useRecoveryRequests.getState().begin(requestKey)) return
     setError(null)
@@ -844,6 +859,17 @@ export function RecoveryBlock(props: {
         </p>
       )}
       <div className="flex flex-wrap gap-1">
+        {['submit_unknown', 'fetch_failed', 'remote_pending'].includes(r.state) && (
+          <button
+            type="button"
+            className={btn}
+            disabled={copying}
+            aria-busy={copying}
+            onClick={() => void copyEvidence()}
+          >
+            复制核查信息
+          </button>
+        )}
         {r.refetchable && (
           <button
             type="button"
