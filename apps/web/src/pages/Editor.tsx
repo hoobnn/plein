@@ -135,6 +135,7 @@ export function Editor({
   const sidebar =
     mode === 'flow' && sidebarOpen && (roomForPanels || (sidebarOverlay && !rightPanelWidth))
   const roomForGuide = usePanelSpace(sidebar ? sidebarWidth : 0, 0, 960)
+  const roomForHint = usePanelSpace(sidebar ? sidebarWidth : 0, rightPanelWidth, 240)
   const guidePresentation =
     mode === 'flow' && roomForGuide && !externalRightPanelWidth ? 'floating' : 'modal'
   useEffect(() => {
@@ -205,8 +206,11 @@ export function Editor({
               <ProjectSwitcher canvas={canvas} />
             </div>
           ) : source.kind === 'demo' ? (
-            <span className="ui-bar-btn block max-w-60 truncate font-medium text-ink">
-              {`演示（${source.count} 个元素）`}
+            <span
+              title={`演示（${source.count} 个元素）`}
+              className="ui-bar-btn min-w-0 max-w-60 shrink font-medium text-ink"
+            >
+              <span className="truncate">{`演示（${source.count} 个元素）`}</span>
             </span>
           ) : null}
           {source.kind === 'remote' && <CanvasInfo query={canvasQuery} />}
@@ -222,7 +226,7 @@ export function Editor({
           onOpenSettings={onOpenSettings}
         />
       </header>
-      {mode === 'flow' && <EmptyHint />}
+      {mode === 'flow' && <EmptyHint hidden={!roomForHint} rightPanel={!!rightPanelWidth} />}
       <Presence>
         {(importing || notice) && (
           <Toast
@@ -371,24 +375,29 @@ function SyncDot({ sync }: { sync: SyncStatus }) {
 }
 
 /** 空画布时在中央给一句上手提示，放下第一个元素后消失 */
-function EmptyHint() {
+function EmptyHint({ hidden, rightPanel }: { hidden: boolean; rightPanel: boolean }) {
   const engine = useCanvas((s) => s.engine)
-  const [empty, setEmpty] = useState(false)
-  useEffect(() => {
-    if (!engine) return
-    const check = () => setEmpty(engine.scene.children(null).length === 0)
-    check()
-    return engine.doc.subscribe(check)
-  }, [engine])
-  if (!empty) return null
+  const empty = useSyncExternalStore(
+    useCallback((notify) => engine?.doc.subscribe(notify) ?? (() => {}), [engine]),
+    () => !!engine && engine.scene.children(null).length === 0,
+  )
+  const insets = useSyncExternalStore(
+    useCallback((notify) => engine?.camera.onInsetsChange(notify) ?? (() => {}), [engine]),
+    () => engine?.camera.insets ?? null,
+  )
+  // 手机上的右面板覆盖整张画布，不占相机边距，此时隐藏背景提示。
+  if (!empty || hidden || (rightPanel && !insets?.right)) return null
   return (
-    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-      <div className="flex flex-col items-center gap-3 text-center">
+    <div
+      style={{ left: insets?.left ?? 0, right: insets?.right ?? 0 }}
+      className="pointer-events-none absolute inset-y-0 flex items-center justify-center px-6 pt-20 pb-24"
+    >
+      <div className="flex w-full min-w-0 max-w-xl flex-col items-center gap-3 text-center">
         <div className="flex items-center gap-1.5 text-xs text-ink-subtle">
           <span className="ui-keycap">双击</span>或<span className="ui-keycap">Tab</span>
         </div>
-        <p className="text-sm text-ink-muted">双击空白处或按 Tab 添加节点</p>
-        <p className="text-xs text-ink-subtle">
+        <p className="max-w-full break-words text-sm text-ink-muted">双击空白处或按 Tab 添加节点</p>
+        <p className="max-w-full break-words text-xs text-ink-subtle">
           也可以把图片、视频、音频拖进来 · {MOD} + 滚轮缩放 · 按 ? 查看快捷键
         </p>
       </div>
