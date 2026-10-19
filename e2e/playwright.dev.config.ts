@@ -221,6 +221,7 @@ export default defineConfig({
     'board-reading-order.spec.ts',
     'board-text-content.spec.ts',
     'board-mentions.spec.ts',
+    'board-pending-results.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
     'sidebar-resize.spec.ts',
     'sidebar-assets-recovery.spec.ts',

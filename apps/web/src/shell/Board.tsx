@@ -44,6 +44,19 @@ const STATUS: Record<string, { label: string; tone: string }> = {
   canceled: { label: '已取消', tone: '' },
 }
 
+/** 审片只读主输出的候选，避免副输出或说明文字混入。 */
+function candidatesOf(el: CanvasElement) {
+  if (el.kind !== 'node') return []
+  const port = el.ports?.outputs[0]?.id ?? primaryResult(el)?.port ?? el.results?.[0]?.port
+  return (el.results ?? []).filter((result) => result.port === port)
+}
+
+function statusOf(el: CanvasElement) {
+  if (el.run?.status === 'canceled' && primaryResult(el)?.runId === el.run.id)
+    return { label: '已取回', tone: 'ui-tag-accent' }
+  return el.run && STATUS[el.run.status]
+}
+
 /** 元素当前展示的内容：素材本身，或节点当前采用的结果 */
 type Content =
   | { type: 'text'; text: string }
@@ -247,7 +260,7 @@ function TextItem({
   const catalog = useCatalog((s) => s.catalog)
   const c = contentOf(el, catalog)
   const source = useRef<HTMLButtonElement>(null)
-  const status = el.run && STATUS[el.run.status]
+  const status = statusOf(el)
   return (
     <li>
       <div className="board-text group relative">
@@ -295,10 +308,9 @@ function MediaItem({
   const localUrl = useCanvas((s) => s.localAssetUrls?.get(assetId ?? ''))
   const meta = useAssetMeta(localUrl ? undefined : assetId)
   const title = outlineTitle(el, catalog)
-  const status = el.run && STATUS[el.run.status]
+  const status = statusOf(el)
 
-  const result = el.kind === 'node' ? primaryResult(el) : undefined
-  const candidates = result ? (el.results?.filter((r) => r.port === result.port).length ?? 0) : 0
+  const candidates = candidatesOf(el).filter((result) => result.value.type === type)
   const preview = useRef<HTMLButtonElement>(null)
   const thumb =
     localUrl ??
@@ -348,7 +360,12 @@ function MediaItem({
           ? { kind: 'result', nodeId: latest.id, resultId: current.id, name: title }
           : { assetId: media.assetId, kind: media.kind, name: title },
       )
-    } else onLocate()
+    } else {
+      const candidate = candidatesOf(latest).find((result) => result.value.type === type)
+      if (candidate)
+        state.view({ kind: 'result', nodeId: latest.id, resultId: candidate.id, name: title })
+      else onLocate()
+    }
   }
 
   return (
@@ -365,7 +382,9 @@ function MediaItem({
         ref={preview}
         type="button"
         onClick={open}
-        aria-label={assetId ? `查看${title}` : `定位${title}`}
+        aria-label={
+          assetId ? `查看${title}` : candidates.length ? `查看${title}的候选` : `定位${title}`
+        }
         // 竖图按高度封顶，宽度随比例缩，不裁画面
         style={{ aspectRatio: aspect, width: `min(100%, ${Math.round(MEDIA_MAX_H * aspect)}px)` }}
         className="board-media group"
@@ -405,12 +424,19 @@ function MediaItem({
         {!assetId && (
           <span className="flex flex-col items-center gap-2 text-sm text-ink-subtle">
             <Icon name={outlineIcon(type)} size={24} />
-            {el.run?.status === 'running' || el.run?.status === 'queued' ? '生成中…' : '待生成'}
+            {el.run?.status === 'running' || el.run?.status === 'queued'
+              ? '生成中…'
+              : candidates.length
+                ? '待采用'
+                : '待生成'}
           </span>
         )}
-        {candidates > 1 && (
-          <span className="ui-badge absolute top-2 right-2" aria-label={`${candidates} 个候选`}>
-            {candidates}
+        {candidates.length > 1 && (
+          <span
+            className="ui-badge absolute top-2 right-2"
+            aria-label={`${candidates.length} 个候选`}
+          >
+            {candidates.length}
           </span>
         )}
       </button>
