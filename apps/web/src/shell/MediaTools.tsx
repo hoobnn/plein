@@ -1,16 +1,9 @@
 import { useCatalog } from '../stores/catalog'
 import { deriveNode } from '../canvas/presets'
 import type { Engine } from '@plein/canvas-core'
-import type {
-  Asset,
-  AssetKind,
-  MediaCapsInfo,
-  MediaDerivation,
-  MediaDeriveRequest,
-} from '@plein/protocol'
-import { useEffect, useRef, useState } from 'react'
+import type { Asset, MediaCapsInfo, MediaDeriveRequest } from '@plein/protocol'
+import { useEffect, useState } from 'react'
 import {
-  applyDerivation,
   clampRange,
   clampSpeed,
   cropRect,
@@ -28,59 +21,9 @@ import { Icon } from '../ui/icons'
 import { Popover } from '../ui/Popover'
 import { Presence } from '../ui/Presence'
 import { audioSplitPlan } from './audioSegments'
-
-/** 一次加工的目标：一个画布元素 + 它背后的资产 */
-export interface MediaTarget {
-  elId: string
-  assetId: string
-  kind: AssetKind
-}
-
-/**
- * 加工过程中统一的提示与防重入：一轮（单个或批量）只提示一次。
- * 已有一轮在跑时返回 false，不算失败。
- */
-function useDeriver(engine: Engine) {
-  const notify = useCanvas((s) => s.notify)
-  const [busy, setBusy] = useState(false)
-  // 批量加工是一轮 await 循环，用 ref 挡重入才不会被同一帧里的多次点击打乱
-  const running = useRef(false)
-  const run = async (targets: MediaTarget[], make: (t: MediaTarget) => MediaDeriveRequest) => {
-    if (running.current || !targets.length) return false
-    running.current = true
-    setBusy(true)
-    const made: MediaDerivation[] = []
-    const errors: string[] = []
-    let op: MediaDeriveRequest['op'] | undefined
-    try {
-      for (const t of targets) {
-        const input = make(t)
-        op = input.op
-        try {
-          made.push(await applyDerivation(engine, input, t.elId))
-        } catch (err) {
-          errors.push((err as Error).message)
-        }
-      }
-    } finally {
-      running.current = false
-      setBusy(false)
-    }
-    const one = made[0]
-    if (targets.length === 1)
-      notify(
-        one && op
-          ? `已${opLabel(op)}，新素材放在右边：${one.assets.map((a) => a.name).join('、')}${
-              one.note ? `。${one.note}` : ''
-            }`
-          : (errors[0] ?? null),
-      )
-    else if (errors.length) notify(`${made.length} 个成功，${errors.length} 个失败：${errors[0]}`)
-    else if (op) notify(`已${opLabel(op)} ${made.length} 个素材，新素材放在右边`)
-    return true
-  }
-  return { busy, run }
-}
+import { useMediaDeriver } from './mediaRequests'
+import type { MediaTarget } from '../canvas/media'
+export type { MediaTarget } from '../canvas/media'
 
 function num(value: string) {
   // Number('') 是 0：留空不能当成 0，否则裁剪会悄悄产出 1×1
@@ -136,16 +79,15 @@ export function MediaTools({
   ops?: ReturnType<typeof opsFor>
 }) {
   const notify = useCanvas((s) => s.notify)
-  const { busy, run } = useDeriver(engine)
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState<string | null>(null)
   const [meta, setMeta] = useState<Asset | null>(null)
   const [values, setValues] = useState<Record<string, string>>({})
-  const btnRef = useRef<HTMLButtonElement>(null)
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
 
   const list = Array.isArray(target) ? target : [target]
   const first = list[0]!
+  const { busy, run, cancel, trigger: btnRef } = useMediaDeriver(engine, list)
   const [caps, setCaps] = useState<MediaCapsInfo | null>(null)
   useEffect(() => {
     let alive = true
@@ -166,17 +108,29 @@ export function MediaTools({
     const next = !open
     setOpen(next)
     setAnchorEl(btnRef.current)
-    if (next && !meta)
-      loadAssetMeta(first.assetId)
-        .then(setMeta)
-        .catch(() => notify('读不到素材信息'))
   }
+  useEffect(() => {
+    if (!open || meta) return
+    let alive = true
+    loadAssetMeta(first.assetId)
+      .then((asset) => {
+        if (alive) setMeta(asset)
+      })
+      .catch(() => {
+        if (alive) notify('读不到素材信息')
+      })
+    return () => {
+      alive = false
+    }
+  }, [open, meta, first.assetId, notify])
 
   const set = (key: string, value: string) => setValues((v) => ({ ...v, [key]: value }))
 
   /** 多选时按目标顺序逐个加工，失败的跳过并如实报数；上一轮还没完时不重复发起 */
   const runAll = async (make: (t: MediaTarget) => MediaDeriveRequest) => {
-    if (await run(list, make)) setOpen(false)
+    const pending = run(list, make)
+    setOpen(false)
+    await pending
   }
 
   // 批量时每个目标用自己的 assetId；区间、尺寸类参数按第一个素材的信息校验
@@ -276,6 +230,21 @@ export function MediaTools({
         {label}
         <Icon name="chevronDown" size={12} />
       </button>
+
+      {busy && (
+        <>
+          <span role="status" className="ui-bar-text">
+            正在加工…
+          </span>
+          <button
+            type="button"
+            className="ui-bar-btn"
+            onClick={(event) => cancel(event.currentTarget)}
+          >
+            取消加工
+          </button>
+        </>
+      )}
 
       <Presence>
         {open && (

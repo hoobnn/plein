@@ -128,6 +128,7 @@ export default defineConfig({
     'continue-lifecycle.spec.ts',
     'concurrent-placement.spec.ts',
     'frame-placement.spec.ts',
+    'media-tools-lifecycle.spec.ts',
     'continue.spec.ts',
     'template-save-targets.spec.ts',
     'selection-library-targets.spec.ts',

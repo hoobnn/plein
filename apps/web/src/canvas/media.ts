@@ -1,5 +1,11 @@
 import type { Engine } from '@plein/canvas-core'
-import { createElements, mediaSize, type NewElement } from '@plein/doc'
+import {
+  createElements,
+  elementMedia,
+  mediaSize,
+  type NewElement,
+  ReadOnlyDocError,
+} from '@plein/doc'
 import type {
   Asset,
   AssetKind,
@@ -164,6 +170,14 @@ export function mediaCaps(): Promise<MediaCapsInfo> {
   return capsCache
 }
 
+export interface MediaTarget {
+  elId: string
+  assetId: string
+  kind: AssetKind
+}
+
+export type DerivedMedia = MediaDerivation & { created: string[] }
+
 /**
  * 加工并把产物摆到源元素右边：加工永远产出新资产，原来的素材不动。
  * 产物可以像导入的素材一样继续用、继续加工、进入导出。
@@ -172,8 +186,18 @@ export async function applyDerivation(
   engine: Engine,
   input: MediaDeriveRequest,
   nearId: string,
-): Promise<MediaDerivation> {
-  const made = await api.mediaDerive(input)
+  signal?: AbortSignal,
+): Promise<DerivedMedia> {
+  const check = () => {
+    signal?.throwIfAborted()
+    if (engine.doc.readOnly) throw new ReadOnlyDocError()
+    const source = engine.doc.get(nearId)
+    if (!source || elementMedia(source)?.assetId !== input.assetId)
+      throw new Error('素材已变化，本次加工未放入画布，请重新选择素材')
+  }
+  check()
+  const made = await api.mediaDerive(input, signal)
+  check()
   // 分离会一次出两个资产，先量好整组的尺寸再找位置，否则两个会叠在一起
   const sizes = made.assets
     .map((asset) => ({ asset, size: elementSize(asset) }))
@@ -199,7 +223,9 @@ export async function applyDerivation(
       })
       x += size.w + GAP
     }
-    engine.selection.set(createElements(engine.doc, list))
   }
-  return made
+  engine.doc.undo.stopCapturing()
+  const created = createElements(engine.doc, list)
+  engine.doc.undo.stopCapturing()
+  return { ...made, created }
 }
