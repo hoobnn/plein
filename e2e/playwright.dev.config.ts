@@ -119,6 +119,7 @@ export default defineConfig({
     'task-batch-targets.spec.ts',
     'batch-read-recovery.spec.ts',
     'group-cancel-pending.spec.ts',
+    'group-request-lifecycle.spec.ts',
     'task-viewport-layout.spec.ts',
     'task-mobile-locate.spec.ts',
     'selection-toolbar-layout.spec.ts',

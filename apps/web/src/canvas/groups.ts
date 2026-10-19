@@ -91,6 +91,7 @@ async function start(
 ): Promise<GroupRun> {
   signal?.throwIfAborted()
   const { groupId } = await begin()
+  signal?.throwIfAborted()
   onStart?.(groupId)
   let failures = 0
   for (;;) {
@@ -98,6 +99,7 @@ async function start(
     let state: GroupRunState
     try {
       state = await api.groupRun(groupId, signal)
+      signal?.throwIfAborted()
       failures = 0
     } catch (err) {
       if (signal?.aborted) throw signal.reason

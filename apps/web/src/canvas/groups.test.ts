@@ -1,4 +1,4 @@
-import type { GroupRunState } from '@plein/protocol'
+import type { GroupRunStarted, GroupRunState } from '@plein/protocol'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { ApiError, api } from '../api/client'
 import { runGroup } from './groups'
@@ -104,5 +104,45 @@ describe('整组运行轮询', () => {
     vi.mocked(api.runFrame).mockClear()
     await expect(runGroup('c', 'f', { signal: ctl.signal })).rejects.toBe(reason)
     expect(api.runFrame).not.toHaveBeenCalled()
+  })
+})
+
+describe('忽略中止的迟到传输', () => {
+  it('离开画布后发起应答才到达，不登记旧组 ID 或开始轮询', async () => {
+    let release!: (value: GroupRunStarted) => void
+    vi.mocked(api.runFrame).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        }) as ReturnType<typeof api.runFrame>,
+    )
+    const controller = new AbortController(),
+      reason = new Error('离开旧画布'),
+      onStart = vi.fn()
+    const pending = runGroup('c', 'f', { signal: controller.signal, onStart })
+    const failed = expect(pending).rejects.toBe(reason)
+    controller.abort(reason)
+    release({ groupId: 'old-group', total: 1 })
+    await failed
+    expect(onStart).not.toHaveBeenCalled()
+    expect(api.groupRun).not.toHaveBeenCalled()
+  })
+  it('查询中离开画布后旧成功应答才返回，不能当作当前操作成功', async () => {
+    let release!: (value: GroupRunState) => void
+    vi.mocked(api.groupRun).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        }),
+    )
+    const controller = new AbortController(),
+      reason = new Error('离开旧画布')
+    const pending = runGroup('c', 'f', { signal: controller.signal })
+    const failed = expect(pending).rejects.toBe(reason)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(api.groupRun).toHaveBeenCalledOnce()
+    controller.abort(reason)
+    release(done)
+    await failed
   })
 })

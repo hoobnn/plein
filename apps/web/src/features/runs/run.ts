@@ -60,21 +60,23 @@ export async function cancelNode(id: string, runId?: string) {
   try {
     await api.cancelNode(canvasId, id, { runId: expected })
   } catch (err) {
-    if (useCanvas.getState().canvasId === canvasId) fail(err)
+    const current = useCanvas.getState()
+    if (current.canvasId === canvasId && current.engine === engine) fail(err)
   } finally {
     useCancelRequests.getState().end(key)
   }
 }
 
 export async function cancelGroup(groupId: string) {
-  const { canvasId } = useCanvas.getState()
+  const { canvasId, engine } = useCanvas.getState()
   if (!canvasId) return
   const key = groupCancelRequestKey(canvasId, groupId)
   if (!useCancelRequests.getState().begin(key)) return
   try {
     await api.cancelGroup(groupId)
   } catch (err) {
-    if (useCanvas.getState().canvasId === canvasId) fail(err)
+    const current = useCanvas.getState()
+    if (current.canvasId === canvasId && current.engine === engine) fail(err)
   } finally {
     useCancelRequests.getState().end(key)
   }
@@ -93,9 +95,11 @@ export async function runFrame(
     const r = await groups.runGroup(canvasId, frameId, {
       ...opts,
       signal,
-      onStart: (groupId) => useGroupRuns.getState().started(frameId, groupId),
+      onStart: (groupId) => {
+        if (!signal.aborted) useGroupRuns.getState().started(frameId, groupId)
+      },
     })
-    notify(groups.describeGroupRun(name, r))
+    if (!signal.aborted) notify(groups.describeGroupRun(name, r))
   } catch (err) {
     if (!signal.aborted) fail(err)
   } finally {
@@ -110,7 +114,7 @@ export async function runFlowFrom(nodeId: string, scope: FlowRunOptions['scope']
   const signal = groupRunSignal()
   try {
     const r = await groups.runFlow(canvasId, nodeId, scope, { signal })
-    notify(groups.describeFlowRun(scope, name, r))
+    if (!signal.aborted) notify(groups.describeFlowRun(scope, name, r))
   } catch (err) {
     if (!signal.aborted) fail(err)
   }
