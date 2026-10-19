@@ -508,6 +508,13 @@ test('序列时间线：排序、修剪、播放', async ({ page }) => {
   await page.mouse.up()
   await expect.poll(leftToRight).toEqual([before[1], before[2], before[0]])
   expect(await order()).toHaveLength(3)
+  await expect(timeline).toBeFocused()
+  await page.keyboard.press('Home')
+  await page.keyboard.press('Space')
+  await expect
+    .poll(async () => (await editor.locator('.seq-time').textContent())?.slice(0, 6))
+    .not.toBe('0:00.0')
+  await page.keyboard.press('Space')
 
   // 拖出点把第一段剪短：检查器里出点跟着变
   const head = clip(before[1]!)
@@ -529,6 +536,7 @@ test('序列时间线：排序、修剪、播放', async ({ page }) => {
   expect(Number(await out.inputValue())).toBeLessThan(2.5)
 
   // 修剪时播放头停在剪切处；Home 回到开头，空格播放，播放头往前走
+  await expect(timeline).toBeFocused()
   const time = editor.locator('.seq-time')
   await expect(time).toHaveText(/^0:01\.\d \/ 0:06\.\d$/)
   await page.keyboard.press('Home')

@@ -139,6 +139,7 @@ export function Timeline({
   onTrim(key: string, patch: TrimPatch, done: boolean): void
   onBeforeInteract?(): void
 }) {
+  const timeline = useRef<HTMLElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const head = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState(0)
@@ -202,6 +203,13 @@ export function Timeline({
     })
   }
 
+  /** 缩放按钮到达边界会禁用，将键盘焦点交回仍可定位的时间线。 */
+  const zoomButton = (next: number) => {
+    const z = Math.min(zoomMax, Math.max(1, next))
+    if (z === 1 || z === zoomMax) timeline.current?.focus({ preventScroll: true })
+    zoomAt(z)
+  }
+
   // ⌘/Ctrl + 滚轮（触控板捏合也是这个）缩放；要 passive: false 才能拦下页面缩放
   const zoomRef = useRef(zoomAt)
   zoomRef.current = zoomAt
@@ -225,6 +233,8 @@ export function Timeline({
     if (!sc || e.button !== 0 || closing) return
     cancelScrub()
     e.preventDefault()
+    // 防止刻度的 preventDefault 把焦点留在原先的滑杆或数字输入框。
+    timeline.current?.focus({ preventScroll: true })
     playhead.pause()
     const at = (clientX: number) =>
       (clientX - sc.getBoundingClientRect().left + sc.scrollLeft - LABEL - PAD) / ppsRef.current
@@ -237,7 +247,13 @@ export function Timeline({
   for (let t = 0; t <= Math.max(total, 1) + 1e-6; t += step) ticks.push(t)
 
   return (
-    <section className="seq-timeline" aria-label="时间线" onPointerDownCapture={onBeforeInteract}>
+    <section
+      ref={timeline}
+      tabIndex={-1}
+      className="seq-timeline"
+      aria-label="时间线"
+      onPointerDownCapture={onBeforeInteract}
+    >
       <div className="seq-toolbar">
         <span className="seq-toolbar-hint">
           {readOnly
@@ -250,7 +266,7 @@ export function Timeline({
             className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
             aria-label="缩小"
             disabled={zoom <= 1}
-            onClick={() => zoomAt(zoom / 1.5)}
+            onClick={() => zoomButton(zoom / 1.5)}
           >
             <Icon name="zoomOut" size={14} />
           </button>
@@ -269,7 +285,7 @@ export function Timeline({
             className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
             aria-label="放大"
             disabled={zoom >= zoomMax}
-            onClick={() => zoomAt(zoom * 1.5)}
+            onClick={() => zoomButton(zoom * 1.5)}
           >
             <Icon name="zoomIn" size={14} />
           </button>
@@ -279,7 +295,7 @@ export function Timeline({
             aria-label="铺满"
             title="整条铺满"
             disabled={zoom === 1}
-            onClick={() => zoomAt(1)}
+            onClick={() => zoomButton(1)}
           >
             <Icon name="fit" size={14} />
           </button>
@@ -315,6 +331,7 @@ export function Timeline({
             onSelect={onSelect}
             onMove={onMove}
             onTrim={onTrim}
+            onFocusTimeline={() => timeline.current?.focus({ preventScroll: true })}
           />
 
           <Track label="对白" icon="mic" kind="dialogue" empty="把配音连到序列的「对白」端口">
@@ -480,6 +497,7 @@ function ClipTrack({
   onSelect,
   onMove,
   onTrim,
+  onFocusTimeline,
 }: {
   readOnly: boolean
   items: TrackItem[]
@@ -490,6 +508,7 @@ function ClipTrack({
   onSelect(key: string | undefined): void
   onMove(from: number, to: number): void
   onTrim(key: string, patch: TrimPatch, done: boolean): void
+  onFocusTimeline(): void
 }) {
   const [drag, setDrag] = useState<Drag | null>(null)
   /** 落下后的位移补偿：先停在松手处，下一帧滑回 0 */
@@ -524,6 +543,7 @@ function ClipTrack({
     const move = (ev: PointerEvent) => {
       const dx = ev.clientX - x0
       if (!moved && Math.abs(dx) < 4) return
+      if (!moved) onFocusTimeline()
       moved = true
       const mine = center(item) + dx
       let target = items.filter((it, i) => i !== index && center(it) < mine).length
@@ -564,6 +584,7 @@ function ClipTrack({
     cancelGesture()
     e.stopPropagation()
     e.preventDefault()
+    onFocusTimeline()
     onSelect(item.key)
     playhead.pause()
     setTrimming(item.key)
