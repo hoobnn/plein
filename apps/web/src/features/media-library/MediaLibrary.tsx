@@ -669,6 +669,7 @@ function MediaPlayer({ asset, className }: { asset: MediaLibraryItem; className:
       />
     )
   const props = {
+    'aria-label': `${asset.name || '未命名素材'} ${video ? '视频' : '音频'}播放器`,
     src: assetUrls.original(asset.id),
     controls: true,
     preload: 'metadata',

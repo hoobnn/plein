@@ -459,7 +459,7 @@ function Review({ viewer }: { viewer: View }) {
               )}
             </>
           ) : (kind === 'video' || kind === 'audio') && assetId ? (
-            <ReviewMedia key={assetId} assetId={assetId} kind={kind} />
+            <ReviewMedia key={assetId} assetId={assetId} kind={kind} name={name} />
           ) : value ? (
             <div
               data-review-text=""
@@ -497,7 +497,15 @@ function Review({ viewer }: { viewer: View }) {
   )
 }
 
-function ReviewMedia({ assetId, kind }: { assetId: string; kind: 'video' | 'audio' }) {
+function ReviewMedia({
+  assetId,
+  kind,
+  name,
+}: {
+  assetId: string
+  kind: 'video' | 'audio'
+  name: string
+}) {
   const [failed, setFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const [waveformFailed, setWaveformFailed] = useState(false)
@@ -535,6 +543,7 @@ function ReviewMedia({ assetId, kind }: { assetId: string; kind: 'video' | 'audi
       </div>
     )
   const props = {
+    'aria-label': `${name} ${kind === 'audio' ? '音频' : '视频'}播放器`,
     ref: (media: HTMLMediaElement | null) => {
       ref.current = media
     },

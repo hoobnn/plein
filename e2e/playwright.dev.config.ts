@@ -67,6 +67,7 @@ export default defineConfig({
     'library-profile-preview.spec.ts',
     'character-assets.spec.ts',
     'viewer-media.spec.ts',
+    'viewer-accessibility.spec.ts',
     'media-pagination.spec.ts',
     'media-search.spec.ts',
     'media-offline.spec.ts',
