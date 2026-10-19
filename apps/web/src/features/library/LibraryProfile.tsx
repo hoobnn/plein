@@ -21,6 +21,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react'
@@ -158,6 +159,30 @@ function freeName(profile: CharacterProfile, base: string) {
 /** 选中的是一个时期，或某个时期下的一套服饰 */
 type PeriodSelection = { period: string; outfit?: string }
 
+/** 先停在不会被增删替换的区域，提交后仅在焦点仍归本区域时交接到新控件。 */
+function useProfileFocus() {
+  const focus = useLibraryFieldFocus()
+  const pending = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    const selector = pending.current
+    pending.current = null
+    if (!selector || document.activeElement !== focus.props.ref.current) return
+    const target = focus.props.ref.current?.querySelector<HTMLElement>(selector)
+    target?.focus({ preventScroll: true })
+    target?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  })
+  return {
+    ...focus,
+    to(selector: string) {
+      focus.park()
+      pending.current = selector
+    },
+  }
+}
+
+const profileControl = (kind: 'period' | 'look' | 'state', id: string) =>
+  `[data-profile-${kind}="${CSS.escape(id)}"]`
+
 export function PeriodsTab({
   name,
   profile,
@@ -172,6 +197,7 @@ export function PeriodsTab({
   media: CanvasMedia[]
   hero: HeroControl
 }) {
+  const focus = useProfileFocus()
   const [sel, setSel] = useState<PeriodSelection | null>(() =>
     profile.periods[0] ? { period: profile.periods[0].id } : null,
   )
@@ -203,6 +229,7 @@ export function PeriodsTab({
     setPeriods(profile.periods.map((x) => (x.id === id ? { ...x, ...p } : x)))
   const addPeriod = (name: string) => {
     const next = emptyPeriod(freeName(profile, name))
+    focus.to('input[aria-label="时期名"]')
     setPeriods([...profile.periods, next])
     setSel({ period: next.id })
   }
@@ -217,12 +244,14 @@ export function PeriodsTab({
   const removePeriod = () => {
     if (!period) return
     const rest = profile.periods.filter((x) => x.id !== period.id)
-    setPeriods(rest)
     const near = rest[Math.max(0, index - 1)]
+    focus.to(near ? profileControl('period', near.id) : 'button.lib-timeline-add')
+    setPeriods(rest)
     setSel(near ? { period: near.id } : null)
   }
   const addOutfit = (owner: ProfilePeriod, name: string) => {
     const look = emptyLook(freeName(profile, name))
+    focus.to('input[aria-label="服饰名"]')
     patchPeriod(owner.id, { outfits: [...owner.outfits, look] })
     setSel({ period: owner.id, outfit: look.id })
   }
@@ -234,6 +263,7 @@ export function PeriodsTab({
     })
   const removeOutfit = () => {
     if (!period || !outfit) return
+    focus.to(profileControl('period', period.id))
     patchPeriod(period.id, { outfits: period.outfits.filter((o) => o.id !== outfit.id) })
     setSel({ period: period.id })
   }
@@ -250,7 +280,12 @@ export function PeriodsTab({
   const outfitsUsed = new Set(profile.periods.flatMap((p) => p.outfits.map((o) => o.name)))
 
   return (
-    <div className="flex flex-col gap-4">
+    <div
+      {...focus.props}
+      role="group"
+      aria-label="时期与服饰编辑"
+      className="lib-focus-region flex flex-col gap-4"
+    >
       {profile.periods.length === 0 ? (
         <p className="text-sm text-ink-subtle">
           一个角色通常会经历几个时期：童年、少年、青年……每个时期有自己的样貌、一个主音色和几套服饰。
@@ -270,6 +305,7 @@ export function PeriodsTab({
             <li key={p.id} className="lib-lane" data-active={on || undefined}>
               <button
                 type="button"
+                data-profile-period={p.id}
                 aria-pressed={on && !outfit}
                 onClick={() => setSel({ period: p.id })}
                 onPointerEnter={() => hover.enter(`period:${p.id}`)}
@@ -596,11 +632,17 @@ function VoiceStates({
   states: VoiceState[]
   onChange(next: VoiceState[]): void
 }) {
+  const focus = useProfileFocus()
   const unused = VOICE_STATE_PRESETS.filter((n) => !states.some((s) => s.name === n))
   const set = (id: string, p: Partial<VoiceState>) =>
     onChange(states.map((s) => (s.id === id ? { ...s, ...p } : s)))
   return (
-    <div className="ui-field">
+    <div
+      {...focus.props}
+      role="group"
+      aria-label="状态次音色"
+      className="ui-field lib-focus-region"
+    >
       <span className="ui-label flex items-center gap-2">
         状态次音色
         <span className="font-normal text-ink-subtle">生病、醉酒等状态下换一个音色</span>
@@ -608,7 +650,7 @@ function VoiceStates({
       {states.length > 0 && (
         <ul className="flex flex-col gap-2">
           {states.map((s) => (
-            <li key={s.id} className="lib-row">
+            <li key={s.id} data-profile-state={s.id} className="lib-row">
               <NameField
                 label="状态"
                 compact
@@ -623,7 +665,12 @@ function VoiceStates({
                 type="button"
                 aria-label={`删除次音色「${s.name}」`}
                 title="删除"
-                onClick={() => onChange(states.filter((x) => x.id !== s.id))}
+                onClick={() => {
+                  const rest = states.filter((x) => x.id !== s.id)
+                  const near = rest[Math.min(states.indexOf(s), rest.length - 1)]
+                  focus.to(near ? `${profileControl('state', near.id)} input` : 'button.lib-preset')
+                  onChange(rest)
+                }}
                 className="ui-btn ui-btn-quiet ui-icon-btn hover:text-danger"
               >
                 <Icon name="x" />
@@ -635,12 +682,16 @@ function VoiceStates({
       {states.length < PROFILE_LIMITS.voiceStates && (
         <PresetChips
           presets={unused}
-          onAdd={(name) =>
-            onChange([
-              ...states,
-              { id: profileId(), name: freeName(profile, name), aliases: [], voice: noVoice },
-            ])
-          }
+          onAdd={(name) => {
+            const state = {
+              id: profileId(),
+              name: freeName(profile, name),
+              aliases: [],
+              voice: noVoice,
+            }
+            focus.to(`${profileControl('state', state.id)} input`)
+            onChange([...states, state])
+          }}
         />
       )}
     </div>
@@ -711,6 +762,7 @@ function LookGrid({
   hero: HeroControl
   onChange(next: ProfileLook[]): void
 }) {
+  const focus = useProfileFocus()
   const [open, setOpen] = useState<string | null>(null)
   const current = looks.find((l) => l.id === open)
   const hover = useProfileHover(
@@ -722,6 +774,7 @@ function LookGrid({
   const unused = presets.filter((n) => !looks.some((l) => l.name === n))
   const add = (name: string) => {
     const look = emptyLook(freeName(profile, name))
+    focus.to('input[aria-label="名字"]')
     onChange([...looks, look])
     setOpen(look.id)
   }
@@ -732,7 +785,12 @@ function LookGrid({
   }, [current?.id, current?.images[0], current?.name])
 
   return (
-    <div className="ui-field">
+    <div
+      {...focus.props}
+      role="group"
+      aria-label={`${title}编辑`}
+      className="ui-field lib-focus-region"
+    >
       <span className="ui-label flex items-center gap-2">
         {title}
         <span className="font-normal text-ink-subtle tabular-nums">
@@ -744,6 +802,7 @@ function LookGrid({
           <li key={l.id}>
             <button
               type="button"
+              data-profile-look={l.id}
               aria-pressed={l.id === open}
               aria-label={`编辑「${l.name}」`}
               onClick={() => setOpen(l.id === open ? null : l.id)}
@@ -779,7 +838,10 @@ function LookGrid({
             <button
               type="button"
               onClick={() => {
-                onChange(looks.filter((l) => l.id !== current.id))
+                const rest = looks.filter((l) => l.id !== current.id)
+                const near = rest[Math.min(looks.indexOf(current), rest.length - 1)]
+                focus.to(near ? profileControl('look', near.id) : 'button.lib-look-add')
+                onChange(rest)
                 setOpen(null)
                 hero.onPin(null)
               }}
@@ -828,9 +890,14 @@ function NameField({
   onRename(name: string): void
   compact?: boolean
 }) {
+  const ref = useRef<HTMLInputElement>(null)
   const [draft, setDraft] = useState(item.name)
   const [problem, setProblem] = useState<string | undefined>()
   const problemId = useId()
+  useLayoutEffect(() => {
+    if (document.activeElement === ref.current)
+      ref.current?.parentElement?.scrollIntoView({ block: 'center', inline: 'nearest' })
+  }, [problem, item.name])
   useEffect(() => {
     setDraft(item.name)
     setProblem(undefined)
@@ -844,6 +911,7 @@ function NameField({
   }
   const input = (
     <input
+      ref={ref}
       className={`ui-input ${compact ? 'w-24' : ''}`}
       aria-label={label}
       aria-invalid={!!problem}
@@ -857,14 +925,21 @@ function NameField({
       }}
       onBlur={commit}
       onKeyDown={(e) => {
-        if (e.nativeEvent.isComposing) return
+        if (e.nativeEvent.isComposing || e.keyCode === 229) {
+          e.stopPropagation()
+          return
+        }
         if (e.key === 'Escape') {
           e.preventDefault()
           e.stopPropagation()
           setDraft(item.name)
           setProblem(undefined)
         }
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          e.stopPropagation()
+          commit()
+        }
       }}
     />
   )
@@ -1069,19 +1144,38 @@ function PresetChips({
   presets: readonly string[]
   onAdd(name: string): void
 }) {
+  const focus = useProfileFocus()
   const [custom, setCustom] = useState<string | null>(null)
   const [problem, setProblem] = useState<string | undefined>()
   const problemId = useId()
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div
+      {...focus.props}
+      role="group"
+      aria-label="快捷添加"
+      className="lib-focus-region flex flex-wrap items-center gap-1.5"
+    >
       {presets.map((p) => (
-        <button key={p} type="button" onClick={() => onAdd(p)} className="ui-chip lib-preset">
+        <button
+          key={p}
+          type="button"
+          onClick={() => {
+            focus.to('[data-profile-custom]')
+            onAdd(p)
+          }}
+          className="ui-chip lib-preset"
+        >
           <Icon name="plus" size={12} />
           {p}
         </button>
       ))}
       {custom === null ? (
-        <button type="button" onClick={() => setCustom('')} className="ui-chip lib-preset">
+        <button
+          type="button"
+          data-profile-custom=""
+          onClick={() => setCustom('')}
+          className="ui-chip lib-preset"
+        >
           <Icon name="pencil" size={12} />
           自定义
         </button>
@@ -1107,18 +1201,25 @@ function PresetChips({
               setProblem(undefined)
             }}
             onKeyDown={(e) => {
-              if (e.nativeEvent.isComposing) return
+              if (e.nativeEvent.isComposing || e.keyCode === 229) {
+                e.stopPropagation()
+                return
+              }
               if (e.key === 'Escape') {
                 e.preventDefault()
                 e.stopPropagation()
+                focus.to('[data-profile-custom]')
                 setCustom(null)
                 setProblem(undefined)
               }
               if (e.key === 'Enter') {
+                e.preventDefault()
+                e.stopPropagation()
                 const next = custom.trim()
                 const error = nameProblem(emptyProfile(), next)
                 setProblem(error)
                 if (error) return
+                focus.to('[data-profile-custom]')
                 onAdd(next)
                 setCustom(null)
               }
@@ -1152,41 +1253,66 @@ function AddMenu({
   tile?: boolean
 }) {
   const [open, setOpen] = useState(false)
-  if (!open)
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className={tile ? 'lib-look lib-look-add' : 'lib-timeline-node lib-timeline-add'}
-      >
-        <span className={tile ? 'lib-look-cover' : 'lib-timeline-thumb'}>
-          <Icon name="plus" size={16} />
-        </span>
-        <span className="truncate px-1 text-xs">{label}</span>
-      </button>
-    )
+  const focus = useProfileFocus()
+  const collapse = () => {
+    focus.to('button')
+    setOpen(false)
+  }
   return (
-    <div className={`lib-add-pop ui-pop ${tile ? 'is-tile' : ''}`} data-side="below">
-      <div className="flex items-center gap-1.5 text-xs text-ink-subtle">
-        <Icon name={icon} size={14} />
-        {label}
+    <div
+      {...focus.props}
+      role="group"
+      aria-label={label}
+      className={`lib-focus-region ${open ? `lib-add-pop ui-pop ${tile ? 'is-tile' : ''}` : ''}`}
+      data-side="below"
+      data-library-escape={open ? '' : undefined}
+      onKeyDown={(e) => {
+        if (!open || e.nativeEvent.isComposing || e.keyCode === 229) return
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          e.stopPropagation()
+          collapse()
+        }
+      }}
+    >
+      {open ? (
+        <>
+          <div className="flex items-center gap-1.5 text-xs text-ink-subtle">
+            <Icon name={icon} size={14} />
+            {label}
+            <button
+              type="button"
+              aria-label="收起"
+              onClick={collapse}
+              className="ui-btn ui-btn-quiet ui-btn-xs ui-icon-btn ml-auto"
+            >
+              <Icon name="x" size={12} />
+            </button>
+          </div>
+          <PresetChips
+            presets={presets}
+            onAdd={(n) => {
+              collapse()
+              onAdd(n)
+            }}
+          />
+          {placeholder && <span className="sr-only">{placeholder}</span>}
+        </>
+      ) : (
         <button
           type="button"
-          aria-label="收起"
-          onClick={() => setOpen(false)}
-          className="ui-btn ui-btn-quiet ui-btn-xs ui-icon-btn ml-auto"
+          onClick={() => {
+            focus.to('button.lib-preset')
+            setOpen(true)
+          }}
+          className={tile ? 'lib-look lib-look-add' : 'lib-timeline-node lib-timeline-add'}
         >
-          <Icon name="x" size={12} />
+          <span className={tile ? 'lib-look-cover' : 'lib-timeline-thumb'}>
+            <Icon name="plus" size={16} />
+          </span>
+          <span className="truncate px-1 text-xs">{label}</span>
         </button>
-      </div>
-      <PresetChips
-        presets={presets}
-        onAdd={(n) => {
-          onAdd(n)
-          setOpen(false)
-        }}
-      />
-      {placeholder && <span className="sr-only">{placeholder}</span>}
+      )}
     </div>
   )
 }

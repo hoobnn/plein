@@ -189,7 +189,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
         !e.target.closest('[role="dialog"]')?.classList.contains('lib-dialog')
       )
         return
-      if (e.key === 'Escape' && e.isComposing) {
+      if (e.key === 'Escape' && (e.isComposing || e.keyCode === 229)) {
         e.stopPropagation()
         return
       }

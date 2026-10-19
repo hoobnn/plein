@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import { newProject } from './canvas'
+import { openLibraryPanel } from './library-ui'
 
 let dir = ''
 test.beforeAll(() => {
@@ -24,8 +25,7 @@ test.beforeAll(() => {
 })
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
 async function open(page: Page, name: string) {
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
-  const panel = page.getByRole('dialog', { name: '资产库', exact: true })
+  const panel = await openLibraryPanel(page)
   await panel
     .getByRole('group', { name: '范围' })
     .getByRole('button', { name: '全部', exact: true })
