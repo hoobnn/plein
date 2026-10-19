@@ -1,4 +1,4 @@
-import { createDoc, createElement } from '@plein/doc'
+import { createDoc, createElement, setParam } from '@plein/doc'
 import { animaticNode, arrangeAnimatic, sequenceTimeline } from '@plein/nodes'
 import { describe, expect, it } from 'vite-plus/test'
 import { snapshotAnimatic } from './animatic'
@@ -6,6 +6,43 @@ import { previewScene } from './scene'
 
 const image = 'a'.repeat(64)
 const audio = 'b'.repeat(64)
+it('素材刷新保留人工镜头顺序，追加新镜头并移除已删除镜头', () => {
+  const doc = createDoc()
+  const board = createElement(doc, {
+    kind: 'node',
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+    params: {
+      shots: [
+        { id: 'one', no: 1, duration: 3 },
+        { id: 'two', no: 2, duration: 4 },
+        { id: 'new', no: 3, duration: 5 },
+      ],
+    },
+  })
+  const old = animaticNode.params.parse({
+    shots: [
+      { shotId: 'two', duration: 7, subtitle: '手工字幕' },
+      { shotId: 'one', duration: 2 },
+    ],
+  }).shots
+  const refreshed = snapshotAnimatic(doc, board, old)
+  expect(refreshed.map((shot) => shot.shotId)).toEqual(['two', 'one', 'new'])
+  expect(refreshed[0]).toMatchObject({ duration: 7, subtitle: '手工字幕' })
+  setParam(doc, board, 'shots', [
+    { id: 'new', no: 1, duration: 8 },
+    { id: 'two', no: 2, duration: 4 },
+  ])
+  const deleted = snapshotAnimatic(doc, board, refreshed)
+  expect(deleted.map((shot) => shot.shotId)).toEqual(['two', 'new'])
+  expect(deleted[1]?.duration).toBe(5)
+  setParam(doc, board, 'shots', [])
+  expect(snapshotAnimatic(doc, board, deleted)).toEqual([])
+  doc.destroy()
+})
+
 it('更新快照只读取采用的素材并按稳定镜头保留自定义节奏', () => {
   const doc = createDoc()
   const boardId = createElement(doc, {

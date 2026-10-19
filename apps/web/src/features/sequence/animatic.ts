@@ -19,7 +19,12 @@ export function snapshotAnimatic(
   previous: AnimaticShot[] = [],
 ): AnimaticShot[] {
   const groups = expandedNodes(doc, boardId)
-  return shotsOf(doc.get(boardId)).map((shot) => {
+  // 样片是独立剪辑，刷新素材不能覆盖人工排序；新镜头按分镜顺序追加。
+  const order = new Map(previous.map((shot, index) => [shot.shotId, index]))
+  const shots = shotsOf(doc.get(boardId)).sort(
+    (a, b) => (order.get(a.id) ?? previous.length) - (order.get(b.id) ?? previous.length),
+  )
+  return shots.map((shot) => {
     const nodes = activeShotNodes(shot, groups.get(shot.id) ?? [])
     const image = nodes.find((n) => (n.params?.source as ShotSource)?.role === 'image')
     const imageValue = image && currentResult(image)?.value

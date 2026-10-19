@@ -674,6 +674,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             <button
               className="ui-btn ui-btn-quiet"
               type="button"
+              title="更新当前采用的分镜图和配音；保留样片顺序与节奏，新增镜头追加，已删除镜头移除"
               onClick={() => setAnimaticError(refreshAnimatic(engine, id))}
             >
               更新已有素材
@@ -799,6 +800,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       {animatic && (
         <p className="px-4 text-xs text-muted">
           仅使用创建或更新时已有的分镜图、配音。调整时长与对白节奏只改变样片；原生成结果保留。
+          更新素材保留已有镜头顺序与节奏，新增镜头追加到末尾，已删除镜头移除。
           {pending > 0 && ` ${pending} 镜缺图，将显示占位。`}
         </p>
       )}

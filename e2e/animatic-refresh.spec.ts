@@ -120,6 +120,67 @@ async function fixture(page: Page) {
   return { ...f, boardId: f.id, id, editor, read, update, assets, submissions }
 }
 
+test('样片素材刷新保留人工顺序，新增镜头追加且删除镜头不复活', async ({ page }) => {
+  const f = await fixture(page)
+  await f.editor.getByRole('button', { name: '后移', exact: true }).click()
+  const shotIds = async () =>
+    ((await f.read())!.shots as Array<{ shotId: string }>).map((s) => s.shotId)
+  expect(await shotIds()).toEqual(['two', 'one'])
+  const before = await f.read()
+  await f.update()
+  const refresh = f.editor.getByRole('button', { name: '更新已有素材', exact: true })
+  await refresh.click()
+  expect(await shotIds()).toEqual(['two', 'one'])
+  const after = await f.read()
+  expect((after!.shots as Array<Record<string, unknown>>)[1]).toMatchObject({
+    duration: 7,
+    lineDelay: 0.5,
+    lineGap: 0.8,
+    imageAssetId: f.assets[1],
+  })
+  await refresh.focus()
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(f.read).toEqual(before)
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect.poll(f.read).toEqual(after)
+  const writeShots = (shots: Array<{ id: string; no: number; duration: number }>) =>
+    page.evaluate(
+      ({ boardId, shots }) => {
+        const params = window.__plein.engine.doc.mutable(boardId)!.get('params') as {
+          set(k: string, v: unknown): void
+        }
+        params.set('shots', shots)
+      },
+      { boardId: f.boardId, shots },
+    )
+  await writeShots([
+    { id: 'new', no: 1, duration: 4 },
+    { id: 'one', no: 2, duration: 9 },
+    { id: 'two', no: 3, duration: 2 },
+  ])
+  await refresh.click()
+  expect(await shotIds()).toEqual(['two', 'one', 'new'])
+  expect((await f.read())!.shots).toMatchObject([
+    { shotId: 'two', duration: 2 },
+    { shotId: 'one', duration: 7 },
+    { shotId: 'new', duration: 4 },
+  ])
+  await expect(f.editor.locator('.seq-clip')).toHaveCount(3)
+  await f.editor.screenshot({
+    path: test.info().outputPath('preserved-shot-order.png'),
+    animations: 'disabled',
+  })
+  await writeShots([
+    { id: 'new', no: 1, duration: 8 },
+    { id: 'two', no: 2, duration: 2 },
+  ])
+  await refresh.click()
+  expect(await shotIds()).toEqual(['two', 'new'])
+  expect((await f.read())!.shots).toMatchObject([{ duration: 2 }, { duration: 4 }])
+  await expect(f.editor.locator('.seq-clip')).toHaveCount(2)
+  expect(f.submissions).toEqual([])
+})
+
 for (const change of ['missing', 'type', 'readonly'] as const) {
   test(`样片刷新遇到 ${change} 保留旧快照和节奏，来源恢复后可更新`, async ({ page }) => {
     const f = await fixture(page)
