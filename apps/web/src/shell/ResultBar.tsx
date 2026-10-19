@@ -5,6 +5,7 @@ import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
 import { mediaOf, splitGrid } from '../canvas/grid'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
+import { canvasBottomSpace, fitFloatingPanel } from '../canvas/floatingPanel'
 import { beginImport } from '../canvas/importProgress'
 import { importLocation, watchImportView } from '../canvas/importView'
 import { revealImports } from '../canvas/import'
@@ -28,7 +29,9 @@ import { MediaTools } from './MediaTools'
 import { AssetDownloadButton } from './AssetDownloadButton'
 
 const BAR_H = 40
-const BOTTOM_RESERVED = 64
+const TOP_RESERVED = 64
+const GAP = 12
+const TITLE_H = 30
 
 const GRIDS = [
   { rows: 2, cols: 2, label: '4 宫格' },
@@ -67,11 +70,28 @@ function ResultBarHost({ engine }: { engine: Engine }) {
   const place = () => {
     const rect = el && engine.scene.rect(el.id)
     if (!rect) return null
-    const bl = engine.worldToClient(rect.x, rect.y + rect.h)
+    const tl = engine.worldToClient(rect.x, rect.y)
     const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
+    const left = engine.camera.insets.left + 8
+    const right = window.innerWidth - engine.camera.insets.right - 8
+    const panel = fitFloatingPanel(
+      (tl.x + br.x) / 2,
+      ref.current?.offsetWidth ?? window.innerWidth,
+      left,
+      right,
+    )
+    const bottom = canvasBottomSpace(window.innerWidth, engine.camera.insets.left).generator
+    const limit = window.innerHeight - bottom
+    const maxHeight = Math.max(1, limit - TOP_RESERVED)
+    const height = Math.min(ref.current?.offsetHeight ?? BAR_H, maxHeight)
+    const below = br.y + GAP
+    const above = tl.y - TITLE_H - GAP - height
+    const preferred = below + height <= limit || above < TOP_RESERVED ? below : above
     return {
-      top: Math.min(bl.y + 12, window.innerHeight - BOTTOM_RESERVED - BAR_H),
-      left: (bl.x + br.x) / 2,
+      left: panel.left,
+      maxWidth: Math.max(1, right - left),
+      top: Math.max(TOP_RESERVED, Math.min(preferred, limit - height)),
+      maxHeight,
     }
   }
   const ref = useFollow<HTMLDivElement>(engine, place)
@@ -85,7 +105,7 @@ function ResultBarHost({ engine }: { engine: Engine }) {
       role="toolbar"
       aria-label="结果操作"
       style={style}
-      className="ui-bar ui-bar-sm pointer-events-auto fixed z-20 w-max -translate-x-1/2"
+      className="ui-bar ui-bar-sm ui-scrollbar pointer-events-auto fixed z-20 h-auto w-max flex-wrap overflow-y-auto"
     >
       {media && (
         <ResultActions

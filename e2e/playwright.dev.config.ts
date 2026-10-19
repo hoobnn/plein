@@ -121,6 +121,7 @@ export default defineConfig({
     'task-viewport-layout.spec.ts',
     'task-mobile-locate.spec.ts',
     'selection-toolbar-layout.spec.ts',
+    'result-toolbar-layout.spec.ts',
     'template-save-targets.spec.ts',
     'selection-library-targets.spec.ts',
     'selection-library-capacity.spec.ts',
