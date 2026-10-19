@@ -57,6 +57,7 @@ export default defineConfig({
     'library-preview-recovery.spec.ts',
     'library-retry-focus.spec.ts',
     'library-picker-boundaries.spec.ts',
+    'library-capacity-focus.spec.ts',
     'library-upload-batches.spec.ts',
     'library-profile-upload-batches.spec.ts',
     'library-profile-structure.spec.ts',

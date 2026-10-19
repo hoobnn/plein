@@ -1,6 +1,6 @@
 import type { LibraryKindSpec } from '@plein/nodes'
 import type { LibraryImage } from '@plein/protocol'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { type RefObject, useLayoutEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
 import type { CanvasMedia } from './canvas'
 import { Icon } from '../../ui/icons'
@@ -167,6 +167,7 @@ export function SlotField({
   onRemove,
   disabled = false,
   onBusyChange,
+  focusFallback,
 }: {
   slot: LibraryKindSpec['slots'][number]
   images: LibraryImage[]
@@ -177,6 +178,8 @@ export function SlotField({
   onRemove(assetId: string): void
   disabled?: boolean
   onBusyChange?(busy: boolean): void
+  /** 满额时父级会撤下整个字段，先使用仍会保留的焦点落点。 */
+  focusFallback?: RefObject<HTMLElement | null>
 }) {
   const ref = useRef<HTMLInputElement>(null)
   const focus = useLibraryFieldFocus()
@@ -185,6 +188,7 @@ export function SlotField({
   const room = Math.max(0, 24 - used.length)
   const pick = async (files: File[]) => {
     if (busy || disabled) return
+    if (focus.props.ref.current?.contains(document.activeElement)) focus.park()
     setBusy(true)
     onBusyChange?.(true)
     setFeedback(null)
@@ -193,7 +197,11 @@ export function SlotField({
         capacity: slot.multiple ? room : Math.min(1, room),
         used,
       })
-      if (result.ids.length) onAdd(result.ids)
+      if (result.ids.length) {
+        if (result.ids.length === room && document.activeElement === focus.props.ref.current)
+          focusFallback?.current?.focus({ preventScroll: true })
+        onAdd(result.ids)
+      }
       setFeedback(result)
     } catch (err) {
       setFeedback({ message: (err as Error).message, failed: true })
@@ -267,7 +275,8 @@ export function SlotField({
             multiple={!!slot.multiple}
             taken={used}
             onPick={(id) => {
-              if (!slot.multiple || room === 1) focus.park()
+              if (!slot.multiple || room === 1)
+                (focusFallback?.current ?? focus.props.ref.current)?.focus({ preventScroll: true })
               setFeedback(null)
               onAdd([id])
             }}

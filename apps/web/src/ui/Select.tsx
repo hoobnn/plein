@@ -2,6 +2,7 @@ import { Select as Base } from '@base-ui/react/select'
 import { useRef } from 'react'
 import { flushSync } from 'react-dom'
 import { Icon } from './icons'
+import { claimMenuEscape } from './menuEscape'
 
 export interface SelectOption {
   value: string
@@ -20,6 +21,7 @@ export function Select({
   options,
   onChange,
   disabled = false,
+  restoreFocusOnSelect = true,
   className = '',
   'aria-label': ariaLabel,
 }: {
@@ -28,6 +30,8 @@ export function Select({
   options: SelectOption[]
   onChange(value: string): void
   disabled?: boolean
+  /** 选中后入口会退出时，由调用方安置焦点；取消仍返回原入口。 */
+  restoreFocusOnSelect?: boolean
   className?: string
   'aria-label'?: string
 }) {
@@ -37,14 +41,23 @@ export function Select({
     disabled: o.disabled,
   }))
   const popup = useRef<HTMLDivElement>(null)
+  const changed = useRef(false)
   return (
     <Base.Root
       disabled={disabled}
       value={value}
       items={items}
       modal={false}
+      onOpenChange={(open, details) => {
+        if (open) changed.current = false
+        else if (details.reason === 'escape-key') claimMenuEscape(details.event)
+      }}
       onValueChange={(v) => {
-        if (v !== null) onChange(v)
+        if (v !== null) {
+          changed.current = v !== value
+          if (restoreFocusOnSelect) onChange(v)
+          else flushSync(() => onChange(v))
+        }
       }}
     >
       <Base.Trigger
@@ -101,6 +114,7 @@ export function Select({
           className="z-70"
         >
           <Base.Popup
+            finalFocus={restoreFocusOnSelect ? undefined : () => !changed.current}
             className="ui-menu ui-select-popup ui-scrollbar pointer-events-auto overflow-y-auto outline-none"
             ref={popup}
           >

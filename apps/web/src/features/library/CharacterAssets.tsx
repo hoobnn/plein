@@ -1,11 +1,18 @@
 import { CHARACTER_IMAGE_SLOTS, type LibrarySlot } from '@plein/nodes'
 import type { LibraryImage } from '@plein/protocol'
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { Icon, type IconName } from '../../ui/icons'
 import { Select } from '../../ui/Select'
 import type { CanvasMedia } from './canvas'
-import { CanvasPick, SlotField, thumb, uploadAll, UploadFeedback } from './LibraryFields'
+import {
+  CanvasPick,
+  SlotField,
+  thumb,
+  uploadAll,
+  UploadFeedback,
+  useLibraryFieldFocus,
+} from './LibraryFields'
 import type { UploadNotice } from './uploadBatch'
 import { LibraryThumbnail } from './LibraryMedia'
 
@@ -39,6 +46,24 @@ export function CharacterAssets({
 }) {
   const slots = VISUAL_ORDER.map((id) => CHARACTER_IMAGE_SLOTS.find((s) => s.id === id)!)
   const extras = images.filter((image) => !slots.some((s) => s.id === image.slot))
+  const focus = useLibraryFieldFocus()
+  const summary = useRef<HTMLElement>(null)
+  const nextFocus = useRef<string | null>(null)
+  const parkFor = (label: string) => {
+    focus.park()
+    nextFocus.current = label
+  }
+  useLayoutEffect(() => {
+    const label = nextFocus.current
+    nextFocus.current = null
+    if (!label || document.activeElement !== focus.props.ref.current) return
+    const target =
+      label === 'summary'
+        ? summary.current
+        : focus.props.ref.current?.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+    target?.focus({ preventScroll: true })
+    target?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  })
   const count = slots.filter((s) => images.some((image) => image.slot === s.id)).length
   const [error, setError] = useState<string | null>(null)
   const used = images.map((image) => image.assetId)
@@ -59,7 +84,12 @@ export function CharacterAssets({
     onSelect(assetId, slots.find((s) => s.id === slot)?.label)
   }
   return (
-    <div className="flex flex-col gap-4">
+    <div
+      {...focus.props}
+      role="group"
+      aria-label="角色形象"
+      className="lib-focus-region flex flex-col gap-4"
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold">角色形象</h3>
@@ -90,7 +120,7 @@ export function CharacterAssets({
         ))}
       </div>
       <details className="lib-character-extras" open={extras.length > 0 || undefined}>
-        <summary>
+        <summary ref={summary}>
           <span>其他参考</span>
           <span className="text-xs text-ink-subtle">{extras.length} 张</span>
           <Icon name="chevronDown" size={14} />
@@ -115,12 +145,15 @@ export function CharacterAssets({
                     <Select
                       aria-label={`参考图 ${index + 1} 的分类`}
                       value="extra"
+                      restoreFocusOnSelect={false}
                       options={[
                         { value: 'extra', label: '其他参考' },
                         ...slots.map((slot) => ({ value: slot.id, label: slot.label })),
                       ]}
                       onChange={(slot) => {
                         if (slot === 'extra') return
+                        const label = slots.find((s) => s.id === slot)?.label
+                        if (label) parkFor(`预览${label}`)
                         change((current) => {
                           const extraIndex = current.indexOf(image)
                           return current.map((entry, i) =>
@@ -143,7 +176,13 @@ export function CharacterAssets({
                   type="button"
                   aria-label={`移除其他参考 ${index + 1}`}
                   disabled={busy}
-                  onClick={() => {
+                  onClick={(event) => {
+                    if (document.activeElement === event.currentTarget)
+                      parkFor(
+                        extras.length === 1
+                          ? 'summary'
+                          : `预览其他参考 ${Math.min(index + 1, extras.length - 1)}`,
+                      )
                     change((current) => current.filter((entry) => entry !== image))
                     if (selected === image.assetId) onSelect(null)
                   }}
@@ -163,12 +202,18 @@ export function CharacterAssets({
             media={media}
             disabled={busy}
             onBusyChange={onBusyChange}
+            focusFallback={focus.props.ref}
             onAdd={(ids) => {
               if (images.length + ids.length > 24) {
                 setError('每个角色最多保存 24 张基础参考图，请减少本次添加的图片。')
                 return
               }
               setError(null)
+              if (
+                images.length + ids.length === 24 &&
+                document.activeElement === focus.props.ref.current
+              )
+                nextFocus.current = `预览其他参考 ${extras.length + ids.length}`
               change((current) => [
                 ...current,
                 ...ids.map((assetId) => ({ slot: 'extra', assetId })),

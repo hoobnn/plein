@@ -2,6 +2,7 @@ import { Dialog } from '@base-ui/react/dialog'
 import { type ReactNode, useEffect, useRef } from 'react'
 import { Icon } from './icons'
 import { useClosing, useExit } from './Presence'
+import { claimMenuEscape, isMenuEscape } from './menuEscape'
 
 /**
  * 盖住整个窗口的面板（设置、生成历史、分镜表、序列、快捷键），基于 Base UI Dialog：
@@ -35,7 +36,6 @@ export function Modal({
 }) {
   const exit = useExit()
   const closing = useClosing()
-  const menuEscapes = useRef(new WeakSet<Event>())
   const popup = useRef<HTMLDivElement>(null)
   const escapeOwners = useRef(new WeakMap<Event, HTMLElement>())
   useEffect(() => {
@@ -57,9 +57,11 @@ export function Modal({
       if (
         event.key === 'Escape' &&
         !event.isComposing &&
-        document.querySelector('.ui-menu:not([data-closed]):not([data-closing])')
+        document.querySelector(
+          '.ui-menu:not([data-closed]):not([data-closing]), [role="combobox"][aria-expanded="true"]',
+        )
       )
-        menuEscapes.current.add(event)
+        claimMenuEscape(event)
     }
     window.addEventListener('keydown', capture, true)
     return () => window.removeEventListener('keydown', capture, true)
@@ -75,7 +77,7 @@ export function Modal({
           return
         }
         // 同一个 Esc 只关闭按键开始时最上层的菜单，不影响之后退出父面板。
-        if (!open && details.reason === 'escape-key' && menuEscapes.current.has(details.event)) {
+        if (!open && details.reason === 'escape-key' && isMenuEscape(details.event)) {
           details.cancel()
           return
         }
