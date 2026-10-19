@@ -146,19 +146,12 @@ export function SubtitleEditor({
                       {(['start', 'end'] as const).map((field) => (
                         <label key={field} className="min-w-0 flex-1 text-xs">
                           {field === 'start' ? '开始' : '结束'}（秒）
-                          <input
-                            type="number"
-                            min={0}
-                            step={0.01}
-                            className="ui-input w-full"
+                          <SubtitleTimeInput
                             value={q[field]}
-                            aria-label={`镜头 ${index + 1} 字幕 ${i + 1} ${field === 'start' ? '开始' : '结束'}（秒）`}
-                            aria-invalid={invalidTime || undefined}
-                            aria-describedby={invalidTime ? timeError : undefined}
-                            onChange={(e) => {
-                              const n = Number(e.target.value)
-                              if (Number.isFinite(n) && n >= 0) patch(q.id, { [field]: n })
-                            }}
+                            label={`镜头 ${index + 1} 字幕 ${i + 1} ${field === 'start' ? '开始' : '结束'}（秒）`}
+                            invalid={invalidTime}
+                            describedBy={invalidTime ? timeError : undefined}
+                            onChange={(n) => patch(q.id, { [field]: n })}
                           />
                         </label>
                       ))}
@@ -197,6 +190,57 @@ export function SubtitleEditor({
           )
         })}
     </div>
+  )
+}
+
+/** 只有有效时间写入字幕轨，清空或尚未输入完的数字保留在输入框内。 */
+function SubtitleTimeInput({
+  value,
+  label,
+  invalid,
+  describedBy,
+  onChange,
+}: {
+  value: number
+  label: string
+  invalid: boolean
+  describedBy?: string
+  onChange(value: number): void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const errorId = useId()
+  const invalidDraft =
+    draft !== null && (!draft.trim() || !Number.isFinite(Number(draft)) || Number(draft) < 0)
+  return (
+    <>
+      <input
+        type="number"
+        min={0}
+        step={0.01}
+        className="ui-input w-full"
+        value={draft ?? value}
+        aria-label={label}
+        aria-invalid={invalidDraft || invalid || undefined}
+        aria-describedby={
+          [describedBy, invalidDraft ? errorId : undefined].filter(Boolean).join(' ') || undefined
+        }
+        onChange={(event) => {
+          setDraft(event.target.value)
+          const next = event.currentTarget.valueAsNumber
+          if (Number.isFinite(next) && next >= 0) onChange(next)
+        }}
+        onBlur={() => setDraft(null)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return
+          if (event.key === 'Enter') event.currentTarget.blur()
+        }}
+      />
+      {invalidDraft && (
+        <span id={errorId} className="text-xs text-danger">
+          请输入大于或等于 0 的有效时间；失焦后恢复已保存值。
+        </span>
+      )}
+    </>
   )
 }
 

@@ -422,3 +422,47 @@ test('只读序列可预览，字幕编辑控件明确不可写且没有异常',
   expect(await page.evaluate(() => [...window.__plein.engine.doc.elements()])).toEqual(f.original)
   expect(errors).toEqual([])
 })
+
+test('字幕时间清空和无效数字保留草稿，失焦恢复且不篡改已保存时间', async ({ page }) => {
+  const f = await setup(page)
+  await f.editor.getByRole('button', { name: '字幕', exact: true }).click()
+  const end = f.editor.getByRole('spinbutton', { name: '镜头 1 字幕 1 结束（秒）', exact: true })
+  const saved = () =>
+    page.evaluate((id) => {
+      const track = window.__plein.engine.doc.get(id)!.params!.subtitleTrack as {
+        cues: Array<{ end: number }>
+      }
+      return track.cues[0]!.end
+    }, f.id)
+  for (const value of ['', '-1']) {
+    await end.fill(value)
+    await expect(end).toHaveValue(value)
+    await expect(end).toHaveAttribute('aria-invalid', 'true')
+    await expect(end).toHaveAccessibleDescription(
+      '请输入大于或等于 0 的有效时间；失焦后恢复已保存值。',
+    )
+    expect(await saved()).toBe(1)
+    if (value === '-1') {
+      await f.editor
+        .getByText('请输入大于或等于 0 的有效时间；失焦后恢复已保存值。', { exact: true })
+        .scrollIntoViewIfNeeded()
+      await f.editor.screenshot({ path: test.info().outputPath('subtitle-time-draft.png') })
+    }
+    await end.blur()
+    await expect(end).toHaveValue('1')
+  }
+  await end.fill('')
+  await end.pressSequentially('1.25')
+  await expect(end).toHaveValue('1.25')
+  expect(await saved()).toBe(1.25)
+  await end.blur()
+  await f.editor.getByRole('button', { name: '回到开头', exact: true }).focus()
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(end).toHaveValue('1')
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect(end).toHaveValue('1.25')
+  await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
+  await f.open()
+  await f.editor.getByRole('button', { name: '字幕', exact: true }).click()
+  await expect(end).toHaveValue('1.25')
+})
