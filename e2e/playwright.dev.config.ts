@@ -163,6 +163,7 @@ export default defineConfig({
     'storyboard-mention-navigation.spec.ts',
     'storyboard-dialogue-collaboration.spec.ts',
     'storyboard-dialogue-structure.spec.ts',
+    'storyboard-batch-menu.spec.ts',
     'ime-editor.spec.ts',
     'markdown-ime.spec.ts',
     'markdown-history.spec.ts',

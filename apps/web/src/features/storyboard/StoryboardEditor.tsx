@@ -27,6 +27,7 @@ import { StoryboardReview } from './StoryboardReview'
 import { BatchChecklist } from './BatchChecklist'
 import { openAnimatic } from '../sequence/animatic'
 import { AssetBindingSelect, DialogueCell } from './ShotBindings'
+import { Menu } from '@base-ui/react/menu'
 
 const cell =
   'resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
@@ -72,6 +73,22 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const [mode, setMode] = useState<'edit' | 'review'>('edit')
   const [structureError, setStructureError] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [regenerateOpen, setRegenerateOpen] = useState(false)
+  const regenerateEscapes = useRef(new WeakSet<Event>())
+  const regeneratePending = useRef(false)
+  const regenerateCancelledAt = useRef(-Infinity)
+  const regenerateTrigger = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!regenerateOpen) return
+    const focus = () => {
+      const active = document.activeElement?.closest('[role="dialog"]')
+      if (active && active !== regenerateTrigger.current?.closest('[role="dialog"]'))
+        setRegenerateOpen(false)
+    }
+    document.addEventListener('focusin', focus)
+    focus()
+    return () => document.removeEventListener('focusin', focus)
+  }, [regenerateOpen])
   const shotElements = useRef(new Map<string, HTMLElement>())
   const addButton = useRef<HTMLButtonElement>(null)
   const [focusTarget, setFocusTarget] = useState<{
@@ -107,6 +124,27 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     const key = (e: KeyboardEvent) => {
       if (useCanvas.getState().viewer) return
       if (
+        e.key === 'Escape' &&
+        !e.isComposing &&
+        e.keyCode !== 229 &&
+        regeneratePending.current &&
+        e.target instanceof Node &&
+        regenerateTrigger.current?.contains(e.target)
+      ) {
+        regeneratePending.current = false
+        regenerateCancelledAt.current = e.timeStamp
+        e.preventDefault()
+        e.stopPropagation()
+        setRegenerateOpen(false)
+        return
+      }
+      // 菜单可能先于本监听卸载，不能再靠 DOM 判断同一个 Esc 的归属。
+      if (regenerateEscapes.current.has(e)) {
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
+      if (
         !(e.target instanceof Element) ||
         !e.target.closest('[role="dialog"]')?.classList.contains('storyboard-editor')
       )
@@ -116,7 +154,14 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         return
       }
       // 下拉触发器和菜单自己处理方向键、确认及 Esc，不能连带关闭分镜表。
-      if (e.target instanceof Element && e.target.closest('.ui-select, .ui-menu')) return
+      if (
+        e.target instanceof Element &&
+        (e.target.closest('.ui-select, .ui-menu') ||
+          (e.target.closest('[aria-haspopup="menu"]') &&
+            (regenerateOpen ||
+              !((e.metaKey || e.ctrlKey) && ['z', 'y'].includes(e.key.toLowerCase())))))
+      )
+        return
       e.stopPropagation()
       const target = e.target instanceof HTMLElement ? e.target : null
       const typing =
@@ -150,7 +195,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
-  }, [onClose, syncScope, batchRequest, engine, id, canvasId])
+  }, [onClose, syncScope, batchRequest, regenerateOpen, engine, id, canvasId])
 
   const write = (next: Shot[]) => setParam(engine.doc, id, 'shots', next)
   const textValue = (
@@ -386,21 +431,56 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           更新展开
         </button>
         <span aria-hidden="true" className="ui-bar-sep" />
-        <details className="relative">
-          <summary className={btn}>全部重新生成</summary>
-          <div className="absolute z-20 flex w-44 flex-col gap-1 rounded-lg bg-surface p-2 shadow-3">
-            {(['image', 'video', 'speech', 'sfx'] as const).map((role) => (
-              <button
-                key={role}
-                type="button"
-                className="ui-btn ui-btn-quiet"
-                onClick={() => batch(role, true)}
+        <Menu.Root
+          modal={false}
+          open={regenerateOpen}
+          onOpenChange={(open, details) => {
+            regeneratePending.current = false
+            // Base UI 可能延迟处理触发器点击；Esc 已取消的旧点击不能再次打开。
+            if (open && details.event.timeStamp <= regenerateCancelledAt.current) {
+              details.cancel()
+              return
+            }
+            if (!open && details.reason === 'escape-key')
+              regenerateEscapes.current.add(details.event)
+            setRegenerateOpen(open)
+          }}
+        >
+          <Menu.Trigger
+            ref={regenerateTrigger}
+            className={btn}
+            disabled={!expanded.size}
+            onPointerDownCapture={(event) => {
+              if (event.button === 0) regeneratePending.current = true
+            }}
+            onPointerCancel={() => {
+              regeneratePending.current = false
+            }}
+          >
+            全部重新生成
+            <Icon name="chevronDown" size={12} />
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Positioner
+              side="bottom"
+              align="start"
+              sideOffset={8}
+              collisionPadding={8}
+              className="z-70"
+            >
+              <Menu.Popup
+                aria-label="全部重新生成"
+                className="ui-menu pointer-events-auto w-44 outline-none"
               >
-                {{ image: '分镜图', video: '视频', speech: '配音', sfx: '音效' }[role]}
-              </button>
-            ))}
-          </div>
-        </details>
+                {(['image', 'video', 'speech', 'sfx'] as const).map((role) => (
+                  <Menu.Item key={role} className="ui-menu-item" onClick={() => batch(role, true)}>
+                    {{ image: '分镜图', video: '视频', speech: '配音', sfx: '音效' }[role]}
+                  </Menu.Item>
+                ))}
+              </Menu.Popup>
+            </Menu.Positioner>
+          </Menu.Portal>
+        </Menu.Root>
         <button
           type="button"
           className={btn}
