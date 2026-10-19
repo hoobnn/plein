@@ -396,7 +396,7 @@ export function Timeline({
             {items.flatMap((it) =>
               it.cues.map((q) => (
                 <button
-                  key={`${it.key}:${q.start}`}
+                  key={`${it.key}:${q.id ?? q.start}`}
                   type="button"
                   className="seq-block seq-block-text"
                   data-selected={selected === it.key || undefined}

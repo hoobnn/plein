@@ -60,6 +60,7 @@ describe('序列', () => {
     track.cues[1]!.hidden = true
     const saved = params({ ...p, subtitleTrack: JSON.parse(JSON.stringify(track)) })
     const preview = sequenceTimeline(saved, arranged, durations).clips.flatMap((c) => c.cues)
+    expect(preview.map((q) => q.id)).toEqual(track.cues.filter((q) => !q.hidden).map((q) => q.id))
     const output = sequenceSpec(saved, arranged, durations, undefined).subtitles!.cues
     expect(output).toEqual(preview)
     expect(output).toHaveLength(3)

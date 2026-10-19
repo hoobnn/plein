@@ -232,6 +232,8 @@ export function clipLength(
 }
 
 export interface Cue {
+  /** 已保存字幕轨的条目标识，时间修改或多句同起点时仍保持独立。 */
+  id?: string
   start: number
   end: number
   text: string
@@ -391,7 +393,12 @@ export function sequenceTimeline(
     if (params.subtitleTrack && params.subtitles) {
       cues = params.subtitleTrack.cues
         .filter((q) => q.source === subtitleSource(c, i) && !q.hidden && q.text.trim())
-        .map((q) => ({ start: start + q.start, end: Math.min(start + q.end, total), text: q.text }))
+        .map((q) => ({
+          id: q.id,
+          start: start + q.start,
+          end: Math.min(start + q.end, total),
+          text: q.text,
+        }))
         .filter((q) => q.end > q.start)
     }
     return { start, length, lines, cues, transition }

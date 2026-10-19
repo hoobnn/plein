@@ -318,6 +318,11 @@ test('字幕时间边界与空文本指出具体字段，隐藏后解除导出�
 })
 
 test('连续新增字幕与修改可逐步撤销，重做保持独立条目', async ({ page }) => {
+  const duplicateKeys: string[] = []
+  page.on('console', (message) => {
+    if (message.type() === 'error' && message.text().includes('same key'))
+      duplicateKeys.push(message.text())
+  })
   const f = await setup(page)
   await f.editor.getByRole('button', { name: '字幕', exact: true }).click()
   const fields = f.editor.getByRole('textbox', { name: /镜头 1 字幕 \d+ 文本/ })
@@ -325,6 +330,7 @@ test('连续新增字幕与修改可逐步撤销，重做保持独立条目', as
   await add.click()
   await add.click()
   await expect(fields).toHaveCount(4)
+  await expect(f.editor.locator('.seq-block-text')).toHaveCount(4)
   await fields.nth(3).fill('New independent subtitle')
   await f.editor.getByRole('button', { name: '回到开头', exact: true }).focus()
   await page.keyboard.press('ControlOrMeta+z')
@@ -333,6 +339,7 @@ test('连续新增字幕与修改可逐步撤销，重做保持独立条目', as
   await expect(fields).toHaveCount(3)
   await page.keyboard.press('ControlOrMeta+z')
   await expect(fields).toHaveCount(2)
+  await expect(f.editor.locator('.seq-block-text')).toHaveCount(2)
   await expect(fields.first()).toHaveValue('Subtitle ready')
   await page.keyboard.press('ControlOrMeta+Shift+z')
   await expect(fields).toHaveCount(3)
@@ -340,6 +347,32 @@ test('连续新增字幕与修改可逐步撤销，重做保持独立条目', as
   await expect(fields).toHaveCount(4)
   await page.keyboard.press('ControlOrMeta+Shift+z')
   await expect(fields.nth(3)).toHaveValue('New independent subtitle')
+  await expect(f.editor.locator('.seq-block-text')).toHaveCount(4)
+  await expect(f.editor.locator('.seq-block-text')).toHaveText([
+    'Subtitle ready',
+    'Later subtitle',
+    '新字幕',
+    'New independent subtitle',
+  ])
+  const third = f.editor.getByRole('checkbox', { name: '显示字幕 3', exact: true })
+  await third.uncheck()
+  await expect(f.editor.locator('.seq-block-text')).toHaveText([
+    'Subtitle ready',
+    'Later subtitle',
+    'New independent subtitle',
+  ])
+  await third.check()
+  await expect(f.editor.locator('.seq-block-text')).toHaveCount(4)
+  await f.editor
+    .getByRole('spinbutton', { name: '镜头 1 字幕 3 开始（秒）', exact: true })
+    .fill('0.25')
+  await expect(f.editor.locator('.seq-block-text')).toHaveText([
+    'Subtitle ready',
+    'Later subtitle',
+    '新字幕',
+    'New independent subtitle',
+  ])
+  expect(duplicateKeys).toEqual([])
 })
 
 test('按台词重建字幕可独立撤销并完整恢复手改轨道', async ({ page }) => {
