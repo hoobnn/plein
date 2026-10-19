@@ -1,5 +1,6 @@
 import { Menu } from '@base-ui/react/menu'
 import { Icon } from './icons'
+import { useDialogMenu } from './useDialogMenu'
 
 /**
  * 轻量下拉（Base UI Menu）：文字 + ▾ 的安静按钮，弹出单选菜单。用在侧栏、故事板列头这类工具位。
@@ -17,9 +18,23 @@ export function MenuSelect<T extends string>({
   label: string
 }) {
   const current = options.find((o) => o.value === value)
+  const menu = useDialogMenu()
   return (
-    <Menu.Root modal={false}>
+    <Menu.Root modal={false} open={menu.open} onOpenChange={menu.onOpenChange}>
       <Menu.Trigger
+        {...menu.triggerProps}
+        data-plein-active={menu.open ? '' : undefined}
+        onKeyDown={(event) => {
+          if (
+            menu.open &&
+            !event.nativeEvent.isComposing &&
+            (event.metaKey || event.ctrlKey) &&
+            ['z', 'y'].includes(event.key.toLowerCase())
+          ) {
+            event.preventDefault()
+            event.stopPropagation()
+          }
+        }}
         aria-label={label}
         className="ui-btn ui-btn-quiet ui-btn-sm gap-1 px-2 text-ink-muted"
       >

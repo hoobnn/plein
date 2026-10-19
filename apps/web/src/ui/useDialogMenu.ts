@@ -1,7 +1,7 @@
 import type { Menu } from '@base-ui/react/menu'
 import { type ComponentProps, type PointerEvent, useEffect, useRef, useState } from 'react'
 
-/** 对话框内的动作菜单：让位于上层窗口，并取消尚未完成的触发器点击。 */
+/** 菜单与窗口协调：让位于上层窗口，并取消尚未完成的触发器点击。 */
 export function useDialogMenu() {
   const [open, setOpen] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)

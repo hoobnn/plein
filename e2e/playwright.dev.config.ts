@@ -207,6 +207,7 @@ export default defineConfig({
     'provider-number-validation.spec.ts',
     'sidebar-search.spec.ts',
     'sidebar-filter-recovery.spec.ts',
+    'filter-menu-layers.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
     'sidebar-resize.spec.ts',
     'sidebar-assets-recovery.spec.ts',
