@@ -3,6 +3,7 @@ import type { Engine } from '@plein/canvas-core'
 import {
   type CanvasElement,
   connect,
+  compareZ,
   inputEdges,
   createElement,
   currentResult,
@@ -129,13 +130,33 @@ type PortFrom = { elementId: string; port: Port; side: 'in' | 'out' }
 
 /** 按最终世界坐标找能完整容纳元素的最上层 Frame。 */
 export function containingFrame(engine: Engine, rect: Rect): string | null {
-  return engine.scene.hitTest(rect.x + rect.w / 2, rect.y + rect.h / 2, (id) => {
-    if (engine.scene.get(id)?.kind !== 'frame') return false
-    const r = engine.scene.rect(id)!
-    return (
-      rect.x >= r.x && rect.y >= r.y && rect.x + rect.w <= r.x + r.w && rect.y + rect.h <= r.y + r.h
-    )
-  })
+  // 创建事务和同帧移动尚未通知场景时，索引中的层级与坐标可能仍是旧值。
+  const { doc } = engine
+  const children = new Map<string | null, CanvasElement[]>()
+  for (const el of doc.elements()) {
+    const parent = doc.effectiveParent(el)
+    const list = children.get(parent) ?? []
+    list.push(el)
+    children.set(parent, list)
+  }
+  const visit = (parent: string | null): string | null => {
+    // 与场景绘制顺序一致：后绘制的兄弟及其后代优先，子级在父级之上。
+    for (const el of (children.get(parent) ?? []).sort(compareZ).reverse()) {
+      const nested = visit(el.id)
+      if (nested) return nested
+      if (el.kind !== 'frame') continue
+      const r = doc.worldRect(el.id)!
+      if (
+        rect.x >= r.x &&
+        rect.y >= r.y &&
+        rect.x + rect.w <= r.x + r.w &&
+        rect.y + rect.h <= r.y + r.h
+      )
+        return el.id
+    }
+    return null
+  }
+  return visit(null)
 }
 
 /** 连接点上的全部端口：每侧只有一个连接点，拉线时按类型挑其中能接上的 */
@@ -168,7 +189,6 @@ export function placeElement(
   at: { x: number; y: number },
   from?: PortFrom,
 ): string {
-  const { scene } = engine
   let x = at.x - input.w / 2
   if (from?.side === 'out') x = at.x
   if (from?.side === 'in') x = at.x - input.w
@@ -182,7 +202,7 @@ export function placeElement(
         )
   // 避让后以实际落点判定所属 Frame，不能把已挪到框外的节点仍写成框内局部坐标。
   const frame = containingFrame(engine, { ...spot, w: input.w, h: input.h })
-  const origin = (frame && scene.rect(frame)) || { x: 0, y: 0 }
+  const origin = (frame && engine.doc.worldRect(frame)) || { x: 0, y: 0 }
   // 新建（连同自动连线）单独算一步撤销
   engine.doc.undo.stopCapturing()
   const id = createElement(engine.doc, {
