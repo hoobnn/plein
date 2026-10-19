@@ -207,8 +207,8 @@ export async function audioWaveform(src: string, out: string) {
 }
 
 /**
- * 胶片条：在时长的 (k + 0.5) / frames 处各取一帧，缩到 90 高后横向拼成一张 webp。
- * 每帧单独 -ss 定位（输入前定位很快），一次 ffmpeg 用 hstack 拼起来，帧数和位置都是确定的。
+ * 胶片条：优先按位置快速定位，避免长视频完整解码。
+ * 稀疏帧在最后取样点之后可能没有帧；此时顺序解码并在 EOF 复制末帧，填满所有格子。
  */
 export async function videoFilmstrip(src: string, out: string, duration: number, frames: number) {
   const args = ['-v', 'error']
@@ -220,24 +220,31 @@ export async function videoFilmstrip(src: string, out: string, duration: number,
     (_, k) => `[${k}:v]scale=-2:90,setsar=1,format=rgb24[f${k}]`,
   )
   const stack = `${scaled.map((_, k) => `[f${k}]`).join('')}hstack=inputs=${frames}[out]`
-  const { stdout } = await run(
+  const output = ['-frames:v', '1', '-f', 'image2pipe', '-c:v', 'png', '-']
+  const options = { encoding: 'buffer' as const, maxBuffer: 64 * 1024 * 1024 }
+  let { stdout } = await run(
     bin.ffmpeg,
-    [
-      ...args,
-      '-filter_complex',
-      `${scaled.join(';')};${stack}`,
-      '-map',
-      '[out]',
-      '-frames:v',
-      '1',
-      '-f',
-      'image2pipe',
-      '-c:v',
-      'png',
-      '-',
-    ],
-    { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 },
+    [...args, '-filter_complex', `${scaled.join(';')};${stack}`, '-map', '[out]', ...output],
+    options,
   )
+  if (!stdout.length) {
+    const fallback = await run(
+      bin.ffmpeg,
+      [
+        '-v',
+        'error',
+        '-i',
+        src,
+        '-map',
+        '0:v:0',
+        '-vf',
+        `setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop=-1,fps=${frames}/${duration}:start_time=0:round=near,scale=-2:90,setsar=1,format=rgb24,tile=${frames}x1:nb_frames=${frames}`,
+        ...output,
+      ],
+      options,
+    )
+    stdout = fallback.stdout
+  }
   await sharp(stdout).webp({ quality: 72 }).toFile(out)
 }
 

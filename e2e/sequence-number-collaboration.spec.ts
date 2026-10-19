@@ -52,6 +52,8 @@ async function fixture(page: Page) {
   const editor = page.getByRole('dialog', { name: '序列', exact: true })
   const input = editor.getByRole('spinbutton', { name: '入点（秒）', exact: true })
   await expect(input).toHaveValue('0')
+  await expect(editor.locator('.seq-filmstrip > span').first()).toBeVisible()
+  await expect(editor.getByText('缩略图加载失败', { exact: true })).toHaveCount(0)
   const saved = () =>
     page.evaluate(
       (id) =>
@@ -93,6 +95,10 @@ for (const kind of ['conflict', 'other-field', 'cross-in', 'cross-out'] as const
       { id: f.id, kind },
     )
     if (kind === 'conflict') {
+      await f.editor
+        .locator('.seq-clip')
+        .first()
+        .screenshot({ path: test.info().outputPath('sparse-filmstrip.png') })
       expect(await f.saved()).toMatchObject({ in: 0.2, out: 1.4 })
       await expect(f.input).toHaveValue('0.4')
       await f.editor.getByRole('button', { name: '保留当前数值', exact: true }).click()
