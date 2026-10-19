@@ -84,13 +84,10 @@
   color: var(--ink);
 }
 
-/* 顶栏名称随窗口收缩，改名输入不侵入旁边的视图按钮。 */
+/* 顶栏名称随窗口收缩，保留旁边的视图按钮。 */
 .editor-project > .ui-bar-btn {
   min-width: 24px;
   flex-shrink: 1;
-}
-.editor-project > input {
-  min-width: 0;
 }
 
 /* 故事板视图：按类型并排的几栏，每栏独立滚动 */

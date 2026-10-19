@@ -107,8 +107,9 @@ function DialogView({ req }: { req: Request }) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (current?.id !== req.id) return
-      if (e.key === 'Escape' && !e.isComposing) {
+      if (e.key === 'Escape') {
         e.stopPropagation()
+        if (e.isComposing || e.keyCode === 229) return
         finish(null)
       }
     }
@@ -185,6 +186,7 @@ function DialogView({ req }: { req: Request }) {
             {req.kind === 'prompt' && (
               <input
                 ref={inputRef}
+                aria-label={req.options.placeholder ?? options.title}
                 className="ui-input ui-input-lg w-full"
                 value={text}
                 placeholder={req.options.placeholder}

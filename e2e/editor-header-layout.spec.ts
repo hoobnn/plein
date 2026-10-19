@@ -35,13 +35,13 @@ for (const width of [320, 390, 768, 1024, 1440]) {
     }
     const compact = page.getByRole('button', { name: '画布工具', exact: true })
     await page.getByRole('button', { name: projectName, exact: true }).click()
-    const rename = page.getByRole('textbox', { name: '项目名称', exact: true })
+    const renameDialog = page.getByRole('dialog', { name: '重命名项目', exact: true })
+    const rename = renameDialog.getByRole('textbox')
     await expect(rename).toBeFocused()
     expect(
       await rename.evaluate((el) => {
         const r = el.getBoundingClientRect()
-        const bar = el.closest('.editor-project')!.getBoundingClientRect()
-        return r.x >= 0 && r.right <= bar.right
+        return r.x >= 0 && r.right <= innerWidth && r.width > 200
       }),
     ).toBe(true)
     await rename.press('Escape')

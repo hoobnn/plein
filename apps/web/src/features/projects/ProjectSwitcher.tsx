@@ -7,7 +7,6 @@ import { navigate } from '../../router'
 import { useCanvas } from '../../stores/canvas'
 import { confirmDialog, promptDialog } from '../../ui/Dialog'
 import { Icon } from '../../ui/icons'
-import { InlineTitle } from '../../ui/InlineTitle'
 import { Popover } from '../../ui/Popover'
 import { Presence } from '../../ui/Presence'
 import { forgetLocalCache } from '../../canvas/localCache'
@@ -25,7 +24,7 @@ const captureCanvasVisit = (canvasId: string) => {
 
 /**
  * 页头的「项目 / 画布 ▾」：
- * 点项目名改名；画布下拉里切换同项目的其他画布、新建、改名、删除当前画布。
+ * 点项目名打开改名窗口；画布下拉里切换同项目的其他画布、新建、改名、删除当前画布。
  */
 export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
   // 侧栏展开收起、切故事板时会换位置重新挂载，查询缓存里有上次读到的，项目名不会闪成「…」
@@ -39,7 +38,6 @@ export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
     queryFn: () => api.projectCanvases(canvas.projectId),
   })
   const canvases = canvasList.data ?? []
-  const [renaming, setRenaming] = useState(false)
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [retryError, setRetryError] = useState<Error | null>(null)
   const listError = canvasList.error ?? retryError
@@ -65,17 +63,24 @@ export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
   }
 
   const close = () => setAnchor(null)
-  const renameProject = async (title: string | null) => {
-    setRenaming(false)
-    if (project && title && title !== project.title) {
-      try {
-        const next = await api.renameProject(project.id, title)
-        cacheProject(next)
+  const renameProject = async () => {
+    const target = project
+    if (!target) return
+    const isCurrent = captureCanvasVisit(canvas.id)
+    close()
+    await promptDialog({
+      title: '重命名项目',
+      defaultValue: target.title,
+      placeholder: '项目名称',
+      maxLength: 200,
+      confirmLabel: '保存',
+      onConfirm: async (title) => {
+        if (!isCurrent()) throw new Error('画布已切换，请关闭窗口后重新操作')
+        if (title === target.title) return
+        cacheProject(await api.renameProject(target.id, title))
         void invalidateProjects()
-      } catch (err) {
-        fail(err)
-      }
-    }
+      },
+    })
   }
   const addCanvas = async () => {
     const isCurrent = captureCanvasVisit(canvas.id)
@@ -139,23 +144,14 @@ export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
 
   return (
     <>
-      {renaming && project ? (
-        <InlineTitle
-          value={project.title}
-          label="项目名称"
-          onDone={renameProject}
-          className="h-9 w-44 rounded-md px-2 text-sm font-medium"
-        />
-      ) : (
-        <button
-          type="button"
-          onClick={() => setRenaming(!!project)}
-          title="重命名项目"
-          className="ui-bar-btn block max-w-44 truncate font-medium text-ink"
-        >
-          {project?.title ?? '…'}
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => void renameProject()}
+        title="重命名项目"
+        className="ui-bar-btn block max-w-44 truncate font-medium text-ink"
+      >
+        {project?.title ?? '…'}
+      </button>
       <span className="text-ink-subtle" aria-hidden="true">
         /
       </span>
