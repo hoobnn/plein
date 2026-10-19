@@ -18,6 +18,7 @@ const MEDIA_MAX_H = 320
 
 type Column = Exclude<OutlineType, 'frame' | 'other'>
 type Filter = 'all' | 'done' | 'todo'
+type Filters = Partial<Record<Column, Filter>>
 
 const COLUMNS: Array<{ type: Column; label: string }> = [
   { type: 'text', label: '文本' },
@@ -62,11 +63,33 @@ function contentOf(el: CanvasElement): Content {
 export function Board() {
   const engine = useCanvas((s) => s.engine)
   const mode = useCanvas((s) => s.mode)
+  const [filters, setFilters] = useState<{ engine: Engine | null; values: Filters }>({
+    engine,
+    values: {},
+  })
+  if (filters.engine !== engine) setFilters({ engine, values: {} })
   if (!engine || mode !== 'board') return null
-  return <BoardPanel engine={engine} />
+  return (
+    <BoardPanel
+      engine={engine}
+      filters={filters.values}
+      onFilter={(type, value) => {
+        if (useCanvas.getState().engine !== engine) return
+        setFilters((current) => ({ engine, values: { ...current.values, [type]: value } }))
+      }}
+    />
+  )
 }
 
-function BoardPanel({ engine }: { engine: Engine }) {
+function BoardPanel({
+  engine,
+  filters,
+  onFilter,
+}: {
+  engine: Engine
+  filters: Filters
+  onFilter(type: Column, value: Filter): void
+}) {
   const catalog = useCatalog((s) => s.catalog)
   const version = useDocVersion(engine.doc)
   const [expanded, setExpanded] = useState<Column | null>(null)
@@ -119,6 +142,8 @@ function BoardPanel({ engine }: { engine: Engine }) {
           type={c.type}
           label={c.label}
           items={c.items}
+          filter={filters[c.type] ?? 'all'}
+          onFilter={(value) => onFilter(c.type, value)}
           expanded={expanded === c.type}
           onExpand={() => setExpanded(expanded === c.type ? null : c.type)}
           onLocate={locate}
@@ -136,6 +161,8 @@ function BoardColumn({
   expanded,
   onExpand,
   onLocate,
+  filter,
+  onFilter,
 }: {
   type: Column
   label: string
@@ -143,8 +170,9 @@ function BoardColumn({
   expanded: boolean
   onExpand(): void
   onLocate(id: string): void
+  filter: Filter
+  onFilter(value: Filter): void
 }) {
-  const [filter, setFilter] = useState<Filter>('all')
   const shown = items.filter((el) =>
     filter === 'all' ? true : (contentOf(el) !== null) === (filter === 'done'),
   )
@@ -157,7 +185,7 @@ function BoardColumn({
           {type === 'text' ? items.length : `${done}/${items.length}`}
         </span>
         <span className="flex-1" />
-        <MenuSelect<Filter> value={filter} options={FILTERS} onChange={setFilter} label="筛选" />
+        <MenuSelect<Filter> value={filter} options={FILTERS} onChange={onFilter} label="筛选" />
         <button
           type="button"
           onClick={onExpand}

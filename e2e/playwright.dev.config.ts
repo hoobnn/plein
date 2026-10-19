@@ -217,6 +217,7 @@ export default defineConfig({
     'header-project-read.spec.ts',
     'empty-canvas-layout.spec.ts',
     'demo-media.spec.ts',
+    'board-filter-retention.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
     'sidebar-resize.spec.ts',
     'sidebar-assets-recovery.spec.ts',
