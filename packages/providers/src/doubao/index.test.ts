@@ -10,6 +10,37 @@ function context(
 }
 
 describe('Doubao Speech HTTP contracts', () => {
+  it.each([500, 502, 503, 504])(
+    'HTTP %s 保留请求 ID、平台 logid 与提交未知，不自动重试',
+    async (status) => {
+      const ctx = context(
+        new Response('gateway timeout', {
+          status,
+          headers: { 'X-Tt-Logid': 'platform-log-504' },
+        }),
+      )
+      const error = await doubaoProvider
+        .submit(
+          {
+            capability: 'audio.speech',
+            model: 'seed-tts-2.0',
+            input: { text: 'fixture' },
+          },
+          ctx,
+        )
+        .catch((err: unknown) => err)
+      const init = vi.mocked(ctx.fetch).mock.calls[0]![1]!
+      const id = new Headers(init.headers).get('X-Api-Request-Id')!
+      expect(error).toMatchObject({
+        code: status === 504 ? 'timeout' : 'unavailable',
+        outcome: 'unknown',
+        retryable: false,
+        message: expect.stringContaining(id),
+      })
+      expect((error as Error).message).toContain('platform-log-504')
+      expect(ctx.fetch).toHaveBeenCalledTimes(1)
+    },
+  )
   it('accepts null audio in sentence metadata and the terminal packet', async () => {
     const ctx = context(
       new Response(
@@ -73,7 +104,67 @@ describe('Doubao Speech HTTP contracts', () => {
         { capability: 'audio.speech', model: 'seed-tts-2.0', input: { text: 'fixture' } },
         ctx,
       ),
-    ).rejects.toMatchObject({ message: '豆包语音 45000001: [redacted] [redacted] [redacted]' })
+    ).rejects.toMatchObject({
+      message: expect.stringContaining('豆包语音 45000001: [redacted] [redacted] [redacted]'),
+    })
+  })
+
+  it.each(['network', 'body', 'parse'] as const)(
+    '%s 失败仍保留核查标识和提交未知状态',
+    async (mode) => {
+      const response =
+        mode === 'body'
+          ? new Response(
+              new ReadableStream({
+                start(controller) {
+                  controller.error(new TypeError('terminated'))
+                },
+              }),
+              { headers: { 'X-Tt-Logid': 'stream-log-id' } },
+            )
+          : new Response('{"code":0,"data":"AQID"}', { headers: { 'X-Tt-Logid': 'stream-log-id' } })
+      const ctx = context(response)
+      if (mode === 'network')
+        vi.mocked(ctx.fetch).mockRejectedValueOnce(new TypeError('disconnected'))
+      const error = await doubaoProvider
+        .submit(
+          {
+            capability: 'audio.speech',
+            model: 'seed-tts-2.0',
+            input: { text: 'private fixture text' },
+          },
+          ctx,
+        )
+        .catch((err: unknown) => err)
+      const id = new Headers(vi.mocked(ctx.fetch).mock.calls[0]![1]?.headers).get(
+        'X-Api-Request-Id',
+      )!
+      expect(error).toMatchObject({
+        code: 'unavailable',
+        retryable: false,
+        outcome: 'unknown',
+        message: expect.stringContaining(id),
+      })
+      if (mode !== 'network') expect((error as Error).message).toContain('stream-log-id')
+      expect(ctx.fetch).toHaveBeenCalledTimes(1)
+      expect(JSON.stringify(vi.mocked(ctx.log).mock.calls)).not.toContain('private fixture text')
+      expect(JSON.stringify(vi.mocked(ctx.log).mock.calls)).not.toContain('test-key')
+    },
+  )
+
+  it('响应 logid 中的配置密钥同样脱敏', async () => {
+    const ctx = context(
+      new Response('timeout', { status: 504, headers: { 'X-Tt-Logid': 'test-key' } }),
+    )
+    const error = await doubaoProvider
+      .submit(
+        { capability: 'audio.speech', model: 'seed-tts-2.0', input: { text: 'fixture' } },
+        ctx,
+      )
+      .catch((err: unknown) => err)
+    expect((error as Error).message).toContain('平台日志 ID [redacted]')
+    expect((error as Error).message).not.toContain('test-key')
+    expect(JSON.stringify(vi.mocked(ctx.log).mock.calls)).not.toContain('test-key')
   })
 
   it('分块响应读到一半断开时提交结果未知，不可重试', async () => {

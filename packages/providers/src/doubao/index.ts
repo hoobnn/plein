@@ -9,6 +9,7 @@ import {
   type TranscriptSegment,
   ProviderError,
   type ProviderErrorCode,
+  type SubmitResult,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { isJson, type Json, readText, redact, send } from '../shared/http'
@@ -23,8 +24,7 @@ const secrets = ['VOLC_SPEECH_API_KEY', 'VOLC_SPEECH_APP_ID', 'VOLC_SPEECH_ACCES
 const host = 'https://openspeech.bytedance.com'
 
 function object(value: unknown): Json {
-  if (!isJson(value))
-    throw new ProviderError('unavailable', '豆包语音返回无效 JSON 对象', { retryable: false })
+  if (!isJson(value)) throw incomplete('豆包语音返回无效 JSON 对象')
   return value
 }
 
@@ -79,48 +79,82 @@ function failure(status: number, code: unknown, message: unknown, ctx: Context):
   return new ProviderError(
     normalized,
     `豆包语音 ${scrub(String(code ?? status), ctx)}: ${detail}`,
-    { retryable: false },
+    {
+      retryable: false,
+      ...(status === 408 || status >= 500 ? { outcome: 'unknown' as const } : {}),
+    },
   )
 }
 
 async function post(ctx: Context, path: string, body: Json, resource?: string, asr = false) {
   const requestHeaders = headers(ctx, resource)
   if (asr) requestHeaders['X-Api-Sequence'] = '-1'
+  const requestId = requestHeaders['X-Api-Request-Id']!
+  let logId: string | undefined
+  const traced = (error: unknown) => {
+    if (!(error instanceof ProviderError)) return error
+    const ids = [`客户端请求 ID ${requestId}`, ...(logId ? [`平台日志 ID ${logId}`] : [])]
+    return new ProviderError(error.code, `${scrub(error.message, ctx)}（${ids.join('；')}）`, {
+      retryable: error.retryable,
+      cause: error,
+      ...(error.outcome ? { outcome: error.outcome } : {}),
+    })
+  }
+  ctx.log('豆包语音请求关联信息', { requestId, path })
   // 只有提交接口，一律不可重试；分块响应读完前断开同样算提交结果未知
   const messages = {
     cancelled: '豆包语音请求已取消',
     network: '豆包语音网络请求失败，提交结果未知',
     timeout: '豆包语音请求超时，提交结果未知',
   }
-  const response = await send(
-    ctx,
-    `${host}${path}`,
-    { method: 'POST', headers: requestHeaders, body: JSON.stringify(body) },
-    messages,
-  )
-  const raw = await readText(ctx, response, 'POST', messages)
-  const status = response.headers.get('X-Api-Status-Code')
-  if (!response.ok || (status && status !== '20000000' && !(asr && status === '20000003'))) {
-    let detail: Json = {}
-    try {
-      const parsed = object(JSON.parse(raw))
-      detail = parsed.header ? object(parsed.header) : parsed
-    } catch {
-      // HTTP headers still carry useful errors when the response is not JSON.
-    }
-    throw failure(
-      response.status,
-      detail.code ?? status,
-      detail.message ?? response.headers.get('X-Api-Message'),
+  try {
+    const response = await send(
       ctx,
+      `${host}${path}`,
+      { method: 'POST', headers: requestHeaders, body: JSON.stringify(body) },
+      messages,
     )
+    const remoteLog = response.headers.get('X-Tt-Logid')
+    logId = remoteLog ? scrub(remoteLog, ctx).replace(/\s+/g, ' ').slice(0, 160) : undefined
+    ctx.log('豆包语音响应关联信息', {
+      requestId,
+      ...(logId ? { logId } : {}),
+      status: response.status,
+    })
+    const raw = await readText(ctx, response, 'POST', messages)
+    const status = response.headers.get('X-Api-Status-Code')
+    if (!response.ok || (status && status !== '20000000' && !(asr && status === '20000003'))) {
+      let detail: Json = {}
+      try {
+        const parsed = object(JSON.parse(raw))
+        detail = parsed.header ? object(parsed.header) : parsed
+      } catch {
+        // HTTP headers still carry useful errors when the response is not JSON.
+      }
+      throw failure(
+        response.status,
+        detail.code ?? status,
+        detail.message ?? response.headers.get('X-Api-Message'),
+        ctx,
+      )
+    }
+    return {
+      decode<T>(parse: (raw: string, silent: boolean) => T): T {
+        try {
+          return parse(raw, status === '20000003')
+        } catch (error) {
+          throw traced(error)
+        }
+      },
+    }
+  } catch (error) {
+    throw traced(error)
   }
-  return { raw, silent: status === '20000003' }
 }
 
 /** HTTP Chunked may contain newline-delimited or directly adjacent JSON objects. */
 function incomplete(message: string) {
-  return new ProviderError('unavailable', message, { retryable: false })
+  return new ProviderError('unavailable', message, { retryable: false, outcome: 'unknown' })
 }
 
 function events(raw: string): Json[] {
@@ -324,7 +358,7 @@ export const doubaoProvider = defineProvider({
       const speed = input.speed ?? 1
       if (!Number.isFinite(speed) || speed < 0.5 || speed > 2)
         throw new ProviderError('invalid_input', '语速须在 0.5 至 2 之间')
-      const { raw } = await post(
+      const response = await post(
         ctx,
         '/api/v3/tts/unidirectional',
         {
@@ -343,7 +377,7 @@ export const doubaoProvider = defineProvider({
         },
         req.model,
       )
-      return audioResult(raw, 'data', ctx, true)
+      return response.decode((raw) => audioResult(raw, 'data', ctx, true))
     }
     if (req.capability === 'audio.music' || req.capability === 'audio.sfx') {
       const input = req.input as CapabilityInput<'audio.music'>
@@ -358,7 +392,7 @@ export const doubaoProvider = defineProvider({
         req.capability === 'audio.music'
           ? '仅生成音乐，不要人声对白。'
           : '仅生成音效，不要音乐或人声对白。'
-      const { raw } = await post(ctx, '/api/v3/tts/create', {
+      const response = await post(ctx, '/api/v3/tts/create', {
         model: req.model,
         text_prompt: text(
           `${kind}${input.duration ? `目标时长 ${input.duration} 秒。` : ''}${prompt}`,
@@ -366,7 +400,7 @@ export const doubaoProvider = defineProvider({
         ),
         audio_config: { format: ctx.settings.format, sample_rate: Number(ctx.settings.sampleRate) },
       })
-      return audioResult(raw, 'audio', ctx)
+      return response.decode((raw) => audioResult(raw, 'audio', ctx))
     }
     if (req.capability === 'audio.transcribe') {
       const input = req.input as CapabilityInput<'audio.transcribe'>
@@ -386,7 +420,7 @@ export const doubaoProvider = defineProvider({
       )[asset.mime]
       if (!format)
         throw new ProviderError('invalid_input', '极速识别支持 MP3、WAV、Ogg Opus、FLAC、M4A 音频')
-      const { raw, silent } = await post(
+      const response = await post(
         ctx,
         '/api/v3/auc/bigmodel/recognize/flash',
         {
@@ -407,38 +441,39 @@ export const doubaoProvider = defineProvider({
         'volc.bigasr.auc_turbo',
         true,
       )
-      if (silent) return { state: 'succeeded', outputs: [{ type: 'text', text: '' }] }
-      const packet = events(raw)[0]!
-      if (packet.code !== undefined && ![0, 20000000].includes(Number(packet.code))) {
-        throw failure(200, packet.code, packet.message, ctx)
-      }
-      const result = object(packet.result)
-      if (typeof result.text !== 'string')
-        throw new ProviderError('unavailable', '豆包语音返回无效识别文本')
-      // 分句时间是毫秒，按 SDK 约定换成秒
-      const segments: TranscriptSegment[] = (
-        Array.isArray(result.utterances) ? result.utterances : []
-      )
-        .map(object)
-        .filter(
-          (u) =>
-            typeof u.text === 'string' &&
-            typeof u.start_time === 'number' &&
-            typeof u.end_time === 'number' &&
-            u.end_time > u.start_time,
+      return response.decode<SubmitResult>((raw, silent) => {
+        if (silent) return { state: 'succeeded', outputs: [{ type: 'text', text: '' }] }
+        const packet = events(raw)[0]!
+        if (packet.code !== undefined && ![0, 20000000].includes(Number(packet.code))) {
+          throw failure(200, packet.code, packet.message, ctx)
+        }
+        const result = object(packet.result)
+        if (typeof result.text !== 'string') throw incomplete('豆包语音返回无效识别文本')
+        // 分句时间是毫秒，按 SDK 约定换成秒
+        const segments: TranscriptSegment[] = (
+          Array.isArray(result.utterances) ? result.utterances : []
         )
-        .map((u) => ({
-          start: (u.start_time as number) / 1000,
-          end: (u.end_time as number) / 1000,
-          text: (u.text as string).trim(),
-        }))
-      return {
-        state: 'succeeded',
-        outputs: [
-          { type: 'text', text: result.text },
-          ...(segments.length ? [{ type: 'json' as const, value: { segments } }] : []),
-        ],
-      }
+          .map(object)
+          .filter(
+            (u) =>
+              typeof u.text === 'string' &&
+              typeof u.start_time === 'number' &&
+              typeof u.end_time === 'number' &&
+              u.end_time > u.start_time,
+          )
+          .map((u) => ({
+            start: (u.start_time as number) / 1000,
+            end: (u.end_time as number) / 1000,
+            text: (u.text as string).trim(),
+          }))
+        return {
+          state: 'succeeded',
+          outputs: [
+            { type: 'text', text: result.text },
+            ...(segments.length ? [{ type: 'json' as const, value: { segments } }] : []),
+          ],
+        }
+      })
     }
     throw new ProviderError('invalid_input', '豆包语音不支持该能力')
   },
