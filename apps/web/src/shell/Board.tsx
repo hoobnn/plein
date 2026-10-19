@@ -228,19 +228,22 @@ function MediaItem({
   const catalog = useCatalog((s) => s.catalog)
   const c = contentOf(el)
   const assetId = c && c.type !== 'text' ? c.assetId : undefined
-  const meta = useAssetMeta(assetId)
+  const localUrl = useCanvas((s) => s.localAssetUrls?.get(assetId ?? ''))
+  const meta = useAssetMeta(localUrl ? undefined : assetId)
   const title = outlineTitle(el, catalog)
   const status = el.run && STATUS[el.run.status]
 
   const result = el.kind === 'node' ? primaryResult(el) : undefined
   const candidates = result ? (el.results?.filter((r) => r.port === result.port).length ?? 0) : 0
   const preview = useRef<HTMLButtonElement>(null)
-  const thumb = assetId
-    ? assetUrls.variant(
-        assetId,
-        type === 'image' ? 'thumb-1024' : type === 'video' ? 'poster' : 'waveform',
-      )
-    : undefined
+  const thumb =
+    localUrl ??
+    (assetId
+      ? assetUrls.variant(
+          assetId,
+          type === 'image' ? 'thumb-1024' : type === 'video' ? 'poster' : 'waveform',
+        )
+      : undefined)
   const [load, setLoad] = useState({ src: thumb, attempt: 0, broken: false })
   const current = load.src === thumb ? load : { src: thumb, attempt: 0, broken: false }
   if (load.src !== thumb) setLoad(current)

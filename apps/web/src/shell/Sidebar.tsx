@@ -691,6 +691,7 @@ function assetIcon(el: CanvasElement) {
 
 function Thumb({ el, type }: { el: CanvasElement; type: OutlineType }) {
   const m = mediaOf(el)
+  const localUrl = useCanvas((s) => s.localAssetUrls?.get(m?.assetId ?? ''))
   if (el.kind === 'frame')
     return (
       <span className="plein-layer-thumb plein-layer-folder">
@@ -701,7 +702,9 @@ function Thumb({ el, type }: { el: CanvasElement; type: OutlineType }) {
     <span className="plein-layer-thumb">
       {m ? (
         <img
-          src={assetUrls.variant(m.assetId, m.kind === 'image' ? 'thumb-256' : 'poster')}
+          src={
+            localUrl ?? assetUrls.variant(m.assetId, m.kind === 'image' ? 'thumb-256' : 'poster')
+          }
           alt=""
           loading="lazy"
           draggable={false}

@@ -216,6 +216,7 @@ export default defineConfig({
     'header-project-rename.spec.ts',
     'header-project-read.spec.ts',
     'empty-canvas-layout.spec.ts',
+    'demo-media.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
     'sidebar-resize.spec.ts',
     'sidebar-assets-recovery.spec.ts',

@@ -102,6 +102,7 @@ export function CanvasView({
       doc: PleinDoc,
       assetUrl: (id: string, kind: ElementKind, size: PreviewSize) => string | undefined,
       awareness?: unknown,
+      localAssets?: ReadonlyMap<string, string>,
     ) => {
       const engine = new Engine({
         host,
@@ -119,7 +120,7 @@ export function CanvasView({
         () => {
           if (disposed) return engine.destroy()
           const overlays = new CanvasOverlays(engine, overlayRoot, host, {
-            originalUrl: assetUrls.original,
+            originalUrl: (id) => localAssets?.get(id) ?? assetUrls.original(id),
             awareness,
           })
           const openText = (id: string) => overlays.activate(id)
@@ -132,7 +133,7 @@ export function CanvasView({
             cancel: cancelNode,
             applyPreset: (id, preset) =>
               applyPresetToNode(engine, useCatalog.getState().catalog, id, preset),
-            thumbUrl: (id) => assetUrls.variant(id, 'thumb-256'),
+            thumbUrl: (id) => localAssets?.get(id) ?? assetUrls.variant(id, 'thumb-256'),
           })
           // 双击节点：聚焦生成器的提示词（面板在选中后的下一帧才挂载）
           const offActivate = engine.onActivate((id) => {
@@ -150,7 +151,7 @@ export function CanvasView({
           const offAspect = canvasId ? watchVideoAspect(engine, videoRatio) : () => {}
           const offStageAspect = watchStageAspect(doc)
           const offStageHistory = watchStageHistory(doc)
-          const detach = attach(engine)
+          const detach = attach(engine, localAssets)
           // 端到端测试读画布状态、换算节点屏幕坐标用；只有 e2e 构建（--mode e2e）才有，正式构建会被摇掉
           const e2e = import.meta.env.MODE === 'e2e'
           if (e2e)
@@ -228,7 +229,7 @@ export function CanvasView({
       const doc = createDoc()
       seedDemo(doc, count)
       const urls = demoAssetUrls()
-      start(doc, (id) => urls.get(id))
+      start(doc, (id) => urls.get(id), undefined, urls)
       cleanups.push(() => {
         doc.destroy()
         releaseDemoAssetUrls(urls)

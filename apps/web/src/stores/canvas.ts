@@ -25,6 +25,8 @@ export interface NoticeAction {
 
 interface CanvasStore extends EngineState {
   engine: Engine | null
+  /** 当前画布持有的临时素材地址，随引擎分离清空。 */
+  localAssetUrls: ReadonlyMap<string, string> | null
   sync: SyncStatus
   /** 本机缓存（IndexedDB）可用；是否写入完成另由 cacheSaved 表示 */
   localCache: boolean
@@ -66,7 +68,7 @@ interface CanvasStore extends EngineState {
   /** 画布视图：工作流（节点图）或故事板（按类型分栏的列表） */
   mode: 'flow' | 'board'
   /** 挂载引擎并把它的运行时状态镜像到 store（只在状态变化时更新，不跟随每帧） */
-  attach(engine: Engine): () => void
+  attach(engine: Engine, localAssetUrls?: ReadonlyMap<string, string>): () => void
   setSync(sync: SyncStatus, localCache?: boolean): void
   setCacheSaved(saved: boolean): void
   setImporting(importing: { done: number; total: number } | null): void
@@ -99,6 +101,7 @@ let noticeTimer: ReturnType<typeof setTimeout> | undefined
 export const useCanvas = create<CanvasStore>((set, get) => ({
   ...initial,
   engine: null,
+  localAssetUrls: null,
   sync: 'local',
   localCache: true,
   cacheSaved: true,
@@ -118,7 +121,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
   tasks: false,
   impact: false,
   mode: 'flow',
-  attach(engine) {
+  attach(engine, localAssetUrls) {
     const sync = () => set(engine.state)
     const off = engine.onStateChange(sync)
     const offMenu = engine.onMenu((menu) => set({ menu }))
@@ -126,7 +129,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
       set({ arranged })
       if (arranged.scope === 'canvas') engine.zoomToFit()
     })
-    set({ engine, ...engine.state })
+    set({ engine, localAssetUrls: localAssetUrls ?? null, ...engine.state })
     return () => {
       off()
       offMenu()
@@ -135,6 +138,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
       if (!keepNotice) clearTimeout(noticeTimer)
       set({
         engine: null,
+        localAssetUrls: null,
         importing: null,
         ...(!keepNotice
           ? { notice: null, noticeAction: null, noticeScope: 'canvas' as const }

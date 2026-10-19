@@ -23,6 +23,8 @@ type View = NonNullable<ReturnType<typeof useCanvas.getState>['viewer']>
 
 function Review({ viewer }: { viewer: View }) {
   const engine = useCanvas((s) => s.engine)
+  const localAssets = useCanvas((s) => s.localAssetUrls)
+  const originalUrl = (id: string) => localAssets?.get(id) ?? assetUrls.original(id)
   const canvasId = useCanvas((s) => s.canvasId)
   const [actionError, setActionError] = useState<string | null>(null)
   const doc = engine?.doc
@@ -390,7 +392,7 @@ function Review({ viewer }: { viewer: View }) {
               >
                 <img
                   key={`${imageKey}:${imageLoads[imageKey]?.attempt ?? 0}`}
-                  src={assetUrls.original(assetId)}
+                  src={originalUrl(assetId)}
                   alt={otherId ? '候选 A' : name}
                   draggable={false}
                   {...imageEvents(imageKey)}
@@ -400,7 +402,7 @@ function Review({ viewer }: { viewer: View }) {
                 {otherId && (
                   <img
                     key={`${otherImageKey}:${imageLoads[otherImageKey]?.attempt ?? 0}`}
-                    src={assetUrls.original(otherId)}
+                    src={originalUrl(otherId)}
                     alt="候选 B"
                     draggable={false}
                     {...imageEvents(otherImageKey)}
