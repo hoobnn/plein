@@ -54,8 +54,8 @@ const show = (v: unknown) => {
         : voice.voiceId
       : '（空）'
   }
-  const text = String(v ?? '').trim()
-  return text || '（空）'
+  const text = String(v ?? '')
+  return text.trim() ? text : '（空）'
 }
 
 /**
@@ -183,16 +183,21 @@ export function StoryboardSync({
         <div className="ui-scrollbar min-h-0 overflow-auto px-5 pb-5">
           <ul className="flex flex-col gap-3">
             {rows.map((s) => (
-              <li key={s.id} className="rounded-lg border border-line p-3">
+              <li key={s.id} className="min-w-0 rounded-lg border border-line p-3">
                 <p className="mb-2 text-xs font-medium text-ink-subtle">
                   镜头 {String(s.no).padStart(2, '0')}
                 </p>
                 <ul className="flex flex-col gap-2">
                   {(diffs.get(s.id) ?? []).map((d) => (
-                    <li key={d.el.id} className="text-sm">
+                    <li key={d.el.id} data-node-id={d.el.id} className="min-w-0 text-sm">
                       <p
-                        className="text-xs text-ink-muted"
-                        title={d.version ? `展开时的计划版本：${d.version}` : undefined}
+                        className="truncate text-xs text-ink-muted"
+                        title={[
+                          d.el.name ?? ROLE_LABEL[d.role],
+                          d.version ? `展开时的计划版本：${d.version}` : undefined,
+                        ]
+                          .filter(Boolean)
+                          .join('\n')}
                       >
                         {d.el.name ?? ROLE_LABEL[d.role]}
                         {d.role === 'speech' && d.line !== undefined && ` · 第 ${d.line + 1} 句`}
@@ -201,31 +206,27 @@ export function StoryboardSync({
                         {d.diffs.map((f) => (
                           <li
                             key={f.key}
-                            className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5"
+                            aria-label={`${PARAM_LABEL[f.key] ?? f.key}差异`}
+                            className="min-w-0 border-t border-line pt-2 first:border-t-0 first:pt-0"
                           >
-                            <span className="w-12 shrink-0 text-ink-subtle">
-                              {PARAM_LABEL[f.key]}
-                            </span>
-                            <span className="text-ink-muted line-through decoration-ink-subtle/50">
-                              {show(f.expanded)}
-                            </span>
-                            <span aria-hidden="true" className="text-ink-subtle">
-                              →
-                            </span>
-                            <span className="text-ink">
-                              {show(f.overridden ? f.actual : f.wanted)}
-                            </span>
-                            {f.overridden ? (
-                              <span className="ui-tag ui-tag-accent">你改过</span>
-                            ) : (
-                              <span className="ui-tag ui-tag-warning">计划已改</span>
-                            )}
-                            {f.legacy && <span className="ui-tag">没有展开快照</span>}
-                            {f.overridden && (
-                              <span className="min-w-0 basis-full break-words text-xs text-ink-subtle">
-                                计划：{show(f.wanted)}
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-xs font-medium text-ink">
+                                {PARAM_LABEL[f.key] ?? f.key}
                               </span>
-                            )}
+                              {f.overridden ? (
+                                <span className="ui-tag ui-tag-accent">你改过</span>
+                              ) : (
+                                <span className="ui-tag ui-tag-warning">计划已改</span>
+                              )}
+                              {f.legacy && <span className="ui-tag">没有展开快照</span>}
+                            </div>
+                            <dl className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2">
+                              {f.overridden && !f.legacy && (
+                                <DiffValue label="展开时" value={f.expanded} wide />
+                              )}
+                              <DiffValue label="当前节点" value={f.actual} />
+                              <DiffValue label="分镜计划" value={f.wanted} />
+                            </dl>
                           </li>
                         ))}
                       </ul>
@@ -238,5 +239,24 @@ export function StoryboardSync({
         </div>
       )}
     </Modal>
+  )
+}
+
+function DiffValue({
+  label,
+  value,
+  wide = false,
+}: {
+  label: string
+  value: unknown
+  wide?: boolean
+}) {
+  return (
+    <div className={`min-w-0 rounded-lg border border-line p-2 ${wide ? 'sm:col-span-2' : ''}`}>
+      <dt className="mb-1 text-xs text-ink-subtle">{label}</dt>
+      <dd className="m-0 min-w-0 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">
+        {show(value)}
+      </dd>
+    </div>
   )
 }

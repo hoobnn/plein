@@ -198,8 +198,13 @@ for (const mode of ['unmodified', 'keep-overrides'] as const) {
       })
       if (change === 'actual')
         await expect(
-          f.panel.getByText('计划：计划改后的分镜图 景别：中景', { exact: true }),
-        ).toBeVisible()
+          f.panel
+            .getByRole('listitem', { name: '提示词差异', exact: true })
+            .locator('dt')
+            .filter({ hasText: /^分镜计划$/ })
+            .locator('..')
+            .locator('dd'),
+        ).toHaveText('计划改后的分镜图 景别：中景')
       await f.panel.getByRole('button', { name: label, exact: true }).click()
       await expect(f.panel.getByText('没有待处理的差异', { exact: true })).toBeVisible()
       await expect(f.panel.getByRole('alert')).toHaveCount(0)
