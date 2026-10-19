@@ -12,6 +12,9 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "🔧 chore(deps): 更新依赖 "
+    ignore:
+      # 必须与 vite-plus 内置的 vitest 版本一致，随 vite-plus 升级手动对齐
+      - dependency-name: "@vitest/coverage-v8"
     groups:
       production-minor-patch:
         dependency-type: production
