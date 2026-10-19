@@ -34,7 +34,7 @@ import {
 import { flushSync } from 'react-dom'
 import { ApiError, api } from '../../api/client'
 import { AssetDownloadButton } from '../../shell/AssetDownloadButton'
-import { useDocVersion } from '../../canvas/hooks'
+import { useDocVersion, useEngineVersion } from '../../canvas/hooks'
 import { desktop } from '../../desktop'
 import { findNode, upstreams, validate } from '../../canvas/nodes'
 import { cancelNode, runNode } from '../runs/run'
@@ -57,6 +57,7 @@ import { SubtitleEditor } from './SubtitleEditor'
 import { refreshAnimatic, relatedSequences } from './animatic'
 import { DeliveryReview, useDeliveryReviewSession } from './DeliveryReview'
 import { MediaReloadContext } from './media'
+import { sequenceParameterProblem } from './parameters'
 
 const seconds = (s: number | undefined) => (s === undefined ? '—' : `${s.toFixed(1)} 秒`)
 
@@ -138,9 +139,64 @@ export function SequenceEditor() {
   return (
     <Presence>
       {engine && id && engine.doc.get(id) && (
-        <Editor key={id} engine={engine} id={id} onClose={close} />
+        <GuardedEditor key={id} engine={engine} id={id} onClose={close} />
       )}
     </Presence>
+  )
+}
+
+function GuardedEditor({ engine, id, onClose }: { engine: Engine; id: string; onClose(): void }) {
+  useEngineVersion(engine)
+  const el = engine.doc.get(id)
+  if (!el) return null
+  const problem = sequenceParameterProblem(el.params, el.nodeType === ANIMATIC_TYPE)
+  if (!problem) return <Editor engine={engine} id={id} onClose={onClose} />
+  const readOnly = engine.doc.readOnly
+  const restore = () => {
+    const current = engine.doc.get(id)
+    if (engine.doc.readOnly || !current) return
+    const latest = sequenceParameterProblem(current.params, current.nodeType === ANIMATIC_TYPE)
+    if (!latest) return
+    engine.doc.undo.stopCapturing()
+    setParams(engine.doc, id, latest.patch)
+    engine.doc.flush()
+    engine.doc.undo.stopCapturing()
+  }
+  return (
+    <Modal label="序列参数问题" onClose={onClose} isolateKeys className="max-w-xl">
+      <ModalHeader title="序列参数需要修复" onClose={onClose}>
+        <button
+          type="button"
+          className="ui-btn"
+          disabled={readOnly || !engine.doc.undo.undoStack.length}
+          onClick={() => engine.undo()}
+        >
+          撤销
+        </button>
+        <button
+          type="button"
+          className="ui-btn"
+          disabled={readOnly || !engine.doc.undo.redoStack.length}
+          onClick={() => engine.redo()}
+        >
+          重做
+        </button>
+      </ModalHeader>
+      <div className="flex min-h-0 flex-col gap-4 overflow-y-auto p-5">
+        <p role="alert" className="break-words">
+          无法打开序列：{problem.whole ? '参数格式无效' : problem.labels.join('、')}。
+        </p>
+        <p>
+          原始数据已保留。恢复将{problem.whole ? '重置全部参数' : '仅重置上述无效字段'}
+          为默认值，可通过撤销恢复。画布连线和已生成结果会保留。
+        </p>
+        {problem.lists && <p>无效的镜头或字幕列表会整体重置，请确认后再恢复。</p>}
+        {readOnly && <p>当前画布为只读，无法恢复参数。</p>}
+        <button type="button" className="ui-btn self-start" disabled={readOnly} onClick={restore}>
+          恢复无效字段默认值
+        </button>
+      </div>
+    </Modal>
   )
 }
 

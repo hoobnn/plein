@@ -173,6 +173,7 @@ export default defineConfig({
     'right-panel-switching.spec.ts',
     'sequence-load-recovery.spec.ts',
     'sequence-input-readiness.spec.ts',
+    'sequence-invalid-parameters.spec.ts',
     'sequence-sound-controls.spec.ts',
     'sequence-preview-lifecycle.spec.ts',
     'sequence-subtitle-renderer.spec.ts',
