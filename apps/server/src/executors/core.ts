@@ -31,12 +31,11 @@ import {
   inputAssets,
   inputText,
   ProviderError,
-  parseModelRef,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { mediaCaps, missingCapability } from '../assets/media'
 import { animaticExecutor } from './animatic'
-import { sfx, transcription, speechDirection } from './audio'
+import { sfx, transcription, speechDirection, speechVoice } from './audio'
 
 /** 节点选的模型：不替用户挑，没选就报错 */
 function pickModel(ctx: ExecutorContext<{ model: string }>, label: string) {
@@ -192,21 +191,9 @@ const speech = defineExecutor(speechNode, async (ctx) => {
   // 各家的音色 ID 只在本家平台有效，平台的入参契约不变
   const voice = voiceOf(params)
   const model = pickModel(ctx, '配音')
-  // 手选的音色标明了平台、却和要用的模型不是一家：送过去多半读不出来，不如先停下
-  const provider = parseModelRef(model)?.provider ?? ''
-  if (voice.voiceId && voice.provider && provider && voice.provider !== provider)
-    throw new ProviderError(
-      'invalid_input',
-      `音色 ${voice.voiceId} 属于 ${voice.provider}，当前配音模型是 ${provider} 的，请换成同一平台的音色或模型`,
-      { retryable: false },
-    )
-  // 音色没有记录平台（手工填的或旧画布里的裸字符串）：照用，但说明没法校验是不是本平台的
-  sayProgress(
-    ctx,
-    voice.voiceId && !voice.provider
-      ? `音色 ${voice.voiceId} 未标明所属平台，请确认它适用于当前模型`
-      : '',
-  )
+  const check = speechVoice(model, voice)
+  if (check.problem) throw new ProviderError('invalid_input', check.problem, { retryable: false })
+  sayProgress(ctx, check.notice)
   const direction = speechDirection(
     model,
     params.instruction,

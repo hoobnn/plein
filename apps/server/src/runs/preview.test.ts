@@ -108,6 +108,59 @@ const run = (server: Server, canvas: string, node: string, expect?: string) =>
     body: JSON.stringify(expect ? { expect } : {}),
   })
 
+it('手选跨平台音色在预览时阻止提交，修正音色后执行使用修正后的 ID', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const n = addNode(doc, 'plein/speech', {
+    params: {
+      model: 'plein/mock:audio',
+      text: '测试手选音色的恢复。',
+      voice: { provider: 'minimax/api', voiceId: 'foreign-voice' },
+    },
+  })
+  const submit = vi.spyOn(mockProvider, 'submit')
+  const blocked = await preview(server, id, n)
+  expect(blocked.status).toBe('blocked')
+  expect(blocked.blocked).toEqual([
+    { code: 'prepare_failed', message: expect.stringContaining('请换成同一平台的音色或模型') },
+  ])
+  const failed = server.runs.start(id, n, 'local')
+  expect(await server.runs.wait(failed)).toBe('failed')
+  expect(submit).not.toHaveBeenCalled()
+  await until(() => !server.runs.isRunning(id, n))
+  setParams(doc, n, { voice: { provider: 'plein/mock', voiceId: 'mock-male' } })
+  const ready = await preview(server, id, n)
+  expect(ready.status).toBe('ready')
+  expect(ready.inputHash).not.toBe(blocked.inputHash)
+  const res = await run(server, id, n, ready.inputHash)
+  expect(res.status).toBe(202)
+  const { runId } = (await res.json()) as { runId: string }
+  expect(await server.runs.wait(runId)).toBe('succeeded')
+  expect(submit).toHaveBeenCalledTimes(1)
+  expect(submit.mock.calls[0]![0].input).toMatchObject({ voice: 'mock-male' })
+}, 30_000)
+
+it('旧画布未标平台的手选音色提前提示，仍按原 ID 提交', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const n = addNode(doc, 'plein/speech', {
+    params: { model: 'plein/mock:audio', text: '旧音色兼容检查。', voice: 'mock-female' },
+  })
+  const submit = vi.spyOn(mockProvider, 'submit')
+  const p = await preview(server, id, n)
+  expect(p.status).toBe('ready')
+  expect(p.notices).toEqual([
+    { code: 'voice_unverified', message: expect.stringContaining('未标明所属平台') },
+  ])
+  const res = await run(server, id, n, p.inputHash)
+  expect(res.status).toBe(202)
+  const { runId } = (await res.json()) as { runId: string }
+  expect(await server.runs.wait(runId)).toBe('succeeded')
+  expect(submit.mock.calls[0]![0].input).toMatchObject({ voice: 'mock-female' })
+}, 30_000)
+
 /** 记下送到 mock 平台的参考图 */
 function captureSubmits() {
   const seen: Array<{ prompt: string; references: AssetRef[] }> = []

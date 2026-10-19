@@ -1,6 +1,50 @@
 import { expect, test } from '@playwright/test'
 import { clickElement, newProject, waitNode } from './canvas'
 
+test('跨平台手选音色在生成前提示，切换正确音色后恢复并产出音频', async ({ page }) => {
+  await newProject(page)
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/speech',
+      name: '跨平台音色恢复',
+      x: 400,
+      y: 200,
+      params: {
+        model: 'plein/mock:audio',
+        text: '换回正确的平台后继续配音。',
+        voice: { provider: 'minimax/api', voiceId: 'foreign-voice' },
+      },
+    }),
+  )
+  await clickElement(page, id)
+  const preview = page.getByTestId('input-preview')
+  await expect(preview).toContainText('不会提交')
+  await preview.getByRole('button', { name: /实际输入/ }).click()
+  await expect(page.getByText(/音色 foreign-voice 属于 minimax\/api，当前配音模型/)).toBeVisible()
+  const generate = page.getByRole('button', { name: '生成', exact: true })
+  await expect(generate).toBeDisabled()
+  await page.getByRole('button', { name: '参数', exact: true }).click()
+  await page.getByRole('button', { name: '更多参数', exact: true }).click()
+  await page.getByRole('combobox', { name: '音色', exact: true }).click()
+  await page.getByRole('option', { name: /Mock 女声/ }).click()
+  await expect(preview).not.toContainText('不会提交')
+  await expect(generate).toBeEnabled()
+  await generate.click()
+  await waitNode(page, id)
+  const result = await page.evaluate((id) => window.__plein.engine.doc.get(id)!.results![0]!, id)
+  expect(result.value.type).toBe('audio')
+  const canvas = /#\/c\/([^/?]+)/.exec(page.url())![1]
+  const jobs = await (await page.request.get(`/api/canvases/${canvas}/jobs`)).json()
+  expect(jobs.jobs.find((job: { nodeId: string }) => job.nodeId === id).input.voice).toEqual({
+    provider: 'plein/mock',
+    voiceId: 'mock-female',
+  })
+  await expect(preview).toHaveAttribute('aria-busy', 'false')
+  await expect(preview).toContainText('mock-female')
+  await expect(preview).not.toContainText('foreign-voice')
+  await page.screenshot({ path: test.info().outputPath('speech-voice-recovered.png') })
+})
+
 for (const initial of ['mock-female', 'initial-custom']) {
   test(`角色音色从 ${initial} 跟随外部切换，默认选择可以撤销恢复`, async ({ page }) => {
     await newProject(page)

@@ -1,4 +1,5 @@
 import { imageProcessParams, videoModeProblem, type VideoMode } from '@plein/nodes'
+import { speechVoice } from '../executors/audio'
 import {
   appendDeliveryRecord,
   freezeDeliveryOrigins,
@@ -1493,6 +1494,12 @@ export class NodeRuns implements BatchHost {
         .get(modelRef.provider)
         ?.def.models.find((m) => m.id === modelRef.model)?.limits
     const effective = this.latestParams(el, { def, params, inputs }) ?? {}
+    if (def.capability === 'audio.speech') {
+      const check = speechVoice(String(effective.model ?? ''), voiceOf(effective))
+      if (check.problem) blocked.push({ code: 'prepare_failed', message: check.problem })
+      if (check.notice && !notices.some((n) => n.code === 'voice_unverified'))
+        notices.push({ code: 'voice_unverified', message: check.notice })
+    }
     if (def.capability === 'video.generate') {
       const images = inputs.images?.length ?? 0
       const videos = inputs.videos?.length ?? 0

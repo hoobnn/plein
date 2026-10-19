@@ -1,4 +1,4 @@
-import { sfxNode, transcribeNode } from '@plein/nodes'
+import { sfxNode, transcribeNode, type VoiceRef } from '@plein/nodes'
 import {
   defineExecutor,
   inputAssets,
@@ -9,6 +9,18 @@ import {
   type TranscriptSegment,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
+
+/** 预检与执行共用音色的平台约束；旧音色仍允许使用，但先说明无法校验。 */
+export function speechVoice(model: string, voice: VoiceRef) {
+  const provider = parseModelRef(model)?.provider ?? ''
+  if (voice.voiceId && voice.provider && provider && voice.provider !== provider)
+    return {
+      problem: `音色 ${voice.voiceId} 属于 ${voice.provider}，当前配音模型是 ${provider} 的，请换成同一平台的音色或模型`,
+    }
+  if (voice.voiceId && !voice.provider)
+    return { notice: `音色 ${voice.voiceId} 未标明所属平台，请确认它适用于当前模型` }
+  return {}
+}
 
 const SPEECH_EMOTIONS: Record<string, string> = {
   happy: 'happy',
