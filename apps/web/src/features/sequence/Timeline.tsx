@@ -2,6 +2,7 @@ import type { Cue } from '@plein/nodes'
 import { type ComposeTransition, overlapping } from '@plein/plugin-sdk'
 import {
   Children,
+  useCallback,
   type PointerEvent as ReactPointerEvent,
   useEffect,
   useLayoutEffect,
@@ -75,9 +76,16 @@ function usePointerGesture() {
     onMove: (event: PointerEvent) => void,
     onEnd?: () => void,
     onCancel?: () => void,
+    guard?: { current(): boolean; invalid(): void },
   ) => {
     const move = (event: PointerEvent) => {
-      if (event.pointerId === pointerId) onMove(event)
+      if (event.pointerId !== pointerId) return
+      if (guard && !guard.current()) {
+        finish(false)
+        guard.invalid()
+        return
+      }
+      onMove(event)
     }
     const finish = (commit: boolean) => {
       window.removeEventListener('pointermove', move)
@@ -89,7 +97,13 @@ function usePointerGesture() {
       else onCancel?.()
     }
     const up = (event: PointerEvent) => {
-      if (event.pointerId === pointerId) finish(true)
+      if (event.pointerId !== pointerId) return
+      if (guard && !guard.current()) {
+        finish(false)
+        guard.invalid()
+        return
+      }
+      finish(true)
     }
     const cancel = (event: PointerEvent) => {
       if (event.pointerId === pointerId) finish(false)
@@ -102,7 +116,13 @@ function usePointerGesture() {
     window.addEventListener('blur', blur)
   }
 
-  return { closing, cancel: () => cancelGesture.current?.(), trackPointer }
+  const cancel = useCallback(() => {
+    const current = cancelGesture.current
+    if (!current) return false
+    current()
+    return true
+  }, [])
+  return { closing, cancel, trackPointer }
 }
 
 const TRANSITION_LABELS: Record<ComposeTransition['type'], string> = {
@@ -119,6 +139,8 @@ const TRANSITION_LABELS: Record<ComposeTransition['type'], string> = {
  */
 export function Timeline({
   readOnly = false,
+  interactionKey,
+  readInteractionKey,
   items,
   total,
   music,
@@ -130,6 +152,8 @@ export function Timeline({
   onBeforeInteract,
 }: {
   readOnly?: boolean
+  interactionKey: string
+  readInteractionKey(): string
   items: TrackItem[]
   total: number
   /** 配乐和它的音量包络（对白时压低的地方画成凹下去） */
@@ -147,6 +171,7 @@ export function Timeline({
   const head = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState(0)
   const [requestedZoom, setZoom] = useState(1)
+  const [gestureNotice, setGestureNotice] = useState<string | null>(null)
   const { closing, cancel: cancelScrub, trackPointer: trackScrub } = usePointerGesture()
 
   useLayoutEffect(() => {
@@ -257,6 +282,11 @@ export function Timeline({
       aria-label="时间线"
       onPointerDownCapture={onBeforeInteract}
     >
+      {gestureNotice && (
+        <p role="status" aria-label="时间线操作已取消" className="ui-help shrink-0 px-3 py-2">
+          {gestureNotice}
+        </p>
+      )}
       {items.some((item) => !item.timingReady) && (
         <p role="status" aria-label="镜头定位暂不可用" className="ui-help shrink-0 px-3 py-2">
           部分镜头或前序镜头的时长未就绪，相关镜头暂不能定位、重排或拖边修剪。可先查看设置，等待加载或修复素材信息。
@@ -331,6 +361,9 @@ export function Timeline({
 
           <ClipTrack
             readOnly={readOnly}
+            interactionKey={interactionKey}
+            readInteractionKey={readInteractionKey}
+            onGestureNotice={setGestureNotice}
             items={items}
             pps={pps}
             x={x}
@@ -497,6 +530,9 @@ interface Drag {
  */
 function ClipTrack({
   readOnly,
+  interactionKey,
+  readInteractionKey,
+  onGestureNotice,
   items,
   pps,
   x,
@@ -508,6 +544,9 @@ function ClipTrack({
   onFocusTimeline,
 }: {
   readOnly: boolean
+  interactionKey: string
+  readInteractionKey(): string
+  onGestureNotice(message: string | null): void
   items: TrackItem[]
   pps: number
   x(t: number): number
@@ -523,11 +562,21 @@ function ClipTrack({
   /** 落下后的位移补偿：先停在松手处，下一帧滑回 0 */
   const [settle, setSettle] = useState<{ key: string; dx: number; animate: boolean } | null>(null)
   const [trimming, setTrimming] = useState<string | null>(null)
+  // 取消后立即清除旧位移；下次操作再恢复动画，避免新布局被旧动画遮挡。
+  const [cancelled, setCancelled] = useState(false)
   const { closing, cancel: cancelGesture, trackPointer } = usePointerGesture()
 
+  const isCurrent = () => {
+    try {
+      return readInteractionKey() === interactionKey
+    } catch {
+      return false
+    }
+  }
+  const invalid = () => onGestureNotice('剪辑内容已更新，已取消本次拖动；请按当前内容重新操作。')
   useLayoutEffect(() => {
-    if (readOnly) cancelGesture()
-  }, [readOnly, cancelGesture])
+    if (cancelGesture()) onGestureNotice('剪辑内容已更新，已取消本次拖动；请按当前内容重新操作。')
+  }, [interactionKey, readOnly, cancelGesture, onGestureNotice])
 
   useLayoutEffect(() => {
     if (!settle || settle.animate) return
@@ -539,13 +588,17 @@ function ClipTrack({
     if (closing) return
     onSelect(item.key)
     if (!item.timingReady) return
+    setCancelled(false)
+    onGestureNotice(null)
     playhead.pause()
     playhead.seek(item.start)
   }
 
   const startDrag = (e: ReactPointerEvent, index: number) => {
-    if (e.button !== 0 || closing) return
+    if (e.button !== 0 || closing || !isCurrent()) return
     cancelGesture()
+    setCancelled(false)
+    onGestureNotice(null)
     const item = items[index]!
     onSelect(item.key)
     if (!item.timingReady) return
@@ -589,15 +642,25 @@ function ClipTrack({
         onMove(index, current.target)
       } else setSettle({ key: item.key, dx: current.dx, animate: false })
     }
-    trackPointer(e.pointerId, move, up, () => {
-      setDrag(null)
-      setSettle(null)
-    })
+    trackPointer(
+      e.pointerId,
+      move,
+      up,
+      () => {
+        setCancelled(true)
+        setDrag(null)
+        setSettle(null)
+      },
+      { current: isCurrent, invalid },
+    )
   }
 
   const startTrim = (e: ReactPointerEvent, item: TrackItem, edge: 'in' | 'out') => {
-    if (e.button !== 0 || item.pending || !item.timingReady || closing || readOnly) return
+    if (e.button !== 0 || item.pending || !item.timingReady || closing || readOnly || !isCurrent())
+      return
     cancelGesture()
+    setCancelled(false)
+    onGestureNotice(null)
     e.stopPropagation()
     e.preventDefault()
     onFocusTimeline()
@@ -630,13 +693,20 @@ function ClipTrack({
       setTrimming(null)
       if ('in' in patch || 'out' in patch) onTrim(item.key, patch, true)
     }
-    trackPointer(e.pointerId, move, up, () => {
-      setTrimming(null)
-      onTrim(item.key, {}, false)
-    })
+    trackPointer(
+      e.pointerId,
+      move,
+      up,
+      () => {
+        setCancelled(true)
+        setTrimming(null)
+        onTrim(item.key, {}, false)
+      },
+      { current: isCurrent, invalid },
+    )
   }
 
-  const w = drag ? items[drag.index]!.length * pps : 0
+  const w = drag ? (items[drag.index]?.length ?? 0) * pps : 0
   return (
     <div className="seq-row seq-row-clips" data-track="video">
       <TrackLabel icon="video" label="画面" />
@@ -652,7 +722,7 @@ function ClipTrack({
             else if (drag.index > drag.target && i >= drag.target && i < drag.index) dx = w
           } else if (settle?.key === it.key) dx = settle.dx
           // 落下那一帧所有块都瞬间就位（让位的块新 left 正好等于原 left + 让位量），只有被拖的块滑过去
-          const animate = !moving && !(settle && !settle.animate)
+          const animate = !cancelled && !moving && !(settle && !settle.animate)
           const width = Math.max(it.length * pps, 2)
           return (
             <div

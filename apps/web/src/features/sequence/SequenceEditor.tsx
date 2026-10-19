@@ -142,6 +142,31 @@ function projectSourceKey(read: ReturnType<typeof readSequence>) {
   })
 }
 
+/** 只比较已提交的镜头布局；本地修剪草稿、名称和混音等不使有效手势失效。 */
+function sequenceInteractionKey(
+  read: ReturnType<typeof readSequence>,
+  duration: (assetId: string) => number | undefined,
+  readOnly: boolean,
+) {
+  return JSON.stringify([
+    readOnly,
+    read.el?.nodeType,
+    read.params.transition,
+    read.params.transitionDuration,
+    read.rows.map((row) => [
+      row.source,
+      row.clip.assetId,
+      row.pending,
+      row.in,
+      row.out,
+      row.speed,
+      row.transition,
+      row.transitionDuration,
+      read.animatic ? row.out : duration(row.clip.assetId),
+    ]),
+  ])
+}
+
 /** 序列编辑器：调整镜头顺序、入出点，指定每段的对白、音效和字幕，导出成片 */
 export function SequenceEditor() {
   const engine = useCanvas((s) => s.engine)
@@ -481,19 +506,33 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   }
   const move = (from: number, to: number) => {
     if (engine.doc.readOnly) return
-    if (to < 0 || to >= rows.length || from === to) return
-    if (animatic) {
-      const next = [...animatic.shots]
+    const currentElement = engine.doc.get(id)
+    if (
+      !currentElement ||
+      (currentElement.nodeType !== ANIMATIC_TYPE &&
+        currentElement.nodeType !== sequenceNode.type) ||
+      sequenceParameterProblem(currentElement.params, currentElement.nodeType === ANIMATIC_TYPE)
+    )
+      return
+    const latest = readSequence(engine, id)
+    if (
+      JSON.stringify(latest.rows.map((r) => r.source)) !==
+      JSON.stringify(read.rows.map((r) => r.source))
+    )
+      return
+    if (to < 0 || to >= latest.rows.length || from === to) return
+    if (latest.animatic) {
+      const next = [...latest.animatic.shots]
       const [shot] = next.splice(from, 1)
       next.splice(to, 0, shot!)
       setParam(engine.doc, id, 'shots', next)
       engine.doc.flush()
       return
     }
-    const next = [...read.rows]
+    const next = [...latest.rows]
     const [r] = next.splice(from, 1)
     next.splice(to, 0, r!)
-    write(settings(next))
+    write(settings(next, latest.params.clips))
   }
   const set = (key: keyof SequenceParams, value: unknown) => {
     if (engine.doc.readOnly) return
@@ -1131,6 +1170,10 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           <MediaReloadContext.Provider value={previewRevision}>
             <Timeline
               readOnly={engine.doc.readOnly}
+              interactionKey={sequenceInteractionKey(read, duration, engine.doc.readOnly)}
+              readInteractionKey={() =>
+                sequenceInteractionKey(readSequence(engine, id), duration, engine.doc.readOnly)
+              }
               onBeforeInteract={() => {
                 const active = document.activeElement
                 if (active instanceof HTMLElement && active.closest('.seq-inspector'))

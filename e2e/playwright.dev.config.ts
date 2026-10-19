@@ -185,6 +185,7 @@ export default defineConfig({
     'sequence-subtitle-renderer.spec.ts',
     'sequence-readonly.spec.ts',
     'sequence-settings-collaboration.spec.ts',
+    'sequence-gesture-collaboration.spec.ts',
     'sequence-timeline-focus.spec.ts',
     'sequence.spec.ts',
     'sequence-long.spec.ts',
