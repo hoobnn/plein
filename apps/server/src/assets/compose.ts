@@ -223,6 +223,7 @@ export async function composeVideo(
   dir: string,
   opts: { signal: AbortSignal; onProgress?: (fraction: number) => void },
 ) {
+  opts.signal.throwIfAborted()
   if (spec.clips.length === 0) throw new Error('没有可合成的画面')
   const out = join(dir, 'out.mp4')
   let fontsdir = false
@@ -237,9 +238,12 @@ export async function composeVideo(
   }
   const { args, total } = composeArgs(spec, files, infos, out, await h264Args(), fontsdir)
   if (total <= 0) throw new Error('画面总时长为 0，检查各段的入点和出点')
+  opts.signal.throwIfAborted()
 
   await new Promise<void>((resolve, reject) => {
     const proc = spawn(ffmpegBin(), args, { cwd: dir, signal: opts.signal })
+    let failure: Error | undefined
+    let killTimer: ReturnType<typeof setTimeout> | undefined
     let stderr = ''
     let buf = ''
     proc.stdout.on('data', (chunk: Buffer) => {
@@ -254,9 +258,19 @@ export async function composeVideo(
     proc.stderr.on('data', (chunk: Buffer) => {
       stderr = (stderr + chunk.toString()).slice(-4000)
     })
-    proc.on('error', reject)
+    // AbortSignal 的 error 早于 close；必须等退出后才允许调用方清理工作目录。
+    proc.on('error', (error) => {
+      failure = error
+      if (opts.signal.aborted && proc.pid && !killTimer) {
+        killTimer = setTimeout(() => proc.kill('SIGKILL'), 5_000)
+        killTimer.unref()
+      }
+    })
     proc.on('close', (code) => {
-      if (code === 0) resolve()
+      clearTimeout(killTimer)
+      if (failure) reject(failure)
+      else if (opts.signal.aborted) reject(opts.signal.reason)
+      else if (code === 0) resolve()
       else reject(new Error(`ffmpeg 合成失败（${code}）：${stderr.trim()}`))
     })
   })
