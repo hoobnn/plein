@@ -15,7 +15,7 @@ import { placeImports } from './import'
 /** 变速可选的倍数：本地工具直接改素材，不是 TTS 那种合成时的语速参数 */
 export const SPEEDS = [0.5, 0.75, 1.5, 2, 3] as const
 
-/** 服务端允许的变速范围，这里先夹一次，省得把明显越界的值发出去 */
+/** 服务端允许的变速范围；无效输入由表单提示，不擅自改变用户的倍数。 */
 const SPEED_RANGE = { min: 0.25, max: 4 } as const
 
 /** 多个产物（音视频分离）之间的间距 */
@@ -44,17 +44,18 @@ export function formatTimecode(seconds: number) {
   return `${head}:${s < 10 ? '0' : ''}${Number(s.toFixed(1))}`
 }
 
-/** 夹到合法区间；起倒挂或出界返回 null，让调用方提示而不是默默改用户输入 */
+/** 夹到素材范围；无效数字、倒挂或夹紧后没有长度时返回 null，保留输入精度。 */
 export function clampRange(
   start: number,
   end: number,
   duration?: number,
 ): { start: number; end: number } | null {
   const hi = duration ?? Number.POSITIVE_INFINITY
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null
   const s = Math.max(0, start)
   const e = Math.min(end, hi)
   if (!(e > s) || s > hi) return null
-  return { start: Number(s.toFixed(2)), end: Number(e.toFixed(2)) }
+  return { start: s, end: e }
 }
 
 /** 平均切分成 n 段，供“切分”一步给出可用的默认区间 */
@@ -70,8 +71,10 @@ export function evenSegments(
   }))
 }
 
-export function clampSpeed(speed: number) {
-  return Number(Math.min(SPEED_RANGE.max, Math.max(SPEED_RANGE.min, speed)).toFixed(2))
+export function validSpeed(speed: number) {
+  return Number.isFinite(speed) && speed >= SPEED_RANGE.min && speed <= SPEED_RANGE.max
+    ? speed
+    : null
 }
 
 /** 裁剪框默认值：整张图；再夹一次，保证不会超过摆正后的尺寸 */

@@ -5,7 +5,7 @@ import {
   mediaTargetsFor,
   type MediaTarget,
   clampRange,
-  clampSpeed,
+  validSpeed,
   cropRect,
   deriveLabel,
   elementSize,
@@ -75,11 +75,19 @@ describe('区间与倍数', () => {
     expect(evenSegments(5, 99)).toHaveLength(12)
   })
 
-  it('变速倍数夹在服务端允许的范围里', () => {
-    expect(clampSpeed(2)).toBe(2)
-    expect(clampSpeed(0.1)).toBe(0.25)
-    expect(clampSpeed(9)).toBe(4)
-    expect(clampSpeed(1.234)).toBe(1.23)
+  it('拒绝无效或越界倍数，合法倍数不被改写', () => {
+    for (const speed of [0, -1, 0.249, 4.01, Number.NaN, Infinity, -Infinity])
+      expect(validSpeed(speed)).toBeNull()
+    for (const speed of [0.25, 4, 2, 1.234]) expect(validSpeed(speed)).toBe(speed)
+  })
+  it('保留毫秒区间，不因取整把有效范围变成零长度', () => {
+    expect(clampRange(0.101, 0.104, 2)).toEqual({ start: 0.101, end: 0.104 })
+  })
+  it('拒绝非有限入点和出点', () => {
+    for (const value of [Number.NaN, Infinity, -Infinity]) {
+      expect(clampRange(value, 1, 2)).toBeNull()
+      expect(clampRange(0, value, 2)).toBeNull()
+    }
   })
 })
 

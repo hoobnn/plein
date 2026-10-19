@@ -2,10 +2,10 @@ import { useCatalog } from '../stores/catalog'
 import { deriveNode } from '../canvas/presets'
 import type { Engine } from '@plein/canvas-core'
 import type { Asset, MediaCapsInfo, MediaDeriveRequest, MediaOp } from '@plein/protocol'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import {
   clampRange,
-  clampSpeed,
+  validSpeed,
   cropRect,
   formatTimecode,
   mediaCaps,
@@ -81,7 +81,22 @@ export function MediaTools({
 }) {
   const notify = useCanvas((s) => s.notify)
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState<string | null>(null)
+  const [form, setFormState] = useState<string | null>(null)
+  const [error, setError] = useState<{
+    key: string
+    message: string
+    waitingForDuration: boolean
+  } | null>(null)
+  const errorId = useId()
+  const inputs = useRef(new Map<string, HTMLInputElement>())
+  const setForm = (next: string | null) => {
+    setError(null)
+    setFormState(next)
+  }
+  const invalid = (key: string, message: string, waitingForDuration = false) => {
+    setError({ key, message, waitingForDuration })
+    inputs.current.get(key)?.focus()
+  }
   const [loadedMeta, setMeta] = useState<{ assetId: string; asset: Asset } | null>(null)
   const [values, setValues] = useState<Record<string, string>>({})
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
@@ -105,6 +120,10 @@ export function MediaTools({
   const formTargets = form ? applicable(form as MediaOp) : list
   const metaAssetId = formTargets[0]?.assetId
   const meta = loadedMeta && loadedMeta.assetId === metaAssetId ? loadedMeta.asset : null
+  useEffect(() => {
+    if (meta?.duration !== undefined)
+      setError((previous) => (previous?.waitingForDuration ? null : previous))
+  }, [meta?.duration])
   const scopeText = (op: MediaOp) => {
     const targets = applicable(op),
       kinds = new Set(targets.map((t) => t.kind))
@@ -142,7 +161,10 @@ export function MediaTools({
     }
   }, [open, meta, metaAssetId, notify])
 
-  const set = (key: string, value: string) => setValues((v) => ({ ...v, [key]: value }))
+  const set = (key: string, value: string) => {
+    setValues((v) => ({ ...v, [key]: value }))
+    if (error?.key === key) setError(null)
+  }
 
   /** 多选时按目标顺序逐个加工，失败的跳过并如实报数；上一轮还没完时不重复发起 */
   const runAll = async (op: MediaOp, make: (t: MediaTarget) => MediaDeriveRequest) => {
@@ -171,17 +193,27 @@ export function MediaTools({
       return
     }
     if (form === 'trim') {
-      const range = clampRange(
-        parseTimecode(values.start ?? '0') ?? 0,
-        parseTimecode(values.end ?? '0') ?? Number.NaN,
-        meta?.duration,
-      )
-      if (!range) return notify('区间不对：出点要大于入点，且不能超出素材长度')
+      const start = parseTimecode(values.start ?? '0')
+      const end = parseTimecode(values.end ?? String(meta?.duration ?? ''))
+      if (start === null) return invalid('start', '入点时间看不懂，试试 12.5 或 1:02')
+      if (end === null)
+        return invalid(
+          'end',
+          meta?.duration === undefined && values.end === undefined
+            ? '正在读取素材时长，请稍后再试'
+            : '出点时间看不懂，试试 12.5 或 1:02',
+          meta?.duration === undefined && values.end === undefined,
+        )
+      if (meta?.duration !== undefined && end > meta.duration + 0.05)
+        return invalid('end', `出点超出素材长度（只有 ${meta.duration} 秒）`)
+      const range = clampRange(start, end, meta?.duration)
+      if (!range) return invalid('end', '出点要大于入点，且不能超出素材长度')
       await runAll('trim', (t) => ({ op: 'trim', assetId: t.assetId, ...range }))
       return
     }
     if (form === 'speed') {
-      const speed = clampSpeed(num(values.speed ?? '1'))
+      const speed = validSpeed(num(values.speed ?? '2'))
+      if (speed === null) return invalid('speed', '倍数需为 0.25–4 之间的数字')
       await runAll('speed', (t) => ({
         op: 'speed',
         assetId: t.assetId,
@@ -223,13 +255,19 @@ export function MediaTools({
           : { op: 'separate', assetId: t.assetId },
     )
 
-  const field = (key: string, label: string, fallback: string) => (
+  const field = (key: string, label: string, placeholder: string, fallback = '') => (
     <label className="ui-field">
       <span className="ui-label">{label}</span>
       <input
+        ref={(input) => {
+          if (input) inputs.current.set(key, input)
+          else inputs.current.delete(key)
+        }}
         className="ui-input"
-        value={values[key] ?? ''}
-        placeholder={fallback}
+        aria-invalid={error?.key === key || undefined}
+        aria-describedby={error?.key === key ? errorId : undefined}
+        value={values[key] ?? fallback}
+        placeholder={placeholder}
         onChange={(e) => set(key, e.target.value)}
       />
     </label>
@@ -290,6 +328,11 @@ export function MediaTools({
                     当前环境暂不支持此操作，请返回选择其他操作。
                   </p>
                 )}
+                {error && (
+                  <p id={errorId} role="alert" className="ui-help text-danger">
+                    {error.message}
+                  </p>
+                )}
                 {form === 'crop' && (
                   <div className="grid grid-cols-2 gap-2">
                     {field('left', '左', '0')}
@@ -301,7 +344,12 @@ export function MediaTools({
                 {form === 'trim' && (
                   <div className="grid grid-cols-2 gap-2">
                     {field('start', '入点', '0:00')}
-                    {field('end', '出点', formatTimecode(meta?.duration ?? 0))}
+                    {field(
+                      'end',
+                      '出点',
+                      formatTimecode(meta?.duration ?? 0),
+                      String(meta?.duration ?? ''),
+                    )}
                   </div>
                 )}
                 {form === 'speed' && (
@@ -319,6 +367,7 @@ export function MediaTools({
                       ))}
                     </div>
                     {field('speed', '倍数', '2')}
+                    <p className="ui-help pt-1">支持 0.25–4×。</p>
                     {formTargets.some((t) => t.kind === 'audio') && (
                       <label className="flex items-center gap-2 pt-2 text-sm">
                         <input
@@ -487,7 +536,7 @@ export function MediaTools({
                     type="button"
                     className="ui-menu-item justify-between"
                     onClick={() => {
-                      setValues({ start: '0:00', end: formatTimecode(meta?.duration ?? 0) })
+                      setValues({ start: '0:00' })
                       setForm('trim')
                     }}
                   >
