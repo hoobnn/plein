@@ -84,16 +84,6 @@ export function BatchChecklist({
       off()
     }
   }, [engine, load, invalidate])
-  useEffect(() => {
-    const key = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy) {
-        event.stopPropagation()
-        onClose()
-      }
-    }
-    window.addEventListener('keydown', key, true)
-    return () => window.removeEventListener('keydown', key, true)
-  }, [onClose, busy])
 
   const commit = async () => {
     if (!plan || busy || stale || loading || !online) return
@@ -128,6 +118,7 @@ export function BatchChecklist({
     >
       <ModalHeader
         title={`${roles[request.role]}生成清单`}
+        closeDisabled={busy}
         onClose={() => {
           if (!busy) onClose()
         }}

@@ -2,7 +2,7 @@ import type { Engine } from '@plein/canvas-core'
 import { useDocVersion } from '../../canvas/hooks'
 import { planDiffs, shotsOf, syncExpanded } from './model'
 import { type ShotRole, type SyncMode, voiceOf } from '@plein/nodes'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useCanvas } from '../../stores/canvas'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { EmptyState } from '../../ui/EmptyState'
@@ -77,15 +77,6 @@ export function StoryboardSync({
   const notify = useCanvas((s) => s.notify)
   const canvasId = useCanvas((s) => s.canvasId)
   const [error, setError] = useState<string | null>(null)
-  useEffect(() => {
-    // 分镜表浮层还开着时，本面板自己处理 Esc（见 StoryboardEditor 的按键拦截）
-    const key = (e: KeyboardEvent) => {
-      e.stopPropagation()
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', key, true)
-    return () => window.removeEventListener('keydown', key, true)
-  }, [onClose])
   const board = engine.doc.get(boardId)
   const shots = shotsOf(board)
   const diffs = planDiffs(engine, boardId)
@@ -139,7 +130,7 @@ export function StoryboardSync({
 
   const btn = 'ui-btn ui-btn-secondary'
   return (
-    <Modal label="计划差异" onClose={onClose} className="max-w-150">
+    <Modal label="计划差异" onClose={onClose} isolateKeys className="max-w-150">
       <ModalHeader title="计划与节点的差异" onClose={onClose}>
         <button
           type="button"

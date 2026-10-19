@@ -157,6 +157,7 @@ export default defineConfig({
     'storyboard-text-collaboration.spec.ts',
     'storyboard-structure.spec.ts',
     'storyboard-sync-boundaries.spec.ts',
+    'batch-checklist.spec.ts',
     'storyboard.spec.ts',
     'storyboard-editing.spec.ts',
     'storyboard-mention-navigation.spec.ts',

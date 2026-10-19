@@ -50,6 +50,34 @@ async function fixture(page: Page) {
   return { id, editor, panel, read }
 }
 
+for (const kind of ['sync', 'batch'] as const) {
+  test(`${kind} 子窗口叠加设置，Esc 只关闭最上层并逐层恢复焦点`, async ({ page }) => {
+    const f = await fixture(page)
+    let panel = f.panel
+    if (kind === 'batch') {
+      await panel.getByRole('button', { name: '关闭', exact: true }).click()
+      await f.editor.getByRole('button', { name: '批量出分镜图', exact: true }).click()
+      panel = page.getByRole('dialog', { name: '批量生成清单', exact: true })
+      await expect(panel.getByLabel('清单汇总')).toBeVisible()
+    }
+    const close = panel.getByRole('button', { name: '关闭', exact: true })
+    await close.focus()
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('plein:open-settings')))
+    const settings = page.getByRole('dialog', { name: '设置', exact: true })
+    await expect(settings).toBeVisible()
+    await settings.getByRole('button', { name: '关闭', exact: true }).focus()
+    await page.keyboard.press('Escape')
+    await expect(settings).toHaveCount(0)
+    await expect(panel).toBeVisible()
+    await expect(close).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(panel).toHaveCount(0)
+    await expect(f.editor).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(f.editor).toHaveCount(0)
+  })
+}
+
 for (const mode of ['unmodified', 'keep-overrides'] as const) {
   const label = mode === 'unmodified' ? '同步计划改动' : '不同步，按节点现状'
   for (const change of ['plan', 'actual', 'readonly', 'node-delete', 'shot-delete'] as const) {
