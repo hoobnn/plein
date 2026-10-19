@@ -72,6 +72,26 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const [mode, setMode] = useState<'edit' | 'review'>('edit')
   const [structureError, setStructureError] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const shotElements = useRef(new Map<string, HTMLElement>())
+  const addButton = useRef<HTMLButtonElement>(null)
+  const [focusTarget, setFocusTarget] = useState<{
+    shotId: string | null
+    description?: boolean
+  } | null>(null)
+  useEffect(() => {
+    if (!focusTarget) return
+    // 只消费本次结构操作；目标已被撤销或删除时，不在之后重做时补抢焦点。
+    setFocusTarget(null)
+    const article = focusTarget.shotId ? shotElements.current.get(focusTarget.shotId) : null
+    const target = focusTarget.shotId
+      ? article?.querySelector<HTMLElement>(
+          focusTarget.description ? '[data-storyboard-field="画面"] textarea' : 'h3 button',
+        )
+      : addButton.current
+    if (!target) return
+    target.focus({ preventScroll: true })
+    target.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [focusTarget])
   const allCollapsed = shots.length > 0 && shots.every((s) => collapsed.has(s.id))
   const expanded = expandedNodes(engine, id)
   const diffs = planDiffs(engine, id)
@@ -162,11 +182,12 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
     const current = readShots()
     const no = (current.at(-1)?.no ?? 0) + 1
+    const shotId = newShotId()
     engine.doc.undo.stopCapturing()
     write([
       ...current,
       {
-        id: newShotId(),
+        id: shotId,
         no,
         duration: 5,
         shotSize: '中景',
@@ -182,6 +203,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       },
     ])
     engine.doc.undo.stopCapturing()
+    setMode('edit')
+    setFocusTarget({ shotId, description: true })
   }
   /**
    * 删镜头：只从计划里去掉这一行。已经展开出来的节点和它们的产物留在画布上，
@@ -229,7 +252,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       setStructureError('镜头内容或展开结构已变化，本次删除未执行；请检查后重新删除')
       return
     }
-    const next = dropShot(readShots(), shotId)
+    const latest = readShots()
+    const index = latest.findIndex((s) => s.id === shotId)
+    const next = dropShot(latest, shotId)
     engine.doc.undo.stopCapturing()
     engine.doc.ydoc.transact(() => {
       setParam(engine.doc, id, 'shots', next.shots)
@@ -237,6 +262,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }, engine.doc.origin)
     engine.doc.flush()
     engine.doc.undo.stopCapturing()
+    if (mode === 'edit')
+      setFocusTarget({ shotId: (next.shots[index] ?? next.shots[index - 1])?.id ?? null })
     notify(nodes ? `已删除镜头，${nodes} 个节点保留在画布上（Ctrl+Z 可撤销）` : '已删除镜头')
   }
   const scope = picked.size ? `选中的 ${picked.size} 个镜头` : '全部镜头'
@@ -323,7 +350,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         >
           节奏样片
         </button>
-        <button type="button" className={btn} onClick={addShot}>
+        <button ref={addButton} type="button" className={btn} onClick={addShot}>
           <Icon name="plus" />
           添加镜头
         </button>
@@ -483,6 +510,10 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             {shots.map((s) => (
               <article
                 key={s.id}
+                ref={(node) => {
+                  if (node) shotElements.current.set(s.id, node)
+                  else shotElements.current.delete(s.id)
+                }}
                 aria-label={`镜头 ${String(s.no).padStart(2, '0')}`}
                 className="storyboard-shot rounded-xl border border-line bg-surface"
               >

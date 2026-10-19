@@ -48,6 +48,63 @@ async function fixture(page: Page, expanded = false) {
   return { id, dialog, read }
 }
 
+test('添加镜头滚动到新画面并可直接输入，审核模式也能开始编辑新镜头', async ({ page }) => {
+  const f = await fixture(page)
+  await page.setViewportSize({ width: 800, height: 700 })
+  for (const review of [false, true]) {
+    if (review) await f.dialog.getByRole('button', { name: '审核镜头', exact: true }).click()
+    await f.dialog.getByRole('button', { name: '添加镜头', exact: true }).click()
+    const description = f.dialog.getByRole('article').last().getByLabel('画面', { exact: true })
+    await expect(description).toBeFocused()
+    await expect(description).toBeInViewport()
+    await page.keyboard.type(review ? '从审核添加的画面' : '新增的画面')
+    await description.blur()
+    await expect
+      .poll(async () => (await f.read()).shots.at(-1)!.description)
+      .toBe(review ? '从审核添加的画面' : '新增的画面')
+    if (review)
+      await f.dialog.screenshot({ path: test.info().outputPath('new-shot-focused-800.png') })
+  }
+})
+
+test('添加同帧撤销后，重做不会用过期定位抢走当前输入焦点', async ({ page }) => {
+  const f = await fixture(page)
+  await f.dialog.getByRole('button', { name: '添加镜头', exact: true }).evaluate((button) => {
+    ;(button as HTMLButtonElement).click()
+    ;(window.__plein.engine as typeof window.__plein.engine & { undo(): void }).undo()
+  })
+  await expect(f.dialog.getByRole('article')).toHaveCount(2)
+  const description = f.dialog.getByRole('article').first().getByLabel('画面', { exact: true })
+  await description.focus()
+  await page.evaluate(() =>
+    (window.__plein.engine as typeof window.__plein.engine & { redo(): void }).redo(),
+  )
+  await expect(f.dialog.getByRole('article')).toHaveCount(3)
+  await expect(description).toBeFocused()
+})
+
+for (const index of [0, 1]) {
+  test(`删除第 ${index + 1} 个镜头后焦点留在相邻镜头，删除最后一项回到添加`, async ({ page }) => {
+    const f = await fixture(page)
+    await f.dialog.getByRole('button', { name: '收起全部镜头', exact: true }).click()
+    const remove = f.dialog.getByRole('button', { name: /^删除镜头 \d/ }).nth(index)
+    await remove.focus()
+    await page.keyboard.press('Enter')
+    await expect(f.dialog.getByRole('article')).toHaveCount(1)
+    await expect(f.dialog.getByRole('button', { name: /^展开镜头 \d/ })).toBeFocused()
+    const last = f.dialog.getByRole('button', { name: /^删除镜头 \d/ })
+    await last.focus()
+    await page.keyboard.press('Enter')
+    await expect(f.dialog.getByRole('article')).toHaveCount(0)
+    const add = f.dialog.getByRole('button', { name: '添加镜头', exact: true })
+    await expect(add).toBeFocused()
+    await page.keyboard.press('Enter')
+    const description = f.dialog.getByRole('article').getByLabel('画面', { exact: true })
+    await expect(description).toBeFocused()
+    await expect(description).toBeInViewport()
+  })
+}
+
 for (const change of ['content', 'structure', 'readonly'] as const) {
   test(`删除确认期间${change}变化不删除新内容或脱离新增节点，核对后可重试`, async ({ page }) => {
     const f = await fixture(page, true)
@@ -183,6 +240,7 @@ test('已展开镜头可取消删除，确认后节点保留且撤销重做整�
   await confirmation.getByRole('button', { name: '删除镜头', exact: true }).click()
   await expect(f.dialog.getByRole('article')).toHaveCount(1)
   const removed = await f.read()
+  await expect(f.dialog.getByRole('button', { name: '收起镜头 2', exact: true })).toBeFocused()
   expect(removed.nodes.map((node) => node.id)).toEqual(before.nodes.map((node) => node.id))
   expect(
     removed.nodes
