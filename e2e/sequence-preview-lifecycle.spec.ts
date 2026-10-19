@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
-import { centerOf, clickElement, newProject } from './canvas'
+import { centerOf, clickElement, elements, newProject } from './canvas'
 
 let dir = ''
 test.beforeAll(() => {
@@ -13,6 +13,17 @@ test.beforeAll(() => {
   for (const color of ['red', 'blue'])
     ff('-f', 'lavfi', '-i', `color=c=${color}:s=96x64`, '-frames:v', '1', join(dir, `${color}.png`))
   ff('-f', 'lavfi', '-i', 'sine=f=440:d=3', join(dir, 'audio.wav'))
+  ff(
+    '-f',
+    'lavfi',
+    '-i',
+    'color=c=red:s=96x64:d=3:r=8',
+    '-c:v',
+    'libvpx-vp9',
+    '-deadline',
+    'realtime',
+    join(dir, 'video.webm'),
+  )
 })
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
@@ -231,4 +242,109 @@ for (const action of ['switch', 'reopen'] as const) {
       }
     })
   }
+}
+
+for (const action of ['reopen', 'resize'] as const) {
+  test(`视频初始化等待中 ${action}，旧解码迟到结束不再降级或干扰新画面`, async ({ page }) => {
+    const warnings: string[] = []
+    const errors: string[] = []
+    page.on('console', (message) => {
+      if (message.type() === 'warning' && message.text().includes('WebCodecs 解码不可用'))
+        warnings.push(message.text())
+    })
+    page.on('pageerror', (error) => errors.push(error.message))
+    await newProject(page)
+    const chooser = page.waitForEvent('filechooser')
+    await page.getByRole('button', { name: '上传', exact: true }).click()
+    await (await chooser).setFiles(join(dir, 'video.webm'))
+    await expect
+      .poll(async () => (await elements(page)).filter((e) => e.kind === 'video').length)
+      .toBe(1)
+    const video = (await elements(page)).find((e) => e.kind === 'video')!
+    const asset = await page.evaluate((id) => window.__plein.engine.doc.get(id)!.assetId!, video.id)
+    await page.evaluate((asset) => {
+      const original = window.fetch.bind(window)
+      let release!: () => void
+      let blocked = true
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      window.addEventListener(
+        'allow-new-video',
+        () => {
+          blocked = false
+        },
+        { once: true },
+      )
+      window.addEventListener('release-old-video', () => release(), { once: true })
+      window.fetch = async (...args) => {
+        const url = args[0] instanceof Request ? args[0].url : String(args[0])
+        if (!blocked || new URL(url, location.href).pathname !== `/api/assets/${asset}`)
+          return original(...args)
+        document.body.dataset.oldVideoReads = String(
+          Number(document.body.dataset.oldVideoReads ?? 0) + 1,
+        )
+        try {
+          await gate
+          return await original(...args)
+        } finally {
+          document.body.dataset.oldVideoSettled = String(
+            Number(document.body.dataset.oldVideoSettled ?? 0) + 1,
+          )
+        }
+      }
+    }, asset)
+    const id = await page.evaluate((source) => {
+      const id = window.__plein.addNode({
+        type: 'plein/sequence',
+        name: '视频解码关闭重开',
+        x: 3000,
+        y: 1000,
+        params: { subtitles: false, aspectRatio: '16:9' },
+      })
+      window.__plein.connect([source, 'video'], [id, 'clips'])
+      return id
+    }, video.id)
+    try {
+      let editor = await open(page, id)
+      await expect
+        .poll(() => page.evaluate(() => Number(document.body.dataset.oldVideoReads ?? 0)))
+        .toBeGreaterThan(0)
+      await page.evaluate(() => window.dispatchEvent(new Event('allow-new-video')))
+      if (action === 'reopen') {
+        await editor.getByRole('button', { name: '关闭', exact: true }).click()
+        await expect(editor).toHaveCount(0)
+        editor = await open(page, id)
+      } else {
+        await editor.getByRole('button', { name: '成片', exact: true }).click()
+        await editor.getByRole('button', { name: '竖屏 9:16', exact: true }).click()
+      }
+      const canvas = editor.locator('.seq-stage > canvas')
+      const red = () =>
+        canvas.evaluate((canvas: HTMLCanvasElement) => {
+          const p = canvas
+            .getContext('2d')!
+            .getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data
+          return p[0]! > 150 && p[2]! < 80
+        })
+      await expect.poll(red).toBe(true)
+      await expect(canvas).toHaveAttribute('data-decoder', 'webcodecs')
+      await page.evaluate(() => window.dispatchEvent(new Event('release-old-video')))
+      await expect
+        .poll(() => page.evaluate(() => Number(document.body.dataset.oldVideoSettled ?? 0)))
+        .toBeGreaterThan(0)
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      )
+      expect(warnings).toEqual([])
+      expect(errors).toEqual([])
+      await expect(editor.locator('.seq-monitor').getByRole('alert')).toHaveCount(0)
+      expect(await red()).toBe(true)
+    } finally {
+      await page.evaluate(() => window.dispatchEvent(new Event('release-old-video')))
+    }
+  })
 }

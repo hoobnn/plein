@@ -138,6 +138,7 @@ class CodecFrames implements Frames {
   private fresh = false
   private stillBusy = false
   private stillDone = Number.NaN
+  private disposed = false
 
   constructor(
     url: string,
@@ -149,11 +150,18 @@ class CodecFrames implements Frames {
     this.input = input
     void (async () => {
       const track = await input.getPrimaryVideoTrack()
-      if (!track || !(await track.canDecode())) throw new Error('浏览器解不了这个视频')
-      this.first = await track.getFirstTimestamp()
+      if (this.disposed) return
+      if (!track) throw new Error('浏览器解不了这个视频')
+      const canDecode = await track.canDecode()
+      if (this.disposed) return
+      if (!canDecode) throw new Error('浏览器解不了这个视频')
+      const first = await track.getFirstTimestamp()
+      if (this.disposed) return
+      this.first = first
       this.sink = new CanvasSink(track, { ...box, fit: 'contain', poolSize: 4 })
       this.restart()
     })().catch((err) => {
+      if (this.disposed) return
       console.warn('[预览] WebCodecs 解码不可用，退回 video 元素：', err)
       onFail()
     })
@@ -192,6 +200,8 @@ class CodecFrames implements Frames {
   }
 
   dispose() {
+    if (this.disposed) return
+    this.disposed = true
     this.park()
     this.input.dispose()
   }
