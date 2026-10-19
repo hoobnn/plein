@@ -351,10 +351,10 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
 
   /** 参数里按当前显示顺序记下每段的设置 */
   // 自动对应的对白、音效在这时记下来：之后调换镜头顺序，对白跟着镜头走
-  const settings = (list: Row[]): SequenceClip[] =>
+  const settings = (list: Row[], clips = params.clips): SequenceClip[] =>
     list.flatMap((r) => {
       if (!r.source) return []
-      const old = params.clips.find((c) => c.source === r.source) ?? { source: r.source, in: 0 }
+      const old = clips.find((c) => c.source === r.source) ?? { source: r.source, in: 0 }
       return [
         {
           ...old,
@@ -377,7 +377,13 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   }
   const patch = (source: string | undefined, p: Partial<SequenceClip>) => {
     if (!source) return
-    write(settings(read.rows).map((c) => (c.source === source ? { ...c, ...p } : c)))
+    const latest = readSequence(engine, id)
+    if (!latest.rows.some((r) => r.source === source)) return
+    write(
+      settings(latest.rows, latest.params.clips).map((c) =>
+        c.source === source ? { ...c, ...p } : c,
+      ),
+    )
   }
   const move = (from: number, to: number) => {
     if (engine.doc.readOnly) return
@@ -800,7 +806,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       }
                     />
                   ) : tab === 'film' ? (
-                    <FilmSettings params={params} set={set} />
+                    <FilmSettings
+                      params={params}
+                      readParams={() => readSequence(engine, id).params}
+                      set={set}
+                    />
                   ) : row && animatic ? (
                     <AnimaticSettings
                       shot={animatic.shots[current]!}
@@ -824,6 +834,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                     <ClipSettings
                       key={rowKey(row, current)}
                       row={row}
+                      readRow={() =>
+                        readSequence(engine, id).rows.find((r) => r.source === row.source)
+                      }
                       index={current}
                       count={rows.length}
                       full={duration(row.clip.assetId)}
@@ -950,9 +963,11 @@ function SegBlock<T extends string>(props: {
 /** 成片的设置：画面、字幕、转场、混音，对所有镜头生效 */
 function FilmSettings({
   params,
+  readParams,
   set,
 }: {
   params: SequenceParams
+  readParams(): SequenceParams
   set(key: keyof SequenceParams, value: unknown): void
 }) {
   const catalog = useCatalog((s) => s.catalog)
@@ -1037,6 +1052,7 @@ function FilmSettings({
             <NumberField
               label="转场时长（秒）"
               value={params.transitionDuration}
+              readValue={() => readParams().transitionDuration}
               max={2}
               unit="秒"
               onChange={(v) => set('transitionDuration', Math.max(0.2, v ?? 0.5))}
@@ -1073,6 +1089,7 @@ function FilmSettings({
 /** 选中镜头的设置：顺序、入出点、速度、转场、声音、字幕 */
 function ClipSettings({
   row,
+  readRow,
   index,
   count,
   full,
@@ -1084,6 +1101,7 @@ function ClipSettings({
   onPatch,
 }: {
   row: Row
+  readRow(): Row | undefined
   index: number
   count: number
   full: number | undefined
@@ -1104,8 +1122,10 @@ function ClipSettings({
   const trimmed = length !== undefined && full !== undefined && Math.abs(length - full) > 0.01
   const [trimError, setTrimError] = useState<string | null>(null)
   const changeIn = (value: number | undefined) => {
+    const latest = readRow()
+    if (!latest) return
     const start = value ?? 0
-    if (start >= (row.out ?? full ?? Infinity)) {
+    if (start >= (latest.out ?? full ?? Infinity)) {
       setTrimError('入点需要早于出点，已保留原设置')
       return
     }
@@ -1113,7 +1133,9 @@ function ClipSettings({
     onPatch({ in: start })
   }
   const changeOut = (value: number | undefined) => {
-    if ((value ?? full ?? Infinity) <= row.in) {
+    const latest = readRow()
+    if (!latest) return
+    if ((value ?? full ?? Infinity) <= latest.in) {
       setTrimError('出点需要晚于入点，已保留原设置')
       return
     }
@@ -1166,6 +1188,7 @@ function ClipSettings({
               <NumberField
                 label="入点（秒）"
                 value={row.in}
+                readValue={() => readRow()?.in}
                 max={full}
                 unit="秒"
                 onChange={changeIn}
@@ -1175,6 +1198,7 @@ function ClipSettings({
               <NumberField
                 label="出点（秒）"
                 value={row.out}
+                readValue={() => readRow()?.out}
                 placeholder={full === undefined ? '结尾' : full.toFixed(1)}
                 max={full}
                 unit="秒"
@@ -1219,6 +1243,7 @@ function ClipSettings({
                   <NumberField
                     label="这段转场时长（秒）"
                     value={row.transitionDuration}
+                    readValue={() => readRow()?.transitionDuration}
                     placeholder={String(params.transitionDuration)}
                     max={2}
                     unit="秒"
@@ -1257,6 +1282,7 @@ function ClipSettings({
             <NumberField
               label="台词延后（秒）"
               value={row.lineDelay || undefined}
+              readValue={() => readRow()?.lineDelay || undefined}
               placeholder="0"
               max={10}
               unit="秒"
@@ -1295,20 +1321,37 @@ function ClipSettings({
 function NumberField(props: {
   label: string
   value: number | undefined
+  readValue(): number | undefined
   placeholder?: string
   max?: number
   /** 输入框里靠右的单位 */
   unit?: string
   onChange(v: number | undefined): void
 }) {
-  const [draft, setDraft] = useState<string | null>(null)
+  const [draft, setDraft] = useState<{
+    text: string
+    base: number | undefined
+    badInput: boolean
+  } | null>(null)
   const [error, setError] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
   const errorId = useId()
-  const commit = (input: HTMLInputElement) => {
+  const conflictId = useId()
+  const current = props.readValue()
+  const conflict = draft !== null && !Object.is(draft.base, current)
+  const commit = (input: HTMLInputElement, force = false) => {
     if (draft === null) return
-    const n = draft.trim() === '' ? undefined : Number(draft)
+    if (!force && !Object.is(draft.base, props.readValue())) {
+      setDraft({ ...draft })
+      return
+    }
+    const n = draft.text.trim() === '' ? undefined : Number(draft.text)
     setDraft(null)
-    if (input.validity.badInput || (n !== undefined && (!Number.isFinite(n) || n < 0))) {
+    if (
+      draft.badInput ||
+      input.validity.badInput ||
+      (n !== undefined && (!Number.isFinite(n) || n < 0))
+    ) {
       setError(true)
       return
     }
@@ -1319,18 +1362,29 @@ function NumberField(props: {
     <span className="block space-y-1">
       <span className="seq-number">
         <input
+          ref={inputRef}
           type="number"
           aria-label={props.label}
           aria-invalid={error || undefined}
-          aria-describedby={error ? errorId : undefined}
+          aria-describedby={
+            [error ? errorId : undefined, conflict ? conflictId : undefined]
+              .filter(Boolean)
+              .join(' ') || undefined
+          }
           min={0}
           step={0.1}
           max={props.max}
           className="ui-input w-full tabular-nums"
-          value={draft ?? (props.value === undefined ? '' : String(props.value))}
+          value={draft?.text ?? (props.value === undefined ? '' : String(props.value))}
           placeholder={props.placeholder}
           onChange={(e) => {
-            setDraft(e.target.value)
+            const text = e.target.value
+            const badInput = e.currentTarget.validity.badInput
+            setDraft((previous) => ({
+              text,
+              badInput,
+              base: previous ? previous.base : props.readValue(),
+            }))
             setError(false)
           }}
           onBlur={(e) => commit(e.currentTarget)}
@@ -1344,6 +1398,39 @@ function NumberField(props: {
       {error && (
         <span id={errorId} role="alert" className="block text-xs text-danger">
           请输入有效的非负数字，已保留原设置
+        </span>
+      )}
+      {conflict && (
+        <span className="block space-y-2 rounded-lg bg-fill p-2">
+          <span id={conflictId} role="status" className="block text-xs text-ink-muted">
+            设置已更新为 {String(current ?? '默认')}，当前草稿尚未保存。
+          </span>
+          <span className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary ui-btn-sm"
+              onClick={() => {
+                setDraft(null)
+                setError(false)
+                inputRef.current?.focus()
+              }}
+            >
+              使用最新数值
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary ui-btn-sm"
+              onClick={() => {
+                const input = inputRef.current
+                if (input) {
+                  input.focus()
+                  commit(input, true)
+                }
+              }}
+            >
+              保留当前数值
+            </button>
+          </span>
         </span>
       )}
     </span>

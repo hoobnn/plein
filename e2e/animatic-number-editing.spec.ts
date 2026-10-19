@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { centerOf, clickElement, newProject } from './canvas'
+import { centerOf, clickElement, newProject, waitEngine } from './canvas'
 
 for (const [key, label, initial] of [
   ['duration', '样片镜头时长（秒）', 3],
@@ -254,3 +254,49 @@ test('成片转场时长提交可撤销重做，关闭重开保持已保存值',
   await f.open()
   await expect(f.input).toHaveValue('1.5')
 })
+
+for (const keepDraft of [false, true]) {
+  test(`成片秒数协作更新后失焦不覆盖，可${keepDraft ? '保留草稿' : '使用最新数值'}`, async ({
+    page,
+    context,
+  }) => {
+    const f = await filmNumber(page)
+    const peerContext = await context.browser()!.newContext()
+    try {
+      const peer = await peerContext.newPage()
+      await peer.goto(page.url())
+      await waitEngine(peer)
+      await expect
+        .poll(() => peer.evaluate((id) => !!window.__plein.engine.doc.get(id), f.id))
+        .toBe(true)
+      await clickElement(peer, f.id)
+      const at = await centerOf(peer, f.id)
+      await peer.mouse.dblclick(at.x, at.y)
+      const other = peer.getByRole('dialog', { name: '序列', exact: true })
+      await other.getByRole('button', { name: '成片', exact: true }).click()
+      await f.input.fill('1.8')
+      await other.getByRole('spinbutton', { name: '转场时长（秒）', exact: true }).fill('0.8')
+      await other.getByRole('spinbutton', { name: '转场时长（秒）', exact: true }).press('Enter')
+      await expect.poll(f.saved).toBe(0.8)
+      await f.input.press('Tab')
+      expect(await f.saved()).toBe(0.8)
+      await expect(f.input).toHaveValue('1.8')
+      await expect(f.editor.getByRole('status')).toContainText('设置已更新为 0.8')
+      if (!keepDraft) {
+        await f.editor.getByRole('status').scrollIntoViewIfNeeded()
+        await f.editor
+          .locator('.seq-inspector')
+          .screenshot({ path: test.info().outputPath('seconds-conflict.png') })
+      }
+      await f.editor
+        .getByRole('button', { name: keepDraft ? '保留当前数值' : '使用最新数值', exact: true })
+        .click()
+      await expect(f.input).toHaveValue(keepDraft ? '1.8' : '0.8')
+      await expect(f.input).toBeFocused()
+      await expect(f.editor.getByRole('status')).toHaveCount(0)
+      expect(await f.saved()).toBe(keepDraft ? 1.8 : 0.8)
+    } finally {
+      await peerContext.close()
+    }
+  })
+}
