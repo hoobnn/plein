@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, type Page, test } from '@playwright/test'
 import { centerOf, clickElement, newProject } from './canvas'
 
 for (const [key, label, initial] of [
@@ -152,4 +152,105 @@ test('样片秒数提交后撤销重做，重新打开显示保存值', async ({
   await expect.poll(read).toBe(2.5)
   await open()
   await expect(input).toHaveValue('2.5')
+})
+
+async function filmNumber(page: Page) {
+  await newProject(page)
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/animatic',
+      name: '成片数值编辑',
+      x: 400,
+      y: 200,
+      params: {
+        subtitles: false,
+        transition: '叠化',
+        transitionDuration: 1.2,
+        shots: [{ shotId: 'one', duration: 3, dialogue: [] }],
+      },
+    }),
+  )
+  const open = async () => {
+    await clickElement(page, id)
+    const at = await centerOf(page, id)
+    await page.mouse.dblclick(at.x, at.y)
+    await page
+      .getByRole('dialog', { name: '序列', exact: true })
+      .getByRole('button', { name: '成片', exact: true })
+      .click()
+  }
+  await open()
+  const editor = page.getByRole('dialog', { name: '序列', exact: true })
+  const input = editor.getByRole('spinbutton', { name: '转场时长（秒）', exact: true })
+  const saved = () =>
+    page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.transitionDuration, id)
+  return { id, open, editor, input, saved }
+}
+
+for (const raw of ['1e', '-']) {
+  test(`成片转场时长未完成输入 ${raw} 不误当清空，主动清空仍恢复默认值`, async ({ page }) => {
+    const f = await filmNumber(page)
+    await f.input.fill('')
+    await f.input.pressSequentially(raw)
+    expect(await f.input.evaluate((input: HTMLInputElement) => input.validity.badInput)).toBe(true)
+    await f.input.press('Tab')
+    expect(await f.saved()).toBe(1.2)
+    await expect(f.input).toHaveValue('1.2')
+    await expect(f.input).toHaveAttribute('aria-invalid', 'true')
+    await expect(f.input).toHaveAccessibleDescription('请输入有效的非负数字，已保留原设置')
+    if (raw === '1e') {
+      await f.editor.getByRole('alert').scrollIntoViewIfNeeded()
+      await f.editor
+        .locator('.seq-inspector')
+        .screenshot({ path: test.info().outputPath('film-number-error.png') })
+    }
+    await f.input.fill('-1')
+    await f.input.blur()
+    expect(await f.saved()).toBe(1.2)
+    await expect(f.input).toHaveValue('1.2')
+    await f.input.fill('1.5')
+    await f.input.press('Enter')
+    expect(await f.saved()).toBe(1.5)
+    await expect(f.editor.getByRole('alert')).toHaveCount(0)
+    await f.input.fill('')
+    await f.input.blur()
+    expect(await f.saved()).toBe(0.5)
+    await expect(f.input).toHaveValue('0.5')
+    await f.input.fill('3')
+    await f.input.press('Enter')
+    expect(await f.saved()).toBe(2)
+    await expect(f.input).toHaveValue('2')
+  })
+}
+
+test('成片转场时长草稿按 Esc 关闭不保存，重新打开保留原值', async ({ page }) => {
+  const f = await filmNumber(page)
+  await f.input.fill('1.8')
+  await f.input.press('Escape')
+  await expect(f.editor).toBeHidden()
+  expect(await f.saved()).toBe(1.2)
+  await f.open()
+  await expect(f.input).toHaveValue('1.2')
+})
+
+test('成片转场时长提交可撤销重做，关闭重开保持已保存值', async ({ page }) => {
+  const f = await filmNumber(page)
+  await page.evaluate(() =>
+    (
+      window.__plein.engine.doc as unknown as { undo: { stopCapturing(): void } }
+    ).undo.stopCapturing(),
+  )
+  await f.input.fill('1.5')
+  await f.input.press('Enter')
+  expect(await f.saved()).toBe(1.5)
+  await f.editor.getByRole('button', { name: '关闭', exact: true }).focus()
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect(f.input).toHaveValue('1.2')
+  expect(await f.saved()).toBe(1.2)
+  await page.keyboard.press('ControlOrMeta+Shift+z')
+  await expect(f.input).toHaveValue('1.5')
+  await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(f.editor).toBeHidden()
+  await f.open()
+  await expect(f.input).toHaveValue('1.5')
 })

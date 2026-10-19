@@ -1302,31 +1302,50 @@ function NumberField(props: {
   onChange(v: number | undefined): void
 }) {
   const [draft, setDraft] = useState<string | null>(null)
-  const commit = () => {
+  const [error, setError] = useState(false)
+  const errorId = useId()
+  const commit = (input: HTMLInputElement) => {
     if (draft === null) return
     const n = draft.trim() === '' ? undefined : Number(draft)
     setDraft(null)
-    if (n === undefined || (Number.isFinite(n) && n >= 0))
-      props.onChange(n === undefined ? undefined : Math.min(n, props.max ?? n))
+    if (input.validity.badInput || (n !== undefined && (!Number.isFinite(n) || n < 0))) {
+      setError(true)
+      return
+    }
+    setError(false)
+    props.onChange(n === undefined ? undefined : Math.min(n, props.max ?? n))
   }
   return (
-    <span className="seq-number">
-      <input
-        type="number"
-        aria-label={props.label}
-        min={0}
-        step={0.1}
-        max={props.max}
-        className="ui-input w-full tabular-nums"
-        value={draft ?? (props.value === undefined ? '' : String(props.value))}
-        placeholder={props.placeholder}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur()
-        }}
-      />
-      {props.unit && <span className="seq-number-unit">{props.unit}</span>}
+    <span className="block space-y-1">
+      <span className="seq-number">
+        <input
+          type="number"
+          aria-label={props.label}
+          aria-invalid={error || undefined}
+          aria-describedby={error ? errorId : undefined}
+          min={0}
+          step={0.1}
+          max={props.max}
+          className="ui-input w-full tabular-nums"
+          value={draft ?? (props.value === undefined ? '' : String(props.value))}
+          placeholder={props.placeholder}
+          onChange={(e) => {
+            setDraft(e.target.value)
+            setError(false)
+          }}
+          onBlur={(e) => commit(e.currentTarget)}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return
+            if (e.key === 'Enter') e.currentTarget.blur()
+          }}
+        />
+        {props.unit && <span className="seq-number-unit">{props.unit}</span>}
+      </span>
+      {error && (
+        <span id={errorId} role="alert" className="block text-xs text-danger">
+          请输入有效的非负数字，已保留原设置
+        </span>
+      )}
     </span>
   )
 }
