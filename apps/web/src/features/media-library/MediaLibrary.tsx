@@ -673,7 +673,7 @@ function MediaPlayer({ asset, className }: { asset: MediaLibraryItem; className:
     src: assetUrls.original(asset.id),
     controls: true,
     preload: 'metadata',
-    className,
+    className: video ? `${className} w-full object-contain` : className,
     onError: () => setFailed(true),
   } as const
   // oxlint-disable jsx-a11y/media-has-caption -- 用户素材没有可用字幕轨

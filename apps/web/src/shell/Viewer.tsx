@@ -557,7 +557,12 @@ function ReviewMedia({
   }
   // oxlint-disable jsx-a11y/media-has-caption -- 生成素材不一定带字幕轨
   return kind === 'video' ? (
-    <video key={attempt} {...props} poster={assetUrls.variant(assetId, 'poster')} />
+    <video
+      key={attempt}
+      {...props}
+      className="max-h-full w-full object-contain"
+      poster={assetUrls.variant(assetId, 'poster')}
+    />
   ) : (
     <div className="flex w-full max-w-3xl flex-col items-center gap-6 px-8">
       {!waveformFailed && (

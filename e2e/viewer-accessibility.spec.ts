@@ -42,6 +42,8 @@ for (const kind of ['audio', 'video'] as const) {
       .poll(() => media.evaluate((el) => (el as HTMLMediaElement).readyState))
       .toBeGreaterThanOrEqual(2)
     await expect(media).toHaveAccessibleName(label)
+    if (kind === 'video')
+      await expect.poll(async () => (await media.boundingBox())?.width ?? 0).toBeGreaterThan(320)
     const cdp = await context.newCDPSession(page)
     const tree = (await cdp.send('Accessibility.getFullAXTree')) as {
       nodes: Array<{ ignored?: boolean; role?: { value?: string }; name?: { value?: string } }>
@@ -124,6 +126,20 @@ for (const kind of ['audio', 'video'] as const) {
     await expect(surface.locator(kind)).toHaveAccessibleName(
       `${meta.name} ${kind === 'audio' ? '音频' : '视频'}播放器`,
     )
+    if (kind === 'video') {
+      await expect
+        .poll(async () => (await surface.locator(kind).boundingBox())?.width ?? 0)
+        .toBeGreaterThan(320)
+      await page.setViewportSize({ width: 800, height: 560 })
+      const box = (await surface.locator(kind).boundingBox())!
+      expect(box.width).toBeGreaterThan(320)
+      expect(box.x).toBeGreaterThanOrEqual(0)
+      expect(box.y).toBeGreaterThanOrEqual(0)
+      expect(box.x + box.width).toBeLessThanOrEqual(800)
+      expect(box.y + box.height).toBeLessThanOrEqual(560)
+      await surface.screenshot({ path: test.info().outputPath('small-video-fitted.png') })
+      await page.setViewportSize({ width: 1440, height: 900 })
+    }
     if (kind === 'video') await surface.getByRole('button', { name: '关闭', exact: true }).click()
     await library.getByRole('button', { name: '关闭', exact: true }).click()
   })
