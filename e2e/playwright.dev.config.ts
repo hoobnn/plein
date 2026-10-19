@@ -104,6 +104,7 @@ export default defineConfig({
     'generator-popovers.spec.ts',
     'tooltip-lifecycle.spec.ts',
     'input-preview.spec.ts',
+    'input-preview-shared-assets.spec.ts',
     'generator-camera.spec.ts',
     'stage-menu.spec.ts',
     'stage-boundaries.spec.ts',

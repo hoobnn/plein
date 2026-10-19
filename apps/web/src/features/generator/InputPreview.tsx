@@ -266,7 +266,7 @@ export function InputPreview({
               <div className="ui-scrollbar flex gap-2 overflow-x-auto pb-0.5">
                 {images.map((v, i) => (
                   <figure
-                    key={`${v.port}-${v.assetId}`}
+                    key={`${v.port}-${v.source ?? ''}-${v.resultId ?? ''}-${v.assetId}`}
                     className="flex w-12 flex-none flex-col items-center gap-1 text-2xs text-ink-subtle"
                     title={nameOf(v.assetId, v.source)}
                   >

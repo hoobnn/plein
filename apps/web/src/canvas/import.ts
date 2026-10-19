@@ -91,7 +91,8 @@ export async function importFiles(
       const asset = await api.upload(file, signal)
       const input = elementFor(asset)
       if (!input) skipped.push({ name: file.name, reason: '暂不支持这种文件' })
-      return input
+      // 相同内容会复用已有资产，画布名称仍应来自这次导入的文件。
+      return input ? { ...input, name: file.name } : null
     } catch (err) {
       skipped.push({ name: file.name, reason: (err as Error).message })
       return null
