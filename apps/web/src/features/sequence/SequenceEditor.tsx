@@ -1307,6 +1307,7 @@ function ClipSettings({
           ) : (
             <SubtitleField
               value={row.subtitle}
+              readValue={() => readRow()?.subtitle}
               placeholder={caption ? caption : '这段没有字幕，可以在这里写'}
               onChange={(v) => onPatch({ subtitle: v })}
             />
@@ -1473,27 +1474,77 @@ function ChoiceField(props: {
 /** 字幕：留空用对白的台词；失焦时写入 */
 function SubtitleField(props: {
   value: string | undefined
+  readValue(): string | undefined
   placeholder: string
   onChange(v: string | undefined): void
 }) {
-  const [draft, setDraft] = useState<string | null>(null)
+  const [draft, setDraft] = useState<{ text: string; base: string | undefined } | null>(null)
+  const input = useRef<HTMLInputElement>(null)
+  const conflictId = useId()
+  const current = props.readValue()
+  const conflict = draft !== null && draft.base !== current
+  const commit = (force = false) => {
+    if (draft === null) return
+    if (!force && draft.base !== props.readValue()) {
+      setDraft({ ...draft })
+      return
+    }
+    const value = draft.text.trim()
+    setDraft(null)
+    props.onChange(value || undefined)
+  }
   return (
-    <input
-      aria-label="字幕"
-      className="ui-input w-full"
-      value={draft ?? props.value ?? ''}
-      placeholder={props.placeholder}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        if (draft === null) return
-        const v = draft.trim()
-        setDraft(null)
-        props.onChange(v ? v : undefined)
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') e.currentTarget.blur()
-      }}
-    />
+    <div className="space-y-2">
+      <input
+        ref={input}
+        aria-label="字幕"
+        aria-describedby={conflict ? conflictId : undefined}
+        className="ui-input w-full"
+        value={draft?.text ?? props.value ?? ''}
+        placeholder={props.placeholder}
+        onChange={(e) => {
+          const text = e.target.value
+          setDraft((previous) => ({ text, base: previous ? previous.base : props.readValue() }))
+        }}
+        onBlur={() => commit()}
+        onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return
+          if (e.key === 'Enter') e.currentTarget.blur()
+        }}
+      />
+      {conflict && (
+        <div className="space-y-2 rounded-lg bg-fill p-2">
+          <p id={conflictId} role="status" className="text-xs text-ink-muted">
+            字幕已更新，当前草稿尚未保存。
+          </p>
+          <p className="max-h-24 overflow-y-auto text-xs break-words text-ink-muted">
+            最新字幕：{current || '自动使用台词'}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary ui-btn-sm"
+              onClick={() => {
+                setDraft(null)
+                input.current?.focus()
+              }}
+            >
+              使用最新字幕
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary ui-btn-sm"
+              onClick={() => {
+                input.current?.focus()
+                commit(true)
+              }}
+            >
+              保留当前字幕
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

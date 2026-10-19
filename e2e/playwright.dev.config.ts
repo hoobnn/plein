@@ -151,7 +151,7 @@ export default defineConfig({
     'sequence-preview-lifecycle.spec.ts',
     'sequence-subtitle-renderer.spec.ts',
     'sequence-readonly.spec.ts',
-    'sequence-number-collaboration.spec.ts',
+    'sequence-settings-collaboration.spec.ts',
     'sequence-mobile-layout.spec.ts',
     'animatic-number-editing.spec.ts',
     'storyboard-text-collaboration.spec.ts',
