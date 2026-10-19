@@ -125,6 +125,7 @@ export default defineConfig({
     'mask-editor-lifecycle.spec.ts',
     'region-edit.spec.ts',
     'continue-lifecycle.spec.ts',
+    'concurrent-placement.spec.ts',
     'continue.spec.ts',
     'template-save-targets.spec.ts',
     'selection-library-targets.spec.ts',

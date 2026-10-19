@@ -13,7 +13,7 @@ import { ContinuesFrom, continueShotParams, nearestAspect } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { api } from '../api/client'
 import { elementSize, formatTimecode } from './media'
-import { applyAspect, aspectKey, fieldsOf, findNode, type NodeInfo, nodeElement } from './nodes'
+import { aspectKey, fieldsOf, findNode, type NodeInfo, nodeElement } from './nodes'
 import { focusGenerator, freeSpotRight } from './presets'
 
 /** 从哪一帧续：尾帧，或视频里的某一秒 */
@@ -130,8 +130,8 @@ export async function continueShot(
         ? { frameAssetId: own.assetId }
         : {}),
   }
-  const base = nodeElement(node)
   const params = continueParams(node, latest, from, frameAsset)
+  const base = nodeElement(node, params)
 
   const { doc } = engine
   // 取出的帧、新节点和两条连线算一步撤销
@@ -164,8 +164,6 @@ export async function continueShot(
       y: Math.round(spot.y),
     })
     connect(doc, out, [id, input.id])
-    const ak = aspectKey(node)
-    if (ak) applyAspect(engine, id, params[ak])
   }, doc.origin)
   doc.undo.stopCapturing()
   if (options.focus !== false) focusGenerator(engine, id)

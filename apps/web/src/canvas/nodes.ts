@@ -78,10 +78,10 @@ export function aspectKey(node: NodeInfo): string | undefined {
   return fieldsOf(node).find(([k, f]) => /aspect/i.test(k) && f.enum)?.[0]
 }
 
-/** 节点在画布上的默认尺寸：出图 / 视频的节点按默认画幅取形状 */
-function defaultSize(node: NodeInfo) {
+/** 节点在画布上的初始尺寸：按最终画幅取形状，未传参数时沿用声明默认值。 */
+function defaultSize(node: NodeInfo, params = node.defaults) {
   const key = aspectKey(node)
-  return nodeSize(node.outputs[0]?.type, key ? parseAspect(node.defaults?.[key]) : null)
+  return nodeSize(node.outputs[0]?.type, key ? parseAspect(params?.[key]) : null)
 }
 
 /**
@@ -103,8 +103,8 @@ export function applyAspect(engine: Engine, id: string, value: unknown) {
   })
 }
 
-/** 由节点声明生成画布上的节点元素 */
-export function nodeElement(node: NodeInfo): Omit<NewElement, 'x' | 'y'> {
+/** 由节点声明和最终参数生成元素，放置前就确定与画幅一致的尺寸。 */
+export function nodeElement(node: NodeInfo, params = node.defaults): Omit<NewElement, 'x' | 'y'> {
   const port = (p: NodeInfo['inputs'][number]): Port => ({
     id: p.id,
     label: p.label,
@@ -112,13 +112,13 @@ export function nodeElement(node: NodeInfo): Omit<NewElement, 'x' | 'y'> {
     ...(p.multiple ? { multiple: true } : {}),
     ...(p.required ? { required: true } : {}),
   })
-  const { w, h } = defaultSize(node)
+  const { w, h } = defaultSize(node, params)
   return {
     kind: 'node',
     nodeType: node.type,
     nodeVersion: node.version,
     name: node.title,
-    params: node.defaults,
+    params,
     w,
     h,
     ports: { inputs: node.inputs.map(port), outputs: node.outputs.map(port) },

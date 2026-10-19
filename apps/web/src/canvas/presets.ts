@@ -60,7 +60,8 @@ export function outputPort(el: CanvasElement, type: Port['type']): Port | undefi
 
 /** 源元素右侧找一块 w×h 的空地（左上角坐标），与智能体放置新元素是同一套规则 */
 export function freeSpotRight(engine: Engine, source: string, w: number, h: number) {
-  return spotRightOf(engine.doc, source, w, h, (r) => engine.scene.query(r))
+  // 场景索引按帧更新，同帧的新建或移动可能尚未收录；落点必须读取当前文档。
+  return spotRightOf(engine.doc, source, w, h)
 }
 
 /**
@@ -87,7 +88,14 @@ export function deriveNode(
     ? node.inputs.find((p) => p.id === opts.inputPort)
     : node.inputs.find((p) => p.type !== 'text')
   const out = input && outputPort(source, input.type)
-  const base = nodeElement(node)
+  // 先按最终画幅计算占位，避免套预设后才扩高而压到邻居。
+  const pk = promptKey(node)
+  const base = nodeElement(node, {
+    ...node.defaults,
+    ...opts.params,
+    ...(opts.preset ? presetParams(node, opts.preset) : {}),
+    ...(opts.preset && pk ? { [pk]: opts.preset.template } : {}),
+  })
   const spot = freeSpotRight(engine, sourceId, base.w, base.h)
   // placeElement 以中心定位
   const at = { x: spot.x + base.w / 2, y: spot.y + base.h / 2 }
@@ -99,14 +107,12 @@ export function deriveNode(
       {
         ...base,
         name: opts.name ?? opts.preset?.title ?? base.name,
-        params: { ...base.params, ...opts.params },
       },
       at,
     )
     if (out && input) connect(engine.doc, [sourceId, out.id], [id, input.id])
-    if (opts.preset) applyPresetToNode(engine, catalog, id, opts.preset)
   }, engine.doc.origin)
   engine.doc.undo.stopCapturing()
-  if (!opts.preset) focusGenerator(engine, id)
+  focusGenerator(engine, id)
   return id
 }
