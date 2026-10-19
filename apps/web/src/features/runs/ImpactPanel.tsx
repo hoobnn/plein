@@ -259,7 +259,12 @@ function Panel({
   }
 
   const locate = (id: string) => {
-    if (!engine.doc.has(id)) return
+    if (!isCurrent()) return
+    if (!engine.doc.has(id)) {
+      notify('节点已被删除，已重新分析当前影响')
+      void load()
+      return
+    }
     onClose()
     engine.selection.set([id])
     engine.zoomToFit([id])
@@ -461,6 +466,7 @@ function Panel({
           engine={engine}
           boardId={syncing.board}
           shotIds={syncing.shots}
+          isCurrent={isCurrent}
           onClose={() => {
             setSyncing(null)
             void load()

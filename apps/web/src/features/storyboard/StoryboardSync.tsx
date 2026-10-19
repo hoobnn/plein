@@ -67,11 +67,14 @@ export function StoryboardSync({
   boardId,
   shotIds,
   onClose,
+  isCurrent,
 }: {
   engine: Engine
   boardId: string
   shotIds: string[]
   onClose(): void
+  /** 其他入口显式提供来源校验；默认仍归分镜编辑器所有。 */
+  isCurrent?(): boolean
 }) {
   useDocVersion(engine.doc)
   const notify = useCanvas((s) => s.notify)
@@ -88,7 +91,7 @@ export function StoryboardSync({
     if (
       state.engine !== engine ||
       state.canvasId !== canvasId ||
-      state.storyboard !== boardId ||
+      (isCurrent ? !isCurrent() : state.storyboard !== boardId) ||
       engine.doc.get(boardId)?.nodeType !== 'plein/storyboard'
     )
       return
