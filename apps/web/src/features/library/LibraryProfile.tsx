@@ -27,7 +27,7 @@ import {
 import type { CanvasMedia } from './canvas'
 import { Icon, type IconName } from '../../ui/icons'
 import { SlideSwap } from '../../ui/Slide'
-import { CanvasPick, thumb, uploadAll, UploadFeedback } from './LibraryFields'
+import { CanvasPick, thumb, uploadAll, UploadFeedback, useLibraryFieldFocus } from './LibraryFields'
 import type { UploadNotice } from './uploadBatch'
 import { Select } from '../../ui/Select'
 import { VoicePicker } from '../../ui/VoicePicker'
@@ -968,6 +968,7 @@ function ImageStrip({
   onChange(next: string[]): void
 }) {
   const ref = useRef<HTMLInputElement>(null)
+  const focus = useLibraryFieldFocus()
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<UploadNotice | null>(null)
   const uploads = useContext(ProfileUploadContext)
@@ -991,7 +992,7 @@ function ImageStrip({
     }
   }
   return (
-    <div className="ui-field">
+    <div {...focus.props} role="group" aria-label={label} className="ui-field lib-focus-region">
       <span className="ui-label flex min-w-0 items-baseline gap-2" title={hint}>
         <span className="flex-none">{label}</span>
         <span className="font-normal text-ink-subtle tabular-nums">
@@ -1005,7 +1006,10 @@ function ImageStrip({
             key={id}
             id={id}
             hero={hero}
-            onRemove={() => onChange(images.filter((x) => x !== id))}
+            onRemove={() => {
+              focus.park()
+              onChange(images.filter((x) => x !== id))
+            }}
           />
         ))}
         {room > 0 && (
@@ -1032,6 +1036,7 @@ function ImageStrip({
             multiple
             taken={images}
             onPick={(id) => {
+              if (room === 1) focus.park()
               setFeedback(null)
               add([id])
             }}

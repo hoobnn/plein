@@ -74,7 +74,11 @@ export function Popover({
             ref={popup}
             aria-label={label}
             {...exit}
-            style={{ width, maxHeight: 'min(480px, 70vh, var(--available-height, 70vh))' }}
+            style={{
+              width,
+              maxWidth: 'var(--available-width, calc(100vw - 16px))',
+              maxHeight: 'min(480px, 70vh, var(--available-height, 70vh))',
+            }}
             className="ui-menu ui-scrollbar pointer-events-auto overflow-y-auto outline-none"
           >
             {children}

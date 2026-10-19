@@ -146,7 +146,7 @@ function Bubble({ tip }: { tip: Tip }) {
       ref={ref}
       role="tooltip"
       style={pos}
-      className="ui-tooltip pointer-events-none fixed z-80 max-w-70"
+      className="ui-tooltip pointer-events-none fixed z-80 max-w-70 break-words"
     >
       {tip.text}
     </div>

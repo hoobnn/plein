@@ -1,6 +1,6 @@
 import type { LibraryKindSpec } from '@plein/nodes'
 import type { LibraryImage } from '@plein/protocol'
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
 import type { CanvasMedia } from './canvas'
 import { Icon } from '../../ui/icons'
@@ -10,6 +10,15 @@ import { LibraryThumbnail, ReferenceVideo } from './LibraryMedia'
 import { uploadBatch, type UploadNotice } from './uploadBatch'
 
 /** 资产库编辑页的图片字段：上传、从画布选、槽位与参考视频 */
+
+/** 在同步选择移除其入口之前，先把键盘位置停在仍会保留的字段内。 */
+export function useLibraryFieldFocus() {
+  const ref = useRef<HTMLDivElement>(null)
+  return {
+    props: { ref, tabIndex: -1 },
+    park: () => ref.current?.focus({ preventScroll: true }),
+  }
+}
 
 /** 缩略图地址：图片取 256 缩略图，视频取封面 */
 export const thumb = (assetId: string) => assetUrls.variant(assetId, 'thumb-256')
@@ -56,6 +65,31 @@ export function CanvasPick({
   disabled?: boolean
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+  const grid = useRef<HTMLDivElement>(null)
+  const pendingFocus = useRef<{ source: HTMLElement; index: number } | null>(null)
+  useLayoutEffect(() => {
+    const pending = pendingFocus.current
+    pendingFocus.current = null
+    if (!pending || !multiple || !pending.source.matches(':disabled')) return
+    const active = document.activeElement
+    if (
+      active !== document.body &&
+      !grid.current?.contains(active) &&
+      active !== grid.current?.closest('[role="dialog"]')
+    )
+      return
+    const choices = [
+      ...(grid.current?.querySelectorAll<HTMLButtonElement>('button[aria-pressed]') ?? []),
+    ]
+    const next = [...choices.slice(pending.index + 1), ...choices.slice(0, pending.index)].find(
+      (button) => !button.disabled,
+    )
+    if (next) next.focus()
+    else {
+      setAnchor(null)
+      anchor?.focus()
+    }
+  }, [taken, multiple, anchor])
   const list = media.filter((m) => m.kind === type)
   if (!media.length) return null
   return (
@@ -84,8 +118,11 @@ export function CanvasPick({
             <div className="ui-menu-label">
               画布上的{type === 'image' ? '图片' : '视频'}（{list.length}）
             </div>
-            <div className="ui-scrollbar grid max-h-80 grid-cols-4 gap-2 overflow-y-auto p-2">
-              {list.map((m) => {
+            <div
+              ref={grid}
+              className="ui-scrollbar grid max-h-80 grid-cols-4 gap-2 overflow-y-auto p-2"
+            >
+              {list.map((m, index) => {
                 const on = taken.includes(m.assetId)
                 return (
                   <div
@@ -103,6 +140,9 @@ export function CanvasPick({
                       selected={on}
                       disabled={disabled}
                       onSelect={() => {
+                        const source = document.activeElement
+                        if (source instanceof HTMLElement && grid.current?.contains(source))
+                          pendingFocus.current = { source, index }
                         onPick(m.assetId)
                         if (!multiple) setAnchor(null)
                       }}
@@ -139,6 +179,7 @@ export function SlotField({
   onBusyChange?(busy: boolean): void
 }) {
   const ref = useRef<HTMLInputElement>(null)
+  const focus = useLibraryFieldFocus()
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<UploadNotice | null>(null)
   const room = Math.max(0, 24 - used.length)
@@ -163,7 +204,12 @@ export function SlotField({
   }
   const canAdd = room > 0 && (slot.multiple || images.length === 0)
   return (
-    <div className="ui-field">
+    <div
+      {...focus.props}
+      role="group"
+      aria-label={slot.label}
+      className="ui-field lib-focus-region"
+    >
       {/* 标签和提示只占一行：提示折行会把这一格的上传框挤下去，跟同一行另一格对不齐 */}
       <span className="ui-label flex min-w-0 items-baseline" title={slot.hint}>
         <span className="flex-none">{slot.label}</span>
@@ -186,7 +232,10 @@ export function SlotField({
               type="button"
               aria-label="移除"
               title="移除"
-              onClick={() => onRemove(img.assetId)}
+              onClick={(event) => {
+                if (document.activeElement === event.currentTarget) focus.park()
+                onRemove(img.assetId)
+              }}
               disabled={busy || disabled}
               className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn absolute top-1 right-1 bg-float opacity-0 group-hover:opacity-100 focus:opacity-100"
             >
@@ -218,6 +267,7 @@ export function SlotField({
             multiple={!!slot.multiple}
             taken={used}
             onPick={(id) => {
+              if (!slot.multiple || room === 1) focus.park()
               setFeedback(null)
               onAdd([id])
             }}
@@ -256,10 +306,11 @@ export function VideoField({
   onBusyChange?(busy: boolean): void
 }) {
   const ref = useRef<HTMLInputElement>(null)
+  const focus = useLibraryFieldFocus()
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<UploadNotice | null>(null)
   return (
-    <div className="ui-field">
+    <div {...focus.props} role="group" aria-label="参考视频" className="ui-field lib-focus-region">
       <span className="ui-label">
         参考视频
         <span className="ml-2 font-normal text-ink-subtle">只给人看，不会送进模型</span>
@@ -269,7 +320,10 @@ export function VideoField({
           <ReferenceVideo src={assetUrls.original(value)} disabled={busy || disabled} />
           <button
             type="button"
-            onClick={() => onChange(null)}
+            onClick={(event) => {
+              if (document.activeElement === event.currentTarget) focus.park()
+              onChange(null)
+            }}
             disabled={busy || disabled}
             className="ui-btn ui-btn-quiet ui-btn-sm"
           >
@@ -294,6 +348,7 @@ export function VideoField({
             multiple={false}
             taken={[]}
             onPick={(id) => {
+              focus.park()
               setFeedback(null)
               onChange(id)
             }}
