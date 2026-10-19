@@ -75,6 +75,29 @@ describe('角色档案', () => {
     expect(m.conflict).toContain('青年')
   })
 
+  it('服饰和次音色同时冲突时分别说明，保留指定时期的图片和音色', () => {
+    const data = profileOf({
+      ...profile,
+      periods: [
+        ...profile.periods,
+        {
+          ...look('p3', '成年', { images: [img('8')] }),
+          voice: { provider: 'doubao/speech', voiceId: 'adult' },
+        },
+      ],
+    })
+    const m = matchProfile('/成年/正装/生病', data)
+    expect(m.pick.period?.id).toBe('p3')
+    expect(m.pick.outfit).toBeUndefined()
+    expect(m.pick.voiceState).toBeUndefined()
+    expect(m.conflict).toContain('服饰「正装」')
+    expect(m.conflict).toContain('青年')
+    expect(m.conflict).toContain('次音色「生病」')
+    expect(m.conflict).toContain('少年')
+    expect(pickImages(m.pick, [])).toEqual([img('8')])
+    expect(pickVoice(m.pick, { provider: '', voiceId: 'base' }).voiceId).toBe('adult')
+  })
+
   it('对不上的档案项留在文本里并报出来', () => {
     const m = matchProfile('/学生装', profile)
     expect(m.length).toBe(0)

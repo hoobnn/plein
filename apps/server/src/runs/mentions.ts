@@ -170,7 +170,7 @@ export async function applyMentions(
       if (m.profileConflict)
         notices.push({
           code: 'profile_conflict',
-          message: `@${m.name}：${m.profileConflict}，已忽略`,
+          message: `@${m.name}：${m.profileConflict}`,
           ...(m.id ? { elementId: m.id } : {}),
         })
     }

@@ -202,7 +202,7 @@ const WORD = /^[^\s@#/，。,.!！?？:：;；、（）()【】[\]「」"'“”
 export function matchProfile(rest: string, profile: CharacterProfile): ProfileMatch {
   const list = candidates(profile)
   const pick: ProfilePick = {}
-  const owners: ProfilePeriod[] = []
+  const owners: Array<{ owner: ProfilePeriod; slot: 'outfit' | 'voiceState'; name: string }> = []
   let length = 0
   let miss: string | undefined
   while (rest[length] === '/') {
@@ -213,20 +213,21 @@ export function matchProfile(rest: string, profile: CharacterProfile): ProfileMa
       break
     }
     ;(pick as Record<Slot, unknown>)[hit.slot] = hit.item
-    if (hit.owner) owners.push(hit.owner)
+    if (hit.owner && (hit.slot === 'outfit' || hit.slot === 'voiceState'))
+      owners.push({ owner: hit.owner, slot: hit.slot, name: hit.item.name })
     length += 1 + hit.text.length
   }
-  let conflict: string | undefined
-  for (const owner of owners) {
+  const conflicts: string[] = []
+  for (const { owner, slot, name } of owners) {
     if (!pick.period) pick.period = owner
     else if (owner.id !== pick.period.id) {
-      conflict = `「${pick.period.name}」时期没有这一项，它属于「${owner.name}」`
-      if (pick.outfit && !pick.period.outfits.includes(pick.outfit)) delete pick.outfit
-      if (pick.voiceState && !pick.period.voiceStates.includes(pick.voiceState))
-        delete pick.voiceState
+      conflicts.push(
+        `已忽略${slot === 'outfit' ? '服饰' : '次音色'}「${name}」：它属于「${owner.name}」时期，与「${pick.period.name}」时期不一致`,
+      )
+      delete pick[slot]
     }
   }
-  return { pick, length, miss, conflict }
+  return { pick, length, miss, conflict: conflicts.length ? conflicts.join('；') : undefined }
 }
 
 export const pickEmpty = (p: ProfilePick) =>
