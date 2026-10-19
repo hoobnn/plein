@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { fitAspect, setParam } from '@plein/doc'
+import { elementMedia, fitAspect, ReadOnlyDocError, setParam } from '@plein/doc'
 import type { EditMask } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { deriveNode } from './presets'
@@ -23,6 +23,11 @@ export function startRegionEdit(
   mask: EditMask,
   name: string,
 ): string | null {
+  if (engine.doc.readOnly) throw new ReadOnlyDocError()
+  const source = engine.doc.get(sourceId)
+  if (!source) throw new Error('原图已经不在画布上了')
+  if (!mask.sourceAssetId || elementMedia(source)?.assetId !== mask.sourceAssetId)
+    throw new Error('原图已经变化，请重新画重绘区域')
   const node = regionEditNode(catalog)
   if (!node) return null
   const input = node.inputs.find((p) => p.type === 'image')!

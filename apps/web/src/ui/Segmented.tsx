@@ -21,6 +21,7 @@ export function Segmented<T extends string>({
   onChange,
   iconOnly = false,
   size = 'md',
+  disabled = false,
 }: {
   /** 无障碍名称 */
   label: string
@@ -29,11 +30,13 @@ export function Segmented<T extends string>({
   onChange(value: NoInfer<T>): void
   iconOnly?: boolean
   size?: 'md' | 'lg'
+  disabled?: boolean
 }) {
   return (
     <fieldset
       aria-label={label}
-      className={`ui-seg ui-slide ${size === 'lg' ? 'ui-seg-lg' : ''} ${iconOnly ? 'ui-seg-icon' : ''}`}
+      disabled={disabled}
+      className={`ui-seg ui-slide disabled:cursor-not-allowed disabled:opacity-40 ${size === 'lg' ? 'ui-seg-lg' : ''} ${iconOnly ? 'ui-seg-icon' : ''}`}
     >
       <SlidePill variant="seg" />
       {options.map((o) => (
@@ -44,7 +47,7 @@ export function Segmented<T extends string>({
           aria-label={iconOnly ? o.label : undefined}
           title={iconOnly ? o.label : undefined}
           onClick={() => onChange(o.value)}
-          className="ui-seg-item"
+          className="ui-seg-item disabled:cursor-not-allowed"
         >
           {o.icon && <Icon name={o.icon} size={14} />}
           {!iconOnly && o.label}

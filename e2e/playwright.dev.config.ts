@@ -122,6 +122,8 @@ export default defineConfig({
     'task-mobile-locate.spec.ts',
     'selection-toolbar-layout.spec.ts',
     'result-toolbar-layout.spec.ts',
+    'mask-editor-lifecycle.spec.ts',
+    'region-edit.spec.ts',
     'template-save-targets.spec.ts',
     'selection-library-targets.spec.ts',
     'selection-library-capacity.spec.ts',

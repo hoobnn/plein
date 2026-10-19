@@ -334,6 +334,7 @@ function Panel({
   const audio = result?.value.type === 'audio' ? result : undefined
   const actions = media ? (
     <ResultActions
+      key={`actions:${media.assetId}`}
       engine={engine}
       el={el}
       media={media}

@@ -7,6 +7,7 @@ import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Segmented } from '../../ui/Segmented'
+import { useClosing } from '../../ui/Presence'
 
 const TOOLS = [
   { value: 'rect', label: '框选', icon: 'rectSelect' },
@@ -46,6 +47,27 @@ export function MaskEditor({
   onSave(mask: EditMask): void
 }) {
   const notify = useCanvas((s) => s.notify)
+  const closing = useClosing()
+  const alive = useRef(false)
+  const saveRequest = useRef<AbortController | null>(null)
+  const cancelSave = () => saveRequest.current?.abort()
+  const close = () => {
+    cancelSave()
+    onClose()
+  }
+  useLayoutEffect(() => {
+    alive.current = true
+    return () => {
+      alive.current = false
+      saveRequest.current?.abort()
+    }
+  }, [])
+  useLayoutEffect(() => {
+    if (closing) saveRequest.current?.abort()
+    return () => {
+      saveRequest.current?.abort()
+    }
+  }, [closing, assetId])
   const [stage, setStage] = useState<HTMLDivElement | null>(null)
   const overlayRef = useRef<HTMLCanvasElement>(null)
   const [size, setSize] = useState<{ width: number; height: number } | null>(null)
@@ -117,7 +139,7 @@ export function MaskEditor({
     return [(e.clientX - r.left) / scale, (e.clientY - r.top) / scale]
   }
   const down = (e: React.PointerEvent) => {
-    if (!size || e.button !== 0) return
+    if (!size || e.button !== 0 || saveRequest.current || closing) return
     e.currentTarget.setPointerCapture(e.pointerId)
     const p = toImage(e)
     drag.current = { start: p }
@@ -128,6 +150,7 @@ export function MaskEditor({
     )
   }
   const move = (e: React.PointerEvent) => {
+    if (saveRequest.current || closing) return
     const r = overlayRef.current?.getBoundingClientRect()
     if (r) setCursor({ x: e.clientX - r.left, y: e.clientY - r.top })
     if (!drag.current || !draft || !size) return
@@ -136,7 +159,7 @@ export function MaskEditor({
     else if (draft.type !== 'image') setDraft({ ...draft, points: [...draft.points, p] })
   }
   const up = () => {
-    if (!drag.current) return
+    if (!drag.current || saveRequest.current || closing) return
     drag.current = null
     if (draft && !(draft.type === 'rect' && (draft.w < 2 || draft.h < 2)))
       setOps((list) => [...list, draft])
@@ -144,15 +167,24 @@ export function MaskEditor({
   }
 
   const save = async () => {
-    if (!size) return
+    if (!size || closing || !alive.current || saveRequest.current) return
+    const request = new AbortController()
+    saveRequest.current = request
+    drag.current = null
+    setDraft(null)
     setSaving(true)
     try {
       const blob = await exportMask(ops, size)
+      if (request.signal.aborted || !alive.current) return
       if (!blob) {
         notify('还没圈出要重画的区域')
         return
       }
-      const asset = await api.upload(new File([blob], `${name}-蒙版.png`, { type: 'image/png' }))
+      const asset = await api.upload(
+        new File([blob], `${name}-蒙版.png`, { type: 'image/png' }),
+        request.signal,
+      )
+      if (request.signal.aborted || !alive.current) return
       onSave({
         assetId: asset.id,
         width: size.width,
@@ -160,39 +192,44 @@ export function MaskEditor({
         sourceAssetId: assetId,
       })
     } catch (err) {
-      notify((err as Error).message)
+      if (!request.signal.aborted && alive.current) notify((err as Error).message)
     } finally {
-      setSaving(false)
+      if (saveRequest.current === request) {
+        saveRequest.current = null
+        if (alive.current) setSaving(false)
+      }
     }
   }
 
-  // ⌘Z 撤销最后一笔
+  // ⌘Z 撤销最后一笔；保存时冻结区域，但仍阻止按键穿透到画布。
   useEffect(() => {
+    if (closing) return
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault()
         e.stopPropagation()
-        setOps((list) => list.slice(0, -1))
+        if (!saveRequest.current) setOps((list) => list.slice(0, -1))
       }
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [])
+  }, [closing])
 
   return (
-    <Modal label="画重绘区域" onClose={onClose} isolateKeys top className="h-full max-w-6xl">
+    <Modal label="画重绘区域" onClose={close} isolateKeys top className="h-full max-w-6xl">
       <ModalHeader
         title="画重绘区域"
         meta={<span className="text-sm text-ink-subtle">高亮的地方按提示词重画，其余保持原图</span>}
-        onClose={onClose}
+        onClose={close}
       >
-        <Segmented label="工具" options={TOOLS} value={tool} onChange={setTool} />
+        <Segmented label="工具" options={TOOLS} value={tool} onChange={setTool} disabled={saving} />
         {tool !== 'rect' && (
           <label className="flex items-center gap-2 text-xs text-ink-subtle">
             笔刷
             <input
               type="range"
               aria-label="笔刷大小"
+              disabled={saving}
               min={8}
               max={160}
               value={brush}
@@ -206,7 +243,7 @@ export function MaskEditor({
           className="ui-btn ui-btn-quiet ui-icon-btn"
           aria-label="撤销"
           title="撤销（⌘Z）"
-          disabled={!ops.length}
+          disabled={!ops.length || saving}
           onClick={() => setOps((list) => list.slice(0, -1))}
         >
           <Icon name="undo" />
@@ -214,7 +251,7 @@ export function MaskEditor({
         <button
           type="button"
           className="ui-btn ui-btn-quiet"
-          disabled={!ops.length}
+          disabled={!ops.length || saving}
           onClick={() => setOps([])}
         >
           清空

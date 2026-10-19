@@ -109,6 +109,7 @@ function ResultBarHost({ engine }: { engine: Engine }) {
     >
       {media && (
         <ResultActions
+          key={`actions:${media.assetId}`}
           engine={engine}
           el={el}
           media={media}
@@ -357,8 +358,8 @@ export function ResultActions({
             onClose={() => setMasking(false)}
             onSave={(mask) => {
               setMasking(false)
-              startRegionEdit(engine, catalog, el.id, mask, name)
-              notify('区域画好了，写一句要改成什么就能生成')
+              const id = startRegionEdit(engine, catalog, el.id, mask, name)
+              if (id) notify('区域画好了，写一句要改成什么就能生成')
             }}
           />
         )}
