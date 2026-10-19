@@ -120,6 +120,7 @@ export default defineConfig({
     'recovery-actions.spec.ts',
     'task-cancel-identity.spec.ts',
     'task-cancel-pending.spec.ts',
+    'task-submission-wait.spec.ts',
     'task-keyboard.spec.ts',
     'task-read-recovery.spec.ts',
     'task-retry-identity.spec.ts',

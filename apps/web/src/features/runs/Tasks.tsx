@@ -528,11 +528,12 @@ function ActiveDetail({
   grouped: boolean
   attempt?: number
 }) {
-  const tone = view.retrying
-    ? 'text-warning'
-    : view.step === undefined || view.step === 2
-      ? 'text-accent'
-      : 'text-ink-muted'
+  const tone =
+    view.retrying || view.notice
+      ? 'text-warning'
+      : view.step === undefined || view.step === 2
+        ? 'text-accent'
+        : 'text-ink-muted'
   return (
     <>
       <p className="flex min-w-0 items-baseline gap-1.5 text-xs">
@@ -543,6 +544,11 @@ function ActiveDetail({
           </span>
         )}
       </p>
+      {view.notice && (
+        <p role="status" className="mt-1 text-xs text-warning break-words">
+          {view.notice}
+        </p>
+      )}
       {view.step !== undefined ? (
         <ol className="ui-run-steps mt-1.5" aria-label="进度">
           {RUN_STEPS.map((name, i) => {

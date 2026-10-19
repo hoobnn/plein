@@ -586,7 +586,7 @@ export class NodeCards {
     live.box.dataset.phase = run.status === 'queued' ? 'local' : (run.phase ?? 'generating')
     const label = canceling ? '正在停止任务…' : view.label
     if (live.label.textContent !== label) live.label.textContent = label
-    const detail = view.detail ?? ''
+    const detail = [view.detail, view.notice].filter(Boolean).join(' · ')
     if (live.detail.textContent !== detail) {
       live.detail.textContent = detail
       live.detail.title = detail

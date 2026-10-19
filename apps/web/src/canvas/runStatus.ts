@@ -23,6 +23,8 @@ export interface RunView {
   label: string
   /** 第二行说明：平台、等谁、出错原因 */
   detail?: string
+  /** 平台长时间未响应时的非阻断说明，不表示失败或触发重试。 */
+  notice?: string
   /** 0–1；没有时显示不确定进度 */
   progress?: number
   /** 当前在 RUN_STEPS 的第几步；不知道时不显示步骤 */
@@ -62,8 +64,17 @@ export function describeActive(run: NodeRun, now: number): RunView {
     }
     case 'waiting':
       return { ...base, label: '等待空位', detail: `${platform ?? '平台'}并发已满，轮到就提交` }
-    case 'submitting':
-      return { ...base, label: '等待响应', detail: run.via }
+    case 'submitting': {
+      // 依据最近一次阶段／进度更新，不能把此前等待本地空位的时间算进平台响应。
+      const idle = Math.max(0, now - Math.max(run.at, run.startedAt ?? run.at))
+      const slow = idle >= 30_000
+      return {
+        ...base,
+        label: slow ? '响应较慢' : '等待响应',
+        detail: run.via,
+        notice: slow ? '平台响应较慢，请继续等待；请求可能已受理，请勿重复生成。' : undefined,
+      }
+    }
     case 'queued':
       return { ...base, label: '平台排队', detail: run.via }
     case 'saving':
