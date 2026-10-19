@@ -70,7 +70,11 @@ for (const type of [
     await page.setViewportSize({ width: 1000, height: 320 })
     await expect(panel).toHaveAttribute('data-compact', 'true')
     await page.screenshot({ path: `test-results/generator-compact-${type.split('/')[1]}.png` })
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await page.getByRole('button', { name: '画布工具', exact: true }).click()
+    await page
+      .getByRole('menu', { name: '画布工具', exact: true })
+      .getByRole('menuitem', { name: '设置', exact: true })
+      .click()
     const settings = page.getByRole('dialog', { name: '设置', exact: true })
     const close = settings.getByRole('button', { name: '关闭', exact: true })
     await close.focus()

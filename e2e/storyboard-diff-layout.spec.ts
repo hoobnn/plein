@@ -127,3 +127,33 @@ test('手改空台词和自定义音色明确显示当前值与计划值，同�
     await page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.prompt, f.ids.image),
   ).toContain('更新的分镜图')
 })
+
+test('差异窗口打开时反复调整画布尺寸不触发布局观察循环', async ({ page }) => {
+  await page.addInitScript(() => {
+    const errors: string[] = []
+    ;(window as unknown as { layoutErrors: string[] }).layoutErrors = errors
+    window.addEventListener('error', (event) => {
+      if (event.message.includes('ResizeObserver')) errors.push(event.message)
+    })
+  })
+  const f = await fixture(page, true)
+  for (const height of [700, 900, 680, 850, 650, 900]) {
+    await page.setViewportSize({ width: 1440, height })
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+    await expect(
+      f.panel.getByRole('button', { name: '同步计划改动', exact: true }),
+    ).toBeInViewport()
+  }
+  await f.panel.getByRole('button', { name: '关闭', exact: true }).click()
+  const editor = page.getByRole('dialog', { name: '分镜表', exact: true })
+  await expect(editor.getByLabel('分镜图提示词', { exact: true })).toHaveValue(
+    'PlannedToken'.repeat(100) + '\n计划第二行',
+  )
+  await editor.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(editor).toHaveCount(0)
+  expect(
+    await page.evaluate(() => (window as unknown as { layoutErrors: string[] }).layoutErrors),
+  ).toEqual([])
+})

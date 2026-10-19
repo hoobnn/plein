@@ -74,9 +74,17 @@ export function useFollow<T extends HTMLElement>(engine: Engine, place: () => Fo
     const node = ref.current
     if (!node) return
     sync()
-    const resize = new ResizeObserver(sync)
+    let frame = 0
+    // 定位可能改变观察对象自身的宽高；放到下一帧，避免在尺寸通知中再次重排。
+    const resize = new ResizeObserver(() => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(sync)
+    })
     resize.observe(node)
-    return () => resize.disconnect()
+    return () => {
+      resize.disconnect()
+      cancelAnimationFrame(frame)
+    }
   })
   return ref
 }
