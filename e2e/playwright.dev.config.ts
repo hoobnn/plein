@@ -212,6 +212,7 @@ export default defineConfig({
     'board-candidates.spec.ts',
     'board-playback.spec.ts',
     'board-thumbnail-recovery.spec.ts',
+    'editor-header-layout.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
     'sidebar-resize.spec.ts',
     'sidebar-assets-recovery.spec.ts',

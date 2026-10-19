@@ -38,7 +38,7 @@ import { Brand, isPlainClick } from '../ui/Brand'
 import { Icon } from '../ui/icons'
 import { MOD, withShortcut } from '../ui/keys'
 import { SlidePill } from '../ui/Slide'
-import { ThemeToggle } from '../ui/ThemeToggle'
+import { EditorActions } from '../shell/EditorActions'
 import { useCatalog } from '../stores/catalog'
 import { useLibrary } from '../features/library/store'
 import { type SyncStatus, switchMode, useCanvas } from '../stores/canvas'
@@ -49,8 +49,6 @@ import { Presence } from '../ui/Presence'
 import { zoomView } from '../ui/viewTransition'
 import { Toast } from '../ui/Toast'
 import { useShallow } from 'zustand/react/shallow'
-import { useMediaLibrary } from '../features/media-library/store'
-import { useCheckpoints } from '../features/checkpoints/store'
 
 const SYNC_LABELS: Record<SyncStatus, string> = {
   local: '本地演示',
@@ -179,7 +177,7 @@ export function Editor({
       {/* 侧栏是浮在画布左侧的面板：开关只滑入滑出，顶栏和画布都不动 */}
       {mode === 'flow' && <Sidebar open={sidebar} />}
       <header className="app-titlebar app-viewbar pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-4 p-3">
-        <div className="app-drag ui-bar pointer-events-auto">
+        <div className="app-drag ui-bar pointer-events-auto min-w-0">
           {/* 故事板没有侧栏，开关保留但禁用，切换视图时后面的按钮不挪位置 */}
           <SidebarToggle open={sidebar} disabled={mode !== 'flow'} onToggle={toggleSidebar} />
           <div className="ui-bar-sep" />
@@ -203,7 +201,9 @@ export function Editor({
             /
           </span>
           {canvas ? (
-            <ProjectSwitcher canvas={canvas} />
+            <div className="editor-project flex min-w-0 items-center gap-0.5">
+              <ProjectSwitcher canvas={canvas} />
+            </div>
           ) : source.kind === 'demo' ? (
             <span className="ui-bar-btn block max-w-60 truncate font-medium text-ink">
               {`演示（${source.count} 个元素）`}
@@ -215,59 +215,12 @@ export function Editor({
           <ModeSwitch />
           <span id="plein-creation-guide-entry" className="inline-flex empty:hidden" />
         </div>
-        <div className="app-actions ui-bar pointer-events-auto">
-          {source.kind === 'remote' && (
-            <>
-              <button
-                type="button"
-                className="ui-bar-btn gap-1.5"
-                onClick={() =>
-                  useMediaLibrary.getState().show({ projectId: canvas?.projectId ?? undefined })
-                }
-              >
-                <Icon name="image" />
-                素材
-              </button>
-              <button
-                type="button"
-                className="ui-bar-btn gap-1.5"
-                disabled={!canvas?.projectId}
-                onClick={() => {
-                  if (canvas?.projectId && canvasId)
-                    useCheckpoints.getState().show({ projectId: canvas.projectId, canvasId })
-                }}
-              >
-                <Icon name="history" />
-                检查点
-              </button>
-              <button
-                type="button"
-                onClick={() => useLibrary.getState().show('character')}
-                title="资产库：角色、场景、道具、风格、特效"
-                className="ui-bar-btn gap-1.5"
-              >
-                <Icon name="library" />
-                资产库
-              </button>
-              <div className="ui-bar-sep" />
-            </>
-          )}
-          <ThemeToggle />
-          {source.kind === 'remote' && (
-            <>
-              <div className="ui-bar-sep" />
-              <button
-                type="button"
-                onClick={onOpenSettings}
-                aria-label="设置"
-                title="设置"
-                className="ui-bar-btn"
-              >
-                <Icon name="settings" />
-              </button>
-            </>
-          )}
-        </div>
+        <EditorActions
+          remote={source.kind === 'remote'}
+          projectId={canvas?.projectId}
+          canvasId={canvasId}
+          onOpenSettings={onOpenSettings}
+        />
       </header>
       {mode === 'flow' && <EmptyHint />}
       <Presence>

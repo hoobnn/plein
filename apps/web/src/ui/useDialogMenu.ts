@@ -1,5 +1,12 @@
 import type { Menu } from '@base-ui/react/menu'
-import { type ComponentProps, type PointerEvent, useEffect, useRef, useState } from 'react'
+import {
+  type ComponentProps,
+  type PointerEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 
 /** 菜单与窗口协调：让位于上层窗口，并取消尚未完成的触发器点击。 */
 export function useDialogMenu() {
@@ -7,6 +14,10 @@ export function useDialogMenu() {
   const trigger = useRef<HTMLButtonElement>(null)
   const pending = useRef(false)
   const cancelledAt = useRef(-Infinity)
+  const close = useCallback(() => {
+    pending.current = false
+    setOpen(false)
+  }, [])
   const owner = () => trigger.current?.closest('[role="dialog"]')
   const otherDialogFocused = () => {
     const active = document.activeElement?.closest('[role="dialog"]')
@@ -64,6 +75,7 @@ export function useDialogMenu() {
 
   return {
     open,
+    close,
     onOpenChange,
     triggerProps: {
       ref: trigger,
