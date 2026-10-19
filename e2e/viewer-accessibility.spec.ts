@@ -1,8 +1,10 @@
 import { expect, test } from '@playwright/test'
+import { execFileSync } from 'node:child_process'
 import { clickElement, newProject, waitNode } from './canvas'
 
-for (const kind of ['audio', 'video'] as const) {
-  test(`${kind} 正常播放器使用素材名称，候选切换、改名和失败恢复不误报不可播放`, async ({
+for (const format of ['audio', 'video', 'h264'] as const) {
+  const kind = format === 'h264' ? 'video' : format
+  test(`${format} 正常播放器使用素材名称，候选切换、改名和失败恢复不误报不可播放`, async ({
     page,
     context,
   }) => {
@@ -32,6 +34,51 @@ for (const kind of ['audio', 'video'] as const) {
       .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.results?.length, id))
       .toBe(2)
     await waitNode(page, id)
+    if (format === 'h264') {
+      // 真实 2K 无音轨 MP4；Mock 默认 WebM 不能代表付费平台返回的编码。
+      const assets: string[] = []
+      for (const color of ['blue', 'green']) {
+        const data = execFileSync('ffmpeg', [
+          '-hide_banner',
+          '-loglevel',
+          'error',
+          '-f',
+          'lavfi',
+          '-i',
+          `color=c=${color}:s=2560x1440:r=24:d=2`,
+          '-an',
+          '-c:v',
+          'libx264',
+          '-pix_fmt',
+          'yuv420p',
+          '-movflags',
+          'frag_keyframe+empty_moov',
+          '-f',
+          'mp4',
+          'pipe:1',
+        ])
+        const response = await page.request.post('/api/assets', {
+          headers: { 'content-type': 'video/mp4', 'x-file-name': `2k-${color}.mp4` },
+          data,
+        })
+        expect(response.status()).toBe(201)
+        assets.push((await response.json()).id)
+      }
+      await page.evaluate(
+        ({ id, assets }) => {
+          const node = window.__plein.engine.doc.mutable(id) as unknown as {
+            get(key: string): unknown
+            set(key: string, value: unknown): void
+          }
+          const results = node.get('results') as Array<{ value: Record<string, unknown> }>
+          node.set(
+            'results',
+            results.map((r, i) => ({ ...r, value: { ...r.value, assetId: assets[i] } })),
+          )
+        },
+        { id, assets },
+      )
+    }
     const before = await page.evaluate((id) => window.__plein.engine.doc.get(id)!.adopted, id)
     const open = () => generator.getByRole('button', { name: '全屏查看', exact: true }).click()
     await open()
@@ -41,6 +88,13 @@ for (const kind of ['audio', 'video'] as const) {
     await expect
       .poll(() => media.evaluate((el) => (el as HTMLMediaElement).readyState))
       .toBeGreaterThanOrEqual(2)
+    if (format === 'h264')
+      expect(
+        await media.evaluate((el) => {
+          const video = el as HTMLVideoElement
+          return [video.videoWidth, video.videoHeight, video.error]
+        }),
+      ).toEqual([2560, 1440, null])
     await expect(media).toHaveAccessibleName(label)
     if (kind === 'video')
       await expect.poll(async () => (await media.boundingBox())?.width ?? 0).toBeGreaterThan(320)
@@ -54,8 +108,7 @@ for (const kind of ['audio', 'video'] as const) {
     ).toBe(label)
     expect(
       tree.nodes.filter(
-        (node) =>
-          !node.ignored && /无法播放媒体|unable to play media/i.test(node.name?.value ?? ''),
+        (node) => !node.ignored && /无法播放媒体|unable to play media/i.test(JSON.stringify(node)),
       ),
     ).toEqual([])
     await test.info().attach('native-media-accessibility.json', {
@@ -89,6 +142,11 @@ for (const kind of ['audio', 'video'] as const) {
     await expect(renamed.locator(kind)).toHaveAccessibleName(
       `协作改名后的播放器 ${kind === 'audio' ? '音频' : '视频'}播放器`,
     )
+    // 重开审片会回到采用项；故障应拦截它，而不是刚才浏览但未采用的另一个候选。
+    await renamed.getByRole('button', { name: '预览上一个候选', exact: true }).click()
+    await expect
+      .poll(() => renamed.locator(kind).evaluate((el) => (el as HTMLMediaElement).readyState))
+      .toBeGreaterThanOrEqual(2)
     const asset = await renamed.locator(kind).getAttribute('src')
     await renamed.getByRole('button', { name: '关闭', exact: true }).click()
     let failing = true
