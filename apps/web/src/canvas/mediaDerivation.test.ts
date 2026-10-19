@@ -84,3 +84,78 @@ it('有效加工返回新卡片但不接管选择，产物单独撤销且保留�
   doc.undo.redo()
   expect(doc.get(result.created[0]!)?.assetId).toBe('cropped')
 })
+
+it.each(['inside', 'nested', 'moved'] as const)(
+  '加工产物在 %s 分组内保持归属和世界位置，撤销重做后随父级移动',
+  async (mode) => {
+    const doc = openDoc()
+    docs.push(doc)
+    const outer = createElement(doc, { kind: 'frame', x: 100, y: 200, w: 1400, h: 900 })
+    const parent =
+      mode === 'nested'
+        ? createElement(doc, { kind: 'frame', parentId: outer, x: 50, y: 50, w: 1000, h: 700 })
+        : outer
+    const source = createElement(doc, {
+      kind: 'image',
+      assetId: 'source',
+      parentId: parent,
+      x: 100,
+      y: 200,
+      w: 160,
+      h: 90,
+    })
+    const engine = { doc, scene: new Scene(doc) } as unknown as Engine
+    let release!: (value: MediaDerivation) => void
+    vi.spyOn(api, 'mediaDerive').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        }),
+    )
+    const pending = applyDerivation(engine, input, source)
+    if (mode === 'moved') updateElement(doc, outer, { x: 2000, y: 1000 })
+    const sourceRect = doc.worldRect(source)!
+    release(made)
+    const { created } = await pending
+    const result = created[0]!
+    expect(doc.get(result)?.parentId).toBe(parent)
+    const rect = doc.worldRect(result)!
+    expect(rect).toEqual({ x: sourceRect.x + sourceRect.w + 80, y: sourceRect.y, w: 80, h: 90 })
+    doc.undo.undo()
+    expect(doc.get(result)).toBeUndefined()
+    doc.undo.redo()
+    expect(doc.get(result)?.parentId).toBe(parent)
+    expect(doc.worldRect(result)).toEqual(rect)
+    updateElement(doc, outer, { x: doc.get(outer)!.x + 200 })
+    expect(doc.worldRect(result)).toEqual({ ...rect, x: rect.x + 200 })
+  },
+)
+it('音视频分离按每张卡片最终范围归组，超出分组的音频留在根层且保留相对位置', async () => {
+  const doc = openDoc()
+  docs.push(doc)
+  const frame = createElement(doc, { kind: 'frame', x: 100, y: 100, w: 450, h: 600 })
+  const source = createElement(doc, {
+    kind: 'video',
+    assetId: 'source',
+    parentId: frame,
+    x: 50,
+    y: 200,
+    w: 160,
+    h: 90,
+  })
+  const engine = { doc, scene: new Scene(doc) } as unknown as Engine
+  vi.spyOn(api, 'mediaDerive').mockResolvedValue({
+    assets: [
+      { id: 'silent', kind: 'video', width: 160, height: 90, name: '画面.mp4' },
+      { id: 'sound', kind: 'audio', name: '声音.wav' },
+    ],
+  } as MediaDerivation)
+  const { created } = await applyDerivation(engine, { op: 'separate', assetId: 'source' }, source)
+  expect(created).toHaveLength(2)
+  expect(doc.get(created[0]!)?.parentId).toBe(frame)
+  expect(doc.get(created[1]!)?.parentId).toBeNull()
+  const a = doc.worldRect(created[0]!)!,
+    b = doc.worldRect(created[1]!)!
+  expect(b.x - a.x - a.w).toBe(16)
+  expect(Math.abs(a.y + a.h / 2 - (b.y + b.h / 2))).toBeLessThanOrEqual(1)
+})

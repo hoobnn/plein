@@ -1,11 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import {
-  createElements,
-  elementMedia,
-  mediaSize,
-  type NewElement,
-  ReadOnlyDocError,
-} from '@plein/doc'
+import { elementMedia, mediaSize, type NewElement, ReadOnlyDocError } from '@plein/doc'
 import type {
   Asset,
   AssetKind,
@@ -16,6 +10,7 @@ import type {
 } from '@plein/protocol'
 import { api } from '../api/client'
 import { freeSpotRight } from './presets'
+import { placeImports } from './import'
 
 /** 变速可选的倍数：本地工具直接改素材，不是 TTS 那种合成时的语速参数 */
 export const SPEEDS = [0.5, 0.75, 1.5, 2, 3] as const
@@ -224,8 +219,7 @@ export async function applyDerivation(
       x += size.w + GAP
     }
   }
-  engine.doc.undo.stopCapturing()
-  const created = createElements(engine.doc, list)
-  engine.doc.undo.stopCapturing()
+  // 与导入共用最终位置归组，完整放得下才归入框内，并保留整次加工的一步撤销。
+  const created = placeImports(engine, list)
   return { ...made, created }
 }
