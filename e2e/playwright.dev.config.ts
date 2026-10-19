@@ -208,6 +208,7 @@ export default defineConfig({
     'sidebar-search.spec.ts',
     'sidebar-filter-recovery.spec.ts',
     'filter-menu-layers.spec.ts',
+    'board-lifecycle.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
     'sidebar-resize.spec.ts',
     'sidebar-assets-recovery.spec.ts',

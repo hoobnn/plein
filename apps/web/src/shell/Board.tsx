@@ -86,10 +86,28 @@ function BoardPanel({ engine }: { engine: Engine }) {
   }, [engine, catalog, version])
   // oxlint-enable react-hooks/exhaustive-deps
 
+  // 已展开的类别可能被本地或协作删除；退出展开，避免把其他类别一起藏掉。
+  if (expanded && !columns.some((column) => column.type === expanded)) setExpanded(null)
+
   const locate = (id: string) => {
+    const state = useCanvas.getState()
+    if (state.engine !== engine || state.mode !== 'board') return
+    if (!engine.doc.has(id)) {
+      state.notify('元素已被删除，无法定位')
+      return
+    }
     switchMode('flow')
     engine.selection.set([id])
-    requestAnimationFrame(() => engine.zoomToFit([id]))
+    requestAnimationFrame(() => {
+      const current = useCanvas.getState()
+      if (
+        current.engine === engine &&
+        engine.doc.has(id) &&
+        engine.selection.size === 1 &&
+        engine.selection.has(id)
+      )
+        engine.zoomToFit([id])
+    })
   }
 
   const shown = expanded ? columns.filter((c) => c.type === expanded) : columns
