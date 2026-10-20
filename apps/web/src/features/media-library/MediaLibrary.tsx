@@ -23,7 +23,7 @@ import { EmptyState } from '../../ui/EmptyState'
 import { bytes, fullTime } from '../../ui/format'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
-import { Presence } from '../../ui/Presence'
+import { Presence, useClosing } from '../../ui/Presence'
 import { Select } from '../../ui/Select'
 import { useLibrary } from '../library/store'
 import { mediaApi } from './client'
@@ -698,17 +698,35 @@ function MediaImage({
 
 function MediaPlayer({ asset, className }: { asset: MediaLibraryItem; className: string }) {
   const [failed, setFailed] = useState(false)
+  const ref = useRef<HTMLMediaElement | null>(null)
+  const closing = useClosing()
+  useLayoutEffect(() => {
+    const media = ref.current
+    if (closing) media?.pause()
+    // StrictMode 保留 DOM 重放布局 effect，清理后需恢复当前来源。
+    else if (media && !media.getAttribute('src')) media.src = assetUrls.original(asset.id)
+    return () => {
+      media?.pause()
+      media?.removeAttribute('src')
+      media?.load()
+    }
+  }, [asset.id, failed, closing])
   const video = asset.kind === 'video'
   if (failed)
     return (
       <MediaFailure
         icon={video ? 'video' : 'audio'}
         label={video ? '视频加载失败' : '音频加载失败'}
-        onRetry={() => setFailed(false)}
+        onRetry={() => {
+          if (!closing) setFailed(false)
+        }}
       />
     )
   const props = {
     'aria-label': `${asset.name || '未命名素材'} ${video ? '视频' : '音频'}播放器`,
+    ref: (media: HTMLMediaElement | null) => {
+      ref.current = media
+    },
     src: assetUrls.original(asset.id),
     controls: true,
     preload: 'metadata',
@@ -716,7 +734,7 @@ function MediaPlayer({ asset, className }: { asset: MediaLibraryItem; className:
     onError: () => setFailed(true),
   } as const
   // oxlint-disable jsx-a11y/media-has-caption -- 用户素材没有可用字幕轨
-  return video ? <video {...props} autoPlay /> : <audio {...props} />
+  return video ? <video {...props} autoPlay={!closing} /> : <audio {...props} />
   // oxlint-enable jsx-a11y/media-has-caption
 }
 

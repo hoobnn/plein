@@ -74,6 +74,7 @@ export default defineConfig({
     'media-library-layout.spec.ts',
     'media-preview-lifecycle.spec.ts',
     'media-preview-scroll.spec.ts',
+    'media-library-player-lifecycle.spec.ts',
     'media-offline.spec.ts',
     'offline.spec.ts',
     'collaboration-fields.spec.ts',
