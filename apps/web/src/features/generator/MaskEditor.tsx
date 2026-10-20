@@ -75,7 +75,23 @@ export function MaskEditor({
   const [box, setBox] = useState({ w: 0, h: 0 })
   const [tool, setTool] = useState<MaskTool>('brush')
   const [brush, setBrush] = useState(48)
-  const [ops, setOps] = useState<MaskOp[]>([])
+  const [history, setHistory] = useState<{ steps: MaskOp[][]; index: number }>({
+    steps: [[]],
+    index: 0,
+  })
+  const ops = history.steps[history.index]!
+  const edit = useCallback(
+    (update: (ops: MaskOp[]) => MaskOp[]) => {
+      setHistory((current) => ({
+        steps: [
+          ...current.steps.slice(0, current.index + 1),
+          update(current.steps[current.index]!),
+        ],
+        index: current.index + 1,
+      }))
+    },
+    [setHistory],
+  )
   const [draft, setDraft] = useState<MaskOp | null>(null)
   const [saving, setSaving] = useState(false)
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
@@ -115,13 +131,13 @@ export function MaskEditor({
             : null
         if (!alive) return
         setSize({ width: meta.width, height: meta.height })
-        if (base) setOps([{ type: 'image', image: base }])
+        if (base) edit(() => [{ type: 'image', image: base }])
       })
       .catch((err: Error) => alive && notify(err.message))
     return () => {
       alive = false
     }
-  }, [assetId, initial, notify])
+  }, [assetId, initial, notify, edit])
 
   // 舞台大小变了，图片按比例缩进去（弹层挂载晚于本组件，用回调 ref 拿节点）
   useLayoutEffect(() => {
@@ -189,7 +205,7 @@ export function MaskEditor({
     if (active.target.hasPointerCapture(active.pointerId))
       active.target.releasePointerCapture(active.pointerId)
     if (draft && !(draft.type === 'rect' && (draft.w < 2 || draft.h < 2)))
-      setOps((list) => [...list, draft])
+      edit((list) => [...list, draft])
     setDraft(null)
   }
 
@@ -227,19 +243,35 @@ export function MaskEditor({
     }
   }
 
-  // ⌘Z 撤销最后一笔；保存时冻结区域，但仍阻止按键穿透到画布。
+  const travel = useCallback(
+    (direction: -1 | 1) => {
+      if (saveRequest.current || closing) return
+      // 未完成的笔画先取消，不消耗已完成区域的历史。
+      if (drag.current) {
+        cancelDrag()
+        return
+      }
+      setHistory((current) => ({
+        ...current,
+        index: Math.max(0, Math.min(current.steps.length - 1, current.index + direction)),
+      }))
+    },
+    [cancelDrag, closing, setHistory],
+  )
+  // 保存时冻结历史，但仍阻止快捷键穿透到画布。
   useEffect(() => {
     if (closing) return
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault()
-        e.stopPropagation()
-        if (!saveRequest.current) setOps((list) => list.slice(0, -1))
-      }
+      if (e.isComposing || e.keyCode === 229 || e.altKey || !(e.metaKey || e.ctrlKey)) return
+      const key = e.key.toLowerCase()
+      if (key !== 'z' && key !== 'y') return
+      e.preventDefault()
+      e.stopPropagation()
+      travel(key === 'y' || e.shiftKey ? 1 : -1)
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [closing])
+  }, [closing, travel])
 
   return (
     <Modal label="画重绘区域" onClose={close} isolateKeys top className="h-full max-w-6xl">
@@ -269,16 +301,29 @@ export function MaskEditor({
           className="ui-btn ui-btn-quiet ui-icon-btn"
           aria-label="撤销"
           title="撤销（⌘Z）"
-          disabled={!ops.length || saving}
-          onClick={() => setOps((list) => list.slice(0, -1))}
+          disabled={(!history.index && !draft) || saving}
+          onClick={() => travel(-1)}
         >
           <Icon name="undo" />
         </button>
         <button
           type="button"
+          className="ui-btn ui-btn-quiet ui-icon-btn"
+          aria-label="重做"
+          title="重做（⇧⌘Z / Ctrl+Y）"
+          disabled={history.index === history.steps.length - 1 || !!draft || saving}
+          onClick={() => travel(1)}
+        >
+          <Icon name="redo" />
+        </button>
+        <button
+          type="button"
           className="ui-btn ui-btn-quiet"
           disabled={!ops.length || saving}
-          onClick={() => setOps([])}
+          onClick={() => {
+            cancelDrag()
+            edit(() => [])
+          }}
         >
           清空
         </button>
