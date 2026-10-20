@@ -654,7 +654,9 @@
   gap: 6px;
   color: var(--ink-muted);
   word-break: break-word;
-  background: radial-gradient(80% 80% at 50% 50%, var(--danger-soft), transparent 70%);
+  /* 旧媒体仍由 GPU 保留；错误说明不能随底图颜色失去对比。 */
+  background:
+    radial-gradient(80% 80% at 50% 50%, var(--danger-soft), transparent 70%), var(--surface);
 }
 
 .plein-node-failed-icon {
