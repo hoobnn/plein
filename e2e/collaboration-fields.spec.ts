@@ -32,7 +32,7 @@ test('角色名称远端更新不覆盖未提交草稿，用户可明确选择�
     await nameField(page).fill('我的未提交名称')
     const rename = async (before: string, after: string) => {
       await peer.getByRole('treeitem', { name: `${before} 定位到画布`, exact: true }).dblclick()
-      const input = peer.getByRole('tree').getByRole('textbox', { name: '画布名称' })
+      const input = peer.getByRole('tree').getByRole('textbox', { name: '元素名称', exact: true })
       await input.fill(after)
       await input.press('Enter')
       await expect.poll(() => savedName(page, id)).toBe(after)
@@ -41,7 +41,7 @@ test('角色名称远端更新不覆盖未提交草稿，用户可明确选择�
     await expect(nameField(page)).toHaveValue('我的未提交名称')
     const panel = page.getByTestId('generator')
     await expect(panel.getByRole('status')).toContainText('同伴已保存名称')
-    await page.screenshot({ path: 'test-results/name-conflict.png' })
+    await page.screenshot({ path: test.info().outputPath('name-conflict.png') })
     // 冲突时失焦不应无意覆盖同伴刚提交的名称。
     await nameField(page).press('Tab')
     expect(await savedName(page, id)).toBe('同伴已保存名称')
@@ -82,7 +82,7 @@ test('角色名称远端更新不覆盖未提交草稿，用户可明确选择�
     await panel
       .getByRole('button', { name: '使用更新后的名称', exact: true })
       .scrollIntoViewIfNeeded()
-    await page.screenshot({ path: 'test-results/name-conflict-narrow.png' })
+    await page.screenshot({ path: test.info().outputPath('name-conflict-narrow.png') })
     await panel.getByRole('button', { name: '使用更新后的名称', exact: true }).click()
     await expect(nameField(page)).toHaveValue(longName)
     const bounds = await panel.boundingBox()

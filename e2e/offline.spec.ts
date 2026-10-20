@@ -134,11 +134,11 @@ test('离线正文撤销重做与在线同伴修改合并，刷新和无缓存�
     await expect(prompt).toHaveValue('初始正文')
     await page.getByRole('button', { name: '重做', exact: true }).click()
     await expect(prompt).toHaveValue('离线修改后的正文')
-    await page.screenshot({ path: 'test-results/offline-edit-before-reconnect.png' })
+    await page.screenshot({ path: test.info().outputPath('offline-edit-before-reconnect.png') })
 
     // 修改不同字段，验证真实远端事务不会被本机撤销历史吞掉。
     await peer.getByRole('treeitem', { name: '离线正文 定位到画布', exact: true }).dblclick()
-    const name = peer.getByRole('tree').getByRole('textbox', { name: '画布名称' })
+    const name = peer.getByRole('tree').getByRole('textbox', { name: '元素名称', exact: true })
     await name.fill('同伴重命名')
     await name.press('Enter')
     await addNode(peer, '文本', { x: 950, y: 450 })
@@ -155,7 +155,7 @@ test('离线正文撤销重做与在线同伴修改合并，刷新和无缓存�
     await expect(
       page.getByRole('treeitem', { name: '同伴重命名 定位到画布', exact: true }),
     ).toBeVisible()
-    await page.screenshot({ path: 'test-results/offline-edit-after-reconnect.png' })
+    await page.screenshot({ path: test.info().outputPath('offline-edit-after-reconnect.png') })
     await page.getByRole('button', { name: '撤销', exact: true }).click()
     await expect.poll(() => read(page)).toEqual({ ...merged, text: '初始正文' })
     await expect.poll(() => read(peer)).toEqual({ ...merged, text: '初始正文' })
