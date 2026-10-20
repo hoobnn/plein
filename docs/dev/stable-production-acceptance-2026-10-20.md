@@ -92,11 +92,25 @@
 - `unified-static.log`：全部源码格式/lint、13 个 TypeScript 配置及 13 项桌面身份合同通过；`unified-smoke.log` 的隔离 HTTP/WS 冒烟通过。统一产品初轮覆盖率 51.91% 未过 52% 门禁，新增上述真实命令回归后重新执行，保留失败日志；最终 `unified-coverage-final.log`：199 文件、1640 通过/1 跳过，Lines 52.34%、Statements 50.40%、Branches 42.58%、Functions 43.90%，全部既定阈值通过。
 - 原生统一验收包已完成同一项目的 v4 本地导出；产物 `d0f1e1cd72c196a8e4b982634d387da4a0422c3eaf3362bebf48cf558c0672b2`，完整解码通过、字幕仍 56 条、上游快照未变、provider submit 为零。实际播放器从零播放至 3:26，原生下载文件哈希与 assetId 一致。最终包三次冷启动均保留端口 56972、完整序列参数、56 条字幕、全部候选与 v4 采用；第 3 次可再次打开实际 v4 回看。上游对象键在 Yjs 重放后可能重排，故使用逐项语义及规范化哈希比较，候选/字幕数组顺序不放宽。原始记录为 `native-unified-after.json`、`native-unified-cold*.json`、`native-unified-verification.json`。
 
+## 工程交换格式的独立补验
+
+原生验收包通过“导出工程”保存 `native-unified-v4-engineering.zip`（SHA256 `ae0246311112703729bde24a46e027ddefc77a9e4a1d024efa2bba37aae1d372`）。以独立 Python 环境中的 ASWF OpenTimelineIO 0.18.1 读取实际 OTIO：19 段视频、18 段对白、1 条配乐、206.167s、38 份相对路径素材和 56 条字幕均通过；素材哈希匹配返工项目包，OTIO 再序列化与重读语义相同。Apple 官方 FCPXML 1.10 DTD 的离线 `xmllint` 校验通过。证据为 `engineering-check-report.json`。格式校验不替代剪辑软件实际导入。
+
+这次独立核验暴露并修复两处工程导出问题：FCPXML 原来把单声道 24kHz 的源音频硬写为双声道 48kHz；README 原来将 OTIO 私有元数据中的音量描述为已保留。经子代理评审后，探测和工程接口只透传单一音频流中已知的真实声道数、采样率；多流、未知或无音频时不猜属性，也不推定 `audioSources`；序列最终混音 48kHz 保持不变。README 改为明确 FCPXML 基础音量与 OTIO 私有音量元数据的区别，要求导入后核对。针对真实 mono24k、stereo48k、双流 MKA、静音画面、完整 ZIP 及旧合同的 21 项回归全部通过，见 `interchange-audio-proof.json`。修复后产品冻结为 `db8ad840485fec46`，相对 `1548ea259fde2367` 仅改变上述 3 个产品文件与 2 个测试文件；格式/lint、Markdown、13 个 TypeScript 配置与 13 项桌面合同均通过，全量 200 个测试文件、1649 通过/1 跳过，Lines 52.35%、Statements 50.41%、Branches 42.60%、Functions 43.91%，既定阈值通过。证据为 `interchange-freeze-static-report.json`、`interchange-freeze-profile.log`、`interchange-freeze-coverage.log` 和 `interchange-freeze-tests.json`。
+
+新冻结逐项核对 1168 份源码、103184 个依赖 entry 和 6 项运行资源。3548 个链接的文本及内部指向与旧清单一致，活动工作区断链为 0；旧快照夹带的 `.claude/worktrees/remote-control-4f7f12` 中 11 个历史开发链接目标缺失，单列于 `interchange-freeze-verification.json`，不冒充为有效运行依赖，也未修补它们来凑通过。实际 server/web/desktop 构建与打包通过。
+
+新原生验收包签名校验通过、没有更新 feed；只重启验收进程（新 PID `16582`），生产 PID `47747` 保持。通过界面再次导出 `native-interchange-fixed-engineering.zip`，SHA256 `599f6a91c70c8e947abc02a90678d523822b9a7a2f9280a252b7e82115db3758`。逐个使用真实 ffprobe 核验全部 38 份素材，音频源属性全部吻合；单声道 24kHz、双声道 48kHz、无音频素材均符合合同。序列混音仍 48k；19 镜、18 段对白、1 条配乐、206.167s、56 字幕及全部素材哈希通过，OTIO 与 SRT 字节同旧包，Apple DTD 再验通过，README 实际内容准确。见 `interchange-fixed-check-report.json` 和 `interchange-native-package.json`。隔离 HTTP/WS 冒烟、上传加工与重启也通过，见 `interchange-freeze-smoke-approved.log`；首次受 sandbox 禁止回环监听的失败日志保留，原样允许监听后通过。本次只修改工程导出和媒体事实探测，不将前一冻结的三连片、强杀恢复或 76 条 UI 回归说成本冻结重跑；本次对应验证为全量单元/静态/合同及原生重新导出。新增付费调用仍为零。
+
+为推进实际编辑器验收，临时下载 KDE 官方 Kdenlive 26.08.2 arm64，核对官方 SHA256、镜像 CRC、应用签名及公证；未安装到系统应用目录。该软件在 Quick Setup 点击 Start Editing 时三次崩溃，尚未读取 Plein 工程；系统日志为 SIGTRAP，栈含 `QImage::toCGImage` / `KDirOperator::setViewMode`。因此本项记为“外部工具启动阻塞、实际导入待验收”，不归因为 Plein 导出失败，也不记为通过。已退出临时应用并卸载只读镜像，摘要证据为 `external-editor-startup-report.json`。
+
+用户已明确当前没有第二台 Mac，跨机验收保留待验收；同机新数据目录迁移不能替代跨机证据。
+
 ## 仍需完成的生产准入
 
 1. 在另行批准预算后，用同一冻结产品版本连续生成双人对话、动作连续性、强风格三类新片；记录真实提交次数、等待、成功率、重试和人工干预。现有素材复用不能覆盖这项。
 2. 用供应商真实请求编号核对未知提交、补提交及费用；没有请求编号的历史 504 无法由本地修复反推出是否计费。保留旧尝试，不盲目自动补发。
-3. 在另一台机器导入工程和项目包，验证独立依赖与媒体路径；在实际外部剪辑软件核验 OTIO/FCPXML。当前只完成同机新数据目录迁移。
+3. 跨机验收：用户已确认暂无第二台 Mac，明确保留待验收。当前同机新数据目录迁移、OTIO 官方解析和 Apple DTD 校验已完成；外部编辑器实际导入仍待验证，临时 Kdenlive 在读取工程前启动崩溃。
 4. 对正式生产安装包完成双开、签名、公证、更新 feed 与发布门禁。当前为本地 ad-hoc 签名验收包与开发实例双开，未发布。
 5. 按账号实际授权验证 ASR、配乐等模型可用性。当前 UI 如实显示“未验证”，不把配置成功当作授权恢复。
 6. 后续新增的交互修复仍需独立冻结并重验；截至 `6a3c919` 的明确检查点已完成上述统一补验，之后进行中的侧栏重命名等改动未纳入。
