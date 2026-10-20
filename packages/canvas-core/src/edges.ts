@@ -6,6 +6,8 @@ import type { Scene } from './scene'
 import type { Selection } from './selection'
 import { theme } from './theme'
 
+const MIN_PORT_ZOOM = 0.25
+
 /** 拖拽中的连线预览：从一个端口拉到光标 */
 export interface EdgePreview {
   from: PortRef
@@ -87,7 +89,7 @@ export class EdgeLayer {
    * 平时卡片保持干净，连线直接接在卡片边缘。
    */
   portsVisible(el: CanvasElement) {
-    if (!elementPorts(el)) return false
+    if (this.camera.zoom < MIN_PORT_ZOOM || !elementPorts(el)) return false
     return this.preview !== null || this.selection.has(el.id) || this.hoverEl === el.id
   }
 
@@ -181,7 +183,7 @@ export class EdgeLayer {
       p.stroke({ color: portColor(from.port.type), alpha: target ? 0.95 : 0.6, width: 2 * px })
     }
     // 缩得很小时端口点太密，不画
-    if (this.camera.zoom < 0.25) return
+    if (this.camera.zoom < MIN_PORT_ZOOM) return
     const active = this.preview?.target ?? this.hover
     // 平时只有选中和悬停的元素露出端口；拉线时视口内都露出
     const candidates = this.preview

@@ -112,6 +112,7 @@ export default defineConfig({
     'gesture-lifecycle.spec.ts',
     'gesture-concurrency.spec.ts',
     'group-boundaries.spec.ts',
+    'port-zoom-boundaries.spec.ts',
     'canvas-readonly.spec.ts',
     'canvas-shortcut-composition.spec.ts',
     'command-palette-boundaries.spec.ts',

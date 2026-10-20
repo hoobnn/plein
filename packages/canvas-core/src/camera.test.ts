@@ -50,6 +50,24 @@ describe('Camera', () => {
     expect(s.y).toBeCloseTo(45)
   })
 
+  it.each([0.2, 0.249, 0.25, 0.5, 0.001, 100])(
+    '指定缩放 %s 保留准确边界、中心锚点并只通知一次',
+    (zoom) => {
+      const cam = camera(13, -7, 0.09)
+      cam.setViewport(1440, 900)
+      const before = cam.screenToWorld(720, 450)
+      const seen: number[] = []
+      cam.onChange(() => seen.push(cam.zoom))
+      cam.zoomTo(zoom)
+      const expected = Math.min(cam.maxZoom, Math.max(cam.minZoom, zoom))
+      expect(cam.zoom).toBe(expected)
+      expect(seen).toEqual([expected])
+      const after = cam.screenToWorld(720, 450)
+      expect(after.x).toBeCloseTo(before.x)
+      expect(after.y).toBeCloseTo(before.y)
+    },
+  )
+
   it('fit 居中到挡板之外的区域，不超过 maxZoom', () => {
     const cam = camera()
     cam.setViewport(1000, 800)

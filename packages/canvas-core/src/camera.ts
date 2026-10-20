@@ -51,7 +51,11 @@ export class Camera {
 
   /** 以屏幕上的某一点为中心缩放（光标不动） */
   zoomAt(sx: number, sy: number, factor: number) {
-    const next = this.clamp(this.zoom * factor)
+    this.setZoomAt(sx, sy, this.zoom * factor)
+  }
+
+  private setZoomAt(sx: number, sy: number, zoom: number) {
+    const next = this.clamp(zoom)
     const k = next / this.zoom
     this.x = sx - (sx - this.x) * k
     this.y = sy - (sy - this.y) * k
@@ -61,7 +65,7 @@ export class Camera {
 
   /** 以视口中心缩放到指定倍数 */
   zoomTo(zoom: number) {
-    this.zoomAt(this.width / 2, this.height / 2, zoom / this.zoom)
+    this.setZoomAt(this.width / 2, this.height / 2, zoom)
   }
 
   /** 面板边距只通知布局订阅者，不移动相机或触发画面变化。 */
