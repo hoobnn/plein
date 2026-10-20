@@ -72,6 +72,7 @@ export default defineConfig({
     'media-pagination.spec.ts',
     'media-search.spec.ts',
     'media-library-layout.spec.ts',
+    'media-preview-lifecycle.spec.ts',
     'media-offline.spec.ts',
     'offline.spec.ts',
     'collaboration-fields.spec.ts',

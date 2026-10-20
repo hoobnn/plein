@@ -85,7 +85,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
   }, [selected])
   const engine = useCanvas((s) => s.engine),
     canvasId = useCanvas((s) => s.canvasId)
-  const [preview, setPreview] = useState(false)
+  const [preview, setPreview] = useState<MediaLibraryItem | null>(null)
   const searching = searchQuery.trim() !== debounced
   const visibleItems = searching || queryTooLong ? [] : page.items
   useEffect(() => () => request.current?.abort(), [])
@@ -370,7 +370,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
               <MediaDetail
                 key={selected.id}
                 asset={selected}
-                onPreview={() => setPreview(true)}
+                onPreview={() => setPreview(selected)}
                 onPlace={() => place(selected)}
                 canPlace={!!engine && !!canvasId && !engine.doc.readOnly}
                 onClose={close}
@@ -380,7 +380,9 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
         </div>
       </Modal>
       <Presence>
-        {preview && selected && <MediaPreview asset={selected} onClose={() => setPreview(false)} />}
+        {preview && (
+          <MediaPreview key={preview.id} asset={preview} onClose={() => setPreview(null)} />
+        )}
       </Presence>
     </>
   )
