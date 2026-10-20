@@ -38,8 +38,9 @@ const README = `这个文件夹是 plein 导出的剪辑工程，素材在 media
 - 字幕：subtitles.srt，大多数剪辑软件都能直接导入
 
 和 plein 导出的成片相比：
-- 画面顺序、入出点、速度、重叠转场（叠化 / 划像 / 推移 / 闪白）和各轨声音的位置、音量都保留；
+- 画面顺序、入出点、速度、重叠转场（叠化 / 划像 / 推移 / 闪白）和各轨声音的位置保留；
   FCPXML 里划像、推移、闪白统一用交叉叠化，经黑场转场在两个工程里都是硬切
+- FCPXML 保留各轨声音的基础音量；OTIO 只把音量附在 plein 私有元数据中，剪辑软件不一定应用，导入后请核对并按需设置
 - 对白时压低配乐、结尾淡出、响度标准化不保留（各软件的自动化格式不通用），需要时在剪辑软件里重做
 `
 
@@ -80,6 +81,8 @@ export async function sequencePackage(
           : (info.duration ?? asset.duration ?? 0),
       hasVideo: info.hasVideo,
       hasAudio: info.hasAudio,
+      audioChannels: info.audioChannels,
+      audioSampleRate: info.audioSampleRate,
     })
   }
   const lookup = (ref: { assetId: string }) => media.get(ref.assetId)!

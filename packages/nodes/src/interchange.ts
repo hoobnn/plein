@@ -22,6 +22,9 @@ export interface InterchangeMedia {
   duration: number
   hasVideo: boolean
   hasAudio: boolean
+  /** 唯一音频流的真实属性；未知或多流时不推定。 */
+  audioChannels?: number
+  audioSampleRate?: number
 }
 
 export type MediaLookup = (ref: AssetRef) => InterchangeMedia
@@ -338,12 +341,26 @@ export function sequenceFcpxml(spec: ComposeSpec, lookup: MediaLookup) {
     )
   })
 
+  // 素材采样率不同于 sequence 的 48k 混音；未知属性由导入软件读取原文件。
+  // ffprobe 流数不能据此确定 FCP 音频 source 组织，因此不猜 audioSources。
+  const audioAttributes = (media: InterchangeMedia) => {
+    if (!media.hasAudio) return ''
+    return (
+      [
+        ['audioChannels', media.audioChannels],
+        ['audioRate', media.audioSampleRate],
+      ] as const
+    )
+      .filter(([, value]) => value !== undefined && Number.isInteger(value) && value > 0)
+      .map(([key, value]) => ` ${key}="${value}"`)
+      .join('')
+  }
   const resources = [
     `    <format id="r1" frameDuration="${T(1 / fps)}" width="${spec.width}" height="${spec.height}"/>`,
     `    <effect id="r2" name="Cross Dissolve" uid="${CROSS_DISSOLVE}"/>`,
     ...[...assets.values()].map(
       ({ id, media: m }) =>
-        `    <asset id="${id}" name="${xml(m.name)}" start="0s" duration="${T(m.duration)}" hasVideo="${m.hasVideo ? 1 : 0}" hasAudio="${m.hasAudio ? 1 : 0}"${m.hasVideo ? ' format="r1"' : ''} audioSources="1" audioChannels="2" audioRate="48000">\n      <media-rep kind="original-media" src="${xml(encodeURI(m.path))}"/>\n    </asset>`,
+        `    <asset id="${id}" name="${xml(m.name)}" start="0s" duration="${T(m.duration)}" hasVideo="${m.hasVideo ? 1 : 0}" hasAudio="${m.hasAudio ? 1 : 0}"${m.hasVideo ? ' format="r1"' : ''}${audioAttributes(m)}>\n      <media-rep kind="original-media" src="${xml(encodeURI(m.path))}"/>\n    </asset>`,
     ),
   ]
   const name = xml(spec.name ?? '序列')

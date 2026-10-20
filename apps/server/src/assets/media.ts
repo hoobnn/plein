@@ -12,6 +12,10 @@ export interface Probe {
   duration?: number
   hasVideo: boolean
   hasAudio: boolean
+  /** 唯一音频流的真实声道数；未知或多音频流时省略。 */
+  audioChannels?: number
+  /** 唯一音频流的真实采样率（Hz）；未知或多音频流时省略。 */
+  audioSampleRate?: number
 }
 
 const bin = { ffmpeg: 'ffmpeg', ffprobe: 'ffprobe' }
@@ -123,6 +127,8 @@ export async function probeImage(file: string): Promise<Probe> {
 
 interface FfprobeStream {
   codec_type?: string
+  channels?: number
+  sample_rate?: string
   width?: number
   height?: number
   disposition?: { attached_pic?: number }
@@ -144,7 +150,10 @@ export async function probeMedia(file: string): Promise<Probe> {
   const streams = info.streams ?? []
   // 音频文件里的封面图也是 video 流，排除掉
   const video = streams.find((s) => s.codec_type === 'video' && !s.disposition?.attached_pic)
-  const audio = streams.some((s) => s.codec_type === 'audio')
+  const audio = streams.filter((s) => s.codec_type === 'audio')
+  const singleAudio = audio.length === 1 ? audio[0] : undefined
+  const channels = singleAudio?.channels
+  const sampleRate = Number(singleAudio?.sample_rate)
   const duration = Number(info.format?.duration)
   const rotation = Math.abs(
     Number(
@@ -159,7 +168,11 @@ export async function probeMedia(file: string): Promise<Probe> {
     height: swap ? video?.width : video?.height,
     duration: Number.isFinite(duration) ? duration : undefined,
     hasVideo: Boolean(video),
-    hasAudio: audio,
+    hasAudio: audio.length > 0,
+    ...(channels !== undefined && Number.isInteger(channels) && channels > 0
+      ? { audioChannels: channels }
+      : {}),
+    ...(Number.isInteger(sampleRate) && sampleRate > 0 ? { audioSampleRate: sampleRate } : {}),
   }
 }
 

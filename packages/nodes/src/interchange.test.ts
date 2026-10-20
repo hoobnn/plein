@@ -88,4 +88,49 @@ describe('剪辑工程导出', () => {
   it('SRT', () => {
     expect(subtitleSrt(spec.subtitles!.cues)).toBe('1\n00:00:00,500 --> 00:00:02,000\n你来了\n')
   })
+
+  it('FCPXML 使用素材真实音频属性，输出混音仍是 48k；未知和无音频时不伪造', () => {
+    const clipSpec: ComposeSpec = {
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      clips: ['mono', 'stereo', 'unknown', 'silent', 'invalid', 'channels-only', 'rate-only'].map(
+        (assetId) => ({
+          asset: ref(assetId),
+          in: 0,
+          out: 1,
+          volume: 1,
+        }),
+      ),
+      audio: [],
+    }
+    const x = sequenceFcpxml(clipSpec, (r) => ({
+      ...media(r),
+      hasAudio: r.assetId !== 'silent',
+      ...(r.assetId === 'mono' ? { audioChannels: 1, audioSampleRate: 24000 } : {}),
+      ...(r.assetId === 'stereo' || r.assetId === 'silent'
+        ? { audioChannels: 2, audioSampleRate: 48000 }
+        : {}),
+      ...(r.assetId === 'invalid' ? { audioChannels: 0, audioSampleRate: Number.NaN } : {}),
+      ...(r.assetId === 'channels-only' ? { audioChannels: 1 } : {}),
+      ...(r.assetId === 'rate-only' ? { audioSampleRate: 24000 } : {}),
+    }))
+    const assets = x.match(/<asset\s[^>]+>/g)!
+    expect(assets.find((a) => a.includes('name="mono"'))).toContain(
+      'audioChannels="1" audioRate="24000"',
+    )
+    expect(assets.find((a) => a.includes('name="stereo"'))).toContain(
+      'audioChannels="2" audioRate="48000"',
+    )
+    for (const name of ['unknown', 'silent', 'invalid']) {
+      const asset = assets.find((a) => a.includes(`name="${name}"`))!
+      expect(asset).not.toMatch(/audioChannels=|audioRate=|audioSources=/)
+    }
+    expect(x).not.toContain('audioSources=')
+    expect(assets.find((a) => a.includes('name="channels-only"'))).toContain('audioChannels="1"')
+    expect(assets.find((a) => a.includes('name="channels-only"'))).not.toContain('audioRate=')
+    expect(assets.find((a) => a.includes('name="rate-only"'))).toContain('audioRate="24000"')
+    expect(assets.find((a) => a.includes('name="rate-only"'))).not.toContain('audioChannels=')
+    expect(x).toMatch(/<sequence [^>]+audioRate="48k"/)
+  })
 })
