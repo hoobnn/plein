@@ -270,6 +270,7 @@ export default defineConfig({
     'impact-navigation.spec.ts',
     'impact-storyboard-sources.spec.ts',
     'sidebar-tree-keyboard.spec.ts',
+    'sidebar-group-filter.spec.ts',
     'sidebar-resize.spec.ts',
     'sidebar-assets-recovery.spec.ts',
     'plugins.spec.ts',

@@ -316,8 +316,12 @@
   border-radius: var(--radius-sm);
   color: var(--ink-subtle);
 }
-.plein-layer-caret:hover {
+.plein-layer-caret:hover:not(:disabled) {
   color: var(--ink);
+}
+.plein-layer-caret:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 .plein-layer-thumb {
   position: relative;

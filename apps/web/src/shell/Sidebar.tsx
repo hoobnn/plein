@@ -185,6 +185,8 @@ interface Row {
 
 // ── 画布页签：图层树 ─────────────────────────────────
 
+const FILTERED_GROUP_HINT = '筛选时分组保持展开，清除筛选后可折叠'
+
 function Layers({ engine }: { engine: Engine }) {
   const catalog = useCatalog((s) => s.catalog)
   const version = useDocVersion(engine.doc)
@@ -306,13 +308,15 @@ function Layers({ engine }: { engine: Engine }) {
   }, [engine, selVersion])
   // oxlint-enable react-hooks/exhaustive-deps
 
-  const toggleFolder = (id: string) =>
+  const toggleFolder = (id: string) => {
+    if (filtering) return
     setCollapsed((c) => {
       const next = new Set(c)
       if (next.has(id)) next.delete(id)
       else next.add(id)
       return next
     })
+  }
   const allCollapsed = frames.length > 0 && frames.every((id) => collapsed.has(id))
 
   const pick = (id: string, e: React.MouseEvent | React.KeyboardEvent) => {
@@ -471,9 +475,11 @@ function Layers({ engine }: { engine: Engine }) {
             <span className="flex-1" />
             <button
               type="button"
-              disabled={!frames.length}
+              disabled={filtering || !frames.length}
               aria-label={allCollapsed ? '展开全部分组' : '折叠全部分组'}
-              title={allCollapsed ? '展开全部分组' : '折叠全部分组'}
+              title={
+                filtering ? FILTERED_GROUP_HINT : allCollapsed ? '展开全部分组' : '折叠全部分组'
+              }
               onClick={() => setCollapsed(allCollapsed ? new Set() : new Set(frames))}
               className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn"
             >
@@ -532,6 +538,7 @@ function Layers({ engine }: { engine: Engine }) {
             selected={engine.selection.has(r.el.id)}
             tabStop={r.el.id === tabStop}
             open={filtering || !collapsed.has(r.el.id)}
+            filtering={filtering}
             renaming={renaming === r.el.id}
             actions={actions}
           />
@@ -564,6 +571,7 @@ const LayerRow = memo(function LayerRow({
   selected,
   tabStop,
   open,
+  filtering,
   renaming,
   actions,
 }: {
@@ -573,6 +581,7 @@ const LayerRow = memo(function LayerRow({
   selected: boolean
   tabStop: boolean
   open: boolean
+  filtering: boolean
   renaming: boolean
   actions: LayerActions
 }) {
@@ -636,6 +645,8 @@ const LayerRow = memo(function LayerRow({
           type="button"
           tabIndex={-1}
           aria-label={open ? '折叠' : '展开'}
+          disabled={filtering}
+          title={filtering ? FILTERED_GROUP_HINT : undefined}
           onClick={(e) => {
             e.stopPropagation()
             onToggle()
