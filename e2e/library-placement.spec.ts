@@ -1,3 +1,4 @@
+import { openLibraryPanel } from './library-ui'
 import { expect, type Page, test } from '@playwright/test'
 import { newProject, waitEngine } from './canvas'
 
@@ -136,7 +137,7 @@ test('放入后使用记录仍在提交，刷新列表不能丢失最近使用�
     const list = page.waitForResponse(
       (r) => r.request().method() === 'GET' && new URL(r.url()).pathname === '/api/library',
     )
-    await page.getByRole('button', { name: '资产库', exact: true }).click()
+    await openLibraryPanel(page)
     await list
     const panel = page.getByRole('dialog', { name: '资产库', exact: true })
     await panel
@@ -156,7 +157,7 @@ test('放入后使用记录仍在提交，刷新列表不能丢失最近使用�
     await saved
     await page.reload()
     await waitEngine(page)
-    await page.getByRole('button', { name: '资产库', exact: true }).click()
+    await openLibraryPanel(page)
     await panel
       .getByRole('group', { name: '资产类别', exact: true })
       .getByRole('button', { name: '道具', exact: true })

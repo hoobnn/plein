@@ -1,3 +1,4 @@
+import { openLibraryPanel } from './library-ui'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -51,7 +52,7 @@ for (const scenario of [
   }) => {
     if (scenario.media === 'video') await page.setViewportSize({ width: 800, height: 560 })
     await newProject(page)
-    await page.getByRole('button', { name: '资产库', exact: true }).click()
+    await openLibraryPanel(page)
     const panel = page.getByRole('dialog', { name: '资产库', exact: true })
     await panel
       .getByRole('group', { name: '资产类别', exact: true })

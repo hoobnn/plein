@@ -1,3 +1,4 @@
+import { openLibraryPanel } from './library-ui'
 import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
 
@@ -11,7 +12,7 @@ test('删除等待期间锁定编辑操作，失败后保留内容并可重试',
     data: { kind: 'prop', name: '删除恢复道具', projectId: canvas.projectId },
   })
   const item = await created.json()
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   await panel.getByRole('button', { name: '道具', exact: true }).click()
   await panel.getByRole('button', { name: '本项目', exact: true }).click()
@@ -86,7 +87,7 @@ test('官方复制等待时阻止重复提交，切换到其他条目后迟到�
   await page.request.post('/api/library', {
     data: { kind: 'scene', name: '保留编辑的场景', projectId: canvas.projectId },
   })
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   await panel.getByRole('button', { name: '风格', exact: true }).click()
   await panel.getByRole('button', { name: '官方', exact: true }).click()
@@ -143,7 +144,7 @@ test('保存等待时继续编辑不丢掉新草稿，下一次保存提交最�
       data: { kind: 'prop', name: '名称基线', projectId: canvas.projectId },
     })
   ).json()
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   await panel.getByRole('button', { name: '道具', exact: true }).click()
   await panel.getByRole('button', { name: '本项目', exact: true }).click()
@@ -195,7 +196,7 @@ test('关闭后重开同条目继续保存，旧应答不覆盖新草稿且写�
   ).json()
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   const open = async () => {
-    await page.getByRole('button', { name: '资产库', exact: true }).click()
+    await openLibraryPanel(page)
     await panel.getByRole('button', { name: '道具', exact: true }).click()
     await panel.locator(`[data-library-id="${item.id}"]`).getByRole('button').first().click()
   }

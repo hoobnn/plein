@@ -1,3 +1,4 @@
+import { openLibraryPanel } from './library-ui'
 import { expect, type Page, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -68,7 +69,7 @@ async function setup(page: Page) {
     ids.push((await response.json()).id)
   }
   const open = async () => {
-    await page.getByRole('button', { name: '资产库', exact: true }).click()
+    await openLibraryPanel(page)
     const panel = page.getByRole('dialog', { name: '资产库', exact: true })
     await panel
       .getByRole('group', { name: '资产类别', exact: true })

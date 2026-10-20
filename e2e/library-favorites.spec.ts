@@ -1,3 +1,4 @@
+import { openLibraryPanel } from './library-ui'
 import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
 
@@ -11,7 +12,7 @@ test('收藏响应延迟时仍可进入编辑，保存排队完成后名称与�
       data: { kind: 'prop', name: '并发修改前名称', projectId: canvas.projectId },
     })
   ).json()
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   await panel.getByRole('button', { name: '道具', exact: true }).click()
   await panel.getByRole('button', { name: '本项目', exact: true }).click()
@@ -77,7 +78,7 @@ test('收藏等待防止重复提交，失败可见且可重试，收藏筛选�
       data: { kind: 'prop', name: '收藏恢复水杯', projectId: canvas.projectId },
     })
   ).json()
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   await panel.getByRole('button', { name: '道具', exact: true }).click()
   await panel.getByRole('button', { name: '本项目', exact: true }).click()

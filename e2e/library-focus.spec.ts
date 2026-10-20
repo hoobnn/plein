@@ -1,10 +1,11 @@
+import { openLibraryPanel } from './library-ui'
 import { expect, type Page, test } from '@playwright/test'
 import { newProject, waitEngine } from './canvas'
 
 test('320px 下资产类别可用键盘逐项访问，导航不撑出面板', async ({ page }) => {
   await newProject(page)
   await page.setViewportSize({ width: 320, height: 700 })
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   const categories = panel.getByRole('group', { name: '资产类别', exact: true })
   const buttons = categories.getByRole('button')
@@ -52,7 +53,7 @@ async function fixture(page: Page, count = 2, cold = false) {
     const item = await created.json()
     await page.request.patch(`/api/library/${item.id}`, { data: { favorite: true } })
   }
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   await panel.getByRole('button', { name: '道具', exact: true }).click()
   await panel.getByRole('button', { name: '本项目', exact: true }).click()

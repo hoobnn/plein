@@ -1,3 +1,4 @@
+import { openLibraryPanel } from './library-ui'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -27,7 +28,7 @@ test.beforeAll(() => {
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 async function openItem(page: Page, kind: string, name: string) {
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   await panel
     .getByRole('group', { name: '资产类别' })

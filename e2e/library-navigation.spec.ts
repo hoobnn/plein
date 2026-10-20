@@ -1,10 +1,11 @@
+import { openLibraryPanel } from './library-ui'
 import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
 
 // 同时在生产构建和开发 StrictMode 下运行，确保一次性打开目标不会被 effect 重放清掉。
 test('角色卡编辑档案直达对应角色的时期分页，反复打开保持目标正确', async ({ page }) => {
   await newProject(page)
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   await panel.getByRole('button', { name: '新建角色', exact: true }).first().click()
   await panel.getByRole('textbox', { name: '名称', exact: true }).fill('档案导航回归')
@@ -48,7 +49,7 @@ for (const filter of ['搜索', '标签'] as const) {
       },
     })
     expect(result.status()).toBe(201)
-    await page.getByRole('button', { name: '资产库', exact: true }).click()
+    await openLibraryPanel(page)
     const panel = page.getByRole('dialog', { name: '资产库', exact: true })
     await panel
       .getByRole('group', { name: '范围', exact: true })
@@ -104,7 +105,7 @@ test('有结果时可同时重置关键词和标签，保留收藏范围并聚�
       ).toBe(true)
     }
   }
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   const favorite = panel
     .getByRole('group', { name: '范围', exact: true })
@@ -129,7 +130,7 @@ test('有结果时可同时重置关键词和标签，保留收藏范围并聚�
 
 test('真正空库和空白关键词保留新建入口，清空无匹配查询后恢复空库提示', async ({ page }) => {
   await newProject(page)
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   const empty = panel.getByText('这个项目还没有角色', { exact: true })
   await expect(empty).toBeVisible()

@@ -1,9 +1,10 @@
+import { openLibraryPanel } from './library-ui'
 import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
 
 test('官方复制完成后可直接编辑保存，更新复制条目而不再次创建', async ({ page }) => {
   await newProject(page)
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   await panel.getByRole('button', { name: '风格', exact: true }).click()
   await panel.getByRole('button', { name: '官方', exact: true }).click()
@@ -38,7 +39,7 @@ for (const action of ['保存', '保存并添加到画布']) {
     const canvas = await (
       await page.request.get(`/api/canvases/${page.url().split('/').at(-1)}`)
     ).json()
-    await page.getByRole('button', { name: '资产库', exact: true }).click()
+    await openLibraryPanel(page)
     const panel = page.getByRole('dialog', { name: '资产库', exact: true })
     await panel.getByRole('button', { name: '道具', exact: true }).click()
     await panel.getByRole('button', { name: '新建道具', exact: true }).first().click()
@@ -115,7 +116,7 @@ test('新建失败保留草稿，修正后重试只创建一条资产', async ({
   const canvas = await (
     await page.request.get(`/api/canvases/${page.url().split('/').at(-1)}`)
   ).json()
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await openLibraryPanel(page)
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   await panel.getByRole('button', { name: '道具', exact: true }).click()
   await panel.getByRole('button', { name: '新建道具', exact: true }).first().click()
