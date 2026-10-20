@@ -59,3 +59,13 @@ Mac 之后锁屏，原生工具两次明确返回锁屏，解锁请求仍待回�
 只读检查启动前后均为 2 个 QA 项目、60 成功／3 失败任务，无非终态或新增任务；未带桌面凭据的 health 请求返回 403，桌面请求保护有效。启动日志另有 `sandbox_extension_issue_file` 警告，未据此宣称原生界面正常；最新原生读取仍明确报告 Mac 锁屏，前台窗口和实际输入法必须在解锁后验收。
 
 [构建记录](../benchmarks/2026-10-21-native-context-package.json)、[启动核对](../benchmarks/2026-10-21-native-context-launch.json)和[只读预检](../benchmarks/2026-10-21-native-context-preflight.json)保留包来源、资源哈希、数据隔离与当前边界。没有替换 `/Applications/Plein.app`，没有新增计费调用。
+
+## 图形释放与静止回收修复的当前验收实例
+
+当前独立包产品代码为 `14d070d`，构建源码为干净的 `3d50ae6`（后者仅增加验收说明并修正一处注释）。776 个选定源码内容在构建期间保持一致，Electron 44.8.0、签名 deep／strict 自检、无更新 feed 均已核对；包内实际存在 context 销毁和 scheduler 低频维护代码。
+
+路径为 `/private/tmp/plein-ui-audit-20261020/native-gpu-14d070d/apps/desktop/release-acceptance/mac-arm64/Plein Acceptance.app`。旧 `native-context-90498a0` 验收主进程 PID 65015 已仅以 SIGTERM 停止，执行会话 99416 返回 0；当前执行会话 26426 保持运行，启用 Mock，关闭助手和自动更新。正式安装版未替换。
+
+启动前后只读核对仍为 2 个 QA 项目和 60 成功／3 失败任务；没有新增或非终态任务。服务启动在同一独立桌面端口 56972，未带桌面凭据的请求返回 403。sandbox extension 警告仍保留，最新原生工具读取仍明确报告 Mac 锁屏；不能由服务成功认定前台 UI、实际 IME 或物理输入已通过。
+
+[当前原生包记录](../benchmarks/2026-10-21-native-gpu-acceptance.json)与[构建](../benchmarks/2026-10-21-native-gpu-package.json)、[启动](../benchmarks/2026-10-21-native-gpu-launch.json)为本次证据。早期包和启动记录作为历史保留，不再将旧运行句柄视为当前实例。

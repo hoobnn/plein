@@ -1,0 +1,26 @@
+{
+  "createdAt": "2026-10-20T19:50:10.857738+00:00",
+  "sourceCommit": "3d50ae66b2a6fb7fb553557cde24343e3791b8f3",
+  "productCommit": "14d070d",
+  "sourceDirty": false,
+  "sourceUnchangedDuringBuild": true,
+  "sourceFiles": 776,
+  "sourceManifestSha256": "ed9837c25f9b7137a62e217c60fafd1cc6e4b7a6ca4b9c30bb59dbfaefbfa3d0",
+  "sourceSnapshot": "/private/tmp/plein-ui-audit-20261020/native-gpu-14d070d",
+  "app": "/private/tmp/plein-ui-audit-20261020/native-gpu-14d070d/apps/desktop/release-acceptance/mac-arm64/Plein Acceptance.app",
+  "profile": "acceptance",
+  "electron": "44.8.0",
+  "signature": "ad-hoc deep strict verified",
+  "updateFeed": false,
+  "resources": {
+    "server/main.mjs": "4d8b8d690d963838855d3b60b87742e189ad365dd9fa1b68610f02549486db02",
+    "web/index.html": "56b33b0524c526e55201236d903030885a5fcf6a9d84cea35f6ee11cc06de5b6",
+    "fonts/NotoSansCJKsc-Regular.otf": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b"
+  },
+  "dependencies": "existing local node_modules symlinks, no install or dependency mutation",
+  "launchPlanned": {
+    "PLEIN_MOCK_PROVIDER": "1",
+    "PLEIN_AGENT": "0"
+  },
+  "status": "built; native UI acceptance still required"
+}
