@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { article, checkpointPair, panel } from './checkpoints'
+import { article, checkpointPair, openCheckpoints, panel } from './checkpoints'
 
 test.use({ hasTouch: true, viewport: { width: 390, height: 844 } })
 async function setup(page: Page) {
@@ -152,7 +152,7 @@ test('双指手势取消后可重新拖动，关闭预览期间松手不污染�
     await page.keyboard.press('Escape')
     await expect(panel(page)).toHaveCount(0)
     await f.touch('touchEnd', [])
-    await page.getByRole('button', { name: '检查点', exact: true }).click()
+    await openCheckpoints(page)
     await article(page, f.first.name).getByRole('button', { name: '只读预览', exact: true }).click()
     await expect(panel(page).getByTestId('checkpoint-preview')).toContainText('第一版正文')
     expect(await mainCamera(page)).toEqual(camera)

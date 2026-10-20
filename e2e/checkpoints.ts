@@ -4,6 +4,13 @@ import { newProject } from './canvas'
 export const panel = (page: Page) => page.getByRole('dialog', { name: '创作检查点', exact: true })
 export const article = (page: Page, name: string) =>
   panel(page).getByRole('article').filter({ hasText: name })
+export async function openCheckpoints(page: Page) {
+  const tools = page.getByRole('button', { name: '画布工具', exact: true })
+  if (await tools.isVisible()) {
+    await tools.click()
+    await page.getByRole('menuitem', { name: '检查点', exact: true }).click()
+  } else await page.getByRole('button', { name: '检查点', exact: true }).click()
+}
 export async function checkpointPair(page: Page) {
   await newProject(page)
   const canvasId = decodeURIComponent(page.url().split('#/c/')[1]!)
@@ -17,7 +24,7 @@ export async function checkpointPair(page: Page) {
       params: { text: '第一版正文' },
     }),
   )
-  await page.getByRole('button', { name: '检查点', exact: true }).click()
+  await openCheckpoints(page)
   for (const name of ['第一版检查点', '第二版检查点']) {
     if (name === '第二版检查点')
       await page.evaluate((id) => {
