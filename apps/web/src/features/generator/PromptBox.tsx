@@ -57,7 +57,6 @@ export function PromptBox({
   const [expanded, setExpanded] = useState(false)
   const expandedRef = useRef<HTMLTextAreaElement>(null)
   const [draft, setDraft] = useState(value)
-  const [focused, setFocused] = useState(false)
   const composing = useRef(false)
   const previous = useRef(value)
   const written = useRef<string | null>(null)
@@ -70,7 +69,8 @@ export function PromptBox({
   // 正在输入的 @ 引用或行首 / 预设
   const [query, setQuery] = useState<{ kind: '@' | '/'; start: number; query: string } | null>(null)
   const [active, setActive] = useState(0)
-  const shown = focused ? draft : value
+  // 原生菜单编辑可能发生在窗口失焦期间；始终显示本地草稿，避免旧文档快照写回文本框。
+  const shown = draft
   useLayoutEffect(() => {
     if (previous.current === value) return
     previous.current = value
@@ -223,11 +223,9 @@ export function PromptBox({
         rows={3}
         onFocus={() => {
           setDraft(value)
-          setFocused(true)
         }}
         onBlur={() => {
           composing.current = false
-          setFocused(false)
           // 让候选项的点击先生效
           setTimeout(() => setQuery(null), 150)
         }}
