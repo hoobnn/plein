@@ -561,7 +561,13 @@ export function attachInteractions(host: InteractHost) {
     if (e.pointerId === pointer) cancel()
   }
   const onKeyDown = (e: KeyboardEvent) => {
-    if (gesture && e.key === 'Escape' && !e.defaultPrevented && !e.isComposing) {
+    if (
+      gesture &&
+      e.key === 'Escape' &&
+      !e.defaultPrevented &&
+      !e.isComposing &&
+      e.keyCode !== 229
+    ) {
       e.preventDefault()
       cancel()
     }

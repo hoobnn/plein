@@ -792,7 +792,7 @@ export class Engine {
 
   private attachShortcuts() {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.isComposing) return
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return
       if (isEditableTarget(e.target)) {
         // 输入框里的 Esc：退出输入框，焦点回到画布，再按一次才是取消选中。
         // 输入框自己处理过的（关掉候选、取消编辑）不再管；输入法组字时的 Esc 是撤销组字
