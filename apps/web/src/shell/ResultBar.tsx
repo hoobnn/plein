@@ -330,6 +330,14 @@ export function ResultActions({
           <Icon name="chevronDown" size={12} />
         </button>
       )}
+      {remote && variant === 'inline' && media.kind === 'video' && (
+        <MediaTools
+          key={`${el.id}:${media.assetId}`}
+          engine={engine}
+          target={{ elId: el.id, ...media }}
+          variant="inline"
+        />
+      )}
       {remote && (
         <LibraryAdd media={[{ elId: el.id, ...media, name: el.name ?? '' }]} variant={variant} />
       )}

@@ -71,11 +71,13 @@ export function MediaTools({
   engine,
   target,
   label = '媒体工具',
+  variant = 'bar',
   ops,
 }: {
   engine: Engine
   target: MediaTarget | MediaTarget[]
   label?: string
+  variant?: 'bar' | 'inline'
   /** 多选时限制可批量操作的项目；默认按素材类型给全量 */
   ops?: ReturnType<typeof opsFor>
 }) {
@@ -295,12 +297,13 @@ export function MediaTools({
     </label>
   )
 
+  const buttonClass = variant === 'inline' ? 'ui-btn ui-btn-sm ui-btn-quiet' : 'ui-bar-btn'
   return (
     <>
       <button
         ref={btnRef}
         type="button"
-        className="ui-bar-btn ui-btn-menu"
+        className={`${buttonClass} ui-btn-menu`}
         aria-expanded={open}
         disabled={busy || !actions.length}
         onClick={toggle}
@@ -322,7 +325,7 @@ export function MediaTools({
           </span>
           <button
             type="button"
-            className="ui-bar-btn"
+            className={buttonClass}
             onClick={(event) => cancel(event.currentTarget)}
           >
             取消加工
