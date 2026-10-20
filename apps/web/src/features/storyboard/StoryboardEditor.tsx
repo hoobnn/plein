@@ -549,7 +549,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
               {allCollapsed ? '展开全部镜头' : '收起全部镜头'}
             </button>
           </div>
-          <div className="space-y-4">
+          <div className="space-y-2">
             {shots.map((s) => (
               <article
                 key={s.id}
@@ -560,7 +560,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                 aria-label={`镜头 ${String(s.no).padStart(2, '0')}`}
                 className="storyboard-shot rounded-xl border border-line bg-surface"
               >
-                <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3">
+                <div
+                  className={`storyboard-shot-header flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2 ${collapsed.has(s.id) ? '' : 'border-b border-line'}`}
+                >
                   <input
                     type="checkbox"
                     aria-label={`选择镜头 ${s.no}`}
@@ -606,42 +608,36 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       onChange={(v) => patch(s.id, { shotSize: v as Shot['shotSize'] })}
                     />
                   </div>
-                  <div className="ml-auto">
-                    <div className="flex flex-col items-end gap-1">
-                      <div className="flex items-center gap-1">
-                        {expanded.has(s.id) && (
-                          <span className="ui-tag ui-tag-success">已展开</span>
-                        )}
-                        {diffCount(s.id) > 0 && (
-                          <button
-                            type="button"
-                            aria-label={`查看镜头 ${s.no} 的差异`}
-                            className="ui-tag ui-tag-warning hover:brightness-110"
-                            onClick={() => setSyncScope([s.id])}
-                          >
-                            {diffCount(s.id)} 处差异
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          aria-label={`删除镜头 ${s.no}`}
-                          title={expanded.has(s.id) ? '删除镜头（已展开的节点保留）' : '删除镜头'}
-                          className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn hover:text-danger"
-                          onClick={() => void remove(s.id)}
-                        >
-                          <Icon name="trash" size={14} />
-                        </button>
-                      </div>
-                      {s.edited && <span className="ui-tag ui-tag-accent">手改</span>}
-                    </div>
+                  <div className="storyboard-shot-actions ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                    {expanded.has(s.id) && <span className="ui-tag ui-tag-success">已展开</span>}
+                    {s.edited && <span className="ui-tag ui-tag-accent">手改</span>}
+                    {diffCount(s.id) > 0 && (
+                      <button
+                        type="button"
+                        aria-label={`查看镜头 ${s.no} 的差异`}
+                        className="ui-tag ui-tag-warning hover:brightness-110"
+                        onClick={() => setSyncScope([s.id])}
+                      >
+                        {diffCount(s.id)} 处差异
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      aria-label={`删除镜头 ${s.no}`}
+                      title={expanded.has(s.id) ? '删除镜头（已展开的节点保留）' : '删除镜头'}
+                      className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn hover:text-danger"
+                      onClick={() => void remove(s.id)}
+                    >
+                      <Icon name="trash" size={14} />
+                    </button>
                   </div>
                 </div>
                 <div
                   id={`shot-content-${s.id}`}
                   hidden={collapsed.has(s.id)}
-                  className={`storyboard-shot-content ${collapsed.has(s.id) ? 'hidden' : 'grid'} gap-5 p-4`}
+                  className={`storyboard-shot-content ${collapsed.has(s.id) ? 'hidden' : 'grid'} items-start gap-4 px-4 py-3`}
                 >
-                  <section aria-label="镜头内容" className="min-w-0 space-y-4">
+                  <section aria-label="镜头内容" className="min-w-0 space-y-3">
                     <TextCell
                       value={s.description}
                       readValue={() => textValue(s.id, 'description')}
@@ -685,19 +681,6 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                         />
                       ))}
                     </TextCell>
-                    <div className="min-w-0">
-                      <div className="mb-1 text-xs font-medium text-ink-muted">台词</div>
-                      <DialogueCell
-                        engine={engine}
-                        shot={s}
-                        readDialogue={() =>
-                          readShots().find((shot) => shot.id === s.id)?.dialogue ?? []
-                        }
-                        onChange={(update) =>
-                          patch(s.id, (current) => ({ dialogue: update(current.dialogue) }))
-                        }
-                      />
-                    </div>
                     <TextCell
                       value={s.sfx}
                       readValue={() => textValue(s.id, 'sfx')}
@@ -705,7 +688,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       onChange={(sfx) => patch(s.id, { sfx })}
                     />
                   </section>
-                  <section aria-label="生成提示词" className="min-w-0 space-y-4">
+                  <section aria-label="生成提示词" className="min-w-0 space-y-3">
                     <div className="text-xs font-medium text-ink-subtle">
                       生成提示词 · 可独立编辑
                     </div>
@@ -721,6 +704,19 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       label="运动提示词"
                       onChange={(v) => patch(s.id, { motionPrompt: v })}
                     />
+                    <div className="min-w-0">
+                      <div className="mb-1 text-xs font-medium text-ink-muted">台词</div>
+                      <DialogueCell
+                        engine={engine}
+                        shot={s}
+                        readDialogue={() =>
+                          readShots().find((shot) => shot.id === s.id)?.dialogue ?? []
+                        }
+                        onChange={(update) =>
+                          patch(s.id, (current) => ({ dialogue: update(current.dialogue) }))
+                        }
+                      />
+                    </div>
                   </section>
                 </div>
               </article>
@@ -855,8 +851,8 @@ function TextCell({
         }}
         aria-label={label}
         aria-describedby={conflict ? conflictId : undefined}
-        rows={2}
-        className={`${cell} w-full field-sizing-content min-h-12 max-h-80 overflow-y-auto bg-surface-2 leading-relaxed`}
+        rows={1}
+        className={`${cell} block w-full field-sizing-content min-h-8 max-h-80 overflow-y-auto bg-surface-2 leading-relaxed`}
         value={draft}
         onFocus={() => {
           if (!dirty) reset()
