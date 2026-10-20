@@ -1,3 +1,4 @@
+import { openCanvasSettings } from './settings-ui'
 import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
 
@@ -23,7 +24,7 @@ test('首次读取维护状态失败可手动重试，不必等待自动轮询',
     else await route.continue()
   })
   await newProject(page)
-  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await openCanvasSettings(page)
   const settings = page.getByRole('dialog', { name: '设置', exact: true })
   await settings.getByRole('button', { name: '数据', exact: true }).click()
   await expect(settings.getByRole('alert')).toContainText('维护状态暂不可用')
@@ -37,7 +38,7 @@ test('真实备份成功后读取失败保留操作与设置草稿，重试不�
   await page.setViewportSize({ width: 800, height: 560 })
   const before = await (await request.get('/api/maintenance/status')).json()
   await newProject(page)
-  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await openCanvasSettings(page)
   const settings = page.getByRole('dialog', { name: '设置', exact: true })
   await settings.getByRole('button', { name: '数据', exact: true }).click()
   const automatic = settings.getByRole('region', { name: '自动备份', exact: true })

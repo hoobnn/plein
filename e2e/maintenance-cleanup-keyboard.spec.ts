@@ -1,3 +1,4 @@
+import { openCanvasSettings } from './settings-ui'
 import { expect, type Page, test } from '@playwright/test'
 import { newProject } from './canvas'
 
@@ -18,7 +19,7 @@ test.afterEach(async ({ request }) => {
 async function openData(page: Page) {
   await page.setViewportSize({ width: 800, height: 560 })
   await newProject(page)
-  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await openCanvasSettings(page)
   const settings = page.getByRole('dialog', { name: '设置', exact: true })
   await settings.getByRole('button', { name: '数据', exact: true }).click()
   return settings

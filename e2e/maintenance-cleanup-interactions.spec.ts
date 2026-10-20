@@ -1,3 +1,4 @@
+import { openCanvasSettings } from './settings-ui'
 import { randomUUID } from 'node:crypto'
 import { utimes } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -7,7 +8,7 @@ import { newProject } from './canvas'
 
 async function openData(page: Page) {
   await newProject(page)
-  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await openCanvasSettings(page)
   const settings = page.getByRole('dialog', { name: '设置', exact: true })
   await settings.getByRole('button', { name: '数据', exact: true }).click()
   return settings
