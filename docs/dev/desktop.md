@@ -62,6 +62,14 @@ Electron 主进程（apps/desktop）
 - **文件进出**：下载走系统“另存为”，记住上次目录，保存后提示并可“在访达中显示”；序列编辑器加“另存为…”；拖入或选择整个文件夹导入（含子文件夹，跳过隐藏文件，单次最多 500 个）。
 - **端口沿用**：服务端尽量沿用上次的端口（存在 `<userData>/desktop.json`），否则网页的本地设置（主题、侧栏、智能体选择、引导是否看过）每次启动都会丢；端口被占用时换一个。
 
+## 本地运行时检查
+
+`pnpm dev:desktop` 和 `pnpm start:desktop` 会先检查当前依赖链接对应的 Electron 二进制和版本，再启动前端或构建桌面入口。检查不会导入 Electron 的自动下载入口，也不会启动窗口；缺失、不可执行或版本不一致时会打印实际依赖目录与修复命令。
+
+- 只检查：`pnpm --filter @plein/desktop runtime:check`。
+- 安装缺失的当前版本：`pnpm --filter @plein/desktop runtime:install`。这会显式调用当前 Electron 包自带的安装器，沿用其缓存、镜像和文件校验，需要可用网络；安装后重新检查，不会启动桌面应用。
+- pnpm 缓存里存在其他版本不表示当前依赖已安装，不会自动回退到另一版本。显式 `ELECTRON_OVERRIDE_DIST_PATH` 仍按 Electron 自身的路径语义检查。
+
 ## 打包（2026-10-13）
 
 - `pnpm --filter @plein/desktop ffmpeg`：从源码构建 ffmpeg / ffprobe 到 `apps/desktop/stage/ffmpeg`（需要 `brew install meson ninja pkgconf`）。LGPL 构建，静态链接 libass、freetype、fribidi、harfbuzz，字体走 CoreText，只依赖系统框架；没有 libx264，服务端的 `h264Args()` 在这种情况下改用 `h264_videotoolbox`（按码率，`-allow_sw` 兜底）。
