@@ -44,12 +44,20 @@ export function retryableFor(method: Method, code: ProviderErrorCode): boolean {
   return method === 'GET' && (code === 'rate_limit' || code === 'unavailable' || code === 'timeout')
 }
 
-/** 按请求方法重新判定一个平台错误能否重试 */
-export function withRetry(error: ProviderError, method: Method): ProviderError {
+/**
+ * 按请求方法判定重试和受理状态。POST 的网关超时/服务故障不能证明未受理；
+ * 明确的业务拒绝（鉴权、额度、限流、参数、审核）仍保留平台结论。
+ */
+export function withRetry(error: ProviderError, method: Method, status?: number): ProviderError {
+  const unknown =
+    method === 'POST' &&
+    status !== undefined &&
+    (status === 408 || status >= 500) &&
+    ['unknown', 'timeout', 'unavailable'].includes(error.code)
   return new ProviderError(error.code, error.message, {
     retryable: retryableFor(method, error.code),
     cause: error.cause,
-    ...(error.outcome ? { outcome: error.outcome } : {}),
+    ...(error.outcome || unknown ? { outcome: error.outcome ?? 'unknown' } : {}),
   })
 }
 

@@ -37,6 +37,22 @@ describe('公共请求层的重试规则', () => {
     expect(withRetry(error, 'GET')).toMatchObject({ code: 'unavailable', retryable: true })
   })
 
+  it.each([408, 500, 502, 503, 504])('POST HTTP %i 保留受理未知，GET 不改变查询合同', (status) => {
+    const error = new ProviderError('unavailable', 'gateway error')
+    expect(withRetry(error, 'POST', status)).toMatchObject({ outcome: 'unknown', retryable: false })
+    expect(withRetry(error, 'GET', status)).toMatchObject({ outcome: undefined, retryable: true })
+  })
+
+  it.each(['auth', 'quota', 'rate_limit', 'invalid_input', 'content_policy'] as const)(
+    '明确业务拒绝 %s 不因 HTTP 503 被标记受理未知',
+    (code) => {
+      expect(withRetry(new ProviderError(code, 'rejected'), 'POST', 503)).toMatchObject({
+        outcome: undefined,
+        retryable: false,
+      })
+    },
+  )
+
   it('网络失败：POST 提交结果未知不可重试，GET 可重试', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(async () => {
       throw new TypeError('fetch failed')

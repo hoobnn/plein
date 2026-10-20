@@ -31,7 +31,7 @@ function object(value: unknown): Json {
 function headers(ctx: Context, resource?: string): Record<string, string> {
   const result: Record<string, string> = {
     'Content-Type': 'application/json',
-    'X-Api-Request-Id': crypto.randomUUID(),
+    'X-Api-Request-Id': ctx.submission?.requestId ?? crypto.randomUUID(),
   }
   const key = ctx.secret('VOLC_SPEECH_API_KEY')
   if (key) result['X-Api-Key'] = key
@@ -116,6 +116,7 @@ async function post(ctx: Context, path: string, body: Json, resource?: string, a
     )
     const remoteLog = response.headers.get('X-Tt-Logid')
     logId = remoteLog ? scrub(remoteLog, ctx).replace(/\s+/g, ' ').slice(0, 160) : undefined
+    ctx.submission?.response({ ...(logId ? { logId } : {}), httpStatus: response.status })
     ctx.log('豆包语音响应关联信息', {
       requestId,
       ...(logId ? { logId } : {}),

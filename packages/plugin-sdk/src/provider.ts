@@ -321,6 +321,12 @@ export interface ProviderContext<S = Record<string, unknown>> {
    * 平台支持客户端幂等键或按客户端标识查任务时传给平台；不支持的忽略
    */
   idempotencyKey?: string
+  /** 宿主在发送前持久化的关联信息；requestId 不代表平台支持幂等。 */
+  submission?: {
+    requestId: string
+    /** 响应头到达时同步持久化；失败时不得继续读取或重新提交。 */
+    response(info: { logId?: string; httpStatus: number }): void
+  }
 }
 
 /** 模型平台适配器 */
@@ -412,13 +418,23 @@ export interface ProviderDescriptor {
   plugin: string
 }
 
+/** 没有远端 test 实现时只能检查配置，不能因缺省描述而声称验证了连接。 */
+export function providerTestScope(def: {
+  test?: unknown
+  testScope?: 'connection' | 'configuration'
+}): 'connection' | 'configuration' {
+  return typeof def.test === 'function' && def.testScope !== 'configuration'
+    ? 'connection'
+    : 'configuration'
+}
+
 export function describeProvider(def: ProviderDefinition, plugin: string): ProviderDescriptor {
   return {
     id: def.id,
     title: def.title,
     description: def.description,
     docsUrl: def.docsUrl,
-    testScope: def.testScope,
+    testScope: providerTestScope(def),
     settingsSchema: z.toJSONSchema(def.settings, { io: 'input', unrepresentable: 'any' }) as Record<
       string,
       unknown

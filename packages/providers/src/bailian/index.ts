@@ -117,7 +117,7 @@ async function response(
   )
   if (!res.ok) {
     const data = await readJson(ctx, res, method, messages)
-    throw withRetry(remoteError(res.status, data, ctx), method)
+    throw withRetry(remoteError(res.status, data, ctx), method, res.status)
   }
   return res
 }
@@ -130,7 +130,11 @@ async function request(ctx: Context, path: string, body?: Json, asyncTask = fals
   const data = asJson(value)
   if (Object.keys(data).length === 0) throw new ProviderError('unknown', '百炼返回空响应')
   if (data.code || data.error)
-    throw withRetry(remoteError(res.status, data, ctx), body === undefined ? 'GET' : 'POST')
+    throw withRetry(
+      remoteError(res.status, data, ctx),
+      body === undefined ? 'GET' : 'POST',
+      res.status,
+    )
   return data
 }
 function usage(data: Json): ProviderUsage {

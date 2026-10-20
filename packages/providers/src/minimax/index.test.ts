@@ -320,3 +320,23 @@ describe('MiniMax 官方 HTTP 契约', () => {
     ).rejects.toMatchObject({ code: 'unavailable', retryable: false })
   })
 })
+
+// 网关响应没有明确未受理合同；不能只禁止自动重试却丢掉受理未知。
+it.each([408, 500, 502, 503, 504])(
+  'POST HTTP %i 的 HTML / JSON 网关响应保留 unknown',
+  async (status) => {
+    for (const response of [
+      new Response('<html>gateway</html>', { status }),
+      Response.json({ error: { message: 'gateway' } }, { status }),
+    ]) {
+      const { ctx, fetch } = setup([response])
+      await expect(
+        minimaxProvider.submit(
+          { capability: 'video.generate', model: 'MiniMax-H3', input: { prompt: 'local' } },
+          ctx,
+        ),
+      ).rejects.toMatchObject({ outcome: 'unknown', retryable: false })
+      expect(fetch).toHaveBeenCalledTimes(1)
+    }
+  },
+)

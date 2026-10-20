@@ -17,7 +17,7 @@ import {
   type Method,
   readJson,
   redact,
-  retryableFor,
+  withRetry,
   send,
 } from '../shared/http'
 import { sizeByLongEdge, tierEdge } from '../size'
@@ -113,9 +113,11 @@ async function request(
   if (!parsed.success) {
     const code = res.ok ? 'unknown' : errorCode(res.status)
     // 查询接口遇到网关错误页（502/503 等非 JSON）可以重试；提交接口一律不重试
-    throw new ProviderError(code, `MiniMax 返回无效响应（HTTP ${res.status}）`, {
-      retryable: retryableFor(method, code),
-    })
+    throw withRetry(
+      new ProviderError(code, `MiniMax 返回无效响应（HTTP ${res.status}）`),
+      method,
+      res.status,
+    )
   }
   const data = parsed.data
   if (!res.ok || data.error || (data.base_resp?.status_code ?? 0) !== 0) {
@@ -125,9 +127,7 @@ async function request(
       [key],
     )
     const normalized = errorCode(code) === 'unknown' ? errorCode(res.status) : errorCode(code)
-    throw new ProviderError(normalized, `MiniMax：${message}`, {
-      retryable: retryableFor(method, normalized),
-    })
+    throw withRetry(new ProviderError(normalized, `MiniMax：${message}`), method, res.status)
   }
   return data
 }

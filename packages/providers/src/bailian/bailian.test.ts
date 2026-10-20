@@ -489,3 +489,23 @@ describe('百炼 API 契约', () => {
     ).rejects.toMatchObject({ message: 'invalid [REDACTED]' })
   })
 })
+
+// 网关响应没有明确未受理合同；不能只禁止自动重试却丢掉受理未知。
+it.each([408, 500, 502, 503, 504])(
+  'POST HTTP %i 的 HTML / JSON 网关响应保留 unknown',
+  async (status) => {
+    for (const response of [
+      new Response('<html>gateway</html>', { status }),
+      Response.json({ error: { message: 'gateway' } }, { status }),
+    ]) {
+      const { ctx, fetch } = setup([response])
+      await expect(
+        bailianProvider.submit(
+          { capability: 'audio.speech', model: 'qwen3-tts-flash', input: { text: 'local' } },
+          ctx,
+        ),
+      ).rejects.toMatchObject({ outcome: 'unknown', retryable: false })
+      expect(fetch).toHaveBeenCalledTimes(1)
+    }
+  },
+)

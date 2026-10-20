@@ -264,7 +264,7 @@ async function request(
   )
   const value = await readJson(ctx, response, method, messages)
   if (value === null) {
-    if (!response.ok) throw withRetry(errorInfo({}, response.status, key), method)
+    if (!response.ok) throw withRetry(errorInfo({}, response.status, key), method, response.status)
     throw new ProviderError('unknown', '火山方舟返回无效 JSON；不会自动重新提交')
   }
   const data = asJson(value)
@@ -272,7 +272,7 @@ async function request(
     !response.ok ||
     (data.error && !['failed', 'cancelled', 'expired'].includes(String(data.status)))
   )
-    throw withRetry(errorInfo(data.error, response.status, key), method)
+    throw withRetry(errorInfo(data.error, response.status, key), method, response.status)
   return data
 }
 
