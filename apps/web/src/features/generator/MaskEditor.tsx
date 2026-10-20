@@ -1,5 +1,5 @@
 import type { EditMask } from '@plein/nodes'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
 import { drawMask, exportMask, type MaskOp, type MaskTool, normRect } from '../../canvas/mask'
 import { loadAssetMeta } from '../../stores/assetMeta'
@@ -53,6 +53,7 @@ export function MaskEditor({
   const cancelSave = () => saveRequest.current?.abort()
   const close = () => {
     cancelSave()
+    cancelDrag()
     onClose()
   }
   useLayoutEffect(() => {
@@ -78,7 +79,29 @@ export function MaskEditor({
   const [draft, setDraft] = useState<MaskOp | null>(null)
   const [saving, setSaving] = useState(false)
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
-  const drag = useRef<{ start: [number, number] } | null>(null)
+  const drag = useRef<{
+    start: [number, number]
+    pointerId: number
+    target: Element
+  } | null>(null)
+  const cancelDrag = useCallback(() => {
+    const active = drag.current
+    drag.current = null
+    setDraft(null)
+    setCursor(null)
+    if (active?.target.hasPointerCapture(active.pointerId))
+      active.target.releasePointerCapture(active.pointerId)
+  }, [setDraft, setCursor])
+  useEffect(() => {
+    window.addEventListener('blur', cancelDrag)
+    return () => {
+      window.removeEventListener('blur', cancelDrag)
+      cancelDrag()
+    }
+  }, [cancelDrag, assetId])
+  useLayoutEffect(() => {
+    if (closing) cancelDrag()
+  }, [closing, cancelDrag])
 
   // 原图尺寸以资产信息为准（不是屏幕上显示的大小），蒙版要和它逐像素对齐
   useEffect(() => {
@@ -139,10 +162,10 @@ export function MaskEditor({
     return [(e.clientX - r.left) / scale, (e.clientY - r.top) / scale]
   }
   const down = (e: React.PointerEvent) => {
-    if (!size || e.button !== 0 || saveRequest.current || closing) return
+    if (!size || e.button !== 0 || drag.current || saveRequest.current || closing) return
     e.currentTarget.setPointerCapture(e.pointerId)
     const p = toImage(e)
-    drag.current = { start: p }
+    drag.current = { start: p, pointerId: e.pointerId, target: e.currentTarget }
     setDraft(
       tool === 'rect'
         ? { type: 'rect', ...normRect(p, p, size) }
@@ -150,7 +173,8 @@ export function MaskEditor({
     )
   }
   const move = (e: React.PointerEvent) => {
-    if (saveRequest.current || closing) return
+    if (saveRequest.current || closing || (drag.current && drag.current.pointerId !== e.pointerId))
+      return
     const r = overlayRef.current?.getBoundingClientRect()
     if (r) setCursor({ x: e.clientX - r.left, y: e.clientY - r.top })
     if (!drag.current || !draft || !size) return
@@ -158,9 +182,12 @@ export function MaskEditor({
     if (draft.type === 'rect') setDraft({ type: 'rect', ...normRect(drag.current.start, p, size) })
     else if (draft.type !== 'image') setDraft({ ...draft, points: [...draft.points, p] })
   }
-  const up = () => {
-    if (!drag.current || saveRequest.current || closing) return
+  const up = (e: React.PointerEvent) => {
+    const active = drag.current
+    if (!active || active.pointerId !== e.pointerId || saveRequest.current || closing) return
     drag.current = null
+    if (active.target.hasPointerCapture(active.pointerId))
+      active.target.releasePointerCapture(active.pointerId)
     if (draft && !(draft.type === 'rect' && (draft.w < 2 || draft.h < 2)))
       setOps((list) => [...list, draft])
     setDraft(null)
@@ -170,8 +197,7 @@ export function MaskEditor({
     if (!size || closing || !alive.current || saveRequest.current) return
     const request = new AbortController()
     saveRequest.current = request
-    drag.current = null
-    setDraft(null)
+    cancelDrag()
     setSaving(true)
     try {
       const blob = await exportMask(ops, size)
@@ -289,7 +315,12 @@ export function MaskEditor({
               onPointerDown={down}
               onPointerMove={move}
               onPointerUp={up}
-              onPointerCancel={up}
+              onPointerCancel={(e) => {
+                if (drag.current?.pointerId === e.pointerId) cancelDrag()
+              }}
+              onLostPointerCapture={(e) => {
+                if (drag.current?.pointerId === e.pointerId) cancelDrag()
+              }}
               onPointerLeave={() => setCursor(null)}
             />
             {tool !== 'rect' && cursor && (
