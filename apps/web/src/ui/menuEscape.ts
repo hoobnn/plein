@@ -5,8 +5,10 @@ export const claimMenuEscape = (event: Event) => {
 }
 export const isMenuEscape = (event: Event) => owned.has(event)
 
-/** Base UI 已关闭的菜单不再拦截；Presence 的退场菜单卸载前仍属于当前层。 */
+/** 已关闭或被前景弹窗隐藏的后台菜单不拦截；当前层退场中的菜单仍占用本次 Esc。 */
 export const hasMenuEscapeLayer = () =>
-  !!document.querySelector(
-    '.ui-menu:not([data-closed]), .ui-menu[data-closing], [role="combobox"][aria-expanded="true"]',
-  )
+  [
+    ...document.querySelectorAll(
+      '.ui-menu:not([data-closed]), .ui-menu[data-closing], [role="combobox"][aria-expanded="true"]',
+    ),
+  ].some((element) => !element.closest('[aria-hidden="true"], [inert]'))
