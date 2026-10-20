@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test'
+import { randomUUID } from 'node:crypto'
 import { newProject } from './canvas'
+
+test.afterEach(async ({ page }) => {
+  // 删除后的列表刷新可能晚于可见断言结束；先等路由处理完，再释放响应所属的 context。
+  await page.unrouteAll({ behavior: 'wait' })
+})
 
 test('筛选后删除匹配项目，列表剩一项仍可清除搜索并恢复项目', async ({ page }) => {
   await newProject(page)
@@ -37,8 +43,10 @@ test('筛选后删除匹配项目，列表剩一项仍可清除搜索并恢复�
 for (const width of [320, 390]) {
   test(`${width}px 项目搜索及导入新建入口完整可点击，不横向溢出`, async ({ page }) => {
     await newProject(page)
-    const title = `Layout project ${width} ${'W'.repeat(150)}`
-    await page.request.post('/api/projects', { data: { title } })
+    const searchTerm = `Layout project ${width} ${randomUUID()}`
+    const title = `${searchTerm} ${'W'.repeat(200 - searchTerm.length - 1)}`
+    const created = await page.request.post('/api/projects', { data: { title } })
+    expect(created.status()).toBe(201)
     const count = (await (await page.request.get('/api/projects')).json()).length
     await page.goto('/')
     await page.setViewportSize({ width, height: 800 })
@@ -61,7 +69,7 @@ for (const width of [320, 390]) {
       ).toBe(true)
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    await controls[0]!.fill(` layout project ${width} `)
+    await controls[0]!.fill(` ${searchTerm.toLowerCase()} `)
     await expect(page.locator('[data-project]')).toHaveCount(1)
     const projectTitle = page.getByRole('link', { name: title, exact: true })
     await expect(projectTitle).toBeVisible()
