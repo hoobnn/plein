@@ -103,6 +103,7 @@ export default defineConfig({
     'gesture-lifecycle.spec.ts',
     'gesture-concurrency.spec.ts',
     'group-boundaries.spec.ts',
+    'canvas-readonly.spec.ts',
     'context-menu-boundaries.spec.ts',
     'node-picker-boundaries.spec.ts',
     'generator-layout.spec.ts',

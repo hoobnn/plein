@@ -1,3 +1,4 @@
+import { useEngineVersion } from '../canvas/hooks'
 import type { CanvasMenuEvent, Engine } from '@plein/canvas-core'
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useState } from 'react'
 import { applyCast, castLibrary, castOf, describeCast } from '../canvas/cast'
@@ -96,11 +97,28 @@ function NodePicker({
   canImport: boolean
   onClose(): void
 }) {
+  useEngineVersion(engine)
   const ref = useDismiss(onClose, { wheel: true })
   const pos = useMenuPosition(ref, menu.client, PICKER_W)
+  useEffect(() => {
+    if (engine.doc.readOnly) onClose()
+  }, [engine, engine.doc.readOnly, onClose])
+  if (engine.doc.readOnly) return null
   return (
     <div
       ref={ref}
+      onClickCapture={(event) => {
+        if (!engine.doc.readOnly) return
+        event.preventDefault()
+        event.stopPropagation()
+        onClose()
+      }}
+      onKeyDownCapture={(event) => {
+        if (!engine.doc.readOnly) return
+        event.preventDefault()
+        event.stopPropagation()
+        onClose()
+      }}
       className="pointer-events-none fixed z-35"
       style={{ ...pos, width: PICKER_W, maxWidth: 'calc(100vw - 16px)' }}
     >
@@ -152,6 +170,8 @@ function ContextMenu({
   onClose(): void
   onAddNode(): void
 }) {
+  useEngineVersion(engine)
+  const readOnly = engine.doc.readOnly
   const ref = useDismiss(onClose, { wheel: true })
   const exit = useExit()
   const closing = useClosing()
@@ -167,6 +187,11 @@ function ContextMenu({
   }, [closing, ref])
   const catalog = useCatalog((s) => s.catalog)
   const act = (fn: () => void) => () => {
+    onClose()
+    fn()
+  }
+  const edit = (fn: () => void) => () => {
+    if (engine.doc.readOnly) return
     onClose()
     fn()
   }
@@ -188,16 +213,20 @@ function ContextMenu({
   if (menu.target === null) {
     items = (
       <>
-        <Item label="添加节点…" hint="双击" onClick={onAddNode} />
+        <Item label="添加节点…" hint="双击" disabled={readOnly} onClick={edit(onAddNode)} />
         {canImport && (
           <>
             <Item
               label="导入文件…"
-              onClick={act(() => window.dispatchEvent(new CustomEvent('plein:import-pick')))}
+              disabled={readOnly}
+              onClick={edit(() => window.dispatchEvent(new CustomEvent('plein:import-pick')))}
             />
             <Item
               label="导入文件夹…"
-              onClick={act(() => window.dispatchEvent(new CustomEvent('plein:import-pick-folder')))}
+              disabled={readOnly}
+              onClick={edit(() =>
+                window.dispatchEvent(new CustomEvent('plein:import-pick-folder')),
+              )}
             />
           </>
         )}
@@ -213,7 +242,8 @@ function ContextMenu({
           <Item
             label="生成"
             hint={shortcut('mod+enter')}
-            onClick={act(() => void runNode(single.id))}
+            disabled={readOnly}
+            onClick={edit(() => void runNode(single.id))}
           />
         )}
         {node && single && canImport && (
@@ -222,10 +252,15 @@ function ContextMenu({
               <Item
                 label="运行到此处"
                 hint="含上游"
-                onClick={act(() => void flow(single.id, 'upstream'))}
+                disabled={readOnly}
+                onClick={edit(() => void flow(single.id, 'upstream'))}
               />
             )}
-            <Item label="运行下游" onClick={act(() => void flow(single.id, 'downstream'))} />
+            <Item
+              label="运行下游"
+              disabled={readOnly}
+              onClick={edit(() => void flow(single.id, 'downstream'))}
+            />
             <Sep />
           </>
         )}
@@ -234,7 +269,8 @@ function ContextMenu({
             <Item
               label={`生成设定卡（${cast.length}）`}
               hint="按抽取结果"
-              onClick={act(
+              disabled={readOnly}
+              onClick={edit(
                 () =>
                   void castLibrary(cast).then((lib) =>
                     notify(describeCast(applyCast(engine, catalog, single.id, cast, lib))),
@@ -246,23 +282,42 @@ function ContextMenu({
         )}
         {single?.kind === 'frame' && canImport && (
           <>
-            <Item label="运行整组" onClick={act(() => void runGroup(single.id, false))} />
-            <Item label="运行整组（含视频）" onClick={act(() => void runGroup(single.id, true))} />
-            <Item label="存为模板…" onClick={act(() => void saveFrame(single.id))} />
+            <Item
+              label="运行整组"
+              disabled={readOnly}
+              onClick={edit(() => void runGroup(single.id, false))}
+            />
+            <Item
+              label="运行整组（含视频）"
+              disabled={readOnly}
+              onClick={edit(() => void runGroup(single.id, true))}
+            />
+            <Item
+              label="存为模板…"
+              disabled={readOnly}
+              onClick={edit(() => void saveFrame(single.id))}
+            />
             <Sep />
           </>
         )}
         <Item
           label="复制一份"
           hint={shortcut('mod+d')}
-          onClick={act(() => engine.duplicateSelection())}
+          disabled={readOnly}
+          onClick={edit(() => engine.duplicateSelection())}
         />
-        <Item label="打组" hint={shortcut('mod+g')} onClick={act(() => engine.groupSelection())} />
+        <Item
+          label="打组"
+          hint={shortcut('mod+g')}
+          disabled={readOnly}
+          onClick={edit(() => engine.groupSelection())}
+        />
         {ids.some((id) => engine.scene.get(id)?.kind === 'frame') && (
           <Item
             label="解组"
             hint={shortcut('mod+shift+g')}
-            onClick={act(() => engine.ungroupSelection())}
+            disabled={readOnly}
+            onClick={edit(() => engine.ungroupSelection())}
           />
         )}
         <Item
@@ -274,15 +329,22 @@ function ContextMenu({
         <Item
           label="置于顶层"
           hint={shortcut('mod+]')}
-          onClick={act(() => engine.bringToFront())}
+          disabled={readOnly}
+          onClick={edit(() => engine.bringToFront())}
         />
-        <Item label="置于底层" hint={shortcut('mod+[')} onClick={act(() => engine.sendToBack())} />
+        <Item
+          label="置于底层"
+          hint={shortcut('mod+[')}
+          disabled={readOnly}
+          onClick={edit(() => engine.sendToBack())}
+        />
         <Sep />
         <Item
           label="删除"
           hint={shortcut('backspace')}
           danger
-          onClick={act(() => engine.deleteSelection())}
+          disabled={readOnly}
+          onClick={edit(() => engine.deleteSelection())}
         />
       </>
     )

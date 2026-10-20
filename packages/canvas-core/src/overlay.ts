@@ -105,6 +105,7 @@ export class SelectionOverlay {
 
   /** 选中项全部锁定，或含有尺寸自适应的素材元素时不显示手柄 */
   showHandles() {
+    if (this.scene.doc.readOnly) return false
     const els = this.selection.values().map((id) => this.scene.get(id))
     return (
       els.some((el) => el?.locked === false) &&

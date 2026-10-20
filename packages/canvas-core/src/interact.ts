@@ -147,12 +147,19 @@ export function attachInteractions(host: InteractHost) {
     el.style.cursor = pan.space || pan.hand ? 'grab' : ''
   }
   const commit = (write: () => void) => {
+    if (doc.readOnly) return
     doc.undo.stopCapturing()
     try {
       host.commit(() => doc.ydoc.transact(write, doc.origin))
     } finally {
       doc.undo.stopCapturing()
     }
+  }
+  const cancelReadOnlyEdit = () => {
+    if (!doc.readOnly || !gesture || gesture.kind === 'press' || gesture.kind === 'marquee')
+      return false
+    cancel(false)
+    return true
   }
   const interrupt = () => {
     if (!gesture) return
@@ -235,7 +242,7 @@ export function attachInteractions(host: InteractHost) {
   }
 
   const handleAt = (x: number, y: number): Handle | null => {
-    if (selection.size === 0 || !overlay.showHandles()) return null
+    if (doc.readOnly || selection.size === 0 || !overlay.showHandles()) return null
     const box = overlay.selectionBox()
     if (!box) return null
     const tol = HANDLE_PX / camera.zoom
@@ -249,7 +256,9 @@ export function attachInteractions(host: InteractHost) {
 
   /** 可编辑（未锁定）的顶层选中元素 */
   const editableTops = () =>
-    topLevel(doc, selection.values()).filter((id) => scene.get(id)?.locked === false)
+    doc.readOnly
+      ? []
+      : topLevel(doc, selection.values()).filter((id) => scene.get(id)?.locked === false)
 
   const parentOrigin = (id: string) => {
     const p = scene.parent(id)
@@ -307,6 +316,7 @@ export function attachInteractions(host: InteractHost) {
   }
 
   const startConnect = (x: number, y: number) => {
+    if (doc.readOnly) return false
     const port = findPortAt(x, y)
     if (!port) return false
     let from = port
@@ -331,6 +341,7 @@ export function attachInteractions(host: InteractHost) {
 
   const onPointerMove = (e: PointerEvent) => {
     if (pointer !== null && pointer !== e.pointerId) return
+    if (cancelReadOnlyEdit()) return
     if (gesture && !valid()) {
       interrupt()
       return
@@ -338,8 +349,8 @@ export function attachInteractions(host: InteractHost) {
     const w = toWorld(e)
     if (!gesture) {
       if (pan.space || pan.hand) return
-      edges.setHoverElement(nearElement(w.x, w.y))
-      const port = findPortAt(w.x, w.y)
+      edges.setHoverElement(doc.readOnly ? null : nearElement(w.x, w.y))
+      const port = doc.readOnly ? null : findPortAt(w.x, w.y)
       const handle = port ? null : handleAt(w.x, w.y)
       edges.setHover(port)
       el.style.cursor = handle ? HANDLE_CURSORS[handle] : port ? 'crosshair' : ''
@@ -452,6 +463,7 @@ export function attachInteractions(host: InteractHost) {
     if (pointer !== e.pointerId) return
     doc.flush()
     if (pointer !== e.pointerId) return
+    if (cancelReadOnlyEdit()) return
     if (!valid()) {
       interrupt()
       return
@@ -563,7 +575,7 @@ export function attachInteractions(host: InteractHost) {
     }
   })
   const offDoc = doc.subscribe(() => {
-    if (gesture && !valid()) interrupt()
+    if (!cancelReadOnlyEdit() && gesture && !valid()) interrupt()
   })
 
   el.addEventListener('pointerdown', onPointerDown)
@@ -575,18 +587,25 @@ export function attachInteractions(host: InteractHost) {
   window.addEventListener('blur', onBlur)
   window.addEventListener('keydown', onKeyDown)
 
-  return () => {
-    offCamera()
-    offSelection()
-    offDoc()
-    cancel(false)
-    el.removeEventListener('pointerdown', onPointerDown)
-    el.removeEventListener('pointerleave', onPointerLeave)
-    el.removeEventListener('pointermove', onPointerMove)
-    el.removeEventListener('pointerup', onPointerUp)
-    el.removeEventListener('pointercancel', onCancel)
-    el.removeEventListener('lostpointercapture', onCancel)
-    window.removeEventListener('blur', onBlur)
-    window.removeEventListener('keydown', onKeyDown)
+  return {
+    cancelEditing() {
+      if (gesture && gesture.kind !== 'marquee') cancel(false)
+      edges.setHover(null)
+      edges.setHoverElement(null)
+    },
+    dispose() {
+      offCamera()
+      offSelection()
+      offDoc()
+      cancel(false)
+      el.removeEventListener('pointerdown', onPointerDown)
+      el.removeEventListener('pointerleave', onPointerLeave)
+      el.removeEventListener('pointermove', onPointerMove)
+      el.removeEventListener('pointerup', onPointerUp)
+      el.removeEventListener('pointercancel', onCancel)
+      el.removeEventListener('lostpointercapture', onCancel)
+      window.removeEventListener('blur', onBlur)
+      window.removeEventListener('keydown', onKeyDown)
+    },
   }
 }

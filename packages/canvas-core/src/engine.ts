@@ -137,6 +137,7 @@ export class Engine {
   /** 动画自身更新相机时不取消自己；其他来源的导航立即接管。 */
   private advancingFlight = false
   private stopInputMotion = () => {}
+  private stopEditing = () => {}
   private pan: PanState = { space: false, hand: false }
   private toolValue: Tool = 'select'
   private viewDirty = true
@@ -213,23 +214,25 @@ export class Engine {
 
     const input = attachInput(host, this.camera, this.pan)
     this.stopInputMotion = input.cancel
+    const interactions = attachInteractions({
+      el: host,
+      camera: this.camera,
+      scene: this.scene,
+      doc: this.doc,
+      selection: this.selection,
+      edges: this.edges,
+      overlay: this.overlay,
+      pan: this.pan,
+      preview: (patches) => this.preview(patches),
+      commit: (write) => this.commit(write),
+      onInterrupted: () => this.opts.onInteractionInterrupted?.(),
+      connectToEmpty: (from, world, client) =>
+        this.emitMenu({ kind: 'connect', from, world, client }),
+    })
+    this.stopEditing = interactions.cancelEditing
     this.disposers.push(
       input.dispose,
-      attachInteractions({
-        el: host,
-        camera: this.camera,
-        scene: this.scene,
-        doc: this.doc,
-        selection: this.selection,
-        edges: this.edges,
-        overlay: this.overlay,
-        pan: this.pan,
-        preview: (patches) => this.preview(patches),
-        commit: (write) => this.commit(write),
-        onInterrupted: () => this.opts.onInteractionInterrupted?.(),
-        connectToEmpty: (from, world, client) =>
-          this.emitMenu({ kind: 'connect', from, world, client }),
-      }),
+      interactions.dispose,
       this.camera.onChange(() => {
         if (!this.advancingFlight) this.flight = null
         this.cameraDirty = true
@@ -309,8 +312,8 @@ export class Engine {
       tool: this.toolValue,
       zoom: this.camera.zoom,
       selection: this.selection.size,
-      canUndo: this.doc.undo.canUndo(),
-      canRedo: this.doc.undo.canRedo(),
+      canUndo: !this.doc.readOnly && this.doc.undo.canUndo(),
+      canRedo: !this.doc.readOnly && this.doc.undo.canRedo(),
       edgesHidden: this.edgesHidden,
     }
   }
@@ -323,6 +326,10 @@ export class Engine {
 
   /** 引擎之外改了会影响状态的东西（如文档转为只读）时，让外壳重新读取 */
   refreshState() {
+    if (this.doc.readOnly) this.stopEditing()
+    this.overlay.markDirty()
+    this.edges.markDirty()
+    this.requestRender()
     this.emit()
   }
 
@@ -434,10 +441,12 @@ export class Engine {
   // ── 命令 ────────────────────────────────────────────
 
   undo() {
+    if (this.doc.readOnly) return
     this.doc.undo.undo()
   }
 
   redo() {
+    if (this.doc.readOnly) return
     this.doc.undo.redo()
   }
 
@@ -448,11 +457,13 @@ export class Engine {
   }
 
   deleteSelection() {
+    if (this.doc.readOnly) return
     if (this.selection.size === 0) return
     deleteElements(this.doc, this.selection.values())
   }
 
   duplicateSelection() {
+    if (this.doc.readOnly) return
     if (this.selection.size === 0) return
     const data = (this.opts.clipboard?.copy ?? exportElements)(this.doc, this.selection.values())
     this.selection.set(
@@ -461,12 +472,14 @@ export class Engine {
   }
 
   nudge(dx: number, dy: number) {
+    if (this.doc.readOnly) return
     if (this.selection.size === 0) return
     moveElements(this.doc, this.selection.values(), dx, dy)
   }
 
   /** 用 Frame 包住选中元素（⌘G） */
   groupSelection() {
+    if (this.doc.readOnly) return
     if (this.selection.size === 0) return
     this.discreteEdit(() => {
       const frame = groupElements(this.doc, this.selection.values())
@@ -476,6 +489,7 @@ export class Engine {
 
   /** 解组选中的 Frame（⇧⌘G），选中原来的子元素 */
   ungroupSelection() {
+    if (this.doc.readOnly) return
     const frames = this.selection.values().filter((id) => this.scene.get(id)?.kind === 'frame')
     if (frames.length === 0) return
     this.discreteEdit(() => {
@@ -512,7 +526,7 @@ export class Engine {
       count,
       stale,
       revert: () => {
-        if (stale()) return false
+        if (this.doc.readOnly || stale()) return false
         undo.undo()
         return true
       },
@@ -522,10 +536,12 @@ export class Engine {
   }
 
   bringToFront() {
+    if (this.doc.readOnly) return
     bringToFront(this.doc, this.selection.values())
   }
 
   sendToBack() {
+    if (this.doc.readOnly) return
     sendToBack(this.doc, this.selection.values())
   }
 
@@ -536,6 +552,7 @@ export class Engine {
   }
 
   paste(data: ClipboardData) {
+    if (this.doc.readOnly) return
     this.pasteCount++
     const d = PASTE_OFFSET * this.pasteCount
     this.selection.set(
@@ -585,6 +602,7 @@ export class Engine {
 
   /** 在视口中央弹出节点选择器（Tab） */
   openCreateMenu() {
+    if (this.doc.readOnly) return
     const r = this.opts.host.getBoundingClientRect()
     const client = { x: r.left + r.width / 2, y: r.top + r.height / 2 }
     this.emitMenu({ kind: 'create', world: this.clientToWorld(client.x, client.y), client })
@@ -593,6 +611,7 @@ export class Engine {
   // ── 内部 ────────────────────────────────────────────
 
   private emitMenu(e: CanvasMenuEvent) {
+    if (this.doc.readOnly && e.kind !== 'context') return
     for (const fn of this.menuListeners) fn(e)
   }
 

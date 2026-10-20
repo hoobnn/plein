@@ -205,6 +205,7 @@ export function AddMenu({
 
   const pick = (item: Item | undefined) => {
     if (!item) return
+    if (engine.doc.readOnly) return onClose()
     onClose()
     item.run(at())
   }

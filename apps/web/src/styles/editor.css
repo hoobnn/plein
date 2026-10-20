@@ -12,8 +12,12 @@
   color: var(--on-primary);
   transition: background-color var(--dur-fast) var(--ease-standard);
 }
-.plein-add-btn:hover {
+.plein-add-btn:hover:not(:disabled) {
   background: var(--primary-hover);
+}
+.plein-add-btn:disabled {
+  cursor: default;
+  opacity: 0.4;
 }
 .plein-add-btn svg {
   transition: transform var(--dur-base) var(--ease-spring);

@@ -1,3 +1,4 @@
+import { useEngineVersion } from '../canvas/hooks'
 import type { Engine, Tool } from '@plein/canvas-core'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { visibleFiles } from '../canvas/dropped'
@@ -87,22 +88,30 @@ function ToolPicker({ engine, tool }: { engine: Engine; tool: Tool }) {
 
 /** 添加节点：实心的“+”，菜单在按钮上方弹出，新元素落在视口中央 */
 function NodeMenu({ engine, canImport }: { engine: Engine; canImport: boolean }) {
+  useEngineVersion(engine)
+  const readOnly = engine.doc.readOnly
   const [open, setOpen] = useState(false)
   const ref = useDismiss(() => setOpen(false), { active: open })
+  useEffect(() => {
+    if (readOnly) setOpen(false)
+  }, [readOnly])
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
-        title="添加节点（Tab）"
+        title={readOnly ? '只读画布不能添加节点' : '添加节点（Tab）'}
+        disabled={readOnly}
         aria-label="添加节点"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (!engine.doc.readOnly) setOpen(!open)
+        }}
         className="plein-add-btn"
       >
         <Icon name="plus" size={20} />
       </button>
       <Presence>
-        {open && (
+        {open && !readOnly && (
           <AddMenu
             side="above"
             engine={engine}
