@@ -110,10 +110,16 @@ export function AddMenu({
   const exit = useExit()
   const nodes = useCatalog((s) => s.catalog?.nodes)
   const catalog = useCatalog((s) => s.catalog)
+  const canvasId = useCanvas((s) => s.canvasId)
   const templates = useTemplates((s) => s.templates)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
+
+  // 另一端可能刚启停插件，进入菜单时重新读取，不依赖设置面板的轮询是否完成。
+  useEffect(() => {
+    if (canvasId) void useCatalog.getState().load()
+  }, [canvasId])
 
   const items = useMemo(() => {
     const list: Item[] = []

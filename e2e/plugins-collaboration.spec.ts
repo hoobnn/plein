@@ -1,10 +1,11 @@
+import { openCanvasSettings } from './settings-ui'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import { clickElement, elements, newProject, waitEngine, waitNode } from './canvas'
 
 async function openPlugins(page: Page) {
-  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await openCanvasSettings(page)
   const settings = page.getByRole('dialog', { name: '设置', exact: true })
   await settings.getByRole('button', { name: /^插件/ }).click()
   return { settings, toggle: settings.locator('[data-plugin="acme/echo"]').getByRole('switch') }
@@ -31,16 +32,26 @@ test('另一客户端启停插件时，已打开的插件面板和随后使用�
     await waitEngine(peer)
     const other = await openPlugins(peer)
     await expect(local.toggle).not.toBeChecked()
+    // 主页面先读到启用过程中的旧目录；关闭设置后首次使用节点时仍须跟进新目录。
+    const oldCatalog = await (await request.get('/api/catalog')).json()
+    let staleReads = 0
+    await page.route('**/api/catalog', (route) => {
+      staleReads++
+      return route.fulfill({ json: oldCatalog })
+    })
     await other.toggle.click()
     await expect(other.toggle).toBeEnabled()
     expect(await page.evaluate(() => document.visibilityState)).toBe('visible')
     await expect(local.toggle).toBeChecked()
+    await expect.poll(() => staleReads).toBeGreaterThan(0)
+    await page.unroute('**/api/catalog')
     await page.keyboard.press('Escape')
     await expect(local.settings).toHaveCount(0)
     await page.getByRole('button', { name: '添加节点', exact: true }).click()
     const picker = page.getByRole('dialog', { name: '添加节点', exact: true })
     await picker.getByRole('textbox', { name: '搜索节点', exact: true }).fill('大声说')
     await expect(picker.getByRole('option', { name: '大声说', exact: true })).toBeVisible()
+    await picker.screenshot({ path: test.info().outputPath('plugin-catalog-recovered.png') })
     await picker.getByRole('option', { name: '大声说', exact: true }).click()
     const node = (await elements(page)).find((element) => element.nodeType === 'acme/shout')!
     await page
