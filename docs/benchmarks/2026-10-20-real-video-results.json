@@ -1,0 +1,91 @@
+{
+  "asset": {
+    "id": "5d5ad1c924c4a91a84b2ac405409559fea467afa13800d1601a1a017070475fe",
+    "kind": "video",
+    "mime": "video/mp4",
+    "width": 1344,
+    "height": 768,
+    "duration": 4.458333,
+    "size": 386425
+  },
+  "originalSha256": "5d5ad1c924c4a91a84b2ac405409559fea467afa13800d1601a1a017070475fe",
+  "downloadSha256": "5d5ad1c924c4a91a84b2ac405409559fea467afa13800d1601a1a017070475fe",
+  "downloadMatchesOriginal": true,
+  "playback": {
+    "readyState": 4,
+    "error": null,
+    "replayStarted": {
+      "time": 0.13427,
+      "paused": false
+    },
+    "replayEnded": {
+      "time": 4.458333,
+      "ended": true
+    }
+  },
+  "generationCalls": 1,
+  "attempts": 1,
+  "remoteId": "454475688116633",
+  "runId": "run_mvgthupm5rpja8",
+  "canvasId": "cv_CELs0MJNx0E9",
+  "adoption": "candidate 1 adopted; only candidate",
+  "sourceProductCommit": "8b41279",
+  "request": {
+    "model": "MiniMax-H3",
+    "duration": 4,
+    "resolution": "768P",
+    "count": 1,
+    "mode": "text-to-video"
+  },
+  "generationRefreshPreservedIdentity": true,
+  "probe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 1344,
+        "height": 768,
+        "duration": "4.458333"
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "duration": "4.450000"
+      }
+    ],
+    "format": {
+      "duration": "4.458333",
+      "size": "386425"
+    }
+  },
+  "afterServerRestart": {
+    "jobs": [["run_mvgthupm5rpja8", "succeeded", 1]],
+    "assetCount": 1,
+    "candidateAdopted": true,
+    "videoReadyState": 4,
+    "videoError": null
+  },
+  "boundaries": [
+    "One paid text-to-video call only; no reference images in this request.",
+    "No real cancellation, regeneration or alternate candidate switch verified in this allowance.",
+    "Requested duration 4 seconds; provider output video 4.458333 seconds and audio 4.45 seconds.",
+    "Current source server and production web build; not an upgraded installed desktop app."
+  ],
+  "screenshots": [
+    {
+      "file": "2026-10-20-real-video-running.png",
+      "sha256": "fcdb5af5dd3aadf399bbc11adac57470a7fce76e582040056b0a381015354029"
+    },
+    {
+      "file": "2026-10-20-real-video-after-restart.png",
+      "sha256": "9317231f849ce5136776b26658cbc54b59671b9cfd463082922adf261b202c56"
+    }
+  ],
+  "cleanup": {
+    "isolatedServerStopped": true,
+    "copiedProviderConfigurationRemoved": true,
+    "completedDatabaseAndMediaRetained": true
+  }
+}
