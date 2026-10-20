@@ -176,6 +176,8 @@ export function EditPlanRow({ item }: { item: Extract<AgentItem, { type: 'edit_p
   return (
     <div
       ref={root}
+      role="group"
+      aria-label={`修改方案：${plan.summary}`}
       className={`plein-agent-approval plein-edit-plan flex flex-col gap-2 rounded-lg px-3 py-2.5 text-xs ring-1 ring-inset ${pending ? 'bg-accent-soft/50 text-ink ring-accent/40' : 'text-ink ring-line'}`}
       data-status={plan.status}
       data-revising={revising || undefined}

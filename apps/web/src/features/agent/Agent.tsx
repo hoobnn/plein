@@ -555,6 +555,11 @@ function Transcript({
   return (
     <div
       ref={ref}
+      role="region"
+      aria-label="对话记录"
+      // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- 滚动阅读区需要接收原生翻页键。
+      tabIndex={0}
+      data-plein-scroll
       onScroll={(e) => {
         const el = e.currentTarget
         stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40

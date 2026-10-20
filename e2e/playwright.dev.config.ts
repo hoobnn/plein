@@ -78,6 +78,7 @@ export default defineConfig({
     'agent-layout.spec.ts',
     'home-agent-layout.spec.ts',
     'agent-keyboard.spec.ts',
+    'agent-transcript-navigation.spec.ts',
     'agent-drafts.spec.ts',
     'agent-history.spec.ts',
     'agent-history-provider.spec.ts',
