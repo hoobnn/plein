@@ -1158,9 +1158,17 @@ function PresetChips({
     if (!editingCustom || !field?.contains(document.activeElement)) return
     const menu = field.closest<HTMLElement>('.lib-add-pop')
     const viewport = menu?.closest<HTMLElement>('.lib-editor-content')
-    // 自动聚焦只保证输入框可见；空间足够时同时露出菜单标题和预设。
-    if (menu && viewport && menu.offsetHeight <= viewport.clientHeight)
-      menu.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    if (!menu || !viewport) return
+    // 自动聚焦只保证输入框可见；输入或窗口变化后同时露出整个菜单。
+    const reveal = () => {
+      if (field.contains(document.activeElement) && menu.offsetHeight <= viewport.clientHeight)
+        menu.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    }
+    reveal()
+    const resize = new ResizeObserver(reveal)
+    resize.observe(menu)
+    resize.observe(viewport)
+    return () => resize.disconnect()
   }, [editingCustom, problem, focus.props.ref])
   return (
     <div

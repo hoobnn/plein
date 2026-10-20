@@ -593,6 +593,19 @@
   width: auto;
 }
 
+@media (max-width: 640px) {
+  .lib-lane {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lib-lane-outfits > li:has(> .lib-add-pop) {
+    width: 100%;
+  }
+  .lib-lane-outfits .lib-add-pop {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
 /* 「添加时期」：和时期圆图对齐的一行 */
 .lib-lane-add {
   display: block;

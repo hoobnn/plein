@@ -5,9 +5,12 @@ import { openLibraryPanel } from './library-ui'
 for (const [kind, add, field, name, width] of [
   ['period', '添加时期', '时期名', '自定义阶段', 1440],
   ['outfit', '加服饰', '服饰名', '自定义造型', 800],
+  ['outfit', '加服饰', '服饰名', '自定义造型', 580],
+  ['outfit', '加服饰', '服饰名', '自定义造型', 390],
+  ['outfit', '加服饰', '服饰名', '自定义造型', 320],
   ['expression', '添加表情', '名字', '自定义神态', 390],
 ] as const) {
-  test(`档案自定义 ${kind} 组字不提前添加，正常确认只保存一次并保留其他设定`, async ({
+  test(`档案自定义 ${kind} ${width}px 组字不提前添加，正常确认只保存一次并保留其他设定`, async ({
     page,
   }, testInfo) => {
     const errors: string[] = []
@@ -17,7 +20,7 @@ for (const [kind, add, field, name, width] of [
     const response = await page.request.post('/api/library', {
       data: {
         kind: 'character',
-        name: `中文自定义-${kind}`,
+        name: `中文自定义-${kind}-${width}`,
         description: '保留角色基础设定',
         profile: {
           periods: [
@@ -76,15 +79,33 @@ for (const [kind, add, field, name, width] of [
       item.profile,
     )
     await expect(custom).toBeInViewport({ ratio: 1 })
-    await expect
-      .poll(() =>
-        pop.evaluate((el) => {
-          const menu = el.getBoundingClientRect()
-          const clip = el.closest('.lib-editor-content')!.getBoundingClientRect()
-          return menu.top >= clip.top - 1 && menu.bottom <= clip.bottom + 1
-        }),
-      )
-      .toBe(true)
+    const menuFits = () =>
+      pop.evaluate((el) => {
+        const menu = el.getBoundingClientRect()
+        const clips = [el.closest('.lib-editor-content'), el.closest('.lib-lane-outfits')].filter(
+          (clip): clip is Element => !!clip,
+        )
+        return clips.every((el) => {
+          const clip = el.getBoundingClientRect()
+          return (
+            menu.top >= clip.top - 1 &&
+            menu.bottom <= clip.bottom + 1 &&
+            menu.left >= clip.left - 1 &&
+            menu.right <= clip.right + 1
+          )
+        })
+      })
+    await expect.poll(menuFits).toBe(true)
+    if (kind === 'outfit' && width === 800) {
+      for (const nextWidth of [641, 640, 580, 390, 320, 800]) {
+        await page.setViewportSize({ width: nextWidth, height: nextWidth === 800 ? 650 : 800 })
+        await expect(custom).toHaveValue(name)
+        await expect(custom).toBeFocused()
+        await expect.poll(menuFits).toBe(true)
+        if (nextWidth === 320)
+          await panel.screenshot({ path: testInfo.outputPath('profile-custom-resized.png') })
+      }
+    }
     await panel.screenshot({ path: testInfo.outputPath('profile-custom-composition.png') })
     await page.keyboard.press('Enter')
     await expect(custom).toHaveCount(0)
