@@ -7,18 +7,22 @@ const SHOTS = process.env.PLEIN_SHOTS ?? 'test-results'
 test('弹层、下拉、开关、面板、确认框的交互', async ({ page }) => {
   await newProject(page)
 
-  // 弹层：点锚点打开，再点锚点关闭（不能先关再被重新打开），Esc 关闭
+  // 工具单击立即切换，键盘快捷键与按钮保持一致。
   const tools = page.getByRole('button', { name: '工具', exact: true })
   const toolsPop = page.getByRole('dialog', { name: '工具' })
+  await expect(tools).toHaveAttribute('aria-pressed', 'false')
   await tools.click()
-  await expect(toolsPop).toBeVisible()
-  await page.screenshot({ path: `${SHOTS}/popover.png` })
-  await tools.click()
+  await expect(tools).toHaveAttribute('aria-pressed', 'true')
+  await expect(tools).toHaveAttribute('title', /当前：抓手；点击切换为移动/)
   await expect(toolsPop).toHaveCount(0)
   await tools.click()
-  await expect(toolsPop).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(toolsPop).toHaveCount(0)
+  await expect(tools).toHaveAttribute('aria-pressed', 'false')
+  await expect(tools).toHaveAttribute('title', /当前：移动；点击切换为抓手/)
+  await page.locator('canvas').evaluate((canvas) => (canvas.parentElement as HTMLElement).focus())
+  await page.keyboard.press('h')
+  await expect(tools).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.press('v')
+  await expect(tools).toHaveAttribute('aria-pressed', 'false')
 
   // 缩放弹层打开就能输入倍数
   await page.getByRole('button', { name: '缩放选项' }).click()

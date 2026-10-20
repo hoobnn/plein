@@ -46,43 +46,19 @@ const TOOLS: Array<{ tool: Tool; label: string; hint: string; icon: IconName }> 
   { tool: 'hand', label: '抓手', hint: 'H', icon: 'hand' },
 ]
 
-/** 工具切换：一个按钮显示当前工具，弹层里选（省一格） */
-function ToolPicker({ engine, tool }: { engine: Engine; tool: Tool }) {
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
+/** 点击直接切换移动与抓手，图标显示当前工具。 */
+function ToolToggle({ engine, tool }: { engine: Engine; tool: Tool }) {
   const current = TOOLS.find((t) => t.tool === tool) ?? TOOLS[0]!
+  const next = TOOLS[tool === 'hand' ? 0 : 1]!
   return (
-    <>
-      <Button
-        label="工具"
-        hint={`${current.label} ${current.hint}`}
-        expanded={!!anchor}
-        onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
-      >
-        <Icon name={current.icon} />
-      </Button>
-      <Presence>
-        {anchor && (
-          <Popover anchor={anchor} onClose={() => setAnchor(null)} label="工具" width={168}>
-            {TOOLS.map((t) => (
-              <button
-                key={t.tool}
-                type="button"
-                aria-pressed={t.tool === tool}
-                onClick={() => {
-                  engine.setTool(t.tool)
-                  setAnchor(null)
-                }}
-                className="ui-menu-item"
-              >
-                <Icon name={t.icon} />
-                <span className="flex-1">{t.label}</span>
-                <span className="ui-kbd">{t.hint}</span>
-              </button>
-            ))}
-          </Popover>
-        )}
-      </Presence>
-    </>
+    <Button
+      label="工具"
+      hint={`当前：${current.label}；点击切换为${next.label}；V 移动 / H 抓手`}
+      active={tool === 'hand'}
+      onClick={() => engine.setTool(next.tool)}
+    >
+      <Icon name={current.icon} />
+    </Button>
   )
 }
 
@@ -164,7 +140,7 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
   return (
     <div className="ui-bar pointer-events-auto">
       <NodeMenu engine={engine} canImport={canImport} />
-      <ToolPicker engine={engine} tool={tool} />
+      <ToolToggle engine={engine} tool={tool} />
       {canImport && (
         <>
           <Button
