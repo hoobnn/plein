@@ -638,16 +638,22 @@ function MediaPreview({ asset, onClose }: { asset: MediaLibraryItem; onClose(): 
           </>
         )}
       </ModalHeader>
-      <div className="ui-scrollbar flex min-h-0 flex-1 items-center justify-center overflow-auto bg-canvas p-4">
+      <div
+        role="region"
+        aria-label="素材预览区域"
+        // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- 滚动预览区需要接收原生方向键。
+        tabIndex={0}
+        className="ui-scrollbar flex min-h-0 flex-1 overflow-auto bg-canvas p-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+      >
         {asset.kind === 'video' ? (
-          <MediaPlayer asset={asset} className="max-h-full max-w-full" />
+          <MediaPlayer asset={asset} className="m-auto max-h-full max-w-full" />
         ) : (
           <MediaImage
             src={assetUrls.original(asset.id)}
             alt={asset.name}
             retry
             style={{ width: `${scale * 100}%`, maxWidth: 'none' }}
-            className="flex-none object-contain"
+            className="m-auto flex-none object-contain"
           />
         )}
       </div>
