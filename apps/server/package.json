@@ -9,6 +9,7 @@
     "start": "node --no-experimental-webstorage dist/main.mjs",
     "typecheck": "tsc -p .",
     "bench:migration": "tsx bench/migration.ts",
+    "bench:stable-production": "tsx bench/stable-production.ts",
     "bench:recovery": "vp test run --config bench/vite.config.ts recovery.measure",
     "bench:recovery:real": "vp test run --config bench/vite.config.ts recovery-real",
     "db:generate": "drizzle-kit generate && tsx scripts/embed-migrations.ts && vp fmt src/storage/migrations.gen.ts"
