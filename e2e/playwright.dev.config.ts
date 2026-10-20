@@ -117,6 +117,7 @@ export default defineConfig({
     'arrange-locked-nesting.spec.ts',
     'arrange-feedback.spec.ts',
     'shortcuts-panel.spec.ts',
+    'modal-composition.spec.ts',
     'canvas-footer-fit.spec.ts',
     'canvas-readonly.spec.ts',
     'canvas-shortcut-composition.spec.ts',
