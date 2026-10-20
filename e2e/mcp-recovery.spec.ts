@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
+import { openCanvasSettings } from './settings-ui'
 
 for (const method of ['POST', 'DELETE']) {
   test(`对外 MCP ${method} 失败有提示并可恢复，不改变原连接状态`, async ({ page, request }) => {
     await request.delete('/api/mcp/external')
     await newProject(page)
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await openCanvasSettings(page)
     const settings = page.getByRole('dialog', { name: '设置', exact: true })
     await settings.getByRole('button', { name: 'MCP', exact: true }).click()
     if (method === 'DELETE')
@@ -56,7 +57,7 @@ test('MCP 配置复制失败不显示成功，重试和客户端切换对应实�
   await page.setViewportSize({ width: 800, height: 560 })
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await newProject(page)
-  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await openCanvasSettings(page)
   const settings = page.getByRole('dialog', { name: '设置', exact: true })
   await settings.getByRole('button', { name: 'MCP', exact: true }).click()
   await settings.getByRole('button', { name: '生成连接令牌', exact: true }).click()
