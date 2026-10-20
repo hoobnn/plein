@@ -27,7 +27,15 @@ import {
 } from './geometry'
 import type { PanState } from './input'
 import { HANDLE_PX, type SelectionOverlay } from './overlay'
-import { canConnect, eachPort, hitPort, PORT_RADIUS, type PortRef, sidePorts } from './ports'
+import {
+  canConnect,
+  eachPort,
+  hitPort,
+  PORT_RADIUS,
+  type PortRef,
+  portUncovered,
+  sidePorts,
+} from './ports'
 import type { Scene, Transient } from './scene'
 import type { Selection } from './selection'
 
@@ -204,7 +212,13 @@ export function attachInteractions(host: InteractHost) {
   }
 
   const findPortAt = (x: number, y: number, filter?: (p: PortRef) => boolean) =>
-    hitPort(portCandidates(x, y), x, y, portRadius(), filter)
+    hitPort(
+      portCandidates(x, y),
+      x,
+      y,
+      portRadius(),
+      (ref) => portUncovered(scene, ref) && (!filter || filter(ref)),
+    )
 
   /** 同一连接点上的全部端口 */
   const portsOf = (ref: PortRef) => {

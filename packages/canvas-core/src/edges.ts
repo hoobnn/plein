@@ -1,7 +1,7 @@
 import { type CanvasElement, elementPorts } from '@plein/doc'
 import { Graphics } from 'pixi.js'
 import type { Camera } from './camera'
-import { eachHandle, findPort, PORT_RADIUS, type PortRef, portColor } from './ports'
+import { eachHandle, findPort, PORT_RADIUS, type PortRef, portColor, portUncovered } from './ports'
 import type { Scene } from './scene'
 import type { Selection } from './selection'
 import { theme } from './theme'
@@ -194,12 +194,7 @@ export class EdgeLayer {
       const r = this.scene.rect(id)
       if (!el || !r || !this.portsVisible(el)) continue
       eachHandle(el, r, (side, ports, at) => {
-        const front = this.scene.hitTest(
-          at.x,
-          at.y,
-          (other) => this.scene.get(other)?.kind !== 'frame',
-        )
-        if (front && front !== id && this.scene.drawOrder(front) > this.scene.drawOrder(id)) return
+        if (!portUncovered(this.scene, { elementId: id, ...at })) return
         const on = active?.elementId === el.id && active.side === side
         // 一侧的端口类型都一样时按类型着色，混着的用中性色
         const types = new Set(ports.map((p) => p.type))

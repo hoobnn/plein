@@ -114,6 +114,7 @@ export default defineConfig({
     'gesture-concurrency.spec.ts',
     'group-boundaries.spec.ts',
     'port-zoom-boundaries.spec.ts',
+    'port-occlusion.spec.ts',
     'wheel-units.spec.ts',
     'arrange-locked-nesting.spec.ts',
     'arrange-feedback.spec.ts',

@@ -7,6 +7,7 @@ import {
   type Rect,
 } from '@plein/doc'
 import { theme } from './theme'
+import type { Scene } from './scene'
 
 /** 端口半径（世界坐标） */
 export const PORT_RADIUS = 6
@@ -19,6 +20,14 @@ export interface PortRef {
   side: PortSide
   x: number
   y: number
+}
+
+/** 绘制和命中共用端口中心的遮挡判断，不能从旁边点中已隐藏的连接点。 */
+export function portUncovered(scene: Scene, ref: Pick<PortRef, 'elementId' | 'x' | 'y'>) {
+  const front = scene.hitTest(ref.x, ref.y, (id) => scene.get(id)?.kind !== 'frame')
+  return (
+    !front || front === ref.elementId || scene.drawOrder(front) < scene.drawOrder(ref.elementId)
+  )
 }
 
 /** 端口按类型着色（随主题变化） */
