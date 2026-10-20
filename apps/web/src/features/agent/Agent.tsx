@@ -154,7 +154,9 @@ export function AgentDock() {
   if (!ready || route.name === 'demo') return null
   return (
     <>
-      <Presence>{open && <AgentPanel canvasId={canvasId} onClose={close} />}</Presence>
+      <Presence>
+        {open && <AgentPanel canvasId={canvasId} onClose={close} bottom={mascotBottom + 76} />}
+      </Presence>
       {route.name !== 'home' && (
         <button
           ref={trigger}
@@ -180,7 +182,15 @@ export function AgentDock() {
   )
 }
 
-function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose(): void }) {
+function AgentPanel({
+  canvasId,
+  onClose,
+  bottom,
+}: {
+  canvasId: string | null
+  onClose(): void
+  bottom: number
+}) {
   const {
     status,
     agent,
@@ -237,7 +247,8 @@ function AgentPanel({ canvasId, onClose }: { canvasId: string | null; onClose():
         }
       }}
       {...exit}
-      className="plein-agent-panel ui-float pointer-events-auto fixed top-16 right-3 bottom-21 z-40 flex w-100 flex-col overflow-hidden rounded-xl max-sm:inset-x-3 max-sm:bottom-35 max-sm:w-auto"
+      style={{ bottom }}
+      className="plein-agent-panel ui-float pointer-events-auto fixed top-16 right-3 z-40 flex w-100 flex-col overflow-hidden rounded-xl max-sm:inset-x-3 max-sm:w-auto"
     >
       <header className="flex h-12 flex-none items-center gap-1 border-b border-line pr-2 pl-4">
         <h2 className="mr-1 text-sm font-semibold">小满</h2>

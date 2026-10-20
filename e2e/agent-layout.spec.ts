@@ -10,13 +10,16 @@ for (const initialWidth of [639, 1440]) {
     const input = panel.getByPlaceholder('让小满帮你做点什么…')
     await expect(input).toBeFocused()
     await input.fill('保留这段未发送的草稿')
+    const toggle = page.getByRole('button', { name: '收起助手', exact: true })
+    const send = panel.getByRole('button', { name: '发送', exact: true })
+    await expect(send).toBeEnabled()
     const right = () =>
       page.evaluate(
         () =>
           (window.__plein.engine as unknown as { camera: { insets: { right: number } } }).camera
             .insets.right,
       )
-    for (const width of [640, 639, 1440, 600, 640]) {
+    for (const width of [640, 639, 1440, 320, 390, 664, 700, 800, 900, 600, 640]) {
       await page.setViewportSize({ width, height: 900 })
       await expect.poll(right).toBe(width >= 640 ? 424 : 0)
       await expect(panel).toBeVisible()
@@ -25,6 +28,24 @@ for (const initialWidth of [639, 1440]) {
         .toBe(width >= 640 ? 400 : width - 24)
       await expect(input).toBeFocused()
       await expect(input).toHaveValue('保留这段未发送的草稿')
+      // 两个方向都不能遮挡：单纯提升吉祥物层级会反过来盖住发送按钮。
+      for (const button of [toggle, send]) {
+        await expect
+          .poll(() =>
+            button.evaluate((el) => {
+              const r = el.getBoundingClientRect()
+              return (
+                document
+                  .elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+                  ?.closest('button') === el
+              )
+            }),
+          )
+          .toBe(true)
+      }
+      const buttonRect = (await toggle.boundingBox())!
+      const panelRect = (await panel.boundingBox())!
+      expect(panelRect.y + panelRect.height).toBeLessThanOrEqual(buttonRect.y - 8)
     }
     await page.screenshot({ path: test.info().outputPath('agent-breakpoint.png') })
     await page.getByRole('button', { name: '收起助手', exact: true }).click()
