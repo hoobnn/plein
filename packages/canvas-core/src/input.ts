@@ -81,7 +81,10 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
       const factor = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.01))
       move(() => camera.zoomAt(sx, sy, factor))
     } else {
-      move(() => camera.panBy(-e.deltaX, -e.deltaY))
+      // 鼠标也可能按行或按页报告滚动量，先换成屏幕像素；画布没有文本行，约定一行为 16px。
+      const sx = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? camera.width : 1
+      const sy = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? camera.height : 1
+      move(() => camera.panBy(-e.deltaX * sx, -e.deltaY * sy))
     }
   }
 

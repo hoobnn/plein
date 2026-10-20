@@ -170,6 +170,30 @@ it('输入框、媒体、浮层和控件保留空格，普通画布仅非重复�
   expect(f.pan.space).toBe(false)
   expect(f.el.style.cursor).toBe('')
 })
+
+it.each([
+  [0, -2, 3],
+  [1, -32, 48],
+  [2, -1600, 1800],
+])('平移单位 %s 使用屏幕像素，两轴保留方向且不改变缩放', (mode, x, y) => {
+  const f = setup()
+  const wheel = event('wheel', {
+    deltaMode: mode,
+    deltaX: 2,
+    deltaY: -3,
+    clientX: 110,
+    clientY: 220,
+  })
+  f.el.dispatchEvent(wheel)
+  expect(wheel.defaultPrevented).toBe(true)
+  expect([f.camera.x, f.camera.y, f.camera.zoom]).toEqual([x, y, 1])
+  // 按页滚动使用当前视口，不能缓存缩放前或调整窗口前的尺寸。
+  f.camera.setViewport(1000, 700)
+  f.el.dispatchEvent(
+    event('wheel', { deltaMode: mode, deltaX: -2, deltaY: 3, clientX: 110, clientY: 220 }),
+  )
+  expect([f.camera.x, f.camera.y, f.camera.zoom]).toEqual(mode === 2 ? [400, -300, 1] : [0, 0, 1])
+})
 it('普通左键不平移，中键只跟随捕获指针并接收合并事件，停稳后释放不启动旧惯性', () => {
   const f = setup()
   f.pointer('pointerdown')
