@@ -1,0 +1,128 @@
+{
+  "recordedAt": "2026-10-20T17:42:23.553109+00:00",
+  "productCommit": "bb4eef6",
+  "status": "source fix and targeted acceptance passed; foreground native replay pending unlock",
+  "problem": {
+    "observedInNativeWindow": "Replace selection with A\\nB, undo restores old value, redo clears text; short ASCII and Chinese replacements work. Direct Edit menu reproduced the multiline failure.",
+    "testProject": "原生输入与窗口验收 · 1021",
+    "testCanvasId": "cv_NNnLiNjZ6Mjg",
+    "scope": "own project in Plein Acceptance; installed production app and production data untouched",
+    "cause": "PromptBox selected the older document snapshot while unfocused; script value resets during native edits invalidated multiline undo/redo history.",
+    "fix": "Show the local draft in both focus states; existing layout effects still reconcile external document changes. No flushSync remains."
+  },
+  "nativeContract": [
+    {
+      "name": "baseline",
+      "path": "docs/benchmarks/2026-10-21-native-history-baseline.json",
+      "sha256": "04138a19616f6366449f58783afe283ec196826a06363907cd4b70602a6b04b9",
+      "cases": 6,
+      "passed": 0,
+      "buildFingerprint": "e13a42ee3b7a5becad39c6930cda329279aeac67c5930ede2f95e21dabff7201"
+    },
+    {
+      "name": "fixed",
+      "path": "docs/benchmarks/2026-10-21-native-history-fixed.json",
+      "sha256": "fd98c22fe634ca2d0036fe3b9b46e28929cbb6033428046db3774a7e0d7c04e4",
+      "cases": 6,
+      "passed": 6,
+      "buildFingerprint": "ff834f7ef4a842a02172510fb0f8eb589c76531a30548aa41e9264e46f7b466b"
+    }
+  ],
+  "browserUi": [
+    {
+      "name": "multiline-baseline",
+      "report": "/private/tmp/plein-ui-audit-20261020/multiline-baseline.json",
+      "sha256": "296725b89eb7dd95d9f983d8f49e174d81321b3f8ff3b68c50795c7bac4bdce1",
+      "stats": {
+        "startTime": "2026-10-20T17:09:54.489Z",
+        "duration": 7451.956,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "name": "prompt-history-production",
+      "report": "/private/tmp/plein-ui-audit-20261020/prompt-history-production.json",
+      "sha256": "8ea80d479dd309ba7f13d3be13720149141cfa7cad4965a13a060d2737157f5e",
+      "stats": {
+        "startTime": "2026-10-20T17:31:14.993Z",
+        "duration": 173316.566,
+        "expected": 72,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "name": "prompt-history-development",
+      "report": "/private/tmp/plein-ui-audit-20261020/prompt-history-development.json",
+      "sha256": "c43ca930d4aa7f32f29a73215a399d10275559c2f6aeafa6a918505919154354",
+      "stats": {
+        "startTime": "2026-10-20T17:34:42.957Z",
+        "duration": 197561.243,
+        "expected": 72,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    }
+  ],
+  "unit": {
+    "files": 81,
+    "passed": 584,
+    "log": "/private/tmp/plein-ui-audit-20261020/native-history-unit.log",
+    "sha256": "81ab46ce12b6666d8295906f17d7fd5afe1ce0c5a5c7f311a31700563b23fc52"
+  },
+  "profileContract": {
+    "passed": 13,
+    "log": "/private/tmp/plein-ui-audit-20261020/native-history-profile.log",
+    "sha256": "57cfee65fd0d7ad0edcb5b2fae011ad797ea6817e0f23e62bd5edaa605515e4c"
+  },
+  "typecheck": ["root e2e", "apps/web", "apps/desktop"],
+  "formatAndLint": "five source/test/package files passed; staged diff check passed",
+  "nativePackage": {
+    "path": "docs/benchmarks/2026-10-21-native-history-package.json",
+    "sha256": "232946cf606d9edc47ee937100e32670f97ad9180a252a105bfc7925fd74a7b7",
+    "bootLog": "/private/tmp/plein-ui-audit-20261020/native-history-boot-snapshot.log",
+    "bootLogSha256": "6f1b0e6b4f127b5d82fbd73d834276e61485a62a660d2c0752d3e7a70a510bdf",
+    "foregroundUiPassed": false,
+    "pendingReason": "Mac locked; async unlock request remains pending",
+    "oldInstanceExit": "SIGTERM of precisely identified old acceptance PID 62321; exec handle completed exit 0",
+    "newInstance": "bb4eef6 independent acceptance bundle; Mock provider enabled and agent disabled explicitly"
+  },
+  "paidCalls": 0,
+  "preflight": {
+    "acceptanceJobs": {
+      "succeeded": 60,
+      "failed": 3,
+      "nonterminal": 0
+    },
+    "ordinaryUiInventory": {
+      "files": 324,
+      "tests": 1608
+    },
+    "inventoryFile": "/private/tmp/plein-ui-audit-20261020/ui-inventory-after-native-history.txt",
+    "inventorySha256": "60e715a24ce1589419b88a549aefca859e122250fe5713c25890ea4a07f8d946"
+  },
+  "evidenceBoundaries": [
+    "Permanent native contract uses actual Electron 44.8.0, a hidden application frame, isolated temporary Mock server, and a minimal bridge fixture; it does not replace production preload/IPC security tests.",
+    "Its edit insertion uses native browser editing commands and does not use the system clipboard; separate browser tests use real clipboard paste.",
+    "Foreground Unicode paste, ASCII/Chinese undo/redo, and the multiline failure were observed on the original current-source bundle. Updated bundle foreground replay remains pending.",
+    "Control-space and key injection did not prove a real IME candidate session; physical IME, trackpad, long use, multi-display, sleep and second machine remain unverified.",
+    "Original 1605-case staged ledger is unchanged; new inventory and affected subsets do not constitute a new full uninterrupted run."
+  ],
+  "rejectedCandidate": {
+    "change": "flushSync for local draft only",
+    "result": "all three native diagnostic paths still produced wrong undo/redo text",
+    "shipped": false
+  },
+  "diagnostics": {
+    "oldWritesReport": "/private/tmp/plein-ui-audit-20261020/electron-history-writes.json",
+    "oldWritesSha256": "5e4cf87fc80d01cb328237818aaf7b33c24a6b5b8f9cac6fcb37a968fb59610d",
+    "fixedWritesReport": "/private/tmp/plein-ui-audit-20261020/electron-history-v2.json",
+    "fixedWritesSha256": "543be4cf488d2160574321e4fa4813d783857eef3524e78c3cb40045ccaf2ddf",
+    "startupObservation": "Background screenshot and accessibility state appeared stale; raising the original window showed Home with successful session/catalog/projects requests. No startup hang product fix claimed."
+  }
+}
