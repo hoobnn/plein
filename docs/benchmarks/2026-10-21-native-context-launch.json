@@ -1,0 +1,23 @@
+{
+  "observedAt": "2026-10-20T19:13:22.983718+00:00",
+  "serverUrl": "http://127.0.0.1:56972",
+  "readyLogObserved": true,
+  "unauthenticatedHealthStatus": 403,
+  "desktopGuardVerified": true,
+  "dataScope": "Plein Acceptance only",
+  "jobsAfterLaunch": {
+    "failed": 3,
+    "succeeded": 60
+  },
+  "projectsAfterLaunch": 2,
+  "nativeUi": "Mac locked; unreadable",
+  "activeExecSession": 99416,
+  "runtimeEnv": {
+    "PLEIN_MOCK_PROVIDER": "1",
+    "PLEIN_AGENT": "0",
+    "PLEIN_AUTO_UPDATE": "0"
+  },
+  "bootstrapSnapshotSha256": "d8bf013fbeaed321572c0188ccb7daaed2c22f24bb2de515a8192c773078a7aa",
+  "warning": "sandbox_extension_issue_file warning present; native UI still unverified",
+  "paidCalls": 0
+}

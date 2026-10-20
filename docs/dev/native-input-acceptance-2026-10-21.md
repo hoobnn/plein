@@ -49,3 +49,13 @@ apps/desktop/node_modules/.bin/electron apps/desktop/scripts/edit-history.contra
 Mac 之后锁屏，原生工具两次明确返回锁屏，解锁请求仍待回复。修复包的前台菜单／快捷键复验、窗口调整和重启后实际界面仍待检查；没有保存或宣称不存在的修复后截图。此前 Ctrl-Space 和按键注入也没有证明真实输入法候选会话；实际 IME、物理触控板、多屏、休眠与长时连续使用均保留待验。
 
 本轮新增计费调用为零。完整结构化证据、报告哈希及包来源见[验收记录](../benchmarks/2026-10-21-native-history-acceptance.json)与[包构建记录](../benchmarks/2026-10-21-native-history-package.json)。
+
+## 最新渲染修复的独立验收包
+
+最新包产品代码为 `90498a0`，包含预览程序复用和 context 恢复重绘修复。构建执行时 HEAD 为仅加验收文档的 `ff1516f`；`sourceDirty=true` 来自未跟踪的本轮持续会话文档，776 个选定源码文件在仓库、快照和构建结束时的内容哈希均一致。使用既有锁定依赖和 Electron 44.8.0，没有运行安装或依赖同步。签名 deep／strict 自检通过，更新 feed 缺席、自动更新关闭；这是 ad-hoc 验收包，不是发布／公证证明。
+
+包路径：`/private/tmp/plein-ui-audit-20261020/native-context-90498a0/apps/desktop/release-acceptance/mac-arm64/Plein Acceptance.app`。旧 `native-history` 验收主进程 PID 5752 在确认任务全部终态后以 SIGTERM 退出，其执行会话 2125 已返回 0；未操作正式版进程。新包执行会话 99416 保持运行，明确启用 Mock、关闭助手和自动更新，输出独立验收数据目录和 `http://127.0.0.1:56972` 启动日志。
+
+只读检查启动前后均为 2 个 QA 项目、60 成功／3 失败任务，无非终态或新增任务；未带桌面凭据的 health 请求返回 403，桌面请求保护有效。启动日志另有 `sandbox_extension_issue_file` 警告，未据此宣称原生界面正常；最新原生读取仍明确报告 Mac 锁屏，前台窗口和实际输入法必须在解锁后验收。
+
+[构建记录](../benchmarks/2026-10-21-native-context-package.json)、[启动核对](../benchmarks/2026-10-21-native-context-launch.json)和[只读预检](../benchmarks/2026-10-21-native-context-preflight.json)保留包来源、资源哈希、数据隔离与当前边界。没有替换 `/Applications/Plein.app`，没有新增计费调用。
