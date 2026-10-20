@@ -5,7 +5,15 @@ import {
   type MediaSource,
   type Project,
 } from '@plein/protocol'
-import { type CSSProperties, useCallback, useEffect, useId, useRef, useState } from 'react'
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { api, ApiError, assetUrls } from '../../api/client'
 import { elementFor } from '../../canvas/import'
 import { placeElement } from '../../canvas/nodes'
@@ -65,6 +73,16 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
     [refresh, setRefresh] = useState(0)
   const [failedMore, setFailedMore] = useState<'retry' | 'restart' | null>(null)
   const request = useRef<AbortController | null>(null)
+  const list = useRef<HTMLDivElement>(null)
+  const returnTo = useRef<string | null>(null)
+  useLayoutEffect(() => {
+    const id = returnTo.current
+    if (selected || !id) return
+    returnTo.current = null
+    list.current
+      ?.querySelector<HTMLButtonElement>(`[data-media-asset="${CSS.escape(id)}"]`)
+      ?.focus({ preventScroll: true })
+  }, [selected])
   const engine = useCanvas((s) => s.engine),
     canvasId = useCanvas((s) => s.canvasId)
   const [preview, setPreview] = useState(false)
@@ -262,7 +280,8 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
         )}
         <div className="flex min-h-0 flex-1">
           <div
-            className="ui-scrollbar min-w-0 flex-1 overflow-y-auto p-5"
+            ref={list}
+            className={`ui-scrollbar min-w-0 flex-1 overflow-y-auto p-5 ${selected && !queryTooLong ? 'hidden md:block' : ''}`}
             aria-busy={busy || searching}
           >
             {!visibleItems.length ? (
@@ -293,6 +312,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
                   <button
                     type="button"
                     key={asset.id}
+                    data-media-asset={asset.id}
                     aria-label={`查看素材 ${asset.name}`}
                     aria-pressed={selected?.id === asset.id}
                     onClick={() => setSelected(asset)}
@@ -335,7 +355,18 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
             )}
           </div>
           {selected && !queryTooLong && (
-            <div className="ui-scrollbar w-80 flex-none overflow-y-auto border-l border-line p-4">
+            <div className="ui-scrollbar w-full min-w-0 flex-none overflow-y-auto border-line p-4 md:w-80 md:border-l">
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary mb-3 md:hidden"
+                onClick={() => {
+                  returnTo.current = selected.id
+                  setSelected(null)
+                }}
+              >
+                <Icon name="chevronLeft" />
+                返回素材列表
+              </button>
               <MediaDetail
                 key={selected.id}
                 asset={selected}
