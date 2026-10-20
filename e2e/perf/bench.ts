@@ -84,20 +84,24 @@ async function startServer() {
   const stale = await fetch(`${BASE}/api/health`).catch(() => null)
   if (stale) throw new Error(`端口 ${PORT} 已被占用，先停掉残留的服务`)
   const dataDir = mkdtempSync(join(tmpdir(), 'plein-perf-'))
-  const proc = spawn('pnpm', ['--filter', '@plein/server', 'exec', 'tsx', 'src/main.ts'], {
-    cwd: ROOT,
-    env: {
-      ...process.env,
-      PLEIN_PORT: String(PORT),
-      PLEIN_DATA_DIR: dataDir,
-      PLEIN_WEB_DIST: WEB_DIST,
-      PLEIN_MOCK_PROVIDER: '1',
-      PLEIN_AGENT: '0',
+  const proc = spawn(
+    join(ROOT, 'apps/server/node_modules/.bin/tsx'),
+    [join(ROOT, 'apps/server/src/main.ts')],
+    {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        PLEIN_PORT: String(PORT),
+        PLEIN_DATA_DIR: dataDir,
+        PLEIN_WEB_DIST: WEB_DIST,
+        PLEIN_MOCK_PROVIDER: '1',
+        PLEIN_AGENT: '0',
+      },
+      stdio: ['ignore', 'ignore', 'inherit'],
+      // 单独的进程组：结束时连同 tsx 拉起的子进程一起停掉；不触发包管理器同步依赖。
+      detached: true,
     },
-    stdio: ['ignore', 'ignore', 'inherit'],
-    // 单独的进程组：结束时连同 pnpm 拉起的 tsx 一起停掉
-    detached: true,
-  })
+  )
   for (let i = 0; i < 120; i++) {
     try {
       if ((await fetch(`${BASE}/api/health`)).ok) return { proc, dataDir }
@@ -380,7 +384,8 @@ async function main() {
     await cdp.send('Performance.enable')
 
     // ── 打开画布 ──────────────────────────────────────
-    const profileOpen = process.env.PERF_PROFILE === '打开'
+    const profileWarm = process.env.PERF_PROFILE === '热开'
+    const profileOpen = process.env.PERF_PROFILE === '打开' || profileWarm
     if ((!process.env.PERF_PROFILE || profileOpen) && !process.env.PERF_SKIP_OPEN) {
       const media = await createMediaFixture(BASE, {
         elements: N,
@@ -402,12 +407,12 @@ async function main() {
         const network = watchAssetRequests(p)
         try {
           await installOpenProbe(p, N)
-          if (pcdp) await startProfile(pcdp)
+          if (pcdp && !profileWarm) await startProfile(pcdp)
           await p.goto(`${BASE}/#/c/${canvasId}`)
           openSamples.cold.push(await readOpenSample(p, network.requests))
           console.error(`[perf] cold ${i + 1}/${ROUNDS}`, JSON.stringify(openSamples.cold.at(-1)))
           network.stop()
-          if (pcdp) {
+          if (pcdp && !profileWarm) {
             const { self } = await stopProfile(pcdp)
             console.log(`冷开首个预览 ${openSamples.cold[0]!.firstVisiblePreviewMs.toFixed(0)} ms`)
             printTop(self)
@@ -421,11 +426,20 @@ async function main() {
           const warmNetwork = watchAssetRequests(p)
           try {
             await resetOpenProbe(p, N)
+            if (pcdp && profileWarm) await startProfile(pcdp)
             await p.evaluate((id) => {
               location.hash = `#/c/${id}`
             }, canvasId)
             openSamples.warm.push(await readOpenSample(p, warmNetwork.requests))
             console.error(`[perf] warm ${i + 1}/${ROUNDS}`, JSON.stringify(openSamples.warm.at(-1)))
+            if (pcdp && profileWarm) {
+              const { self } = await stopProfile(pcdp)
+              console.log(
+                `热开首个预览 ${openSamples.warm[0]!.firstVisiblePreviewMs.toFixed(0)} ms`,
+              )
+              printTop(self)
+              return
+            }
           } finally {
             warmNetwork.stop()
           }
