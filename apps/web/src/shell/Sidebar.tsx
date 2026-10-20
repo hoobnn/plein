@@ -196,6 +196,7 @@ function Layers({ engine }: { engine: Engine }) {
   const [type, setType] = useState<TypeFilter>('all')
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
   const [renaming, setRenaming] = useState<string | null>(null)
+  const renameTarget = useRef<{ id: string; element: unknown } | null>(null)
   const [focused, setFocused] = useState<string | null>(null)
   const searchButton = useRef<HTMLButtonElement>(null)
   const searchInput = useRef<HTMLInputElement>(null)
@@ -278,7 +279,17 @@ function Layers({ engine }: { engine: Engine }) {
     target?.scrollIntoView({ block: 'nearest' })
   }, [rows])
   useEffect(() => {
-    if (renaming && !engine.doc.get(renaming)) setRenaming(null)
+    if (!renaming) return
+    const target = renameTarget.current
+    if (target?.id === renaming && target.element === engine.doc.elementMaps.get(renaming)) return
+    const row = listRef.current?.querySelector(`[data-id="${CSS.escape(renaming)}"]`)
+    if (row?.contains(document.activeElement)) {
+      activeRow.current = null
+      pendingRenameFocus.current = { id: renaming }
+    }
+    renameTarget.current = null
+    setRenaming(null)
+    if (engine.doc.has(renaming)) useCanvas.getState().notify('元素已替换，名称未保存，请重新编辑')
   }, [engine, version, renaming])
   useLayoutEffect(() => {
     const pending = pendingRenameFocus.current
@@ -365,13 +376,21 @@ function Layers({ engine }: { engine: Engine }) {
     }
   }
   const rename = (id: string, name: string | null, expected: string) => {
+    if (renaming !== id) return
     const finish = (changed = false) => {
       const row = listRef.current?.querySelector(`[data-id="${CSS.escape(id)}"]`)
       if (row?.contains(document.activeElement)) {
         activeRow.current = null
         pendingRenameFocus.current = { id, ...(changed ? { version } : {}) }
       }
+      renameTarget.current = null
       setRenaming(null)
+    }
+    const target = renameTarget.current
+    if (name !== null && (target?.id !== id || target.element !== engine.doc.elementMaps.get(id))) {
+      finish()
+      useCanvas.getState().notify('元素已替换，名称未保存，请重新编辑')
+      return
     }
     const current = engine.doc.get(id)
     if (name !== null && current && name !== current.name) {
@@ -402,7 +421,13 @@ function Layers({ engine }: { engine: Engine }) {
     pick,
     toggle: toggleFolder,
     locate,
-    startRename: (id) => !engine.doc.readOnly && setRenaming(id),
+    startRename: (id) => {
+      if (engine.doc.readOnly) return
+      const element = engine.doc.elementMaps.get(id)
+      if (!element) return
+      renameTarget.current = { id, element }
+      setRenaming(id)
+    },
     rename,
     focus: setFocused,
     navigate,
