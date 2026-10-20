@@ -1,5 +1,5 @@
 import * as Y from 'yjs'
-import { migrate } from './migrate'
+import { migrate, SCHEMA_VERSION } from './migrate'
 import { isCreativeReview } from './review-types'
 import { isDeliveryRecord } from './delivery'
 import {
@@ -73,6 +73,7 @@ export class PleinDoc {
   private listeners = new Set<Listener>()
   private pendingElements = new Set<string>()
   private pendingEdges = new Set<string>()
+  private pendingState = false
   private scheduled = false
   private schedule: Scheduler
   private disposers: Array<() => void> = []
@@ -112,6 +113,20 @@ export class PleinDoc {
     )
 
     this.migrate()
+    // 协作升级可能只改元数据，不会重新触发 WebSocket 初次同步。
+    // 在更新返回前就锁住命令，通知仍与普通文档变化按帧合并。
+    const onMeta = (event: Y.YMapEvent<unknown>) => {
+      if (!event.keysChanged.has('schemaVersion')) return
+      const version = this.meta.get('schemaVersion')
+      if (typeof version !== 'number' || version <= SCHEMA_VERSION) return
+      if (this.readOnly && this.schemaVersion === version) return
+      this.schemaVersion = version
+      this.readOnly = true
+      this.pendingState = true
+      this.requestFlush()
+    }
+    this.meta.observe(onMeta)
+    this.disposers.push(() => this.meta.unobserve(onMeta))
   }
 
   /** 执行 schema 迁移；初次同步完成后应再调用一次 */
@@ -266,8 +281,10 @@ export class PleinDoc {
   /** 立即派发尚未通知的变更 */
   flush() {
     this.scheduled = false
-    if (this.pendingElements.size === 0 && this.pendingEdges.size === 0) return
+    if (this.pendingElements.size === 0 && this.pendingEdges.size === 0 && !this.pendingState)
+      return
     const change: DocChange = { elements: this.pendingElements, edges: this.pendingEdges }
+    this.pendingState = false
     this.pendingElements = new Set()
     this.pendingEdges = new Set()
     for (const fn of this.listeners) fn(change)

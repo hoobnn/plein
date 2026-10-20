@@ -285,6 +285,15 @@ export function CanvasView({
       let doc: PleinDoc | null = null
       const open = () => {
         doc = createDoc(ydoc)
+        const opened = doc
+        let readOnly = opened.readOnly
+        cleanups.push(
+          opened.subscribe(() => {
+            if (!disposed && opened.readOnly && !readOnly)
+              notify('这个画布已被新版本升级，当前只能查看，请刷新或更新应用')
+            readOnly = opened.readOnly
+          }),
+        )
         start(doc, previewUrl, provider.awareness)
       }
       // 缓存已是当前版本：直接打开，迁移是空操作；旧版本缓存要等服务端完整状态再迁移
