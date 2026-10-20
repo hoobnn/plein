@@ -111,6 +111,8 @@ export interface ArrangeResult {
 const STROKE_ZOOM_SLACK = 0.1
 /** 镜头过渡（flyTo）时长 */
 const FLIGHT_MS = 560
+/** 静止时仍低频提交一帧，让 Pixi 的渲染后 GPU 回收按原期限运行。 */
+const IDLE_MAINTENANCE_MS = 30_000
 
 /** 粘贴时相对上一次的位移 */
 const PASTE_OFFSET = 24
@@ -225,6 +227,9 @@ export class Engine {
     // 不用 Pixi 默认的每帧渲染，改为在 frame() 里按需渲染
     this.app.ticker.remove(this.app.render, this.app)
     this.app.ticker.add(() => this.frame())
+    const scheduler = this.app.renderer.scheduler
+    const maintenance = scheduler.repeat(() => this.requestRender(), IDLE_MAINTENANCE_MS, false)
+    this.disposers.push(() => scheduler.cancel(maintenance))
 
     const input = attachInput(host, this.camera, this.pan)
     this.stopInputMotion = input.cancel

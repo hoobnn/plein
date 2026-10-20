@@ -36,6 +36,11 @@ export type ElementRenderer = (el: CanvasElement, ctx: RenderContext) => Element
 
 const RADIUS = 16
 
+/** 内置图形的 context 由卡片创建；素材纹理仍由纹理池共享和释放。 */
+function destroyDisplay(display: Container) {
+  display.destroy({ children: true, context: true })
+}
+
 const KIND_LABELS: Record<ElementKind, string> = {
   image: '图片',
   video: '视频',
@@ -105,7 +110,7 @@ function card(el: CanvasElement, texture?: () => Texture | undefined): ElementVi
       high = next
       view.update(current)
     },
-    destroy: () => display.destroy({ children: true }),
+    destroy: () => destroyDisplay(display),
   }
   view.update(el)
   return view
@@ -149,7 +154,7 @@ const frameRenderer: ElementRenderer = (el) => {
     setDetail(high) {
       label.visible = high
     },
-    destroy: () => display.destroy({ children: true }),
+    destroy: () => destroyDisplay(display),
   }
   view.update(el)
   return view
@@ -246,7 +251,7 @@ const mediaRenderer: ElementRenderer = (el, ctx) => {
     destroy() {
       slot.destroy()
       if (!ctx.textures) owner.dispose()
-      display.destroy({ children: true })
+      destroyDisplay(display)
     },
   }
   view.update(el)
@@ -283,7 +288,7 @@ const markdownRenderer: ElementRenderer = (el) => {
       high = next
       view.update(current)
     },
-    destroy: () => display.destroy({ children: true }),
+    destroy: () => destroyDisplay(display),
   }
   view.update(el)
   return view
@@ -368,7 +373,7 @@ const nodeRenderer: ElementRenderer = (el, ctx) => {
     destroy() {
       slot.destroy()
       if (!ctx.textures) owner.dispose()
-      display.destroy({ children: true })
+      destroyDisplay(display)
     },
   }
   view.update(el)
