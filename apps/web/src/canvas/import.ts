@@ -4,6 +4,7 @@ import type { Asset } from '@plein/protocol'
 import { api } from '../api/client'
 import { containingFrame, placeElement } from './nodes'
 
+const DOCX_EXT = /\.docx$/i
 const TEXT_EXT = /\.(md|markdown|mdown|txt)$/i
 const MAX_SIDE = 480
 const GAP = 24
@@ -83,8 +84,12 @@ export async function importFiles(
   const inputs = await mapLimit(files, CONCURRENCY, async (file) => {
     try {
       signal?.throwIfAborted()
-      if (isTextFile(file)) {
-        const text = await file.text()
+      if (/\.doc$/i.test(file.name))
+        throw new Error('旧版 .doc 暂不支持，请另存为 .docx 或 .txt 后导入')
+      if (DOCX_EXT.test(file.name) || isTextFile(file)) {
+        const text = DOCX_EXT.test(file.name)
+          ? await (await import('./docx')).readDocx(file)
+          : await file.text()
         const [w, h] = markdownSize(text)
         return { kind: 'markdown', w, h, text, name: file.name } as Omit<NewElement, 'x' | 'y'>
       }

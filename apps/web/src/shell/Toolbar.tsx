@@ -167,7 +167,11 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
       <ToolPicker engine={engine} tool={tool} />
       {canImport && (
         <>
-          <Button label="上传" hint="也可以直接拖入或粘贴" onClick={() => fileRef.current?.click()}>
+          <Button
+            label="上传"
+            hint="图片、视频、音频、Markdown、TXT、DOCX；也可以拖入或粘贴"
+            onClick={() => fileRef.current?.click()}
+          >
             <Icon name="upload" />
           </Button>
           <input
@@ -175,7 +179,7 @@ export function Toolbar({ canImport }: { canImport: boolean }) {
             type="file"
             multiple
             hidden
-            accept="image/*,video/*,audio/*,.md,.markdown,.txt"
+            accept="image/*,video/*,audio/*,.md,.markdown,.txt,.docx"
             onChange={(e) => importPicked(e.target)}
           />
           {/* 选整个文件夹：子文件夹里的文件一起导入 */}
