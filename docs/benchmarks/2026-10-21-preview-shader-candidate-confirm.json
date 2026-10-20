@@ -1,0 +1,354 @@
+{
+  "formatVersion": 1,
+  "status": "complete",
+  "buildFingerprint": "e13a42ee3b7a5becad39c6930cda329279aeac67c5930ede2f95e21dabff7201",
+  "sourceCommit": "2461cf57a3a07066f2ef86d1ea90e2feb36d1c70",
+  "sourceDirty": true,
+  "measuredAt": "2026-10-20T16:49:02.590Z",
+  "environment": {
+    "runtime": "node 26.12.0",
+    "platform": "darwin/arm64",
+    "browserVersion": "156.0.8078.4",
+    "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+    "renderMode": "software",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "fixture": {
+    "version": 2,
+    "elements": 1000,
+    "imageAssets": 32,
+    "videoAssets": 1,
+    "audioAssets": 1,
+    "serializedBytes": 225535
+  },
+  "rounds": 3,
+  "metrics": {
+    "cold.engineReadyMs": 480.6000000014901,
+    "cold.firstVisiblePreviewMs": 934.1000000014901,
+    "cold.visibleMediaSettledMs": 934.1000000014901,
+    "warm.engineReadyMs": 87.40000000596046,
+    "warm.firstVisiblePreviewMs": 662.2000000029802,
+    "warm.visibleMediaSettledMs": 662.2000000029802
+  },
+  "details": {
+    "openSamples": {
+      "cold": [
+        {
+          "engineReadyMs": 961.3999999985099,
+          "firstVisiblePreviewMs": 1648.1999999955297,
+          "visibleMediaSettledMs": 1648.1999999955297,
+          "stats": {
+            "elements": 1000,
+            "visible": 1000,
+            "fps": 29.940119760479163,
+            "residentBodies": 1000,
+            "visibleBodies": 1000,
+            "offscreenBodies": 0,
+            "previews": {
+              "total": 1000,
+              "ready": 1000,
+              "pending": 0,
+              "failed": 0
+            },
+            "textures": {
+              "owners": 1,
+              "activeLeases": 1000,
+              "pinnedTextures": 34,
+              "idleTextures": 0,
+              "queuedLoads": 0,
+              "inFlightLoads": 0,
+              "unloadingTextures": 0,
+              "readyTextures": 34,
+              "estimatedTextureBytes": 7397632,
+              "pinnedEstimatedBytes": 7397632,
+              "pinnedOverBudgetBytes": 0,
+              "budgetBytes": 536870912,
+              "cacheHits": 966,
+              "loadsStarted": 34,
+              "evictions": 0,
+              "loadErrors": 0,
+              "unloadErrors": 0
+            },
+            "previewRevision": 1000,
+            "renderedPreviewRevision": 1000
+          },
+          "requests": {
+            "count": 65,
+            "failed": 0,
+            "variants": {
+              "poster": 2,
+              "thumb-256": 62,
+              "waveform": 1
+            },
+            "runtimeErrors": []
+          }
+        },
+        {
+          "engineReadyMs": 473.90000000596046,
+          "firstVisiblePreviewMs": 919,
+          "visibleMediaSettledMs": 919,
+          "stats": {
+            "elements": 1000,
+            "visible": 1000,
+            "fps": 5.455537370430989,
+            "residentBodies": 1000,
+            "visibleBodies": 1000,
+            "offscreenBodies": 0,
+            "previews": {
+              "total": 1000,
+              "ready": 1000,
+              "pending": 0,
+              "failed": 0
+            },
+            "textures": {
+              "owners": 1,
+              "activeLeases": 1000,
+              "pinnedTextures": 34,
+              "idleTextures": 0,
+              "queuedLoads": 0,
+              "inFlightLoads": 0,
+              "unloadingTextures": 0,
+              "readyTextures": 34,
+              "estimatedTextureBytes": 7397632,
+              "pinnedEstimatedBytes": 7397632,
+              "pinnedOverBudgetBytes": 0,
+              "budgetBytes": 536870912,
+              "cacheHits": 966,
+              "loadsStarted": 34,
+              "evictions": 0,
+              "loadErrors": 0,
+              "unloadErrors": 0
+            },
+            "previewRevision": 1000,
+            "renderedPreviewRevision": 1000
+          },
+          "requests": {
+            "count": 65,
+            "failed": 0,
+            "variants": {
+              "poster": 2,
+              "thumb-256": 62,
+              "waveform": 1
+            },
+            "runtimeErrors": []
+          }
+        },
+        {
+          "engineReadyMs": 480.6000000014901,
+          "firstVisiblePreviewMs": 934.1000000014901,
+          "visibleMediaSettledMs": 934.1000000014901,
+          "stats": {
+            "elements": 1000,
+            "visible": 1000,
+            "fps": 4.286326618088297,
+            "residentBodies": 1000,
+            "visibleBodies": 1000,
+            "offscreenBodies": 0,
+            "previews": {
+              "total": 1000,
+              "ready": 1000,
+              "pending": 0,
+              "failed": 0
+            },
+            "textures": {
+              "owners": 1,
+              "activeLeases": 1000,
+              "pinnedTextures": 34,
+              "idleTextures": 0,
+              "queuedLoads": 0,
+              "inFlightLoads": 0,
+              "unloadingTextures": 0,
+              "readyTextures": 34,
+              "estimatedTextureBytes": 7397632,
+              "pinnedEstimatedBytes": 7397632,
+              "pinnedOverBudgetBytes": 0,
+              "budgetBytes": 536870912,
+              "cacheHits": 966,
+              "loadsStarted": 34,
+              "evictions": 0,
+              "loadErrors": 0,
+              "unloadErrors": 0
+            },
+            "previewRevision": 1000,
+            "renderedPreviewRevision": 1000
+          },
+          "requests": {
+            "count": 65,
+            "failed": 0,
+            "variants": {
+              "poster": 2,
+              "thumb-256": 62,
+              "waveform": 1
+            },
+            "runtimeErrors": []
+          }
+        }
+      ],
+      "warm": [
+        {
+          "engineReadyMs": 85.30000000447035,
+          "firstVisiblePreviewMs": 652,
+          "visibleMediaSettledMs": 652,
+          "stats": {
+            "elements": 1000,
+            "visible": 1000,
+            "fps": 60.24096385542202,
+            "residentBodies": 1000,
+            "visibleBodies": 1000,
+            "offscreenBodies": 0,
+            "previews": {
+              "total": 1000,
+              "ready": 1000,
+              "pending": 0,
+              "failed": 0
+            },
+            "textures": {
+              "owners": 1,
+              "activeLeases": 1000,
+              "pinnedTextures": 34,
+              "idleTextures": 0,
+              "queuedLoads": 0,
+              "inFlightLoads": 0,
+              "unloadingTextures": 0,
+              "readyTextures": 34,
+              "estimatedTextureBytes": 7397632,
+              "pinnedEstimatedBytes": 7397632,
+              "pinnedOverBudgetBytes": 0,
+              "budgetBytes": 536870912,
+              "cacheHits": 1932,
+              "loadsStarted": 68,
+              "evictions": 34,
+              "loadErrors": 0,
+              "unloadErrors": 0
+            },
+            "previewRevision": 1000,
+            "renderedPreviewRevision": 1000
+          },
+          "requests": {
+            "count": 34,
+            "failed": 0,
+            "variants": {
+              "thumb-256": 32,
+              "poster": 1,
+              "waveform": 1
+            },
+            "runtimeErrors": []
+          }
+        },
+        {
+          "engineReadyMs": 89.70000000298023,
+          "firstVisiblePreviewMs": 767.3999999985099,
+          "visibleMediaSettledMs": 767.3999999985099,
+          "stats": {
+            "elements": 1000,
+            "visible": 1000,
+            "fps": 7.507507507507505,
+            "residentBodies": 1000,
+            "visibleBodies": 1000,
+            "offscreenBodies": 0,
+            "previews": {
+              "total": 1000,
+              "ready": 1000,
+              "pending": 0,
+              "failed": 0
+            },
+            "textures": {
+              "owners": 1,
+              "activeLeases": 1000,
+              "pinnedTextures": 34,
+              "idleTextures": 0,
+              "queuedLoads": 0,
+              "inFlightLoads": 0,
+              "unloadingTextures": 0,
+              "readyTextures": 34,
+              "estimatedTextureBytes": 7397632,
+              "pinnedEstimatedBytes": 7397632,
+              "pinnedOverBudgetBytes": 0,
+              "budgetBytes": 536870912,
+              "cacheHits": 1932,
+              "loadsStarted": 68,
+              "evictions": 34,
+              "loadErrors": 0,
+              "unloadErrors": 0
+            },
+            "previewRevision": 1000,
+            "renderedPreviewRevision": 1000
+          },
+          "requests": {
+            "count": 34,
+            "failed": 0,
+            "variants": {
+              "thumb-256": 32,
+              "waveform": 1,
+              "poster": 1
+            },
+            "runtimeErrors": []
+          }
+        },
+        {
+          "engineReadyMs": 87.40000000596046,
+          "firstVisiblePreviewMs": 662.2000000029802,
+          "visibleMediaSettledMs": 662.2000000029802,
+          "stats": {
+            "elements": 1000,
+            "visible": 1000,
+            "fps": 59.88023952095792,
+            "residentBodies": 1000,
+            "visibleBodies": 1000,
+            "offscreenBodies": 0,
+            "previews": {
+              "total": 1000,
+              "ready": 1000,
+              "pending": 0,
+              "failed": 0
+            },
+            "textures": {
+              "owners": 1,
+              "activeLeases": 1000,
+              "pinnedTextures": 34,
+              "idleTextures": 0,
+              "queuedLoads": 0,
+              "inFlightLoads": 0,
+              "unloadingTextures": 0,
+              "readyTextures": 34,
+              "estimatedTextureBytes": 7397632,
+              "pinnedEstimatedBytes": 7397632,
+              "pinnedOverBudgetBytes": 0,
+              "budgetBytes": 536870912,
+              "cacheHits": 1932,
+              "loadsStarted": 68,
+              "evictions": 34,
+              "loadErrors": 0,
+              "unloadErrors": 0
+            },
+            "previewRevision": 1000,
+            "renderedPreviewRevision": 1000
+          },
+          "requests": {
+            "count": 34,
+            "failed": 0,
+            "variants": {
+              "thumb-256": 32,
+              "poster": 1,
+              "waveform": 1
+            },
+            "runtimeErrors": []
+          }
+        }
+      ]
+    },
+    "interactions": {
+      "cold.engineReadyMs": 480.6000000014901,
+      "cold.firstVisiblePreviewMs": 934.1000000014901,
+      "cold.visibleMediaSettledMs": 934.1000000014901,
+      "warm.engineReadyMs": 87.40000000596046,
+      "warm.firstVisiblePreviewMs": 662.2000000029802,
+      "warm.visibleMediaSettledMs": 662.2000000029802
+    }
+  },
+  "baselineCompared": true,
+  "regressions": []
+}

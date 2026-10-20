@@ -1,0 +1,225 @@
+{
+  "recordedAt": "2026-10-20T16:57:34.519412+00:00",
+  "productCommit": "da1e93c",
+  "status": "targeted acceptance passed; overall goal remains incomplete",
+  "paidCalls": 0,
+  "builds": {
+    "baseline": {
+      "directory": "/private/tmp/plein-ui-audit-20261020/dist-schema-live",
+      "productSource": "be4da90"
+    },
+    "candidate": {
+      "directory": "/private/tmp/plein-ui-audit-20261020/dist-preview-shader",
+      "productSource": "be4da90 plus preview shader runtime equivalent to da1e93c",
+      "postBuildChange": "EngineOptions omits internal previewShader; TypeScript-only, no emitted runtime change"
+    },
+    "provenanceBoundary": "Benchmark sourceCommit records execution checkout HEAD 2461cf5 with uncommitted work. Build identity is the fingerprint and explicit product provenance above."
+  },
+  "measurements": [
+    {
+      "name": "baseline",
+      "path": "docs/benchmarks/2026-10-21-preview-shader-baseline.json",
+      "sha256": "1d6e1fc5bb1a53203351a0a57e5123731204a29f401812a2dafee16224fc70dc",
+      "buildFingerprint": "9324bcb1005b1e4f3f585df28bb2c3addc0ef0e4a30c6f36bc28ebdd8a950fae",
+      "metrics": {
+        "cold.engineReadyMs": 480.20000000298023,
+        "cold.firstVisiblePreviewMs": 921.5,
+        "cold.visibleMediaSettledMs": 921.5,
+        "warm.engineReadyMs": 90.80000000447035,
+        "warm.firstVisiblePreviewMs": 884.3000000044703,
+        "warm.visibleMediaSettledMs": 884.3000000044703,
+        "平移.jsMs": 0.926943548387097,
+        "缩放.jsMs": 4.604040322580643,
+        "平移（选中素材，浮动工具条跟随）.jsMs": 0.9234148148148147,
+        "拖动 12 个元素.jsMs": 2.0161093750000005,
+        "静止（20 个节点生成中）.jsMs": 0.06443089430894308
+      },
+      "regressions": [],
+      "rounds": 3,
+      "scope": "opens and five demo interaction scenarios"
+    },
+    {
+      "name": "candidate",
+      "path": "docs/benchmarks/2026-10-21-preview-shader-candidate.json",
+      "sha256": "b3f81ca95ec73763b7a20aa634c8ebe10aef9c9f544052dc0daadde79a43991f",
+      "buildFingerprint": "e13a42ee3b7a5becad39c6930cda329279aeac67c5930ede2f95e21dabff7201",
+      "metrics": {
+        "cold.engineReadyMs": 517.9000000059605,
+        "cold.firstVisiblePreviewMs": 963.6000000014901,
+        "cold.visibleMediaSettledMs": 963.6000000014901,
+        "warm.engineReadyMs": 90.09999999403954,
+        "warm.firstVisiblePreviewMs": 659.6000000014901,
+        "warm.visibleMediaSettledMs": 659.6000000014901,
+        "平移.jsMs": 0.949146341463415,
+        "缩放.jsMs": 4.549016129032257,
+        "平移（选中素材，浮动工具条跟随）.jsMs": 0.959688888888889,
+        "拖动 12 个元素.jsMs": 2.086,
+        "静止（20 个节点生成中）.jsMs": 0.0856829268292683
+      },
+      "regressions": [],
+      "rounds": 3,
+      "scope": "opens and five demo interaction scenarios"
+    },
+    {
+      "name": "baseline-confirm",
+      "path": "docs/benchmarks/2026-10-21-preview-shader-baseline-confirm.json",
+      "sha256": "68e5c623363f5917869f52b59f40513cf36053a101c76d7ccf926682408f780e",
+      "buildFingerprint": "9324bcb1005b1e4f3f585df28bb2c3addc0ef0e4a30c6f36bc28ebdd8a950fae",
+      "metrics": {
+        "cold.engineReadyMs": 475.5,
+        "cold.firstVisiblePreviewMs": 1105.5,
+        "cold.visibleMediaSettledMs": 1105.5,
+        "warm.engineReadyMs": 84.89999999850988,
+        "warm.firstVisiblePreviewMs": 759.8999999985099,
+        "warm.visibleMediaSettledMs": 759.8999999985099
+      },
+      "regressions": [],
+      "rounds": 3,
+      "scope": "opens only"
+    },
+    {
+      "name": "candidate-confirm",
+      "path": "docs/benchmarks/2026-10-21-preview-shader-candidate-confirm.json",
+      "sha256": "10314710a61e79c26be777328a668de47fb058f8e08e6783df0c37104429a221",
+      "buildFingerprint": "e13a42ee3b7a5becad39c6930cda329279aeac67c5930ede2f95e21dabff7201",
+      "metrics": {
+        "cold.engineReadyMs": 480.6000000014901,
+        "cold.firstVisiblePreviewMs": 934.1000000014901,
+        "cold.visibleMediaSettledMs": 934.1000000014901,
+        "warm.engineReadyMs": 87.40000000596046,
+        "warm.firstVisiblePreviewMs": 662.2000000029802,
+        "warm.visibleMediaSettledMs": 662.2000000029802
+      },
+      "regressions": [],
+      "rounds": 3,
+      "scope": "opens only"
+    }
+  ],
+  "tests": [
+    {
+      "name": "preview-pixels-baseline",
+      "report": "/private/tmp/plein-ui-audit-20261020/preview-pixels-baseline.json",
+      "sha256": "1b7d63d5d5926752928251c7588986ca70bcf9b578f96b7620032a9eba19c282",
+      "stats": {
+        "startTime": "2026-10-20T16:42:19.620Z",
+        "duration": 7160.851,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "name": "preview-pixels-candidate",
+      "report": "/private/tmp/plein-ui-audit-20261020/preview-pixels-candidate.json",
+      "sha256": "c9ebc422a43ddedf7fc6260f51b9f8ddd49cc84a990a2299f8966f1385aa7af5",
+      "stats": {
+        "startTime": "2026-10-20T16:45:58.763Z",
+        "duration": 5829.727,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "name": "preview-shader-production",
+      "report": "/private/tmp/plein-ui-audit-20261020/preview-shader-production.json",
+      "sha256": "56fb3508d4e7d54d86b6cbecfbbfda9f59925d68a714bb2ea24af7a27917783a",
+      "stats": {
+        "startTime": "2026-10-20T16:49:29.631Z",
+        "duration": 144049.91499999998,
+        "expected": 36,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "name": "preview-shader-development",
+      "report": "/private/tmp/plein-ui-audit-20261020/preview-shader-development.json",
+      "sha256": "1a2026d257a10cfc7abb6efe9ab18c48f23198276a36327e9da91abcf6f21323",
+      "stats": {
+        "startTime": "2026-10-20T16:52:34.274Z",
+        "duration": 158357.15399999998,
+        "expected": 36,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "name": "preview-zoom-production",
+      "report": "/private/tmp/plein-ui-audit-20261020/preview-zoom-production.json",
+      "sha256": "478d52ff0a5a3c7252f38ab915e44051a06df9a5a4ca33a6223e130c45f65a95",
+      "stats": {
+        "startTime": "2026-10-20T16:55:54.445Z",
+        "duration": 5382.849999999999,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "name": "preview-zoom-development",
+      "report": "/private/tmp/plein-ui-audit-20261020/preview-zoom-development.json",
+      "sha256": "051b0da430d8e02c6b4ab1a85eafe5daac45f7394b94f7358fb36bbbebd7d4c8",
+      "stats": {
+        "startTime": "2026-10-20T16:56:19.454Z",
+        "duration": 6726.42,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    }
+  ],
+  "unit": {
+    "command": "node_modules/.bin/vp test run packages/canvas-core",
+    "files": 10,
+    "passed": 80,
+    "log": "/private/tmp/plein-ui-audit-20261020/preview-core-unit.log",
+    "sha256": "f5289581a3fd45d5743abd9aa2412f14224241accf33098db622a447a8ac18e0"
+  },
+  "types": {
+    "passed": ["root e2e", "packages/canvas-core", "apps/web"],
+    "lastChange": "root type check passed after final pixel-test type annotations"
+  },
+  "formatAndLint": "four changed source/test files passed; staged diff check passed",
+  "geometryProbe": {
+    "cases": 490,
+    "sameGeometry": true,
+    "maximumTextureSources": 2,
+    "originalGuardEligible": 168,
+    "originalGuardWouldDisableAutoBatching": 60,
+    "conservativeGuardEligible": 58,
+    "conservativeGuardWouldDisableAutoBatching": 0,
+    "proofBoundary": "CPU construction of actual Pixi Graphics geometry; not a rendered pixel, lifetime or performance result."
+  },
+  "pixelEvidence": {
+    "file": "docs/benchmarks/2026-10-21-preview-pixels-restored.png",
+    "sha256": "1b0ce7776dac547f8ffeb85cebadfdd2193df5e1c2efed24e3c13019b2fd4a5d",
+    "manuallyViewed": true,
+    "scope": "four uploaded PNG colors including alpha plus two image nodes; main canvas zoom, readonly checkpoint preview, preview disposal and restored canvas"
+  },
+  "interpretation": {
+    "warmFirstPreviewMedianImprovementPercent": [25.4, 12.9],
+    "coldOpenImprovementClaimed": false,
+    "completeInteractionRegressionGate": "passed in first paired three-round report; confirmation pair covers opens only",
+    "hardwareGpuOrNativeInputProof": false,
+    "allUiRetestedAfterOptimization": false,
+    "originalUiLedger": "Original 1605 cases closed in stages separately. One new case and affected 36-case production/development subsets passed; final strengthened zoom assertion passed once per mode."
+  },
+  "rejectedPriorExperiments": {
+    "forcedBatchZoomJsMs": 38.28346,
+    "renderGroupPlusForcedBatchZoomJsMs": 31.47491,
+    "shipped": false
+  },
+  "remaining": [
+    "cold-open and hardware startup variance",
+    "native IME, physical trackpad and longer use",
+    "external second machine and editor",
+    "real role-profile variants require fresh authorization after the one-per-category allowance was used"
+  ]
+}
