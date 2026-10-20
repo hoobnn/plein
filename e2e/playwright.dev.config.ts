@@ -152,6 +152,7 @@ export default defineConfig({
     'mask-editor-lifecycle.spec.ts',
     'mask-pointer-boundaries.spec.ts',
     'mask-history.spec.ts',
+    'mask-session.spec.ts',
     'region-edit.spec.ts',
     'continue-lifecycle.spec.ts',
     'concurrent-placement.spec.ts',
