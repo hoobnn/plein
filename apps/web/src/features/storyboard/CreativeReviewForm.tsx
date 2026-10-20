@@ -9,7 +9,7 @@ import {
   type CreativeReviewTarget,
   type PleinDoc,
 } from '@plein/doc'
-import { useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 
 export const reviewLabels: Record<CreativeReviewStatus, string> = {
   pending: '待审',
@@ -42,24 +42,38 @@ export function CreativeReviewForm({
   /** 审片器按正在查看的输出端口记录；其他入口默认核对主输出。 */
   port?: string
 }) {
+  const element = useSyncExternalStore(
+    (notify) => doc.subscribe(notify),
+    () => doc.elementMaps.get(node.id),
+  )
+  const [binding, setBinding] = useState({ doc, element, revision: 0 })
+  if (binding.doc !== doc || binding.element !== element)
+    setBinding({ doc, element, revision: binding.revision + 1 })
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const target = creativeReviewTarget(node, port)
   if (!target) return <p className="text-xs text-ink-subtle">有产物后可记录创作验收</p>
   const review = getCreativeReview(node, target)
   const targetKey = creativeReviewKey(target)
   return (
-    <ReviewDraft
-      key={`${creativeReviewKey(target)}/${review?.at ?? 0}`}
-      doc={doc}
-      node={node}
-      target={target}
-      review={review}
-      stale={stale}
-      expanded={expanded[targetKey] ?? defaultOpen}
-      onExpanded={(open) =>
-        setExpanded((old) => (old[targetKey] === open ? old : { ...old, [targetKey]: open }))
-      }
-    />
+    <>
+      {binding.revision > 0 && (
+        <p role="status" className="mb-2 text-xs text-ink-muted">
+          来源节点已变化，未保存的验收草稿已清除，请核对当前素材。
+        </p>
+      )}
+      <ReviewDraft
+        key={`${creativeReviewKey(target)}/${review?.at ?? 0}/${binding.revision}`}
+        doc={doc}
+        node={node}
+        target={target}
+        review={review}
+        stale={stale}
+        expanded={expanded[targetKey] ?? defaultOpen}
+        onExpanded={(open) =>
+          setExpanded((old) => (old[targetKey] === open ? old : { ...old, [targetKey]: open }))
+        }
+      />
+    </>
   )
 }
 
@@ -80,6 +94,7 @@ function ReviewDraft({
   expanded: boolean
   onExpanded(open: boolean): void
 }) {
+  const [element] = useState(() => doc.elementMaps.get(node.id))
   const [note, setNote] = useState(review?.note ?? '')
   const [tags, setTags] = useState(review?.tags ?? [])
   const [error, setError] = useState('')
@@ -87,6 +102,14 @@ function ReviewDraft({
   const older =
     node.reviews?.filter((r) => creativeReviewKey(r.target) !== creativeReviewKey(target)) ?? []
   const save = (next: CreativeReviewStatus) => {
+    if (doc.readOnly) {
+      setError('画布已变为只读，本次验收未保存')
+      return
+    }
+    if (doc.ydoc.isDestroyed || !element || doc.elementMaps.get(node.id) !== element) {
+      setError('来源节点已变化，请重新核对素材后记录验收')
+      return
+    }
     if (!recordCreativeReview(doc, node.id, { target, status: next, tags, note }))
       setError('采用候选已改变，请重新打开此候选再记录验收')
   }

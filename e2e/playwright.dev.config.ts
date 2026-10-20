@@ -162,6 +162,7 @@ export default defineConfig({
     'history-media-recovery.spec.ts',
     'history-preview.spec.ts',
     'creative-review.spec.ts',
+    'creative-review-lifecycle.spec.ts',
     'viewer-action-targets.spec.ts',
     'viewer-browse-keys.spec.ts',
     'viewer-live-comparison.spec.ts',
