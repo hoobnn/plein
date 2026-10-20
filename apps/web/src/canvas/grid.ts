@@ -121,6 +121,34 @@ export interface DownloadItem {
   name: string
 }
 
+const FILE_EXTENSIONS: Record<string, readonly string[]> = {
+  'image/png': ['png'],
+  'image/jpeg': ['jpg', 'jpeg'],
+  'image/webp': ['webp'],
+  'image/gif': ['gif'],
+  'image/avif': ['avif'],
+  'image/svg+xml': ['svg'],
+  'image/x-icon': ['ico'],
+  'image/vnd.microsoft.icon': ['ico'],
+  'video/mp4': ['mp4'],
+  'video/webm': ['webm'],
+  'video/quicktime': ['mov'],
+  'audio/mpeg': ['mp3'],
+  'audio/wav': ['wav'],
+  'audio/x-wav': ['wav'],
+  'audio/ogg': ['ogg', 'oga'],
+  'audio/mp4': ['m4a'],
+  'audio/aac': ['aac'],
+  'audio/flac': ['flac'],
+}
+
+/** 标题里的点号不等于文件扩展名；以实际读取的格式补齐，保留正确的大小写及别名。 */
+function downloadName(name: string, mime: string) {
+  const extensions = FILE_EXTENSIONS[mime.split(';')[0]!.trim().toLowerCase()]
+  if (!extensions || extensions.some((ext) => name.toLowerCase().endsWith(`.${ext}`))) return name
+  return `${name}.${extensions[0]}`
+}
+
 /** 逐个读取原文件再交给浏览器，读取失败保留重试队列，不把 HTTP 错误页存成素材。 */
 export async function downloadAll(
   items: readonly DownloadItem[],
@@ -145,7 +173,7 @@ export async function downloadAll(
       try {
         const a = document.createElement('a')
         a.href = url
-        a.download = item.name
+        a.download = downloadName(item.name, blob.type)
         document.body.appendChild(a)
         try {
           a.click()

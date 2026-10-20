@@ -28,21 +28,6 @@ const TYPES: Array<{ id: TypeFilter; label: string; icon?: IconName }> = [
 
 const TYPE_LABEL: Record<MediaType, string> = { image: '图片', video: '视频', audio: '音频' }
 
-const EXT: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/webp': 'webp',
-  'image/gif': 'gif',
-  'video/mp4': 'mp4',
-  'video/webm': 'webm',
-  'video/quicktime': 'mov',
-  'audio/mpeg': 'mp3',
-  'audio/wav': 'wav',
-  'audio/x-wav': 'wav',
-  'audio/ogg': 'ogg',
-  'audio/mp4': 'm4a',
-}
-
 const SIZE_MIN = 96
 const SIZE_MAX = 280
 /** 一行最多放几个，超出换行 */
@@ -133,9 +118,8 @@ function HistoryPanel({ engine }: { engine: Engine }) {
   const download = () => {
     void downloads.start(
       selected.map((entry, i) => {
-        const ext = EXT[entry.result.value.mime ?? '']
-        const base = selected.length > 1 ? `${nameOf(entry)}-${i + 1}` : nameOf(entry)
-        return { assetId: entry.result.value.assetId, name: ext ? `${base}.${ext}` : base }
+        const name = selected.length > 1 ? `${nameOf(entry)}-${i + 1}` : nameOf(entry)
+        return { assetId: entry.result.value.assetId, name }
       }),
     )
   }

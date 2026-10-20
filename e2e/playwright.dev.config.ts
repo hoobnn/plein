@@ -181,6 +181,7 @@ export default defineConfig({
     'viewer-single-keys.spec.ts',
     'history-context.spec.ts',
     'single-download-recovery.spec.ts',
+    'download-filenames.spec.ts',
     'single-download-large.spec.ts',
     'animatic-delivery.spec.ts',
     'delivery-feedback.spec.ts',
