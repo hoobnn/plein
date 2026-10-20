@@ -30,5 +30,11 @@ export function fitCanvasToolbar(
 
 /** 底栏与助手并排至少需要 380px；侧栏占用也要算进去。 */
 export function canvasBottomSpace(viewportWidth: number, left: number) {
-  return viewportWidth - left < 380 ? { mascot: 64, generator: 128 } : { mascot: 8, generator: 64 }
+  const available = viewportWidth - left
+  // 桌面视图工具栏在剩余内容区 <=680px 时分行（底栏另有 24px 内边距）。
+  if (viewportWidth >= 640 && available <= 704) {
+    const mascot = available < 360 ? 176 : 128
+    return { mascot, generator: mascot + 64 }
+  }
+  return available < 380 ? { mascot: 64, generator: 128 } : { mascot: 8, generator: 64 }
 }

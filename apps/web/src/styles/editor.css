@@ -216,10 +216,28 @@
 }
 /* 底栏三栏：视图工具条靠左，主工具条居中，右栏留空保持对称 */
 .plein-footer {
+  container: plein-footer / inline-size;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: end;
   gap: 8px;
+}
+/* 剩余画布放不下两条工具栏时分行，避免把尾部按钮推出窗口。 */
+@container plein-footer (max-width: 680px) {
+  .plein-footer > :first-child,
+  .plein-footer > .ui-bar {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+  .plein-footer > .ui-bar {
+    justify-self: start;
+  }
+  .plein-footer .ui-bar {
+    height: auto;
+    min-height: var(--chrome-h);
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
 }
 /* 拖宽度时不要动画，跟手 */
 .plein-resizing .plein-follow-sidebar {

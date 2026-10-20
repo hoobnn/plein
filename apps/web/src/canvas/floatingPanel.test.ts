@@ -6,7 +6,10 @@ describe('浮动操作区避让侧栏与任务面板', () => {
     expect(canvasBottomSpace(320, 0)).toEqual({ mascot: 64, generator: 128 })
     expect(canvasBottomSpace(390, 0)).toEqual({ mascot: 8, generator: 64 })
     expect(canvasBottomSpace(639, 284)).toEqual({ mascot: 64, generator: 128 })
-    expect(canvasBottomSpace(664, 284)).toEqual({ mascot: 8, generator: 64 })
+    expect(canvasBottomSpace(664, 284)).toEqual({ mascot: 128, generator: 192 })
+    expect(canvasBottomSpace(640, 284)).toEqual({ mascot: 176, generator: 240 })
+    expect(canvasBottomSpace(700, 284)).toEqual({ mascot: 128, generator: 192 })
+    expect(canvasBottomSpace(1440, 480)).toEqual({ mascot: 8, generator: 64 })
   })
   it('右侧任务面板挡住原居中位置时，把整个生成器移进剩余区域', () => {
     expect(fitFloatingPanel(862, 600, 292, 1060)).toEqual({ left: 460, width: 600 })

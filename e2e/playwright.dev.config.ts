@@ -116,6 +116,7 @@ export default defineConfig({
     'wheel-units.spec.ts',
     'arrange-locked-nesting.spec.ts',
     'arrange-feedback.spec.ts',
+    'canvas-footer-fit.spec.ts',
     'canvas-readonly.spec.ts',
     'canvas-shortcut-composition.spec.ts',
     'command-palette-boundaries.spec.ts',
