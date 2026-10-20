@@ -326,7 +326,7 @@ const editMedia = serverCapability({
   name: 'edit_media',
   title: '加工素材',
   description:
-    '加工素材，与画布上的加工工具条是同一套实现：trim 截取片段（start、end 秒）、speed 变速（speed 倍数）、separate 把视频分离成音轨和无声视频（要去掉原声就用分出来的无声视频）、frame 抽一帧成图片（at 秒）、crop / rotate / flip 处理图片、split 把音频按区间切开（segments）。结果是新资产，作为元素放在原元素旁边，原素材不变；要做多步就依次调用。',
+    '加工素材，与画布上的加工工具条是同一套实现：trim 截取片段（start、end 秒）、speed 变速（speed 倍数）、separate 把视频分离成音轨和无声视频（要去掉原声就用分出来的无声视频）、frame 抽一帧成图片（at 秒）、crop 按摆正后的像素裁剪图片或视频（left、top、width、height；视频宽高须为偶数，保留首条音轨）、rotate / flip 只处理图片、split 把音频按区间切开（segments）。结果是新资产，作为元素放在原元素旁边，原素材不变；要做多步就依次调用。',
   group: 'media',
   where: 'server',
   effect: 'edit',

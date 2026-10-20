@@ -13,7 +13,7 @@ import { openDb } from '../storage/db'
 import { tempDir } from '../testing'
 import { collageAssets } from './collage'
 import { deriveAsset, readOrigin } from './derive'
-import { atempoChain, audioTempoFilter, ffmpegBin, hasFfmpeg, mediaCaps } from './media'
+import { atempoChain, audioTempoFilter, ffmpegBin, hasFfmpeg, mediaCaps, probeMedia } from './media'
 import { AssetStore } from './store'
 
 const OWNER = 'local'
@@ -453,6 +453,152 @@ describe.skipIf(!ffmpegAvailable)('视频与音频加工', () => {
   })
 })
 
+describe.skipIf(!ffmpegAvailable)('视频像素裁剪', () => {
+  it('保留时长、音轨、帧率和来源，生成封面且源文件字节不变', async () => {
+    const original = store.originalPath(video.id)
+    const before = hash(original)
+    const rect = { left: 11, top: 7, width: 200, height: 100 }
+    const made = await deriveAsset(store, OWNER, { op: 'crop', assetId: video.id, ...rect })
+    const asset = made.assets[0]!
+    expect(asset).toMatchObject({ kind: 'video', mime: 'video/mp4', width: 200, height: 100 })
+    expect(asset.id).not.toBe(video.id)
+    expect(asset.variants).toContain('poster')
+    const file = store.originalPath(asset.id)
+    expect(await probeMedia(file)).toMatchObject({ hasVideo: true, hasAudio: true })
+    const durations = streamDurations(file)
+    expectDuration(durations.video, 4, 0.05)
+    expectDuration(durations.audio, 4, 0.1)
+    const streams = JSON.parse(
+      execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', file], {
+        encoding: 'utf8',
+      }),
+    ).streams
+    expect(streams.find((s: { codec_type: string }) => s.codec_type === 'video')).toMatchObject({
+      codec_name: 'h264',
+      pix_fmt: 'yuv420p',
+      r_frame_rate: '25/1',
+      nb_frames: '100',
+    })
+    expect(await readOrigin(store, asset.id)).toMatchObject({
+      source: { assetId: video.id },
+      op: 'crop',
+      params: rect,
+    })
+    expect(hash(original)).toBe(before)
+  })
+
+  it('奇数起点精确裁剪，无声视频不产生音轨', async () => {
+    const dir = tempDir('plein-crop-exact-')
+    const png = join(dir, 'markers.png')
+    const data = Buffer.alloc(40 * 20 * 3)
+    for (let y = 0; y < 20; y++)
+      for (let x = 0; x < 40; x++)
+        if (x === 5 || y === 7) data.fill(255, (y * 40 + x) * 3, (y * 40 + x) * 3 + 3)
+    await sharp(data, { raw: { width: 40, height: 20, channels: 3 } })
+      .png()
+      .toFile(png)
+    const source = join(dir, 'silent.mp4')
+    execFileSync(ffmpegBin(), [
+      '-v',
+      'error',
+      '-i',
+      png,
+      '-c:v',
+      'libx264',
+      '-crf',
+      '0',
+      '-pix_fmt',
+      'yuv420p',
+      source,
+    ])
+    const asset = await store.ingest(OWNER, createReadStream(source), {
+      mime: 'video/mp4',
+      name: 'markers.mp4',
+    })
+    const made = await deriveAsset(store, OWNER, {
+      op: 'crop',
+      assetId: asset.id,
+      left: 5,
+      top: 7,
+      width: 8,
+      height: 8,
+    })
+    const file = store.originalPath(made.assets[0]!.id)
+    expect(await probeMedia(file)).toMatchObject({ width: 8, height: 8, hasAudio: false })
+    const frame = execFileSync(ffmpegBin(), [
+      '-v',
+      'error',
+      '-i',
+      file,
+      '-frames:v',
+      '1',
+      '-f',
+      'image2pipe',
+      '-c:v',
+      'png',
+      '-',
+    ])
+    const pixels = await sharp(frame).raw().toBuffer()
+    const at = (x: number, y: number) => pixels[(y * 8 + x) * 3]!
+    expect(at(0, 4)).toBeGreaterThan(220)
+    expect(at(4, 0)).toBeGreaterThan(220)
+    expect(at(1, 1)).toBeLessThan(30)
+    expect(at(4, 4)).toBeLessThan(30)
+  })
+
+  it.each([90, 270])('旋转 %i° 的视频按摆正后坐标裁剪，输出不再带旋转', async (angle) => {
+    const dir = tempDir('plein-crop-rotate-')
+    const file = join(dir, 'rotated.mp4')
+    execFileSync(ffmpegBin(), [
+      '-v',
+      'error',
+      '-display_rotation:v:0',
+      String(angle),
+      '-i',
+      store.originalPath(video.id),
+      '-c',
+      'copy',
+      file,
+    ])
+    const source = await store.ingest(OWNER, createReadStream(file), {
+      mime: 'video/mp4',
+      name: 'rotated.mp4',
+    })
+    expect(source).toMatchObject({ width: 180, height: 320 })
+    const rect = { left: 11, top: 21, width: 100, height: 200 }
+    const made = await deriveAsset(store, OWNER, { op: 'crop', assetId: source.id, ...rect })
+    const out = store.originalPath(made.assets[0]!.id)
+    expect(await probeMedia(out)).toMatchObject({ width: 100, height: 200 })
+    const frame = (path: string) =>
+      execFileSync(ffmpegBin(), [
+        '-v',
+        'error',
+        '-i',
+        path,
+        '-frames:v',
+        '1',
+        '-f',
+        'image2pipe',
+        '-c:v',
+        'png',
+        '-',
+      ])
+    const reference = await sharp(frame(file)).extract(rect).raw().toBuffer()
+    const actual = await sharp(frame(out)).raw().toBuffer()
+    expect(actual.length).toBe(reference.length)
+    const error = actual.reduce((sum, v, i) => sum + Math.abs(v - reference[i]!), 0) / actual.length
+    expect(error).toBeLessThan(12)
+    const probe = JSON.parse(
+      execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', out], {
+        encoding: 'utf8',
+      }),
+    )
+    expect(
+      probe.streams[0].side_data_list?.some((d: { rotation?: number }) => d.rotation),
+    ).toBeFalsy()
+  })
+})
+
 // 图片加工只靠 sharp：没有 ffmpeg 的机器也要跑
 describe('媒体加工接口', () => {
   // 身份由 requireAuth 注入，这里直接给定，加工只能碰自己名下的资产
@@ -520,11 +666,31 @@ describe('媒体加工接口', () => {
     expect(((await res.json()) as { message: string }).message).toMatch(/超出图片范围/)
   })
 
-  it.runIf(ffmpegAvailable)('视频不能按图片裁剪 422', async () => {
-    expect(
-      (await post({ op: 'crop', assetId: video.id, left: 0, top: 0, width: 1, height: 1 })).status,
-    ).toBe(422)
-  })
+  it.runIf(ffmpegAvailable)(
+    '视频裁剪成功；拒绝奇数尺寸、越界和坏参数，音频不支持裁剪',
+    async () => {
+      const base = { op: 'crop', assetId: video.id, left: 1, top: 1, width: 100, height: 80 }
+      expect((await post(base)).status).toBe(201)
+      for (const patch of [
+        { width: 99 },
+        { height: 79 },
+        { width: 320 },
+        { top: 180 },
+        { left: -1 },
+        { top: 0.5 },
+        { width: 0 },
+        { height: null },
+        { width: 1e30 },
+      ])
+        expect((await post({ ...base, ...patch })).status).toBe(400)
+      expect((await post({ ...base, assetId: audio.id })).status).toBe(422)
+      expect((await post({ op: 'rotate', assetId: video.id, angle: 90 })).status).toBe(422)
+      expect((await post({ op: 'flip', assetId: video.id, axis: 'horizontal' })).status).toBe(422)
+      expect(
+        (await post({ ...base, assetId: image.id, left: 0, top: 0, width: 3, height: 3 })).status,
+      ).toBe(201)
+    },
+  )
 
   it('能力查询返回本机 ffmpeg 能力', async () => {
     const res = await app().request('/api/media/caps')

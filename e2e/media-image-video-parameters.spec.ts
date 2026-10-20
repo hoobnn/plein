@@ -234,13 +234,13 @@ test('图片尺寸迟到时说明读取状态，保留手动宽度并按剩余�
   try {
     const tools = await open(page, '裁剪')
     await tools.getByRole('button', { name: '开始加工', exact: true }).click()
-    await expect(tools.getByRole('alert')).toContainText('正在读取图片尺寸')
+    await expect(tools.getByRole('alert')).toContainText('正在读取素材尺寸')
     expect(f.requests).toEqual([])
     await tools.getByLabel('左', { exact: true }).fill('40')
     await tools.getByLabel('上', { exact: true }).fill('20')
     await tools.getByLabel('宽', { exact: true }).fill('80')
     await tools.getByRole('button', { name: '开始加工', exact: true }).click()
-    await expect(tools.getByRole('alert')).toContainText('正在读取图片尺寸')
+    await expect(tools.getByRole('alert')).toContainText('正在读取素材尺寸')
     await expect(tools.getByLabel('高', { exact: true })).toBeFocused()
     expect(f.requests).toEqual([])
     release()
@@ -255,4 +255,44 @@ test('图片尺寸迟到时说明读取状态，保留手动宽度并按剩余�
   } finally {
     release()
   }
+})
+
+test('视频像素裁剪拒绝奇数尺寸和越界，生成新视频且支持撤销', async ({ page }) => {
+  const f = await fixture(page, 'video')
+  const before = await page.evaluate(() => [...window.__plein.engine.doc.elements()])
+  const tools = await open(page, '裁剪')
+  await expect(tools).toContainText('视频 160 × 90 像素')
+  await expect(tools).toContainText('保留首条音轨，输出新 MP4')
+  await tools.getByLabel('左', { exact: true }).fill('11')
+  await tools.getByLabel('上', { exact: true }).fill('7')
+  await tools.getByLabel('宽', { exact: true }).fill('99')
+  await tools.getByLabel('高', { exact: true }).fill('56')
+  await tools.getByRole('button', { name: '开始加工', exact: true }).click()
+  await expect(tools.getByRole('alert')).toContainText('宽度需为偶数')
+  await expect(tools.getByLabel('宽', { exact: true })).toBeFocused()
+  expect(f.requests).toEqual([])
+  await tools.getByLabel('宽', { exact: true }).fill('160')
+  await tools.getByRole('button', { name: '开始加工', exact: true }).click()
+  await expect(tools.getByRole('alert')).toContainText('超出视频宽度')
+  expect(f.requests).toEqual([])
+  await tools.getByLabel('宽', { exact: true }).fill('100')
+  await page.screenshot({ path: test.info().outputPath('video-crop-pixels.png') })
+  await tools.getByRole('button', { name: '开始加工', exact: true }).click()
+  await expect.poll(async () => (await f.outputs()).length).toBe(1)
+  expect(f.requests).toEqual([
+    { op: 'crop', assetId: f.assets[0], left: 11, top: 7, width: 100, height: 56 },
+  ])
+  const out = (await f.outputs())[0]!
+  expect(out.assetId).not.toBe(f.assets[0])
+  const meta = await (await page.request.get(`/api/assets/${out.assetId}/meta`)).json()
+  expect(meta).toMatchObject({ kind: 'video', width: 100, height: 56 })
+  expect(meta.duration).toBeCloseTo(2, 1)
+  expect(
+    await page.evaluate(
+      (id) => [...window.__plein.engine.doc.elements()].find((e) => e.id === id),
+      f.sources[0]!,
+    ),
+  ).toEqual(before[0])
+  await page.keyboard.press('ControlOrMeta+z')
+  await expect.poll(async () => (await f.outputs()).length).toBe(0)
 })

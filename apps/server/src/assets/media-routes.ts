@@ -33,7 +33,7 @@ function statusOf(code: DeriveError['code']) {
 }
 
 /**
- * 媒体加工接口：裁剪 / 旋转 / 镜像（sharp）、截取 / 变速 / 切分 / 音视频分离 / 抽帧（ffmpeg）。
+ * 媒体加工接口：图片裁剪 / 旋转 / 镜像（sharp）、视频裁剪 / 截取 / 变速 / 切分 / 音视频分离 / 抽帧（ffmpeg）。
  * 前端工具条与智能体工具走的是同一个加工函数，这里只是它的入口。
  */
 export function mediaRoutes(store: AssetStore) {

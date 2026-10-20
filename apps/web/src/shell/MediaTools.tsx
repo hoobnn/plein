@@ -198,14 +198,14 @@ export function MediaTools({
           width: num(values.width?.trim() || cropWidth),
           height: num(values.height?.trim() || cropHeight),
         },
-        { width: meta?.width, height: meta?.height },
+        { width: meta?.width, height: meta?.height, kind: formTargets[0]?.kind },
       )
       if ('error' in rect) {
         if (
           (rect.field === 'width' && !values.width?.trim() && meta?.width === undefined) ||
           (rect.field === 'height' && !values.height?.trim() && meta?.height === undefined)
         )
-          return invalid(rect.field, '正在读取图片尺寸，请稍后再试', 'imageSize')
+          return invalid(rect.field, '正在读取素材尺寸，请稍后再试', 'imageSize')
         return invalid(rect.field, rect.error)
       }
       await runAll('crop', (t) => ({ op: 'crop', assetId: t.assetId, ...rect }))
@@ -366,8 +366,10 @@ export function MediaTools({
                     <p className="ui-help pt-1">
                       {meta?.width !== undefined &&
                         meta?.height !== undefined &&
-                        `图片 ${meta.width} × ${meta.height} 像素。`}
-                      宽高留空时裁到右侧和下侧边缘。
+                        `${formTargets[0]?.kind === 'video' ? '视频' : '图片'} ${meta.width} × ${meta.height} 像素。`}
+                      左、上为距画面左上角的像素数；宽高留空时裁到右侧和下侧边缘。
+                      {formTargets[0]?.kind === 'video' &&
+                        '视频按摆正后的画面裁剪，宽高须为偶数；保留首条音轨，输出新 MP4。'}
                     </p>
                   </>
                 )}

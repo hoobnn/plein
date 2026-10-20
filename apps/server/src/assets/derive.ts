@@ -175,7 +175,7 @@ async function deriveImage(
 async function deriveVideo(
   store: AssetStore,
   src: Asset,
-  input: Extract<MediaDeriveRequest, { op: 'trim' | 'speed' | 'separate' }>,
+  input: Extract<MediaDeriveRequest, { op: 'crop' | 'trim' | 'speed' | 'separate' }>,
   dir: string,
 ): Promise<Made> {
   const srcFile = store.originalPath(src.id)
@@ -213,7 +213,41 @@ async function deriveVideo(
   }
 
   const args = ['-i', srcFile]
-  if (input.op === 'trim') {
+  if (input.op === 'crop') {
+    const { left, top, width, height } = input
+    if (
+      ![left, top, width, height].every(Number.isSafeInteger) ||
+      left < 0 ||
+      top < 0 ||
+      width <= 0 ||
+      height <= 0
+    )
+      throw new DeriveError('invalid', '裁剪坐标需为非负整数，宽高需为正整数')
+    if (!probe.hasVideo || !probe.width || !probe.height)
+      throw new DeriveError('unsupported', '无法读取视频画面尺寸，不能裁剪')
+    if (left + width > probe.width || top + height > probe.height)
+      throw new DeriveError(
+        'invalid',
+        `裁剪区域超出视频范围，视频摆正后是 ${probe.width}×${probe.height}`,
+      )
+    if (width % 2 || height % 2)
+      throw new DeriveError('invalid', '视频裁剪宽高需为偶数像素（H.264 编码要求），请调整宽或高')
+    // ffmpeg 默认先按旋转元数据摆正；exact 保留奇数坐标，避免色度采样悄悄挪动区域。
+    args.push(
+      '-map',
+      '0:V:0',
+      '-map',
+      '0:a:0?',
+      '-filter:v',
+      `crop=${width}:${height}:${left}:${top}:exact=1`,
+      ...(await h264Args()),
+      '-map_metadata',
+      '-1',
+      '-metadata:s:v:0',
+      'rotate=0',
+    )
+    Object.assign(params, { left, top, width, height })
+  } else if (input.op === 'trim') {
     const { start, length, end } = rangeOf(input.start, input.end, probe.duration, '截取区间')
     // -ss 放在 -i 前面是快速定位，配合 -t 限制长度；重编码保证入点精确
     args.unshift('-ss', fmtSeconds(start))
@@ -343,7 +377,9 @@ export async function deriveAsset(
   const src = store.get(ownerId, input.assetId)
   if (!src) throw new DeriveError('not_found', '资产不存在')
 
-  if (input.op === 'crop' || input.op === 'rotate' || input.op === 'flip') {
+  if (input.op === 'crop') {
+    expectKind(src, input.op, ['image', 'video'])
+  } else if (input.op === 'rotate' || input.op === 'flip') {
     expectKind(src, input.op, ['image'])
   } else if (input.op === 'split') {
     expectKind(src, input.op, ['audio'])
@@ -358,7 +394,12 @@ export async function deriveAsset(
   const dir = await store.tempDir()
   try {
     let made: Made
-    if (input.op === 'crop' || input.op === 'rotate' || input.op === 'flip') {
+    if (input.op === 'crop') {
+      made =
+        src.kind === 'image'
+          ? await deriveImage(store, src, input, dir)
+          : await deriveVideo(store, src, input, dir)
+    } else if (input.op === 'rotate' || input.op === 'flip') {
       made = await deriveImage(store, src, input, dir)
     } else if (input.op === 'frame') {
       made = await deriveFrame(store, src, input, dir)

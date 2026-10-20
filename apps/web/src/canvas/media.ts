@@ -82,8 +82,9 @@ type CropRect = { left: number; top: number; width: number; height: number }
 /** 校验真实像素范围，不把无效输入悄悄改成其他裁剪区域。 */
 export function cropRect(
   rect: CropRect,
-  size: { width?: number; height?: number },
+  size: { width?: number; height?: number; kind?: AssetKind },
 ): CropRect | { field: keyof CropRect; error: string } {
+  const type = size.kind === 'video' ? '视频' : '图片'
   for (const [field, label, minimum] of [
     ['left', '左侧坐标', 0],
     ['top', '顶部坐标', 0],
@@ -93,17 +94,22 @@ export function cropRect(
     if (!Number.isSafeInteger(rect[field]) || rect[field] < minimum)
       return { field, error: `${label}需为${minimum ? '大于 0' : '不小于 0'}的整数` }
     if (field === 'left' && size.width !== undefined && rect.left >= size.width)
-      return { field: 'left', error: `左侧坐标需小于图片宽度（${size.width} 像素）` }
+      return { field: 'left', error: `左侧坐标需小于${type}宽度（${size.width} 像素）` }
     if (field === 'top' && size.height !== undefined && rect.top >= size.height)
-      return { field: 'top', error: `顶部坐标需小于图片高度（${size.height} 像素）` }
+      return { field: 'top', error: `顶部坐标需小于${type}高度（${size.height} 像素）` }
   }
   if (size.width !== undefined) {
     if (rect.left + rect.width > size.width)
-      return { field: 'width', error: `裁剪区域超出图片宽度（${size.width} 像素）` }
+      return { field: 'width', error: `裁剪区域超出${type}宽度（${size.width} 像素）` }
   }
   if (size.height !== undefined) {
     if (rect.top + rect.height > size.height)
-      return { field: 'height', error: `裁剪区域超出图片高度（${size.height} 像素）` }
+      return { field: 'height', error: `裁剪区域超出${type}高度（${size.height} 像素）` }
+  }
+  if (size.kind === 'video') {
+    for (const field of ['width', 'height'] as const)
+      if (rect[field] % 2)
+        return { field, error: `视频裁剪${field === 'width' ? '宽度' : '高度'}需为偶数像素` }
   }
   return rect
 }
@@ -114,7 +120,7 @@ export function opsFor(kind: AssetKind, caps?: MediaCapsInfo | null): MediaOp[] 
   // 音视频全靠 ffmpeg；能力还没读到（caps 为空）时先照常显示，服务端会兜底报 503
   if (caps && !caps.ffmpeg) return []
   if (kind === 'audio') return ['trim', 'speed', 'split']
-  if (kind === 'video') return ['trim', 'speed', 'separate', 'frame']
+  if (kind === 'video') return ['crop', 'trim', 'speed', 'separate', 'frame']
   return []
 }
 

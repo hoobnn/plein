@@ -92,6 +92,19 @@ describe('区间与倍数', () => {
 })
 
 describe('裁剪框', () => {
+  it('视频宽高为偶数、奇数起点保留，图片仍允许奇数宽高', () => {
+    const rect = { left: 1, top: 3, width: 20, height: 10 }
+    expect(cropRect(rect, { kind: 'video' })).toEqual(rect)
+    expect(cropRect({ ...rect, width: 19 }, { kind: 'video' })).toMatchObject({
+      field: 'width',
+      error: expect.stringContaining('偶数'),
+    })
+    expect(cropRect({ ...rect, height: 9 }, { kind: 'video' })).toMatchObject({ field: 'height' })
+    expect(cropRect({ ...rect, width: 19 }, { kind: 'image' })).toEqual({ ...rect, width: 19 })
+    expect(opsFor('video')).toContain('crop')
+    expect(opsFor('video')).not.toContain('rotate')
+    expect(opsFor('video')).not.toContain('flip')
+  })
   it('默认整张图', () => {
     expect(
       cropRect({ left: 0, top: 0, width: 1920, height: 1080 }, { width: 1920, height: 1080 }),
@@ -131,7 +144,7 @@ describe('裁剪框', () => {
 describe('可用操作', () => {
   it('本机没有 ffmpeg 时不给视频加工项', () => {
     expect(opsFor('video', { ffmpeg: false, subtitles: false, rubberband: false })).toEqual([])
-    expect(opsFor('video', { ffmpeg: true, subtitles: false, rubberband: false })).toHaveLength(4)
+    expect(opsFor('video', { ffmpeg: true, subtitles: false, rubberband: false })).toHaveLength(5)
     // 图片加工不靠 ffmpeg
     expect(opsFor('image', { ffmpeg: false, subtitles: false, rubberband: false })).not.toEqual([])
   })

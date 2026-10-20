@@ -4,7 +4,7 @@ import { Asset } from './assets'
 
 /**
  * 加工操作。图片走 sharp，视频 / 音频走 ffmpeg：
- * crop/rotate/flip 只对图片；separate/frame 只对视频；split 只对音频；
+ * crop 对图片和视频可用；rotate/flip 只对图片；separate/frame 只对视频；split 只对音频；
  * trim/speed 对视频和音频都可用（视频变速同时处理音画）。
  */
 export const MediaOp = z.enum([
@@ -31,7 +31,7 @@ const deriveName = z.string().trim().max(120).optional()
 
 /** 加工请求：一次一个操作，产出的都是新资产，源资产不动 */
 export const MediaDeriveRequest = z.discriminatedUnion('op', [
-  /** 图片裁剪，坐标对应显示出来的像素（含 EXIF 方向已纠正） */
+  /** 图片 / 视频裁剪，坐标对应摆正后的像素；视频宽高须为偶数 */
   z.object({
     op: z.literal('crop'),
     assetId: assetIdField,
