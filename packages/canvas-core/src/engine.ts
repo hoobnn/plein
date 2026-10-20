@@ -202,7 +202,14 @@ export class Engine {
       resolution: window.devicePixelRatio,
       preference: this.opts.renderer ?? 'webgl',
     })
-    if (this.app.renderer.type === RendererType.WEBGL) this.previewShader = createPreviewShader()
+    if (this.app.renderer.type === RendererType.WEBGL) {
+      this.previewShader = createPreviewShader()
+      // Pixi 重建 GPU 资源后，静止的按需画布也必须重新提交一帧。
+      const canvas = this.app.canvas
+      const restored = () => this.requestRender()
+      canvas.addEventListener('webglcontextrestored', restored)
+      this.disposers.push(() => canvas.removeEventListener('webglcontextrestored', restored))
+    }
     host.appendChild(this.app.canvas)
     this.app.stage.addChild(this.grid.display, this.world)
     // 连线在元素下，端口、选择叠加层在元素上，靠 zIndex 排序

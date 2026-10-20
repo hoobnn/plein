@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Locator, type Page, test } from '@playwright/test'
 import { createRequire } from 'node:module'
 import type { Engine } from '../packages/canvas-core/src/engine'
 import { newProject, waitEngine } from './canvas'
@@ -67,6 +67,25 @@ async function assertPreviewPixels(page: Page) {
       return counts.map((n) => n >= 200)
     })
     .toEqual(colors.map(() => true))
+}
+
+async function loseAndRestoreContext(canvas: Locator) {
+  await canvas.evaluate(async (element) => {
+    const gl = (element as HTMLCanvasElement).getContext('webgl2')!
+    const extension = gl.getExtension('WEBGL_lose_context')
+    if (!extension) throw new Error('WEBGL_lose_context is unavailable')
+    const lost = new Promise<void>((resolve) =>
+      element.addEventListener('webglcontextlost', () => resolve(), { once: true }),
+    )
+    extension.loseContext()
+    await lost
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    const restored = new Promise<void>((resolve) =>
+      element.addEventListener('webglcontextrestored', () => resolve(), { once: true }),
+    )
+    extension.restoreContext()
+    await restored
+  })
 }
 
 test('上传预览的颜色与半透明合成在缩放、检查点销毁及恢复后保持正确', async ({ page }) => {
@@ -158,10 +177,14 @@ test('上传预览的颜色与半透明合成在缩放、检查点销毁及恢�
     .poll(() => page.evaluate(() => (window.__plein.engine as unknown as Engine).camera.zoom))
     .toBeLessThan(zoom)
   await assertMainPixels(page)
+  await loseAndRestoreContext(page.locator('canvas').first())
+  await assertMainPixels(page)
   await openCheckpoints(page)
   await panel(page).getByRole('textbox', { name: '检查点名称', exact: true }).fill('像素校验')
   await panel(page).getByRole('button', { name: '保存当前画布', exact: true }).click()
   await expect(article(page, '像素校验')).toBeVisible()
+  await assertPreviewPixels(page)
+  await loseAndRestoreContext(panel(page).getByTestId('checkpoint-preview').locator('canvas'))
   await assertPreviewPixels(page)
   await panel(page).getByRole('button', { name: '关闭', exact: true }).click()
   await expect(panel(page)).toHaveCount(0)
