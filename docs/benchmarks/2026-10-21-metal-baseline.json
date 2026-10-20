@@ -1,0 +1,404 @@
+{
+  "formatVersion": 1,
+  "status": "complete",
+  "buildFingerprint": "ff834f7ef4a842a02172510fb0f8eb589c76531a30548aa41e9264e46f7b466b",
+  "sourceCommit": "aaabe05e6236e8812d1eec01bfb29f7da3559b2d",
+  "sourceDirty": true,
+  "measuredAt": "2026-10-20T18:40:01.032Z",
+  "environment": {
+    "runtime": "node 26.12.0",
+    "platform": "darwin/arm64",
+    "browserVersion": "156.0.8078.4",
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)",
+    "renderMode": "hardware",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "fixture": {
+    "version": 2,
+    "elements": 1000,
+    "imageAssets": 32,
+    "videoAssets": 1,
+    "audioAssets": 1,
+    "serializedBytes": 225535
+  },
+  "rounds": 3,
+  "metrics": {
+    "cold.engineReadyMs": 455.29999999701977,
+    "cold.firstVisiblePreviewMs": 571.3000000119209,
+    "cold.visibleMediaSettledMs": 571.3000000119209,
+    "warm.engineReadyMs": 73.80000001192093,
+    "warm.firstVisiblePreviewMs": 175.40000000596046,
+    "warm.visibleMediaSettledMs": 175.5,
+    "平移.jsMs": 1.0022276422764234,
+    "缩放.jsMs": 4.616967479674797,
+    "平移（选中素材，浮动工具条跟随）.jsMs": 0.9771407407407411,
+    "拖动 12 个元素.jsMs": 2.353513274336286,
+    "静止（20 个节点生成中）.jsMs": 0.05728455284552845
+  },
+  "details": {
+    "openSamples": {
+      "cold": [
+        {
+          "engineReadyMs": 451.29999999701977,
+          "firstVisiblePreviewMs": 567.5999999940395,
+          "visibleMediaSettledMs": 567.5999999940395,
+          "stats": {
+            "elements": 1000,
+            "visible": 1000,
+            "fps": 59.88023952095833,
+            "residentBodies": 1000,
+            "visibleBodies": 1000,
+            "offscreenBodies": 0,
+            "previews": {
+              "total": 1000,
+              "ready": 1000,
+              "pending": 0,
+              "failed": 0
+            },
+            "textures": {
+              "owners": 1,
+              "activeLeases": 1000,
+              "pinnedTextures": 34,
+              "idleTextures": 0,
+              "queuedLoads": 0,
+              "inFlightLoads": 0,
+              "unloadingTextures": 0,
+              "readyTextures": 34,
+              "estimatedTextureBytes": 7397632,
+              "pinnedEstimatedBytes": 7397632,
+              "pinnedOverBudgetBytes": 0,
+              "budgetBytes": 536870912,
+              "cacheHits": 966,
+              "loadsStarted": 34,
+              "evictions": 0,
+              "loadErrors": 0,
+              "unloadErrors": 0
+            },
+            "previewRevision": 1000,
+            "renderedPreviewRevision": 1000
+          },
+          "requests": {
+            "count": 65,
+            "failed": 0,
+            "variants": {
+              "poster": 2,
+              "thumb-256": 62,
+              "waveform": 1
+            },
+            "runtimeErrors": []
+          }
+        },
+        {
+          "engineReadyMs": 455.29999999701977,
+          "firstVisiblePreviewMs": 576.7999999970198,
+          "visibleMediaSettledMs": 576.7999999970198,
+          "stats": {
+            "elements": 1000,
+            "visible": 1000,
+            "fps": 60.240963855421604,
+            "residentBodies": 1000,
+            "visibleBodies": 1000,
+            "offscreenBodies": 0,
+            "previews": {
+              "total": 1000,
+              "ready": 1000,
+              "pending": 0,
+              "failed": 0
+            },
+            "textures": {
+              "owners": 1,
+              "activeLeases": 1000,
+              "pinnedTextures": 34,
+              "idleTextures": 0,
+              "queuedLoads": 0,
+              "inFlightLoads": 0,
+              "unloadingTextures": 0,
+              "readyTextures": 34,
+              "estimatedTextureBytes": 7397632,
+              "pinnedEstimatedBytes": 7397632,
+              "pinnedOverBudgetBytes": 0,
+              "budgetBytes": 536870912,
+              "cacheHits": 966,
+              "loadsStarted": 34,
+              "evictions": 0,
+              "loadErrors": 0,
+              "unloadErrors": 0
+            },
+            "previewRevision": 1000,
+            "renderedPreviewRevision": 1000
+          },
+          "requests": {
+            "count": 65,
+            "failed": 0,
+            "variants": {
+              "poster": 2,
+              "thumb-256": 62,
+              "waveform": 1
+            },
+            "runtimeErrors": []
+          }
+        },
+        {
+          "engineReadyMs": 458,
+          "firstVisiblePreviewMs": 571.3000000119209,
+          "visibleMediaSettledMs": 571.3000000119209,
+          "stats": {
+            "elements": 1000,
+            "visible": 1000,
+            "fps": 59.88023952095833,
+            "residentBodies": 1000,
+            "visibleBodies": 1000,
+            "offscreenBodies": 0,
+            "previews": {
+              "total": 1000,
+              "ready": 1000,
+              "pending": 0,
+              "failed": 0
+            },
+            "textures": {
+              "owners": 1,
+              "activeLeases": 1000,
+              "pinnedTextures": 34,
+              "idleTextures": 0,
+              "queuedLoads": 0,
+              "inFlightLoads": 0,
+              "unloadingTextures": 0,
+              "readyTextures": 34,
+              "estimatedTextureBytes": 7397632,
+              "pinnedEstimatedBytes": 7397632,
+              "pinnedOverBudgetBytes": 0,
+              "budgetBytes": 536870912,
+              "cacheHits": 966,
+              "loadsStarted": 34,
+              "evictions": 0,
+              "loadErrors": 0,
+              "unloadErrors": 0
+            },
+            "previewRevision": 1000,
+            "renderedPreviewRevision": 1000
+          },
+          "requests": {
+            "count": 65,
+            "failed": 0,
+            "variants": {
+              "poster": 2,
+              "thumb-256": 62,
+              "waveform": 1
+            },
+            "runtimeErrors": []
+          }
+        }
+      ],
+      "warm": [
+        {
+          "engineReadyMs": 73.80000001192093,
+          "firstVisiblePreviewMs": 175.40000000596046,
+          "visibleMediaSettledMs": 175.5,
+          "stats": {
+            "elements": 1000,
+            "visible": 1000,
+            "fps": 60.60606060606061,
+            "residentBodies": 1000,
+            "visibleBodies": 1000,
+            "offscreenBodies": 0,
+            "previews": {
+              "total": 1000,
+              "ready": 1000,
+              "pending": 0,
+              "failed": 0
+            },
+            "textures": {
+              "owners": 1,
+              "activeLeases": 1000,
+              "pinnedTextures": 34,
+              "idleTextures": 0,
+              "queuedLoads": 0,
+              "inFlightLoads": 0,
+              "unloadingTextures": 0,
+              "readyTextures": 34,
+              "estimatedTextureBytes": 7397632,
+              "pinnedEstimatedBytes": 7397632,
+              "pinnedOverBudgetBytes": 0,
+              "budgetBytes": 536870912,
+              "cacheHits": 1932,
+              "loadsStarted": 68,
+              "evictions": 34,
+              "loadErrors": 0,
+              "unloadErrors": 0
+            },
+            "previewRevision": 1000,
+            "renderedPreviewRevision": 1000
+          },
+          "requests": {
+            "count": 34,
+            "failed": 0,
+            "variants": {
+              "thumb-256": 32,
+              "waveform": 1,
+              "poster": 1
+            },
+            "runtimeErrors": []
+          }
+        },
+        {
+          "engineReadyMs": 69,
+          "firstVisiblePreviewMs": 175.70000000298023,
+          "visibleMediaSettledMs": 175.70000000298023,
+          "stats": {
+            "elements": 1000,
+            "visible": 1000,
+            "fps": 60.24096385542119,
+            "residentBodies": 1000,
+            "visibleBodies": 1000,
+            "offscreenBodies": 0,
+            "previews": {
+              "total": 1000,
+              "ready": 1000,
+              "pending": 0,
+              "failed": 0
+            },
+            "textures": {
+              "owners": 1,
+              "activeLeases": 1000,
+              "pinnedTextures": 34,
+              "idleTextures": 0,
+              "queuedLoads": 0,
+              "inFlightLoads": 0,
+              "unloadingTextures": 0,
+              "readyTextures": 34,
+              "estimatedTextureBytes": 7397632,
+              "pinnedEstimatedBytes": 7397632,
+              "pinnedOverBudgetBytes": 0,
+              "budgetBytes": 536870912,
+              "cacheHits": 1932,
+              "loadsStarted": 68,
+              "evictions": 34,
+              "loadErrors": 0,
+              "unloadErrors": 0
+            },
+            "previewRevision": 1000,
+            "renderedPreviewRevision": 1000
+          },
+          "requests": {
+            "count": 34,
+            "failed": 0,
+            "variants": {
+              "poster": 1,
+              "waveform": 1,
+              "thumb-256": 32
+            },
+            "runtimeErrors": []
+          }
+        },
+        {
+          "engineReadyMs": 73.8999999910593,
+          "firstVisiblePreviewMs": 165,
+          "visibleMediaSettledMs": 165,
+          "stats": {
+            "elements": 1000,
+            "visible": 1000,
+            "fps": 59.88023952095792,
+            "residentBodies": 1000,
+            "visibleBodies": 1000,
+            "offscreenBodies": 0,
+            "previews": {
+              "total": 1000,
+              "ready": 1000,
+              "pending": 0,
+              "failed": 0
+            },
+            "textures": {
+              "owners": 1,
+              "activeLeases": 1000,
+              "pinnedTextures": 34,
+              "idleTextures": 0,
+              "queuedLoads": 0,
+              "inFlightLoads": 0,
+              "unloadingTextures": 0,
+              "readyTextures": 34,
+              "estimatedTextureBytes": 7397632,
+              "pinnedEstimatedBytes": 7397632,
+              "pinnedOverBudgetBytes": 0,
+              "budgetBytes": 536870912,
+              "cacheHits": 1932,
+              "loadsStarted": 68,
+              "evictions": 34,
+              "loadErrors": 0,
+              "unloadErrors": 0
+            },
+            "previewRevision": 1000,
+            "renderedPreviewRevision": 1000
+          },
+          "requests": {
+            "count": 34,
+            "failed": 0,
+            "variants": {
+              "thumb-256": 32,
+              "poster": 1,
+              "waveform": 1
+            },
+            "runtimeErrors": []
+          }
+        }
+      ]
+    },
+    "interactions": {
+      "cold.engineReadyMs": 455.29999999701977,
+      "cold.firstVisiblePreviewMs": 571.3000000119209,
+      "cold.visibleMediaSettledMs": 571.3000000119209,
+      "warm.engineReadyMs": 73.80000001192093,
+      "warm.firstVisiblePreviewMs": 175.40000000596046,
+      "warm.visibleMediaSettledMs": 175.5,
+      "平移": {
+        "frames": 123,
+        "js": 1.0022276422764234,
+        "native": 1.6478861788617887,
+        "layout": 0.023138211382113794,
+        "style": 0.11983739837398376,
+        "long": 0,
+        "mutations": 34.26829268292683
+      },
+      "缩放": {
+        "frames": 123,
+        "js": 4.616967479674797,
+        "native": 2.050130081300813,
+        "layout": 0.1656178861788618,
+        "style": 0.1569593495934958,
+        "long": 0,
+        "mutations": 74.0650406504065
+      },
+      "平移（选中素材，浮动工具条跟随）": {
+        "frames": 135,
+        "js": 0.9771407407407411,
+        "native": 1.8902518518518518,
+        "layout": 0.045251851851851814,
+        "style": 0.13066176470588242,
+        "long": 0,
+        "mutations": 32.80740740740741
+      },
+      "拖动 12 个元素": {
+        "frames": 113,
+        "js": 2.353513274336286,
+        "native": 2.2736194690265483,
+        "layout": 0.03489380530973462,
+        "style": 0.045079646017699315,
+        "long": 0,
+        "mutations": 1.3628318584070795
+      },
+      "静止（20 个节点生成中）": {
+        "frames": 123,
+        "js": 0.05728455284552845,
+        "native": 0.839829268292683,
+        "layout": 0,
+        "style": 0.0008606557377046012,
+        "long": 0,
+        "mutations": 0.34146341463414637
+      }
+    }
+  },
+  "baselineCompared": false,
+  "regressions": []
+}

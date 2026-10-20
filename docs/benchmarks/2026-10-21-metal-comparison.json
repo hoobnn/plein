@@ -1,0 +1,42 @@
+{
+  "baseline": "perf-metal-baseline.json",
+  "candidate": "perf-metal-preview.json",
+  "baselineMetrics": {
+    "cold.engineReadyMs": 455.29999999701977,
+    "cold.firstVisiblePreviewMs": 571.3000000119209,
+    "cold.visibleMediaSettledMs": 571.3000000119209,
+    "warm.engineReadyMs": 73.80000001192093,
+    "warm.firstVisiblePreviewMs": 175.40000000596046,
+    "warm.visibleMediaSettledMs": 175.5,
+    "平移.jsMs": 1.0022276422764234,
+    "缩放.jsMs": 4.616967479674797,
+    "平移（选中素材，浮动工具条跟随）.jsMs": 0.9771407407407411,
+    "拖动 12 个元素.jsMs": 2.353513274336286,
+    "静止（20 个节点生成中）.jsMs": 0.05728455284552845
+  },
+  "candidateMetrics": {
+    "cold.engineReadyMs": 458.5,
+    "cold.firstVisiblePreviewMs": 692,
+    "cold.visibleMediaSettledMs": 692,
+    "warm.engineReadyMs": 68.79999999701977,
+    "warm.firstVisiblePreviewMs": 164.5,
+    "warm.visibleMediaSettledMs": 164.5,
+    "平移.jsMs": 0.9783089430894318,
+    "缩放.jsMs": 4.5657398373983735,
+    "平移（选中素材，浮动工具条跟随）.jsMs": 0.9453111111111121,
+    "拖动 12 个元素.jsMs": 2.255446428571429,
+    "静止（20 个节点生成中）.jsMs": 0.06661788617886179
+  },
+  "environment": {
+    "runtime": "node 26.12.0",
+    "platform": "darwin/arm64",
+    "browserVersion": "156.0.8078.4",
+    "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)",
+    "renderMode": "hardware",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "regressions": []
+}

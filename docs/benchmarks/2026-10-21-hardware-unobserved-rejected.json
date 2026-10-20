@@ -1,0 +1,36 @@
+{
+  "environment": {
+    "runtime": "node 26.12.0",
+    "platform": "darwin/arm64",
+    "renderMode": "hardware",
+    "browserVersion": "156.0.8078.4",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    }
+  },
+  "fixture": {
+    "version": 2,
+    "elements": 1000,
+    "imageAssets": 0,
+    "videoAssets": 0,
+    "audioAssets": 0,
+    "serializedBytes": 0
+  },
+  "rounds": 3,
+  "buildFingerprint": "43cdef15e396d1d7f9aadfd8c739bd9b7d89194fcd080e9bb447c852840c9c02",
+  "details": {
+    "openSamples": {
+      "cold": [],
+      "warm": []
+    },
+    "interactions": {}
+  },
+  "formatVersion": 1,
+  "status": "failed",
+  "measuredAt": "2026-10-20T18:42:16.928Z",
+  "error": {
+    "name": "Error",
+    "message": "Hardware renderer could not be verified: unobserved"
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "status": "targeted actual GPU and repeated-reentry acceptance passed; overall goal incomplete",
+  "toolFixCommit": "e30b345",
+  "productBuilds": {
+    "baseline": "bb4eef6 frozen dist-prompt-native-v2",
+    "candidate": "0ed1e1d frozen dist-shared-preview"
+  },
+  "paidCalls": 0,
+  "tests": {
+    "performanceReportUnit": 6,
+    "metalUi": {
+      "startTime": "2026-10-20T18:40:37.670Z",
+      "duration": 35388.496,
+      "expected": 3,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "rootTypecheck": "passed",
+    "webTypecheck": "passed",
+    "formatLint": "passed"
+  },
+  "boundaries": [
+    "headless actual Metal is not native foreground or physical input proof",
+    "30 quick cycles are not long-duration editing",
+    "explicit-GC heap grew; no leak-free claim",
+    "cold startup was slower but below unchanged relative-plus-absolute gate"
+  ],
+  "evidence": [
+    {
+      "path": "docs/benchmarks/2026-10-21-canvas-reentry-30.json",
+      "sha256": "6241edccc7092e585cea74b0301cdcce998489604714fb10a69274d7aca3f4a3"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-canvas-reentry-metal-30.json",
+      "sha256": "a8308b0db2d17f3715397dd9f59f9defca140b79fa33a7a1973d9a851c7eb3ff"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-hardware-fallback-before.json",
+      "sha256": "d86c15fc200ada074fa5d723a403470ae03fb27ff2dd5ad845dfbdcca16ad64d"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-hardware-fallback-rejected.json",
+      "sha256": "ea4ad9e810c6b57e03bd74c97b769875ee5a3f315b3f6095bbf267de77206e98"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-hardware-unobserved-rejected.json",
+      "sha256": "2be9506021ade4a4859e63ddd2b803b5b0102140a30712cd62f1b0c116452db5"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-metal-baseline.json",
+      "sha256": "2b3523e6d692b3f7aec2f6ebb1f0ada26982f38d20c8bb070428ca437dd2b483"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-metal-candidate.json",
+      "sha256": "83c81810902ae5f97d00bada43454fd72c73188913cd1fe2f870e9d074301732"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-metal-comparison.json",
+      "sha256": "1585adc89b254377042420940c10b03d7bec828ea61cbb0f1e132bd5cbd397e4"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-renderer-probe.json",
+      "sha256": "7d0330bbf41efae2cf5b6ec3869a4185cbab1bebbc23d07582f7ab63f9512187"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/metal-ui.json",
+      "sha256": "2583e11b00ce02d3727fa568e9480294ee70f5d247f4e24637876eb3af9fed06"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/hardware-renderer-red.log",
+      "sha256": "2341817190f29193981add19f2f65cadcfe45b77015c6d9648edba11a95c3c6a"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/hardware-renderer-final.log",
+      "sha256": "3ecfca373299782d1accf969c9fbb2d60b476cee7e3fd96d0cc55eeb57f59e96"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-metal-dense-arranged.png",
+      "sha256": "b547557f7837d1594f6fd707373a3cec425c93790101b3aa89d05f5548536224"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-metal-pixels-restored.png",
+      "sha256": "a865810c0ba10736bd0271857766b4fd6a565312fc94e08c4cda0dc8cfa30109"
+    }
+  ],
+  "privateReproduction": [
+    {
+      "path": ".cache/functional-acceptance-2026-10-21/endurance-software.mts",
+      "sha256": "26378fb5be9862381f1d2b699d7c19e9f10c80cef5ce78d2b739c50b55262867"
+    },
+    {
+      "path": ".cache/functional-acceptance-2026-10-21/endurance.mts",
+      "sha256": "25c9ba798360ab39f5efe1e5e9be3aa7e4e22c3ffbc97033311c7bbb18f1bb18"
+    },
+    {
+      "path": ".cache/functional-acceptance-2026-10-21/renderer-probe.mts",
+      "sha256": "0ed44d7054ac5d63be3eebaca7b8cc1d93a17f2c664eb32674ae89a13b15422a"
+    },
+    {
+      "path": ".cache/functional-acceptance-2026-10-21/playwright.metal.config.ts",
+      "sha256": "ebf5422b5a8e463e5e545baa805fbf46bb0071fe42d0efb034473c9d11edadc0"
+    },
+    {
+      "path": ".cache/functional-acceptance-2026-10-21/compare-metal.mts",
+      "sha256": "dcc11417c2a9abf76d25ffe0a480c1461c7ad44e478e5ab297f8fbde8dd22e77"
+    }
+  ]
+}
