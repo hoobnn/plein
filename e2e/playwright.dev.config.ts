@@ -212,6 +212,7 @@ export default defineConfig({
     'ime-editor.spec.ts',
     'markdown-ime.spec.ts',
     'markdown-history.spec.ts',
+    'markdown-target-lifecycle.spec.ts',
     'markdown-long-edit.spec.ts',
     'markdown-panel-layout.spec.ts',
     'markdown-rendering.spec.ts',

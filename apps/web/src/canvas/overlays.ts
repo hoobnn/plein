@@ -1,11 +1,12 @@
 import { defaultKeymap } from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
+import { EditorState } from '@codemirror/state'
 import { EditorView, drawSelection, keymap } from '@codemirror/view'
 import type { Engine } from '@plein/canvas-core'
 import { currentResult, elementMedia, type Rect } from '@plein/doc'
 import { ANIMATIC_TYPE, SEQUENCE_TYPE } from '@plein/nodes'
 import { useCanvas } from '../stores/canvas'
-import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
+import { yCollab, ySyncAnnotation, yUndoManagerKeymap } from 'y-codemirror.next'
 import * as Y from 'yjs'
 import { renderMarkdown } from './markdown'
 import { createPlayer } from './player'
@@ -24,6 +25,8 @@ interface Active {
   node: HTMLElement
   /** 播放器正在放的素材：节点切换结果版本时据此换片 */
   assetId?: string
+  /** 正文编辑必须仍绑定当前可编辑节点及其原始 Y.Text。 */
+  valid?(): boolean
   /** 挂到页面后调用 */
   focus?(): void
   layout?(rect: Rect, viewport: Rect): void
@@ -102,6 +105,14 @@ export class CanvasOverlays {
     this.measurer.setAttribute('aria-hidden', 'true')
     root.appendChild(this.measurer)
     this.disposers.push(
+      engine.onStateChange(() => {
+        const active = this.active
+        if (!active?.valid || active.valid()) return
+        // Yjs 可能正在派发正文事件，等本次更新结束再销毁 CodeMirror。
+        queueMicrotask(() => {
+          if (this.active === active && !active.valid?.()) this.deactivate()
+        })
+      }),
       engine.onViewChange(({ content }) => this.sync(content)),
       engine.camera.onInsetsChange(() => this.sync(false)),
       engine.onMove(() => {
@@ -144,6 +155,10 @@ export class CanvasOverlays {
 
   /** content 为 false：只同步交互可用范围，已显示的正文不重画和量高 */
   sync(content = true) {
+    if (this.active?.valid && !this.active.valid()) {
+      this.deactivate()
+      return
+    }
     const { engine } = this
     const viewport = engine.camera.viewRect
     this.viewport = viewport
@@ -359,8 +374,17 @@ export class CanvasOverlays {
   }
 
   private openEditor(id: string): Active | null {
-    const ytext = this.engine.doc.getText(id)
-    if (!ytext || this.engine.doc.readOnly) return null
+    const doc = this.engine.doc
+    const element = doc.elementMaps.get(id)
+    const ytext = doc.getText(id)
+    const valid = () =>
+      !doc.readOnly &&
+      !doc.ydoc.isDestroyed &&
+      doc.elementMaps.get(id) === element &&
+      element?.get('kind') === 'markdown' &&
+      !element.get('locked') &&
+      doc.getText(id) === ytext
+    if (!ytext || !valid()) return null
     const node = document.createElement('div')
     node.className = 'plein-md-editor'
     const undoManager = new Y.UndoManager(ytext)
@@ -369,8 +393,20 @@ export class CanvasOverlays {
       parent: node,
       doc: ytext.toString(),
       extensions: [
+        EditorState.transactionFilter.of((transaction) =>
+          !transaction.docChanged || transaction.annotation(ySyncAnnotation) || valid()
+            ? transaction
+            : [],
+        ),
         yCollab(ytext, this.opts.awareness ?? null, { undoManager }),
-        keymap.of([...yUndoManagerKeymap, ...defaultKeymap]),
+        // 正文历史直接操作 Y.Text，必须在调用 Yjs UndoManager 之前拦截。
+        keymap.of([
+          ...yUndoManagerKeymap.map((binding) => ({
+            ...binding,
+            run: (editor: EditorView) => (valid() ? (binding.run?.(editor) ?? false) : true),
+          })),
+          ...defaultKeymap,
+        ]),
         drawSelection(),
         markdown(),
         EditorView.lineWrapping,
@@ -394,6 +430,7 @@ export class CanvasOverlays {
     return {
       id,
       node,
+      valid,
       focus: () => view.focus(),
       layout: (rect, viewport) => {
         const { zoom, insets } = this.engine.camera
