@@ -148,7 +148,7 @@ export class Engine {
   private pan: PanState = { space: false, hand: false }
   private toolValue: Tool = 'select'
   private viewDirty = true
-  /** 画面有变化、下一帧要渲染；静止时不重画，省 GPU 和电量 */
+  /** 画面变化或低频维护时提交一帧，其余时间跳过绘制 */
   private renderDirty = true
   private previewRevision = 0
   private renderedPreviewRevision = 0

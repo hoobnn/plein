@@ -1,0 +1,114 @@
+{
+  "status": "targeted resource acceptance passed; overall goal incomplete",
+  "runtimeProductCommit": "14d070d",
+  "sourceFilesAtTestedCommit": [
+    {
+      "path": "packages/canvas-core/src/engine.ts",
+      "sha256": "4d26a5597b14481b94030e253cef1fa0423860574b1a20a36220bb73ba476b2c"
+    },
+    {
+      "path": "packages/canvas-core/src/renderers.ts",
+      "sha256": "ee0d0a3f7c42739fbb4ffcdde86760861400a66476ecc227542a3c30c17ae0e8"
+    },
+    {
+      "path": "packages/canvas-core/src/renderers.test.ts",
+      "sha256": "f65effe746275d3f9c2a01b2024f194eb8b3ebfe533c8ca4a0f6c56458df8aaf"
+    },
+    {
+      "path": "e2e/canvas-gpu-idle.spec.ts",
+      "sha256": "0bb5a8816a48b318df824432acb28f92b16d796e69b4e8b32be855f8bf64d002"
+    }
+  ],
+  "followupSourceChange": "Engine renderDirty comment corrected to mention low-frequency maintenance; no runtime change",
+  "core": {
+    "files": 11,
+    "passed": 88,
+    "newOwnedContextTests": 7
+  },
+  "typecheck": ["canvas-core", "web", "root"],
+  "paidCalls": 0,
+  "evidence": [
+    {
+      "path": "docs/benchmarks/2026-10-21-gpu-heap-aggregate.json",
+      "sha256": "33ca1c674132217495366d80bcb8444b4140770030ef783d43b34ab334095d0e"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-gpu-heap-probe.json",
+      "sha256": "93fb5ac03efe60e2bdfcf47a5beb5db6d5b9092ca179416ed23c3dbb4dd787bc"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-gpu-idle-control-before.json",
+      "sha256": "d5cb0b6e94c22d86602889b6e3d75ad432c5406fdf22f42e67dd9e7319bad5b0"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-gpu-idle-control-fixed.json",
+      "sha256": "28ca84620da8677ede213dd870ce8cffa470d467756e006ef8d78504dfde0d47"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-gpu-resource-tests.json",
+      "sha256": "87983dbaa955ebcd0c4a9e7cc98c846cec1e3861a9a2a862c14df5dbbca1709d"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/graphics-dispose-red.log",
+      "sha256": "2e7ab5258d6dc908c3ce074dd1cad15dcc28abb9e5703a26557ee6b07e26ed74"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/gpu-idle-core.log",
+      "sha256": "8702ea3076bf09e97c2661c50548a567eee28a1a169d1a12982947568a3b4dfb"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/gpu-idle-red.json",
+      "sha256": "1839cbb41663ca7ce7176a812988ec41198b1b9960f3e3a5ff4bd6e147eda3e0"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/gpu-idle-metal.json",
+      "sha256": "6b13ebce102e73e084ed47d4c261fd0c150b4375773878070471e1ec5f02457a"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/gpu-idle-production.json",
+      "sha256": "6c8495dc62d7b5d2df19bdf3762d1802e49fb611facdf77d380cf9162152834a"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/gpu-idle-development.json",
+      "sha256": "36c99edb0483d7fd9aedc830638f16495e200ad8e356c3c5bf72943663d13a79"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/ui-discovery-gpu-idle.json",
+      "sha256": "e100a75796d0216c06e710628cdfeb14302b0b2b85b0c3dbc93fb7670133de36"
+    }
+  ],
+  "builds": {
+    "before": {
+      "path": "/private/tmp/plein-ui-audit-20261020/dist-context-restored/index.html",
+      "sha256": "f7407ac3e6d1af6d2d671a1a3cde13e32502b5256e166605a9b046a5cd77d313"
+    },
+    "candidate": {
+      "path": "/private/tmp/plein-ui-audit-20261020/dist-gpu-idle/index.html",
+      "sha256": "8208a250305f1bd89bedd5398c8395693116e876de51d754e98f31bede01497c"
+    }
+  },
+  "privateReproduction": [
+    {
+      "path": ".cache/functional-acceptance-2026-10-21/heap-warm.mts",
+      "sha256": "54a795d0375ec49af95af27f5cac99e95e47056c98660dfd97be7b43e9ee7751"
+    },
+    {
+      "path": ".cache/functional-acceptance-2026-10-21/heap-idle-control-before.mts",
+      "sha256": "4834e94b6f6e504c3403ac7e14e1481f4fa9258dff1eaa7403a5604c9b088099"
+    },
+    {
+      "path": ".cache/functional-acceptance-2026-10-21/heap-idle-control.mts",
+      "sha256": "bb137a9115feff4040fde2b96e47630966dea528ba30f1b60013934ea768fbfa"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/analyze-heap.py",
+      "sha256": "702a3c061e581e75223d4231aaa19a1cc9557e720e99e6d4c35cf63c389fa174"
+    }
+  ],
+  "boundaries": [
+    "native buffer API counts are not driver VRAM measurements",
+    "quick control is not a second ten-minute session",
+    "original 16.3 MB increase is not wholly attributed",
+    "no new full-suite or production-ready claim"
+  ]
+}

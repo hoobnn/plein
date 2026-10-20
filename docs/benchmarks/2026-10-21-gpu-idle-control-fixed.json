@@ -1,0 +1,1306 @@
+{
+  "status": "passed",
+  "cycles": [
+    {
+      "cycle": 1,
+      "phase": 0,
+      "elapsedMs": 2303,
+      "stats": {
+        "elements": 1060,
+        "visible": 1060,
+        "fps": 59.88023952095874,
+        "residentBodies": 1060,
+        "visibleBodies": 1060,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 1000,
+          "ready": 1000,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 1000,
+          "pinnedTextures": 50,
+          "idleTextures": 0,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 50,
+          "estimatedTextureBytes": 57729280,
+          "pinnedEstimatedBytes": 57729280,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 2800,
+          "loadsStarted": 54,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 1841,
+        "renderedPreviewRevision": 1841
+      },
+      "heap": {
+        "usedSize": 99096208,
+        "totalSize": 172113920,
+        "embedderHeapUsedSize": 28791328,
+        "backingStorageSize": 35067672
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14854,
+        "jsEventListeners": 4782
+      }
+    },
+    {
+      "cycle": 2,
+      "phase": 1,
+      "elapsedMs": 5870,
+      "stats": {
+        "elements": 1060,
+        "visible": 0,
+        "fps": 60.24096385542037,
+        "residentBodies": 0,
+        "visibleBodies": 0,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 0,
+          "ready": 0,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 0,
+          "pinnedTextures": 0,
+          "idleTextures": 62,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 0,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 2906,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 1959,
+        "renderedPreviewRevision": 1959
+      },
+      "heap": {
+        "usedSize": 103643740,
+        "totalSize": 174587904,
+        "embedderHeapUsedSize": 35225664,
+        "backingStorageSize": 32750118
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14920,
+        "jsEventListeners": 4975
+      }
+    },
+    {
+      "cycle": 3,
+      "phase": 2,
+      "elapsedMs": 6560,
+      "stats": {
+        "elements": 1060,
+        "visible": 49,
+        "fps": 59.88023952095874,
+        "residentBodies": 266,
+        "visibleBodies": 49,
+        "offscreenBodies": 217,
+        "previews": {
+          "total": 49,
+          "ready": 49,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 266,
+          "pinnedTextures": 61,
+          "idleTextures": 1,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 94429440,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 3221,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 2274,
+        "renderedPreviewRevision": 2274
+      },
+      "heap": {
+        "usedSize": 125753168,
+        "totalSize": 176963584,
+        "embedderHeapUsedSize": 38860504,
+        "backingStorageSize": 32814571
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14985,
+        "jsEventListeners": 5199
+      }
+    },
+    {
+      "phase": "gc-sample",
+      "cycle": 4,
+      "heap": {
+        "usedSize": 55790956,
+        "totalSize": 60194816,
+        "embedderHeapUsedSize": 27181792,
+        "backingStorageSize": 26266146
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14753,
+        "jsEventListeners": 4460
+      }
+    },
+    {
+      "cycle": 4,
+      "phase": 3,
+      "elapsedMs": 8400,
+      "stats": {
+        "elements": 1060,
+        "visible": 1060,
+        "fps": 29.94011976047937,
+        "residentBodies": 1060,
+        "visibleBodies": 1060,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 1000,
+          "ready": 1000,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 1000,
+          "pinnedTextures": 62,
+          "idleTextures": 0,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 95478016,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 3955,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 3008,
+        "renderedPreviewRevision": 3008
+      },
+      "heap": {
+        "usedSize": 55872244,
+        "totalSize": 60194816,
+        "embedderHeapUsedSize": 27163896,
+        "backingStorageSize": 26266146
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14753,
+        "jsEventListeners": 4460
+      }
+    },
+    {
+      "cycle": 5,
+      "phase": 0,
+      "elapsedMs": 9912,
+      "stats": {
+        "elements": 1060,
+        "visible": 1060,
+        "fps": 60.60606060606061,
+        "residentBodies": 1060,
+        "visibleBodies": 1060,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 1000,
+          "ready": 1000,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 1000,
+          "pinnedTextures": 62,
+          "idleTextures": 0,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 95478016,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 5747,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 3800,
+        "renderedPreviewRevision": 3800
+      },
+      "heap": {
+        "usedSize": 112050820,
+        "totalSize": 158760960,
+        "embedderHeapUsedSize": 31417760,
+        "backingStorageSize": 33921837
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14856,
+        "jsEventListeners": 4875
+      }
+    },
+    {
+      "cycle": 6,
+      "phase": 1,
+      "elapsedMs": 13471,
+      "stats": {
+        "elements": 1060,
+        "visible": 0,
+        "fps": 59.880239520962,
+        "residentBodies": 0,
+        "visibleBodies": 0,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 0,
+          "ready": 0,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 0,
+          "pinnedTextures": 0,
+          "idleTextures": 62,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 0,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 5844,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 3897,
+        "renderedPreviewRevision": 3897
+      },
+      "heap": {
+        "usedSize": 114537928,
+        "totalSize": 164659200,
+        "embedderHeapUsedSize": 38404896,
+        "backingStorageSize": 33989156
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14922,
+        "jsEventListeners": 5068
+      }
+    },
+    {
+      "cycle": 7,
+      "phase": 2,
+      "elapsedMs": 14142,
+      "stats": {
+        "elements": 1060,
+        "visible": 49,
+        "fps": 60.24096385542697,
+        "residentBodies": 266,
+        "visibleBodies": 49,
+        "offscreenBodies": 217,
+        "previews": {
+          "total": 49,
+          "ready": 49,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 266,
+          "pinnedTextures": 61,
+          "idleTextures": 1,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 94429440,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 6159,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 4212,
+        "renderedPreviewRevision": 4212
+      },
+      "heap": {
+        "usedSize": 128839324,
+        "totalSize": 170967040,
+        "embedderHeapUsedSize": 42279320,
+        "backingStorageSize": 34053313
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14988,
+        "jsEventListeners": 5253
+      }
+    },
+    {
+      "cycle": 8,
+      "phase": 3,
+      "elapsedMs": 14912,
+      "stats": {
+        "elements": 1060,
+        "visible": 1060,
+        "fps": 60.60606060606061,
+        "residentBodies": 1060,
+        "visibleBodies": 1060,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 1000,
+          "ready": 1000,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 1000,
+          "pinnedTextures": 62,
+          "idleTextures": 0,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 95478016,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 6893,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 4946,
+        "renderedPreviewRevision": 4946
+      },
+      "heap": {
+        "usedSize": 131457452,
+        "totalSize": 191758336,
+        "embedderHeapUsedSize": 46078568,
+        "backingStorageSize": 34182718
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 15053,
+        "jsEventListeners": 5446
+      }
+    },
+    {
+      "cycle": 9,
+      "phase": 0,
+      "elapsedMs": 16328,
+      "stats": {
+        "elements": 1060,
+        "visible": 1060,
+        "fps": 59.88023952095548,
+        "residentBodies": 1060,
+        "visibleBodies": 1060,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 1000,
+          "ready": 1000,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 1000,
+          "pinnedTextures": 62,
+          "idleTextures": 0,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 95478016,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 8685,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 5738,
+        "renderedPreviewRevision": 5738
+      },
+      "heap": {
+        "usedSize": 203445768,
+        "totalSize": 259686400,
+        "embedderHeapUsedSize": 53857856,
+        "backingStorageSize": 40940438
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 15222,
+        "jsEventListeners": 6054
+      }
+    },
+    {
+      "cycle": 10,
+      "phase": 1,
+      "elapsedMs": 19955,
+      "stats": {
+        "elements": 1060,
+        "visible": 0,
+        "fps": 59.88023952095548,
+        "residentBodies": 0,
+        "visibleBodies": 0,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 0,
+          "ready": 0,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 0,
+          "pinnedTextures": 0,
+          "idleTextures": 62,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 0,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 8782,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 5835,
+        "renderedPreviewRevision": 5835
+      },
+      "heap": {
+        "usedSize": 203661568,
+        "totalSize": 264486912,
+        "embedderHeapUsedSize": 60902136,
+        "backingStorageSize": 41006479
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 15288,
+        "jsEventListeners": 6247
+      }
+    },
+    {
+      "cycle": 11,
+      "phase": 2,
+      "elapsedMs": 20623,
+      "stats": {
+        "elements": 1060,
+        "visible": 49,
+        "fps": 60.24096385541377,
+        "residentBodies": 266,
+        "visibleBodies": 49,
+        "offscreenBodies": 217,
+        "previews": {
+          "total": 49,
+          "ready": 49,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 266,
+          "pinnedTextures": 61,
+          "idleTextures": 1,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 94429440,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 9097,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 6150,
+        "renderedPreviewRevision": 6150
+      },
+      "heap": {
+        "usedSize": 222486284,
+        "totalSize": 271400960,
+        "embedderHeapUsedSize": 64316688,
+        "backingStorageSize": 41071470
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 15354,
+        "jsEventListeners": 6432
+      }
+    },
+    {
+      "phase": "gc-sample",
+      "cycle": 12,
+      "heap": {
+        "usedSize": 56990440,
+        "totalSize": 60473344,
+        "embedderHeapUsedSize": 27297840,
+        "backingStorageSize": 26940870
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14753,
+        "jsEventListeners": 4460
+      }
+    },
+    {
+      "cycle": 12,
+      "phase": 3,
+      "elapsedMs": 22465,
+      "stats": {
+        "elements": 1060,
+        "visible": 1060,
+        "fps": 20,
+        "residentBodies": 1060,
+        "visibleBodies": 1060,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 1000,
+          "ready": 1000,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 1000,
+          "pinnedTextures": 62,
+          "idleTextures": 0,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 95478016,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 9831,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 6884,
+        "renderedPreviewRevision": 6884
+      },
+      "heap": {
+        "usedSize": 57070424,
+        "totalSize": 60473344,
+        "embedderHeapUsedSize": 27279984,
+        "backingStorageSize": 26940870
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14753,
+        "jsEventListeners": 4460
+      }
+    },
+    {
+      "cycle": 13,
+      "phase": 0,
+      "elapsedMs": 23963,
+      "stats": {
+        "elements": 1060,
+        "visible": 1060,
+        "fps": 60.24096385542697,
+        "residentBodies": 1060,
+        "visibleBodies": 1060,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 1000,
+          "ready": 1000,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 1000,
+          "pinnedTextures": 62,
+          "idleTextures": 0,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 95478016,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 11623,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 7676,
+        "renderedPreviewRevision": 7676
+      },
+      "heap": {
+        "usedSize": 112483076,
+        "totalSize": 160350208,
+        "embedderHeapUsedSize": 31976504,
+        "backingStorageSize": 34596537
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14856,
+        "jsEventListeners": 4875
+      }
+    },
+    {
+      "cycle": 14,
+      "phase": 1,
+      "elapsedMs": 27522,
+      "stats": {
+        "elements": 1060,
+        "visible": 0,
+        "fps": 59.88023952095548,
+        "residentBodies": 0,
+        "visibleBodies": 0,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 0,
+          "ready": 0,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 0,
+          "pinnedTextures": 0,
+          "idleTextures": 62,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 0,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 11720,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 7773,
+        "renderedPreviewRevision": 7773
+      },
+      "heap": {
+        "usedSize": 111700744,
+        "totalSize": 165429248,
+        "embedderHeapUsedSize": 38858640,
+        "backingStorageSize": 34663619
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14922,
+        "jsEventListeners": 5068
+      }
+    },
+    {
+      "cycle": 15,
+      "phase": 2,
+      "elapsedMs": 28198,
+      "stats": {
+        "elements": 1060,
+        "visible": 49,
+        "fps": 59.88023952095548,
+        "residentBodies": 266,
+        "visibleBodies": 49,
+        "offscreenBodies": 217,
+        "previews": {
+          "total": 49,
+          "ready": 49,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 266,
+          "pinnedTextures": 61,
+          "idleTextures": 1,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 94429440,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 12035,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 8088,
+        "renderedPreviewRevision": 8088
+      },
+      "heap": {
+        "usedSize": 124142808,
+        "totalSize": 172310528,
+        "embedderHeapUsedSize": 42440672,
+        "backingStorageSize": 34727768
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14988,
+        "jsEventListeners": 5253
+      }
+    },
+    {
+      "cycle": 16,
+      "phase": 3,
+      "elapsedMs": 29012,
+      "stats": {
+        "elements": 1060,
+        "visible": 1060,
+        "fps": 60.24096385542697,
+        "residentBodies": 1060,
+        "visibleBodies": 1060,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 1000,
+          "ready": 1000,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 1000,
+          "pinnedTextures": 62,
+          "idleTextures": 0,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 95478016,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 12769,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 8822,
+        "renderedPreviewRevision": 8822
+      },
+      "heap": {
+        "usedSize": 131966168,
+        "totalSize": 193413120,
+        "embedderHeapUsedSize": 45811184,
+        "backingStorageSize": 34856678
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 15054,
+        "jsEventListeners": 5446
+      }
+    },
+    {
+      "cycle": 17,
+      "phase": 0,
+      "elapsedMs": 30496,
+      "stats": {
+        "elements": 1060,
+        "visible": 1060,
+        "fps": 59.88023952095548,
+        "residentBodies": 1060,
+        "visibleBodies": 1060,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 1000,
+          "ready": 1000,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 1000,
+          "pinnedTextures": 62,
+          "idleTextures": 0,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 95478016,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 14561,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 9614,
+        "renderedPreviewRevision": 9614
+      },
+      "heap": {
+        "usedSize": 207961432,
+        "totalSize": 261341184,
+        "embedderHeapUsedSize": 54609072,
+        "backingStorageSize": 41615659
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 15222,
+        "jsEventListeners": 6062
+      }
+    },
+    {
+      "cycle": 18,
+      "phase": 1,
+      "elapsedMs": 34084,
+      "stats": {
+        "elements": 1060,
+        "visible": 0,
+        "fps": 60.24096385542697,
+        "residentBodies": 0,
+        "visibleBodies": 0,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 0,
+          "ready": 0,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 0,
+          "pinnedTextures": 0,
+          "idleTextures": 62,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 0,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 14658,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 9711,
+        "renderedPreviewRevision": 9711
+      },
+      "heap": {
+        "usedSize": 207866988,
+        "totalSize": 265633792,
+        "embedderHeapUsedSize": 61567088,
+        "backingStorageSize": 41682545
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 15288,
+        "jsEventListeners": 6263
+      }
+    },
+    {
+      "cycle": 19,
+      "phase": 2,
+      "elapsedMs": 34754,
+      "stats": {
+        "elements": 1060,
+        "visible": 49,
+        "fps": 60.24096385542697,
+        "residentBodies": 266,
+        "visibleBodies": 49,
+        "offscreenBodies": 217,
+        "previews": {
+          "total": 49,
+          "ready": 49,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 266,
+          "pinnedTextures": 61,
+          "idleTextures": 1,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 94429440,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 14973,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 10026,
+        "renderedPreviewRevision": 10026
+      },
+      "heap": {
+        "usedSize": 224419384,
+        "totalSize": 273022976,
+        "embedderHeapUsedSize": 65019392,
+        "backingStorageSize": 41746694
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 15353,
+        "jsEventListeners": 6448
+      }
+    },
+    {
+      "phase": "gc-sample",
+      "cycle": 20,
+      "heap": {
+        "usedSize": 57499380,
+        "totalSize": 60915712,
+        "embedderHeapUsedSize": 27307728,
+        "backingStorageSize": 27620262
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14753,
+        "jsEventListeners": 4460
+      }
+    },
+    {
+      "cycle": 20,
+      "phase": 3,
+      "elapsedMs": 36613,
+      "stats": {
+        "elements": 1060,
+        "visible": 1060,
+        "fps": 20,
+        "residentBodies": 1060,
+        "visibleBodies": 1060,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 1000,
+          "ready": 1000,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 1000,
+          "pinnedTextures": 62,
+          "idleTextures": 0,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 62,
+          "estimatedTextureBytes": 95478016,
+          "pinnedEstimatedBytes": 95478016,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 15707,
+          "loadsStarted": 66,
+          "evictions": 4,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 10760,
+        "renderedPreviewRevision": 10760
+      },
+      "heap": {
+        "usedSize": 57579364,
+        "totalSize": 60915712,
+        "embedderHeapUsedSize": 27388568,
+        "backingStorageSize": 27620262
+      },
+      "dom": {
+        "documents": 1,
+        "nodes": 14753,
+        "jsEventListeners": 4460
+      }
+    },
+    {
+      "phase": "before-idle",
+      "gpu": {
+        "now": 37397.80000001192,
+        "ready": false,
+        "maxUnusedTime": 60000,
+        "frequency": 30000,
+        "collections": [
+          {
+            "name": "graphics",
+            "total": 2065,
+            "stale": 0
+          },
+          {
+            "name": "graphicsContext",
+            "total": 2065,
+            "stale": 0
+          },
+          {
+            "name": "glBuffer",
+            "total": 2124,
+            "stale": 0
+          },
+          {
+            "name": "glTexture",
+            "total": 68,
+            "stale": 0
+          },
+          {
+            "name": "glGeometry",
+            "total": 1062,
+            "stale": 0
+          },
+          {
+            "name": "tilingSprite",
+            "total": 1,
+            "stale": 0
+          },
+          {
+            "name": "canvasText",
+            "total": 0,
+            "stale": 0
+          }
+        ]
+      },
+      "heap": {
+        "usedSize": 58661424,
+        "totalSize": 59867136,
+        "embedderHeapUsedSize": 27243040,
+        "backingStorageSize": 27620262
+      }
+    },
+    {
+      "phase": "after-idle",
+      "gpu": {
+        "now": 132463.90000000596,
+        "ready": false,
+        "maxUnusedTime": 60000,
+        "frequency": 30000,
+        "collections": [
+          {
+            "name": "graphics",
+            "total": 2065,
+            "stale": 0
+          },
+          {
+            "name": "graphicsContext",
+            "total": 2065,
+            "stale": 0
+          },
+          {
+            "name": "glBuffer",
+            "total": 2124,
+            "stale": 0
+          },
+          {
+            "name": "glTexture",
+            "total": 68,
+            "stale": 0
+          },
+          {
+            "name": "glGeometry",
+            "total": 1062,
+            "stale": 0
+          },
+          {
+            "name": "tilingSprite",
+            "total": 1,
+            "stale": 0
+          },
+          {
+            "name": "canvasText",
+            "total": 0,
+            "stale": 0
+          }
+        ]
+      },
+      "heap": {
+        "usedSize": 58641736,
+        "totalSize": 59867136,
+        "embedderHeapUsedSize": 27327296,
+        "backingStorageSize": 27620262
+      }
+    },
+    {
+      "phase": "after-real-pan",
+      "gpu": {
+        "now": 132560.90000000596,
+        "ready": false,
+        "maxUnusedTime": 60000,
+        "frequency": 30000,
+        "collections": [
+          {
+            "name": "graphics",
+            "total": 2065,
+            "stale": 0
+          },
+          {
+            "name": "graphicsContext",
+            "total": 2065,
+            "stale": 0
+          },
+          {
+            "name": "glBuffer",
+            "total": 2124,
+            "stale": 0
+          },
+          {
+            "name": "glTexture",
+            "total": 68,
+            "stale": 0
+          },
+          {
+            "name": "glGeometry",
+            "total": 1062,
+            "stale": 0
+          },
+          {
+            "name": "tilingSprite",
+            "total": 1,
+            "stale": 0
+          },
+          {
+            "name": "canvasText",
+            "total": 0,
+            "stale": 0
+          }
+        ]
+      },
+      "heap": {
+        "usedSize": 57795412,
+        "totalSize": 60129280,
+        "embedderHeapUsedSize": 27220032,
+        "backingStorageSize": 27620262
+      }
+    },
+    {
+      "phase": "final-reload",
+      "elapsedMs": 131805,
+      "documentHash": "b876fe6828433247aee1ff20932aae814bc19cb5944b2ef32d7fc615e1f77a9d",
+      "buildFingerprint": "8208a250305f1bd89bedd5398c8395693116e876de51d754e98f31bede01497c",
+      "baselineHeap": {
+        "usedSize": 48147132,
+        "totalSize": 51462144,
+        "embedderHeapUsedSize": 16636688,
+        "backingStorageSize": 17756587
+      },
+      "baselineDom": {
+        "documents": 1,
+        "nodes": 14740,
+        "jsEventListeners": 4423
+      },
+      "finalHeap": {
+        "usedSize": 57482820,
+        "totalSize": 58818560,
+        "embedderHeapUsedSize": 27387224,
+        "backingStorageSize": 27620273
+      },
+      "finalDom": {
+        "documents": 1,
+        "nodes": 14753,
+        "jsEventListeners": 4460
+      },
+      "stats": {
+        "elements": 1060,
+        "visible": 1060,
+        "fps": 60.240963855421604,
+        "residentBodies": 1060,
+        "visibleBodies": 1060,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 1000,
+          "ready": 1000,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 1000,
+          "pinnedTextures": 34,
+          "idleTextures": 0,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 34,
+          "estimatedTextureBytes": 7397632,
+          "pinnedEstimatedBytes": 7397632,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 966,
+          "loadsStarted": 34,
+          "evictions": 0,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 1000,
+        "renderedPreviewRevision": 1000
+      }
+    }
+  ],
+  "runtimeErrors": [],
+  "contextWarnings": [],
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)",
+  "startedAt": "2026-10-20T19:43:37.633Z",
+  "finishedAt": "2026-10-20T19:45:53.251Z",
+  "failure": "",
+  "aliases": {
+    "engine": "gd",
+    "app": "e",
+    "renderer": "nc",
+    "scene": "ad",
+    "views": "dd",
+    "doc": "hc",
+    "ydoc": "e",
+    "world": "e",
+    "camera": "Ft"
+  }
+}
