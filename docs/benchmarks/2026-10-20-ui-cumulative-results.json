@@ -1,0 +1,363 @@
+{
+  "formatVersion": 1,
+  "productSourceCommit": "8b41279",
+  "testSourceCommitBeforeFix": "a609951",
+  "classification": "All original 1603 UI cases now have cumulative execution evidence: 1602 passed and one requires an unavailable real DOCX reference. This spans product builds; final complete execution on current source is still required.",
+  "scope": "Isolated local service and actual browser input. Mock providers; no paid-provider or native-input acceptance.",
+  "coverage": {
+    "universe": 1603,
+    "passedDistinct": 1602,
+    "conditionalSkipped": 1,
+    "remaining": 0,
+    "productionReports": [
+      "full-production-resume.json",
+      "checkpoints-production.json",
+      "checkpoints-production-final.json",
+      "full-after-checkpoints.json",
+      "collaboration-production.json",
+      "full-after-collaboration.json",
+      "library-entry-production.json",
+      "full-after-library.json",
+      "profile-generation-production.json",
+      "full-after-profile.json",
+      "maintenance-production.json",
+      "full-after-maintenance.json",
+      "markdown-lifecycle-production.json",
+      "mcp-production.json",
+      "full-after-mcp.json",
+      "settings-entry-production.json",
+      "plugin-stale-before.json",
+      "catalog-fix-production.json",
+      "full-after-catalog-fix.json",
+      "submit-wait-production.json",
+      "full-after-submit-wait.json",
+      "voice-picker-production.json",
+      "full-after-voice.json"
+    ]
+  },
+  "remainingTestListSha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+  "runs": {
+    "finalRemaining": {
+      "sha256": "47ed1526e590b5ac9fc4d9b02b2cdeb82ef6c792b38749f4b2f84e5596e0416c",
+      "stats": {
+        "startTime": "2026-10-20T14:27:53.895Z",
+        "duration": 41177.425,
+        "expected": 16,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "files": ["welcome-lifecycle.spec.ts", "welcome.spec.ts", "wheel-units.spec.ts"],
+      "distinctTests": 16,
+      "failures": []
+    }
+  },
+  "coverageScope": "All original cases have cumulative evidence across two product builds. This is not a full-suite pass on current source.",
+  "caseLedger": {
+    "file": "ui-cumulative-case-ledger.json",
+    "sha256": "8cd10d66b6b8b72c9d24d49138a6141741d910d1d53633f39198aa2a4bfcae69",
+    "cases": 1603
+  },
+  "proofs": [
+    {
+      "file": "full-production-resume.json",
+      "sha256": "a7387c380ddb12fe469862159199458f89650ed1b2e47b6eac73c8a1a36b3fc8",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T12:15:54.344Z",
+        "duration": 880333.7000000001,
+        "expected": 275,
+        "skipped": 1327,
+        "unexpected": 1,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "checkpoints-production.json",
+      "sha256": "f868c54febc403826b96402d0aad709fab3c5a5439759e5b64bae89a4f413c03",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T12:31:09.058Z",
+        "duration": 149716.391,
+        "expected": 35,
+        "skipped": 0,
+        "unexpected": 1,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "checkpoints-production-final.json",
+      "sha256": "303817e2d314ae66a0e6ea828dc1c51e26aa082e210607d6f7e99d2c62e25725",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T12:33:56.750Z",
+        "duration": 27918.210000000003,
+        "expected": 7,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "full-after-checkpoints.json",
+      "sha256": "5b07abd0840f51ae1583c9c60dd6153787badbe25d84c9c23316052924e766e2",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T12:38:41.723Z",
+        "duration": 73585.396,
+        "expected": 14,
+        "skipped": 1313,
+        "unexpected": 1,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "collaboration-production.json",
+      "sha256": "026d0fe9ae56fed1b983bde733005c3c87a99b214f100e3da37927da7753a16b",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T12:40:32.525Z",
+        "duration": 43233.274,
+        "expected": 12,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "full-after-collaboration.json",
+      "sha256": "ca4502fe12d93030674630c35a423d2a729b388b280dd159ad82e287527a7269",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T12:43:34.462Z",
+        "duration": 1001143.404,
+        "expected": 343,
+        "skipped": 970,
+        "unexpected": 1,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "library-entry-production.json",
+      "sha256": "f7f7724d499ce790d12898bd027296440472027283043087d8532707e73bb71e",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T13:01:03.298Z",
+        "duration": 167067.887,
+        "expected": 47,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "full-after-library.json",
+      "sha256": "bb1c3fdb07e187ac7cd1ce2e5f51ea444154d6f64cbfd7cb33c144895fe49931",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T13:08:05.759Z",
+        "duration": 130772.58899999999,
+        "expected": 23,
+        "skipped": 886,
+        "unexpected": 1,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "profile-generation-production.json",
+      "sha256": "a2c975da917bf73029be51a89a181477b2df10bbcea70aeeded049473dfa7473",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T13:10:54.870Z",
+        "duration": 54369.79,
+        "expected": 8,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "full-after-profile.json",
+      "sha256": "98b6d34c96c5889df74622ecb8e633df74c4eb889952cffe171724ad10ab23cd",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T13:14:15.701Z",
+        "duration": 245152.757,
+        "expected": 54,
+        "skipped": 830,
+        "unexpected": 1,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "maintenance-production.json",
+      "sha256": "11ce03538d89a38747a9558fa3358238943b4e96ad63b16e1ee8fe621fcbb543",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T13:18:52.852Z",
+        "duration": 78637.643,
+        "expected": 16,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "full-after-maintenance.json",
+      "sha256": "4e91add7d3c9282521f26a3d263a12d80d4f1986da40c0ccc5867d2f7cbcdf40",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T13:22:49.964Z",
+        "duration": 71930.529,
+        "expected": 28,
+        "skipped": 787,
+        "unexpected": 1,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "markdown-lifecycle-production.json",
+      "sha256": "5fc2f0f70926dcb0b3665c353b846fe54e070207bc988786fe0751612c5b0079",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T13:25:24.382Z",
+        "duration": 54565.193,
+        "expected": 27,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "mcp-production.json",
+      "sha256": "5217ec0296cb5933d63b4d25485725f4a7aaa2781dac7661a1b5fca866ddbb38",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T13:30:10.516Z",
+        "duration": 14539.043,
+        "expected": 4,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "full-after-mcp.json",
+      "sha256": "29ae22713d2270428294c8c81cbf71155183b6f499ef7d20cfa963cd068e6700",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T13:32:03.749Z",
+        "duration": 498882.69299999997,
+        "expected": 161,
+        "skipped": 616,
+        "unexpected": 1,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "settings-entry-production.json",
+      "sha256": "71c573f2c900657ad67288771d224a3081c7392eae383b80c80c7219b1554832",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T13:41:04.344Z",
+        "duration": 116219.834,
+        "expected": 24,
+        "skipped": 0,
+        "unexpected": 1,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "plugin-stale-before.json",
+      "sha256": "f80e1149d3149785a88c1e2c777401b0e4d98a662d4ce93a3a479bc9aed6e80a",
+      "product": "17974fe",
+      "stats": {
+        "startTime": "2026-10-20T13:45:19.137Z",
+        "duration": 21713.612,
+        "expected": 0,
+        "skipped": 0,
+        "unexpected": 1,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "catalog-fix-production.json",
+      "sha256": "6904464c8109c92875266fe29c6cc4c91f95a5ebf1d7dc4dac3b6a41b724c3f6",
+      "product": "8b41279",
+      "stats": {
+        "startTime": "2026-10-20T13:47:25.312Z",
+        "duration": 114948.348,
+        "expected": 30,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "full-after-catalog-fix.json",
+      "sha256": "8047be93a5e84ac50ade9aa9c7f9fcf56f8168fa6c1485d71d223a90f51893c6",
+      "product": "8b41279",
+      "stats": {
+        "startTime": "2026-10-20T13:54:01.163Z",
+        "duration": 1584154.997,
+        "expected": 519,
+        "skipped": 72,
+        "unexpected": 1,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "submit-wait-production.json",
+      "sha256": "7f2058132ae13be99f9fba15890ec58454d3af14e8f49917436db5433dfa1c64",
+      "product": "8b41279",
+      "stats": {
+        "startTime": "2026-10-20T14:21:17.635Z",
+        "duration": 8368.439,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "full-after-submit-wait.json",
+      "sha256": "c16cc94e9a2d1108813467483ca5d2495f12e3e944c4a9e6b4b54de058c472c2",
+      "product": "8b41279",
+      "stats": {
+        "startTime": "2026-10-20T14:23:19.699Z",
+        "duration": 138257.103,
+        "expected": 50,
+        "skipped": 20,
+        "unexpected": 1,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "voice-picker-production.json",
+      "sha256": "8ea642cdef49df41b8da18afa3a7671339ca942d3faa2a1ab7ea6b1831564d7a",
+      "product": "8b41279",
+      "stats": {
+        "startTime": "2026-10-20T14:26:15.733Z",
+        "duration": 13810.499,
+        "expected": 5,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    },
+    {
+      "file": "full-after-voice.json",
+      "sha256": "47ed1526e590b5ac9fc4d9b02b2cdeb82ef6c792b38749f4b2f84e5596e0416c",
+      "product": "8b41279",
+      "stats": {
+        "startTime": "2026-10-20T14:27:53.895Z",
+        "duration": 41177.425,
+        "expected": 16,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      }
+    }
+  ],
+  "currentProductIndexSha256": "7794bf6ea3a3b82cc555ec35b32ac85d74b47ae2dd91ce8d0e129c101a8a4c1e"
+}
