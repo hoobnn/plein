@@ -3,7 +3,7 @@ import { create } from 'zustand'
 
 interface MediaLibraryStore {
   open: { projectId?: string } | null
-  target: Pick<MediaSource, 'canvasId' | 'nodeId'> | null
+  target: (Pick<MediaSource, 'canvasId' | 'nodeId'> & { assetId: string }) | null
   show(context?: { projectId?: string }): void
   close(): void
   locate(target: MediaLibraryStore['target']): void

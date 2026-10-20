@@ -1,3 +1,4 @@
+import type { CanvasElement } from '@plein/doc'
 import {
   MEDIA_SEARCH_MAX_LENGTH,
   type MediaLibraryItem,
@@ -34,6 +35,21 @@ function invalidCursor(reason: unknown) {
   return reason instanceof ApiError && reason.status === 400 && reason.code === 'invalid'
 }
 
+function referencesAsset(node: CanvasElement, assetId: string) {
+  const contains = (value: unknown): boolean =>
+    typeof value === 'string'
+      ? value === assetId
+      : Array.isArray(value)
+        ? value.some(contains)
+        : !!value && typeof value === 'object' && Object.values(value).some(contains)
+  return (
+    node.assetId === assetId ||
+    node.results?.some((result) => 'assetId' in result.value && result.value.assetId === assetId) ||
+    node.deliveries?.some((delivery) => delivery.assetId === assetId) ||
+    contains(node.params)
+  )
+}
+
 export function MediaLibraryPanel() {
   const open = useMediaLibrary((s) => s.open),
     target = useMediaLibrary((s) => s.target)
@@ -42,10 +58,14 @@ export function MediaLibraryPanel() {
     sync = useCanvas((s) => s.sync)
   useEffect(() => {
     if (!target?.canvasId || target.canvasId !== canvasId || !engine || sync !== 'connected') return
-    if (target.nodeId && engine.doc.has(target.nodeId)) {
-      engine.selection.set([target.nodeId])
-      engine.zoomToFit([target.nodeId])
-    } else useCanvas.getState().notify('来源节点已不在画布上')
+    const node = target.nodeId ? engine.doc.get(target.nodeId) : undefined
+    if (!node) useCanvas.getState().notify('来源节点已不在画布上')
+    else if (!referencesAsset(node, target.assetId))
+      useCanvas.getState().notify('来源节点已不再引用此素材，未执行定位')
+    else {
+      engine.selection.set([node.id])
+      engine.zoomToFit([node.id])
+    }
     useMediaLibrary.getState().locate(null)
   }, [target, engine, canvasId, sync])
   return (
@@ -493,7 +513,9 @@ function MediaDetail({
   }, [load])
   const locate = (source: MediaSource) => {
     if (!source.locatable || !source.canvasId || !source.nodeId) return
-    useMediaLibrary.getState().locate(source)
+    useMediaLibrary
+      .getState()
+      .locate({ canvasId: source.canvasId, nodeId: source.nodeId, assetId: asset.id })
     if (useCanvas.getState().canvasId !== source.canvasId)
       navigate({ name: 'canvas', id: source.canvasId })
   }
