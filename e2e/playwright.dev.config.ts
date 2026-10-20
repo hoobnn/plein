@@ -62,6 +62,7 @@ export default defineConfig({
     'library-profile-upload-batches.spec.ts',
     'library-profile-structure.spec.ts',
     'library-profile-keyboard.spec.ts',
+    'library-profile-custom-input.spec.ts',
     'library-profile-movement.spec.ts',
     'library-profile-generation.spec.ts',
     'library-profile-preview.spec.ts',
