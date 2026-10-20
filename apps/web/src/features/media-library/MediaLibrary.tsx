@@ -410,6 +410,25 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
   )
 }
 
+/** 同名来源只有目的地不同时才需要额外标识，避免正常来源列表堆满 ID。 */
+function sourceHint(source: MediaSource, sources: MediaSource[]) {
+  if (!source.locatable || !source.canvasId || !source.nodeId) return ''
+  const peers = sources.filter((item) => item.locatable && item.label === source.label)
+  if (!peers.some((item) => item.canvasId !== source.canvasId || item.nodeId !== source.nodeId))
+    return ''
+  const suffix = (id: string, key: 'canvasId' | 'nodeId') => {
+    let size = 6
+    while (
+      peers.some(
+        (item) => item[key] && item[key] !== id && item[key]!.slice(-size) === id.slice(-size),
+      )
+    )
+      size++
+    return id.slice(-size)
+  }
+  return `画布 ${suffix(source.canvasId, 'canvasId')} · 元素 ${suffix(source.nodeId, 'nodeId')}`
+}
+
 function MediaDetail({
   asset,
   onPreview,
@@ -565,42 +584,54 @@ function MediaDetail({
         )}
         {sources.length ? (
           <div role="list" aria-label="素材来源" className="flex flex-col gap-2">
-            {sources.map((source) => (
-              <div
-                role="listitem"
-                key={`${source.type}/${source.id}/${source.locator}`}
-                className="rounded-lg bg-surface-2 p-2.5 text-xs"
-              >
-                <span className="block break-words">
-                  {source.type === 'checkpoint'
-                    ? '检查点 · '
-                    : source.type === 'library'
-                      ? '资产库 · '
-                      : ''}
-                  {source.label}
-                </span>
-                <span className="mt-1 flex items-center gap-2 text-ink-subtle">
-                  {source.adopted && <span>采用中</span>}
-                  {source.locatable ? (
-                    <button
-                      type="button"
-                      className="ui-btn ui-btn-xs ui-btn-quiet"
-                      onClick={() => locate(source)}
+            {sources.map((source) => {
+              const hint = sourceHint(source, sources)
+              return (
+                <div
+                  role="listitem"
+                  aria-label={hint ? `${source.label} · ${hint}` : source.label}
+                  key={`${source.type}/${source.id}/${source.locator}`}
+                  className="rounded-lg bg-surface-2 p-2.5 text-xs"
+                >
+                  <span className="block break-words">
+                    {source.type === 'checkpoint'
+                      ? '检查点 · '
+                      : source.type === 'library'
+                        ? '资产库 · '
+                        : ''}
+                    {source.label}
+                  </span>
+                  {hint && (
+                    <span
+                      className="mt-1 block break-words text-ink-subtle"
+                      title={`画布 ${source.canvasId} · 元素 ${source.nodeId}`}
                     >
-                      定位来源
-                    </button>
-                  ) : (
-                    <span>
-                      {source.type === 'job'
-                        ? '来源节点已删除'
-                        : source.type === 'checkpoint'
-                          ? '保存在检查点'
-                          : '素材引用'}
+                      {hint}
                     </span>
                   )}
-                </span>
-              </div>
-            ))}
+                  <span className="mt-1 flex items-center gap-2 text-ink-subtle">
+                    {source.adopted && <span>采用中</span>}
+                    {source.locatable ? (
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn-xs ui-btn-quiet"
+                        onClick={() => locate(source)}
+                      >
+                        定位来源
+                      </button>
+                    ) : (
+                      <span>
+                        {source.type === 'job'
+                          ? '来源节点已删除'
+                          : source.type === 'checkpoint'
+                            ? '保存在检查点'
+                            : '素材引用'}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              )
+            })}
           </div>
         ) : !busy && !error ? (
           <p className="text-xs text-ink-subtle">未关联到现存项目，文件仍可复用。</p>
