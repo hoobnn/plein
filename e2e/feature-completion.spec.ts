@@ -52,7 +52,8 @@ test('资产库新版经过差异审阅同步，固定卡片不被后续保存�
     .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.description, id))
     .toBe('新版白色外套')
   await updates.getByRole('button', { name: '固定当前版本', exact: true }).click()
-  await expect(updates.getByText(/已固定/)).toBeVisible()
+  await expect(updates.getByRole('status')).toHaveText('已固定当前卡片版本')
+  await expect(updates.getByRole('button', { name: '解除固定', exact: true })).toBeVisible()
   expect(
     (
       await page.request.patch(`/api/library/${item.id}`, {

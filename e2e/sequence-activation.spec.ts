@@ -3,32 +3,52 @@ import { expect, type Page, test } from '@playwright/test'
 import { centerOf, newProject, zoomTo } from './canvas'
 
 async function fixture(page: Page, type: string) {
-  const data = execFileSync('ffmpeg', [
-    '-hide_banner',
-    '-loglevel',
-    'error',
-    '-f',
-    'lavfi',
-    '-i',
-    'color=c=blue:s=160x90:d=30:r=10',
-    '-f',
-    'lavfi',
-    '-i',
-    'sine=f=440:d=30',
-    '-c:v',
-    'libx264',
-    '-pix_fmt',
-    'yuv420p',
-    '-c:a',
-    'aac',
-    '-movflags',
-    'frag_keyframe+empty_moov',
-    '-f',
-    'mp4',
-    'pipe:1',
-  ])
+  const audio = type === 'plein/speech'
+  const args = audio
+    ? [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=f=440:d=30',
+        '-c:a',
+        'pcm_s16le',
+        '-f',
+        'wav',
+        'pipe:1',
+      ]
+    : [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=blue:s=160x90:d=30:r=10',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=f=440:d=30',
+        '-c:v',
+        'libx264',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-movflags',
+        'frag_keyframe+empty_moov',
+        '-f',
+        'mp4',
+        'pipe:1',
+      ]
+  const data = execFileSync('ffmpeg', args, { maxBuffer: 8 * 1024 * 1024 })
   const response = await page.request.post('/api/assets', {
-    headers: { 'content-type': 'video/mp4', 'x-file-name': 'activation-with-sound.mp4' },
+    headers: {
+      'content-type': audio ? 'audio/wav' : 'video/mp4',
+      'x-file-name': audio ? 'activation.wav' : 'activation-with-sound.mp4',
+    },
     data,
   })
   expect(response.status()).toBe(201)
@@ -154,10 +174,20 @@ for (const [type, hint, play] of [
 }
 
 test('普通视频与音频节点仍双击播放，退出释放媒体', async ({ page }) => {
-  await newProject(page)
-  const { id, assetId } = await fixture(page, 'plein/video')
   for (const kind of ['video', 'audio']) {
+    await newProject(page)
+    const { id, assetId } = await fixture(page, kind === 'audio' ? 'plein/speech' : 'plein/video')
     await result(page, id, assetId, kind)
+    await page.waitForFunction(
+      ({ id, kind }) => {
+        const engine = window.__plein
+          .engine as unknown as import('../packages/canvas-core/src/engine').Engine
+        return engine.scene.get(id)?.results?.[0]?.value.type === kind
+      },
+      { id, kind },
+    )
+    if (kind === 'video')
+      await expect(page.locator('.plein-node').getByText('双击播放', { exact: true })).toBeVisible()
     const point = await centerOf(page, id)
     await page.mouse.dblclick(point.x, point.y)
     const player = page.locator('[data-player-el]')

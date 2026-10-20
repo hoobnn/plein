@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { gzipSync } from 'node:zlib'
+import { pathToFileURL } from 'node:url'
 import { expect, test, type Page } from '@playwright/test'
 import type { PreparedInput } from '../packages/protocol/src/runs'
 import { clickElement, confirmBatchChecklist, newProject, waitEngine, waitNode } from './canvas'
@@ -82,56 +83,62 @@ async function openStoryboard(page: Page, id: string) {
   return dialog
 }
 
-test('首页仅加载轻量闭包，进入画布后才加载编辑器并正常运行', async ({ page }) => {
-  type Chunk = { file: string; imports?: string[] }
-  const dist = new URL('../apps/web/dist-e2e/', import.meta.url)
-  const manifest = JSON.parse(readFileSync(new URL('.vite/manifest.json', dist), 'utf8')) as Record<
-    string,
-    Chunk
-  >
-  const home = new Set<string>()
-  const visit = (key: string) => {
-    if (home.has(key)) return
-    home.add(key)
-    for (const dependency of manifest[key]!.imports ?? []) visit(dependency)
-  }
-  visit('index.html')
-  visit('src/pages/Home.tsx')
-  const files = new Set([...home].map((key) => manifest[key]!.file))
-  const bodies = [...files].map((file) => readFileSync(new URL(file, dist)))
-  const compressedBytes = bodies.reduce((bytes, body) => bytes + gzipSync(body).length, 0)
-  expect(compressedBytes, '首页完整静态 JS 闭包的 gzip 预算').toBeLessThanOrEqual(300 * 1024)
-  expect(home.has('src/pages/Editor.tsx')).toBe(false)
-  expect(home.has('src/features/stage/StagePanel.tsx')).toBe(false)
-  expect([...home].some((key) => /node_modules\/(?:jassub|pixi\.js)\//.test(key))).toBe(false)
-  // Match implementation diagnostics, not CodeMirror theme packages or dynamic import names.
-  for (const marker of [
-    'CodeMirror plugin crashed',
-    'Invalid JSON representation for EditorState',
-    'A VideoSample was garbage collected without first being closed',
-    '[PixiJS] Vertex Array Objects are not supported on this device',
-  ])
-    expect(
-      bodies.some((body) => body.includes(marker)),
-      marker,
-    ).toBe(false)
+test(
+  '首页仅加载轻量闭包，进入画布后才加载编辑器并正常运行',
+  { tag: '@production' },
+  async ({ page }) => {
+    type Chunk = { file: string; imports?: string[] }
+    const dist = process.env.PLEIN_E2E_DIST
+      ? pathToFileURL(`${process.env.PLEIN_E2E_DIST}/`)
+      : new URL('../apps/web/dist-e2e/', import.meta.url)
+    const manifest = JSON.parse(
+      readFileSync(new URL('.vite/manifest.json', dist), 'utf8'),
+    ) as Record<string, Chunk>
+    const home = new Set<string>()
+    const visit = (key: string) => {
+      if (home.has(key)) return
+      home.add(key)
+      for (const dependency of manifest[key]!.imports ?? []) visit(dependency)
+    }
+    visit('index.html')
+    visit('src/pages/Home.tsx')
+    const files = new Set([...home].map((key) => manifest[key]!.file))
+    const bodies = [...files].map((file) => readFileSync(new URL(file, dist)))
+    const compressedBytes = bodies.reduce((bytes, body) => bytes + gzipSync(body).length, 0)
+    expect(compressedBytes, '首页完整静态 JS 闭包的 gzip 预算').toBeLessThanOrEqual(300 * 1024)
+    expect(home.has('src/pages/Editor.tsx')).toBe(false)
+    expect(home.has('src/features/stage/StagePanel.tsx')).toBe(false)
+    expect([...home].some((key) => /node_modules\/(?:jassub|pixi\.js)\//.test(key))).toBe(false)
+    // Match implementation diagnostics, not CodeMirror theme packages or dynamic import names.
+    for (const marker of [
+      'CodeMirror plugin crashed',
+      'Invalid JSON representation for EditorState',
+      'A VideoSample was garbage collected without first being closed',
+      '[PixiJS] Vertex Array Objects are not supported on this device',
+    ])
+      expect(
+        bodies.some((body) => body.includes(marker)),
+        marker,
+      ).toBe(false)
 
-  const requested = new Set<string>()
-  page.on('request', (request) => {
-    if (request.resourceType() === 'script') requested.add(new URL(request.url()).pathname.slice(1))
-  })
-  await page.goto('/')
-  await expect(page.getByRole('button', { name: '新建项目', exact: true })).toBeVisible()
-  await page.waitForLoadState('networkidle')
-  expect(requested.has(manifest['src/pages/Home.tsx']!.file)).toBe(true)
-  expect([...requested].filter((file) => !files.has(file))).toEqual([])
-  expect(await page.evaluate(() => !!window.__plein)).toBe(false)
-  await page.getByRole('button', { name: '新建项目', exact: true }).click()
-  await expect(page).toHaveURL(/#\/c\//)
-  await waitEngine(page)
-  expect(requested.has(manifest['src/pages/Editor.tsx']!.file)).toBe(true)
-  await expect(page.locator('canvas').first()).toBeVisible()
-})
+    const requested = new Set<string>()
+    page.on('request', (request) => {
+      if (request.resourceType() === 'script')
+        requested.add(new URL(request.url()).pathname.slice(1))
+    })
+    await page.goto('/')
+    await expect(page.getByRole('button', { name: '新建项目', exact: true })).toBeVisible()
+    await page.waitForLoadState('networkidle')
+    expect(requested.has(manifest['src/pages/Home.tsx']!.file)).toBe(true)
+    expect([...requested].filter((file) => !files.has(file))).toEqual([])
+    expect(await page.evaluate(() => !!window.__plein)).toBe(false)
+    await page.getByRole('button', { name: '新建项目', exact: true }).click()
+    await expect(page).toHaveURL(/#\/c\//)
+    await waitEngine(page)
+    expect(requested.has(manifest['src/pages/Editor.tsx']!.file)).toBe(true)
+    await expect(page.locator('canvas').first()).toBeVisible()
+  },
+)
 
 test('参考素材可真实预览、重排和替换；实际送入顺序跟随界面', async ({ page }) => {
   await newProject(page)
@@ -515,14 +522,21 @@ test('分镜批量默认沿用已有结果，选中只生成目标，全重生�
   expect(submissions).toBe(2)
   await expect.poll(counts).toEqual([2, 1])
   await dialog.getByRole('checkbox', { name: '选择镜头 1', exact: true }).uncheck()
-  await dialog.locator('summary').filter({ hasText: '全部重新生成' }).click()
-  await dialog.getByRole('button', { name: '分镜图', exact: true }).click()
+  await dialog.getByRole('button', { name: '全部重新生成', exact: true }).click()
+  await page
+    .getByRole('menu', { name: '全部重新生成', exact: true })
+    .getByRole('menuitem', { name: '分镜图', exact: true })
+    .click()
   await expect(checklist.getByLabel('清单汇总')).toContainText('生成 2 项')
   expect(submissions).toBe(2)
   await checklist.getByRole('button', { name: '取消', exact: true }).click()
   await expect(checklist).toBeHidden()
   expect(submissions).toBe(2)
-  await dialog.getByRole('button', { name: '分镜图', exact: true }).click()
+  await dialog.getByRole('button', { name: '全部重新生成', exact: true }).click()
+  await page
+    .getByRole('menu', { name: '全部重新生成', exact: true })
+    .getByRole('menuitem', { name: '分镜图', exact: true })
+    .click()
   await expect(checklist).toBeVisible()
   expect(submissions).toBe(2)
   await confirmBatchChecklist(page)

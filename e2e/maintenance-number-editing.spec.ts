@@ -28,7 +28,8 @@ for (const [key, label, bad] of fields) {
   test(`维护数值 ${key} 可清空修改，无效值不提交，失败草稿可重试`, async ({ page, request }) => {
     await page.setViewportSize({ width: 800, height: 560 })
     await newProject(page)
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await page.getByRole('button', { name: '画布工具', exact: true }).click()
+    await page.getByRole('menuitem', { name: '设置', exact: true }).click()
     const settings = page.getByRole('dialog', { name: '设置', exact: true })
     await settings.getByRole('button', { name: '数据', exact: true }).click()
     const field = settings.getByRole('spinbutton', { name: label, exact: true })
@@ -84,7 +85,8 @@ for (const [key, label, bad] of fields) {
       expect((await (await request.get('/api/maintenance/status')).json()).settings[key]).toBe(12)
       await settings.getByRole('button', { name: '关闭', exact: true }).click()
       await expect(settings).toHaveCount(0)
-      await page.getByRole('button', { name: '设置', exact: true }).click()
+      await page.getByRole('button', { name: '画布工具', exact: true }).click()
+      await page.getByRole('menuitem', { name: '设置', exact: true }).click()
       await settings.getByRole('button', { name: '数据', exact: true }).click()
       await expect(field).toHaveValue('12')
     }
