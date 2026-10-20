@@ -1,0 +1,194 @@
+{
+  "createdAt": "2026-10-20T17:57:26.866Z",
+  "sourceProduct": "bb4eef6",
+  "dataDir": "/Users/haobin/Code/personal/active/plein/.cache/functional-acceptance-2026-10-21/data-live-profile",
+  "project": {
+    "id": "cv_WqoiuB_DJwYs",
+    "projectId": "pj_EhdvZBDS3xZG",
+    "title": "真实角色档案待授权小样 1021",
+    "createdAt": 1792519046728,
+    "updatedAt": 1792519046728
+  },
+  "characters": {
+    "decoy": "el-21b61669-4a2f-42db-8815-9f69703f60f0",
+    "target": "el-b2b3db04-2446-44c8-93f9-6128e9825ebf"
+  },
+  "assetReferences": {
+    "selected": {
+      "id": "266b22b0523fa65eabe3c6e1ab6d91c37cffb180d7ad18abf794cf8577d954f1",
+      "source": "apps/web/public/plein-icon.png",
+      "bytes": 880415
+    },
+    "excluded": {
+      "id": "9fef1df00accf6fe111be5d5b63e0239e7b0c10be121eebdb9537c01831571da",
+      "sourceProject": "pj_g9FGWJOhSrZj",
+      "sourceCanvas": "cv_98gtH7elVOv6",
+      "reason": "decoy character and unselected period"
+    }
+  },
+  "nodes": {
+    "image": "el-969c1253-87bb-4249-8a05-450787983d24",
+    "llm": "el-e9725175-f287-44ce-8d04-cfad5f2cedcf",
+    "llmImage": "el-ee6dfb1f-5530-4a33-842e-90a01a4f0eb3"
+  },
+  "llmReferencePolicy": "@ role adds text description only; the image enters through an explicit image edge",
+  "prepared": [
+    {
+      "v": 1,
+      "nodeId": "el-969c1253-87bb-4249-8a05-450787983d24",
+      "nodeType": "plein/image",
+      "nodeVersion": 1,
+      "preparedAt": 1792519046855,
+      "status": "ready",
+      "capability": "image.generate",
+      "model": {
+        "ref": "volc/ark:doubao-seedream-5-0-pro-260628",
+        "provider": "volc/ark",
+        "title": "Seedream 5.0 Pro"
+      },
+      "referenceLimit": 10,
+      "prompt": "验收小满（青年·默认造型） 保持参考图中蓝色独角海豚的造型、白色独角、奶油色腹部和深色轮廓，在纯黄色背景中央展示胸像，挥动右侧鳍肢。不要出现水杯，不添加文字、角标或水印。\n\n设定：\n验收小满#2（青年·默认造型）：蓝色独角海豚吉祥物小满，奶油色腹部和白色独角\n青年时期：只参考蓝色小满图标\n服饰「默认造型」：保持参考图的配色与造型，不添加衣物",
+      "params": {
+        "model": "volc/ark:doubao-seedream-5-0-pro-260628",
+        "aspectRatio": "1:1",
+        "resolution": "1K",
+        "options": {
+          "watermark": false,
+          "output_format": "png"
+        },
+        "count": 1
+      },
+      "inputs": {
+        "references": [
+          {
+            "type": "image",
+            "assetId": "266b22b0523fa65eabe3c6e1ab6d91c37cffb180d7ad18abf794cf8577d954f1",
+            "source": "el-b2b3db04-2446-44c8-93f9-6128e9825ebf"
+          }
+        ]
+      },
+      "refs": [
+        {
+          "elementId": "el-b2b3db04-2446-44c8-93f9-6128e9825ebf",
+          "name": "验收小满#2（青年·默认造型）",
+          "kind": "character",
+          "required": true,
+          "available": ["266b22b0523fa65eabe3c6e1ab6d91c37cffb180d7ad18abf794cf8577d954f1"],
+          "sent": ["266b22b0523fa65eabe3c6e1ab6d91c37cffb180d7ad18abf794cf8577d954f1"]
+        }
+      ],
+      "notices": [],
+      "blocked": [],
+      "inputHash": "v2:ac761536f33cff6e2c1c05d031462c4a5eddd2ded557f9ad74e36866461ecde3"
+    },
+    {
+      "v": 1,
+      "nodeId": "el-e9725175-f287-44ce-8d04-cfad5f2cedcf",
+      "nodeType": "plein/llm",
+      "nodeVersion": 1,
+      "preparedAt": 1792519046856,
+      "status": "ready",
+      "capability": "text.chat",
+      "model": {
+        "ref": "minimax/api:MiniMax-M3",
+        "provider": "minimax/api",
+        "title": "MiniMax M3"
+      },
+      "prompt": "结合所连图片与 验收小满（青年·默认造型） 的设定 ，用一句不超过20个汉字的中文描述其主体颜色与外形，只返回正文。\n\n设定：\n验收小满#2（青年·默认造型）：蓝色独角海豚吉祥物小满，奶油色腹部和白色独角\n青年时期：只参考蓝色小满图标\n服饰「默认造型」：保持参考图的配色与造型，不添加衣物",
+      "params": {
+        "model": "minimax/api:MiniMax-M3",
+        "system": "只返回一句简短中文，不使用工具，不扩写。",
+        "temperature": 0
+      },
+      "inputs": {
+        "images": [
+          {
+            "type": "image",
+            "assetId": "266b22b0523fa65eabe3c6e1ab6d91c37cffb180d7ad18abf794cf8577d954f1",
+            "source": "el-ee6dfb1f-5530-4a33-842e-90a01a4f0eb3"
+          }
+        ]
+      },
+      "refs": [
+        {
+          "elementId": "el-b2b3db04-2446-44c8-93f9-6128e9825ebf",
+          "name": "验收小满#2（青年·默认造型）",
+          "kind": "character",
+          "required": false,
+          "available": ["266b22b0523fa65eabe3c6e1ab6d91c37cffb180d7ad18abf794cf8577d954f1"],
+          "sent": [],
+          "reason": "unsupported"
+        }
+      ],
+      "notices": [],
+      "blocked": [],
+      "inputHash": "v2:fa94ca8cf7c1517b2a2326168470f61f079ec8a5a9df76e5aa7e807eb37e3d36"
+    }
+  ],
+  "package": {
+    "path": "/Users/haobin/Code/personal/active/plein/.cache/functional-acceptance-2026-10-21/live-profile-proposal.plein",
+    "bytes": 1151535,
+    "sha256": "9251a671b8e6f17725672d86cdcfceda306be63edd9cb73605c0b9f7537a493e"
+  },
+  "proof": {
+    "credentialsRead": false,
+    "providerSubmitBlocked": true,
+    "providerCalls": [],
+    "outgoingFetches": [],
+    "jobs": 0,
+    "generationStarted": false
+  },
+  "proposedExecution": {
+    "imageCalls": 1,
+    "llmCalls": 1,
+    "videoCalls": 0,
+    "retryDelaysMs": [],
+    "stopOnAnyAnomaly": true,
+    "requiresFreshUserAuthorization": true,
+    "modelAccessAndBillingUnverified": true
+  },
+  "roundtrip": {
+    "imported": {
+      "projectId": "pj_EhdvZBDS3xZG",
+      "title": "真实角色档案待授权小样 1021",
+      "canvasId": "cv_WqoiuB_DJwYs"
+    },
+    "counts": {
+      "canvases": 1,
+      "checkpoints": 0,
+      "assets": 2,
+      "library": 0,
+      "jobs": 0,
+      "bytes": 1152415
+    },
+    "checked": [
+      {
+        "nodeId": "el-969c1253-87bb-4249-8a05-450787983d24",
+        "inputHash": "v2:ac761536f33cff6e2c1c05d031462c4a5eddd2ded557f9ad74e36866461ecde3",
+        "unchanged": true
+      },
+      {
+        "nodeId": "el-e9725175-f287-44ce-8d04-cfad5f2cedcf",
+        "inputHash": "v2:fa94ca8cf7c1517b2a2326168470f61f079ec8a5a9df76e5aa7e807eb37e3d36",
+        "unchanged": true
+      }
+    ],
+    "jobs": 0,
+    "providerCalls": 0,
+    "outgoingFetches": 0,
+    "credentialsRead": false,
+    "modelDependencies": [
+      {
+        "ref": "minimax/api:MiniMax-M3",
+        "status": "disabled"
+      },
+      {
+        "ref": "volc/ark:doubao-seedream-5-0-pro-260628",
+        "status": "disabled"
+      }
+    ],
+    "notices": [
+      "平台密钥、登录信息和智能体会话不在项目包里；导入后在设置里启用可用的平台，再按需重新选择模型和音色"
+    ]
+  }
+}
