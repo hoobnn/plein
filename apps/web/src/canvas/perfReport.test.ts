@@ -80,3 +80,37 @@ test('rejects failed diagnostic artifacts as baselines', () => {
   baseline.status = 'failed'
   expect(() => comparePerfReports(report(), baseline)).toThrow(/failed or incomplete/)
 })
+
+test('rejects software fallback mislabeled as hardware even when both reports match', () => {
+  for (const renderer of [
+    'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device), SwiftShader driver)',
+    'llvmpipe (LLVM 18.1.8, 256 bits)',
+    'Microsoft Basic Render Driver',
+    'unobserved',
+    'WebKit WebGL',
+  ]) {
+    const baseline = report()
+    const current = report()
+    for (const value of [baseline, current]) {
+      value.environment.renderer = renderer
+      value.environment.renderMode = 'hardware'
+    }
+    expect(() => comparePerfReports(current, baseline)).toThrow(/Hardware renderer/)
+  }
+})
+
+test('accepts observed GPU names while preserving software-mode comparisons', () => {
+  for (const renderer of [
+    'ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Max, Unspecified Version)',
+    'ANGLE (NVIDIA, NVIDIA GeForce RTX 4080, OpenGL 4.5)',
+    'Mesa Intel(R) UHD Graphics 620',
+  ]) {
+    const baseline = report()
+    const current = report()
+    for (const value of [baseline, current]) {
+      value.environment.renderer = renderer
+      value.environment.renderMode = 'hardware'
+    }
+    expect(comparePerfReports(current, baseline)).toEqual([])
+  }
+})

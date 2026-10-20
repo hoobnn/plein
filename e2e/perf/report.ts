@@ -32,6 +32,16 @@ export interface PerfRegression {
   current: number
 }
 
+/** Requested hardware mode must be backed by an identifiable GPU, not a fallback. */
+export function assertRendererMode(mode: string, renderer: string) {
+  if (mode !== 'hardware') return
+  if (
+    /swiftshader|llvmpipe|softpipe|lavapipe|software|basic render/i.test(renderer) ||
+    !/apple|nvidia|amd|radeon|intel|adreno|mali|powervr|vivante|qualcomm/i.test(renderer)
+  )
+    throw new Error(`Hardware renderer could not be verified: ${renderer}`)
+}
+
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
   if (value && typeof value === 'object') {
@@ -45,6 +55,8 @@ function canonical(value: unknown): string {
 
 /** Both the relative and absolute slowdown must exceed the gate. */
 export function comparePerfReports(current: PerfReport, baseline: PerfReport): PerfRegression[] {
+  for (const report of [current, baseline])
+    assertRendererMode(report.environment.renderMode, report.environment.renderer)
   if (
     current.status === 'failed' ||
     baseline.status === 'failed' ||

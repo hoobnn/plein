@@ -22,7 +22,7 @@ import {
   resetOpenProbe,
   watchAssetRequests,
 } from './probe'
-import { comparePerfReports, type PerfReport } from './report'
+import { assertRendererMode, comparePerfReports, type PerfReport } from './report'
 
 /** 被测的仓库根目录：服务端和前端构建都从这里取；对比改动前后时指向另一个检出 */
 const ROOT = process.env.PERF_ROOT ?? join(import.meta.dirname, '../..')
@@ -397,6 +397,7 @@ async function main() {
       const canvasId = await seedMediaCanvas(page, BASE, media)
       renderer = await observeRenderer(page)
       Object.assign(failureContext.environment as object, { renderer })
+      assertRendererMode(renderMode, renderer)
       await page.goto(`${BASE}/#/`)
       for (let i = 0; i < ROUNDS; i++) {
         // 冷开：全新的浏览器上下文（没有任何本地缓存）
@@ -534,6 +535,7 @@ async function main() {
         await engineReady(page)
         if (renderer === 'unobserved') renderer = await observeRenderer(page)
         Object.assign(failureContext.environment as object, { renderer })
+        assertRendererMode(renderMode, renderer)
         await page.evaluate(() => (window as unknown as PerfWindow).__plein!.engine.zoomTo(1))
         await page.waitForTimeout(500)
         rs.push(await measure(page, cdp, () => run(page)))
@@ -556,13 +558,15 @@ async function main() {
       'Frontend build changed during measurement; discard this run and repeat against a frozen build',
     )
 
+  assertRendererMode(renderMode, renderer)
+
   console.log(`\n元素数 ${N}，每项 ${ROUNDS} 轮取中位数`)
   for (const [k, v] of Object.entries(report)) {
     if (typeof v === 'number') console.log(`${k}: ${v}`)
     else
       console.log(
         `${k}: 帧 ${v.frames}，每帧 JS ${v.js.toFixed(2)} / 布局 ${v.layout.toFixed(2)} / 样式 ${v.style.toFixed(2)} ms，` +
-          `原生（软件光栅）${v.native.toFixed(1)} ms，长任务 ${v.long.toFixed(0)} ms，DOM 变动 ${v.mutations.toFixed(1)}/帧`,
+          `原生调用 ${v.native.toFixed(1)} ms，长任务 ${v.long.toFixed(0)} ms，DOM 变动 ${v.mutations.toFixed(1)}/帧`,
       )
   }
   const metrics: Record<string, number> = {}
