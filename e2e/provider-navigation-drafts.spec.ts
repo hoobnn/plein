@@ -1,3 +1,4 @@
+import { openCanvasSettings } from './settings-ui'
 import { expect, type Page, test } from '@playwright/test'
 import { newProject } from './canvas'
 
@@ -21,7 +22,7 @@ test.afterEach(async ({ request }) => {
   await request.put(modelUrl, { data: { capability: 'text.chat', model: 'plein/mock:agent' } })
 })
 async function openProviders(page: Page) {
-  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await openCanvasSettings(page)
   const settings = page.getByRole('dialog', { name: '设置', exact: true })
   await settings.getByRole('button', { name: /^模型平台/ }).click()
   return settings

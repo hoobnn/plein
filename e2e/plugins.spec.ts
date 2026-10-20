@@ -1,3 +1,4 @@
+import { openCanvasSettings } from './settings-ui'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
@@ -25,7 +26,7 @@ test('本机第三方插件：放进数据目录、看权限、启用后节点�
   ])
 
   await newProject(page)
-  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await openCanvasSettings(page)
   const settings = page.getByRole('dialog', { name: '设置' })
   await settings.getByRole('button', { name: /^插件/ }).click()
   await settings.getByRole('button', { name: '重新扫描' }).click()
@@ -54,7 +55,7 @@ test('本机第三方插件：放进数据目录、看权限、启用后节点�
   await shoot(page, 'node')
 
   // 停用：节点从目录里撤下，画布上已有的保留
-  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await openCanvasSettings(page)
   await settings.getByRole('button', { name: /^插件/ }).click()
   await row.getByRole('switch', { name: '启用 Acme 回声' }).click()
   await expect(row).toContainText('未启用')

@@ -1,3 +1,4 @@
+import { openCanvasSettings } from './settings-ui'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
@@ -24,7 +25,7 @@ for (const action of ['scan', 'enable', 'disable', 'reload'] as const) {
     if (initiallyEnabled)
       expect((await request.put(endpoint, { data: { enabled: true } })).ok()).toBe(true)
     await newProject(page)
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await openCanvasSettings(page)
     const settings = page.getByRole('dialog', { name: '设置', exact: true })
     await settings.getByRole('button', { name: /^插件/ }).click()
     const row = settings.locator('[data-plugin="acme/echo"]')
@@ -85,7 +86,7 @@ test('插件列表读取失败有反馈，重试恢复真实列表', async ({ pa
     else await route.continue()
   })
   await newProject(page)
-  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await openCanvasSettings(page)
   const settings = page.getByRole('dialog', { name: '设置', exact: true })
   await settings.getByRole('button', { name: /^插件/ }).click()
   await expect(settings.getByRole('alert')).toContainText('列表暂不可用')
@@ -102,7 +103,7 @@ test('插件列表读取失败有反馈，重试恢复真实列表', async ({ pa
 test('刷新读取失败保留现有插件列表，重试后清除过期提示', async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 560 })
   await newProject(page)
-  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await openCanvasSettings(page)
   const settings = page.getByRole('dialog', { name: '设置', exact: true })
   await settings.getByRole('button', { name: /^插件/ }).click()
   const row = settings.locator('[data-plugin="acme/echo"]')

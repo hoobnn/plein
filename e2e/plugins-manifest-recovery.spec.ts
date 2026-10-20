@@ -1,3 +1,4 @@
+import { openCanvasSettings } from './settings-ui'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -22,7 +23,7 @@ for (const recovery of ['reload', 'disable'] as const) {
     try {
       await page.setViewportSize({ width: 800, height: 560 })
       await newProject(page)
-      await page.getByRole('button', { name: '设置', exact: true }).click()
+      await openCanvasSettings(page)
       const settings = page.getByRole('dialog', { name: '设置', exact: true })
       await settings.getByRole('button', { name: /^插件/ }).click()
       const row = settings.locator('[data-plugin="acme/echo"]')

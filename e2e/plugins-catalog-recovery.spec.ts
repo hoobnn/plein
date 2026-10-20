@@ -1,3 +1,4 @@
+import { openCanvasSettings } from './settings-ui'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
@@ -22,7 +23,7 @@ for (const source of ['local', 'external'] as const) {
   test(`插件 ${source} 启用成功但目录读取失败时可单独重试`, async ({ page, request }) => {
     await page.setViewportSize({ width: 800, height: 560 })
     await newProject(page)
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await openCanvasSettings(page)
     const settings = page.getByRole('dialog', { name: '设置', exact: true })
     await settings.getByRole('button', { name: /^插件/ }).click()
     const row = settings.locator('[data-plugin="acme/echo"]')

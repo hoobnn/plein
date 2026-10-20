@@ -1,3 +1,4 @@
+import { openCanvasSettings } from './settings-ui'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -29,7 +30,7 @@ test('运行中反复崩溃更新设置状态，修复重载后原节点可继�
       .getByRole('textbox', { name: '提示词', exact: true })
       .fill('crash recovery')
     const canvas = /#\/c\/([^/?]+)/.exec(page.url())![1]
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await openCanvasSettings(page)
     const settings = page.getByRole('dialog', { name: '设置', exact: true })
     await settings.getByRole('button', { name: /^插件/ }).click()
     const row = settings.locator('[data-plugin="acme/echo"]')
