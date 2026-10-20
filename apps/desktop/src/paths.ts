@@ -2,12 +2,14 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app } from 'electron'
+import { desktopDevelopment, profileDataDir, readProfile } from './profile'
+import { packagedServerPaths } from './packaged-resources'
 
 /** 构建产物在 apps/desktop/dist/，仓库根目录在上三级 */
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 
 /** 开发模式：`electron . --dev`，服务端跑源码，页面来自 Vite */
-export const isDev = process.argv.includes('--dev') || process.env.PLEIN_DESKTOP_DEV === '1'
+export const isDev = desktopDevelopment(app.isPackaged, process.argv, process.env.PLEIN_DESKTOP_DEV)
 
 /**
  * 图标与网页资产一同交付，开发与安装包使用同一份。
@@ -43,16 +45,8 @@ function bundled(dir: string, name: string) {
 
 export function serverPaths(): ServerPaths {
   if (app.isPackaged) {
-    // 安装包布局在打包阶段（M4）确定：resources/server、resources/web、resources/ffmpeg
-    const res = process.resourcesPath
-    return {
-      entry: join(res, 'server', 'main.mjs'),
-      cwd: join(res, 'server'),
-      webDist: join(res, 'web'),
-      ffmpeg: bundled(join(res, 'ffmpeg'), 'ffmpeg'),
-      ffprobe: bundled(join(res, 'ffmpeg'), 'ffprobe'),
-      subtitleFont: existing(join(res, 'fonts', SUBTITLE_FONT)),
-    }
+    // 由 launchServer 的启动错误路径捕获并展示；模块初始化阶段不探测文件。
+    return packagedServerPaths(process.resourcesPath, process.platform)
   }
   const server = join(repoRoot, 'apps/server')
   const mediaDir = join(repoRoot, 'apps/desktop/stage/ffmpeg')
@@ -80,8 +74,12 @@ export function serverPaths(): ServerPaths {
 
 /** 开发模式下窗口加载 Vite 开发服务器，接口经 Vite 代理到固定端口的服务端 */
 export const DEV_WEB_URL = process.env.PLEIN_DESKTOP_WEB_URL ?? 'http://localhost:5173'
-export const DEV_SERVER_PORT = 8787
+export { DEV_SERVER_PORT } from './server-env'
 
 export function dataDir() {
-  return process.env.PLEIN_DATA_DIR ?? join(app.getPath('userData'), 'data')
+  return profileDataDir(
+    readProfile(app.isPackaged, app.getAppPath()),
+    app.getPath('userData'),
+    process.env.PLEIN_DATA_DIR,
+  )
 }

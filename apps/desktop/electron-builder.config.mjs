@@ -8,6 +8,10 @@
 // CI 发版时这里只出 ad-hoc 签名的 .app（--dir），由 hoobnn/ci-workflows 的复用工作流全部重签、公证和打包。
 import { cpSync, existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { parseProfile, profileIdentity } from './src/profile.ts'
+
+const profile = parseProfile(process.env.PLEIN_DESKTOP_PROFILE)
+const identity = profileIdentity(profile)
 
 const signed = Boolean(process.env.CSC_LINK || process.env.CSC_NAME)
 const notarize = signed && Boolean(process.env.APPLE_TEAM_ID && process.env.APPLE_ID)
@@ -20,12 +24,18 @@ if (!existsSync('stage/ffmpeg/ffmpeg'))
 
 /** @type {import('electron-builder').Configuration} */
 export default {
-  appId: 'com.ikuyu.plein',
-  productName: 'Plein',
+  appId: identity.appId,
+  productName: identity.productName,
   copyright: 'Copyright © 2026 hoobnn',
-  directories: { output: 'release', buildResources: 'resources' },
+  directories: { output: identity.output, buildResources: 'resources' },
   // 发布时由 CI 按标签传入（v0.1.0 → 0.1.0）
-  ...(process.env.PLEIN_VERSION ? { extraMetadata: { version: process.env.PLEIN_VERSION } } : {}),
+  extraMetadata: {
+    pleinDesktopProfile: profile,
+    ...(profile === 'acceptance'
+      ? { name: 'plein-acceptance', productName: identity.productName }
+      : {}),
+    ...(process.env.PLEIN_VERSION ? { version: process.env.PLEIN_VERSION } : {}),
+  },
   files: ['dist/**/*', 'package.json'],
   // 与 apps/desktop/src/paths.ts 里 app.isPackaged 时的布局一致
   extraResources: [
@@ -51,11 +61,11 @@ export default {
     // null 不签名，"-" 是 ad-hoc 签名（Apple 芯片上未签名的程序无法运行）
     identity: signed ? undefined : '-',
     notarize,
-    artifactName: 'Plein-${version}-${arch}-mac.${ext}',
+    artifactName: `${identity.productName.replaceAll(' ', '-')}-\${version}-\${arch}-mac.\${ext}`,
   },
   dmg: {
-    title: 'Plein ${version}',
-    artifactName: 'Plein-${version}-${arch}.dmg',
+    title: `${identity.productName} \${version}`,
+    artifactName: `${identity.productName.replaceAll(' ', '-')}-\${version}-\${arch}.dmg`,
   },
   publish: null,
   /** 签名之前把服务端的原生模块复制进去，签名时一起签上 */
@@ -67,9 +77,11 @@ export default {
     cpSync('stage/server/node_modules', join(resources, 'server/node_modules'), { recursive: true })
     // 自动更新从这里读来源和缓存目录（electron-updater）。electron-builder 只在打 dmg / zip 时自己写，
     // 发版 CI 用 --dir 出 .app，所以在这里写；上传 latest-mac.yml 由 release.yml 完成
-    writeFileSync(
-      join(resources, 'app-update.yml'),
-      'provider: github\nowner: hoobnn\nrepo: plein\nupdaterCacheDirName: plein-updater\n',
-    )
+    if (profile === 'production') {
+      writeFileSync(
+        join(resources, 'app-update.yml'),
+        'provider: github\nowner: hoobnn\nrepo: plein\nupdaterCacheDirName: plein-updater\n',
+      )
+    }
   },
 }

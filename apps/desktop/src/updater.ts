@@ -1,6 +1,7 @@
 import type { DesktopUpdateProgress } from '@plein/protocol'
 import { app, type BrowserWindow, dialog } from 'electron'
 import electronUpdater from 'electron-updater'
+import { canUpdate, readProfile } from './profile'
 
 const { autoUpdater } = electronUpdater
 
@@ -14,7 +15,14 @@ const CHECK_EVERY_MS = 6 * 60 * 60 * 1000
  * 只在安装包里启用：开发模式和 ad-hoc 签名的本地包无法通过 Squirrel 的签名校验。
  */
 export function setupUpdater(getWindow: () => BrowserWindow | null) {
-  if (!app.isPackaged || process.platform !== 'darwin' || process.env.PLEIN_UPDATE === '0')
+  if (
+    !canUpdate(
+      readProfile(app.isPackaged, app.getAppPath()),
+      app.isPackaged,
+      process.platform,
+      process.env.PLEIN_UPDATE,
+    )
+  )
     return { check: null }
 
   // 来源默认读安装包里的 app-update.yml（GitHub Releases，见 electron-builder.config.mjs）；

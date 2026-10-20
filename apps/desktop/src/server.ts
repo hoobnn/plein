@@ -3,7 +3,8 @@ import { createWriteStream, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { app, type UtilityProcess, utilityProcess } from 'electron'
 import type { RunActivity } from '@plein/protocol'
-import { DEV_SERVER_PORT, isDev, type ServerPaths } from './paths'
+import { isDev, type ServerPaths } from './paths'
+import { serverEnvironment } from './server-env'
 
 export interface ServerHandle {
   /** 服务端实际地址 */
@@ -29,19 +30,14 @@ type ServerMessage =
  */
 export function startServer(paths: ServerPaths, dataDir: string, port = 0): Promise<ServerHandle> {
   const token = randomBytes(32).toString('hex')
-  const env: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-    PLEIN_HOST: '127.0.0.1',
-    PLEIN_PORT: String(isDev ? DEV_SERVER_PORT : port),
-    PLEIN_AUTH: 'none',
-    PLEIN_DATA_DIR: dataDir,
-    PLEIN_DESKTOP_TOKEN: token,
-  }
-  if (paths.webDist) env.PLEIN_WEB_DIST = paths.webDist
-  if (paths.ffmpeg) env.PLEIN_FFMPEG_PATH = paths.ffmpeg
-  if (paths.ffprobe) env.PLEIN_FFPROBE_PATH = paths.ffprobe
-  if (paths.subtitleFont) env.PLEIN_SUBTITLE_FONT ??= paths.subtitleFont
-  if (isDev) env.PLEIN_MOCK_PROVIDER ??= '1'
+  const env = serverEnvironment(paths, {
+    packaged: app.isPackaged,
+    development: isDev,
+    port,
+    dataDir,
+    token,
+    inherited: process.env,
+  })
 
   const child: UtilityProcess = utilityProcess.fork(paths.entry, [], {
     cwd: paths.cwd,

@@ -5,6 +5,7 @@ import { Activity } from './activity'
 import { handleDownloads, showSavedFile } from './downloads'
 import { installMenu } from './menu'
 import { appIconPath, DEV_WEB_URL, dataDir, isDev, serverPaths } from './paths'
+import { initializeProfile, profileIdentity, profileWindowChrome, readProfile } from './profile'
 import { readPrefs, writePrefs } from './prefs'
 import { type ServerHandle, startServer } from './server'
 import { setupUpdater } from './updater'
@@ -38,9 +39,9 @@ function flushOpen() {
   pendingOpen = null
 }
 
-app.setName('plein')
-if (process.platform === 'win32') app.setAppUserModelId('com.ikuyu.plein')
-const primaryInstance = app.requestSingleInstanceLock()
+const profile = readProfile(app.isPackaged, app.getAppPath())
+const identity = profileIdentity(profile)
+const primaryInstance = initializeProfile(app, profile)
 if (!primaryInstance) app.quit()
 
 function showWindow() {
@@ -61,13 +62,11 @@ function createWindow(url: string) {
     ...bounds,
     // macOS 隐藏标题栏、红绿灯浮在应用顶栏上（顶栏可拖动、双击缩放，见 styles.css 的 .app-drag），
     // 红绿灯与首页顶栏、编辑器左上角工具条垂直居中对齐。
-    // 其他平台保留系统标题栏，留住原生窗口按钮和 Windows Snap 行为。
+    // 验收包和其他平台保留系统标题栏，持续显示验收身份并保留 Windows Snap 行为。
     frame: true,
-    ...(process.platform === 'darwin'
-      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 20, y: 27 } }
-      : { titleBarStyle: 'default' as const }),
+    ...profileWindowChrome(profile, process.platform),
     autoHideMenuBar: false,
-    title: 'plein',
+    title: identity.windowTitle,
     icon: appIconPath(),
     // 与网页主题的画布底色一致，避免启动时闪色
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0a0a0a' : '#fafafa',
@@ -127,7 +126,7 @@ async function waitFor(url: string, timeoutMs = 30_000) {
 async function boot() {
   app.dock?.setIcon(appIconPath())
   app.setAboutPanelOptions({
-    applicationName: 'Plein',
+    applicationName: identity.productName,
     applicationVersion: app.getVersion(),
     credits: '开源 AI 无限画布，让故事在这里展开',
     iconPath: appIconPath(),

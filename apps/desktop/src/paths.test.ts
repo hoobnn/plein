@@ -10,7 +10,10 @@ vi.mock('electron', () => ({
     },
   },
 }))
-vi.mock('node:fs', () => ({ existsSync: (file: string) => state.files.has(file) }))
+vi.mock('node:fs', async () => ({
+  ...(await vi.importActual<typeof import('node:fs')>('node:fs')),
+  existsSync: (file: string) => state.files.has(file),
+}))
 
 const staged = (name: string) =>
   join(

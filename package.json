@@ -29,7 +29,7 @@
     "bench:recovery": "pnpm --filter @plein/server bench:recovery",
     "bench:e1": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.l4.config.ts e1-composition",
     "bench:rework": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.bench.config.ts",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm smoke",
+    "verify": "pnpm lint && pnpm typecheck && pnpm --filter @plein/desktop test:profile && pnpm test:coverage && pnpm smoke",
     "e2e": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.config.ts",
     "e2e:real": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.l4.config.ts",
     "perf": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && pnpm --filter @plein/server exec node --import tsx ../../e2e/perf/bench.ts"
