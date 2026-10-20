@@ -80,6 +80,7 @@ export default defineConfig({
     'agent-keyboard.spec.ts',
     'agent-transcript-navigation.spec.ts',
     'stage-readonly.spec.ts',
+    'stage-range-history.spec.ts',
     'agent-drafts.spec.ts',
     'agent-history.spec.ts',
     'agent-history-provider.spec.ts',

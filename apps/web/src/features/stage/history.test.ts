@@ -128,6 +128,27 @@ describe('构图撤销范围', () => {
     doc.destroy()
   })
 
+  it('同一字段的两次独立手势分别撤销，显式边界不能被无限时间窗覆盖', () => {
+    const { doc, id, off } = setup()
+    const name = (value: string) =>
+      writeStageEdit(doc, id, () => setParam(doc, id, 'label', value), 'name', true)
+    name('A')
+    doc.undo.stopCapturing()
+    name('AB')
+    doc.undo.lastChange = 1
+    name('ABC')
+    applyStageHistory(doc, id, 'undo')
+    expect(doc.get(id)!.params!.label).toBe('A')
+    applyStageHistory(doc, id, 'undo')
+    expect(doc.get(id)!.params!.label).toBeUndefined()
+    applyStageHistory(doc, id, 'redo')
+    expect(doc.get(id)!.params!.label).toBe('A')
+    applyStageHistory(doc, id, 'redo')
+    expect(doc.get(id)!.params!.label).toBe('ABC')
+    off()
+    doc.destroy()
+  })
+
   it('手势不能跨越其他画布操作归并', () => {
     const { doc, id, off } = setup()
     const name = (value: string) =>
