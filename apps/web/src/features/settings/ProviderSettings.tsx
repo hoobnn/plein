@@ -11,11 +11,11 @@ import { Group } from './SettingsGroup'
 
 const input = 'ui-input ui-input-lg w-full'
 
-/** 平台行的状态：停用 / 缺密钥 / 可用 */
+/** 平台行仅表示本地配置，不把填写密钥标成远端可用。 */
 function providerState(p: ProviderInfo): { label: string; tone: string } {
   if (!p.enabled) return { label: '已停用', tone: '' }
   if (!p.configured) return { label: '缺少密钥', tone: 'ui-tag-warning' }
-  return { label: '已配置', tone: 'ui-tag-success' }
+  return { label: '已配置', tone: '' }
 }
 
 /** 单个平台：一行摘要（状态、启用开关），展开后是设置表单（由插件声明的 schema 生成）、密钥、测试连接 */
@@ -125,7 +125,8 @@ export function ProviderRow({
     try {
       setTest(await api.testProvider(provider.id))
     } catch (err) {
-      setTest({ ok: false, message: (err as Error).message })
+      // 传输失败没有服务端检查结果，不能伪造 scope 或完成时间。
+      setStatus({ error: true, message: `检查请求失败：${(err as Error).message}` })
     } finally {
       setBusy(false)
     }
@@ -140,7 +141,9 @@ export function ProviderRow({
         JSON.stringify(settings) !== JSON.stringify(config.settings)))
   const feedback = test
     ? {
-        message: test.ok ? (test.message ?? '连接正常') : `检查失败：${test.message ?? '未知错误'}`,
+        message: test.ok
+          ? (test.message ?? '检查完成；尚未验证具体模型、资源权限或余额')
+          : `检查失败：${test.message ?? '未知错误'}`,
         error: !test.ok,
       }
     : status
@@ -166,7 +169,9 @@ export function ProviderRow({
               {provider.description ?? `${provider.models.length} 个模型`}
             </span>
           </span>
-          <span className={`ui-tag ${state.tone}`}>{state.label}</span>
+          <span className={`ui-tag ${state.tone}`} title="本地配置状态不代表具体模型权限或余额">
+            {state.label}
+          </span>
         </button>
         <Switch
           checked={provider.enabled}

@@ -16,7 +16,8 @@ test.afterEach(async ({ request }) => {
 async function openProvider(page: Page) {
   await page.setViewportSize({ width: 800, height: 560 })
   await newProject(page)
-  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await page.getByRole('button', { name: '画布工具', exact: true }).click()
+  await page.getByRole('menuitem', { name: '设置', exact: true }).click()
   const settings = page.getByRole('dialog', { name: '设置', exact: true })
   await settings.getByRole('button', { name: /^模型平台/ }).click()
   const row = settings.locator('[data-provider="plein/mock"]')
@@ -49,8 +50,11 @@ test('连接检查成功后保存失败仍显示错误，真实重试保存可�
   const row = await openProvider(page)
   const latency = row.getByRole('spinbutton', { name: '模拟耗时（毫秒）', exact: true })
   await expect(latency).toBeVisible()
+  await expect(row.getByText('已配置', { exact: true })).not.toHaveClass(/ui-tag-success/)
   await row.getByRole('button', { name: '测试连接', exact: true }).click()
-  await expect(row.getByRole('status')).toContainText('连接正常')
+  await expect(row.getByRole('status')).toContainText(
+    '连接检查通过；尚未验证具体模型、资源权限或余额',
+  )
   await latency.fill('321')
   await page.route(`**${configUrl}`, async (route) => {
     if (route.request().method() === 'PUT')
@@ -197,9 +201,34 @@ test('保存等待期间冻结输入，保存完成后才检查实际保存的�
     expect(persisted.settings.latencyMs).toBe(456)
     expect(persisted.secrets.MOCK_API_KEY).toBe(true)
     await check.click()
-    await expect(row.getByRole('status')).toContainText('连接正常')
+    await expect(row.getByRole('status')).toContainText(
+      '连接检查通过；尚未验证具体模型、资源权限或余额',
+    )
     expect(tests).toBe(1)
   } finally {
     release()
   }
+})
+
+test('检查请求传输失败与服务端检查结果分开显示，重试成功才显示检查范围', async ({ page }) => {
+  const row = await openProvider(page)
+  await page.route('**/api/providers/plein/mock/test', (route) =>
+    route.fulfill({
+      status: 503,
+      json: { error: 'unavailable', message: '检查服务暂不可用' },
+    }),
+  )
+  const check = row.getByRole('button', { name: '测试连接', exact: true })
+  await check.click()
+  await expect(row.getByRole('alert')).toContainText('检查请求失败：检查服务暂不可用')
+  await expect(
+    row.getByText('连接检查通过；尚未验证具体模型、资源权限或余额', { exact: true }),
+  ).toHaveCount(0)
+  await expect(check).toBeEnabled()
+  await page.unroute('**/api/providers/plein/mock/test')
+  await check.click()
+  await expect(row.getByRole('status')).toContainText(
+    '连接检查通过；尚未验证具体模型、资源权限或余额',
+  )
+  await expect(row.getByRole('alert')).toHaveCount(0)
 })
