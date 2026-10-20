@@ -230,6 +230,8 @@ test('图片平移只处理当前指针，取消、失焦、切换与重置结�
 })
 
 test('图片候选与对比图可独立恢复，滑杆和缩放不遮挡重试且不改变采用', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
   await newProject(page)
   const assets: string[] = []
   for (const color of ['blue', 'green']) {
@@ -349,7 +351,7 @@ test('图片候选与对比图可独立恢复，滑杆和缩放不遮挡重试�
     )
     .toBe(true)
   // 同一 URL 可能复用已解码缓存，用受控错误事件检查两侧状态隔离。
-  await duplicate.dispatchEvent('error')
+  await duplicate.dispatchEvent('error', { bubbles: false })
   await expect(viewer.getByRole('alert')).toHaveCount(1)
   await expect(viewer.getByRole('alert')).toHaveText('候选 B加载失败')
   await expect
@@ -369,6 +371,7 @@ test('图片候选与对比图可独立恢复，滑杆和缩放不遮挡重试�
   expect(
     await page.evaluate((id) => window.__plein.engine.doc.mutable(id)?.get('adopted'), target),
   ).toBe('image-0')
+  expect(errors).toEqual([])
 })
 
 for (const kind of ['audio', 'video'] as const) {

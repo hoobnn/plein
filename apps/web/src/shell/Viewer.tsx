@@ -459,7 +459,7 @@ function Review({ viewer }: { viewer: View }) {
               )}
             </>
           ) : (kind === 'video' || kind === 'audio') && assetId ? (
-            <ReviewMedia key={assetId} assetId={assetId} kind={kind} name={name} />
+            <ReviewMedia key={`${kind}:${assetId}`} assetId={assetId} kind={kind} name={name} />
           ) : value ? (
             <div
               data-review-text=""
