@@ -41,13 +41,30 @@ for (const action of ['type', 'delete', 'undo', 'redo'] as const) {
     const { id, editor } = await setup(page)
     if (action === 'redo') await editor.press('ControlOrMeta+z')
     const before = await read(page, id)
-    // 不先刷新 UI：验证编辑器自身在输入与独立正文历史入口同步复核权限。
-    await page.evaluate(() => ((window.__plein.engine as unknown as Engine).doc.readOnly = true))
+    // 在真实输入事件进入编辑器时转只读，确保验证权限守卫，避免帧同步先关闭编辑器。
+    await editor.evaluate((el, action) => {
+      const eventType = action === 'type' ? 'beforeinput' : 'keydown'
+      const guard = (event: Event) => {
+        if (
+          event instanceof KeyboardEvent &&
+          !(action === 'delete'
+            ? event.key === 'Backspace'
+            : event.key.toLowerCase() === 'z' && (event.metaKey || event.ctrlKey))
+        )
+          return
+        el.removeEventListener(eventType, guard, true)
+        ;(window.__plein.engine as unknown as Engine).doc.readOnly = true
+      }
+      el.addEventListener(eventType, guard, true)
+    }, action)
     if (action === 'type') await page.keyboard.insertText('，只读不应写入')
     else if (action === 'delete') {
       await editor.press('ControlOrMeta+a')
       await editor.press('Backspace')
     } else await editor.press(action === 'undo' ? 'ControlOrMeta+z' : 'ControlOrMeta+Shift+z')
+    expect(
+      await page.evaluate(() => (window.__plein.engine as unknown as Engine).doc.readOnly),
+    ).toBe(true)
     expect(await read(page, id)).toBe(before)
     await page.evaluate(() => (window.__plein.engine as unknown as Engine).refreshState())
     await expect(page.locator('.plein-md-editor')).toHaveCount(0)
