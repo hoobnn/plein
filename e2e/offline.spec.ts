@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type BrowserContext, expect, type Page, test, type WebSocketRoute } from '@playwright/test'
@@ -423,25 +423,64 @@ test('IndexedDB 不可用时照常从服务端打开，断线时提示改动没�
 })
 
 test.describe('服务重启', () => {
-  const PORT = Number(process.env.PLEIN_E2E_PORT ?? 8790) + 1
-  const base = `http://127.0.0.1:${PORT}`
-  const dataDir = mkdtempSync(join(tmpdir(), 'plein-e2e-restart-'))
+  // 首次由服务自身分配空闲端口；崩溃后复用它，保证原页面能重连。
+  let port = 0
+  let base = ''
+  let dataDir = ''
   let server: ChildProcess | null = null
 
   const start = async () => {
-    server = spawn('pnpm', ['--filter', '@plein/server', 'exec', 'tsx', 'src/main.ts'], {
-      cwd: join(import.meta.dirname, '..'),
-      detached: true,
-      stdio: 'ignore',
-      env: {
-        ...process.env,
-        PLEIN_PORT: String(PORT),
-        PLEIN_DATA_DIR: dataDir,
-        PLEIN_WEB_DIST: join(import.meta.dirname, '../apps/web/dist-e2e'),
-        PLEIN_MOCK_PROVIDER: '1',
-        PLEIN_AGENT: '0',
+    const root = join(import.meta.dirname, '..')
+    const child = spawn(
+      join(root, 'apps/server/node_modules/.bin/tsx'),
+      [join(root, 'apps/server/src/main.ts')],
+      {
+        cwd: root,
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+          ...process.env,
+          PLEIN_PORT: String(port),
+          PLEIN_DATA_DIR: dataDir,
+          PLEIN_WEB_DIST: process.env.PLEIN_E2E_DIST ?? join(root, 'apps/web/dist-e2e'),
+          PLEIN_MOCK_PROVIDER: '1',
+          PLEIN_AGENT: '0',
+        },
       },
+    )
+    server = child
+    child.stdout?.setEncoding('utf8')
+    child.stderr?.setEncoding('utf8')
+    base = await new Promise<string>((resolve, reject) => {
+      let output = ''
+      let errors = ''
+      const finish = (url?: string, error?: Error) => {
+        clearTimeout(timer)
+        child.stdout?.off('data', read)
+        child.off('error', failed)
+        child.off('exit', exited)
+        if (error) reject(error)
+        else resolve(url!)
+      }
+      const read = (chunk: string) => {
+        output = (output + chunk.toString()).slice(-8192)
+        const match = /plein 已启动：(http:\/\/[^\s]+)/.exec(output)
+        if (match) finish(match[1])
+      }
+      const failed = (error: Error) => finish(undefined, error)
+      const exited = (code: number | null) =>
+        failed(new Error(`重启测试服务提前退出 (${code}): ${errors}`))
+      const timer = setTimeout(() => failed(new Error(`重启测试服务启动超时: ${errors}`)), 60_000)
+      child.stdout?.on('data', read)
+      child.stderr?.on('data', (chunk: string) => {
+        errors = (errors + chunk.toString()).slice(-8192)
+      })
+      child.once('error', failed)
+      child.once('exit', exited)
     })
+    const reportedPort = Number(new URL(base).port)
+    if (port && port !== reportedPort) throw new Error('重启后的服务没有复用原端口')
+    port = reportedPort
     await expect
       .poll(
         () =>
@@ -456,14 +495,22 @@ test.describe('服务重启', () => {
   /** 直接杀掉整个进程组，模拟服务崩溃 */
   const kill = async () => {
     if (!server?.pid) return
-    const exited = new Promise((done) => server!.once('exit', done))
-    process.kill(-server.pid, 'SIGKILL')
-    await exited
+    const child = server
     server = null
+    if (child.exitCode !== null || child.signalCode !== null) return
+    const exited = new Promise((done) => child.once('exit', done))
+    process.kill(-child.pid!, 'SIGKILL')
+    await exited
   }
 
-  test.beforeAll(start)
-  test.afterAll(kill)
+  test.beforeAll(async () => {
+    dataDir = mkdtempSync(join(tmpdir(), 'plein-e2e-restart-'))
+    await start()
+  })
+  test.afterAll(async () => {
+    await kill()
+    if (dataDir) rmSync(dataDir, { recursive: true, force: true })
+  })
 
   test('服务停掉期间继续编辑，重启后自动重连并合并', async ({ page, context }) => {
     await page.goto(`${base}/`)
