@@ -57,7 +57,17 @@ export function Shortcuts() {
   const toggle = useCanvas((s) => s.toggleShortcuts)
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (isEditableTarget(e.target)) return
+      if (
+        e.defaultPrevented ||
+        e.isComposing ||
+        e.keyCode === 229 ||
+        e.repeat ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey ||
+        isEditableTarget(e.target)
+      )
+        return
       if (e.key === '?') {
         e.preventDefault()
         toggle()
@@ -72,14 +82,17 @@ export function Shortcuts() {
       {open && (
         <Modal label="快捷键" onClose={close} align="bottom" className="max-w-220">
           <ModalHeader title="快捷键" onClose={close} divider={false} />
-          <div className="grid gap-x-8 gap-y-6 px-5 pb-5 sm:grid-cols-3">
+          <div className="grid min-h-0 gap-x-8 gap-y-6 overflow-y-auto px-5 pb-5 sm:grid-cols-2 lg:grid-cols-3">
             {GROUPS.map((g) => (
               <section key={g.title}>
                 <h3 className="ui-section-title mb-2">{g.title}</h3>
                 <ul className="flex flex-col">
                   {g.items.map(([label, ...combos]) => (
-                    <li key={label} className="flex h-8 items-center justify-between gap-3">
-                      <span className="truncate text-ink-muted">{label}</span>
+                    <li
+                      key={label}
+                      className="flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1"
+                    >
+                      <span className="text-ink-muted">{label}</span>
                       <span className="flex flex-none items-center gap-1 text-2xs text-ink-subtle">
                         {combos.map((combo, i) => (
                           <Fragment key={combo.join()}>
