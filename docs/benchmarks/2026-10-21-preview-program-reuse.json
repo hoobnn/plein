@@ -1,0 +1,76 @@
+{
+  "recordedAt": "2026-10-20T18:29:14.897618+00:00",
+  "status": "targeted acceptance passed; overall goal remains incomplete",
+  "baseCommit": "d94d3900dc6e6865ed72b22ede8da420934ee2c6",
+  "paidCalls": 0,
+  "unit": {
+    "files": 11,
+    "passed": 81,
+    "baselineRegression": "fails because second.glProgram is not first.glProgram"
+  },
+  "typecheck": ["packages/canvas-core", "apps/web", "root"],
+  "production": {
+    "startTime": "2026-10-20T18:26:25.834Z",
+    "duration": 145116.863,
+    "expected": 36,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "artifacts": [
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/preview-program-red.log",
+      "sha256": "dd2856dda8864152c57b5a9dc9b7bcf1e082247f248ec5703d873758119a696d"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/preview-program-core.log",
+      "sha256": "fefb649d5a71bff7d1f77f92e0a82228f67b9155785d61d73e5785257cf4da13"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/shared-preview-production.json",
+      "sha256": "b88607f553b0be28312e451e5a76957906585599ab8bd07df61e862abcae719a"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/perf-shader-baseline-recovered.json",
+      "sha256": "beedc78c1499f899143519a488a843b556b8cc7236b18da1b5127ad5084d1668"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/perf-shader-shared-diagnostic.json",
+      "sha256": "809582d462a6dbcea4bfabf909ef7601b62356d49a5822af40f61acaf2315b14"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/build-shared-preview.log",
+      "sha256": "e022396a432dfdd4cfc12b8b1601b56f44765f35ec997069586cbc590bafb640"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/shared-preview-development.json",
+      "sha256": "bccccdde8d0f4690eadfe955a17b6cebaf342cbc5741f397901392cbce3bbe81"
+    }
+  ],
+  "boundaries": [
+    "isolated Mock UI, software Chromium, not native foreground proof",
+    "GPU programs remain per WebGL context",
+    "no stable startup improvement inferred",
+    "initial baseline trace overwritten; durable baseline is separately reacquired"
+  ],
+  "sourceFiles": [
+    {
+      "path": "packages/canvas-core/src/previewShader.ts",
+      "sha256": "2b8443c170dcd1ddfbdbe706262896e30871cbe3761443cf80e62846181040b0"
+    },
+    {
+      "path": "packages/canvas-core/src/previewShader.test.ts",
+      "sha256": "fbea9ef4097fac54b3efe306a08cc4e380d725c2b61cff98cd75057f2b955a74"
+    }
+  ],
+  "buildFingerprint": "43cdef15e396d1d7f9aadfd8c739bd9b7d89194fcd080e9bb447c852840c9c02",
+  "productCommit": "0ed1e1d8c1904674e28f718ca52df6d28706a75f",
+  "development": {
+    "startTime": "2026-10-20T18:29:00.391Z",
+    "duration": 157420.069,
+    "expected": 36,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}
