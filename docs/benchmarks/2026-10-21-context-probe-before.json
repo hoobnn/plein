@@ -1,0 +1,10 @@
+{
+  "status": "failed",
+  "cycles": [],
+  "runtimeErrors": [],
+  "contextWarnings": [],
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)",
+  "startedAt": "2026-10-20T18:49:37.440Z",
+  "finishedAt": "2026-10-20T18:49:58.078Z",
+  "failure": "Error: expect(received).toBeLessThan(expected)\n\nExpected: < 0.001\nReceived:   0.9997940670723545\n\nCall Log:\n- Timeout 15000ms exceeded while waiting on the predicate"
+}

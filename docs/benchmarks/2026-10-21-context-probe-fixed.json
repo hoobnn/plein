@@ -1,0 +1,89 @@
+{
+  "status": "passed",
+  "cycles": [
+    {
+      "phase": "preview-context-restored",
+      "changedRatio": 0,
+      "stats": {
+        "elements": 1000,
+        "visible": 1000,
+        "fps": 59.880239520957105,
+        "residentBodies": 1000,
+        "visibleBodies": 1000,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 1000,
+          "ready": 1000,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 2,
+          "activeLeases": 2000,
+          "pinnedTextures": 34,
+          "idleTextures": 0,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 34,
+          "estimatedTextureBytes": 7397632,
+          "pinnedEstimatedBytes": 7397632,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 1966,
+          "loadsStarted": 34,
+          "evictions": 0,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 1000,
+        "renderedPreviewRevision": 1000
+      }
+    },
+    {
+      "phase": "main-context-restored",
+      "changedRatio": 0,
+      "stats": {
+        "elements": 1000,
+        "visible": 1000,
+        "fps": 60.24096385542037,
+        "residentBodies": 1000,
+        "visibleBodies": 1000,
+        "offscreenBodies": 0,
+        "previews": {
+          "total": 1000,
+          "ready": 1000,
+          "pending": 0,
+          "failed": 0
+        },
+        "textures": {
+          "owners": 1,
+          "activeLeases": 1000,
+          "pinnedTextures": 34,
+          "idleTextures": 0,
+          "queuedLoads": 0,
+          "inFlightLoads": 0,
+          "unloadingTextures": 0,
+          "readyTextures": 34,
+          "estimatedTextureBytes": 7397632,
+          "pinnedEstimatedBytes": 7397632,
+          "pinnedOverBudgetBytes": 0,
+          "budgetBytes": 536870912,
+          "cacheHits": 1966,
+          "loadsStarted": 34,
+          "evictions": 0,
+          "loadErrors": 0,
+          "unloadErrors": 0
+        },
+        "previewRevision": 1000,
+        "renderedPreviewRevision": 1000
+      }
+    }
+  ],
+  "runtimeErrors": [],
+  "contextWarnings": [],
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)",
+  "startedAt": "2026-10-20T18:56:34.525Z",
+  "finishedAt": "2026-10-20T18:56:42.567Z",
+  "failure": ""
+}
