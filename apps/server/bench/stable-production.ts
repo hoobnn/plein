@@ -25,6 +25,7 @@ import { inspectPackage, commitImport } from '../src/projects/package'
 import { builtinPlugins } from '../src/plugins/builtin'
 import { openZipEntry, readZipIndex } from '../src/projects/zip'
 import * as Y from 'yjs'
+import { sequenceEditState } from './stable-production-snapshot'
 
 const packagePath = process.env.PLEIN_ACCEPTANCE_PACKAGE
 const outputPath = process.env.PLEIN_ACCEPTANCE_OUT
@@ -99,6 +100,15 @@ assert.equal(sourceTrack.cues.filter((cue) => !cue.hidden).length, 56)
 const semantic = (value: unknown) =>
   JSON.parse(JSON.stringify(value, (key, item) => (key === 'runId' ? undefined : item)))
 const sourceAdoption = semantic(adoption(sourceDoc))
+report.sourceSequence = {
+  adopted: sourceSequences[0]!.adopted,
+  current: currentResult(sourceSequences[0]!),
+  subtitleCues: sourceTrack.cues.length,
+  firstCue: sourceTrack.cues[0]?.text,
+  editStateSha256: createHash('sha256')
+    .update(JSON.stringify(sequenceEditState(sourceDoc, sourceSequences[0]!.id)))
+    .digest('hex'),
+}
 
 async function compose(server: Server, canvasId: string, nodeId: string) {
   const runId = server.runs.start(canvasId, nodeId, 'local')
@@ -139,6 +149,7 @@ const coldChecks: Array<{
   sequenceId: string
   assetId: string
   before: unknown
+  sequenceState: unknown
   item: Record<string, unknown>
 }> = []
 try {
@@ -181,6 +192,11 @@ try {
       const sequences = [...doc.elements()].filter((el) => el.nodeType === 'plein/sequence')
       assert.equal(sequences.length, 1, '需要唯一序列；多个序列时须显式指定目标')
       const sequence = sequences[0]!
+      assert.deepEqual(
+        sequenceEditState(doc, sequence.id),
+        sequenceEditState(sourceDoc, sourceSequences[0]!.id),
+        '导入必须逐项保留剪辑参数、人工字幕与全部输入连接',
+      )
       assert.deepEqual(
         semantic(adoption(doc)),
         sourceAdoption,
@@ -345,6 +361,7 @@ try {
         sequenceId: sequence.id,
         assetId: first.result.assetId,
         before,
+        sequenceState: sequenceEditState(doc, sequence.id),
         item,
       })
       await persist()
@@ -383,7 +400,21 @@ try {
     const proof = JSON.parse(cold.stdout.trim().split('\n').at(-1)!)
     assert.equal(proof.providerAttempts, 0)
     assert.deepEqual(proof.adoption, check.before)
+    assert.deepEqual(
+      proof.sequenceState,
+      check.sequenceState,
+      '冷启动必须逐项恢复剪辑参数、人工字幕与全部输入连接',
+    )
+    assert.equal(proof.networkFetchAttempts, 0)
     check.item.coldStart = 'passed'
+    check.item.coldStartEditStateChecked = true
+    check.item.coldStartEditStateSha256 = createHash('sha256')
+      .update(JSON.stringify(check.sequenceState))
+      .digest('hex')
+    await writeFile(
+      join(out, `${check.item.label}-edit-state.json`),
+      `${JSON.stringify(check.sequenceState, null, 2)}\n`,
+    )
     check.item.coldStartPid = proof.pid
     await persist()
   }

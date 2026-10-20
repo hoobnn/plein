@@ -6,6 +6,7 @@ import { createDoc, currentResult } from '@plein/doc'
 import { createServer } from '../src/app'
 import { loadConfig } from '../src/config'
 import { builtinPlugins } from '../src/plugins/builtin'
+import { sequenceEditState } from './stable-production-snapshot'
 
 const [dataDir, canvasId, sequenceId, assetId] = process.argv.slice(2)
 assert(dataDir && canvasId && sequenceId && assetId)
@@ -68,6 +69,7 @@ try {
       networkFetchAttempts,
       assetsChecked: rows.length,
       adoption,
+      sequenceState: sequenceEditState(doc, sequenceId),
     }),
   )
 } finally {
