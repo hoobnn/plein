@@ -1,6 +1,7 @@
 import type { Engine } from '@plein/canvas-core'
 import { adoptResult, currentResult, setParam } from '@plein/doc'
 import {
+  STAGE_TYPE,
   STAGE_ASPECTS,
   STAGE_BLOCKS,
   STAGE_BOUNDS,
@@ -20,6 +21,7 @@ import { useDocVersion } from '../../canvas/hooks'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { useClosing } from '../../ui/Presence'
 import { Segmented } from '../../ui/Segmented'
 import { useDialogMenu } from '../../ui/useDialogMenu'
 import { saveSnapshot } from './snapshot'
@@ -58,7 +60,17 @@ export function StagePanel({
 }) {
   useDocVersion(engine.doc)
   const notify = useCanvas((s) => s.notify)
+  const closing = useClosing()
+  const target = useRef(engine.doc.elementMaps.get(id))
+  const isTarget = () =>
+    engine.doc.elementMaps.get(id) === target.current &&
+    target.current?.get('nodeType') === STAGE_TYPE
+  const canWrite = () => {
+    const state = useCanvas.getState()
+    return !engine.doc.readOnly && isTarget() && state.engine === engine && state.stage === id
+  }
   const readOnly = engine.doc.readOnly
+  const locked = readOnly || closing
   const el = engine.doc.get(id)
   const scene = stageSceneOf(el?.params)
   const records = stageRecordsOf(el)
@@ -116,7 +128,7 @@ export function StagePanel({
 
   const readScene = () => stageSceneOf(engine.doc.get(id)?.params)
   const commit = (change: (current: StageScene) => StageScene, group: string | null = null) => {
-    if (engine.doc.readOnly) return
+    if (!canWrite()) return
     // 属性编辑前先确认当前视角；确认可能同步写入新机位，随后必须重新读文档。
     view.current?.finishCamera()
     const current = readScene()
@@ -151,6 +163,7 @@ export function StagePanel({
     )
 
   const history = (direction: 'undo' | 'redo') => {
+    if (!canWrite()) return
     view.current?.finishCamera()
     applyStageHistory(engine.doc, id, direction)
   }
@@ -158,7 +171,7 @@ export function StagePanel({
   useEffect(() => {
     if (!host) return
     const v = new StageView(host, {
-      readOnly: () => engine.doc.readOnly,
+      readOnly: () => !canWrite(),
       onSelect: (sid) => setSelected(sid),
       onMove: (oid, at) => {
         const s = readScene()
@@ -169,7 +182,7 @@ export function StagePanel({
     })
     view.current = v
     v.setScene(latest.current)
-    v.setReadOnly(engine.doc.readOnly)
+    v.setReadOnly(!canWrite())
     v.setSelected(selectedRef.current === CAMERA_ID ? null : selectedRef.current)
     return () => {
       v.dispose()
@@ -177,7 +190,7 @@ export function StagePanel({
     }
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- 视口只随宿主节点建一次，回调都经 latest 取最新场景
   }, [host])
-  useEffect(() => view.current?.setReadOnly(readOnly), [readOnly])
+  useEffect(() => view.current?.setReadOnly(locked), [locked])
   const sceneKey = JSON.stringify(scene)
   useEffect(() => view.current?.setScene(latest.current), [sceneKey])
   useEffect(() => view.current?.setSelected(selected === CAMERA_ID ? null : selected), [selected])
@@ -187,7 +200,7 @@ export function StagePanel({
   // 快捷键只作用于当前构图面板，不能穿透输入框或菜单。
   const keys = useRef<(e: KeyboardEvent) => void>(() => {})
   keys.current = (e) => {
-    if (e.defaultPrevented || e.isComposing || e.repeat || engine.doc.readOnly) return
+    if (e.defaultPrevented || e.isComposing || e.repeat || !canWrite()) return
     const target = e.target
     if (!(target instanceof HTMLElement) || !host?.closest('[role="dialog"]')?.contains(target))
       return
@@ -228,7 +241,7 @@ export function StagePanel({
   const block = scene.blocks.find((b) => b.id === selected)
 
   const addFigure = () => {
-    if (engine.doc.readOnly) return
+    if (!canWrite()) return
     const current = readScene()
     const n = current.figures.length
     if (n >= 12) return
@@ -249,7 +262,7 @@ export function StagePanel({
     setSelected(f.id)
   }
   const addBlock = (kind: StageBlockKind) => {
-    if (engine.doc.readOnly) return
+    if (!canWrite()) return
     const current = readScene()
     if (current.blocks.length >= 60) return
     const def = STAGE_BLOCKS.find((b) => b.id === kind)!
@@ -270,7 +283,7 @@ export function StagePanel({
     setSelected(b.id)
   }
   const removeSelected = () => {
-    if (engine.doc.readOnly || !selected || selected === CAMERA_ID) return
+    if (!canWrite() || !selected || selected === CAMERA_ID) return
     commit((current) => ({
       ...current,
       figures: current.figures.filter((f) => f.id !== selected),
@@ -284,17 +297,20 @@ export function StagePanel({
   }
   const shoot = async () => {
     const v = view.current
-    if (!v || busy || engine.doc.readOnly) return
+    if (!v || busy || !canWrite()) return
     setBusy(true)
     const report = (message: string) => {
-      if (useCanvas.getState().engine === engine) notify(message)
+      if (useCanvas.getState().engine === engine && isTarget()) notify(message)
     }
     try {
       // PNG 编码是异步的：来源与采用基线在渲染前冻结，不能记录成等待后的新场景。
       v.finishCamera()
       const node = engine.doc.get(id)
       const captured = stageSceneOf(node?.params)
-      const baseline = { resultId: node ? currentResult(node, 'image')?.id : undefined }
+      const baseline = {
+        resultId: node ? currentResult(node, 'image')?.id : undefined,
+        element: target.current,
+      }
       v.setScene(captured)
       const blob = await v.snapshot()
       const shot = await saveSnapshot(engine.doc, id, captured, blob, baseline)
@@ -338,7 +354,7 @@ export function StagePanel({
         <button
           type="button"
           className="ui-btn ui-btn-primary"
-          disabled={busy || readOnly}
+          disabled={busy || locked}
           title="按机位截一张灰模构图，作为这个节点的新结果"
           onClick={() => void shoot()}
         >
@@ -372,7 +388,7 @@ export function StagePanel({
                 className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn"
                 aria-label="添加人物"
                 title="添加人物"
-                disabled={readOnly || scene.figures.length >= 12}
+                disabled={locked || scene.figures.length >= 12}
                 onClick={addFigure}
               >
                 <Icon name="plus" size={14} />
@@ -392,7 +408,7 @@ export function StagePanel({
           </OutlineGroup>
           <OutlineGroup
             title="场景件"
-            action={<AddBlock onPick={addBlock} disabled={readOnly || scene.blocks.length >= 60} />}
+            action={<AddBlock onPick={addBlock} disabled={locked || scene.blocks.length >= 60} />}
           >
             {scene.blocks.length === 0 && (
               <p className="stage-empty">墙、桌椅、门、床，用来定空间</p>
@@ -432,7 +448,7 @@ export function StagePanel({
                     <button
                       type="button"
                       aria-pressed={record.adopted}
-                      disabled={!record.available || engine.doc.readOnly}
+                      disabled={!record.available || !canWrite()}
                       title={
                         !record.available
                           ? '候选不可用，仅能恢复场景'
@@ -441,7 +457,7 @@ export function StagePanel({
                             : '采用此截图（缺少构图来源，不能恢复场景）'
                       }
                       onClick={() => {
-                        if (!record.available || engine.doc.readOnly) return
+                        if (!record.available || !canWrite()) return
                         view.current?.finishCamera()
                         const result = engine.doc
                           .get(id)
@@ -474,7 +490,7 @@ export function StagePanel({
                       <button
                         type="button"
                         className="stage-link"
-                        disabled={!record.snapshot || engine.doc.readOnly}
+                        disabled={!record.snapshot || locked}
                         title={
                           record.snapshot
                             ? '把场景和机位恢复成截这张图时的样子'
@@ -482,7 +498,7 @@ export function StagePanel({
                         }
                         onClick={() => {
                           const captured = record.snapshot?.scene
-                          if (captured && !engine.doc.readOnly) commit(() => captured)
+                          if (captured && canWrite()) commit(() => captured)
                         }}
                       >
                         恢复
@@ -539,11 +555,7 @@ export function StagePanel({
         </section>
 
         <aside className="stage-inspector ui-scrollbar" aria-label="属性">
-          <fieldset
-            key={readOnly ? 'readonly' : 'editable'}
-            disabled={readOnly}
-            className="min-w-0"
-          >
+          <fieldset key={locked ? 'readonly' : 'editable'} disabled={locked} className="min-w-0">
             {figure ? (
               <FigureInspector
                 key={figure.id}

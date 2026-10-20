@@ -57,6 +57,27 @@ function setup() {
 }
 
 describe('3D 截图保存', () => {
+  it.each(['编码', '上传'] as const)(
+    '%s期间同 ID 节点被替换，旧截图不能写入新节点',
+    async (phase) => {
+      const { doc, id, scene, finish } = setup()
+      const element = doc.mutable(id)!
+      const replace = () => {
+        doc.ydoc.transact(() => doc.elementMaps.set(id, element.clone()), doc.origin)
+        doc.flush()
+      }
+      if (phase === '编码') replace()
+      const run = saveSnapshot(doc, id, scene, new Blob(), { resultId: 'original', element })
+      if (phase === '上传') replace()
+      const before = doc.get(id)
+      if (phase === '上传') finish()
+      await expect(run).rejects.toThrow('节点已被替换')
+      expect(doc.get(id)).toEqual(before)
+      expect(api.upload).toHaveBeenCalledTimes(phase === '编码' ? 0 : 1)
+      doc.destroy()
+    },
+  )
+
   it('编码期间关闭画布，拒绝上传到已经销毁的文档', async () => {
     const { doc, id, scene } = setup()
     doc.destroy()

@@ -30,11 +30,15 @@ export async function saveSnapshot(
   id: string,
   scene: StageScene,
   blob: Blob,
-  baseline = { resultId: doc.get(id) ? currentResult(doc.get(id)!, 'image')?.id : undefined },
+  baseline: { resultId?: string; element?: ReturnType<PleinDoc['mutable']> } = {
+    resultId: doc.get(id) ? currentResult(doc.get(id)!, 'image')?.id : undefined,
+  },
 ) {
+  const element = baseline.element ?? doc.mutable(id)
   const writable = () => {
     if (doc.ydoc.isDestroyed) throw new Error('画布已经关闭，请重新打开构图后截图')
     if (doc.readOnly) throw new ReadOnlyDocError()
+    if (doc.mutable(id) !== element) throw new Error('3D 构图节点已被替换，请重新打开后截图')
     if (doc.get(id)?.nodeType !== STAGE_TYPE) throw new Error('3D 构图节点已经不在画布上了')
   }
   writable()

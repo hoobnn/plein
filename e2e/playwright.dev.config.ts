@@ -81,6 +81,7 @@ export default defineConfig({
     'agent-transcript-navigation.spec.ts',
     'stage-readonly.spec.ts',
     'stage-range-history.spec.ts',
+    'stage-target-lifecycle.spec.ts',
     'agent-drafts.spec.ts',
     'agent-history.spec.ts',
     'agent-history-provider.spec.ts',
