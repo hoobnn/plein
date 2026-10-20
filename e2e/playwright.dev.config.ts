@@ -118,6 +118,7 @@ export default defineConfig({
     'arrange-feedback.spec.ts',
     'shortcuts-panel.spec.ts',
     'modal-composition.spec.ts',
+    'canvas-create-recovery.spec.ts',
     'canvas-footer-fit.spec.ts',
     'canvas-readonly.spec.ts',
     'canvas-shortcut-composition.spec.ts',

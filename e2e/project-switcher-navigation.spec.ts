@@ -84,6 +84,8 @@ for (const operation of ['create', 'delete'] as const) {
             .getByRole('button', { name: operation === 'create' ? '新建' : '删除', exact: true })
             .click()
           await expect.poll(() => received).toBe(1)
+          if (operation === 'create')
+            await dialog.getByRole('button', { name: '关闭', exact: true }).click()
           await expect(dialog).toHaveCount(0)
           await page.getByRole('button', { name: '切换画布', exact: true }).click()
           await page

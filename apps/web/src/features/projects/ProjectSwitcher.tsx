@@ -86,21 +86,23 @@ export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
   const addCanvas = async () => {
     const isCurrent = captureCanvasVisit(canvas.id)
     close()
-    const title = await promptDialog({
+    let dialogActive = true
+    await promptDialog({
       title: '新建画布',
       message: `建在项目「${project?.title ?? ''}」下，可以和其他画布共用资产库里的角色、场景`,
       defaultValue: `画布 ${canvases.length + 1}`,
       placeholder: '画布名称',
+      maxLength: 200,
       confirmLabel: '新建',
+      onConfirm: async (title) => {
+        if (!isCurrent()) throw new Error('画布已切换，请关闭窗口后重新操作')
+        const created = await api.createCanvas(canvas.projectId, title)
+        void invalidateProjects()
+        // 主动关闭等待窗口后，创建仍完成，但不再接管用户当前的画布或新输入框。
+        if (dialogActive && isCurrent()) navigate({ name: 'canvas', id: created.id })
+      },
     })
-    if (!title || !isCurrent()) return
-    try {
-      const c = await api.createCanvas(canvas.projectId, title)
-      void invalidateProjects()
-      if (isCurrent()) navigate({ name: 'canvas', id: c.id })
-    } catch (err) {
-      if (isCurrent()) fail(err)
-    }
+    dialogActive = false
   }
   const renameCanvas = async () => {
     const isCurrent = captureCanvasVisit(canvas.id)
