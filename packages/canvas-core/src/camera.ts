@@ -8,7 +8,11 @@ export class Camera {
   x = 0
   y = 0
   zoom = 1
-  readonly minZoom = 0.05
+  private minimumZoom = 0.05
+  /** 普通缩放下限为 5%；适配大画布后允许回到该全景比例。 */
+  get minZoom() {
+    return this.minimumZoom
+  }
   readonly maxZoom = 8
   /** 视口尺寸（屏幕像素），由引擎在 resize 时更新 */
   width = 0
@@ -93,21 +97,18 @@ export class Camera {
   /** 让世界矩形完整落在可见区域内，留出 padding（屏幕像素） */
   fit(r: Rect, padding = 64, maxZoom = 1) {
     if (this.width === 0 || this.height === 0) return
-    const { w, h, cx, cy } = this.safe
-    const zx = (w - padding * 2) / Math.max(r.w, 1)
-    const zy = (h - padding * 2) / Math.max(r.h, 1)
-    this.zoom = this.clamp(Math.min(zx, zy, maxZoom))
-    this.x = cx - (r.x + r.w / 2) * this.zoom
-    this.y = cy - (r.y + r.h / 2) * this.zoom
-    this.emit()
+    const to = this.fitTarget(r, padding, maxZoom)
+    this.lookAt(to.x, to.y, to.zoom)
   }
 
   /** fit 的目标：可见区域中央对准的世界坐标和缩放（不改相机，用来做过渡动画） */
   fitTarget(r: Rect, padding = 64, maxZoom = 1) {
     const { w, h } = this.safe
-    const zx = (w - padding * 2) / Math.max(r.w, 1)
-    const zy = (h - padding * 2) / Math.max(r.h, 1)
-    return { x: r.x + r.w / 2, y: r.y + r.h / 2, zoom: this.clamp(Math.min(zx, zy, maxZoom)) }
+    const zx = Math.max(1, w - padding * 2) / Math.max(r.w, 1)
+    const zy = Math.max(1, h - padding * 2) / Math.max(r.h, 1)
+    // 适配与定位动画必须能容纳整个目标，不能被普通滚轮的最小比例裁掉。
+    const zoom = Math.min(zx, zy, maxZoom, this.maxZoom)
+    return { x: r.x + r.w / 2, y: r.y + r.h / 2, zoom: zoom > 0 ? zoom : this.minZoom }
   }
 
   /** 可见区域中央对准的世界坐标 */
@@ -119,6 +120,8 @@ export class Camera {
   /** 让世界坐标 (wx, wy) 落在可见区域中央，并设成指定缩放 */
   lookAt(wx: number, wy: number, zoom: number) {
     const { cx, cy } = this.safe
+    // 程序定位可以扩展缩小范围；后续滚轮和动画也沿用这个下限，避免突然跳回 5%。
+    if (Number.isFinite(zoom) && zoom > 0) this.minimumZoom = Math.min(this.minimumZoom, zoom)
     this.zoom = this.clamp(zoom)
     this.x = cx - wx * this.zoom
     this.y = cy - wy * this.zoom

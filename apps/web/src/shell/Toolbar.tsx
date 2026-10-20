@@ -226,6 +226,8 @@ const ZOOM_PRESETS = [0.5, 1, 2]
 function ZoomMenu({ engine, zoom }: { engine: Engine; zoom: number }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [draft, setDraft] = useState('')
+  const percent = zoom * 100
+  const percentage = String(percent < 1 ? Number(percent.toPrecision(2)) : Math.round(percent))
   const close = () => setAnchor(null)
   const act = (fn: () => void) => () => {
     fn()
@@ -237,12 +239,12 @@ function ZoomMenu({ engine, zoom }: { engine: Engine; zoom: number }) {
         label="缩放选项"
         expanded={!!anchor}
         onClick={(e) => {
-          setDraft(String(Math.round(zoom * 100)))
+          setDraft(percentage)
           setAnchor(anchor ? null : e.currentTarget)
         }}
         className="min-w-14 text-xs tabular-nums"
       >
-        {Math.round(zoom * 100)}%
+        {percentage}%
       </Button>
       <Presence>
         {anchor && (
@@ -252,10 +254,10 @@ function ZoomMenu({ engine, zoom }: { engine: Engine; zoom: number }) {
                 // oxlint-disable-next-line jsx-a11y/no-autofocus -- 打开就能输入倍数
                 autoFocus
                 value={draft}
-                inputMode="numeric"
+                inputMode="decimal"
                 aria-label="缩放百分比"
                 onFocus={(e) => e.currentTarget.select()}
-                onChange={(e) => setDraft(e.target.value.replace(/[^\d]/g, ''))}
+                onChange={(e) => setDraft(e.target.value.replace(/[^\d.]/g, ''))}
                 onKeyDown={(e) => {
                   // Esc 交给弹层关闭，其余按键不让画布快捷键响应
                   if (e.key === 'Escape') return

@@ -12,6 +12,8 @@ const root = join(import.meta.dirname, '..')
 export default defineConfig({
   ...base,
   testMatch: [
+    'canvas-dense.spec.ts',
+    'canvas-media.spec.ts',
     'project-switcher-navigation.spec.ts',
     'project-switcher-list.spec.ts',
     'canvas-rename-recovery.spec.ts',

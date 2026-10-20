@@ -81,6 +81,36 @@ describe('Camera', () => {
     expect(cam.worldToScreen(50, 50)).toEqual({ x: 600, y: 400 })
   })
 
+  it.each([
+    { x: -40000, y: 500, w: 80000, h: 900 },
+    { x: 100, y: -60000, w: 800, h: 120000 },
+  ])('适配巨大目标 $w × $h 完整避开面板，继续缩放不会跳回 5%', (r) => {
+    const cam = camera()
+    cam.setViewport(1440, 900)
+    cam.setInsets({ left: 280, top: 80, bottom: 64 })
+    const target = cam.fitTarget(r)
+    expect(target.zoom).toBeLessThan(0.05)
+    expect(cam.zoom).toBe(1) // 计算动画目标不改变相机。
+    cam.fit(r)
+    expect(cam.zoom).toBe(target.zoom)
+    expect(cam.worldToScreen(r.x, r.y).x).toBeGreaterThanOrEqual(344)
+    expect(cam.worldToScreen(r.x, r.y).y).toBeGreaterThanOrEqual(144)
+    expect(cam.worldToScreen(r.x + r.w, r.y + r.h).x).toBeLessThanOrEqual(1376)
+    expect(cam.worldToScreen(r.x + r.w, r.y + r.h).y).toBeLessThanOrEqual(772)
+    cam.zoomAt(720, 450, 1.1)
+    expect(cam.zoom).toBeCloseTo(target.zoom * 1.1)
+    cam.zoomAt(720, 450, 0.01)
+    expect(cam.zoom).toBe(target.zoom)
+    // 定位动画从普通比例逐步走到同一目标，也必须实际到达。
+    const animated = camera()
+    animated.setViewport(1440, 900)
+    animated.setInsets(cam.insets)
+    animated.lookAt(target.x, target.y, target.zoom)
+    expect(animated.zoom).toBe(target.zoom)
+    expect(animated.center.x).toBeCloseTo(target.x)
+    expect(animated.center.y).toBeCloseTo(target.y)
+  })
+
   it('视口还没有尺寸时 fit 不动', () => {
     const cam = camera(5, 6, 2)
     let changed = 0
