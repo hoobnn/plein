@@ -164,7 +164,7 @@ export type PollResult =
       state: 'pending'
       progress?: number
       pollAfterMs?: number
-      /** 远端任务是在平台排队还是已开始生成；不给时界面只显示“生成中” */
+      /** 远端任务是在平台排队还是已开始生成；不给时界面只显示“平台已受理” */
       remote?: 'queued' | 'running'
     }
   | { state: 'succeeded'; outputs: ProviderOutput[]; usage?: ProviderUsage }

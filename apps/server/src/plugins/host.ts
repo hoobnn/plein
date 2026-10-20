@@ -170,7 +170,7 @@ function shutdownOnly(signal: AbortSignal | undefined) {
 
 /** 一次模型调用所处的阶段，见 @plein/doc 的 RunPhase */
 export interface CallStage {
-  phase: 'waiting' | 'submitting' | 'queued' | 'generating' | 'saving'
+  phase: 'waiting' | 'submitting' | 'accepted' | 'queued' | 'generating' | 'saving'
   /** 平台和模型，如“火山方舟 · Seedance 1.0 Pro” */
   via: string
 }
@@ -406,8 +406,10 @@ export class PluginHost {
             })
             throw staged(err, r.error.code === 'cancelled' ? 'remote_canceled' : 'remote_failed')
           }
-          // 平台没说在排队还是在生成时，按生成中算
-          stage(r.remote === 'queued' ? 'queued' : 'generating')
+          // 平台未报告排队或生成时，只能确认已受理，不能推测实际进度。
+          stage(
+            r.remote === 'queued' ? 'queued' : r.remote === 'running' ? 'generating' : 'accepted',
+          )
           if (r.progress !== undefined) opts.onProgress?.(r.progress)
           wait = r.pollAfterMs ?? DEFAULT_POLL_MS
         }
@@ -437,12 +439,13 @@ export class PluginHost {
           if (recorded?.state === 'pending' && def.poll) {
             // 之前已经提交过（重启、重试或重新获取）：接着轮询，不再提交
             remote = recorded.remoteId
-            stage('generating')
+            stage('accepted')
             return pollUntilDone(recorded.remoteId, 0)
           }
           if (recorded?.state === 'fetched' && recorded.remoteId && def.poll) {
             // 记录里的结果没存字节：再查一次平台拿结果
             remote = recorded.remoteId
+            stage('accepted')
             return pollUntilDone(recorded.remoteId, 0)
           }
           if (recorded?.state === 'submitting' || recorded?.state === 'unknown') {
@@ -451,7 +454,7 @@ export class PluginHost {
             if (found) {
               remote = found.remoteId
               record({ state: 'pending', remoteId: found.remoteId })
-              stage('generating')
+              stage('accepted')
               return pollUntilDone(found.remoteId, 0)
             }
           }
@@ -483,7 +486,7 @@ export class PluginHost {
               if (found) {
                 remote = found.remoteId
                 record({ state: 'pending', remoteId: found.remoteId })
-                stage('generating')
+                stage('accepted')
                 return pollUntilDone(found.remoteId, 0)
               }
             }
@@ -493,6 +496,7 @@ export class PluginHost {
             throw new ProviderError('unknown', `平台 ${def.title} 返回了异步任务但没有实现 poll`)
           remote = submitted.remoteId
           record({ state: 'pending', remoteId: submitted.remoteId })
+          stage('accepted')
           return pollUntilDone(submitted.remoteId, submitted.pollAfterMs ?? DEFAULT_POLL_MS)
         }, signal)
         record({

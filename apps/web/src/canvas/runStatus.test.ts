@@ -5,7 +5,7 @@ const base = { id: 'r', status: 'running', at: 0, startedAt: 1000 } as const
 
 describe('运行状态的展示', () => {
   it('按阶段说清在等谁', () => {
-    expect(describeActive({ ...base, status: 'queued' }, 5000)).toMatchObject({ label: '排队中' })
+    expect(describeActive({ ...base, status: 'queued' }, 5000)).toMatchObject({ label: '本地排队' })
     expect(
       describeActive({ ...base, phase: 'queued', via: '火山方舟 · Seedance' }, 43_000),
     ).toMatchObject({ label: '平台排队', detail: '火山方舟 · Seedance', step: 1, elapsed: 42_000 })
@@ -15,8 +15,16 @@ describe('运行状态的展示', () => {
       progress: 0.42,
     })
     expect(describeActive({ ...base, phase: 'waiting', via: '百炼 · 万相' }, 2000).detail).toBe(
-      '百炼并发已满，轮到就提交',
+      'Plein 本地的百炼并发已满，等待空位后继续',
     )
+  })
+
+  it('平台已受理但未报告进度时，不显示等待响应或推测生成阶段', () => {
+    expect(
+      describeActive({ ...base, phase: 'accepted', via: 'MiniMax · H3' }, 120_000),
+    ).toMatchObject({ label: '平台已受理', detail: 'MiniMax · H3 · 等待任务状态', step: undefined })
+    expect(describeActive({ ...base, phase: 'accepted' }, 120_000).notice).toBeUndefined()
+    expect(describeActive({ ...base, phase: 'waiting' }, 120_000).notice).toBeUndefined()
   })
 
   it('等待重试时倒计时', () => {

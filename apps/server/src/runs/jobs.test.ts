@@ -135,6 +135,45 @@ describe('任务队列', () => {
     }
   })
 
+  it('全局并发 4、平台并发 2：区分本地排队、空位等待和平台已受理', async () => {
+    const { server } = await boot({ PLEIN_MAX_JOBS: '4' })
+    mock(server, { latencyMs: 600 })
+    Object.assign(mockProvider, { limits: { concurrency: 2 } })
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const original = mockProvider.submit
+    const submit = vi.spyOn(mockProvider, 'submit').mockImplementation(async (req, ctx) => {
+      await gate
+      return original(req, ctx)
+    })
+    const { id, doc } = await canvas(server)
+    const nodes = Array.from({ length: 5 }, (_, i) =>
+      addNode(doc, 'plein/image', { params: { prompt: `镜头 ${i}` } }),
+    )
+    const phases = () => nodes.map((node) => doc.get(node)?.run)
+    const jobs = nodes.map((node) => server.runs.start(id, node, 'local'))
+    try {
+      await until(() => phases().filter((r) => r?.phase === 'waiting').length === 2)
+      expect(submit).toHaveBeenCalledTimes(2)
+      expect(phases().filter((r) => r?.phase === 'submitting')).toHaveLength(2)
+      expect(phases().filter((r) => r?.status === 'queued')).toHaveLength(1)
+      release()
+      await until(() => phases().some((r) => r?.phase === 'accepted'))
+      expect(phases().filter((r) => r?.phase === 'accepted')).toHaveLength(2)
+      expect(submit).toHaveBeenCalledTimes(2)
+      expect(await Promise.all(jobs.map((job) => server.runs.wait(job)))).toEqual(
+        Array(5).fill('succeeded'),
+      )
+      expect(submit).toHaveBeenCalledTimes(5)
+    } finally {
+      release()
+      await server.close()
+      Reflect.deleteProperty(mockProvider, 'limits')
+    }
+  })
+
   it('取消排队中的任务', async () => {
     const { server } = await boot({ PLEIN_MAX_JOBS: '1' })
     mock(server, { latencyMs: 300 })
@@ -197,7 +236,7 @@ describe('任务队列', () => {
     })
     const run = server.runs.start(id, a, 'local')
     expect(await server.runs.wait(run)).toBe('succeeded')
-    expect(phases).toEqual(['submitting', 'queued', 'generating', 'saving'])
+    expect(phases).toEqual(['submitting', 'accepted', 'queued', 'generating', 'saving'])
     expect(doc.get(a)?.run?.status).toBe('succeeded')
   })
 

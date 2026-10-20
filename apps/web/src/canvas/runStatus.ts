@@ -9,9 +9,10 @@ import type { NodeRun, RunPhase } from '@plein/doc'
 /** 进度条上的四步：提交、平台排队、生成、保存结果 */
 export const RUN_STEPS = ['提交', '排队', '生成', '保存'] as const
 
-const PHASE_STEP: Record<RunPhase, number> = {
+const PHASE_STEP: Record<RunPhase, number | undefined> = {
   waiting: 0,
   submitting: 0,
+  accepted: undefined,
   queued: 1,
   generating: 2,
   saving: 3,
@@ -44,8 +45,8 @@ const platformOf = (via?: string) => via?.split(' · ')[0]
 export function describeActive(run: NodeRun, now: number): RunView {
   if (run.status === 'queued')
     return {
-      label: '排队中',
-      detail: run.message ?? '等前面的任务跑完',
+      label: '本地排队',
+      detail: run.message ?? '等待 Plein 运行空位',
       retrying: false,
     }
   const elapsed = run.startedAt ? Math.max(0, now - run.startedAt) : undefined
@@ -63,7 +64,11 @@ export function describeActive(run: NodeRun, now: number): RunView {
       }
     }
     case 'waiting':
-      return { ...base, label: '等待空位', detail: `${platform ?? '平台'}并发已满，轮到就提交` }
+      return {
+        ...base,
+        label: '等待调用空位',
+        detail: `Plein 本地的${platform ?? '平台'}并发已满，等待空位后继续`,
+      }
     case 'submitting': {
       // 依据最近一次阶段／进度更新，不能把此前等待本地空位的时间算进平台响应。
       const idle = Math.max(0, now - Math.max(run.at, run.startedAt ?? run.at))
@@ -75,6 +80,8 @@ export function describeActive(run: NodeRun, now: number): RunView {
         notice: slow ? '平台响应较慢，请继续等待；请求可能已受理，请勿重复生成。' : undefined,
       }
     }
+    case 'accepted':
+      return { ...base, label: '平台已受理', detail: `${run.via ?? '平台'} · 等待任务状态` }
     case 'queued':
       return { ...base, label: '平台排队', detail: run.via }
     case 'saving':

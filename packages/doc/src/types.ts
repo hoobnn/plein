@@ -115,11 +115,19 @@ export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancele
 
 /**
  * 运行中调用外部平台的阶段：
- * waiting 等平台并发空位 → submitting 提交（同步平台在这一步直接出结果）→
+ * waiting 等本地平台调用空位 → submitting 提交（同步平台在这一步直接出结果）→
+ * accepted 平台已受理、状态待查询 →
  * queued 平台排队 → generating 平台生成中 → saving 下载结果存入资产库；
  * retrying 是出错后等待自动重试
  */
-export type RunPhase = 'waiting' | 'submitting' | 'queued' | 'generating' | 'saving' | 'retrying'
+export type RunPhase =
+  | 'waiting'
+  | 'submitting'
+  | 'accepted'
+  | 'queued'
+  | 'generating'
+  | 'saving'
+  | 'retrying'
 
 /** 节点最近一次运行的状态，由服务端写入，不进撤销栈 */
 export interface NodeRun {

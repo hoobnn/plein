@@ -21,7 +21,7 @@ import { beforeAll, describe, expect, it, vi } from 'vite-plus/test'
 import { z } from 'zod'
 import { startTestServer, tempDir } from '../testing'
 import { ProviderConfigStore } from './config-store'
-import { type CallRecord, NodeRunError, PluginHost } from './host'
+import { type CallRecord, type CallStage, NodeRunError, PluginHost } from './host'
 import { Limiter } from './limiter'
 import { PluginRegistry } from './registry'
 import { PermissionError, scopedFetch, scopedSecrets } from './sandbox'
@@ -677,15 +677,44 @@ describe('模型调用记录', () => {
       false,
     )
     const records = new Map<string, CallRecord>()
+    const stages: CallStage['phase'][] = []
     const call = () =>
       host.call(
         'image.generate',
         'acme/async:m',
         { prompt: '天台', seed: 7 },
-        { ownerId: 'local', journal: { store: records, key: 'k' } },
+        {
+          ownerId: 'local',
+          journal: { store: records, key: 'k' },
+          onStage: ({ phase }) => stages.push(phase),
+        },
       )
-    return { submit, poll, records, call }
+    return { submit, poll, records, stages, call }
   }
+
+  it('提交受理后立即更新，只有平台明确报告时才展示排队或生成', async () => {
+    const { poll, stages, call } = asyncHost()
+    poll.mockImplementationOnce(async () => {
+      // 首轮查询前已经收到任务 ID，不再显示等待提交响应。
+      expect(stages.at(-1)).toBe('accepted')
+      return { state: 'pending', remote: 'queued', pollAfterMs: 1 }
+    })
+    poll.mockResolvedValueOnce({ state: 'pending', remote: 'running', pollAfterMs: 1 })
+    poll.mockResolvedValueOnce({ state: 'pending', pollAfterMs: 1 })
+    await call()
+    expect(stages).toEqual(['submitting', 'accepted', 'queued', 'generating', 'accepted'])
+  })
+
+  it('已有远端任务恢复查询时不推测生成，不重复提交', async () => {
+    const { submit, poll, records, stages, call } = asyncHost()
+    records.set('k', { state: 'pending', remoteId: 'r1' })
+    poll.mockImplementationOnce(async () => {
+      expect(stages).toEqual(['accepted'])
+      return { state: 'succeeded', outputs: [{ type: 'text', text: '已恢复' }] }
+    })
+    await call()
+    expect(submit).not.toHaveBeenCalled()
+  })
 
   it('记录里已有结果：直接返回，不提交也不轮询', async () => {
     const { submit, poll, records, call } = asyncHost()
