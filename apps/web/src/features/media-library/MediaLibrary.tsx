@@ -13,6 +13,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import { api, ApiError, assetUrls } from '../../api/client'
 import { elementFor } from '../../canvas/import'
@@ -85,6 +86,21 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
   }, [selected])
   const engine = useCanvas((s) => s.engine),
     canvasId = useCanvas((s) => s.canvasId)
+  const readOnly = useSyncExternalStore(
+    useCallback(
+      (notify) => {
+        if (!engine) return () => {}
+        const offState = engine.onStateChange(notify)
+        const offDoc = engine.doc.subscribe(notify)
+        return () => {
+          offState()
+          offDoc()
+        }
+      },
+      [engine],
+    ),
+    () => engine?.doc.readOnly ?? true,
+  )
   const [preview, setPreview] = useState<MediaLibraryItem | null>(null)
   const searching = searchQuery.trim() !== debounced
   const visibleItems = searching || queryTooLong ? [] : page.items
@@ -372,7 +388,13 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
                 asset={selected}
                 onPreview={() => setPreview(selected)}
                 onPlace={() => place(selected)}
-                canPlace={!!engine && !!canvasId && !engine.doc.readOnly}
+                placeDisabledReason={
+                  !engine || !canvasId
+                    ? '打开一张画布后可以放入'
+                    : readOnly
+                      ? '当前画布为只读，不能放入素材'
+                      : undefined
+                }
                 onClose={close}
               />
             </div>
@@ -392,18 +414,19 @@ function MediaDetail({
   asset,
   onPreview,
   onPlace,
-  canPlace,
+  placeDisabledReason,
   onClose,
 }: {
   asset: MediaLibraryItem
   onPreview(): void
   onPlace(): void
-  canPlace: boolean
+  placeDisabledReason?: string
   onClose(): void
 }) {
   const [sources, setSources] = useState<MediaSource[]>(asset.sources),
     [cursor, setCursor] = useState<string | null>(null),
     [error, setError] = useState('')
+  const placeReasonId = useId()
   const [category, setCategory] = useState('character')
   const [busy, setBusy] = useState(true)
   const [retryCursor, setRetryCursor] = useState<string | undefined>()
@@ -500,12 +523,18 @@ function MediaDetail({
       <button
         type="button"
         className="ui-btn ui-btn-primary"
-        disabled={!canPlace}
-        title={canPlace ? undefined : '打开一张画布后可以放入'}
+        disabled={!!placeDisabledReason}
+        title={placeDisabledReason}
+        aria-describedby={placeDisabledReason ? placeReasonId : undefined}
         onClick={onPlace}
       >
         放入当前画布
       </button>
+      {placeDisabledReason && (
+        <p id={placeReasonId} role="status" className="text-xs text-ink-subtle">
+          {placeDisabledReason}
+        </p>
+      )}
       {asset.kind !== 'audio' && (
         <div className="flex flex-col gap-2">
           {asset.kind === 'image' && (
