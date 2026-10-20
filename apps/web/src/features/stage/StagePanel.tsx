@@ -58,6 +58,7 @@ export function StagePanel({
 }) {
   useDocVersion(engine.doc)
   const notify = useCanvas((s) => s.notify)
+  const readOnly = engine.doc.readOnly
   const el = engine.doc.get(id)
   const scene = stageSceneOf(el?.params)
   const records = stageRecordsOf(el)
@@ -115,6 +116,7 @@ export function StagePanel({
 
   const readScene = () => stageSceneOf(engine.doc.get(id)?.params)
   const commit = (change: (current: StageScene) => StageScene, group: string | null = null) => {
+    if (engine.doc.readOnly) return
     // 属性编辑前先确认当前视角；确认可能同步写入新机位，随后必须重新读文档。
     view.current?.finishCamera()
     const current = readScene()
@@ -156,6 +158,7 @@ export function StagePanel({
   useEffect(() => {
     if (!host) return
     const v = new StageView(host, {
+      readOnly: () => engine.doc.readOnly,
       onSelect: (sid) => setSelected(sid),
       onMove: (oid, at) => {
         const s = readScene()
@@ -166,6 +169,7 @@ export function StagePanel({
     })
     view.current = v
     v.setScene(latest.current)
+    v.setReadOnly(engine.doc.readOnly)
     v.setSelected(selectedRef.current === CAMERA_ID ? null : selectedRef.current)
     return () => {
       v.dispose()
@@ -173,6 +177,7 @@ export function StagePanel({
     }
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- 视口只随宿主节点建一次，回调都经 latest 取最新场景
   }, [host])
+  useEffect(() => view.current?.setReadOnly(readOnly), [readOnly])
   const sceneKey = JSON.stringify(scene)
   useEffect(() => view.current?.setScene(latest.current), [sceneKey])
   useEffect(() => view.current?.setSelected(selected === CAMERA_ID ? null : selected), [selected])
@@ -182,7 +187,7 @@ export function StagePanel({
   // 快捷键只作用于当前构图面板，不能穿透输入框或菜单。
   const keys = useRef<(e: KeyboardEvent) => void>(() => {})
   keys.current = (e) => {
-    if (e.defaultPrevented || e.isComposing || e.repeat) return
+    if (e.defaultPrevented || e.isComposing || e.repeat || engine.doc.readOnly) return
     const target = e.target
     if (!(target instanceof HTMLElement) || !host?.closest('[role="dialog"]')?.contains(target))
       return
@@ -223,6 +228,7 @@ export function StagePanel({
   const block = scene.blocks.find((b) => b.id === selected)
 
   const addFigure = () => {
+    if (engine.doc.readOnly) return
     const current = readScene()
     const n = current.figures.length
     if (n >= 12) return
@@ -243,6 +249,7 @@ export function StagePanel({
     setSelected(f.id)
   }
   const addBlock = (kind: StageBlockKind) => {
+    if (engine.doc.readOnly) return
     const current = readScene()
     if (current.blocks.length >= 60) return
     const def = STAGE_BLOCKS.find((b) => b.id === kind)!
@@ -263,7 +270,7 @@ export function StagePanel({
     setSelected(b.id)
   }
   const removeSelected = () => {
-    if (!selected || selected === CAMERA_ID) return
+    if (engine.doc.readOnly || !selected || selected === CAMERA_ID) return
     commit((current) => ({
       ...current,
       figures: current.figures.filter((f) => f.id !== selected),
@@ -277,7 +284,7 @@ export function StagePanel({
   }
   const shoot = async () => {
     const v = view.current
-    if (!v || busy) return
+    if (!v || busy || engine.doc.readOnly) return
     setBusy(true)
     const report = (message: string) => {
       if (useCanvas.getState().engine === engine) notify(message)
@@ -331,7 +338,7 @@ export function StagePanel({
         <button
           type="button"
           className="ui-btn ui-btn-primary"
-          disabled={busy}
+          disabled={busy || readOnly}
           title="按机位截一张灰模构图，作为这个节点的新结果"
           onClick={() => void shoot()}
         >
@@ -339,6 +346,11 @@ export function StagePanel({
           截图
         </button>
       </ModalHeader>
+      {readOnly && (
+        <p role="status" className="ui-help px-4 py-2">
+          只读构图：可查看对象和切换视角，不能修改场景或截图。
+        </p>
+      )}
       <div
         className="stage-body"
         onPointerDownCapture={(event) => {
@@ -360,7 +372,7 @@ export function StagePanel({
                 className="ui-btn ui-btn-xs ui-btn-quiet ui-icon-btn"
                 aria-label="添加人物"
                 title="添加人物"
-                disabled={scene.figures.length >= 12}
+                disabled={readOnly || scene.figures.length >= 12}
                 onClick={addFigure}
               >
                 <Icon name="plus" size={14} />
@@ -380,7 +392,7 @@ export function StagePanel({
           </OutlineGroup>
           <OutlineGroup
             title="场景件"
-            action={<AddBlock onPick={addBlock} disabled={scene.blocks.length >= 60} />}
+            action={<AddBlock onPick={addBlock} disabled={readOnly || scene.blocks.length >= 60} />}
           >
             {scene.blocks.length === 0 && (
               <p className="stage-empty">墙、桌椅、门、床，用来定空间</p>
@@ -504,7 +516,7 @@ export function StagePanel({
                 { value: 'free', label: '自由视角', icon: 'map' },
               ]}
             />
-            {(figure || block) && (
+            {!readOnly && (figure || block) && (
               <Segmented
                 label="操作"
                 value={tool}
@@ -518,47 +530,55 @@ export function StagePanel({
             )}
           </div>
           <p className="stage-overlay stage-hint">
-            {mode === 'shot'
-              ? '拖动画面绕着看向的点转机位 · 右键平移 · 滚轮推拉 · 点人物或场景件后拖手柄摆位置'
-              : '自由视角只用来摆场景，截图总是按机位取景'}
+            {readOnly
+              ? '只读预览 · 可拖动画面查看空间，视角变化不会保存'
+              : mode === 'shot'
+                ? '拖动画面绕着看向的点转机位 · 右键平移 · 滚轮推拉 · 点人物或场景件后拖手柄摆位置'
+                : '自由视角只用来摆场景，截图总是按机位取景'}
           </p>
         </section>
 
         <aside className="stage-inspector ui-scrollbar" aria-label="属性">
-          {figure ? (
-            <FigureInspector
-              key={figure.id}
-              figure={figure}
-              onChange={(p) => patchFigure(figure.id, p)}
-              onRemove={removeSelected}
-              onAim={() =>
-                patchCamera({
-                  tx: figure.x,
-                  ty: Math.round(figure.height * 0.85 * 100) / 100,
-                  tz: figure.z,
-                })
-              }
-            />
-          ) : block ? (
-            <BlockInspector
-              key={block.id}
-              block={block}
-              onChange={(p) => patchBlock(block.id, p)}
-              onRemove={removeSelected}
-            />
-          ) : (
-            <CameraInspector
-              scene={scene}
-              mode={mode}
-              onAspect={(aspect) => commit((current) => ({ ...current, aspect }))}
-              onChange={patchCamera}
-              onFromView={() => {
-                const cam = view.current?.viewAsCamera()
-                if (cam) patchCamera(cam)
-                setMode('shot')
-              }}
-            />
-          )}
+          <fieldset
+            key={readOnly ? 'readonly' : 'editable'}
+            disabled={readOnly}
+            className="min-w-0"
+          >
+            {figure ? (
+              <FigureInspector
+                key={figure.id}
+                figure={figure}
+                onChange={(p) => patchFigure(figure.id, p)}
+                onRemove={removeSelected}
+                onAim={() =>
+                  patchCamera({
+                    tx: figure.x,
+                    ty: Math.round(figure.height * 0.85 * 100) / 100,
+                    tz: figure.z,
+                  })
+                }
+              />
+            ) : block ? (
+              <BlockInspector
+                key={block.id}
+                block={block}
+                onChange={(p) => patchBlock(block.id, p)}
+                onRemove={removeSelected}
+              />
+            ) : (
+              <CameraInspector
+                scene={scene}
+                mode={mode}
+                onAspect={(aspect) => commit((current) => ({ ...current, aspect }))}
+                onChange={patchCamera}
+                onFromView={() => {
+                  const cam = view.current?.viewAsCamera()
+                  if (cam) patchCamera(cam)
+                  setMode('shot')
+                }}
+              />
+            )}
+          </fieldset>
         </aside>
       </div>
     </Modal>

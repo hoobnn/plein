@@ -998,3 +998,70 @@ test('3D 编码期间切换画布，旧任务不上传、不提示新画布且�
   expect(uploads).toHaveLength(1)
   expect(errors).toEqual([])
 })
+
+for (const gesture of ['object', 'camera'] as const) {
+  for (const mode of ['rendered', 'same-frame'] as const) {
+    test(`3D ${gesture} 拖动中转只读 ${mode} 不提交旧手势且可恢复`, async ({ page }) => {
+      const errors: string[] = []
+      page.on('pageerror', (error) => errors.push(error.message))
+      const { stage, dialog } = await openStage(page)
+      const canvas = dialog.locator('canvas.stage-canvas')
+      const read = async () =>
+        stageSceneOf(
+          await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params, stage.id),
+        )
+      const before = await read()
+      const dragStart = async () => {
+        const rect = (await canvas.boundingBox())!
+        const at =
+          gesture === 'object'
+            ? await handlePoint(page, await canvas.screenshot(), 'red')
+            : { x: 0.75, y: 0.3 }
+        const x = rect.x + at.x * rect.width,
+          y = rect.y + at.y * rect.height
+        await page.mouse.move(x, y)
+        await page.mouse.down()
+        await page.mouse.move(x + 60, y - (gesture === 'camera' ? 25 : 0), { steps: 8 })
+      }
+      await dragStart()
+      await page.evaluate(
+        ({ id, mode }) => {
+          const doc = window.__plein.engine.doc as typeof window.__plein.engine.doc & {
+            readOnly: boolean
+          }
+          doc.readOnly = true
+          // 模拟权限快照带来的文档刷新；同帧路径在 React 回送前立即松手。
+          const node = doc.mutable(id)! as unknown as { set(k: string, v: unknown): void }
+          node.set('name', '只读构图')
+          if (mode === 'same-frame')
+            document
+              .querySelector('.stage-canvas')!
+              .dispatchEvent(
+                new PointerEvent('pointerup', { pointerId: 1, button: 0, bubbles: true }),
+              )
+        },
+        { id: stage.id, mode },
+      )
+      if (mode === 'rendered') await expect(dialog.getByRole('status')).toContainText('只读')
+      await page.mouse.up()
+      await expect(dialog.getByRole('status')).toContainText('只读')
+      expect(await read()).toEqual(before)
+      await dialog.screenshot({ path: test.info().outputPath(`readonly-${gesture}.png`) })
+      await page.evaluate((id) => {
+        const doc = window.__plein.engine.doc as typeof window.__plein.engine.doc & {
+          readOnly: boolean
+        }
+        doc.readOnly = false
+        const node = doc.mutable(id)! as unknown as { set(k: string, v: unknown): void }
+        node.set('name', '恢复构图')
+      }, stage.id)
+      await expect(dialog.getByRole('status')).toHaveCount(0)
+      await dragStart()
+      await page.mouse.up()
+      await expect.poll(read).not.toEqual(before)
+      await dialog.getByRole('button', { name: '撤销构图操作', exact: true }).click()
+      expect(await read()).toEqual(before)
+      expect(errors).toEqual([])
+    })
+  }
+}

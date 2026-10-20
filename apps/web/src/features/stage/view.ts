@@ -21,6 +21,8 @@ export interface StageViewEvents {
   onMove(id: string, at: { x: number; z: number; facing: number }): void
   /** 机位视角下拖动画面结束：新的机位 */
   onCamera(camera: StageCamera): void
+  /** 每次提交时同步读取，避免只读切换与松手处于同一帧。 */
+  readOnly?(): boolean
 }
 
 /** 背景和地面：和主题无关，取景框里看到的就是截出来的样子 */
@@ -186,6 +188,19 @@ export class StageView {
     this.resize()
   }
 
+  setReadOnly(readOnly: boolean) {
+    this.gizmo.enabled = !readOnly
+    if (readOnly) {
+      if (this.dragging) this.gizmo.reset()
+      this.dragging = false
+      this.gizmo.dragging = false
+      this.pendingCamera = false
+      this.stopOrbit()
+      if (this.data) this.setScene(this.data)
+    }
+    this.attachGizmo()
+  }
+
   setSelected(id: string | null) {
     this.selected = id
     for (const [oid, obj] of this.objects) this.highlight(obj, oid === id)
@@ -307,6 +322,10 @@ export class StageView {
 
   /** 截图、关闭或切视角前，确认当前所见机位；正常拖动则等缓动结束再写一次。 */
   finishCamera() {
+    if (this.events.readOnly?.()) {
+      this.pendingCamera = false
+      return
+    }
     if (this.mode !== 'shot' || !this.pendingCamera) return
     this.stopOrbit()
     this.pendingCamera = false
@@ -401,7 +420,8 @@ export class StageView {
   }
 
   private attachGizmo() {
-    const obj = this.selected ? this.objects.get(this.selected) : undefined
+    const obj =
+      !this.events.readOnly?.() && this.selected ? this.objects.get(this.selected) : undefined
     if (obj && this.gizmo.object !== obj) this.gizmo.attach(obj)
     else if (!obj && this.gizmo.object) this.gizmo.detach()
   }
@@ -415,6 +435,10 @@ export class StageView {
   }
 
   private commitMove() {
+    if (this.events.readOnly?.()) {
+      if (this.data) this.setScene(this.data)
+      return
+    }
     const obj = this.gizmo.object
     const id = obj?.userData.id as string | undefined
     if (!obj || !id) return
