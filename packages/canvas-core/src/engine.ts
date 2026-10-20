@@ -16,7 +16,7 @@ import {
   sendToBack,
   ungroupElements,
 } from '@plein/doc'
-import { Application, Container } from 'pixi.js'
+import { Application, Container, RendererType, type Shader } from 'pixi.js'
 import { Camera } from './camera'
 import { EdgeLayer } from './edges'
 import { union } from './geometry'
@@ -32,6 +32,7 @@ import { attachInteractions } from './interact'
 import type { PortRef } from './ports'
 import { HighlightLayer } from './highlight'
 import { SelectionOverlay } from './overlay'
+import { createPreviewShader } from './previewShader'
 import { type RenderContext, RendererRegistry } from './renderers'
 import { Scene, type Transient } from './scene'
 import { Selection } from './selection'
@@ -41,7 +42,10 @@ import { previewTextures } from './textures'
 
 export type Tool = 'select' | 'hand'
 
-export interface EngineOptions extends Omit<RenderContext, 'initialDetail' | 'textures'> {
+export interface EngineOptions extends Omit<
+  RenderContext,
+  'initialDetail' | 'textures' | 'previewShader'
+> {
   host: HTMLElement
   doc: PleinDoc
   /** DOM 覆盖层，跟随相机变换 */
@@ -125,6 +129,7 @@ export class Engine {
   private grid = new DotGrid()
   private views: ElementViews
   private textureOwner = previewTextures.createOwner()
+  private previewShader: Shader | undefined
   private edges: EdgeLayer
   private overlay: SelectionOverlay
   private highlight: HighlightLayer
@@ -170,6 +175,7 @@ export class Engine {
     this.views = new ElementViews(this.scene, opts.renderers ?? new RendererRegistry(), {
       assetUrl: opts.assetUrl,
       textures: this.textureOwner,
+      previewShader: () => this.previewShader,
       onContentSize: (id, w, h) => this.fitMedia(id, w, h),
       invalidate: () => {
         this.previewRevision++
@@ -196,6 +202,7 @@ export class Engine {
       resolution: window.devicePixelRatio,
       preference: this.opts.renderer ?? 'webgl',
     })
+    if (this.app.renderer.type === RendererType.WEBGL) this.previewShader = createPreviewShader()
     host.appendChild(this.app.canvas)
     this.app.stage.addChild(this.grid.display, this.world)
     // 连线在元素下，端口、选择叠加层在元素上，靠 zIndex 排序
@@ -889,6 +896,9 @@ export class Engine {
     this.edges.destroy()
     this.overlay.destroy()
     this.grid.destroy()
+    // 程序源码缓存可被其他引擎共享，只销毁本引擎的 Shader 和绑定，不销毁共享 Program。
+    this.previewShader?.destroy()
+    this.previewShader = undefined
     // 主画布与只读预览可同时存在；销毁单个引擎不能释放其他 renderer 的全局资源。
     this.app.destroy({ removeView: true, releaseGlobalResources: false }, { children: true })
   }

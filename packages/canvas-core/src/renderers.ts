@@ -1,5 +1,5 @@
 import { type CanvasElement, elementMedia, type ElementKind } from '@plein/doc'
-import { Container, Graphics, Text, type Texture } from 'pixi.js'
+import { Container, Graphics, Text, type Texture, type Shader } from 'pixi.js'
 import { theme } from './theme'
 import { previewTextures, type TextureOwner, TextureSlot } from './textures'
 
@@ -11,6 +11,8 @@ export interface RenderContext {
   initialDetail?: boolean
   /** Engine-owned leases into the shared Pixi preview cache. */
   textures?: TextureOwner
+  /** 引擎拥有的 WebGL 预览程序；只有底色和一张预览纹理，不扩展通用渲染器限制。 */
+  previewShader?: () => Shader | undefined
   /** 资产在画布上的预览图 URL：图片缩略图、视频封面、音频波形 */
   assetUrl?: (assetId: string, kind: ElementKind, size: PreviewSize) => string | undefined
   /** 媒体预览加载后报告其像素尺寸，用来按内容校正元素尺寸 */
@@ -176,6 +178,9 @@ const mediaRenderer: ElementRenderer = (el, ctx) => {
   const draw = (next: CanvasElement) => {
     const { w, h, kind } = next
     const texture = slot.texture
+    // 正常大小的三段预览几何原本就不合批，保留其静态缓冲；小卡片仍用自动策略。
+    bg.context.customShader =
+      texture && Math.min(w, h) >= RADIUS * 2 ? ctx.previewShader?.() : undefined
     bg.clear().roundRect(0, 0, w, h, RADIUS).fill({ color: theme.surface })
     if (texture) {
       // 纹理按形状包围盒铺满（textureSpace: local），省掉昂贵的遮罩
@@ -307,6 +312,12 @@ const nodeRenderer: ElementRenderer = (el, ctx) => {
   const draw = (next: CanvasElement) => {
     const { w, h } = next
     const texture = slot.texture
+    const fit = texture ? Math.min(w / texture.width, h / texture.height) : 0
+    // 极端长宽比的内嵌预览原本仍可合批；这些几何沿用默认程序。
+    bg.context.customShader =
+      texture && Math.min(w, h, texture.width * fit, texture.height * fit) >= RADIUS * 2
+        ? ctx.previewShader?.()
+        : undefined
     const status = next.run?.status
     const accent = (status && theme.status[status]) ?? theme.kinds.node
     const loud = status === 'running' || status === 'failed' || status === 'queued'
