@@ -114,6 +114,7 @@ export default defineConfig({
     'group-boundaries.spec.ts',
     'port-zoom-boundaries.spec.ts',
     'wheel-units.spec.ts',
+    'arrange-locked-nesting.spec.ts',
     'canvas-readonly.spec.ts',
     'canvas-shortcut-composition.spec.ts',
     'command-palette-boundaries.spec.ts',

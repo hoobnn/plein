@@ -193,4 +193,33 @@ describe('arrangeElements', () => {
     for (const moved of [a, b])
       for (const obstacle of [c, d]) expectNoOverlap([doc.get(moved)!, doc.get(obstacle)!])
   })
+
+  it('组内有锁定元素时，不先扩大嵌套组再放弃外层整理', () => {
+    const doc = open()
+    const a = createElement(doc, node({ x: 100, y: 100 }))
+    const b = createElement(doc, node({ x: 100, y: 100 }))
+    connect(doc, [a, 'out'], [b, 'in'])
+    const inner = groupElements(doc, [a, b])!
+    const fixed = createElement(doc, node({ x: 300, y: 100, locked: true }))
+    const outer = groupElements(doc, [inner, fixed])!
+    const before = [...doc.elements()]
+    doc.undo.stopCapturing()
+    expect(arrangeElements(doc, [outer])).toBe(0)
+    expect([...doc.elements()]).toEqual(before)
+    // 解锁后仍会正常整理嵌套内容，且一步撤销恢复原始几何。
+    doc.ydoc.transact(() => doc.mutable(fixed)!.set('locked', false), doc.origin)
+    doc.undo.stopCapturing()
+    const unlocked = [...doc.elements()]
+    expect(arrangeElements(doc, [outer])).toBeGreaterThan(0)
+    for (const child of doc.descendants(outer)) {
+      const parent = doc.worldRect(child.parentId!)!
+      const rect = doc.worldRect(child.id)!
+      expect(rect.x).toBeGreaterThanOrEqual(parent.x)
+      expect(rect.y).toBeGreaterThanOrEqual(parent.y)
+      expect(rect.x + rect.w).toBeLessThanOrEqual(parent.x + parent.w)
+      expect(rect.y + rect.h).toBeLessThanOrEqual(parent.y + parent.h)
+    }
+    doc.undo.undo()
+    expect([...doc.elements()]).toEqual(unlocked)
+  })
 })

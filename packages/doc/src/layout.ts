@@ -256,9 +256,9 @@ export function arrangeElements(
   }
   const arrangeFrame = (frame: CanvasElement) => {
     const kids = doc.children(frame.id).filter((el) => !el.locked)
-    for (const k of kids) if (k.kind === 'frame') arrangeFrame(k)
-    // 有锁定的子元素时不收放 Frame，免得把它挤出去
+    // 有锁定的子元素时不能重新排布同级或收放 Frame；先确认，再递归，避免只撑大内层组。
     if (kids.length === 0 || kids.length !== doc.children(frame.id).length) return
+    for (const k of kids) if (k.kind === 'frame') arrangeFrame(k)
     const size = place(kids, FRAME_PAD.x, FRAME_PAD.top)
     geo.set(frame.id, {
       x: frame.x,
