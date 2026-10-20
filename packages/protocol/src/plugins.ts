@@ -90,6 +90,10 @@ export type ProviderConfigUpdate = z.infer<typeof ProviderConfigUpdate>
 
 export interface ProviderTestResult {
   ok: boolean
+  /** 本次检查的类型；即使连接检查成功，也不证明具体模型可用。 */
+  scope: 'configuration' | 'connection'
+  modelAccess: 'unverified'
+  checkedAt: number
   code?: string
   message?: string
 }

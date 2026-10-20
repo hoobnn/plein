@@ -533,7 +533,17 @@ export class NodeRuns implements BatchHost {
       ...(def?.capability === 'audio.speech' && hasVoice(voice)
         ? { voice: { provider: voice.provider, voiceId: voice.voiceId } }
         : {}),
-      notices: p.mentions?.notices ?? [],
+      notices: [
+        ...(p.mentions?.notices ?? []),
+        ...((def?.capability === 'audio.transcribe' || def?.capability === 'audio.music') && model
+          ? [
+              {
+                code: 'model_access_unverified' as const,
+                message: `${def.capability === 'audio.transcribe' ? '语音识别' : '配乐生成'}模型 ${model.ref} 的当前账户权限尚未验证；配置或连接检查不能证明该模型可用。执行可能计费。`,
+              },
+            ]
+          : []),
+      ],
       blocked,
       inputHash: this.cacheKey(el, p, []),
     }
@@ -899,7 +909,10 @@ export class NodeRuns implements BatchHost {
     const rec = view.recovery
     const stored = parseRecovery(row.recovery)
     if (opt.action === 'dismiss') {
-      this.store.update(jobId, { recovery: JSON.stringify({ ...stored, dismissed: true }) })
+      const keys = Object.keys(JSON.parse(row.calls || '{}'))
+      this.store.manualRecovery(jobId, 'dismiss', keys, {
+        recovery: JSON.stringify({ ...stored, dismissed: true }),
+      })
       return this.jobInfo(this.store.get(jobId)!)
     }
     if (this.isRunning(canvasId, row.node_id))
@@ -908,7 +921,6 @@ export class NodeRuns implements BatchHost {
     const unknown = Object.keys(calls).filter(
       (k) => calls[k]!.state === 'unknown' || calls[k]!.state === 'submitting',
     )
-    const journal = this.store.journal(jobId)
     if (opt.action === 'refetch') {
       if (!rec?.refetchable)
         throw new NodeRunError('invalid_input', rec?.note ?? '这个任务没有可以重新获取的结果')
@@ -918,22 +930,34 @@ export class NodeRuns implements BatchHost {
       if (opt.action === 'attach') {
         if (!rec.attachable || !row.frozen)
           throw new NodeRunError('invalid_input', '这个平台不支持按任务 ID 查询，无法接着取结果')
-        journal.set(unknown[0]!, { state: 'pending', remoteId: opt.remoteId })
-      } else for (const k of unknown) journal.delete(k)
+      }
+      this.store.manualRecovery(
+        jobId,
+        opt.action,
+        unknown,
+        {
+          status: 'queued',
+          error: null,
+          finished_at: null,
+          recovery: stored.canceledBy ? JSON.stringify({ canceledBy: stored.canceledBy }) : null,
+        },
+        opt.action === 'attach' ? opt.remoteId : undefined,
+      )
     }
-    this.resume(row, stored)
+    this.resume(row, stored, opt.action !== 'refetch')
     return this.jobInfo(this.store.get(jobId)!)
   }
 
   /** 按调用记录重新执行一个已结束的任务（不新建任务，结果和费用都记在原任务上） */
-  private resume(row: JobRow, stored: StoredRecovery) {
+  private resume(row: JobRow, stored: StoredRecovery, prepared = false) {
     const canceled = stored.canceledBy === 'user' || row.status === 'canceled'
-    this.store.update(row.id, {
-      status: 'queued',
-      error: null,
-      finished_at: null,
-      recovery: stored.canceledBy ? JSON.stringify({ canceledBy: stored.canceledBy }) : null,
-    })
+    if (!prepared)
+      this.store.update(row.id, {
+        status: 'queued',
+        error: null,
+        finished_at: null,
+        recovery: stored.canceledBy ? JSON.stringify({ canceledBy: stored.canceledBy }) : null,
+      })
     this.enqueue({
       id: row.id,
       canvasId: row.canvas_id,
@@ -1849,6 +1873,21 @@ function jobInfo(j: JobRow): JobInfo {
     startedAt: j.started_at ?? undefined,
     finishedAt: j.finished_at ?? undefined,
     ...(input ? { input } : {}),
+    submissionHistory: (
+      JSON.parse(j.call_history || '[]') as import('@plein/protocol').SubmissionAudit[]
+    ).map((e) => ({
+      id: e.id,
+      at: e.at,
+      callKey: e.callKey,
+      kind: e.kind,
+      ...(e.attemptId ? { attemptId: e.attemptId } : {}),
+      ...(e.requestId ? { requestId: e.requestId } : {}),
+      ...(e.logId ? { logId: e.logId } : {}),
+      ...(e.httpStatus ? { httpStatus: e.httpStatus } : {}),
+      ...(e.remoteId ? { remoteId: e.remoteId } : {}),
+      ...(e.previousState ? { previousState: e.previousState } : {}),
+      ...(e.previousAt !== undefined ? { previousAt: e.previousAt } : {}),
+    })),
   }
 }
 

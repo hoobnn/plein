@@ -84,8 +84,8 @@ export function recoveryAfter(
   if ((err as { code?: string } | undefined)?.code === 'input_changed') out.state = 'review'
   const remoteId = (err as { remoteId?: string } | undefined)?.remoteId
   if (remoteId) out.remoteId = remoteId
-  if (status === 'canceled' && !out.state) {
-    // 取消时平台已受理：平台不一定停得下来，结果可能晚到，可以再去取
+  if ((status === 'canceled' || status === 'failed') && !out.state) {
+    // 不只取消：登记错误可能没有stage；以持久calls兜底，不能把已发送/已生成误作未提交。
     const pending = calls.find((c) => c.state === 'pending')
     if (pending?.state === 'pending') {
       out.state = 'remote_pending'
@@ -93,13 +93,6 @@ export function recoveryAfter(
     } else if (calls.some((c) => c.state === 'unknown' || c.state === 'submitting'))
       out.state = 'submit_unknown'
     else if (calls.some((c) => c.state === 'fetched')) out.state = 'fetch_failed'
-  } else if (status === 'failed' && !out.state) {
-    // 平台已受理后轮询一直出错（网络、限流、超时）：任务还在平台上，可以接着取，不必重新提交
-    const pending = calls.find((c) => c.state === 'pending')
-    if (pending?.state === 'pending') {
-      out.state = 'remote_pending'
-      out.remoteId = pending.remoteId
-    }
   }
   return Object.keys(out).length ? out : null
 }

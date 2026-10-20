@@ -259,6 +259,17 @@ describe('命名检查点项目包迁移', () => {
   )
   it('v2默认完整保留检查点候选与独有素材，在新数据目录导入后可恢复且不续跑', async () => {
     const s = await seed()
+    s.server.db.$client.prepare('UPDATE jobs SET call_history=?').run(
+      JSON.stringify([
+        {
+          id: 'private-audit',
+          at: 1,
+          callKey: 'call',
+          kind: 'submit_unknown',
+          requestId: 'private-correlation',
+        },
+      ]),
+    )
     const service = checkpointService(s.server)
     const cp = service.create('local', s.canvasId, {
       name: '全部候选',
@@ -294,6 +305,11 @@ describe('命名检查点项目包迁移', () => {
       .all(restored.canvasId) as Array<{ calls: string; status: string }>
     expect(rows).toHaveLength(2)
     expect(rows.every((r) => r.calls === '{}' && r.status === 'succeeded')).toBe(true)
+    expect(
+      target.server.db.$client
+        .prepare('SELECT call_history FROM jobs WHERE canvas_id=?')
+        .all(restored.canvasId),
+    ).toEqual(rows.map(() => ({ call_history: '[]' })))
     expect(
       target.server.db.$client
         .prepare('SELECT * FROM checkpoint_assets WHERE checkpoint_id=?')

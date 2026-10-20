@@ -13,6 +13,7 @@ import {
   type PluginManifestInput,
   type PollResult,
   type ProviderRequest,
+  type SubmitResult,
   ProviderError,
 } from '@plein/plugin-sdk'
 import type { Catalog, ProviderConfigView, ProviderTestResult } from '@plein/protocol'
@@ -293,6 +294,9 @@ describe('插件宿主', () => {
     ).json()) as ProviderTestResult
     expect(result).toMatchObject({
       ok: true,
+      scope: 'configuration',
+      modelAccess: 'unverified',
+      checkedAt: expect.any(Number),
       message: '配置检查通过；尚未验证远端密钥、模型权限或网络',
     })
     s.host.configs.update('doubao/speech', {
@@ -539,13 +543,52 @@ describe('插件宿主', () => {
     const ok = (await (
       await fetch(`${s.base}/api/providers/plein/mock/test`, { method: 'POST' })
     ).json()) as ProviderTestResult
-    expect(ok).toEqual({ ok: true })
+    expect(ok).toEqual({
+      ok: true,
+      scope: 'connection',
+      modelAccess: 'unverified',
+      checkedAt: expect.any(Number),
+      message: '连接检查通过；尚未验证具体模型、资源权限或余额',
+    })
     await fetch(url, s.json('PUT', { settings: { latencyMs: 0, failWith: 'auth' } }))
     const bad = (await (
       await fetch(`${s.base}/api/providers/plein/mock/test`, { method: 'POST' })
     ).json()) as ProviderTestResult
-    expect(bad).toMatchObject({ ok: false, code: 'auth' })
+    expect(bad).toMatchObject({
+      ok: false,
+      code: 'auth',
+      scope: 'connection',
+      modelAccess: 'unverified',
+      checkedAt: expect.any(Number),
+    })
     await fetch(url, s.json('PUT', { settings: { latencyMs: 0, failWith: 'none' } }))
+  })
+
+  it('未提供 test 的平台即使声明 connection，也只报告配置检查且不触发生成', async () => {
+    const id = 'acme/no-probe'
+    const mock = s.host.registry.providers.get('plein/mock')!
+    const submit = vi.fn(mock.def.submit)
+    s.host.registry.providers.set(id, {
+      ...mock,
+      def: { ...mock.def, id, test: undefined, testScope: 'connection', submit },
+    })
+    try {
+      const result = await (
+        await fetch(`${s.base}/api/providers/${id}/test`, { method: 'POST' })
+      ).json()
+      expect(result).toMatchObject({
+        ok: true,
+        scope: 'configuration',
+        modelAccess: 'unverified',
+        checkedAt: expect.any(Number),
+        message: '配置检查通过；尚未验证远端密钥、模型权限或网络',
+      })
+      const catalog = (await (await fetch(`${s.base}/api/catalog`)).json()) as Catalog
+      expect(catalog.providers.find((p) => p.id === id)?.testScope).toBe('configuration')
+      expect(submit).not.toHaveBeenCalled()
+    } finally {
+      s.host.registry.providers.delete(id)
+    }
   })
 
   it('旧版本节点参数先迁移再执行', async () => {
@@ -643,8 +686,8 @@ describe('模型调用记录', () => {
 
   /** 异步平台：提交得到远端任务，轮询结果由各用例决定；模型不支持种子 */
   function asyncHost(timeoutMs?: number) {
-    const submit = vi.fn(async (_req: ProviderRequest) => ({
-      state: 'pending' as const,
+    const submit = vi.fn(async (_req: ProviderRequest): Promise<SubmitResult> => ({
+      state: 'pending',
       remoteId: 'r1',
       pollAfterMs: 1,
     }))
@@ -676,7 +719,7 @@ describe('模型调用记录', () => {
       ],
       false,
     )
-    const records = new Map<string, CallRecord>()
+    const records = Object.assign(new Map<string, CallRecord>(), { id: 'async-host-journal' })
     const stages: CallStage['phase'][] = []
     const call = () =>
       host.call(
@@ -770,6 +813,40 @@ describe('模型调用记录', () => {
     expect(records.get('k')).toMatchObject({ state: 'unknown' })
     await expect(call()).rejects.toMatchObject({ stage: 'submit_unknown' })
     expect(submit).toHaveBeenCalledTimes(1)
+  })
+
+  it('同步大文件保存失败：ready暂存恢复成功且不重新生成', async () => {
+    const { submit, records, call } = asyncHost()
+    submit.mockResolvedValueOnce({
+      state: 'succeeded',
+      outputs: [
+        {
+          type: 'file',
+          kind: 'audio',
+          mime: 'audio/wav',
+          data: new Uint8Array(16 * 1024 * 1024 + 1),
+        },
+      ],
+    })
+    const ingest = vi
+      .spyOn(s.server.assets, 'ingest')
+      .mockRejectedValueOnce(new Error('storage unavailable'))
+    try {
+      await expect(call()).rejects.toMatchObject({ stage: 'fetch_failed' })
+      const original = records.get('k')
+      expect(original).toMatchObject({
+        state: 'fetched',
+        outputs: [expect.objectContaining({ spool: expect.objectContaining({ state: 'ready' }) })],
+      })
+      await expect(call()).resolves.toMatchObject({
+        assets: [expect.objectContaining({ kind: 'audio' })],
+      })
+      expect(records.get('k')).toMatchObject({ state: 'done' })
+      expect(submit).toHaveBeenCalledTimes(1)
+      expect(ingest).toHaveBeenCalledTimes(2)
+    } finally {
+      ingest.mockRestore()
+    }
   })
 
   it('超时归为 timeout', async () => {

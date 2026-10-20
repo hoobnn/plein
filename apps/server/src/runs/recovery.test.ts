@@ -123,6 +123,13 @@ describe('提交状态未知', () => {
     const r = await recover(server, id, run, { action: 'attach', remoteId: lost.remoteId() })
     expect(r.status).toBe(200)
     await until(() => status(server, run) === 'succeeded')
+    expect(job(server, id, run).submissionHistory).toContainEqual(
+      expect.objectContaining({
+        kind: 'manual_attach',
+        previousState: 'unknown',
+        remoteId: lost.remoteId(),
+      }),
+    )
     expect(lost.submit).toHaveBeenCalledTimes(1)
     expect(doc.get(a)?.results).toHaveLength(1)
     expect(doc.get(a)?.run).toMatchObject({ id: run, status: 'succeeded' })
@@ -143,6 +150,24 @@ describe('提交状态未知', () => {
     expect((await recover(server, id, run, { action: 'resubmit' })).status).toBe(200)
     await until(() => status(server, run) === 'succeeded')
     expect(lost.submit).toHaveBeenCalledTimes(2)
+    const row = server.runs.store.get(run)!
+    const history = JSON.parse(row.call_history)
+    const started = history.filter((e: { kind: string }) => e.kind === 'submit_started')
+    expect(started).toHaveLength(2)
+    expect(started[0].requestId).not.toBe(started[1].requestId)
+    expect(history).toContainEqual(
+      expect.objectContaining({
+        kind: 'manual_resubmit',
+        previousState: 'unknown',
+        requestId: started[0].requestId,
+        previousError: expect.stringContaining('网络断开'),
+      }),
+    )
+    const summary = job(server, id, run).submissionHistory!
+    expect(summary).toContainEqual(
+      expect.objectContaining({ kind: 'manual_resubmit', requestId: started[0].requestId }),
+    )
+    expect(JSON.stringify(summary)).not.toContain('previousError')
 
     loseSubmitResponse()
     const other = server.runs.start(id, b, 'local')
@@ -150,6 +175,9 @@ describe('提交状态未知', () => {
     await until(() => !server.runs.isRunning(id, b))
     const r = await recover(server, id, other, { action: 'dismiss' })
     expect(r.body.recovery).toMatchObject({ state: 'submit_unknown', dismissed: true })
+    expect(r.body.submissionHistory).toContainEqual(
+      expect.objectContaining({ kind: 'manual_dismiss', previousState: 'unknown' }),
+    )
     const next = server.runs.start(id, b, 'local')
     expect(await server.runs.wait(next)).toBe('succeeded')
   })
@@ -652,4 +680,25 @@ describe('批准的计划', () => {
     expect(after.find((i) => i.nodeId === c)?.outcome).toBe('cached')
     expect(server.runs.list(id).groups.find((x) => x.id === g)?.review).toBe(1)
   })
+})
+
+it('人工补提交审计写入失败时原未知记录、历史、状态均不变且不增加提交', async () => {
+  withoutLookup()
+  const { server } = await boot()
+  mock(server, { latencyMs: 0 })
+  const lost = loseSubmitResponse()
+  const { id, doc } = await canvas(server)
+  const node = addNode(doc, 'plein/image', { params: { prompt: 'local only' } })
+  const run = server.runs.start(id, node, 'local')
+  expect(await server.runs.wait(run)).toBe('failed')
+  await until(() => !server.runs.isRunning(id, node))
+  const before = server.runs.store.get(run)!
+  server.db.$client.exec(`CREATE TRIGGER reject_manual_audit BEFORE UPDATE OF call_history ON jobs
+    WHEN NEW.call_history != OLD.call_history BEGIN SELECT RAISE(ABORT, 'disk unavailable'); END`)
+  expect(() => server.runs.recoverJob(id, run, 'local', { action: 'resubmit' })).toThrow(
+    'disk unavailable',
+  )
+  expect(server.runs.store.get(run)).toEqual(before)
+  expect(lost.submit).toHaveBeenCalledTimes(1)
+  expect(server.runs.isRunning(id, node)).toBe(false)
 })

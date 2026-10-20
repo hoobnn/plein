@@ -1,4 +1,5 @@
-import type { GroupRunOptions, GroupRunSummary, JobStatus } from '@plein/protocol'
+import type { GroupRunOptions, GroupRunSummary, JobStatus, SubmissionAudit } from '@plein/protocol'
+import { randomUUID } from 'node:crypto'
 import type { CallJournal, CallRecord } from '../plugins/host'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { DB } from '../storage/db'
@@ -111,10 +112,20 @@ export class JobStore {
   /** 模型调用记录：读写这个任务的 calls 列 */
   journal(id: string): CallJournal {
     const read = (): Record<string, CallRecord> => JSON.parse(this.get(id)?.calls ?? '{}')
-    const write = (calls: Record<string, CallRecord>) => {
+    const write = (calls: Record<string, CallRecord>, audit?: SubmissionAudit) => {
       this.db
         .update(jobs)
-        .set({ calls: JSON.stringify(calls) })
+        .set({
+          calls: JSON.stringify(calls),
+          ...(audit
+            ? {
+                call_history: JSON.stringify([
+                  ...JSON.parse(this.get(id)?.call_history ?? '[]'),
+                  audit,
+                ]),
+              }
+            : {}),
+        })
         .where(eq(jobs.id, id))
         .run()
       this.changed(id)
@@ -122,13 +133,58 @@ export class JobStore {
     return {
       id,
       get: (key) => read()[key],
-      set: (key, record) => write({ ...read(), [key]: record }),
+      set: (key, record, audit) => write({ ...read(), [key]: record }, audit),
       delete: (key) => {
         const calls = read()
         delete calls[key]
         write(calls)
       },
     }
+  }
+
+  /** 人工决策、旧未知证据和活动调用/排队状态一次落盘；失败时全部回滚。 */
+  manualRecovery(
+    id: string,
+    action: 'resubmit' | 'attach' | 'dismiss',
+    keys: string[],
+    patch: JobPatch,
+    remoteId?: string,
+  ) {
+    this.db.transaction((tx) => {
+      const row = tx.select().from(jobs).where(eq(jobs.id, id)).get()
+      if (!row) throw new Error('任务不存在')
+      const calls = JSON.parse(row.calls) as Record<string, CallRecord>
+      const history = JSON.parse(row.call_history) as Array<
+        SubmissionAudit & { previousError?: string; previousMessage?: string }
+      >
+      for (const key of keys.length ? keys : ['']) {
+        const old = calls[key]
+        history.push({
+          id: randomUUID(),
+          at: Date.now(),
+          callKey: key,
+          kind: `manual_${action}`,
+          ...old?.trace,
+          ...(old ? { previousState: old.state } : {}),
+          ...(old && 'at' in old ? { previousAt: old.at } : {}),
+          ...(old?.state === 'unknown' ? { previousMessage: old.message } : {}),
+          ...(row.error ? { previousError: row.error } : {}),
+          ...(remoteId ? { remoteId } : {}),
+        })
+        if (action === 'resubmit') delete calls[key]
+        if (action === 'attach' && key === keys[0])
+          calls[key] = {
+            state: 'pending',
+            remoteId: remoteId!,
+            ...(old?.trace ? { trace: old.trace } : {}),
+          }
+      }
+      tx.update(jobs)
+        .set({ ...patch, calls: JSON.stringify(calls), call_history: JSON.stringify(history) })
+        .where(eq(jobs.id, id))
+        .run()
+    })
+    this.changed(id)
   }
 
   /** 画布最近的任务，新的在前 */

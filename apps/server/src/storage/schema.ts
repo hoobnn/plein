@@ -113,6 +113,8 @@ export const jobs = sqliteTable(
     cache_omit: text(),
     /** 模型调用记录（见 CallJournal），重启后据此续跑 */
     calls: text().notNull().default('{}'),
+    /** 只追加的提交及人工恢复事件；不参与活动调用恢复、不进入共享项目包。 */
+    call_history: text().notNull().default('[]'),
     /** 提交时的实际输入（PreparedInput JSON）：引用、降级、模型与有效参数 */
     input: text(),
     /**

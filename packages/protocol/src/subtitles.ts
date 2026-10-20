@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { RecoverJobOptions, type JobRecovery } from './recovery'
+import type { SubmissionAudit } from './runs'
 
 export const SubtitleRecognizeRequest = z.object({
   model: z.string().min(1),
@@ -23,6 +24,8 @@ export interface SubtitleRecognitionInfo {
   assetId: string
   expected: string
   recovery: JobRecovery
+  /** 不含输入、凭据、结果URL的客户端请求与人工恢复核查摘要。 */
+  submissionHistory?: SubmissionAudit[]
 }
 export const SubtitleRecoverRequest = SubtitleRecognitionLookup.extend({
   expected: z.string().min(1),

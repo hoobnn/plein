@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import type { SubmissionAudit } from '@plein/protocol'
 import { createReadStream } from 'node:fs'
 import { readFile, rm } from 'node:fs/promises'
 import { Readable } from 'node:stream'
@@ -32,6 +33,7 @@ import { Agent, Dispatcher1Wrapper } from 'undici'
 import { composeVideo } from '../assets/compose'
 import { hasFfmpeg, probeMedia } from '../assets/media'
 import type { AssetStore } from '../assets/store'
+import type { OutputSpoolRef, SpoolBinding } from '../assets/output-spool'
 import type { ProviderConfigStore } from './config-store'
 import { Limiter, sleep } from './limiter'
 import type { PluginRegistry } from './registry'
@@ -87,7 +89,11 @@ export function stageOf(err: unknown): FailureStage | undefined {
 /** 文件结果在调用记录里的样子：直接给的字节转成 base64，过大时丢掉（只能重新查询平台） */
 type RecordedOutput =
   | Exclude<ProviderOutput, { type: 'file' }>
-  | (Omit<Extract<ProviderOutput, { type: 'file' }>, 'data'> & { base64?: string; dropped?: true })
+  | (Omit<Extract<ProviderOutput, { type: 'file' }>, 'data'> & {
+      base64?: string
+      dropped?: true
+      spool?: OutputSpoolRef
+    })
 
 /** 调用记录里内嵌字节的上限；超过的文件结果不存字节，重新获取时只能再查平台 */
 const RECORD_DATA_LIMIT = 16 * 1024 * 1024
@@ -100,7 +106,13 @@ const RECORD_DATA_LIMIT = 16 * 1024 * 1024
  * - fetched：平台已生成，结果还没存到本地（下载或保存失败时留着，重新获取时直接再存）
  * - done：结果已入库
  */
-export type CallRecord =
+export interface SubmissionTrace {
+  attemptId: string
+  requestId: string
+  logId?: string
+  httpStatus?: number
+}
+export type CallRecord = { trace?: SubmissionTrace } & (
   | { state: 'submitting'; at: number }
   | { state: 'unknown'; at: number; message: string }
   | { state: 'pending'; remoteId: string; canceled?: true }
@@ -111,7 +123,13 @@ export type CallRecord =
       usage?: ProviderCallResult['usage']
     }
   /** remoteId：异步任务的远端 ID，完成后也留着，便于核对有没有重复提交 */
-  | { state: 'done'; result: ProviderCallResult; remoteId?: string }
+  | {
+      state: 'done'
+      result: ProviderCallResult
+      remoteId?: string
+      dataAssets?: Record<number, AssetRef>
+    }
+)
 
 /**
  * 服务退出时中止运行用的 reason：不取消远端任务、不清调用记录，重启后接着轮询
@@ -122,7 +140,7 @@ export interface CallJournal {
   /** 所属任务；用来生成稳定的幂等键 */
   id?: string
   get(key: string): CallRecord | undefined
-  set(key: string, record: CallRecord): void
+  set(key: string, record: CallRecord, audit?: SubmissionAudit): void
   delete(key: string): void
 }
 
@@ -151,7 +169,12 @@ function restoreOutputs(outputs: RecordedOutput[]): ProviderOutput[] | undefined
   if (outputs.some((o) => o.type === 'file' && 'dropped' in o && o.dropped)) return undefined
   return outputs.map((o) => {
     if (o.type !== 'file') return o
-    const { base64, dropped: _, ...rest } = o as Extract<RecordedOutput, { type: 'file' }>
+    const {
+      base64,
+      dropped: _,
+      spool: _spool,
+      ...rest
+    } = o as Extract<RecordedOutput, { type: 'file' }>
     return base64 ? { ...rest, data: new Uint8Array(Buffer.from(base64, 'base64')) } : rest
   })
 }
@@ -340,8 +363,53 @@ export class PluginHost {
   ): Promise<ProviderCallResult> {
     const journal = opts.journal
     const recorded = journal?.store.get(journal.key)
-    if (recorded?.state === 'done') return recorded.result
-    const record = (r: CallRecord) => journal?.store.set(journal.key, r)
+    if (recorded?.state === 'done') {
+      // 内部记录仅存资产引用；恢复时还原公开 outputs.data，不能改变插件读取字节的合同。
+      try {
+        return await this.assets.activity.run(async () => {
+          for (const asset of recorded.result.assets)
+            await this.assets.verifyOriginal(opts.ownerId, asset.assetId)
+          return {
+            ...recorded.result,
+            outputs: await Promise.all(
+              recorded.result.outputs.map(async (output, index) => {
+                const asset = recorded.dataAssets?.[index]
+                if (!asset) return output
+                if (output.type !== 'file') throw new Error('已完成输出的字节引用与文件不匹配')
+                return {
+                  ...output,
+                  data: await this.assets.readOriginal(opts.ownerId, asset.assetId),
+                }
+              }),
+            ),
+          }
+        })
+      } catch (error) {
+        throw fetchFailed(
+          new ProviderError('unavailable', `已入库输出无法读取：${(error as Error).message}`, {
+            retryable: false,
+          }),
+          recorded.remoteId,
+          false,
+        )
+      }
+    }
+    let trace = recorded?.trace
+    const record = (r: CallRecord, kind?: SubmissionAudit['kind']) => {
+      journal?.store.set(
+        journal.key,
+        { ...r, ...(trace ? { trace } : {}) },
+        kind
+          ? {
+              id: randomUUID(),
+              at: Date.now(),
+              callKey: journal.key,
+              kind,
+              ...trace,
+            }
+          : undefined,
+      )
+    }
 
     const parsed = parseModelRef(ref)
     if (!parsed) throw new ProviderError('invalid_input', `模型引用格式不正确：${ref}`)
@@ -384,11 +452,71 @@ export class PluginHost {
     // 保留调用记录，重试、重启或重新获取时接着轮询，不能重新提交付费任务
     let remoteFailed = false
     let remote: string | undefined
+    const spools = new Map<number, OutputSpoolRef>()
+    const binding = (outputIndex: number): SpoolBinding => ({
+      ownerId: opts.ownerId,
+      jobId: journal?.store.id ?? '',
+      callKey: journal?.key ?? '',
+      ...(trace?.attemptId ? { attemptId: trace.attemptId } : {}),
+      outputIndex,
+    })
+    const saveFetched = async (outputs: ProviderOutput[], usage?: ProviderCallResult['usage']) => {
+      let saved = recordOutputs(outputs)
+      const publish = () =>
+        record({
+          state: 'fetched',
+          outputs: saved,
+          ...(usage ? { usage } : {}),
+          ...(remote ? { remoteId: remote } : {}),
+        })
+      try {
+        await this.assets.activity.run(async () => {
+          spools.clear()
+          if (journal?.store.id) {
+            for (const [index, output] of outputs.entries()) {
+              if (output.type !== 'file' || !output.data) continue
+              const spool = this.assets.outputSpool.describe(output.data, binding(index))
+              const { data: _data, ...metadata } = output
+              saved[index] = { ...metadata, spool }
+              spools.set(index, spool)
+            }
+          }
+          // 在首次磁盘写入前保存调用绑定，闭合 rename 完成而 journal 尚未更新的退出窗口。
+          publish()
+          for (const [index, spool] of spools) {
+            const output = outputs[index]!
+            if (output.type !== 'file' || !output.data) throw new Error('暂存输出缺少字节')
+            const ready = await this.assets.outputSpool.write(spool, output.data, binding(index))
+            saved[index] = {
+              ...(saved[index] as Extract<RecordedOutput, { type: 'file' }>),
+              spool: ready,
+            }
+            spools.set(index, ready)
+          }
+          publish()
+        })
+      } catch (error) {
+        // 预登记或磁盘失败不意味着未提交；尽力保留 fetched/dropped 事实，绝不退回 submit。
+        if (!journal?.store.get(journal.key) || journal.store.get(journal.key)?.state !== 'fetched')
+          publish()
+        throw fetchFailed(
+          new ProviderError('unavailable', `平台输出暂存失败：${(error as Error).message}`, {
+            retryable: false,
+          }),
+          remote,
+          !!(remote && def.poll),
+        )
+      }
+    }
     let fetched: { outputs: ProviderOutput[]; usage?: ProviderCallResult['usage'] } | undefined
     if (recorded?.state === 'fetched') {
       remote = recorded.remoteId
       const outputs = restoreOutputs(recorded.outputs)
-      if (outputs) fetched = { outputs, usage: recorded.usage }
+      if (outputs) {
+        fetched = { outputs, usage: recorded.usage }
+        for (const [index, output] of recorded.outputs.entries())
+          if (output.type === 'file' && output.spool) spools.set(index, output.spool)
+      }
     }
 
     /** 轮询远端任务直到结束 */
@@ -436,6 +564,28 @@ export class PluginHost {
       if (!fetched) {
         if (limiter.full) stage('waiting')
         fetched = await limiter.run(async () => {
+          // 受理记录不能退回提交：平台升级移除了查询合同，或同步大文件没有可恢复字节时，
+          // 保留原调用记录供人工处理，不能用新生成冒充“重新获取”。
+          if (recorded?.state === 'pending' && !def.poll)
+            throw new ProviderError(
+              'unavailable',
+              '平台已受理，但当前不支持重新查询；没有重新提交',
+              {
+                retryable: false,
+              },
+            )
+          if (recorded?.state === 'fetched' && !(recorded.remoteId && def.poll))
+            throw fetchFailed(
+              new ProviderError(
+                'unavailable',
+                '结果没有可恢复的本地字节，平台不支持重新查询；没有重新提交',
+                {
+                  retryable: false,
+                },
+              ),
+              recorded.remoteId,
+              false,
+            )
           if (recorded?.state === 'pending' && def.poll) {
             // 之前已经提交过（重启、重试或重新获取）：接着轮询，不再提交
             remote = recorded.remoteId
@@ -462,7 +612,18 @@ export class PluginHost {
           let verified = false
           for (;;) {
             stage('submitting')
-            record({ state: 'submitting', at: Date.now() })
+            trace = { attemptId: randomUUID(), requestId: randomUUID() }
+            // 同步落盘失败时不会进入 submit，更不会发请求。
+            record({ state: 'submitting', at: Date.now() }, 'submit_started')
+            ctx.submission = {
+              requestId: trace.requestId,
+              response: ({ logId, httpStatus }) => {
+                const safeLog = logId?.replace(/[^a-zA-Z0-9_.:-]/g, '').slice(0, 160)
+                trace = { ...trace!, httpStatus, ...(safeLog ? { logId: safeLog } : {}) }
+                const current = journal?.store.get(journal.key)
+                if (current) record(current, 'response')
+              },
+            }
             try {
               submitted = await def.submit({ capability, model: parsed.model, input }, ctx)
               break
@@ -476,7 +637,7 @@ export class PluginHost {
               }
               const message = (err as Error)?.message ?? String(err)
               const unknown = { state: 'unknown' as const, at: Date.now(), message }
-              record(unknown)
+              record(unknown, 'submit_unknown')
               if (opts.signal?.aborted) throw err
               // 平台有查询或幂等合同：马上核查一次；查到就接着轮询，幂等时用同一个键再提交一次
               if (verified || !(def.lookup || def.idempotent))
@@ -492,19 +653,19 @@ export class PluginHost {
             }
           }
           if (submitted.state === 'succeeded') return submitted
-          if (!def.poll)
-            throw new ProviderError('unknown', `平台 ${def.title} 返回了异步任务但没有实现 poll`)
           remote = submitted.remoteId
+          // 平台受理是持久事实；即使插件缺少查询实现，也先保存已知远端 ID。
           record({ state: 'pending', remoteId: submitted.remoteId })
           stage('accepted')
+          if (!def.poll)
+            throw new ProviderError(
+              'unavailable',
+              `平台 ${def.title} 已受理，但当前不支持重新查询；没有重新提交`,
+              { retryable: false },
+            )
           return pollUntilDone(submitted.remoteId, submitted.pollAfterMs ?? DEFAULT_POLL_MS)
         }, signal)
-        record({
-          state: 'fetched',
-          outputs: recordOutputs(fetched.outputs),
-          ...(fetched.usage ? { usage: fetched.usage } : {}),
-          ...(remote ? { remoteId: remote } : {}),
-        })
+        await saveFetched(fetched.outputs, fetched.usage)
       }
     } catch (err) {
       const error =
@@ -523,34 +684,87 @@ export class PluginHost {
       AbortSignal.timeout(this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS),
       shutdownOnly(opts.signal),
     ])
-    let outputs = fetched.outputs
-    if (outputs.some((o) => o.type === 'file')) stage('saving')
-    let assets: AssetRef[]
-    try {
-      assets = await this.storeOutputs(parsed.provider, outputs, opts.ownerId, storeSignal)
-    } catch (err) {
-      // 结果地址过期：平台能再查就拿一份新地址再存一次
-      const status = (err as { status?: number }).status
-      if (status && EXPIRED.has(status) && remote && def.poll && !storeSignal.aborted) {
+    return this.assets.activity
+      .run(async () => {
+        let outputs = fetched.outputs
+        if (outputs.some((o) => o.type === 'file')) stage('saving')
+        let assets: AssetRef[]
         try {
-          const again = await def.poll(remote, ctx)
-          if (again.state !== 'succeeded') throw err
-          outputs = again.outputs
-          record({
-            state: 'fetched',
-            outputs: recordOutputs(outputs),
-            remoteId: remote,
-            ...(fetched.usage ? { usage: fetched.usage } : {}),
-          })
-          assets = await this.storeOutputs(parsed.provider, outputs, opts.ownerId, storeSignal)
-        } catch (again) {
-          throw fetchFailed(again, remote, true)
+          assets = await this.storeOutputs(
+            parsed.provider,
+            outputs,
+            opts.ownerId,
+            storeSignal,
+            spools,
+            binding,
+          )
+        } catch (err) {
+          // 结果地址过期：平台能再查就拿一份新地址再存一次
+          const status = (err as { status?: number }).status
+          if (status && EXPIRED.has(status) && remote && def.poll && !storeSignal.aborted) {
+            try {
+              const again = await def.poll(remote, ctx)
+              if (again.state !== 'succeeded') throw err
+              outputs = again.outputs
+              await saveFetched(outputs, fetched.usage)
+              assets = await this.storeOutputs(
+                parsed.provider,
+                outputs,
+                opts.ownerId,
+                storeSignal,
+                spools,
+                binding,
+              )
+            } catch (again) {
+              throw fetchFailed(again, remote, true)
+            }
+          } else throw fetchFailed(err, remote, !!(remote && def.poll))
         }
-      } else throw fetchFailed(err, remote, !!(remote && def.poll))
-    }
-    const result: ProviderCallResult = { outputs, assets, usage: fetched.usage }
-    record({ state: 'done', result, ...(remote ? { remoteId: remote } : {}) })
-    return result
+        const dataAssets: Record<number, AssetRef> = {}
+        let fileIndex = 0
+        const publicOutputs: ProviderOutput[] = []
+        const storedOutputs: ProviderOutput[] = []
+        for (const [index, output] of outputs.entries()) {
+          if (output.type !== 'file') {
+            publicOutputs.push(output)
+            storedOutputs.push(output)
+            continue
+          }
+          const asset = assets[fileIndex++]!
+          if (output.data || spools.has(index)) {
+            dataAssets[index] = asset
+            const { data: _data, ...metadata } = output
+            storedOutputs.push(metadata)
+            publicOutputs.push({
+              ...metadata,
+              data: output.data ?? (await this.assets.readOriginal(opts.ownerId, asset.assetId)),
+            })
+          } else {
+            publicOutputs.push(output)
+            storedOutputs.push(output)
+          }
+        }
+        const result: ProviderCallResult = { outputs: publicOutputs, assets, usage: fetched.usage }
+        record({
+          state: 'done',
+          result: { ...result, outputs: storedOutputs },
+          ...(Object.keys(dataAssets).length ? { dataAssets } : {}),
+          ...(remote ? { remoteId: remote } : {}),
+        })
+        // done 已经持久化才删除恢复副本；删除失败保留孤儿，后续按引用和宽限期清理。
+        for (const [index, spool] of spools)
+          await this.assets.outputSpool
+            .remove(spool, binding(index))
+            .catch((error) =>
+              this.log(entry.plugin, '平台输出暂存清理失败', { message: (error as Error).message }),
+            )
+        return result
+      })
+      .catch((error) => {
+        if (stageOf(error)) throw error
+        // 包含 ingest 后的结果登记/公开字节恢复失败；已受理事实不能退回无恢复状态。
+        throw fetchFailed(error, remote, !!(remote && def.poll))
+      })
   }
 
   /**
@@ -627,13 +841,17 @@ export class PluginHost {
     outputs: ProviderOutput[],
     ownerId: string,
     signal: AbortSignal,
+    spools = new Map<number, OutputSpoolRef>(),
+    binding?: (index: number) => SpoolBinding,
   ) {
     const manifest = this.manifest(this.registry.providers.get(provider)!.plugin)
     const refs: AssetRef[] = []
-    for (const out of outputs) {
+    for (const [index, out] of outputs.entries()) {
       if (out.type !== 'file') continue
       let body: Readable
-      if (out.data) body = Readable.from([Buffer.from(out.data)])
+      const spool = spools.get(index)
+      if (spool && binding) body = await this.assets.outputSpool.read(spool, binding(index))
+      else if (out.data) body = Readable.from([Buffer.from(out.data)])
       else if (out.url) {
         // 结果文件同样只能从声明过的域名下载
         const res = await scopedFetch(manifest)(out.url, { signal })
@@ -646,11 +864,15 @@ export class PluginHost {
           )
         body = Readable.fromWeb(res.body as never)
       } else throw new ProviderError('unknown', '平台返回的文件既没有 url 也没有 data')
-      const asset = await this.assets.ingest(ownerId, body, {
-        mime: out.mime,
-        name: out.name ?? `${out.kind}`,
-      })
-      refs.push({ assetId: asset.id, kind: out.kind, mime: asset.mime })
+      try {
+        const asset = await this.assets.ingest(ownerId, body, {
+          mime: out.mime,
+          name: out.name ?? `${out.kind}`,
+        })
+        refs.push({ assetId: asset.id, kind: out.kind, mime: asset.mime })
+      } finally {
+        body.destroy()
+      }
     }
     return refs
   }

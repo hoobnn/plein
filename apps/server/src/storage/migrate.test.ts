@@ -1,4 +1,6 @@
 import Database from 'better-sqlite3'
+import { join } from 'node:path'
+import { tempDir } from '../testing'
 import { describe, expect, it } from 'vite-plus/test'
 import { wrapDb } from './db'
 import { LEGACY_MIGRATIONS } from './legacy-migrations'
@@ -140,4 +142,34 @@ describe('数据库迁移', () => {
     expect(() => migrate(db)).toThrow('请升级 plein')
     db.close()
   })
+})
+
+it('审计迁移不改旧未知调用，SQLite一致性备份保留审计和原请求ID', async () => {
+  const db = new Database(':memory:')
+  migrate(db, MIGRATIONS.slice(0, -1))
+  db.exec(
+    `INSERT INTO canvases(id,owner_id,title,created_at,updated_at) VALUES('c','local','c',1,1)`,
+  )
+  const calls = JSON.stringify({ key: { state: 'unknown', at: 1, message: 'old evidence' } })
+  db.prepare(`INSERT INTO jobs(id,owner_id,canvas_id,node_id,node_type,status,created_at,calls)
+    VALUES('j','local','c','n','plein/speech','failed',1,?)`).run(calls)
+  migrate(db)
+  expect(db.prepare('SELECT calls,call_history FROM jobs').get()).toEqual({
+    calls,
+    call_history: '[]',
+  })
+  const history = JSON.stringify([
+    { id: 'e', at: 2, callKey: 'key', kind: 'submit_started', requestId: 'original-request' },
+  ])
+  db.prepare('UPDATE jobs SET call_history=?').run(history)
+  const path = join(tempDir('audit-backup-'), 'backup.db')
+  await db.backup(path)
+  const restored = new Database(path)
+  wrapDb(restored)
+  expect(restored.prepare('SELECT calls,call_history FROM jobs').get()).toEqual({
+    calls,
+    call_history: history,
+  })
+  restored.close()
+  db.close()
 })

@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import type { AuthEnv } from '../auth'
 import { addNode, bootServer, createCanvas, mockModel, mockSettings } from '../testing'
 import { subtitleRoutes } from './routes'
+import * as journal from './journal'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -122,6 +123,18 @@ describe('字幕显式识别与持久恢复', () => {
       record: { state: 'unknown' },
     })
     expect(stored.record.state).toBe('done')
+    const starts = stored.audit.filter((e: { kind: string }) => e.kind === 'submit_started')
+    expect(starts).toHaveLength(2)
+    expect(starts[0].requestId).not.toBe(starts[1].requestId)
+    expect(stored.history[0].record.trace.requestId).toBe(starts[0].requestId)
+    expect(stored.record.trace.requestId).toBe(starts[1].requestId)
+    expect(stored.audit).toContainEqual(
+      expect.objectContaining({
+        kind: 'manual_resubmit',
+        previousState: 'unknown',
+        requestId: starts[0].requestId,
+      }),
+    )
   })
 
   it.each(['matching', 'owner', 'asset', 'model', 'adapter', 'unknown'] as const)(
@@ -336,4 +349,73 @@ describe('字幕显式识别与持久恢复', () => {
     expect((await s.call()).status).toBe(422)
     expect(submit).toHaveBeenCalledTimes(1)
   })
+})
+
+it('字幕审计在submit入口前已持久化，同一次调用的响应关联ID也保存', async () => {
+  const s = await setup()
+  vi.spyOn(s.entry.def, 'submit').mockImplementationOnce(async (_request, ctx) => {
+    const file = readdirSync(join(s.dataDir, 'subtitle-recognition')).find((f) =>
+      f.endsWith('.json'),
+    )!
+    const stored = journal.readRecord(join(s.dataDir, 'subtitle-recognition', file))!
+    expect(stored.record?.trace?.requestId).toBe(ctx.submission?.requestId)
+    expect(stored.audit).toContainEqual(
+      expect.objectContaining({ kind: 'submit_started', requestId: ctx.submission?.requestId }),
+    )
+    ctx.submission!.response({ logId: 'local-asr-log', httpStatus: 200 })
+    return {
+      state: 'succeeded',
+      outputs: [{ type: 'json', value: { segments: [{ start: 0, end: 1, text: 'local' }] } }],
+    }
+  })
+  expect((await s.call()).status).toBe(200)
+  const file = readdirSync(join(s.dataDir, 'subtitle-recognition')).find((f) =>
+    f.endsWith('.json'),
+  )!
+  const stored = journal.readRecord(join(s.dataDir, 'subtitle-recognition', file))!
+  expect(stored.audit).toContainEqual(
+    expect.objectContaining({ kind: 'response', logId: 'local-asr-log', httpStatus: 200 }),
+  )
+})
+
+it('字幕提交前写失败不调用submit，人工恢复写失败不丢原未知证据', async () => {
+  const s = await setup()
+  s.entry.def.lookup = undefined
+  s.entry.def.idempotent = false
+  const submit = vi
+    .spyOn(s.entry.def, 'submit')
+    .mockRejectedValueOnce(new ProviderError('unknown', 'local lost', { outcome: 'unknown' }))
+  const write = vi.spyOn(journal, 'writeRecord')
+  write.mockImplementationOnce(() => {
+    throw new Error('disk unavailable')
+  })
+  expect((await s.call()).status).toBe(422)
+  expect(submit).not.toHaveBeenCalled()
+  const { recovery } = (await (await s.call()).json()) as { recovery: SubtitleRecognitionInfo }
+  expect(submit).toHaveBeenCalledTimes(1)
+  expect(recovery.submissionHistory).toContainEqual(
+    expect.objectContaining({ kind: 'submit_started' }),
+  )
+  const file = readdirSync(join(s.dataDir, 'subtitle-recognition')).find((f) =>
+    f.endsWith('.json'),
+  )!
+  const path = join(s.dataDir, 'subtitle-recognition', file)
+  const before = readFileSync(path, 'utf8')
+  write.mockImplementationOnce(() => {
+    throw new Error('disk unavailable')
+  })
+  const response = await s.app().request(API.subtitleRecover, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      assetId: s.assetId,
+      model: mockModel('audio.transcribe'),
+      expected: recovery.expected,
+      operation: { action: 'resubmit' },
+      confirmedNotAccepted: true,
+    }),
+  })
+  expect(response.status).toBe(500)
+  expect(readFileSync(path, 'utf8')).toBe(before)
+  expect(submit).toHaveBeenCalledTimes(1)
 })

@@ -10,6 +10,7 @@ import Database from 'better-sqlite3'
 import * as Y from 'yjs'
 import { afterEach, describe, expect, it } from 'vite-plus/test'
 import { AssetStore } from '../assets/store'
+import { storedOutputSpoolRefs } from '../assets/output-spool'
 import { openDb } from '../storage/db'
 import { Rooms, sqliteDocStore } from '../sync/rooms'
 import { DataActivity } from './activity'
@@ -82,6 +83,20 @@ describe('本机数据维护', () => {
       doc = f.canvas('canvas')
     createElement(doc, { kind: 'image', assetId: asset.id, x: 0, y: 0, w: 10, h: 10 })
     await writeFile(join(f.root, 'providers.json'), '{"private":"local-secret"}', { mode: 0o600 })
+    const audit = JSON.stringify([
+      {
+        id: 'audit',
+        at: 1,
+        callKey: 'call',
+        kind: 'submit_unknown',
+        requestId: 'original-request',
+      },
+    ])
+    const calls = JSON.stringify({ call: { state: 'unknown', at: 1, message: 'retained' } })
+    f.db.$client
+      .prepare(`INSERT INTO jobs(id,owner_id,canvas_id,node_id,node_type,status,created_at,calls,call_history)
+      VALUES('audit-job','local','canvas','n','plein/speech','failed',1,?,?)`)
+      .run(calls, audit)
     const backup = await f.service.backup()
     expect(statSync(backup.path).mode & 0o777).toBe(0o700)
     expect(statSync(join(backup.path, 'providers.json')).mode & 0o777).toBe(0o600)
@@ -90,6 +105,9 @@ describe('本机数据维护', () => {
     try {
       expect(db.prepare('SELECT * FROM doc_updates').all()).toHaveLength(1)
       expect(db.prepare('SELECT * FROM assets').all()).toHaveLength(1)
+      expect(db.prepare('SELECT calls,call_history FROM jobs WHERE id=?').get('audit-job')).toEqual(
+        { calls, call_history: audit },
+      )
     } finally {
       db.close()
     }
@@ -162,7 +180,32 @@ describe('本机数据维护', () => {
     await f.assets.activity.run(async () =>
       atomicJson(path, {
         assetId: asset.id,
-        record: { state: 'unknown', remoteId: 'remote-task' },
+        record: {
+          state: 'unknown',
+          remoteId: 'remote-task',
+          trace: { attemptId: 'asr-attempt', requestId: 'asr-request' },
+        },
+        audit: [
+          {
+            id: 'asr-event',
+            at: 1,
+            callKey: 'k',
+            kind: 'submit_started',
+            requestId: 'asr-request',
+          },
+        ],
+        history: [
+          {
+            record: {
+              state: 'unknown',
+              at: 1,
+              message: 'retained',
+              trace: { attemptId: 'old-asr', requestId: 'old-asr-request' },
+            },
+            at: 2,
+            action: 'confirmed_not_accepted',
+          },
+        ],
       }),
     )
     expect((await f.service.preview()).assets).toBe(0)
@@ -171,6 +214,106 @@ describe('本机数据维护', () => {
     expect(
       await readFile(join(copy.path, 'subtitle-recognition', 'recognition.json'), 'utf8'),
     ).toContain('remote-task')
+    const restored = JSON.parse(
+      await readFile(join(copy.path, 'subtitle-recognition', 'recognition.json'), 'utf8'),
+    )
+    expect(restored.audit[0].requestId).toBe('asr-request')
+    expect(restored.history[0].record.trace.requestId).toBe('old-asr-request')
+  })
+
+  it('平台输出ready随备份恢复、writing缺失事实保留；ready缺失或损坏拒绝不完整备份', async () => {
+    const f = await fixture()
+    f.canvas('spool-canvas')
+    const binding = { ownerId: 'local', jobId: 'spool-run', callKey: 'generate', outputIndex: 0 }
+    const bytes = new Uint8Array([1, 2, 3, 4])
+    const ref = await f.assets.outputSpool.write(
+      f.assets.outputSpool.describe(bytes, binding),
+      bytes,
+      binding,
+    )
+    const missing = f.assets.outputSpool.describe(bytes, { ...binding, outputIndex: 1 })
+    const calls = {
+      generate: {
+        state: 'fetched',
+        outputs: [
+          { type: 'file', spool: ref },
+          { type: 'file', spool: missing },
+        ],
+      },
+    }
+    f.db.$client
+      .prepare(
+        'INSERT INTO jobs(id,owner_id,canvas_id,node_id,node_type,status,calls,created_at) VALUES(?,?,?,?,?,?,?,?)',
+      )
+      .run(
+        'spool-run',
+        'local',
+        'spool-canvas',
+        'node',
+        'plein/speech',
+        'failed',
+        JSON.stringify(calls),
+        f.now(),
+      )
+    const backup = await f.service.backup(),
+      copy = await f.service.restoreCopy(backup.id)
+    expect(await readFile(join(copy.path, 'job-outputs', ref.id))).toEqual(Buffer.from(bytes))
+    const copiedDb = openDb(copy.path)
+    const restoredAssets = new AssetStore(copy.path, copiedDb, 10_000_000)
+    try {
+      await restoredAssets.init()
+      const stream = await restoredAssets.outputSpool.read(ref, binding)
+      const chunks = []
+      for await (const chunk of stream) chunks.push(chunk)
+      expect(Buffer.concat(chunks)).toEqual(Buffer.from(bytes))
+    } finally {
+      copiedDb.$client.close()
+    }
+    await writeFile(join(f.root, 'job-outputs', ref.id), new Uint8Array([9, 9, 9, 9]))
+    await expect(f.service.backup()).rejects.toThrow('暂存校验失败')
+    await rm(join(f.root, 'job-outputs', ref.id))
+    await expect(f.service.backup()).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('字幕历史record不pin旧spool：只备份当前record且恢复不误报历史缺失', async () => {
+    const f = await fixture()
+    const binding = {
+      ownerId: 'local',
+      jobId: 'recognition',
+      callKey: 'transcribe',
+      outputIndex: 0,
+    }
+    const bytes = new Uint8Array([1, 2, 3, 4])
+    const current = await f.assets.outputSpool.write(
+      f.assets.outputSpool.describe(bytes, binding),
+      bytes,
+      binding,
+    )
+    const old = await f.assets.outputSpool.write(
+      f.assets.outputSpool.describe(bytes, binding),
+      bytes,
+      binding,
+    )
+    await atomicJson(join(f.root, 'subtitle-recognition', 'spool-recognition.json'), {
+      record: { state: 'fetched', outputs: [{ type: 'file', spool: current }] },
+      history: [
+        {
+          record: { state: 'fetched', outputs: [{ type: 'file', spool: old }] },
+          action: 'resubmit',
+        },
+      ],
+    })
+    const refs = await storedOutputSpoolRefs(f.db.$client, f.root)
+    expect(refs.map((ref) => ref.id)).toEqual([current.id])
+    for (const ref of [current, old])
+      await utimes(join(f.root, 'job-outputs', ref.id), new Date(0), new Date(0))
+    await f.assets.outputSpool.prune(refs)
+    expect(existsSync(join(f.root, 'job-outputs', current.id))).toBe(true)
+    expect(existsSync(join(f.root, 'job-outputs', old.id))).toBe(false)
+    const backup = await f.service.backup(),
+      copy = await f.service.restoreCopy(backup.id)
+    expect(await readFile(join(copy.path, 'job-outputs', current.id))).toEqual(Buffer.from(bytes))
+    expect(existsSync(join(copy.path, 'job-outputs', old.id))).toBe(false)
   })
 
   it('定时配置跨重启保留到期时间，按间隔执行并只在成功后保留指定份数', async () => {

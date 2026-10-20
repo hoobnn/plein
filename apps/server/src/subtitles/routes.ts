@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { stableStringify } from '@plein/flow'
 import { parseModelRef, ProviderError, type TranscriptSegment } from '@plein/plugin-sdk'
@@ -10,41 +10,17 @@ import {
   SubtitleRecoverRequest,
   type SubtitleRecognitionInfo,
   type SubtitleRecognizeResult,
+  type SubmissionAudit,
 } from '@plein/protocol'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import type { AssetStore } from '../assets/store'
-import type { CallRecord, PluginHost } from '../plugins/host'
+import type { PluginHost } from '../plugins/host'
 import type { DB } from '../storage/db'
 import { legacySubtitleRecord } from './legacy'
+import { readRecord, writeRecord } from './journal'
 
-interface StoredRecognition {
-  assetId: string
-  model: string
-  record?: CallRecord | null
-  migratedFrom?: string
-  history?: Array<{ record: CallRecord; at: number; action: string }>
-  confirmedReset?: boolean
-}
 const hash = (value: unknown) => createHash('sha256').update(stableStringify(value)).digest('hex')
-function readRecord(file: string): StoredRecognition | undefined {
-  try {
-    const stored = JSON.parse(readFileSync(file, 'utf8')) as StoredRecognition & CallRecord
-    return 'record' in stored ? stored : { assetId: '', model: '', record: stored }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    return undefined
-  }
-}
-function writeRecord(file: string, value: StoredRecognition) {
-  const tmp = `${file}.${randomUUID()}.tmp`
-  try {
-    writeFileSync(tmp, JSON.stringify(value), { mode: 0o600 })
-    renameSync(tmp, file)
-  } finally {
-    rmSync(tmp, { force: true })
-  }
-}
 
 /** 音频内容哈希 + 平台插件版本 + 模型合同决定识别缓存；文案修订、混音、再次导出不重提。 */
 export function subtitleRoutes({
@@ -101,6 +77,19 @@ export function subtitleRoutes({
       model,
       assetId,
       expected: hash(record),
+      submissionHistory: (stored.audit ?? []).map((event) => ({
+        id: event.id,
+        at: event.at,
+        callKey: event.callKey,
+        kind: event.kind,
+        attemptId: event.attemptId,
+        requestId: event.requestId,
+        logId: event.logId,
+        httpStatus: event.httpStatus,
+        remoteId: event.remoteId,
+        previousState: event.previousState,
+        previousAt: event.previousAt,
+      })),
       recovery: {
         state,
         attachable: !!context.provider.def.poll,
@@ -147,16 +136,24 @@ export function subtitleRoutes({
               store: {
                 id: `subtitle-${key}`,
                 get: () => record,
-                set: (_key, value) => {
+                set: (_key, value, audit) => {
                   // 先落盘再确认状态；即使进程退出，submitting/remoteId 也不会被遗忘后重新提交。
-                  stored = { ...stored, assetId, model, record: value }
-                  writeRecord(file, stored)
+                  const next = {
+                    ...stored,
+                    assetId,
+                    model,
+                    record: value,
+                    ...(audit ? { audit: [...(stored.audit ?? []), audit] } : {}),
+                  }
+                  writeRecord(file, next)
+                  stored = next
                   record = value
                 },
                 // host 只在平台明确拒绝、尚未受理时删除；unknown/pending 始终保留。
                 delete: () => {
-                  stored = { ...stored, record: null, confirmedReset: true }
-                  writeRecord(file, stored)
+                  const next = { ...stored, record: null, confirmedReset: true }
+                  writeRecord(file, next)
+                  stored = next
                   record = undefined
                 },
               },
@@ -223,6 +220,16 @@ export function subtitleRoutes({
           const stored = readRecord(context.file)
           const record = stored?.record
           if (!stored || !record || hash(record) !== expected) return 'changed' as const
+          const audit = (kind: SubmissionAudit['kind']): SubmissionAudit => ({
+            id: randomUUID(),
+            at: Date.now(),
+            callKey: context.key,
+            kind,
+            ...record.trace,
+            previousState: record.state,
+            ...('at' in record ? { previousAt: record.at } : {}),
+            ...(operation.action === 'attach' ? { remoteId: operation.remoteId } : {}),
+          })
           if (operation.action === 'attach') {
             if (
               !context.provider.def.poll ||
@@ -231,7 +238,12 @@ export function subtitleRoutes({
               return 'invalid' as const
             writeRecord(context.file, {
               ...stored,
-              record: { state: 'pending', remoteId: operation.remoteId },
+              record: {
+                state: 'pending',
+                remoteId: operation.remoteId,
+                ...(record.trace ? { trace: record.trace } : {}),
+              },
+              audit: [...(stored.audit ?? []), audit('manual_attach')],
               history: [...(stored.history ?? []), { record, at: Date.now(), action: 'attach' }],
             })
           } else if (operation.action === 'resubmit') {
@@ -244,6 +256,7 @@ export function subtitleRoutes({
               ...stored,
               record: null,
               confirmedReset: true,
+              audit: [...(stored.audit ?? []), audit('manual_resubmit')],
               history: [
                 ...(stored.history ?? []),
                 { record, at: Date.now(), action: 'confirmed_not_accepted' },

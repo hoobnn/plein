@@ -659,3 +659,53 @@ describe('实际输入预览', () => {
     expect(doc.get(good)?.run?.status).toBe('succeeded')
   }, 30_000)
 })
+
+it('音乐和独立识别预览明确当前模型权限未知，检查本身不发生成请求', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const submit = vi.spyOn(mockProvider, 'submit')
+  const audio = createElement(doc, {
+    kind: 'audio',
+    assetId: asset('a'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  for (const type of ['plein/music', 'plein/transcribe']) {
+    const node = addNode(doc, type, { params: { model: 'plein/mock:audio', prompt: '安静的配乐' } })
+    if (type === 'plein/transcribe') connect(doc, [audio, 'audio'], [node, 'audio'])
+    const input = await preview(server, id, node)
+    expect(input.notices).toContainEqual({
+      code: 'model_access_unverified',
+      message: expect.stringContaining('plein/mock:audio 的当前账户权限尚未验证'),
+    })
+    expect(input.blocked).not.toContainEqual(
+      expect.objectContaining({ code: 'model_access_unverified' }),
+    )
+  }
+  expect(submit).not.toHaveBeenCalled()
+})
+
+it('原生序列本地导出即使保留识别模型设置，也不冒称即将调用ASR', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const video = createElement(doc, {
+    kind: 'video',
+    assetId: asset('b'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const sequence = addNode(doc, 'plein/sequence', {
+    params: { model: 'plein/mock:audio', asrTiming: true, clips: [{ source: video }] },
+  })
+  connect(doc, [video, 'video'], [sequence, 'clips'])
+  const submit = vi.spyOn(mockProvider, 'submit')
+  const input = await preview(server, id, sequence)
+  expect(input.notices.some((notice) => notice.code === 'model_access_unverified')).toBe(false)
+  expect(submit).not.toHaveBeenCalled()
+})

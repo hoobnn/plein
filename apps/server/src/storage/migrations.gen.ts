@@ -79,4 +79,10 @@ export const MIGRATIONS: Migration[] = [
       'CREATE INDEX `media_sources_source` ON `media_sources` (`owner_id`,`source_type`,`source_id`);',
     ],
   },
+  {
+    tag: '0005_fuzzy_tana_nile',
+    when: 1792460129263,
+    hash: 'c9900b78c83928bab0121a41beb6448ea246f6567da8ce1dc69c4f648c5c7e52',
+    statements: ["ALTER TABLE `jobs` ADD `call_history` text DEFAULT '[]' NOT NULL;"],
+  },
 ]

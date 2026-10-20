@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { z } from 'zod'
 import type { LocalBackup } from '@plein/protocol'
+import { storedOutputSpoolRefs, type OutputSpoolRef } from '../assets/output-spool'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { atomicJson, copyChecked, filesIn, hashFile, jsonFile, safeRelative } from './files'
@@ -37,6 +38,9 @@ function allowedPath(path: string) {
     (path === 'plein.db' ||
       CONFIGS.has(path) ||
       path.startsWith('plugins/') ||
+      /^job-outputs\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+        path,
+      ) ||
       /^subtitle-recognition\/[A-Za-z0-9_-]+\.json$/.test(path) ||
       /^assets\/[0-9a-f]{2}\/[0-9a-f]{64}(?:\.[a-z0-9.-]+)?$/.test(path))
   )
@@ -81,12 +85,14 @@ export async function writeBackup(deps: {
     await chmod(join(part, 'plein.db'), 0o600)
     const snapshot = new Database(join(part, 'plein.db'), { readonly: true })
     let assetIds: Set<string>
+    let spoolRefs: OutputSpoolRef[]
     try {
       assetIds = new Set(
         (snapshot.prepare('SELECT DISTINCT id FROM assets').all() as Array<{ id: string }>).map(
           (r) => r.id,
         ),
       )
+      spoolRefs = await storedOutputSpoolRefs(snapshot, deps.dataDir)
     } finally {
       snapshot.close()
     }
@@ -111,6 +117,23 @@ export async function writeBackup(deps: {
       if (file.path === `${id.slice(0, 2)}/${id}` && copied.sha256 !== id)
         throw new Error(`素材哈希不匹配：${id}`)
       files.push({ path, ...copied })
+    }
+    if (spoolRefs.length) {
+      const root = await lstat(join(deps.dataDir, 'job-outputs'))
+      if (!root.isDirectory() || root.isSymbolicLink()) throw new Error('平台输出暂存目录不安全')
+    }
+    for (const ref of spoolRefs) {
+      const path = `job-outputs/${ref.id}`
+      try {
+        const copied = await copyChecked(join(deps.dataDir, path), join(part, path))
+        if (copied.bytes !== ref.bytes || copied.sha256 !== ref.sha256)
+          throw new Error(`平台输出暂存校验失败：${ref.id}`)
+        files.push({ path, ...copied })
+      } catch (error) {
+        // writing 但尚未发布文件是合法的失败事实；ready 缺文件则不能产生“完整”备份。
+        if (ref.state !== 'writing' || (error as NodeJS.ErrnoException).code !== 'ENOENT')
+          throw error
+      }
     }
     for (const path of CONFIGS) {
       try {
@@ -180,6 +203,13 @@ export async function restoreBackup(source: string, destination: string): Promis
       const paths = new Set(manifest.files.map((f) => f.path))
       if (rows.some((r) => !paths.has(`assets/${r.id.slice(0, 2)}/${r.id}`)))
         throw new Error('备份缺少数据库引用的素材')
+      for (const ref of await storedOutputSpoolRefs(sqlite, part)) {
+        const path = `job-outputs/${ref.id}`
+        const file = manifest.files.find((entry) => entry.path === path)
+        if (!file && ref.state === 'writing') continue
+        if (!file || file.bytes !== ref.bytes || file.sha256 !== ref.sha256)
+          throw new Error(`备份缺少有效的平台输出暂存：${ref.id}`)
+      }
     } finally {
       sqlite.close()
     }

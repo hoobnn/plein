@@ -72,6 +72,7 @@ export interface InputValue {
  * - optional_dropped：可选参考超过上限没有送入
  * - mention_broken：@ 的名字找不到，可能改过名
  * - profile_miss / profile_conflict：@ 写的档案项不存在或冲突
+ * - model_access_unverified：所选模型的当前账户权限未验证，配置或连接检查不能证明可用
  * - voice_unverified / voice_ambiguous：沿用的音色无法校验平台，或引用了多个有音色的角色
  * - unsupported_refs：当前模式不送参考图，只附文字设定
  */
@@ -85,6 +86,7 @@ export type InputIssueCode =
   | 'mention_broken'
   | 'profile_miss'
   | 'profile_conflict'
+  | 'model_access_unverified'
   | 'voice_unverified'
   | 'voice_ambiguous'
   | 'unsupported_refs'
@@ -199,6 +201,27 @@ export interface GroupRunState {
   summary?: GroupRunSummary
 }
 
+/** 不含凭据、输入、结果 URL 或原始错误的提交核查摘要。 */
+export interface SubmissionAudit {
+  id: string
+  at: number
+  callKey: string
+  kind:
+    | 'submit_started'
+    | 'response'
+    | 'submit_unknown'
+    | 'manual_resubmit'
+    | 'manual_attach'
+    | 'manual_dismiss'
+  attemptId?: string
+  requestId?: string
+  logId?: string
+  httpStatus?: number
+  remoteId?: string
+  previousState?: string
+  previousAt?: number
+}
+
 /** 任务面板里的一条运行记录 */
 /** 任务状态；与 @plein/doc 的 RunStatus 一致，见 apps/server/src/shared-types.test.ts */
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled'
@@ -220,6 +243,8 @@ export interface JobInfo {
   input?: PreparedInput
   /** 恢复状态与可执行的处理；排队、还没提交的任务没有 */
   recovery?: JobRecovery
+  /** 提交及人工恢复的持久化核查摘要；成功不代表旧未知请求已核销。 */
+  submissionHistory?: SubmissionAudit[]
   /** 已取消时是谁取消的 */
   canceledBy?: CanceledBy
 }

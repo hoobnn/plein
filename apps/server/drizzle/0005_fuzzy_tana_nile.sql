@@ -1,0 +1,1 @@
+ALTER TABLE `jobs` ADD `call_history` text DEFAULT '[]' NOT NULL;

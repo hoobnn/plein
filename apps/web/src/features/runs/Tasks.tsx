@@ -848,6 +848,11 @@ export function RecoveryBlock(props: {
     <div className="mt-1 flex flex-col gap-1" data-testid="job-recovery">
       <p className={`text-xs ${tone}`}>{view.title}</p>
       {view.detail && <p className="text-2xs text-ink-subtle">{view.detail}</p>}
+      {job.submissionHistory?.some((e) => e.kind === 'manual_resubmit') && (
+        <p className="text-2xs text-ink-subtle">
+          保留原未知请求的核查记录；本次成功不代表旧请求已核销。
+        </p>
+      )}
       {busy && (
         <p role="status" className="text-2xs text-ink-subtle">
           正在处理恢复请求…
@@ -859,7 +864,8 @@ export function RecoveryBlock(props: {
         </p>
       )}
       <div className="flex flex-wrap gap-1">
-        {['submit_unknown', 'fetch_failed', 'remote_pending'].includes(r.state) && (
+        {(['submit_unknown', 'fetch_failed', 'remote_pending'].includes(r.state) ||
+          !!job.submissionHistory?.length) && (
           <button
             type="button"
             className={btn}

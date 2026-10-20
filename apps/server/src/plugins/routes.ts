@@ -11,6 +11,7 @@ import {
   describeNode,
   describeProvider,
   providerConfigured,
+  providerTestScope,
   ProviderError,
   withDefaultModel,
 } from '@plein/plugin-sdk'
@@ -122,19 +123,32 @@ export function pluginRoutes(host: PluginHost) {
     .post('/api/providers/:vendor/:name/test', async (c) => {
       if (c.var.principal.role !== 'owner') return c.json(forbidden, 403)
       const id = `${c.req.param('vendor')}/${c.req.param('name')}`
-      if (!registry.providers.has(id)) return c.json(notFound, 404)
+      const provider = registry.providers.get(id)
+      if (!provider) return c.json(notFound, 404)
+      const scope = providerTestScope(provider.def)
       try {
         await host.testProvider(id, c.var.principal.id, AbortSignal.timeout(30_000))
         return c.json({
           ok: true,
-          ...(registry.providers.get(id)!.def.testScope === 'configuration'
-            ? { message: '配置检查通过；尚未验证远端密钥、模型权限或网络' }
-            : {}),
+          scope,
+          modelAccess: 'unverified',
+          checkedAt: Date.now(),
+          message:
+            scope === 'configuration'
+              ? '配置检查通过；尚未验证远端密钥、模型权限或网络'
+              : '连接检查通过；尚未验证具体模型、资源权限或余额',
         } satisfies ProviderTestResult)
       } catch (err) {
         const e =
           err instanceof ProviderError ? err : new ProviderError('unknown', (err as Error).message)
-        return c.json({ ok: false, code: e.code, message: e.message } satisfies ProviderTestResult)
+        return c.json({
+          ok: false,
+          scope,
+          modelAccess: 'unverified',
+          checkedAt: Date.now(),
+          code: e.code,
+          message: e.message,
+        } satisfies ProviderTestResult)
       }
     })
 }

@@ -1,6 +1,7 @@
+import { OutputSpool, storedOutputSpoolRefs } from './output-spool'
 import { createHash, randomUUID } from 'node:crypto'
-import { createWriteStream } from 'node:fs'
-import { mkdir, mkdtemp, rename, rm, stat } from 'node:fs/promises'
+import { constants, createWriteStream } from 'node:fs'
+import { mkdir, mkdtemp, open, readFile, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -78,21 +79,30 @@ function kindOf(mime: string): AssetKind {
  */
 export class AssetStore {
   readonly activity = new DataActivity()
+  readonly outputSpool: OutputSpool
   private root: string
   private tmp: string
   /** 正在生成的按需衍生物，同一个只跑一次 */
   private pending = new Map<string, Promise<boolean>>()
 
   constructor(
-    dataDir: string,
+    private dataDir: string,
     private db: DB,
     private maxSize: number,
   ) {
+    this.outputSpool = new OutputSpool(dataDir, this.activity, maxSize)
     this.root = join(dataDir, 'assets')
     this.tmp = join(dataDir, 'tmp')
   }
 
   async init() {
+    await this.outputSpool.init()
+    try {
+      await this.outputSpool.prune(await storedOutputSpoolRefs(this.db.$client, this.dataDir))
+    } catch (error) {
+      // 引用不完整时保守保留，不能让恢复清理阻止用户打开已有项目。
+      console.warn('[output-spool] 暂存清理已跳过：', (error as Error).message)
+    }
     await mkdir(this.root, { recursive: true })
     await rm(this.tmp, { recursive: true, force: true })
     await mkdir(this.tmp, { recursive: true })
@@ -118,6 +128,29 @@ export class AssetStore {
       .where(and(eq(assets.owner_id, ownerId), eq(assets.id, id)))
       .get()
     return row ? toAsset(row) : null
+  }
+
+  /** 流式校验已入库原件，不把 URL-only 大视频整份读入内存。 */
+  async verifyOriginal(ownerId: string, id: string): Promise<Asset> {
+    const asset = this.get(ownerId, id)
+    if (!asset) throw new Error(`资产 ${id} 不存在或不属于当前用户`)
+    const file = await open(this.originalPath(id), constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
+    try {
+      const info = await file.stat()
+      if (!info.isFile() || info.size !== asset.size) throw new Error(`资产 ${id} 原件大小不匹配`)
+      const hash = createHash('sha256')
+      for await (const chunk of file.createReadStream({ autoClose: false })) hash.update(chunk)
+      if (hash.digest('hex') !== asset.id) throw new Error(`资产 ${id} 原件哈希不匹配`)
+    } finally {
+      await file.close()
+    }
+    return asset
+  }
+
+  /** 经所有权和完整性检查读取字节，保持插件公开 outputs.data 合同。 */
+  async readOriginal(ownerId: string, id: string): Promise<Uint8Array> {
+    const asset = await this.verifyOriginal(ownerId, id)
+    return new Uint8Array(await readFile(this.originalPath(asset.id)))
   }
 
   /** 流式写入临时文件并计算哈希，再移动到内容地址；已存在则直接复用 */

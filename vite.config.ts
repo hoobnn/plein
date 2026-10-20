@@ -76,7 +76,15 @@ export default defineConfig({
     projects: ['packages/*', 'apps/*'],
     coverage: {
       include: ['apps/*/src/**/*.{ts,tsx}', 'packages/*/src/**/*.{ts,tsx}'],
-      exclude: ['**/*.test.{ts,tsx}', '**/*.d.ts', '**/*.gen.ts', '**/testing.ts'],
+      exclude: [
+        '**/*.test.{ts,tsx}',
+        '**/*.d.ts',
+        '**/*.gen.ts',
+        '**/testing.ts',
+        // Child-process test drivers are terminated with SIGKILL before V8 can flush coverage.
+        'apps/server/src/runs/fixtures/submission-crash.child.ts',
+        'apps/server/src/runs/fixtures/output-spool-crash.child.ts',
+      ],
       reporter: ['text-summary', 'html', 'json-summary'],
       reportOnFailure: true,
       thresholds: {
