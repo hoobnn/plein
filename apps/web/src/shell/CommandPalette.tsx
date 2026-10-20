@@ -43,6 +43,7 @@ export function CommandPalette({ canvasId }: { canvasId: string | null }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setOpen((v) => !v)
@@ -181,7 +182,10 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.nativeEvent.isComposing) return
+    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) {
+      e.stopPropagation()
+      return
+    }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault()
       const n = items.length
@@ -217,6 +221,7 @@ function Palette({ canvasId, onClose }: { canvasId: string | null; onClose(): vo
           }}
           onKeyDown={onKeyDown}
           role="combobox"
+          data-plein-inline-list=""
           aria-expanded
           aria-controls="plein-palette-list"
           aria-activedescendant={items.length ? `plein-palette-${active}` : undefined}

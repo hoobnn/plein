@@ -5,10 +5,10 @@ export const claimMenuEscape = (event: Event) => {
 }
 export const isMenuEscape = (event: Event) => owned.has(event)
 
-/** 已关闭或被前景弹窗隐藏的后台菜单不拦截；当前层退场中的菜单仍占用本次 Esc。 */
+/** 后台菜单不拦截；内联结果列表属于面板正文，当前层退场菜单仍占用本次 Esc。 */
 export const hasMenuEscapeLayer = () =>
   [
     ...document.querySelectorAll(
-      '.ui-menu:not([data-closed]), .ui-menu[data-closing], [role="combobox"][aria-expanded="true"]',
+      '.ui-menu:not([data-closed]), .ui-menu[data-closing], [role="combobox"][aria-expanded="true"]:not([data-plein-inline-list])',
     ),
   ].some((element) => !element.closest('[aria-hidden="true"], [inert]'))
