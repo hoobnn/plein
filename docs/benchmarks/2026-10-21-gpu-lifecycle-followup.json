@@ -1,0 +1,76 @@
+{
+  "recordedAt": "2026-10-20T20:05:20.448620+00:00",
+  "status": "targeted lifecycle follow-up passed; overall goal incomplete",
+  "products": {
+    "baseline": "90498a0",
+    "candidate": "14d070d"
+  },
+  "benchmarkDriverCommit": "b10fc3a",
+  "benchmarkCheckoutClean": true,
+  "baselineCompared": true,
+  "regressions": [],
+  "roundsPerBuild": 3,
+  "openSamplesPerBuild": 6,
+  "interactionRoundsPerBuild": 15,
+  "allInteractionLongTasksZero": true,
+  "pinnedPreviewPngByteIdentical": true,
+  "evidence": [
+    {
+      "path": "docs/benchmarks/2026-10-21-gpu-lifecycle-perf-baseline.json",
+      "sha256": "adba66be6f68d72f107076a58d2a5d47641e6805f5483483c175941dc8a4fc16"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-gpu-lifecycle-perf-candidate.json",
+      "sha256": "e6b4d2825700a9014d0aaeb3fa909764e5176edede86c788602a079119412f80"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-maintenance-pinned-95s.json",
+      "sha256": "3d64888abef704188189209d9a5ff6c427aafc35357744854ca5d0a58ba8074a"
+    },
+    {
+      "path": "docs/benchmarks/2026-10-21-maintenance-pinned-preview.png",
+      "sha256": "ae6049df2934c61013bba688d043e142e825a7881a0d92ded868c5830b753db4"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/perf-gpu-lifecycle-baseline.json",
+      "sha256": "adba66be6f68d72f107076a58d2a5d47641e6805f5483483c175941dc8a4fc16"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/perf-gpu-lifecycle-candidate.json",
+      "sha256": "e6b4d2825700a9014d0aaeb3fa909764e5176edede86c788602a079119412f80"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/perf-gpu-lifecycle-baseline.log",
+      "sha256": "ec4cfdacb8ab25d227c115677d787b49e4e0c880f4d17cd948591e91781d350f"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/perf-gpu-lifecycle-candidate.log",
+      "sha256": "9b1b42583fe5fd8357d2b3d8131038f441e90a01e6df35fce1b5d733cbeb759a"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/maintenance-preview-before.png",
+      "sha256": "ae6049df2934c61013bba688d043e142e825a7881a0d92ded868c5830b753db4"
+    },
+    {
+      "path": "/private/tmp/plein-ui-audit-20261020/maintenance-preview-after.png",
+      "sha256": "ae6049df2934c61013bba688d043e142e825a7881a0d92ded868c5830b753db4"
+    }
+  ],
+  "privateReproduction": {
+    "path": ".cache/functional-acceptance-2026-10-21/maintenance-pinned.mts",
+    "sha256": "c6484ee500b58deb7dc43673ef7413fb24382ecb8d01c86b6c8739de3412babc"
+  },
+  "nativeState": {
+    "execSession": 26426,
+    "verifiedLive": true,
+    "latestAxResult": "Mac locked"
+  },
+  "paidCalls": 0,
+  "productChanges": 0,
+  "boundaries": [
+    "fresh same-environment pair, not stable speedup proof",
+    "open fixture uses real local media; five interaction timing scenarios use existing demo fixture",
+    "not physical input or screen FPS",
+    "no new whole-suite run or native foreground acceptance"
+  ]
+}
