@@ -69,3 +69,11 @@
 原始报告：[原构建](../benchmarks/2026-10-21-preview-shader-baseline.json)、[候选](../benchmarks/2026-10-21-preview-shader-candidate.json)、[原构建复核](../benchmarks/2026-10-21-preview-shader-baseline-confirm.json)、[候选复核](../benchmarks/2026-10-21-preview-shader-candidate-confirm.json)。本次未调用计费模型。
 
 产品提交 `da1e93c`；画布核心 10 文件／80 项通过，root e2e、canvas-core、Web 三处类型检查及四个改动文件格式／lint 通过。生产与开发 StrictMode 的同一组 36 项均通过；随后补充等待相机比例实际降低的断言，像素用例两态各 1 项复验通过。没有因测试加强而重复整套。详见[结构化验收](../benchmarks/2026-10-21-preview-shader-acceptance.json)与[恢复后的像素截图](../benchmarks/2026-10-21-preview-pixels-restored.png)。
+
+## 当前提示词修复版本的完整基准复核
+
+在 `bb4eef6` 产品源码对应的 e2e 构建上，再按原有 1000 元素、三轮、同一 SwiftShader 环境执行全部打开及五个交互场景。执行时 Git 为干净的 `a7ab454`（后者只增加验收文档），不是重建不了的未知脏源码；构建本身在提示词修改后冻结，来源与原生六项合同的修复构建一致。
+
+冷开首预览中位数 955.5ms，热开 886.8ms；缩放 JS 约 4.87ms／帧，其余交互未触发原比较门槛，长任务为零。六次打开均为 1000／1000 预览就绪，预览请求失败及运行时错误均为零。[完整原始报告](../benchmarks/2026-10-21-current-canvas-perf.json)保留了全部样本和比较结果，没有改变原门槛、缩减规模或覆盖前几批。
+
+本批虽然通过门槛，热开却没有保持前两批约 660ms 的水平；之前两组交替测量的改善不能扩写成所有批次的稳定收益。性能波动原因仍待定位，硬件输入、真实 GPU 与长时使用也未因此关闭。Mac 锁屏不影响本次隔离无头软件光栅测量，但阻止原生前台复验。
