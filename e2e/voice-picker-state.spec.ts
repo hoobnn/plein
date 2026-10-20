@@ -20,7 +20,9 @@ test('跨平台手选音色在生成前提示，切换正确音色后恢复并�
   const preview = page.getByTestId('input-preview')
   await expect(preview).toContainText('不会提交')
   await preview.getByRole('button', { name: /实际输入/ }).click()
-  await expect(page.getByText(/音色 foreign-voice 属于 minimax\/api，当前配音模型/)).toBeVisible()
+  await expect(
+    preview.getByText(/音色 foreign-voice 属于 minimax\/api，当前配音模型/),
+  ).toBeVisible()
   const generate = page.getByRole('button', { name: '生成', exact: true })
   await expect(generate).toBeDisabled()
   await page.getByRole('button', { name: '参数', exact: true }).click()
