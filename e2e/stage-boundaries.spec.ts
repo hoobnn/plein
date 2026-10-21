@@ -928,7 +928,8 @@ test('3D 快速关闭后打开另一个节点，选择和操作不串场景', as
   await addNode(page, '3D 构图')
   const first = (await elements(page)).find((e) => e.nodeType === 'plein/stage')!
   await page.keyboard.press('Escape')
-  await addNode(page, '3D 构图')
+  // 第一个节点就落在默认双击点上，第二个换到空白处添加，否则双击会打开第一个节点。
+  await addNode(page, '3D 构图', { x: 1100, y: 750 })
   const second = (await elements(page)).find(
     (e) => e.nodeType === 'plein/stage' && e.id !== first.id,
   )!

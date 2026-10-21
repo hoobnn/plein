@@ -38,10 +38,13 @@ async function drag(page: Page) {
   await page.mouse.move(1200, 760, { steps: 4 })
 }
 async function flick(page: Page) {
-  await drag(page)
-  await page.mouse.up({ button: 'middle' })
-  const released = await position(page)
-  await expect.poll(() => position(page)).not.toEqual(released)
+  // 松手距最后一次移动超过 100ms 不起惯性；机器繁忙时主线程可能刚好卡过这个窗口，重甩一次。
+  await expect(async () => {
+    await drag(page)
+    await page.mouse.up({ button: 'middle' })
+    const released = await position(page)
+    await expect.poll(() => position(page), { timeout: 1_000 }).not.toEqual(released)
+  }).toPass({ timeout: 15_000 })
 }
 
 for (const action of ['fit', 'zoom', 'fly'] as const) {

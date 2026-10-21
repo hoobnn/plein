@@ -145,7 +145,7 @@ test('资产库移动服饰并手动同步后，旧名引用生成使用新时�
   await updates.getByRole('button', { name: '查看画布中的版本', exact: true }).click()
   await updates.getByRole('checkbox', { name: '角色档案', exact: true }).check()
   await updates.getByRole('button', { name: '同步选中的字段', exact: true }).click()
-  await expect(updates.getByRole('status')).toContainText('选中的卡片已同步')
+  await expect(updates.getByRole('status').filter({ hasText: '选中的卡片已同步' })).toBeVisible()
   await panel.getByRole('button', { name: '关闭', exact: true }).click()
   await expect.poll(async () => (await preview(nodes.speech)).voice?.voiceId).toBe('mock-male')
   const stale = await page.request.post(`/api/canvases/${canvas}/nodes/${nodes.image}/run`, {

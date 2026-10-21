@@ -118,7 +118,8 @@ test('实际导出中停止保留旧成片，任务状态一致且可再次成�
   await page.getByRole('button', { name: '任务', exact: true }).click()
   const panel = page.getByRole('complementary', { name: '任务', exact: true })
   const row = panel.locator(`[data-job-id="${active.id}"]`)
-  await expect(row.getByText('已取消', { exact: true })).toBeVisible()
+  // 运行超过一秒会附上「· 用时 N 秒」
+  await expect(row.getByText(/^已取消( · 用时 .+)?$/)).toBeVisible()
   await expect(row.getByRole('button', { name: '停止', exact: true })).toHaveCount(0)
   await panel.screenshot({
     path: test.info().outputPath('actual-export-canceled.png'),
