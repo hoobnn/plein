@@ -462,7 +462,8 @@ describe('本机数据维护', () => {
     try {
       await expect(pending).rejects.toMatchObject({ code: 'changed' })
       expect(writes).toBeGreaterThan(0)
-      expect(writes).toBeLessThan(100)
+      // 写入次数只反映扫描期间过了多少轮事件循环，满载跑覆盖率时会多一些；无界重试会一直写到超时
+      expect(writes).toBeLessThan(1000)
       expect(existsSync(f.assets.originalPath(asset.id))).toBe(true)
     } finally {
       clearImmediate(timer)
