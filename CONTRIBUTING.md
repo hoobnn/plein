@@ -17,15 +17,17 @@ pnpm dev                 # 前端 http://localhost:5173 + 服务端 :8787（数�
 
 | 命令                 | 作用                                                                                    |
 | -------------------- | --------------------------------------------------------------------------------------- |
-| `pnpm lint`          | Vite+ 检查（Oxfmt 格式 + Oxlint 规则）加 markdownlint；CI 在 PR 和推送 main 时自动运行  |
+| `pnpm lint`          | Vite+ 检查（Oxfmt 格式 + Oxlint 规则）加 markdownlint                                   |
 | `pnpm format`        | 格式化代码，并应用能安全自动修复的规则，包括 markdownlint 能自动修的项                  |
 | `pnpm typecheck`     | 全部包的类型检查                                                                        |
 | `pnpm test`          | Vitest 单测与集成测试                                                                   |
 | `pnpm test:coverage` | 统计全部应用及公共包源码覆盖率，执行覆盖率门槛，输出 `coverage/index.html` 与 JSON 汇总 |
 | `pnpm smoke`         | 启动真实服务，经 HTTP 和 Yjs WebSocket 读写，重启后确认数据没丢                         |
-| `pnpm verify`        | 依次运行 lint、typecheck、test:coverage、smoke，合并前必须通过                          |
+| `pnpm verify`        | 依次运行 lint、typecheck、test:coverage、smoke，pre-push 钩子自动运行                   |
 | `pnpm e2e`           | Playwright 界面冒烟：基于 mock 平台覆盖从短剧模板到导出的完整流程                       |
 | `pnpm perf`          | 画布渲染性能基准                                                                        |
+
+本地检查由 git 钩子（husky）完成，`pnpm install` 时自动装好：pre-commit 运行 `vp staged`，只格式化、检查暂存文件；pre-push 运行 `pnpm verify`，改了 `package.json` 或 `pnpm-lock.yaml` 时再跑 `pnpm audit:deps`。推送 main 不触发云端 CI，云端只在 Dependabot PR、打 `v*` 标签发版和手动运行（Actions → CI → Run workflow）时跑完整检查与 e2e、perf；依赖安全检查另有每周定时。急用可 `git push --no-verify` 跳过钩子，之后在 Actions 里手动补跑一次 CI。
 
 验收分四层：单测、集成、启动冒烟、真实样例，各层的准入和写法见 [docs/acceptance-0.1.0.md](docs/plan/acceptance-0.1.0.md)。
 

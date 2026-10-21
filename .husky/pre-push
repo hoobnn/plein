@@ -11,3 +11,13 @@ if ! printf '%s' "$branch" | grep -qE "$pattern"; then
   echo "见 https://conventionalbranch.org/" >&2
   exit 1
 fi
+
+# 云端 CI 不再在推送 main 时运行，合并前检查在这里完成；急用可 git push --no-verify 跳过
+pnpm verify
+
+# 依赖有变动时再查漏洞（需要联网）
+if git rev-parse -q --verify '@{u}' >/dev/null; then
+  if git diff --name-only '@{u}' HEAD | grep -qE '(^|/)(package\.json|pnpm-lock\.yaml)$'; then
+    pnpm audit:deps
+  fi
+fi

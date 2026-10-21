@@ -5,6 +5,11 @@ import { defineConfig } from 'vite-plus'
  * 各应用自己的 Vite / 打包配置在 apps/<name>/vite.config.ts。
  */
 export default defineConfig({
+  // pre-commit 只检查暂存文件：格式和 lint 能自动修的直接修好再提交
+  staged: {
+    '*.{ts,tsx,mts,cts,js,mjs,cjs,json,jsonc,css,html,yml,yaml,md}': 'vp check --fix',
+    '*.md': 'markdownlint --fix',
+  },
   lint: {
     plugins: ['typescript', 'react', 'jsx-a11y', 'unicorn', 'oxc'],
     jsPlugins: [{ name: 'vite-plus', specifier: 'vite-plus/oxlint-plugin' }],

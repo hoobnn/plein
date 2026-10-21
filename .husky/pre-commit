@@ -1,0 +1,2 @@
+# 只检查暂存文件，规则见 vite.config.ts 的 staged
+pnpm exec vp staged

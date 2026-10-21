@@ -1,11 +1,17 @@
 name: CI
 
+# 日常检查在本地 git 钩子里完成（pre-commit：vp staged；pre-push：pnpm verify），推送 main 不再触发。
+# 云端只在三种情况下跑：PR（Dependabot）、release.yml 发版前复用、手动运行。
 on:
-  push:
-    branches: [main]
   pull_request:
+    paths-ignore: ["docs/**", "**/*.md", "site/**"]
   # release.yml 发版前复用同一套检查
   workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
@@ -34,6 +40,7 @@ jobs:
   # 界面冒烟：mock 平台起真服务，Playwright 驱动 Chromium 走完模板到导出。
   # 系统 ffmpeg 带 libass，加上中文字体，导出时连烧字幕一起验证
   e2e:
+    needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -55,7 +62,10 @@ jobs:
           retention-days: 7
 
   # 真实入库媒体与资源回收是硬门禁；同环境有基线时再比较时间，首次只归档报告。
+  # 只在发版和手动运行时跑，依赖升级 PR 不跑
   perf:
+    needs: check
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

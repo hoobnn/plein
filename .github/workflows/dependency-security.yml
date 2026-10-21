@@ -1,9 +1,8 @@
 name: Dependency security
 
+# 推送 main 不触发：改依赖时 pre-push 钩子会本地跑 pnpm audit:deps
 on:
   pull_request:
-  push:
-    branches: [main]
   # 每周一北京时间 09:00，检查已有依赖的新漏洞。
   schedule:
     - cron: "0 1 * * 1"
