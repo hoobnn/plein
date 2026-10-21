@@ -27,7 +27,7 @@ pnpm dev                 # 前端 http://localhost:5173 + 服务端 :8787（数�
 | `pnpm e2e`           | Playwright 界面冒烟：基于 mock 平台覆盖从短剧模板到导出的完整流程                       |
 | `pnpm perf`          | 画布渲染性能基准                                                                        |
 
-本地检查由 git 钩子（husky）完成，`pnpm install` 时自动装好：pre-commit 运行 `vp staged`，只格式化、检查暂存文件；pre-push 运行 `pnpm verify`，改了 `package.json` 或 `pnpm-lock.yaml` 时再跑 `pnpm audit:deps`。推送 main 不触发云端 CI，云端只在 Dependabot PR、打 `v*` 标签发版和手动运行（Actions → CI → Run workflow）时跑完整检查与 e2e、perf；依赖安全检查另有每周定时。急用可 `git push --no-verify` 跳过钩子，之后在 Actions 里手动补跑一次 CI。
+本地检查由 git 钩子（husky）完成，`pnpm install` 时自动装好：pre-commit 运行 `vp staged`，只格式化、检查暂存文件；pre-push 运行 `pnpm verify`，改了 `package.json` 或 `pnpm-lock.yaml` 时再跑 `pnpm audit:deps`。推送 main 不触发云端 CI，云端只在 Dependabot PR、打 `v*` 标签发版和手动运行（Actions → CI → Run workflow）时跑完整检查与 e2e、perf（e2e 按文件分 12 片并行，失败重试一次，重试才通过的标为 flaky）；发版说明写在 `docs/releases/<标签>.md`，打标签时自动用作 Release 正文；依赖安全检查另有每周定时。急用可 `git push --no-verify` 跳过钩子，之后在 Actions 里手动补跑一次 CI。
 
 验收分四层：单测、集成、启动冒烟、真实样例，各层的准入和写法见 [docs/acceptance-0.1.0.md](docs/plan/acceptance-0.1.0.md)。
 

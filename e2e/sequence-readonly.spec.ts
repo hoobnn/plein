@@ -61,10 +61,15 @@ async function setup(page: Page) {
 
 async function readonly(page: Page, value: boolean) {
   await page.evaluate((value) => {
-    const doc = window.__plein.engine.doc as typeof window.__plein.engine.doc & {
+    const doc = window.__plein.engine.doc as unknown as {
       readOnly: boolean
+      pendingState: boolean
+      requestFlush(): void
     }
     doc.readOnly = value
+    // 与协作升级切只读一样发出状态通知，界面才会立即重绘
+    doc.pendingState = true
+    doc.requestFlush()
   }, value)
 }
 
