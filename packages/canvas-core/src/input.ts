@@ -148,6 +148,10 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
   const onPointerCancel = (e: PointerEvent) => {
     if (e.pointerId === pointer) cancel()
   }
+  // Linux 上中键松开会粘贴主选区，中键只用来平移，不能顺带往画布里贴内容。
+  const onMouseUp = (e: MouseEvent) => {
+    if (e.button === 1) e.preventDefault()
+  }
 
   const onKeyDown = (e: KeyboardEvent) => {
     if (
@@ -180,6 +184,7 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
   el.addEventListener('pointerup', onPointerUp)
   el.addEventListener('pointercancel', onPointerCancel)
   el.addEventListener('lostpointercapture', onPointerCancel)
+  el.addEventListener('mouseup', onMouseUp)
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   window.addEventListener('blur', onBlur)
@@ -197,6 +202,7 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
       el.removeEventListener('pointerup', onPointerUp)
       el.removeEventListener('pointercancel', onPointerCancel)
       el.removeEventListener('lostpointercapture', onPointerCancel)
+      el.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
