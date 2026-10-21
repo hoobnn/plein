@@ -27,6 +27,8 @@ concurrency:
 jobs:
   test:
     uses: ./.github/workflows/ci.yml
+    with:
+      e2e-os: macos-15
 
   build:
     name: Build app
