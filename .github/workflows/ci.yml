@@ -38,11 +38,16 @@ jobs:
       - run: pnpm build
 
   # 界面冒烟：mock 平台起真服务，Playwright 驱动 Chromium 走完模板到导出。
-  # 系统 ffmpeg 带 libass，加上中文字体，导出时连烧字幕一起验证
+  # 系统 ffmpeg 带 libass，加上中文字体，导出时连烧字幕一起验证。
+  # 用例已有一千多条且单进程串跑，按文件分片到多台机器，每片各起一套服务和数据目录
   e2e:
     needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -53,11 +58,11 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm e2e
+      - run: pnpm e2e --shard=${{ matrix.shard }}/12
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
-          name: e2e-results
+          name: e2e-results-${{ matrix.shard }}
           path: test-results/
           retention-days: 7
 
