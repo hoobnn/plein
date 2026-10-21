@@ -1,0 +1,19 @@
+name: e2e mac probe (temporary)
+on:
+  push:
+    branches: [claude/project-thread-vu02iz]
+jobs:
+  probe:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: brew install ffmpeg
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install chromium
+      - run: pnpm e2e e2e/filter-menu-layers.spec.ts e2e/markdown-history.spec.ts e2e/impact.spec.ts e2e/sequence-export-cancel.spec.ts e2e/pan-lifecycle.spec.ts e2e/stage-boundaries.spec.ts e2e/board-filter-retention.spec.ts e2e/checkpoint-preview-resize.spec.ts

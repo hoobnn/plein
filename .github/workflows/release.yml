@@ -90,6 +90,8 @@ jobs:
       entitlements: apps/desktop/resources/entitlements.mac.plist
       arch-suffix: true
       make-dmg: true
+      # 有 docs/releases/<标签>.md 就用作发版说明，没有则自动生成
+      release-notes-file: docs/releases/${{ github.ref_name }}.md
       sign: ${{ github.event_name == 'push' || inputs.sign }}
     secrets: inherit
 

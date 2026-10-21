@@ -95,7 +95,20 @@ test('手动缩放和平移后调整预览窗口，保留用户的缩放与查�
   await page.mouse.up({ button: 'middle' })
   // 再次按下停止松手惯性，测量已经稳定的手动视角。
   await page.mouse.click(box.x + box.width / 2 + 35, box.y + box.height / 2 + 20)
-  const before = await measure(page)
+  // 缩放和平移带缓动，连续两次测量一致才算视角已经停稳。
+  let before = await measure(page)
+  await expect
+    .poll(async () => {
+      const prev = before
+      await page.waitForTimeout(150)
+      before = await measure(page)
+      return (
+        before.width === prev.width &&
+        before.centerX === prev.centerX &&
+        before.centerY === prev.centerY
+      )
+    })
+    .toBe(true)
   await page.setViewportSize({ width: 1100, height: 800 })
   await expect
     .poll(async () => {

@@ -34,6 +34,8 @@ async function fixture(page: Page) {
   const image = page.getByRole('region', { name: '图片', exact: true })
   await text.getByRole('button', { name: '筛选', exact: true }).click()
   await page.getByRole('menuitemradio', { name: '已生成', exact: true }).click()
+  // 菜单有退场动画，等它卸载，否则两栏菜单里的同名选项会同时存在
+  await expect(page.getByRole('menu')).toHaveCount(0)
   await expect(text.locator('.board-text')).toHaveCount(1)
   await image.getByRole('button', { name: '筛选', exact: true }).click()
   await page.getByRole('menuitemradio', { name: '待生成', exact: true }).click()
