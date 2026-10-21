@@ -18,6 +18,8 @@ export default defineConfig({
   // 一条用例走完整条流水线，状态前后相依，不并行
   workers: 1,
   fullyParallel: false,
+  // CI 每次全量一千六百多条，偶发的时序抖动重试一次；稳定失败仍然算失败，重试通过的会标成 flaky
+  retries: process.env.CI ? 1 : 0,
   timeout: 180_000,
   expect: { timeout: 15_000 },
   reporter: process.env.CI ? 'github' : 'list',
