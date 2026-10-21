@@ -226,7 +226,9 @@ test('删除确认期间其他镜头损坏，不删除任何镜头或脱离已�
   await expect(confirmation).toBeVisible()
   const broken = [before[0], { ...before[1], duration: -2 }]
   await f.write(broken)
-  await confirmation.getByRole('button', { name: '删除镜头', exact: true }).click()
+  // 编辑器可能先发现数据损坏并直接收起确认框；还开着时再点删除，两条路径都不能删掉镜头。
+  const remove = confirmation.getByRole('button', { name: '删除镜头', exact: true })
+  await remove.click({ timeout: 2_000 }).catch(() => expect(confirmation).not.toBeVisible())
   await expect(confirmation).not.toBeVisible()
   await expect(page.getByRole('dialog', { name: '分镜数据问题', exact: true })).toBeVisible()
   expect(await f.read()).toEqual(broken)
