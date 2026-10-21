@@ -134,6 +134,12 @@ test('分镜图片与已有配音预演，零视频生成导出样片并按实�
   expect(await currentFile.failure()).toBeNull()
   expect(readFileSync((await currentFile.path())!)).toEqual(expectedFile)
   await editor.getByRole('button', { name: '实际 MP4 回看 / 交付', exact: true }).click()
+  // 播放器读到元数据前添加意见只会保留草稿，先等实际 MP4 就绪
+  await expect
+    .poll(() =>
+      video.evaluate((v: HTMLVideoElement) => v.readyState >= HTMLMediaElement.HAVE_METADATA),
+    )
+    .toBe(true)
   await editor.getByRole('textbox', { name: '成片时间码意见' }).fill('第一镜停顿需要复查')
   await editor.getByRole('button', { name: '在当前时间添加意见', exact: true }).click()
   await expect(
