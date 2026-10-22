@@ -129,8 +129,9 @@ export async function zoomTo(page: Page, ids: string[]) {
 }
 
 /**
- * 等镜头停稳：元素在屏幕上的位置连续几帧不变。
- * 展开分镜、放资产等操作会自己飞到新内容，动画没结束就按坐标点，会点到别处
+ * 等镜头和元素停稳：元素在屏幕上的位置和大小连续几帧不变。
+ * 展开分镜、放资产等操作会自己飞到新内容，动画没结束就按坐标点，会点到别处；
+ * 便签先按估算高度放置、量出正文后才收缩（顶边不动），只看位置会在收缩前取到中心
  */
 export async function settle(page: Page, id: string) {
   await page.waitForFunction(
@@ -140,7 +141,8 @@ export async function settle(page: Page, id: string) {
         const at = () => {
           const r = engine.doc.worldRect(id)
           const p = engine.worldToClient(r.x, r.y)
-          return `${Math.round(p.x)},${Math.round(p.y)}`
+          const q = engine.worldToClient(r.x + r.w, r.y + r.h)
+          return [p.x, p.y, q.x, q.y].map(Math.round).join()
         }
         let last = at()
         let same = 0

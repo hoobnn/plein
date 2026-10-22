@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { centerOf, elements, newProject, waitEngine } from './canvas'
+import { centerOf, elements, newProject, settle, waitEngine } from './canvas'
 
 async function note(page: Page) {
   await newProject(page)
@@ -28,6 +28,7 @@ async function note(page: Page) {
     .poll(async () => (await elements(page)).filter((el) => el.kind === 'markdown').length)
     .toBe(1)
   const id = (await elements(page)).find((el) => el.kind === 'markdown')!.id
+  await settle(page, id)
   const point = await centerOf(page, id)
   await page.mouse.dblclick(point.x, point.y)
   const editor = page.locator('.plein-md-editor .cm-content')
