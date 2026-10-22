@@ -135,8 +135,14 @@ test('旧整组受理应答在切回重跑后才到达，停止入口仍对应�
     })
   }
 })
-for (const kind of ['node', 'group'] as const) {
-  test(`停止${kind === 'node' ? '节点' : '整组'}失败应答在切回同一画布后才返回，不提示到新引擎`, async ({
+for (const [kind, when] of [
+  ['node', 'back'],
+  ['group', 'back'],
+  ['group', 'away'],
+] as const) {
+  const where = when === 'back' ? '切回同一画布后' : '停在另一画布时'
+  const target = when === 'back' ? '新引擎' : '另一画布'
+  test(`停止${kind === 'node' ? '节点' : '整组'}失败应答在${where}才返回，不提示到${target}`, async ({
     page,
   }) => {
     const f = await fixture(page)
@@ -170,7 +176,11 @@ for (const kind of ['node', 'group'] as const) {
         .getByRole('button', { name: kind === 'node' ? '停止' : '停止整组', exact: true })
         .click()
       await expect.poll(() => entered).toBe(true)
-      await back(page, f)
+      if (when === 'back') await back(page, f)
+      else {
+        await page.goto(`/#/c/${f.other}`)
+        await waitEngine(page)
+      }
       release()
       await expect.poll(() => finished).toBe(true)
       await settle(page)
