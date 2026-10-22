@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 
 const desktop = vi.hoisted(() => ({
   canUpdate: vi.fn(() => true),
-  showMessageBox: vi.fn(() => Promise.resolve({ response: 1 })),
+  showMessageBox: vi.fn((..._args: unknown[]) => Promise.resolve({ response: 1 })),
 }))
 vi.mock('electron', () => ({
   app: { isPackaged: true, getAppPath: () => '/Applications/Plein.app', getVersion: () => '0.3.0' },
