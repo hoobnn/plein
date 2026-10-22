@@ -12,10 +12,6 @@ on:
         description: e2e 运行平台
         type: string
         default: ubuntu-latest
-      e2e-advisory:
-        description: e2e 只出报告、失败不拦后续任务（发版用）
-        type: boolean
-        default: false
   workflow_dispatch:
     inputs:
       e2e-os:
@@ -55,13 +51,11 @@ jobs:
   # 界面冒烟：mock 平台起真服务，Playwright 驱动 Chromium 走完模板到导出。
   # 系统 ffmpeg 带 libass，加上中文字体，导出时连烧字幕一起验证。
   # 用例已有一千多条且单进程串跑，按文件分片到多台机器，每片各起一套服务和数据目录。
-  # 发版时在 macOS 上跑，与出包平台一致；Linux 上的按键和时序差异不卡发版
+  # 推送 main 不跑 e2e，发版是唯一拦截点：任何一片失败都不签名、不发布
   e2e:
     needs: check
     runs-on: ${{ inputs.e2e-os || 'ubuntu-latest' }}
     timeout-minutes: 45
-    # 发版时 e2e 只作参考：时序类偶发失败不拦签名打包，结果仍在本次运行里可查
-    continue-on-error: ${{ inputs.e2e-advisory == true }}
     strategy:
       fail-fast: false
       matrix:
