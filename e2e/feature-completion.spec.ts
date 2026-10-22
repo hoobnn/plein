@@ -52,7 +52,8 @@ test('资产库新版经过差异审阅同步，固定卡片不被后续保存�
     .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.description, id))
     .toBe('新版白色外套')
   await updates.getByRole('button', { name: '固定当前版本', exact: true }).click()
-  await expect(updates.getByRole('status')).toHaveText('已固定当前卡片版本')
+  // 操作结果和随后自动刷新差异的“正在读取”是两条状态，读取慢时会同时出现。
+  await expect(updates.getByRole('status').filter({ hasText: '已固定当前卡片版本' })).toBeVisible()
   await expect(updates.getByRole('button', { name: '解除固定', exact: true })).toBeVisible()
   expect(
     (
@@ -62,6 +63,10 @@ test('资产库新版经过差异审阅同步，固定卡片不被后续保存�
     ).status(),
   ).toBe(200)
   await updates.getByRole('button', { name: '刷新差异' }).click()
+  // 读取期间整组按钮本来就禁用，读完新差异后仍禁用才说明是固定挡住了同步。
+  await expect(updates.getByText('正在读取差异…')).toHaveCount(0)
+  // 刷新后详情收起，新值在折叠区里
+  await expect(updates.getByText('另一版红色外套', { exact: true })).toBeAttached()
   await expect(updates.getByRole('button', { name: '同步选中的字段' })).toBeDisabled()
   expect(
     await page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.description, id),
