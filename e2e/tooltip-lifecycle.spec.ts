@@ -150,6 +150,39 @@ test('协作删除悬停控件所属节点后，提示立即退场，不悬挂�
   }
 })
 
+test('悬停按钮的图标被替换后漏掉 pointerout，指针进入别处时提示仍然退场', async ({ page }) => {
+  await newProject(page)
+  const id = await page.evaluate(() =>
+    window.__plein.addNode({
+      type: 'plein/image',
+      name: '换图标悬停',
+      params: { prompt: '透明水杯', model: 'plein/mock:image' },
+      x: 400,
+      y: 200,
+    }),
+  )
+  await clickElement(page, id)
+  const button = page.getByTestId('generator').getByRole('button', { name: '生成', exact: true })
+  // 全程派发事件、真实指针留在角落：指针真停在按钮上时，浏览器会在图标替换后补发移动，重新弹出提示。
+  await page.mouse.move(0, 0)
+  await button
+    .locator('svg')
+    .evaluate((el) =>
+      el.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' })),
+    )
+  const tip = page.getByRole('tooltip')
+  await expect(tip).toContainText('生成')
+  // 任务开始时按钮换图标，指针下的节点被移除，浏览器不再给它派发 pointerout，
+  // 下一次移动只在新位置派发 pointerover。这里直接复现这一事件序列。
+  await button.evaluate((el) => {
+    el.replaceChildren(document.createElementNS('http://www.w3.org/2000/svg', 'svg'))
+    document
+      .querySelector('canvas')!
+      .dispatchEvent(new PointerEvent('pointerover', { bubbles: true, pointerType: 'mouse' }))
+  })
+  await expect(tip).toHaveCount(0)
+})
+
 for (const change of ['empty', 'remove', 'replace'] as const) {
   test(`悬停标题 ${change} 与移出发生在同一任务时，不把旧说明恢复回去`, async ({ page }) => {
     await newProject(page)

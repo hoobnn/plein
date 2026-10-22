@@ -50,6 +50,9 @@ export function TooltipHost() {
 
     const over = (e: PointerEvent) => {
       if (e.pointerType === 'touch') return
+      // 悬停目标里的节点被替换（如按钮换图标）时，浏览器不给已移除的节点派发 pointerout，
+      // 只能在指针进入目标以外的元素时收起。
+      if (target && !target.contains(e.target as Node)) hide()
       const el = (e.target as Element | null)?.closest?.<HTMLElement>('[title]')
       if (!el || el === target) return
       hide()
