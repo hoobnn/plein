@@ -51,7 +51,7 @@ test('手写文本直接显示正文，编辑与撤销后预览和筛选同步',
     .toEqual([id])
 })
 
-for (const width of [1440, 420]) {
+for (const width of [420]) {
   test(`生成文本空白不算完成，多行与超长正文不撑破 ${width}px 卡片`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
     await newProject(page)

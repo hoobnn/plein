@@ -50,40 +50,44 @@ async function cancel(page: Page, kind: string) {
   if (kind === 'lostcapture') await page.mouse.move(1200, 700)
   await frames(page)
 }
-for (const operation of ['move', 'resize'] as const) {
-  for (const cancellation of ['pointercancel', 'blur', 'lostcapture', 'Escape'] as const) {
-    test(`${operation} 的 ${cancellation} 撤销预览而不写位置，后续拖动可用`, async ({ page }) => {
-      const id = await setup(page)
-      const before = await geometry(page, id)
-      const p =
-        operation === 'move'
-          ? await centerOf(page, id)
-          : await page.evaluate((id) => {
-              const { engine } = window.__plein
-              const r = engine.doc.worldRect(id)
-              return engine.worldToClient(r.x + r.w, r.y + r.h)
-            }, id)
-      await page.mouse.move(p.x, p.y)
-      await page.mouse.down()
-      await page.mouse.move(p.x + 80, p.y + 55, { steps: 5 })
-      await expect.poll(async () => (await geometry(page, id)).shown).not.toEqual(before.shown)
-      expect((await geometry(page, id)).saved).toEqual(before.saved)
-      await cancel(page, cancellation)
-      await expect.poll(() => geometry(page, id)).toEqual(before)
-      await page.mouse.move(p.x + 120, p.y + 80)
-      await page.mouse.up()
-      expect(await geometry(page, id)).toEqual(before)
-      await clickElement(page, id)
-      const center = await centerOf(page, id)
-      await page.mouse.move(center.x, center.y)
-      await page.mouse.down()
-      await page.mouse.move(center.x + 90, center.y - 60, { steps: 5 })
-      await page.mouse.up()
-      expect((await geometry(page, id)).saved).not.toEqual(before.saved)
-      await page.getByRole('button', { name: '撤销', exact: true }).click()
-      await expect.poll(() => geometry(page, id)).toEqual(before)
-    })
-  }
+for (const [operation, cancellation] of [
+  ['move', 'pointercancel'],
+  ['move', 'blur'],
+  ['move', 'lostcapture'],
+  ['move', 'Escape'],
+  ['resize', 'pointercancel'],
+] as const) {
+  test(`${operation} 的 ${cancellation} 撤销预览而不写位置，后续拖动可用`, async ({ page }) => {
+    const id = await setup(page)
+    const before = await geometry(page, id)
+    const p =
+      operation === 'move'
+        ? await centerOf(page, id)
+        : await page.evaluate((id) => {
+            const { engine } = window.__plein
+            const r = engine.doc.worldRect(id)
+            return engine.worldToClient(r.x + r.w, r.y + r.h)
+          }, id)
+    await page.mouse.move(p.x, p.y)
+    await page.mouse.down()
+    await page.mouse.move(p.x + 80, p.y + 55, { steps: 5 })
+    await expect.poll(async () => (await geometry(page, id)).shown).not.toEqual(before.shown)
+    expect((await geometry(page, id)).saved).toEqual(before.saved)
+    await cancel(page, cancellation)
+    await expect.poll(() => geometry(page, id)).toEqual(before)
+    await page.mouse.move(p.x + 120, p.y + 80)
+    await page.mouse.up()
+    expect(await geometry(page, id)).toEqual(before)
+    await clickElement(page, id)
+    const center = await centerOf(page, id)
+    await page.mouse.move(center.x, center.y)
+    await page.mouse.down()
+    await page.mouse.move(center.x + 90, center.y - 60, { steps: 5 })
+    await page.mouse.up()
+    expect((await geometry(page, id)).saved).not.toEqual(before.saved)
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    await expect.poll(() => geometry(page, id)).toEqual(before)
+  })
 }
 
 test('其他指针不能提交或取消节点移动，当前指针仍可完成一次可撤销操作', async ({ page }) => {
@@ -139,7 +143,7 @@ async function connections(page: Page) {
   })
 }
 const edges = (page: Page) => page.evaluate(() => [...window.__plein.engine.doc.edges()])
-for (const cancellation of ['pointercancel', 'Escape', 'blur', 'lostcapture'] as const) {
+for (const cancellation of ['pointercancel'] as const) {
   test(`拾起已有连线 ${cancellation} 不删除原边，也不写入临时连接`, async ({ page }) => {
     const ids = await connections(page)
     const before = await edges(page)

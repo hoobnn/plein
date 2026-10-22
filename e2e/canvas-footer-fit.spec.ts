@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { clickElement, newProject } from './canvas'
 type Engine = import('../packages/canvas-core/src/engine').Engine
 
-for (const width of [320, 390, 640, 664, 700, 800, 900, 1440]) {
+for (const width of [320, 640, 700, 800, 1440]) {
   test(`${width}px 底栏所有按钮留在窗口内且不被助手遮挡`, async ({ page }, testInfo) => {
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))

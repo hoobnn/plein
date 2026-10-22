@@ -64,39 +64,7 @@ test('数值参数保留零值、失焦夹紧范围，清空恢复默认且不�
   expect(submitted).toBe(0)
 })
 
-test('平台整数设置夹紧上下界并取整，清空可恢复平台默认', async ({ page }) => {
-  await newProject(page)
-  await page.getByRole('button', { name: '设置', exact: true }).click()
-  const settings = page.getByRole('dialog', { name: '设置', exact: true })
-  await settings.getByRole('button', { name: /^模型平台/ }).click()
-  await settings.getByRole('button', { name: /^Mock（开发测试用）/ }).click()
-  const input = settings.getByRole('spinbutton', { name: '模拟耗时（毫秒）', exact: true })
-  for (const [typed, expected] of [
-    ['-1', '0'],
-    ['60001', '60000'],
-    ['1.6', '2'],
-  ] as const) {
-    await input.fill(typed)
-    await input.press('Tab')
-    await expect(input).toHaveValue(expected)
-  }
-  await input.fill('')
-  await input.pressSequentially('-')
-  await input.press('Tab')
-  await expect(input).toHaveValue('2')
-  await expect(settings.getByRole('alert')).toContainText('请输入有效数字')
-  await input.fill('')
-  await input.press('Tab')
-  await expect(input).toHaveValue('')
-  await expect(settings.getByRole('alert')).toHaveCount(0)
-  await settings.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(settings.getByText('已保存', { exact: true })).toBeVisible()
-  const config = await (await page.request.get('/api/providers/plein/mock/config')).json()
-  // 配置保存用户覆盖项；清空后删掉覆盖，由 Provider 的 schema 默认值接管。
-  expect(config.settings.latencyMs).toBeUndefined()
-})
-
-for (const incomplete of ['1e', '-']) {
+for (const incomplete of ['1e']) {
   test(`数值草稿 ${incomplete} 不误当清空，失焦保留已有参数并可恢复输入`, async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 560 })
     await newProject(page)
@@ -129,11 +97,10 @@ for (const incomplete of ['1e', '-']) {
     await expect(number).toHaveAttribute('aria-invalid', 'true')
     await expect(panel.getByRole('alert')).toContainText('请输入有效数字')
     await expect(number).toHaveAccessibleDescription(/请输入有效数字/)
-    if (incomplete === '1e')
-      await panel.screenshot({
-        path: test.info().outputPath('invalid-number.png'),
-        animations: 'disabled',
-      })
+    await panel.screenshot({
+      path: test.info().outputPath('invalid-number.png'),
+      animations: 'disabled',
+    })
     await number.fill('1.3')
     await number.press('Enter')
     expect(

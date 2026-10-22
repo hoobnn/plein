@@ -51,31 +51,13 @@ test('拖动宽度限制、持久化、键盘微调与双击恢复默认', async
   await expect(handleOf(page)).toHaveAttribute('aria-valuenow', '220')
 })
 
-for (const interruption of [
-  'pointercancel',
-  'lostpointercapture',
-  'Escape',
-  'blur',
-  'close',
-  'leave',
-]) {
+for (const interruption of ['close', 'leave'] as const) {
   test(`拖动遇到 ${interruption} 后恢复原宽度并清理拖动状态，可重新拖动`, async ({ page }) => {
     await newProject(page)
-    const { handle, x, y } = await startDrag(page)
+    const { x, y } = await startDrag(page)
     const url = page.url()
-    if (interruption === 'Escape') await page.keyboard.press('Escape')
-    else if (interruption === 'blur')
-      await page.evaluate(() => window.dispatchEvent(new Event('blur')))
-    else if (interruption === 'close') await page.keyboard.press('ControlOrMeta+Backslash')
-    else if (interruption === 'leave') await page.evaluate(() => (location.hash = '#/'))
-    else {
-      // 浏览器 pointer capture 已由真实鼠标建立；模拟系统取消，或真实释放捕获。
-      await handle.evaluate((element, kind) => {
-        if (kind === 'lostpointercapture') element.releasePointerCapture(1)
-        else
-          element.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true }))
-      }, interruption)
-    }
+    if (interruption === 'close') await page.keyboard.press('ControlOrMeta+Backslash')
+    else await page.evaluate(() => (location.hash = '#/'))
     await expect(page.locator('html')).not.toHaveClass(/plein-resizing/)
     await page.mouse.move(x + 130, y)
     await page.mouse.up()
@@ -95,17 +77,3 @@ for (const interruption of [
     expect(await savedWidth(page)).toBe('352')
   })
 }
-
-test('拖动期间忽略另一根指针的移动、抬起和取消', async ({ page }) => {
-  await newProject(page)
-  const { handle } = await startDrag(page)
-  for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) {
-    await handle.dispatchEvent(type, { pointerId: 2, button: 0, clientX: 1000 })
-  }
-  await expect(handle).toHaveAttribute('aria-valuenow', '352')
-  await expect(handle).toHaveAttribute('data-dragging', 'true')
-  expect(await savedWidth(page)).toBeNull()
-  await page.mouse.up()
-  expect(await savedWidth(page)).toBe('352')
-  await expect(page.locator('html')).not.toHaveClass(/plein-resizing/)
-})

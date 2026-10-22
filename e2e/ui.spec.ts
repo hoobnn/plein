@@ -4,7 +4,7 @@ import { newProject } from './canvas'
 const SHOTS = process.env.PLEIN_SHOTS ?? 'test-results'
 
 /** 基础浮层（Base UI）：弹层、下拉、开关、面板、确认框的打开、关闭、键盘和焦点 */
-test('弹层、下拉、开关、面板、确认框的交互', async ({ page }) => {
+test('弹层、下拉、开关、面板、确认框的交互', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
 
   // 工具单击立即切换，键盘快捷键与按钮保持一致。

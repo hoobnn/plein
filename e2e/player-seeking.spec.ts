@@ -25,7 +25,12 @@ test.beforeAll(() => {
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 for (const kind of ['video', 'audio'] as const) {
-  for (const cancellation of ['lostcapture', 'pendingcapture', 'blur', 'pointercancel'] as const) {
+  // 音频只保留 pointercancel；其余中断方式与视频共用同一套进度条逻辑，由视频覆盖。
+  const cancellations =
+    kind === 'video'
+      ? (['lostcapture', 'pendingcapture', 'blur', 'pointercancel'] as const)
+      : (['pointercancel'] as const)
+  for (const cancellation of cancellations) {
     test(`${kind} 进度拖动越界及 ${cancellation} 中断后可继续操作`, async ({ page }) => {
       const errors: string[] = []
       page.on('pageerror', (error) => errors.push(error.message))

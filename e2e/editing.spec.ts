@@ -5,7 +5,7 @@ const nodes = async (page: Parameters<typeof elements>[0]) =>
   (await elements(page)).filter((e) => e.kind === 'node')
 
 /** 画布编辑的基本功：拖线连接两个节点，撤销 / 重做连线和删除 */
-test('拖线连接节点，撤销重做连线与删除', async ({ page }) => {
+test('拖线连接节点，撤销重做连线与删除', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
   await addNode(page, '文本', { x: 360, y: 450 })
   await expect.poll(async () => (await nodes(page)).length).toBe(1)

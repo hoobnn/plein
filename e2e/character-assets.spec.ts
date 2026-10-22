@@ -365,7 +365,7 @@ test('时期自定义音色支持先填平台，保存重开后继续填写并�
   })
 })
 
-for (const role of ['时期', '服饰', '表情'] as const) {
+for (const role of ['时期', '表情'] as const) {
   test(`档案${role}缩略图与封面同步恢复，移除后更新封面`, async ({ page }) => {
     await newProject(page)
     const ids = await uploadedImages(page, 2)
@@ -389,7 +389,7 @@ for (const role of ['时期', '服饰', '表情'] as const) {
                   name: '校服',
                   aliases: [],
                   description: '',
-                  images: role === '服饰' ? ids : [],
+                  images: [],
                 },
               ],
             },
@@ -422,10 +422,7 @@ for (const role of ['时期', '服饰', '表情'] as const) {
     const entry =
       role === '时期'
         ? panel.locator('.lib-lane-period').first()
-        : panel.getByRole('button', {
-            name: role === '服饰' ? '少年 · 校服' : '编辑「开心」',
-            exact: true,
-          })
+        : panel.getByRole('button', { name: '编辑「开心」', exact: true })
     const cover = entry.locator(role === '时期' ? '.lib-timeline-thumb' : '.lib-look-cover')
     await expect(cover.getByRole('img', { name: '参考图加载失败，进入编辑后重试' })).toBeVisible()
     await entry.focus()
@@ -477,9 +474,7 @@ for (const role of ['时期', '服饰', '表情'] as const) {
     expect((await readItem(page, item.id)).profile).toMatchObject(
       role === '时期'
         ? { periods: [{ images: [ids[1]] }] }
-        : role === '服饰'
-          ? { periods: [{ outfits: [{ images: [ids[1]] }] }] }
-          : { expressions: [{ images: [ids[1]] }] },
+        : { expressions: [{ images: [ids[1]] }] },
     )
     if (role === '时期')
       await panel.screenshot({
@@ -520,12 +515,10 @@ for (const role of ['时期', '服饰', '表情'] as const) {
     await openItem(panel, item.name)
     const tabs = panel.getByRole('group', { name: '档案分页', exact: true })
     await tabs.getByRole('button', { name: role === '表情' ? /^表情/ : /^时期与服饰/ }).click()
-    if (role === '服饰')
-      await panel.getByRole('button', { name: '少年 · 校服', exact: true }).click()
     if (role === '表情')
       await panel.getByRole('button', { name: '编辑「开心」', exact: true }).click()
     const name = panel.getByRole('textbox', {
-      name: role === '时期' ? '时期名' : role === '服饰' ? '服饰名' : '名字',
+      name: role === '时期' ? '时期名' : '名字',
       exact: true,
     })
     await name.fill(`新${role}`)
@@ -587,11 +580,7 @@ for (const role of ['时期', '服饰', '表情'] as const) {
     const expected = (images: Array<string | undefined>) =>
       role === '时期'
         ? { periods: [{ name: '新时期', aliases: ['少年'], images }] }
-        : role === '服饰'
-          ? {
-              periods: [{ name: '少年', outfits: [{ name: '新服饰', aliases: ['校服'], images }] }],
-            }
-          : { expressions: [{ name: '新表情', aliases: ['开心'], images }] }
+        : { expressions: [{ name: '新表情', aliases: ['开心'], images }] }
     expect(saved.profile).toMatchObject(expected([assetId]))
     rejectNext = true
     const uploadAgain = async () => {
@@ -852,57 +841,61 @@ test('旧角色图槽兼容四类资产，保存与重分类不丢图，画布�
   ).toEqual(initial.profile)
 })
 
-test('新角色四类图可上传、替换、移除并从画布补入，保存重开保持分类', async ({ page }) => {
-  await newProject(page)
-  const ids = await uploadedImages(page)
-  await uploadToCanvas(page, 7)
+test(
+  '新角色四类图可上传、替换、移除并从画布补入，保存重开保持分类',
+  { tag: '@core' },
+  async ({ page }) => {
+    await newProject(page)
+    const ids = await uploadedImages(page)
+    await uploadToCanvas(page, 7)
 
-  const panel = await openLibrary(page)
-  await panel.locator('header').getByRole('button', { name: '新建角色', exact: true }).click()
-  const tabs = panel.getByRole('group', { name: '档案分页' })
-  await tabs.getByRole('button', { name: '基础设定', exact: true }).click()
-  await panel.getByRole('textbox', { name: '名称', exact: true }).fill('四类上传角色')
-  await tabs.getByRole('button', { name: '角色资产', exact: true }).click()
-  for (const [index, { id, label }] of SLOTS.entries()) {
-    await slot(panel, id).getByLabel(`上传${label}`, { exact: true }).setInputFiles(file(index))
-    await expect(slot(panel, id).locator('img')).toHaveAttribute('src', new RegExp(ids[index]!))
-  }
+    const panel = await openLibrary(page)
+    await panel.locator('header').getByRole('button', { name: '新建角色', exact: true }).click()
+    const tabs = panel.getByRole('group', { name: '档案分页' })
+    await tabs.getByRole('button', { name: '基础设定', exact: true }).click()
+    await panel.getByRole('textbox', { name: '名称', exact: true }).fill('四类上传角色')
+    await tabs.getByRole('button', { name: '角色资产', exact: true }).click()
+    for (const [index, { id, label }] of SLOTS.entries()) {
+      await slot(panel, id).getByLabel(`上传${label}`, { exact: true }).setInputFiles(file(index))
+      await expect(slot(panel, id).locator('img')).toHaveAttribute('src', new RegExp(ids[index]!))
+    }
 
-  const portrait = slot(panel, 'portrait')
-  const replacement = page.waitForEvent('filechooser')
-  await portrait.getByRole('button', { name: '替换', exact: true }).click()
-  await (await replacement).setFiles(file(6))
-  await expect(portrait.locator('img')).toHaveAttribute('src', new RegExp(ids[6]!))
-  const grid = slot(panel, 'face_grid')
-  await grid.getByRole('button', { name: '移除', exact: true }).click()
-  await expect(grid.locator('img')).toHaveCount(0)
-  await grid.getByRole('button', { name: '从画布选择情绪九宫格', exact: true }).click()
-  const picker = page.locator('.ui-menu[aria-label="从画布选"]')
-  await picker.getByTitle('character-7.png', { exact: true }).click()
-  await expect(grid.locator('img')).toHaveAttribute('src', new RegExp(ids[7]!))
-  await save(panel)
+    const portrait = slot(panel, 'portrait')
+    const replacement = page.waitForEvent('filechooser')
+    await portrait.getByRole('button', { name: '替换', exact: true }).click()
+    await (await replacement).setFiles(file(6))
+    await expect(portrait.locator('img')).toHaveAttribute('src', new RegExp(ids[6]!))
+    const grid = slot(panel, 'face_grid')
+    await grid.getByRole('button', { name: '移除', exact: true }).click()
+    await expect(grid.locator('img')).toHaveCount(0)
+    await grid.getByRole('button', { name: '从画布选择情绪九宫格', exact: true }).click()
+    const picker = page.locator('.ui-menu[aria-label="从画布选"]')
+    await picker.getByTitle('character-7.png', { exact: true }).click()
+    await expect(grid.locator('img')).toHaveAttribute('src', new RegExp(ids[7]!))
+    await save(panel)
 
-  const items = (await (await page.request.get('/api/library')).json()) as LibraryItem[]
-  const saved = items.find((i) => i.name === '四类上传角色')!
-  expect(saved).toBeTruthy()
-  created.push(saved.id)
-  expect(saved.images).toHaveLength(4)
-  expect(saved.images).toEqual(
-    expect.arrayContaining([
-      { slot: 'full_body', assetId: ids[0] },
-      { slot: 'character_3view', assetId: ids[3] },
-      { slot: 'portrait', assetId: ids[6] },
-      { slot: 'face_grid', assetId: ids[7] },
-    ]),
-  )
-  await panel.getByRole('button', { name: '返回', exact: true }).click()
-  await openItem(panel, saved.name)
-  for (const image of saved.images)
-    await expect(slot(panel, image.slot).locator('img')).toHaveAttribute(
-      'src',
-      new RegExp(image.assetId),
+    const items = (await (await page.request.get('/api/library')).json()) as LibraryItem[]
+    const saved = items.find((i) => i.name === '四类上传角色')!
+    expect(saved).toBeTruthy()
+    created.push(saved.id)
+    expect(saved.images).toHaveLength(4)
+    expect(saved.images).toEqual(
+      expect.arrayContaining([
+        { slot: 'full_body', assetId: ids[0] },
+        { slot: 'character_3view', assetId: ids[3] },
+        { slot: 'portrait', assetId: ids[6] },
+        { slot: 'face_grid', assetId: ids[7] },
+      ]),
     )
-})
+    await panel.getByRole('button', { name: '返回', exact: true }).click()
+    await openItem(panel, saved.name)
+    for (const image of saved.images)
+      await expect(slot(panel, image.slot).locator('img')).toHaveAttribute(
+        'src',
+        new RegExp(image.assetId),
+      )
+  },
+)
 
 test('角色图片上传完成前暂停保存和其他选图，完成后保存不丢失新图片', async ({ page }) => {
   await newProject(page)

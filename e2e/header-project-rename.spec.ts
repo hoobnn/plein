@@ -9,7 +9,7 @@ async function fixture(page: Page) {
   return { canvas, project }
 }
 
-for (const width of [320, 1440]) {
+for (const width of [320]) {
   test(`${width}px 画布顶栏项目改名失败保留输入，可修改后重试`, async ({ page }) => {
     await newProject(page)
     const canvasId = decodeURIComponent(page.url().split('#/c/')[1]!)

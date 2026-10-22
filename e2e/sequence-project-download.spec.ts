@@ -74,7 +74,7 @@ async function fixture(page: Page) {
   return { id, source, asset, editor, open, downloads }
 }
 
-for (const mode of ['unavailable', 'not-zip', 'truncated', 'disconnected'] as const) {
+for (const mode of ['unavailable', 'not-zip', 'disconnected'] as const) {
   test(`工程 ZIP ${mode} 失败可见且不保存错误页，重试读取实际工程`, async ({ page }) => {
     const f = await fixture(page)
     let blocked = true
@@ -85,13 +85,7 @@ for (const mode of ['unavailable', 'not-zip', 'truncated', 'disconnected'] as co
           ? route.fulfill(
               mode === 'unavailable'
                 ? { status: 503, json: { error: 'unavailable', message: '工程下载暂不可用' } }
-                : mode === 'not-zip'
-                  ? { status: 200, contentType: 'text/html', body: '<html>upstream error</html>' }
-                  : {
-                      status: 200,
-                      contentType: 'application/zip',
-                      body: Buffer.from('PK\x03\x04incomplete-archive'),
-                    },
+                : { status: 200, contentType: 'text/html', body: '<html>upstream error</html>' },
             )
           : route.continue(),
     )

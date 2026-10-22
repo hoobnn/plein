@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { addNode, elements, newProject } from './canvas'
 
 /** 内置智能体：不装 CLI，用 mock 的工具调用模型跑完一轮，再整轮撤销 */
-test('内置小满建节点并运行，整轮撤销', async ({ page }) => {
+test('内置小满建节点并运行，整轮撤销', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
   await page.getByRole('button', { name: '打开助手' }).click()
   const panel = page.getByRole('complementary', { name: '助手' })
@@ -20,7 +20,7 @@ test('内置小满建节点并运行，整轮撤销', async ({ page }) => {
 })
 
 /** 计划模式：先出计划卡片，同意后小满按步骤执行，逐步打勾 */
-test('先出计划，同意后执行并打勾', async ({ page }) => {
+test('先出计划，同意后执行并打勾', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
   await page.getByRole('button', { name: '打开助手' }).click()
   const panel = page.getByRole('complementary', { name: '助手' })

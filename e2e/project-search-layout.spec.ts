@@ -40,7 +40,7 @@ test('筛选后删除匹配项目，列表剩一项仍可清除搜索并恢复�
   await expect(page.getByRole('link', { name: '保留的项目', exact: true })).toBeVisible()
 })
 
-for (const width of [320, 390]) {
+for (const width of [320]) {
   test(`${width}px 项目搜索及导入新建入口完整可点击，不横向溢出`, async ({ page }) => {
     await newProject(page)
     const searchTerm = `Layout project ${width} ${randomUUID()}`

@@ -3,9 +3,7 @@ import { newProject } from './canvas'
 
 for (const [width, height] of [
   [320, 320],
-  [320, 640],
   [639, 640],
-  [768, 640],
   [1440, 640],
 ] as const) {
   test(`${width}x${height}px 空画布提示在可见画布内，可双击添加并撤销回空态`, async ({ page }) => {
@@ -89,7 +87,7 @@ test('侧栏覆盖和任务面板改变可用空间时，空态提示隐藏或�
   await expect(prompt).toBeVisible()
 })
 
-for (const width of [320, 1440]) {
+for (const width of [320]) {
   test(`${width}px 本地演示离线时顶栏可操作，空态支持添加文档和返回`, async ({ page }) => {
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))

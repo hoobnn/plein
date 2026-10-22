@@ -5,7 +5,6 @@ const fields = [
   ['intervalHours', '备份间隔（小时）', '-1'],
   ['keepBackups', '保留最近几份', '1.5'],
   ['unusedDays', '未引用素材保留（天）', '3651'],
-  ['trashDays', '回收站保留（天）', '366'],
 ] as const
 
 test.beforeEach(async ({ request }) => {

@@ -46,83 +46,85 @@ async function select(page: Page, id: string) {
   await page.mouse.click(p.x, p.y)
 }
 
-test('角色、道具存进资产库，换个项目生成设定卡时直接套用，不再重新出定妆图、道具图', async ({
-  page,
-}) => {
-  // 资产库按账号共享：先清掉别的用例或上次留下的同名条目，否则同名多条会被当成指不明、不套用
-  for (const i of (await library(page)).filter((i) => i.name === '林晚' || i.name === '铁盒'))
-    await page.request.delete(`/api/library/${i.id}`)
-  // 项目 A：抽取出林晚，出定妆图，存进资产库
-  await newProject(page)
-  await castFromTemplate(page)
-  const portrait = await byName(page, '林晚 · 定妆图')
-  await zoomTo(page, [portrait.id])
-  await contextMenu(page, portrait.id, '生成')
-  await waitNode(page, portrait.id)
+test(
+  '角色、道具存进资产库，换个项目生成设定卡时直接套用，不再重新出定妆图、道具图',
+  { tag: '@core' },
+  async ({ page }) => {
+    // 资产库按账号共享：先清掉别的用例或上次留下的同名条目，否则同名多条会被当成指不明、不套用
+    for (const i of (await library(page)).filter((i) => i.name === '林晚' || i.name === '铁盒'))
+      await page.request.delete(`/api/library/${i.id}`)
+    // 项目 A：抽取出林晚，出定妆图，存进资产库
+    await newProject(page)
+    await castFromTemplate(page)
+    const portrait = await byName(page, '林晚 · 定妆图')
+    await zoomTo(page, [portrait.id])
+    await contextMenu(page, portrait.id, '生成')
+    await waitNode(page, portrait.id)
 
-  const lin = await byName(page, '林晚')
-  await select(page, lin.id)
-  await page.getByRole('button', { name: '存入资产库' }).click()
-  await expect(page.locator('.ui-toast')).toContainText('已存入资产库：角色「林晚」')
-  const [saved] = (await library(page)).filter((i) => i.name === '林晚')
-  // 设定里的性别、年龄存成标签；定妆图和音色一起带走
-  expect(saved).toMatchObject({
-    tags: { gender: '女', age: '青年' },
-    voice: { voiceId: 'mock-female' },
-  })
-  expect(saved!.images).toHaveLength(1)
+    const lin = await byName(page, '林晚')
+    await select(page, lin.id)
+    await page.getByRole('button', { name: '存入资产库' }).click()
+    await expect(page.locator('.ui-toast')).toContainText('已存入资产库：角色「林晚」')
+    const [saved] = (await library(page)).filter((i) => i.name === '林晚')
+    // 设定里的性别、年龄存成标签；定妆图和音色一起带走
+    expect(saved).toMatchObject({
+      tags: { gender: '女', age: '青年' },
+      voice: { voiceId: 'mock-female' },
+    })
+    expect(saved!.images).toHaveLength(1)
 
-  // 道具同样：出道具图，存进资产库带着图
-  const boxImage = await byName(page, '铁盒 · 道具图')
-  await zoomTo(page, [boxImage.id])
-  await contextMenu(page, boxImage.id, '生成')
-  await waitNode(page, boxImage.id)
-  await select(page, (await byName(page, '铁盒')).id)
-  await page.getByRole('button', { name: '存入资产库' }).click()
-  await expect(page.locator('.ui-toast')).toContainText('已存入资产库：道具「铁盒」')
-  const [box] = (await library(page)).filter((i) => i.name === '铁盒')
-  expect(box).toMatchObject({ kind: 'prop', voice: null })
-  expect(box!.images).toHaveLength(1)
+    // 道具同样：出道具图，存进资产库带着图
+    const boxImage = await byName(page, '铁盒 · 道具图')
+    await zoomTo(page, [boxImage.id])
+    await contextMenu(page, boxImage.id, '生成')
+    await waitNode(page, boxImage.id)
+    await select(page, (await byName(page, '铁盒')).id)
+    await page.getByRole('button', { name: '存入资产库' }).click()
+    await expect(page.locator('.ui-toast')).toContainText('已存入资产库：道具「铁盒」')
+    const [box] = (await library(page)).filter((i) => i.name === '铁盒')
+    expect(box).toMatchObject({ kind: 'prop', voice: null })
+    expect(box!.images).toHaveLength(1)
 
-  // 资产库里按性别筛：女能看到林晚，男看不到
-  await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: '资产库' }).click()
-  const panel = page.getByRole('dialog', { name: '资产库' })
-  await panel.getByRole('combobox', { name: '性别' }).click()
-  await page.getByRole('option', { name: '男', exact: true }).click()
-  await expect(panel.getByText('林晚', { exact: true })).toBeHidden()
-  await panel.getByRole('combobox', { name: '性别' }).click()
-  await page.getByRole('option', { name: '女', exact: true }).click()
-  await expect(panel.getByText('林晚', { exact: true })).toBeVisible()
-  await expect(panel.getByText('女 · 青年')).toBeVisible()
-  await panel.getByRole('button', { name: '关闭' }).click()
+    // 资产库里按性别筛：女能看到林晚，男看不到
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: '资产库' }).click()
+    const panel = page.getByRole('dialog', { name: '资产库' })
+    await panel.getByRole('combobox', { name: '性别' }).click()
+    await page.getByRole('option', { name: '男', exact: true }).click()
+    await expect(panel.getByText('林晚', { exact: true })).toBeHidden()
+    await panel.getByRole('combobox', { name: '性别' }).click()
+    await page.getByRole('option', { name: '女', exact: true }).click()
+    await expect(panel.getByText('林晚', { exact: true })).toBeVisible()
+    await expect(panel.getByText('女 · 青年')).toBeVisible()
+    await panel.getByRole('button', { name: '关闭' }).click()
 
-  // 项目 B：同一个模板，林晚直接用资产库的设定、参考图和音色
-  await newProject(page)
-  const notice = await castFromTemplate(page)
-  expect(notice).toContain('林晚、铁盒 用了资产库里的设定和参考图')
-  const names = (await elements(page)).map((e) => e.name)
-  expect(names).not.toContain('林晚 · 定妆图')
-  expect(names).not.toContain('铁盒 · 道具图')
-  expect(names).toContain('老周 · 定妆图')
-  expect(names).toContain('老城区天台 · 场景图')
-  const again = await byName(page, '林晚')
-  const into = await edgesInto(page, again.id)
-  expect(into).toHaveLength(1)
-  const ref = await page.evaluate((id) => window.__plein.engine.doc.get(id)?.assetId, into[0]![0])
-  expect(ref).toBe(saved!.images[0]!.assetId)
+    // 项目 B：同一个模板，林晚直接用资产库的设定、参考图和音色
+    await newProject(page)
+    const notice = await castFromTemplate(page)
+    expect(notice).toContain('林晚、铁盒 用了资产库里的设定和参考图')
+    const names = (await elements(page)).map((e) => e.name)
+    expect(names).not.toContain('林晚 · 定妆图')
+    expect(names).not.toContain('铁盒 · 道具图')
+    expect(names).toContain('老周 · 定妆图')
+    expect(names).toContain('老城区天台 · 场景图')
+    const again = await byName(page, '林晚')
+    const into = await edgesInto(page, again.id)
+    expect(into).toHaveLength(1)
+    const ref = await page.evaluate((id) => window.__plein.engine.doc.get(id)?.assetId, into[0]![0])
+    expect(ref).toBe(saved!.images[0]!.assetId)
 
-  // 卡片上的音色是下拉选的预置音色，显示名字和性别
-  await select(page, again.id)
-  await page.getByText('更多设置').click()
-  await expect(page.getByRole('combobox', { name: '音色' })).toContainText('Mock 女声 · 女')
+    // 卡片上的音色是下拉选的预置音色，显示名字和性别
+    await select(page, again.id)
+    await page.getByText('更多设置').click()
+    await expect(page.getByRole('combobox', { name: '音色' })).toContainText('Mock 女声 · 女')
 
-  // 资产库里再点「添加到画布」：同一条目已经在画布上，只选中它
-  await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: '资产库' }).click()
-  await panel.getByRole('button', { name: '全部', exact: true }).click()
-  const cardItem = panel.getByRole('listitem').filter({ hasText: '林晚' })
-  await cardItem.hover()
-  await cardItem.getByRole('button', { name: '添加到画布' }).click()
-  await expect(page.locator('.ui-toast')).toContainText('「林晚」已经在画布上，已为你选中')
-})
+    // 资产库里再点「添加到画布」：同一条目已经在画布上，只选中它
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: '资产库' }).click()
+    await panel.getByRole('button', { name: '全部', exact: true }).click()
+    const cardItem = panel.getByRole('listitem').filter({ hasText: '林晚' })
+    await cardItem.hover()
+    await cardItem.getByRole('button', { name: '添加到画布' }).click()
+    await expect(page.locator('.ui-toast')).toContainText('「林晚」已经在画布上，已为你选中')
+  },
+)

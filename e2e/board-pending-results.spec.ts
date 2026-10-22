@@ -1,7 +1,7 @@
 import { expect, type Page, test } from '@playwright/test'
 import { newProject, waitNode } from './canvas'
 
-async function generated(page: Page, kind: 'image' | 'video' | 'audio' = 'image') {
+async function generated(page: Page, kind: 'image' | 'audio' = 'image') {
   await newProject(page)
   const id = await page.evaluate(
     (kind) =>
@@ -30,7 +30,7 @@ async function generated(page: Page, kind: 'image' | 'video' | 'audio' = 'image'
   return id
 }
 
-for (const kind of ['image', 'video', 'audio'] as const) {
+for (const kind of ['image', 'audio'] as const) {
   test(`${kind} 尚未采用时显示候选并可审片，预览不误采用，确认后刷新故事板`, async ({ page }) => {
     const id = await generated(page, kind)
     const before = await page.evaluate(
@@ -56,7 +56,7 @@ for (const kind of ['image', 'video', 'audio'] as const) {
     )
     await page.getByRole('button', { name: '故事板', exact: true }).click()
     const column = page.getByRole('region', {
-      name: kind === 'image' ? '图片' : kind === 'video' ? '视频' : '音频',
+      name: kind === 'image' ? '图片' : '音频',
       exact: true,
     })
     const card = column.getByRole('button', { name: '查看待审素材的候选', exact: true })

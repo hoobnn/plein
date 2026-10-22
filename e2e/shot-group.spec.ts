@@ -240,74 +240,81 @@ const shotGroup = (page: Page, frameId: string) =>
     frameId,
   )
 
-test('分镜组：宫格切分后自动编号，调顺序、排版，拼成大图并标出实际像素', async ({ page }) => {
-  await newProject(page)
-  const chooser = page.waitForEvent('filechooser')
-  await page.getByRole('button', { name: '上传' }).click()
-  await (await chooser).setFiles(join(dir, 'storyboard.png'))
-  await expect.poll(async () => (await elements(page)).length).toBe(1)
-  const [source] = await elements(page)
+test(
+  '分镜组：宫格切分后自动编号，调顺序、排版，拼成大图并标出实际像素',
+  { tag: '@core' },
+  async ({ page }) => {
+    await newProject(page)
+    const chooser = page.waitForEvent('filechooser')
+    await page.getByRole('button', { name: '上传' }).click()
+    await (await chooser).setFiles(join(dir, 'storyboard.png'))
+    await expect.poll(async () => (await elements(page)).length).toBe(1)
+    const [source] = await elements(page)
 
-  await clickElement(page, source!.id)
-  await page
-    .getByRole('toolbar', { name: '结果操作' })
-    .getByRole('button', { name: '宫格切分' })
-    .click()
-  await page.getByRole('button', { name: /4 宫格/ }).click()
-  await expect
-    .poll(async () => (await elements(page)).filter((e) => e.kind === 'frame').length)
-    .toBe(1)
-  const frame = (await elements(page)).find((e) => e.kind === 'frame')!
-  await expect.poll(async () => (await shotGroup(page, frame.id))?.order.length).toBe(4)
-  const tiles = (await shotGroup(page, frame.id))!.order
+    await clickElement(page, source!.id)
+    await page
+      .getByRole('toolbar', { name: '结果操作' })
+      .getByRole('button', { name: '宫格切分' })
+      .click()
+    await page.getByRole('button', { name: /4 宫格/ }).click()
+    await expect
+      .poll(async () => (await elements(page)).filter((e) => e.kind === 'frame').length)
+      .toBe(1)
+    const frame = (await elements(page)).find((e) => e.kind === 'frame')!
+    await expect.poll(async () => (await shotGroup(page, frame.id))?.order.length).toBe(4)
+    const tiles = (await shotGroup(page, frame.id))!.order
 
-  // 切出来的直接是分镜组，图上有序号
-  await zoomTo(page, [frame.id])
-  await expect(page.locator('.plein-shot-badge')).toHaveCount(4)
-  await page.evaluate((id) => window.__plein.engine.selection.set([id]), frame.id)
-  const bar = page.getByRole('toolbar', { name: 'Frame 操作' })
-  await expect(bar.getByRole('button', { name: '分镜组' })).toHaveAttribute('aria-pressed', 'true')
-  await bar.getByRole('button', { name: '分镜组' }).click()
-  const panel = page.getByRole('dialog', { name: '分镜组' })
-  await expect(panel.getByRole('listitem')).toHaveCount(4)
+    // 切出来的直接是分镜组，图上有序号
+    await zoomTo(page, [frame.id])
+    await expect(page.locator('.plein-shot-badge')).toHaveCount(4)
+    await page.evaluate((id) => window.__plein.engine.selection.set([id]), frame.id)
+    const bar = page.getByRole('toolbar', { name: 'Frame 操作' })
+    await expect(bar.getByRole('button', { name: '分镜组' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await bar.getByRole('button', { name: '分镜组' }).click()
+    const panel = page.getByRole('dialog', { name: '分镜组' })
+    await expect(panel.getByRole('listitem')).toHaveCount(4)
 
-  // 第 4 格挪到最前，排成一行
-  await panel.getByRole('button', { name: '宫格 4上移' }).click()
-  await panel.getByRole('button', { name: '宫格 4上移' }).click()
-  await panel.getByRole('button', { name: '宫格 4上移' }).click()
-  expect((await shotGroup(page, frame.id))!.order).toEqual([tiles[3], ...tiles.slice(0, 3)])
-  await panel.getByRole('button', { name: '4 列' }).click()
-  const ys = await page.evaluate(
-    (ids) => ids.map((id) => window.__plein.engine.doc.worldRect(id).y),
-    tiles,
-  )
-  expect(new Set(ys).size).toBe(1)
-  await expect(page.locator(`[data-shot-badge="${tiles[3]}"]`)).toHaveText('1')
-  await shoot(page, '1-panel')
+    // 第 4 格挪到最前，排成一行
+    await panel.getByRole('button', { name: '宫格 4上移' }).click()
+    await panel.getByRole('button', { name: '宫格 4上移' }).click()
+    await panel.getByRole('button', { name: '宫格 4上移' }).click()
+    expect((await shotGroup(page, frame.id))!.order).toEqual([tiles[3], ...tiles.slice(0, 3)])
+    await panel.getByRole('button', { name: '4 列' }).click()
+    const ys = await page.evaluate(
+      (ids) => ids.map((id) => window.__plein.engine.doc.worldRect(id).y),
+      tiles,
+    )
+    expect(new Set(ys).size).toBe(1)
+    await expect(page.locator(`[data-shot-badge="${tiles[3]}"]`)).toHaveText('1')
+    await shoot(page, '1-panel')
 
-  await panel.getByRole('button', { name: '拼成大图' }).click()
-  await expect(page.getByText(/拼好了：\d+×\d+ 像素/)).toBeVisible()
-  const collage = (await elements(page)).find(
-    (e) => e.kind === 'image' && /拼图/.test(e.name ?? ''),
-  )!
-  expect(collage.name).toMatch(/\d+×\d+$/)
-  const [w, h] = collage
-    .name!.match(/(\d+)×(\d+)$/)!
-    .slice(1)
-    .map(Number)
-  // 4 格一行，每格按切出来的原图 480×270，格间和四周 16px
-  expect([w, h]).toEqual([480 * 4 + 16 * 5, 270 + 16 * 2])
-  // 拼好后镜头会飞到新图，等它停稳再取景
-  await settle(page, collage.id)
-  await zoomTo(page, [frame.id, collage.id])
-  await page.mouse.move(700, 120)
-  await shoot(page, '2-collage')
+    await panel.getByRole('button', { name: '拼成大图' }).click()
+    await expect(page.getByText(/拼好了：\d+×\d+ 像素/)).toBeVisible()
+    const collage = (await elements(page)).find(
+      (e) => e.kind === 'image' && /拼图/.test(e.name ?? ''),
+    )!
+    expect(collage.name).toMatch(/\d+×\d+$/)
+    const [w, h] = collage
+      .name!.match(/(\d+)×(\d+)$/)!
+      .slice(1)
+      .map(Number)
+    // 4 格一行，每格按切出来的原图 480×270，格间和四周 16px
+    expect([w, h]).toEqual([480 * 4 + 16 * 5, 270 + 16 * 2])
+    // 拼好后镜头会飞到新图，等它停稳再取景
+    await settle(page, collage.id)
+    await zoomTo(page, [frame.id, collage.id])
+    await page.mouse.move(700, 120)
+    await shoot(page, '2-collage')
 
-  // 回到切分前的原图
-  await page.evaluate((id) => window.__plein.engine.selection.set([id]), frame.id)
-  await bar.getByRole('button', { name: '分镜组' }).click()
-  await panel.getByRole('button', { name: '定位原图' }).click()
-  await expect
-    .poll(() => page.evaluate(() => window.__plein.engine.selection.values()))
-    .toEqual([source!.id])
-})
+    // 回到切分前的原图
+    await page.evaluate((id) => window.__plein.engine.selection.set([id]), frame.id)
+    await bar.getByRole('button', { name: '分镜组' }).click()
+    await panel.getByRole('button', { name: '定位原图' }).click()
+    await expect
+      .poll(() => page.evaluate(() => window.__plein.engine.selection.values()))
+      .toEqual([source!.id])
+  },
+)

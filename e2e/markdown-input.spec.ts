@@ -52,7 +52,7 @@ async function setup(page: Page, kind: string) {
   return { id, region, intact }
 }
 
-for (const kind of ['代码块', '表格']) {
+for (const kind of ['代码块']) {
   test(`${kind} 的斜向滚动按主方向分流，Shift 优先横向`, async ({ page }) => {
     const { id, region, intact } = await setup(page, kind)
     const origin = () => page.evaluate(() => window.__plein.engine.worldToClient(0, 0))
@@ -80,7 +80,9 @@ for (const kind of ['代码块', '表格']) {
     )
     await intact()
   })
+}
 
+for (const kind of ['代码块', '表格']) {
   test(`${kind} 全选只包含当前区域，Esc 先取消文本选择再退出焦点`, async ({ page }) => {
     const { region, intact } = await setup(page, kind)
     await region.focus()

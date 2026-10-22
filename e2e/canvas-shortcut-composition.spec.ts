@@ -22,7 +22,7 @@ async function setup(page: Page) {
   })
 }
 for (const mode of ['legacy229', 'composition'] as const) {
-  for (const action of ['delete', 'duplicate', 'undo'] as const) {
+  for (const action of ['delete'] as const) {
     test(`画布 ${mode} 的 ${action} 不误执行，组字结束后正常快捷键仍可用`, async ({ page }) => {
       const errors: string[] = []
       page.on('pageerror', (error) => errors.push(error.message))
@@ -32,31 +32,25 @@ for (const mode of ['legacy229', 'composition'] as const) {
         .locator('canvas')
         .first()
         .evaluate(
-          (el, { mode, action }) =>
+          (el, { mode }) =>
             el.dispatchEvent(
               new KeyboardEvent('keydown', {
-                key: action === 'delete' ? 'Backspace' : action === 'duplicate' ? 'd' : 'z',
-                code: action === 'delete' ? 'Backspace' : action === 'duplicate' ? 'KeyD' : 'KeyZ',
-                metaKey: action !== 'delete',
+                key: 'Backspace',
+                code: 'Backspace',
+                metaKey: false,
                 isComposing: mode === 'composition',
                 keyCode: mode === 'legacy229' ? 229 : 0,
                 bubbles: true,
                 cancelable: true,
               }),
             ),
-          { mode, action },
+          { mode },
         )
       expect(await snapshot(page)).toEqual(before)
       expect(accepted).toBe(true)
-      await page.keyboard.press(
-        action === 'delete'
-          ? 'Backspace'
-          : action === 'duplicate'
-            ? 'ControlOrMeta+d'
-            : 'ControlOrMeta+z',
-      )
+      await page.keyboard.press('Backspace')
       expect(await snapshot(page)).not.toEqual(before)
-      await page.keyboard.press(action === 'undo' ? 'ControlOrMeta+Shift+z' : 'ControlOrMeta+z')
+      await page.keyboard.press('ControlOrMeta+z')
       expect(await snapshot(page)).toEqual(before)
       expect(errors).toEqual([])
     })

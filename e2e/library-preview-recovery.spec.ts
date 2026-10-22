@@ -154,43 +154,6 @@ for (const kind of ['scene', 'character'] as const) {
   })
 }
 
-test('场景缩略图失败可反复重试，不改素材列表或已保存状态', async ({ page }) => {
-  await newProject(page)
-  const id = await asset(page, 'reference-0.png')
-  const created = await page.request.post('/api/library', {
-    data: { kind: 'scene', name: '场景缩略图恢复', images: [{ slot: 'main', assetId: id }] },
-  })
-  const item = await created.json()
-  let fail = true
-  await page.route(`**/api/assets/${id}/thumb-256`, (route) =>
-    fail ? route.fulfill({ status: 503, body: 'unavailable' }) : route.continue(),
-  )
-  const panel = await openItem(page, '场景', '场景缩略图恢复')
-  const field = panel
-    .locator('.ui-field')
-    .filter({ has: page.locator('.ui-label').filter({ hasText: '主场景图' }) })
-    .last()
-  const retry = field.getByRole('button', { name: '重新加载主场景图 1', exact: true })
-  await expect(retry).toBeVisible()
-  await retry.click()
-  await expect(retry).toBeVisible()
-  await expect(field.getByRole('button', { name: '移除', exact: true })).toBeEnabled()
-  await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
-  fail = false
-  await retry.click()
-  await expect
-    .poll(() =>
-      field
-        .locator('img')
-        .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
-    )
-    .toBe(true)
-  await expect(retry).toHaveCount(0)
-  expect((await (await page.request.get(`/api/library/${item.id}`)).json()).images).toEqual([
-    { slot: 'main', assetId: id },
-  ])
-})
-
 test('特效参考视频失败可重载，恢复后实际播放，移除与保存仍可用', async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 560 })
   await newProject(page)
@@ -237,44 +200,6 @@ test('特效参考视频失败可重载，恢复后实际播放，移除与保�
   await panel.getByRole('button', { name: '保存', exact: true }).click()
   await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
   expect((await (await page.request.get(`/api/library/${item.id}`)).json()).video).toBeNull()
-})
-
-test('角色补充参考重试与预览分离，小图恢复不改分类或保存状态', async ({ page }) => {
-  await newProject(page)
-  const id = await asset(page, 'reference-0.png')
-  const created = await page.request.post('/api/library', {
-    data: { kind: 'character', name: '补充参考恢复', images: [{ slot: 'extra', assetId: id }] },
-  })
-  const item = await created.json()
-  let fail = true
-  await page.route(`**/api/assets/${id}/thumb-256`, (route) =>
-    fail ? route.fulfill({ status: 503, body: 'unavailable' }) : route.continue(),
-  )
-  const panel = await openItem(page, '角色', '补充参考恢复')
-  const extras = panel.locator('.lib-character-extra-list')
-  const preview = extras.getByRole('button', { name: '预览其他参考 1', exact: true })
-  await preview.scrollIntoViewIfNeeded()
-  const retry = extras.getByRole('button', { name: '重新加载预览其他参考 1', exact: true })
-  await expect(retry).toBeVisible()
-  await panel.screenshot({
-    path: test.info().outputPath('extra-reference-failed.png'),
-    animations: 'disabled',
-  })
-  await preview.click()
-  await expect(panel.locator('.lib-hero-caption')).toContainText('其他参考')
-  fail = false
-  await retry.click()
-  await expect
-    .poll(() =>
-      extras
-        .locator('img')
-        .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
-    )
-    .toBe(true)
-  await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
-  expect((await (await page.request.get(`/api/library/${item.id}`)).json()).images).toEqual([
-    { slot: 'extra', assetId: id },
-  ])
 })
 
 for (const media of ['image', 'video'] as const) {

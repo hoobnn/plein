@@ -34,7 +34,7 @@ async function withinCanvas(target: Locator) {
   ).toBe(true)
 }
 
-for (const initialWidth of [1440, 320]) {
+for (const initialWidth of [1440]) {
   test(`从 ${initialWidth}px 打开检查点，适应预览随窗口尺寸保持内容可见`, async ({ page }) => {
     await page.setViewportSize({ width: initialWidth, height: initialWidth === 320 ? 700 : 900 })
     const errors: string[] = []

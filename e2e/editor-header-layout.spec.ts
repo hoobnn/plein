@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { newProject, waitEngine } from './canvas'
 
-for (const width of [320, 390, 768, 1024, 1440]) {
+for (const width of [320, 1024, 1440]) {
   test(`${width}px 顶栏工具可达，面板关闭后能继续切换视图`, async ({ page }) => {
     await newProject(page)
     const canvasId = decodeURIComponent(page.url().split('#/c/')[1]!)

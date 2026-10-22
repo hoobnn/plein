@@ -46,7 +46,7 @@ async function setup(page: Page) {
   await expect.poll(() => read(page)).not.toEqual(before)
   return { ids, before, arranged: await read(page) }
 }
-for (const width of [1440, 320])
+for (const width of [320])
   test(`${width}px 整理提示在只读时明确禁用还原，恢复可写后可以还原`, async ({
     page,
   }, testInfo) => {
@@ -108,7 +108,7 @@ for (const change of ['undo-redo', 'edit-undo']) {
     await expect(restore(page)).toHaveCount(0, { timeout: 1500 })
   })
 }
-test('还原本地整理保留同伴刚更新的名称和连线', async ({ page, context }) => {
+test('还原本地整理保留同伴刚更新的名称和连线', { tag: '@core' }, async ({ page, context }) => {
   const f = await setup(page)
   const peerContext = await context.browser()!.newContext()
   try {

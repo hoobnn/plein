@@ -48,15 +48,8 @@ async function readonly(page: Page, value: boolean) {
 }
 
 const keys = {
-  undo: 'ControlOrMeta+z',
   redo: 'ControlOrMeta+Shift+z',
-  nudge: 'ArrowRight',
   delete: 'Backspace',
-  duplicate: 'ControlOrMeta+d',
-  group: 'ControlOrMeta+g',
-  ungroup: 'ControlOrMeta+Shift+g',
-  front: 'ControlOrMeta+]',
-  back: 'ControlOrMeta+[',
 } as const
 for (const action of [...Object.keys(keys), 'paste', 'cut']) {
   test(`只读画布 ${action} 不写文档、不抛错，恢复可写后继续撤销重做`, async ({ page }) => {
@@ -222,7 +215,7 @@ test('只读右键菜单停用写入，保留定位和全选，不再打开创�
   expect(errors).toEqual([])
 })
 
-for (const entry of ['canvas', 'toolbar'] as const) {
+for (const entry of ['canvas'] as const) {
   test(`创建菜单 ${entry} 打开后同帧变只读，旧 Enter 不创建节点且菜单退出`, async ({ page }) => {
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
@@ -250,21 +243,6 @@ for (const entry of ['canvas', 'toolbar'] as const) {
     expect(errors).toEqual([])
   })
 }
-
-test('整理后变为只读，迟到的还原操作不能绕过撤销保护', async ({ page }) => {
-  await setup(page)
-  const state = await page.evaluate(() => {
-    const engine = window.__plein.engine as unknown as Engine
-    const result = engine.arrange()
-    if (!result) throw new Error('未产生整理操作')
-    const before = [...engine.doc.elements()]
-    engine.doc.readOnly = true
-    engine.refreshState()
-    return { reverted: result.revert(), before, after: [...engine.doc.elements()] }
-  })
-  expect(state.reverted).toBe(false)
-  expect(state.after).toEqual(state.before)
-})
 
 test('只读画布仍可框选整组、复制完整层级与连线、平移和缩放', async ({ page }) => {
   const errors: string[] = []

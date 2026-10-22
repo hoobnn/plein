@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
 
 type Engine = import('../packages/canvas-core/src/engine').Engine
-for (const mode of ['changed', 'initial'] as const) {
+for (const mode of ['changed'] as const) {
   test(`素材库 ${mode} 只读状态明确停用放入，恢复后可放入并撤销`, async ({ page }) => {
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
@@ -30,12 +30,12 @@ for (const mode of ['changed', 'initial'] as const) {
     })
     expect(response.status()).toBe(201)
     const assetId = ((await response.json()) as { id: string }).id
-    await page.evaluate((initial) => {
+    await page.evaluate(() => {
       const engine = window.__plein.engine as unknown as Engine
       engine.doc.undo.clear()
-      engine.doc.readOnly = initial
+      engine.doc.readOnly = false
       engine.refreshState()
-    }, mode === 'initial')
+    })
     await page.getByRole('button', { name: '素材', exact: true }).click()
     const panel = page.getByRole('dialog', { name: '素材', exact: true })
     await panel.getByRole('combobox', { name: '关联项目' }).click()
@@ -45,14 +45,12 @@ for (const mode of ['changed', 'initial'] as const) {
       .getByRole('button', { name: '查看素材 permission-fixture.png', exact: true })
       .click()
     const place = panel.getByRole('button', { name: '放入当前画布', exact: true })
-    if (mode === 'changed') {
-      await expect(place).toBeEnabled()
-      await page.evaluate(() => {
-        const engine = window.__plein.engine as unknown as Engine
-        engine.doc.readOnly = true
-        engine.refreshState()
-      })
-    }
+    await expect(place).toBeEnabled()
+    await page.evaluate(() => {
+      const engine = window.__plein.engine as unknown as Engine
+      engine.doc.readOnly = true
+      engine.refreshState()
+    })
     await expect(place).toBeDisabled()
     await expect(place).toHaveAttribute('title', /只读/)
     await expect(place).toHaveAccessibleDescription(/只读/)

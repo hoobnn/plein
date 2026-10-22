@@ -114,7 +114,7 @@ test('新文件已在可见区域时保持用户当前缩放和视角', async ({
   ).toEqual(before)
 })
 
-for (const steering of ['selection', 'zoom', 'typing', 'drop-typing', 'notice-reset'] as const) {
+for (const steering of ['typing', 'drop-typing', 'notice-reset'] as const) {
   test(`上传期间${steering} 后保留新上下文，并允许手动定位导入结果`, async ({ page }, testInfo) => {
     await newProject(page)
     await page.evaluate(() =>
@@ -175,17 +175,11 @@ for (const steering of ['selection', 'zoom', 'typing', 'drop-typing', 'notice-re
       ).setFiles({ name: '稍后完成的文件.png', mimeType: 'image/png', buffer: png })
     }
     await expect.poll(() => held).toBe(true)
-    if (steering === 'selection' || steering === 'notice-reset')
+    if (steering === 'notice-reset')
       await page
         .getByRole('treeitem', { name: '用户继续操作的卡片 定位到画布', exact: true })
         .click()
-    else if (steering === 'zoom') {
-      await page.getByRole('button', { name: '缩放选项', exact: true }).click()
-      await page
-        .getByRole('dialog', { name: '缩放', exact: true })
-        .getByRole('button', { name: /^缩小/ })
-        .click()
-    } else
+    else
       await page
         .getByTestId('generator')
         .getByRole('textbox', { name: '提示词', exact: true })

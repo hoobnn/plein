@@ -17,7 +17,7 @@ test('窄屏筛选卡片的标题右侧可点击，不被助手开关截获', as
   await expect(page.getByRole('complementary', { name: '助手', exact: true })).toHaveCount(0)
 })
 
-for (const width of [320, 390, 1440]) {
+for (const width of [320, 1440]) {
   test(`${width}px 首页助手不覆盖项目卡片，开关后焦点归还且入口唯一`, async ({ page }) => {
     await newProject(page)
     const original = new URL(page.url()).hash

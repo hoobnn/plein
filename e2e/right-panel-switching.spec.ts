@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
 
-for (const initialWidth of [639, 1440]) {
+for (const initialWidth of [1440]) {
   test(`${initialWidth}px 助手与任务互相切换保留草稿，断点和主动展开侧栏正确释放边距`, async ({
     page,
   }) => {

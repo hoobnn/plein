@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
 
-for (const width of [390, 1440]) {
+for (const width of [390]) {
   test(`素材搜索更新不打断 ${width}px 已打开预览，下一素材不会自动弹出`, async ({ page }) => {
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))

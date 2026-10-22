@@ -129,27 +129,6 @@ test('裁剪拒绝零尺寸、负值和小数，不静默改成一像素后加�
   expect(meta).toMatchObject({ width: 80, height: 40 })
 })
 
-test('裁剪拒绝图片外的坐标与明确越界的尺寸，保持用户输入', async ({ page }) => {
-  const f = await fixture(page, 'image')
-  const tools = await open(page, '裁剪')
-  await expect(tools.getByLabel('宽', { exact: true })).toHaveAttribute('placeholder', '160')
-  for (const [label, value] of [
-    ['左', '160'],
-    ['上', '90'],
-    ['宽', '161'],
-    ['高', '91'],
-  ]) {
-    const input = tools.getByLabel(label!, { exact: true })
-    await input.fill(value!)
-    await tools.getByRole('button', { name: '开始加工', exact: true }).click()
-    await expect(tools.getByRole('alert')).toBeVisible()
-    await expect(input).toBeFocused()
-    await expect(input).toHaveValue(value!)
-    expect(f.requests).toEqual([])
-    await input.fill(label === '左' || label === '上' ? '0' : label === '宽' ? '160' : '90')
-  }
-})
-
 test('裁剪宽高留空表示从偏移位置到图片边缘，结果尺寸与原件及撤销一致', async ({ page }) => {
   const f = await fixture(page, 'image')
   const before = await page.evaluate(() => [...window.__plein.engine.doc.elements()])

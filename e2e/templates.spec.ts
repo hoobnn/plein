@@ -16,7 +16,7 @@ async function searchAdd(page: Parameters<typeof deselect>[0], query: string) {
   return page.getByRole('dialog', { name: '添加节点' })
 }
 
-test('分组存为模板，从「我的模板」铺回画布，不要了可以删掉', async ({ page }) => {
+test('分组存为模板，从「我的模板」铺回画布，不要了可以删掉', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
   await addNode(page, '文本', { x: 400, y: 300 })
   await deselect(page)

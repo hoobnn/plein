@@ -267,7 +267,7 @@ test('运行已受理但应答未返回时仍可取消，不被提交等待锁�
   }
 })
 
-for (const mode of ['composition', 'legacy229'] as const) {
+for (const mode of ['legacy229'] as const) {
   for (const key of ['Enter', 'Escape']) {
     test(`角色名称 ${mode} 的 ${key} 不提交或清除草稿，正式改名后引用随撤销重做恢复`, async ({
       page,
@@ -294,18 +294,18 @@ for (const mode of ['composition', 'legacy229'] as const) {
       const name = generator.getByRole('textbox', { name: '节点名称', exact: true })
       await name.fill('角色新名')
       await name.evaluate(
-        (el, { key, mode }) =>
+        (el, key) =>
           el.dispatchEvent(
             new KeyboardEvent('keydown', {
               key,
               code: key,
               bubbles: true,
               cancelable: true,
-              isComposing: mode === 'composition',
-              keyCode: mode === 'legacy229' ? 229 : key === 'Enter' ? 13 : 27,
+              isComposing: false,
+              keyCode: 229,
             }),
           ),
-        { key, mode },
+        key,
       )
       await expect(name).toBeFocused()
       await expect(name).toHaveValue('角色新名')

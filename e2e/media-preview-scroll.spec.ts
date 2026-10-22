@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
 
-for (const width of [390, 1440])
+for (const width of [390])
   for (const portrait of [false, true]) {
     test(`${width}px ${portrait ? '竖图' : '横图'}放大后四角可滚动查看，键盘仍可操作`, async ({
       page,

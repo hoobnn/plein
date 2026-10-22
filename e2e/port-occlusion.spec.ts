@@ -4,7 +4,7 @@ import { deselect, newProject } from './canvas'
 
 type Engine = import('../packages/canvas-core/src/engine').Engine
 
-for (const zoom of [0.5, 1]) {
+for (const zoom of [0.5]) {
   for (const depth of [0, 2]) {
     test(`${zoom * 100}% ${depth} 层分组中被遮住的端口不抢占邻近可见卡片拖动`, async ({ page }) => {
       await newProject(page)

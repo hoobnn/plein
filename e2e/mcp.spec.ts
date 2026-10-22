@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
 
 /** 对外开放 MCP：生成令牌，拿到能直接贴的配置，外部应用用它连进来 */
-test('生成对外令牌，外部应用能连进来', async ({ page, request }) => {
+test('生成对外令牌，外部应用能连进来', { tag: '@core' }, async ({ page, request }) => {
   await newProject(page)
   await page.getByRole('button', { name: '设置', exact: true }).click()
   const settings = page.getByRole('dialog', { name: '设置' })

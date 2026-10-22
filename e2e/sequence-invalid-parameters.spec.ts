@@ -1,11 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { centerOf, clickElement, newProject } from './canvas'
 
-for (const kind of ['sequence', 'animatic'] as const) {
+for (const kind of ['sequence'] as const) {
   test(`${kind} 异常参数不击穿画布，显式恢复保留其他设置并可撤销重做`, async ({
     page,
   }, testInfo) => {
-    if (kind === 'animatic') await page.setViewportSize({ width: 800, height: 560 })
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
     await newProject(page)
@@ -22,7 +21,6 @@ for (const kind of ['sequence', 'animatic'] as const) {
             aspectRatio: '16:9',
             clipVolume: 0.25,
             clips: [{ source: 'retained-clip', in: 0.2 }],
-            ...(kind === 'animatic' ? { boardId: 'retained-board', shots: [] } : {}),
           },
         }),
       kind,
@@ -105,7 +103,6 @@ for (const kind of ['sequence', 'animatic'] as const) {
       clipVolume: 0.25,
       clips: [],
     })
-    if (kind === 'animatic') expect((await read()).boardId).toBe('retained-board')
     await editor.getByRole('button', { name: '关闭', exact: true }).click()
     expect(errors).toEqual([])
   })

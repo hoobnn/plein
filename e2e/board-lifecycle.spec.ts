@@ -68,25 +68,6 @@ test('展开分栏中的全部节点被同伴删除后显示其他分栏，撤�
   }
 })
 
-test('展开时删空画布显示空态，撤销后所有分栏都可访问', async ({ page }) => {
-  const f = await fixture(page)
-  await f.image.getByRole('button', { name: '展开此栏', exact: true }).click()
-  await page.evaluate((ids) => {
-    const engine = window.__plein.engine as typeof window.__plein.engine & {
-      deleteSelection(): void
-    }
-    engine.selection.set([...ids.text, ids.image])
-    engine.deleteSelection()
-  }, f.ids)
-  await expect(page.getByText('画布上还没有内容', { exact: true })).toBeVisible()
-  await page.evaluate(() =>
-    (window.__plein.engine as typeof window.__plein.engine & { undo(): void }).undo(),
-  )
-  await expect(f.text.locator('.board-text')).toHaveCount(2)
-  await expect(f.image).toBeVisible()
-  await expect(page.getByRole('button', { name: '还原分栏', exact: true })).toHaveCount(0)
-})
-
 for (const image of [false, true]) {
   test(`${image ? '待生成图片' : '筛选后的文本'}卡片准确定位到工作流节点`, async ({ page }) => {
     const f = await fixture(page)

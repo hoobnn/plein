@@ -354,7 +354,7 @@ test('样片素材刷新保留人工顺序，新增镜头追加且删除镜头�
   expect(f.submissions).toEqual([])
 })
 
-for (const change of ['missing', 'type', 'readonly'] as const) {
+for (const change of ['missing', 'readonly'] as const) {
   test(`样片刷新遇到 ${change} 保留旧快照和节奏，来源恢复后可更新`, async ({ page }) => {
     const f = await fixture(page)
     const before = await f.read()

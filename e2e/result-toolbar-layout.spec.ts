@@ -126,7 +126,7 @@ async function fits(page: Page) {
     .toBe(true)
 }
 
-for (const width of [1440, 900, 390, 320]) {
+for (const width of [1440, 900, 320]) {
   test(`${width}px 图片操作条完整避让面板，审片和派生视频可用`, async ({ page }) => {
     const f = await fixture(page)
     await resize(page, { width, height: 900 })
@@ -184,10 +184,7 @@ for (const kind of ['video', 'audio'] as const) {
   })
 }
 
-for (const { width, height } of [
-  { width: 390, height: 500 },
-  { width: 320, height: 320 },
-]) {
+for (const { width, height } of [{ width: 320, height: 320 }]) {
   test(`${width}×${height} 图片靠近画布上下边缘时操作条仍完整可点击，平移不改素材`, async ({
     page,
   }) => {

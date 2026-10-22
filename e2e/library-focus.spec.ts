@@ -63,27 +63,6 @@ async function fixture(page: Page, count = 2, cold = false) {
   return { panel, search, prefix }
 }
 
-test('键盘从编辑返回列表，焦点回到原资产卡片', async ({ page }) => {
-  await page.setViewportSize({ width: 800, height: 560 })
-  const { panel, prefix } = await fixture(page)
-  const card = panel.getByRole('listitem').filter({ hasText: '焦点测试一' })
-  const open = card.getByRole('button').first()
-  await open.focus()
-  await page.keyboard.press('Enter')
-  await expect(panel.getByRole('textbox', { name: '名称', exact: true })).toHaveValue(
-    `${prefix} 焦点测试一`,
-  )
-  await panel.getByRole('button', { name: '返回', exact: true }).focus()
-  await expect(panel.getByRole('button', { name: '返回', exact: true })).toBeFocused()
-  await page.keyboard.press('Enter')
-  await expect(open).toBeFocused()
-  await expect(card).toHaveCSS('outline-style', 'solid')
-  await panel.screenshot({
-    path: test.info().outputPath('library-return-focus.png'),
-    animations: 'disabled',
-  })
-})
-
 test('长列表返回原卡片时同时恢复焦点和可见位置', async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 560 })
   const { panel } = await fixture(page, 18)

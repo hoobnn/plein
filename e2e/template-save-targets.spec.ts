@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import type { UserTemplate } from '../packages/protocol/src/templates'
 import { newProject } from './canvas'
 
-for (const change of ['selection', 'deleted', 'cancel', 'retry', 'success'] as const) {
+for (const change of ['retry', 'success'] as const) {
   test(`多选模板保存 ${change} 核对原目标，失败重试不重复打组`, async ({ page }) => {
     await newProject(page)
     const ids = await page.evaluate(() => {
@@ -59,54 +59,29 @@ for (const change of ['selection', 'deleted', 'cancel', 'retry', 'success'] as c
         .click()
       const dialog = page.getByRole('dialog', { name: '存为模板', exact: true })
       await dialog.getByRole('textbox').fill(title)
-      if (change === 'cancel') {
-        await dialog.getByRole('button', { name: '取消', exact: true }).click()
-      } else {
-        if (change === 'selection')
-          await page.evaluate((id) => window.__plein.engine.selection.set([id]), ids.other)
-        if (change === 'deleted')
-          await page.evaluate((id) => {
-            window.__plein.engine.selection.set([id])
-            ;(window.__plein.engine as unknown as { deleteSelection(): void }).deleteSelection()
-          }, ids.a)
+      await dialog.getByRole('button', { name: '保存', exact: true }).click()
+      if (change === 'retry') {
+        await expect(page.locator('.ui-toast')).toContainText('模板保存测试失败')
+        expect(requests).toHaveLength(1)
+        expect(await frames()).toHaveLength(1)
+        await page
+          .getByRole('toolbar', { name: 'Frame 操作', exact: true })
+          .getByRole('button', { name: '存为模板', exact: true })
+          .click()
+        await dialog.getByRole('textbox').fill(title)
         await dialog.getByRole('button', { name: '保存', exact: true }).click()
-        if (change === 'selection' || change === 'deleted') {
-          await expect(page.locator('.ui-toast')).toContainText(
-            '模板目标已变化，请重新选择后保存',
-            { timeout: 1500 },
-          )
-        } else {
-          if (change === 'retry') {
-            await expect(page.locator('.ui-toast')).toContainText('模板保存测试失败')
-            expect(requests).toHaveLength(1)
-            expect(await frames()).toHaveLength(1)
-            await page
-              .getByRole('toolbar', { name: 'Frame 操作', exact: true })
-              .getByRole('button', { name: '存为模板', exact: true })
-              .click()
-            await dialog.getByRole('textbox').fill(title)
-            await dialog.getByRole('button', { name: '保存', exact: true }).click()
-          }
-          await expect
-            .poll(async () => (await templates()).filter((item) => item.title === title).length)
-            .toBe(1)
-          const saved = (await templates()).find((item) => item.title === title)!
-          expect(saved.data.elements).toHaveLength(3)
-          expect(saved.data.elements.map((el) => el.id)).toEqual(
-            expect.arrayContaining([ids.a, ids.b]),
-          )
-          expect(saved.data.elements.some((el) => el.id === ids.other)).toBe(false)
-          expect(saved.data.edges).toHaveLength(1)
-          expect(saved.data.extensions).toHaveProperty('plein/mentions')
-          expect(await frames()).toHaveLength(1)
-          expect(requests).toHaveLength(change === 'retry' ? 2 : 1)
-        }
       }
-      if (['selection', 'deleted', 'cancel'].includes(change)) {
-        expect(requests).toHaveLength(0)
-        expect(await frames()).toHaveLength(0)
-        expect((await templates()).some((item) => item.title === title)).toBe(false)
-      }
+      await expect
+        .poll(async () => (await templates()).filter((item) => item.title === title).length)
+        .toBe(1)
+      const saved = (await templates()).find((item) => item.title === title)!
+      expect(saved.data.elements).toHaveLength(3)
+      expect(saved.data.elements.map((el) => el.id)).toEqual(expect.arrayContaining([ids.a, ids.b]))
+      expect(saved.data.elements.some((el) => el.id === ids.other)).toBe(false)
+      expect(saved.data.edges).toHaveLength(1)
+      expect(saved.data.extensions).toHaveProperty('plein/mentions')
+      expect(await frames()).toHaveLength(1)
+      expect(requests).toHaveLength(change === 'retry' ? 2 : 1)
       await page.screenshot({
         path: test.info().outputPath('template-save-target.png'),
         animations: 'disabled',

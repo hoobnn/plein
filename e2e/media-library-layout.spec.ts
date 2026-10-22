@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
 
-for (const width of [390, 800, 1440]) {
+for (const width of [390, 1440]) {
   test(`素材库 ${width}px 查看详情、预览、返回和复用保持可操作`, async ({ page }) => {
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))

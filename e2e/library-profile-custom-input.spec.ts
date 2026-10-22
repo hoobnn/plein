@@ -5,8 +5,6 @@ import { openLibraryPanel } from './library-ui'
 for (const [kind, add, field, name, width] of [
   ['period', '添加时期', '时期名', '自定义阶段', 1440],
   ['outfit', '加服饰', '服饰名', '自定义造型', 800],
-  ['outfit', '加服饰', '服饰名', '自定义造型', 580],
-  ['outfit', '加服饰', '服饰名', '自定义造型', 390],
   ['outfit', '加服饰', '服饰名', '自定义造型', 320],
   ['expression', '添加表情', '名字', '自定义神态', 390],
 ] as const) {

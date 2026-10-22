@@ -86,7 +86,10 @@ async function videoFixture(page: Page) {
 }
 
 for (const mode of ['rendered', 'same-frame'] as const) {
-  for (const change of ['trim', 'asset', 'subtitle'] as const) {
+  // 素材变化只在 rendered 下验证：同帧取消路径与 trim 相同，由 trim same-frame 覆盖
+  for (const change of mode === 'rendered'
+    ? (['trim', 'asset', 'subtitle'] as const)
+    : (['trim', 'subtitle'] as const)) {
     test(`修剪中 ${change} 外部变化 ${mode} 不被旧松手覆盖`, async ({ page }) => {
       const f = await videoFixture(page)
       const clip = f.editor.locator('.seq-clip').first()

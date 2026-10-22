@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { addNode, centerOf, elements, newProject, zoomTo } from './canvas'
 
 /** E1 3D 构图：摆人物和姿态，截图写成节点结果；改场景不动已有截图，重新截图产生新结果 */
-test('3D 构图：摆人物、截图成为节点结果', async ({ page }) => {
+test('3D 构图：摆人物、截图成为节点结果', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
   await addNode(page, '3D 构图')
   await expect

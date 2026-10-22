@@ -35,7 +35,7 @@ const meta = async (page: Page, assetId: string) =>
   }
 
 /** 资产卡：生成器里上传参考图连进卡片；下游 @ 引用它生成后，卡片的参考图变了，结果随之过期 */
-test('角色卡上传参考图，@ 引用后换参考图，镜头图标为过期', async ({ page }) => {
+test('角色卡上传参考图，@ 引用后换参考图，镜头图标为过期', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
   await addNode(page, '角色')
   const card = await byName(page, '角色')
@@ -90,7 +90,7 @@ test('角色卡上传参考图，@ 引用后换参考图，镜头图标为过期
 })
 
 /** 媒体工具条：裁剪图片、截取视频，产出新素材放在右边，原素材不变 */
-test('媒体工具条裁剪图片、截取视频', async ({ page }) => {
+test('媒体工具条裁剪图片、截取视频', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
   const chooser = page.waitForEvent('filechooser')
   await page.getByRole('button', { name: '上传' }).click()

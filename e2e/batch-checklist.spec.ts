@@ -51,52 +51,56 @@ async function fixture(page: Page) {
   return { board, images, open }
 }
 
-test('批量先预检零提交，内容改变需重查，确认期间关闭不会丢失清单', async ({ page }) => {
-  const f = await fixture(page)
-  let submissions = 0
-  page.on('request', (request) => {
-    if (request.method() === 'POST' && request.url().endsWith('/storyboard-batch/commit'))
-      submissions++
-  })
-  const board = await f.open()
-  await board.getByRole('button', { name: '批量出分镜图', exact: true }).click()
-  const checklist = page.getByRole('dialog', { name: '批量生成清单', exact: true })
-  await expect(checklist.getByLabel('清单汇总')).toContainText('生成 2 项')
-  const confirm = checklist.getByRole('button', { name: '确认并开始生成', exact: true })
-  await expect(confirm).toBeEnabled()
-  expect(submissions).toBe(0)
-  await page.evaluate((id) => {
-    const params = window.__plein.engine.doc.mutable(id)!.get('params') as {
-      set(key: string, value: string): void
-    }
-    params.set('prompt', '清单打开后改成逆光构图')
-  }, f.images[0]!)
-  await expect(confirm).toBeDisabled()
-  await expect(checklist).toContainText('内容或任务已变化')
-  await checklist.getByRole('button', { name: '重新检查清单', exact: true }).click()
-  await expect(confirm).toBeEnabled()
-  await checklist.locator('details').first().locator('summary').click()
-  await expect(checklist).toContainText('逆光构图')
-  let release!: () => void
-  const gate = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  await page.route('**/storyboard-batch/commit', async (route) => {
-    await gate
-    await route.continue()
-  })
-  await confirm.click()
-  await expect(checklist.getByRole('button', { name: '正在确认…', exact: true })).toBeDisabled()
-  await expect(checklist.getByRole('button', { name: '关闭', exact: true })).toBeDisabled()
-  await expect(checklist.getByRole('button', { name: '取消', exact: true })).toBeDisabled()
-  await checklist.focus()
-  await page.keyboard.press('Escape')
-  await expect(checklist).toBeVisible()
-  release()
-  await expect(checklist).toBeHidden()
-  for (const id of f.images) await waitNode(page, id)
-  expect(submissions).toBe(1)
-})
+test(
+  '批量先预检零提交，内容改变需重查，确认期间关闭不会丢失清单',
+  { tag: '@core' },
+  async ({ page }) => {
+    const f = await fixture(page)
+    let submissions = 0
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().endsWith('/storyboard-batch/commit'))
+        submissions++
+    })
+    const board = await f.open()
+    await board.getByRole('button', { name: '批量出分镜图', exact: true }).click()
+    const checklist = page.getByRole('dialog', { name: '批量生成清单', exact: true })
+    await expect(checklist.getByLabel('清单汇总')).toContainText('生成 2 项')
+    const confirm = checklist.getByRole('button', { name: '确认并开始生成', exact: true })
+    await expect(confirm).toBeEnabled()
+    expect(submissions).toBe(0)
+    await page.evaluate((id) => {
+      const params = window.__plein.engine.doc.mutable(id)!.get('params') as {
+        set(key: string, value: string): void
+      }
+      params.set('prompt', '清单打开后改成逆光构图')
+    }, f.images[0]!)
+    await expect(confirm).toBeDisabled()
+    await expect(checklist).toContainText('内容或任务已变化')
+    await checklist.getByRole('button', { name: '重新检查清单', exact: true }).click()
+    await expect(confirm).toBeEnabled()
+    await checklist.locator('details').first().locator('summary').click()
+    await expect(checklist).toContainText('逆光构图')
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await page.route('**/storyboard-batch/commit', async (route) => {
+      await gate
+      await route.continue()
+    })
+    await confirm.click()
+    await expect(checklist.getByRole('button', { name: '正在确认…', exact: true })).toBeDisabled()
+    await expect(checklist.getByRole('button', { name: '关闭', exact: true })).toBeDisabled()
+    await expect(checklist.getByRole('button', { name: '取消', exact: true })).toBeDisabled()
+    await checklist.focus()
+    await page.keyboard.press('Escape')
+    await expect(checklist).toBeVisible()
+    release()
+    await expect(checklist).toBeHidden()
+    for (const id of f.images) await waitNode(page, id)
+    expect(submissions).toBe(1)
+  },
+)
 
 test('未就绪视频列为阻塞，可从清单定位，零生成提交', async ({ page }) => {
   const f = await fixture(page)

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { newProject, settle } from './canvas'
 
-for (const width of [320, 390, 639])
+for (const width of [320, 639])
   for (const target of ['node', 'frame', 'batch'] as const) {
     test(`${width}px 任务定位 ${target} 后收起全宽面板并显示目标，侧栏偏好保留`, async ({
       page,

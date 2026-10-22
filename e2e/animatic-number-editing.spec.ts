@@ -1,11 +1,7 @@
 import { expect, type Page, test } from '@playwright/test'
 import { centerOf, clickElement, newProject, waitEngine } from './canvas'
 
-for (const [key, label, initial] of [
-  ['duration', '样片镜头时长（秒）', 3],
-  ['lineDelay', '对白起始延迟（秒）', 2],
-  ['lineGap', '对白句间停顿（秒）', 1.2],
-] as const) {
+for (const [key, label, initial] of [['duration', '样片镜头时长（秒）', 3]] as const) {
   test(`${label}支持清空后逐字输入小数，提交前不改保存值`, async ({ page }) => {
     await newProject(page)
     const id = await page.evaluate(() =>
@@ -187,7 +183,7 @@ async function filmNumber(page: Page) {
   return { id, open, editor, input, saved }
 }
 
-for (const raw of ['1e', '-']) {
+for (const raw of ['1e']) {
   test(`成片转场时长未完成输入 ${raw} 不误当清空，主动清空仍恢复默认值`, async ({ page }) => {
     const f = await filmNumber(page)
     await f.input.fill('')

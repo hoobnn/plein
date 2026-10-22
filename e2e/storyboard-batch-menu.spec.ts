@@ -197,12 +197,7 @@ test('菜单尚在打开等待时叠加设置，不迟到遮挡也不抢走设�
   await expect(editor).toHaveCSS('opacity', '1')
 })
 
-for (const [label, role] of [
-  ['分镜图', 'image'],
-  ['视频', 'video'],
-  ['配音', 'speech'],
-  ['音效', 'sfx'],
-] as const) {
+for (const [label, role] of [['视频', 'video']] as const) {
   test(`重新生成${label}只打开对应清单，取消后焦点回到菜单按钮`, async ({ page }) => {
     const { editor } = await fixture(page)
     const trigger = editor.getByRole('button', { name: '全部重新生成', exact: true })

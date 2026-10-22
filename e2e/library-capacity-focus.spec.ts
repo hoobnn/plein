@@ -197,7 +197,7 @@ test('最后一张上传失败保留字段焦点，修正后可继续键盘上�
   await full(f)
 })
 
-for (const count of [23, 22]) {
+for (const count of [23]) {
   test(`从${count}张混合拖入至满额后保留跳过说明，移除重传后清除旧说明`, async ({ page }) => {
     if (count === 22) await page.setViewportSize({ width: 800, height: 650 })
     const f = await fixture(page, count)

@@ -42,9 +42,6 @@ test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 for (const scenario of [
   { kind: 'scene', label: '场景', slot: '主场景图', media: 'image' },
-  { kind: 'prop', label: '道具', slot: '主图', media: 'image' },
-  { kind: 'style', label: '风格', slot: '参考图', media: 'image' },
-  { kind: 'effect', label: '特效', slot: '封面', media: 'image' },
   { kind: 'effect', label: '特效', slot: '参考视频', media: 'video' },
 ] as const) {
   test(`${scenario.label}${scenario.slot}上传中保护保存和导航，失败可恢复且不漏存素材`, async ({

@@ -22,7 +22,7 @@ const hasLibass = () => {
   }
 }
 
-test('短剧模板：插入 → 跑骨架 → 展开 → 批量 → 导出', async ({ page }) => {
+test('短剧模板：插入 → 跑骨架 → 展开 → 批量 → 导出', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
   await addNode(page, '短剧')
   await expect(page.locator('.ui-toast')).toContainText('短剧模板已铺出')

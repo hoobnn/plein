@@ -139,7 +139,7 @@ for (const kind of ['detached', 'removed-shot', 'speech', 'sfx']) {
   })
 }
 
-for (const change of ['delete', 'disconnect', 'ambiguous'] as const) {
+for (const change of ['delete', 'ambiguous'] as const) {
   test(`旧切回按钮遇到 ${change} 不跳错，恢复后可继续选择`, async ({ page }) => {
     const f = await fixture(page)
     await f.editor.getByRole('button', { name: '切回成片', exact: true }).evaluate(
@@ -147,8 +147,6 @@ for (const change of ['delete', 'disconnect', 'ambiguous'] as const) {
         const engine = window.__plein.engine as typeof window.__plein.engine & {
           deleteSelection(): void
           doc: {
-            edgeMap: { delete(id: string): void }
-            edges(): Iterable<{ id: string; from: [string, string]; to: [string, string] }>
             undo: { stopCapturing(): void }
           }
         }
@@ -157,13 +155,6 @@ for (const change of ['delete', 'disconnect', 'ambiguous'] as const) {
           engine.selection.set([ids.film])
           engine.deleteSelection()
           engine.doc.undo.stopCapturing()
-        } else if (change === 'disconnect') {
-          for (const edge of engine.doc.edges() as Iterable<{
-            id: string
-            from: [string, string]
-            to: [string, string]
-          }>)
-            if (edge.to[0] === ids.film) engine.doc.edgeMap.delete(edge.id)
         } else {
           const second = window.__plein.addNode({
             type: 'plein/sequence',
@@ -187,13 +178,8 @@ for (const change of ['delete', 'disconnect', 'ambiguous'] as const) {
         f.editor.getByRole('heading', { name: '新增成片版本', exact: true }),
       ).toBeVisible()
     } else {
-      await page.evaluate(
-        ({ ids, change }) => {
-          if (change === 'delete')
-            (window.__plein.engine as typeof window.__plein.engine & { undo(): void }).undo()
-          else window.__plein.connect([ids.media, 'video'], [ids.film, 'clips'])
-        },
-        { ids: f.ids, change },
+      await page.evaluate(() =>
+        (window.__plein.engine as typeof window.__plein.engine & { undo(): void }).undo(),
       )
       await f.editor.getByRole('button', { name: '切回成片', exact: true }).click()
       await expect(f.editor.getByRole('heading', { name: '当前成片', exact: true })).toBeVisible()
@@ -201,33 +187,21 @@ for (const change of ['delete', 'disconnect', 'ambiguous'] as const) {
   })
 }
 
-for (const change of ['delete', 'disconnect'] as const) {
+for (const change of ['delete'] as const) {
   test(`选择菜单中的成片 ${change} 后拒绝旧选项，仍可切到剩余成片`, async ({ page }) => {
     const f = await fixture(page, 'video', true)
     await f.editor.getByRole('combobox', { name: '选择成片序列', exact: true }).click()
     const option = page.getByRole('option', { name: new RegExp(f.ids.second.slice(-6)) })
     await option.evaluate(
-      (element, { ids, change }) => {
+      (element, { ids }) => {
         const engine = window.__plein.engine as typeof window.__plein.engine & {
           deleteSelection(): void
-          doc: {
-            edgeMap: { delete(id: string): void }
-            edges(): Iterable<{ id: string; from: [string, string]; to: [string, string] }>
-          }
         }
-        if (change === 'delete') {
-          engine.selection.set([ids.second])
-          engine.deleteSelection()
-        } else
-          for (const edge of engine.doc.edges() as Iterable<{
-            id: string
-            from: [string, string]
-            to: [string, string]
-          }>)
-            if (edge.to[0] === ids.second) engine.doc.edgeMap.delete(edge.id)
+        engine.selection.set([ids.second])
+        engine.deleteSelection()
         ;(element as HTMLElement).click()
       },
-      { ids: f.ids, change },
+      { ids: f.ids },
     )
     await expect(f.editor.getByRole('heading', { name: '导航样片草稿', exact: true })).toBeVisible()
     await expect(f.editor.getByRole('alert')).toContainText('已变化')

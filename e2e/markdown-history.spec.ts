@@ -80,45 +80,49 @@ test('便签键盘撤销重做修改正文，不修改背景节点，退出刷�
   await f.intact()
 })
 
-test('同伴追加正文后，本机撤销只移除本机编辑，重做仍保留同伴内容', async ({ page, browser }) => {
-  const f = await note(page)
-  const context = await browser.newContext({ baseURL: new URL(page.url()).origin })
-  try {
-    const peer = await context.newPage()
-    await peer.goto(page.url())
-    await waitEngine(peer)
-    await expect
-      .poll(() => peer.evaluate((id) => !!window.__plein.engine.doc.get(id), f.id))
-      .toBe(true)
-    await peer.evaluate((id) => window.__plein.engine.zoomToFit([id]), f.id)
-    const point = await centerOf(peer, f.id)
-    await peer.mouse.dblclick(point.x, point.y)
-    const other = peer.locator('.plein-md-editor .cm-content')
-    await expect(other).toBeFocused()
-    const readPeer = () =>
-      peer.evaluate((id) => window.__plein.engine.doc.getText(id)?.toString(), f.id)
-    await f.editor.press('End')
-    await page.keyboard.insertText('，本机追加')
-    await expect.poll(readPeer).toBe('便签原始正文，本机追加')
-    await other.press('End')
-    await peer.keyboard.insertText('，同伴追加')
-    await expect.poll(f.read).toBe('便签原始正文，本机追加，同伴追加')
-    await f.editor.press('ControlOrMeta+z')
-    await expect.poll(f.read).toBe('便签原始正文，同伴追加')
-    await expect.poll(readPeer).toBe('便签原始正文，同伴追加')
-    await expect(f.editor).not.toContainText('本机追加')
-    await expect(other).toContainText('同伴追加')
-    await f.intact()
-    await f.editor.press('ControlOrMeta+Shift+Z')
-    await expect.poll(f.read).toBe('便签原始正文，本机追加，同伴追加')
-    await expect.poll(readPeer).toBe('便签原始正文，本机追加，同伴追加')
-    await expect(f.editor).toContainText('本机追加')
-    await expect(other).toContainText('本机追加')
-    await f.intact()
-  } finally {
-    await context.close()
-  }
-})
+test(
+  '同伴追加正文后，本机撤销只移除本机编辑，重做仍保留同伴内容',
+  { tag: '@core' },
+  async ({ page, browser }) => {
+    const f = await note(page)
+    const context = await browser.newContext({ baseURL: new URL(page.url()).origin })
+    try {
+      const peer = await context.newPage()
+      await peer.goto(page.url())
+      await waitEngine(peer)
+      await expect
+        .poll(() => peer.evaluate((id) => !!window.__plein.engine.doc.get(id), f.id))
+        .toBe(true)
+      await peer.evaluate((id) => window.__plein.engine.zoomToFit([id]), f.id)
+      const point = await centerOf(peer, f.id)
+      await peer.mouse.dblclick(point.x, point.y)
+      const other = peer.locator('.plein-md-editor .cm-content')
+      await expect(other).toBeFocused()
+      const readPeer = () =>
+        peer.evaluate((id) => window.__plein.engine.doc.getText(id)?.toString(), f.id)
+      await f.editor.press('End')
+      await page.keyboard.insertText('，本机追加')
+      await expect.poll(readPeer).toBe('便签原始正文，本机追加')
+      await other.press('End')
+      await peer.keyboard.insertText('，同伴追加')
+      await expect.poll(f.read).toBe('便签原始正文，本机追加，同伴追加')
+      await f.editor.press('ControlOrMeta+z')
+      await expect.poll(f.read).toBe('便签原始正文，同伴追加')
+      await expect.poll(readPeer).toBe('便签原始正文，同伴追加')
+      await expect(f.editor).not.toContainText('本机追加')
+      await expect(other).toContainText('同伴追加')
+      await f.intact()
+      await f.editor.press('ControlOrMeta+Shift+Z')
+      await expect.poll(f.read).toBe('便签原始正文，本机追加，同伴追加')
+      await expect.poll(readPeer).toBe('便签原始正文，本机追加，同伴追加')
+      await expect(f.editor).toContainText('本机追加')
+      await expect(other).toContainText('本机追加')
+      await f.intact()
+    } finally {
+      await context.close()
+    }
+  },
+)
 
 test('便签复制剪切粘贴和各自撤销重做只影响正文，不新增或删除画布节点', async ({ page }) => {
   const f = await note(page)

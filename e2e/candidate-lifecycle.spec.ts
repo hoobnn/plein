@@ -2,118 +2,119 @@ import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { clickElement, newProject, waitEngine, waitNode } from './canvas'
 
-test('首次生成期间修改输入，结果只进候选，查看采用及撤销刷新不隐式生效', async ({
-  page,
-  context,
-}) => {
-  await newProject(page)
-  const config = '/api/providers/plein/mock/config'
-  const original = await (await page.request.get(config)).json()
-  const id = await page.evaluate(() =>
-    window.__plein.addNode({
-      type: 'plein/image',
-      name: '首次待采用候选',
-      params: { prompt: '透明水杯', model: 'plein/mock:image' },
-      x: 400,
-      y: 200,
-    }),
-  )
-  try {
-    expect(
-      (
-        await page.request.put(config, {
-          data: { settings: { ...original.settings, latencyMs: 3000 } },
-        })
-      ).ok(),
-    ).toBe(true)
-    await clickElement(page, id)
-    const generator = page.getByTestId('generator')
-    await generator.getByRole('button', { name: '生成', exact: true }).click()
-    await expect(generator.getByRole('button', { name: '取消', exact: true })).toBeEnabled()
-    await generator.getByRole('textbox', { name: '提示词', exact: true }).fill('改为陶瓷水杯')
-    await waitNode(page, id)
-    const adopted = () => page.evaluate((id) => window.__plein.engine.doc.get(id)?.adopted, id)
-    await expect.poll(adopted).toBeNull()
-    await expect(page.locator('.plein-node-status')).toHaveText('待采用')
-    await expect(
-      page.locator('.plein-node').getByText('1 个候选待采用，当前没有生效的结果'),
-    ).toBeVisible()
-    await page
-      .locator('.plein-node')
-      .screenshot({ path: test.info().outputPath('held-first-candidate.png') })
-    const open = () => page.getByRole('button', { name: '查看待采用候选', exact: true }).click()
-    await open()
-    const viewer = page.getByRole('dialog', { name: '查看「首次待采用候选」', exact: true })
-    await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
-    const chosen = await adopted()
-    expect(typeof chosen).toBe('string')
-    await viewer.getByRole('button', { name: '关闭', exact: true }).click()
-    await page.getByRole('button', { name: '撤销', exact: true }).click()
-    await expect.poll(adopted).toBeNull()
-    await page.reload()
-    await waitEngine(page)
-    await expect.poll(adopted).toBeNull()
-    await open()
-    await expect(viewer.getByRole('button', { name: '采用此候选', exact: true })).toBeEnabled()
-    await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
-    await expect.poll(adopted).toBe(chosen)
-    await viewer.getByRole('button', { name: '关闭', exact: true }).click()
-    await page.getByRole('button', { name: '撤销', exact: true }).click()
-    await expect.poll(adopted).toBeNull()
-
-    // 真实剪贴板跨画布保留待采用状态；连线不能让下游隐式使用候选。
-    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-    await page.evaluate((id) => window.__plein.engine.selection.set([id]), id)
-    await page.keyboard.press('ControlOrMeta+c')
+test(
+  '首次生成期间修改输入，结果只进候选，查看采用及撤销刷新不隐式生效',
+  { tag: '@core' },
+  async ({ page, context }) => {
     await newProject(page)
-    await page.keyboard.press('ControlOrMeta+v')
-    const copied = () =>
-      page.evaluate(() =>
-        [...window.__plein.engine.doc.elements()].find((el) => el.name === '首次待采用候选'),
-      )
-    await expect.poll(async () => (await copied())?.adopted).toBeNull()
-    const source = (await copied())!
-    expect(source.results?.[0]?.id).toBe(chosen)
-    await expect(page.locator('.plein-node-status')).toHaveText('待采用')
-    const downstream = await page.evaluate((source) => {
-      const id = window.__plein.addNode({
+    const config = '/api/providers/plein/mock/config'
+    const original = await (await page.request.get(config)).json()
+    const id = await page.evaluate(() =>
+      window.__plein.addNode({
         type: 'plein/image',
-        name: '下游图片',
-        params: { model: 'plein/mock:image', prompt: '保持参考素材' },
-        x: 1000,
+        name: '首次待采用候选',
+        params: { prompt: '透明水杯', model: 'plein/mock:image' },
+        x: 400,
         y: 200,
-      })
-      window.__plein.connect([source, 'images'], [id, 'references'])
-      window.__plein.engine.zoomToFit()
-      return id
-    }, source.id)
-    await clickElement(page, downstream)
-    const preview = page.getByTestId('input-preview')
-    await preview.getByRole('button', { name: /实际输入/ }).click()
-    await expect(generator).toContainText('有候选待采用，请先查看并采用结果')
-    await expect(generator.getByRole('button', { name: '生成', exact: true })).toBeDisabled()
-    await generator.screenshot({ path: test.info().outputPath('held-upstream-input.png') })
-    await generator
-      .getByRole('button', { name: '「首次待采用候选」有候选待采用，点击定位来源', exact: true })
-      .click()
-    await page.getByRole('button', { name: '查看待采用候选', exact: true }).click()
-    await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
-    await viewer.getByRole('button', { name: '关闭', exact: true }).click()
-    await page.evaluate(() => window.__plein.engine.zoomToFit())
-    await clickElement(page, downstream)
-    await expect(generator).not.toContainText('有候选待采用')
-    await expect(generator.getByRole('button', { name: '生成', exact: true })).toBeEnabled()
-    const canvas = /#\/c\/([^/?]+)/.exec(page.url())![1]
-    const input = await (
-      await page.request.get(`/api/canvases/${canvas}/nodes/${downstream}/input`)
-    ).json()
-    expect(input.inputs.references).toMatchObject([
-      { type: 'image', assetId: source.results![0]!.value.assetId, source: source.id },
-    ])
-  } finally {
-    await page.request.put(config, { data: { settings: original.settings } })
-  }
-})
+      }),
+    )
+    try {
+      expect(
+        (
+          await page.request.put(config, {
+            data: { settings: { ...original.settings, latencyMs: 3000 } },
+          })
+        ).ok(),
+      ).toBe(true)
+      await clickElement(page, id)
+      const generator = page.getByTestId('generator')
+      await generator.getByRole('button', { name: '生成', exact: true }).click()
+      await expect(generator.getByRole('button', { name: '取消', exact: true })).toBeEnabled()
+      await generator.getByRole('textbox', { name: '提示词', exact: true }).fill('改为陶瓷水杯')
+      await waitNode(page, id)
+      const adopted = () => page.evaluate((id) => window.__plein.engine.doc.get(id)?.adopted, id)
+      await expect.poll(adopted).toBeNull()
+      await expect(page.locator('.plein-node-status')).toHaveText('待采用')
+      await expect(
+        page.locator('.plein-node').getByText('1 个候选待采用，当前没有生效的结果'),
+      ).toBeVisible()
+      await page
+        .locator('.plein-node')
+        .screenshot({ path: test.info().outputPath('held-first-candidate.png') })
+      const open = () => page.getByRole('button', { name: '查看待采用候选', exact: true }).click()
+      await open()
+      const viewer = page.getByRole('dialog', { name: '查看「首次待采用候选」', exact: true })
+      await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
+      const chosen = await adopted()
+      expect(typeof chosen).toBe('string')
+      await viewer.getByRole('button', { name: '关闭', exact: true }).click()
+      await page.getByRole('button', { name: '撤销', exact: true }).click()
+      await expect.poll(adopted).toBeNull()
+      await page.reload()
+      await waitEngine(page)
+      await expect.poll(adopted).toBeNull()
+      await open()
+      await expect(viewer.getByRole('button', { name: '采用此候选', exact: true })).toBeEnabled()
+      await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
+      await expect.poll(adopted).toBe(chosen)
+      await viewer.getByRole('button', { name: '关闭', exact: true }).click()
+      await page.getByRole('button', { name: '撤销', exact: true }).click()
+      await expect.poll(adopted).toBeNull()
+
+      // 真实剪贴板跨画布保留待采用状态；连线不能让下游隐式使用候选。
+      await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+      await page.evaluate((id) => window.__plein.engine.selection.set([id]), id)
+      await page.keyboard.press('ControlOrMeta+c')
+      await newProject(page)
+      await page.keyboard.press('ControlOrMeta+v')
+      const copied = () =>
+        page.evaluate(() =>
+          [...window.__plein.engine.doc.elements()].find((el) => el.name === '首次待采用候选'),
+        )
+      await expect.poll(async () => (await copied())?.adopted).toBeNull()
+      const source = (await copied())!
+      expect(source.results?.[0]?.id).toBe(chosen)
+      await expect(page.locator('.plein-node-status')).toHaveText('待采用')
+      const downstream = await page.evaluate((source) => {
+        const id = window.__plein.addNode({
+          type: 'plein/image',
+          name: '下游图片',
+          params: { model: 'plein/mock:image', prompt: '保持参考素材' },
+          x: 1000,
+          y: 200,
+        })
+        window.__plein.connect([source, 'images'], [id, 'references'])
+        window.__plein.engine.zoomToFit()
+        return id
+      }, source.id)
+      await clickElement(page, downstream)
+      const preview = page.getByTestId('input-preview')
+      await preview.getByRole('button', { name: /实际输入/ }).click()
+      await expect(generator).toContainText('有候选待采用，请先查看并采用结果')
+      await expect(generator.getByRole('button', { name: '生成', exact: true })).toBeDisabled()
+      await generator.screenshot({ path: test.info().outputPath('held-upstream-input.png') })
+      await generator
+        .getByRole('button', { name: '「首次待采用候选」有候选待采用，点击定位来源', exact: true })
+        .click()
+      await page.getByRole('button', { name: '查看待采用候选', exact: true }).click()
+      await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
+      await viewer.getByRole('button', { name: '关闭', exact: true }).click()
+      await page.evaluate(() => window.__plein.engine.zoomToFit())
+      await clickElement(page, downstream)
+      await expect(generator).not.toContainText('有候选待采用')
+      await expect(generator.getByRole('button', { name: '生成', exact: true })).toBeEnabled()
+      const canvas = /#\/c\/([^/?]+)/.exec(page.url())![1]
+      const input = await (
+        await page.request.get(`/api/canvases/${canvas}/nodes/${downstream}/input`)
+      ).json()
+      expect(input.inputs.references).toMatchObject([
+        { type: 'image', assetId: source.results![0]!.value.assetId, source: source.id },
+      ])
+    } finally {
+      await page.request.put(config, { data: { settings: original.settings } })
+    }
+  },
+)
 
 for (const kind of ['image', 'video', 'speech'] as const) {
   test(`${kind} 连续生成候选后，卡片浏览、采用、撤销重做与刷新保持一致`, async ({ page }) => {

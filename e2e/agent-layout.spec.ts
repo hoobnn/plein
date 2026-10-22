@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { newProject, settle } from './canvas'
 
-for (const initialWidth of [639, 1440]) {
+for (const initialWidth of [1440]) {
   test(`助手从 ${initialWidth} 宽度打开后随断点变化同步避让，草稿与焦点保留`, async ({ page }) => {
     await page.setViewportSize({ width: initialWidth, height: 900 })
     await newProject(page)

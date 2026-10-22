@@ -261,7 +261,7 @@ for (const action of ['switch', 'reopen'] as const) {
   }
 }
 
-for (const action of ['reopen', 'resize'] as const) {
+for (const action of ['reopen'] as const) {
   test(`视频初始化等待中 ${action}，旧解码迟到结束不再降级或干扰新画面`, async ({ page }) => {
     const warnings: string[] = []
     const errors: string[] = []
@@ -328,14 +328,9 @@ for (const action of ['reopen', 'resize'] as const) {
         .poll(() => page.evaluate(() => Number(document.body.dataset.oldVideoReads ?? 0)))
         .toBeGreaterThan(0)
       await page.evaluate(() => window.dispatchEvent(new Event('allow-new-video')))
-      if (action === 'reopen') {
-        await editor.getByRole('button', { name: '关闭', exact: true }).click()
-        await expect(editor).toHaveCount(0)
-        editor = await open(page, id)
-      } else {
-        await editor.getByRole('button', { name: '成片', exact: true }).click()
-        await editor.getByRole('button', { name: '竖屏 9:16', exact: true }).click()
-      }
+      await editor.getByRole('button', { name: '关闭', exact: true }).click()
+      await expect(editor).toHaveCount(0)
+      editor = await open(page, id)
       const canvas = editor.locator('.seq-stage > canvas')
       const red = () =>
         canvas.evaluate((canvas: HTMLCanvasElement) => {

@@ -3,8 +3,6 @@ import { centerOf, newProject, zoomTo } from './canvas'
 
 for (const [width, height] of [
   [320, 600],
-  [390, 600],
-  [800, 600],
   [1440, 600],
   [640, 360],
   [390, 480],

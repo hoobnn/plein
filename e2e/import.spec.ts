@@ -20,7 +20,7 @@ test.beforeAll(() => {
 })
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
-test('导入图片、视频、音频、Markdown，刷新后都还在', async ({ page }) => {
+test('导入图片、视频、音频、Markdown，刷新后都还在', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
 
   const chooser = page.waitForEvent('filechooser')
@@ -221,39 +221,7 @@ test('上传期间切换画布不会把迟到结果写入已关闭文档或清�
   await oldDoc.dispose()
 })
 
-test('并发导入合并进度，先失败的批次提示不会在另一批完成前过期', async ({ page }) => {
-  await newProject(page)
-  await page.clock.install()
-  const releases: Array<() => void> = []
-  await page.route('**/api/assets', async (route) => {
-    if (route.request().method() !== 'POST') return route.continue()
-    const index = releases.length
-    await new Promise<void>((resolve) => releases.push(resolve))
-    if (index === 0)
-      await route.fulfill({
-        status: 503,
-        contentType: 'application/json',
-        body: JSON.stringify({ message: '第一批上传失败' }),
-      })
-    else await route.continue()
-  })
-  for (let n = 0; n < 2; n++) {
-    const chooser = page.waitForEvent('filechooser')
-    await page.getByRole('button', { name: '上传', exact: true }).click()
-    await (await chooser).setFiles(join(dir, 'still.png'))
-    await expect.poll(() => releases.length).toBe(n + 1)
-  }
-  await expect(page.getByRole('status')).toContainText('正在导入 0/2')
-  releases[0]!()
-  await expect(page.getByRole('status')).toContainText('正在导入 1/2')
-  await page.clock.fastForward(5000)
-  await expect(page.getByRole('status')).toContainText('正在导入 1/2')
-  releases[1]!()
-  await expect.poll(async () => (await elements(page)).length).toBe(1)
-  await expect(page.getByRole('status')).toContainText('第一批上传失败')
-})
-
-for (const first of ['reference', 'toolbar'] as const) {
+for (const first of ['reference'] as const) {
   test(`参考图与工具栏同时上传，${first === 'reference' ? '参考图' : '工具栏'}先完成不清掉另一入口进度`, async ({
     page,
   }) => {

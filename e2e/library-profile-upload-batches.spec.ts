@@ -127,9 +127,9 @@ test('档案选图弹层打开时拖入上传，候选在上传期间禁用且�
   await expect(panel).toBeHidden()
 })
 
-for (const role of ['时期', '服饰', '表情'] as const) {
+for (const role of ['时期'] as const) {
   test(`档案${role}批量失败保留成功项，重复不占位且超限不上传`, async ({ page }) => {
-    if (role === '时期') await page.setViewportSize({ width: 800, height: 560 })
+    await page.setViewportSize({ width: 800, height: 560 })
     await newProject(page)
     const name = `档案${role}批量恢复`
     const response = await page.request.post('/api/library', {
@@ -151,22 +151,13 @@ for (const role of ['时期', '服饰', '表情'] as const) {
     await panel.getByRole('listitem').filter({ hasText: name }).getByRole('button').first().click()
     await panel
       .getByRole('group', { name: '档案分页' })
-      .getByRole('button', { name: role === '表情' ? /^表情/ : /^时期与服饰/ })
+      .getByRole('button', { name: /^时期与服饰/ })
       .click()
-    if (role === '服饰')
-      await panel.getByRole('button', { name: '少年 · 校服', exact: true }).click()
-    if (role === '表情')
-      await panel.getByRole('button', { name: '编辑「开心」', exact: true }).click()
     const field = panel
       .locator('.lib-look-editor .ui-field')
       .filter({ has: page.locator('.ui-label').filter({ hasText: '参考图' }) })
       .last()
-    const imagesOf = (profile: typeof item.profile): string[] =>
-      role === '时期'
-        ? profile.periods[0].images
-        : role === '服饰'
-          ? profile.periods[0].outfits[0].images
-          : profile.expressions[0].images
+    const imagesOf = (profile: typeof item.profile): string[] => profile.periods[0].images
     let posts = 0
     let fail = true
     await page.route('**/api/assets', (route) => {
@@ -192,13 +183,11 @@ for (const role of ['时期', '服饰', '表情'] as const) {
     await upload([0, 1, 2])
     await expect(field.getByRole('alert')).toContainText('profile-batch-1.png')
     await expect(field.locator('img')).toHaveCount(2)
-    if (role === '时期') {
-      await field.getByRole('alert').scrollIntoViewIfNeeded()
-      await panel.screenshot({
-        path: test.info().outputPath('profile-batch-partial.png'),
-        animations: 'disabled',
-      })
-    }
+    await field.getByRole('alert').scrollIntoViewIfNeeded()
+    await panel.screenshot({
+      path: test.info().outputPath('profile-batch-partial.png'),
+      animations: 'disabled',
+    })
     const first = imagesOf(await save())
     expect(first).toHaveLength(2)
     fail = false

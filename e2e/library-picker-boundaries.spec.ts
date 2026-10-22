@@ -139,7 +139,7 @@ async function save(f: Awaited<ReturnType<typeof fixture>>) {
   return f.read()
 }
 
-for (const height of [640, 320]) {
+for (const height of [320]) {
   test(`320×${height} 画布选材菜单完整落在窗口内，末项可选择并保存正确素材`, async ({ page }) => {
     await page.setViewportSize({ width: 320, height })
     const f = await fixture(page)

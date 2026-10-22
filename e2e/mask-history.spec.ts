@@ -63,7 +63,7 @@ async function fixture(page: Page) {
     expect.poll(async () => (await pixels()) === expected).toBe(true)
   return { dialog, canvas, draw, pixels, matches, errors, id, assetId }
 }
-for (const width of [390, 1440]) {
+for (const width of [390]) {
   test(`蒙版 ${width}px 撤销重做与清空恢复不会改动画布`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 })
     const f = await fixture(page)

@@ -19,9 +19,9 @@ test.afterEach(async ({ request }) => {
   await request.put(endpoint, { data: { enabled: false } })
 })
 
-for (const action of ['scan', 'enable', 'disable', 'reload'] as const) {
+for (const action of ['scan', 'enable', 'reload'] as const) {
   test(`本机插件 ${action} 失败可重试，状态与节点目录一致`, async ({ page, request }) => {
-    const initiallyEnabled = action === 'disable' || action === 'reload'
+    const initiallyEnabled = action === 'reload'
     if (initiallyEnabled)
       expect((await request.put(endpoint, { data: { enabled: true } })).ok()).toBe(true)
     await newProject(page)

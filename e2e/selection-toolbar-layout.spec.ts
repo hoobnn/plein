@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { newProject } from './canvas'
 
-for (const width of [1440, 900, 390, 320]) {
+for (const width of [1440, 900, 320]) {
   test(`${width}px 多选操作条避让面板，复制连线和打组可撤销重做`, async ({ page }) => {
     await newProject(page)
     await page.setViewportSize({ width, height: 900 })

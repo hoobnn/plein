@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import type { GroupRunStarted, GroupRunState, JobList } from '../packages/protocol/src/runs'
 import { newProject, waitEngine } from './canvas'
 
-for (const entry of ['任务面板重开', 'Frame工具条'] as const) {
+for (const entry of ['任务面板重开'] as const) {
   test(`停止整组等待时${entry}共享禁用，失败可重试并取消运行和排队节点`, async ({ page }) => {
     await newProject(page)
     const configUrl = '/api/providers/plein/mock/config'

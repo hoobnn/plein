@@ -160,17 +160,21 @@ test('视频与音频参考进入实际输入，图片精修生成新候选保�
   expect(state.target?.assetId).not.toBe(state.source?.assetId)
 })
 
-test('本机数据页显示空间、备份状态并能创建恢复副本', async ({ page }, testInfo) => {
-  await page.goto('/')
-  await page.getByRole('button', { name: '设置', exact: true }).click()
-  const settings = page.getByRole('dialog', { name: '设置', exact: true })
-  await settings.getByRole('button', { name: '数据', exact: true }).click()
-  await expect(settings.getByText(/自动备份/).first()).toBeVisible()
-  await settings.getByRole('button', { name: '立即备份', exact: true }).click()
-  await expect(
-    settings.getByRole('button', { name: '恢复副本', exact: true }).first(),
-  ).toBeVisible()
-  await settings.screenshot({ path: testInfo.outputPath('data-maintenance.png') })
-  await settings.getByRole('button', { name: '恢复副本', exact: true }).first().click()
-  await expect(settings.getByText(/副本|恢复/).last()).toBeVisible()
-})
+test(
+  '本机数据页显示空间、备份状态并能创建恢复副本',
+  { tag: '@core' },
+  async ({ page }, testInfo) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const settings = page.getByRole('dialog', { name: '设置', exact: true })
+    await settings.getByRole('button', { name: '数据', exact: true }).click()
+    await expect(settings.getByText(/自动备份/).first()).toBeVisible()
+    await settings.getByRole('button', { name: '立即备份', exact: true }).click()
+    await expect(
+      settings.getByRole('button', { name: '恢复副本', exact: true }).first(),
+    ).toBeVisible()
+    await settings.screenshot({ path: testInfo.outputPath('data-maintenance.png') })
+    await settings.getByRole('button', { name: '恢复副本', exact: true }).first().click()
+    await expect(settings.getByText(/副本|恢复/).last()).toBeVisible()
+  },
+)

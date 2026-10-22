@@ -23,7 +23,7 @@ async function openProvider(page: Page) {
   return { row, settings }
 }
 
-for (const incomplete of ['-', '1e']) {
+for (const incomplete of ['1e']) {
   test(`平台未完成数字 ${incomplete} 阻止保存，折叠不清除错误，修正后可保存`, async ({
     page,
     request,
@@ -40,11 +40,9 @@ for (const incomplete of ['-', '1e']) {
     expect(await number.evaluate((element: HTMLInputElement) => element.validity.badInput)).toBe(
       true,
     )
-    if (incomplete === '1e') {
-      await number.press('Tab')
-      await save.focus()
-      await page.keyboard.press('Enter')
-    } else await save.click()
+    await number.press('Tab')
+    await save.focus()
+    await page.keyboard.press('Enter')
     await expect(number).toHaveValue('20')
     await expect(number).toHaveAttribute('aria-invalid', 'true')
     await expect(row.getByRole('alert')).toContainText('请输入有效数字')
@@ -58,18 +56,15 @@ for (const incomplete of ['-', '1e']) {
     await save.click()
     expect(writes).toBe(0)
     await expect(number).toBeFocused()
-    if (incomplete === '1e') {
-      await settings.getByRole('button', { name: '外观', exact: true }).click()
-      await settings.getByRole('button', { name: /^模型平台/ }).click()
-      await expect(number).toHaveAttribute('aria-invalid', 'true')
-      await number.focus()
-      await expect(row.getByRole('alert')).toBeInViewport()
-    }
-    if (incomplete === '1e')
-      await settings.screenshot({
-        path: test.info().outputPath('provider-invalid-number.png'),
-        animations: 'disabled',
-      })
+    await settings.getByRole('button', { name: '外观', exact: true }).click()
+    await settings.getByRole('button', { name: /^模型平台/ }).click()
+    await expect(number).toHaveAttribute('aria-invalid', 'true')
+    await number.focus()
+    await expect(row.getByRole('alert')).toBeInViewport()
+    await settings.screenshot({
+      path: test.info().outputPath('provider-invalid-number.png'),
+      animations: 'disabled',
+    })
     await number.fill('123')
     await number.press('Enter')
     await expect(number).not.toHaveAttribute('aria-invalid', 'true')

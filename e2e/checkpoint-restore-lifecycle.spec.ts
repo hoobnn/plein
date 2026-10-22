@@ -194,29 +194,33 @@ test('关闭后重开同一画布的检查点窗口，旧恢复成功不会关�
   }
 })
 
-test('当前窗口恢复失败保留检查点并可重试，成功后只创建一个副本且原画布保留', async ({ page }) => {
-  const f = await fixture(page)
-  let writes = 0
-  await page.route(`**/api/checkpoints/${f.checkpoint.id}/restore`, (route) => {
-    writes++
-    return writes === 1
-      ? route.fulfill({ status: 503, json: { message: '恢复服务暂时不可用' } })
-      : route.continue()
-  })
-  const article = panel(page).getByRole('article').filter({ hasText: name })
-  await article.getByRole('button', { name: '恢复为新画布', exact: true }).click()
-  await expect(panel(page).getByRole('alert')).toContainText('恢复服务暂时不可用')
-  await expect(article.getByRole('button', { name: '恢复为新画布', exact: true })).toBeEnabled()
-  await article.getByRole('button', { name: '恢复为新画布', exact: true }).click()
-  await expect(panel(page)).toHaveCount(0)
-  await expect(page).not.toHaveURL(new RegExp(`#/c/${f.canvas.id}$`))
-  const id = decodeURIComponent(page.url().split('#/c/')[1]!)
-  expect((await (await page.request.get(`/api/canvases/${id}`)).json()).projectId).toBe(
-    f.canvas.projectId,
-  )
-  expect((await page.request.get(`/api/canvases/${f.canvas.id}`)).ok()).toBe(true)
-  expect(
-    await (await page.request.get(`/api/projects/${f.canvas.projectId}/canvases`)).json(),
-  ).toHaveLength(2)
-  expect(writes).toBe(2)
-})
+test(
+  '当前窗口恢复失败保留检查点并可重试，成功后只创建一个副本且原画布保留',
+  { tag: '@core' },
+  async ({ page }) => {
+    const f = await fixture(page)
+    let writes = 0
+    await page.route(`**/api/checkpoints/${f.checkpoint.id}/restore`, (route) => {
+      writes++
+      return writes === 1
+        ? route.fulfill({ status: 503, json: { message: '恢复服务暂时不可用' } })
+        : route.continue()
+    })
+    const article = panel(page).getByRole('article').filter({ hasText: name })
+    await article.getByRole('button', { name: '恢复为新画布', exact: true }).click()
+    await expect(panel(page).getByRole('alert')).toContainText('恢复服务暂时不可用')
+    await expect(article.getByRole('button', { name: '恢复为新画布', exact: true })).toBeEnabled()
+    await article.getByRole('button', { name: '恢复为新画布', exact: true }).click()
+    await expect(panel(page)).toHaveCount(0)
+    await expect(page).not.toHaveURL(new RegExp(`#/c/${f.canvas.id}$`))
+    const id = decodeURIComponent(page.url().split('#/c/')[1]!)
+    expect((await (await page.request.get(`/api/canvases/${id}`)).json()).projectId).toBe(
+      f.canvas.projectId,
+    )
+    expect((await page.request.get(`/api/canvases/${f.canvas.id}`)).ok()).toBe(true)
+    expect(
+      await (await page.request.get(`/api/projects/${f.canvas.projectId}/canvases`)).json(),
+    ).toHaveLength(2)
+    expect(writes).toBe(2)
+  },
+)

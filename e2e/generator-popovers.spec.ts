@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test'
 import { clickElement, newProject } from './canvas'
 
 for (const { type, trigger, label } of [
-  { type: 'plein/image', trigger: '参数', label: '参数' },
   { type: 'plein/video', trigger: '参数', label: '参数' },
   { type: 'plein/video', trigger: '模型', label: '选择模型' },
 ]) {

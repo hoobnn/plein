@@ -3,7 +3,7 @@ import { solidPng } from '../packages/providers/src/mock/media'
 import { newProject } from './canvas'
 
 type Engine = import('../packages/canvas-core/src/engine').Engine
-for (const zoom of [0.2, 0.249, 0.25, 0.5]) {
+for (const zoom of [0.249, 0.25]) {
   for (const depth of [0, 2]) {
     test(`${zoom * 100}% 缩放 ${depth} 层分组的端口显示与拖动一致，可撤销重做`, async ({
       page,

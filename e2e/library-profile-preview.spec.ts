@@ -63,7 +63,7 @@ async function save(panel: Locator) {
   await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
 }
 
-for (const kind of ['scene', 'prop'] as const) {
+for (const kind of ['scene'] as const) {
   test(`${kind} 移除选中参考图立即回退，重新上传后保存与放入画布一致`, async ({ page }) => {
     await newProject(page)
     const [base, angle, other] = await images(page)

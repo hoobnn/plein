@@ -34,7 +34,7 @@ test.beforeAll(() => {
 })
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
-test('较大视频读取完成后交给浏览器，保存字节与原视频一致', async ({ page }) => {
+test('较大视频读取完成后交给浏览器，保存字节与原视频一致', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
   expect(bytes.length).toBeGreaterThan(16 * 1024 * 1024)
   const uploaded = await page.request.post('/api/assets', {

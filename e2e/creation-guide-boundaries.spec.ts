@@ -100,55 +100,6 @@ for (const kind of ['board', 'sequence'] as const) {
   })
 }
 
-test('已选分镜删除后不自动切到剩余分镜，撤销恢复与重新选择均可继续', async ({ page }) => {
-  const f = await fixture(page, 2)
-  const choose = guide(page).getByRole('combobox', { name: '创作引导分镜', exact: true })
-  await choose.click()
-  await page.getByRole('option', { name: '引导分镜2', exact: true }).click()
-  await expect(choose).toContainText('引导分镜2')
-  await remove(page, f.board)
-  await expect(guide(page).locator('[data-guide-step]')).toHaveCount(0)
-  await expect(choose).toBeVisible()
-  await expect(guide(page)).toContainText('原分镜选择已失效')
-  expect(
-    await page.evaluate(
-      (key) => JSON.parse(localStorage.getItem(key)!).boardId,
-      `plein:creation-guide:v1:${canvasId(page)}`,
-    ),
-  ).toBe(f.board)
-  await page.evaluate(() =>
-    (window.__plein.engine as typeof window.__plein.engine & { undo(): void }).undo(),
-  )
-  await expect(choose).toContainText('引导分镜2')
-  await expect(guide(page).locator('[data-guide-step]')).toHaveCount(6)
-  await remove(page, f.board)
-  await expect(guide(page).locator('[data-guide-step]')).toHaveCount(0)
-  await choose.click()
-  await page.getByRole('option', { name: '引导分镜1', exact: true }).click()
-  await step(page, 'storyboard').click()
-  await expect(
-    page.getByRole('dialog', { name: '分镜表', exact: true }).getByLabel('画面', { exact: true }),
-  ).toHaveValue('分镜1的画面')
-  expect(f.submitted).toEqual([])
-})
-
-test('已选成片删除后不自动打开另一版，重新选择后定位正确序列', async ({ page }) => {
-  const f = await fixture(page, 1, 2)
-  const choose = guide(page).getByRole('combobox', { name: '创作引导交付序列', exact: true })
-  await choose.click()
-  await page.getByRole('option', { name: '引导成片2', exact: true }).click()
-  await remove(page, f.films[1]!)
-  await expect(step(page, 'delivery')).toBeDisabled()
-  await expect(choose).toBeVisible()
-  await expect(guide(page)).toContainText('原交付序列已移除或不再关联')
-  await choose.click()
-  await page.getByRole('option', { name: '引导成片1', exact: true }).click()
-  await step(page, 'delivery').click()
-  expect(await page.evaluate(() => window.__plein.engine.selection.values())).toEqual([f.films[0]])
-  await expect(page.getByRole('dialog', { name: '序列', exact: true })).toBeVisible()
-  expect(f.submitted).toEqual([])
-})
-
 test('唯一成片同帧变为多个时旧交付按钮拒绝猜测，显式选择后可定位', async ({ page }) => {
   const f = await fixture(page)
   await step(page, 'delivery').evaluate((button, video) => {

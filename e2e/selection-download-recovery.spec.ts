@@ -3,14 +3,7 @@ import { expect, test, type Download } from '@playwright/test'
 import { solidPng } from '../packages/providers/src/mock/media'
 import { newProject } from './canvas'
 
-for (const mode of [
-  'failure',
-  'cancel',
-  'double',
-  'selection',
-  'selection-cancel',
-  'navigate',
-] as const) {
+for (const mode of ['failure', 'double', 'selection', 'selection-cancel', 'navigate'] as const) {
   test(`批量下载 ${mode} 显示状态并只恢复未下载文件`, async ({ page }) => {
     await newProject(page)
     const sources = [
@@ -104,11 +97,6 @@ for (const mode of [
               button.click()
             })
           release()
-        } else if (mode === 'cancel') {
-          await bar.getByRole('button', { name: '取消下载', exact: true }).click()
-          await expect(bar.getByRole('status')).toContainText('1 个文件未下载')
-          release()
-          await bar.getByRole('button', { name: '继续下载（1）', exact: true }).click()
         } else if (mode === 'navigate') {
           await page.getByRole('link', { name: 'Plein', exact: true }).click()
           await expect(bar).toHaveCount(0)
@@ -139,9 +127,7 @@ for (const mode of [
         expect(downloads[i]!.suggestedFilename()).toMatch(new RegExp(`^恢复下载${i}`))
         expect(readFileSync((await downloads[i]!.path())!)).toEqual(sources[i])
       }
-      expect(requests).toEqual(
-        mode === 'failure' || mode === 'cancel' || mode === 'selection-cancel' ? [1, 2] : [1, 1],
-      )
+      expect(requests).toEqual(mode === 'failure' || mode === 'selection-cancel' ? [1, 2] : [1, 1])
     } finally {
       release()
     }

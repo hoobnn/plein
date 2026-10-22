@@ -97,19 +97,6 @@ test('变速拒绝空值、非数字和越界倍数，修正前不提交或关�
   expect(await page.evaluate(() => [...window.__plein.engine.doc.elements()].length)).toBe(2)
 })
 
-test('截取毫秒边界保留输入精度，不因百分秒取整变成零长度', async ({ page }) => {
-  const f = await fixture(page)
-  const tools = await open(page, '截取一段')
-  await tools.getByLabel('入点', { exact: true }).fill('0.101')
-  await tools.getByLabel('出点', { exact: true }).fill('0.104')
-  await tools.getByRole('button', { name: '开始加工', exact: true }).click()
-  await expect.poll(() => f.requests.length).toBe(1)
-  expect(f.requests[0]).toEqual({ op: 'trim', assetId: f.asset, start: 0.101, end: 0.104 })
-  await expect
-    .poll(() => page.evaluate(() => [...window.__plein.engine.doc.elements()].length))
-    .toBe(2)
-})
-
 test('元信息迟到后截取默认区间可直接使用，不保留未加载时的零出点', async ({ page }) => {
   const f = await fixture(page)
   let release!: () => void

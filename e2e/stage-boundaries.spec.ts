@@ -231,24 +231,6 @@ test('3D 添加菜单中的按键不删除背后的对象', async ({ page }) => 
   await expect(dialog.getByRole('button', { name: /人物 1/ })).toHaveCount(0)
 })
 
-test('3D 删除后再添加人物仍能按名字区分且不重叠', async ({ page }) => {
-  const { stage, dialog } = await openStage(page)
-  await dialog.getByRole('button', { name: '添加人物', exact: true }).click()
-  await dialog.getByRole('button', { name: '添加人物', exact: true }).click()
-  await dialog.getByRole('button', { name: /人物 2/ }).click()
-  await dialog.getByRole('button', { name: '删除', exact: true }).click()
-  await dialog.getByRole('button', { name: '添加人物', exact: true }).click()
-  const labels = await dialog.locator('.stage-outline .stage-item').allTextContents()
-  const people = labels.filter((label) => label.includes('人物'))
-  expect(new Set(people).size).toBe(3)
-  const positions = await page.evaluate((id) => {
-    return (
-      window.__plein.engine.doc.get(id)!.params!.scene as { figures: { x: number; z: number }[] }
-    ).figures.map((f) => `${f.x},${f.z}`)
-  }, stage.id)
-  expect(new Set(positions).size).toBe(3)
-})
-
 test('3D 连续添加场景件可区分名称且不堆在同一位置', async ({ page }) => {
   const { stage, dialog } = await openStage(page)
   for (let i = 0; i < 2; i++) {

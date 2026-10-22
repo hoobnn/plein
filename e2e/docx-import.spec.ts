@@ -37,48 +37,52 @@ async function references(page: Page) {
   )
 }
 
-test('DOCX 本地保留中文段落、列表、表格与来源，刷新持久化且一步撤销', async ({ page }) => {
-  await newProject(page)
-  const uploads: string[] = []
-  page.on('request', (r) => {
-    if (r.method() === 'POST' && r.url().includes('/api/assets')) uploads.push(r.url())
-  })
-  const listed = '<w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="1"/></w:numPr></w:pPr>'
-  const body =
-    p('青年宣讲') +
-    p('第一段中文') +
-    p('列表内容', listed) +
-    '<w:tbl><w:tr><w:tc>' +
-    p('主题') +
-    '</w:tc><w:tc>' +
-    p('说明') +
-    '</w:tc></w:tr>' +
-    '<w:tr><w:tc>' +
-    p('青年|行动') +
-    '</w:tc><w:tc>' +
-    p('第一行') +
-    p('第二行') +
-    '</w:tc></w:tr></w:tbl>' +
-    p('![外部图片](https://example.invalid/private.png) # *字面文本*')
-  await upload(page, [docx(body)])
-  await expect.poll(async () => (await references(page)).length).toBe(1)
-  const before = await references(page)
-  expect(before[0]!.name).toBe('中文参考.docx')
-  expect(before[0]!.text).toContain('来源：中文参考\\.docx')
-  expect(before[0]!.text).toContain('  - 列表内容')
-  expect(before[0]!.text).toContain('| 青年\\|行动 | 第一行 / 第二行 |')
-  await expect(page.locator('.plein-md-scroll table')).toContainText('青年|行动')
-  await expect(page.locator('.plein-md-scroll table')).toContainText('第一行 / 第二行')
-  await expect(page.locator('[data-markdown-id] img')).toHaveCount(0)
-  expect(uploads).toEqual([])
-  await page.getByRole('button', { name: '撤销', exact: true }).click()
-  await expect.poll(async () => (await references(page)).length).toBe(0)
-  await page.getByRole('button', { name: '重做', exact: true }).click()
-  await expect.poll(() => references(page)).toEqual(before)
-  await page.reload()
-  await waitEngine(page)
-  expect(await references(page)).toEqual(before)
-})
+test(
+  'DOCX 本地保留中文段落、列表、表格与来源，刷新持久化且一步撤销',
+  { tag: '@core' },
+  async ({ page }) => {
+    await newProject(page)
+    const uploads: string[] = []
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && r.url().includes('/api/assets')) uploads.push(r.url())
+    })
+    const listed = '<w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="1"/></w:numPr></w:pPr>'
+    const body =
+      p('青年宣讲') +
+      p('第一段中文') +
+      p('列表内容', listed) +
+      '<w:tbl><w:tr><w:tc>' +
+      p('主题') +
+      '</w:tc><w:tc>' +
+      p('说明') +
+      '</w:tc></w:tr>' +
+      '<w:tr><w:tc>' +
+      p('青年|行动') +
+      '</w:tc><w:tc>' +
+      p('第一行') +
+      p('第二行') +
+      '</w:tc></w:tr></w:tbl>' +
+      p('![外部图片](https://example.invalid/private.png) # *字面文本*')
+    await upload(page, [docx(body)])
+    await expect.poll(async () => (await references(page)).length).toBe(1)
+    const before = await references(page)
+    expect(before[0]!.name).toBe('中文参考.docx')
+    expect(before[0]!.text).toContain('来源：中文参考\\.docx')
+    expect(before[0]!.text).toContain('  - 列表内容')
+    expect(before[0]!.text).toContain('| 青年\\|行动 | 第一行 / 第二行 |')
+    await expect(page.locator('.plein-md-scroll table')).toContainText('青年|行动')
+    await expect(page.locator('.plein-md-scroll table')).toContainText('第一行 / 第二行')
+    await expect(page.locator('[data-markdown-id] img')).toHaveCount(0)
+    expect(uploads).toEqual([])
+    await page.getByRole('button', { name: '撤销', exact: true }).click()
+    await expect.poll(async () => (await references(page)).length).toBe(0)
+    await page.getByRole('button', { name: '重做', exact: true }).click()
+    await expect.poll(() => references(page)).toEqual(before)
+    await page.reload()
+    await waitEngine(page)
+    expect(await references(page)).toEqual(before)
+  },
+)
 
 test('DOCX 损坏、空正文和旧 DOC 提供可读错误，不上传或生成空卡片', async ({ page }) => {
   await newProject(page)

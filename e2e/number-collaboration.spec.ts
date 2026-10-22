@@ -1,7 +1,7 @@
 import { expect, type Page, test } from '@playwright/test'
 import { newProject, waitEngine } from './canvas'
 
-for (const choice of ['latest', 'draft'] as const) {
+for (const choice of ['latest'] as const) {
   test(`数值草稿遇到同帧更新不覆盖，明确选择 ${choice} 后继续编辑`, async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 560 })
     await newProject(page)

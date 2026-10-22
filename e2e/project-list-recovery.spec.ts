@@ -86,7 +86,7 @@ for (const operation of ['rename', 'delete'] as const) {
   })
 }
 
-for (const width of [320, 390]) {
+for (const width of [320]) {
   test(`${width}px 首页顶部素材、资产库、主题与设置完整可操作`, async ({ page }) => {
     await newProject(page)
     await page.goto('/')

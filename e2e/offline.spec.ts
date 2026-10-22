@@ -55,36 +55,40 @@ async function serverNodes(context: BrowserContext, url: string) {
   return n
 }
 
-test('断线编辑，断线时刷新从本机缓存恢复，重连后合并到服务端', async ({ page, context }) => {
-  const net = await syncSwitch(context)
-  await newProject(page)
-  await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected')
-  const url = page.url()
-  await addNode(page, '文本', { x: 400, y: 450 })
-  await page.keyboard.press('Escape')
-  await expect.poll(() => nodeCount(page)).toBe(1)
+test(
+  '断线编辑，断线时刷新从本机缓存恢复，重连后合并到服务端',
+  { tag: '@core' },
+  async ({ page, context }) => {
+    const net = await syncSwitch(context)
+    await newProject(page)
+    await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected')
+    const url = page.url()
+    await addNode(page, '文本', { x: 400, y: 450 })
+    await page.keyboard.press('Escape')
+    await expect.poll(() => nodeCount(page)).toBe(1)
 
-  net.offline()
-  await expect(syncStatus(page)).toHaveAttribute('data-sync', 'disconnected')
-  await addNode(page, '文本', { x: 900, y: 450 })
-  await page.keyboard.press('Escape')
-  await expect.poll(() => nodeCount(page)).toBe(2)
-  await expect(syncStatus(page)).toContainText('改动先存在本机')
+    net.offline()
+    await expect(syncStatus(page)).toHaveAttribute('data-sync', 'disconnected')
+    await addNode(page, '文本', { x: 900, y: 450 })
+    await page.keyboard.press('Escape')
+    await expect.poll(() => nodeCount(page)).toBe(2)
+    await expect(syncStatus(page)).toContainText('改动先存在本机')
 
-  // 写入完成才承诺刷新恢复，不能只等内存里出现两个节点。
-  await expect(syncStatus(page)).toHaveAttribute('data-cache', 'saved')
-  // 断线时刷新：页面照常从服务端取，文档同步不通，从 IndexedDB 缓存打开，两个节点都在
-  await page.reload()
-  await waitEngine(page)
-  await expect.poll(() => nodeCount(page)).toBe(2)
-  await expect(syncStatus(page)).toHaveAttribute('data-sync', 'disconnected')
-  // 服务端此时只有断线前的一个节点
-  expect(await serverNodes(context, url)).toBe(1)
+    // 写入完成才承诺刷新恢复，不能只等内存里出现两个节点。
+    await expect(syncStatus(page)).toHaveAttribute('data-cache', 'saved')
+    // 断线时刷新：页面照常从服务端取，文档同步不通，从 IndexedDB 缓存打开，两个节点都在
+    await page.reload()
+    await waitEngine(page)
+    await expect.poll(() => nodeCount(page)).toBe(2)
+    await expect(syncStatus(page)).toHaveAttribute('data-sync', 'disconnected')
+    // 服务端此时只有断线前的一个节点
+    expect(await serverNodes(context, url)).toBe(1)
 
-  net.online()
-  await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected', { timeout: 30_000 })
-  await expect.poll(() => serverNodes(context, url)).toBe(2)
-})
+    net.online()
+    await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected', { timeout: 30_000 })
+    await expect.poll(() => serverNodes(context, url)).toBe(2)
+  },
+)
 
 test('离线正文撤销重做与在线同伴修改合并，刷新和无缓存客户端保持一致', async ({
   page,
@@ -512,34 +516,38 @@ test.describe('服务重启', () => {
     if (dataDir) rmSync(dataDir, { recursive: true, force: true })
   })
 
-  test('服务停掉期间继续编辑，重启后自动重连并合并', async ({ page, context }) => {
-    await page.goto(`${base}/`)
-    await page.getByRole('button', { name: '新建项目', exact: true }).click()
-    await expect(page).toHaveURL(/#\/c\//)
-    await waitEngine(page)
-    await page.waitForFunction(
-      () => document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.tagName === 'CANVAS',
-    )
-    const url = page.url()
-    await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected')
-    await addNode(page, '文本', { x: 400, y: 450 })
-    await page.keyboard.press('Escape')
-    await expect.poll(() => nodeCount(page)).toBe(1)
-    // 等服务端攒批写库（50ms）
-    await page.waitForTimeout(500)
+  test(
+    '服务停掉期间继续编辑，重启后自动重连并合并',
+    { tag: '@core' },
+    async ({ page, context }) => {
+      await page.goto(`${base}/`)
+      await page.getByRole('button', { name: '新建项目', exact: true }).click()
+      await expect(page).toHaveURL(/#\/c\//)
+      await waitEngine(page)
+      await page.waitForFunction(
+        () => document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.tagName === 'CANVAS',
+      )
+      const url = page.url()
+      await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected')
+      await addNode(page, '文本', { x: 400, y: 450 })
+      await page.keyboard.press('Escape')
+      await expect.poll(() => nodeCount(page)).toBe(1)
+      // 等服务端攒批写库（50ms）
+      await page.waitForTimeout(500)
 
-    await kill()
-    await expect(syncStatus(page)).toHaveAttribute('data-sync', 'disconnected')
-    await addNode(page, '文本', { x: 900, y: 450 })
-    await page.keyboard.press('Escape')
-    await expect.poll(() => nodeCount(page)).toBe(2)
-    // 入口由服务托管：服务停着时新开页面打不开
-    const other = await context.newPage()
-    await expect(other.goto(url)).rejects.toThrow()
-    await other.close()
+      await kill()
+      await expect(syncStatus(page)).toHaveAttribute('data-sync', 'disconnected')
+      await addNode(page, '文本', { x: 900, y: 450 })
+      await page.keyboard.press('Escape')
+      await expect.poll(() => nodeCount(page)).toBe(2)
+      // 入口由服务托管：服务停着时新开页面打不开
+      const other = await context.newPage()
+      await expect(other.goto(url)).rejects.toThrow()
+      await other.close()
 
-    await start()
-    await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected', { timeout: 60_000 })
-    await expect.poll(() => serverNodes(context, url)).toBe(2)
-  })
+      await start()
+      await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected', { timeout: 60_000 })
+      await expect.poll(() => serverNodes(context, url)).toBe(2)
+    },
+  )
 })
