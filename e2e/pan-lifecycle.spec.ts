@@ -38,13 +38,14 @@ async function drag(page: Page) {
   await page.mouse.move(1200, 760, { steps: 4 })
 }
 async function flick(page: Page) {
-  // 松手距最后一次移动超过 100ms 不起惯性；机器繁忙时主线程可能刚好卡过这个窗口，重甩一次。
-  await expect(async () => {
-    await drag(page)
-    await page.mouse.up({ button: 'middle' })
-    const released = await position(page)
-    await expect.poll(() => position(page), { timeout: 1_000 }).not.toEqual(released)
-  }).toPass({ timeout: 15_000 })
+  // 松手距最后一次移动超过 100ms 不起惯性。Playwright 要等上一个事件处理完、渲染出一帧才发下一个，
+  // 软件渲染慢的机器上这一帧就超过 100ms，等于停住再松手；最后一次移动和松手一起发出才是甩动。
+  await page.mouse.move(1050, 700)
+  await page.mouse.down({ button: 'middle' })
+  await page.mouse.move(1162, 730, { steps: 3 })
+  await Promise.all([page.mouse.move(1200, 760), page.mouse.up({ button: 'middle' })])
+  const released = await position(page)
+  await expect.poll(() => position(page), { timeout: 1_000 }).not.toEqual(released)
 }
 
 for (const action of ['fit', 'zoom', 'fly'] as const) {

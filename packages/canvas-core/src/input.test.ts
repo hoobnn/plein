@@ -35,7 +35,9 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 function event(type: string, props: Record<string, unknown> = {}, target?: EventTarget) {
-  const e = Object.assign(new Event(type, { cancelable: true }), props)
+  const e = new Event(type, { cancelable: true })
+  // timeStamp 在原型上只读，逐项定义成实例属性
+  for (const [key, value] of Object.entries(props)) Object.defineProperty(e, key, { value })
   if (target) Object.defineProperty(e, 'target', { value: target })
   return e
 }
@@ -71,6 +73,7 @@ function setup(pan: PanState = { space: false, hand: false }) {
       clientY: y,
       button: 0,
       pointerType: 'mouse',
+      timeStamp: now,
       ...extra,
     })
     el.dispatchEvent(e)
@@ -208,8 +211,8 @@ it('普通左键不平移，中键只跟随捕获指针并接收合并事件，�
   f.advance(16)
   f.pointer('pointermove', 1, 40, 30, {
     getCoalescedEvents: () => [
-      { clientX: 20, clientY: 10 },
-      { clientX: 40, clientY: 30 },
+      { clientX: 20, clientY: 10, timeStamp: 1008 },
+      { clientX: 40, clientY: 30, timeStamp: 1016 },
     ],
   })
   expect([f.camera.x, f.camera.y]).toEqual([40, 30])
@@ -239,6 +242,25 @@ it('松手惯性逐步衰减，外部导航接管立即取消且旧拖动不能�
   f.pointer('pointerup', 3)
   for (let i = 0; i < 200 && f.frames.size; i++) f.frame()
   expect(f.frames.size).toBe(0)
+})
+it('合并事件按各自发生时间计算甩出速度，回调处理延后时松手仍起惯性', () => {
+  const f = setup({ hand: true, space: false })
+  f.pointer('pointerdown')
+  // 两个合并事件相隔 8ms 各移动 8px，回调却在 100ms 后才处理
+  f.advance(100)
+  f.pointer('pointermove', 1, 16, 0, {
+    timeStamp: 1016,
+    getCoalescedEvents: () => [
+      { clientX: 8, clientY: 0, timeStamp: 1008 },
+      { clientX: 16, clientY: 0, timeStamp: 1016 },
+    ],
+  })
+  // 松手紧跟最后一次移动发生，处理时刻已过 100ms
+  f.advance(120)
+  f.pointer('pointerup', 1, 16, 0, { timeStamp: 1020 })
+  f.frame()
+  // 速度 1px/ms，首帧位移 16 × 0.92；按处理时刻算会把间隔压成 1ms，速度虚高 8 倍
+  expect(f.camera.x).toBeCloseTo(16 + 16 * 0.92)
 })
 it.each(['pointercancel', 'lostpointercapture', 'blur', 'wheel'] as const)(
   '%s 中断平移后释放捕获并丢弃旧速度',

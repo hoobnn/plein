@@ -98,7 +98,7 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
     pointer = e.pointerId
     lastX = e.clientX
     lastY = e.clientY
-    lastT = performance.now()
+    lastT = e.timeStamp
     vx = vy = 0
     el.setPointerCapture(e.pointerId)
     el.style.cursor = 'grabbing'
@@ -106,19 +106,19 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
 
   const onPointerMove = (e: PointerEvent) => {
     if (e.pointerId !== pointer) return
-    // 合并事件，高刷屏下更顺滑
+    // 合并事件，高刷屏下更顺滑。速度按事件发生时间算：合并事件在同一次回调里处理，
+    // 用处理时刻会把间隔压成 0，主线程卡顿时甩出的速度成倍虚高。
     const coalesced = e.getCoalescedEvents?.()
     const events = coalesced?.length ? coalesced : [e]
     for (const ev of events) {
       const dx = ev.clientX - lastX
       const dy = ev.clientY - lastY
-      const now = performance.now()
-      const dt = Math.max(1, now - lastT)
+      const dt = Math.max(1, ev.timeStamp - lastT)
       vx = dx / dt
       vy = dy / dt
       lastX = ev.clientX
       lastY = ev.clientY
-      lastT = now
+      lastT = ev.timeStamp
       move(() => camera.panBy(dx, dy))
     }
   }
@@ -129,7 +129,8 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
     if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId)
     el.style.cursor = idleCursor()
     // 已经按住停稳时，不能用最后一次移动的旧速度再次甩动画布。
-    if (performance.now() - lastT > 100) return
+    // 同样按事件时间判断，渲染慢时松手事件排在一帧之后处理，不算停稳。
+    if (e.timeStamp - lastT > 100) return
     // 惯性：指数衰减
     let px = vx * 16
     let py = vy * 16
