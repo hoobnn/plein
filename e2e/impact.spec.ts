@@ -142,13 +142,21 @@ test(
     await expect(impact.getByText('价格未知')).toBeVisible()
 
     // 先选「只改配音 / 字幕」，再自己勾上镜头图
-    await impact.getByRole('button', { name: '只改配音 / 字幕' }).click()
-    await expect(shot3.getByRole('checkbox', { name: '重做镜头图' })).not.toBeChecked()
+    // 同步回推等文档变化会让面板短暂重新分析并禁用按钮，点击恰好落在这一瞬会被吞掉，按结果重试
+    await expect(async () => {
+      await impact.getByRole('button', { name: '只改配音 / 字幕' }).click({ timeout: 1_000 })
+      await expect(shot3.getByRole('checkbox', { name: '重做镜头图' })).not.toBeChecked({
+        timeout: 1_000,
+      })
+    }).toPass()
     await expect(shot3.getByRole('checkbox', { name: '重做配音' })).toBeChecked()
     await shot3.getByRole('checkbox', { name: '重做镜头图' }).check()
     await expect(shot3.getByRole('checkbox', { name: '重做视频' })).not.toBeChecked()
-    await impact.getByRole('button', { name: '重做选中的 2 个' }).click()
-    await expect(impact).toBeHidden()
+    await expect(async () => {
+      if (await impact.isVisible())
+        await impact.getByRole('button', { name: '重做选中的 2 个' }).click({ timeout: 1_000 })
+      await expect(impact).toBeHidden({ timeout: 1_000 })
+    }).toPass()
     await expect(page.locator('.ui-toast')).toContainText('重做受影响的结果运行完成：2 个生成')
     await waitIdle(page)
 
