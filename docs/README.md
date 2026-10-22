@@ -26,6 +26,8 @@
 
 ## 规划
 
+0.3.0 之后的任务见 [任务计划](plan/next-2026-10-22.md)：先恢复 e2e 与依赖审计门禁，再处理真机与付费授权项。
+
 本轮创作功能补齐见 [八项工作包与验收](plan/feature-completion-2026-10-17.md)。
 
 后续创作流程优化见 [六项工作包与验收](plan/creation-workflow-2026-10-17.md)，固定案例见 [创作基线](benchmarks/creative-baselines/README.md)。
