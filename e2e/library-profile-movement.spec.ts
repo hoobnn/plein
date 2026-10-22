@@ -172,7 +172,10 @@ for (const role of ['服饰', '表情'] as const) {
     const f = await fixture(page, data, role === '表情')
     const label = role === '服饰' ? '加服饰' : '添加表情'
     const preset = role === '服饰' ? '校服' : '开心'
-    await f.panel.getByRole('button', { name: label, exact: true }).click()
+    const add = f.panel.getByRole('button', { name: label, exact: true })
+    // 添加入口贴着滚动区底边：新名称框出现在可视区下方，按底边对齐，最能暴露入场动画后的裁切。
+    await add.evaluate((el) => el.scrollIntoView({ block: 'end' }))
+    await add.click()
     const choice = f.panel
       .locator('.lib-add-pop')
       .getByRole('button', { name: preset, exact: true })

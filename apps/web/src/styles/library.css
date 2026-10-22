@@ -142,6 +142,11 @@
 .lib-editor-content.is-character {
   grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
 }
+/* 聚焦或滚入的控件与滚动区边缘留出余量：焦点框不被裁掉；新编辑区按入场动画的起始位置
+   对齐后还会下沉几像素，小数像素布局下也会差一点，余量让控件最终仍完整露出 */
+.lib-editor-content :is(input, textarea, select, button) {
+  scroll-margin-block: 8px;
+}
 .lib-character-heading {
   display: flex;
   flex: none;
