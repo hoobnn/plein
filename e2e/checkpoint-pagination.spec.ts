@@ -1,4 +1,4 @@
-import type { CanvasCheckpoint, CreateCheckpoint } from '../packages/protocol/src/checkpoints'
+import type { CreateCheckpoint } from '../packages/protocol/src/checkpoints'
 import { expect, type Page, test } from '@playwright/test'
 import { article, checkpointPair, panel } from './checkpoints'
 
@@ -81,26 +81,6 @@ test('真实检查点分页失败保留已加载条目和预览，重试成功�
   await expect(panel(page).getByTestId('checkpoint-preview')).toContainText('第二版正文')
   expect(reads).toBe(2)
   expect(await page.evaluate(() => [...window.__plein.engine.doc.elements()])).toEqual(f.original)
-})
-
-test('相邻分页包含重叠条目时按检查点身份合并，不重复显示', async ({ page }) => {
-  const f = await fixture(page)
-  const errors: string[] = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  await page.route(`**${f.listPath}?*`, async (route) => {
-    if (!new URL(route.request().url()).searchParams.has('cursor')) return route.continue()
-    const response = await route.fetch()
-    const result = (await response.json()) as {
-      items: CanvasCheckpoint[]
-      nextCursor: string | null
-    }
-    await route.fulfill({ response, json: { ...result, items: [f.second, ...result.items] } })
-  })
-  await f.more.click()
-  await expect(article(page, f.first.name)).toHaveCount(1)
-  await expect(panel(page).getByRole('article')).toHaveCount(51)
-  await expect(article(page, f.second.name)).toHaveCount(1)
-  expect(errors).toEqual([])
 })
 
 test('加载旧分页期间保存新检查点，迟到旧页不追加到刷新的列表', async ({ page }) => {

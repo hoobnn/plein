@@ -12,6 +12,7 @@ import { Modal, ModalHeader } from '../../ui/Modal'
 import { Presence } from '../../ui/Presence'
 import { checkpointApi, saveSynchronizedCheckpoint } from './client'
 import { CheckpointPreview } from './CheckpointPreview'
+import { mergeCheckpointPage } from './pagination'
 import { useCheckpoints } from './store'
 
 export function CheckpointsPanel() {
@@ -182,16 +183,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
     try {
       const result = await checkpointApi.list(projectId, cursor, controller.signal)
       if (!current()) return
-      setPage((old) =>
-        old.nextCursor !== cursor
-          ? old
-          : {
-              items: [
-                ...new Map([...old.items, ...result.items].map((item) => [item.id, item])).values(),
-              ],
-              nextCursor: result.nextCursor,
-            },
-      )
+      setPage((old) => mergeCheckpointPage(old, cursor, result))
     } catch (reason) {
       if (current()) setError((reason as Error).message)
     } finally {
