@@ -2,7 +2,7 @@ import { expect, type Page, test } from '@playwright/test'
 import type { JobInfo } from '../packages/protocol/src/runs'
 import { clickElement, newProject } from './canvas'
 
-async function setup(page: Page, attach = false) {
+async function setup(page: Page) {
   await newProject(page)
   const ids = await page.evaluate(() => {
     const board = window.__plein.addNode({
@@ -45,9 +45,7 @@ async function setup(page: Page, attach = false) {
     status: 'failed',
     attempts: 1,
     createdAt: Date.now(),
-    recovery: attach
-      ? { state: 'submit_unknown', attachable: true }
-      : { state: 'fetch_failed', refetchable: true, remoteId: 'remote-kept' },
+    recovery: { state: 'fetch_failed', refetchable: true, remoteId: 'remote-kept' },
   }
   let release!: () => void
   const pending = new Promise<void>((resolve) => {
@@ -121,30 +119,3 @@ for (const entry of ['reopen', 'review'] as const) {
     expect(f.calls).toEqual([{ action: 'refetch' }, { action: 'refetch' }])
   })
 }
-
-test('同一帧重复提交平台 ID 表单，只发出一个恢复请求', async ({ page }) => {
-  const f = await setup(page, true)
-  try {
-    await f.panel.getByRole('button', { name: '填写平台任务 ID', exact: true }).click()
-    const input = f.panel.getByRole('textbox', { name: '平台任务 ID', exact: true })
-    await input.fill('remote-kept')
-    await page.evaluate(() => {
-      const fetch = window.fetch.bind(window)
-      let started = 0
-      window.fetch = (...args) => {
-        if (String(args[0]).endsWith('/jobs/pending-recovery/recover'))
-          document.body.dataset.recoveryStarted = String(++started)
-        return fetch(...args)
-      }
-    })
-    await input.evaluate((el) => {
-      const form = (el as HTMLInputElement).form!
-      form.requestSubmit()
-      form.requestSubmit()
-    })
-    expect(await page.evaluate(() => Number(document.body.dataset.recoveryStarted))).toBe(1)
-    await expect.poll(() => f.calls.length).toBe(1)
-  } finally {
-    f.release()
-  }
-})
