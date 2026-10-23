@@ -251,6 +251,7 @@ const typing = (target: EventTarget | null) =>
 function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose(): void }) {
   // 协作者改了顺序也能看到
   useDocVersion(engine.doc)
+  const closing = useClosing()
   const catalog = useCatalog((s) => s.catalog)
   const read = readSequence(engine, id, catalog)
   const { el, params, dialogue, sfx, music, animatic, inputProblem } = read
@@ -292,6 +293,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const [subtitleError, setSubtitleError] = useState<string | null>(null)
   const [subtitleRecovery, setSubtitleRecovery] = useState<SubtitleRecognitionInfo | null>(null)
   const subtitleStateRevision = useRef(0)
+  const subtitleRequest = useRef<object | null>(null)
   // 在时间线上点了镜头就切回镜头设置
   const select = (key: string | undefined) => {
     setSelected(key)
@@ -327,6 +329,49 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   }
   const running = el?.run?.status === 'running' || el?.run?.status === 'queued'
   const canvasId = useCanvas((s) => s.canvasId)
+  useLayoutEffect(() => {
+    subtitleRequest.current = null
+    setRecognizing(false)
+    return () => {
+      // 已提交的识别 / 恢复事实由服务端保留；退出的编辑会话不再写字幕或继续识别。
+      subtitleRequest.current = null
+    }
+  }, [engine, id, canvasId, closing])
+  const beginSubtitleRequest = () => {
+    const state = useCanvas.getState()
+    const node = engine.doc.elementMaps.get(id)
+    if (
+      closing ||
+      subtitleRequest.current ||
+      engine.doc.readOnly ||
+      !node ||
+      state.engine !== engine ||
+      state.canvasId !== canvasId ||
+      state.sequence !== id
+    )
+      return null
+    const request = {}
+    subtitleRequest.current = request
+    setRecognizing(true)
+    return {
+      current: () => {
+        const current = useCanvas.getState()
+        return (
+          subtitleRequest.current === request &&
+          current.engine === engine &&
+          current.canvasId === canvasId &&
+          current.sequence === id &&
+          engine.doc.elementMaps.get(id) === node &&
+          !engine.doc.readOnly
+        )
+      },
+      finish: () => {
+        if (subtitleRequest.current !== request) return
+        subtitleRequest.current = null
+        setRecognizing(false)
+      },
+    }
+  }
   const openFilm = (target: string, explicit = false) => {
     if (!target) return
     const state = useCanvas.getState()
@@ -555,7 +600,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     setSubtitleError(null)
   }
   const recognizeSubtitles = async () => {
-    if (engine.doc.readOnly || recognizing || !subtitleKnown) return
+    if (engine.doc.readOnly || subtitleRequest.current || !subtitleKnown) return
     if (!params.model) {
       setSubtitleError('请先在成片设置中选择语音识别模型')
       return
@@ -568,12 +613,14 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     const snapshot = { ...params, asrTiming: true }
     const inputKey = subtitleInputKey(snapshot, read.rows)
     const originalTrack = JSON.stringify(params.subtitleTrack)
-    setRecognizing(true)
+    const request = beginSubtitleRequest()
+    if (!request) return
     subtitleStateRevision.current++
     setSubtitleRecovery(null)
     setSubtitleError(null)
     try {
       const { transcripts } = await api.subtitleRecognize({ model: params.model, assetIds })
+      if (!request.current()) return
       const latest = readSequence(engine, id)
       if (
         !engine.doc.get(id) ||
@@ -591,19 +638,21 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       setParams(engine.doc, id, { asrTiming: true, subtitleTrack: track })
       engine.doc.flush()
     } catch (error) {
+      if (!request.current()) return
       setSubtitleError((error as Error).message)
       if (error instanceof ApiError)
         setSubtitleRecovery(
           (error.body as { recovery?: SubtitleRecognitionInfo | null })?.recovery ?? null,
         )
     } finally {
-      setRecognizing(false)
+      request.finish()
     }
   }
   const recoverSubtitles = async (operation: RecoverJobOptions, confirmedNotAccepted = false) => {
-    if (engine.doc.readOnly || !subtitleRecovery || recognizing) return
+    if (engine.doc.readOnly || !subtitleRecovery || subtitleRequest.current) return
     const inputKey = subtitleInputKey(params, read.rows)
-    setRecognizing(true)
+    const request = beginSubtitleRequest()
+    if (!request) return
     subtitleStateRevision.current++
     try {
       await api.subtitleRecover({
@@ -613,17 +662,19 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         operation,
         confirmedNotAccepted,
       })
+      if (!request.current()) return
       setSubtitleRecovery(null)
       const latest = readSequence(engine, id)
       if (subtitleInputKey(latest.params, latest.rows) !== inputKey) {
         setSubtitleError('素材在恢复期间已变化，恢复记录已保存，请重新检查字幕后再识别')
         return
       }
+      request.finish()
       await recognizeSubtitles()
     } catch (error) {
-      setSubtitleError((error as Error).message)
+      if (request.current()) setSubtitleError((error as Error).message)
     } finally {
-      setRecognizing(false)
+      request.finish()
     }
   }
   const trim = (key: string, p: TrimPatch, done: boolean) => {
@@ -639,7 +690,6 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const [packError, setPackError] = useState<string | null>(null)
   const [packNotice, setPackNotice] = useState<string | null>(null)
   const packRequest = useRef<{ controller: AbortController; key: string } | null>(null)
-  const closing = useClosing()
   const packKey = projectSourceKey(read)
   const cancelProject = useCallback((silent = false) => {
     const pending = packRequest.current
