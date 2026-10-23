@@ -1,47 +1,39 @@
 import { type AudioPeaks, FILMSTRIP_FRAMES } from '@plein/protocol'
 import { createContext, useContext, useEffect, useState } from 'react'
 import { assetUrls } from '../../api/client'
+import { peaksCache } from './peaks'
 
 /** 用户重新加载预览时，同时重试时间线的衍生素材。 */
 export const MediaReloadContext = createContext(0)
 
-/** 峰值整个会话缓存一份（资产不可变）；取不到的不缓存，下次再试 */
-const peaksCache = new Map<string, Promise<AudioPeaks | null>>()
-
-function loadPeaks(assetId: string) {
-  let p = peaksCache.get(assetId)
-  if (!p) {
-    p = fetch(assetUrls.variant(assetId, 'peaks'))
-      .then((r) => (r.ok ? (r.json() as Promise<AudioPeaks>) : null))
-      .catch(() => null)
-      .then((v) => {
-        if (!v) peaksCache.delete(assetId)
-        return v
-      })
-    peaksCache.set(assetId, p)
-  }
-  return p
-}
-
 function usePeaks(assetId: string | undefined) {
-  const [peaks, setPeaks] = useState<AudioPeaks | null>(null)
-  const [failed, setFailed] = useState(false)
+  const [result, setResult] = useState<{
+    assetId?: string
+    peaks: AudioPeaks | null
+    failed: boolean
+  }>({ peaks: null, failed: false })
   const reload = useContext(MediaReloadContext)
   useEffect(() => {
-    setPeaks(null)
-    setFailed(false)
+    // 同一素材重新加载时保留正在显示的波形；缓存淘汰不会使活跃组件丢掉结果。
+    setResult((current) =>
+      current.assetId === assetId && current.peaks
+        ? current
+        : { assetId, peaks: null, failed: false },
+    )
     if (!assetId) return
     let live = true
-    void loadPeaks(assetId).then((p) => {
+    void peaksCache.load(assetId).then((p) => {
       if (!live) return
-      setPeaks(p)
-      setFailed(!p)
+      setResult((current) => {
+        const peaks = p ?? (current.assetId === assetId ? current.peaks : null)
+        return { assetId, peaks, failed: !peaks }
+      })
     })
     return () => {
       live = false
     }
   }, [assetId, reload])
-  return { peaks, failed }
+  return result.assetId === assetId ? result : { peaks: null, failed: false }
 }
 
 /** 一条波形最多画这么多根柱子，再放大只是拉宽（矢量，不糊） */
