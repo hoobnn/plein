@@ -11,6 +11,8 @@ const INSET = 8
  */
 export class ShotBadges {
   private badges = new Map<string, HTMLSpanElement>()
+  /** 视口和几何预览不改变编号；文档内容刷新后再按需推导。 */
+  private orders = new Map<string, Map<string, number>>()
   private off: Array<() => void> = []
 
   constructor(
@@ -18,8 +20,10 @@ export class ShotBadges {
     private root: HTMLElement,
   ) {
     this.off.push(
-      engine.onViewChange(() => this.sync()),
-      engine.doc.subscribe(() => this.sync()),
+      engine.onViewChange(({ content }) => {
+        if (content) this.orders.clear()
+        this.sync()
+      }),
     )
     this.sync()
   }
@@ -28,16 +32,15 @@ export class ShotBadges {
     const { engine } = this
     const want = new Map<string, number>()
     if (engine.highDetail) {
-      const orders = new Map<string, Map<string, number>>()
       for (const id of engine.visibleIds) {
         const parent = engine.scene.get(id)?.parentId
         if (!parent) continue
-        let order = orders.get(parent)
+        let order = this.orders.get(parent)
         if (!order) {
           order = shotGroupOf(engine.doc.get(parent))
             ? new Map(groupShots(engine.doc, parent).map((el, i) => [el.id, i + 1]))
             : new Map()
-          orders.set(parent, order)
+          this.orders.set(parent, order)
         }
         const n = order.get(id)
         if (n) want.set(id, n)
@@ -75,5 +78,6 @@ export class ShotBadges {
     for (const off of this.off) off()
     for (const node of this.badges.values()) node.remove()
     this.badges.clear()
+    this.orders.clear()
   }
 }

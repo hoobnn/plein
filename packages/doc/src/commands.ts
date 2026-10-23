@@ -88,21 +88,37 @@ function validParent(doc: PleinDoc, parentId: string | null | undefined): string
 
 export function createElements(doc: PleinDoc, inputs: NewElement[]): string[] {
   return write(doc, () => {
+    if (inputs.length === 0) return []
     // 同一父元素下按输入顺序叠在最上面
-    const zByParent = new Map<string | null, string[]>()
     const parents = inputs.map((input) => validParent(doc, input.parentId))
-    for (const p of new Set(parents)) {
-      zByParent.set(p, topZ(doc, p, parents.filter((q) => q === p).length))
+    const zByParent = new Map<
+      string | null,
+      { count: number; max: string | null; keys: string[]; next: number }
+    >()
+    for (const parent of parents) {
+      const group = zByParent.get(parent)
+      if (group) group.count++
+      else zByParent.set(parent, { count: 1, max: null, keys: [], next: 0 })
+    }
+    if (doc.size > 0) {
+      for (const el of doc.elements()) {
+        const group = zByParent.get(doc.effectiveParent(el))
+        if (group && (group.max === null || el.z > group.max)) group.max = el.z
+      }
+    }
+    for (const group of zByParent.values()) {
+      group.keys = generateNKeysBetween(group.max, null, group.count)
     }
     return inputs.map((input, i) => {
       const id = input.id ?? newId('el')
       const parentId = parents[i]!
+      const group = zByParent.get(parentId)!
       // 先挂进文档再写字段：未挂载的 Y 类型不能读取
       const m = new Y.Map<unknown>()
       doc.elementMaps.set(id, m)
       m.set('kind', input.kind)
       m.set('rotation', input.rotation ?? 0)
-      m.set('z', zByParent.get(parentId)!.shift()!)
+      m.set('z', group.keys[group.next++]!)
       m.set('parentId', parentId)
       m.set('locked', input.locked ?? false)
       applyPatch(m, {
@@ -186,9 +202,20 @@ export function deleteElements(doc: PleinDoc, ids: Iterable<string>) {
   write(doc, () => {
     const doomed = new Set<string>()
     for (const id of ids) {
-      if (!doc.elementMaps.has(id)) continue
-      doomed.add(id)
-      for (const d of doc.descendants(id)) doomed.add(d.id)
+      if (doc.elementMaps.has(id)) doomed.add(id)
+    }
+    if (doomed.size === 0) return
+    // 一次构建有效父子关系，避免多选删除时为每个元素重新扫描整份文档。
+    const children = new Map<string, string[]>()
+    for (const el of doc.elements()) {
+      const parent = doc.effectiveParent(el)
+      if (parent === null) continue
+      const siblings = children.get(parent)
+      if (siblings) siblings.push(el.id)
+      else children.set(parent, [el.id])
+    }
+    for (const id of doomed) {
+      for (const child of children.get(id) ?? []) doomed.add(child)
     }
     for (const [edgeId, e] of doc.edgeMap) {
       if (doomed.has(e.from[0]) || doomed.has(e.to[0])) doc.edgeMap.delete(edgeId)

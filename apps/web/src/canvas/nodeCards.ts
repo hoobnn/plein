@@ -46,6 +46,8 @@ export interface NodeCardActions {
 
 interface Card {
   root: HTMLDivElement
+  w: number
+  h: number
   glyph: HTMLSpanElement
   title: HTMLSpanElement
   status: HTMLSpanElement
@@ -136,7 +138,7 @@ export class NodeCards {
     private actions: NodeCardActions,
   ) {
     this.disposers.push(
-      // 只是平移出入视口：已有的卡片不动，只增删
+      // 预览几何和视口变化复用正文，文档变化才重新推导引用与参考图。
       engine.onViewChange(({ content }) => this.sync(content)),
       engine.onMove(() => {
         const next = engine.camera.viewRect
@@ -187,18 +189,23 @@ export class NodeCards {
       const rect = engine.scene.rect(id)
       if (!rect) continue
       let card = this.cards.get(id)
-      if (card && !content) {
-        clipOverlay(card.root, engine.scene, id, rect, NODE_LAYOUT.title, viewport)
-        continue
-      }
+      const resized = card && (card.w !== rect.w || card.h !== rect.h)
+      const render = content || !card || resized
       if (!card) {
         card = this.create(id)
         this.cards.set(id, card)
       }
       card.root.style.transform = `translate(${rect.x}px, ${rect.y}px)`
-      card.root.style.width = `${rect.w}px`
-      card.root.style.height = `${rect.h}px`
-      this.render(card, { ...el, ...rect }, engine.selection.has(id))
+      if (card.w !== rect.w) {
+        card.root.style.width = `${rect.w}px`
+        card.w = rect.w
+      }
+      if (card.h !== rect.h) {
+        card.root.style.height = `${rect.h}px`
+        card.h = rect.h
+      }
+      // 缩放卡片跨过预设展示阈值时仍要更新正文，纯位移只改位置和裁剪。
+      if (render) this.render(card, { ...el, ...rect }, engine.selection.has(id))
       clipOverlay(card.root, engine.scene, id, rect, NODE_LAYOUT.title, viewport)
     }
     const ticking = [...this.cards.values()].some((c) => c.live)
@@ -271,7 +278,19 @@ export class NodeCards {
     prev.addEventListener('click', () => step(-1))
     next.addEventListener('click', () => step(1))
 
-    return { root, glyph, title, status, nav, count, body, progress, sig: '' }
+    return {
+      root,
+      w: Number.NaN,
+      h: Number.NaN,
+      glyph,
+      title,
+      status,
+      nav,
+      count,
+      body,
+      progress,
+      sig: '',
+    }
   }
 
   private render(card: Card, el: CanvasElement, selected: boolean) {

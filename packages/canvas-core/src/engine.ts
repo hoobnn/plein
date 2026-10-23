@@ -76,7 +76,7 @@ export interface EngineState {
 
 /** onViewChange 的通知内容 */
 export interface ViewChange {
-  /** 元素内容或几何变了（否则只是视口内的元素集合或细节层级变了） */
+  /** 文档或主题变了；false 时仍需同步几何、可见集合与裁剪，但可复用内容。 */
   content: boolean
 }
 
@@ -166,8 +166,10 @@ export class Engine {
   private activateListeners = new Set<(id: string) => void>()
   private menuListeners = new Set<(e: CanvasMenuEvent) => void>()
   private arrangeListeners = new Set<(r: ArrangeResult) => void>()
-  /** 元素内容或几何变化，需要通知覆盖层 */
+  /** 文档或主题变化，需要刷新覆盖层内容 */
   private contentDirty = false
+  /** 拖动预览只改几何，不使覆盖层的文档内容失效 */
+  private geometryDirty = false
   private disposers: Array<() => void> = []
   private pasteCount = 0
   private lastClipboard: string | null = null
@@ -361,9 +363,9 @@ export class Engine {
   }
 
   /**
-   * 视口内元素集合、细节层级或元素内容变化时通知（不随平移每帧触发），
+   * 视口内元素集合、细节层级、元素内容或预览几何变化时通知（不随平移每帧触发），
    * 供 DOM 覆盖层（Markdown 正文、播放器、编辑器）增量更新。
-   * content 为 false 表示只有元素进出视口：已显示的元素不用重画。
+   * content 为 false 时只同步位置、尺寸与裁剪，已显示的正文可以复用。
    */
   onViewChange(fn: (change: ViewChange) => void) {
     this.viewListeners.add(fn)
@@ -713,14 +715,15 @@ export class Engine {
     if (this.flight) this.stepFlight(performance.now())
     // 缩放停下来的那一帧：按最终缩放把线宽画准
     if (!this.cameraDirty && this.strokeZoom !== this.camera.zoom) this.redrawStrokes()
-    const moved = this.cameraDirty || this.contentDirty
+    const moved = this.cameraDirty || this.contentDirty || this.geometryDirty
     // 宿主可能因页面布局变化移动而尺寸不变：每个有变化的帧重新量一次
     if (moved) this.hostRect = null
     if (moved || this.viewDirty) this.renderDirty = true
     if (this.cameraDirty) this.syncCamera()
     const content = this.contentDirty
-    let notify = content
+    let notify = content || this.geometryDirty
     this.contentDirty = false
+    this.geometryDirty = false
     if (this.viewDirty) {
       this.viewDirty = false
       if (this.views.cull(this.camera.viewRect, this.camera.zoom)) notify = true
@@ -751,7 +754,7 @@ export class Engine {
 
   private afterTransient(touched: Set<string>) {
     this.views.refresh(touched)
-    if (touched.size > 0) this.contentDirty = true
+    if (touched.size > 0) this.geometryDirty = true
     this.edges.markDirty()
     this.overlay.markDirty()
     this.viewDirty = true

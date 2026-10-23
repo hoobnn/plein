@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, it, vi } from 'vite-plus/test'
 import * as Y from 'yjs'
 import {
   addResults,
@@ -54,6 +54,126 @@ describe('元素', () => {
     expect(eb.text).toBe('# 标题')
     expect(ea.z < eb.z).toBe(true)
     expect(doc.children(null).map((e) => e.id)).toEqual([a, b])
+  })
+
+  it('混排多个父级时按各组最高 z 追加并保持输入顺序，整批可一次撤销', () => {
+    const doc = open()
+    const [f1, f2] = createElements(doc, [box({ kind: 'frame' }), box({ kind: 'frame' })])
+    const [a1, b1, a2] = createElements(doc, [
+      box({ parentId: f1! }),
+      box({ parentId: f2! }),
+      box({ parentId: f1! }),
+    ])
+    bringToFront(doc, [a1!])
+    doc.undo.stopCapturing()
+
+    const [a3, root1, b2, a4, b3, root2] = createElements(doc, [
+      box({ parentId: f1! }),
+      box(),
+      box({ parentId: f2! }),
+      box({ parentId: f1! }),
+      box({ parentId: f2! }),
+      box(),
+    ])
+    expect(doc.children(f1!).map((el) => el.id)).toEqual([a2, a1, a3, a4])
+    expect(doc.children(f2!).map((el) => el.id)).toEqual([b1, b2, b3])
+    expect(doc.children(null).map((el) => el.id)).toEqual([f1, f2, root1, root2])
+
+    const created = [a3!, root1!, b2!, a4!, b3!, root2!]
+    doc.undo.undo()
+    expect(created.every((id) => !doc.has(id))).toBe(true)
+    expect(doc.children(f1!).map((el) => el.id)).toEqual([a2, a1])
+    doc.undo.redo()
+    expect(doc.children(f1!).map((el) => el.id)).toEqual([a2, a1, a3, a4])
+    expect(doc.children(f2!).map((el) => el.id)).toEqual([b1, b2, b3])
+    expect(doc.children(null).map((el) => el.id)).toEqual([f1, f2, root1, root2])
+  })
+
+  it('整批写入前解析父级，同批新容器、缺失和非容器父级均归根', () => {
+    const doc = open()
+    const nonContainer = createElement(doc, box())
+    const [frame, sameBatch, missing, invalid] = createElements(doc, [
+      box({ id: 'new-frame', kind: 'frame' }),
+      box({ parentId: 'new-frame' }),
+      box({ parentId: 'missing' }),
+      box({ parentId: nonContainer }),
+    ])
+
+    expect(doc.children(frame!)).toEqual([])
+    expect(doc.children(null).map((el) => el.id)).toEqual([
+      nonContainer,
+      frame,
+      sameBatch,
+      missing,
+      invalid,
+    ])
+    for (const id of [sameBatch!, missing!, invalid!]) expect(doc.get(id)!.parentId).toBeNull()
+  })
+
+  it.each(['悬空', '非容器', '环下'] as const)('最高 z 使用有效父级，%s元素仍计入根层', (mode) => {
+    const doc = open()
+    const [nonContainer, f1, f2, affected] = createElements(doc, [
+      box(),
+      box({ kind: 'frame' }),
+      box({ kind: 'frame' }),
+      box(),
+    ])
+    doc.ydoc.transact(() => {
+      const parentId = mode === '悬空' ? 'missing' : mode === '非容器' ? nonContainer! : f1!
+      doc.mutable(affected!)!.set('parentId', parentId)
+      if (mode === '环下') {
+        doc.mutable(f1!)!.set('parentId', f2!)
+        doc.mutable(f2!)!.set('parentId', f1!)
+      }
+    })
+    const highest = doc.get(affected!)!.z
+    const [root, inFrame] = createElements(doc, [box(), box({ parentId: f1! })])
+
+    expect(doc.get(root!)!.z > highest).toBe(true)
+    expect(doc.get(inFrame!)!.parentId).toBe(f1)
+    expect(doc.get(inFrame!)!.z < highest).toBe(true)
+    expect(doc.effectiveParent(doc.get(inFrame!)!)).toBe(mode === '环下' ? null : f1)
+  })
+
+  it('向多个父级批量创建时只扫描一次已有元素', () => {
+    const doc = open()
+    const frames = createElements(
+      doc,
+      Array.from({ length: 100 }, () => box({ kind: 'frame' })),
+    )
+    const elements = doc.elements.bind(doc)
+    let visits = 0
+    const scans = vi.spyOn(doc, 'elements').mockImplementation(function* () {
+      for (const el of elements()) {
+        visits++
+        yield el
+      }
+    })
+    const children = vi.spyOn(doc, 'children')
+
+    const created = createElements(
+      doc,
+      frames.map((parentId) => box({ parentId })),
+    )
+    expect(created.map((id) => doc.get(id)!.parentId)).toEqual(frames)
+    expect(scans).toHaveBeenCalledTimes(1)
+    expect(visits).toBe(frames.length)
+    expect(children).not.toHaveBeenCalled()
+  })
+
+  it('空批次和全新文档不扫描已有元素，空批次仍校验只读状态', () => {
+    const doc = open()
+    const scans = vi.spyOn(doc, 'elements')
+
+    expect(createElements(doc, [])).toEqual([])
+    expect(createElements(doc, [box(), box()])).toHaveLength(2)
+    expect(createElements(doc, [])).toEqual([])
+    expect(doc.size).toBe(2)
+    expect(scans).not.toHaveBeenCalled()
+
+    doc.readOnly = true
+    expect(() => createElements(doc, [])).toThrow(ReadOnlyDocError)
+    expect(scans).not.toHaveBeenCalled()
   })
 
   it('只写变化的字段，尺寸不小于 1', () => {
@@ -131,6 +251,24 @@ describe('并发', () => {
       expect(d.children(null)).toHaveLength(2)
     }
   })
+
+  it('删除并发成环的容器时，保留按根处理的另一个容器与子元素', () => {
+    const a = open()
+    const [f1, f2] = createElements(a, [box({ kind: 'frame' }), box({ kind: 'frame' })])
+    const child = createElement(a, box({ parentId: f1! }))
+    const b = open(new Y.Doc())
+    exchange(a.ydoc, b.ydoc)
+
+    setParent(a, [f1!], f2!)
+    setParent(b, [f2!], f1!)
+    exchange(a.ydoc, b.ydoc)
+    expect(a.effectiveParent(a.get(child)!)).toBeNull()
+
+    deleteElements(a, [f1!])
+    expect(a.has(f1!)).toBe(false)
+    expect(a.has(f2!)).toBe(true)
+    expect(a.has(child)).toBe(true)
+  })
 })
 
 describe('撤销', () => {
@@ -191,6 +329,85 @@ describe('层级', () => {
     expect(doc.has(n1!)).toBe(false)
     expect(doc.has(n2!)).toBe(true)
     expect(doc.edgeMap.size).toBe(0)
+  })
+
+  it('多根、重复和重叠选区只删各自后代，保留无关元素与边并支持撤销重做', () => {
+    const doc = open()
+    const [outer, other] = createElements(doc, [box({ kind: 'frame' }), box({ kind: 'frame' })])
+    const inner = createElement(doc, box({ kind: 'frame', parentId: outer! }))
+    const [nested, separate, keepFrom, keepTo] = createElements(doc, [
+      node({ parentId: inner }),
+      node({ parentId: other! }),
+      node(),
+      node(),
+    ])
+    const incident = connect(doc, [nested!, 'out'], [keepFrom!, 'in'])!.id
+    const kept = connect(doc, [keepFrom!, 'out'], [keepTo!, 'in'])!.id
+    doc.undo.stopCapturing()
+
+    deleteElements(doc, [inner, outer!, inner, other!, 'missing'])
+    const deleted = [outer!, inner, nested!, other!, separate!]
+    expect(deleted.every((id) => !doc.has(id))).toBe(true)
+    expect([...doc.elements()].map((el) => el.id)).toEqual([keepFrom, keepTo])
+    expect([...doc.edges()].map((edge) => edge.id)).toEqual([kept])
+
+    doc.undo.undo()
+    expect(deleted.every((id) => doc.has(id))).toBe(true)
+    expect(new Set([...doc.edges()].map((edge) => edge.id))).toEqual(new Set([incident, kept]))
+    doc.undo.redo()
+    expect(deleted.every((id) => !doc.has(id))).toBe(true)
+    expect([...doc.edges()].map((edge) => edge.id)).toEqual([kept])
+  })
+
+  it('悬空或非容器父级下的元素按根处理，不跟随无效父级删除', () => {
+    const doc = open()
+    const [parent, invalidChild, orphan] = createElements(doc, [box(), box(), box()])
+    doc.ydoc.transact(() => {
+      doc.mutable(invalidChild!)!.set('parentId', parent!)
+      doc.mutable(orphan!)!.set('parentId', 'missing')
+    })
+
+    deleteElements(doc, [parent!, 'missing'])
+    expect(doc.has(parent!)).toBe(false)
+    expect(doc.has(invalidChild!)).toBe(true)
+    expect(doc.has(orphan!)).toBe(true)
+  })
+
+  it('批量删除独立元素只扫描一次文档', () => {
+    const doc = open()
+    const ids = createElements(
+      doc,
+      Array.from({ length: 100 }, () => box()),
+    )
+    const elements = doc.elements.bind(doc)
+    let visits = 0
+    const scans = vi.spyOn(doc, 'elements').mockImplementation(function* () {
+      for (const el of elements()) {
+        visits++
+        yield el
+      }
+    })
+
+    deleteElements(doc, ids)
+    expect(doc.size).toBe(0)
+    expect(scans).toHaveBeenCalledTimes(1)
+    expect(visits).toBe(ids.length)
+  })
+
+  it('空或全无效选区不扫描文档，但仍校验只读状态', () => {
+    const doc = open()
+    const kept = createElement(doc, box())
+    const scans = vi.spyOn(doc, 'elements')
+
+    deleteElements(doc, [])
+    deleteElements(doc, ['missing', 'missing'])
+    expect(doc.has(kept)).toBe(true)
+    expect(scans).not.toHaveBeenCalled()
+
+    doc.readOnly = true
+    expect(() => deleteElements(doc, [])).toThrow(ReadOnlyDocError)
+    expect(() => deleteElements(doc, ['missing'])).toThrow(ReadOnlyDocError)
+    expect(scans).not.toHaveBeenCalled()
   })
 })
 

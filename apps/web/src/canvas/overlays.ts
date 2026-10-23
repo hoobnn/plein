@@ -18,6 +18,7 @@ interface Preview {
   node: HTMLDivElement
   content: HTMLDivElement
   text: string | undefined
+  width: number
 }
 
 interface Active {
@@ -153,7 +154,7 @@ export class CanvasOverlays {
     return this.active?.id ?? null
   }
 
-  /** content 为 false：只同步交互可用范围，已显示的正文不重画和量高 */
+  /** content 为 false：更新几何和交互范围，已有正文与量高结果可复用 */
   sync(content = true) {
     if (this.active?.valid && !this.active.valid()) {
       this.deactivate()
@@ -182,7 +183,11 @@ export class CanvasOverlays {
       if (!rect) continue
       let p = this.previews.get(id)
       if (p && !content) {
+        const resized = p.width !== rect.w
+        place(p.node, rect)
+        p.width = rect.w
         clipOverlay(p.node, engine.scene, id, rect, 0, viewport)
+        if (resized) this.fit(id)
         continue
       }
       if (!p) {
@@ -246,11 +251,12 @@ export class CanvasOverlays {
         content.dataset.markdownId = id
         node.appendChild(content)
         this.root.appendChild(node)
-        p = { node, content, text: undefined }
+        p = { node, content, text: undefined, width: rect.w }
         this.previews.set(id, p)
         this.previewSizer.observe(content)
       }
       place(p.node, rect)
+      p.width = rect.w
       if (p.text !== el.text) {
         p.text = el.text
         p.content.innerHTML = renderMarkdown(el.text ?? '')
