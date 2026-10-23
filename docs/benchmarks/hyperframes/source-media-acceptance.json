@@ -1,0 +1,64 @@
+{
+  "schema": "plein.motion-acceptance.v1",
+  "engine": {
+    "name": "hyperframes",
+    "version": "0.8.186",
+    "fps": 30
+  },
+  "runtime": {
+    "encoder": "h264_videotoolbox",
+    "ffmpegVersion": "ffmpeg version 7.1.1 Copyright (c) 2000-2025 the FFmpeg developers",
+    "ffprobeVersion": "ffprobe version 7.1.1 Copyright (c) 2007-2025 the FFmpeg developers"
+  },
+  "identity": "5e431efb94407b76b5c508f6935e4acc8b5c916aac9bfb0cc86fe19b2af6a152",
+  "params": {
+    "template": "video-title",
+    "title": "真实素材 · 裁切与变速",
+    "subtitle": "1秒入点 / 2倍速 / 保留原声",
+    "accent": "#d7f467",
+    "background": "#111827",
+    "duration": 1,
+    "aspectRatio": "16:9",
+    "resolution": "720p",
+    "sourceIn": 1,
+    "speed": 2,
+    "audio": "source",
+    "overrides": {
+      "hf-title.style.color": "#ffee99"
+    }
+  },
+  "dependencyAssetIds": ["local-acceptance-video"],
+  "output": {
+    "bytes": 237939,
+    "duration": "1.000000",
+    "streams": [
+      {
+        "codec_type": "video",
+        "codec_name": "h264",
+        "nb_frames": "30"
+      },
+      {
+        "codec_type": "audio",
+        "codec_name": "aac",
+        "nb_frames": "48"
+      }
+    ]
+  },
+  "sourceBytes": 11526568,
+  "warnings": [],
+  "cancelled": {
+    "passed": true,
+    "stage": "Streaming frame 1/900",
+    "elapsedMs": 9909,
+    "afterAbortMs": 593
+  },
+  "files": {
+    "before": "trim-speed-before.png",
+    "after": "trim-speed-after.png"
+  },
+  "scope": "Local source-tree render using the desktop-staged LGPL FFmpeg and cached headless Chrome; packaged app acceptance is separate.",
+  "visualChecks": {
+    "beforeFrame5": "Green source segment after sourceIn=1 at 2x speed; Chinese text and color override visible",
+    "afterFrame25": "Blue source segment; confirms source time advances at 2x"
+  }
+}

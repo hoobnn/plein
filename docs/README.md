@@ -21,6 +21,7 @@
 | [插件](dev/plugins.md)                              | 插件清单、节点、Provider、执行器与能力          |
 | [平台协议映射](dev/provider-protocols.md)           | 四个内置 Provider 的端点、请求结构与响应格式    |
 | [桌面端](dev/desktop.md)                            | Electron 方案、进程结构、打包、签名、发布与更新 |
+| [动态合成](dev/motion-composition.md)               | 本地合成渲染、源版本、随包资源与验收脚本        |
 | [界面设计规范](dev/design-spec.md)                  | 令牌、尺寸、颜色、图标、动效与通用组件          |
 | [创作基线](benchmarks/creative-baselines/README.md) | 固定创作案例与测量字段，测试直接读取这些夹具    |
 
