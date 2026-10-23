@@ -21,6 +21,9 @@ import {
   duckEnvelope,
   type SequenceClip,
   sequenceNode,
+  SequenceOverlay,
+  sequenceOverlays,
+  sequenceOverlayProblem,
   type SequenceParams,
   type SequenceSubtitleTrack,
   sequenceSpec,
@@ -71,6 +74,9 @@ import { SubtitleEditor } from './SubtitleEditor'
 import { refreshAnimatic, relatedSequences } from './animatic'
 import { DeliveryReview, useDeliveryReviewSession } from './DeliveryReview'
 import { MediaReloadContext } from './media'
+import { overlayMediaProblem } from './overlayMedia'
+import { OverlayEditor } from './OverlayEditor'
+import type { OverlayGeometry } from './OverlayHandles'
 import { sequenceParameterProblem } from './parameters'
 import { sequenceInputValue, sequenceSourceIdentity } from './instanceModel'
 import { SequenceRework } from './SequenceRework'
@@ -101,6 +107,8 @@ function readSequence(engine: Engine, id: string, catalog = useCatalog.getState(
       dialogue: [],
       sfx: [],
       music: undefined as string | undefined,
+      overlays: [] as PortValue[],
+      overlaySources: [] as { value: string; label: string }[],
       animatic: params,
       inputProblem: null,
     }
@@ -148,6 +156,11 @@ function readSequence(engine: Engine, id: string, catalog = useCatalog.getState(
     rows,
     dialogue: options('dialogue'),
     sfx: options('sfx'),
+    overlays: values('overlays').filter((value) => 'assetId' in value && !!value.assetId),
+    overlaySources: (ups.get('overlays') ?? []).map((upstream, index) => ({
+      value: upstream.source.id,
+      label: upstream.source.name ?? `叠加素材 ${index + 1}`,
+    })),
     music: music && 'assetId' in music ? music.assetId : undefined,
     animatic: undefined,
     inputProblem: el && node ? validate(node, el, ups, catalog) : null,
@@ -162,6 +175,7 @@ function projectSourceKey(read: ReturnType<typeof readSequence>) {
     params: read.params,
     rows: read.rows.map(({ el: _, ...row }) => row),
     music: read.music,
+    overlays: read.overlays,
   })
 }
 
@@ -312,7 +326,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const closing = useClosing()
   const catalog = useCatalog((s) => s.catalog)
   const read = readSequence(engine, id, catalog)
-  const { el, params, dialogue, sfx, music, animatic, inputProblem } = read
+  const { el, params, dialogue, sfx, music, animatic, inputProblem: upstreamProblem } = read
   const principal = useSession((s) => s.info?.principal)
   const [element] = useState(() => engine.doc.elementMaps.get(id))
   const readonly = engine.doc.readOnly || !!el?.locked || !principal || principal.role === 'viewer'
@@ -339,7 +353,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   useEffect(() => () => playhead.dispose(), [playhead])
   const [selected, setSelected] = useState<string | undefined>()
   /** 检查器显示选中镜头的设置还是整部成片的设置 */
-  const [tab, setTab] = useState<'clip' | 'film' | 'subtitles'>('clip')
+  const [tab, setTab] = useState<'clip' | 'film' | 'subtitles' | 'overlays'>('clip')
+  const [selectedOverlay, setSelectedOverlay] = useState<string>()
   const [view, setView] = useState<'edit' | 'delivery'>('edit')
   const deliverySession = useDeliveryReviewSession()
   const [previewRevision, setPreviewRevision] = useState(0)
@@ -360,6 +375,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   // 在时间线上点了镜头就切回镜头设置
   const select = (key: string | undefined) => {
     setSelected(key)
+    setSelectedOverlay(undefined)
     if (key) setTab('clip')
   }
   /** 正在拖动修剪的那段：松手前只改显示，不写文档 */
@@ -376,6 +392,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const metadata = useAssetMetas(
     [
       ...rows.map((r) => r.clip.assetId),
+      ...read.overlays.flatMap((value) => ('assetId' in value ? [value.assetId] : [])),
       ...rows.flatMap((r) => clipLines(r).map((d) => d.assetId)),
     ],
     previewRevision,
@@ -483,6 +500,17 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     dialogue: rows.map((r) => (r.dialogue ? duration(r.dialogue.assetId) : undefined)),
     more: rows.map((r) => r.more.map((m) => duration(m.assetId))),
   })
+  const overlayProblem =
+    sequenceOverlayProblem(params, rows, read.overlays, timeline) ??
+    overlayMediaProblem(params, rows, read.overlays, timeline, (assetId) => meta(assetId)?.duration)
+  const resolvedOverlays = overlayProblem
+    ? []
+    : sequenceOverlays(params, rows, read.overlays, timeline)
+  const inputProblem = upstreamProblem ?? overlayProblem ?? null
+  const selectOverlay = (overlay: string) => {
+    setSelectedOverlay(overlay)
+    setTab('overlays')
+  }
   const known =
     !!animatic || rows.every((r) => !r.pending && videoDuration(r.clip.assetId) !== undefined)
   const subtitleKnown =
@@ -720,6 +748,31 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     setParams(engine.doc, id, { [key]: value })
     engine.doc.flush()
   }
+  const updateOverlays = (update: (latest: SequenceOverlay[]) => SequenceOverlay[]) => {
+    if (engine.doc.readOnly) return
+    const state = useCanvas.getState()
+    if (state.engine !== engine || state.sequence !== id) return
+    const latest = readSequence(engine, id).params.overlays
+    set(
+      'overlays',
+      update(latest).map((overlay) =>
+        Object.fromEntries(Object.entries(overlay).filter(([, value]) => value !== undefined)),
+      ),
+    )
+  }
+  const patchOverlayGeometry = (overlayId: string, geometry: OverlayGeometry) => {
+    if (engine.doc.readOnly) return
+    const original = params.overlays.find((overlay) => overlay.id === overlayId)
+    const latest = readSequence(engine, id).params.overlays.find(
+      (overlay) => overlay.id === overlayId,
+    )
+    if (!original || JSON.stringify(original) !== JSON.stringify(latest)) return
+    engine.doc.undo.stopCapturing()
+    updateOverlays((overlays) =>
+      overlays.map((overlay) => (overlay.id === overlayId ? { ...overlay, ...geometry } : overlay)),
+    )
+    engine.doc.undo.stopCapturing()
+  }
   const subtitleDurations = () => ({
     clips: read.rows.map((r) => (animatic ? (r.out ?? 0) : (duration(r.clip.assetId) ?? 0))),
     dialogue: read.rows.map((r) => (r.dialogue ? duration(r.dialogue.assetId) : undefined)),
@@ -938,6 +991,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         },
         music ? [{ type: 'audio', assetId: music, kind: 'audio' }] : undefined,
         el?.name,
+        undefined,
+        read.overlays,
       )
       const { url } = await api.sequenceExport({ spec }, signal)
       if (!current()) return
@@ -1255,6 +1310,14 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           {inputProblem}。请先补齐结果或断开不需要的连线后再导出。
         </p>
       )}
+      {overlayProblem && (
+        <p role="alert" className="px-4 py-2 text-sm text-danger">
+          {overlayProblem}
+          <button type="button" className="ml-2 underline" onClick={() => setTab('overlays')}>
+            检查叠加轨
+          </button>
+        </p>
+      )}
       {subtitleProblem && (
         <p role="status" className="px-4 text-sm text-danger">
           {subtitleProblem}{' '}
@@ -1298,12 +1361,20 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           <div className="seq-edit-top flex min-h-0 flex-1">
             <SequencePreview
               key={previewRevision}
-              rows={rows}
+              rows={rows.map((row) => ({
+                ...row,
+                clip: { ...row.clip, mime: row.clip.mime ?? meta(row.clip.assetId)?.mime },
+              }))}
               timeline={timeline}
               params={params}
               music={music}
               playhead={playhead}
               draft={!!animatic}
+              overlays={resolvedOverlays}
+              selectedOverlay={selectedOverlay}
+              readOnly={engine.doc.readOnly}
+              onSelectOverlay={selectOverlay}
+              onPatchOverlay={patchOverlayGeometry}
             />
             <aside className="seq-inspector" aria-label="剪辑设置">
               <div className="seq-tabs">
@@ -1314,6 +1385,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                     { value: 'clip', label: '镜头' },
                     { value: 'film', label: '成片' },
                     { value: 'subtitles', label: '字幕' },
+                    ...(!animatic ? [{ value: 'overlays' as const, label: '叠加' }] : []),
                   ]}
                   onChange={setTab}
                 />
@@ -1324,7 +1396,32 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
               >
                 <fieldset disabled={readonly} className="m-0 min-w-0 border-0 p-0">
                   <legend className="sr-only">剪辑参数</legend>
-                  {tab === 'subtitles' ? (
+                  {tab === 'overlays' ? (
+                    <OverlayEditor
+                      overlays={params.overlays}
+                      readOnly={engine.doc.readOnly}
+                      sources={read.overlaySources.map((source) => ({
+                        ...source,
+                        duration: duration(
+                          (
+                            read.overlays.find((value) => value.source === source.value) as
+                              | { assetId?: string }
+                              | undefined
+                          )?.assetId,
+                        ),
+                      }))}
+                      clips={rows.flatMap((row, index) =>
+                        row.source
+                          ? [{ value: row.source, label: row.el?.name ?? `镜头 ${index + 1}` }]
+                          : [],
+                      )}
+                      selected={selectedOverlay}
+                      onSelect={selectOverlay}
+                      onChange={updateOverlays}
+                      onBoundary={() => engine.doc.undo.stopCapturing()}
+                      duration={timeline.total}
+                    />
+                  ) : tab === 'subtitles' ? (
                     <SubtitleEditor
                       params={params}
                       rows={read.rows}
@@ -1427,6 +1524,19 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                   flushSync(() => active.blur())
               }}
               items={items}
+              overlays={resolvedOverlays.map((overlay, index) => ({
+                id: overlay.id,
+                name:
+                  read.overlaySources.find(
+                    (source) =>
+                      source.value ===
+                      params.overlays.find((entry) => entry.id === overlay.id)?.source,
+                  )?.label ?? `叠加 ${index + 1}`,
+                start: overlay.start,
+                duration: overlay.duration,
+              }))}
+              selectedOverlay={selectedOverlay}
+              onSelectOverlay={selectOverlay}
               total={timeline.total}
               music={
                 music
@@ -1564,10 +1674,37 @@ function FilmSettings({
       <Section title="字幕">
         <SwitchRow
           label="开启字幕"
-          help="把台词烧进成片"
+          help="保留字幕文本与时间，供预览、烧录和SRT工程使用"
           checked={params.subtitles}
           onChange={(v) => set('subtitles', v)}
         />
+        {params.subtitles && (
+          <Field label="字幕渲染">
+            <Select
+              aria-label="字幕渲染"
+              value={params.subtitleRender}
+              onChange={(value) => set('subtitleRender', value)}
+              options={[
+                { value: 'static', label: '静态字幕' },
+                { value: 'animated', label: '动画字幕（HyperFrames）' },
+                { value: 'none', label: '不烧录（保留SRT）' },
+              ]}
+            />
+          </Field>
+        )}
+        {params.subtitles && params.subtitleRender === 'animated' && (
+          <Field label="字幕动画">
+            <Select
+              aria-label="字幕动画"
+              value={params.subtitleAnimation}
+              onChange={(value) => set('subtitleAnimation', value)}
+              options={[
+                { value: 'fade', label: '淡入淡出' },
+                { value: 'pop', label: '弹出' },
+              ]}
+            />
+          </Field>
+        )}
         {params.subtitles && (
           <Field label="样式">
             <SegBlock

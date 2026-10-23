@@ -22,6 +22,8 @@ test.beforeAll(() => {
     'realtime',
     join(dir, 'video.webm'),
   )
+  // WebM为保留alpha强制native；用VP9-in-MP4单独覆盖WebCodecs运行时失败回退。
+  ff('-i', join(dir, 'video.webm'), '-c:v', 'copy', join(dir, 'video.mp4'))
   ff('-f', 'lavfi', '-i', 'sine=f=440:d=3', join(dir, 'audio.wav'))
 })
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -41,9 +43,11 @@ for (const kind of ['image', 'video', 'video-runtime', 'audio', 'audio-decode'] 
     const bad =
       kind === 'image'
         ? image
-        : kind.startsWith('video')
-          ? await upload('video.webm', 'video/webm')
-          : await upload('audio.wav', 'audio/wav')
+        : kind === 'video-runtime'
+          ? await upload('video.mp4', 'video/mp4')
+          : kind === 'video'
+            ? await upload('video.webm', 'video/webm')
+            : await upload('audio.wav', 'audio/wav')
     let blocked = true
     let reads = 0
     await page.route(`**/api/assets/${bad}`, (route) => {

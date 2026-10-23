@@ -36,8 +36,24 @@ async function setup(
   params.subtitleTrack = {
     inputKey: subtitleInputKey(params, arrangeAnimatic(params)),
     cues: [
-      { id: 'a', source: 'one', start: 0, end: 1, text: 'Subtitle ready', hidden: false },
-      { id: 'b', source: 'one', start: 3, end: 5, text: 'Later subtitle', hidden: false },
+      {
+        id: 'a',
+        source: 'one',
+        start: 0,
+        end: 1,
+        text: 'Subtitle ready',
+        origin: 'manual',
+        hidden: false,
+      },
+      {
+        id: 'b',
+        source: 'one',
+        start: 3,
+        end: 5,
+        text: 'Later subtitle',
+        origin: 'manual',
+        hidden: false,
+      },
     ],
   }
   const id = await page.evaluate(

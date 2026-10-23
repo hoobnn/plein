@@ -468,6 +468,18 @@ function Editor({
                       onChange={(value) => commit('aspectRatio', value)}
                     />
                   </Label>
+                  <Label label="输出格式">
+                    <Select
+                      aria-label="动态合成输出格式"
+                      value={shown.output}
+                      onChange={(value) => commit('output', value)}
+                      disabled={controlsLocked}
+                      options={[
+                        { value: 'mp4', label: 'MP4（不透明）' },
+                        { value: 'transparent-webm', label: '透明 WebM（叠加素材）' },
+                      ]}
+                    />
+                  </Label>
                   <Label label="分辨率">
                     <Select
                       aria-label="分辨率"

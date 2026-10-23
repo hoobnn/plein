@@ -150,6 +150,9 @@ export function Timeline({
   interactionKey,
   readInteractionKey,
   items,
+  overlays = [],
+  selectedOverlay,
+  onSelectOverlay,
   total,
   music,
   playhead,
@@ -163,6 +166,9 @@ export function Timeline({
   interactionKey: string
   readInteractionKey(): string
   items: TrackItem[]
+  overlays?: Array<{ id: string; name: string; start: number; duration: number }>
+  selectedOverlay?: string
+  onSelectOverlay?(id: string): void
   total: number
   /** 配乐和它的音量包络（对白时压低的地方画成凹下去） */
   music?: { assetId: string; volume: number; duck: Array<[number, number]> }
@@ -484,6 +490,36 @@ export function Timeline({
             )}
           </Track>
 
+          {overlays.length ? (
+            overlays.map((overlay, index) => (
+              <Track
+                key={overlay.id}
+                label={`叠加 ${index + 1}`}
+                icon="layers"
+                kind="overlay"
+                empty="没有叠加图层"
+              >
+                <button
+                  type="button"
+                  className="seq-block seq-block-text"
+                  aria-label={`叠加图层 ${index + 1} ${overlay.name}`}
+                  data-selected={selectedOverlay === overlay.id || undefined}
+                  style={{ left: x(overlay.start), width: Math.max(2, overlay.duration * pps) }}
+                  onClick={() => {
+                    onSelectOverlay?.(overlay.id)
+                    playhead.seek(overlay.start)
+                  }}
+                >
+                  <span className="seq-block-label">{overlay.name}</span>
+                </button>
+              </Track>
+            ))
+          ) : (
+            <Track label="叠加" icon="layers" kind="overlay" empty="没有叠加图层">
+              {null}
+            </Track>
+          )}
+
           <Track label="字幕" icon="captions" kind="text" empty="没有字幕">
             {items.flatMap((it) =>
               it.cues.map((q) => (
@@ -522,9 +558,9 @@ function Track({
   children,
 }: {
   label: string
-  icon: 'mic' | 'sound' | 'music' | 'captions'
+  icon: 'mic' | 'sound' | 'music' | 'captions' | 'layers'
   /** 轨道的颜色：.seq-row[data-track] 里给 --track */
-  kind: 'dialogue' | 'sfx' | 'music' | 'text'
+  kind: 'dialogue' | 'sfx' | 'music' | 'text' | 'overlay'
   /** 轨道上什么都没有时的提示 */
   empty: string
   children: React.ReactNode

@@ -76,7 +76,20 @@ export function SubtitleEditor({
   })
   const patch = (id: string, value: Partial<SequenceSubtitleTrack['cues'][number]>) => {
     if (track)
-      onChange({ ...track, cues: track.cues.map((q) => (q.id === id ? { ...q, ...value } : q)) })
+      onChange({
+        ...track,
+        cues: track.cues.map((q) =>
+          q.id === id
+            ? {
+                ...q,
+                ...value,
+                ...('text' in value || 'start' in value || 'end' in value
+                  ? { origin: 'manual' as const }
+                  : {}),
+              }
+            : q,
+        ),
+      })
   }
   return (
     <div
@@ -193,10 +206,21 @@ export function SubtitleEditor({
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
+                        aria-label={`显示字幕 ${i + 1}`}
                         checked={!q.hidden}
                         onChange={(e) => patch(q.id, { hidden: !e.target.checked })}
                       />
                       显示字幕 {i + 1}
+                      <span className="text-xs text-muted">
+                        {
+                          {
+                            manual: '手动校订',
+                            estimated: '按台词估时',
+                            asr: '语音识别',
+                            legacy: '旧版来源',
+                          }[q.origin ?? 'legacy']
+                        }
+                      </span>
                     </label>
                     <textarea
                       aria-label={`镜头 ${index + 1} 字幕 ${i + 1} 文本`}
@@ -254,6 +278,7 @@ export function SubtitleEditor({
                         end: 1,
                         text: '新字幕',
                         hidden: false,
+                        origin: 'manual',
                       },
                     ],
                   })

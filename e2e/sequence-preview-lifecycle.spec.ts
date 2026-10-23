@@ -28,7 +28,7 @@ test.beforeAll(() => {
     'libvpx-vp9',
     '-deadline',
     'realtime',
-    join(dir, 'cut.webm'),
+    join(dir, 'cut.mp4'),
   )
   ff(
     '-f',
@@ -39,7 +39,7 @@ test.beforeAll(() => {
     'libvpx-vp9',
     '-deadline',
     'realtime',
-    join(dir, 'video.webm'),
+    join(dir, 'video.mp4'),
   )
 })
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -273,7 +273,7 @@ for (const action of ['reopen'] as const) {
     await newProject(page)
     const chooser = page.waitForEvent('filechooser')
     await page.getByRole('button', { name: '上传', exact: true }).click()
-    await (await chooser).setFiles(join(dir, 'video.webm'))
+    await (await chooser).setFiles(join(dir, 'video.mp4'))
     await expect
       .poll(async () => (await elements(page)).filter((e) => e.kind === 'video').length)
       .toBe(1)
@@ -367,7 +367,7 @@ test('真实视频快速播放暂停与连续定位，暂停画面始终落在�
   await newProject(page)
   const chooser = page.waitForEvent('filechooser')
   await page.getByRole('button', { name: '上传', exact: true }).click()
-  await (await chooser).setFiles(join(dir, 'cut.webm'))
+  await (await chooser).setFiles(join(dir, 'cut.mp4'))
   await expect
     .poll(async () => (await elements(page)).filter((e) => e.kind === 'video').length)
     .toBe(1)

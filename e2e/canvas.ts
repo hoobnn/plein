@@ -36,6 +36,18 @@ declare global {
                 insert(i: number, s: string): void
               }
             | undefined
+          /** 边的底层 Y.Map：直接写边，跳过连线命令按当前模型重建 */
+          edgeMap: {
+            set(
+              id: string,
+              edge: {
+                id: string
+                from: [string, string]
+                to: [string, string]
+                order: string
+              },
+            ): void
+          }
           worldRect(id: string): { x: number; y: number; w: number; h: number }
         }
         worldToClient(x: number, y: number): { x: number; y: number }

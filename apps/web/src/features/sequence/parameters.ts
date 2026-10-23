@@ -19,7 +19,7 @@ export function sequenceParameterProblem(value: unknown, animatic = false) {
       const field = shape[key as keyof typeof shape]
       return String(field?.meta()?.title ?? key)
     }),
-    lists: keys.some((key) => ['clips', 'shots', 'subtitleTrack'].includes(key)),
+    lists: keys.some((key) => ['clips', 'shots', 'subtitleTrack', 'overlays'].includes(key)),
     patch: Object.fromEntries(keys.map((key) => [key, defaults[key]])),
   }
 }

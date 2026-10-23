@@ -760,3 +760,7 @@
     display: none;
   }
 }
+
+.seq-row[data-track="overlay"] {
+  --track: var(--accent);
+}

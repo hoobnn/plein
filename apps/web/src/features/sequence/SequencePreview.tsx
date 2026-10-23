@@ -7,6 +7,9 @@ import {
   type Timeline,
 } from '@plein/nodes'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { type ComposeOverlay } from '@plein/plugin-sdk'
+import { CaptionPreview } from './CaptionPreview'
+import { OverlayHandles, type OverlayGeometry } from './OverlayHandles'
 import { PreviewEngine } from './engine'
 import type { Playhead } from './playhead'
 import { previewScene } from './scene'
@@ -26,6 +29,11 @@ export function SequencePreview({
   music,
   playhead,
   draft = false,
+  overlays = [],
+  selectedOverlay,
+  readOnly = false,
+  onSelectOverlay,
+  onPatchOverlay,
 }: {
   /** pending 的镜头没有素材，轮到它时显示占位 */
   rows: Array<ArrangedClip & { pending?: boolean }>
@@ -34,7 +42,13 @@ export function SequencePreview({
   music?: string
   playhead: Playhead
   draft?: boolean
+  overlays?: ComposeOverlay[]
+  selectedOverlay?: string
+  readOnly?: boolean
+  onSelectOverlay?(id: string): void
+  onPatchOverlay?(id: string, patch: OverlayGeometry): void
 }) {
+  const [geometry, setGeometry] = useState<{ id: string; patch: OverlayGeometry } | null>(null)
   const [subMode, setSubMode] = useState<SubtitleMode>('loading')
   const [subtitleAttempt, setSubtitleAttempt] = useState(0)
   const [failed, setFailed] = useState(0)
@@ -45,7 +59,15 @@ export function SequencePreview({
   const portrait = params.aspectRatio === '9:16'
   const canvas = useRef<HTMLCanvasElement>(null)
   const engine = useRef<PreviewEngine | null>(null)
-  const scene = previewScene(rows, timeline, params, music)
+  const scene = previewScene(
+    rows,
+    timeline,
+    params,
+    music,
+    overlays.map((overlay) =>
+      geometry?.id === overlay.id ? { ...overlay, ...geometry.patch } : overlay,
+    ),
+  )
   const sceneKey = JSON.stringify(scene)
   const sceneRef = useRef(scene)
   sceneRef.current = scene
@@ -86,7 +108,13 @@ export function SequencePreview({
         <div
           className="seq-stage"
           data-portrait={portrait || undefined}
-          data-subtitles={params.subtitles ? subMode : undefined}
+          data-subtitles={
+            params.subtitles
+              ? params.subtitleRender === 'static'
+                ? subMode
+                : params.subtitleRender
+              : undefined
+          }
         >
           <canvas ref={canvas} className="absolute inset-0 h-full w-full" />
           {draft && (
@@ -94,7 +122,35 @@ export function SequencePreview({
               样片 / 草稿 · 已有分镜图与配音节奏预演
             </div>
           )}
-          {params.subtitles && !closing && (
+          {onSelectOverlay && onPatchOverlay && (
+            <OverlayHandles
+              overlays={overlays}
+              playhead={playhead}
+              selected={selectedOverlay}
+              readOnly={readOnly}
+              onSelect={onSelectOverlay}
+              onDraft={setGeometry}
+              onCommit={onPatchOverlay}
+            />
+          )}
+          {params.subtitles &&
+            params.subtitleRender === 'animated' &&
+            cues.length > 0 &&
+            total > 0 &&
+            !closing && (
+              <CaptionPreview
+                params={{
+                  ...size,
+                  fps: 30,
+                  duration: total,
+                  cues,
+                  style: SUBTITLE_STYLE_IDS[params.subtitleStyle],
+                  animation: params.subtitleAnimation,
+                }}
+                playhead={playhead}
+              />
+            )}
+          {params.subtitles && params.subtitleRender === 'static' && !closing && (
             <SubtitleLayer
               key={subtitleAttempt}
               build={(font) =>
@@ -113,14 +169,14 @@ export function SequencePreview({
             playhead={playhead}
             rows={rows}
             timeline={timeline}
-            cues={subMode !== 'libass' ? cues : []}
+            cues={params.subtitleRender === 'static' && subMode !== 'libass' ? cues : []}
             portrait={portrait}
             subtitleStyle={params.subtitleStyle}
             draft={draft}
           />
         </div>
       </div>
-      {params.subtitles && subMode !== 'libass' && (
+      {params.subtitles && params.subtitleRender === 'static' && subMode !== 'libass' && (
         <div
           role="status"
           className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted"

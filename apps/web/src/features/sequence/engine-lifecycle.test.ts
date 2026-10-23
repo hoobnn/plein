@@ -47,6 +47,11 @@ const createVideo = vi.fn(() => ({
   paused: true,
   readyState: 0,
   currentTime: 0,
+  playbackRate: 1,
+  muted: false,
+  videoWidth: 0,
+  videoHeight: 0,
+  seeking: false,
   addEventListener: vi.fn(),
   removeEventListener: vi.fn(),
   removeAttribute: vi.fn(),
@@ -129,6 +134,54 @@ describe('视频解码初始化与释放', () => {
     expect(warn).toHaveBeenCalledOnce()
     expect(createVideo).toHaveBeenCalledOnce()
     expect(calls.dispose).toHaveBeenCalledOnce()
+  })
+  it('未知MIME先保留alpha，元数据确定MP4后释放原生元素并使用WebCodecs', async () => {
+    const engine = open()
+    const scene = {
+      width: 96,
+      height: 64,
+      total: 2,
+      sounds: [],
+      clips: [
+        {
+          key: 'clip',
+          assetId: 'asset',
+          kind: 'video' as const,
+          start: 0,
+          length: 2,
+          in: 0,
+          speed: 1,
+          native: true,
+        },
+      ],
+    }
+    engine.setScene(scene)
+    await settle()
+    expect(createVideo).toHaveBeenCalledOnce()
+    const video = createVideo.mock.results[0]!.value
+    engine.setScene({ ...scene, clips: scene.clips.map((clip) => ({ ...clip, native: false })) })
+    await settle()
+    expect(video.removeAttribute).toHaveBeenCalledWith('src')
+    expect(video.load).toHaveBeenCalledOnce()
+    expect(calls.sink).toHaveBeenCalledOnce()
+  })
+  it('真正的解码失败回退不会被普通场景刷新反复改回WebCodecs', async () => {
+    calls.primary.mockRejectedValue(new Error('unsupported video'))
+    const engine = open()
+    await settle()
+    engine.setScene({
+      width: 96,
+      height: 64,
+      total: 2,
+      sounds: [],
+      clips: [
+        { key: 'clip', assetId: 'asset', kind: 'video', start: 0, length: 2, in: 0, speed: 1 },
+      ],
+    })
+    await settle()
+    expect(calls.primary).toHaveBeenCalledOnce()
+    expect(createVideo).toHaveBeenCalledOnce()
+    expect(createVideo.mock.results[0]!.value.load).not.toHaveBeenCalled()
   })
   it('活动预览正常初始化 WebCodecs，不创建回退元素', async () => {
     open()
@@ -238,4 +291,63 @@ describe('已初始化视频的读取失败', () => {
       expect(calls.primary).toHaveBeenCalledTimes(2)
     })
   }
+})
+
+describe('透明叠加原生video与唯一播放头', () => {
+  it('强制native，不创建CanvasSink；入点变速、几何、opacity按同一时钟绘制并在离轨时停播', () => {
+    const playhead = new Playhead()
+    playhead.setTotal(4)
+    const engine = new PreviewEngine(playhead)
+    engines.push(engine)
+    engine.setScene({
+      width: 96,
+      height: 64,
+      total: 4,
+      clips: [],
+      sounds: [],
+      overlays: [
+        {
+          id: 'overlay',
+          key: 'overlay',
+          assetId: 'alpha',
+          kind: 'video',
+          native: true,
+          seekOnly: true,
+          start: 1,
+          length: 2,
+          in: 0.5,
+          speed: 2,
+          x: 0.25,
+          y: 0.5,
+          width: 0.5,
+          height: 0.25,
+          opacity: 0.4,
+        },
+      ],
+    })
+    engine.attach({
+      width: 0,
+      height: 0,
+      dataset: {},
+      getContext: () => ({ fillRect: vi.fn(), drawImage: calls.draw }),
+    } as unknown as HTMLCanvasElement)
+    playhead.seek(1.25)
+    expect(createVideo).toHaveBeenCalledOnce()
+    const video = createVideo.mock.results[0]!.value
+    expect(video.muted).toBe(true)
+    expect(video.currentTime).toBe(1)
+    expect(video.play).not.toHaveBeenCalled()
+    video.readyState = 2
+    video.videoWidth = 96
+    video.videoHeight = 64
+    playhead.seek(1.5)
+    expect(calls.draw).toHaveBeenLastCalledWith(video, 24, 32, 48, 16)
+    expect(calls.sink).not.toHaveBeenCalled()
+    video.paused = false
+    playhead.seek(3)
+    expect(video.pause).toHaveBeenCalled()
+    engine.dispose()
+    expect(video.removeAttribute).toHaveBeenCalledWith('src')
+    expect(video.load).toHaveBeenCalled()
+  })
 })

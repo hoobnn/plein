@@ -1,4 +1,4 @@
-import type { MotionParams } from '@plein/nodes'
+import type { MotionParams, CaptionLayerParams } from '@plein/nodes'
 import { request } from '../../api/client'
 
 export interface MotionInputs {
@@ -28,6 +28,23 @@ export async function createMotionPreview(
     body: JSON.stringify({ params, inputs }),
     signal,
   })
+  return isolatedSession(session)
+}
+
+export async function createCaptionPreview(
+  params: CaptionLayerParams,
+  signal: AbortSignal,
+): Promise<MotionPreviewSession> {
+  const session = await request<MotionPreviewSession>('/api/motion/preview/captions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(params),
+    signal,
+  })
+  return isolatedSession(session)
+}
+
+function isolatedSession(session: MotionPreviewSession): MotionPreviewSession {
   const url = new URL(session.url)
   if (
     !['http:', 'https:'].includes(url.protocol) ||

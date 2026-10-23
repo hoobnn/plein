@@ -8,7 +8,7 @@ import {
   sequenceSize,
   type Timeline,
 } from '@plein/nodes'
-import { overlapping } from '@plein/plugin-sdk'
+import { overlapping, type ComposeOverlay } from '@plein/plugin-sdk'
 import { envelopeAt, type Scene, type SceneClip, type SceneSound } from './engine'
 
 /** 两条包络相乘：在两边所有拐点上取值（配乐的闪避 × 结尾淡出） */
@@ -29,6 +29,7 @@ export function previewScene(
   timeline: Timeline,
   params: SequenceParams,
   music?: string,
+  overlays: ComposeOverlay[] = [],
 ): Scene {
   const { total } = timeline
   const seen = new Map<string, number>()
@@ -49,6 +50,9 @@ export function previewScene(
       in: row.in,
       speed: row.speed,
       transition: c.transition,
+      native:
+        (row.clip.type !== 'image' && (!row.clip.mime || row.clip.mime.startsWith('video/webm'))) ||
+        undefined,
     }
   })
   const real = clips.flatMap((c, i) => (c.length > 0 ? [i] : []))
@@ -121,5 +125,19 @@ export function previewScene(
   }
   // 静音来源不参与预览解码；读取失败不能阻止其余画面和声音播放。
   // 音量恢复后会重新进入场景，由引擎重新读取并报告实际失败。
-  return { ...sequenceSize(params), total, clips, sounds: sounds.filter((s) => s.gain > 0) }
+  return {
+    ...sequenceSize(params),
+    total,
+    clips,
+    sounds: sounds.filter((s) => s.gain > 0),
+    overlays: overlays.map((overlay) => ({
+      ...overlay,
+      key: `overlay:${overlay.id}:${overlay.asset.assetId}`,
+      assetId: overlay.asset.assetId,
+      kind: 'video',
+      length: overlay.duration,
+      native: true,
+      seekOnly: true,
+    })),
+  }
 }

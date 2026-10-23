@@ -16,6 +16,18 @@ export interface SceneClip {
   speed: number
   /** 从上一段切进来的转场（和导出同一份） */
   transition?: ComposeTransition
+  /** WebM alpha 只能走原生元素；WebCodecs/CanvasSink可能丢失透明通道。 */
+  native?: boolean
+  seekOnly?: boolean
+}
+
+export interface SceneOverlay extends SceneClip {
+  id: string
+  x: number
+  y: number
+  width: number
+  height: number
+  opacity: number
 }
 
 /** 一段声音：成片 start 处开始，从素材 offset 起播 duration 秒 */
@@ -38,6 +50,7 @@ export interface Scene {
   total: number
   clips: SceneClip[]
   sounds: SceneSound[]
+  overlays?: SceneOverlay[]
 }
 
 /** 预览画布长边上限：再大肉眼看不出，解码和合成的开销却翻倍 */
@@ -296,11 +309,15 @@ class CodecFrames implements Frames {
 class ElementFrames implements Frames {
   readonly kind = 'element'
   private el = document.createElement('video')
+  private want = 0
+  private parked = true
+  private frozen: OffscreenCanvas | null = null
 
   constructor(
     url: string,
     private onFrame: () => void,
     onFail: () => void,
+    private seekOnly = false,
   ) {
     const el = this.el
     el.onerror = onFail
@@ -308,12 +325,19 @@ class ElementFrames implements Frames {
     el.playsInline = true
     el.preload = 'auto'
     el.src = url
-    el.addEventListener('seeked', onFrame)
-    el.addEventListener('loadeddata', onFrame)
+    el.addEventListener('seeked', this.settled)
+    el.addEventListener('loadeddata', this.settled)
   }
 
   update(mt: number, playing: boolean, rate: number) {
     const el = this.el
+    this.want = Math.max(0, mt)
+    this.parked = false
+    if (this.seekOnly) {
+      el.pause()
+      this.seekLatest()
+      return
+    }
     if (el.playbackRate !== rate) el.playbackRate = rate
     if (
       Math.abs(el.currentTime - mt) > 0.25 ||
@@ -327,22 +351,58 @@ class ElementFrames implements Frames {
     if (!playing && !el.paused) el.pause()
   }
 
+  private seekLatest() {
+    if (!this.el.seeking && Math.abs(this.el.currentTime - this.want) > 0.001) {
+      try {
+        this.el.currentTime = this.want
+      } catch {}
+    }
+  }
+  private settled = () => {
+    const el = this.el
+    if (
+      this.seekOnly &&
+      typeof OffscreenCanvas !== 'undefined' &&
+      el.readyState >= 2 &&
+      el.videoWidth &&
+      !el.seeking
+    ) {
+      this.frozen ??= new OffscreenCanvas(el.videoWidth, el.videoHeight)
+      if (this.frozen.width !== el.videoWidth) this.frozen.width = el.videoWidth
+      if (this.frozen.height !== el.videoHeight) this.frozen.height = el.videoHeight
+      const g = this.frozen.getContext('2d')!
+      g.clearRect(0, 0, this.frozen.width, this.frozen.height)
+      g.drawImage(el, 0, 0)
+    }
+    if (this.seekOnly && !this.parked) this.seekLatest()
+    this.onFrame()
+  }
+
   park() {
+    this.parked = true
     if (!this.el.paused) this.el.pause()
   }
 
   image() {
     const el = this.el
-    return el.readyState >= 2 && el.videoWidth
+    if (this.seekOnly && this.frozen)
+      return { source: this.frozen, width: this.frozen.width, height: this.frozen.height }
+    return !el.seeking && el.readyState >= 2 && el.videoWidth
       ? { source: el, width: el.videoWidth, height: el.videoHeight }
       : null
   }
 
   dispose() {
+    this.parked = true
+    if (this.frozen) {
+      this.frozen.width = 0
+      this.frozen.height = 0
+      this.frozen = null
+    }
     this.el.pause()
     this.el.onerror = null
-    this.el.removeEventListener('seeked', this.onFrame)
-    this.el.removeEventListener('loadeddata', this.onFrame)
+    this.el.removeEventListener('seeked', this.settled)
+    this.el.removeEventListener('loadeddata', this.settled)
     this.el.removeAttribute('src')
     this.el.load()
   }
@@ -358,6 +418,7 @@ export class PreviewEngine {
   private g: CanvasRenderingContext2D | null = null
   private scene: Scene = { width: 0, height: 0, total: 0, clips: [], sounds: [] }
   private frames = new Map<string, Frames>()
+  private nativeFrames = new Set<string>()
   private audio: AudioContext | null = null
   private master: GainNode | null = null
   private buffers = new Map<string, Promise<AudioBuffer | null>>()
@@ -408,13 +469,16 @@ export class PreviewEngine {
       // 画布尺寸变了，解码器输出尺寸也要跟着换
       for (const f of this.frames.values()) f.dispose()
       this.frames.clear()
+      this.nativeFrames.clear()
       this.resize()
     }
-    const keep = new Set(scene.clips.filter((c) => c.assetId).map((c) => c.key))
+    const visuals = [...scene.clips, ...(scene.overlays ?? [])]
+    const keep = new Set(visuals.filter((c) => c.assetId).map((c) => c.key))
     for (const [key, f] of this.frames) {
       if (!keep.has(key)) {
         f.dispose()
         this.frames.delete(key)
+        this.nativeFrames.delete(key)
       }
     }
     for (const key of this.failedFrames) if (!keep.has(key)) this.failedFrames.delete(key)
@@ -438,6 +502,7 @@ export class PreviewEngine {
     this.stopAudio()
     for (const f of this.frames.values()) f.dispose()
     this.frames.clear()
+    this.nativeFrames.clear()
     if (this.clock) this.playhead.setClock(null)
     void this.audio?.close().catch(() => {})
   }
@@ -460,10 +525,11 @@ export class PreviewEngine {
     for (const key of frames) {
       this.frames.get(key)?.dispose()
       this.frames.delete(key)
+      this.nativeFrames.delete(key)
     }
     for (const id of sounds) this.buffers.delete(id)
     this.reportIssues()
-    for (const clip of this.scene.clips)
+    for (const clip of [...this.scene.clips, ...(this.scene.overlays ?? [])])
       if (frames.has(clip.key)) this.framesFor(clip)?.update(clip.in, false, clip.speed)
     for (const id of sounds) void this.buffer(id)
     this.render()
@@ -480,7 +546,14 @@ export class PreviewEngine {
   private framesFor(clip: SceneClip): Frames | null {
     if (!clip.assetId) return null
     const existing = this.frames.get(clip.key)
-    if (existing) return existing
+    if (
+      existing &&
+      !(clip.native && existing.kind === 'webcodecs') &&
+      !(!clip.native && this.nativeFrames.has(clip.key))
+    )
+      return existing
+    existing?.dispose()
+    this.nativeFrames.delete(clip.key)
     const url = assetUrls.original(clip.assetId)
     const ready = (frame: Frames) => {
       if (this.disposed || this.frames.get(clip.key) !== frame) return
@@ -499,6 +572,7 @@ export class PreviewEngine {
         url,
         () => ready(frame),
         () => fail(frame),
+        clip.seekOnly,
       )
       return frame
     }
@@ -510,7 +584,7 @@ export class PreviewEngine {
         () => fail(frame),
       )
       created = frame
-    } else if (typeof VideoDecoder === 'undefined') created = element()
+    } else if (clip.native || typeof VideoDecoder === 'undefined') created = element()
     else {
       const frame: Frames = new CodecFrames(
         url,
@@ -526,6 +600,7 @@ export class PreviewEngine {
       created = frame
     }
     this.frames.set(clip.key, created)
+    if (clip.native && created.kind === 'element') this.nativeFrames.add(clip.key)
     return created
   }
 
@@ -559,6 +634,25 @@ export class PreviewEngine {
       // 快到的下一段先起解码器，切过去的那一帧不用等
       else f.update(clip.in, true, clip.speed)
     }
+
+    const overlays = this.scene.overlays ?? []
+    const activeOverlays = overlays.filter(
+      (overlay) => t >= overlay.start && t < overlay.start + overlay.length,
+    )
+    for (const overlay of overlays) {
+      if (!activeOverlays.includes(overlay)) {
+        this.frames.get(overlay.key)?.park()
+        continue
+      }
+      this.framesFor(overlay)?.update(
+        overlay.in + Math.max(0, t - overlay.start) * overlay.speed,
+        playing,
+        overlay.speed,
+      )
+    }
+    c.dataset.overlayDecoder = activeOverlays
+      .map((overlay) => this.frames.get(overlay.key)?.kind ?? '')
+      .join(' ')
 
     const layers = active.map((clip) => ({
       clip,
@@ -644,6 +738,13 @@ export class PreviewEngine {
       g.globalAlpha = Math.min(1, black)
       g.fillStyle = '#000'
       g.fillRect(0, 0, W, H)
+    }
+    // 叠加轨在背景转场完成后绘制，透明像素直接透出背景，后项在上。
+    for (const overlay of activeOverlays) {
+      const image = this.frames.get(overlay.key)?.image()
+      if (!image) continue
+      g.globalAlpha = overlay.opacity
+      g.drawImage(image.source, overlay.x * W, overlay.y * H, overlay.width * W, overlay.height * H)
     }
     g.globalAlpha = 1
   }
