@@ -1,12 +1,14 @@
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import type { ClipboardData } from '../../packages/doc/src/clipboard'
-import type { CanvasElement } from '../../packages/doc/src/types'
+import type { CanvasElement, Edge } from '../../packages/doc/src/types'
 import { sineWav, solidPng } from '../../packages/providers/src/mock/media'
 import { waitEngine } from './probe'
+import { canonical } from './report'
 
 export const MEDIA_FIXTURE_VERSION = 2
 
@@ -17,7 +19,40 @@ export interface MediaFixture {
   videoAssets: number
   audioAssets: number
   serializedBytes: number
+  contentHash: string
   data: ClipboardData
+}
+
+export function fixtureContentHash(data: unknown): string {
+  return createHash('sha256').update(canonical(data)).digest('hex')
+}
+
+/** Hash the actual demo graph without random identifiers or transient run status. */
+export function demoContentHash(data: { elements: CanvasElement[]; edges: Edge[] }): string {
+  return fixtureContentHash(normalizeDemoFixture(data))
+}
+
+export function normalizeDemoFixture(data: { elements: CanvasElement[]; edges: Edge[] }) {
+  const ids = new Map(data.elements.map((el, index) => [el.id, `element-${index}`]))
+  const remap = (id: string) => {
+    const normalized = ids.get(id)
+    if (!normalized) throw new Error(`Demo fixture references a missing element: ${id}`)
+    return normalized
+  }
+  return {
+    elements: data.elements.map(({ id, parentId, run: _run, ...el }) => ({
+      ...el,
+      id: remap(id),
+      parentId: parentId === null ? null : remap(parentId),
+    })),
+    edges: data.edges
+      .map(({ id: _id, from, to, ...edge }) => ({
+        ...edge,
+        from: [remap(from[0]), from[1]],
+        to: [remap(to[0]), to[1]],
+      }))
+      .sort((a, b) => canonical(a).localeCompare(canonical(b))),
+  }
 }
 
 interface FixtureAsset {
@@ -132,6 +167,7 @@ export async function createMediaFixture(
     videoAssets: video ? 1 : 0,
     audioAssets: audio ? 1 : 0,
     serializedBytes: Buffer.byteLength(JSON.stringify(data)),
+    contentHash: fixtureContentHash(data),
     data,
   }
 }

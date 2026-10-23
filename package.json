@@ -23,17 +23,20 @@
     "format": "vp check --fix && markdownlint '**/*.md' --ignore-path .gitignore --fix",
     "test": "vp test",
     "test:coverage": "vp test run --coverage",
+    "test:e2e-lifecycle": "node --test e2e/server-lifecycle.contract.mjs",
     "prepare": "husky",
     "smoke": "pnpm --filter @plein/server exec tsx scripts/smoke.ts",
     "bench:migration": "pnpm --filter @plein/server bench:migration",
     "bench:recovery": "pnpm --filter @plein/server bench:recovery",
     "bench:e1": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.l4.config.ts e1-composition",
     "bench:rework": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.bench.config.ts",
-    "verify": "pnpm lint && pnpm typecheck && pnpm --filter @plein/desktop test:profile && pnpm test:coverage && pnpm smoke",
+    "verify": "pnpm lint && pnpm typecheck && pnpm --filter @plein/desktop test:profile && pnpm test:e2e-lifecycle && pnpm test:coverage && pnpm smoke",
     "e2e": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.config.ts",
     "e2e:core": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.config.ts --grep @core",
+    "e2e:auth": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.auth.config.ts",
     "e2e:real": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && playwright test -c e2e/playwright.l4.config.ts",
-    "perf": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && pnpm --filter @plein/server exec node --import tsx ../../e2e/perf/bench.ts"
+    "perf": "pnpm --filter @plein/web exec vp build --mode e2e --outDir dist-e2e && pnpm --filter @plein/server exec node --import tsx ../../e2e/perf/bench.ts",
+    "perf:compare": "pnpm --filter @plein/server exec node --import tsx ../../e2e/perf/compare.ts"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.3",

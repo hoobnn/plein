@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
@@ -9,7 +9,9 @@ import { defineConfig, devices } from '@playwright/test'
  */
 const root = join(import.meta.dirname, '..')
 const PORT = Number(process.env.PLEIN_E2E_PORT ?? 8790)
-const dataDir = process.env.PLEIN_E2E_DATA ?? mkdtempSync(join(tmpdir(), 'plein-e2e-'))
+const providedData = process.env.PLEIN_E2E_DATA
+// 只预留名字；--list 和配置加载不产生目录，真正的服务进程负责创建及回收。
+const dataDir = providedData ?? join(tmpdir(), `plein-e2e-${randomUUID()}`)
 process.env.PLEIN_E2E_DATA = dataDir
 
 export default defineConfig({
@@ -34,13 +36,17 @@ export default defineConfig({
   webServer: {
     // PLEIN_E2E_SERVER：换成别的服务端入口，例如桌面安装包用的打包产物
     // （node apps/desktop/stage/server/main.mjs）
-    command:
-      process.env.PLEIN_E2E_SERVER ?? 'apps/server/node_modules/.bin/tsx apps/server/src/main.ts',
+    command: 'node e2e/server-lifecycle.ts',
     cwd: root,
     url: `http://127.0.0.1:${PORT}/api/health`,
     reuseExistingServer: false,
     timeout: 60_000,
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 15_000 },
     env: {
+      PLEIN_E2E_SERVER_COMMAND:
+        process.env.PLEIN_E2E_SERVER ?? 'apps/server/node_modules/.bin/tsx apps/server/src/main.ts',
+      PLEIN_E2E_OWN_DATA: providedData === undefined ? dataDir : '',
+      PLEIN_E2E_RUNNER_PID: String(process.pid),
       PLEIN_PORT: String(PORT),
       PLEIN_DATA_DIR: dataDir,
       PLEIN_WEB_DIST:

@@ -15,18 +15,21 @@ pnpm dev                 # 前端 http://localhost:5173 + 服务端 :8787（数�
 
 ## 常用命令
 
-| 命令                 | 作用                                                                                    |
-| -------------------- | --------------------------------------------------------------------------------------- |
-| `pnpm lint`          | Vite+ 检查（Oxfmt 格式 + Oxlint 规则）加 markdownlint                                   |
-| `pnpm format`        | 格式化代码，并应用能安全自动修复的规则，包括 markdownlint 能自动修的项                  |
-| `pnpm typecheck`     | 全部包的类型检查                                                                        |
-| `pnpm test`          | Vitest 单测与集成测试                                                                   |
-| `pnpm test:coverage` | 统计全部应用及公共包源码覆盖率，执行覆盖率门槛，输出 `coverage/index.html` 与 JSON 汇总 |
-| `pnpm smoke`         | 启动真实服务，经 HTTP 和 Yjs WebSocket 读写，重启后确认数据没丢                         |
-| `pnpm verify`        | 依次运行 lint、typecheck、test:coverage、smoke，pre-push 钩子自动运行                   |
-| `pnpm e2e`           | Playwright 界面冒烟：基于 mock 平台覆盖从短剧模板到导出的完整流程                       |
-| `pnpm e2e:core`      | 只跑标记为 `@core` 的核心用例：主创作流程、导入导出、协作基础与关键恢复，几分钟跑完     |
-| `pnpm perf`          | 画布渲染性能基准                                                                        |
+| 命令                      | 作用                                                                                                     |
+| ------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `pnpm lint`               | Vite+ 检查（Oxfmt 格式 + Oxlint 规则）加 markdownlint                                                    |
+| `pnpm format`             | 格式化代码，并应用能安全自动修复的规则，包括 markdownlint 能自动修的项                                   |
+| `pnpm typecheck`          | 全部包的类型检查                                                                                         |
+| `pnpm test`               | Vitest 单测与集成测试                                                                                    |
+| `pnpm test:coverage`      | 统计全部应用及公共包源码覆盖率，执行覆盖率门槛，输出 `coverage/index.html` 与 JSON 汇总                  |
+| `pnpm test:e2e-lifecycle` | 用最小 Playwright 服务验证自动目录所有权及成功、失败、中断后的回收                                       |
+| `pnpm smoke`              | 启动真实服务，经 HTTP 和 Yjs WebSocket 读写，重启后确认数据没丢                                          |
+| `pnpm verify`             | 依次运行 lint、typecheck、桌面 test:profile、E2E 生命周期合同、test:coverage、smoke，pre-push 与 CI 共用 |
+| `pnpm e2e`                | Playwright 界面冒烟：基于 mock 平台覆盖从短剧模板到导出的完整流程                                        |
+| `pnpm e2e:core`           | 只跑标记为 `@core` 的核心用例：主创作流程、导入导出、协作基础与关键恢复，几分钟跑完                      |
+| `pnpm e2e:auth`           | 密码登录回归：真实账号创建、登录退出、会话失效与界面恢复，使用隔离数据库                                 |
+| `pnpm perf`               | 画布渲染性能基准                                                                                         |
+| `pnpm perf:compare`       | 在同一 runner 顺序构建和测量基线、候选，比较完整样本并拒绝明显回退                                       |
 
 本地检查由 git 钩子（husky）完成，`pnpm install` 时自动装好：pre-commit 运行 `vp staged`，只格式化、检查暂存文件；pre-push 运行 `pnpm verify`，改了 `package.json` 或 `pnpm-lock.yaml` 时再跑 `pnpm audit:deps`。推送 main 不触发云端 CI，云端只在 Dependabot PR、打 `v*` 标签发版和手动运行（Actions → CI → Run workflow）时跑完整检查与 e2e、perf（e2e 按文件分 12 片并行，失败重试一次，重试才通过的标为 flaky；推送 main 不跑 e2e，发版时任何一片失败都不签名、不发布，可在 Actions 里重跑失败的任务）；发版说明写在 `docs/releases/<标签>.md`，打标签时自动用作 Release 正文；依赖安全检查另有每周定时。急用可 `git push --no-verify` 跳过钩子，之后在 Actions 里手动补跑一次 CI。
 
@@ -35,6 +38,10 @@ pnpm dev                 # 前端 http://localhost:5173 + 服务端 :8787（数�
 工具链是 [Vite+](https://viteplus.dev)（命令 `vp`）：Oxfmt 负责格式化代码、样式、Markdown、YAML 和 HTML，Oxlint 做代码检查（含类型感知规则），Vitest 运行单元测试，`vp pack`（tsdown）打包服务端和桌面端。规则和格式选项都写在根目录的 `vite.config.ts`。
 
 覆盖率包括未被测试导入的 `apps/*/src` 和 `packages/*/src` 源码，只排除测试、类型声明、生成代码及测试辅助文件。桌面端也属于测试项目。CI 和 `pnpm verify` 使用同一套覆盖率门槛：全局底线防止回退，本次收敛的调度、输入准备、列表快照及桌面状态模块另设更高门槛。单元测试覆盖率和浏览器端到端测试分别计数，不能把 mock 平台通过解释为真实平台验收。当前范围、证据和覆盖缺口见[结构优化记录](docs/dev/refactoring-2026-10-17.md)。
+
+E2E 自动数据目录在启动服务时独占创建，服务停止后回收；`--list` 不建目录。显式设置 `PLEIN_E2E_DATA` 的目录由调用者管理，测试失败或中断后仍保留。目录监护支持 macOS/Linux；监护进程自身遭 `SIGKILL` 或机器崩溃不保证回收。
+
+性能比较需要两份独立检出和各自 lockfile 对应的依赖。设置 `PERF_BASE_ROOT=/path/to/baseline pnpm perf:compare`；默认基线为候选提交之前最近的 `v*` tag，可用 `PERF_BASE_REF=<tag-or-commit>` 指定，检出必须与之匹配且干净。CI 自动创建基线 worktree 并安装锁定依赖，本地命令不安装依赖。两份产品都由当前候选的测量脚本、同一 Chromium 和参数顺序测量，输出 `test-results/perf-comparison/{baseline,candidate,comparison}.json`；环境、实际夹具摘要、全部场景或三轮原始样本不符均失败。只验证已生成报告可用 `pnpm perf:compare --reports baseline.json candidate.json`。单版本诊断仍用 `pnpm perf`；formatVersion 1 历史报告不能充当新门禁基线。
 
 格式化遵循 `.gitignore`，排除构建产物；`pnpm-lock.yaml` 保留 pnpm 自己生成的格式。Markdown 段落不强制折行，代码块和 HTML 里内嵌的代码不做二次格式化。Markdown 规则另由 markdownlint 检查，配置在 `.markdownlint.jsonc`，VS Code 的 markdownlint 插件读取同一份配置。
 

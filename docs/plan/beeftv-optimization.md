@@ -36,7 +36,7 @@
 
 每包通过对应行为测试后集成。最终执行 `pnpm verify`、`pnpm build`、`pnpm e2e`、`pnpm perf`，记录运行版本和结果，不以窄测试替代整包验收。
 
-性能 fixture 使用真实入库的图片和视频封面，预览失败不能判首屏成功。报告分 engine-ready、first-visible-preview、visible-media-settled，记录 commit、fixture、runtime、平台与渲染器。只比较相同环境；首预览同时退化 >50% 且 >100ms、每帧 JS 同时退化 >50% 且 >2ms 时失败。首次无基线仅报告时间，资源生命周期断言保持硬门禁。
+性能 fixture 使用真实入库的图片和视频封面，预览失败不能判首屏成功。报告分 engine-ready、first-visible-preview、visible-media-settled，记录 commit、fixture、runtime、平台与渲染器。只比较相同环境；首预览同时退化 >50% 且 >100ms、每帧 JS 同时退化 >50% 且 >2ms 时失败。2026-10-23 起 CI 同 runner 重新测量基线与候选，基线缺失、样本或夹具不匹配均失败；资源生命周期断言继续作为硬门禁。
 
 不新增供应商，不扩展完整动态 3D，不替换渲染引擎。源码落地、自动测试、界面运行、真实平台与人工审片分别记录。
 
@@ -44,7 +44,7 @@
 
 `pnpm verify` 覆盖格式、类型、单测和服务端 smoke；`pnpm build` 附带首页 gzip 门禁；`pnpm e2e` 用真实服务、mock 平台和 Chromium 运行完整界面流程。
 
-`PERF_OUTPUT=/private/tmp/plein-perf.json pnpm perf` 默认用 1000 个元素、32 个唯一图片和真实视频/音频资产，冷开与热开各三轮，并运行全部交互场景。报告包含源码提交、未提交状态、构建指纹、Node/Chromium/渲染器、fixture 和每轮样本。设置 `PERF_BASELINE` 才启用同环境时间比较；默认 SwiftShader 结果不代表硬件 GPU 帧率。CI 将报告保留为 `canvas-perf` artifact，失败也写诊断 JSON。
+`PERF_OUTPUT=/private/tmp/plein-perf.json pnpm perf` 默认用 1000 个元素、32 个唯一图片和真实视频/音频资产，冷开与热开各三轮，并运行全部交互场景。报告包含源码提交、未提交状态、构建指纹、Node/Chromium/渲染器、实际媒体与 demo 摘要和每轮样本。单次诊断可用 `PERF_BASELINE` 比较已存在的 formatVersion 2 报告；CI 使用 `pnpm perf:compare`，在同一 runner 重测候选提交之前最近的版本 tag（可覆盖），不借用历史机器报告。完整用法见[开发约定](../../CONTRIBUTING.md)。SwiftShader 结果不代表硬件 GPU 帧率。CI 将两份样本及比较结果保留为 `canvas-perf` artifact，失败也写诊断 JSON。
 
 各专项数可能覆盖相同测试，不能直接相加为全量总数。Agent 的真实账号 CLI、真实模型视觉和生成质量不在本轮 mock 验收结论中。
 

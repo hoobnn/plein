@@ -12,6 +12,10 @@ on:
         description: e2e 运行平台
         type: string
         default: ubuntu-latest
+      perf-baseline-ref:
+        description: 性能基线 tag 或 commit（留空取候选提交之前最近的 v* tag）
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       e2e-os:
@@ -19,6 +23,10 @@ on:
         type: choice
         options: [ubuntu-latest, macos-15]
         default: ubuntu-latest
+      perf-baseline-ref:
+        description: 性能基线 tag 或 commit（留空取候选提交之前最近的 v* tag）
+        type: string
+        default: ""
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -37,9 +45,7 @@ jobs:
           cache: pnpm
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fontconfig fonts-noto-cjk
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test:coverage
+      - run: pnpm verify
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -75,6 +81,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm e2e --shard=${{ matrix.shard }}/12
+      - if: matrix.shard == 1
+        run: pnpm exec playwright test -c e2e/playwright.auth.config.ts
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
@@ -82,15 +90,17 @@ jobs:
           path: test-results/
           retention-days: 7
 
-  # 真实入库媒体与资源回收是硬门禁；同环境有基线时再比较时间，首次只归档报告。
+  # 同一 runner 顺序测量独立检出的基线和候选；夹具/环境/样本不匹配或明显回退均失败。
   # 只在发版和手动运行时跑，依赖升级 PR 不跑
   perf:
     needs: check
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -99,14 +109,31 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm perf
+      - name: Prepare baseline checkout
+        env:
+          REQUESTED_BASELINE: ${{ inputs.perf-baseline-ref }}
+        run: |
+          ref="${REQUESTED_BASELINE:-$(git describe --tags --match 'v[0-9]*' --abbrev=0 HEAD^)}"
+          commit="$(git rev-parse --verify "${ref}^{commit}")"
+          test "$commit" != "$(git rev-parse HEAD)"
+          git worktree add --detach "$RUNNER_TEMP/plein-perf-baseline" "$commit"
+          pnpm --dir "$RUNNER_TEMP/plein-perf-baseline" install --frozen-lockfile
+      - run: pnpm perf:compare
         env:
           PERF_N: "1000"
           PERF_ROUNDS: "3"
-          PERF_OUTPUT: ${{ github.workspace }}/test-results/perf.json
+          PERF_BASE_REF: ${{ inputs.perf-baseline-ref }}
+          PERF_BASE_ROOT: ${{ runner.temp }}/plein-perf-baseline
+          PERF_COMPARE_OUTPUT: ${{ github.workspace }}/test-results/perf-comparison
+      - name: Remove baseline checkout
+        if: always()
+        run: |
+          if test -d "$RUNNER_TEMP/plein-perf-baseline"; then
+            git worktree remove --force "$RUNNER_TEMP/plein-perf-baseline"
+          fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: canvas-perf
-          path: test-results/perf.json
+          path: test-results/perf-comparison/
           retention-days: 30

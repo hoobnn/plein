@@ -13,7 +13,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { type Browser, type CDPSession, chromium, type Page } from '@playwright/test'
-import { createMediaFixture, MEDIA_FIXTURE_VERSION, seedMediaCanvas } from './fixtures'
+import type { CanvasElement, Edge } from '../../packages/doc/src/types'
+import {
+  createMediaFixture,
+  fixtureContentHash,
+  MEDIA_FIXTURE_VERSION,
+  normalizeDemoFixture,
+  seedMediaCanvas,
+} from './fixtures'
 import {
   installFunctionSerialization,
   installOpenProbe,
@@ -22,7 +29,14 @@ import {
   resetOpenProbe,
   watchAssetRequests,
 } from './probe'
-import { assertRendererMode, comparePerfReports, type PerfReport } from './report'
+import {
+  assertCompletePerfReport,
+  assertRendererMode,
+  comparePerfReports,
+  medianSample,
+  PERF_FORMAT_VERSION,
+  type PerfReport,
+} from './report'
 
 /** 被测的仓库根目录：服务端和前端构建都从这里取；对比改动前后时指向另一个检出 */
 const ROOT = process.env.PERF_ROOT ?? join(import.meta.dirname, '../..')
@@ -62,7 +76,8 @@ interface Engine {
     rect(id: string): { x: number; y: number; w: number; h: number } | undefined
   }
   doc: {
-    elements(): Iterable<{ id: string; kind: string; parentId: string | null }>
+    elements(): Iterable<CanvasElement>
+    edges(): Iterable<Edge>
     mutable(id: string): { set(k: string, v: unknown): void } | undefined
     ydoc: { transact(fn: () => void): void }
   }
@@ -348,7 +363,15 @@ async function main() {
   let browserVersion = ''
   let renderer = 'unobserved'
   const report: Record<string, Result | number> = {}
+  const samples: Record<string, number[]> = {}
+  const interactionSamples: Record<string, Result[]> = {}
   const openSamples: { cold: OpenSample[]; warm: OpenSample[] } = { cold: [], warm: [] }
+  const details = {
+    openSamples,
+    interactions: report,
+    interactionSamples,
+    demoFixture: null as ReturnType<typeof normalizeDemoFixture> | null,
+  }
   let fixture: PerfReport['fixture'] = {
     version: MEDIA_FIXTURE_VERSION,
     elements: N,
@@ -356,9 +379,12 @@ async function main() {
     videoAssets: 0,
     audioAssets: 0,
     serializedBytes: 0,
+    contentHash: '',
+    demoContentHash: '',
   }
   failureContext.fixture = fixture
-  failureContext.details = { openSamples, interactions: report }
+  failureContext.samples = samples
+  failureContext.details = details
   const observeRenderer = (page: Page) =>
     page.evaluate(() => {
       const canvas = document.querySelector('canvas')
@@ -392,7 +418,7 @@ async function main() {
         imageAssets: Number(process.env.PERF_MEDIA_ASSETS ?? 32),
       })
       const { data: _data, ...metadata } = media
-      fixture = metadata
+      fixture = { ...metadata, demoContentHash: '' }
       failureContext.fixture = fixture
       const canvasId = await seedMediaCanvas(page, BASE, media)
       renderer = await observeRenderer(page)
@@ -455,8 +481,9 @@ async function main() {
           'firstVisiblePreviewMs',
           'visibleMediaSettledMs',
         ] as const) {
-          const values = openSamples[mode].map((sample) => sample[key]).sort((a, b) => a - b)
-          report[`${mode}.${key}`] = values[Math.floor(values.length / 2)]!
+          const metric = `${mode}.${key}`
+          samples[metric] = openSamples[mode].map((sample) => sample[key])
+          report[metric] = medianSample(samples[metric])
         }
       }
       console.error('[perf] 真实媒体冷开/热开', JSON.stringify(report))
@@ -483,6 +510,7 @@ async function main() {
             .filter((el) => !el.parentId && el.kind !== 'frame')
             .slice(0, 12)
             .map((el) => el.id)
+          if (ids.length !== 12) throw new Error('Drag scenario requires exactly 12 elements')
           e.zoomToFit(ids)
           e.selection.set(ids)
           await new Promise((r) => setTimeout(r, 300))
@@ -501,6 +529,7 @@ async function main() {
         await p.evaluate(() => {
           const e = (window as unknown as PerfWindow).__plein!.engine
           const nodes = [...e.doc.elements()].filter((el) => el.kind === 'node').slice(0, 20)
+          if (nodes.length !== 20) throw new Error('Running scenario requires exactly 20 nodes')
           e.doc.ydoc.transact(() => {
             for (const n of nodes)
               e.doc.mutable(n.id)!.set('run', { status: 'running', progress: 0.3 })
@@ -529,6 +558,7 @@ async function main() {
     for (const [name, run] of Object.entries(scenarios)) {
       if (pick && !pick.includes(name)) continue
       const rs: Result[] = []
+      interactionSamples[name] = rs
       for (let i = 0; i < ROUNDS; i++) {
         await page.goto(`${BASE}/#/`)
         await page.goto(`${BASE}/#/demo?n=${N}`)
@@ -538,10 +568,29 @@ async function main() {
         assertRendererMode(renderMode, renderer)
         await page.evaluate(() => (window as unknown as PerfWindow).__plein!.engine.zoomTo(1))
         await page.waitForTimeout(500)
+        const snapshot = await page.evaluate(() => {
+          const doc = (window as unknown as PerfWindow).__plein!.engine.doc
+          return { elements: [...doc.elements()], edges: [...doc.edges()] }
+        })
+        const normalized = normalizeDemoFixture(snapshot)
+        const contentHash = fixtureContentHash(normalized)
+        if (!details.demoFixture) details.demoFixture = normalized
+        if (fixture.demoContentHash && fixture.demoContentHash !== contentHash) {
+          failureContext.demoFixtureMismatch = {
+            scenario: name,
+            round: i + 1,
+            expectedHash: fixture.demoContentHash,
+            actualHash: contentHash,
+            actualFixture: normalized,
+          }
+          throw new Error(`Demo fixture changed between performance samples: ${name}`)
+        }
+        fixture.demoContentHash = contentHash
         rs.push(await measure(page, cdp, () => run(page)))
         console.error(`[perf] ${name} 第 ${i + 1} 轮`, JSON.stringify(rs.at(-1)))
       }
       report[name] = median(rs)
+      samples[`${name}.jsMs`] = rs.map((sample) => sample.js)
     }
   } finally {
     try {
@@ -577,7 +626,7 @@ async function main() {
   const git = (...args: string[]) =>
     execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim()
   const output: PerfReport = {
-    formatVersion: 1,
+    formatVersion: PERF_FORMAT_VERSION,
     status: 'complete',
     buildFingerprint: fingerprint,
     sourceCommit: git('rev-parse', 'HEAD'),
@@ -594,9 +643,11 @@ async function main() {
     fixture,
     rounds: ROUNDS,
     metrics,
-    details: { openSamples, interactions: report },
+    samples,
+    details,
   }
   Object.assign(failureContext, output)
+  assertCompletePerfReport(output)
   const baseline = process.env.PERF_BASELINE
   const regressions = baseline
     ? comparePerfReports(output, JSON.parse(readFileSync(baseline, 'utf8')) as PerfReport)
@@ -614,7 +665,7 @@ async function main() {
 await main().catch((error: unknown) => {
   const failure = {
     ...failureContext,
-    formatVersion: 1,
+    formatVersion: PERF_FORMAT_VERSION,
     status: 'failed',
     measuredAt: new Date().toISOString(),
     error:
