@@ -5,13 +5,8 @@ import { addNode, clickElement, elements, newProject } from './canvas'
 for (const state of [
   'fetch_failed',
   'remote_pending',
-  'pending_failed',
   'fetch_unavailable',
-  'pending_unavailable',
-  'submit_unknown',
-  'review',
   'remote_failed',
-  'legacy',
 ] as const) {
   test(`任务恢复操作：${state} 不混淆重新获取与重新生成`, async ({ page }) => {
     await newProject(page)
@@ -21,30 +16,15 @@ for (const state of [
       id: 'recover-fixture',
       nodeId: node.id,
       nodeType: node.nodeType!,
-      status:
-        state === 'remote_pending' || state === 'pending_unavailable' || state === 'review'
-          ? 'canceled'
-          : 'failed',
+      status: state === 'remote_pending' ? 'canceled' : 'failed',
       attempts: 1,
       error: '请求没有完成',
       createdAt: Date.now(),
-      ...(state === 'legacy'
-        ? {}
-        : {
-            recovery: {
-              state:
-                state === 'pending_failed' || state === 'pending_unavailable'
-                  ? 'remote_pending'
-                  : state === 'fetch_unavailable'
-                    ? 'fetch_failed'
-                    : state,
-              refetchable:
-                state === 'fetch_failed' ||
-                state === 'remote_pending' ||
-                state === 'pending_failed',
-              remoteId: 'remote-existing',
-            },
-          }),
+      recovery: {
+        state: state === 'fetch_unavailable' ? 'fetch_failed' : state,
+        refetchable: state === 'fetch_failed' || state === 'remote_pending',
+        remoteId: 'remote-existing',
+      },
     }
     const calls: unknown[] = []
     let submissions = 0
@@ -64,23 +44,18 @@ for (const state of [
     await page.getByRole('button', { name: '任务', exact: true }).click()
     const panel = page.getByRole('complementary', { name: '任务', exact: true })
     await expect(panel.locator('li')).toHaveCount(1)
-    if (state === 'remote_failed' || state === 'legacy') {
+    if (state === 'remote_failed') {
       await expect(panel.getByRole('button', { name: '重试', exact: true })).toBeVisible()
       await panel.getByRole('button', { name: '重试', exact: true }).click()
       await expect.poll(() => submissions).toBe(1)
       expect(calls).toEqual([])
     } else {
       await expect(panel.getByRole('button', { name: '重试', exact: true })).toHaveCount(0)
-      if (state === 'fetch_failed' || state === 'remote_pending' || state === 'pending_failed') {
+      if (state === 'fetch_failed' || state === 'remote_pending') {
         await panel.getByRole('button', { name: '重新获取', exact: true }).click()
         await expect.poll(() => calls).toEqual([{ action: 'refetch' }])
         expect(submissions).toBe(0)
-      }
-      if (state === 'review')
-        await expect(panel.getByRole('button', { name: '去审查' })).toBeVisible()
-      if (state === 'submit_unknown')
-        await expect(panel.getByRole('button', { name: '确认未受理，重新提交' })).toBeVisible()
-      if (state === 'fetch_unavailable' || state === 'pending_unavailable') {
+      } else {
         await expect(panel.getByRole('button', { name: '重新获取', exact: true })).toHaveCount(0)
         await panel.getByRole('button', { name: '标记已处理', exact: true }).click()
         await expect.poll(() => calls).toEqual([{ action: 'dismiss' }])

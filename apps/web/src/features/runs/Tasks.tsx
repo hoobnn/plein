@@ -20,7 +20,13 @@ import { useCatalog } from '../../stores/catalog'
 import { duration, relativeTime } from '../../ui/format'
 import { Icon } from '../../ui/icons'
 import { cancelGroup, cancelNode, runNode } from './run'
-import { BATCH_OUTCOME, BATCH_STAGE, CANCELED_BY, describeRecovery } from './recovery'
+import {
+  BATCH_OUTCOME,
+  BATCH_STAGE,
+  CANCELED_BY,
+  describeRecovery,
+  recoveryActions,
+} from './recovery'
 import { useRecoveryRequests } from './recoveryRequests'
 import { recoveryEvidence } from './recoveryEvidence'
 import { cancelRequestKey, groupCancelRequestKey, useCancelRequests } from './cancelRequests'
@@ -496,8 +502,7 @@ function JobRow(props: {
           el &&
           (!el.run?.id || el.run.id === job.id) &&
           (job.status === 'failed' || job.status === 'canceled') &&
-          // 已受理的任务先恢复原结果，输入变化先审查；只有明确失败才直接重试。
-          (!job.recovery || job.recovery.state === 'remote_failed') &&
+          recoveryActions(job.recovery).retry &&
           !isActive(el.run?.status ?? '') && (
             <RowButton
               label="重试"
@@ -764,6 +769,7 @@ export function RecoveryBlock(props: {
 }) {
   const { job, view, doc } = props
   const r = job.recovery!
+  const actions = recoveryActions(r)
   const canvasId = useCanvas((s) => s.canvasId)
   const client = useQueryClient()
   const requestKey = JSON.stringify([canvasId, job.id])
@@ -876,7 +882,7 @@ export function RecoveryBlock(props: {
             复制核查信息
           </button>
         )}
-        {r.refetchable && (
+        {actions.refetch && (
           <button
             type="button"
             className={btn}
@@ -886,7 +892,7 @@ export function RecoveryBlock(props: {
             {r.state === 'submit_unknown' ? '重新核查' : '重新获取'}
           </button>
         )}
-        {r.state === 'submit_unknown' && r.attachable && attach === null && (
+        {actions.attach && attach === null && (
           <button
             ref={attachTrigger}
             type="button"
@@ -897,7 +903,7 @@ export function RecoveryBlock(props: {
             填写平台任务 ID
           </button>
         )}
-        {r.state === 'submit_unknown' && !confirm && (
+        {actions.resubmit && !confirm && (
           <button
             ref={confirmTrigger}
             type="button"
@@ -908,8 +914,7 @@ export function RecoveryBlock(props: {
             确认未受理，重新提交
           </button>
         )}
-        {(r.state === 'submit_unknown' ||
-          ((r.state === 'fetch_failed' || r.state === 'remote_pending') && !r.refetchable)) && (
+        {actions.dismiss && (
           <button
             type="button"
             className="ui-btn ui-btn-quiet ui-btn-xs"
@@ -932,7 +937,7 @@ export function RecoveryBlock(props: {
             采用
           </button>
         )}
-        {r.state === 'review' && el && props.latest && (
+        {actions.review && el && props.latest && (
           <button type="button" className={btn} onClick={props.onLocate}>
             去审查
           </button>

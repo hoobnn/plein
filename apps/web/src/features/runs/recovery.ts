@@ -21,6 +21,22 @@ export const CANCELED_BY: Record<CanceledBy, string> = {
   system: '已停止（画布或节点已删除）',
 }
 
+/** 任务记录本身决定的恢复操作；节点是否还在、是否最新一次等界面条件由调用处再判断 */
+export function recoveryActions(recovery: JobInfo['recovery']) {
+  const state = recovery?.state
+  return {
+    // 已受理的任务先恢复原结果，输入变化先审查；只有明确失败才直接重试。
+    retry: !recovery || state === 'remote_failed',
+    refetch: !!recovery?.refetchable,
+    attach: state === 'submit_unknown' && !!recovery?.attachable,
+    resubmit: state === 'submit_unknown',
+    dismiss:
+      state === 'submit_unknown' ||
+      ((state === 'fetch_failed' || state === 'remote_pending') && !recovery?.refetchable),
+    review: state === 'review',
+  }
+}
+
 export function describeRecovery(job: JobInfo): RecoveryView | null {
   const r = job.recovery
   if (!r || r.dismissed) return null
