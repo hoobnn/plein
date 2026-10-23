@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 import { MotionParams, MOTION_TEMPLATE_VERSION } from '../packages/nodes/src/motion'
 import type { CompositionSourceRef } from '../packages/plugin-sdk/src/ports'
 import { MOCK_WEBM_BASE64 } from '../packages/providers/src/mock/video-fixture'
@@ -315,6 +315,37 @@ test('资产卡从画布选择保留精确来源，删除原画布后再展开�
   await card.getByRole('button', { name: '添加到画布', exact: true }).click()
   await expect.poll(async () => (await mediaElements(page)).length).toBe(1)
   expect((await mediaElements(page))[0]!.params?.compositionSource).toEqual(f.sources[1])
+  await expect(reopened).toHaveCount(0)
+  const video = (await mediaElements(page))[0]!
+  await zoomTo(page, [video.id])
+  const point = await centerOf(page, video.id)
+  await page.mouse.click(point.x, point.y)
+  const original = await page.evaluate(
+    (id) => JSON.stringify(window.__plein.engine.doc.get(id)),
+    video.id,
+  )
+  const restore = page.getByRole('button', { name: '从源版本继续编辑', exact: true })
+  await expect(restore).toBeEnabled()
+  await restore.click()
+  const motion = page.getByRole('dialog', { name: '动态合成', exact: true })
+  await expect(motion).toBeVisible()
+  await expect(motion.getByRole('textbox', { name: '标题文案', exact: true })).toHaveValue(
+    '源工程 2',
+  )
+  await expect(motion.locator('.motion-preview')).toHaveAttribute('data-state', 'ready')
+  expect(
+    await page.evaluate((id) => JSON.stringify(window.__plein.engine.doc.get(id)), video.id),
+  ).toBe(original)
+  await motion.getByRole('button', { name: '撤销动态合成编辑', exact: true }).click()
+  await expect(motion).toHaveCount(0)
+  expect(
+    await page.evaluate(() =>
+      [...window.__plein.engine.doc.elements()].filter((el) => el.nodeType === 'plein/motion'),
+    ),
+  ).toHaveLength(0)
+  expect(
+    await page.evaluate((id) => JSON.stringify(window.__plein.engine.doc.get(id)), video.id),
+  ).toBe(original)
 })
 
 test('旧资产卡多来源展开先选择，取消零新增，再选后带所选版本', async ({ page }) => {
@@ -343,3 +374,87 @@ test('旧资产卡多来源展开先选择，取消零新增，再选后带所�
   await expect.poll(async () => (await mediaElements(page)).length).toBe(1)
   expect((await mediaElements(page))[0]!.params?.compositionSource).toEqual(f.sources[1])
 })
+
+for (const mode of ['只读', '删原视频', '换画布'] as const) {
+  test(`普通视频源版本恢复：${mode}期间迟到读取不新增动态合成`, async ({ page }) => {
+    const f = await fixture(page, 1)
+    await anotherCanvas(page, f.projectId)
+    const panel = await openAsset(page, '可复用合成.webm')
+    await panel.getByRole('button', { name: '放入当前画布', exact: true }).click()
+    await expect(panel).toHaveCount(0)
+    const video = (await mediaElements(page))[0]!
+    await zoomTo(page, [video.id])
+    const point = await centerOf(page, video.id)
+    await page.mouse.click(point.x, point.y)
+    const restore = page.getByRole('button', { name: '从源版本继续编辑', exact: true })
+    const setReadOnly = (value: boolean) =>
+      page.evaluate((readOnly) => {
+        ;(
+          window.__plein.engine.doc as typeof window.__plein.engine.doc & { readOnly: boolean }
+        ).readOnly = readOnly
+        const selected = window.__plein.engine.selection.values()
+        window.__plein.engine.selection.set([])
+        window.__plein.engine.selection.set(selected)
+      }, value)
+    await setReadOnly(true)
+    await expect(restore).toBeDisabled()
+    expect(
+      await page
+        .getByRole('toolbar', { name: '结果操作', exact: true })
+        .getByRole('button')
+        .count(),
+    ).toBe(1)
+    await setReadOnly(false)
+    await expect(restore).toBeEnabled()
+    let release!: () => void
+    const hold = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let started!: () => void
+    const reached = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    await page.route(`**/api/motion/source/${f.sources[0]!.manifestAssetId}`, async (route) => {
+      const response = await route.fetch()
+      started()
+      await hold
+      await route.fulfill({ response }).catch(() => {})
+    })
+    const browserRequest = page.waitForRequest((request) =>
+      request.url().endsWith(`/api/motion/source/${f.sources[0]!.manifestAssetId}`),
+    )
+    await restore.click()
+    const reading = await browserRequest
+    await reached
+    if (mode === '只读') await setReadOnly(true)
+    if (mode === '删原视频')
+      await page.evaluate(() => {
+        const engine = window.__plein.engine as typeof window.__plein.engine & {
+          deleteSelection(): void
+        }
+        engine.deleteSelection()
+      })
+    if (mode === '换画布') await anotherCanvas(page, f.projectId)
+    release()
+    const response = await reading.response()
+    if (response) await response.finished()
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    )
+    await expect
+      .poll(async () =>
+        page.evaluate(
+          () =>
+            [...window.__plein.engine.doc.elements()].filter((el) => el.nodeType === 'plein/motion')
+              .length,
+        ),
+      )
+      .toBe(0)
+    await expect(page.getByRole('dialog', { name: '动态合成', exact: true })).toHaveCount(0)
+    if (mode === '只读') await setReadOnly(false)
+    if (mode === '删原视频') expect(await mediaElements(page)).toHaveLength(0)
+  })
+}

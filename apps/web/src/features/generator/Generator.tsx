@@ -310,7 +310,13 @@ export function GeneratorPanel({
         key={`actions:${media.assetId}`}
         engine={engine}
         el={el}
-        media={media}
+        media={{
+          ...media,
+          compositionSource:
+            result?.value.type === media.kind && result.value.assetId === media.assetId
+              ? result.value.compositionSource
+              : undefined,
+        }}
         catalog={catalog}
         remote={!!canvasId}
         variant="inline"

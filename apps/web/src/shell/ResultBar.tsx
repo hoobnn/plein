@@ -29,6 +29,8 @@ import { useCatalog } from '../stores/catalog'
 import { Icon } from '../ui/icons'
 import { Popover } from '../ui/Popover'
 import { Presence } from '../ui/Presence'
+import { SourceRestoreButton } from '../features/motion/SourceRestoreButton'
+import { resultActionMedia, type ResultActionMedia } from './resultActionMedia'
 import { LibraryAdd } from '../features/library/LibraryAdd'
 import { MediaTools } from './MediaTools'
 import { AssetDownloadButton } from './AssetDownloadButton'
@@ -71,6 +73,19 @@ function ResultBarHost({ engine }: { engine: Engine }) {
   // 生成节点的结果操作在生成器里；锁定的节点没有生成器，仍用浮动工具条
   const media = el && (el.kind !== 'node' || el.locked) ? mediaOf(el) : null
   // 加工工具要覆盖音频，所以另算一份含音频的
+  const resultValue = el?.kind === 'node' ? primaryResult(el)?.value : undefined
+  const shownMedia = media
+    ? {
+        ...media,
+        compositionSource:
+          resultValue &&
+          'assetId' in resultValue &&
+          resultValue.assetId === media.assetId &&
+          resultValue.type === media.kind
+            ? resultValue.compositionSource
+            : undefined,
+      }
+    : null
   const asset = el && (el.kind !== 'node' || el.locked) ? elementMedia(el) : null
   const analysis = el?.nodeType === SHOT_ANALYSIS_TYPE && (engine.doc.readOnly || el.locked)
   const place = () => {
@@ -102,7 +117,15 @@ function ResultBarHost({ engine }: { engine: Engine }) {
   }
   const ref = useFollow<HTMLDivElement>(engine, place)
   const style = place()
-  if (!el || (!media && !asset && !analysis) || !style || (engine.doc.readOnly && !analysis))
+  if (
+    !el ||
+    (!media && !asset && !analysis) ||
+    !style ||
+    // 只读画布仍要能看见拉片清单与源版本入口，其余操作不展示
+    (engine.doc.readOnly &&
+      !analysis &&
+      (el.kind !== 'video' || el.params?.compositionSource === undefined))
+  )
     return null
 
   return (
@@ -123,18 +146,22 @@ function ResultBarHost({ engine }: { engine: Engine }) {
           查看拉片清单
         </button>
       )}
-      {media && (
-        <ResultActions
-          key={`actions:${media.assetId}`}
-          engine={engine}
-          el={el}
-          media={media}
-          catalog={catalog}
-          remote={!!canvasId}
-          variant="bar"
-        />
+      {engine.doc.readOnly ? (
+        <SourceRestoreButton engine={engine} element={el} className="ui-bar-btn" />
+      ) : (
+        media && (
+          <ResultActions
+            key={`actions:${media.assetId}`}
+            engine={engine}
+            el={el}
+            media={shownMedia!}
+            catalog={catalog}
+            remote={!!canvasId}
+            variant="bar"
+          />
+        )
       )}
-      {asset && canvasId && (
+      {!engine.doc.readOnly && asset && canvasId && (
         // key 跟着素材走：换选一个素材时把已读的元信息和打开的表单一起丢掉
         <MediaTools
           key={`${el.id}:${asset.assetId}`}
@@ -162,7 +189,7 @@ export function ResultActions({
 }: {
   engine: Engine
   el: CanvasElement
-  media: { assetId: string; kind: 'image' | 'video' }
+  media: ResultActionMedia
   catalog: Catalog | null
   remote: boolean
   variant: 'bar' | 'inline'
@@ -349,9 +376,8 @@ export function ResultActions({
           variant="inline"
         />
       )}
-      {remote && (
-        <LibraryAdd media={[{ elId: el.id, ...media, name: el.name ?? '' }]} variant={variant} />
-      )}
+      {remote && <SourceRestoreButton engine={engine} element={el} className={btn} />}
+      {remote && <LibraryAdd media={[resultActionMedia(el, media)]} variant={variant} />}
       {(remote || (image && (imageNode || videoNode)) || continueNode || editNode) && (
         <span aria-hidden="true" className="ui-bar-sep" />
       )}

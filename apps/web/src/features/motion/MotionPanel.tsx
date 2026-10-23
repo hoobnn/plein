@@ -2,8 +2,6 @@ import type { Composition } from '@hyperframes/sdk'
 import type { Engine } from '@plein/canvas-core'
 import {
   adoptResult,
-  connect,
-  createElement,
   currentResult,
   setParam,
   setParamEntry,
@@ -29,9 +27,9 @@ import {
   type ReactNode,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react'
-import { assetUrls, request } from '../../api/client'
+import { assetUrls } from '../../api/client'
 import { useEngineVersion } from '../../canvas/hooks'
-import { findNode, nodeElement, upstreams } from '../../canvas/nodes'
+import { upstreams } from '../../canvas/nodes'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { Icon } from '../../ui/icons'
@@ -46,6 +44,7 @@ import type { MotionInputs } from './api'
 import { applyMotionHistory, canMotionHistory, writeMotionEdit } from './history'
 import { MotionPreview } from './MotionPreview'
 import { editMotionDocument, openMotionDocument } from './sdk'
+import { copyMotionSource, loadMotionSource } from './source'
 import './motion.css'
 
 const FieldLock = createContext(false)
@@ -314,21 +313,9 @@ function Editor({
     setSourceLoading(true)
     try {
       const manifestAssetId = result.value.compositionSource.manifestAssetId
-      const source = await request<{ params: unknown; inputs?: MotionInputs }>(
-        `/api/motion/source/${encodeURIComponent(manifestAssetId)}`,
-        { signal: abort.signal },
-      )
-      const parsed = MotionParams.parse(source.params)
-      const media: MotionInputs = {}
-      for (const kind of ['image', 'video'] as const) {
-        const assetId = source.inputs?.[kind]
-        if (assetId) {
-          if (!/^[0-9a-f]{64}$/.test(assetId)) throw new Error('源工程中的素材引用无效')
-          media[kind] = assetId
-        }
-      }
+      const source = await loadMotionSource(manifestAssetId, abort.signal)
       if (abort.signal.aborted || !canView()) return
-      setFrozen({ resultId: result.id, params: parsed, inputs: media, manifestAssetId })
+      setFrozen({ resultId: result.id, ...source, manifestAssetId })
       setError(null)
     } catch (cause) {
       if (!abort.signal.aborted && canView()) setError(errorText(cause))
@@ -342,39 +329,11 @@ function Editor({
   }
   const restoreSource = () => {
     if (!canWrite() || !frozen || !canvasId || sourceLoading) return
-    const source = frozen
-    const info = findNode(useCatalog.getState().catalog, MOTION_TYPE)
-    if (!info) return setError('动态合成节点尚未启用')
-    const nodeId = `el_${crypto.randomUUID().replaceAll('-', '')}`
-    const anchor = engine.doc.worldRect(id) ?? { x: 0, y: 0, w: 320, h: 240 }
-    // 从经过所有权、模板版本与素材验证的冻结源创建副本；旧节点和连线均保留。
-    writeMotionEdit(engine.doc, nodeId, () => {
-      createElement(engine.doc, {
-        ...nodeElement(info, source.params),
-        id: nodeId,
-        name: `${source.params.title || '动态合成'} · 源版本`,
-        x: anchor.x + anchor.w + 380,
-        y: anchor.y,
-      })
-      for (const [index, kind] of (['image', 'video'] as const).entries()) {
-        const assetId = source.inputs[kind]
-        if (!assetId) continue
-        const inputId = createElement(engine.doc, {
-          kind,
-          assetId,
-          x: anchor.x + anchor.w + 40,
-          y: anchor.y + index * 240,
-          w: 280,
-          h: 180,
-          name: `源版本${kind === 'image' ? '图片' : '视频'}`,
-        })
-        connect(engine.doc, [inputId, kind], [nodeId, kind])
-      }
-    })
-    engine.doc.flush()
-    engine.selection.set([nodeId])
-    engine.zoomToFit([nodeId])
-    useCanvas.getState().openMotion(nodeId)
+    try {
+      copyMotionSource(engine, id, frozen)
+    } catch (cause) {
+      setError(errorText(cause))
+    }
   }
   const selection = document?.getElement(selected)
   const editable = motionEditable.find((entry) => entry.id === selected)!

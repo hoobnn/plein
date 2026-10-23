@@ -33,7 +33,7 @@ import { ApiError, assetUrls } from '../../api/client'
 import { loadAssetMeta } from '../../stores/assetMeta'
 import type { LibrarySeed } from './store'
 import { mediaOf } from '../../canvas/grid'
-import { currentResult } from '@plein/doc'
+import { primaryResult } from '@plein/doc'
 import { loadMediaCompositionSources } from '../media-library/composition'
 import { findNode, mentionTargets, nodeElement } from '../../canvas/nodes'
 
@@ -340,7 +340,7 @@ export function mediaIn(engine: Engine, ids: readonly string[]): CanvasMedia[] {
     for (const el of [engine.doc.get(id), ...engine.doc.descendants(id)]) {
       const m = el && mediaOf(el)
       if (!el || !m) continue
-      const value = el.kind === 'node' ? currentResult(el)?.value : undefined
+      const value = el.kind === 'node' ? primaryResult(el)?.value : undefined
       const raw =
         value && 'compositionSource' in value
           ? value.compositionSource
