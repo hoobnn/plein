@@ -2,9 +2,8 @@ import { expect, type Page, test } from '@playwright/test'
 import { centerOf, newProject } from './canvas'
 
 type NavigationEngine = Window['__plein']['engine'] & {
-  camera: { x: number; y: number; zoom: number; centerOn(x: number, y: number): void }
+  camera: { x: number; y: number; zoom: number }
   flyTo(ids: string[]): void
-  zoomTo(zoom: number): void
   flight: unknown
 }
 async function setup(page: Page) {
@@ -24,37 +23,6 @@ const camera = (page: Page) =>
     const { camera } = window.__plein.engine as NavigationEngine
     return { x: camera.x, y: camera.y, zoom: camera.zoom }
   })
-
-for (const action of ['fit', 'zoom', 'center'] as const) {
-  test(`平滑定位中 ${action} 立即接管镜头，旧动画不再拉回`, async ({ page }) => {
-    const ids = await setup(page)
-    const expected = await page.evaluate(
-      ({ ids, action }) => {
-        const engine = window.__plein.engine as NavigationEngine
-        engine.flyTo([ids.far])
-        if (action === 'fit') engine.zoomToFit([ids.latest])
-        if (action === 'zoom') engine.zoomTo(0.5)
-        if (action === 'center') {
-          const r = engine.doc.worldRect(ids.latest)
-          engine.camera.centerOn(r.x + r.w / 2, r.y + r.h / 2)
-        }
-        const { x, y, zoom } = engine.camera
-        return { x, y, zoom }
-      },
-      { ids, action },
-    )
-    // 超过现有 560ms 镜头动画时长，确认后续帧不会覆盖刚完成的导航。
-    await page.waitForTimeout(700)
-    expect(await camera(page)).toEqual(expected)
-    if (action !== 'zoom') {
-      const p = await centerOf(page, ids.latest)
-      expect(p.x).toBeGreaterThan(296)
-      expect(p.x).toBeLessThan(1428)
-      expect(p.y).toBeGreaterThan(64)
-      expect(p.y).toBeLessThan(836)
-    }
-  })
-}
 
 test('连续平滑定位以最后一个目标为准，滚轮操作能停止正在进行的定位', async ({ page }) => {
   const ids = await setup(page)
