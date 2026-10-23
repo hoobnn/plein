@@ -8,6 +8,26 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 
 const available = await hasFfmpeg()
 afterEach(() => vi.restoreAllMocks())
+
+describe('序列实例损坏时直接拒绝', () => {
+  it('实例版序列的镜头缺少实例身份时先修复，不猜着渲染', async () => {
+    const f = await sequenceSegmentFixture()
+    const sequence = addNode(f.doc, 'plein/sequence', {
+      nodeVersion: 2,
+      params: {
+        instanceVersion: 2,
+        // 缺少 clipInstanceId 的旧式镜头，不是有实例身份的镜头
+        clips: [{ source: f.view, in: 1, out: 3 }],
+        subtitles: false,
+      },
+    })
+    connect(f.doc, [f.view, 'video'], [sequence, 'clips'])
+    const job = f.server.runs.start(f.id, sequence, 'local')
+    expect(await f.server.runs.wait(job)).toBe('failed')
+    expect(f.server.runs.store.get(job)?.error).toContain('序列实例损坏')
+  })
+})
+
 describe.skipIf(!available)('P11 v1在途序列冻结版本恢复', () => {
   for (const mode of ['frozen-version', 'prepared-version', 'unknown-version']) {
     it(`${mode}: shutdown后实际升级文档，不按当前v2参数猜旧任务`, async () => {

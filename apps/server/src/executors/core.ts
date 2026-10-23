@@ -14,6 +14,7 @@ import {
   sequenceSpec,
   sequenceSourceMap,
   subtitleExportProblem,
+  sequenceOverlayProblem,
   speechNode,
   StoryboardDraft,
   stageNode,
@@ -317,6 +318,8 @@ const sequence = defineExecutor(sequenceNode, async (ctx) => {
   const { params, inputs } = ctx
   const arranged = arrangeSequence(params, inputs)
   if (arranged.length === 0) throw new ProviderError('invalid_input', '没有连入镜头视频')
+  const overlayProblem = sequenceOverlayProblem(params, arranged, inputs.overlays)
+  if (overlayProblem) throw new ProviderError('invalid_input', overlayProblem, { retryable: false })
   const subtitleProblem = subtitleExportProblem(params, arranged)
   if (subtitleProblem)
     throw new ProviderError('invalid_input', subtitleProblem, { retryable: false })
@@ -388,6 +391,8 @@ const sequence = defineExecutor(sequenceNode, async (ctx) => {
     },
     inputs.music,
     undefined,
+    undefined,
+    inputs.overlays,
   )
   if (spec.clips.length === 0)
     throw new ProviderError('invalid_input', '各段时长都是 0，检查入点和出点')
@@ -395,7 +400,12 @@ const sequence = defineExecutor(sequenceNode, async (ctx) => {
   // 本机缺能力是长期状态，重试没有意义，标成不可重试。
   // 完全没有 ffmpeg 时不是缺 libass 的问题，交给合成本身报错
   const caps = await mediaCaps()
-  if (spec.subtitles?.cues.length && caps.ffmpeg && !caps.subtitles)
+  if (
+    spec.subtitles?.cues.length &&
+    (spec.subtitles.render ?? 'static') === 'static' &&
+    caps.ffmpeg &&
+    !caps.subtitles
+  )
     throw new ProviderError('unavailable', missingCapability('subtitles'), { retryable: false })
   ctx.progress(0, '合成中…')
   const subtitleEvidence = freezeSubtitleEvidence(spec)

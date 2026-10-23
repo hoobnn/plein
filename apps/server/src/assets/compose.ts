@@ -22,6 +22,67 @@ function sourceLengths(spec: ComposeSpec, infos: MediaInfo[]) {
   })
 }
 
+/** 同一转场语义，供字幕层根时长和合成门禁使用。 */
+export function compositionDuration(spec: ComposeSpec, infos: MediaInfo[]): number {
+  const durations = sourceLengths(spec, infos).map((d, i) => d / (spec.clips[i]!.speed ?? 1))
+  return durations.reduce((sum, duration, i) => {
+    const tr = i ? (spec.clips[i]!.transition ?? spec.transition) : undefined
+    return sum + duration - (tr && overlapping(tr) ? tr.duration : 0)
+  }, 0)
+}
+
+/** 新图层必须可表示且覆盖真实源窗口；不让损坏数据静默消失或冻结尾帧。 */
+export function validateComposeOverlays(
+  spec: ComposeSpec,
+  infos: MediaInfo[],
+  total: number,
+  internalCaptionLayer = false,
+) {
+  const overlays = spec.overlays ?? []
+  if (overlays.length > (internalCaptionLayer ? 201 : 200)) throw new Error('叠加层不能超过 200 个')
+  overlays.forEach((overlay, i) => {
+    const finite = [
+      overlay.start,
+      overlay.duration,
+      overlay.in,
+      overlay.speed,
+      overlay.x,
+      overlay.y,
+      overlay.width,
+      overlay.height,
+      overlay.opacity,
+    ].every(Number.isFinite)
+    if (
+      !finite ||
+      overlay.start < 0 ||
+      overlay.start >= total ||
+      overlay.duration <= 0 ||
+      overlay.in < 0 ||
+      overlay.speed < 0.25 ||
+      overlay.speed > 4 ||
+      overlay.x < 0 ||
+      overlay.x > 1 ||
+      overlay.y < 0 ||
+      overlay.y > 1 ||
+      overlay.width <= 0 ||
+      overlay.width > 1 ||
+      overlay.height <= 0 ||
+      overlay.height > 1 ||
+      overlay.opacity < 0 ||
+      overlay.opacity > 1
+    )
+      throw new Error(`第 ${i + 1} 个叠加层的时间或位置不合法`)
+    const info = infos[i]
+    if (!info?.hasVideo) throw new Error(`第 ${i + 1} 个叠加层不是视频`)
+    const duration = Math.min(overlay.duration, total - overlay.start)
+    if (
+      !Number.isFinite(info.duration) ||
+      overlay.in + duration * overlay.speed > info.duration! + 1 / spec.fps
+    )
+      throw new Error(`第 ${i + 1} 个叠加层的源素材不足以覆盖入点、速度与可见时长`)
+  })
+}
+
 const fmt = (n: number) => Number(n.toFixed(3)).toString()
 
 /** 重叠转场对应的 xfade 效果 */
@@ -55,8 +116,8 @@ export function envelopeExpr(env: Array<[number, number]>, offset: number) {
  */
 function composeArgs(
   spec: ComposeSpec,
-  files: { clips: string[]; audio: string[] },
-  infos: { clips: MediaInfo[] },
+  files: { clips: string[]; audio: string[]; overlays?: string[] },
+  infos: { clips: MediaInfo[]; overlays?: MediaInfo[] },
   out: string,
   /** H.264 编码参数，见 h264Args */
   encoder: string[],
@@ -82,6 +143,20 @@ function composeArgs(
   spec.audio.forEach((a, i) => {
     if (a.loop) args.push('-stream_loop', '-1')
     args.push('-i', files.audio[i]!)
+  })
+
+  ;(spec.overlays ?? []).forEach((overlay, i) => {
+    // FFmpeg内置VP9解码会丢WebM alpha，明确使用libvpx双平面解码。
+    if (infos.overlays?.[i]?.videoCodec === 'vp9' && infos.overlays[i]?.hasAlpha)
+      args.push('-c:v', 'libvpx-vp9')
+    args.push(
+      '-ss',
+      fmt(overlay.in),
+      '-t',
+      fmt(overlay.duration * overlay.speed),
+      '-i',
+      files.overlays![i]!,
+    )
   })
 
   // 经黑场转场：前一段结尾淡出、后一段开头淡入，各占一半
@@ -180,10 +255,26 @@ function composeArgs(
       ? `${mix.join('')}amix=inputs=${mix.length}:duration=first:dropout_transition=0:normalize=0,${master}[aout]`
       : `[acat]${master}[aout]`,
   )
+  let painted = '[vcat]'
+  const precise = (value: number) => Number(value.toFixed(9)).toString()
+  ;(spec.overlays ?? []).forEach((overlay, i) => {
+    const input = spec.clips.length + spec.audio.length + i
+    const width = Math.max(1, Math.round(overlay.width * W)),
+      height = Math.max(1, Math.round(overlay.height * H))
+    const start = precise(overlay.start),
+      end = precise(Math.min(total, overlay.start + overlay.duration))
+    filters.push(
+      `[${input}:v]setpts=(PTS-STARTPTS)/${precise(overlay.speed)},fps=${fps},scale=${width}:${height},format=rgba,colorchannelmixer=aa=${precise(overlay.opacity)},setpts=PTS+${start}/TB[overlay${i}]`,
+    )
+    filters.push(
+      `${painted}[overlay${i}]overlay=x=${Math.round(overlay.x * W)}:y=${Math.round(overlay.y * H)}:enable='gte(t,${start})*lt(t,${end})':eof_action=pass:repeatlast=0:format=auto[paint${i}]`,
+    )
+    painted = `[paint${i}]`
+  })
   filters.push(
-    spec.subtitles?.cues.length
-      ? `[vcat]ass=subs.ass${fontsdir ? ':fontsdir=fonts' : ''}[vout]`
-      : '[vcat]null[vout]',
+    spec.subtitles?.cues.length && (spec.subtitles.render ?? 'static') === 'static'
+      ? `${painted}ass=subs.ass${fontsdir ? ':fontsdir=fonts' : ''}[vout]`
+      : `${painted}format=yuv420p[vout]`,
   )
 
   args.push(
@@ -218,16 +309,28 @@ function composeArgs(
  */
 export async function composeVideo(
   spec: ComposeSpec,
-  files: { clips: string[]; audio: string[] },
-  infos: { clips: MediaInfo[] },
+  files: { clips: string[]; audio: string[]; overlays?: string[] },
+  infos: { clips: MediaInfo[]; overlays?: MediaInfo[] },
   dir: string,
-  opts: { signal: AbortSignal; onProgress?: (fraction: number) => void },
+  opts: {
+    signal: AbortSignal
+    onProgress?: (fraction: number) => void
+    /** 仅宿主追加的内部字幕层，不占用户的200层额度。 */ internalCaptionLayer?: boolean
+  },
 ) {
   opts.signal.throwIfAborted()
   if (spec.clips.length === 0) throw new Error('没有可合成的画面')
+  validateComposeOverlays(
+    spec,
+    infos.overlays ?? [],
+    compositionDuration(spec, infos.clips),
+    opts.internalCaptionLayer,
+  )
+  if ((files.overlays?.length ?? 0) !== (spec.overlays?.length ?? 0))
+    throw new Error('叠加层文件不完整')
   const out = join(dir, 'out.mp4')
   let fontsdir = false
-  if (spec.subtitles?.cues.length) {
+  if (spec.subtitles?.cues.length && (spec.subtitles.render ?? 'static') === 'static') {
     const font = await subtitleFont()
     if (font) {
       await mkdir(join(dir, 'fonts'), { recursive: true })

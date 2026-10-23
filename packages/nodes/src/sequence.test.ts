@@ -178,8 +178,8 @@ describe('序列', () => {
     expect(spec.subtitles).toEqual({
       style: 'standard',
       cues: [
-        { start: 0, end: 4, text: '改过的字幕' },
-        { start: 4, end: 6, text: '二' },
+        { start: 0, end: 4, text: '改过的字幕', source: 'b', origin: 'manual' },
+        { start: 4, end: 6, text: '二', source: 'a', origin: 'estimated' },
       ],
     })
   })
@@ -209,7 +209,9 @@ describe('序列', () => {
     ])
     expect(tl.clips.map((c) => c.start)).toEqual([0, 2.5, 4])
     expect(tl.total).toBe(9)
-    expect(tl.clips[2]!.cues).toEqual([{ start: 4, end: 5, text: '三' }])
+    expect(tl.clips[2]!.cues).toEqual([
+      { start: 4, end: 5, text: '三', source: 'c', origin: 'estimated' },
+    ])
     // 经黑场淡入淡出不改变时长
     const fade = sequenceTimeline(params({ transition: '淡入淡出' }), arranged, {
       clips: [4, 3, 5],

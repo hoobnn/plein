@@ -1620,6 +1620,7 @@ export class NodeRuns implements BatchHost {
         if (this.store.batchItem(g.id, id)?.outcome === 'pending')
           this.store.updateBatchItem(g.id, id, { outcome: 'canceled' })
       const status = ctrl.signal.aborted ? 'canceled' : 'done'
+      // 待审阅不是失败：输入变了没提交、候选还没采用，都单列出来等审看。
       const review = this.store.batchItems(g.id).filter((item) => item.outcome === 'review').length
       const summary = {
         succeeded: r.succeeded.length,
@@ -2342,7 +2343,9 @@ export class NodeRuns implements BatchHost {
       CACHE_KEY_VERSION +
       this.hashKey(el, p, omit, NOT_CONTENT, {
         model: model ? { ref: model.ref, version: model.version, plugin: model.plugin } : null,
-        ...(el.nodeType === MOTION_TYPE
+        ...(el.nodeType === MOTION_TYPE ||
+        (el.nodeType === 'plein/sequence' &&
+          this.latestParams(el, p)?.subtitleRender === 'animated')
           ? { renderer: this.host.compositionRendererIdentity() }
           : {}),
       })
@@ -2401,13 +2404,14 @@ export class NodeRuns implements BatchHost {
           type: el.nodeType,
           version: p.def?.version ?? el.nodeVersion,
           params: kept,
-          // 来源元素 id 只用来对应设置，不算内容
+          // 来源元素 id 只用来对应设置，不算内容；序列按来源元素对应镜头和叠加设置，
+          // 换同资产副本也要重新验证绑定，所以序列保留来源信息。候选出处等元数据一律不算内容。
           inputs: Object.fromEntries(
             Object.entries(p.inputs).map(([k, vs]) => [
               k,
               vs.map(
                 ({
-                  source: _,
+                  source,
                   sourcePort: _p,
                   edgeId: _e,
                   resultId: _r,
@@ -2417,7 +2421,8 @@ export class NodeRuns implements BatchHost {
                   sourceCanvasId: _selection,
                   generationOrigin: _generation,
                   ...v
-                }: PortValue & { originCanvasId?: string; originNodeId?: string }) => v,
+                }: PortValue & { originCanvasId?: string; originNodeId?: string }) =>
+                  el.nodeType === 'plein/sequence' ? { source, ...v } : v,
               ),
             ]),
           ),

@@ -1,7 +1,7 @@
 import { compositionAssetIds } from '@plein/doc'
 import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
-import type { ComposeSpec } from '@plein/plugin-sdk'
+import { composeAssetRefs, type ComposeSpec } from '@plein/plugin-sdk'
 import {
   API,
   MediaCollageRequest,
@@ -61,7 +61,7 @@ export function mediaRoutes(store: AssetStore) {
         if (!parsed.success) return c.json({ error: 'invalid', message: '参数不合法' }, 400)
         const owner = c.var.principal.id
         const spec = parsed.data.spec as ComposeSpec
-        const refs = [...spec.clips.map((x) => x.asset), ...spec.audio.map((x) => x.asset)]
+        const refs = composeAssetRefs(spec)
         if (
           refs.some(
             (r) =>
@@ -92,6 +92,8 @@ export function mediaRoutes(store: AssetStore) {
           })
         } catch (err) {
           if ((err as { code?: string }).code === 'not_found') return c.json(notFound, 404)
+          if ((err as { code?: string }).code === 'invalid')
+            return c.json({ error: 'invalid', message: (err as Error).message }, 422)
           console.error('[media] 导出剪辑工程失败：', err)
           return c.json({ error: 'internal', message: '导出失败，请查看服务端日志' }, 500)
         }

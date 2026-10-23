@@ -222,4 +222,28 @@ describe('节点运行接口', () => {
     ])
     expect(shots[0]!.id).toMatch(/^shot_/)
   })
+
+  it('素材卡片不是节点，不能直接运行或作为流程起点', async () => {
+    const { canvas, doc } = await newCanvas()
+    const card = createElement(doc, {
+      kind: 'markdown',
+      text: '不是节点的卡片',
+      x: 0,
+      y: 0,
+      w: 200,
+      h: 100,
+    })
+    expect(() => server.runs.start(canvas.id, card, 'local')).toThrow('节点不存在')
+    expect(() =>
+      server.runs.runFlow(canvas.id, card, 'local', { scope: 'upstream', force: false }),
+    ).toThrow('节点不存在')
+  })
+
+  it('设定卡是就地节点，没有可运行的批次', async () => {
+    const { canvas, doc } = await newCanvas()
+    const character = addNode(doc, 'plein/character', { params: { description: '设定' } })
+    expect(() =>
+      server.runs.runFlow(canvas.id, character, 'local', { scope: 'upstream', force: false }),
+    ).toThrow('这里没有需要运行的节点')
+  })
 })

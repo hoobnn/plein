@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { connect, createElement, type PleinDoc } from '@plein/doc'
 import { stableStringify } from '@plein/flow'
-import { ProviderError } from '@plein/plugin-sdk'
+import { parseModelRef, ProviderError } from '@plein/plugin-sdk'
 import { API, type SubtitleRecognitionInfo } from '@plein/protocol'
 import { Hono } from 'hono'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
@@ -11,6 +11,8 @@ import type { AuthEnv } from '../auth'
 import { addNode, bootServer, createCanvas, mockModel, mockSettings } from '../testing'
 import { subtitleRoutes } from './routes'
 import * as journal from './journal'
+import { cacheParams } from '../runs/runs'
+import { sequenceNode } from '@plein/nodes'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -137,115 +139,151 @@ describe('字幕显式识别与持久恢复', () => {
     )
   })
 
-  it.each(['matching', 'owner', 'asset', 'model', 'adapter', 'unknown'] as const)(
-    '历史 ASR 迁移只复用精确版本和来源：%s',
-    async (variant) => {
-      const s = await setup()
-      const { id: canvasId, doc } = await createCanvas(s.server)
-      const video = await s.server.plugins.call(
-        'video.generate',
-        mockModel('video.generate'),
-        { prompt: '历史镜头' },
-        { ownerId: 'local' },
+  it.each(
+    (['current-source', 'legacy-no-source'] as const).flatMap((encoding) =>
+      (['matching', 'owner', 'asset', 'model', 'adapter', 'unknown', 'checksum'] as const).map(
+        (variant) => [encoding, variant] as const,
+      ),
+    ),
+  )('历史 ASR 迁移只复用精确版本和来源：%s / %s', async (encoding, variant) => {
+    const s = await setup()
+    const { id: canvasId, doc } = await createCanvas(s.server)
+    const video = await s.server.plugins.call(
+      'video.generate',
+      mockModel('video.generate'),
+      { prompt: '历史镜头' },
+      { ownerId: 'local' },
+    )
+    const clip = createElement(doc, {
+      kind: 'video',
+      assetId: video.assets[0]!.assetId,
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+    })
+    const audio = createElement(doc, {
+      kind: 'audio',
+      assetId: s.assetId,
+      x: 0,
+      y: 200,
+      w: 100,
+      h: 100,
+    })
+    const seq = addNode(doc, 'plein/sequence', {
+      params: { asrTiming: true, model: mockModel('audio.transcribe') },
+    })
+    connect(doc, [clip, 'video'], [seq, 'clips'])
+    connect(doc, [audio, 'audio'], [seq, 'dialogue'])
+    const inspection = await s.server.runs.inspect(
+      doc,
+      doc.get(seq)!,
+      'local',
+      new AbortController().signal,
+    )
+    expect(inspection.input.inputHash).toMatch(/^v2:/)
+    const input = inspection.inputs.dialogue![0]!
+    if (!('assetId' in input)) throw new Error('fixture needs audio')
+    const model = mockModel('audio.transcribe')
+    const key = `${createHash('sha256')
+      .update(
+        stableStringify({
+          capability: 'audio.transcribe',
+          model,
+          input: { audio: { assetId: input.assetId, kind: 'audio', mime: input.mime } },
+        }),
       )
-      const clip = createElement(doc, {
-        kind: 'video',
-        assetId: video.assets[0]!.assetId,
-        x: 0,
-        y: 0,
-        w: 100,
-        h: 100,
-      })
-      const audio = createElement(doc, {
-        kind: 'audio',
-        assetId: s.assetId,
-        x: 0,
-        y: 200,
-        w: 100,
-        h: 100,
-      })
-      const seq = addNode(doc, 'plein/sequence', {
-        params: { asrTiming: true, model: mockModel('audio.transcribe') },
-      })
-      connect(doc, [clip, 'video'], [seq, 'clips'])
-      connect(doc, [audio, 'audio'], [seq, 'dialogue'])
-      const inspection = await s.server.runs.inspect(
-        doc,
-        doc.get(seq)!,
-        'local',
-        new AbortController().signal,
-      )
-      expect(inspection.input.inputHash).toMatch(/^v2:/)
-      const input = inspection.inputs.dialogue![0]!
-      if (!('assetId' in input)) throw new Error('fixture needs audio')
-      const model = mockModel('audio.transcribe')
-      const key = `${createHash('sha256')
+      .digest('hex')}#0`
+    const jobId = 'legacy-confirmed-asr'
+    s.server.runs.store.insert({
+      id: jobId,
+      ownerId: variant === 'owner' ? 'other' : 'local',
+      canvasId,
+      nodeId: seq,
+      nodeType: 'plein/sequence',
+    })
+    const frozen = {
+      params: inspection.params,
+      inputs: inspection.inputs,
+      inputHash: inspection.input.inputHash,
+    }
+    if (encoding === 'legacy-no-source') {
+      // 真实旧快照既不保存新增图层/渲染默认值，也不把来源元素身份计入 v2 hash。
+      const {
+        overlays: _overlays,
+        subtitleRender: _render,
+        subtitleAnimation: _animation,
+        ...oldParams
+      } = frozen.params
+      frozen.params = oldParams
+      const modelSpec = s.entry.def.models.find((spec) => spec.id === parseModelRef(model)!.model)!
+      frozen.inputHash = `v2:${createHash('sha256')
         .update(
           stableStringify({
-            capability: 'audio.transcribe',
-            model,
-            input: { audio: { assetId: input.assetId, kind: 'audio', mime: input.mime } },
+            type: 'plein/sequence',
+            // 旧任务按当前节点版本重算，版本变了就不再复用旧结果
+            version: sequenceNode.version,
+            params: cacheParams(oldParams),
+            inputs: Object.fromEntries(
+              Object.entries(frozen.inputs).map(([port, values]) => [
+                port,
+                values.map(({ source: _source, ...value }) => value),
+              ]),
+            ),
+            model: {
+              ref: model,
+              version: modelSpec.version,
+              plugin: s.server.plugins.registry.plugin(s.entry.plugin)!.manifest.version,
+            },
           }),
         )
-        .digest('hex')}#0`
-      const jobId = 'legacy-confirmed-asr'
-      s.server.runs.store.insert({
-        id: jobId,
-        ownerId: variant === 'owner' ? 'other' : 'local',
-        canvasId,
-        nodeId: seq,
-        nodeType: 'plein/sequence',
-      })
-      const frozen = {
-        params: inspection.params,
-        inputs: inspection.inputs,
-        inputHash: inspection.input.inputHash,
-      }
-      if (variant === 'asset') input.assetId = 'e'.repeat(64)
-      if (variant === 'model') frozen.params.model = 'other/model:asr'
-      s.server.runs.store.update(jobId, { status: 'succeeded', frozen: JSON.stringify(frozen) })
-      s.server.runs.store.journal(jobId).set(
-        key,
-        variant === 'unknown'
-          ? { state: 'unknown', at: Date.now(), message: '历史提交不明' }
-          : {
-              state: 'done',
-              result: {
-                outputs: [
-                  {
-                    type: 'json',
-                    value: { segments: [{ start: 0.2, end: 0.8, text: '历史确认结果' }] },
-                  },
-                ],
-                assets: [],
-              },
+        .digest('hex')}`
+    }
+    if (variant === 'checksum') frozen.inputHash = `v2:${'f'.repeat(64)}`
+    if (variant === 'asset') input.assetId = 'e'.repeat(64)
+    if (variant === 'model') frozen.params.model = 'other/model:asr'
+    s.server.runs.store.update(jobId, { status: 'succeeded', frozen: JSON.stringify(frozen) })
+    s.server.runs.store.journal(jobId).set(
+      key,
+      variant === 'unknown'
+        ? { state: 'unknown', at: Date.now(), message: '历史提交不明' }
+        : {
+            state: 'done',
+            result: {
+              outputs: [
+                {
+                  type: 'json',
+                  value: { segments: [{ start: 0.2, end: 0.8, text: '历史确认结果' }] },
+                },
+              ],
+              assets: [],
             },
-      )
-      const submit = vi.spyOn(s.entry.def, 'submit')
-      const manifest = s.server.plugins.registry.plugin(s.entry.plugin)!.manifest
-      const original = manifest.version
-      try {
-        if (variant === 'adapter') manifest.version = '99.0.0'
-        const response = await s.call()
-        if (variant === 'unknown') {
-          expect(response.status).toBe(422)
-          expect(((await response.json()) as { message: string }).message).toContain(jobId)
-          expect(submit).not.toHaveBeenCalled()
-        } else {
-          expect(response.status).toBe(200)
-          const body = (await response.json()) as {
-            transcripts: Record<string, Array<{ text: string }>>
-          }
-          expect(submit).toHaveBeenCalledTimes(variant === 'matching' ? 0 : 1)
-          if (variant === 'matching')
-            expect(body.transcripts[s.assetId]![0]!.text).toBe('历史确认结果')
+          },
+    )
+    const submit = vi.spyOn(s.entry.def, 'submit')
+    const manifest = s.server.plugins.registry.plugin(s.entry.plugin)!.manifest
+    const original = manifest.version
+    try {
+      if (variant === 'adapter') manifest.version = '99.0.0'
+      const response = await s.call()
+      if (variant === 'unknown') {
+        expect(response.status).toBe(422)
+        expect(((await response.json()) as { message: string }).message).toContain(jobId)
+        expect(submit).not.toHaveBeenCalled()
+      } else {
+        expect(response.status).toBe(200)
+        const body = (await response.json()) as {
+          transcripts: Record<string, Array<{ text: string }>>
         }
-      } finally {
-        manifest.version = original
-        ;(doc as PleinDoc).destroy()
+        expect(submit).toHaveBeenCalledTimes(variant === 'matching' ? 0 : 1)
+        if (variant === 'matching')
+          expect(body.transcripts[s.assetId]![0]!.text).toBe('历史确认结果')
       }
-    },
-  )
+    } finally {
+      manifest.version = original
+      ;(doc as PleinDoc).destroy()
+    }
+  })
 
   it('远端已受理时保留任务 ID；恢复只续查，并与本地维护互斥', async () => {
     const s = await setup()

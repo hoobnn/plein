@@ -60,6 +60,7 @@ export interface Probe {
   /** 秒 */
   duration?: number
   hasVideo: boolean
+  hasAlpha?: boolean
   hasAudio: boolean
   /** 唯一音频流的真实声道数；未知或多音频流时省略。 */
   audioChannels?: number
@@ -212,7 +213,8 @@ interface FfprobeStream {
   height?: number
   disposition?: { attached_pic?: number }
   side_data_list?: { rotation?: number }[]
-  tags?: { rotate?: string; DURATION?: string }
+  pix_fmt?: string
+  tags?: { rotate?: string; DURATION?: string; alpha_mode?: string; ALPHA_MODE?: string }
 }
 
 export async function probeMedia(file: string): Promise<Probe> {
@@ -267,6 +269,13 @@ export async function probeMedia(file: string): Promise<Probe> {
     ...(rate(video?.time_base) !== undefined ? { videoTimeBase: rate(video?.time_base) } : {}),
     audioCodecs: audio.map((stream) => stream.codec_name ?? 'unknown'),
     hasVideo: Boolean(video),
+    ...(video?.codec_name ? { videoCodec: video.codec_name } : {}),
+    ...(video &&
+    (/^(yuva|gbrap|rgba|argb|bgra|abgr|ayuv|ya)/.test(video.pix_fmt ?? '') ||
+      video.tags?.alpha_mode === '1' ||
+      video.tags?.ALPHA_MODE === '1')
+      ? { hasAlpha: true }
+      : {}),
     hasAudio: audio.length > 0,
     ...(channels !== undefined && Number.isInteger(channels) && channels > 0
       ? { audioChannels: channels }

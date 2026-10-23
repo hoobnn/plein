@@ -199,6 +199,8 @@ export interface GroupRunSummary {
   canceled: number
   /** 上游失败或取消而没有运行 */
   skipped: number
+  /** 等重新审查的目标数：输入相对批准的计划变了没提交，或候选还没采用；不算失败 */
+  review?: number
 }
 
 export interface GroupRunState {

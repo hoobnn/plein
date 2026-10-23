@@ -32,7 +32,18 @@ import { subtitleSrt } from './interchange'
 
 const plain = (value: unknown): unknown =>
   JSON.parse(
-    JSON.stringify(value, (key, item) => (['provenance', 'id'].includes(key) ? undefined : item)),
+    JSON.stringify(value, function (this: unknown, key, item) {
+      if (['provenance', 'id'].includes(key)) return undefined
+      // 字幕的来源与时间来源是后来补的溯源元数据，实测快照只比对时间与文案
+      if (
+        (key === 'source' || key === 'origin') &&
+        this &&
+        typeof this === 'object' &&
+        'text' in this
+      )
+        return undefined
+      return item
+    }),
   )
 
 describe('sequence instances: old real behavior and fixed uses', () => {

@@ -10,9 +10,11 @@ import {
   subtitleSrt,
   sequenceSourceMap,
 } from '@plein/nodes'
-import type { ComposeSpec } from '@plein/plugin-sdk'
+import { composeAssetRefs, CompositionSourceRef, type ComposeSpec } from '@plein/plugin-sdk'
 import { strToU8, Zip, ZipDeflate, ZipPassThrough } from 'fflate'
 import { probeMedia } from './media'
+import { compositionDuration, validateComposeOverlays } from './compose'
+import { captionSourceArchive } from '../motion/captions'
 import type { AssetStore } from './store'
 
 const MIME_EXT: Record<string, string> = {
@@ -43,12 +45,17 @@ const README = `这个文件夹是 plein 导出的剪辑工程，素材在 media
 - Final Cut Pro：文件 → 导入 → XML，选 timeline.fcpxml；提示素材离线时用「重新链接文件」指到 media/
 - Kdenlive 等支持 OpenTimelineIO 的软件：导入 timeline.otio
 - 字幕：subtitles.srt，大多数剪辑软件都能直接导入
-- 动态合成：sources/ 保留对应源工程和冻结参数；动画在剪辑工程中为渲染视频，继续编辑请打开source.zip内的HTML工程
+- 动态合成：sources/ 保留对应源工程和冻结参数；动画在剪辑工程中为渲染视频，继续编辑请打开 source.zip 内的 HTML 工程
+- 动画字幕：sources/captions/source.zip 保留离线 HTML、字体、GSAP、动画参数和逐句来源；字幕动画不会自动转换成剪辑软件的原生字幕效果
 
 和 plein 导出的成片相比：
 - 画面顺序、入出点、速度、重叠转场（叠化 / 划像 / 推移 / 闪白）和各轨声音的位置保留；
   FCPXML 里划像、推移、闪白统一用交叉叠化，经黑场转场在两个工程里都是硬切
 - FCPXML 保留各轨声音的基础音量；OTIO 只把音量附在 plein 私有元数据中，剪辑软件不一定应用，导入后请核对并按需设置
+- 透明叠加按数组顺序保留独立画面轨，叠加视频自带声音不加入混音；FCPXML 用 connected clips 保留位置、尺寸、透明度和独立变速
+- OTIO 保留叠加起点、入点、时长、速度与轨道顺序；位置、尺寸、透明度在 plein 私有元数据中，导入软件不一定应用，需核对并手动设置
+- FCPXML 按原媒体像素尺寸换算位置和缩放；缺少尺寸时按成片尺寸推定，特殊像素宽高比或旋转元数据需在剪辑软件中核对
+- animated / none 模式也附 subtitles.srt；SRT 本身不包含动画。caption-cues.json 保留句子 id、来源和时间来源
 - 对白时压低配乐、结尾淡出、响度标准化不保留（各软件的自动化格式不通用），需要时在剪辑软件里重做
 `
 
@@ -61,21 +68,32 @@ export async function sequencePackage(
   ownerId: string,
   spec: ComposeSpec,
 ): Promise<{ stream: Readable; name: string }> {
-  const refs = [...spec.clips.map((c) => c.asset), ...spec.audio.map((a) => a.asset)]
+  const refs = composeAssetRefs(spec)
   const media = new Map<string, InterchangeMedia & { file: string }>()
   const used = new Set<string>()
   const sources = new Map<string, { bundle: string; manifest: string }>()
-  for (const ref of refs) {
-    const source = ref.compositionSource
-    if (!source || sources.has(source.bundleAssetId)) continue
-    for (const id of compositionAssetIds(source)) {
-      try {
-        await store.verifyOriginal(ownerId, id)
-      } catch {
-        throw Object.assign(new Error('动态合成源工程或原素材缺失或损坏'), { code: 'not_found' })
-      }
+  const verified = new Set<string>()
+  const verify = async (id: string) => {
+    if (verified.has(id)) return
+    try {
+      await store.verifyOriginal(ownerId, id)
+    } catch {
+      throw Object.assign(new Error('素材或动态合成源工程缺失或损坏'), { code: 'not_found' })
     }
-    sources.set(source.bundleAssetId, {
+    verified.add(id)
+  }
+  for (const ref of refs) {
+    await verify(ref.assetId)
+    if (ref.compositionSource === undefined) continue
+    let source: CompositionSourceRef
+    try {
+      source = CompositionSourceRef.parse(ref.compositionSource)
+    } catch {
+      throw Object.assign(new Error('动态合成来源信息无效'), { code: 'invalid' })
+    }
+    // 每处声明都验证，不能因同 bundle 去重而跳过另一 manifest 或依赖。
+    for (const id of compositionAssetIds(source)) await verify(id)
+    sources.set(`${source.bundleAssetId}:${source.manifestAssetId}`, {
       bundle: store.originalPath(source.bundleAssetId),
       manifest: store.originalPath(source.manifestAssetId),
     })
@@ -103,6 +121,8 @@ export async function sequencePackage(
               ...spec.clips.filter((c) => c.asset.assetId === asset.id).map((c) => c.out ?? 1),
             )
           : (info.duration ?? asset.duration ?? 0),
+      width: info.width,
+      height: info.height,
       hasVideo: info.hasVideo,
       hasAudio: info.hasAudio,
       audioChannels: info.audioChannels,
@@ -110,6 +130,38 @@ export async function sequencePackage(
     })
   }
   const lookup = (ref: { assetId: string }) => media.get(ref.assetId)!
+  const total = compositionDuration(
+    spec,
+    spec.clips.map((clip) => lookup(clip.asset)),
+  )
+  try {
+    validateComposeOverlays(
+      spec,
+      (spec.overlays ?? []).map((overlay) => lookup(overlay.asset)),
+      total,
+    )
+  } catch (error) {
+    throw Object.assign(new Error((error as Error).message), { code: 'invalid' })
+  }
+  let captionArchive: Uint8Array | undefined
+  if (spec.subtitles?.render === 'animated' && spec.subtitles.cues.length) {
+    try {
+      captionArchive = await captionSourceArchive({
+        width: spec.width,
+        height: spec.height,
+        fps: 30,
+        duration: total,
+        cues: spec.subtitles.cues,
+        style: spec.subtitles.style,
+        animation: spec.subtitles.animation ?? 'pop',
+      })
+    } catch {
+      throw Object.assign(
+        new Error('动画字幕源工程无法构建，请检查字幕、时长、尺寸及本机字体资源'),
+        { code: 'invalid' },
+      )
+    }
+  }
   const name = safeName(spec.name ?? '序列')
   const texts: Array<[string, string]> = [
     ['timeline.otio', sequenceOtio(spec, lookup)],
@@ -129,7 +181,10 @@ export async function sequencePackage(
       ) + '\n',
     ],
   ]
-  if (spec.subtitles?.cues.length) texts.push(['subtitles.srt', subtitleSrt(spec.subtitles.cues)])
+  if (spec.subtitles?.cues.length) {
+    texts.push(['subtitles.srt', subtitleSrt(spec.subtitles.cues)])
+    texts.push(['caption-cues.json', JSON.stringify(spec.subtitles, null, 2) + '\n'])
+  }
 
   const out = new PassThrough()
   const controller = new AbortController()
@@ -150,6 +205,11 @@ export async function sequencePackage(
       const entry = new ZipDeflate(`${name}/${path}`, { level: 6 })
       zip.add(entry)
       entry.push(strToU8(text), true)
+    }
+    if (captionArchive) {
+      const entry = new ZipPassThrough(`${name}/sources/captions/source.zip`)
+      zip.add(entry)
+      entry.push(captionArchive, true)
     }
     for (const [index, source] of [...sources.values()].entries()) {
       for (const [suffix, file] of [

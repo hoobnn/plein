@@ -338,7 +338,12 @@ describe('批次输入快照', () => {
     await entered.promise
     setParams(doc, node, { prompt: 'unapproved edit' })
     release.resolve()
-    expect((await done(server, group.groupId)).summary).toMatchObject({ failed: 1, succeeded: 0 })
+    // 复核拒绝不算失败：目标单列为「待重新审查」，既没提交也没有产出。
+    expect((await done(server, group.groupId)).summary).toMatchObject({
+      failed: 0,
+      review: 1,
+      succeeded: 0,
+    })
     expect(server.runs.batchItems(group.groupId, 'local')![0]).toMatchObject({
       input: { prompt: 'approved' },
       outcome: 'review',

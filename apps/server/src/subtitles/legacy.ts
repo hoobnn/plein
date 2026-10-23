@@ -38,6 +38,8 @@ const hash = (value: unknown) => createHash('sha256').update(stableStringify(val
 
 /**
  * 只读旧序列任务。v2 输入哈希必须按当前模型/Provider插件版本精确重算一致，
+ * 兼容 v2 的两种来源编码（旧版省略 source，序列锚定修复后保留 source）；
+ * 只使用冻结参数重算，不把新增默认值灌回历史快照。
  * 再按旧执行器的完整 audio 请求（含 mime）核对 call key；不从文件名或字幕文本猜测来源。
  */
 export function legacySubtitleRecord(
@@ -70,19 +72,27 @@ export function legacySubtitleRecord(
     const snapshot = frozen.data
     const omit = row.omit ? z.array(z.string()).safeParse(parse(row.omit)) : undefined
     if (omit && !omit.success) continue
-    const checksum = `v2:${hash({
-      type: 'plein/sequence',
-      version: sequenceNode.version,
-      params: cacheParams(snapshot.params, omit?.data ?? []),
-      inputs: Object.fromEntries(
+    const inputEncodings = [
+      snapshot.inputs,
+      Object.fromEntries(
         Object.entries(snapshot.inputs).map(([port, values]) => [
           port,
           values.map(({ source: _source, ...v }) => v),
         ]),
       ),
-      model: { ref: model, version: modelVersion, plugin: pluginVersion },
-    })}`
-    if (snapshot.inputHash !== checksum) continue
+    ]
+    const matches = inputEncodings.some(
+      (inputs) =>
+        snapshot.inputHash ===
+        `v2:${hash({
+          type: 'plein/sequence',
+          version: sequenceNode.version,
+          params: cacheParams(snapshot.params, omit?.data ?? []),
+          inputs,
+          model: { ref: model, version: modelVersion, plugin: pluginVersion },
+        })}`,
+    )
+    if (!matches) continue
     const calls = z.record(z.string(), z.unknown()).safeParse(parse(row.calls))
     if (!calls.success) continue
     for (const value of snapshot.inputs.dialogue ?? []) {

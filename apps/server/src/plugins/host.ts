@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import type { SubmissionAudit } from '@plein/protocol'
+import { SequenceExportRequest, type SubmissionAudit } from '@plein/protocol'
 import { createReadStream } from 'node:fs'
 import { readFile, rm } from 'node:fs/promises'
 import { Readable } from 'node:stream'
@@ -35,14 +35,15 @@ import {
 import { stableStringify } from '@plein/flow'
 import { compatibleBaseURL, COMPATIBLE_ID, createCompatiblePlugin } from '@plein/providers'
 import { Agent, Dispatcher1Wrapper } from 'undici'
-import { composeVideo } from '../assets/compose'
+import { composeVideo, compositionDuration, validateComposeOverlays } from '../assets/compose'
 import { analyzeVideo } from '../assets/shot-analysis'
 import { checkVideo } from '../assets/delivery-check'
 import { DELIVERY_CHECK_LIMITS } from '@plein/nodes'
 import { hasFfmpeg, probeMedia, mediaToolPaths, withMediaAbort } from '../assets/media'
 import { SHOT_ANALYSIS_LIMITS } from '@plein/nodes'
-import { MotionParams } from '@plein/nodes'
+import { MotionParams, CaptionLayerParams } from '@plein/nodes'
 import { renderMotion } from '../motion/render'
+import { renderCaptionLayer } from '../motion/captions'
 import { motionChromePath, motionRendererIdentity } from '../motion/identity'
 import type { AssetStore } from '../assets/store'
 import type { OutputSpoolRef, SpoolBinding } from '../assets/output-spool'
@@ -1229,8 +1230,8 @@ export class PluginHost {
       )
       signal.throwIfAborted()
       const video = await this.assets.ingest(ownerId, createReadStream(out.outputPath), {
-        mime: 'video/mp4',
-        name: `${parsed.data.title || '动态合成'}.mp4`,
+        mime: out.mime,
+        name: `${parsed.data.title || '动态合成'}.${out.mime === 'video/webm' ? 'webm' : 'mp4'}`,
       })
       return {
         assetId: video.id,
@@ -1318,21 +1319,118 @@ export class PluginHost {
     signal: AbortSignal,
     onProgress: (fraction: number) => void,
   ): Promise<AssetRef> {
+    const parsed = SequenceExportRequest.safeParse({ spec })
+    if (!parsed.success)
+      throw new ProviderError('invalid_input', '序列合成参数不合法', { retryable: false })
+    spec = parsed.data.spec
     const clips = await Promise.all(
       spec.clips.map((c) => this.mediaPath(manifest, ownerId, c.asset)),
     )
     const audio = await Promise.all(
       spec.audio.map((a) => this.mediaPath(manifest, ownerId, a.asset)),
     )
-    const infos = await Promise.all(clips.map((f) => probeMedia(f)))
+    const overlays = await Promise.all(
+      (spec.overlays ?? []).map(async (overlay) => {
+        await this.assets.verifyOriginal(ownerId, overlay.asset.assetId)
+        if (overlay.asset.compositionSource) {
+          const source = CompositionSourceRef.parse(overlay.asset.compositionSource)
+          for (const id of [
+            source.bundleAssetId,
+            source.manifestAssetId,
+            ...source.dependencyAssetIds,
+          ])
+            await this.assets.verifyOriginal(ownerId, id)
+        }
+        return this.mediaPath(manifest, ownerId, overlay.asset)
+      }),
+    )
+    const [infos, overlayInfos] = await Promise.all([
+      Promise.all(clips.map((f) => probeMedia(f))),
+      Promise.all(overlays.map((f) => probeMedia(f))),
+    ])
+    try {
+      validateComposeOverlays(spec, overlayInfos, compositionDuration(spec, infos))
+    } catch (error) {
+      throw new ProviderError('invalid_input', (error as Error).message, { retryable: false })
+    }
+    if (
+      spec.subtitles?.render === 'animated' &&
+      spec.subtitles.cues.length &&
+      manifest.id !== 'plein/core'
+    )
+      throw new PermissionError('只有内置序列可以启动动画字幕渲染器')
+    const animated = spec.subtitles?.render === 'animated' && spec.subtitles.cues.length
+    const captionInput = animated
+      ? CaptionLayerParams.safeParse({
+          width: spec.width,
+          height: spec.height,
+          fps: 30,
+          duration: compositionDuration(spec, infos),
+          cues: spec.subtitles!.cues,
+          style: spec.subtitles!.style,
+          animation: spec.subtitles!.animation ?? 'pop',
+        })
+      : undefined
+    if (captionInput && !captionInput.success)
+      throw new ProviderError(
+        'invalid_input',
+        compositionDuration(spec, infos) > 300
+          ? '动画字幕目前支持最长 300 秒的序列，请缩短序列或使用普通字幕'
+          : `动画字幕参数不合法：${captionInput.error.issues[0]?.message ?? '请检查字幕数量、文本与时间'}`,
+        { retryable: false },
+      )
     const missing = infos.findIndex((i) => !i.hasVideo)
     if (missing >= 0) throw new ProviderError('invalid_input', `第 ${missing + 1} 段不是视频`)
     const dir = await this.assets.tempDir()
     try {
-      const { file } = await composeVideo(spec, { clips, audio }, { clips: infos }, dir, {
-        signal,
-        onProgress,
-      })
+      let renderedSpec = spec
+      if (captionInput?.success) {
+        const duration = compositionDuration(spec, infos)
+        const caption = await renderCaptionLayer(captionInput.data, `${dir}/captions`, {
+          ...mediaToolPaths(),
+          chromePath: motionChromePath(),
+          signal,
+          progress: (event) => onProgress((event.percent / 100) * 0.65),
+        })
+        overlays.push(caption.outputPath)
+        overlayInfos.push({
+          hasVideo: true,
+          hasAudio: false,
+          duration,
+          videoCodec: 'vp9',
+          hasAlpha: true,
+        })
+        renderedSpec = {
+          ...spec,
+          overlays: [
+            ...(spec.overlays ?? []),
+            {
+              id: 'plein-captions',
+              asset: { assetId: 'internal-caption-layer', kind: 'video', mime: caption.mime },
+              start: 0,
+              duration,
+              in: 0,
+              speed: 1,
+              x: 0,
+              y: 0,
+              width: 1,
+              height: 1,
+              opacity: 1,
+            },
+          ],
+        }
+      }
+      const { file } = await composeVideo(
+        renderedSpec,
+        { clips, audio, overlays },
+        { clips: infos, overlays: overlayInfos },
+        dir,
+        {
+          signal,
+          onProgress: (f) => onProgress(animated ? 0.65 + f * 0.35 : f),
+          internalCaptionLayer: Boolean(animated),
+        },
+      )
       const a = await this.assets.ingest(ownerId, createReadStream(file), {
         mime: 'video/mp4',
         name: `${spec.name ?? '成片'}.mp4`,
@@ -1341,6 +1439,10 @@ export class PluginHost {
     } catch (err) {
       if (signal.aborted) throw new ProviderError('cancelled', '已取消')
       if (err instanceof ProviderError) throw err
+      if (err && typeof err === 'object' && 'retryable' in err && err.retryable === false)
+        throw new ProviderError('unavailable', err instanceof Error ? err.message : String(err), {
+          retryable: false,
+        })
       throw new ProviderError('unknown', (err as Error).message)
     } finally {
       await rm(dir, { recursive: true, force: true })

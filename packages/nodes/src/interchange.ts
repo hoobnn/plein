@@ -21,6 +21,8 @@ export interface InterchangeMedia {
   path: string
   name: string
   duration: number
+  width?: number
+  height?: number
   hasVideo: boolean
   hasAudio: boolean
   /** 唯一音频流的真实属性；未知或多流时不推定。 */
@@ -118,7 +120,14 @@ export function placeSequence(spec: ComposeSpec, lookup: MediaLookup) {
       if (!a.loop) break
     }
   }
-  return { placed, sounds, total, fps }
+  const overlays = (spec.overlays ?? []).flatMap((overlay, order) => {
+    const start = frame(overlay.start)
+    const duration = frame(Math.min(overlay.duration, total - start))
+    return duration > 0
+      ? [{ ...overlay, start, duration, media: lookup(overlay.asset), order }]
+      : []
+  })
+  return { placed, sounds, overlays, total, fps }
 }
 
 // ── OpenTimelineIO ──
@@ -154,16 +163,19 @@ function otioClip(
     speed?: number
     volume?: number
     provenance?: ComposeSpec['clips'][number]['provenance']
+    /** 叠加轨的几何与不透明度；导入软件不会自动识别，写进元数据供人工还原 */
+    overlay?: Omit<NonNullable<ComposeSpec['overlays']>[number], 'asset'>
   } = {},
 ) {
   return {
     OTIO_SCHEMA: 'Clip.2',
     metadata:
-      extra.volume !== undefined || extra.provenance
+      extra.volume !== undefined || extra.provenance || extra.overlay
         ? {
             plein: {
               ...(extra.volume !== undefined ? { volume: extra.volume } : {}),
               ...(extra.provenance ? { provenance: extra.provenance } : {}),
+              ...(extra.overlay ? { overlay: extra.overlay } : {}),
             },
           }
         : {},
@@ -234,7 +246,7 @@ function soundTracks(sounds: PlacedSound[], rate: number, name: string) {
 }
 
 export function sequenceOtio(spec: ComposeSpec, lookup: MediaLookup) {
-  const { placed, sounds, fps: rate } = placeSequence(spec, lookup)
+  const { placed, sounds, overlays, fps: rate } = placeSequence(spec, lookup)
   const video: unknown[] = []
   const original: unknown[] = []
   const sounding = (p: Placed | undefined) => !!p && p.media.hasAudio && p.volume > 0
@@ -268,6 +280,17 @@ export function sequenceOtio(spec: ComposeSpec, lookup: MediaLookup) {
   })
   const tracks = [
     otioTrack('画面', 'Video', video),
+    ...overlays.map((overlay) => {
+      const clip = otioClip(overlay.media, overlay.in, overlay.duration, rate, {
+        speed: overlay.speed,
+      })
+      const { media: _media, asset: _asset, ...settings } = overlay
+      clip.metadata = { plein: { overlay: settings } }
+      return otioTrack(`叠加 ${overlay.order + 1}: ${overlay.media.name}`, 'Video', [
+        ...(overlay.start > 0 ? [otioGap(overlay.start, rate)] : []),
+        clip,
+      ])
+    }),
     ...(placed.some(sounding) ? [otioTrack('原声', 'Audio', original)] : []),
     ...soundTracks(
       sounds.filter((s) => s.role === 'dialogue'),
@@ -289,6 +312,7 @@ export function sequenceOtio(spec: ComposeSpec, lookup: MediaLookup) {
         ...(spec.clips.some((c) => c.provenance)
           ? { clipMap: { version: 1, sources: sequenceSourceMap(spec) } }
           : {}),
+        ...(spec.subtitles ? { subtitles: spec.subtitles } : {}),
       },
     },
     name: spec.name ?? '序列',
@@ -328,7 +352,7 @@ const db = (v: number) => (v <= 0 ? -96 : Math.round(20 * Math.log10(v) * 10) / 
 const CROSS_DISSOLVE = 'FxPlug:4731E73A-8DAC-4113-9A30-AE85B1761265'
 
 export function sequenceFcpxml(spec: ComposeSpec, lookup: MediaLookup) {
-  const { placed, sounds, total, fps } = placeSequence(spec, lookup)
+  const { placed, sounds, overlays, total, fps } = placeSequence(spec, lookup)
   const T = (s: number) => fcpTime(s, fps)
   const assets = new Map<string, { id: string; media: InterchangeMedia }>()
   const assetId = (m: InterchangeMedia) => {
@@ -341,6 +365,7 @@ export function sequenceFcpxml(spec: ComposeSpec, lookup: MediaLookup) {
   }
   for (const p of placed) assetId(p.media)
   for (const s of sounds) assetId(s.media)
+  for (const overlay of overlays) assetId(overlay.media)
 
   const volume = (v: number) => (v === 1 ? '' : `<adjust-volume amount="${db(v)}dB"/>`)
   // 声音挂在它开始时所在的那段画面上，偏移用那段画面自己的时间（素材时间）
@@ -370,6 +395,28 @@ export function sequenceFcpxml(spec: ComposeSpec, lookup: MediaLookup) {
     )
   })
 
+  // 用无变速父 clip 的时钟连接叠加，不能把其挂在某个已变速背景素材下。
+  const decimal = (value: number) => Number(value.toFixed(8))
+  const overlayClip = (overlay: (typeof overlays)[number]) => {
+    const retime =
+      overlay.speed !== 1
+        ? `<timeMap><timept time="${T(overlay.in)}" value="${T(overlay.in)}" interp="linear"/><timept time="${T(overlay.in + overlay.duration)}" value="${T(overlay.in + overlay.duration * overlay.speed)}" interp="linear"/></timeMap>`
+        : ''
+    const position = `${decimal((((overlay.x + overlay.width / 2 - 0.5) * spec.width) / spec.height) * 100)} ${decimal((0.5 - overlay.y - overlay.height / 2) * 100)}`
+    const scale = `${decimal((spec.width * overlay.width) / (overlay.media.width ?? spec.width))} ${decimal((spec.height * overlay.height) / (overlay.media.height ?? spec.height))}`
+    return `              <asset-clip ref="${assetId(overlay.media)}" lane="${overlay.order + 1}" offset="${T(overlay.start)}" name="${xml(overlay.id)}" start="${T(overlay.in)}" duration="${T(overlay.duration)}" srcEnable="video">${retime}<adjust-conform type="none"/><adjust-transform position="${position}" scale="${scale}"/><adjust-blend amount="${overlay.opacity}"/></asset-clip>`
+  }
+  const body = overlays.length
+    ? [
+        `            <clip name="画面与叠加" offset="0s" start="0s" duration="${T(total)}" format="r1">`,
+        '              <spine>',
+        ...spine,
+        '              </spine>',
+        ...overlays.map(overlayClip),
+        '            </clip>',
+      ].join('\n')
+    : spine.join('\n')
+
   // 素材采样率不同于 sequence 的 48k 混音；未知属性由导入软件读取原文件。
   // ffprobe 流数不能据此确定 FCP 音频 source 组织，因此不猜 audioSources。
   const audioAttributes = (media: InterchangeMedia) => {
@@ -387,9 +434,16 @@ export function sequenceFcpxml(spec: ComposeSpec, lookup: MediaLookup) {
   const resources = [
     `    <format id="r1" frameDuration="${T(1 / fps)}" width="${spec.width}" height="${spec.height}"/>`,
     `    <effect id="r2" name="Cross Dissolve" uid="${CROSS_DISSOLVE}"/>`,
+    ...[...assets.values()].flatMap(({ id, media: m }) =>
+      m.hasVideo && m.width && m.height
+        ? [
+            `    <format id="f${id}" frameDuration="${T(1 / fps)}" width="${m.width}" height="${m.height}"/>`,
+          ]
+        : [],
+    ),
     ...[...assets.values()].map(
       ({ id, media: m }) =>
-        `    <asset id="${id}" name="${xml(m.name)}" start="0s" duration="${T(m.duration)}" hasVideo="${m.hasVideo ? 1 : 0}" hasAudio="${m.hasAudio ? 1 : 0}"${m.hasVideo ? ' format="r1"' : ''}${audioAttributes(m)}>\n      <media-rep kind="original-media" src="${xml(encodeURI(m.path))}"/>\n    </asset>`,
+        `    <asset id="${id}" name="${xml(m.name)}" start="0s" duration="${T(m.duration)}" hasVideo="${m.hasVideo ? 1 : 0}" hasAudio="${m.hasAudio ? 1 : 0}"${m.hasVideo ? ` format="${m.width && m.height ? `f${id}` : 'r1'}"` : ''}${audioAttributes(m)}>\n      <media-rep kind="original-media" src="${xml(encodeURI(m.path))}"/>\n    </asset>`,
     ),
   ]
   const name = xml(spec.name ?? '序列')
@@ -404,7 +458,7 @@ ${resources.join('\n')}
       <project name="${name}">
         <sequence format="r1" duration="${T(total)}" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">
           <spine>
-${spine.join('\n')}
+${body}
           </spine>
         </sequence>
       </project>
