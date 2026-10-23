@@ -163,3 +163,17 @@ describe('动态合成合同', () => {
     expect(MotionParams.safeParse({ ...edited, duration: 3 }).success).toBe(false)
   })
 })
+
+describe('Motion output compatibility', () => {
+  it('旧参数缺output仍使用MP4，透明WebM不涂全屏背景且始终静音', () => {
+    expect(params().output).toBe('mp4')
+    const transparent = motionHtml(
+      params({ template: 'video-title', output: 'transparent-webm', audio: 'source' }),
+      { video: 'media/input.mp4' },
+    )
+    expect(transparent).toContain('data-volume="0" muted')
+    expect(transparent).toContain('background:transparent')
+    expect(transparent).not.toContain('background:#111827')
+    expect(() => params({ output: 'mov' })).toThrow()
+  })
+})

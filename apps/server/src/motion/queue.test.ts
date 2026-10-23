@@ -20,6 +20,7 @@ beforeEach(() => {
       await writeFile(outputPath, Buffer.from(MOCK_WEBM_BASE64, 'base64'))
       return {
         outputPath,
+        mime: 'video/mp4',
         sourceZip: new Uint8Array([80, 75, 3, 4]),
         identity: 'test-renderer',
         warnings: [],

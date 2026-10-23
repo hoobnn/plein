@@ -1,4 +1,4 @@
-import { MOTION_TEMPLATE_VERSION } from '@plein/nodes'
+import { MOTION_TEMPLATE_VERSION, CAPTION_TEMPLATE_VERSION } from '@plein/nodes'
 import { createHash } from 'node:crypto'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -50,8 +50,9 @@ export function motionRendererIdentity(
   return createHash('sha256')
     .update(
       JSON.stringify({
-        adapter: 1,
+        adapter: 2,
         templateVersion: MOTION_TEMPLATE_VERSION,
+        captionTemplateVersion: CAPTION_TEMPLATE_VERSION,
         hyperframes: HYPERFRAMES_VERSION,
         gsap: '3.14.2',
         font: 'noto-sans-sc@5.2.8:400,700',

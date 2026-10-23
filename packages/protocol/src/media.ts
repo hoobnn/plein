@@ -1,4 +1,4 @@
-import { AssetKind, CompositionSourceRef } from '@plein/plugin-sdk'
+import { AssetKind, CompositionSourceRef, SUBTITLE_ORIGINS } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { Asset } from './assets'
 
@@ -125,6 +125,30 @@ const composeTransition = z.object({
   duration: z.number().positive().max(10),
 })
 
+const composeOverlay = z.object({
+  id: z.string().min(1),
+  asset: composeRef.extend({ kind: z.literal('video') }),
+  start: z.number().finite().min(0),
+  duration: z.number().finite().positive(),
+  in: z.number().finite().min(0).default(0),
+  speed: z.number().finite().min(0.25).max(4).default(1),
+  x: z.number().finite().min(0).max(1).default(0),
+  y: z.number().finite().min(0).max(1).default(0),
+  width: z.number().finite().positive().max(1).default(1),
+  height: z.number().finite().positive().max(1).default(1),
+  opacity: z.number().finite().min(0).max(1).default(1),
+})
+const composeCue = z
+  .object({
+    id: z.string().optional(),
+    source: z.string().optional(),
+    origin: z.enum(SUBTITLE_ORIGINS).optional(),
+    start: z.number().finite().min(0),
+    end: z.number().finite().positive(),
+    text: z.string(),
+  })
+  .refine((cue) => cue.end > cue.start, { message: '字幕结束时间必须晚于开始时间' })
+
 /**
  * 导出剪辑工程（OTIO / FCPXML / SRT 和用到的素材打成一个 zip）：
  * 前端按和导出成片同一套规则算出合成参数（ComposeSpec）交上来，服务端只负责打包。
@@ -161,10 +185,13 @@ export const SequenceExportRequest = z.object({
         }),
       )
       .max(2000),
+    overlays: z.array(composeOverlay).max(200).optional(),
     subtitles: z
       .object({
-        cues: z.array(z.object({ start: z.number(), end: z.number(), text: z.string() })),
+        cues: z.array(composeCue).max(10000),
         style: z.enum(['standard', 'bold', 'boxed']),
+        render: z.enum(['static', 'animated', 'none']).optional(),
+        animation: z.enum(['fade', 'pop']).optional(),
       })
       .optional(),
     transition: composeTransition.optional(),

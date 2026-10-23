@@ -32,7 +32,13 @@ export function resolveMotionWorkerPath(baseUrl = import.meta.url): string {
 }
 
 export async function runMotionWorker(
-  request: { projectDir: string; outputPath: string; useGpu: boolean; chromePath?: string },
+  request: {
+    projectDir: string
+    outputPath: string
+    useGpu: boolean
+    chromePath?: string
+    format?: 'mp4' | 'webm'
+  },
   options: MotionChildOptions,
 ): Promise<{ warnings: unknown[]; outcome?: string }> {
   if (options.signal?.aborted) throw abortError()

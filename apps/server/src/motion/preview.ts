@@ -4,7 +4,15 @@ import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { serve, type ServerType } from '@hono/node-server'
 import { Hono } from 'hono'
-import { MotionParams, motionHtml, motionSize, motionDurationFrames } from '@plein/nodes'
+import {
+  MotionParams,
+  motionHtml,
+  motionSize,
+  motionDurationFrames,
+  CaptionLayerParams,
+  captionLayerHtml,
+  captionDurationFrames,
+} from '@plein/nodes'
 import type { AssetStore } from '../assets/store'
 import { sendFile } from '../http/files'
 import { motionRuntimeAssets } from './runtime'
@@ -46,9 +54,6 @@ export class MotionPreviews {
     parentOrigin: string,
   ): Promise<MotionPreviewInfo> {
     if (this.closed) throw new Error('动态合成预览服务已关闭')
-    const parent = new URL(parentOrigin)
-    if (!['http:', 'https:'].includes(parent.protocol) || parent.origin !== parentOrigin)
-      throw new Error('动态合成预览需要明确的父页面 origin')
     const params = MotionParams.parse(value)
     const files = new Map<string, { path: string; mime: string }>()
     const media: { image?: string; video?: string } = {}
@@ -61,6 +66,46 @@ export class MotionPreviews {
       files.set(name, { path: this.store.originalPath(id), mime: asset.mime })
       media[kind] = name
     }
+    return this.openDocument(
+      owner,
+      motionHtml(params, {
+        ...media,
+        gsap: 'vendor/gsap.min.js',
+        fontCss: 'fonts/noto-sans-sc.css',
+      }),
+      { ...motionSize(params), duration: motionDurationFrames(params) / 30 },
+      parentOrigin,
+      files,
+    )
+  }
+
+  async openCaptions(
+    owner: string,
+    value: unknown,
+    parentOrigin: string,
+  ): Promise<MotionPreviewInfo> {
+    const params = CaptionLayerParams.parse(value)
+    return this.openDocument(
+      owner,
+      captionLayerHtml(params),
+      { width: params.width, height: params.height, duration: captionDurationFrames(params) / 30 },
+      parentOrigin,
+      new Map(),
+    )
+  }
+
+  private async openDocument(
+    owner: string,
+    html: string,
+    dimensions: { width: number; height: number; duration: number },
+    parentOrigin: string,
+    files: Map<string, { path: string; mime: string }>,
+  ): Promise<MotionPreviewInfo> {
+    if (this.closed) throw new Error('动态合成预览服务已关闭')
+    const parent = new URL(parentOrigin)
+    if (!['http:', 'https:'].includes(parent.protocol) || parent.origin !== parentOrigin)
+      throw new Error('动态合成预览需要明确的父页面 origin')
+    assertLocalMotionHtml(html)
     const runtime = await motionRuntimeAssets()
     files.set('vendor/gsap.min.js', { path: runtime.gsapPath, mime: 'text/javascript' })
     for (const file of runtime.files)
@@ -90,12 +135,6 @@ export class MotionPreviews {
       if (session.expiresAt <= Date.now()) this.sessions.delete(key)
     if ([...this.sessions.values()].filter((s) => s.owner === owner).length >= 12)
       throw new Error('打开的动态合成预览过多，请关闭不用的面板')
-    const html = motionHtml(params, {
-      ...media,
-      gsap: 'vendor/gsap.min.js',
-      fontCss: 'fonts/noto-sans-sc.css',
-    })
-    assertLocalMotionHtml(html)
     // CSS是安装包内的固定资源，保存在这个会话中而不是写入主应用文档。
     files.set('fonts/noto-sans-sc.css', { path: '', mime: runtime.fontCss })
     this.sessions.set(id, { owner, nonce, expiresAt, parentOrigin, origin, html, files })
@@ -105,8 +144,7 @@ export class MotionPreviews {
       expiresAt,
       origin,
       url: `${origin}/s/${id}/`,
-      ...motionSize(params),
-      duration: motionDurationFrames(params) / 30,
+      ...dimensions,
     }
   }
 
@@ -195,7 +233,7 @@ function previewPage(id: string, session: PreviewSession): string {
     nonce: session.nonce,
     origin: session.parentOrigin,
   }).replaceAll('<', '\\u003c')
-  return `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#080b12}hyperframes-player{width:100%;height:100%;display:block}</style><script src="player.js"></script></head><body><hyperframes-player src="composition.html" runtime-src="runtime.js" disable-click-to-play></hyperframes-player><script>
+  return `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}hyperframes-player{width:100%;height:100%;display:block;background:transparent!important}</style><script src="player.js"></script></head><body><hyperframes-player src="composition.html" runtime-src="runtime.js" disable-click-to-play></hyperframes-player><script>
 const config=${config};const player=document.querySelector('hyperframes-player');
 const emit=(event,detail={})=>parent.postMessage({type:'plein-motion-event',id:config.id,nonce:config.nonce,event,...detail},config.origin);
 for(const event of ['ready','timeupdate','play','pause','ended'])player.addEventListener(event,e=>emit(event,{time:player.currentTime,duration:player.duration}));

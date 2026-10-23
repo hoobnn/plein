@@ -139,3 +139,29 @@ describe('motion runtime boundary', () => {
     })
   })
 })
+
+it('VP9 alpha requires its own working bundled encoder, without H264 fallback', async () => {
+  await fixture(async (dir) => {
+    const binary = join(dir, 'ffmpeg')
+    await writeFile(
+      binary,
+      '#!/bin/sh\ncase "$2" in -encoders) echo " V..... libx264 Fake encoder"; exit 0;; esac\ncase "$1" in -version) echo "fake 1"; exit 0;; esac\nexit 0\n',
+      { mode: 0o755 },
+    )
+    await expect(
+      probeMotionRuntime({ ffmpeg: binary, ffprobe: binary, output: 'transparent-webm' }),
+    ).rejects.toMatchObject({
+      code: 'motion_encoder_unavailable',
+      retryable: false,
+      message: expect.stringContaining('VP9 alpha'),
+    })
+    await writeFile(
+      binary,
+      '#!/bin/sh\ncase "$2" in -encoders) echo " V..... libvpx-vp9 Fake encoder"; exit 0;; esac\ncase "$1" in -version) echo "fake 1"; exit 0;; esac\nexit 0\n',
+      { mode: 0o755 },
+    )
+    expect(
+      await probeMotionRuntime({ ffmpeg: binary, ffprobe: binary, output: 'transparent-webm' }),
+    ).toMatchObject({ encoder: 'libvpx-vp9', useGpu: false })
+  })
+})

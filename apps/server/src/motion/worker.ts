@@ -6,6 +6,7 @@ interface WorkerRequest {
   projectDir: string
   outputPath: string
   useGpu: boolean
+  format?: 'mp4' | 'webm'
   chromePath?: string
 }
 const controller = new AbortController()
@@ -30,7 +31,7 @@ process.once('message', async (request: WorkerRequest) => {
     const job = createRenderJob({
       fps: 30,
       quality: 'standard',
-      format: 'mp4',
+      format: request.format ?? 'mp4',
       strictness: 'strict',
       useGpu: request.useGpu,
       workers: 1,

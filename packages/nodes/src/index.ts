@@ -28,3 +28,5 @@ export * from './characterAssetTarget'
 export * from './panorama'
 
 export * from './motion'
+
+export * from './captions'

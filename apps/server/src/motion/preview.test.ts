@@ -51,3 +51,31 @@ describe('motion preview security boundary', () => {
     expect((await fetch(info.url)).status).toBe(404)
   })
 })
+
+it('caption preview shares owner limits and cleanup; both wrapper and composition are transparent', async () => {
+  const previews = service()
+  const params = {
+    width: 1280,
+    height: 720,
+    duration: 2,
+    cues: [{ start: 0.25, end: 1.75, text: '字幕 fetch(1) / url(1)' }],
+  }
+  const info = await previews.openCaptions('owner', params, 'http://localhost:5173')
+  expect(info).toMatchObject({ width: 1280, height: 720, duration: 2 })
+  const wrapper = await (await fetch(info.url)).text()
+  expect(wrapper).toContain('background:transparent')
+  expect(wrapper).toContain('e.source!==parent')
+  expect(wrapper).toContain('e.origin!==config.origin')
+  const html = await (await fetch(new URL('composition.html', info.url))).text()
+  expect(html).toContain('background:transparent')
+  expect(html).toContain('字幕 fetch(1) / url(1)')
+  for (let i = 0; i < 11; i++) await previews.openCaptions('owner', params, 'http://localhost:5173')
+  await expect(previews.open('owner', {}, {}, 'http://localhost:5173')).rejects.toThrow('过多')
+  expect(previews.release('other-owner', info.id)).toBe(false)
+  expect(previews.release('owner', info.id)).toBe(true)
+  expect((await fetch(info.url)).status).toBe(404)
+  await previews.close()
+  await expect(previews.openCaptions('owner', params, 'http://localhost:5173')).rejects.toThrow(
+    '已关闭',
+  )
+})

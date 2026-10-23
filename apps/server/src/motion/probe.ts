@@ -5,14 +5,21 @@ export interface MotionRuntime {
   ffmpeg: string
   ffprobe: string
   useGpu: boolean
-  encoder: 'libx264' | 'h264_videotoolbox' | 'h264_nvenc' | 'h264_vaapi' | 'h264_qsv' | 'h264_amf'
+  encoder:
+    | 'libvpx-vp9'
+    | 'libx264'
+    | 'h264_videotoolbox'
+    | 'h264_nvenc'
+    | 'h264_vaapi'
+    | 'h264_qsv'
+    | 'h264_amf'
   ffmpegVersion: string
   ffprobeVersion: string
 }
 
 /** Probe the exact binaries shipped by the host, including one real encoded frame. */
 export async function probeMotionRuntime(
-  input: { ffmpeg: string; ffprobe: string },
+  input: { ffmpeg: string; ffprobe: string; output?: 'mp4' | 'transparent-webm' },
   options: { signal?: AbortSignal; env?: NodeJS.ProcessEnv } = {},
 ): Promise<MotionRuntime> {
   if (!isAbsolute(input.ffmpeg) || !isAbsolute(input.ffprobe))
@@ -25,14 +32,17 @@ export async function probeMotionRuntime(
     runTool(input.ffmpeg, ['-version'], options),
     runTool(input.ffprobe, ['-version'], options),
   ])
-  const names = [
-    'libx264',
-    'h264_nvenc',
-    'h264_videotoolbox',
-    'h264_vaapi',
-    'h264_qsv',
-    'h264_amf',
-  ] as const
+  const names =
+    input.output === 'transparent-webm'
+      ? (['libvpx-vp9'] as const)
+      : ([
+          'libx264',
+          'h264_nvenc',
+          'h264_videotoolbox',
+          'h264_vaapi',
+          'h264_qsv',
+          'h264_amf',
+        ] as const)
   const failures: string[] = []
   for (const encoder of names) {
     if (!new RegExp(`^\\s*V\\S*\\s+${encoder}\\s`, 'm').test(encoders.stdout)) continue
@@ -48,6 +58,7 @@ export async function probeMotionRuntime(
       '1',
       '-an',
     ]
+    if (encoder === 'libvpx-vp9') args.push('-vf', 'format=yuva420p')
     if (encoder === 'h264_vaapi')
       args.push('-vaapi_device', '/dev/dri/renderD128', '-vf', 'format=nv12,hwupload')
     args.push('-c:v', encoder)
@@ -59,7 +70,7 @@ export async function probeMotionRuntime(
       return {
         ...input,
         encoder,
-        useGpu: encoder !== 'libx264',
+        useGpu: encoder !== 'libx264' && encoder !== 'libvpx-vp9',
         ffmpegVersion: ffmpeg.stdout.split('\n')[0]!,
         ffprobeVersion: ffprobe.stdout.split('\n')[0]!,
       }
@@ -70,6 +81,6 @@ export async function probeMotionRuntime(
   }
   throw new MotionError(
     'motion_encoder_unavailable',
-    `The configured ffmpeg has no working H.264 encoder compatible with HyperFrames. ${failures.join('; ')}`,
+    `The configured ffmpeg has no working ${input.output === 'transparent-webm' ? 'VP9 alpha (libvpx-vp9)' : 'H.264'} encoder compatible with HyperFrames. ${failures.join('; ')}`,
   )
 }

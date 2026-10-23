@@ -54,6 +54,7 @@ export interface MotionManifest {
 }
 export interface MotionRenderResult {
   outputPath: string
+  mime: 'video/mp4' | 'video/webm'
   sourceZip: Uint8Array
   manifest: MotionManifest
   identity: string
@@ -72,6 +73,8 @@ export async function renderMotion(
 ): Promise<MotionRenderResult> {
   if (options.signal?.aborted) throw abortError()
   params = MotionParams.parse(params)
+  // Alpha layers are always silent, including the frozen editable source contract.
+  if (params.output === 'transparent-webm') params = { ...params, audio: 'mute' }
   if (!isAbsolute(workDir))
     throw new MotionError('motion_invalid_workdir', 'Motion workDir must be absolute')
   const projectDir = join(workDir, 'project'),
@@ -84,7 +87,10 @@ export async function renderMotion(
   ])
   const env = motionEnvironment({ ...options, home, temp })
   options.progress?.({ stage: 'preflight', percent: 0, message: 'Checking bundled render runtime' })
-  const runtime = await probeMotionRuntime(options, { env, signal: options.signal })
+  const runtime = await probeMotionRuntime(
+    { ...options, output: params.output },
+    { env, signal: options.signal },
+  )
   const assets = options.runtimeAssets ?? (await motionRuntimeAssets())
   const entries: Record<string, Uint8Array> = {}
   let totalBytes = 0
@@ -172,15 +178,20 @@ export async function renderMotion(
   // Parse execution contexts so text content cannot masquerade as resource code.
   assertLocalMotionHtml(html)
   await put('index.html', encoder.encode(html))
-  const outputPath = join(workDir, 'output.mp4')
+  const format = params.output === 'transparent-webm' ? 'webm' : 'mp4'
+  const mime = format === 'webm' ? ('video/webm' as const) : ('video/mp4' as const)
+  const outputPath = join(workDir, `output.${format}`)
   const rendered = await runMotionWorker(
-    { projectDir, outputPath, useGpu: runtime.useGpu, chromePath: options.chromePath },
+    { projectDir, outputPath, format, useGpu: runtime.useGpu, chromePath: options.chromePath },
     { ...options, env },
   )
   if (options.signal?.aborted) throw abortError()
   const output = await stat(outputPath)
   if (!output.isFile() || !output.size)
-    throw new MotionError('motion_render_failed', 'Motion renderer did not create an MP4')
+    throw new MotionError(
+      'motion_render_failed',
+      'Motion renderer did not create the requested video',
+    )
   // SDK stamps stable hf-ids in the worker. Archive those exact rendered sources.
   entries['index.html'] = await readFile(join(projectDir, 'index.html'))
   entries['hyperframes.lock.json'] = encoder.encode(
@@ -240,7 +251,7 @@ export async function renderMotion(
     percent: 100,
     message: 'Motion render and immutable source package complete',
   })
-  return { outputPath, sourceZip, manifest, identity, warnings: rendered.warnings }
+  return { outputPath, mime, sourceZip, manifest, identity, warnings: rendered.warnings }
 }
 
 export { motionRuntimeAssets } from './runtime'

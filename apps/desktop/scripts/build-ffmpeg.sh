@@ -15,6 +15,9 @@ FREETYPE_VERSION=2.13.3
 FRIBIDI_VERSION=1.0.16
 HARFBUZZ_VERSION=11.2.1
 LIBASS_VERSION=0.17.3
+LIBVPX_VERSION=1.16.0
+# Official webmproject archive, pinned bytes (not a moving branch).
+LIBVPX_SHA256=7a479a3c66b9f5d5542a4c6a1b7d3768a983b1e5c14c60a9396edc9b649e015c
 
 here=$(cd "$(dirname "$0")/.." && pwd)
 out=${1:-$here/stage/ffmpeg}
@@ -50,6 +53,21 @@ fetch() { # fetch <目录名> <地址> [备用地址...]
   mkdir -p "$dir"
   tar -xf "$archive" -C "$dir" --strip-components=1
   rm "$archive"
+}
+
+# Verify cached archives too; extracted directories alone are not a checksum proof.
+fetch_verified() {
+  local name=$1 expected=$2 url=$3 archive=$work/src/$1.tar.gz
+  if [ ! -f "$archive" ]; then
+    curl -fsSL --retry 3 --retry-all-errors --connect-timeout 20 -o "$archive" "$url"
+  fi
+  local actual
+  actual=$(shasum -a 256 "$archive" | awk '{print $1}')
+  [ "$actual" = "$expected" ] || { echo "SHA256 mismatch for $name: $actual" >&2; exit 1; }
+  if [ ! -d "$work/src/$name" ]; then
+    mkdir -p "$work/src/$name"
+    tar -xf "$archive" -C "$work/src/$name" --strip-components=1
+  fi
 }
 
 built() { [ -f "$prefix/.built-$1" ]; }
@@ -110,6 +128,19 @@ if ! built libass; then
   mark libass
 fi
 
+fetch_verified "libvpx-$LIBVPX_VERSION" "$LIBVPX_SHA256" \
+  "https://github.com/webmproject/libvpx/archive/refs/tags/v$LIBVPX_VERSION.tar.gz"
+if ! built "libvpx-$LIBVPX_VERSION-$LIBVPX_SHA256"; then
+  (
+    cd "$work/src/libvpx-$LIBVPX_VERSION"
+    ./configure --prefix="$prefix" --enable-static --disable-shared --enable-pic \
+      --disable-examples --disable-tools --disable-docs --disable-unit-tests
+    make -j "$jobs"
+    make install
+  )
+  mark "libvpx-$LIBVPX_VERSION-$LIBVPX_SHA256"
+fi
+
 # ffmpeg.org 偶尔连不上，退到 GitHub 上的官方镜像（同一标签的源码）
 fetch "ffmpeg-$FFMPEG_VERSION" "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz" \
   "https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n$FFMPEG_VERSION.tar.gz"
@@ -118,7 +149,7 @@ ffmpeg_flags=(
   --pkg-config-flags=--static
   --disable-debug --disable-doc --disable-ffplay --disable-network
   --disable-autodetect --enable-zlib
-  --enable-libass --enable-libfreetype --enable-libfribidi --enable-libharfbuzz
+  --enable-libvpx --enable-libass --enable-libfreetype --enable-libfribidi --enable-libharfbuzz
 )
 if [ "$os" = Darwin ]; then
   ffmpeg_flags+=(--enable-videotoolbox --enable-audiotoolbox)
@@ -146,6 +177,8 @@ libass $LIBASS_VERSION      https://github.com/libass/libass（ISC）
 freetype $FREETYPE_VERSION  https://freetype.org（FreeType License）
 fribidi $FRIBIDI_VERSION    https://github.com/fribidi/fribidi（LGPL 2.1）
 harfbuzz $HARFBUZZ_VERSION  https://github.com/harfbuzz/harfbuzz（MIT）
+libvpx $LIBVPX_VERSION      https://github.com/webmproject/libvpx/archive/refs/tags/v$LIBVPX_VERSION.tar.gz（BSD 3-Clause + PATENTS）
+libvpx source SHA256: $LIBVPX_SHA256
 
 配置：./configure ${ffmpeg_flags[*]/--prefix=*/}
 构建脚本：https://github.com/hoobnn/plein/blob/main/apps/desktop/scripts/build-ffmpeg.sh
@@ -153,6 +186,8 @@ harfbuzz $HARFBUZZ_VERSION  https://github.com/harfbuzz/harfbuzz（MIT）
 要换成自己的 ffmpeg，替换本目录下的两个可执行文件即可。
 EOF
 cp "$work/src/ffmpeg-$FFMPEG_VERSION/COPYING.LGPLv2.1" "$out/COPYING.LGPLv2.1"
+cp "$work/src/libvpx-$LIBVPX_VERSION/LICENSE" "$out/LICENSE.libvpx"
+cp "$work/src/libvpx-$LIBVPX_VERSION/PATENTS" "$out/PATENTS.libvpx"
 
 # 自检：必须是 LGPL、带 ass 滤镜（先取输出再匹配，免得 grep -q 提前退出触发 pipefail）
 license=$("$out/ffmpeg" -hide_banner -L 2>&1)
@@ -160,6 +195,7 @@ filters=$("$out/ffmpeg" -hide_banner -filters 2>/dev/null)
 encoders=$("$out/ffmpeg" -hide_banner -encoders 2>/dev/null)
 grep -q 'GNU Lesser General Public' <<<"$license" || { echo '不是 LGPL 构建' >&2; exit 1; }
 grep -qE '^\s*\S+\s+ass\s' <<<"$filters" || { echo '缺少 ass 滤镜' >&2; exit 1; }
+grep -q libvpx-vp9 <<<"$encoders" || { echo '缺少 libvpx-vp9 编码器' >&2; exit 1; }
 if [ "$os" = Darwin ]; then
   grep -q h264_videotoolbox <<<"$encoders" || { echo '缺少 h264_videotoolbox 编码器' >&2; exit 1; }
   # 只能依赖系统库，不能指向 Homebrew 或构建目录

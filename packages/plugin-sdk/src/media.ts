@@ -10,6 +10,8 @@ export interface MediaInfo {
   height?: number
   hasVideo: boolean
   hasAudio: boolean
+  videoCodec?: string
+  hasAlpha?: boolean
 }
 
 /**
@@ -87,7 +89,28 @@ export interface ComposeAudio {
   envelope?: Array<[number, number]>
 }
 
+/** 透明视频叠加；几何为成片尺寸的比例，数组后项绘制在前项之上，声音不混入。 */
+export interface ComposeOverlay {
+  id: string
+  asset: AssetRef & { kind: 'video' }
+  start: number
+  duration: number
+  in: number
+  speed: number
+  x: number
+  y: number
+  width: number
+  height: number
+  opacity: number
+}
+
+export const SUBTITLE_ORIGINS = ['manual', 'estimated', 'asr', 'legacy'] as const
+export type SubtitleOrigin = (typeof SUBTITLE_ORIGINS)[number]
+
 export interface ComposeCue {
+  id?: string
+  source?: string
+  origin?: SubtitleOrigin
   start: number
   end: number
   text: string
@@ -102,7 +125,14 @@ export interface ComposeSpec {
   fps: number
   clips: ComposeClip[]
   audio: ComposeAudio[]
-  subtitles?: { cues: ComposeCue[]; style: SubtitleStyle }
+  overlays?: ComposeOverlay[]
+  subtitles?: {
+    cues: ComposeCue[]
+    style: SubtitleStyle
+    /** none 仍保留 cues 供 sidecar；缺省 static 保持旧烧录行为。 */
+    render?: 'static' | 'animated' | 'none'
+    animation?: 'fade' | 'pop'
+  }
   /** 镜头之间默认的转场（各段可在 ComposeClip.transition 单独指定） */
   transition?: ComposeTransition
   /** 成片响度标准化到 -14 LUFS（短视频平台的通行响度） */
@@ -110,6 +140,15 @@ export interface ComposeSpec {
   /** 输出文件名（不含扩展名） */
   name?: string
 }
+
+/** 所有实际媒体引用；保留每处引用的冻结来源身份，调用方可再按资产 id 去重。 */
+export const composeAssetRefs = (
+  spec: Pick<ComposeSpec, 'clips' | 'audio' | 'overlays'>,
+): AssetRef[] => [
+  ...spec.clips.map((clip) => clip.asset),
+  ...spec.audio.map((audio) => audio.asset),
+  ...(spec.overlays ?? []).map((overlay) => overlay.asset),
+]
 
 export interface MediaService {
   probe(ref: AssetRef): Promise<MediaInfo>

@@ -138,3 +138,58 @@ describe('动态合成预览API与冻结源恢复', () => {
     expect(doc.size).toBe(count)
   })
 })
+
+it('受控字幕API只接受cue参数，透明会话沿用相同释放合同', async () => {
+  const { server } = await bootServer()
+  const params = {
+    width: 1280,
+    height: 720,
+    fps: 30,
+    duration: 2,
+    style: 'boxed',
+    animation: 'pop',
+    cues: [
+      {
+        id: 'c1',
+        source: 'clip1',
+        origin: 'manual',
+        start: 0.2,
+        end: 1.8,
+        text: '<script>fetch(1)</script>',
+      },
+    ],
+  }
+  const response = await request(server, '/api/motion/preview/captions', {
+    method: 'POST',
+    headers: { origin: 'http://localhost:5173' },
+    body: JSON.stringify(params),
+  })
+  expect(response.status).toBe(201)
+  const info = (await response.json()) as {
+    id: string
+    url: string
+    width: number
+    height: number
+    duration: number
+  }
+  expect(info).toMatchObject({ width: 1280, height: 720, duration: 2 })
+  expect(await (await fetch(info.url)).text()).toContain('background:transparent')
+  const html = await (await fetch(new URL('composition.html', info.url))).text()
+  expect(html).toContain('&lt;script&gt;fetch(1)&lt;/script&gt;')
+  for (const bad of [
+    { ...params, html: '<script/>' },
+    { ...params, duration: 301 },
+    { ...params, cues: [{ ...params.cues[0], origin: 'invented' }] },
+  ]) {
+    expect(
+      (
+        await request(server, '/api/motion/preview/captions', {
+          method: 'POST',
+          body: JSON.stringify(bad),
+        })
+      ).status,
+    ).toBe(400)
+  }
+  await request(server, `/api/motion/preview/${info.id}`, { method: 'DELETE' })
+  expect((await fetch(info.url)).status).toBe(404)
+})

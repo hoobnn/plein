@@ -3,7 +3,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { connect, createElement } from '@plein/doc'
 import { nodeElementOf } from '@plein/capabilities'
-import { motionNode, MotionParams, MOTION_TEMPLATE_VERSION } from '@plein/nodes'
+import { motionNode, MotionParams, MOTION_TEMPLATE_VERSION, CaptionLayerParams } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
 import type { AuthEnv } from '../auth'
 import type { AssetStore } from '../assets/store'
@@ -76,6 +76,20 @@ export function motionRoutes(deps: {
           parentOrigin,
         )
         return c.json(info, 201)
+      } catch (error) {
+        return c.json({ error: 'invalid', message: (error as Error).message }, 422)
+      }
+    })
+    .post('/api/motion/preview/captions', async (c) => {
+      const parsed = CaptionLayerParams.safeParse(await c.req.json().catch(() => null))
+      if (!parsed.success)
+        return c.json({ error: 'invalid', message: '动态字幕预览参数不合法' }, 400)
+      try {
+        const parentOrigin = new URL(c.req.header('origin') ?? c.req.url).origin
+        return c.json(
+          await deps.previews.openCaptions(c.var.principal.id, parsed.data, parentOrigin),
+          201,
+        )
       } catch (error) {
         return c.json({ error: 'invalid', message: (error as Error).message }, 422)
       }

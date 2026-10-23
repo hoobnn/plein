@@ -86,6 +86,10 @@ const motionParams = z
     resolution: z.enum(['720p', '1080p']).default('1080p').meta({ title: '分辨率' }),
     sourceIn: z.number().min(0).default(0).meta({ title: '素材入点（秒）' }),
     speed: z.number().min(0.25).max(4).default(1).meta({ title: '素材速度' }),
+    output: z
+      .enum(['mp4', 'transparent-webm'])
+      .default('mp4')
+      .meta({ title: '输出', labels: { mp4: 'MP4 视频', 'transparent-webm': '透明 WebM 图层' } }),
     audio: z
       .enum(['mute', 'source'])
       .default('mute')
@@ -232,6 +236,7 @@ const seconds = (value: number) => String(Math.round(value * MOTION_FPS) / MOTIO
 /** 可信内置模板的纯函数投影；HTML 已应用 overrides，不应再应用一次 SDK 覆盖。 */
 export function motionHtml(input: MotionParams, files: MotionFiles = {}): string {
   const params = motionNode.params.parse(input)
+  const transparent = params.output === 'transparent-webm'
   for (const path of Object.values(files)) if (path !== undefined) localFile(path)
   const gsap = localFile(files.gsap ?? 'vendor/gsap.min.js')
   const { width, height } = motionSize(params)
@@ -296,7 +301,7 @@ export function motionHtml(input: MotionParams, files: MotionFiles = {}): string
   }
   const media =
     video && files.video
-      ? `<video ${attrs('hf-media', 0)} src="${escapeHtml(files.video)}" preload="auto" playsinline data-playback-start="${params.sourceIn}" data-playback-rate="${params.speed}" data-volume="${params.audio === 'source' ? 1 : 0}"${params.audio === 'mute' ? ' muted' : ''}></video>`
+      ? `<video ${attrs('hf-media', 0)} src="${escapeHtml(files.video)}" preload="auto" playsinline data-playback-start="${params.sourceIn}" data-playback-rate="${params.speed}" data-volume="${!transparent && params.audio === 'source' ? 1 : 0}"${transparent || params.audio === 'mute' ? ' muted' : ''}></video>`
       : character && files.image
         ? `<img ${attrs('hf-media', 0)} src="${escapeHtml(files.image)}" alt="" />`
         : `<div ${attrs('hf-media', 0)}></div>`
@@ -312,9 +317,9 @@ export function motionHtml(input: MotionParams, files: MotionFiles = {}): string
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">${files.fontCss ? `<link rel="stylesheet" href="${files.fontCss}">` : ''}
 <style>${files.font ? `@font-face{font-family:PleinMotion;src:url('${files.font}')}` : ''}
-*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:${params.background}}
-#hf-root{position:relative;overflow:hidden;width:${width}px;height:${height}px;background:${params.background};font-family:'Noto Sans SC',PleinMotion,'Arial',sans-serif}
-.clip{position:absolute}#hf-title,#hf-subtitle{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.15;font-weight:700}#hf-subtitle{font-weight:400;line-height:1.4}#hf-media{object-fit:cover;background:${character ? params.accent : params.background}}#hf-accent{transform-origin:left center}${video ? '#hf-title,#hf-subtitle{text-shadow:0 2px 18px #000000}' : ''}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:${transparent ? 'transparent' : params.background}}
+#hf-root{position:relative;overflow:hidden;width:${width}px;height:${height}px;background:${transparent ? 'transparent' : params.background};font-family:'Noto Sans SC',PleinMotion,'Arial',sans-serif}
+.clip{position:absolute}#hf-title,#hf-subtitle{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.15;font-weight:700}#hf-subtitle{font-weight:400;line-height:1.4}#hf-media{object-fit:cover;background:${transparent ? 'transparent' : character ? params.accent : params.background}}#hf-accent{transform-origin:left center}${video ? '#hf-title,#hf-subtitle{text-shadow:0 2px 18px #000000}' : ''}
 </style></head><body><main id="hf-root" data-hf-id="hf-root" data-hf-root data-composition-id="plein-motion" data-start="0" data-duration="${seconds(duration)}" data-width="${width}" data-height="${height}">
 ${media}
 <div ${attrs('hf-accent', 1)}></div>
