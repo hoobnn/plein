@@ -214,6 +214,32 @@ describe('删除画布', () => {
 })
 
 describe('关闭与卸载', () => {
+  it('连接关闭失败不阻止其他连接和房间保存并释放', () => {
+    const store = memoryStore()
+    const rooms = new Rooms(store)
+    const broken = rooms.get('broken-close')
+    const good = recorder()
+    broken.join({
+      ...conn(),
+      close() {
+        throw new Error('socket already gone')
+      },
+    })
+    broken.join(good.conn)
+    broken.doc.getMap('m').set('x', 1)
+    const next = rooms.get('next-close')
+    next.doc.getMap('m').set('y', 2)
+
+    expect(() => rooms.closeAll()).not.toThrow()
+    expect(good.closed).toEqual([1001])
+    expect(broken.doc.isDestroyed).toBe(true)
+    expect(next.doc.isDestroyed).toBe(true)
+    expect(rooms.loaded()).toEqual([])
+    const saved = replay(store, 'next-close')
+    expect(saved.getMap('m').get('y')).toBe(2)
+    saved.destroy()
+  })
+
   it('closeAll 把还在缓冲里的更新一起写进快照', () => {
     vi.useFakeTimers()
     const store = memoryStore()

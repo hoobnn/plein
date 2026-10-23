@@ -246,7 +246,13 @@ export class Room {
   close(code = 1001, reason = 'closing') {
     if (this.writeTimer) clearTimeout(this.writeTimer)
     this.writeTimer = null
-    for (const conn of this.conns.keys()) conn.close(code, reason)
+    for (const conn of this.conns.keys()) {
+      try {
+        conn.close(code, reason)
+      } catch {
+        // 已断开的连接不能阻止其他房间保存，以及当前房间释放文档和定时器。
+      }
+    }
     this.conns.clear()
     if (this.unloadTimer) clearTimeout(this.unloadTimer)
     this.awareness.destroy()

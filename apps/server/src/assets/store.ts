@@ -336,8 +336,12 @@ export class AssetStore {
       )
       if (!ok) {
         const part = `${out}.${randomUUID()}.part`
-        await fn(part)
-        await rename(part, out)
+        try {
+          await fn(part)
+          await rename(part, out)
+        } finally {
+          await rm(part, { force: true })
+        }
       }
       variants.push(v)
     }
