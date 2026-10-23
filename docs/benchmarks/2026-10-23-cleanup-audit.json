@@ -1,0 +1,111 @@
+{
+  "date": "2026-10-23",
+  "sourceCommit": "94bf7943bacb4f77e4b5492811519d72dba749b8",
+  "sourceDirty": true,
+  "environment": {
+    "node": "26.12.1",
+    "pnpm": "12.11.2",
+    "platform": "macOS"
+  },
+  "deleteProbe": {
+    "method": "Operation counts using the HEAD deleteElements loop and working-tree implementation on identical independent root-image fixtures; no wall-time or GPU measurement.",
+    "samples": [
+      {
+        "elements": 1000,
+        "baseline": {
+          "scans": 1000,
+          "elementVisits": 1000000,
+          "remaining": 0
+        },
+        "candidate": {
+          "scans": 1,
+          "elementVisits": 1000,
+          "remaining": 0
+        }
+      },
+      {
+        "elements": 4000,
+        "baseline": {
+          "scans": 4000,
+          "elementVisits": 16000000,
+          "remaining": 0
+        },
+        "candidate": {
+          "scans": 1,
+          "elementVisits": 4000,
+          "remaining": 0
+        }
+      }
+    ]
+  },
+  "verification": {
+    "verify": {
+      "status": "passed",
+      "testFiles": 210,
+      "testsPassed": 1747,
+      "testsSkipped": 1,
+      "desktopProfileContractsPassed": 13,
+      "smoke": "passed"
+    },
+    "coverage": {
+      "productionFiles": 465,
+      "total": {
+        "lines": {
+          "total": 30731,
+          "covered": 16598,
+          "skipped": 0,
+          "pct": 54.01
+        },
+        "statements": {
+          "total": 36334,
+          "covered": 18888,
+          "skipped": 0,
+          "pct": 51.98
+        },
+        "functions": {
+          "total": 8703,
+          "covered": 3942,
+          "skipped": 0,
+          "pct": 45.29
+        },
+        "branches": {
+          "total": 28750,
+          "covered": 12488,
+          "skipped": 0,
+          "pct": 43.43
+        },
+        "branchesTrue": {
+          "total": 0,
+          "covered": 0,
+          "skipped": 0,
+          "pct": 100
+        }
+      }
+    },
+    "browser": {
+      "e2eBuild": "passed",
+      "auth": {
+        "passed": 13,
+        "files": 2
+      },
+      "editing": {
+        "passed": 4,
+        "files": 1
+      },
+      "ordinarySuiteDiscovered": {
+        "tests": 1413,
+        "files": 322
+      },
+      "fullOrdinarySuiteRun": false,
+      "provider": "mock",
+      "isolatedData": true
+    },
+    "initialSandboxAttempt": {
+      "status": "failed",
+      "reason": "Local socket listeners denied with listen EPERM; complete verify passed after allowing local listeners."
+    },
+    "remoteCI": "not run",
+    "paidProvider": "not run",
+    "browserCPUHeapAndGPUPerformance": "not measured"
+  }
+}

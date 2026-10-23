@@ -1,0 +1,155 @@
+{
+  "date": "2026-10-23",
+  "sourceCommit": "94bf7943bacb4f77e4b5492811519d72dba749b8",
+  "sourceDirty": true,
+  "environment": {
+    "node": "26.12.1",
+    "pnpm": "12.11.2",
+    "platform": "macOS"
+  },
+  "validationScope": {
+    "method": "HEAD plus 23 explicit cleanup paths; APFS-cloned existing locked dependencies; no dependency installation. Unrelated concurrent Agent changes excluded from full verification.",
+    "matchingTypeScriptFiles": 17,
+    "fileSHA256": {
+      "apps/server/src/checkpoints/archive.ts": "bed472075c22a75ebdb5a3e3a7e3affcd363253cf68883fe4751418174501a59",
+      "apps/server/src/maintenance/files.ts": "e3fb2eaf7c0d742dbbb11a91873a1228b05c4a2059ce050e3ef27171c75b6e6c",
+      "apps/server/src/runs/storyboard-batch.ts": "4686562697e40fa3ae3dfaf8cb419fe00f9c6d7aecdde42e00ba96f4248e84b4",
+      "apps/web/src/features/stage/snapshot.test.ts": "2ad7e5e1cbc4bc083d071331a5ce5800c1cede88142dd354ab5c84bbf6f4ffac",
+      "packages/doc/src/commands.ts": "194479653750ae9053c034747be870b0fef606bad8754e217dfa8b79d8afe5ab",
+      "packages/doc/src/doc.test.ts": "5f0495f2650cd3a129dfcd9d868cfcf6190174c16881377ecf4896d6635ff8eb",
+      "packages/nodes/src/stage.ts": "c62185f6c0948a0b98499d0635bf2ce495009d538e19ca79efcc683fec610334",
+      "packages/canvas-core/src/engine.ts": "279d48415ff8497d8b935810433886aff1b7d8c88a17f55b22e0f0389aa49f6b",
+      "packages/canvas-core/src/engine-preview-refresh.test.ts": "ec060e93aa5580ba0dabe187cecd7b06afc7ce04a99078f4b65cee1e545ad85d",
+      "apps/web/src/canvas/nodeCards.ts": "9e20c1484be1cf8950c079df568c4758f72c95437c300caf1db636498d9b817f",
+      "apps/web/src/canvas/overlays.ts": "9f6210601287f259f5451f92b65f122bac56455ccf3e0278ef7abb9916954554",
+      "apps/web/src/canvas/shotBadges.ts": "0e327f8bb68638cb221d11271369f6d3073b0ca43adc2482e4c41cc3e7804d68",
+      "apps/web/src/canvas/shotBadges.test.ts": "26f6dc95c96587b8afaf015f7f830df7d8b911186b11604b0c67fb031578b430",
+      "apps/web/src/features/sequence/media.tsx": "a385ea249a8cb161cff233d17370e4f478a0fd38b0b7ea4044bb989320252d30",
+      "apps/web/src/features/sequence/peaks.ts": "96fb53e84db4f354fdc698790633d7929a37688b70e8bd5ac1c426cb4e469c08",
+      "apps/web/src/features/sequence/peaks.test.ts": "5cf0acceda89ac41461dfa9e56e8ce894f2f663bb45f1ad8e74bd737b2a98be0",
+      "e2e/overlay-refresh.spec.ts": "858a4369b3b23ec34d659428315d66d19a595e19bfa0c97452315394a5ea41c5"
+    }
+  },
+  "creationProbe": {
+    "existingFrames": 100,
+    "newElements": 100,
+    "beforeElementVisits": 10000,
+    "afterElementVisits": 100,
+    "afterElementsCalls": 1,
+    "afterChildrenCalls": 0,
+    "source": "packages/doc/src/doc.test.ts: 向多个父级批量创建时只扫描一次已有元素"
+  },
+  "previewProbe": {
+    "driver": "50 Engine.preview updates in real Chromium; two requestAnimationFrame callbacks after each update; fractional card widths",
+    "result": {
+      "scans": {
+        "elements": 0,
+        "edges": 50,
+        "edgeDraws": 50
+      },
+      "sameBody": true,
+      "sameNote": true,
+      "card": {
+        "x": 527.3333740234375,
+        "y": 253
+      },
+      "at": {
+        "x": 527.3333333333334,
+        "y": 253
+      },
+      "note": {
+        "x": 527.3333740234375,
+        "y": 603
+      },
+      "noteAt": {
+        "x": 527.3333333333334,
+        "y": 603
+      },
+      "documentUnchanged": true
+    },
+    "additionalEdgeScans": 0,
+    "wallTimeAndFPSMeasured": false
+  },
+  "shotBadgeProbe": {
+    "transientFrames": 30,
+    "documentElementsCalls": 0,
+    "domIdentityAndOcclusionVerified": true
+  },
+  "waveformCache": {
+    "sharedSuccessfulPeakBudget": 1000000,
+    "minimumWeightPerEntry": 1,
+    "inFlightDeduplicated": true,
+    "oversizeReturnedButNotCached": true,
+    "unitTestsPassed": 10,
+    "totalHeapBoundClaimed": false
+  },
+  "verification": {
+    "targeted": {
+      "files": 28,
+      "passed": 243
+    },
+    "sharedTypecheck": "passed",
+    "ownedFormattingAndLint": "passed",
+    "isolatedVerify": {
+      "status": "passed",
+      "testFiles": 213,
+      "testsPassed": 1773,
+      "testsSkipped": 1,
+      "desktopProfileContractsPassed": 13,
+      "smoke": "passed",
+      "coverageProductionFiles": 466,
+      "coverage": {
+        "lines": {
+          "total": 30771,
+          "covered": 16694,
+          "skipped": 0,
+          "pct": 54.25
+        },
+        "statements": {
+          "total": 36380,
+          "covered": 18997,
+          "skipped": 0,
+          "pct": 52.21
+        },
+        "functions": {
+          "total": 8705,
+          "covered": 3957,
+          "skipped": 0,
+          "pct": 45.45
+        },
+        "branches": {
+          "total": 28791,
+          "covered": 12534,
+          "skipped": 0,
+          "pct": 43.53
+        },
+        "branchesTrue": {
+          "total": 0,
+          "covered": 0,
+          "skipped": 0,
+          "pct": 100
+        }
+      }
+    },
+    "browser": {
+      "sharedRelatedRegressionPassed": 33,
+      "isolatedWaveformRegressionPassed": 2,
+      "isolatedStrongerPreviewAssertionPassed": 1,
+      "distinctRelatedCasesPassed": 35,
+      "finalRunsRetried": 0,
+      "e2eBuild": "passed",
+      "provider": "mock",
+      "isolatedTemporaryData": true
+    },
+    "sharedVerify": {
+      "status": "stopped at lint",
+      "reason": "Unrelated concurrent Agent files had formatting issues; they were preserved. Full cleanup verification passed in the isolated snapshot."
+    },
+    "initialPreviewProbeCorrection": "Initial counter included required EdgeLayer redraws and a debounced stale response. Final probe waits for stale refresh and separately counts edge redraws; stronger note-content identity assertion passed in isolation.",
+    "earlySharedServerDiagnostic": "An early shared-source UI run logged missing agent settings columns from concurrent schema work. Final isolated verify and waveform runs passed without that concurrent change.",
+    "fullE2E": "not run",
+    "remoteCI": "not run",
+    "paidProvider": "not run",
+    "longSessionHeapCPUAndGPU": "not measured"
+  }
+}
