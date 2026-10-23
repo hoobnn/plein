@@ -12,7 +12,7 @@ import {
 } from '@plein/plugin-sdk'
 import type { z } from 'zod'
 import type { PluginHost } from '../plugins/host'
-import { type ServerContext, viewOf } from './tools'
+import type { ServerContext } from './tools'
 
 type Cap = CapabilityDefinition<z.ZodObject, ServerContext>
 
@@ -56,7 +56,7 @@ export function pluginCapabilities(host: PluginHost, builtin: CapabilityRegistry
           })
         const pctx: PluginCapabilityContext = {
           canvasId: ctx.env.canvasId,
-          selection: ctx.env.selection ?? viewOf(ctx.env.rooms, ctx.env.canvasId)?.selection ?? [],
+          selection: [...(ctx.env.selection ?? [])],
           signal,
           call: (name, raw) => callBuiltin(builtin, ctx, def, name, raw),
           log: (message, data) => console.log(`[plugin ${plugin}] ${message}`, data ?? ''),

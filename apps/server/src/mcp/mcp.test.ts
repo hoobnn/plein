@@ -1,6 +1,14 @@
 import type { Canvas } from '@plein/protocol'
+import { createElement } from '@plein/doc'
+import {
+  definePlugin,
+  definePluginCapability,
+  defineServerPlugin,
+  PLUGIN_API_VERSION,
+} from '@plein/plugin-sdk'
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
-import { request, startTestServer } from '../testing'
+import { z } from 'zod'
+import { bootServer, createCanvas, request, startTestServer } from '../testing'
 
 let running: Awaited<ReturnType<typeof startTestServer>>
 let canvasId: string
@@ -15,6 +23,121 @@ beforeAll(async () => {
 afterAll(() => running.close())
 
 describe('对外开放 MCP', () => {
+  it('captures awareness selection per request and keeps it stable throughout an asynchronous plugin call', async () => {
+    const { server } = await bootServer()
+    const { id: canvasId, doc } = await createCanvas(server)
+    let entered!: () => void, release!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let waitNext = true
+    server.plugins.load(
+      [
+        defineServerPlugin(
+          definePlugin({
+            manifest: {
+              id: 'acme/selection',
+              version: '1.0.0',
+              name: 'selection',
+              engines: { plein: `^${PLUGIN_API_VERSION}` },
+              contributes: { capabilities: ['acme/selection'] },
+            },
+          }),
+          {
+            capabilities: [
+              definePluginCapability({
+                id: 'acme/selection',
+                title: 'selection',
+                description: '',
+                effect: 'read',
+                input: z.object({}),
+                run: async (ctx) => {
+                  if (waitNext) {
+                    waitNext = false
+                    entered()
+                    await waiting
+                  }
+                  return { selection: ctx.selection, builtin: await ctx.call('ui_get_selection') }
+                },
+              }),
+            ],
+          },
+        ),
+      ],
+      false,
+    )
+    try {
+      const [first, second] = ['first', 'second'].map((name) =>
+        createElement(doc, {
+          kind: 'markdown',
+          name,
+          x: 0,
+          y: 0,
+          w: 100,
+          h: 100,
+        }),
+      )
+      const selection = [first!]
+      const view = (ids: string[]) =>
+        server.rooms.get(canvasId).awareness.setLocalState({
+          view: {
+            selection: ids,
+            viewport: { x: 0, y: 0, w: 800, h: 600 },
+            at: Date.now(),
+          },
+        })
+      view(selection)
+      const { token } = (await (
+        await request(server, '/api/mcp/external', { method: 'POST' })
+      ).json()) as { token: string }
+      let sequence = 0
+      const call = async (name: string) => {
+        const response = await server.app.request('/mcp', {
+          method: 'POST',
+          headers: {
+            host: '127.0.0.1:8787',
+            'content-type': 'application/json',
+            authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: ++sequence,
+            method: 'tools/call',
+            params: { name, arguments: { canvas_id: canvasId } },
+          }),
+        })
+        const body = (await response.json()) as {
+          result: { content: Array<{ text: string }>; isError?: boolean }
+        }
+        expect(body.result.isError).not.toBe(true)
+        return JSON.parse(body.result.content[0]!.text)
+      }
+      expect(await call('ui_get_selection')).toMatchObject({ total: 1, elements: [{ id: first }] })
+      const pending = call('acme__selection')
+      await started
+      selection[0] = second!
+      view([second!])
+      release()
+      expect(await pending).toMatchObject({
+        selection: [first],
+        builtin: { total: 1, elements: [{ id: first }] },
+      })
+      expect(await call('ui_get_selection')).toMatchObject({ total: 1, elements: [{ id: second }] })
+      expect(await call('acme__selection')).toMatchObject({
+        selection: [second],
+        builtin: { total: 1, elements: [{ id: second }] },
+      })
+      server.rooms.get(canvasId).awareness.setLocalState(null)
+      expect(await call('ui_get_selection')).toMatchObject({ total: 0, elements: [] })
+    } finally {
+      release()
+      doc.destroy()
+    }
+  })
+
   it('对外开放：长期令牌让外部应用用全部能力，不传画布时用用户正在看的', async () => {
     const { server: app } = running
     const { rooms } = app

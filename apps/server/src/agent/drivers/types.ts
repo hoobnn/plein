@@ -46,6 +46,8 @@ export interface DriverOptions {
   token: string
   instructions: string
   settings?: AgentSettings
+  /** 本轮显式选择、由服务端目录验证的 Codex 原生技能。 */
+  skill?: { name: string; path: string }
 }
 
 /** 一个轮次的 CLI 进程；下一轮通过 resume 延续原 CLI 会话。 */

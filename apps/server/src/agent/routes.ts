@@ -6,6 +6,7 @@ import {
   SendAgentMessage,
   AgentKind,
   UpdateAgentSession,
+  ToggleAgentSkill,
 } from '@plein/protocol'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
@@ -39,6 +40,39 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
         if (!agent.success) return c.json({ error: 'not_found', message: '没有这个智能体' }, 404)
         try {
           return c.json(await agents.models(agent.data, c.req.query('refresh') === '1'))
+        } catch (err) {
+          if (!(err instanceof AgentError)) throw err
+          return c.json({ error: err.code, message: err.message }, STATUS[err.code])
+        }
+      })
+      .get('/api/agent/skills/:agent', async (c) => {
+        const agent = AgentKind.safeParse(c.req.param('agent'))
+        if (!agent.success) return c.json({ error: 'not_found', message: '没有这个智能体' }, 404)
+        return c.json(
+          await agents.skills(c.var.principal.id, agent.data, c.req.query('refresh') === '1'),
+        )
+      })
+      .get('/api/agent/skills/:agent/:id', async (c) => {
+        const agent = AgentKind.safeParse(c.req.param('agent'))
+        if (!agent.success) return c.json({ error: 'not_found', message: '没有这个智能体' }, 404)
+        try {
+          return c.json(await agents.skill(c.var.principal.id, agent.data, c.req.param('id')))
+        } catch (err) {
+          if (!(err instanceof AgentError)) throw err
+          return c.json({ error: err.code, message: err.message }, STATUS[err.code])
+        }
+      })
+      .patch('/api/agent/skills/:agent/:id', async (c) => {
+        const p = c.var.principal
+        if (p.role === 'viewer') return c.json(forbidden, 403)
+        const agent = AgentKind.safeParse(c.req.param('agent'))
+        if (!agent.success) return c.json({ error: 'not_found', message: '没有这个智能体' }, 404)
+        const body = ToggleAgentSkill.safeParse(await c.req.json().catch(() => null))
+        if (!body.success) return c.json({ error: 'invalid_input', message: '参数不对' }, 400)
+        try {
+          return c.json(
+            await agents.toggleSkill(p.id, agent.data, c.req.param('id'), body.data.enabled),
+          )
         } catch (err) {
           if (!(err instanceof AgentError)) throw err
           return c.json({ error: err.code, message: err.message }, STATUS[err.code])
@@ -121,6 +155,7 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
             body.data.approval,
             body.data.plan,
             body.data.access,
+            body.data.skill,
           )
           return c.body(null, 202)
         } catch (err) {

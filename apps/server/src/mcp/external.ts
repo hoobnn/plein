@@ -126,7 +126,14 @@ export class ExternalMcp {
 
   private env(canvasId: string): ToolEnv {
     const { db: _, ...rest } = this.deps
-    return { ...rest, canvasId, ownerId: this.owner(), origin: EXTERNAL_ORIGIN }
+    return {
+      ...rest,
+      canvasId,
+      ownerId: this.owner(),
+      origin: EXTERNAL_ORIGIN,
+      // 外部应用没有会话发送入口：每次工具调用捕获一次，异步插件内的后续读取复用它。
+      selection: [...(viewOf(this.deps.rooms, canvasId)?.selection ?? [])],
+    }
   }
 
   /** 用户最近在看的画布：浏览器里打开的画布会经 awareness 发布视口 */

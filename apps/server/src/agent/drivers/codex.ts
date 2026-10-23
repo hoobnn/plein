@@ -376,7 +376,14 @@ export function startCodex(o: DriverOptions, hooks: DriverHooks): CliDriver {
         .then(() =>
           call('turn/start', {
             threadId: thread,
-            input: [{ type: 'text', text: prompt, text_elements: [] }],
+            input: [
+              {
+                type: 'text',
+                text: o.skill ? `$${o.skill.name} ${prompt}` : prompt,
+                text_elements: [],
+              },
+              ...(o.skill ? [{ type: 'skill', name: o.skill.name, path: o.skill.path }] : []),
+            ],
             ...(o.settings?.model ? { model: o.settings.model } : {}),
             ...(o.settings?.reasoningEffort ? { effort: o.settings.reasoningEffort } : {}),
           }),

@@ -111,6 +111,9 @@ export const API = {
     `/api/canvases/${encodeURIComponent(canvasId)}/agent/sessions`,
   agentSession: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}`,
   agentModels: (agent: string) => `/api/agent/models/${encodeURIComponent(agent)}`,
+  agentSkills: (agent: string) => `/api/agent/skills/${encodeURIComponent(agent)}`,
+  agentSkill: (agent: string, id: string) =>
+    `/api/agent/skills/${encodeURIComponent(agent)}/${encodeURIComponent(id)}`,
   agentContextReset: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}/context/reset`,
   agentMessages: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}/messages`,
   agentStop: (id: string) => `/api/agent/sessions/${encodeURIComponent(id)}/stop`,

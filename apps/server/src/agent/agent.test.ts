@@ -8,7 +8,7 @@ import { hasFfmpeg } from '../assets/media'
 import { startTestServer } from '../testing'
 import { Approvals } from './approvals'
 import { AgentChanges } from './changes'
-import { McpServer } from './mcp'
+import { callTool, McpServer } from './mcp'
 import { AgentPlan, type PlanItem } from './plan'
 import { agentTools, canvasTools } from './tools'
 
@@ -606,17 +606,36 @@ describe('确认关卡与界面能力', () => {
     auto.changes.release()
   })
 
-  it('读用户的选区和视口，把镜头带到元素上', async () => {
+  it('选区绑定本轮发送快照，视口实时读取，并能把镜头带到元素上', async () => {
     const { call, rooms, id, ui, changes } = await setup()
-    expect((await call('ui_get_selection')).text).toContain('没有打开')
+    expect((await call('ui_get_selection')).json()).toMatchObject({ total: 0, elements: [] })
     const el = (
       await call('create_element', { kind: 'markdown', text: '选中的', x: 10, y: 10 })
     ).json()
     rooms.get(id).awareness.setLocalState({
       view: { selection: [el.id], viewport: { x: 0, y: 0, w: 1000, h: 800 }, at: Date.now() },
     })
-    const sel = (await call('ui_get_selection')).json()
-    expect(sel.elements[0].id).toBe(el.id)
+    // 没有附带目标的这一轮，不因画布上的新选区偷偷带入目标。
+    expect((await call('ui_get_selection')).json()).toMatchObject({ total: 0, elements: [] })
+    const { runs, plugins, assets } = running.server
+    const snapshot = canvasTools({
+      canvasId: id,
+      ownerId: 'local',
+      rooms,
+      runs,
+      host: plugins,
+      assets,
+      selection: [el.id],
+    }).find((tool) => tool.name === 'ui_get_selection')!
+    rooms.get(id).awareness.setLocalState({
+      view: { selection: [], viewport: { x: 0, y: 0, w: 1000, h: 800 }, at: Date.now() },
+    })
+    const selected = await callTool(snapshot, {})
+    const selectedText = selected.content.find((block) => block.type === 'text')!
+    expect(selectedText.type === 'text' && JSON.parse(selectedText.text)).toMatchObject({
+      total: 1,
+      elements: [{ id: el.id }],
+    })
     const view = (await call('ui_get_viewport')).json()
     expect(view.elements.map((e: { id: string }) => e.id)).toContain(el.id)
     expect((await call('ui_focus', { ids: [el.id, 'nope'] })).text).toContain('已在用户屏幕上')

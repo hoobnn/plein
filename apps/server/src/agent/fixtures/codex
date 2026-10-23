@@ -21,11 +21,28 @@ const complete = (status = 'completed') => note('turn/completed', { threadId, tu
 
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   const msg = JSON.parse(line)
+  if (process.env.FAKE_CODEX_SKILL_LOG) fs.appendFileSync(process.env.FAKE_CODEX_SKILL_LOG, `${JSON.stringify(msg)}\n`)
   if (!msg.method) return answers.get(msg.id)?.(msg.result)
   const ok = (result) => send({ id: msg.id, result })
   switch (msg.method) {
     case 'initialize':
       return ok({ userAgent: 'fake' })
+    case 'skills/list': {
+      if (process.env.FAKE_CODEX_SKILL_HANG === '1') return
+      if (process.env.FAKE_CODEX_SKILL_ERROR === '1') return send({ id: msg.id, error: { message: 'fixture skills unavailable' } })
+      if (process.env.FAKE_CODEX_SKILL_INVALID === '1') return ok({ data: 'invalid' })
+      const skills = process.env.FAKE_CODEX_SKILLS_FILE ? JSON.parse(fs.readFileSync(process.env.FAKE_CODEX_SKILLS_FILE, 'utf8')) : []
+      return ok({ data: [{ cwd: msg.params.cwds[0], skills, errors: [] }] })
+    }
+    case 'skills/config/write': {
+      if (process.env.FAKE_CODEX_SKILL_WRITE_ERROR === '1') return send({ id: msg.id, error: { message: 'fixture config unwritable' } })
+      const skills = JSON.parse(fs.readFileSync(process.env.FAKE_CODEX_SKILLS_FILE, 'utf8'))
+      const skill = skills.find(skill => skill.path === msg.params.path)
+      if (!skill) return send({ id: msg.id, error: { message: 'skill not found' } })
+      skill.enabled = msg.params.enabled
+      fs.writeFileSync(process.env.FAKE_CODEX_SKILLS_FILE, JSON.stringify(skills))
+      return ok({})
+    }
     case 'model/list':
       if (process.env.FAKE_CLI_LOG) fs.appendFileSync(process.env.FAKE_CLI_LOG, `${JSON.stringify({ rpc: msg.method, params: msg.params })}\n`)
       if (process.env.FAKE_CODEX_MODEL_HANG === '1') return

@@ -66,6 +66,7 @@ import type { AgentPlan } from './plan'
 import { pluginCapabilities } from './plugin-caps'
 import { capabilityTools, type McpTool, type ToolResult } from './mcp'
 import type { TurnExecution } from './execution'
+import { InspectNodeInput, preparedInputPage } from './input-view'
 
 const exec = promisify(execFile)
 
@@ -89,8 +90,8 @@ export interface ToolEnv {
   onRun?(nodeId: string, runId: string): void
   /** 发起了一次整组 / 上下游运行 */
   onGroup?(groupId: string): void
-  /** 调用方给定的选区（从 ⌘K 调用时）；不给时读用户屏幕上的选区 */
-  selection?: string[]
+  /** 本轮发送或命令调用时附带的选区快照；未附带时为空，不回退实时选区。 */
+  selection?: readonly string[]
   /** 推给用户屏幕的界面动作；返回 false 表示没有人在看这块画布 */
   ui?(action: UiAction, ids: string[]): boolean
 }
@@ -145,6 +146,7 @@ export function serverContext(env: ToolEnv): ServerContext {
       : value
   const safeEnv = {
     ...env,
+    selection: Object.freeze([...new Set(env.selection ?? [])]),
     runs: scoped(env.runs),
     host: scoped(env.host),
     assets: scoped(env.assets),
@@ -222,6 +224,28 @@ const runNode = serverCapability({
     }
     env.onRun?.(id, runId)
     return waitRun(ctx, id, runId, wait_seconds)
+  },
+})
+
+const inspectNodeInput = serverCapability({
+  name: 'inspect_node_input',
+  title: '检查节点实际输入',
+  description:
+    '只读检查节点最终送入模型的提示词、参考顺序、模型、音色、提示和阻断，不运行节点。默认返回字段目录，完整原文用 field_path（/prompt、/refs、/inputs、/model、/notices、/blocked）；数组沿 next_offset，文字沿 next_text_offset 续读，并携带 expected_version。complete 只表示当前字段读完，目录中的预览不是完整原文。',
+  group: 'read',
+  where: 'server',
+  effect: 'read',
+  input: InspectNodeInput,
+  run: async (ctx, a) => {
+    try {
+      return preparedInputPage(
+        await ctx.env.runs.preview(ctx.env.canvasId, a.id, ctx.env.ownerId),
+        a,
+      )
+    } catch (err) {
+      if (err instanceof NodeRunError) throw new CapabilityError(err.message)
+      throw err
+    }
   },
 })
 
@@ -678,21 +702,46 @@ const listStale = serverCapability({
 const getSelection = serverCapability({
   name: 'ui_get_selection',
   title: '查看选区',
-  description: '读取用户现在在画布上选中的元素（用户可能在对话过程中改了选区）。',
+  description:
+    '读取本轮发送时附带的选区快照。用户后来在画布上换选区不会改变这些目标；未附带选区时返回空。',
   group: 'ui',
   where: 'client',
   effect: 'read',
-  input: z.object({}),
-  run: (ctx) => {
-    const view = viewOf(ctx.env.rooms, ctx.env.canvasId)
-    if (!view) return '用户现在没有打开这块画布'
-    return ctx.withDoc((doc) => ({
-      elements: view.selection.flatMap((i) => {
+  input: z.object({
+    offset: z.number().int().min(0).default(0),
+    limit: z.number().int().min(1).max(50).default(20),
+  }),
+  run: (ctx, a) =>
+    ctx.withDoc((doc) => {
+      const ids = ctx.env.selection ?? []
+      const elements = []
+      const missing: string[] = []
+      let next = a.offset
+      for (const i of ids.slice(a.offset, a.offset + a.limit)) {
         const el = doc.get(i)
-        return el ? [summarize(doc, el, false)] : []
-      }),
-    }))
-  },
+        const item = el
+          ? { id: i, kind: el.kind, name: el.name?.slice(0, 100), type: el.nodeType?.slice(0, 100) }
+          : undefined
+        if (
+          Buffer.byteLength(
+            JSON.stringify({ elements: [...elements, item], missing: [...missing, i] }),
+          ) >
+          20 * 1024
+        )
+          break
+        if (item) elements.push(item)
+        else missing.push(i)
+        next++
+      }
+      return {
+        source: 'request',
+        total: ids.length,
+        elements,
+        missing,
+        complete: next >= ids.length,
+        ...(next < ids.length ? { next_offset: next } : {}),
+      }
+    }),
 })
 
 const getViewport = serverCapability({
@@ -886,6 +935,7 @@ export const serverCapabilities = new CapabilityRegistry<ServerContext>([
   runStoryboard,
   ...editPlanCapabilities,
   rewrite,
+  inspectNodeInput,
   runNode,
   waitForRun,
   cancelRun,

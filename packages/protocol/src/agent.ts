@@ -31,6 +31,45 @@ export interface AgentModelCatalog {
   error?: string
 }
 
+/** Plein 的受控指南与 CLI 原生技能；id 是服务端生成的不透明标识。 */
+export interface AgentSkill {
+  id: string
+  name: string
+  title: string
+  description: string
+  source: 'plein' | 'codex'
+  enabled: boolean
+  selection: 'optional' | 'required'
+  prompt: string
+  capabilities: string[]
+  path?: string
+  scope?: string
+  canToggle: boolean
+}
+
+export interface AgentSkillDetail extends AgentSkill {
+  instructions: string
+}
+
+export interface AgentCanvasCapability {
+  name: string
+  title: string
+  description: string
+  group: string
+  effect: 'read' | 'edit' | 'run' | 'destructive' | 'dynamic'
+  where: 'doc' | 'server' | 'client'
+}
+
+export interface AgentSkillCatalog {
+  skills: AgentSkill[]
+  capabilities: AgentCanvasCapability[]
+  error?: string
+  warnings?: string[]
+}
+
+export const ToggleAgentSkill = z.object({ enabled: z.boolean() })
+export type ToggleAgentSkill = z.infer<typeof ToggleAgentSkill>
+
 /** 提供方使用量与本地请求估算分开标明，未知时不推算占比。 */
 export interface AgentContext {
   source: 'provider' | 'estimate' | 'unavailable'
@@ -107,7 +146,14 @@ export interface AgentStatus {
 
 /** 对话里的一项：用户消息、智能体回复、一次工具调用或错误 */
 export type AgentItem =
-  | { id: string; type: 'user'; text: string; selection?: string[]; at: number }
+  | {
+      id: string
+      type: 'user'
+      text: string
+      selection?: string[]
+      skill?: Pick<AgentSkill, 'id' | 'name' | 'title' | 'source'>
+      at: number
+    }
   | { id: string; type: 'text'; text: string; at: number }
   /** 正常停止等状态通知，不代表执行失败。 */
   | { id: string; type: 'notice'; text: string; at: number }
@@ -208,6 +254,8 @@ export const SendAgentMessage = z.object({
   text: z.string().trim().min(1).max(20_000),
   /** 用户当前选中的元素 id，作为上下文告诉智能体 */
   selection: z.array(z.string().max(200)).max(200).optional(),
+  /** 显式选择本轮技能；服务端验证目录、启用状态和适用范围。 */
+  skill: z.string().min(1).max(200).optional(),
   /** 这一轮的确认方式，默认 rules */
   approval: AgentApprovalMode.optional(),
   /** 计划模式：先列计划，用户同意后才动手 */
