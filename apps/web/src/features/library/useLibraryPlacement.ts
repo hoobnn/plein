@@ -4,11 +4,13 @@ import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { placeLibraryItem, type PlaceInput } from './canvas'
 import { useLibrary } from './store'
+import { useCompositionSourcePicker } from '../media-library/CompositionSourcePicker'
 
 const keyOf = (input: PlaceInput) => input.libraryId ?? `${input.kind.id}:${input.name}`
 
 /** 放置请求属于当前入口与引擎；迟到的读取不得修改旧文档或操作新的面板。 */
 export function useLibraryPlacement(engine: Engine | null, scope: unknown = null) {
+  const sourcePicker = useCompositionSourcePicker(scope, !!engine && !engine.doc.readOnly, engine)
   const lifetime = useRef<{ active: boolean } | null>(null)
   const pending = useRef(new Set<string>())
   const [placing, setPlacing] = useState<string[]>([])
@@ -33,13 +35,19 @@ export function useLibraryPlacement(engine: Engine | null, scope: unknown = null
     setError(null)
     setPlacing([...pending.current])
     try {
-      const result = await placeLibraryItem(engine, useCatalog.getState().catalog, input, current)
+      const result = await placeLibraryItem(
+        engine,
+        useCatalog.getState().catalog,
+        input,
+        current,
+        sourcePicker.resolve,
+      )
       if (!current()) return null
       if (input.libraryId && result.id) useLibrary.getState().markUsed(input.libraryId)
       if (result.notice) useCanvas.getState().notify(result.notice)
       return result
     } catch (error) {
-      if (current()) {
+      if (current() && (error as Error).name !== 'AbortError') {
         const message = `放入资产失败（${input.name}）：${(error as Error).message}`
         setError(message)
         useCanvas.getState().notify(message)
@@ -54,6 +62,7 @@ export function useLibraryPlacement(engine: Engine | null, scope: unknown = null
   }
   return {
     place,
+    sourcePicker: sourcePicker.picker,
     error,
     placing: placing.length > 0,
     isPlacing: (input: PlaceInput) => placing.includes(keyOf(input)),

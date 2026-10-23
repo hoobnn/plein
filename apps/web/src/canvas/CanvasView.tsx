@@ -8,7 +8,13 @@ import {
   type PleinDoc,
   SCHEMA_VERSION,
 } from '@plein/doc'
-import { ANIMATIC_TYPE, SEQUENCE_TYPE, STAGE_TYPE, STORYBOARD_TYPE } from '@plein/nodes'
+import {
+  ANIMATIC_TYPE,
+  MOTION_TYPE,
+  SEQUENCE_TYPE,
+  STAGE_TYPE,
+  STORYBOARD_TYPE,
+} from '@plein/nodes'
 import { useEffect, useRef } from 'react'
 import { IndexeddbPersistence } from 'y-indexeddb'
 import { WebsocketProvider } from 'y-websocket'
@@ -37,6 +43,7 @@ import { watchVideoAspect } from './videoAspect'
 import { watchStageAspect } from './stageAspect'
 import { watchAgentRender } from './agentRender'
 import { watchStageHistory } from '../features/stage/history'
+import { watchMotionHistory } from '../features/motion/history'
 import { droppedFiles, MAX_IMPORT_FILES } from './dropped'
 import { CreationGuide } from '../features/creation-guide/CreationGuide'
 
@@ -148,6 +155,7 @@ export function CanvasView({
             if (el.nodeType === SEQUENCE_TYPE || el.nodeType === ANIMATIC_TYPE)
               return useCanvas.getState().openSequence(id)
             if (el.nodeType === STAGE_TYPE) return useCanvas.getState().openStage(id)
+            if (el.nodeType === MOTION_TYPE) return useCanvas.getState().openMotion(id)
             requestAnimationFrame(() =>
               window.dispatchEvent(new CustomEvent('plein:focus-generator', { detail: id })),
             )
@@ -156,6 +164,7 @@ export function CanvasView({
           const offAspect = canvasId ? watchVideoAspect(engine, videoRatio) : () => {}
           const offStageAspect = watchStageAspect(doc)
           const offStageHistory = watchStageHistory(doc)
+          const offMotionHistory = watchMotionHistory(doc)
           const detach = attach(engine, localAssets)
           // 端到端测试读画布状态、换算节点屏幕坐标用；只有 e2e 构建（--mode e2e）才有，正式构建会被摇掉
           const e2e = import.meta.env.MODE === 'e2e'
@@ -201,6 +210,7 @@ export function CanvasView({
             offAspect()
             offStageAspect()
             offStageHistory()
+            offMotionHistory()
             offTheme()
             off()
             offActivate()

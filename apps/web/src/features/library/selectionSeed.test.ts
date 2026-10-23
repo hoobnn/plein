@@ -1,7 +1,8 @@
 import type { Engine } from '@plein/canvas-core'
 import { createDoc, createElement, deleteElements, setParent, updateElement } from '@plein/doc'
+import { libraryKind } from '@plein/nodes'
 import { expect, it } from 'vite-plus/test'
-import { mediaIn, mediaSelectionKey, selectionSeed } from './canvas'
+import { mediaIn, mediaSelectionKey, selectionSeed, seedOf, librarySeedIssue } from './canvas'
 
 const A = 'a'.repeat(64)
 const B = 'b'.repeat(64)
@@ -64,4 +65,54 @@ it('Frame 后代去重并保留图片和视频的类型，空输入不打开空�
   expect(expected).toHaveLength(2)
   expect(selectionSeed(engine, expected)).toEqual({ name: undefined, images: [A], videos: [V] })
   expect(selectionSeed(engine, [])).toBeNull()
+})
+
+it('同哈希不同源版本不合并，坏来源明确拒绝存入资产卡', () => {
+  const { doc, engine } = setup()
+  try {
+    const source = {
+      version: 1 as const,
+      bundleAssetId: 'd'.repeat(64),
+      manifestAssetId: 'e'.repeat(64),
+      dependencyAssetIds: [],
+      rendererIdentity: 'hyperframes:selection',
+    }
+    const a = createElement(doc, {
+      kind: 'video',
+      assetId: V,
+      params: { compositionSource: source },
+      x: 0,
+      y: 0,
+      w: 200,
+      h: 150,
+    })
+    const b = createElement(doc, {
+      kind: 'video',
+      assetId: V,
+      params: { compositionSource: { ...source, manifestAssetId: 'f'.repeat(64) } },
+      x: 300,
+      y: 0,
+      w: 200,
+      h: 150,
+    })
+    const choices = mediaIn(engine, [a, b])
+    expect(choices).toHaveLength(2)
+    expect(librarySeedIssue(libraryKind('effect')!, seedOf(choices))).toContain(
+      '只能保存 1 个参考视频',
+    )
+    const bad = createElement(doc, {
+      kind: 'video',
+      assetId: V,
+      params: { compositionSource: { ...source, version: 99 } },
+      x: 600,
+      y: 0,
+      w: 200,
+      h: 150,
+    })
+    const broken = mediaIn(engine, [bad])
+    expect(broken[0]!.compositionSourceInvalid).toBe(true)
+    expect(librarySeedIssue(libraryKind('effect')!, seedOf(broken))).toContain('源工程身份不合法')
+  } finally {
+    doc.destroy()
+  }
 })

@@ -5,6 +5,7 @@ import {
   editCapabilities,
   sequenceCapabilities,
   reviewCapabilities,
+  motionCapabilities,
   storyCapabilities,
 } from '@plein/capabilities'
 import type { Engine } from '@plein/canvas-core'
@@ -23,6 +24,7 @@ export const localCapabilities = new CapabilityRegistry<CapabilityContext>([
   ...(sequenceCapabilities as never[]),
   ...(reviewCapabilities as never[]),
   ...(storyCapabilities as never[]),
+  ...(motionCapabilities as never[]),
 ])
 
 export type LocalCapability = CapabilityDefinition

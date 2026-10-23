@@ -38,3 +38,19 @@ it('官方复制按原名称设定和标签初始化，修改草稿标签不改�
   draft.tags.test = 'draft only'
   expect(official.tags.test).toBeUndefined()
 })
+
+it('视频草稿的明确源版本随画布种子和库条目保留', () => {
+  const source = {
+    version: 1 as const,
+    bundleAssetId: 'a'.repeat(64),
+    manifestAssetId: 'b'.repeat(64),
+    dependencyAssetIds: [],
+    rendererIdentity: 'hyperframes:seed',
+  }
+  const draft = draftOf(libraryKind('effect')!, undefined, undefined, null, {
+    images: [],
+    videos: ['c'.repeat(64)],
+    videoCompositionSource: source,
+  })
+  expect(draft.videoCompositionSource).toEqual(source)
+})

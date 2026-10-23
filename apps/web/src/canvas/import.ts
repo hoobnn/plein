@@ -1,6 +1,7 @@
 import type { Engine } from '@plein/canvas-core'
 import { AUDIO_SIZE, createElements, findFreeSpot, type NewElement } from '@plein/doc'
 import type { Asset } from '@plein/protocol'
+import { CompositionSourceRef } from '@plein/plugin-sdk'
 import { api } from '../api/client'
 import { containingFrame, placeElement } from './nodes'
 
@@ -33,8 +34,16 @@ function markdownSize(text: string): [number, number] {
 }
 
 /** 资产对应的素材元素（按原始比例缩到长边 480） */
-export function elementFor(asset: Asset): Omit<NewElement, 'x' | 'y'> | null {
-  const base = { assetId: asset.id, name: asset.name }
+export function elementFor(
+  asset: Asset,
+  compositionSource?: unknown,
+): Omit<NewElement, 'x' | 'y'> | null {
+  const source = CompositionSourceRef.safeParse(compositionSource)
+  const base = {
+    assetId: asset.id,
+    name: asset.name,
+    ...(source.success ? { params: { compositionSource: source.data } } : {}),
+  }
   switch (asset.kind) {
     case 'image': {
       const [w, h] = fit(asset.width, asset.height, [320, 240])

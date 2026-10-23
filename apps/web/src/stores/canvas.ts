@@ -52,6 +52,8 @@ interface CanvasStore extends EngineState {
   stage: string | null
   shotAnalysis: string | null
   aiAnalysis: AiAnalysisTarget | null
+  /** 打开编辑器的动态合成节点 */
+  motion: string | null
   /** 全屏查看的图片 / 视频 */
   viewer: {
     assetId?: string
@@ -87,6 +89,7 @@ interface CanvasStore extends EngineState {
   openStage(id: string | null): void
   openShotAnalysis(id: string | null): void
   openAiAnalysis(target: AiAnalysisTarget | null): void
+  openMotion(id: string | null): void
   view(v: CanvasStore['viewer']): void
   toggleShortcuts(open?: boolean): void
   setArranged(r: ArrangeResult | null): void
@@ -128,6 +131,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
   stage: null,
   shotAnalysis: null,
   aiAnalysis: null,
+  motion: null,
   viewer: null,
   shortcuts: false,
   arranged: null,
@@ -165,6 +169,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
         stage: null,
         shotAnalysis: null,
         aiAnalysis: null,
+        motion: null,
         viewer: null,
         arranged: null,
         history: false,
@@ -202,6 +207,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
   openStage: (stage) => set({ stage }),
   openShotAnalysis: (shotAnalysis) => set({ shotAnalysis }),
   openAiAnalysis: (aiAnalysis) => set({ aiAnalysis }),
+  openMotion: (motion) => set({ motion }),
   view: (viewer) => set({ viewer }),
   toggleShortcuts: (open) => set((s) => ({ shortcuts: open ?? !s.shortcuts })),
   setArranged: (arranged) => set({ arranged }),

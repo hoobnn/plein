@@ -56,6 +56,8 @@ import { CharacterAssets } from './CharacterAssets'
 import { LibraryReadStatus } from './LibraryReadStatus'
 import { LibraryModal, LibraryTabs, useLibraryClose, VoicePanel } from './VoicePanel'
 import { useLibraryPlacement } from './useLibraryPlacement'
+import { useCompositionSourcePicker } from '../media-library/CompositionSourcePicker'
+import { loadAssetMeta } from '../../stores/assetMeta'
 import { listFocusTarget } from './listFocus'
 import { settleSavedDraft } from './savedDraft'
 
@@ -504,6 +506,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
           </div>
         </>
       )}
+      {placement.sourcePicker}
     </>
   )
 }
@@ -828,6 +831,7 @@ function Editor({
   onUploadPendingChange(pending: boolean): void
 }) {
   const lib = useLibrary()
+  const videoSourcePicker = useCompositionSourcePicker(kind.id, true)
   const readOnly = !!official
   const character = kind.id === 'character'
   const [draft, setDraft] = useState(() => draftOf(kind, item, official, projectId, seed))
@@ -890,6 +894,7 @@ function Editor({
     // 普通编辑保留独立封面；归档响应由 store 按 ID 合并，不用旧条目回写。
     coverAssetId: item?.coverAssetId ?? null,
     video: kind.video ? draft.video : null,
+    videoCompositionSource: kind.video && draft.video ? draft.videoCompositionSource : null,
     models: kind.video
       ? draft.models
           .split(/[,，、\n]/)
@@ -934,11 +939,19 @@ function Editor({
     if (!session) return null
     const submitted = draft
     try {
+      const payload = body()
+      let resolvedSource = false
+      if (payload.video && !payload.videoCompositionSource) {
+        const source = await videoSourcePicker.resolve(await loadAssetMeta(payload.video))
+        if (!current(session)) return null
+        payload.videoCompositionSource = source ?? null
+        resolvedSource = !!source
+      }
       const saved = item
-        ? dirty
-          ? await lib.update(item.id, body())
+        ? dirty || resolvedSource
+          ? await lib.update(item.id, payload)
           : item
-        : await lib.create({ kind: kind.id, ...body() })
+        : await lib.create({ kind: kind.id, ...payload })
       if (!current(session)) return null
       const normalized = draftOf(kind, saved, undefined, projectId)
       const outcome = settleSavedDraft(submitted, latestDraft.current, normalized, placingAfterSave)
@@ -947,7 +960,7 @@ function Editor({
       if (!item) onCreated(saved.id)
       return outcome.continuePlacement ? saved : null
     } catch (err) {
-      if (current(session)) setError((err as Error).message)
+      if (current(session) && (err as Error).name !== 'AbortError') setError((err as Error).message)
       return null
     } finally {
       finishMutation(session)
@@ -1210,7 +1223,7 @@ function Editor({
         <VideoField
           value={draft.video}
           media={media}
-          onChange={(video) => patch({ video })}
+          onChange={(video, videoCompositionSource) => patch({ video, videoCompositionSource })}
           disabled={busy || pendingUploads > 0}
           onBusyChange={trackUpload}
         />
@@ -1244,6 +1257,7 @@ function Editor({
 
   return (
     <div ref={editor} className="flex min-h-0 flex-1 flex-col">
+      {videoSourcePicker.picker}
       {saveNotice && (
         <p
           role="status"

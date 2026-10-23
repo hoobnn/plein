@@ -8,6 +8,7 @@ import {
   type SceneView,
   slotImages,
 } from '@plein/nodes'
+import type { CompositionSourceRef } from '@plein/plugin-sdk'
 import type { LibraryImage, LibraryItem } from '@plein/protocol'
 import type { LibrarySeed } from './store'
 
@@ -23,6 +24,7 @@ export interface Draft {
   voice: { provider: string; voiceId: string }
   images: LibraryImage[]
   video: string | null
+  videoCompositionSource?: CompositionSourceRef | null
   models: string
   profile: CharacterProfile
   sceneViews: SceneView[]
@@ -49,6 +51,7 @@ export function draftOf(
       item?.images ?? (seed ? slotImages(kind, seed.images) : []),
     ),
     video: item?.video ?? (kind.video ? (seed?.videos[0] ?? null) : null),
+    videoCompositionSource: item?.videoCompositionSource ?? seed?.videoCompositionSource,
     models: (item?.models ?? official?.models ?? []).join('，'),
     profile: profileOf(item?.profile),
     sceneViews: sceneViewsOf(item?.sceneViews),

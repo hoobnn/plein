@@ -137,7 +137,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
         selected.map(async (e) => {
           const asset = await loadAssetMeta(e.result.value.assetId)
           batch.progress(++done)
-          const input = elementFor(asset)
+          const input = elementFor(asset, e.result.value.compositionSource)
           return input && { ...input, name: nameOf(e) }
         }),
       )

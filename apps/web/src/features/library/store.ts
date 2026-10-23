@@ -1,3 +1,4 @@
+import type { CompositionSourceRef } from '@plein/plugin-sdk'
 import type {
   ArchiveCharacterImage,
   CreateLibraryItem,
@@ -21,6 +22,8 @@ export interface LibrarySeed {
   images: string[]
   /** 视频资产 id（只有特效收参考视频） */
   videos: string[]
+  videoCompositionSource?: CompositionSourceRef
+  videoCompositionSourceInvalid?: boolean
 }
 
 interface LibraryStore {

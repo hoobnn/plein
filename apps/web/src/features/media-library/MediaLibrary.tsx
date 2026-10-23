@@ -1,4 +1,5 @@
 import type { CanvasElement } from '@plein/doc'
+import type { CompositionSourceRef } from '@plein/plugin-sdk'
 import {
   MEDIA_SEARCH_MAX_LENGTH,
   type MediaLibraryItem,
@@ -29,6 +30,7 @@ import { Presence, useClosing } from '../../ui/Presence'
 import { Select } from '../../ui/Select'
 import { useLibrary } from '../library/store'
 import { mediaApi } from './client'
+import { useCompositionSourcePicker } from './CompositionSourcePicker'
 import { useMediaLibrary } from './store'
 
 function invalidCursor(reason: unknown) {
@@ -122,6 +124,15 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
     () => engine?.doc.readOnly ?? true,
   )
   const [preview, setPreview] = useState<MediaLibraryItem | null>(null)
+  const [placing, setPlacing] = useState(false)
+  const placement = useRef<AbortController | null>(null)
+  const entry = useMediaLibrary((state) => state.open)
+  const sourcePicker = useCompositionSourcePicker(
+    entry,
+    !readOnly && !!engine && !!canvasId,
+    engine,
+  )
+  useEffect(() => () => placement.current?.abort(), [engine, canvasId])
   const searching = searchQuery.trim() !== debounced
   const visibleItems = searching || queryTooLong ? [] : page.items
   useEffect(() => () => request.current?.abort(), [])
@@ -203,9 +214,20 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
       if (!controller.signal.aborted) setBusy(false)
     }
   }
-  const place = (asset: MediaLibraryItem) => {
-    if (!engine || !canvasId || engine.doc.readOnly) return
-    const input = elementFor(asset)
+  const canPlace = () => {
+    const state = useCanvas.getState()
+    return (
+      !!engine &&
+      !!canvasId &&
+      !engine.doc.readOnly &&
+      state.engine === engine &&
+      state.canvasId === canvasId &&
+      useMediaLibrary.getState().open !== null
+    )
+  }
+  const finishPlace = (asset: MediaLibraryItem, source?: CompositionSourceRef) => {
+    if (!engine || !canPlace()) return
+    const input = elementFor(asset, source)
     if (!input) return
     const view = engine.camera.viewRect
     const id = placeElement(engine, input, {
@@ -216,6 +238,26 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
     close()
     engine.zoomToFit([id])
     useCanvas.getState().notify(`已放入画布：${asset.name}`)
+  }
+  const place = async (asset: MediaLibraryItem) => {
+    if (!canPlace() || placement.current) return
+    const controller = new AbortController()
+    const entry = useMediaLibrary.getState().open
+    placement.current = controller
+    setPlacing(true)
+    setError('')
+    try {
+      const source = await sourcePicker.resolve(asset)
+      if (controller.signal.aborted || !canPlace() || useMediaLibrary.getState().open !== entry)
+        return
+      finishPlace(asset, source)
+    } catch (reason) {
+      if (!controller.signal.aborted && canPlace() && (reason as Error).name !== 'AbortError')
+        setError(`读取素材源工程失败：${(reason as Error).message}`)
+    } finally {
+      if (placement.current === controller) placement.current = null
+      if (!controller.signal.aborted) setPlacing(false)
+    }
   }
   return (
     <>
@@ -407,13 +449,15 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
                 key={selected.id}
                 asset={selected}
                 onPreview={() => setPreview(selected)}
-                onPlace={() => place(selected)}
+                onPlace={() => void place(selected)}
                 placeDisabledReason={
                   !engine || !canvasId
                     ? '打开一张画布后可以放入'
                     : readOnly
                       ? '当前画布为只读，不能放入素材'
-                      : undefined
+                      : placing
+                        ? '正在读取素材源工程…'
+                        : undefined
                 }
                 onClose={close}
               />
@@ -421,6 +465,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
           )}
         </div>
       </Modal>
+      {sourcePicker.picker}
       <Presence>
         {preview && (
           <MediaPreview key={preview.id} asset={preview} onClose={() => setPreview(null)} />

@@ -1,0 +1,239 @@
+.motion-editor {
+  width: min(1280px, 100%);
+  height: min(850px, 100%);
+}
+.motion-layout {
+  display: grid;
+  grid-template-columns: 310px minmax(0, 1fr);
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.motion-properties {
+  padding: 20px;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.motion-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.motion-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--ink);
+}
+.motion-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+.motion-field input:not([type="color"]),
+.motion-field textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 7px 9px;
+  font-size: 13px;
+}
+.motion-field textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+.motion-field input[type="color"] {
+  width: 100%;
+  height: 34px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  padding: 3px;
+}
+.motion-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.motion-workspace {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.motion-preview {
+  flex: 1;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 24px 12px;
+  gap: 10px;
+}
+.motion-preview-stage {
+  flex: 1;
+  min-height: 150px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 12px;
+  background: repeating-conic-gradient(#181b20 0 25%, #1d2025 0 50%) 50% / 20px 20px;
+}
+.motion-preview-stage iframe {
+  height: 100%;
+  max-height: 100%;
+  max-width: 100%;
+  width: auto;
+  border: 0;
+  background: #111827;
+  box-shadow: 0 8px 32px #0004;
+}
+.motion-preview-notice {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  background: #15171de8;
+  color: #ddd;
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+}
+.motion-transport {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+.motion-transport input[type="range"] {
+  min-width: 0;
+  flex: 1;
+  accent-color: var(--accent);
+}
+.motion-transport output {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+.motion-preview-caption {
+  margin: 0;
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+.motion-candidates {
+  border-top: 1px solid var(--line);
+  padding: 12px 20px;
+  max-height: 190px;
+  flex: none;
+  overflow: auto;
+}
+.motion-candidates-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 8px;
+  color: var(--ink-muted);
+}
+.motion-candidate-list {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+}
+.motion-candidate {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px;
+  min-width: 190px;
+}
+.motion-candidate[data-adopted="true"] {
+  border-color: var(--accent);
+}
+.motion-candidate img {
+  width: 64px;
+  height: 58px;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #191b20;
+}
+.motion-candidate-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 11px;
+}
+.motion-status {
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin: 0;
+}
+.motion-error {
+  margin: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--danger);
+}
+.motion-footnote {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-muted);
+  margin: 0;
+}
+@media (max-width: 700px) {
+  .motion-editor {
+    height: 100%;
+  }
+  .motion-layout {
+    grid-template-columns: 1fr;
+    overflow: auto;
+    grid-template-rows: auto minmax(360px, 1fr);
+  }
+  .motion-properties {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    max-height: 42vh;
+    gap: 16px;
+    padding: 14px;
+  }
+  .motion-preview {
+    padding: 12px;
+    min-height: 340px;
+  }
+  .motion-candidates {
+    max-height: 160px;
+    padding: 12px;
+  }
+  .motion-transport {
+    gap: 8px;
+  }
+  .motion-transport output {
+    font-size: 10px;
+  }
+}

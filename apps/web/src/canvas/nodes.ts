@@ -24,6 +24,7 @@ import {
 } from '@plein/doc'
 import { type MentionTarget, mentionName, profileOf, sceneViewsOf } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
+import { CompositionSourceRef } from '@plein/plugin-sdk'
 import { modelProblem, selectedModel } from './modelParams'
 
 export type NodeInfo = Catalog['nodes'][number]
@@ -289,8 +290,14 @@ export function upstreams(
     } else if (
       (source.kind === 'image' || source.kind === 'video' || source.kind === 'audio') &&
       source.assetId
-    )
-      value = { type: source.kind, assetId: source.assetId }
+    ) {
+      const composition = CompositionSourceRef.safeParse(source.params?.compositionSource)
+      value = {
+        type: source.kind,
+        assetId: source.assetId,
+        ...(composition.success ? { compositionSource: composition.data } : {}),
+      }
+    }
     const list = out.get(e.to[1]) ?? []
     list.push({
       edgeId: e.id,

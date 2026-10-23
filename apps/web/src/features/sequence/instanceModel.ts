@@ -1,11 +1,19 @@
 import { currentResult, isGenerationOrigin, type CanvasElement, type Edge } from '@plein/doc'
-import type { PortValue } from '@plein/plugin-sdk'
+import type { CompositionSourceRef, PortValue } from '@plein/plugin-sdk'
 
 /** The exact connected output, including an empty pending slot; never a primary-output guess. */
 export function sequenceInputValue(
   source: CanvasElement,
   edge: Edge,
-  value: { type: string; assetId?: string; caption?: string; mime?: string } | undefined,
+  value:
+    | {
+        type: string
+        assetId?: string
+        caption?: string
+        mime?: string
+        compositionSource?: CompositionSourceRef
+      }
+    | undefined,
   canvasId?: string | null,
 ): PortValue {
   const result = source.kind === 'node' ? currentResult(source, edge.from[1]) : undefined
@@ -26,6 +34,8 @@ export function sequenceInputValue(
       assetId: value.assetId,
       caption: value.caption,
       mime: value.mime,
+      // 可编辑合成的冻结来源跟着这一路素材走，导出时才能认出它的源工程
+      ...(value.compositionSource ? { compositionSource: value.compositionSource } : {}),
       ...metadata,
     }
   return { type: 'video', kind: 'video', assetId: '', ...metadata }

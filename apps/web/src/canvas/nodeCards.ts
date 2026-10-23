@@ -3,6 +3,7 @@ import { type CanvasElement, currentResult, type Rect, type RunStatus } from '@p
 import { useCanvas } from '../stores/canvas'
 import {
   ANIMATIC_TYPE,
+  MOTION_TYPE,
   SEQUENCE_TYPE,
   ASSET_NODE_TYPES,
   presetsFor,
@@ -53,6 +54,7 @@ interface Card {
   status: HTMLSpanElement
   nav: HTMLSpanElement
   count: HTMLSpanElement
+  editMotion: HTMLButtonElement
   body: HTMLDivElement
   progress: HTMLDivElement
   /** 运行中浮层：建一次，之后只改文字，转圈和步骤的动画不会被打断 */
@@ -252,7 +254,13 @@ export class NodeCards {
     count.className = 'plein-node-count'
     const next = button('plein-node-btn', '下一个结果', { icon: 'chevronRight' })
     nav.append(prev, count, next)
-    head.append(glyph, title, status, nav)
+    const editMotion = button('plein-node-btn', '编辑动态合成', { icon: 'pencil' })
+    editMotion.hidden = true
+    editMotion.addEventListener('click', (event) => {
+      event.stopPropagation()
+      useCanvas.getState().openMotion(id)
+    })
+    head.append(glyph, title, status, editMotion, nav)
 
     const body = document.createElement('div')
     body.className = 'plein-node-body'
@@ -287,6 +295,7 @@ export class NodeCards {
       status,
       nav,
       count,
+      editMotion,
       body,
       progress,
       sig: '',
@@ -367,12 +376,15 @@ export class NodeCards {
       ? `${list.findIndex((r) => r.id === cur.id) + 1}/${list.length}`
       : `待采用 · ${list.length}`
 
+    card.editMotion.hidden = el.nodeType !== MOTION_TYPE
     const editHint =
       el.nodeType === SEQUENCE_TYPE
         ? '双击编辑序列'
         : el.nodeType === ANIMATIC_TYPE
           ? '双击编辑节奏样片'
-          : undefined
+          : el.nodeType === MOTION_TYPE
+            ? '双击编辑动态合成'
+            : undefined
     card.root.title = editHint ?? ''
     card.body.className = 'plein-node-body'
     if (!info) {
@@ -520,6 +532,12 @@ export class NodeCards {
       const hint = document.createElement('span')
       hint.className = 'plein-node-muted'
       hint.textContent = el.nodeType === SEQUENCE_TYPE ? '双击编辑序列' : '双击编辑节奏样片'
+      center.appendChild(hint)
+    }
+    if (el.nodeType === MOTION_TYPE) {
+      const hint = document.createElement('span')
+      hint.className = 'plein-node-muted'
+      hint.textContent = '双击选择模板、编辑文案与动效'
       center.appendChild(hint)
     }
     if (el.nodeType === STAGE_TYPE) {

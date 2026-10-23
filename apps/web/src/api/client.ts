@@ -129,7 +129,7 @@ async function send(path: string, init: RequestInit = {}): Promise<Response> {
   return res
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await send(path, init)
   // 204 / 202 这类没有响应体的应答
   const body = await res.text()

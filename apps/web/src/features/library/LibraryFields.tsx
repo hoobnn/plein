@@ -1,3 +1,4 @@
+import type { CompositionSourceRef } from '@plein/plugin-sdk'
 import type { LibraryKindSpec } from '@plein/nodes'
 import type { LibraryImage } from '@plein/protocol'
 import { type RefObject, useLayoutEffect, useRef, useState } from 'react'
@@ -59,7 +60,7 @@ export function CanvasPick({
   multiple: boolean
   /** 已经用在条目里的资产，列表里标出来、不能重复选 */
   taken: string[]
-  onPick(assetId: string): void
+  onPick(assetId: string, media: CanvasMedia): void
   compact?: boolean
   label?: string
   disabled?: boolean
@@ -126,7 +127,7 @@ export function CanvasPick({
                 const on = taken.includes(m.assetId)
                 return (
                   <div
-                    key={m.assetId}
+                    key={`${m.assetId}:${m.compositionSource?.manifestAssetId ?? ''}`}
                     className={`relative aspect-square overflow-hidden rounded-md bg-surface-2 ${
                       on ? 'opacity-40' : 'hover:ring-2 hover:ring-accent'
                     }`}
@@ -136,14 +137,18 @@ export function CanvasPick({
                         type === 'image' ? thumb(m.assetId) : assetUrls.variant(m.assetId, 'poster')
                       }
                       label={`选择${type === 'image' ? '图片' : '视频'}「${m.name || '未命名素材'}」`}
-                      title={m.name || undefined}
+                      title={
+                        m.compositionSourceInvalid
+                          ? '源工程身份不合法，无法存入资产库'
+                          : m.name || undefined
+                      }
                       selected={on}
-                      disabled={disabled}
+                      disabled={disabled || m.compositionSourceInvalid}
                       onSelect={() => {
                         const source = document.activeElement
                         if (source instanceof HTMLElement && grid.current?.contains(source))
                           pendingFocus.current = { source, index }
-                        onPick(m.assetId)
+                        onPick(m.assetId, m)
                         if (!multiple) setAnchor(null)
                       }}
                     />
@@ -312,7 +317,7 @@ export function VideoField({
 }: {
   value: string | null
   media: CanvasMedia[]
-  onChange(v: string | null): void
+  onChange(v: string | null, source?: CompositionSourceRef): void
   disabled?: boolean
   onBusyChange?(busy: boolean): void
 }) {
@@ -358,10 +363,10 @@ export function VideoField({
             type="video"
             multiple={false}
             taken={[]}
-            onPick={(id) => {
+            onPick={(id, media) => {
               focus.park()
               setFeedback(null)
-              onChange(id)
+              onChange(id, media.compositionSource)
             }}
           />
         </div>

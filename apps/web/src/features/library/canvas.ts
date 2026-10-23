@@ -19,6 +19,7 @@ import {
   sceneViewImages,
   slotImages,
 } from '@plein/nodes'
+import { CompositionSourceRef } from '@plein/plugin-sdk'
 import type {
   Asset,
   Catalog,
@@ -26,11 +27,14 @@ import type {
   LibraryItem,
   SaveLibraryCard,
   SaveLibraryCardResult,
+  UpdateLibraryItem,
 } from '@plein/protocol'
 import { ApiError, assetUrls } from '../../api/client'
 import { loadAssetMeta } from '../../stores/assetMeta'
 import type { LibrarySeed } from './store'
 import { mediaOf } from '../../canvas/grid'
+import { currentResult } from '@plein/doc'
+import { loadMediaCompositionSources } from '../media-library/composition'
 import { findNode, mentionTargets, nodeElement } from '../../canvas/nodes'
 
 /**
@@ -50,6 +54,7 @@ export interface PlaceInput {
   sceneViews?: LibraryItem['sceneViews']
   images?: LibraryItem['images']
   video?: string | null
+  videoCompositionSource?: CompositionSourceRef
   /** 资产库条目 id；官方条目没有 */
   libraryId?: string
   /** 制作草稿使用当前资产的新副本，保留画布上已有的旧版本。 */
@@ -113,6 +118,11 @@ export async function placeLibraryItem(
   catalog: Catalog | null,
   input: PlaceInput,
   isCurrent: () => boolean = () => true,
+  resolveSource: (asset: Asset) => Promise<CompositionSourceRef | undefined> = async (asset) => {
+    const sources = await loadMediaCompositionSources(asset.id, AbortSignal.timeout(20_000))
+    if (sources.length > 1) throw new Error('此参考视频有多个源版本，请选择对应源工程')
+    return sources[0]?.compositionSource
+  },
 ): Promise<PlaceResult> {
   const { kind } = input
   const unavailable = (): PlaceResult => ({
@@ -146,6 +156,16 @@ export async function placeLibraryItem(
   if (!isCurrent() || engine.doc.readOnly) return unavailable()
   const concurrent = selectPlaced()
   if (concurrent) return concurrent
+  let videoCompositionSource: CompositionSourceRef | undefined
+  const video = assets.find((asset) => asset.id === input.video && asset.kind === 'video')
+  if (video)
+    videoCompositionSource =
+      input.videoCompositionSource === undefined
+        ? await resolveSource(video)
+        : CompositionSourceRef.parse(input.videoCompositionSource)
+  if (!isCurrent() || engine.doc.readOnly) return unavailable()
+  const afterSource = selectPlaced()
+  if (afterSource) return afterSource
   const missing = requested.length - assets.length
   const missingViews = viewRequested.length - viewAssets.filter((a) => a.kind === 'image').length
 
@@ -153,7 +173,18 @@ export async function placeLibraryItem(
   const base = nodeElement(info)
   const refs: CardRef[] = assets.flatMap((a) =>
     a.kind === 'image' || a.kind === 'video'
-      ? [{ kind: a.kind, assetId: a.id, name: a.name, width: a.width, height: a.height }]
+      ? [
+          {
+            kind: a.kind,
+            assetId: a.id,
+            name: a.name,
+            width: a.width,
+            height: a.height,
+            ...(a.id === input.video && videoCompositionSource
+              ? { compositionSource: videoCompositionSource }
+              : {}),
+          },
+        ]
       : [],
   )
   // 卡片 + 左侧素材列一起找空地，从视口中央往右挪，不压住已有元素
@@ -222,7 +253,7 @@ export async function saveCardToLibrary(
   lib: {
     items: LibraryItem[]
     create(body: CreateLibraryItem): Promise<LibraryItem>
-    update(id: string, body: Partial<CreateLibraryItem>): Promise<LibraryItem>
+    update(id: string, body: UpdateLibraryItem): Promise<LibraryItem>
     saveCard?(body: SaveLibraryCard): Promise<SaveLibraryCardResult>
   },
   source?: { canvasId: string; current(): boolean },
@@ -258,6 +289,7 @@ export async function saveCardToLibrary(
       tags: { ...body.tags, ...nonEmpty(linked.tags) },
       images,
       video: body.video,
+      videoCompositionSource: body.videoCompositionSource,
       voice: body.voice,
       profile: body.profile,
       sceneViews: body.sceneViews,
@@ -285,6 +317,7 @@ export function placeInputOf(item: LibraryItem): PlaceInput | null {
     sceneViews: item.sceneViews,
     images: item.images,
     video: item.video,
+    videoCompositionSource: item.videoCompositionSource,
     libraryId: item.id,
   }
 }
@@ -295,6 +328,8 @@ export interface CanvasMedia {
   assetId: string
   kind: 'image' | 'video'
   name: string
+  compositionSource?: CompositionSourceRef
+  compositionSourceInvalid?: boolean
 }
 
 /** 这些元素（含 Frame 里的）展示的图片和视频，按资产去重 */
@@ -304,9 +339,30 @@ export function mediaIn(engine: Engine, ids: readonly string[]): CanvasMedia[] {
   for (const id of ids)
     for (const el of [engine.doc.get(id), ...engine.doc.descendants(id)]) {
       const m = el && mediaOf(el)
-      if (!el || !m || seen.has(m.assetId)) continue
-      seen.add(m.assetId)
-      out.push({ elId: el.id, ...m, name: el.name ?? '' })
+      if (!el || !m) continue
+      const value = el.kind === 'node' ? currentResult(el)?.value : undefined
+      const raw =
+        value && 'compositionSource' in value
+          ? value.compositionSource
+          : el.params?.compositionSource
+      const source = CompositionSourceRef.safeParse(raw)
+      const identity = JSON.stringify([
+        m.assetId,
+        source.success ? source.data.manifestAssetId : null,
+        raw !== undefined && !source.success,
+      ])
+      if (seen.has(identity)) continue
+      seen.add(identity)
+      out.push({
+        elId: el.id,
+        ...m,
+        name: el.name ?? '',
+        ...(source.success
+          ? { compositionSource: source.data }
+          : raw !== undefined
+            ? { compositionSourceInvalid: true }
+            : {}),
+      })
     }
   return out
 }
@@ -325,12 +381,20 @@ export function seedOf(media: readonly CanvasMedia[]): LibrarySeed {
     name: media.length === 1 ? media[0]!.name : undefined,
     images: media.filter((m) => m.kind === 'image').map((m) => m.assetId),
     videos: media.filter((m) => m.kind === 'video').map((m) => m.assetId),
+    ...(media.some((m) => m.kind === 'video' && m.compositionSourceInvalid)
+      ? { videoCompositionSourceInvalid: true }
+      : {}),
+    ...(media.find((m) => m.kind === 'video')?.compositionSource
+      ? { videoCompositionSource: media.find((m) => m.kind === 'video')!.compositionSource }
+      : {}),
   }
 }
 
 /** 预填前检查类别容量，不让草稿初始化静默丢弃选中的素材。 */
 export function librarySeedIssue(kind: LibraryKindSpec, seed: LibrarySeed): string | null {
-  const videos = new Set(seed.videos).size
+  if (seed.videoCompositionSourceInvalid)
+    return '所选视频的源工程身份不合法，请先修复来源再存入资产库'
+  const videos = seed.videos.length
   if (videos && !kind.video) return `${kind.title}只收图片，请先取消选择视频`
   if (videos > 1) return `每条${kind.title}只能保存 1 个参考视频，请先只选 1 个视频`
   if (slotImages(kind, seed.images).length < new Set(seed.images).size)
@@ -340,7 +404,15 @@ export function librarySeedIssue(kind: LibraryKindSpec, seed: LibrarySeed): stri
 
 /** 类别菜单绑定素材身份和顺序；改名不改变素材，预填时再读最新名称。 */
 export function mediaSelectionKey(media: readonly CanvasMedia[]) {
-  return JSON.stringify(media.map((item) => [item.elId, item.assetId, item.kind]))
+  return JSON.stringify(
+    media.map((item) => [
+      item.elId,
+      item.assetId,
+      item.kind,
+      item.compositionSource?.manifestAssetId,
+      item.compositionSourceInvalid,
+    ]),
+  )
 }
 
 /** 点击菜单时再读当前文档与选区，拒绝旧菜单在同一帧里提交已变化的素材。 */

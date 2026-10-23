@@ -6,6 +6,10 @@ import type { Asset, Catalog, LibraryItem } from '@plein/protocol'
 import { describe, expect, it, vi } from 'vite-plus/test'
 import { ApiError, api } from '../../api/client'
 
+vi.mock('../media-library/composition', () => ({
+  loadMediaCompositionSources: vi.fn(async () => []),
+}))
+
 const A = 'a'.repeat(64)
 const B = 'b'.repeat(64)
 const V = 'c'.repeat(64)
@@ -360,4 +364,99 @@ describe('资产库 ↔ 画布', () => {
       }),
     )
   })
+})
+
+it('资产卡保存再展开保留参考视频的精确源版本，不重新猜测同哈希来源', async () => {
+  const source = {
+    version: 1 as const,
+    bundleAssetId: 'd'.repeat(64),
+    manifestAssetId: 'e'.repeat(64),
+    dependencyAssetIds: [],
+    rendererIdentity: 'hyperframes:library',
+  }
+  const first = setup()
+  const resolver = vi.fn(async () => {
+    throw new Error('有明确来源时不能重新选择')
+  })
+  const placed = await placeLibraryItem(
+    first.engine,
+    catalog,
+    {
+      kind: libraryKind('effect')!,
+      name: '保留来源的特效',
+      description: '',
+      video: V,
+      videoCompositionSource: source,
+    },
+    () => true,
+    resolver,
+  )
+  expect(resolver).not.toHaveBeenCalled()
+  const snapshot = cardSnapshot(first.engine, first.doc.get(placed.id!)!, null)!
+  expect(snapshot.body).toMatchObject({ video: V, videoCompositionSource: source })
+  const create = vi.fn(async (body) => item({ ...body, id: 'lib_source' }))
+  const saved = await saveCardToLibrary(first.engine, first.doc.get(placed.id!)!, null, {
+    items: [],
+    create,
+    update: vi.fn(),
+  })
+  expect(create).toHaveBeenCalledWith(
+    expect.objectContaining({ video: V, videoCompositionSource: source }),
+  )
+  const second = setup()
+  try {
+    const restored = await placeLibraryItem(
+      second.engine,
+      catalog,
+      placeInputOf(saved.item)!,
+      () => true,
+      resolver,
+    )
+    const ref = [...second.doc.elements()].find((el) => el.kind === 'video')!
+    expect(ref.params?.compositionSource).toEqual(source)
+    expect(
+      cardSnapshot(second.engine, second.doc.get(restored.id!)!, null)!.body.videoCompositionSource,
+    ).toEqual(source)
+  } finally {
+    first.doc.destroy()
+    second.doc.destroy()
+  }
+})
+
+it('旧资产卡由调用方明确选择源版本后才铺出，取消或读取失败时零新增', async () => {
+  const { doc, engine } = setup()
+  try {
+    const source = {
+      version: 1 as const,
+      bundleAssetId: 'd'.repeat(64),
+      manifestAssetId: 'e'.repeat(64),
+      dependencyAssetIds: [],
+      rendererIdentity: 'hyperframes:chosen',
+    }
+    const input = placeInputOf(item({ kind: 'effect', images: [], video: V }))!
+    await expect(
+      placeLibraryItem(
+        engine,
+        catalog,
+        input,
+        () => true,
+        async () => {
+          throw new DOMException('cancel', 'AbortError')
+        },
+      ),
+    ).rejects.toThrow('cancel')
+    expect([...doc.elements()]).toHaveLength(0)
+    await placeLibraryItem(
+      engine,
+      catalog,
+      input,
+      () => true,
+      async () => source,
+    )
+    expect(
+      [...doc.elements()].find((el) => el.kind === 'video')?.params?.compositionSource,
+    ).toEqual(source)
+  } finally {
+    doc.destroy()
+  }
 })

@@ -34,6 +34,7 @@ import { SequenceEditor } from '../features/sequence/SequenceEditor'
 import { StageEditor } from '../features/stage/StageEditor'
 import { ShotAnalysisEditor } from '../features/shot-analysis/ShotAnalysisEditor'
 import { AiAnalysisEditor } from '../features/ai-shot-analysis/AiAnalysisEditor'
+import { MotionEditor } from '../features/motion/MotionEditor'
 import { StoryboardEditor } from '../features/storyboard/StoryboardEditor'
 import { Tasks } from '../features/runs/Tasks'
 import { ImpactPanel } from '../features/runs/ImpactPanel'
@@ -280,6 +281,7 @@ export function Editor({
       <StageEditor />
       <ShotAnalysisEditor />
       <AiAnalysisEditor />
+      <MotionEditor />
       <Shortcuts />
       <CommandPalette canvasId={canvasId} />
       <AgentCursor />
