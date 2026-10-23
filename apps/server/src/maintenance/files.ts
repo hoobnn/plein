@@ -12,12 +12,6 @@ import {
 } from 'node:fs/promises'
 import { dirname, join, posix } from 'node:path'
 
-export interface StoredFile {
-  path: string
-  bytes: number
-  sha256: string
-}
-
 export async function atomicJson(path: string, value: unknown) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 })
   const part = `${path}.part`

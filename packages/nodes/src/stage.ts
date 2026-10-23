@@ -121,9 +121,6 @@ export const StageSnapshot = z.object({
 })
 export type StageSnapshot = z.infer<typeof StageSnapshot>
 
-/** 截图来源最多记这么多条，和节点结果上限一致 */
-export const MAX_STAGE_SNAPSHOTS = 48
-
 /** 新建时的场景：一个站着的人物，正面中景机位 */
 export const defaultStageScene = (): StageScene =>
   StageScene.parse({

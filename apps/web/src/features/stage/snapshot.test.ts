@@ -4,9 +4,10 @@ import {
   createElement,
   currentResult,
   deleteElements,
+  MAX_RESULTS,
   setParam,
 } from '@plein/doc'
-import { defaultStageScene, MAX_STAGE_SNAPSHOTS, STAGE_TYPE, stageSnapshotsOf } from '@plein/nodes'
+import { defaultStageScene, STAGE_TYPE, stageSnapshotsOf } from '@plein/nodes'
 import * as Y from 'yjs'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { api } from '../../api/client'
@@ -104,13 +105,13 @@ describe('3D 截图保存', () => {
     >)
     const original = { ...scene, aspect: '9:16' as const }
     const adopted = await saveSnapshot(doc, id, original, new Blob())
-    for (let rev = 1; rev <= MAX_STAGE_SNAPSHOTS; rev++) {
+    for (let rev = 1; rev <= MAX_RESULTS; rev++) {
       await saveSnapshot(doc, id, { ...scene, rev }, new Blob(), { resultId: 'older-baseline' })
     }
     const results = doc.get(id)!.results!
     const snapshots = stageSnapshotsOf(doc.get(id)?.params)
-    expect(results).toHaveLength(MAX_STAGE_SNAPSHOTS)
-    expect(snapshots).toHaveLength(MAX_STAGE_SNAPSHOTS)
+    expect(results).toHaveLength(MAX_RESULTS)
+    expect(snapshots).toHaveLength(MAX_RESULTS)
     expect(currentResult(doc.get(id)!)?.id).toBe(adopted.resultId)
     expect(snapshots.find((s) => s.resultId === adopted.resultId)?.scene).toEqual(original)
     expect(snapshots.map((s) => s.resultId).sort()).toEqual(results.map((r) => r.id).sort())

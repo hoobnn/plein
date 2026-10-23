@@ -1,4 +1,4 @@
-import { PackageJob, type PackageMissing } from '@plein/protocol'
+import { PackageJob } from '@plein/protocol'
 import { z } from 'zod'
 import type { DB } from '../storage/db'
 import { documentReferences, readDocument } from '../media-index/references'
@@ -58,8 +58,4 @@ export function checkpointAssetIds(state: Uint8Array, owns: (id: string) => bool
     else if (ref.explicit) missing.add(ref.assetId)
   }
   return { ids: [...ids], missing: [...missing] }
-}
-
-export function checkpointMissing(ids: readonly string[], name: string): PackageMissing[] {
-  return ids.map((id) => ({ kind: 'asset', id, where: `检查点 / ${name}` }))
 }
