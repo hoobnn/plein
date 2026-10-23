@@ -3,6 +3,7 @@ import { ProviderError } from '@plein/plugin-sdk'
 import type { PluginHost } from '../plugins/host'
 import { callTool, inputSchema, type McpTool, type ToolResult } from './mcp'
 import type { TurnExecution } from './execution'
+import type { AgentContext } from '@plein/protocol'
 import { budgetMessages, RESULT_BYTES, textCost } from './context-budget'
 
 /**
@@ -22,9 +23,10 @@ export interface BuiltinModel {
 }
 
 /** 驱动内置智能体的模型：默认对话模型，且声明了 tools 特性；不满足时没有 */
-export function builtinModel(host: PluginHost): BuiltinModel | undefined {
-  const ref = host.defaultModel('text.chat')
-  const m = host.models('text.chat').find((x) => x.ref === ref)
+export function builtinModel(host: PluginHost, selected?: string): BuiltinModel | undefined {
+  const models = host.models('text.chat').filter((m) => m.features?.includes('tools'))
+  const ref = selected ?? host.defaultModel('text.chat')
+  const m = models.find((x) => x.ref === ref) ?? (selected ? undefined : models[0])
   return m?.features?.includes('tools')
     ? { ref: m.ref, title: m.title, vision: m.features.includes('vision') }
     : undefined
@@ -48,6 +50,7 @@ export interface BuiltinTurn {
   onText(key: string, text: string, done: boolean): void
   onToolStart(call: ChatToolCall): void
   onToolEnd(call: ChatToolCall, result: ToolResult): void
+  onContext?(context: AgentContext): void
 }
 
 const resultText = (r: ToolResult) => {
@@ -82,7 +85,15 @@ export async function runBuiltinTurn(t: BuiltinTurn): Promise<void> {
   for (let step = 0; step < MAX_STEPS; step++) {
     if (t.signal.aborted) return
     t.execution?.assertOpen()
-    const messages = budgetMessages(t.system, t.history, current, tools)
+    const messages = budgetMessages(t.system, t.history, current, tools, (context) =>
+      t.onContext?.({
+        ...context,
+        source: 'estimate',
+        limit: 32000,
+        model: t.model,
+        updatedAt: Date.now(),
+      }),
+    )
     if (t.execution) {
       t.execution.facts.requests++
       t.execution.persist()

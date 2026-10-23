@@ -4,6 +4,7 @@ import { CapabilityError } from '@plein/capabilities'
 const encoder = new TextEncoder()
 export const TEXT_BYTES = 128 * 1024
 export const RESULT_BYTES = 32 * 1024
+export const TEXT_TOKENS = 32000
 export function textCost(value: unknown) {
   const text = JSON.stringify(value)
   let ascii = 0
@@ -15,7 +16,7 @@ export function textCost(value: unknown) {
 }
 export function requestWithinBudget(messages: ChatMessage[], tools: ChatTool[]) {
   const cost = textCost({ messages, tools })
-  return cost.bytes <= TEXT_BYTES && cost.tokens + messages.length * 16 <= 32000
+  return cost.bytes <= TEXT_BYTES && cost.tokens + messages.length * 16 <= TEXT_TOKENS
 }
 /** Complete user-led rounds only; current tool exchanges are never cut apart. */
 export function budgetMessages(
@@ -23,6 +24,12 @@ export function budgetMessages(
   history: ChatMessage[],
   current: ChatMessage[],
   tools: ChatTool[],
+  report?: (context: {
+    tokens: number
+    bytes: number
+    messages: number
+    omittedRounds: number
+  }) => void,
 ) {
   const groups: ChatMessage[][] = []
   for (const message of history) {
@@ -51,7 +58,16 @@ export function budgetMessages(
       ...groups.slice(omitted).flat(),
       ...current,
     ]
-    if (requestWithinBudget(messages, tools)) return messages
+    if (requestWithinBudget(messages, tools)) {
+      const cost = textCost({ messages, tools })
+      report?.({
+        ...cost,
+        tokens: cost.tokens + messages.length * 16,
+        messages: messages.length,
+        omittedRounds: omitted,
+      })
+      return messages
+    }
     if (omitted >= groups.length)
       throw new CapabilityError(
         'context_budget_exhausted: 当前需求和工具交换已达到处理预算，已完成的操作保留，请缩小范围后继续',

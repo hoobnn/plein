@@ -7,9 +7,9 @@ if (process.env.FAKE_CLI_LOG) fs.appendFileSync(process.env.FAKE_CLI_LOG, `${JSO
 const resume = process.argv.indexOf('--resume')
 const session = resume > 0 ? process.argv[resume + 1] : 'fake-claude-1'
 const out = (m) => process.stdout.write(`${JSON.stringify({ ...m, session_id: session })}\n`)
-const say = (text) =>
-  out({ type: 'assistant', message: { id: `msg_${Math.random().toString(36).slice(2)}`, content: [{ type: 'text', text }] } })
-const done = (subtype = 'success') => out({ type: 'result', subtype, is_error: subtype !== 'success', result: '' })
+const say = (text, usage) =>
+  out({ type: 'assistant', message: { id: `msg_${Math.random().toString(36).slice(2)}`, content: [{ type: 'text', text }], ...(usage ? { usage, model: 'fixture-claude' } : {}) } })
+const done = (subtype = 'success') => out({ type: 'result', subtype, is_error: subtype !== 'success', result: '', usage: { input_tokens: 999999 } })
 
 let turns = process.env.FAKE_CLI_LOG ? fs.readFileSync(process.env.FAKE_CLI_LOG, 'utf8').trim().split('\n').filter(line => Array.isArray(JSON.parse(line))).length - 1 : 0
 let waiting = null
@@ -39,7 +39,7 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   } else if (prompt.includes('慢')) {
     say('开始了')
   } else {
-    say(`第 ${turns} 轮：${prompt.split('\n').at(-1)}`)
+    say(`第 ${turns} 轮：${prompt.split('\n').at(-1)}`, prompt.includes('用量') ? { input_tokens: 100, cache_read_input_tokens: 300, cache_creation_input_tokens: 50, output_tokens: 77 } : undefined)
     done()
   }
 })

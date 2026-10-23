@@ -236,6 +236,12 @@ export const agentSessions = sqliteTable(
       .references(() => canvases.id, { onDelete: 'cascade' }),
     agent: text().$type<AgentKind>().notNull(),
     cli_session: text(),
+    /** 会话覆盖配置与最近一次可信的上下文状态，JSON。 */
+    settings: text().notNull().default('{}'),
+    context: text().notNull().default('{"source":"unavailable","messages":0}'),
+    /** 重置只改变后续模型历史，展示记录与执行事实保留。 */
+    context_cutoff: integer(),
+    context_reset_at: integer(),
     title: text().notNull(),
     items: text().notNull(),
     created_at: integer().notNull(),

@@ -1,5 +1,6 @@
 import {
   API,
+  AgentSettings,
   type AgentAccess,
   type AgentApprovalMode,
   type AgentEvent,
@@ -21,6 +22,7 @@ const AGENT_KEY = 'plein:agent'
 const APPROVAL_KEY = 'plein:agent-approval'
 const PLAN_KEY = 'plein:agent-plan'
 const ACCESS_KEY = 'plein:agent-access'
+const SETTINGS_KEY = 'plein:agent-settings'
 
 interface AgentStore {
   open: boolean
@@ -36,6 +38,10 @@ interface AgentStore {
   status: AgentStatus | null
   /** 新建对话用的 CLI，记在本机 */
   agent: AgentKind
+  /** 新对话按智能体记住模型；历史会话使用服务端保存的配置。 */
+  modelPreferences: Partial<Record<AgentKind, AgentSettings>>
+  setSettings(settings: AgentSettings): Promise<void>
+  resetContext(): Promise<void>
   /** 花钱、删东西前要不要先问，记在本机 */
   approval: AgentApprovalMode
   /** 计划模式：先列计划，同意后才动手，记在本机 */
@@ -127,6 +133,21 @@ function savedAgent(): AgentKind {
   }
 }
 
+function savedSettings(): Partial<Record<AgentKind, AgentSettings>> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}')
+    if (!raw || typeof raw !== 'object') return {}
+    const settings: Partial<Record<AgentKind, AgentSettings>> = {}
+    for (const kind of ['builtin', 'claude', 'codex'] as const) {
+      const parsed = AgentSettings.safeParse(raw[kind])
+      if (parsed.success) settings[kind] = parsed.data
+    }
+    return settings
+  } catch {
+    return {}
+  }
+}
+
 export const useAgent = create<AgentStore>((set, get) => {
   const completeFeedback = (session: AgentSession, turn: AgentSession['lastTurn']) => {
     const state = turn?.state
@@ -175,6 +196,10 @@ export const useAgent = create<AgentStore>((set, get) => {
         return
       }
       if (!cur || cur.id !== id) return
+      if (e.type === 'configuration') {
+        set({ session: { ...cur, settings: e.settings, context: e.context } })
+        return
+      }
       if (e.type === 'ui') {
         const engine = get().canvasId === cur.canvasId ? useCanvas.getState().engine : null
         if (!engine) return
@@ -269,6 +294,7 @@ export const useAgent = create<AgentStore>((set, get) => {
     },
     status: null,
     agent: savedAgent(),
+    modelPreferences: savedSettings(),
     approval: savedApproval(),
     plan: savedFlag(PLAN_KEY),
     access: savedAccess(),
@@ -312,6 +338,80 @@ export const useAgent = create<AgentStore>((set, get) => {
       try {
         localStorage.setItem(AGENT_KEY, agent)
       } catch {}
+    },
+
+    async setSettings(settings) {
+      const { session, agent, canvasId } = get()
+      if (
+        get().loadingHistory ||
+        get().historyError ||
+        get().selecting ||
+        get().selectionError ||
+        get().connectionError ||
+        get().reconnecting ||
+        (canvasId && get().sending[canvasId]) ||
+        session?.status === 'running'
+      )
+        return
+      const kind = session?.agent ?? agent
+      const key = `${session?.id}/configure`
+      if (get().pendingActions[key]) return
+      const mine = selectSeq
+      set({ error: null, pendingActions: { ...get().pendingActions, [key]: true } })
+      try {
+        const updated = session ? await api.updateAgentSession(session.id, settings) : null
+        if (mine !== selectSeq || get().session?.id !== session?.id) return
+        // SSE 可能已经包含同一会话里更晚的操作；HTTP 快照不能覆盖它。
+        if (updated && get().session === session) {
+          set({ session: updated })
+          void refreshList()
+        }
+        const modelPreferences = { ...get().modelPreferences, [kind]: settings }
+        set({ modelPreferences })
+        try {
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(modelPreferences))
+        } catch {}
+      } catch (err) {
+        if (mine === selectSeq && get().session?.id === session?.id)
+          set({ error: (err as Error).message })
+      } finally {
+        const pendingActions = { ...get().pendingActions }
+        delete pendingActions[key]
+        set({ pendingActions })
+      }
+    },
+
+    async resetContext() {
+      const { session, canvasId } = get()
+      if (
+        !session ||
+        session.status === 'running' ||
+        get().loadingHistory ||
+        get().historyError ||
+        get().selecting ||
+        get().selectionError ||
+        get().connectionError ||
+        get().reconnecting ||
+        (canvasId && get().sending[canvasId])
+      )
+        return
+      const key = `${session.id}/configure`
+      if (get().pendingActions[key]) return
+      const mine = selectSeq
+      set({ error: null, pendingActions: { ...get().pendingActions, [key]: true } })
+      try {
+        const updated = await api.resetAgentContext(session.id)
+        if (mine !== selectSeq || get().session?.id !== session.id) return
+        if (get().session === session) set({ session: updated })
+        void refreshList()
+      } catch (err) {
+        if (mine === selectSeq && get().session?.id === session.id)
+          set({ error: (err as Error).message })
+      } finally {
+        const pendingActions = { ...get().pendingActions }
+        delete pendingActions[key]
+        set({ pendingActions })
+      }
     },
 
     setApproval(approval) {
@@ -439,6 +539,7 @@ export const useAgent = create<AgentStore>((set, get) => {
         get().connectionError ||
         get().reconnecting ||
         get().selecting ||
+        get().pendingActions[`${get().session?.id}/configure`] ||
         get().sending[canvasId] ||
         get().session?.status === 'running'
       )
@@ -446,12 +547,16 @@ export const useAgent = create<AgentStore>((set, get) => {
       let mine = selectSeq
       const draft = get().drafts[canvasId]
       const options = { approval: get().approval, plan: get().plan, access: get().access }
+      const settings = get().modelPreferences[agent]
       set({ error: null, sending: { ...get().sending, [canvasId]: true } })
       try {
         let session = get().session
         // 历史会话继续使用自己的智能体；显式切换智能体时界面会先重置会话。
         if (!session) {
-          session = await api.createAgentSession(canvasId, agent)
+          session =
+            settings && Object.keys(settings).length
+              ? await api.createAgentSession(canvasId, agent, settings)
+              : await api.createAgentSession(canvasId, agent)
           if (get().canvasId !== canvasId || mine !== selectSeq || get().agent !== agent) return
           mine = ++selectSeq
           set({ session })

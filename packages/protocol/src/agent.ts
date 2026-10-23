@@ -10,6 +10,40 @@ import { ApplyEditPlan, type EditPlan, EditScope } from './edit-plan'
 export const AgentKind = z.enum(['builtin', 'claude', 'codex'])
 export type AgentKind = z.infer<typeof AgentKind>
 
+/** 会话覆盖配置；空对象表示跟随当前智能体默认配置。 */
+export const AgentSettings = z.object({
+  model: z.string().trim().min(1).max(200).optional(),
+  reasoningEffort: z.string().trim().min(1).max(32).optional(),
+})
+export type AgentSettings = z.infer<typeof AgentSettings>
+
+export interface AgentModel {
+  id: string
+  title: string
+  description?: string
+  reasoningEfforts?: string[]
+  defaultReasoningEffort?: string
+}
+
+export interface AgentModelCatalog {
+  models: AgentModel[]
+  defaultModel?: string
+  error?: string
+}
+
+/** 提供方使用量与本地请求估算分开标明，未知时不推算占比。 */
+export interface AgentContext {
+  source: 'provider' | 'estimate' | 'unavailable'
+  tokens?: number
+  limit?: number
+  bytes?: number
+  messages: number
+  resetAt?: number
+  updatedAt?: number
+  omittedRounds?: number
+  model?: string
+}
+
 /**
  * 智能体花钱、删东西前要不要问用户：
  * rules 视频、整组运行、删用户已有的东西、一轮运行超过 6 次时问；always 每次运行和删除都问；auto 都不问。
@@ -150,6 +184,8 @@ export interface AgentSession {
   updatedAt: number
   items: AgentItem[]
   lastTurn?: AgentTurnSummary
+  settings?: AgentSettings
+  context?: AgentContext
 }
 
 export interface AgentTurnSummary {
@@ -162,8 +198,11 @@ export interface AgentTurnSummary {
 
 export type AgentSessionSummary = Omit<AgentSession, 'items'>
 
-export const CreateAgentSession = z.object({ agent: AgentKind })
+export const CreateAgentSession = z.object({ agent: AgentKind, settings: AgentSettings.optional() })
 export type CreateAgentSession = z.infer<typeof CreateAgentSession>
+
+export const UpdateAgentSession = AgentSettings
+export type UpdateAgentSession = z.infer<typeof UpdateAgentSession>
 
 export const SendAgentMessage = z.object({
   text: z.string().trim().min(1).max(20_000),
@@ -195,6 +234,7 @@ export type AgentEvent =
   | { type: 'session'; session: AgentSession }
   | { type: 'item'; item: AgentItem }
   | { type: 'status'; status: AgentSession['status']; lastTurn?: AgentTurnSummary }
+  | { type: 'configuration'; settings: AgentSettings; context: AgentContext }
   /** 智能体刚改动了这些元素（画布上短暂高亮） */
   | { type: 'touch'; ids: string[] }
   /** 智能体请用户的画布执行界面动作：平滑定位到元素 / 选中元素 */

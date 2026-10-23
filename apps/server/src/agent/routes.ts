@@ -4,6 +4,8 @@ import {
   DecideAgentApproval,
   ReviseEditPlan,
   SendAgentMessage,
+  AgentKind,
+  UpdateAgentSession,
 } from '@plein/protocol'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
@@ -32,6 +34,16 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
   return (
     new Hono<AuthEnv>()
       .get('/api/agent', async (c) => c.json(await agents.status(c.req.query('refresh') === '1')))
+      .get('/api/agent/models/:agent', async (c) => {
+        const agent = AgentKind.safeParse(c.req.param('agent'))
+        if (!agent.success) return c.json({ error: 'not_found', message: '没有这个智能体' }, 404)
+        try {
+          return c.json(await agents.models(agent.data, c.req.query('refresh') === '1'))
+        } catch (err) {
+          if (!(err instanceof AgentError)) throw err
+          return c.json({ error: err.code, message: err.message }, STATUS[err.code])
+        }
+      })
       // 本机 CLI 的版本和更新：只在本机免登录模式开放（更新等于在这台电脑上执行命令）
       .get('/api/agent/clis', async (c) => {
         if (!agents.localEnabled) return c.json(disabled, 403)
@@ -56,11 +68,39 @@ export function agentRoutes(db: DB, agents: AgentSessions) {
         if (!ownsCanvas(db, p.id, canvas)) return c.json(notFound, 404)
         const body = CreateAgentSession.safeParse(await c.req.json().catch(() => null))
         if (!body.success) return c.json({ error: 'invalid_input', message: '参数不对' }, 400)
-        return c.json(agents.create(canvas, p.id, body.data.agent), 201)
+        try {
+          await agents.validateSettings(body.data.agent, body.data.settings ?? {})
+          return c.json(agents.create(canvas, p.id, body.data.agent, body.data.settings), 201)
+        } catch (err) {
+          if (!(err instanceof AgentError)) throw err
+          return c.json({ error: err.code, message: err.message }, STATUS[err.code])
+        }
       })
       .get('/api/agent/sessions/:id', (c) => {
         const s = agents.get(c.req.param('id'), c.var.principal.id)
         return s ? c.json(s) : c.json(notFound, 404)
+      })
+      .patch('/api/agent/sessions/:id', async (c) => {
+        const p = c.var.principal
+        if (p.role === 'viewer') return c.json(forbidden, 403)
+        const body = UpdateAgentSession.safeParse(await c.req.json().catch(() => null))
+        if (!body.success) return c.json({ error: 'invalid_input', message: '参数不对' }, 400)
+        try {
+          return c.json(await agents.update(c.req.param('id'), p.id, body.data))
+        } catch (err) {
+          if (!(err instanceof AgentError)) throw err
+          return c.json({ error: err.code, message: err.message }, STATUS[err.code])
+        }
+      })
+      .post('/api/agent/sessions/:id/context/reset', (c) => {
+        const p = c.var.principal
+        if (p.role === 'viewer') return c.json(forbidden, 403)
+        try {
+          return c.json(agents.resetContext(c.req.param('id'), p.id))
+        } catch (err) {
+          if (!(err instanceof AgentError)) throw err
+          return c.json({ error: err.code, message: err.message }, STATUS[err.code])
+        }
       })
       .delete('/api/agent/sessions/:id', (c) =>
         agents.delete(c.req.param('id'), c.var.principal.id)

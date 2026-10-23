@@ -10,6 +10,8 @@ vi.mock('../../api/client', () => ({
     deleteAgentSession: vi.fn(),
     createAgentSession: vi.fn(),
     sendAgentMessage: vi.fn(),
+    updateAgentSession: vi.fn(),
+    resetAgentContext: vi.fn(),
     stopAgent: vi.fn(),
     undoAgentTurn: vi.fn(),
     decideAgentApproval: vi.fn(),
@@ -61,10 +63,138 @@ afterEach(() => {
   vi.mocked(api.deleteAgentSession).mockReset()
   vi.mocked(api.createAgentSession).mockReset()
   vi.mocked(api.sendAgentMessage).mockReset()
+  vi.mocked(api.updateAgentSession).mockReset()
+  vi.mocked(api.resetAgentContext).mockReset()
   vi.mocked(api.stopAgent).mockReset()
   vi.mocked(api.undoAgentTurn).mockReset()
   vi.mocked(api.decideAgentApproval).mockReset()
   vi.mocked(api.reviseAgentEditPlan).mockReset()
+})
+
+describe('助手模型与上下文配置', () => {
+  it('新对话按智能体带上选择的模型，历史会话使用自己的配置', async () => {
+    useAgent.setState({ canvasId: 'c1', agent: 'codex' })
+    await useAgent.getState().setSettings({ model: 'fast', reasoningEffort: 'low' })
+    useAgent.getState().setAgent('claude')
+    await useAgent.getState().setSettings({ model: 'sonnet' })
+    useAgent.getState().setAgent('codex')
+    vi.mocked(api.createAgentSession).mockResolvedValue({ ...session('new'), agent: 'codex' })
+    vi.mocked(api.sendAgentMessage).mockResolvedValue()
+    vi.mocked(api.agentSessions).mockResolvedValue([])
+    await useAgent.getState().send('新的消息')
+    expect(api.createAgentSession).toHaveBeenCalledWith('c1', 'codex', {
+      model: 'fast',
+      reasoningEffort: 'low',
+    })
+    vi.mocked(api.agentSession).mockResolvedValue({
+      ...session('old'),
+      agent: 'claude',
+      settings: { model: 'opus' },
+    })
+    await useAgent.getState().select('old')
+    await useAgent.getState().send('继续旧消息')
+    expect(api.sendAgentMessage).toHaveBeenLastCalledWith(
+      'old',
+      '继续旧消息',
+      undefined,
+      expect.any(Object),
+    )
+    expect(useAgent.getState().session?.settings).toEqual({ model: 'opus' })
+    expect(useAgent.getState().modelPreferences.claude).toEqual({ model: 'sonnet' })
+  })
+
+  it('保存期间禁止发送与重复修改，失败保留配置和草稿', async () => {
+    const original = { ...session('s1'), agent: 'codex' as const, settings: { model: 'fast' } }
+    useAgent.setState({ canvasId: 'c1', session: original })
+    useAgent.getState().setDraft('c1', '继续说')
+    const pending = deferred<AgentSession>()
+    vi.mocked(api.updateAgentSession).mockReturnValue(pending.promise)
+    const save = useAgent.getState().setSettings({ model: 'deep' })
+    await useAgent.getState().setSettings({ model: 'other' })
+    await useAgent.getState().send('继续说')
+    expect(api.updateAgentSession).toHaveBeenCalledTimes(1)
+    expect(api.sendAgentMessage).not.toHaveBeenCalled()
+    expect(useAgent.getState().session).toBe(original)
+    pending.resolve({ ...original, settings: { model: 'deep' } })
+    await save
+    expect(useAgent.getState().session?.settings).toEqual({ model: 'deep' })
+    expect(useAgent.getState().drafts.c1?.text).toBe('继续说')
+    vi.mocked(api.updateAgentSession).mockRejectedValue(new Error('目录不可用'))
+    await useAgent.getState().setSettings({ model: 'invalid' })
+    expect(useAgent.getState().session?.settings).toEqual({ model: 'deep' })
+    expect(useAgent.getState().error).toBe('目录不可用')
+    expect(useAgent.getState().pendingActions).toEqual({})
+  })
+
+  it('切换会话后忽略迟到的配置和重置结果', async () => {
+    const original = { ...session('s1'), agent: 'codex' as const, settings: { model: 'fast' } }
+    useAgent.setState({ canvasId: 'c1', session: original })
+    const pending = deferred<AgentSession>()
+    vi.mocked(api.updateAgentSession).mockReturnValue(pending.promise)
+    const save = useAgent.getState().setSettings({ model: 'deep' })
+    useAgent.getState().reset()
+    pending.resolve({ ...original, settings: { model: 'deep' } })
+    await save
+    expect(useAgent.getState().session).toBeNull()
+    expect(useAgent.getState().modelPreferences.codex).toBeUndefined()
+    useAgent.setState({ session: original })
+    const reset = deferred<AgentSession>()
+    vi.mocked(api.resetAgentContext).mockReturnValue(reset.promise)
+    const clearing = useAgent.getState().resetContext()
+    useAgent.getState().reset()
+    reset.resolve({ ...original, context: { source: 'unavailable', messages: 0, resetAt: 123 } })
+    await clearing
+    expect(useAgent.getState().session).toBeNull()
+    expect(useAgent.getState().pendingActions).toEqual({})
+  })
+
+  it('运行中不能改配置或重置；configuration 事件更新当前会话', async () => {
+    vi.mocked(api.agentSession).mockResolvedValue({ ...session('s1'), status: 'running' })
+    useAgent.setState({ canvasId: 'c1' })
+    await useAgent.getState().select('s1')
+    await useAgent.getState().setSettings({ model: 'deep' })
+    await useAgent.getState().resetContext()
+    expect(api.updateAgentSession).not.toHaveBeenCalled()
+    expect(api.resetAgentContext).not.toHaveBeenCalled()
+    FakeEventSource.all.at(-1)!.emit({
+      type: 'configuration',
+      settings: { model: 'fast' },
+      context: { source: 'provider', tokens: 1200, limit: 10000, messages: 3 },
+    })
+    expect(useAgent.getState().session?.context?.tokens).toBe(1200)
+    expect(useAgent.getState().session?.settings?.model).toBe('fast')
+  })
+})
+
+describe('同会话配置快照', () => {
+  it('较新的 SSE 状态与回复不会被迟到重置快照覆盖', async () => {
+    const original = { ...session('s1'), agent: 'codex' as const }
+    vi.mocked(api.agentSession).mockResolvedValue(original)
+    vi.mocked(api.agentSessions).mockResolvedValue([])
+    useAgent.setState({ canvasId: 'c1' })
+    await useAgent.getState().select('s1')
+    const pending = deferred<AgentSession>()
+    vi.mocked(api.resetAgentContext).mockReturnValue(pending.promise)
+    const reset = useAgent.getState().resetContext()
+    const events = FakeEventSource.all.at(-1)!
+    events.emit({
+      type: 'configuration',
+      settings: {},
+      context: { source: 'unavailable', messages: 0, resetAt: 123 },
+    })
+    events.emit({ type: 'status', status: 'running' })
+    events.emit({
+      type: 'item',
+      item: { id: 'new-text', type: 'text', text: '另一窗口的新回复', at: 456 },
+    })
+    pending.resolve({ ...original, context: { source: 'unavailable', messages: 0, resetAt: 123 } })
+    await reset
+    expect(useAgent.getState().session?.status).toBe('running')
+    expect(useAgent.getState().session?.items).toEqual([
+      expect.objectContaining({ text: '另一窗口的新回复' }),
+    ])
+    expect(useAgent.getState().session?.context?.resetAt).toBe(123)
+  })
 })
 
 describe('助手草稿与发送生命周期', () => {

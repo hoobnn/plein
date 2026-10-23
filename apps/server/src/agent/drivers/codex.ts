@@ -234,11 +234,41 @@ export function startCodex(o: DriverOptions, hooks: DriverHooks): CliDriver {
         if (!done) return
         hooks.toolStart(id, 'web_search', typeof item.query === 'string' ? item.query : undefined)
         return hooks.toolEnd(id, false)
+      case 'contextCompaction':
+        // 压缩后旧使用量失效，等待提供方下一次用量事件。
+        if (done)
+          hooks.context?.({
+            source: 'unavailable',
+            messages: 0,
+            model: o.settings?.model,
+            updatedAt: Date.now(),
+          })
+        return
     }
   }
 
   const onNotification = (method: string, p: Msg) => {
+    if (typeof p.threadId === 'string' && thread && p.threadId !== thread) return
+    if (typeof p.turnId === 'string' && turnId && p.turnId !== turnId) return
     switch (method) {
+      case 'thread/tokenUsage/updated': {
+        if (!inTurn || !turnId || p.turnId !== turnId) return
+        const usage = p.tokenUsage as
+          | { last?: { inputTokens?: unknown }; modelContextWindow?: unknown }
+          | undefined
+        const input = usage?.last?.inputTokens
+        const limit = usage?.modelContextWindow
+        const valid = typeof input === 'number' && Number.isFinite(input) && input >= 0
+        hooks.context?.({
+          source: valid ? 'provider' : 'unavailable',
+          ...(valid ? { tokens: input } : {}),
+          ...(typeof limit === 'number' && Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+          messages: 0,
+          model: o.settings?.model,
+          updatedAt: Date.now(),
+        })
+        return
+      }
       case 'item/started':
       case 'item/completed':
         if (p.item && typeof p.item === 'object') onItem(p.item as Msg, method === 'item/completed')
@@ -314,7 +344,13 @@ export function startCodex(o: DriverOptions, hooks: DriverHooks): CliDriver {
       capabilities: null,
     })
     proc.write({ method: 'initialized' })
-    const params = { cwd: o.cwd, developerInstructions: o.instructions, ...policyOf(o.access) }
+    const params = {
+      cwd: o.cwd,
+      developerInstructions: o.instructions,
+      ...policyOf(o.access),
+      ...(o.settings?.model ? { model: o.settings.model } : {}),
+      ...(o.settings?.reasoningEffort ? { reasoningEffort: o.settings.reasoningEffort } : {}),
+    }
     // 接不上（记录被清理了）就开新的 thread
     const resumed = o.resume
       ? await call('thread/resume', { threadId: o.resume, ...params }).catch(() => null)
@@ -341,6 +377,8 @@ export function startCodex(o: DriverOptions, hooks: DriverHooks): CliDriver {
           call('turn/start', {
             threadId: thread,
             input: [{ type: 'text', text: prompt, text_elements: [] }],
+            ...(o.settings?.model ? { model: o.settings.model } : {}),
+            ...(o.settings?.reasoningEffort ? { effort: o.settings.reasoningEffort } : {}),
           }),
         )
         .then((r) => {

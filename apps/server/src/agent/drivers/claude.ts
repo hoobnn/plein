@@ -62,6 +62,7 @@ export function startClaude(o: DriverOptions, hooks: DriverHooks): CliDriver {
       ? ['--dangerously-skip-permissions']
       : ['--permission-prompt-tool', 'stdio']),
     ...(o.resume ? ['--resume', o.resume] : []),
+    ...(o.settings?.model ? ['--model', o.settings.model] : []),
   ]
 
   let inTurn = false
@@ -108,11 +109,41 @@ export function startClaude(o: DriverOptions, hooks: DriverHooks): CliDriver {
       pending.get(String(ev.request_id))?.abort()
       return
     }
-    const message = ev.message as { id?: string; content?: unknown } | undefined
+    const message = ev.message as
+      | { id?: string; content?: unknown; usage?: Record<string, unknown>; model?: string }
+      | undefined
     const blocks = Array.isArray(message?.content)
       ? (message.content as Array<Record<string, unknown>>)
       : []
     if (ev.type === 'assistant') {
+      // 每条 assistant 消息的输入量是当前请求使用量；result.usage 是整轮累计，不能表示上下文占用。
+      const usage = message?.usage
+      const keys = ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens']
+      if (
+        inTurn &&
+        usage &&
+        typeof usage.input_tokens === 'number' &&
+        keys.every(
+          (key) =>
+            usage[key] === undefined ||
+            (typeof usage[key] === 'number' && Number.isFinite(usage[key]) && usage[key] >= 0),
+        )
+      ) {
+        hooks.context?.({
+          source: 'provider',
+          tokens: keys.reduce(
+            (sum, key) => sum + (typeof usage[key] === 'number' ? usage[key] : 0),
+            0,
+          ),
+          messages: 0,
+          ...(message?.model
+            ? { model: message.model }
+            : o.settings?.model
+              ? { model: o.settings.model }
+              : {}),
+          updatedAt: Date.now(),
+        })
+      }
       blocks.forEach((b, i) => {
         if (b.type === 'text' && typeof b.text === 'string' && b.text.trim()) {
           hooks.text(`${message?.id ?? newId('m')}_${i}`, b.text, true)

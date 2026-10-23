@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { ChatMessage } from '@plein/plugin-sdk'
 import type { AgentTurnSummary } from '@plein/protocol'
@@ -105,13 +105,24 @@ export class TurnStore {
       groups: facts.groups ?? [],
     }
   }
-  history(sessionId: string): ChatMessage[] {
+  cutoff(sessionId: string): number {
+    return (
+      this.db
+        .select({ at: agentTurns.created_at })
+        .from(agentTurns)
+        .where(eq(agentTurns.session_id, sessionId))
+        .orderBy(desc(agentTurns.created_at))
+        .get()?.at ?? 0
+    )
+  }
+  history(sessionId: string, cutoff?: number | null): ChatMessage[] {
     const rows = this.db
       .select()
       .from(agentTurns)
       .where(
         and(
           eq(agentTurns.session_id, sessionId),
+          cutoff == null ? undefined : gt(agentTurns.created_at, cutoff),
           inArray(agentTurns.state, ['completed', 'failed', 'stopped', 'interrupted']),
         ),
       )

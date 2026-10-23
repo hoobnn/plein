@@ -3,7 +3,9 @@ import {
   type AgentAccess,
   type AgentApprovalMode,
   type AgentKind,
+  type AgentModelCatalog,
   type AgentSession,
+  type AgentSettings,
   type AgentSessionSummary,
   type AgentStatus,
   type Asset,
@@ -234,9 +236,15 @@ export const api = {
   agentStatus: (refresh = false) =>
     request<AgentStatus>(refresh ? `${API.agent}?refresh=1` : API.agent),
   agentSessions: (canvasId: string) => request<AgentSessionSummary[]>(API.agentSessions(canvasId)),
-  createAgentSession: (canvasId: string, agent: AgentKind) =>
-    request<AgentSession>(API.agentSessions(canvasId), json('POST', { agent })),
+  agentModels: (agent: AgentKind, refresh = false) =>
+    request<AgentModelCatalog>(`${API.agentModels(agent)}${refresh ? '?refresh=1' : ''}`),
+  createAgentSession: (canvasId: string, agent: AgentKind, settings?: AgentSettings) =>
+    request<AgentSession>(API.agentSessions(canvasId), json('POST', { agent, settings })),
   agentSession: (id: string) => request<AgentSession>(API.agentSession(id)),
+  updateAgentSession: (id: string, settings: AgentSettings) =>
+    request<AgentSession>(API.agentSession(id), json('PATCH', settings)),
+  resetAgentContext: (id: string) =>
+    request<AgentSession>(API.agentContextReset(id), json('POST', {})),
   deleteAgentSession: (id: string) => request<void>(API.agentSession(id), { method: 'DELETE' }),
   sendAgentMessage: (
     id: string,

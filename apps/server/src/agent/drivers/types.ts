@@ -1,4 +1,4 @@
-import type { AgentAccess } from '@plein/protocol'
+import type { AgentAccess, AgentContext, AgentSettings } from '@plein/protocol'
 
 /** CLI 想做一件需要用户点头的事（改文件、跑命令、用用户自己的 MCP 工具等） */
 export interface PermissionAsk {
@@ -28,6 +28,8 @@ export interface DriverHooks {
   exit(reason?: string): void
   /** 等用户在面板里允许或拒绝；signal 中止表示 CLI 不再需要这个答复 */
   permission(ask: PermissionAsk, signal: AbortSignal): Promise<boolean>
+  /** 当前上下文占用；不能用累计计费 token 代替。 */
+  context?(context: AgentContext): void
 }
 
 export interface DriverOptions {
@@ -43,6 +45,7 @@ export interface DriverOptions {
   mcpUrl: string
   token: string
   instructions: string
+  settings?: AgentSettings
 }
 
 /** 一个轮次的 CLI 进程；下一轮通过 resume 延续原 CLI 会话。 */

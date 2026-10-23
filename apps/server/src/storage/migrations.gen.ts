@@ -85,4 +85,15 @@ export const MIGRATIONS: Migration[] = [
     hash: 'c9900b78c83928bab0121a41beb6448ea246f6567da8ce1dc69c4f648c5c7e52',
     statements: ["ALTER TABLE `jobs` ADD `call_history` text DEFAULT '[]' NOT NULL;"],
   },
+  {
+    tag: '0006_young_puck',
+    when: 1792736706499,
+    hash: 'f42c8e138d12c9403f8f3289d4f1d9a99530899e8f10512e754ff5a9458321a6',
+    statements: [
+      "ALTER TABLE `agent_sessions` ADD `settings` text DEFAULT '{}' NOT NULL;",
+      'ALTER TABLE `agent_sessions` ADD `context` text DEFAULT \'{"source":"unavailable","messages":0}\' NOT NULL;',
+      'ALTER TABLE `agent_sessions` ADD `context_cutoff` integer;',
+      'ALTER TABLE `agent_sessions` ADD `context_reset_at` integer;',
+    ],
+  },
 ]

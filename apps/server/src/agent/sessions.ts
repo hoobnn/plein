@@ -11,6 +11,9 @@ import type {
   AgentKind,
   AgentSession,
   AgentSessionSummary,
+  AgentSettings,
+  AgentContext,
+  AgentModelCatalog,
   AgentStatus,
   ApplyEditPlan,
   EditPlan,
@@ -39,6 +42,7 @@ import { type McpTool, McpServer, type ToolResult } from './mcp'
 import { agentTools } from './tools'
 import { TurnExecution } from './execution'
 import { TurnStore } from './turn-store'
+import { CLAUDE_MODELS, CodexModelCache } from './models'
 
 /** 每轮对话的上限，防止 CLI 卡住 */
 const TURN_TIMEOUT_MS = 60 * 60 * 1000
@@ -68,6 +72,8 @@ const INSTRUCTIONS = `你是 Plein 的创作助手。Plein 是一块 AI 无限�
 type SessionRow = typeof agentSessions.$inferSelect
 
 interface Live {
+  /** 空闲配置与待验证发送的代次，阻止目录查询回来后复活已取消的工作。 */
+  revision: number
   active: TurnExecution | null
   row: SessionRow
   items: AgentItem[]
@@ -114,6 +120,7 @@ export class AgentSessions {
   private live = new Map<string, Live>()
   private byToken = new Map<string, { session: Live; turn: TurnExecution }>()
   private turns: TurnStore
+  private modelCache = new CodexModelCache()
   private mcpUrl = ''
   /** 找本机 CLI；测试里换成假的 */
   detect: (refresh?: boolean) => Promise<CliEnvironment> = detectClis
@@ -148,7 +155,7 @@ export class AgentSessions {
         ? { enabled: true, agents: [builtin] }
         : {
             enabled: false,
-            reason: '把默认对话模型设成支持工具调用的模型（如百炼的千问）后，就能使用内置智能体',
+            reason: '启用一个支持工具调用的对话模型后，就能使用内置智能体',
             agents: [builtin],
           }
     }
@@ -172,7 +179,56 @@ export class AgentSessions {
       .map((r) => this.summary(this.live.get(r.id)?.row ?? r))
   }
 
-  create(canvasId: string, ownerId: string, agent: AgentKind): AgentSession {
+  async models(agent: AgentKind, refresh = false): Promise<AgentModelCatalog> {
+    if (agent === 'builtin') {
+      const models = this.deps.host.models('text.chat').filter((m) => m.features?.includes('tools'))
+      const selected = builtinModel(this.deps.host)
+      return {
+        models: models.map((m) => ({ id: m.ref, title: m.title })),
+        ...(selected ? { defaultModel: selected.ref } : {}),
+      }
+    }
+    if (!this.deps.enabled) throw new AgentError('disabled', '本机智能体未启用')
+    if (agent === 'claude') return CLAUDE_MODELS
+    const env = await this.detect(refresh)
+    const cli = env.agents.find((candidate) => candidate.id === 'codex')
+    if (!cli?.path) return { models: [], error: '本机没有找到 Codex' }
+    const cwd = join(this.deps.dataDir, 'agent')
+    mkdirSync(cwd, { recursive: true })
+    return this.modelCache.get(cli.path, cwd, { ...process.env, PATH: env.path }, refresh)
+  }
+
+  async validateSettings(agent: AgentKind, settings: AgentSettings): Promise<AgentSettings> {
+    if (!settings.model && !settings.reasoningEffort) return {}
+    if (settings.reasoningEffort && !settings.model)
+      throw new AgentError('invalid_input', '请先选择具体模型再设置推理强度')
+    const catalog = await this.models(agent)
+    if (catalog.error) throw new AgentError('not_ready', catalog.error)
+    const model = catalog.models.find((m) => m.id === (settings.model ?? catalog.defaultModel))
+    if (!model) throw new AgentError('invalid_input', '所选模型已不可用，请刷新模型列表后重新选择')
+    if (settings.reasoningEffort && !model.reasoningEfforts?.includes(settings.reasoningEffort))
+      throw new AgentError('invalid_input', '所选模型不支持这个推理强度')
+    // Codex turn overrides persist as thread defaults. Always resolve the selected model's
+    // declared default effort rather than inheriting another model's previous effort.
+    return {
+      ...settings,
+      ...(agent === 'codex'
+        ? {
+            model: model.id,
+            ...((settings.reasoningEffort ?? model.defaultReasoningEffort)
+              ? { reasoningEffort: settings.reasoningEffort ?? model.defaultReasoningEffort }
+              : {}),
+          }
+        : {}),
+    }
+  }
+
+  create(
+    canvasId: string,
+    ownerId: string,
+    agent: AgentKind,
+    settings: AgentSettings = {},
+  ): AgentSession {
     const now = Date.now()
     const row: SessionRow = {
       id: newId('agt'),
@@ -180,6 +236,10 @@ export class AgentSessions {
       canvas_id: canvasId,
       agent,
       cli_session: null,
+      settings: JSON.stringify(settings),
+      context: JSON.stringify({ source: 'unavailable', messages: 0, model: settings.model }),
+      context_cutoff: null,
+      context_reset_at: null,
       title: '新对话',
       items: '[]',
       created_at: now,
@@ -192,6 +252,62 @@ export class AgentSessions {
   get(id: string, ownerId: string): AgentSession | null {
     const s = this.load(id)
     return s && s.row.owner_id === ownerId ? this.view(s) : null
+  }
+
+  async update(id: string, ownerId: string, settings: AgentSettings): Promise<AgentSession> {
+    const s = this.load(id)
+    if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
+    if (s.busy) throw new AgentError('busy', '这一轮还没结束，先停止再修改模型')
+    const revision = s.revision
+    const previous = settingsOf(s.row)
+    const resolved = await this.validateSettings(s.row.agent, settings)
+    // 模型目录可能需要启动只读查询；等待期间另一条请求可能已经开始一轮。
+    if (this.live.get(id) !== s) throw new AgentError('not_found', '会话不存在')
+    if (s.busy || revision !== s.revision) throw new AgentError('busy', '会话配置已变化，请重试')
+    s.revision++
+    s.row.settings = JSON.stringify(settings)
+    const rebuild =
+      s.row.cli_session != null &&
+      s.row.agent !== 'builtin' &&
+      ((previous.model && !settings.model) ||
+        (s.row.agent === 'codex' &&
+          (previous.reasoningEffort || previous.model !== settings.model) &&
+          !settings.reasoningEffort &&
+          !resolved.reasoningEffort))
+    if (rebuild) {
+      s.row.cli_session = null
+      s.row.context_cutoff = this.turns.cutoff(id)
+      s.row.context_reset_at = Date.now()
+    }
+    this.configuration(s, {
+      source: 'unavailable',
+      messages: rebuild ? 0 : contextOf(s.row).messages,
+      model: settings.model,
+      updatedAt: Date.now(),
+    })
+    if (rebuild)
+      this.notice(s, '已应用模型配置并重新开始 CLI 上下文；对话记录、画布与已有任务仍保留。')
+    return this.view(s)
+  }
+
+  resetContext(id: string, ownerId: string): AgentSession {
+    const s = this.load(id)
+    if (!s || s.row.owner_id !== ownerId) throw new AgentError('not_found', '会话不存在')
+    if (s.busy) throw new AgentError('busy', '这一轮还没结束，先停止再重置上下文')
+    s.revision++
+    s.driver?.close()
+    s.driver = null
+    s.row.cli_session = null
+    s.row.context_cutoff = this.turns.cutoff(id)
+    s.row.context_reset_at = Date.now()
+    this.configuration(s, {
+      source: 'unavailable',
+      messages: 0,
+      model: settingsOf(s.row).model,
+      updatedAt: Date.now(),
+    })
+    this.notice(s, '已重置模型上下文；对话记录、画布与已有任务仍保留。')
+    return this.view(s)
   }
 
   delete(id: string, ownerId: string): boolean {
@@ -279,19 +395,24 @@ export class AgentSessions {
     if (!this.deps.enabled && s.row.agent !== 'builtin')
       throw new AgentError('disabled', '本机智能体未启用')
     s.busy = true
+    const revision = ++s.revision
     let dispatched: TurnExecution | null = null
     try {
+      const settings = await this.validateSettings(s.row.agent, settingsOf(s.row))
+      if (this.live.get(id) !== s) throw new AgentError('not_found', '会话不存在')
+      if (revision !== s.revision) throw new AgentError('busy', '本次发送已取消，请重新发送')
       s.mode = mode
       s.plan.begin(plan)
       if (s.row.agent === 'builtin') {
         this.startBuiltin(s, text, selection)
         dispatched = s.active
       } else {
-        const started = this.startTurn(s, text, selection, access)
+        const started = this.startTurn(s, text, selection, access, settings)
         dispatched = s.active
         await started
       }
     } catch (err) {
+      if (this.live.get(id) !== s || revision !== s.revision) throw err
       dispatched ??= s.active
       if (dispatched && s.active === dispatched) {
         this.fail(s, (err as Error).message)
@@ -307,8 +428,9 @@ export class AgentSessions {
     text: string,
     selection: string[] | undefined,
     access: AgentAccess,
+    settings: AgentSettings,
   ) {
-    const turn = this.beginTurn(s, text, selection)
+    const turn = this.beginTurn(s, text, selection, settings.model)
     const env = await this.detect()
     turn.assertOpen()
     const cli = env.agents.find((a) => a.id === s.row.agent)
@@ -321,7 +443,7 @@ export class AgentSessions {
       s.driver = null
     }
     s.stopped = false
-    s.driver = this.startDriver(s, turn, cli, env.path, access)
+    s.driver = this.startDriver(s, turn, cli, env.path, access, settings)
     s.turnTimer = setTimeout(() => {
       if (s.active === turn) this.stop(s.row.id, 'turn_timeout')
     }, TURN_TIMEOUT_MS)
@@ -335,6 +457,7 @@ export class AgentSessions {
     cli: ResolvedCli,
     path: string,
     access: AgentAccess,
+    settings: AgentSettings,
   ): CliDriver {
     // 所有会话共用一个工作目录：Claude Code 按目录归档会话，分开会在它的项目列表里留下一堆记录
     const workdir = join(this.deps.dataDir, 'agent')
@@ -354,6 +477,7 @@ export class AgentSessions {
         mcpUrl: this.mcpUrl,
         token: turn.token,
         instructions: INSTRUCTIONS,
+        settings,
       },
       {
         session: (id) => {
@@ -407,6 +531,10 @@ export class AgentSessions {
           this.endTurn(s, turn)
         },
         permission: (ask, signal) => this.askPermission(s, turn, ask, signal),
+        context: (context) => {
+          if (mine() && s.busy && turn.state === 'running')
+            this.configuration(s, { ...context, messages: contextOf(s.row).messages })
+        },
       },
     )
     return driver
@@ -452,6 +580,13 @@ export class AgentSessions {
     this.push(s, { id: newId('it'), type: 'user', text, selection, at: Date.now() })
     turn.append({ role: 'user', content: this.prompt(s, text, selection) })
     this.setRunning(s, true)
+    const context = contextOf(s.row)
+    this.configuration(s, {
+      source: 'unavailable',
+      messages: context.messages + 1,
+      model: model ?? settingsOf(s.row).model,
+      updatedAt: Date.now(),
+    })
     return turn
   }
 
@@ -478,14 +613,15 @@ export class AgentSessions {
 
   /** 内置智能体：在服务端进程里跑模型 ↔ 工具循环，工具与 CLI 走的 MCP 是同一份 */
   private startBuiltin(s: Live, text: string, selection?: string[]) {
-    const model = builtinModel(this.deps.host)
+    const model = builtinModel(this.deps.host, settingsOf(s.row).model)
     if (!model)
       throw new AgentError(
         'not_installed',
-        '默认对话模型不支持工具调用：请在 设置 → 默认模型 里换一个支持的对话模型',
+        '没有可用的工具调用模型：请启用一个支持工具调用的对话模型',
       )
-    const persisted = this.turns.history(s.row.id)
-    const legacy = historyOf(s.items)
+    const persisted = this.turns.history(s.row.id, s.row.context_cutoff)
+    // 重置后的空历史不能回退到展示记录，否则旧对话会再次进入模型。
+    const legacy = s.row.context_reset_at == null ? historyOf(s.items) : []
     const history = persisted.length
       ? persisted
       : [
@@ -520,6 +656,9 @@ export class AgentSessions {
       signal: abort.signal,
       execution,
       vision: model.vision,
+      onContext: (context) => {
+        if (s.active === execution && execution.state === 'running') this.configuration(s, context)
+      },
       saveImage: async (image) => {
         execution.assertOpen()
         const asset = await this.deps.assets.ingest(
@@ -574,7 +713,16 @@ export class AgentSessions {
   stop(id: string, reason = 'user_stopped') {
     const s = this.live.get(id)
     const turn = s?.active
-    if (!s || !turn) return
+    if (!s) return
+    if (!turn) {
+      if (s.busy) {
+        s.revision++
+        s.busy = false
+        this.notice(s, '已停止')
+        this.setRunning(s, false)
+      }
+      return
+    }
     turn.close('stopping', reason)
     this.byToken.delete(turn.token)
     s.approvals.expireAll()
@@ -605,6 +753,7 @@ export class AgentSessions {
 
   close() {
     for (const s of this.live.values()) {
+      s.revision++
       s.abort?.abort()
       s.stopped = true
       s.driver?.close()
@@ -781,12 +930,40 @@ export class AgentSessions {
 
   private save(s: Live) {
     s.row.items = JSON.stringify(s.items)
-    const { cli_session, title, items, updated_at } = s.row
+    const {
+      cli_session,
+      title,
+      items,
+      updated_at,
+      settings,
+      context,
+      context_cutoff,
+      context_reset_at,
+    } = s.row
     this.deps.db
       .update(agentSessions)
-      .set({ cli_session, title, items, updated_at })
+      .set({
+        cli_session,
+        title,
+        items,
+        updated_at,
+        settings,
+        context,
+        context_cutoff,
+        context_reset_at,
+      })
       .where(eq(agentSessions.id, s.row.id))
       .run()
+  }
+
+  private configuration(s: Live, context: AgentContext) {
+    s.row.context = JSON.stringify({
+      ...context,
+      ...(s.row.context_reset_at == null ? {} : { resetAt: s.row.context_reset_at }),
+    })
+    s.row.updated_at = Date.now()
+    this.save(s)
+    this.emit(s, { type: 'configuration', settings: settingsOf(s.row), context: contextOf(s.row) })
   }
 
   private configureTurn(s: Live, turn: TurnExecution) {
@@ -909,6 +1086,7 @@ export class AgentSessions {
             : it,
     )
     s = {
+      revision: 0,
       active: null,
       row,
       items,
@@ -962,6 +1140,7 @@ export class AgentSessions {
   }
 
   private drop(s: Live) {
+    s.revision++
     this.keep(s)
     s.driver?.close()
     s.driver = null
@@ -983,11 +1162,29 @@ export class AgentSessions {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       lastTurn: this.turns.last(row.id),
+      settings: settingsOf(row),
+      context: contextOf(row),
     }
   }
 
   private view(s: Live): AgentSession {
     return { ...this.summary(s.row), items: s.items }
+  }
+}
+
+function settingsOf(row: SessionRow): AgentSettings {
+  try {
+    return JSON.parse(row.settings) as AgentSettings
+  } catch {
+    return {}
+  }
+}
+
+function contextOf(row: SessionRow): AgentContext {
+  try {
+    return JSON.parse(row.context) as AgentContext
+  } catch {
+    return { source: 'unavailable', messages: 0 }
   }
 }
 

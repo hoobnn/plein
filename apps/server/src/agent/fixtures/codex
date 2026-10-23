@@ -26,6 +26,13 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   switch (msg.method) {
     case 'initialize':
       return ok({ userAgent: 'fake' })
+    case 'model/list':
+      if (process.env.FAKE_CLI_LOG) fs.appendFileSync(process.env.FAKE_CLI_LOG, `${JSON.stringify({ rpc: msg.method, params: msg.params })}\n`)
+      if (process.env.FAKE_CODEX_MODEL_HANG === '1') return
+      if (process.env.FAKE_CODEX_MODEL_ERROR === '1') return send({ id: msg.id, error: { message: 'fixture catalog unavailable' } })
+      return ok(msg.params.cursor
+        ? { data: [{ id: 'fixture-fast', model: 'fixture-fast', displayName: 'Fixture Fast', supportedReasoningEfforts: [{ reasoningEffort: 'low' }], defaultReasoningEffort: 'low' }], nextCursor: null }
+        : { data: [{ id: 'fixture-thinking', model: 'fixture-thinking', displayName: 'Fixture Thinking', description: 'Account supplied test model', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }, { reasoningEffort: 'high' }], defaultReasoningEffort: 'medium', isDefault: true }], nextCursor: 'page-2' })
     case 'thread/start':
       threadId = 'thr_fake'
       if (process.env.FAKE_CLI_LOG) fs.appendFileSync(process.env.FAKE_CLI_LOG, `${JSON.stringify(msg.params)}\n`)
@@ -38,11 +45,16 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
       ok({})
       return complete('interrupted')
     case 'turn/start': {
+      if (process.env.FAKE_CLI_LOG) fs.appendFileSync(process.env.FAKE_CLI_LOG, `${JSON.stringify({ rpc: msg.method, params: msg.params })}\n`)
       turn++
       turnId = `turn_${turn}`
       ok({ turn: { id: turnId } })
       note('turn/started', { threadId, turn: { id: turnId } })
       const prompt = msg.params.input[0].text
+      if (prompt.includes('用量')) {
+        note('thread/tokenUsage/updated', { threadId, turnId: 'old-turn', tokenUsage: { last: { inputTokens: 99999 }, modelContextWindow: 10000 } })
+        note('thread/tokenUsage/updated', { threadId, turnId, tokenUsage: { total: { totalTokens: 999999 }, last: { inputTokens: 1200, cachedInputTokens: 500, outputTokens: 77, totalTokens: 1277 }, modelContextWindow: 10000 } })
+      }
       if (prompt.includes('权限')) {
         const item = { type: 'commandExecution', id: 'cmd_1', command: 'rm -rf build', status: 'inProgress' }
         note('item/started', { item })

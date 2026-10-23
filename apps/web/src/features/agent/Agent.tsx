@@ -15,6 +15,7 @@ import { renderMarkdown } from '../../canvas/markdown'
 import { useRoute } from '../../router'
 import { EditPlanRow } from './EditPlanCard'
 import { useAgent } from './store'
+import { AgentControls } from './AgentControls'
 import { existingTargets, useAgentTargets } from './targets'
 import { useCanvas } from '../../stores/canvas'
 import { useSession } from '../../stores/session'
@@ -227,10 +228,11 @@ function AgentPanel({
   const current = session?.agent ?? agent
   const label = (a: AgentCli) => (a.model ? `${a.name} · ${a.model}` : a.name)
   const currentAgent = status?.agents.find((a) => a.id === current)
-  const cliName = currentAgent ? label(currentAgent) : '小满'
+  const customModel = !!session?.settings?.model
+  const cliName = currentAgent ? (customModel ? currentAgent.name : label(currentAgent)) : '小满'
   const intro =
     current === 'builtin'
-      ? `我是小满，正在用${currentAgent?.model ? ` ${currentAgent.model} ` : '内置模型'}帮你操作这块画布。说说想做什么：`
+      ? `我是小满，正在用${customModel ? '当前所选模型' : currentAgent?.model ? ` ${currentAgent.model} ` : '内置模型'}帮你操作这块画布。说说想做什么：`
       : `我是小满，会用你电脑上的 ${cliName} 来操作这块画布。说说想做什么：`
   const worker = current === 'builtin' ? '小满' : cliName
   const exit = useExit()
@@ -978,6 +980,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
   const text = useAgent((s) => s.drafts[canvasId]?.text ?? '')
   const sending = useAgent((s) => !!s.sending[canvasId])
   const selecting = useAgent((s) => !!s.selecting)
+  const configuring = useAgent((s) => !!s.pendingActions[`${s.session?.id}/configure`])
   const historyBlocked = useAgent(
     (s) =>
       s.loadingHistory ||
@@ -1035,13 +1038,17 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
 
   const submit = () => {
     const t = text.trim()
-    if (!t || running || sending || selecting || historyBlocked) return
+    if (!t || running || sending || selecting || configuring || historyBlocked) return
     const sel = withSelection ? useCanvas.getState().engine?.selection.values() : undefined
     void useAgent.getState().send(t, sel?.length ? sel : undefined)
   }
 
   return (
     <div className="border-t border-line p-3">
+      <AgentControls
+        disabled={running || sending || selecting || configuring || historyBlocked}
+        selectionCount={withSelection ? selected : 0}
+      />
       {selected > 0 && withSelection && (
         <div className="mb-2 flex">
           <span className="ui-chip pr-0.5">
@@ -1108,7 +1115,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
             aria-label="发送"
             title="发送（Enter）"
             className="ui-btn ui-btn-lg ui-btn-primary ui-icon-btn"
-            disabled={!text.trim() || sending || selecting || historyBlocked}
+            disabled={!text.trim() || sending || selecting || configuring || historyBlocked}
             aria-busy={sending}
             onClick={submit}
           >
@@ -1131,7 +1138,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
           正在打开对话…
         </p>
       )}
-      <div className="mt-2 flex items-center gap-1">
+      <div className="mt-2 flex flex-wrap items-center gap-1">
         <button
           type="button"
           aria-pressed={plan}
