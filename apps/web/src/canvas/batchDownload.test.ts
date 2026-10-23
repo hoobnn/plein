@@ -89,3 +89,30 @@ it('来源在读取完成前失效时不交出旧文件，保留队列且不创�
   expect(click).not.toHaveBeenCalled()
   expect(URL.createObjectURL).not.toHaveBeenCalled()
 })
+
+it.each([
+  ['封面.jpg', 'image/png', '封面.jpg.png'],
+  ['角色.JPEG', 'image/jpeg', '角色.JPEG'],
+  ['构图.v3', 'image/svg+xml', '构图.v3.svg'],
+  ['图标.v1', 'image/vnd.microsoft.icon', '图标.v1.ico'],
+])('下载标题 %s 按实际格式 %s 补扩展名为 %s，并交出原文件', async (name, type, expected) => {
+  const anchors: { download?: string }[] = []
+  vi.stubGlobal('document', {
+    createElement: () => {
+      const a: { click: typeof click; remove: typeof remove; download?: string } = {
+        click,
+        remove,
+      }
+      anchors.push(a)
+      return a
+    },
+    body: { appendChild: vi.fn() },
+  })
+  const blob = new Blob(['source'], { type })
+  vi.spyOn(api, 'assetBlob').mockResolvedValue(blob)
+  expect(
+    await downloadAll([{ assetId: 'a', name }], new AbortController().signal, vi.fn()),
+  ).toEqual({ started: 1, failed: [], remaining: [] })
+  expect(anchors.map((a) => a.download)).toEqual([expected])
+  expect(URL.createObjectURL).toHaveBeenCalledWith(blob)
+})

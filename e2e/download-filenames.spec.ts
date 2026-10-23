@@ -7,11 +7,7 @@ import { newProject, zoomTo } from './canvas'
 type Engine = import('../packages/canvas-core/src/engine').Engine
 for (const [kind, name, expected, mime] of [
   ['image', '分镜.v2', '分镜.v2.png', 'image/png'],
-  ['image', '封面.jpg', '封面.jpg.png', 'image/png'],
   ['image', '角色.PNG', '角色.PNG', 'image/png'],
-  ['image', '角色.JPEG', '角色.JPEG', 'image/jpeg'],
-  ['image', '构图.v3', '构图.v3.svg', 'image/svg+xml'],
-  ['image', '图标.v1', '图标.v1.ico', 'image/vnd.microsoft.icon'],
   ['audio', '台词.final', '台词.final.wav', 'audio/wav'],
   ['video', '成片.v1.2', '成片.v1.2.mp4', 'video/mp4'],
 ] as const) {
@@ -20,63 +16,28 @@ for (const [kind, name, expected, mime] of [
     page.on('pageerror', (error) => errors.push(error.message))
     await newProject(page)
     const bytes =
-      mime === 'image/svg+xml'
-        ? Buffer.from(
-            '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48"><rect width="64" height="48" fill="teal"/></svg>',
-          )
-        : mime === 'image/vnd.microsoft.icon'
-          ? (() => {
-              const png = Buffer.from(solidPng(64, 48, [100, 140, 180]))
-              const header = Buffer.alloc(22)
-              header.writeUInt16LE(1, 2)
-              header.writeUInt16LE(1, 4)
-              header[6] = 64
-              header[7] = 48
-              header.writeUInt16LE(1, 10)
-              header.writeUInt16LE(32, 12)
-              header.writeUInt32LE(png.length, 14)
-              header.writeUInt32LE(22, 18)
-              return Buffer.concat([header, png])
-            })()
-          : mime === 'image/jpeg'
-            ? execFileSync('ffmpeg', [
-                '-hide_banner',
-                '-loglevel',
-                'error',
-                '-f',
-                'lavfi',
-                '-i',
-                'color=c=teal:s=64x48',
-                '-frames:v',
-                '1',
-                '-f',
-                'image2pipe',
-                '-vcodec',
-                'mjpeg',
-                'pipe:1',
-              ])
-            : kind === 'image'
-              ? Buffer.from(solidPng(64, 48, [100, 140, 180]))
-              : kind === 'audio'
-                ? Buffer.from(sineWav(0.2, 440))
-                : execFileSync('ffmpeg', [
-                    '-hide_banner',
-                    '-loglevel',
-                    'error',
-                    '-f',
-                    'lavfi',
-                    '-i',
-                    'color=c=teal:s=64x48:r=10:d=0.3',
-                    '-c:v',
-                    'libx264',
-                    '-pix_fmt',
-                    'yuv420p',
-                    '-movflags',
-                    'frag_keyframe+empty_moov',
-                    '-f',
-                    'mp4',
-                    'pipe:1',
-                  ])
+      kind === 'image'
+        ? Buffer.from(solidPng(64, 48, [100, 140, 180]))
+        : kind === 'audio'
+          ? Buffer.from(sineWav(0.2, 440))
+          : execFileSync('ffmpeg', [
+              '-hide_banner',
+              '-loglevel',
+              'error',
+              '-f',
+              'lavfi',
+              '-i',
+              'color=c=teal:s=64x48:r=10:d=0.3',
+              '-c:v',
+              'libx264',
+              '-pix_fmt',
+              'yuv420p',
+              '-movflags',
+              'frag_keyframe+empty_moov',
+              '-f',
+              'mp4',
+              'pipe:1',
+            ])
     const upload = await page.request.post('/api/assets', {
       headers: { 'content-type': mime },
       data: bytes,
