@@ -8,6 +8,7 @@ import {
   type AgentSession,
   type AgentSessionSummary,
   type AgentStatus,
+  type AgentSkill,
   type ApplyEditPlan,
   type ReviseEditPlan,
 } from '@plein/protocol'
@@ -23,13 +24,24 @@ const APPROVAL_KEY = 'plein:agent-approval'
 const PLAN_KEY = 'plein:agent-plan'
 const ACCESS_KEY = 'plein:agent-access'
 const SETTINGS_KEY = 'plein:agent-settings'
+type DraftSkill = Pick<AgentSkill, 'id' | 'name' | 'title' | 'source'>
 
 interface AgentStore {
   open: boolean
   /** 本次应用会话内按画布保留；关闭面板不丢失，不跨画布显示。 */
   drafts: Record<string, { text: string }>
   excludedSelections: Record<string, string>
+  excludedTargets: Record<string, { signature: string; ids: string[] }>
+  excludeTarget(canvasId: string, signature: string, id: string): void
   setExcludedSelection(canvasId: string, signature?: string): void
+  selectedSkills: Record<string, DraftSkill>
+  chooseSkill(
+    canvasId: string,
+    skill: AgentSkill,
+    agent: AgentKind,
+    sessionId?: string | null,
+  ): void
+  clearSkill(canvasId: string): void
   sending: Record<string, boolean>
   selecting: string | null
   removing: Record<string, boolean>
@@ -264,6 +276,8 @@ export const useAgent = create<AgentStore>((set, get) => {
     open: false,
     drafts: {},
     excludedSelections: {},
+    excludedTargets: {},
+    selectedSkills: {},
     deletedSessions: {},
     loadingHistory: false,
     historyError: null,
@@ -276,11 +290,54 @@ export const useAgent = create<AgentStore>((set, get) => {
       connect(session.id, true)
     },
     setExcludedSelection(canvasId, signature) {
+      if (signature === undefined && get().excludedTargets[canvasId]) {
+        const excludedTargets = { ...get().excludedTargets }
+        delete excludedTargets[canvasId]
+        set({ excludedTargets })
+      }
       if (get().excludedSelections[canvasId] === signature) return
       const excludedSelections = { ...get().excludedSelections }
       if (signature === undefined) delete excludedSelections[canvasId]
       else excludedSelections[canvasId] = signature
       set({ excludedSelections })
+    },
+    excludeTarget(canvasId, signature, id) {
+      const previous = get().excludedTargets[canvasId]
+      const ids = previous?.signature === signature ? previous.ids : []
+      set({
+        excludedTargets: {
+          ...get().excludedTargets,
+          [canvasId]: { signature, ids: [...new Set([...ids, id])] },
+        },
+      })
+    },
+    chooseSkill(canvasId, skill, agent, sessionId) {
+      const state = get()
+      if (
+        state.canvasId !== canvasId ||
+        (sessionId !== undefined && (state.session?.id ?? null) !== sessionId) ||
+        (state.session?.agent ?? state.agent) !== agent ||
+        !skill.enabled ||
+        state.session?.status === 'running' ||
+        state.sending[canvasId] ||
+        state.selecting ||
+        state.loadingHistory ||
+        state.historyError ||
+        state.selectionError ||
+        state.connectionError ||
+        state.reconnecting ||
+        state.pendingActions[`${state.session?.id}/configure`]
+      )
+        return
+      const { id, name, title, source } = skill
+      set({ selectedSkills: { ...state.selectedSkills, [canvasId]: { id, name, title, source } } })
+      if (!state.drafts[canvasId]?.text.trim()) state.setDraft(canvasId, skill.prompt)
+      set({ focusSeq: get().focusSeq + 1 })
+    },
+    clearSkill(canvasId) {
+      const selectedSkills = { ...get().selectedSkills }
+      delete selectedSkills[canvasId]
+      set({ selectedSkills })
     },
     sending: {},
     selecting: null,
@@ -546,7 +603,26 @@ export const useAgent = create<AgentStore>((set, get) => {
         return
       let mine = selectSeq
       const draft = get().drafts[canvasId]
-      const options = { approval: get().approval, plan: get().plan, access: get().access }
+      const skill = get().selectedSkills[canvasId]
+      if (skill?.source === 'codex' && (get().session?.agent ?? agent) !== 'codex') {
+        set({ error: '所选技能仅适用于 Codex，请移除技能或切换智能体。' })
+        return
+      }
+      const signature = JSON.stringify([...(selection ?? [])].sort())
+      const excluded = get().excludedTargets[canvasId]
+      selection =
+        get().excludedSelections[canvasId] === signature
+          ? undefined
+          : selection?.filter(
+              (id) => excluded?.signature !== signature || !excluded.ids.includes(id),
+            )
+      selection = selection?.length ? [...new Set(selection)] : undefined
+      const options = {
+        approval: get().approval,
+        plan: get().plan,
+        access: get().access,
+        ...(skill ? { skill: skill.id } : {}),
+      }
       const settings = get().modelPreferences[agent]
       set({ error: null, sending: { ...get().sending, [canvasId]: true } })
       try {
@@ -565,6 +641,7 @@ export const useAgent = create<AgentStore>((set, get) => {
         await api.sendAgentMessage(session.id, text, selection, options)
         if (draft && draft.text.trim() === text && get().drafts[canvasId] === draft)
           get().setDraft(canvasId, '')
+        if (skill && get().selectedSkills[canvasId] === skill) get().clearSkill(canvasId)
         if (get().canvasId === canvasId && mine === selectSeq) void refreshList()
       } catch (err) {
         if (get().canvasId === canvasId && mine === selectSeq) {

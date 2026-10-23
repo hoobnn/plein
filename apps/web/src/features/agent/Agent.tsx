@@ -16,6 +16,8 @@ import { useRoute } from '../../router'
 import { EditPlanRow } from './EditPlanCard'
 import { useAgent } from './store'
 import { AgentControls } from './AgentControls'
+import { AgentSkillsButton } from './AgentSkills'
+import { AgentSelection } from './AgentSelection'
 import { existingTargets, useAgentTargets } from './targets'
 import { useCanvas } from '../../stores/canvas'
 import { useSession } from '../../stores/session'
@@ -31,6 +33,9 @@ const TOOL_LABELS: Record<string, string> = {
   get_canvas_page: '分页查看画布',
   get_element_field: '读取原文字段',
   get_element: '查看元素',
+  inspect_node_input: '检查节点实际输入',
+  reorder_inputs: '调整参考顺序',
+  replace_input: '替换参考素材',
   find_elements: '查找元素',
   list_node_types: '查看可用节点',
   create_node: '新建节点',
@@ -632,10 +637,16 @@ function Item({ item }: { item: AgentItem }) {
     return (
       <div className="ml-10 self-end rounded-xl rounded-br-xs bg-surface-3 px-3 py-2 text-sm whitespace-pre-wrap">
         {item.text}
+        {item.skill && (
+          <span className="mt-1 block text-xs text-ink-subtle">技能：{item.skill.title}</span>
+        )}
         {item.selection?.length ? (
-          <span className="mt-1 block text-xs text-ink-subtle">
-            附带 {item.selection.length} 个选中元素
-          </span>
+          <div className="mt-1">
+            <span className="mb-1 block text-xs text-ink-subtle">
+              附带 {item.selection.length} 个选中元素
+            </span>
+            <AgentSelection ids={item.selection} />
+          </div>
         ) : null}
       </div>
     )
@@ -1006,6 +1017,12 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
   )
   const withSelection = excluded !== selectionKey
   const selected = useCanvas((s) => s.selection)
+  const excludedTargets = useAgent((s) => s.excludedTargets[canvasId])
+  const selectedIds = (withSelection ? (JSON.parse(selectionKey) as string[]) : []).filter(
+    (id) => excludedTargets?.signature !== selectionKey || !excludedTargets.ids.includes(id),
+  )
+  const skill = useAgent((s) => s.selectedSkills[canvasId])
+  const agent = useAgent((s) => s.session?.agent ?? s.agent)
   const approval = useAgent((s) => s.approval)
   const plan = useAgent((s) => s.plan)
   const access = useAgent((s) => s.access)
@@ -1039,21 +1056,39 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
   const submit = () => {
     const t = text.trim()
     if (!t || running || sending || selecting || configuring || historyBlocked) return
-    const sel = withSelection ? useCanvas.getState().engine?.selection.values() : undefined
-    void useAgent.getState().send(t, sel?.length ? sel : undefined)
+    void useAgent.getState().send(t, selectedIds.length ? selectedIds : undefined)
   }
 
   return (
     <div className="border-t border-line p-3">
       <AgentControls
         disabled={running || sending || selecting || configuring || historyBlocked}
-        selectionCount={withSelection ? selected : 0}
+        selectionCount={selectedIds.length}
       />
-      {selected > 0 && withSelection && (
+      {skill && (
         <div className="mb-2 flex">
+          <span className="ui-chip max-w-full pr-0.5">
+            <Icon name="sparkle" size={12} />
+            <span className="truncate">
+              技能：{skill.title}
+              {skill.source === 'codex' && agent !== 'codex' ? '（仅 Codex）' : ''}
+            </span>
+            <button
+              type="button"
+              className="ui-chip-remove"
+              aria-label="移除本轮技能"
+              onClick={() => useAgent.getState().clearSkill(canvasId)}
+            >
+              <Icon name="x" size={12} />
+            </button>
+          </span>
+        </div>
+      )}
+      {selected > 0 && withSelection && (
+        <div className="mb-2 flex flex-col items-start gap-1.5">
           <span className="ui-chip pr-0.5">
             <Icon name="cursor" size={12} />
-            带上选中的 {selected} 个元素
+            带上选中的 {selectedIds.length} 个元素
             <button
               type="button"
               aria-label="不带选中元素"
@@ -1064,6 +1099,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
               <Icon name="x" size={12} />
             </button>
           </span>
+          <AgentSelection ids={selectedIds} canvasId={canvasId} signature={selectionKey} />
         </div>
       )}
       <div className="flex items-end gap-2">
@@ -1139,6 +1175,11 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
         </p>
       )}
       <div className="mt-2 flex flex-wrap items-center gap-1">
+        <AgentSkillsButton
+          canvasId={canvasId}
+          selectionCount={selectedIds.length}
+          disabled={running || sending || selecting || configuring || historyBlocked}
+        />
         <button
           type="button"
           aria-pressed={plan}

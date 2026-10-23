@@ -6,6 +6,9 @@ import {
   type AgentModelCatalog,
   type AgentSession,
   type AgentSettings,
+  type AgentSkill,
+  type AgentSkillCatalog,
+  type AgentSkillDetail,
   type AgentSessionSummary,
   type AgentStatus,
   type Asset,
@@ -238,6 +241,12 @@ export const api = {
   agentSessions: (canvasId: string) => request<AgentSessionSummary[]>(API.agentSessions(canvasId)),
   agentModels: (agent: AgentKind, refresh = false) =>
     request<AgentModelCatalog>(`${API.agentModels(agent)}${refresh ? '?refresh=1' : ''}`),
+  agentSkills: (agent: AgentKind, refresh = false) =>
+    request<AgentSkillCatalog>(`${API.agentSkills(agent)}${refresh ? '?refresh=1' : ''}`),
+  agentSkill: (agent: AgentKind, id: string) =>
+    request<AgentSkillDetail>(API.agentSkill(agent, id)),
+  toggleAgentSkill: (agent: AgentKind, id: string, enabled: boolean) =>
+    request<AgentSkill>(API.agentSkill(agent, id), json('PATCH', { enabled })),
   createAgentSession: (canvasId: string, agent: AgentKind, settings?: AgentSettings) =>
     request<AgentSession>(API.agentSessions(canvasId), json('POST', { agent, settings })),
   agentSession: (id: string) => request<AgentSession>(API.agentSession(id)),
@@ -250,7 +259,12 @@ export const api = {
     id: string,
     text: string,
     selection?: string[],
-    opts: { approval?: AgentApprovalMode; plan?: boolean; access?: AgentAccess } = {},
+    opts: {
+      approval?: AgentApprovalMode
+      plan?: boolean
+      access?: AgentAccess
+      skill?: string
+    } = {},
   ) => request<void>(API.agentMessages(id), json('POST', { text, selection, ...opts })),
   decideAgentApproval: (id: string, approvalId: string, allow: boolean, pick?: ApplyEditPlan) =>
     request<void>(API.agentApproval(id, approvalId), json('POST', { allow, ...pick })),

@@ -15,11 +15,12 @@ import { ExternalMcp } from './ExternalMcp'
 import { LocalPlugins } from './LocalPlugins'
 import { LocalClis } from '../agent/LocalClis'
 import { useAgent } from '../agent/store'
+import { SkillBrowser } from '../agent/AgentSkills'
 import { SlidePill, SlideSwap } from '../../ui/Slide'
 
 export { ProviderRow } from './ProviderSettings'
 
-export type Section = 'appearance' | 'providers' | 'local' | 'mcp' | 'plugins' | 'data'
+export type Section = 'appearance' | 'providers' | 'local' | 'mcp' | 'plugins' | 'skills' | 'data'
 
 /** 设置：左侧分区导航，右侧当前分区 */
 export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?: Section }) {
@@ -58,6 +59,7 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
       badge: providers.filter((p) => p.enabled && p.configured).length,
     },
     ...(localCli ? [{ id: 'local' as const, label: '本机 AI', icon: 'terminal' as const }] : []),
+    { id: 'skills', label: '技能与画布能力', icon: 'sparkle' },
     // 对外开放 MCP 只在本机模式可用：其他模式下接口返回 403，不显示这一栏
     ...(externalMcp ? [{ id: 'mcp' as const, label: 'MCP', icon: 'plug' as const }] : []),
     { id: 'plugins', label: '插件', icon: 'puzzle', badge: plugins.length },
@@ -134,6 +136,7 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
                 <ExternalMcp />
               </Group>
             )}
+            {current.id === 'skills' && <SkillBrowser />}
             {current.id === 'plugins' && (
               <Group
                 title="本机插件"

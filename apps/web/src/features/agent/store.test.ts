@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentSession, AgentSessionSummary } from '@plein/protocol'
+import type { AgentEvent, AgentSession, AgentSessionSummary, AgentSkill } from '@plein/protocol'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { api } from '../../api/client'
 import { useAgent } from './store'
@@ -194,6 +194,106 @@ describe('同会话配置快照', () => {
       expect.objectContaining({ text: '另一窗口的新回复' }),
     ])
     expect(useAgent.getState().session?.context?.resetAt).toBe(123)
+  })
+})
+
+describe('画布技能与本轮目标', () => {
+  const skill = (id = 'plein:canvas-audit'): AgentSkill => ({
+    id,
+    name: 'canvas-audit',
+    title: '检查画布',
+    description: '检查',
+    source: 'plein',
+    enabled: true,
+    selection: 'optional',
+    prompt: '检查当前画布',
+    capabilities: [],
+    canToggle: true,
+  })
+  it('选择技能保留已有草稿，按画布保留，不自动创建会话或发送', () => {
+    useAgent.setState({ canvasId: 'c1', agent: 'builtin' })
+    useAgent.getState().chooseSkill('c1', skill(), 'builtin')
+    expect(useAgent.getState().drafts.c1?.text).toBe('检查当前画布')
+    useAgent.getState().setDraft('c1', '自己的目标')
+    useAgent.getState().chooseSkill('c1', skill('plein:workflow'), 'builtin')
+    expect(useAgent.getState().drafts.c1?.text).toBe('自己的目标')
+    expect(useAgent.getState().selectedSkills.c1?.id).toBe('plein:workflow')
+    useAgent.getState().chooseSkill('c2', skill(), 'builtin')
+    expect(useAgent.getState().selectedSkills.c2).toBeUndefined()
+    useAgent.getState().toggle(false)
+    expect(useAgent.getState().selectedSkills.c1?.id).toBe('plein:workflow')
+    expect(api.createAgentSession).not.toHaveBeenCalled()
+    expect(api.sendAgentMessage).not.toHaveBeenCalled()
+  })
+  it('发送冻结技能和选区，失败保留草稿，成功仅清理原本轮技能', async () => {
+    useAgent.setState({ canvasId: 'c1', agent: 'builtin' })
+    useAgent.getState().chooseSkill('c1', skill(), 'builtin')
+    const pending = deferred<AgentSession>()
+    const ids = ['a', 'b']
+    vi.mocked(api.createAgentSession).mockReturnValue(pending.promise)
+    vi.mocked(api.sendAgentMessage).mockRejectedValue(new Error('技能已停用'))
+    const sending = useAgent.getState().send('检查当前画布', ids)
+    ids.push('late')
+    pending.resolve(session('s1'))
+    await sending
+    expect(api.sendAgentMessage).toHaveBeenCalledWith(
+      's1',
+      '检查当前画布',
+      ['a', 'b'],
+      expect.objectContaining({ skill: 'plein:canvas-audit' }),
+    )
+    expect(useAgent.getState().selectedSkills.c1?.id).toBe('plein:canvas-audit')
+    expect(useAgent.getState().drafts.c1?.text).toBe('检查当前画布')
+    vi.mocked(api.sendAgentMessage).mockResolvedValue()
+    vi.mocked(api.agentSessions).mockResolvedValue([])
+    await useAgent.getState().send('检查当前画布', ['a'])
+    expect(useAgent.getState().selectedSkills.c1).toBeUndefined()
+    expect(useAgent.getState().drafts.c1).toBeUndefined()
+  })
+  it('逐个排除与整体排除均作用于实际消息，主动处理重新带上目标', async () => {
+    useAgent.setState({ canvasId: 'c1', session: { ...session('s1'), agent: 'builtin' } })
+    vi.mocked(api.sendAgentMessage).mockResolvedValue()
+    vi.mocked(api.agentSessions).mockResolvedValue([])
+    useAgent.getState().excludeTarget('c1', '["a","b"]', 'a')
+    await useAgent.getState().send('只处理b', ['a', 'b'])
+    expect(api.sendAgentMessage).toHaveBeenLastCalledWith(
+      's1',
+      '只处理b',
+      ['b'],
+      expect.any(Object),
+    )
+    useAgent.getState().setExcludedSelection('c1', '["a","b"]')
+    await useAgent.getState().send('不附带选区', ['a', 'b'])
+    expect(api.sendAgentMessage).toHaveBeenLastCalledWith(
+      's1',
+      '不附带选区',
+      undefined,
+      expect.any(Object),
+    )
+    useAgent.getState().ask()
+    expect(useAgent.getState().excludedTargets.c1).toBeUndefined()
+    await useAgent.getState().send('重新处理', ['a', 'b'])
+    expect(api.sendAgentMessage).toHaveBeenLastCalledWith(
+      's1',
+      '重新处理',
+      ['a', 'b'],
+      expect.any(Object),
+    )
+  })
+  it('拒绝迟到或运行中选择，不将 Codex 原生技能发送到其他智能体', async () => {
+    useAgent.setState({ canvasId: 'c1', agent: 'builtin' })
+    useAgent.getState().chooseSkill('c1', skill(), 'codex')
+    expect(useAgent.getState().selectedSkills).toEqual({})
+    useAgent.setState({ session: { ...session('s1'), status: 'running' } })
+    useAgent.getState().chooseSkill('c1', skill(), 'builtin')
+    expect(useAgent.getState().selectedSkills).toEqual({})
+    useAgent.setState({
+      session: { ...session('s1'), status: 'idle', agent: 'builtin' },
+      selectedSkills: { c1: { id: 'codex:x', name: 'x', title: 'x', source: 'codex' } },
+    })
+    await useAgent.getState().send('目标')
+    expect(api.sendAgentMessage).not.toHaveBeenCalled()
+    expect(useAgent.getState().error).toContain('仅适用于 Codex')
   })
 })
 
