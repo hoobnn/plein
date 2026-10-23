@@ -231,26 +231,6 @@ test('3D 添加菜单中的按键不删除背后的对象', async ({ page }) => 
   await expect(dialog.getByRole('button', { name: /人物 1/ })).toHaveCount(0)
 })
 
-test('3D 连续添加场景件可区分名称且不堆在同一位置', async ({ page }) => {
-  const { stage, dialog } = await openStage(page)
-  for (let i = 0; i < 2; i++) {
-    await dialog.getByRole('button', { name: '添加场景件', exact: true }).click()
-    await page.getByRole('menuitem', { name: '桌子', exact: true }).click()
-  }
-  const data = await page.evaluate((id) => {
-    return (
-      window.__plein.engine.doc.get(id)!.params!.scene as {
-        blocks: { name?: string; x: number; z: number; w: number; d: number }[]
-      }
-    ).blocks
-  }, stage.id)
-  expect(new Set(data.map((b) => b.name)).size).toBe(2)
-  const [a, b] = data
-  expect(
-    Math.abs(a!.x - b!.x) >= (a!.w + b!.w) / 2 || Math.abs(a!.z - b!.z) >= (a!.d + b!.d) / 2,
-  ).toBe(true)
-})
-
 test('3D 截图等待时关闭重开，新截图的采用不被旧请求覆盖', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))

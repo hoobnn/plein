@@ -1,4 +1,4 @@
-import { defaultStageScene, StageBlock, StageScene } from '@plein/nodes'
+import { defaultStageScene, STAGE_BLOCKS, StageBlock, StageScene } from '@plein/nodes'
 import { describe, expect, it } from 'vite-plus/test'
 import { stageObjectName, stageObjectPosition } from './placement'
 
@@ -30,6 +30,36 @@ describe('3D 新对象放置', () => {
     expect(new Set(scene.figures.map((f) => f.name)).size).toBe(12)
     expect(StageScene.safeParse(scene).success).toBe(true)
   })
+
+  it.each(STAGE_BLOCKS.map((k) => [k.label, k] as const))(
+    '连续添加两个%s时名称可区分且占地不重叠',
+    (_, kind) => {
+      const scene = defaultStageScene()
+      const [w, h, d] = kind.size
+      // 与面板添加场景件一致：默认落点在镜头前 1.5 米，名字按类型标签编号。
+      for (let i = 0; i < 2; i++) {
+        const at = stageObjectPosition(scene, { x: 0, z: -1.5, w, d })!
+        expect(at).toBeDefined()
+        scene.blocks.push(
+          StageBlock.parse({
+            id: `added-${i}`,
+            kind: kind.id,
+            name: stageObjectName(scene, kind.label),
+            ...at,
+            w,
+            h,
+            d,
+          }),
+        )
+      }
+      const [a, b] = scene.blocks
+      expect([a!.name, b!.name]).toEqual([`${kind.label} 1`, `${kind.label} 2`])
+      expect(
+        Math.abs(a!.x - b!.x) >= (a!.w + b!.w) / 2 || Math.abs(a!.z - b!.z) >= (a!.d + b!.d) / 2,
+      ).toBe(true)
+      expect(StageScene.safeParse(scene).success).toBe(true)
+    },
+  )
 
   it('旋转墙的占地以及地面边缘均参与避让', () => {
     const scene = defaultStageScene()
