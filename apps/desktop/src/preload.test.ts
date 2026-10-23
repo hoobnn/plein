@@ -24,16 +24,41 @@ beforeEach(async () => {
 })
 
 describe('桌面页面桥', () => {
+  it('React 挂载前到达的更新菜单命令会在订阅后交付一次', () => {
+    events.emit('plein:menu-command', {}, 'updates')
+    const listener = vi.fn()
+    bridge.onMenuCommand(listener)
+    expect(listener).toHaveBeenCalledExactlyOnceWith('updates')
+    const second = vi.fn()
+    bridge.onMenuCommand(second)
+    expect(second).not.toHaveBeenCalled()
+  })
+  it('启动或重建窗口时保留最后一次面板意图，不重放旧的编辑命令', () => {
+    events.emit('plein:menu-command', {}, 'updates')
+    events.emit('plein:menu-command', {}, 'settings')
+    events.emit('plein:menu-command', {}, 'undo')
+    const listener = vi.fn()
+    bridge.onMenuCommand(listener)
+    expect(listener).toHaveBeenCalledExactlyOnceWith('settings')
+  })
   it('暴露限定桥接口，原生操作转发到对应通道', async () => {
     expect(electron.expose).toHaveBeenCalledWith('pleinDesktop', expect.any(Object))
     expect(bridge.platform).toBe(process.platform)
     await bridge.nativeEdit('undo')
     await bridge.openDataDir()
     await bridge.showSavedFile('/tmp/作品.mp4')
+    await bridge.getUpdateState()
+    await bridge.checkForUpdates()
+    await bridge.downloadUpdate()
+    await bridge.installUpdate()
     expect(electron.invoke.mock.calls).toEqual([
       ['plein:native-edit', 'undo'],
       ['plein:open-data-dir'],
       ['plein:show-saved-file', '/tmp/作品.mp4'],
+      ['plein:update-state'],
+      ['plein:update-check'],
+      ['plein:update-download'],
+      ['plein:update-install'],
     ])
   })
 
@@ -57,19 +82,19 @@ describe('桌面页面桥', () => {
     const off = bridge.onMenuCommand(menu)
     bridge.onMenuCommand(second)
     const offSaved = bridge.onSaved(saved)
-    const offProgress = bridge.onUpdateProgress(progress)
+    const offProgress = bridge.onUpdateState(progress)
     events.emit('plein:menu-command', { sender: 'private' }, 'settings')
     events.emit('plein:saved', {}, { name: '作品', state: 'cancelled' })
-    events.emit('plein:update-progress', {}, null)
+    events.emit('plein:update-state', {}, { phase: 'downloading' })
     expect(menu).toHaveBeenCalledExactlyOnceWith('settings')
     expect(saved).toHaveBeenCalledExactlyOnceWith({ name: '作品', state: 'cancelled' })
-    expect(progress).toHaveBeenCalledExactlyOnceWith(null)
+    expect(progress).toHaveBeenCalledExactlyOnceWith({ phase: 'downloading' })
     off()
     offSaved()
     offProgress()
     events.emit('plein:menu-command', {}, 'redo')
     events.emit('plein:saved', {}, {})
-    events.emit('plein:update-progress', {}, {})
+    events.emit('plein:update-state', {}, {})
     expect(menu).toHaveBeenCalledTimes(1)
     expect(second).toHaveBeenLastCalledWith('redo')
     expect(saved).toHaveBeenCalledTimes(1)

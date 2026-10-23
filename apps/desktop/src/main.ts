@@ -9,6 +9,7 @@ import { initializeProfile, profileIdentity, profileWindowChrome, readProfile } 
 import { readPrefs, writePrefs } from './prefs'
 import { type ServerHandle, startServer } from './server'
 import { setupUpdater } from './updater'
+import { waitForWeb } from './web-ready'
 import { restoreWindowState, trackWindowState } from './window-state'
 
 const DESKTOP_COOKIE = 'plein_desktop'
@@ -19,6 +20,7 @@ let server: ServerHandle | null = null
 let window: BrowserWindow | null = null
 let quitting = false
 let lastCrash = 0
+let updateInstallationConfirmed = () => false
 
 const activity = new Activity(() => window, openNode)
 
@@ -110,19 +112,6 @@ function createWindow(url: string) {
   return win
 }
 
-/** 开发模式下 Vite 和桌面端一起启动，等 Vite 就绪再打开窗口 */
-async function waitFor(url: string, timeoutMs = 30_000) {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    const ok = await fetch(url).then(
-      (r) => r.ok,
-      () => false,
-    )
-    if (ok) return
-    await new Promise((r) => setTimeout(r, 300))
-  }
-}
-
 async function boot() {
   app.dock?.setIcon(appIconPath())
   app.setAboutPanelOptions({
@@ -131,7 +120,40 @@ async function boot() {
     credits: '开源 AI 无限画布，让故事在这里展开',
     iconPath: appIconPath(),
   })
-  installMenu(showWindow, setupUpdater(() => window).check)
+  const updater = setupUpdater(() => window, confirmUpdateInstall)
+  updateInstallationConfirmed = () => updater.installationRequested
+  installMenu(
+    showWindow,
+    updater.check
+      ? () => {
+          const win = showWindow()
+          if (!win) return
+          if (win.webContents.isLoadingMainFrame()) {
+            win.webContents.once('did-finish-load', () => {
+              if (!win.isDestroyed()) updater.check?.()
+            })
+          } else updater.check?.()
+        }
+      : null,
+  )
+  // 更新操作只接受当前主页面；页面重载或窗口重建后先读取主进程快照。
+  const updateHandlers = {
+    'plein:update-state': () => updater.getState(),
+    'plein:update-check': () => updater.checkForUpdates(),
+    'plein:update-download': () => updater.download(),
+    'plein:update-install': () => updater.install(),
+  }
+  for (const [channel, handle] of Object.entries(updateHandlers)) {
+    ipcMain.handle(channel, (event) => {
+      if (
+        !window ||
+        event.sender !== window.webContents ||
+        event.senderFrame !== window.webContents.mainFrame
+      )
+        throw new Error('更新操作仅限当前主窗口')
+      return handle()
+    })
+  }
   const dir = dataDir()
   ipcMain.handle('plein:native-edit', (event, action: unknown) => {
     if (
@@ -186,7 +208,7 @@ async function launchServer() {
   server.onExit((code) => void crashed(code))
 
   const url = pageUrl()
-  if (isDev) await waitFor(url)
+  if (isDev) await waitForWeb(url)
   // 令牌只放在本次会话的 Cookie 里，不落盘，也不出现在地址栏
   await session.defaultSession.cookies.set({
     url,
@@ -245,7 +267,7 @@ app.on('before-quit', (e) => {
   if (quitting || !server) return
   e.preventDefault()
   if (confirming) return
-  if (activity.pending) {
+  if (activity.pending && !updateInstallationConfirmed()) {
     confirming = true
     void confirmQuit(activity.pending).then((ok) => {
       confirming = false
@@ -260,6 +282,18 @@ function stop() {
   quitting = true
   activity.reset()
   void server!.stop().finally(() => app.quit())
+}
+
+/** 原生 quitAndInstall 会先销毁窗口，任务确认必须发生在调用它之前。 */
+async function confirmUpdateInstall() {
+  if (quitting || confirming) return false
+  if (!activity.pending) return true
+  confirming = true
+  try {
+    return await confirmQuit(activity.pending)
+  } finally {
+    confirming = false
+  }
 }
 
 async function confirmQuit(pending: number) {

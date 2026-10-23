@@ -12,5 +12,13 @@ contextBridge.exposeInMainWorld('pleinDesktop', {
   onOpenNode: () => () => {},
   onSaved: () => () => {},
   showSavedFile: async () => {},
-  onUpdateProgress: () => () => {},
+  getUpdateState: async () => ({
+    phase: 'unavailable',
+    currentVersion: 'contract',
+    reason: '原生编辑合同不检查更新',
+  }),
+  checkForUpdates: async () => {},
+  downloadUpdate: async () => {},
+  installUpdate: async () => {},
+  onUpdateState: () => () => {},
 })

@@ -17,10 +17,19 @@ import { LocalClis } from '../agent/LocalClis'
 import { useAgent } from '../agent/store'
 import { SkillBrowser } from '../agent/AgentSkills'
 import { SlidePill, SlideSwap } from '../../ui/Slide'
+import { UpdateContent } from '../../shell/DesktopUpdates'
 
 export { ProviderRow } from './ProviderSettings'
 
-export type Section = 'appearance' | 'providers' | 'local' | 'mcp' | 'plugins' | 'skills' | 'data'
+export type Section =
+  | 'appearance'
+  | 'providers'
+  | 'local'
+  | 'mcp'
+  | 'plugins'
+  | 'skills'
+  | 'data'
+  | 'updates'
 
 /** 设置：左侧分区导航，右侧当前分区 */
 export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?: Section }) {
@@ -30,14 +39,6 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
   useEffect(() => {
     void load()
   }, [load])
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   const { data: externalMcp } = useQuery({
     queryKey: queryKeys.mcpExternal,
     queryFn: api.externalMcp,
@@ -64,6 +65,7 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
     ...(externalMcp ? [{ id: 'mcp' as const, label: 'MCP', icon: 'plug' as const }] : []),
     { id: 'plugins', label: '插件', icon: 'puzzle', badge: plugins.length },
     { id: 'data' as const, label: '数据', icon: 'folder' as const },
+    ...(desktop ? [{ id: 'updates' as const, label: '应用更新', icon: 'download' as const }] : []),
   ]
   const current = sections.find((s) => s.id === section) ?? sections[0]!
 
@@ -177,6 +179,7 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
               </Group>
             )}
             {current.id === 'data' && <DataMaintenance />}
+            {current.id === 'updates' && <UpdateContent />}
             {current.id === 'data' && desktop && (
               <Group title="数据目录" hint="画布、素材和平台密钥都保存在本机的数据目录里">
                 <div>

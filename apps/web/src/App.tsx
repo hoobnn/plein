@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { desktop } from './desktop'
 import { useAgent } from './features/agent/store'
 import { DesktopEvents } from './shell/DesktopEvents'
+import { useUpdate } from './shell/desktopUpdateState'
 import type { Section } from './features/settings/Settings'
 import { DialogHost } from './ui/Dialog'
 import { TooltipHost } from './ui/Tooltip'
@@ -79,6 +80,10 @@ export function App() {
       desktop?.onMenuCommand((command) => {
         if (command === 'settings') {
           setSettings(undefined)
+          return
+        }
+        if (command === 'updates') {
+          useUpdate.setState({ open: true })
           return
         }
         const engine = useCanvas.getState().engine

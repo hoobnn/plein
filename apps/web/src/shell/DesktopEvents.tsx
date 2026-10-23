@@ -1,11 +1,14 @@
-import type { DesktopOpenNode, DesktopSaved, DesktopUpdateProgress } from '@plein/protocol'
-import { useEffect, useState } from 'react'
+import type { DesktopOpenNode, DesktopSaved } from '@plein/protocol'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { desktop } from '../desktop'
 import { navigate } from '../router'
 import { switchMode, useCanvas } from '../stores/canvas'
-import { bytes } from '../ui/format'
 import { Presence } from '../ui/Presence'
 import { Toast } from '../ui/Toast'
+
+const DesktopUpdates = lazy(() =>
+  import('./DesktopUpdates').then((m) => ({ default: m.DesktopUpdates })),
+)
 
 /** 等画布和节点都加载好再定位，最多等这么久 */
 const REVEAL_TIMEOUT_MS = 10_000
@@ -27,12 +30,10 @@ export function revealNode({ canvasId, nodeId }: DesktopOpenNode) {
   tick()
 }
 
-/** 桌面端主进程发来的事件：点通知定位节点、另存为结束后提示并可在访达中显示、更新下载进度 */
+/** 桌面端主进程发来的事件：点通知定位节点、文件保存结果和应用更新。 */
 export function DesktopEvents() {
   const [saved, setSaved] = useState<DesktopSaved | null>(null)
-  const [update, setUpdate] = useState<DesktopUpdateProgress | null>(null)
   useEffect(() => desktop?.onOpenNode(revealNode), [])
-  useEffect(() => desktop?.onUpdateProgress(setUpdate), [])
   useEffect(
     () =>
       desktop?.onSaved((s) => {
@@ -49,61 +50,32 @@ export function DesktopEvents() {
 
   const path = saved?.savePath
   return (
-    <Presence>
-      {saved ? (
-        <Toast
-          action={
-            path && (
-              <button
-                type="button"
-                className="ui-btn ui-btn-quiet ui-btn-sm"
-                onClick={() => {
-                  void desktop?.showSavedFile(path)
-                  setSaved(null)
-                }}
-              >
-                {desktop.platform === 'darwin' ? '在访达中显示' : '在文件夹中显示'}
-              </button>
-            )
-          }
-        >
-          {saved.state === 'completed' ? `已保存「${saved.name}」` : `「${saved.name}」保存失败`}
-        </Toast>
-      ) : (
-        update && <UpdateProgress progress={update} />
-      )}
-    </Presence>
-  )
-}
-
-/** 更新包下载中：进度条、已下载 / 总大小和速度；下载完由主进程弹窗提示重启 */
-function UpdateProgress({ progress }: { progress: DesktopUpdateProgress }) {
-  const { version, percent, transferred, total, bytesPerSecond } = progress
-  return (
-    <Toast>
-      <div className="flex w-72 flex-col gap-1.5 py-0.5">
-        <p className="flex items-baseline justify-between gap-3">
-          <span className="truncate">
-            {version ? `正在下载新版本 ${version}` : '正在下载新版本'}
-          </span>
-          <span className="shrink-0 font-medium tabular-nums">{Math.floor(percent)}%</span>
-        </p>
-        <span
-          className="ui-run-step-bar"
-          role="progressbar"
-          aria-label="更新下载进度"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.floor(percent)}
-          style={{ background: 'color-mix(in srgb, var(--accent) 22%, transparent)' }}
-        >
-          <i style={{ width: `${Math.max(2, percent)}%` }} />
-        </span>
-        <p className="flex justify-between gap-3 text-xs text-ink-subtle tabular-nums">
-          <span>{total > 0 ? `${bytes(transferred)} / ${bytes(total)}` : bytes(transferred)}</span>
-          <span>{`${bytes(bytesPerSecond)}/s`}</span>
-        </p>
-      </div>
-    </Toast>
+    <>
+      <Suspense fallback={null}>
+        <DesktopUpdates />
+      </Suspense>
+      <Presence>
+        {saved ? (
+          <Toast
+            action={
+              path && (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-quiet ui-btn-sm"
+                  onClick={() => {
+                    void desktop?.showSavedFile(path)
+                    setSaved(null)
+                  }}
+                >
+                  {desktop.platform === 'darwin' ? '在访达中显示' : '在文件夹中显示'}
+                </button>
+              )
+            }
+          >
+            {saved.state === 'completed' ? `已保存「${saved.name}」` : `「${saved.name}」保存失败`}
+          </Toast>
+        ) : null}
+      </Presence>
+    </>
   )
 }

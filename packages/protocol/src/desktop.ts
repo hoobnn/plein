@@ -34,7 +34,7 @@ export type RunActivity =
 
 /** 桌面端 preload 暴露给页面的原生能力；浏览器里不存在（window.pleinDesktop 为 undefined） */
 export type DesktopEditCommand = 'undo' | 'redo' | 'selectAll'
-export type DesktopMenuCommand = DesktopEditCommand | 'settings'
+export type DesktopMenuCommand = DesktopEditCommand | 'settings' | 'updates'
 
 /** 系统通知被点击：打开画布并定位到节点 */
 export interface DesktopOpenNode {
@@ -59,6 +59,25 @@ export interface DesktopUpdateProgress {
   bytesPerSecond: number
 }
 
+/** 来自更新源的版本说明；GitHub feed 提供 HTML，generic feed 也可提供 Markdown。 */
+export interface DesktopUpdateRelease {
+  version: string
+  name?: string
+  date?: string
+  notes: Array<{ version: string; note: string }>
+}
+
+/** 主进程持有完整快照，页面重新加载后仍能恢复更新状态。 */
+export interface DesktopUpdateState {
+  phase: 'unavailable' | 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error'
+  currentVersion: string
+  release?: DesktopUpdateRelease
+  progress?: DesktopUpdateProgress
+  checkedAt?: number
+  error?: { operation: 'check' | 'download' | 'install'; message: string }
+  reason?: string
+}
+
 export interface DesktopBridge {
   platform: string
   onMenuCommand(listener: (command: DesktopMenuCommand) => void): () => void
@@ -71,6 +90,9 @@ export interface DesktopBridge {
   onSaved(listener: (saved: DesktopSaved) => void): () => void
   /** 在访达 / 资源管理器里显示刚保存的文件；只接受本次运行中保存过的路径 */
   showSavedFile(path: string): Promise<void>
-  /** 更新包下载中持续推送进度，下载结束（成功或失败）推送 null */
-  onUpdateProgress(listener: (progress: DesktopUpdateProgress | null) => void): () => void
+  getUpdateState(): Promise<DesktopUpdateState>
+  checkForUpdates(): Promise<void>
+  downloadUpdate(): Promise<void>
+  installUpdate(): Promise<void>
+  onUpdateState(listener: (state: DesktopUpdateState) => void): () => void
 }
