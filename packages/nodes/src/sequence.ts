@@ -209,7 +209,12 @@ type MediaValue = Extract<PortValue, { assetId: string }>
 const media = (values: PortValue[] | undefined) =>
   (values ?? []).filter((v): v is MediaValue => 'assetId' in v)
 
-const asset = (v: MediaValue): AssetRef => ({ assetId: v.assetId, kind: v.kind, mime: v.mime })
+const asset = (v: MediaValue): AssetRef => ({
+  assetId: v.assetId,
+  kind: v.kind,
+  mime: v.mime,
+  ...(v.compositionSource ? { compositionSource: v.compositionSource } : {}),
+})
 
 export interface ArrangedClip {
   clipInstanceId?: string

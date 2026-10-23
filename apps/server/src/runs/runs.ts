@@ -5,6 +5,7 @@ import {
   type VideoMode,
   isAiAnalysisType,
   AI_ANALYSIS_LIMITS,
+  MOTION_TYPE,
   SEQUENCE_TYPE,
   sequenceNode,
   corePlugin,
@@ -46,6 +47,7 @@ import {
 import { FlowGraph, runDag, type StepOutcome, stableStringify } from '@plein/flow'
 import {
   executionOf,
+  CompositionSourceRef,
   type NodeDefinition,
   type NodeOutputs,
   nodeKey,
@@ -166,6 +168,7 @@ function toPortValue(v: ResultValue): PortValue {
   if (v.type === 'text' || v.type === 'json') return v
   const out: PortValue = { type: v.type, assetId: v.assetId, kind: v.type, mime: v.mime }
   if (v.caption) out.caption = v.caption
+  if (v.compositionSource) out.compositionSource = v.compositionSource
   return out
 }
 
@@ -174,6 +177,7 @@ function toResultValue(v: PortValue): ResultValue {
   if (v.type === 'json') return { type: 'json', value: v.value }
   const out: ResultValue = { type: v.type, assetId: v.assetId, mime: v.mime }
   if (v.caption) out.caption = v.caption
+  if (v.compositionSource) out.compositionSource = v.compositionSource
   return out
 }
 
@@ -1519,8 +1523,21 @@ export class NodeRuns implements BatchHost {
           this.store.updateBatchItem(g.id, nodeId, { outcome: 'failed', reason: '节点已删除' })
           return 'failed'
         }
-        // 重启后继续：这次整组里已经成功的不再跑
-        if (this.store.succeededInGroup(g.id, nodeId)) return 'succeeded'
+        const requireReview = (resultId?: string): StepOutcome => {
+          this.store.updateBatchItem(g.id, nodeId, {
+            outcome: 'review',
+            reason: '动态合成候选尚未采用，请审看并采用后再运行下游',
+            ...(resultId ? { result_id: resultId } : {}),
+          })
+          return 'failed'
+        }
+        // 重启后成功的渲染仍可能是待审候选，不能把旧采用项放行到下游。
+        const completed = this.store.succeededInGroup(g.id, nodeId)
+        if (completed) {
+          if (el.nodeType === MOTION_TYPE && currentResult(el)?.runId !== completed.id)
+            return requireReview(parseRecovery(completed.recovery).resultIds?.[0])
+          return 'succeeded'
+        }
         let jobId = this.active.get(this.key(g.canvas_id, nodeId))?.id
         if (options.candidateOnly && jobId && this.store.get(jobId)?.group_id !== g.id) {
           this.store.updateBatchItem(g.id, nodeId, {
@@ -1548,6 +1565,7 @@ export class NodeRuns implements BatchHost {
             const now = await this.inspect(doc, el, g.owner_id, ctrl.signal, g.canvas_id)
             const hit = this.cachedCandidate(el, now)
             if (hit) {
+              if (el.nodeType === MOTION_TYPE) return requireReview(hit)
               if (!options.candidateOnly) adoptResult(doc, nodeId, hit)
               settle(nodeId, 'cached', hit)
               return 'cached'
@@ -1578,7 +1596,11 @@ export class NodeRuns implements BatchHost {
             ? (parseRecovery(job?.recovery).resultIds?.[0] ?? (now && currentResult(now)?.id))
             : undefined,
         )
-        if (status === 'succeeded') return 'succeeded'
+        if (status === 'succeeded') {
+          if (now?.nodeType === MOTION_TYPE && currentResult(now)?.runId !== jobId)
+            return requireReview(parseRecovery(job?.recovery).resultIds?.[0])
+          return 'succeeded'
+        }
         return status === 'canceled' ? 'canceled' : 'failed'
       }
       // @ 引用带来的依赖是软的：参考图出不来（比如被平台审核拦下）时，镜头只带文字设定照常出
@@ -1598,10 +1620,12 @@ export class NodeRuns implements BatchHost {
         if (this.store.batchItem(g.id, id)?.outcome === 'pending')
           this.store.updateBatchItem(g.id, id, { outcome: 'canceled' })
       const status = ctrl.signal.aborted ? 'canceled' : 'done'
+      const review = this.store.batchItems(g.id).filter((item) => item.outcome === 'review').length
       const summary = {
         succeeded: r.succeeded.length,
         cached: r.cached.length,
-        failed: r.failed.length,
+        failed: Math.max(0, r.failed.length - review),
+        ...(review ? { review } : {}),
         canceled: r.canceled.length,
         skipped: r.skipped.length,
       }
@@ -1896,6 +1920,7 @@ export class NodeRuns implements BatchHost {
     if (el.nodeType === SEQUENCE_TYPE && !frozen && (row?.attempts ?? 0) > 1)
       throw reviewError('旧序列任务缺少冻结输入，不能从当前序列猜测原版本')
     // Local job executors have no provider journal; their frozen inputs still define recovery.
+    // 动态合成也是本地 job，它的冻结输入同样决定恢复时用的是哪一版参数。
     const frozenLocalJob = def?.execution === 'job' && !def.capability
     const frozenAiRecovery =
       isAiAnalysisType(el.nodeType) &&
@@ -2074,7 +2099,9 @@ export class NodeRuns implements BatchHost {
       )
     }
     const group = a.groupId ? this.store.group(a.groupId) : undefined
-    const candidateOnly = group && (JSON.parse(group.options) as StoredGroupOptions).candidateOnly
+    const candidateOnly =
+      el.nodeType === MOTION_TYPE ||
+      (group && (JSON.parse(group.options) as StoredGroupOptions).candidateOnly)
     const held =
       (await this.heldReason(doc, a, el, frozen.inputHash, row?.created_at ?? 0, signal)) ??
       (candidateOnly ? 'candidate_only' : undefined)
@@ -2315,6 +2342,9 @@ export class NodeRuns implements BatchHost {
       CACHE_KEY_VERSION +
       this.hashKey(el, p, omit, NOT_CONTENT, {
         model: model ? { ref: model.ref, version: model.version, plugin: model.plugin } : null,
+        ...(el.nodeType === MOTION_TYPE
+          ? { renderer: this.host.compositionRendererIdentity() }
+          : {}),
       })
     )
   }
@@ -2479,8 +2509,21 @@ export class NodeRuns implements BatchHost {
         return src.text?.trim() ? [{ type: 'text', text: src.text }] : []
       case 'image':
       case 'video':
-      case 'audio':
-        return src.assetId ? [{ type: src.kind, assetId: src.assetId, kind: src.kind }] : []
+      case 'audio': {
+        const source = CompositionSourceRef.safeParse(src.params?.compositionSource)
+        if (src.params?.compositionSource !== undefined && !source.success)
+          throw new NodeRunError('invalid_input', '素材的动态合成来源不合法')
+        return src.assetId
+          ? [
+              {
+                type: src.kind,
+                assetId: src.assetId,
+                kind: src.kind,
+                ...(source.success ? { compositionSource: source.data } : {}),
+              },
+            ]
+          : []
+      }
       case 'node': {
         const r = currentResult(src, port)
         if (r) return [toPortValue(r.value)]

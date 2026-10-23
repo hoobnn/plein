@@ -31,6 +31,7 @@ import { newCanvasId } from '../storage/canvases'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { checkpointAssetIds, type CheckpointRow } from './archive'
+import { compositionReferences } from '../media-index/references'
 
 const id = (prefix: string) => `${prefix}_${randomBytes(12).toString('base64url')}`
 const sha = (state: Uint8Array) => createHash('sha256').update(state).digest('hex')
@@ -91,6 +92,20 @@ export class CheckpointService {
     }
   }
 
+  private checkCompositionSources(owner: string, doc: ReturnType<typeof createDoc>) {
+    try {
+      for (const assetId of compositionReferences(doc)) {
+        if (
+          !this.deps.assets.get(owner, assetId) ||
+          !existsSync(this.deps.assets.originalPath(assetId))
+        )
+          throw new Error('missing')
+      }
+    } catch {
+      throw new CheckpointError('invalid', '动态合成源工程信息无效或依赖缺失，无法保存或恢复检查点')
+    }
+  }
+
   create(owner: string, canvasId: string, request: CreateCheckpoint): CanvasCheckpoint {
     const canvas = this.db
       .prepare('SELECT project_id,title FROM canvases WHERE id=? AND owner_id=?')
@@ -114,6 +129,7 @@ export class CheckpointService {
       doc = createDoc(copy, { schedule: () => {} })
       if (doc.readOnly)
         throw new CheckpointError('unsupported_version', '请升级 Plein 后再保存这张画布的检查点')
+      this.checkCompositionSources(owner, doc)
       const runIds = new Set<string>()
       copy.transact(() => {
         for (const el of doc!.elements()) {
@@ -255,6 +271,7 @@ export class CheckpointService {
       doc = createDoc(ydoc, { schedule: () => {} })
       if (doc.readOnly)
         throw new CheckpointError('unsupported_version', '请升级 Plein 后再恢复这个检查点')
+      this.checkCompositionSources(owner, doc)
       const history = JSON.parse(row.history) as PackageJob[]
       const remap = new Map<string, string>()
       const canvasId = newCanvasId()

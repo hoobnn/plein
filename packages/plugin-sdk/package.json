@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./child": "./src/child.ts"
+    "./child": "./src/child.ts",
+    "./ports": "./src/ports.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."

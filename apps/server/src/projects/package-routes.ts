@@ -23,13 +23,19 @@ export function packageRoutes(deps: PackageDeps) {
   const candidates = (history: string | undefined) => (history === '1' ? 'all' : 'current')
   return new Hono<AuthEnv>()
     .get('/api/projects/:id/package/summary', async (c) => {
-      const summary = await packageSummary(
-        deps,
-        c.var.principal.id,
-        c.req.param('id'),
-        candidates(c.req.query('history')),
-      )
-      return summary ? c.json(summary) : c.json(notFound, 404)
+      try {
+        const summary = await packageSummary(
+          deps,
+          c.var.principal.id,
+          c.req.param('id'),
+          candidates(c.req.query('history')),
+        )
+        return summary ? c.json(summary) : c.json(notFound, 404)
+      } catch (error) {
+        if (error instanceof PackageError)
+          return c.json({ error: error.code, message: error.message }, 422)
+        throw error
+      }
     })
     .get('/api/projects/:id/package', async (c) => {
       try {
@@ -50,6 +56,8 @@ export function packageRoutes(deps: PackageDeps) {
           },
         })
       } catch (err) {
+        if (err instanceof PackageError)
+          return c.json({ error: err.code, message: err.message }, 422)
         if (err instanceof PackageTooLargeError)
           return c.json({ error: 'too_large', message: err.message }, 413)
         throw err

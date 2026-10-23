@@ -1,3 +1,4 @@
+import { CompositionSourceRef } from '@plein/plugin-sdk'
 import { z } from 'zod'
 
 /**
@@ -136,6 +137,8 @@ const libraryFields = {
     .regex(/^[0-9a-f]{64}$/)
     .nullable()
     .default(null),
+  /** 参考视频冻结的可编辑来源；必须与 video 一起保留。 */
+  videoCompositionSource: CompositionSourceRef.nullable().optional(),
   /** 适配模型（展示用，如 Seedance 2.0、Kling 3.0） */
   models: z.array(z.string().trim().min(1).max(60)).max(12).default([]),
   /** 角色档案（时期 / 服饰 / 表情 / 次音色），只有角色用 */
@@ -145,7 +148,12 @@ const libraryFields = {
   coverAssetId: libraryAssetId.nullable().optional(),
 }
 
-export const CreateLibraryItem = z.object({ kind: LibraryKind, ...libraryFields })
+export const CreateLibraryItem = z
+  .object({ kind: LibraryKind, ...libraryFields })
+  .refine((item) => !item.videoCompositionSource || item.video !== null, {
+    path: ['videoCompositionSource'],
+    message: '可编辑来源必须绑定参考视频',
+  })
 export type CreateLibraryItem = z.input<typeof CreateLibraryItem>
 
 /** 部分更新；kind 不能改 */
@@ -161,6 +169,8 @@ export const UpdateLibraryItem = z
       .string()
       .regex(/^[0-9a-f]{64}$/)
       .nullable(),
+    /** null 显式移除；更换 video 时未传此字段也会清除旧来源。 */
+    videoCompositionSource: CompositionSourceRef.nullable(),
     models: z.array(z.string().trim().min(1).max(60)).max(12),
     profile: LibraryProfile.nullable(),
     sceneViews: LibrarySceneViews,
@@ -180,6 +190,7 @@ export interface LibraryItem {
   voice: { provider: string; voiceId: string } | null
   images: LibraryImage[]
   video: string | null
+  videoCompositionSource?: CompositionSourceRef
   models: string[]
   profile: LibraryProfile | null
   sceneViews?: LibrarySceneView[]

@@ -6,6 +6,7 @@ import { Readable } from 'node:stream'
 import {
   type AssetRef,
   Capability,
+  CompositionSourceRef,
   type CapabilityInput,
   type ComposeSpec,
   type ExecutorContext,
@@ -38,8 +39,11 @@ import { composeVideo } from '../assets/compose'
 import { analyzeVideo } from '../assets/shot-analysis'
 import { checkVideo } from '../assets/delivery-check'
 import { DELIVERY_CHECK_LIMITS } from '@plein/nodes'
-import { hasFfmpeg, probeMedia, withMediaAbort } from '../assets/media'
+import { hasFfmpeg, probeMedia, mediaToolPaths, withMediaAbort } from '../assets/media'
 import { SHOT_ANALYSIS_LIMITS } from '@plein/nodes'
+import { MotionParams } from '@plein/nodes'
+import { renderMotion } from '../motion/render'
+import { motionChromePath, motionRendererIdentity } from '../motion/identity'
 import type { AssetStore } from '../assets/store'
 import type { OutputSpoolRef, SpoolBinding } from '../assets/output-spool'
 import type { ProviderConfigStore } from './config-store'
@@ -1064,6 +1068,18 @@ export class PluginHost {
       for (const v of values) {
         if (!portAccepts(spec.type, v.type))
           throw new NodeRunError('invalid_output', `输出 ${spec.label} 不应为 ${v.type}`)
+        if ('assetId' in v && v.compositionSource) {
+          const parsed = CompositionSourceRef.safeParse(v.compositionSource)
+          if (!parsed.success) throw new NodeRunError('invalid_output', '动态合成来源不合法')
+          for (const id of [
+            parsed.data.bundleAssetId,
+            parsed.data.manifestAssetId,
+            ...parsed.data.dependencyAssetIds,
+          ])
+            if (!this.assets.get(opts.ownerId, id))
+              throw new NodeRunError('invalid_output', '动态合成来源缺失或不可访问')
+          v.compositionSource = parsed.data
+        }
       }
     }
     return outputs
@@ -1115,6 +1131,8 @@ export class PluginHost {
         read: (ref) => this.readAsset(manifest, ownerId, ref),
       },
       media: {
+        renderComposition: (spec) =>
+          this.renderComposition(manifest, ownerId, spec, signal, opts.onProgress),
         probe: (ref) => this.probe(manifest, ownerId, ref),
         checkVideo: async (ref, request) => {
           const localSignal = AbortSignal.any([
@@ -1151,6 +1169,87 @@ export class PluginHost {
             opts.onProgress?.(Math.min(1, Math.max(0, f))),
           ),
       },
+    }
+  }
+
+  compositionRendererIdentity(): string {
+    return motionRendererIdentity(mediaToolPaths(), motionChromePath())
+  }
+
+  private async renderComposition(
+    manifest: PluginManifest,
+    ownerId: string,
+    spec: { params: Record<string, unknown>; image?: AssetRef; video?: AssetRef },
+    signal: AbortSignal,
+    onProgress?: (fraction: number) => void,
+  ): Promise<AssetRef> {
+    if (
+      manifest.id !== 'plein/core' ||
+      !manifest.permissions.media ||
+      manifest.permissions.assets !== 'write'
+    )
+      throw new PermissionError('只有内置动态合成可以启动本地渲染器')
+    const parsed = MotionParams.safeParse(spec.params)
+    if (!parsed.success)
+      throw new ProviderError('invalid_input', '动态合成参数不合法', { retryable: false })
+    const inputs: import('../motion/render').MotionInputs = {}
+    for (const kind of ['image', 'video'] as const) {
+      const ref = spec[kind]
+      if (!ref) continue
+      const asset = this.assets.get(ownerId, ref.assetId)
+      if (!asset || asset.kind !== kind)
+        throw new ProviderError(
+          'invalid_input',
+          `动态合成${kind === 'image' ? '图片' : '视频'}不存在`,
+        )
+      await this.assets.verifyOriginal(ownerId, asset.id)
+      inputs[kind] = {
+        assetId: asset.id,
+        path: this.assets.originalPath(asset.id),
+        mime: asset.mime,
+      }
+    }
+    const dir = await this.assets.tempDir()
+    try {
+      const out = await renderMotion(parsed.data, inputs, dir, {
+        ...mediaToolPaths(),
+        signal,
+        chromePath: motionChromePath(),
+        progress: (event) => onProgress?.(event.percent / 100),
+      })
+      signal.throwIfAborted()
+      const bundle = await this.assets.ingest(ownerId, Readable.from([out.sourceZip]), {
+        mime: 'application/zip',
+        name: '动态合成源工程.zip',
+      })
+      const sourceManifest = await this.assets.ingest(
+        ownerId,
+        Readable.from([Buffer.from(JSON.stringify(out.manifest))]),
+        { mime: 'application/json', name: '动态合成来源.json' },
+      )
+      signal.throwIfAborted()
+      const video = await this.assets.ingest(ownerId, createReadStream(out.outputPath), {
+        mime: 'video/mp4',
+        name: `${parsed.data.title || '动态合成'}.mp4`,
+      })
+      return {
+        assetId: video.id,
+        kind: video.kind,
+        mime: video.mime,
+        compositionSource: {
+          version: 1,
+          bundleAssetId: bundle.id,
+          manifestAssetId: sourceManifest.id,
+          dependencyAssetIds: out.manifest.dependencyAssetIds,
+          rendererIdentity: out.identity,
+        },
+      }
+    } catch (error) {
+      if (signal.aborted) throw new ProviderError('cancelled', '已取消动态合成')
+      if (error instanceof ProviderError) throw error
+      throw new ProviderError('unavailable', (error as Error).message, { retryable: false })
+    } finally {
+      await rm(dir, { recursive: true, force: true })
     }
   }
 

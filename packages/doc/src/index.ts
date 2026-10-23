@@ -26,3 +26,5 @@ export * from './continuity'
 export * from './video-segment'
 export * from './sequence-instances'
 export { snapshotTypedDeliveries } from './sequence-snapshot'
+
+export * from './composition'

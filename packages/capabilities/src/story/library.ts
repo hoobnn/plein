@@ -1,3 +1,4 @@
+import { CompositionSourceRef } from '@plein/plugin-sdk'
 import {
   type CanvasElement,
   connect,
@@ -34,6 +35,7 @@ export const REF_COL_GAP = 80
 export interface CardRef {
   kind: 'image' | 'video'
   assetId: string
+  compositionSource?: CompositionSourceRef
   name?: string
   width?: number
   height?: number
@@ -88,6 +90,7 @@ export function addCardWithRefs(
     const ref = createElement(doc, {
       kind: r.kind,
       assetId: r.assetId,
+      ...(r.compositionSource ? { params: { compositionSource: r.compositionSource } } : {}),
       name: r.name,
       x: at.x - REF_COL_GAP - REF_W,
       y: Math.round(y),
@@ -102,14 +105,28 @@ export function addCardWithRefs(
   return { id, loose }
 }
 
-/** 卡片连入 references 的素材：素材元素或上游节点当前采用的结果 */
-export function referenceAssets(doc: PleinDoc, el: CanvasElement, type: 'image' | 'video') {
+/** 卡片连入的精确素材与冻结来源；同一视频的不同源版本不能只按 assetId 合并。 */
+export function referenceMedia(doc: PleinDoc, el: CanvasElement, type: 'image' | 'video') {
   return inputEdges(doc, el.id, 'references').flatMap((e) => {
     const src = doc.get(e.from[0])
-    if (src?.kind === type && src.assetId) return [src.assetId]
-    const r = src?.kind === 'node' ? currentResult(src, e.from[1])?.value : undefined
-    return r?.type === type ? [r.assetId] : []
+    const value =
+      src?.kind === type && src.assetId
+        ? { assetId: src.assetId, compositionSource: src.params?.compositionSource }
+        : src?.kind === 'node'
+          ? currentResult(src, e.from[1])?.value
+          : undefined
+    if (!value || !('assetId' in value) || ('type' in value && value.type !== type)) return []
+    const compositionSource =
+      type === 'video' && value.compositionSource !== undefined
+        ? CompositionSourceRef.parse(value.compositionSource)
+        : undefined
+    return [{ assetId: value.assetId, ...(compositionSource ? { compositionSource } : {}) }]
   })
+}
+
+/** 卡片连入 references 的素材：素材元素或上游节点当前采用的结果。 */
+export function referenceAssets(doc: PleinDoc, el: CanvasElement, type: 'image' | 'video') {
+  return referenceMedia(doc, el, type).map((value) => value.assetId)
 }
 
 /** 卡片当前内容，整理成资产库条目；不是资产卡时返回 null */
@@ -117,7 +134,7 @@ export function cardSnapshot(doc: PleinDoc, el: CanvasElement, projectId: string
   const kind: LibraryKindSpec | undefined = libraryKindOfNode(el.nodeType)
   if (!kind) return null
   const images = slotImages(kind, referenceAssets(doc, el, 'image'))
-  const videos = kind.video ? referenceAssets(doc, el, 'video') : []
+  const videos = kind.video ? referenceMedia(doc, el, 'video') : []
   const voice = kind.voice ? voiceOf(el.params) : null
   const name = (el.name ?? kind.title).trim().slice(0, 60) || kind.title
   const description = String(el.params?.description ?? '')
@@ -132,7 +149,10 @@ export function cardSnapshot(doc: PleinDoc, el: CanvasElement, projectId: string
       // 角色的性别、年龄段从设定里看出来，资产库里按它筛选
       tags: kind.id === 'character' ? characterTags(name, description) : {},
       images,
-      video: videos[0] ?? null,
+      video: videos[0]?.assetId ?? null,
+      ...(videos[0]?.compositionSource
+        ? { videoCompositionSource: videos[0].compositionSource }
+        : {}),
       voice: voice?.voiceId ? voice : null,
       profile: profile && !profileEmpty(profile) ? profile : null,
       ...(kind.id === 'scene' ? { sceneViews: sceneViewsOf(el.params?.sceneViews) } : {}),

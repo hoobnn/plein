@@ -17,6 +17,7 @@ import {
   speechNode,
   StoryboardDraft,
   stageNode,
+  motionNode,
   storyboardNode,
   styleNode,
   textNode,
@@ -301,6 +302,16 @@ const effect = defineExecutor(effectNode, async ({ inputs }) => ({
  */
 const stage = defineExecutor(stageNode, async () => ({ image: [] }))
 
+const motion = defineExecutor(motionNode, async (ctx) => {
+  const [image] = inputAssets(ctx.inputs, 'image')
+  const [video] = inputAssets(ctx.inputs, 'video')
+  ctx.progress(0, '准备动态合成…')
+  if (!ctx.media.renderComposition)
+    throw new ProviderError('unavailable', '当前宿主不支持动态合成', { retryable: false })
+  const out = await ctx.media.renderComposition({ params: ctx.params, image, video })
+  return { video: [{ type: 'video', ...out }] }
+})
+
 /** 序列：探测各段时长，排好时间线，交给宿主的 ffmpeg 合成 */
 const sequence = defineExecutor(sequenceNode, async (ctx) => {
   const { params, inputs } = ctx
@@ -434,5 +445,6 @@ export const coreServerPlugin = defineServerPlugin(corePlugin, {
     aiSceneExecutor,
     aiSummaryExecutor,
     deliveryCheckExecutor,
+    motion,
   ],
 })

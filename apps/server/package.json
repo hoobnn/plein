@@ -15,7 +15,11 @@
     "db:generate": "drizzle-kit generate && tsx scripts/embed-migrations.ts && vp fmt src/storage/migrations.gen.ts"
   },
   "dependencies": {
+    "@fontsource/noto-sans-sc": "5.2.8",
     "@hono/node-server": "^2.1.5",
+    "@hyperframes/player": "0.8.186",
+    "@hyperframes/producer": "0.8.186",
+    "@hyperframes/sdk": "0.8.186",
     "@plein/capabilities": "workspace:*",
     "@plein/doc": "workspace:*",
     "@plein/flow": "workspace:*",
@@ -27,8 +31,10 @@
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.4",
     "fflate": "^0.8.2",
+    "gsap": "3.14.2",
     "hono": "^4.13.14",
     "lib0": "^0.2.119",
+    "linkedom": "0.18.14",
     "semver": "^7.8.5",
     "sharp": "^0.35.5",
     "undici": "8.12.3",

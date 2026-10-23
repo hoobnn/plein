@@ -167,7 +167,13 @@ export function createElements(doc: PleinDoc, inputs: NewElement[]): string[] {
               input.nodeType === 'plein/sequence'
                 ? sequenceSnapshot(input.params ?? {})
                 : (input.params ?? {}),
-            ),
+            ).map(([key, value]) => [
+              key,
+              // 动态合成的结构化编辑按条目存进嵌套 Y.Map，局部改动不会重写整份参数
+              key === 'overrides' && value && typeof value === 'object' && !Array.isArray(value)
+                ? new Y.Map(Object.entries(value))
+                : value,
+            ]),
           ),
         )
       }
@@ -334,13 +340,55 @@ export function setParams(doc: PleinDoc, id: string, params: Record<string, unkn
     const pm = p as Y.Map<unknown>
     for (const [k, v] of Object.entries(params)) {
       if (v === undefined) pm.delete(k)
-      else pm.set(k, m.get('nodeType') === 'plein/sequence' ? sequenceSnapshot(v) : v)
+      else if (m.get('nodeType') === 'plein/sequence') pm.set(k, sequenceSnapshot(v))
+      // 动态合成的结构化编辑按条目存进嵌套 Y.Map，局部改动不会重写整份参数
+      else if (k === 'overrides' && v && typeof v === 'object' && !Array.isArray(v)) {
+        const old = pm.get(k)
+        if (old instanceof Y.Map) {
+          const entries = v as Record<string, unknown>
+          for (const key of [...old.keys()]) if (!(key in entries)) old.delete(key)
+          for (const [key, value] of Object.entries(entries))
+            if (old.get(key) !== value) old.set(key, value)
+        } else pm.set(k, new Y.Map(Object.entries(v)))
+      } else pm.set(k, v)
     }
   })
 }
 
 export function setParam(doc: PleinDoc, id: string, key: string, value: unknown) {
   setParams(doc, id, { [key]: value })
+}
+
+/** 稀疏字典按条目合并；独立编辑不会整对象覆盖，事务仍由本地撤销管理。 */
+export function setParamEntry(
+  doc: PleinDoc,
+  id: string,
+  key: string,
+  entry: string,
+  value: unknown,
+) {
+  write(doc, () => {
+    const m = doc.mutable(id)
+    if (!m) return
+    let params = m.get('params')
+    if (!(params instanceof Y.Map)) {
+      params = new Y.Map<unknown>()
+      m.set('params', params)
+    }
+    const pm = params as Y.Map<unknown>
+    let dictionary = pm.get(key)
+    if (!(dictionary instanceof Y.Map)) {
+      const previous =
+        dictionary && typeof dictionary === 'object' && !Array.isArray(dictionary)
+          ? Object.entries(dictionary as Record<string, unknown>)
+          : []
+      dictionary = new Y.Map<unknown>(previous)
+      pm.set(key, dictionary)
+    }
+    const map = dictionary as Y.Map<unknown>
+    if (value === undefined) map.delete(entry)
+    else if (map.get(entry) !== value) map.set(entry, value)
+  })
 }
 
 /** 整体替换文本；编辑器应直接绑定 doc.getText(id) 做增量编辑 */

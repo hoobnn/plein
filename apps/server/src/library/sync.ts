@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { referenceAssets, shotAssetMention } from '@plein/capabilities'
+import { referenceAssets, referenceMedia, shotAssetMention } from '@plein/capabilities'
 import {
   type CanvasElement,
   type PleinDoc,
@@ -28,13 +28,14 @@ import {
   type LibraryUpdates,
 } from '@plein/protocol'
 import { Hono } from 'hono'
+import { z } from 'zod'
 import type { AuthEnv } from '../auth'
 import type { AssetStore } from '../assets/store'
 import { listCanvases } from '../storage/canvases'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { archiveLibraryCard, LibraryArchiveConflict } from './archive'
-import type { LibraryStore } from './store'
+import { LibrarySourceError, type LibraryStore } from './store'
 import { archiveCharacterImage, CharacterImageConflict } from './character-image'
 import { capturePanoramaView, PanoramaCaptureError } from './panorama'
 
@@ -56,6 +57,7 @@ function projection(item: LibraryItem) {
     voice: kind.voice ? voiceOf({ voice: item.voice }) : null,
     profile: item.kind === 'character' ? profileOf(item.profile) : null,
     sceneViews: item.kind === 'scene' ? sceneViewsOf(item.sceneViews) : [],
+    videoCompositionSource: kind.video ? (item.videoCompositionSource ?? null) : null,
     references: kind.video
       ? item.video
         ? [item.video]
@@ -71,6 +73,9 @@ function actual(doc: PleinDoc, card: CanvasElement, item: LibraryItem) {
     profile: item.kind === 'character' ? profileOf(card.params?.profile) : null,
     sceneViews: item.kind === 'scene' ? sceneViewsOf(card.params?.sceneViews) : [],
     references: referenceAssets(doc, card, libraryKind(item.kind)?.video ? 'video' : 'image'),
+    videoCompositionSource: libraryKind(item.kind)?.video
+      ? (referenceMedia(doc, card, 'video')[0]?.compositionSource ?? null)
+      : null,
   }
 }
 const expected = (doc: PleinDoc, card: CanvasElement, item: LibraryItem) =>
@@ -178,6 +183,11 @@ export function librarySyncRoutes(deps: Deps) {
       } catch (error) {
         if (error instanceof LibraryArchiveConflict)
           return c.json({ error: 'conflict', message: error.message }, 409)
+        if (error instanceof LibrarySourceError || error instanceof z.ZodError)
+          return c.json(
+            { error: 'invalid_source', message: '参考视频的动态合成来源无效或缺失' },
+            422,
+          )
         throw error
       }
     })
@@ -208,7 +218,12 @@ export function librarySyncRoutes(deps: Deps) {
                   ? card.params.libraryRevision
                   : null,
               changes: fields
-                .filter((field) => hash(value[field]) !== hash(wanted[field]))
+                .filter(
+                  (field) =>
+                    hash(value[field]) !== hash(wanted[field]) ||
+                    (field === 'references' &&
+                      hash(value.videoCompositionSource) !== hash(wanted.videoCompositionSource)),
+                )
                 .map((field) => ({ field, before: value[field], after: wanted[field] })),
             })
           }
@@ -256,6 +271,16 @@ export function librarySyncRoutes(deps: Deps) {
       const imageExists = (id: string, kind: 'image' | 'video' = 'image') => {
         const asset = deps.assets.get(owner, id)
         return asset?.kind === kind && existsSync(deps.assets.originalPath(id))
+      }
+      if (selected('references')) {
+        try {
+          deps.library.assertVideoSource(owner, item.video, item.videoCompositionSource)
+        } catch {
+          return c.json(
+            { error: 'invalid_source', message: '参考视频的动态合成来源无效或缺失' },
+            422,
+          )
+        }
       }
       const profileImages = wanted.profile
         ? [
@@ -309,6 +334,9 @@ export function librarySyncRoutes(deps: Deps) {
                 .map((id) => deps.assets.get(owner, id)!)
                 .map((a) => ({
                   assetId: a.id,
+                  ...(a.kind === 'video' && item.videoCompositionSource
+                    ? { compositionSource: item.videoCompositionSource }
+                    : {}),
                   kind: a.kind as 'image' | 'video',
                   width: a.width,
                   height: a.height,
@@ -362,6 +390,7 @@ function addReferences(doc: PleinDoc, card: CanvasElement, refs: CardRef[]) {
     const id = createElement(doc, {
       kind: ref.kind,
       assetId: ref.assetId,
+      ...(ref.compositionSource ? { params: { compositionSource: ref.compositionSource } } : {}),
       name: ref.name,
       x: spot.x,
       y: Math.round(y),

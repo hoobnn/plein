@@ -19,11 +19,22 @@ export type PortSpec = z.infer<typeof PortSpec>
 export const AssetKind = z.enum(['image', 'video', 'audio', 'file'])
 export type AssetKind = z.infer<typeof AssetKind>
 
+/** 可编辑合成的冻结来源；每个产物固定自己的源工程，不跟随当前节点参数。 */
+export const CompositionSourceRef = z.object({
+  version: z.literal(1),
+  bundleAssetId: z.string().regex(/^[0-9a-f]{64}$/),
+  manifestAssetId: z.string().regex(/^[0-9a-f]{64}$/),
+  dependencyAssetIds: z.array(z.string().regex(/^[0-9a-f]{64}$/)).max(100),
+  rendererIdentity: z.string().min(1).max(500),
+})
+export type CompositionSourceRef = z.infer<typeof CompositionSourceRef>
+
 /** 资产引用：节点之间传递图片 / 视频 / 音频时只传 id，二进制在资产库 */
 export interface AssetRef {
   assetId: string
   kind: AssetKind
   mime?: string
+  compositionSource?: CompositionSourceRef
 }
 
 /** 端口值的附加信息 */

@@ -1,3 +1,4 @@
+import { compositionAssetIds } from '@plein/doc'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { createReadStream, createWriteStream } from 'node:fs'
 import { mkdir, rm, stat } from 'node:fs/promises'
@@ -76,7 +77,12 @@ import {
   parseCheckpointArchive,
   type CheckpointArchive,
 } from '../checkpoints/archive'
-import { documentReferences, readDocument } from '../media-index/references'
+import {
+  compositionReferences,
+  documentReferences,
+  libraryCompositionReferences,
+  readDocument,
+} from '../media-index/references'
 import type { MediaIndex } from '../media-index/service'
 import type { PluginHost } from '../plugins/host'
 import { newCanvasId, newProjectId } from '../storage/canvases'
@@ -235,6 +241,7 @@ async function planExport(
   const files = new Map<string, string>()
   /** 资产 id → 第一次被引用的位置；explicit 表示是素材 / 结果 / 资产库图片这类明确的引用 */
   const assetRefs = new Map<string, { where: string; explicit: boolean }>()
+  const compositionRefs = new Set<string>()
   const libraryRefs = new Map<string, string>()
   const models = new Set<string>()
   const voices = new Map<string, { provider: string; voiceId: string }>()
@@ -277,8 +284,11 @@ async function planExport(
               candidates === 'all' ? el.results : el.results.filter((r) => adopted.has(r.id))
             if (kept.length !== el.results.length) m.set('results', kept)
             for (const r of kept) {
-              if ('assetId' in r.value) refAsset(r.value.assetId, where, true)
-              else if (el.nodeType === SHOT_ANALYSIS_TYPE && r.value.type === 'json')
+              if ('assetId' in r.value) {
+                refAsset(r.value.assetId, where, true)
+                for (const id of compositionAssetIds(r.value.compositionSource))
+                  refAsset(id, `${where} / 动态合成源工程`, true)
+              } else if (el.nodeType === SHOT_ANALYSIS_TYPE && r.value.type === 'json')
                 for (const assetId of shotAnalysisAssets(r.value.value))
                   refAsset(assetId, where, true)
               else if (el.nodeType === DELIVERY_CHECK_TYPE && r.value.type === 'json')
@@ -326,6 +336,14 @@ async function planExport(
           }
         }
       })
+      try {
+        for (const id of compositionReferences(doc)) {
+          compositionRefs.add(id)
+          refAsset(id, `${row.title} / 动态合成源工程`, true)
+        }
+      } catch {
+        throw new PackageError('corrupt', '动态合成来源信息无效，无法导出可编辑工程')
+      }
       const data = Y.encodeStateAsUpdate(ydoc)
       const path = `canvases/${i + 1}.yjs`
       blobs.set(path, data)
@@ -346,6 +364,11 @@ async function planExport(
   for (const [i, checkpoint] of checkpointRows(db, owner, projectId).entries()) {
     // 命名保存的候选不能被当前画布的 current/all 选项删掉。
     readDocument(checkpoint.state, (doc) => {
+      try {
+        for (const id of compositionReferences(doc)) compositionRefs.add(id)
+      } catch {
+        throw new PackageError('corrupt', '检查点中的动态合成来源信息无效')
+      }
       for (const ref of documentReferences(doc))
         refAsset(ref.assetId, `检查点 ${checkpoint.name} / ${ref.label}`, ref.explicit)
       for (const el of doc.elements()) {
@@ -415,6 +438,9 @@ async function planExport(
       voice: d.voice ?? null,
       images: normalizeLibraryImages(r.kind, d.images ?? []),
       video: d.video ?? null,
+      ...(d.videoCompositionSource != null
+        ? { videoCompositionSource: d.videoCompositionSource }
+        : {}),
       models: d.models ?? [],
       profile: d.profile ?? null,
       sceneViews: d.sceneViews ?? [],
@@ -425,6 +451,14 @@ async function planExport(
     }
     library.push(item)
     const where = `资产库 / ${r.name}`
+    try {
+      for (const id of libraryCompositionReferences(item)) {
+        compositionRefs.add(id)
+        refAsset(id, `${where} / 动态合成源工程`, true)
+      }
+    } catch {
+      throw new PackageError('corrupt', '资产库中的动态合成来源信息无效')
+    }
     eachString(
       {
         images: item.images,
@@ -451,6 +485,8 @@ async function planExport(
     const file = store.originalPath(id)
     const info = asset && (await stat(file).catch(() => null))
     if (!asset || !info?.isFile()) {
+      if (compositionRefs.has(id))
+        throw new PackageError('missing_file', '动态合成源工程或依赖缺失，无法导出可编辑工程')
       if (ref.explicit) missing.push({ kind: 'asset', id, where: ref.where })
       continue
     }
@@ -859,6 +895,15 @@ export async function inspectPackage(
       )
     await rm(pkg, { force: true })
 
+    const availableSources = new Set(manifest.assets.map((asset) => asset.id))
+    for (const item of manifest.library) {
+      if (libraryCompositionReferences(item).some((id) => !availableSources.has(id)))
+        throw new PackageError(
+          'missing_file',
+          `资产库中的动态合成源工程或依赖未包含在项目包中，${reexport}`,
+        )
+    }
+
     // 文档能解析；版本高于本机时只读打开
     const docs = new Map<string, Uint8Array>()
     let newer = 0
@@ -869,8 +914,18 @@ export async function inspectPackage(
         Y.applyUpdate(ydoc, data)
         const doc = createDoc(ydoc, { schedule: () => {} })
         if (doc.readOnly) newer++
-        doc.destroy()
-      } catch {
+        try {
+          const available = new Set(manifest.assets.map((asset) => asset.id))
+          if (compositionReferences(doc).some((id) => !available.has(id)))
+            throw new PackageError(
+              'missing_file',
+              `动态合成源工程或依赖未包含在项目包中，${reexport}`,
+            )
+        } finally {
+          doc.destroy()
+        }
+      } catch (error) {
+        if (error instanceof PackageError) throw error
         throw new PackageError('corrupt', `画布「${c.title}」的文档已损坏，${reexport}`)
       } finally {
         ydoc.destroy()
@@ -899,8 +954,17 @@ export async function inspectPackage(
         const archive = parseCheckpointArchive(
           JSON.parse(new TextDecoder().decode(blobs.get(checkpoint.file.path))),
         )
+        readDocument(Buffer.from(archive.state, 'base64'), (doc) => {
+          const available = new Set(manifest.assets.map((asset) => asset.id))
+          if (compositionReferences(doc).some((id) => !available.has(id)))
+            throw new PackageError(
+              'missing_file',
+              `检查点中的动态合成源工程或依赖未包含在项目包中，${reexport}`,
+            )
+        })
         checkpoints.set(checkpoint.id, archive)
-      } catch {
+      } catch (error) {
+        if (error instanceof PackageError) throw error
         throw new PackageError('corrupt', `检查点「${checkpoint.name}」内容已损坏，${reexport}`)
       }
     }

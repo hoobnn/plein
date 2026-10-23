@@ -1,7 +1,7 @@
 import { API, CreateLibraryItem, LibraryKind, UpdateLibraryItem } from '@plein/protocol'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
-import type { LibraryStore } from '../library/store'
+import { LibrarySourceError, type LibraryStore } from '../library/store'
 import type { DB } from '../storage/db'
 import { ownsProject } from '../storage/canvases'
 
@@ -23,7 +23,13 @@ export function libraryRoutes(db: DB, library: LibraryStore) {
       const owner = c.var.principal.id
       const { projectId } = body.data
       if (projectId && !ownsProject(db, owner, projectId)) return c.json(noProject, 404)
-      return c.json(library.create(owner, body.data), 201)
+      try {
+        return c.json(library.create(owner, body.data), 201)
+      } catch (error) {
+        if (error instanceof LibrarySourceError)
+          return c.json({ error: 'invalid_source', message: error.message }, 422)
+        throw error
+      }
     })
     .get('/api/library/:id', (c) => {
       const item = library.get(c.var.principal.id, c.req.param('id'))
@@ -37,7 +43,13 @@ export function libraryRoutes(db: DB, library: LibraryStore) {
       if (!library.get(owner, c.req.param('id'))) return c.json(notFound, 404)
       const { projectId } = body.data
       if (projectId && !ownsProject(db, owner, projectId)) return c.json(noProject, 404)
-      return c.json(library.update(owner, c.req.param('id'), body.data)!)
+      try {
+        return c.json(library.update(owner, c.req.param('id'), body.data)!)
+      } catch (error) {
+        if (error instanceof LibrarySourceError)
+          return c.json({ error: 'invalid_source', message: error.message }, 422)
+        throw error
+      }
     })
     .post('/api/library/:id/use', (c) =>
       library.markUsed(c.var.principal.id, c.req.param('id'))

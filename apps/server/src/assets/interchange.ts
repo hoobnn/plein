@@ -1,3 +1,4 @@
+import { compositionAssetIds } from '@plein/doc'
 import { createReadStream } from 'node:fs'
 import { extname } from 'node:path'
 import { PassThrough, type Readable } from 'node:stream'
@@ -42,6 +43,7 @@ const README = `这个文件夹是 plein 导出的剪辑工程，素材在 media
 - Final Cut Pro：文件 → 导入 → XML，选 timeline.fcpxml；提示素材离线时用「重新链接文件」指到 media/
 - Kdenlive 等支持 OpenTimelineIO 的软件：导入 timeline.otio
 - 字幕：subtitles.srt，大多数剪辑软件都能直接导入
+- 动态合成：sources/ 保留对应源工程和冻结参数；动画在剪辑工程中为渲染视频，继续编辑请打开source.zip内的HTML工程
 
 和 plein 导出的成片相比：
 - 画面顺序、入出点、速度、重叠转场（叠化 / 划像 / 推移 / 闪白）和各轨声音的位置保留；
@@ -62,6 +64,22 @@ export async function sequencePackage(
   const refs = [...spec.clips.map((c) => c.asset), ...spec.audio.map((a) => a.asset)]
   const media = new Map<string, InterchangeMedia & { file: string }>()
   const used = new Set<string>()
+  const sources = new Map<string, { bundle: string; manifest: string }>()
+  for (const ref of refs) {
+    const source = ref.compositionSource
+    if (!source || sources.has(source.bundleAssetId)) continue
+    for (const id of compositionAssetIds(source)) {
+      try {
+        await store.verifyOriginal(ownerId, id)
+      } catch {
+        throw Object.assign(new Error('动态合成源工程或原素材缺失或损坏'), { code: 'not_found' })
+      }
+    }
+    sources.set(source.bundleAssetId, {
+      bundle: store.originalPath(source.bundleAssetId),
+      manifest: store.originalPath(source.manifestAssetId),
+    })
+  }
   for (const ref of refs) {
     if (media.has(ref.assetId)) continue
     const asset = store.get(ownerId, ref.assetId)
@@ -132,6 +150,21 @@ export async function sequencePackage(
       const entry = new ZipDeflate(`${name}/${path}`, { level: 6 })
       zip.add(entry)
       entry.push(strToU8(text), true)
+    }
+    for (const [index, source] of [...sources.values()].entries()) {
+      for (const [suffix, file] of [
+        ['source.zip', source.bundle],
+        ['manifest.json', source.manifest],
+      ]) {
+        controller.signal.throwIfAborted()
+        const entry = new ZipPassThrough(`${name}/sources/${index + 1}/${suffix}`)
+        zip.add(entry)
+        for await (const chunk of createReadStream(file!, { signal: controller.signal })) {
+          entry.push(chunk as Uint8Array)
+          if (out.writableNeedDrain) await once(out, 'drain', { signal: controller.signal })
+        }
+        entry.push(new Uint8Array(0), true)
+      }
     }
     for (const m of media.values()) {
       controller.signal.throwIfAborted()

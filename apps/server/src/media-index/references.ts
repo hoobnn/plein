@@ -1,10 +1,12 @@
 import {
   createDoc,
   adoptedResultIds,
+  compositionAssetIds,
   continuityAssets,
   sequenceSegmentAssets,
   type PleinDoc,
 } from '@plein/doc'
+import { CompositionSourceRef } from '@plein/plugin-sdk'
 import {
   SHOT_ANALYSIS_TYPE,
   shotAnalysisAssets,
@@ -72,13 +74,23 @@ export function documentReferences(doc: PleinDoc): AssetReference[] {
       add(assetId, `media-derivation/${assetId}`, null, false, true)
     for (const assetId of sequenceSegmentAssets(el))
       add(assetId, `sequence-segment/${assetId}`, null, true, true)
+    // 动态合成的源工程素材按显式来源登记
+    if (['image', 'video', 'audio'].includes(el.kind)) {
+      const source = CompositionSourceRef.safeParse(el.params?.compositionSource)
+      if (source.success)
+        for (const id of compositionAssetIds(source.data))
+          add(id, `composition/${id}`, null, true, true)
+    }
     const adopted = adoptedResultIds(el)
     for (const assetId of continuityAssets(el.production?.continuity))
       add(assetId, `production/continuity/${assetId}`, null, false, true)
     for (const r of el.results ?? []) {
-      if ('assetId' in r.value)
+      if ('assetId' in r.value) {
         add(r.value.assetId, `result/${r.id}`, r.id, adopted.has(r.id), true)
-      else if (el.nodeType === SHOT_ANALYSIS_TYPE && r.value.type === 'json')
+        // 合成结果带着自己的源工程素材一起登记
+        for (const id of compositionAssetIds(r.value.compositionSource))
+          add(id, `result/${r.id}/composition/${id}`, r.id, adopted.has(r.id), true)
+      } else if (el.nodeType === SHOT_ANALYSIS_TYPE && r.value.type === 'json')
         for (const assetId of shotAnalysisAssets(r.value.value))
           add(assetId, `result/${r.id}/analysis/${assetId}`, r.id, adopted.has(r.id), true)
       else if (el.nodeType === DELIVERY_CHECK_TYPE && r.value.type === 'json')
@@ -109,6 +121,34 @@ export function documentReferences(doc: PleinDoc): AssetReference[] {
         add(assetId, `ai-draft-origin/${assetId}`, null, true, true)
   }
   return out
+}
+
+/** 保存与迁移时严格校验新来源合同；索引读取仍能容纳损坏的旧文档。 */
+export function compositionReferences(doc: PleinDoc): string[] {
+  const ids = new Set<string>()
+  const add = (source: unknown) => {
+    if (source === undefined) return
+    const parsed = CompositionSourceRef.safeParse(source)
+    if (!parsed.success) throw new Error('动态合成来源信息无效')
+    for (const id of compositionAssetIds(parsed.data)) ids.add(id)
+  }
+  for (const element of doc.elements()) {
+    if (['image', 'video', 'audio'].includes(element.kind)) add(element.params?.compositionSource)
+    for (const result of element.results ?? [])
+      if ('assetId' in result.value) add(result.value.compositionSource)
+  }
+  return [...ids]
+}
+
+/** 库中的参考视频来源是显式硬引用；没有声明来源的旧视频保持原有缺失策略。 */
+export function libraryCompositionReferences(value: unknown): string[] {
+  if (!value || typeof value !== 'object') return []
+  const item = value as { video?: unknown; videoCompositionSource?: unknown }
+  if (item.videoCompositionSource === undefined || item.videoCompositionSource === null) return []
+  if (typeof item.video !== 'string' || !ASSET_HASH.test(item.video))
+    throw new Error('动态合成来源没有参考视频')
+  const source = CompositionSourceRef.parse(item.videoCompositionSource)
+  return [...new Set([item.video, ...compositionAssetIds(source)])]
 }
 
 /** 不打开新房间，优先读取现有房间中的未落盘编辑。调用者负责授权。 */

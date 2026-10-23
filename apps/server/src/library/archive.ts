@@ -37,6 +37,7 @@ export function archiveLibraryCard(
       },
       images: preserveLibraryImageSlots(linked.kind, body.images, linked.images),
       video: body.video,
+      videoCompositionSource: body.videoCompositionSource ?? null,
       voice: body.voice,
       profile: body.profile,
       ...(options.updateSceneViews === false ? {} : { sceneViews: body.sceneViews }),

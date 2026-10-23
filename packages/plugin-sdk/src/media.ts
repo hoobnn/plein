@@ -119,6 +119,12 @@ export interface MediaService {
   analyzeVideo?(ref: AssetRef, options: VideoAnalysisOptions): Promise<unknown>
   /** Free local technical inspection; never calls a model or confirms delivery. */
   checkVideo?(ref: AssetRef, request: DeliveryCheckRequest): Promise<unknown>
+  /** 只渲染宿主内置模板；不接受任意 HTML、代码或本机路径。 */
+  renderComposition?(spec: {
+    params: Record<string, unknown>
+    image?: AssetRef
+    video?: AssetRef
+  }): Promise<AssetRef>
 }
 
 export interface SubtitlePlanEvidence {

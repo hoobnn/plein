@@ -16,6 +16,7 @@ import { LibraryKind } from '@plein/protocol'
 import { z } from 'zod'
 import type { ServerContext } from './tools'
 import { archiveLibraryCard } from '../library/archive'
+import { LibrarySourceError } from '../library/store'
 
 /** 资产库能力：搜索、用到画布上、存回资产库。与资产库面板、卡片菜单是同一套逻辑 */
 
@@ -88,12 +89,25 @@ export const placeLibraryItem = serverCapability({
     const info = kind && ctx.nodes.latest(kind.nodeType)
     if (!kind || !info) throw new CapabilityError(`当前没有「${kind?.title ?? item.kind}」卡片节点`)
     const base = nodeElementOf(info.descriptor)
+    try {
+      library(ctx).assertVideoSource(ctx.env.ownerId, item.video, item.videoCompositionSource)
+    } catch (error) {
+      throw new CapabilityError((error as Error).message)
+    }
     const requested: CardRef[] = [
       ...libraryReferenceImageIds(kind, item.images).map((assetId) => ({
         kind: 'image' as const,
         assetId,
       })),
-      ...(item.video ? [{ kind: 'video' as const, assetId: item.video }] : []),
+      ...(item.video
+        ? [
+            {
+              kind: 'video' as const,
+              assetId: item.video,
+              compositionSource: item.videoCompositionSource,
+            },
+          ]
+        : []),
     ]
     const refs = requested.flatMap((r) => {
       const meta = ctx.assetMeta(r.assetId)
@@ -161,10 +175,16 @@ export const saveToLibrary = serverCapability({
   run: (ctx, a) => {
     const lib = library(ctx)
     const project = lib.projectOf(ctx.env.ownerId, ctx.env.canvasId)
-    const result = ctx.withDoc((doc) =>
-      archiveLibraryCard(doc, a.id, ctx.env.ownerId, project, lib),
-    )
-    return { item_id: result.item.id, created: result.created }
+    try {
+      const result = ctx.withDoc((doc) =>
+        archiveLibraryCard(doc, a.id, ctx.env.ownerId, project, lib),
+      )
+      return { item_id: result.item.id, created: result.created }
+    } catch (error) {
+      if (error instanceof LibrarySourceError || error instanceof z.ZodError)
+        throw new CapabilityError('参考视频的动态合成来源无效或缺失')
+      throw error
+    }
   },
 })
 

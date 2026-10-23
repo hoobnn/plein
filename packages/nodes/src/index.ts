@@ -26,3 +26,5 @@ export * from './deliveryCheck'
 export * from './characterAssetTarget'
 
 export * from './panorama'
+
+export * from './motion'

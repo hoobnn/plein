@@ -1,3 +1,4 @@
+import { compositionAssetIds } from '@plein/doc'
 import { randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import type { ComposeSpec } from '@plein/plugin-sdk'
@@ -61,7 +62,14 @@ export function mediaRoutes(store: AssetStore) {
         const owner = c.var.principal.id
         const spec = parsed.data.spec as ComposeSpec
         const refs = [...spec.clips.map((x) => x.asset), ...spec.audio.map((x) => x.asset)]
-        if (refs.some((r) => !store.get(owner, r.assetId))) return c.json(notFound, 404)
+        if (
+          refs.some(
+            (r) =>
+              !store.get(owner, r.assetId) ||
+              compositionAssetIds(r.compositionSource).some((id) => !store.get(owner, id)),
+          )
+        )
+          return c.json(notFound, 404)
         const now = Date.now()
         for (const [k, v] of pendingExports) if (v.expires < now) pendingExports.delete(k)
         const token = randomUUID()

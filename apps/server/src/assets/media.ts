@@ -1,5 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { execFile, type ExecFileOptions } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { isAbsolute, join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 import sharp from 'sharp'
@@ -121,6 +123,16 @@ export function h264Args(): Promise<string[]> {
 
 /** 当前使用的 ffmpeg 可执行文件 */
 export const ffmpegBin = () => bin.ffmpeg
+export const mediaToolPaths = () => {
+  const absolute = (name: string) =>
+    isAbsolute(name)
+      ? name
+      : ((process.env.PATH ?? '')
+          .split(':')
+          .map((dir) => join(dir, name))
+          .find((path) => existsSync(path)) ?? name)
+  return { ffmpeg: absolute(bin.ffmpeg), ffprobe: absolute(bin.ffprobe) }
+}
 
 /** ffmpeg / ffprobe 是否可用；缺失时视频和音频只存原文件，不生成衍生物 */
 export function hasFfmpeg(): Promise<boolean> {

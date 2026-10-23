@@ -11,7 +11,7 @@ import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { canvasState, documentReferences, readDocument, stringReferences } from './references'
 
-const INDEX_VERSION = 2
+const INDEX_VERSION = 4
 type SqlRow = Record<string, unknown>
 type SourceKind = MediaSource['type']
 type SourceRow = {
@@ -378,6 +378,7 @@ export class MediaIndex {
       const data = json(row.data) as {
         images?: unknown
         video?: unknown
+        videoCompositionSource?: unknown
         profile?: unknown
         sceneViews?: unknown
         coverAssetId?: unknown
@@ -386,6 +387,7 @@ export class MediaIndex {
         {
           images: data?.images,
           video: data?.video,
+          videoCompositionSource: data?.videoCompositionSource,
           profile: data?.profile,
           sceneViews: data?.sceneViews,
           coverAssetId: data?.coverAssetId,

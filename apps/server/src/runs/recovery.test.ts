@@ -671,7 +671,7 @@ describe('批准的计划', () => {
     )
     setParams(doc, b, { prompt: 'b 改了' })
     const state = await done(g)
-    expect(state.summary).toMatchObject({ succeeded: 1, failed: 1, cached: 1 })
+    expect(state.summary).toMatchObject({ succeeded: 1, failed: 0, review: 1, cached: 1 })
     expect(submit).toHaveBeenCalledTimes(1)
     const after = await items()
     expect(after.find((i) => i.nodeId === a)).toMatchObject({ outcome: 'succeeded' })

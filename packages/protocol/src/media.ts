@@ -1,4 +1,4 @@
-import { AssetKind } from '@plein/plugin-sdk'
+import { AssetKind, CompositionSourceRef } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { Asset } from './assets'
 
@@ -114,7 +114,12 @@ export const MediaDeriveRequest = z.discriminatedUnion('op', [
 ])
 export type MediaDeriveRequest = z.infer<typeof MediaDeriveRequest>
 
-const composeRef = z.object({ assetId: assetIdField, kind: AssetKind, mime: z.string().optional() })
+const composeRef = z.object({
+  assetId: assetIdField,
+  kind: AssetKind,
+  mime: z.string().optional(),
+  compositionSource: CompositionSourceRef.optional(),
+})
 const composeTransition = z.object({
   type: z.enum(['fade', 'dissolve', 'wipe', 'slide', 'flash']),
   duration: z.number().positive().max(10),

@@ -71,7 +71,7 @@ export const PackageAsset = z.object({
 export type PackageAsset = z.infer<typeof PackageAsset>
 
 /** 资产库条目：字段同新建条目，另带原 id 和时间 */
-export const PackageLibraryItem = CreateLibraryItem.extend({
+export const PackageLibraryItem = CreateLibraryItem.safeExtend({
   id: recordId,
   projectId: recordId.nullable(),
   favorite: z.boolean().default(false),

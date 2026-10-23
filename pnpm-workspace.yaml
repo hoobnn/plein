@@ -11,10 +11,22 @@ allowBuilds:
   electron-winstaller: false
   # JASSUB 依赖的本地字体查询垫片，安装脚本只是联网刷新内置字体名单，预览不查本机字体（queryFonts: false）
   lfa-ponyfill: false
+  # 动态合成渲染器带的 puppeteer，安装脚本只是下载一份 Chrome；本机用系统 Chrome 或 PLEIN_HYPERFRAMES_CHROME_PATH 指定的即可
+  puppeteer: false
 # Vite+：vite 由 vite-plus-core 提供，插件和 vitest 依赖的 vite 都指向这一份
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@1.4.0
   vite-plus: 1.4.0
+# 动态合成依赖的 hyperframes 包还没满最小发布年龄，先按确切版本放行
+minimumReleaseAgeExclude:
+  - "@hyperframes/core@0.8.186"
+  - "@hyperframes/engine@0.8.186"
+  - "@hyperframes/lint@0.8.186"
+  - "@hyperframes/parsers@0.8.186"
+  - "@hyperframes/producer@0.8.186"
+  - "@hyperframes/sdk@0.8.186"
+  - "@hyperframes/studio-server@0.8.186"
+  - "@hyperframes/player@0.8.186"
 overrides:
   vite@*: "catalog:"
   # @volcengine/tos-sdk 把 axios 锁在 ^0.21.1，0.21.4 带 10 项 high 漏洞；0.x 分支的修复版为 >=0.32.0

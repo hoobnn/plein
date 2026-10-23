@@ -7,6 +7,7 @@ import { shotPresets } from './shotPresets'
 import { noVoice, VoiceRef } from './refs'
 import { sequenceNode } from './sequence'
 import { animaticNode } from './animatic'
+import { motionNode } from './motion'
 import { stageNode } from './stage'
 import { storyboardNode } from './storyboard'
 import { imageProcessNode } from './imageProcess'
@@ -394,6 +395,7 @@ export const corePlugin = definePlugin({
         'plein/storyboard@1',
         'plein/sequence@2',
         'plein/animatic@1',
+        'plein/motion@1',
         'plein/stage@1',
       ],
       prompts: [...corePrompts, ...shotPresets].map((p) => p.id),
@@ -424,6 +426,7 @@ export const corePlugin = definePlugin({
     storyboardNode,
     sequenceNode,
     animaticNode,
+    motionNode,
     stageNode,
   ],
   prompts: [...corePrompts, ...shotPresets],

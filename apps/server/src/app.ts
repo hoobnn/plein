@@ -1,3 +1,5 @@
+import { MotionPreviews } from './motion/preview'
+import { motionRoutes } from './motion/routes'
 import { subtitleRoutes } from './subtitles/routes'
 import { createMaintenanceService, type MaintenanceService } from './maintenance/service'
 import { maintenanceRoutes } from './maintenance/routes'
@@ -79,6 +81,7 @@ export async function createServer(config: Config): Promise<Server> {
   const rooms = new Rooms(sqliteDocStore(db, (id) => mediaIndex?.refreshPersistedCanvas(id)))
   const assets = new AssetStore(config.dataDir, db, config.maxUpload)
   await assets.init()
+  const motionPreviews = new MotionPreviews(assets)
   const plugins = new PluginHost(
     new PluginRegistry(),
     new ProviderConfigStore(config.dataDir, new Set(config.mockProvider ? ['plein/mock'] : [])),
@@ -98,7 +101,7 @@ export async function createServer(config: Config): Promise<Server> {
       : null
   const auth = await createAuth(config.auth, db, secrets, { publicUrl: config.publicUrl })
   const runs = new NodeRuns(db, rooms, plugins, { concurrency: config.maxJobs })
-  const library = new LibraryStore(db)
+  const library = new LibraryStore(db, assets)
   mediaIndex = createMediaIndex({ db, rooms })
   mediaIndex.install()
   const checkpoints = createCheckpointService({ db, rooms, assets, index: mediaIndex })
@@ -193,6 +196,8 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', mediaLibraryRoutes(mediaIndex))
   app.route('/', creative)
   app.route('/', checkpointRoutes(checkpoints))
+  // 资产与素材路由已经并进 creative，动态合成路由沿用它们之后的顺序
+  app.route('/', motionRoutes({ assets, previews: motionPreviews, db, rooms }))
   app.route('/', syncRoutes(db, rooms))
   app.route('/', pluginRoutes(plugins))
   app.route('/', localPluginRoutes(local))
@@ -248,6 +253,7 @@ export async function createServer(config: Config): Promise<Server> {
     canvasApi,
     close() {
       closeWork ??= (async () => {
+        await motionPreviews.close()
         await maintenance?.close()
         await pluginInstaller?.close()
         agents.close()

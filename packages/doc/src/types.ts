@@ -1,4 +1,5 @@
 import type { ProductionRecord } from './production'
+import type { CompositionSourceRef } from '@plein/plugin-sdk/ports'
 import type { CreativeReview } from './review-types'
 import type { DeliveryRecord } from './delivery'
 import type { GenerationOrigin, VideoSegment } from './video-segment'
@@ -98,6 +99,7 @@ export type ResultValue =
       type: 'image' | 'video' | 'audio'
       assetId: string
       mime?: string
+      compositionSource?: CompositionSourceRef
       /** 语音的台词（配音节点写入，导出时用作字幕） */
       caption?: string
     }
