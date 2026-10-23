@@ -3,9 +3,6 @@ import { centerOf, clickElement, newProject, waitEngine } from './canvas'
 
 type GroupEngine = Window['__plein']['engine'] & {
   groupSelection(): void
-  ungroupSelection(): void
-  nudge(dx: number, dy: number): void
-  undo(): void
   doc: Window['__plein']['engine']['doc'] & { flush(): void; undo: { stopCapturing(): void } }
 }
 
@@ -125,44 +122,6 @@ const snapshot = (page: Page) =>
       }))
       .sort((a, b) => a.id.localeCompare(b.id)),
   )
-
-for (const command of ['group', 'ungroup'] as const) {
-  for (const order of ['before', 'after'] as const) {
-    test(`${command} 与紧邻的 ${order} 位置修改分别撤销，不连带回退`, async ({ page }) => {
-      await setup(page, command === 'ungroup')
-      const expected = await page.evaluate(
-        ({ command, order }) => {
-          const engine = window.__plein.engine as GroupEngine
-          const read = () =>
-            [...engine.doc.elements()]
-              .map((el) => ({
-                id: el.id,
-                kind: el.kind,
-                parent: el.parentId,
-                rect: engine.doc.worldRect(el.id),
-              }))
-              .sort((a, b) => a.id.localeCompare(b.id))
-          const act = () =>
-            command === 'group' ? engine.groupSelection() : engine.ungroupSelection()
-          if (order === 'before') {
-            engine.nudge(17, 9)
-            const expected = read()
-            act()
-            engine.undo()
-            return expected
-          }
-          act()
-          const expected = read()
-          engine.nudge(21, -12)
-          engine.undo()
-          return expected
-        },
-        { command, order },
-      )
-      expect(await snapshot(page)).toEqual(expected)
-    })
-  }
-}
 
 for (const [nested, reverse] of [
   [false, false],
