@@ -1,4 +1,4 @@
-import { type CanvasElement, currentResult, type PleinDoc } from '@plein/doc'
+import { type CanvasElement, createDoc, currentResult, type PleinDoc } from '@plein/doc'
 import { createHash } from 'node:crypto'
 import { stableStringify } from '@plein/flow'
 import type {
@@ -9,7 +9,9 @@ import type {
   PreparedInput,
 } from '@plein/protocol'
 import type { FlowGraph } from '@plein/flow'
+import * as Y from 'yjs'
 import { parseRecovery } from './recovery'
+import type { Inspection } from './runs'
 import type { BatchItemRow, JobRow, JobStore } from './store'
 
 /**
@@ -63,8 +65,8 @@ export interface BatchHost {
     el: CanvasElement,
     ownerId: string,
     signal: AbortSignal,
-  ): Promise<{ input: PreparedInput }>
-  isFresh(doc: PleinDoc, el: CanvasElement, ownerId: string, signal: AbortSignal): Promise<boolean>
+  ): Promise<Inspection>
+  resultMatches(el: CanvasElement, inspection: Inspection): boolean
   planKey(el: CanvasElement): string
 }
 
@@ -76,66 +78,82 @@ export interface BatchHost {
 export async function snapshotBatch(
   host: BatchHost,
   g: { id: string; canvas_id: string; owner_id: string },
-  doc: PleinDoc,
+  source: PleinDoc,
   targets: string[],
   graph: FlowGraph,
   opts: {
     force?: boolean
     rerun: Set<string>
     /** 用户确认保留的过期结果也算沿用 */
-    kept?: (el: CanvasElement) => Promise<boolean>
+    kept?: (el: CanvasElement, inspection: Inspection) => Promise<boolean>
   },
   signal: AbortSignal,
 ) {
-  const inBatch = new Set(targets)
-  const fresh = new Map<string, boolean>()
-  for (const id of targets) {
-    const el = doc.get(id)
-    const reusable = !!el && !opts.force && !opts.rerun.has(id)
-    fresh.set(
-      id,
-      reusable && ((await host.isFresh(doc, el, g.owner_id, signal)) || !!(await opts.kept?.(el))),
-    )
+  // 调用方持有 live Doc；只在本次副本里复用检查结果，避免 await 期间的编辑混入快照。
+  const snapshot = new Y.Doc()
+  let doc: PleinDoc | undefined
+  try {
+    Y.applyUpdate(snapshot, Y.encodeStateAsUpdate(source.ydoc))
+    doc = createDoc(snapshot, { schedule: () => {} })
+    const inBatch = new Set(targets)
+    const inspections = new Map<string, Inspection>()
+    const fresh = new Map<string, boolean>()
+    for (const id of inBatch) {
+      const el = doc.get(id)
+      if (!el) continue
+      const inspection = await host.inspect(doc, el, g.owner_id, signal)
+      inspections.set(id, inspection)
+      const reusable = !opts.force && !opts.rerun.has(id)
+      fresh.set(
+        id,
+        reusable && (host.resultMatches(el, inspection) || !!(await opts.kept?.(el, inspection))),
+      )
+    }
+    const now = Date.now()
+    const rows: BatchItemRow[] = []
+    for (const [seq, id] of targets.entries()) {
+      const el = doc.get(id)
+      if (!el) continue
+      const ups = [...graph.ancestors(id)].filter((u) => inBatch.has(u))
+      const rerunUps = ups.filter((u) => !fresh.get(u))
+      const deps: BatchDependency[] = []
+      for (const u of rerunUps) {
+        const upstream = doc.get(u)
+        const r = upstream && currentResult(upstream)
+        deps.push(r ? { nodeId: u, resultId: r.id } : { nodeId: u })
+      }
+      const { input } = inspections.get(id)!
+      let stage: BatchStage = 'run'
+      let reason: string | undefined
+      if (fresh.get(id) && !rerunUps.length) {
+        stage = 'reuse'
+        reason = '参数和输入都没变，沿用当前结果'
+      } else if (!deps.length && input.status !== 'ready') {
+        stage = 'blocked'
+        reason = input.blocked.map((b) => b.message).join('；')
+      } else if (deps.length) reason = '等上游生成后再定实际输入'
+      rows.push({
+        group_id: g.id,
+        node_id: id,
+        seq,
+        stage,
+        reason: reason ?? null,
+        input_hash: !deps.length && input.inputHash ? input.inputHash : null,
+        plan_hash: host.planKey(el),
+        deps: JSON.stringify(deps),
+        input: JSON.stringify(input),
+        frozen_hash: null,
+        job_id: null,
+        outcome: 'pending',
+        result_id: null,
+        updated_at: now,
+      })
+    }
+    host.store.insertBatchItems(rows)
+  } finally {
+    doc?.destroy()
+    snapshot.destroy()
   }
-  const now = Date.now()
-  const rows: BatchItemRow[] = []
-  for (const [seq, id] of targets.entries()) {
-    const el = doc.get(id)
-    if (!el) continue
-    const ups = [...graph.ancestors(id)].filter((u) => inBatch.has(u))
-    const rerunUps = ups.filter((u) => !fresh.get(u))
-    const deps: BatchDependency[] = rerunUps.map((u) => {
-      const r = doc.get(u) && currentResult(doc.get(u)!)
-      return r ? { nodeId: u, resultId: r.id } : { nodeId: u }
-    })
-    const { input } = await host.inspect(doc, el, g.owner_id, signal)
-    let stage: BatchStage = 'run'
-    let reason: string | undefined
-    if (fresh.get(id) && !rerunUps.length) {
-      stage = 'reuse'
-      reason = '参数和输入都没变，沿用当前结果'
-    } else if (!deps.length && input.status !== 'ready') {
-      stage = 'blocked'
-      reason = input.blocked.map((b) => b.message).join('；')
-    } else if (deps.length) reason = '等上游生成后再定实际输入'
-    rows.push({
-      group_id: g.id,
-      node_id: id,
-      seq,
-      stage,
-      reason: reason ?? null,
-      input_hash: !deps.length && input.inputHash ? input.inputHash : null,
-      plan_hash: host.planKey(el),
-      deps: JSON.stringify(deps),
-      input: JSON.stringify(input),
-      frozen_hash: null,
-      job_id: null,
-      outcome: 'pending',
-      result_id: null,
-      updated_at: now,
-    })
-  }
-  host.store.insertBatchItems(rows)
 }
 
 /** 批次里一个目标提交时带的计划 */

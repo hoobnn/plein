@@ -44,6 +44,7 @@ import type {
   GroupRunOptions,
   GroupRunStarted,
   GroupRunState,
+  GroupRunSummary,
   InputValue,
   JobInfo,
   JobList,
@@ -693,7 +694,7 @@ export class NodeRuns implements BatchHost {
     ownerId: string,
   ): GroupRunStarted {
     const targets = this.rooms.withDoc(canvasId, (doc) => {
-      const picked = nodeIds.filter((id) => this.isJobNode(doc.get(id)))
+      const picked = [...new Set(nodeIds)].filter((id) => this.isJobNode(doc.get(id)))
       const mentioned = new FlowGraph(mentionEdges(doc))
       const edges = new FlowGraph(doc.edges())
       const before = new Set<string>()
@@ -991,24 +992,70 @@ export class NodeRuns implements BatchHost {
       const targets = (JSON.parse(g.targets) as string[]).filter((id) => doc.get(id))
       const graph = runGraph(doc)
       // 批次快照：启动时（重启后继续时已经有了）定下每个目标的阶段、批准的输入和待解析依赖
-      if (!this.store.batchItems(g.id).length)
-        await snapshotBatch(
-          this,
-          g,
-          doc,
-          targets,
-          graph,
-          {
-            force: options.force,
-            rerun,
-            // 用户确认保留的结果也按沿用记（按影响运行时除外）
-            kept:
-              options.scope === 'impact'
-                ? undefined
-                : (el) => this.isKept(g.canvas_id, doc, el, g.owner_id, ctrl.signal),
-          },
-          ctrl.signal,
-        ).catch(() => {})
+      if (!this.store.batchItems(g.id).length) {
+        try {
+          await snapshotBatch(
+            this,
+            g,
+            doc,
+            targets,
+            graph,
+            {
+              force: options.force,
+              rerun,
+              // 用户确认保留的结果也按沿用记（按影响运行时除外）
+              kept:
+                options.scope === 'impact'
+                  ? undefined
+                  : (el, inspection) =>
+                      this.isKept(g.canvas_id, doc, el, g.owner_id, ctrl.signal, inspection),
+            },
+            ctrl.signal,
+          )
+        } catch (error) {
+          // 没有批准输入就不能继续提交；关闭或删除时由既有恢复/清理流程接管。
+          if (this.closed || !this.store.group(g.id)) return
+          const canceled = ctrl.signal.aborted
+          const reason = canceled
+            ? '批次已取消'
+            : `批次输入检查失败，请重新检查后运行：${(error as Error).message}`
+          try {
+            this.store.insertBatchItems(
+              targets.map((nodeId, seq) => ({
+                group_id: g.id,
+                node_id: nodeId,
+                seq,
+                stage: 'blocked',
+                reason,
+                input_hash: null,
+                plan_hash: null,
+                deps: '[]',
+                input: null,
+                frozen_hash: null,
+                job_id: null,
+                outcome: canceled ? 'canceled' : 'review',
+                result_id: null,
+                updated_at: Date.now(),
+              })),
+            )
+          } catch (recordError) {
+            console.error(`[runs] 批次 ${g.id} 的检查失败明细尚未写入`, recordError)
+          }
+          try {
+            this.finishGroup(g, doc, canceled ? 'canceled' : 'done', {
+              succeeded: 0,
+              cached: 0,
+              failed: canceled ? 0 : targets.length,
+              canceled: canceled ? targets.length : 0,
+              skipped: 0,
+            })
+          } catch (recordError) {
+            // 数据库仍不可写时只能停止执行并保留诊断，不能伪造已持久化的结束事实。
+            console.error(`[runs] 批次 ${g.id} 已停止，结束状态尚未写入`, recordError)
+          }
+          return
+        }
+      }
       const settle = (nodeId: string, outcome: BatchItem['outcome'], resultId?: string) =>
         this.store.updateBatchItem(g.id, nodeId, {
           outcome,
@@ -1107,20 +1154,29 @@ export class NodeRuns implements BatchHost {
         canceled: r.canceled.length,
         skipped: r.skipped.length,
       }
-      this.store.finishGroup(g.id, status, summary)
-      this.emit({
-        type: 'group-finished',
-        canvasId: g.canvas_id,
-        frameId: g.frame_id,
-        title: this.titleOf(doc.get(g.frame_id), '分组'),
-        status,
-        summary,
-      })
+      this.finishGroup(g, doc, status, summary)
     } finally {
       this.groups.delete(g.id)
       doc.destroy()
       lease.release()
     }
+  }
+
+  private finishGroup(
+    group: GroupRow,
+    doc: PleinDoc,
+    status: 'done' | 'canceled',
+    summary: GroupRunSummary,
+  ) {
+    this.store.finishGroup(group.id, status, summary)
+    this.emit({
+      type: 'group-finished',
+      canvasId: group.canvas_id,
+      frameId: group.frame_id,
+      title: this.titleOf(doc.get(group.frame_id), '分组'),
+      status,
+      summary,
+    })
   }
 
   /**
@@ -1133,10 +1189,11 @@ export class NodeRuns implements BatchHost {
     el: CanvasElement,
     ownerId: string,
     signal: AbortSignal,
+    inspection?: Inspection,
   ) {
     const d = this.store.decisions(canvasId).find((x) => x.node_id === el.id && !x.revoked_at)
     if (!d || currentResult(el)?.id !== d.result_id) return false
-    const now = await this.inspect(doc, el, ownerId, signal)
+    const now = inspection ?? (await this.inspect(doc, el, ownerId, signal))
     return now.input.inputHash === d.input_hash
   }
 

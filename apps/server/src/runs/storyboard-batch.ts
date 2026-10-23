@@ -171,13 +171,13 @@ export class StoryboardBatches {
         }
       }
       // 图片批次保留既有资产准备行为，所有隐式准备项目先列出来。
+      const hardGraph = new FlowGraph(doc.edges())
       if (request.role === 'image') {
         const mentions = new FlowGraph(mentionEdges(doc))
-        const edges = new FlowGraph(doc.edges())
         for (const id of direct) {
           if (request.reuseExisting && currentResult(doc.get(id)!)) continue
           for (const card of mentions.upstream(id))
-            for (const up of edges.ancestors(card)) {
+            for (const up of hardGraph.ancestors(card)) {
               const node = doc.get(up)
               if (node && this.runs.isJobNode(node)) add(node, undefined, true)
             }
@@ -254,7 +254,7 @@ export class StoryboardBatches {
         const changing = [...graph.ancestors(id)].filter((up) =>
           rows.some((r) => r.nodeId === up && r.action === 'run'),
         )
-        const hardAncestors = [...new FlowGraph(doc.edges()).ancestors(id)]
+        const hardAncestors = [...hardGraph.ancestors(id)]
         const hardBlocked = hardAncestors.some((up) =>
           rows.some((r) => r.nodeId === up && r.action === 'blocked'),
         )
