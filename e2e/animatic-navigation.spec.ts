@@ -1,10 +1,10 @@
 import { expect, type Page, test } from '@playwright/test'
 import { centerOf, newProject, zoomTo } from './canvas'
 
-async function fixture(page: Page, kind = 'video', multiple = false, missingBoard = false) {
+async function fixture(page: Page, multiple = false, missingBoard = false) {
   await newProject(page)
   const ids = await page.evaluate(
-    ({ kind, multiple, missingBoard }) => {
+    ({ multiple, missingBoard }) => {
       const add = window.__plein.addNode
       const board = add({
         type: 'plein/storyboard',
@@ -13,16 +13,9 @@ async function fixture(page: Page, kind = 'video', multiple = false, missingBoar
         y: 0,
         params: { shots: [{ id: 'one', no: 1, duration: 3 }] },
       })
-      const role = kind === 'speech' ? 'speech' : kind === 'sfx' ? 'sfx' : 'video'
-      const source = {
-        storyboard: board,
-        shot: kind === 'removed-shot' ? 'removed' : 'one',
-        role,
-        detached: kind === 'detached',
-        dialogueId: 'removed-line',
-      }
+      const source = { storyboard: board, shot: 'one', role: 'video' }
       const media = add({
-        type: `plein/${role}`,
+        type: 'plein/video',
         name: '关联镜头素材',
         x: 500,
         y: 0,
@@ -35,9 +28,7 @@ async function fixture(page: Page, kind = 'video', multiple = false, missingBoar
         y: 0,
         params: { aspectRatio: '16:9' },
       })
-      const port = role === 'video' ? 'clips' : role === 'speech' ? 'dialogue' : 'sfx'
-      if (!window.__plein.connect([media, role === 'video' ? 'video' : 'audio'], [film, port]))
-        throw new Error('连接失败')
+      if (!window.__plein.connect([media, 'video'], [film, 'clips'])) throw new Error('连接失败')
       let second = ''
       if (multiple) {
         second = add({
@@ -66,7 +57,7 @@ async function fixture(page: Page, kind = 'video', multiple = false, missingBoar
       }
       return { board, media, film, second, draft }
     },
-    { kind, multiple, missingBoard },
+    { multiple, missingBoard },
   )
   await zoomTo(page, [ids.draft])
   const at = await centerOf(page, ids.draft)
@@ -88,7 +79,7 @@ for (const missing of [false, true]) {
   test(`唯一成片${missing ? '在来源分镜删除后' : ''}可正确切回，导航不改剪辑数据`, async ({
     page,
   }) => {
-    const f = await fixture(page, 'video', false, missing)
+    const f = await fixture(page, false, missing)
     const before = await f.read()
     await f.editor.getByRole('button', { name: '切回成片', exact: true }).click()
     await expect(f.editor.getByRole('heading', { name: '当前成片', exact: true })).toBeVisible()
@@ -97,7 +88,7 @@ for (const missing of [false, true]) {
 }
 
 test('多个同名成片显示可消歧选项，Esc仅关菜单，键盘可打开指定成片', async ({ page }) => {
-  const f = await fixture(page, 'video', true)
+  const f = await fixture(page, true)
   await page.setViewportSize({ width: 390, height: 700 })
   const before = await f.read()
   expect(await f.editor.getByRole('button', { name: '切回成片', exact: true }).count()).toBe(0)
@@ -127,17 +118,6 @@ test('多个同名成片显示可消歧选项，Esc仅关菜单，键盘可打�
   )
   expect(await f.read()).toEqual(before)
 })
-
-for (const kind of ['detached', 'removed-shot', 'speech', 'sfx']) {
-  test(`${kind} 的旧素材不作为当前样片的成片关联`, async ({ page }) => {
-    const f = await fixture(page, kind)
-    expect(await f.editor.getByRole('button', { name: '切回成片', exact: true }).count()).toBe(0)
-    expect(
-      await f.editor.getByRole('combobox', { name: '选择成片序列', exact: true }).count(),
-    ).toBe(0)
-    await expect(f.editor.getByRole('heading', { name: '导航样片草稿', exact: true })).toBeVisible()
-  })
-}
 
 for (const change of ['delete', 'ambiguous'] as const) {
   test(`旧切回按钮遇到 ${change} 不跳错，恢复后可继续选择`, async ({ page }) => {
@@ -189,7 +169,7 @@ for (const change of ['delete', 'ambiguous'] as const) {
 
 for (const change of ['delete'] as const) {
   test(`选择菜单中的成片 ${change} 后拒绝旧选项，仍可切到剩余成片`, async ({ page }) => {
-    const f = await fixture(page, 'video', true)
+    const f = await fixture(page, true)
     await f.editor.getByRole('combobox', { name: '选择成片序列', exact: true }).click()
     const option = page.getByRole('option', { name: new RegExp(f.ids.second.slice(-6)) })
     await option.evaluate(

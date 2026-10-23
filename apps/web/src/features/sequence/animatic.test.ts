@@ -1,7 +1,14 @@
-import { createDoc, createElement, setParam } from '@plein/doc'
-import { animaticNode, arrangeAnimatic, sequenceTimeline } from '@plein/nodes'
+import type { Engine } from '@plein/canvas-core'
+import { connect, createDoc, createElement, setParam } from '@plein/doc'
+import {
+  ANIMATIC_TYPE,
+  animaticNode,
+  arrangeAnimatic,
+  SEQUENCE_TYPE,
+  sequenceTimeline,
+} from '@plein/nodes'
 import { describe, expect, it } from 'vite-plus/test'
-import { snapshotAnimatic } from './animatic'
+import { relatedSequences, snapshotAnimatic } from './animatic'
 import { previewScene } from './scene'
 
 const image = 'a'.repeat(64)
@@ -229,4 +236,67 @@ it('新快照跳过删除/清空/脱离的台词，重排按稳定id及旧文本
     expect(actual).toEqual([ids[1], ids[0]])
     doc.destroy()
   }
+})
+
+describe('样片的成片关联', () => {
+  const media = { video: 'video', speech: 'audio', sfx: 'audio' } as const
+  const port = { video: 'clips', speech: 'dialogue', sfx: 'sfx' } as const
+  function related(
+    role: 'video' | 'speech' | 'sfx',
+    source: { shot?: string; detached?: boolean; dialogueId?: string },
+    shot: Record<string, unknown> = {},
+  ) {
+    const doc = createDoc()
+    const node = (params: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+      createElement(doc, { kind: 'node', x: 0, y: 0, w: 10, h: 10, params, ...extra })
+    const board = node(
+      { shots: [{ id: 'one', no: 1, duration: 3, ...shot }] },
+      { nodeType: 'plein/storyboard' },
+    )
+    const from = node(
+      { source: { storyboard: board, shot: 'one', role, ...source } },
+      {
+        nodeType: `plein/${role}`,
+        ports: { inputs: [], outputs: [{ id: media[role], type: media[role] }] },
+      },
+    )
+    const film = node(
+      { aspectRatio: '16:9' },
+      {
+        nodeType: SEQUENCE_TYPE,
+        name: '当前成片',
+        ports: { inputs: [{ id: port[role], type: media[role], multiple: true }], outputs: [] },
+      },
+    )
+    expect(connect(doc, [from, media[role]], [film, port[role]])).not.toBeNull()
+    const draft = node(
+      { boardId: board, shots: [{ shotId: 'one', duration: 3, dialogue: [] }] },
+      { nodeType: ANIMATIC_TYPE },
+    )
+    const names = relatedSequences({ doc } as unknown as Engine, draft).map((el) => el.name)
+    doc.destroy()
+    return names
+  }
+
+  it.each([
+    ['detached', 'video', { detached: true }],
+    ['removed-shot', 'video', { shot: 'removed' }],
+    ['speech', 'speech', { dialogueId: 'removed-line' }],
+    ['sfx', 'sfx', {}],
+  ] as const)('%s 的旧素材不作为当前样片的成片关联', (_, role, source) => {
+    expect(related(role, source)).toEqual([])
+  })
+
+  it.each([
+    ['视频', 'video', {}, {}],
+    [
+      '当前台词配音',
+      'speech',
+      { dialogueId: 'line' },
+      { dialogue: [{ id: 'line', character: '人', line: '你好' }] },
+    ],
+    ['当前音效', 'sfx', {}, { sfx: '雷声' }],
+  ] as const)('当前镜头的%s有效连线会关联到成片', (_, role, source, shot) => {
+    expect(related(role, source, shot)).toEqual(['当前成片'])
+  })
 })
