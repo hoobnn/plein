@@ -1,5 +1,6 @@
 import { createDoc, createElement, LOCAL_ORIGIN, type PleinDoc } from '@plein/doc'
 import { describeNode, defineNode } from '@plein/plugin-sdk'
+import { findMentions } from '@plein/nodes'
 import { describe, expect, it } from 'vite-plus/test'
 import * as Y from 'yjs'
 import { z } from 'zod'
@@ -141,5 +142,42 @@ describe('能力注册表', () => {
     const out = (await registry.invoke('ungroup', ctx, { frame_id })) as { ids: string[] }
     expect(out.ids.sort()).toEqual([a, b].sort())
     await expect(registry.invoke('ungroup', ctx, { frame_id: a })).rejects.toThrow('不是 Frame')
+  })
+
+  it('复制能力和画布快捷键一样重映射内部引用，保留原节点指向', async () => {
+    const { registry, ctx } = setup()
+    const [character, image] = ctx.withDoc((doc) => {
+      const character = createElement(doc, {
+        kind: 'node',
+        nodeType: 'plein/character',
+        name: '林夏',
+        x: 0,
+        y: 0,
+        w: 100,
+        h: 100,
+      })
+      const image = createElement(doc, {
+        kind: 'node',
+        x: 200,
+        y: 0,
+        w: 100,
+        h: 100,
+        params: { prompt: '@林夏 站着', requiredRefs: [character] },
+      })
+      return [character, image]
+    })
+    const copy = (await registry.invoke('duplicate_elements', ctx, {
+      ids: [character, image],
+    })) as { ids: string[] }
+    ctx.withDoc((doc) => {
+      const original = doc.get(image!)!
+      const copied = doc.get(copy.ids[1]!)!
+      expect(copied.params!.requiredRefs).toEqual([copy.ids[0]])
+      expect(original.params!.requiredRefs).toEqual([character])
+      const targets = [character!, copy.ids[0]!].map((id) => ({ id, name: '林夏' }))
+      expect(findMentions(copied.params!.prompt as string, targets)[0]?.id).toBe(copy.ids[0])
+      expect(findMentions(original.params!.prompt as string, targets)[0]?.id).toBe(character)
+      expect(copied).toMatchObject({ x: 224, y: 24 })
+    })
   })
 })

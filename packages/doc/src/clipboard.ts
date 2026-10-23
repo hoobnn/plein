@@ -1,6 +1,7 @@
 import { createElements, ReadOnlyDocError, topLevel } from './commands'
 import { compareZ, type PleinDoc } from './doc'
 import { newId } from './ids'
+import { shotGroupOf, SHOT_GROUP_KEY } from './shotGroup'
 import { generateNKeysBetween } from 'fractional-indexing'
 import type { CanvasElement, Edge, NewElement } from './types'
 
@@ -77,8 +78,28 @@ export function importElements(
       const inputs: NewElement[] = batch.map((e) => {
         const isRoot = e.parentId === null
         const { id: _id, z: _z, parentId: _p, ...rest } = e
+        const group = shotGroupOf(e)
         return {
           ...rest,
+          ...(group
+            ? {
+                params: {
+                  ...rest.params,
+                  [SHOT_GROUP_KEY]: {
+                    ...group,
+                    order: group.order.map((id) => remap.get(id) ?? id),
+                    ...(group.source
+                      ? {
+                          source: {
+                            ...group.source,
+                            elementId: remap.get(group.source.elementId) ?? group.source.elementId,
+                          },
+                        }
+                      : {}),
+                  },
+                },
+              }
+            : {}),
           id: remap.get(e.id)!,
           x: isRoot ? e.x + dx - (parent?.x ?? 0) : e.x,
           y: isRoot ? e.y + dy - (parent?.y ?? 0) : e.y,

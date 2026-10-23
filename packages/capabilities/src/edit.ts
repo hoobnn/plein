@@ -1,7 +1,6 @@
 import {
   arrangeElements,
   bringToFront,
-  duplicateElements,
   elementPorts,
   groupElements,
   inputEdges,
@@ -15,6 +14,7 @@ import {
 import { z } from 'zod'
 import { CapabilityError, defineCapability } from './define'
 import { need } from './place'
+import { referenceClipboard } from './clipboard'
 
 /** 整理类编辑：复制、打组、解组、整理布局、层级。与右键菜单、快捷键是同一套命令 */
 
@@ -39,7 +39,12 @@ export const duplicate = defineCapability({
   run: (ctx, a) =>
     ctx.withDoc((doc) => {
       for (const i of a.ids) need(doc, i)
-      return { ids: duplicateElements(doc, a.ids, a.dx, a.dy) }
+      return {
+        ids: referenceClipboard.paste(doc, referenceClipboard.copy(doc, a.ids), {
+          dx: a.dx,
+          dy: a.dy,
+        }),
+      }
     }),
 })
 

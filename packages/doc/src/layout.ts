@@ -58,7 +58,11 @@ export function layoutGraph(
   const find = (id: string): string => {
     let r = id
     while (root.get(r) !== r) r = root.get(r)!
-    root.set(id, r)
+    while (id !== r) {
+      const parent = root.get(id)!
+      root.set(id, r)
+      id = parent
+    }
     return r
   }
   for (const [a, bs] of out) for (const b of bs) root.set(find(a), find(b))
@@ -121,19 +125,30 @@ function layoutComponent(
   // 断环：按原顺序深度优先，指回栈内的边不参与分层
   const dag = new Map<string, string[]>(comp.map((it) => [it.id, []]))
   const state = new Map<string, 1 | 2>()
-  const visit = (id: string) => {
+  const frames: Array<{ id: string; next: string[]; cursor: number }> = []
+  const enter = (id: string) => {
     state.set(id, 1)
     const next = [...out.get(id)!].filter((n) => ids.has(n))
     next.sort((a, b) => rank.get(a)! - rank.get(b)!)
-    for (const n of next) {
-      const s = state.get(n)
-      if (s === 1) continue
-      dag.get(id)!.push(n)
-      if (!s) visit(n)
-    }
-    state.set(id, 2)
+    frames.push({ id, next, cursor: 0 })
   }
-  for (const it of comp) if (!state.has(it.id)) visit(it.id)
+  for (const it of comp) {
+    if (state.has(it.id)) continue
+    enter(it.id)
+    while (frames.length) {
+      const frame = frames.at(-1)!
+      const n = frame.next[frame.cursor++]
+      if (n === undefined) {
+        state.set(frame.id, 2)
+        frames.pop()
+      } else {
+        const s = state.get(n)
+        if (s === 1) continue
+        dag.get(frame.id)!.push(n)
+        if (!s) enter(n)
+      }
+    }
+  }
 
   // 最长路径分层：每个元素在它所有上游的右边一层
   const preds = new Map<string, string[]>(comp.map((it) => [it.id, []]))

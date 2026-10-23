@@ -46,6 +46,18 @@ describe('自动放置避让', () => {
 })
 
 describe('layoutGraph', () => {
+  it('长依赖链不会耗尽调用栈，仍保持拓扑顺序和尺寸间距', () => {
+    const items = Array.from({ length: 12_000 }, (_, i) => item(String(i)))
+    const links = items.slice(1).map((it, i): [string, string] => [String(i), it.id])
+    const pos = layoutGraph(items, links)
+    expect(pos.size).toBe(items.length)
+    expect(pos.get('0')).toEqual({ x: 0, y: 0 })
+    for (let i = 1; i < items.length; i++) {
+      expect(pos.get(String(i))!.x).toBeGreaterThan(pos.get(String(i - 1))!.x + 100)
+      expect(pos.get(String(i))!.y).toBe(0)
+    }
+  })
+
   it('上游在左、下游在右，同层纵向排开', () => {
     const items = [item('a', 500, 500), item('b', 0, 0), item('c', 0, 300), item('d', 900, 0)]
     // a → b, a → c, b → d, c → d
