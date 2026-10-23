@@ -8,10 +8,14 @@
 // CI 发版时这里只出 ad-hoc 签名的 .app（--dir），由 hoobnn/ci-workflows 的复用工作流全部重签、公证和打包。
 import { cpSync, existsSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseProfile, profileIdentity } from './src/profile.ts'
+import { parseProfile, profileIdentity, parseAcceptanceNamespace } from './src/profile.ts'
 
 const profile = parseProfile(process.env.PLEIN_DESKTOP_PROFILE)
 const identity = profileIdentity(profile)
+const namespace =
+  profile === 'acceptance'
+    ? parseAcceptanceNamespace(process.env.PLEIN_ACCEPTANCE_NAMESPACE)
+    : undefined
 
 const signed = Boolean(process.env.CSC_LINK || process.env.CSC_NAME)
 const notarize = signed && Boolean(process.env.APPLE_TEAM_ID && process.env.APPLE_ID)
@@ -31,6 +35,7 @@ export default {
   // 发布时由 CI 按标签传入（v0.1.0 → 0.1.0）
   extraMetadata: {
     pleinDesktopProfile: profile,
+    ...(namespace ? { pleinAcceptanceNamespace: namespace } : {}),
     ...(profile === 'acceptance'
       ? { name: 'plein-acceptance', productName: identity.productName }
       : {}),

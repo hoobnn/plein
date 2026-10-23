@@ -58,6 +58,7 @@ vi.mock('./profile', () => ({
   profileIdentity: () => ({ productName: 'Plein', windowTitle: 'plein' }),
   initializeProfile: () => true,
   profileWindowChrome: () => ({}),
+  readAcceptanceNamespace: () => undefined,
 }))
 vi.mock('./downloads', () => ({ handleDownloads: vi.fn(), showSavedFile: vi.fn() }))
 vi.mock('./menu', () => ({ installMenu: vi.fn() }))

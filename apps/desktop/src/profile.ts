@@ -51,12 +51,34 @@ interface ProfileApp {
   requestSingleInstanceLock(): boolean
 }
 
+/** 验收运行目录由包内元数据冻结；生产包不接受命名空间。 */
+export function parseAcceptanceNamespace(value: unknown): string | undefined {
+  if (value === undefined) return
+  if (typeof value !== 'string' || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(value))
+    throw new Error('验收命名空间只支持 1–64 位小写英文、数字和短横线')
+  return value
+}
+
+export function readAcceptanceNamespace(
+  packaged: boolean,
+  appPath: string,
+  profile: DesktopProfile,
+) {
+  if (!packaged || profile !== 'acceptance') return
+  return parseAcceptanceNamespace(
+    JSON.parse(readFileSync(join(appPath, 'package.json'), 'utf8')).pleinAcceptanceNamespace,
+  )
+}
+
 /** 必须在获取单实例锁、创建 session 或窗口前执行；正式版沿用既有 userData。 */
-export function initializeProfile(app: ProfileApp, profile: DesktopProfile) {
+export function initializeProfile(app: ProfileApp, profile: DesktopProfile, namespace?: string) {
   const identity = profileIdentity(profile)
   app.setName(identity.runtimeName)
   if (profile === 'acceptance') {
-    const dir = join(app.getPath('appData'), identity.productName)
+    const selected = parseAcceptanceNamespace(namespace)
+    const dir = selected
+      ? join(app.getPath('appData'), identity.productName, selected)
+      : join(app.getPath('appData'), identity.productName)
     mkdirSync(dir, { recursive: true })
     app.setPath('userData', dir)
   }

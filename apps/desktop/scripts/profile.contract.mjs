@@ -9,6 +9,8 @@ import {
   desktopDevelopment,
   initializeProfile,
   parseProfile,
+  parseAcceptanceNamespace,
+  readAcceptanceNamespace,
   profileDataDir,
   profileIdentity,
   profileWindowChrome,
@@ -292,4 +294,37 @@ void test('包内媒体二进制不可执行时在启动检查失败，不等到
     createBundle(dir)
     chmodSync(join(dir, 'ffmpeg/ffmpeg'), 0o600)
     assert.throws(() => packagedServerPaths(dir, 'darwin'), /ffmpeg/)
+  }))
+
+void test('命名验收包将目录冻结在包内元数据，不能越界或污染已有验收数据', () =>
+  temporary((dir) => {
+    for (const value of ['', '../production', '/production', 'a/b', 'A', null])
+      assert.throws(() => parseAcceptanceNamespace(value))
+    assert.equal(parseAcceptanceNamespace('hyperframes-2026-10-23'), 'hyperframes-2026-10-23')
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({ pleinAcceptanceNamespace: 'hyperframes-2026-10-23' }),
+    )
+    assert.equal(readAcceptanceNamespace(true, dir, 'production'), undefined)
+    assert.equal(readAcceptanceNamespace(false, dir, 'acceptance'), undefined)
+    assert.equal(readAcceptanceNamespace(true, dir, 'acceptance'), 'hyperframes-2026-10-23')
+    const calls = []
+    initializeProfile(
+      {
+        setName() {},
+        getPath: () => dir,
+        setPath: (name, value) => calls.push([name, value]),
+        setAppUserModelId() {},
+        requestSingleInstanceLock: () => {
+          calls.push(['lock'])
+          return true
+        },
+      },
+      'acceptance',
+      'hyperframes-2026-10-23',
+    )
+    assert.deepEqual(calls, [
+      ['userData', join(dir, 'Plein Acceptance', 'hyperframes-2026-10-23')],
+      ['lock'],
+    ])
   }))

@@ -20,6 +20,7 @@ apps/web/.e2e-build-stamp.json
 apps/desktop/stage/
 apps/desktop/.ffmpeg-build/
 apps/desktop/release/
+apps/desktop/release-acceptance/
 
 # ── 测试 / 覆盖率 ─────────────────────────────────
 coverage/

@@ -5,7 +5,13 @@ import { Activity } from './activity'
 import { handleDownloads, showSavedFile } from './downloads'
 import { installMenu } from './menu'
 import { appIconPath, DEV_WEB_URL, dataDir, isDev, serverPaths } from './paths'
-import { initializeProfile, profileIdentity, profileWindowChrome, readProfile } from './profile'
+import {
+  initializeProfile,
+  profileIdentity,
+  profileWindowChrome,
+  readProfile,
+  readAcceptanceNamespace,
+} from './profile'
 import { readPrefs, writePrefs } from './prefs'
 import { type ServerHandle, startServer } from './server'
 import { setupUpdater } from './updater'
@@ -43,7 +49,11 @@ function flushOpen() {
 
 const profile = readProfile(app.isPackaged, app.getAppPath())
 const identity = profileIdentity(profile)
-const primaryInstance = initializeProfile(app, profile)
+const primaryInstance = initializeProfile(
+  app,
+  profile,
+  readAcceptanceNamespace(app.isPackaged, app.getAppPath(), profile),
+)
 if (!primaryInstance) app.quit()
 
 function showWindow() {

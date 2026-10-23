@@ -150,3 +150,32 @@ node apps/server/src/motion/matrix-acceptance.build.mjs
 node_modules/.bin/vp test run apps/server/src/motion
 node_modules/.bin/markdownlint docs/dev/motion-composition.md
 ```
+
+## 动画字幕与透明叠加轨
+
+动态合成的 `output` 支持 `mp4` 和 `transparent-webm`。透明格式固定为 VP9 alpha、30fps、无音轨；随包 FFmpeg 使用锁定的 libvpx 1.16.0。源 ZIP 保留输出格式，旧版没有该字段的工程仍按 MP4 处理。前端使用原生视频解码保留透明通道，服务端对带 alpha 的 VP9 明确选择 `libvpx-vp9` 解码器。
+
+序列新增 `overlays` 视频端口和独立叠加轨。每层支持来源、全片时间或镜头锚定、入点、时长、速度、位置、尺寸、不透明度、显示开关和前后层序。位置和尺寸归一化为画幅比例；内容拉伸到指定矩形，超出画幅裁切。数组后面的层绘制在上面，区间为 `[start,end)`。镜头锚定随镜头重排移动，并在镜头结束处截断；叠加层速度独立于背景镜头速度。叠加视频的声音不加入混音。
+
+用户叠加轨最多 200 层，内部字幕层另计。断开的来源、失效的镜头锚定、不合法的几何和不足以覆盖 `in + visibleDuration * speed` 的源素材会阻断导出。预览和导出共用 `sequenceOverlays` 与全局字幕 cue。背景镜头、叠加视频和字幕都由序列主播放头定位，动画字幕不会单独播放声音。
+
+`subtitleRender` 支持 `static`、`animated`、`none`；默认维持普通字幕。动画提供整句 `fade` 和 `pop`，通过渲染 SDK 渲染独立透明层，最后叠加到成片；不会再重复烧录 ASS。`none` 保留字幕轨和工程 SRT，关闭画面烧录。字幕 `id/source/origin` 保留；`origin` 区分 `manual`、`estimated`、`asr`、`legacy`，手改时间或文案会标记 `manual`，不推断单词时间。
+
+单次动画字幕目前支持最长 300 秒、最多 2000 个 cue 和 100000 个文本字符；超出参数会明确拒绝且不可自动重试。调整字幕模板时提升 `CAPTION_TEMPLATE_VERSION`；渲染缓存同时包含字幕模板版本、Motion 模板版本、适配器版本、引擎、字体和工具身份。序列缓存保留来源元素 ID，不能用同资产的另一个节点绕过轨道绑定验证。
+
+工程导出的 OTIO 与 FCPXML 保留独立透明视频轨及素材。FCPXML 保留变速、位置、尺寸和不透明度；OTIO 的几何与不透明度写入 Plein 元数据，导入软件可能需要手动设置。动画字幕的离线 HTML、字体、GSAP 和 cue 来源存于 `sources/captions/source.zip`，同时附 SRT 与 `caption-cues.json`；动画不转换为第三方剪辑软件的原生字幕效果。
+
+透明渲染与取消的可复现验收：
+
+```sh
+node apps/server/src/motion/alpha-acceptance.build.mjs
+```
+
+安装包验收使用不可被环境变量切换的独立数据命名空间：打包时设置 `PLEIN_DESKTOP_PROFILE=acceptance` 和 `PLEIN_ACCEPTANCE_NAMESPACE=hyperframes-2026-10-23`。从 DMG 复制安装后，执行：
+
+```sh
+apps/server/node_modules/.bin/tsx apps/desktop/scripts/hyperframes-installed.ts \
+  '/absolute/installed/Plein Acceptance.app' '/absolute/evidence-directory'
+```
+
+脚本通过正式 HTTP/Yjs 接口准备本地测试素材，在打包后的应用里操作实际编辑器、渲染透明候选、明确采用、导出动画字幕成片和工程，并重启检查保留状态。它不依赖 `window.__plein` 开发测试入口。原生下载的保存位置由验收驱动指定，实际文件由桌面下载流程写入。
