@@ -26,6 +26,7 @@ export function SlidePill({
     const group = pill?.parentElement
     if (!pill || !group) return
     let ready = false
+    let frame = 0
     const place = () => {
       const active = group.querySelector<HTMLElement>(ACTIVE)
       if (!active) {
@@ -39,7 +40,7 @@ export function SlidePill({
       // 第一次直接就位，之后才有过渡，免得一打开就从左上角滑过来
       if (!ready) {
         ready = true
-        requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => {
           pill.dataset.ready = ''
         })
       }
@@ -52,12 +53,22 @@ export function SlidePill({
       attributes: true,
       attributeFilter: ['aria-pressed', 'aria-selected', 'aria-current', 'class'],
     })
-    const ro = new ResizeObserver(place)
+    const ro = new ResizeObserver(() => {
+      place()
+      // 窗口/内容重排必须立即对齐，不能让旧尺寸的滑块在新布局外继续滑动。
+      // 选中项变化仍走 MutationObserver，保留原本的连续位移。
+      for (const animation of pill.getAnimations()) {
+        if (animation instanceof CSSTransition) animation.finish()
+      }
+    })
     ro.observe(group)
-    for (const el of group.children) ro.observe(el)
+    for (const el of group.children) {
+      if (el !== pill) ro.observe(el)
+    }
     return () => {
       mo.disconnect()
       ro.disconnect()
+      cancelAnimationFrame(frame)
     }
   }, [])
   return <span ref={ref} aria-hidden="true" className={`ui-slide-pill ui-slide-pill-${variant}`} />
