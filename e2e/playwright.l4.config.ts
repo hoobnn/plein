@@ -4,7 +4,7 @@ const PORT = Number(process.env.PLEIN_L4_PORT ?? 8796)
 process.env.PLEIN_L4_PORT = String(PORT)
 
 /**
- * L4 真实样例（发版门禁，见 docs/plan/acceptance-0.1.0.md）：真实平台、真实计费。
+ * L4 真实样例（发版门禁，见 CONTRIBUTING.md「验收分层」）：真实平台、真实计费。
  * 不进 `pnpm e2e` 和 CI；用 `pnpm e2e:real` 手动跑，服务端由用例自己起停（中途要杀掉重启）。
  * 必须给 PLEIN_L4_DATA：一个已在设置里配好、启用了平台的数据目录，用例不会替你选平台。
  */
