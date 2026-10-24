@@ -70,10 +70,15 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
   const current = sections.find((s) => s.id === section) ?? sections[0]!
 
   return (
-    <Modal label="设置" onClose={onClose} top className="h-[min(640px,100%)] max-w-215 sm:flex-row">
+    <Modal
+      label="设置"
+      onClose={onClose}
+      top
+      className="settings-dialog h-[min(640px,100%)] max-w-215 sm:flex-row"
+    >
       <nav
         aria-label="设置分区"
-        className="ui-slide flex flex-none gap-1 overflow-x-auto border-b border-line bg-surface-2 p-2 sm:w-52 sm:flex-col sm:overflow-visible sm:border-r sm:border-b-0 sm:p-3"
+        className="settings-nav ui-slide flex flex-none gap-1 overflow-x-auto border-b border-line bg-surface-2 p-2 sm:w-52 sm:flex-col sm:overflow-visible sm:border-r sm:border-b-0 sm:p-3"
       >
         <h2 className="hidden px-2.5 pt-1.5 pb-3 text-lg font-semibold sm:block">设置</h2>
         <SlidePill variant="seg" />
@@ -83,7 +88,7 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
             type="button"
             aria-current={s.id === current.id ? 'page' : undefined}
             onClick={() => setSection(s.id)}
-            className={`flex h-8 flex-none items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors ${
+            className={`settings-nav-item flex h-8 flex-none items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors ${
               s.id === current.id ? 'text-ink' : 'text-ink-muted hover:bg-hover hover:text-ink'
             }`}
           >
@@ -99,7 +104,7 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
       </nav>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ModalHeader title={current.label} onClose={onClose} divider={false} />
-        <div className="ui-scrollbar flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-5 pt-2 pb-5">
+        <div className="settings-content ui-scrollbar flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-5 pt-2 pb-5">
           {/* 分区导航是竖排的：内容按上下方向滑入 */}
           <SlideSwap
             index={sections.indexOf(current)}
@@ -205,24 +210,63 @@ function Appearance() {
   const pref = useTheme((s) => s.pref)
   const setPref = useTheme((s) => s.setPref)
   return (
-    <fieldset aria-label="主题" className="ui-slide grid grid-cols-3 gap-2 border-0 p-0">
+    <fieldset aria-label="主题" className="settings-themes ui-slide">
       <SlidePill variant="accent" />
       {THEME_OPTIONS.map((o) => (
         <button
           key={o.pref}
           type="button"
+          aria-label={o.label}
           aria-pressed={pref === o.pref}
           onClick={() => setPref(o.pref)}
-          className={`flex h-10 items-center justify-center gap-2 rounded-md text-sm ring-1 transition-colors ${
-            pref === o.pref
-              ? 'text-accent ring-transparent'
-              : 'bg-surface-2 text-ink-muted ring-line hover:text-ink'
-          }`}
+          className="settings-theme"
         >
-          <Icon name={o.icon} />
-          {o.label}
+          <ThemePreview mode={o.pref} />
+          <span className="settings-theme-caption">
+            <Icon name={o.icon} size={14} />
+            <span>{o.label}</span>
+          </span>
+          <span className="settings-theme-check" aria-hidden="true">
+            <Icon name="check" size={12} />
+          </span>
         </button>
       ))}
     </fieldset>
+  )
+}
+
+/** 用编辑器自身的结构预览主题；独立配色让深浅选择在任一当前主题下都可辨认。 */
+function ThemePreview({ mode }: { mode: 'system' | 'light' | 'dark' }) {
+  return (
+    <span className="settings-theme-preview" data-mode={mode} aria-hidden="true">
+      {(['light', 'dark'] as const).map((theme) => (
+        <span key={theme} className="settings-theme-scene" data-scheme={theme}>
+          <span className="settings-theme-header">
+            <span className="settings-theme-brand" />
+            <span className="settings-theme-line" />
+            <span className="settings-theme-avatar" />
+          </span>
+          <span className="settings-theme-sidebar">
+            <span className="settings-theme-line" />
+            <span className="settings-theme-line" />
+            <span className="settings-theme-line" />
+          </span>
+          <span className="settings-theme-link" />
+          <span className="settings-theme-node settings-theme-node-text">
+            <span className="settings-theme-line" />
+            <span className="settings-theme-line" />
+            <span className="settings-theme-line" />
+          </span>
+          <span className="settings-theme-node settings-theme-node-image">
+            <span />
+          </span>
+          <span className="settings-theme-tools">
+            <span />
+            <span />
+            <span />
+          </span>
+        </span>
+      ))}
+    </span>
   )
 }
