@@ -254,7 +254,7 @@ const supported: Partial<Record<string, string[]>> = {
   'image.edit': ['wanx2.1-imageedit'],
   'image.process': ['wanx2.1-imageedit'],
   'video.generate': ['wan3.0-video', 'wan3.0-video-prime'],
-  'audio.speech': ['qwen3-tts-flash', 'qwen3-tts-instruct-flash'],
+  'audio.speech': ['qwen3-tts-flash'],
 }
 const IMAGE_ASPECTS = ['21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16']
 // 万相视频的 ratio；auto 即 adaptive，跟随素材或由模型决定
@@ -345,13 +345,6 @@ export const bailianProvider = defineProvider({
       capabilities: ['audio.speech' as const],
       limits: { speed: false as const, instruction: false },
     },
-    {
-      id: 'qwen3-tts-instruct-flash',
-      title: 'qwen3-tts-instruct-flash',
-      capabilities: ['audio.speech' as const],
-      // 语速用语气指令描述
-      limits: { speed: false as const },
-    },
   ],
   async test(ctx) {
     key(ctx)
@@ -359,6 +352,11 @@ export const bailianProvider = defineProvider({
   },
   async submit(req, ctx) {
     key(ctx)
+    if (req.model === 'qwen3-tts-instruct-flash')
+      throw new ProviderError(
+        'invalid_input',
+        'qwen3-tts-instruct-flash 已下线；请选择 qwen3-tts-flash，语气指令请使用豆包语音',
+      )
     if (!supported[req.capability]?.includes(req.model))
       throw new ProviderError('invalid_input', `百炼模型 ${req.model} 不支持 ${req.capability}`)
     switch (req.capability) {
@@ -621,8 +619,13 @@ export const bailianProvider = defineProvider({
         // oxlint-disable-next-line typescript/no-misused-spread -- 平台按 Unicode 码点计字数
         if (!input.text.trim() || [...input.text].length > 600)
           throw new ProviderError('invalid_input', '千问语音文本须为 1–600 字符')
-        if (input.instruction && !req.model.includes('instruct'))
-          throw new ProviderError('invalid_input', '语音指令需要 qwen3-tts-instruct-flash')
+        if (
+          input.instruction ||
+          ['instruction', 'instructions', 'optimize_instructions'].some(
+            (field) => input.extra?.[field] !== undefined,
+          )
+        )
+          throw new ProviderError('invalid_input', 'qwen3-tts-flash 不支持语气指令，请使用豆包语音')
         if (input.speed !== undefined && input.speed !== 1)
           throw new ProviderError(
             'invalid_input',
@@ -635,9 +638,6 @@ export const bailianProvider = defineProvider({
             text: input.text,
             voice: input.voice ?? ctx.settings.voice,
             language_type: ctx.settings.language,
-            ...(input.instruction
-              ? { instructions: input.instruction, optimize_instructions: true }
-              : {}),
           },
         })
         return {

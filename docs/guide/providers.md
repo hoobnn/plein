@@ -22,7 +22,7 @@ MiniMax 默认走中国区 `api.minimax.cn`，也可以选国际区 `api.minimax
 
 适配器以官方接口文档为契约，直接调用宿主提供的 `ctx.fetch`，没有引入云厂商 SDK。这样域名许可、密钥访问、资产归属、取消信号和异步任务轮询都由宿主统一把关。每个平台各自声明模型、设置、密钥和所需的最小网络权限；生成的产物经宿主写入资产库。
 
-OpenAI 兼容的对话（`text.chat`）共用 `packages/providers/src/shared/llm.ts`。它基于 Vercel AI SDK（`ai` + `@ai-sdk/openai-compatible`），负责消息转换、流式读取、按请求里的 JSON Schema 校验结构化输出（zod `fromJSONSchema`），以及用量归一化。鉴权、端点，以及 HTTP 错误码和流内错误码的归类与脱敏，仍由各平台适配器通过传入的 `fetch` 和 `streamError` 负责；请求一律不重试。目前只有百炼接入了这一层；火山方舟和 MiniMax 的对话还是各自手写请求，等插件 SDK 支持把流式输出送到界面、或支持工具调用时再迁过来。
+OpenAI 兼容的对话（`text.chat`）共用 `packages/providers/src/shared/llm.ts`。它基于 Vercel AI SDK（`ai` + `@ai-sdk/openai-compatible`），负责消息转换、流式读取、按请求里的 JSON Schema 校验结构化输出（zod `fromJSONSchema`），以及用量归一化。鉴权、端点，以及 HTTP 错误码和流内错误码的归类与脱敏，仍由各平台适配器通过传入的 `fetch` 和 `streamError` 负责；请求一律不重试。百炼和火山方舟已接入这一层，支持流式文字回调和工具调用；MiniMax 对话仍使用独立的非流式请求实现。
 
 SDK 新增了两个字段：`testScope` 用来标出「只检查本地配置」，`credentialAlternatives` 用来表达豆包的新旧两种鉴权方式；只有某一组凭据填完整时，目录里的 `configured` 才为真。宿主发送取消请求时使用独立的 10 秒信号，避免已取消的生成请求把远端取消请求也一起拦下。
 
@@ -30,10 +30,10 @@ SDK 新增了两个字段：`testScope` 用来标出「只检查本地配置」�
 
 - 生成视频节点的模式由用户在生成器里指定：文生视频、图生视频（第 1 张图作首帧）、首尾帧（第 1、2 张图）、多模态参考（按类型送入图片、视频和音频）。连入图片按参考槽位的明确顺序编号；移动上游节点不会改变顺序，拖动缩略图或点击前移/后移才会重排。替换保留原槽位，点击缩略图可以预览。旧画布首次迁移时按原来的空间顺序固化一次。图片数和模式对不上时提交前拦下。视频提示词里 `@` 资产卡时，只有多模态参考模式会把参考图并入，其他模式只附文字设定并给出提示。参考图上限：Seedance 2.5 为 30 张，2.0 系列为 9 张，万相为 10 张，MiniMax H3 为 9 张。「生成音频」是通用开关：Seedance 传 `generate_audio`，万相传 `audio`，MiniMax H3 不支持（隐藏）。生成数量按条数并行提交。
 - MiniMax H3 使用 V2：H3 为 4–15 整数秒、768P / 2K；H3-Max 为 5–15 秒、480P / 768P。首尾帧与参考素材互斥，V2 不支持 seed。此适配器支持图片、视频与音频参考，分别按官方类型和用途提交，本地素材经宿主读取和编码。M2.7 对话仅支持纯文本；当前 MiniMax 对话适配器不支持强制 JSON Schema。
-- MiniMax 图片仅支持单张人物参考图；MiniMax 配音不支持自由语气指令，可通过 `extra.emotion` 指定官方情绪，或使用豆包 / 千问 instruct 模型。
+- MiniMax 图片仅支持单张人物参考图；MiniMax 配音不支持自由语气指令，可通过 `extra.emotion` 指定官方情绪，或使用豆包语音。
 - Music 3.0 当前生成纯音乐，时长由模型决定。该旧音乐 API 可能仅向原付费用户开放；2026-10-12 本机账号实测返回 HTTP 410。Seed Audio 的目标时长写入提示词，属于软约束。豆包返回内嵌音频，暂不支持仅返回 URL 的音频产物。
-- 百炼 Wan 3.0 的本地参考素材通过官方上传凭证上传 OSS，再交给生成接口。局部重绘（`image.edit`）用万相通用图像编辑 `wanx2.1-imageedit` 的 `description_edit_with_mask`：原图和蒙版（黑底白区，与原图同尺寸）同样走 OSS 上传，异步任务；目前只有它原生支持蒙版，方舟和 MiniMax 不声明这项能力，界面不会用整图重绘或裁切贴回冒充。还没做真实平台验收。千问配音自然语言指令需要 instruct 模型，单次文本最多 600 字符。对话 JSON Schema 以 JSON mode + 提示词表达，当前不保证强制符合 Schema。
-- 方舟支持本地图片和音频编码为 data URL；本地视频参考仍需平台素材库上传，当前不声明这项能力，界面会在提交前阻断并提示使用支持本地视频的其他模型。Seedream 的画幅映射为对应模型支持的尺寸；多图生成应选择支持组图的 Lite 模型。Seedream 5 不支持 seed。
+- 百炼 Wan 3.0 的本地参考素材通过官方上传凭证上传 OSS，再交给生成接口。局部重绘（`image.edit`）用万相通用图像编辑 `wanx2.1-imageedit` 的 `description_edit_with_mask`：原图和蒙版（黑底白区，与原图同尺寸）同样走 OSS 上传，异步任务；目前只有它原生支持蒙版，方舟和 MiniMax 不声明这项能力，界面不会用整图重绘或裁切贴回冒充。还没做真实平台验收。千问配音当前只接入 `qwen3-tts-flash`，不支持自然语言语气指令，单次文本最多 600 字符。已下线的 `qwen3-tts-instruct-flash` 不再列出，旧节点提交时在本地拒绝；不自动替换模型。Qwen-Audio-TTS 使用独立的 `SpeechSynthesizer` 协议，当前尚未接入。对话 JSON Schema 以 JSON mode + 提示词表达，当前不保证强制符合 Schema。
+- 方舟支持本地图片和音频编码为 data URL；本地视频参考仍需平台素材库上传，当前不声明这项能力，界面会在提交前阻断并提示使用支持本地视频的其他模型。Seedream 的画幅映射为对应模型支持的尺寸；Lite 支持组图，但已停止新购，官方计划于 2026-11-24 14:00（UTC+8）关停 `doubao-seedream-5-0-260128` / `doubao-seedream-5-0-lite-260128`；目录保留现有接入并显示迁移提示。Pro / Flash 只支持单图，不能直接替代组图能力。Seedream 5 不支持 seed。
 - MiniMax / 方舟仅对排队任务尝试远端取消；运行中任务无法由此接口取消。取消前查询状态，避免对已完成任务调用兼具删除语义的接口。百炼取消受官方排队状态限制。
 - 不自动重试生成 POST；网络断开或缺少 task ID 时不得假定提交失败。宿主通过任务 journal 将异步 ID 存入 SQLite `jobs.calls`，重启后对已记录的 pending 调用继续轮询；机制已有源码实现，真实平台跨进程恢复仍需端到端验收。
 - 提交后没收到回应时任务记为「提交结果未知」。内置真实平台都没有声明按幂等键查询（`lookup`）或幂等提交（`idempotent`），这时只能在任务面板人工核查：填平台控制台里查到的任务 ID 接着取结果，或确认未受理后重新提交（可能重复计费）。mock 平台实现了 `lookup`，用来测试自动核查。
@@ -47,9 +47,11 @@ SDK 新增了两个字段：`testScope` 用来标出「只检查本地配置」�
 复刻不是模型能力，而是 Provider 上可选的 `voiceClone`：`voiceId` 说明音色 ID 由用户填（`slot`）还是由宿主生成（`generated`），`clone` 提交样本，`status` 查训练状态。训练状态不另起后台任务，拉音色列表时顺手查训练中的音色（同一音色至少隔 15 秒），也可以手动刷新，重启后照常接着查。
 
 - MiniMax：先 `POST /v1/files/upload`（`purpose=voice_clone`，multipart）拿 `file_id`，再 `POST /v1/voice_clone`，成功即可用。音色 ID 由宿主生成（字母开头、小写字母和数字）。需要实名认证，未认证时平台返回 2038，按鉴权失败报出。样本 10 秒至 5 分钟、MP3 / M4A / WAV、20 MB 以内，时长和大小在上传前拦下。复刻出的音色 7 天内没用于正式合成会被平台删除。
-- 豆包：音色 ID 要填控制台开通声音复刻后分配的 `S_` 开头 ID，同一 ID 再上传会重新训练。`POST /api/v3/tts/voice_clone` 提交样本（base64，开启降噪），`POST /api/v3/tts/get_voice` 查状态：1 训练中，2、4 可用，3 失败。样本 WAV / MP3 / OGG / M4A / AAC、10 MB 以内。配音时音色以 `S_` 开头就自动走 `seed-icl-2.0` 资源，即使节点选的是合成 2.0。官方页面无法抓取，字段按社区实现与豆包语音工具说明对接，尚未真机验证。
+- 豆包：音色 ID 要填控制台开通声音复刻后分配的 `S_` 开头 ID，同一 ID 再上传会重新训练。`POST /api/v3/tts/voice_clone` 提交样本（base64，开启降噪），`POST /api/v3/tts/get_voice` 查状态：1 训练中，2、4 可用，3 失败。样本 WAV / MP3 / OGG / M4A / AAC、10 MB 以内。配音时音色以 `S_` 开头就自动走 `seed-icl-2.0` 资源，即使节点选的是合成 2.0。本轮已通过官方文档站的 `getDocDetail` 取得[声音复刻](https://docs.volcengine.com/docs/DoubaoVoice/tone-training-http?lang=zh)和[状态查询](https://docs.volcengine.com/docs/DoubaoVoice/tone-query-http?lang=zh)正文，字段及状态枚举与当前实现相符；尚未进行本轮云端训练验证。
 
 ## 验证与官方来源
+
+2026-10-24 重新获取四个平台的 30 份官方正文，并参考 `hoobnn-mcps` 已审查实现核对当前接入范围。修正百炼已下线 instruct 模型和语气字段、方舟尾帧 JPEG MIME，并注明 Seedream Lite 下线日期。逐平台请求结构与验证边界见[本轮契约复核](../dev/provider-contract-audit-2026-10-24.md)，来源 URL 和正文 SHA-256 见[抓取记录](../benchmarks/2026-10-24-provider-doc-sources.json)。
 
 契约测试用模拟的 HTTP 响应，覆盖节点参数映射、二进制素材和音频、业务错误、任务状态、取消和权限清单；宿主集成测试检查插件目录、默认禁用状态、鉴权配置与取消信号。这些测试证明不了账号有没有模型权限，也证明不了云端的实际生成效果。
 

@@ -370,7 +370,7 @@ describe('百炼 API 契约', () => {
       ),
     ).rejects.toMatchObject({ code: 'invalid_input' })
   })
-  it('语音 input 指令、音色和业务空间端点符合 native API', async () => {
+  it('语音 input、音色和业务空间端点符合 Qwen-TTS API', async () => {
     const { ctx, fetch, body } = setup([
       {
         output: { audio: { url: 'https://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/a.wav' } },
@@ -380,8 +380,8 @@ describe('百炼 API 契约', () => {
     const result = await bailianProvider.submit(
       {
         capability: 'audio.speech',
-        model: 'qwen3-tts-instruct-flash',
-        input: { text: '你好', instruction: '温柔', voice: 'Cherry' },
+        model: 'qwen3-tts-flash',
+        input: { text: '你好', voice: 'Cherry' },
       },
       ctx,
     )
@@ -389,13 +389,31 @@ describe('百炼 API 契约', () => {
       state: 'succeeded',
       outputs: [{ kind: 'audio', mime: 'audio/wav' }],
     })
-    expect(fetch.mock.calls[0]?.[0]).toContain('work-123.cn-beijing.maas.aliyuncs.com')
+    expect(fetch.mock.calls[0]?.[0]).toBe(
+      'https://work-123.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
+    )
     expect(body().input).toMatchObject({
       text: '你好',
       voice: 'Cherry',
-      instructions: '温柔',
-      optimize_instructions: true,
+      language_type: 'Auto',
     })
+  })
+  it('下线 instruct 模型和不支持的语气字段在发包前拒绝', async () => {
+    expect(bailianProvider.models.some((m) => m.id === 'qwen3-tts-instruct-flash')).toBe(false)
+    const { ctx, fetch } = setup()
+    for (const req of [
+      { model: 'qwen3-tts-instruct-flash', input: { text: '你好' } },
+      { model: 'qwen3-tts-flash', input: { text: '你好', instruction: '温柔' } },
+      ...['instruction', 'instructions', 'optimize_instructions'].map((field) => ({
+        model: 'qwen3-tts-flash',
+        input: { text: '你好', extra: { [field]: '温柔' } },
+      })),
+    ]) {
+      await expect(
+        bailianProvider.submit({ capability: 'audio.speech', ...req }, ctx),
+      ).rejects.toMatchObject({ code: 'invalid_input' })
+    }
+    expect(fetch).not.toHaveBeenCalled()
   })
   it('业务层安全与欠费错误归一化', async () => {
     for (const [code, expected] of [

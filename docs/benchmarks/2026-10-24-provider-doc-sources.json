@@ -1,0 +1,283 @@
+{
+  "checked_at": "2026-10-24T15:50:10.004200+00:00",
+  "reference_commit": "d8daa0f14b23fc23b084588d6289c6dd6c0ceee8",
+  "sources": [
+    {
+      "id": "ark-chat-api",
+      "url": "https://docs.volcengine.com/docs/ark/chat-api?lang=zh",
+      "fetch_url": "https://www.volcengine.com/api/doc/getDocDetail?LibraryCode=ark&DocumentCode=chat-api",
+      "updated_at": "2026-10-22T11:38:16Z",
+      "status": "ok",
+      "body_sha256": "35f2fecd7bd865c015786e2083fbfc4185c5a7cc243373c710bf4d1ada74afd0",
+      "bytes": 54644,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "ark-create-video-generation-task-api",
+      "url": "https://docs.volcengine.com/docs/ark/create-video-generation-task-api?lang=zh",
+      "fetch_url": "https://www.volcengine.com/api/doc/getDocDetail?LibraryCode=ark&DocumentCode=create-video-generation-task-api",
+      "updated_at": "2026-10-20T02:28:50Z",
+      "status": "ok",
+      "body_sha256": "4ecdd7dfa6e29e35d42d3abc3bb60383a1a8f35599d28e7e423e764561146aa8",
+      "bytes": 36528,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "ark-get-video-generation-task-api",
+      "url": "https://docs.volcengine.com/docs/ark/get-video-generation-task-api?lang=zh",
+      "fetch_url": "https://www.volcengine.com/api/doc/getDocDetail?LibraryCode=ark&DocumentCode=get-video-generation-task-api",
+      "updated_at": "2026-10-20T02:28:50Z",
+      "status": "ok",
+      "body_sha256": "4e9a35b5dd56720abb3b6de52595a12316032f4f0e89d185302d7a8dbdebfa55",
+      "bytes": 6413,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "ark-image-generation-api",
+      "url": "https://docs.volcengine.com/docs/ark/image-generation-api?lang=zh",
+      "fetch_url": "https://www.volcengine.com/api/doc/getDocDetail?LibraryCode=ark&DocumentCode=image-generation-api",
+      "updated_at": "2026-10-14T07:35:19Z",
+      "status": "ok",
+      "body_sha256": "3cd083a6229142ca772c66954cf9e8b0ca3aa4c65ed09f17926fbb5acb011f2c",
+      "bytes": 35176,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "ark-model-deprecation-notice",
+      "url": "https://docs.volcengine.com/docs/ark/model-deprecation-notice?lang=zh",
+      "fetch_url": "https://www.volcengine.com/api/doc/getDocDetail?LibraryCode=ark&DocumentCode=model-deprecation-notice",
+      "updated_at": "2026-10-14T15:23:28Z",
+      "status": "ok",
+      "body_sha256": "dac82c9284debee2e6d2247046864ffb9a15a09d2401c201de10248ab4209fa4",
+      "bytes": 20095,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "bailian-chat",
+      "url": "https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions",
+      "fetch_url": "https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions.md",
+      "status": "ok",
+      "body_sha256": "5cce59bda20457427213cc51fa31ee552c4e5b88ecedbbabe941db594ee87050",
+      "bytes": 134489,
+      "content_type": "text/markdown;charset=UTF-8"
+    },
+    {
+      "id": "bailian-qwen-image",
+      "url": "https://help.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference",
+      "fetch_url": "https://help.aliyun.com/zh/model-studio/qwen-image-generation-and-editing-api-reference.md",
+      "status": "ok",
+      "body_sha256": "811a4bcc7da912d4213da8cf6c02317dc35bc3333b34db884a6db11590cb9d8a",
+      "bytes": 81381,
+      "content_type": "text/markdown;charset=UTF-8"
+    },
+    {
+      "id": "bailian-regions",
+      "url": "https://help.aliyun.com/zh/model-studio/regions",
+      "fetch_url": "https://help.aliyun.com/zh/model-studio/regions.md",
+      "status": "ok",
+      "body_sha256": "5bbafbac80aad9f4c73293e40200b196c3f18898b9297b8a6309e53521c3c5aa",
+      "bytes": 19480,
+      "content_type": "text/markdown;charset=UTF-8"
+    },
+    {
+      "id": "bailian-tts",
+      "url": "https://help.aliyun.com/zh/model-studio/qwen-tts-api",
+      "fetch_url": "https://help.aliyun.com/zh/model-studio/qwen-tts-api.md",
+      "status": "ok",
+      "body_sha256": "7dcc82ef84b3983f5704f57b89f154336e3b92b0460b623cff6ecdf05d33d084",
+      "bytes": 29065,
+      "content_type": "text/markdown;charset=UTF-8"
+    },
+    {
+      "id": "bailian-tts-models",
+      "url": "https://help.aliyun.com/zh/model-studio/tts-model",
+      "fetch_url": "https://help.aliyun.com/zh/model-studio/tts-model.md",
+      "status": "ok",
+      "body_sha256": "9bc1ea6ceae3350ad9a21ae1e0fa022c86458749fa1e54b22891c8b8b18326b3",
+      "bytes": 24493,
+      "content_type": "text/markdown;charset=UTF-8"
+    },
+    {
+      "id": "bailian-tts-qwen-audio",
+      "url": "https://help.aliyun.com/zh/model-studio/qwen-audio-tts-http-api",
+      "fetch_url": "https://help.aliyun.com/zh/model-studio/qwen-audio-tts-http-api.md",
+      "status": "ok",
+      "last_attempt_error": "<urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1144)>",
+      "body_sha256": "7079f9af9c5ce6aa289619d93f0903dbcf652677193544a3b6f182a65e66e270",
+      "bytes": 18380
+    },
+    {
+      "id": "bailian-upload",
+      "url": "https://help.aliyun.com/zh/model-studio/get-temporary-file-url",
+      "fetch_url": "https://help.aliyun.com/zh/model-studio/get-temporary-file-url.md",
+      "status": "ok",
+      "body_sha256": "571335b29b5cf6b9b1e25e899b06d704d0f241f6652251ccc852165e37e72bf5",
+      "bytes": 51529,
+      "content_type": "text/markdown;charset=UTF-8"
+    },
+    {
+      "id": "bailian-wan-image",
+      "url": "https://help.aliyun.com/zh/model-studio/wan-image-generation-and-editing-api-reference",
+      "fetch_url": "https://help.aliyun.com/zh/model-studio/wan-image-generation-and-editing-api-reference.md",
+      "status": "ok",
+      "body_sha256": "b6eb1d9994b263ed3d98edf66e5235eb6fa1a79fd1834d85acebfaea8d33ae36",
+      "bytes": 108448,
+      "content_type": "text/markdown;charset=UTF-8"
+    },
+    {
+      "id": "bailian-wan-video",
+      "url": "https://help.aliyun.com/zh/model-studio/wan3-video-generation-api-reference",
+      "fetch_url": "https://help.aliyun.com/zh/model-studio/wan3-video-generation-api-reference.md",
+      "status": "ok",
+      "body_sha256": "03c037a60a6b4cf6cd6add68ee1144dcf9aa55226a0499b60422e8d0df68dd00",
+      "bytes": 41589,
+      "content_type": "text/markdown;charset=UTF-8"
+    },
+    {
+      "id": "doubao-audio-generation-http",
+      "url": "https://docs.volcengine.com/docs/DoubaoVoice/audio-generation-http?lang=zh",
+      "fetch_url": "https://docs.volcengine.com/api/doc/getDocDetail?LibraryCode=DoubaoVoice&DocumentCode=audio-generation-http",
+      "updated_at": "2026-09-28T11:12:54Z",
+      "status": "ok",
+      "body_sha256": "3767e2086c64501c0815035a290e1ac7af33af5a0bf00874f020bddb537bb0cb",
+      "bytes": 9626,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "doubao-recording-file-recognition-lite-http",
+      "url": "https://docs.volcengine.com/docs/DoubaoVoice/recording-file-recognition-lite-http?lang=zh",
+      "fetch_url": "https://docs.volcengine.com/api/doc/getDocDetail?LibraryCode=DoubaoVoice&DocumentCode=recording-file-recognition-lite-http",
+      "updated_at": "2026-09-28T11:34:08Z",
+      "status": "ok",
+      "body_sha256": "73a5831193f8774de55208554daef83054848de9a9ca8d67855727f477e51efe",
+      "bytes": 14907,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "doubao-tone-query-http",
+      "url": "https://docs.volcengine.com/docs/DoubaoVoice/tone-query-http?lang=zh",
+      "fetch_url": "https://docs.volcengine.com/api/doc/getDocDetail?LibraryCode=DoubaoVoice&DocumentCode=tone-query-http",
+      "updated_at": "2026-09-29T11:02:49Z",
+      "status": "ok",
+      "body_sha256": "63c76a69ea524af41b6986cc940ab89b49facaa858be40e4948b0703af9312a1",
+      "bytes": 3708,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "doubao-tone-training-http",
+      "url": "https://docs.volcengine.com/docs/DoubaoVoice/tone-training-http?lang=zh",
+      "fetch_url": "https://docs.volcengine.com/api/doc/getDocDetail?LibraryCode=DoubaoVoice&DocumentCode=tone-training-http",
+      "updated_at": "2026-09-29T11:02:44Z",
+      "status": "ok",
+      "body_sha256": "065544a74a33d03983b414b3e04037789e2fc56b23d2e794d1eec3f6ee8e6be8",
+      "bytes": 7502,
+      "content_type": "application/json; charset=utf-8"
+    },
+    {
+      "id": "doubao-unidirectional-streaming-text-to-speech-http",
+      "url": "https://docs.volcengine.com/docs/DoubaoVoice/unidirectional-streaming-text-to-speech-http?lang=zh",
+      "fetch_url": "https://docs.volcengine.com/api/doc/getDocDetail?LibraryCode=DoubaoVoice&DocumentCode=unidirectional-streaming-text-to-speech-http",
+      "status": "ok",
+      "last_attempt_error": "<urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1144)>",
+      "body_sha256": "b980f515957a88ff2a169315277618036c9eb113792812ed2564cb27c440dc3d",
+      "bytes": 15431
+    },
+    {
+      "id": "image-generation-i2i",
+      "url": "https://platform.minimax.cn/docs/api-reference/image-generation-i2i",
+      "fetch_url": "https://platform.minimax.cn/docs/api-reference/image-generation-i2i.md",
+      "status": "ok",
+      "body_sha256": "f3c5a0e7283cc919537346631e2ea7432501b8b03faf41fb4c14f2e1febc72d7",
+      "bytes": 8409,
+      "content_type": "text/markdown; charset=utf-8"
+    },
+    {
+      "id": "image-generation-t2i",
+      "url": "https://platform.minimax.cn/docs/api-reference/image-generation-t2i",
+      "fetch_url": "https://platform.minimax.cn/docs/api-reference/image-generation-t2i.md",
+      "status": "ok",
+      "body_sha256": "fad48a956b6a21d25898116ec55826ae02fa0d145f0468eb5821947a5defab26",
+      "bytes": 7659,
+      "content_type": "text/markdown; charset=utf-8"
+    },
+    {
+      "id": "music-generation",
+      "url": "https://platform.minimax.cn/docs/api-reference/music-generation",
+      "fetch_url": "https://platform.minimax.cn/docs/api-reference/music-generation.md",
+      "status": "ok",
+      "body_sha256": "4a1012bbff07b0ca932c0122bb7c7f0da080f50694d56bb07741990acdcf6e98",
+      "bytes": 10688,
+      "content_type": "text/markdown; charset=utf-8"
+    },
+    {
+      "id": "speech-t2a-http",
+      "url": "https://platform.minimax.cn/docs/api-reference/speech-t2a-http",
+      "fetch_url": "https://platform.minimax.cn/docs/api-reference/speech-t2a-http.md",
+      "status": "ok",
+      "body_sha256": "08594700cfd8a9c405cb3f0545ee2a6d4f76b89eb0a82dbe0ce80d7d514bf0b3",
+      "bytes": 31471,
+      "content_type": "text/markdown; charset=utf-8"
+    },
+    {
+      "id": "video-generation-v2-create",
+      "url": "https://platform.minimax.cn/docs/api-reference/video-generation-v2-create",
+      "fetch_url": "https://platform.minimax.cn/docs/api-reference/video-generation-v2-create.md",
+      "status": "ok",
+      "last_attempt_error": "<urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1144)>",
+      "body_sha256": "238be3add02890d1bb561d2ab13aada0d0049ac30020988c88aab70fc4bfd16f",
+      "bytes": 21927
+    },
+    {
+      "id": "video-generation-v2-delete",
+      "url": "https://platform.minimax.cn/docs/api-reference/video-generation-v2-delete",
+      "fetch_url": "https://platform.minimax.cn/docs/api-reference/video-generation-v2-delete.md",
+      "status": "ok",
+      "last_attempt_error": "<urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1144)>",
+      "body_sha256": "23164f2f8cadcf03ded43723b6f7ac9185e938966ef60d46840fe8a44190a8bd",
+      "bytes": 6397
+    },
+    {
+      "id": "video-generation-v2-query",
+      "url": "https://platform.minimax.cn/docs/api-reference/video-generation-v2-query",
+      "fetch_url": "https://platform.minimax.cn/docs/api-reference/video-generation-v2-query.md",
+      "status": "ok",
+      "last_attempt_error": "<urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1144)>",
+      "body_sha256": "ba7a03558de9e9cbff113afd5e372f209251976f4dbca9a6e12583040f0d1aea",
+      "bytes": 17532
+    },
+    {
+      "id": "voice-cloning-clone",
+      "url": "https://platform.minimax.cn/docs/api-reference/voice-cloning-clone",
+      "fetch_url": "https://platform.minimax.cn/docs/api-reference/voice-cloning-clone.md",
+      "status": "ok",
+      "body_sha256": "697aa5af8586f2365b59b25cabe8df54a8eded438db0abdffbeb64a37fcc4045",
+      "bytes": 11472,
+      "content_type": "text/markdown; charset=utf-8"
+    },
+    {
+      "id": "bailian-wan-edit",
+      "url": "https://help.aliyun.com/zh/model-studio/wanx-image-edit",
+      "fetch_url": "https://help.aliyun.com/zh/model-studio/wanx-image-edit.md",
+      "status": "ok",
+      "body_sha256": "4ce603c95f141ad557be3779778b067237c46a2359e8d98877c08e2b4e44eb27",
+      "bytes": 45921
+    },
+    {
+      "id": "minimax-chat",
+      "url": "https://platform.minimax.cn/docs/api-reference/text-chat-openai",
+      "fetch_url": "https://platform.minimax.cn/docs/api-reference/text-chat-openai.md",
+      "status": "ok",
+      "body_sha256": "cdf533be3fca051b9a6319e6f5099778345ab5f1ee51a9bb6b93ee6b3a9a3436",
+      "bytes": 60255
+    },
+    {
+      "id": "file-management-upload",
+      "url": "https://platform.minimax.cn/docs/api-reference/file-management-upload",
+      "fetch_url": "https://platform.minimax.cn/docs/api-reference/file-management-upload.md",
+      "status": "ok",
+      "body_sha256": "06409fe8aea3d900c63a2f55c06690f8c8335a8935b96baa4c9dd75eea7d9c9f",
+      "bytes": 5779
+    }
+  ],
+  "scope": "Public documentation only; no credentials or provider generation calls. Sources fetched in two attempts during this audit; a failed later attempt does not discard a successful earlier body."
+}

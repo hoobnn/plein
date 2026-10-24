@@ -125,6 +125,8 @@ const models: ModelSpec[] = [
   {
     id: 'doubao-seedream-5-0-260128',
     title: 'Seedream 5.0 Lite（支持组图）',
+    description:
+      '已停止新购，计划于 2026-11-24 14:00（UTC+8）下线；现有接入请提前迁移，Pro / Flash 不支持组图',
     capabilities: ['image.generate'],
     limits: {
       aspectRatios: SEEDREAM_ASPECTS,
@@ -727,7 +729,7 @@ export const arkProvider = defineProvider({
       ]
       // 开了「返回尾帧」时多一张尾帧图片
       if (typeof content.last_frame_url === 'string' && content.last_frame_url)
-        outputs.push(remoteFile(content.last_frame_url, 'image', 'image/png'))
+        outputs.push(remoteFile(content.last_frame_url, 'image', 'image/jpeg'))
       return {
         state: 'succeeded',
         outputs,

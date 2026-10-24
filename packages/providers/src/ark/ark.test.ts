@@ -435,7 +435,7 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
         status: 'succeeded',
         content: {
           video_url: 'https://result.tos-cn-beijing.volces.com/clip.mp4',
-          last_frame_url: 'https://result.tos-cn-beijing.volces.com/last.png',
+          last_frame_url: 'https://result.tos-cn-beijing.volces.com/last.jpeg',
         },
       },
     ])
@@ -443,7 +443,11 @@ describe('火山方舟 Provider HTTP 契约（不调用云端）', () => {
       state: 'succeeded',
       outputs: [
         { kind: 'video', mime: 'video/mp4' },
-        { kind: 'image', url: 'https://result.tos-cn-beijing.volces.com/last.png' },
+        {
+          kind: 'image',
+          mime: 'image/jpeg',
+          url: 'https://result.tos-cn-beijing.volces.com/last.jpeg',
+        },
       ],
     })
   })
