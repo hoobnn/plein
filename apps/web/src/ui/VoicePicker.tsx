@@ -1,6 +1,7 @@
 import { noVoice, type VoiceRef } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
+import { useVoices, voiceTraits } from '../features/library/voices'
 import { useCatalog } from '../stores/catalog'
 import { Select } from './Select'
 
@@ -32,8 +33,8 @@ export function voicePresets(catalog: Catalog | null) {
 const CUSTOM = '__custom'
 
 /**
- * 音色选择：平台声明了预置音色时从下拉里挑（显示名字和性别），
- * 复刻 / 设计出来的音色或表里没有的，选「自定义」再填平台和音色 ID。
+ * 音色选择：平台声明的预置音色和资产库里「我的音色」（复刻或登记的）从下拉里挑，
+ * 表里没有的选「自定义」再填平台和音色 ID。
  * 平台和音色 ID 要配对：音色只能在同一家平台的配音模型里用。
  */
 export function VoicePicker({
@@ -47,13 +48,34 @@ export function VoicePicker({
   onChange(v: VoiceRef): void
   inputClassName?: string
 }) {
-  const presets = voicePresets(useCatalog((s) => s.catalog))
+  const catalog = useCatalog((s) => s.catalog)
+  const presets = voicePresets(catalog)
+  const mine = (useVoices().data ?? []).map((v) => {
+    const traits = voiceTraits(v)
+    return {
+      provider: v.provider,
+      providerTitle: catalog?.providers.find((p) => p.id === v.provider)?.title ?? v.provider,
+      id: v.voiceId,
+      label: `我的 · ${v.name}${traits ? ` · ${traits}` : ''}${
+        v.status === 'training' ? '（训练中）' : v.status === 'failed' ? '（复刻失败）' : ''
+      }`,
+      disabled: v.status !== 'ready',
+    }
+  })
+  const keyOf = (p: { provider: string; id: string }) => `${p.provider}|${p.id}`
   const key = value.provider || value.voiceId ? `${value.provider}|${value.voiceId}` : ''
-  const known = !key || presets.some((p) => `${p.provider}|${p.id}` === key)
+  const known = (p: { provider: string; id: string }) => keyOf(p) === key
+  // 我的音色和预置音色同 ID 时只列我的那条（有名字）
+  const listed = [
+    ...mine,
+    ...presets
+      .filter((p) => !mine.some((m) => keyOf(m) === keyOf(p)))
+      .map((p) => ({ ...p, disabled: false })),
+  ]
   // 手动选择自定义是本地编辑意图；外部传入的未知音色始终显示可编辑字段。
   const [custom, setCustom] = useState(false)
-  const showCustom = custom || !known
-  const several = new Set(presets.map((p) => p.provider)).size > 1
+  const showCustom = custom || (!!key && !listed.some(known))
+  const several = new Set(listed.map((p) => p.provider)).size > 1
   const inputs = (
     <div className="flex gap-2">
       <input
@@ -64,7 +86,7 @@ export function VoicePicker({
         onChange={(e) => onChange({ ...value, provider: e.target.value.trim() })}
       />
       <input
-        id={presets.length ? undefined : id}
+        id={listed.length ? undefined : id}
         className={`${inputClassName} flex-1`}
         aria-label="音色 ID"
         placeholder="音色 ID"
@@ -79,8 +101,8 @@ export function VoicePicker({
       />
     </div>
   )
-  // 没有平台声明音色表：只能手填
-  if (!presets.length) return inputs
+  // 没有预置音色也没有我的音色：只能手填
+  if (!listed.length) return inputs
   return (
     <div className="flex flex-col gap-2">
       <Select
@@ -89,9 +111,10 @@ export function VoicePicker({
         value={showCustom ? CUSTOM : key}
         options={[
           { value: '', label: '平台默认音色' },
-          ...presets.map((p) => ({
+          ...listed.map((p) => ({
             value: `${p.provider}|${p.id}`,
             label: several ? `${p.providerTitle} · ${p.label}` : p.label,
+            disabled: p.disabled,
           })),
           { value: CUSTOM, label: '自定义音色 ID…' },
         ]}

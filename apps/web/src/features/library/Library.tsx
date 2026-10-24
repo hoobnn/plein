@@ -21,7 +21,7 @@ import { type LibrarySeed, useLibrary } from './store'
 import { confirmDialog, dialogOpen } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
 import { Icon, type IconName } from '../../ui/icons'
-import { Modal, ModalHeader } from '../../ui/Modal'
+import { ModalHeader } from '../../ui/Modal'
 import { hasMenuEscapeLayer, isMenuEscape } from '../../ui/menuEscape'
 import { Presence } from '../../ui/Presence'
 import { Segmented } from '../../ui/Segmented'
@@ -42,6 +42,7 @@ import { VoicePicker } from '../../ui/VoicePicker'
 import { LibraryUpdatesPanel } from './LibraryUpdates'
 import { CharacterAssets } from './CharacterAssets'
 import { LibraryReadStatus } from './LibraryReadStatus'
+import { LibraryModal, LibraryTabs, useLibraryClose, VoicePanel } from './VoicePanel'
 import { useLibraryPlacement } from './useLibraryPlacement'
 import { listFocusTarget } from './listFocus'
 import { settleSavedDraft } from './savedDraft'
@@ -76,7 +77,14 @@ const hasOfficial = (kind: LibraryKind) => OFFICIAL_LIBRARY.some((o) => o.kind =
 
 export function LibraryPanel() {
   const open = useLibrary((s) => s.open)
-  return <Presence>{open && <Panel kind={open} />}</Presence>
+  return (
+    <Presence>
+      {open && (
+        // 弹窗外壳各页签共用：切到「音色」时只换内容，不重新弹出
+        <LibraryModal>{open === 'voice' ? <VoicePanel /> : <Panel kind={open} />}</LibraryModal>
+      )}
+    </Presence>
+  )
 }
 
 function Panel({ kind: kindId }: { kind: LibraryKind }) {
@@ -265,41 +273,15 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
   // 「从画布选」的候选：打开着画布时取画布上的图片和视频
   const media = useMemo(() => (canPlace && engine ? canvasMedia(engine) : []), [canPlace, engine])
 
+  useLibraryClose(close)
+
   return (
-    <Modal
-      label="资产库"
-      onClose={close}
-      isolateKeys
-      top
-      className="lib-dialog h-[min(860px,100%)] max-w-6xl"
-    >
+    <>
       <ModalHeader
         title="资产库"
         onClose={close}
         closeDisabled={uploadPending}
-        meta={
-          <fieldset disabled={uploadPending} className="contents">
-            <div
-              className="ui-scrollbar min-w-0 max-w-full overflow-x-auto"
-              onFocusCapture={(event) => {
-                if (event.target instanceof HTMLElement)
-                  event.target.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-              }}
-            >
-              <Segmented
-                label="资产类别"
-                size="lg"
-                options={LIBRARY_KINDS.map((k) => ({
-                  value: k.id,
-                  label: k.title,
-                  icon: KIND_ICONS[k.id],
-                }))}
-                value={kindId}
-                onChange={show}
-              />
-            </div>
-          </fieldset>
-        }
+        meta={<LibraryTabs value={kindId} disabled={uploadPending} />}
       >
         {!editing && (
           <>
@@ -485,7 +467,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
           </div>
         </>
       )}
-    </Modal>
+    </>
   )
 }
 

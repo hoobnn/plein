@@ -28,6 +28,11 @@ export const API = {
   libraryItem: (id: string) => `/api/library/${encodeURIComponent(id)}`,
   /** 记一次「用到画布上」，最近使用按它排 */
   libraryUse: (id: string) => `/api/library/${encodeURIComponent(id)}/use`,
+  /** 我的音色：GET 列表（顺带刷新训练中的状态），POST 复刻或登记，body 为 CreateVoice */
+  voices: '/api/voices',
+  voice: (id: string) => `/api/voices/${encodeURIComponent(id)}`,
+  /** 立即向平台查一次训练状态 */
+  voiceRefresh: (id: string) => `/api/voices/${encodeURIComponent(id)}/refresh`,
   assets: '/api/assets',
   asset: (id: string) => `/api/assets/${id}`,
   assetMeta: (id: string) => `/api/assets/${id}/meta`,

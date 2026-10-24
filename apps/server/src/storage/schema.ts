@@ -10,6 +10,7 @@ import {
   real,
   sqliteTable,
   text,
+  uniqueIndex,
 } from 'drizzle-orm/sqlite-core'
 
 /**
@@ -251,6 +252,24 @@ export const agentSessions = sqliteTable(
 )
 
 /** 资产库：角色 / 场景 / 道具 / 风格 / 特效。图片等二进制在 assets，这里只存设定与资产 id */
+/** 我的音色：复刻或登记的平台音色，见 @plein/protocol 的 Voice */
+export const voices = sqliteTable(
+  'voices',
+  {
+    id: text().primaryKey(),
+    owner_id: text().notNull(),
+    provider: text().notNull(),
+    voice_id: text().notNull(),
+    name: text().notNull(),
+    status: text().notNull(),
+    /** message / sampleAssetId / gender / age，JSON */
+    data: text().notNull(),
+    created_at: integer().notNull(),
+    updated_at: integer().notNull(),
+  },
+  (t) => [uniqueIndex('voices_owner_voice').on(t.owner_id, t.provider, t.voice_id)],
+)
+
 export const libraryItems = sqliteTable(
   'library_items',
   {

@@ -181,7 +181,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
             <button
               type="button"
               onClick={() => useLibrary.getState().show('character')}
-              title="资产库：角色、场景、道具、风格、特效"
+              title="资产库：角色、场景、道具、风格、特效、音色"
               className="ui-bar-btn gap-1.5"
             >
               <Icon name="library" />

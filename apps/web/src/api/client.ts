@@ -24,6 +24,9 @@ import {
   type RecoverJobOptions,
   type LibraryItem,
   type LibraryKind,
+  type CreateVoice,
+  type UpdateVoice,
+  type Voice,
   type LibraryUpdates,
   type LibrarySyncResult,
   type ApplyLibraryUpdates,
@@ -196,6 +199,13 @@ export const api = {
     request<LibraryItem>(API.libraryItem(id), json('PATCH', body)),
   deleteLibraryItem: (id: string) => request<void>(API.libraryItem(id), { method: 'DELETE' }),
   markLibraryUsed: (id: string) => request<void>(API.libraryUse(id), json('POST', {})),
+
+  voices: () => request<Voice[]>(API.voices),
+  createVoice: (body: CreateVoice) => request<Voice>(API.voices, json('POST', body)),
+  updateVoice: (id: string, body: UpdateVoice) =>
+    request<Voice>(API.voice(id), json('PATCH', body)),
+  refreshVoice: (id: string) => request<Voice>(API.voiceRefresh(id), json('POST', {})),
+  deleteVoice: (id: string) => request<void>(API.voice(id), { method: 'DELETE' }),
   libraryUpdates: (id: string) =>
     request<LibraryUpdates>(`/api/library/${encodeURIComponent(id)}/updates`),
   applyLibraryUpdates: (id: string, body: ApplyLibraryUpdates) =>

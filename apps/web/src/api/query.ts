@@ -29,6 +29,7 @@ export const queryKeys = {
   mcpExternal: ['mcp', 'external'] as const,
   localPlugins: ['plugins', 'local'] as const,
   localClis: ['agent', 'clis'] as const,
+  voices: ['voices'] as const,
 }
 
 /** 已获服务端确认的改名立即更新已加载列表，保留应答中没有的列表封面。 */

@@ -96,4 +96,13 @@ export const MIGRATIONS: Migration[] = [
       'ALTER TABLE `agent_sessions` ADD `context_reset_at` integer;',
     ],
   },
+  {
+    tag: '0007_faithful_darkhawk',
+    when: 1792850484065,
+    hash: '0a09878539a9232f3e6f3a94ee54d3283771c63971ef4e7319ea4a47c7c717f7',
+    statements: [
+      'CREATE TABLE `voices` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`owner_id` text NOT NULL,\n\t`provider` text NOT NULL,\n\t`voice_id` text NOT NULL,\n\t`name` text NOT NULL,\n\t`status` text NOT NULL,\n\t`data` text NOT NULL,\n\t`created_at` integer NOT NULL,\n\t`updated_at` integer NOT NULL\n);',
+      'CREATE UNIQUE INDEX `voices_owner_voice` ON `voices` (`owner_id`,`provider`,`voice_id`);',
+    ],
+  },
 ]

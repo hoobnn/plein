@@ -50,7 +50,7 @@ export function EditorActions({
         {
           label: '资产库',
           icon: 'library' as const,
-          hint: '资产库：角色、场景、道具、风格、特效',
+          hint: '资产库：角色、场景、道具、风格、特效、音色',
           run: () => useLibrary.getState().show('character'),
         },
       ]

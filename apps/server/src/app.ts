@@ -21,6 +21,8 @@ import { previewer } from './storage/previews'
 import { desktopGuard, originGuard } from './http/guard'
 import { LibraryStore } from './library/store'
 import { libraryRoutes } from './library/routes'
+import { VoiceStore } from './voices/store'
+import { voiceRoutes } from './voices/routes'
 import { librarySyncRoutes } from './library/sync'
 import { mediaRoutes } from './assets/media-routes'
 import { projectRoutes } from './projects/routes'
@@ -150,6 +152,7 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', subtitleRoutes({ db, host: plugins, assets, dataDir: config.dataDir }))
   app.route('/', libraryRoutes(db, library))
   app.route('/', librarySyncRoutes({ db, library, rooms, assets }))
+  app.route('/', voiceRoutes({ voices: new VoiceStore(db), host: plugins, assets }))
   app.route('/', templateRoutes(db))
   app.route('/', mediaLibraryRoutes(mediaIndex))
   app.route('/', checkpointRoutes(checkpoints))

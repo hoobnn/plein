@@ -10,6 +10,9 @@ import { create } from 'zustand'
 import { api } from '../../api/client'
 import { reconcileList } from '../../api/listSnapshot'
 
+/** 资产库面板的页签：各类资产卡，加上不放到画布上的「我的音色」 */
+export type LibraryTab = LibraryKind | 'voice'
+
 /** 从画布带进资产库的内容：打开面板时直接进入预填好的新建表单 */
 export interface LibrarySeed {
   name?: string
@@ -24,8 +27,8 @@ interface LibraryStore {
   loaded: boolean
   loading: boolean
   error: string | null
-  /** 资产库面板：打开哪一类；null 为关闭 */
-  open: LibraryKind | null
+  /** 资产库面板：打开哪一类（voice 是「我的音色」页）；null 为关闭 */
+  open: LibraryTab | null
   /** 打开时要预填的新建内容；面板接手后清掉 */
   seed: LibrarySeed | null
   /** 打开时直接进入编辑的条目 id（画布上角色卡的「编辑档案」）；面板接手后清掉 */
@@ -35,7 +38,7 @@ interface LibraryStore {
   /** 当前画布所属项目，「本项目」筛选与新建条目的默认归属 */
   projectId: string | null
   setProject(id: string | null): void
-  show(kind: LibraryKind | null, seed?: LibrarySeed): void
+  show(kind: LibraryTab | null, seed?: LibrarySeed): void
   /** 打开资产库并直接编辑一条，可指定先看哪一页 */
   edit(item: LibraryItem, tab?: LibraryStore['tab']): void
   takeSeed(): LibrarySeed | null

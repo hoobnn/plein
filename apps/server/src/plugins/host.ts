@@ -27,6 +27,7 @@ import {
   type ProviderOutput,
   resolveParams,
   type ServerPluginDefinition,
+  type VoiceCloneState,
 } from '@plein/plugin-sdk'
 import { stableStringify } from '@plein/flow'
 import { Agent, Dispatcher1Wrapper } from 'undici'
@@ -340,6 +341,49 @@ export class PluginHost {
     })
     try {
       await entry.def.test?.(ctx)
+    } catch (err) {
+      throw toError(err)
+    }
+  }
+
+  /** 平台的声音复刻说明；没装或不支持时为空 */
+  voiceClone(id: string) {
+    return this.registry.providers.get(id)?.def.voiceClone
+  }
+
+  /** 在平台上复刻音色（计费）：样本从调用者的资产库读，平台必须已启用 */
+  async cloneVoice(
+    id: string,
+    ownerId: string,
+    input: { voiceId: string; sample: AssetRef },
+    signal?: AbortSignal,
+  ): Promise<VoiceCloneState> {
+    const spec = this.voiceClone(id)
+    if (!spec) throw new ProviderError('invalid_input', `平台 ${id} 不支持声音复刻`)
+    const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
+      requireEnabled: true,
+    })
+    try {
+      return await spec.clone(input, ctx)
+    } catch (err) {
+      throw toError(err)
+    }
+  }
+
+  /** 查复刻训练状态；平台不提供查询时返回空，沿用已记下的状态 */
+  async voiceStatus(
+    id: string,
+    ownerId: string,
+    voiceId: string,
+    signal?: AbortSignal,
+  ): Promise<VoiceCloneState | null> {
+    const spec = this.voiceClone(id)
+    if (!spec?.status) return null
+    const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
+      requireEnabled: true,
+    })
+    try {
+      return await spec.status(voiceId, ctx)
     } catch (err) {
       throw toError(err)
     }
