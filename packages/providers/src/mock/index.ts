@@ -495,6 +495,20 @@ export const mockProvider = defineProvider({
     const remoteId = byKey.get(key)
     return remoteId ? { remoteId } : null
   },
+  // 先报训练中，查一次状态就好；样本只读一下，确认宿主把文件交了过来
+  voiceClone: {
+    voiceId: 'generated',
+    hint: '模拟复刻，不调用真实平台',
+    async clone({ sample }, ctx) {
+      const asset = await ctx.files.read(sample)
+      if (!asset.mime.startsWith('audio/'))
+        throw new ProviderError('invalid_input', '复刻样本须为音频')
+      return { status: 'training' }
+    },
+    async status() {
+      return { status: 'ready' }
+    },
+  },
 })
 
 /** 演示插件能力：在选区旁边贴一张便签，写上选中了什么（只经 ctx.call 改画布） */

@@ -399,4 +399,63 @@ describe('Doubao Speech HTTP contracts', () => {
     expect(ctx.fetch).not.toHaveBeenCalled()
     expect(ctx.files.read).not.toHaveBeenCalled()
   })
+
+  it('合成 2.0 收到复刻音色时自动改走复刻 2.0 资源', async () => {
+    const ctx = context(new Response('{"code":20000000,"data":"AQI="}'))
+    await doubaoProvider.submit(
+      {
+        capability: 'audio.speech',
+        model: 'seed-tts-2.0',
+        input: { text: '你好', voice: 'S_abc' },
+      },
+      ctx,
+    )
+    const init = vi.mocked(ctx.fetch).mock.calls[0]![1]!
+    expect(init.headers).toMatchObject({ 'X-Api-Resource-Id': 'seed-icl-2.0' })
+  })
+
+  it('复刻上传样本到控制台分配的音色 ID，训练状态按 get_voice 归一', async () => {
+    const ctx = fakeContext(
+      doubaoProvider,
+      [
+        Response.json({ speaker_id: 'S_abc' }),
+        Response.json({ speaker_id: 'S_abc', status: 1 }),
+        Response.json({ speaker_id: 'S_abc', status: 4 }),
+        Response.json({ speaker_id: 'S_abc', status: 3 }),
+      ],
+      { secret: { VOLC_SPEECH_API_KEY: 'test-key' }, mime: 'audio/mpeg' },
+    ).ctx
+    const sample = { assetId: 'a', kind: 'audio' as const }
+    await expect(
+      doubaoProvider.voiceClone!.clone({ voiceId: 'S_abc', sample }, ctx),
+    ).resolves.toEqual({
+      status: 'training',
+    })
+    const [url, init] = vi.mocked(ctx.fetch).mock.calls[0]!
+    expect(url).toBe('https://openspeech.bytedance.com/api/v3/tts/voice_clone')
+    expect(init!.headers).not.toHaveProperty('X-Api-Resource-Id')
+    expect(JSON.parse(String(init!.body))).toMatchObject({
+      speaker_id: 'S_abc',
+      audio: { data: 'AQID', format: 'mp3' },
+    })
+    const status = doubaoProvider.voiceClone!.status!
+    await expect(status('S_abc', ctx)).resolves.toEqual({ status: 'training' })
+    await expect(status('S_abc', ctx)).resolves.toEqual({ status: 'ready' })
+    await expect(status('S_abc', ctx)).resolves.toMatchObject({ status: 'failed' })
+  })
+
+  it('复刻只接受 S_ 音色 ID，平台错误码照常报出', async () => {
+    const sample = { assetId: 'a', kind: 'audio' as const }
+    await expect(
+      doubaoProvider.voiceClone!.clone({ voiceId: 'abc', sample }, context()),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+    const ctx = fakeContext(
+      doubaoProvider,
+      [Response.json({ code: 45001105, message: 'speaker permission denied' })],
+      { secret: { VOLC_SPEECH_API_KEY: 'test-key' }, mime: 'audio/wav' },
+    ).ctx
+    await expect(
+      doubaoProvider.voiceClone!.clone({ voiceId: 'S_abc', sample }, ctx),
+    ).rejects.toThrow('speaker permission denied')
+  })
 })

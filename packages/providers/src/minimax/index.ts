@@ -63,14 +63,23 @@ const responseSchema = z
     extra_info: z
       .object({ usage_characters: z.number().optional(), audio_length: z.number().optional() })
       .optional(),
-    input_sensitive: z.boolean().optional(),
-    output_sensitive: z.boolean().optional(),
+    // 对话返回布尔值，声音复刻返回 { type }，0 为正常
+    input_sensitive: z
+      .union([z.boolean(), z.object({ type: z.number() }).passthrough()])
+      .optional(),
+    output_sensitive: z
+      .union([z.boolean(), z.object({ type: z.number() }).passthrough()])
+      .optional(),
+    file: z
+      .object({ file_id: z.union([z.string(), z.number()]) })
+      .passthrough()
+      .optional(),
   })
   .passthrough()
 
 function errorCode(code: number | string): ProviderErrorCode {
   if (Number(code) === 410) return 'unavailable'
-  if ([401, 403, 1004, 2049].includes(Number(code)) || /auth|permission/i.test(String(code)))
+  if ([401, 403, 1004, 2038, 2049].includes(Number(code)) || /auth|permission/i.test(String(code)))
     return 'auth'
   if ([402, 1008].includes(Number(code)) || /balance|quota/i.test(String(code))) return 'quota'
   if ([429, 1002].includes(Number(code)) || /rate_limit/i.test(String(code))) return 'rate_limit'
@@ -84,6 +93,10 @@ function errorCode(code: number | string): ProviderErrorCode {
   return 'unknown'
 }
 
+const sensitive = (value: boolean | { type: number } | undefined) =>
+  typeof value === 'object' ? value.type !== 0 : value === true
+
+/** body 是 FormData 时按 multipart 上传，Content-Type 交给 fetch 带上 boundary */
 async function request(
   ctx: Context,
   path: string,
@@ -92,8 +105,9 @@ async function request(
 ) {
   const key = ctx.secret('MINIMAX_API_KEY')?.trim()
   if (!key) throw new ProviderError('auth', '请填写 MiniMax API Key')
-  const payload = body === undefined ? undefined : JSON.stringify(body)
-  if (payload && Buffer.byteLength(payload) > 64 * 1024 * 1024)
+  const form = body instanceof FormData ? body : undefined
+  const payload = form ?? (body === undefined ? undefined : JSON.stringify(body))
+  if (typeof payload === 'string' && Buffer.byteLength(payload) > 64 * 1024 * 1024)
     throw new ProviderError('invalid_input', 'MiniMax 请求体超过 64 MB')
   const messages = {
     cancelled: 'MiniMax 请求已取消',
@@ -104,7 +118,10 @@ async function request(
     `${ctx.settings.region === 'cn' ? 'https://api.minimax.cn' : 'https://api.minimax.io'}${path}`,
     {
       method,
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${key}`,
+        ...(form ? {} : { 'Content-Type': 'application/json' }),
+      },
       body: payload,
     },
     messages,
@@ -142,6 +159,17 @@ function imageData(ctx: Context, ref: AssetRef, maxMb = 30) {
     maxBytes: maxMb * 1024 * 1024,
     tooLarge: message,
   })
+}
+
+/** 复刻样本可接受的格式与上传时的扩展名 */
+const CLONE_FORMATS: Record<string, string> = {
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/wave': 'wav',
 }
 
 function required(value: string, max: number, label: string) {
@@ -288,8 +316,8 @@ export const minimaxProvider = defineProvider({
           max_completion_tokens: input.maxTokens,
         })
         if (
-          result.input_sensitive ||
-          result.output_sensitive ||
+          sensitive(result.input_sensitive) ||
+          sensitive(result.output_sensitive) ||
           result.choices?.[0]?.finish_reason === 'content_filter'
         )
           throw new ProviderError('content_policy', 'MiniMax 内容审核未通过')
@@ -530,6 +558,37 @@ export const minimaxProvider = defineProvider({
     // DELETE 也会删除已完成记录，因此仅对排队状态发取消请求。
     if (result.task?.status === 'queued')
       await request(ctx, `/v2/video_generation/${id(remoteId)}`, undefined, 'DELETE')
+  },
+  // 复刻是同步接口：上传样本拿 file_id，再提交复刻，成功即可用
+  voiceClone: {
+    voiceId: 'generated',
+    hint: '需要先在 MiniMax 完成实名认证。样本 10 秒至 5 分钟、单人清晰，MP3 / M4A / WAV，20 MB 以内；复刻出的音色 7 天内没用于正式合成会被平台删除',
+    async clone({ voiceId, sample }, ctx) {
+      const asset = await ctx.files.read(sample)
+      const ext = CLONE_FORMATS[asset.mime.toLowerCase()]
+      if (!ext) throw new ProviderError('invalid_input', '复刻样本须为 MP3、M4A 或 WAV 音频')
+      if (!asset.data.length || asset.data.length > 20 * 1024 * 1024)
+        throw new ProviderError('invalid_input', '复刻样本须在 20 MB 以内')
+      if (asset.duration !== undefined && (asset.duration < 10 || asset.duration > 300))
+        throw new ProviderError('invalid_input', '复刻样本须为 10 秒至 5 分钟')
+      const form = new FormData()
+      form.set('purpose', 'voice_clone')
+      form.set('file', new Blob([Buffer.from(asset.data)], { type: asset.mime }), `sample.${ext}`)
+      const uploaded = await request(ctx, '/v1/files/upload', form)
+      const fileId = uploaded.file?.file_id
+      // file_id 是 int64，超出 JS 安全整数时 JSON 解析已丢精度，不能拿去提交
+      if (fileId === undefined || (typeof fileId === 'number' && !Number.isSafeInteger(fileId)))
+        throw new ProviderError('unknown', 'MiniMax 上传样本后没有返回可用的文件 ID')
+      const result = await request(ctx, '/v1/voice_clone', {
+        file_id: fileId,
+        voice_id: voiceId,
+        need_noise_reduction: true,
+        need_volume_normalization: true,
+      })
+      if (sensitive(result.input_sensitive))
+        throw new ProviderError('content_policy', 'MiniMax 内容审核未通过，换一段样本再试')
+      return { status: 'ready' }
+    },
   },
 })
 

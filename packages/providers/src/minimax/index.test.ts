@@ -340,3 +340,50 @@ it.each([408, 500, 502, 503, 504])(
     }
   },
 )
+
+describe('MiniMax 声音复刻', () => {
+  const sample: AssetRef = { assetId: 'a', kind: 'audio' }
+
+  it('先 multipart 上传样本，再用 file_id 提交复刻', async () => {
+    const { ctx, fetch } = fakeContext(
+      minimaxProvider,
+      [
+        { file: { file_id: 263891729178625 }, base_resp: { status_code: 0 } },
+        { input_sensitive: { type: 0 }, demo_audio: '', base_resp: { status_code: 0 } },
+      ],
+      { secret: 'test-key', mime: 'audio/mpeg', duration: 30 },
+    )
+    await expect(
+      minimaxProvider.voiceClone!.clone({ voiceId: 'pleinabcdefgh', sample }, ctx),
+    ).resolves.toEqual({ status: 'ready' })
+    const [uploadUrl, upload] = fetch.mock.calls[0]!
+    expect(uploadUrl).toBe('https://api.minimax.cn/v1/files/upload')
+    expect(upload!.headers).not.toHaveProperty('Content-Type')
+    const form = upload!.body as FormData
+    expect(form.get('purpose')).toBe('voice_clone')
+    expect((form.get('file') as File).name).toBe('sample.mp3')
+    expect(fetch.mock.calls[1]![0]).toBe('https://api.minimax.cn/v1/voice_clone')
+    expect(JSON.parse(String(fetch.mock.calls[1]![1]!.body))).toMatchObject({
+      voice_id: 'pleinabcdefgh',
+    })
+  })
+
+  it('样本过短直接拦下，未实名按鉴权失败报', async () => {
+    const short = fakeContext(minimaxProvider, [], { secret: 'k', mime: 'audio/wav', duration: 3 })
+    await expect(
+      minimaxProvider.voiceClone!.clone({ voiceId: 'pleinabcdefgh', sample }, short.ctx),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+    expect(short.fetch).not.toHaveBeenCalled()
+    const { ctx } = fakeContext(
+      minimaxProvider,
+      [
+        { file: { file_id: 1 }, base_resp: { status_code: 0 } },
+        { base_resp: { status_code: 2038, status_msg: 'no cloning permission' } },
+      ],
+      { secret: 'k', mime: 'audio/wav', duration: 30 },
+    )
+    await expect(
+      minimaxProvider.voiceClone!.clone({ voiceId: 'pleinabcdefgh', sample }, ctx),
+    ).rejects.toMatchObject({ code: 'auth' })
+  })
+})

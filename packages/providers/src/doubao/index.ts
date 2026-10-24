@@ -10,6 +10,7 @@ import {
   ProviderError,
   type ProviderErrorCode,
   type SubmitResult,
+  type VoiceCloneState,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { isJson, type Json, readText, redact, send } from '../shared/http'
@@ -301,6 +302,46 @@ const TTS_VOICES: VoicePreset[] = [
   },
 ]
 
+/** 复刻样本：平台接受的格式，单个文件 10 MB 以内 */
+const CLONE_FORMATS: Record<string, string> = {
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/wave': 'wav',
+  'audio/mpeg': 'mp3',
+  'audio/mp3': 'mp3',
+  'audio/ogg': 'ogg',
+  'audio/mp4': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/aac': 'aac',
+}
+
+/** 复刻接口的响应：HTTP 200 也可能在 code / message 里带错误 */
+function cloneBody(raw: string, ctx: Context): Json {
+  let body: Json
+  try {
+    body = object(JSON.parse(raw))
+  } catch {
+    throw incomplete('豆包语音返回无效 JSON 对象')
+  }
+  const header = isJson(body.header) ? body.header : body
+  if (header.code !== undefined && ![0, 20000000].includes(Number(header.code)))
+    throw failure(200, header.code, header.message, ctx)
+  return isJson(body.data) ? body.data : body
+}
+
+/** 训练状态：0 没找到、1 训练中、2 成功、3 失败、4 已激活（2、4 都能用于合成） */
+function cloneState(raw: string, ctx: Context): VoiceCloneState {
+  const data = cloneBody(raw, ctx)
+  const status = Number(data.status)
+  if (status === 2 || status === 4) return { status: 'ready' }
+  if (status === 1) return { status: 'training' }
+  const reason = typeof data.message === 'string' ? scrub(data.message, ctx) : ''
+  if (status === 3)
+    return { status: 'failed', message: reason || '平台训练失败，请换一段更清晰的样本' }
+  if (status === 0) return { status: 'failed', message: '平台上找不到这个音色 ID' }
+  throw incomplete('豆包语音返回无效训练状态')
+}
+
 export const doubaoProvider = defineProvider({
   testScope: 'configuration',
   id: 'doubao/speech',
@@ -353,9 +394,8 @@ export const doubaoProvider = defineProvider({
       if (req.model === 'seed-icl-2.0' && !voice.startsWith('S_')) {
         throw new ProviderError('invalid_input', '声音复刻模型需要已创建的 S_ 音色 ID')
       }
-      if (req.model === 'seed-tts-2.0' && voice.startsWith('S_')) {
-        throw new ProviderError('invalid_input', '复刻音色请选择 seed-icl-2.0')
-      }
+      // 复刻音色只能走复刻资源；角色卡沿用的音色常配默认的合成 2.0，这里自动改走复刻 2.0
+      const resource = voice.startsWith('S_') ? 'seed-icl-2.0' : req.model
       const speed = input.speed ?? 1
       if (!Number.isFinite(speed) || speed < 0.5 || speed > 2)
         throw new ProviderError('invalid_input', '语速须在 0.5 至 2 之间')
@@ -376,7 +416,7 @@ export const doubaoProvider = defineProvider({
             ),
           },
         },
-        req.model,
+        resource,
       )
       return response.decode((raw) => audioResult(raw, 'data', ctx, true))
     }
@@ -477,6 +517,33 @@ export const doubaoProvider = defineProvider({
       })
     }
     throw new ProviderError('invalid_input', '豆包语音不支持该能力')
+  },
+  // 按声音复刻 V3 接口对接（/api/v3/tts/voice_clone、/api/v3/tts/get_voice），尚未真机验证
+  voiceClone: {
+    voiceId: 'slot',
+    hint: '先在火山引擎控制台开通声音复刻，填分配的 S_ 音色 ID。样本 10–30 秒、单人清晰、无背景音乐，WAV / MP3 / OGG / M4A / AAC，10 MB 以内；每次训练消耗该音色的训练次数',
+    async clone({ voiceId, sample }, ctx) {
+      if (!/^S_[A-Za-z0-9_-]{1,100}$/.test(voiceId))
+        throw new ProviderError('invalid_input', '请填控制台分配的 S_ 开头的音色 ID')
+      const asset = await ctx.files.read(sample)
+      const format = CLONE_FORMATS[asset.mime.toLowerCase()]
+      if (!format)
+        throw new ProviderError('invalid_input', '复刻样本须为 WAV、MP3、OGG、M4A 或 AAC 音频')
+      if (!asset.data.length || asset.data.length > 10 * 1024 * 1024)
+        throw new ProviderError('invalid_input', '复刻样本须在 10 MB 以内')
+      const response = await post(ctx, '/api/v3/tts/voice_clone', {
+        speaker_id: voiceId,
+        audio: { data: Buffer.from(asset.data).toString('base64'), format },
+        extra_params: { enable_audio_denoise: true },
+      })
+      // 提交后训练在平台上进行，状态以 get_voice 为准
+      response.decode((raw) => cloneBody(raw, ctx))
+      return { status: 'training' }
+    },
+    async status(voiceId, ctx) {
+      const response = await post(ctx, '/api/v3/tts/get_voice', { speaker_id: voiceId })
+      return response.decode((raw) => cloneState(raw, ctx))
+    },
   },
 })
 

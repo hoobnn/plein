@@ -277,6 +277,29 @@ export interface VoicePreset {
   age?: 'young' | 'mature'
 }
 
+/** 复刻进度：训练是平台上的异步过程，宿主按 status 刷新 */
+export type VoiceCloneState =
+  | { status: 'training' }
+  | { status: 'ready' }
+  | { status: 'failed'; message: string }
+
+/**
+ * 声音复刻：上传一段样本，在平台上训练出一个只能在这家配音模型里用的音色。
+ * 复刻会计费，结果是平台上的音色 ID，不是文件，所以不走模型能力。
+ */
+export interface VoiceCloneSpec<Ctx> {
+  /**
+   * 音色 ID 由谁定：slot 要用户填在平台控制台预先开通的音色槽位（如豆包的 S_ 开头 ID），
+   * generated 由宿主生成一个新 ID
+   */
+  voiceId: 'slot' | 'generated'
+  /** 样本要求，表单里给用户看 */
+  hint: string
+  clone(input: { voiceId: string; sample: AssetRef }, ctx: Ctx): Promise<VoiceCloneState>
+  /** 查训练状态；clone 直接返回 ready / failed 的平台可以不实现 */
+  status?(voiceId: string, ctx: Ctx): Promise<VoiceCloneState>
+}
+
 /** 可序列化的模型描述：专属参数转成 JSON Schema */
 export type ModelInfo = Omit<ModelSpec, 'options'> & { optionsSchema?: Record<string, unknown> }
 
@@ -366,6 +389,7 @@ export interface ProviderDefinition<S extends z.ZodObject = z.ZodObject> {
    * 只有平台官方承诺幂等时才声明；声明了，提交状态未知时宿主会用同一个键重新提交
    */
   idempotent?: boolean
+  voiceClone?: VoiceCloneSpec<ProviderContext<z.output<S>>>
 }
 
 export function defineProvider<S extends z.ZodObject>(
@@ -415,6 +439,8 @@ export interface ProviderDescriptor {
   settingsSchema: Record<string, unknown>
   secrets: SecretSpec[]
   models: ModelInfo[]
+  /** 支持声音复刻时的表单说明 */
+  voiceClone?: Pick<VoiceCloneSpec<never>, 'voiceId' | 'hint'>
   plugin: string
 }
 
@@ -451,6 +477,9 @@ export function describeProvider(def: ProviderDefinition, plugin: string): Provi
           }
         : m,
     ),
+    ...(def.voiceClone
+      ? { voiceClone: { voiceId: def.voiceClone.voiceId, hint: def.voiceClone.hint } }
+      : {}),
     plugin,
   }
 }

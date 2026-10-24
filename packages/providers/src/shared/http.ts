@@ -105,7 +105,7 @@ export function transportError(
 export async function send(
   ctx: Pick<ProviderContext, 'fetch' | 'signal'>,
   url: string,
-  init: { method: Method; headers?: Record<string, string>; body?: string },
+  init: { method: Method; headers?: Record<string, string>; body?: string | FormData },
   messages: TransportMessages,
 ): Promise<Response> {
   // 尚未发出请求时可以确定没有提交；发出后再取消则无法判断平台是否已受理。
