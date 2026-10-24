@@ -52,7 +52,7 @@
   .ui-float {
     background: var(--float);
     box-shadow: var(--shadow-2);
-    backdrop-filter: blur(24px) saturate(1.8);
+    backdrop-filter: blur(var(--blur-float));
   }
 
   /*
@@ -68,7 +68,7 @@
     border-radius: var(--radius-lg);
     background: var(--float);
     box-shadow: var(--shadow-2);
-    backdrop-filter: blur(24px) saturate(1.8);
+    backdrop-filter: blur(var(--blur-float));
   }
   .ui-bar-sm {
     height: var(--h-xl);
@@ -94,7 +94,8 @@
     white-space: nowrap;
     transition:
       background-color var(--dur-fast) var(--ease-standard),
-      color var(--dur-fast) var(--ease-standard);
+      color var(--dur-fast) var(--ease-standard),
+      scale var(--dur-fast) var(--ease-spring);
   }
   .ui-bar-sm .ui-bar-btn {
     height: var(--h-md);
@@ -167,7 +168,8 @@
     transition:
       background-color var(--dur-fast) var(--ease-standard),
       color var(--dur-fast) var(--ease-standard),
-      box-shadow var(--dur-fast) var(--ease-standard);
+      box-shadow var(--dur-fast) var(--ease-standard),
+      scale var(--dur-fast) var(--ease-spring);
   }
   .ui-btn:hover {
     background: var(--hover);
@@ -458,7 +460,7 @@
     padding: 4px;
     background: var(--menu);
     box-shadow: var(--shadow-3);
-    backdrop-filter: blur(32px) saturate(1.8);
+    backdrop-filter: blur(var(--blur-menu));
     animation: ui-pop-in var(--dur-base) var(--ease-spring);
     transform-origin: var(--pop-origin, top left);
   }
@@ -551,7 +553,7 @@
     font-size: var(--text-sm);
     background: var(--menu);
     box-shadow: var(--shadow-3);
-    backdrop-filter: blur(32px) saturate(1.8);
+    backdrop-filter: blur(var(--blur-menu));
     /* 贴在顶栏下面：从上方落下、往上收回 */
     --pop-from: translateY(-6px);
     --pop-to: translateY(-4px);
@@ -567,6 +569,7 @@
     background: var(--primary);
     box-shadow: var(--shadow-2);
     animation: ui-pop-in var(--dur-fast) var(--ease-spring);
+    transform-origin: var(--pop-origin, center);
   }
 
   /* 对话框（ui/Dialog.tsx、ui/Modal.tsx）：遮罩淡入，面板略微上浮着弹出，两者同时进行 */
@@ -574,8 +577,8 @@
     animation: ui-fade-in var(--dur-base) var(--ease-standard);
   }
   .ui-dialog {
-    --pop-from: translateY(8px) scale(0.96);
-    --pop-to: translateY(4px) scale(0.98);
+    --pop-from: translateY(6px) scale(0.985);
+    --pop-to: translateY(3px) scale(0.99);
     animation: ui-pop-in var(--dur-slow) var(--ease-spring);
   }
   /* 其他弹出的浮层（任务面板等）：用 --pop-from / --pop-origin 指定从哪边进来 */
@@ -844,6 +847,16 @@
   .ui-scrollbar {
     scrollbar-width: thin;
     scrollbar-color: var(--line-strong) transparent;
+  }
+}
+
+/* 按下只压缩控件本身，不改变布局，也不影响画布世界坐标。 */
+@media (prefers-reduced-motion: no-preference) {
+  @layer components {
+    .ui-btn:active:not(:disabled),
+    .ui-bar-btn:active:not(:disabled) {
+      scale: 0.97;
+    }
   }
 }
 

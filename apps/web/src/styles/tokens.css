@@ -13,15 +13,15 @@
   --surface-2: #1f1f1f;
   --surface-3: #292929;
   /* 材质：浮动工具条半透明，菜单和弹层更实，盖在图片上也读得清 */
-  --float: rgb(24 24 24 / 0.84);
-  --menu: rgb(28 28 28 / 0.96);
+  --float: rgb(24 24 24 / 0.92);
+  --menu: rgb(28 28 28 / 0.98);
   --hover: rgb(255 255 255 / 0.06);
   --active: rgb(255 255 255 / 0.1);
   --line: rgb(255 255 255 / 0.08);
   --line-strong: rgb(255 255 255 / 0.15);
   --ink: #ededed;
-  --ink-muted: #a3a3a3;
-  --ink-subtle: #6b6b6b;
+  --ink-muted: #b0b0b0;
+  --ink-subtle: #949494;
   --primary: #ededed;
   --primary-hover: #ffffff;
   --on-primary: #0a0a0a;
@@ -53,15 +53,15 @@
   --surface: #ffffff;
   --surface-2: #f5f5f5;
   --surface-3: #ebebeb;
-  --float: rgb(255 255 255 / 0.82);
-  --menu: rgb(255 255 255 / 0.96);
+  --float: rgb(255 255 255 / 0.92);
+  --menu: rgb(255 255 255 / 0.98);
   --hover: rgb(0 0 0 / 0.05);
   --active: rgb(0 0 0 / 0.09);
   --line: rgb(0 0 0 / 0.08);
   --line-strong: rgb(0 0 0 / 0.14);
   --ink: #171717;
-  --ink-muted: #5e5e5e;
-  --ink-subtle: #949494;
+  --ink-muted: #525252;
+  --ink-subtle: #666666;
   --primary: #171717;
   --primary-hover: #333333;
   --on-primary: #ffffff;
@@ -207,4 +207,7 @@
   --dur-slow: 280ms;
   --dur-move: 360ms;
   --dur-exit: 140ms;
+  /* 小工具条透出作品，大面积阅读面板用 surface 实底。 */
+  --blur-float: 20px;
+  --blur-menu: 24px;
 }

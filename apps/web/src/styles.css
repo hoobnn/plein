@@ -16,3 +16,5 @@
 @import "./styles/home.css";
 @import "./styles/agent.css";
 @import "./styles/library.css";
+/* 用户动态效果偏好必须在组件样式之后生效。 */
+@import "./styles/motion.css";

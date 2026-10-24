@@ -142,6 +142,8 @@ function Bubble({ tip }: { tip: Tip }) {
     )
     const below = rect.bottom + gap + h <= window.innerHeight - 8
     setPos({ left, top: below ? rect.bottom + gap : rect.top - gap - h })
+    el.style.setProperty('--pop-origin', below ? 'top center' : 'bottom center')
+    el.style.setProperty('--pop-from', `translateY(${below ? -2 : 2}px) scale(0.98)`)
   }, [tip])
 
   return (

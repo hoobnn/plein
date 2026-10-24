@@ -1,0 +1,31 @@
+/*
+ * 放在所有组件样式之后。这里的 !important 是用户的动态效果偏好，必须高于
+ * 具体组件、Tailwind layer 和内联编排的时长；不能清除 transform，画布定位依赖它。
+ * 保留极短时长使依赖动画结束的浮层清理仍然完成，去掉延迟避免逐项出现。
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+  }
+
+  /* 不确定进度仍然可见，不能停在轨道外；状态文字继续提供进展。 */
+  .ui-run-step-bar[data-indeterminate="true"]::after,
+  .plein-node-progress.is-indeterminate::after {
+    animation: none !important;
+    transform: none;
+  }
+}

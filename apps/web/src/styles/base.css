@@ -161,13 +161,3 @@ input[type="range"]::-moz-range-thumb {
     outline-offset: 2px;
   }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  ::before,
-  ::after {
-    animation-duration: 1ms;
-    animation-iteration-count: 1;
-    transition-duration: 1ms;
-  }
-}

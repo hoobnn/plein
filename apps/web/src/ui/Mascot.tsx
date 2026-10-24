@@ -13,7 +13,15 @@ export function Mascot({ mood, size = 56 }: { mood: Mood; size?: number }) {
     const g = eyes.current
     if (!g) return
     let frame = 0
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const reset = () => {
+      if (motion.matches) {
+        cancelAnimationFrame(frame)
+        g.style.transform = ''
+      }
+    }
     const move = (e: PointerEvent) => {
+      if (motion.matches) return
       cancelAnimationFrame(frame)
       frame = requestAnimationFrame(() => {
         const r = g.ownerSVGElement?.getBoundingClientRect()
@@ -26,9 +34,11 @@ export function Mascot({ mood, size = 56 }: { mood: Mood; size?: number }) {
       })
     }
     window.addEventListener('pointermove', move, { passive: true })
+    motion.addEventListener('change', reset)
     return () => {
       cancelAnimationFrame(frame)
       window.removeEventListener('pointermove', move)
+      motion.removeEventListener('change', reset)
     }
   }, [])
 
