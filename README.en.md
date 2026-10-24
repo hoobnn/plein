@@ -85,6 +85,7 @@ Every result is a new asset with its source recorded; originals are never touche
 - One project is one film, and it can hold several canvases
 - Review asset updates by canvas and field, or pin a card to its current version; local automatic backups, storage usage, restore copies and unused-asset recycling are described in [Local data maintenance](docs/guide/data-maintenance.md) (Chinese)
 - The asset library holds characters, scenes, props, styles and effects, reusable across canvases and projects. Characters have full-body / half-body / turnaround / emotion-grid slots, tags and a voice; canvas cards and the library sync both ways
+- The Voices tab in the asset library manages your own voices: upload a voice sample to clone it on MiniMax or Doubao, or register a voice that already exists on the platform; cloned voices can be picked directly on character cards and voiceover nodes
 - Project packages (.plein): export a whole project from the home page (canvases, the assets they use, library items, adopted results and run history, optionally all past candidates) and import it on another machine or data directory; imports check the format version and file hashes first and list missing models, voices and plugins. Platform keys and sign-in data are never included
 
 ### Runs and jobs

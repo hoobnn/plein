@@ -334,11 +334,11 @@ function cloneState(raw: string, ctx: Context): VoiceCloneState {
   const data = cloneBody(raw, ctx)
   const status = Number(data.status)
   if (status === 2 || status === 4) return { status: 'ready' }
-  if (status === 1) return { status: 'training' }
+  // 0 是没找到：刚提交时平台可能还没登记，提交本身成功过，所以按训练中继续查
+  if (status === 0 || status === 1) return { status: 'training' }
   const reason = typeof data.message === 'string' ? scrub(data.message, ctx) : ''
   if (status === 3)
     return { status: 'failed', message: reason || '平台训练失败，请换一段更清晰的样本' }
-  if (status === 0) return { status: 'failed', message: '平台上找不到这个音色 ID' }
   throw incomplete('豆包语音返回无效训练状态')
 }
 

@@ -419,7 +419,7 @@ describe('Doubao Speech HTTP contracts', () => {
       doubaoProvider,
       [
         Response.json({ speaker_id: 'S_abc' }),
-        Response.json({ speaker_id: 'S_abc', status: 1 }),
+        Response.json({ speaker_id: 'S_abc', status: 0 }),
         Response.json({ speaker_id: 'S_abc', status: 4 }),
         Response.json({ speaker_id: 'S_abc', status: 3 }),
       ],

@@ -9,9 +9,9 @@ test('320px 下资产类别可用键盘逐项访问，导航不撑出面板', as
   const panel = page.getByRole('dialog', { name: '资产库', exact: true })
   const categories = panel.getByRole('group', { name: '资产类别', exact: true })
   const buttons = categories.getByRole('button')
-  await expect(buttons).toHaveCount(5)
+  await expect(buttons).toHaveCount(6)
   await buttons.first().focus()
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 6; i++) {
     const button = buttons.nth(i)
     if (i > 0) await page.keyboard.press('Tab')
     await expect(button).toBeFocused()
@@ -21,7 +21,7 @@ test('320px 下资产类别可用键盘逐项访问，导航不撑出面板', as
     await expect(panel.getByRole('button', { name: '关闭', exact: true })).toBeInViewport()
     expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
   }
-  await expect(categories.getByRole('button', { name: '特效', exact: true })).toHaveAttribute(
+  await expect(categories.getByRole('button', { name: '音色', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
