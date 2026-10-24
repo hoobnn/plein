@@ -363,6 +363,13 @@
     transform: none;
   }
 }
+/* 助手面板浮在右侧（宽 400、距右 12）：宽屏时首页内容让出这一列，「新建项目」等主要操作不被盖住；
+   窄屏面板铺满宽度，照旧浮在上面 */
+@media (min-width: 1024px) {
+  .home-main[data-agent-open] {
+    margin-right: 428px;
+  }
+}
 @media (max-width: 1023px) {
   .home-quick-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));

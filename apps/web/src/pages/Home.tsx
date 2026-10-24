@@ -24,6 +24,7 @@ import { useCanvas } from '../stores/canvas'
 import { useMediaLibrary } from '../features/media-library/store'
 import { useCheckpoints } from '../features/checkpoints/store'
 import { HomeAgentTrigger } from '../features/agent/HomeAgentTrigger'
+import { useAgent } from '../features/agent/store'
 
 /** 快速开始：新建项目并在它的第一张画布上放好对应节点、打开生成器 */
 const QUICK_START: Array<{
@@ -53,6 +54,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   const info = useSession((s) => s.info)
   const signOut = useSession((s) => s.logout)
   const signingOut = useSession((s) => s.signingOut)
+  const agentOpen = useAgent((s) => s.open)
   // 回到首页时先显示上次的列表，同时重新拉（在画布里改过的标题、更新时间）
   const list = useQuery({
     queryKey: queryKeys.projects,
@@ -216,7 +218,10 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
         </div>
       </header>
 
-      <main className="home-col home-main mx-auto flex max-w-6xl flex-col px-5 pb-16 sm:px-10">
+      <main
+        data-agent-open={agentOpen || undefined}
+        className="home-col home-main mx-auto flex max-w-6xl flex-col px-5 pb-16 sm:px-10"
+      >
         <div className="home-heading">
           <div>
             <h1 className="flex items-baseline gap-3 text-2xl font-semibold">
@@ -399,6 +404,11 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
   )
 }
 
+/**
+ * 删除从封面上的按钮发起，进度和失败原因在卡片底部；窄屏时底部可能在视口外，出现时滚进视野
+ */
+const reveal = (el: HTMLElement | null) => el?.scrollIntoView({ block: 'nearest' })
+
 function ProjectCard({
   project: c,
   onRename,
@@ -517,7 +527,7 @@ function ProjectCard({
             </p>
           )}
           {deleting && (
-            <p role="status" className="mt-1 text-xs text-ink-muted">
+            <p ref={reveal} role="status" className="mt-1 text-xs text-ink-muted">
               正在删除项目…
             </p>
           )}
@@ -527,7 +537,7 @@ function ProjectCard({
             </p>
           )}
           {deleteError && (
-            <p role="alert" className="mt-1 break-words text-xs text-danger">
+            <p ref={reveal} role="alert" className="mt-1 break-words text-xs text-danger">
               {deleteError}
             </p>
           )}
