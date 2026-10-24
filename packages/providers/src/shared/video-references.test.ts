@@ -47,6 +47,26 @@ describe('本地多模态参考输入合同', () => {
       'audio',
     ])
   })
+  it.each(['audio/mpeg', 'audio/mp3'])('MP3 参考音频（%s）按 mp3 格式编码', async (mime) => {
+    for (const platform of ['ark', 'minimax'] as const) {
+      const content = await videoReferences([ref('image'), ref('audio')], context(), {
+        ...limits,
+        platform,
+      })
+      expect(content[1]).toMatchObject({ audio_url: { url: 'data:audio/mp3;base64,AQID' } })
+    }
+    function context() {
+      return {
+        files: {
+          read: vi.fn(async (value: AssetRef) =>
+            value.kind === 'image'
+              ? { data: new Uint8Array([1, 2, 3]), mime: 'image/png', width: 1024, height: 1024 }
+              : { data: new Uint8Array([1, 2, 3]), mime, duration: 5 },
+          ),
+        },
+      }
+    }
+  })
   it('数量和纯音频策略在读文件前拒绝，非法 kind 不能穿过原型链', async () => {
     const ctx = context()
     await expect(

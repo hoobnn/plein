@@ -1,5 +1,11 @@
 import { type AssetRef, type ProviderContext, ProviderError } from '@plein/plugin-sdk'
 
+/** 平台按 data URL 的子类型认格式（只认 wav / mp3），MP3 的标准 MIME audio/mpeg 会被当成 .mpeg */
+const AUDIO_FORMAT: Record<string, string> = {
+  'audio/x-wav': 'audio/wav',
+  'audio/mpeg': 'audio/mp3',
+}
+
 /** Encode local references through the host, never exposing a local path or secret URL. */
 export async function videoReferences(
   refs: AssetRef[],
@@ -102,7 +108,7 @@ export async function videoReferences(
     const type = `${kind}_url`
     content.push({
       type,
-      [type]: { url: `data:${mime === 'audio/x-wav' ? 'audio/wav' : mime};base64,${encoded}` },
+      [type]: { url: `data:${AUDIO_FORMAT[mime] ?? mime};base64,${encoded}` },
       role: `reference_${kind}`,
     })
   }
