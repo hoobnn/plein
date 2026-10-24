@@ -216,32 +216,18 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
         </div>
       </header>
 
-      <main className="home-col mx-auto flex max-w-6xl flex-col gap-6 px-5 pb-16 pt-4 sm:px-10">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+      <main className="home-col home-main mx-auto flex max-w-6xl flex-col px-5 pb-16 sm:px-10">
+        <div className="home-heading">
           <div>
-            <h1 className="flex items-baseline gap-2 text-2xl font-semibold">
+            <h1 className="flex items-baseline gap-3 text-2xl font-semibold">
               我的项目
               {projects && projects.length > 0 && (
-                <span className="text-sm font-normal text-ink-subtle">{projects.length}</span>
+                <span className="home-project-count">{projects.length}</span>
               )}
             </h1>
-            <p className="mt-1 text-sm text-ink-subtle">
-              一个项目一部片子，下面可以分多张画布；角色、场景、风格存进资产库跨画布复用
-            </p>
+            <p className="home-subtitle">从一个想法，到一部作品。</p>
           </div>
-          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">
-            {projects && (projects.length > 1 || query) && (
-              <label className="home-search max-sm:basis-full">
-                <Icon name="search" />
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="搜索项目"
-                  aria-label="搜索项目"
-                />
-              </label>
-            )}
+          <div className="home-heading-actions">
             <button
               type="button"
               onClick={() => fileInput.current?.click()}
@@ -275,28 +261,31 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
           </div>
         </div>
 
-        <section
-          aria-label="快速开始"
-          className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5"
-        >
-          {QUICK_START.map((q) => (
-            <button
-              key={q.type}
-              type="button"
-              disabled={creating}
-              onClick={(e) => void create(e.currentTarget, q.type)}
-              title={q.detail}
-              className="home-quick group"
-            >
-              <span className="home-quick-icon">
-                <Icon name={q.icon} size={20} />
-              </span>
-              <span className="min-w-0 text-left">
-                <span className="block text-base font-medium text-ink">{q.title}</span>
-                <span className="block truncate text-xs text-ink-subtle">{q.hint}</span>
-              </span>
-            </button>
-          ))}
+        <section aria-label="快速开始" className="home-start">
+          <div className="home-section-heading">
+            <h2 className="home-section-title">快速开始</h2>
+            <span className="home-section-hint">选择一种创作方式</span>
+          </div>
+          <div className="home-quick-grid">
+            {QUICK_START.map((q) => (
+              <button
+                key={q.type}
+                type="button"
+                disabled={creating}
+                onClick={(e) => void create(e.currentTarget, q.type)}
+                title={q.detail}
+                className="home-quick group"
+              >
+                <span className="home-quick-icon">
+                  <Icon name={q.icon} size={20} />
+                </span>
+                <span className="min-w-0 text-left">
+                  <span className="block text-sm font-medium text-ink">{q.title}</span>
+                  <span className="block truncate text-xs text-ink-subtle">{q.hint}</span>
+                </span>
+              </button>
+            ))}
+          </div>
         </section>
 
         {creating && (
@@ -327,40 +316,63 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
           </div>
         )}
 
-        {shown && (
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {!q && (
-              <li>
-                <button
-                  type="button"
-                  onClick={(e) => void create(e.currentTarget)}
-                  disabled={creating}
-                  className="home-new"
-                >
-                  <span className="home-new-icon">
-                    <Icon name="plus" size={20} />
-                  </span>
-                  <span className="text-base font-medium text-ink">新建项目</span>
-                  <span className="text-xs text-ink-subtle">
-                    {projects?.length ? '从一张空白画布开始' : '拖入图片、视频、音频或 Markdown'}
-                  </span>
-                </button>
-              </li>
+        <section aria-label="项目列表" className="home-projects">
+          <div className="home-section-heading home-projects-heading">
+            <h2 className="home-section-title">{q ? '搜索结果' : '最近项目'}</h2>
+            {projects && (projects.length > 1 || query) && (
+              <label className="home-search">
+                <Icon name="search" />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="搜索项目"
+                  aria-label="搜索项目"
+                />
+              </label>
             )}
-            {shown.map((p) => (
-              <ProjectCard
-                key={p.id}
-                project={p}
-                onRename={(t) => rename(p, t)}
-                onExport={() => setExporting(p)}
-                onDelete={() => remove(p)}
-              />
-            ))}
-          </ul>
-        )}
-        {q && shown?.length === 0 && (
-          <EmptyState icon="search" title={`没有标题包含「${query}」的项目`} />
-        )}
+          </div>
+          {!projects && !listError && (
+            <div role="status" className="home-loading">
+              <span className="ui-spinner size-4" />
+              正在加载项目…
+            </div>
+          )}
+          {shown && (
+            <ul className="home-project-grid">
+              {shown.map((p) => (
+                <ProjectCard
+                  key={p.id}
+                  project={p}
+                  onRename={(t) => rename(p, t)}
+                  onExport={() => setExporting(p)}
+                  onDelete={() => remove(p)}
+                />
+              ))}
+              {!q && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={(e) => void create(e.currentTarget)}
+                    disabled={creating}
+                    className="home-new"
+                  >
+                    <span className="home-new-icon">
+                      <Icon name="plus" size={20} />
+                    </span>
+                    <span className="text-base font-medium text-ink">新建项目</span>
+                    <span className="text-xs text-ink-subtle">
+                      {projects?.length ? '从一张空白画布开始' : '开启你的第一部作品'}
+                    </span>
+                  </button>
+                </li>
+              )}
+            </ul>
+          )}
+          {q && shown?.length === 0 && (
+            <EmptyState icon="search" title={`没有标题包含「${query}」的项目`} />
+          )}
+        </section>
       </main>
       <Welcome />
       {/* 画布页留下的提示（如画布已在别处删除，跳回首页时） */}
@@ -472,7 +484,7 @@ function ProjectCard({
       >
         <Cover covers={covers} empty={c.canvases === 0} />
       </a>
-      <div className="flex items-center gap-2 px-3 pb-3 pt-2.5">
+      <div className="home-card-info">
         <div className="min-w-0 flex-1">
           {editing ? (
             <InlineTitle
@@ -520,7 +532,7 @@ function ProjectCard({
             </p>
           )}
         </div>
-        <div className="home-card-actions absolute top-3 right-3 flex gap-0.5 rounded-lg bg-surface p-1 opacity-0 shadow-2 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+        <div className="home-card-actions">
           <button
             type="button"
             aria-label="项目素材"
@@ -587,11 +599,11 @@ function ProjectCard({
 function Cover({ covers, empty }: { covers: string[]; empty: boolean }) {
   if (covers.length === 0)
     return (
-      <div className="plein-thumb home-cover flex items-center justify-center">
-        <span className="flex flex-col items-center gap-2 text-ink-subtle">
+      <div className="home-cover home-cover-empty">
+        <span className="home-cover-sketch" aria-hidden="true">
           <Icon name="frame" size={24} />
-          <span className="text-xs">{empty ? '还没有画布' : '还没有生成图片'}</span>
         </span>
+        <span className="text-xs text-ink-subtle">{empty ? '还没有画布' : '还没有生成图片'}</span>
       </div>
     )
   const layout =
