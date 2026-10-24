@@ -77,7 +77,8 @@ export function Popover({
             style={{
               width,
               maxWidth: 'var(--available-width, calc(100vw - 16px))',
-              maxHeight: 'min(480px, 70vh, var(--available-height, 70vh))',
+              // 放不下时保留最低高度，让定位器翻到另一侧，而不是压成一条；矮窗口里随视口收小
+              maxHeight: 'min(480px, 70vh, max(var(--available-height, 70vh), min(200px, 40vh)))',
             }}
             className="ui-menu ui-scrollbar pointer-events-auto overflow-y-auto outline-none"
           >
