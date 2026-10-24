@@ -208,7 +208,7 @@ export function PromptBox({
   )
 
   return (
-    <div className="relative">
+    <div className="plein-prompt relative" data-large={large || undefined}>
       <MentionTextarea
         targets={targets}
         onLocate={(id) => {
@@ -252,14 +252,14 @@ export function PromptBox({
             setQuery(null)
           }
         }}
-        className={`field-sizing-content ${large ? 'max-h-[65vh] min-h-80' : 'max-h-60 min-h-24'} w-full resize-none bg-transparent px-4 py-3 text-base text-ink outline-none placeholder:text-ink-subtle`}
+        className={`plein-prompt-input field-sizing-content ${large ? 'max-h-[65vh] min-h-80' : 'max-h-60 min-h-24'} w-full resize-none bg-transparent px-4 py-3 text-base text-ink outline-none placeholder:text-ink-subtle`}
       />
       {!large && (
         <button
           type="button"
           aria-label="放大编辑提示词"
           title="放大编辑提示词"
-          className="ui-btn ui-btn-quiet absolute top-1 right-1 opacity-60 hover:opacity-100"
+          className="plein-prompt-expand ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn absolute top-2 right-2"
           onClick={() => setExpanded(true)}
         >
           <Icon name="expand" size={14} />

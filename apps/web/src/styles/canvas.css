@@ -304,6 +304,7 @@
 .plein-md-scroll td {
   min-width: 6em;
 }
+
 .plein-md blockquote {
   border-left: 3px solid var(--line);
   padding-left: 0.8em;
@@ -322,6 +323,45 @@
 .plein-md td {
   border: 1px solid var(--line);
   padding: 0.2em 0.5em;
+}
+
+/* 生成器是阅读和输入区，使用实底隔开后方作品；位置与尺寸仍由画布引擎跟随。 */
+.plein-generator {
+  background: var(--surface);
+  box-shadow: var(--shadow-3);
+}
+.plein-generator-toggle,
+.plein-generator-name {
+  background: var(--surface);
+}
+.plein-generator-toggle[aria-expanded="true"] {
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+.plein-generator-footer {
+  z-index: 1;
+  background: var(--surface);
+  box-shadow: 0 -1px 0 var(--line);
+}
+
+/* 输入时只改变颜色，不对正文或随内容变化的高度做过渡。 */
+.plein-prompt {
+  background: var(--surface);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.plein-prompt:focus-within {
+  background: color-mix(in srgb, var(--accent) 3%, var(--surface));
+}
+.plein-prompt:not([data-large]) .plein-prompt-input {
+  padding-right: 48px;
+}
+.plein-prompt-expand {
+  color: var(--ink-subtle);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.plein-prompt:focus-within .plein-prompt-expand,
+.plein-prompt-expand:hover {
+  color: var(--ink-muted);
 }
 
 /* ── 节点卡片（DOM 层，GPU 底板之上） ─────────────── */
@@ -375,6 +415,7 @@
   text-overflow: ellipsis;
   font-weight: 500;
   letter-spacing: 0.01em;
+  transition: color var(--dur-fast) var(--ease-standard);
 }
 
 .plein-node[data-selected="true"] .plein-node-title {
@@ -428,6 +469,10 @@
   gap: 1px;
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 .plein-node-nav[hidden] {
@@ -455,9 +500,20 @@
   color: var(--ink-muted);
 }
 
-.plein-node-btn:hover {
+.plein-node-btn:hover:not(:disabled) {
   background: var(--hover);
   color: var(--ink);
+}
+.plein-node-btn:active:not(:disabled),
+.plein-node-try:active:not(:disabled),
+.plein-node-action:active:not(:disabled) {
+  background: var(--active);
+}
+.plein-node-btn:disabled,
+.plein-node-try:disabled,
+.plein-node-action:disabled {
+  cursor: default;
+  opacity: 0.4;
 }
 
 /* 卡片本体：结果由 GPU 画，这里放文本结果、空状态、运行状态 */
@@ -497,14 +553,22 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 12px;
+  gap: 16px;
+  padding: 16px;
+  text-align: center;
 }
 
 .plein-node-empty-icon {
   display: inline-flex;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
   color: var(--ink-subtle);
-  opacity: 0.7;
 }
 
 .plein-node-tries {
@@ -521,6 +585,7 @@
 .plein-node-tries-label {
   flex-basis: 100%;
   text-align: center;
+  margin-bottom: 2px;
 }
 
 .plein-node-try {
@@ -533,7 +598,7 @@
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
-.plein-node-try:hover {
+.plein-node-try:hover:not(:disabled) {
   color: var(--ink);
   background: var(--surface-3);
 }
@@ -694,7 +759,7 @@
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
-.plein-node-action:hover {
+.plein-node-action:hover:not(:disabled) {
   background: var(--surface-3);
 }
 

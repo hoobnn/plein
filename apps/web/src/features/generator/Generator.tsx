@@ -409,7 +409,7 @@ function Panel({
       data-testid="generator"
       data-compact={collapsed}
       style={style}
-      className="ui-float ui-scrollbar pointer-events-auto fixed z-20 flex flex-col overflow-y-auto rounded-xl"
+      className="plein-generator ui-scrollbar pointer-events-auto fixed z-20 flex flex-col overflow-y-auto rounded-xl"
       onKeyDown={(e) => {
         if (e.nativeEvent.isComposing) return
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -428,7 +428,7 @@ function Panel({
               onExpand()
             } else onCollapse()
           }}
-          className="ui-btn ui-btn-quiet sticky top-0 z-10 min-h-11 shrink-0 justify-between rounded-none bg-float px-4"
+          className="plein-generator-toggle ui-btn ui-btn-quiet sticky top-0 z-10 min-h-11 shrink-0 justify-between rounded-none px-4"
         >
           <span>{collapsed ? `编辑${node.title}` : '收起编辑器'}</span>
           <Icon name={collapsed ? 'expand' : 'collapse'} size={14} />
@@ -577,7 +577,7 @@ function Panel({
         )}
         {!pure && (
           // 底栏吸底：面板被视口截短时生成按钮仍然可见
-          <footer className="sticky bottom-0 flex flex-col gap-2 bg-float px-3 pb-3 pt-1 backdrop-blur-xl">
+          <footer className="plein-generator-footer sticky bottom-0 flex flex-col gap-2 px-3 py-3">
             {hiddenInstruction && (
               <div className="flex items-start gap-2 px-1 text-xs text-ink-muted">
                 <p
@@ -731,7 +731,7 @@ function NameField({
     } else reset()
   }
   return (
-    <div className="border-b border-line">
+    <div className="plein-generator-name border-b border-line">
       <div className="flex items-center gap-2 px-4 py-3">
         <input
           aria-label="节点名称"
