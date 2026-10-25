@@ -296,6 +296,19 @@ export async function applyMentions(
           [port]: dedupe([...own, ...refs]),
         }
       : inputs
+  const provider = parseModelRef(String(params.model ?? ''))?.provider
+  if (video && send && (provider === 'minimax/api' || provider === 'volc/ark')) {
+    const images = merged[port] ?? []
+    const bindings = details.flatMap((d) => {
+      const tokens = d.sent.flatMap((id) => {
+        const index = images.findIndex((v) => v.type === 'image' && v.assetId === id)
+        return index < 0 ? [] : [`@image${index + 1}`]
+      })
+      return tokens.length ? [`${d.name}：${tokens.join('、')}`] : []
+    })
+    if (bindings.length)
+      params.prompt = `${params.prompt ?? ''}\n\n参考对应：\n${bindings.join('\n')}`
+  }
   return { params, inputs: merged, refs: refList, notices, details, blocked }
 }
 

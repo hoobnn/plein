@@ -1,4 +1,9 @@
-import type { ModelInfo, ModelLimits } from '@plein/plugin-sdk'
+import {
+  videoTaskOverrides,
+  videoModelProblem,
+  type ModelInfo,
+  type ModelLimits,
+} from '@plein/plugin-sdk'
 import { type VideoMode, videoModeProblem } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import {
@@ -72,6 +77,12 @@ export function constrainFields(
   const ak = aspectKey(node)
   return fields.flatMap(([k, f]): Array<[string, FieldSchema]> => {
     if (f.widget === 'modelOptions') return []
+    if (
+      node.capability === 'video.generate' &&
+      params &&
+      Object.hasOwn(videoTaskOverrides(params), k)
+    )
+      return []
     if (node.capability === 'image.process' && params?.operation) {
       if (k === 'scale' && params.operation !== 'upscale') return []
       if (['top', 'bottom', 'left', 'right'].includes(k) && params.operation !== 'outpaint')
@@ -184,6 +195,11 @@ export function modelProblem(
     const imageCount = ups.get('images')?.length ?? 0
     const videos = ups.get('videos')?.length ?? 0
     const audios = ups.get('audios')?.length ?? 0
+    const prompt = [
+      params.prompt ?? '',
+      ...(ups.get('prompt') ?? []).map((u) => (u.value?.type === 'text' ? u.value.text : '')),
+    ].join('\n')
+    const softReferences = mode === 'reference' && prompt.includes('@')
     if (mode !== 'reference' && (videos || audios)) return '视频或音频参考需要选择多模态参考模式'
     if (
       model &&
@@ -195,7 +211,21 @@ export function modelProblem(
       mode,
       mode === 'reference' ? imageCount + videos + audios : imageCount,
     )
-    if (problem) return problem
+    if (problem && !softReferences) return problem
+    if (model) {
+      const upstreamPrompt = (ups.get('prompt') ?? [])
+        .map((u) => (u.value?.type === 'text' ? u.value.text : ''))
+        .join('\n')
+      const issue = videoModelProblem(
+        model,
+        params,
+        { image: imageCount, video: videos, audio: audios },
+        [params.prompt ?? '', upstreamPrompt].join('\n'),
+        // @角色等软引用会在服务端展开，只有那里掌握最终参考图数量和编号。
+        { deferReferenceCounts: softReferences },
+      )
+      if (issue) return issue
+    }
   }
   if (!model) return null
   if (

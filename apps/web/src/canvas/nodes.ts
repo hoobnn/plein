@@ -360,7 +360,13 @@ export function validate(
     }
   }
   const key = promptKey(node)
-  if (key && node.capability !== 'image.process') {
+  const params = { ...node.defaults, ...el.params }
+  const videoPromptOptional =
+    node.capability === 'video.generate' &&
+    selectedModel(catalog, node, params)?.info.limits?.optionalVideoPrompt &&
+    (['image', 'frames'].includes(String(params.mode)) || params.mode === 'reference') &&
+    ['images', 'videos', 'audios'].some((port) => (ups.get(port)?.length ?? 0) > 0)
+  if (key && node.capability !== 'image.process' && !videoPromptOptional) {
     const own = String(el.params?.[key] ?? '').trim()
     const textPort = node.inputs.find((p) => p.type === 'text')
     const upstreamText = textPort

@@ -77,6 +77,37 @@ describe('F6/F8 实际输入、阻断与有效参数合同', () => {
     expect(submit).not.toHaveBeenCalled()
   })
 
+  it('仅尾帧从 API 预览到执行保持用途；空输入、多图及视频参考均阻断', async () => {
+    const f = await boot()
+    const source = f.asset('image', 'a')
+    const other = f.asset('image', 'b')
+    const clip = f.asset('video', 'c')
+    const target = addNode(f.doc, 'plein/video', {
+      params: { mode: 'lastFrame', prompt: '以指定画面结束' },
+    })
+    const submit = vi.spyOn(mockProvider, 'submit')
+    expect((await f.preview(target)).status).toBe('blocked')
+    connect(f.doc, [source, 'image'], [target, 'images'])
+    const input = await f.preview(target)
+    expect(input.status).toBe('ready')
+    expect(input.params.mode).toBe('lastFrame')
+    expect((await f.run(target, input)).status).toBe('succeeded')
+    expect(submit).toHaveBeenCalledOnce()
+    const posted = submit.mock.calls[0]![0].input as CapabilityInput<'video.generate'>
+    expect(posted.lastFrame?.assetId).toBe('a'.repeat(64))
+    expect(posted.firstFrame).toBeUndefined()
+    expect(posted.references).toBeUndefined()
+    connect(f.doc, [other, 'image'], [target, 'images'])
+    expect((await f.preview(target)).blocked.some((p) => p.message.includes('仅尾帧'))).toBe(true)
+    const wrongMode = addNode(f.doc, 'plein/video', { params: { mode: 'lastFrame', prompt: 'p' } })
+    connect(f.doc, [source, 'image'], [wrongMode, 'images'])
+    connect(f.doc, [clip, 'video'], [wrongMode, 'videos'])
+    expect(
+      (await f.preview(wrongMode)).blocked.some((p) => p.message.includes('多模态参考模式')),
+    ).toBe(true)
+    expect(submit).toHaveBeenCalledOnce()
+  })
+
   it('媒体按声明顺序预览并冻结，POST 与 inputHash 使用同一份素材', async () => {
     const f = await boot()
     const sources = [f.asset('image', 'a'), f.asset('video', 'b'), f.asset('audio', 'c')]

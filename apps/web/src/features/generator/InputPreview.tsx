@@ -326,7 +326,13 @@ export function InputPreview({
                   <span className="ui-scrollbar min-w-0 max-h-24 overflow-y-auto whitespace-pre-wrap break-all">
                     {fields.get(k)?.title ?? k}{' '}
                     {fields.get(k)?.labels?.[String(v)] ??
-                      (typeof v === 'boolean' ? (v ? '开启' : '关闭') : String(v))}
+                      (k === 'duration' && v === -1
+                        ? '自动'
+                        : typeof v === 'boolean'
+                          ? v
+                            ? '开启'
+                            : '关闭'
+                          : String(v))}
                   </span>
                 </span>
               ))}

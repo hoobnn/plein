@@ -634,6 +634,7 @@ function Panel({
                   images={ups.get('images')?.length ?? 0}
                   videos={ups.get('videos')?.length ?? 0}
                   audios={ups.get('audios')?.length ?? 0}
+                  allowedModes={model?.info.limits?.videoModes}
                   onChange={(v) => set(modeField[0], v)}
                 />
               )}

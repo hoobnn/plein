@@ -230,3 +230,41 @@ describe('上游', () => {
     expect(upstreams(engine, target, null).get('prompt')![0]!.value).toBeUndefined()
   })
 })
+
+it('视频有素材且模型允许时，通用提示词检查不再阻断；没有素材仍阻断', () => {
+  const video = info({
+    type: 'plein/video',
+    capability: 'video.generate',
+    paramsSchema: {
+      properties: {
+        model: { type: 'string', widget: 'model' },
+        prompt: { type: 'string', widget: 'textarea', title: '提示词' },
+      },
+    },
+    inputs: [
+      { id: 'prompt', type: 'text', multiple: true },
+      { id: 'images', type: 'image', multiple: true },
+    ],
+  })
+  const catalog = catalogOf(
+    provider({
+      models: [
+        {
+          id: 'v',
+          title: 'V',
+          capabilities: ['video.generate'],
+          limits: { optionalVideoPrompt: true },
+        },
+      ],
+    }),
+  )
+  const params = { model: 'p:v', mode: 'reference', prompt: '' }
+  const inputs = ups({ images: [up('I', { type: 'image', assetId: 'img' })] })
+  expect(validate(video, el(params), inputs, catalog)).toBeNull()
+  expect(validate(video, el({ ...params, mode: 'text' }), inputs, catalog)).toContain('提示词')
+  expect(validate(video, el(params), ups(), catalog)).toContain('至少 1 份')
+  const required = catalogOf(
+    provider({ models: [{ id: 'v', title: 'V', capabilities: ['video.generate'] }] }),
+  )
+  expect(validate(video, el(params), inputs, required)).toContain('提示词')
+})

@@ -1,3 +1,4 @@
+import { videoReferenceTokens } from '@plein/plugin-sdk'
 import { findMentions, isMentionStart, mentionProblem, type MentionTarget } from '@plein/nodes'
 
 /** 有效引用共用生成解析器；找不到目标的 @ 写法单独标为缺失，不绑定到猜测的元素。 */
@@ -12,6 +13,7 @@ export function mentionParts(text: string, targets: readonly MentionTarget[]) {
   }> = []
   let end = 0
   const matches = findMentions(text, targets)
+  const reserved = new Set(videoReferenceTokens(text).map((t) => t.start))
   const unknown =
     /@[^\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]+(?:[ \t]+·[ \t]*[^\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]+)*/g
   const ranges = [
@@ -27,7 +29,11 @@ export function mentionParts(text: string, targets: readonly MentionTarget[]) {
     ...[...text.matchAll(unknown)].flatMap((match) => {
       const start = match.index
       // 邮件地址和已解析引用中的 @ 不当作新引用。
-      if (!isMentionStart(text, start) || matches.some((m) => start >= m.start && start < m.end))
+      if (
+        !isMentionStart(text, start) ||
+        reserved.has(start) ||
+        matches.some((m) => start >= m.start && start < m.end)
+      )
         return []
       return [
         {

@@ -191,3 +191,41 @@ describe('张数、参考图与画幅', () => {
     )
   })
 })
+
+it('仅尾帧模式在前端要求恰好一张图片，禁止混入视频或音频', () => {
+  const params = { mode: 'lastFrame' }
+  expect(modelProblem(node, params, undefined, new Map())).toContain('仅尾帧')
+  const images = [{} as Upstream]
+  expect(modelProblem(node, params, undefined, new Map([['images', images]]))).toBeNull()
+  expect(
+    modelProblem(node, params, undefined, new Map([['images', [...images, ...images]]])),
+  ).toContain('仅尾帧')
+  expect(
+    modelProblem(
+      node,
+      params,
+      undefined,
+      new Map([
+        ['images', images],
+        ['audios', images],
+      ]),
+    ),
+  ).toContain('多模态参考模式')
+})
+
+it('最终素材编号交给服务端校验，避免误拦由角色软引用补入的图', () => {
+  const m: SelectedModel['info'] = {
+    id: 'm',
+    ref: 'p:m',
+    title: 'M',
+    capabilities: ['video.generate'],
+    limits: { references: { max: 9 }, aspectRatios: ['16:9'] },
+  }
+  const params = {
+    mode: 'reference',
+    prompt: '@林夏 站在 @image2 中',
+    aspectRatio: '16:9',
+    duration: 5,
+  }
+  expect(modelProblem(node, params, m, new Map([['images', [{} as Upstream]]]))).toBeNull()
+})

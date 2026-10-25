@@ -157,13 +157,14 @@ export const imageEditNode = defineNode({
 
 /**
  * 视频生成模式：由用户指定，不按连线猜。连进来的图片按输入边的显式顺序编号，模式决定怎么用：
- * 图生视频用第 1 张做首帧，首尾帧用第 1、2 张，图片参考把全部图片当参考主体。
+ * 图生视频用第 1 张做首帧，仅尾帧用第 1 张做尾帧，首尾帧用第 1、2 张，多模态参考使用全部参考素材。
  */
-export const VIDEO_MODES = ['text', 'image', 'frames', 'reference'] as const
+export const VIDEO_MODES = ['text', 'image', 'lastFrame', 'frames', 'reference'] as const
 export type VideoMode = (typeof VIDEO_MODES)[number]
 export const VIDEO_MODE_LABELS: Record<VideoMode, string> = {
   text: '文生视频',
   image: '图生视频',
+  lastFrame: '仅尾帧',
   frames: '首尾帧',
   reference: '多模态参考',
 }
@@ -174,18 +175,21 @@ export function videoModeProblem(mode: VideoMode, images: number): string | null
     return images
       ? `图生视频只用 1 张图作首帧，现在连了 ${images} 张`
       : '图生视频需要连入 1 张图作首帧'
+  if (mode === 'lastFrame' && images !== 1)
+    return `仅尾帧需要连入 1 张图作尾帧，现在连了 ${images} 张`
   if (mode === 'frames' && images !== 2)
     return `首尾帧需要连入 2 张图（上面的作首帧、下面的作尾帧），现在连了 ${images} 张`
   if (mode === 'reference' && images === 0) return '多模态参考需要连入至少 1 份图片、视频或音频参考'
   return null
 }
 
-/** 生成视频：文生视频 / 图生视频 / 首尾帧 / 多模态参考，模式由参数指定 */
+/** 生成视频：文生视频 / 图生视频 / 仅尾帧 / 首尾帧 / 多模态参考，模式由参数指定 */
 export const videoNode = defineNode({
   type: 'plein/video',
   version: 2,
   title: '生成视频',
-  description: '文生视频、图生视频、首尾帧、多模态参考；在生成器里选模式，连入的图片按模式使用',
+  description:
+    '文生视频、图生视频、仅尾帧、首尾帧、多模态参考；在生成器里选模式，连入的图片按模式使用',
   category: 'video',
   capability: 'video.generate',
   inputs: [

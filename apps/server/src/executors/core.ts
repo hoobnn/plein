@@ -31,6 +31,7 @@ import {
   inputAssets,
   inputText,
   ProviderError,
+  videoTaskOverrides,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { mediaCaps, missingCapability } from '../assets/media'
@@ -156,21 +157,29 @@ const video = defineExecutor(videoNode, async (ctx) => {
   const media =
     params.mode === 'image'
       ? { firstFrame: images[0] }
-      : params.mode === 'frames'
-        ? { firstFrame: images[0], lastFrame: images[1] }
-        : params.mode === 'reference'
-          ? { references }
-          : {}
+      : params.mode === 'lastFrame'
+        ? { lastFrame: images[0] }
+        : params.mode === 'frames'
+          ? { firstFrame: images[0], lastFrame: images[1] }
+          : params.mode === 'reference'
+            ? { references }
+            : {}
   sayProgress(ctx)
   const model = pickModel(ctx, '生成视频')
+  const spec = ctx.providers.models('video.generate').find((m) => m.ref === model)
+  const prompt = joinText(params.prompt, inputText(inputs, 'prompt'))
   const input = {
-    prompt: requireText(joinText(params.prompt, inputText(inputs, 'prompt')), '提示词'),
+    prompt:
+      spec?.limits?.optionalVideoPrompt && params.mode !== 'text' && references.length
+        ? prompt
+        : requireText(prompt, '提示词'),
     ...media,
     duration: params.duration,
     aspectRatio: params.aspectRatio,
     resolution: params.resolution || undefined,
     audio: params.audio,
     extra: modelOptions(params),
+    ...videoTaskOverrides(params),
   }
   // 平台一次只出一条视频：要几条就并行提交几次
   const results = await Promise.all(

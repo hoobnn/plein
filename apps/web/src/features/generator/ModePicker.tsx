@@ -7,6 +7,7 @@ import { Presence } from '../../ui/Presence'
 const MODES: Record<VideoMode, { icon: IconName; hint: string }> = {
   text: { icon: 'text', hint: '只用提示词，不使用连入的图片' },
   image: { icon: 'imageToVideo', hint: '连入 1 张图作首帧' },
+  lastFrame: { icon: 'frames', hint: '连入 1 张图作尾帧，生成以该画面结束的视频' },
   frames: { icon: 'frames', hint: '连入 2 张图，上面的作首帧、下面的作尾帧' },
   reference: { icon: 'references', hint: '使用连入的图片、视频与音频，按所选模型能力校验' },
 }
@@ -17,6 +18,7 @@ export function ModePicker({
   images,
   videos = 0,
   audios = 0,
+  allowedModes,
   onChange,
 }: {
   value: VideoMode
@@ -24,6 +26,7 @@ export function ModePicker({
   images: number
   videos?: number
   audios?: number
+  allowedModes?: readonly VideoMode[]
   onChange(v: VideoMode): void
 }) {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
@@ -52,6 +55,7 @@ export function ModePicker({
                   type="button"
                   role="option"
                   aria-selected={m === value}
+                  disabled={allowedModes !== undefined && !allowedModes.includes(m)}
                   onClick={() => {
                     onChange(m)
                     setAnchor(null)
@@ -62,7 +66,9 @@ export function ModePicker({
                   <span className="ui-menu-text">
                     <span className="truncate">{VIDEO_MODE_LABELS[m]}</span>
                     <span className="ui-menu-desc">
-                      {MODES[m].hint}
+                      {allowedModes !== undefined && !allowedModes.includes(m)
+                        ? '当前模型不支持'
+                        : MODES[m].hint}
                       {m === 'reference'
                         ? `（${images} 张图、${videos} 段视频、${audios} 段音频）`
                         : m !== 'text' && `（已连 ${images} 张）`}

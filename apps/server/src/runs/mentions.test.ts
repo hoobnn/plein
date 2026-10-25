@@ -384,3 +384,36 @@ describe('角色档案：@林夏/少年/校服', () => {
     expect(msg(r.notices).join()).toContain('学生装')
   })
 })
+
+it('视频角色绑定以最终去重后的参考图顺序编号，保留手写素材标记', async () => {
+  const doc = createDoc(undefined, { schedule: () => {} })
+  const photo = createElement(doc, {
+    kind: 'image',
+    name: '角色照',
+    assetId: 'a'.repeat(64),
+    x: 0,
+    y: 0,
+    w: 10,
+    h: 10,
+  })
+  const hero = character(doc, '林夏', { description: '短发' })
+  connect(doc, [photo, 'image'], [hero, 'references'])
+  const n = node(doc, 'plein/video', {
+    prompt: '@林夏 参考 @video1 运镜',
+    mode: 'reference',
+    model: 'volc/ark:doubao-seedance-2-5-260628',
+  })
+  const own: PortValue = { type: 'image', assetId: 'b'.repeat(64), kind: 'image' }
+  const result = await applyMentions(doc, doc.get(n)!, videoNode, { images: [own] }, collect(doc))
+  expect(result.params.prompt).toContain('参考对应：\n林夏：@image2')
+  expect(result.params.prompt).toContain('@video1')
+  const reversed = await applyMentions(
+    doc,
+    doc.get(n)!,
+    videoNode,
+    { images: [{ type: 'image', assetId: 'a'.repeat(64), kind: 'image' }, own] },
+    collect(doc),
+  )
+  expect(reversed.params.prompt).toContain('林夏：@image1')
+  expect(reversed.inputs.images).toHaveLength(2)
+})

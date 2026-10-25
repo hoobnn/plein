@@ -1,3 +1,4 @@
+import { videoModelProblem, videoReferencePrompt, videoTaskOverrides } from '@plein/plugin-sdk'
 import { imageProcessParams, videoModeProblem, type VideoMode } from '@plein/nodes'
 import { speechDirection, speechVoice } from '../executors/audio'
 import { modelOptionsProblem } from './model-options'
@@ -484,12 +485,20 @@ export class NodeRuns implements BatchHost {
     const upstreamText = (p.inputs[promptKey ?? 'prompt'] ?? []).flatMap((v) =>
       v.type === 'text' ? [v.text] : v.type === 'json' ? [JSON.stringify(v.value)] : [],
     )
-    const prompt = promptKey
+    let prompt = promptKey
       ? [String(params[promptKey]).trim(), upstreamText.join('\n').trim()]
           .filter(Boolean)
           .join('\n\n')
       : undefined
-    const shown = cacheParams(params)
+    if (def?.capability === 'video.generate' && prompt && params.mode === 'reference') {
+      const provider = parseModelRef(String(params.model ?? ''))?.provider
+      if (provider === 'volc/ark' || provider === 'minimax/api')
+        prompt = videoReferencePrompt(prompt, provider === 'volc/ark' ? 'ark' : 'minimax')
+    }
+    const shown: Record<string, unknown> = {
+      ...cacheParams(params),
+      ...(def?.capability === 'video.generate' ? videoTaskOverrides(params) : {}),
+    }
     for (const k of [
       promptKey,
       'usedRefs',
@@ -1657,6 +1666,19 @@ export class NodeRuns implements BatchHost {
         mode === 'reference' ? images + videos + audios : images,
       )
       if (problem) blocked.push({ code: 'prepare_failed', message: problem })
+      if (spec) {
+        const prompt = [
+          String(effective.prompt ?? ''),
+          ...(inputs.prompt ?? []).flatMap((v) => (v.type === 'text' ? [v.text] : [])),
+        ].join('\n')
+        const issue = videoModelProblem(
+          spec,
+          effective,
+          { image: images, video: videos, audio: audios },
+          prompt,
+        )
+        if (issue) blocked.push({ code: 'prepare_failed', message: issue })
+      }
       if (mode === 'reference' && limits?.references && images > limits.references.max)
         blocked.push({
           code: 'prepare_failed',

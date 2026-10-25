@@ -1,3 +1,4 @@
+import { videoReferenceTokens } from '@plein/plugin-sdk'
 /**
  * 提示词里的 @ 引用：`@林夏站在天台上` 引用名为“林夏”的资产卡。
  * 按名字匹配（不存 id），文本保持可读，复制粘贴到别处也看得懂；
@@ -93,8 +94,9 @@ export function findMentions(text: string, targets: readonly MentionTarget[]): A
   // 长的名字优先：`@林夏夏` 是人名，不是 `@林夏` 后面多一个字
   const names = [...byName.keys()].sort((a, b) => b.length - a.length)
   const out: Array<Mention> = []
+  const reserved = new Set(videoReferenceTokens(text).map((t) => t.start))
   for (let i = text.indexOf('@'); i >= 0; i = text.indexOf('@', i + 1)) {
-    if (!isMentionStart(text, i)) continue
+    if (!isMentionStart(text, i) || reserved.has(i)) continue
     const rest = text.slice(i + 1)
     const name = names.find((n) => rest.startsWith(n))
     if (!name) continue
@@ -151,8 +153,9 @@ export function findBrokenMentions(
   const hit = new Set(findMentions(text, targets).map((m) => m.start))
   const names = [...groupByName(targets).keys()]
   const out: Array<BrokenMention> = []
+  const reserved = new Set(videoReferenceTokens(text).map((t) => t.start))
   for (let i = text.indexOf('@'); i >= 0; i = text.indexOf('@', i + 1)) {
-    if (hit.has(i) || !isMentionStart(text, i)) continue
+    if (hit.has(i) || !isMentionStart(text, i) || reserved.has(i)) continue
     const word = text
       .slice(i + 1)
       .match(/^[^\s@#，。,.!！?？:：;；、（）()【】[\]「」"'“”]{1,12}/)?.[0]

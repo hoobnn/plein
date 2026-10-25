@@ -6,6 +6,7 @@ describe('视频模式与连入图片数', () => {
   it.each<[VideoMode, boolean[]]>([
     ['text', [true, true, true, true]],
     ['image', [false, true, false, false]],
+    ['lastFrame', [false, true, false, false]],
     ['frames', [false, false, true, false]],
     ['reference', [false, true, true, true]],
   ])('%s', (mode, ok) => {

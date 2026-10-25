@@ -709,3 +709,25 @@ it('原生序列本地导出即使保留识别模型设置，也不冒称即将�
   expect(input.notices.some((notice) => notice.code === 'model_access_unverified')).toBe(false)
   expect(submit).not.toHaveBeenCalled()
 })
+
+it('仅尾帧在不支持它的平台预览阶段即阻断', async () => {
+  const { server } = await bootServer()
+  const { id, doc } = await createCanvas(server)
+  const image = createElement(doc, {
+    kind: 'image',
+    assetId: 'a'.repeat(64),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  for (const model of ['volc/ark:doubao-seedance-2-5-260628', 'aliyun/bailian:wan3.0-video']) {
+    const node = addNode(doc, 'plein/video', {
+      params: { model, mode: 'lastFrame', prompt: '结束画面' },
+    })
+    connect(doc, [image, 'image'], [node, 'images'])
+    const result = await server.runs.preview(id, node, 'local')
+    expect(result.status).toBe('blocked')
+    expect(result.blocked.some((p) => p.message.includes('不支持此视频生成模式'))).toBe(true)
+  }
+})

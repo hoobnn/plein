@@ -6,6 +6,7 @@ import {
   inputEdges,
   removeEdges,
   reorderInputs,
+  setParam,
   replaceInput,
   type ResultValue,
 } from '@plein/doc'
@@ -127,11 +128,18 @@ export function Inputs({
 
   // 生成视频的图片按模式标注用途：图生视频第 1 张是首帧，首尾帧第 1、2 张分别是首帧、尾帧
   const mode = node.capability === 'video.generate' ? el.params?.mode : undefined
+  const tokenOf = (port: InputPort, i: number) =>
+    mode === 'reference' && ['images', 'videos', 'audios'].includes(port.id)
+      ? `@${port.id.slice(0, -1)}${i + 1}`
+      : undefined
   const roleOf = (port: InputPort, i: number) => {
+    const token = tokenOf(port, i)
+    if (token) return token
     if (port.id === 'videos' || port.id === 'audios')
       return mode === 'reference' ? port.label : '当前模式不使用'
     if (port.id !== 'images') return undefined
     if (mode === 'image') return i === 0 ? '首帧' : '未使用'
+    if (mode === 'lastFrame') return i === 0 ? '尾帧' : '未使用'
     if (mode === 'frames') return ['首帧', '尾帧'][i] ?? '未使用'
     if (mode === 'text') return '未使用'
     return undefined
@@ -152,6 +160,23 @@ export function Inputs({
           index={n}
           up={u}
           caption={roleOf(port, i) ?? caption}
+          onReference={
+            tokenOf(port, i) && u.value
+              ? () => {
+                  const current = engine.doc.get(el.id)
+                  if (!current) return
+                  const prompt = String(current.params?.prompt ?? '')
+                  engine.doc.undo.stopCapturing()
+                  setParam(
+                    engine.doc,
+                    el.id,
+                    'prompt',
+                    `${prompt}${prompt && !/\s$/.test(prompt) ? ' ' : ''}${tokenOf(port, i)} `,
+                  )
+                  engine.doc.undo.stopCapturing()
+                }
+              : undefined
+          }
           onLocate={() => locate(u)}
           onPreview={() => previewUpstream(u)}
           onRemove={() => disconnect(u)}
@@ -303,6 +328,7 @@ function RefTile({
   onMove,
   canPrevious,
   canNext,
+  onReference,
 }: {
   index: number
   up: Upstream
@@ -319,6 +345,7 @@ function RefTile({
   onMove(delta: number): void
   canPrevious: boolean
   canNext: boolean
+  onReference?(): void
 }) {
   const v = up.value
   const img = preview(v)
@@ -364,7 +391,7 @@ function RefTile({
           <img src={img} alt="" className="size-full object-cover" />
         ) : (
           <span className="flex size-full items-center justify-center text-ink-subtle">
-            <Icon name={v?.type === 'video' ? 'video' : 'image'} />
+            <Icon name={v?.type === 'video' ? 'video' : v?.type === 'audio' ? 'audio' : 'image'} />
           </span>
         )}
         <span className="absolute top-1 left-1 flex size-4 items-center justify-center rounded-full bg-black/60 text-2xs font-medium text-white tabular-nums">
@@ -381,7 +408,19 @@ function RefTile({
       >
         <Icon name="x" size={12} />
       </button>
-      {caption && <span>{caption}</span>}
+      {caption &&
+        (onReference ? (
+          <button
+            type="button"
+            onClick={onReference}
+            className="ui-btn ui-btn-quiet p-0.5 text-2xs"
+            title={`在提示词末尾插入 ${caption}；编号按当前同类素材顺序`}
+          >
+            {caption}
+          </button>
+        ) : (
+          <span>{caption}</span>
+        ))}
       <div className="flex gap-0.5">
         {draggable && (
           <>
