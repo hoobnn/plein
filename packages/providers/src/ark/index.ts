@@ -1,3 +1,5 @@
+import { videoReferenceProblem, videoReferencePrompt } from '@plein/plugin-sdk'
+import { referenceUploader } from './reference-upload'
 import { videoReferences } from '../shared/video-references'
 import {
   type AssetRef,
@@ -30,6 +32,11 @@ import { sizeByArea, tierEdge } from '../size'
 const BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 const NETWORK = ['*.volces.com', '*.byteimg.com', '*.ibytedtos.com', '*.byteicdn.com']
 const settings = z.object({
+  referenceBucket: z.string().default('').meta({
+    title: '视频参考 TOS 桶',
+    description: '私有桶；上传至 plein/video-references/，建议为此前缀配置生命周期清理',
+  }),
+  referenceRegion: z.string().default('cn-beijing').meta({ title: '视频参考 TOS 地域' }),
   customChatModel: z.string().default('').meta({ title: '自定义对话模型 / Endpoint ID' }),
   customImageModel: z.string().default('').meta({ title: '自定义图片模型 / Endpoint ID' }),
   customVideoModel: z.string().default('').meta({ title: '自定义视频模型 / Endpoint ID' }),
@@ -54,6 +61,10 @@ const seedreamOptions = z.object({
 
 const seedanceOptions = (v25: boolean) =>
   z.object({
+    adaptive_duration: z
+      .boolean()
+      .optional()
+      .meta({ title: '自动时长', description: '由模型决定输出时长；编辑任务自动保持原视频时长' }),
     return_last_frame: z
       .boolean()
       .optional()
@@ -69,6 +80,18 @@ const seedanceOptions = (v25: boolean) =>
     watermark: z.boolean().optional().meta({ title: '水印' }),
     ...(v25
       ? {
+          omni_reference_task_type: z
+            .enum(['auto', 'reference', 'edit', 'extend'])
+            .optional()
+            .meta({
+              title: '参考任务',
+              labels: {
+                auto: '自动判断',
+                reference: '生成新视频',
+                edit: '编辑参考视频',
+                extend: '延长参考视频',
+              },
+            }),
           draft: z
             .boolean()
             .optional()
@@ -145,7 +168,9 @@ const models: ModelSpec[] = [
       duration: { min: 4, max: 30 },
       seed: false,
       references: { max: 30 },
-      referenceMedia: { video: 0, audio: 10 },
+      referenceMedia: { video: 10, audio: 10, audioOnly: true },
+      optionalVideoPrompt: true,
+      videoModes: ['text', 'image', 'frames', 'reference'],
     },
     options: seedanceOptions(true),
   },
@@ -159,7 +184,9 @@ const models: ModelSpec[] = [
       duration: { min: 4, max: 15 },
       seed: false,
       references: { max: 9 },
-      referenceMedia: { video: 0, audio: 3 },
+      referenceMedia: { video: 3, audio: 3, audioOnly: false },
+      optionalVideoPrompt: true,
+      videoModes: ['text', 'image', 'frames', 'reference'],
     },
     options: seedanceOptions(false),
   },
@@ -173,7 +200,9 @@ const models: ModelSpec[] = [
       duration: { min: 4, max: 15 },
       seed: false,
       references: { max: 9 },
-      referenceMedia: { video: 0, audio: 3 },
+      referenceMedia: { video: 3, audio: 3, audioOnly: false },
+      optionalVideoPrompt: true,
+      videoModes: ['text', 'image', 'frames', 'reference'],
     },
     options: seedanceOptions(false),
   },
@@ -187,7 +216,9 @@ const models: ModelSpec[] = [
       duration: { min: 4, max: 15 },
       seed: false,
       references: { max: 9 },
-      referenceMedia: { video: 0, audio: 3 },
+      referenceMedia: { video: 3, audio: 3, audioOnly: false },
+      optionalVideoPrompt: true,
+      videoModes: ['text', 'image', 'frames', 'reference'],
     },
     options: seedanceOptions(false),
   },
@@ -205,6 +236,7 @@ const models: ModelSpec[] = [
     id: 'custom-video',
     title: '自定义视频模型（设置中填写）',
     capabilities: ['video.generate'],
+    limits: { videoModes: ['text', 'image', 'frames', 'reference'] },
   },
 ]
 
@@ -596,14 +628,18 @@ async function video(model: string, input: CapabilityInput<'video.generate'>, ct
   if (input.lastFrame && !input.firstFrame) invalid('尾帧需要同时提供首帧')
   if ((input.firstFrame || input.lastFrame) && input.references?.length)
     invalid('首尾帧与参考图不能混用')
+  const { adaptive_duration, ...extra } = input.extra ?? {}
+  if (adaptive_duration !== undefined && typeof adaptive_duration !== 'boolean')
+    invalid('自动时长必须为布尔值')
   const body: Json = {
-    ...extraParams(input.extra, [
+    ...extraParams(extra, [
       'watermark',
       'return_last_frame',
       'service_tier',
       'execution_expires_after',
       'draft',
       'output_format',
+      'omni_reference_task_type',
     ]),
     ...(input.audio !== undefined ? { generate_audio: input.audio } : {}),
     model,
@@ -617,6 +653,19 @@ async function video(model: string, input: CapabilityInput<'video.generate'>, ct
   const current = model.startsWith('doubao-seedance-2-')
   const v25 = model.startsWith('doubao-seedance-2-5-')
   const maxDuration = v25 ? 30 : 15
+  const taskType = input.extra?.omni_reference_task_type
+  if (
+    taskType !== undefined &&
+    (!v25 || !['auto', 'reference', 'edit', 'extend'].includes(String(taskType)))
+  )
+    invalid('参考任务类型仅支持 Seedance 2.5 的 auto / reference / edit / extend')
+  if (taskType && !input.references?.length) invalid('参考任务类型需要使用多模态参考模式')
+  if (taskType === 'edit' || taskType === 'extend') {
+    if (!input.references?.some((ref) => ref.kind === 'video'))
+      invalid('编辑或延长任务需要参考视频')
+    body.ratio = 'adaptive'
+  }
+
   if (current && input.seed !== undefined) invalid('Seedance 2.0 / 2.5 不支持 seed')
   if (input.duration !== undefined) {
     if (
@@ -626,6 +675,7 @@ async function video(model: string, input: CapabilityInput<'video.generate'>, ct
       invalid(`Seedance 时长必须为 -1 或 4–${maxDuration} 的整数秒`)
     body.duration = input.duration
   }
+  if (taskType === 'edit' || (current && adaptive_duration === true)) body.duration = -1
   if (input.seed !== undefined) body.seed = input.seed
   if (
     current &&
@@ -638,8 +688,7 @@ async function video(model: string, input: CapabilityInput<'video.generate'>, ct
       ? ['480p', '720p', '1080p']
       : ['480p', '720p', '1080p', '4k']
   if (current && !resolutions.includes(String(body.resolution))) invalid('Seedance 不支持该分辨率')
-  if (v25 && input.firstFrame && body.ratio !== 'adaptive')
-    invalid('Seedance 2.5 首尾帧模式需要 adaptive 宽高比')
+  if (v25 && input.firstFrame) body.ratio = 'adaptive'
   if (
     current &&
     (input.references ?? []).filter((ref) => ref.kind === 'image').length > (v25 ? 30 : 9)
@@ -653,7 +702,14 @@ async function video(model: string, input: CapabilityInput<'video.generate'>, ct
       (current && body.output_format === 'mov' && !v25))
   )
     invalid('所选 Seedance 模型不支持该 output_format')
-  const content: Json[] = input.prompt ? [{ type: 'text', text: input.prompt }] : []
+  const counts = { image: 0, video: 0, audio: 0 }
+  for (const ref of input.references ?? [])
+    if (ref.kind === 'image' || ref.kind === 'video' || ref.kind === 'audio') counts[ref.kind]++
+  const referenceProblem = videoReferenceProblem(input.prompt, counts)
+  if (referenceProblem) invalid(referenceProblem)
+  const content: Json[] = input.prompt.trim()
+    ? [{ type: 'text', text: videoReferencePrompt(input.prompt, 'ark') }]
+    : []
   for (const [ref, role] of [
     [input.firstFrame, 'first_frame'],
     [input.lastFrame, 'last_frame'],
@@ -662,18 +718,20 @@ async function video(model: string, input: CapabilityInput<'video.generate'>, ct
       content.push({ type: 'image_url', image_url: { url: await imageData(ref, ctx) }, role })
   }
   if (input.references?.length) {
-    if (input.references.some((ref) => ref.kind === 'video'))
-      invalid('火山方舟本地视频参考需要先上传至平台素材库；请改用支持本地视频参考的模型')
     if (!current && input.references.some((ref) => ref.kind !== 'image'))
       invalid('当前模型不支持视频或音频参考')
     content.push(
       ...(await videoReferences(input.references, ctx, {
         image: v25 ? 30 : 9,
-        video: 0,
+        video: current ? (v25 ? 10 : 3) : 0,
         audio: current ? (v25 ? 10 : 3) : 0,
         duration: v25 ? 30 : 15,
         allowAudioOnly: v25,
         platform: 'ark',
+        ...(taskType === 'edit' ? { minVideoDuration: 4 } : {}),
+        ...(input.references.some((ref) => ref.kind === 'video')
+          ? { uploadVideo: referenceUploader(ctx) }
+          : {}),
       })),
     )
   }
@@ -690,7 +748,11 @@ export const arkProvider = defineProvider({
   description: 'Doubao Seed 对话、Seedream 图片及 Seedance 视频；支持自定义模型 / Endpoint ID',
   docsUrl: 'https://docs.volcengine.com/docs/ark/model-list?lang=zh',
   settings,
-  secrets: [{ name: 'ARK_API_KEY', title: '火山方舟 API Key', required: true }],
+  secrets: [
+    { name: 'ARK_API_KEY', title: '火山方舟 API Key', required: true },
+    { name: 'ARK_TOS_ACCESS_KEY', title: 'TOS Access Key（视频参考）' },
+    { name: 'ARK_TOS_SECRET_KEY', title: 'TOS Secret Key（视频参考）' },
+  ],
   models: models.map((model) => ({ ...model, capabilities: [...model.capabilities] })),
   async test(ctx) {
     await request(ctx, '/contents/generations/tasks?page_size=1')
@@ -783,7 +845,11 @@ export const arkPlugin = defineServerPlugin(
       name: '火山方舟',
       engines: { plein: `^${PLUGIN_API_VERSION}` },
       contributes: { providers: ['volc/ark'] },
-      permissions: { network: NETWORK, secrets: ['ARK_API_KEY'], assets: 'read' },
+      permissions: {
+        network: NETWORK,
+        secrets: ['ARK_API_KEY', 'ARK_TOS_ACCESS_KEY', 'ARK_TOS_SECRET_KEY'],
+        assets: 'read',
+      },
     },
   }),
   { providers: [arkProvider] },

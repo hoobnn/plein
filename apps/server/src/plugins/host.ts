@@ -1078,8 +1078,24 @@ export class PluginHost {
       throw new PermissionError(`插件 ${manifest.id} 没有读资产的权限`)
     const asset = this.assets.get(ownerId, ref.assetId)
     if (!asset) throw new ProviderError('invalid_input', `资产 ${ref.assetId} 不存在`)
+    const path = this.assets.originalPath(asset.id)
+    let videoInfo: Awaited<ReturnType<typeof probeMedia>> | undefined
+    if (asset.kind === 'video') {
+      try {
+        videoInfo = await probeMedia(path)
+      } catch {
+        // 可选探测信息保持未知；需要这些信息的平台负责拒绝，避免改变其他平台的素材读取契约。
+      }
+    }
     return {
-      data: new Uint8Array(await readFile(this.assets.originalPath(asset.id))),
+      ...(videoInfo
+        ? {
+            videoCodec: videoInfo.videoCodec,
+            frameRate: videoInfo.frameRate,
+            audioCodecs: videoInfo.audioCodecs,
+          }
+        : {}),
+      data: new Uint8Array(await readFile(path)),
       mime: asset.mime,
       duration: asset.duration,
       width: asset.width,

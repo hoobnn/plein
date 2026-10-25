@@ -6,6 +6,9 @@ import sharp from 'sharp'
 const run = promisify(execFile)
 
 export interface Probe {
+  videoCodec?: string
+  frameRate?: number
+  audioCodecs?: string[]
   width?: number
   height?: number
   /** 秒 */
@@ -127,6 +130,9 @@ export async function probeImage(file: string): Promise<Probe> {
 
 interface FfprobeStream {
   codec_type?: string
+  codec_name?: string
+  avg_frame_rate?: string
+  r_frame_rate?: string
   channels?: number
   sample_rate?: string
   width?: number
@@ -162,11 +168,21 @@ export async function probeMedia(file: string): Promise<Probe> {
         0,
     ),
   )
+  const rate = (value?: string) => {
+    if (!value) return undefined
+    const [n, d = '1'] = value.split('/')
+    const result = Number(n) / Number(d)
+    return Number.isFinite(result) && result > 0 ? result : undefined
+  }
+  const frameRate = rate(video?.avg_frame_rate) ?? rate(video?.r_frame_rate)
   const swap = rotation === 90 || rotation === 270
   return {
     width: swap ? video?.height : video?.width,
     height: swap ? video?.width : video?.height,
     duration: Number.isFinite(duration) ? duration : undefined,
+    ...(video?.codec_name ? { videoCodec: video.codec_name } : {}),
+    ...(frameRate !== undefined ? { frameRate } : {}),
+    audioCodecs: audio.map((stream) => stream.codec_name ?? 'unknown'),
     hasVideo: Boolean(video),
     hasAudio: audio.length > 0,
     ...(channels !== undefined && Number.isInteger(channels) && channels > 0

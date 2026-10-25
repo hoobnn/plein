@@ -330,6 +330,7 @@ export const bailianProvider = defineProvider({
         duration: { min: 2, max: 30 },
         references: { max: 10 },
         referenceMedia: { video: 3, audio: 3 },
+        videoModes: ['text', 'image', 'frames', 'reference'] as const,
       },
       options: z.object({
         prompt_extend: z

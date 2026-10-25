@@ -1,3 +1,4 @@
+import { videoReferenceProblem, videoReferencePrompt } from '@plein/plugin-sdk'
 import { videoReferences } from '../shared/video-references'
 import {
   type AssetRef,
@@ -221,34 +222,25 @@ export const minimaxProvider = defineProvider({
         references: { max: 1 },
       },
     },
-    {
-      id: 'MiniMax-H3',
-      title: 'MiniMax-H3',
+    ...['MiniMax-H3', 'MiniMax-H3-Highspeed', 'MiniMax-H3-Lite', 'MiniMax-H3-Max'].map((id) => ({
+      id,
+      title: id,
       capabilities: ['video.generate' as const],
       limits: {
-        aspectRatios: ['16:9', '4:3', '1:1', '3:4', '9:16'],
-        resolutions: ['768P', '2K'],
-        duration: { min: 4, max: 15 },
+        aspectRatios: ['auto', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+        resolutions:
+          id === 'MiniMax-H3'
+            ? ['768P', '2K']
+            : id === 'MiniMax-H3-Highspeed'
+              ? ['768P']
+              : ['480P', '768P'],
+        duration: { min: id === 'MiniMax-H3-Max' ? 5 : 4, max: 15 },
         seed: false,
         audio: false,
         references: { max: 9 },
-        referenceMedia: { video: 3, audio: 3 },
+        referenceMedia: { video: 3, audio: 3, audioOnly: true },
       },
-    },
-    {
-      id: 'MiniMax-H3-Max',
-      title: 'MiniMax-H3-Max',
-      capabilities: ['video.generate' as const],
-      limits: {
-        aspectRatios: ['16:9', '4:3', '1:1', '3:4', '9:16'],
-        resolutions: ['480P', '768P'],
-        duration: { min: 5, max: 15 },
-        seed: false,
-        audio: false,
-        references: { max: 9 },
-        referenceMedia: { video: 3, audio: 3 },
-      },
-    },
+    })),
     ...['speech-2.8-hd', 'speech-2.8-turbo'].map((id) => ({
       id,
       title: id,
@@ -401,13 +393,21 @@ export const minimaxProvider = defineProvider({
         required(input.prompt, 7000, '视频提示词')
         const max = req.model === 'MiniMax-H3-Max'
         const duration = input.duration ?? 5
-        const resolution = input.resolution ?? (max ? '768P' : '2K')
+        const resolution = input.resolution ?? (req.model === 'MiniMax-H3' ? '2K' : '768P')
         if (!Number.isInteger(duration) || duration < (max ? 5 : 4) || duration > 15)
           throw new ProviderError(
             'invalid_input',
             `H3${max ? '-Max' : ''} 时长须为 ${max ? 5 : 4}–15 整数秒`,
           )
-        if (!(max ? ['480P', '768P'] : ['768P', '2K']).includes(resolution))
+        if (
+          !(
+            req.model === 'MiniMax-H3'
+              ? ['768P', '2K']
+              : req.model === 'MiniMax-H3-Highspeed'
+                ? ['768P']
+                : ['480P', '768P']
+          ).includes(resolution)
+        )
           throw new ProviderError('invalid_input', '所选 H3 模型不支持该分辨率')
         const frames = Boolean(input.firstFrame || input.lastFrame)
         if (frames && input.references?.length)
@@ -415,13 +415,43 @@ export const minimaxProvider = defineProvider({
         if ((input.references ?? []).filter((ref) => ref.kind === 'image').length > 9)
           throw new ProviderError('invalid_input', 'H3 最多支持 9 张参考图')
         if (input.seed !== undefined) throw new ProviderError('invalid_input', 'H3 V2 不支持 seed')
-        const content: unknown[] = [{ type: 'text', text: input.prompt }]
+        const ratio = frames
+          ? 'adaptive'
+          : input.aspectRatio === 'auto'
+            ? 'adaptive'
+            : (input.aspectRatio ?? '16:9')
+        if (!['adaptive', '21:9', '16:9', '4:3', '1:1', '3:4', '9:16'].includes(ratio))
+          throw new ProviderError('invalid_input', 'H3 不支持该宽高比')
+        if (
+          ratio === 'adaptive' &&
+          (!input.references?.length || req.model === 'MiniMax-H3-Lite') &&
+          !frames
+        )
+          throw new ProviderError('invalid_input', '文生视频和 H3-Lite 参考模式需要选择具体画幅')
+        const counts = { image: 0, video: 0, audio: 0 }
+        for (const ref of input.references ?? [])
+          if (ref.kind === 'image' || ref.kind === 'video' || ref.kind === 'audio')
+            counts[ref.kind]++
+        const referenceProblem = videoReferenceProblem(input.prompt, counts)
+        if (referenceProblem) throw new ProviderError('invalid_input', referenceProblem)
+        const content: unknown[] = [
+          { type: 'text', text: videoReferencePrompt(input.prompt, 'minimax') },
+        ]
         for (const [role, refs] of [
           ['first_frame', input.firstFrame ? [input.firstFrame] : []],
           ['last_frame', input.lastFrame ? [input.lastFrame] : []],
         ] as const) {
-          for (const ref of refs)
-            content.push({ type: 'image_url', image_url: { url: await imageData(ctx, ref) }, role })
+          for (const ref of refs) {
+            if (ref.kind !== 'image') throw new ProviderError('invalid_input', '首尾帧须为图片资产')
+            const [frame] = await videoReferences([ref], ctx, {
+              image: 1,
+              video: 0,
+              audio: 0,
+              duration: 15,
+              platform: 'minimax',
+            })
+            content.push({ ...frame, role })
+          }
         }
         if (input.references?.length)
           content.push(
@@ -439,7 +469,7 @@ export const minimaxProvider = defineProvider({
           content,
           duration,
           resolution,
-          ratio: frames ? 'adaptive' : (input.aspectRatio ?? '16:9'),
+          ratio,
         })
         if (!result.task_id)
           throw new ProviderError(

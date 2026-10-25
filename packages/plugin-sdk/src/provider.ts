@@ -230,7 +230,11 @@ export interface ModelLimits {
   /** 参考图最多几张 */
   references?: { max: number }
   /** Supported reference media for video generation; absent means images only. */
-  referenceMedia?: { video: number; audio: number }
+  referenceMedia?: { video: number; audio: number; audioOnly?: boolean }
+  /** 视频有素材输入时是否允许空提示词；不声明时仍要求提示词。 */
+  optionalVideoPrompt?: boolean
+  /** 已实现的视频输入模式；缺省时沿用节点支持的模式。 */
+  videoModes?: ReadonlyArray<'text' | 'image' | 'lastFrame' | 'frames' | 'reference'>
   imageOperations?: Array<'upscale' | 'outpaint' | 'cutout'>
   /** 语速范围（倍速）；false 表示不支持，表单隐藏，宿主不传 */
   speed?: { min: number; max: number } | false
@@ -335,6 +339,12 @@ export interface ProviderContext<S = Record<string, unknown>> {
       duration?: number
       width?: number
       height?: number
+      /** ffprobe 原文件编码名，例如 h264 / hevc；无法探测时缺省。 */
+      videoCodec?: string
+      /** 实际帧率（fps），分数帧率保留精度。 */
+      frameRate?: number
+      /** 全部音频流编码；空数组表示无音轨，缺省表示未知。 */
+      audioCodecs?: string[]
     }>
   }
   /** 流式输出：text.chat 边生成边回调文本增量（宿主没要求时为空，平台照常一次返回） */

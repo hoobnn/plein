@@ -13,3 +13,5 @@ export * from './plugin'
 export * from './ports'
 export * from './provider'
 export * from './rpc'
+
+export * from './video-input'

@@ -4,6 +4,8 @@ packages:
 
 # esbuild 的安装脚本只做二进制自检，平台二进制来自可选依赖，不需要执行
 allowBuilds:
+  # TOS SDK 仅用于本地签名，不调用原生 CRC 上传实现
+  tos-crc64-js: false
   esbuild: false
   # electron-builder 带的 Windows 安装器，只出 macOS 包时用不到
   electron-winstaller: false

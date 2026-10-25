@@ -126,7 +126,7 @@ describe('本地多模态参考输入合同', () => {
     const ctx = context()
     await expect(
       videoReferences([ref('video')], ctx, { ...limits, platform: 'ark' }),
-    ).rejects.toThrow('上传至平台素材库')
+    ).rejects.toThrow('TOS 上传通路')
     expect(ctx.files.read).not.toHaveBeenCalled()
   })
   it('空文件、错误 MIME 和编码后超限的文件均阻断', async () => {
@@ -140,4 +140,47 @@ describe('本地多模态参考输入合同', () => {
       videoReferences([ref('video')], context({ data: new Uint8Array(48 * 1024 * 1024) }), limits),
     ).rejects.toThrow('编码后超过请求上限')
   })
+})
+
+it('Ark 视频采用独立的 200MB、24fps、像素面积与 MOV PCM 规则', async () => {
+  const uploadVideo = vi.fn(async () => 'https://bucket.tos-cn-beijing.volces.com/video')
+  const rules = { ...limits, platform: 'ark' as const, uploadVideo }
+  const ctx = context({
+    videoCodec: 'h264',
+    frameRate: 24,
+    audioCodecs: [],
+    data: new Uint8Array(64 * 1024 * 1024),
+  })
+  const content = await videoReferences([ref('video')], ctx, rules)
+  expect(content[0]).toMatchObject({ video_url: { url: expect.stringMatching(/^https:/) } })
+  expect(uploadVideo).toHaveBeenCalledOnce()
+  uploadVideo.mockClear()
+  for (const over of [
+    { width: 300, height: 300 },
+    { frameRate: 23.976 },
+    { videoCodec: 'vp9' },
+    { duration: 16 },
+    { audioCodecs: ['opus'] },
+  ]) {
+    await expect(
+      videoReferences(
+        [ref('video')],
+        context({ videoCodec: 'h264', frameRate: 24, audioCodecs: [], ...over }),
+        rules,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+  }
+  expect(uploadVideo).not.toHaveBeenCalled()
+  await expect(
+    videoReferences(
+      [ref('video')],
+      context({
+        mime: 'video/quicktime',
+        videoCodec: 'hevc',
+        frameRate: 60,
+        audioCodecs: ['pcm_s16le'],
+      }),
+      rules,
+    ),
+  ).resolves.toHaveLength(1)
 })

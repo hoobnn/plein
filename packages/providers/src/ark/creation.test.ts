@@ -18,6 +18,9 @@ const setup = (replies: unknown[] = [], over = {}) => {
     width: 1024,
     height: 1024,
     duration: 4,
+    videoCodec: 'h264',
+    frameRate: 30,
+    audioCodecs: [],
     ...over,
   }))
   return f
@@ -57,10 +60,12 @@ describe('Ark 创作扩展 HTTP 合同', () => {
     ).rejects.toThrow('搭配图片或视频')
     expect(old.fetch).not.toHaveBeenCalled()
   })
-  it('本地视频不发错误 data URL；模型目录也不声称这条本地通路可用', async () => {
+  it('本地视频声明实际上限；缺少 TOS 配置时不发送生成请求', async () => {
     const f = setup()
     for (const model of [v25, v20]) {
-      expect(arkProvider.models.find((m) => m.id === model)?.limits?.referenceMedia?.video).toBe(0)
+      expect(arkProvider.models.find((m) => m.id === model)?.limits?.referenceMedia?.video).toBe(
+        model === v25 ? 10 : 3,
+      )
       await expect(
         arkProvider.submit(
           { capability: 'video.generate', model, input: { prompt: '运动', references: [video] } },
@@ -179,4 +184,139 @@ describe('Ark 创作扩展 HTTP 合同', () => {
     ).rejects.toMatchObject({ code: 'unknown' })
     expect(f.fetch).toHaveBeenCalledTimes(1)
   })
+})
+
+const withStorage = (replies: unknown[], over = {}) => {
+  const f = setup(replies, over)
+  f.ctx.settings.referenceBucket = 'test-bucket'
+  return f
+}
+
+describe('Seedance 多模态通路与任务类型', () => {
+  it.each([v25, v20, 'doubao-seedance-2-0-fast-260128', 'doubao-seedance-2-0-mini-260615'])(
+    '三类素材上传和引用编号：%s',
+    async (model) => {
+      const f = withStorage([new Response(null, { status: 200 }), { id: 'accepted' }])
+      await expect(
+        arkProvider.submit(
+          {
+            capability: 'video.generate',
+            model,
+            input: {
+              prompt: '@图片1 参考 @video1 运镜和 @audio1',
+              references: [image, video, audio],
+            },
+          },
+          f.ctx,
+        ),
+      ).resolves.toMatchObject({ remoteId: 'accepted' })
+      expect(f.fetch).toHaveBeenCalledTimes(2)
+      const body = f.body(1)
+      expect(body.content.map((v: { role: string }) => v.role)).toEqual([
+        undefined,
+        'reference_image',
+        'reference_video',
+        'reference_audio',
+      ])
+      expect(body.content[0].text).toBe('@image1 参考 @video1 运镜和 @audio1')
+      expect(body.content[2].video_url.url).toMatch(
+        /^https:\/\/test-bucket\.tos-cn-beijing\.volces\.com\//,
+      )
+      expect(body.content[2].video_url.url).not.toContain('data:')
+      expect(f.fetch.mock.calls[1]?.[1]?.headers).toMatchObject({
+        Authorization: 'Bearer test-secret',
+      })
+    },
+  )
+  it.each(['edit', 'extend'])('%s 自动对齐画幅和时长', async (task) => {
+    const f = withStorage([new Response(null, { status: 200 }), { id: 'task' }])
+    await arkProvider.submit(
+      {
+        capability: 'video.generate',
+        model: v25,
+        input: {
+          prompt: task === 'edit' ? '替换 @video1 的背景' : '向后延长 @video1',
+          references: [video],
+          aspectRatio: '16:9',
+          duration: 5,
+          extra: { omni_reference_task_type: task },
+        },
+      },
+      f.ctx,
+    )
+    expect(f.body(1)).toMatchObject({
+      ratio: 'adaptive',
+      duration: task === 'edit' ? -1 : 5,
+      omni_reference_task_type: task,
+    })
+  })
+  it('编辑短视频、越界引用、累计超限和缺失素材均不上传或生成', async () => {
+    for (const input of [
+      { prompt: '编辑', references: [video], extra: { omni_reference_task_type: 'edit' } },
+      { prompt: '@video2', references: [video] },
+      {
+        prompt: 'p',
+        references: [video, video, video, video, video, video, video, video, video, video, video],
+      },
+      { prompt: 'p', extra: { omni_reference_task_type: 'extend' } },
+    ]) {
+      const f = withStorage([], { duration: 3 })
+      await expect(
+        arkProvider.submit({ capability: 'video.generate', model: v25, input }, f.ctx),
+      ).rejects.toMatchObject({ code: 'invalid_input' })
+      expect(f.fetch).not.toHaveBeenCalled()
+    }
+    const f = withStorage([], { duration: 16 })
+    await expect(
+      arkProvider.submit(
+        {
+          capability: 'video.generate',
+          model: v25,
+          input: { prompt: 'p', references: [video, video] },
+        },
+        f.ctx,
+      ),
+    ).rejects.toThrow('总时长')
+    expect(f.fetch).not.toHaveBeenCalled()
+  })
+  it('有参考时允许空提示词，自动时长不透传内部开关', async () => {
+    const f = setup([{ id: 'task' }])
+    await arkProvider.submit(
+      {
+        capability: 'video.generate',
+        model: v20,
+        input: { prompt: '', references: [image], extra: { adaptive_duration: true } },
+      },
+      f.ctx,
+    )
+    expect(f.body().content).toHaveLength(1)
+    expect(f.body().duration).toBe(-1)
+    expect(f.body()).not.toHaveProperty('adaptive_duration')
+  })
+  it('TOS 上传网络失败不发送生成请求，不标记生成结果未知', async () => {
+    const f = withStorage([new Error('secret signed URL')])
+    await expect(
+      arkProvider.submit(
+        { capability: 'video.generate', model: v25, input: { prompt: 'p', references: [video] } },
+        f.ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'unavailable', outcome: undefined })
+    expect(f.fetch).toHaveBeenCalledTimes(1)
+  })
+})
+
+it('Seedance 2.5 首帧 / 首尾帧忽略节点默认画幅，统一保持输入比例', async () => {
+  const f = setup([{ id: 'first' }, { id: 'both' }])
+  for (const lastFrame of [undefined, image]) {
+    await arkProvider.submit(
+      {
+        capability: 'video.generate',
+        model: v25,
+        input: { prompt: '镜头移动', firstFrame: image, lastFrame, aspectRatio: '16:9' },
+      },
+      f.ctx,
+    )
+  }
+  expect(f.body(0).ratio).toBe('adaptive')
+  expect(f.body(1).ratio).toBe('adaptive')
 })

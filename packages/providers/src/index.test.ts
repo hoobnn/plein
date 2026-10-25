@@ -7,9 +7,9 @@ describe('内置平台插件的权限声明', () => {
     [
       '火山方舟',
       arkPlugin,
-      ['ARK_API_KEY'],
+      ['ARK_API_KEY', 'ARK_TOS_ACCESS_KEY', 'ARK_TOS_SECRET_KEY'],
       ['volces.com', 'byteimg.com', 'ibytedtos.com', 'byteicdn.com'],
-      ['ark.cn-beijing.volces.com'],
+      ['ark.cn-beijing.volces.com', 'test-bucket.tos-cn-beijing.volces.com'],
     ],
     [
       '百炼',
