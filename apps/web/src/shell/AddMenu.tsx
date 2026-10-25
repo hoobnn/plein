@@ -1,8 +1,10 @@
 import type { ClipboardData, NewElement } from '@plein/doc'
 import type { Engine, PortRef } from '@plein/canvas-core'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { dramaNotice, placeDramaTemplate } from '../canvas/drama'
+import { api } from '../api/client'
 import { placeTemplate } from '../canvas/groups'
+import { pluginTemplateData, type PluginTemplate } from '../canvas/pluginTemplates'
 import {
   compatibleNodes,
   handlePorts,
@@ -115,6 +117,40 @@ export function AddMenu({
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
+  const insertingPluginTemplate = useRef(false)
+
+  const insertPluginTemplate = useCallback(
+    async (selected: PluginTemplate, p: { x: number; y: number }) => {
+      if (insertingPluginTemplate.current) return
+      insertingPluginTemplate.current = true
+      const current = () => {
+        const state = useCanvas.getState()
+        return state.engine === engine && state.canvasId === canvasId && !engine.doc.readOnly
+      }
+      try {
+        if (!current()) return
+        const latest = await api.catalog()
+        if (!current()) return
+        const template = latest.templates.find(
+          (t) => t.id === selected.id && t.plugin === selected.plugin,
+        )
+        if (!template) throw new Error('模板已不可用，请重新打开添加菜单')
+        if (JSON.stringify(template) !== JSON.stringify(selected))
+          throw new Error('模板已更新，请重新打开添加菜单后插入')
+        const data = pluginTemplateData(latest, template, engine.doc)
+        if (!current()) return
+        engine.doc.undo.stopCapturing()
+        placeTemplate(engine, data, p)
+        engine.doc.undo.stopCapturing()
+        useCanvas.getState().notify(`已插入模板「${template.title}」，未运行任何节点`)
+      } catch (err) {
+        if (current()) useCanvas.getState().notify(`模板未插入：${(err as Error).message}`)
+      } finally {
+        insertingPluginTemplate.current = false
+      }
+    },
+    [engine, canvasId],
+  )
 
   // 另一端可能刚启停插件，进入菜单时重新读取，不依赖设置面板的轮询是否完成。
   useEffect(() => {
@@ -161,6 +197,17 @@ export function AddMenu({
           run: (p) => placeTemplate(engine, t.data as unknown as ClipboardData, p),
           remove: () => void removeTemplate(t.id, t.title),
         })
+      for (const template of catalog?.templates ?? []) {
+        const plugin = catalog?.plugins.find((p) => p.id === template.plugin)
+        list.push({
+          id: `plugin-template:${template.id}`,
+          title: template.title,
+          hint: `${template.description ? `${template.description} · ` : ''}${template.plugin} · ${template.nodes.length} 个节点`,
+          icon: 'workflow',
+          section: `插件模板 · ${plugin?.name ?? template.plugin}`,
+          run: (p) => void insertPluginTemplate(template, p),
+        })
+      }
       if (canImport) {
         list.push({
           id: 'upload',
@@ -203,7 +250,7 @@ export function AddMenu({
             return score(a.title) - score(b.title)
           })
       : list
-  }, [nodes, catalog, templates, engine, from, query, canImport])
+  }, [nodes, catalog, templates, engine, from, query, canImport, insertPluginTemplate])
 
   useEffect(() => {
     listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
@@ -264,7 +311,10 @@ export function AddMenu({
           <p className="px-3 pb-3 pt-1 text-sm text-ink-subtle">没有匹配的节点</p>
         )}
         {items.map((item, i) => {
-          const header = item.section !== lastSection && i > 0 ? item.section : null
+          const header =
+            item.section !== lastSection && (i > 0 || item.section.startsWith('插件模板'))
+              ? item.section
+              : null
           lastSection = item.section
           return (
             <div key={item.id} className="group relative">

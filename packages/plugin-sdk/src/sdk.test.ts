@@ -15,6 +15,7 @@ import {
   PluginManifest,
   providerConfigured,
   resolveParams,
+  parseNodeDescriptorParams,
   withDefaultModel,
 } from '.'
 
@@ -28,6 +29,29 @@ const base = {
 }
 
 describe('plugin-sdk', () => {
+  it('目录参数校验合并默认值并检查嵌套约束，无法转换的声明不能放行', () => {
+    const descriptor = describeNode(
+      defineNode({
+        ...base,
+        params: z.object({
+          text: z.string().default('默认'),
+          options: z.object({ count: z.number().int().min(1) }).default({ count: 1 }),
+        }),
+      }),
+      'acme/p',
+    )
+    expect(parseNodeDescriptorParams(descriptor, { text: '修改' })).toEqual({
+      text: '修改',
+      options: { count: 1 },
+    })
+    expect(() => parseNodeDescriptorParams(descriptor, { text: 1 })).toThrow('模板参数不合法')
+    expect(() => parseNodeDescriptorParams(descriptor, { options: { count: 0 } })).toThrow(
+      '模板参数不合法',
+    )
+    expect(() =>
+      parseNodeDescriptorParams({ ...descriptor, paramsSchema: { type: 'not-a-type' } }),
+    ).toThrow('无法校验')
+  })
   it('精修新节点跟随默认模型支持的操作，保留原描述与用户已支持的操作', () => {
     const def = defineNode({
       ...base,

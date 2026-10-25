@@ -111,6 +111,25 @@ export function describeNode(def: NodeDefinition, plugin: string): NodeDescripto
   }
 }
 
+/** 目录中的节点参数预检；转换失败也拒绝，不能把无法校验当作已通过。 */
+export function parseNodeDescriptorParams(
+  node: Pick<NodeDescriptor, 'title' | 'paramsSchema' | 'defaults'>,
+  params: Record<string, unknown> = {},
+): Record<string, unknown> {
+  let schema: z.ZodType
+  try {
+    schema = z.fromJSONSchema(node.paramsSchema as Parameters<typeof z.fromJSONSchema>[0])
+  } catch {
+    throw new Error(`无法校验节点「${node.title}」的参数声明`)
+  }
+  const result = schema.safeParse({ ...node.defaults, ...params })
+  if (!result.success)
+    throw new Error(`节点「${node.title}」的模板参数不合法：${result.error.message}`)
+  if (!result.data || typeof result.data !== 'object' || Array.isArray(result.data))
+    throw new Error(`节点「${node.title}」的参数应为对象`)
+  return result.data as Record<string, unknown>
+}
+
 /**
  * 读取节点参数：按版本迁移后用 schema 校验并补默认值。
  * 来自文档的参数可能是旧版本、被并发编辑或手改过，不能直接信任。
