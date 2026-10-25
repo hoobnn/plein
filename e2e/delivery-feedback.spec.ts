@@ -612,19 +612,68 @@ test('切换剪辑再回看保留版本、草稿和时间码，离开的实际�
     video.currentTime = 0.5
     await video.play()
   })
-  await f.editor.getByRole('button', { name: '剪辑预览', exact: true }).click()
-  expect(
-    await page.evaluate(
-      () =>
-        (window as typeof window & { previousDeliveryVideo?: HTMLVideoElement })
-          .previousDeliveryVideo!.paused,
-    ),
-  ).toBe(true)
-  const stoppedAt = await page.evaluate(
-    () =>
-      (window as typeof window & { previousDeliveryVideo?: HTMLVideoElement })
-        .previousDeliveryVideo!.currentTime,
-  )
+  await expect.poll(() => f.video.evaluate((v: HTMLVideoElement) => v.paused)).toBe(false)
+  const edit = f.editor.getByRole('button', { name: '剪辑预览', exact: true })
+  await edit.evaluate((button) => {
+    button.addEventListener(
+      'click',
+      () => {
+        const video = (window as typeof window & { previousDeliveryVideo?: HTMLVideoElement })
+          .previousDeliveryVideo!
+        video.dataset.leavingAt = String(video.currentTime)
+        video.dataset.wasPlaying = String(!video.paused)
+      },
+      { capture: true, once: true },
+    )
+  })
+  await edit.click()
+  const readRelease = () => {
+    const video = (window as typeof window & { previousDeliveryVideo?: HTMLVideoElement })
+      .previousDeliveryVideo!
+    return {
+      at: Number(video.dataset.leavingAt),
+      wasPlaying: video.dataset.wasPlaying === 'true',
+      paused: video.paused,
+      connected: video.isConnected,
+      src: video.getAttribute('src'),
+      currentSrc: video.currentSrc,
+      srcObject: video.srcObject === null,
+      sources: video.querySelectorAll('source').length,
+      network: video.networkState,
+      ready: video.readyState,
+      buffered: video.buffered.length,
+      seekable: video.seekable.length,
+    }
+  }
+  const released = await page.evaluate(readRelease)
+  expect(released).toMatchObject({
+    wasPlaying: true,
+    paused: true,
+    connected: false,
+    src: null,
+    srcObject: true,
+    sources: 0,
+  })
+  expect(released.at).toBeGreaterThanOrEqual(0.5)
+  let settled = released
+  await expect
+    .poll(async () => {
+      settled = await page.evaluate(readRelease)
+      return settled
+    })
+    .toMatchObject({
+      wasPlaying: true,
+      paused: true,
+      connected: false,
+      src: null,
+      srcObject: true,
+      sources: 0,
+      network: 0,
+      ready: 0,
+      buffered: 0,
+      seekable: 0,
+    })
+  const stoppedAt = released.at
   await f.editor.getByRole('button', { name: '实际 MP4 回看 / 交付', exact: true }).click()
   await expect(f.versions).toHaveValue('r1')
   await expect(f.field).toHaveValue('对照剪辑后继续记录旧版意见')
@@ -642,6 +691,19 @@ test('切换剪辑再回看保留版本、草稿和时间码，离开的实际�
   expect(note.text).toBe('对照剪辑后继续记录旧版意见')
   expect(note.time).toBeCloseTo(stoppedAt, 1)
   expect(note.source).toBe(f.ids.boards[0])
+  await test.info().attach('delivery-release-state', {
+    contentType: 'application/json',
+    body: JSON.stringify(
+      {
+        released,
+        settled,
+        restoredTime: await f.video.evaluate((v: HTMLVideoElement) => v.currentTime),
+        note,
+      },
+      null,
+      2,
+    ),
+  })
 })
 
 test('分版草稿和播放位置跨剪辑视图保留，重复切换不串版', async ({ page }) => {

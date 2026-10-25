@@ -1,5 +1,16 @@
 import { videoModelProblem, videoReferencePrompt, videoTaskOverrides } from '@plein/plugin-sdk'
-import { imageProcessParams, videoModeProblem, type VideoMode } from '@plein/nodes'
+import {
+  imageProcessParams,
+  videoModeProblem,
+  type VideoMode,
+  SEQUENCE_TYPE,
+  sequenceNode,
+  corePlugin,
+} from '@plein/nodes'
+import { withMediaAbort } from '../assets/media'
+import type { AssetRef, MediaInfo } from '@plein/plugin-sdk'
+import type { StoryboardAudioSource } from '@plein/protocol'
+import { shotSegmentMapping } from '@plein/capabilities'
 import { speechDirection, speechVoice } from '../executors/audio'
 import { modelOptionsProblem } from './model-options'
 import {
@@ -22,6 +33,11 @@ import {
   type ResultValue,
   setParams,
   SYSTEM_ORIGIN,
+  isSequenceInstance,
+  isGenerationOrigin,
+  type GenerationOrigin,
+  videoSegmentConflict,
+  type Edge,
   writeRun,
 } from '@plein/doc'
 import { FlowGraph, runDag, type StepOutcome, stableStringify } from '@plein/flow'
@@ -72,6 +88,7 @@ import {
   parseExpect,
   planChange,
   snapshotBatch,
+  storeReviewedInput,
 } from './batch'
 import {
   canceledByOf,
@@ -89,6 +106,7 @@ import {
 
 /** 就地计算纯上游节点的最大递归深度（防环） */
 const MAX_DEPTH = 8
+export type VerifiedSequenceMedia = Map<string, Promise<{ kind: string; info: MediaInfo }>>
 
 /** 进度写回文档的最小间隔，避免高频同步 */
 const PROGRESS_INTERVAL_MS = 500
@@ -105,8 +123,39 @@ function reusableResult(job: JobRow, resultId: string): boolean {
 }
 
 /** 调度用的依赖图：画布上的连线，加上提示词里 @ 引用带来的依赖 */
+function sequenceEdgeAllowed(doc: PleinDoc, edge: Edge) {
+  const target = doc.get(edge.to[0])
+  if (
+    target?.nodeType !== SEQUENCE_TYPE ||
+    (target.nodeVersion ?? 1) < 2 ||
+    target.params?.instanceVersion !== 2
+  )
+    return true
+  if (!['clips', 'dialogue', 'sfx'].includes(edge.to[1])) return true
+  const parsed = sequenceNode.params.safeParse(target.params)
+  if (!parsed.success || !parsed.data.clips.every(isSequenceInstance)) return false
+  const rows = parsed.data.clips
+  if (rows.some((row) => row.segment && row.sound === 'legacy')) return false
+  if (edge.to[1] === 'clips')
+    return rows.some(
+      (row) =>
+        !row.segment &&
+        row.source === edge.from[0] &&
+        row.port === edge.from[1] &&
+        (!row.edgeId || row.edgeId === edge.id),
+    )
+  if (rows.some((row) => row.sound === 'legacy')) return true
+  return rows.some((row) =>
+    edge.to[1] === 'dialogue'
+      ? row.sound !== 'native' && [row.dialogue, ...(row.more ?? [])].includes(edge.from[0])
+      : row.sfx === edge.from[0],
+  )
+}
+export function executionEdges(doc: PleinDoc) {
+  return [...doc.edges()].filter((edge) => sequenceEdgeAllowed(doc, edge))
+}
 export function runGraph(doc: PleinDoc) {
-  return new FlowGraph([...doc.edges(), ...mentionEdges(doc)])
+  return new FlowGraph([...executionEdges(doc), ...mentionEdges(doc)])
 }
 
 function toPortValue(v: ResultValue): PortValue {
@@ -151,10 +200,161 @@ interface ActiveJob {
 
 /** 提交时冻结的参数与输入值（jobs.frozen） */
 interface Frozen {
+  nodeVersion?: number
+  /** Persisted before first execution; never reconstructed from a restored job's local aliases. */
+  executionOrigin?: Pick<GenerationOrigin, 'canvasId' | 'nodeId' | 'runId'>
+  /** Original candidates are durably bound before publication, independently of local result aliases. */
+  outputEvidence?: OutputEvidence
   params: Record<string, unknown> | undefined
   inputs: Record<string, PortValue[]>
   inputHash?: string
   deliveryOrigins?: DeliveryOrigins
+}
+
+type OutputCall = {
+  inputFingerprint: string
+} & (
+  | { kind: 'provider'; calls: Array<{ key: string; attemptId: string; requestId: string }> }
+  | { kind: 'local'; execution: NonNullable<Frozen['executionOrigin']> }
+)
+interface OutputEvidence {
+  version: 1
+  publications: Array<{
+    callIdentity: string
+    call: OutputCall
+    outputs: Array<{
+      port: string
+      ordinal: number
+      payloadHash: string
+      origin: GenerationOrigin
+    }>
+  }>
+}
+const fingerprint = (value: unknown) =>
+  createHash('sha256').update(stableStringify(value)).digest('hex')
+const proofHash = (value: unknown): value is string =>
+  typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
+const proofText = (value: unknown): value is string => typeof value === 'string' && value.length > 0
+function outputEvidence(value: unknown): value is OutputEvidence {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    (value as OutputEvidence).version !== 1 ||
+    !Array.isArray((value as OutputEvidence).publications)
+  )
+    return false
+  return (value as OutputEvidence).publications.every((publication) => {
+    const call = publication?.call
+    return (
+      !!call &&
+      proofHash(call.inputFingerprint) &&
+      proofHash(publication.callIdentity) &&
+      fingerprint(call) === publication.callIdentity &&
+      (call.kind === 'local'
+        ? executionOrigin(call.execution)
+        : call.kind === 'provider' &&
+          Array.isArray(call.calls) &&
+          call.calls.length > 0 &&
+          call.calls.every((c) => c && [c.key, c.attemptId, c.requestId].every(proofText))) &&
+      Array.isArray(publication.outputs) &&
+      publication.outputs.every(
+        (output) =>
+          output &&
+          proofText(output.port) &&
+          Number.isSafeInteger(output.ordinal) &&
+          output.ordinal >= 0 &&
+          proofHash(output.payloadHash) &&
+          isGenerationOrigin(output.origin) &&
+          output.origin.port === output.port,
+      )
+    )
+  })
+}
+function outputCall(
+  row: JobRow | undefined,
+  frozen: Frozen,
+  local: boolean,
+): OutputCall | undefined {
+  const inputFingerprint = fingerprint({
+    nodeVersion: frozen.nodeVersion,
+    params: frozen.params,
+    inputs: frozen.inputs,
+  })
+  try {
+    const calls = Object.entries(JSON.parse(row?.calls || '{}') as Record<string, CallRecord>).sort(
+      ([a], [b]) => a.localeCompare(b),
+    )
+    if (!calls.length)
+      return local && executionOrigin(frozen.executionOrigin)
+        ? { kind: 'local', inputFingerprint, execution: { ...frozen.executionOrigin } }
+        : undefined
+    if (
+      !calls.every(
+        ([, call]) =>
+          call.state === 'done' &&
+          proofText(call.trace?.attemptId) &&
+          proofText(call.trace?.requestId),
+      )
+    )
+      return undefined
+    return {
+      kind: 'provider',
+      inputFingerprint,
+      calls: calls.map(([key, call]) => ({
+        key,
+        attemptId: call.trace!.attemptId,
+        requestId: call.trace!.requestId,
+      })),
+    }
+  } catch {
+    return undefined
+  }
+}
+function newSubmission(
+  before: JobRow | undefined,
+  after: JobRow | undefined,
+  call: OutputCall,
+): boolean {
+  if (call.kind !== 'provider') return false
+  try {
+    const prior = new Set(
+      (JSON.parse(before?.call_history || '[]') as Array<{ id: string }>).map((event) => event.id),
+    )
+    return (
+      JSON.parse(after?.call_history || '[]') as Array<{
+        id: string
+        kind: string
+        callKey: string
+        attemptId?: string
+        requestId?: string
+      }>
+    ).some(
+      (event) =>
+        event.kind === 'submit_started' &&
+        !prior.has(event.id) &&
+        call.calls.some(
+          (c) =>
+            c.key === event.callKey &&
+            c.attemptId === event.attemptId &&
+            c.requestId === event.requestId,
+        ),
+    )
+  } catch {
+    return false
+  }
+}
+
+function executionOrigin(value: unknown): value is NonNullable<Frozen['executionOrigin']> {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    ['canvasId', 'nodeId', 'runId'].every(
+      (key) =>
+        typeof (value as Record<string, unknown>)[key] === 'string' &&
+        !!(value as Record<string, unknown>)[key],
+    )
+  )
 }
 
 function parseFrozen(raw: string | null | undefined): Frozen | undefined {
@@ -220,6 +420,201 @@ export class NodeRuns implements BatchHost {
   private jobsChanged = false
   private concurrency: number
   private retryDelays: number[]
+
+  private async verifySequenceMedia(
+    ownerId: string,
+    ref: AssetRef,
+    signal: AbortSignal,
+    cache: VerifiedSequenceMedia,
+  ) {
+    const key = JSON.stringify([ownerId, ref.assetId])
+    if (!cache.has(key))
+      cache.set(
+        key,
+        (async () => {
+          signal.throwIfAborted()
+          const asset = await this.host.verifyAsset(ownerId, ref.assetId)
+          const services = this.host.services(corePlugin.manifest, { ownerId, signal })
+          const info = await withMediaAbort(signal, () => services.media.probe(ref))
+          signal.throwIfAborted()
+          return { kind: asset.kind, info }
+        })(),
+      )
+    return cache.get(key)!
+  }
+
+  async verifySequenceAudio(
+    doc: PleinDoc,
+    sequenceId: string,
+    sources: ReadonlySet<string>,
+    ownerId: string,
+    signal: AbortSignal,
+    allowPending: ReadonlySet<string> = new Set(),
+    cache: VerifiedSequenceMedia = new Map(),
+  ): Promise<StoryboardAudioSource[]> {
+    const refs: StoryboardAudioSource[] = []
+    for (const source of sources) {
+      const edges = inputEdges(doc, sequenceId, 'dialogue').filter(
+        (edge) => edge.from[0] === source,
+      )
+      if (edges.length !== 1)
+        throw new NodeRunError('invalid_input', `配音 ${source} 的端口未明确连接或有歧义`)
+      const node = doc.get(source),
+        port = edges[0]!.from[1]
+      const result = node?.kind === 'node' ? currentResult(node, port) : undefined
+      const assetId =
+        node?.kind === 'audio'
+          ? node.assetId
+          : result?.value.type === 'audio'
+            ? result.value.assetId
+            : undefined
+      if (!assetId) {
+        if (allowPending.has(source)) continue
+        throw new NodeRunError('invalid_input', `配音 ${source} 尚无所选端口的音频素材`)
+      }
+      const { info, kind } = await this.verifySequenceMedia(
+        ownerId,
+        { assetId, kind: 'audio' },
+        signal,
+        cache,
+      )
+      if (kind !== 'audio' || !info.hasAudio || !info.duration || !Number.isFinite(info.duration))
+        throw new NodeRunError('invalid_input', `配音 ${source} 不是有效音轨`)
+      const latest = doc.get(source)
+      const latestResult = latest?.kind === 'node' ? currentResult(latest, port) : undefined
+      const latestAsset =
+        latest?.kind === 'audio'
+          ? latest.assetId
+          : latestResult?.value.type === 'audio'
+            ? latestResult.value.assetId
+            : undefined
+      if (
+        latestAsset !== assetId ||
+        latestResult?.id !== result?.id ||
+        latestResult?.runId !== result?.runId
+      )
+        throw new NodeRunError('invalid_input', '配音读取期间来源已变化，请重新检查')
+      refs.push({
+        source,
+        port,
+        assetId,
+        ...(result ? { resultId: result.id, runId: result.runId } : {}),
+      })
+    }
+    return refs
+  }
+
+  private async sequenceScopeProblem(
+    doc: PleinDoc,
+    a: Pick<ActiveJob, 'canvasId' | 'ownerId'>,
+    scope: NonNullable<JobExpect['sequenceScope']>,
+    signal: AbortSignal,
+  ) {
+    const maps = scope.shotIds.map((shotId) => shotSegmentMapping(doc, { ...scope, shotId }))
+    if (
+      scope.canvasId !== a.canvasId ||
+      maps.some((map) => map.problem || map.sequenceId !== scope.sequenceId) ||
+      stableStringify(
+        [...new Set(maps.flatMap((map) => map.instances.map((row) => row.clipInstanceId)))].sort(),
+      ) !== stableStringify([...scope.clipInstanceIds].sort())
+    )
+      return '批准的序列映射范围已变化，请重新检查'
+    try {
+      const checked: VerifiedSequenceMedia = new Map()
+      await this.verifySequenceAssets(
+        doc,
+        scope.sequenceId,
+        a.ownerId,
+        signal,
+        new Set(scope.clipInstanceIds),
+        checked,
+      )
+      if (scope.audioSources?.length) {
+        const actual = await this.verifySequenceAudio(
+          doc,
+          scope.sequenceId,
+          new Set(scope.audioSources.map((ref) => ref.source)),
+          a.ownerId,
+          signal,
+          new Set(),
+          checked,
+        )
+        const order = (refs: StoryboardAudioSource[]) =>
+          [...refs].sort((a, b) => a.source.localeCompare(b.source))
+        if (stableStringify(order(actual)) !== stableStringify(order(scope.audioSources)))
+          return '批准的精确配音候选已变化'
+      }
+    } catch (error) {
+      if (signal.aborted) throw error
+      return `批准的固定文件已变化或不可读：${(error as Error).message}`
+    }
+    signal.throwIfAborted()
+    const latest = scope.shotIds.map((shotId) => shotSegmentMapping(doc, { ...scope, shotId }))
+    if (
+      latest.some((map) => map.problem || map.sequenceId !== scope.sequenceId) ||
+      stableStringify(
+        [
+          ...new Set(latest.flatMap((map) => map.instances.map((row) => row.clipInstanceId))),
+        ].sort(),
+      ) !== stableStringify([...scope.clipInstanceIds].sort())
+    )
+      return '素材读取期间序列映射已变化'
+    return undefined
+  }
+
+  /** Owned, intact fixed files only; metadata existence alone is not a reusable clip. */
+  async verifySequenceAssets(
+    doc: PleinDoc,
+    sequenceId: string,
+    ownerId: string,
+    signal: AbortSignal,
+    clipInstanceIds?: ReadonlySet<string>,
+    checked: VerifiedSequenceMedia = new Map(),
+  ) {
+    const sequence = doc.get(sequenceId)
+    if (sequence?.nodeType !== SEQUENCE_TYPE || sequence.params?.instanceVersion !== 2) return []
+    const parsed = sequenceNode.params.safeParse(sequence.params)
+    if (!parsed.success || !parsed.data.clips.every(isSequenceInstance))
+      throw new NodeRunError('invalid_input', '序列实例损坏，请先修复')
+    const files = new Map<string, MediaInfo>()
+    for (const row of parsed.data.clips) {
+      if (clipInstanceIds && !clipInstanceIds.has(row.clipInstanceId!)) continue
+      if (!row.segment) continue
+      if (row.sound === 'legacy')
+        throw new NodeRunError('invalid_input', '固定段必须明确选择原生声、配音或混合路线')
+      if (videoSegmentConflict(doc.elements(), row.segment))
+        throw new NodeRunError('invalid_input', '同一固定段存在文件或出处冲突')
+      const ref = row.segment.asset
+      if (!files.has(ref.assetId)) {
+        const { kind, info } = await this.verifySequenceMedia(ownerId, ref, signal, checked)
+        if (kind !== 'video') throw new NodeRunError('invalid_input', '固定段不是视频文件')
+        if (!info.hasVideo || !info.duration || !Number.isFinite(info.duration))
+          throw new NodeRunError('invalid_input', '固定段缺少有效视频时长')
+        if (
+          !info.videoDuration ||
+          !Number.isFinite(info.videoDuration) ||
+          Math.abs(info.duration - info.videoDuration) > 1 / 30 + 0.001
+        )
+          throw new NodeRunError(
+            'invalid_input',
+            '固定段容器时长不能证明视频覆盖，请先拆分或重核实际视频时长',
+          )
+        files.set(ref.assetId, info)
+      }
+      const duration = files.get(ref.assetId)!.videoDuration!
+      if (
+        Math.abs(row.segment.duration - duration) > 1 / 30 + 0.001 ||
+        row.in >= duration ||
+        (row.out !== undefined && (row.out <= row.in || row.out > duration + 0.001))
+      )
+        throw new NodeRunError(
+          'invalid_input',
+          `剪辑实例 ${row.clipInstanceId} 的固定时长或源区间无效`,
+        )
+    }
+    signal.throwIfAborted()
+    return [...files].map(([assetId, info]) => ({ assetId, ...info }))
+  }
 
   constructor(
     db: DB,
@@ -367,7 +762,9 @@ export class NodeRuns implements BatchHost {
     try {
       const el = doc.get(nodeId)
       if (el?.kind !== 'node' || !el.nodeType) throw new NodeRunError('not_found', '节点不存在')
-      return (await this.inspect(doc, el, ownerId, new AbortController().signal)).input
+      const input = (await this.inspect(doc, el, ownerId, new AbortController().signal, canvasId))
+        .input
+      return input
     } finally {
       doc.destroy()
       lease.release()
@@ -386,10 +783,11 @@ export class NodeRuns implements BatchHost {
     el: CanvasElement,
     ownerId: string,
     signal: AbortSignal,
+    canvasId?: string,
   ): Promise<Inspection> {
     let prepared: Prepared
     try {
-      prepared = await this.prepare(doc, el, ownerId, signal)
+      prepared = await this.prepare(doc, el, ownerId, signal, canvasId)
     } catch (err) {
       if (!(err instanceof NodeRunError)) throw err
       const def = el.nodeType ? this.host.registry.latestNode(el.nodeType)?.def : undefined
@@ -516,7 +914,7 @@ export class NodeRuns implements BatchHost {
       v: PREPARED_INPUT_VERSION,
       nodeId: el.id,
       nodeType: el.nodeType!,
-      ...(def ? { nodeVersion: def.version } : {}),
+      ...(def ? { nodeVersion: el.nodeVersion ?? def.version } : {}),
       preparedAt: Date.now(),
       status: blocked.length ? 'blocked' : 'ready',
       capability: def?.capability,
@@ -705,7 +1103,7 @@ export class NodeRuns implements BatchHost {
     const targets = this.rooms.withDoc(canvasId, (doc) => {
       const picked = [...new Set(nodeIds)].filter((id) => this.isJobNode(doc.get(id)))
       const mentioned = new FlowGraph(mentionEdges(doc))
-      const edges = new FlowGraph(doc.edges())
+      const edges = new FlowGraph(executionEdges(doc))
       const before = new Set<string>()
       for (const id of picked)
         for (const card of mentioned.upstream(id))
@@ -749,7 +1147,8 @@ export class NodeRuns implements BatchHost {
         input_hash: item.expect.inputHash ?? null,
         plan_hash: item.expect.planHash ?? null,
         deps: JSON.stringify(item.expect.deps ?? []),
-        input: JSON.stringify(item.input),
+        // Reviewed scope is approval metadata, never execution params or an inferred mapping.
+        input: storeReviewedInput(item.input, item.expect.sequenceScope),
         frozen_hash: null,
         job_id: null,
         outcome: 'pending',
@@ -1103,7 +1502,7 @@ export class NodeRuns implements BatchHost {
             return 'cached'
           }
           if (options.candidates && reuse) {
-            const now = await this.inspect(doc, el, g.owner_id, ctrl.signal)
+            const now = await this.inspect(doc, el, g.owner_id, ctrl.signal, g.canvas_id)
             const hit = this.cachedCandidate(el, now)
             if (hit) {
               if (!options.candidateOnly) adoptResult(doc, nodeId, hit)
@@ -1141,7 +1540,7 @@ export class NodeRuns implements BatchHost {
       }
       // @ 引用带来的依赖是软的：参考图出不来（比如被平台审核拦下）时，镜头只带文字设定照常出
       const deps = graph.dependencies(targets)
-      const hard = new FlowGraph(doc.edges()).dependencies(targets)
+      const hard = new FlowGraph(executionEdges(doc)).dependencies(targets)
       const soft = new Map(
         [...deps].map(([id, ups]) => [id, new Set([...ups].filter((u) => !hard.get(id)?.has(u)))]),
       )
@@ -1202,7 +1601,7 @@ export class NodeRuns implements BatchHost {
   ) {
     const d = this.store.decisions(canvasId).find((x) => x.node_id === el.id && !x.revoked_at)
     if (!d || currentResult(el)?.id !== d.result_id) return false
-    const now = inspection ?? (await this.inspect(doc, el, ownerId, signal))
+    const now = inspection ?? (await this.inspect(doc, el, ownerId, signal, canvasId))
     return now.input.inputHash === d.input_hash
   }
 
@@ -1217,7 +1616,7 @@ export class NodeRuns implements BatchHost {
     if (!job) return true
     if (!reusableResult(job, r.id) || !job.cache_key) return false
     try {
-      const prepared = await this.prepare(doc, el, ownerId, signal)
+      const prepared = await this.prepare(doc, el, ownerId, signal, job.canvas_id)
       return this.keyMatches(el, prepared, job)
     } catch {
       return false
@@ -1451,8 +1850,17 @@ export class NodeRuns implements BatchHost {
     const row = this.store.get(a.id)
     const def = this.host.registry.latestNode(el.nodeType)?.def
     let frozen = parseFrozen(row?.frozen)
-    if (!frozen || !parseCalls(row?.calls).length) {
-      const prepared = await this.prepare(doc, el, a.ownerId, signal)
+    if (el.nodeType === SEQUENCE_TYPE && !frozen && (row?.attempts ?? 0) > 1)
+      throw reviewError('旧序列任务缺少冻结输入，不能从当前序列猜测原版本')
+    // Local job executors have no provider journal; their frozen inputs still define recovery.
+    const frozenLocalJob = def?.execution === 'job' && !def.capability
+    const frozenSequenceRecovery =
+      !!parseExpect(row?.expect)?.sequenceScope &&
+      (JSON.parse(row?.call_history || '[]') as Array<{ kind: string }>).some(
+        (event) => event.kind === 'manual_resubmit',
+      )
+    if (!frozen || (!parseCalls(row?.calls).length && !frozenLocalJob && !frozenSequenceRecovery)) {
+      const prepared = await this.prepare(doc, el, a.ownerId, signal, a.canvasId)
       // 实际输入随任务存下来：降级、舍弃的参考图和所用模型以后查得到
       const input = this.summarize(el, prepared)
       this.store.update(a.id, { input: JSON.stringify(input) })
@@ -1465,11 +1873,37 @@ export class NodeRuns implements BatchHost {
           { doc, groupId: a.groupId, store: this.store },
         )
         if (reason) throw reviewError(reason)
+        if (expect.sequenceScope) {
+          const problem = await this.sequenceScopeProblem(doc, a, expect.sequenceScope, signal)
+          if (problem) throw reviewError(problem)
+          signal.throwIfAborted()
+          const changed = planChange(
+            expect,
+            { inputHash: input.inputHash, planHash: this.planKey(doc.get(a.nodeId)!) },
+            { doc, groupId: a.groupId, store: this.store },
+          )
+          if (changed) throw reviewError(changed)
+        }
       }
       // 必需参考用不上：不提交，免得花钱生成一张缺了关键角色或道具的图
       if (input.blocked.length)
         throw new NodeRunError('invalid_input', input.blocked.map((b) => b.message).join('；'))
+      const original = executionOrigin(frozen?.executionOrigin)
+        ? { ...frozen.executionOrigin }
+        : !frozen &&
+            row?.attempts === 1 &&
+            !parseCalls(row.calls).length &&
+            !(JSON.parse(row.call_history || '[]') as unknown[]).length
+          ? { canvasId: a.canvasId, nodeId: a.nodeId, runId: a.id }
+          : undefined
       frozen = {
+        nodeVersion: el.nodeVersion ?? def?.version,
+        ...(original ? { executionOrigin: original } : {}),
+        ...(outputEvidence(frozen?.outputEvidence)
+          ? { outputEvidence: frozen.outputEvidence }
+          : !frozen && original
+            ? { outputEvidence: { version: 1 as const, publications: [] } }
+            : {}),
         params: prepared.params,
         inputs: prepared.inputs,
         inputHash: input.inputHash,
@@ -1481,13 +1915,26 @@ export class NodeRuns implements BatchHost {
       if (a.groupId)
         this.store.updateBatchItem(a.groupId, a.nodeId, { frozen_hash: input.inputHash ?? null })
     }
+    const provenVersion = frozen.nodeVersion ?? parseInput(row?.input ?? null)?.nodeVersion
+    if (
+      el.nodeType === SEQUENCE_TYPE &&
+      (!Number.isInteger(provenVersion) || !provenVersion || provenVersion < 1)
+    )
+      throw reviewError('旧序列任务缺少可验证的冻结节点版本，请重新审阅后运行')
+    if (
+      el.nodeType === SEQUENCE_TYPE &&
+      frozen.nodeVersion !== undefined &&
+      parseInput(row?.input ?? null)?.nodeVersion !== undefined &&
+      frozen.nodeVersion !== parseInput(row?.input ?? null)!.nodeVersion
+    )
+      throw reviewError('旧序列任务的冻结版本证据冲突，请重新审阅')
     const prepared: Prepared = { def, params: frozen.params, inputs: frozen.inputs }
     // 运行中的状态：进度、执行器提示和调用平台的阶段合在一起写回文档
     const live: Omit<NodeRun, 'at'> = { ...base }
     let lastProgress = 0
     const outputs = await this.host.runNode({
       type: el.nodeType,
-      version: el.nodeVersion ?? 1,
+      version: provenVersion ?? el.nodeVersion ?? 1,
       params: prepared.params,
       inputs: prepared.inputs,
       ownerId: a.ownerId,
@@ -1510,18 +1957,60 @@ export class NodeRuns implements BatchHost {
       },
     })
     const at = Date.now()
-    const results: NodeResult[] = Object.entries(outputs).flatMap(([port, values]) =>
-      values.map((v) => ({
-        id: newId('res'),
-        port,
-        value: toResultValue(v),
-        runId: a.id,
-        at,
-        ...(typeof v.outputGroup === 'string' && v.outputGroup
-          ? { outputGroup: v.outputGroup }
-          : {}),
-      })),
+    const original = executionOrigin(frozen.executionOrigin) ? frozen.executionOrigin : undefined
+    const evidence = outputEvidence(frozen.outputEvidence) ? frozen.outputEvidence : undefined
+    const after = this.store.get(a.id)
+    const call = outputCall(after, frozen, frozenLocalJob)
+    const callIdentity = call && fingerprint(call)
+    const publication = evidence?.publications.find(
+      (publication) => publication.callIdentity === callIdentity,
     )
+    const mayCreate = !!(
+      original &&
+      call &&
+      !publication &&
+      ((evidence && evidence.publications.length === 0) || newSubmission(row, after, call))
+    )
+    const proofs: OutputEvidence['publications'][number]['outputs'] = []
+    const results: NodeResult[] = Object.entries(outputs).flatMap(([port, values]) =>
+      values.map((v, ordinal) => {
+        const id = newId('res')
+        const payloadHash = fingerprint(v)
+        const known = publication?.outputs.find(
+          (proof) =>
+            proof.port === port && proof.ordinal === ordinal && proof.payloadHash === payloadHash,
+        )?.origin
+        const generationOrigin =
+          known ?? (mayCreate ? { ...original!, port, resultId: id } : undefined)
+        if (mayCreate && generationOrigin)
+          proofs.push({ port, ordinal, payloadHash, origin: generationOrigin })
+        return {
+          id,
+          port,
+          value: toResultValue(v),
+          runId: a.id,
+          at,
+          ...(generationOrigin ? { generationOrigin: { ...generationOrigin } } : {}),
+          ...(typeof v.outputGroup === 'string' && v.outputGroup
+            ? { outputGroup: v.outputGroup }
+            : {}),
+        }
+      }),
+    )
+    if (mayCreate && call && callIdentity && proofs.length) {
+      frozen = {
+        ...frozen,
+        outputEvidence: {
+          version: 1,
+          publications: [
+            ...(evidence?.publications ?? []),
+            { callIdentity, call, outputs: proofs },
+          ],
+        },
+      }
+      // The original tuple must survive a crash before addResults or any later local alias remap.
+      this.store.update(a.id, { frozen: JSON.stringify(frozen) })
+    }
     // 运行结果写回的参数不计入缓存键，否则节点一跑完就“过期”
     const patchFor = () => {
       const now = doc.get(el.id)
@@ -1551,6 +2040,7 @@ export class NodeRuns implements BatchHost {
       frozen.inputs,
       (id) => this.host.assetInfo(a.ownerId, id),
       frozen.deliveryOrigins ?? {},
+      outputs,
     )
     const patch = held ? undefined : patchFor()
     if (patch) setParams(doc, el.id, patch)
@@ -1581,7 +2071,23 @@ export class NodeRuns implements BatchHost {
     if (this.store.newerJobs(a.canvasId, el.id, createdAt).length) return 'superseded'
     if (!inputHash) return undefined
     try {
-      const p = await this.prepare(doc, now, a.ownerId, new AbortController().signal)
+      const expect = parseExpect(this.store.get(a.id)?.expect)
+      if (
+        expect?.sequenceScope &&
+        ((await this.sequenceScopeProblem(
+          doc,
+          a,
+          expect.sequenceScope,
+          new AbortController().signal,
+        )) ||
+          planChange(
+            expect,
+            { inputHash, planHash: this.planKey(now) },
+            { doc, groupId: a.groupId, store: this.store },
+          ))
+      )
+        return 'input_changed'
+      const p = await this.prepare(doc, now, a.ownerId, new AbortController().signal, a.canvasId)
       return this.cacheKey(now, p, []) === inputHash ? undefined : 'input_changed'
     } catch {
       return 'input_changed'
@@ -1594,9 +2100,19 @@ export class NodeRuns implements BatchHost {
     el: CanvasElement,
     ownerId: string,
     signal: AbortSignal,
+    canvasId?: string,
   ): Promise<Prepared> {
     const origins = new WeakMap<PortValue, Origin>()
-    const collected = await this.collectInputs(doc, el.id, ownerId, signal, 0, origins)
+    const collected = await this.collectInputs(
+      doc,
+      el.id,
+      ownerId,
+      signal,
+      0,
+      origins,
+      false,
+      canvasId,
+    )
     const def = this.host.registry.latestNode(el.nodeType!)?.def
     if (!def) return { def, params: el.params, inputs: collected, origins }
     const { params, inputs, details, notices, blocked } = await applyMentions(
@@ -1605,7 +2121,7 @@ export class NodeRuns implements BatchHost {
       def,
       collected,
       // @ 引用是软依赖：卡片的参考图节点还没结果（生成失败、被审核拦下）时只附文字设定
-      (id) => this.collectInputs(doc, id, ownerId, signal, 0, origins, true),
+      (id) => this.collectInputs(doc, id, ownerId, signal, 0, origins, true, canvasId),
       this.resolveModel(el.params?.model)?.limit,
     )
     const modelRef = typeof params.model === 'string' ? parseModelRef(params.model) : null
@@ -1783,7 +2299,23 @@ export class NodeRuns implements BatchHost {
           params: kept,
           // 来源元素 id 只用来对应设置，不算内容
           inputs: Object.fromEntries(
-            Object.entries(p.inputs).map(([k, vs]) => [k, vs.map(({ source: _, ...v }) => v)]),
+            Object.entries(p.inputs).map(([k, vs]) => [
+              k,
+              vs.map(
+                ({
+                  source: _,
+                  sourcePort: _p,
+                  edgeId: _e,
+                  resultId: _r,
+                  runId: _run,
+                  originCanvasId: _canvas,
+                  originNodeId: _node,
+                  sourceCanvasId: _selection,
+                  generationOrigin: _generation,
+                  ...v
+                }: PortValue & { originCanvasId?: string; originNodeId?: string }) => v,
+              ),
+            ]),
           ),
           ...extra,
         }),
@@ -1805,9 +2337,21 @@ export class NodeRuns implements BatchHost {
     origins?: WeakMap<PortValue, Origin>,
     /** 上游节点没有结果时当作没有值，而不是报错 */
     lenient = false,
+    canvasId?: string,
   ): Promise<Record<string, PortValue[]>> {
     if (depth > MAX_DEPTH) throw new NodeRunError('invalid_input', '上游连线成环或层级过深')
-    const edges = inputEdges(doc, nodeId)
+    const target = doc.get(nodeId)
+    const exactSequence =
+      target?.nodeType === SEQUENCE_TYPE &&
+      (target.nodeVersion ?? 1) >= 2 &&
+      target.params?.instanceVersion === 2
+    if (exactSequence) {
+      const parsed = sequenceNode.params.safeParse(target.params)
+      if (!parsed.success || !parsed.data.clips.every(isSequenceInstance))
+        throw new NodeRunError('invalid_input', '序列实例损坏，请先修复')
+      await this.verifySequenceAssets(doc, nodeId, ownerId, signal)
+    }
+    const edges = inputEdges(doc, nodeId).filter((edge) => sequenceEdgeAllowed(doc, edge))
     const inputs: Record<string, PortValue[]> = {}
     for (const edge of edges) {
       const src = doc.get(edge.from[0])
@@ -1820,9 +2364,24 @@ export class NodeRuns implements BatchHost {
         signal,
         depth,
         lenient,
+        canvasId,
       )
       const r = src.kind === 'node' ? currentResult(src, edge.from[1]) : undefined
-      const tagged = values.map((v) => ({ ...v, source: src.id }))
+      const tagged = values.map((v) => ({
+        ...v,
+        source: src.id,
+        ...(exactSequence
+          ? {
+              sourcePort: edge.from[1],
+              edgeId: edge.id,
+              ...(r ? { resultId: r.id, runId: r.runId } : {}),
+              ...(canvasId ? { sourceCanvasId: canvasId } : {}),
+              ...(isGenerationOrigin(r?.generationOrigin)
+                ? { generationOrigin: { ...r.generationOrigin } }
+                : {}),
+            }
+          : {}),
+      }))
       if (r && origins) for (const v of tagged) origins.set(v, { resultId: r.id, runId: r.runId })
       const port = (inputs[edge.to[1]] ??= [])
       for (const v of tagged) port.push(v)
@@ -1838,6 +2397,7 @@ export class NodeRuns implements BatchHost {
     signal: AbortSignal,
     depth: number,
     lenient = false,
+    canvasId?: string,
   ): Promise<PortValue[]> {
     const label = src.name ?? '上游'
     switch (src.kind) {
@@ -1864,6 +2424,7 @@ export class NodeRuns implements BatchHost {
               depth + 1,
               undefined,
               lenient,
+              canvasId,
             ),
             ownerId,
             signal,

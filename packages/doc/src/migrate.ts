@@ -5,9 +5,10 @@ import { generateNKeysBetween } from 'fractional-indexing'
 import * as Y from 'yjs'
 import { CONTAINER_KINDS, type Edge } from './types'
 import { migrateStoryboardIdentity } from './migrate-storyboard'
+import { materializeSequenceV1 } from './sequence-instances'
 
 /** 当前文档 schema 版本 */
-export const SCHEMA_VERSION = 10
+export const SCHEMA_VERSION = 11
 
 export interface MigrateResult {
   version: number
@@ -29,7 +30,34 @@ const MIGRATIONS: Migration[] = [
   v7ToV8,
   v8ToV9,
   v9ToV10,
+  v10ToV11,
 ]
+
+function v10ToV11(ydoc: Y.Doc) {
+  const elements = ydoc.getMap<unknown>('elements')
+  const edges = [...ydoc.getMap<Edge>('edges').values()]
+  for (const [id, value] of elements) {
+    if (
+      !(value instanceof Y.Map) ||
+      value.get('nodeType') !== 'plein/sequence' ||
+      Number(value.get('nodeVersion') ?? 1) > 1
+    )
+      continue
+    const params = value.get('params')
+    if (!(params instanceof Y.Map)) continue
+    const next = materializeSequenceV1(id, params.toJSON(), edges, (id) => elements.has(id))
+    for (const [key, item] of Object.entries(next)) params.set(key, item)
+    value.set('nodeVersion', 2)
+    const ports = value.get('ports') as
+      | { inputs?: Array<Record<string, unknown>>; outputs?: unknown[] }
+      | undefined
+    if (ports?.inputs)
+      value.set('ports', {
+        ...ports,
+        inputs: ports.inputs.map((p) => (p.id === 'clips' ? { ...p, required: false } : p)),
+      })
+  }
+}
 
 function v9ToV10(ydoc: Y.Doc) {
   for (const value of ydoc.getMap<unknown>('elements').values()) {

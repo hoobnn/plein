@@ -398,11 +398,20 @@ for (const mode of ['delayed', 'failed', 'missing-duration', 'cancel', 'close'] 
             return source
           })
           const node = window.__plein.engine.doc.mutable(sequence)! as unknown as {
-            get(k: string): { set(k: string, v: unknown): void }
+            get(k: string): { get(k: string): unknown; set(k: string, v: unknown): void }
           }
-          node
-            .get('params')
-            .set('clips', [{ source: clip, dialogue: sources[0], more: [sources[1]], lineGap: 0 }])
+          const params = node.get('params')
+          const instances = params.get('clips') as Array<Record<string, unknown>>
+          if (!instances.some((row) => row.source === clip && row.clipInstanceId))
+            throw new Error('Expected the actual materialized video instance')
+          params.set(
+            'clips',
+            instances.map((row) =>
+              row.source === clip
+                ? { ...row, dialogue: sources[0], more: [sources[1]], lineGap: 0 }
+                : row,
+            ),
+          )
         },
         { voices, sequence: f.id, clip: f.source },
       )

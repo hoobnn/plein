@@ -4,6 +4,7 @@ import {
   duckEnvelope,
   MUSIC_FADE,
   type SequenceParams,
+  sequenceRowKey,
   sequenceSize,
   type Timeline,
 } from '@plein/nodes'
@@ -37,7 +38,10 @@ export function previewScene(
     const n = seen.get(id) ?? 0
     seen.set(id, n + 1)
     return {
-      key: `${id}#${n}`,
+      // Selection follows the instance; a changed file needs a new decoder.
+      key: row.clipInstanceId
+        ? JSON.stringify([sequenceRowKey(row, i), id, row.clip.type])
+        : `${id}#${n}`,
       assetId: row.pending ? undefined : id,
       kind: row.clip.type === 'image' ? 'image' : 'video',
       start: c.start,

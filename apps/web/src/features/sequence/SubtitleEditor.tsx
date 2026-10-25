@@ -3,6 +3,7 @@ import {
   type SequenceParams,
   type SequenceSubtitleTrack,
   sequenceNode,
+  sequenceRowKey,
   subtitleTrackStale,
 } from '@plein/nodes'
 import { findNode } from '../../canvas/nodes'
@@ -42,6 +43,13 @@ export function SubtitleEditor({
   const node = findNode(catalog, sequenceNode.type)
   const track = params.subtitleTrack
   const stale = subtitleTrackStale(params, rows)
+  const unmappedOccurrences = new Map<string, number>()
+  const unmapped = (track?.unmappedCues ?? []).map((item) => {
+    const value = JSON.stringify(item)
+    const occurrence = unmappedOccurrences.get(value) ?? 0
+    unmappedOccurrences.set(value, occurrence + 1)
+    return { ...item, displayKey: `${value}:${occurrence}` }
+  })
   const patch = (id: string, value: Partial<SequenceSubtitleTrack['cues'][number]>) => {
     if (track)
       onChange({ ...track, cues: track.cues.map((q) => (q.id === id ? { ...q, ...value } : q)) })
@@ -69,6 +77,41 @@ export function SubtitleEditor({
         <p role="alert" className="text-sm text-danger">
           {error}
         </p>
+      )}
+      {!!track?.unmappedCues?.length && (
+        <section
+          aria-label="未映射旧字幕"
+          className="flex flex-col gap-2 rounded border border-line p-3"
+        >
+          <h3 className="ui-section-title">保留的未映射旧字幕 · {track.unmappedCues.length} 条</h3>
+          <p className="ui-help">
+            这些旧条目没有对应当前剪辑实例，原值保留供核对，未加入预览或导出。
+          </p>
+          {unmapped.map((item, index) => (
+            <details key={item.displayKey} className="text-xs">
+              <summary className="cursor-pointer">
+                旧条目 {index + 1} · {item.reason}
+              </summary>
+              <pre
+                aria-label={`未映射字幕 ${index + 1} 原值`}
+                className="ui-scrollbar max-h-60 overflow-auto whitespace-pre-wrap break-words"
+              >
+                {JSON.stringify(item.cue, null, 2) ?? String(item.cue)}
+              </pre>
+            </details>
+          ))}
+          {track.legacyTrack !== undefined && (
+            <details className="text-xs">
+              <summary className="cursor-pointer">查看迁移前完整字幕轨</summary>
+              <pre
+                aria-label="迁移前完整字幕轨原值"
+                className="ui-scrollbar max-h-60 overflow-auto whitespace-pre-wrap break-words"
+              >
+                {JSON.stringify(track.legacyTrack, null, 2)}
+              </pre>
+            </details>
+          )}
+        </section>
       )}
       {recovery && (
         <RecognitionRecovery
@@ -107,7 +150,7 @@ export function SubtitleEditor({
       {!track && <p className="ui-help">尚未创建可编辑字幕轨；当前按台词自动生成。</p>}
       {track &&
         rows.map((row, index) => {
-          const source = row.source ?? `clip:${index}:${row.clip.assetId}`
+          const source = sequenceRowKey(row, index)
           const cues = track.cues.filter((q) => q.source === source)
           return (
             <section key={source} className="seq-section">

@@ -29,6 +29,21 @@ export interface AssetRef {
 export interface PortValueMeta {
   /** 来自画布上的哪个元素：同一端口有多个上游时，执行器靠它对应参数里的设置 */
   source?: string
+  /** Exact connected output and edge. source alone cannot distinguish two ports or uses. */
+  sourcePort?: string
+  edgeId?: string
+  resultId?: string
+  runId?: string
+  /** Current connected candidate's local canvas; this is a selection location, not generation. */
+  sourceCanvasId?: string
+  /** Original execution/candidate identity, retained independently of local copy/import aliases. */
+  generationOrigin?: import('./media').MediaResultIdentity
+  /** The exact executed clip mapping, frozen before compose awaits. */
+  clipEvidence?: {
+    version: 1
+    basis: 'executed-sequence-spec'
+    sources: import('./media').CompositionSource[]
+  }
   /** 执行器输出的候选关联键，同一候选的主输出和副输出共用；仅在本次运行内有效。 */
   outputGroup?: string
 }

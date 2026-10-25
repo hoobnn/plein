@@ -3,6 +3,7 @@ import {
   type ComposeAudio,
   type ComposeSpec,
   type ComposeTransition,
+  type CompositionSource,
   defineNode,
   overlapping,
   type PortValue,
@@ -27,9 +28,43 @@ const DUCK_RELEASE = 0.4
 /** 配乐结尾淡出秒数 */
 export const MUSIC_FADE = 2
 
+const resultIdentity = z.object({
+  canvasId: z.string().min(1),
+  nodeId: z.string().min(1),
+  port: z.string().min(1),
+  resultId: z.string().min(1),
+  runId: z.string().min(1),
+})
+
 /** 序列里的一段镜头：按 source（上游元素 id）对应连进来的视频 */
 export const SequenceClip = z.object({
   source: z.string(),
+  clipInstanceId: z.string().min(1).optional(),
+  port: z.string().min(1).optional(),
+  edgeId: z.string().min(1).optional(),
+  segment: z
+    .object({
+      version: z.literal(1),
+      segmentId: z.string().min(1),
+      asset: z.object({
+        assetId: z.string().regex(/^[0-9a-f]{64}$/),
+        kind: z.literal('video'),
+        mime: z.string().optional(),
+      }),
+      duration: z.number().finite().positive(),
+      origin: resultIdentity.optional(),
+      selection: resultIdentity.optional(),
+    })
+    .optional(),
+  narrative: z
+    .object({
+      canvasId: z.string().min(1),
+      boardId: z.string().min(1),
+      shotId: z.string().min(1),
+      historical: z.boolean().optional(),
+    })
+    .optional(),
+  sound: z.enum(['legacy', 'native', 'voice', 'mix']).optional(),
   /** 入点、出点（秒）；出点不填到素材结尾 */
   in: z.number().min(0).default(0),
   out: z.number().min(0).optional(),
@@ -78,51 +113,93 @@ export const SequenceSubtitleCue = z.object({
 export const SequenceSubtitleTrack = z.object({
   inputKey: z.string(),
   cues: z.array(SequenceSubtitleCue),
+  /** Migrated v1 key; compare against the real old inputs until an explicit subtitle edit/rebuild. */
+  keyVersion: z.literal(1).optional(),
+  legacySources: z.record(z.string(), z.string()).optional(),
+  /** Unresolved v1 evidence is retained verbatim and never rendered or guessed onto a new row. */
+  unmappedCues: z.array(z.object({ cue: z.unknown(), reason: z.string() })).optional(),
+  legacyTrack: z.unknown().optional(),
 })
 export type SequenceSubtitleTrack = z.infer<typeof SequenceSubtitleTrack>
 
 /** 序列：把镜头视频按顺序拼成成片，混合对白、配乐、音效，烧录字幕，导出 MP4 */
 export const sequenceNode = defineNode({
   type: SEQUENCE_TYPE,
-  version: 1,
+  version: 2,
   title: '序列',
   description: '把镜头视频按顺序拼接，配上对白、配乐、音效和字幕，导出 MP4',
   category: 'video',
   execution: 'job',
   inputs: [
-    { id: 'clips', label: '镜头', type: 'video', multiple: true, required: true },
+    { id: 'clips', label: '镜头', type: 'video', multiple: true },
     { id: 'dialogue', label: '对白', type: 'audio', multiple: true },
     { id: 'music', label: '配乐', type: 'audio' },
     { id: 'sfx', label: '音效', type: 'audio', multiple: true },
   ],
   outputs: [{ id: 'video', label: '成片', type: 'video' }],
-  params: z.object({
-    clips: z.array(SequenceClip).default([]).meta({ title: '镜头', widget: 'hidden' }),
-    aspectRatio: z.enum(['9:16', '16:9']).default('9:16').meta({ title: '画幅' }),
-    resolution: z.enum(['1080p', '720p']).default('1080p').meta({ title: '分辨率' }),
-    subtitles: z.boolean().default(true).meta({ title: '字幕' }),
-    subtitleStyle: z.enum(SUBTITLE_STYLES).default('常规').meta({ title: '字幕样式' }),
-    clipVolume: volume('镜头原声音量', 1),
-    dialogueVolume: volume('对白音量', 1),
-    musicVolume: volume('配乐音量', 0.35),
-    sfxVolume: volume('音效音量', 0.8),
-    transition: z.enum(TRANSITIONS).default('无').meta({ title: '转场' }),
-    transitionDuration: z.number().min(0.2).max(2).default(0.5).meta({ title: '转场时长（秒）' }),
-    duck: z.boolean().default(true).meta({
-      title: '对白时压低配乐',
-      description: '有台词的地方配乐自动降低约 10 dB，说完再回来',
+  params: z
+    .object({
+      instanceVersion: z.literal(2).optional().meta({ widget: 'hidden' }),
+      legacySourceSettings: z.array(z.unknown()).optional().meta({ widget: 'hidden' }),
+      clips: z.array(SequenceClip).default([]).meta({ title: '镜头', widget: 'hidden' }),
+      aspectRatio: z.enum(['9:16', '16:9']).default('9:16').meta({ title: '画幅' }),
+      resolution: z.enum(['1080p', '720p']).default('1080p').meta({ title: '分辨率' }),
+      subtitles: z.boolean().default(true).meta({ title: '字幕' }),
+      subtitleStyle: z.enum(SUBTITLE_STYLES).default('常规').meta({ title: '字幕样式' }),
+      clipVolume: volume('镜头原声音量', 1),
+      dialogueVolume: volume('对白音量', 1),
+      musicVolume: volume('配乐音量', 0.35),
+      sfxVolume: volume('音效音量', 0.8),
+      transition: z.enum(TRANSITIONS).default('无').meta({ title: '转场' }),
+      transitionDuration: z.number().min(0.2).max(2).default(0.5).meta({ title: '转场时长（秒）' }),
+      duck: z.boolean().default(true).meta({
+        title: '对白时压低配乐',
+        description: '有台词的地方配乐自动降低约 10 dB，说完再回来',
+      }),
+      loudnorm: z.boolean().default(true).meta({
+        title: '响度标准化',
+        description: '成片响度统一到 -14 LUFS（短视频平台的通行响度）',
+      }),
+      asrTiming: z.boolean().default(false).meta({
+        title: '按语音识别对齐字幕',
+        description: '用已启用平台的语音识别校准每句字幕的时间',
+      }),
+      model: z.string().default('').meta({ title: '语音识别模型', widget: 'hidden' }),
+      subtitleTrack: SequenceSubtitleTrack.optional().meta({ title: '字幕轨', widget: 'hidden' }),
+    })
+    .superRefine((p, ctx) => {
+      if (p.instanceVersion !== 2) return
+      const seen = new Set<string>(),
+        segments = new Map<string, string>()
+      p.clips.forEach((c, i) => {
+        if (!c.clipInstanceId || !c.source || !c.port || !c.sound || seen.has(c.clipInstanceId))
+          ctx.addIssue({
+            code: 'custom',
+            path: ['clips', i],
+            message: '剪辑实例身份、端口和声音路线必须明确且唯一',
+          })
+        if (c.clipInstanceId) seen.add(c.clipInstanceId)
+        if (c.segment) {
+          if (c.sound === 'legacy')
+            ctx.addIssue({
+              code: 'custom',
+              path: ['clips', i, 'sound'],
+              message: '固定素材必须明确选择原生声、配音或混合',
+            })
+          const value = JSON.stringify(c.segment)
+          const old = segments.get(c.segment.segmentId)
+          if (old && old !== value)
+            ctx.addIssue({
+              code: 'custom',
+              path: ['clips', i, 'segment'],
+              message: '同一固定段身份不能对应不同文件或出处',
+            })
+          segments.set(c.segment.segmentId, value)
+        }
+      })
     }),
-    loudnorm: z.boolean().default(true).meta({
-      title: '响度标准化',
-      description: '成片响度统一到 -14 LUFS（短视频平台的通行响度）',
-    }),
-    asrTiming: z.boolean().default(false).meta({
-      title: '按语音识别对齐字幕',
-      description: '用已启用平台的语音识别校准每句字幕的时间',
-    }),
-    model: z.string().default('').meta({ title: '语音识别模型', widget: 'hidden' }),
-    subtitleTrack: SequenceSubtitleTrack.optional().meta({ title: '字幕轨', widget: 'hidden' }),
-  }),
+  // Frozen v1 jobs keep their real v1 source-key behavior; document migration has edge identities.
+  migrate: (params) => params,
 })
 
 export type SequenceParams = z.output<typeof sequenceNode.params>
@@ -135,6 +212,12 @@ const media = (values: PortValue[] | undefined) =>
 const asset = (v: MediaValue): AssetRef => ({ assetId: v.assetId, kind: v.kind, mime: v.mime })
 
 export interface ArrangedClip {
+  clipInstanceId?: string
+  port?: string
+  edgeId?: string
+  segment?: SequenceClip['segment']
+  narrative?: SequenceClip['narrative']
+  sound?: SequenceClip['sound']
   /** 上游元素 id；没有时只能按顺序对应 */
   source?: string
   clip: MediaValue
@@ -162,7 +245,7 @@ export interface ArrangedClip {
  * 已断开的设置丢掉。对白、音效没指定时按顺序对应第 n 段（别的段已经指定了的除外）。
  */
 export function arrangeSequence(
-  params: Pick<SequenceParams, 'clips'>,
+  params: Pick<SequenceParams, 'clips'> & { instanceVersion?: 2 },
   inputs: Record<string, PortValue[]>,
 ): ArrangedClip[] {
   const clips = media(inputs.clips)
@@ -171,6 +254,50 @@ export function arrangeSequence(
   const allDialogue = media(inputs.dialogue)
   const dialogue = allDialogue.filter((v) => v.source === undefined || !extra.has(v.source))
   const sfx = media(inputs.sfx)
+  if (params.instanceVersion === 2) {
+    const claimed = new Set(params.clips.flatMap((c) => [c.dialogue, c.sfx]).filter(Boolean))
+    const pick = (
+      list: MediaValue[],
+      choice: string | undefined,
+      index: number,
+      legacy: boolean,
+    ) => {
+      if (choice === '') return undefined
+      if (choice !== undefined) return list.find((v) => v.source === choice)
+      const auto = legacy ? list[index] : undefined
+      return auto?.source && claimed.has(auto.source) ? undefined : auto
+    }
+    return params.clips.map((c, i) => {
+      const legacy = c.sound === 'legacy'
+      const value = c.segment
+        ? { type: 'video' as const, ...c.segment.asset, source: c.source }
+        : clips.find(
+            (v) =>
+              v.source === c.source &&
+              v.sourcePort === c.port &&
+              (!c.edgeId || v.edgeId === c.edgeId),
+          )
+      const noVoice = c.sound === 'native'
+      return {
+        ...c,
+        clip: value ?? {
+          type: 'video' as const,
+          kind: 'video' as const,
+          assetId: '',
+          source: c.source,
+        },
+        in: c.in ?? 0,
+        speed: c.speed ?? 1,
+        volume: c.sound === 'voice' ? 0 : (c.volume ?? 1),
+        lineDelay: c.lineDelay ?? 0,
+        dialogue: noVoice ? undefined : pick(dialogue, c.dialogue, i, legacy),
+        more: noVoice
+          ? []
+          : (c.more ?? []).flatMap((id) => allDialogue.filter((v) => v.source === id)),
+        sfx: pick(sfx, c.sfx, i, legacy),
+      }
+    })
+  }
   const settings = new Map(params.clips.map((c) => [c.source, c]))
   const order = new Map(params.clips.map((c, i) => [c.source, i]))
   const sorted = clips
@@ -406,16 +533,19 @@ export function sequenceTimeline(
   return { clips, total }
 }
 
-const subtitleSource = (c: ArrangedClip, i: number) => c.source ?? `clip:${i}:${c.clip.assetId}`
+const subtitleSource = (c: ArrangedClip, i: number) =>
+  c.clipInstanceId ?? c.source ?? `clip:${i}:${c.clip.assetId}`
+
+export const sequenceRowKey = (c: ArrangedClip, i = 0) => subtitleSource(c, i)
 
 /** 只跟字幕的实际输入相关；混音、样式变化不会再次要求识别。 */
-export function subtitleInputKey(params: SequenceParams, arranged: ArrangedClip[]) {
+export function legacySubtitleInputKey(params: SequenceParams, arranged: ArrangedClip[]) {
   return JSON.stringify({
     model: params.asrTiming ? params.model : '',
     transition: params.transition,
     transitionDuration: params.transitionDuration,
     clips: arranged.map((c, i) => ({
-      source: subtitleSource(c, i),
+      source: c.source ?? `clip:${i}:${c.clip.assetId}`,
       assetId: c.clip.assetId,
       in: c.in,
       out: c.out,
@@ -434,10 +564,35 @@ export function subtitleInputKey(params: SequenceParams, arranged: ArrangedClip[
   })
 }
 
+export function subtitleInputKey(params: SequenceParams, arranged: ArrangedClip[]) {
+  if (params.instanceVersion !== 2) return legacySubtitleInputKey(params, arranged)
+  const old = JSON.parse(legacySubtitleInputKey(params, arranged))
+  return JSON.stringify({
+    version: 2,
+    ...old,
+    clips: old.clips.map((c: Record<string, unknown>, i: number) => ({
+      ...c,
+      source: subtitleSource(arranged[i]!, i),
+      sound: arranged[i]!.sound,
+    })),
+  })
+}
+
 export function subtitleTrackStale(params: SequenceParams, arranged: ArrangedClip[]) {
-  return (
-    !!params.subtitleTrack && params.subtitleTrack.inputKey !== subtitleInputKey(params, arranged)
-  )
+  const track = params.subtitleTrack
+  const current =
+    track?.keyVersion === 1 && track.legacySources
+      ? legacySubtitleInputKey(
+          params,
+          arranged.map((c) => ({
+            ...c,
+            source: c.clipInstanceId
+              ? (track.legacySources![c.clipInstanceId] ?? c.source)
+              : c.source,
+          })),
+        )
+      : subtitleInputKey(params, arranged)
+  return !!track && track.inputKey !== current
 }
 
 /** 创建字幕轨不调用平台；识别结果由显式识别入口提供，全部对白都参与对齐。 */
@@ -455,6 +610,7 @@ export function createSubtitleTrack(
     arranged.map((c) => c.more.map((m) => transcripts[m.assetId])),
   )
   return {
+    ...unmappedSubtitleEvidence(params.subtitleTrack),
     inputKey: subtitleInputKey(params, arranged),
     cues: timeline.clips.flatMap((clip, i) =>
       clip.cues.map((q, k) => ({
@@ -467,6 +623,95 @@ export function createSubtitleTrack(
       })),
     ),
   }
+}
+
+/** Explicit cue editing may promote a fresh migrated key, never a stale track. */
+export function commitSubtitleTrackEdit(
+  params: SequenceParams,
+  arranged: ArrangedClip[],
+  cues: SequenceSubtitleTrack['cues'],
+): SequenceSubtitleTrack {
+  if (subtitleTrackStale(params, arranged)) throw new Error('字幕已过期，不能直接沿用旧时间')
+  const sources = new Set(arranged.map(subtitleSource))
+  if (
+    new Set(cues.map((c) => c.id)).size !== cues.length ||
+    cues.some((c) => !sources.has(c.source))
+  )
+    throw new Error('字幕条目不属于当前剪辑实例')
+  return {
+    ...unmappedSubtitleEvidence(params.subtitleTrack),
+    inputKey: subtitleInputKey(params, arranged),
+    cues: cues.map((c) => ({ ...c })),
+  }
+}
+
+/** Preserve relative manual cues only for the same actual row contents after explicit layout edits. */
+export function retainInstanceSubtitleTrack(
+  before: SequenceParams,
+  oldRows: ArrangedClip[],
+  after: SequenceParams,
+  newRows: ArrangedClip[],
+): SequenceSubtitleTrack | undefined {
+  if (!before.subtitleTrack) return undefined
+  if (subtitleTrackStale(before, oldRows)) throw new Error('字幕已过期，不能直接沿用旧时间')
+  const byId = new Map(oldRows.map((r, i) => [subtitleSource(r, i), r]))
+  if (
+    newRows.some((row, i) => {
+      const old = byId.get(subtitleSource(row, i))
+      return !old || legacySubtitleInputKey(before, [old]) !== legacySubtitleInputKey(after, [row])
+    })
+  )
+    throw new Error('剪辑实际素材或时间已变化，请重新核对字幕')
+  const active = new Set(newRows.map(subtitleSource))
+  return {
+    ...unmappedSubtitleEvidence(before.subtitleTrack),
+    inputKey: subtitleInputKey(after, newRows),
+    cues: before.subtitleTrack.cues.filter((c) => active.has(c.source)).map((c) => ({ ...c })),
+  }
+}
+
+export function duplicateInstanceSubtitleTrack(
+  before: SequenceParams,
+  oldRows: ArrangedClip[],
+  after: SequenceParams,
+  newRows: ArrangedClip[],
+  fromId: string,
+  toId: string,
+): SequenceSubtitleTrack | undefined {
+  if (!before.subtitleTrack) return undefined
+  const original = oldRows.find((r, i) => subtitleSource(r, i) === fromId)
+  const added = newRows.find((r, i) => subtitleSource(r, i) === toId)
+  if (
+    !original ||
+    !added ||
+    fromId === toId ||
+    oldRows.some((r, i) => subtitleSource(r, i) === toId) ||
+    newRows.length !== oldRows.length + 1 ||
+    JSON.stringify([original.clip.assetId, original.in, original.out, original.speed]) !==
+      JSON.stringify([added.clip.assetId, added.in, added.out, added.speed])
+  )
+    throw new Error('新增实例不是原素材的明确副本')
+  const withoutAdded = newRows.filter((r, i) => subtitleSource(r, i) !== toId)
+  const retained = retainInstanceSubtitleTrack(before, oldRows, after, withoutAdded)!
+  return {
+    ...unmappedSubtitleEvidence(before.subtitleTrack),
+    inputKey: subtitleInputKey(after, newRows),
+    cues: [
+      ...retained.cues,
+      ...before.subtitleTrack.cues
+        .filter((c) => c.source === fromId)
+        .map((c, i) => ({ ...c, id: `${toId}:${c.id}:${i}`, source: toId })),
+    ],
+  }
+}
+
+function unmappedSubtitleEvidence(track: SequenceSubtitleTrack | undefined) {
+  return track?.unmappedCues?.length
+    ? {
+        unmappedCues: track.unmappedCues.map((c) => ({ ...c })),
+        ...(track.legacyTrack !== undefined ? { legacyTrack: track.legacyTrack } : {}),
+      }
+    : {}
 }
 
 /** 所有导出入口共用的门禁；绝不在导出时隐式调用付费识别。 */
@@ -568,6 +813,30 @@ export function sequenceSpec(
           volume: params.clipVolume * c.volume,
           ...(c.speed !== 1 && { speed: c.speed }),
           ...(transition && { transition }),
+          ...(c.source
+            ? {
+                provenance: {
+                  source: c.source,
+                  port: c.port ?? c.clip.sourcePort,
+                  edgeId: c.edgeId ?? c.clip.edgeId,
+                  clipInstanceId: c.clipInstanceId,
+                  segmentId: c.segment?.segmentId,
+                  narrative: c.narrative,
+                  origin: c.segment?.origin ?? c.clip.generationOrigin,
+                  selection:
+                    c.segment?.selection ??
+                    (c.clip.resultId && c.clip.runId && c.clip.sourceCanvasId
+                      ? {
+                          canvasId: c.clip.sourceCanvasId,
+                          nodeId: c.source,
+                          port: c.port ?? c.clip.sourcePort ?? 'video',
+                          resultId: c.clip.resultId,
+                          runId: c.clip.runId,
+                        }
+                      : undefined),
+                },
+              }
+            : {}),
         },
       ]
     }),
@@ -576,4 +845,42 @@ export function sequenceSpec(
     loudnorm: params.loudnorm || undefined,
     name,
   }
+}
+
+/** The same interval convention used by sequenceTimeline and compose. Includes every overlapping use. */
+export function sequenceSourceMap(spec: ComposeSpec): CompositionSource[] {
+  let at = 0
+  return spec.clips.flatMap((c, i) => {
+    const tr = i ? (c.transition ?? spec.transition) : undefined
+    if (overlapping(tr)) at -= tr!.duration
+    const start = at,
+      speed = c.speed ?? 1,
+      out = c.out ?? c.in
+    at += Math.max(0, out - c.in) / speed
+    return c.provenance
+      ? [
+          {
+            ...c.provenance,
+            assetId: c.asset.assetId,
+            sourceIn: c.in,
+            sourceOut: out,
+            speed,
+            start,
+            end: at,
+          },
+        ]
+      : []
+  })
+}
+
+export function sequenceSourcesAt<
+  T extends { start: number; end: number; sourceIn?: number; speed?: number },
+>(sources: readonly T[], time: number) {
+  return sources
+    .filter((s) => time >= s.start && time < s.end)
+    .map((s) => ({
+      ...s,
+      sourceTime:
+        s.sourceIn === undefined ? undefined : s.sourceIn + (time - s.start) * (s.speed ?? 1),
+    }))
 }

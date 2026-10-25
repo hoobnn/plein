@@ -372,7 +372,7 @@ export const corePlugin = definePlugin({
         'plein/style@1',
         'plein/effect@1',
         'plein/storyboard@1',
-        'plein/sequence@1',
+        'plein/sequence@2',
         'plein/animatic@1',
         'plein/stage@1',
       ],

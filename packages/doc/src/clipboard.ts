@@ -1,6 +1,7 @@
 import { createElements, ReadOnlyDocError, topLevel } from './commands'
 import { compareZ, type PleinDoc } from './doc'
 import { copyProduction } from './production'
+import { copySequenceParams, materializeSequenceV1 } from './sequence-instances'
 import { newId } from './ids'
 import { shotGroupOf, SHOT_GROUP_KEY } from './shotGroup'
 import { generateNKeysBetween } from 'fractional-indexing'
@@ -69,6 +70,7 @@ export function importElements(
   const parent = opts.parentId ? doc.worldRect(opts.parentId) : undefined
   const parentId = parent ? opts.parentId! : null
   const remap = new Map(data.elements.map((e) => [e.id, newId('el')]))
+  const edgeIds = new Map(data.edges.map((e) => [e.id, newId('edge')]))
   const roots: string[] = []
 
   doc.ydoc.transact(() => {
@@ -84,6 +86,23 @@ export function importElements(
         const group = shotGroupOf(e)
         return {
           ...rest,
+          ...(e.deliveries
+            ? { deliveries: e.deliveries.map((record) => ({ ...record, historical: true })) }
+            : {}),
+          ...(e.nodeType === 'plein/sequence'
+            ? {
+                nodeVersion: 2,
+                params: copySequenceParams(
+                  materializeSequenceV1(e.id, e.params ?? {}, data.edges, (id) =>
+                    data.elements.some((el) => el.id === id),
+                  ),
+                  remap,
+                  () => newId('clip'),
+                  opts.canvasId,
+                  edgeIds,
+                ),
+              }
+            : {}),
           ...(e.production
             ? { production: copyProduction(e.production, remap, opts.canvasId) }
             : {}),
@@ -125,7 +144,7 @@ export function importElements(
       const to = remap.get(e.to[0])
       if (!from || !to) continue
       const edge: Edge = {
-        id: newId('edge'),
+        id: edgeIds.get(e.id)!,
         from: [from, e.from[1]],
         to: [to, e.to[1]],
         ...(e.order ? { order: e.order } : {}),

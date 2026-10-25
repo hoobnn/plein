@@ -75,3 +75,68 @@ describe('envelopeAt', () => {
     expect(envelopeAt(undefined, 3)).toBe(1)
   })
 })
+
+describe('stable sequence instances', () => {
+  const sharedFile = 'a'.repeat(64)
+  const fixed = {
+    version: 1,
+    segmentId: 'shared',
+    asset: { assetId: sharedFile, kind: 'video' },
+    duration: 8,
+  }
+  const instance = (
+    id: string,
+    sound: 'native' | 'voice' | 'mix',
+    extra: Record<string, unknown> = {},
+  ) => ({
+    clipInstanceId: id,
+    source: 'fixed-view',
+    port: 'video',
+    segment: fixed,
+    in: 0,
+    out: 2,
+    sound,
+    ...extra,
+  })
+  it('keeps per-instance decoders through reorder, and replaces a decoder when that instance changes file', () => {
+    const params = sequenceNode.params.parse({
+      instanceVersion: 2,
+      clips: [instance('a', 'native'), instance('b', 'native', { in: 4, out: 6 })],
+    })
+    const rows = arrangeSequence(params, {}),
+      durations = { clips: [8, 8], dialogue: [undefined, undefined] }
+    const first = previewScene(rows, sequenceTimeline(params, rows, durations), params)
+    const reversed = [...rows].reverse()
+    const reordered = previewScene(reversed, sequenceTimeline(params, reversed, durations), params)
+    expect(first.clips.map((c) => c.key)).toEqual([...reordered.clips.map((c) => c.key)].reverse())
+    expect(new Set(first.clips.map((c) => c.key)).size).toBe(2)
+    const changed = rows.map((row, i) =>
+      i ? row : { ...row, clip: { ...row.clip, assetId: 'replacement-file' } },
+    )
+    const next = previewScene(changed, sequenceTimeline(params, changed, durations), params)
+    expect(next.clips[0]!.key).not.toBe(first.clips[0]!.key)
+    expect(next.clips[1]!.key).toBe(first.clips[1]!.key)
+  })
+  it('native does not claim dialogue, voice disables native and mix explicitly uses both; playback offsets remain independent', () => {
+    const params = sequenceNode.params.parse({
+      instanceVersion: 2,
+      clips: [
+        instance('native', 'native', { dialogue: 'line' }),
+        instance('voice', 'voice', { in: 4, out: 6, speed: 2, dialogue: 'line' }),
+        instance('mix', 'mix', { dialogue: 'line' }),
+      ],
+    })
+    const rows = arrangeSequence(params, { dialogue: [audio('line')] })
+    const timeline = sequenceTimeline(params, rows, { clips: [8, 8, 8], dialogue: [1, 1, 1] })
+    const result = previewScene(rows, timeline, params)
+    const originals = result.sounds.filter((s) => s.assetId === sharedFile)
+    expect(originals.map((s) => s.start)).toEqual([0, 3])
+    expect(result.sounds.filter((s) => s.assetId === 'line').map((s) => [s.start, s.rate])).toEqual(
+      [
+        [2, undefined],
+        [3, undefined],
+      ],
+    )
+    expect(result.clips[1]).toMatchObject({ in: 4, speed: 2, length: 1 })
+  })
+})

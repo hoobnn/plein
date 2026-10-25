@@ -1,4 +1,10 @@
-import { type DeliveryRecord, type NodeResult, type PleinDoc, SYSTEM_ORIGIN } from '@plein/doc'
+import {
+  type DeliveryRecord,
+  type NodeResult,
+  type PleinDoc,
+  SYSTEM_ORIGIN,
+  snapshotTypedDeliveries,
+} from '@plein/doc'
 import {
   ANIMATIC_TYPE,
   animaticNode,
@@ -9,6 +15,56 @@ import {
   sequenceTimeline,
 } from '@plein/nodes'
 import type { PortValue } from '@plein/plugin-sdk'
+import { z } from 'zod'
+
+const scope = z.object({
+  canvasId: z.string(),
+  boardId: z.string(),
+  shotId: z.string(),
+  historical: z.boolean().optional(),
+})
+const clipEvidence = z.object({
+  version: z.literal(1),
+  basis: z.literal('executed-sequence-spec'),
+  sources: z
+    .array(
+      z
+        .object({
+          source: z.string(),
+          clipInstanceId: z.string().optional(),
+          segmentId: z.string().optional(),
+          assetId: z.string().regex(/^[0-9a-f]{64}$/),
+          port: z.string().optional(),
+          edgeId: z.string().optional(),
+          narrative: scope.optional(),
+          origin: z
+            .object({
+              canvasId: z.string(),
+              nodeId: z.string(),
+              port: z.string(),
+              resultId: z.string(),
+              runId: z.string(),
+            })
+            .optional(),
+          selection: z
+            .object({
+              canvasId: z.string(),
+              nodeId: z.string(),
+              port: z.string(),
+              resultId: z.string(),
+              runId: z.string(),
+            })
+            .optional(),
+          sourceIn: z.number().finite().min(0),
+          sourceOut: z.number().finite().min(0),
+          speed: z.number().finite().min(0.25).max(4),
+          start: z.number().finite().min(0),
+          end: z.number().finite().min(0),
+        })
+        .refine((s) => s.end >= s.start && s.sourceOut >= s.sourceIn),
+    )
+    .max(10000),
+})
 
 type AssetInfo = { duration?: number; width?: number; height?: number }
 export type DeliveryOrigins = Record<string, { shot?: string; storyboard?: string }>
@@ -40,6 +96,7 @@ export function appendDeliveryRecord(
   frozenInputs: Record<string, PortValue[]>,
   info: (assetId: string) => AssetInfo | undefined,
   frozenOrigins?: DeliveryOrigins,
+  outputs?: Record<string, PortValue[]>,
 ) {
   const el = doc.get(nodeId)
   if (!el || !['plein/sequence', ANIMATIC_TYPE].includes(el.nodeType ?? '')) return
@@ -58,13 +115,16 @@ export function appendDeliveryRecord(
   })
   const durationKnown = draft || rows.every((r) => info(r.clip.assetId)?.duration !== undefined)
   const prior = el.deliveries ?? []
-  const origins = frozenOrigins ?? freezeDeliveryOrigins(doc, frozenInputs)
+  // v2 may only use the binding frozen before execution, never today's source metadata.
+  const origins =
+    frozenOrigins ??
+    (!draft && params.instanceVersion === 2 ? {} : freezeDeliveryOrigins(doc, frozenInputs))
   let version = prior.length
   const fresh = results.flatMap((result): DeliveryRecord[] => {
     if (result.value.type !== 'video' || prior.some((r) => r.resultId === result.id)) return []
     const meta = info(result.value.assetId)
     const size = sequenceSize(params)
-    const sources = (durationKnown ? rows : []).flatMap((row, i) => {
+    const fallbackSources = (durationKnown ? rows : []).flatMap((row, i) => {
       const clip = timeline.clips[i]!
       if (!row.source || clip.length <= 0) return []
       const source = origins[row.source]
@@ -77,9 +137,60 @@ export function appendDeliveryRecord(
         },
       ]
     })
+    const outputAssetId = result.value.assetId
+    const output = outputs?.[result.port]?.find(
+      (value) => value.type === 'video' && value.assetId === outputAssetId,
+    )
+    const actualClips = clipEvidence.safeParse(output?.clipEvidence)
+    const instanceExport = !draft && params.instanceVersion === 2
+    const executedSources = actualClips.success
+      ? actualClips.data.sources.map((source) => {
+          const row = params.clips.find((c) => c.clipInstanceId === source.clipInstanceId)
+          // Legacy live links predate explicit narrative mappings. Preserve only their exact
+          // pre-run binding; fixed segments and explicit/history mappings never inherit it.
+          const legacyLive =
+            instanceExport &&
+            row &&
+            !row.segment &&
+            !row.narrative &&
+            !source.segmentId &&
+            !source.narrative &&
+            row.source === source.source &&
+            row.port === source.port &&
+            row.edgeId === source.edgeId &&
+            frozenInputs.clips?.some(
+              (value) =>
+                value.type === 'video' &&
+                value.assetId === source.assetId &&
+                value.source === source.source &&
+                value.sourcePort === source.port &&
+                value.edgeId === source.edgeId,
+            )
+              ? frozenOrigins?.[source.source]
+              : undefined
+          const explicit = source.narrative && !source.narrative.historical
+          return {
+            source: {
+              ...source,
+              ...(explicit
+                ? { shotId: source.narrative!.shotId }
+                : legacyLive?.shot
+                  ? { shotId: legacyLive.shot }
+                  : {}),
+            },
+            boardId: explicit ? source.narrative!.boardId : legacyLive?.storyboard,
+          }
+        })
+      : []
+    const sources = instanceExport ? executedSources.map((s) => s.source) : fallbackSources
+    const boards = [...new Set(executedSources.flatMap((s) => (s.boardId ? [s.boardId] : [])))]
     const boardId = draft
       ? draftBoard
-      : rows.map((r) => origins[r.source ?? '']?.storyboard).find(Boolean)
+      : instanceExport
+        ? actualClips.success && boards.length === 1
+          ? boards[0]
+          : undefined
+        : rows.map((r) => origins[r.source ?? '']?.storyboard).find(Boolean)
     return [
       {
         id: `delivery_${result.id}`,
@@ -100,7 +211,7 @@ export function appendDeliveryRecord(
   })
   if (fresh.length)
     doc.ydoc.transact(
-      () => doc.mutable(nodeId)?.set('deliveries', [...fresh, ...prior]),
+      () => doc.mutable(nodeId)?.set('deliveries', snapshotTypedDeliveries([...fresh, ...prior])),
       SYSTEM_ORIGIN,
     )
 }

@@ -275,6 +275,11 @@ export class PluginHost {
     return this.assets.get(ownerId, assetId) ?? undefined
   }
 
+  /** Local integrity check without materializing an entire media file in memory. */
+  verifyAsset(ownerId: string, assetId: string) {
+    return this.assets.verifyOriginal(ownerId, assetId)
+  }
+
   constructor(
     readonly registry: PluginRegistry,
     readonly configs: ProviderConfigStore,

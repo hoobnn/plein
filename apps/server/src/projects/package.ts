@@ -18,6 +18,9 @@ import {
   createContinuityMap,
   readContinuity,
   continuityAssets,
+  sequenceSegmentAssets,
+  remapSequenceCanvasScopes,
+  snapshotTypedDeliveries,
   adoptedResultIds,
   type DeliveryRecord,
   type NodeResult,
@@ -235,6 +238,8 @@ async function planExport(
           const where = `${row.title} / ${el.name ?? el.nodeType ?? el.kind}`
           const m = doc.mutable(el.id)!
           if (el.assetId) refAsset(el.assetId, where, true)
+          for (const assetId of sequenceSegmentAssets(el))
+            refAsset(assetId, `${where} / 固定剪辑素材`, true)
           for (const assetId of continuityAssets(el.production?.continuity))
             refAsset(assetId, `${where} / 历史观察证据`, true)
           for (const subject of el.production?.continuity?.subjects ?? [])
@@ -982,6 +987,13 @@ export function remapDoc(data: Uint8Array, map: ReadonlyMap<string, string>): Ui
         const params = m.get('params')
         if (params instanceof Y.Map) {
           for (const [k, v] of params.entries()) {
+            if (m.get('nodeType') === 'plein/sequence' && params.get('instanceVersion') === 2) {
+              if (k === 'clips' && Array.isArray(v)) {
+                params.set(k, remapSequenceCanvasScopes(params.toJSON(), map).clips)
+                continue
+              }
+              if (['legacySourceSettings', 'subtitleTrack'].includes(k)) continue
+            }
             const next = remapValue(v, map)
             if (next !== v) params.set(k, next)
           }
@@ -990,9 +1002,16 @@ export function remapDoc(data: Uint8Array, map: ReadonlyMap<string, string>): Ui
         const deliveries = m.get('deliveries')
         if (Array.isArray(deliveries)) {
           const next = (deliveries as DeliveryRecord[]).map((r) =>
-            r && typeof r === 'object' && map.has(r.runId) ? { ...r, runId: map.get(r.runId)! } : r,
+            r && typeof r === 'object'
+              ? {
+                  ...r,
+                  historical: true,
+                  ...(map.has(r.runId) ? { runId: map.get(r.runId)! } : {}),
+                }
+              : r,
           )
-          if (next.some((r, i) => r !== deliveries[i])) m.set('deliveries', next)
+          if (next.some((r, i) => r !== deliveries[i]))
+            m.set('deliveries', snapshotTypedDeliveries(next))
         }
         if (Array.isArray(results)) {
           const next = (results as NodeResult[]).map((r) =>

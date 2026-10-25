@@ -5,12 +5,17 @@ import {
   type CanvasElement,
   type DeliveryNote,
   type DeliveryRecord,
+  type DeliverySource,
+  sequenceInstancesOf,
 } from '@plein/doc'
+import { sequenceSourcesAt } from '@plein/nodes'
 import { type RefObject, useEffect, useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { AssetDownloadButton } from '../../shell/AssetDownloadButton'
 import { useCanvas } from '../../stores/canvas'
+import { useSession } from '../../stores/session'
 import { CreativeReviewForm } from '../storyboard/CreativeReviewForm'
+import { sequenceTupleLabel } from './instanceModel'
 
 const timecode = (s: number) =>
   `${Math.floor(s / 60)
@@ -31,9 +36,10 @@ const recordIdentity = (record: DeliveryRecord) =>
     record.duration,
     record.boardId,
     record.sources,
+    record.historical,
   ])
 const noteIdentity = (note: DeliveryNote) =>
-  JSON.stringify([note.id, note.time, note.text, note.source, note.shotId])
+  JSON.stringify([note.id, note.time, note.text, note.source, note.shotId, note.clipInstanceId])
 const NO_RECORDS: DeliveryRecord[] = []
 
 /** 会话归属于序列编辑器，切换视图不会丢失尚未提交的审阅内容。 */
@@ -65,7 +71,21 @@ export function DeliveryReview({
   const video = useRef<HTMLVideoElement>(null)
   const text = record ? (drafts[record.id] ?? '') : ''
   const [error, setError] = useState('')
+  const principal = useSession((s) => s.info?.principal)
+  const [element] = useState(() => engine.doc.elementMaps.get(node.id))
+  const readonly =
+    engine.doc.readOnly ||
+    !!node.locked ||
+    !!record?.historical ||
+    !principal ||
+    principal.role === 'viewer'
+  const [filmTime, setFilmTime] = useState(0)
+  const [noteSource, setNoteSource] = useState('')
   const canvasId = useCanvas((s) => s.canvasId)
+  useEffect(() => {
+    setFilmTime(0)
+    setNoteSource('')
+  }, [recordId])
   useEffect(() => {
     if (!records.length || records.some((r) => r.id === selected)) return
     setSelected(records[0]!.id)
@@ -95,11 +115,17 @@ export function DeliveryReview({
       setError('交付来源或版本已移除，本次操作未执行')
       return null
     }
+    if (writable && latest.historical) {
+      setError('历史范围的意见与确认只读，请重新导出当前版本后审阅')
+      return null
+    }
     if (recordIdentity(latest) !== recordIdentity(record)) {
       setError('版本内容已变化，本次操作未执行；请核对当前实际 MP4 后重试')
       return null
     }
-    if (writable && engine.doc.readOnly) {
+    const actor = useSession.getState().info?.principal
+    if (engine.doc.elementMaps.get(node.id) !== element || engine.doc.ydoc.isDestroyed) return null
+    if (writable && (engine.doc.readOnly || current.locked || !actor || actor.role === 'viewer')) {
       setError('画布已变为只读，本次操作未执行；意见草稿已保留')
       return null
     }
@@ -162,7 +188,10 @@ export function DeliveryReview({
     const time = Math.max(0, Math.min(record.duration || Infinity, player.currentTime))
     // 片尾暂停仍属于最后一帧；中间切点继续使用左闭右开，关联下一镜。
     const at = time === record.duration ? Math.max(0, time - 0.001) : time
-    const source = record.sources.find((s) => at >= s.start && at < s.end)
+    const covering = sequenceSourcesAt(record.sources, at)
+    const source =
+      covering.length === 1 ? covering[0] : covering.find((s) => s.clipInstanceId === noteSource)
+    if (noteSource && !source) return setError('所选意见来源已不覆盖此时间，请重新选择具体实例')
     const saved = save((latest) => ({
       notes: [
         ...latest.notes,
@@ -173,6 +202,7 @@ export function DeliveryReview({
           resolved: false,
           source: source?.source,
           shotId: source?.shotId,
+          clipInstanceId: source?.clipInstanceId,
         },
       ],
     }))
@@ -181,7 +211,26 @@ export function DeliveryReview({
         current[record.id] === text ? { ...current, [record.id]: '' } : current,
       )
   }
+  const locateInstance = (source: DeliverySource) => {
+    const latest = readTarget()
+    if (!latest || latest.historical) return
+    if (source.clipInstanceId) {
+      const current = engine.doc.get(node.id)
+      if (
+        !current ||
+        !sequenceInstancesOf(current).some((c) => c.clipInstanceId === source.clipInstanceId)
+      ) {
+        setError('此历史实例已不在当前剪辑中；保留原文件、源区间和生成出处，不按名称重新绑定')
+        return
+      }
+      useCanvas.getState().openSequence(node.id, source.clipInstanceId)
+      return
+    }
+    locate(source.source)
+  }
   const locate = (source: string | undefined) => {
+    const latest = readTarget()
+    if (!latest || latest.historical) return
     if (!source || !engine.doc.has(source)) {
       setError('此镜头节点已不在画布中，可按保留的镜头编号核对历史版本')
       return
@@ -198,12 +247,18 @@ export function DeliveryReview({
       aria-label="成片回看与交付"
     >
       <div className="min-w-0 flex-none lg:flex-1">
+        {error && (
+          <p role="alert" className="mb-3 text-sm text-danger">
+            {error}
+          </p>
+        )}
         <DeliveryVideo
           key={identity}
           video={video}
           src={assetUrls.original(record.assetId)}
           identity={identity}
           positions={positions}
+          onTime={setFilmTime}
         />
         <p className="mt-2 text-xs text-ink-subtle">
           实际导出 · {record.kind === 'animatic' ? '样片 / 草稿' : '成片'} · {record.version} ·{' '}
@@ -214,7 +269,7 @@ export function DeliveryReview({
           产物 {record.assetId.slice(0, 12)} · 结果 {record.resultId}
         </p>
         <div className="mt-3">
-          {currentResult(node)?.id === record.resultId && (
+          {!record.historical && currentResult(node)?.id === record.resultId && (
             <CreativeReviewForm doc={engine.doc} node={node} />
           )}
         </div>
@@ -234,20 +289,84 @@ export function DeliveryReview({
           >
             {records.map((r) => (
               <option key={r.id} value={r.id}>
-                {r.version} · {r.kind === 'animatic' ? '样片草稿' : '成片'} ·{' '}
+                {r.version} · {r.historical ? '历史范围 · ' : ''}
+                {r.kind === 'animatic' ? '样片草稿' : '成片'} ·{' '}
                 {new Date(r.createdAt).toLocaleTimeString()}
               </option>
             ))}
           </select>
         </label>
-        {error && (
-          <p role="alert" className="text-xs text-danger">
-            {error}
+        <p className="text-sm" aria-label="交付确认状态">
+          {record.historical
+            ? record.confirmedAt
+              ? '历史范围曾人工确认此文件'
+              : '历史范围未人工确认此文件'
+            : record.confirmedAt
+              ? '已人工确认此版本'
+              : '待人工确认'}{' '}
+          · {unresolved} 条未解决意见
+        </p>
+        {record.historical && (
+          <p role="status" className="ui-help">
+            这是复制或恢复保留的历史范围，原意见与出处只读。请导出当前版本后另行审阅。
           </p>
         )}
-        <p className="text-sm">
-          {record.confirmedAt ? '已人工确认此版本' : '待人工确认'} · {unresolved} 条未解决意见
-        </p>
+        <section
+          className="space-y-2 rounded border border-line p-2 text-xs"
+          aria-label="当前成片时间全部来源"
+        >
+          <h3>成片 {filmTime.toFixed(3)} 秒的全部来源</h3>
+          {sequenceSourcesAt(
+            record.sources,
+            filmTime === record.duration ? Math.max(0, filmTime - 0.001) : filmTime,
+          ).map((source, index) => (
+            <div
+              key={source.clipInstanceId ?? `${source.source}:${index}`}
+              data-clip-instance={source.clipInstanceId}
+              data-source-time={source.sourceTime}
+            >
+              <p className="break-all">
+                实例 {source.clipInstanceId ?? '旧记录未保存实例身份'} · 段{' '}
+                {source.segmentId ?? '未知'} · 源时刻{' '}
+                {source.sourceTime === undefined ? '未知' : `${source.sourceTime.toFixed(3)} 秒`} ·
+                speed {source.speed ?? 1}
+              </p>
+              <p className="break-all">
+                文件 {source.assetId ?? '旧记录未保存'} · 端口 {source.port ?? '未知'}
+              </p>
+              <p className="break-all">原始生成出处：{sequenceTupleLabel(source.origin)}</p>
+              <p className="break-all">本地选定候选：{sequenceTupleLabel(source.selection)}</p>
+              {!record.historical && (
+                <button type="button" className="underline" onClick={() => locateInstance(source)}>
+                  定位此具体实例
+                </button>
+              )}
+            </div>
+          ))}
+          {sequenceSourcesAt(record.sources, filmTime).length > 1 && (
+            <p>转场覆盖多个实例；意见可指定一个实例，或保留为整片意见。</p>
+          )}
+        </section>
+        {sequenceSourcesAt(record.sources, filmTime).length > 1 && (
+          <label className="block text-xs">
+            意见归属实例
+            <select
+              className="ui-input w-full"
+              aria-label="意见归属实例"
+              value={noteSource}
+              onChange={(event) => setNoteSource(event.target.value)}
+            >
+              <option value="">整片意见（不猜第一来源）</option>
+              {sequenceSourcesAt(record.sources, filmTime)
+                .filter((s) => s.clipInstanceId)
+                .map((s) => (
+                  <option key={s.clipInstanceId} value={s.clipInstanceId}>
+                    {s.clipInstanceId} · 源 {s.sourceTime?.toFixed(3)} 秒
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
         <AssetDownloadButton
           engine={engine}
           assetId={record.assetId}
@@ -261,15 +380,16 @@ export function DeliveryReview({
           maxLength={4000}
           value={text}
           onChange={(e) => {
+            if (!readTarget(true)) return
             const value = e.target.value
             setDrafts((current) => ({ ...current, [record.id]: value }))
           }}
-          disabled={engine.doc.readOnly}
+          disabled={readonly}
         />
         <button
           type="button"
           className="ui-btn ui-btn-secondary"
-          disabled={!text.trim() || engine.doc.readOnly}
+          disabled={!text.trim() || readonly}
           onClick={add}
         >
           在当前时间添加意见
@@ -295,18 +415,26 @@ export function DeliveryReview({
                 <input
                   type="checkbox"
                   checked={note.resolved}
-                  disabled={engine.doc.readOnly}
+                  disabled={readonly}
                   onChange={(e) => editNote(note, e.target.checked)}
                 />{' '}
                 已解决
               </label>
-              {note.source && (
+              {!record.historical && (note.source || note.clipInstanceId) && (
                 <button
                   type="button"
                   className="underline"
                   onClick={() => {
                     const latest = readNote(note)
-                    if (latest) locate(latest.source)
+                    if (latest) {
+                      const source = record.sources.find((s) =>
+                        latest.clipInstanceId
+                          ? s.clipInstanceId === latest.clipInstanceId
+                          : s.source === latest.source,
+                      )
+                      if (source) locateInstance(source)
+                      else setError('此意见未保存可核对的实例出处')
+                    }
                   }}
                 >
                   定位镜头返工
@@ -315,7 +443,7 @@ export function DeliveryReview({
               <button
                 type="button"
                 className="text-ink-subtle"
-                disabled={engine.doc.readOnly}
+                disabled={readonly}
                 onClick={() => editNote(note)}
               >
                 删除
@@ -326,7 +454,7 @@ export function DeliveryReview({
         <button
           type="button"
           className="ui-btn ui-btn-primary"
-          disabled={unresolved > 0 || engine.doc.readOnly}
+          disabled={unresolved > 0 || readonly}
           onClick={() => {
             const confirm = !record.confirmedAt
             save((latest) => {
@@ -336,14 +464,18 @@ export function DeliveryReview({
             })
           }}
         >
-          {record.confirmedAt
-            ? '撤回此版确认'
-            : record.kind === 'animatic'
-              ? '确认此版草稿已审阅'
-              : '确认此版本可交付'}
+          {record.historical
+            ? '历史范围确认只读'
+            : record.confirmedAt
+              ? '撤回此版确认'
+              : record.kind === 'animatic'
+                ? '确认此版草稿已审阅'
+                : '确认此版本可交付'}
         </button>
         <p className="ui-help">
-          确认只绑定这份实际 MP4。重新导出创建新版本，不继承旧确认；新增或修改意见会撤回确认。
+          {record.historical
+            ? '保留原文件、原始出处和曾有的人工结论，当前范围须重新导出后审阅。'
+            : '确认只绑定这份实际 MP4。重新导出创建新版本，不继承旧确认；新增或修改意见会撤回确认。'}
         </p>
       </aside>
     </div>
@@ -355,6 +487,7 @@ interface DeliveryVideoProps {
   video: RefObject<HTMLVideoElement | null>
   identity: string
   positions: Map<string, number>
+  onTime(time: number): void
 }
 
 function DeliveryVideo(props: DeliveryVideoProps) {
@@ -368,6 +501,7 @@ function DeliveryVideoAttempt({
   video,
   identity,
   positions,
+  onTime,
   onRetry,
 }: DeliveryVideoProps & {
   onRetry(): void
@@ -380,6 +514,8 @@ function DeliveryVideoAttempt({
       if (element.readyState >= 1 && Number.isFinite(element.currentTime))
         positions.set(identity, element.currentTime)
       element.pause()
+      element.removeAttribute('src')
+      element.load()
     }
   }, [video, identity, positions])
   return (
@@ -389,11 +525,14 @@ function DeliveryVideoAttempt({
         ref={video}
         src={src}
         controls
+        onTimeUpdate={(event) => onTime(event.currentTarget.currentTime)}
+        onSeeked={(event) => onTime(event.currentTarget.currentTime)}
         onError={() => setFailed(true)}
         onLoadedMetadata={(e) => {
           const at = positions.get(identity)
           if (at !== undefined && Number.isFinite(e.currentTarget.duration))
             e.currentTarget.currentTime = Math.max(0, Math.min(at, e.currentTarget.duration))
+          onTime(e.currentTarget.currentTime)
         }}
         className="max-h-[65vh] w-full bg-black"
         aria-label="实际导出 MP4"

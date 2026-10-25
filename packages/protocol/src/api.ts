@@ -103,6 +103,9 @@ export const API = {
     `/api/canvases/${encodeURIComponent(canvasId)}/jobs/${encodeURIComponent(jobId)}/recover`,
   /** 画布最近的运行记录，返回 JobList */
   canvasJobs: (canvasId: string) => `/api/canvases/${encodeURIComponent(canvasId)}/jobs`,
+  /** 按精确作业 ID 读取历史记录，返回 JobInfo；不受最近任务数量限制 */
+  canvasJob: (canvasId: string, jobId: string) =>
+    `/api/canvases/${encodeURIComponent(canvasId)}/jobs/${encodeURIComponent(jobId)}`,
   /** Yjs 同步（y-websocket 协议），房间名为画布 id */
   sync: '/sync',
   /** 本机智能体是否可用，返回 AgentStatus */

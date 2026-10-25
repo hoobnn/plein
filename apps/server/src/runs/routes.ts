@@ -234,6 +234,15 @@ export function runRoutes(db: DB, runs: NodeRuns) {
       if (!ownsCanvas(db, c.var.principal.id, canvas)) return c.json(notFound, 404)
       return c.json(runs.list(canvas) satisfies JobList)
     })
+    .get('/api/canvases/:canvas/jobs/:job', (c) => {
+      const { canvas, job } = c.req.param()
+      const owner = c.var.principal.id
+      const missing = { error: 'not_found', message: '任务不存在' }
+      if (!ownsCanvas(db, owner, canvas)) return c.json(missing, 404)
+      const row = runs.store.get(job)
+      if (!row || row.owner_id !== owner || row.canvas_id !== canvas) return c.json(missing, 404)
+      return c.json(runs.jobInfo(row) satisfies JobInfo)
+    })
     .post('/api/canvases/:canvas/jobs/latest', async (c) => {
       const canvas = c.req.param('canvas')
       if (!ownsCanvas(db, c.var.principal.id, canvas)) return c.json(notFound, 404)

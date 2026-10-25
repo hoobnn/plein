@@ -45,6 +45,7 @@ interface CanvasStore extends EngineState {
   storyboard: string | null
   /** 打开编辑器的序列节点 */
   sequence: string | null
+  sequenceFocus: { sequenceId: string; clipInstanceId: string; requestId: number } | null
   /** 打开编辑器的 3D 构图节点 */
   stage: string | null
   /** 全屏查看的图片 / 视频 */
@@ -76,7 +77,8 @@ interface CanvasStore extends EngineState {
   setCanvasId(id: string | null): void
   setMenu(menu: CanvasMenuEvent | null): void
   openStoryboard(id: string | null): void
-  openSequence(id: string | null): void
+  openSequence(id: string | null, clipInstanceId?: string): void
+  consumeSequenceFocus(requestId: number): void
   openStage(id: string | null): void
   view(v: CanvasStore['viewer']): void
   toggleShortcuts(open?: boolean): void
@@ -97,6 +99,7 @@ const initial: EngineState = {
 }
 
 let noticeTimer: ReturnType<typeof setTimeout> | undefined
+let sequenceFocusRequest = 0
 
 export const useCanvas = create<CanvasStore>((set, get) => ({
   ...initial,
@@ -113,6 +116,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
   menu: null,
   storyboard: null,
   sequence: null,
+  sequenceFocus: null,
   stage: null,
   viewer: null,
   shortcuts: false,
@@ -146,6 +150,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
         menu: null,
         storyboard: null,
         sequence: null,
+        sequenceFocus: null,
         stage: null,
         viewer: null,
         arranged: null,
@@ -161,7 +166,17 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
   setCanvasId: (canvasId) => set({ canvasId }),
   setMenu: (menu) => set({ menu }),
   openStoryboard: (storyboard) => set({ storyboard }),
-  openSequence: (sequence) => set({ sequence }),
+  openSequence: (sequence, clipInstanceId) =>
+    set({
+      sequence,
+      sequenceFocus:
+        sequence && clipInstanceId
+          ? { sequenceId: sequence, clipInstanceId, requestId: ++sequenceFocusRequest }
+          : null,
+    }),
+  consumeSequenceFocus: (requestId) => {
+    if (get().sequenceFocus?.requestId === requestId) set({ sequenceFocus: null })
+  },
   openStage: (stage) => set({ stage }),
   view: (viewer) => set({ viewer }),
   toggleShortcuts: (open) => set((s) => ({ shortcuts: open ?? !s.shortcuts })),

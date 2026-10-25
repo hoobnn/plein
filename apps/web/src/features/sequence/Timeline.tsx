@@ -788,6 +788,7 @@ function ClipTrack({
               aria-disabled={!it.timingReady || undefined}
               aria-pressed={selected === it.key}
               className="seq-clip"
+              data-clip-instance={it.key}
               data-selected={selected === it.key || undefined}
               data-pending={it.pending || undefined}
               data-moving={moving || undefined}

@@ -4,6 +4,7 @@ import {
   expandedNodes,
   planDiffs,
   shotsOf,
+  shotSegmentMapping,
   type ShotSource,
 } from '@plein/capabilities'
 import { createDoc, currentResult, type CanvasElement, type PleinDoc } from '@plein/doc'
@@ -21,11 +22,15 @@ import * as Y from 'yjs'
 import { NodeRunError } from '../plugins/host'
 import { batchSourceKey, type JobExpect } from './batch'
 import { mentionEdges } from './mentions'
-import { type NodeRuns, runGraph } from './runs'
+import { type NodeRuns, type VerifiedSequenceMedia, runGraph, executionEdges } from './runs'
 
 const TTL = 10 * 60_000
 const digest = (value: unknown) => createHash('sha256').update(stableStringify(value)).digest('hex')
 const sourceOf = (el: CanvasElement) => el.params?.source as ShotSource | undefined
+const assertWritable = (doc: PleinDoc) => {
+  if (doc.readOnly)
+    throw new NodeRunError('invalid_input', '文档版本高于当前客户端，只能只读打开，不能生成')
+}
 const revision = (doc: PleinDoc) =>
   digest(
     [...doc.elements()]
@@ -52,10 +57,36 @@ interface BuiltPlan {
   items: Array<{ nodeId: string; input: PreparedInput; expect: JobExpect }>
 }
 
+const shared = new WeakMap<NodeRuns, StoryboardBatches>()
+
+/** HTTP 与 Agent 使用同一份短期清单；服务重启后令牌自然失效。 */
+export function storyboardBatchesOf(runs: NodeRuns): StoryboardBatches {
+  let batches = shared.get(runs)
+  if (!batches) {
+    batches = new StoryboardBatches(runs)
+    shared.set(runs, batches)
+  }
+  return batches
+}
+
 /** 只读预检，确认时重算；批准输入先持久化，再交给既有任务调度器。 */
 export class StoryboardBatches {
   private plans = new Map<string, StoredPlan>()
   constructor(private runs: NodeRuns) {}
+
+  get(canvasId: string, sourceId: string, ownerId: string, token: string): StoryboardBatchPlan {
+    const stored = this.plans.get(token)
+    if (
+      !stored ||
+      stored.ownerId !== ownerId ||
+      stored.canvasId !== canvasId ||
+      stored.plan.sourceId !== sourceId ||
+      stored.plan.expiresAt <= Date.now()
+    )
+      throw new NodeRunError('invalid_input', '清单已过期或服务已重启，请重新检查')
+    this.runs.rooms.withDoc(canvasId, assertWritable)
+    return structuredClone(stored.plan)
+  }
 
   async preview(
     canvasId: string,
@@ -72,25 +103,26 @@ export class StoryboardBatches {
     sourceId: string,
     ownerId: string,
     token: string,
+    assertOpen?: () => void,
   ): Promise<{ started: GroupRunStarted } | { changed: StoryboardBatchPlan }> {
-    const stored = this.plans.get(token)
-    if (
-      !stored ||
-      stored.ownerId !== ownerId ||
-      stored.canvasId !== canvasId ||
-      stored.plan.sourceId !== sourceId ||
-      stored.plan.expiresAt <= Date.now()
-    )
-      throw new NodeRunError('invalid_input', '清单已过期或服务已重启，请重新检查')
+    assertOpen?.()
+    this.get(canvasId, sourceId, ownerId, token)
+    const stored = this.plans.get(token)!
     const built = await this.build(canvasId, sourceId, ownerId, stored.plan.request)
+    assertOpen?.()
     // 同一令牌并发确认只能成功一次；重算期间它可能已被另一个请求消费。
     if (this.plans.get(token) !== stored)
       throw new NodeRunError('busy', '这份清单已经提交，请检查原任务')
+    if (stored.plan.expiresAt <= Date.now()) {
+      this.plans.delete(token)
+      throw new NodeRunError('invalid_input', '清单已过期，请重新检查')
+    }
+    const unchanged = this.runs.rooms.withDoc(canvasId, (doc) => {
+      assertWritable(doc)
+      return revision(doc) === built.revision
+    })
     this.plans.delete(token)
-    if (
-      built.signature !== stored.signature ||
-      !this.runs.rooms.withDoc(canvasId, (doc) => revision(doc) === built.revision)
-    )
+    if (built.signature !== stored.signature || !unchanged)
       return { changed: this.remember(canvasId, ownerId, built) }
     return { started: this.runs.runReviewedBatch(canvasId, sourceId, ownerId, built.items) }
   }
@@ -117,6 +149,8 @@ export class StoryboardBatches {
     const doc = createDoc(snapshot)
     const before = revision(live)
     try {
+      assertWritable(live)
+      assertWritable(doc)
       const board = doc.get(sourceId)
       if (board?.nodeType !== STORYBOARD_TYPE) throw new NodeRunError('not_found', '分镜表不存在')
       const request = { ...body, shotIds: [...new Set(body.shotIds)] }
@@ -127,6 +161,20 @@ export class StoryboardBatches {
       const changes = planDiffs(doc, sourceId)
       const rows: StoryboardBatchRow[] = []
       const direct = new Set<string>()
+      const selectedMappings = new Map<string, ReturnType<typeof shotSegmentMapping>>()
+      if (request.role === 'video' || request.role === 'speech' || request.sequenceId)
+        for (const shotId of request.shotIds)
+          selectedMappings.set(
+            shotId,
+            shotSegmentMapping(doc, {
+              canvasId,
+              boardId: sourceId,
+              shotId,
+              sequenceId: request.sequenceId,
+            }),
+          )
+      const checkedMedia: VerifiedSequenceMedia = new Map()
+      const selectedAudio: NonNullable<StoryboardBatchRow['mapping']>['audioSources'] = []
       const add = (el: CanvasElement, shotId?: string, prerequisite = false) => {
         if (rows.some((row) => row.nodeId === el.id)) return
         const shot = shotId ? shots.get(shotId) : undefined
@@ -143,9 +191,140 @@ export class StoryboardBatches {
       }
       for (const shotId of request.shotIds) {
         const shot = shots.get(shotId)!
-        const nodes = activeShotNodes(shot, groups.get(shotId) ?? []).filter(
+        let nodes = activeShotNodes(shot, groups.get(shotId) ?? []).filter(
           (el) => sourceOf(el)?.role === request.role,
         )
+        if (request.role === 'video' || request.role === 'speech' || request.sequenceId) {
+          const mapping = selectedMappings.get(shotId)!
+          const details: StoryboardBatchRow['mapping'] = mapping.sequenceId
+            ? {
+                sequenceId: mapping.sequenceId,
+                instances: mapping.instances.map((row) => ({
+                  clipInstanceId: row.clipInstanceId,
+                  source: row.source,
+                  port: row.port,
+                  ...(row.segment
+                    ? { segmentId: row.segment.segmentId, assetId: row.segment.asset.assetId }
+                    : {}),
+                  in: row.in,
+                  ...(row.out === undefined ? {} : { out: row.out }),
+                  sound: row.sound,
+                })),
+                users: mapping.users,
+              }
+            : undefined
+          const mappedRow = (action: StoryboardBatchRow['action'], reason: string) =>
+            rows.push({
+              key: `${shotId}/${request.role}/mapping`,
+              shotId,
+              shotNo: shot.no,
+              name: `镜头 ${shot.no}`,
+              prerequisite: false,
+              action,
+              reason,
+              calls: 0,
+              ...(details ? { mapping: details } : {}),
+            })
+          if (mapping.problem) {
+            mappedRow('blocked', mapping.problem)
+            continue
+          }
+          const fixed = mapping.instances.filter((row) => row.segment)
+          if (fixed.length && mapping.sequenceId) {
+            try {
+              await this.runs.verifySequenceAssets(
+                doc,
+                mapping.sequenceId,
+                ownerId,
+                new AbortController().signal,
+                new Set(mapping.instances.map((row) => row.clipInstanceId)),
+                checkedMedia,
+              )
+            } catch (error) {
+              mappedRow('blocked', `固定素材核查失败：${(error as Error).message}`)
+              continue
+            }
+          }
+          const voiceSources = new Set(
+            mapping.instances
+              .filter((row) => row.sound === 'voice' || row.sound === 'mix')
+              .flatMap((row) => [row.dialogue, ...(row.more ?? [])])
+              .filter((id): id is string => !!id),
+          )
+          if (mapping.sequenceId && voiceSources.size) {
+            try {
+              const pending = new Set(
+                activeShotNodes(shot, groups.get(shotId) ?? [])
+                  .filter((node) => sourceOf(node)?.role === 'speech')
+                  .map((node) => node.id),
+              )
+              const refs = await this.runs.verifySequenceAudio(
+                doc,
+                mapping.sequenceId,
+                voiceSources,
+                ownerId,
+                new AbortController().signal,
+                pending,
+                checkedMedia,
+              )
+              selectedAudio.push(...refs)
+              if (details) details.audioSources = refs
+            } catch (error) {
+              mappedRow('blocked', `声音素材核查失败：${(error as Error).message}`)
+              continue
+            }
+          }
+          if (request.role === 'video' && fixed.length) {
+            if (!request.reuseExisting) {
+              mappedRow(
+                'blocked',
+                '所选镜头使用固定共享段；先明确解除所选绑定或建立独立源。实际使用者见实例定位，不重拍原共享节点',
+              )
+              continue
+            }
+            mappedRow('reuse', '沿用该序列明确固定的文件与源区间；零模型调用，不补建独立视频节点')
+            if (fixed.length === mapping.instances.length) continue
+            const live = new Set(
+              mapping.instances.filter((row) => !row.segment).map((row) => row.source),
+            )
+            nodes = nodes.filter((node) => live.has(node.id))
+          }
+          if (
+            request.role === 'speech' &&
+            mapping.instances.length &&
+            !mapping.instances.some((row) => row.sound === 'legacy')
+          ) {
+            const voice = mapping.instances.filter(
+              (row) => row.sound === 'voice' || row.sound === 'mix',
+            )
+            if (!voice.length) {
+              mappedRow('skip', '所选实例仅使用原生声，不需要独立配音')
+              continue
+            }
+            const needed = new Set(
+              voice
+                .flatMap((row) => [row.dialogue, ...(row.more ?? [])])
+                .filter((id): id is string => !!id),
+            )
+            if (!needed.size) {
+              mappedRow('blocked', '所选配音/混合实例尚未明确绑定配音，不自动认领旧对白')
+              continue
+            }
+            const external = [...needed].filter((id) => !nodes.some((node) => node.id === id))
+            if (external.length) {
+              if (!request.reuseExisting) {
+                mappedRow(
+                  'blocked',
+                  '当前绑定的是现有声音素材；先显式选择独立配音节点，不隐式重录共享来源',
+                )
+                continue
+              }
+              mappedRow('reuse', '沿用明确绑定且文件有效的声音素材，不补建或重复生成旧对白')
+            }
+            nodes = nodes.filter((node) => needed.has(node.id))
+            if (!nodes.length && external.length) continue
+          }
+        }
         if (!nodes.length) {
           const empty =
             (request.role === 'speech' && !shot.dialogue.some((line) => line.line.trim())) ||
@@ -171,7 +350,7 @@ export class StoryboardBatches {
         }
       }
       // 图片批次保留既有资产准备行为，所有隐式准备项目先列出来。
-      const hardGraph = new FlowGraph(doc.edges())
+      const hardGraph = new FlowGraph(executionEdges(doc))
       if (request.role === 'image') {
         const mentions = new FlowGraph(mentionEdges(doc))
         for (const id of direct) {
@@ -317,6 +496,14 @@ export class StoryboardBatches {
         }
       }
       const running = rows.filter((row) => row.action === 'run')
+      const paidTargets = new Set(running.flatMap((row) => (row.nodeId ? [row.nodeId] : [])))
+      const audioSources = [
+        ...new Map(
+          selectedAudio
+            .filter((ref) => !paidTargets.has(ref.source))
+            .map((ref) => [JSON.stringify([ref.source, ref.port]), ref]),
+        ).values(),
+      ]
       const items = running.map((row) => {
         const el = doc.get(row.nodeId!)!
         const upstream = [...graph.ancestors(el.id)]
@@ -332,6 +519,29 @@ export class StoryboardBatches {
             },
           ]
         })
+        const mapping = row.shotId ? selectedMappings.get(row.shotId) : undefined
+        const sequence = mapping?.sequenceId ? doc.get(mapping.sequenceId) : undefined
+        if (sequence && !deps.some((dep) => dep.nodeId === sequence.id))
+          deps.push({
+            nodeId: sequence.id,
+            sourceKey: batchSourceKey(doc, sequence),
+            ...(currentResult(sequence) ? { resultId: currentResult(sequence)!.id } : {}),
+          })
+        const selected = [...selectedMappings.values()]
+        const sequenceScope = sequence
+          ? {
+              canvasId,
+              boardId: sourceId,
+              sequenceId: sequence.id,
+              shotIds: request.shotIds,
+              clipInstanceIds: [
+                ...new Set(
+                  selected.flatMap((map) => map.instances.map((row) => row.clipInstanceId)),
+                ),
+              ],
+              ...(audioSources.length ? { audioSources } : {}),
+            }
+          : undefined
         return {
           nodeId: el.id,
           input: row.input!,
@@ -339,6 +549,7 @@ export class StoryboardBatches {
             ...(!row.deferred && row.input?.inputHash ? { inputHash: row.input.inputHash } : {}),
             planHash: this.runs.planKey(el),
             deps,
+            ...(sequenceScope ? { sequenceScope } : {}),
           },
         }
       })
@@ -349,6 +560,21 @@ export class StoryboardBatches {
       const plan = {
         sourceId,
         request,
+        scope: {
+          canvasId,
+          boardId: sourceId,
+          ...(request.sequenceId ||
+          [...selectedMappings.values()].find((value) => value.sequenceId)?.sequenceId
+            ? {
+                sequenceId:
+                  request.sequenceId ??
+                  [...selectedMappings.values()].find((value) => value.sequenceId)?.sequenceId,
+              }
+            : {}),
+          sequenceIds: [
+            ...new Set([...selectedMappings.values()].flatMap((value) => value.sequenceIds)),
+          ],
+        },
         rows,
         summary: {
           run: running.length,
@@ -360,10 +586,12 @@ export class StoryboardBatches {
           unknownCalls: running.filter((r) => !r.price).reduce((n, r) => n + r.calls, 0),
         },
       }
+      assertWritable(live)
       if (revision(live) !== before)
         throw new NodeRunError('busy', '清单准备期间内容或任务已变化，请重新检查')
       const signature = digest({
         request,
+        scope: plan.scope,
         rows: rows.map(({ input, ...row }) => ({
           ...row,
           inputHash: input?.inputHash,

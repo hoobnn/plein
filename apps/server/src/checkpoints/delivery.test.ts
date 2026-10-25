@@ -55,7 +55,10 @@ describe.skipIf(!media)('样片与交付本地完整链路', () => {
     })
     const restored = server.checkpoints.restore('local', checkpoint.id)
     const restoredDoc = createDoc(server.rooms.get(restored.canvasId).doc, { schedule: () => {} })
-    expect(restoredDoc.get(id)?.deliveries).toEqual(saved)
+    expect(restoredDoc.get(id)?.deliveries).toEqual(
+      saved?.map((record) => ({ ...record, historical: true })),
+    )
+    expect(editDelivery(restoredDoc, id, record!.id, { confirm: true })).toBe(false)
     restoredDoc.destroy()
     const canvas = (await (await request(server, `/api/canvases/${canvasId}`)).json()) as Canvas
     const packaged = await request(
@@ -80,7 +83,10 @@ describe.skipIf(!media)('样片与交付本地完整链路', () => {
     const importedDoc = createDoc(destination.rooms.get(result.canvasId!).doc, {
       schedule: () => {},
     })
-    expect(importedDoc.get(id)?.deliveries).toEqual(saved)
+    expect(importedDoc.get(id)?.deliveries).toEqual(
+      saved?.map((record) => ({ ...record, historical: true })),
+    )
+    expect(editDelivery(importedDoc, id, record!.id, { notes: [] })).toBe(false)
     expect(destination.assets.get('local', record!.assetId)).not.toBeNull()
     importedDoc.destroy()
     doc.destroy()

@@ -1,6 +1,14 @@
-import { createElement } from '@plein/doc'
+import { createElement, setParam, sequenceInstancesOf } from '@plein/doc'
 import { openDoc, node } from '@plein/doc/testing'
-import { findMentions, mentionName, profileOf } from '@plein/nodes'
+import {
+  findMentions,
+  mentionName,
+  profileOf,
+  sequenceNode,
+  arrangeSequence,
+  createSubtitleTrack,
+  subtitleTrackStale,
+} from '@plein/nodes'
 import { describe, expect, it } from 'vite-plus/test'
 import { referenceClipboard } from './clipboard'
 
@@ -37,6 +45,78 @@ function resolved(doc: ReturnType<typeof openDoc>, text: string) {
 }
 
 describe('画布复制中的引用映射', () => {
+  it('typed clip copies remap scope/instance/key while preserving literal subtitles and fixed origin', () => {
+    const doc = openDoc(),
+      target = openDoc()
+    const role = createElement(doc, node({ name: '林夏', nodeType: 'plein/character' }))
+    createElement(target, node({ name: '林夏', nodeType: 'plein/character' }))
+    const board = createElement(doc, node({ nodeType: 'plein/storyboard', params: { shots: [] } }))
+    const segment = {
+      version: 1,
+      segmentId: 'fixed',
+      asset: { assetId: 'a'.repeat(64), kind: 'video' },
+      duration: 8,
+      origin: {
+        canvasId: 'original',
+        nodeId: 'original-generator',
+        port: 'video',
+        resultId: 'r',
+        runId: 'run',
+      },
+    }
+    const params = sequenceNode.params.parse({
+      instanceVersion: 2,
+      clips: [
+        {
+          source: 'deleted-view',
+          port: 'video',
+          clipInstanceId: 'original-clip',
+          segment,
+          sound: 'native',
+          in: 0,
+          out: 2,
+          subtitle: '@林夏 literal',
+          narrative: { canvasId: 'original', boardId: board, shotId: 'shot' },
+        },
+      ],
+    })
+    const sequence = createElement(
+      doc,
+      node({ nodeType: 'plein/sequence', nodeVersion: 2, params }),
+    )
+    const rows = arrangeSequence(params, {})
+    const track = createSubtitleTrack(params, rows, { clips: [8], dialogue: [undefined] })
+    const orphan = {
+      id: 'orphan',
+      source: 'deleted-source',
+      start: 0,
+      end: 1,
+      text: '@林夏 old literal',
+      hidden: false,
+    }
+    track.unmappedCues = [{ cue: orphan, reason: '来源已删除，未绑定' }]
+    track.legacyTrack = { inputKey: 'original legacy key', cues: [orphan] }
+    setParam(doc, sequence, 'subtitleTrack', track)
+    const copied = referenceClipboard.paste(
+      target,
+      referenceClipboard.copy(doc, [role, board, sequence]),
+      { canvasId: 'target' },
+    )
+    const imported = target.get(copied[2]!)!,
+      c = sequenceInstancesOf(imported)[0]!
+    expect(c.clipInstanceId).not.toBe('original-clip')
+    expect(c.segment).toEqual(segment)
+    expect(c.narrative).toMatchObject({ canvasId: 'target', boardId: copied[1] })
+    expect(c.subtitle).toBe('@林夏 literal')
+    const next = sequenceNode.params.parse(imported.params)
+    expect(next.subtitleTrack!.cues[0]!.text).toBe('@林夏 literal')
+    expect(next.subtitleTrack!.cues[0]!.source).toBe(c.clipInstanceId)
+    expect(next.subtitleTrack!.unmappedCues).toEqual(track.unmappedCues)
+    expect(next.subtitleTrack!.legacyTrack).toEqual(track.legacyTrack)
+    expect(subtitleTrackStale(next, arrangeSequence(next, {}))).toBe(false)
+    doc.destroy()
+    target.destroy()
+  })
   it('跨画布重新编号，保留档案、分镜嵌套引用和目标画布原有指向', () => {
     const { doc, text } = source()
     const data = JSON.parse(JSON.stringify(referenceClipboard.copy(doc, ['a', 'z', text])))

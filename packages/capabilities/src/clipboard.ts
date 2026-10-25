@@ -7,6 +7,7 @@ import {
   type PleinDoc,
   setParams,
   setText,
+  isVideoSegment,
 } from '@plein/doc'
 import {
   findMentions,
@@ -67,10 +68,19 @@ function rewrite(
 }
 
 function rewriteValue(value: unknown, text: (s: string) => string): unknown {
+  if (isVideoSegment(value)) return value
   if (typeof value === 'string') return text(value)
   if (Array.isArray(value)) return value.map((v) => rewriteValue(v, text))
   if (value && typeof value === 'object')
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, rewriteValue(v, text)]))
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [
+        k,
+        k === 'legacySourceSettings' ||
+        (k === 'inputKey' && Array.isArray((value as Record<string, unknown>).cues))
+          ? v
+          : rewriteValue(v, text),
+      ]),
+    )
   return value
 }
 
@@ -78,6 +88,7 @@ function rewriteValue(value: unknown, text: (s: string) => string): unknown {
 function remapParams(params: Record<string, unknown>, ids: ReadonlyMap<string, string>) {
   const ref = (v: unknown) => (typeof v === 'string' ? (ids.get(v) ?? v) : v)
   const bindings = (v: unknown): unknown => {
+    if (isVideoSegment(v)) return v
     if (Array.isArray(v)) return v.map(bindings)
     if (!v || typeof v !== 'object') return v
     return Object.fromEntries(
@@ -112,6 +123,9 @@ function patch(
   text: (s: string) => string,
   ids?: ReadonlyMap<string, string>,
 ) {
+  // doc's typed copier already remaps instance/edge/audio/scope IDs and the key.
+  // Rendered subtitle text and fixed generation origins are literal evidence, not @ prompts.
+  if (el.nodeType === 'plein/sequence' && el.params?.instanceVersion === 2) return
   if (el.params) {
     const rewritten = rewriteValue(el.params, text) as Record<string, unknown>
     const next = ids ? remapParams(rewritten, ids) : rewritten

@@ -73,6 +73,16 @@ export class JobStore {
     return this.db.select().from(jobs).where(eq(jobs.id, id)).get()
   }
 
+  countForNode(canvasId: string, nodeId: string): number {
+    return (
+      this.db
+        .select({ count: sql<number>`count(*)` })
+        .from(jobs)
+        .where(and(eq(jobs.canvas_id, canvasId), eq(jobs.node_id, nodeId)))
+        .get()?.count ?? 0
+    )
+  }
+
   update(id: string, patch: JobPatch) {
     if (Object.keys(patch).length === 0) return
     // 显式传 undefined 的字段写成 NULL（与改用 Drizzle 前一致）

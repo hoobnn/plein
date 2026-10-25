@@ -2,7 +2,13 @@ import { createReadStream } from 'node:fs'
 import { extname } from 'node:path'
 import { PassThrough, type Readable } from 'node:stream'
 import { once } from 'node:events'
-import { type InterchangeMedia, sequenceFcpxml, sequenceOtio, subtitleSrt } from '@plein/nodes'
+import {
+  type InterchangeMedia,
+  sequenceFcpxml,
+  sequenceOtio,
+  subtitleSrt,
+  sequenceSourceMap,
+} from '@plein/nodes'
 import type { ComposeSpec } from '@plein/plugin-sdk'
 import { strToU8, Zip, ZipDeflate, ZipPassThrough } from 'fflate'
 import { probeMedia } from './media'
@@ -91,6 +97,19 @@ export async function sequencePackage(
     ['timeline.otio', sequenceOtio(spec, lookup)],
     ['timeline.fcpxml', sequenceFcpxml(spec, lookup)],
     ['README.txt', README],
+    [
+      'clip-map.json',
+      JSON.stringify(
+        {
+          version: 1,
+          basis: 'executed-sequence-spec',
+          fps: spec.fps,
+          sources: sequenceSourceMap(spec),
+        },
+        null,
+        2,
+      ) + '\n',
+    ],
   ]
   if (spec.subtitles?.cues.length) texts.push(['subtitles.srt', subtitleSrt(spec.subtitles.cues)])
 

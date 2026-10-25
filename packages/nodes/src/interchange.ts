@@ -5,6 +5,7 @@ import {
   type ComposeTransition,
   overlapping,
 } from '@plein/plugin-sdk'
+import { sequenceSourceMap } from './sequence'
 
 /**
  * 把序列导出成专业剪辑软件能打开的工程：OpenTimelineIO（DaVinci Resolve、Kdenlive 等）
@@ -41,6 +42,7 @@ interface Placed {
   volume: number
   /** 进入这段的重叠转场时长 */
   transitionIn?: ComposeTransition
+  provenance?: ComposeSpec['clips'][number]['provenance']
 }
 
 interface PlacedSound {
@@ -89,6 +91,7 @@ export function placeSequence(spec: ComposeSpec, lookup: MediaLookup) {
       speed: x.speed,
       volume: x.c.volume,
       transitionIn: into ? x.tr : undefined,
+      ...(x.c.provenance ? { provenance: x.c.provenance } : {}),
     })
     t = start + x.length
   })
@@ -147,11 +150,23 @@ function otioClip(
   source: number,
   duration: number,
   rate: number,
-  extra: { speed?: number; volume?: number } = {},
+  extra: {
+    speed?: number
+    volume?: number
+    provenance?: ComposeSpec['clips'][number]['provenance']
+  } = {},
 ) {
   return {
     OTIO_SCHEMA: 'Clip.2',
-    metadata: extra.volume !== undefined ? { plein: { volume: extra.volume } } : {},
+    metadata:
+      extra.volume !== undefined || extra.provenance
+        ? {
+            plein: {
+              ...(extra.volume !== undefined ? { volume: extra.volume } : {}),
+              ...(extra.provenance ? { provenance: extra.provenance } : {}),
+            },
+          }
+        : {},
     name: m.name,
     source_range: range(source, duration, rate),
     effects:
@@ -238,10 +253,16 @@ export function sequenceOtio(spec: ComposeSpec, lookup: MediaLookup) {
       video.push(transition)
       if (sounding(p) && sounding(placed[i - 1])) original.push({ ...transition, name: '交叉淡化' })
     }
-    video.push(otioClip(p.media, p.source, p.duration, rate, { speed: p.speed }))
+    video.push(
+      otioClip(p.media, p.source, p.duration, rate, { speed: p.speed, provenance: p.provenance }),
+    )
     original.push(
       sounding(p)
-        ? otioClip(p.media, p.source, p.duration, rate, { speed: p.speed, volume: p.volume })
+        ? otioClip(p.media, p.source, p.duration, rate, {
+            speed: p.speed,
+            volume: p.volume,
+            provenance: p.provenance,
+          })
         : otioGap(p.duration, rate),
     )
   })
@@ -261,7 +282,15 @@ export function sequenceOtio(spec: ComposeSpec, lookup: MediaLookup) {
   ]
   const timeline = {
     OTIO_SCHEMA: 'Timeline.1',
-    metadata: { plein: { width: spec.width, height: spec.height } },
+    metadata: {
+      plein: {
+        width: spec.width,
+        height: spec.height,
+        ...(spec.clips.some((c) => c.provenance)
+          ? { clipMap: { version: 1, sources: sequenceSourceMap(spec) } }
+          : {}),
+      },
+    },
     name: spec.name ?? '序列',
     global_start_time: null,
     tracks: {

@@ -1,5 +1,14 @@
 import type { Engine } from '@plein/canvas-core'
-import { type CanvasElement, currentResult, setParam, setParams } from '@plein/doc'
+import {
+  type CanvasElement,
+  currentResult,
+  inputEdges,
+  setParam,
+  setParams,
+  editSequenceInstance,
+  reorderSequenceInstances,
+  sequenceInstancesOf,
+} from '@plein/doc'
 import {
   type ArrangedClip,
   ANIMATIC_TYPE,
@@ -13,8 +22,12 @@ import {
   type SequenceClip,
   sequenceNode,
   type SequenceParams,
+  type SequenceSubtitleTrack,
   sequenceSpec,
   sequenceTimeline,
+  sequenceRowKey,
+  commitSubtitleTrackEdit,
+  retainInstanceSubtitleTrack,
   subtitleExportProblem,
   subtitleInputKey,
   TRANSITIONS,
@@ -41,6 +54,7 @@ import { cancelNode, runNode } from '../runs/run'
 import { cancelRequestKey, useCancelRequests } from '../runs/cancelRequests'
 import { loadAssetMeta, useAssetMetas } from '../../stores/assetMeta'
 import { useCanvas } from '../../stores/canvas'
+import { useSession } from '../../stores/session'
 import { useCatalog } from '../../stores/catalog'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
@@ -58,6 +72,8 @@ import { refreshAnimatic, relatedSequences } from './animatic'
 import { DeliveryReview, useDeliveryReviewSession } from './DeliveryReview'
 import { MediaReloadContext } from './media'
 import { sequenceParameterProblem } from './parameters'
+import { sequenceInputValue, sequenceSourceIdentity } from './instanceModel'
+import { AddFixedInstance, SequenceInstanceTools, SOUND_LABELS } from './SequenceInstanceTools'
 
 const seconds = (s: number | undefined) => (s === undefined ? '—' : `${s.toFixed(1)} 秒`)
 
@@ -90,25 +106,20 @@ function readSequence(engine: Engine, id: string, catalog = useCatalog.getState(
   }
   const params = sequenceNode.params.parse(el?.params ?? {}) as SequenceParams
   const ups = upstreams(engine, id, catalog)
+  const edges = new Map(inputEdges(engine.doc, id).map((edge) => [edge.id, edge]))
   const values = (port: string): PortValue[] =>
-    (ups.get(port) ?? []).map((u) => {
-      const v = u.value
-      if (v && v.type !== 'text' && v.type !== 'json')
-        return {
-          type: v.type,
-          assetId: v.assetId,
-          kind: v.type,
-          caption: v.caption,
-          source: u.source.id,
-        }
-      return { type: 'video', assetId: '', kind: 'video', source: u.source.id }
+    (ups.get(port) ?? []).flatMap((u) => {
+      const edge = edges.get(u.edgeId)
+      return edge
+        ? [sequenceInputValue(u.source, edge, u.value, useCanvas.getState().canvasId)]
+        : []
     })
   const inputs = { clips: values('clips'), dialogue: values('dialogue'), sfx: values('sfx') }
   const named = new Map<string, CanvasElement>()
   for (const list of ups.values()) for (const u of list) named.set(u.source.id, u.source)
   const rows: Row[] = arrangeSequence(params, inputs).map((c) => ({
     ...c,
-    el: c.source ? named.get(c.source) : undefined,
+    el: c.source ? (engine.doc.get(c.source) ?? named.get(c.source)) : undefined,
     pending: !c.clip.assetId,
   }))
   const options = (port: 'dialogue' | 'sfx') =>
@@ -154,8 +165,8 @@ function sequenceInteractionKey(
     read.params.transition,
     read.params.transitionDuration,
     read.rows.map((row) => [
-      row.source,
-      row.clip.assetId,
+      sequenceRowKey(row),
+      sequenceSourceIdentity(row),
       row.pending,
       row.in,
       row.out,
@@ -171,7 +182,10 @@ function sequenceInteractionKey(
 export function SequenceEditor() {
   const engine = useCanvas((s) => s.engine)
   const id = useCanvas((s) => s.sequence)
-  const close = () => useCanvas.getState().openSequence(null)
+  const close = () => {
+    const state = useCanvas.getState()
+    if (state.engine === engine && state.sequence === id) state.openSequence(null)
+  }
   return (
     <Presence>
       {engine && id && engine.doc.get(id) && (
@@ -183,14 +197,42 @@ export function SequenceEditor() {
 
 function GuardedEditor({ engine, id, onClose }: { engine: Engine; id: string; onClose(): void }) {
   useEngineVersion(engine)
+  const principal = useSession((s) => s.info?.principal)
   const el = engine.doc.get(id)
   if (!el) return null
   const problem = sequenceParameterProblem(el.params, el.nodeType === ANIMATIC_TYPE)
   if (!problem) return <Editor engine={engine} id={id} onClose={onClose} />
-  const readOnly = engine.doc.readOnly
+  const readOnly = engine.doc.readOnly || !!el.locked || !principal || principal.role === 'viewer'
+  const captured = engine.doc.elementMaps.get(id),
+    canvasId = useCanvas.getState().canvasId
+  const canWrite = () => {
+    const actor = useSession.getState().info?.principal,
+      state = useCanvas.getState()
+    return (
+      !!actor &&
+      actor.role !== 'viewer' &&
+      !engine.doc.readOnly &&
+      !engine.doc.get(id)?.locked &&
+      state.engine === engine &&
+      state.canvasId === canvasId &&
+      state.sequence === id &&
+      engine.doc.elementMaps.get(id) === captured
+    )
+  }
   const restore = () => {
     const current = engine.doc.get(id)
-    if (engine.doc.readOnly || !current) return
+    const state = useCanvas.getState(),
+      actor = useSession.getState().info?.principal
+    if (
+      !canWrite() ||
+      !current ||
+      current.locked ||
+      !actor ||
+      actor.role === 'viewer' ||
+      state.engine !== engine ||
+      state.sequence !== id
+    )
+      return
     const latest = sequenceParameterProblem(current.params, current.nodeType === ANIMATIC_TYPE)
     if (!latest) return
     engine.doc.undo.stopCapturing()
@@ -205,7 +247,9 @@ function GuardedEditor({ engine, id, onClose }: { engine: Engine; id: string; on
           type="button"
           className="ui-btn"
           disabled={readOnly || !engine.doc.undo.undoStack.length}
-          onClick={() => engine.undo()}
+          onClick={() => {
+            if (canWrite()) engine.undo()
+          }}
         >
           撤销
         </button>
@@ -213,7 +257,9 @@ function GuardedEditor({ engine, id, onClose }: { engine: Engine; id: string; on
           type="button"
           className="ui-btn"
           disabled={readOnly || !engine.doc.undo.redoStack.length}
-          onClick={() => engine.redo()}
+          onClick={() => {
+            if (canWrite()) engine.redo()
+          }}
         >
           重做
         </button>
@@ -241,7 +287,7 @@ const PENDING_LENGTH = 2
 /** 方向键逐帧移动（按 30 帧） */
 const FRAME = 1 / 30
 
-const rowKey = (r: Row, i: number) => r.source ?? String(i)
+const rowKey = sequenceRowKey
 
 /** 焦点在输入框里时，空格、方向键留给输入框 */
 const typing = (target: EventTarget | null) =>
@@ -255,6 +301,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const catalog = useCatalog((s) => s.catalog)
   const read = readSequence(engine, id, catalog)
   const { el, params, dialogue, sfx, music, animatic, inputProblem } = read
+  const principal = useSession((s) => s.info?.principal)
+  const [element] = useState(() => engine.doc.elementMaps.get(id))
+  const readonly = engine.doc.readOnly || !!el?.locked || !principal || principal.role === 'viewer'
   const filmSequences = animatic ? relatedSequences(engine, id) : []
   const filmNames = filmSequences.map((film) => film.name?.trim() || '成片序列')
   const filmOptions = filmSequences.map((film, index) => {
@@ -329,6 +378,27 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   }
   const running = el?.run?.status === 'running' || el?.run?.status === 'queued'
   const canvasId = useCanvas((s) => s.canvasId)
+  const active = useCallback(() => {
+    const state = useCanvas.getState()
+    return (
+      !closing &&
+      !engine.doc.ydoc.isDestroyed &&
+      state.engine === engine &&
+      state.canvasId === canvasId &&
+      state.sequence === id &&
+      engine.doc.elementMaps.get(id) === element
+    )
+  }, [closing, engine, canvasId, id, element])
+  const writable = () => {
+    const actor = useSession.getState().info?.principal
+    return (
+      active() &&
+      !engine.doc.readOnly &&
+      !engine.doc.get(id)?.locked &&
+      !!actor &&
+      actor.role !== 'viewer'
+    )
+  }
   useLayoutEffect(() => {
     subtitleRequest.current = null
     setRecognizing(false)
@@ -343,7 +413,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     if (
       closing ||
       subtitleRequest.current ||
-      engine.doc.readOnly ||
+      !writable() ||
       !node ||
       state.engine !== engine ||
       state.canvasId !== canvasId ||
@@ -362,7 +432,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           current.canvasId === canvasId &&
           current.sequence === id &&
           engine.doc.elementMaps.get(id) === node &&
-          !engine.doc.readOnly
+          writable()
         )
       },
       finish: () => {
@@ -430,11 +500,23 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   playhead.setTotal(timeline.total)
 
   const current = rows.findIndex((r, i) => rowKey(r, i) === selected)
+  const focus = useCanvas((s) => s.sequenceFocus)
+  useEffect(() => {
+    if (!focus || focus.sequenceId !== id || !active()) return
+    const at = rows.findIndex((row, i) => rowKey(row, i) === focus.clipInstanceId)
+    if (at < 0 || !known) return
+    select(focus.clipInstanceId)
+    setView('edit')
+    playhead.pause()
+    playhead.seek(timeline.clips[at]!.start)
+    useCanvas.getState().consumeSequenceFocus(focus.requestId)
+  }, [focus, id, known, playhead, rows, active, timeline.clips])
   // 默认选中第一段；选中的镜头断开了就退回第一段
   const firstKey = rows[0] ? rowKey(rows[0], 0) : undefined
   useEffect(() => {
+    if (focus?.sequenceId === id) return
     if (current < 0 && firstKey) setSelected(firstKey)
-  }, [current, firstKey])
+  }, [current, firstKey, focus, id])
 
   // 捕获阶段拦下按键：编辑器打开时画布的快捷键不生效；播放控制在这里处理
   const keys = useRef<(e: KeyboardEvent) => void>(() => {})
@@ -470,7 +552,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       e.preventDefault()
       const state = useCanvas.getState()
       if (
-        !engine.doc.readOnly &&
+        writable() &&
         state.engine === engine &&
         state.canvasId === canvasId &&
         state.sequence === id &&
@@ -518,6 +600,10 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const settings = (list: Row[], clips = params.clips): SequenceClip[] =>
     list.flatMap((r) => {
       if (!r.source) return []
+      if (r.clipInstanceId) {
+        const original = clips.find((c) => c.clipInstanceId === r.clipInstanceId)
+        return original ? [original] : []
+      }
       const old = clips.find((c) => c.source === r.source) ?? { source: r.source, in: 0 }
       return [
         {
@@ -530,7 +616,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   // 去掉值为 undefined 的键（清空入出点、改回自动）
   // 写完立即派发：复选框、下拉是受控的，等批量通知才重渲染会先弹回旧值再变过来
   const write = (clips: SequenceClip[]) => {
-    if (engine.doc.readOnly) return
+    if (!writable()) return
     setParam(
       engine.doc,
       id,
@@ -539,18 +625,27 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     )
     engine.doc.flush()
   }
-  const patch = (source: string | undefined, p: Partial<SequenceClip>) => {
-    if (!source) return
+  const patch = (key: string | undefined, p: Partial<SequenceClip>) => {
+    if (!key || !writable()) return
     const latest = readSequence(engine, id)
-    if (!latest.rows.some((r) => r.source === source)) return
+    const row = latest.rows.find((r, i) => rowKey(r, i) === key)
+    const displayed = read.rows.find((r, i) => rowKey(r, i) === key)
+    if (!row || !displayed || sequenceSourceIdentity(row) !== sequenceSourceIdentity(displayed))
+      return
+    if (row.clipInstanceId) {
+      const raw = sequenceInstancesOf(engine.doc.get(id)!).find((c) => c.clipInstanceId === key)
+      if (raw) editSequenceInstance(engine.doc, id, key, p, JSON.stringify(raw))
+      engine.doc.flush()
+      return
+    }
     write(
       settings(latest.rows, latest.params.clips).map((c) =>
-        c.source === source ? { ...c, ...p } : c,
+        c.source === row.source ? { ...c, ...p } : c,
       ),
     )
   }
   const move = (from: number, to: number) => {
-    if (engine.doc.readOnly) return
+    if (!writable()) return
     const currentElement = engine.doc.get(id)
     if (
       !currentElement ||
@@ -561,8 +656,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       return
     const latest = readSequence(engine, id)
     if (
-      JSON.stringify(latest.rows.map((r) => r.source)) !==
-      JSON.stringify(read.rows.map((r) => r.source))
+      sequenceInteractionKey(latest, duration, !writable()) !==
+      sequenceInteractionKey(read, duration, readonly)
     )
       return
     if (to < 0 || to >= latest.rows.length || from === to) return
@@ -577,10 +672,37 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     const next = [...latest.rows]
     const [r] = next.splice(from, 1)
     next.splice(to, 0, r!)
+    if (latest.params.instanceVersion === 2) {
+      const raw = sequenceInstancesOf(engine.doc.get(id)!)
+      const clips = next.flatMap((r) => raw.filter((c) => c.clipInstanceId === r.clipInstanceId))
+      const afterParams = sequenceNode.params.parse({ ...latest.params, clips })
+      let track = latest.params.subtitleTrack
+      try {
+        track = retainInstanceSubtitleTrack(latest.params, latest.rows, afterParams, next)
+      } catch (error) {
+        setSubtitleError((error as Error).message)
+      }
+      engine.doc.undo.stopCapturing()
+      engine.doc.ydoc.transact(() => {
+        if (
+          reorderSequenceInstances(
+            engine.doc,
+            id,
+            clips.map((c) => c.clipInstanceId),
+            JSON.stringify(raw),
+          ) &&
+          track
+        )
+          setParam(engine.doc, id, 'subtitleTrack', track)
+      }, engine.doc.origin)
+      engine.doc.flush()
+      engine.doc.undo.stopCapturing()
+      return
+    }
     write(settings(next, latest.params.clips))
   }
   const set = (key: keyof SequenceParams, value: unknown) => {
-    if (engine.doc.readOnly) return
+    if (!writable()) return
     setParams(engine.doc, id, { [key]: value })
     engine.doc.flush()
   }
@@ -590,7 +712,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     more: read.rows.map((r) => r.more.map((m) => duration(m.assetId))),
   })
   const buildSubtitles = () => {
-    if (engine.doc.readOnly) return
+    if (!writable()) return
     const next = { ...params, asrTiming: false }
     setParams(engine.doc, id, {
       asrTiming: false,
@@ -599,8 +721,24 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     engine.doc.flush()
     setSubtitleError(null)
   }
+  const editSubtitles = (track: SequenceSubtitleTrack) => {
+    if (!writable()) return
+    const latest = readSequence(engine, id)
+    if (JSON.stringify(latest.params.subtitleTrack) !== JSON.stringify(params.subtitleTrack)) {
+      setSubtitleError('字幕轨已由其他操作更新，本次未覆盖，请重新核对')
+      return
+    }
+    try {
+      const next = commitSubtitleTrackEdit(latest.params, latest.rows, track.cues)
+      setParam(engine.doc, id, 'subtitleTrack', next)
+      engine.doc.flush()
+      setSubtitleError(null)
+    } catch (error) {
+      setSubtitleError((error as Error).message)
+    }
+  }
   const recognizeSubtitles = async () => {
-    if (engine.doc.readOnly || subtitleRequest.current || !subtitleKnown) return
+    if (!writable() || subtitleRequest.current || !subtitleKnown) return
     if (!params.model) {
       setSubtitleError('请先在成片设置中选择语音识别模型')
       return
@@ -624,7 +762,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       const latest = readSequence(engine, id)
       if (
         !engine.doc.get(id) ||
-        engine.doc.readOnly ||
+        !writable() ||
         latest.params.asrTiming !== params.asrTiming ||
         subtitleInputKey({ ...latest.params, asrTiming: true }, latest.rows) !== inputKey ||
         JSON.stringify(latest.params.subtitleTrack) !== originalTrack
@@ -649,7 +787,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
   }
   const recoverSubtitles = async (operation: RecoverJobOptions, confirmedNotAccepted = false) => {
-    if (engine.doc.readOnly || !subtitleRecovery || subtitleRequest.current) return
+    if (!writable() || !subtitleRecovery || subtitleRequest.current) return
     const inputKey = subtitleInputKey(params, read.rows)
     const request = beginSubtitleRequest()
     if (!request) return
@@ -678,11 +816,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
   }
   const trim = (key: string, p: TrimPatch, done: boolean) => {
-    if (engine.doc.readOnly) return setDraft(null)
+    if (!writable()) return setDraft(null)
     if (!done) return setDraft('in' in p || 'out' in p ? { key, patch: p } : null)
     setDraft(null)
     const r = read.rows.find((x, i) => rowKey(x, i) === key)
-    patch(r?.source, p)
+    patch(r ? rowKey(r) : undefined, p)
   }
 
   /** 导出剪辑工程：和成片同一套合成参数，服务端打包成 OTIO / FCPXML + 素材的 zip */
@@ -818,9 +956,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   }
 
   const exportVideo = () => {
-    if (canceling) return
+    if (canceling || !writable()) return
     if (running) void cancelNode(id, el?.run?.id)
-    else if (!engine.doc.readOnly && !inputProblem) void runNode(id)
+    else if (writable() && !inputProblem) void runNode(id)
   }
   const progress = el?.run?.status === 'running' ? el.run.progress : undefined
   const film = el && currentResult(el)?.value
@@ -894,7 +1032,10 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
               className="ui-btn ui-btn-quiet"
               type="button"
               title="更新当前采用的分镜图和配音；保留样片顺序与节奏，新增镜头追加，已删除镜头移除"
-              onClick={() => setAnimaticError(refreshAnimatic(engine, id))}
+              disabled={readonly}
+              onClick={() => {
+                if (writable()) setAnimaticError(refreshAnimatic(engine, id))
+              }}
             >
               更新已有素材
             </button>
@@ -965,8 +1106,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           className={running ? 'ui-btn ui-btn-secondary' : 'ui-btn ui-btn-primary'}
           disabled={
             canceling ||
+            readonly ||
             (!running &&
-              (engine.doc.readOnly ||
+              (readonly ||
                 !!inputProblem ||
                 rows.length === 0 ||
                 (!animatic && pending > 0) ||
@@ -1001,7 +1143,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           )}
         </button>
       </ModalHeader>
-      {engine.doc.readOnly && (
+      {readonly && (
         <p role="status" className="px-4 py-2 text-sm text-muted">
           当前画布为只读，仍可预览，暂不能修改或生成新成片。
         </p>
@@ -1113,6 +1255,16 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           onChange={setView}
         />
       </div>
+      {!animatic && canvasId && view === 'edit' && (
+        <AddFixedInstance
+          engine={engine}
+          canvasId={canvasId}
+          sequenceId={id}
+          writable={writable}
+          readCurrent={() => readSequence(engine, id)}
+          onSelect={select}
+        />
+      )}
       {view === 'delivery' && el ? (
         <DeliveryReview engine={engine} node={el} session={deliverySession} />
       ) : rows.length === 0 ? (
@@ -1150,7 +1302,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                 key={tab === 'clip' ? `clip:${selected ?? ''}` : 'film'}
                 className="seq-inspector-body ui-scrollbar"
               >
-                <fieldset disabled={engine.doc.readOnly} className="m-0 min-w-0 border-0 p-0">
+                <fieldset disabled={readonly} className="m-0 min-w-0 border-0 p-0">
                   <legend className="sr-only">剪辑参数</legend>
                   {tab === 'subtitles' ? (
                     <SubtitleEditor
@@ -1160,7 +1312,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       error={subtitleError}
                       onBuild={buildSubtitles}
                       onRecognize={() => void recognizeSubtitles()}
-                      onChange={(track) => set('subtitleTrack', track)}
+                      onChange={editSubtitles}
                       onEditBoundary={() => engine.doc.undo.stopCapturing()}
                       onModelChange={(model) => set('model', model)}
                       recovery={subtitleRecovery}
@@ -1181,7 +1333,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       count={rows.length}
                       onMove={(to) => move(current, to)}
                       onChange={(patch) => {
-                        if (engine.doc.readOnly) return
+                        if (!writable()) return
                         setParam(
                           engine.doc,
                           id,
@@ -1194,22 +1346,37 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       }}
                     />
                   ) : row ? (
-                    <ClipSettings
-                      key={rowKey(row, current)}
-                      row={row}
-                      readRow={() =>
-                        readSequence(engine, id).rows.find((r) => r.source === row.source)
-                      }
-                      index={current}
-                      count={rows.length}
-                      full={duration(row.clip.assetId)}
-                      length={timeline.clips[current]?.length}
-                      params={params}
-                      dialogue={dialogue}
-                      sfx={sfx}
-                      onMove={(to) => move(current, to)}
-                      onPatch={(p) => patch(row.source, p)}
-                    />
+                    <>
+                      {row.clipInstanceId && (
+                        <SequenceInstanceTools
+                          key={row.clipInstanceId}
+                          engine={engine}
+                          canvasId={canvasId}
+                          sequenceId={id}
+                          row={row}
+                          writable={writable}
+                          readCurrent={() => readSequence(engine, id)}
+                          onSelect={select}
+                          onNotice={setSubtitleError}
+                        />
+                      )}
+                      <ClipSettings
+                        key={`${rowKey(row, current)}:${sequenceSourceIdentity(row)}`}
+                        row={row}
+                        readRow={() =>
+                          readSequence(engine, id).rows.find((r, i) => rowKey(r, i) === selected)
+                        }
+                        index={current}
+                        count={rows.length}
+                        full={duration(row.clip.assetId)}
+                        length={timeline.clips[current]?.length}
+                        params={params}
+                        dialogue={dialogue}
+                        sfx={sfx}
+                        onMove={(to) => move(current, to)}
+                        onPatch={(p) => patch(rowKey(row, current), p)}
+                      />
+                    </>
                   ) : (
                     <p className="ui-help">在时间线上点一段镜头，在这里调整它。</p>
                   )}
@@ -1219,10 +1386,10 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           </div>
           <MediaReloadContext.Provider value={previewRevision}>
             <Timeline
-              readOnly={engine.doc.readOnly}
-              interactionKey={sequenceInteractionKey(read, duration, engine.doc.readOnly)}
+              readOnly={readonly}
+              interactionKey={sequenceInteractionKey(read, duration, readonly)}
               readInteractionKey={() =>
-                sequenceInteractionKey(readSequence(engine, id), duration, engine.doc.readOnly)
+                sequenceInteractionKey(readSequence(engine, id), duration, !writable())
               }
               onBeforeInteract={() => {
                 const active = document.activeElement
@@ -1479,7 +1646,9 @@ function ClipSettings({
   onMove(to: number): void
   onPatch(p: Partial<SequenceClip>): void
 }) {
-  const chosen = params.clips.find((c) => c.source === row.source)
+  const chosen = params.clips.find((c) =>
+    row.clipInstanceId ? c.clipInstanceId === row.clipInstanceId : c.source === row.source,
+  )
   // 同一镜头里依次播放的几句台词都列出来
   const caption =
     clipLines(row)
@@ -1630,7 +1799,29 @@ function ClipSettings({
         </>
       )}
       <Section title="声音">
-        {!row.pending && (
+        {row.clipInstanceId && (
+          <Field label="声音路线">
+            <Select
+              aria-label="本实例声音路线"
+              value={row.sound ?? 'legacy'}
+              options={[
+                ...(row.sound === 'legacy'
+                  ? [{ value: 'legacy', label: SOUND_LABELS.legacy }]
+                  : []),
+                ...(['native', 'voice', 'mix'] as const).map((value) => ({
+                  value,
+                  label: SOUND_LABELS[value],
+                })),
+              ]}
+              onChange={(v) => onPatch({ sound: v as SequenceClip['sound'] })}
+            />
+          </Field>
+        )}
+        {row.sound === 'native' && (
+          <p className="ui-help">原生声音路线不自动认领或播放独立对白。</p>
+        )}
+        {row.sound === 'voice' && <p className="ui-help">原生声已关闭，独立配音须明确绑定。</p>}
+        {!row.pending && row.sound !== 'voice' && (
           <Volume
             label="原声"
             aria="本段原声"
@@ -1638,12 +1829,13 @@ function ClipSettings({
             onChange={(v) => onPatch({ volume: v === 1 ? undefined : v })}
           />
         )}
-        {dialogue.length > 0 && (
+        {dialogue.length > 0 && row.sound !== 'native' && (
           <ChoiceField
             label="对白"
             options={dialogue}
             chosen={chosen?.dialogue}
             current={row.dialogue?.source}
+            allowAuto={!row.clipInstanceId || row.sound === 'legacy'}
             onChange={(v) => onPatch({ dialogue: v })}
           />
         )}
@@ -1666,6 +1858,7 @@ function ClipSettings({
             options={sfx}
             chosen={chosen?.sfx}
             current={row.sfx?.source}
+            allowAuto={!row.clipInstanceId || row.sound === 'legacy'}
             onChange={(v) => onPatch({ sfx: v })}
           />
         )}
@@ -1820,10 +2013,18 @@ function ChoiceField(props: {
   chosen: string | undefined
   /** 实际对应到的那条 */
   current: string | undefined
+  allowAuto?: boolean
   onChange(v: string | undefined): void
 }) {
   const auto = props.options.find((o) => o.value === props.current)
-  const value = props.chosen === undefined ? AUTO : props.chosen === '' ? NONE : props.chosen
+  const value =
+    props.chosen === undefined
+      ? props.allowAuto === false
+        ? NONE
+        : AUTO
+      : props.chosen === ''
+        ? NONE
+        : props.chosen
   return (
     <Field label={props.label}>
       <Select
@@ -1831,7 +2032,9 @@ function ChoiceField(props: {
         className="ui-input w-full"
         value={value}
         options={[
-          { value: AUTO, label: auto ? `自动（${auto.label}）` : '自动（无）' },
+          ...(props.allowAuto === false
+            ? []
+            : [{ value: AUTO, label: auto ? `自动（${auto.label}）` : '自动（无）' }]),
           { value: NONE, label: '不配' },
           ...props.options,
         ]}

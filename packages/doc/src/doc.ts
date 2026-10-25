@@ -1,8 +1,14 @@
-import { readProduction } from './production'
 import * as Y from 'yjs'
 import { migrate, SCHEMA_VERSION } from './migrate'
+import { readProduction } from './production'
 import { isCreativeReview } from './review-types'
 import { isDeliveryRecord } from './delivery'
+import { isVideoSegment } from './video-segment'
+import {
+  sequenceSnapshot,
+  snapshotTypedDeliveries,
+  snapshotResultEvidence,
+} from './sequence-snapshot'
 import {
   type CanvasElement,
   type DocChange,
@@ -337,10 +343,26 @@ function readElement(id: string, m: ElementMap): CanvasElement | undefined {
   if (color !== undefined) el.color = color
   const assetId = str(m.get('assetId'))
   if (assetId !== undefined) el.assetId = assetId
+  const videoSegment = m.get('videoSegment')
+  if (isVideoSegment(videoSegment))
+    Object.defineProperty(el, 'videoSegment', {
+      value: sequenceSnapshot(videoSegment),
+      enumerable: true,
+      writable: false,
+    })
   const text = m.get('text')
   if (text instanceof Y.Text) el.text = text.toString()
   const params = m.get('params')
-  if (params instanceof Y.Map) el.params = params.toJSON()
+  if (params instanceof Y.Map) {
+    const value = params.toJSON()
+    if (m.get('nodeType') === 'plein/sequence' && value.instanceVersion === 2)
+      Object.defineProperty(el, 'params', {
+        value: sequenceSnapshot(value),
+        enumerable: true,
+        writable: false,
+      })
+    else el.params = value
+  }
   const ports = m.get('ports') as Ports | undefined
   if (ports && Array.isArray(ports.inputs) && Array.isArray(ports.outputs)) el.ports = ports
   const nodeType = str(m.get('nodeType'))
@@ -348,7 +370,13 @@ function readElement(id: string, m: ElementMap): CanvasElement | undefined {
   const nodeVersion = m.get('nodeVersion')
   if (typeof nodeVersion === 'number') el.nodeVersion = nodeVersion
   const results = m.get('results')
-  if (Array.isArray(results)) el.results = results.filter(isResult)
+  if (Array.isArray(results)) {
+    const filtered = results.filter(isResult)
+    const snapshot = snapshotResultEvidence(filtered)
+    if (snapshot !== filtered)
+      Object.defineProperty(el, 'results', { value: snapshot, enumerable: true, writable: false })
+    else el.results = filtered
+  }
   const adopted = m.get('adopted') === null ? null : str(m.get('adopted'))
   if (adopted !== undefined) el.adopted = adopted
   const reviews = m.get('reviews')
@@ -361,7 +389,17 @@ function readElement(id: string, m: ElementMap): CanvasElement | undefined {
     writable: false,
   })
   const deliveries = m.get('deliveries')
-  if (Array.isArray(deliveries)) el.deliveries = deliveries.filter(isDeliveryRecord)
+  if (Array.isArray(deliveries)) {
+    const records = deliveries.filter(isDeliveryRecord)
+    const snapshot = snapshotTypedDeliveries(records)
+    if (snapshot !== records)
+      Object.defineProperty(el, 'deliveries', {
+        value: snapshot,
+        enumerable: true,
+        writable: false,
+      })
+    else el.deliveries = records
+  }
   const run = m.get('run') as NodeRun | undefined
   if (run && typeof run === 'object' && typeof run.status === 'string') el.run = run
   return el

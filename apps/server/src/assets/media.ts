@@ -1,11 +1,51 @@
-import { execFile } from 'node:child_process'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { execFile, type ExecFileOptions } from 'node:child_process'
 import { writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 import sharp from 'sharp'
 
-const run = promisify(execFile)
+const runDefault = promisify(execFile)
+const mediaAbort = new AsyncLocalStorage<{
+  signal: AbortSignal
+  ffmpegAvailable?: Promise<boolean>
+  h264Cache?: Promise<string[] | null>
+  capsCache?: Promise<MediaCaps>
+}>()
+
+/** Opt-in cancellation scope, with job-local probe caches, for a complete local media task. */
+export function withMediaAbort<T>(signal: AbortSignal, task: () => Promise<T>) {
+  return mediaAbort.run({ signal }, task)
+}
+
+const run = ((file: string, args: readonly string[], options: ExecFileOptions = {}) => {
+  const signal = mediaAbort.getStore()?.signal
+  if (!signal) return runDefault(file, args, options)
+  signal.throwIfAborted()
+  return new Promise<{ stdout: string | Buffer; stderr: string | Buffer }>((resolve, reject) => {
+    let output: { stdout: string | Buffer; stderr: string | Buffer } | undefined
+    let failure: unknown
+    const child = execFile(
+      file,
+      args,
+      { ...options, signal, killSignal: 'SIGKILL' },
+      (error, stdout, stderr) => {
+        failure = error
+        output = { stdout, stderr }
+      },
+    )
+    // AbortError may arrive before close: keep the slot and temporary files until the child exits.
+    child.once('close', () => {
+      if (signal.aborted) reject(signal.reason)
+      else if (failure) reject(failure)
+      else if (output) resolve(output)
+      else reject(new Error('媒体子进程未返回输出'))
+    })
+  })
+}) as typeof runDefault
 
 export interface Probe {
+  /** Video stream duration, when declared separately from the container duration. */
+  videoDuration?: number
   videoCodec?: string
   frameRate?: number
   audioCodecs?: string[]
@@ -40,29 +80,35 @@ export function setMediaTools(paths: { ffmpeg: string; ffprobe: string }) {
  * macOS 上改用系统的 VideoToolbox（硬件编码，不可用时 allow_sw 退到 Apple 的软件编码）。
  */
 export function h264Args(): Promise<string[]> {
-  h264Cache ??= run(bin.ffmpeg, ['-hide_banner', '-encoders']).then(
-    ({ stdout }) => {
-      if (/^\s*V\S*\s+libx264\s/m.test(stdout))
-        return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20']
-      if (/^\s*V\S*\s+h264_videotoolbox\s/m.test(stdout))
-        // VideoToolbox 的恒定质量（-q:v）只有 Apple 芯片支持，统一按码率
-        return [
-          '-c:v',
-          'h264_videotoolbox',
-          '-allow_sw',
-          '1',
-          '-b:v',
-          '12M',
-          '-maxrate',
-          '20M',
-          '-bufsize',
-          '24M',
-        ]
-      return null
-    },
-    () => null,
-  )
-  return h264Cache.then((args) => {
+  const context = mediaAbort.getStore()
+  const detect = () =>
+    run(bin.ffmpeg, ['-hide_banner', '-encoders']).then(
+      ({ stdout }) => {
+        if (/^\s*V\S*\s+libx264\s/m.test(stdout))
+          return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20']
+        if (/^\s*V\S*\s+h264_videotoolbox\s/m.test(stdout))
+          // VideoToolbox 的恒定质量（-q:v）只有 Apple 芯片支持，统一按码率
+          return [
+            '-c:v',
+            'h264_videotoolbox',
+            '-allow_sw',
+            '1',
+            '-b:v',
+            '12M',
+            '-maxrate',
+            '20M',
+            '-bufsize',
+            '24M',
+          ]
+        return null
+      },
+      () => {
+        context?.signal.throwIfAborted()
+        return null
+      },
+    )
+  const pending = context ? (context.h264Cache ??= detect()) : (h264Cache ??= detect())
+  return pending.then((args) => {
     if (!args)
       throw new Error('本机 ffmpeg 没有 H.264 编码器（libx264 或 VideoToolbox），无法输出视频')
     return [...args, '-pix_fmt', 'yuv420p']
@@ -74,14 +120,16 @@ export const ffmpegBin = () => bin.ffmpeg
 
 /** ffmpeg / ffprobe 是否可用；缺失时视频和音频只存原文件，不生成衍生物 */
 export function hasFfmpeg(): Promise<boolean> {
-  ffmpegAvailable ??= Promise.all([
-    run(bin.ffmpeg, ['-version']),
-    run(bin.ffprobe, ['-version']),
-  ]).then(
-    () => true,
-    () => false,
-  )
-  return ffmpegAvailable
+  const context = mediaAbort.getStore()
+  const detect = () =>
+    Promise.all([run(bin.ffmpeg, ['-version']), run(bin.ffprobe, ['-version'])]).then(
+      () => true,
+      () => {
+        context?.signal.throwIfAborted()
+        return false
+      },
+    )
+  return context ? (context.ffmpegAvailable ??= detect()) : (ffmpegAvailable ??= detect())
 }
 
 /** 本机 ffmpeg 能做什么：烧字幕需要 libass（Homebrew 默认没有，Docker 镜像里有） */
@@ -98,15 +146,20 @@ export interface MediaCaps {
  * 不能等合成跑完才抛一句 “Error parsing a filter description”。
  */
 export function mediaCaps(): Promise<MediaCaps> {
-  capsCache ??= run(bin.ffmpeg, ['-hide_banner', '-filters']).then(
-    ({ stdout }) => ({
-      ffmpeg: true,
-      subtitles: /^\s*\S+\s+ass\s/m.test(stdout) || /^\s*\S+\s+subtitles\s/m.test(stdout),
-      rubberband: /^\s*\S+\s+rubberband\s/m.test(stdout),
-    }),
-    () => ({ ffmpeg: false, subtitles: false, rubberband: false }),
-  )
-  return capsCache
+  const context = mediaAbort.getStore()
+  const detect = () =>
+    run(bin.ffmpeg, ['-hide_banner', '-filters']).then(
+      ({ stdout }) => ({
+        ffmpeg: true,
+        subtitles: /^\s*\S+\s+ass\s/m.test(stdout) || /^\s*\S+\s+subtitles\s/m.test(stdout),
+        rubberband: /^\s*\S+\s+rubberband\s/m.test(stdout),
+      }),
+      () => {
+        context?.signal.throwIfAborted()
+        return { ffmpeg: false, subtitles: false, rubberband: false }
+      },
+    )
+  return context ? (context.capsCache ??= detect()) : (capsCache ??= detect())
 }
 
 /** 缺能力时给用户看的话：说清缺什么、怎么解决 */
@@ -129,6 +182,7 @@ export async function probeImage(file: string): Promise<Probe> {
 }
 
 interface FfprobeStream {
+  duration?: string
   codec_type?: string
   codec_name?: string
   avg_frame_rate?: string
@@ -139,7 +193,7 @@ interface FfprobeStream {
   height?: number
   disposition?: { attached_pic?: number }
   side_data_list?: { rotation?: number }[]
-  tags?: { rotate?: string }
+  tags?: { rotate?: string; DURATION?: string }
 }
 
 export async function probeMedia(file: string): Promise<Probe> {
@@ -161,6 +215,11 @@ export async function probeMedia(file: string): Promise<Probe> {
   const channels = singleAudio?.channels
   const sampleRate = Number(singleAudio?.sample_rate)
   const duration = Number(info.format?.duration)
+  const streamDuration = Number(video?.duration)
+  const tag = video?.tags?.DURATION?.match(/^(\d{2,}):([0-5]\d):([0-5]\d(?:\.\d+)?)$/)
+  const taggedDuration = tag ? Number(tag[1]) * 3600 + Number(tag[2]) * 60 + Number(tag[3]) : NaN
+  const videoDuration =
+    Number.isFinite(streamDuration) && streamDuration > 0 ? streamDuration : taggedDuration
   const rotation = Math.abs(
     Number(
       video?.side_data_list?.find((d) => d.rotation !== undefined)?.rotation ??
@@ -180,6 +239,7 @@ export async function probeMedia(file: string): Promise<Probe> {
     width: swap ? video?.height : video?.width,
     height: swap ? video?.width : video?.height,
     duration: Number.isFinite(duration) ? duration : undefined,
+    ...(Number.isFinite(videoDuration) && videoDuration > 0 ? { videoDuration } : {}),
     ...(video?.codec_name ? { videoCodec: video.codec_name } : {}),
     ...(frameRate !== undefined ? { frameRate } : {}),
     audioCodecs: audio.map((stream) => stream.codec_name ?? 'unknown'),

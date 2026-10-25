@@ -7,6 +7,7 @@ import type {
   BatchOutcome,
   BatchStage,
   PreparedInput,
+  StoryboardAudioSource,
 } from '@plein/protocol'
 import type { FlowGraph } from '@plein/flow'
 import * as Y from 'yjs'
@@ -24,6 +25,48 @@ export interface JobExpect {
   inputHash?: string
   planHash?: string
   deps?: BatchDependency[]
+  sequenceScope?: {
+    canvasId: string
+    boardId: string
+    sequenceId: string
+    shotIds: string[]
+    clipInstanceIds: string[]
+    audioSources?: StoryboardAudioSource[]
+  }
+}
+
+interface StoredReviewedInput {
+  kind: 'plein-reviewed-sequence-input'
+  version: 1
+  input: PreparedInput
+  sequenceScope: NonNullable<JobExpect['sequenceScope']>
+}
+export function storeReviewedInput(
+  input: PreparedInput,
+  scope?: JobExpect['sequenceScope'],
+): string {
+  const stored: PreparedInput | StoredReviewedInput = scope
+    ? { kind: 'plein-reviewed-sequence-input', version: 1, input, sequenceScope: scope }
+    : input
+  return JSON.stringify(stored)
+}
+function readReviewedInput(raw: string): {
+  input: PreparedInput
+  sequenceScope?: JobExpect['sequenceScope']
+} {
+  const value = JSON.parse(raw) as PreparedInput | StoredReviewedInput
+  if ('kind' in value && value.kind === 'plein-reviewed-sequence-input') {
+    if (
+      value.version !== 1 ||
+      !value.input ||
+      !value.sequenceScope ||
+      !Array.isArray(value.sequenceScope.shotIds) ||
+      !Array.isArray(value.sequenceScope.clipInstanceIds)
+    )
+      throw new Error('保存的序列审核范围损坏，请重新检查')
+    return { input: value.input, sequenceScope: value.sequenceScope }
+  }
+  return { input: value as PreparedInput }
 }
 
 /** 只冻结会改变输入的文档事实，排除布局、运行进度、审核及交付意见。 */
@@ -159,8 +202,11 @@ export async function snapshotBatch(
 /** 批次里一个目标提交时带的计划 */
 export function expectOf(item: BatchItemRow): JobExpect {
   const deps = JSON.parse(item.deps) as BatchDependency[]
-  if (item.input_hash) return { inputHash: item.input_hash, ...(deps.length ? { deps } : {}) }
-  return { ...(item.plan_hash ? { planHash: item.plan_hash } : {}), deps }
+  const reviewed = item.input ? readReviewedInput(item.input) : undefined
+  const scope = reviewed?.sequenceScope ? { sequenceScope: reviewed.sequenceScope } : {}
+  if (item.input_hash)
+    return { inputHash: item.input_hash, ...(deps.length ? { deps } : {}), ...scope }
+  return { ...(item.plan_hash ? { planHash: item.plan_hash } : {}), deps, ...scope }
 }
 
 /**
@@ -207,7 +253,7 @@ export function batchItem(row: BatchItemRow): BatchItem {
     ...(row.reason ? { reason: row.reason } : {}),
     ...(row.input_hash ? { inputHash: row.input_hash } : {}),
     deps: JSON.parse(row.deps) as BatchDependency[],
-    ...(row.input ? { input: JSON.parse(row.input) as PreparedInput } : {}),
+    ...(row.input ? { input: readReviewedInput(row.input).input } : {}),
     ...(row.frozen_hash ? { frozenHash: row.frozen_hash } : {}),
     ...(row.job_id ? { jobId: row.job_id } : {}),
     outcome: row.outcome as BatchOutcome,

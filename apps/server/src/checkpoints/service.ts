@@ -11,6 +11,8 @@ import {
   copyContinuity,
   createContinuityMap,
   readContinuity,
+  remapSequenceCanvasScopes,
+  snapshotTypedDeliveries,
   type NodeResult,
 } from '@plein/doc'
 import type {
@@ -264,6 +266,13 @@ export class CheckpointService {
         const localBindings = new Map([...doc!.elements()].map((el) => [el.id, el.id]))
         for (const el of doc!.elements()) {
           const m = doc!.mutable(el.id)!
+          const checkParams = m.get('params')
+          if (
+            el.nodeType === 'plein/sequence' &&
+            checkParams instanceof Y.Map &&
+            checkParams.get('instanceVersion') === 2
+          )
+            checkParams.set('clips', remapSequenceCanvasScopes(checkParams.toJSON(), remap).clips)
           const production = m.get('production')
           if (production instanceof Y.Map) {
             const goals = readProductionGoals(production.get('goals'))
@@ -289,6 +298,13 @@ export class CheckpointService {
             m.set(
               'results',
               el.results.map((r): NodeResult => ({ ...r, runId: remap.get(r.runId)! })),
+            )
+          if (el.deliveries?.length)
+            m.set(
+              'deliveries',
+              snapshotTypedDeliveries(
+                el.deliveries.map((record) => ({ ...record, historical: true })),
+              ),
             )
           const library = el.params?.libraryId
           if (

@@ -1,6 +1,7 @@
 import type { ProductionRecord } from './production'
 import type { CreativeReview } from './review-types'
 import type { DeliveryRecord } from './delivery'
+import type { GenerationOrigin, VideoSegment } from './video-segment'
 
 /** 画布元素类型。工作流节点统一为 `node`，具体节点由 `nodeType` 区分。 */
 export type ElementKind = 'image' | 'video' | 'audio' | 'markdown' | 'node' | 'frame' | 'sequence'
@@ -70,6 +71,7 @@ export interface CanvasElement extends Rect {
   color?: string
   /** 指向资产系统，二进制不进文档 */
   assetId?: string
+  videoSegment?: VideoSegment
   /** Markdown 等文本内容（文档里是 Y.Text） */
   text?: string
   /** 节点参数（文档里是 Y.Map，按键合并并发修改） */
@@ -108,6 +110,8 @@ export interface NodeResult {
   value: ResultValue
   /** 同一次运行的结果共享 runId */
   runId: string
+  /** Immutable original execution identity; local job aliases and copied carriers never rewrite it. */
+  generationOrigin?: GenerationOrigin
   /** 本次运行内的候选关联键，例如一条视频与它自己的尾帧。 */
   outputGroup?: string
   at: number
@@ -175,6 +179,7 @@ export interface NewElement extends Rect {
   name?: string
   color?: string
   assetId?: string
+  videoSegment?: VideoSegment
   text?: string
   params?: Record<string, unknown>
   ports?: Ports

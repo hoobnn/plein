@@ -1,11 +1,23 @@
 import { ReadOnlyDocError, updateElement } from './commands'
 import type { PleinDoc } from './doc'
+import type { NarrativeScope, VideoSegment } from './video-segment'
 /** 成片交付元数据：绑定已落盘的结果，不进入模型参数或输入哈希。 */
 export interface DeliverySource {
   source: string
   shotId?: string
   start: number
   end: number
+  clipInstanceId?: string
+  segmentId?: string
+  assetId?: string
+  port?: string
+  edgeId?: string
+  origin?: VideoSegment['origin']
+  selection?: VideoSegment['selection']
+  narrative?: NarrativeScope
+  sourceIn?: number
+  sourceOut?: number
+  speed?: number
 }
 export interface DeliveryNote {
   id: string
@@ -14,8 +26,20 @@ export interface DeliveryNote {
   resolved: boolean
   source?: string
   shotId?: string
+  clipInstanceId?: string
+}
+/** Only the exact sequenceSpec used by the exporter; this does not prove rendered text/OCR. */
+export interface DeliverySubtitleEvidence {
+  version: 1
+  basis: 'executed-sequence-spec'
+  enabled: boolean
+  cues: Array<{ start: number; end: number; text: string }>
+  assetId: string
+  resultId: string
 }
 export interface DeliveryRecord {
+  /** Copies/imports retain the original confirmation as history, never current-scope approval. */
+  historical?: boolean
   id: string
   resultId: string
   runId: string
@@ -30,6 +54,7 @@ export interface DeliveryRecord {
   sources: DeliverySource[]
   notes: DeliveryNote[]
   confirmedAt?: number
+  subtitleEvidence?: DeliverySubtitleEvidence
 }
 export function isDeliveryRecord(value: unknown): value is DeliveryRecord {
   if (!value || typeof value !== 'object') return false
@@ -54,11 +79,18 @@ export function isDeliveryRecord(value: unknown): value is DeliveryRecord {
         Number.isFinite(s.end) &&
         s.start >= 0 &&
         s.end >= s.start &&
-        (s.shotId === undefined || typeof s.shotId === 'string'),
+        (s.shotId === undefined || typeof s.shotId === 'string') &&
+        (s.clipInstanceId === undefined || typeof s.clipInstanceId === 'string') &&
+        (s.assetId === undefined || /^[0-9a-f]{64}$/.test(s.assetId)) &&
+        (s.sourceIn === undefined || (Number.isFinite(s.sourceIn) && s.sourceIn >= 0)) &&
+        (s.sourceOut === undefined ||
+          (Number.isFinite(s.sourceOut) && s.sourceOut >= (s.sourceIn ?? 0))) &&
+        (s.speed === undefined || (Number.isFinite(s.speed) && s.speed > 0)),
     ) &&
     Array.isArray(v.notes) &&
     v.notes.every((n) => validNote(n, v.duration ?? 0)) &&
-    (v.confirmedAt === undefined || Number.isFinite(v.confirmedAt))
+    (v.confirmedAt === undefined || Number.isFinite(v.confirmedAt)) &&
+    (v.historical === undefined || typeof v.historical === 'boolean')
   )
 }
 
@@ -72,7 +104,7 @@ export function editDelivery(
   if (doc.readOnly) throw new ReadOnlyDocError()
   const el = doc.get(elementId)
   const record = el?.deliveries?.find((r) => r.id === deliveryId)
-  if (!record) return false
+  if (!record || record.historical) return false
   const notes = change.notes ?? record.notes
   if (notes.some((n) => !validNote(n, record.duration))) return false
   if (change.confirm && notes.some((n) => !n.resolved)) return false
@@ -101,6 +133,7 @@ function validNote(value: unknown, duration: number): value is DeliveryNote {
     n.text.length <= 4000 &&
     typeof n.resolved === 'boolean' &&
     (n.source === undefined || typeof n.source === 'string') &&
-    (n.shotId === undefined || typeof n.shotId === 'string')
+    (n.shotId === undefined || typeof n.shotId === 'string') &&
+    (n.clipInstanceId === undefined || typeof n.clipInstanceId === 'string')
   )
 }

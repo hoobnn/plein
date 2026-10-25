@@ -12,6 +12,7 @@ import {
   arrangeSequence,
   sequenceNode,
   sequenceSpec,
+  sequenceSourceMap,
   subtitleExportProblem,
   speechNode,
   StoryboardDraft,
@@ -34,7 +35,7 @@ import {
   videoTaskOverrides,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
-import { mediaCaps, missingCapability } from '../assets/media'
+import { mediaCaps, missingCapability, withMediaAbort } from '../assets/media'
 import { animaticExecutor } from './animatic'
 import { sfx, transcription, speechDirection, speechVoice } from './audio'
 
@@ -305,16 +306,64 @@ const sequence = defineExecutor(sequenceNode, async (ctx) => {
   if (subtitleProblem)
     throw new ProviderError('invalid_input', subtitleProblem, { retryable: false })
   ctx.progress(0, '读取素材…')
-  const [clips, dialogue, more] = await Promise.all([
-    Promise.all(arranged.map((c) => ctx.media.probe(c.clip))),
-    Promise.all(arranged.map(async (c) => (c.dialogue ? ctx.media.probe(c.dialogue) : undefined))),
-    Promise.all(arranged.map((c) => Promise.all(c.more.map((m) => ctx.media.probe(m))))),
-  ])
+  const [clips, dialogue, more] = await withMediaAbort(ctx.signal, () =>
+    Promise.all([
+      Promise.all(arranged.map((c) => ctx.media.probe(c.clip))),
+      Promise.all(
+        arranged.map(async (c) => (c.dialogue ? ctx.media.probe(c.dialogue) : undefined)),
+      ),
+      Promise.all(arranged.map((c) => Promise.all(c.more.map((m) => ctx.media.probe(m))))),
+    ]),
+  )
+  if (params.instanceVersion === 2) {
+    for (const [index, row] of arranged.entries()) {
+      if (row.segment && row.sound === 'legacy')
+        throw new ProviderError('invalid_input', '固定段必须明确选择声音路线', { retryable: false })
+      if ((row.sound === 'voice' || row.sound === 'mix') && !row.dialogue && !row.more.length)
+        throw new ProviderError('invalid_input', '配音或混合实例尚无明确有效的声音素材', {
+          retryable: false,
+        })
+      for (const audio of [dialogue[index], ...more[index]!].filter(Boolean))
+        if (!audio!.hasAudio || !audio!.duration || !Number.isFinite(audio!.duration))
+          throw new ProviderError('invalid_input', '实例配音文件没有有效音轨', { retryable: false })
+      const info = clips[index]!
+      if (
+        !info.videoDuration ||
+        !Number.isFinite(info.videoDuration) ||
+        !info.duration ||
+        Math.abs(info.duration - info.videoDuration) > 1 / 30 + 0.001
+      )
+        throw new ProviderError(
+          'invalid_input',
+          '视频容器时长不能证明实际画面覆盖，请先拆分或重核视频时长',
+          { retryable: false },
+        )
+      if (
+        !row.clip.assetId ||
+        !info.hasVideo ||
+        !Number.isFinite(info.duration) ||
+        !info.duration ||
+        row.in >= info.videoDuration ||
+        (row.out !== undefined && (row.out <= row.in || row.out > info.videoDuration + 0.001))
+      )
+        throw new ProviderError(
+          'invalid_input',
+          `剪辑实例 ${row.clipInstanceId} 的文件或源区间无效`,
+          { retryable: false },
+        )
+      if (row.segment && Math.abs(row.segment.duration - info.videoDuration) > 1 / 30 + 0.001)
+        throw new ProviderError(
+          'invalid_input',
+          `固定段 ${row.segment.segmentId} 的实际时长与快照不符`,
+          { retryable: false },
+        )
+    }
+  }
   const spec = sequenceSpec(
     params,
     arranged,
     {
-      clips: clips.map((i) => i.duration ?? 0),
+      clips: clips.map((i) => (params.instanceVersion === 2 ? i.videoDuration : i.duration) ?? 0),
       dialogue: dialogue.map((i) => i?.duration),
       more: more.map((list) => list.map((i) => i.duration)),
     },
@@ -330,8 +379,24 @@ const sequence = defineExecutor(sequenceNode, async (ctx) => {
   if (spec.subtitles?.cues.length && caps.ffmpeg && !caps.subtitles)
     throw new ProviderError('unavailable', missingCapability('subtitles'), { retryable: false })
   ctx.progress(0, '合成中…')
+  const clipEvidence =
+    params.instanceVersion === 2
+      ? {
+          version: 1 as const,
+          basis: 'executed-sequence-spec' as const,
+          sources: structuredClone(sequenceSourceMap(spec)),
+        }
+      : undefined
   const out = await ctx.media.compose(spec)
-  return { video: [{ type: 'video', ...out }] }
+  return {
+    video: [
+      {
+        type: 'video',
+        ...out,
+        ...(clipEvidence ? { clipEvidence } : {}),
+      },
+    ],
+  }
 })
 
 export const coreServerPlugin = defineServerPlugin(corePlugin, {

@@ -217,6 +217,9 @@ export const api = {
   catalog: () => request<Catalog>(API.catalog),
   /** 画布最近的运行记录（任务面板） */
   canvasJobs: (id: string) => request<JobList>(API.canvasJobs(id)),
+  /** 按精确 ID 读取该画布历史作业，不从最近任务列表推断。 */
+  canvasJob: (canvasId: string, jobId: string): Promise<JobInfo> =>
+    request<JobInfo>(API.canvasJob(canvasId, jobId)),
   /** 调用方可传整张分镜；每个请求最多 100 个，服务端只返回各节点最新一条。 */
   canvasNodeJobs: async (id: string, nodeIds: readonly string[]): Promise<LatestNodeJobs> => {
     const nodes = [...new Set(nodeIds)]

@@ -3,6 +3,8 @@ import {
   connect,
   createElement,
   currentResult,
+  isSequenceInstance,
+  materializeSequenceV1,
   type NewElement,
   setParams,
   updateElement,
@@ -364,6 +366,101 @@ function linkSequence(
   const into = [...doc.edges()].filter((e) => e.to[0] === seq.id)
   const has = (from: string, port: string) =>
     into.some((e) => e.from[0] === from && e.to[1] === port)
+  if ((seq.nodeVersion ?? 1) >= 2) {
+    const params = seq.params ?? {}
+    if (params.instanceVersion !== 2) {
+      // A v2 catalog node starts empty; retain the same explicit legacy materialization as connect.
+      if (Array.isArray(params.clips) && params.clips.some((row) => row?.segment)) return 'linked'
+      setParams(
+        doc,
+        seq.id,
+        materializeSequenceV1(seq.id, params, [...doc.edges()], (id) => doc.has(id)),
+      )
+    }
+    const initial = doc.get(seq.id)?.params?.clips
+    // Never filter damaged rows out and turn an invalid mapping into an implicitly payable one.
+    if (!Array.isArray(initial) || !initial.every(isSequenceInstance)) return 'linked'
+    const managed = (id: string | undefined, video: ShotSource, role: ShotRole) => {
+      const element = id ? doc.get(id) : undefined
+      const source = element && sourceOf(element)
+      return (
+        !!source &&
+        !source.detached &&
+        source.role === role &&
+        source.storyboard === video.storyboard &&
+        source.shot === video.shot
+      )
+    }
+    const active = shots.filter((shot) => {
+      const source = sourceOf(doc.get(shot.video)!)
+      return (
+        source &&
+        !source.detached &&
+        !initial.some(
+          (row) =>
+            row.segment &&
+            row.narrative &&
+            !row.narrative.historical &&
+            row.narrative.boardId === source.storyboard &&
+            row.narrative.shotId === source.shot,
+        )
+      )
+    })
+    for (const shot of active) {
+      const video = sourceOf(doc.get(shot.video)!)!
+      if (!has(shot.video, 'clips')) connect(doc, [shot.video, 'video'], [seq.id, 'clips'])
+      for (const speech of shot.speeches)
+        if (managed(speech, video, 'speech') && !has(speech, 'dialogue'))
+          connect(doc, [speech, 'audio'], [seq.id, 'dialogue'])
+      if (managed(shot.sfx, video, 'sfx') && !has(shot.sfx!, 'sfx'))
+        connect(doc, [shot.sfx!, 'audio'], [seq.id, 'sfx'])
+    }
+    // connect owns row identity and order. Read its complete current values after all connections.
+    const rows = doc.get(seq.id)?.params?.clips
+    if (!Array.isArray(rows) || !rows.every(isSequenceInstance)) return 'linked'
+    const edges = [...doc.edges()]
+    const clips = rows.map((row) => {
+      if (row.segment || row.sound !== 'legacy') return row
+      const shot = active.find((shot) => shot.video === row.source)
+      const video = shot && sourceOf(doc.get(shot.video)!)
+      if (
+        !shot ||
+        !video ||
+        row.port !== 'video' ||
+        (row.narrative &&
+          (row.narrative.historical ||
+            row.narrative.boardId !== video.storyboard ||
+            row.narrative.shotId !== video.shot)) ||
+        edges.filter(
+          (edge) =>
+            edge.to[0] === seq.id &&
+            edge.to[1] === 'clips' &&
+            edge.from[0] === row.source &&
+            edge.from[1] === row.port &&
+            (!row.edgeId || edge.id === row.edgeId),
+        ).length !== 1
+      )
+        return row
+      const speeches = shot.speeches.filter((id) => managed(id, video, 'speech'))
+      const dialogue =
+        !row.dialogue || managed(row.dialogue, video, 'speech') ? (speeches[0] ?? '') : row.dialogue
+      const retained = (row.more ?? []).filter((id) => !managed(id, video, 'speech'))
+      const more = [...new Set([...speeches.filter((id) => id !== dialogue), ...retained])]
+      const sfx = managed(shot.sfx, video, 'sfx') ? shot.sfx : undefined
+      const next = {
+        ...row,
+        dialogue,
+        ...(sfx || managed(row.sfx, video, 'sfx')
+          ? { sfx: row.sfx && !managed(row.sfx, video, 'sfx') ? row.sfx : (sfx ?? '') }
+          : {}),
+      }
+      if (more.length) next.more = more
+      else delete next.more
+      return next
+    })
+    setParams(doc, seq.id, { clips })
+    return 'linked'
+  }
   const clips = [...((seq.params?.clips as SequenceClip[] | undefined) ?? [])]
   for (const s of shots) {
     if (!has(s.video, 'clips')) connect(doc, [s.video, 'video'], [seq.id, 'clips'])

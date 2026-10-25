@@ -2,6 +2,8 @@ import type { AssetRef } from './ports'
 
 /** 媒体文件的基本信息（ffprobe） */
 export interface MediaInfo {
+  /** 实际视频流报告的时长；容器时长可能由更长音轨延伸。 */
+  videoDuration?: number
   /** 秒 */
   duration?: number
   width?: number
@@ -36,6 +38,37 @@ export interface ComposeClip {
   speed?: number
   /** 从上一段切到这一段的转场；不填用 ComposeSpec.transition，第一段忽略 */
   transition?: ComposeTransition
+  provenance?: ClipProvenance
+}
+
+export interface MediaResultIdentity {
+  canvasId: string
+  nodeId: string
+  port: string
+  resultId: string
+  runId: string
+}
+
+export interface ClipProvenance {
+  clipInstanceId?: string
+  segmentId?: string
+  source: string
+  port?: string
+  edgeId?: string
+  origin?: MediaResultIdentity
+  /** Captured local candidate location, distinct from original execution identity. */
+  selection?: MediaResultIdentity
+  narrative?: { canvasId: string; boardId: string; shotId: string; historical?: boolean }
+}
+
+/** Source seconds and film seconds are different when speed or overlap is used. */
+export interface CompositionSource extends ClipProvenance {
+  assetId: string
+  sourceIn: number
+  sourceOut: number
+  speed: number
+  start: number
+  end: number
 }
 
 /** 放在时间线上的一段声音 */
