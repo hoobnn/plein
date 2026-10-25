@@ -105,4 +105,16 @@ H3 系列开放 21:9；参考模式可选智能画幅，Lite 参考模式与全�
 
 官方契约：[MiniMax H3 V2](https://platform.minimax.io/docs/api-reference/video-generation-v2-create)、[Seedance 创建任务](https://docs.volcengine.com/docs/ark/create-video-generation-task-api?lang=zh)、[Seedance 2.5 任务约束](https://docs.volcengine.com/docs/ark/seedance-2-5?lang=zh)、[TOS 官方 SDK](https://github.com/volcengine/ve-tos-js-sdk)。本轮验证范围和回执见 [多模态参考验收记录](../video-reference-alignment.md)。
 
+## 兼容对话渠道
+
+在「设置 → 模型平台 → 兼容对话渠道」填写完整 Base URL（包含 `/v1` 等协议前缀）、API Key 和渠道上的实际模型 ID，保存后启用。当前提供一个配置槽，仅接入 Chat Completions 对话；不自动拉取模型，不提供通用生图、视频或音频。API Key 必填，保存在本机平台密钥配置中，不进入画布。
+
+图片输入、工具调用和结构化输出必须按渠道实际能力显式勾选或选择，不根据模型名称推断。默认只有普通文本；结构化输出可选 `json_object`（JSON mode 与本地 Schema 校验）或 `json_schema`（向渠道发送 Schema），具体执行能力仍以渠道为准。未声明的图片、工具或结构化输入在提交前阻断，内置智能体需要显式启用工具调用。
+
+远端地址必须使用 HTTPS 和域名；本机服务允许 `http://localhost:<端口>/...`，当前不接受 IP 地址。Base URL 不得包含用户名、密码、查询参数或片段。宿主只允许配置的精确 origin（协议、主机和端口），重定向逐跳检查；跨 origin 重定向在发送前阻断，不将 API Key 转发到另一个渠道。
+
+「检查配置」只验证本机填写项，不联网、不生成、不计费，也不表示远端鉴权、模型权限或余额已经通过。实际生成继续走既有任务记录与提交未知规则，不自动重试生成 POST。接入真实渠道前应先单独验证一个小请求，不能用配置检查替代模型能力验收。
+
+修改地址、实际模型或能力声明会生成新的模型引用；旧节点需要重新选择模型，旧任务不能把原引用当成新渠道重提。在途调用保留开始时的地址、设置和密钥快照。模型引用包含非密钥配置摘要，密钥轮换不改变模型身份；这是单配置槽，不支持同时保存多个渠道或对旧渠道进行远端任务查询恢复。
+
 模型菜单按已实现的输入模式禁用不支持的选项；例如方舟和万相不开放仅尾帧，服务端预览也会阻断。MiniMax 首帧 / 尾帧以及 Seedance 2.5 首帧 / 首尾帧自动跟随输入画幅。存在角色等软引用时，素材编号与搭配限制由服务端根据最终展开的素材校验，避免用尚未展开的图片数量误拦。

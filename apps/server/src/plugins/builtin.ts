@@ -1,4 +1,11 @@
-import { arkPlugin, bailianPlugin, doubaoPlugin, minimaxPlugin, mockPlugin } from '@plein/providers'
+import {
+  arkPlugin,
+  bailianPlugin,
+  compatiblePlugin,
+  doubaoPlugin,
+  minimaxPlugin,
+  mockPlugin,
+} from '@plein/providers'
 import type { ServerPluginDefinition } from '@plein/plugin-sdk'
 import { coreServerPlugin } from '../executors/core'
 
@@ -11,5 +18,6 @@ export function builtinPlugins(opts: { mock: boolean }): ServerPluginDefinition[
     doubaoPlugin,
     bailianPlugin,
     arkPlugin,
+    compatiblePlugin,
   ]
 }

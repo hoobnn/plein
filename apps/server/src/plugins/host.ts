@@ -30,6 +30,7 @@ import {
   type VoiceCloneState,
 } from '@plein/plugin-sdk'
 import { stableStringify } from '@plein/flow'
+import { compatibleBaseURL, COMPATIBLE_ID, createCompatiblePlugin } from '@plein/providers'
 import { Agent, Dispatcher1Wrapper } from 'undici'
 import { composeVideo } from '../assets/compose'
 import { hasFfmpeg, probeMedia } from '../assets/media'
@@ -291,12 +292,28 @@ export class PluginHost {
       const entry = this.registry.register(p, { builtin })
       if (entry.status === 'error') this.log(entry.manifest.id, `加载失败：${entry.error}`)
     }
+    this.refreshConfiguredProviders()
+  }
+
+  private compatibleDescriptor = ''
+
+  /** Only the trusted built-in channel may derive its exact network permission from owner settings. */
+  refreshConfiguredProviders() {
+    if (!this.registry.plugin(COMPATIBLE_ID)?.builtin) return
+    const settings = this.configs.get(COMPATIBLE_ID).settings
+    const signature = stableStringify(settings)
+    if (signature === this.compatibleDescriptor) return
+    const plugin = createCompatiblePlugin(settings)
+    this.registry.unregister(COMPATIBLE_ID)
+    this.registry.register(plugin, { builtin: true })
+    this.compatibleDescriptor = signature
   }
 
   // ── Provider ──────────────────────────────────────
 
   /** 已启用平台中支持某能力的模型 */
   models(capability: Capability): Array<ModelSpec & { ref: string; provider: string }> {
+    this.refreshConfiguredProviders()
     const out: Array<ModelSpec & { ref: string; provider: string }> = []
     for (const [id, { def }] of this.registry.providers) {
       if (!this.configs.get(id).enabled) continue
@@ -334,6 +351,7 @@ export class PluginHost {
 
   /** 测试连接：校验配置与密钥；没有 test 方法的平台只校验配置 */
   async testProvider(id: string, ownerId: string, signal?: AbortSignal) {
+    this.refreshConfiguredProviders()
     const entry = this.registry.providers.get(id)
     if (!entry) throw new ProviderError('invalid_input', `平台 ${id} 未安装`)
     const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
@@ -455,6 +473,7 @@ export class PluginHost {
       )
     }
 
+    this.refreshConfiguredProviders()
     const parsed = parseModelRef(ref)
     if (!parsed) throw new ProviderError('invalid_input', `模型引用格式不正确：${ref}`)
     const entry = this.registry.providers.get(parsed.provider)
@@ -864,7 +883,13 @@ export class PluginHost {
     }
     if (!providerConfigured(def, config.secrets))
       throw new ProviderError('auth', `平台 ${def.title} 缺少一组完整的鉴权密钥`)
-    const fetchScoped = scopedFetch(manifest, this.opts.fetch ?? providerFetch)
+    const fetchScoped = scopedFetch(
+      manifest,
+      this.opts.fetch ?? providerFetch,
+      id === COMPATIBLE_ID && this.registry.plugin(plugin)?.builtin && settings.data.baseURL
+        ? compatibleBaseURL(String(settings.data.baseURL)).origin
+        : undefined,
+    )
     return {
       settings: settings.data,
       secret: scopedSecrets(manifest, config.secrets),

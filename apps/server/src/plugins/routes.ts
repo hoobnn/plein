@@ -40,6 +40,7 @@ export function pluginRoutes(host: PluginHost) {
 
   return new Hono<AuthEnv>()
     .get('/api/catalog', (c) => {
+      host.refreshConfiguredProviders()
       const catalog: Catalog = {
         plugins: registry.plugins.map((p) => ({
           id: p.manifest.id,
@@ -107,6 +108,7 @@ export function pluginRoutes(host: PluginHost) {
       if (unknown.length)
         return c.json({ error: 'invalid', message: `未知的密钥：${unknown.join('、')}` }, 400)
       configs.update(id, body.data)
+      host.refreshConfiguredProviders()
       return c.json(view(id))
     })
     .put('/api/model-defaults', async (c) => {

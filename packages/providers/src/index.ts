@@ -7,3 +7,9 @@ export { minimaxPlugin, minimaxProvider } from './minimax'
 export { doubaoPlugin, doubaoProvider } from './doubao'
 export { bailianPlugin, bailianProvider } from './bailian'
 export { arkPlugin, arkProvider } from './ark'
+export {
+  compatiblePlugin,
+  createCompatiblePlugin,
+  compatibleBaseURL,
+  COMPATIBLE_ID,
+} from './compatible'

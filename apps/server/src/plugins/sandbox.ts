@@ -14,9 +14,16 @@ const MAX_REDIRECTS = 5
  * 内置插件与宿主同进程，这层是约定而非安全边界；第三方插件以后在子进程里运行，
  * 由宿主代理网络请求，用的是同一套检查。
  */
-export function scopedFetch(manifest: PluginManifest, base: typeof fetch = fetch): typeof fetch {
+export function scopedFetch(
+  manifest: PluginManifest,
+  base: typeof fetch = fetch,
+  origin?: string,
+): typeof fetch {
   const allowed = manifest.permissions.network
   const check = (url: URL) => {
+    if (origin && url.origin !== origin) {
+      throw new PermissionError(`插件 ${manifest.id} 只能访问配置的渠道 origin`)
+    }
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {
       throw new PermissionError(`插件 ${manifest.id} 不能访问 ${url.protocol} 地址`)
     }
