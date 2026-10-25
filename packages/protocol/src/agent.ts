@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { ApplyEditPlan, type EditPlan, EditScope } from './edit-plan'
+import type { StoryboardBatchPlan } from './storyboard-batch'
 
 /**
  * 智能体：
@@ -216,6 +217,8 @@ export type AgentItem =
       reason: string
       /** 相关元素 */
       ids: string[]
+      /** 审阅快照不携带可执行 token，历史记录不能恢复批准。 */
+      storyboardBatch?: Omit<StoryboardBatchPlan, 'token'>
       status: 'pending' | 'approved' | 'denied' | 'expired'
       at: number
     }

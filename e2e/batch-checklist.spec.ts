@@ -78,7 +78,7 @@ test(
     await expect(checklist).toContainText('内容或任务已变化')
     await checklist.getByRole('button', { name: '重新检查清单', exact: true }).click()
     await expect(confirm).toBeEnabled()
-    await checklist.locator('details').first().locator('summary').click()
+    await checklist.locator('details').first().locator(':scope > summary').click()
     await expect(checklist).toContainText('逆光构图')
     let release!: () => void
     const gate = new Promise<void>((resolve) => {

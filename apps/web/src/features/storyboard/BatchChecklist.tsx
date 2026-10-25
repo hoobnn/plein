@@ -1,4 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
+import { shotSegmentMapping } from '@plein/capabilities'
 import type {
   StoryboardBatchPlan,
   StoryboardBatchRequest,
@@ -8,8 +9,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api } from '../../api/client'
 import { useCanvas } from '../../stores/canvas'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { BatchPlanDetails } from './BatchPlanDetails'
 
-const actions = { run: '本次生成', reuse: '沿用', blocked: '阻塞', skip: '跳过' }
 const roles = { image: '分镜图', video: '视频', speech: '配音', sfx: '音效' }
 
 export function BatchChecklist({
@@ -20,6 +21,7 @@ export function BatchChecklist({
   onClose,
   onLocate,
   onStarted,
+  isCurrent,
 }: {
   engine: Engine
   canvasId: string
@@ -28,15 +30,18 @@ export function BatchChecklist({
   onClose(): void
   onLocate(row: StoryboardBatchRow): void
   onStarted(total: number): void
+  isCurrent?(): boolean
 }) {
   const [plan, setPlan] = useState<StoryboardBatchPlan | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [stale, setStale] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sequenceId, setSequenceId] = useState(request.sequenceId ?? '')
   const sync = useCanvas((s) => s.sync)
   const online = sync === 'connected'
   const version = useRef(0)
+  const planVersion = useRef(-1)
   const invalidate = useCallback(() => {
     version.current++
   }, [])
@@ -47,13 +52,13 @@ export function BatchChecklist({
     setStale(true)
     setLoading(false)
   }, [online, invalidate])
-  const requestKey = JSON.stringify(request)
+  const requestKey = JSON.stringify({ ...request, sequenceId: sequenceId || undefined })
   const load = useCallback(async () => {
     const mine = ++version.current
     setLoading(true)
     setStale(true)
     setError(null)
-    if (useCanvas.getState().sync !== 'connected') {
+    if (useCanvas.getState().sync !== 'connected' || isCurrent?.() === false) {
       setLoading(false)
       return
     }
@@ -63,7 +68,8 @@ export function BatchChecklist({
         boardId,
         JSON.parse(requestKey) as StoryboardBatchRequest,
       )
-      if (mine !== version.current) return
+      if (mine !== version.current || isCurrent?.() === false) return
+      planVersion.current = mine
       setPlan(next)
       setStale(false)
     } catch (cause) {
@@ -71,7 +77,7 @@ export function BatchChecklist({
     } finally {
       if (mine === version.current) setLoading(false)
     }
-  }, [canvasId, boardId, requestKey])
+  }, [canvasId, boardId, requestKey, isCurrent])
   useEffect(() => {
     const off = engine.doc.subscribe(() => {
       invalidate()
@@ -87,17 +93,32 @@ export function BatchChecklist({
 
   const commit = async () => {
     if (!plan || busy || stale || loading || !online) return
+    const current = useCanvas.getState()
+    if (
+      current.engine !== engine ||
+      current.canvasId !== canvasId ||
+      current.sync !== 'connected' ||
+      engine.doc.readOnly
+    )
+      return setError('画布、同步或编辑权限已变化，请重新打开清单')
+    if (planVersion.current !== version.current) {
+      setStale(true)
+      return setError('清单范围或内容已变化，请重新检查')
+    }
+    if (isCurrent?.() === false) return setError('工作台目标或权限已变化，请重新打开清单')
+    const mine = version.current
     setBusy(true)
     setError(null)
     try {
       const started = await api.storyboardBatchCommit(canvasId, boardId, plan.token)
-      onStarted(started.total)
+      if (isCurrent?.() !== false) onStarted(started.total)
     } catch (cause) {
       const changed =
         cause instanceof ApiError && cause.code === 'input_changed'
           ? (cause.body as { plan?: StoryboardBatchPlan })?.plan
           : null
-      if (changed) {
+      if (changed && mine === version.current && isCurrent?.() !== false) {
+        planVersion.current = mine
         setPlan(changed)
         setStale(false)
       } else setStale(true)
@@ -107,6 +128,33 @@ export function BatchChecklist({
     }
   }
   const summary = plan?.summary
+  const locateMapping = (row: StoryboardBatchRow, clipInstanceId: string) => {
+    const state = useCanvas.getState()
+    if (
+      !row.mapping ||
+      !row.shotId ||
+      state.engine !== engine ||
+      state.canvasId !== canvasId ||
+      isCurrent?.() === false
+    )
+      return
+    const mapping = shotSegmentMapping(engine.doc, {
+      canvasId,
+      boardId,
+      shotId: row.shotId,
+      sequenceId: row.mapping.sequenceId,
+    })
+    if (
+      mapping.problem ||
+      !mapping.instances.some((instance) => instance.clipInstanceId === clipInstanceId) ||
+      planVersion.current !== version.current
+    )
+      return setError('清单映射已变化，请重新检查')
+    onClose()
+    engine.selection.set([row.mapping.sequenceId])
+    engine.zoomToFit([row.mapping.sequenceId])
+    state.openSequence(row.mapping.sequenceId, clipInstanceId)
+  }
   return (
     <Modal
       label="批量生成清单"
@@ -139,6 +187,32 @@ export function BatchChecklist({
             : '为所选镜头创建新候选，旧候选保留。'}
           资产准备也列在下方；阻塞和跳过项本次不会提交。
         </p>
+        {!!plan?.scope?.sequenceIds.length && (
+          <label className="mb-3 block text-sm">
+            本次序列范围{' '}
+            <select
+              aria-label="批量清单序列范围"
+              className="ui-input"
+              value={sequenceId}
+              disabled={busy || loading}
+              onChange={(event) => {
+                invalidate()
+                setStale(true)
+                setPlan(null)
+                setSequenceId(event.target.value)
+              }}
+            >
+              <option value="">唯一关联时确定；多个序列需选择</option>
+              {[...new Set([...plan.scope.sequenceIds, ...(sequenceId ? [sequenceId] : [])])].map(
+                (id) => (
+                  <option key={id} value={id}>
+                    {engine.doc.get(id)?.name ?? id} · {id}
+                  </option>
+                ),
+              )}
+            </select>
+          </label>
+        )}
         {!online && (
           <p role="status" className="mb-3 text-sm text-danger">
             当前未连接服务，恢复连接并重新检查后才能提交。
@@ -154,74 +228,14 @@ export function BatchChecklist({
             内容或任务已变化，请重新检查清单。
           </p>
         )}
-        {summary && (
-          <p aria-label="清单汇总" className="mb-4 text-sm">
-            生成 {summary.run} 项 · 沿用 {summary.reuse} 项 · 阻塞 {summary.blocked} 项 · 跳过{' '}
-            {summary.skip} 项{' · '}预计 {summary.calls} 次模型调用（不含自动重试）
-            {summary.prices.map((price) => (
-              <span key={price.currency}>
-                {' '}
-                · 配置估算 {price.amount.toFixed(2)} {price.currency}
-              </span>
-            ))}
-            {summary.unknownCalls > 0 && <span> · {summary.unknownCalls} 次价格未知</span>}
-          </p>
+        {plan && (
+          <BatchPlanDetails
+            plan={plan}
+            busy={busy}
+            onLocate={onLocate}
+            onLocateMapping={locateMapping}
+          />
         )}
-        <table className="w-full text-left text-sm" aria-label="本次批量项目">
-          <thead>
-            <tr className="border-b border-line text-ink-muted">
-              <th className="p-2">项目</th>
-              <th className="p-2">处理</th>
-              <th className="p-2">原因与实际输入</th>
-              <th className="p-2">修复</th>
-            </tr>
-          </thead>
-          <tbody>
-            {plan?.rows.map((row) => (
-              <tr key={row.key} className="border-b border-line align-top">
-                <td className="p-2">
-                  <p>{row.name}</p>
-                  <p className="text-xs text-ink-subtle">
-                    {row.prerequisite ? '资产准备' : row.shotNo ? `镜头 ${row.shotNo}` : ''}
-                  </p>
-                </td>
-                <td className="whitespace-nowrap p-2">
-                  {actions[row.action]}
-                  {row.calls > 0 && <p className="text-xs text-ink-muted">预计 {row.calls} 次</p>}
-                </td>
-                <td className="max-w-120 p-2">
-                  <p>{row.reason}</p>
-                  {row.input && (
-                    <details className="mt-1 text-xs text-ink-muted">
-                      <summary className="cursor-pointer">
-                        查看实际输入{row.deferred ? '（资产准备后复核）' : ''}
-                      </summary>
-                      <p>{row.input.model?.title ?? '尚未选模型'}</p>
-                      <p className="mt-1 whitespace-pre-wrap break-words">
-                        {row.input.prompt ?? ''}
-                      </p>
-                      {row.input.notices.map((notice) => (
-                        <p key={`${notice.code}/${notice.elementId ?? ''}/${notice.message}`}>
-                          {notice.message}
-                        </p>
-                      ))}
-                    </details>
-                  )}
-                </td>
-                <td className="p-2">
-                  <button
-                    type="button"
-                    className="ui-btn ui-btn-quiet ui-btn-xs"
-                    disabled={busy}
-                    onClick={() => onLocate(row)}
-                  >
-                    定位
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
         {!plan && loading && (
           <p className="py-6 text-sm text-ink-muted">正在准备实际输入，不会调用生成平台…</p>
         )}

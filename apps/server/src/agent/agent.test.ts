@@ -588,10 +588,11 @@ describe('确认关卡与界面能力', () => {
     gate.approvals.expireAll()
     expect(gate.decided).toContain('run_frame:expired')
     expect(gate.approvals.decide(gated.approval_id, true)).toBe(false)
-    // 分镜批量运行同样要确认
+    // 无镜头时在审批前返回预检错误，不能批准不存在的清单。
     const board = (await gate.call('create_node', { type: 'plein/storyboard' })).json()
-    const batch = (await gate.call('run_storyboard', { id: board.id, role: 'image' })).json()
-    expect(batch.status).toBe('needs_approval')
+    const batch = await gate.call('run_storyboard', { id: board.id, role: 'image' })
+    expect(batch.error).toBe(true)
+    expect(batch.text).toContain('还没有镜头')
     gate.changes.end()
     gate.changes.release()
 

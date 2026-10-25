@@ -19,7 +19,6 @@ import {
   need,
   placeNew,
   resultSummary,
-  runExpanded,
   shotsOf,
   summarize,
 } from '@plein/capabilities'
@@ -45,6 +44,7 @@ import {
   MediaDeriveRequest,
   type MediaDerivation,
   MediaOp,
+  type StoryboardBatchPlan,
 } from '@plein/protocol'
 import sharp, { type Sharp } from 'sharp'
 import { z } from 'zod'
@@ -56,6 +56,7 @@ import type { AssetStore } from '../assets/store'
 import { NodeRunError, type PluginHost } from '../plugins/host'
 import type { EditPlans } from '../runs/edit-plan'
 import type { NodeRuns } from '../runs/runs'
+import { storyboardBatchesOf, type StoryboardBatches } from '../runs/storyboard-batch'
 import type { LibraryStore } from '../library/store'
 import type { Rooms } from '../sync/rooms'
 import { type Approvals, approvalFor } from './approvals'
@@ -64,7 +65,7 @@ import { APPLY_EDIT, editPlanCapabilities, planBrief, PROPOSE_EDIT } from './edi
 import { libraryCapabilities } from './library'
 import type { AgentPlan } from './plan'
 import { pluginCapabilities } from './plugin-caps'
-import { capabilityTools, type McpTool, type ToolResult } from './mcp'
+import { capabilityTools, toToolResult, type McpTool, type ToolResult } from './mcp'
 import type { TurnExecution } from './execution'
 import { InspectNodeInput, preparedInputPage } from './input-view'
 
@@ -119,6 +120,7 @@ export function viewOf(rooms: Rooms, canvasId: string): ViewState | undefined {
 /** 服务端能力的上下文：画布读写之外还能用运行队列、资产文件 */
 export interface ServerContext extends CapabilityContext {
   env: ToolEnv
+  storyboardBatches: StoryboardBatches
 }
 
 /** 单次等待运行结果的上限：Codex 默认 60 秒工具超时，留出余量 */
@@ -163,6 +165,7 @@ export function serverContext(env: ToolEnv): ServerContext {
   })
   return {
     env: safeEnv,
+    storyboardBatches: scoped(storyboardBatchesOf(env.runs)),
     withDoc: (fn) => {
       guard?.()
       return env.rooms.withDoc(env.canvasId, fn, undefined, env.origin)
@@ -869,58 +872,106 @@ const rewrite = serverCapability({
   },
 })
 
+const StoryboardRun = z.object({
+  id: id.describe('分镜节点'),
+  role: z.enum(['image', 'video', 'speech', 'sfx']),
+  sequence_id: id.optional().describe('本次叙事映射的精确序列；关联多个序列时必须明确选择'),
+  shot_ids: z.array(id).min(1).max(500).optional().describe('只跑这些镜头；不填补齐全部镜头'),
+  reuse_existing: z
+    .boolean()
+    .optional()
+    .describe('沿用已有采用结果；默认全部补缺、指定镜头出新候选'),
+  preview_only: z
+    .boolean()
+    .default(false)
+    .describe('只读生成清单，不执行；可用返回 token 确认相同范围'),
+  token: id.optional().describe('已审阅清单的短期 token；不可跨范围或服务重启后沿用'),
+})
+
+async function storyboardPlan(ctx: ServerContext, a: z.output<typeof StoryboardRun>) {
+  const { env } = ctx
+  try {
+    if (a.token) {
+      const plan = ctx.storyboardBatches.get(env.canvasId, a.id, env.ownerId, a.token)
+      if (
+        plan.request.role !== a.role ||
+        (a.sequence_id !== undefined &&
+          (plan.request.sequenceId ?? plan.scope?.sequenceId) !== a.sequence_id) ||
+        (a.reuse_existing !== undefined && plan.request.reuseExisting !== a.reuse_existing) ||
+        (a.shot_ids &&
+          JSON.stringify(plan.request.shotIds) !== JSON.stringify([...new Set(a.shot_ids)]))
+      )
+        throw new CapabilityError('清单范围与请求不一致，请重新检查')
+      return plan
+    }
+    const shotIds =
+      a.shot_ids ??
+      ctx.withDoc((doc) => {
+        const shots = shotsOf(need(doc, a.id))
+        if (!shots.length) throw new CapabilityError(`${a.id} 不是分镜节点，或还没有镜头`)
+        return shots.map((shot) => shot.id)
+      })
+    return await ctx.storyboardBatches.preview(env.canvasId, a.id, env.ownerId, {
+      shotIds,
+      role: a.role,
+      ...(a.sequence_id ? { sequenceId: a.sequence_id } : {}),
+      reuseExisting: a.reuse_existing ?? a.shot_ids === undefined,
+    })
+  } catch (error) {
+    if (error instanceof NodeRunError) throw new CapabilityError(error.message)
+    throw error
+  }
+}
+
+function storyboardReview(plan: StoryboardBatchPlan) {
+  const { token: _token, ...review } = plan
+  return review
+}
+
+async function commitStoryboard(ctx: ServerContext, plan: StoryboardBatchPlan) {
+  const { env } = ctx
+  try {
+    const result = await ctx.storyboardBatches.commit(
+      env.canvasId,
+      plan.sourceId,
+      env.ownerId,
+      plan.token,
+      env.execution?.assertOpen,
+    )
+    if ('changed' in result)
+      return {
+        status: 'input_changed',
+        plan: result.changed,
+        next: '输入或任务已变化，原批准未执行。重新审阅清单后用 run_storyboard 携带新 token；不会自动提交新清单。',
+      }
+    env.onGroup?.(result.started.groupId)
+    return { group_id: result.started.groupId, total: result.started.total, summary: plan.summary }
+  } catch (error) {
+    if (error instanceof NodeRunError) throw new CapabilityError(error.message)
+    throw error
+  }
+}
+
 const runStoryboard = serverCapability({
   name: 'run_storyboard',
   title: '批量运行分镜',
   description:
-    '批量运行分镜展开出来的某一类节点：image（分镜图）、video（镜头视频，要等分镜图有结果）、speech（配音）、sfx（镜头音效）。会产生费用，需要用户确认。image 作为一组运行：镜头 @ 到的角色、场景卡还没出定妆图的先出，返回 group_id，用 wait_for_group 等结果；video、speech、sfx 返回发起的运行和跳过的原因，之后用 wait_for_run 逐个等结果。',
+    '批量运行分镜的一类节点：image、video、speech、sfx。与界面共用清单，列明实际输入、准备、沿用、阻塞、跳过及费用未知。preview_only=true 只预检；默认补齐未完成项，指定 shot_ids 默认出新候选。会话按确认模式批准具体清单，批准后只提交原 token；输入变化返回 input_changed 和新清单，必须重新审阅。所有类型返回 group_id，用 wait_for_group 等待。',
   group: 'run',
   where: 'server',
-  effect: 'run',
-  input: z.object({
-    id: id.describe('分镜节点'),
-    role: z.enum(['image', 'video', 'speech', 'sfx']),
-    shot_ids: z.array(z.string()).optional().describe('只跑这些镜头；不填跑全部'),
-  }),
-  run: (ctx, a) => {
-    const { env } = ctx
-    const picked: string[] = []
-    const batch = ctx.withDoc((doc) => {
-      const shots = shotsOf(need(doc, a.id))
-      if (!shots.length) throw new CapabilityError(`${a.id} 不是分镜节点，或还没有镜头`)
-      return runExpanded(doc, a.id, a.shot_ids ?? shots.map((s) => s.id), a.role, (n) =>
-        picked.push(n),
-      )
-    })
-    if (a.role === 'image' && picked.length) {
-      try {
-        const group = env.runs.runBatch(env.canvasId, a.id, picked, env.ownerId)
-        env.onGroup?.(group.groupId)
-        return {
-          group_id: group.groupId,
-          images: picked.length,
-          portraits: group.total - picked.length,
-          skipped: batch.skipped,
-          reasons: batch.reasons,
-        }
-      } catch (err) {
-        if (err instanceof NodeRunError) throw new CapabilityError(err.message)
-        throw err
+  effect: (a) => (a.preview_only ? 'read' : 'run'),
+  input: StoryboardRun,
+  run: async (ctx, raw) => {
+    const a = StoryboardRun.parse(raw)
+    const plan = await storyboardPlan(ctx, a)
+    if (a.preview_only)
+      return {
+        status: 'ready_for_review',
+        plan,
+        next: '审阅清单后调用 run_storyboard，携带相同 id、role 和 token。',
       }
-    }
-    const started: Array<{ id: string; run_id: string }> = []
-    const failed: Array<{ id: string; error: string }> = []
-    for (const nodeId of picked) {
-      try {
-        const runId = env.runs.start(env.canvasId, nodeId, env.ownerId)
-        env.onRun?.(nodeId, runId)
-        started.push({ id: nodeId, run_id: runId })
-      } catch (err) {
-        if (!(err instanceof NodeRunError)) throw err
-        failed.push({ id: nodeId, error: err.message })
-      }
-    }
-    return { started, skipped: batch.skipped, reasons: batch.reasons, failed }
+    if (!plan.summary.run) return { status: 'nothing_to_run', plan: storyboardReview(plan) }
+    return commitStoryboard(ctx, plan)
   },
 })
 
@@ -996,6 +1047,31 @@ export function agentTools(
   const tools = capabilityTools(registry, ctx, async (cap, args, run) => {
     const blocked = opts.plan?.blocked(registry.effectOf(cap, args, ctx))
     if (blocked) return { content: [{ type: 'text', text: blocked }], isError: true }
+    if (cap.name === 'run_storyboard') {
+      const input = StoryboardRun.parse(args)
+      const plan = await storyboardPlan(ctx, input)
+      env.execution?.assertOpen()
+      if (input.preview_only) return toToolResult({ status: 'ready_for_review', plan })
+      if (!plan.summary.run)
+        return toToolResult({ status: 'nothing_to_run', plan: storyboardReview(plan) })
+      const req = approvalFor(opts.mode(), cap, args, ctx, opts.changes)
+      const approved = async () => {
+        env.execution?.assertOpen()
+        return toToolResult(await commitStoryboard(ctx, plan))
+      }
+      if (!req) return approved()
+      const review = storyboardReview(plan)
+      const approval = opts.approvals.create(cap.name, { ...req, storyboardBatch: review }, () =>
+        env.execution ? env.execution.serialize(approved) : approved(),
+      )
+      return JSON.stringify({
+        status: 'needs_approval',
+        approval_id: approval.id,
+        reason: req.reason,
+        plan: review,
+        next: '具体批量清单已展示给用户。调用 await_approval 等原调用结果，不重复调用 run_storyboard；若返回 input_changed，重新审阅新清单后再请求确认。',
+      })
+    }
     if (cap.name === 'run_node') {
       const input = await env.runs.preview(env.canvasId, String(args.id), env.ownerId)
       if (input.status !== 'ready')

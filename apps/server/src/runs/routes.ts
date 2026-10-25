@@ -24,7 +24,7 @@ import { NodeRunError } from '../plugins/host'
 import type { DB } from '../storage/db'
 import { ImpactAnalyzer } from './impact'
 import type { NodeRuns } from './runs'
-import { StoryboardBatches } from './storyboard-batch'
+import { storyboardBatchesOf } from './storyboard-batch'
 
 const STATUS: Record<string, 404 | 409 | 400> = {
   not_found: 404,
@@ -39,7 +39,7 @@ export function runRoutes(db: DB, runs: NodeRuns) {
   const notFound = { error: 'not_found', message: '画布不存在' }
   const forbidden = { error: 'forbidden', message: '只读成员不能运行节点' }
   const impact = new ImpactAnalyzer(db, runs)
-  const storyBatches = new StoryboardBatches(runs)
+  const storyBatches = storyboardBatchesOf(runs)
 
   return new Hono<AuthEnv>()
     .post('/api/canvases/:canvas/nodes/:node/storyboard-batch/preview', async (c) => {

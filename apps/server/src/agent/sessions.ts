@@ -1072,6 +1072,7 @@ export class AgentSessions {
         tool: a.tool,
         reason: a.reason,
         ids: a.ids,
+        ...(a.storyboardBatch ? { storyboardBatch: a.storyboardBatch } : {}),
         status: a.status,
         at: Date.now(),
       })

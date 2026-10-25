@@ -27,6 +27,7 @@ import { Mascot } from '../../ui/Mascot'
 import { Popover } from '../../ui/Popover'
 import { Presence, useExit } from '../../ui/Presence'
 import { Select } from '../../ui/Select'
+import { BatchPlanDetails } from '../storyboard/BatchPlanDetails'
 
 const TOOL_LABELS: Record<string, string> = {
   get_canvas: '查看画布',
@@ -810,6 +811,14 @@ function ApprovalRow({ item }: { item: Extract<AgentItem, { type: 'approval' }> 
           </button>
         )}
       </div>
+      {item.storyboardBatch && (
+        <details>
+          <summary className="cursor-pointer">审阅本次批量清单</summary>
+          <div className="ui-scrollbar mt-2 max-h-96 overflow-auto">
+            <BatchPlanDetails plan={item.storyboardBatch} />
+          </div>
+        </details>
+      )}
       {pending && (
         <div className="flex justify-end gap-1.5">
           <button

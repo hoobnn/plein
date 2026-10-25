@@ -1,5 +1,5 @@
 import type { CapabilityDefinition } from '@plein/capabilities'
-import type { AgentApprovalMode } from '@plein/protocol'
+import type { AgentApprovalMode, StoryboardBatchPlan } from '@plein/protocol'
 import type { z } from 'zod'
 import { newId } from '../ids'
 import type { AgentChanges } from './changes'
@@ -14,6 +14,8 @@ export interface ApprovalRequest {
   reason: string
   /** 相关元素，确认卡片悬停时在画布上高亮 */
   ids: string[]
+  /** 只保留展示依据；可执行 token 仅存在本轮批准闭包中。 */
+  storyboardBatch?: Omit<StoryboardBatchPlan, 'token'>
 }
 
 type Cap = CapabilityDefinition<z.ZodObject, ServerContext>
