@@ -51,6 +51,7 @@ import { countUnit, isMainField, type ModelOptions, ParamsPill } from './ParamsP
 import { ShotPresets } from './ShotPresets'
 import { PromptBox } from './PromptBox'
 import { PromptTools } from './PromptTools'
+import { RecipeLibrary } from './RecipeLibrary'
 
 const PANEL_W = 600
 const GAP = 12
@@ -511,6 +512,9 @@ function Panel({
                 : '摆好人物和机位后截图，把「构图」连到图片节点的参考图'}
             </p>
           </div>
+        )}
+        {pk && presets.length > 0 && (
+          <RecipeLibrary key={el.id} engine={engine} el={el} node={node} />
         )}
         {pk && (
           <PromptBox
