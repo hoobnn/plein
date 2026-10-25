@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { type MouseEvent, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { cacheProject, invalidateProjects, queryClient, queryKeys } from '../api/query'
-import { queueStartNode } from '../canvas/startQueue'
+import { DRAMA_START, queueStartNode } from '../canvas/startQueue'
 import { navigate, routeHash } from '../router'
 import { forgetLocalCache } from '../canvas/localCache'
 import { useLibrary } from '../features/library/store'
@@ -35,6 +35,13 @@ const QUICK_START: Array<{
   detail?: string
   icon: IconName
 }> = [
+  {
+    type: DRAMA_START,
+    title: '短剧模板',
+    hint: '从剧本、分镜到成片',
+    detail: '铺出剧本、分镜、镜头、配音配乐和序列，只建结构，不调用模型',
+    icon: 'workflow',
+  },
   { type: 'plein/image', title: '图片生成', hint: '文生图、图生图', icon: 'image' },
   {
     type: 'plein/video',
