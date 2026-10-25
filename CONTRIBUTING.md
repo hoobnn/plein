@@ -13,6 +13,15 @@ pnpm dev                 # 前端 http://localhost:5173 + 服务端 :8787（数�
 
 性能演示画布不依赖服务端：`http://localhost:5173/#/demo?n=5000`。
 
+复制工作区时不要复制 `node_modules/.bin`：pnpm 生成的启动脚本可能保留原工作区路径，原目录删除后会出现 `Cannot find module`。已有依赖本体仍在但普通安装没有重新链接时，可在仓库根目录按当前锁文件强制重建链接：
+
+```bash
+pnpm install --offline --frozen-lockfile --ignore-scripts --force
+pnpm typecheck
+```
+
+离线修复要求包已在本机缓存；它不升级锁定版本，也不执行依赖构建脚本。修复后应从各工作区运行原来的 `vp`、`tsx` 等命令验收，不能只用绝对路径绕过。不要手动把临时目录写回启动脚本。
+
 ## 常用命令
 
 | 命令                      | 作用                                                                                                     |
