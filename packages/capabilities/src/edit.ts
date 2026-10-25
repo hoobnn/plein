@@ -41,6 +41,7 @@ export const duplicate = defineCapability({
       for (const i of a.ids) need(doc, i)
       return {
         ids: referenceClipboard.paste(doc, referenceClipboard.copy(doc, a.ids), {
+          canvasId: ctx.canvasId,
           dx: a.dx,
           dy: a.dy,
         }),

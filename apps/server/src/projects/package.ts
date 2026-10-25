@@ -8,6 +8,16 @@ import { pipeline } from 'node:stream/promises'
 import { once } from 'node:events'
 import {
   createDoc,
+  createProductionGoals,
+  readProductionGoals,
+  remapProductionGoalScopes,
+  copySourceMap,
+  createSourceMap,
+  readSourceMap,
+  copyContinuity,
+  createContinuityMap,
+  readContinuity,
+  continuityAssets,
   adoptedResultIds,
   type DeliveryRecord,
   type NodeResult,
@@ -225,6 +235,11 @@ async function planExport(
           const where = `${row.title} / ${el.name ?? el.nodeType ?? el.kind}`
           const m = doc.mutable(el.id)!
           if (el.assetId) refAsset(el.assetId, where, true)
+          for (const assetId of continuityAssets(el.production?.continuity))
+            refAsset(assetId, `${where} / 历史观察证据`, true)
+          for (const subject of el.production?.continuity?.subjects ?? [])
+            if (subject.binding?.libraryId)
+              libraryRefs.set(subject.binding.libraryId, `${where} / 状态主体`)
           for (const delivery of el.deliveries ?? [])
             refAsset(delivery.assetId, `${where} / 交付 ${delivery.version}`, true)
           if (el.results?.length) {
@@ -232,7 +247,9 @@ async function planExport(
             const kept =
               candidates === 'all' ? el.results : el.results.filter((r) => adopted.has(r.id))
             if (kept.length !== el.results.length) m.set('results', kept)
-            for (const r of kept) if ('assetId' in r.value) refAsset(r.value.assetId, where, true)
+            for (const r of kept) {
+              if ('assetId' in r.value) refAsset(r.value.assetId, where, true)
+            }
           }
           if (el.run) {
             let run = settledRun(el.run, RUNNING_NOTE)
@@ -289,6 +306,9 @@ async function planExport(
       for (const ref of documentReferences(doc))
         refAsset(ref.assetId, `检查点 ${checkpoint.name} / ${ref.label}`, ref.explicit)
       for (const el of doc.elements()) {
+        for (const subject of el.production?.continuity?.subjects ?? [])
+          if (subject.binding?.libraryId)
+            libraryRefs.set(subject.binding.libraryId, `检查点 / ${checkpoint.name} / 状态主体`)
         if (el.params) {
           eachVoice(el.params, refVoice)
           const { libraryId, model } = el.params
@@ -925,9 +945,40 @@ export function remapDoc(data: Uint8Array, map: ReadonlyMap<string, string>): Ui
   try {
     Y.applyUpdate(ydoc, data)
     const elements = ydoc.getMap<Y.Map<unknown>>('elements')
+    const localBindings = new Map([...elements.keys()].map((id) => [id, id]))
     ydoc.transact(() => {
       for (const m of elements.values()) {
         if (!(m instanceof Y.Map)) continue
+        const production = m.get('production')
+        if (production instanceof Y.Map) {
+          // 无ID冲突的导入也可能保留canvasId。导入本身形成历史边界，
+          // 不能仅依靠scope变化使原来的人工内容确认和制作决策失效。
+          for (const key of ['confirmations', 'decisions']) {
+            const records = production.get(key)
+            if (!(records instanceof Y.Map)) continue
+            for (const [id, record] of records.entries()) {
+              if (record && typeof record === 'object' && !Array.isArray(record))
+                records.set(id, { ...record, historical: true })
+            }
+          }
+          const goals = readProductionGoals(production.get('goals'))
+          const remapped = remapProductionGoalScopes(goals, map)
+          if (remapped !== goals) production.set('goals', createProductionGoals(remapped))
+          const sourceMap = readSourceMap(production.get('sourceMap'))
+          if (sourceMap && (sourceMap.sources.length || sourceMap.proposals.length))
+            production.set('sourceMap', createSourceMap(copySourceMap(sourceMap, localBindings)))
+          const continuity = readContinuity(production.get('continuity'))
+          if (
+            continuity &&
+            (continuity.subjects.length ||
+              continuity.plans.length ||
+              continuity.observations.length)
+          )
+            production.set(
+              'continuity',
+              createContinuityMap(copyContinuity(continuity, localBindings, map)),
+            )
+        }
         const params = m.get('params')
         if (params instanceof Y.Map) {
           for (const [k, v] of params.entries()) {

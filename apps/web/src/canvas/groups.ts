@@ -1,4 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
+import { useCanvas } from '../stores/canvas'
 import { type ClipboardData } from '@plein/doc'
 import { referenceClipboard } from '@plein/capabilities'
 import type { Catalog, FlowRunOptions, GroupRunStarted, GroupRunState } from '@plein/protocol'
@@ -177,6 +178,10 @@ export function templateData(engine: Engine, frameId: string): ClipboardData {
 export function placeTemplate(engine: Engine, data: ClipboardData, at: { x: number; y: number }) {
   const root = data.elements[0]
   const ids = referenceClipboard.paste(engine.doc, data, {
+    canvasId:
+      useCanvas.getState().engine === engine
+        ? (useCanvas.getState().canvasId ?? undefined)
+        : undefined,
     dx: Math.round(at.x - (root?.x ?? 0)),
     dy: Math.round(at.y - (root?.y ?? 0)),
   })

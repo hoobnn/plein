@@ -9,6 +9,7 @@ import type { Engine } from '@plein/canvas-core'
 import type { NodeDefinition } from '@plein/plugin-sdk'
 import type { Catalog } from '@plein/protocol'
 import { useLibrary } from '../features/library/store'
+import { useCanvas } from '../stores/canvas'
 import { findNode } from './nodes'
 
 /**
@@ -38,6 +39,10 @@ function infoOf(node: Catalog['nodes'][number]) {
 
 export function localContext(engine: Engine, catalog: Catalog | null): CapabilityContext {
   return {
+    canvasId:
+      useCanvas.getState().engine === engine
+        ? (useCanvas.getState().canvasId ?? undefined)
+        : undefined,
     withDoc: (fn) => fn(engine.doc),
     nodes: {
       latest: (type) => {

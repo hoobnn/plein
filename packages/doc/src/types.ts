@@ -1,3 +1,4 @@
+import type { ProductionRecord } from './production'
 import type { CreativeReview } from './review-types'
 import type { DeliveryRecord } from './delivery'
 
@@ -82,6 +83,7 @@ export interface CanvasElement extends Rect {
   adopted?: string | null
   /** 人工验收按具体候选保存，独立于生成参数与采用状态。 */
   reviews?: CreativeReview[]
+  production?: ProductionRecord
   deliveries?: DeliveryRecord[]
   run?: NodeRun
 }
@@ -182,6 +184,7 @@ export interface NewElement extends Rect {
   results?: NodeResult[]
   adopted?: string | null
   reviews?: CreativeReview[]
+  production?: ProductionRecord
   deliveries?: DeliveryRecord[]
 }
 

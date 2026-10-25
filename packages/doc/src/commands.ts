@@ -1,6 +1,7 @@
 import { generateNKeysBetween } from 'fractional-indexing'
 import * as Y from 'yjs'
 import { type ElementMap, type PleinDoc, SYSTEM_ORIGIN } from './doc'
+import { createProductionMap } from './production'
 import { newId } from './ids'
 import { inputEdges } from './inputs'
 import { creativeReviewKey, isCreativeReview } from './review-types'
@@ -149,6 +150,8 @@ export function createElements(doc: PleinDoc, inputs: NewElement[]): string[] {
             input.reviews.filter(isCreativeReview).map((r) => [creativeReviewKey(r.target), r]),
           ),
         )
+      if (input.nodeType === 'plein/storyboard' || input.production)
+        m.set('production', createProductionMap(input.production))
       return id
     })
   })

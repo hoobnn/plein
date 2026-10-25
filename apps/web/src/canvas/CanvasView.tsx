@@ -108,7 +108,11 @@ export function CanvasView({
         host,
         doc,
         overlay: overlayRoot,
-        clipboard: referenceClipboard,
+        clipboard: {
+          copy: referenceClipboard.copy,
+          paste: (target, data, opts) =>
+            referenceClipboard.paste(target, data, { ...opts, canvasId: canvasId || undefined }),
+        },
         assetUrl,
         theme: canvasTheme(useTheme.getState().name),
         onInteractionInterrupted: () => {

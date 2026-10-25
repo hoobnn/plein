@@ -91,6 +91,8 @@ export interface AssetMeta {
 
 /** 能力运行时拿到的上下文；两端各实现一次 */
 export interface CapabilityContext {
+  /** 当前画布身份，复制范围等文档外上下文；缺失时不猜测。 */
+  canvasId?: string
   /** 同步读写当前画布；写入带调用方的 origin（用户 / 某个智能体会话），撤销按它归属 */
   withDoc<T>(fn: (doc: PleinDoc) => T): T
   nodes: NodeCatalog

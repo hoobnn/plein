@@ -1,10 +1,13 @@
+import { createProductionMap } from './production'
+import { createSourceMap } from './source-map'
+import { createContinuityMap } from './continuity'
 import { generateNKeysBetween } from 'fractional-indexing'
 import * as Y from 'yjs'
 import { CONTAINER_KINDS, type Edge } from './types'
 import { migrateStoryboardIdentity } from './migrate-storyboard'
 
 /** 当前文档 schema 版本 */
-export const SCHEMA_VERSION = 6
+export const SCHEMA_VERSION = 10
 
 export interface MigrateResult {
   version: number
@@ -15,7 +18,56 @@ export interface MigrateResult {
 type Migration = (ydoc: Y.Doc) => void
 
 /** MIGRATIONS[n] 把 n 版升到 n + 1 版 */
-const MIGRATIONS: Migration[] = [v0ToV1, v1ToV2, v2ToV3, migrateStoryboardIdentity, v4ToV5, v5ToV6]
+const MIGRATIONS: Migration[] = [
+  v0ToV1,
+  v1ToV2,
+  v2ToV3,
+  migrateStoryboardIdentity,
+  v4ToV5,
+  v5ToV6,
+  v6ToV7,
+  v7ToV8,
+  v8ToV9,
+  v9ToV10,
+]
+
+function v9ToV10(ydoc: Y.Doc) {
+  for (const value of ydoc.getMap<unknown>('elements').values()) {
+    if (!(value instanceof Y.Map) || value.get('nodeType') !== 'plein/storyboard') continue
+    const production = value.get('production')
+    if (production instanceof Y.Map && !production.has('continuity'))
+      production.set('continuity', createContinuityMap())
+  }
+}
+
+function v8ToV9(ydoc: Y.Doc) {
+  for (const value of ydoc.getMap<unknown>('elements').values()) {
+    if (!(value instanceof Y.Map) || value.get('nodeType') !== 'plein/storyboard') continue
+    const production = value.get('production')
+    if (production instanceof Y.Map && !production.has('sourceMap'))
+      production.set('sourceMap', createSourceMap())
+  }
+}
+
+function v7ToV8(ydoc: Y.Doc) {
+  for (const value of ydoc.getMap<unknown>('elements').values()) {
+    if (!(value instanceof Y.Map) || value.get('nodeType') !== 'plein/storyboard') continue
+    const production = value.get('production')
+    if (production instanceof Y.Map && !production.has('goals'))
+      production.set('goals', new Y.Map())
+  }
+}
+
+function v6ToV7(ydoc: Y.Doc) {
+  for (const value of ydoc.getMap<unknown>('elements').values()) {
+    if (
+      value instanceof Y.Map &&
+      value.get('nodeType') === 'plein/storyboard' &&
+      !value.has('production')
+    )
+      value.set('production', createProductionMap())
+  }
+}
 
 /** v6 按候选关联输出；不猜测旧记录的配对，旧客户端按未来版本机制只读打开。 */
 function v5ToV6(_ydoc: Y.Doc) {

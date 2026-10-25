@@ -1,5 +1,6 @@
 import { createElements, ReadOnlyDocError, topLevel } from './commands'
 import { compareZ, type PleinDoc } from './doc'
+import { copyProduction } from './production'
 import { newId } from './ids'
 import { shotGroupOf, SHOT_GROUP_KEY } from './shotGroup'
 import { generateNKeysBetween } from 'fractional-indexing'
@@ -46,6 +47,8 @@ function depthOrder(doc: PleinDoc, a: CanvasElement, b: CanvasElement) {
 }
 
 export interface ImportOptions {
+  /** 由产品当前画布上下文提供，不能从剪贴板猜测目标画布。 */
+  canvasId?: string
   /** 顶层元素的位移（世界坐标） */
   dx?: number
   dy?: number
@@ -81,6 +84,9 @@ export function importElements(
         const group = shotGroupOf(e)
         return {
           ...rest,
+          ...(e.production
+            ? { production: copyProduction(e.production, remap, opts.canvasId) }
+            : {}),
           ...(group
             ? {
                 params: {

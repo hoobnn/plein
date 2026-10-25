@@ -1,3 +1,4 @@
+import { readProduction } from './production'
 import * as Y from 'yjs'
 import { migrate, SCHEMA_VERSION } from './migrate'
 import { isCreativeReview } from './review-types'
@@ -353,6 +354,12 @@ function readElement(id: string, m: ElementMap): CanvasElement | undefined {
   const reviews = m.get('reviews')
   const reviewValues = reviews instanceof Y.Map ? [...reviews.values()] : reviews
   if (Array.isArray(reviewValues)) el.reviews = reviewValues.filter(isCreativeReview)
+  const production = readProduction(m.get('production'))
+  Object.defineProperty(el, 'production', {
+    value: production,
+    enumerable: production !== undefined,
+    writable: false,
+  })
   const deliveries = m.get('deliveries')
   if (Array.isArray(deliveries)) el.deliveries = deliveries.filter(isDeliveryRecord)
   const run = m.get('run') as NodeRun | undefined

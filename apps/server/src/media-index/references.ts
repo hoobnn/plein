@@ -1,4 +1,4 @@
-import { createDoc, adoptedResultIds, type PleinDoc } from '@plein/doc'
+import { createDoc, adoptedResultIds, continuityAssets, type PleinDoc } from '@plein/doc'
 import * as Y from 'yjs'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
@@ -53,9 +53,12 @@ export function documentReferences(doc: PleinDoc): AssetReference[] {
       })
     if (el.assetId) add(el.assetId, 'asset', null, true, true)
     const adopted = adoptedResultIds(el)
-    for (const r of el.results ?? [])
+    for (const assetId of continuityAssets(el.production?.continuity))
+      add(assetId, `production/continuity/${assetId}`, null, false, true)
+    for (const r of el.results ?? []) {
       if ('assetId' in r.value)
         add(r.value.assetId, `result/${r.id}`, r.id, adopted.has(r.id), true)
+    }
     for (const delivery of el.deliveries ?? [])
       add(
         delivery.assetId,

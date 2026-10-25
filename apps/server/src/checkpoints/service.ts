@@ -1,6 +1,18 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { createDoc, type NodeResult } from '@plein/doc'
+import {
+  createDoc,
+  createProductionGoals,
+  readProductionGoals,
+  remapProductionGoalScopes,
+  copySourceMap,
+  createSourceMap,
+  readSourceMap,
+  copyContinuity,
+  createContinuityMap,
+  readContinuity,
+  type NodeResult,
+} from '@plein/doc'
 import type {
   CanvasCheckpoint,
   CheckpointDetail,
@@ -243,12 +255,35 @@ export class CheckpointService {
         throw new CheckpointError('unsupported_version', '请升级 Plein 后再恢复这个检查点')
       const history = JSON.parse(row.history) as PackageJob[]
       const remap = new Map<string, string>()
+      const canvasId = newCanvasId()
+      if (row.source_canvas_id) remap.set(row.source_canvas_id, canvasId)
       for (const el of doc.elements())
         for (const result of el.results ?? [])
           if (!remap.has(result.runId)) remap.set(result.runId, id('run'))
       ydoc.transact(() => {
+        const localBindings = new Map([...doc!.elements()].map((el) => [el.id, el.id]))
         for (const el of doc!.elements()) {
           const m = doc!.mutable(el.id)!
+          const production = m.get('production')
+          if (production instanceof Y.Map) {
+            const goals = readProductionGoals(production.get('goals'))
+            const remapped = remapProductionGoalScopes(goals, remap)
+            if (remapped !== goals) production.set('goals', createProductionGoals(remapped))
+            const sourceMap = readSourceMap(production.get('sourceMap'))
+            if (sourceMap && (sourceMap.sources.length || sourceMap.proposals.length))
+              production.set('sourceMap', createSourceMap(copySourceMap(sourceMap, localBindings)))
+            const continuity = readContinuity(production.get('continuity'))
+            if (
+              continuity &&
+              (continuity.subjects.length ||
+                continuity.plans.length ||
+                continuity.observations.length)
+            )
+              production.set(
+                'continuity',
+                createContinuityMap(copyContinuity(continuity, localBindings, remap)),
+              )
+          }
           m.delete('run')
           if (el.results?.length)
             m.set(
@@ -265,8 +300,7 @@ export class CheckpointService {
             (m.get('params') as Y.Map<unknown>)?.delete('libraryId')
         }
       })
-      const canvasId = newCanvasId(),
-        now = Date.now()
+      const now = Date.now()
       const state = Buffer.from(Y.encodeStateAsUpdate(ydoc))
       this.db.transaction(() => {
         this.db
