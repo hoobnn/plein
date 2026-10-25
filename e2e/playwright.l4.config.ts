@@ -10,7 +10,7 @@ process.env.PLEIN_L4_PORT = String(PORT)
  */
 export default defineConfig({
   testDir: 'real',
-  outputDir: '../test-results',
+  outputDir: '../test-results/playwright-l4',
   testMatch: '**/*.l4.ts',
   workers: 1,
   timeout: 90 * 60_000,

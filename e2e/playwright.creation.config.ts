@@ -14,7 +14,7 @@ if (development) {
 export default defineConfig({
   testDir: '.',
   testMatch: 'creation-end-to-end.spec.ts',
-  outputDir: '../test-results',
+  outputDir: '../test-results/playwright-creation',
   workers: 1,
   fullyParallel: false,
   timeout: 240_000,

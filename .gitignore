@@ -23,6 +23,7 @@ apps/desktop/release/
 coverage/
 .nyc_output/
 test-results/
+.creative-workbench-evidence/
 playwright-report/
 playwright/.cache/
 __screenshots__/__diff_output__/

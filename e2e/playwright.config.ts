@@ -16,7 +16,8 @@ process.env.PLEIN_E2E_DATA = dataDir
 
 export default defineConfig({
   testDir: '.',
-  outputDir: '../test-results',
+  // Keep the runner's destructive cleanup inside its own directory.
+  outputDir: '../test-results/playwright-main',
   // 一条用例走完整条流水线，状态前后相依，不并行
   workers: 1,
   fullyParallel: false,
