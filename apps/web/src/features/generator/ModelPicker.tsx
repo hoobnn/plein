@@ -4,6 +4,7 @@ import type { NodeInfo } from '../../canvas/nodes'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
 import { Presence } from '../../ui/Presence'
+import { ProviderIcon } from '../../ui/ProviderIcon'
 import { SlidePill, SlideSwap } from '../../ui/Slide'
 import { useSession } from '../../stores/session'
 
@@ -40,7 +41,9 @@ export function ModelPicker({
     }))
     .filter((p) => p.models.length > 0)
   const current = providers
-    .flatMap((p) => p.models.map((m) => ({ ref: `${p.id}:${m.id}`, title: m.title })))
+    .flatMap((p) =>
+      p.models.map((m) => ({ ref: `${p.id}:${m.id}`, title: m.title, provider: p.id })),
+    )
     .find((m) => m.ref === value)
   const pick = (v: string) => {
     const next = [v, ...recent.filter((r) => r !== v)].slice(0, 6)
@@ -75,6 +78,7 @@ export function ModelPicker({
       onPointerEnter={() => setTab(id)}
       className="ui-menu-item"
     >
+      <ProviderIcon provider={id} />
       <span className="ui-menu-text">
         <span className="truncate">{title}</span>
         {/* 当前模型所在的平台写明「使用中」，不另加标记 */}
@@ -91,6 +95,7 @@ export function ModelPicker({
       onClick={() => pick(v)}
       className="ui-menu-item items-start"
     >
+      <ProviderIcon provider={v.slice(0, v.indexOf(':'))} />
       <span className="ui-menu-text">
         <span className="truncate">
           {title}
@@ -117,7 +122,7 @@ export function ModelPicker({
         }}
         className="ui-btn ui-btn-lg ui-btn-menu min-w-0 max-w-48"
       >
-        <Icon name="sparkle" />
+        {current ? <ProviderIcon provider={current.provider} /> : <Icon name="sparkle" />}
         <span className="truncate">{current?.title ?? '选择模型'}</span>
         <Icon name="chevronDown" size={14} />
       </button>

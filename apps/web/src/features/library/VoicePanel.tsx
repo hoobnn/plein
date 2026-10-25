@@ -7,6 +7,7 @@ import { confirmDialog, promptDialog } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { ProviderIcon } from '../../ui/ProviderIcon'
 import { Segmented } from '../../ui/Segmented'
 import { Select } from '../../ui/Select'
 import { KIND_ICONS } from './LibraryAdd'
@@ -353,7 +354,11 @@ function VoiceForm({
         <Select
           aria-label="平台"
           value={provider}
-          options={providers.map((p) => ({ value: p.id, label: p.title }))}
+          options={providers.map((p) => ({
+            value: p.id,
+            label: p.title,
+            icon: <ProviderIcon provider={p.id} />,
+          }))}
           onChange={setProvider}
         />
         {mode === 'clone' && spec && <span className="ui-help">{spec.hint}</span>}

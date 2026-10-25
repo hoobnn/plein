@@ -4,6 +4,7 @@ import type { Catalog, ProviderConfigView, ProviderInfo, ProviderTestResult } fr
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
 import { Icon } from '../../ui/icons'
+import { ProviderIcon } from '../../ui/ProviderIcon'
 import { Select } from '../../ui/Select'
 import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
 import { Switch } from '../../ui/Switch'
@@ -163,6 +164,7 @@ export function ProviderRow({
           >
             <Icon name="chevronRight" size={14} />
           </span>
+          <ProviderIcon provider={provider.id} size={24} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium">{provider.title}</span>
             <span className="block truncate text-xs text-ink-subtle">
@@ -189,9 +191,9 @@ export function ProviderRow({
           {busy ? '处理中…' : status?.message}
         </p>
       )}
-      {/* 展开的内容和标题文字对齐：左边距 16 + 箭头 14 + 间距 12 */}
+      {/* 与标题对齐：左边距 16 + 箭头 14 + 图标 24 + 两个间距 12 */}
       <div hidden={!open}>
-        <div id={bodyId} className="flex flex-col gap-4 px-4 pb-4 pl-10.5">
+        <div id={bodyId} className="flex flex-col gap-4 px-4 pb-4 pl-19.5">
           {provider.models.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {provider.models.map((m) => (
@@ -414,7 +416,11 @@ function DefaultModels({
     options: ready.flatMap((p) =>
       p.models
         .filter((m) => m.capabilities.includes(cap))
-        .map((m) => ({ value: `${p.id}:${m.id}`, label: `${p.title} · ${m.title ?? m.id}` })),
+        .map((m) => ({
+          value: `${p.id}:${m.id}`,
+          label: `${p.title} · ${m.title ?? m.id}`,
+          icon: <ProviderIcon provider={p.id} />,
+        })),
     ),
   })).filter((r) => r.options.length > 0)
   if (rows.length === 0)

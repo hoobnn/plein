@@ -1,5 +1,5 @@
 import { Select as Base } from '@base-ui/react/select'
-import { useRef } from 'react'
+import { type ReactNode, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import { Icon } from './icons'
 import { claimMenuEscape } from './menuEscape'
@@ -8,6 +8,7 @@ export interface SelectOption {
   value: string
   label?: string
   disabled?: boolean
+  icon?: ReactNode
 }
 
 /**
@@ -102,7 +103,14 @@ export function Select({
         className={`ui-select truncate text-left ${className}`}
       >
         {/* 当前值不在选项里时照原样显示 */}
-        <Base.Value>{(v: string) => items.find((o) => o.value === v)?.label ?? v}</Base.Value>
+        <Base.Value className="flex min-w-0 items-center gap-2">
+          {(v: string) => (
+            <>
+              {options.find((o) => o.value === v)?.icon}
+              <span className="truncate">{items.find((o) => o.value === v)?.label ?? v}</span>
+            </>
+          )}
+        </Base.Value>
       </Base.Trigger>
       <Base.Portal>
         <Base.Positioner
@@ -126,6 +134,7 @@ export function Select({
                   disabled={o.disabled}
                   className="ui-menu-item ui-select-item"
                 >
+                  {options.find((option) => option.value === o.value)?.icon}
                   <Base.ItemText className="min-w-0 flex-1 truncate">{o.label}</Base.ItemText>
                   <Base.ItemIndicator className="text-accent">
                     <Icon name="check" size={14} />

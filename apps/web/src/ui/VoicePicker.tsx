@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useVoices, voiceTraits } from '../features/library/voices'
 import { useCatalog } from '../stores/catalog'
 import { Select } from './Select'
+import { ProviderIcon } from './ProviderIcon'
 
 /** 已启用平台里配音模型声明的预置音色，同一平台的同一音色只列一次 */
 export function voicePresets(catalog: Catalog | null) {
@@ -115,6 +116,7 @@ export function VoicePicker({
             value: `${p.provider}|${p.id}`,
             label: several ? `${p.providerTitle} · ${p.label}` : p.label,
             disabled: p.disabled,
+            icon: <ProviderIcon provider={p.provider} />,
           })),
           { value: CUSTOM, label: '自定义音色 ID…' },
         ]}
