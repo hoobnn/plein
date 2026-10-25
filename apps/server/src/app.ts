@@ -14,7 +14,7 @@ import { setSubtitleFont } from './assets/fonts'
 import { setMediaTools } from './assets/media'
 import { AssetStore } from './assets/store'
 import { type AuthEnv, createAuth } from './auth'
-import type { Config } from './config'
+import { LOOPBACK, type Config } from './config'
 import { assetRoutes } from './assets/routes'
 import { canvasRoutes } from './canvases/routes'
 import { previewer } from './storage/previews'
@@ -33,6 +33,8 @@ import { PluginHost } from './plugins/host'
 import { PluginRegistry } from './plugins/registry'
 import { ExternalPlugins } from './plugins/external'
 import { localPluginRoutes, pluginRoutes } from './plugins/routes'
+import { PluginInstaller } from './plugins/install'
+import { pluginInstallRoutes } from './plugins/install-routes'
 import { runRoutes } from './runs/routes'
 import { EditPlans } from './runs/edit-plan'
 import { NodeRuns } from './runs/runs'
@@ -89,6 +91,10 @@ export async function createServer(config: Config): Promise<Server> {
     join(config.dataDir, 'plugins-state.json'),
   )
   await local.init()
+  const pluginInstaller =
+    config.auth === 'none' && LOOPBACK.has(config.host)
+      ? new PluginInstaller(config.dataDir, local, (id) => !!plugins.registry.plugin(id))
+      : null
   const auth = await createAuth(config.auth, db, secrets, { publicUrl: config.publicUrl })
   const runs = new NodeRuns(db, rooms, plugins, { concurrency: config.maxJobs })
   const library = new LibraryStore(db)
@@ -161,6 +167,7 @@ export async function createServer(config: Config): Promise<Server> {
   app.route('/', syncRoutes(db, rooms))
   app.route('/', pluginRoutes(plugins))
   app.route('/', localPluginRoutes(local))
+  app.route('/', pluginInstallRoutes(pluginInstaller))
   app.route('/', promptRoutes(plugins))
   app.route('/', runRoutes(db, runs))
   app.route('/', agentRoutes(db, agents))
@@ -212,6 +219,7 @@ export async function createServer(config: Config): Promise<Server> {
     close() {
       closeWork ??= (async () => {
         await maintenance?.close()
+        await pluginInstaller?.close()
         agents.close()
         runs.close()
         offJobs()

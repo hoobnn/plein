@@ -1,5 +1,7 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve, sep } from 'node:path'
+import { stableStringify } from '@plein/flow'
 import {
   type AssetRef,
   Capability,
@@ -323,6 +325,8 @@ export class ExternalPlugins {
       const raw = await proc.request<unknown>('describe', null, { timeoutMs: DESCRIBE_TIMEOUT_MS })
       if (JSON.stringify(raw).length > DESCRIPTOR_MAX) throw new Error('插件声明太大')
       const desc = PluginDescriptor.parse(raw)
+      if (stableStringify(PluginManifest.parse(desc.manifest)) !== stableStringify(manifest))
+        throw new Error('入口报上来的清单与已确认的磁盘清单不一致，请核对版本、贡献和权限')
       const sp = proxyPlugin(desc, proc)
       if (sp.plugin.manifest.id !== manifest.id) throw new Error('入口报上来的 id 和清单不一致')
       const entryInfo = this.host.registry.register(sp, { builtin: false })
@@ -348,15 +352,46 @@ export class ExternalPlugins {
   }
 
   private save() {
-    writeFileSync(this.stateFile, JSON.stringify({ enabled: [...this.enabled] }, null, 2))
+    const part = join(dirname(this.stateFile), `.plugins-state-${randomUUID()}.tmp`)
+    try {
+      writeFileSync(part, JSON.stringify({ enabled: [...this.enabled] }, null, 2), {
+        flag: 'wx',
+        mode: 0o600,
+        flush: true,
+      })
+      renameSync(part, this.stateFile)
+    } finally {
+      rmSync(part, { force: true })
+    }
+  }
+
+  /** 在安装目录发布前清除遗留启用意图，进程此后退出也不会在重启时执行新包。 */
+  prepareInstall(id: string) {
+    this.scan()
+    if (this.found.has(id)) throw new Error('插件 ID 已存在，不会覆盖安装')
+    const wasEnabled = this.enabled.has(id)
+    this.enabled.delete(id)
+    try {
+      this.save()
+    } catch (error) {
+      if (wasEnabled) this.enabled.add(id)
+      throw error
+    }
   }
 
   async setEnabled(id: string, on: boolean): Promise<LocalPluginInfo | null> {
     const f = this.found.get(id)
     if (!f) return null
+    const wasEnabled = this.enabled.has(id)
     if (on) this.enabled.add(id)
     else this.enabled.delete(id)
-    this.save()
+    try {
+      this.save()
+    } catch (error) {
+      if (wasEnabled) this.enabled.add(id)
+      else this.enabled.delete(id)
+      throw error
+    }
     this.stop(f)
     if (on && f.manifest) await this.start(f)
     return this.info(f)

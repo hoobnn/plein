@@ -1,12 +1,39 @@
-import type { LocalPluginInfo } from '@plein/protocol'
+import {
+  PLUGIN_INSTALL_MAX_UPLOAD,
+  type LocalPluginInfo,
+  type PluginInstallPreview,
+} from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
+import { ApiError, reportUnauthorized } from '../../api/client'
 import { queryClient, queryKeys } from '../../api/query'
 import { desktop } from '../../desktop'
 import { useCatalog } from '../../stores/catalog'
 import { Icon } from '../../ui/icons'
 import { Switch } from '../../ui/Switch'
+import { Modal } from '../../ui/Modal'
+import { useCanvas } from '../../stores/canvas'
+
+async function installRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`/api/plugins/install/${path}`, {
+    credentials: 'same-origin',
+    ...init,
+  })
+  if (!response.ok) {
+    const error = (await response.json().catch(() => null)) as {
+      error?: string
+      message?: string
+    } | null
+    if (response.status === 401) reportUnauthorized()
+    throw new ApiError(
+      response.status,
+      error?.error ?? 'install_failed',
+      error?.message ?? '插件安装请求失败',
+    )
+  }
+  return response.status === 204 ? (undefined as T) : (response.json() as Promise<T>)
+}
 
 /** 状态标签 */
 function state(p: LocalPluginInfo): { label: string; tone: string } {
@@ -42,7 +69,7 @@ function isolation(p: LocalPluginInfo): { label: string; tone: string; hint: str
 }
 
 /** 声明的权限，一项一个标签 */
-function permissionTags(p: LocalPluginInfo) {
+function permissionTags(p: Pick<LocalPluginInfo, 'permissions'>) {
   const perm = p.permissions
   if (!perm) return []
   const tags: string[] = []
@@ -69,6 +96,24 @@ function contributesText(p: LocalPluginInfo) {
 
 /** 本机插件：数据目录 plugins/ 下的文件夹，默认不启用，看过权限再打开 */
 export function LocalPlugins() {
+  const { data: installStatus } = useQuery({
+    queryKey: ['plugin-install-status'],
+    queryFn: () => installRequest<{ available: boolean }>('status'),
+  })
+  const fileInput = useRef<HTMLInputElement>(null)
+  const [preview, setPreview] = useState<PluginInstallPreview | null>(null)
+  const previewRef = useRef(preview)
+  previewRef.current = preview
+  const installPending = useRef(false)
+  const active = useRef(true)
+  useEffect(() => {
+    active.current = true
+    return () => {
+      active.current = false
+      if (previewRef.current && !installPending.current)
+        void installRequest(`${previewRef.current.token}`, { method: 'DELETE' }).catch(() => {})
+    }
+  }, [])
   const catalogError = useCatalog((state) => state.error)
   const {
     data: list,
@@ -104,6 +149,65 @@ export function LocalPlugins() {
       lastList.current = JSON.stringify(queryClient.getQueryData(queryKeys.localPlugins))
       await useCatalog.getState().load()
       setBusy(null)
+    }
+  }
+
+  const inspect = async (file: File) => {
+    if (installPending.current) return
+    if (file.size > PLUGIN_INSTALL_MAX_UPLOAD) {
+      setError('插件 ZIP 不能超过 20 MiB')
+      return
+    }
+    installPending.current = true
+    setBusy('install-preview')
+    setError(null)
+    try {
+      const next = await installRequest<PluginInstallPreview>('preview', {
+        method: 'POST',
+        headers: { 'content-type': 'application/zip' },
+        body: file,
+      })
+      if (active.current) setPreview(next)
+      else void installRequest(next.token, { method: 'DELETE' }).catch(() => {})
+    } catch (err) {
+      if (active.current) setError((err as Error).message)
+    } finally {
+      installPending.current = false
+      if (active.current) setBusy(null)
+    }
+  }
+  const closePreview = () => {
+    const old = previewRef.current
+    previewRef.current = null
+    setPreview(null)
+    if (old && !installPending.current)
+      void installRequest(old.token, { method: 'DELETE' }).catch(() => {})
+  }
+  const install = async () => {
+    const current = previewRef.current
+    if (!current || installPending.current) return
+    installPending.current = true
+    setBusy('install-confirm')
+    setError(null)
+    try {
+      const plugin = await installRequest<LocalPluginInfo>('confirm', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: current.token }),
+      })
+      useCanvas.getState().notify(`已安装「${plugin.name}」，尚未启用`)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.localPlugins })
+      await useCatalog.getState().load()
+    } catch (err) {
+      if (active.current) setError((err as Error).message)
+      else useCanvas.getState().notify(`插件安装未获确认：${(err as Error).message}`)
+    } finally {
+      installPending.current = false
+      previewRef.current = null
+      if (active.current) {
+        setPreview(null)
+        setBusy(null)
+      }
     }
   }
 
@@ -244,6 +348,35 @@ export function LocalPlugins() {
         </ul>
       )}
       <div className="flex gap-2">
+        <input
+          type="file"
+          accept=".zip,application/zip"
+          hidden
+          ref={fileInput}
+          data-testid="plugin-install-file"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (file) void inspect(file)
+          }}
+        />
+        <button
+          type="button"
+          className="ui-btn ui-btn-secondary"
+          disabled={busy !== null || !installStatus?.available}
+          onClick={() => fileInput.current?.click()}
+          title={
+            installStatus?.available
+              ? '选择本机 ZIP，先查看清单与权限再安装'
+              : '插件包安装只在本机模式可用'
+          }
+        >
+          {busy === 'install-preview'
+            ? '正在预检…'
+            : busy === 'install-confirm'
+              ? '正在安装…'
+              : '安装插件包'}
+        </button>
         <button
           type="button"
           className="ui-btn ui-btn-secondary"
@@ -263,6 +396,60 @@ export function LocalPlugins() {
           </button>
         )}
       </div>
+      {preview && (
+        <Modal label="安装本机插件" onClose={closePreview} top isolateKeys className="max-w-150">
+          <div className="ui-scrollbar flex min-h-0 flex-col gap-3 overflow-y-auto p-6">
+            <h2 className="text-lg font-semibold">安装 {preview.manifest.name}</h2>
+            <p className="text-sm text-ink-muted">
+              {preview.manifest.id} · {preview.manifest.version} · 插件 API{' '}
+              {preview.manifest.engines.plein}
+            </p>
+            {preview.manifest.description && (
+              <p className="text-sm">{preview.manifest.description}</p>
+            )}
+            <p className="ui-help">
+              {preview.files} 个文件，解压后 {(preview.bytes / 1024).toFixed(1)}{' '}
+              KiB。预检已检查包结构和清单，未执行插件代码；启用时才校验实际贡献。
+            </p>
+            <div className="flex flex-wrap gap-1.5" aria-label="插件声明权限">
+              {permissionTags({ permissions: preview.manifest.permissions }).map((tag) => (
+                <span key={tag} className="ui-tag">
+                  {tag}
+                </span>
+              ))}
+              {!permissionTags({ permissions: preview.manifest.permissions }).length && (
+                <span className="ui-help">不声明联网、密钥或素材访问</span>
+              )}
+            </div>
+            <ul className="text-sm text-ink-muted" aria-label="插件声明贡献">
+              {Object.entries(preview.manifest.contributes)
+                .filter(([, ids]) => ids.length)
+                .map(([kind, ids]) => (
+                  <li key={kind}>
+                    {kind}：{ids.join('、')}
+                  </li>
+                ))}
+            </ul>
+            <p className="ui-help break-all">包 SHA-256：{preview.sha256}</p>
+            <p className="ui-help">
+              安装后默认禁用。仅在你启用时运行插件；现有同 ID 插件不会被覆盖。
+            </p>
+          </div>
+          <footer className="flex flex-none justify-end gap-2 border-t border-line px-6 py-4">
+            <button type="button" className="ui-btn ui-btn-quiet" onClick={closePreview}>
+              取消
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn-primary"
+              disabled={busy === 'install-confirm'}
+              onClick={() => void install()}
+            >
+              {busy === 'install-confirm' ? '正在安装…' : '确认安装（暂不启用）'}
+            </button>
+          </footer>
+        </Modal>
+      )}
     </div>
   )
 }
