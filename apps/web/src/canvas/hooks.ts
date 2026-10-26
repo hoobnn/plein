@@ -69,6 +69,11 @@ export function useFollow<T extends HTMLElement>(engine: Engine, place: () => Fo
       offInsets()
     }
   }, [engine, sync])
+  // 窗口变宽变窄后，面板要按新的可用空间重新放置。
+  useEffect(() => {
+    window.addEventListener('resize', sync)
+    return () => window.removeEventListener('resize', sync)
+  }, [sync])
   // 选区为空时没有 DOM；之后挂载或换行改变高度，也要立即重新放置。
   useLayoutEffect(() => {
     const node = ref.current

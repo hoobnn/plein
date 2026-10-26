@@ -305,7 +305,7 @@ export function Inputs({
   if (!tiles.length && !adds.length && !texts.length && !trailing && !toolbar) return null
   return (
     <div className="plein-generator-inputs flex flex-col gap-1 px-4 pt-2">
-      <div className="plein-generator-input-tools flex items-center gap-2 pr-9">
+      <div className="plein-generator-input-tools flex flex-wrap items-center gap-2 pr-9">
         {adds.length > 0 && (
           <>
             <button
@@ -414,7 +414,12 @@ export function Inputs({
         <RoleReferencePicker engine={engine} nodeId={el.id} data={prepared} />
         {toolbar}
         {trailing && (
-          <div role="toolbar" aria-label="结果操作" className="ml-auto flex items-center gap-0.5">
+          // 结果操作可能排到面板外：让它能换行，别把最后一个按钮裁掉
+          <div
+            role="toolbar"
+            aria-label="结果操作"
+            className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-0.5"
+          >
             {trailing}
           </div>
         )}

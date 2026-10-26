@@ -16,6 +16,7 @@ import { isAiAnalysisType } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useEngineVersion, useFollow } from '../../canvas/hooks'
+import { canvasBottomSpace, fitFloatingPanel } from '../../canvas/floatingPanel'
 import { adaptToModel, constrainFields, selectedModel } from '../../canvas/modelParams'
 import {
   applyAspect,
@@ -55,6 +56,15 @@ import { PromptTools } from './PromptTools'
 import { AiAnalysisEntry } from '../ai-shot-analysis/AiAnalysisEditor'
 import { RecipeLibrary } from './RecipeLibrary'
 import { CharacterImageArchiveButton } from '../library/ArchiveCharacterImage'
+
+/** 顶栏占的高度；编辑器往上收时不能压到它。 */
+const TOP_RESERVED = 64
+/** 编辑器的常规尺寸；窗口放不下时按可用空间收窄。 */
+const PANEL_W = 840
+const PANEL_H = 440
+const MIN_H = 180
+/** 面板与两侧面板、窗口边缘留出的空隙。 */
+const PANEL_GAP = 12
 
 /** 损坏的历史值仅在显示时按空表单呈现；用户明确修改或恢复默认才写回。 */
 function optionRecord(value: unknown): Record<string, unknown> {
@@ -97,7 +107,7 @@ function GeneratorHost({ engine }: { engine: Engine }) {
   )
 }
 
-/** 编辑器始终位于卡片下方；相机变化时只更新锚点，不翻转或切换成窗口停靠。 */
+/** 编辑器放在卡片下方；卡片下方放不下才挪到上方，位置随相机变化更新。 */
 function NodeBelow({
   engine,
   nodeId,
@@ -114,13 +124,27 @@ function NodeBelow({
     if (!rect) return null
     const tl = engine.worldToClient(rect.x, rect.y)
     const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
-    const width = 840
-    const top = br.y + 12
+    // 面板要落在窗口里：宽度跟着两侧面板之间的空处收，高度按上下留白裁。
+    // 卡片下方是首选位置，放不下才挪到卡片上方；面板不能压住自己的卡片，
+    // 否则双击卡片打不开播放器。
+    const minLeft = engine.camera.insets.left + PANEL_GAP
+    const right = window.innerWidth - engine.camera.insets.right - PANEL_GAP
+    const { left, width } = fitFloatingPanel((tl.x + br.x) / 2, PANEL_W, minLeft, right)
+    const bottom = canvasBottomSpace(window.innerWidth, engine.camera.insets.left).generator
+    const limit = window.innerHeight - bottom
+    const belowTop = br.y + PANEL_GAP
+    const room = limit - belowTop
+    const height = Math.min(PANEL_H, Math.max(MIN_H, room))
+    const top =
+      room >= MIN_H
+        ? belowTop
+        : Math.max(TOP_RESERVED, Math.min(tl.y - PANEL_GAP - height, limit - height))
     return {
-      left: (tl.x + br.x - width) / 2,
+      left,
       top,
       width,
-      maxHeight: 480,
+      height,
+      maxHeight: height,
     }
   }
   const ref = useFollow<HTMLElement>(engine, place)
@@ -133,7 +157,7 @@ function NodeBelow({
       data-testid="node-editor"
       data-placement="below"
       className="plein-node-editor pointer-events-auto fixed z-20 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface"
-      style={{ ...style, height: 440 }}
+      style={style}
     >
       <button
         type="button"
