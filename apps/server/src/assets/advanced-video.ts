@@ -174,7 +174,8 @@ export async function deriveAdvancedVideo(
       )
       labels.push('[after]')
     }
-    filters.push(`${labels.join('')}concat=n=${labels.length}:v=1:a=0[video]`)
+    // concat的输出帧率未知；显式传播已核验的原帧率，确保VideoToolbox写入末帧时长。
+    filters.push(`${labels.join('')}concat=n=${labels.length}:v=1:a=0,fps=${fps}[video]`)
     await ffmpeg([
       '-i',
       original,

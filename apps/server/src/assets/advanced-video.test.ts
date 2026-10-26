@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createReadStream, readFileSync, writeFileSync, chmodSync } from 'node:fs'
+import { createReadStream, readFileSync, writeFileSync, chmodSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Asset } from '@plein/protocol'
 import sharp from 'sharp'
@@ -357,6 +357,29 @@ describe.skipIf(!available)('本地高级视频加工', () => {
       }),
     ).rejects.toThrow('时间戳不等距')
   })
+
+  it.skipIf(!existsSync('/Applications/Plein.app/Contents/Resources/ffmpeg/ffmpeg'))(
+    '桌面VideoToolbox在拼接后保留末帧时长，不以音轨长度掩盖短一帧的视频',
+    async () => {
+      setMediaTools({
+        ffmpeg: '/Applications/Plein.app/Contents/Resources/ffmpeg/ffmpeg',
+        ffprobe: '/Applications/Plein.app/Contents/Resources/ffmpeg/ffprobe',
+      })
+      const made = await deriveAsset(store, OWNER, {
+        op: 'replace-range',
+        assetId: source.id,
+        replacementAssetId: replacement.id,
+        start: 0.5,
+        end: 1.5,
+        replacementStart: 0.2,
+      })
+      const file = store.originalPath(made.assets[0]!.id)
+      expect(await probeMedia(file)).toMatchObject({ videoDuration: 2, duration: 2, frameRate: 10 })
+      expect(audioHash(file)).toBe(audioHash(store.originalPath(source.id)))
+      expect((await pixel(file, 1))[0]).toBeGreaterThan(180)
+      expect((await pixel(file, 1.8, 10, 10))[2]).toBeGreaterThan(180)
+    },
+  )
 
   it('拒绝触边或越界的修补矩形和无效区间，缺少真实滤镜时明确不可用', async () => {
     const base = {
