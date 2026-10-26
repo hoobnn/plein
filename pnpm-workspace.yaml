@@ -14,7 +14,7 @@ allowBuilds:
 # Vite+：vite 由 vite-plus-core 提供，插件和 vitest 依赖的 vite 都指向这一份
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@1.3.0
-  vite-plus: 1.3.0
+  vite-plus: 1.4.0
 overrides:
   vite@*: "catalog:"
   # markdownlint-cli 用 ~ 锁住的小版本带已公开的 DoS 漏洞，修复版同一大版本；它放宽范围后删掉
