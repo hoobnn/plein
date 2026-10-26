@@ -14,6 +14,7 @@ import {
   aiAnalysisAssets,
 } from '@plein/nodes'
 import * as Y from 'yjs'
+import { derivationAssets } from '@plein/protocol'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 
@@ -66,6 +67,9 @@ export function documentReferences(doc: PleinDoc): AssetReference[] {
         explicit,
       })
     if (el.assetId) add(el.assetId, 'asset', null, true, true)
+    const derivedInputs = derivationAssets(el.params?.mediaDerivation)
+    for (const assetId of derivedInputs)
+      add(assetId, `media-derivation/${assetId}`, null, false, true)
     for (const assetId of sequenceSegmentAssets(el))
       add(assetId, `sequence-segment/${assetId}`, null, true, true)
     const adopted = adoptedResultIds(el)
@@ -93,6 +97,7 @@ export function documentReferences(doc: PleinDoc): AssetReference[] {
         true,
       )
     stringReferences(el.params, (id, path) => {
+      if (derivedInputs.length && path.startsWith('/mediaDerivation/')) return
       // 场景视角图虽存放在参数里，仍是档案直接持有的素材，不是碰巧出现的哈希文本。
       const sceneViewImage =
         el.nodeType === 'plein/scene' && /^\/sceneViews\/\d+\/images\/\d+$/.test(path)

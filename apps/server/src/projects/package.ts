@@ -44,6 +44,7 @@ import {
 import { parseModelRef } from '@plein/plugin-sdk'
 import {
   type Asset,
+  derivationAssets,
   type DependencyStatus,
   type LibraryItem,
   PackageJob,
@@ -256,6 +257,8 @@ async function planExport(
           const where = `${row.title} / ${el.name ?? el.nodeType ?? el.kind}`
           const m = doc.mutable(el.id)!
           if (el.assetId) refAsset(el.assetId, where, true)
+          for (const assetId of derivationAssets(el.params?.mediaDerivation))
+            refAsset(assetId, `${where} / 加工来源`, true)
           for (const assetId of sequenceSegmentAssets(el))
             refAsset(assetId, `${where} / 固定剪辑素材`, true)
           if (el.kind === 'markdown')
