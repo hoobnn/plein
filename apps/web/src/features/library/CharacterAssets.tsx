@@ -1,5 +1,5 @@
 import { CHARACTER_IMAGE_SLOTS, type LibrarySlot } from '@plein/nodes'
-import type { LibraryImage } from '@plein/protocol'
+import type { CharacterImageSlot, LibraryImage } from '@plein/protocol'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { Icon, type IconName } from '../../ui/icons'
@@ -18,7 +18,7 @@ import { LibraryThumbnail } from './LibraryMedia'
 
 type ChangeImages = (update: (images: LibraryImage[]) => LibraryImage[]) => void
 
-const VISUAL_ORDER = ['portrait', 'full_body', 'face_grid', 'character_3view']
+const VISUAL_ORDER: CharacterImageSlot[] = ['portrait', 'full_body', 'face_grid', 'character_3view']
 const SLOT_ICONS: Record<string, IconName> = {
   portrait: 'character',
   full_body: 'outfit',
@@ -35,6 +35,8 @@ export function CharacterAssets({
   onChange,
   busy,
   onBusyChange,
+  onProduce,
+  canProduce = false,
 }: {
   images: LibraryImage[]
   media: CanvasMedia[]
@@ -43,6 +45,8 @@ export function CharacterAssets({
   onChange: ChangeImages
   busy: boolean
   onBusyChange(busy: boolean): void
+  onProduce?(slot: CharacterImageSlot): void
+  canProduce?: boolean
 }) {
   const slots = VISUAL_ORDER.map((id) => CHARACTER_IMAGE_SLOTS.find((s) => s.id === id)!)
   const extras = images.filter((image) => !slots.some((s) => s.id === image.slot))
@@ -112,6 +116,8 @@ export function CharacterAssets({
             onBusyChange={onBusyChange}
             onSelect={onSelect}
             onAdd={(assetId) => assign(slot.id, assetId)}
+            onProduce={onProduce ? () => onProduce(slot.id) : undefined}
+            canProduce={canProduce}
             onRemove={() => {
               change((current) => current.filter((image) => image.slot !== slot.id))
               onSelect(null)
@@ -241,6 +247,8 @@ function CharacterAssetTile({
   onSelect,
   onAdd,
   onRemove,
+  onProduce,
+  canProduce,
   disabled,
   onBusyChange,
 }: {
@@ -252,6 +260,8 @@ function CharacterAssetTile({
   onSelect(assetId: string | null, caption?: string): void
   onAdd(assetId: string): void
   onRemove(): void
+  onProduce?(): void
+  canProduce: boolean
   disabled: boolean
   onBusyChange(busy: boolean): void
 }) {
@@ -355,6 +365,22 @@ function CharacterAssetTile({
             >
               <Icon name="retry" size={12} />
               重新加载
+            </button>
+          )}
+          {onProduce && (
+            <button
+              type="button"
+              disabled={busy || !canProduce}
+              title={
+                canProduce
+                  ? `先保存角色，再为${slot.label}创建独立草稿；到画布后手动生成`
+                  : '先打开一张可编辑画布'
+              }
+              onClick={onProduce}
+              className="ui-btn ui-btn-secondary ui-btn-xs"
+            >
+              <Icon name="wand" size={12} />
+              制作这类图片
             </button>
           )}
           <button

@@ -13,6 +13,7 @@ import {
   type AgentStatus,
   type Asset,
   type AssetVariant,
+  type ArchiveCharacterImage,
   type Canvas,
   type Catalog,
   type CreateLibraryItem,
@@ -195,8 +196,11 @@ export const api = {
     request<LibraryItem>(API.library, json('POST', body)),
   saveLibraryCard: (body: SaveLibraryCard) =>
     request<SaveLibraryCardResult>('/api/library/save-card', json('POST', body)),
+  libraryItem: (id: string) => request<LibraryItem>(API.libraryItem(id)),
   updateLibraryItem: (id: string, body: UpdateLibraryItem) =>
     request<LibraryItem>(API.libraryItem(id), json('PATCH', body)),
+  archiveCharacterImage: (id: string, body: ArchiveCharacterImage) =>
+    request<LibraryItem>(`${API.libraryItem(id)}/character-image`, json('POST', body)),
   deleteLibraryItem: (id: string) => request<void>(API.libraryItem(id), { method: 'DELETE' }),
   markLibraryUsed: (id: string) => request<void>(API.libraryUse(id), json('POST', {})),
 

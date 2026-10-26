@@ -53,6 +53,7 @@ import { ShotPresets } from './ShotPresets'
 import { PromptBox } from './PromptBox'
 import { PromptTools } from './PromptTools'
 import { RecipeLibrary } from './RecipeLibrary'
+import { CharacterImageArchiveButton } from '../library/ArchiveCharacterImage'
 
 /** 损坏的历史值仅在显示时按空表单呈现；用户明确修改或恢复默认才写回。 */
 function optionRecord(value: unknown): Record<string, unknown> {
@@ -279,15 +280,20 @@ export function GeneratorPanel({
   const result = running ? undefined : primaryResult(el)
   const audio = result?.value.type === 'audio' ? result : undefined
   const actions = media ? (
-    <ResultActions
-      key={`actions:${media.assetId}`}
-      engine={engine}
-      el={el}
-      media={media}
-      catalog={catalog}
-      remote={!!canvasId}
-      variant="inline"
-    />
+    <>
+      <ResultActions
+        key={`actions:${media.assetId}`}
+        engine={engine}
+        el={el}
+        media={media}
+        catalog={catalog}
+        remote={!!canvasId}
+        variant="inline"
+      />
+      {node.type === 'plein/image' && canvasId && (
+        <CharacterImageArchiveButton engine={engine} el={el} canvasId={canvasId} />
+      )}
+    </>
   ) : result ? (
     <>
       {audio && audio.value.type === 'audio' && (

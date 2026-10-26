@@ -1,4 +1,5 @@
 import type {
+  ArchiveCharacterImage,
   CreateLibraryItem,
   LibraryItem,
   LibraryKind,
@@ -48,6 +49,7 @@ interface LibraryStore {
   create(body: CreateLibraryItem): Promise<LibraryItem>
   saveCard(body: SaveLibraryCard): Promise<SaveLibraryCardResult>
   update(id: string, body: UpdateLibraryItem): Promise<LibraryItem>
+  archiveCharacterImage(id: string, body: ArchiveCharacterImage): Promise<LibraryItem>
   remove(id: string): Promise<void>
   /** 记一次用到画布上（失败不影响插入） */
   markUsed(id: string): void
@@ -176,6 +178,27 @@ export const useLibrary = create<LibraryStore>((set, get) => {
         return saved
       }
       // 同一条目按用户提交顺序写入；失败不阻塞后续编辑，其他条目仍可并行。
+      const operation = (updates.get(id) ?? Promise.resolve()).then(write, write)
+      updates.set(id, operation)
+      const clear = () => {
+        if (updates.get(id) === operation) updates.delete(id)
+      }
+      void operation.then(clear, clear)
+      return operation
+    },
+    archiveCharacterImage(id, body) {
+      const submitted = structuredClone(body)
+      const write = async () => {
+        const item = await api.archiveCharacterImage(id, submitted)
+        const usedAt = get().items.find((entry) => entry.id === id)?.usedAt
+        const saved =
+          usedAt != null && (item.usedAt === null || usedAt > item.usedAt)
+            ? { ...item, usedAt }
+            : item
+        // 归档响应只替换原 ID；不插入已删除条目，也不接管其他画布或角色。
+        set({ items: replace(get().items, saved) })
+        return saved
+      }
       const operation = (updates.get(id) ?? Promise.resolve()).then(write, write)
       updates.set(id, operation)
       const clear = () => {

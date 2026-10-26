@@ -12,13 +12,22 @@ import {
   profileSize,
   sceneViewImages,
 } from '@plein/nodes'
-import type { LibraryItem, LibraryKind } from '@plein/protocol'
+import type { CharacterImageSlot, LibraryItem, LibraryKind } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
 import { queryKeys } from '../../api/query'
-import { type CanvasMedia, canvasMedia, coverOf, placeInputOf, type PlaceInput } from './canvas'
+import {
+  type CanvasMedia,
+  canvasMedia,
+  coverAssetOf,
+  coverOf,
+  placeInputOf,
+  type PlaceInput,
+} from './canvas'
 import { useCanvas } from '../../stores/canvas'
+import { useCatalog } from '../../stores/catalog'
+import { CHARACTER_STARTERS, createCharacterImageDraft } from './CharacterProduction'
 import { type LibrarySeed, useLibrary } from './store'
 import { confirmDialog, dialogOpen } from '../../ui/Dialog'
 import { EmptyState } from '../../ui/EmptyState'
@@ -249,6 +258,27 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
     if (r?.id) close()
   }
 
+  const produce = async (item: LibraryItem, slot: CharacterImageSlot) => {
+    const input = placeInputOf(item)
+    if (!input || !engine || !canvasId) return
+    const placed = await placement.place({ ...input, fresh: true })
+    if (!placed?.id) return
+    const current = useCanvas.getState()
+    if (current.engine !== engine || current.canvasId !== canvasId || engine.doc.readOnly) return
+    const id = createCharacterImageDraft(
+      engine,
+      useCatalog.getState().catalog,
+      placed.id,
+      item,
+      slot,
+    )
+    if (!id) {
+      current.notify('无法创建角色图片草稿，请确认图片生成节点可用后重试')
+      return
+    }
+    close()
+  }
+
   const shownKey = shown.map((item) => item.id).join(',')
   useLayoutEffect(() => {
     if (editing || open !== kindId) return
@@ -351,6 +381,7 @@ function Panel({ kind: kindId }: { kind: LibraryKind }) {
             setEditing(createdEditing(editing, id))
           }}
           onPlace={place}
+          onProduce={produce}
         />
       ) : (
         <>
@@ -771,6 +802,7 @@ function Editor({
   onBack,
   onCreated,
   onPlace,
+  onProduce,
   onUploadPendingChange,
 }: {
   kind: LibraryKindSpec
@@ -784,6 +816,7 @@ function Editor({
   onBack(): void
   onCreated(id: string): void
   onPlace(input: PlaceInput): Promise<void>
+  onProduce(item: LibraryItem, slot: CharacterImageSlot): Promise<void>
   onUploadPendingChange(pending: boolean): void
 }) {
   const lib = useLibrary()
@@ -838,6 +871,8 @@ function Editor({
     tags: Object.fromEntries(Object.entries(draft.tags).filter(([, v]) => v)),
     voice: kind.voice && draft.voice.voiceId.trim() ? draft.voice : null,
     images: draft.images,
+    // 普通编辑保留独立封面；归档响应由 store 按 ID 合并，不用旧条目回写。
+    coverAssetId: item?.coverAssetId ?? null,
     video: kind.video ? draft.video : null,
     models: kind.video
       ? draft.models
@@ -913,6 +948,17 @@ function Editor({
     if (input) await onPlace(input)
   }
 
+  const produce = async (slot: CharacterImageSlot) => {
+    if (!draft.name.trim()) {
+      setError('请先填写有效的角色名称，再制作角色图片。')
+      editor.current?.querySelector<HTMLInputElement>('input[aria-label="名称"]')?.focus()
+      return
+    }
+    // save(true) 同时拦截无效输入、上传中与保存期间的新草稿；失败时保留编辑现场。
+    const saved = await save(true)
+    if (saved) await onProduce(saved, slot)
+  }
+
   // 从画布存进来的内容本来就在画布上，新建时不再提供放回画布
   const placeable = canPlace && !(seed && !item)
 
@@ -941,7 +987,19 @@ function Editor({
   const thumbnails = ordered.filter(
     (image, index) => ordered.findIndex((entry) => entry.assetId === image.assetId) === index,
   )
+  const explicitCover = coverAssetOf(
+    {
+      kind: kind.id,
+      images: draft.images,
+      profile: draft.profile,
+      sceneViews: draft.sceneViews,
+      video: draft.video,
+      coverAssetId: item?.coverAssetId,
+    },
+    kind,
+  )
   const cover =
+    explicitCover ??
     ordered[0]?.assetId ??
     (kind.id === 'scene' ? (sceneViewImages(draft.sceneViews)[0] ?? null) : null)
   // 悬停中的图优先，其次是选中项钉住的图，最后是封面；悬停到没有图的项时不换
@@ -1190,6 +1248,31 @@ function Editor({
               className="contents"
               aria-label="角色档案编辑"
             >
+              {!item && (
+                <section
+                  aria-label="示例设定，尚未生成图片"
+                  className="mb-4 rounded-xl border border-line bg-surface-2 p-3"
+                >
+                  <h3 className="text-sm font-medium">本地文字起点</h3>
+                  <p className="mt-1 text-xs text-ink-subtle">
+                    示例设定，尚未生成图片。选择后仍可编辑，再从下方图片槽位开始制作。
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {CHARACTER_STARTERS.map((starter) => (
+                      <button
+                        key={starter.id}
+                        type="button"
+                        className="ui-btn ui-btn-secondary ui-btn-sm"
+                        onClick={() =>
+                          patch({ name: starter.name, description: starter.description })
+                        }
+                      >
+                        使用「{starter.name}」示例
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
               <ProfileUploadContext.Provider
                 value={{ pending: busy || pendingUploads > 0, onBusyChange: trackUpload }}
               >
@@ -1224,6 +1307,8 @@ function Editor({
                         }}
                         busy={busy || pendingUploads > 0}
                         onBusyChange={trackUpload}
+                        canProduce={canPlace}
+                        onProduce={(slot) => void produce(slot)}
                       />
                     ) : tab === 'basics' ? (
                       basics

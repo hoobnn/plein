@@ -51,6 +51,8 @@ export interface PlaceInput {
   video?: string | null
   /** 资产库条目 id；官方条目没有 */
   libraryId?: string
+  /** 制作草稿使用当前资产的新副本，保留画布上已有的旧版本。 */
+  fresh?: boolean
 }
 
 export interface PlaceResult {
@@ -65,8 +67,23 @@ export interface PlaceResult {
 export const findPlacedCard = (engine: Engine, libraryId: string) =>
   findPlacedCardIn(engine.doc, libraryId)
 
-/** 条目封面：优先基础参考图，角色 / 场景可回退档案图片，最后使用参考视频的封面。 */
+type CoverInput = Pick<
+  LibraryItem,
+  'kind' | 'images' | 'profile' | 'sceneViews' | 'video' | 'coverAssetId'
+>
+
+/** 独立封面必须仍指向条目中的有效素材；移除素材后回退，不显示悬空 ID。 */
+export function coverAssetOf(item: CoverInput, kind = libraryKind(item.kind)) {
+  const id = item.coverAssetId
+  if (!id) return null
+  const valid = kind?.id === 'character' && item.images.some((image) => image.assetId === id)
+  return valid ? id : null
+}
+
+/** 条目封面：优先有效独立封面，再按基础参考、档案图片与视频封面回退。 */
 export function coverOf(item: LibraryItem, kind = libraryKind(item.kind)) {
+  const explicit = coverAssetOf(item, kind)
+  if (explicit) return assetUrls.variant(explicit, 'thumb-256')
   const first = kind && orderedImages(kind, item.images)[0]
   if (first) return assetUrls.variant(first.assetId, 'thumb-256')
   const profile = kind?.id === 'character' && item.profile && profileImages(item.profile)[0]
@@ -103,6 +120,7 @@ export async function placeLibraryItem(
   })
   if (!isCurrent() || engine.doc.readOnly) return unavailable()
   const selectPlaced = (): PlaceResult | undefined => {
+    if (input.fresh) return undefined
     const placed = input.libraryId && findPlacedCard(engine, input.libraryId)
     if (placed) {
       engine.selection.set([placed.id])
@@ -150,11 +168,18 @@ export async function placeLibraryItem(
     ...(kind.id === 'scene' ? { sceneViews: input.sceneViews ?? [] } : {}),
     ...(input.libraryId ? { libraryId: input.libraryId } : {}),
   }
-  const duplicate = mentionTargets(engine).some((t) => t.name === input.name)
+  const names = new Set(mentionTargets(engine).map((target) => target.name))
+  let cardName = input.name
+  if (input.fresh) {
+    const stem = `${input.name} · 制作参考`
+    cardName = stem
+    for (let n = 2; names.has(cardName); n++) cardName = `${stem} ${n}`
+  }
+  const duplicate = names.has(cardName)
 
   const { id: cardId, loose } = placeLibraryCard(
     engine.doc,
-    { ...base, name: input.name, params },
+    { ...base, name: cardName, params },
     card,
     refs,
   )
