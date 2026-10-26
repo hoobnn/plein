@@ -392,12 +392,19 @@ for (const change of ['missing', 'readonly'] as const) {
       },
       { boardId: f.boardId, change },
     )
-    await f.editor.getByRole('button', { name: '更新已有素材', exact: true }).click()
-    expect(await f.read()).toEqual(before)
-    expect(errors).toEqual([])
-    await expect(f.editor.getByRole('alert')).toContainText(
-      change === 'readonly' ? '只读' : '来源分镜',
-    )
+    const refresh = f.editor.getByRole('button', { name: '更新已有素材', exact: true })
+    if (change === 'readonly') {
+      // 只读时不刷新，也不报「来源分镜」这类误导
+      await refresh.click({ force: true })
+      expect(await f.read()).toEqual(before)
+      expect(errors).toEqual([])
+      await expect(f.editor.getByRole('alert')).toHaveCount(0)
+    } else {
+      await refresh.click()
+      expect(await f.read()).toEqual(before)
+      expect(errors).toEqual([])
+      await expect(f.editor.getByRole('alert')).toContainText('来源分镜')
+    }
     await f.editor.screenshot({
       path: test.info().outputPath(`${change}-refresh-refused.png`),
       animations: 'disabled',
