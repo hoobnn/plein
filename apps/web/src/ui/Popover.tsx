@@ -15,6 +15,8 @@ export function Popover({
   label,
   placement = 'above',
   scrollKey,
+  container,
+  initialFocus,
   children,
 }: {
   anchor: HTMLElement | null
@@ -24,6 +26,8 @@ export function Popover({
   placement?: 'above' | 'below'
   /** 内容步骤切换时回到顶部，输入字段变化不影响用户滚动。 */
   scrollKey?: string
+  container?: HTMLElement | null
+  initialFocus?: boolean
   children: ReactNode
 }) {
   const exit = useExit()
@@ -61,7 +65,7 @@ export function Popover({
         onClose()
       }}
     >
-      <Base.Portal>
+      <Base.Portal container={container ?? undefined}>
         <Base.Positioner
           anchor={anchor}
           side={placement === 'above' ? 'top' : 'bottom'}
@@ -72,6 +76,7 @@ export function Popover({
         >
           <Base.Popup
             ref={popup}
+            initialFocus={initialFocus}
             aria-label={label}
             {...exit}
             style={{

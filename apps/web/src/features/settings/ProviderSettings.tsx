@@ -166,8 +166,8 @@ export function ProviderRow({
           </span>
           <ProviderIcon provider={provider.id} size={24} />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium">{provider.title}</span>
-            <span className="block truncate text-xs text-ink-subtle">
+            <span className="block text-sm font-medium break-words">{provider.title}</span>
+            <span className="block truncate text-xs text-ink-subtle" title={provider.description}>
               {provider.description ?? `${provider.models.length} 个模型`}
             </span>
           </span>
@@ -191,9 +191,9 @@ export function ProviderRow({
           {busy ? '处理中…' : status?.message}
         </p>
       )}
-      {/* 与标题对齐：左边距 16 + 箭头 14 + 图标 24 + 两个间距 12 */}
+      {/* 宽窗口与标题文字对齐；窄窗口缩减缩进，给配置字段留出空间。 */}
       <div hidden={!open}>
-        <div id={bodyId} className="flex flex-col gap-4 px-4 pb-4 pl-19.5">
+        <div id={bodyId} className="flex min-w-0 flex-col gap-4 px-4 pb-4 sm:pl-19.5">
           {provider.models.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {provider.models.map((m) => (

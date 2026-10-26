@@ -78,7 +78,7 @@ export function SettingsDialog({ onClose, initial }: { onClose(): void; initial?
     >
       <nav
         aria-label="设置分区"
-        className="settings-nav ui-slide flex flex-none gap-1 overflow-x-auto border-b border-line bg-surface-2 p-2 sm:w-52 sm:flex-col sm:overflow-visible sm:border-r sm:border-b-0 sm:p-3"
+        className="settings-nav ui-slide ui-scrollbar flex min-h-0 flex-none gap-1 overflow-x-auto border-b border-line bg-surface-2 p-2 sm:w-52 sm:flex-col sm:overflow-x-hidden sm:overflow-y-auto sm:border-r sm:border-b-0 sm:p-3"
       >
         <h2 className="hidden px-2.5 pt-1.5 pb-3 text-lg font-semibold sm:block">设置</h2>
         <SlidePill variant="seg" />

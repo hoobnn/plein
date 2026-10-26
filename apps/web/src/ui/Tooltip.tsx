@@ -167,7 +167,11 @@ function Bubble({ tip }: { tip: Tip }) {
       Math.min(rect.left + rect.width / 2 - w / 2, window.innerWidth - w - 8),
     )
     const below = rect.bottom + gap + h <= window.innerHeight - 8
-    setPos({ translate: `${left}px ${below ? rect.bottom + gap : rect.top - gap - h}px` })
+    const top = Math.max(
+      8,
+      Math.min(below ? rect.bottom + gap : rect.top - gap - h, window.innerHeight - h - 8),
+    )
+    setPos({ translate: `${left}px ${top}px` })
     el.style.setProperty('--pop-origin', below ? 'top center' : 'bottom center')
     el.style.setProperty('--pop-from', `translateY(${below ? -2 : 2}px) scale(0.98)`)
   }, [tip])
@@ -177,7 +181,7 @@ function Bubble({ tip }: { tip: Tip }) {
       ref={ref}
       role="tooltip"
       style={pos}
-      className="ui-tooltip pointer-events-none fixed top-0 left-0 z-80 max-w-70 break-words"
+      className="ui-tooltip pointer-events-none fixed top-0 left-0 z-80 max-w-[min(280px,calc(100vw-16px))] break-words"
     >
       {tip.text}
     </div>

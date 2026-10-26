@@ -515,7 +515,8 @@
     background: none;
   }
   .ui-select-popup {
-    min-width: max(var(--anchor-width), 160px);
+    min-width: min(max(var(--anchor-width), 160px), var(--available-width, calc(100vw - 16px)));
+    max-width: var(--available-width, calc(100vw - 16px));
     /* 下方剩不到五项的高度时不再压扁，溢出让定位器翻到上方；矮窗口里最低高度随视口收小 */
     max-height: min(480px, max(var(--available-height), min(168px, 40vh)));
   }
@@ -528,6 +529,7 @@
     opacity: 0.4;
   }
   .ui-menu-item > svg {
+    flex-shrink: 0;
     color: var(--ink-muted);
   }
   /* 两行的菜单项：名称下面一行弱色说明 */
@@ -551,6 +553,8 @@
   /* 提示条：顶栏下方居中 */
   .ui-toast {
     display: flex;
+    max-width: 100%;
+    overflow-wrap: anywhere;
     align-items: center;
     min-height: var(--h-lg);
     padding: 8px 16px;

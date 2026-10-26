@@ -138,25 +138,29 @@ export function ModalHeader({
 }) {
   return (
     <header
-      className={`flex min-h-14 flex-none flex-wrap items-center gap-x-3 gap-y-2 py-2.5 pr-3 pl-5 ${
+      className={`relative flex min-h-14 flex-none flex-wrap items-center gap-x-3 gap-y-2 py-2.5 pr-14 pl-5 ${
         divider ? 'border-b border-line' : ''
       }`}
     >
-      <h2 className="truncate text-lg font-semibold">{title}</h2>
+      <h2 className="min-w-0 flex-1 basis-full text-lg font-semibold break-words sm:basis-auto">
+        {title}
+      </h2>
       {meta}
-      <div className="ml-auto flex flex-wrap items-center gap-2">
-        {children}
-        <button
-          type="button"
-          aria-label="关闭"
-          title="关闭（Esc）"
-          disabled={closeDisabled}
-          onClick={onClose}
-          className="ui-btn ui-btn-quiet ui-icon-btn"
-        >
-          <Icon name="x" />
-        </button>
-      </div>
+      {children && (
+        <div className="ml-auto flex max-w-full shrink-0 flex-wrap items-center gap-2">
+          {children}
+        </div>
+      )}
+      <button
+        type="button"
+        aria-label="关闭"
+        title="关闭（Esc）"
+        disabled={closeDisabled}
+        onClick={onClose}
+        className="ui-btn ui-btn-quiet ui-icon-btn absolute top-2.5 right-3"
+      >
+        <Icon name="x" />
+      </button>
     </header>
   )
 }

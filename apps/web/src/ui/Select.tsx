@@ -100,6 +100,7 @@ export function Select({
           options[index]!.scrollIntoView({ block: 'nearest' })
         }}
         aria-label={ariaLabel}
+        title={items.find((o) => o.value === value)?.label ?? value}
         className={`ui-select truncate text-left ${className}`}
       >
         {/* 当前值不在选项里时照原样显示 */}
@@ -135,8 +136,10 @@ export function Select({
                   className="ui-menu-item ui-select-item"
                 >
                   {options.find((option) => option.value === o.value)?.icon}
-                  <Base.ItemText className="min-w-0 flex-1 truncate">{o.label}</Base.ItemText>
-                  <Base.ItemIndicator className="text-accent">
+                  <Base.ItemText className="min-w-0 flex-1 whitespace-normal break-words">
+                    {o.label}
+                  </Base.ItemText>
+                  <Base.ItemIndicator className="shrink-0 text-accent">
                     <Icon name="check" size={14} />
                   </Base.ItemIndicator>
                 </Base.Item>

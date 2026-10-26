@@ -155,7 +155,7 @@ function DialogView({ req }: { req: Request }) {
     >
       <Dialog.Portal>
         <Dialog.Backdrop {...exit} className="ui-dialog-scrim fixed inset-0 z-60 bg-scrim" />
-        <Dialog.Viewport className="fixed inset-0 z-60 flex items-center justify-center p-6">
+        <Dialog.Viewport className="fixed inset-0 z-60 flex items-center justify-center p-4 sm:p-6">
           <Dialog.Popup
             {...exit}
             aria-label={options.title}
@@ -175,12 +175,12 @@ function DialogView({ req }: { req: Request }) {
                 }}
               />
             }
-            className="ui-dialog relative flex w-full max-w-100 flex-col gap-5 rounded-2xl bg-surface p-6 shadow-4 outline-none"
+            className="ui-dialog ui-scrollbar relative flex max-h-full w-full max-w-100 flex-col gap-5 overflow-y-auto rounded-2xl bg-surface p-5 shadow-4 outline-none sm:p-6 [&>*]:shrink-0"
           >
             <div className="flex flex-col gap-1.5">
-              <h2 className="text-lg font-semibold">{options.title}</h2>
+              <h2 className="text-lg font-semibold break-words">{options.title}</h2>
               {options.message && (
-                <p className="text-sm leading-5 text-ink-muted">{options.message}</p>
+                <p className="text-sm leading-5 break-words text-ink-muted">{options.message}</p>
               )}
             </div>
             {req.kind === 'prompt' && (
@@ -205,7 +205,7 @@ function DialogView({ req }: { req: Request }) {
                 正在{options.confirmLabel ?? '提交'}，关闭窗口后仍会继续执行。
               </p>
             )}
-            <div className="flex justify-end gap-2">
+            <div className="flex shrink-0 flex-wrap justify-end gap-2">
               <button
                 type="button"
                 className="ui-btn ui-btn-secondary ui-btn-lg"
