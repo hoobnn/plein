@@ -289,6 +289,40 @@ export type VoiceCloneState =
   | { status: 'ready' }
   | { status: 'failed'; message: string }
 
+export interface VoiceCloneInput {
+  voiceId: string
+  sample: AssetRef
+  idMode?: 'slot' | 'custom'
+  noiseReduction?: boolean
+  volumeNormalization?: boolean
+  language?: 'zh' | 'en'
+  previewText?: string
+  promptSample?: AssetRef
+  promptText?: string
+}
+
+export interface VoiceDesignInput {
+  voiceId: string
+  prompt: string
+  previewText: string
+  image?: AssetRef
+  language?: 'zh' | 'en'
+}
+
+export type VoiceCreationResult = VoiceCloneState & {
+  voiceId?: string
+  preview?: { data: Uint8Array; mime: string }
+}
+
+export interface VoiceDesignSpec<Ctx> {
+  voiceId: 'slot' | 'generated'
+  hint: string
+  maxPromptLength: number
+  maxPreviewLength: number
+  image?: boolean
+  design(input: VoiceDesignInput, ctx: Ctx): Promise<VoiceCreationResult>
+}
+
 /**
  * 声音复刻：上传一段样本，在平台上训练出一个只能在这家配音模型里用的音色。
  * 复刻会计费，结果是平台上的音色 ID，不是文件，所以不走模型能力。
@@ -299,11 +333,14 @@ export interface VoiceCloneSpec<Ctx> {
    * generated 由宿主生成一个新 ID
    */
   voiceId: 'slot' | 'generated'
+  customId?: boolean
+  promptSample?: boolean
+  previewModel?: string
   /** 样本要求，表单里给用户看 */
   hint: string
-  clone(input: { voiceId: string; sample: AssetRef }, ctx: Ctx): Promise<VoiceCloneState>
+  clone(input: VoiceCloneInput, ctx: Ctx): Promise<VoiceCreationResult>
   /** 查训练状态；clone 直接返回 ready / failed 的平台可以不实现 */
-  status?(voiceId: string, ctx: Ctx): Promise<VoiceCloneState>
+  status?(voiceId: string, ctx: Ctx): Promise<VoiceCreationResult>
 }
 
 /** 可序列化的模型描述：专属参数转成 JSON Schema */
@@ -402,6 +439,7 @@ export interface ProviderDefinition<S extends z.ZodObject = z.ZodObject> {
    */
   idempotent?: boolean
   voiceClone?: VoiceCloneSpec<ProviderContext<z.output<S>>>
+  voiceDesign?: VoiceDesignSpec<ProviderContext<z.output<S>>>
 }
 
 export function defineProvider<S extends z.ZodObject>(
@@ -452,7 +490,11 @@ export interface ProviderDescriptor {
   secrets: SecretSpec[]
   models: ModelInfo[]
   /** 支持声音复刻时的表单说明 */
-  voiceClone?: Pick<VoiceCloneSpec<never>, 'voiceId' | 'hint'>
+  voiceClone?: Pick<
+    VoiceCloneSpec<never>,
+    'voiceId' | 'hint' | 'customId' | 'promptSample' | 'previewModel'
+  >
+  voiceDesign?: Omit<VoiceDesignSpec<never>, 'design'>
   plugin: string
 }
 
@@ -490,7 +532,26 @@ export function describeProvider(def: ProviderDefinition, plugin: string): Provi
         : m,
     ),
     ...(def.voiceClone
-      ? { voiceClone: { voiceId: def.voiceClone.voiceId, hint: def.voiceClone.hint } }
+      ? {
+          voiceClone: {
+            voiceId: def.voiceClone.voiceId,
+            hint: def.voiceClone.hint,
+            customId: def.voiceClone.customId,
+            promptSample: def.voiceClone.promptSample,
+            previewModel: def.voiceClone.previewModel,
+          },
+        }
+      : {}),
+    ...(def.voiceDesign
+      ? {
+          voiceDesign: {
+            voiceId: def.voiceDesign.voiceId,
+            hint: def.voiceDesign.hint,
+            maxPromptLength: def.voiceDesign.maxPromptLength,
+            maxPreviewLength: def.voiceDesign.maxPreviewLength,
+            image: def.voiceDesign.image,
+          },
+        }
       : {}),
     plugin,
   }

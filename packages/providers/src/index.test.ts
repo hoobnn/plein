@@ -22,8 +22,8 @@ describe('内置平台插件的权限声明', () => {
       '豆包语音',
       doubaoPlugin,
       ['VOLC_SPEECH_API_KEY', 'VOLC_SPEECH_APP_ID', 'VOLC_SPEECH_ACCESS_KEY'],
-      ['bytedance.com'],
-      ['openspeech.bytedance.com'],
+      ['bytedance.com', 'bytespeech.com'],
+      ['openspeech.bytedance.com', 'lf6-lab-speech-tt-sign.bytespeech.com'],
     ],
     [
       'MiniMax',

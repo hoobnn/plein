@@ -27,7 +27,9 @@ import {
   type ProviderOutput,
   resolveParams,
   type ServerPluginDefinition,
-  type VoiceCloneState,
+  type VoiceCreationResult,
+  type VoiceCloneInput,
+  type VoiceDesignInput,
 } from '@plein/plugin-sdk'
 import { stableStringify } from '@plein/flow'
 import { compatibleBaseURL, COMPATIBLE_ID, createCompatiblePlugin } from '@plein/providers'
@@ -382,9 +384,9 @@ export class PluginHost {
   async cloneVoice(
     id: string,
     ownerId: string,
-    input: { voiceId: string; sample: AssetRef },
+    input: VoiceCloneInput,
     signal?: AbortSignal,
-  ): Promise<VoiceCloneState> {
+  ): Promise<VoiceCreationResult> {
     const spec = this.voiceClone(id)
     if (!spec) throw new ProviderError('invalid_input', `平台 ${id} 不支持声音复刻`)
     const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
@@ -397,13 +399,35 @@ export class PluginHost {
     }
   }
 
+  voiceDesign(id: string) {
+    return this.registry.providers.get(id)?.def.voiceDesign
+  }
+
+  async designVoice(
+    id: string,
+    ownerId: string,
+    input: VoiceDesignInput,
+    signal?: AbortSignal,
+  ): Promise<VoiceCreationResult> {
+    const spec = this.voiceDesign(id)
+    if (!spec) throw new ProviderError('invalid_input', `平台 ${id} 不支持音色设计`)
+    const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
+      requireEnabled: true,
+    })
+    try {
+      return await spec.design(input, ctx)
+    } catch (err) {
+      throw toError(err)
+    }
+  }
+
   /** 查复刻训练状态；平台不提供查询时返回空，沿用已记下的状态 */
   async voiceStatus(
     id: string,
     ownerId: string,
     voiceId: string,
     signal?: AbortSignal,
-  ): Promise<VoiceCloneState | null> {
+  ): Promise<VoiceCreationResult | null> {
     const spec = this.voiceClone(id)
     if (!spec?.status) return null
     const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {

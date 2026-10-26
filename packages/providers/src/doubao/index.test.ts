@@ -459,3 +459,74 @@ describe('Doubao Speech HTTP contracts', () => {
     ).rejects.toThrow('speaker permission denied')
   })
 })
+
+describe('豆包音色设计及自定义复刻', () => {
+  it('四秒样本不按建议时长拦截，自定义 ID 使用后付费协议，默认关闭降噪和归一化', async () => {
+    const { ctx, body } = fakeContext(doubaoProvider, [{ status: 2 }], {
+      mime: 'audio/wav',
+      duration: 4,
+    })
+    await expect(
+      doubaoProvider.voiceClone!.clone(
+        { voiceId: 'pleinabcdefgh', idMode: 'custom', sample: { assetId: 'a', kind: 'audio' } },
+        ctx,
+      ),
+    ).resolves.toEqual({ status: 'ready' })
+    expect(body()).toMatchObject({
+      speaker_id: 'custom_speaker_id',
+      custom_speaker_id: 'pleinabcdefgh',
+      language: 0,
+      extra_params: { enable_audio_denoise: false, disable_volume_normalization: true },
+    })
+  })
+  it('文字和图片设计使用独立接口，成功状态立即可用', async () => {
+    const { ctx, body, fetch } = fakeContext(doubaoProvider, [{ status: 4 }], { mime: 'image/png' })
+    await expect(
+      doubaoProvider.voiceDesign!.design(
+        {
+          voiceId: 'S_abc',
+          prompt: '温柔女声',
+          previewText: '这是一段试听文本。',
+          image: { assetId: 'a', kind: 'image' },
+        },
+        ctx,
+      ),
+    ).resolves.toEqual({ status: 'ready' })
+    expect(fetch.mock.calls[0]![0]).toBe('https://openspeech.bytedance.com/api/v3/tts/voice_design')
+    expect(body()).toMatchObject({
+      speaker_id: 'S_abc',
+      text: '这是一段试听文本。',
+      prompt: { text_prompt: '温柔女声', image_prompt: { image_bytes: 'AQID' } },
+    })
+  })
+  it('设计参数越界在提交前拒绝；平台失败状态保留', async () => {
+    const { ctx, fetch } = fakeContext(doubaoProvider, [{ status: 3, message: '训练失败' }])
+    await expect(
+      doubaoProvider.voiceDesign!.design(
+        { voiceId: 'S_abc', prompt: 'a'.repeat(201), previewText: '试听' },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+    expect(fetch).not.toHaveBeenCalled()
+    await expect(
+      doubaoProvider.voiceDesign!.design(
+        { voiceId: 'S_abc', prompt: '女声', previewText: '试听' },
+        ctx,
+      ),
+    ).resolves.toMatchObject({ status: 'failed' })
+  })
+  it('自定义音色合成走复刻资源，官方预置音色仍走合成资源', async () => {
+    const { ctx, fetch } = fakeContext(doubaoProvider, [
+      new Response('{"code":0,"data":"AQID"}\n{"code":20000000,"data":null}'),
+    ])
+    await doubaoProvider.submit(
+      {
+        capability: 'audio.speech',
+        model: 'seed-tts-2.0',
+        input: { text: '测试', voice: 'pleinabcdefgh' },
+      },
+      ctx,
+    )
+    expect(fetch.mock.calls[0]![1]!.headers).toMatchObject({ 'X-Api-Resource-Id': 'seed-icl-2.0' })
+  })
+})

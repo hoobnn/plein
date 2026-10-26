@@ -1,3 +1,4 @@
+import { downloadVoicePreview } from '../shared/voice-preview'
 import { videoReferenceProblem, videoReferencePrompt } from '@plein/plugin-sdk'
 import { videoReferences } from '../shared/video-references'
 import {
@@ -182,6 +183,18 @@ function id(value: string) {
   if (!/^[A-Za-z0-9_-]{1,256}$/.test(value))
     throw new ProviderError('invalid_input', '无效 MiniMax task ID')
   return value
+}
+
+async function clonePreview(value: unknown, ctx: Context) {
+  if (typeof value !== 'string' || !value) return undefined
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'https:') return undefined
+    return await downloadVoicePreview(url.toString(), ctx)
+  } catch {
+    ctx.log('音色已创建，试听暂未保存；请在平台核查，避免重复创建')
+    return undefined
+  }
 }
 
 export const minimaxProvider = defineProvider({
@@ -592,15 +605,57 @@ export const minimaxProvider = defineProvider({
   // 复刻是同步接口：上传样本拿 file_id，再提交复刻，成功即可用
   voiceClone: {
     voiceId: 'generated',
+    promptSample: true,
+    previewModel: 'speech-2.8-hd',
     hint: '需要先在 MiniMax 完成实名认证。样本 10 秒至 5 分钟、单人清晰，MP3 / M4A / WAV，20 MB 以内；复刻出的音色 7 天内没用于正式合成会被平台删除',
-    async clone({ voiceId, sample }, ctx) {
+    async clone(
+      {
+        voiceId,
+        sample,
+        noiseReduction = false,
+        volumeNormalization = false,
+        previewText,
+        promptSample,
+        promptText,
+      },
+      ctx,
+    ) {
       const asset = await ctx.files.read(sample)
       const ext = CLONE_FORMATS[asset.mime.toLowerCase()]
       if (!ext) throw new ProviderError('invalid_input', '复刻样本须为 MP3、M4A 或 WAV 音频')
       if (!asset.data.length || asset.data.length > 20 * 1024 * 1024)
         throw new ProviderError('invalid_input', '复刻样本须在 20 MB 以内')
-      if (asset.duration !== undefined && (asset.duration < 10 || asset.duration > 300))
+      if (
+        asset.duration !== undefined &&
+        (!Number.isFinite(asset.duration) || asset.duration < 10 || asset.duration > 300)
+      )
         throw new ProviderError('invalid_input', '复刻样本须为 10 秒至 5 分钟')
+      if (!/^[A-Za-z][A-Za-z0-9_-]{6,254}[A-Za-z0-9]$/.test(voiceId))
+        throw new ProviderError(
+          'invalid_input',
+          '音色 ID 须为 8–256 位，字母开头，末尾为字母或数字',
+        )
+      if (previewText && previewText.length > 1000)
+        throw new ProviderError('invalid_input', '试听文本须在 1000 字以内')
+      if (!!promptSample !== !!promptText?.trim())
+        throw new ProviderError('invalid_input', '增强参考音频和对应文字须同时提供')
+      let promptAsset: Awaited<ReturnType<typeof ctx.files.read>> | undefined
+      if (promptSample) {
+        promptAsset = await ctx.files.read(promptSample)
+        if (
+          !CLONE_FORMATS[promptAsset.mime.toLowerCase()] ||
+          !promptAsset.data.length ||
+          promptAsset.data.length > 20 * 1024 * 1024 ||
+          (promptAsset.duration !== undefined &&
+            (!Number.isFinite(promptAsset.duration) ||
+              promptAsset.duration <= 0 ||
+              promptAsset.duration >= 8))
+        )
+          throw new ProviderError(
+            'invalid_input',
+            '增强参考须为小于 8 秒的 MP3、M4A 或 WAV，20 MB 以内',
+          )
+      }
       const form = new FormData()
       form.set('purpose', 'voice_clone')
       form.set('file', new Blob([Buffer.from(asset.data)], { type: asset.mime }), `sample.${ext}`)
@@ -609,15 +664,70 @@ export const minimaxProvider = defineProvider({
       // file_id 是 int64，超出 JS 安全整数时 JSON 解析已丢精度，不能拿去提交
       if (fileId === undefined || (typeof fileId === 'number' && !Number.isSafeInteger(fileId)))
         throw new ProviderError('unknown', 'MiniMax 上传样本后没有返回可用的文件 ID')
+      let clonePrompt: { prompt_audio: string | number; prompt_text: string } | undefined
+      if (promptAsset) {
+        const promptForm = new FormData()
+        promptForm.set('purpose', 'prompt_audio')
+        promptForm.set(
+          'file',
+          new Blob([Buffer.from(promptAsset.data)], { type: promptAsset.mime }),
+          `prompt.${CLONE_FORMATS[promptAsset.mime.toLowerCase()]}`,
+        )
+        const uploadedPrompt = await request(ctx, '/v1/files/upload', promptForm)
+        const promptId = uploadedPrompt.file?.file_id
+        if (
+          promptId === undefined ||
+          (typeof promptId === 'number' && !Number.isSafeInteger(promptId))
+        )
+          throw new ProviderError('unknown', 'MiniMax 没有返回可用的增强参考文件 ID')
+        clonePrompt = { prompt_audio: promptId, prompt_text: promptText! }
+      }
       const result = await request(ctx, '/v1/voice_clone', {
         file_id: fileId,
         voice_id: voiceId,
-        need_noise_reduction: true,
-        need_volume_normalization: true,
+        need_noise_reduction: noiseReduction,
+        need_volume_normalization: volumeNormalization,
+        ...(clonePrompt ? { clone_prompt: clonePrompt } : {}),
+        ...(previewText ? { text: previewText, model: 'speech-2.8-hd' } : {}),
       })
       if (sensitive(result.input_sensitive))
         throw new ProviderError('content_policy', 'MiniMax 内容审核未通过，换一段样本再试')
-      return { status: 'ready' }
+      if (result.base_resp?.status_code !== 0)
+        throw new ProviderError('unknown', 'MiniMax 复刻响应缺少成功状态；请先在平台核查音色 ID', {
+          outcome: 'unknown',
+        })
+      const preview = await clonePreview(result.demo_audio, ctx)
+      return { status: 'ready', ...(preview ? { preview } : {}) }
+    },
+  },
+  voiceDesign: {
+    voiceId: 'generated',
+    hint: '用文字描述设计新音色，无需音频样本；试听合成会计费。',
+    maxPromptLength: 2000,
+    maxPreviewLength: 500,
+    async design({ voiceId, prompt, previewText, image }, ctx) {
+      if (image) throw new ProviderError('invalid_input', 'MiniMax 音色设计仅支持文字描述')
+      required(prompt, 2000, '音色描述')
+      required(previewText, 500, '试听文本')
+      const result = await request(ctx, '/v1/voice_design', {
+        voice_id: voiceId,
+        prompt,
+        preview_text: previewText,
+      })
+      if (typeof result.voice_id !== 'string' || !result.voice_id)
+        throw new ProviderError(
+          'unknown',
+          'MiniMax 音色设计未返回音色 ID；请先在平台核查，避免重复创建',
+          { outcome: 'unknown' },
+        )
+      const audio = result.trial_audio
+      return {
+        status: 'ready',
+        voiceId: result.voice_id,
+        ...(typeof audio === 'string' && /^(?:[a-f\d]{2})+$/i.test(audio)
+          ? { preview: { data: new Uint8Array(Buffer.from(audio, 'hex')), mime: 'audio/mpeg' } }
+          : {}),
+      }
     },
   },
 })

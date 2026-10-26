@@ -1,5 +1,5 @@
 import { domainAllowed, type AssetRef } from '@plein/plugin-sdk'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, it, vi } from 'vite-plus/test'
 import { fakeContext } from '../testing'
 import { minimaxPlugin, minimaxProvider } from './index'
 
@@ -385,5 +385,78 @@ describe('MiniMax 声音复刻', () => {
     await expect(
       minimaxProvider.voiceClone!.clone({ voiceId: 'pleinabcdefgh', sample }, ctx),
     ).rejects.toMatchObject({ code: 'auth' })
+  })
+})
+
+describe('MiniMax 音色设计与增强参考', () => {
+  it('设计无需上传样本，返回平台音色 ID 并解码 hex 试听', async () => {
+    const { ctx, fetch, body } = fakeContext(minimaxProvider, [
+      { voice_id: 'designed123', trial_audio: '010203', base_resp: { status_code: 0 } },
+    ])
+    const result = await minimaxProvider.voiceDesign!.design(
+      { voiceId: 'pleinabcdefgh', prompt: '低沉男声', previewText: '这是试听。' },
+      ctx,
+    )
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(fetch.mock.calls[0]![0]).toBe('https://api.minimax.cn/v1/voice_design')
+    expect(body()).toEqual({
+      voice_id: 'pleinabcdefgh',
+      prompt: '低沉男声',
+      preview_text: '这是试听。',
+    })
+    expect(result).toMatchObject({
+      status: 'ready',
+      voiceId: 'designed123',
+      preview: { data: new Uint8Array([1, 2, 3]), mime: 'audio/mpeg' },
+    })
+  })
+  it('增强音频单独上传为 prompt_audio，试听带合成模型，显式传递处理选项', async () => {
+    const { ctx, fetch, body } = fakeContext(
+      minimaxProvider,
+      [{ file: { file_id: 1 } }, { file: { file_id: 2 } }, { base_resp: { status_code: 0 } }],
+      { mime: 'audio/wav', duration: 20 },
+    )
+    vi.mocked(ctx.files.read)
+      .mockResolvedValueOnce({ data: new Uint8Array([1]), mime: 'audio/wav', duration: 20 })
+      .mockResolvedValueOnce({ data: new Uint8Array([2]), mime: 'audio/wav', duration: 4 })
+    await minimaxProvider.voiceClone!.clone(
+      {
+        voiceId: 'pleinabcdefgh',
+        sample: { assetId: 'a', kind: 'audio' },
+        promptSample: { assetId: 'b', kind: 'audio' },
+        promptText: '参考文字',
+        previewText: '试听文字',
+        noiseReduction: true,
+        volumeNormalization: true,
+      },
+      ctx,
+    )
+    expect((fetch.mock.calls[1]![1]!.body as FormData).get('purpose')).toBe('prompt_audio')
+    expect(body(2)).toMatchObject({
+      file_id: 1,
+      clone_prompt: { prompt_audio: 2, prompt_text: '参考文字' },
+      model: 'speech-2.8-hd',
+      text: '试听文字',
+      need_noise_reduction: true,
+      need_volume_normalization: true,
+    })
+  })
+  it('增强参考达到八秒，提交前拒绝，不产生样本上传', async () => {
+    const { ctx, fetch } = fakeContext(minimaxProvider, [], { mime: 'audio/wav', duration: 20 })
+    vi.mocked(ctx.files.read)
+      .mockResolvedValueOnce({ data: new Uint8Array([1]), mime: 'audio/wav', duration: 20 })
+      .mockResolvedValueOnce({ data: new Uint8Array([2]), mime: 'audio/wav', duration: 8 })
+    await expect(
+      minimaxProvider.voiceClone!.clone(
+        {
+          voiceId: 'pleinabcdefgh',
+          sample: { assetId: 'a', kind: 'audio' },
+          promptSample: { assetId: 'b', kind: 'audio' },
+          promptText: '文字',
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

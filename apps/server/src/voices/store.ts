@@ -7,7 +7,10 @@ import { voices } from '../storage/schema'
 type VoiceRow = typeof voices.$inferSelect
 
 /** data 列里存的字段 */
-type VoiceData = Pick<Voice, 'message' | 'sampleAssetId' | 'gender' | 'age'>
+type VoiceData = Pick<
+  Voice,
+  'message' | 'sampleAssetId' | 'gender' | 'age' | 'source' | 'previewAssetId'
+>
 
 const toVoice = (r: VoiceRow): Voice => {
   const d = JSON.parse(r.data) as Partial<VoiceData>
@@ -18,6 +21,8 @@ const toVoice = (r: VoiceRow): Voice => {
     name: r.name,
     status: r.status as VoiceStatus,
     message: d.message ?? null,
+    source: d.source ?? (d.sampleAssetId ? 'clone' : 'register'),
+    previewAssetId: d.previewAssetId ?? null,
     sampleAssetId: d.sampleAssetId ?? null,
     gender: d.gender ?? null,
     age: d.age ?? null,
@@ -29,6 +34,8 @@ const toVoice = (r: VoiceRow): Voice => {
 const dataOf = (v: VoiceData) =>
   JSON.stringify({
     message: v.message,
+    source: v.source,
+    previewAssetId: v.previewAssetId,
     sampleAssetId: v.sampleAssetId,
     gender: v.gender,
     age: v.age,
@@ -124,6 +131,17 @@ export class VoiceStore {
     this.db
       .update(voices)
       .set({ status, data: dataOf({ ...cur, message }), updated_at: Date.now() })
+      .where(this.mine(owner, id))
+      .run()
+    return this.get(owner, id)
+  }
+
+  setPreview(owner: string, id: string, previewAssetId: string) {
+    const cur = this.get(owner, id)
+    if (!cur) return null
+    this.db
+      .update(voices)
+      .set({ data: dataOf({ ...cur, previewAssetId }), updated_at: Date.now() })
       .where(this.mine(owner, id))
       .run()
     return this.get(owner, id)

@@ -542,6 +542,17 @@ export const mockProvider = defineProvider({
       return { status: 'ready' }
     },
   },
+  voiceDesign: {
+    voiceId: 'generated',
+    hint: '模拟音色设计，不调用真实平台',
+    maxPromptLength: 2000,
+    maxPreviewLength: 500,
+    image: true,
+    async design({ voiceId, image }, ctx) {
+      if (image) await ctx.files.read(image)
+      return { status: 'ready', voiceId, preview: { data: sineWav(1), mime: 'audio/wav' } }
+    },
+  },
 })
 
 /** 演示插件能力：在选区旁边贴一张便签，写上选中了什么（只经 ctx.call 改画布） */

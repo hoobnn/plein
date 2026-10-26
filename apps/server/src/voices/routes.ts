@@ -1,4 +1,5 @@
-import { ProviderError } from '@plein/plugin-sdk'
+import { Readable } from 'node:stream'
+import { type AssetRef, type VoiceCreationResult, ProviderError } from '@plein/plugin-sdk'
 import { API, CreateVoice, UpdateVoice, type Voice } from '@plein/protocol'
 import { Hono } from 'hono'
 import type { AssetStore } from '../assets/store'
@@ -22,8 +23,30 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
   const forbidden = { error: 'forbidden', message: '只读成员不能修改音色' }
   const checkedAt = new Map<string, number>()
 
+  async function savePreview(
+    owner: string,
+    voice: Voice,
+    state: VoiceCreationResult,
+  ): Promise<Voice> {
+    if (!state.preview) return voice
+    try {
+      const asset = await assets.ingest(owner, Readable.from([state.preview.data]), {
+        mime: state.preview.mime,
+        name: `${voice.name}-试听`,
+      })
+      return voices.setPreview(owner, voice.id, asset.id) ?? voice
+    } catch {
+      // 音色已经在远端创建，试听保存失败不能丢失 ID 或诱发重复创建。
+      return voice
+    }
+  }
+
   async function refresh(owner: string, voice: Voice, force = false): Promise<Voice> {
-    if (voice.status !== 'training') return voice
+    if (
+      voice.status !== 'training' &&
+      !(force && voice.source !== 'register' && voice.provider === 'doubao/speech')
+    )
+      return voice
     const last = checkedAt.get(voice.id) ?? 0
     if (!force && Date.now() - last < STATUS_INTERVAL) return voice
     checkedAt.set(voice.id, Date.now())
@@ -35,13 +58,15 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
         AbortSignal.timeout(20_000),
       )
       if (!state) return voice
-      return (
+      return savePreview(
+        owner,
         voices.setStatus(
           owner,
           voice.id,
           state.status,
           state.status === 'failed' ? state.message : null,
-        ) ?? voice
+        ) ?? voice,
+        state,
       )
     } catch (err) {
       // 查不到状态不等于训练失败，保持训练中，把原因带给界面
@@ -49,7 +74,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
         voices.setStatus(
           owner,
           voice.id,
-          'training',
+          voice.status,
           `查询训练状态失败：${providerError(err).message}`,
         ) ?? voice
       )
@@ -66,45 +91,94 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
       const body = CreateVoice.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
       const owner = c.var.principal.id
-      const { provider, name, sampleAssetId, gender, age } = body.data
-      const fields = { provider, name, gender, age, sampleAssetId }
-      // 不带样本：只登记平台上已有的音色，不调用平台
-      if (!sampleAssetId) {
-        const voice = voices.save(owner, {
-          ...fields,
-          voiceId: body.data.voiceId,
-          status: 'ready',
-          message: null,
-        })
-        return c.json(voice, 201)
-      }
-      const spec = host.voiceClone(provider)
-      if (!spec)
-        return c.json({ error: 'invalid', message: `平台 ${provider} 不支持声音复刻` }, 400)
-      const sample = assets.get(owner, sampleAssetId)
-      if (!sample || sample.kind !== 'audio')
-        return c.json({ error: 'invalid', message: '复刻样本须为资产库里的音频' }, 400)
-      const voiceId = spec.voiceId === 'slot' ? body.data.voiceId : generatedVoiceId()
-      if (!voiceId)
-        return c.json({ error: 'invalid', message: '这个平台需要填写控制台分配的音色 ID' }, 400)
-      try {
-        const state = await host.cloneVoice(
-          provider,
-          owner,
-          { voiceId, sample: { assetId: sample.id, kind: 'audio', mime: sample.mime } },
-          AbortSignal.timeout(180_000),
+      const input = body.data
+      const { provider, name, sampleAssetId, gender, age } = input
+      const mode = input.mode ?? (sampleAssetId ? 'clone' : 'register')
+      const fields = { provider, name, gender, age, sampleAssetId, source: mode }
+      if (mode === 'register') {
+        return c.json(
+          voices.save(owner, { ...fields, voiceId: input.voiceId, status: 'ready', message: null }),
+          201,
         )
+      }
+      const spec = mode === 'design' ? host.voiceDesign(provider) : host.voiceClone(provider)
+      if (!spec)
+        return c.json(
+          {
+            error: 'invalid',
+            message: `平台 ${provider} 不支持${mode === 'design' ? '音色设计' : '声音复刻'}`,
+          },
+          400,
+        )
+      const custom = mode === 'clone' && input.idMode === 'custom'
+      if (custom && !host.voiceClone(provider)?.customId)
+        return c.json({ error: 'invalid', message: '该平台不支持此自定义 ID 模式' }, 400)
+      const voiceId =
+        spec.voiceId === 'slot' && !custom ? input.voiceId : input.voiceId || generatedVoiceId()
+      if (!voiceId)
+        return c.json({ error: 'invalid', message: '请填写控制台分配的音色槽位 ID' }, 400)
+      const ref = (id: string | null, kind: 'audio' | 'image'): AssetRef | undefined => {
+        if (!id) return undefined
+        const asset = assets.get(owner, id)
+        if (!asset || asset.kind !== kind)
+          throw new ProviderError(
+            'invalid_input',
+            kind === 'image' ? '角色图片不存在或无权访问' : '复刻样本须为资产库里的音频',
+          )
+        return { assetId: asset.id, kind, mime: asset.mime }
+      }
+      try {
+        const signal = AbortSignal.timeout(180_000)
+        const state =
+          mode === 'design'
+            ? await host.designVoice(
+                provider,
+                owner,
+                {
+                  voiceId,
+                  prompt: input.prompt,
+                  previewText: input.previewText,
+                  image: ref(input.imageAssetId, 'image'),
+                  language: input.language,
+                },
+                signal,
+              )
+            : await host.cloneVoice(
+                provider,
+                owner,
+                {
+                  voiceId,
+                  sample: ref(sampleAssetId, 'audio')!,
+                  idMode: input.idMode,
+                  noiseReduction: input.noiseReduction,
+                  volumeNormalization: input.volumeNormalization,
+                  language: input.language,
+                  previewText: input.previewText,
+                  promptSample: ref(input.promptSampleAssetId, 'audio'),
+                  promptText: input.promptText,
+                },
+                signal,
+              )
         const voice = voices.save(owner, {
           ...fields,
-          voiceId,
+          voiceId: state.voiceId ?? voiceId,
           status: state.status,
           message: state.status === 'failed' ? state.message : null,
         })
         checkedAt.set(voice.id, Date.now())
-        return c.json(voice, 201)
+        return c.json(await savePreview(owner, voice, state), 201)
       } catch (err) {
         const e = providerError(err)
-        return c.json({ error: e.code, message: e.message }, 422)
+        if (e.outcome === 'unknown') {
+          const voice = voices.save(owner, {
+            ...fields,
+            voiceId,
+            status: 'training',
+            message: `提交结果未知，请先在平台核查音色 ID ${voiceId}，不要重复创建：${e.message}`,
+          })
+          return c.json(voice, 201)
+        }
+        return c.json({ error: e.code, message: e.message }, e.code === 'invalid_input' ? 400 : 422)
       }
     })
     .patch('/api/voices/:id', async (c) => {

@@ -1,3 +1,4 @@
+import { downloadVoicePreview } from '../shared/voice-preview'
 import {
   type CapabilityInput,
   definePlugin,
@@ -11,6 +12,7 @@ import {
   type ProviderErrorCode,
   type SubmitResult,
   type VoiceCloneState,
+  type VoiceCreationResult,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { isJson, type Json, readText, redact, send } from '../shared/http'
@@ -342,6 +344,35 @@ function cloneState(raw: string, ctx: Context): VoiceCloneState {
   throw incomplete('豆包语音返回无效训练状态')
 }
 
+function customVoiceId(value: string) {
+  return (
+    /^[A-Za-z][A-Za-z0-9_-]{6,254}[A-Za-z0-9]$/.test(value) &&
+    !/^((?:S_|ICL_|MIX_|DiT_|BV)|[a-z]{2}_|(?:wvae|moon|mercury|venus|earth|mars|jupiter|saturn|uranus|neptune|pluto|umm)_)/i.test(
+      value,
+    ) &&
+    !/_(?:bigtts|bigtts_cc|tob|cs_tob|streaming)$/i.test(value)
+  )
+}
+
+async function voiceResult(
+  raw: string,
+  ctx: Context,
+  pending = false,
+): Promise<VoiceCreationResult> {
+  const data = cloneBody(raw, ctx)
+  const state =
+    data.status === undefined && pending ? { status: 'training' as const } : cloneState(raw, ctx)
+  if (typeof data.demo_audio !== 'string' || !data.demo_audio) return state
+  try {
+    const url = new URL(data.demo_audio)
+    if (url.protocol !== 'https:' || !url.hostname.endsWith('.bytespeech.com')) return state
+    return { ...state, preview: await downloadVoicePreview(url.toString(), ctx) }
+  } catch {
+    ctx.log('音色已提交，试听暂未保存；可刷新状态重试获取试听')
+    return state
+  }
+}
+
 export const doubaoProvider = defineProvider({
   testScope: 'configuration',
   id: 'doubao/speech',
@@ -391,11 +422,12 @@ export const doubaoProvider = defineProvider({
       const input = req.input as CapabilityInput<'audio.speech'>
       const content = text(input.text, '合成文本')
       const voice = input.voice ?? ctx.settings.voice
-      if (req.model === 'seed-icl-2.0' && !voice.startsWith('S_')) {
-        throw new ProviderError('invalid_input', '声音复刻模型需要已创建的 S_ 音色 ID')
+      const cloned = voice.startsWith('S_') || customVoiceId(voice)
+      if (req.model === 'seed-icl-2.0' && !cloned) {
+        throw new ProviderError('invalid_input', '声音复刻模型需要已创建的复刻或设计音色 ID')
       }
       // 复刻音色只能走复刻资源；角色卡沿用的音色常配默认的合成 2.0，这里自动改走复刻 2.0
-      const resource = voice.startsWith('S_') ? 'seed-icl-2.0' : req.model
+      const resource = cloned ? 'seed-icl-2.0' : req.model
       const speed = input.speed ?? 1
       if (!Number.isFinite(speed) || speed < 0.5 || speed > 2)
         throw new ProviderError('invalid_input', '语速须在 0.5 至 2 之间')
@@ -521,10 +553,29 @@ export const doubaoProvider = defineProvider({
   // 按声音复刻 V3 接口对接（/api/v3/tts/voice_clone、/api/v3/tts/get_voice），尚未真机验证
   voiceClone: {
     voiceId: 'slot',
-    hint: '先在火山引擎控制台开通声音复刻，填分配的 S_ 音色 ID。样本 10–30 秒、单人清晰、无背景音乐，WAV / MP3 / OGG / M4A / AAC，10 MB 以内；每次训练消耗该音色的训练次数',
-    async clone({ voiceId, sample }, ctx) {
-      if (!/^S_[A-Za-z0-9_-]{1,100}$/.test(voiceId))
-        throw new ProviderError('invalid_input', '请填控制台分配的 S_ 开头的音色 ID')
+    customId: true,
+    hint: '先在火山引擎控制台开通声音复刻，填分配的 S_ 音色 ID。样本建议 14–30 秒以改善效果，短音频可提交，由平台判定；单人清晰、无背景音乐，WAV / MP3 / OGG / M4A / AAC，10 MB 以内；预付费槽位消耗训练次数；后付费自定义音色首次正式合成会转正计费，转正后不可再复刻，未合成的音色 7 天后删除',
+    async clone(
+      {
+        voiceId,
+        sample,
+        idMode,
+        noiseReduction = false,
+        volumeNormalization = false,
+        language = 'zh',
+        previewText,
+        promptSample,
+      },
+      ctx,
+    ) {
+      if (promptSample) throw new ProviderError('invalid_input', '豆包不支持 MiniMax 增强参考样本')
+      if (previewText && (previewText.length < 4 || previewText.length > 300))
+        throw new ProviderError('invalid_input', '豆包复刻试听文本须为 4–300 字')
+      if (idMode === 'custom' ? !customVoiceId(voiceId) : !/^S_[A-Za-z0-9_-]{1,100}$/.test(voiceId))
+        throw new ProviderError(
+          'invalid_input',
+          '请填写有效的音色槽位 ID 或符合官方规则的自定义音色 ID',
+        )
       const asset = await ctx.files.read(sample)
       const format = CLONE_FORMATS[asset.mime.toLowerCase()]
       if (!format)
@@ -532,17 +583,57 @@ export const doubaoProvider = defineProvider({
       if (!asset.data.length || asset.data.length > 10 * 1024 * 1024)
         throw new ProviderError('invalid_input', '复刻样本须在 10 MB 以内')
       const response = await post(ctx, '/api/v3/tts/voice_clone', {
-        speaker_id: voiceId,
+        speaker_id: idMode === 'custom' ? 'custom_speaker_id' : voiceId,
+        ...(idMode === 'custom' ? { custom_speaker_id: voiceId } : {}),
+        language: language === 'en' ? 1 : 0,
         audio: { data: Buffer.from(asset.data).toString('base64'), format },
-        extra_params: { enable_audio_denoise: true },
+        extra_params: {
+          enable_audio_denoise: noiseReduction,
+          disable_volume_normalization: !volumeNormalization,
+          ...(previewText ? { demo_text: previewText } : {}),
+        },
       })
       // 提交后训练在平台上进行，状态以 get_voice 为准
-      response.decode((raw) => cloneBody(raw, ctx))
-      return { status: 'training' }
+      return response.decode((raw) => voiceResult(raw, ctx, true))
     },
     async status(voiceId, ctx) {
       const response = await post(ctx, '/api/v3/tts/get_voice', { speaker_id: voiceId })
-      return response.decode((raw) => cloneState(raw, ctx))
+      return response.decode((raw) => voiceResult(raw, ctx))
+    },
+  },
+  voiceDesign: {
+    voiceId: 'slot',
+    hint: '使用控制台购买的 S_ 音色槽位；文字描述或角色图片生成音色，图片优先。会消耗该槽位的设计次数，重复使用同一槽位会覆盖原音色。',
+    maxPromptLength: 200,
+    maxPreviewLength: 300,
+    image: true,
+    async design({ voiceId, prompt, previewText, image, language = 'zh' }, ctx) {
+      if (!/^S_[A-Za-z0-9_-]{1,100}$/.test(voiceId))
+        throw new ProviderError('invalid_input', '音色设计需要控制台购买的 S_ 音色槽位')
+      if (prompt.length > 200 || (!prompt.trim() && !image))
+        throw new ProviderError('invalid_input', '请填写 200 字以内的音色描述或提供角色图片')
+      text(previewText, '试听文本', 300)
+      let imagePrompt: Json | undefined
+      if (image) {
+        const asset = await ctx.files.read(image)
+        if (
+          !['image/jpeg', 'image/png', 'image/webp'].includes(asset.mime) ||
+          !asset.data.length ||
+          asset.data.length > 10 * 1024 * 1024
+        )
+          throw new ProviderError('invalid_input', '角色图片须为 JPEG、PNG 或 WebP，10 MB 以内')
+        imagePrompt = { image_bytes: Buffer.from(asset.data).toString('base64') }
+      }
+      const response = await post(ctx, '/api/v3/tts/voice_design', {
+        speaker_id: voiceId,
+        text: previewText,
+        language: language === 'en' ? 1 : 0,
+        prompt: {
+          ...(prompt.trim() ? { text_prompt: prompt } : {}),
+          ...(imagePrompt ? { image_prompt: imagePrompt } : {}),
+        },
+      })
+      return response.decode((raw) => voiceResult(raw, ctx, true))
     },
   },
 })
@@ -555,7 +646,11 @@ export const doubaoPlugin = defineServerPlugin(
       name: '豆包语音',
       engines: { plein: `^${PLUGIN_API_VERSION}` },
       contributes: { providers: ['doubao/speech'] },
-      permissions: { network: ['openspeech.bytedance.com'], secrets, assets: 'read' },
+      permissions: {
+        network: ['openspeech.bytedance.com', '*.bytespeech.com'],
+        secrets,
+        assets: 'read',
+      },
     },
   }),
   { providers: [doubaoProvider] },
