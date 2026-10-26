@@ -155,3 +155,40 @@ describe('必需参考与取舍', () => {
     })
   })
 })
+
+describe('明确选择角色参考图', () => {
+  it('只送用户选中的图片，保留完整候选列表；仅文字不送图，失效选择不回退', async () => {
+    const { doc, hero } = scene()
+    const second = createElement(doc, {
+      kind: 'image',
+      assetId: asset('e'),
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+    })
+    connect(doc, [second, 'image'], [hero, 'references'])
+    const run = async (selected: string[] | undefined) => {
+      const n = shot(doc, 'plein/image', {
+        prompt: '@林夏',
+        referenceImagePicks: selected === undefined ? {} : { [hero]: selected },
+      })
+      return applyMentions(doc, doc.get(n)!, imageNode, {}, collect(doc), 3)
+    }
+    const chosen = await run([asset('e')])
+    expect(sent(chosen.inputs.references)).toEqual([asset('e')])
+    expect(chosen.details[0]).toMatchObject({
+      available: [asset('a'), asset('e')],
+      selected: [asset('e')],
+      sent: [asset('e')],
+    })
+    expect(chosen.details[0]?.reason).toBeUndefined()
+    expect(sent((await run([])).inputs.references)).toEqual([])
+    const missing = await run([asset('f')])
+    expect(sent(missing.inputs.references)).toEqual([])
+    expect(missing.blocked[0]?.message).toContain('不会自动换成其他图片')
+    expect(missing.details[0]?.reason).toBe('selection_missing')
+    expect(sent((await run(undefined)).inputs.references)).toEqual([asset('a'), asset('e')])
+    doc.destroy()
+  })
+})

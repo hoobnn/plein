@@ -31,7 +31,12 @@ export type InputRefKind = 'character' | 'scene' | 'prop' | 'style' | 'image' | 
  * - no_image：被引用者没有可用的参考图（还没生成或没连），只附文字设定
  * - failed：被引用者的参考图生成失败，只附文字设定
  */
-export type InputRefReason = 'over_limit' | 'unsupported' | 'no_image' | 'failed'
+export type InputRefReason =
+  | 'over_limit'
+  | 'unsupported'
+  | 'no_image'
+  | 'failed'
+  | 'selection_missing'
 
 /** 提示词里 @ 到的一个引用，在本次运行中实际怎么用 */
 export interface InputRef {
@@ -44,6 +49,8 @@ export interface InputRef {
   required: boolean
   /** 它能提供的参考图资产 */
   available: string[]
+  /** 用户明确选择的角色图片；空数组为仅文字，未设置为自动选择。 */
+  selected?: string[]
   /** 实际送进模型的参考图资产 */
   sent: string[]
   /** available 里有图没送，或根本没图时的原因 */

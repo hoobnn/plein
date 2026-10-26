@@ -81,6 +81,7 @@ import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { fillModels } from './models'
 import { type AppliedMentions, applyMentions, mentionEdges } from './mentions'
+import { continuationInputs } from './continuation-inputs'
 import { type GroupRow, type JobRow, type JobStatus, JobStore } from './store'
 import {
   type BatchHost,
@@ -942,6 +943,7 @@ export class NodeRuns implements BatchHost {
       promptKey,
       'usedRefs',
       'requiredRefs',
+      'referenceImagePicks',
       'continuesFrom',
       'shotPresets',
       'voice',
@@ -2167,15 +2169,17 @@ export class NodeRuns implements BatchHost {
     )
     const def = this.host.registry.latestNode(el.nodeType!)?.def
     if (!def) return { def, params: el.params, inputs: collected, origins }
+    const continuation = continuationInputs(doc, el, def, collected)
     const { params, inputs, details, notices, blocked } = await applyMentions(
       doc,
       el,
       def,
-      collected,
+      continuation.inputs,
       // @ 引用是软依赖：卡片的参考图节点还没结果（生成失败、被审核拦下）时只附文字设定
       (id) => this.collectInputs(doc, id, ownerId, signal, 0, origins, true, canvasId),
       this.resolveModel(el.params?.model)?.limit,
     )
+    if (continuation.issue) blocked.push(continuation.issue)
     const modelRef = typeof params.model === 'string' ? parseModelRef(params.model) : null
     const spec =
       modelRef &&
@@ -2605,12 +2609,14 @@ const NEUTRAL: Record<string, unknown> = { resolution: '', speed: 1 }
  */
 const NOT_CONTENT: ReadonlySet<string> = new Set([
   'requiredRefs',
+  'referenceImagePicks',
   'usedRefs',
   'continuesFrom',
   'shotPresets',
 ])
 const LEGACY_NOT_CONTENT: ReadonlySet<string> = new Set([
   'requiredRefs',
+  'referenceImagePicks',
   'continuesFrom',
   'shotPresets',
 ])

@@ -209,7 +209,7 @@ export async function applyMentions(
     const base = (own.references ?? []).filter((v) => v.type === 'image')
     if (base.length === 0 && referenceFailed(doc, target.id)) failedRefs.add(target.id)
     // 写了档案项：命中项的图排前面，再补卡片的参考图，每个角色截到上限
-    const images = pickEmpty(h.pick)
+    const candidates = pickEmpty(h.pick)
       ? base
       : pickImages(h.pick, imageIds(base)).map(
           (id): PortValue =>
@@ -220,6 +220,28 @@ export async function applyMentions(
               source: target.id,
             },
         )
+    const rawPicks = params.referenceImagePicks
+    const asked =
+      target.nodeType === 'plein/character' &&
+      rawPicks &&
+      typeof rawPicks === 'object' &&
+      !Array.isArray(rawPicks)
+        ? (rawPicks as Record<string, unknown>)[target.id]
+        : undefined
+    const selected = Array.isArray(asked)
+      ? [...new Set(asked.filter((v): v is string => typeof v === 'string'))]
+      : undefined
+    const available = imageIds(candidates)
+    if (selected?.some((id) => !available.includes(id)))
+      blocked.push({
+        code: 'prepare_failed',
+        elementId: target.id,
+        message: `「${label(h)}」选定的参考图已不可用，请重新选择；不会自动换成其他图片`,
+      })
+    const images =
+      selected === undefined
+        ? candidates
+        : selected.flatMap((id) => candidates.filter((v) => v.type === 'image' && v.assetId === id))
     const rank = RANK.indexOf(target.nodeType ?? '')
     groups.push({ rank: rank < 0 ? RANK.length : rank, priority, images })
     refList.push({
@@ -227,7 +249,10 @@ export async function applyMentions(
       elementId: target.id,
       assetIds: imageIds(images),
     })
-    details.push(detail(target, label(h), priority, imageIds(images)))
+    details.push({
+      ...detail(target, label(h), priority, available),
+      ...(selected !== undefined ? { selected } : {}),
+    })
   }
 
   const prompt = ['prompt', 'text'].find((k) => typeof params[k] === 'string')
@@ -261,7 +286,7 @@ export async function applyMentions(
           ? `「${d.name}」是必需参考，当前模式不送参考图，请切到「多模态参考」或取消必需`
           : `「${d.name}」是必需参考，这个节点不收参考图`,
       })
-    else if (d.available.length === 0)
+    else if (d.selected?.length === 0 || d.available.length === 0)
       blocked.push(
         failedRefs.has(d.elementId)
           ? {
@@ -281,9 +306,11 @@ export async function applyMentions(
   const refs = send ? pickRefs(own, groups, refList, details, maxRefs, notices, blocked) : []
   for (const [i, d] of details.entries()) {
     d.sent = send ? refList[i]!.assetIds : []
-    if (d.available.length === 0) d.reason = failedRefs.has(d.elementId) ? 'failed' : 'no_image'
+    if (d.selected?.some((id) => !d.available.includes(id))) d.reason = 'selection_missing'
+    else if (d.available.length === 0)
+      d.reason = failedRefs.has(d.elementId) ? 'failed' : 'no_image'
     else if (!send) d.reason = 'unsupported'
-    else if (d.sent.length < d.available.length) d.reason = 'over_limit'
+    else if (d.sent.length < (d.selected ?? d.available).length) d.reason = 'over_limit'
   }
 
   // 本次真正送进去的东西带到执行器（宿主不把运行摘要传下去，见 node 定义的 usedRefs 注释）

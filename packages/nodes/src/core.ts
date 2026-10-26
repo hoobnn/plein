@@ -49,9 +49,15 @@ const usedRefs = () =>
  */
 const requiredRefs = () =>
   z.array(z.string()).default([]).meta({ title: '必需参考', widget: 'hidden' })
+/** 按角色元素 id 保存明确选中的图片资产；空数组表示只引用文字设定。 */
+const referenceImagePicks = () =>
+  z
+    .record(z.string(), z.array(z.string()))
+    .default({})
+    .meta({ title: '指定角色参考图', widget: 'hidden' })
 /**
  * 续镜来路：这个镜头接在哪段视频后面（父视频的元素、资产和取帧位置）。
- * 只是记录，首帧照常从连线进来；不进缓存键
+ * 接续帧参与实际输入，连线缺失时按 frameAssetId 补齐；不进缓存键
  */
 export const ContinuesFrom = z.object({
   elementId: z.string(),
@@ -122,6 +128,7 @@ export const imageNode = defineNode({
     count: z.number().int().min(1).max(4).default(1).meta({ title: '张数' }),
     usedRefs: usedRefs(),
     requiredRefs: requiredRefs(),
+    referenceImagePicks: referenceImagePicks(),
   }),
 })
 
@@ -220,6 +227,7 @@ export const videoNode = defineNode({
     options: modelOptions(),
     usedRefs: usedRefs(),
     requiredRefs: requiredRefs(),
+    referenceImagePicks: referenceImagePicks(),
     continuesFrom: ContinuesFrom.nullable()
       .default(null)
       .meta({ title: '续镜来路', widget: 'hidden' }),

@@ -586,6 +586,9 @@ describe('实际输入预览', () => {
     const prepared = await runs.prepare(doc, doc.get(n)!, 'local', new AbortController().signal)
     const params = runs.latestParams(doc.get(n)!, prepared)
     const m = runs.resolveModel('plein/mock:image')
+    // 升级前还不存在角色选图字段，历史缓存键不包含这个中性默认值。
+    const legacyParams = { ...params }
+    delete legacyParams.referenceImagePicks
     const old =
       'v2:' +
       runs.hashKey(
@@ -594,7 +597,7 @@ describe('实际输入预览', () => {
         [],
         new Set(['requiredRefs', 'usedRefs']),
         { model: { ref: m.ref, version: m.version, plugin: m.plugin } },
-        { ...params, model: '' },
+        { ...legacyParams, model: '' },
       )
     server.runs.store.update(runId, { cache_key: old })
     setParams(doc, n, { model: '' })
@@ -730,4 +733,60 @@ it('仅尾帧在不支持它的平台预览阶段即阻断', async () => {
     expect(result.status).toBe('blocked')
     expect(result.blocked.some((p) => p.message.includes('不支持此视频生成模式'))).toBe(true)
   }
+})
+
+it('续镜旧连线缺失时仍以保存的尾帧为图片1，合并角色引用并去重', async () => {
+  const { server } = await bootServer()
+  mockSettings(server, {})
+  const { id, doc } = await createCanvas(server)
+  const parent = createElement(doc, {
+    kind: 'video',
+    assetId: asset('a'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const frame = createElement(doc, {
+    kind: 'image',
+    assetId: asset('b'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  const other = createElement(doc, {
+    kind: 'image',
+    assetId: asset('c'),
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  })
+  card(doc, 'plein/character', '接续角色', asset('d'), 0)
+  const video = addNode(doc, 'plein/video', {
+    params: {
+      model: 'plein/mock:video',
+      mode: 'reference',
+      prompt: '@接续角色 继续表演',
+      continuesFrom: {
+        elementId: parent,
+        assetId: asset('a'),
+        last: true,
+        frameAssetId: asset('b'),
+      },
+    },
+  })
+  connect(doc, [other, 'image'], [video, 'images'])
+  const missingEdge = await preview(server, id, video)
+  expect(missingEdge.inputs.images?.map((v) => v.assetId)).toEqual([
+    asset('b'),
+    asset('c'),
+    asset('d'),
+  ])
+  expect(missingEdge.inputs.images?.[0]?.source).toBe(frame)
+  connect(doc, [frame, 'image'], [video, 'images'])
+  const linked = await preview(server, id, video)
+  expect(linked.inputs.images?.map((v) => v.assetId)).toEqual([asset('b'), asset('c'), asset('d')])
+  expect(linked.inputHash).toBe(missingEdge.inputHash)
 })
