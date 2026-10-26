@@ -34,9 +34,9 @@ export const API = {
   /** 立即向平台查一次训练状态 */
   voiceRefresh: (id: string) => `/api/voices/${encodeURIComponent(id)}/refresh`,
   assets: '/api/assets',
-  asset: (id: string) => `/api/assets/${id}`,
-  assetMeta: (id: string) => `/api/assets/${id}/meta`,
-  assetVariant: (id: string, v: AssetVariant) => `/api/assets/${id}/${v}`,
+  asset: (id: string) => `/api/assets/${encodeURIComponent(id)}`,
+  assetMeta: (id: string) => `/api/assets/${encodeURIComponent(id)}/meta`,
+  assetVariant: (id: string, v: AssetVariant) => `/api/assets/${encodeURIComponent(id)}/${v}`,
   /** 媒体加工：裁剪 / 旋转 / 镜像 / 截取 / 变速 / 切分 / 音视频分离 / 抽帧，body 为 MediaDeriveRequest */
   mediaDerive: '/api/media/derive',
   mediaCollage: '/api/media/collage',

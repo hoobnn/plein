@@ -27,6 +27,11 @@ type Action = {
   schema: z.ZodObject
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE'
   path: (a: Record<string, unknown>) => string
+  /**
+   * 允许请求的路径形状。参数里的 id 可能带 ../ 或 ?，URL 解析会把它们折成别的路由，
+   * 所以按解析后的 pathname 复核，只放行登记在册的那条路由。
+   */
+  pathname: RegExp
   body?: (a: Record<string, unknown>) => unknown
 }
 const actions: Record<string, Action> = {
@@ -36,6 +41,7 @@ const actions: Record<string, Action> = {
     schema: empty,
     method: 'GET',
     path: () => API.mediaCaps,
+    pathname: /^\/api\/media\/caps$/,
   },
   get_asset: {
     title: '读取素材元数据和下载地址',
@@ -43,6 +49,7 @@ const actions: Record<string, Action> = {
     schema: item,
     method: 'GET',
     path: (a) => API.assetMeta(String(a.id)),
+    pathname: /^\/api\/assets\/[^/]+\/meta$/,
   },
   get_library_item: {
     title: '读取资产库完整条目',
@@ -50,6 +57,7 @@ const actions: Record<string, Action> = {
     schema: item,
     method: 'GET',
     path: (a) => API.libraryItem(String(a.id)),
+    pathname: /^\/api\/library\/[^/]+$/,
   },
   create_library_item: {
     title: '新建资产库条目（独立保存）',
@@ -57,6 +65,7 @@ const actions: Record<string, Action> = {
     schema: CreateLibraryItem,
     method: 'POST',
     path: () => API.library,
+    pathname: /^\/api\/library$/,
     body: (a) => a,
   },
   update_library_item: {
@@ -65,6 +74,7 @@ const actions: Record<string, Action> = {
     schema: z.object({ id, patch: UpdateLibraryItem }),
     method: 'PATCH',
     path: (a) => API.libraryItem(String(a.id)),
+    pathname: /^\/api\/library\/[^/]+$/,
     body: (a) => a.patch,
   },
   delete_library_item: {
@@ -73,6 +83,7 @@ const actions: Record<string, Action> = {
     schema: item,
     method: 'DELETE',
     path: (a) => API.libraryItem(String(a.id)),
+    pathname: /^\/api\/library\/[^/]+$/,
   },
   capture_panorama: {
     title: '从全景保存命名视角',
@@ -80,6 +91,7 @@ const actions: Record<string, Action> = {
     schema: z.object({ id, request: PanoramaCaptureRequest }),
     method: 'POST',
     path: (a) => `${API.libraryItem(String(a.id))}/panorama-view`,
+    pathname: /^\/api\/library\/[^/]+\/panorama-view$/,
     body: (a) => a.request,
   },
   archive_character_image: {
@@ -88,6 +100,7 @@ const actions: Record<string, Action> = {
     schema: z.object({ id, request: ArchiveCharacterImage }),
     method: 'POST',
     path: (a) => `${API.libraryItem(String(a.id))}/character-image`,
+    pathname: /^\/api\/library\/[^/]+\/character-image$/,
     body: (a) => a.request,
   },
   get_library_updates: {
@@ -96,6 +109,7 @@ const actions: Record<string, Action> = {
     schema: item,
     method: 'GET',
     path: (a) => `${API.libraryItem(String(a.id))}/updates`,
+    pathname: /^\/api\/library\/[^/]+\/updates$/,
   },
   apply_library_updates: {
     title: '按版本凭据同步、固定或解除固定画布资产（跨画布独立保存）',
@@ -103,6 +117,7 @@ const actions: Record<string, Action> = {
     schema: z.object({ id, request: ApplyLibraryUpdates }),
     method: 'POST',
     path: (a) => `${API.libraryItem(String(a.id))}/updates`,
+    pathname: /^\/api\/library\/[^/]+\/updates$/,
     body: (a) => a.request,
   },
   list_templates: {
@@ -111,6 +126,7 @@ const actions: Record<string, Action> = {
     schema: empty,
     method: 'GET',
     path: () => API.templates,
+    pathname: /^\/api\/templates$/,
   },
   save_template: {
     title: '保存工作流模板（独立保存）',
@@ -118,6 +134,7 @@ const actions: Record<string, Action> = {
     schema: CreateTemplate,
     method: 'POST',
     path: () => API.templates,
+    pathname: /^\/api\/templates$/,
     body: (a) => a,
   },
   delete_template: {
@@ -126,6 +143,7 @@ const actions: Record<string, Action> = {
     schema: item,
     method: 'DELETE',
     path: (a) => API.template(String(a.id)),
+    pathname: /^\/api\/templates\/[^/]+$/,
   },
   list_voices: {
     title: '读取音色和训练状态',
@@ -133,6 +151,7 @@ const actions: Record<string, Action> = {
     schema: empty,
     method: 'GET',
     path: () => API.voices,
+    pathname: /^\/api\/voices$/,
   },
   create_voice: {
     title: '设计、复刻或登记音色（设计和复刻调用平台）',
@@ -140,6 +159,7 @@ const actions: Record<string, Action> = {
     schema: CreateVoice,
     method: 'POST',
     path: () => API.voices,
+    pathname: /^\/api\/voices$/,
     body: (a) => a,
   },
   update_voice: {
@@ -148,6 +168,7 @@ const actions: Record<string, Action> = {
     schema: z.object({ id, patch: UpdateVoice }),
     method: 'PATCH',
     path: (a) => API.voice(String(a.id)),
+    pathname: /^\/api\/voices\/[^/]+$/,
     body: (a) => a.patch,
   },
   refresh_voice: {
@@ -156,6 +177,7 @@ const actions: Record<string, Action> = {
     schema: item,
     method: 'POST',
     path: (a) => API.voiceRefresh(String(a.id)),
+    pathname: /^\/api\/voices\/[^/]+\/refresh$/,
   },
   delete_voice: {
     title: '删除已登记音色（不能通过画布撤销）',
@@ -163,6 +185,7 @@ const actions: Record<string, Action> = {
     schema: item,
     method: 'DELETE',
     path: (a) => API.voice(String(a.id)),
+    pathname: /^\/api\/voices\/[^/]+$/,
   },
   recognize_subtitles: {
     title: '识别对白时间戳（调用平台，复用既有识别记录）',
@@ -170,6 +193,7 @@ const actions: Record<string, Action> = {
     schema: SubtitleRecognizeRequest,
     method: 'POST',
     path: () => API.subtitleRecognize,
+    pathname: /^\/api\/media\/subtitle-recognize$/,
     body: (a) => a,
   },
   get_subtitle_recognition: {
@@ -178,6 +202,7 @@ const actions: Record<string, Action> = {
     schema: SubtitleRecognitionLookup,
     method: 'GET',
     path: (a) => `${API.subtitleRecognition}?${new URLSearchParams(a as Record<string, string>)}`,
+    pathname: /^\/api\/media\/subtitle-recognition$/,
   },
   recover_subtitle_recognition: {
     title: '恢复字幕识别任务（重新提交须核实未受理）',
@@ -185,6 +210,7 @@ const actions: Record<string, Action> = {
     schema: SubtitleRecoverRequest,
     method: 'POST',
     path: () => API.subtitleRecover,
+    pathname: /^\/api\/media\/subtitle-recover$/,
     body: (a) => a,
   },
   export_sequence_project: {
@@ -193,6 +219,7 @@ const actions: Record<string, Action> = {
     schema: SequenceExportRequest,
     method: 'POST',
     path: () => API.sequenceExport,
+    pathname: /^\/api\/media\/sequence-export$/,
     body: (a) => a,
   },
 }
@@ -262,9 +289,12 @@ export const performCanvasAction = cap({
     if (!ctx.env.canvasApi) throw new CapabilityError('扩展画布服务不可用')
     const input = parsed.data as Record<string, unknown>
     const body = spec.body?.(input)
+    const url = new URL(`http://plein.internal${spec.path(input)}`)
+    // 参数里的 id 可能带 ../ 或 ?，URL 解析会把它们折成别的路由；按解析后的 pathname 复核。
+    if (!spec.pathname.test(url.pathname)) throw new CapabilityError('操作路径不合法')
     const response = await ctx.env.canvasApi(
       ctx.env.ownerId,
-      new Request(`http://plein.internal${spec.path(input)}`, {
+      new Request(url, {
         method: spec.method,
         ...(body === undefined
           ? {}

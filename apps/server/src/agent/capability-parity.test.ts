@@ -10,6 +10,7 @@ import { callTool, inputSchema } from './mcp'
 import { requestWithinBudget } from './context-budget'
 import { Approvals } from './approvals'
 import { AgentChanges } from './changes'
+import type { AssetStore } from '../assets/store'
 
 async function fixture() {
   const { server } = await bootServer()
@@ -393,5 +394,99 @@ describe('画布与 Agent 能力契约', () => {
       expect(schema.properties).toHaveProperty(key)
     const stage = addNode(f.doc, 'plein/stage')
     await expect(f.invoke('capture_stage', { id: stage })).rejects.toThrow('打开当前画布')
+  })
+
+  it('扩展操作的 id 不能带 ../ 或 ? 跳出登记在册的路由', async () => {
+    const f = await fixture()
+    const made = (await f.action('create_library_item', {
+      kind: 'scene',
+      name: '教室',
+      description: '明亮',
+    })) as { id: string }
+    expect(f.server.library.get('local', made.id)?.name).toBe('教室')
+    // 路径穿越若生效，会读到没登记的资产库、模板、音色列表
+    for (const id of [
+      '../assets/../library?x',
+      '../assets/../templates?x',
+      '../assets/../voices?x',
+      '../assets/../assets?x',
+    ])
+      await expect(f.action('get_asset', { id })).rejects.toThrow('资产不存在')
+  })
+
+  it('加工素材：裁剪可从画面边缘开始，指定素材不误判来源已变化', async () => {
+    const f = await fixture()
+    const gray = await sharp({
+      create: { width: 32, height: 32, channels: 3, background: 'gray' },
+    })
+      .png()
+      .toBuffer()
+    const red = await sharp({
+      create: { width: 32, height: 32, channels: 3, background: 'red' },
+    })
+      .png()
+      .toBuffer()
+    const a = await f.server.assets.ingest('local', Readable.from([gray]), {
+      name: 'a.png',
+      mime: 'image/png',
+    })
+    const b = await f.server.assets.ingest('local', Readable.from([red]), {
+      name: 'b.png',
+      mime: 'image/png',
+    })
+    const image = createElement(f.doc, {
+      kind: 'image',
+      x: 0,
+      y: 0,
+      w: 32,
+      h: 32,
+      assetId: a.id,
+    })
+    // crop 的 left/top 允许 0，拍平入参不能被 repair-region 的 ≥1 挡掉
+    const cropped = (await f.invoke('edit_media', {
+      element_id: image,
+      op: 'crop',
+      left: 0,
+      top: 0,
+      width: 16,
+      height: 16,
+    })) as { elements: Array<{ id: string }> }
+    expect(cropped.elements[0]!.id).toBeTruthy()
+    // 显式指定另一个素材加工时，来源并没有变化，不能误报来源已变化
+    const derived = (await f.invoke('edit_media', {
+      element_id: image,
+      asset_id: b.id,
+      op: 'rotate',
+      angle: 90,
+    })) as { elements: Array<{ id: string }> }
+    expect(derived.elements[0]!.id).toBeTruthy()
+    expect(f.doc.get(derived.elements[0]!.id)).toBeDefined()
+    // 拍平层只收约束，不能替 op 填默认值：replace-range 的 start 是必填的
+    await expect(
+      f.invoke('edit_media', {
+        op: 'replace-range',
+        asset_id: a.id,
+        replacementAssetId: b.id,
+        end: 1,
+      }),
+    ).rejects.toThrow('参数不对')
+    // 加工期间元素换了素材，仍然要拒绝写回画布
+    const racing = new Proxy(f.server.assets, {
+      get(target, prop, receiver) {
+        if (prop !== 'ingest') return Reflect.get(target, prop, receiver)
+        return async (...args: unknown[]) => {
+          const asset = await (target.ingest as (...a: unknown[]) => Promise<unknown>)(...args)
+          updateElement(f.doc, image, { assetId: b.id })
+          return asset
+        }
+      },
+    }) as AssetStore
+    await expect(
+      serverCapabilities.invoke('edit_media', serverContext({ ...f.env, assets: racing }), {
+        element_id: image,
+        op: 'rotate',
+        angle: 90,
+      }),
+    ).rejects.toThrow('来源已变化')
   })
 })

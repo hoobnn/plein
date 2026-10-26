@@ -367,6 +367,39 @@ const viewMedia = serverCapability({
   },
 })
 
+/**
+ * 把加工协议的判别联合拍平成工具入参字段。
+ * 同名字段各分支约束不同时取并集（如 crop 的 left/top 允许 0，repair-region 要求 ≥1），
+ * 否则拍平会用更严的那一支挡掉本合法的入参；各操作自己的严格约束仍由 MediaDeriveRequest 校验。
+ */
+function flatDeriveFields(): Record<string, z.ZodType> {
+  const fields: Record<string, z.ZodType[]> = {}
+  for (const option of MediaDeriveRequest.options)
+    for (const [key, schema] of Object.entries(option.shape)) {
+      if (key === 'op' || key === 'assetId') continue
+      ;(fields[key] ??= []).push(schema)
+    }
+  return Object.fromEntries(
+    Object.entries(fields).map(([key, schemas]) => {
+      // 只有一个分支的字段照搬协议里的写法
+      if (schemas.length === 1) return [key, schemas[0]!.optional()]
+      // 多个分支的字段取各分支约束的并集；默认值是 op 自己的规定，拍平层不能带，
+      // 否则会替 op 填上本该必填的字段（如 replace-range 的 start）
+      const loose = [
+        ...new Map(
+          schemas
+            .map((s) => (s instanceof z.ZodDefault ? (s.unwrap() as z.ZodType) : s))
+            .map((s) => [JSON.stringify(z.toJSONSchema(s)), s] as const),
+        ).values(),
+      ]
+      // 各分支约束相同的字段只留一份，避免 schema 里出现重复分支
+      const schema =
+        loose.length === 1 ? loose[0]! : z.union(loose as [z.ZodType, z.ZodType, ...z.ZodType[]])
+      return [key, schema.optional()]
+    }),
+  )
+}
+
 const editMedia = serverCapability({
   name: 'edit_media',
   title: '加工素材',
@@ -379,21 +412,19 @@ const editMedia = serverCapability({
     element_id: id.optional().describe('素材元素或节点（取当前结果）'),
     asset_id: z.string().optional(),
     op: MediaOp,
-    ...Object.fromEntries(
-      MediaDeriveRequest.options.flatMap((option) =>
-        Object.entries(option.shape)
-          .filter(([key]) => key !== 'op' && key !== 'assetId')
-          .map(([key, schema]) => [key, schema.optional()]),
-      ),
-    ),
+    // 加工协议是判别联合，同名字段各分支约束不同（crop 的 left/top 允许 0，repair-region 要求 ≥1）。
+    // 拍平后取各分支约束的并集，各操作自己的严格约束仍由 MediaDeriveRequest 校验。
+    ...flatDeriveFields(),
   }),
   run: async (ctx, { element_id, asset_id, ...edit }) => {
-    const assetId =
-      asset_id ??
-      (element_id ? ctx.withDoc((doc) => elementMedia(need(doc, element_id))?.assetId) : undefined)
-    if (!assetId) throw new CapabilityError('需要素材的 asset_id 或 element_id')
     const source = element_id ? ctx.withDoc((doc) => need(doc, element_id)) : undefined
     const sourceMap = element_id ? ctx.withDoc((doc) => doc.elementMaps.get(element_id)) : undefined
+    // 开始时元素上的素材；加工期间变了就不能再往画布上写
+    const sourceAssetId = element_id
+      ? ctx.withDoc((doc) => elementMedia(need(doc, element_id))?.assetId)
+      : undefined
+    const assetId = asset_id ?? sourceAssetId
+    if (!assetId) throw new CapabilityError('需要素材的 asset_id 或 element_id')
     if (source?.locked) throw new CapabilityError('素材已锁定')
     const req = MediaDeriveRequest.safeParse({ ...edit, assetId })
     if (!req.success) throw new CapabilityError(`参数不对：${z.prettifyError(req.error)}`)
@@ -410,7 +441,7 @@ const editMedia = serverCapability({
         if (
           current.locked ||
           doc.elementMaps.get(element_id) !== sourceMap ||
-          elementMedia(current)?.assetId !== assetId
+          elementMedia(current)?.assetId !== sourceAssetId
         )
           throw new CapabilityError('来源已变化或锁定，加工资产已保存，未写入画布')
       }
