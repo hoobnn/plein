@@ -769,6 +769,7 @@ describe.skipIf(!ffmpegAvailable)('剪辑工程导出', () => {
     const entries = unzipSync(new Uint8Array(await file.arrayBuffer()))
     expect(Object.keys(entries).sort()).toEqual([
       '雨夜_归来/README.txt',
+      '雨夜_归来/clip-map.json',
       '雨夜_归来/media/01 原片.mp4',
       '雨夜_归来/media/02 原声.m4a',
       '雨夜_归来/subtitles.srt',

@@ -25,6 +25,32 @@ import { ProviderError } from '@plein/plugin-sdk'
 const available = await hasFfmpeg()
 afterEach(() => vi.restoreAllMocks())
 describe.skipIf(!available)('P11固定段与批准序列范围', () => {
+  it('直接合成前拒绝损坏实例、冲突出处与越界源区间', async () => {
+    const f = await sequenceSegmentFixture()
+    const submit = vi.spyOn(mockProvider, 'submit')
+    const row = f.fixed(0)
+    const cases = [
+      { clips: [{ ...row, clipInstanceId: '' }], reason: '序列实例损坏' },
+      {
+        clips: [{ ...row, segment: { ...row.segment!, duration: row.segment!.duration + 1 } }],
+        reason: '同一固定段存在文件或出处冲突',
+      },
+      { clips: [{ ...row, out: row.segment!.duration + 1 }], reason: '固定时长或源区间无效' },
+    ]
+    for (const { clips, reason } of cases) {
+      setParam(f.doc, f.sequence, 'clips', clips)
+      await expect(
+        f.server.runs.verifySequenceAssets(
+          f.doc,
+          f.sequence,
+          'local',
+          new AbortController().signal,
+        ),
+      ).rejects.toThrow(reason)
+    }
+    expect(submit).not.toHaveBeenCalled()
+  }, 30_000)
+
   it('第二shot没有独立video仍复用，native不认领旧配音；显式重拍只列真实users并阻塞', async () => {
     const f = await sequenceSegmentFixture()
     const submit = vi.spyOn(mockProvider, 'submit')
