@@ -397,17 +397,28 @@ function EmptyHint({ hidden, rightPanel }: { hidden: boolean; rightPanel: boolea
   return (
     <div
       style={{ left: insets?.left ?? 0, right: insets?.right ?? 0 }}
-      className="pointer-events-none absolute inset-y-0 flex items-center justify-center px-6 pt-20 pb-24"
+      className="pointer-events-none absolute inset-y-0"
     >
-      <div className="flex w-full min-w-0 max-w-xl flex-col items-center gap-3 text-center">
-        {engine && <CanvasStart engine={engine} />}
-        <div className="flex items-center gap-1.5 text-xs text-ink-subtle">
-          <span className="ui-keycap">双击</span>或<span className="ui-keycap">Tab</span>
+      {/* 快捷创建入口靠上摆：画布中央留给双击添加节点，入口不能挡住这个手势 */}
+      <div className="absolute inset-x-0 top-20 flex justify-center px-6">
+        {engine && (
+          <div className="w-full min-w-0 max-w-xl">
+            <CanvasStart engine={engine} />
+          </div>
+        )}
+      </div>
+      <div className="absolute inset-y-0 flex items-center justify-center px-6 pt-20 pb-24">
+        <div className="flex w-full min-w-0 max-w-xl flex-col items-center gap-3 text-center">
+          <div className="flex items-center gap-1.5 text-xs text-ink-subtle">
+            <span className="ui-keycap">双击</span>或<span className="ui-keycap">Tab</span>
+          </div>
+          <p className="max-w-full break-words text-sm text-ink-muted">
+            双击空白处或按 Tab 添加节点
+          </p>
+          <p className="max-w-full break-words text-xs text-ink-subtle">
+            也可以把图片、视频、音频拖进来 · {MOD} + 滚轮缩放 · 按 ? 查看快捷键
+          </p>
         </div>
-        <p className="max-w-full break-words text-sm text-ink-muted">双击空白处或按 Tab 添加节点</p>
-        <p className="max-w-full break-words text-xs text-ink-subtle">
-          也可以把图片、视频、音频拖进来 · {MOD} + 滚轮缩放 · 按 ? 查看快捷键
-        </p>
       </div>
     </div>
   )

@@ -209,13 +209,12 @@
   }
 }
 
-/* 空态入口只出现在有足够纵向空间的窗口，保留双击空白区域。 */
+/* 空态入口只出现在有足够纵向空间的窗口，摆在画布上方：双击空白处的入口要留在画布中央。 */
 .plein-canvas-start {
   display: grid;
   width: 100%;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  margin-bottom: 20px;
 }
 .plein-canvas-start-card {
   display: flex;
