@@ -67,8 +67,10 @@ test('短剧模板：插入 → 跑骨架 → 展开 → 批量 → 导出', { t
     await zoomTo(page, [board.id])
     const p = await centerOf(page, board.id)
     await page.mouse.dblclick(p.x, p.y)
-    const dialog = page.getByRole('dialog')
+    const dialog = page.getByRole('dialog', { name: '分镜表', exact: true })
     await expect(dialog).toBeVisible()
+    // 详细卡片视图：批量操作区展开着，台词也在每张卡片上
+    await dialog.getByRole('button', { name: '详细卡片', exact: true }).click()
     return dialog
   }
   let dialog = await openBoard()
