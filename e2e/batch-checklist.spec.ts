@@ -1,5 +1,5 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
-import { clickElement, newProject, waitNode } from './canvas'
+import { clickElement, newProject, openStoryboardActions, waitNode } from './canvas'
 
 async function fixture(page: Page) {
   await newProject(page)
@@ -33,7 +33,9 @@ async function fixture(page: Page) {
       .getByTestId('generator')
       .getByRole('button', { name: /^编辑分镜表/ })
       .click()
-    return page.getByRole('dialog', { name: '分镜表', exact: true })
+    const dialog = page.getByRole('dialog', { name: '分镜表', exact: true })
+    await openStoryboardActions(dialog)
+    return dialog
   }
   const initial = await open()
   await initial.getByRole('button', { name: '展开为节点', exact: true }).click()
@@ -132,9 +134,9 @@ test('删除唯一已选镜头后清除失效选区，清单对应剩余镜头',
   await board.getByRole('checkbox', { name: '选择镜头 1', exact: true }).check()
   await board.getByRole('button', { name: '删除镜头 1', exact: true }).click()
   await page.getByRole('button', { name: '删除镜头', exact: true }).click()
-  await expect(board.getByRole('article')).toHaveCount(1)
+  await expect(board.getByRole('row', { name: /^镜头 0/ })).toHaveCount(1)
   await expect(board.getByRole('toolbar', { name: '分镜批量操作' })).toContainText('作用于全部镜头')
-  await expect(board.getByRole('checkbox', { name: '全选', exact: true })).not.toBeChecked()
+  await expect(board.getByRole('checkbox', { name: '全选镜头', exact: true })).not.toBeChecked()
   await board.getByRole('button', { name: '批量出分镜图', exact: true }).click()
   const checklist = page.getByRole('dialog', { name: '批量生成清单', exact: true })
   await expect(checklist.getByLabel('清单汇总')).toContainText('生成 1 项')
@@ -151,7 +153,7 @@ test('删除唯一已选镜头后清除失效选区，清单对应剩余镜头',
 test('协作删除部分已选镜头后，全选和批量范围只计现存镜头', async ({ page }) => {
   const f = await fixture(page)
   const board = await f.open()
-  await board.getByRole('checkbox', { name: '全选', exact: true }).check()
+  await board.getByRole('checkbox', { name: '全选镜头', exact: true }).check()
   await page.evaluate((id) => {
     const params = window.__plein.engine.doc.mutable(id)!.get('params') as {
       get(key: string): unknown[]
@@ -162,8 +164,8 @@ test('协作删除部分已选镜头后，全选和批量范围只计现存镜�
   await expect(board.getByRole('toolbar', { name: '分镜批量操作' })).toContainText(
     '选中的 1 个镜头',
   )
-  await expect(board.getByText('已选择 1 / 1 个镜头', { exact: true })).toBeVisible()
-  await expect(board.getByRole('checkbox', { name: '全选', exact: true })).toBeChecked()
+  await expect(board.getByText('已选择 1 个镜头', { exact: true })).toBeVisible()
+  await expect(board.getByRole('checkbox', { name: '全选镜头', exact: true })).toBeChecked()
   await board.getByRole('button', { name: '批量出分镜图', exact: true }).click()
   const checklist = page.getByRole('dialog', { name: '批量生成清单', exact: true })
   await expect(checklist.getByLabel('清单汇总')).toContainText('生成 1 项')
@@ -210,7 +212,8 @@ test('部分镜头失败后补齐批量只重试未完成项，保留成功镜�
   } finally {
     expect((await request.put(mock, { data: { settings: { failWith: 'none' } } })).ok()).toBe(true)
   }
-  await board.getByRole('button', { name: '编辑分镜', exact: true }).click()
+  await board.getByRole('button', { name: '镜头表格', exact: true }).click()
+  await openStoryboardActions(board)
   await batch.click()
   await expect(checklist.getByLabel('清单汇总')).toContainText('生成 1 项 · 沿用 1 项')
   await confirm.click()

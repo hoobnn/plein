@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { centerOf, newProject, zoomTo } from './canvas'
+import { centerOf, newProject, openStoryboardActions, showStoryboardCards, zoomTo } from './canvas'
 
 async function fixture(page: Page) {
   await newProject(page)
@@ -29,11 +29,13 @@ async function fixture(page: Page) {
     const at = await centerOf(page, id)
     await page.mouse.dblclick(at.x, at.y)
     await expect(editor).toBeVisible()
+    await openStoryboardActions(editor)
   }
   await open()
   await editor.getByRole('button', { name: '展开为节点', exact: true }).click()
   await expect(editor).not.toBeVisible()
   await open()
+  await showStoryboardCards(editor)
   const prompt = editor.getByLabel('分镜图提示词', { exact: true })
   await prompt.fill('计划改后的分镜图')
   await prompt.blur()

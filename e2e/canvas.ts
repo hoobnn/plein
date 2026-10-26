@@ -288,6 +288,22 @@ async function jobs(page: Page) {
 }
 
 /**
+ * 分镜表的「节点与批量操作」在表格视图里是折叠的，展开为节点、批量生成这些
+ * 按钮都收在里面。要用它们先把这块展开。
+ */
+export async function openStoryboardActions(dialog: Locator) {
+  const section = dialog.locator('details').first()
+  if ((await section.getAttribute('open')) === null) await section.locator('summary').click()
+  await expect(dialog.getByRole('toolbar', { name: '分镜批量操作' })).toBeVisible()
+}
+
+/** 分镜表的逐镜头字段（分镜图提示词、台词等）在详细卡片视图上，表格视图没有这些输入框。 */
+export async function showStoryboardCards(dialog: Locator) {
+  await dialog.getByRole('button', { name: '详细卡片', exact: true }).click()
+  await expect(dialog.getByRole('article')).toBeVisible()
+}
+
+/**
  * 点分镜表里的批量按钮并等这一批跑完。视频、配音是按节点逐个提交的，提示比提交先出来，
  * 上一批的「已开始生成」提示也可能还在：只等提示和节点空闲会在任务还没提交时就往下走。
  * 这里按提示里的个数等新任务都提交到服务端、全部结束，再等画布同步到空闲
