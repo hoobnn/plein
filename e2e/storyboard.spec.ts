@@ -7,6 +7,7 @@ import {
   contextMenu,
   deselect,
   newProject,
+  showStoryboardCards,
   waitNode,
   zoomTo,
 } from './canvas'
@@ -43,6 +44,7 @@ test(
       await page.mouse.dblclick(p.x, p.y)
       const dialog = page.getByRole('dialog', { name: '分镜表' })
       await expect(dialog).toBeVisible()
+      await showStoryboardCards(dialog)
       return dialog
     }
     let dialog = await openBoard()

@@ -12,7 +12,7 @@ import {
   type TestInfo,
   test,
 } from '@playwright/test'
-import { centerOf, newProject, waitEngine, waitNode, zoomTo } from './canvas'
+import { centerOf, newProject, openStoryboardActions, waitEngine, waitNode, zoomTo } from './canvas'
 
 const fixtureFile = join(
   import.meta.dirname,
@@ -260,6 +260,7 @@ async function prepare(page: Page, audit: Audit, sourceMapping = false) {
   )
   const editor = await act(audit, '实际双击打开分镜编辑器', () => openBoard(page, ids.board))
   await editor.getByRole('button', { name: '详细卡片', exact: true }).click()
+  await openStoryboardActions(editor)
   if (sourceMapping)
     await act(audit, 'P05实际捕获原文、声明核对并关联一条本镜对白', () => captureSource(editor))
   await act(audit, '实际编辑器展开原始三镜，保留稳定shot/dialogue身份', () =>

@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { centerOf, newProject, zoomTo } from './canvas'
+import { centerOf, newProject, openStoryboardActions, zoomTo } from './canvas'
 import type { StoryboardBatchPlan } from '../packages/protocol/src/storyboard-batch'
 
 async function fixture(page: Page, expanded = true) {
@@ -31,6 +31,7 @@ async function fixture(page: Page, expanded = true) {
     const at = await centerOf(page, id)
     await page.mouse.dblclick(at.x, at.y)
     await expect(editor).toBeVisible()
+    await openStoryboardActions(editor)
   }
   await open()
   if (expanded) {

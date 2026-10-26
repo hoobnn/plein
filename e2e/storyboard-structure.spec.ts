@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { centerOf, newProject, waitEngine, zoomTo } from './canvas'
+import { centerOf, newProject, openStoryboardActions, waitEngine, zoomTo } from './canvas'
 
 async function fixture(page: Page, expanded = false) {
   await newProject(page)
@@ -25,6 +25,7 @@ async function fixture(page: Page, expanded = false) {
     const at = await centerOf(page, id)
     await page.mouse.dblclick(at.x, at.y)
     await dialog.getByRole('button', { name: '详细卡片', exact: true }).click()
+    await openStoryboardActions(dialog)
     await expect(dialog.getByRole('article')).toHaveCount(2)
   }
   await open()

@@ -1,6 +1,6 @@
 import { expect, type Page, test } from '@playwright/test'
 import type { JobInfo } from '../packages/protocol/src/runs'
-import { clickElement, newProject } from './canvas'
+import { clickElement, newProject, openStoryboardActions } from './canvas'
 
 async function setup(page: Page) {
   await newProject(page)
@@ -36,7 +36,9 @@ async function setup(page: Page) {
       .getByTestId('generator')
       .getByRole('button', { name: /^编辑分镜表/ })
       .click()
-    return page.getByRole('dialog', { name: '分镜表', exact: true })
+    const dialog = page.getByRole('dialog', { name: '分镜表', exact: true })
+    await openStoryboardActions(dialog)
+    return dialog
   }
   let dialog = await open()
   await dialog.getByRole('button', { name: '展开为节点', exact: true }).click()

@@ -13,6 +13,7 @@ import {
   clickElement,
   contextMenu,
   deselect,
+  showStoryboardCards,
   waitEngine,
   waitNode,
   zoomTo,
@@ -129,6 +130,7 @@ test(
       const at = await centerOf(page, board.id)
       await page.mouse.dblclick(at.x, at.y)
       await expect(dialog).toBeVisible()
+      await showStoryboardCards(dialog)
     }
     await openBoard()
     while ((await dialog.getByRole('article').count()) > 2) {

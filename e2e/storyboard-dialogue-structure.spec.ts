@@ -1,5 +1,12 @@
 import { expect, type Page, test } from '@playwright/test'
-import { centerOf, confirmBatchChecklist, newProject, waitNode, zoomTo } from './canvas'
+import {
+  centerOf,
+  confirmBatchChecklist,
+  newProject,
+  showStoryboardCards,
+  waitNode,
+  zoomTo,
+} from './canvas'
 import type { StoryboardBatchPlan } from '../packages/protocol/src/storyboard-batch'
 
 async function fixture(page: Page) {
@@ -30,6 +37,7 @@ async function fixture(page: Page) {
   await page.mouse.dblclick(at.x, at.y)
   const dialog = page.getByRole('dialog', { name: '分镜表', exact: true })
   await expect(dialog).toBeVisible()
+  await showStoryboardCards(dialog)
   const read = () =>
     page.evaluate(
       (id) =>

@@ -300,7 +300,7 @@ export async function openStoryboardActions(dialog: Locator) {
 /** 分镜表的逐镜头字段（分镜图提示词、台词等）在详细卡片视图上，表格视图没有这些输入框。 */
 export async function showStoryboardCards(dialog: Locator) {
   await dialog.getByRole('button', { name: '详细卡片', exact: true }).click()
-  await expect(dialog.getByRole('article')).toBeVisible()
+  await expect(dialog.getByRole('article').first()).toBeVisible()
 }
 
 /**

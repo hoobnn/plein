@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { centerOf, clickElement, newProject, waitEngine } from './canvas'
+import { centerOf, clickElement, newProject, showStoryboardCards, waitEngine } from './canvas'
 
 const field = (page: Page) =>
   page
@@ -10,6 +10,7 @@ async function open(page: Page, id: string) {
   await clickElement(page, id)
   const at = await centerOf(page, id)
   await page.mouse.dblclick(at.x, at.y)
+  await showStoryboardCards(page.getByRole('dialog', { name: '分镜表', exact: true }))
   await expect(field(page)).toBeVisible()
 }
 const saved = (page: Page, id: string) =>
