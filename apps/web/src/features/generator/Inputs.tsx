@@ -304,7 +304,7 @@ export function Inputs({
 
   if (!tiles.length && !adds.length && !texts.length && !trailing && !toolbar) return null
   return (
-    <div className="flex flex-col gap-2 px-4 pt-3">
+    <div className="plein-generator-inputs flex flex-col gap-1 px-4 pt-2">
       <div className="plein-generator-input-tools flex items-center gap-2 pr-9">
         {adds.length > 0 && (
           <>
@@ -595,7 +595,7 @@ function RefTile({
         e.preventDefault()
         onDrop()
       }}
-      className="relative flex w-16 flex-none flex-col items-center gap-1 text-2xs text-ink-subtle"
+      className="relative flex flex-none items-center gap-1 text-2xs text-ink-subtle"
     >
       <button
         type="button"
@@ -614,7 +614,7 @@ function RefTile({
             onMove(e.key === 'ArrowLeft' ? -1 : 1)
           }
         }}
-        className="relative size-16 overflow-hidden rounded-lg bg-surface-2 shadow-1"
+        className="relative size-12 shrink-0 overflow-hidden rounded-md bg-surface-2 shadow-1"
       >
         {img ? (
           <img src={img} alt="" className="size-full object-cover" />
@@ -634,7 +634,7 @@ function RefTile({
         aria-label={`管理参考 ${index}`}
         aria-expanded={!!anchor}
         title={`管理参考 ${index}：${name}`}
-        className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-md bg-surface/95 text-sm text-ink shadow-1"
+        className="absolute top-1 left-6 flex size-5 items-center justify-center rounded-md bg-surface/95 text-sm text-ink shadow-1"
       >
         ⋯
       </button>
@@ -643,7 +643,7 @@ function RefTile({
           <button
             type="button"
             onClick={onReference}
-            className="ui-btn ui-btn-quiet p-0.5 text-2xs"
+            className="ui-btn ui-btn-xs ui-btn-quiet px-0.5 text-2xs"
             title={`在提示词末尾插入 ${caption}；编号按当前同类素材顺序`}
           >
             {caption}
@@ -799,12 +799,12 @@ function SubmittedTile({
       aria-label={`参考 ${item.index}：${name}`}
       data-asset-id={item.assetId}
       title={`${name} · ${origin}`}
-      className="relative flex w-16 flex-none flex-col items-center gap-1 text-2xs text-ink-subtle"
+      className="relative flex flex-none items-center gap-1 text-2xs text-ink-subtle"
     >
       <button
         type="button"
         aria-label={`预览「${name}」`}
-        className="relative size-16 overflow-hidden rounded-lg bg-surface-2"
+        className="relative size-12 shrink-0 overflow-hidden rounded-md bg-surface-2"
         onClick={() => {
           if (item.assetId)
             useCanvas.getState().view({ assetId: item.assetId, kind: item.type, name })
@@ -827,7 +827,11 @@ function SubmittedTile({
         </span>
       </button>
       {onReference ? (
-        <button type="button" className="ui-btn ui-btn-quiet p-0.5 text-2xs" onClick={onReference}>
+        <button
+          type="button"
+          className="ui-btn ui-btn-xs ui-btn-quiet px-0.5 text-2xs"
+          onClick={onReference}
+        >
           {label}
         </button>
       ) : (

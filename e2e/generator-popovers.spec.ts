@@ -185,13 +185,17 @@ for (const width of [1440, 390]) {
     ).toBe(true)
     const footer = panel.locator('footer')
     expect(await footer.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
-    const controls = await footer.locator('button').evaluateAll((buttons) =>
-      buttons.map((el) => {
-        const { x, y, width, height } = el.getBoundingClientRect()
-        return { x, y, width, height }
-      }),
-    )
-    const footerBox = await footer.boundingBox()
+    // 相机跟随仍可能更新位置，在同一帧测量边界和按钮，避免跨帧坐标误报。
+    const { controls, footerBox } = await footer.evaluate((el) => {
+      const { x, width } = el.getBoundingClientRect()
+      return {
+        footerBox: { x, width },
+        controls: [...el.querySelectorAll('button')].map((button) => {
+          const { x, y, width, height } = button.getBoundingClientRect()
+          return { x, y, width, height }
+        }),
+      }
+    })
     for (const [i, a] of controls.entries()) {
       expect(a.x).toBeGreaterThanOrEqual(footerBox!.x)
       expect(a.x + a.width).toBeLessThanOrEqual(footerBox!.x + footerBox!.width)

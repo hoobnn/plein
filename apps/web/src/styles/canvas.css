@@ -355,7 +355,7 @@
 }
 .plein-generator-models > button {
   flex: 0 0 auto;
-  height: 40px;
+  height: var(--h-md);
   padding-inline: 8px;
   background: transparent;
   box-shadow: none;
@@ -370,7 +370,7 @@
   min-width: 0;
 }
 .plein-generator-params {
-  height: 40px;
+  height: var(--h-md);
   padding-inline: 4px;
 }
 .plein-generator-footer {
@@ -394,6 +394,20 @@
   flex: 1;
   min-height: 144px;
   max-height: none;
+}
+
+/* 收起的辅助信息共用一行；展开时恢复整行宽度，正文始终可独立滚动。 */
+.plein-generator-inspectors {
+  display: flex;
+  align-items: flex-start;
+  padding-block: 4px;
+}
+.plein-generator-inspectors > * {
+  flex: 1;
+  min-width: 0;
+}
+.plein-generator-inspectors:has(details[open], button[aria-expanded="true"]) {
+  display: block;
 }
 
 /* 输入时只改变颜色，不对正文或随内容变化的高度做过渡。 */

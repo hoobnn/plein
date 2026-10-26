@@ -353,17 +353,17 @@ export function PromptBox({
         )}
       </Presence>
       {(mentions.length > 0 || missing.length > 0) && (
-        <div className="flex items-start gap-2 px-4 pb-2 text-xs text-ink-subtle">
-          <span className="shrink-0 pt-1 whitespace-nowrap">引用</span>
+        <div className="plein-prompt-references flex items-center gap-2 px-4 pb-1 text-xs text-ink-subtle">
+          <span className="shrink-0 whitespace-nowrap">引用</span>
           <div className="ui-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-1">
             {[...new Map(missing.map((p) => [p.text, p])).values()].map((part) => (
               <span
                 key={part.text}
                 title={part.warning}
-                className="inline-flex items-center gap-1 text-warning"
+                className="inline-flex h-7 max-w-64 shrink-0 items-center gap-1 whitespace-nowrap text-warning"
               >
                 <Icon name="warning" size={12} />
-                未找到：{part.text}
+                <span className="truncate">未找到：{part.text}</span>
               </span>
             ))}
             {[
@@ -381,10 +381,12 @@ export function PromptBox({
                 return (
                   <span
                     key={`?${m.name}`}
-                    className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-1.5 py-0.5 text-warning"
+                    className="inline-flex h-7 max-w-64 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-warning/10 px-1.5 py-0.5 text-warning"
                   >
                     <Icon name="warning" size={12} />
-                    {mentionProblem(m)}
+                    <span className="truncate" title={mentionProblem(m)}>
+                      {mentionProblem(m)}
+                    </span>
                   </span>
                 )
               }
@@ -414,9 +416,11 @@ export function PromptBox({
                     }
                   />
                   {warn && (
-                    <span className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-1.5 py-0.5 text-warning">
+                    <span className="inline-flex h-7 max-w-64 shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-warning/10 px-1.5 py-0.5 text-warning">
                       <Icon name="warning" size={12} />
-                      {warn}
+                      <span className="truncate" title={warn}>
+                        {warn}
+                      </span>
                     </span>
                   )}
                 </span>
@@ -575,10 +579,10 @@ function MentionChip({
         engine.selection.set([target.id])
         engine.zoomToFit([target.id])
       }}
-      className="flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-surface-2 pr-2 pl-0.5 text-ink-muted hover:bg-accent-soft hover:text-accent"
+      className="flex h-7 max-w-64 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-surface-2 pr-2 pl-0.5 text-ink-muted hover:bg-accent-soft hover:text-accent"
     >
       <Thumb engine={engine} target={target} imageId={imageId} />
-      {name}
+      <span className="truncate">{name}</span>
     </button>
   )
 }

@@ -134,7 +134,7 @@ function NodeBelow({
     >
       <button
         type="button"
-        className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn absolute top-3 right-3 z-10"
+        className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn absolute top-2 right-3 z-10"
         aria-label="关闭节点编辑器"
         title={`关闭${title}编辑器`}
         onClick={() => engine.selection.set([])}
@@ -464,9 +464,6 @@ export function GeneratorPanel({
             onChange={(v) => set(pk, v)}
           />
         )}
-        {pk && !pure && (
-          <ShotPresets engine={engine} el={el} node={node} catalog={catalog} promptKey={pk} />
-        )}
         {pure && Object.keys(rest).length > 0 && (
           <div className="px-4 pb-3">
             <button
@@ -496,20 +493,25 @@ export function GeneratorPanel({
           </div>
         )}
         {!pure && (
-          <InputPreview
-            engine={engine}
-            el={el}
-            node={node}
-            data={input.data}
-            loading={input.loading}
-            error={input.error}
-            onRetry={input.retry}
-          />
+          <div className="plein-generator-inspectors">
+            {pk && (
+              <ShotPresets engine={engine} el={el} node={node} catalog={catalog} promptKey={pk} />
+            )}
+            <InputPreview
+              engine={engine}
+              el={el}
+              node={node}
+              data={input.data}
+              loading={input.loading}
+              error={input.error}
+              onRetry={input.retry}
+            />
+          </div>
         )}
       </div>
       {!pure && (
         // 生成工具栏保持一行，独立于正文滚动。
-        <footer className="plein-generator-footer flex flex-col gap-2 px-4 py-3">
+        <footer className="plein-generator-footer flex flex-col gap-1 px-4 py-2">
           {hiddenInstruction && (
             <div className="flex items-start gap-2 px-1 text-xs text-ink-muted">
               <p
@@ -614,7 +616,7 @@ export function GeneratorPanel({
                   aria-busy={canceling || awaitingAcceptance}
                   title={problem ?? (running ? runLabel : withShortcut(runLabel, 'mod+enter'))}
                   aria-label={runLabel}
-                  className={`ui-btn ui-icon-btn size-10 shrink-0 rounded-xl ${running ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
+                  className={`ui-btn ui-icon-btn size-8 shrink-0 rounded-lg ${running ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
                 >
                   {canceling || awaitingAcceptance ? (
                     <span className="ui-spinner size-3" />

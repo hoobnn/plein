@@ -153,7 +153,7 @@ export function InputPreview({
   ) : null
   if (!data)
     return status ? (
-      <div className="px-4 pt-3" data-testid="input-preview" aria-busy={loading}>
+      <div className="min-w-0 px-4" data-testid="input-preview" aria-busy={loading}>
         {status}
       </div>
     ) : null
@@ -180,7 +180,7 @@ export function InputPreview({
   const issues = data.blocked.length + data.notices.length
 
   return (
-    <div className="px-4 pt-3" data-testid="input-preview" aria-busy={loading}>
+    <div className="min-w-0 px-4" data-testid="input-preview" aria-busy={loading}>
       {status}
       <button
         type="button"

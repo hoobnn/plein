@@ -106,7 +106,7 @@ export function ShotPresets({
   const move = state.picks['camera.move']
 
   return (
-    <div className="flex flex-col gap-1.5 px-4 pb-2" data-testid="shot-presets">
+    <div className="flex min-w-0 flex-col gap-1.5 px-4" data-testid="shot-presets">
       <details
         className="group/presets"
         onToggle={(e) => {
