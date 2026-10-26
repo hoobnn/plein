@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { addNode, elements, newProject, waitNode } from './canvas'
+import { addNode, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 const MOCK = '/api/providers/plein/mock/config'
 
@@ -19,6 +19,8 @@ test(
       .poll(async () => (await elements(page)).filter((e) => e.kind === 'node'))
       .toHaveLength(1)
     const [node] = (await elements(page)).filter((e) => e.kind === 'node')
+    // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+    await revealGenerator(page)
     const generator = page.getByTestId('generator')
     await generator.locator('textarea').first().fill('雨夜天台上的铁盒')
     const run = () => generator.getByRole('button', { name: /生成$/ }).click()

@@ -3,7 +3,15 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
-import { addNode, edgesInto, elements, newProject, waitNode, zoomTo } from './canvas'
+import {
+  addNode,
+  edgesInto,
+  elements,
+  newProject,
+  revealGenerator,
+  waitNode,
+  zoomTo,
+} from './canvas'
 
 /** 设了就把界面截图存到这个目录（亮色、暗色各一张） */
 const shotDir = process.env.PLEIN_E2E_SHOTS
@@ -40,6 +48,8 @@ test(
     await newProject(page)
     await addNode(page, '生成视频')
     const generator = page.getByTestId('generator')
+    // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+    await revealGenerator(page)
     await generator.locator('textarea').first().fill('雨夜天台，她走到栏杆边')
     await generator.getByRole('button', { name: '生成', exact: true }).click()
     const [parent] = (await elements(page)).filter((e) => e.kind === 'node')
@@ -70,6 +80,8 @@ test(
     expect(frame.kind).toBe('image')
 
     const continued = page.getByTestId('continued-from')
+    // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+    await revealGenerator(page)
     await expect(continued).toContainText('续自')
     await expect(continued).toContainText('尾帧')
     await zoomTo(page, [parent!.id, frame.id, next.id])

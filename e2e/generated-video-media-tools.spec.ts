@@ -1,13 +1,15 @@
 import { execFileSync } from 'node:child_process'
 import type { PleinDoc } from '../packages/doc/src/doc'
 import { expect, type Page, test } from '@playwright/test'
-import { addNode, clickElement, elements, newProject, waitNode } from './canvas'
+import { addNode, clickElement, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 async function fixture(page: Page) {
   await newProject(page)
   await addNode(page, '生成视频')
   const generator = page.getByTestId('generator')
   await expect(generator.getByRole('button', { name: '媒体工具', exact: true })).toHaveCount(0)
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
   await generator.locator('textarea').first().fill('用于裁剪验收的视频')
   await generator.getByRole('button', { name: '生成', exact: true }).click()
   const node = (await elements(page)).find((e) => e.kind === 'node')!

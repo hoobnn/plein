@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { clickElement, newProject, waitNode } from './canvas'
+import { clickElement, newProject, revealGenerator, waitNode } from './canvas'
 
 const canvasId = (page: Page) => decodeURIComponent(page.url().split('#/c/')[1]!.split('?')[0]!)
 async function run(page: Page, id: string) {
@@ -142,6 +142,8 @@ test('视频与音频参考进入实际输入，图片精修生成新候选保�
     })
     .toBe(true)
   await clickElement(page, targets.video)
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
   await generator.getByRole('button', { name: /实际输入/ }).click()
   await expect(generator.getByText(/视频 ·/).first()).toBeVisible()

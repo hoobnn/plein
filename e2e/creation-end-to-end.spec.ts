@@ -13,6 +13,7 @@ import {
   clickElement,
   contextMenu,
   deselect,
+  revealGenerator,
   showStoryboardCards,
   waitEngine,
   waitNode,
@@ -283,6 +284,8 @@ test(
     await editor.screenshot({ path: test.info().outputPath('complete-film-ui.png') })
     await editor.getByRole('button', { name: '关闭', exact: true }).click()
     await clickElement(page, videos[0]!.id)
+    // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+    await revealGenerator(page)
     const generator = page.getByTestId('generator')
     const retry = generator.getByRole('button', { name: /^(?:生成|重新生成|重试)$/ })
     const mock = api('/api/providers/plein/mock/config')
