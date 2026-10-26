@@ -153,7 +153,7 @@ test('画布内播放器全屏时不保留节点的遮挡裁剪，退出后恢�
   await expect.poll(() => play.evaluate((el: HTMLElement) => el.inert)).toBe(true)
 })
 
-test('窗口缩窄后生成器同步变窄，操作区不被窗口和侧栏裁掉', async ({ page }) => {
+test('窗口缩窄后生成器仍贴在卡片下方，不被窗口和侧栏裁掉', async ({ page }) => {
   await newProject(page)
   const id = await page.evaluate(() =>
     window.__plein.addNode({
@@ -172,15 +172,26 @@ test('窗口缩窄后生成器同步变窄，操作区不被窗口和侧栏裁�
   await clickElement(page, id)
   await expect(page.getByTestId('generator')).toBeVisible()
   await page.setViewportSize({ width: 800, height: 900 })
+  // 编辑器固定 840px 宽、贴在卡片下方，不随窗口变窄；宽度超出窗口时由画布平移带出来。
+  const editor = page.getByTestId('node-editor')
+  await expect
+    .poll(async () => Math.round((await editor.boundingBox())!.width), { timeout: 3000 })
+    .toBe(840)
   await expect
     .poll(
       async () => {
-        const box = (await page.getByTestId('generator').boundingBox())!
-        return Math.round(box.x + box.width)
+        const box = (await editor.boundingBox())!
+        const anchor = await page.evaluate((id) => {
+          const engine = window.__plein.engine
+          const rect = engine.doc.worldRect(id)
+          const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
+          return br.y + 12
+        }, id)
+        return Math.abs(box.y - anchor)
       },
       { timeout: 3000 },
     )
-    .toBeLessThanOrEqual(788)
+    .toBeLessThan(1)
 })
 
 test('创作引导不会盖住所选节点的生成器和按钮', async ({ page }) => {

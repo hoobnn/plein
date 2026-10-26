@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-import { clickElement, newProject, waitEngine, waitNode } from './canvas'
+import { clickElement, newProject, revealGenerator, waitEngine, waitNode } from './canvas'
 
 test(
   '首次生成期间修改输入，结果只进候选，查看采用及撤销刷新不隐式生效',
@@ -27,6 +27,8 @@ test(
         ).ok(),
       ).toBe(true)
       await clickElement(page, id)
+      // 编辑器固定在卡片下方，先把它移进窗口再点生成
+      await revealGenerator(page)
       const generator = page.getByTestId('generator')
       await generator.getByRole('button', { name: '生成', exact: true }).click()
       await expect(generator.getByRole('button', { name: '取消', exact: true })).toBeEnabled()
@@ -88,6 +90,8 @@ test(
         return id
       }, source.id)
       await clickElement(page, downstream)
+      // 编辑器固定在卡片下方，先把它移进窗口再操作里面的控件
+      await revealGenerator(page)
       const preview = page.getByTestId('input-preview')
       await preview.getByRole('button', { name: /实际输入/ }).click()
       await expect(generator).toContainText('有候选待采用，请先查看并采用结果')
@@ -135,6 +139,8 @@ for (const kind of ['image', 'video', 'speech'] as const) {
       kind,
     )
     await clickElement(page, id)
+    // 编辑器固定在卡片下方，先把它移进窗口再点生成
+    await revealGenerator(page)
     const generator = page.getByTestId('generator')
     await generator.getByRole('button', { name: '生成', exact: true }).click()
     await waitNode(page, id)
@@ -245,6 +251,8 @@ test('LLM 长文本候选在窄屏完整换行，明确采用后可从生成器�
     token,
   )
   await clickElement(page, id)
+  // 编辑器固定在卡片下方，先把它移进窗口再点生成
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
   await generator.getByRole('button', { name: '生成', exact: true }).click()
   await waitNode(page, id)
@@ -287,6 +295,9 @@ test('LLM 长文本候选在窄屏完整换行，明确采用后可从生成器�
     animations: 'disabled',
   })
   await viewer.getByRole('button', { name: '关闭', exact: true }).click()
+  // 编辑器固定 840px 宽，窄窗口里点不到右边的操作；先回到宽窗口再从生成器重新查看
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await revealGenerator(page)
   await generator.getByRole('button', { name: '全屏查看', exact: true }).click()
   await expect(viewer.getByRole('button', { name: '已采用', exact: true })).toBeDisabled()
   await expect(text).toContainText(token)

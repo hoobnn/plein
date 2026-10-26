@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { newProject, waitNode, zoomTo } from './canvas'
+import { newProject, revealGenerator, waitNode, zoomTo } from './canvas'
 
 test('审片候选被移除后保留同端口浏览，退出失效对比并结束拖动', async ({ page }) => {
   const errors: string[] = []
@@ -16,6 +16,8 @@ test('审片候选被移除后保留同端口浏览，退出失效对比并结�
     }),
   )
   await page.getByRole('treeitem', { name: '候选删除恢复 定位到画布', exact: true }).click()
+  // 编辑器固定在卡片下方，先把它移进窗口再点生成
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
   await generator.getByRole('button', { name: '生成', exact: true }).click()
   await waitNode(page, target)
@@ -154,6 +156,8 @@ test('图片平移只处理当前指针，取消、失焦、切换与重置结�
     }),
   )
   await page.getByRole('treeitem', { name: '平移边界 定位到画布', exact: true }).click()
+  // 编辑器固定在卡片下方，先把它移进窗口再点生成
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
   await generator.getByRole('button', { name: '生成', exact: true }).click()
   await waitNode(page, target)

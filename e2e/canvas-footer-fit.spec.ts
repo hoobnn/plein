@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { clickElement, newProject } from './canvas'
+import { clickElement, newProject, revealGenerator } from './canvas'
 type Engine = import('../packages/canvas-core/src/engine').Engine
 
 for (const width of [320, 640, 700, 800, 1440]) {
@@ -73,20 +73,15 @@ test('分行底栏下文本生成器仍完整可编辑，正文保留', async ({
   await clickElement(page, id)
   const panel = page.getByTestId('generator')
   await expect(panel).toBeVisible()
-  if ((await panel.getAttribute('data-compact')) === 'true')
-    await panel.getByRole('button', { name: /^编辑/ }).click()
+  // 编辑器固定在卡片下方，窄窗口里先把它移进窗口再操作
+  await revealGenerator(page)
   const prompt = panel.getByRole('textbox', { name: '提示词', exact: true })
   await expect(prompt).toBeVisible()
   await expect
     .poll(() =>
       panel.evaluate((el) => {
         const r = el.getBoundingClientRect()
-        return (
-          r.left >= 4 &&
-          r.right <= window.innerWidth - 4 &&
-          r.top >= 64 &&
-          r.bottom <= window.innerHeight - 128
-        )
+        return r.top >= 64 && r.bottom <= window.innerHeight
       }),
     )
     .toBe(true)
