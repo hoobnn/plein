@@ -19,8 +19,9 @@ import {
   type ShotAnalysisManifest,
 } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
-import type { Catalog } from '@plein/protocol'
+import type { Catalog, JobInfo } from '@plein/protocol'
 import { describe, expect, it, vi } from 'vite-plus/test'
+import { ApiError } from '../../api/client'
 import { aiFixture } from '../../../../../packages/nodes/src/aiShotAnalysis.fixture'
 import {
   aiModels,
@@ -28,6 +29,7 @@ import {
   createSummaryPlan,
   convertAiDrafts,
   draftReference,
+  pollJob,
   sameReportOrigin,
 } from './model'
 
@@ -267,5 +269,70 @@ describe('P09计划与数据转换', () => {
     doc.readOnly = true
     expect(() => convertAiDrafts(doc, 'canvas', [ref])).toThrow()
     doc.destroy()
+  })
+})
+
+describe('AI 拉片作业轮询', () => {
+  const job = (patch: Partial<JobInfo> = {}) =>
+    ({
+      id: 'run-1',
+      nodeId: 'node-1',
+      nodeType: 'plein/shot-scene-draft',
+      status: 'running',
+      attempts: 1,
+      createdAt: 0,
+      ...patch,
+    }) as JobInfo
+
+  it('按精确作业 ID 读到终态，不用最近一条推断', async () => {
+    const seen: string[] = []
+    const result = await pollJob('run-1', {
+      read: async (id) => {
+        seen.push(id)
+        return job({ status: 'succeeded' })
+      },
+      alive: () => true,
+      wait: async () => {},
+    })
+    expect(result?.status).toBe('succeeded')
+    expect(seen).toEqual(['run-1'])
+  })
+
+  it('作业还没出现时只等有限次数，读不到就按状态未知收场', async () => {
+    let calls = 0
+    const result = await pollJob('run-2', {
+      read: async () => {
+        calls++
+        throw new ApiError(404, 'not_found', '任务不存在')
+      },
+      alive: () => true,
+      wait: async () => {},
+      missing: 3,
+    })
+    expect(result).toBeUndefined()
+    expect(calls).toBe(4)
+  })
+
+  it('面板不再看这次运行时停止轮询，其它错误照实抛出', async () => {
+    let calls = 0
+    const stopped = await pollJob('run-3', {
+      read: async () => {
+        calls++
+        return job()
+      },
+      alive: () => calls < 2,
+      wait: async () => {},
+    })
+    expect(stopped).toBeUndefined()
+    expect(calls).toBe(2)
+    await expect(
+      pollJob('run-4', {
+        read: async () => {
+          throw new ApiError(500, 'server_error', '服务端出错')
+        },
+        alive: () => true,
+        wait: async () => {},
+      }),
+    ).rejects.toThrow('服务端出错')
   })
 })

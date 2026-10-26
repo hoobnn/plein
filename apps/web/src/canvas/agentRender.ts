@@ -6,10 +6,13 @@ import { api } from '../api/client'
 export function watchAgentRender(awareness: WebsocketProvider['awareness']) {
   let disposed = false
   const pending = new Set<string>()
-  const check = () => {
-    const active = new Set(
+  /** 服务端还没取走的截图请求；被取走或超时后就不再保留它的结果。 */
+  const activeRequests = () =>
+    new Set(
       [...awareness.getStates().values()].flatMap((s) => Object.keys(s.canvasRenderRequests ?? {})),
     )
+  const check = () => {
+    const active = activeRequests()
     for (const id of pending) if (!active.has(id)) pending.delete(id)
     for (const state of awareness.getStates().values()) {
       const requests = state.canvasRenderRequests as
@@ -51,8 +54,10 @@ export function watchAgentRender(awareness: WebsocketProvider['awareness']) {
             host.remove()
           }
           if (disposed) return
-          const prev = Object.entries(awareness.getLocalState()?.canvasRenderResults ?? {}).slice(
-            -7,
+          // 只留服务端还没取走的结果：请求还在就留着，被挤掉后服务端只能等到超时。
+          const active = activeRequests()
+          const prev = Object.entries(awareness.getLocalState()?.canvasRenderResults ?? {}).filter(
+            ([id]) => active.has(id),
           )
           awareness.setLocalStateField('canvasRenderResults', {
             ...Object.fromEntries(prev),

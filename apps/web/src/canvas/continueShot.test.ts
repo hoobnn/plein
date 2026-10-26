@@ -4,6 +4,7 @@ import {
   connect,
   createDoc,
   createElement,
+  deleteElements,
   removeEdges,
   setParam,
   updateElement,
@@ -224,6 +225,16 @@ describe('续镜异步取帧的保存边界', () => {
       doc.destroy()
     },
   )
+
+  it('首帧图片被删除后拒绝换成新画面：来路不变，也不留下没人用的帧', async () => {
+    const { doc, engine, frame, next } = continuation()
+    deleteElements(doc, [frame])
+    const before = continuesFromOf(doc.get(next))
+    await expect(refreshContinue(engine, next)).rejects.toThrow('首帧图片已经断开了')
+    expect(continuesFromOf(doc.get(next))).toEqual(before)
+    expect(api.mediaDerive).not.toHaveBeenCalled()
+    doc.destroy()
+  })
 
   it('提示词和位置编辑不影响更新；首帧与来路一起保存并可以单步撤销', async () => {
     const { doc, engine, frame, next, from } = continuation()

@@ -7,7 +7,7 @@ import {
   isAiAnalysisType,
   type AiDraftReference,
 } from '@plein/nodes'
-import type { PreparedInput, JobInfo } from '@plein/protocol'
+import type { PreparedInput } from '@plein/protocol'
 import { useEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
 import { useDocVersion } from '../../canvas/hooks'
@@ -24,6 +24,7 @@ import {
   createSummaryPlan,
   convertAiDrafts,
   draftReference,
+  pollJob,
   sameReportOrigin,
 } from './model'
 
@@ -207,15 +208,11 @@ export function AiAnalysisPanel({
           remaining.delete(row.id)
           if (!current()) break
           setActive({ nodeId: row.id, runId: started.runId })
-          let job: JobInfo | undefined
-          while (current()) {
-            const latest = (await api.canvasNodeJobs(canvasId, [row.id])).jobs[0]
-            if (latest && latest.id !== started.runId)
-              throw new Error('作业已变化，停止提交剩余计划')
-            job = latest
-            if (job && !['queued', 'running'].includes(job.status)) break
-            await wait()
-          }
+          // 按精确作业 ID 等它结束：不再从最近一条推断，同节点的新作业也不会误判成“已变化”。
+          const job = await pollJob(started.runId, {
+            read: (id) => api.canvasJob(canvasId, id),
+            alive: current,
+          })
           if (!current()) break
           if (job) {
             const submitted =
@@ -234,6 +231,10 @@ export function AiAnalysisPanel({
                 '原作业需要核查或取回；剩余作业未提交。请在任务面板处理，不能用新作业绕过。',
               )
             }
+          } else {
+            // 没读到这次作业：状态未知，不能当成失败，也不能继续提交剩余作业。
+            stop.current = true
+            setMessage('没有读到这次作业，状态未知；剩余作业未提交。请在任务面板确认是否已提交。')
           }
           setActive(undefined)
         }

@@ -214,13 +214,15 @@ export async function refreshContinue(engine: Engine, nodeId: string, signal?: A
     return e.to[0] === nodeId && el?.kind === 'image' && el.assetId === from.frameAssetId
   })
   const frameEl = edge && doc.get(edge.from[0])
+  // 首帧图片还在才有得换：没有它就只改来路会指向画布上不存在的画面。
+  if (!edge || !frameEl) throw new Error('首帧图片已经断开了')
   const made = await api.mediaDerive(
     {
       op: 'frame',
       assetId,
       at: from.last ? 0 : (from.at ?? 0),
       ...(from.last ? { last: true } : {}),
-      name: frameEl?.name ?? `${parent.name ?? '前镜'} · 接续帧`,
+      name: frameEl.name,
     },
     signal,
   )
@@ -233,23 +235,22 @@ export async function refreshContinue(engine: Engine, nodeId: string, signal?: A
   if (
     videoAssetOf(doc.get(from.elementId)) !== assetId ||
     JSON.stringify(continuesFromOf(doc.get(nodeId))) !== JSON.stringify(from) ||
-    (frameEl && doc.get(frameEl.id)?.assetId !== from.frameAssetId) ||
-    (edge &&
-      !doc
-        .edgesOf(nodeId)
-        .some(
-          (e) =>
-            e.id === edge.id &&
-            e.from[0] === frameEl!.id &&
-            e.from[1] === edge.from[1] &&
-            e.to[0] === nodeId &&
-            e.to[1] === edge.to[1],
-        ))
+    doc.get(frameEl.id)?.assetId !== from.frameAssetId ||
+    !doc
+      .edgesOf(nodeId)
+      .some(
+        (e) =>
+          e.id === edge.id &&
+          e.from[0] === frameEl.id &&
+          e.from[1] === edge.from[1] &&
+          e.to[0] === nodeId &&
+          e.to[1] === edge.to[1],
+      )
   )
     throw new Error('续镜内容已经改变，请重新获取首帧')
   doc.undo.stopCapturing()
   doc.ydoc.transact(() => {
-    if (frameEl) updateElement(doc, frameEl.id, { assetId: asset.id })
+    updateElement(doc, frameEl.id, { assetId: asset.id })
     setParam(doc, nodeId, 'continuesFrom', {
       ...from,
       assetId,
