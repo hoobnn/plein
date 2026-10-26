@@ -14,7 +14,7 @@ import { collageAssets } from '../assets/collage'
 import { DeriveError, deriveAsset } from '../assets/derive'
 import { subtitleFont } from '../assets/fonts'
 import { sequencePackage } from '../assets/interchange'
-import { mediaCaps } from '../assets/media'
+import { mediaCaps, withMediaAbort } from '../assets/media'
 import { type AssetStore, UploadTooLargeError } from '../assets/store'
 import { sendFile } from '../http/files'
 
@@ -112,6 +112,8 @@ export function mediaRoutes(store: AssetStore) {
         }
       })
       .post(API.mediaDerive, async (c) => {
+        if (c.var.principal.role === 'viewer')
+          return c.json({ error: 'forbidden', message: '只读账号不能加工素材' }, 403)
         const body = await c.req.json().catch(() => null)
         const parsed = MediaDeriveRequest.safeParse(body)
         if (!parsed.success)
@@ -126,7 +128,9 @@ export function mediaRoutes(store: AssetStore) {
           )
         if (!store.get(c.var.principal.id, parsed.data.assetId)) return c.json(notFound, 404)
         try {
-          const made = await deriveAsset(store, c.var.principal.id, parsed.data)
+          const made = await withMediaAbort(c.req.raw.signal, () =>
+            deriveAsset(store, c.var.principal.id, parsed.data),
+          )
           return c.json(made, 201)
         } catch (err) {
           if (err instanceof DeriveError)

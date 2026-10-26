@@ -23,16 +23,9 @@ import {
   videoLastFrame,
 } from './media'
 import type { AssetStore } from './store'
-
-/** 加工失败：带 code，HTTP 路由据此选状态码（invalid 参数、unsupported 类型不匹配） */
-export class DeriveError extends Error {
-  constructor(
-    readonly code: 'not_found' | 'invalid' | 'unsupported' | 'no_ffmpeg',
-    message: string,
-  ) {
-    super(message)
-  }
-}
+import { deriveAdvancedVideo } from './advanced-video'
+import { DeriveError } from './derive-error'
+export { DeriveError } from './derive-error'
 
 /** 来源记录：产物 id 旁边存一份，源资产、坐标 / 区间、操作、参数都有，重启后仍可追溯 */
 export interface DerivationOrigin {
@@ -83,6 +76,8 @@ const KIND_LABEL: Record<MediaOp, string> = {
   split: '切分',
   separate: '分离',
   frame: '帧',
+  'repair-region': '区域修补',
+  'replace-range': '片段替换',
 }
 
 const KIND_NAME: Record<AssetKind, string> = {
@@ -383,7 +378,12 @@ export async function deriveAsset(
     expectKind(src, input.op, ['image'])
   } else if (input.op === 'split') {
     expectKind(src, input.op, ['audio'])
-  } else if (input.op === 'separate' || input.op === 'frame') {
+  } else if (
+    input.op === 'separate' ||
+    input.op === 'frame' ||
+    input.op === 'repair-region' ||
+    input.op === 'replace-range'
+  ) {
     expectKind(src, input.op, ['video'])
   } else {
     expectKind(src, input.op, ['video', 'audio'])
@@ -394,7 +394,10 @@ export async function deriveAsset(
   const dir = await store.tempDir()
   try {
     let made: Made
-    if (input.op === 'crop') {
+    if (input.op === 'repair-region' || input.op === 'replace-range') {
+      const name = safeName(input.name?.trim() || `${stem(src.name)}-${KIND_LABEL[input.op]}`)
+      made = await deriveAdvancedVideo(store, ownerId, src, input, dir, name)
+    } else if (input.op === 'crop') {
       made =
         src.kind === 'image'
           ? await deriveImage(store, src, input, dir)

@@ -6,6 +6,7 @@ import { Asset } from './assets'
  * 加工操作。图片走 sharp，视频 / 音频走 ffmpeg：
  * crop 对图片和视频可用；rotate/flip 只对图片；separate/frame 只对视频；split 只对音频；
  * trim/speed 对视频和音频都可用（视频变速同时处理音画）。
+ * repair-region / replace-range 仅对视频，分别修补像素区域及替换等长画面区间。
  */
 export const MediaOp = z.enum([
   'crop',
@@ -16,6 +17,8 @@ export const MediaOp = z.enum([
   'split',
   'separate',
   'frame',
+  'repair-region',
+  'replace-range',
 ])
 export type MediaOp = z.infer<typeof MediaOp>
 
@@ -84,6 +87,28 @@ export const MediaDeriveRequest = z.discriminatedUnion('op', [
     assetId: assetIdField,
     at: z.number().min(0),
     last: z.boolean().optional(),
+    name: deriveName,
+  }),
+  /** 本地插值修补固定区域；像素坐标对应摆正后的画面，四周须保留背景。 */
+  z.object({
+    op: z.literal('repair-region'),
+    assetId: assetIdField,
+    left: z.number().int().min(1),
+    top: z.number().int().min(1),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    start: z.number().min(0).default(0),
+    end: z.number().positive().optional(),
+    name: deriveName,
+  }),
+  /** 用另一视频的等长片段替换原视频区间，保留原音轨，不自动拉伸或补长。 */
+  z.object({
+    op: z.literal('replace-range'),
+    assetId: assetIdField,
+    replacementAssetId: assetIdField,
+    start: z.number().min(0),
+    end: z.number().positive(),
+    replacementStart: z.number().min(0).default(0),
     name: deriveName,
   }),
 ])
@@ -155,6 +180,84 @@ export const MediaDerivation = z.object({
 })
 export type MediaDerivation = z.infer<typeof MediaDerivation>
 
+const originMetadata: Partial<Record<MediaOp, Record<string, z.ZodType>>> = {
+  'repair-region': { method: z.literal('removelogo'), audio: z.literal('source') },
+  'replace-range': {
+    frameRate: z.number().positive().max(240),
+    frames: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    audio: z.literal('source'),
+    fit: z.literal('contain'),
+  },
+}
+const originParams = new Map<MediaOp, z.ZodType>(
+  MediaDeriveRequest.options.map((option) => {
+    const fields: Record<string, z.ZodType> = { ...option.shape }
+    delete fields.op
+    delete fields.assetId
+    delete fields.name
+    // 尾帧的位置可能未知；last=true 时不伪造为0秒。
+    if (option.shape.op.value === 'frame') fields.at = z.number().min(0).optional()
+    return [
+      option.shape.op.value,
+      z.object({ ...fields, ...originMetadata[option.shape.op.value] }).strict(),
+    ] as const
+  }),
+)
+
+/** 画布持久化的加工来路，随撤销、检查点及项目包保留；只接受已知操作字段。 */
+export const MediaDerivationOrigin = z
+  .object({
+    version: z.literal(1),
+    op: MediaOp,
+    source: z
+      .object({ assetId: assetIdField, kind: AssetKind, name: z.string().max(4096) })
+      .strict(),
+    params: z.record(z.string(), z.unknown()),
+  })
+  .strict()
+  .superRefine((origin, ctx) => {
+    const parsed = originParams.get(origin.op)?.safeParse(origin.params)
+    if (!parsed?.success) {
+      ctx.addIssue({ code: 'custom', path: ['params'], message: '加工来源参数不符合操作契约' })
+      return
+    }
+    const params = parsed.data as Record<string, unknown>
+    if (origin.op === 'frame' && params.last !== true && params.at === undefined)
+      ctx.addIssue({ code: 'custom', path: ['params', 'at'], message: '抽帧来源缺少位置' })
+    if (
+      ['trim', 'repair-region', 'replace-range'].includes(origin.op) &&
+      params.end !== undefined &&
+      !(Number(params.end) > Number(params.start ?? 0))
+    )
+      ctx.addIssue({ code: 'custom', path: ['params', 'end'], message: '来源区间的出点须大于入点' })
+    const kinds =
+      origin.op === 'crop'
+        ? ['image', 'video']
+        : ['rotate', 'flip'].includes(origin.op)
+          ? ['image']
+          : origin.op === 'split'
+            ? ['audio']
+            : ['trim', 'speed'].includes(origin.op)
+              ? ['audio', 'video']
+              : ['video']
+    if (!kinds.includes(origin.source.kind))
+      ctx.addIssue({ code: 'custom', path: ['source', 'kind'], message: '来源类型不符合操作契约' })
+  })
+  .transform((origin) => ({
+    ...origin,
+    params: originParams.get(origin.op)!.parse(origin.params) as Record<string, unknown>,
+  }))
+export type MediaDerivationOrigin = z.infer<typeof MediaDerivationOrigin>
+
+/** 仅收集显式来源与片段替换输入，不递归猜测其他字符串中的资产。 */
+export function derivationAssets(value: unknown): string[] {
+  const parsed = MediaDerivationOrigin.safeParse(value)
+  if (!parsed.success) return []
+  const ids = [parsed.data.source.assetId]
+  if (parsed.data.op === 'replace-range') ids.push(String(parsed.data.params.replacementAssetId))
+  return [...new Set(ids)]
+}
+
 /**
  * 拼图：把一组图片按顺序拼成一张大图。每格大小一致（取第一张的比例），图片等比放进格子，
  * 留白用底色填；结果是新图片资产，原图不动
@@ -193,4 +296,6 @@ export interface MediaCapsInfo {
   subtitles: boolean
   /** 有 rubberband 滤镜，音频变速能真正保音调 */
   rubberband: boolean
+  /** 有 removelogo 滤镜，可用周边像素修补矩形区域；旧服务端未探测时不显示入口。 */
+  regionRepair?: boolean
 }

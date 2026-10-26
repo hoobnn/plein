@@ -29,6 +29,7 @@ const run = ((file: string, args: readonly string[], options: ExecFileOptions = 
       args,
       { ...options, signal, killSignal: 'SIGKILL' },
       (error, stdout, stderr) => {
+        if (error) Object.assign(error, { stdout, stderr })
         failure = error
         output = { stdout, stderr }
       },
@@ -48,6 +49,9 @@ export interface Probe {
   videoDuration?: number
   videoCodec?: string
   frameRate?: number
+  /** 容器声明的基准帧率，用于拒绝平均帧率不同的可变帧率素材。 */
+  nominalFrameRate?: number
+  videoTimeBase?: number
   audioCodecs?: string[]
   width?: number
   height?: number
@@ -139,6 +143,7 @@ export interface MediaCaps {
   subtitles: boolean
   /** 有 `rubberband` 滤镜，音频变速能真正保音调（Homebrew 默认没有） */
   rubberband: boolean
+  regionRepair: boolean
 }
 
 /**
@@ -153,10 +158,11 @@ export function mediaCaps(): Promise<MediaCaps> {
         ffmpeg: true,
         subtitles: /^\s*\S+\s+ass\s/m.test(stdout) || /^\s*\S+\s+subtitles\s/m.test(stdout),
         rubberband: /^\s*\S+\s+rubberband\s/m.test(stdout),
+        regionRepair: /^\s*\S+\s+removelogo\s/m.test(stdout),
       }),
       () => {
         context?.signal.throwIfAborted()
-        return { ffmpeg: false, subtitles: false, rubberband: false }
+        return { ffmpeg: false, subtitles: false, rubberband: false, regionRepair: false }
       },
     )
   return context ? (context.capsCache ??= detect()) : (capsCache ??= detect())
@@ -187,6 +193,7 @@ interface FfprobeStream {
   codec_name?: string
   avg_frame_rate?: string
   r_frame_rate?: string
+  time_base?: string
   channels?: number
   sample_rate?: string
   width?: number
@@ -242,6 +249,10 @@ export async function probeMedia(file: string): Promise<Probe> {
     ...(Number.isFinite(videoDuration) && videoDuration > 0 ? { videoDuration } : {}),
     ...(video?.codec_name ? { videoCodec: video.codec_name } : {}),
     ...(frameRate !== undefined ? { frameRate } : {}),
+    ...(rate(video?.r_frame_rate) !== undefined
+      ? { nominalFrameRate: rate(video?.r_frame_rate) }
+      : {}),
+    ...(rate(video?.time_base) !== undefined ? { videoTimeBase: rate(video?.time_base) } : {}),
     audioCodecs: audio.map((stream) => stream.codec_name ?? 'unknown'),
     hasVideo: Boolean(video),
     hasAudio: audio.length > 0,
@@ -249,6 +260,40 @@ export async function probeMedia(file: string): Promise<Probe> {
       ? { audioChannels: channels }
       : {}),
     ...(Number.isInteger(sampleRate) && sampleRate > 0 ? { audioSampleRate: sampleRate } : {}),
+  }
+}
+
+/** 有界读取实际包PTS，避免只凭平均帧率把可变时间戳误认为固定帧率。 */
+export async function videoPacketTimes(file: string): Promise<number[] | null> {
+  try {
+    const { stdout } = await run(
+      bin.ffprobe,
+      [
+        '-v',
+        'error',
+        '-select_streams',
+        'v:0',
+        '-show_entries',
+        'packet=pts_time',
+        '-of',
+        'csv=p=0',
+        file,
+      ],
+      { maxBuffer: 16 * 1024 * 1024, timeout: 60_000 },
+    )
+    const times: number[] = []
+    for (const line of String(stdout).split('\n')) {
+      if (!line.trim()) continue
+      const text = line.split(',')[0]!.trim()
+      if (!/^-?\d+(?:\.\d+)?$/.test(text)) return null
+      const value = Number(text)
+      if (!Number.isFinite(value)) return null
+      times.push(value)
+    }
+    return times.sort((a, b) => a - b)
+  } catch {
+    mediaAbort.getStore()?.signal.throwIfAborted()
+    return null
   }
 }
 
@@ -383,27 +428,26 @@ export async function audioPeaks(src: string, out: string) {
 const FFMPEG_TIMEOUT_MS = 10 * 60_000
 
 /** 跑一次 ffmpeg；失败时把 stderr 末尾几行带进消息里，别只丢一句 Command failed */
-export function ffmpeg(args: string[], opts: { maxBuffer?: number; timeoutMs?: number } = {}) {
-  return new Promise<void>((resolve, reject) => {
-    execFile(
-      bin.ffmpeg,
-      ['-hide_banner', '-v', 'error', '-y', ...args],
-      {
-        maxBuffer: opts.maxBuffer ?? 32 * 1024 * 1024,
-        // 卡死的 ffmpeg 不能一直占着进程；长视频加工也远用不了这么久
-        timeout: opts.timeoutMs ?? FFMPEG_TIMEOUT_MS,
-      },
-      (err, _stdout, stderr) => {
-        if (!err) return resolve()
-        const tail = String(stderr ?? '')
-          .trim()
-          .split('\n')
-          .slice(-2)
-          .join(' ')
-        reject(new Error(`ffmpeg 处理失败：${tail || err.message}`))
-      },
-    )
-  })
+export async function ffmpeg(
+  args: string[],
+  opts: { maxBuffer?: number; timeoutMs?: number; cwd?: string } = {},
+) {
+  try {
+    await run(bin.ffmpeg, ['-hide_banner', '-v', 'error', '-y', ...args], {
+      maxBuffer: opts.maxBuffer ?? 32 * 1024 * 1024,
+      timeout: opts.timeoutMs ?? FFMPEG_TIMEOUT_MS,
+      cwd: opts.cwd,
+    })
+  } catch (error) {
+    mediaAbort.getStore()?.signal.throwIfAborted()
+    const failure = error as Error & { stderr?: string | Buffer }
+    const tail = String(failure.stderr ?? '')
+      .trim()
+      .split('\n')
+      .slice(-2)
+      .join(' ')
+    throw new Error(`ffmpeg 处理失败：${tail || failure.message}`)
+  }
 }
 
 /** 音频流的采样率；取不到时按 48k 处理（重采样滤镜只是改率，不影响时长） */
