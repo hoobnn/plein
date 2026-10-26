@@ -94,9 +94,9 @@ export function deriveNode(
     params?: Record<string, unknown>
   } = {},
 ): string | null {
-  const source = engine.scene.get(sourceId)
+  const source = engine.doc.get(sourceId)
   const node = findNode(catalog, nodeType)
-  if (!source || !node) return null
+  if (engine.doc.readOnly || !source || source.locked || !node) return null
   const input = opts.inputPort
     ? node.inputs.find((p) => p.id === opts.inputPort)
     : node.inputs.find((p) => p.type !== 'text')

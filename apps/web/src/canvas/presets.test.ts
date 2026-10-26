@@ -72,9 +72,19 @@ it('删除障碍后不被旧索引占位，不改变已有卡片', () => {
   expect(doc.worldRect(source)).toEqual({ x: 0, y: 0, w: 100, h: 80 })
 })
 
-it('同帧从同一原图派生三次时纵向避让，连线保持来源且可逐步撤销重做', () => {
-  const { doc, source } = setup()
+it('新来源尚未进入索引时也可连续派生并避让，连线保持来源且可逐步撤销重做', () => {
+  const doc = openDoc()
+  docs.push(doc)
   const scene = new Scene(doc)
+  const source = createElement(doc, {
+    kind: 'image',
+    assetId: 'source-image',
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 80,
+  })
+  expect(scene.has(source)).toBe(false)
   const engine = {
     doc,
     scene,
