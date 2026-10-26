@@ -104,7 +104,7 @@ for (const mode of ['switch', 'return', 'home-return', 'duplicate-node'] as cons
     // 素材索引刚起来时还在建，接口会先回 503；这时候当作还没有来源，继续等。
     const sources = async () => {
       const response = await page.request.get(`/api/assets/${asset.id}/sources`)
-      if (!response.ok()) return { items: [] } as MediaSourcesPage
+      if (!response.ok()) return { items: [], nextCursor: null } as MediaSourcesPage
       return (await response.json()) as MediaSourcesPage
     }
     await expect

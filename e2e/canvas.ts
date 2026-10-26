@@ -241,10 +241,10 @@ export async function revealGenerator(page: Page, target?: Locator) {
       const moved = await target.evaluate((el) => {
         const box = el.getBoundingClientRect()
         const engine = window.__plein.engine as Window['__plein']['engine'] & {
-          camera: { panBy(x: number, y: number): void }
+          camera: { panBy(x: number, y: number): void; insets: { left: number } }
         }
         // 目标要躲开左侧栏和窗口边
-        const inset = window.__plein.engine.camera.insets.left
+        const inset = engine.camera.insets.left
         const dx =
           box.left < inset
             ? inset - box.left
