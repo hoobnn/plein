@@ -2,9 +2,11 @@ import type { ChatMessage, ChatTool } from '@plein/plugin-sdk'
 import { CapabilityError } from '@plein/capabilities'
 
 const encoder = new TextEncoder()
-export const TEXT_BYTES = 128 * 1024
+export const TEXT_BYTES = 256 * 1024
 export const RESULT_BYTES = 32 * 1024
-export const TEXT_TOKENS = 32000
+// 内置智能体带上全部画布能力，工具清单本身就占三万多 token；
+// 预算要留得下这份清单，再给对话留出余量。
+export const TEXT_TOKENS = 96000
 export function textCost(value: unknown) {
   const text = JSON.stringify(value)
   let ascii = 0
