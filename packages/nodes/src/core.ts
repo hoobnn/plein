@@ -12,6 +12,7 @@ import { imageProcessNode } from './imageProcess'
 import { sfxNode, transcribeNode } from './audioNodes'
 import { shotAnalysisNode } from './shotAnalysis'
 import { aiSceneNode, aiSummaryNode } from './aiShotAnalysis'
+import { deliveryCheckNode } from './deliveryCheck'
 
 const model = () => z.string().default('').meta({ title: '模型', widget: 'model' })
 /** 分辨率：选项随所选模型变化，空字符串用平台默认 */
@@ -371,6 +372,7 @@ export const corePlugin = definePlugin({
         'plein/shot-analysis@1',
         'plein/shot-scene-draft@1',
         'plein/shot-summary-draft@1',
+        'plein/delivery-check@1',
         'plein/character@1',
         'plein/scene@1',
         'plein/prop@1',
@@ -400,6 +402,7 @@ export const corePlugin = definePlugin({
     shotAnalysisNode,
     aiSceneNode,
     aiSummaryNode,
+    deliveryCheckNode,
     characterNode,
     sceneNode,
     propNode,

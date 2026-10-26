@@ -39,6 +39,8 @@ import { mediaCaps, missingCapability, withMediaAbort } from '../assets/media'
 import { animaticExecutor } from './animatic'
 import { shotAnalysisExecutor } from './shot-analysis'
 import { aiSceneExecutor, aiSummaryExecutor } from './ai-shot-analysis'
+import { deliveryCheckExecutor } from './delivery-check'
+import { freezeSubtitleEvidence } from './subtitle-evidence'
 import { sfx, transcription, speechDirection, speechVoice } from './audio'
 
 /** 节点选的模型：不替用户挑，没选就报错 */
@@ -381,6 +383,7 @@ const sequence = defineExecutor(sequenceNode, async (ctx) => {
   if (spec.subtitles?.cues.length && caps.ffmpeg && !caps.subtitles)
     throw new ProviderError('unavailable', missingCapability('subtitles'), { retryable: false })
   ctx.progress(0, '合成中…')
+  const subtitleEvidence = freezeSubtitleEvidence(spec)
   const clipEvidence =
     params.instanceVersion === 2
       ? {
@@ -395,6 +398,7 @@ const sequence = defineExecutor(sequenceNode, async (ctx) => {
       {
         type: 'video',
         ...out,
+        ...(subtitleEvidence ? { subtitleEvidence } : {}),
         ...(clipEvidence ? { clipEvidence } : {}),
       },
     ],
@@ -425,5 +429,6 @@ export const coreServerPlugin = defineServerPlugin(corePlugin, {
     shotAnalysisExecutor,
     aiSceneExecutor,
     aiSummaryExecutor,
+    deliveryCheckExecutor,
   ],
 })

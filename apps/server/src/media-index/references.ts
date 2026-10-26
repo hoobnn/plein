@@ -8,6 +8,8 @@ import {
 import {
   SHOT_ANALYSIS_TYPE,
   shotAnalysisAssets,
+  DELIVERY_CHECK_TYPE,
+  deliveryCheckAssets,
   isAiAnalysisType,
   aiAnalysisAssets,
 } from '@plein/nodes'
@@ -75,6 +77,9 @@ export function documentReferences(doc: PleinDoc): AssetReference[] {
       else if (el.nodeType === SHOT_ANALYSIS_TYPE && r.value.type === 'json')
         for (const assetId of shotAnalysisAssets(r.value.value))
           add(assetId, `result/${r.id}/analysis/${assetId}`, r.id, adopted.has(r.id), true)
+      else if (el.nodeType === DELIVERY_CHECK_TYPE && r.value.type === 'json')
+        for (const assetId of deliveryCheckAssets(r.value.value))
+          add(assetId, `result/${r.id}/delivery-check/${assetId}`, r.id, adopted.has(r.id), true)
       else if (isAiAnalysisType(el.nodeType) && r.value.type === 'json')
         for (const assetId of aiAnalysisAssets(r.value.value))
           add(assetId, `result/${r.id}/ai-analysis/${assetId}`, r.id, adopted.has(r.id), true)

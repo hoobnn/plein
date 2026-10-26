@@ -34,6 +34,8 @@ import { compatibleBaseURL, COMPATIBLE_ID, createCompatiblePlugin } from '@plein
 import { Agent, Dispatcher1Wrapper } from 'undici'
 import { composeVideo } from '../assets/compose'
 import { analyzeVideo } from '../assets/shot-analysis'
+import { checkVideo } from '../assets/delivery-check'
+import { DELIVERY_CHECK_LIMITS } from '@plein/nodes'
 import { hasFfmpeg, probeMedia, withMediaAbort } from '../assets/media'
 import { SHOT_ANALYSIS_LIMITS } from '@plein/nodes'
 import type { AssetStore } from '../assets/store'
@@ -1090,6 +1092,20 @@ export class PluginHost {
       },
       media: {
         probe: (ref) => this.probe(manifest, ownerId, ref),
+        checkVideo: async (ref, request) => {
+          const localSignal = AbortSignal.any([
+            signal,
+            AbortSignal.timeout(DELIVERY_CHECK_LIMITS.timeoutMs),
+          ])
+          return withMediaAbort(localSignal, async () => {
+            await this.mediaPath(manifest, ownerId, ref)
+            return this.assets.activity.run(() =>
+              checkVideo(this.assets, ownerId, ref, request, localSignal, (fraction) =>
+                opts.onProgress?.(fraction),
+              ),
+            )
+          })
+        },
         analyzeVideo: async (ref, options) => {
           const localSignal = AbortSignal.any([
             signal,

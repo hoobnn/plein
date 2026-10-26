@@ -15,6 +15,7 @@ import { AssetDownloadButton } from '../../shell/AssetDownloadButton'
 import { useCanvas } from '../../stores/canvas'
 import { useSession } from '../../stores/session'
 import { CreativeReviewForm } from '../storyboard/CreativeReviewForm'
+import { DeliveryCheck } from '../delivery-check/DeliveryCheck'
 import { sequenceTupleLabel } from './instanceModel'
 
 const timecode = (s: number) =>
@@ -275,6 +276,14 @@ export function DeliveryReview({
         </div>
       </div>
       <aside className="w-full shrink-0 space-y-3 lg:w-80">
+        {record.kind === 'film' && (
+          <DeliveryCheck
+            key={`${node.id}:${record.id}`}
+            engine={engine}
+            node={node}
+            record={record}
+          />
+        )}
         <label className="block text-xs">
           交付版本
           <select

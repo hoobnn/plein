@@ -127,6 +127,7 @@ function patch(
   text: (s: string) => string,
   ids?: ReadonlyMap<string, string>,
 ) {
+  if (el.nodeType === 'plein/delivery-check') return
   // doc's typed copier already remaps instance/edge/audio/scope IDs and the key.
   // Rendered subtitle text and fixed generation origins are literal evidence, not @ prompts.
   if (el.nodeType === 'plein/sequence' && el.params?.instanceVersion === 2) return

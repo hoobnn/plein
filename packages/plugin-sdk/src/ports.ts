@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { SubtitlePlanEvidence } from './media'
 
 /** 端口数据类型，与文档里节点元素的端口一致 */
 export const PortType = z.enum(['text', 'image', 'video', 'audio', 'json', 'any'])
@@ -27,6 +28,8 @@ export interface AssetRef {
 
 /** 端口值的附加信息 */
 export interface PortValueMeta {
+  /** Exact plan used by sequence compose; consumed by the host's delivery record writer. */
+  subtitleEvidence?: SubtitlePlanEvidence
   /** 来自画布上的哪个元素：同一端口有多个上游时，执行器靠它对应参数里的设置 */
   source?: string
   /** Exact connected output and edge. source alone cannot distinguish two ports or uses. */

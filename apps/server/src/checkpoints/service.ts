@@ -267,6 +267,8 @@ export class CheckpointService {
         for (const el of doc!.elements()) {
           const m = doc!.mutable(el.id)!
           const checkParams = m.get('params')
+          if (el.nodeType === 'plein/delivery-check' && checkParams instanceof Y.Map)
+            checkParams.set('historical', true)
           if (
             el.nodeType === 'plein/sequence' &&
             checkParams instanceof Y.Map &&

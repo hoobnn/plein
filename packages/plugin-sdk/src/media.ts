@@ -117,6 +117,24 @@ export interface MediaService {
   compose(spec: ComposeSpec): Promise<AssetRef>
   /** Local shot analysis, where supported by the host. The caller validates the versioned manifest. */
   analyzeVideo?(ref: AssetRef, options: VideoAnalysisOptions): Promise<unknown>
+  /** Free local technical inspection; never calls a model or confirms delivery. */
+  checkVideo?(ref: AssetRef, request: DeliveryCheckRequest): Promise<unknown>
+}
+
+export interface SubtitlePlanEvidence {
+  version: 1
+  basis: 'executed-sequence-spec'
+  enabled: boolean
+  cues: ComposeCue[]
+}
+export interface DeliveryCheckRequest {
+  scope: { canvasId: string; boardId: string; sequenceId: string }
+  deliveryId: string
+  runId: string
+  resultId: string
+  source: AssetRef
+  goal: { id: string; snapshot: string }
+  subtitles?: SubtitlePlanEvidence & { assetId: string; resultId: string }
 }
 
 export interface VideoAnalysisOptions {

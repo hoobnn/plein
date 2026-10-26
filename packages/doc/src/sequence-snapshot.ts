@@ -31,7 +31,7 @@ export function snapshotResultEvidence<T>(value: T): T {
   ) as T
 }
 
-/** New executed provenance is immutable evidence; legacy delivery shape keeps its existing path. */
+/** New executed provenance/subtitle evidence owns its values; old legacy records keep their path. */
 export function snapshotTypedDeliveries<T>(value: T): T {
   const typed =
     Array.isArray(value) &&
@@ -39,7 +39,8 @@ export function snapshotTypedDeliveries<T>(value: T): T {
       (record) =>
         record &&
         typeof record === 'object' &&
-        (record.historical === true ||
+        ('subtitleEvidence' in record ||
+          record.historical === true ||
           (Array.isArray(record.sources) &&
             record.sources.some(
               (source: unknown) =>

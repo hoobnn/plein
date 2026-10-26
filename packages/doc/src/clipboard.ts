@@ -103,6 +103,9 @@ export function importElements(
                 ),
               }
             : {}),
+          ...(e.nodeType === 'plein/delivery-check'
+            ? { params: copyDeliveryCheck(e.params, remap, opts.canvasId) }
+            : {}),
           ...(e.production
             ? { production: copyProduction(e.production, remap, opts.canvasId) }
             : {}),
@@ -168,6 +171,39 @@ export function importElements(
     opts.onImport?.(remap)
   }, doc.origin)
   return roots
+}
+
+/** Frozen check text is evidence, not editable @-reference text. Only scope identities remap. */
+function copyDeliveryCheck(
+  params: Record<string, unknown> | undefined,
+  ids: ReadonlyMap<string, string>,
+  canvasId?: string,
+) {
+  const request = params?.request
+  if (!request || typeof request !== 'object' || Array.isArray(request))
+    return { ...params, historical: true }
+  const value = request as Record<string, unknown>,
+    scope = value.scope
+  if (!scope || typeof scope !== 'object' || Array.isArray(scope))
+    return { ...params, historical: true }
+  const target = scope as Record<string, unknown>
+  return {
+    ...params,
+    historical: true,
+    request: {
+      ...value,
+      scope: {
+        ...target,
+        ...(canvasId ? { canvasId } : {}),
+        ...(typeof target.boardId === 'string'
+          ? { boardId: ids.get(target.boardId) ?? target.boardId }
+          : {}),
+        ...(typeof target.sequenceId === 'string'
+          ? { sequenceId: ids.get(target.sequenceId) ?? target.sequenceId }
+          : {}),
+      },
+    },
+  }
 }
 
 /** 原地复制一份（默认向右下偏移），返回新的顶层 id */

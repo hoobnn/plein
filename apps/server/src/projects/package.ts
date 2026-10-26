@@ -30,6 +30,8 @@ import {
   normalizeLibraryImages,
   SHOT_ANALYSIS_TYPE,
   shotAnalysisAssets,
+  DELIVERY_CHECK_TYPE,
+  deliveryCheckAssets,
   isAiAnalysisType,
   aiAnalysisAssets,
   AiDraftOrigin,
@@ -268,6 +270,9 @@ async function planExport(
               if ('assetId' in r.value) refAsset(r.value.assetId, where, true)
               else if (el.nodeType === SHOT_ANALYSIS_TYPE && r.value.type === 'json')
                 for (const assetId of shotAnalysisAssets(r.value.value))
+                  refAsset(assetId, where, true)
+              else if (el.nodeType === DELIVERY_CHECK_TYPE && r.value.type === 'json')
+                for (const assetId of deliveryCheckAssets(r.value.value))
                   refAsset(assetId, where, true)
               else if (isAiAnalysisType(el.nodeType) && r.value.type === 'json')
                 for (const assetId of aiAnalysisAssets(r.value.value))
@@ -1003,6 +1008,8 @@ export function remapDoc(data: Uint8Array, map: ReadonlyMap<string, string>): Ui
             )
         }
         const params = m.get('params')
+        if (m.get('nodeType') === DELIVERY_CHECK_TYPE && params instanceof Y.Map)
+          params.set('historical', true)
         if (params instanceof Y.Map) {
           for (const [k, v] of params.entries()) {
             if (m.get('nodeType') === 'plein/sequence' && params.get('instanceVersion') === 2) {

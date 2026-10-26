@@ -13,6 +13,7 @@ import {
   sequenceNode,
   sequenceSize,
   sequenceTimeline,
+  SubtitlePlanEvidence,
 } from '@plein/nodes'
 import type { PortValue } from '@plein/plugin-sdk'
 import { z } from 'zod'
@@ -191,6 +192,7 @@ export function appendDeliveryRecord(
           ? boards[0]
           : undefined
         : rows.map((r) => origins[r.source ?? '']?.storyboard).find(Boolean)
+    const evidence = SubtitlePlanEvidence.safeParse(output?.subtitleEvidence)
     return [
       {
         id: `delivery_${result.id}`,
@@ -206,6 +208,15 @@ export function appendDeliveryRecord(
         boardId,
         sources,
         notes: [],
+        ...(evidence.success
+          ? {
+              subtitleEvidence: {
+                ...evidence.data,
+                assetId: result.value.assetId,
+                resultId: result.id,
+              },
+            }
+          : {}),
       },
     ]
   })

@@ -406,6 +406,107 @@ describe('fixed segment and instance guards', () => {
     expect(doc.get(sequence)!.deliveries![0]!.sources[0]!.sourceOut).toBe(6)
     doc.destroy()
   })
+  it.each(['valid', 'invalid', 'undefined'] as const)(
+    'legacy delivery with %s subtitleEvidence owns input/read snapshots while explicit feedback still writes',
+    (kind) => {
+      const doc = createDoc(undefined, { schedule: () => {} })
+      const evidence =
+        kind === 'undefined'
+          ? undefined
+          : {
+              version: kind === 'valid' ? 1 : 0,
+              basis: kind === 'valid' ? 'executed-sequence-spec' : 'invalid-retained-evidence',
+              enabled: true,
+              cues: [{ start: 0, end: 2, text: 'executed subtitle @literal' }],
+              assetId: 'a'.repeat(64),
+              resultId: 'result',
+              extra: { values: ['original', 7] },
+            }
+      const input: DeliveryRecord = {
+        id: 'legacy-delivery',
+        resultId: 'result',
+        runId: 'run',
+        assetId: 'a'.repeat(64),
+        kind: 'film',
+        version: 'v1',
+        createdAt: 1,
+        width: 1280,
+        height: 720,
+        duration: 2,
+        sources: [{ source: 'legacy-source', start: 0, end: 2 }],
+        notes: [],
+        subtitleEvidence: evidence as unknown as DeliveryRecord['subtitleEvidence'],
+      }
+      const expected = evidence === undefined ? undefined : JSON.parse(JSON.stringify(evidence))
+      const id = createElement(doc, {
+        kind: 'node',
+        nodeType: 'plein/sequence',
+        nodeVersion: 1,
+        x: 0,
+        y: 0,
+        w: 100,
+        h: 100,
+        deliveries: [input],
+      })
+      const { subtitleEvidence: _evidence, ...legacy } = input
+      const legacyId = createElement(doc, {
+        kind: 'node',
+        x: 0,
+        y: 0,
+        w: 100,
+        h: 100,
+        deliveries: [legacy],
+      })
+      expect(doc.get(legacyId)!.deliveries![0]).toBe(legacy)
+      expect(Object.isFrozen(legacy)).toBe(false)
+      doc.undo.clear()
+      let updates = 0
+      doc.ydoc.on('update', () => updates++)
+      const before = Y.encodeStateAsUpdate(doc.ydoc)
+      if (evidence) {
+        evidence.cues[0]!.text = 'outside input mutation'
+        evidence.assetId = 'b'.repeat(64)
+        evidence.extra.values.push('outside input extension')
+      }
+      expect(Y.encodeStateAsUpdate(doc.ydoc)).toEqual(before)
+      const read = doc.get(id)!.deliveries![0]!
+      expect(Reflect.set(read, 'subtitleEvidence', { cues: [] })).toBe(false)
+      expect(Reflect.set(doc.get(id)!, 'deliveries', [])).toBe(false)
+      if (read.subtitleEvidence)
+        expect(Reflect.set(read.subtitleEvidence.cues[0]!, 'text', 'outside read mutation')).toBe(
+          false,
+        )
+      expect(read.subtitleEvidence).toEqual(expected)
+      expect(Y.encodeStateAsUpdate(doc.ydoc)).toEqual(before)
+      expect(updates).toBe(0)
+      expect(doc.undo.undoStack).toHaveLength(0)
+      const raw = new Y.Doc()
+      Y.applyUpdate(raw, before)
+      const reloaded = createDoc(raw, { schedule: () => {} })
+      expect(reloaded.get(id)!.deliveries![0]!.subtitleEvidence).toEqual(expected)
+      expect(Reflect.set(reloaded.get(id)!.deliveries![0]!, 'subtitleEvidence', {})).toBe(false)
+      const notes = [{ id: 'n', time: 1, text: 'explicit feedback', resolved: false }]
+      expect(editDelivery(doc, id, input.id, { notes })).toBe(true)
+      notes[0]!.text = 'outside notes mutation'
+      expect(doc.get(id)!.deliveries![0]!.notes[0]!.text).toBe('explicit feedback')
+      expect(updates).toBeGreaterThan(0)
+      expect(doc.undo.undoStack).toHaveLength(1)
+      doc.undo.undo()
+      expect(doc.get(id)!.deliveries![0]!.notes).toEqual([])
+      doc.undo.redo()
+      expect(doc.get(id)!.deliveries![0]!.notes[0]!.text).toBe('explicit feedback')
+      expect(editDelivery(doc, id, input.id, { notes: [{ ...notes[0]!, resolved: true }] })).toBe(
+        true,
+      )
+      expect(editDelivery(doc, id, input.id, { confirm: true })).toBe(true)
+      expect(doc.get(id)!.deliveries![0]!.confirmedAt).toEqual(expect.any(Number))
+      expect(doc.get(id)!.deliveries![0]!.subtitleEvidence).toEqual(expected)
+      reloaded.destroy()
+      raw.destroy()
+      doc.destroy()
+    },
+  )
+
   it('typed executed delivery provenance is isolated while explicit notes/confirmation still write', () => {
     const doc = createDoc()
     const input: DeliveryRecord = {
