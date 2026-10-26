@@ -22,8 +22,8 @@
     "@plein/protocol": "workspace:*",
     "@types/node": "^26.6.5",
     "electron": "^44.9.1",
-    "electron-builder": "^26.17.0",
-    "electron-updater": "^6.8.9",
+    "electron-builder": "^26.18.0",
+    "electron-updater": "^6.8.11",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite-plus": "catalog:"

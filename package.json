@@ -39,7 +39,7 @@
     "perf:compare": "pnpm --filter @plein/server exec node --import tsx ../../e2e/perf/compare.ts"
   },
   "devDependencies": {
-    "@commitlint/cli": "^21.2.3",
+    "@commitlint/cli": "^21.2.4",
     "@playwright/test": "1.64.1",
     "@types/node": "^26.6.5",
     "@vitest/coverage-v8": "5.0.5",
