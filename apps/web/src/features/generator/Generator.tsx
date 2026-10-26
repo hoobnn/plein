@@ -87,7 +87,7 @@ function GeneratorHost({ engine }: { engine: Engine }) {
           </button>
         </div>
       ) : (
-        <Panel key={el.id} engine={engine} el={el} node={node} catalog={catalog} />
+        <GeneratorPanel key={el.id} engine={engine} el={el} node={node} catalog={catalog} />
       )}
     </NodeBelow>
   )
@@ -145,7 +145,7 @@ function NodeBelow({
   )
 }
 
-function Panel({
+export function GeneratorPanel({
   engine,
   el,
   node,

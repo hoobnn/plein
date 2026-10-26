@@ -73,6 +73,7 @@ import { DeliveryReview, useDeliveryReviewSession } from './DeliveryReview'
 import { MediaReloadContext } from './media'
 import { sequenceParameterProblem } from './parameters'
 import { sequenceInputValue, sequenceSourceIdentity } from './instanceModel'
+import { SequenceRework } from './SequenceRework'
 import { AddFixedInstance, SequenceInstanceTools, SOUND_LABELS } from './SequenceInstanceTools'
 
 const seconds = (s: number | undefined) => (s === undefined ? '—' : `${s.toFixed(1)} 秒`)
@@ -1360,6 +1361,13 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                           onNotice={setSubtitleError}
                         />
                       )}
+                      <SequenceRework
+                        key={`rework:${row.clipInstanceId ?? row.source}`}
+                        engine={engine}
+                        sequenceId={id}
+                        row={row}
+                        writable={writable}
+                      />
                       <ClipSettings
                         key={`${rowKey(row, current)}:${sequenceSourceIdentity(row)}`}
                         row={row}
