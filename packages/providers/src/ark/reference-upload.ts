@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { TosClient } from '@volcengine/tos-sdk/browser/index.js'
+import { TosClient } from '@volcengine/tos-sdk'
 import { type AssetRef, type ProviderContext, ProviderError } from '@plein/plugin-sdk'
 
 export interface ReferenceStorage {
@@ -7,7 +7,7 @@ export interface ReferenceStorage {
   referenceRegion: string
 }
 
-/** 使用官方纯 JS 入口避开 Node CRC 原生模块；SDK 只在本地签名；所有网络请求仍走宿主的权限、取消与网络代理。 */
+/** 走 SDK 的 Node 入口：浏览器入口深引用 axios 内部模块（axios/lib/core/createError 等），带漏洞修复的 axios 已删除这些模块，改用公开 API 即可；SDK 只在本地签名，所有网络请求仍走宿主的权限、取消与网络代理。 */
 export function referenceUploader(ctx: ProviderContext<ReferenceStorage>) {
   const bucket = ctx.settings.referenceBucket.trim()
   const region = ctx.settings.referenceRegion.trim()
