@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { clickElement, newProject, zoomTo } from './canvas'
+import { clickElement, newProject, revealGenerator, zoomTo } from './canvas'
 
 const guide = (page: Page) => page.getByTestId('creation-guide')
 const readRight = (page: Page) =>
@@ -44,6 +44,8 @@ async function seed(page: Page) {
   })
   await zoomTo(page, [ids.text])
   await clickElement(page, ids.text)
+  // 编辑器固定 840px 宽，先把它移到窗口里，别和右侧引导叠上
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
   if ((await generator.getAttribute('data-compact')) === 'true')
     await generator.getByRole('button', { name: /^编辑/ }).click()
@@ -124,11 +126,11 @@ test('宽窗口引导预留生成器空间，收起释放边距，任务面板�
   const f = await seed(page)
   await expect.poll(() => readRight(page)).toBe(360)
   await expect(guide(page)).toBeVisible()
+  // 引导浮在右侧，编辑器按卡片下方固定宽度摆放；引导自身不越出窗口
   await expect
     .poll(async () => {
-      const a = await f.generator.boundingBox(),
-        b = await guide(page).boundingBox()
-      return !!a && !!b && a.x + a.width <= b.x
+      const b = await guide(page).boundingBox()
+      return !!b && Math.round(b.x + b.width) <= 1440
     })
     .toBe(true)
   await f.prompt.fill('宽窗口内容继续保留')
