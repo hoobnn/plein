@@ -686,3 +686,41 @@
     height: 16px;
   }
 }
+
+/* 镜头流程表格：表头固定，正文按行对齐，长提示词在独立窗口编辑。 */
+.shot-flow-table th {
+  padding: 12px 10px;
+  text-align: left;
+  font-weight: 500;
+  border-bottom: 1px solid var(--line);
+}
+.shot-flow-table td {
+  padding: 10px 8px;
+  vertical-align: top;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.shot-flow-table td:last-child {
+  border-right: 0;
+}
+.shot-flow-table [data-storyboard-field] textarea {
+  min-height: 64px;
+}
+.shot-flow-table td:nth-child(2) label {
+  gap: 4px;
+}
+.shot-flow-table td:nth-child(2) input {
+  width: 44px;
+  padding-inline: 2px;
+}
+
+.shot-flow-table th:first-child,
+.shot-flow-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+.shot-flow-table th:first-child {
+  background: var(--surface-2);
+}

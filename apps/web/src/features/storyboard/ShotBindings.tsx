@@ -68,11 +68,13 @@ export function DialogueCell({
   shot,
   readDialogue,
   onChange,
+  compact = false,
 }: {
   engine: Engine
   shot: Shot
   readDialogue(): ShotDialogue[]
   onChange(update: (dialogue: ShotDialogue[]) => ShotDialogue[]): void
+  compact?: boolean
 }) {
   // 本地结构操作会先重绘本组件，父级的文档订阅按帧更新；渲染也读取最新数组。
   const lines = normalizeDialogue(shot.id, readDialogue())
@@ -140,7 +142,7 @@ export function DialogueCell({
     setFocusId((remaining[i] ?? remaining[i - 1])?.id ?? 'empty')
   }
   return (
-    <div className="min-w-0 rounded-lg bg-surface-2 p-2">
+    <div className={compact ? 'min-w-0' : 'min-w-0 rounded-lg bg-surface-2 p-2'}>
       {(lines.length ? lines : [{ id: 'empty', character: '', line: '' }]).map((line, i) => (
         <div
           key={line.id}
@@ -164,7 +166,7 @@ export function DialogueCell({
             }}
             onChange={(value) => change(line.id!, value)}
           />
-          {line.character && (
+          {!compact && line.character && (
             <AssetBindingSelect
               engine={engine}
               name={line.character}
@@ -177,7 +179,7 @@ export function DialogueCell({
               }
             />
           )}
-          {lines.length > 0 && (
+          {!compact && lines.length > 0 && (
             <div className="flex gap-1">
               <button
                 type="button"
@@ -209,17 +211,19 @@ export function DialogueCell({
           )}
         </div>
       ))}
-      <button
-        type="button"
-        className="ui-btn ui-btn-xs ui-btn-quiet"
-        onClick={() => {
-          const id = newDialogueId()
-          structure((current) => [...current, { id, character: '', line: '' }])
-          setFocusId(id)
-        }}
-      >
-        添加台词
-      </button>
+      {!compact && (
+        <button
+          type="button"
+          className="ui-btn ui-btn-xs ui-btn-quiet"
+          onClick={() => {
+            const id = newDialogueId()
+            structure((current) => [...current, { id, character: '', line: '' }])
+            setFocusId(id)
+          }}
+        >
+          添加台词
+        </button>
+      )}
     </div>
   )
 }

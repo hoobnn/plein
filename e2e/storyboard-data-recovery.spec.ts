@@ -31,6 +31,7 @@ async function fixture(page: Page) {
   }
   await open()
   const editor = page.getByRole('dialog', { name: '分镜表', exact: true })
+  await editor.getByRole('button', { name: '详细卡片', exact: true }).click()
   await expect(editor.getByRole('article')).toHaveCount(2)
   const read = () => page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.shots, id)
   const write = (shots: unknown) =>

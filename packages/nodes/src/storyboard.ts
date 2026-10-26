@@ -32,6 +32,8 @@ export const Shot = z.object({
   imagePrompt: z.string().default(''),
   /** 视频运动提示词 */
   motionPrompt: z.string().default(''),
+  /** 每镜独立的运镜意图，只合入视频提示词。 */
+  cameraMotion: z.string().optional(),
   /** 用户手改过：重新生成时不覆盖 */
   edited: z.boolean().optional(),
 })
@@ -65,6 +67,7 @@ export const storyboardNode = defineNode({
       placeholder: '补充要求，如：竖屏短剧节奏，每镜 3–5 秒',
     }),
     shotCount: z.number().int().min(1).max(30).default(8).meta({ title: '镜头数' }),
+    visualStyle: z.string().optional().meta({ title: '全局视觉风格', widget: 'hidden' }),
     shots: z.array(Shot).default([]).meta({ title: '分镜表', widget: 'hidden' }),
   }),
   applyOutputs(params, outputs) {
@@ -127,13 +130,29 @@ export function planParams(
     .join('；')
   if (role === 'image') {
     return {
-      prompt: [ctx.mentions, shot.imagePrompt || shot.description, direction]
+      prompt: [
+        ctx.mentions && !(shot.imagePrompt || shot.description).includes(ctx.mentions)
+          ? ctx.mentions
+          : '',
+        shot.imagePrompt || shot.description,
+        (shot.imagePrompt || shot.description).includes(direction) ? '' : direction,
+      ]
         .filter(Boolean)
         .join(' '),
     }
   }
   return {
-    prompt: [shot.motionPrompt || shot.description, direction].filter(Boolean).join(' '),
+    prompt: [
+      shot.motionPrompt || shot.description,
+      direction,
+      shot.cameraMotion?.trim() && `运镜：${shot.cameraMotion.trim()}`,
+    ]
+      .filter(Boolean)
+      .filter(
+        (part, i, all) =>
+          !all.slice(0, i).some((previous) => String(previous).includes(String(part))),
+      )
+      .join(' '),
     duration: Math.max(1, Math.min(30, Math.round(shot.duration))),
   }
 }
@@ -177,6 +196,7 @@ export function planVersion(shots: Shot[]): string {
       s.imagePrompt,
       s.motionPrompt,
       s.edited ?? false,
+      ...(s.cameraMotion ? [s.cameraMotion] : []),
     ]),
   )
   let h = 0x811c9dc5

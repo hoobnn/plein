@@ -30,6 +30,7 @@ for (const [width, height] of [
     const at = await centerOf(page, id)
     await page.mouse.dblclick(at.x, at.y)
     const dialog = page.getByRole('dialog', { name: '分镜表', exact: true })
+    await dialog.getByRole('button', { name: '详细卡片', exact: true }).click()
     await expect(dialog.getByRole('article')).toHaveCount(40)
     await page.setViewportSize({ width, height })
     const body = dialog.getByTestId('storyboard-shots')

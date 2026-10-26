@@ -8,10 +8,8 @@ import {
   type Shot,
   type ShotRole,
 } from '@plein/nodes'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useDocVersion } from '../../canvas/hooks'
-import { mentionTargets } from '../../canvas/nodes'
-import { MentionTextarea } from '../../ui/MentionTextarea'
 import { detachShot, expandedNodes, expandShots, planDiffs, shotsOf } from './model'
 import type { StoryboardBatchRequest } from '@plein/protocol'
 import { useCanvas } from '../../stores/canvas'
@@ -34,9 +32,8 @@ import { storyboardDataProblem } from './dataRecovery'
 import { SourceMappingPanel } from './SourceMappingPanel'
 import { ShotControls } from './ShotControls'
 import { ShotStatePanel } from './ShotStatePanel'
-
-const cell =
-  'resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
+import { DurationCell, TextCell } from './StoryboardCells'
+import { ShotFlow, ShotFlowHeader, ShotPromptDialog } from './ShotFlow'
 
 const splitNames = (text: string) =>
   text
@@ -84,6 +81,22 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const [syncScope, setSyncScope] = useState<string[] | null>(null)
   const [batchRequest, setBatchRequest] = useState<StoryboardBatchRequest | null>(null)
   const [mode, setMode] = useState<'edit' | 'review' | 'sources'>('edit')
+  const [flowStage, setFlowStage] = useState<1 | 2 | 3>(1)
+  const [layout, setLayout] = useState<'table' | 'cards'>(() => {
+    try {
+      return localStorage.getItem('plein:storyboard:layout') === 'cards' ? 'cards' : 'table'
+    } catch {
+      return 'table'
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem('plein:storyboard:layout', layout)
+    } catch {
+      /* 本地偏好不可用时仍可切换视图。 */
+    }
+  }, [layout])
+  const [promptShot, setPromptShot] = useState<string | null>(null)
   const [controlShot, setControlShot] = useState<string | null>(null)
   const [stateShot, setStateShot] = useState<string | null>(null)
   const [structureError, setStructureError] = useState<string | null>(null)
@@ -102,13 +115,17 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     const article = focusTarget.shotId ? shotElements.current.get(focusTarget.shotId) : null
     const target = focusTarget.shotId
       ? article?.querySelector<HTMLElement>(
-          focusTarget.description ? '[data-storyboard-field="画面"] textarea' : 'h3 button',
+          focusTarget.description
+            ? '[data-storyboard-field="画面"] textarea'
+            : layout === 'table'
+              ? 'input[type="checkbox"]'
+              : 'h3 button',
         )
       : addButton.current
     if (!target) return
     target.focus({ preventScroll: true })
     target.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [focusTarget])
+  }, [focusTarget, layout])
   const allCollapsed = shots.length > 0 && shots.every((s) => collapsed.has(s.id))
   const expanded = expandedNodes(engine, id)
   const diffs = planDiffs(engine, id)
@@ -166,6 +183,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         !batchRequest &&
         !controlShot &&
         !stateShot &&
+        !promptShot &&
         !dialogOpen() &&
         !engine.doc.readOnly &&
         state.engine === engine &&
@@ -184,6 +202,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         !batchRequest &&
         !controlShot &&
         !stateShot &&
+        !promptShot &&
         !dialogOpen()
       )
         onClose()
@@ -196,6 +215,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     batchRequest,
     controlShot,
     stateShot,
+    promptShot,
     regenerate.open,
     engine,
     id,
@@ -377,7 +397,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
 
   const btn = 'ui-btn ui-btn-secondary'
   return (
-    <Modal label="分镜表" onClose={onClose} className="storyboard-editor max-w-350">
+    <Modal label="分镜表" onClose={onClose} className="storyboard-editor max-w-[1800px]">
       <ModalHeader
         title={el?.name ?? '分镜'}
         onClose={onClose}
@@ -390,10 +410,23 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         <div role="group" aria-label="分镜视图" className="flex gap-1">
           <button
             type="button"
-            className={mode === 'edit' ? 'ui-btn ui-btn-primary' : btn}
-            onClick={() => setMode('edit')}
+            className={mode === 'edit' && layout === 'table' ? 'ui-btn ui-btn-primary' : btn}
+            onClick={() => {
+              setMode('edit')
+              setLayout('table')
+            }}
           >
-            编辑分镜
+            镜头表格
+          </button>
+          <button
+            type="button"
+            className={layout === 'cards' && mode === 'edit' ? 'ui-btn ui-btn-primary' : btn}
+            onClick={() => {
+              setMode('edit')
+              setLayout('cards')
+            }}
+          >
+            详细卡片
           </button>
           <button
             type="button"
@@ -420,129 +453,153 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         >
           节奏样片
         </button>
-        <button ref={addButton} type="button" className={btn} onClick={addShot}>
-          <Icon name="plus" />
-          添加镜头
-        </button>
+        {!(mode === 'edit' && layout === 'table') && (
+          <button ref={addButton} type="button" className={btn} onClick={addShot}>
+            <Icon name="plus" />
+            添加镜头
+          </button>
+        )}
       </ModalHeader>
+      <ShotFlowHeader
+        engine={engine}
+        shots={shots}
+        stage={flowStage}
+        onStage={(next) => {
+          setFlowStage(next)
+          setMode('edit')
+          setLayout('table')
+        }}
+      />
       {structureError && (
         <p role="alert" className="flex-none border-b border-line px-5 py-3 text-sm text-danger">
           {structureError}
         </p>
       )}
-      <div
-        role="toolbar"
-        aria-label="分镜批量操作"
-        className="flex flex-none flex-wrap items-center gap-2 border-b border-line px-5 py-3"
+      <details
+        open={layout === 'cards' || mode !== 'edit'}
+        className="border-b border-line px-5 py-2"
       >
-        <span className="mr-1 text-xs text-ink-subtle">作用于{scope}</span>
-        <button
-          type="button"
-          className={btn}
-          disabled={!shots.length}
-          onClick={() => expand('new')}
+        <summary className="cursor-pointer text-xs text-ink-subtle">
+          节点与批量操作 · {scope}
+        </summary>
+        <div
+          role="toolbar"
+          aria-label="分镜批量操作"
+          className="flex flex-none flex-wrap items-center gap-2 border-b border-line px-5 py-3"
         >
-          <Icon name="workflow" />
-          展开为节点
-        </button>
-        <button
-          type="button"
-          className={btn}
-          disabled={!expanded.size}
-          title="给已展开的镜头补齐缺的角色和新增的台词，已有节点不动"
-          onClick={() => expand('update')}
-        >
-          <Icon name="retry" />
-          更新展开
-        </button>
-        <span aria-hidden="true" className="ui-bar-sep" />
-        <Menu.Root modal={false} open={regenerate.open} onOpenChange={regenerate.onOpenChange}>
-          <Menu.Trigger {...regenerate.triggerProps} className={btn} disabled={!expanded.size}>
-            全部重新生成
-            <Icon name="chevronDown" size={12} />
-          </Menu.Trigger>
-          <Menu.Portal>
-            <Menu.Positioner
-              side="bottom"
-              align="start"
-              sideOffset={8}
-              collisionPadding={8}
-              className="z-70"
-            >
-              <Menu.Popup
-                aria-label="全部重新生成"
-                className="ui-menu pointer-events-auto w-44 outline-none"
-              >
-                {(['image', 'video', 'speech', 'sfx'] as const).map((role) => (
-                  <Menu.Item key={role} className="ui-menu-item" onClick={() => batch(role, true)}>
-                    {{ image: '分镜图', video: '视频', speech: '配音', sfx: '音效' }[role]}
-                  </Menu.Item>
-                ))}
-              </Menu.Popup>
-            </Menu.Positioner>
-          </Menu.Portal>
-        </Menu.Root>
-        <button
-          type="button"
-          className={btn}
-          disabled={!expanded.size}
-          onClick={() => batch('image')}
-        >
-          <Icon name="image" />
-          批量出分镜图
-        </button>
-        <button
-          type="button"
-          className={btn}
-          disabled={!expanded.size}
-          onClick={() => batch('video')}
-        >
-          <Icon name="video" />
-          批量生成视频
-        </button>
-        <button
-          type="button"
-          className="ui-btn ui-btn-primary"
-          disabled={!expanded.size}
-          onClick={() => batch('speech')}
-        >
-          <Icon name="mic" />
-          批量配音
-        </button>
-        <button
-          type="button"
-          className={btn}
-          disabled={!expanded.size}
-          onClick={() => batch('sfx')}
-        >
-          批量音效
-        </button>
-        <button
-          type="button"
-          className={btn}
-          disabled={!scopeDiffs}
-          title="看分镜表改动和已展开节点的出入，确认后才同步"
-          onClick={() => setSyncScope(targetIds)}
-        >
-          <Icon name="layers" />
-          查看差异{scopeDiffs ? `（${scopeDiffs}）` : ''}
-        </button>
-        {canvasId && (
+          <span className="mr-1 text-xs text-ink-subtle">作用于{scope}</span>
+          <button
+            type="button"
+            className={btn}
+            disabled={!shots.length}
+            onClick={() => expand('new')}
+          >
+            <Icon name="workflow" />
+            展开为节点
+          </button>
           <button
             type="button"
             className={btn}
             disabled={!expanded.size}
-            title="改了之后哪些镜头图、视频、配音受影响，保留还是重做"
-            onClick={() => {
-              onClose()
-              useCanvas.getState().toggleImpact(true)
-            }}
+            title="给已展开的镜头补齐缺的角色和新增的台词，已有节点不动"
+            onClick={() => expand('update')}
+          >
+            <Icon name="retry" />
+            更新展开
+          </button>
+          <span aria-hidden="true" className="ui-bar-sep" />
+          <Menu.Root modal={false} open={regenerate.open} onOpenChange={regenerate.onOpenChange}>
+            <Menu.Trigger {...regenerate.triggerProps} className={btn} disabled={!expanded.size}>
+              全部重新生成
+              <Icon name="chevronDown" size={12} />
+            </Menu.Trigger>
+            <Menu.Portal>
+              <Menu.Positioner
+                side="bottom"
+                align="start"
+                sideOffset={8}
+                collisionPadding={8}
+                className="z-70"
+              >
+                <Menu.Popup
+                  aria-label="全部重新生成"
+                  className="ui-menu pointer-events-auto w-44 outline-none"
+                >
+                  {(['image', 'video', 'speech', 'sfx'] as const).map((role) => (
+                    <Menu.Item
+                      key={role}
+                      className="ui-menu-item"
+                      onClick={() => batch(role, true)}
+                    >
+                      {{ image: '分镜图', video: '视频', speech: '配音', sfx: '音效' }[role]}
+                    </Menu.Item>
+                  ))}
+                </Menu.Popup>
+              </Menu.Positioner>
+            </Menu.Portal>
+          </Menu.Root>
+          <button
+            type="button"
+            className={btn}
+            disabled={!expanded.size}
+            onClick={() => batch('image')}
+          >
+            <Icon name="image" />
+            批量出分镜图
+          </button>
+          <button
+            type="button"
+            className={btn}
+            disabled={!expanded.size}
+            onClick={() => batch('video')}
+          >
+            <Icon name="video" />
+            批量生成视频
+          </button>
+          <button
+            type="button"
+            className="ui-btn ui-btn-primary"
+            disabled={!expanded.size}
+            onClick={() => batch('speech')}
+          >
+            <Icon name="mic" />
+            批量配音
+          </button>
+          <button
+            type="button"
+            className={btn}
+            disabled={!expanded.size}
+            onClick={() => batch('sfx')}
+          >
+            批量音效
+          </button>
+          <button
+            type="button"
+            className={btn}
+            disabled={!scopeDiffs}
+            title="看分镜表改动和已展开节点的出入，确认后才同步"
+            onClick={() => setSyncScope(targetIds)}
           >
             <Icon name="layers" />
-            查看影响
+            查看差异{scopeDiffs ? `（${scopeDiffs}）` : ''}
           </button>
-        )}
-      </div>
+          {canvasId && (
+            <button
+              type="button"
+              className={btn}
+              disabled={!expanded.size}
+              title="改了之后哪些镜头图、视频、配音受影响，保留还是重做"
+              onClick={() => {
+                onClose()
+                useCanvas.getState().toggleImpact(true)
+              }}
+            >
+              <Icon name="layers" />
+              查看影响
+            </button>
+          )}
+        </div>
+      </details>
       {mode === 'sources' ? (
         <SourceMappingPanel
           engine={engine}
@@ -559,7 +616,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             onClose()
           }}
         />
-      ) : shots.length === 0 ? (
+      ) : shots.length === 0 && !(mode === 'edit' && layout === 'table') ? (
         <EmptyState
           icon="frames"
           title="还没有镜头"
@@ -579,6 +636,48 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
               return next
             })
           }
+        />
+      ) : layout === 'table' ? (
+        <ShotFlow
+          engine={engine}
+          boardId={id}
+          shots={shots}
+          stage={flowStage}
+          picked={picked}
+          onPick={(shotId, on) =>
+            setPicked((previous) => {
+              const next = new Set(previous)
+              if (on) next.add(shotId)
+              else next.delete(shotId)
+              return next
+            })
+          }
+          onPickAll={(on) => setPicked(new Set(on ? shots.map((shot) => shot.id) : []))}
+          onPatch={patch}
+          onAdd={() => {
+            setFlowStage(1)
+            addShot()
+          }}
+          onRemove={(shotId) => void remove(shotId)}
+          onPrompts={setPromptShot}
+          onDetails={(shotId) => {
+            setLayout('cards')
+            setFocusTarget({ shotId })
+          }}
+          onLocate={(elementId) => {
+            engine.selection.set([elementId])
+            engine.zoomToFit([elementId])
+            onClose()
+          }}
+          addRef={addButton}
+          expanded={expanded.size > 0}
+          onExpand={() => expand('new')}
+          onBatch={() => batch('video')}
+          onRowRef={(shotId, node) => {
+            if (node) shotElements.current.set(shotId, node)
+            else shotElements.current.delete(shotId)
+          }}
+          onNext={() => setFlowStage(flowStage === 3 ? 3 : ((flowStage + 1) as 2 | 3))}
         />
       ) : (
         <div
@@ -803,6 +902,15 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           </div>
         </div>
       )}
+      {promptShot && (
+        <ShotPromptDialog
+          engine={engine}
+          boardId={id}
+          shotId={promptShot}
+          onClose={() => setPromptShot(null)}
+          onPatch={(patchValue) => patch(promptShot, patchValue)}
+        />
+      )}
       {syncScope && (
         <StoryboardSync
           engine={engine}
@@ -855,151 +963,5 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         )}
       </Presence>
     </Modal>
-  )
-}
-
-/** 保留清空、负号等输入草稿，文档里的时长始终符合镜头约束。 */
-function DurationCell({ value, onChange }: { value: number; onChange(value: number): void }) {
-  const [draft, setDraft] = useState<string | null>(null)
-  return (
-    <label className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-ink-muted">
-      时长
-      <input
-        type="number"
-        min={1}
-        max={30}
-        step="any"
-        aria-label="时长"
-        className={`${cell} w-16 bg-surface-2`}
-        value={draft ?? value}
-        onChange={(event) => {
-          setDraft(event.target.value)
-          const next = event.currentTarget.valueAsNumber
-          if (Number.isFinite(next)) onChange(Math.max(1, Math.min(30, next)))
-        }}
-        onBlur={() => setDraft(null)}
-      />
-      秒
-    </label>
-  )
-}
-
-/** 单元格：失焦时写入，避免每个按键都改一次文档并标记手改 */
-function TextCell({
-  value,
-  readValue,
-  label,
-  onChange,
-  children,
-}: {
-  value: string
-  readValue(): string
-  label: string
-  onChange(v: string): void
-  children?: React.ReactNode
-}) {
-  const engine = useCanvas((s) => s.engine)
-  const [edit, setEdit] = useState({ base: value, draft: value })
-  const conflictId = useId()
-  const input = useRef<HTMLTextAreaElement>(null)
-  const [locateBlocked, setLocateBlocked] = useState(false)
-  useEffect(() => {
-    setEdit((prev) =>
-      prev.draft === prev.base || prev.draft === value ? { base: value, draft: value } : prev,
-    )
-  }, [value])
-  const { base, draft } = edit
-  const dirty = draft !== base
-  const conflict = dirty && base !== value && draft !== value
-  useEffect(() => {
-    if (!locateBlocked) return
-    if (conflict) {
-      document.getElementById(conflictId)?.parentElement?.scrollIntoView({ block: 'nearest' })
-      setLocateBlocked(false)
-    } else if (!dirty) setLocateBlocked(false)
-  }, [locateBlocked, conflict, conflictId, dirty])
-  const reset = () => {
-    const latest = readValue()
-    setEdit({ base: latest, draft: latest })
-  }
-  const commit = () => {
-    setEdit({ base: draft, draft })
-    if (draft !== readValue()) onChange(draft)
-  }
-  const saveIfSafe = () => {
-    const latest = readValue()
-    if (!dirty) reset()
-    else if (base === latest || draft === latest) commit()
-    else return false
-    return true
-  }
-  return (
-    <div className="min-w-0" data-storyboard-field={label}>
-      <div className="mb-1 text-xs font-medium text-ink-muted">{label}</div>
-      <MentionTextarea
-        ref={input}
-        targets={engine ? mentionTargets(engine) : []}
-        onLocate={(id) => {
-          if (!engine?.doc.has(id)) return
-          // 组合点击仍在同一文本框内，不会触发 blur，离开前必须主动保存。
-          if (!saveIfSafe()) {
-            setLocateBlocked(true)
-            return
-          }
-          useCanvas.getState().openStoryboard(null)
-          engine.selection.set([id])
-          engine.zoomToFit([id])
-        }}
-        aria-label={label}
-        aria-describedby={conflict ? conflictId : undefined}
-        rows={1}
-        className={`${cell} block w-full field-sizing-content min-h-8 max-h-80 overflow-y-auto bg-surface-2 leading-relaxed`}
-        value={draft}
-        onFocus={() => {
-          if (!dirty) reset()
-        }}
-        onChange={(e) => setEdit({ base: dirty ? base : readValue(), draft: e.target.value })}
-        onBlur={() => {
-          // 文档按帧通知；失焦时读最新值，不能只依赖尚未刷新的 props。
-          saveIfSafe()
-        }}
-      />
-      {conflict && (
-        <div className="mt-2 space-y-2 rounded-md border border-line bg-surface-2 p-2">
-          <p id={conflictId} role="status" className="text-xs text-ink-muted">
-            {label}已在其他位置更新。请选择要使用的内容。
-          </p>
-          <p
-            aria-label={`${label}的最新内容`}
-            className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words text-xs text-ink-muted"
-          >
-            {value || '（空）'}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="ui-btn ui-btn-secondary ui-btn-sm"
-              onClick={() => {
-                reset()
-                input.current?.focus()
-              }}
-            >
-              使用最新内容
-            </button>
-            <button
-              type="button"
-              className="ui-btn ui-btn-secondary ui-btn-sm"
-              onClick={() => {
-                commit()
-                input.current?.focus()
-              }}
-            >
-              保留当前输入
-            </button>
-          </div>
-        </div>
-      )}
-      {children && <div className="mt-2 grid gap-2 sm:grid-cols-2">{children}</div>}
-    </div>
   )
 }

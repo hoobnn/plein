@@ -268,3 +268,16 @@ describe('配音节点按内容对应台词', () => {
     expect(match(lines('第一句', '', '第三句'))).toEqual({ a: 0, b: undefined, c: 2 })
   })
 })
+
+it('每镜运镜仅进入视频计划，改变计划版本；空运镜兼容旧版本', () => {
+  const base = shot(1, '人物在雨后的天台上行走')
+  const moved = { ...base, cameraMotion: '缓慢推近主体' }
+  expect(String(planParams(moved, 'video').prompt)).toContain('运镜：缓慢推近主体')
+  expect(String(planParams(moved, 'image').prompt)).not.toContain('推近主体')
+  expect(planVersion([base])).toBe(planVersion([{ ...base, cameraMotion: '' }]))
+  expect(planVersion([base])).not.toBe(planVersion([moved]))
+  const prompt = String(planParams(base, 'image', { mentions: '@林夏' }).prompt)
+  expect(planParams({ ...base, imagePrompt: prompt }, 'image', { mentions: '@林夏' }).prompt).toBe(
+    prompt,
+  )
+})

@@ -24,6 +24,7 @@ async function fixture(page: Page, expanded = false) {
     await zoomTo(page, [id])
     const at = await centerOf(page, id)
     await page.mouse.dblclick(at.x, at.y)
+    await dialog.getByRole('button', { name: '详细卡片', exact: true }).click()
     await expect(dialog.getByRole('article')).toHaveCount(2)
   }
   await open()

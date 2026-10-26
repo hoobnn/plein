@@ -14,6 +14,7 @@ async function openBoard(page: Page) {
   await page.mouse.dblclick(center.x, center.y)
   const dialog = page.getByRole('dialog', { name: '分镜表' })
   await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: '详细卡片', exact: true }).click()
   return { boardId, dialog }
 }
 
@@ -183,6 +184,7 @@ test('快速切换复制的分镜计划，不沿用另一份计划的选择和�
   const b = await centerOf(page, ids[1]!)
   const dialog = page.getByRole('dialog', { name: '分镜表', exact: true })
   await page.mouse.dblclick(a.x, a.y)
+  await dialog.getByRole('button', { name: '详细卡片', exact: true }).click()
   await dialog.getByRole('checkbox', { name: '选择镜头 1', exact: true }).check()
   await dialog.getByRole('button', { name: '收起全部镜头', exact: true }).click()
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()

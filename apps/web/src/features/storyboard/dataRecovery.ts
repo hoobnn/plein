@@ -15,6 +15,7 @@ const labels: Record<Field, string> = {
   dialogue: '台词',
   imagePrompt: '分镜图提示词',
   motionPrompt: '运动提示词',
+  cameraMotion: '运镜',
   edited: '编辑标记',
 }
 type Row = { index: number; fields: Field[]; labels: string[]; replace: boolean }
