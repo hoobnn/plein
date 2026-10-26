@@ -363,6 +363,16 @@ export function GeneratorPanel({
       )
   }
 
+  // 快捷键比按钮更早按下时，实际输入还在准备：先记下来，准备好再提交，
+  // 不能像以前那样静默丢掉这次生成。
+  const pendingRun = useRef(false)
+  useEffect(() => {
+    if (!pendingRun.current) return
+    if (input.loading || !input.data?.inputHash) return
+    pendingRun.current = false
+    run()
+  })
+
   return (
     <section
       aria-label={`${node.title} 生成器`}
@@ -373,6 +383,7 @@ export function GeneratorPanel({
         if (e.nativeEvent.isComposing) return
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
           e.preventDefault()
+          if (!running && !input.data?.inputHash) pendingRun.current = true
           run()
         }
       }}
