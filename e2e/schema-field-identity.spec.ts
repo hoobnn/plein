@@ -41,7 +41,6 @@ test('模型与通用同名字段各自关联标签、说明和保存位置', as
     }),
   )
   await clickElement(page, id)
-  await page.getByRole('button', { name: '编辑配音', exact: true }).click()
   await page.getByRole('button', { name: '参数', exact: true }).click()
   const panel = page.getByRole('dialog', { name: '参数', exact: true })
   await panel.getByRole('button', { name: '更多参数', exact: true }).click()
