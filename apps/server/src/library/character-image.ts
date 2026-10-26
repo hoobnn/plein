@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { currentResult, type PleinDoc } from '@plein/doc'
-import { normalizeLibraryImages } from '@plein/nodes'
+import { normalizeLibraryImages, characterAssetTargetOf } from '@plein/nodes'
 import { characterImageRevision, type ArchiveCharacterImage } from '@plein/protocol'
 import type { AssetStore } from '../assets/store'
 import type { LibraryStore } from './store'
@@ -22,15 +22,12 @@ export function archiveCharacterImage(
   if (characterImageRevision(item) !== input.expected)
     throw new CharacterImageConflict('角色或图片已变化，请重新读取后核对归档目标')
   const node = doc.get(input.nodeId)
-  const target = node?.params?.characterAssetTarget as
-    | { libraryId?: unknown; slot?: unknown }
-    | undefined
+  const target = node && characterAssetTargetOf(node)
   const candidate = node && currentResult(node, 'images')
   if (
     doc.readOnly ||
     !node ||
     node.locked ||
-    node.nodeType !== 'plein/image' ||
     target?.libraryId !== libraryId ||
     target.slot !== input.sourceSlot ||
     candidate?.id !== input.resultId ||

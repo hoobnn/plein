@@ -10,6 +10,7 @@ import { animaticNode } from './animatic'
 import { stageNode } from './stage'
 import { storyboardNode } from './storyboard'
 import { imageProcessNode } from './imageProcess'
+import { characterAssetTargetField } from './characterAssetTarget'
 import { sfxNode, transcribeNode } from './audioNodes'
 import { shotAnalysisNode } from './shotAnalysis'
 import { aiSceneNode, aiSummaryNode } from './aiShotAnalysis'
@@ -130,13 +131,7 @@ export const imageNode = defineNode({
     usedRefs: usedRefs(),
     requiredRefs: requiredRefs(),
     referenceImagePicks: referenceImagePicks(),
-    characterAssetTarget: z
-      .object({
-        libraryId: z.string().min(1).max(200),
-        slot: z.enum(['full_body', 'portrait', 'face_grid', 'character_3view']),
-      })
-      .optional()
-      .meta({ title: '角色图片归档目标', widget: 'hidden' }),
+    characterAssetTarget: characterAssetTargetField(),
   }),
 })
 
@@ -169,6 +164,7 @@ export const imageEditNode = defineNode({
     count: z.number().int().min(1).max(4).default(1).meta({ title: '张数' }),
     options: modelOptions(),
     mask: EditMask.nullable().default(null).meta({ title: '重绘区域', widget: 'hidden' }),
+    characterAssetTarget: characterAssetTargetField(),
     usedRefs: usedRefs(),
   }),
 })

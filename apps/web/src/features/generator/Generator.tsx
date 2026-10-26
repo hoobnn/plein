@@ -290,9 +290,7 @@ export function GeneratorPanel({
         remote={!!canvasId}
         variant="inline"
       />
-      {node.type === 'plein/image' && canvasId && (
-        <CharacterImageArchiveButton engine={engine} el={el} canvasId={canvasId} />
-      )}
+      {canvasId && <CharacterImageArchiveButton engine={engine} el={el} canvasId={canvasId} />}
     </>
   ) : result ? (
     <>

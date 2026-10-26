@@ -1,8 +1,12 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, primaryResult } from '@plein/doc'
-import { CHARACTER_IMAGE_SLOTS, sortMentionTargets } from '@plein/nodes'
 import {
-  CharacterImageSlot,
+  CHARACTER_IMAGE_SLOTS,
+  sortMentionTargets,
+  characterAssetTargetOf,
+  type CharacterAssetTarget,
+} from '@plein/nodes'
+import {
   type ArchiveCharacterImage,
   type Catalog,
   type CharacterImageSlot as CharacterImageSlotValue,
@@ -11,11 +15,6 @@ import {
 } from '@plein/protocol'
 import { deriveNode } from '../../canvas/presets'
 import { mentionTargets } from '../../canvas/nodes'
-
-export interface CharacterAssetTarget {
-  libraryId: string
-  slot: CharacterImageSlotValue
-}
 
 export interface CharacterArchiveSource extends CharacterAssetTarget {
   canvasId: string
@@ -103,10 +102,9 @@ export function characterArchiveSource(
   el: CanvasElement | undefined,
   canvasId: string | null,
 ): CharacterArchiveSource | null {
-  if (!el || !canvasId || el.nodeType !== 'plein/image') return null
-  const raw = el.params?.characterAssetTarget as { libraryId?: unknown; slot?: unknown } | undefined
-  const slot = CharacterImageSlot.safeParse(raw?.slot)
-  if (typeof raw?.libraryId !== 'string' || !raw.libraryId || !slot.success) return null
+  if (!el || !canvasId || el.locked) return null
+  const target = characterAssetTargetOf(el)
+  if (!target) return null
   const result = primaryResult(el)
   if (result?.value.type !== 'image') return null
   return {
@@ -114,8 +112,8 @@ export function characterArchiveSource(
     nodeId: el.id,
     resultId: result.id,
     assetId: result.value.assetId,
-    libraryId: raw.libraryId,
-    slot: slot.data,
+    libraryId: target.libraryId,
+    slot: target.slot,
   }
 }
 

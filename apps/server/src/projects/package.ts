@@ -29,6 +29,7 @@ import {
 } from '@plein/doc'
 import {
   normalizeLibraryImages,
+  characterAssetTargetOf,
   sceneViewImages,
   SHOT_ANALYSIS_TYPE,
   shotAnalysisAssets,
@@ -138,11 +139,7 @@ function eachString(v: unknown, fn: (s: string) => void) {
 }
 
 function characterAssetLibrary(el: Pick<CanvasElement, 'nodeType' | 'params'>) {
-  if (el.nodeType !== 'plein/image') return undefined
-  const target = el.params?.characterAssetTarget
-  if (!target || typeof target !== 'object' || Array.isArray(target)) return undefined
-  const id = (target as Record<string, unknown>).libraryId
-  return typeof id === 'string' && id ? id : undefined
+  return characterAssetTargetOf(el)?.libraryId
 }
 
 /** 深度遍历 JSON 值，收集 { provider, voiceId } 形状的音色绑定 */

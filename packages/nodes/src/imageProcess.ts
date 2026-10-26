@@ -1,5 +1,6 @@
 import { defineNode } from '@plein/plugin-sdk'
 import { z } from 'zod'
+import { characterAssetTargetField } from './characterAssetTarget'
 
 /** 预览、缓存和执行只保留当前操作真正使用的参数。 */
 export function imageProcessParams(params: Record<string, unknown>): Record<string, unknown> {
@@ -28,6 +29,7 @@ export const imageProcessNode = defineNode({
   ],
   params: z.object({
     model: z.string().default('').meta({ title: '模型', widget: 'model' }),
+    characterAssetTarget: characterAssetTargetField(),
     operation: z
       .enum(['upscale', 'outpaint', 'cutout'])
       .default('upscale')

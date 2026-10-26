@@ -58,6 +58,7 @@ function CharacterImageArchiveAction({
     const current = useCanvas.getState()
     return (
       current.engine === engine &&
+      !engine.doc.readOnly &&
       current.canvasId === source.canvasId &&
       sameCharacterArchiveSource(engine.doc.get(source.nodeId), source)
     )

@@ -22,3 +22,5 @@ export * from './imageProcess'
 export * from './shotAnalysis'
 export * from './aiShotAnalysis'
 export * from './deliveryCheck'
+
+export * from './characterAssetTarget'

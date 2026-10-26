@@ -19,7 +19,7 @@ import { insertProject } from '../storage/canvases'
 import { addNode, bootServer, createCanvas, request } from '../testing'
 import { librarySyncRoutes } from './sync'
 
-async function fixture() {
+async function fixture(type = 'plein/image') {
   const { server } = await bootServer()
   const { id: canvasId, doc } = await createCanvas(server)
   const images = await Promise.all(
@@ -42,7 +42,7 @@ async function fixture() {
       images: [{ slot: 'portrait', assetId: images[0]!.id }],
     }),
   )
-  const nodeId = addNode(doc, 'plein/image', {
+  const nodeId = addNode(doc, type, {
     params: {
       prompt: '角色肖像',
       characterAssetTarget: { libraryId: item.id, slot: 'portrait' },
@@ -93,29 +93,42 @@ async function fixture() {
 }
 
 describe('角色候选精确归档', () => {
-  it('只归档明确候选到原角色，旧图保留，独立封面不改变图片类别或项目', async () => {
-    const f = await fixture()
-    const response = await f.archive()
-    expect(response.status).toBe(200)
-    const saved = (await response.json()) as LibraryItem
-    expect(saved).toMatchObject({
-      id: f.item.id,
-      projectId: f.item.projectId,
-      description: '保留的设定',
-      tags: { era: '现代' },
-      coverAssetId: f.images[1]!.id,
-    })
-    expect(saved.images).toEqual([
-      { slot: 'extra', assetId: f.images[0]!.id },
-      { slot: 'portrait', assetId: f.images[1]!.id },
-    ])
-    expect(saved.images.some((image) => image.slot === 'full_body')).toBe(false)
-    expect(f.server.db.$client.prepare('SELECT count(*) AS n FROM jobs').get()).toMatchObject({
-      n: 0,
-    })
-    expect((await f.archive()).status).toBe(409)
-    expect(f.server.library.get('local', f.item.id)?.images).toEqual(saved.images)
-  })
+  it.each(['plein/video', 'other/image-process', 'raw-image'])(
+    '不接受误留角色目标的 %s 作为角色图片归档来源',
+    async (type) => {
+      const f = await fixture()
+      if (type === 'raw-image') f.doc.mutable(f.nodeId)!.set('kind', 'image')
+      else updateElement(f.doc, f.nodeId, { nodeType: type })
+      expect((await f.archive()).status).toBe(409)
+      expect(f.server.library.get('local', f.item.id)?.images).toEqual(f.item.images)
+    },
+  )
+  it.each(['plein/image', 'plein/image-edit', 'plein/image-process'])(
+    '从 %s 只归档明确候选，保留旧图、独立封面与项目',
+    async (type) => {
+      const f = await fixture(type)
+      const response = await f.archive()
+      expect(response.status).toBe(200)
+      const saved = (await response.json()) as LibraryItem
+      expect(saved).toMatchObject({
+        id: f.item.id,
+        projectId: f.item.projectId,
+        description: '保留的设定',
+        tags: { era: '现代' },
+        coverAssetId: f.images[1]!.id,
+      })
+      expect(saved.images).toEqual([
+        { slot: 'extra', assetId: f.images[0]!.id },
+        { slot: 'portrait', assetId: f.images[1]!.id },
+      ])
+      expect(saved.images.some((image) => image.slot === 'full_body')).toBe(false)
+      expect(f.server.db.$client.prepare('SELECT count(*) AS n FROM jobs').get()).toMatchObject({
+        n: 0,
+      })
+      expect((await f.archive()).status).toBe(409)
+      expect(f.server.library.get('local', f.item.id)?.images).toEqual(saved.images)
+    },
+  )
 
   it('拒绝同毫秒改图的旧确认；刷新后移动已有图片不重复占容量', async () => {
     const f = await fixture()
@@ -185,35 +198,40 @@ describe('角色候选精确归档', () => {
     expect(f.server.library.get('local', f.item.id)?.coverAssetId).toBeNull()
   })
 
-  it('仅制作草稿也打包原角色及独立封面，导入副本映射目标ID', async () => {
-    const f = await fixture()
-    expect((await f.archive()).status).toBe(200)
-    const canvas = (await (await request(f.server, `/api/canvases/${f.canvasId}`)).json()) as Canvas
-    const response = await request(f.server, `/api/projects/${canvas.projectId}/package`)
-    expect(response.status).toBe(200)
-    const bytes = new Uint8Array(await response.arrayBuffer())
-    const zip = unzipSync(bytes)
-    const manifest = JSON.parse(strFromU8(zip['manifest.json']!)) as ProjectPackageManifest
-    expect(manifest.library).toContainEqual(
-      expect.objectContaining({ id: f.item.id, coverAssetId: f.images[1]!.id }),
-    )
-    const inspect = await request(f.server, '/api/project-imports', {
-      method: 'POST',
-      headers: { 'content-type': 'application/octet-stream' },
-      body: bytes,
-    })
-    expect(inspect.status).toBe(201)
-    const preview = (await inspect.json()) as ProjectImportPreview
-    const committed = await request(f.server, `/api/project-imports/${preview.token}`, {
-      method: 'POST',
-      body: '{}',
-    })
-    expect(committed.status).toBe(201)
-    const imported = (await committed.json()) as ProjectImportResult
-    if (!imported.canvasId) throw new Error('项目包未恢复画布')
-    const restored = f.server.rooms.withDoc(imported.canvasId, (doc) => doc.get(f.nodeId))!
-    const target = restored.params?.characterAssetTarget as { libraryId: string }
-    expect(f.server.library.get('local', target.libraryId)?.coverAssetId).toBe(f.images[1]!.id)
-    expect(target.libraryId).toBe(f.item.id) // Shared original-project library entries are deliberately reused.
-  })
+  it.each(['plein/image', 'plein/image-edit', 'plein/image-process'])(
+    '仅 %s 制作草稿也打包角色与封面，导入映射目标ID',
+    async (type) => {
+      const f = await fixture(type)
+      expect((await f.archive()).status).toBe(200)
+      const canvas = (await (
+        await request(f.server, `/api/canvases/${f.canvasId}`)
+      ).json()) as Canvas
+      const response = await request(f.server, `/api/projects/${canvas.projectId}/package`)
+      expect(response.status).toBe(200)
+      const bytes = new Uint8Array(await response.arrayBuffer())
+      const zip = unzipSync(bytes)
+      const manifest = JSON.parse(strFromU8(zip['manifest.json']!)) as ProjectPackageManifest
+      expect(manifest.library).toContainEqual(
+        expect.objectContaining({ id: f.item.id, coverAssetId: f.images[1]!.id }),
+      )
+      const inspect = await request(f.server, '/api/project-imports', {
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: bytes,
+      })
+      expect(inspect.status).toBe(201)
+      const preview = (await inspect.json()) as ProjectImportPreview
+      const committed = await request(f.server, `/api/project-imports/${preview.token}`, {
+        method: 'POST',
+        body: '{}',
+      })
+      expect(committed.status).toBe(201)
+      const imported = (await committed.json()) as ProjectImportResult
+      if (!imported.canvasId) throw new Error('项目包未恢复画布')
+      const restored = f.server.rooms.withDoc(imported.canvasId, (doc) => doc.get(f.nodeId))!
+      const target = restored.params?.characterAssetTarget as { libraryId: string }
+      expect(f.server.library.get('local', target.libraryId)?.coverAssetId).toBe(f.images[1]!.id)
+      expect(target.libraryId).toBe(f.item.id) // Shared original-project library entries are deliberately reused.
+    },
+  )
 })
