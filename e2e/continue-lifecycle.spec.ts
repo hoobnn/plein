@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { expect, type Page, test } from '@playwright/test'
-import { newProject, settle, waitEngine, zoomTo } from './canvas'
+import { newProject, revealGenerator, settle, waitEngine, zoomTo } from './canvas'
 
 async function fixture(page: Page) {
   await newProject(page)
@@ -193,7 +193,11 @@ test('窄窗口取消取帧后立即重试，只创建新请求的一个镜头',
   try {
     await start(page)
     await expect.poll(held.ready).toBe(true)
-    const cancel = page.getByRole('button', { name: '取消取帧', exact: true })
+    // 素材浮条和生成器里各有一个取消取帧，这里要的是素材浮条上那个
+    const cancel = page
+      .getByRole('toolbar', { name: '结果操作', exact: true })
+      .getByRole('button', { name: '取消取帧', exact: true })
+      .first()
     await expect(cancel).toBeInViewport()
     await page.screenshot({
       path: test.info().outputPath('continue-pending.png'),
@@ -288,6 +292,8 @@ async function staleFixture(page: Page) {
       ).set('assetId', asset),
     { id: f.source, asset },
   )
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的按钮
+  await revealGenerator(page)
   await expect(
     page.getByTestId('continued-from').getByRole('button', { name: '换成新画面', exact: true }),
   ).toBeVisible()
