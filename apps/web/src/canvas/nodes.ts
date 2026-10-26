@@ -22,7 +22,7 @@ import {
   findFreeSpot,
   setParam,
 } from '@plein/doc'
-import { type MentionTarget, mentionName, profileOf } from '@plein/nodes'
+import { type MentionTarget, mentionName, profileOf, sceneViewsOf } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { modelProblem, selectedModel } from './modelParams'
 
@@ -390,7 +390,12 @@ export function mentionTargets(engine: Engine): MentionTarget[] {
     const name = mentionName(el)
     if (!name) continue
     const profile = el.nodeType === 'plein/character' ? profileOf(el.params?.profile) : undefined
-    out.push({ id: el.id, name, ...(profile ? { profile } : {}) })
+    out.push({
+      id: el.id,
+      name,
+      ...(profile ? { profile } : {}),
+      ...(el.nodeType === 'plein/scene' ? { sceneViews: sceneViewsOf(el.params?.sceneViews) } : {}),
+    })
   }
   return out
 }

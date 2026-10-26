@@ -15,6 +15,7 @@ import {
   orderedImages,
   preserveLibraryImageSlots,
   profileImages,
+  sceneViewImages,
   slotImages,
 } from '@plein/nodes'
 import type {
@@ -45,6 +46,7 @@ export interface PlaceInput {
   description: string
   voice?: LibraryItem['voice']
   profile?: LibraryItem['profile']
+  sceneViews?: LibraryItem['sceneViews']
   images?: LibraryItem['images']
   video?: string | null
   /** 资产库条目 id；官方条目没有 */
@@ -63,12 +65,14 @@ export interface PlaceResult {
 export const findPlacedCard = (engine: Engine, libraryId: string) =>
   findPlacedCardIn(engine.doc, libraryId)
 
-/** 条目封面：优先基础参考图，角色可回退档案图片，最后使用参考视频的封面。 */
+/** 条目封面：优先基础参考图，角色 / 场景可回退档案图片，最后使用参考视频的封面。 */
 export function coverOf(item: LibraryItem, kind = libraryKind(item.kind)) {
   const first = kind && orderedImages(kind, item.images)[0]
   if (first) return assetUrls.variant(first.assetId, 'thumb-256')
   const profile = kind?.id === 'character' && item.profile && profileImages(item.profile)[0]
   if (profile) return assetUrls.variant(profile, 'thumb-256')
+  const scene = kind?.id === 'scene' ? sceneViewImages(item.sceneViews)[0] : undefined
+  if (scene) return assetUrls.variant(scene, 'thumb-256')
   if (item.video) return assetUrls.variant(item.video, 'poster')
   return null
 }
@@ -143,6 +147,7 @@ export async function placeLibraryItem(
     description: input.description,
     ...(kind.voice && input.voice ? { voice: input.voice } : {}),
     ...(input.profile ? { profile: input.profile } : {}),
+    ...(kind.id === 'scene' ? { sceneViews: input.sceneViews ?? [] } : {}),
     ...(input.libraryId ? { libraryId: input.libraryId } : {}),
   }
   const duplicate = mentionTargets(engine).some((t) => t.name === input.name)
@@ -222,6 +227,7 @@ export async function saveCardToLibrary(
       video: body.video,
       voice: body.voice,
       profile: body.profile,
+      sceneViews: body.sceneViews,
     })
     return { item, created: false }
   }
@@ -243,6 +249,7 @@ export function placeInputOf(item: LibraryItem): PlaceInput | null {
     description: item.description,
     voice: item.voice,
     profile: item.profile,
+    sceneViews: item.sceneViews,
     images: item.images,
     video: item.video,
     libraryId: item.id,

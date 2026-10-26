@@ -24,6 +24,9 @@ export function mentionParts(text: string, targets: readonly MentionTarget[]) {
       warning:
         mentionProblem(m) ??
         m.profileConflict ??
+        (m.sceneViewMiss !== undefined
+          ? `视角「${m.sceneViewMiss}」不存在，请重新选择`
+          : undefined) ??
         (m.profileMiss ? `档案中没有「${m.profileMiss}」` : undefined),
     })),
     ...[...text.matchAll(unknown)].flatMap((match) => {

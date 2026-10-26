@@ -1,6 +1,7 @@
 import { defineNode, definePlugin, PLUGIN_API_VERSION } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { CharacterProfile, emptyProfile } from './profile'
+import { SceneViews } from './sceneViews'
 import { corePrompts } from './prompts'
 import { shotPresets } from './shotPresets'
 import { noVoice, VoiceRef } from './refs'
@@ -306,6 +307,7 @@ export const sceneNode = defineNode({
   outputs: [{ id: 'images', label: '参考图', type: 'image' }],
   params: z.object({
     description: textarea('设定', '时间、地点、光线、氛围，如：雨夜，老城区天台，霓虹反光'),
+    sceneViews: SceneViews.default([]).meta({ title: '场景视角', widget: 'hidden' }),
   }),
 })
 

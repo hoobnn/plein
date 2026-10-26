@@ -67,6 +67,48 @@ export const LibraryProfile = z.object({
 })
 export type LibraryProfile = z.infer<typeof LibraryProfile>
 
+/** 同一地点的命名视角；旧条目缺省为空，不改变已有基础参考。 */
+export const LibrarySceneView = z.object({
+  id: z.string().min(1).max(40),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(20)
+    .regex(/^[^/@#\s]+$/, '视角名不能含空格或 / @ #'),
+  aliases: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1)
+        .max(20)
+        .regex(/^[^/@#\s]+$/),
+    )
+    .max(8)
+    .default([]),
+  description: z.string().max(1000).default(''),
+  images: z.array(libraryAssetId).max(4).default([]),
+})
+export const LibrarySceneViews = z
+  .array(LibrarySceneView)
+  .max(24)
+  .superRefine((views, ctx) => {
+    const ids = new Set<string>()
+    const names = new Set<string>()
+    for (const [index, view] of views.entries()) {
+      if (ids.has(view.id))
+        ctx.addIssue({ code: 'custom', path: [index, 'id'], message: '视角标识重复' })
+      ids.add(view.id)
+      for (const name of new Set([view.name, ...view.aliases])) {
+        if (names.has(name))
+          ctx.addIssue({ code: 'custom', path: [index, 'name'], message: '视角名或旧名重复' })
+        names.add(name)
+      }
+    }
+  })
+export type LibrarySceneView = z.infer<typeof LibrarySceneView>
+
 const libraryFields = {
   name: z.string().trim().min(1).max(60),
   /** 归属项目；null 表示不归属任何项目（全局可用） */
@@ -88,6 +130,7 @@ const libraryFields = {
   models: z.array(z.string().trim().min(1).max(60)).max(12).default([]),
   /** 角色档案（时期 / 服饰 / 表情 / 次音色），只有角色用 */
   profile: LibraryProfile.nullable().default(null),
+  sceneViews: LibrarySceneViews.default([]),
 }
 
 export const CreateLibraryItem = z.object({ kind: LibraryKind, ...libraryFields })
@@ -108,6 +151,7 @@ export const UpdateLibraryItem = z
       .nullable(),
     models: z.array(z.string().trim().min(1).max(60)).max(12),
     profile: LibraryProfile.nullable(),
+    sceneViews: LibrarySceneViews,
     favorite: z.boolean(),
   })
   .partial()
@@ -125,6 +169,7 @@ export interface LibraryItem {
   video: string | null
   models: string[]
   profile: LibraryProfile | null
+  sceneViews?: LibrarySceneView[]
   favorite: boolean
   /** 最近一次用到画布上的时间，「最近使用」按它排 */
   usedAt: number | null

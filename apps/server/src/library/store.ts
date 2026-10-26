@@ -16,7 +16,7 @@ type LibraryRow = typeof libraryItems.$inferSelect
 /** data 列里存的字段 */
 type LibraryData = Pick<
   LibraryItem,
-  'description' | 'tags' | 'voice' | 'images' | 'video' | 'models' | 'profile'
+  'description' | 'tags' | 'voice' | 'images' | 'video' | 'models' | 'profile' | 'sceneViews'
 >
 
 const toItem = (r: LibraryRow): LibraryItem => {
@@ -33,6 +33,7 @@ const toItem = (r: LibraryRow): LibraryItem => {
     video: d.video ?? null,
     models: d.models ?? [],
     profile: d.profile ?? null,
+    sceneViews: d.sceneViews ?? [],
     favorite: r.favorite === 1,
     usedAt: r.used_at,
     createdAt: r.created_at,
@@ -49,6 +50,7 @@ const dataOf = (kind: LibraryKind, i: LibraryData): string =>
     video: i.video,
     models: i.models,
     profile: i.profile,
+    sceneViews: i.sceneViews ?? [],
   })
 
 /** 资产库条目的增删改查，按所有者隔离；HTTP 路由和智能体能力共用 */
@@ -93,7 +95,10 @@ export class LibraryStore {
     return row ? toItem(row) : null
   }
 
-  create(owner: string, body: z.output<typeof CreateLibraryItem>): LibraryItem {
+  create(
+    owner: string,
+    body: Omit<z.output<typeof CreateLibraryItem>, 'sceneViews'> & Pick<LibraryItem, 'sceneViews'>,
+  ): LibraryItem {
     const { kind, name, projectId, ...data } = body
     const id = `lib_${randomBytes(9).toString('base64url')}`
     const now = Date.now()

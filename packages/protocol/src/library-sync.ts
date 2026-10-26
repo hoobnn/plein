@@ -15,7 +15,14 @@ export interface SaveLibraryCardResult {
   persistence: 'saved' | 'pending'
 }
 
-export const LibrarySyncField = z.enum(['name', 'description', 'voice', 'profile', 'references'])
+export const LibrarySyncField = z.enum([
+  'name',
+  'description',
+  'voice',
+  'profile',
+  'sceneViews',
+  'references',
+])
 export type LibrarySyncField = z.infer<typeof LibrarySyncField>
 export interface LibraryCardUpdate {
   canvasId: string

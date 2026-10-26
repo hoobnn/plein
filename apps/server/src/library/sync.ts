@@ -15,6 +15,8 @@ import {
   libraryKind,
   libraryReferenceImageIds,
   profileOf,
+  sceneViewsOf,
+  sceneViewImages,
   voiceOf,
 } from '@plein/nodes'
 import {
@@ -34,7 +36,14 @@ import { archiveLibraryCard, LibraryArchiveConflict } from './archive'
 import type { LibraryStore } from './store'
 
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
-const fields: LibrarySyncField[] = ['name', 'description', 'voice', 'profile', 'references']
+const fields: LibrarySyncField[] = [
+  'name',
+  'description',
+  'voice',
+  'profile',
+  'sceneViews',
+  'references',
+]
 export const libraryRevision = (item: LibraryItem) => hash(projection(item))
 function projection(item: LibraryItem) {
   const kind = libraryKind(item.kind)!
@@ -43,6 +52,7 @@ function projection(item: LibraryItem) {
     description: item.description,
     voice: kind.voice ? voiceOf({ voice: item.voice }) : null,
     profile: item.kind === 'character' ? profileOf(item.profile) : null,
+    sceneViews: item.kind === 'scene' ? sceneViewsOf(item.sceneViews) : [],
     references: kind.video
       ? item.video
         ? [item.video]
@@ -56,6 +66,7 @@ function actual(doc: PleinDoc, card: CanvasElement, item: LibraryItem) {
     description: String(card.params?.description ?? ''),
     voice: libraryKind(item.kind)?.voice ? voiceOf(card.params) : null,
     profile: item.kind === 'character' ? profileOf(card.params?.profile) : null,
+    sceneViews: item.kind === 'scene' ? sceneViewsOf(card.params?.sceneViews) : [],
     references: referenceAssets(doc, card, libraryKind(item.kind)?.video ? 'video' : 'image'),
   }
 }
@@ -199,7 +210,9 @@ export function librarySyncRoutes(deps: Deps) {
           wanted.references.some(
             (id) => !imageExists(id, item.kind === 'effect' ? 'video' : 'image'),
           )) ||
-        (selected('profile') && profileImages.some((id) => !imageExists(id)))
+        (selected('profile') && profileImages.some((id) => !imageExists(id))) ||
+        (selected('sceneViews') &&
+          sceneViewImages(wanted.sceneViews).some((id) => !imageExists(id)))
       )
         return c.json(
           {
@@ -223,7 +236,7 @@ export function librarySyncRoutes(deps: Deps) {
             }
             if (selected.has('name') && card.name !== wanted.name)
               renameReferences(doc, card, wanted.name)
-            for (const field of ['description', 'voice', 'profile'] as const)
+            for (const field of ['description', 'voice', 'profile', 'sceneViews'] as const)
               if (selected.has(field)) params[field] = wanted[field]
             if (selected.has('references')) {
               removeEdges(
@@ -303,7 +316,20 @@ function addReferences(doc: PleinDoc, card: CanvasElement, refs: CardRef[]) {
 function renameReferences(doc: PleinDoc, card: CanvasElement, name: string) {
   const targets = [...doc.elements()].flatMap((el) => {
     const name = mentionName(el)
-    return name ? [{ id: el.id, name, profile: profileOf(el.params?.profile) }] : []
+    return name
+      ? [
+          {
+            id: el.id,
+            name,
+            ...(el.nodeType === 'plein/character'
+              ? { profile: profileOf(el.params?.profile) }
+              : {}),
+            ...(el.nodeType === 'plein/scene'
+              ? { sceneViews: sceneViewsOf(el.params?.sceneViews) }
+              : {}),
+          },
+        ]
+      : []
   })
   const edits: Array<{
     id: string

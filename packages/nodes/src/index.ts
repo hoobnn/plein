@@ -15,6 +15,7 @@ export * from './storyIdentity'
 export * from './subtitles'
 export * from './cast'
 export * from './profile'
+export * from './sceneViews'
 export * from './stage'
 
 export * from './imageProcess'

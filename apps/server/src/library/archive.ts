@@ -38,6 +38,7 @@ export function archiveLibraryCard(
       video: body.video,
       voice: body.voice,
       profile: body.profile,
+      sceneViews: body.sceneViews,
     })!
     return { item, created: false }
   }

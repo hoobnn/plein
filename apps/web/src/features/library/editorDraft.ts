@@ -4,6 +4,8 @@ import {
   type OfficialLibraryItem,
   normalizeLibraryImages,
   profileOf,
+  sceneViewsOf,
+  type SceneView,
   slotImages,
 } from '@plein/nodes'
 import type { LibraryImage, LibraryItem } from '@plein/protocol'
@@ -23,6 +25,7 @@ export interface Draft {
   video: string | null
   models: string
   profile: CharacterProfile
+  sceneViews: SceneView[]
   /** 是否保留项目归属 */
   inProject: boolean
   /** 已有条目的来源；null 表示选择当前项目，避免保存应答改变草稿的目标。 */
@@ -48,6 +51,7 @@ export function draftOf(
     video: item?.video ?? (kind.video ? (seed?.videos[0] ?? null) : null),
     models: (item?.models ?? official?.models ?? []).join('，'),
     profile: profileOf(item?.profile),
+    sceneViews: sceneViewsOf(item?.sceneViews),
     // 新建的角色 / 场景 / 道具默认归到当前项目；风格、特效默认全局
     inProject: item ? item.projectId !== null : !!projectId && !kind.video && kind.id !== 'style',
     projectTarget: item?.projectId ?? null,

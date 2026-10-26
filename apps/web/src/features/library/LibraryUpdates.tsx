@@ -15,6 +15,7 @@ const labels: Record<LibrarySyncField, string> = {
   description: '设定',
   voice: '音色',
   profile: '角色档案',
+  sceneViews: '场景视角',
   references: '参考素材',
 }
 const display = (value: unknown) =>

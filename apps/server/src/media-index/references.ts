@@ -92,7 +92,12 @@ export function documentReferences(doc: PleinDoc): AssetReference[] {
         adopted.has(delivery.resultId),
         true,
       )
-    stringReferences(el.params, (id, path) => add(id, `params${path}`, null, false, false))
+    stringReferences(el.params, (id, path) => {
+      // 场景视角图虽存放在参数里，仍是档案直接持有的素材，不是碰巧出现的哈希文本。
+      const sceneViewImage =
+        el.nodeType === 'plein/scene' && /^\/sceneViews\/\d+\/images\/\d+$/.test(path)
+      add(id, `params${path}`, null, false, sceneViewImage)
+    })
     if (el.kind === 'markdown')
       for (const assetId of aiAnalysisAssets(el.params?.aiDraftOrigin))
         add(assetId, `ai-draft-origin/${assetId}`, null, true, true)

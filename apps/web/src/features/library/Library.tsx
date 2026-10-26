@@ -1,3 +1,4 @@
+import { SceneViews } from './SceneViews'
 import {
   CHARACTER_IMAGE_SLOTS,
   LIBRARY_KINDS,
@@ -9,6 +10,7 @@ import {
   normalizeLibraryImages,
   profileEmpty,
   profileSize,
+  sceneViewImages,
 } from '@plein/nodes'
 import type { LibraryItem, LibraryKind } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
@@ -844,6 +846,7 @@ function Editor({
           .filter(Boolean)
       : [],
     profile: character && !profileEmpty(draft.profile) ? draft.profile : null,
+    sceneViews: kind.id === 'scene' ? draft.sceneViews : [],
     projectId: draft.inProject ? (draft.projectTarget ?? projectId) : null,
   })
 
@@ -938,7 +941,9 @@ function Editor({
   const thumbnails = ordered.filter(
     (image, index) => ordered.findIndex((entry) => entry.assetId === image.assetId) === index,
   )
-  const cover = ordered[0]?.assetId ?? null
+  const cover =
+    ordered[0]?.assetId ??
+    (kind.id === 'scene' ? (sceneViewImages(draft.sceneViews)[0] ?? null) : null)
   // 悬停中的图优先，其次是选中项钉住的图，最后是封面；悬停到没有图的项时不换
   const shown = preview?.id ?? pin.id ?? cover
   const caption = preview?.id ? preview.caption : pin.id ? pin.caption : undefined
@@ -1246,6 +1251,15 @@ function Editor({
           ) : (
             <fieldset disabled={pendingUploads > 0} className="contents" aria-label="资产设定编辑">
               {basics}
+              {kind.id === 'scene' && (
+                <SceneViews
+                  value={draft.sceneViews}
+                  onChange={(sceneViews) => patch({ sceneViews })}
+                  media={media}
+                  disabled={readOnly || busy || pendingUploads > 0}
+                  onBusyChange={trackUpload}
+                />
+              )}
             </fieldset>
           )}
           {item && !readOnly && <LibraryUpdatesPanel key={item.id} item={item} />}

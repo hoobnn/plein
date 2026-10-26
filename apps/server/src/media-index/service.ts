@@ -375,9 +375,19 @@ export class MediaIndex {
     }>('SELECT * FROM library_items WHERE id=?', id)
     const rows: SourceRow[] = []
     if (row) {
-      const data = json(row.data) as { images?: unknown; video?: unknown; profile?: unknown } | null
+      const data = json(row.data) as {
+        images?: unknown
+        video?: unknown
+        profile?: unknown
+        sceneViews?: unknown
+      } | null
       stringReferences(
-        { images: data?.images, video: data?.video, profile: data?.profile },
+        {
+          images: data?.images,
+          video: data?.video,
+          profile: data?.profile,
+          sceneViews: data?.sceneViews,
+        },
         (asset, path) =>
           rows.push({
             owner_id: row.owner_id,

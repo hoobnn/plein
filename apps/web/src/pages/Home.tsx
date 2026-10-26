@@ -1,6 +1,6 @@
 import type { Project } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
-import { type MouseEvent, useEffect, useRef, useState } from 'react'
+import { lazy, type MouseEvent, Suspense, useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { cacheProject, invalidateProjects, queryClient, queryKeys } from '../api/query'
 import { DRAMA_START, queueStartNode } from '../canvas/startQueue'
@@ -17,7 +17,6 @@ import { ThemeToggle } from '../ui/ThemeToggle'
 import { EmptyState } from '../ui/EmptyState'
 import { zoomView } from '../ui/viewTransition'
 import { Welcome } from '../features/onboarding/Welcome'
-import { ExportPackageDialog, ImportPackageDialog } from '../features/projects/ProjectPackage'
 import { Presence } from '../ui/Presence'
 import { Toast } from '../ui/Toast'
 import { useCanvas } from '../stores/canvas'
@@ -25,6 +24,13 @@ import { useMediaLibrary } from '../features/media-library/store'
 import { useCheckpoints } from '../features/checkpoints/store'
 import { HomeAgentTrigger } from '../features/agent/HomeAgentTrigger'
 import { useAgent } from '../features/agent/store'
+
+const ExportPackageDialog = lazy(() =>
+  import('../features/projects/ProjectPackage').then((m) => ({ default: m.ExportPackageDialog })),
+)
+const ImportPackageDialog = lazy(() =>
+  import('../features/projects/ProjectPackage').then((m) => ({ default: m.ImportPackageDialog })),
+)
 
 /** 快速开始：新建项目并在它的第一张画布上放好对应节点、打开生成器 */
 const QUICK_START: Array<{
@@ -389,24 +395,26 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
       <Welcome />
       {/* 画布页留下的提示（如画布已在别处删除，跳回首页时） */}
       <Presence>{notice && <Toast>{notice}</Toast>}</Presence>
-      <Presence>
-        {exporting && (
-          <ExportPackageDialog project={exporting} onClose={() => setExporting(null)} />
-        )}
-      </Presence>
-      <Presence>
-        {importing && (
-          <ImportPackageDialog
-            file={importing}
-            onClose={() => setImporting(null)}
-            onImported={(r) => {
-              setImporting(null)
-              void invalidateProjects()
-              if (r.canvasId) navigate({ name: 'canvas', id: r.canvasId })
-            }}
-          />
-        )}
-      </Presence>
+      <Suspense fallback={<p role="status">正在打开项目包…</p>}>
+        <Presence>
+          {exporting && (
+            <ExportPackageDialog project={exporting} onClose={() => setExporting(null)} />
+          )}
+        </Presence>
+        <Presence>
+          {importing && (
+            <ImportPackageDialog
+              file={importing}
+              onClose={() => setImporting(null)}
+              onImported={(r) => {
+                setImporting(null)
+                void invalidateProjects()
+                if (r.canvasId) navigate({ name: 'canvas', id: r.canvasId })
+              }}
+            />
+          )}
+        </Presence>
+      </Suspense>
     </div>
   )
 }

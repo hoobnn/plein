@@ -122,12 +122,23 @@ export function PromptBox({
     const head = query.query.slice(0, cut)
     const seg = query.query.slice(cut + 1)
     const owner = targets.find((t, i) => {
-      if (!t.profile) return false
+      if (!t.profile && !t.sceneViews) return false
       const total = counts.get(t.name) ?? 1
       const nth = targets.slice(0, i + 1).filter((x) => x.name === t.name).length
       const insert = total > 1 ? `${t.name}#${nth}` : t.name
-      return head === insert || head.startsWith(`${insert}/`)
+      return t.sceneViews ? head === insert : head === insert || head.startsWith(`${insert}/`)
     })
+    if (owner?.sceneViews)
+      return owner.sceneViews
+        .filter((v) => v.name.includes(seg))
+        .slice(0, MAX_OPTIONS)
+        .map((v) => ({
+          ...v,
+          key: `scene:${v.id}`,
+          insert: `${head}/${v.name}`,
+          slot: 'scene' as const,
+          period: undefined,
+        }))
     if (!owner?.profile) return []
     const base = head.slice(0, head.indexOf('/') < 0 ? head.length : head.indexOf('/'))
     const written = matchProfile(head.slice(base.length), owner.profile).pick
@@ -358,7 +369,10 @@ export function PromptBox({
             {[
               ...new Map(
                 mentions.flatMap((m) => [
-                  [`${m.id ?? `?${m.name}`}:${pickLabel(m.name, m.pick ?? {})}`, m] as const,
+                  [
+                    `${m.id ?? `?${m.name}`}:${pickLabel(m.name, m.pick ?? {})}:${m.sceneView?.id ?? ''}`,
+                    m,
+                  ] as const,
                 ]),
               ).values(),
             ].map((m) => {
@@ -376,17 +390,28 @@ export function PromptBox({
               }
               const target = engine.doc.get(m.id)
               if (!target) return null
-              const label = pickLabel(m.total > 1 ? `${m.name}#${m.index}` : m.name, m.pick ?? {})
-              const warn = m.profileMiss
-                ? `「${m.name}」的档案里没有「${m.profileMiss}」`
-                : m.profileConflict
+              const baseLabel = pickLabel(
+                m.total > 1 ? `${m.name}#${m.index}` : m.name,
+                m.pick ?? {},
+              )
+              const label = m.sceneView ? `${baseLabel}（${m.sceneView.name}）` : baseLabel
+              const warn =
+                m.sceneViewMiss !== undefined
+                  ? `视角「${m.sceneViewMiss}」不存在，请重新选择`
+                  : m.profileMiss
+                    ? `「${m.name}」的档案里没有「${m.profileMiss}」`
+                    : m.profileConflict
               return (
                 <span key={`${m.id}:${label}`} className="contents">
                   <MentionChip
                     engine={engine}
                     name={label}
                     target={target}
-                    imageId={pickImages(m.pick ?? {}, targetImages(engine, target))[0]}
+                    imageId={
+                      m.sceneView
+                        ? (m.sceneView.images[0] ?? null)
+                        : pickImages(m.pick ?? {}, targetImages(engine, target))[0]
+                    }
                   />
                   {warn && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-1.5 py-0.5 text-warning">
@@ -422,7 +447,7 @@ export function PromptBox({
       {profileOpts.length > 0 && (
         <div
           role="listbox"
-          aria-label="引用角色档案"
+          aria-label="引用角色档案或场景视角"
           className="ui-menu absolute top-full left-3 z-10 mt-1 w-72"
         >
           {profileOpts.map((o, i) =>
@@ -445,7 +470,7 @@ export function PromptBox({
                 <span className="min-w-0 flex-1 truncate">{o.name}</span>
                 <span className="text-xs text-ink-subtle">
                   {o.period ? `${o.period} · ` : ''}
-                  {SLOT_LABELS[o.slot]}
+                  {o.slot === 'scene' ? '场景视角' : SLOT_LABELS[o.slot]}
                 </span>
               </>,
             ),
@@ -492,6 +517,7 @@ function remapSelection(
 }
 
 const SLOT_ICONS = {
+  scene: 'map',
   period: 'period',
   outfit: 'outfit',
   expression: 'expression',
@@ -515,9 +541,9 @@ function Thumb({
 }: {
   engine: Engine
   target: CanvasElement
-  imageId?: string
+  imageId?: string | null
 }) {
-  const id = imageId ?? targetImages(engine, target)[0]
+  const id = imageId === undefined ? targetImages(engine, target)[0] : imageId
   return id ? (
     <img
       src={assetUrls.variant(id, 'thumb-256')}
@@ -539,7 +565,7 @@ function MentionChip({
   engine: Engine
   name: string
   target: CanvasElement
-  imageId?: string
+  imageId?: string | null
 }) {
   return (
     <button

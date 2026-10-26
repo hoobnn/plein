@@ -122,6 +122,7 @@ export const placeLibraryItem = serverCapability({
             description: item.description,
             ...(kind.voice && item.voice ? { voice: item.voice } : {}),
             ...(item.profile ? { profile: item.profile } : {}),
+            ...(item.kind === 'scene' ? { sceneViews: item.sceneViews ?? [] } : {}),
             libraryId: item.id,
           },
         },

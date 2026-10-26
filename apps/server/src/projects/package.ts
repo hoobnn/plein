@@ -28,6 +28,7 @@ import {
 } from '@plein/doc'
 import {
   normalizeLibraryImages,
+  sceneViewImages,
   SHOT_ANALYSIS_TYPE,
   shotAnalysisAssets,
   DELIVERY_CHECK_TYPE,
@@ -291,6 +292,9 @@ async function planExport(
             eachString(el.params, (s) => {
               if (ASSET_ID.test(s)) refAsset(s, where, false)
             })
+            if (el.nodeType === 'plein/scene')
+              for (const assetId of sceneViewImages(el.params.sceneViews))
+                refAsset(assetId, `${where} / 场景视角`, true)
             eachVoice(el.params, refVoice)
             const { libraryId, model, voice } = el.params as Record<string, unknown>
             if (typeof libraryId === 'string' && libraryId) libraryRefs.set(libraryId, where)
@@ -399,15 +403,24 @@ async function planExport(
       video: d.video ?? null,
       models: d.models ?? [],
       profile: d.profile ?? null,
+      sceneViews: d.sceneViews ?? [],
       favorite: r.favorite === 1,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
     }
     library.push(item)
     const where = `资产库 / ${r.name}`
-    eachString({ images: item.images, video: item.video, profile: item.profile }, (s) => {
-      if (ASSET_ID.test(s)) refAsset(s, where, true)
-    })
+    eachString(
+      {
+        images: item.images,
+        video: item.video,
+        profile: item.profile,
+        sceneViews: item.sceneViews,
+      },
+      (s) => {
+        if (ASSET_ID.test(s)) refAsset(s, where, true)
+      },
+    )
     eachVoice({ voice: item.voice, profile: item.profile }, refVoice)
   }
   const missing: PackageMissing[] = []

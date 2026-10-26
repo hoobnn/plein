@@ -10,6 +10,7 @@ import { videoReferenceTokens } from '@plein/plugin-sdk'
  */
 
 import { type CharacterProfile, matchProfile, type ProfilePick } from './profile'
+import { type SceneView, matchSceneView } from './sceneViews'
 
 /** @ 后到这些字符为止 */
 const STOP = /[\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]/
@@ -31,6 +32,7 @@ export interface MentionTarget {
   name: string
   /** 角色档案：有时 `@林夏/少年/校服` 的 `/` 部分按它解析 */
   profile?: CharacterProfile
+  sceneViews?: SceneView[]
 }
 
 /** 文本里的一处 @ 引用 */
@@ -54,6 +56,8 @@ export interface Mention {
   profileMiss?: string
   /** 服饰 / 次音色和写明的时期对不上 */
   profileConflict?: string
+  sceneView?: SceneView
+  sceneViewMiss?: string
 }
 
 /** 一处 @ 引用没有对上画布上的任何名字（多半是被改名了） */
@@ -108,9 +112,12 @@ export function findMentions(text: string, targets: readonly MentionTarget[]): A
     const target = picked ?? (index === undefined && list.length === 1 ? list[0] : undefined)
     const end = i + 1 + name.length + (asked ? asked[0].length : 0)
     const profile = target?.profile ? matchProfile(text.slice(end), target.profile) : undefined
+    const scene = target?.sceneViews
+      ? matchSceneView(text.slice(end), target.sceneViews)
+      : undefined
     out.push({
       start: i,
-      end: end + (profile?.length ?? 0),
+      end: end + (profile?.length ?? scene?.length ?? 0),
       name,
       id: target?.id,
       total: list.length,
@@ -119,6 +126,8 @@ export function findMentions(text: string, targets: readonly MentionTarget[]): A
       ...(profile?.length ? { pick: profile.pick } : {}),
       ...(profile?.miss ? { profileMiss: profile.miss } : {}),
       ...(profile?.conflict ? { profileConflict: profile.conflict } : {}),
+      ...(scene?.view ? { sceneView: scene.view } : {}),
+      ...(scene?.miss !== undefined ? { sceneViewMiss: scene.miss } : {}),
     })
   }
   return out

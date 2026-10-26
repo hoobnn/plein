@@ -13,6 +13,8 @@ import {
   type ProfilePick,
   pickVoice,
   profileOf,
+  sceneViewsOf,
+  type SceneView,
   type VoiceRef,
   voiceFitsProvider,
   voiceOf,
@@ -55,6 +57,7 @@ export interface MentionElement {
   name: string
   el: CanvasElement
   profile?: ReturnType<typeof profileOf>
+  sceneViews?: SceneView[]
 }
 
 /** 列出可被 @ 引用的元素；重名不合并，由 `#序号` 消歧（序号顺序见 sortMentionTargets） */
@@ -64,7 +67,13 @@ function mentionTargets(doc: PleinDoc): MentionElement[] {
     const name = mentionName(el)
     if (!name) continue
     const profile = el.nodeType === 'plein/character' ? profileOf(el.params?.profile) : undefined
-    out.push({ id: el.id, name, el, ...(profile ? { profile } : {}) })
+    out.push({
+      id: el.id,
+      name,
+      el,
+      ...(profile ? { profile } : {}),
+      ...(el.nodeType === 'plein/scene' ? { sceneViews: sceneViewsOf(el.params?.sceneViews) } : {}),
+    })
   }
   return out
 }
@@ -97,9 +106,13 @@ interface Hit {
   el: CanvasElement
   /** `@林夏/少年/校服` 里写明的档案项 */
   pick: ProfilePick
+  sceneView?: SceneView
 }
 
-const label = (h: Hit) => pickLabel(h.total > 1 ? `${h.name}#${h.index + 1}` : h.name, h.pick)
+const label = (h: Hit) => {
+  const base = pickLabel(h.total > 1 ? `${h.name}#${h.index + 1}` : h.name, h.pick)
+  return h.sceneView ? `${base}（${h.sceneView.name}）` : base
+}
 
 /** 同一个角色写了不同的档案项（`@林夏/童年` 和 `@林夏/青年`）算两处引用 */
 const hitKey = (h: Hit) =>
@@ -109,6 +122,7 @@ const hitKey = (h: Hit) =>
     h.pick.outfit?.id,
     h.pick.expression?.id,
     h.pick.voiceState?.id,
+    h.sceneView?.id,
   ].join('/')
 
 /** 提示词里 @ 的名字，对应到画布上的元素 */
@@ -118,7 +132,19 @@ function checkMention(m: Mention, byId: Map<string, CanvasElement>): Hit | undef
   if (problem) throw new NodeRunError('invalid_input', problem)
   const el = m.id ? byId.get(m.id) : undefined
   if (!el) return undefined
-  return { name: m.name, index: m.ids.indexOf(m.id!), total: m.total, el, pick: m.pick ?? {} }
+  if (m.sceneViewMiss !== undefined)
+    throw new NodeRunError(
+      'invalid_input',
+      `「${m.name}」的视角「${m.sceneViewMiss}」不存在，请重新选择视角`,
+    )
+  return {
+    name: m.name,
+    index: m.ids.indexOf(m.id!),
+    total: m.total,
+    el,
+    pick: m.pick ?? {},
+    sceneView: m.sceneView,
+  }
 }
 
 /**
@@ -158,7 +184,7 @@ export async function applyMentions(
     for (const m of found) {
       const h = checkMention(m, byId)
       // 写了档案项的换成「林夏（少年·校服）」，同一段里出现两个时期也分得清
-      text += `${value.slice(last, m.start)}${pickLabel(m.name, m.pick ?? {})}`
+      text += `${value.slice(last, m.start)}${h?.sceneView ? `${m.name}（${h.sceneView.name}）` : pickLabel(m.name, m.pick ?? {})}`
       last = m.end
       if (h) hit.set(hitKey(h), h)
       if (m.profileMiss)
@@ -201,7 +227,12 @@ export async function applyMentions(
       details.push(detail(target, label(h), priority, [target.assetId]))
       continue
     }
-    const description = pickNotes(String(target.params?.description ?? ''), h.pick)
+    const description = [
+      pickNotes(String(target.params?.description ?? ''), h.pick),
+      h.sceneView?.description,
+    ]
+      .filter(Boolean)
+      .join('；')
     if (description) notes.push(`${label(h)}：${description}`)
     const v = pickVoice(h.pick, voiceOf(target.params))
     if (hasVoice(v)) voices.push({ name: label(h), voice: v })
@@ -209,17 +240,30 @@ export async function applyMentions(
     const base = (own.references ?? []).filter((v) => v.type === 'image')
     if (base.length === 0 && referenceFailed(doc, target.id)) failedRefs.add(target.id)
     // 写了档案项：命中项的图排前面，再补卡片的参考图，每个角色截到上限
-    const candidates = pickEmpty(h.pick)
-      ? base
-      : pickImages(h.pick, imageIds(base)).map(
-          (id): PortValue =>
-            base.find((b) => 'assetId' in b && b.assetId === id) ?? {
-              type: 'image',
-              assetId: id,
-              kind: 'image',
-              source: target.id,
-            },
-        )
+    const candidates = h.sceneView
+      ? h.sceneView.images.map((assetId): PortValue => ({
+          type: 'image',
+          assetId,
+          kind: 'image',
+          source: target.id,
+        }))
+      : pickEmpty(h.pick)
+        ? base
+        : pickImages(h.pick, imageIds(base)).map(
+            (id): PortValue =>
+              base.find((b) => 'assetId' in b && b.assetId === id) ?? {
+                type: 'image',
+                assetId: id,
+                kind: 'image',
+                source: target.id,
+              },
+          )
+    if (h.sceneView && candidates.length === 0)
+      blocked.push({
+        code: 'prepare_failed',
+        elementId: target.id,
+        message: `「${label(h)}」没有参考图，请补齐该视角图片`,
+      })
     const rawPicks = params.referenceImagePicks
     const asked =
       target.nodeType === 'plein/character' &&

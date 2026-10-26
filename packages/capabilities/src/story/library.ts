@@ -14,6 +14,7 @@ import {
   libraryKindOfNode,
   profileEmpty,
   profileOf,
+  sceneViewsOf,
   slotImages,
   voiceOf,
 } from '@plein/nodes'
@@ -134,6 +135,7 @@ export function cardSnapshot(doc: PleinDoc, el: CanvasElement, projectId: string
       video: videos[0] ?? null,
       voice: voice?.voiceId ? voice : null,
       profile: profile && !profileEmpty(profile) ? profile : null,
+      ...(kind.id === 'scene' ? { sceneViews: sceneViewsOf(el.params?.sceneViews) } : {}),
     },
   }
 }

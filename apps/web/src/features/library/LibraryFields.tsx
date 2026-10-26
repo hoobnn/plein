@@ -168,6 +168,7 @@ export function SlotField({
   disabled = false,
   onBusyChange,
   focusFallback,
+  capacity = 24,
 }: {
   slot: LibraryKindSpec['slots'][number]
   images: LibraryImage[]
@@ -180,12 +181,13 @@ export function SlotField({
   onBusyChange?(busy: boolean): void
   /** 满额时父级会撤下整个字段，先使用仍会保留的焦点落点。 */
   focusFallback?: RefObject<HTMLElement | null>
+  capacity?: number
 }) {
   const ref = useRef<HTMLInputElement>(null)
   const focus = useLibraryFieldFocus()
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<UploadNotice | null>(null)
-  const room = Math.max(0, 24 - used.length)
+  const room = Math.max(0, capacity - used.length)
   const pick = async (files: File[]) => {
     if (busy || disabled) return
     if (focus.props.ref.current?.contains(document.activeElement)) focus.park()
