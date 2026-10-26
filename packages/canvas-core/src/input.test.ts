@@ -64,7 +64,8 @@ function setup(pan: PanState = { space: false, hand: false }) {
     return next
   })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
-  const input = attachInput(el as unknown as HTMLElement, camera, pan)
+  const menu = vi.fn()
+  const input = attachInput(el as unknown as HTMLElement, camera, pan, menu)
   disposers.push(input.dispose)
   const pointer = (type: string, id = 1, x = 0, y = 0, extra: Record<string, unknown> = {}) => {
     const e = event(type, {
@@ -85,6 +86,7 @@ function setup(pan: PanState = { space: false, hand: false }) {
     camera,
     pan,
     input,
+    menu,
     pointer,
     frames,
     advance(ms: number) {
@@ -316,4 +318,49 @@ it('非抓手触点不接管导航，卸载后滚轮、键盘和指针不再影�
   f.pointer('pointerdown', 1, 0, 0, { button: 1 })
   f.pointer('pointermove', 1, 100, 100)
   expect([f.camera.x, f.camera.y, f.pan.space, f.el.style.cursor]).toEqual([0, 0, false, ''])
+})
+
+it('右键轻微抖动不平移，菜单只在松开时打开一次，屏蔽两种平台时序的原生菜单', () => {
+  const f = setup()
+  f.pointer('pointerdown', 1, 100, 100, { button: 2 })
+  const downMenu = event('contextmenu', { button: 2 })
+  f.el.dispatchEvent(downMenu)
+  expect(downMenu.defaultPrevented).toBe(true)
+  expect(f.menu).not.toHaveBeenCalled()
+  f.pointer('pointermove', 1, 101, 101)
+  expect([f.camera.x, f.camera.y]).toEqual([0, 0])
+  f.pointer('pointerup', 1, 101, 101, { button: 2 })
+  expect(f.menu).toHaveBeenCalledOnce()
+  f.el.dispatchEvent(event('contextmenu', { button: 2 }))
+  expect(f.menu).toHaveBeenCalledOnce()
+  f.frame()
+  expect([f.camera.x, f.camera.y]).toEqual([0, 0])
+  f.win.dispatchEvent(event('keydown', { key: 'F10', shiftKey: true }))
+  f.el.dispatchEvent(event('contextmenu', { button: 0 }))
+  expect(f.menu).toHaveBeenCalledTimes(2)
+})
+
+it('右键越过阈值后平移，回到原点也不弹菜单；取消和相机接管后不继续拖动', () => {
+  const f = setup()
+  f.pointer('pointerdown', 1, 100, 100, { button: 2 })
+  f.advance(16)
+  f.pointer('pointermove', 1, 102, 100)
+  expect(f.camera.x).toBe(0)
+  f.pointer('pointermove', 1, 120, 110)
+  expect([f.camera.x, f.camera.y, f.el.style.cursor]).toEqual([20, 10, 'grabbing'])
+  f.advance(16)
+  f.pointer('pointermove', 1, 100, 100)
+  f.advance(101)
+  f.pointer('pointerup', 1, 100, 100, { button: 2 })
+  f.el.dispatchEvent(event('contextmenu', { button: 2 }))
+  expect(f.menu).not.toHaveBeenCalled()
+  expect(f.el.captured.size).toBe(0)
+  f.pointer('pointerdown', 2, 100, 100, { button: 2 })
+  f.pointer('pointercancel', 2)
+  f.pointer('pointerup', 2, 100, 100, { button: 2 })
+  expect(f.menu).not.toHaveBeenCalled()
+  f.pointer('pointerdown', 3, 100, 100, { button: 2 })
+  f.camera.panBy(40, 30)
+  f.pointer('pointermove', 3, 300, 300)
+  expect([f.camera.x, f.camera.y]).toEqual([40, 30])
 })

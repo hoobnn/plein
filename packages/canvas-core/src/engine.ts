@@ -233,7 +233,7 @@ export class Engine {
     const maintenance = scheduler.repeat(() => this.requestRender(), IDLE_MAINTENANCE_MS, false)
     this.disposers.push(() => scheduler.cancel(maintenance))
 
-    const input = attachInput(host, this.camera, this.pan)
+    const input = attachInput(host, this.camera, this.pan, (e) => this.showContextMenu(e))
     this.stopInputMotion = input.cancel
     const interactions = attachInteractions({
       el: host,
@@ -275,7 +275,6 @@ export class Engine {
       }),
       this.attachShortcuts(),
       this.attachActivate(),
-      this.attachContextMenu(),
     )
 
     const onResize = () => {
@@ -798,18 +797,12 @@ export class Engine {
     return () => host.removeEventListener('dblclick', onDblClick)
   }
 
-  private attachContextMenu() {
-    const host = this.opts.host
-    const onContextMenu = (e: MouseEvent) => {
-      e.preventDefault()
-      const world = this.clientToWorld(e.clientX, e.clientY)
-      const target = this.scene.hitTest(world.x, world.y)
-      if (target && !this.selection.has(target)) this.selection.set([target])
-      if (!target) this.selection.clear()
-      this.emitMenu({ kind: 'context', target, world, client: { x: e.clientX, y: e.clientY } })
-    }
-    host.addEventListener('contextmenu', onContextMenu)
-    return () => host.removeEventListener('contextmenu', onContextMenu)
+  private showContextMenu(e: MouseEvent) {
+    const world = this.clientToWorld(e.clientX, e.clientY)
+    const target = this.scene.hitTest(world.x, world.y)
+    if (target && !this.selection.has(target)) this.selection.set([target])
+    if (!target) this.selection.clear()
+    this.emitMenu({ kind: 'context', target, world, client: { x: e.clientX, y: e.clientY } })
   }
 
   private attachShortcuts() {

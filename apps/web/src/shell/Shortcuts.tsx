@@ -29,7 +29,7 @@ const GROUPS: Array<{ title: string; items: Array<[string, ...Combo[]]> }> = [
     title: '视图',
     items: [
       ['缩放', [MOD, '滚轮'], ['双指捏合']],
-      ['移动画布', ['空格', '拖动'], ['滚轮']],
+      ['移动画布', ['鼠标右键', '拖动'], ['空格', '拖动'], ['滚轮']],
       ['适应画布', [k('shift+1')]],
       ['缩放到选中', [k('shift+2')]],
       ['放大 / 缩小', [k('mod+plus')], [k('mod+minus')]],

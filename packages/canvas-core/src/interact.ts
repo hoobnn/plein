@@ -362,7 +362,7 @@ export function attachInteractions(host: InteractHost) {
     }
     const w = toWorld(e)
     if (!gesture) {
-      if (pan.space || pan.hand) return
+      if (pan.space || pan.hand || (e.buttons & 6) !== 0) return
       edges.setHoverElement(doc.readOnly ? null : nearElement(w.x, w.y))
       const port = doc.readOnly ? null : findPortAt(w.x, w.y)
       const handle = port ? null : handleAt(w.x, w.y)

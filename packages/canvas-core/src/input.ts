@@ -30,9 +30,20 @@ export const isControlTarget = (t: EventTarget | null) =>
  * 触控板/滚轮/拖拽输入。
  * - 触控板双指滑动 = 平移；捏合（ctrlKey wheel）= 缩放
  * - 鼠标滚轮 + ⌘/Ctrl = 缩放
- * - 空格 + 拖拽、抓手工具拖拽、中键拖拽 = 平移，松手带惯性
+ * - 右键拖动、空格 + 拖拽、抓手工具拖拽、中键拖拽 = 平移，松手带惯性
+ * - 右键轻点在松开时打开菜单，移动达到 3px 后只平移、不弹菜单
  */
-export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
+export function attachInput(
+  el: HTMLElement,
+  camera: Camera,
+  pan: PanState,
+  onContextClick?: (event: MouseEvent) => void,
+) {
+  let right = false
+  let rightDragged = false
+  let rightHandled = false
+  let startX = 0
+  let startY = 0
   let pointer: number | null = null
   let lastX = 0
   let lastY = 0
@@ -60,6 +71,8 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
     touch.cancel()
     const id = pointer
     pointer = null
+    right = false
+    rightDragged = false
     vx = vy = 0
     if (id !== null && el.hasPointerCapture(id)) el.releasePointerCapture(id)
     el.style.cursor = idleCursor()
@@ -92,16 +105,22 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
     if (e.pointerType === 'touch' && pan.hand) return
     if (pointer !== null) return
     stopInertia()
-    const panning = e.button === 1 || (e.button === 0 && (pan.space || pan.hand))
+    rightHandled = false
+    const panning = e.button === 2 || e.button === 1 || (e.button === 0 && (pan.space || pan.hand))
     if (!panning) return
     touch.cancel()
     pointer = e.pointerId
+    right = e.button === 2
+    rightDragged = false
+    rightHandled = right
+    startX = e.clientX
+    startY = e.clientY
     lastX = e.clientX
     lastY = e.clientY
     lastT = e.timeStamp
     vx = vy = 0
     el.setPointerCapture(e.pointerId)
-    el.style.cursor = 'grabbing'
+    if (!right) el.style.cursor = 'grabbing'
   }
 
   const onPointerMove = (e: PointerEvent) => {
@@ -111,6 +130,11 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
     const coalesced = e.getCoalescedEvents?.()
     const events = coalesced?.length ? coalesced : [e]
     for (const ev of events) {
+      if (right && !rightDragged) {
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 3) continue
+        rightDragged = true
+        el.style.cursor = 'grabbing'
+      }
       const dx = ev.clientX - lastX
       const dy = ev.clientY - lastY
       const dt = Math.max(1, ev.timeStamp - lastT)
@@ -125,9 +149,17 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
 
   const onPointerUp = (e: PointerEvent) => {
     if (e.pointerId !== pointer) return
+    if (right && !rightDragged) onPointerMove(e)
+    const contextClick = right && !rightDragged
+    right = false
+    rightDragged = false
     pointer = null
     if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId)
     el.style.cursor = idleCursor()
+    if (contextClick) {
+      onContextClick?.(e)
+      return
+    }
     // 已经按住停稳时，不能用最后一次移动的旧速度再次甩动画布。
     // 同样按事件时间判断，渲染慢时松手事件排在一帧之后处理，不算停稳。
     if (e.timeStamp - lastT > 100) return
@@ -154,7 +186,15 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
     if (e.button === 1) e.preventDefault()
   }
 
+  const onContextMenu = (e: MouseEvent) => {
+    e.preventDefault()
+    // macOS 可在按下时发菜单事件，Windows/Linux 也可能在松开后发。
+    // 鼠标右键由 pointerup 统一判定轻点或拖动，避免提前打开或重复打开菜单。
+    if (!rightHandled) onContextClick?.(e)
+  }
+
   const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) rightHandled = false
     if (
       e.code === 'Space' &&
       !e.repeat &&
@@ -179,6 +219,7 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
     cancel()
   }
 
+  el.addEventListener('contextmenu', onContextMenu)
   el.addEventListener('wheel', onWheel, { passive: false })
   el.addEventListener('pointerdown', onPointerDown)
   el.addEventListener('pointermove', onPointerMove)
@@ -197,6 +238,7 @@ export function attachInput(el: HTMLElement, camera: Camera, pan: PanState) {
       cancel()
       touch.dispose()
       el.style.cursor = ''
+      el.removeEventListener('contextmenu', onContextMenu)
       el.removeEventListener('wheel', onWheel)
       el.removeEventListener('pointerdown', onPointerDown)
       el.removeEventListener('pointermove', onPointerMove)
