@@ -187,9 +187,13 @@ export function continueStale(engine: Engine, nodeId: string): boolean {
   const parent = engine.doc.get(from.elementId)
   const now = videoAssetOf(parent)
   if (!now || now === from.assetId) return false
-  return engine.doc
+  const live = engine.doc
     .edgesOf(nodeId)
-    .some((e) => e.to[0] === nodeId && engine.doc.get(e.from[0])?.assetId === from.frameAssetId)
+    .some(
+      (edge) =>
+        edge.from[0] === from.elementId && edge.from[1] === 'lastFrame' && edge.to[0] === nodeId,
+    )
+  return !live && !!from.frameAssetId
 }
 
 /** 用父镜头当前的视频重新取帧，替换旧的首帧图片（同一个元素换资产，连线不动） */
@@ -206,14 +210,13 @@ export async function refreshContinue(engine: Engine, nodeId: string, signal?: A
     return e.to[0] === nodeId && el?.kind === 'image' && el.assetId === from.frameAssetId
   })
   const frameEl = edge && doc.get(edge.from[0])
-  if (!edge || !frameEl) throw new Error('首帧图片已经断开了')
   const made = await api.mediaDerive(
     {
       op: 'frame',
       assetId,
       at: from.last ? 0 : (from.at ?? 0),
       ...(from.last ? { last: true } : {}),
-      name: frameEl.name,
+      name: frameEl?.name ?? `${parent.name ?? '前镜'} · 接续帧`,
     },
     signal,
   )
@@ -226,22 +229,23 @@ export async function refreshContinue(engine: Engine, nodeId: string, signal?: A
   if (
     videoAssetOf(doc.get(from.elementId)) !== assetId ||
     JSON.stringify(continuesFromOf(doc.get(nodeId))) !== JSON.stringify(from) ||
-    doc.get(frameEl.id)?.assetId !== from.frameAssetId ||
-    !doc
-      .edgesOf(nodeId)
-      .some(
-        (e) =>
-          e.id === edge.id &&
-          e.from[0] === frameEl.id &&
-          e.from[1] === edge.from[1] &&
-          e.to[0] === nodeId &&
-          e.to[1] === edge.to[1],
-      )
+    (frameEl && doc.get(frameEl.id)?.assetId !== from.frameAssetId) ||
+    (edge &&
+      !doc
+        .edgesOf(nodeId)
+        .some(
+          (e) =>
+            e.id === edge.id &&
+            e.from[0] === frameEl!.id &&
+            e.from[1] === edge.from[1] &&
+            e.to[0] === nodeId &&
+            e.to[1] === edge.to[1],
+        ))
   )
     throw new Error('续镜内容已经改变，请重新获取首帧')
   doc.undo.stopCapturing()
   doc.ydoc.transact(() => {
-    updateElement(doc, frameEl.id, { assetId: asset.id })
+    if (frameEl) updateElement(doc, frameEl.id, { assetId: asset.id })
     setParam(doc, nodeId, 'continuesFrom', {
       ...from,
       assetId,

@@ -327,8 +327,8 @@
 
 /* 生成器是阅读和输入区，使用实底隔开后方作品；位置与尺寸仍由画布引擎跟随。 */
 .plein-generator {
+  container-type: inline-size;
   background: var(--surface);
-  box-shadow: var(--shadow-3);
 }
 .plein-generator-toggle,
 .plein-generator-name {
@@ -338,9 +338,62 @@
   box-shadow: inset 0 -1px 0 var(--line);
 }
 .plein-generator-footer {
+  margin-top: auto;
+  flex-shrink: 0;
   z-index: 1;
   background: var(--surface);
   box-shadow: 0 -1px 0 var(--line);
+}
+.plein-generator-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.plein-generator-models,
+.plein-generator-controls {
+  display: contents;
+}
+.plein-generator-models > button {
+  flex: 0 0 auto;
+  height: 40px;
+  padding-inline: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+.plein-generator-models > .plein-generator-mode {
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  padding-right: 16px;
+}
+.plein-generator-controls > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.plein-generator-params {
+  height: 40px;
+  padding-inline: 4px;
+}
+.plein-generator-footer {
+  box-shadow: none;
+}
+.plein-generator-body > :not(.plein-prompt) {
+  flex-shrink: 0;
+}
+.plein-generator-body > .plein-prompt:not([data-large]) {
+  display: flex;
+  flex: 1 0 144px;
+  flex-direction: column;
+}
+.plein-generator-body > .plein-prompt:not([data-large]) > .plein-mention-input {
+  display: flex;
+  flex: 1;
+  min-height: 144px;
+}
+.plein-generator-body .plein-prompt:not([data-large]) .plein-prompt-input {
+  field-sizing: fixed;
+  flex: 1;
+  min-height: 144px;
+  max-height: none;
 }
 
 /* 输入时只改变颜色，不对正文或随内容变化的高度做过渡。 */

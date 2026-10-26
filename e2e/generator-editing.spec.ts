@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { clickElement, newProject } from './canvas'
+import { clickElement, revealGenerator, newProject } from './canvas'
 
 test('正在编辑长正文时平移与窗口缩小不收起输入框，选区和正文保持', async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 560 })
@@ -14,6 +14,7 @@ test('正在编辑长正文时平移与窗口缩小不收起输入框，选区�
     }),
   )
   await clickElement(page, id)
+  await revealGenerator(page)
   await page.evaluate(() =>
     (
       window.__plein.engine as Window['__plein']['engine'] & {
@@ -61,10 +62,14 @@ test('正在编辑长正文时平移与窗口缩小不收起输入框，选区�
   await expect(prompt).toHaveValue(text)
   expect(await selection()).toEqual(before)
   await page.screenshot({ path: 'test-results/generator-long-editing.png' })
-  await panel.getByRole('button', { name: '收起编辑器' }).click()
-  await expect(panel).toHaveAttribute('data-compact', 'true')
-  await panel.getByRole('button', { name: '编辑文本', exact: true }).click()
+  // 编辑器与卡片一起移出视口时，先把画布移回来，再点击关闭。
+  await page.setViewportSize({ width: 1000, height: 560 })
+  await revealGenerator(page)
+  await page.getByRole('button', { name: '关闭节点编辑器', exact: true }).click()
+  await clickElement(page, id)
+  await revealGenerator(page)
   await expect(prompt).toHaveValue(text)
+  await prompt.focus()
   await prompt.evaluate((el) => {
     const input = el as HTMLTextAreaElement
     input.setSelectionRange(input.value.length, input.value.length)
@@ -80,7 +85,7 @@ test('正在编辑长正文时平移与窗口缩小不收起输入框，选区�
     .toBe(`${text} tail`)
 })
 
-test('角色名称草稿在平移时不失焦或提前提交，手动收起后保存并可撤销', async ({ page }) => {
+test('角色名称草稿在平移时不失焦或提前提交，关闭编辑器后保存并可撤销', async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 560 })
   await newProject(page)
   const id = await page.evaluate(() =>
@@ -93,6 +98,7 @@ test('角色名称草稿在平移时不失焦或提前提交，手动收起后�
     }),
   )
   await clickElement(page, id)
+  await revealGenerator(page)
   await page.evaluate(() =>
     (
       window.__plein.engine as Window['__plein']['engine'] & {
@@ -122,8 +128,8 @@ test('角色名称草稿在平移时不失焦或提前提交，手动收起后�
   expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, id)).toBe(
     '原角色名称',
   )
-  await panel.getByRole('button', { name: '收起编辑器' }).click()
-  await expect(panel).toHaveAttribute('data-compact', 'true')
+  await page.getByRole('button', { name: '关闭节点编辑器', exact: true }).click()
+  await expect(panel).toHaveCount(0)
   await expect
     .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, id))
     .toBe('尚未提交的角色草稿')
@@ -135,7 +141,8 @@ test('角色名称草稿在平移时不失焦或提前提交，手动收起后�
   await expect
     .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, id))
     .toBe('尚未提交的角色草稿')
-  await panel.getByRole('button', { name: '编辑角色', exact: true }).click()
+  await clickElement(page, id)
+  await revealGenerator(page)
   await expect(name).toHaveValue('尚未提交的角色草稿')
 })
 
@@ -153,6 +160,7 @@ test('生成受理等待时按钮与快捷键共享保护，重开生成器保�
     }),
   )
   await clickElement(page, id)
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
   const submit = generator.getByRole('button', { name: '生成', exact: true })
   await expect(submit).toBeEnabled()
@@ -186,6 +194,7 @@ test('生成受理等待时按钮与快捷键共享保护，重开生成器保�
     await page.evaluate(() => window.__plein.engine.selection.set([]))
     await expect(generator).toBeHidden()
     await clickElement(page, id)
+    await revealGenerator(page)
     await expect(submit).toBeDisabled()
     await expect(prompt).toHaveValue('等待期间继续编辑的蓝色水杯')
     await generator.screenshot({
@@ -244,6 +253,7 @@ test('运行已受理但应答未返回时仍可取消，不被提交等待锁�
   })
   try {
     await clickElement(page, id)
+    await revealGenerator(page)
     const generator = page.getByTestId('generator')
     await generator.getByRole('button', { name: '生成', exact: true }).click()
     await expect.poll(() => accepted).toBe(true)
@@ -290,6 +300,7 @@ for (const mode of ['legacy229'] as const) {
         }),
       }))
       await clickElement(page, ids.role)
+      await revealGenerator(page)
       const generator = page.getByTestId('generator')
       const name = generator.getByRole('textbox', { name: '节点名称', exact: true })
       await name.fill('角色新名')
@@ -317,6 +328,7 @@ for (const mode of ['legacy229'] as const) {
         .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, ids.role))
         .toBe('角色新名')
       await clickElement(page, ids.text)
+      await revealGenerator(page)
       const mark = generator.getByTestId('mention-highlights').locator('mark')
       await expect(mark).toHaveAttribute('data-state', 'missing')
       await page.getByRole('button', { name: '撤销', exact: true }).click()
@@ -340,6 +352,7 @@ for (const commit of ['Enter', 'blur']) {
       }),
     )
     await clickElement(page, id)
+    await revealGenerator(page)
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
     const generator = page.getByTestId('generator')
@@ -364,6 +377,7 @@ for (const commit of ['Enter', 'blur']) {
       ).readOnly = false
     })
     await clickElement(page, id)
+    await revealGenerator(page)
     await input.fill('恢复后角色名')
     await input.press('Enter')
     await expect

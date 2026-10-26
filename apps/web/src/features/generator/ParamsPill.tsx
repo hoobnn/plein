@@ -73,7 +73,7 @@ export function ParamsPill({
         aria-label="参数"
         aria-expanded={!!anchor}
         onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
-        className="ui-btn ui-btn-lg ui-btn-menu min-w-0"
+        className="plein-generator-params ui-btn ui-btn-menu min-w-0 max-w-full"
       >
         {ratio ? (
           <AspectGlyph ratio={ratio} size={16} />
@@ -82,7 +82,9 @@ export function ParamsPill({
         ) : (
           <Icon name="sliders" />
         )}
-        <span className="truncate tabular-nums">{summary || '参数'}</span>
+        <span className="min-w-0 text-left text-sm whitespace-nowrap tabular-nums">
+          {summary || '参数'}
+        </span>
         {audio && (
           <span title={audioOn ? '生成音频' : '不生成音频'} className="flex items-center">
             <Icon name={audioOn ? 'sound' : 'mute'} size={14} />

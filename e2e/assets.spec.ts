@@ -3,7 +3,16 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
-import { addNode, byName, centerOf, edgesInto, elements, newProject, waitNode } from './canvas'
+import {
+  addNode,
+  byName,
+  centerOf,
+  revealGenerator,
+  edgesInto,
+  elements,
+  newProject,
+  waitNode,
+} from './canvas'
 
 let dir = ''
 
@@ -39,9 +48,14 @@ test('角色卡上传参考图，@ 引用后换参考图，镜头图标为过期
   await newProject(page)
   await addNode(page, '角色')
   const card = await byName(page, '角色')
+  await revealGenerator(page)
 
   const chooser = page.waitForEvent('filechooser')
-  await page.getByRole('button', { name: '参考图' }).click()
+  await page.getByTestId('generator').getByRole('button', { name: '上传参考', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: '上传参考', exact: true })
+    .getByRole('button', { name: '参考图', exact: true })
+    .click()
   await (await chooser).setFiles(join(dir, 'still.png'))
   await expect.poll(() => edgesInto(page, card.id)).toHaveLength(1)
   const [imageId] = (await assetElements(page, 'image'))[0]!
@@ -50,6 +64,7 @@ test('角色卡上传参考图，@ 引用后换参考图，镜头图标为过期
   await page.keyboard.press('Escape')
   await addNode(page, '图片', { x: 1200, y: 200 })
   const node = await byName(page, '生成图片')
+  await revealGenerator(page)
   const prompt = page.getByRole('textbox', { name: '提示词' })
   await prompt.click()
   await page.keyboard.type('@角色')
@@ -82,8 +97,13 @@ test('角色卡上传参考图，@ 引用后换参考图，镜头图标为过期
   await page.keyboard.press('Escape')
   const p = await centerOf(page, card.id)
   await page.mouse.click(p.x, p.y)
+  await revealGenerator(page)
   const again = page.waitForEvent('filechooser')
-  await page.getByRole('button', { name: '参考图' }).click()
+  await page.getByTestId('generator').getByRole('button', { name: '上传参考', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: '上传参考', exact: true })
+    .getByRole('button', { name: '参考图', exact: true })
+    .click()
   await (await again).setFiles(join(dir, 'side.png'))
   await expect.poll(() => edgesInto(page, card.id)).toHaveLength(2)
   await expect.poll(stale).toContain(node.id)

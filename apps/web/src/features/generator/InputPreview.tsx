@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
 import { fieldsOf, type NodeInfo } from '../../canvas/nodes'
 import { Icon } from '../../ui/icons'
+import { submittedMedia } from './submittedMedia'
 
 /** 改动后多久重新准备一次实际输入：打字时不逐字请求 */
 const DEBOUNCE_MS = 400
@@ -69,6 +70,8 @@ const KIND_LABEL: Record<InputRefKind, string> = {
 
 /** 引用的用法标签：送了几张、为什么没送 */
 function refState(r: InputRef): { text: string; tone: string; title?: string } {
+  if (r.reason === 'selection_missing') return { text: '所选图已失效', tone: 'ui-tag-warning' }
+  if (r.selected?.length === 0) return { text: '仅文字', tone: 'ui-tag' }
   if (r.reason === 'failed')
     return { text: '参考图失败', tone: 'ui-tag-warning', title: '参考图生成失败，只附文字设定' }
   if (r.reason === 'no_image')
@@ -78,7 +81,7 @@ function refState(r: InputRef): { text: string; tone: string; title?: string } {
   if (r.reason === 'over_limit')
     return r.sent.length
       ? {
-          text: `送入 ${r.sent.length}/${r.available.length} 张`,
+          text: `送入 ${r.sent.length}/${(r.selected ?? r.available).length} 张`,
           tone: 'ui-tag-warning',
           title: '超过模型的参考图上限，其余的没有送入',
         }
@@ -170,11 +173,7 @@ export function InputPreview({
   const nameOf = (assetId: string | undefined, source: string | undefined) =>
     data.refs.find((r) => assetId && r.sent.includes(assetId))?.name ??
     ((source && engine.doc.get(source)?.name) || '连入')
-  const images = Object.entries(data.inputs).flatMap(([port, values]) =>
-    values
-      .filter((v) => v.type === 'image' || v.type === 'video' || v.type === 'audio')
-      .map((v) => ({ ...v, port })),
-  )
+  const images = submittedMedia(data)
   const params = Object.entries(data.params).filter(
     ([k, v]) => k !== 'model' && v !== '' && v !== undefined && typeof v !== 'object',
   )
@@ -271,7 +270,7 @@ export function InputPreview({
             <section className="flex flex-col gap-1.5">
               <h4 className="ui-section-title">送入顺序</h4>
               <div className="ui-scrollbar flex gap-2 overflow-x-auto pb-0.5">
-                {images.map((v, i) => (
+                {images.map((v) => (
                   <figure
                     key={`${v.port}-${v.source ?? ''}-${v.resultId ?? ''}-${v.assetId}`}
                     className="flex w-12 flex-none flex-col items-center gap-1 text-2xs text-ink-subtle"
@@ -292,7 +291,7 @@ export function InputPreview({
                           className="size-full object-cover"
                         />
                       )}
-                      <span className="ui-badge absolute top-1 left-1 tabular-nums">{i + 1}</span>
+                      <span className="ui-badge absolute top-1 left-1 tabular-nums">{v.index}</span>
                     </span>
                     <figcaption className="w-full truncate text-center">
                       {v.type === 'video' ? '视频 · ' : v.type === 'audio' ? '音频 · ' : ''}

@@ -10,6 +10,9 @@ import {
   replaceInput,
   type ResultValue,
 } from '@plein/doc'
+import type { PreparedInput } from '@plein/protocol'
+import { submittedMedia, type SubmittedMedia } from './submittedMedia'
+import { RoleReferencePicker } from './RoleReferencePicker'
 import { useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { importFiles } from '../../canvas/import'
@@ -17,6 +20,8 @@ import { beginImport } from '../../canvas/importProgress'
 import type { NodeInfo, Upstream } from '../../canvas/nodes'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
+import { Popover } from '../../ui/Popover'
+import { Presence } from '../../ui/Presence'
 
 type InputPort = NodeInfo['inputs'][number]
 
@@ -33,6 +38,9 @@ export function Inputs({
   node,
   ups,
   trailing,
+  prepared,
+  preparing,
+  toolbar,
 }: {
   engine: Engine
   el: CanvasElement
@@ -40,10 +48,16 @@ export function Inputs({
   ups: Map<string, Upstream[]>
   /** 第一行右侧的操作（对结果的操作） */
   trailing?: React.ReactNode
+  prepared?: PreparedInput | null
+  preparing?: boolean
+  toolbar?: React.ReactNode
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [target, setTarget] = useState<{ port: InputPort; edgeId?: string } | null>(null)
   const [replacing, setReplacing] = useState<{ port: InputPort; edgeId: string } | null>(null)
+  const [addAnchor, setAddAnchor] = useState<HTMLButtonElement | null>(null)
+  const [canvasAnchor, setCanvasAnchor] = useState<HTMLButtonElement | null>(null)
+  const [canvasQuery, setCanvasQuery] = useState('')
   const [dragged, setDragged] = useState<string | null>(null)
   const media = node.inputs.filter((p) => p.type !== 'text')
   const texts = node.inputs.filter((p) => p.type === 'text').flatMap((p) => ups.get(p.id) ?? [])
@@ -126,12 +140,38 @@ export function Inputs({
     else locate(up)
   }
 
+  const submitted = prepared ? submittedMedia(prepared) : null
+  const sentTiles = new Map<string, React.ReactNode>()
+  const unusedTiles: React.ReactNode[] = []
+  const insertToken = (token: string) => {
+    const current = engine.doc.get(el.id)
+    if (!current) return
+    const prompt = String(current.params?.prompt ?? '')
+    engine.doc.undo.stopCapturing()
+    setParam(
+      engine.doc,
+      el.id,
+      'prompt',
+      `${prompt}${prompt && !/\s$/.test(prompt) ? ' ' : ''}@${token} `,
+    )
+    engine.doc.undo.stopCapturing()
+  }
+  const mediaKey = (v: SubmittedMedia) => `${v.port}:${v.token}`
   // 生成视频的图片按模式标注用途：图生视频第 1 张是首帧，首尾帧第 1、2 张分别是首帧、尾帧
   const mode = node.capability === 'video.generate' ? el.params?.mode : undefined
-  const tokenOf = (port: InputPort, i: number) =>
-    mode === 'reference' && ['images', 'videos', 'audios'].includes(port.id)
-      ? `@${port.id.slice(0, -1)}${i + 1}`
-      : undefined
+  const tokenOf = (port: InputPort, i: number) => {
+    const value = ups.get(port.id)?.[i]?.value
+    const sent = submitted?.find(
+      (v) =>
+        value &&
+        v.type === value.type &&
+        v.port === port.id &&
+        (!v.source || v.source === ups.get(port.id)?.[i]?.source.id) &&
+        'assetId' in value &&
+        v.assetId === value.assetId,
+    )
+    return mode === 'reference' && sent && !preparing ? `@${sent.token}` : undefined
+  }
   const roleOf = (port: InputPort, i: number) => {
     const token = tokenOf(port, i)
     if (token) return token
@@ -154,12 +194,24 @@ export function Inputs({
     const caption = port.multiple ? undefined : port.label
     for (const [i, u] of list.entries()) {
       n++
-      tiles.push(
+      const value = u.value
+      const sent = submitted?.find(
+        (v) =>
+          value &&
+          v.type === value.type &&
+          v.port === port.id &&
+          (!v.source || v.source === ups.get(port.id)?.[i]?.source.id) &&
+          'assetId' in value &&
+          v.assetId === value.assetId,
+      )
+      const unused = !!prepared && !sent
+      const tile = (
         <RefTile
           key={u.edgeId}
-          index={n}
+          index={sent?.index ?? n}
+          unused={unused}
           up={u}
-          caption={roleOf(port, i) ?? caption}
+          caption={unused ? '未送入' : (roleOf(port, i) ?? caption)}
           onReference={
             tokenOf(port, i) && u.value
               ? () => {
@@ -201,15 +253,21 @@ export function Inputs({
           }}
           canPrevious={i > 0}
           canNext={i < list.length - 1}
-        />,
+        />
       )
+      tiles.push(tile)
+      if (sent) sentTiles.set(mediaKey(sent), tile)
+      else if (prepared) unusedTiles.push(tile)
     }
     if (port.multiple || list.length === 0)
       adds.push(
         <button
           key={`add-${port.id}`}
           type="button"
-          onClick={() => pick(port)}
+          onClick={() => {
+            setAddAnchor(null)
+            pick(port)
+          }}
           title={`上传${port.label}，也可以从画布上的对应素材拖线连入`}
           className={`ui-btn ui-btn-sm ui-btn-secondary ${port.required && list.length === 0 ? 'text-danger' : ''}`}
         >
@@ -219,23 +277,186 @@ export function Inputs({
       )
   }
 
-  if (!tiles.length && !adds.length && !texts.length && !trailing) return null
+  const availablePorts = media.filter(
+    (port) => port.multiple || !inputEdges(engine.doc, el.id, port.id).length,
+  )
+  const candidates = [...engine.doc.elements()]
+    .flatMap((source) =>
+      source.id === el.id
+        ? []
+        : (elementPorts(source)?.outputs ?? []).flatMap((output) =>
+            availablePorts
+              .filter(
+                (port) =>
+                  (port.type === output.type || port.type === 'any' || output.type === 'any') &&
+                  !inputEdges(engine.doc, el.id, port.id).some(
+                    (edge) => edge.from[0] === source.id && edge.from[1] === output.id,
+                  ),
+              )
+              .map((port) => ({ source, output, port })),
+          ),
+    )
+    .filter(({ source, port }) =>
+      `${source.name ?? source.id} ${port.label}`
+        .toLocaleLowerCase()
+        .includes(canvasQuery.trim().toLocaleLowerCase()),
+    )
+
+  if (!tiles.length && !adds.length && !texts.length && !trailing && !toolbar) return null
   return (
-    <div className="flex flex-col gap-3 px-4 pt-4">
-      {(adds.length > 0 || trailing) && (
-        <div className="flex flex-wrap items-center gap-2">
-          {adds}
-          {trailing && (
-            <div role="toolbar" aria-label="结果操作" className="ml-auto flex items-center gap-0.5">
-              {trailing}
-            </div>
-          )}
-        </div>
+    <div className="flex flex-col gap-2 px-4 pt-3">
+      <div className="plein-generator-input-tools flex items-center gap-2 pr-9">
+        {adds.length > 0 && (
+          <>
+            <button
+              type="button"
+              className="ui-btn ui-btn-sm ui-btn-secondary"
+              aria-label="上传参考"
+              aria-expanded={!!addAnchor}
+              onClick={(e) => {
+                setCanvasAnchor(null)
+                setAddAnchor(addAnchor ? null : e.currentTarget)
+              }}
+            >
+              <Icon name="plus" size={14} />
+              上传
+            </button>
+            <Presence>
+              {addAnchor && (
+                <Popover
+                  anchor={addAnchor}
+                  onClose={() => setAddAnchor(null)}
+                  label="上传参考"
+                  width={220}
+                >
+                  <div className="flex flex-col items-stretch gap-1">{adds}</div>
+                </Popover>
+              )}
+            </Presence>
+            <button
+              type="button"
+              className="ui-btn ui-btn-sm ui-btn-secondary"
+              aria-label="画布参考"
+              aria-expanded={!!canvasAnchor}
+              onClick={(e) => {
+                setAddAnchor(null)
+                setCanvasQuery('')
+                setCanvasAnchor(canvasAnchor ? null : e.currentTarget)
+              }}
+            >
+              <Icon name="board" size={14} />
+              画布参考
+            </button>
+            <Presence>
+              {canvasAnchor && (
+                <Popover
+                  anchor={canvasAnchor}
+                  onClose={() => setCanvasAnchor(null)}
+                  label="画布参考"
+                  width={340}
+                >
+                  <input
+                    className="ui-input mb-2 w-full"
+                    aria-label="搜索画布参考"
+                    placeholder="搜索画布素材"
+                    value={canvasQuery}
+                    onChange={(e) => setCanvasQuery(e.target.value)}
+                  />
+                  <div
+                    role="listbox"
+                    aria-label="可用画布素材"
+                    className="ui-scrollbar max-h-64 overflow-y-auto"
+                  >
+                    {candidates.map(({ source, output, port }) => (
+                      <button
+                        key={`${source.id}/${output.id}/${port.id}`}
+                        type="button"
+                        role="option"
+                        aria-selected={false}
+                        className="ui-menu-item w-full"
+                        onClick={() => {
+                          if (!port.multiple && inputEdges(engine.doc, el.id, port.id).length) {
+                            useCanvas.getState().notify('该输入已接入参考，请重新选择')
+                            return
+                          }
+                          engine.doc.undo.stopCapturing()
+                          const edge = connect(engine.doc, [source.id, output.id], [el.id, port.id])
+                          engine.doc.undo.stopCapturing()
+                          if (edge) setCanvasAnchor(null)
+                          else useCanvas.getState().notify('无法添加该参考，请重新选择')
+                        }}
+                      >
+                        <Icon
+                          name={
+                            output.type === 'video'
+                              ? 'video'
+                              : output.type === 'audio'
+                                ? 'audio'
+                                : 'image'
+                          }
+                          size={16}
+                        />
+                        <span className="min-w-0 flex-1 text-left">
+                          <span className="block truncate">{source.name ?? source.id}</span>
+                          <span className="ui-menu-desc">{port.label}</span>
+                        </span>
+                      </button>
+                    ))}
+                    {!candidates.length && (
+                      <p className="px-2 py-3 text-xs text-ink-subtle">没有匹配的可用素材</p>
+                    )}
+                  </div>
+                </Popover>
+              )}
+            </Presence>
+          </>
+        )}
+        <RoleReferencePicker engine={engine} nodeId={el.id} data={prepared} />
+        {toolbar}
+        {trailing && (
+          <div role="toolbar" aria-label="结果操作" className="ml-auto flex items-center gap-0.5">
+            {trailing}
+          </div>
+        )}
+      </div>
+      {preparing && (
+        <p role="status" className="text-2xs text-ink-subtle">
+          正在确认实际输入与编号…
+        </p>
       )}
-      {tiles.length > 0 && (
-        <div className="ui-scrollbar flex items-start gap-2 overflow-x-auto pt-1.5 pb-0.5">
-          {tiles}
+      {submitted?.length || (!prepared && tiles.length) ? (
+        <div
+          data-testid="submitted-references"
+          aria-label="实际送入的参考素材"
+          aria-busy={preparing}
+          className="ui-scrollbar flex items-start gap-2 overflow-x-auto pt-1.5 pb-0.5"
+        >
+          {submitted
+            ? submitted.map(
+                (item) =>
+                  sentTiles.get(mediaKey(item)) ?? (
+                    <SubmittedTile
+                      key={`${item.port}:${item.token}`}
+                      engine={engine}
+                      el={el}
+                      item={item}
+                      data={prepared!}
+                      onReference={
+                        mode === 'reference' && !preparing
+                          ? () => insertToken(item.token)
+                          : undefined
+                      }
+                    />
+                  ),
+              )
+            : tiles}
         </div>
+      ) : null}
+      {unusedTiles.length > 0 && (
+        <details className="text-2xs text-ink-subtle" open={submitted?.length === 0}>
+          <summary className="cursor-pointer py-1">未送入的连线素材 · {unusedTiles.length}</summary>
+          <div className="ui-scrollbar flex gap-2 overflow-x-auto py-1">{unusedTiles}</div>
+        </details>
       )}
       {replacing && (
         <div className="flex items-center gap-2 rounded-lg bg-surface-2 p-2">
@@ -311,9 +532,10 @@ function preview(v: ResultValue | undefined) {
   return null
 }
 
-/** 一张连入的素材：编号角标，悬停出现断开按钮，点击定位到上游 */
+/** 参考素材保持紧凑；点击预览，低频管理操作放入独立菜单，拖动与键盘排序仍可直接使用。 */
 function RefTile({
   index,
+  unused = false,
   up,
   caption,
   onLocate,
@@ -331,6 +553,7 @@ function RefTile({
   onReference,
 }: {
   index: number
+  unused?: boolean
   up: Upstream
   caption?: string
   onLocate(): void
@@ -347,6 +570,11 @@ function RefTile({
   canNext: boolean
   onReference?(): void
 }) {
+  const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
+  const act = (action: () => void) => {
+    setAnchor(null)
+    action()
+  }
   const v = up.value
   const img = preview(v)
   const name = up.source.name ?? '上游'
@@ -360,13 +588,14 @@ function RefTile({
   return (
     <div
       role="group"
-      aria-label={`参考 ${index}：${name}`}
+      aria-label={unused ? `未送入：${name}` : `参考 ${index}：${name}`}
+      data-asset-id={v && 'assetId' in v ? v.assetId : undefined}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault()
         onDrop()
       }}
-      className="group relative flex flex-none flex-col items-center gap-1 text-2xs text-ink-subtle"
+      className="relative flex w-16 flex-none flex-col items-center gap-1 text-2xs text-ink-subtle"
     >
       <button
         type="button"
@@ -385,7 +614,7 @@ function RefTile({
             onMove(e.key === 'ArrowLeft' ? -1 : 1)
           }
         }}
-        className="relative size-12 overflow-hidden rounded-md bg-surface-2 shadow-1"
+        className="relative size-16 overflow-hidden rounded-lg bg-surface-2 shadow-1"
       >
         {img ? (
           <img src={img} alt="" className="size-full object-cover" />
@@ -395,18 +624,19 @@ function RefTile({
           </span>
         )}
         <span className="absolute top-1 left-1 flex size-4 items-center justify-center rounded-full bg-black/60 text-2xs font-medium text-white tabular-nums">
-          {index}
+          {unused ? '—' : index}
         </span>
         {!v && <span className="absolute inset-0 bg-canvas/50" />}
       </button>
       <button
         type="button"
-        onClick={onRemove}
-        aria-label={`断开「${name}」`}
-        title="断开"
-        className="absolute -top-1.5 -right-1.5 hidden size-5 items-center justify-center rounded-full bg-surface-3 text-ink shadow-2 group-hover:flex"
+        onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
+        aria-label={`管理参考 ${index}`}
+        aria-expanded={!!anchor}
+        title={`管理参考 ${index}：${name}`}
+        className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-md bg-surface/95 text-sm text-ink shadow-1"
       >
-        <Icon name="x" size={12} />
+        ⋯
       </button>
       {caption &&
         (onReference ? (
@@ -421,57 +651,78 @@ function RefTile({
         ) : (
           <span>{caption}</span>
         ))}
-      <div className="flex gap-0.5">
-        {draggable && (
-          <>
+      <Presence>
+        {anchor && (
+          <Popover
+            anchor={anchor}
+            onClose={() => setAnchor(null)}
+            label={`管理参考 ${index}`}
+            width={220}
+          >
+            <p className="truncate px-2 py-1 text-xs text-ink-subtle" title={name}>
+              {name}
+            </p>
+            {draggable && (
+              <>
+                <button
+                  type="button"
+                  className="ui-menu-item"
+                  disabled={!canPrevious}
+                  aria-label={`向前移动参考 ${index}`}
+                  onClick={() => act(() => onMove(-1))}
+                >
+                  <span aria-hidden="true">←</span>向前移动
+                </button>
+                <button
+                  type="button"
+                  className="ui-menu-item"
+                  disabled={!canNext}
+                  aria-label={`向后移动参考 ${index}`}
+                  onClick={() => act(() => onMove(1))}
+                >
+                  <span aria-hidden="true">→</span>向后移动
+                </button>
+              </>
+            )}
             <button
               type="button"
-              className="ui-btn ui-btn-quiet p-0.5"
-              disabled={!canPrevious}
-              aria-label={`向前移动参考 ${index}`}
-              onClick={() => onMove(-1)}
+              className="ui-menu-item"
+              aria-label={`替换参考 ${index}`}
+              onClick={() => act(onReplace)}
             >
-              ←
+              <Icon name="retry" size={14} />
+              从画布替换
             </button>
             <button
               type="button"
-              className="ui-btn ui-btn-quiet p-0.5"
-              disabled={!canNext}
-              aria-label={`向后移动参考 ${index}`}
-              onClick={() => onMove(1)}
+              className="ui-menu-item"
+              aria-label={`上传替换参考 ${index}`}
+              onClick={() => act(onUpload)}
             >
-              →
+              <Icon name="upload" size={14} />
+              上传替换
             </button>
-          </>
+            <button
+              type="button"
+              className="ui-menu-item"
+              aria-label={`定位参考 ${index}`}
+              onClick={() => act(onLocate)}
+            >
+              <Icon name="locate" size={14} />
+              定位来源
+            </button>
+            <button
+              type="button"
+              className="ui-menu-item text-danger"
+              aria-label={`断开「${name}」`}
+              onClick={() => act(onRemove)}
+            >
+              <Icon name="x" size={14} />
+              断开参考
+            </button>
+          </Popover>
         )}
-        <button
-          type="button"
-          className="ui-btn ui-btn-quiet p-0.5"
-          aria-label={`替换参考 ${index}`}
-          title="从画布替换"
-          onClick={onReplace}
-        >
-          <Icon name="retry" size={12} />
-        </button>
-        <button
-          type="button"
-          className="ui-btn ui-btn-quiet p-0.5"
-          aria-label={`上传替换参考 ${index}`}
-          title="上传替换"
-          onClick={onUpload}
-        >
-          <Icon name="upload" size={12} />
-        </button>
-        <button
-          type="button"
-          className="ui-btn ui-btn-quiet p-0.5"
-          aria-label={`定位参考 ${index}`}
-          title="定位上游"
-          onClick={onLocate}
-        >
-          <Icon name="locate" size={12} />
-        </button>
-      </div>
+      </Presence>
     </div>
   )
 }
@@ -509,5 +760,79 @@ function TextChip({
         <Icon name="x" size={12} />
       </button>
     </span>
+  )
+}
+
+function SubmittedTile({
+  engine,
+  el,
+  item,
+  data,
+  onReference,
+}: {
+  engine: Engine
+  el: CanvasElement
+  item: SubmittedMedia
+  data: PreparedInput
+  onReference?: () => void
+}) {
+  const refs = data.refs.filter((r) => item.assetId && r.sent.includes(item.assetId))
+  const source = item.source ? engine.doc.get(item.source) : undefined
+  const from = el.params?.continuesFrom as
+    | { frameAssetId?: string; last?: boolean }
+    | null
+    | undefined
+  const continuation = !!from && item.type === 'image' && item.index === 1
+  const name = continuation
+    ? from?.last
+      ? '前镜尾帧'
+      : '接续帧'
+    : refs.map((r) => r.name).join('、') || source?.name || '参考素材'
+  const origin = continuation ? '续镜接入' : refs.length ? '@ 引用' : '连线'
+  const label =
+    data.params.mode === 'reference'
+      ? `@${item.token}`
+      : `${item.type === 'image' ? '图片' : item.type === 'video' ? '视频' : '音频'}${item.index}`
+  return (
+    <div
+      role="group"
+      aria-label={`参考 ${item.index}：${name}`}
+      data-asset-id={item.assetId}
+      title={`${name} · ${origin}`}
+      className="relative flex w-16 flex-none flex-col items-center gap-1 text-2xs text-ink-subtle"
+    >
+      <button
+        type="button"
+        aria-label={`预览「${name}」`}
+        className="relative size-16 overflow-hidden rounded-lg bg-surface-2"
+        onClick={() => {
+          if (item.assetId)
+            useCanvas.getState().view({ assetId: item.assetId, kind: item.type, name })
+        }}
+      >
+        {item.type === 'audio' ? (
+          <Icon name="sound" />
+        ) : (
+          <img
+            src={assetUrls.variant(item.assetId!, item.type === 'video' ? 'poster' : 'thumb-256')}
+            alt=""
+            className="size-full object-cover"
+          />
+        )}
+        <span className="absolute top-1 left-1 flex size-4 items-center justify-center rounded-full bg-black/60 text-2xs text-white">
+          {item.index}
+        </span>
+        <span className="absolute right-0 bottom-0 left-0 bg-black/60 py-0.5 text-2xs text-white">
+          {origin}
+        </span>
+      </button>
+      {onReference ? (
+        <button type="button" className="ui-btn ui-btn-quiet p-0.5 text-2xs" onClick={onReference}>
+          {label}
+        </button>
+      ) : (
+        <span>{label}</span>
+      )}
+    </div>
   )
 }

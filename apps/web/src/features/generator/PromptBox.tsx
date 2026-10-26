@@ -13,7 +13,7 @@ import {
   slashQuery,
   sortMentionTargets,
 } from '@plein/nodes'
-import type { Catalog } from '@plein/protocol'
+import type { PreparedInput, Catalog } from '@plein/protocol'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Presence } from '../../ui/Presence'
@@ -21,7 +21,11 @@ import { assetUrls } from '../../api/client'
 import { Icon } from '../../ui/icons'
 import { MentionTextarea } from '../../ui/MentionTextarea'
 import { mentionParts } from '../../canvas/mentionText'
-import { mentionTargets, targetImages } from '../../canvas/nodes'
+import { findNode, mentionTargets, targetImages } from '../../canvas/nodes'
+import { useCatalog } from '../../stores/catalog'
+import { videoReferenceTokens } from '@plein/plugin-sdk'
+import { submittedMedia } from './submittedMedia'
+import { MentionPicker, type MentionChoice, type MentionPickerHandle } from './MentionPicker'
 
 export type PromptPreset = Catalog['prompts'][number]
 
@@ -37,6 +41,7 @@ export function PromptBox({
   ref,
   engine,
   selfId,
+  prepared,
   value,
   presets,
   placeholder,
@@ -47,6 +52,7 @@ export function PromptBox({
   ref: React.RefObject<HTMLTextAreaElement | null>
   engine: Engine
   selfId: string
+  prepared?: PreparedInput | null
   value: string
   presets: PromptPreset[]
   placeholder: string
@@ -54,6 +60,8 @@ export function PromptBox({
   onPreset(p: PromptPreset): void
   large?: boolean
 }) {
+  const picker = useRef<MentionPickerHandle>(null)
+  const catalog = useCatalog((s) => s.catalog)
   const [expanded, setExpanded] = useState(false)
   const expandedRef = useRef<HTMLTextAreaElement>(null)
   const [draft, setDraft] = useState(value)
@@ -132,15 +140,14 @@ export function PromptBox({
         insert: `${head}/${o.name}`,
       }))
   })()
-  const mentionOptions = (query?.kind === '@' && !query.query.includes('/') ? targets : [])
-    .filter((t) => t.name.toLowerCase().includes(q))
-    .map((t) => {
+  const mentionOptions = (query?.kind === '@' && !query.query.includes('/') ? targets : []).map(
+    (t) => {
       const total = counts.get(t.name) ?? 1
       const nth = (seen.get(t.name) ?? 0) + 1
       seen.set(t.name, nth)
       return { ...t, total, nth, insert: total > 1 ? `${t.name}#${nth}` : t.name }
-    })
-    .slice(0, MAX_OPTIONS)
+    },
+  )
   const presetOptions =
     query?.kind === '/'
       ? presets
@@ -150,6 +157,46 @@ export function PromptBox({
   const count = mentionOptions.length + presetOptions.length + profileOpts.length
   const mentions = findMentions(shown, targets)
   const missing = mentionParts(shown, targets).filter((p) => p.missing)
+  const connectedIds = new Set<string>()
+  const choices: MentionChoice[] = []
+  const element = engine.doc.get(selfId)
+  if (
+    element?.params?.mode === 'reference' &&
+    findNode(catalog, element.nodeType)?.capability === 'video.generate'
+  ) {
+    const tokens = videoReferenceTokens(shown)
+    const items = prepared ? submittedMedia(prepared) : []
+    for (const item of items) {
+      if (item.source) connectedIds.add(item.source)
+      const source = item.source ? engine.doc.get(item.source) : undefined
+      choices.push({
+        key: item.token,
+        name: source?.name ?? item.token,
+        insert: item.token,
+        category: item.type,
+        description: `@${item.token}`,
+        thumbnail: item.type === 'audio' ? undefined : item.assetId,
+        poster: item.type === 'video',
+        used:
+          tokens.some((t) => t.kind === item.type && t.index === item.index) ||
+          mentions.some((m) => m.id === item.source),
+      })
+    }
+  }
+  for (const t of mentionOptions) {
+    // 搜索由菜单完成；名称的消歧序号仍使用完整画布目标集。
+    const target = engine.doc.get(t.id)
+    if (!target || connectedIds.has(t.id)) continue
+    choices.push({
+      key: t.id,
+      name: t.total > 1 ? `${t.name} #${t.nth}` : t.name,
+      insert: t.insert,
+      category: target.kind === 'image' ? 'image' : 'asset',
+      description: targetKind(target),
+      thumbnail: targetImages(engine, target)[0],
+      used: mentions.some((m) => m.id === t.id),
+    })
+  }
 
   const detect = (text: string, caret: number) => {
     const slash = presets.length ? slashQuery(text, caret) : null
@@ -221,13 +268,10 @@ export function PromptBox({
         value={shown}
         placeholder={placeholder}
         rows={3}
-        onFocus={() => {
-          setDraft(value)
-        }}
         onBlur={() => {
           composing.current = false
-          // 让候选项的点击先生效
-          setTimeout(() => setQuery(null), 150)
+          // 素材菜单自己处理外部点击，允许搜索框获得焦点；行内候选按下时已阻止失焦。
+          if (query?.kind !== '@' || query.query.includes('/')) setQuery(null)
         }}
         onCompositionStart={() => {
           composing.current = true
@@ -239,6 +283,10 @@ export function PromptBox({
         onChange={(e) => update(e.target.value, e.target.selectionStart)}
         onKeyDown={(e) => {
           if (e.nativeEvent.isComposing) return
+          if (query?.kind === '@' && !query.query.includes('/')) {
+            picker.current?.handleKey(e)
+            return
+          }
           if (!count) return
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault()
@@ -252,14 +300,14 @@ export function PromptBox({
             setQuery(null)
           }
         }}
-        className={`plein-prompt-input field-sizing-content ${large ? 'max-h-[65vh] min-h-80' : 'max-h-60 min-h-24'} w-full resize-none bg-transparent px-4 py-3 text-base text-ink outline-none placeholder:text-ink-subtle`}
+        className={`plein-prompt-input field-sizing-content ${large ? 'max-h-[65vh] min-h-80' : 'max-h-48 min-h-24'} w-full resize-none bg-transparent px-4 py-3 text-base text-ink outline-none placeholder:text-ink-subtle`}
       />
       {!large && (
         <button
           type="button"
           aria-label="放大编辑提示词"
           title="放大编辑提示词"
-          className="plein-prompt-expand ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn absolute top-2 right-2"
+          className="plein-prompt-expand ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn absolute top-2 right-4"
           onClick={() => setExpanded(true)}
         >
           <Icon name="expand" size={14} />
@@ -281,6 +329,7 @@ export function PromptBox({
                 ref={expandedRef}
                 engine={engine}
                 selfId={selfId}
+                prepared={prepared}
                 value={value}
                 presets={presets}
                 placeholder={placeholder}
@@ -293,60 +342,62 @@ export function PromptBox({
         )}
       </Presence>
       {(mentions.length > 0 || missing.length > 0) && (
-        <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2 text-xs text-ink-subtle">
-          引用
-          {[...new Map(missing.map((p) => [p.text, p])).values()].map((part) => (
-            <span
-              key={part.text}
-              title={part.warning}
-              className="inline-flex items-center gap-1 text-warning"
-            >
-              <Icon name="warning" size={12} />
-              未找到：{part.text}
-            </span>
-          ))}
-          {[
-            ...new Map(
-              mentions.flatMap((m) => [
-                [`${m.id ?? `?${m.name}`}:${pickLabel(m.name, m.pick ?? {})}`, m] as const,
-              ]),
-            ).values(),
-          ].map((m) => {
-            if (!m.id) {
-              // 指不明的引用当场说清，不等到运行才报错
+        <div className="flex items-start gap-2 px-4 pb-2 text-xs text-ink-subtle">
+          <span className="shrink-0 pt-1 whitespace-nowrap">引用</span>
+          <div className="ui-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-1">
+            {[...new Map(missing.map((p) => [p.text, p])).values()].map((part) => (
+              <span
+                key={part.text}
+                title={part.warning}
+                className="inline-flex items-center gap-1 text-warning"
+              >
+                <Icon name="warning" size={12} />
+                未找到：{part.text}
+              </span>
+            ))}
+            {[
+              ...new Map(
+                mentions.flatMap((m) => [
+                  [`${m.id ?? `?${m.name}`}:${pickLabel(m.name, m.pick ?? {})}`, m] as const,
+                ]),
+              ).values(),
+            ].map((m) => {
+              if (!m.id) {
+                // 指不明的引用当场说清，不等到运行才报错
+                return (
+                  <span
+                    key={`?${m.name}`}
+                    className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-1.5 py-0.5 text-warning"
+                  >
+                    <Icon name="warning" size={12} />
+                    {mentionProblem(m)}
+                  </span>
+                )
+              }
+              const target = engine.doc.get(m.id)
+              if (!target) return null
+              const label = pickLabel(m.total > 1 ? `${m.name}#${m.index}` : m.name, m.pick ?? {})
+              const warn = m.profileMiss
+                ? `「${m.name}」的档案里没有「${m.profileMiss}」`
+                : m.profileConflict
               return (
-                <span
-                  key={`?${m.name}`}
-                  className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-1.5 py-0.5 text-warning"
-                >
-                  <Icon name="warning" size={12} />
-                  {mentionProblem(m)}
+                <span key={`${m.id}:${label}`} className="contents">
+                  <MentionChip
+                    engine={engine}
+                    name={label}
+                    target={target}
+                    imageId={pickImages(m.pick ?? {}, targetImages(engine, target))[0]}
+                  />
+                  {warn && (
+                    <span className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-1.5 py-0.5 text-warning">
+                      <Icon name="warning" size={12} />
+                      {warn}
+                    </span>
+                  )}
                 </span>
               )
-            }
-            const target = engine.doc.get(m.id)
-            if (!target) return null
-            const label = pickLabel(m.total > 1 ? `${m.name}#${m.index}` : m.name, m.pick ?? {})
-            const warn = m.profileMiss
-              ? `「${m.name}」的档案里没有「${m.profileMiss}」`
-              : m.profileConflict
-            return (
-              <span key={`${m.id}:${label}`} className="contents">
-                <MentionChip
-                  engine={engine}
-                  name={label}
-                  target={target}
-                  imageId={pickImages(m.pick ?? {}, targetImages(engine, target))[0]}
-                />
-                {warn && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-warning/10 px-1.5 py-0.5 text-warning">
-                    <Icon name="warning" size={12} />
-                    {warn}
-                  </span>
-                )}
-              </span>
-            )
-          })}
+            })}
+          </div>
         </div>
       )}
       {presetOptions.length > 0 && (
@@ -401,26 +452,16 @@ export function PromptBox({
           )}
         </div>
       )}
-      {mentionOptions.length > 0 && (
-        <div
-          role="listbox"
-          aria-label="引用资产"
-          className="ui-menu absolute top-full left-3 z-10 mt-1 w-64"
-        >
-          {mentionOptions.map((t, i) =>
-            option(
-              t.insert,
-              i,
-              () => insert(t.insert),
-              <>
-                <Thumb engine={engine} target={engine.doc.get(t.id)!} />
-                <span className="min-w-0 flex-1 truncate">{t.name}</span>
-                {t.total > 1 && <span className="text-xs text-ink-subtle">#{t.nth}</span>}
-                <span className="text-xs text-ink-subtle">{targetKind(engine.doc.get(t.id)!)}</span>
-              </>,
-            ),
-          )}
-        </div>
+      {query?.kind === '@' && !query.query.includes('/') && ref.current && (
+        <MentionPicker
+          key={query.start}
+          ref={picker}
+          anchor={ref.current}
+          query={query.query}
+          choices={choices}
+          onPick={insert}
+          onClose={() => setQuery(null)}
+        />
       )}
     </div>
   )
@@ -508,7 +549,7 @@ function MentionChip({
         engine.selection.set([target.id])
         engine.zoomToFit([target.id])
       }}
-      className="flex h-7 items-center gap-1.5 rounded-md bg-surface-2 pr-2 pl-0.5 text-ink-muted hover:bg-accent-soft hover:text-accent"
+      className="flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-surface-2 pr-2 pl-0.5 text-ink-muted hover:bg-accent-soft hover:text-accent"
     >
       <Thumb engine={engine} target={target} imageId={imageId} />
       {name}

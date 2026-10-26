@@ -107,43 +107,61 @@ export function ShotPresets({
 
   return (
     <div className="flex flex-col gap-1.5 px-4 pb-2" data-testid="shot-presets">
-      <div className="flex flex-wrap items-center gap-1">
-        {slots.map((slot) => {
-          const id = state.picks[slot]
-          const p = id ? presets.find((x) => x.id === id) : undefined
-          const edited = !!p && !intact[slot === 'style' ? 'style' : 'camera']
-          const speed =
-            slot === 'camera.move' &&
-            p &&
-            !NO_SPEED.has(p.id) &&
-            state.speed &&
-            state.speed !== 'normal'
-              ? SPEED_OPTIONS.find((o) => o.value === state.speed)?.label
-              : ''
-          return (
-            <button
-              key={slot}
-              type="button"
-              className="ui-chip ui-chip-btn"
-              aria-pressed={!!p}
-              aria-expanded={open?.slot === slot}
-              data-edited={edited || undefined}
-              title={edited ? '这一行在提示词里改过了，再选会在末尾另起一行' : undefined}
-              onClick={(e) =>
-                setOpen(open?.slot === slot ? null : { slot, anchor: e.currentTarget })
-              }
-            >
-              <span className={p ? 'text-ink-subtle' : undefined}>{LABELS[slot]}</span>
-              {p && <span>{`${speed}${p.title}`}</span>}
-              {edited && <span className="text-ink-subtle">· 已改动</span>}
-              <Icon name="chevronDown" size={12} />
-            </button>
-          )
-        })}
-        <span className="ml-auto text-xs text-ink-subtle" title={HONEST}>
-          提示词预设 · 效果因模型而异
-        </span>
-      </div>
+      <details
+        className="group/presets"
+        onToggle={(e) => {
+          if (!e.currentTarget.open) setOpen(null)
+        }}
+      >
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 py-1 text-xs text-ink-subtle hover:text-ink [&::-webkit-details-marker]:hidden">
+          <span className="transition-transform group-open/presets:rotate-90">
+            <Icon name="chevronRight" size={12} />
+          </span>
+          镜头与风格
+          <span className="ml-auto">
+            {Object.values(state.picks).filter(Boolean).length
+              ? `${Object.values(state.picks).filter(Boolean).length} 项已选`
+              : '可选'}
+          </span>
+        </summary>
+        <div className="flex flex-wrap items-center gap-1 pt-1">
+          {slots.map((slot) => {
+            const id = state.picks[slot]
+            const p = id ? presets.find((x) => x.id === id) : undefined
+            const edited = !!p && !intact[slot === 'style' ? 'style' : 'camera']
+            const speed =
+              slot === 'camera.move' &&
+              p &&
+              !NO_SPEED.has(p.id) &&
+              state.speed &&
+              state.speed !== 'normal'
+                ? SPEED_OPTIONS.find((o) => o.value === state.speed)?.label
+                : ''
+            return (
+              <button
+                key={slot}
+                type="button"
+                className="ui-chip ui-chip-btn"
+                aria-pressed={!!p}
+                aria-expanded={open?.slot === slot}
+                data-edited={edited || undefined}
+                title={edited ? '这一行在提示词里改过了，再选会在末尾另起一行' : undefined}
+                onClick={(e) =>
+                  setOpen(open?.slot === slot ? null : { slot, anchor: e.currentTarget })
+                }
+              >
+                <span className={p ? 'text-ink-subtle' : undefined}>{LABELS[slot]}</span>
+                {p && <span>{`${speed}${p.title}`}</span>}
+                {edited && <span className="text-ink-subtle">· 已改动</span>}
+                <Icon name="chevronDown" size={12} />
+              </button>
+            )
+          })}
+          <span className="ml-auto text-xs text-ink-subtle" title={HONEST}>
+            提示词预设 · 效果因模型而异
+          </span>
+        </div>
+      </details>
       {conflicts.map((c) => (
         <p key={c} className="flex items-start gap-1 text-xs text-warning">
           <span className="mt-0.5 shrink-0">

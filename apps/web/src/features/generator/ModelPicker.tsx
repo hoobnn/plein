@@ -120,10 +120,12 @@ export function ModelPicker({
           setQuery('')
           setAnchor(anchor ? null : e.currentTarget)
         }}
-        className="ui-btn ui-btn-lg ui-btn-menu min-w-0 max-w-48"
+        className="plein-generator-model ui-btn ui-btn-menu min-w-0"
       >
         {current ? <ProviderIcon provider={current.provider} /> : <Icon name="sparkle" />}
-        <span className="truncate">{current?.title ?? '选择模型'}</span>
+        <span className="min-w-0 text-left text-sm whitespace-nowrap">
+          {current?.title ?? '选择模型'}
+        </span>
         <Icon name="chevronDown" size={14} />
       </button>
       <Presence>
@@ -166,7 +168,8 @@ export function ModelPicker({
                     })}
                   </div>
                 )}
-                <div className="flex max-h-80 min-h-40">
+                {/* 平台悬停会切换模型；高度不能跟随模型数量改变，否则上方弹层移动会再次触发悬停。 */}
+                <div className="flex h-64 min-h-40 max-h-[40vh]">
                   <div
                     role="tablist"
                     aria-label="平台"

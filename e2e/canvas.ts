@@ -193,6 +193,28 @@ export async function clickElement(page: Page, id: string) {
     .toEqual([id])
 }
 
+/** 固定尺寸编辑器不会自动避开视口；编辑操作前像用户一样把它平移回可见区域。 */
+export async function revealGenerator(page: Page) {
+  const editor = page.getByTestId('node-editor')
+  await expect(editor).toBeVisible()
+  await editor.evaluate((el) => {
+    const box = el.getBoundingClientRect()
+    const engine = window.__plein.engine as Window['__plein']['engine'] & {
+      camera: { panBy(x: number, y: number): void }
+    }
+    const dx =
+      box.width > innerWidth - 24
+        ? 12 - box.x
+        : box.right > innerWidth - 12
+          ? innerWidth - 12 - box.right
+          : box.x < 12
+            ? 12 - box.x
+            : 0
+    const dy = Math.max(12 - box.y, Math.min(0, innerHeight - 76 - box.bottom))
+    if (dx || dy) engine.camera.panBy(dx, dy)
+  })
+}
+
 /** 右键元素，点菜单项 */
 export async function contextMenu(page: Page, id: string, item: string) {
   // 先取消选中：选中节点的生成器面板会浮在画布上，可能正好盖住要右键的元素

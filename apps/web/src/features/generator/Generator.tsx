@@ -13,11 +13,9 @@ import {
   type VideoMode,
 } from '@plein/nodes'
 import { isAiAnalysisType } from '@plein/nodes'
-import { AiAnalysisEntry } from '../ai-shot-analysis/AiAnalysisEditor'
 import type { Catalog } from '@plein/protocol'
-import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useEngineVersion, useFollow } from '../../canvas/hooks'
-import { canvasBottomSpace, fitFloatingPanel } from '../../canvas/floatingPanel'
 import { adaptToModel, constrainFields, selectedModel } from '../../canvas/modelParams'
 import {
   applyAspect,
@@ -56,20 +54,6 @@ import { PromptBox } from './PromptBox'
 import { PromptTools } from './PromptTools'
 import { RecipeLibrary } from './RecipeLibrary'
 
-const PANEL_W = 600
-const GAP = 12
-/** 节点标题行在卡片上方，面板放上方时让开它 */
-const TITLE_H = 30
-/** 让开底部工具条及画布剩余宽度不足时上移的助手入口。 */
-const bottomReserved = (engine: Engine) =>
-  canvasBottomSpace(window.innerWidth, engine.camera.insets.left).generator
-/** 顶部页头占的高度 */
-const TOP_RESERVED = 64
-/** 下方剩余空间不少于这么高时总放在下方 */
-const PREFER_BELOW = 280
-const MIN_H = 180
-
-/** 选中单个节点时浮在它下方的生成器：参考素材、主提示词、模型与参数、生成 */
 /** 损坏的历史值仅在显示时按空表单呈现；用户明确修改或恢复默认才写回。 */
 function optionRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -89,112 +73,76 @@ function GeneratorHost({ engine }: { engine: Engine }) {
   const ids = engine.selection.values()
   const el = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
   const node = el?.kind === 'node' ? findNode(catalog, el.nodeType) : undefined
-  if (el && node && isAiAnalysisType(node.type)) return <AiAnalysisEntry engine={engine} el={el} />
   if (!el || !node || el.locked || engine.doc.readOnly) return null
-  return <NodeGenerator key={el.id} engine={engine} el={el} node={node} catalog={catalog} />
+  return (
+    <NodeBelow engine={engine} nodeId={el.id} title={el.name ?? node.title}>
+      {isAiAnalysisType(node.type) ? (
+        <div className="p-4">
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary w-full"
+            onClick={() => useCanvas.getState().openAiAnalysis({ kind: 'node', nodeId: el.id })}
+          >
+            查看 AI 分析与预检
+          </button>
+        </div>
+      ) : (
+        <Panel key={el.id} engine={engine} el={el} node={node} catalog={catalog} />
+      )}
+    </NodeBelow>
+  )
 }
 
-function NodeGenerator({
+/** 编辑器始终位于卡片下方；相机变化时只更新锚点，不翻转或切换成窗口停靠。 */
+function NodeBelow({
   engine,
-  el,
-  node,
-  catalog,
+  nodeId,
+  title,
+  children,
 }: {
   engine: Engine
-  el: CanvasElement
-  node: NodeInfo
-  catalog: Catalog | null
+  nodeId: string
+  title: string
+  children: ReactNode
 }) {
-  const [expanded, setExpanded] = useState(false)
-  // 平移不经过 React 的引擎状态订阅；只有可用空间跨过阈值时才重渲染面板。
-  const cramped = useSyncExternalStore(
-    useCallback((notify: () => void) => engine.onMove(notify), [engine]),
-    () => {
-      const rect = engine.scene.rect(el.id)
-      if (!rect) return false
-      const tl = engine.worldToClient(rect.x, rect.y)
-      const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
-      return (
-        Math.max(
-          tl.y - TITLE_H - TOP_RESERVED,
-          window.innerHeight - bottomReserved(engine) - br.y,
-        ) <
-        MIN_H + GAP
-      )
-    },
-  )
-  const collapsed = cramped && !expanded
-  const place = () => placeBeside(engine, el.id, collapsed, cramped && expanded)
+  const place = () => {
+    const rect = engine.doc.worldRect(nodeId)
+    if (!rect) return null
+    const tl = engine.worldToClient(rect.x, rect.y)
+    const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
+    const width = 840
+    const top = br.y + 12
+    return {
+      left: (tl.x + br.x - width) / 2,
+      top,
+      width,
+      maxHeight: 480,
+    }
+  }
   const ref = useFollow<HTMLElement>(engine, place)
   const style = place()
   if (!style) return null
   return (
-    <Panel
-      engine={engine}
-      el={el}
-      node={node}
-      catalog={catalog}
-      style={style}
-      panelRef={ref}
-      collapsed={collapsed}
-      canCollapse={cramped}
-      onExpand={() => setExpanded(true)}
-      onCollapse={() => setExpanded(false)}
-    />
+    <aside
+      ref={ref}
+      aria-label="节点编辑器"
+      data-testid="node-editor"
+      data-placement="below"
+      className="plein-node-editor pointer-events-auto fixed z-20 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface"
+      style={{ ...style, height: 440 }}
+    >
+      <button
+        type="button"
+        className="ui-btn ui-btn-quiet ui-btn-sm ui-icon-btn absolute top-3 right-3 z-10"
+        aria-label="关闭节点编辑器"
+        title={`关闭${title}编辑器`}
+        onClick={() => engine.selection.set([])}
+      >
+        <Icon name="x" size={14} />
+      </button>
+      {children}
+    </aside>
   )
-}
-
-/** 默认放在节点下方；下方实在放不下才放上方，让开标题行 */
-function placeBeside(engine: Engine, id: string, collapsed = false, expanded = false) {
-  const rect = engine.scene.rect(id)
-  if (!rect) return null
-  const tl = engine.worldToClient(rect.x, rect.y)
-  const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
-  const bottom = bottomReserved(engine)
-  const below = window.innerHeight - bottom - br.y
-  const above = tl.y - TITLE_H - TOP_RESERVED
-  const preferBelow = below >= PREFER_BELOW || below >= above
-  const availableHeight = Math.max(0, window.innerHeight - TOP_RESERVED - bottom)
-  // 空间不足时，用户主动展开应能使用窗口内的可用高度，不能仍挤在节点旁的窄缝里。
-  const maxHeight = expanded
-    ? availableHeight
-    : Math.min(availableHeight, Math.max(MIN_H, (preferBelow ? below : above) - GAP))
-  // 让开两侧面板；可见区域不够宽时面板跟着变窄。
-  const minLeft = engine.camera.insets.left + GAP
-  const right = window.innerWidth - engine.camera.insets.right - GAP
-  const { left, width } = fitFloatingPanel((tl.x + br.x) / 2, PANEL_W, minLeft, right)
-  if (collapsed) {
-    // 紧凑入口避开两侧端口所在的中线；展开由用户主动接管编辑。
-    const portY = (tl.y + br.y) / 2
-    const height = 44
-    const limit = window.innerHeight - bottom
-    const top = portY + GAP + height <= limit ? portY + GAP : portY - GAP - height
-    return {
-      left,
-      width,
-      top: Math.max(TOP_RESERVED, Math.min(top, limit - height)),
-      maxHeight: height,
-    }
-  }
-  return preferBelow
-    ? {
-        left,
-        width,
-        top: Math.max(TOP_RESERVED, Math.min(br.y + GAP, window.innerHeight - bottom - maxHeight)),
-        maxHeight,
-      }
-    : {
-        left,
-        width,
-        bottom: Math.max(
-          bottom,
-          Math.min(
-            window.innerHeight - tl.y + TITLE_H + GAP,
-            window.innerHeight - TOP_RESERVED - maxHeight,
-          ),
-        ),
-        maxHeight,
-      }
 }
 
 function Panel({
@@ -202,28 +150,15 @@ function Panel({
   el,
   node,
   catalog,
-  style,
-  panelRef,
-  collapsed,
-  canCollapse,
-  onExpand,
-  onCollapse,
 }: {
   engine: Engine
   el: CanvasElement
   node: NodeInfo
   catalog: Catalog | null
-  style: React.CSSProperties
-  panelRef: React.Ref<HTMLElement>
-  collapsed: boolean
-  canCollapse: boolean
-  onExpand(): void
-  onCollapse(): void
 }) {
   const [more, setMore] = useState(false)
   const canvasId = useCanvas((s) => s.canvasId)
   const promptRef = useRef<HTMLTextAreaElement>(null)
-  const pendingFocus = useRef(false)
   const params = { ...node.defaults, ...el.params }
   const ak = aspectKey(node)
   const set = (key: string, value: unknown) => {
@@ -320,16 +255,11 @@ function Panel({
         )
       )
         return
-      if (collapsed) {
-        pendingFocus.current = true
-        onExpand()
-        return
-      }
       focusPrompt()
     }
     window.addEventListener('plein:focus-generator', focus)
     return () => window.removeEventListener('plein:focus-generator', focus)
-  }, [el.id, collapsed, onExpand])
+  }, [el.id])
   function focusPrompt() {
     if (
       document.querySelector(
@@ -343,11 +273,6 @@ function Panel({
     const hole = firstPlaceholder(ta.value)
     if (hole) ta.setSelectionRange(hole.start, hole.end)
   }
-  useEffect(() => {
-    if (collapsed || !pendingFocus.current) return
-    pendingFocus.current = false
-    focusPrompt()
-  }, [collapsed])
 
   // 已有结果时，预设、生成视频、宫格切分、下载、全屏放在第一行右侧
   const media = running ? null : mediaOf(el)
@@ -395,13 +320,13 @@ function Panel({
   ) : null
 
   const run = () => {
-    if (canceling || awaitingAcceptance) return
+    if (canceling || awaitingAcceptance || (!running && !input.data?.inputHash)) return
     if (running) void cancelNode(el.id, el.run?.id)
     // 带上用户看到的实际输入：提交时输入已经变了就不运行，换成新的预览
     else if (!problem)
       void runNode(
         el.id,
-        input.data?.inputHash && !input.loading
+        input.data?.inputHash
           ? { expect: input.data.inputHash, onChanged: input.setData }
           : undefined,
       )
@@ -409,12 +334,10 @@ function Panel({
 
   return (
     <section
-      ref={panelRef}
       aria-label={`${node.title} 生成器`}
       data-testid="generator"
-      data-compact={collapsed}
-      style={style}
-      className="plein-generator ui-scrollbar pointer-events-auto fixed z-20 flex flex-col overflow-y-auto rounded-xl"
+      data-compact="false"
+      className="plein-generator pointer-events-auto flex min-h-0 flex-1 flex-col overflow-hidden"
       onKeyDown={(e) => {
         if (e.nativeEvent.isComposing) return
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -423,36 +346,7 @@ function Panel({
         }
       }}
     >
-      {canCollapse && (
-        <button
-          type="button"
-          aria-expanded={!collapsed}
-          onClick={() => {
-            if (collapsed) {
-              pendingFocus.current = true
-              onExpand()
-            } else onCollapse()
-          }}
-          className="plein-generator-toggle ui-btn ui-btn-quiet sticky top-0 z-10 min-h-11 shrink-0 justify-between rounded-none px-4"
-        >
-          <span>{collapsed ? `编辑${node.title}` : '收起编辑器'}</span>
-          <Icon name={collapsed ? 'expand' : 'collapse'} size={14} />
-        </button>
-      )}
-      <div
-        className={collapsed ? 'hidden' : 'contents'}
-        onFocusCapture={(event) => {
-          const target = event.target
-          // Portal 中的模型搜索等浮层保持各自生命周期，不锁定主编辑器。
-          if (!event.currentTarget.contains(target)) return
-          if (
-            target instanceof HTMLInputElement ||
-            target instanceof HTMLTextAreaElement ||
-            target.isContentEditable
-          )
-            onExpand()
-        }}
-      >
+      <div className="plein-generator-body ui-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto">
         {ASSET_NODE_TYPES.has(node.type) && (
           <NameField
             value={el.name ?? node.title}
@@ -470,7 +364,20 @@ function Panel({
           />
         )}
         {(node.inputs.length > 0 || actions) && (
-          <Inputs engine={engine} el={el} node={node} ups={ups} trailing={actions} />
+          <Inputs
+            engine={engine}
+            el={el}
+            node={node}
+            ups={ups}
+            prepared={input.data}
+            preparing={input.loading}
+            trailing={actions}
+            toolbar={
+              presets.length > 0 ? (
+                <RecipeLibrary key={el.id} engine={engine} el={el} node={node} />
+              ) : undefined
+            }
+          />
         )}
         <ContinuedFrom engine={engine} el={el} />
         {node.type === SHOT_ANALYSIS_TYPE && (
@@ -528,14 +435,15 @@ function Panel({
             </p>
           </div>
         )}
-        {pk && presets.length > 0 && (
-          <RecipeLibrary key={el.id} engine={engine} el={el} node={node} />
+        {pk && pure && (
+          <div className="px-4 pt-3 pr-12 text-xs font-medium text-ink-subtle">正文</div>
         )}
         {pk && (
           <PromptBox
             ref={promptRef}
             engine={engine}
             selfId={el.id}
+            prepared={input.data}
             value={String(params[pk] ?? '')}
             presets={presets}
             onPreset={(p) => {
@@ -594,41 +502,43 @@ function Panel({
             onRetry={input.retry}
           />
         )}
-        {!pure && (
-          // 底栏吸底：面板被视口截短时生成按钮仍然可见
-          <footer className="plein-generator-footer sticky bottom-0 flex flex-col gap-2 px-3 py-3">
-            {hiddenInstruction && (
-              <div className="flex items-start gap-2 px-1 text-xs text-ink-muted">
-                <p
-                  className="min-w-0 flex-1 line-clamp-2 break-words"
-                  title={String(params.instruction)}
-                >
-                  当前模型不支持自由语气，已保留指令：{String(params.instruction)}
-                </p>
-                <button
-                  type="button"
-                  className="ui-btn ui-btn-xs ui-btn-secondary shrink-0"
-                  onClick={() => {
-                    focusPrompt()
-                    set('instruction', '')
-                  }}
-                >
-                  清空语气指令
-                </button>
-              </div>
-            )}
-            {notes.length > 0 && !problem && (
-              <p className="px-1 text-xs text-ink-subtle">{notes.join('；')}</p>
-            )}
-            {((problem && !onlyPromptMissing) || (!running && el.run?.status === 'failed')) && (
+      </div>
+      {!pure && (
+        // 生成工具栏保持一行，独立于正文滚动。
+        <footer className="plein-generator-footer flex flex-col gap-2 px-4 py-3">
+          {hiddenInstruction && (
+            <div className="flex items-start gap-2 px-1 text-xs text-ink-muted">
               <p
-                className={`px-1 text-xs ${problem ? 'text-ink-subtle' : 'text-danger'}`}
-                title={problem ?? el.run?.error ?? undefined}
+                className="min-w-0 flex-1 line-clamp-2 break-words"
+                title={String(params.instruction)}
               >
-                {problem ?? el.run?.error ?? '生成失败'}
+                当前模型不支持自由语气，已保留指令：{String(params.instruction)}
               </p>
-            )}
-            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="ui-btn ui-btn-xs ui-btn-secondary shrink-0"
+                onClick={() => {
+                  focusPrompt()
+                  set('instruction', '')
+                }}
+              >
+                清空语气指令
+              </button>
+            </div>
+          )}
+          {notes.length > 0 && !problem && (
+            <p className="px-1 text-xs text-ink-subtle">{notes.join('；')}</p>
+          )}
+          {((problem && !onlyPromptMissing) || (!running && el.run?.status === 'failed')) && (
+            <p
+              className={`px-1 text-xs ${problem ? 'text-ink-subtle' : 'text-danger'}`}
+              title={problem ?? el.run?.error ?? undefined}
+            >
+              {problem ?? el.run?.error ?? '生成失败'}
+            </p>
+          )}
+          <div className="plein-generator-toolbar">
+            <div className="plein-generator-models">
               {modelField && (
                 <ModelPicker
                   value={String(params[modelField[0]] ?? '')}
@@ -657,66 +567,72 @@ function Panel({
                   onChange={(v) => set(modeField[0], v)}
                 />
               )}
-              {(modelField || modeField) && hasParams && (
-                <span aria-hidden="true" className="ui-bar-sep" />
-              )}
-              {hasParams && (
-                <ParamsPill
-                  fields={paramFields}
-                  rest={rest}
-                  params={params}
-                  readParams={() => engine.doc.get(el.id)?.params ?? {}}
-                  aspect={ak}
-                  options={modelOptions}
-                  // 模型只能出 1 张时张数不可选，摘要里照样写出来
-                  fixed={
-                    countField && !paramFields.some(([k]) => k === 'count')
-                      ? [`1 ${countUnit(countField[1])}`]
-                      : []
-                  }
-                  onChange={set}
-                />
-              )}
-              <span className="flex-1" />
-              {pk && (
-                <PromptTools
-                  engine={engine}
-                  elId={el.id}
-                  promptKey={pk}
-                  text={String(params[pk] ?? '')}
-                  node={node}
-                  catalog={catalog}
-                />
-              )}
-              <button
-                type="button"
-                onClick={run}
-                disabled={canceling || awaitingAcceptance || (!running && !!problem)}
-                aria-busy={canceling || awaitingAcceptance}
-                title={problem ?? (running ? runLabel : withShortcut(runLabel, 'mod+enter'))}
-                aria-label={runLabel}
-                className={`ui-btn ui-btn-lg ui-icon-btn ml-1 ${running ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
-              >
-                {canceling || awaitingAcceptance ? (
-                  <span className="ui-spinner size-3" />
-                ) : (
-                  <Icon name={running ? 'stop' : 'arrowUp'} size={running ? 14 : 16} />
-                )}
-              </button>
             </div>
-            {canceling && (
-              <p role="status" className="text-xs text-ink-muted">
-                正在停止任务…
-              </p>
-            )}
-            {awaitingAcceptance && (
-              <p role="status" className="text-xs text-ink-muted">
-                正在提交生成请求…
-              </p>
-            )}
-          </footer>
-        )}
-      </div>
+            <div className="plein-generator-controls">
+              <div className="min-w-0">
+                {hasParams && (
+                  <ParamsPill
+                    fields={paramFields}
+                    rest={rest}
+                    params={params}
+                    readParams={() => engine.doc.get(el.id)?.params ?? {}}
+                    aspect={ak}
+                    options={modelOptions}
+                    // 模型只能出 1 张时张数不可选，摘要里照样写出来
+                    fixed={
+                      countField && !paramFields.some(([k]) => k === 'count')
+                        ? [`1 ${countUnit(countField[1])}`]
+                        : []
+                    }
+                    onChange={set}
+                  />
+                )}
+              </div>
+              <div className="flex shrink-0 items-center justify-end gap-2">
+                {pk && (
+                  <PromptTools
+                    engine={engine}
+                    elId={el.id}
+                    promptKey={pk}
+                    text={String(params[pk] ?? '')}
+                    node={node}
+                    catalog={catalog}
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={run}
+                  disabled={
+                    canceling ||
+                    awaitingAcceptance ||
+                    (!running && (!!problem || !input.data?.inputHash))
+                  }
+                  aria-busy={canceling || awaitingAcceptance}
+                  title={problem ?? (running ? runLabel : withShortcut(runLabel, 'mod+enter'))}
+                  aria-label={runLabel}
+                  className={`ui-btn ui-icon-btn size-10 shrink-0 rounded-xl ${running ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
+                >
+                  {canceling || awaitingAcceptance ? (
+                    <span className="ui-spinner size-3" />
+                  ) : (
+                    <Icon name={running ? 'stop' : 'arrowUp'} size={running ? 14 : 16} />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+          {canceling && (
+            <p role="status" className="text-xs text-ink-muted">
+              正在停止任务…
+            </p>
+          )}
+          {awaitingAcceptance && (
+            <p role="status" className="text-xs text-ink-muted">
+              正在提交生成请求…
+            </p>
+          )}
+        </footer>
+      )}
     </section>
   )
 }
@@ -752,7 +668,7 @@ function NameField({
   }
   return (
     <div className="plein-generator-name border-b border-line">
-      <div className="flex items-center gap-2 px-4 py-3">
+      <div className="flex items-center gap-2 px-4 py-3 pr-12">
         <input
           aria-label="节点名称"
           aria-describedby={conflict ? conflictId : undefined}

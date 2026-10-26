@@ -3,7 +3,14 @@ import { gzipSync } from 'node:zlib'
 import { pathToFileURL } from 'node:url'
 import { expect, test, type Page } from '@playwright/test'
 import type { PreparedInput } from '../packages/protocol/src/runs'
-import { clickElement, confirmBatchChecklist, newProject, waitEngine, waitNode } from './canvas'
+import {
+  clickElement,
+  revealGenerator,
+  confirmBatchChecklist,
+  newProject,
+  waitEngine,
+  waitNode,
+} from './canvas'
 
 const canvasId = (page: Page) => /#\/c\/([^/?]+)/.exec(page.url())![1]!
 const promptOf = (page: Page, id: string) =>
@@ -74,6 +81,7 @@ async function seedStoryboard(page: Page, name: string) {
 
 async function openStoryboard(page: Page, id: string) {
   await clickElement(page, id)
+  await revealGenerator(page)
   await page
     .getByTestId('generator')
     .getByRole('button', { name: /^编辑分镜表/ })
@@ -158,13 +166,15 @@ test('参考素材可真实预览、重排和替换；实际送入顺序跟随�
     return id
   }, sources)
   await clickElement(page, target)
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
   await expect(generator.getByRole('group', { name: '参考 1：左景', exact: true })).toBeVisible()
   await generator.getByTitle('预览「左景」').click()
   const preview = page.getByRole('dialog', { name: '查看「左景」' })
   await expect(preview.getByRole('img', { name: '左景', exact: true })).toBeVisible()
   await preview.getByRole('button', { name: '关闭', exact: true }).click()
-  await generator.getByRole('button', { name: '向前移动参考 2', exact: true }).click()
+  await generator.getByRole('button', { name: '管理参考 2', exact: true }).click()
+  await page.getByRole('button', { name: '向前移动参考 2', exact: true }).click()
   await expect(generator.getByRole('group', { name: '参考 1：右景', exact: true })).toBeVisible()
   const prepared = async () =>
     (await (
@@ -173,7 +183,8 @@ test('参考素材可真实预览、重排和替换；实际送入顺序跟随�
   await expect
     .poll(async () => (await prepared()).inputs.references?.map((input) => input.source))
     .toEqual([sources[1], sources[0]])
-  await generator.getByRole('button', { name: '替换参考 1', exact: true }).click()
+  await generator.getByRole('button', { name: '管理参考 1', exact: true }).click()
+  await page.getByRole('button', { name: '替换参考 1', exact: true }).click()
   await generator
     .getByRole('combobox', { name: '替换参考素材' })
     .selectOption(JSON.stringify([sources[2], 'images']))
@@ -219,8 +230,13 @@ test('空单输入上传期间被接入新参考时，不覆盖新参考且保�
     await route.fulfill({ response })
   })
   await clickElement(page, target)
+  await revealGenerator(page)
   const chooser = page.waitForEvent('filechooser')
-  await page.getByTestId('generator').getByRole('button', { name: '原图', exact: true }).click()
+  await page.getByTestId('generator').getByRole('button', { name: '上传参考', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: '上传参考', exact: true })
+    .getByRole('button', { name: '原图', exact: true })
+    .click()
   await (await chooser).setFiles({ name: '慢上传.png', mimeType: 'image/png', buffer: file })
   await uploading
   try {
@@ -265,6 +281,7 @@ test('提示词先审建议，取消不写回、采用可编辑、协作变更�
     })
   })
   await clickElement(page, target)
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
   const suggestion = page.getByRole('dialog', { name: '提示词建议' })
   const suggest = async () => {
@@ -323,6 +340,7 @@ test('候选浏览与 A/B 对比不改变采用结果，明确采用后才更新
     }),
   )
   await clickElement(page, target)
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
   await generator.getByRole('button', { name: '生成', exact: true }).click()
   await waitNode(page, target)
@@ -363,6 +381,7 @@ test('审片按钮 Enter 执行按钮本意，只有预览区 Enter 才采用候
     }),
   )
   await clickElement(page, target)
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
   await generator.getByRole('button', { name: '生成', exact: true }).click()
   await waitNode(page, target)

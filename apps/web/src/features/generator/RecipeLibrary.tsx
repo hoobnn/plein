@@ -104,7 +104,7 @@ export function RecipeLibrary({
   }
   return (
     <>
-      <div className="px-4 pt-2">
+      <div>
         <button
           type="button"
           className="ui-btn ui-btn-quiet ui-btn-sm"

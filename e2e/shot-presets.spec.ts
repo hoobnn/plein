@@ -25,6 +25,8 @@ test(
     const prompt = generator.getByRole('textbox', { name: '提示词' })
     await prompt.fill('女孩在雨夜的街口回头')
     const bar = generator.getByTestId('shot-presets')
+    await expect(bar.getByRole('button', { name: /^运镜/ })).toBeHidden()
+    await bar.locator('summary').click()
     await expect(bar).toContainText('提示词预设 · 效果因模型而异')
 
     const choose = async (slot: string, option: string) => {

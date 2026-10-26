@@ -38,10 +38,12 @@ export function ModePicker({
         aria-label="生成模式"
         aria-expanded={!!anchor}
         onClick={(e) => setAnchor(anchor ? null : e.currentTarget)}
-        className="ui-btn ui-btn-lg ui-btn-menu flex-none"
+        className="plein-generator-mode ui-btn ui-btn-menu min-w-0"
       >
         <Icon name={current.icon} />
-        <span>{VIDEO_MODE_LABELS[value] ?? VIDEO_MODE_LABELS.text}</span>
+        <span className="text-sm whitespace-nowrap">
+          {VIDEO_MODE_LABELS[value] ?? VIDEO_MODE_LABELS.text}
+        </span>
         <Icon name="chevronDown" size={14} />
       </button>
       <Presence>

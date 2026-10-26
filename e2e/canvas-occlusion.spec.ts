@@ -233,7 +233,7 @@ test('创作引导不会盖住所选节点的生成器和按钮', async ({ page 
     .toBe(true)
   const reference = page
     .getByTestId('generator')
-    .getByRole('button', { name: '参考图', exact: true })
+    .getByRole('button', { name: '上传参考', exact: true })
   await expect(reference).toBeVisible()
   expect(
     await reference.evaluate((el) => {

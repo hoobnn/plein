@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { clickElement, newProject } from './canvas'
+import { clickElement, revealGenerator, newProject } from './canvas'
 
 const waitPlaced = (page: Page, id: string) =>
   page.waitForFunction(
@@ -27,6 +27,7 @@ test('文本正文和展开编辑器直接标记引用，保留普通文字、�
   })
   await waitPlaced(page, id)
   await clickElement(page, id)
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
   const field = generator.getByRole('textbox', { name: '提示词', exact: true })
   const original = await field.inputValue()
@@ -67,6 +68,7 @@ test('重名引用警示、消歧引用正常显示，新增目标立即更新�
   })
   await waitPlaced(page, id)
   await clickElement(page, id)
+  await revealGenerator(page)
   const marks = page.getByTestId('generator').getByTestId('mention-highlights').locator('mark')
   await expect(marks).toHaveCount(3)
   await expect(marks.last()).toHaveAttribute('data-state', 'missing')
@@ -97,6 +99,7 @@ test('长文本滚动时引用标记跟随文字，选区替换和原始文本�
   })
   await waitPlaced(page, id)
   await clickElement(page, id)
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
   const field = generator.getByRole('textbox', { name: '提示词', exact: true })
   await field.hover()
@@ -113,4 +116,43 @@ test('长文本滚动时引用标记跟随文字，选区替换和原始文本�
   await field.pressSequentially('@小岚 ')
   await expect(field).toHaveValue('@小岚 ')
   await expect(generator.getByTestId('mention-highlights').locator('mark')).toHaveCount(1)
+})
+
+test('@ 菜单先展示已引用和分类，搜索不修改正文，选择后保留原有内容', async ({ page }) => {
+  await newProject(page)
+  const id = await page.evaluate(() => {
+    for (const name of ['常用角色', ...Array.from({ length: 12 }, (_, i) => `人物${i + 1}`)]) {
+      window.__plein.addNode({ type: 'plein/character', name, params: {}, x: -900, y: 0 })
+    }
+    return window.__plein.addNode({
+      type: 'plein/text',
+      name: '引用菜单验收',
+      params: { text: '@常用角色 与 ' },
+      x: 0,
+      y: 0,
+    })
+  })
+  await clickElement(page, id)
+  await revealGenerator(page)
+  const panel = page.getByTestId('generator')
+  const field = panel.getByRole('textbox', { name: '提示词', exact: true })
+  await field.fill('@常用角色 与 ')
+  await field.pressSequentially('@')
+  const menu = page.getByRole('dialog', { name: '引用素材', exact: true })
+  await expect(menu).toContainText('已引用')
+  await menu.screenshot({ path: test.info().outputPath('mention-menu-home.png') })
+  await expect(menu.getByRole('option', { name: /常用角色/ })).toBeVisible()
+  for (const name of ['图片', '视频', '音频', '资产']) {
+    await expect(menu.getByRole('option', { name, exact: true })).toBeVisible()
+  }
+  await menu.getByRole('option', { name: '资产', exact: true }).click()
+  await expect(menu.getByRole('option')).toHaveCount(13)
+  const search = menu.getByRole('textbox', { name: '搜索引用素材', exact: true })
+  await search.fill('人物11')
+  await expect(menu.getByRole('option')).toHaveCount(1)
+  await expect(field).toHaveValue('@常用角色 与 @')
+  await search.press('Enter')
+  await expect(menu).toHaveCount(0)
+  await expect(field).toHaveValue('@常用角色 与 @人物11 ')
+  await expect(field).toBeFocused()
 })
