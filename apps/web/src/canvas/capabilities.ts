@@ -3,6 +3,8 @@ import {
   type CapabilityDefinition,
   CapabilityRegistry,
   editCapabilities,
+  sequenceCapabilities,
+  reviewCapabilities,
   storyCapabilities,
 } from '@plein/capabilities'
 import type { Engine } from '@plein/canvas-core'
@@ -18,6 +20,8 @@ import { findNode } from './nodes'
  */
 export const localCapabilities = new CapabilityRegistry<CapabilityContext>([
   ...(editCapabilities as never[]),
+  ...(sequenceCapabilities as never[]),
+  ...(reviewCapabilities as never[]),
   ...(storyCapabilities as never[]),
 ])
 

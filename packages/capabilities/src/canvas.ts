@@ -96,19 +96,29 @@ export const listNodeTypes = defineCapability({
   group: 'read',
   where: 'doc',
   effect: 'read',
-  input: z.object({}),
-  run: (ctx) =>
-    ctx.nodes.all().map(({ descriptor: d, runnable }) => ({
-      type: d.type,
-      title: d.title,
-      description: d.description,
-      runnable,
-      inputs: d.inputs,
-      outputs: d.outputs,
-      params: (d.paramsSchema as { properties?: unknown }).properties,
-      defaults: d.defaults,
-      models: d.capability ? ctx.nodes.models(d.capability) : undefined,
-    })),
+  input: z.object({
+    type: z
+      .string()
+      .optional()
+      .describe('指定节点类型时返回完整参数 schema（含必填项、嵌套字段和约束）；不填列出全部类型'),
+  }),
+  run: (ctx, a) =>
+    ctx.nodes
+      .all()
+      .filter((n) => !a.type || n.descriptor.type === a.type)
+      .map(({ descriptor: d, runnable }) => ({
+        type: d.type,
+        title: d.title,
+        description: d.description,
+        runnable,
+        inputs: d.inputs,
+        outputs: d.outputs,
+        params: (d.paramsSchema as { properties?: unknown }).properties,
+        ...(a.type ? { params_schema: d.paramsSchema } : {}),
+        version: d.version,
+        defaults: d.defaults,
+        models: d.capability ? ctx.nodes.models(d.capability) : undefined,
+      })),
 })
 
 export const createNode = defineCapability({
@@ -217,10 +227,29 @@ export const updateElementCap = defineCapability({
     w: z.number().positive().optional(),
     h: z.number().positive().optional(),
     parent_id: id.nullable().optional().describe('移入 Frame；null 移出到画布根'),
+    rotation: z.number().finite().optional(),
+    locked: z.boolean().optional(),
+    color: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/)
+      .nullable()
+      .optional(),
+    asset_id: id.optional().describe('替换媒体元素的素材，必须与元素类型相同'),
   }),
   run: (ctx, a) =>
     ctx.withDoc((doc) => {
       const el = need(doc, a.id)
+      if (a.asset_id !== undefined) {
+        const meta = ctx.assetMeta(a.asset_id)
+        if (!meta || meta.kind !== el.kind || !['image', 'video', 'audio'].includes(el.kind))
+          throw new CapabilityError('需要与媒体元素类型相同的有效资产')
+        if (el.videoSegment)
+          throw new CapabilityError('固定视频素材不可替换，请用 replace_sequence_segment')
+      }
+      if (a.text !== undefined && el.kind !== 'markdown')
+        throw new CapabilityError('只有 markdown 元素有正文')
+      if (a.parent_id && need(doc, a.parent_id).kind !== 'frame')
+        throw new CapabilityError('parent_id 必须是 Frame')
       if (a.params) {
         if (el.kind !== 'node') throw new CapabilityError('只有节点有参数')
         const def = el.nodeType ? ctx.nodes.latest(el.nodeType)?.def : undefined
@@ -238,6 +267,10 @@ export const updateElementCap = defineCapability({
       const cur = need(doc, a.id)
       const world = doc.worldRect(a.id)!
       updateElement(doc, a.id, {
+        ...(a.rotation !== undefined ? { rotation: a.rotation } : {}),
+        ...(a.locked !== undefined ? { locked: a.locked } : {}),
+        ...(a.color !== undefined ? { color: a.color ?? undefined } : {}),
+        ...(a.asset_id !== undefined ? { assetId: a.asset_id } : {}),
         ...(a.name !== undefined ? { name: a.name } : {}),
         ...(a.x !== undefined ? { x: Math.round(cur.x + a.x - world.x) } : {}),
         ...(a.y !== undefined ? { y: Math.round(cur.y + a.y - world.y) } : {}),
@@ -303,11 +336,11 @@ export const adopt = defineCapability({
   group: 'edit',
   where: 'doc',
   effect: 'edit',
-  input: z.object({ id, result_id: id }),
+  input: z.object({ id, result_id: id.nullable().describe('null 恢复默认采用规则（最新候选）') }),
   run: (ctx, { id, result_id }) =>
     ctx.withDoc((doc) => {
       const el = need(doc, id)
-      if (!el.results?.some((r) => r.id === result_id))
+      if (result_id !== null && !el.results?.some((r) => r.id === result_id))
         throw new CapabilityError(`节点没有结果 ${result_id}`)
       adoptResult(doc, id, result_id)
       return '已采用'

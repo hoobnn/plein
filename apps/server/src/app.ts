@@ -62,6 +62,7 @@ export interface Server {
   library: LibraryStore
   mediaIndex: MediaIndex
   checkpoints: CheckpointService
+  canvasApi: (ownerId: string, request: Request) => Promise<Response>
   maintenance: MaintenanceService | null
   close(): Promise<void>
 }
@@ -110,6 +111,24 @@ export async function createServer(config: Config): Promise<Server> {
   const offLibrary = library.onChange((id) => index.refreshLibrarySafely(id))
   // 修改方案：内置智能体、本机 CLI 和对外 MCP 共用一份
   const plans = new EditPlans(db, runs, plugins)
+  // 同一份创作路由同时服务界面与 Agent；识别缓存、版本检查与所有权规则不另建副本。
+  const creative = new Hono<AuthEnv>()
+  creative.route('/', subtitleRoutes({ db, host: plugins, assets, dataDir: config.dataDir }))
+  creative.route('/', libraryRoutes(db, library))
+  creative.route('/', librarySyncRoutes({ db, library, rooms, assets }))
+  creative.route('/', voiceRoutes({ voices: new VoiceStore(db), host: plugins, assets }))
+  creative.route('/', templateRoutes(db))
+  creative.route('/', mediaRoutes(assets))
+  creative.route('/', assetRoutes(assets))
+  // 只在进程内调用，不挂载到 HTTP；ownerId 来自已认证的会话，不来自工具参数。
+  const internal = new Hono<AuthEnv & { Bindings: { ownerId: string } }>()
+  internal.use('*', async (c, next) => {
+    c.set('principal', { id: c.env.ownerId, role: 'owner' })
+    await next()
+  })
+  internal.route('/', creative)
+  const canvasApi = async (ownerId: string, request: Request) =>
+    internal.fetch(request, { ownerId })
   const agents = new AgentSessions({
     db,
     library,
@@ -118,13 +137,27 @@ export async function createServer(config: Config): Promise<Server> {
     host: plugins,
     assets,
     plans,
+    canvasApi,
+    mediaIndex: index,
+    checkpoints,
     dataDir: config.dataDir,
     enabled: config.agent,
   })
 
   // 对外开放 MCP 和本机智能体一样，只在本机免登录模式开放
   const external = config.mcp
-    ? new ExternalMcp(config.dataDir, { db, rooms, runs, host: plugins, assets, library, plans })
+    ? new ExternalMcp(config.dataDir, {
+        db,
+        rooms,
+        runs,
+        host: plugins,
+        assets,
+        library,
+        plans,
+        mediaIndex: index,
+        checkpoints,
+        canvasApi,
+      })
     : null
 
   const app = new Hono<AuthEnv>()
@@ -155,15 +188,9 @@ export async function createServer(config: Config): Promise<Server> {
   )
   app.route('/', canvasRoutes(db, rooms, preview))
   if (maintenance) app.route('/', maintenanceRoutes(maintenance))
-  app.route('/', subtitleRoutes({ db, host: plugins, assets, dataDir: config.dataDir }))
-  app.route('/', libraryRoutes(db, library))
-  app.route('/', librarySyncRoutes({ db, library, rooms, assets }))
-  app.route('/', voiceRoutes({ voices: new VoiceStore(db), host: plugins, assets }))
-  app.route('/', templateRoutes(db))
+  app.route('/', creative)
   app.route('/', mediaLibraryRoutes(mediaIndex))
   app.route('/', checkpointRoutes(checkpoints))
-  app.route('/', assetRoutes(assets))
-  app.route('/', mediaRoutes(assets))
   app.route('/', syncRoutes(db, rooms))
   app.route('/', pluginRoutes(plugins))
   app.route('/', localPluginRoutes(local))
@@ -216,6 +243,7 @@ export async function createServer(config: Config): Promise<Server> {
     mediaIndex,
     checkpoints,
     maintenance,
+    canvasApi,
     close() {
       closeWork ??= (async () => {
         await maintenance?.close()

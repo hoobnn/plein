@@ -6,6 +6,10 @@ import {
   CapabilityRegistry,
   type ContentBlock,
   canvasCapabilities,
+  sequenceCapabilities,
+  storyStateCapabilities,
+  productionCapabilities,
+  reviewCapabilities,
   readViewCapabilities,
   capabilityFor,
   content,
@@ -42,6 +46,7 @@ import {
   type EditPlan,
   ApplyEditPlan,
   MediaDeriveRequest,
+  MediaDerivationOrigin,
   type MediaDerivation,
   MediaOp,
   type StoryboardBatchPlan,
@@ -67,6 +72,13 @@ import type { AgentPlan } from './plan'
 import { pluginCapabilities } from './plugin-caps'
 import { capabilityTools, toToolResult, type McpTool, type ToolResult } from './mcp'
 import type { TurnExecution } from './execution'
+import { analysisCapabilities } from './analysis-caps'
+import { templateCapabilities } from './template-caps'
+import { captureStage } from './client-render'
+import { actionCapabilities } from './action-caps'
+import { workspaceCapabilities } from './workspace-caps'
+import type { CheckpointService } from '../checkpoints/service'
+import type { MediaIndex } from '../media-index/service'
 import { InspectNodeInput, preparedInputPage } from './input-view'
 
 const exec = promisify(execFile)
@@ -82,6 +94,9 @@ export interface ToolEnv {
   host: PluginHost
   assets: AssetStore
   /** 资产库（测试里可以不给） */
+  canvasApi?: (ownerId: string, request: Request) => Promise<Response>
+  mediaIndex?: MediaIndex
+  checkpoints?: CheckpointService
   library?: LibraryStore
   /** 修改方案（测试里可以不给） */
   plans?: EditPlans
@@ -153,6 +168,8 @@ export function serverContext(env: ToolEnv): ServerContext {
     host: scoped(env.host),
     assets: scoped(env.assets),
     library: env.library ? scoped(env.library) : undefined,
+    mediaIndex: env.mediaIndex ? scoped(env.mediaIndex) : undefined,
+    checkpoints: env.checkpoints ? scoped(env.checkpoints) : undefined,
   }
   const info = (key: string, n: NonNullable<ReturnType<typeof host.registry.latestNode>>) => ({
     def: n.def,
@@ -164,6 +181,7 @@ export function serverContext(env: ToolEnv): ServerContext {
     runnable: executionOf(n.def) === 'inline' || host.registry.executors.has(key),
   })
   return {
+    canvasId: env.canvasId,
     env: safeEnv,
     storyboardBatches: scoped(storyboardBatchesOf(env.runs)),
     withDoc: (fn) => {
@@ -353,7 +371,7 @@ const editMedia = serverCapability({
   name: 'edit_media',
   title: '加工素材',
   description:
-    '加工素材，与画布上的加工工具条是同一套实现：trim 截取片段（start、end 秒）、speed 变速（speed 倍数）、separate 把视频分离成音轨和无声视频（要去掉原声就用分出来的无声视频）、frame 抽一帧成图片（at 秒）、crop 按摆正后的像素裁剪图片或视频（left、top、width、height；视频宽高须为偶数，保留首条音轨）、rotate / flip 只处理图片、split 把音频按区间切开（segments）。结果是新资产，作为元素放在原元素旁边，原素材不变；要做多步就依次调用。',
+    '加工素材，与画布上的加工工具条是同一套实现：trim 截取片段（start、end 秒）、speed 变速（speed 倍数）、separate 把视频分离成音轨和无声视频（要去掉原声就用分出来的无声视频）、frame 抽一帧成图片（at 秒）、crop 按摆正后的像素裁剪图片或视频（left、top、width、height；视频宽高须为偶数，保留首条音轨）、rotate / flip 只处理图片、split 把音频按区间切开（segments）；repair-region 用本地插值修补视频固定区域（left/top/width/height、start/end）；replace-range 用 replacementAssetId 的片段替换 start/end 区间（replacementStart 指定替换素材入点）；frame 支持 last=true 尾帧，speed 支持 keepPitch。结果是新资产，作为元素放在原元素旁边，原素材不变；要做多步就依次调用。',
   group: 'media',
   where: 'server',
   effect: 'edit',
@@ -361,27 +379,22 @@ const editMedia = serverCapability({
     element_id: id.optional().describe('素材元素或节点（取当前结果）'),
     asset_id: z.string().optional(),
     op: MediaOp,
-    start: z.number().min(0).optional().describe('trim 入点（秒）'),
-    end: z.number().positive().optional().describe('trim 出点（秒）'),
-    speed: z.number().min(0.25).max(4).optional().describe('speed 倍数'),
-    at: z.number().min(0).optional().describe('frame 取帧时刻（秒）'),
-    left: z.number().int().optional(),
-    top: z.number().int().optional(),
-    width: z.number().int().optional(),
-    height: z.number().int().optional(),
-    angle: z.number().int().optional().describe('rotate：90 / 180 / 270'),
-    axis: z.enum(['horizontal', 'vertical']).optional().describe('flip 方向'),
-    segments: z
-      .array(z.object({ start: z.number(), end: z.number() }))
-      .optional()
-      .describe('split 的区间（秒）'),
-    name: z.string().max(100).optional(),
+    ...Object.fromEntries(
+      MediaDeriveRequest.options.flatMap((option) =>
+        Object.entries(option.shape)
+          .filter(([key]) => key !== 'op' && key !== 'assetId')
+          .map(([key, schema]) => [key, schema.optional()]),
+      ),
+    ),
   }),
   run: async (ctx, { element_id, asset_id, ...edit }) => {
     const assetId =
       asset_id ??
       (element_id ? ctx.withDoc((doc) => elementMedia(need(doc, element_id))?.assetId) : undefined)
     if (!assetId) throw new CapabilityError('需要素材的 asset_id 或 element_id')
+    const source = element_id ? ctx.withDoc((doc) => need(doc, element_id)) : undefined
+    const sourceMap = element_id ? ctx.withDoc((doc) => doc.elementMaps.get(element_id)) : undefined
+    if (source?.locked) throw new CapabilityError('素材已锁定')
     const req = MediaDeriveRequest.safeParse({ ...edit, assetId })
     if (!req.success) throw new CapabilityError(`参数不对：${z.prettifyError(req.error)}`)
     let made: MediaDerivation
@@ -392,6 +405,21 @@ const editMedia = serverCapability({
       throw err
     }
     return ctx.withDoc((doc: PleinDoc) => {
+      if (element_id) {
+        const current = need(doc, element_id)
+        if (
+          current.locked ||
+          doc.elementMaps.get(element_id) !== sourceMap ||
+          elementMedia(current)?.assetId !== assetId
+        )
+          throw new CapabilityError('来源已变化或锁定，加工资产已保存，未写入画布')
+      }
+      const origin = MediaDerivationOrigin.safeParse({
+        version: 1,
+        op: made.op,
+        source: made.source,
+        params: made.params,
+      })
       const elements = made.assets.flatMap((out) => {
         const kind = out.kind
         if (kind !== 'image' && kind !== 'video' && kind !== 'audio') return []
@@ -399,7 +427,13 @@ const editMedia = serverCapability({
         const elId = placeNew(
           doc,
           { near: element_id },
-          { kind, assetId: out.id, name: out.name, ...size },
+          {
+            kind,
+            assetId: out.id,
+            name: out.name,
+            ...(origin.success ? { params: { mediaDerivation: origin.data } } : {}),
+            ...size,
+          },
         )
         return [{ id: elId, kind, asset_id: out.id, duration: out.duration }]
       })
@@ -975,14 +1009,51 @@ const runStoryboard = serverCapability({
   },
 })
 
+const listCanvasCapabilities = serverCapability({
+  name: 'list_canvas_capabilities',
+  title: '查询画布能力契约',
+  description:
+    '查询实时能力目录（含插件）。不填 name 返回名称、用途、分组与运行位置；指定 name 返回完整输入 JSON Schema。先查契约再操作，不猜参数；节点的嵌套参数用 list_node_types 指定 type 查询。',
+  group: 'read',
+  where: 'server',
+  effect: 'read',
+  input: z.object({ name: id.optional() }),
+  run: (ctx, a) => {
+    const registry = capabilitiesOf(ctx.env.host)
+    if (a.name) {
+      const cap = registry.get(a.name)
+      if (!cap) throw new CapabilityError(`没有能力 ${a.name}`)
+      return {
+        name: cap.name,
+        description: cap.description,
+        where: cap.where,
+        input_schema: z.toJSONSchema(cap.input),
+      }
+    }
+    return registry
+      .list()
+      .map((cap) => ({ name: cap.name, title: cap.title, group: cap.group, where: cap.where }))
+  },
+})
+
 /** 服务端可用的全部能力：画布读写（前后端共用）+ 运行、媒体 */
 export const serverCapabilities = new CapabilityRegistry<ServerContext>([
+  listCanvasCapabilities,
   ...(canvasCapabilities as never[]),
+  ...(sequenceCapabilities as never[]),
+  ...(storyStateCapabilities as never[]),
+  ...(productionCapabilities as never[]),
+  ...(reviewCapabilities as never[]),
   ...(readViewCapabilities as never[]),
   ...(editCapabilities as never[]),
   ...(storyCapabilities as never[]),
   ...(promptCapabilities as never[]),
   ...libraryCapabilities,
+  ...workspaceCapabilities,
+  ...actionCapabilities,
+  captureStage,
+  ...templateCapabilities,
+  ...analysisCapabilities,
   runStoryboard,
   ...editPlanCapabilities,
   rewrite,

@@ -24,6 +24,55 @@ import type { PluginHost } from './host'
 const notFound = { error: 'not_found', message: '平台不存在' }
 const forbidden = { error: 'forbidden', message: '只有所有者可以修改平台设置' }
 
+export function catalogOf(host: PluginHost): Catalog {
+  const { registry, configs } = host
+  host.refreshConfiguredProviders()
+  const catalog: Catalog = {
+    plugins: registry.plugins.map((p) => ({
+      id: p.manifest.id,
+      name: p.manifest.name,
+      version: p.manifest.version,
+      description: p.manifest.description,
+      builtin: p.builtin,
+      status: p.status,
+      error: p.error,
+      contributes: p.manifest.contributes,
+      permissions: p.manifest.permissions,
+    })),
+    nodes: [...registry.nodes].map(([key, n]) => ({
+      ...withDefaultModel(
+        describeNode(n.def, n.plugin),
+        (cap) => host.defaultModel(cap),
+        (cap, ref) => host.models(cap).find((m) => m.ref === ref)?.limits,
+      ),
+      executable: registry.executors.has(key),
+    })),
+    providers: [...registry.providers].map(([id, p]) => {
+      const cfg = configs.get(id)
+      return {
+        ...describeProvider(p.def, p.plugin),
+        enabled: cfg.enabled,
+        configured: providerConfigured(p.def, cfg.secrets),
+      }
+    }),
+    defaultModels: host.defaultModels(),
+    templates: [...registry.templates.values()].map((t) => ({ ...t.def, plugin: t.plugin })),
+    prompts: [...registry.prompts.values()].map((p) => ({ ...p.def, plugin: p.plugin })),
+    elements: [...registry.elements.values()].map((e) => ({
+      type: e.def.type,
+      title: e.def.title,
+      description: e.def.description,
+      defaultSize: e.def.defaultSize,
+      dataSchema: z.toJSONSchema(e.def.data, { io: 'input', unrepresentable: 'any' }) as Record<
+        string,
+        unknown
+      >,
+      plugin: e.plugin,
+    })),
+  }
+  return catalog
+}
+
 /** 插件目录与平台设置接口 */
 export function pluginRoutes(host: PluginHost) {
   const { registry, configs } = host
@@ -40,51 +89,7 @@ export function pluginRoutes(host: PluginHost) {
 
   return new Hono<AuthEnv>()
     .get('/api/catalog', (c) => {
-      host.refreshConfiguredProviders()
-      const catalog: Catalog = {
-        plugins: registry.plugins.map((p) => ({
-          id: p.manifest.id,
-          name: p.manifest.name,
-          version: p.manifest.version,
-          description: p.manifest.description,
-          builtin: p.builtin,
-          status: p.status,
-          error: p.error,
-          contributes: p.manifest.contributes,
-          permissions: p.manifest.permissions,
-        })),
-        nodes: [...registry.nodes].map(([key, n]) => ({
-          ...withDefaultModel(
-            describeNode(n.def, n.plugin),
-            (cap) => host.defaultModel(cap),
-            (cap, ref) => host.models(cap).find((m) => m.ref === ref)?.limits,
-          ),
-          executable: registry.executors.has(key),
-        })),
-        providers: [...registry.providers].map(([id, p]) => {
-          const cfg = configs.get(id)
-          return {
-            ...describeProvider(p.def, p.plugin),
-            enabled: cfg.enabled,
-            configured: providerConfigured(p.def, cfg.secrets),
-          }
-        }),
-        defaultModels: host.defaultModels(),
-        templates: [...registry.templates.values()].map((t) => ({ ...t.def, plugin: t.plugin })),
-        prompts: [...registry.prompts.values()].map((p) => ({ ...p.def, plugin: p.plugin })),
-        elements: [...registry.elements.values()].map((e) => ({
-          type: e.def.type,
-          title: e.def.title,
-          description: e.def.description,
-          defaultSize: e.def.defaultSize,
-          dataSchema: z.toJSONSchema(e.def.data, { io: 'input', unrepresentable: 'any' }) as Record<
-            string,
-            unknown
-          >,
-          plugin: e.plugin,
-        })),
-      }
-      return c.json(catalog)
+      return c.json(catalogOf(host))
     })
     .get('/api/providers/:vendor/:name/config', (c) => {
       const id = `${c.req.param('vendor')}/${c.req.param('name')}`

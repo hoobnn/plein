@@ -30,7 +30,7 @@ export interface ProductionScope {
 }
 export interface ProductionActor {
   userId: string
-  source: 'ui'
+  source: 'ui' | 'agent'
 }
 export interface ProductionConfirmation {
   id: string
@@ -83,7 +83,10 @@ const scopeValid = (v: unknown): v is ProductionScope =>
   typeof v.boardId === 'string' &&
   !!v.boardId
 const actorValid = (v: unknown): v is ProductionActor =>
-  object(v) && v.source === 'ui' && typeof v.userId === 'string' && !!v.userId.trim()
+  object(v) &&
+  ['ui', 'agent'].includes(v.source as string) &&
+  typeof v.userId === 'string' &&
+  !!v.userId.trim()
 const eventValid = (v: unknown) =>
   object(v) &&
   typeof v.id === 'string' &&
@@ -94,7 +97,12 @@ const eventValid = (v: unknown) =>
   Number.isFinite(v.at) &&
   (v.historical === undefined || typeof v.historical === 'boolean')
 const confirmationValid = (v: unknown): v is ProductionConfirmation =>
-  eventValid(v) && object(v) && typeof v.snapshot === 'string' && typeof v.version === 'string'
+  eventValid(v) &&
+  object(v) &&
+  object(v.actor) &&
+  v.actor.source === 'ui' &&
+  typeof v.snapshot === 'string' &&
+  typeof v.version === 'string'
 const decisionValid = (v: unknown): v is ProductionDecision =>
   eventValid(v) &&
   object(v) &&
@@ -293,6 +301,7 @@ export function appendProductionDecision(
   input: {
     scope: ProductionScope
     userId: string
+    actorSource?: ProductionActor['source']
     category: ProductionDecision['category']
     subject: string
     value: string
@@ -306,7 +315,7 @@ export function appendProductionDecision(
     subject: input.subject.trim().slice(0, 120),
     value: input.value.trim().slice(0, 2000),
     note: (input.note ?? '').trim().slice(0, 2000),
-    actor: { userId: input.userId, source: 'ui' },
+    actor: { userId: input.userId, source: input.actorSource ?? 'ui' },
     at: nextEventTime(doc, input.scope.boardId),
   }
   if (doc.readOnly) throw new ReadOnlyDocError()

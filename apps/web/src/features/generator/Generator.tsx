@@ -52,6 +52,7 @@ import { countUnit, isMainField, type ModelOptions, ParamsPill } from './ParamsP
 import { ShotPresets } from './ShotPresets'
 import { PromptBox } from './PromptBox'
 import { PromptTools } from './PromptTools'
+import { AiAnalysisEntry } from '../ai-shot-analysis/AiAnalysisEditor'
 import { RecipeLibrary } from './RecipeLibrary'
 import { CharacterImageArchiveButton } from '../library/ArchiveCharacterImage'
 
@@ -74,7 +75,9 @@ function GeneratorHost({ engine }: { engine: Engine }) {
   const ids = engine.selection.values()
   const el = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
   const node = el?.kind === 'node' ? findNode(catalog, el.nodeType) : undefined
-  if (!el || !node || el.locked || engine.doc.readOnly) return null
+  if (!el || !node) return null
+  if (el.locked || engine.doc.readOnly)
+    return isAiAnalysisType(node.type) ? <AiAnalysisEntry engine={engine} el={el} /> : null
   return (
     <NodeBelow engine={engine} nodeId={el.id} title={el.name ?? node.title}>
       {isAiAnalysisType(node.type) ? (

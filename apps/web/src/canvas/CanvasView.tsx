@@ -35,6 +35,7 @@ import { applyPresetToNode } from './presets'
 import { cancelNode, runNode } from '../features/runs/run'
 import { watchVideoAspect } from './videoAspect'
 import { watchStageAspect } from './stageAspect'
+import { watchAgentRender } from './agentRender'
 import { watchStageHistory } from '../features/stage/history'
 import { droppedFiles, MAX_IMPORT_FILES } from './dropped'
 import { CreationGuide } from '../features/creation-guide/CreationGuide'
@@ -264,6 +265,7 @@ export function CanvasView({
         })
       }
       const provider = new WebsocketProvider(syncUrl(), canvasId, ydoc)
+      const offAgentRender = watchAgentRender(provider.awareness)
       provider.awareness.setLocalStateField('user', { name: '我', color: '#2869f0' })
       // 断线后 y-websocket 会反复「连接中 → 断开」重试：「连接中」不改状态，免得来回闪
       let lost = false
@@ -324,6 +326,7 @@ export function CanvasView({
       }
       provider.on('sync', onSync)
       cleanups.push(() => {
+        offAgentRender()
         provider.destroy()
         void local?.destroy().catch(() => {})
         doc?.destroy()

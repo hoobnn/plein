@@ -120,7 +120,7 @@ export function isProductionGoalRevision(v: unknown): v is ProductionGoalRevisio
     isProductionGoal(v.content) &&
     v.snapshot === productionGoalSnapshot(v.content) &&
     object(v.actor) &&
-    v.actor.source === 'ui' &&
+    ['ui', 'agent'].includes(v.actor.source as string) &&
     id(v.actor.userId) &&
     typeof v.at === 'number' &&
     Number.isFinite(v.at) &&
@@ -160,6 +160,7 @@ export function appendProductionGoal(
     content: ProductionGoal
     expectedHeads: string[]
     userId: string
+    actorSource?: ProductionActor['source']
   },
 ): ProductionGoalRevision | undefined {
   if (doc.readOnly) throw new ReadOnlyDocError()
@@ -189,7 +190,7 @@ export function appendProductionGoal(
     parents: heads.map((r) => r.id),
     content: JSON.parse(snapshot) as ProductionGoal,
     snapshot,
-    actor: { userId: input.userId, source: 'ui' },
+    actor: { userId: input.userId, source: input.actorSource ?? 'ui' },
     at: Math.max(Date.now(), ...heads.map((r) => r.at + 1)),
   }
   doc.undo.stopCapturing()

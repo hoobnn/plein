@@ -78,3 +78,36 @@ Codex 目录来自本机 `skills/list`，显式选用时通过 `turn/start` 的 
 - 同样只在本机免登录模式下开放。
 - 令牌只在生成时显示一次，服务端只保存它的 SHA-256；重新生成会让旧令牌失效。
 - 外部应用的改动不进任何会话的撤销栈，确认环节交给外部应用自己的界面。
+
+## 画布操作的完整契约
+
+Agent 按语义调用画布功能。文档编辑复用 `packages/capabilities` 与 `packages/doc` 命令；文件、音色、字幕和资产库操作复用界面正在使用的服务端路由；WebGL 构图截图由打开当前画布的客户端渲染，服务端核对资产和目标后写回。内置助手、本机 CLI 和外部 MCP 使用同一目录。
+
+- `list_canvas_capabilities`：读取当前工具目录，指定 `name` 可查询完整输入契约。`list_node_types` 指定 `type` 时返回完整嵌套参数 schema，适用于场景、关键帧、角色档案、分镜、字幕和混音等参数。
+- `get_sequence` / `edit_sequence`：读取剪辑实例，按版本凭据修改、排序、固定候选、复制固定片段、加入或替换固定素材、移除一次使用。固定片段使用真实素材时长；替换只影响指定实例，旧素材保留。
+- `edit_production` / `edit_delivery_notes`：选择试制镜头和目标序列、追加制作目标及决策版本、编辑指定交付版本的反馈。Agent 的目标与决策明确记录 `source=agent`，不产生用户确认。
+- `list_canvas_templates` / `place_canvas_template`：铺设插件或用户保存的工作流模板，复用界面的依赖预检、连线校验与引用映射；只创建结构，不运行。
+- `extract_analysis_assets` / `plan_analysis`：提取既有拉片关键帧、片段和音轨，建立逐镜分析或采样归纳草稿，或将精确候选转为带来源的分镜计划；模型推断保留未经人工核实的标记。
+- `get_story_inputs` / `edit_story_state`：固定原文来源、标记事件与对白范围、关联镜头、记录改编提案、登记连续性主体与追加镜头状态计划。计划写入保留父版本校验。
+- `review_candidate`：对审看片刻的具体资产及候选记录状态、标签和意见；候选变化时拒绝旧意见。审片独立于采用，也不等于用户确认内容或批准交付。
+- `search_media` / `get_media_sources`：检索跨画布已有文件并读取来源，得到的资产 id 可用 `create_element` 放入画布。
+- `list_jobs` / `recover_job` / `cancel_group`：读取任务、按原回执恢复，以及取消整组运行。指定节点查询最新任务不受最近任务窗口限制。未知提交重新提交前须核实平台未受理。
+- `create_checkpoint` / `list_checkpoints` / `restore_checkpoint` / `delete_checkpoint`：保存已同步到服务端的画布、查看项目检查点、恢复为新画布或删除检查点。恢复不会自动改变本轮工具的目标画布。
+- `capture_stage`：按时刻截取 3D 构图，保留完整场景与轨迹来源。客户端未打开、超时或目标锁定时明确失败；不会调用生成模型。
+
+`list_canvas_actions` 提供扩展操作目录。先指定 `action` 查看完整 schema，再用 `perform_canvas_action` 传入同名操作及 `input`：
+
+| 功能                                 | 操作                                                                                    |
+| ------------------------------------ | --------------------------------------------------------------------------------------- |
+| 本机媒体能力、素材元数据和下载       | `get_media_caps`、`get_asset`                                                           |
+| 资产库增删改查                       | `get_library_item`、`create_library_item`、`update_library_item`、`delete_library_item` |
+| 全景视角、角色图片归档               | `capture_panorama`、`archive_character_image`                                           |
+| 跨画布版本差异、同步、固定和解锁版本 | `get_library_updates`、`apply_library_updates`                                          |
+| 工作流模板保存与管理                 | `list_templates`、`save_template`、`delete_template`                                    |
+| 音色设计、复刻、登记和管理           | `list_voices`、`create_voice`、`update_voice`、`refresh_voice`、`delete_voice`          |
+| 对白时间戳识别及任务恢复             | `recognize_subtitles`、`get_subtitle_recognition`、`recover_subtitle_recognition`       |
+| OTIO、FCPXML、SRT 和素材工程包       | `export_sequence_project`                                                               |
+
+扩展操作的参数与界面使用相同协议。媒体加工 `edit_media` 也直接从加工协议生成参数，包含区域修补、片段替换、尾帧和保持音高，不另维护缩减版字段。
+
+画布内编辑沿用本轮撤销；资产库、模板、音色、识别记录、跨画布同步和检查点独立保存，不能靠“撤销这一轮”回退。付费操作与删除沿用确认模式。系统不把 Agent 的计划、意见或推断写成用户亲自确认或完整观片的证据；界面中的人工确认仍由用户完成。文件选择器、播放器播放头和面板开关属于客户端交互，语义编辑通过上述工具完成。

@@ -1,6 +1,7 @@
 import type { CapabilityDefinition } from '@plein/capabilities'
 import type { AgentApprovalMode, StoryboardBatchPlan } from '@plein/protocol'
 import type { z } from 'zod'
+import { canvasActionInfo } from './action-caps'
 import { newId } from '../ids'
 import type { AgentChanges } from './changes'
 import type { ServerContext } from './tools'
@@ -91,6 +92,9 @@ export function approvalFor(
       }
     return null
   }
+  if (cap.name === 'perform_canvas_action')
+    return { reason: canvasActionInfo(String(input.action)).title, ids: [] }
+  if (cap.name === 'recover_job' || effect === 'destructive') return { reason: cap.title, ids: [] }
   // 插件能力会花钱或删东西时，规则模式下也先问：宿主不知道它具体做什么
   if (mode === 'always' || cap.group === 'plugin') return { reason: cap.title, ids: [] }
   return null

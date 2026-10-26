@@ -27,6 +27,9 @@ export function summarize(doc: PleinDoc, el: CanvasElement, full: boolean) {
   const out: Record<string, unknown> = {
     id: el.id,
     kind: el.kind,
+    locked: el.locked,
+    rotation: el.rotation,
+    ...(el.color ? { color: el.color } : {}),
     ...(el.name ? { name: el.name } : {}),
     rect: [Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)],
   }
@@ -34,6 +37,15 @@ export function summarize(doc: PleinDoc, el: CanvasElement, full: boolean) {
   if (parent) out.parent = parent
   if (el.text !== undefined) out.text = full ? el.text : clip(el.text)
   if (el.assetId) out.asset_id = el.assetId
+  if (full) {
+    if (el.kind !== 'node' && el.params) out.params = el.params
+    out.z = el.z
+    out.adopted = el.adopted
+    if (el.reviews) out.reviews = el.reviews
+    if (el.production) out.production = el.production
+    if (el.deliveries) out.deliveries = el.deliveries
+    if (el.videoSegment) out.video_segment = el.videoSegment
+  }
   if (el.kind === 'node') {
     out.type = el.nodeType
     out.params = full
