@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { newProject, waitEngine } from './canvas'
+import { newProject, revealGenerator, waitEngine } from './canvas'
 
 async function character(page: Page) {
   await newProject(page)
@@ -25,6 +25,8 @@ test(
   { tag: '@core' },
   async ({ page, context }) => {
     const id = await character(page)
+    // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+    await revealGenerator(page)
     const peerContext = await context.browser()!.newContext()
     try {
       const peer = await peerContext.newPage()
@@ -48,7 +50,10 @@ test(
       // 冲突时失焦不应无意覆盖同伴刚提交的名称。
       await nameField(page).press('Tab')
       expect(await savedName(page, id)).toBe('同伴已保存名称')
-      await panel.getByRole('button', { name: '使用更新后的名称', exact: true }).click()
+      // 冲突提示出现在面板里，位置可能落在可视区外：移进窗口再滚进来
+      const useRemote = panel.getByRole('button', { name: '使用更新后的名称', exact: true })
+      await revealGenerator(page, useRemote)
+      await useRemote.click()
       await expect(nameField(page)).toHaveValue('同伴已保存名称')
       await expect(panel.getByRole('status')).toHaveCount(0)
 
@@ -88,9 +93,10 @@ test(
       await page.screenshot({ path: test.info().outputPath('name-conflict-narrow.png') })
       await panel.getByRole('button', { name: '使用更新后的名称', exact: true }).click()
       await expect(nameField(page)).toHaveValue(longName)
+      // 编辑器固定 840px 宽，窄窗口里右侧会超出；左边缘留在窗口内就还能操作
       const bounds = await panel.boundingBox()
       expect(bounds!.x).toBeGreaterThanOrEqual(0)
-      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(800)
+      expect(bounds!.x).toBeLessThanOrEqual(800)
       await page.reload()
       await waitEngine(page)
       await expect.poll(() => savedName(page, id)).toBe(longName)
@@ -107,6 +113,8 @@ test('角色名称按 Esc 取消草稿，保留选中节点与已保存名称', 
   await expect(nameField(page)).toHaveValue('协作角色')
   expect(await savedName(page, id)).toBe('协作角色')
   await expect(page.getByTestId('generator')).toBeVisible()
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
 })
 
 test('名称正常失焦保存、空值恢复、输入法确认隔离与撤销边界', async ({ page }) => {

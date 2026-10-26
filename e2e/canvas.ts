@@ -193,8 +193,11 @@ export async function clickElement(page: Page, id: string) {
     .toEqual([id])
 }
 
-/** 固定尺寸编辑器不会自动避开视口；编辑操作前像用户一样把它平移回可见区域。 */
-export async function revealGenerator(page: Page) {
+/**
+ * 固定尺寸编辑器不会自动避开视口；编辑操作前像用户一样把它平移回可见区域。
+ * 面板里的内容可能比面板还高，指定 target 时再把它滚进面板内。
+ */
+export async function revealGenerator(page: Page, target?: Locator) {
   const editor = page.getByTestId('node-editor')
   await expect(editor).toBeVisible()
   // 面板跟着相机走，平移后要再确认一次仍在窗口里
@@ -212,7 +215,10 @@ export async function revealGenerator(page: Page) {
             : box.x < 12
               ? 12 - box.x
               : 0
-      const dy = Math.max(12 - box.y, Math.min(0, innerHeight - 76 - box.bottom))
+      // 底部工具条浮在画布上，面板不能被它压住：按工具条实际高度留出位置
+      const footer = document.querySelector('.plein-footer')
+      const reserve = footer ? Math.max(76, footer.getBoundingClientRect().height + 16) : 76
+      const dy = Math.max(12 - box.y, Math.min(0, innerHeight - reserve - box.bottom))
       if (dx || dy) engine.camera.panBy(dx, dy)
       return dx !== 0 || dy !== 0
     })
@@ -228,6 +234,7 @@ export async function revealGenerator(page: Page) {
     ;(el as HTMLElement & { __revealTop?: number }).__revealTop = box.top
     return last === undefined || Math.abs(last - box.top) < 0.5
   })
+  if (target) await target.scrollIntoViewIfNeeded()
 }
 
 /** 右键元素，点菜单项 */
