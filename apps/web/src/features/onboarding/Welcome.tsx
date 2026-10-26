@@ -10,7 +10,7 @@ import { Icon, type IconName } from '../../ui/icons'
 import { Modal } from '../../ui/Modal'
 import { Presence, useClosing } from '../../ui/Presence'
 import { SlideSwap } from '../../ui/Slide'
-import { ProviderRow } from '../settings/Settings'
+import { ProviderRow } from '../settings/ProviderSettings'
 
 const DONE_KEY = 'plein.welcome'
 /** 推荐先接入的平台排在前面（0.1.0 的 P0） */
