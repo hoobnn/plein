@@ -137,7 +137,7 @@ function ResultBarHost({ engine }: { engine: Engine }) {
       {asset && canvasId && (
         // key 跟着素材走：换选一个素材时把已读的元信息和打开的表单一起丢掉
         <MediaTools
-          key={asset.assetId}
+          key={`${el.id}:${asset.assetId}`}
           engine={engine}
           target={{ elId: el.id, ...asset }}
           label="媒体工具"
@@ -341,7 +341,7 @@ export function ResultActions({
           <Icon name="chevronDown" size={12} />
         </button>
       )}
-      {remote && variant === 'inline' && media.kind === 'video' && (
+      {remote && variant === 'inline' && (
         <MediaTools
           key={`${el.id}:${media.assetId}`}
           engine={engine}

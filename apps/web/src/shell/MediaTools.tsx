@@ -25,6 +25,7 @@ import { Popover } from '../ui/Popover'
 import { Presence } from '../ui/Presence'
 import { audioSplitPlan } from './audioSegments'
 import { useMediaDeriver } from './mediaRequests'
+import { useCreationTools } from './media-tools/useCreationTools'
 import type { MediaTarget } from '../canvas/media'
 export type { MediaTarget } from '../canvas/media'
 
@@ -84,6 +85,7 @@ export function MediaTools({
   ops?: ReturnType<typeof opsFor>
 }) {
   const notify = useCanvas((s) => s.notify)
+  const catalog = useCatalog((s) => s.catalog)
   const [open, setOpen] = useState(false)
   const [form, setFormState] = useState<string | null>(null)
   const [error, setError] = useState<{
@@ -107,13 +109,19 @@ export function MediaTools({
 
   const list = Array.isArray(target) ? target : [target]
   const first = list[0]!
+  const locked = list.some((t) => engine.doc.get(t.elId)?.locked)
+  const writable = !engine.doc.readOnly && !locked
   const { busy, run, cancel, trigger: btnRef } = useMediaDeriver(engine, list)
   const [caps, setCaps] = useState<MediaCapsInfo | null>(null)
+  const [capsError, setCapsError] = useState(false)
+  const creation = useCreationTools(engine, list, catalog, () => setOpen(false), caps)
   useEffect(() => {
     let alive = true
     mediaCaps()
       .then((c) => alive && setCaps(c))
-      .catch(() => {})
+      .catch(() => {
+        if (alive) setCapsError(true)
+      })
     return () => {
       alive = false
     }
@@ -185,6 +193,10 @@ export function MediaTools({
   /** 多选时按目标顺序逐个加工，失败的跳过并如实报数；上一轮还没完时不重复发起 */
   const runAll = async (op: MediaOp, make: (t: MediaTarget) => MediaDeriveRequest) => {
     const targets = applicable(op)
+    if (!writable)
+      return notify(
+        engine.doc.readOnly ? '当前画布只读，不能加工素材。' : '所选素材已锁定，请先解锁。',
+      )
     if (!targets.length) return notify('所选素材不支持此操作')
     const pending = run(targets, make, { skipped: list.length - targets.length })
     setOpen(false)
@@ -303,11 +315,14 @@ export function MediaTools({
   return (
     <>
       <button
-        ref={btnRef}
+        ref={(button) => {
+          btnRef.current = button
+          creation.trigger.current = button
+        }}
         type="button"
         className={`${buttonClass} ui-btn-menu`}
         aria-expanded={open}
-        disabled={busy || !actions.length}
+        disabled={busy}
         onClick={toggle}
         title={
           actions.length
@@ -335,6 +350,17 @@ export function MediaTools({
         </>
       )}
 
+      {creation.pending && (
+        <button
+          type="button"
+          className={buttonClass}
+          disabled={creation.pending.signal.aborted}
+          onClick={(event) => creation.cancel(event.currentTarget)}
+        >
+          {creation.pending.signal.aborted ? '取消中…' : '取消取帧'}
+        </button>
+      )}
+      {creation.overlay}
       <Presence>
         {open && (
           <Popover
@@ -480,7 +506,7 @@ export function MediaTools({
                   <button
                     type="button"
                     className="ui-btn ui-btn-sm ui-btn-primary flex-1"
-                    disabled={busy || !formTargets.length}
+                    disabled={busy || !writable || !formTargets.length}
                     onClick={() => void submit()}
                   >
                     {busy ? '处理中…' : '开始加工'}
@@ -490,167 +516,191 @@ export function MediaTools({
             ) : (
               <>
                 <div className="ui-menu-label">
-                  {list.length > 1 ? `已选择 ${list.length} 个素材` : '加工'}
+                  {list.length > 1 ? `本地处理 · 已选择 ${list.length} 个素材` : '本地处理'}
                 </div>
                 {list.length > 1 && <p className="ui-help px-2 pb-2">每项操作仅处理适用的素材。</p>}
-                {first.kind === 'video' && list.length === 1 && actions.length > 0 && (
-                  <button
-                    type="button"
-                    className="ui-menu-item"
-                    onClick={() => {
-                      const source = engine.doc.get(first.elId)
-                      if (
-                        engine.doc.readOnly ||
-                        !source ||
-                        elementMedia(source)?.assetId !== first.assetId
-                      ) {
-                        notify('原视频已变化，请重新选择')
-                        return
-                      }
-                      const id = deriveNode(
-                        engine,
-                        useCatalog.getState().catalog,
-                        first.elId,
-                        SHOT_ANALYSIS_TYPE,
-                        { inputPort: 'video', sourceAssetId: first.assetId },
-                      )
-                      if (id) {
-                        setOpen(false)
-                        useCanvas.getState().openShotAnalysis(id)
-                      } else notify('没有找到本地拉片节点，请刷新节点目录')
-                    }}
-                  >
-                    本地拉片
-                  </button>
-                )}
-                {first.kind === 'image' && list.length === 1 && (
-                  <button
-                    type="button"
-                    className="ui-menu-item justify-between"
-                    onClick={() => {
-                      const id = deriveNode(
-                        engine,
-                        useCatalog.getState().catalog,
-                        first.elId,
-                        'plein/image-process',
-                        { inputPort: 'image', name: '图片精修' },
-                      )
-                      if (id) {
-                        setOpen(false)
-                        engine.selection.set([id])
-                      }
-                    }}
-                  >
-                    AI 精修（放大 / 扩图 / 抠图）
-                  </button>
-                )}
-                {actions.includes('crop') && (
-                  <button
-                    type="button"
-                    className="ui-menu-item justify-between"
-                    onClick={() => {
-                      setValues({ left: '0', top: '0' })
-                      setForm('crop')
-                    }}
-                  >
-                    裁剪
-                  </button>
-                )}
-                {actions.includes('rotate') &&
-                  ([90, 180, 270] as const).map((angle) => (
+                <p className="ui-help px-2 pb-2">结果是新素材，保留原文件，不调用生成模型。</p>
+                {capsError && (
+                  <div className="ui-help px-2 pb-2">
+                    无法读取本地媒体能力。
                     <button
-                      key={angle}
                       type="button"
-                      className="ui-menu-item justify-between"
-                      onClick={() =>
-                        void runAll('rotate', (t) => ({ op: 'rotate', assetId: t.assetId, angle }))
-                      }
+                      className="underline"
+                      onClick={() => {
+                        void mediaCaps()
+                          .then((value) => {
+                            setCaps(value)
+                            setCapsError(false)
+                          })
+                          .catch(() => setCapsError(true))
+                      }}
                     >
-                      旋转 {angle}° {scope('rotate')}
+                      重试读取能力
                     </button>
-                  ))}
-                {actions.includes('flip') && (
-                  <>
+                  </div>
+                )}
+                {!writable && (
+                  <p role="status" className="ui-help px-2 pb-2">
+                    {engine.doc.readOnly
+                      ? '当前画布只读，不能加工素材。'
+                      : '所选素材已锁定，请先解锁。'}
+                  </p>
+                )}
+                {!actions.length && (
+                  <p role="status" className="ui-help px-2 pb-2">
+                    {caps?.ffmpeg === false
+                      ? '本机未提供 ffmpeg，音视频本地加工暂不可用。'
+                      : '当前选择没有适用的本地加工操作。'}
+                  </p>
+                )}
+                <fieldset disabled={!writable} aria-label="本地处理">
+                  {first.kind === 'video' && list.length === 1 && (
+                    <button
+                      type="button"
+                      className="ui-menu-item"
+                      disabled={caps?.ffmpeg === false}
+                      title={
+                        caps?.ffmpeg === false ? '本机缺少 ffmpeg，无法检测切点与抽帧' : undefined
+                      }
+                      onClick={() => {
+                        if (!creation.check()) return
+                        const source = engine.doc.get(first.elId)
+                        if (
+                          engine.doc.readOnly ||
+                          !source ||
+                          elementMedia(source)?.assetId !== first.assetId
+                        ) {
+                          notify('原视频已变化，请重新选择')
+                          return
+                        }
+                        const id = deriveNode(
+                          engine,
+                          useCatalog.getState().catalog,
+                          first.elId,
+                          SHOT_ANALYSIS_TYPE,
+                          { inputPort: 'video', sourceAssetId: first.assetId },
+                        )
+                        if (id) {
+                          setOpen(false)
+                          useCanvas.getState().openShotAnalysis(id)
+                        } else notify('没有找到本地拉片节点，请刷新节点目录')
+                      }}
+                    >
+                      本地拉片
+                    </button>
+                  )}
+                  {actions.includes('crop') && (
                     <button
                       type="button"
                       className="ui-menu-item justify-between"
-                      onClick={() => void quick('flip')}
+                      onClick={() => {
+                        setValues({ left: '0', top: '0' })
+                        setForm('crop')
+                      }}
                     >
-                      左右翻转 {scope('flip')}
+                      裁剪
                     </button>
+                  )}
+                  {actions.includes('rotate') &&
+                    ([90, 180, 270] as const).map((angle) => (
+                      <button
+                        key={angle}
+                        type="button"
+                        className="ui-menu-item justify-between"
+                        onClick={() =>
+                          void runAll('rotate', (t) => ({
+                            op: 'rotate',
+                            assetId: t.assetId,
+                            angle,
+                          }))
+                        }
+                      >
+                        旋转 {angle}° {scope('rotate')}
+                      </button>
+                    ))}
+                  {actions.includes('flip') && (
+                    <>
+                      <button
+                        type="button"
+                        className="ui-menu-item justify-between"
+                        onClick={() => void quick('flip')}
+                      >
+                        左右翻转 {scope('flip')}
+                      </button>
+                      <button
+                        type="button"
+                        className="ui-menu-item justify-between"
+                        onClick={() =>
+                          void runAll('flip', (t) => ({
+                            op: 'flip',
+                            assetId: t.assetId,
+                            axis: 'vertical',
+                          }))
+                        }
+                      >
+                        上下翻转 {scope('flip')}
+                      </button>
+                    </>
+                  )}
+                  {actions.includes('trim') && (
                     <button
                       type="button"
                       className="ui-menu-item justify-between"
-                      onClick={() =>
-                        void runAll('flip', (t) => ({
-                          op: 'flip',
-                          assetId: t.assetId,
-                          axis: 'vertical',
-                        }))
-                      }
+                      onClick={() => {
+                        setValues({ start: '0:00' })
+                        setForm('trim')
+                      }}
                     >
-                      上下翻转 {scope('flip')}
+                      截取一段
                     </button>
-                  </>
-                )}
-                {actions.includes('trim') && (
-                  <button
-                    type="button"
-                    className="ui-menu-item justify-between"
-                    onClick={() => {
-                      setValues({ start: '0:00' })
-                      setForm('trim')
-                    }}
-                  >
-                    截取一段
-                  </button>
-                )}
-                {actions.includes('speed') && (
-                  <button
-                    type="button"
-                    className="ui-menu-item justify-between"
-                    onClick={() => {
-                      setValues({ speed: '2', keepPitch: 'yes' })
-                      setForm('speed')
-                    }}
-                  >
-                    变速 {scope('speed')}
-                  </button>
-                )}
-                {actions.includes('split') && (
-                  <button
-                    type="button"
-                    className="ui-menu-item justify-between"
-                    onClick={() => {
-                      setValues({ count: '2' })
-                      setForm('split')
-                    }}
-                  >
-                    手动切分
-                  </button>
-                )}
-                {actions.includes('separate') && (
-                  <button
-                    type="button"
-                    className="ui-menu-item justify-between"
-                    onClick={() => void quick('separate')}
-                  >
-                    分离音频与画面 {scope('separate')}
-                  </button>
-                )}
-                {actions.includes('frame') && (
-                  <button
-                    type="button"
-                    className="ui-menu-item justify-between"
-                    onClick={() => {
-                      setValues({ at: '0:00' })
-                      setForm('frame')
-                    }}
-                  >
-                    抽帧成图片 {scope('frame')}
-                  </button>
-                )}
-                <div className="ui-help px-2 pt-2">加工后会创建新素材，原素材保持不变。</div>
+                  )}
+                  {actions.includes('speed') && (
+                    <button
+                      type="button"
+                      className="ui-menu-item justify-between"
+                      onClick={() => {
+                        setValues({ speed: '2', keepPitch: 'yes' })
+                        setForm('speed')
+                      }}
+                    >
+                      变速 {scope('speed')}
+                    </button>
+                  )}
+                  {actions.includes('split') && (
+                    <button
+                      type="button"
+                      className="ui-menu-item justify-between"
+                      onClick={() => {
+                        setValues({ count: '2' })
+                        setForm('split')
+                      }}
+                    >
+                      手动切分
+                    </button>
+                  )}
+                  {actions.includes('separate') && (
+                    <button
+                      type="button"
+                      className="ui-menu-item justify-between"
+                      onClick={() => void quick('separate')}
+                    >
+                      分离音频与画面 {scope('separate')}
+                    </button>
+                  )}
+                  {actions.includes('frame') && (
+                    <button
+                      type="button"
+                      className="ui-menu-item justify-between"
+                      onClick={() => {
+                        setValues({ at: '0:00' })
+                        setForm('frame')
+                      }}
+                    >
+                      抽帧成图片 {scope('frame')}
+                    </button>
+                  )}
+                </fieldset>
+                {creation.menu}
               </>
             )}
           </Popover>
@@ -666,7 +716,7 @@ export function MediaBatchTools({ engine, targets }: { engine: Engine; targets: 
   if (!targets.length || !ops.length) return null
   return (
     <MediaTools
-      key={targets.map((t) => t.assetId).join(',')}
+      key={targets.map((t) => `${t.elId}:${t.assetId}`).join(',')}
       engine={engine}
       target={targets}
       label="批量加工"

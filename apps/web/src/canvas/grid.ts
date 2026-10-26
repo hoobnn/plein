@@ -27,6 +27,9 @@ export async function splitGrid(
   onProgress?: (done: number, total: number) => void,
   signal?: AbortSignal,
 ): Promise<string | null> {
+  if (engine.doc.readOnly || engine.doc.get(sourceId)?.locked)
+    throw new Error('当前素材只读或已锁定，不能切分')
+  const sourceMap = engine.doc.elementMaps.get(sourceId)
   const rect = engine.scene.rect(sourceId)
   if (!rect) return null
   const bitmap = await createImageBitmap(await api.assetBlob(assetId, signal))
@@ -78,7 +81,10 @@ export async function splitGrid(
       }
     }
     signal?.throwIfAborted()
-    if (!engine.doc.has(sourceId)) throw new Error('来源元素已删除，切图未写入画布')
+    if (engine.doc.readOnly || engine.doc.get(sourceId)?.locked)
+      throw new Error('当前素材只读或已锁定，切图未写入画布')
+    if (!engine.doc.has(sourceId) || engine.doc.elementMaps.get(sourceId) !== sourceMap)
+      throw new Error('来源元素已删除或替换，切图未写入画布')
     const current = engine.doc.get(sourceId)!
     if (mediaOf(current)?.assetId !== assetId)
       throw new Error('来源图片已变化，切图未写入画布；已上传的切片可在素材中查看')

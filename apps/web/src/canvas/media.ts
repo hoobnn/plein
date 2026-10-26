@@ -226,11 +226,17 @@ export async function applyDerivation(
   nearId: string,
   signal?: AbortSignal,
 ): Promise<DerivedMedia> {
+  const sourceMap = engine.doc.elementMaps.get(nearId)
   const check = () => {
     signal?.throwIfAborted()
     if (engine.doc.readOnly) throw new ReadOnlyDocError()
     const source = engine.doc.get(nearId)
-    if (!source || elementMedia(source)?.assetId !== input.assetId)
+    if (source?.locked) throw new Error('素材已锁定，本次加工未放入画布，请先解锁')
+    if (
+      !source ||
+      engine.doc.elementMaps.get(nearId) !== sourceMap ||
+      elementMedia(source)?.assetId !== input.assetId
+    )
       throw new Error('素材已变化，本次加工未放入画布，请重新选择素材')
   }
   check()

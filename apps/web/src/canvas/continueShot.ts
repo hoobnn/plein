@@ -87,6 +87,8 @@ export async function continueShot(
   const source = engine.doc.get(sourceId)
   const assetId = videoAssetOf(source)
   if (!source || !assetId) throw new Error('选中的不是视频')
+  if (source.locked) throw new Error('视频已锁定，请先解锁')
+  const sourceMap = engine.doc.elementMaps.get(sourceId)
   const node = continueNodeFor(catalog, source)
   if (!node) throw new Error('没有能做图生视频的节点')
   const input = node.inputs.find((p) => p.type === 'image')!
@@ -114,7 +116,9 @@ export async function continueShot(
   // 只接受仍对应当前视频的抽帧；等待期间的参数编辑则沿用最新值。
   if (engine.doc.readOnly) throw new ReadOnlyDocError()
   const latest = engine.doc.get(sourceId)
-  if (!latest) throw new Error('视频已经不在画布上了')
+  if (!latest || engine.doc.elementMaps.get(sourceId) !== sourceMap)
+    throw new Error('视频已经不在画布上或来源已替换')
+  if (latest.locked) throw new Error('视频已锁定，本次未创建续镜草稿')
   if (videoAssetOf(latest) !== assetId) throw new Error('视频已经更换，请重新续镜')
 
   const from: ContinuesFrom = {

@@ -189,6 +189,20 @@ describe('续镜异步取帧的保存边界', () => {
     doc.destroy()
   })
 
+  it('创建续镜期间锁定父视频，拒绝迟到结果且不创建节点', async () => {
+    const { doc, engine, parent } = continuation()
+    const finish = pendingFrame()
+    const before = [...doc.elements()].length
+    const run = continueShot(engine, { nodes: [video] } as never, parent, { last: true })
+    updateElement(doc, parent, { locked: true })
+    const steps = doc.undo.undoStack.length
+    finish()
+    await expect(run).rejects.toThrow('视频已锁定')
+    expect([...doc.elements()]).toHaveLength(before)
+    expect(doc.undo.undoStack).toHaveLength(steps)
+    doc.destroy()
+  })
+
   it.each(['视频', '首帧', '连线', '来路', '删除', '只读'] as const)(
     '更新首帧期间修改%s，拒绝旧结果且不留下部分写入',
     async (kind) => {

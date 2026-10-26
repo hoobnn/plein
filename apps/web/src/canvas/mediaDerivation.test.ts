@@ -24,7 +24,7 @@ const made = {
 } as MediaDerivation
 const input = { op: 'crop' as const, assetId: 'source', left: 0, top: 0, width: 80, height: 90 }
 
-it.each(['delete', 'replace', 'readonly', 'cancel'] as const)(
+it.each(['delete', 'replace', 'identity', 'readonly', 'locked', 'cancel'] as const)(
   '加工传输忽略取消并迟到返回时，%s 不写入或增加撤销记录',
   async (change) => {
     const { doc, engine, source } = setup()
@@ -38,8 +38,21 @@ it.each(['delete', 'replace', 'readonly', 'cancel'] as const)(
     const controller = new AbortController()
     const pending = applyDerivation(engine, input, source, controller.signal)
     if (change === 'delete') doc.elementMaps.delete(source)
+    if (change === 'identity') {
+      doc.elementMaps.delete(source)
+      createElement(doc, {
+        id: source,
+        kind: 'image',
+        assetId: 'source',
+        x: 0,
+        y: 0,
+        w: 160,
+        h: 90,
+      })
+    }
     if (change === 'replace') updateElement(doc, source, { assetId: 'replacement' })
     if (change === 'readonly') doc.readOnly = true
+    if (change === 'locked') updateElement(doc, source, { locked: true })
     if (change === 'cancel') controller.abort()
     const steps = doc.undo.undoStack.length
     release(made)
