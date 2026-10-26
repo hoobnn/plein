@@ -88,6 +88,16 @@ export const LibrarySceneView = z.object({
     .max(8)
     .default([]),
   description: z.string().max(1000).default(''),
+  // 与 nodes/PanoramaViewSource 同构；来源不进入该视角的模型参考图列表。
+  panorama: z
+    .object({
+      assetId: libraryAssetId,
+      yaw: z.number().min(-180).max(180),
+      pitch: z.number().min(-80).max(80),
+      fov: z.number().min(25).max(100),
+      format: z.enum(['landscape', 'portrait', 'square']),
+    })
+    .optional(),
   images: z.array(libraryAssetId).max(4).default([]),
 })
 export const LibrarySceneViews = z

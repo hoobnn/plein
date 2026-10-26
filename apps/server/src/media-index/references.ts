@@ -100,7 +100,8 @@ export function documentReferences(doc: PleinDoc): AssetReference[] {
       if (derivedInputs.length && path.startsWith('/mediaDerivation/')) return
       // 场景视角图虽存放在参数里，仍是档案直接持有的素材，不是碰巧出现的哈希文本。
       const sceneViewImage =
-        el.nodeType === 'plein/scene' && /^\/sceneViews\/\d+\/images\/\d+$/.test(path)
+        el.nodeType === 'plein/scene' &&
+        /^\/sceneViews\/\d+\/(?:images\/\d+|panorama\/assetId)$/.test(path)
       add(id, `params${path}`, null, false, sceneViewImage)
     })
     if (el.kind === 'markdown')

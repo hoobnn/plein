@@ -1,3 +1,4 @@
+import type { PanoramaCaptureRequest } from '@plein/nodes'
 import {
   API,
   type AgentAccess,
@@ -201,6 +202,8 @@ export const api = {
     request<LibraryItem>(API.libraryItem(id), json('PATCH', body)),
   archiveCharacterImage: (id: string, body: ArchiveCharacterImage) =>
     request<LibraryItem>(`${API.libraryItem(id)}/character-image`, json('POST', body)),
+  capturePanoramaView: (id: string, body: PanoramaCaptureRequest, signal?: AbortSignal) =>
+    request<LibraryItem>(`${API.libraryItem(id)}/panorama-view`, { ...json('POST', body), signal }),
   deleteLibraryItem: (id: string) => request<void>(API.libraryItem(id), { method: 'DELETE' }),
   markLibraryUsed: (id: string) => request<void>(API.libraryUse(id), json('POST', {})),
 

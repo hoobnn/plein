@@ -11,10 +11,11 @@ import {
   profileEmpty,
   profileSize,
   sceneViewImages,
+  panoramaSceneRevision,
 } from '@plein/nodes'
 import type { CharacterImageSlot, LibraryItem, LibraryKind } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { api, assetUrls } from '../../api/client'
 import { queryKeys } from '../../api/query'
 import {
@@ -57,7 +58,10 @@ import { LibraryModal, LibraryTabs, useLibraryClose, VoicePanel } from './VoiceP
 import { useLibraryPlacement } from './useLibraryPlacement'
 import { listFocusTarget } from './listFocus'
 import { settleSavedDraft } from './savedDraft'
+
 import { createdEditing, draftOf, editorKeyOf, type Draft, type Editing } from './editorDraft'
+
+const PanoramaDialog = lazy(() => import('../panorama/PanoramaDialog'))
 
 /**
  * 资产库面板：
@@ -856,6 +860,14 @@ function Editor({
   useEffect(() => {
     useLibrary.getState().takeTab()
   }, [])
+  const openingPanorama = useRef(false)
+  const [panoramaOpening, setPanoramaOpening] = useState(false)
+  const [panorama, setPanorama] = useState<{
+    item: LibraryItem
+    sourceAssetId: string
+    session: { active: boolean }
+    snapshot: string
+  } | null>(null)
   const [preview, setPreview] = useState<{ id: string | null; caption?: string } | null>(null)
   const [pin, setPin] = useState<{ id: string | null; caption?: string }>({ id: null })
   const initial = useMemo(
@@ -936,6 +948,61 @@ function Editor({
     } finally {
       finishMutation(session)
     }
+  }
+
+  const panoramaCurrent = () => {
+    if (
+      !panorama ||
+      !current(panorama.session) ||
+      JSON.stringify(latestDraft.current) !== panorama.snapshot
+    )
+      return false
+    const source = useLibrary.getState().items.find((entry) => entry.id === panorama.item.id)
+    return !!source && panoramaSceneRevision(source) === panoramaSceneRevision(panorama.item)
+  }
+  const openPanorama = async () => {
+    if (panorama || openingPanorama.current) return
+    const session = lifetime.current
+    openingPanorama.current = true
+    setPanoramaOpening(true)
+    try {
+      const saved = readOnly ? item : await save(true)
+      if (!saved || !current(session)) return
+      const snapshot = JSON.stringify(
+        readOnly ? latestDraft.current : draftOf(kind, saved, undefined, projectId),
+      )
+      const latest = await api.libraryItem(saved.id)
+      if (!current(session)) return
+      if (JSON.stringify(latestDraft.current) !== snapshot) {
+        setError('读取全景期间设定已变化，请核对后重试。')
+        return
+      }
+      const normalized = draftOf(kind, latest, undefined, projectId)
+      useLibrary.setState((state) => ({
+        items: state.items.map((entry) => (entry.id === latest.id ? latest : entry)),
+      }))
+      setDraft(normalized)
+      const sourceAssetId = latest.images.find((image) => image.slot === 'panorama')?.assetId
+      if (!sourceAssetId) {
+        setError('场景中已没有全景原图，请重新选择。')
+        return
+      }
+      setPanorama({ item: latest, sourceAssetId, session, snapshot: JSON.stringify(normalized) })
+    } catch (cause) {
+      if (current(session)) setError((cause as Error).message)
+    } finally {
+      openingPanorama.current = false
+      if (session.active) setPanoramaOpening(false)
+    }
+  }
+  const capturedPanorama = (saved: LibraryItem) => {
+    if (!panoramaCurrent()) return
+    useLibrary.setState((state) => ({
+      items: state.items.map((entry) => (entry.id === saved.id ? saved : entry)),
+    }))
+    setDraft(draftOf(kind, saved, undefined, projectId))
+    setPanorama(null)
+    setSaveNotice('已保存命名视角。画布上的场景卡仍可通过“查看画布中的版本”选择同步。')
   }
 
   const place = async () => {
@@ -1023,35 +1090,49 @@ function Editor({
   ]
   const tabIndex = tabs.findIndex((t) => t.value === tab)
   const slotField = (slot: LibraryKindSpec['slots'][number]) => (
-    <SlotField
-      key={slot.id}
-      slot={slot}
-      images={draft.images.filter((i) => i.slot === slot.id)}
-      used={draft.images.map((i) => i.assetId)}
-      media={media}
-      disabled={busy || pendingUploads > 0}
-      onBusyChange={trackUpload}
-      onAdd={(ids) =>
-        setDraft((current) => {
-          const retained = slot.multiple
-            ? current.images
-            : current.images.filter((i) => i.slot !== slot.id)
-          const used = new Set(retained.map((image) => image.assetId))
-          const added = [...new Set(ids)]
-            .filter((id) => !used.has(id))
-            .map((assetId) => ({ slot: slot.id, assetId }))
-          return { ...current, images: [...retained, ...added] }
-        })
-      }
-      onRemove={(assetId) => {
-        setDraft((current) => ({
-          ...current,
-          images: current.images.filter((i) => !(i.slot === slot.id && i.assetId === assetId)),
-        }))
-        setPreview((current) => (current?.id === assetId ? null : current))
-        setPin((current) => (current.id === assetId ? { id: null } : current))
-      }}
-    />
+    <div key={slot.id} className="flex flex-col gap-2">
+      <SlotField
+        key={slot.id}
+        slot={slot}
+        images={draft.images.filter((i) => i.slot === slot.id)}
+        used={draft.images.map((i) => i.assetId)}
+        media={media}
+        disabled={busy || pendingUploads > 0}
+        onBusyChange={trackUpload}
+        onAdd={(ids) =>
+          setDraft((current) => {
+            const retained = slot.multiple
+              ? current.images
+              : current.images.filter((i) => i.slot !== slot.id)
+            const used = new Set(retained.map((image) => image.assetId))
+            const added = [...new Set(ids)]
+              .filter((id) => !used.has(id))
+              .map((assetId) => ({ slot: slot.id, assetId }))
+            return { ...current, images: [...retained, ...added] }
+          })
+        }
+        onRemove={(assetId) => {
+          setDraft((current) => ({
+            ...current,
+            images: current.images.filter((i) => !(i.slot === slot.id && i.assetId === assetId)),
+          }))
+          setPreview((current) => (current?.id === assetId ? null : current))
+          setPin((current) => (current.id === assetId ? { id: null } : current))
+        }}
+      />
+      {kind.id === 'scene' &&
+        slot.id === 'panorama' &&
+        draft.images.some((image) => image.slot === 'panorama') && (
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary ui-btn-sm self-start"
+            disabled={busy || pendingUploads > 0 || !!panorama || panoramaOpening}
+            onClick={() => void openPanorama()}
+          >
+            浏览全景与截取视角
+          </button>
+        )}
+    </div>
   )
 
   const basics = (
@@ -1429,6 +1510,18 @@ function Editor({
           )}
         </div>
       </footer>
+      {panorama && (
+        <Suspense fallback={<p role="status">正在打开全景…</p>}>
+          <PanoramaDialog
+            item={panorama.item}
+            sourceAssetId={panorama.sourceAssetId}
+            readOnly={readOnly}
+            isCurrent={panoramaCurrent}
+            onSaved={capturedPanorama}
+            onClose={() => setPanorama(null)}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

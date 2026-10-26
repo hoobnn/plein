@@ -30,7 +30,7 @@ import {
 import {
   normalizeLibraryImages,
   characterAssetTargetOf,
-  sceneViewImages,
+  sceneViewAssets,
   SHOT_ANALYSIS_TYPE,
   shotAnalysisAssets,
   DELIVERY_CHECK_TYPE,
@@ -302,7 +302,7 @@ async function planExport(
               if (ASSET_ID.test(s)) refAsset(s, where, false)
             })
             if (el.nodeType === 'plein/scene')
-              for (const assetId of sceneViewImages(el.params.sceneViews))
+              for (const assetId of sceneViewAssets(el.params.sceneViews))
                 refAsset(assetId, `${where} / 场景视角`, true)
             eachVoice(el.params, refVoice)
             const { libraryId, model, voice } = el.params as Record<string, unknown>

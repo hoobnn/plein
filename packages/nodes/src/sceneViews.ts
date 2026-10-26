@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PanoramaViewSource } from './panorama'
 
 /** 与 mentions.ts 的 @ 终止字符保持一致，视角后可直接接标点或另一处引用。 */
 const STOP = /[\s@，。,.!！?？:：;；、（）()【】[\]「」"'“”]/
@@ -25,6 +26,7 @@ export const SceneView = z.object({
     .max(8)
     .default([]),
   description: z.string().max(1000).default(''),
+  panorama: PanoramaViewSource.optional(),
   images: z
     .array(z.string().regex(/^[0-9a-f]{64}$/))
     .max(4)
@@ -39,6 +41,16 @@ export function sceneViewsOf(raw: unknown): SceneView[] {
 export const sceneViewImages = (raw: unknown) => [
   ...new Set(sceneViewsOf(raw).flatMap((v) => v.images)),
 ]
+/** Strong references include the original projection source, never appended to model inputs. */
+export const sceneViewAssets = (raw: unknown) => [
+  ...new Set(
+    sceneViewsOf(raw).flatMap((view) => [
+      ...view.images,
+      ...(view.panorama ? [view.panorama.assetId] : []),
+    ]),
+  ),
+]
+
 export function sceneViewProblem(views: SceneView[], next: string, exceptId?: string) {
   const name = next.trim()
   if (!name || name.length > 20 || /[/@#\s]/.test(name))

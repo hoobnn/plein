@@ -16,7 +16,7 @@ import {
   libraryReferenceImageIds,
   profileOf,
   sceneViewsOf,
-  sceneViewImages,
+  sceneViewAssets,
   voiceOf,
 } from '@plein/nodes'
 import {
@@ -36,6 +36,7 @@ import type { Rooms } from '../sync/rooms'
 import { archiveLibraryCard, LibraryArchiveConflict } from './archive'
 import type { LibraryStore } from './store'
 import { archiveCharacterImage, CharacterImageConflict } from './character-image'
+import { capturePanoramaView, PanoramaCaptureError } from './panorama'
 
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const fields: LibrarySyncField[] = [
@@ -88,6 +89,26 @@ interface Deps {
 /** Read and apply are deliberately separate: library edits never overwrite another canvas. */
 export function librarySyncRoutes(deps: Deps) {
   return new Hono<AuthEnv>()
+    .post('/api/library/:id/panorama-view', async (c) => {
+      try {
+        const saved = await capturePanoramaView(
+          deps.assets,
+          deps.library,
+          c.var.principal.id,
+          c.req.param('id'),
+          await c.req.json().catch(() => null),
+          c.req.raw.signal,
+          () => c.var.principal.role !== 'viewer',
+        )
+        return c.json(saved)
+      } catch (error) {
+        if (error instanceof PanoramaCaptureError)
+          return c.json({ error: 'panorama_capture', message: error.message }, error.status)
+        if (c.req.raw.signal.aborted)
+          return c.json({ error: 'cancelled', message: '截图已取消，未保存视角' }, 409)
+        throw error
+      }
+    })
     .post('/api/library/:id/character-image', async (c) => {
       const owner = c.var.principal.id
       if (c.var.principal.role === 'viewer')
@@ -243,7 +264,7 @@ export function librarySyncRoutes(deps: Deps) {
           )) ||
         (selected('profile') && profileImages.some((id) => !imageExists(id))) ||
         (selected('sceneViews') &&
-          sceneViewImages(wanted.sceneViews).some((id) => !imageExists(id)))
+          sceneViewAssets(wanted.sceneViews).some((id) => !imageExists(id)))
       )
         return c.json(
           {
