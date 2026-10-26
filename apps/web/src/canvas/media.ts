@@ -161,6 +161,8 @@ const OP_LABEL: Record<MediaOp, string> = {
   split: '切分',
   separate: '分离音视频',
   frame: '抽帧',
+  'repair-region': '区域修补（本地插值）',
+  'replace-range': '片段替换',
 }
 
 export const opLabel = (op: MediaOp) => OP_LABEL[op]
@@ -183,6 +185,10 @@ export function deriveLabel(op: MediaOp, params: Record<string, unknown>) {
       return `${(params.segments as unknown[] | undefined)?.length ?? 0} 段`
     case 'frame':
       return params.last ? '尾帧' : formatTimecode(n('at'))
+    case 'repair-region':
+      return `${n('width')}×${n('height')} @ (${n('left')}, ${n('top')}) · ${formatTimecode(n('start'))} – ${params.end === undefined ? '结尾' : formatTimecode(n('end'))}`
+    case 'replace-range':
+      return `${formatTimecode(n('start'))} – ${formatTimecode(n('end'))} · 替换源 ${String(params.replacementAssetId ?? '').slice(0, 8)} @ ${formatTimecode(n('replacementStart'))}`
     default:
       return ''
   }
@@ -225,10 +231,12 @@ export async function applyDerivation(
   input: MediaDeriveRequest,
   nearId: string,
   signal?: AbortSignal,
+  validate?: () => boolean,
 ): Promise<DerivedMedia> {
   const sourceMap = engine.doc.elementMaps.get(nearId)
   const check = () => {
     signal?.throwIfAborted()
+    if (validate && !validate()) throw new Error('加工来源或替换素材已变化，请重新选择')
     if (engine.doc.readOnly) throw new ReadOnlyDocError()
     const source = engine.doc.get(nearId)
     if (source?.locked) throw new Error('素材已锁定，本次加工未放入画布，请先解锁')
@@ -241,6 +249,9 @@ export async function applyDerivation(
   }
   check()
   const made = await api.mediaDerive(input, signal)
+  check()
+  const { persistedMediaOrigin } = await import('./derivationOrigin')
+  const origin = persistedMediaOrigin(made)
   check()
   // 分离会一次出两个资产，先量好整组的尺寸再找位置，否则两个会叠在一起
   const sizes = made.assets
@@ -260,6 +271,7 @@ export async function applyDerivation(
         kind: size.kind,
         assetId: asset.id,
         name: asset.name,
+        ...(origin.success ? { params: { mediaDerivation: origin.data } } : {}),
         w: size.w,
         h: size.h,
         x: Math.round(x),

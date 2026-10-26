@@ -27,6 +27,8 @@ import { audioSplitPlan } from './audioSegments'
 import { useMediaDeriver } from './mediaRequests'
 import { useCreationTools } from './media-tools/useCreationTools'
 import type { MediaTarget } from '../canvas/media'
+import { AdvancedVideo, type AdvancedVideoOperation } from './media-tools/AdvancedVideo'
+import { TranscriptionSplitPlan } from './media-tools/TranscriptionSplitPlan'
 export type { MediaTarget } from '../canvas/media'
 
 function num(value: string) {
@@ -87,6 +89,7 @@ export function MediaTools({
   const notify = useCanvas((s) => s.notify)
   const catalog = useCatalog((s) => s.catalog)
   const [open, setOpen] = useState(false)
+  const [advanced, setAdvanced] = useState<AdvancedVideoOperation | null>(null)
   const [form, setFormState] = useState<string | null>(null)
   const [error, setError] = useState<{
     key: string
@@ -362,6 +365,17 @@ export function MediaTools({
       )}
       {creation.overlay}
       <Presence>
+        {advanced && list.length === 1 && first.kind === 'video' && (
+          <AdvancedVideo
+            key={`${first.elId}:${first.assetId}:${advanced}`}
+            engine={engine}
+            target={first}
+            operation={advanced}
+            onClose={() => setAdvanced(null)}
+          />
+        )}
+      </Presence>
+      <Presence>
         {open && (
           <Popover
             anchor={anchorEl}
@@ -462,6 +476,22 @@ export function MediaTools({
                         <option value="ranges">自定义区间</option>
                       </select>
                     </label>
+                    {list.length === 1 && first.kind === 'audio' && (
+                      <TranscriptionSplitPlan
+                        engine={engine}
+                        target={first}
+                        duration={meta?.duration}
+                        onPlan={(text) => {
+                          setValues((previous) => ({
+                            ...previous,
+                            splitMode: 'ranges',
+                            intervals: text,
+                          }))
+                          setError(null)
+                        }}
+                        onDraftCreated={() => setOpen(false)}
+                      />
+                    )}
                     {(values.splitMode ?? 'even') === 'even' ? (
                       field('count', '切成几段', '2')
                     ) : (
@@ -554,6 +584,42 @@ export function MediaTools({
                   </p>
                 )}
                 <fieldset disabled={!writable} aria-label="本地处理">
+                  {first.kind === 'video' && list.length === 1 && (
+                    <>
+                      <button
+                        type="button"
+                        className="ui-menu-item"
+                        disabled={!caps?.ffmpeg || !caps.regionRepair}
+                        title={
+                          !caps?.ffmpeg
+                            ? '本机缺少 ffmpeg'
+                            : !caps.regionRepair
+                              ? '本机缺少区域插值滤镜'
+                              : '用周围背景填补固定矩形'
+                        }
+                        onClick={() => {
+                          setOpen(false)
+                          setAdvanced('repair-region')
+                        }}
+                      >
+                        区域修补（本地插值）
+                      </button>
+                      <button
+                        type="button"
+                        className="ui-menu-item"
+                        disabled={!caps?.ffmpeg}
+                        title={
+                          !caps?.ffmpeg ? '本机缺少 ffmpeg' : '用另一个视频替换指定时间段的画面'
+                        }
+                        onClick={() => {
+                          setOpen(false)
+                          setAdvanced('replace-range')
+                        }}
+                      >
+                        片段替换
+                      </button>
+                    </>
+                  )}
                   {first.kind === 'video' && list.length === 1 && (
                     <button
                       type="button"

@@ -1,4 +1,105 @@
 import { parseTimecode } from '../canvas/media'
+import type { JobInfo } from '@plein/protocol'
+
+export interface TranscriptionSegment {
+  start: number
+  end: number
+  text: string
+}
+
+/** 必须是该识别作业提交时冻结的唯一音频，当前连线不能证明历史结果的归属。 */
+export function transcriptionSourceMatches(
+  job: JobInfo,
+  nodeId: string,
+  runId: string,
+  assetId: string,
+) {
+  const input = job.input
+  if (
+    job.id !== runId ||
+    job.nodeId !== nodeId ||
+    job.nodeType !== 'plein/transcribe' ||
+    job.status !== 'succeeded' ||
+    !input ||
+    input.v !== 1 ||
+    input.nodeId !== nodeId ||
+    input.nodeType !== 'plein/transcribe' ||
+    (input.capability !== undefined && input.capability !== 'audio.transcribe') ||
+    input.status !== 'ready'
+  )
+    return false
+  if (
+    !input.inputs ||
+    typeof input.inputs !== 'object' ||
+    Object.values(input.inputs).some((values) => !Array.isArray(values))
+  )
+    return false
+  const audio = input.inputs.audio
+  if (
+    !Array.isArray(audio) ||
+    audio.length !== 1 ||
+    audio[0]?.type !== 'audio' ||
+    audio[0].assetId !== assetId
+  )
+    return false
+  const values = Object.values(input.inputs).flat()
+  if (
+    values.some(
+      (value) =>
+        !value ||
+        typeof value !== 'object' ||
+        !['text', 'json', 'audio', 'video', 'image'].includes(value.type),
+    )
+  )
+    return false
+  const media = values.filter(
+    (value) => ['audio', 'video', 'image'].includes(value.type) || value.assetId !== undefined,
+  )
+  return media.length === 1 && media[0] === audio[0]
+}
+
+/** 保留平台原始时间精度和顺序；超出切分限额时完整导入，由用户明确编辑。 */
+export function transcriptionSplitPlan(value: unknown, duration: number | undefined) {
+  if (!duration || !Number.isFinite(duration) || duration <= 0)
+    throw new Error('等待素材时长读取完成后再使用识别区间')
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    !('segments' in value) ||
+    !Array.isArray(value.segments) ||
+    !value.segments.length
+  )
+    throw new Error('识别结果没有分句时间戳，请手动填写区间或重新识别')
+  const segments: TranscriptionSegment[] = []
+  for (const [index, entry] of value.segments.entries()) {
+    if (
+      !entry ||
+      typeof entry !== 'object' ||
+      typeof entry.start !== 'number' ||
+      typeof entry.end !== 'number' ||
+      !Number.isFinite(entry.start) ||
+      !Number.isFinite(entry.end) ||
+      entry.start < 0 ||
+      entry.end <= entry.start ||
+      typeof entry.text !== 'string'
+    )
+      throw new Error(`第 ${index + 1} 句缺少有效时间戳，请手动填写区间或重新识别`)
+    if (entry.end > duration) throw new Error(`第 ${index + 1} 句超出音频时长，请手动核对区间`)
+    if (index && entry.start < segments[index - 1]!.end)
+      throw new Error(`第 ${index + 1} 句与前句重叠或乱序，请手动核对，不会自动排序`)
+    segments.push({ start: entry.start, end: entry.end, text: entry.text })
+  }
+  return {
+    segments,
+    text: segments.map((segment) => `${segment.start} - ${segment.end}`).join('\n'),
+    issue:
+      segments.length < 2
+        ? '识别只有 1 句，切分需要 2–20 段；导入后请手动补充区间。'
+        : segments.length > 20
+          ? `识别有 ${segments.length} 句，切分最多 20 段；会完整导入，请手动合并或移除区间。`
+          : undefined,
+  }
+}
 
 /** 显式切点必须严格递增；不静默排序、夹断或吞掉无效区间。 */
 export function audioSplitPlan(

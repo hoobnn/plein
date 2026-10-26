@@ -39,12 +39,21 @@ export function useMediaDeriver(engine: Engine, targets: MediaTarget[]) {
   const run = async (
     list: MediaTarget[],
     make: (t: MediaTarget) => MediaDeriveRequest,
-    { skipped = 0 }: { skipped?: number } = {},
+    {
+      skipped = 0,
+      validate,
+      onFinished,
+    }: {
+      skipped?: number
+      validate?: () => boolean
+      onFinished?: (result: { succeeded: number; errors: string[]; cancelled: boolean }) => void
+    } = {},
   ) => {
     const owner = useCanvas.getState()
     const requestKeys = list.map((t) => targetKey(engine, t))
     if (
       owner.engine !== engine ||
+      (validate && !validate()) ||
       !list.length ||
       requestKeys.some((k) => useMediaRequests.getState().pending.has(k))
     )
@@ -56,8 +65,12 @@ export function useMediaDeriver(engine: Engine, targets: MediaTarget[]) {
     const current = () =>
       useCanvas.getState().engine === engine && useCanvas.getState().canvasId === owner.canvasId
     const off = useCanvas.subscribe(() => {
-      if (!current()) controller.abort()
+      if (!current() || (validate && !validate())) controller.abort()
     })
+    const check = () => {
+      if (validate && !validate()) controller.abort()
+    }
+    engine.doc.ydoc.on('afterTransaction', check)
     const view = watchImportView(engine, controller.signal)
     const made: DerivedMedia[] = [],
       errors: string[] = []
@@ -69,12 +82,13 @@ export function useMediaDeriver(engine: Engine, targets: MediaTarget[]) {
         try {
           const input = make(t)
           op = input.op
-          made.push(await applyDerivation(engine, input, t.elId, controller.signal))
+          made.push(await applyDerivation(engine, input, t.elId, controller.signal, validate))
         } catch (error) {
           if (!controller.signal.aborted) errors.push(`${name}：${(error as Error).message}`)
         }
       }
       if (!current()) return true
+      onFinished?.({ succeeded: made.length, errors, cancelled: controller.signal.aborted })
       const ids = made.flatMap((m) => m.created)
       const unchanged = view.unchanged()
       if (ids.length && unchanged) revealImports(engine, ids)
@@ -100,6 +114,7 @@ export function useMediaDeriver(engine: Engine, targets: MediaTarget[]) {
     } finally {
       view.dispose()
       off()
+      engine.doc.ydoc.off('afterTransaction', check)
       const next = new Map(useMediaRequests.getState().pending)
       for (const key of requestKeys) if (next.get(key) === controller) next.delete(key)
       useMediaRequests.setState({ pending: next })
