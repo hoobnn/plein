@@ -1,8 +1,17 @@
 import { expect, type Route, test } from '@playwright/test'
-import { addNode, byName, clickElement, deselect, newProject, waitNode } from './canvas'
+import {
+  addNode,
+  byName,
+  clickElement,
+  deselect,
+  newProject,
+  revealGenerator,
+  waitNode,
+} from './canvas'
 
 test('专属开关的字符串历史值不伪装成关闭，可修正、撤销重做和恢复默认', async ({ page }) => {
-  await page.setViewportSize({ width: 800, height: 560 })
+  // 卡片下方的编辑器固定 840px 宽，窗口要留得下它
+  await page.setViewportSize({ width: 1200, height: 700 })
   await newProject(page)
   const id = await page.evaluate(() =>
     window.__plein.addNode({
@@ -21,8 +30,11 @@ test('专属开关的字符串历史值不伪装成关闭，可修正、撤销�
     }),
   )
   await clickElement(page, id)
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
-  await generator.getByRole('button', { name: '编辑生成图片', exact: true }).click()
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
   const preview = page.getByTestId('input-preview')
   await preview.getByRole('button', { name: /实际输入/ }).click()
   await expect(preview).toContainText('水印（watermark）')
@@ -98,7 +110,8 @@ test('专属开关的字符串历史值不伪装成关闭，可修正、撤销�
 })
 
 test('旧数据的无效分辨率提前显示支持值，修正后可生成并保留实际取值', async ({ page }) => {
-  await page.setViewportSize({ width: 800, height: 560 })
+  // 卡片下方的编辑器固定 840px 宽，窗口要留得下它
+  await page.setViewportSize({ width: 1200, height: 700 })
   await newProject(page)
   const id = await page.evaluate(() =>
     window.__plein.addNode({
@@ -110,6 +123,8 @@ test('旧数据的无效分辨率提前显示支持值，修正后可生成并�
     }),
   )
   await clickElement(page, id)
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
   const expand = generator.getByRole('button', { name: /^编辑/ })
   if (await expand.isVisible()) await expand.click()
@@ -146,6 +161,8 @@ test('视频实际输入使用模式标签和音频开关说明，保留原始�
     }),
   )
   await clickElement(page, id)
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
   const preview = page.getByTestId('input-preview')
   await preview.getByRole('button', { name: /实际输入/ }).click()
   await expect(preview.locator('.ui-chip').filter({ hasText: '生成模式' })).toHaveText(
@@ -185,6 +202,8 @@ test('实际输入首次读取失败可见，重试只刷新预览不生成', as
       : route.continue(),
   )
   await addNode(page, '图片')
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
   await page.getByRole('textbox', { name: '提示词' }).fill('雨后的天台')
   const preview = page.getByTestId('input-preview')
   await expect(preview.getByRole('alert')).toContainText('输入服务暂时不可用')
@@ -199,8 +218,12 @@ test('实际输入首次读取失败可见，重试只刷新预览不生成', as
 test('预览刷新失败标明旧数据，旧阻断不锁死生成，409 返回的新输入恢复预览', async ({ page }) => {
   await newProject(page)
   await addNode(page, '角色')
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
   await deselect(page)
   await addNode(page, '图片', { x: 1200, y: 200 })
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
   const image = await byName(page, '生成图片')
   const prompt = page.getByRole('textbox', { name: '提示词' })
   await prompt.fill('@角色 站在天台上')
@@ -238,6 +261,8 @@ test('预览刷新失败标明旧数据，旧阻断不锁死生成，409 返回�
 test('提交的 409 新输入不会被仍在途中的预览响应覆盖', async ({ page }) => {
   await newProject(page)
   await addNode(page, '图片')
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
   const prompt = page.getByRole('textbox', { name: '提示词' })
   await prompt.fill('最初的输入')
   const preview = page.getByTestId('input-preview')

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import type { Catalog } from '../packages/protocol/src/plugins'
-import { addNode, elements, newProject } from './canvas'
+import { addNode, elements, newProject, revealGenerator } from './canvas'
 
 async function openRecipeDraft(page: Page) {
   await newProject(page)
@@ -70,7 +70,8 @@ test('配方面板期间的并发草稿与只读变化不会被旧选择覆盖',
   await newProject(page)
   await addNode(page, '生成图片', { x: 450, y: 300 })
   const generator = page.getByTestId('generator')
-  await generator.getByRole('button', { name: '编辑生成图片', exact: true }).click()
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
   const node = (await elements(page)).find((el) => el.nodeType === 'plein/image')!
   const dialog = page.getByRole('dialog', { name: '创作配方', exact: true })
   await generator.getByRole('button', { name: '创作配方', exact: true }).click()

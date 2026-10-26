@@ -351,7 +351,9 @@ export function GeneratorPanel({
 
   /** 输入还在准备时按下：记下来等它备好，不用让用户再点一次 */
   const requestRun = () => {
-    if (!running && !input.data?.inputHash) pendingRun.current = true
+    // 实际输入还在准备或正在刷新：先记下，等拿到这份输入再提交，
+    // 否则会拿着上一版的哈希提交，被服务端判成输入已变。
+    if (!running && (input.loading || !input.data?.inputHash)) pendingRun.current = true
     run()
   }
 

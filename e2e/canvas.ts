@@ -197,22 +197,28 @@ export async function clickElement(page: Page, id: string) {
 export async function revealGenerator(page: Page) {
   const editor = page.getByTestId('node-editor')
   await expect(editor).toBeVisible()
-  await editor.evaluate((el) => {
-    const box = el.getBoundingClientRect()
-    const engine = window.__plein.engine as Window['__plein']['engine'] & {
-      camera: { panBy(x: number, y: number): void }
-    }
-    const dx =
-      box.width > innerWidth - 24
-        ? 12 - box.x
-        : box.right > innerWidth - 12
-          ? innerWidth - 12 - box.right
-          : box.x < 12
-            ? 12 - box.x
-            : 0
-    const dy = Math.max(12 - box.y, Math.min(0, innerHeight - 76 - box.bottom))
-    if (dx || dy) engine.camera.panBy(dx, dy)
-  })
+  // 面板跟着相机走，平移后要再确认一次仍在窗口里
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const moved = await editor.evaluate((el) => {
+      const box = el.getBoundingClientRect()
+      const engine = window.__plein.engine as Window['__plein']['engine'] & {
+        camera: { panBy(x: number, y: number): void }
+      }
+      const dx =
+        box.width > innerWidth - 24
+          ? 12 - box.x
+          : box.right > innerWidth - 12
+            ? innerWidth - 12 - box.right
+            : box.x < 12
+              ? 12 - box.x
+              : 0
+      const dy = Math.max(12 - box.y, Math.min(0, innerHeight - 76 - box.bottom))
+      if (dx || dy) engine.camera.panBy(dx, dy)
+      return dx !== 0 || dy !== 0
+    })
+    if (!moved) break
+    await page.waitForTimeout(100)
+  }
 }
 
 /** 右键元素，点菜单项 */
