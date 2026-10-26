@@ -1,0 +1,251 @@
+/* 镜头制作：参考、脚本、候选各自滚动，镜头导航始终留在底部。 */
+.plein-shot-workspace {
+  height: 100%;
+  max-width: none;
+  container: shot-workspace / inline-size;
+}
+.plein-shot-workspace-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.plein-shot-workspace-context {
+  flex: none;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.plein-shot-workspace-context select {
+  max-width: 100%;
+}
+.plein-shot-workspace-columns {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: 200px minmax(0, 1fr) minmax(0, 1fr);
+}
+.plein-shot-workspace-assets,
+.plein-shot-workspace-plan,
+.plein-shot-workspace-preview {
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+}
+.plein-shot-workspace-assets {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  background: var(--surface-2);
+}
+.plein-shot-workspace-plan {
+  border-right: 1px solid var(--line);
+}
+.plein-shot-subject {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+  font-size: var(--text-xs);
+}
+.plein-shot-reference {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+.plein-shot-reference:hover {
+  background: var(--hover);
+}
+.plein-shot-reference > svg {
+  flex: none;
+  color: var(--ink-muted);
+}
+.plein-shot-workspace-impact {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  max-height: 128px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  padding: 12px 20px;
+}
+.plein-shot-preview-empty {
+  display: flex;
+  min-height: 200px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: var(--canvas);
+  text-align: center;
+}
+.plein-shot-preview-media {
+  display: block;
+  width: 100%;
+  max-height: 40vh;
+  object-fit: contain;
+  border-radius: var(--radius-lg);
+  background: var(--canvas);
+}
+.plein-shot-input-evidence {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.plein-shot-input-evidence > summary {
+  margin-bottom: 12px;
+  font-size: var(--text-xs);
+  color: var(--ink-muted);
+}
+.plein-shot-strip {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  border-top: 1px solid var(--line);
+  padding: 12px 20px;
+  background: var(--surface-2);
+}
+.plein-shot-strip-items {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+}
+.plein-shot-strip-item {
+  display: flex;
+  width: 200px;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 8px;
+  background: var(--surface);
+  text-align: left;
+}
+.plein-shot-strip-item:hover {
+  background: var(--hover);
+}
+.plein-shot-strip-item[aria-current="step"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.plein-shot-strip-cover {
+  display: flex;
+  width: 48px;
+  height: 36px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--canvas);
+  color: var(--ink-subtle);
+}
+.plein-shot-strip-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+@container shot-workspace (max-width: 1100px) {
+  .plein-shot-workspace-columns {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .plein-shot-workspace-assets {
+    grid-column: 1 / -1;
+    max-height: 112px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  .plein-shot-workspace-columns {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .plein-shot-workspace-assets > .mt-4 {
+    margin-top: 0;
+  }
+}
+@container shot-workspace (max-width: 760px) {
+  .plein-shot-workspace-body {
+    overflow: auto;
+  }
+  .plein-shot-workspace-columns {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    overflow: visible;
+  }
+  .plein-shot-workspace-plan,
+  .plein-shot-workspace-preview {
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .plein-shot-workspace-impact {
+    max-height: none;
+    overflow: visible;
+  }
+  .plein-shot-strip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 8px 12px;
+  }
+}
+
+/* 空态入口只出现在有足够纵向空间的窗口，保留双击空白区域。 */
+.plein-canvas-start {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.plein-canvas-start-card {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  padding: 16px;
+  background: var(--surface);
+  transition:
+    background var(--dur-fast),
+    border-color var(--dur-fast);
+}
+.plein-canvas-start-card:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+.plein-canvas-start-icon {
+  display: flex;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+@media (max-height: 520px), (max-width: 639px) {
+  .plein-canvas-start {
+    display: none;
+  }
+}

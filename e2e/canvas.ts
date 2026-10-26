@@ -110,7 +110,7 @@ export async function newProject(page: Page) {
   // 首页卡片放大成画布走 View Transition，过渡期间点击落在过渡层上、打不到画布
   await page.waitForFunction(() => {
     const at = document.elementFromPoint(innerWidth / 2, innerHeight / 2)
-    return at?.tagName === 'CANVAS'
+    return at?.tagName === 'CANVAS' || !!at?.closest('[aria-label="选择创作起点"]')
   })
 }
 

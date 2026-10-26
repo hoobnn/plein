@@ -25,6 +25,7 @@ import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { useSession } from '../../stores/session'
 import { Modal, ModalHeader } from '../../ui/Modal'
+import { Icon } from '../../ui/icons'
 import { useStale } from '../runs/stale'
 import { describeRecovery } from '../runs/recovery'
 import { BatchChecklist } from './BatchChecklist'
@@ -42,6 +43,7 @@ import {
   WORKBENCH_FIELDS,
   workbenchDownstream,
   workbenchDraft,
+  type WorkbenchDraft,
 } from './shotWorkbenchModel'
 
 const labels = {
@@ -70,8 +72,8 @@ export function ShotWorkbench() {
     target = useCanvas((s) => s.shotWorkbench)
   if (!engine || !canvasId || !target) return null
   return (
-    <Workbench
-      key={`${engineKey(engine)}:${canvasId}:${target.boardId}:${target.shotId}`}
+    <WorkbenchSession
+      key={`${engineKey(engine)}:${canvasId}:${target.boardId}`}
       engine={engine}
       canvasId={canvasId}
       {...target}
@@ -79,22 +81,51 @@ export function ShotWorkbench() {
   )
 }
 
-function Workbench({
-  engine,
-  canvasId,
-  boardId,
-  shotId,
-}: {
+function WorkbenchSession(props: {
   engine: Engine
   canvasId: string
   boardId: string
   shotId: string
 }) {
+  // 切镜保留尚未保存的字段；离开本次工作台后不跨项目复用草稿。
+  const drafts = useRef(new Map<string, WorkbenchDraft>())
+  return <Workbench key={props.shotId} {...props} drafts={drafts.current} />
+}
+
+function Workbench({
+  engine,
+  canvasId,
+  boardId,
+  shotId,
+  drafts,
+}: {
+  engine: Engine
+  canvasId: string
+  boardId: string
+  shotId: string
+  drafts: Map<string, WorkbenchDraft>
+}) {
   useDocVersion(engine.doc)
+  const catalog = useCatalog((s) => s.catalog)
+  const currentShotButton = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const button = currentShotButton.current
+    const strip = button?.parentElement
+    if (button && strip)
+      strip.scrollLeft =
+        button.offsetLeft - strip.offsetLeft - strip.clientWidth / 2 + button.clientWidth / 2
+  }, [shotId])
   const principal = useSession((s) => s.info?.principal)
   const staleNodes = useStale((s) => s.nodes)
   const [boardMap] = useState(() => engine.doc.elementMaps.get(boardId))
-  const [draft, setDraft] = useState(() => workbenchDraft(engine.doc, boardId, shotId))
+  const [draft, updateDraft] = useState(
+    () => drafts.get(shotId) ?? workbenchDraft(engine.doc, boardId, shotId),
+  )
+  const setDraft = (next: WorkbenchDraft | undefined) => {
+    if (next) drafts.set(shotId, next)
+    else drafts.delete(shotId)
+    updateDraft(next)
+  }
   const [selectedNode, setSelectedNode] = useState('')
   const [child, setChild] = useState<'controls' | 'sync' | 'pair' | null>(null)
   const [batch, setBatch] = useState<{ role: ShotRole; reuseExisting: boolean } | null>(null)
@@ -151,6 +182,20 @@ function Workbench({
   const beforeVideo =
     previous &&
     (groups.get(previous.id) ?? []).find((n) => (n.params?.source as ShotSource)?.role === 'video')
+  const currentIndex = shots.findIndex((item) => item.id === shotId)
+  const references = node ? [...upstreams(engine, node.id, catalog).values()].flat() : []
+  const changeShot = (id: string) => {
+    if (!active() || id === shotId || !shots.some((item) => item.id === id)) return
+    if (draft) drafts.set(shotId, draft)
+    useCanvas.getState().openShotWorkbench({ boardId, shotId: id })
+  }
+  const original = draft ? (JSON.parse(draft.source) as Record<string, unknown>) : undefined
+  const dirty =
+    !!draft &&
+    WORKBENCH_FIELDS.some(
+      (field) =>
+        draft.values[field] !== (typeof original?.[field] === 'string' ? original[field] : ''),
+    )
   const locate = (id: string, sequence = false) => {
     if (!active() || !engine.doc.has(id)) return
     close()
@@ -160,8 +205,26 @@ function Workbench({
   }
   return (
     <>
-      <Modal label="镜头工作台" onClose={close} isolateKeys className="max-w-6xl">
-        <ModalHeader title={`镜头工作台 · 镜头 ${shot?.no ?? '已删除'}`} onClose={close}>
+      <Modal label="镜头工作台" onClose={close} isolateKeys className="plein-shot-workspace">
+        <ModalHeader
+          title={`镜头工作台 · 镜头 ${shot?.no ?? '已删除'}`}
+          onClose={close}
+          meta={
+            <span className="text-xs text-ink-subtle">
+              {engine.doc.get(boardId)?.name ?? '分镜制作'}
+            </span>
+          }
+        >
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary"
+            disabled={!active()}
+            onClick={() => {
+              if (active()) useCanvas.getState().openStoryboard(boardId)
+            }}
+          >
+            返回分镜表
+          </button>
           <button
             type="button"
             className="ui-btn ui-btn-secondary"
@@ -171,22 +234,19 @@ function Workbench({
             定位分镜
           </button>
         </ModalHeader>
-        <div className="min-h-0 overflow-auto p-4 space-y-4" data-testid="shot-workbench">
+        <div className="plein-shot-workspace-body" data-testid="shot-workbench">
           {!shot || !currentDraft ? (
             <p role="alert">镜头已删除或身份重复，请返回分镜核对。</p>
           ) : (
             <>
-              <div className="flex flex-wrap gap-3 items-center text-sm">
+              <div className="plein-shot-workspace-context flex flex-wrap gap-3 items-center text-sm">
                 <label>
                   当前镜头{' '}
                   <select
                     aria-label="工作台镜头"
                     className="ui-input"
                     value={shotId}
-                    onChange={(e) => {
-                      if (active())
-                        useCanvas.getState().openShotWorkbench({ boardId, shotId: e.target.value })
-                    }}
+                    onChange={(e) => changeShot(e.target.value)}
                   >
                     {shots.map((s) => (
                       <option key={s.id} value={s.id}>
@@ -195,7 +255,17 @@ function Workbench({
                     ))}
                   </select>
                 </label>
-                <span>创作验收：{reviewLabels[shotReviewStatus(nodes, shot)]}</span>
+                <span className="text-xs text-ink-muted">
+                  {shot.shotSize} · {shot.duration} 秒
+                </span>
+                <span className="text-xs text-ink-muted">
+                  创作验收：{reviewLabels[shotReviewStatus(nodes, shot)]}
+                </span>
+                {dirty && (
+                  <span role="status" className="text-xs text-warning">
+                    本镜有未保存字段，切镜时保留，关闭工作台后丢弃。
+                  </span>
+                )}
                 {!canWrite && <span role="status">当前只读，可查看已有依据与候选。</span>}
               </div>
               {error && (
@@ -203,14 +273,72 @@ function Workbench({
                   {error}
                 </p>
               )}
-              <div className="grid gap-4 lg:grid-cols-2">
-                <section
-                  aria-label="当前镜头计划"
-                  className="space-y-2 rounded-lg border border-line p-3"
-                >
-                  <h3 className="font-medium">当前镜头计划</h3>
+              <div className="plein-shot-workspace-columns">
+                <aside className="plein-shot-workspace-assets" aria-label="本镜参考资产">
+                  <h3 className="font-medium">本镜参考</h3>
+                  <p className="text-xs text-ink-subtle">出场设定</p>
+                  {shot.characters.length ? (
+                    shot.characters.map((name) => (
+                      <span key={name} className="plein-shot-subject">
+                        {name}
+                      </span>
+                    ))
+                  ) : (
+                    <p className="text-xs text-ink-subtle">尚未指定出场资产</p>
+                  )}
+                  <h4 className="mt-4 text-xs font-medium">当前阶段上游</h4>
+                  {references.length ? (
+                    references.map((ref) => (
+                      <button
+                        key={ref.edgeId}
+                        type="button"
+                        className="plein-shot-reference"
+                        onClick={() => locate(ref.source.id)}
+                      >
+                        <Icon
+                          name={
+                            ref.value?.type === 'image'
+                              ? 'image'
+                              : ref.value?.type === 'video'
+                                ? 'video'
+                                : ref.value?.type === 'audio'
+                                  ? 'audio'
+                                  : 'doc'
+                          }
+                        />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm">
+                            {ref.source.name ?? '未命名素材'}
+                          </span>
+                          <span className="block text-xs text-ink-subtle">
+                            {ref.value ? '定位来源' : '等待上游素材'}
+                          </span>
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="text-xs text-ink-subtle">暂无上游引用，选择阶段后可查看来源。</p>
+                  )}
+                  {!!shot.dialogue.length && (
+                    <details className="mt-4 text-xs">
+                      <summary>本镜对白 · {shot.dialogue.length} 句</summary>
+                      <div className="space-y-2 pt-2">
+                        {shot.dialogue.map((line) => (
+                          <p key={line.id}>
+                            <span className="font-medium">{line.character}</span>：{line.line}
+                          </p>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </aside>
+                <section aria-label="当前镜头计划" className="plein-shot-workspace-plan space-y-3">
+                  <div>
+                    <p className="text-xs text-ink-subtle">脚本与提示词</p>
+                    <h3 className="font-medium">当前镜头计划</h3>
+                  </div>
                   <p className="text-xs text-ink-subtle">
-                    只改本镜选定字段。节点参数通过原计划差异显式同步，打开和编辑均不生成。
+                    保存镜头计划后，可核对并同步到生成节点。
                   </p>
                   {changed && (
                     <p role="status" className="text-warning">
@@ -280,10 +408,7 @@ function Workbench({
                       核对本镜计划差异
                     </button>
                   </div>
-                  <p className="text-xs text-ink-muted">
-                    景别 {shot.shotSize} · 计划 {shot.duration} 秒 · 出场{' '}
-                    {shot.characters.join('、') || '未填'} · 台词 {shot.dialogue.length} 句
-                  </p>
+
                   <details>
                     <summary>固定原文与本镜映射</summary>
                     <SourceQuotes
@@ -315,9 +440,12 @@ function Workbench({
                 </section>
                 <section
                   aria-label="本镜候选与执行依据"
-                  className="space-y-3 rounded-lg border border-line p-3"
+                  className="plein-shot-workspace-preview space-y-3"
                 >
-                  <h3 className="font-medium">本镜候选与执行依据</h3>
+                  <div>
+                    <p className="text-xs text-ink-subtle">预览与审片</p>
+                    <h3 className="font-medium">本镜候选与执行依据</h3>
+                  </div>
                   <label className="block text-sm">
                     阶段节点{' '}
                     <select
@@ -336,9 +464,13 @@ function Workbench({
                     </select>
                   </label>
                   {!node ? (
-                    <p role="status">
-                      此阶段没有生成节点；已有固定段可在下方映射中核对，生成清单会先检查复用。
-                    </p>
+                    <div className="plein-shot-preview-empty" role="status">
+                      <Icon name="video" size={24} />
+                      <p>从当前镜头开始制作</p>
+                      <p className="text-xs text-ink-subtle">
+                        此阶段没有生成节点；已有固定段可在下方映射中核对，生成清单会先检查复用。
+                      </p>
+                    </div>
                   ) : (
                     <CandidateInspection
                       key={node.id}
@@ -392,40 +524,13 @@ function Workbench({
                   />
                 </section>
               </div>
-              <section
-                className="space-y-2 rounded-lg border border-line p-3 text-sm"
-                aria-label="本镜下游影响"
-              >
-                <h3 className="font-medium">本镜下游影响</h3>
-                <p>
-                  沿实际连线可达 {downstream.length} 个节点；P06 显式状态引用 {dependents.length}{' '}
-                  项。修改不会自动更新或重生成下游。
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {downstream.map((id) => (
-                    <button
-                      type="button"
-                      className="ui-btn ui-btn-secondary ui-btn-xs"
-                      key={id}
-                      onClick={() => locate(id, engine.doc.get(id)?.nodeType === 'plein/sequence')}
-                    >
-                      {engine.doc.get(id)?.name ?? id}
-                    </button>
-                  ))}
-                </div>
-                {dependents.map((ref) => (
-                  <p
-                    key={JSON.stringify([
-                      ref.toPlanRevisionId,
-                      ref.planRevisionId,
-                      ref.subjectId,
-                      ref.fields,
-                    ])}
-                  >
-                    镜头 {shots.find((s) => s.id === ref.toShotId)?.no ?? ref.toShotId} 引用{' '}
-                    {ref.fields.join('、')}：{ref.status}
+              <section className="plein-shot-workspace-impact text-sm" aria-label="本镜下游影响">
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-medium">本镜下游影响</h3>
+                  <p className="text-xs text-ink-subtle">
+                    {downstream.length} 个关联节点 · {dependents.length} 项镜头状态引用
                   </p>
-                ))}
+                </div>
                 <button
                   type="button"
                   className="ui-btn ui-btn-secondary"
@@ -440,10 +545,103 @@ function Workbench({
                 >
                   与前镜连续性审看
                 </button>
+                {!!downstream.length && (
+                  <div className="flex w-full flex-wrap gap-2">
+                    {downstream.map((id) => (
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn-secondary ui-btn-xs"
+                        key={id}
+                        onClick={() =>
+                          locate(id, engine.doc.get(id)?.nodeType === 'plein/sequence')
+                        }
+                      >
+                        {engine.doc.get(id)?.name ?? id}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {dependents.map((ref) => (
+                  <p
+                    key={JSON.stringify([
+                      ref.toPlanRevisionId,
+                      ref.planRevisionId,
+                      ref.subjectId,
+                      ref.fields,
+                    ])}
+                  >
+                    镜头 {shots.find((s) => s.id === ref.toShotId)?.no ?? ref.toShotId} 引用{' '}
+                    {ref.fields.join('、')}：{ref.status}
+                  </p>
+                ))}
               </section>
             </>
           )}
         </div>
+        {shot && currentDraft && (
+          <nav className="plein-shot-strip" aria-label="镜头导航">
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary ui-icon-btn"
+                aria-label="上一镜"
+                disabled={currentIndex <= 0}
+                onClick={() => changeShot(shots[currentIndex - 1]!.id)}
+              >
+                <Icon name="chevronLeft" />
+              </button>
+              <span className="text-xs text-ink-muted tabular-nums">
+                {currentIndex + 1} / {shots.length}
+              </span>
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary ui-icon-btn"
+                aria-label="下一镜"
+                disabled={currentIndex < 0 || currentIndex >= shots.length - 1}
+                onClick={() => changeShot(shots[currentIndex + 1]!.id)}
+              >
+                <Icon name="chevronRight" />
+              </button>
+            </div>
+            <div className="plein-shot-strip-items">
+              {shots.map((item) => {
+                const shotNodes = reviewNodesForShot(item, groups.get(item.id) ?? [])
+                const mediaNode = shotNodes.find(
+                  (n) => (n.params?.source as ShotSource)?.role === 'image',
+                )
+                const image = mediaNode && currentResult(mediaNode)?.value
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="plein-shot-strip-item"
+                    aria-label={`切换到镜头 ${item.no}`}
+                    aria-current={item.id === shotId ? 'step' : undefined}
+                    title={item.description || `镜头 ${item.no}`}
+                    onClick={() => changeShot(item.id)}
+                    ref={item.id === shotId ? currentShotButton : undefined}
+                  >
+                    <span className="plein-shot-strip-cover">
+                      {image?.type === 'image' ? (
+                        <img loading="lazy" src={assetUrls.original(image.assetId)} alt="" />
+                      ) : (
+                        <Icon name="video" />
+                      )}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-xs font-medium">
+                        镜头 {item.no} · {item.duration}s
+                      </span>
+                      <span className="block truncate text-xs text-ink-subtle">
+                        {item.description || '待填写画面描述'}
+                      </span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </nav>
+        )}
       </Modal>
       {child === 'controls' && (
         <ShotControls
@@ -807,7 +1005,11 @@ function CandidateInspection({
       {candidate ? (
         <CandidateMedia key={binding} result={candidate} />
       ) : (
-        <p>尚无候选或原候选已移除。</p>
+        <div className="plein-shot-preview-empty">
+          <Icon name="video" size={24} />
+          <p>尚无候选或原候选已移除。</p>
+          <p className="text-xs text-ink-subtle">先完善脚本，再从本镜生成清单开始。</p>
+        </div>
       )}
       {error && (
         <p role="alert" className="text-danger">
@@ -857,30 +1059,33 @@ function CandidateInspection({
           ))}
         </details>
       )}
-      <div className="grid gap-2 md:grid-cols-2" aria-label="旧候选与当前输入对照">
-        <section>
-          <h4 className="text-sm font-medium">此候选生成时实际输入</h4>
-          {!candidate?.runId ? (
-            <p className="text-xs">未记录生成任务，不能用当前参数补填。</p>
-          ) : old.isPending ? (
-            <p>读取旧依据…</p>
-          ) : old.isError || !old.data?.input ? (
-            <p className="text-xs">旧依据未记录或不可读取；不以当前输入替代。</p>
-          ) : (
-            <InputDetails input={old.data.input} />
-          )}
-        </section>
-        <section>
-          <h4 className="text-sm font-medium">当前节点实际输入</h4>
-          {current.isPending ? (
-            <p>核对当前输入…</p>
-          ) : current.isError ? (
-            <p>当前输入暂不可读取。</p>
-          ) : (
-            current.data && <InputDetails input={current.data} />
-          )}
-        </section>
-      </div>
+      <details className="plein-shot-input-evidence" open>
+        <summary>生成依据与输入对照</summary>
+        <div className="grid gap-2 md:grid-cols-2" aria-label="旧候选与当前输入对照">
+          <section>
+            <h4 className="text-sm font-medium">此候选生成时实际输入</h4>
+            {!candidate?.runId ? (
+              <p className="text-xs">未记录生成任务，不能用当前参数补填。</p>
+            ) : old.isPending ? (
+              <p>读取旧依据…</p>
+            ) : old.isError || !old.data?.input ? (
+              <p className="text-xs">旧依据未记录或不可读取；不以当前输入替代。</p>
+            ) : (
+              <InputDetails input={old.data.input} />
+            )}
+          </section>
+          <section>
+            <h4 className="text-sm font-medium">当前节点实际输入</h4>
+            {current.isPending ? (
+              <p>核对当前输入…</p>
+            ) : current.isError ? (
+              <p>当前输入暂不可读取。</p>
+            ) : (
+              current.data && <InputDetails input={current.data} />
+            )}
+          </section>
+        </div>
+      </details>
       {recovery && latest && (
         <div role="status" className="rounded border border-line p-2 text-xs">
           <p>{recovery.title}</p>
@@ -930,7 +1135,7 @@ function CandidateMedia({ result }: { result: NodeResult }) {
     return (
       <img
         loading="lazy"
-        className="max-h-72 w-full object-contain rounded"
+        className="plein-shot-preview-media"
         src={assetUrls.original(value.assetId)}
         alt="当前查看的具体候选"
       />
@@ -945,7 +1150,7 @@ function CandidateMedia({ result }: { result: NodeResult }) {
         controls
         playsInline
         preload="metadata"
-        className="max-h-72 w-full rounded"
+        className="plein-shot-preview-media"
         src={assetUrls.original(value.assetId)}
         aria-label="工作台候选视频"
       />

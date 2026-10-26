@@ -164,7 +164,7 @@ async function openBoard(page: Page, board: string) {
 }
 async function openRow(page: Page, board: string, no = 1) {
   const dialog = await openBoard(page, board)
-  await dialog.getByRole('button', { name: '编辑分镜', exact: true }).click()
+  await dialog.getByRole('button', { name: '详细卡片', exact: true }).click()
   await dialog.getByRole('button', { name: '镜头 ' + no + ' 工作台', exact: true }).click()
   await expect(wb(page)).toBeVisible()
   await expect(dialog).toBeHidden()
@@ -259,6 +259,7 @@ async function prepare(page: Page, audit: Audit, sourceMapping = false) {
     { baseline, script },
   )
   const editor = await act(audit, '实际双击打开分镜编辑器', () => openBoard(page, ids.board))
+  await editor.getByRole('button', { name: '详细卡片', exact: true }).click()
   if (sourceMapping)
     await act(audit, 'P05实际捕获原文、声明核对并关联一条本镜对白', () => captureSource(editor))
   await act(audit, '实际编辑器展开原始三镜，保留稳定shot/dialogue身份', () =>

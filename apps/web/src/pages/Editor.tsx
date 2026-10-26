@@ -14,6 +14,7 @@ import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { placeStartNode } from '../canvas/start'
 import { watchStartNode } from '../canvas/startQueue'
 import { CanvasMenus } from '../shell/CanvasMenus'
+import { CanvasStart } from '../shell/CanvasStart'
 import { AgentCursor } from '../features/agent/AgentCursor'
 import { useAgent } from '../features/agent/store'
 import { CommandPalette } from '../shell/CommandPalette'
@@ -399,6 +400,7 @@ function EmptyHint({ hidden, rightPanel }: { hidden: boolean; rightPanel: boolea
       className="pointer-events-none absolute inset-y-0 flex items-center justify-center px-6 pt-20 pb-24"
     >
       <div className="flex w-full min-w-0 max-w-xl flex-col items-center gap-3 text-center">
+        {engine && <CanvasStart engine={engine} />}
         <div className="flex items-center gap-1.5 text-xs text-ink-subtle">
           <span className="ui-keycap">双击</span>或<span className="ui-keycap">Tab</span>
         </div>
