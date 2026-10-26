@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { newProject, waitEngine } from './canvas'
+import { newProject, revealGenerator, waitEngine } from './canvas'
 
 test('角色存档与档案入口并发只建档一次，离开角色后不打开迟到档案', async ({ page }) => {
   await newProject(page)
@@ -32,6 +32,7 @@ test('角色存档与档案入口并发只建档一次，离开角色后不打�
     await route.continue()
   })
   const generator = page.getByTestId('generator')
+  await revealGenerator(page)
   try {
     await generator.getByRole('button', { name: '存入资产库', exact: true }).click()
     await expect.poll(() => requests).toBe(1)

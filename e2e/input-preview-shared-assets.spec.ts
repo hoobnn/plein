@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { solidPng } from '../packages/providers/src/mock/media'
-import { clickElement, newProject, waitEngine, waitNode } from './canvas'
+import { clickElement, newProject, revealGenerator, waitEngine, waitNode } from './canvas'
 
 test('同一图片用于两个首尾帧来源时，预览顺序、重绘和实际生成都保留两帧', async ({ page }) => {
   const duplicateKeys: string[] = []
@@ -53,6 +53,7 @@ test('同一图片用于两个首尾帧来源时，预览顺序、重绘和实�
     return { id: video, asset: first.assetId }
   })
   await clickElement(page, id)
+  await revealGenerator(page)
   const preview = page.getByTestId('input-preview')
   await preview.getByRole('button', { name: /实际输入/ }).click()
   const frames = preview.locator('figure')
@@ -91,6 +92,7 @@ test('同一图片用于两个首尾帧来源时，预览顺序、重绘和实�
   await page.reload()
   await waitEngine(page)
   await clickElement(page, id)
+  await revealGenerator(page)
   await preview.getByRole('button', { name: /实际输入/ }).click()
   await expect(frames).toHaveCount(2)
   await expect(frames.nth(0)).toContainText('循环开场')
