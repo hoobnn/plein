@@ -185,6 +185,15 @@ export function StoryboardReview({
                     </p>
                     <button
                       type="button"
+                      className="ui-btn ui-btn-secondary ui-btn-xs mt-2"
+                      onClick={() =>
+                        useCanvas.getState().openShotWorkbench({ boardId, shotId: shot.id })
+                      }
+                    >
+                      打开镜头工作台
+                    </button>
+                    <button
+                      type="button"
                       disabled={!canCompare}
                       title={
                         canCompare
@@ -369,9 +378,11 @@ export function StoryboardReview({
           <p className="p-6 text-center text-sm text-ink-subtle">没有符合条件的镜头</p>
         )}
       </div>
-      {before && after && beforeVideo && afterVideo && (
+      {before && after && beforeVideo && afterVideo && canvasId && (
         <ShotContinuityReview
           engine={engine}
+          canvasId={canvasId}
+          boardId={boardId}
           before={{ shot: before, node: beforeVideo }}
           after={{ shot: after, node: afterVideo }}
           onClose={() => setPair(undefined)}

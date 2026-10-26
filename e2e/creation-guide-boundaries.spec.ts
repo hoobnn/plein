@@ -87,10 +87,17 @@ for (const kind of ['board', 'sequence'] as const) {
       kind === 'board' ? '原分镜选择已失效' : '原交付序列已移除或不再关联',
     )
     expect(
-      await page.evaluate(({ key, field }) => JSON.parse(localStorage.getItem(key)!)[field], {
-        key: `plein:creation-guide:v1:${canvasId(page)}`,
-        field: kind === 'board' ? 'boardId' : 'sequenceId',
-      }),
+      await page.evaluate(
+        ({ key, kind, boardId }) =>
+          kind === 'board'
+            ? JSON.parse(localStorage.getItem(key)!).boardId
+            : window.__plein.engine.doc.get(boardId)?.production?.selection?.sequenceId,
+        {
+          key: `plein:creation-guide:v1:${canvasId(page)}`,
+          kind,
+          boardId: f.board,
+        },
+      ),
     ).toBe(ids[1])
     await page.evaluate(() =>
       (window.__plein.engine as typeof window.__plein.engine & { undo(): void }).undo(),
@@ -159,7 +166,7 @@ test('人工核对同帧计划变化不写入旧确认，核对新计划后可�
   const key = `plein:creation-guide:v1:${canvasId(page)}`
   const before = await page.evaluate((key) => localStorage.getItem(key), key)
   const confirm = guide(page).getByRole('button', {
-    name: '我已人工核对这份分镜（仅本机）',
+    name: '我已人工核对这份分镜',
     exact: true,
   })
   await confirm.evaluate((button, id) => {

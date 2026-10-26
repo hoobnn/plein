@@ -93,8 +93,8 @@ test('已选试做镜头真实删除后等待重新选择，撤销重做和候�
   await expect(guide(page)).toContainText('原试做镜头已移除')
   expect(
     await page.evaluate(
-      (key) => JSON.parse(localStorage.getItem(key)!).trialShotId,
-      `plein:creation-guide:v1:${canvasId(page)}`,
+      (board) => window.__plein.engine.doc.get(board)?.production?.selection?.trialShotId,
+      f.board,
     ),
   ).toBe('two')
   await page.getByRole('button', { name: '撤销', exact: true }).click()
@@ -126,23 +126,42 @@ test('已选试做镜头真实删除后等待重新选择，撤销重做和候�
   await expect(stage(page, 'review').getByRole('button')).toBeDisabled()
   await page.setViewportSize({ width: 390, height: 700 })
   await page.getByRole('button', { name: '展开创作引导', exact: true }).click()
-  await expect
-    .poll(() =>
-      guide(page).evaluate((el) => {
-        const controls = [
-          '[aria-label="收起创作引导"]',
-          '[aria-label="创作引导试做镜头"]',
-          '[data-guide-step="trial"]',
-        ]
-        return controls.every((selector) => {
-          const rect = el.querySelector(selector)!.getBoundingClientRect()
+  for (const selector of [
+    '[aria-label="收起创作引导"]',
+    '[aria-label="创作引导试做镜头"]',
+    '[data-guide-step="trial"]',
+  ]) {
+    const control = guide(page).locator(selector)
+    await control.scrollIntoViewIfNeeded()
+    await expect
+      .poll(() =>
+        control.evaluate((el) => {
+          const rect = el.getBoundingClientRect()
           return el.contains(
             document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2),
           )
-        })
-      }),
-    )
-    .toBe(true)
+        }),
+      )
+      .toBe(true)
+    await expect
+      .poll(() =>
+        guide(page)
+          .getByRole('button', { name: '收起创作引导', exact: true })
+          .evaluate((el) => {
+            const rect = el.getBoundingClientRect()
+            return (
+              rect.x >= 0 &&
+              rect.y >= 0 &&
+              rect.right <= window.innerWidth &&
+              rect.bottom <= window.innerHeight &&
+              el.contains(
+                document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2),
+              )
+            )
+          }),
+      )
+      .toBe(true)
+  }
   await guide(page).screenshot({
     path: test.info().outputPath('guide-missing-trial.png'),
     animations: 'disabled',

@@ -582,6 +582,328 @@ async function mappedFixture(page: Page) {
   )
   return { ...f, ...ids }
 }
+const workbench = (page: Page) => page.getByRole('dialog', { name: '镜头工作台', exact: true })
+const checklist = (page: Page) => page.getByRole('dialog', { name: '批量生成清单', exact: true })
+async function openShot(page: Page, board: string, no: number) {
+  await zoomTo(page, [board])
+  const point = await centerOf(page, board)
+  await page.mouse.dblclick(point.x, point.y)
+  const table = page.getByRole('dialog', { name: '分镜表', exact: true })
+  await expect(table).toHaveCSS('opacity', '1')
+  await table.getByRole('button', { name: '编辑分镜', exact: true }).click()
+  await table.getByRole('button', { name: `镜头 ${no} 工作台`, exact: true }).click()
+  await expect(workbench(page)).toHaveCSS('opacity', '1')
+}
+async function missingVideoPlan(page: Page) {
+  const response = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname.endsWith('/storyboard-batch/preview'),
+  )
+  await workbench(page).getByRole('button', { name: '本镜视频缺项清单', exact: true }).click()
+  const result = await response
+  expect(result.status()).toBe(200)
+  return result.json()
+}
+
+test('固定段映射第二叙事镜且无video节点：工作台与引导精确定位第二实例，真实视频缺项清单沿用且零提交', async ({
+  page,
+}, info) => {
+  const f = await mappedFixture(page)
+  expect(
+    await page.evaluate(
+      (board) =>
+        [...window.__plein.engine.doc.elements()].filter(
+          (el) =>
+            el.nodeType === 'plein/video' &&
+            (el.params?.source as { storyboard?: string; shot?: string } | undefined)
+              ?.storyboard === board &&
+            (el.params?.source as { shot?: string } | undefined)?.shot === 'action-continuity-2',
+        ).length,
+      f.board,
+    ),
+  ).toBe(0)
+  await openShot(page, f.board, 2)
+  let mapping = workbench(page).getByRole('region', { name: '本镜序列映射', exact: true })
+  await expect(mapping).toContainText(f.b)
+  await expect(mapping).not.toContainText(f.a)
+  await mapping.getByRole('button', { name: '定位此剪辑实例', exact: true }).click()
+  await expect(workbench(page)).toBeHidden()
+  await expect(editor(page).locator(`[data-clip-instance="${f.b}"]`)).toHaveAttribute(
+    'data-selected',
+    'true',
+  )
+  await expect(
+    editor(page).getByRole('spinbutton', { name: '入点（秒）', exact: true }),
+  ).toHaveValue('4')
+  await editor(page).getByRole('button', { name: '关闭', exact: true }).click()
+  const guide = page.getByTestId('creation-guide')
+  await choice(page, guide, '创作引导试做镜头', '镜头 2 · 受控动作镜2')
+  const overview = page.getByTestId('production-overview')
+  mapping = overview.getByRole('region', { name: '本镜序列映射', exact: true })
+  await expect(mapping).toContainText(f.b)
+  await expect(mapping).not.toContainText(f.a)
+  await mapping.getByRole('button', { name: '定位此剪辑实例', exact: true }).click()
+  await expect(editor(page).locator(`[data-clip-instance="${f.b}"]`)).toHaveAttribute(
+    'data-selected',
+    'true',
+  )
+  await editor(page).getByRole('button', { name: '关闭', exact: true }).click()
+  await overview.getByRole('button', { name: '代表镜头工作台', exact: true }).click()
+  const plan = await missingVideoPlan(page)
+  expect(plan.request).toMatchObject({
+    shotIds: ['action-continuity-2'],
+    role: 'video',
+    reuseExisting: true,
+  })
+  expect(plan.scope.sequenceId).toBe(f.sequence)
+  expect(plan.summary).toMatchObject({ run: 0, reuse: 1, blocked: 0, calls: 0 })
+  expect(plan.rows).toHaveLength(1)
+  expect(plan.rows[0]).toMatchObject({
+    action: 'reuse',
+    calls: 0,
+    mapping: {
+      sequenceId: f.sequence,
+      instances: [
+        expect.objectContaining({
+          clipInstanceId: f.b,
+          segmentId: f.segmentId,
+          assetId: f.assetId,
+          sound: 'native',
+        }),
+      ],
+    },
+  })
+  await expect(checklist(page).getByLabel('清单汇总')).toContainText('沿用 1 项')
+  await expect(
+    checklist(page).getByRole('button', { name: '确认并开始生成', exact: true }),
+  ).toBeDisabled()
+  await checklist(page).getByText('查看固定段与声音映射', { exact: true }).click()
+  await expect(checklist(page)).toContainText(f.b)
+  await expect(checklist(page)).toContainText(f.assetId)
+  await expect(checklist(page)).toContainText('声音 native')
+  await checklist(page).screenshot({
+    path: info.outputPath('fixed-second-shot-reuse-and-exact-instance.png'),
+  })
+  expect(f.execution).toEqual([])
+  expect(providerSubmits(f.canvas)).toEqual([])
+  writeFileSync(
+    info.outputPath('P11-mapping-ui-evidence.json'),
+    JSON.stringify(
+      {
+        fixture:
+          'controlled typed fixed mapping over actual owned 8-second file; no generated origin',
+        assetId: f.assetId,
+        fixtureSha: f.sha,
+        a: f.a,
+        b: f.b,
+        plan,
+        requests: f.execution,
+        journal: providerSubmits(f.canvas),
+        humanActions: null,
+        quality: null,
+      },
+      null,
+      2,
+    ),
+  )
+})
+
+test('真实复制第二序列后未选scope阻塞；清单与工作台显式范围只显示所选序列的确切实例，零提交', async ({
+  page,
+}, info) => {
+  const f = await mappedFixture(page)
+  await page.keyboard.press('Escape')
+  await zoomTo(page, [f.sequence])
+  const point = await centerOf(page, f.sequence)
+  await page.mouse.click(point.x, point.y)
+  await page.keyboard.press('ControlOrMeta+d')
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          [...window.__plein.engine.doc.elements()].filter((el) => el.nodeType === 'plein/sequence')
+            .length,
+      ),
+    )
+    .toBe(2)
+  const copy = await page.evaluate(
+    (original) =>
+      [...window.__plein.engine.doc.elements()].find(
+        (el) => el.nodeType === 'plein/sequence' && el.id !== original,
+      )!.id,
+    f.sequence,
+  )
+  const copyB = (await clips(page, copy)).find(
+    (c) => c.narrative?.shotId === 'action-continuity-2',
+  )!
+  expect(copyB.clipInstanceId).not.toBe(f.b)
+  await openShot(page, f.board, 2)
+  const mapping = workbench(page).getByRole('region', { name: '本镜序列映射', exact: true })
+  await expect(mapping).toContainText('多个序列')
+  const blocked = await missingVideoPlan(page)
+  expect(blocked.request.sequenceId).toBeUndefined()
+  expect(blocked.summary).toMatchObject({ run: 0, blocked: 1, calls: 0 })
+  await expect(checklist(page)).toContainText('多个序列')
+  await expect(
+    checklist(page).getByRole('button', { name: '确认并开始生成', exact: true }),
+  ).toBeDisabled()
+  const changed = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname.endsWith('/storyboard-batch/preview'),
+  )
+  await checklist(page)
+    .getByRole('combobox', { name: '批量清单序列范围', exact: true })
+    .selectOption(copy)
+  const selectedResponse = await changed
+  expect(selectedResponse.status()).toBe(200)
+  const selected = await selectedResponse.json()
+  expect(selected.request.sequenceId).toBe(copy)
+  expect(selected.scope.sequenceId).toBe(copy)
+  expect(selected.summary).toMatchObject({ run: 0, reuse: 1, blocked: 0, calls: 0 })
+  expect(
+    selected.rows[0].mapping.instances.map((c: { clipInstanceId: string }) => c.clipInstanceId),
+  ).toEqual([copyB.clipInstanceId])
+  await expect(checklist(page).getByLabel('清单冻结范围')).toContainText(copy)
+  await checklist(page).getByText('查看固定段与声音映射', { exact: true }).click()
+  await expect(checklist(page)).toContainText(copyB.clipInstanceId)
+  await checklist(page).screenshot({
+    path: info.outputPath('two-sequences-explicit-batch-scope.png'),
+  })
+  await checklist(page).getByRole('button', { name: '取消', exact: true }).click()
+  await mapping
+    .getByRole('combobox', { name: '本镜序列范围', exact: true })
+    .selectOption(f.sequence)
+  await expect(mapping).toContainText(f.b)
+  await expect(mapping).not.toContainText(copyB.clipInstanceId)
+  await mapping.getByRole('button', { name: '定位此剪辑实例', exact: true }).click()
+  await expect(editor(page).locator(`[data-clip-instance="${f.b}"]`)).toHaveAttribute(
+    'data-selected',
+    'true',
+  )
+  expect(f.execution).toEqual([])
+  expect(providerSubmits(f.canvas)).toEqual([])
+  writeFileSync(
+    info.outputPath('P11-mapping-ui-evidence.json'),
+    JSON.stringify(
+      {
+        fixture:
+          'actual keyboard sequence duplication; controlled fixed mapping over actual owned file',
+        fixtureSha: f.sha,
+        original: f.sequence,
+        copy,
+        blocked,
+        selected,
+        requests: f.execution,
+        journal: providerSubmits(f.canvas),
+        humanActions: null,
+        quality: null,
+      },
+      null,
+      2,
+    ),
+  )
+})
+
+test('两live序列可运行新候选时，同帧切换范围再旧确认click不能发出旧scope commit，零submit', async ({
+  page,
+}, info) => {
+  const f = await fixture(page)
+  expect(
+    (
+      await page.request.put(API.providerConfig('plein/mock'), {
+        data: { settings: { latencyMs: 0, failWith: 'none' } },
+      })
+    ).ok(),
+  ).toBe(true)
+  const other = await page.evaluate(
+    ({ source, board }) => {
+      const params = window.__plein.engine.doc.mutable(source)!.get('params') as {
+        set(k: string, v: unknown): void
+      }
+      params.set('model', 'plein/mock:video')
+      params.set('mode', 'text')
+      params.set('prompt', '受控范围授权反例，不应实际提交')
+      params.set('source', { storyboard: board, shot: 'action-continuity-1', role: 'video' })
+      const id = window.__plein.addNode({
+        type: 'plein/sequence',
+        name: '第二live范围',
+        x: 1100,
+        y: 100,
+        params: { instanceVersion: 2, clips: [], subtitles: false },
+      })
+      if (!window.__plein.connect([source, 'video'], [id, 'clips']))
+        throw new Error('second live input')
+      return id
+    },
+    { source: f.source, board: f.board },
+  )
+  await openShot(page, f.board, 1)
+  // This deliberately hand-configured live node must acknowledge its real plan differences first.
+  await workbench(page).getByRole('button', { name: '核对本镜计划差异', exact: true }).click()
+  const differences = page.getByRole('dialog', { name: '计划差异', exact: true })
+  await differences.getByRole('button', { name: '不同步，按节点现状', exact: true }).click()
+  await differences.getByRole('button', { name: '关闭', exact: true }).click()
+  await workbench(page)
+    .getByRole('region', { name: '本镜序列映射', exact: true })
+    .getByRole('combobox', { name: '本镜序列范围', exact: true })
+    .selectOption(f.sequence)
+  const previewResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname.endsWith('/storyboard-batch/preview'),
+  )
+  await workbench(page).getByRole('button', { name: '本镜视频生成清单', exact: true }).click()
+  const plan = await (await previewResponse).json()
+  expect(plan.request).toMatchObject({ reuseExisting: false, sequenceId: f.sequence })
+  expect(plan.summary.run, JSON.stringify(plan.rows)).toBe(1)
+  const confirm = checklist(page).getByRole('button', { name: '确认并开始生成', exact: true })
+  await expect(confirm).toBeEnabled()
+  await confirm.evaluate((button, nextScope) => {
+    button.addEventListener(
+      'click',
+      () => {
+        const select = button
+          .closest('[role="dialog"]')!
+          .querySelector<HTMLSelectElement>('select[aria-label="批量清单序列范围"]')!
+        select.value = nextScope
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      },
+      { capture: true, once: true },
+    )
+  }, other)
+  // Trusted button click with a nested real DOM change; no React/store handler is called directly.
+  await confirm.click()
+  await expect(
+    checklist(page).getByRole('combobox', { name: '批量清单序列范围', exact: true }),
+  ).toHaveValue(other)
+  await expect(checklist(page).getByLabel('清单冻结范围')).toContainText(other)
+  expect(f.execution).toEqual([])
+  expect(providerSubmits(f.canvas)).toEqual([])
+  await checklist(page).screenshot({
+    path: info.outputPath('same-frame-scope-change-rejects-old-commit.png'),
+  })
+  writeFileSync(
+    info.outputPath('P11-mapping-ui-evidence.json'),
+    JSON.stringify(
+      {
+        fixture: 'controlled real live-source candidates; only real UI previews, no commit',
+        fixtureSha: f.sha,
+        firstScope: f.sequence,
+        changedScope: other,
+        initialPlan: plan,
+        requests: f.execution,
+        journal: providerSubmits(f.canvas),
+        humanActions: null,
+        quality: null,
+      },
+      null,
+      2,
+    ),
+  )
+})
+
 test('v1失去来源的手工字幕保留完整原值：只读展示、编辑当前字幕、真实复制和刷新不丢失或改写literal @文本', async ({
   page,
 }, info) => {

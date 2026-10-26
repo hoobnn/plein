@@ -252,6 +252,8 @@ export interface ModelSpec {
   title: string
   capabilities: Capability[]
   description?: string
+  /** 可选的模型提示词指南；只作可阅读的创作参考，不参与执行权限或参数转换。 */
+  promptGuide?: { version: string; text: string }
   /**
    * 平台公布的模型版本（快照日期或版本号）。声明了就计入缓存键：同名模型换了权重时旧结果算过期；
    * 平台不公布时不填，模型名不等于不可变的版本

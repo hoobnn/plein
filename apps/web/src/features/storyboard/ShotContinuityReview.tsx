@@ -10,20 +10,28 @@ import { Modal, ModalHeader } from '../../ui/Modal'
 import { useStale } from '../runs/stale'
 import { CreativeReviewForm } from './CreativeReviewForm'
 import { continuityWindow } from './reviewModel'
+import { ShotObservationForm } from './ShotObservationForm'
+import type { ContinuityPlayback } from './continuityModel'
 
 type PairSide = { shot: Shot; node: CanvasElement }
 
 /** 相邻镜头的视觉衔接，只读抽帧和本地播放，不生成新镜头或改变采用。 */
 export function ShotContinuityReview({
   engine,
+  canvasId,
+  boardId,
   before,
   after,
   onClose,
+  isCurrent,
 }: {
   engine: Engine
+  canvasId: string
+  boardId: string
   before: PairSide
   after: PairSide
   onClose(): void
+  isCurrent?(): boolean
 }) {
   const a = creativeReviewTarget(before.node)
   const b = creativeReviewTarget(after.node)
@@ -38,33 +46,43 @@ export function ShotContinuityReview({
     <PairReview
       key={`${a.resultId}/${a.assetId}/${b.resultId}/${b.assetId}`}
       engine={engine}
+      canvasId={canvasId}
+      boardId={boardId}
       before={before}
       after={after}
       a={a.assetId}
       b={b.assetId}
       onClose={onClose}
+      isCurrent={isCurrent}
     />
   )
 }
 
 function PairReview({
   engine,
+  canvasId,
+  boardId,
   before,
   after,
   a,
   b,
   onClose,
+  isCurrent,
 }: {
   engine: Engine
+  canvasId: string
+  boardId: string
   before: PairSide
   after: PairSide
   a: string
   b: string
   onClose(): void
+  isCurrent?(): boolean
 }) {
   const catalog = useCatalog((s) => s.catalog)
   const stale = useStale((s) => s.nodes.has(before.node.id) || s.nodes.has(after.node.id))
   const [reference, setReference] = useState('')
+  const [played, setPlayed] = useState<Partial<Record<'before' | 'after', ContinuityPlayback>>>({})
   const refs = [...engine.doc.elements()]
     .filter((node) => node.nodeType === 'plein/character')
     .flatMap((node) => [
@@ -170,9 +188,43 @@ function PairReview({
             />
           )}
         </div>
-        <CutLoop before={a} after={b} />
+        <CutLoop
+          before={a}
+          after={b}
+          onPlayback={(side, range) => setPlayed((old) => ({ ...old, [side]: range }))}
+        />
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <ShotObservationForm
+            engine={engine}
+            canvasId={canvasId}
+            boardId={boardId}
+            shotId={before.shot.id}
+            phase="end"
+            node={before.node}
+            frameAssetId={frames.data?.tail}
+            playback={played.before}
+            isCurrent={isCurrent}
+          />
+          <ShotObservationForm
+            engine={engine}
+            canvasId={canvasId}
+            boardId={boardId}
+            shotId={after.shot.id}
+            phase="start"
+            node={after.node}
+            frameAssetId={frames.data?.head}
+            playback={played.after}
+            isCurrent={isCurrent}
+          />
+        </div>
         <div className="mt-3">
-          <CreativeReviewForm doc={engine.doc} node={after.node} stale={stale} defaultOpen />
+          <CreativeReviewForm
+            doc={engine.doc}
+            node={after.node}
+            stale={stale}
+            defaultOpen
+            isCurrent={isCurrent}
+          />
         </div>
       </div>
     </Modal>
@@ -180,21 +232,48 @@ function PairReview({
 }
 
 /** 前镜末一秒 → 后镜首一秒交替循环；短片段按真实 duration 收窄。 */
-function CutLoop({ before, after }: { before: string; after: string }) {
+function CutLoop({
+  before,
+  after,
+  onPlayback,
+}: {
+  before: string
+  after: string
+  onPlayback?(side: 'before' | 'after', range: ContinuityPlayback): void
+}) {
   const refs = useRef<Partial<Record<'before' | 'after', HTMLVideoElement>>>({})
   const [phase, setPhase] = useState<'before' | 'after'>('before')
   const [playing, setPlaying] = useState(false)
   const [muted, setMuted] = useState(false)
   const [error, setError] = useState('')
+  const onPlaybackRef = useRef(onPlayback)
+  onPlaybackRef.current = onPlayback
   useEffect(() => {
     const media = refs.current[phase]
     let alive = true,
       advanced = false,
       frame = 0
+    let viewed: ReturnType<typeof continuityWindow>
+    let audible = false
     for (const video of Object.values(refs.current)) video.pause()
     if (!playing || !media) return
     const next = () => {
       if (alive && !advanced) {
+        if (
+          viewed &&
+          Array.from({ length: media.played.length }, (_, i) => i).some(
+            (i) =>
+              media.played.start(i) <= viewed!.start + 0.12 &&
+              media.played.end(i) >= viewed!.end - 0.12,
+          )
+        )
+          onPlaybackRef.current?.(phase, {
+            assetId: phase === 'before' ? before : after,
+            start: viewed.start,
+            end: viewed.end,
+            duration: media.duration,
+            audible,
+          })
         advanced = true
         media.pause()
         setPhase((value) => (value === 'before' ? 'after' : 'before'))
@@ -208,6 +287,8 @@ function CutLoop({ before, after }: { before: string; after: string }) {
         return
       }
       media.currentTime = range.start
+      viewed = range
+      audible = !media.muted && media.volume > 0
       media.play().catch(() => {
         if (alive) {
           setError('播放未开始，请再点一次循环回看')
@@ -222,6 +303,10 @@ function CutLoop({ before, after }: { before: string; after: string }) {
       frame = requestAnimationFrame(tick)
     }
     media.addEventListener('ended', next)
+    const volumeChanged = () => {
+      if (media.muted || media.volume === 0) audible = false
+    }
+    media.addEventListener('volumechange', volumeChanged)
     if (media.readyState >= 1) start()
     else media.addEventListener('loadedmetadata', start, { once: true })
     return () => {
@@ -230,8 +315,9 @@ function CutLoop({ before, after }: { before: string; after: string }) {
       media.pause()
       media.removeEventListener('loadedmetadata', start)
       media.removeEventListener('ended', next)
+      media.removeEventListener('volumechange', volumeChanged)
     }
-  }, [playing, phase])
+  }, [playing, phase, before, after])
   return (
     <div className="rounded-lg border border-line p-3">
       <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">

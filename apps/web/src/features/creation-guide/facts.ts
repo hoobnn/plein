@@ -2,11 +2,19 @@ import {
   activeShotNodes,
   expandedNodes,
   linkedShotSequences,
+  shotSegmentMapping,
   shotsOf,
   type ShotSource,
 } from '@plein/capabilities'
-import { currentResult, getCreativeReview, type CanvasElement, type PleinDoc } from '@plein/doc'
-import { matchLines, planVersion, SEQUENCE_TYPE, STORYBOARD_TYPE, type Shot } from '@plein/nodes'
+import {
+  currentResult,
+  currentProductionConfirmation,
+  productionContentSnapshot,
+  getCreativeReview,
+  type CanvasElement,
+  type PleinDoc,
+} from '@plein/doc'
+import { matchLines, SEQUENCE_TYPE, STORYBOARD_TYPE, type Shot } from '@plein/nodes'
 
 export type GuideStepId = 'brief' | 'storyboard' | 'trial' | 'review' | 'batch' | 'delivery'
 export type GuideState = 'todo' | 'ready' | 'working' | 'done' | 'attention' | 'skipped'
@@ -14,6 +22,7 @@ export interface GuideTarget {
   kind: 'text' | 'generator' | 'storyboard' | 'review' | 'sequence'
   nodeId: string
   resultId?: string
+  clipInstanceId?: string
 }
 export interface GuideStep {
   id: GuideStepId
@@ -23,12 +32,10 @@ export interface GuideStep {
   target?: GuideTarget
 }
 export interface GuideOptions {
+  canvasId?: string
   boardId?: string
   trialShotId?: string
   sequenceId?: string
-  /** 本机明确确认过的精确分镜计划；非执行结果或隐式阅读记录。 */
-  reviewedPlan?: string
-  reviewedPlans?: Readonly<Record<string, string>>
   staleIds?: ReadonlySet<string>
 }
 export interface GuideFacts {
@@ -78,13 +85,6 @@ const hasText = (el: CanvasElement) => {
     (value?.type === 'text' && value.text.trim())
   )
 }
-
-const planSignatureOf = (shots: Shot[]) =>
-  `${planVersion(shots)}:${JSON.stringify(shots, (_key, value: unknown) => {
-    if (value && typeof value === 'object' && !Array.isArray(value))
-      return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
-    return value
-  })}`
 
 interface ShotProgress {
   complete: boolean
@@ -158,6 +158,7 @@ function deliveryConfirmed(sequence: CanvasElement | undefined) {
     const record = raw as Record<string, unknown>
     return (
       record.kind === 'film' &&
+      record.historical !== true &&
       record.resultId === result.id &&
       record.assetId === assetId &&
       typeof record.confirmedAt === 'number' &&
@@ -207,6 +208,17 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
   )
   const mediaNodes = [...groups.values()].flat()
   const sequences = linkedShotSequences(doc, mediaNodes)
+  if (options.canvasId && shots[0]) {
+    const mapped = shotSegmentMapping(doc, {
+      canvasId: options.canvasId,
+      boardId: board.id,
+      shotId: shots[0].id,
+    })
+    for (const id of mapped.sequenceIds) {
+      const sequence = doc.get(id)
+      if (sequence && !sequences.some((entry) => entry.id === id)) sequences.push(sequence)
+    }
+  }
   // 尚未展开的单分镜模板保留空序列入口；展开后只接受当前镜头的有效连线。
   if (!sequences.length && boards.length === 1 && expanded.size === 0) {
     const all = elements.filter((el) => el.nodeType === SEQUENCE_TYPE)
@@ -219,15 +231,31 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
     )
       sequences.push(all[0]!)
   }
-  const sequence = options.sequenceId
-    ? sequences.find((el) => el.id === options.sequenceId)
+  const sequenceId = board.production?.selection?.sequenceId ?? options.sequenceId
+  const trialShotId = board.production?.selection?.trialShotId ?? options.trialShotId
+  const sequence = sequenceId
+    ? sequences.find((el) => el.id === sequenceId)
     : sequences.length === 1
       ? sequences[0]
       : undefined
-  const trialShot = options.trialShotId
-    ? shots.find((shot) => shot.id === options.trialShotId)
-    : shots[0]
-  const trialMissing = !!options.trialShotId && !trialShot
+  const trialShot = trialShotId ? shots.find((shot) => shot.id === trialShotId) : shots[0]
+  const trialMapping =
+    options.canvasId && trialShot && sequence
+      ? shotSegmentMapping(doc, {
+          canvasId: options.canvasId,
+          boardId: board.id,
+          shotId: trialShot.id,
+          sequenceId: sequence.id,
+        })
+      : undefined
+  const fixedTrial = !trialMapping?.problem
+    ? (trialMapping?.instances.filter((row) => row.segment) ?? [])
+    : []
+  const fixedTrialTarget: GuideTarget | undefined =
+    fixedTrial[0] && sequence
+      ? { kind: 'sequence', nodeId: sequence.id, clipInstanceId: fixedTrial[0].clipInstanceId }
+      : undefined
+  const trialMissing = !!trialShotId && !trialShot
   const staleIds = options.staleIds ?? new Set<string>()
   const progress = shots.map((shot) => ({
     shot,
@@ -237,15 +265,19 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
   const brief = briefSources(doc, board.id)
   const briefTarget =
     brief.find((el) => el.kind === 'markdown' || el.nodeType === 'plein/text') ?? brief[0]
-  const planSignature = planSignatureOf(shots)
-  const reviewSignature = options.reviewedPlan ?? options.reviewedPlans?.[board.id]
-  const reviewedPlan = shots.length > 0 && reviewSignature === planSignature
+  const allRowsValid =
+    Array.isArray(board.params?.shots) && shots.length === board.params.shots.length
+  const planSignature = allRowsValid ? productionContentSnapshot(board) : undefined
+  const reviewSignature = !!board.production?.confirmations.length
+  const reviewedPlan =
+    !!planSignature &&
+    !!options.canvasId &&
+    !!currentProductionConfirmation(board, options.canvasId)
   const boardTarget: GuideTarget = { kind: 'storyboard', nodeId: board.id }
   const trialTarget: GuideTarget | undefined = trialMissing
     ? undefined
-    : sample?.missing
-      ? { kind: 'generator', nodeId: sample.missing.id }
-      : boardTarget
+    : (fixedTrialTarget ??
+      (sample?.missing ? { kind: 'generator', nodeId: sample.missing.id } : boardTarget))
   const reviewNode =
     sample?.nodes.find(
       (el) =>
@@ -289,10 +321,10 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
             : 'ready'
           : 'todo',
       detail: reviewedPlan
-        ? `${shots.length} 镜已在本机人工核对；修改计划会重新待审`
+        ? `${shots.length} 镜已有当前范围的人工核对；修改计划会重新待审`
         : shots.length
           ? reviewSignature
-            ? '分镜计划已变化，请重新核对'
+            ? '分镜计划或确认范围已变化，请重新核对'
             : `逐行核对 ${shots.length} 镜后，在此明确确认`
           : '尚无分镜，先填写或生成分镜表',
       target: boardTarget,
@@ -302,24 +334,28 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
       title: '试做一镜',
       state: trialMissing
         ? 'attention'
-        : sample?.complete
-          ? 'done'
-          : sample?.running
-            ? 'working'
-            : sample?.ambiguous
-              ? 'attention'
-              : shots.length
-                ? 'ready'
-                : 'todo',
+        : fixedTrial.length
+          ? 'ready'
+          : sample?.complete
+            ? 'done'
+            : sample?.running
+              ? 'working'
+              : sample?.ambiguous
+                ? 'attention'
+                : shots.length
+                  ? 'ready'
+                  : 'todo',
       detail: trialMissing
         ? '原试做镜头已移除，请重新选择；没有镜头时可补充或撤销删除'
-        : sample?.complete
-          ? `镜头 ${trialShot!.no} 的画面、视频及所需声音已有采用结果`
-          : sample?.ambiguous
-            ? '试做镜头有重复生成节点，请在分镜表检查'
-            : animation
-              ? '已有低成本样片计划；也可先只做选定的一镜'
-              : '先展开并只试做选定镜头，避免整批试错',
+        : fixedTrial.length
+          ? `本镜已映射 ${fixedTrial.length} 个固定段，请先审看当前叙事与声音；实际文件由清单核验`
+          : sample?.complete
+            ? `镜头 ${trialShot!.no} 的画面、视频及所需声音已有采用结果`
+            : sample?.ambiguous
+              ? '试做镜头有重复生成节点，请在分镜表检查'
+              : animation
+                ? '已有低成本样片计划；也可先只做选定的一镜'
+                : '先展开并只试做选定镜头，避免整批试错',
       target: trialTarget,
     },
     {
@@ -328,26 +364,31 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
       state:
         trialMissing || sample?.stale || sample?.needsChanges
           ? 'attention'
-          : sample?.approved
-            ? 'done'
-            : sample?.complete
-              ? 'ready'
-              : 'todo',
+          : fixedTrial.length
+            ? 'ready'
+            : sample?.approved
+              ? 'done'
+              : sample?.complete
+                ? 'ready'
+                : 'todo',
       detail: trialMissing
         ? '先重新选择要审核的试做镜头'
-        : sample?.stale
-          ? '试做镜头输入已变化，请先查看下游影响'
-          : sample?.needsChanges
-            ? '当前采用项有人工作出的需修改结论'
-            : sample?.approved
-              ? '试做镜头当前采用的画面与声音均已人工确认可用'
-              : '逐项试听、看片并标记可用；生成完成不代表审核通过',
+        : fixedTrial.length
+          ? '请在序列审看固定段用于当前叙事的效果；原出处的人工结论不继承到本镜'
+          : sample?.stale
+            ? '试做镜头输入已变化，请先查看下游影响'
+            : sample?.needsChanges
+              ? '当前采用项有人工作出的需修改结论'
+              : sample?.approved
+                ? '试做镜头当前采用的画面与声音均已人工确认可用'
+                : '逐项试听、看片并标记可用；生成完成不代表审核通过',
       target:
-        !trialMissing && reviewNode && reviewResult
+        fixedTrialTarget ??
+        (!trialMissing && reviewNode && reviewResult
           ? { kind: 'review', nodeId: reviewNode.id, resultId: reviewResult.id }
           : trialMissing
             ? undefined
-            : boardTarget,
+            : boardTarget),
     },
     {
       id: 'batch',
@@ -359,7 +400,7 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
           : shots.length
             ? 'ready'
             : 'todo',
-      detail: `${generated}/${shots.length} 镜已有完整采用项；在分镜表明确选择要运行的阶段`,
+      detail: `${generated}/${shots.length} 镜已有完整节点采用项；固定段复用由清单另行核验，在分镜表明确选择要运行的阶段`,
       target: boardTarget,
     },
     {
@@ -376,10 +417,10 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
         ? '序列输入已有变化，先检查当前成片是否仍适合交付'
         : confirmed
           ? '当前成片版本已人工确认，修改意见均已处理'
-          : options.sequenceId && !sequence && !sequences.length
+          : sequenceId && !sequence && !sequences.length
             ? '原交付序列已移除或不再关联，请先检查当前镜头连线'
             : sequences.length && !sequence
-              ? options.sequenceId
+              ? sequenceId
                 ? '原交付序列已移除或不再关联，请重新选择'
                 : '先选择这份分镜要交付的成片序列'
               : sequence

@@ -97,7 +97,7 @@ test('多分镜显式选择，只定位选中的表，不猜一份也不自动�
 test('明确核对当前分镜后改计划，持续引导立即回到待检查', async ({ page }) => {
   await newProject(page)
   await seedBoard(page, '计划变更')
-  await guide(page).getByRole('button', { name: '我已人工核对这份分镜（仅本机）' }).click()
+  await guide(page).getByRole('button', { name: '我已人工核对这份分镜' }).click()
   await expect(stage(page, 'storyboard')).toHaveAttribute('data-guide-state', 'done')
   await stage(page, 'storyboard').getByRole('button').click()
   const editor = page.getByRole('dialog', { name: '分镜表', exact: true })
@@ -105,7 +105,7 @@ test('明确核对当前分镜后改计划，持续引导立即回到待检查',
   await editor.getByLabel('运动提示词', { exact: true }).first().click()
   await page.keyboard.press('Escape')
   await expect(stage(page, 'storyboard')).toHaveAttribute('data-guide-state', 'attention')
-  await expect(stage(page, 'storyboard')).toContainText('计划已变化')
+  await expect(stage(page, 'storyboard')).toContainText('计划或确认范围已变化')
 })
 
 test('mock产物完成不等于人工通过，审片后换候选重新待审', async ({ page }) => {

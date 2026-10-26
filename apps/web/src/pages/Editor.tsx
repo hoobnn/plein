@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { api } from '../api/client'
+import { ShotWorkbench } from '../features/storyboard/ShotWorkbench'
 import { queryKeys } from '../api/query'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { placeStartNode } from '../canvas/start'
@@ -271,6 +272,7 @@ export function Editor({
         </>
       )}
       <StoryboardEditor />
+      <ShotWorkbench />
       <SequenceEditor />
       <StageEditor />
       <Shortcuts />

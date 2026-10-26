@@ -3,6 +3,8 @@ import {
   adoptResult,
   connect,
   createDoc,
+  confirmProductionContent,
+  selectProductionTarget,
   createElement,
   deleteElements,
   creativeReviewTarget,
@@ -159,15 +161,53 @@ describe('持续创作引导的事实推导', () => {
     })
   })
 
-  it('本机明确核对才完成分镜审核；计划变化重新待审', () => {
+  it('文档中明确核对当前范围才完成审核；计划变化重新待审', () => {
     const doc = open(),
       id = board(doc)
     expect(step(doc, 'storyboard').state).toBe('ready')
-    const reviewedPlan = creationGuideFacts(doc).planSignature!
-    expect(step(doc, 'storyboard', { reviewedPlan }).state).toBe('done')
+    const snapshot = creationGuideFacts(doc).planSignature!
+    confirmProductionContent(doc, {
+      scope: { canvasId: 'canvas', boardId: id },
+      expectedSnapshot: snapshot,
+      version: 'v1',
+      userId: 'local',
+    })
+    expect(step(doc, 'storyboard', { canvasId: 'canvas' }).state).toBe('done')
+    expect(step(doc, 'storyboard', { canvasId: 'copy' }).state).toBe('attention')
     setParams(doc, id, { shots: [shot(1, { lighting: '逆光' })] })
-    expect(step(doc, 'storyboard', { reviewedPlan }).state).toBe('attention')
-    expect(creationGuideFacts(doc, { reviewedPlan }).next).toBe('storyboard')
+    expect(step(doc, 'storyboard', { canvasId: 'canvas' }).state).toBe('attention')
+    expect(creationGuideFacts(doc, { canvasId: 'canvas' }).next).toBe('storyboard')
+  })
+
+  it('旧本机确认无效，文档选定镜头优先于本机查看fallback', () => {
+    const doc = open(),
+      id = board(doc, [shot(1), shot(2)])
+    const legacy = readGuidePreferences('canvas', {
+      getItem: () =>
+        JSON.stringify({
+          trialShotId: 'shot-1',
+          reviewedPlans: { [id]: creationGuideFacts(doc).planSignature },
+        }),
+    })
+    expect(step(doc, 'storyboard', { ...legacy, canvasId: 'canvas' }).state).toBe('ready')
+    expect(creationGuideFacts(doc, legacy).trialShot?.id).toBe('shot-1')
+    selectProductionTarget(doc, id, { trialShotId: 'shot-2' })
+    expect(creationGuideFacts(doc, legacy).trialShot?.id).toBe('shot-2')
+  })
+
+  it('无效分镜行不会静默过滤后显示已核对', () => {
+    const doc = open(),
+      id = board(doc)
+    setParams(doc, id, { shots: [shot(1), { id: 'bad', no: 'invalid' }] })
+    const snapshot = JSON.stringify(doc.get(id)!.params!.shots)
+    confirmProductionContent(doc, {
+      scope: { canvasId: 'canvas', boardId: id },
+      expectedSnapshot: creationGuideFacts(doc).planSignature ?? snapshot,
+      version: 'v1',
+      userId: 'local',
+    })
+    expect(creationGuideFacts(doc, { canvasId: 'canvas' }).planSignature).toBeUndefined()
+    expect(step(doc, 'storyboard', { canvasId: 'canvas' }).state).not.toBe('done')
   })
 
   it('有运行成功标记仍不等于完整产物或人工审片通过', () => {
@@ -374,6 +414,10 @@ describe('持续创作引导的事实推导', () => {
     expect(step(doc, 'delivery').state).toBe('ready')
     updateElement(doc, film, { deliveries: [record] })
     expect(step(doc, 'delivery').state).toBe('done')
+    updateElement(doc, film, { deliveries: [{ ...record, historical: true }] })
+    expect(step(doc, 'delivery').state).toBe('ready')
+    expect(doc.get(film)?.deliveries?.[0]?.confirmedAt).toBe(2)
+    updateElement(doc, film, { deliveries: [record] })
     expect(step(doc, 'delivery', { staleIds: new Set([film]) }).state).toBe('attention')
     updateElement(doc, film, {
       deliveries: [
@@ -387,8 +431,86 @@ describe('持续创作引导的事实推导', () => {
   })
 })
 
+describe('固定段的制作范围', () => {
+  const mappedSequence = (doc: PleinDoc, boardId: string, name: string, extra = {}) =>
+    node(doc, SEQUENCE_TYPE, {
+      instanceVersion: 2,
+      clips: [1, 2].map((no) => ({
+        clipInstanceId: `${name}-clip-${no}`,
+        source: 'deleted-original-generator',
+        port: 'video',
+        sound: 'native',
+        in: no === 1 ? 0 : 4,
+        out: no === 1 ? 2 : 6,
+        speed: no,
+        segment: {
+          version: 1,
+          segmentId: 'shared-fixed-segment',
+          asset: { assetId: 'a'.repeat(64), kind: 'video' },
+          duration: 8,
+        },
+        narrative: { canvasId: 'canvas', boardId, shotId: `shot-${no}`, ...extra },
+      })),
+    })
+
+  it('无生成节点的固定段仍关联序列并定位第二实例，不伪造文件核验或人工通过', () => {
+    const doc = open(),
+      id = board(doc, [shot(1), shot(2)])
+    const sequenceId = mappedSequence(doc, id, 'current')
+    const before = JSON.stringify([...doc.elements()])
+    let writes = 0
+    doc.ydoc.on('update', () => writes++)
+    doc.readOnly = true
+    const facts = creationGuideFacts(doc, {
+      canvasId: 'canvas',
+      boardId: id,
+      trialShotId: 'shot-2',
+    })
+    expect(facts.sequences.map((entry) => entry.id)).toEqual([sequenceId])
+    expect(facts.steps.find((entry) => entry.id === 'trial')).toMatchObject({
+      state: 'ready',
+      target: { kind: 'sequence', nodeId: sequenceId, clipInstanceId: 'current-clip-2' },
+    })
+    expect(facts.steps.find((entry) => entry.id === 'trial')?.detail).toContain(
+      '实际文件由清单核验',
+    )
+    expect(facts.steps.find((entry) => entry.id === 'review')).toMatchObject({
+      state: 'ready',
+      target: { clipInstanceId: 'current-clip-2' },
+    })
+    expect(facts.steps.find((entry) => entry.id === 'review')?.detail).toContain('不继承到本镜')
+    expect(facts.steps.find((entry) => entry.id === 'delivery')?.state).toBe('todo')
+    expect(JSON.stringify([...doc.elements()])).toBe(before)
+    expect(writes).toBe(0)
+  })
+
+  it('多个序列等待明确范围，历史、其他画布及已删镜头映射不能混入', () => {
+    const doc = open(),
+      id = board(doc, [shot(1), shot(2)])
+    board(doc)
+    const first = mappedSequence(doc, id, 'first')
+    const second = mappedSequence(doc, id, 'second')
+    mappedSequence(doc, id, 'historic', { historical: true })
+    mappedSequence(doc, id, 'foreign', { canvasId: 'another-canvas' })
+    mappedSequence(doc, id, 'removed', { shotId: 'removed-shot' })
+    const options = { canvasId: 'canvas', boardId: id, trialShotId: 'shot-2' }
+    const ambiguous = creationGuideFacts(doc, options)
+    expect(ambiguous.sequences.map((entry) => entry.id)).toEqual([first, second])
+    expect(ambiguous.sequence).toBeUndefined()
+    const selected = creationGuideFacts(doc, { ...options, sequenceId: second })
+    expect(selected.steps.find((entry) => entry.id === 'trial')?.target).toEqual({
+      kind: 'sequence',
+      nodeId: second,
+      clipInstanceId: 'second-clip-2',
+    })
+    expect(
+      creationGuideFacts(doc, { ...options, sequenceId: 'deleted-sequence' }).sequence,
+    ).toBeUndefined()
+  })
+})
+
 describe('引导本机偏好', () => {
-  it('收起、选定分镜和核对签名按canvas隔离并可重新打开', () => {
+  it('收起和查看分镜偏好按canvas隔离，忽略旧核对签名', () => {
     const values = new Map<string, string>()
     const storage = {
       getItem: (key: string) => values.get(key) ?? null,
@@ -399,13 +521,11 @@ describe('引导本机偏好', () => {
     const prefs = {
       collapsed: true,
       boardId: 'board-a',
-      reviewedPlans: { 'board-a': 'exact-plan' },
     }
     writeGuidePreferences('canvas-a', prefs, storage)
     expect(readGuidePreferences('canvas-a', storage)).toEqual(prefs)
     expect(readGuidePreferences('canvas-b', storage)).toEqual({
       collapsed: false,
-      reviewedPlans: {},
     })
     expect(guideStorageKey('canvas-a')).not.toBe(guideStorageKey('canvas-b'))
   })
@@ -419,7 +539,7 @@ describe('引导本机偏好', () => {
         throw new Error('full')
       },
     }
-    const fallback = { collapsed: false, reviewedPlans: {} }
+    const fallback = { collapsed: false }
     expect(readGuidePreferences('canvas', broken)).toEqual(fallback)
     expect(() => writeGuidePreferences('canvas', fallback, broken)).not.toThrow()
     expect(readGuidePreferences('canvas', { getItem: () => '{broken' })).toEqual(fallback)
@@ -427,6 +547,6 @@ describe('引导本机偏好', () => {
       readGuidePreferences('canvas', {
         getItem: () => '{"collapsed":true,"reviewedPlans":{"a":3,"b":"plan"}}',
       }),
-    ).toEqual({ collapsed: true, reviewedPlans: { b: 'plan' } })
+    ).toEqual({ collapsed: true })
   })
 })

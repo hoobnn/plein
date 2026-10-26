@@ -1,3 +1,4 @@
+import { selectProductionTarget } from '@plein/doc'
 import type { Engine } from '@plein/canvas-core'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -10,6 +11,9 @@ import { Presence } from '../../ui/Presence'
 import { useStale } from '../runs/stale'
 import { openAnimatic } from '../sequence/animatic'
 import { creationGuideFacts, type GuideState, type GuideStepId, type GuideTarget } from './facts'
+import { ProductionDetails } from './ProductionDetails'
+import { ProductionOverview } from './ProductionOverview'
+import { useSession } from '../../stores/session'
 import { readGuidePreferences, writeGuidePreferences, type GuidePreferences } from './preferences'
 
 const states: Record<GuideState, string> = {
@@ -78,6 +82,12 @@ function Guide({
 }) {
   useDocVersion(engine.doc)
   const sync = useCanvas((s) => s.sync)
+  const principal = useSession((s) => s.info?.principal)
+  const writable = !engine.doc.readOnly && !!principal && principal.role !== 'viewer'
+  const canWrite = () => {
+    const current = useSession.getState().info?.principal
+    return !engine.doc.readOnly && !!current && current.role !== 'viewer'
+  }
   const stale = useStale((s) => s.nodes)
   const [preferences, setPreferences] = useState(() => readGuidePreferences(canvasId))
   const [entryHost, setEntryHost] = useState<HTMLElement | null>(null)
@@ -100,6 +110,7 @@ function Guide({
   }
   const facts = creationGuideFacts(engine.doc, {
     ...preferences,
+    canvasId,
     staleIds: new Set([...stale].filter(([, kind]) => kind !== 'kept').map(([id]) => id)),
   })
   const floating = presentation === 'floating' && !preferences.collapsed && facts.boards.length > 0
@@ -125,6 +136,7 @@ function Guide({
     }
     const current = creationGuideFacts(engine.doc, {
       ...preferencesRef.current,
+      canvasId,
       staleIds: new Set(
         [...useStale.getState().nodes].filter(([, kind]) => kind !== 'kept').map(([id]) => id),
       ),
@@ -162,7 +174,7 @@ function Guide({
     engine.zoomToFit([target.nodeId])
     if (target.kind === 'text') onOpenText(target.nodeId)
     else if (target.kind === 'storyboard') state.openStoryboard(target.nodeId)
-    else if (target.kind === 'sequence') state.openSequence(target.nodeId)
+    else if (target.kind === 'sequence') state.openSequence(target.nodeId, target.clipInstanceId)
     else if (target.kind === 'review' && target.resultId)
       state.view({
         kind: 'result',
@@ -211,7 +223,7 @@ function Guide({
           {error}
         </p>
       )}
-      <div className="ui-scrollbar flex flex-col gap-3 overflow-y-auto px-3 pb-3">
+      <div className="ui-scrollbar flex min-h-0 flex-col gap-3 overflow-y-auto px-3 pb-3 [&>*]:shrink-0">
         {(facts.boards.length > 1 || !facts.board) && (
           <label className="ui-field" htmlFor={`${canvasId}-guide-board`}>
             <span className="ui-label">继续哪份分镜</span>
@@ -224,7 +236,10 @@ function Guide({
               onChange={(boardId) => {
                 const state = useCanvas.getState()
                 if (state.engine !== engine || state.canvasId !== canvasId) return
-                const latest = creationGuideFacts(engine.doc, preferencesRef.current)
+                const latest = creationGuideFacts(engine.doc, {
+                  ...preferencesRef.current,
+                  canvasId,
+                })
                 if (JSON.stringify(latest.boards.map((board) => board.id)) !== boardListKey) return
                 // 列表变更时保留失效身份，不接受旧实例恢复初始值或清空选择。
                 if (!boardId || boardId === facts.board?.id) return
@@ -244,14 +259,16 @@ function Guide({
             {facts.boards.length === 1 && (
               <p className="truncate text-xs text-ink-subtle">{facts.board.name ?? '分镜'}</p>
             )}
-            {(facts.shots.length > 1 || (preferences.trialShotId && !facts.trialShot)) && (
+            {(facts.shots.length > 1 ||
+              ((facts.board.production?.selection?.trialShotId ?? preferences.trialShotId) &&
+                !facts.trialShot)) && (
               <label className="ui-field" htmlFor={`${canvasId}-guide-shot`}>
                 <span className="ui-label">先试哪一镜</span>
                 <Select
                   key={shotListKey}
                   id={`${canvasId}-guide-shot`}
                   aria-label="创作引导试做镜头"
-                  disabled={!facts.shots.length}
+                  disabled={!facts.shots.length || !writable}
                   value={facts.trialShot?.id ?? ''}
                   options={[
                     { value: '', label: '请选择试做镜头' },
@@ -264,25 +281,37 @@ function Guide({
                     // 控件记住挂载时的初始值；列表变更后重建，并拒绝旧列表的迟到回调。
                     const state = useCanvas.getState()
                     if (state.engine !== engine || state.canvasId !== canvasId) return
-                    const latest = creationGuideFacts(engine.doc, preferencesRef.current)
+                    const latest = creationGuideFacts(engine.doc, {
+                      ...preferencesRef.current,
+                      canvasId,
+                    })
                     if (
                       latest.board?.id !== facts.board?.id ||
                       JSON.stringify(latest.shots.map((shot) => shot.id)) !== shotListKey
                     )
                       return
-                    if (trialShotId && trialShotId !== facts.trialShot?.id) update({ trialShotId })
+                    if (
+                      canWrite() &&
+                      trialShotId &&
+                      trialShotId !== facts.trialShot?.id &&
+                      latest.board
+                    )
+                      selectProductionTarget(engine.doc, latest.board.id, { trialShotId })
                   }}
                 />
               </label>
             )}
             {(facts.sequences.length > 1 ||
-              (preferences.sequenceId && !facts.sequence && facts.sequences.length > 0)) && (
+              ((facts.board.production?.selection?.sequenceId ?? preferences.sequenceId) &&
+                !facts.sequence &&
+                facts.sequences.length > 0)) && (
               <label className="ui-field" htmlFor={`${canvasId}-guide-sequence`}>
                 <span className="ui-label">成片交付序列</span>
                 <Select
                   key={sequenceListKey}
                   id={`${canvasId}-guide-sequence`}
                   aria-label="创作引导交付序列"
+                  disabled={!writable}
                   value={facts.sequence?.id ?? ''}
                   options={[
                     { value: '', label: '请选择成片序列' },
@@ -291,7 +320,10 @@ function Guide({
                   onChange={(sequenceId) => {
                     const state = useCanvas.getState()
                     if (state.engine !== engine || state.canvasId !== canvasId) return
-                    const latest = creationGuideFacts(engine.doc, preferencesRef.current)
+                    const latest = creationGuideFacts(engine.doc, {
+                      ...preferencesRef.current,
+                      canvasId,
+                    })
                     if (
                       JSON.stringify([
                         latest.board?.id,
@@ -299,7 +331,13 @@ function Guide({
                       ]) !== sequenceListKey
                     )
                       return
-                    if (sequenceId && sequenceId !== facts.sequence?.id) update({ sequenceId })
+                    if (
+                      canWrite() &&
+                      sequenceId &&
+                      sequenceId !== facts.sequence?.id &&
+                      latest.board
+                    )
+                      selectProductionTarget(engine.doc, latest.board.id, { sequenceId })
                   }}
                 />
               </label>
@@ -335,6 +373,14 @@ function Guide({
                 打开低成本分镜样片
               </button>
             )}
+            <ProductionOverview
+              engine={engine}
+              canvasId={canvasId}
+              facts={facts}
+              writable={writable}
+              readCurrent={() => readCurrent()}
+              onError={setError}
+            />
             <ol className="flex flex-col gap-1">
               {facts.steps.map((step, i) => (
                 <li key={step.id} data-guide-step={step.id} data-guide-state={step.state}>
@@ -369,25 +415,15 @@ function Guide({
                 </li>
               ))}
             </ol>
-            {!!facts.shots.length &&
-              facts.steps.find((step) => step.id === 'storyboard')?.state !== 'done' && (
-                <button
-                  type="button"
-                  className="ui-btn ui-btn-secondary ui-btn-sm"
-                  onClick={() => {
-                    const current = readCurrent(true)
-                    if (current?.board && current.planSignature)
-                      update({
-                        reviewedPlans: {
-                          ...preferencesRef.current.reviewedPlans,
-                          [current.board.id]: current.planSignature,
-                        },
-                      })
-                  }}
-                >
-                  我已人工核对这份分镜（仅本机）
-                </button>
-              )}
+            <ProductionDetails
+              key={facts.board.id}
+              doc={engine.doc}
+              canvasId={canvasId}
+              board={facts.board}
+              writable={writable}
+              readCurrent={() => readCurrent(true)}
+              onError={setError}
+            />
             <p className="text-2xs text-ink-subtle">
               可以跳步定位。这里只打开编辑器；付费生成仍需点击原有生成按钮。人工审片记录与任务运行状态分别显示。
             </p>

@@ -43,6 +43,7 @@ interface CanvasStore extends EngineState {
   menu: CanvasMenuEvent | null
   /** 打开表格编辑器的分镜节点 */
   storyboard: string | null
+  shotWorkbench: { boardId: string; shotId: string } | null
   /** 打开编辑器的序列节点 */
   sequence: string | null
   sequenceFocus: { sequenceId: string; clipInstanceId: string; requestId: number } | null
@@ -77,6 +78,7 @@ interface CanvasStore extends EngineState {
   setCanvasId(id: string | null): void
   setMenu(menu: CanvasMenuEvent | null): void
   openStoryboard(id: string | null): void
+  openShotWorkbench(target: { boardId: string; shotId: string } | null): void
   openSequence(id: string | null, clipInstanceId?: string): void
   consumeSequenceFocus(requestId: number): void
   openStage(id: string | null): void
@@ -115,6 +117,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
   canvasId: null,
   menu: null,
   storyboard: null,
+  shotWorkbench: null,
   sequence: null,
   sequenceFocus: null,
   stage: null,
@@ -149,6 +152,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
           : {}),
         menu: null,
         storyboard: null,
+        shotWorkbench: null,
         sequence: null,
         sequenceFocus: null,
         stage: null,
@@ -165,7 +169,15 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
   setCacheSaved: (cacheSaved) => set({ cacheSaved }),
   setCanvasId: (canvasId) => set({ canvasId }),
   setMenu: (menu) => set({ menu }),
-  openStoryboard: (storyboard) => set({ storyboard }),
+  openStoryboard: (storyboard) =>
+    set({ storyboard, ...(storyboard ? { shotWorkbench: null } : {}) }),
+  openShotWorkbench: (shotWorkbench) =>
+    set({
+      shotWorkbench,
+      ...(shotWorkbench
+        ? { storyboard: null, sequence: null, sequenceFocus: null, viewer: null }
+        : {}),
+    }),
   openSequence: (sequence, clipInstanceId) =>
     set({
       sequence,
@@ -173,6 +185,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
         sequence && clipInstanceId
           ? { sequenceId: sequence, clipInstanceId, requestId: ++sequenceFocusRequest }
           : null,
+      ...(sequence ? { shotWorkbench: null } : {}),
     }),
   consumeSequenceFocus: (requestId) => {
     if (get().sequenceFocus?.requestId === requestId) set({ sequenceFocus: null })

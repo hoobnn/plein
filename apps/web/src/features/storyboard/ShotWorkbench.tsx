@@ -1,0 +1,1008 @@
+import type { Engine } from '@plein/canvas-core'
+import {
+  adoptResult,
+  continuityDependents,
+  continuityOf,
+  currentContinuityObservations,
+  currentResult,
+  readSourceSlice,
+  sourceMapOf,
+  sourceSnapshotState,
+  type CanvasElement,
+  type NodeResult,
+  type SourceSnapshot,
+  type SourceUnit,
+  type StateField,
+} from '@plein/doc'
+import type { ShotRole } from '@plein/nodes'
+import type { PreparedInput } from '@plein/protocol'
+import { useQuery } from '@tanstack/react-query'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { api, assetUrls } from '../../api/client'
+import { useDocVersion } from '../../canvas/hooks'
+import { upstreams } from '../../canvas/nodes'
+import { useCanvas } from '../../stores/canvas'
+import { useCatalog } from '../../stores/catalog'
+import { useSession } from '../../stores/session'
+import { Modal, ModalHeader } from '../../ui/Modal'
+import { useStale } from '../runs/stale'
+import { describeRecovery } from '../runs/recovery'
+import { BatchChecklist } from './BatchChecklist'
+import { CreativeReviewForm, reviewLabels } from './CreativeReviewForm'
+import { expandedNodes, shotsOf, type ShotSource } from './model'
+import { reviewNodesForShot, shotReviewStatus } from './reviewModel'
+import { ShotControls } from './ShotControls'
+import { ShotContinuityReview } from './ShotContinuityReview'
+import { ShotPlanForm } from './ShotStatePanel'
+import { ShotSegmentReferences } from './ShotSegmentReferences'
+import { StoryboardSync } from './StoryboardSync'
+import { certaintyLabels, observationEvidenceLabel, stateLabels } from './continuityModel'
+import {
+  applyWorkbenchDraft,
+  WORKBENCH_FIELDS,
+  workbenchDownstream,
+  workbenchDraft,
+} from './shotWorkbenchModel'
+
+const labels = {
+  description: '画面描述',
+  imagePrompt: '分镜图提示词',
+  motionPrompt: '视频运动提示词',
+  lighting: '光影',
+}
+const roles: Record<ShotRole, string> = {
+  image: '分镜图',
+  video: '视频',
+  speech: '配音',
+  sfx: '音效',
+}
+const engineKeys = new WeakMap<Engine, number>()
+let nextEngineKey = 0
+let nextInspectionRead = 0
+function engineKey(engine: Engine) {
+  if (!engineKeys.has(engine)) engineKeys.set(engine, ++nextEngineKey)
+  return engineKeys.get(engine)!
+}
+
+export function ShotWorkbench() {
+  const engine = useCanvas((s) => s.engine),
+    canvasId = useCanvas((s) => s.canvasId),
+    target = useCanvas((s) => s.shotWorkbench)
+  if (!engine || !canvasId || !target) return null
+  return (
+    <Workbench
+      key={`${engineKey(engine)}:${canvasId}:${target.boardId}:${target.shotId}`}
+      engine={engine}
+      canvasId={canvasId}
+      {...target}
+    />
+  )
+}
+
+function Workbench({
+  engine,
+  canvasId,
+  boardId,
+  shotId,
+}: {
+  engine: Engine
+  canvasId: string
+  boardId: string
+  shotId: string
+}) {
+  useDocVersion(engine.doc)
+  const principal = useSession((s) => s.info?.principal)
+  const staleNodes = useStale((s) => s.nodes)
+  const [boardMap] = useState(() => engine.doc.elementMaps.get(boardId))
+  const [draft, setDraft] = useState(() => workbenchDraft(engine.doc, boardId, shotId))
+  const [selectedNode, setSelectedNode] = useState('')
+  const [child, setChild] = useState<'controls' | 'sync' | 'pair' | null>(null)
+  const [batch, setBatch] = useState<{ role: ShotRole; reuseExisting: boolean } | null>(null)
+  const [sequenceId, setSequenceId] = useState(
+    () => engine.doc.get(boardId)?.production?.selection?.sequenceId ?? '',
+  )
+  const [error, setError] = useState('')
+  const active = useCallback(() => {
+    const state = useCanvas.getState(),
+      target = state.shotWorkbench
+    return (
+      state.engine === engine &&
+      state.canvasId === canvasId &&
+      target?.boardId === boardId &&
+      target.shotId === shotId &&
+      !engine.doc.ydoc.isDestroyed &&
+      engine.doc.elementMaps.get(boardId) === boardMap &&
+      engine.doc.get(boardId)?.nodeType === 'plein/storyboard' &&
+      !!workbenchDraft(engine.doc, boardId, shotId)
+    )
+  }, [engine, canvasId, boardId, shotId, boardMap])
+  const writable = useCallback(() => {
+    const actor = useSession.getState().info?.principal
+    return active() && !engine.doc.readOnly && !!actor && actor.role !== 'viewer'
+  }, [active, engine])
+  const canWrite = !!principal && principal.role !== 'viewer' && writable()
+  const close = () => {
+    const state = useCanvas.getState()
+    if (
+      state.engine === engine &&
+      state.shotWorkbench?.boardId === boardId &&
+      state.shotWorkbench.shotId === shotId
+    )
+      state.openShotWorkbench(null)
+  }
+  const shots = shotsOf(engine.doc.get(boardId)),
+    shot = shots.find((s) => s.id === shotId)
+  const groups = expandedNodes(engine, boardId),
+    nodes = shot ? reviewNodesForShot(shot, groups.get(shotId) ?? []) : []
+  const node = selectedNode ? nodes.find((n) => n.id === selectedNode) : nodes[0]
+  const currentDraft = workbenchDraft(engine.doc, boardId, shotId)
+  const changed = draft?.source !== currentDraft?.source
+  const downstream = workbenchDownstream(
+    engine.doc,
+    nodes.map((n) => n.id),
+  )
+  const dependents = continuityDependents(
+    continuityOf(engine.doc, boardId),
+    shotId,
+    new Set(shots.map((s) => s.id)),
+  )
+  const previous = shots[shots.findIndex((s) => s.id === shotId) - 1]
+  const video = nodes.find((n) => (n.params?.source as ShotSource)?.role === 'video')
+  const beforeVideo =
+    previous &&
+    (groups.get(previous.id) ?? []).find((n) => (n.params?.source as ShotSource)?.role === 'video')
+  const locate = (id: string, sequence = false) => {
+    if (!active() || !engine.doc.has(id)) return
+    close()
+    engine.selection.set([id])
+    engine.zoomToFit([id])
+    if (sequence) useCanvas.getState().openSequence(id)
+  }
+  return (
+    <>
+      <Modal label="镜头工作台" onClose={close} isolateKeys className="max-w-6xl">
+        <ModalHeader title={`镜头工作台 · 镜头 ${shot?.no ?? '已删除'}`} onClose={close}>
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary"
+            disabled={!active()}
+            onClick={() => locate(boardId)}
+          >
+            定位分镜
+          </button>
+        </ModalHeader>
+        <div className="min-h-0 overflow-auto p-4 space-y-4" data-testid="shot-workbench">
+          {!shot || !currentDraft ? (
+            <p role="alert">镜头已删除或身份重复，请返回分镜核对。</p>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-3 items-center text-sm">
+                <label>
+                  当前镜头{' '}
+                  <select
+                    aria-label="工作台镜头"
+                    className="ui-input"
+                    value={shotId}
+                    onChange={(e) => {
+                      if (active())
+                        useCanvas.getState().openShotWorkbench({ boardId, shotId: e.target.value })
+                    }}
+                  >
+                    {shots.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        镜头 {s.no} · {s.description.slice(0, 40)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <span>创作验收：{reviewLabels[shotReviewStatus(nodes, shot)]}</span>
+                {!canWrite && <span role="status">当前只读，可查看已有依据与候选。</span>}
+              </div>
+              {error && (
+                <p role="alert" className="text-danger">
+                  {error}
+                </p>
+              )}
+              <div className="grid gap-4 lg:grid-cols-2">
+                <section
+                  aria-label="当前镜头计划"
+                  className="space-y-2 rounded-lg border border-line p-3"
+                >
+                  <h3 className="font-medium">当前镜头计划</h3>
+                  <p className="text-xs text-ink-subtle">
+                    只改本镜选定字段。节点参数通过原计划差异显式同步，打开和编辑均不生成。
+                  </p>
+                  {changed && (
+                    <p role="status" className="text-warning">
+                      镜头内容已有新版本，当前草稿保留，请重新载入后再保存。
+                    </p>
+                  )}
+                  {draft &&
+                    WORKBENCH_FIELDS.map((field) => (
+                      <label key={field} className="block text-sm">
+                        {labels[field]}
+                        <textarea
+                          aria-label={`工作台${labels[field]}`}
+                          className="ui-input w-full"
+                          rows={3}
+                          disabled={!canWrite}
+                          value={draft.values[field]}
+                          onChange={(e) =>
+                            setDraft({
+                              ...draft,
+                              values: { ...draft.values, [field]: e.target.value },
+                            })
+                          }
+                        />
+                      </label>
+                    ))}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn-primary"
+                      disabled={!canWrite || changed || !draft}
+                      onClick={() => {
+                        if (
+                          !writable() ||
+                          !draft ||
+                          !applyWorkbenchDraft(engine.doc, boardId, draft)
+                        )
+                          return setError('目标、字段或权限已变化，草稿未写入')
+                        setDraft(workbenchDraft(engine.doc, boardId, shotId))
+                        setError('')
+                      }}
+                    >
+                      保存本镜字段
+                    </button>
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn-secondary"
+                      onClick={() => {
+                        if (active()) setDraft(workbenchDraft(engine.doc, boardId, shotId))
+                      }}
+                    >
+                      重新载入本镜
+                    </button>
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn-secondary"
+                      disabled={!canWrite}
+                      onClick={() => setChild('controls')}
+                    >
+                      镜头控制
+                    </button>
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn-secondary"
+                      disabled={!canWrite}
+                      onClick={() => setChild('sync')}
+                    >
+                      核对本镜计划差异
+                    </button>
+                  </div>
+                  <p className="text-xs text-ink-muted">
+                    景别 {shot.shotSize} · 计划 {shot.duration} 秒 · 出场{' '}
+                    {shot.characters.join('、') || '未填'} · 台词 {shot.dialogue.length} 句
+                  </p>
+                  <details>
+                    <summary>固定原文与本镜映射</summary>
+                    <SourceQuotes
+                      engine={engine}
+                      boardId={boardId}
+                      shotId={shotId}
+                      onLocateSource={(id) => locate(id)}
+                    />
+                  </details>
+                  <details>
+                    <summary>本镜当前与历史观察</summary>
+                    <ObservationSummary
+                      engine={engine}
+                      canvasId={canvasId}
+                      boardId={boardId}
+                      shotId={shotId}
+                    />
+                  </details>
+                  <details>
+                    <summary>镜头目的与起止状态</summary>
+                    <ShotPlanForm
+                      engine={engine}
+                      canvasId={canvasId}
+                      boardId={boardId}
+                      shotId={shotId}
+                      isCurrent={writable}
+                    />
+                  </details>
+                </section>
+                <section
+                  aria-label="本镜候选与执行依据"
+                  className="space-y-3 rounded-lg border border-line p-3"
+                >
+                  <h3 className="font-medium">本镜候选与执行依据</h3>
+                  <label className="block text-sm">
+                    阶段节点{' '}
+                    <select
+                      aria-label="工作台阶段节点"
+                      className="ui-input w-full"
+                      value={node?.id ?? selectedNode}
+                      onChange={(e) => setSelectedNode(e.target.value)}
+                    >
+                      <option value="">请选择阶段</option>
+                      {nodes.map((n) => (
+                        <option key={n.id} value={n.id}>
+                          {roles[(n.params?.source as ShotSource)?.role] ?? '节点'} ·{' '}
+                          {n.name ?? n.id}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {!node ? (
+                    <p role="status">
+                      此阶段没有生成节点；已有固定段可在下方映射中核对，生成清单会先检查复用。
+                    </p>
+                  ) : (
+                    <CandidateInspection
+                      key={node.id}
+                      engine={engine}
+                      boardId={boardId}
+                      shotId={shotId}
+                      canvasId={canvasId}
+                      node={node}
+                      active={active}
+                      writable={writable}
+                      stale={staleNodes.has(node.id)}
+                      onLocate={() => locate(node.id)}
+                    />
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {(['image', 'video', 'speech', 'sfx'] as const).map((role) => (
+                      <button
+                        key={role}
+                        type="button"
+                        className="ui-btn ui-btn-secondary"
+                        disabled={!canWrite}
+                        onClick={() => {
+                          if (writable()) setBatch({ role, reuseExisting: false })
+                        }}
+                      >
+                        本镜{roles[role]}生成清单
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn-secondary"
+                      disabled={!canWrite}
+                      onClick={() => {
+                        if (writable()) setBatch({ role: 'video', reuseExisting: true })
+                      }}
+                    >
+                      本镜视频缺项清单
+                    </button>
+                  </div>
+                  <p className="text-xs text-ink-subtle">
+                    配音清单包含本镜台词。清单显示实际项目、费用估算或价格未知，确认后才执行。
+                  </p>
+                  <ShotSegmentReferences
+                    engine={engine}
+                    canvasId={canvasId}
+                    boardId={boardId}
+                    shotId={shotId}
+                    sequenceId={sequenceId || undefined}
+                    onSelectSequence={setSequenceId}
+                    isCurrent={active}
+                  />
+                </section>
+              </div>
+              <section
+                className="space-y-2 rounded-lg border border-line p-3 text-sm"
+                aria-label="本镜下游影响"
+              >
+                <h3 className="font-medium">本镜下游影响</h3>
+                <p>
+                  沿实际连线可达 {downstream.length} 个节点；P06 显式状态引用 {dependents.length}{' '}
+                  项。修改不会自动更新或重生成下游。
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {downstream.map((id) => (
+                    <button
+                      type="button"
+                      className="ui-btn ui-btn-secondary ui-btn-xs"
+                      key={id}
+                      onClick={() => locate(id, engine.doc.get(id)?.nodeType === 'plein/sequence')}
+                    >
+                      {engine.doc.get(id)?.name ?? id}
+                    </button>
+                  ))}
+                </div>
+                {dependents.map((ref) => (
+                  <p
+                    key={JSON.stringify([
+                      ref.toPlanRevisionId,
+                      ref.planRevisionId,
+                      ref.subjectId,
+                      ref.fields,
+                    ])}
+                  >
+                    镜头 {shots.find((s) => s.id === ref.toShotId)?.no ?? ref.toShotId} 引用{' '}
+                    {ref.fields.join('、')}：{ref.status}
+                  </p>
+                ))}
+                <button
+                  type="button"
+                  className="ui-btn ui-btn-secondary"
+                  disabled={
+                    !previous ||
+                    !beforeVideo ||
+                    !video ||
+                    currentResult(beforeVideo)?.value.type !== 'video' ||
+                    currentResult(video)?.value.type !== 'video'
+                  }
+                  onClick={() => setChild('pair')}
+                >
+                  与前镜连续性审看
+                </button>
+              </section>
+            </>
+          )}
+        </div>
+      </Modal>
+      {child === 'controls' && (
+        <ShotControls
+          engine={engine}
+          canvasId={canvasId}
+          boardId={boardId}
+          shotId={shotId}
+          isCurrent={writable}
+          onClose={() => setChild(null)}
+        />
+      )}
+      {child === 'sync' && (
+        <StoryboardSync
+          engine={engine}
+          boardId={boardId}
+          shotIds={[shotId]}
+          isCurrent={writable}
+          onClose={() => setChild(null)}
+        />
+      )}
+      {child === 'pair' && previous && shot && beforeVideo && video && (
+        <ShotContinuityReview
+          engine={engine}
+          canvasId={canvasId}
+          boardId={boardId}
+          before={{ shot: previous, node: beforeVideo }}
+          after={{ shot, node: video }}
+          isCurrent={writable}
+          onClose={() => setChild(null)}
+        />
+      )}
+      {batch && (
+        <BatchChecklist
+          engine={engine}
+          canvasId={canvasId}
+          boardId={boardId}
+          request={{
+            shotIds: [shotId],
+            role: batch.role,
+            reuseExisting: batch.reuseExisting,
+            sequenceId: sequenceId || undefined,
+          }}
+          isCurrent={writable}
+          onClose={() => setBatch(null)}
+          onLocate={(row) => {
+            if (row.nodeId) locate(row.nodeId)
+          }}
+          onStarted={(total) => {
+            if (active()) {
+              setBatch(null)
+              useCanvas.getState().notify(`已提交本镜清单 ${total} 项，旧候选保留`)
+            }
+          }}
+        />
+      )}
+    </>
+  )
+}
+
+function SourceQuotes({
+  engine,
+  boardId,
+  shotId,
+  onLocateSource,
+}: {
+  engine: Engine
+  boardId: string
+  shotId: string
+  onLocateSource(id: string): void
+}) {
+  const record = sourceMapOf(engine.doc, boardId),
+    links = record.links.filter((l) => l.shotId === shotId)
+  return (
+    <div className="space-y-2 p-2 text-xs">
+      {!links.length && <p>本镜尚无固定原文映射；此处不推断剧情已读或内容已确认。</p>}
+      {links.map((link) => {
+        const unit = record.units.find((u) => u.id === link.unitId),
+          source = unit && record.snapshots.find((s) => s.id === unit.snapshotId)
+        const entry = source && record.sources.find((s) => s.id === source.sourceId)
+        const status = source && sourceSnapshotState(engine.doc, boardId, source)
+        const statusLabels = {
+          current: '来源与固定版一致',
+          changed: '当前来源已修改，仍显示固定旧版',
+          missing: '来源已删除，仅保留历史',
+          external: '外部历史来源，未绑定',
+          disconnected: '来源已断开，保留历史',
+        }
+        return (
+          <div key={link.id}>
+            {source && unit ? (
+              <>
+                <p>
+                  {source.name} · 固定版 {source.id.slice(-8)} · [{unit.start},{unit.end})
+                </p>
+                <p>
+                  {status && statusLabels[status]} ·{' '}
+                  {{ retain: '保留', compress: '压缩', merge: '合并' }[link.treatment]}
+                </p>
+                <details>
+                  <summary>捕获时的原出处</summary>
+                  <p className="break-all">
+                    画布 {source.originAtCapture.canvasId} · 元素 {source.originAtCapture.elementId}{' '}
+                    · 端口 {source.originAtCapture.port} · 结果{' '}
+                    {source.originAtCapture.resultId ?? '直接文本'}
+                  </p>
+                </details>
+                {entry?.binding && (status === 'current' || status === 'changed') && (
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn-secondary ui-btn-xs"
+                    onClick={() => {
+                      const now = sourceMapOf(engine.doc, boardId).sources.find(
+                        (s) => s.id === entry.id,
+                      )
+                      const nodeId = now?.binding?.elementId
+                      const state = sourceSnapshotState(engine.doc, boardId, source)
+                      if (
+                        nodeId &&
+                        nodeId === entry.binding?.elementId &&
+                        now?.binding?.port === entry.binding.port &&
+                        (state === 'current' || state === 'changed') &&
+                        engine.doc.has(nodeId)
+                      )
+                        onLocateSource(nodeId)
+                    }}
+                  >
+                    定位当前绑定来源
+                  </button>
+                )}
+                <UnitQuote key={`${source.id}:${unit.id}`} source={source} unit={unit} />
+              </>
+            ) : (
+              <p>历史映射来源缺失，不以当前文字替代。</p>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ObservationSummary({
+  engine,
+  canvasId,
+  boardId,
+  shotId,
+}: {
+  engine: Engine
+  canvasId: string
+  boardId: string
+  shotId: string
+}) {
+  const record = continuityOf(engine.doc, boardId),
+    current = currentContinuityObservations(engine.doc, { canvasId, boardId }, shotId)
+  const history = record.observations.filter(
+    (o) => o.shotId === shotId && !current.some((c) => c.id === o.id),
+  )
+  const lines = (states: (typeof current)[number]['states']) =>
+    Object.entries(states).flatMap(([id, fields]) =>
+      Object.entries(fields).map(([field, value]) => {
+        if (!value) return `${stateLabels[field as StateField]}：未检查`
+        let detail = value.note ?? ''
+        if (value.certainty !== 'unknown') {
+          const actual = value.value
+          detail =
+            typeof actual === 'string'
+              ? actual
+              : `${record.subjects.find((s) => s.id === actual.subjectId)?.label ?? '历史角色'} · ${{ right: '右手', left: '左手', both: '双手' }[actual.hand]}`
+        }
+        return `${record.subjects.find((s) => s.id === id)?.label ?? '历史主体'} · ${stateLabels[field as StateField]}：${certaintyLabels[value.certainty]} ${detail}`
+      }),
+    )
+  return (
+    <div className="space-y-2 p-2 text-xs">
+      <p>观察独立于计划和创作验收；静帧只说明所见范围。</p>
+      {!current.length && <p>当前候选尚无独立观察，保持未检查。</p>}
+      {current.map((o) => (
+        <div key={o.id}>
+          <p>
+            {o.phase === 'start' ? '起始' : '结束'} · {observationEvidenceLabel(o.evidence)}
+          </p>
+          {lines(o.states).map((text) => (
+            <p key={text}>{text}</p>
+          ))}
+        </div>
+      ))}
+      {!!history.length && (
+        <details>
+          <summary>历史观察（{history.length}），不作为当前候选结论</summary>
+          {history.map((o) => (
+            <p key={o.id}>
+              {o.target.resultId?.slice(-10) ?? o.target.assetId.slice(0, 12)} ·{' '}
+              {observationEvidenceLabel(o.evidence)}
+            </p>
+          ))}
+        </details>
+      )}
+    </div>
+  )
+}
+
+function UnitQuote({ source, unit }: { source: SourceSnapshot; unit: SourceUnit }) {
+  const [offset, setOffset] = useState(unit.start)
+  const page = readSourceSlice(source, offset, Math.min(8000, unit.end - offset))
+  return (
+    <div>
+      <p className="whitespace-pre-wrap break-words">{page.text}</p>
+      <p>
+        显示原文 [{page.offset},{Math.min(page.end, unit.end)})，本映射至 {unit.end}
+      </p>
+      <button
+        type="button"
+        className="ui-btn ui-btn-secondary ui-btn-xs"
+        disabled={offset <= unit.start}
+        onClick={() => setOffset(Math.max(unit.start, offset - 8000))}
+      >
+        上一段原文
+      </button>
+      <button
+        type="button"
+        className="ui-btn ui-btn-secondary ui-btn-xs"
+        disabled={page.end >= unit.end}
+        onClick={() => setOffset(page.end)}
+      >
+        下一段原文
+      </button>
+    </div>
+  )
+}
+
+function CandidateInspection({
+  engine,
+  boardId,
+  shotId,
+  canvasId,
+  node,
+  active,
+  writable,
+  stale,
+  onLocate,
+}: {
+  engine: Engine
+  boardId: string
+  shotId: string
+  canvasId: string
+  node: CanvasElement
+  active(): boolean
+  writable(): boolean
+  stale: boolean
+  onLocate(): void
+}) {
+  const version = useDocVersion(engine.doc),
+    catalog = useCatalog((s) => s.catalog)
+  const [element] = useState(() => engine.doc.elementMaps.get(node.id))
+  const identity = (n: CanvasElement) => {
+    const source = n.params?.source as ShotSource | undefined
+    return JSON.stringify([
+      source?.storyboard,
+      source?.shot,
+      source?.role,
+      source?.dialogueId,
+      source?.line,
+      source?.detached,
+    ])
+  }
+  const [sourceIdentity] = useState(() => identity(node))
+  const [readEpoch] = useState(() => ++nextInspectionRead)
+  const [selected, setSelected] = useState(''),
+    [error, setError] = useState('')
+  const candidate = selected ? node.results?.find((r) => r.id === selected) : currentResult(node)
+  const binding = JSON.stringify([node.id, candidate?.id, candidate?.runId, candidate?.value])
+  const validNode = () => {
+    const now = engine.doc.get(node.id),
+      source = now?.params?.source as ShotSource | undefined
+    const shot = shotsOf(engine.doc.get(boardId)).find((s) => s.id === shotId)
+    return (
+      active() &&
+      engine.doc.elementMaps.get(node.id) === element &&
+      !!now &&
+      source?.storyboard === boardId &&
+      source.shot === shotId &&
+      identity(now) === sourceIdentity &&
+      !!shot &&
+      reviewNodesForShot(shot, [now]).length === 1
+    )
+  }
+  const old = useQuery({
+    queryKey: ['workbench-job', canvasId, binding],
+    enabled: !!candidate?.runId && validNode(),
+    retry: false,
+    queryFn: async () => {
+      const job = await api.canvasJob(canvasId, candidate!.runId)
+      if (
+        !validNode() ||
+        job.nodeId !== node.id ||
+        job.id !== candidate!.runId ||
+        job.input?.nodeId !== node.id
+      )
+        throw new Error('没有与此候选匹配的生成依据')
+      return job
+    },
+  })
+  const current = useQuery({
+    queryKey: ['workbench-input', canvasId, boardId, shotId, node.id, readEpoch, version],
+    enabled: validNode(),
+    retry: false,
+    gcTime: 0,
+    queryFn: async () => {
+      const input = await api.nodeInput(canvasId, node.id)
+      if (!validNode() || input.nodeId !== node.id) throw new Error('阶段身份已变化')
+      return input
+    },
+  })
+  const jobs = useQuery({
+    queryKey: ['workbench-latest', canvasId, node.id, readEpoch],
+    enabled: validNode(),
+    queryFn: async () => {
+      const result = await api.canvasNodeJobs(canvasId, [node.id])
+      if (!validNode()) throw new Error('阶段身份已变化')
+      return result
+    },
+    refetchInterval: 1500,
+  })
+  const latest = jobs.data?.jobs.find((j) => j.nodeId === node.id),
+    recovery = latest && describeRecovery(latest)
+  const refs = [...upstreams(engine, node.id, catalog).values()].flat()
+  const adopted = candidate && currentResult(node, candidate.port)?.id === candidate.id
+  const historyReview =
+    candidate &&
+    node.reviews?.find(
+      (review) =>
+        review.target.resultId === candidate.id &&
+        'assetId' in candidate.value &&
+        review.target.assetId === candidate.value.assetId &&
+        review.target.kind === candidate.value.type,
+    )
+  return (
+    <>
+      {!validNode() && <p role="alert">阶段身份已变化，请重新选择阶段或打开工作台。</p>}
+      <p className="text-xs">
+        {stale ? '输入已变化，采用的旧候选需重新核对。' : '当前输入按实际节点读取。'}{' '}
+        {latest && `任务 ${latest.status} · 尝试 ${latest.attempts}`}
+      </p>
+      <label className="block text-sm">
+        查看候选{' '}
+        <select
+          aria-label="工作台候选"
+          className="ui-input w-full"
+          value={candidate?.id ?? selected}
+          onChange={(e) => setSelected(e.target.value)}
+        >
+          <option value="">当前采用候选</option>
+          {(node.results ?? []).map((r) => (
+            <option key={r.id} value={r.id}>
+              {currentResult(node, r.port)?.id === r.id ? '已采用' : '历史'} · {r.id.slice(-10)} ·{' '}
+              {r.port}
+            </option>
+          ))}
+        </select>
+      </label>
+      {candidate ? (
+        <CandidateMedia key={binding} result={candidate} />
+      ) : (
+        <p>尚无候选或原候选已移除。</p>
+      )}
+      {error && (
+        <p role="alert" className="text-danger">
+          {error}
+        </p>
+      )}
+      {candidate && !adopted && (
+        <>
+          <p className="text-xs">
+            历史预览，当前采用项保持不变。原验收：
+            {historyReview ? reviewLabels[historyReview.status] : '未记录'}
+          </p>
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary"
+            disabled={!writable() || !validNode()}
+            onClick={() => {
+              const now = engine.doc.get(node.id)?.results?.find((r) => r.id === candidate.id)
+              if (!writable() || !validNode() || JSON.stringify(now) !== JSON.stringify(candidate))
+                return setError('候选或目标已变化，未采用')
+              adoptResult(engine.doc, node.id, candidate.id)
+              setError('')
+            }}
+          >
+            明确采用此候选
+          </button>
+        </>
+      )}
+      {adopted && candidate && (
+        <CreativeReviewForm
+          doc={engine.doc}
+          node={node}
+          port={candidate.port}
+          stale={stale}
+          defaultOpen
+          isCurrent={() => validNode() && writable()}
+        />
+      )}
+      {refs.length > 0 && (
+        <details>
+          <summary>当前引用与实际送入</summary>
+          {refs.map((u) => (
+            <p key={u.edgeId} className="text-xs break-all">
+              {u.source.name ?? u.source.id} · {u.value?.type ?? '未就绪'}
+              {'assetId' in (u.value ?? {}) ? ` · ${(u.value as { assetId: string }).assetId}` : ''}
+            </p>
+          ))}
+        </details>
+      )}
+      <div className="grid gap-2 md:grid-cols-2" aria-label="旧候选与当前输入对照">
+        <section>
+          <h4 className="text-sm font-medium">此候选生成时实际输入</h4>
+          {!candidate?.runId ? (
+            <p className="text-xs">未记录生成任务，不能用当前参数补填。</p>
+          ) : old.isPending ? (
+            <p>读取旧依据…</p>
+          ) : old.isError || !old.data?.input ? (
+            <p className="text-xs">旧依据未记录或不可读取；不以当前输入替代。</p>
+          ) : (
+            <InputDetails input={old.data.input} />
+          )}
+        </section>
+        <section>
+          <h4 className="text-sm font-medium">当前节点实际输入</h4>
+          {current.isPending ? (
+            <p>核对当前输入…</p>
+          ) : current.isError ? (
+            <p>当前输入暂不可读取。</p>
+          ) : (
+            current.data && <InputDetails input={current.data} />
+          )}
+        </section>
+      </div>
+      {recovery && latest && (
+        <div role="status" className="rounded border border-line p-2 text-xs">
+          <p>{recovery.title}</p>
+          {recovery.detail && <p>{recovery.detail}</p>}
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary"
+            onClick={() => {
+              if (validNode()) {
+                onLocate()
+                useCanvas.getState().toggleTasks(true)
+              }
+            }}
+          >
+            定位原节点与任务恢复
+          </button>
+        </div>
+      )}
+      <button
+        type="button"
+        className="ui-btn ui-btn-secondary"
+        onClick={() => {
+          if (validNode()) onLocate()
+          else setError('阶段身份已变化，未定位旧目标')
+        }}
+      >
+        定位此阶段画布节点
+      </button>
+    </>
+  )
+}
+
+function CandidateMedia({ result }: { result: NodeResult }) {
+  const media = useRef<HTMLMediaElement>(null)
+  useEffect(() => {
+    const element = media.current
+    return () => {
+      if (element) {
+        element.pause()
+        element.removeAttribute('src')
+        element.load()
+      }
+    }
+  }, [])
+  const value = result.value
+  if (value.type === 'image')
+    return (
+      <img
+        loading="lazy"
+        className="max-h-72 w-full object-contain rounded"
+        src={assetUrls.original(value.assetId)}
+        alt="当前查看的具体候选"
+      />
+    )
+  if (value.type === 'video')
+    return (
+      // oxlint-disable-next-line jsx-a11y/media-has-caption -- 审看原始候选，没有凭空创建字幕轨
+      <video
+        ref={(el) => {
+          media.current = el
+        }}
+        controls
+        playsInline
+        preload="metadata"
+        className="max-h-72 w-full rounded"
+        src={assetUrls.original(value.assetId)}
+        aria-label="工作台候选视频"
+      />
+    )
+  if (value.type === 'audio')
+    return (
+      // oxlint-disable-next-line jsx-a11y/media-has-caption -- 审听原始候选，没有凭空创建字幕轨
+      <audio
+        ref={(el) => {
+          media.current = el
+        }}
+        controls
+        preload="metadata"
+        src={assetUrls.original(value.assetId)}
+        aria-label="工作台候选声音"
+      />
+    )
+  return (
+    <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words text-xs">
+      {value.type === 'text'
+        ? value.text
+        : JSON.stringify(value.type === 'json' ? value.value : value, null, 2)}
+    </pre>
+  )
+}
+
+function InputDetails({ input }: { input: PreparedInput }) {
+  return (
+    <div className="space-y-1 text-xs">
+      <p>
+        {input.model?.title ?? input.model?.ref ?? '模型未设置或未记录'} · {input.status}
+      </p>
+      <p className="whitespace-pre-wrap break-words">{input.prompt ?? '提示词未记录'}</p>
+      <p>参考 {input.refs.length} 项 · 费用以执行清单为准</p>
+      <details>
+        <summary>生效参数、送入值与依据版本</summary>
+        <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-all">
+          {JSON.stringify(
+            {
+              v: input.v,
+              inputHash: input.inputHash,
+              params: input.params,
+              inputs: input.inputs,
+              refs: input.refs,
+            },
+            null,
+            2,
+          )}
+        </pre>
+      </details>
+      {[
+        ...new Map(
+          [...input.blocked, ...input.notices].map((n) => [JSON.stringify(n), n] as const),
+        ).entries(),
+      ].map(([key, n]) => (
+        <p key={key}>{n.message}</p>
+      ))}
+    </div>
+  )
+}

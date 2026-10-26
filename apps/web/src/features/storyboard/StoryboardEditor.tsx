@@ -31,6 +31,9 @@ import { Menu } from '@base-ui/react/menu'
 import { useDialogMenu } from '../../ui/useDialogMenu'
 import { StoryboardDataGuard } from './StoryboardDataGuard'
 import { storyboardDataProblem } from './dataRecovery'
+import { SourceMappingPanel } from './SourceMappingPanel'
+import { ShotControls } from './ShotControls'
+import { ShotStatePanel } from './ShotStatePanel'
 
 const cell =
   'resize-none rounded-md bg-transparent px-2 py-1.5 text-sm text-ink outline-none ring-1 ring-transparent transition-shadow hover:ring-line focus:bg-surface-2 focus:ring-accent'
@@ -80,7 +83,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const picked = new Set(shots.filter((shot) => pickedIds.has(shot.id)).map((shot) => shot.id))
   const [syncScope, setSyncScope] = useState<string[] | null>(null)
   const [batchRequest, setBatchRequest] = useState<StoryboardBatchRequest | null>(null)
-  const [mode, setMode] = useState<'edit' | 'review'>('edit')
+  const [mode, setMode] = useState<'edit' | 'review' | 'sources'>('edit')
+  const [controlShot, setControlShot] = useState<string | null>(null)
+  const [stateShot, setStateShot] = useState<string | null>(null)
   const [structureError, setStructureError] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const regenerate = useDialogMenu()
@@ -129,6 +134,12 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       }
       // 下拉触发器和菜单自己处理方向键、确认及 Esc，不能连带关闭分镜表。
       if (
+        e.target instanceof HTMLTextAreaElement &&
+        e.target.hasAttribute('data-source-original') &&
+        e.key !== 'Escape'
+      )
+        return
+      if (
         e.target instanceof Element &&
         (e.target.closest('.ui-select, .ui-menu') ||
           (e.target.closest('[aria-haspopup="menu"]') &&
@@ -153,6 +164,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         !typing &&
         !syncScope &&
         !batchRequest &&
+        !controlShot &&
+        !stateShot &&
         !dialogOpen() &&
         !engine.doc.readOnly &&
         state.engine === engine &&
@@ -165,11 +178,29 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         else engine.undo()
       }
       // 差异面板或确认框开着时 Esc 关它们，不连带关掉表格
-      if (e.key === 'Escape' && !syncScope && !batchRequest && !dialogOpen()) onClose()
+      if (
+        e.key === 'Escape' &&
+        !syncScope &&
+        !batchRequest &&
+        !controlShot &&
+        !stateShot &&
+        !dialogOpen()
+      )
+        onClose()
     }
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
-  }, [onClose, syncScope, batchRequest, regenerate.open, engine, id, canvasId])
+  }, [
+    onClose,
+    syncScope,
+    batchRequest,
+    controlShot,
+    stateShot,
+    regenerate.open,
+    engine,
+    id,
+    canvasId,
+  ])
 
   const writable = () =>
     !engine.doc.readOnly &&
@@ -371,6 +402,13 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           >
             审核镜头
           </button>
+          <button
+            type="button"
+            className={mode === 'sources' ? 'ui-btn ui-btn-primary' : btn}
+            onClick={() => setMode('sources')}
+          >
+            剧情来源
+          </button>
         </div>
         <button
           type="button"
@@ -505,7 +543,23 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           </button>
         )}
       </div>
-      {shots.length === 0 ? (
+      {mode === 'sources' ? (
+        <SourceMappingPanel
+          engine={engine}
+          boardId={id}
+          shots={shots}
+          onLocateShot={(shotId) => {
+            setMode('edit')
+            setPicked(new Set([shotId]))
+            setFocusTarget({ shotId })
+          }}
+          onLocateSource={(elementId) => {
+            engine.selection.set([elementId])
+            engine.zoomToFit([elementId])
+            onClose()
+          }}
+        />
+      ) : shots.length === 0 ? (
         <EmptyState
           icon="frames"
           title="还没有镜头"
@@ -563,6 +617,13 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                 <div
                   className={`storyboard-shot-header flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2 ${collapsed.has(s.id) ? '' : 'border-b border-line'}`}
                 >
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn-secondary ui-btn-xs"
+                    onClick={() => setStateShot(s.id)}
+                  >
+                    目的与起止状态
+                  </button>
                   <input
                     type="checkbox"
                     aria-label={`选择镜头 ${s.no}`}
@@ -689,8 +750,26 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                     />
                   </section>
                   <section aria-label="生成提示词" className="min-w-0 space-y-3">
-                    <div className="text-xs font-medium text-ink-subtle">
-                      生成提示词 · 可独立编辑
+                    <div className="flex items-center justify-between gap-2 text-xs font-medium text-ink-subtle">
+                      <span>生成提示词 · 可独立编辑</span>
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn-secondary ui-btn-xs"
+                        aria-label={`镜头 ${s.no} 工作台`}
+                        onClick={() =>
+                          useCanvas.getState().openShotWorkbench({ boardId: id, shotId: s.id })
+                        }
+                      >
+                        镜头工作台
+                      </button>
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn-quiet ui-btn-sm"
+                        aria-label={`镜头 ${s.no} 控制`}
+                        onClick={() => setControlShot(s.id)}
+                      >
+                        镜头控制
+                      </button>
                     </div>
                     <TextCell
                       value={s.imagePrompt}
@@ -753,6 +832,28 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           }}
         />
       )}
+      <Presence>
+        {stateShot && canvasId && (
+          <ShotStatePanel
+            key={stateShot}
+            engine={engine}
+            canvasId={canvasId}
+            boardId={id}
+            shotId={stateShot}
+            onClose={() => setStateShot(null)}
+          />
+        )}
+        {controlShot && canvasId && (
+          <ShotControls
+            key={controlShot}
+            engine={engine}
+            canvasId={canvasId}
+            boardId={id}
+            shotId={controlShot}
+            onClose={() => setControlShot(null)}
+          />
+        )}
+      </Presence>
     </Modal>
   )
 }

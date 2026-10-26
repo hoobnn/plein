@@ -10,6 +10,8 @@ import {
   type PleinDoc,
 } from '@plein/doc'
 import { useState, useSyncExternalStore } from 'react'
+import { useSession } from '../../stores/session'
+import { useCanvas } from '../../stores/canvas'
 
 export const reviewLabels: Record<CreativeReviewStatus, string> = {
   pending: '待审',
@@ -34,6 +36,7 @@ export function CreativeReviewForm({
   stale = false,
   defaultOpen = false,
   port,
+  isCurrent,
 }: {
   doc: PleinDoc
   node: CanvasElement
@@ -41,6 +44,7 @@ export function CreativeReviewForm({
   defaultOpen?: boolean
   /** 审片器按正在查看的输出端口记录；其他入口默认核对主输出。 */
   port?: string
+  isCurrent?(): boolean
 }) {
   const element = useSyncExternalStore(
     (notify) => doc.subscribe(notify),
@@ -68,6 +72,7 @@ export function CreativeReviewForm({
         target={target}
         review={review}
         stale={stale}
+        isCurrent={isCurrent}
         expanded={expanded[targetKey] ?? defaultOpen}
         onExpanded={(open) =>
           setExpanded((old) => (old[targetKey] === open ? old : { ...old, [targetKey]: open }))
@@ -85,6 +90,7 @@ function ReviewDraft({
   stale,
   expanded,
   onExpanded,
+  isCurrent,
 }: {
   doc: PleinDoc
   node: CanvasElement
@@ -93,7 +99,16 @@ function ReviewDraft({
   stale: boolean
   expanded: boolean
   onExpanded(open: boolean): void
+  isCurrent?(): boolean
 }) {
+  const principal = useSession((s) => s.info?.principal)
+  const currentDoc = useCanvas((s) => s.engine?.doc === doc)
+  const writable =
+    !doc.readOnly &&
+    currentDoc &&
+    !!principal &&
+    principal.role !== 'viewer' &&
+    isCurrent?.() !== false
   const [element] = useState(() => doc.elementMaps.get(node.id))
   const [note, setNote] = useState(review?.note ?? '')
   const [tags, setTags] = useState(review?.tags ?? [])
@@ -102,8 +117,15 @@ function ReviewDraft({
   const older =
     node.reviews?.filter((r) => creativeReviewKey(r.target) !== creativeReviewKey(target)) ?? []
   const save = (next: CreativeReviewStatus) => {
-    if (doc.readOnly) {
-      setError('画布已变为只读，本次验收未保存')
+    const currentPrincipal = useSession.getState().info?.principal
+    if (
+      doc.readOnly ||
+      useCanvas.getState().engine?.doc !== doc ||
+      !currentPrincipal ||
+      currentPrincipal.role === 'viewer' ||
+      isCurrent?.() === false
+    ) {
+      setError('画布已变为只读或编辑权限已变化，本次验收未保存')
       return
     }
     if (doc.ydoc.isDestroyed || !element || doc.elementMaps.get(node.id) !== element) {
@@ -134,7 +156,7 @@ function ReviewDraft({
         {stale && (
           <p className="text-warning">输入已变化；以下结论只针对旧候选，请先核对产物与新要求。</p>
         )}
-        <fieldset disabled={doc.readOnly} className="flex flex-wrap gap-x-3 gap-y-1">
+        <fieldset disabled={!writable} className="flex flex-wrap gap-x-3 gap-y-1">
           <legend className="mb-1 text-ink-muted">问题标签</legend>
           {issues.map(([value, label]) => (
             <label key={value} className="inline-flex items-center gap-1">
@@ -154,7 +176,7 @@ function ReviewDraft({
           rows={2}
           maxLength={2000}
           value={note}
-          disabled={doc.readOnly}
+          disabled={!writable}
           onChange={(e) => setNote(e.target.value)}
           placeholder="具体哪里需要调整，或为什么选这一版"
           className="ui-input w-full resize-y"
@@ -164,7 +186,7 @@ function ReviewDraft({
             <button
               type="button"
               key={value}
-              disabled={doc.readOnly}
+              disabled={!writable}
               className={`ui-btn ui-btn-xs ${value === status ? 'ui-btn-primary' : 'ui-btn-secondary'}`}
               onClick={() => save(value)}
             >
