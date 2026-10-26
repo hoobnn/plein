@@ -363,7 +363,7 @@ export function GeneratorPanel({
       )
   }
 
-  // 快捷键比按钮更早按下时，实际输入还在准备：先记下来，准备好再提交，
+  // 按钮或快捷键比实际输入备好更早触发：先记下这次生成，备好后照常提交，
   // 不能像以前那样静默丢掉这次生成。
   const pendingRun = useRef(false)
   useEffect(() => {
@@ -372,6 +372,12 @@ export function GeneratorPanel({
     pendingRun.current = false
     run()
   })
+
+  /** 输入还在准备时按下：记下来等它备好，不用让用户再点一次 */
+  const requestRun = () => {
+    if (!running && !input.data?.inputHash) pendingRun.current = true
+    run()
+  }
 
   return (
     <section
@@ -383,8 +389,7 @@ export function GeneratorPanel({
         if (e.nativeEvent.isComposing) return
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
           e.preventDefault()
-          if (!running && !input.data?.inputHash) pendingRun.current = true
-          run()
+          requestRun()
         }
       }}
     >
@@ -645,11 +650,13 @@ export function GeneratorPanel({
                 )}
                 <button
                   type="button"
-                  onClick={run}
+                  onClick={requestRun}
                   disabled={
                     canceling ||
                     awaitingAcceptance ||
-                    (!running && (!!problem || !input.data?.inputHash))
+                    (!running && !!problem) ||
+                    // 输入还在准备：按下先记下，备好后自动提交
+                    (!running && !input.loading && !input.data?.inputHash)
                   }
                   aria-busy={canceling || awaitingAcceptance}
                   title={problem ?? (running ? runLabel : withShortcut(runLabel, 'mod+enter'))}
