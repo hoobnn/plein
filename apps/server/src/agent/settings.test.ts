@@ -9,7 +9,7 @@ import type { ChatMessage, ChatTool } from '@plein/plugin-sdk'
 import type { AuthEnv } from '../auth'
 import { bootServer, request, tempDir } from '../testing'
 import { agentSessions, agentTurns, canvases, jobs } from '../storage/schema'
-import { budgetMessages, textCost } from './context-budget'
+import { budgetMessages, TEXT_BYTES, textCost } from './context-budget'
 import { discoverCodexModels } from './models'
 import { agentRoutes } from './routes'
 
@@ -230,7 +230,8 @@ describe('agent model and context management', () => {
   it('reports the exact budgeted local request and omitted complete rounds', () => {
     const reports: AgentContext[] = []
     const history: ChatMessage[] = [
-      { role: 'user', content: 'x'.repeat(131000) },
+      // 旧历史要撑破预算才会被丢掉；大小跟着预算走，不写死数字
+      { role: 'user', content: 'x'.repeat(TEXT_BYTES) },
       { role: 'assistant', content: 'previous' },
       { role: 'user', content: 'recent' },
     ]
