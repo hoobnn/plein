@@ -23,6 +23,7 @@ export const ArchiveCharacterImage = z.object({
   nodeId: z.string().min(1).max(200),
   resultId: z.string().min(1).max(200),
   assetId: z.string().regex(/^[0-9a-f]{64}$/),
+  sourceSlot: CharacterImageSlot,
   slot: CharacterImageSlot,
   expected: z.string().min(1).max(20_000),
   cover: z.boolean().default(false),

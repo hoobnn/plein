@@ -63,6 +63,7 @@ async function fixture() {
     nodeId,
     resultId: 'chosen',
     assetId: images[1]!.id,
+    sourceSlot: 'portrait',
     slot: 'portrait',
     expected: characterImageRevision(item),
     cover: true,
@@ -148,6 +149,10 @@ describe('角色候选精确归档', () => {
     updateElement(f.doc, f.nodeId, { locked: false })
     setParams(f.doc, f.nodeId, {
       characterAssetTarget: { libraryId: 'different-role', slot: 'portrait' },
+    })
+    expect((await f.archive()).status).toBe(409)
+    setParams(f.doc, f.nodeId, {
+      characterAssetTarget: { libraryId: f.item.id, slot: 'face_grid' },
     })
     expect((await f.archive()).status).toBe(409)
     setParams(f.doc, f.nodeId, { characterAssetTarget: { libraryId: f.item.id, slot: 'portrait' } })

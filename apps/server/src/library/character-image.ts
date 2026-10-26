@@ -1,11 +1,7 @@
 import { existsSync } from 'node:fs'
 import { currentResult, type PleinDoc } from '@plein/doc'
 import { normalizeLibraryImages } from '@plein/nodes'
-import {
-  CharacterImageSlot,
-  characterImageRevision,
-  type ArchiveCharacterImage,
-} from '@plein/protocol'
+import { characterImageRevision, type ArchiveCharacterImage } from '@plein/protocol'
 import type { AssetStore } from '../assets/store'
 import type { LibraryStore } from './store'
 
@@ -36,7 +32,7 @@ export function archiveCharacterImage(
     node.locked ||
     node.nodeType !== 'plein/image' ||
     target?.libraryId !== libraryId ||
-    !CharacterImageSlot.safeParse(target.slot).success ||
+    target.slot !== input.sourceSlot ||
     candidate?.id !== input.resultId ||
     candidate.value.type !== 'image' ||
     candidate.value.assetId !== input.assetId
