@@ -7,7 +7,7 @@ import { agentSessions, agentTurns, canvases } from '../storage/schema'
 import { TurnExecution } from './execution'
 import { TurnStore } from './turn-store'
 import { runBuiltinTurn } from './builtin'
-import { budgetMessages, RESULT_BYTES } from './context-budget'
+import { budgetMessages, RESULT_BYTES, TEXT_TOKENS } from './context-budget'
 import { z } from 'zod'
 
 describe('turn identity and durable facts', () => {
@@ -192,8 +192,10 @@ describe('builtin context and media', () => {
     expect(saved).toBe(8)
   })
   it('drops only complete older history and rejects oversized current exchanges', () => {
+    // 旧历史要撑破预算才会被丢掉；大小跟着预算走，不写死数字
+    const big = 'old'.repeat(TEXT_TOKENS)
     const history: ChatMessage[] = [
-      { role: 'user', content: 'old'.repeat(50000) },
+      { role: 'user', content: big },
       { role: 'assistant', content: '', toolCalls: [{ id: 'old', name: 'x', arguments: {} }] },
       { role: 'tool', toolCallId: 'old', toolName: 'x', content: 'done' },
     ]
@@ -202,7 +204,7 @@ describe('builtin context and media', () => {
     expect(result.some((m) => m.toolCallId === 'old')).toBe(false)
     expect(result.at(-1)).toEqual(current[0])
     expect(() =>
-      budgetMessages('', [], [{ role: 'user', content: '中'.repeat(30000) }], []),
+      budgetMessages('', [], [{ role: 'user', content: '中'.repeat(TEXT_TOKENS) }], []),
     ).toThrow('context_budget_exhausted')
   })
   it('sends vision images after the entire tool group and persists refs rather than base64', async () => {
