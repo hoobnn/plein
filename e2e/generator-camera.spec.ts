@@ -21,7 +21,7 @@ async function setup(page: import('@playwright/test').Page) {
   return id
 }
 
-/** 编辑器固定在卡片下方，卡片走到哪它就跟到哪 */
+/** 编辑器固定在卡片下方；左侧栏占着位置时它让开，两边都不挡着 */
 async function expectBelow(page: import('@playwright/test').Page, id: string) {
   await expect
     .poll(() =>
@@ -31,10 +31,10 @@ async function expectBelow(page: import('@playwright/test').Page, id: string) {
         const tl = engine.worldToClient(rect.x, rect.y)
         const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
         const panel = document.querySelector('[data-testid="node-editor"]')!.getBoundingClientRect()
-        return Math.max(
-          Math.abs(panel.top - br.y - 12),
-          Math.abs(panel.x + panel.width / 2 - (tl.x + br.x) / 2),
-        )
+        const centered = (tl.x + br.x - 840) / 2
+        // 面板贴着卡片下方；卡片太靠左时让开侧栏，其余时候仍居中
+        const left = centered < engine.camera.insets.left ? engine.camera.insets.left : centered
+        return Math.max(Math.abs(panel.top - br.y - 12), Math.abs(panel.x - left))
       }, id),
     )
     .toBeLessThan(1)

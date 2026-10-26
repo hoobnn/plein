@@ -219,6 +219,15 @@ export async function revealGenerator(page: Page) {
     if (!moved) break
     await page.waitForTimeout(100)
   }
+  // 等面板停稳，否则点击会落在还在移动的位置上
+  await page.waitForFunction(() => {
+    const el = document.querySelector('[data-testid="node-editor"]')
+    if (!el) return false
+    const box = el.getBoundingClientRect()
+    const last = (el as HTMLElement & { __revealTop?: number }).__revealTop
+    ;(el as HTMLElement & { __revealTop?: number }).__revealTop = box.top
+    return last === undefined || Math.abs(last - box.top) < 0.5
+  })
 }
 
 /** 右键元素，点菜单项 */

@@ -50,10 +50,10 @@ async function expectBelow(page: import('@playwright/test').Page, id: string) {
         const tl = engine.worldToClient(rect.x, rect.y)
         const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
         const panel = document.querySelector('[data-testid="node-editor"]')!.getBoundingClientRect()
-        return Math.max(
-          Math.abs(panel.top - br.y - 12),
-          Math.abs(panel.x + panel.width / 2 - (tl.x + br.x) / 2),
-        )
+        // 编辑器固定在卡片下方、固定 840px 宽；卡片太靠左时让开左侧栏
+        const centered = (tl.x + br.x - 840) / 2
+        const left = centered < engine.camera.insets.left ? engine.camera.insets.left : centered
+        return Math.max(Math.abs(panel.top - br.y - 12), Math.abs(panel.x - left))
       }, id),
     )
     .toBeLessThan(1)
