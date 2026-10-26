@@ -6,8 +6,15 @@ import {
   deleteElements,
   MAX_RESULTS,
   setParam,
+  updateElement,
 } from '@plein/doc'
-import { defaultStageScene, STAGE_TYPE, stageSnapshotsOf } from '@plein/nodes'
+import {
+  defaultStageScene,
+  recordStageKeyframe,
+  sampleStageScene,
+  STAGE_TYPE,
+  stageSnapshotsOf,
+} from '@plein/nodes'
 import * as Y from 'yjs'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { api } from '../../api/client'
@@ -58,6 +65,40 @@ function setup() {
 }
 
 describe('3D 截图保存', () => {
+  it('动态截图保存冻结的完整轨迹与时刻，等待期间的新关键帧不改写来源', async () => {
+    const { doc, id, scene, finish } = setup()
+    const start = recordStageKeyframe(scene, 0)
+    const motion = recordStageKeyframe(start, 5, {
+      ...start,
+      figures: [{ ...start.figures[0]!, x: 10 }],
+    })
+    const run = saveSnapshot(doc, id, motion, new Blob(), { resultId: 'original', time: 2.5 })
+    setParam(
+      doc,
+      id,
+      'scene',
+      recordStageKeyframe(motion, 2.5, { ...motion, figures: [{ ...motion.figures[0]!, x: -3 }] }),
+    )
+    finish()
+    const saved = await run
+    expect(saved.time).toBe(2.5)
+    expect(saved.scene).toEqual(motion)
+    expect(sampleStageScene(saved.scene, saved.time!).figures[0]!.x).toBe(5)
+    expect(stageSnapshotsOf(doc.get(id)?.params)[0]!.time).toBe(2.5)
+    doc.destroy()
+  })
+  it('截图时刻越界时不上传，上传期间锁定节点也不写入迟到结果', async () => {
+    const { doc, id, scene, finish } = setup()
+    const motion = recordStageKeyframe(scene, 0)
+    await expect(saveSnapshot(doc, id, motion, new Blob(), { time: 10 })).rejects.toThrow('时刻')
+    expect(api.upload).not.toHaveBeenCalled()
+    const run = saveSnapshot(doc, id, motion, new Blob(), { time: 0 })
+    updateElement(doc, id, { locked: true })
+    finish()
+    await expect(run).rejects.toThrow('已锁定')
+    expect(doc.get(id)?.results).toHaveLength(2)
+    doc.destroy()
+  })
   it.each(['编码', '上传'] as const)(
     '%s期间同 ID 节点被替换，旧截图不能写入新节点',
     async (phase) => {

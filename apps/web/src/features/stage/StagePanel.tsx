@@ -13,6 +13,10 @@ import {
   type StageFigure,
   type StageScene,
   stageSceneOf,
+  recordStageKeyframe,
+  sampleStageScene,
+  stageTime,
+  STAGE_KEYFRAME_LIMIT,
 } from '@plein/nodes'
 import { Menu } from '@base-ui/react/menu'
 import { useEffect, useRef, useState } from 'react'
@@ -61,18 +65,32 @@ export function StagePanel({
   useDocVersion(engine.doc)
   const notify = useCanvas((s) => s.notify)
   const closing = useClosing()
+  const [time, setTime] = useState(0)
+  const [playing, setPlaying] = useState(false)
+  const timeRef = useRef(time)
+  timeRef.current = time
+  const playingRef = useRef(playing)
+  playingRef.current = playing
   const target = useRef(engine.doc.elementMaps.get(id))
   const isTarget = () =>
     engine.doc.elementMaps.get(id) === target.current &&
     target.current?.get('nodeType') === STAGE_TYPE
   const canWrite = () => {
     const state = useCanvas.getState()
-    return !engine.doc.readOnly && isTarget() && state.engine === engine && state.stage === id
+    return (
+      !engine.doc.readOnly &&
+      !engine.doc.get(id)?.locked &&
+      !playingRef.current &&
+      isTarget() &&
+      state.engine === engine &&
+      state.stage === id
+    )
   }
-  const readOnly = engine.doc.readOnly
-  const locked = readOnly || closing
   const el = engine.doc.get(id)
-  const scene = stageSceneOf(el?.params)
+  const readOnly = engine.doc.readOnly || !!el?.locked
+  const locked = readOnly || closing || playing
+  const baseScene = stageSceneOf(el?.params)
+  const scene = sampleStageScene(baseScene, time)
   const records = stageRecordsOf(el)
   const [selected, setSelected] = useState<string | null>(scene.figures[0]?.id ?? null)
   const selectedRef = useRef(selected)
@@ -127,16 +145,38 @@ export function StagePanel({
   }, [engine])
 
   const readScene = () => stageSceneOf(engine.doc.get(id)?.params)
-  const commit = (change: (current: StageScene) => StageScene, group: string | null = null) => {
+  const commit = (
+    change: (current: StageScene) => StageScene,
+    group: string | null = null,
+    temporal = false,
+  ) => {
     if (!canWrite()) return
     // 属性编辑前先确认当前视角；确认可能同步写入新机位，随后必须重新读文档。
     view.current?.finishCamera()
     const current = readScene()
+    let next: StageScene
+    try {
+      next =
+        temporal && current.motion
+          ? recordStageKeyframe(
+              current,
+              timeRef.current,
+              change(sampleStageScene(current, timeRef.current)),
+            )
+          : change(current)
+    } catch (error) {
+      notify((error as Error).message)
+      return
+    }
     writeStageEdit(
       engine.doc,
       id,
-      () => setParam(engine.doc, id, 'scene', { ...change(current), rev: current.rev + 1 }),
-      group,
+      () => {
+        setParam(engine.doc, id, 'scene', { ...next, rev: current.rev + 1 })
+      },
+      group && temporal && current.motion
+        ? `${group}:time:${stageTime(current, timeRef.current)}`
+        : group,
       rangeGesture.current !== null,
     )
   }
@@ -147,6 +187,7 @@ export function StagePanel({
         figures: current.figures.map((f) => (f.id === fid ? { ...f, ...patch } : f)),
       }),
       continuousGroup(`figure:${fid}`, patch, ['name', 'height', 'facing']),
+      Object.keys(patch).every((key) => ['x', 'z', 'facing', 'pose'].includes(key)),
     )
   const patchBlock = (bid: string, patch: Partial<StageBlock>) =>
     commit(
@@ -160,6 +201,7 @@ export function StagePanel({
     commit(
       (current) => ({ ...current, camera: { ...current.camera, ...patch } }),
       continuousGroup('camera', patch, ['focal', 'y']),
+      true,
     )
 
   const history = (direction: 'undo' | 'redo') => {
@@ -196,6 +238,31 @@ export function StagePanel({
   useEffect(() => view.current?.setSelected(selected === CAMERA_ID ? null : selected), [selected])
   useEffect(() => view.current?.setMode(mode), [mode])
   useEffect(() => view.current?.setTool(tool), [tool])
+  const duration = baseScene.motion?.duration ?? 0
+  useEffect(() => {
+    setTime((value) => stageTime(baseScene, value))
+    if (!duration || closing) setPlaying(false)
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- 只在时长变化或面板关闭时约束本地播放头
+  }, [duration, closing])
+  useEffect(() => {
+    if (!playing || !duration) return
+    const started = performance.now() - timeRef.current * 1000
+    let frame = 0
+    const tick = (now: number) => {
+      const next = Math.min(duration, (now - started) / 1000)
+      setTime(next)
+      if (next >= duration) setPlaying(false)
+      else frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [playing, duration])
+  const seek = (value: number) => {
+    view.current?.finishCamera()
+    engine.doc.undo.stopCapturing()
+    setPlaying(false)
+    setTime(stageTime(readScene(), value))
+  }
 
   // 快捷键只作用于当前构图面板，不能穿透输入框或菜单。
   const keys = useRef<(e: KeyboardEvent) => void>(() => {})
@@ -311,9 +378,13 @@ export function StagePanel({
         resultId: node ? currentResult(node, 'image')?.id : undefined,
         element: target.current,
       }
-      v.setScene(captured)
+      const capturedTime = stageTime(captured, timeRef.current)
+      v.setScene(sampleStageScene(captured, capturedTime))
       const blob = await v.snapshot()
-      const shot = await saveSnapshot(engine.doc, id, captured, blob, baseline)
+      const shot = await saveSnapshot(engine.doc, id, captured, blob, {
+        ...baseline,
+        time: captured.motion ? capturedTime : undefined,
+      })
       report(
         shot.adopted
           ? `已截图（第 ${shot.rev} 版场景），下游连线用这张`
@@ -345,7 +416,7 @@ export function StagePanel({
                 ? '撤销当前构图操作（⌘/Ctrl Z）'
                 : '重做当前构图操作（⌘/Ctrl Shift Z）'
             }
-            disabled={!canStageHistory(engine.doc, id, direction)}
+            disabled={locked || !canStageHistory(engine.doc, id, direction)}
             onClick={() => history(direction)}
           >
             <Icon name={direction} size={16} />
@@ -453,7 +524,7 @@ export function StagePanel({
                         !record.available
                           ? '候选不可用，仅能恢复场景'
                           : record.snapshot
-                            ? `第 ${record.snapshot.rev} 版 · ${record.snapshot.scene.camera.focal}mm · ${record.snapshot.scene.aspect}，点一下让下游用这张`
+                            ? `第 ${record.snapshot.rev} 版 · ${sampleStageScene(record.snapshot.scene, record.snapshot.time ?? 0).camera.focal}mm · ${record.snapshot.scene.aspect}，点一下让下游用这张`
                             : '采用此截图（缺少构图来源，不能恢复场景）'
                       }
                       onClick={() => {
@@ -486,6 +557,8 @@ export function StagePanel({
                     <figcaption>
                       <span className="tabular-nums">
                         {record.snapshot ? `第 ${record.snapshot.rev} 版` : '来源缺失'}
+                        {record.snapshot?.time !== undefined &&
+                          ` · ${record.snapshot.time.toFixed(2)}s`}
                       </span>
                       <button
                         type="button"
@@ -498,7 +571,10 @@ export function StagePanel({
                         }
                         onClick={() => {
                           const captured = record.snapshot?.scene
-                          if (captured && canWrite()) commit(() => captured)
+                          if (captured && canWrite()) {
+                            commit(() => captured)
+                            setTime(record.snapshot?.time ?? 0)
+                          }
                         }}
                       >
                         恢复
@@ -546,11 +622,13 @@ export function StagePanel({
             )}
           </div>
           <p className="stage-overlay stage-hint">
-            {readOnly
-              ? '只读预览 · 可拖动画面查看空间，视角变化不会保存'
-              : mode === 'shot'
-                ? '拖动画面绕着看向的点转机位 · 右键平移 · 滚轮推拉 · 点人物或场景件后拖手柄摆位置'
-                : '自由视角只用来摆场景，截图总是按机位取景'}
+            {playing
+              ? '本地预演中，暂停后可以继续编辑'
+              : readOnly
+                ? '只读预览 · 可拖动画面查看空间，视角变化不会保存'
+                : mode === 'shot'
+                  ? '拖动画面绕着看向的点转机位 · 右键平移 · 滚轮推拉 · 点人物或场景件后拖手柄摆位置'
+                  : '自由视角只用来摆场景，截图总是按机位取景'}
           </p>
         </section>
 
@@ -593,6 +671,154 @@ export function StagePanel({
           </fieldset>
         </aside>
       </div>
+      <section
+        aria-label="动态预演"
+        className="flex flex-none flex-col gap-2 border-t border-line p-3"
+      >
+        {!baseScene.motion ? (
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary ui-btn-sm"
+              disabled={locked}
+              onClick={() => commit((current) => recordStageKeyframe(current, 0))}
+            >
+              启用动态预演
+            </button>
+            <p className="ui-help">记录人物站位、朝向、姿态和机位，在本机预览并按时刻截图。</p>
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary ui-btn-sm"
+                disabled={closing}
+                onClick={() => {
+                  view.current?.finishCamera()
+                  if (!playing && time >= duration) setTime(0)
+                  setMode('shot')
+                  setPlaying((value) => !value)
+                }}
+              >
+                {playing ? '暂停预演' : '播放预演'}
+              </button>
+              <label className="flex items-center gap-2 text-xs">
+                时长（秒）
+                <input
+                  aria-label="预演时长"
+                  type="number"
+                  min={1}
+                  max={60}
+                  step={0.1}
+                  className="ui-input w-20"
+                  value={duration}
+                  disabled={locked}
+                  onChange={(event) => {
+                    const value = event.currentTarget.valueAsNumber
+                    if (!Number.isFinite(value) || value < 1 || value > 60) return
+                    if (baseScene.motion!.keyframes.some((frame) => frame.time > value))
+                      return notify('请先移除超过新时长的关键帧')
+                    commit(
+                      (current) => ({
+                        ...current,
+                        motion: { ...current.motion!, duration: value },
+                      }),
+                      'motion:duration',
+                    )
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                className="ui-btn ui-btn-secondary ui-btn-sm"
+                disabled={
+                  locked ||
+                  (baseScene.motion.keyframes.length >= STAGE_KEYFRAME_LIMIT &&
+                    !baseScene.motion.keyframes.some(
+                      (frame) => frame.time === stageTime(baseScene, time),
+                    ))
+                }
+                onClick={() => commit((current) => recordStageKeyframe(current, time))}
+              >
+                记录当前关键帧
+              </button>
+              <button
+                type="button"
+                className="ui-btn ui-btn-quiet ui-btn-sm"
+                disabled={
+                  locked ||
+                  baseScene.motion.keyframes.length <= 1 ||
+                  !baseScene.motion.keyframes.some(
+                    (frame) => frame.time === stageTime(baseScene, time),
+                  )
+                }
+                onClick={() =>
+                  commit((current) => ({
+                    ...current,
+                    motion: {
+                      ...current.motion!,
+                      keyframes: current.motion!.keyframes.filter(
+                        (frame) => frame.time !== stageTime(current, time),
+                      ),
+                    },
+                  }))
+                }
+              >
+                删除当前关键帧
+              </button>
+              <button
+                type="button"
+                className="ui-btn ui-btn-quiet ui-btn-sm"
+                disabled={locked}
+                onClick={() =>
+                  commit((current) => ({ ...sampleStageScene(current, time), motion: undefined }))
+                }
+              >
+                保留当前静态构图
+              </button>
+              <span className="ui-help">
+                站位、朝向、姿态和机位更新当前时刻；人物外观和场景件保持静态。
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                aria-label="预演时间"
+                type="range"
+                className="min-w-0 flex-1"
+                min={0}
+                max={duration}
+                step={0.01}
+                value={time}
+                disabled={closing}
+                onChange={(event) => seek(event.currentTarget.valueAsNumber)}
+              />
+              <span
+                role="timer"
+                aria-live="off"
+                aria-label="当前预演时间"
+                className="w-28 text-right text-xs tabular-nums"
+              >
+                {time.toFixed(2)} / {duration.toFixed(2)} 秒
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1" aria-label="关键帧列表">
+              {baseScene.motion.keyframes.map((frame) => (
+                <button
+                  key={frame.id}
+                  type="button"
+                  className="ui-btn ui-btn-quiet ui-btn-xs tabular-nums"
+                  aria-label={`跳到 ${frame.time.toFixed(2)} 秒关键帧`}
+                  aria-pressed={stageTime(baseScene, time) === frame.time}
+                  onClick={() => seek(frame.time)}
+                >
+                  {frame.time.toFixed(2)}s
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
     </Modal>
   )
 }

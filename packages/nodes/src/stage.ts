@@ -100,25 +100,70 @@ export const StageCamera = z.object({
 })
 export type StageCamera = z.infer<typeof StageCamera>
 
+export const STAGE_KEYFRAME_LIMIT = 60
+const StageFigurePosition = StageFigure.pick({
+  id: true,
+  x: true,
+  z: true,
+  facing: true,
+  pose: true,
+})
+export const StageKeyframe = z.object({
+  id: z.string().min(1).max(64),
+  time: z.number().min(0).max(60).multipleOf(0.001),
+  camera: StageCamera,
+  figures: z
+    .array(StageFigurePosition)
+    .max(12)
+    .refine(
+      (figures) => new Set(figures.map((f) => f.id)).size === figures.length,
+      '关键帧人物不能重复',
+    ),
+})
+export type StageKeyframe = z.infer<typeof StageKeyframe>
+export const StageMotion = z
+  .object({
+    duration: z.number().min(1).max(60).multipleOf(0.001),
+    keyframes: z.array(StageKeyframe).min(1).max(STAGE_KEYFRAME_LIMIT),
+  })
+  .refine(
+    (motion) =>
+      motion.keyframes.every((frame) => frame.time <= motion.duration) &&
+      new Set(motion.keyframes.map((frame) => frame.time)).size === motion.keyframes.length &&
+      new Set(motion.keyframes.map((frame) => frame.id)).size === motion.keyframes.length,
+    '关键帧时间不能重复或超出时长',
+  )
+export type StageMotion = z.infer<typeof StageMotion>
+
 export const StageScene = z.object({
   aspect: z.enum(STAGE_ASPECTS).catch('16:9').default('16:9'),
   figures: z.array(StageFigure).max(12).default([]),
   blocks: z.array(StageBlock).max(60).default([]),
   camera: StageCamera.default(StageCamera.parse({})),
+  motion: StageMotion.optional(),
   /** 场景版本：每次在构图里改动加一，截图记下截的是哪一版 */
   rev: z.number().int().min(0).default(0),
 })
 export type StageScene = z.infer<typeof StageScene>
 
 /** 一张截图的来源：对应的结果、当时完整的场景（含机位）、场景版本与渲染版本 */
-export const StageSnapshot = z.object({
-  resultId: z.string(),
-  assetId: z.string(),
-  rev: z.number().int(),
-  render: z.number().int(),
-  scene: StageScene,
-  at: z.number(),
-})
+export const StageSnapshot = z
+  .object({
+    resultId: z.string(),
+    assetId: z.string(),
+    rev: z.number().int(),
+    render: z.number().int(),
+    scene: StageScene,
+    at: z.number(),
+    /** 动态预演的截图时刻；旧静态截图没有此字段。 */
+    time: z.number().min(0).max(60).optional(),
+  })
+  .refine(
+    (snapshot) =>
+      snapshot.time === undefined ||
+      (!!snapshot.scene.motion && snapshot.time <= snapshot.scene.motion.duration),
+    '截图时刻超出预演时长',
+  )
 export type StageSnapshot = z.infer<typeof StageSnapshot>
 
 /** 新建时的场景：一个站着的人物，正面中景机位 */
@@ -130,7 +175,81 @@ export const defaultStageScene = (): StageScene =>
 /** 读节点参数里的场景：旧数据或坏数据回退成默认场景，不抛错 */
 export function stageSceneOf(params: Record<string, unknown> | undefined): StageScene {
   const parsed = StageScene.safeParse(params?.scene)
-  return parsed.success ? parsed.data : defaultStageScene()
+  if (parsed.success) return parsed.data
+  // 损坏的新增轨迹不应抹掉仍可读取的旧静态场景。
+  const raw = params?.scene
+  if (raw && typeof raw === 'object' && 'motion' in raw) {
+    const fallback = StageScene.safeParse({ ...raw, motion: undefined })
+    if (fallback.success) return fallback.data
+  }
+  return defaultStageScene()
+}
+
+export function stageTime(scene: StageScene, time: number) {
+  return (
+    Math.round(
+      Math.max(0, Math.min(scene.motion?.duration ?? 0, Number.isFinite(time) ? time : 0)) * 1000,
+    ) / 1000
+  )
+}
+
+/** 纯采样，不写文档、不增加版本或触发生成；对象外观与场景件仍由基础场景管理。 */
+export function sampleStageScene(scene: StageScene, time: number): StageScene {
+  if (!scene.motion) return scene
+  const frames = [...scene.motion.keyframes].sort((a, b) => a.time - b.time)
+  const t = stageTime(scene, time)
+  const left = [...frames].reverse().find((frame) => frame.time <= t) ?? frames[0]!
+  const right = frames.find((frame) => frame.time > t) ?? left
+  const amount =
+    left === right ? 0 : Math.max(0, Math.min(1, (t - left.time) / (right.time - left.time)))
+  const lerp = (a: number, b: number) => a + (b - a) * amount
+  const camera = { ...left.camera }
+  for (const key of Object.keys(camera) as (keyof StageCamera)[])
+    camera[key] = lerp(left.camera[key], right.camera[key])
+  return {
+    ...scene,
+    camera,
+    figures: scene.figures.map((figure) => {
+      const a = left.figures.find((value) => value.id === figure.id) ?? figure
+      const b = right.figures.find((value) => value.id === figure.id) ?? figure
+      const turn = ((((b.facing - a.facing + 540) % 360) + 360) % 360) - 180
+      const facing = ((((a.facing + turn * amount + 180) % 360) + 360) % 360) - 180
+      return { ...figure, x: lerp(a.x, b.x), z: lerp(a.z, b.z), facing, pose: a.pose }
+    }),
+  }
+}
+
+/** 只替换当前时刻，其他关键帧保持不变。 */
+export function recordStageKeyframe(
+  scene: StageScene,
+  time: number,
+  pose = sampleStageScene(scene, time),
+): StageScene {
+  const duration = scene.motion?.duration ?? 5
+  const at =
+    Math.round(Math.max(0, Math.min(duration, Number.isFinite(time) ? time : 0)) * 1000) / 1000
+  const old = scene.motion?.keyframes ?? []
+  const found = old.find((frame) => frame.time === at)
+  if (!found && old.length >= STAGE_KEYFRAME_LIMIT) throw new Error('最多保存 60 个关键帧')
+  const stem = `key-${Math.round(at * 1000)}`
+  let frameId = found?.id ?? stem
+  if (!found)
+    for (let n = 2; old.some((frame) => frame.id === frameId); n++) frameId = `${stem}-${n}`
+  const frame: StageKeyframe = {
+    id: frameId,
+    time: at,
+    camera: { ...pose.camera },
+    figures: pose.figures.map(({ id, x, z, facing, pose }) => ({ id, x, z, facing, pose })),
+  }
+  return StageScene.parse({
+    ...scene,
+    motion: {
+      duration,
+      keyframes: [...old.filter((value) => value.time !== at), frame].sort(
+        (a, b) => a.time - b.time,
+      ),
+    },
+  })
 }
 
 export function stageSnapshotsOf(params: Record<string, unknown> | undefined): StageSnapshot[] {
@@ -177,7 +296,7 @@ export const stageNode = defineNode({
   type: STAGE_TYPE,
   version: 1,
   title: '3D 构图',
-  description: '摆人物占位、姿态和机位，截一张灰模构图图作为参考图（实验）',
+  description: '摆人物、姿态和机位，记录关键帧预演人物与运镜，按时刻截图作参考（实验）',
   category: 'story',
   inputs: [],
   outputs: [{ id: 'image', label: '构图', type: 'image' }],
