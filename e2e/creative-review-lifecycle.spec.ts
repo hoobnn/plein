@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { clickElement, newProject } from './canvas'
+import { clickElement, newProject, revealGenerator } from './canvas'
 
 type Engine = import('../packages/canvas-core/src/engine').Engine
 async function setup(page: Page) {
@@ -36,9 +36,10 @@ async function setup(page: Page) {
     return id
   })
   await clickElement(page, id)
-  const expand = page.getByRole('button', { name: '编辑生成图片', exact: true })
-  if (await expand.isVisible()) await expand.click()
-  await page.getByRole('button', { name: '全屏查看', exact: true }).click()
+  // 编辑器固定 840px 宽，窄窗口里右边的操作在窗口外：先把它移进来
+  const full = page.getByRole('button', { name: '全屏查看', exact: true })
+  await revealGenerator(page, full)
+  await full.click()
   const viewer = page.getByRole('dialog', { name: '查看「验收绑定」', exact: true })
   const form = viewer.locator(`[data-review-node="${id}"]`)
   await form.locator('summary').first().click()
@@ -50,8 +51,9 @@ async function setup(page: Page) {
 
 for (const mode of ['readonly', 'replacement', 'rendered'] as const) {
   test(`创作验收 ${mode} 不保存失效草稿，恢复后可以重新记录`, async ({ page }) => {
-    if (mode === 'rendered') await page.setViewportSize({ width: 390, height: 640 })
+    // 窄窗口要在审片面板打开之后再看：编辑器固定 840px 宽，390px 里点不到它右边的操作
     const f = await setup(page)
+    if (mode === 'rendered') await page.setViewportSize({ width: 390, height: 640 })
     const button = f.form.getByRole('button', { name: '保存为可用', exact: true })
     await button.evaluate(
       (button, { id, mode }) => {

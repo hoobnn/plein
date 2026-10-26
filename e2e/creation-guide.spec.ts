@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { addNode, newProject, waitEngine, waitNode } from './canvas'
+import { addNode, newProject, showStoryboardCards, waitEngine, waitNode } from './canvas'
 
 const canvasId = (page: Page) => decodeURIComponent(page.url().split('#/c/')[1]!.split('?')[0]!)
 const guide = (page: Page) => page.getByTestId('creation-guide')
@@ -101,6 +101,8 @@ test('明确核对当前分镜后改计划，持续引导立即回到待检查',
   await expect(stage(page, 'storyboard')).toHaveAttribute('data-guide-state', 'done')
   await stage(page, 'storyboard').getByRole('button').click()
   const editor = page.getByRole('dialog', { name: '分镜表', exact: true })
+  // 逐镜头字段在详细卡片视图上
+  await showStoryboardCards(editor)
   await editor.getByLabel('画面', { exact: true }).first().fill('协作修改后的新画面')
   await editor.getByLabel('运动提示词', { exact: true }).first().click()
   await page.keyboard.press('Escape')

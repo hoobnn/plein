@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { newProject, waitNode } from './canvas'
+import { newProject, showStoryboardCards, waitNode } from './canvas'
 
 const guide = (page: Page) => page.getByTestId('creation-guide')
 const stage = (page: Page, id: string) => guide(page).locator(`[data-guide-step="${id}"]`)
@@ -80,6 +80,8 @@ test('已选试做镜头真实删除后等待重新选择，撤销重做和候�
   const f = await trial(page)
   await stage(page, 'storyboard').getByRole('button').click()
   const editor = page.getByRole('dialog', { name: '分镜表', exact: true })
+  // 逐镜头字段在详细卡片视图上
+  await showStoryboardCards(editor)
   await editor.getByRole('button', { name: '删除镜头 2', exact: true }).click()
   await page
     .getByRole('dialog', { name: '删除镜头 02？', exact: true })

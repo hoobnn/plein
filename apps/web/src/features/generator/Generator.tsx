@@ -116,13 +116,8 @@ function NodeBelow({
     const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
     const width = 840
     const top = br.y + 12
-    const centered = (tl.x + br.x - width) / 2
-    // 编辑器固定在卡片下方、宽度固定；左侧栏占着位置时它会盖住元素树，
-    // 这时把它收进栏右侧的可见画布，两边都不挡着。
-    const minLeft = engine.camera.insets.left
-    const left = centered < minLeft ? minLeft : centered
     return {
-      left,
+      left: (tl.x + br.x - width) / 2,
       top,
       width,
       maxHeight: 480,

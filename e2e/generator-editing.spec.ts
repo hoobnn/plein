@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { clickElement, revealGenerator, newProject } from './canvas'
+import { clickElement, newProject, revealGenerator } from './canvas'
 
 test('正在编辑长正文时平移与窗口缩小不收起输入框，选区和正文保持', async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 560 })
@@ -65,7 +65,10 @@ test('正在编辑长正文时平移与窗口缩小不收起输入框，选区�
   // 编辑器与卡片一起移出视口时，先把画布移回来，再点击关闭。
   await page.setViewportSize({ width: 1000, height: 560 })
   await revealGenerator(page)
-  await page.getByRole('button', { name: '关闭节点编辑器', exact: true }).click()
+  // 编辑器固定 840px 宽，窄窗口里右边的关闭按钮在窗口外：先把它移进来
+  const close = page.getByRole('button', { name: '关闭节点编辑器', exact: true })
+  await revealGenerator(page, close)
+  await close.click()
   await clickElement(page, id)
   await revealGenerator(page)
   await expect(prompt).toHaveValue(text)
@@ -128,7 +131,10 @@ test('角色名称草稿在平移时不失焦或提前提交，关闭编辑器�
   expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, id)).toBe(
     '原角色名称',
   )
-  await page.getByRole('button', { name: '关闭节点编辑器', exact: true }).click()
+  // 编辑器固定 840px 宽，窄窗口里右边的关闭按钮在窗口外：先把它移进来
+  const close = page.getByRole('button', { name: '关闭节点编辑器', exact: true })
+  await revealGenerator(page, close)
+  await close.click()
   await expect(panel).toHaveCount(0)
   await expect
     .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.name, id))

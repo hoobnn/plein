@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { expect, test } from '@playwright/test'
-import { newProject, waitNode, zoomTo } from './canvas'
+import { newProject, revealGenerator, waitNode, zoomTo } from './canvas'
 import { solidPng } from '../packages/providers/src/mock/media'
 
 for (const size of ['160x90', '90x160']) {
@@ -275,6 +275,8 @@ test('从同一参考图连续套用预设，最终横屏尺寸避让并用正�
   await page.getByRole('treeitem', { name: '角色三视图 定位到画布', exact: true }).click()
   const first = nodes.find((el) => el.name === '角色三视图')!
   const generator = page.getByTestId('generator')
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
   await generator
     .getByRole('textbox', { name: '提示词', exact: true })
     .fill('基于参考角色生成正面、侧面和背面三视图')

@@ -99,7 +99,12 @@ test('角色卡上传参考图，@ 引用后换参考图，镜头图标为过期
   await page.mouse.click(p.x, p.y)
   await revealGenerator(page)
   const again = page.waitForEvent('filechooser')
-  await page.getByTestId('generator').getByRole('button', { name: '上传参考', exact: true }).click()
+  // 编辑器固定 840px 宽，这个按钮可能在侧栏下面：先把它平移进窗口
+  const upload = page
+    .getByTestId('generator')
+    .getByRole('button', { name: '上传参考', exact: true })
+  await revealGenerator(page, upload)
+  await upload.click()
   await page
     .getByRole('dialog', { name: '上传参考', exact: true })
     .getByRole('button', { name: '参考图', exact: true })

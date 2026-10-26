@@ -234,7 +234,36 @@ export async function revealGenerator(page: Page, target?: Locator) {
     ;(el as HTMLElement & { __revealTop?: number }).__revealTop = box.top
     return last === undefined || Math.abs(last - box.top) < 0.5
   })
-  if (target) await target.scrollIntoViewIfNeeded()
+  if (target) {
+    await target.scrollIntoViewIfNeeded()
+    // 面板比窗口还宽时，目标可能在窗口外：把它平移进来
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const moved = await target.evaluate((el) => {
+        const box = el.getBoundingClientRect()
+        const engine = window.__plein.engine as Window['__plein']['engine'] & {
+          camera: { panBy(x: number, y: number): void }
+        }
+        // 目标要躲开左侧栏和窗口边
+        const inset = window.__plein.engine.camera.insets.left
+        const dx =
+          box.left < inset
+            ? inset - box.left
+            : box.right > innerWidth - 12
+              ? innerWidth - 12 - box.right
+              : 0
+        const dy =
+          box.top < 12
+            ? 12 - box.top
+            : box.bottom > innerHeight - 12
+              ? innerHeight - 12 - box.bottom
+              : 0
+        if (dx || dy) engine.camera.panBy(dx, dy)
+        return dx !== 0 || dy !== 0
+      })
+      if (!moved) break
+      await page.waitForTimeout(100)
+    }
+  }
 }
 
 /** 右键元素，点菜单项 */
