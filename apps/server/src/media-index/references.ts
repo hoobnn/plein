@@ -5,7 +5,12 @@ import {
   sequenceSegmentAssets,
   type PleinDoc,
 } from '@plein/doc'
-import { SHOT_ANALYSIS_TYPE, shotAnalysisAssets } from '@plein/nodes'
+import {
+  SHOT_ANALYSIS_TYPE,
+  shotAnalysisAssets,
+  isAiAnalysisType,
+  aiAnalysisAssets,
+} from '@plein/nodes'
 import * as Y from 'yjs'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
@@ -70,6 +75,9 @@ export function documentReferences(doc: PleinDoc): AssetReference[] {
       else if (el.nodeType === SHOT_ANALYSIS_TYPE && r.value.type === 'json')
         for (const assetId of shotAnalysisAssets(r.value.value))
           add(assetId, `result/${r.id}/analysis/${assetId}`, r.id, adopted.has(r.id), true)
+      else if (isAiAnalysisType(el.nodeType) && r.value.type === 'json')
+        for (const assetId of aiAnalysisAssets(r.value.value))
+          add(assetId, `result/${r.id}/ai-analysis/${assetId}`, r.id, adopted.has(r.id), true)
     }
     for (const delivery of el.deliveries ?? [])
       add(
@@ -80,6 +88,9 @@ export function documentReferences(doc: PleinDoc): AssetReference[] {
         true,
       )
     stringReferences(el.params, (id, path) => add(id, `params${path}`, null, false, false))
+    if (el.kind === 'markdown')
+      for (const assetId of aiAnalysisAssets(el.params?.aiDraftOrigin))
+        add(assetId, `ai-draft-origin/${assetId}`, null, true, true)
   }
   return out
 }

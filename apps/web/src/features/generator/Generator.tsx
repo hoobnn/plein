@@ -12,6 +12,8 @@ import {
   SHOT_ANALYSIS_TYPE,
   type VideoMode,
 } from '@plein/nodes'
+import { isAiAnalysisType } from '@plein/nodes'
+import { AiAnalysisEntry } from '../ai-shot-analysis/AiAnalysisEditor'
 import type { Catalog } from '@plein/protocol'
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { useEngineVersion, useFollow } from '../../canvas/hooks'
@@ -87,6 +89,7 @@ function GeneratorHost({ engine }: { engine: Engine }) {
   const ids = engine.selection.values()
   const el = ids.length === 1 ? engine.scene.get(ids[0]!) : undefined
   const node = el?.kind === 'node' ? findNode(catalog, el.nodeType) : undefined
+  if (el && node && isAiAnalysisType(node.type)) return <AiAnalysisEntry engine={engine} el={el} />
   if (!el || !node || el.locked || engine.doc.readOnly) return null
   return <NodeGenerator key={el.id} engine={engine} el={el} node={node} catalog={catalog} />
 }

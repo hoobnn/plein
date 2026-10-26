@@ -83,6 +83,20 @@ export class JobStore {
     )
   }
 
+  unsettledForType(canvasId: string, nodeType: string): JobRow[] {
+    return this.db
+      .select()
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.canvas_id, canvasId),
+          eq(jobs.node_type, nodeType),
+          inArray(jobs.status, ['queued', 'running', 'failed', 'canceled']),
+        ),
+      )
+      .all()
+  }
+
   update(id: string, patch: JobPatch) {
     if (Object.keys(patch).length === 0) return
     // 显式传 undefined 的字段写成 NULL（与改用 Drizzle 前一致）

@@ -1,6 +1,7 @@
 import type { ArrangeResult, CanvasMenuEvent, Engine, EngineState } from '@plein/canvas-core'
 import { create } from 'zustand'
 import { cancelViewTransition, slideView } from '../ui/viewTransition'
+import type { AiAnalysisTarget } from '../features/ai-shot-analysis/AiAnalysisEditor'
 
 /**
  * 画布文档的同步状态：
@@ -50,6 +51,7 @@ interface CanvasStore extends EngineState {
   /** 打开编辑器的 3D 构图节点 */
   stage: string | null
   shotAnalysis: string | null
+  aiAnalysis: AiAnalysisTarget | null
   /** 全屏查看的图片 / 视频 */
   viewer: {
     assetId?: string
@@ -84,6 +86,7 @@ interface CanvasStore extends EngineState {
   consumeSequenceFocus(requestId: number): void
   openStage(id: string | null): void
   openShotAnalysis(id: string | null): void
+  openAiAnalysis(target: AiAnalysisTarget | null): void
   view(v: CanvasStore['viewer']): void
   toggleShortcuts(open?: boolean): void
   setArranged(r: ArrangeResult | null): void
@@ -124,6 +127,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
   sequenceFocus: null,
   stage: null,
   shotAnalysis: null,
+  aiAnalysis: null,
   viewer: null,
   shortcuts: false,
   arranged: null,
@@ -160,6 +164,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
         sequenceFocus: null,
         stage: null,
         shotAnalysis: null,
+        aiAnalysis: null,
         viewer: null,
         arranged: null,
         history: false,
@@ -196,6 +201,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
   },
   openStage: (stage) => set({ stage }),
   openShotAnalysis: (shotAnalysis) => set({ shotAnalysis }),
+  openAiAnalysis: (aiAnalysis) => set({ aiAnalysis }),
   view: (viewer) => set({ viewer }),
   toggleShortcuts: (open) => set((s) => ({ shortcuts: open ?? !s.shortcuts })),
   setArranged: (arranged) => set({ arranged }),

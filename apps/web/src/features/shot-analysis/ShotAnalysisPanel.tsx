@@ -208,6 +208,19 @@ export function ShotAnalysisPanel({
           </div>
         )}
         {report ? (
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary mb-4"
+            onClick={() =>
+              useCanvas
+                .getState()
+                .openAiAnalysis({ kind: 'local', nodeId: id, resultId: report.result.id })
+            }
+          >
+            可选 AI 分析与分镜草稿（默认关闭）
+          </button>
+        ) : null}
+        {report ? (
           <Report
             key={report.result.id}
             engine={engine}

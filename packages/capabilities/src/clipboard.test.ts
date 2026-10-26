@@ -11,6 +11,7 @@ import {
 } from '@plein/nodes'
 import { describe, expect, it } from 'vite-plus/test'
 import { referenceClipboard } from './clipboard'
+import { aiFixture } from '../../nodes/src/aiShotAnalysis.fixture'
 
 const source = () => {
   const doc = openDoc()
@@ -114,6 +115,53 @@ describe('画布复制中的引用映射', () => {
     expect(next.subtitleTrack!.unmappedCues).toEqual(track.unmappedCues)
     expect(next.subtitleTrack!.legacyTrack).toEqual(track.legacyTrack)
     expect(subtitleTrackStale(next, arrangeSequence(next, {}))).toBe(false)
+    doc.destroy()
+    target.destroy()
+  })
+  it('同名@别名冲突不能重写已固定AI请求、归纳候选或模型Markdown出处全文', () => {
+    const doc = openDoc(),
+      target = openDoc()
+    const role = createElement(doc, node({ name: '林夏', nodeType: 'plein/character' }))
+    createElement(target, node({ name: '林夏', nodeType: 'plein/character' }))
+    const draft = aiFixture()
+    draft.value.draft.description = '@林夏 原始模型文字'
+    draft.value.request.focus = '@林夏 仅作为数据'
+    const origin = { version: 1, kind: 'ai-shot-draft-origin', drafts: [draft] }
+    const summary = { id: 'summary', modelRef: 'mock:text', focus: '@林夏', drafts: [draft] }
+    const sceneNode = createElement(
+      doc,
+      node({
+        nodeType: 'plein/shot-scene-draft',
+        params: { model: 'mock:vision', request: draft.value.request },
+      }),
+    )
+    const summaryNode = createElement(
+      doc,
+      node({
+        nodeType: 'plein/shot-summary-draft',
+        params: { model: 'mock:text', request: summary },
+      }),
+    )
+    const sourceNode = createElement(doc, {
+      kind: 'markdown',
+      x: 0,
+      y: 0,
+      w: 200,
+      h: 100,
+      text: '模型分析草稿 @林夏',
+      params: { aiDraftOrigin: origin },
+    })
+    const editable = createElement(doc, node({ params: { prompt: '@林夏 原有引用' } }))
+    const pasted = referenceClipboard.paste(
+      target,
+      referenceClipboard.copy(doc, [role, sceneNode, summaryNode, sourceNode, editable]),
+    )
+    expect(target.get(pasted[1]!)!.params?.request).toEqual(draft.value.request)
+    expect(target.get(pasted[2]!)!.params?.request).toEqual(summary)
+    expect(target.get(pasted[3]!)!.params?.aiDraftOrigin).toEqual(origin)
+    expect(target.get(pasted[3]!)!.text).toBe('模型分析草稿 @林夏')
+    expect(target.get(pasted[4]!)!.params?.prompt).not.toBe('@林夏 原有引用')
+    expect(resolved(target, target.get(pasted[4]!)!.params!.prompt as string)).toBe(pasted[0])
     doc.destroy()
     target.destroy()
   })

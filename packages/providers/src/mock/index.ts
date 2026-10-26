@@ -241,6 +241,39 @@ function fakeOutputs(req: ProviderRequest): ProviderOutput[] {
       const text = lastUserText(input)
       if (input.jsonSchema && 'shots' in ((input.jsonSchema.properties as object) ?? {}))
         return [{ type: 'json', value: mockStoryboard(text) }]
+      if (input.jsonSchema) {
+        let data:
+          | { task?: string; sampledScope?: { scene?: { id?: string } }; drafts?: unknown[] }
+          | undefined
+        try {
+          data = JSON.parse(text)
+        } catch {
+          /* other mock text contracts continue below */
+        }
+        if (data?.task === 'scene-draft')
+          return [
+            {
+              type: 'json',
+              value: {
+                description: `【mock 模型草稿】${data.sampledScope?.scene?.id ?? '镜头'} 的单张采样描述`,
+                visualDraft: ['仅为本地模拟文字，不代表真实模型质量'],
+                inferences: ['叙事关系尚未核实'],
+                unknowns: ['声音未知', '完整运动未知'],
+              },
+            },
+          ]
+        if (data?.task === 'scene-summary')
+          return [
+            {
+              type: 'json',
+              value: {
+                summary: `【mock 模型归纳】仅依据所选 ${data.drafts?.length ?? 0} 份文字草稿`,
+                inferences: [],
+                unknowns: ['未选镜头未知', '未读取声音与完整视频'],
+              },
+            },
+          ]
+      }
       if (input.jsonSchema) return [{ type: 'json', value: { echo: text } }]
       // 角色与场景抽取：按模板要的 Markdown 结构回一份固定设定，让「生成设定卡」能跑通
       if (/^##\s*角色/m.test(text) && /^##\s*场景/m.test(text))

@@ -19,3 +19,4 @@ export * from './stage'
 
 export * from './imageProcess'
 export * from './shotAnalysis'
+export * from './aiShotAnalysis'

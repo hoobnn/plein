@@ -15,6 +15,10 @@ import {
   type MentionTarget,
   profileOf,
   sortMentionTargets,
+  isAiAnalysisType,
+  AiSceneRequest,
+  AiSummaryRequest,
+  AiDraftOrigin,
 } from '@plein/nodes'
 
 const KEY = 'plein/mentions'
@@ -126,6 +130,13 @@ function patch(
   // doc's typed copier already remaps instance/edge/audio/scope IDs and the key.
   // Rendered subtitle text and fixed generation origins are literal evidence, not @ prompts.
   if (el.nodeType === 'plein/sequence' && el.params?.instanceVersion === 2) return
+  if (
+    (isAiAnalysisType(el.nodeType) &&
+      (AiSceneRequest.safeParse(el.params?.request).success ||
+        AiSummaryRequest.safeParse(el.params?.request).success)) ||
+    (el.kind === 'markdown' && AiDraftOrigin.safeParse(el.params?.aiDraftOrigin).success)
+  )
+    return
   if (el.params) {
     const rewritten = rewriteValue(el.params, text) as Record<string, unknown>
     const next = ids ? remapParams(rewritten, ids) : rewritten

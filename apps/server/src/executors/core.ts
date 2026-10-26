@@ -38,6 +38,7 @@ import { z } from 'zod'
 import { mediaCaps, missingCapability, withMediaAbort } from '../assets/media'
 import { animaticExecutor } from './animatic'
 import { shotAnalysisExecutor } from './shot-analysis'
+import { aiSceneExecutor, aiSummaryExecutor } from './ai-shot-analysis'
 import { sfx, transcription, speechDirection, speechVoice } from './audio'
 
 /** 节点选的模型：不替用户挑，没选就报错 */
@@ -422,5 +423,7 @@ export const coreServerPlugin = defineServerPlugin(corePlugin, {
     animaticExecutor,
     stage,
     shotAnalysisExecutor,
+    aiSceneExecutor,
+    aiSummaryExecutor,
   ],
 })

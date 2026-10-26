@@ -3,6 +3,8 @@ import {
   imageProcessParams,
   videoModeProblem,
   type VideoMode,
+  isAiAnalysisType,
+  AI_ANALYSIS_LIMITS,
   SEQUENCE_TYPE,
   sequenceNode,
   corePlugin,
@@ -11,6 +13,7 @@ import { withMediaAbort } from '../assets/media'
 import type { AssetRef, MediaInfo } from '@plein/plugin-sdk'
 import type { StoryboardAudioSource } from '@plein/protocol'
 import { shotSegmentMapping } from '@plein/capabilities'
+import { aiAnalysisProblem, aiAnalysisUnit } from './ai-analysis'
 import { speechDirection, speechVoice } from '../executors/audio'
 import { modelOptionsProblem } from './model-options'
 import {
@@ -695,6 +698,34 @@ export class NodeRuns implements BatchHost {
     return this.rooms.withDoc(canvasId, (doc) => {
       const el = doc.get(nodeId)
       if (el?.kind !== 'node' || !el.nodeType) throw new NodeRunError('not_found', '节点不存在')
+      if (isAiAnalysisType(el.nodeType)) {
+        if (!expect?.inputHash)
+          throw new NodeRunError('review_required', 'AI 拉片必须重新预检并明确确认实际输入')
+        if (this.store.countForNode(canvasId, nodeId) >= AI_ANALYSIS_LIMITS.jobsPerNode)
+          throw new NodeRunError(
+            'analysis_retry_limit',
+            '此分析单元已有两次作业，请保留记录并明确建立新分析版本',
+          )
+        const unit = aiAnalysisUnit(el.nodeType, el.params)
+        if (unit)
+          for (const row of this.store.unsettledForType(canvasId, el.nodeType)) {
+            if (row.node_id === nodeId) continue
+            const original = parseFrozen(row.frozen)?.params ?? doc.get(row.node_id)?.params
+            if (aiAnalysisUnit(el.nodeType, original) !== unit) continue
+            const recovery = this.jobInfo(row, doc).recovery
+            if (
+              row.status === 'running' ||
+              row.status === 'queued' ||
+              (recovery &&
+                !recovery.dismissed &&
+                ['submit_unknown', 'remote_pending', 'fetch_failed'].includes(recovery.state))
+            )
+              throw new NodeRunError(
+                'recovery_required',
+                '同一采样或归纳单元的原作业尚待核查或取回，不能通过新节点绕过',
+              )
+          }
+      }
       const previous = this.store.latestForNodes(canvasId, [nodeId])[0]
       const recovery = previous && this.jobInfo(previous, doc).recovery
       if (
@@ -764,7 +795,17 @@ export class NodeRuns implements BatchHost {
       if (el?.kind !== 'node' || !el.nodeType) throw new NodeRunError('not_found', '节点不存在')
       const input = (await this.inspect(doc, el, ownerId, new AbortController().signal, canvasId))
         .input
-      return input
+      return isAiAnalysisType(el.nodeType) &&
+        this.store.countForNode(canvasId, nodeId) >= AI_ANALYSIS_LIMITS.jobsPerNode
+        ? {
+            ...input,
+            status: 'blocked',
+            blocked: [
+              ...input.blocked,
+              { code: 'prepare_failed', message: '此分析单元已有两次作业，请明确建立新版本' },
+            ],
+          }
+        : input
     } finally {
       doc.destroy()
       lease.release()
@@ -1803,7 +1844,7 @@ export class NodeRuns implements BatchHost {
               err,
               a.held === 'canceled' ? { canceledBy: 'user' } : undefined,
             )
-          const delay = this.retryDelays[attempts - 1]
+          const delay = isAiAnalysisType(el.nodeType) ? undefined : this.retryDelays[attempts - 1]
           if (!retryable(err) || delay === undefined) return this.finish(doc, a, 'failed', err)
           const now = Date.now()
           if (own)
@@ -1854,12 +1895,23 @@ export class NodeRuns implements BatchHost {
       throw reviewError('旧序列任务缺少冻结输入，不能从当前序列猜测原版本')
     // Local job executors have no provider journal; their frozen inputs still define recovery.
     const frozenLocalJob = def?.execution === 'job' && !def.capability
+    const frozenAiRecovery =
+      isAiAnalysisType(el.nodeType) &&
+      (JSON.parse(row?.call_history || '[]') as Array<{ kind: string }>).some(
+        (event) => event.kind === 'manual_resubmit',
+      )
     const frozenSequenceRecovery =
       !!parseExpect(row?.expect)?.sequenceScope &&
       (JSON.parse(row?.call_history || '[]') as Array<{ kind: string }>).some(
         (event) => event.kind === 'manual_resubmit',
       )
-    if (!frozen || (!parseCalls(row?.calls).length && !frozenLocalJob && !frozenSequenceRecovery)) {
+    if (
+      !frozen ||
+      (!parseCalls(row?.calls).length &&
+        !frozenLocalJob &&
+        !frozenAiRecovery &&
+        !frozenSequenceRecovery)
+    ) {
       const prepared = await this.prepare(doc, el, a.ownerId, signal, a.canvasId)
       // 实际输入随任务存下来：降级、舍弃的参考图和所用模型以后查得到
       const input = this.summarize(el, prepared)
@@ -2132,6 +2184,15 @@ export class NodeRuns implements BatchHost {
         ?.def.models.find((m) => m.id === modelRef.model)
     const limits = spec?.limits
     const effective = this.latestParams(el, { def, params, inputs }) ?? {}
+    const analysisProblem = aiAnalysisProblem(
+      this.host,
+      ownerId,
+      el.nodeType!,
+      effective,
+      doc,
+      canvasId,
+    )
+    if (analysisProblem) blocked.push({ code: 'prepare_failed', message: analysisProblem })
     const options = effective.options
     const selectedOptions =
       options && typeof options === 'object' && !Array.isArray(options)

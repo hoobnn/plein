@@ -26,7 +26,16 @@ import {
   type NodeResult,
   type NodeRun,
 } from '@plein/doc'
-import { normalizeLibraryImages, SHOT_ANALYSIS_TYPE, shotAnalysisAssets } from '@plein/nodes'
+import {
+  normalizeLibraryImages,
+  SHOT_ANALYSIS_TYPE,
+  shotAnalysisAssets,
+  isAiAnalysisType,
+  aiAnalysisAssets,
+  AiDraftOrigin,
+  AiSceneRequest,
+  AiSummaryRequest,
+} from '@plein/nodes'
 import { parseModelRef } from '@plein/plugin-sdk'
 import {
   type Asset,
@@ -240,6 +249,9 @@ async function planExport(
           if (el.assetId) refAsset(el.assetId, where, true)
           for (const assetId of sequenceSegmentAssets(el))
             refAsset(assetId, `${where} / 固定剪辑素材`, true)
+          if (el.kind === 'markdown')
+            for (const assetId of aiAnalysisAssets(el.params?.aiDraftOrigin))
+              refAsset(assetId, where, true)
           for (const assetId of continuityAssets(el.production?.continuity))
             refAsset(assetId, `${where} / 历史观察证据`, true)
           for (const subject of el.production?.continuity?.subjects ?? [])
@@ -256,6 +268,9 @@ async function planExport(
               if ('assetId' in r.value) refAsset(r.value.assetId, where, true)
               else if (el.nodeType === SHOT_ANALYSIS_TYPE && r.value.type === 'json')
                 for (const assetId of shotAnalysisAssets(r.value.value))
+                  refAsset(assetId, where, true)
+              else if (isAiAnalysisType(el.nodeType) && r.value.type === 'json')
+                for (const assetId of aiAnalysisAssets(r.value.value))
                   refAsset(assetId, where, true)
             }
           }
@@ -997,6 +1012,16 @@ export function remapDoc(data: Uint8Array, map: ReadonlyMap<string, string>): Ui
               }
               if (['legacySourceSettings', 'subtitleTrack'].includes(k)) continue
             }
+            // Captured model evidence stays at its original scope; imports require a new expect.
+            if (
+              (m.get('kind') === 'markdown' &&
+                k === 'aiDraftOrigin' &&
+                AiDraftOrigin.safeParse(v).success) ||
+              (isAiAnalysisType(m.get('nodeType') as string) &&
+                k === 'request' &&
+                (AiSceneRequest.safeParse(v).success || AiSummaryRequest.safeParse(v).success))
+            )
+              continue
             const next = remapValue(v, map)
             if (next !== v) params.set(k, next)
           }
