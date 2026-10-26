@@ -8,6 +8,7 @@ import {
   revealGenerator,
   confirmBatchChecklist,
   newProject,
+  openStoryboardActions,
   waitEngine,
   waitNode,
 } from './canvas'
@@ -88,6 +89,7 @@ async function openStoryboard(page: Page, id: string) {
     .click()
   const dialog = page.getByRole('dialog', { name: '分镜表', exact: true })
   await expect(dialog).toBeVisible()
+  await openStoryboardActions(dialog)
   return dialog
 }
 

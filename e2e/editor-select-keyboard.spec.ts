@@ -39,7 +39,8 @@ for (const kind of ['storyboard', 'sequence'] as const) {
       })
       if (kind === 'sequence')
         await editor.getByRole('button', { name: '成片', exact: true }).click()
-      const label = kind === 'storyboard' ? '景别' : '转场'
+      // 表格视图的景别下拉按镜头编号命名
+      const label = kind === 'storyboard' ? '镜头 1 景别' : '转场'
       const trigger = editor.getByRole('combobox', { name: label, exact: true })
       const list = page.getByRole('listbox')
       const initial = await trigger.innerText()
