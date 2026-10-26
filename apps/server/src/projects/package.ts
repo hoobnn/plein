@@ -26,7 +26,7 @@ import {
   type NodeResult,
   type NodeRun,
 } from '@plein/doc'
-import { normalizeLibraryImages } from '@plein/nodes'
+import { normalizeLibraryImages, SHOT_ANALYSIS_TYPE, shotAnalysisAssets } from '@plein/nodes'
 import { parseModelRef } from '@plein/plugin-sdk'
 import {
   type Asset,
@@ -254,6 +254,9 @@ async function planExport(
             if (kept.length !== el.results.length) m.set('results', kept)
             for (const r of kept) {
               if ('assetId' in r.value) refAsset(r.value.assetId, where, true)
+              else if (el.nodeType === SHOT_ANALYSIS_TYPE && r.value.type === 'json')
+                for (const assetId of shotAnalysisAssets(r.value.value))
+                  refAsset(assetId, where, true)
             }
           }
           if (el.run) {

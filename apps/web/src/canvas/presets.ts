@@ -2,6 +2,8 @@ import type { Engine } from '@plein/canvas-core'
 import {
   type CanvasElement,
   connect,
+  currentResult,
+  elementMedia,
   elementPorts,
   type Port,
   setParams,
@@ -54,8 +56,18 @@ export function applyPresetToNode(
 }
 
 /** 元素当前能往下游提供的输出端口（图片、视频……） */
-export function outputPort(el: CanvasElement, type: Port['type']): Port | undefined {
-  return elementPorts(el)?.outputs.find((p) => p.type === type)
+export function outputPort(
+  el: CanvasElement,
+  type: Port['type'],
+  assetId?: string,
+): Port | undefined {
+  return elementPorts(el)?.outputs.find((p) => {
+    if (p.type !== type) return false
+    if (!assetId) return true
+    if (el.kind !== 'node') return elementMedia(el)?.assetId === assetId
+    const value = currentResult(el, p.id)?.value
+    return value?.type === type && 'assetId' in value && value.assetId === assetId
+  })
 }
 
 /** 源元素右侧找一块 w×h 的空地（左上角坐标），与智能体放置新元素是同一套规则 */
@@ -77,6 +89,7 @@ export function deriveNode(
   opts: {
     preset?: PromptPreset
     inputPort?: string
+    sourceAssetId?: string
     name?: string
     params?: Record<string, unknown>
   } = {},
@@ -87,7 +100,8 @@ export function deriveNode(
   const input = opts.inputPort
     ? node.inputs.find((p) => p.id === opts.inputPort)
     : node.inputs.find((p) => p.type !== 'text')
-  const out = input && outputPort(source, input.type)
+  const out = input && outputPort(source, input.type, opts.sourceAssetId)
+  if (opts.sourceAssetId && !out) return null
   // 先按最终画幅计算占位，避免套预设后才扩高而压到邻居。
   const pk = promptKey(node)
   const base = nodeElement(node, {

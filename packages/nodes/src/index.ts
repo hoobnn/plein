@@ -18,3 +18,4 @@ export * from './profile'
 export * from './stage'
 
 export * from './imageProcess'
+export * from './shotAnalysis'

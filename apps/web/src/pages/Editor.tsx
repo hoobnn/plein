@@ -31,6 +31,7 @@ import { Shortcuts } from '../shell/Shortcuts'
 import { Sidebar } from '../shell/Sidebar'
 import { SequenceEditor } from '../features/sequence/SequenceEditor'
 import { StageEditor } from '../features/stage/StageEditor'
+import { ShotAnalysisEditor } from '../features/shot-analysis/ShotAnalysisEditor'
 import { StoryboardEditor } from '../features/storyboard/StoryboardEditor'
 import { Tasks } from '../features/runs/Tasks'
 import { ImpactPanel } from '../features/runs/ImpactPanel'
@@ -275,6 +276,7 @@ export function Editor({
       <ShotWorkbench />
       <SequenceEditor />
       <StageEditor />
+      <ShotAnalysisEditor />
       <Shortcuts />
       <CommandPalette canvasId={canvasId} />
       <AgentCursor />

@@ -49,6 +49,7 @@ interface CanvasStore extends EngineState {
   sequenceFocus: { sequenceId: string; clipInstanceId: string; requestId: number } | null
   /** 打开编辑器的 3D 构图节点 */
   stage: string | null
+  shotAnalysis: string | null
   /** 全屏查看的图片 / 视频 */
   viewer: {
     assetId?: string
@@ -82,6 +83,7 @@ interface CanvasStore extends EngineState {
   openSequence(id: string | null, clipInstanceId?: string): void
   consumeSequenceFocus(requestId: number): void
   openStage(id: string | null): void
+  openShotAnalysis(id: string | null): void
   view(v: CanvasStore['viewer']): void
   toggleShortcuts(open?: boolean): void
   setArranged(r: ArrangeResult | null): void
@@ -121,6 +123,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
   sequence: null,
   sequenceFocus: null,
   stage: null,
+  shotAnalysis: null,
   viewer: null,
   shortcuts: false,
   arranged: null,
@@ -156,6 +159,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
         sequence: null,
         sequenceFocus: null,
         stage: null,
+        shotAnalysis: null,
         viewer: null,
         arranged: null,
         history: false,
@@ -191,6 +195,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
     if (get().sequenceFocus?.requestId === requestId) set({ sequenceFocus: null })
   },
   openStage: (stage) => set({ stage }),
+  openShotAnalysis: (shotAnalysis) => set({ shotAnalysis }),
   view: (viewer) => set({ viewer }),
   toggleShortcuts: (open) => set((s) => ({ shortcuts: open ?? !s.shortcuts })),
   setArranged: (arranged) => set({ arranged }),

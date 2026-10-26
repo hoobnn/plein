@@ -33,7 +33,9 @@ import { stableStringify } from '@plein/flow'
 import { compatibleBaseURL, COMPATIBLE_ID, createCompatiblePlugin } from '@plein/providers'
 import { Agent, Dispatcher1Wrapper } from 'undici'
 import { composeVideo } from '../assets/compose'
-import { hasFfmpeg, probeMedia } from '../assets/media'
+import { analyzeVideo } from '../assets/shot-analysis'
+import { hasFfmpeg, probeMedia, withMediaAbort } from '../assets/media'
+import { SHOT_ANALYSIS_LIMITS } from '@plein/nodes'
 import type { AssetStore } from '../assets/store'
 import type { OutputSpoolRef, SpoolBinding } from '../assets/output-spool'
 import type { ProviderConfigStore } from './config-store'
@@ -1088,6 +1090,22 @@ export class PluginHost {
       },
       media: {
         probe: (ref) => this.probe(manifest, ownerId, ref),
+        analyzeVideo: async (ref, options) => {
+          const localSignal = AbortSignal.any([
+            signal,
+            AbortSignal.timeout(SHOT_ANALYSIS_LIMITS.timeoutMs),
+          ])
+          return withMediaAbort(localSignal, async () => {
+            await this.mediaPath(manifest, ownerId, ref)
+            if (manifest.permissions.assets !== 'write')
+              throw new PermissionError(`插件 ${manifest.id} 没有写资产的权限`)
+            return this.assets.activity.run(() =>
+              analyzeVideo(this.assets, ownerId, ref, options, localSignal, (fraction) =>
+                opts.onProgress?.(fraction),
+              ),
+            )
+          })
+        },
         compose: (spec) =>
           this.compose(manifest, ownerId, spec, signal, (f) =>
             opts.onProgress?.(Math.min(1, Math.max(0, f))),

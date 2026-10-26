@@ -9,6 +9,7 @@ import {
   STAGE_TYPE,
   stageSnapshotsOf,
   STORYBOARD_TYPE,
+  SHOT_ANALYSIS_TYPE,
   type VideoMode,
 } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
@@ -469,6 +470,17 @@ function Panel({
           <Inputs engine={engine} el={el} node={node} ups={ups} trailing={actions} />
         )}
         <ContinuedFrom engine={engine} el={el} />
+        {node.type === SHOT_ANALYSIS_TYPE && (
+          <div className="px-4 pt-4">
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary w-full"
+              onClick={() => useCanvas.getState().openShotAnalysis(el.id)}
+            >
+              打开拉片清单
+            </button>
+          </div>
+        )}
         {node.capability === 'image.edit' && (
           <MaskField engine={engine} el={el} source={ups.get('image')?.[0]} />
         )}

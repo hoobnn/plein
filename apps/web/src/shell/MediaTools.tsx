@@ -1,5 +1,7 @@
 import { useCatalog } from '../stores/catalog'
 import { deriveNode } from '../canvas/presets'
+import { SHOT_ANALYSIS_TYPE } from '@plein/nodes'
+import { elementMedia } from '@plein/doc'
 import type { Engine } from '@plein/canvas-core'
 import type { Asset, MediaCapsInfo, MediaDeriveRequest, MediaOp } from '@plein/protocol'
 import { useEffect, useId, useRef, useState } from 'react'
@@ -491,6 +493,36 @@ export function MediaTools({
                   {list.length > 1 ? `已选择 ${list.length} 个素材` : '加工'}
                 </div>
                 {list.length > 1 && <p className="ui-help px-2 pb-2">每项操作仅处理适用的素材。</p>}
+                {first.kind === 'video' && list.length === 1 && actions.length > 0 && (
+                  <button
+                    type="button"
+                    className="ui-menu-item"
+                    onClick={() => {
+                      const source = engine.doc.get(first.elId)
+                      if (
+                        engine.doc.readOnly ||
+                        !source ||
+                        elementMedia(source)?.assetId !== first.assetId
+                      ) {
+                        notify('原视频已变化，请重新选择')
+                        return
+                      }
+                      const id = deriveNode(
+                        engine,
+                        useCatalog.getState().catalog,
+                        first.elId,
+                        SHOT_ANALYSIS_TYPE,
+                        { inputPort: 'video', sourceAssetId: first.assetId },
+                      )
+                      if (id) {
+                        setOpen(false)
+                        useCanvas.getState().openShotAnalysis(id)
+                      } else notify('没有找到本地拉片节点，请刷新节点目录')
+                    }}
+                  >
+                    本地拉片
+                  </button>
+                )}
                 {first.kind === 'image' && list.length === 1 && (
                   <button
                     type="button"

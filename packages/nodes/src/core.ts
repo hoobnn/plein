@@ -10,6 +10,7 @@ import { stageNode } from './stage'
 import { storyboardNode } from './storyboard'
 import { imageProcessNode } from './imageProcess'
 import { sfxNode, transcribeNode } from './audioNodes'
+import { shotAnalysisNode } from './shotAnalysis'
 
 const model = () => z.string().default('').meta({ title: '模型', widget: 'model' })
 /** 分辨率：选项随所选模型变化，空字符串用平台默认 */
@@ -366,6 +367,7 @@ export const corePlugin = definePlugin({
         'plein/music@1',
         'plein/sfx@1',
         'plein/transcribe@1',
+        'plein/shot-analysis@1',
         'plein/character@1',
         'plein/scene@1',
         'plein/prop@1',
@@ -392,6 +394,7 @@ export const corePlugin = definePlugin({
     musicNode,
     sfxNode,
     transcribeNode,
+    shotAnalysisNode,
     characterNode,
     sceneNode,
     propNode,

@@ -1,6 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, primaryResult, elementMedia, videoAssetOf } from '@plein/doc'
-import { presetsFor } from '@plein/nodes'
+import { presetsFor, SHOT_ANALYSIS_TYPE } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
 import { mediaOf, splitGrid } from '../canvas/grid'
@@ -72,6 +72,7 @@ function ResultBarHost({ engine }: { engine: Engine }) {
   const media = el && (el.kind !== 'node' || el.locked) ? mediaOf(el) : null
   // 加工工具要覆盖音频，所以另算一份含音频的
   const asset = el && (el.kind !== 'node' || el.locked) ? elementMedia(el) : null
+  const analysis = el?.nodeType === SHOT_ANALYSIS_TYPE && (engine.doc.readOnly || el.locked)
   const place = () => {
     const rect = el && engine.scene.rect(el.id)
     if (!rect) return null
@@ -101,7 +102,8 @@ function ResultBarHost({ engine }: { engine: Engine }) {
   }
   const ref = useFollow<HTMLDivElement>(engine, place)
   const style = place()
-  if (!el || (!media && !asset) || !style || engine.doc.readOnly) return null
+  if (!el || (!media && !asset && !analysis) || !style || (engine.doc.readOnly && !analysis))
+    return null
 
   return (
     <div
@@ -112,6 +114,15 @@ function ResultBarHost({ engine }: { engine: Engine }) {
       style={style}
       className="ui-bar ui-bar-sm ui-scrollbar pointer-events-auto fixed z-20 h-auto w-max flex-wrap overflow-y-auto"
     >
+      {analysis && (
+        <button
+          type="button"
+          className="ui-btn ui-btn-secondary"
+          onClick={() => useCanvas.getState().openShotAnalysis(el.id)}
+        >
+          查看拉片清单
+        </button>
+      )}
       {media && (
         <ResultActions
           key={`actions:${media.assetId}`}

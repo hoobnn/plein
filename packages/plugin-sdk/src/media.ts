@@ -115,4 +115,14 @@ export interface MediaService {
   probe(ref: AssetRef): Promise<MediaInfo>
   /** 合成视频并存入资产库；进度经 ctx.progress 报告 */
   compose(spec: ComposeSpec): Promise<AssetRef>
+  /** Local shot analysis, where supported by the host. The caller validates the versioned manifest. */
+  analyzeVideo?(ref: AssetRef, options: VideoAnalysisOptions): Promise<unknown>
+}
+
+export interface VideoAnalysisOptions {
+  threshold: number
+  minSceneSeconds: number
+  points?: number[]
+  clips: boolean
+  audio: boolean
 }

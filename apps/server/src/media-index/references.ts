@@ -5,6 +5,7 @@ import {
   sequenceSegmentAssets,
   type PleinDoc,
 } from '@plein/doc'
+import { SHOT_ANALYSIS_TYPE, shotAnalysisAssets } from '@plein/nodes'
 import * as Y from 'yjs'
 import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
@@ -66,6 +67,9 @@ export function documentReferences(doc: PleinDoc): AssetReference[] {
     for (const r of el.results ?? []) {
       if ('assetId' in r.value)
         add(r.value.assetId, `result/${r.id}`, r.id, adopted.has(r.id), true)
+      else if (el.nodeType === SHOT_ANALYSIS_TYPE && r.value.type === 'json')
+        for (const assetId of shotAnalysisAssets(r.value.value))
+          add(assetId, `result/${r.id}/analysis/${assetId}`, r.id, adopted.has(r.id), true)
     }
     for (const delivery of el.deliveries ?? [])
       add(
