@@ -590,7 +590,7 @@ async function openShot(page: Page, board: string, no: number) {
   await page.mouse.dblclick(point.x, point.y)
   const table = page.getByRole('dialog', { name: '分镜表', exact: true })
   await expect(table).toHaveCSS('opacity', '1')
-  await table.getByRole('button', { name: '编辑分镜', exact: true }).click()
+  await table.getByRole('button', { name: '详细卡片', exact: true }).click()
   await table.getByRole('button', { name: `镜头 ${no} 工作台`, exact: true }).click()
   await expect(workbench(page)).toHaveCSS('opacity', '1')
 }

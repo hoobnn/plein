@@ -74,7 +74,7 @@ test('上下空间都不足时，提示气泡仍留在窗口内', async ({ page 
     el.style.position = 'fixed'
     el.style.left = '20px'
     el.style.top = '100px'
-    el.title = '这是一段较长的操作说明。'.repeat(12)
+    el.setAttribute('title', '这是一段较长的操作说明。'.repeat(12))
   })
   await button.hover()
   const tip = page.getByRole('tooltip')

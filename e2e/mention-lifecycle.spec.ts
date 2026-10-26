@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { clickElement, newProject, waitNode } from './canvas'
+import { clickElement, newProject, revealGenerator, waitNode } from './canvas'
 
 async function setup(page: Page) {
   await newProject(page)
@@ -53,6 +53,7 @@ test('邮箱及转义说明不触发引用补全、失效提示或实际生成�
     })
   })
   await page.getByRole('treeitem', { name: '普通文字边界 定位到画布', exact: true }).click()
+  await revealGenerator(page)
   const text = '联系 test@example.com；说明 \\@小岚 · 引用；@@不存在'
   await field(page).fill(text)
   await expect(mark(page)).toHaveCount(0)

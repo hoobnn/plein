@@ -7,6 +7,7 @@ import {
   edgesInto,
   elements,
   newProject,
+  revealGenerator,
   waitNode,
   zoomTo,
 } from './canvas'
@@ -44,6 +45,7 @@ async function select(page: Page, id: string) {
   await zoomTo(page, [id])
   const p = await centerOf(page, id)
   await page.mouse.click(p.x, p.y)
+  await revealGenerator(page)
 }
 
 test(

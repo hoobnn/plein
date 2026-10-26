@@ -20,7 +20,7 @@ test('从未选中元素上右键拖动只平移画布，轻点才选择目标�
     page.evaluate(
       (ids) =>
         ids.map((id) => {
-          const el = window.__plein.engine.doc.get(id)!
+          const el = window.__plein.engine.doc.worldRect(id)!
           return [el.x, el.y]
         }),
       ids,
