@@ -130,6 +130,13 @@ export const imageNode = defineNode({
     usedRefs: usedRefs(),
     requiredRefs: requiredRefs(),
     referenceImagePicks: referenceImagePicks(),
+    characterAssetTarget: z
+      .object({
+        libraryId: z.string().min(1).max(200),
+        slot: z.enum(['full_body', 'portrait', 'face_grid', 'character_3view']),
+      })
+      .optional()
+      .meta({ title: '角色图片归档目标', widget: 'hidden' }),
   }),
 })
 

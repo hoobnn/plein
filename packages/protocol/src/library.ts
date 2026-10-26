@@ -131,6 +131,8 @@ const libraryFields = {
   /** 角色档案（时期 / 服饰 / 表情 / 次音色），只有角色用 */
   profile: LibraryProfile.nullable().default(null),
   sceneViews: LibrarySceneViews.default([]),
+  /** Optional display cover; reference-image category and model input order stay independent. */
+  coverAssetId: libraryAssetId.nullable().optional(),
 }
 
 export const CreateLibraryItem = z.object({ kind: LibraryKind, ...libraryFields })
@@ -152,6 +154,7 @@ export const UpdateLibraryItem = z
     models: z.array(z.string().trim().min(1).max(60)).max(12),
     profile: LibraryProfile.nullable(),
     sceneViews: LibrarySceneViews,
+    coverAssetId: libraryAssetId.nullable(),
     favorite: z.boolean(),
   })
   .partial()
@@ -170,6 +173,7 @@ export interface LibraryItem {
   models: string[]
   profile: LibraryProfile | null
   sceneViews?: LibrarySceneView[]
+  coverAssetId?: string | null
   favorite: boolean
   /** 最近一次用到画布上的时间，「最近使用」按它排 */
   usedAt: number | null

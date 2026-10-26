@@ -21,6 +21,7 @@ import {
 } from '@plein/nodes'
 import {
   ApplyLibraryUpdates,
+  ArchiveCharacterImage,
   SaveLibraryCard,
   type LibraryItem,
   type LibrarySyncField,
@@ -34,6 +35,7 @@ import type { DB } from '../storage/db'
 import type { Rooms } from '../sync/rooms'
 import { archiveLibraryCard, LibraryArchiveConflict } from './archive'
 import type { LibraryStore } from './store'
+import { archiveCharacterImage, CharacterImageConflict } from './character-image'
 
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const fields: LibrarySyncField[] = [
@@ -86,6 +88,35 @@ interface Deps {
 /** Read and apply are deliberately separate: library edits never overwrite another canvas. */
 export function librarySyncRoutes(deps: Deps) {
   return new Hono<AuthEnv>()
+    .post('/api/library/:id/character-image', async (c) => {
+      const owner = c.var.principal.id
+      if (c.var.principal.role === 'viewer')
+        return c.json({ error: 'forbidden', message: '只读成员不能归档角色图片' }, 403)
+      const parsed = ArchiveCharacterImage.safeParse(await c.req.json().catch(() => null))
+      if (!parsed.success)
+        return c.json({ error: 'invalid', message: '角色图片归档参数不合法' }, 400)
+      if (!listCanvases(deps.db, owner).some((canvas) => canvas.id === parsed.data.canvasId))
+        return c.json({ error: 'not_found', message: '来源画布不存在' }, 404)
+      if (!deps.library.get(owner, c.req.param('id')))
+        return c.json({ error: 'not_found', message: '角色不存在' }, 404)
+      try {
+        const item = deps.rooms.withDoc(parsed.data.canvasId, (doc) =>
+          archiveCharacterImage(
+            doc,
+            deps.assets,
+            deps.library,
+            owner,
+            c.req.param('id'),
+            parsed.data,
+          ),
+        )
+        return c.json(item)
+      } catch (error) {
+        if (error instanceof CharacterImageConflict)
+          return c.json({ error: 'conflict', message: error.message }, 409)
+        throw error
+      }
+    })
     .post('/api/library/save-card', async (c) => {
       const owner = c.var.principal.id
       if (c.var.principal.role === 'viewer')

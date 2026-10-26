@@ -380,6 +380,7 @@ export class MediaIndex {
         video?: unknown
         profile?: unknown
         sceneViews?: unknown
+        coverAssetId?: unknown
       } | null
       stringReferences(
         {
@@ -387,6 +388,7 @@ export class MediaIndex {
           video: data?.video,
           profile: data?.profile,
           sceneViews: data?.sceneViews,
+          coverAssetId: data?.coverAssetId,
         },
         (asset, path) =>
           rows.push({

@@ -16,7 +16,15 @@ type LibraryRow = typeof libraryItems.$inferSelect
 /** data 列里存的字段 */
 type LibraryData = Pick<
   LibraryItem,
-  'description' | 'tags' | 'voice' | 'images' | 'video' | 'models' | 'profile' | 'sceneViews'
+  | 'description'
+  | 'tags'
+  | 'voice'
+  | 'images'
+  | 'video'
+  | 'models'
+  | 'profile'
+  | 'sceneViews'
+  | 'coverAssetId'
 >
 
 const toItem = (r: LibraryRow): LibraryItem => {
@@ -34,6 +42,7 @@ const toItem = (r: LibraryRow): LibraryItem => {
     models: d.models ?? [],
     profile: d.profile ?? null,
     sceneViews: d.sceneViews ?? [],
+    coverAssetId: d.coverAssetId ?? null,
     favorite: r.favorite === 1,
     usedAt: r.used_at,
     createdAt: r.created_at,
@@ -51,6 +60,10 @@ const dataOf = (kind: LibraryKind, i: LibraryData): string =>
     models: i.models,
     profile: i.profile,
     sceneViews: i.sceneViews ?? [],
+    coverAssetId:
+      kind === 'character' && i.images.some((image) => image.assetId === i.coverAssetId)
+        ? i.coverAssetId
+        : null,
   })
 
 /** 资产库条目的增删改查，按所有者隔离；HTTP 路由和智能体能力共用 */

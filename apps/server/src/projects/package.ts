@@ -22,6 +22,7 @@ import {
   remapSequenceCanvasScopes,
   snapshotTypedDeliveries,
   adoptedResultIds,
+  type CanvasElement,
   type DeliveryRecord,
   type NodeResult,
   type NodeRun,
@@ -134,6 +135,14 @@ function eachString(v: unknown, fn: (s: string) => void) {
   if (typeof v === 'string') fn(v)
   else if (Array.isArray(v)) for (const x of v) eachString(x, fn)
   else if (v && typeof v === 'object') for (const x of Object.values(v)) eachString(x, fn)
+}
+
+function characterAssetLibrary(el: Pick<CanvasElement, 'nodeType' | 'params'>) {
+  if (el.nodeType !== 'plein/image') return undefined
+  const target = el.params?.characterAssetTarget
+  if (!target || typeof target !== 'object' || Array.isArray(target)) return undefined
+  const id = (target as Record<string, unknown>).libraryId
+  return typeof id === 'string' && id ? id : undefined
 }
 
 /** 深度遍历 JSON 值，收集 { provider, voiceId } 形状的音色绑定 */
@@ -298,6 +307,8 @@ async function planExport(
             eachVoice(el.params, refVoice)
             const { libraryId, model, voice } = el.params as Record<string, unknown>
             if (typeof libraryId === 'string' && libraryId) libraryRefs.set(libraryId, where)
+            const characterLibraryId = characterAssetLibrary(el)
+            if (characterLibraryId) libraryRefs.set(characterLibraryId, `${where} / 角色图片制作`)
             if (typeof model === 'string' && model.trim()) models.add(model.trim())
             // 0.1.0 之前音色是裸字符串，没有平台
             if (typeof voice === 'string' && voice.trim())
@@ -346,6 +357,9 @@ async function planExport(
           const { libraryId, model } = el.params
           if (typeof libraryId === 'string' && libraryId)
             libraryRefs.set(libraryId, `检查点 / ${checkpoint.name}`)
+          const characterLibraryId = characterAssetLibrary(el)
+          if (characterLibraryId)
+            libraryRefs.set(characterLibraryId, `检查点 / ${checkpoint.name} / 角色图片制作`)
           if (typeof model === 'string' && model.trim()) models.add(model.trim())
         }
         if (el.nodeType) {
@@ -404,6 +418,7 @@ async function planExport(
       models: d.models ?? [],
       profile: d.profile ?? null,
       sceneViews: d.sceneViews ?? [],
+      coverAssetId: d.coverAssetId ?? null,
       favorite: r.favorite === 1,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
@@ -416,6 +431,7 @@ async function planExport(
         video: item.video,
         profile: item.profile,
         sceneViews: item.sceneViews,
+        coverAssetId: item.coverAssetId,
       },
       (s) => {
         if (ASSET_ID.test(s)) refAsset(s, where, true)
