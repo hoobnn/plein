@@ -40,15 +40,7 @@ pnpm typecheck
 | `pnpm perf`               | 画布渲染性能基准                                                                                         |
 | `pnpm perf:compare`       | 在同一 runner 顺序构建和测量基线、候选，比较完整样本并拒绝明显回退                                       |
 
-本地检查由 git 钩子（husky）完成，`pnpm install` 时自动装好：pre-commit 运行 `vp staged`，只格式化、检查暂存文件；pre-push 运行 `pnpm verify`，改了 `package.json` 或 `pnpm-lock.yaml` 时再跑 `pnpm audit:deps`。推送 main 不触发云端 CI，云端只在 Dependabot PR、打 `v*` 标签发版和手动运行（Actions → CI → Run workflow）时跑检查与性能（perf）；发版说明写在 `docs/releases/<标签>.md`，打标签时自动用作 Release 正文；依赖安全检查另有每周定时。急用可 `git push --no-verify` 跳过钩子，之后在 Actions 里手动补跑一次 CI。
-
-E2E 只在本地跑，云端不再跑：发版前本地跑完整 e2e，全绿才打标签。
-
-```bash
-pnpm e2e       # 全部界面冒烟用例
-pnpm e2e:core  # 只跑 @core 的核心用例，几分钟跑完
-pnpm e2e:auth  # 密码登录回归，隔离数据库
-```
+本地检查由 git 钩子（husky）完成，`pnpm install` 时自动装好：pre-commit 运行 `vp staged`，只格式化、检查暂存文件；pre-push 运行 `pnpm verify`，改了 `package.json` 或 `pnpm-lock.yaml` 时再跑 `pnpm audit:deps`。推送 main 不触发云端 CI，云端只在 Dependabot PR、打 `v*` 标签发版和手动运行（Actions → CI → Run workflow）时跑完整检查与 e2e、perf（e2e 按文件分 12 片并行，失败重试一次，重试才通过的标为 flaky；推送 main 不跑 e2e，发版时任何一片失败都不签名、不发布，可在 Actions 里重跑失败的任务）；发版说明写在 `docs/releases/<标签>.md`，打标签时自动用作 Release 正文；依赖安全检查另有每周定时。急用可 `git push --no-verify` 跳过钩子，之后在 Actions 里手动补跑一次 CI。
 
 ### 验收分层
 

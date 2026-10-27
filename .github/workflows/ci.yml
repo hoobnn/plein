@@ -2,19 +2,27 @@ name: CI
 
 # 日常检查在本地 git 钩子里完成（pre-commit：vp staged；pre-push：pnpm verify），推送 main 不再触发。
 # 云端只在三种情况下跑：PR（Dependabot）、release.yml 发版前复用、手动运行。
-# e2e 只在本地跑：发版前本地跑完整 e2e，云端只跑检查与性能。
 on:
   pull_request:
     paths-ignore: ["docs/**", "**/*.md", "site/**"]
   # release.yml 发版前复用同一套检查
   workflow_call:
     inputs:
+      e2e-os:
+        description: e2e 运行平台
+        type: string
+        default: ubuntu-latest
       perf-baseline-ref:
         description: 性能基线 tag 或 commit（留空取候选提交之前最近的 v* tag）
         type: string
         default: ""
   workflow_dispatch:
     inputs:
+      e2e-os:
+        description: e2e 运行平台（发版用 macos-15）
+        type: choice
+        options: [ubuntu-latest, macos-15]
+        default: ubuntu-latest
       perf-baseline-ref:
         description: 性能基线 tag 或 commit（留空取候选提交之前最近的 v* tag）
         type: string
@@ -45,6 +53,42 @@ jobs:
           path: coverage/
           retention-days: 14
       - run: pnpm build
+
+  # 界面冒烟：mock 平台起真服务，Playwright 驱动 Chromium 走完模板到导出。
+  # 系统 ffmpeg 带 libass，加上中文字体，导出时连烧字幕一起验证。
+  # 用例已有一千多条且单进程串跑，按文件分片到多台机器，每片各起一套服务和数据目录。
+  # 推送 main 不跑 e2e，发版是唯一拦截点：任何一片失败都不签名、不发布
+  e2e:
+    needs: check
+    runs-on: ${{ inputs.e2e-os || 'ubuntu-latest' }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk
+      # Homebrew 的 ffmpeg 自带 libass；macOS 自带中文字体
+      - if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm e2e --shard=${{ matrix.shard }}/12
+      - if: matrix.shard == 1
+        run: pnpm exec playwright test -c e2e/playwright.auth.config.ts
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-results-${{ matrix.shard }}
+          path: test-results/
+          retention-days: 7
 
   # 同一 runner 顺序测量独立检出的基线和候选；夹具/环境/样本不匹配或明显回退均失败。
   # 只在发版和手动运行时跑，依赖升级 PR 不跑
