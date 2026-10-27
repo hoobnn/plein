@@ -15,6 +15,7 @@ import {
   orderedImages,
   preserveLibraryImageSlots,
   profileImages,
+  sceneViewAssets,
   sceneViewImages,
   slotImages,
 } from '@plein/nodes'
@@ -136,12 +137,17 @@ export async function placeLibraryItem(
 
   const imageIds = orderedImages(kind, input.images ?? []).map((i) => i.assetId)
   const requested = [...new Set([...imageIds, ...(input.video ? [input.video] : [])])]
-  const assets = await metas(requested)
+  const viewRequested =
+    kind.id === 'scene'
+      ? sceneViewAssets(input.sceneViews).filter((assetId) => !requested.includes(assetId))
+      : []
+  const [assets, viewAssets] = await Promise.all([metas(requested), metas(viewRequested)])
   // 元信息等待期间可能离开画布、变为只读，或另一入口已完成放置。
   if (!isCurrent() || engine.doc.readOnly) return unavailable()
   const concurrent = selectPlaced()
   if (concurrent) return concurrent
   const missing = requested.length - assets.length
+  const missingViews = viewRequested.length - viewAssets.filter((a) => a.kind === 'image').length
 
   const view = engine.camera.viewRect
   const base = nodeElement(info)
@@ -191,6 +197,8 @@ export async function placeLibraryItem(
 
   const notes: string[] = []
   if (missing > 0) notes.push(`${missing} 个素材在本机资产里找不到，已跳过`)
+  if (missingViews > 0)
+    notes.push(`${missingViews} 个视角素材在本机资产里找不到或类型不符，使用对应视角前请修复`)
   if (loose > 0) notes.push(`${loose} 个素材没能连进卡片，请手动连线`)
   if (duplicate) notes.push(`画布上已有同名「${input.name}」，@ 引用时要写序号区分，建议改名`)
   return {

@@ -267,6 +267,42 @@ describe('资产库 ↔ 画布', () => {
     expect(missing.notice).toContain('1 个素材在本机资产里找不到')
   })
 
+  it('场景视角素材缺失单独提示，且不变成基础参考连线', async () => {
+    const { doc, engine } = setup()
+    const placed = await placeLibraryItem(
+      engine,
+      catalog,
+      placeInputOf(
+        item({
+          id: 'lib_scene',
+          kind: 'scene',
+          name: '教室',
+          images: [],
+          sceneViews: [
+            {
+              id: 'door',
+              name: '门口',
+              aliases: [],
+              description: '',
+              images: [A, 'f'.repeat(64), V],
+              panorama: {
+                assetId: 'f'.repeat(64),
+                yaw: 0,
+                pitch: 0,
+                fov: 55,
+                format: 'landscape',
+              },
+            },
+          ],
+        }),
+      )!,
+    )
+    expect(placed.notice).toContain('2 个视角素材')
+    expect(placed.notice).not.toContain('已跳过')
+    expect([...doc.elements()]).toHaveLength(1)
+    expect([...doc.edges()].filter((edge) => edge.to[0] === placed.id)).toEqual([])
+  })
+
   it('特效：参考视频连进卡片，描述写进设定；同名时提醒', async () => {
     const { doc, engine } = setup()
     await placeLibraryItem(engine, catalog, placeInputOf(item())!)
