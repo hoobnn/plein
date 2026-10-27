@@ -15,6 +15,7 @@ export function archiveLibraryCard(
   library: LibraryStore,
   snapshot?: CreateLibraryItem,
   expectedLibraryId?: string | null,
+  options: { updateSceneViews?: boolean } = {},
 ) {
   const node = doc.get(nodeId)
   const currentId = typeof node?.params?.libraryId === 'string' ? node.params.libraryId : null
@@ -38,7 +39,7 @@ export function archiveLibraryCard(
       video: body.video,
       voice: body.voice,
       profile: body.profile,
-      sceneViews: body.sceneViews,
+      ...(options.updateSceneViews === false ? {} : { sceneViews: body.sceneViews }),
     })!
     return { item, created: false }
   }

@@ -142,8 +142,16 @@ export function librarySyncRoutes(deps: Deps) {
       const owner = c.var.principal.id
       if (c.var.principal.role === 'viewer')
         return c.json({ error: 'forbidden', message: '只读成员不能存入资产库' }, 403)
-      const input = SaveLibraryCard.safeParse(await c.req.json().catch(() => null))
+      const payload = await c.req.json().catch(() => null)
+      const input = SaveLibraryCard.safeParse(payload)
       if (!input.success) return c.json({ error: 'invalid', message: '存档参数不合法' }, 400)
+      // Zod 会补 sceneViews: []；是否更新必须看原始请求，避免旧客户端清空已有视角。
+      const rawSnapshot =
+        payload && typeof payload === 'object' && 'snapshot' in payload
+          ? payload.snapshot
+          : undefined
+      const updateSceneViews =
+        !!rawSnapshot && typeof rawSnapshot === 'object' && Object.hasOwn(rawSnapshot, 'sceneViews')
       const source = listCanvases(deps.db, owner).find(
         (canvas) => canvas.id === input.data.canvasId,
       )
@@ -158,6 +166,7 @@ export function librarySyncRoutes(deps: Deps) {
             deps.library,
             input.data.snapshot,
             input.data.expectedLibraryId,
+            { updateSceneViews },
           ),
         )
         try {
