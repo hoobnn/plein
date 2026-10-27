@@ -295,6 +295,29 @@ it.each(['save', 'delete', 'reopen'] as const)(
   },
 )
 
+it('同帧重复恢复只发送一次请求，失败释放门闩后可重试', async () => {
+  const held = deferred()
+  let writes = 0
+  const f = await setup((request) => {
+    if (request.method === 'POST') {
+      writes++
+      return writes === 1 ? held.promise : Response.json({ canvasId: 'restored' })
+    }
+  })
+  const restore = button('恢复为新画布', a)
+  act(() => {
+    restore.click()
+    restore.click()
+  })
+  await waitFor(() => expect(writes).toBe(1))
+  expect(button('恢复中…', a).disabled).toBe(true)
+  await act(async () => held.resolve(failure('恢复暂时不可用')))
+  expect(screen.getByRole('alert').textContent).toContain('恢复暂时不可用')
+  await f.user.click(button('恢复为新画布', a))
+  await waitFor(() => expect(location.hash).toBe('#/c/restored'))
+  expect(writes).toBe(2)
+})
+
 it.each(['success', 'failure'] as const)(
   '关闭并重开后旧恢复%s不导航或污染新窗口，重开期间禁止重复恢复',
   async (outcome) => {

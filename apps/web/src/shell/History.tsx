@@ -133,25 +133,28 @@ function HistoryPanel({ engine }: { engine: Engine }) {
       setPlaceError('当前画布只读，恢复编辑权限后再放入素材。')
       return
     }
-    pending.current = true
-    setBusy(true)
-    setPlaceError(null)
-    const batch = beginImport(engine, selected.length)
-    const view = watchImportView(engine, batch.signal)
-    const viewport = engine.camera.viewRect
+    let batch: ReturnType<typeof beginImport> | undefined
+    let view: ReturnType<typeof watchImportView> | undefined
     const notes: string[] = []
     let action: NoticeAction | undefined
     try {
+      pending.current = true
+      setBusy(true)
+      setPlaceError(null)
+      const active = beginImport(engine, selected.length)
+      batch = active
+      view = watchImportView(engine, active.signal)
+      const viewport = engine.camera.viewRect
       let done = 0
       const inputs = await Promise.all(
         selected.map(async (e) => {
           const asset = await loadAssetMeta(e.result.value.assetId)
-          batch.progress(++done)
+          active.progress(++done)
           const input = elementFor(asset, e.result.value.compositionSource)
           return input && { ...input, name: nameOf(e) }
         }),
       )
-      batch.signal.throwIfAborted()
+      active.signal.throwIfAborted()
       if (doc.readOnly) throw new Error('画布已变为只读，恢复编辑权限后再试')
       // 以视口中央为中心排成网格，每行 ROW 个，一次写入（一步撤销）
       const items = inputs.filter((i) => i !== null)
@@ -180,16 +183,16 @@ function HistoryPanel({ engine }: { engine: Engine }) {
       } else if (created.length) action = importLocation(engine, created)
       notes.push(`已放到画布上：${created.length} 个素材`)
     } catch (err) {
-      if (!batch.signal.aborted) {
+      if (!batch?.signal.aborted) {
         const message = `放入失败：${err instanceof Error ? err.message : '素材读取失败'}。选择已保留，请重试。`
         notes.push(message)
         if (mounted.current) setPlaceError(message)
       }
     } finally {
       pending.current = false
-      view.dispose()
-      batch.finish(notes, action)
       if (mounted.current) setBusy(false)
+      view?.dispose()
+      batch?.finish(notes, action)
     }
   }
 

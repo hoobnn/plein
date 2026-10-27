@@ -17,6 +17,9 @@ const viewport = vi.hoisted(() => ({
   snapshot: vi.fn<() => Promise<Blob>>(),
   finish: vi.fn(),
   dispose: vi.fn(),
+  setScene: vi.fn(),
+  setMode: vi.fn(),
+  setTool: vi.fn(),
   events: null as StageViewEvents | null,
 }))
 // DOM 用例只替换 WebGL 视口边界；文档、历史、API 和弹层仍走生产实现。
@@ -26,11 +29,11 @@ vi.mock('./view', () => ({
       viewport.construct()
       viewport.events = events
     }
-    setScene() {}
+    setScene = viewport.setScene
     setReadOnly() {}
     setSelected() {}
-    setMode() {}
-    setTool() {}
+    setMode = viewport.setMode
+    setTool = viewport.setTool
     finishCamera = viewport.finish
     snapshot = viewport.snapshot
     dispose = viewport.dispose
@@ -43,6 +46,9 @@ beforeEach(() => {
   viewport.snapshot.mockReset().mockResolvedValue(new Blob(['png'], { type: 'image/png' }))
   viewport.finish.mockReset()
   viewport.dispose.mockReset()
+  viewport.setScene.mockReset()
+  viewport.setMode.mockReset()
+  viewport.setTool.mockReset()
   viewport.events = null
 })
 afterEach(() => {
@@ -232,17 +238,25 @@ it('同次滑杆停顿归并，两次手势分别撤销，取消手势恢复键�
   expect(doc.undo.captureTimeout).not.toBe(Infinity)
 })
 
-it('WebGL 初始化失败显示重试入口，重试读取最新场景且可截图', async () => {
+it('WebGL 初始化失败显示重试入口，重试恢复最新场景、视角和工具且可截图', async () => {
   viewport.construct.mockImplementationOnce(() => {
     throw new Error('WebGL unavailable')
   })
-  const { user, button } = setup()
+  const { user, button, read } = setup()
   const sent = uploads()
   expect(screen.getByRole('alert').textContent).toContain('3D 预览未能加载')
   expect(button('截图').disabled).toBe(true)
+  await user.click(button('自由视角'))
+  await user.click(button('旋转（E）'))
+  await user.click(button('坐'))
+  expect(viewport.setMode).not.toHaveBeenCalled()
+  expect(viewport.setTool).not.toHaveBeenCalled()
   await user.click(button('重试预览'))
   expect(screen.queryByRole('alert')).toBeNull()
   expect(viewport.construct).toHaveBeenCalledTimes(2)
+  expect(viewport.setScene).toHaveBeenLastCalledWith(read())
+  expect(viewport.setMode).toHaveBeenCalledExactlyOnceWith('free')
+  expect(viewport.setTool).toHaveBeenCalledExactlyOnceWith('rotate')
   await user.click(button('截图'))
   await screen.findByRole('img', { name: /截图/ })
   expect(sent()).toBe(1)

@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { deleteElements } from '@plein/doc'
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
+import * as importProgress from '../canvas/importProgress'
+import * as importView from '../canvas/importView'
 import { useCanvas } from '../stores/canvas'
 import { useSession } from '../stores/session'
 import { mockFetch } from '../testing/fetch'
@@ -181,6 +183,29 @@ it('同帧重复放入只写入一批素材', async () => {
   await act(async () => release(Response.json(mediaAsset(`${f.ids[0]}-asset-0`))))
   expect(f.imported()).toHaveLength(1)
 })
+it.each(['batch', 'view'] as const)(
+  '历史导入初始化 %s 同步失败后释放等待状态且可重试',
+  async (stage) => {
+    const f = setup()
+    await f.user.click(f.check('甲'))
+    const fail = () => {
+      throw new Error('初始化暂时不可用')
+    }
+    if (stage === 'batch') vi.spyOn(importProgress, 'beginImport').mockImplementationOnce(fail)
+    else vi.spyOn(importView, 'watchImportView').mockImplementationOnce(fail)
+    await f.user.click(screen.getByRole('button', { name: '放到画布上' }))
+    expect(screen.getByRole('alert').textContent).toContain('初始化暂时不可用')
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '放到画布上' }).disabled).toBe(
+      false,
+    )
+    expect(f.check('甲').checked).toBe(true)
+    expect(f.imported()).toHaveLength(0)
+    expect(useCanvas.getState().importing).toBeNull()
+    await f.user.click(screen.getByRole('button', { name: '放到画布上' }))
+    await waitFor(() => expect(f.imported()).toHaveLength(1))
+    expect(useCanvas.getState().importing).toBeNull()
+  },
+)
 it('素材读取等待可见，失败保留选择并可重试', async () => {
   const f = setup()
   let release!: (response: Response) => void

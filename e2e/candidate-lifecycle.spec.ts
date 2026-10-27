@@ -10,7 +10,7 @@ import {
 } from './canvas'
 
 test(
-  '首次生成期间修改输入，结果只进候选，查看采用及撤销刷新不隐式生效',
+  '首次生成、采用及撤销刷新保持候选身份，窄屏长正文可完整阅读',
   { tag: '@core' },
   async ({ page, context }) => {
     await newProject(page)
@@ -125,6 +125,49 @@ test(
       await page.getByRole('button', { name: '查看首次待采用候选', exact: true }).click()
       await expect(viewer.getByRole('button', { name: '已采用', exact: true })).toBeVisible()
       await viewer.getByRole('button', { name: '关闭', exact: true }).click()
+
+      await page.getByRole('button', { name: '工作流', exact: true }).click()
+      const token = 'SceneDescription'.repeat(40)
+      const longText = `${token}\n${'雨后镜头，保留完整正文。\n'.repeat(60)}保留结尾。`
+      const textId = await page.evaluate((text) => {
+        const id = window.__plein.addNode({
+          type: 'plein/llm',
+          name: '窄屏长文本候选',
+          params: { model: 'plein/mock:chat', prompt: '雨后镜头' },
+          x: 400,
+          y: 600,
+        })
+        const doc = window.__plein.engine.doc
+        doc.mutable(id)!.set('results', [
+          {
+            id: 'long-text-result',
+            runId: 'long-text-run',
+            port: doc.get(id)!.ports!.outputs[0]!.id,
+            at: Date.now(),
+            value: { type: 'text', text },
+          },
+        ])
+        doc.mutable(id)!.set('adopted', null)
+        return id
+      }, longText)
+      await clickElement(page, textId)
+      await page.getByRole('button', { name: '查看待采用候选', exact: true }).click()
+      const textViewer = page.getByRole('dialog', { name: '查看「窄屏长文本候选」', exact: true })
+      await page.setViewportSize({ width: 320, height: 700 })
+      const text = textViewer.getByRole('textbox', { name: '候选正文', exact: true })
+      await expect(text).toHaveText(longText)
+      await expect
+        .poll(() => text.evaluate((el) => el.scrollWidth - el.clientWidth))
+        .toBeLessThanOrEqual(0)
+      await text.focus()
+      await text.press('PageDown')
+      await expect.poll(() => text.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
+      expect(
+        await page.evaluate((id) => window.__plein.engine.doc.get(id)?.adopted, textId),
+      ).toBeNull()
+      await expect(
+        textViewer.getByRole('button', { name: '采用此候选', exact: true }),
+      ).toBeVisible()
     } finally {
       await page.request.put(config, { data: { settings: original.settings } })
     }
