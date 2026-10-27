@@ -128,6 +128,7 @@ export function LocalPlugins() {
   })
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
   const lastList = useRef<string | undefined>(undefined)
   const listKey = list ? JSON.stringify(list) : undefined
   useEffect(() => {
@@ -137,11 +138,13 @@ export function LocalPlugins() {
   }, [listKey, busy])
 
   /** 改完刷新列表和目录（节点、平台、预设跟着变） */
-  const act = async (key: string, fn: () => Promise<unknown>) => {
+  const act = async (key: string, fn: () => Promise<unknown>, done?: string) => {
     setBusy(key)
     setError(null)
+    setMessage(null)
     try {
       await fn()
+      if (done) setMessage(done)
     } catch (err) {
       setError(`插件操作失败：${(err as Error).message}`)
     } finally {
@@ -249,6 +252,11 @@ export function LocalPlugins() {
           {error ?? `读取插件失败：${loadError!.message}`}
         </p>
       )}
+      {message && (
+        <p role="status" className="text-sm text-ink-muted">
+          {message}
+        </p>
+      )}
       {loadError && retry}
       {catalogError && (
         <div className="flex flex-col items-start gap-2">
@@ -299,7 +307,13 @@ export function LocalPlugins() {
                       label={`启用 ${p.name}`}
                       checked={p.enabled}
                       disabled={busy !== null}
-                      onChange={(on) => act(p.id, () => api.setLocalPlugin(p.id, on))}
+                      onChange={(on) =>
+                        void act(
+                          p.id,
+                          () => api.setLocalPlugin(p.id, on),
+                          on ? `已启用「${p.name}」` : `已停用「${p.name}」`,
+                        )
+                      }
                     />
                   )}
                 </div>
@@ -335,7 +349,9 @@ export function LocalPlugins() {
                       type="button"
                       className="ui-btn ui-btn-xs ui-btn-quiet"
                       disabled={busy !== null}
-                      onClick={() => act(p.id, () => api.reloadLocalPlugin(p.id))}
+                      onClick={() =>
+                        void act(p.id, () => api.reloadLocalPlugin(p.id), `已重新加载「${p.name}」`)
+                      }
                     >
                       <Icon name="retry" size={12} />
                       {busy === p.id ? '加载中…' : '重新加载'}
@@ -381,9 +397,9 @@ export function LocalPlugins() {
           type="button"
           className="ui-btn ui-btn-secondary"
           disabled={busy !== null}
-          onClick={() => act('scan', api.rescanLocalPlugins)}
+          onClick={() => void act('scan', api.rescanLocalPlugins, '已重新扫描本机插件')}
         >
-          重新扫描
+          {busy === 'scan' ? '正在扫描…' : '重新扫描'}
         </button>
         {desktop && (
           <button
