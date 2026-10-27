@@ -44,8 +44,8 @@ export function beginImport(engine: Engine, total: number) {
         .map((b) => b.action)
         .filter((a) => !!a)
         .at(-1)
-      if (messages.length || action)
-        useCanvas.getState().notify(messages.join('；') || '素材已就绪', action)
+      // 全部导入入口都结束时一定给个结论；否则进度条消失得太突然，用户不知道是否成功。
+      useCanvas.getState().notify(messages.join('；') || '素材已就绪', action)
     } else publish()
   }
   if (useCanvas.getState().engine !== engine) {

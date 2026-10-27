@@ -94,7 +94,7 @@ it('混合导入保留正文和成功媒体，逐项报告失败与不支持格�
   expect(result.skipped).toEqual(
     expect.arrayContaining([
       { name: 'bad.png', reason: '测试上传失败' },
-      { name: 'unsupported.pdf', reason: '暂不支持这种文件' },
+      { name: 'unsupported.pdf', reason: expect.stringContaining('暂不支持这种文件') },
     ]),
   )
   const elements = result.created.map((id) => doc.get(id)!)
@@ -174,4 +174,97 @@ it('粘贴正文按最终范围归入分组，可独立撤销；可见产物不�
   doc.undo.undo()
   doc.undo.undo()
   expect([...doc.elements()].map((el) => el.id)).toEqual([frame])
+})
+it('重复批量导入避让原有内容与前一批，一次撤销只移除本批文件', async () => {
+  const { doc, engine } = setup()
+  vi.spyOn(api, 'upload').mockImplementation(async (file) => asset(file.name))
+  const blocker = createElement(doc, {
+    kind: 'markdown',
+    text: '导入前的原有卡片',
+    x: 100,
+    y: 300,
+    w: 360,
+    h: 160,
+  })
+  const batches: string[][] = []
+  for (let n = 0; n < 2; n++) {
+    const result = await importFiles(engine, [image('a.png'), image('b.png')], { x: 100, y: 300 })
+    batches.push(result.created)
+    const rects = result.created.map((id) => doc.worldRect(id)!)
+    // 新导入的文件既不压住原有卡片，也不压住前一批
+    for (const r of rects) {
+      const overlap = (a: typeof r, b: typeof r) =>
+        a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+      expect(overlap(r, doc.worldRect(blocker)!)).toBe(false)
+      for (const other of rects) if (other !== r) expect(overlap(r, other)).toBe(false)
+    }
+  }
+  expect([...doc.elements()]).toHaveLength(5)
+  doc.undo.undo()
+  expect([...doc.elements()].map((el) => el.id)).toEqual([blocker, ...batches[0]!])
+  doc.undo.redo()
+  expect([...doc.elements()].map((el) => el.id)).toEqual([blocker, ...batches.flat()])
+})
+it('导入落在分组内时保留父级，撤销只移除导入的文件不移除分组', async () => {
+  const { doc, engine } = setup()
+  vi.spyOn(api, 'upload').mockImplementation(async (file) => asset(file.name))
+  const frame = createElement(doc, { kind: 'frame', x: 0, y: 0, w: 1600, h: 1000 })
+  const result = await importFiles(engine, [image('a.png')], { x: 300, y: 300 })
+  expect(doc.get(result.created[0]!)!.parentId).toBe(frame)
+  doc.undo.undo()
+  expect([...doc.elements()].map((el) => el.id)).toEqual([frame])
+})
+it('部分上传失败保留成功文件并说明原因，重新导入失败文件可恢复', async () => {
+  const { doc, engine } = setup()
+  let fail = true
+  vi.spyOn(api, 'upload').mockImplementation(async (file) => {
+    if (fail && file.name === 'still.png') throw new Error('上传暂不可用')
+    return asset(file.name)
+  })
+  const first = await importFiles(engine, [image('still.png'), image('ok.png')], { x: 100, y: 300 })
+  expect(first.created).toHaveLength(1)
+  expect(first.skipped).toEqual([{ name: 'still.png', reason: '上传暂不可用' }])
+  fail = false
+  const second = await importFiles(engine, [image('still.png')], { x: 100, y: 300 })
+  expect(second.created).toHaveLength(1)
+  expect(second.skipped).toEqual([])
+  expect([...doc.elements()].filter((el) => el.kind === 'image')).toHaveLength(2)
+})
+it('连续粘贴正文互相避让，每次粘贴独立撤销', () => {
+  const { doc, engine } = setup()
+  importText(engine, '第一段粘贴正文', { x: 300, y: 300 })
+  importText(engine, '第二段粘贴正文', { x: 300, y: 300 })
+  const texts = [...doc.elements()].filter((el) => el.kind === 'markdown')
+  expect(texts.map((el) => doc.getText(el.id)?.toString())).toEqual([
+    '第一段粘贴正文',
+    '第二段粘贴正文',
+  ])
+  const [a, b] = texts.map((el) => doc.worldRect(el.id)!)
+  expect(a!.x < b!.x + b!.w && a!.x + a!.w > b!.x && a!.y < b!.y + b!.h && a!.y + a!.h > b!.y).toBe(
+    false,
+  )
+  doc.undo.undo()
+  expect(
+    [...doc.elements()]
+      .filter((el) => el.kind === 'markdown')
+      .map((el) => doc.getText(el.id)?.toString()),
+  ).toEqual(['第一段粘贴正文'])
+  doc.undo.redo()
+  expect(
+    [...doc.elements()]
+      .filter((el) => el.kind === 'markdown')
+      .map((el) => doc.getText(el.id)?.toString()),
+  ).toEqual(['第一段粘贴正文', '第二段粘贴正文'])
+})
+it('网络中断与旧版 .doc 给出能照着做的原因', async () => {
+  const { engine } = setup()
+  vi.spyOn(api, 'upload').mockRejectedValue(new TypeError('Failed to fetch'))
+  const offline = await importFiles(engine, [image('a.png')], { x: 0, y: 0 })
+  expect(offline.skipped).toEqual([{ name: 'a.png', reason: '网络不可用，请检查连接后重试' }])
+  vi.spyOn(api, 'upload').mockImplementation(async (file) => asset(file.name))
+  const legacy = new File(['old'], '旧文件', { type: 'application/msword' })
+  const docx = await importFiles(engine, [legacy], { x: 0, y: 0 })
+  expect(docx.skipped).toEqual([
+    { name: '旧文件', reason: '旧版 .doc 暂不支持，请另存为 .docx 或 .txt 后导入' },
+  ])
 })

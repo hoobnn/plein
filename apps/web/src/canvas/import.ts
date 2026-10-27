@@ -2,15 +2,23 @@ import type { Engine } from '@plein/canvas-core'
 import { AUDIO_SIZE, createElements, findFreeSpot, type NewElement } from '@plein/doc'
 import type { Asset } from '@plein/protocol'
 import { CompositionSourceRef } from '@plein/plugin-sdk'
-import { api } from '../api/client'
+import { ApiError, api } from '../api/client'
 import { containingFrame, placeElement } from './nodes'
 
 const DOCX_EXT = /\.docx$/i
 const TEXT_EXT = /\.(md|markdown|mdown|txt)$/i
+/** 旧版 .doc：按扩展名或 MIME 判断，改过名的旧文件也要说清怎么另存 */
+const LEGACY_DOC_MIME = /^application\/msword$/i
+const LEGACY_DOC_NAME = /\.doc$/i
 const MAX_SIDE = 480
 const GAP = 24
 /** 同时上传的文件数 */
 const CONCURRENCY = 3
+/** 导入失败时告诉用户支持哪些格式，而不是只说「不支持」 */
+const UNSUPPORTED = '暂不支持这种文件，仅支持图片、视频、音频、Markdown 和 DOCX'
+/** 浏览器在断网时给出的英文异常名 */
+const NETWORK_ERROR =
+  /fetch failed|failed to fetch|networkerror|network error|load failed|failed to load/i
 
 export interface ImportResult {
   created: string[]
@@ -75,6 +83,16 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 }
 
 /**
+ * 导入失败的原因：服务端给出的说明直接用；网络中断等浏览器异常换成用户能看懂的话。
+ */
+function failureReason(err: unknown): string {
+  if (err instanceof ApiError) return err.message
+  if (err instanceof Error && NETWORK_ERROR.test(err.message)) return '网络不可用，请检查连接后重试'
+  if (err instanceof Error && err.message) return err.message
+  return '导入失败，请重试'
+}
+
+/**
  * 导入文件：文本类直接建 Markdown 元素；图片 / 视频 / 音频先上传到资产库再建元素。
  * 元素从 at 开始横向排开，全部完成后一次写入文档（一步撤销）。
  */
@@ -93,7 +111,7 @@ export async function importFiles(
   const inputs = await mapLimit(files, CONCURRENCY, async (file) => {
     try {
       signal?.throwIfAborted()
-      if (/\.doc$/i.test(file.name))
+      if (LEGACY_DOC_NAME.test(file.name) || LEGACY_DOC_MIME.test(file.type))
         throw new Error('旧版 .doc 暂不支持，请另存为 .docx 或 .txt 后导入')
       if (DOCX_EXT.test(file.name) || isTextFile(file)) {
         const text = DOCX_EXT.test(file.name)
@@ -104,11 +122,11 @@ export async function importFiles(
       }
       const asset = await api.upload(file, signal)
       const input = elementFor(asset)
-      if (!input) skipped.push({ name: file.name, reason: '暂不支持这种文件' })
+      if (!input) skipped.push({ name: file.name, reason: UNSUPPORTED })
       // 相同内容会复用已有资产，画布名称仍应来自这次导入的文件。
       return input ? { ...input, name: file.name } : null
     } catch (err) {
-      skipped.push({ name: file.name, reason: (err as Error).message })
+      skipped.push({ name: file.name, reason: failureReason(err) })
       return null
     } finally {
       done++

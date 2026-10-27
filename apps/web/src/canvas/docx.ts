@@ -20,8 +20,30 @@ function children(el: Element, name?: string) {
   )
 }
 
-function first(el: Element, name: string) {
-  return el.getElementsByTagNameNS(WORD, name)[0]
+/**
+ * 命名空间里的第一个后代元素。
+ * 不依赖 getElementsByTagNameNS：部分 DOM 实现按限定名匹配该方法，
+ * 这里统一按 namespaceURI + localName 遍历，浏览器与测试环境结果一致。
+ */
+function first(el: Element | Document, name: string) {
+  for (const node of el.getElementsByTagName('*')) {
+    if (node.namespaceURI === WORD && node.localName === name) return node
+  }
+  return undefined
+}
+
+/**
+ * 命名空间里的属性值；同样不依赖 getAttributeNS，部分实现不返回属性的命名空间。
+ * 有命名空间时按命名空间判断，只有拿不到命名空间时才退回限定名。
+ */
+function attr(el: Element | undefined, name: string) {
+  if (!el) return undefined
+  for (const node of el.attributes) {
+    if (node.namespaceURI) {
+      if (node.namespaceURI === WORD && node.localName === name) return node.value
+    } else if (node.name === `w:${name}`) return node.value
+  }
+  return undefined
 }
 
 function escape(text: string) {
@@ -60,11 +82,11 @@ function paragraph(el: Element) {
   const text = inline(el).trim()
   if (!text) return ''
   const properties = children(el, 'pPr')[0]
-  const level = properties && first(properties, 'ilvl')?.getAttributeNS(WORD, 'val')
+  const level = properties && attr(first(properties, 'ilvl'), 'val')
   const num = properties && first(properties, 'numPr')
   // 保留列表层次；Word 自定义编号统一成 Markdown 项目符号。
   if (num) return `${'  '.repeat(Math.max(0, Math.min(8, Number(level) || 0)))}- ${text}`
-  const style = properties && first(properties, 'pStyle')?.getAttributeNS(WORD, 'val')
+  const style = properties && attr(first(properties, 'pStyle'), 'val')
   const heading = style?.match(/^(?:Heading|标题)\s*([1-6])$/i)
   return heading ? `${'#'.repeat(Number(heading[1]))} ${text}` : text
 }
@@ -121,7 +143,7 @@ export async function readDocx(file: File): Promise<string> {
     })
     const data = entries['word/document.xml']
     if (!data) throw new Error(INVALID)
-    body = xml(strFromU8(data)).getElementsByTagNameNS(WORD, 'body')[0]
+    body = first(xml(strFromU8(data)), 'body')
   } catch (error) {
     if (error instanceof Error && error.message.includes('超过')) throw error
     throw new Error(INVALID)

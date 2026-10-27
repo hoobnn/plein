@@ -95,6 +95,12 @@ it.each([
   ['角色.JPEG', 'image/jpeg', '角色.JPEG'],
   ['构图.v3', 'image/svg+xml', '构图.v3.svg'],
   ['图标.v1', 'image/vnd.microsoft.icon', '图标.v1.ico'],
+  ['台词.final', 'audio/wav', '台词.final.wav'],
+  ['成片.v1.2', 'video/mp4', '成片.v1.2.mp4'],
+  ['分镜.v2', 'image/png', '分镜.v2.png'],
+  ['角色.PNG', 'image/png', '角色.PNG'],
+  ['历史.PNG', 'image/png', '历史.PNG'],
+  ['历史.v2', 'image/png', '历史.v2.png'],
 ])('下载标题 %s 按实际格式 %s 补扩展名为 %s，并交出原文件', async (name, type, expected) => {
   const anchors: { download?: string }[] = []
   vi.stubGlobal('document', {

@@ -1,8 +1,12 @@
 import type { Engine } from '@plein/canvas-core'
 import { templateData } from '../../canvas/groups'
+import { ApiError } from '../../api/client'
 import { useCanvas } from '../../stores/canvas'
 import { useTemplates } from './store'
 import { promptDialog } from '../../ui/Dialog'
+
+/** 模板名称上限，与服务端一致；输入框就限制住，避免提交后才看到校验错误。 */
+const MAX_TITLE = 60
 
 /**
  * 存为模板：问一个名字，把分组存进「我的模板」。模板以分组为单位，
@@ -36,6 +40,7 @@ export async function saveAsTemplate(engine: Engine, frameId: string | null, nam
     defaultValue: name,
     placeholder: '模板名称',
     confirmLabel: '保存',
+    maxLength: MAX_TITLE,
   })
   if (!title) return
   if (!isCurrent() || !writable()) return
@@ -52,6 +57,9 @@ export async function saveAsTemplate(engine: Engine, frameId: string | null, nam
     if (isCurrent())
       notify(`${frameId ? '已' : '已打组并'}存为模板「${title}」，双击空白处在“我的模板”里找到`)
   } catch (err) {
-    if (isCurrent()) notify((err as Error).message)
+    if (!isCurrent()) return
+    // 校验失败时服务端回的是原始校验结果，翻译成用户能照着改的说法。
+    if (err instanceof ApiError && err.status === 400) return notify('模板内容不合法，请检查后重试')
+    notify(err instanceof Error && err.message ? err.message : '模板没有存上，请重试')
   }
 }
