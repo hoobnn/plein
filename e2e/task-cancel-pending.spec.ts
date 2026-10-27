@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { JobInfo } from '../packages/protocol/src/runs'
-import { clickElement, newProject } from './canvas'
+import { clickElement, newProject, revealGenerator } from './canvas'
 
 for (const entry of ['任务面板重开', '生成面板', '序列导出面板', '画布卡片'] as const) {
   test(`停止请求等待时${entry}共享禁用状态，失败可重试且不重复提交`, async ({ page }) => {
@@ -83,12 +83,16 @@ for (const entry of ['任务面板重开', '生成面板', '序列导出面板',
           const generator = page.getByTestId('generator')
           const expand = generator.getByRole('button', { name: '编辑序列', exact: true })
           if (await expand.isVisible()) await expand.click()
-          await generator.getByRole('button', { name: /^编辑序列（/ }).click()
+          const open = generator.getByRole('button', { name: /^编辑序列（/ })
+          await revealGenerator(page, open)
+          await open.click()
           scope = page.getByRole('dialog', { name: '序列', exact: true })
           stop = scope.getByRole('button', { name: '停止导出', exact: true })
         } else {
           scope = page.getByTestId('generator')
           stop = scope.getByRole('button', { name: '取消', exact: true })
+          // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+          await revealGenerator(page, stop)
         }
       }
       await expect(stop).toBeDisabled()

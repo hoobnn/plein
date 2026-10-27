@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { Catalog } from '../packages/protocol/src/plugins'
-import { clickElement, newProject } from './canvas'
+import { clickElement, newProject, revealGenerator } from './canvas'
 
 test('模型与通用同名字段各自关联标签、说明和保存位置', async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 560 })
@@ -41,7 +41,10 @@ test('模型与通用同名字段各自关联标签、说明和保存位置', as
     }),
   )
   await clickElement(page, id)
-  await page.getByRole('button', { name: '参数', exact: true }).click()
+  // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+  const paramsButton = page.getByRole('button', { name: '参数', exact: true })
+  await revealGenerator(page, paramsButton)
+  await paramsButton.click()
   const panel = page.getByRole('dialog', { name: '参数', exact: true })
   await panel.getByRole('button', { name: '更多参数', exact: true }).click()
   const commonLabel = panel.locator('label').filter({ hasText: /^语速$/ })

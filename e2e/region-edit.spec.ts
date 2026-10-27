@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
-import { addNode, edgesInto, elements, newProject, waitNode } from './canvas'
+import { addNode, edgesInto, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 /** 设了就把界面截图存到这个目录（亮色、暗色各一张） */
 const shotDir = process.env.PLEIN_E2E_SHOTS
@@ -23,7 +23,10 @@ test(
     await addNode(page, '生成图片')
     const generator = page.getByTestId('generator')
     await generator.locator('textarea').first().fill('窗边的书桌，桌上有一只白色杯子')
-    await generator.getByRole('button', { name: '生成', exact: true }).click()
+    // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+    const generate = generator.getByRole('button', { name: '生成', exact: true })
+    await revealGenerator(page, generate)
+    await generate.click()
     const [image] = (await elements(page)).filter((e) => e.kind === 'node')
     await waitNode(page, image!.id)
 
@@ -63,7 +66,8 @@ test(
     await generator.locator('textarea').first().fill('把杯子换成红色马克杯')
     await page.mouse.move(700, 120)
     await shoot(page, '2-node')
-    await generator.getByRole('button', { name: '生成', exact: true }).click()
+    await revealGenerator(page, generate)
+    await generate.click()
     await waitNode(page, edit.id)
     await page.mouse.move(700, 120)
     await shoot(page, '3-result')

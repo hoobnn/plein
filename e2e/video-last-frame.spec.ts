@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { solidPng } from '../packages/providers/src/mock/media'
-import { clickElement, newProject, waitEngine, waitNode } from './canvas'
+import { clickElement, newProject, revealGenerator, waitEngine, waitNode } from './canvas'
 
 test('仅尾帧可以从模式菜单选择、预览实际用途、生成并在刷新后保留', async ({ page }) => {
   await newProject(page)
@@ -36,7 +36,9 @@ test('仅尾帧可以从模式菜单选择、预览实际用途、生成并在�
   const generator = page.getByTestId('generator')
   const expand = generator.getByRole('button', { name: /^编辑/ })
   if (await expand.isVisible()) await expand.click()
+  // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
   const mode = generator.getByRole('button', { name: '生成模式', exact: true })
+  await revealGenerator(page, mode)
   await mode.click()
   const option = page.getByRole('option').filter({ hasText: '仅尾帧' })
   await expect(option).toBeVisible()
@@ -46,12 +48,15 @@ test('仅尾帧可以从模式菜单选择、预览实际用途、生成并在�
   await expect(mode).toContainText('仅尾帧')
   await expect(generator.getByText('尾帧', { exact: true })).toBeVisible()
   const preview = page.getByTestId('input-preview')
-  await preview.getByRole('button', { name: /实际输入/ }).click()
+  const actual = preview.getByRole('button', { name: /实际输入/ })
+  await revealGenerator(page, actual)
+  await actual.click()
   await expect(preview.locator('.ui-chip').filter({ hasText: '生成模式' })).toHaveText(
     '生成模式 仅尾帧',
   )
   const generate = generator.getByRole('button', { name: '生成', exact: true })
   await expect(generate).toBeEnabled()
+  await revealGenerator(page, generate)
   await generate.click()
   await waitNode(page, id)
   await expect(preview).toHaveAttribute('aria-busy', 'false')

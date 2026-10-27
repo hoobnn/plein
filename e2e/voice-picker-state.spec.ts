@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { clickElement, newProject, waitNode } from './canvas'
+import { clickElement, newProject, revealGenerator, waitNode } from './canvas'
 
 test('跨平台手选音色在生成前提示，切换正确音色后恢复并产出音频', async ({ page }) => {
   await newProject(page)
@@ -19,18 +19,24 @@ test('跨平台手选音色在生成前提示，切换正确音色后恢复并�
   await clickElement(page, id)
   const preview = page.getByTestId('input-preview')
   await expect(preview).toContainText('不会提交')
-  await preview.getByRole('button', { name: /实际输入/ }).click()
+  // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+  const actual = preview.getByRole('button', { name: /实际输入/ })
+  await revealGenerator(page, actual)
+  await actual.click()
   await expect(
     preview.getByText(/音色 foreign-voice 属于 minimax\/api，当前配音模型/),
   ).toBeVisible()
   const generate = page.getByRole('button', { name: '生成', exact: true })
   await expect(generate).toBeDisabled()
-  await page.getByRole('button', { name: '参数', exact: true }).click()
+  const params = page.getByRole('button', { name: '参数', exact: true })
+  await revealGenerator(page, params)
+  await params.click()
   await page.getByRole('button', { name: '更多参数', exact: true }).click()
   await page.getByRole('combobox', { name: '音色', exact: true }).click()
   await page.getByRole('option', { name: /Mock 女声/ }).click()
   await expect(preview).not.toContainText('不会提交')
   await expect(generate).toBeEnabled()
+  await revealGenerator(page, generate)
   await generate.click()
   await waitNode(page, id)
   const result = await page.evaluate((id) => window.__plein.engine.doc.get(id)!.results![0]!, id)
@@ -65,7 +71,10 @@ for (const initial of ['mock-female', 'initial-custom']) {
       initial,
     )
     await clickElement(page, id)
-    await page.getByRole('button', { name: '更多设置', exact: true }).click()
+    // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+    const more = page.getByRole('button', { name: '更多设置', exact: true })
+    await revealGenerator(page, more)
+    await more.click()
     const picker = page.getByRole('combobox', { name: '音色', exact: true })
     const provider = page.getByRole('textbox', { name: '音色所属平台', exact: true })
     const voice = page.getByRole('textbox', { name: '音色 ID', exact: true })
@@ -87,6 +96,8 @@ for (const initial of ['mock-female', 'initial-custom']) {
     await expect(picker).toHaveText('自定义音色 ID…')
     if (initial === 'initial-custom') {
       await page.setViewportSize({ width: 800, height: 560 })
+      // 窗口变窄后编辑器跟着卡片走：先把它移进窗口，再核对输入行没被裁掉
+      await revealGenerator(page, voice)
       await voice.scrollIntoViewIfNeeded()
       await expect(provider).toBeInViewport()
       await expect(voice).toBeInViewport()
@@ -127,7 +138,10 @@ test('手动自定义音色清空或输入预置 ID 时保持编辑入口', asyn
     }),
   )
   await clickElement(page, id)
-  await page.getByRole('button', { name: '更多设置', exact: true }).click()
+  // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+  const more = page.getByRole('button', { name: '更多设置', exact: true })
+  await revealGenerator(page, more)
+  await more.click()
   const picker = page.getByRole('combobox', { name: '音色', exact: true })
   await picker.click()
   await page.getByRole('option', { name: '自定义音色 ID…', exact: true }).click()
@@ -167,7 +181,10 @@ test('复制空白的音色在界面、生成预检与实际配音执行中保�
     }),
   )
   await clickElement(page, id)
-  await page.getByRole('button', { name: '参数', exact: true }).click()
+  // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+  const params = page.getByRole('button', { name: '参数', exact: true })
+  await revealGenerator(page, params)
+  await params.click()
   await page.getByRole('button', { name: '更多参数', exact: true }).click()
   await expect(page.getByRole('combobox', { name: '音色', exact: true })).toContainText('Mock 女声')
   const canvas = /#\/c\/([^/?]+)/.exec(page.url())![1]

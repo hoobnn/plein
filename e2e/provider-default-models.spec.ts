@@ -1,6 +1,6 @@
 import { openCanvasSettings } from './settings-ui'
 import { expect, type Page, test } from '@playwright/test'
-import { addNode, elements, newProject, waitNode } from './canvas'
+import { addNode, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 const configUrl = '/api/providers/plein/mock/config'
 const modelUrl = '/api/model-defaults'
@@ -96,7 +96,10 @@ test('默认模型等待保存和目录刷新时锁定当前选择，之后仅�
     expect(models).toEqual(['plein/mock:agent', 'plein/mock:chat'])
     const generator = page.getByTestId('generator')
     await generator.getByRole('textbox', { name: '提示词' }).fill('验证新默认模型')
-    await generator.getByRole('button', { name: '生成', exact: true }).click()
+    // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+    const generate = generator.getByRole('button', { name: '生成', exact: true })
+    await revealGenerator(page, generate)
+    await generate.click()
     await waitNode(page, created.id)
     expect(
       (await elements(page)).find((element) => element.id === created.id)?.results,

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { clickElement, newProject, waitNode } from './canvas'
+import { clickElement, newProject, revealGenerator, waitNode } from './canvas'
 
 test('其他模型损坏数据不影响当前生成，恢复当前模型只修改当前项且可撤销', async ({ page }) => {
   await newProject(page)
@@ -25,9 +25,13 @@ test('其他模型损坏数据不影响当前生成，恢复当前模型只修�
   const edit = generator.getByRole('button', { name: '编辑生成图片', exact: true })
   if (await edit.isVisible()) await edit.click()
   const preview = page.getByTestId('input-preview')
-  await preview.getByRole('button', { name: /实际输入/ }).click()
+  // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+  const actual = preview.getByRole('button', { name: /实际输入/ })
+  await revealGenerator(page, actual)
+  await actual.click()
   const generate = generator.getByRole('button', { name: /^(重新)?生成$/ })
   await expect(generate).toBeEnabled()
+  await revealGenerator(page, generate)
   await generate.click()
   await waitNode(page, id)
   const canvas = /#\/c\/([^/?]+)/.exec(page.url())![1]
@@ -60,6 +64,7 @@ test('其他模型损坏数据不影响当前生成，恢复当前模型只修�
   await expect(preview).toContainText('参数格式')
   await page.getByRole('button', { name: '重做', exact: true }).click()
   await expect(generate).toBeEnabled()
+  await revealGenerator(page, generate)
   await generate.click()
   await waitNode(page, id)
   await expect.poll(async () => (await jobs()).length).toBe(2)
@@ -85,7 +90,10 @@ test('没有专属参数表单的模型仍能恢复损坏历史参数并重新�
   const edit = generator.getByRole('button', { name: '编辑生成视频', exact: true })
   if (await edit.isVisible()) await edit.click()
   const preview = page.getByTestId('input-preview')
-  await preview.getByRole('button', { name: /实际输入/ }).click()
+  // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+  const actual = preview.getByRole('button', { name: /实际输入/ })
+  await revealGenerator(page, actual)
+  await actual.click()
   const generate = generator.getByRole('button', { name: /^(重新)?生成$/ })
   await expect(preview).toContainText('参数格式')
   await expect(generate).toBeDisabled()
@@ -102,6 +110,7 @@ test('没有专属参数表单的模型仍能恢复损坏历史参数并重新�
   await expect(preview).toContainText('参数格式')
   await page.getByRole('button', { name: '重做', exact: true }).click()
   await expect(generate).toBeEnabled()
+  await revealGenerator(page, generate)
   await generate.click()
   await waitNode(page, id)
   expect(
