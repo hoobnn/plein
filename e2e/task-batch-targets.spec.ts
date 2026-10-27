@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import type { BatchItem } from '../packages/protocol/src/recovery'
 import type { GroupRunStarted, GroupRunState } from '../packages/protocol/src/runs'
 import { newProject, waitEngine } from './canvas'

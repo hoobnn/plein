@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { centerOf, elements, newProject, zoomTo } from './canvas'
 
 let dir = ''

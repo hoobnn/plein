@@ -2,7 +2,7 @@ import { openCanvasSettings } from './settings-ui'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { addNode, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 const endpoint = '/api/plugins/local/acme/echo'

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject, waitNode } from './canvas'
 
 test('故事板预览保留节点候选，切换不误采用，采用后卡片刷新', async ({ page }) => {

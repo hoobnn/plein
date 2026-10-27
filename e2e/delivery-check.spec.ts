@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { centerOf, newProject, zoomTo } from './canvas'
 
 const panel = (page: Page) => page.getByTestId('delivery-check')

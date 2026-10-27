@@ -53,7 +53,11 @@ async function stopGroup(pid: number, signal: StopSignal) {
   if (!(await waitForGroup(pid))) throw new Error(`E2E 后端进程组 ${pid} 尚未退出，保留数据目录`)
 }
 
-async function ownServer() {
+/**
+ * 以监护者身份运行：独占创建数据目录、起后端、等它退出，最后回收目录。
+ * 同时作为独立进程（`--owner`）和 worker 作用域 fixture 内的子进程使用。
+ */
+export async function ownServer() {
   const stop = new AbortController()
   const requestStop = (signal: StopSignal) => stop.abort(signal)
   process.on('SIGINT', () => requestStop('SIGINT'))
@@ -139,9 +143,16 @@ function monitorOwner() {
   })
 }
 
+/**
+ * 这个文件既能被当成入口跑（`node e2e/server-lifecycle.ts`），
+ * 也能被别的模块 import 复用 `ownServer`。
+ * 只有作为入口时才自动起监护，被 import 时只导出函数。
+ */
+const isEntry = process.argv[1] === fileURLToPath(import.meta.url)
+
 if (process.platform === 'win32') {
   throw new Error('E2E 服务监护目前支持 macOS/Linux')
-} else if (process.argv[2] === '--owner') {
+} else if (isEntry && process.argv[2] === '--owner') {
   try {
     process.exitCode = await ownServer()
   } catch (error) {
@@ -150,6 +161,6 @@ if (process.platform === 'win32') {
   } finally {
     if (process.connected) process.disconnect?.()
   }
-} else {
+} else if (isEntry) {
   monitorOwner()
 }

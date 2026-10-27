@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { clickElement, newProject, revealGenerator, waitNode } from './canvas'
 
 test('跨平台手选音色在生成前提示，切换正确音色后恢复并产出音频', async ({ page }) => {

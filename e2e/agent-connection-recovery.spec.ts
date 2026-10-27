@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 
 test('事件流彻底关闭后可重连，失败可再试，恢复最新状态且不重发消息', async ({ page }) => {

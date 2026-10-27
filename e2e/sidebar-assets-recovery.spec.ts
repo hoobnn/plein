@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { contextMenu, newProject } from './canvas'
 
 test('资产侧栏读取失败可原地重试，恢复后放置、定位和删除状态正确', async ({ page }) => {

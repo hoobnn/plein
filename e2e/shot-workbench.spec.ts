@@ -11,7 +11,7 @@ import {
   type Route,
   type TestInfo,
   test,
-} from '@playwright/test'
+} from './fixtures'
 import { centerOf, newProject, openStoryboardActions, waitEngine, waitNode, zoomTo } from './canvas'
 
 const fixtureFile = join(

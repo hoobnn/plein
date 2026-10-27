@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import type { UserTemplate } from '../packages/protocol/src/templates'
 import { newProject } from './canvas'
 

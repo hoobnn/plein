@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import type { LibraryItem } from '../packages/protocol/src/library'
 import { solidPng } from '../packages/providers/src/mock/media'
 import { newProject } from './canvas'

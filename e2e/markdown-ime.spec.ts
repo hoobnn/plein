@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { centerOf, elements, newProject, settle } from './canvas'
 
 for (const mode of ['composing', 'legacy', 'legacy-27', 'end-229'] as const) {

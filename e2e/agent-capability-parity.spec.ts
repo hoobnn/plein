@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { elements, newProject } from './canvas'
 
 test('外部 Agent 通过当前画布客户端截取 3D 构图，结果与来源同步到画布', async ({ page }) => {

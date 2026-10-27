@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { centerOf, clickElement, newProject, waitEngine } from './canvas'
 
 const errors = new WeakMap<Page, string[]>()

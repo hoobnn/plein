@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject, waitEngine } from './canvas'
 
 /** 项目和画布的增删改：画布页改过的东西回到首页能看到（列表数据走查询缓存，改完要失效重拉） */

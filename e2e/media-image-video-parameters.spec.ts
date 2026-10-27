@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import type { MediaDeriveRequest } from '../packages/protocol/src/media'
 import { solidPng } from '../packages/providers/src/mock/media'
 import { centerOf, newProject, zoomTo } from './canvas'

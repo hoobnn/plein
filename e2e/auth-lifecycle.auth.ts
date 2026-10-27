@@ -1,4 +1,4 @@
-import { expect, type Route, test } from '@playwright/test'
+import { expect, type Route, test } from './fixtures'
 import { waitEngine } from './canvas'
 
 // 仅用于每次新建的隔离认证数据库。

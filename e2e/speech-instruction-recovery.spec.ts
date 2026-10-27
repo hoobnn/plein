@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { clickElement, newProject, revealGenerator, waitNode } from './canvas'
 
 test(`窄窗口长语气指令不适用时可显式清空、撤销重做并换模型生成`, async ({ page }) => {

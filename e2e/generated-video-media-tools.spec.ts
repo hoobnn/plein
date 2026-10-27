@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import type { PleinDoc } from '../packages/doc/src/doc'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { addNode, clickElement, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 async function fixture(page: Page) {

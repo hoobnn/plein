@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { addNode, byName, clickElement, newProject } from './canvas'
 
 test('分镜补充要求不能替代剧本，连接剧本前禁止提交生成', async ({ page }) => {

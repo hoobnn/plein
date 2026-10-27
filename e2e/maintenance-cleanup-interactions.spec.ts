@@ -2,7 +2,7 @@ import { openCanvasSettings } from './settings-ui'
 import { randomUUID } from 'node:crypto'
 import { utimes } from 'node:fs/promises'
 import { join } from 'node:path'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { openDb } from '../apps/server/src/storage/db'
 import { newProject } from './canvas'
 

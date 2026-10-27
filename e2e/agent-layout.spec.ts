@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject, settle } from './canvas'
 
 for (const initialWidth of [1440]) {

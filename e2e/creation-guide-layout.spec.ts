@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { clickElement, newProject, revealGenerator, zoomTo } from './canvas'
 
 const guide = (page: Page) => page.getByTestId('creation-guide')

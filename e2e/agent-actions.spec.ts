@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { elements, newProject } from './canvas'
 
 test('撤销失败保留改动，等待重试时关闭重开仍禁止重复撤销，成功后恢复画布', async ({ page }) => {

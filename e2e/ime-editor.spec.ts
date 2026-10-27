@@ -1,4 +1,4 @@
-import { expect, type Locator, test } from '@playwright/test'
+import { expect, type Locator, test } from './fixtures'
 import { centerOf, clickElement, newProject } from './canvas'
 
 async function composingKey(input: Locator, key: string, isComposing: boolean) {

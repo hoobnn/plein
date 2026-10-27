@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject, waitNode } from './canvas'
 
 for (const mode of ['image', 'video', 'audio', 'resize'] as const) {

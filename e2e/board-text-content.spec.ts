@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { clickElement, newProject } from './canvas'
 
 test('手写文本直接显示正文，编辑与撤销后预览和筛选同步', async ({ page }) => {

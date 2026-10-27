@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { newProject } from './canvas'
 
 test('提交未知可复制核查信息，复制失败可重试且不提交或恢复任务', async ({ page, context }) => {

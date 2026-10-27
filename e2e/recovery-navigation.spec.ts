@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import type { JobInfo } from '../packages/protocol/src/runs'
 import { addNode, elements, newProject } from './canvas'
 

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { elements, newProject, waitEngine } from './canvas'
 
 test('新建项目等待时有明确状态，连续触发只创建一次', async ({ page }) => {

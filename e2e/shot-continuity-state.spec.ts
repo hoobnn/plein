@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { expect, type Locator, type Page, test } from '@playwright/test'
+import { expect, type Locator, type Page, test } from './fixtures'
 import { centerOf, newProject, showStoryboardCards, zoomTo } from './canvas'
 
 const input = JSON.parse(

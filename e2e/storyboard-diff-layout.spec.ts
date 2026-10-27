@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { centerOf, newProject, showStoryboardCards, zoomTo } from './canvas'
 
 async function fixture(page: Page, long = false, overridden = false) {

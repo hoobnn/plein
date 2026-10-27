@@ -1,5 +1,5 @@
 import { openLibraryPanel } from './library-ui'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { newProject, waitEngine } from './canvas'
 
 test('320px 下资产类别可用键盘逐项访问，导航不撑出面板', async ({ page }) => {

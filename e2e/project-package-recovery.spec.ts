@@ -1,4 +1,4 @@
-import { expect, type Route, test } from '@playwright/test'
+import { expect, type Route, test } from './fixtures'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import type { ProjectPackageManifest } from '../packages/protocol/src/project-package'

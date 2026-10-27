@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { centerOf, clickElement, newProject } from './canvas'
 
 for (const kind of ['storyboard', 'sequence'] as const) {

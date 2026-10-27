@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 import { solidPng, sineWav } from '../packages/providers/src/mock/media'
 import { MOCK_WEBM_BASE64 } from '../packages/providers/src/mock/video-fixture'
 import { centerOf, newProject, zoomTo } from './canvas'

@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { loadConfig } from '../apps/server/src/config'
 import { startServer, type RunningServer } from '../apps/server/src/start'
 import type { JobList, PreparedInput } from '../packages/protocol/src/runs'
@@ -44,6 +44,9 @@ function observeSubmits() {
     },
   }
 }
+// 这条用例自带隔离服务，还要在流程中途把服务停掉再起，不借 worker 的后端
+test.use({ ownService: true })
+
 test.beforeAll(async () => {
   data = mkdtempSync(join(tmpdir(), 'plein-complete-creation-'))
   const bundled = join(import.meta.dirname, '../apps/desktop/stage/ffmpeg')

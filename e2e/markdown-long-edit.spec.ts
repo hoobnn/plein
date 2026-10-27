@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { elements, newProject, settle, waitEngine } from './canvas'
 
 for (const { top, zoom } of [

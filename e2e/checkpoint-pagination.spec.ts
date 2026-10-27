@@ -1,5 +1,5 @@
 import type { CreateCheckpoint } from '../packages/protocol/src/checkpoints'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { article, checkpointPair, panel } from './checkpoints'
 
 async function fixture(page: Page) {

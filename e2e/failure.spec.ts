@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { addNode, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 const MOCK = '/api/providers/plein/mock/config'

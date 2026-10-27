@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import type { GroupRunStarted, GroupRunState, JobList } from '../packages/protocol/src/runs'
 import { newProject, waitEngine } from './canvas'
 

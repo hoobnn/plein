@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { clickElement, newProject, settle } from './canvas'
 
 type PanEngine = Window['__plein']['engine'] & { camera: { panBy(x: number, y: number): void } }

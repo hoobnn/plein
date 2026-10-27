@@ -1,5 +1,5 @@
 import { openLibraryPanel } from './library-ui'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 
 // 同时在生产构建和开发 StrictMode 下运行，确保一次性打开目标不会被 effect 重放清掉。

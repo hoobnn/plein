@@ -1,5 +1,5 @@
 import { openLibraryPanel } from './library-ui'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { newProject, waitEngine } from './canvas'
 
 async function fixture(page: Page, failure?: 'http' | 'network') {

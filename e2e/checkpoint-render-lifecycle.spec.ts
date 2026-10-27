@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { article, checkpointPair, panel } from './checkpoints'
 
 test('反复打开关闭和切换检查点预览，不破坏主画布及其他预览的渲染资源', async ({ page }) => {

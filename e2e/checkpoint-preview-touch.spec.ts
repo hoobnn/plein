@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { article, checkpointPair, openCheckpoints, panel } from './checkpoints'
 
 test.use({ hasTouch: true, viewport: { width: 390, height: 844 } })

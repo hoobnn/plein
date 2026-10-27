@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 
 let dir = ''

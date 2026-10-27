@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { newProject } from './canvas'
 
 const duplicateTitle = `同名画布 · ${'雨后玻璃水杯分镜与拍摄计划'.repeat(8)}`

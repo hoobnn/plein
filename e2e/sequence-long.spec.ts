@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { addNode, centerOf, elements, newProject, zoomTo } from './canvas'
 
 test('三十分钟时间线可铺满、定位和放大，片尾修剪与实际导出一致', async ({ page }) => {

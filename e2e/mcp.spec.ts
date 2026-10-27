@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 
 /** 对外开放 MCP：生成令牌，拿到能直接贴的配置，外部应用用它连进来 */

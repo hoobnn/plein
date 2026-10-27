@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { clickElement, newProject, revealGenerator } from './canvas'
 
 test('悬停中的生成按钮随任务状态更新提示，移出后不恢复旧说明', async ({ page }) => {

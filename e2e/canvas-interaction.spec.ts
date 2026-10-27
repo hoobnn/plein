@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { addNode, elements, newProject } from './canvas'
 
 test('添加菜单键盘选项保持可见，中文组字不误建节点', async ({ page }) => {

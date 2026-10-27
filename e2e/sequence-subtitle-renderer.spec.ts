@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { centerOf, newProject, zoomTo } from './canvas'
 import { animaticNode, arrangeAnimatic } from '../packages/nodes/src/animatic'
 import { subtitleInputKey } from '../packages/nodes/src/sequence'

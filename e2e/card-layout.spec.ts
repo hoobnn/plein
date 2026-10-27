@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 import { clickElement, deselect, elements, handleOf, newProject, waitNode, zoomTo } from './canvas'
 
 const rects = (page: Page, ids: string[]) =>

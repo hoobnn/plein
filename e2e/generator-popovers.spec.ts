@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { clickElement, revealGenerator, newProject } from './canvas'
 
 for (const { type, trigger, label } of [

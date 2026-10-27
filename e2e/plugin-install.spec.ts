@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 import { openCanvasSettings } from './settings-ui'
 

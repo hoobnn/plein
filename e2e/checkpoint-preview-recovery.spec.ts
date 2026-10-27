@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { article, checkpointPair as fixture, panel } from './checkpoints'
 
 test('检查点预览读取失败可直接重试，等待禁用重试，成功预览保持只读', async ({ page }) => {

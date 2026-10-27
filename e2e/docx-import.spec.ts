@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 import { elements, newProject, waitEngine } from './canvas'
 
 const { zipSync } = createRequire(new URL('../apps/web/package.json', import.meta.url))(

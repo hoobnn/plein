@@ -1,5 +1,5 @@
 import { openCanvasSettings } from './settings-ui'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 
 test.beforeEach(async ({ request }) => {

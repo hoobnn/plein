@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { byName, waitEngine } from './canvas'
 
 const MOCK = '/api/providers/plein/mock/config'

@@ -1,6 +1,6 @@
 import type { Engine } from '../packages/canvas-core/src/engine'
 import type { Transient } from '../packages/canvas-core/src/scene'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject, settle } from './canvas'
 
 /** 真实 DOM 覆盖层在连续几何预览中复用正文，文档变更后仍刷新语义。 */

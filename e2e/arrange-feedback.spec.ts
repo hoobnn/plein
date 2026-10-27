@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { newProject, waitEngine } from './canvas'
 
 type Engine = import('../packages/canvas-core/src/engine').Engine

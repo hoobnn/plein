@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { sineWav, solidPng } from '../packages/providers/src/mock/media'
 import { MOCK_WEBM_BASE64 } from '../packages/providers/src/mock/video-fixture'
 import { clickElement, revealGenerator, newProject, waitEngine } from './canvas'

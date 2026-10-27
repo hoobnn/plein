@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { elements, newProject, settle } from './canvas'
 
 for (const next of ['edit', 'back'] as const) {

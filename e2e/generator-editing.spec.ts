@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { clickElement, newProject, revealGenerator } from './canvas'
 
 test('正在编辑长正文时平移与窗口缩小不收起输入框，选区和正文保持', async ({ page }) => {

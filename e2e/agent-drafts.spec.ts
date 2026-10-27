@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 
 test('助手草稿关闭后恢复，发送失败保留，迟到成功不清除新输入', async ({ page }) => {

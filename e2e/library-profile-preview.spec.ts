@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, type Locator, type Page, test } from '@playwright/test'
+import { expect, type Locator, type Page, test } from './fixtures'
 import { newProject } from './canvas'
 
 let dir = ''

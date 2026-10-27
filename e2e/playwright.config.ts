@@ -1,59 +1,44 @@
-import { randomUUID } from 'node:crypto'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
+import { cpus } from 'node:os'
 
 /**
  * 界面冒烟（L3 的界面部分）：真服务 + mock 平台 + e2e 构建的前端。
- * 先 `pnpm e2e` 构建 apps/web/dist-e2e，再由这里起服务；数据目录每次新建，结束不留状态。
+ *
+ * 并行模型：每个 worker 起一份自己的后端（独立端口 + 独立数据目录），文件之间并行、
+ * 文件内部串行。baseURL 由 worker 作用域的 fixture 覆盖，见 `e2e/fixtures.ts`。
+ * 数据目录由各 worker 的服务监护进程独占创建、结束后回收，不留状态。
+ *
+ * 端口基准可用 `PLEIN_E2E_BASE_PORT` 覆盖；每个 worker 用 basePort + workerIndex。
+ * 注意别和别的进程抢端口：默认从 8800 起，避开 8790/8795 这类常用值。
  */
-const root = join(import.meta.dirname, '..')
-const PORT = Number(process.env.PLEIN_E2E_PORT ?? 8790)
-const providedData = process.env.PLEIN_E2E_DATA
-// 只预留名字；--list 和配置加载不产生目录，真正的服务进程负责创建及回收。
-const dataDir = providedData ?? join(tmpdir(), `plein-e2e-${randomUUID()}`)
-process.env.PLEIN_E2E_DATA = dataDir
+
+/** 并行度：默认取核数的一半，浏览器本身吃 CPU，留一半给服务和工具链 */
+const defaultWorkers = Math.max(1, Math.floor(cpus().length / 2))
+const workers = Number(process.env.PLEIN_E2E_WORKERS ?? defaultWorkers)
 
 export default defineConfig({
   testDir: '.',
   // Keep the runner's destructive cleanup inside its own directory.
   outputDir: '../test-results/playwright-main',
-  // 一条用例走完整条流水线，状态前后相依，不并行
-  workers: 1,
+  // 文件之间并行，文件内部保持串行（一条用例走完整条流水线，状态前后相依）
+  workers,
   fullyParallel: false,
   // CI 每次全量一千六百多条，偶发的时序抖动重试一次；稳定失败仍然算失败，重试通过的会标成 flaky
   retries: process.env.CI ? 1 : 0,
-  timeout: 180_000,
+  // 默认超时收紧到一分钟：界面冒烟里没有一条该跑更久；
+  // 确实需要长时间的用例在自己的文件里调大
+  timeout: 60_000,
+  // 断言超时保持 15s：有些用例等的是服务端 10s 一次的轮询，
+  // 断言超时再短就比轮询周期还短，稳定失败
   expect: { timeout: 15_000 },
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     ...devices['Desktop Chrome'],
-    baseURL: `http://127.0.0.1:${PORT}`,
+    // baseURL 由 worker fixture 覆盖，这里给一个占位值，保证单跑一条用例时也有地址
+    baseURL: 'http://127.0.0.1:0',
     viewport: { width: 1440, height: 900 },
     actionTimeout: 10_000,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-  },
-  webServer: {
-    // PLEIN_E2E_SERVER：换成别的服务端入口，例如桌面安装包用的打包产物
-    // （node apps/desktop/stage/server/main.mjs）
-    command: 'node e2e/server-lifecycle.ts',
-    cwd: root,
-    url: `http://127.0.0.1:${PORT}/api/health`,
-    reuseExistingServer: false,
-    timeout: 60_000,
-    gracefulShutdown: { signal: 'SIGTERM', timeout: 15_000 },
-    env: {
-      PLEIN_E2E_SERVER_COMMAND:
-        process.env.PLEIN_E2E_SERVER ?? 'apps/server/node_modules/.bin/tsx apps/server/src/main.ts',
-      PLEIN_E2E_OWN_DATA: providedData === undefined ? dataDir : '',
-      PLEIN_E2E_RUNNER_PID: String(process.pid),
-      PLEIN_PORT: String(PORT),
-      PLEIN_DATA_DIR: dataDir,
-      PLEIN_WEB_DIST:
-        process.env.PLEIN_E2E_DIST ?? join(import.meta.dirname, '../apps/web/dist-e2e'),
-      PLEIN_MOCK_PROVIDER: '1',
-      PLEIN_AGENT: '0',
-    },
   },
 })

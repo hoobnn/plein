@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { randomUUID } from 'node:crypto'
 import { newProject } from './canvas'
 

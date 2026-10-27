@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { elements, newProject } from './canvas'
 
 test('长会话可按区域阅读和键盘翻页，方案可访问且不穿透修改画布', async ({ page }) => {

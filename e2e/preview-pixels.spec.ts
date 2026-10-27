@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, test } from '@playwright/test'
+import { expect, type Locator, type Page, test } from './fixtures'
 import { createRequire } from 'node:module'
 import type { Engine } from '../packages/canvas-core/src/engine'
 import { newProject, waitEngine } from './canvas'

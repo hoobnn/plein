@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 
 test('素材搜索组词期间保留结果和详情，确认只查一次，取消与失焦可恢复', async ({ page }) => {

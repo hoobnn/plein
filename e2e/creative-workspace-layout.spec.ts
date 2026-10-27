@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { centerOf, newProject, zoomTo } from './canvas'
 
 test('镜头制作同屏布局、切镜草稿和冲突保护，浏览不触发生成', async ({ page }, info) => {

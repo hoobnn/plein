@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { centerOf, newProject, zoomTo } from './canvas'
 
 for (const cancel of ['pointercancel', 'blur'] as const) {

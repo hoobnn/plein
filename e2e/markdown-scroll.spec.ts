@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { elements, newProject, zoomTo } from './canvas'
 
 for (const kind of ['代码块', '表格']) {

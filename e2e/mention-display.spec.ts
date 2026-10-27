@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 import { clickElement, revealGenerator, newProject } from './canvas'
 
 const waitPlaced = (page: Page, id: string) =>

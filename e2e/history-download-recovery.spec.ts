@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { expect, test, type Download } from '@playwright/test'
+import { expect, test, type Download } from './fixtures'
 import { newProject, waitNode } from './canvas'
 
 for (const mode of ['failure', 'filter', 'cancel', 'close', 'dismiss-failure'] as const) {

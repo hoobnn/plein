@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { addNode, byName, centerOf, contextMenu, newProject, waitNode, zoomTo } from './canvas'
 
 async function openBoard(page: Page) {

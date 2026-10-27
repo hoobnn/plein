@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, test } from '@playwright/test'
+import { expect, type Locator, type Page, test } from './fixtures'
 import { article, checkpointPair, panel } from './checkpoints'
 
 const preview = (page: Page) => panel(page).getByTestId('checkpoint-preview')

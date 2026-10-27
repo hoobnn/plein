@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import type { JobInfo } from '../packages/protocol/src/runs'
 import { clickElement, newProject, openStoryboardActions } from './canvas'
 

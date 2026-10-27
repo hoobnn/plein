@@ -1,4 +1,4 @@
-import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
+import { expect, test, type Page, type WebSocketRoute } from './fixtures'
 import { clickElement, newProject, openStoryboardActions, waitNode } from './canvas'
 
 async function fixture(page: Page) {

@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { newProject } from './canvas'
 
 const handleOf = (page: Page) => page.getByRole('separator', { name: '调整侧栏宽度', exact: true })

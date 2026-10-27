@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { centerOf, elements, newProject, settle } from './canvas'
 
 test('工具记录随元素重命名、删除和撤销同步摘要与定位，展开结果保留', async ({ page }) => {

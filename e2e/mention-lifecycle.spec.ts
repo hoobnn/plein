@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 import { clickElement, newProject, revealGenerator, waitNode } from './canvas'
 
 async function setup(page: Page) {

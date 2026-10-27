@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import type { MediaSourcesPage } from '../packages/protocol/src/media-library'
 import { newProject } from './canvas'
 

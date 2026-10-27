@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject, revealGenerator } from './canvas'
 
 for (const width of [1440, 900])

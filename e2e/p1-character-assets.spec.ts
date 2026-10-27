@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 import type { LibraryItem } from '../packages/protocol/src'
 import { solidPng } from '../packages/providers/src/mock/media'
 import { newProject, revealGenerator, waitNode } from './canvas'

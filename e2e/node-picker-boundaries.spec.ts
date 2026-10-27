@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { clickElement, deselect, edgesInto, elements, handleOf, newProject } from './canvas'
 
 test('视频共用连接点列出视频和尾帧，创建序列连接主视频输出', async ({ page }) => {

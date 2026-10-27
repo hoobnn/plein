@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { article, checkpointPair, panel } from './checkpoints'
 
 for (const source of ['卡片', '空白处']) {

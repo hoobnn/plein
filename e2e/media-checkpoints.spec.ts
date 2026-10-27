@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { byName, elements, newProject, waitEngine, waitNode } from './canvas'
 
 async function image(page: Page, name: string) {

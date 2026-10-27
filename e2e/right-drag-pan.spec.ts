@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { centerOf, clickElement, newProject, zoomTo } from './canvas'
 
 /** 找一块没有被浮层盖住的画布空白处：空画布上的快捷入口卡片会挡住点击。 */

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject, revealGenerator, waitNode, zoomTo } from './canvas'
 
 test('审片候选被移除后保留同端口浏览，退出失效对比并结束拖动', async ({ page }) => {

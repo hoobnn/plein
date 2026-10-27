@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, test } from '@playwright/test'
+import { expect, type Locator, type Page, test } from './fixtures'
 import { solidPng } from '../packages/providers/src/mock/media'
 import { newProject, revealGenerator, zoomTo } from './canvas'
 

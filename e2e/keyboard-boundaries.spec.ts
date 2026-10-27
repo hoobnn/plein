@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { addNode, centerOf, deselect, elements, newProject, waitEngine } from './canvas'
 
 test('本地演示在会话服务离线时仍可切换主题并编辑节点', async ({ page }) => {

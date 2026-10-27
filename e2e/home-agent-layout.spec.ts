@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject, waitEngine } from './canvas'
 
 test('窄屏筛选卡片的标题右侧可点击，不被助手开关截获', async ({ page }) => {

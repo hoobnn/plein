@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 
 test('历史内置会话正确标识，切换中禁止误发，删除后迟到应答不恢复会话', async ({ page }) => {

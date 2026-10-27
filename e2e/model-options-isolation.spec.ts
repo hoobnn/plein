@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { clickElement, newProject, revealGenerator, waitNode } from './canvas'
 
 test('其他模型损坏数据不影响当前生成，恢复当前模型只修改当前项且可撤销', async ({ page }) => {

@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { centerOf, elements, newProject, waitEngine, zoomTo } from './canvas'
 
 async function pasteNote(page: Page, text: string) {

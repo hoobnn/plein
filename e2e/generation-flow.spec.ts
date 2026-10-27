@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 import { clickElement, deselect, newProject, waitNode, zoomTo } from './canvas'
 
 test('图片派生视频自动使用首帧模式，正文遵循图片遮挡并在移开后恢复', async ({ page }) => {

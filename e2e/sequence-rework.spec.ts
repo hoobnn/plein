@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { MOCK_WEBM_BASE64 } from '../packages/providers/src/mock/video-fixture'
 import { API } from '../packages/protocol/src/api'
 import { centerOf, newProject, zoomTo } from './canvas'

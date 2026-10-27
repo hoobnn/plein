@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject, waitEngine } from './canvas'
 
 for (const width of [320, 1024, 1440]) {

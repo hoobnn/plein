@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject, waitEngine } from './canvas'
 
 for (const path of ['/c/%E0%A4%A']) {

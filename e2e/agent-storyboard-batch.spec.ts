@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import type { AgentItem, AgentSession, StoryboardBatchPlan } from '../packages/protocol/src'
 import { newProject } from './canvas'
 

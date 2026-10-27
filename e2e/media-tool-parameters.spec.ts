@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import type { MediaDeriveRequest } from '../packages/protocol/src/media'
 import { sineWav } from '../packages/providers/src/mock/media'
 import { centerOf, newProject, zoomTo } from './canvas'

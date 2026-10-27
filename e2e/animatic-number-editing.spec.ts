@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { centerOf, clickElement, newProject, waitEngine } from './canvas'
 
 for (const [key, label, initial] of [['duration', '样片镜头时长（秒）', 3]] as const) {

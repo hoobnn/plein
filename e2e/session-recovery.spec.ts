@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject, waitEngine } from './canvas'
 
 test('会话接口自身返回 401 时停止自动读取，可手动重试恢复', async ({ page }) => {

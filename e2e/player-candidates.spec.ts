@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { centerOf, newProject, waitEngine, zoomTo } from './canvas'
 
 test('另一端采用或移除视频候选时，内联播放器切到正确素材并停止旧媒体', async ({

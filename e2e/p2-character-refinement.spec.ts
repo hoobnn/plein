@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import type { LibraryItem } from '../packages/protocol/src'
 import { newProject, revealGenerator, waitNode } from './canvas'
 

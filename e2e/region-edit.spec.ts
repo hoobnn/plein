@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { addNode, edgesInto, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 /** 设了就把界面截图存到这个目录（亮色、暗色各一张） */

@@ -1,5 +1,5 @@
 import { openCanvasSettings } from './settings-ui'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { addNode, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 const configUrl = '/api/providers/plein/mock/config'

@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { elements, newProject, settle, waitNode, zoomTo } from './canvas'
 
 async function panElement(page: Page, id: string, top: number, left = 950) {

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject, revealGenerator } from './canvas'
 
 test('数值参数保留零值、失焦夹紧范围，清空恢复默认且不会自动生成', async ({ page }) => {

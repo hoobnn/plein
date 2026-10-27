@@ -1,5 +1,5 @@
 import { openLibraryPanel } from './library-ui'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 
 test('官方复制完成后可直接编辑保存，更新复制条目而不再次创建', async ({ page }) => {

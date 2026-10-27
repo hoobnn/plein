@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 import { solidPng } from '../packages/providers/src/mock/media'
 import { openCanvasSettings } from './settings-ui'

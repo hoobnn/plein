@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { sineWav, solidPng } from '../packages/providers/src/mock/media'
 import { newProject, zoomTo } from './canvas'
 

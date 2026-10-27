@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { addNode, clickElement, edgesInto, elements, handleOf, newProject } from './canvas'
 
 const nodes = async (page: Parameters<typeof elements>[0]) =>

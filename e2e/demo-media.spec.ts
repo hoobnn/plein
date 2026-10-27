@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject, waitEngine, waitNode } from './canvas'
 
 for (const count of [13, 1000]) {

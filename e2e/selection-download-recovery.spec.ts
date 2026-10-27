@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { expect, test, type Download } from '@playwright/test'
+import { expect, test, type Download } from './fixtures'
 import { solidPng } from '../packages/providers/src/mock/media'
 import { newProject } from './canvas'
 

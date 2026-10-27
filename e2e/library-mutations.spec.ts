@@ -1,5 +1,5 @@
 import { openLibraryPanel } from './library-ui'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 
 test('删除等待期间锁定编辑操作，失败后保留内容并可重试', async ({ page }) => {

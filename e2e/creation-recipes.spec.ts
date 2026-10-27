@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 import type { Catalog } from '../packages/protocol/src/plugins'
 import { addNode, elements, newProject, revealGenerator } from './canvas'
 

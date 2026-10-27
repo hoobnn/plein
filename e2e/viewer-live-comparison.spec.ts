@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import type { Catalog } from '../packages/protocol/src/plugins'
 import { newProject, waitNode } from './canvas'
 

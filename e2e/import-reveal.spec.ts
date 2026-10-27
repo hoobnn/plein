@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { elements, newProject, waitNode } from './canvas'
 
 const png = Buffer.from(

@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 import { centerOf, newProject, zoomTo } from './canvas'
 
 async function localReport(page: Page) {

@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { newProject, revealGenerator, waitEngine } from './canvas'
 
 for (const choice of ['latest'] as const) {

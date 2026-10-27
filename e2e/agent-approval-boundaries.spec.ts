@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { elements, newProject } from './canvas'
 
 for (const choice of ['允许', '跳过', '停止'] as const) {

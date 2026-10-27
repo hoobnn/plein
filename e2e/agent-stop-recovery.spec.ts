@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import type { AgentSession, AgentSessionSummary } from '../packages/protocol/src/agent'
 import { elements, newProject, waitEngine } from './canvas'
 

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 import type { LibraryItem } from '../packages/protocol/src'
 import { newProject } from './canvas'
 import { openLibraryPanel } from './library-ui'

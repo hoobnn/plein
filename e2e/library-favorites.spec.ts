@@ -1,5 +1,5 @@
 import { openLibraryPanel } from './library-ui'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 
 test('收藏响应延迟时仍可进入编辑，保存排队完成后名称与收藏均正确', async ({ page }) => {

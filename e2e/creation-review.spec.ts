@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { gzipSync } from 'node:zlib'
 import { pathToFileURL } from 'node:url'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from './fixtures'
 import type { PreparedInput } from '../packages/protocol/src/runs'
 import {
   clickElement,
