@@ -4,7 +4,7 @@ import type { AssetRef, ComposeSpec } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
 import { tempDir } from '../testing'
 import { composeVideo, envelopeExpr, validateComposeOverlays } from './compose'
-import { ffmpegBin, h264Args, hasFfmpeg, probeMedia } from './media'
+import { ffmpegBin, h264Args, hasFfmpeg, mediaToolPaths, probeMedia } from './media'
 
 const ffmpeg = await hasFfmpeg()
 const ff = (...args: string[]) =>
@@ -13,6 +13,26 @@ const ref = <K extends 'video' | 'audio'>(assetId: string, kind: K): AssetRef & 
   assetId,
   kind,
 })
+
+const pixelAt = (file: string, time: number, x: number, y: number) => [
+  ...execFileSync(ffmpegBin(), [
+    '-v',
+    'error',
+    '-ss',
+    String(time),
+    '-i',
+    file,
+    '-vf',
+    `crop=2:2:${x}:${y},scale=1:1`,
+    '-frames:v',
+    '1',
+    '-pix_fmt',
+    'rgb24',
+    '-f',
+    'rawvideo',
+    'pipe:1',
+  ]),
+]
 
 describe('envelopeExpr', () => {
   it('分段线性，两端保持端点值，时间按这条声音的起点平移', () => {
@@ -28,6 +48,64 @@ describe('envelopeExpr', () => {
 })
 
 describe.skipIf(!ffmpeg)('composeVideo', () => {
+  it('五分钟低帧率素材只取片尾，两倍速实际输出保持时长、帧数与正确画面', async () => {
+    const dir = tempDir('plein-compose-long-tail-')
+    const clip = join(dir, 'long.webm')
+    ff(
+      '-f',
+      'lavfi',
+      '-i',
+      "color=c=blue:s=32x32:d=300:r=1,drawbox=c=red:t=fill:enable='gte(t,298)'",
+      '-c:v',
+      'libvpx-vp9',
+      '-deadline',
+      'realtime',
+      '-threads',
+      '1',
+      clip,
+    )
+    const info = await probeMedia(clip)
+    expect(info.duration).toBeCloseTo(300, 2)
+    const spec: ComposeSpec = {
+      width: 320,
+      height: 180,
+      fps: 30,
+      clips: [{ asset: ref('long', 'video'), in: 298, out: 300, speed: 2, volume: 0 }],
+      audio: [],
+    }
+    const out = await composeVideo(spec, { clips: [clip], audio: [] }, { clips: [info] }, dir, {
+      signal: new AbortController().signal,
+    })
+    const actual = JSON.parse(
+      execFileSync(
+        mediaToolPaths().ffprobe,
+        [
+          '-v',
+          'error',
+          '-select_streams',
+          'v:0',
+          '-count_frames',
+          '-show_entries',
+          'stream=duration,nb_read_frames',
+          '-of',
+          'json',
+          out.file,
+        ],
+        { encoding: 'utf8' },
+      ),
+    ) as { streams: Array<{ duration: string; nb_read_frames: string }> }
+    expect(Number(actual.streams[0]!.duration)).toBeCloseTo(1, 2)
+    expect(out.duration).toBe(1)
+    expect(Number(actual.streams[0]!.nb_read_frames)).toBe(30)
+    for (const time of [0, 0.9]) {
+      const pixel = pixelAt(out.file, time, 160, 90)
+      expect(pixel).toHaveLength(3)
+      expect(pixel[0]).toBeGreaterThan(230)
+      expect(pixel[1]).toBeLessThan(20)
+      expect(pixel[2]).toBeLessThan(20)
+    }
+  }, 30_000)
+
   it('逐段转场、变速、配乐包络和响度标准化', async () => {
     const dir = tempDir()
     const encoder = await h264Args()
@@ -187,25 +265,7 @@ describe.skipIf(!ffmpeg)('transparent overlay composition', () => {
       dir,
       { signal: new AbortController().signal },
     )
-    const pixel = (time: number, x: number, y: number) => [
-      ...execFileSync(ffmpegBin(), [
-        '-v',
-        'error',
-        '-ss',
-        String(time),
-        '-i',
-        out.file,
-        '-vf',
-        `crop=2:2:${x}:${y},scale=1:1`,
-        '-frames:v',
-        '1',
-        '-pix_fmt',
-        'rgb24',
-        '-f',
-        'rawvideo',
-        'pipe:1',
-      ]),
-    ]
+    const pixel = (time: number, x: number, y: number) => pixelAt(out.file, time, x, y)
     const blue = (p: number[]) => {
       expect(p[0]).toBeLessThan(20)
       expect(p[2]).toBeGreaterThan(230)
@@ -290,25 +350,7 @@ describe.skipIf(!ffmpeg)('transparent overlay composition', () => {
       dir,
       { signal: new AbortController().signal },
     )
-    const pixel = (time: number) => [
-      ...execFileSync(ffmpegBin(), [
-        '-v',
-        'error',
-        '-ss',
-        String(time),
-        '-i',
-        out.file,
-        '-vf',
-        'crop=2:2:40:40,scale=1:1',
-        '-frames:v',
-        '1',
-        '-pix_fmt',
-        'rgb24',
-        '-f',
-        'rawvideo',
-        'pipe:1',
-      ]),
-    ]
+    const pixel = (time: number) => pixelAt(out.file, time, 40, 40)
     expect(Math.max(...pixel(0.3))).toBeLessThan(12)
     expect(pixel(0.55)[0]).toBeGreaterThan(230)
     expect(pixel(1)[1]).toBeGreaterThan(100)

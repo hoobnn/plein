@@ -159,8 +159,28 @@ test(
       .toBe(true)
     await page.setViewportSize({ width: 390, height: 700 })
     await expect.poll(async () => (await video.boundingBox())?.width ?? 0).toBeGreaterThan(240)
-    await editor.getByRole('textbox', { name: '成片时间码意见' }).fill('第一镜停顿需要复查')
+    await video.evaluate(async (element: HTMLVideoElement) => {
+      element.muted = true
+      await element.play()
+      await new Promise<void>((resolve) => element.requestVideoFrameCallback(() => resolve()))
+      element.pause()
+      element.currentTime = 0
+    })
+    const feedback = editor.getByLabel('成片回看与交付', { exact: true })
+    const note = '第一镜停顿需要复查 https://example.com/' + 'a'.repeat(200)
+    await editor.getByRole('textbox', { name: '成片时间码意见' }).fill(note)
     await editor.getByRole('button', { name: '在当前时间添加意见', exact: true }).click()
+    const savedNote = feedback.getByText(note, { exact: true })
+    await savedNote.scrollIntoViewIfNeeded()
+    await expect(savedNote).toBeInViewport()
+    expect(await feedback.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    )
+    await expect(editor.getByRole('button', { name: '关闭', exact: true })).toBeInViewport()
+    await editor.screenshot({
+      path: test.info().outputPath('delivery-narrow-feedback.png'),
+      animations: 'disabled',
+    })
     await expect(
       editor.getByRole('button', { name: '确认此版草稿已审阅', exact: true }),
     ).toBeDisabled()
@@ -187,7 +207,7 @@ test(
     await page.mouse.dblclick(draftPoint.x, draftPoint.y)
     await page.getByRole('button', { name: '实际 MP4 回看 / 交付', exact: true }).click()
     await expect(page.getByText('已人工确认此版本', { exact: false })).toBeVisible()
-    await expect(page.getByText('第一镜停顿需要复查', { exact: true })).toBeVisible()
+    await expect(page.getByText(note, { exact: true })).toBeVisible()
     await expect(editor.getByRole('button', { name: '关闭', exact: true })).toBeInViewport()
     expect(await editor.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
