@@ -171,8 +171,12 @@ it('模态内编辑独立草稿并请求生成，明确选择候选后只替换�
     expect(submissions).toHaveLength(0)
     const generator = within(modal).getByTestId('generator')
     const prompt = within(generator).getByRole('textbox')
+    await waitFor(() => expect(previews.at(-1)).toEqual({ nodeId: draft.id, prompt: '原镜头输入' }))
     await view.user.clear(prompt)
     await view.user.type(prompt, '返工后的镜头输入')
+    expect(doc.get(draft.id)?.params?.prompt).toBe('返工后的镜头输入')
+    // openDoc 不自动派发变更；刷新预览前补上生产环境按帧派发的通知。
+    await act(async () => doc.flush())
     await waitFor(() =>
       expect(previews.at(-1)).toEqual({ nodeId: draft.id, prompt: '返工后的镜头输入' }),
     )
