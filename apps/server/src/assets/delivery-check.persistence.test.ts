@@ -262,6 +262,8 @@ describe.skipIf(!available)('本地技术报告持久化', () => {
       const file = join(dataDir, 'assets', path)
       if ((await stat(file)).isFile()) await utimes(file, old, old)
     }
+    // 删除仍在房间的落盘缓冲中；先完成夹具写入，再冻结 GC revision。
+    for (const id of server.rooms.loaded()) server.rooms.get(id).flush()
     const preview = await server.maintenance!.preview()
     await server.maintenance!.cleanup(preview.token)
     expect(server.assets.get('local', orphan.id)).toBeNull()

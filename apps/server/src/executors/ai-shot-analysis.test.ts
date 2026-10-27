@@ -384,6 +384,8 @@ describe.skipIf(!available)('P09受控mock作业与真实P08依据', () => {
       const file = join(assetRoot, path)
       if ((await stat(file)).isFile()) await utimes(file, oldTime, oldTime)
     }
+    // 删除仍在房间的落盘缓冲中；先完成夹具写入，再冻结 GC revision。
+    for (const id of f.server.rooms.loaded()) f.server.rooms.get(id).flush()
     const gc = await f.server.maintenance!.preview()
     expect(gc.assets).toBeGreaterThanOrEqual(1)
     await f.server.maintenance!.cleanup(gc.token)

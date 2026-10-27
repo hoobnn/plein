@@ -260,6 +260,8 @@ describe.skipIf(!available)('本地拉片持久化与归档真实往返', () => 
       const file = join(root, path)
       if ((await stat(file)).isFile()) await utimes(file, oldTime, oldTime)
     }
+    // 删除仍在房间的落盘缓冲中；先完成夹具写入，再冻结 GC revision。
+    for (const id of server.rooms.loaded()) server.rooms.get(id).flush()
     const preview = await server.maintenance!.preview()
     expect(preview.assets).toBe(1)
     const cleaned = await server.maintenance!.cleanup(preview.token)
