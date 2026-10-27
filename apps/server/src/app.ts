@@ -188,8 +188,10 @@ export async function createServer(config: Config): Promise<Server> {
   )
   app.route('/', canvasRoutes(db, rooms, preview))
   if (maintenance) app.route('/', maintenanceRoutes(maintenance))
-  app.route('/', creative)
+  // 素材来源路由要排在 creative 之前：资产文件路由 /api/assets/:id/:variant?
+  // 会把 /api/assets/:id/sources 当成变体名抢先匹配，来源分页就永远 404。
   app.route('/', mediaLibraryRoutes(mediaIndex))
+  app.route('/', creative)
   app.route('/', checkpointRoutes(checkpoints))
   app.route('/', syncRoutes(db, rooms))
   app.route('/', pluginRoutes(plugins))
