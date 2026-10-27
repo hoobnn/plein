@@ -1,6 +1,6 @@
 import type { LocalCliInfo } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../../api/client'
 import { queryClient, queryKeys } from '../../api/query'
 import { useAgent } from './store'
@@ -153,22 +153,38 @@ function StatusTag({ cli }: { cli: LocalCliInfo }) {
 
 /** 一条要在终端里运行的命令，带复制按钮 */
 function Command({ label, command }: { label: string; command: string }) {
-  const [copied, setCopied] = useState(false)
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
   const copy = async () => {
-    await navigator.clipboard.writeText(command).catch(() => {})
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+    clearTimeout(timer.current)
+    try {
+      await navigator.clipboard.writeText(command)
+      setState('copied')
+      timer.current = setTimeout(() => setState('idle'), 1500)
+    } catch {
+      setState('failed')
+    }
   }
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-xs text-ink-muted">{label}</span>
       <div className="flex items-center gap-2 rounded-md bg-surface-2 py-1 pr-1 pl-2.5 ring-1 ring-line ring-inset">
-        <code className="min-w-0 flex-1 truncate font-mono text-xs">{command}</code>
+        <code className="min-w-0 flex-1 truncate font-mono text-xs" title={command}>
+          {command}
+        </code>
         <button type="button" className="ui-btn ui-btn-xs ui-btn-quiet" onClick={copy}>
-          <Icon name={copied ? 'check' : 'copy'} size={12} />
-          {copied ? '已复制' : '复制'}
+          <Icon name={state === 'copied' ? 'check' : 'copy'} size={12} />
+          <span aria-live="polite">
+            {state === 'copied' ? '已复制' : state === 'failed' ? '复制失败' : '复制'}
+          </span>
         </button>
       </div>
+      {state === 'failed' && (
+        <p role="alert" className="text-xs text-danger">
+          剪贴板不可用，请选中命令手动复制。
+        </p>
+      )}
     </div>
   )
 }

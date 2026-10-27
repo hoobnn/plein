@@ -57,8 +57,11 @@ export function AgentSkillsButton({
                 selectionCount={selectionCount}
                 disabled={disabled}
                 onUse={(skill) => {
-                  useAgent.getState().chooseSkill(canvasId, skill, agent, sessionId)
-                  setOpen(false)
+                  const accepted = useAgent
+                    .getState()
+                    .chooseSkill(canvasId, skill, agent, sessionId)
+                  if (accepted) setOpen(false)
+                  return accepted
                 }}
               />
             </div>
@@ -80,7 +83,7 @@ export function SkillBrowser({
   agent?: AgentKind
   selectionCount?: number
   disabled?: boolean
-  onUse?(skill: AgentSkill): void
+  onUse?(skill: AgentSkill): boolean | void
   scopeKey?: string
 }) {
   const preferred = useAgent((s) => s.session?.agent ?? s.agent)
@@ -127,6 +130,11 @@ export function SkillBrowser({
   const capabilities = (catalog.data?.capabilities ?? []).filter((cap) =>
     `${cap.title} ${cap.name} ${cap.description} ${cap.group}`.toLocaleLowerCase().includes(search),
   )
+  const reportUse = (skill: AgentSkill) => {
+    const accepted = onUse?.(skill)
+    if (accepted === false)
+      setError('技能未选用：当前对话或画布状态已变化，请回到助手确认状态后重试。')
+  }
   const change = async (skill: AgentSkill, use = false) => {
     if (pending || disabled) return
     const mine = generation.current
@@ -137,7 +145,7 @@ export function SkillBrowser({
       client.setQueryData<AgentSkillCatalog>(key, (old) =>
         old ? { ...old, skills: old.skills.map((s) => (s.id === skill.id ? updated : s)) } : old,
       )
-      if (mine === generation.current && use) onUse?.(updated)
+      if (mine === generation.current && use) reportUse(updated)
     } catch (err) {
       if (mine === generation.current) setError((err as Error).message)
     } finally {
@@ -308,7 +316,7 @@ export function SkillBrowser({
                         className="ui-btn ui-btn-secondary ui-btn-xs ml-auto"
                         disabled={busy || !applicable || (!skill.enabled && !skill.canToggle)}
                         onClick={() => {
-                          if (skill.enabled) onUse(skill)
+                          if (skill.enabled) reportUse(skill)
                           else void change(skill, true)
                         }}
                       >

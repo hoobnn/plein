@@ -40,7 +40,7 @@ interface AgentStore {
     skill: AgentSkill,
     agent: AgentKind,
     sessionId?: string | null,
-  ): void
+  ): boolean
   clearSkill(canvasId: string): void
   sending: Record<string, boolean>
   selecting: string | null
@@ -328,11 +328,12 @@ export const useAgent = create<AgentStore>((set, get) => {
         state.reconnecting ||
         state.pendingActions[`${state.session?.id}/configure`]
       )
-        return
+        return false
       const { id, name, title, source } = skill
       set({ selectedSkills: { ...state.selectedSkills, [canvasId]: { id, name, title, source } } })
       if (!state.drafts[canvasId]?.text.trim()) state.setDraft(canvasId, skill.prompt)
       set({ focusSeq: get().focusSeq + 1 })
+      return true
     },
     clearSkill(canvasId) {
       const selectedSkills = { ...get().selectedSkills }

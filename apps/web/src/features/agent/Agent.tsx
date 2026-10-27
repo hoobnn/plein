@@ -578,7 +578,7 @@ function SessionMenu() {
   )
 }
 
-function Transcript({
+export function Transcript({
   items,
   running,
   intro,
@@ -1149,7 +1149,7 @@ function Composer({ canvasId, running }: { canvasId: string; running: boolean })
           </span>
         </div>
       )}
-      {selected > 0 && withSelection && (
+      {selected > 0 && withSelection && selectedIds.length > 0 && (
         <div className="mb-2 flex flex-col items-start gap-1.5">
           <span className="ui-chip pr-0.5">
             <Icon name="cursor" size={12} />
