@@ -8,6 +8,7 @@ import {
   newProject,
   revealGenerator,
   waitEngine,
+  zoomTo,
 } from './canvas'
 
 /**
@@ -145,6 +146,8 @@ test('低窗口下端口仍能拖线，缩窗后弹层可操作且焦点返回',
     ids,
   )
   await page.keyboard.press('Escape')
+  // 两个节点都要在窗口里，否则测的是「拖到看不见的地方」
+  await zoomTo(page, [ids.text, ids.image])
 
   // 低窗口下端口仍要能命中：拖线真的连上
   const from = await handleOf(page, ids.text, 'out')
