@@ -24,7 +24,7 @@ export interface OpenSample {
     variants: Record<string, number>
     runtimeErrors: string[]
   }
-  /** 相对本次打开起点；保留缓存命中与加载瀑布，避免把等待模块误判成引擎耗时。 */
+  /** 全部已观测资源；相对本次打开起点，负 startMs 表示请求在 probe 前已启动。 */
   resources: Array<{
     name: string
     initiator: string
@@ -197,15 +197,13 @@ export async function readOpenSample(
     requests: structuredClone(requests),
     resources: await page.evaluate(
       (start) =>
-        (performance.getEntriesByType('resource') as PerformanceResourceTiming[])
-          .filter((entry) => entry.startTime >= start)
-          .map((entry) => ({
-            name: new URL(entry.name).pathname,
-            initiator: entry.initiatorType,
-            startMs: entry.startTime - start,
-            durationMs: entry.duration,
-            transferBytes: entry.transferSize,
-          })),
+        (performance.getEntriesByType('resource') as PerformanceResourceTiming[]).map((entry) => ({
+          name: new URL(entry.name).pathname,
+          initiator: entry.initiatorType,
+          startMs: entry.startTime - start,
+          durationMs: entry.duration,
+          transferBytes: entry.transferSize,
+        })),
       probe.startedAt,
     ),
   }

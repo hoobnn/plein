@@ -21,7 +21,7 @@ export function createEditorLoader(load: () => Promise<EditorModule>) {
     return pending
   }
 
-  return function EditorLoader(props: ComponentProps<EditorComponent>) {
+  function EditorLoader(props: ComponentProps<EditorComponent>) {
     const [Editor, setEditor] = useState(() => ready)
     const [error, setError] = useState<Error | null>(null)
     const [attempt, setAttempt] = useState(0)
@@ -64,6 +64,15 @@ export function createEditorLoader(load: () => Promise<EditorModule>) {
       </div>
     )
   }
+  return Object.assign(EditorLoader, {
+    // 预取失败不干扰首页；open 已释放失败 Promise，点击进入时仍可正常重试。
+    preload: () =>
+      open().then(
+        () => {},
+        () => {},
+      ),
+  })
 }
 
 export const EditorLoader = createEditorLoader(() => import('./Editor'))
+export const preloadEditor = () => EditorLoader.preload()

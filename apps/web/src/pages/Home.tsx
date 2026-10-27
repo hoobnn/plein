@@ -24,6 +24,7 @@ import { useMediaLibrary } from '../features/media-library/store'
 import { useCheckpoints } from '../features/checkpoints/store'
 import { HomeAgentTrigger } from '../features/agent/HomeAgentTrigger'
 import { useAgent } from '../features/agent/store'
+import { preloadEditor } from './EditorLoader'
 
 const ExportPackageDialog = lazy(() =>
   import('../features/projects/ProjectPackage').then((m) => ({ default: m.ExportPackageDialog })),
@@ -498,7 +499,19 @@ function ProjectCard({
     zoomView('enter', () => navigate({ name: 'canvas', id }), { from })
   }
   return (
-    <li className="home-card group" data-project={c.id}>
+    <li
+      className="home-card group"
+      data-project={c.id}
+      onPointerEnter={() => {
+        if (!deleting) void preloadEditor()
+      }}
+      onPointerDown={() => {
+        if (!deleting) void preloadEditor()
+      }}
+      onFocus={() => {
+        if (!deleting) void preloadEditor()
+      }}
+    >
       <a
         href={href}
         onClick={open}

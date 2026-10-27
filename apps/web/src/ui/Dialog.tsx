@@ -1,7 +1,6 @@
-import { lazy, Suspense, useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Presence } from './Presence'
-
-const DialogView = lazy(() => import('./DialogView').then((m) => ({ default: m.DialogView })))
+import { LoadingPanel } from './LoadingPanel'
 
 /**
  * 应用内的确认框 / 输入框，替代浏览器原生的 confirm() / prompt()。
@@ -77,26 +76,82 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
   return new Promise((resolve) => open({ kind: 'prompt', options, resolve }))
 }
 
-export function DialogHost({ active = true }: { active?: boolean } = {}) {
-  const req = useSyncExternalStore(
-    (l) => {
-      listeners.add(l)
-      return () => listeners.delete(l)
-    },
-    () => current,
-  )
-  useEffect(() => {
-    if (!active && req) settle(null)
-  }, [active, req])
-  if (!active) return null
-  return (
-    <Suspense fallback={null}>
-      <Presence>
-        {req && <DialogView key={req.id} req={req} isCurrent={isCurrent} onFinish={finish} />}
-      </Presence>
-    </Suspense>
-  )
+/** 加载失败取消当前操作；下一次请求重新加载，不缓存失败的 Promise。 */
+export function createDialogHost(
+  load: () => Promise<Pick<typeof import('./DialogView'), 'DialogView'>>,
+) {
+  type View = (typeof import('./DialogView'))['DialogView']
+  let ready: View | null = null
+  let pending: Promise<View> | null = null
+  const openView = () => {
+    pending ??= load().then(
+      (module) => (ready = module.DialogView),
+      (error: unknown) => {
+        pending = null
+        throw error
+      },
+    )
+    return pending
+  }
+  return function DialogHost({ active = true }: { active?: boolean } = {}) {
+    const [DialogView, setView] = useState(() => ready)
+    const [error, setError] = useState<Error | null>(null)
+    const req = useSyncExternalStore(
+      (l) => {
+        listeners.add(l)
+        return () => listeners.delete(l)
+      },
+      () => current,
+    )
+    useEffect(() => {
+      if (!active && req) settle(null)
+    }, [active, req])
+    useEffect(() => () => settle(null), [])
+    useEffect(() => {
+      if (!active || !req) return
+      setError(null)
+      if (DialogView) return
+      let live = true
+      openView().then(
+        (view) => {
+          if (live) setView(() => view)
+        },
+        (error: unknown) => {
+          if (live) setError(error instanceof Error ? error : new Error(String(error)))
+          finish(req.id, null)
+        },
+      )
+      return () => {
+        live = false
+      }
+    }, [active, req, DialogView])
+    if (!active) return null
+    return (
+      <>
+        {error && (
+          <div className="fixed right-4 bottom-4 z-60 max-w-sm rounded-xl bg-surface p-4 text-sm shadow-4 ring-1 ring-line">
+            <p role="alert">对话框加载失败：{error.message}。操作已取消，请重试操作或刷新页面。</p>
+            <button
+              type="button"
+              className="ui-btn ui-btn-secondary mt-3"
+              onClick={() => setError(null)}
+            >
+              关闭提示
+            </button>
+          </div>
+        )}
+        {req && !DialogView && <LoadingPanel label="正在打开对话框…" />}
+        <Presence>
+          {req && DialogView && (
+            <DialogView key={req.id} req={req} isCurrent={isCurrent} onFinish={finish} />
+          )}
+        </Presence>
+      </>
+    )
+  }
 }
+
+export const DialogHost = createDialogHost(() => import('./DialogView'))
 
 function isCurrent(id: number) {
   return current?.id === id

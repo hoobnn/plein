@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { Asset } from '@plein/protocol'
-import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
+import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { api } from '../api/client'
 import {
@@ -23,10 +23,12 @@ const asset = (id: string): Asset => ({
 })
 const deferred = () => {
   let resolve!: (asset: Asset) => void
-  const promise = new Promise<Asset>((done) => {
+  let reject!: (error: Error) => void
+  const promise = new Promise<Asset>((done, fail) => {
     resolve = done
+    reject = fail
   })
-  return { promise, resolve }
+  return { promise, resolve, reject }
 }
 
 afterEach(() => {
@@ -129,6 +131,39 @@ describe('活跃元信息读取', () => {
       'ready-list',
       'failed-list',
     ])
+  })
+
+  it('旧列表迟到失败不会把已就绪的新列表变回加载中或显示旧错误', async () => {
+    function MetadataList({ ids }: { ids: string[] }) {
+      const metadata = useAssetMetas(ids)
+      return (
+        <div>
+          <p role="status">{metadata.loading ? '读取中' : '已就绪'}</p>
+          <p role="alert">{metadata.errors.map((error) => error.message).join('；')}</p>
+          <ul>
+            {ids.map((id) => (
+              <li key={id}>{metadata.get(id)?.name ?? '尚未读取'}</li>
+            ))}
+          </ul>
+        </div>
+      )
+    }
+    const pending = deferred()
+    const load = vi
+      .spyOn(api, 'assetMeta')
+      .mockReturnValueOnce(pending.promise)
+      .mockImplementation(async (id) => asset(id))
+    const { rerender } = render(<MetadataList ids={['late-error-old']} />)
+    expect(screen.getByRole('status').textContent).toBe('读取中')
+    rerender(<MetadataList ids={['late-error-current']} />)
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('已就绪'))
+    expect(screen.getByRole('listitem').textContent).toBe('late-error-current')
+
+    await act(async () => pending.reject(new Error('旧列表读取失败')))
+    expect(screen.getByRole('status').textContent).toBe('已就绪')
+    expect(screen.getByRole('listitem').textContent).toBe('late-error-current')
+    expect(screen.getByRole('alert').textContent).toBe('')
+    expect(load.mock.calls.map(([id]) => id)).toEqual(['late-error-old', 'late-error-current'])
   })
 
   it('共享缓存淘汰后活跃单项保持结果，切换时不显示旧请求结果', async () => {

@@ -1,6 +1,7 @@
 import type { ProviderInfo } from '@plein/protocol'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { useCatalog } from '../../stores/catalog'
+import { LoadingPanel } from '../../ui/LoadingPanel'
 import { Presence } from '../../ui/Presence'
 
 const WelcomeDialog = lazy(() =>
@@ -48,7 +49,7 @@ export function Welcome() {
     setOpen(false)
   }
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={open ? <LoadingPanel label="正在打开首次使用引导…" /> : null}>
       <Presence>{open && catalog && <WelcomeDialog onClose={close} />}</Presence>
     </Suspense>
   )
