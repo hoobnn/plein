@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
-import { addNode, elements, newProject, waitNode } from './canvas'
+import { addNode, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 /** 设了就把界面截图存到这个目录（亮色、暗色各一张） */
 const shotDir = process.env.PLEIN_E2E_SHOTS
@@ -21,6 +21,8 @@ test(
   async ({ page }) => {
     await newProject(page)
     await addNode(page, '生成视频')
+    // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+    await revealGenerator(page)
     const generator = page.getByTestId('generator')
     const prompt = generator.getByRole('textbox', { name: '提示词' })
     await prompt.fill('女孩在雨夜的街口回头')

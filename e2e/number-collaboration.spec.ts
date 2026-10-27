@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test'
-import { newProject, waitEngine } from './canvas'
+import { newProject, revealGenerator, waitEngine } from './canvas'
 
 for (const choice of ['latest'] as const) {
   test(`数值草稿遇到同帧更新不覆盖，明确选择 ${choice} 后继续编辑`, async ({ page }) => {
@@ -15,10 +15,8 @@ for (const choice of ['latest'] as const) {
       }),
     )
     await page.getByRole('treeitem', { name: '数值冲突 定位到画布', exact: true }).click()
-    await page
-      .getByTestId('generator')
-      .getByRole('button', { name: '编辑LLM', exact: true })
-      .click()
+    // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+    await revealGenerator(page, page.getByRole('button', { name: '参数', exact: true }))
     await page.getByRole('button', { name: '参数', exact: true }).click()
     const panel = page.getByRole('dialog', { name: '参数', exact: true })
     await panel.getByRole('button', { name: '更多参数', exact: true }).click()
@@ -55,7 +53,8 @@ for (const choice of ['latest'] as const) {
 
 async function openNumber(page: Page) {
   await page.getByRole('treeitem', { name: '数值冲突 定位到画布', exact: true }).click()
-  await page.getByTestId('generator').getByRole('button', { name: '编辑LLM', exact: true }).click()
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page, page.getByRole('button', { name: '参数', exact: true }))
   await page.getByRole('button', { name: '参数', exact: true }).click()
   const panel = page.getByRole('dialog', { name: '参数', exact: true })
   await panel.getByRole('button', { name: '更多参数', exact: true }).click()

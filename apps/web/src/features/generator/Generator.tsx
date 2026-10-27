@@ -16,6 +16,7 @@ import { isAiAnalysisType } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useEngineVersion, useFollow } from '../../canvas/hooks'
+import { canvasBottomSpace } from '../../canvas/floatingPanel'
 import { adaptToModel, constrainFields, selectedModel } from '../../canvas/modelParams'
 import {
   applyAspect,
@@ -55,6 +56,12 @@ import { PromptTools } from './PromptTools'
 import { AiAnalysisEntry } from '../ai-shot-analysis/AiAnalysisEditor'
 import { RecipeLibrary } from './RecipeLibrary'
 import { CharacterImageArchiveButton } from '../library/ArchiveCharacterImage'
+
+/** 卡片下方的编辑器尺寸：固定 840px 宽、440px 高。 */
+const EDITOR_W = 840
+const EDITOR_H = 440
+/** 顶栏占的高度；编辑器往上收时不能压到它。 */
+const TOP_RESERVED = 64
 
 /** 损坏的历史值仅在显示时按空表单呈现；用户明确修改或恢复默认才写回。 */
 function optionRecord(value: unknown): Record<string, unknown> {
@@ -125,6 +132,32 @@ function NodeBelow({
   }
   const ref = useFollow<HTMLElement>(engine, place)
   const style = place()
+  // 编辑器固定在卡片下方、固定 440px 高，卡片靠下时它会落到窗口外，
+  // 底部的生成按钮就点不到。开出来时把相机挪一点，让编辑器整个落在窗口里。
+  const revealed = useRef(false)
+  useEffect(() => {
+    if (revealed.current) return
+    revealed.current = true
+    const rect = engine.doc.worldRect(nodeId)
+    if (!rect) return
+    const tl = engine.worldToClient(rect.x, rect.y)
+    const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
+    const limit =
+      window.innerHeight - canvasBottomSpace(window.innerWidth, engine.camera.insets.left).generator
+    const panelBottom = br.y + 12 + EDITOR_H
+    // 挪到底栏之上就行；挪动量不能把卡片本身顶出窗口
+    const down = Math.min(panelBottom - limit, br.y - TOP_RESERVED)
+    if (down > 0) engine.camera.panBy(0, down)
+    const left = (tl.x + br.x - EDITOR_W) / 2
+    const right = window.innerWidth - engine.camera.insets.right
+    const dx =
+      left < engine.camera.insets.left
+        ? engine.camera.insets.left - left
+        : left + EDITOR_W > right
+          ? right - (left + EDITOR_W)
+          : 0
+    if (dx !== 0) engine.camera.panBy(dx, 0)
+  }, [engine, nodeId])
   if (!style) return null
   return (
     <aside
@@ -133,7 +166,7 @@ function NodeBelow({
       data-testid="node-editor"
       data-placement="below"
       className="plein-node-editor pointer-events-auto fixed z-20 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface"
-      style={{ ...style, height: 440 }}
+      style={{ ...style, height: EDITOR_H }}
     >
       <button
         type="button"
@@ -327,16 +360,20 @@ export function GeneratorPanel({
   ) : null
 
   const run = () => {
-    if (canceling || awaitingAcceptance || (!running && !input.data?.inputHash)) return
-    if (running) void cancelNode(el.id, el.run?.id)
+    if (canceling || awaitingAcceptance || (!running && !input.data?.inputHash)) return false
+    if (running) {
+      void cancelNode(el.id, el.run?.id)
+      return true
+    }
     // 带上用户看到的实际输入：提交时输入已经变了就不运行，换成新的预览
-    else if (!problem)
-      void runNode(
-        el.id,
-        input.data?.inputHash
-          ? { expect: input.data.inputHash, onChanged: input.setData }
-          : undefined,
-      )
+    if (problem) return false
+    void runNode(
+      el.id,
+      input.data?.inputHash
+        ? { expect: input.data.inputHash, onChanged: input.setData }
+        : undefined,
+    )
+    return true
   }
 
   // 按钮或快捷键比实际输入备好更早触发：先记下这次生成，备好后照常提交，
@@ -354,7 +391,8 @@ export function GeneratorPanel({
     // 实际输入还在准备或正在刷新：先记下，等拿到这份输入再提交，
     // 否则会拿着上一版的哈希提交，被服务端判成输入已变。
     if (!running && (input.loading || !input.data?.inputHash)) pendingRun.current = true
-    run()
+    // 这一步已经提交过了就别再记着：输入刷新完再补一次会重复生成。
+    if (run()) pendingRun.current = false
   }
 
   return (
