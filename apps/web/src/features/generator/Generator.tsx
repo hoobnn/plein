@@ -14,7 +14,7 @@ import {
 } from '@plein/nodes'
 import { isAiAnalysisType } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useEngineVersion, useFollow } from '../../canvas/hooks'
 import { canvasBottomSpace } from '../../canvas/floatingPanel'
 import { adaptToModel, constrainFields, selectedModel } from '../../canvas/modelParams'
@@ -53,6 +53,8 @@ import { ModePicker } from './ModePicker'
 import { SpeechInstruction } from './SpeechInstruction'
 import { countUnit, isMainField, type ModelOptions, ParamsPill } from './ParamsPill'
 import { ShotPresets } from './ShotPresets'
+import { composingKey } from './composingKey'
+import { NameField } from './NameField'
 import { PromptBox } from './PromptBox'
 import { runBlockReason, runDisabled as runDisabledState } from './runBlock'
 import { PromptTools } from './PromptTools'
@@ -429,7 +431,7 @@ export function GeneratorPanel({
       data-compact="false"
       className="plein-generator pointer-events-auto flex min-h-0 flex-1 flex-col overflow-hidden"
       onKeyDown={(e) => {
-        if (e.nativeEvent.isComposing) return
+        if (composingKey(e.nativeEvent)) return
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
           e.preventDefault()
           requestRun()
@@ -716,89 +718,5 @@ export function GeneratorPanel({
         </footer>
       )}
     </section>
-  )
-}
-
-/** 节点名：资产卡靠它被 @ 引用；失焦或回车时写入文档 */
-function NameField({
-  value,
-  hint,
-  trailing,
-  onChange,
-}: {
-  value: string
-  hint?: string
-  trailing?: React.ReactNode
-  onChange(v: string): boolean | void
-}) {
-  const [edit, setEdit] = useState({ base: value, draft: value })
-  const conflictId = useId()
-  useEffect(() => {
-    setEdit((prev) =>
-      prev.draft === prev.base || prev.draft === value ? { base: value, draft: value } : prev,
-    )
-  }, [value])
-  const { draft, base } = edit
-  const conflict = base !== value && draft.trim() !== value
-  const reset = () => setEdit({ base: value, draft: value })
-  const commit = () => {
-    const v = draft.trim()
-    if (v && v !== value) {
-      if (onChange(v) === false) reset()
-      else setEdit({ base: v, draft: v })
-    } else reset()
-  }
-  return (
-    <div className="plein-generator-name border-b border-line">
-      <div className="flex items-center gap-2 px-4 py-3 pr-12">
-        <input
-          aria-label="节点名称"
-          aria-describedby={conflict ? conflictId : undefined}
-          value={draft}
-          onChange={(e) => setEdit({ base, draft: e.target.value })}
-          onBlur={() => {
-            if (!conflict) commit()
-          }}
-          onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) {
-              e.stopPropagation()
-              return
-            }
-            if (e.key === 'Escape' && draft !== value) {
-              e.preventDefault()
-              e.stopPropagation()
-              reset()
-            }
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              if (conflict) commit()
-              e.currentTarget.blur()
-            }
-          }}
-          className="min-w-0 flex-1 rounded-sm bg-transparent text-base font-semibold text-ink outline-none"
-        />
-        {hint && (
-          <span title={hint} className="max-w-1/2 truncate text-xs text-ink-subtle">
-            {hint}
-          </span>
-        )}
-        {trailing}
-      </div>
-      {conflict && (
-        <div className="space-y-2 px-4 pb-3">
-          <p id={conflictId} role="status" className="break-words text-xs text-ink-subtle">
-            名称已在其他位置更新为「{value}」。请选择要使用的名称。
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="ui-btn ui-btn-secondary" onClick={reset}>
-              使用更新后的名称
-            </button>
-            <button type="button" className="ui-btn ui-btn-secondary" onClick={commit}>
-              保留当前输入
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
   )
 }

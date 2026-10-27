@@ -11,6 +11,7 @@ import {
   type ResultValue,
 } from '@plein/doc'
 import type { PreparedInput } from '@plein/protocol'
+import { filterReferenceCandidates, referenceCandidates } from './referenceCandidates'
 import { submittedMedia, type SubmittedMedia } from './submittedMedia'
 import { RoleReferencePicker } from './RoleReferencePicker'
 import { useRef, useState } from 'react'
@@ -277,30 +278,7 @@ export function Inputs({
       )
   }
 
-  const availablePorts = media.filter(
-    (port) => port.multiple || !inputEdges(engine.doc, el.id, port.id).length,
-  )
-  const candidates = [...engine.doc.elements()]
-    .flatMap((source) =>
-      source.id === el.id
-        ? []
-        : (elementPorts(source)?.outputs ?? []).flatMap((output) =>
-            availablePorts
-              .filter(
-                (port) =>
-                  (port.type === output.type || port.type === 'any' || output.type === 'any') &&
-                  !inputEdges(engine.doc, el.id, port.id).some(
-                    (edge) => edge.from[0] === source.id && edge.from[1] === output.id,
-                  ),
-              )
-              .map((port) => ({ source, output, port })),
-          ),
-    )
-    .filter(({ source, port }) =>
-      `${source.name ?? source.id} ${port.label}`
-        .toLocaleLowerCase()
-        .includes(canvasQuery.trim().toLocaleLowerCase()),
-    )
+  const candidates = filterReferenceCandidates(referenceCandidates(engine, el, media), canvasQuery)
 
   if (!tiles.length && !adds.length && !texts.length && !trailing && !toolbar) return null
   return (
@@ -367,20 +345,27 @@ export function Inputs({
                     aria-label="可用画布素材"
                     className="ui-scrollbar max-h-64 overflow-y-auto"
                   >
-                    {candidates.map(({ source, output, port }) => (
+                    {candidates.map((c) => (
                       <button
-                        key={`${source.id}/${output.id}/${port.id}`}
+                        key={`${c.sourceId}/${c.outputId}/${c.portId}`}
                         type="button"
                         role="option"
                         aria-selected={false}
                         className="ui-menu-item w-full"
                         onClick={() => {
-                          if (!port.multiple && inputEdges(engine.doc, el.id, port.id).length) {
+                          if (
+                            !media.find((p) => p.id === c.portId)?.multiple &&
+                            inputEdges(engine.doc, el.id, c.portId).length
+                          ) {
                             useCanvas.getState().notify('该输入已接入参考，请重新选择')
                             return
                           }
                           engine.doc.undo.stopCapturing()
-                          const edge = connect(engine.doc, [source.id, output.id], [el.id, port.id])
+                          const edge = connect(
+                            engine.doc,
+                            [c.sourceId, c.outputId],
+                            [el.id, c.portId],
+                          )
                           engine.doc.undo.stopCapturing()
                           if (edge) setCanvasAnchor(null)
                           else useCanvas.getState().notify('无法添加该参考，请重新选择')
@@ -388,17 +373,17 @@ export function Inputs({
                       >
                         <Icon
                           name={
-                            output.type === 'video'
+                            c.outputType === 'video'
                               ? 'video'
-                              : output.type === 'audio'
+                              : c.outputType === 'audio'
                                 ? 'audio'
                                 : 'image'
                           }
                           size={16}
                         />
                         <span className="min-w-0 flex-1 text-left">
-                          <span className="block truncate">{source.name ?? source.id}</span>
-                          <span className="ui-menu-desc">{port.label}</span>
+                          <span className="block truncate">{c.sourceName}</span>
+                          <span className="ui-menu-desc">{c.portLabel}</span>
                         </span>
                       </button>
                     ))}

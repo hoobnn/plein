@@ -19,6 +19,7 @@ import { Modal, ModalHeader } from '../../ui/Modal'
 import { Presence } from '../../ui/Presence'
 import { assetUrls } from '../../api/client'
 import { Icon } from '../../ui/icons'
+import { composingKey } from './composingKey'
 import { MentionTextarea } from '../../ui/MentionTextarea'
 import { mentionParts } from '../../canvas/mentionText'
 import { findNode, mentionTargets, targetImages } from '../../canvas/nodes'
@@ -293,7 +294,7 @@ export function PromptBox({
         }}
         onChange={(e) => update(e.target.value, e.target.selectionStart)}
         onKeyDown={(e) => {
-          if (e.nativeEvent.isComposing) return
+          if (composingKey(e.nativeEvent)) return
           if (query?.kind === '@' && !query.query.includes('/')) {
             picker.current?.handleKey(e)
             return

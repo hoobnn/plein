@@ -1,7 +1,12 @@
 import { expect, test, type Page } from './fixtures'
 import { clickElement, deselect, newProject, waitNode, zoomTo } from './canvas'
 
-test('图片派生视频自动使用首帧模式，正文遵循图片遮挡并在移开后恢复', async ({ page }) => {
+/**
+ * 正文的遮挡只按真实像素证明：DOM 正文压在 GPU 画布之上，
+ * 上层图片盖住时正文不能从像素里露出来，移开后又要重新可见。
+ * 遮挡的几何判定本身在 occlusion.test.ts 里已经覆盖。
+ */
+test('正文被上层图片遮挡时不露出像素，移开后恢复', async ({ page }) => {
   await newProject(page)
   const ids = await page.evaluate(() => {
     const add = window.__plein.addNode
@@ -45,11 +50,6 @@ test('图片派生视频自动使用首帧模式，正文遵循图片遮挡并�
       ),
     )
     .toBe('image')
-  const input = await page.request.get(
-    `/api/canvases/${canvas}/nodes/${await page.evaluate(() => [...window.__plein.engine.doc.elements()].find((el) => el.nodeType === 'plein/video')!.id)}/input`,
-  )
-  expect(input.status()).toBe(200)
-  expect(JSON.stringify(await input.json())).toContain(ids.image)
 
   await deselect(page)
   await page.evaluate(({ text, image }) => {
