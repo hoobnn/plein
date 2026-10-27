@@ -254,8 +254,9 @@ export function GeneratorPanel({
   const ups = upstreams(engine, el.id, catalog)
   const presets = presetsFor(catalog?.prompts ?? [], node)
   const pure = isPure(node)
-  // 生成前的实际输入：调模型的节点才有
-  const input = useInputPreview(engine, !pure && node.capability ? canvasId : null, el.id)
+  // 生成前的实际输入：所有要跑的节点都要（插件节点可能没有 capability，
+  // 但服务端照样能准备输入；不取预览，生成按钮就一直是禁用的）
+  const input = useInputPreview(engine, !pure ? canvasId : null, el.id)
   // 必需参考用不上这类问题只有服务端准备过才知道；输入刚改、还在重新准备时先不拦
   const blocked =
     !input.loading && !input.error && input.data?.blocked.length
