@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { addNode, centerOf, elements, newProject, zoomTo } from './canvas'
+import { slowFile } from './slow-file'
 
 for (const change of ['delete', 'replace'] as const) {
   test(`3D 目标 ${change} 后关闭，迟到的输入不修改失效目标且撤销后可重开`, async ({ page }) => {
@@ -94,3 +95,6 @@ test('同 ID 构图实例被替换时清除旧草稿，旧按钮不能修改新�
   await dialog.screenshot({ path: test.info().outputPath('replacement-recovered.png') })
   expect(errors).toEqual([])
 })
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

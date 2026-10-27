@@ -1,8 +1,9 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import type { JobList, PreparedInput } from '../packages/protocol/src/runs'
 import { solidPng } from '../packages/providers/src/mock/media'
 import { clickElement, newProject, revealGenerator, waitEngine, waitNode, zoomTo } from './canvas'
 import { openLibraryPanel } from './library-ui'
+import { slowFile } from './slow-file'
 
 async function fixture(page: Page) {
   await page.setViewportSize({ width: 800, height: 650 })
@@ -346,3 +347,6 @@ test('服饰与次音色同时跨时期冲突时逐项说明，实际图片与�
     })
   }
 })
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

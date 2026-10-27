@@ -1,5 +1,10 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { addNode, centerOf, elements, newProject, zoomTo } from './canvas'
+
+// 3D 构图走真实 WebGL 渲染和截图编码，单条用例天然比界面冒烟的其余部分慢
+test.beforeEach(() => {
+  test.slow()
+})
 
 /** E1 3D 构图：摆人物和姿态，截图写成节点结果；改场景不动已有截图，重新截图产生新结果 */
 test('3D 构图：摆人物、截图成为节点结果', { tag: '@core' }, async ({ page }) => {

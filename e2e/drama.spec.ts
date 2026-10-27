@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import {
   byName,
   centerOf,
@@ -13,6 +13,7 @@ import {
   waitNode,
   zoomTo,
 } from './canvas'
+import { slowFile } from './slow-file'
 
 const hasLibass = () => {
   try {
@@ -148,3 +149,6 @@ test('短剧模板：插入 → 跑骨架 → 展开 → 批量 → 导出', { t
   await waitEngine(page)
   await expect.poll(async () => (await elements(page)).length).toBe(before)
 })
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

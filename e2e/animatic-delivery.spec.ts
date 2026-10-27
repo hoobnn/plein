@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { centerOf, elements, newProject, waitNode, zoomTo } from './canvas'
+import { slowFile } from './slow-file'
 
 const canvasId = (url: string) => decodeURIComponent(url.split('#/c/')[1]!.split('?')[0]!)
 test(
@@ -175,3 +176,6 @@ test(
     await expect(page.getByText('片尾镜头需要复查', { exact: true })).toBeVisible()
   },
 )
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

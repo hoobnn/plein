@@ -2,8 +2,9 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { centerOf, clickElement, newProject, waitNode } from './canvas'
+import { slowFile } from './slow-file'
 
 let dir = ''
 test.beforeAll(() => {
@@ -196,3 +197,6 @@ for (const mode of ['corrupt', 'missing'] as const)
       writeFileSync(file, original)
     }
   })
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

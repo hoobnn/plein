@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { centerOf, newProject, zoomTo } from './canvas'
+import { slowFile } from './slow-file'
 
 test('本地拉片入口、人工切点、历史预览、素材入画布、刷新与锁定只读', async ({ page }) => {
   await newProject(page)
@@ -202,3 +203,6 @@ test('本地拉片入口、人工切点、历史预览、素材入画布、刷�
   await expect(editor).toHaveCSS('opacity', '1')
   await page.screenshot({ path: test.info().outputPath('shot-analysis-readonly.png') })
 })
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

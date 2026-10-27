@@ -1,7 +1,8 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { clickElement, newProject, waitEngine, waitNode } from './canvas'
 import { solidPng } from '../packages/providers/src/mock/media'
 import type { NodeResult } from '../packages/doc/src/types'
+import { slowFile } from './slow-file'
 
 for (const hasTail of [false, true]) {
   test(`同次两个视频切换采用后读取各自尾帧，撤销刷新保持一致（第二条有尾帧=${hasTail}）`, async ({
@@ -305,3 +306,6 @@ for (const action of ['escape', 'locate'] as const) {
     })
   })
 }
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

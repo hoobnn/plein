@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import {
   addNode,
   centerOf,
@@ -13,6 +13,7 @@ import {
   settle,
   zoomTo,
 } from './canvas'
+import { slowFile } from './slow-file'
 
 let dir = ''
 /** WebM（VP9）：Playwright 自带的 Chromium 没有 H.264 解码器，WebM 才能走 WebCodecs 预览 */
@@ -879,3 +880,6 @@ test('普通音频工具自定义切点与区间：预览后生成新素材，�
   await expect(page.locator('.ui-toast')).toContainText('切点需严格递增')
   expect(requests).toHaveLength(2)
 })
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

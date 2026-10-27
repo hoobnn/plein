@@ -1,8 +1,9 @@
 import { openCanvasSettings } from './settings-ui'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { clickElement, elements, newProject, revealGenerator, waitEngine, waitNode } from './canvas'
+import { slowFile } from './slow-file'
 
 async function openPlugins(page: Page) {
   await openCanvasSettings(page)
@@ -89,3 +90,6 @@ test('另一客户端启停插件时，已打开的插件面板和随后使用�
     await request.put('/api/plugins/local/acme/echo', { data: { enabled: false } })
   }
 })
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

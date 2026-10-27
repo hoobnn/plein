@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { centerOf, elements, newProject, settle, waitEngine } from './canvas'
+import { slowFile } from './slow-file'
 
 test('多目标历史部分删除时只定位剩余元素，全删后撤下入口，撤销逐步恢复', async ({ page }) => {
   await newProject(page)
@@ -110,3 +111,6 @@ test('多目标历史部分删除时只定位剩余元素，全删后撤下入�
   await changes.click()
   expect((await selection()).sort()).toEqual([ids[0]!, ids[1]!].sort())
 })
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

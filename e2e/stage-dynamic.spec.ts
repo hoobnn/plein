@@ -1,6 +1,11 @@
-import { expect, test, type Page, type Locator } from '@playwright/test'
+import { expect, test, type Page, type Locator } from './fixtures'
 import type { StageScene, StageSnapshot } from '../packages/nodes/src/stage'
 import { addNode, centerOf, elements, newProject, zoomTo } from './canvas'
+
+// 3D 构图走真实 WebGL 渲染和截图编码，单条用例天然比界面冒烟的其余部分慢
+test.beforeEach(() => {
+  test.slow()
+})
 
 async function openStage(page: Page) {
   await newProject(page)

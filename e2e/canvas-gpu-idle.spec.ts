@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { createRequire } from 'node:module'
 import type { Engine } from '../packages/canvas-core/src/engine'
 import { createMediaFixture } from './perf/fixtures'
@@ -15,6 +15,8 @@ interface BufferStats {
 }
 
 test('静止画布在真实 GPU 闲置期后释放缓冲，返回媒体无需重开画布', async ({ page, baseURL }) => {
+  // 要等满产品自己的 60s 闲置期限和 30s 检查周期，这条用例天然长
+  test.slow()
   await installFunctionSerialization(page.context())
   // 只观测原生 create/delete，不保留缓冲强引用或替代产品的回收策略。
   await page.addInitScript(`(() => {

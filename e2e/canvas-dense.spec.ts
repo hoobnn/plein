@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { createMediaFixture, seedMediaCanvas } from './perf/fixtures'
 import { readMediaStats, type PerfPageWindow, waitEngine } from './perf/probe'
 
@@ -6,6 +6,8 @@ type Engine = import('../packages/canvas-core/src/engine').Engine
 
 /** Fixture construction uses the engine; selection, grouping and dragging use actual input. */
 test('千媒体画布框选、双层分组、拖动撤销重做及连续进出释放资源', async ({ page, baseURL }) => {
+  // 一千个媒体元素，铺画布和分组本身就要几十秒
+  test.slow()
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   const fixture = await createMediaFixture(baseURL!, { elements: 1000, imageAssets: 32 })
@@ -152,6 +154,8 @@ test('千媒体画布框选、双层分组、拖动撤销重做及连续进出�
 })
 
 test('千媒体与六十节点连线画布实际连接、撤销及整图整理还原', async ({ page, baseURL }) => {
+  // 一千个媒体元素，铺画布本身就要几十秒
+  test.slow()
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
   const fixture = await createMediaFixture(baseURL!, { elements: 1000, imageAssets: 32 })

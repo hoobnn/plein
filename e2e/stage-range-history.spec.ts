@@ -1,6 +1,11 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { stageSceneOf } from '../packages/nodes/src/stage'
 import { addNode, centerOf, elements, newProject, zoomTo } from './canvas'
+
+// 3D 构图走真实 WebGL 渲染和截图编码，单条用例天然比界面冒烟的其余部分慢
+test.beforeEach(() => {
+  test.slow()
+})
 
 for (const field of ['宽', '焦距'] as const) {
   test(`3D ${field} 连续两次拖动分别撤销，同次停顿保留为一步`, async ({ page }) => {

@@ -1,5 +1,6 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { centerOf, newProject, waitEngine, zoomTo } from './canvas'
+import { slowFile } from './slow-file'
 
 async function seed(page: Page) {
   await newProject(page)
@@ -192,3 +193,6 @@ test('协作者固定新版后，已选原文范围仍属于原固定版本', as
     await context.close()
   }
 })
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

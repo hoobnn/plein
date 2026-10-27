@@ -1,5 +1,6 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { centerOf, clickElement, newProject, showStoryboardCards, waitEngine } from './canvas'
+import { slowFile } from './slow-file'
 
 const field = (page: Page) =>
   page
@@ -174,3 +175,6 @@ for (const [key, label, local, remote] of [
     await expect(cell.getByRole('status')).toHaveCount(0)
   })
 }
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

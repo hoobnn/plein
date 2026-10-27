@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import {
   addNode,
   byName,
@@ -11,6 +11,7 @@ import {
   waitNode,
   zoomTo,
 } from './canvas'
+import { slowFile } from './slow-file'
 
 interface Item {
   id: string
@@ -130,3 +131,6 @@ test(
     await expect(page.locator('.ui-toast')).toContainText('「林晚」已经在画布上，已为你选中')
   },
 )
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

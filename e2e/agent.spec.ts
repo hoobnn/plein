@@ -1,5 +1,6 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { addNode, elements, newProject } from './canvas'
+import { slowFile } from './slow-file'
 
 /** 内置智能体：不装 CLI，用 mock 的工具调用模型跑完一轮，再整轮撤销 */
 test('内置小满建节点并运行，整轮撤销', { tag: '@core' }, async ({ page }) => {
@@ -143,3 +144,6 @@ test('选区上让小满处理', async ({ page }) => {
   await expect(panel.getByText('带上选中的 2 个元素')).toBeVisible()
   await expect(panel.getByPlaceholder('让小满帮你做点什么…')).toBeFocused()
 })
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

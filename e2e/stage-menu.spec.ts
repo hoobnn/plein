@@ -1,5 +1,6 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import { addNode, centerOf, elements, newProject, zoomTo } from './canvas'
+import { slowFile } from './slow-file'
 
 async function fixture(page: Page) {
   await newProject(page)
@@ -72,3 +73,6 @@ test('3D 添加菜单打开时按钮上的撤销不改背景，关闭后恢复�
     .poll(async () => ((await f.scene()) as { figures: Array<{ pose: string }> }).figures[0]!.pose)
     .toBe('stand')
 })
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

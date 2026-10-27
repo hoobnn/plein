@@ -1,4 +1,4 @@
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Page, test } from './fixtures'
 import {
   addNode,
   byName,
@@ -15,6 +15,7 @@ import {
   waitNode,
   zoomTo,
 } from './canvas'
+import { slowFile } from './slow-file'
 
 /** 每个镜头展开出来的节点现在采用的结果和候选数，以及序列的剪辑参数 */
 const snapshot = (page: Page) =>
@@ -207,3 +208,6 @@ test(
     await expect(shot3.getByText('可沿用已有候选').first()).toBeVisible()
   },
 )
+
+// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
+slowFile(test)

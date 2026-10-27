@@ -1,5 +1,10 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { addNode, centerOf, elements, newProject, zoomTo } from './canvas'
+
+// 3D 构图走真实 WebGL 渲染和截图编码，单条用例天然比界面冒烟的其余部分慢
+test.beforeEach(() => {
+  test.slow()
+})
 
 test('3D 只读可查看对象和视角，不抛错或修改场景，恢复可写后可继续', async ({ page }) => {
   const errors: string[] = []
