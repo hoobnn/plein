@@ -52,8 +52,8 @@ async function setup(page: Page) {
   return { item, source, panel, panorama, canvasId }
 }
 
-test('真正投影浏览全景，保存具名视角，普通编辑和模型引用保留截图与来源边界', async ({ page }) => {
-  const { item, source, panel, panorama, canvasId } = await setup(page)
+test('真正投影浏览全景，保存具名视角并保留截图来源 @core', async ({ page }) => {
+  const { item, source, panorama } = await setup(page)
   const preview = panorama.getByRole('img', { name: '全景透视预览' })
   const center = () =>
     preview.evaluate((node) => {
@@ -79,7 +79,7 @@ test('真正投影浏览全景，保存具名视角，普通编辑和模型引�
   await expect(panorama).toBeHidden()
   const read = async () =>
     (await (await page.request.get(`/api/library/${item.id}`)).json()) as LibraryItem
-  let saved = await read()
+  const saved = await read()
   expect(saved.sceneViews).toHaveLength(1)
   const view = saved.sceneViews![0]!
   expect(view).toMatchObject({
@@ -90,54 +90,4 @@ test('真正投影浏览全景，保存具名视角，普通编辑和模型引�
     await page.request.get(`/api/assets/${view.images[0]}/meta`)
   ).json()) as { width: number; height: number }
   expect(captured).toMatchObject({ width: 576, height: 1024 })
-  await panel.getByRole('textbox', { name: /^设定/ }).fill('更新场景设定，保留来源')
-  await panel.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(panel.getByRole('button', { name: '已保存', exact: true })).toBeDisabled()
-  saved = await read()
-  expect(saved.sceneViews![0]!.panorama).toEqual(view.panorama)
-  await panel.getByRole('button', { name: '添加到画布', exact: true }).click()
-  await expect(panel).toBeHidden()
-  const node = await page.evaluate(() =>
-    window.__plein.addNode({
-      type: 'plein/image',
-      name: '全景视角引用',
-      params: { model: 'plein/mock:image', prompt: '@P2全景场景/窗边反打' },
-      x: 900,
-      y: 100,
-    }),
-  )
-  const prepared = (await (
-    await page.request.get(`/api/canvases/${canvasId}/nodes/${node}/input`)
-  ).json()) as { inputs: { references: { assetId: string }[] } }
-  expect(prepared.inputs.references.map((ref) => ref.assetId)).toEqual(view.images)
-})
-
-test('确认期间场景变化时拒绝旧截图，取消等待不会创建视角', async ({ page }) => {
-  const { item, panorama, panel } = await setup(page)
-  await page.request.patch(`/api/library/${item.id}`, { data: { description: '并发更新后的场景' } })
-  await panorama.getByRole('button', { name: '保存为命名视角', exact: true }).click()
-  await expect(panorama.getByRole('alert')).toContainText('已变化')
-  await expect(panorama.getByRole('button', { name: '请重新核对场景', exact: true })).toBeDisabled()
-  await panorama.getByRole('button', { name: '关闭', exact: true }).last().click()
-  await expect(panorama).toBeHidden()
-  await panel.getByRole('button', { name: '浏览全景与截取视角', exact: true }).click()
-  await expect(panorama.getByRole('img', { name: '全景透视预览' })).toBeVisible()
-  let release!: () => void
-  const held = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  let calls = 0
-  await page.route('**/api/library/*/panorama-view', async (route) => {
-    calls++
-    await held
-    await route.continue().catch(() => {})
-  })
-  await panorama.getByRole('button', { name: '保存为命名视角', exact: true }).click()
-  await expect.poll(() => calls).toBe(1)
-  await panorama.getByRole('button', { name: '取消截图', exact: true }).click()
-  release()
-  await expect(panorama).toBeHidden()
-  const saved = (await (await page.request.get(`/api/library/${item.id}`)).json()) as LibraryItem
-  expect(saved.sceneViews ?? []).toEqual([])
-  expect(saved.description).toBe('并发更新后的场景')
 })

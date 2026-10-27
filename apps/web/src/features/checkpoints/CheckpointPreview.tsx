@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { assetUrls } from '../../api/client'
 import { canvasTheme, useTheme } from '../../stores/theme'
+import { followPreviewCamera } from './previewCamera'
 
 function decode(value: string) {
   const binary = atob(value)
@@ -103,42 +104,8 @@ export function CheckpointPreview({ state }: { state: string }) {
           return
         }
         engine.setTool('hand')
-        const camera = engine.camera
-        const snapshot = () => ({
-          width: camera.width,
-          height: camera.height,
-          x: camera.x,
-          y: camera.y,
-          zoom: camera.zoom,
-          center: camera.center,
-        })
-        let previous = snapshot(),
-          followingFit = true,
-          adjusting = false
-        const fit = () => {
-          adjusting = true
-          followingFit = true
-          // 小预览不沿用主画布的固定大留白，避免压到最低缩放并隐藏正文。
-          engine.zoomToFit(undefined, Math.min(32, camera.width / 8, camera.height / 8))
-          previous = snapshot()
-          adjusting = false
-        }
-        offCamera = camera.onChange(() => {
-          if (adjusting) return
-          if (camera.width !== previous.width || camera.height !== previous.height) {
-            if (followingFit) fit()
-            else {
-              adjusting = true
-              camera.lookAt(previous.center.x, previous.center.y, previous.zoom)
-              previous = snapshot()
-              adjusting = false
-            }
-          } else {
-            if (camera.x !== previous.x || camera.y !== previous.y || camera.zoom !== previous.zoom)
-              followingFit = false
-            previous = snapshot()
-          }
-        })
+        const { fit, dispose: stopFollowing } = followPreviewCamera(engine)
+        offCamera = stopFollowing
         fitRef.current = fit
         off = engine.onViewChange(sync)
         fit()

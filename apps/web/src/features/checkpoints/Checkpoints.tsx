@@ -40,6 +40,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
   const close = () => useCheckpoints.getState().close()
   const removal = useCheckpoints((s) => s.removal)
   const removing = useCheckpoints((s) => s.removing)
+  const restoring = useCheckpoints((s) => s.restoring)
   const [page, setPage] = useState<CheckpointPage>({ items: [], nextCursor: null }),
     [loading, setLoading] = useState(false),
     [paging, setPaging] = useState(false),
@@ -123,6 +124,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
     return () => controller.abort()
   }, [selected, previewRevision])
   const deleting = page.items.some((item) => removing.has(item.id))
+  const restoringVisible = page.items.some((item) => restoring.has(item.id))
   const save = async () => {
     if (!canSave || !name.trim() || saving) return
     const controller = new AbortController()
@@ -208,7 +210,8 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
         state.canvasId === source.canvasId
       )
     }
-    if (working || saving || !current()) return
+    if (working || saving || !current() || !useCheckpoints.getState().beginRestore(checkpoint.id))
+      return
     setWorking({ id: checkpoint.id, kind: 'restore' })
     setError('')
     try {
@@ -221,6 +224,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
     } catch (reason) {
       if (current()) setError((reason as Error).message)
     } finally {
+      useCheckpoints.getState().finishRestore(checkpoint.id)
       setWorking(null)
     }
   }
@@ -302,7 +306,7 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
           {error}
         </p>
       )}
-      {working?.kind === 'restore' && (
+      {restoringVisible && (
         <p role="status" className="px-5 py-3 text-sm text-ink-muted">
           正在恢复为新画布…关闭窗口后仍会继续执行。
         </p>
@@ -367,18 +371,26 @@ function Panel({ projectId, canvasId }: { projectId: string; canvasId?: string }
                     <button
                       type="button"
                       className="ui-btn ui-btn-sm ui-btn-secondary"
-                      disabled={!!working || saving || removing.has(checkpoint.id)}
+                      disabled={
+                        !!working ||
+                        saving ||
+                        removing.has(checkpoint.id) ||
+                        restoring.has(checkpoint.id)
+                      }
                       onClick={() => void restore(checkpoint)}
                     >
-                      {working?.kind === 'restore' && working.id === checkpoint.id
-                        ? '恢复中…'
-                        : '恢复为新画布'}
+                      {restoring.has(checkpoint.id) ? '恢复中…' : '恢复为新画布'}
                     </button>
                     <button
                       type="button"
                       aria-label={`删除检查点 ${checkpoint.name}`}
                       className="ui-btn ui-btn-sm ui-btn-quiet ui-icon-btn hover:text-danger"
-                      disabled={!!working || saving || removing.has(checkpoint.id)}
+                      disabled={
+                        !!working ||
+                        saving ||
+                        removing.has(checkpoint.id) ||
+                        restoring.has(checkpoint.id)
+                      }
                       onClick={() => void remove(checkpoint)}
                     >
                       <Icon name="trash" size={14} />

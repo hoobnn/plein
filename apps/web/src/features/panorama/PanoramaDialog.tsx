@@ -15,6 +15,7 @@ import { Modal, ModalHeader } from '../../ui/Modal'
 import { Select } from '../../ui/Select'
 import { useSession } from '../../stores/session'
 import { useCanvas } from '../../stores/canvas'
+import { PoseControl } from './PoseControl'
 
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value))
 const yawOf = (value: number) => ((((value + 180) % 360) + 360) % 360) - 180
@@ -203,34 +204,14 @@ export default function PanoramaDialog({
     }
   }
   const control = (key: 'yaw' | 'pitch' | 'fov', label: string, min: number, max: number) => (
-    <label className="ui-field">
-      <span className="ui-label">{label}</span>
-      <div className="flex items-center gap-3">
-        <input
-          type="range"
-          aria-label={`${label}滑块`}
-          min={min}
-          max={max}
-          value={pose[key]}
-          disabled={busy}
-          className="min-w-0 flex-1"
-          onChange={(e) => setPose((p) => ({ ...p, [key]: Number(e.target.value) }))}
-        />
-        <input
-          type="number"
-          aria-label={label}
-          min={min}
-          max={max}
-          value={pose[key]}
-          disabled={busy}
-          className="ui-input w-20"
-          onChange={(e) => {
-            const value = Number(e.target.value)
-            if (Number.isFinite(value)) setPose((p) => ({ ...p, [key]: clamp(value, min, max) }))
-          }}
-        />
-      </div>
-    </label>
+    <PoseControl
+      label={label}
+      value={pose[key]}
+      min={min}
+      max={max}
+      disabled={busy}
+      onChange={(value) => setPose((p) => ({ ...p, [key]: value }))}
+    />
   )
   return (
     <Modal label="全景浏览与视角截图" onClose={close} top isolateKeys className="max-w-4xl">
