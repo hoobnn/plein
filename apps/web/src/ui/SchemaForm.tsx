@@ -137,6 +137,7 @@ export function SchemaForm({
             <input
               id={id}
               className={field}
+              aria-label={label}
               placeholder={f.placeholder}
               value={String(current ?? '')}
               onChange={(e) => set(key, e.target.value)}
