@@ -37,11 +37,17 @@ const usable = (p: ProviderInfo) => p.enabled && p.configured
  * 第一步填平台密钥并测试连接，第二步从短剧模板或空白画布开始；随时可以跳过，之后在设置里改。
  */
 export function Welcome() {
-  const { catalog, load } = useCatalog()
+  const { catalog, error, load } = useCatalog()
   const [open, setOpen] = useState(false)
   useEffect(() => {
     void load()
   }, [load])
+  // 目录没读到时引导开不了；重试到读出来为止，别让首次启动引导悄悄消失。
+  useEffect(() => {
+    if (!error || catalog) return
+    const timer = setTimeout(() => void load(), 1000)
+    return () => clearTimeout(timer)
+  }, [catalog, error, load])
   useEffect(() => {
     // 只在打开首页时判断一次：引导里填好密钥后不会因为“已有可用平台”而突然消失
     if (catalog && !welcomed() && !catalog.providers.some(usable)) setOpen(true)
