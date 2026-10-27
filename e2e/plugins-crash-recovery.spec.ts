@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { addNode, clickElement, elements, newProject, waitNode } from './canvas'
+import { addNode, clickElement, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 test('运行中反复崩溃更新设置状态，修复重载后原节点可继续执行', async ({ page, request }) => {
   const directory = join(process.env.PLEIN_E2E_DATA!, 'plugins/acme-echo')
@@ -74,6 +74,8 @@ test('运行中反复崩溃更新设置状态，修复重载后原节点可继�
     await page.keyboard.press('Escape')
     await page.setViewportSize({ width: 1440, height: 900 })
     await clickElement(page, node.id)
+    // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+    await revealGenerator(page)
     await expect(
       page.getByTestId('generator').getByRole('textbox', { name: '提示词', exact: true }),
     ).toHaveValue('crash recovery')

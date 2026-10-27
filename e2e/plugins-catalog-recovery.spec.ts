@@ -2,7 +2,7 @@ import { openCanvasSettings } from './settings-ui'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { addNode, elements, newProject, waitNode } from './canvas'
+import { addNode, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 const endpoint = '/api/plugins/local/acme/echo'
 test.beforeAll(() => {
@@ -95,11 +95,16 @@ for (const source of ['local', 'external'] as const) {
     await page.setViewportSize({ width: 1440, height: 900 })
     await addNode(page, '大声说')
     const node = (await elements(page)).find((element) => element.nodeType === 'acme/shout')!
+    // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+    await revealGenerator(page)
     await page
       .getByTestId('generator')
       .getByRole('textbox', { name: '提示词', exact: true })
       .fill('catalog recovered')
-    await page.getByTestId('generator').getByRole('button', { name: '生成', exact: true }).click()
+    const run = page.getByTestId('generator').getByRole('button', { name: '生成', exact: true })
+    // 生成前要等服务端把实际输入备好，按钮才会解禁
+    await expect(run).toBeEnabled()
+    await run.click()
     await waitNode(page, node.id)
     await expect(page.getByText('CATALOG RECOVERED!', { exact: true })).toBeVisible()
   })
