@@ -40,6 +40,10 @@ async function setup() {
   })
   useCatalog.setState({ catalog })
   const rendered = renderApp(<Welcome />)
+  // 冷加载配置面板可能超过 DOM 查询窗口，先结算真实导入与 Suspense 更新。
+  await act(async () => {
+    await import('./WelcomeDialog')
+  })
   await screen.findByRole('dialog', { name: '欢迎使用 Plein' })
   return {
     ...rendered,

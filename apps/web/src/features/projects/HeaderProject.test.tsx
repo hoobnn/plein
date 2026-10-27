@@ -53,6 +53,14 @@ function setup(
   }
 }
 
+async function projectNameInput() {
+  // 点击只发起模块加载；等待真实导入和宿主更新后再读取输入框。
+  await act(async () => {
+    await import('../../ui/DialogView')
+  })
+  return screen.getByRole<HTMLInputElement>('textbox', { name: '项目名称' })
+}
+
 it('首次读取失败可重试，等待时保留错误并禁止重复，成功返回名称入口', async () => {
   const pending = deferred<Response>()
   let reads = 0
@@ -136,7 +144,7 @@ it('缓存刷新失败保留已确认名称，仍可打开改名并重试', asyn
   expect(title.textContent).toBe('已确认新名称')
   await user.click(title)
   await user.click(screen.getByRole('button', { name: '重命名项目' }))
-  expect(screen.getByRole<HTMLInputElement>('textbox').value).toBe('已确认新名称')
+  expect((await projectNameInput()).value).toBe('已确认新名称')
   await user.click(screen.getByRole('button', { name: '取消' }))
   await user.click(title)
   failed = false
@@ -156,7 +164,7 @@ it('改名失败保留草稿和焦点，修改后重试只写两次', async () =
     },
   )
   await user.click(await screen.findByRole('button', { name: project.title }))
-  const input = screen.getByRole<HTMLInputElement>('textbox', { name: '项目名称' })
+  const input = await projectNameInput()
   await user.clear(input)
   await user.type(input, '草稿 🌧️')
   await user.keyboard('{Enter}')
@@ -179,7 +187,7 @@ it('保存中禁用重复提交，主动关闭后迟到成功仍更新原项目'
     () => pending.promise,
   )
   await user.click(await screen.findByRole('button', { name: project.title }))
-  const input = screen.getByRole<HTMLInputElement>('textbox')
+  const input = await projectNameInput()
   await user.clear(input)
   await user.type(input, '保存中项目')
   await user.keyboard('{Enter}')
@@ -199,7 +207,7 @@ it('保存中禁用重复提交，主动关闭后迟到成功仍更新原项目'
 it.each([false, true])('确认前离开画布（返回=%s），旧草稿不写入', async (returned) => {
   const { user, writes } = setup(undefined, () => Response.json(project))
   await user.click(await screen.findByRole('button', { name: project.title }))
-  const input = screen.getByRole<HTMLInputElement>('textbox')
+  const input = await projectNameInput()
   await user.clear(input)
   await user.type(input, '旧草稿')
   act(() => useCanvas.setState({ canvasId: 'other' }))

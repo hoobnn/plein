@@ -8,6 +8,7 @@ import {
   elements,
   handleOf,
   newProject,
+  settle,
   waitEngine,
 } from './canvas'
 
@@ -272,6 +273,25 @@ test.describe('画布操作浏览器断点', { tag: '@core' }, () => {
       },
       { frame, point },
     )
+    await settle(page, frame)
+    await expect
+      .poll(() =>
+        page.evaluate(
+          ({ frame, point }) => {
+            const engine = window.__plein.engine as typeof window.__plein.engine & {
+              clientToWorld(x: number, y: number): { x: number; y: number }
+              scene: { hitTest(x: number, y: number): string | null }
+            }
+            const world = engine.clientToWorld(point.x, point.y)
+            return (
+              document.elementFromPoint(point.x, point.y)?.tagName === 'CANVAS' &&
+              engine.scene.hitTest(world.x, world.y) === frame
+            )
+          },
+          { frame, point },
+        ),
+      )
+      .toBe(true)
     await page.mouse.click(point.x, point.y, { button: 'right' })
     const menu = page.getByRole('menu')
     await expect(menu).toBeVisible()

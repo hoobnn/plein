@@ -56,6 +56,9 @@ it('需要引导时加载配置面板，关闭后目录变化和重新挂载都�
     new URL(request.url).pathname === '/api/catalog' ? Response.json(catalog()) : undefined,
   )
   const view = renderApp(<Welcome />)
+  await act(async () => {
+    await import('./WelcomeDialog')
+  })
   await screen.findByRole('dialog', { name: '欢迎使用 Plein' })
   await view.user.click(screen.getByRole('button', { name: '关闭' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
