@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { newProject, settle } from './canvas'
+import { newProject, revealGenerator, settle } from './canvas'
 
 for (const width of [320, 639])
   for (const target of ['node', 'frame', 'batch'] as const) {
@@ -114,9 +114,17 @@ for (const width of [320, 639])
           ? page.getByRole('toolbar', { name: 'Frame 操作', exact: true })
           : page.getByTestId('generator')
       await expect(tools).toBeVisible()
-      const bounds = (await tools.boundingBox())!
-      expect(bounds.x).toBeGreaterThanOrEqual(4)
-      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width - 4)
+      if (target === 'frame') {
+        const bounds = (await tools.boundingBox())!
+        expect(bounds.x).toBeGreaterThanOrEqual(4)
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(width - 4)
+      } else {
+        // 节点编辑器固定 840px 宽，窄窗口里放不进整块：
+        // 把它移进窗口，生成按钮要点得到就行
+        const generate = tools.getByRole('button', { name: '生成', exact: true })
+        await revealGenerator(page, generate)
+        await expect(generate).toBeInViewport({ ratio: 1 })
+      }
       expect(
         await page.getByRole('button', { name: '快捷键', exact: true }).evaluate((button) => {
           const r = button.getBoundingClientRect()

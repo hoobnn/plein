@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { newProject } from './canvas'
+import { newProject, revealGenerator } from './canvas'
 
 for (const width of [1440, 900])
   for (const target of ['node', 'frame', 'batch'] as const) {
@@ -109,21 +109,29 @@ for (const width of [1440, 900])
           ? page.getByRole('toolbar', { name: 'Frame 操作', exact: true })
           : page.getByTestId('generator')
       await expect(tools).toBeVisible()
-      await expect
-        .poll(async () => {
-          const box = (await tools.boundingBox())!
-          const panel = (await tasks.boundingBox())!
-          const sidebar = page.getByRole('complementary', {
-            name: '侧栏',
-            exact: true,
-            includeHidden: true,
+      if (target === 'frame') {
+        await expect
+          .poll(async () => {
+            const box = (await tools.boundingBox())!
+            const panel = (await tasks.boundingBox())!
+            const sidebar = page.getByRole('complementary', {
+              name: '侧栏',
+              exact: true,
+              includeHidden: true,
+            })
+            const side = (await sidebar.boundingBox())!
+            const left =
+              (await sidebar.getAttribute('aria-hidden')) === 'true' ? 0 : side.x + side.width
+            return box.x >= left + 4 && box.x + box.width <= panel.x - 4
           })
-          const side = (await sidebar.boundingBox())!
-          const left =
-            (await sidebar.getAttribute('aria-hidden')) === 'true' ? 0 : side.x + side.width
-          return box.x >= left + 4 && box.x + box.width <= panel.x - 4
-        })
-        .toBe(true)
+          .toBe(true)
+      } else {
+        // 节点编辑器固定 840px 宽，和两侧面板并排时放不进中间：
+        // 把它移进窗口，生成按钮要点得到就行
+        const generate = tools.getByRole('button', { name: '生成', exact: true })
+        await revealGenerator(page, generate)
+        await expect(generate).toBeInViewport({ ratio: 1 })
+      }
       expect(await page.evaluate(() => window.__plein.engine.selection.values())).toEqual([nodeId])
       await page.screenshot({
         path: test.info().outputPath('task-locate.png'),
