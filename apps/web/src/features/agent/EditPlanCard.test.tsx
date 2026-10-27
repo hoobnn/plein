@@ -90,6 +90,22 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+it('目标变化使方案失效后明确说明旧方案未执行，不再提供批准或编辑入口', () => {
+  prime()
+  const value = item()
+  const view = renderApp(<EditPlanRow item={value} />)
+  expect(screen.getByRole('button', { name: '只改文字' })).toBeTruthy()
+  view.rerender(
+    <EditPlanRow
+      item={{ ...value, status: 'approved', plan: { ...value.plan, status: 'stale' } }}
+    />,
+  )
+  expect(screen.getByText('目标在批准前变了，旧方案没有执行：让镜头更紧张')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: '只改文字' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '只出候选图' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '改提示词' })).toBeNull()
+})
+
 it('取消逐项编辑恢复入口和原值，可用键盘重新编辑', async () => {
   prime()
   const view = renderApp(<EditPlanRow item={item()} />)

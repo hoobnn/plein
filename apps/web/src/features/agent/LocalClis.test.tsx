@@ -32,7 +32,8 @@ it('剪贴板拒绝写入时说明复制失败，不显示已复制', async () =
   await user.click(copy)
   expect(await screen.findByRole('button', { name: '复制失败' })).toBe(copy)
   expect(screen.queryByRole('button', { name: '已复制' })).toBeNull()
-  expect(screen.getByRole('alert').textContent).toContain('请选中命令手动复制')
+  expect(screen.getByRole('status').textContent).toContain('请选中命令手动复制')
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 it('复制成功后短暂反馈并恢复，可以再次复制', async () => {

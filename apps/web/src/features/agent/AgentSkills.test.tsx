@@ -110,7 +110,9 @@ it('store 拒绝选用时保留窗口并说明原因，不污染草稿或本轮�
   const card = within(dialog).getByRole('article', { name: '技能：整理工作流' })
   await user.click(within(card).getByRole('button', { name: '使用此技能' }))
   expect(screen.getByRole('dialog', { name: '技能与画布能力' })).toBe(dialog)
-  expect(within(dialog).getByRole('alert').textContent).toContain('技能未选用')
+  expect(within(dialog).getByRole('alert').textContent).toBe(
+    '当前助手状态已变化，未选用技能。请稍后重试',
+  )
   expect(useAgent.getState().selectedSkills.c1).toBeUndefined()
   expect(useAgent.getState().drafts.c1?.text).toBe('保留我的创作需求')
 })

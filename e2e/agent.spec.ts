@@ -3,7 +3,7 @@ import type { AgentSession } from '../packages/protocol/src/agent'
 import { clickElement, elements, newProject, waitEngine, waitNode } from './canvas'
 
 // UI 批准经真实 API 执行，再由同步文档回到画布；纯状态边界留在组件与合同测试。
-test('计划和运行分别批准，修改只改文字，整轮撤销恢复原画布', { tag: '@core' }, async ({ page }) => {
+test('计划和运行分别批准，修改只改文字并保留已生成结果', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
   await page.getByRole('button', { name: '打开助手', exact: true }).click()
   const panel = page.getByRole('complementary', { name: '助手', exact: true })
@@ -46,10 +46,22 @@ test('计划和运行分别批准，修改只改文字，整轮撤销恢复原�
   await card.getByRole('button', { name: '只改文字', exact: true }).click()
   await expect(card).toHaveAttribute('data-status', 'applied')
   await expect.poll(snapshot).toEqual({ ...before, prompt: `${before.prompt}，只留一盏顶灯` })
-  await panel.getByRole('button', { name: '撤销这一轮', exact: true }).last().click()
-  await expect.poll(snapshot).toEqual(before)
+})
+
+test('纯运行完成后整轮撤销恢复原画布', { tag: '@core' }, async ({ page }) => {
+  await newProject(page)
+  const original = await elements(page)
+  await page.getByRole('button', { name: '打开助手', exact: true }).click()
+  const panel = page.getByRole('complementary', { name: '助手', exact: true })
+  await panel.getByPlaceholder('让小满帮你做点什么…').fill('画一张雨夜天台')
+  await panel.getByRole('button', { name: '发送', exact: true }).click()
+  await expect(panel.getByText('【mock】好了')).toBeVisible()
+  await expect
+    .poll(async () => (await elements(page)).find((el) => el.nodeType === 'plein/image')?.results)
+    .toBe(1)
+  await expect(panel.locator('.plein-agent-plan')).toHaveCount(0)
   await panel.getByRole('button', { name: '撤销这一轮', exact: true }).click()
-  await expect.poll(() => elements(page)).toEqual([])
+  await expect.poll(() => elements(page)).toEqual(original)
 })
 
 /** 原生 EventSource 自动重试：断线期间完成的会话补回未读，绝不重发消息 */
@@ -239,16 +251,31 @@ test('窄屏助手避让可点击，长会话原生翻页不穿透画布', { tag
   await expect(sidebar).toHaveAttribute('aria-hidden', 'false')
   const transcript = panel.getByRole('region', { name: '对话记录', exact: true })
   await transcript.focus()
+  const scrollKey = async (key: string) => {
+    // 原生滚动结束后再发下一个键，避免连续按键合并到同一段滚动动画。
+    await transcript.evaluate((el) => {
+      el.dataset.scrollSettled = 'false'
+      el.addEventListener(
+        'scrollend',
+        () => {
+          el.dataset.scrollSettled = 'true'
+        },
+        { once: true },
+      )
+    })
+    await transcript.press(key)
+    await expect(transcript).toHaveAttribute('data-scroll-settled', 'true')
+  }
   const bottom = await transcript.evaluate((el) => el.scrollTop)
   expect(bottom).toBeGreaterThan(500)
-  await transcript.press('PageUp')
+  await scrollKey('PageUp')
   await expect.poll(() => transcript.evaluate((el) => el.scrollTop)).toBeLessThan(bottom - 100)
   await page.evaluate((id) => window.__plein.engine.selection.set([id]), nodeId)
   const before = await elements(page)
   await transcript.press('Delete')
-  await transcript.press('ArrowDown')
+  await scrollKey('ArrowDown')
   expect(await elements(page)).toEqual(before)
-  await transcript.press('End')
+  await scrollKey('End')
   await expect
     .poll(() => transcript.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
     .toBeLessThan(2)

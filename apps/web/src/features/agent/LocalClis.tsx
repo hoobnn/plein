@@ -181,7 +181,7 @@ function Command({ label, command }: { label: string; command: string }) {
         </button>
       </div>
       {state === 'failed' && (
-        <p role="alert" className="text-xs text-danger">
+        <p role="status" className="text-xs text-danger">
           剪贴板不可用，请选中命令手动复制。
         </p>
       )}

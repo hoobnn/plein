@@ -132,8 +132,7 @@ export function SkillBrowser({
   )
   const reportUse = (skill: AgentSkill) => {
     const accepted = onUse?.(skill)
-    if (accepted === false)
-      setError('技能未选用：当前对话或画布状态已变化，请回到助手确认状态后重试。')
+    if (accepted === false) setError('当前助手状态已变化，未选用技能。请稍后重试')
   }
   const change = async (skill: AgentSkill, use = false) => {
     if (pending || disabled) return

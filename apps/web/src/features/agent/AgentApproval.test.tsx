@@ -22,6 +22,50 @@ function prime(item: AgentItem) {
   useAgent.setState({ canvasId: 'c1', session })
 }
 
+it.each([
+  ['approved', '已允许', true],
+  ['denied', '已跳过', false],
+  ['expired', '已过期', undefined],
+] as const)('运行确认从待批准变为 %s 时显示对应结果且撤下操作', async (status, label, allow) => {
+  const approval: Extract<AgentItem, { type: 'approval' }> = {
+    id: 'run-approval',
+    type: 'approval',
+    tool: 'run_node',
+    reason: '生成本镜视频',
+    ids: [],
+    status: 'pending',
+    at: 1,
+  }
+  prime(approval)
+  const decisions: unknown[] = []
+  mockFetch((request) => {
+    if (
+      request.method === 'POST' &&
+      new URL(request.url).pathname === '/api/agent/sessions/s1/approvals/run-approval'
+    )
+      return request.json().then((body) => {
+        decisions.push(body)
+        return new Response(null, { status: 204 })
+      })
+  })
+  const view = renderApp(<Transcript items={[approval]} running={false} intro="" worker="小满" />)
+  expect(screen.getByText('需要你确认：生成本镜视频')).toBeTruthy()
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '允许' }).disabled).toBe(false)
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '跳过' }).disabled).toBe(false)
+  if (allow !== undefined) {
+    await view.user.click(screen.getByRole('button', { name: allow ? '允许' : '跳过' }))
+    await waitFor(() => expect(useAgent.getState().pendingActions).toEqual({}))
+  }
+  view.rerender(
+    <Transcript items={[{ ...approval, status }]} running={false} intro="" worker="小满" />,
+  )
+  expect(screen.getByText(`${label}：生成本镜视频`)).toBeTruthy()
+  expect(screen.queryByText('需要你确认：生成本镜视频')).toBeNull()
+  expect(screen.queryByRole('button', { name: '允许' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '跳过' })).toBeNull()
+  expect(decisions).toEqual(allow === undefined ? [] : [{ allow }])
+})
+
 it('计划确认失败可重试，重挂载仍锁定相反选择且只提交一次', async () => {
   const plan: AgentItem = {
     id: 'plan',

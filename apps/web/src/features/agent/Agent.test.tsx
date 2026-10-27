@@ -511,6 +511,35 @@ it('旧版停止记录为中性提示，真实历史错误仍显示错误内容'
   expect(screen.queryByRole('alert')).toBeNull()
 })
 
+it('停止后的轮次解释保留改动与已提交任务，查看任务关闭助手而不重新提交', async () => {
+  prime()
+  useAgent.setState({ open: true })
+  const items: AgentItem[] = [{ id: 'reply', type: 'text', text: '已创建本镜节点', at: 1 }]
+  const { user } = renderApp(
+    <Transcript
+      items={items}
+      running={false}
+      intro=""
+      worker="小满"
+      lastTurn={{
+        id: 'stopped-turn',
+        state: 'stopped',
+        reason: 'user_stopped',
+        runs: [{ nodeId: 'video', runId: 'run-1' }],
+        groups: ['group-1'],
+      }}
+    />,
+  )
+  const status = screen.getByRole('status')
+  expect(within(status).getByText('本轮对话已停止')).toBeTruthy()
+  expect(status.textContent).toContain('已完成的改动保留。已提交 1 次节点运行、1 组运行')
+  expect(status.textContent).toContain('对话结束不代表生成任务失败，已提交的任务不会自动重发。')
+  await user.click(within(status).getByRole('button', { name: '查看任务' }))
+  expect(useCanvas.getState().tasks).toBe(true)
+  expect(useAgent.getState().open).toBe(false)
+  expect(useAgent.getState().session?.id).toBe('s1')
+})
+
 it('关闭的事件流可手动重试，重连期间保留草稿且禁止发送', async () => {
   prime()
   mockFetch((request) => {
