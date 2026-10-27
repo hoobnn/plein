@@ -193,22 +193,39 @@ test('实际输入首次读取失败可见，重试只刷新预览不生成', as
   await newProject(page)
   let failing = true
   let runs = 0
+  let reads = 0
   page.on('request', (r) => {
     if (r.method() === 'POST' && /\/nodes\/[^/]+\/run$/.test(r.url())) runs++
   })
-  await page.route('**/api/canvases/*/nodes/*/input', (route) =>
-    failing
+  await page.route('**/api/canvases/*/nodes/*/input', (route) => {
+    reads++
+    return failing
       ? route.fulfill({ status: 503, json: { message: '输入服务暂时不可用' } })
-      : route.continue(),
-  )
+      : route.continue()
+  })
   await addNode(page, '图片')
   // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
   await revealGenerator(page)
   await page.getByRole('textbox', { name: '提示词' }).fill('雨后的天台')
   const preview = page.getByTestId('input-preview')
   await expect(preview.getByRole('alert')).toContainText('输入服务暂时不可用')
+  // 改过提示词，预览会自己重取一次：刷新途中重试按钮会被换掉，点击会落空。
+  // 等它不再重取（读取请求不再增加）再点重试。
+  await expect
+    .poll(
+      async () => {
+        const before = reads
+        await page.waitForTimeout(600)
+        return reads - before
+      },
+      { message: '预览应停止重新读取', timeout: 15_000 },
+    )
+    .toBe(0)
   failing = false
-  await preview.getByRole('button', { name: '重新读取实际输入' }).click()
+  // 预览会随文档变化自己重取，刷新时重试按钮会被换掉：点没落上就再点一次
+  await expect(async () => {
+    await preview.getByRole('button', { name: '重新读取实际输入' }).click({ timeout: 1000 })
+  }).toPass({ timeout: 15_000 })
   await expect(preview.getByRole('alert')).toHaveCount(0)
   await preview.getByRole('button', { name: /实际输入/ }).click()
   await expect(preview).toContainText('雨后的天台')
