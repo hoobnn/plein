@@ -1377,7 +1377,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                         writable={writable}
                       />
                       <ClipSettings
-                        key={`${rowKey(row, current)}:${sequenceSourceIdentity(row)}`}
+                        // 素材换了只重置入出点的草稿（它们自己按素材编号重新挂载），
+                        // 字幕和音量的草稿要留着：换素材不该把没提交的字丢掉
+                        key={rowKey(row, current)}
                         row={row}
                         readRow={() =>
                           readSequence(engine, id).rows.find((r, i) => rowKey(r, i) === selected)
