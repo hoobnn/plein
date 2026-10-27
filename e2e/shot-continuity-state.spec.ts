@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { expect, type Locator, type Page, test } from '@playwright/test'
-import { centerOf, newProject, zoomTo } from './canvas'
+import { centerOf, newProject, showStoryboardCards, zoomTo } from './canvas'
 
 const input = JSON.parse(
   readFileSync(
@@ -83,6 +83,8 @@ async function seed(page: Page) {
 const editor = (page: Page) => page.getByRole('dialog', { name: '分镜表', exact: true })
 const panel = (page: Page) => page.getByRole('dialog', { name: '镜头目的与起止计划', exact: true })
 async function openState(page: Page, no: number) {
+  // 目的与起止状态在详细卡片视图上，表格视图没有这个入口
+  await showStoryboardCards(editor(page))
   await editor(page)
     .getByRole('article', { name: `镜头 ${String(no).padStart(2, '0')}` })
     .getByRole('button', { name: '目的与起止状态', exact: true })
