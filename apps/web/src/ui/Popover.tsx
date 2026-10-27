@@ -83,7 +83,8 @@ export function Popover({
               width,
               maxWidth: 'var(--available-width, calc(100vw - 16px))',
               // 放不下时保留最低高度，让定位器翻到另一侧，而不是压成一条；矮窗口里随视口收小
-              maxHeight: 'min(480px, 70vh, max(var(--available-height, 70vh), min(200px, 40vh)))',
+              // 最低高度不能高过窗口的三成：两侧都放不下时，弹层要留在窗口里，不能溢出屏幕
+              maxHeight: 'min(480px, 70vh, max(var(--available-height, 70vh), min(200px, 30vh)))',
             }}
             className="ui-menu ui-scrollbar pointer-events-auto overflow-y-auto outline-none"
           >
