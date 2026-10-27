@@ -45,11 +45,11 @@ pnpm typecheck
 
 本地检查由 git 钩子（husky）完成，`pnpm install` 时自动装好：pre-commit 运行 `vp staged`，只格式化、检查暂存文件；pre-push 运行 `pnpm verify`，改了 `package.json` 或 `pnpm-lock.yaml` 时再跑 `pnpm audit:deps`。推送 main 不触发云端 CI，云端只在 Dependabot PR、打 `v*` 标签发版和手动运行（Actions → CI → Run workflow）时跑检查与性能（perf）；发版说明写在 `docs/releases/<标签>.md`，打标签时自动用作 Release 正文；依赖安全检查另有每周定时。急用可 `git push --no-verify` 跳过钩子，之后在 Actions 里手动补跑一次 CI。
 
-E2E 只在本地跑，云端不再跑：发版前本地跑完整 e2e，全绿才打标签。
+E2E 只在本地跑，云端不再跑：发版前运行 `pnpm e2e:core`，核心冒烟全绿才打标签。测试选层、迁移规则与受保护范围见 [测试指南](docs/dev/testing.md)。
 
 ```bash
 pnpm e2e                          # 全部界面冒烟用例，并行跑
-pnpm e2e:core                     # 只跑 @core 的核心用例，几分钟跑完
+pnpm e2e:core                     # 发版前冒烟：只跑 @core 的核心用例
 pnpm e2e:auth                     # 密码登录回归，隔离数据库
 pnpm e2e:file e2e/canvas.spec.ts  # 只跑指定的文件
 pnpm e2e:grep "新建画布"           # 按用例标题筛选
