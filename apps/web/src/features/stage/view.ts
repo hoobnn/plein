@@ -71,80 +71,86 @@ export class StageView {
     private host: HTMLElement,
     private events: StageViewEvents,
   ) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true })
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    this.renderer.shadowMap.enabled = true
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace
-    const canvas = this.renderer.domElement
-    canvas.className = 'stage-canvas'
-    host.appendChild(canvas)
+    try {
+      this.renderer = new THREE.WebGLRenderer({ antialias: true })
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+      this.renderer.shadowMap.enabled = true
+      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+      this.renderer.outputColorSpace = THREE.SRGBColorSpace
+      const canvas = this.renderer.domElement
+      canvas.className = 'stage-canvas'
+      host.appendChild(canvas)
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x9a9ea6, 1.6)
-    const sun = new THREE.DirectionalLight(0xffffff, 1.9)
-    sun.position.set(4, 9, 6)
-    sun.castShadow = true
-    sun.shadow.mapSize.set(2048, 2048)
-    sun.shadow.camera.left = -12
-    sun.shadow.camera.right = 12
-    sun.shadow.camera.top = 12
-    sun.shadow.camera.bottom = -12
-    sun.shadow.bias = -0.0005
-    sun.shadow.radius = 4
-    this.scene.add(hemi, sun)
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x9a9ea6, 1.6)
+      const sun = new THREE.DirectionalLight(0xffffff, 1.9)
+      sun.position.set(4, 9, 6)
+      sun.castShadow = true
+      sun.shadow.mapSize.set(2048, 2048)
+      sun.shadow.camera.left = -12
+      sun.shadow.camera.right = 12
+      sun.shadow.camera.top = 12
+      sun.shadow.camera.bottom = -12
+      sun.shadow.bias = -0.0005
+      sun.shadow.radius = 4
+      this.scene.add(hemi, sun)
 
-    this.floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(100, 100),
-      new THREE.MeshStandardMaterial({ color: FLOOR, roughness: 1 }),
-    )
-    this.floor.rotation.x = -Math.PI / 2
-    this.floor.receiveShadow = true
-    this.scene.add(this.floor)
-    this.grid = new THREE.GridHelper(40, 40, 0x8c929c, 0xa9aeb6)
-    ;(this.grid.material as THREE.Material).transparent = true
-    ;(this.grid.material as THREE.Material).opacity = 0.35
-    this.grid.position.y = 0.002
-    this.scene.add(this.grid)
+      this.floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(100, 100),
+        new THREE.MeshStandardMaterial({ color: FLOOR, roughness: 1 }),
+      )
+      this.floor.rotation.x = -Math.PI / 2
+      this.floor.receiveShadow = true
+      this.scene.add(this.floor)
+      this.grid = new THREE.GridHelper(40, 40, 0x8c929c, 0xa9aeb6)
+      ;(this.grid.material as THREE.Material).transparent = true
+      ;(this.grid.material as THREE.Material).opacity = 0.35
+      this.grid.position.y = 0.002
+      this.scene.add(this.grid)
 
-    this.shotHelper = new THREE.CameraHelper(this.shot)
-    this.shotHelper.visible = false
-    const frustum = new THREE.Color(0x4d8dff)
-    this.shotHelper.setColors(frustum, frustum, frustum, new THREE.Color(0x8c929c), frustum)
-    this.scene.add(this.shotHelper)
-    this.free.position.set(7, 6, 10)
+      this.shotHelper = new THREE.CameraHelper(this.shot)
+      this.shotHelper.visible = false
+      const frustum = new THREE.Color(0x4d8dff)
+      this.shotHelper.setColors(frustum, frustum, frustum, new THREE.Color(0x8c929c), frustum)
+      this.scene.add(this.shotHelper)
+      this.free.position.set(7, 6, 10)
 
-    this.orbit = new OrbitControls(this.shot, canvas)
-    this.orbit.enableDamping = true
-    this.orbit.dampingFactor = 0.12
-    // 防止极端滚轮输入使半径溢出，或缩到相机与目标重合。
-    this.orbit.minDistance = 0.25
-    this.orbit.maxDistance = 100
-    this.orbit.addEventListener('start', () => {
-      this.orbitInteracting = true
-    })
-    this.orbit.addEventListener('end', () => {
-      this.orbitInteracting = false
-      if (this.mode === 'shot') this.pendingCamera = true
-    })
+      this.orbit = new OrbitControls(this.shot, canvas)
+      this.orbit.enableDamping = true
+      this.orbit.dampingFactor = 0.12
+      // 防止极端滚轮输入使半径溢出，或缩到相机与目标重合。
+      this.orbit.minDistance = 0.25
+      this.orbit.maxDistance = 100
+      this.orbit.addEventListener('start', () => {
+        this.orbitInteracting = true
+      })
+      this.orbit.addEventListener('end', () => {
+        this.orbitInteracting = false
+        if (this.mode === 'shot') this.pendingCamera = true
+      })
 
-    this.gizmo = new TransformControls(this.shot, canvas)
-    this.gizmo.setSize(0.8)
-    this.gizmo.showY = false
-    this.gizmo.addEventListener('dragging-changed', (e) => {
-      this.dragging = Boolean(e.value)
-      if (this.dragging) this.dragged = true
-      this.orbit.enabled = !this.dragging
-      if (!this.dragging) this.commitMove()
-    })
-    this.scene.add(this.gizmo.getHelper())
+      this.gizmo = new TransformControls(this.shot, canvas)
+      this.gizmo.setSize(0.8)
+      this.gizmo.showY = false
+      this.gizmo.addEventListener('dragging-changed', (e) => {
+        this.dragging = Boolean(e.value)
+        if (this.dragging) this.dragged = true
+        this.orbit.enabled = !this.dragging
+        if (!this.dragging) this.commitMove()
+      })
+      this.scene.add(this.gizmo.getHelper())
 
-    canvas.addEventListener('pointerdown', this.onDown)
-    canvas.addEventListener('pointerup', this.onUp)
-    this.observer = new ResizeObserver(() => this.resize())
-    this.observer.observe(host)
-    this.scene.background = new THREE.Color(SNAPSHOT_BG)
-    this.resize()
-    this.loop()
+      canvas.addEventListener('pointerdown', this.onDown)
+      canvas.addEventListener('pointerup', this.onUp)
+      this.observer = new ResizeObserver(() => this.resize())
+      this.observer.observe(host)
+      this.scene.background = new THREE.Color(SNAPSHOT_BG)
+      this.resize()
+      this.loop()
+    } catch (error) {
+      // 构造失败时调用者还拿不到实例，必须在这里释放已经分配的资源。
+      this.dispose()
+      throw error
+    }
   }
 
   /** 按场景数据对账：新的建、没了的删、变了的更新 */
@@ -288,20 +294,20 @@ export class StageView {
 
   dispose() {
     cancelAnimationFrame(this.frame)
-    this.observer.disconnect()
-    const canvas = this.renderer.domElement
-    canvas.removeEventListener('pointerdown', this.onDown)
-    canvas.removeEventListener('pointerup', this.onUp)
-    this.gizmo.detach()
-    this.gizmo.dispose()
-    this.orbit.dispose()
+    this.observer?.disconnect()
+    const canvas = this.renderer?.domElement
+    canvas?.removeEventListener('pointerdown', this.onDown)
+    canvas?.removeEventListener('pointerup', this.onUp)
+    this.gizmo?.detach()
+    this.gizmo?.dispose()
+    this.orbit?.dispose()
     for (const id of [...this.objects.keys()]) this.remove(id)
-    disposeTree(this.floor)
-    this.grid.dispose()
-    this.shotHelper.dispose()
-    this.renderer.dispose()
-    this.renderer.forceContextLoss()
-    canvas.remove()
+    if (this.floor) disposeTree(this.floor)
+    this.grid?.dispose()
+    this.shotHelper?.dispose()
+    this.renderer?.dispose()
+    this.renderer?.forceContextLoss()
+    canvas?.remove()
   }
 
   private loop = () => {

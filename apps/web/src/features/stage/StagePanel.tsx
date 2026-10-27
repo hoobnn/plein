@@ -98,6 +98,9 @@ export function StagePanel({
   const [mode, setMode] = useState<StageMode>('shot')
   const [tool, setTool] = useState<StageTool>('move')
   const [busy, setBusy] = useState(false)
+  const capturing = useRef(false)
+  const [preview, setPreview] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [previewAttempt, retryPreview] = useState(0)
   // 面板挂在弹层里，第一次渲染时节点还没进页面：用回调 ref 拿到再建视口
   const [host, setHost] = useState<HTMLDivElement | null>(null)
   const view = useRef<StageView | null>(null)
@@ -212,26 +215,37 @@ export function StagePanel({
 
   useEffect(() => {
     if (!host) return
-    const v = new StageView(host, {
-      readOnly: () => !canWrite(),
-      onSelect: (sid) => setSelected(sid),
-      onMove: (oid, at) => {
-        const s = readScene()
-        if (s.figures.some((f) => f.id === oid)) patchFigure(oid, at)
-        else patchBlock(oid, at)
-      },
-      onCamera: (camera) => patchCamera(camera),
-    })
-    view.current = v
-    v.setScene(latest.current)
-    v.setReadOnly(!canWrite())
-    v.setSelected(selectedRef.current === CAMERA_ID ? null : selectedRef.current)
+    let v: StageView | undefined
+    setPreview('loading')
+    try {
+      v = new StageView(host, {
+        readOnly: () => !canWrite(),
+        onSelect: (sid) => setSelected(sid),
+        onMove: (oid, at) => {
+          const s = readScene()
+          if (s.figures.some((f) => f.id === oid)) patchFigure(oid, at)
+          else patchBlock(oid, at)
+        },
+        onCamera: (camera) => patchCamera(camera),
+      })
+      v.setScene(latest.current)
+      v.setReadOnly(!canWrite())
+      v.setSelected(selectedRef.current === CAMERA_ID ? null : selectedRef.current)
+      v.setMode(mode)
+      v.setTool(tool)
+      view.current = v
+      setPreview('ready')
+    } catch {
+      v?.dispose()
+      setPreview('error')
+      return
+    }
     return () => {
-      v.dispose()
+      v?.dispose()
       view.current = null
     }
-    // oxlint-disable-next-line react-hooks/exhaustive-deps -- 视口只随宿主节点建一次，回调都经 latest 取最新场景
-  }, [host])
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- 仅宿主变化或用户重试时重建，回调读取最新文档
+  }, [host, previewAttempt])
   useEffect(() => view.current?.setReadOnly(locked), [locked])
   const sceneKey = JSON.stringify(scene)
   useEffect(() => view.current?.setScene(latest.current), [sceneKey])
@@ -364,7 +378,8 @@ export function StagePanel({
   }
   const shoot = async () => {
     const v = view.current
-    if (!v || busy || !canWrite()) return
+    if (!v || capturing.current || !canWrite()) return
+    capturing.current = true
     setBusy(true)
     const report = (message: string) => {
       if (useCanvas.getState().engine === engine && isTarget()) notify(message)
@@ -393,6 +408,7 @@ export function StagePanel({
     } catch (err) {
       report(`截图没有成功：${(err as Error).message}`)
     } finally {
+      capturing.current = false
       setBusy(false)
     }
   }
@@ -425,7 +441,8 @@ export function StagePanel({
         <button
           type="button"
           className="ui-btn ui-btn-primary"
-          disabled={busy || locked}
+          disabled={preview !== 'ready' || busy || locked}
+          aria-busy={busy}
           title="按机位截一张灰模构图，作为这个节点的新结果"
           onClick={() => void shoot()}
         >
@@ -598,6 +615,24 @@ export function StagePanel({
 
         <section className="stage-viewport" aria-label="取景">
           <div ref={setHost} className="stage-host" data-mode={mode} />
+          {preview !== 'ready' && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-surface p-4 text-center">
+              {preview === 'error' ? (
+                <>
+                  <p role="alert">3D 预览未能加载，请重试。若仍失败，请检查浏览器的图形加速。</p>
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn-secondary"
+                    onClick={() => retryPreview((attempt) => attempt + 1)}
+                  >
+                    重试预览
+                  </button>
+                </>
+              ) : (
+                <p role="status">正在加载 3D 预览…</p>
+              )}
+            </div>
+          )}
           <div className="stage-overlay stage-overlay-top">
             <Segmented
               label="视角"
