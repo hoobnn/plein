@@ -62,7 +62,7 @@ export function sceneViewProblem(views: SceneView[], next: string, exceptId?: st
 export function matchSceneView(rest: string, views: SceneView[]) {
   if (!rest.startsWith('/')) return undefined
   const candidates = views
-    .flatMap((view) => [view.name, ...view.aliases].map((name) => ({ view, name })))
+    .flatMap((view) => [...new Set([view.name, ...view.aliases])].map((name) => ({ view, name })))
     .filter(
       (v) =>
         rest.startsWith(`/${v.name}`) &&

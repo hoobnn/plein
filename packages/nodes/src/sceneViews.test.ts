@@ -37,6 +37,19 @@ describe('场景命名视角', () => {
     ).toBe('门口未知')
     expect(sceneViewProblem([view], '门口')).toBeDefined()
   })
+  it('同一视角的重复旧名兼容去重，不同视角重名仍有歧义', () => {
+    for (const aliases of [['门口'], ['旧名', '旧名']]) {
+      const [mention] = findMentions('@教室/门口', [
+        { id: 'scene', name: '教室', sceneViews: [{ ...view, aliases }] },
+      ])
+      expect(mention?.sceneView?.id).toBe('door')
+      expect(mention?.sceneViewMiss).toBeUndefined()
+    }
+    const [ambiguous] = findMentions('@教室/门口', [
+      { id: 'scene', name: '教室', sceneViews: [view, { ...view, id: 'other' }] },
+    ])
+    expect(ambiguous?.sceneViewMiss).toBe('门口')
+  })
   it('视角名必须立即终止，后文的空格或标点不能让未知后缀变成有效视角', () => {
     for (const text of ['@教室/门口未知 学生走入', '@教室/门口未知，学生走入']) {
       const [mention] = findMentions(text, [{ id: 'scene', name: '教室', sceneViews: [view] }])
