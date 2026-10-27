@@ -662,6 +662,10 @@ function ClipTrack({
 
   const activate = (item: TrackItem) => {
     if (closing) return
+    if (!isCurrent()) {
+      invalid()
+      return
+    }
     onSelect(item.key)
     if (!item.timingReady) return
     setCancelled(false)

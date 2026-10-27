@@ -143,3 +143,17 @@ describe('波形峰值缓存', () => {
     expect(fetchPeaks).toHaveBeenCalledTimes(3)
   })
 })
+
+it.each([
+  {},
+  { rate: 0, peaks: [0.5] },
+  { rate: 100, peaks: [null] },
+  { rate: 100, peaks: [-1] },
+  { rate: 100, peaks: 'broken' },
+])('无效峰值 %j 不进入缓存，下次可恢复', async (invalid) => {
+  const cache = new PeaksCache()
+  fetchPeaks.mockResolvedValueOnce(Response.json(invalid)).mockResolvedValueOnce(response(4))
+  expect(await cache.load('malformed')).toBeNull()
+  expect(await cache.load('malformed')).toEqual(data(4))
+  expect(fetchPeaks).toHaveBeenCalledTimes(2)
+})

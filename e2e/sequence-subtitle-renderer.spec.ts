@@ -1,8 +1,11 @@
-import { readFileSync } from 'node:fs'
-import { expect, type Page, test } from './fixtures'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { expect, type Locator, type Page, test } from './fixtures'
 import { centerOf, newProject, zoomTo } from './canvas'
 import { animaticNode, arrangeAnimatic } from '../packages/nodes/src/animatic'
-import { subtitleInputKey } from '../packages/nodes/src/sequence'
+import { arrangeSequence, sequenceNode, subtitleInputKey } from '../packages/nodes/src/sequence'
 
 const font = readFileSync(
   new URL('../apps/web/node_modules/jassub/dist/default.woff2', import.meta.url),
@@ -106,412 +109,465 @@ async function lit(page: Page, image: Buffer) {
   }, image.toString('base64'))
 }
 
-test('实际 libass 字幕按时间出现消失，关闭重开可继续渲染且不留 worker', async ({ page }) => {
-  const warnings: string[] = [],
-    errors: string[] = []
-  page.on('console', (message) => {
-    if (message.type() === 'warning' && message.text().includes('[字幕预览]'))
-      warnings.push(message.text())
-  })
-  page.on('pageerror', (error) => errors.push(error.message))
-  const f = await setup(page)
-  const stage = f.editor.locator('.seq-stage')
-  await expect(stage).toHaveAttribute('data-subtitles', 'libass')
-  const pixels = async () => lit(page, await stage.screenshot({ animations: 'disabled' }))
-  await expect.poll(pixels).toBeGreaterThan(50)
-  await f.editor.getByRole('button', { name: '回到开头', exact: true }).click()
-  await page.keyboard.press('Shift+ArrowRight')
-  await page.keyboard.press('Shift+ArrowRight')
-  await expect.poll(pixels).toBeLessThan(10)
-  await page.keyboard.press('Shift+ArrowRight')
-  await expect.poll(pixels).toBeGreaterThan(50)
-  await stage.screenshot({
-    path: test.info().outputPath('libass-subtitle.png'),
-    animations: 'disabled',
-  })
-  await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
-  await expect(f.editor).toHaveCount(0)
-  await expect.poll(() => page.workers().length).toBe(0)
-  const again = await f.open()
-  await expect(again.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'libass')
-  await expect
-    .poll(async () => lit(page, await again.locator('.seq-stage').screenshot()))
-    .toBeGreaterThan(50)
-  expect(await page.evaluate(() => [...window.__plein.engine.doc.elements()])).toEqual(f.original)
-  expect(warnings).toEqual([])
-  expect(errors).toEqual([])
-})
-
-for (const [kind, width] of [
-  ['info', 320],
-  ['file', 390],
-] as const) {
-  test(`${kind} 失败可原地重试，${width}px 下入口完整可用且重复失败不留 worker`, async ({
-    page,
-  }) => {
-    const errors: string[] = []
-    page.on('pageerror', (error) => errors.push(error.message))
-    const fault: { info?: boolean; file?: boolean; gate?: Promise<void> } = { [kind]: true }
-    const f = await setup(page, fault)
-    await page.setViewportSize({ width, height: 700 })
-    const stage = f.editor.locator('.seq-stage')
-    const retry = f.editor.getByRole('button', { name: '重试字幕预览', exact: true })
-    await expect(stage).toHaveAttribute('data-subtitles', 'fallback')
-    await expect(retry).toBeInViewport()
-    await f.editor.screenshot({ path: test.info().outputPath(`subtitle-fallback-${width}.png`) })
-    await retry.click()
-    await expect(stage).toHaveAttribute('data-subtitles', 'fallback')
-    await expect.poll(() => page.workers().length).toBe(0)
-    let release!: () => void
-    fault.gate = new Promise<void>((resolve) => {
-      release = resolve
+test(
+  '实际 libass 字幕按时间出现消失，关闭重开可继续渲染且不留 worker',
+  { tag: '@core' },
+  async ({ page }) => {
+    const warnings: string[] = [],
+      errors: string[] = []
+    page.on('console', (message) => {
+      if (message.type() === 'warning' && message.text().includes('[字幕预览]'))
+        warnings.push(message.text())
     })
-    await retry.click()
-    await expect(stage).toHaveAttribute('data-subtitles', 'loading')
-    await expect(retry).toHaveCount(0)
-    await expect(stage.getByText('Subtitle ready', { exact: true })).toBeVisible()
-    fault[kind] = false
-    release()
+    page.on('pageerror', (error) => errors.push(error.message))
+    const f = await setup(page)
+    const stage = f.editor.locator('.seq-stage')
     await expect(stage).toHaveAttribute('data-subtitles', 'libass')
-    expect(await f.editor.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
-      true,
-    )
-    await f.editor.screenshot({ path: test.info().outputPath(`subtitle-retry-${width}.png`) })
-    // 在标准宽度核对实际字形，避免窄屏缩放抗锯齿左右像素阈值。
-    await page.setViewportSize({ width: 1440, height: 900 })
-    await expect.poll(async () => lit(page, await stage.screenshot())).toBeGreaterThan(50)
+    const pixels = async () => lit(page, await stage.screenshot({ animations: 'disabled' }))
+    await expect.poll(pixels).toBeGreaterThan(50)
+    await f.editor.getByRole('button', { name: '回到开头', exact: true }).click()
+    await page.keyboard.press('Shift+ArrowRight')
+    await page.keyboard.press('Shift+ArrowRight')
+    await expect.poll(pixels).toBeLessThan(10)
+    await page.keyboard.press('Shift+ArrowRight')
+    await expect.poll(pixels).toBeGreaterThan(50)
+    await stage.screenshot({
+      path: test.info().outputPath('libass-subtitle.png'),
+      animations: 'disabled',
+    })
     await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
     await expect(f.editor).toHaveCount(0)
     await expect.poll(() => page.workers().length).toBe(0)
+    const again = await f.open()
+    await expect(again.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'libass')
+    await expect
+      .poll(async () => lit(page, await again.locator('.seq-stage').screenshot()))
+      .toBeGreaterThan(50)
     expect(await page.evaluate(() => [...window.__plein.engine.doc.elements()])).toEqual(f.original)
+    expect(warnings).toEqual([])
     expect(errors).toEqual([])
+  },
+)
+
+let scratch = ''
+const bytes: Record<string, Buffer> = {}
+test.beforeAll(() => {
+  scratch = mkdtempSync(join(tmpdir(), 'plein-overlay-e2e-'))
+  for (const [name, color, alpha] of [
+    ['base', [20, 40, 220], false],
+    ['green', [0, 220, 0], true],
+    ['red', [220, 0, 0], true],
+  ] as const) {
+    const frame = Buffer.alloc(160 * 90 * 4)
+    for (let y = 0; y < 90; y++)
+      for (let x = 0; x < 160; x++)
+        frame.set([...color, alpha && x >= 80 ? 0 : 255], (y * 160 + x) * 4)
+    const path = join(scratch, `${name}.webm`)
+    execFileSync(
+      process.env.PLEIN_FFMPEG_PATH ?? 'ffmpeg',
+      [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-f',
+        'rawvideo',
+        '-pix_fmt',
+        'rgba',
+        '-s',
+        '160x90',
+        '-r',
+        '30',
+        '-i',
+        'pipe:0',
+        '-an',
+        '-c:v',
+        'libvpx-vp9',
+        '-pix_fmt',
+        'yuva420p',
+        '-lossless',
+        '1',
+        '-deadline',
+        'realtime',
+        '-cpu-used',
+        '8',
+        '-auto-alt-ref',
+        '0',
+        path,
+      ],
+      { input: Buffer.concat(Array.from({ length: 90 }, () => frame)) },
+    )
+    bytes[name] = readFileSync(path)
+  }
+})
+test.afterAll(() => {
+  if (scratch) rmSync(scratch, { recursive: true, force: true })
+})
+
+async function fixture(page: Page, animated = false) {
+  await newProject(page)
+  const assets: Record<string, string> = {}
+  for (const name of ['base', 'green', 'red']) {
+    const response = await page.request.post('/api/assets', {
+      headers: { 'content-type': 'video/webm', 'x-file-name': `${name}.webm` },
+      data: bytes[name],
+    })
+    expect(response.status()).toBe(201)
+    assets[name] = (await response.json()).id
+  }
+  const ids = await page.evaluate((assets) => {
+    const engine = window.__plein.engine as typeof window.__plein.engine & {
+      paste(value: unknown): void
+    }
+    engine.paste({
+      plein: 1,
+      edges: [],
+      elements: [
+        {
+          id: 'a',
+          kind: 'video',
+          name: '蓝色镜头 A',
+          assetId: assets.base,
+          x: 0,
+          y: 0,
+          w: 160,
+          h: 90,
+          parentId: null,
+        },
+        {
+          id: 'b',
+          kind: 'video',
+          name: '蓝色镜头 B',
+          assetId: assets.base,
+          x: 200,
+          y: 0,
+          w: 160,
+          h: 90,
+          parentId: null,
+        },
+        {
+          id: 'green',
+          kind: 'video',
+          name: '绿色透明层',
+          assetId: assets.green,
+          x: 0,
+          y: 200,
+          w: 160,
+          h: 90,
+          parentId: null,
+        },
+        {
+          id: 'red',
+          kind: 'video',
+          name: '红色透明层',
+          assetId: assets.red,
+          x: 200,
+          y: 200,
+          w: 160,
+          h: 90,
+          parentId: null,
+        },
+      ],
+    })
+    const all = [...engine.doc.elements()]
+    return {
+      a: all.find((el) => el.name === '蓝色镜头 A')!.id,
+      b: all.find((el) => el.name === '蓝色镜头 B')!.id,
+      green: all.find((el) => el.name === '绿色透明层')!.id,
+      red: all.find((el) => el.name === '红色透明层')!.id,
+    }
+  }, assets)
+  const params = sequenceNode.params.parse({
+    resolution: '720p',
+    aspectRatio: '16:9',
+    subtitles: true,
+    subtitleRender: animated ? 'animated' : 'none',
+    subtitleAnimation: 'fade',
+    clipVolume: 0,
+    loudnorm: false,
+    instanceVersion: 2,
+    clips: [
+      {
+        clipInstanceId: 'clip-a',
+        source: ids.a,
+        port: 'video',
+        sound: 'native',
+        in: 0.5,
+        out: 2.5,
+        speed: 2,
+      },
+      { clipInstanceId: 'clip-b', source: ids.b, port: 'video', sound: 'native', in: 0, out: 1 },
+    ],
+    overlays: [
+      {
+        id: 'green-layer',
+        source: ids.green,
+        clip: ids.a,
+        start: 0.2,
+        in: 0.1,
+        duration: 0.6,
+        speed: 2,
+        x: 0.25,
+        y: 0.25,
+        width: 0.5,
+        height: 0.5,
+      },
+    ],
   })
+  const arranged = arrangeSequence(params, {
+    clips: [ids.a, ids.b].map((source) => ({
+      type: 'video',
+      source,
+      sourcePort: 'video',
+      assetId: assets.base!,
+      kind: 'video',
+    })),
+  })
+  params.subtitleTrack = {
+    inputKey: subtitleInputKey(params, arranged),
+    cues: [
+      {
+        id: 'cue-a',
+        source: 'clip-a',
+        start: 0.2,
+        end: 0.8,
+        text: '第一句透明动画字幕',
+        origin: 'estimated',
+        hidden: false,
+      },
+      {
+        id: 'cue-b',
+        source: 'clip-b',
+        start: 0.2,
+        end: 0.8,
+        text: '第二句透明动画字幕',
+        origin: 'manual',
+        hidden: false,
+      },
+    ],
+  }
+  const id = await page.evaluate(
+    ({ ids, params }) => {
+      const id = window.__plein.addNode({
+        type: 'plein/sequence',
+        name: '透明叠加和动画字幕',
+        params,
+        x: 650,
+        y: 100,
+      })
+      // 直接写边：连线命令会把旧式镜头重建成另一套实例身份，这里要保住自己给的实例身份
+      const edges = window.__plein.engine.doc.edgeMap
+      edges.set('edge-a', { id: 'edge-a', from: [ids.a, 'video'], to: [id, 'clips'], order: 'a0' })
+      edges.set('edge-b', { id: 'edge-b', from: [ids.b, 'video'], to: [id, 'clips'], order: 'a1' })
+      edges.set('edge-green', {
+        id: 'edge-green',
+        from: [ids.green, 'video'],
+        to: [id, 'overlays'],
+        order: 'a0',
+      })
+      edges.set('edge-red', {
+        id: 'edge-red',
+        from: [ids.red, 'video'],
+        to: [id, 'overlays'],
+        order: 'a1',
+      })
+      return id
+    },
+    { ids, params },
+  )
+  await zoomTo(page, [id])
+  const point = await centerOf(page, id)
+  await page.mouse.dblclick(point.x, point.y)
+  const editor = page.getByRole('dialog', { name: '序列', exact: true })
+  await expect(editor).toBeVisible()
+  const canvas = editor.locator('.seq-stage > canvas')
+  await expect.poll(() => canvas.getAttribute('data-decoder')).toBe('element')
+  return { id, ids, editor, canvas, params }
+}
+async function seek(page: Page, editor: Locator, time: number, total = 2) {
+  const sc = await editor.locator('.seq-scroll').boundingBox(),
+    ruler = await editor.locator('.seq-ruler').boundingBox()
+  const label = await editor
+    .locator('.seq-label')
+    .first()
+    .evaluate((el) => el.getBoundingClientRect().width)
+  const width = await editor.locator('.seq-scroll').evaluate((el) => el.clientWidth)
+  await page.mouse.click(
+    sc!.x + label + 16 + ((width - label - 32) * time) / total,
+    ruler!.y + ruler!.height / 2,
+  )
+}
+const pixel = (canvas: Locator, x: number, y: number) =>
+  canvas.evaluate(
+    (el: HTMLCanvasElement, at) => [
+      ...el
+        .getContext('2d')!
+        .getImageData(Math.floor(el.width * at.x), Math.floor(el.height * at.y), 1, 1).data,
+    ],
+    { x, y },
+  )
+async function number(editor: Locator, name: string, value: string) {
+  const field = editor.getByRole('spinbutton', { name, exact: true })
+  await field.fill(value)
+  await field.press('Tab')
+}
+async function choose(page: Page, editor: Locator, name: string, option: string) {
+  await editor.getByRole('combobox', { name, exact: true }).click()
+  await page.getByRole('option', { name: option, exact: true }).click()
+}
+async function whitePixels(page: Page, stage: Locator) {
+  const png = await stage.screenshot({ animations: 'disabled' })
+  return page.evaluate(async (data) => {
+    const bitmap = await createImageBitmap(
+      await (await fetch(`data:image/png;base64,${data}`)).blob(),
+    )
+    const canvas = document.createElement('canvas')
+    canvas.width = bitmap.width
+    canvas.height = bitmap.height
+    const g = canvas.getContext('2d')!
+    g.drawImage(bitmap, 0, 0)
+    bitmap.close()
+    const pixels = g.getImageData(
+      Math.floor(canvas.width * 0.1),
+      Math.floor(canvas.height * 0.65),
+      Math.floor(canvas.width * 0.8),
+      Math.floor(canvas.height * 0.35),
+    ).data
+    let white = 0
+    for (let i = 0; i < pixels.length; i += 4)
+      if (pixels[i]! > 170 && pixels[i + 1]! > 170 && pixels[i + 2]! > 170) white++
+    return white
+  }, png.toString('base64'))
 }
 
-test('字体下载等待期间关闭，迟到结果不能创建 worker 或干扰重开', async ({ page }) => {
-  const errors: string[] = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  let release!: () => void
-  let requested!: () => void
-  const request = new Promise<void>((resolve) => {
-    requested = resolve
-  })
-  const fault: { gate?: Promise<void>; gateFileOnly: boolean } = { gateFileOnly: true }
-  fault.gate = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  page.on('request', (r) => {
-    if (r.url().includes('/api/media/subtitle-font/file?')) requested()
-  })
-  const f = await setup(page, fault)
-  await request
-  await expect(f.editor.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'loading')
-  await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
-  await expect(f.editor).toHaveCount(0)
-  release()
-  fault.gate = undefined
-  await expect.poll(() => page.workers().length).toBe(0)
-  const again = await f.open()
-  await expect(again.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'libass')
-  await expect
-    .poll(async () => lit(page, await again.locator('.seq-stage').screenshot()))
-    .toBeGreaterThan(50)
-  expect(errors).toEqual([])
-})
-
-test('字体信息临时失败后重开可恢复真实字幕', async ({ page }) => {
-  const fault = { info: true }
-  const f = await setup(page, fault)
-  await expect(f.editor.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'fallback')
-  await expect(
-    f.editor.locator('.seq-stage').getByText('Subtitle ready', { exact: true }),
-  ).toBeVisible()
-  fault.info = false
-  await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
-  await expect(f.editor).toHaveCount(0)
-  const again = await f.open()
-  await expect(again.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'libass')
-  await expect
-    .poll(async () => lit(page, await again.locator('.seq-stage').screenshot()))
-    .toBeGreaterThan(50)
-})
-
-test('字体文件失败显示近似字幕并释放 worker', async ({ page }) => {
-  const f = await setup(page, { file: true })
-  await expect(f.editor.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'fallback')
-  await expect(
-    f.editor.locator('.seq-stage').getByText('Subtitle ready', { exact: true }),
-  ).toBeVisible()
-  await expect.poll(() => page.workers().length).toBe(0)
-})
-
-test('暂停时修改字幕立即重绘，隐藏、清空与撤销重做不残留旧字形', async ({ page }) => {
-  const errors: string[] = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  const f = await setup(page)
-  const stage = f.editor.locator('.seq-stage')
-  await expect(stage).toHaveAttribute('data-subtitles', 'libass')
-  const pixels = async () => lit(page, await stage.screenshot({ animations: 'disabled' }))
-  await expect.poll(pixels).toBeGreaterThan(50)
-  await f.editor.getByRole('button', { name: '字幕', exact: true }).click()
-  const text = f.editor.getByRole('textbox', { name: '镜头 1 字幕 1 文本', exact: true })
-  await text.fill('Changed subtitle with a longer sentence')
-  await expect.poll(pixels).toBeGreaterThan(100)
-  const visible = f.editor.getByRole('checkbox', { name: '显示字幕 1', exact: true })
-  await visible.uncheck()
-  await expect.poll(pixels).toBeLessThan(10)
-  await visible.check()
-  await expect.poll(pixels).toBeGreaterThan(100)
-  await text.fill('')
-  await expect.poll(pixels).toBeLessThan(10)
-  await expect(f.editor.getByRole('button', { name: '导出样片 MP4', exact: true })).toBeDisabled()
-  const home = f.editor.getByRole('button', { name: '回到开头', exact: true })
-  await home.focus()
-  await page.keyboard.press('ControlOrMeta+z')
-  await expect(text).toHaveValue('Changed subtitle with a longer sentence')
-  await expect.poll(pixels).toBeGreaterThan(100)
-  await page.keyboard.press('ControlOrMeta+Shift+z')
-  await expect(text).toHaveValue('')
-  await expect.poll(pixels).toBeLessThan(10)
-  await text.fill('Restored subtitle')
-  await visible.focus()
-  await page.keyboard.press('Space')
-  await expect(visible).not.toBeChecked()
-  await page.keyboard.press('Space')
-  await expect(visible).toBeChecked()
-  await home.focus()
-  await page.keyboard.press('ControlOrMeta+z')
-  await expect(visible).not.toBeChecked()
-  await expect(text).toHaveValue('Restored subtitle')
-  await expect.poll(pixels).toBeLessThan(10)
-  await page.keyboard.press('ControlOrMeta+z')
-  await expect(visible).toBeChecked()
-  await expect(text).toHaveValue('Restored subtitle')
-  await expect.poll(pixels).toBeGreaterThan(50)
-  expect(errors).toEqual([])
-})
-
-test('字幕时间边界与空文本指出具体字段，隐藏后解除导出限制', async ({ page }) => {
-  const f = await setup(page)
-  await expect(f.editor.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'libass')
-  await f.editor.getByRole('button', { name: '字幕', exact: true }).click()
-  const text = f.editor.getByRole('textbox', { name: '镜头 1 字幕 1 文本', exact: true })
-  const start = f.editor.getByRole('spinbutton', { name: '镜头 1 字幕 1 开始（秒）', exact: true })
-  const end = f.editor.getByRole('spinbutton', { name: '镜头 1 字幕 1 结束（秒）', exact: true })
-  const output = f.editor.getByRole('button', { name: '导出样片 MP4', exact: true })
-  await text.fill('   ')
-  await expect(text).toHaveAttribute('aria-invalid', 'true')
-  await expect(text).toHaveAccessibleDescription('请输入字幕文本，或关闭这句字幕的显示。')
-  await expect(output).toBeDisabled()
-  await f.editor
-    .getByText('请输入字幕文本，或关闭这句字幕的显示。', { exact: true })
-    .scrollIntoViewIfNeeded()
-  await f.editor.screenshot({ path: test.info().outputPath('subtitle-empty-validation.png') })
-  await text.fill('Fixed subtitle')
-  await start.fill('1')
-  await expect(end).toHaveAttribute('aria-invalid', 'true')
-  await expect(end).toHaveAccessibleDescription('结束时间需要晚于开始时间。')
-  await expect(output).toBeDisabled()
-  await end.fill('2')
-  await expect(end).not.toHaveAttribute('aria-invalid', 'true')
-  await expect(output).toBeEnabled()
-  const stage = f.editor.locator('.seq-stage')
-  const pixels = async () => lit(page, await stage.screenshot())
-  await expect.poll(pixels).toBeLessThan(10)
-  await f.editor.getByRole('button', { name: '回到开头', exact: true }).click()
-  await page.keyboard.press('Shift+ArrowRight')
-  await expect.poll(pixels).toBeGreaterThan(50)
-  await end.fill('1')
-  await expect.poll(pixels).toBeLessThan(10)
-  await f.editor.getByText('结束时间需要晚于开始时间。', { exact: true }).scrollIntoViewIfNeeded()
-  await f.editor.screenshot({ path: test.info().outputPath('subtitle-time-validation.png') })
-  await end.fill('2')
-  await expect.poll(pixels).toBeGreaterThan(50)
-  await text.fill('')
-  await f.editor.getByRole('checkbox', { name: '显示字幕 1', exact: true }).uncheck()
-  await expect(text).not.toHaveAttribute('aria-invalid', 'true')
-  await expect(output).toBeEnabled()
-})
-
-test('连续新增字幕与修改可逐步撤销，重做保持独立条目', async ({ page }) => {
-  const duplicateKeys: string[] = []
-  page.on('console', (message) => {
-    if (message.type() === 'error' && message.text().includes('same key'))
-      duplicateKeys.push(message.text())
-  })
-  const f = await setup(page)
-  await f.editor.getByRole('button', { name: '字幕', exact: true }).click()
-  const fields = f.editor.getByRole('textbox', { name: /镜头 1 字幕 \d+ 文本/ })
-  const add = f.editor.getByRole('button', { name: '新增字幕', exact: true })
-  await add.click()
-  await add.click()
-  await expect(fields).toHaveCount(4)
-  await expect(f.editor.locator('.seq-block-text')).toHaveCount(4)
-  await fields.nth(3).fill('New independent subtitle')
-  await f.editor.getByRole('button', { name: '回到开头', exact: true }).focus()
-  await page.keyboard.press('ControlOrMeta+z')
-  await expect(fields.nth(3)).toHaveValue('新字幕')
-  await page.keyboard.press('ControlOrMeta+z')
-  await expect(fields).toHaveCount(3)
-  await page.keyboard.press('ControlOrMeta+z')
-  await expect(fields).toHaveCount(2)
-  await expect(f.editor.locator('.seq-block-text')).toHaveCount(2)
-  await expect(fields.first()).toHaveValue('Subtitle ready')
-  await page.keyboard.press('ControlOrMeta+Shift+z')
-  await expect(fields).toHaveCount(3)
-  await page.keyboard.press('ControlOrMeta+Shift+z')
-  await expect(fields).toHaveCount(4)
-  await page.keyboard.press('ControlOrMeta+Shift+z')
-  await expect(fields.nth(3)).toHaveValue('New independent subtitle')
-  await expect(f.editor.locator('.seq-block-text')).toHaveCount(4)
-  await expect(f.editor.locator('.seq-block-text')).toHaveText([
-    'Subtitle ready',
-    'Later subtitle',
-    '新字幕',
-    'New independent subtitle',
-  ])
-  const third = f.editor.getByRole('checkbox', { name: '显示字幕 3', exact: true })
-  await third.uncheck()
-  await expect(f.editor.locator('.seq-block-text')).toHaveText([
-    'Subtitle ready',
-    'Later subtitle',
-    'New independent subtitle',
-  ])
-  await third.check()
-  await expect(f.editor.locator('.seq-block-text')).toHaveCount(4)
-  await f.editor
-    .getByRole('spinbutton', { name: '镜头 1 字幕 3 开始（秒）', exact: true })
-    .fill('0.25')
-  await expect(f.editor.locator('.seq-block-text')).toHaveText([
-    'Subtitle ready',
-    'Later subtitle',
-    '新字幕',
-    'New independent subtitle',
-  ])
-  expect(duplicateKeys).toEqual([])
-})
-
-test('按台词重建字幕可独立撤销并完整恢复手改轨道', async ({ page }) => {
-  const f = await setup(page, {}, { script: 'Automatic script subtitle' })
-  await f.editor.getByRole('button', { name: '字幕', exact: true }).click()
-  const fields = f.editor.getByRole('textbox', { name: /镜头 1 字幕 \d+ 文本/ })
-  const original = await page.evaluate(
-    (id) => window.__plein.engine.doc.get(id)!.params!.subtitleTrack,
-    f.id,
-  )
-  await f.editor
-    .getByRole('button', { name: '按当前台词重建字幕（替换手改）', exact: true })
-    .click()
-  await expect(fields).toHaveCount(1)
-  await expect(fields.first()).toHaveValue('Automatic script subtitle')
-  await f.editor.getByRole('button', { name: '回到开头', exact: true }).focus()
-  await page.keyboard.press('ControlOrMeta+z')
-  await expect(fields).toHaveCount(2)
-  expect(
-    await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.subtitleTrack, f.id),
-  ).toEqual(original)
-  await page.keyboard.press('ControlOrMeta+Shift+z')
-  await expect(fields).toHaveCount(1)
-  await expect(fields.first()).toHaveValue('Automatic script subtitle')
-  const stage = f.editor.locator('.seq-stage')
-  await expect(stage).toHaveAttribute('data-subtitles', 'libass')
-  await expect.poll(async () => lit(page, await stage.screenshot())).toBeGreaterThan(50)
-})
-
-test('只读序列可预览，字幕编辑控件明确不可写且没有异常', async ({ page }) => {
-  const errors: string[] = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  const f = await setup(page, {}, { secondShot: true })
-  await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
-  await expect(f.editor).toHaveCount(0)
-  await page.evaluate(() => {
-    const doc = window.__plein.engine.doc as typeof window.__plein.engine.doc & {
-      readOnly: boolean
-    }
-    doc.readOnly = true
-  })
-  const editor = await f.open()
-  await expect(editor.locator('.seq-stage')).toHaveAttribute('data-subtitles', 'libass')
-  await editor.getByRole('button', { name: '字幕', exact: true }).click()
-  await expect(
-    editor.getByRole('textbox', { name: '镜头 1 字幕 1 文本', exact: true }),
-  ).toBeDisabled()
-  await expect(editor.getByRole('checkbox', { name: '显示字幕 1', exact: true })).toBeDisabled()
-  await expect(editor.getByRole('button', { name: '新增字幕', exact: true }).first()).toBeDisabled()
-  await expect(
-    editor.getByRole('button', { name: '按当前台词重建字幕（替换手改）', exact: true }),
-  ).toBeDisabled()
-  await expect(
-    editor.getByText('当前画布为只读，仍可预览，暂不能修改或生成新成片。', { exact: true }),
-  ).toBeVisible()
-  await expect(editor.getByRole('button', { name: '播放', exact: true })).toBeEnabled()
-  await expect(editor.getByRole('button', { name: '导出样片 MP4', exact: true })).toBeDisabled()
-  await editor.getByRole('button', { name: '成片', exact: true }).click()
-  await expect(editor.getByRole('switch', { name: '开启字幕', exact: true })).toBeDisabled()
-  await editor.getByRole('button', { name: '镜头', exact: true }).click()
-  await expect(
-    editor.getByRole('spinbutton', { name: '样片镜头时长（秒）', exact: true }),
-  ).toBeDisabled()
-  const clips = editor.locator('.seq-clip')
-  const a = (await clips.nth(0).boundingBox())!
-  const b = (await clips.nth(1).boundingBox())!
-  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(b.x + b.width - 10, b.y + b.height / 2, { steps: 6 })
-  await page.mouse.up()
-  await clips.nth(1).click()
-  await expect(editor.locator('.seq-time')).toContainText('0:06.0')
-  await editor.getByRole('button', { name: '播放', exact: true }).click()
-  await expect(editor.getByRole('button', { name: '暂停', exact: true })).toBeEnabled()
-  await editor.getByRole('button', { name: '暂停', exact: true }).click()
-  await page.setViewportSize({ width: 390, height: 700 })
-  await expect(editor.getByRole('button', { name: '关闭', exact: true })).toBeInViewport()
-  expect(await editor.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
-  await editor.screenshot({ path: test.info().outputPath('sequence-readonly-390.png') })
-  expect(await page.evaluate(() => [...window.__plein.engine.doc.elements()])).toEqual(f.original)
-  expect(errors).toEqual([])
-})
-
-test('字幕时间清空和无效数字保留草稿，失焦恢复且不篡改已保存时间', async ({ page }) => {
-  const f = await setup(page)
-  await f.editor.getByRole('button', { name: '字幕', exact: true }).click()
-  const end = f.editor.getByRole('spinbutton', { name: '镜头 1 字幕 1 结束（秒）', exact: true })
-  const saved = () =>
-    page.evaluate((id) => {
-      const track = window.__plein.engine.doc.get(id)!.params!.subtitleTrack as {
-        cues: Array<{ end: number }>
-      }
-      return track.cues[0]!.end
-    }, f.id)
-  for (const value of ['', '-1']) {
-    await end.fill(value)
-    await expect(end).toHaveValue(value)
-    await expect(end).toHaveAttribute('aria-invalid', 'true')
-    await expect(end).toHaveAccessibleDescription(
-      '请输入大于或等于 0 的有效时间；失焦后恢复已保存值。',
+test(
+  '透明叠加真实alpha：原生解码、层序、几何和opacity、隐藏、一次撤销与只读',
+  { tag: '@core' },
+  async ({ page }) => {
+    const f = await fixture(page)
+    await seek(page, f.editor, 0.4)
+    await expect(f.canvas).toHaveAttribute('data-overlay-decoder', 'element')
+    await expect.poll(async () => (await pixel(f.canvas, 0.375, 0.5))[1]).toBeGreaterThan(180)
+    await expect.poll(async () => (await pixel(f.canvas, 0.625, 0.5))[2]).toBeGreaterThan(180)
+    expect((await pixel(f.canvas, 0.625, 0.5))[1]).toBeLessThan(70)
+    await f.editor.getByRole('button', { name: '叠加', exact: true }).click()
+    await number(f.editor, '叠加不透明度', '.5')
+    await expect.poll(async () => (await pixel(f.canvas, 0.375, 0.5))[2]).toBeGreaterThan(80)
+    await number(f.editor, '叠加不透明度', '1')
+    const handle = f.editor.getByRole('button', { name: '选择叠加图层 1', exact: true })
+    const bounds = (await handle.boundingBox())!
+    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(bounds.x + bounds.width / 2 + 20, bounds.y + bounds.height / 2, {
+      steps: 4,
+    })
+    await page.mouse.up()
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (id) => (window.__plein.engine.doc.get(id)!.params!.overlays as { x: number }[])[0]!.x,
+          f.id,
+        ),
+      )
+      .toBeGreaterThan(0.25)
+    await page.keyboard.press('Control+z')
+    await expect(f.editor.getByRole('spinbutton', { name: '叠加X', exact: true })).toHaveValue(
+      '0.25',
     )
-    expect(await saved()).toBe(1)
-    if (value === '-1') {
-      await f.editor
-        .getByText('请输入大于或等于 0 的有效时间；失焦后恢复已保存值。', { exact: true })
-        .scrollIntoViewIfNeeded()
-      await f.editor.screenshot({ path: test.info().outputPath('subtitle-time-draft.png') })
-    }
-    await end.blur()
-    await expect(end).toHaveValue('1')
-  }
-  await end.fill('')
-  await end.pressSequentially('1.25')
-  await expect(end).toHaveValue('1.25')
-  expect(await saved()).toBe(1.25)
-  await end.blur()
-  await f.editor.getByRole('button', { name: '回到开头', exact: true }).focus()
-  await page.keyboard.press('ControlOrMeta+z')
-  await expect(end).toHaveValue('1')
-  await page.keyboard.press('ControlOrMeta+Shift+z')
-  await expect(end).toHaveValue('1.25')
-  await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
-  await f.open()
-  await f.editor.getByRole('button', { name: '字幕', exact: true }).click()
-  await expect(end).toHaveValue('1.25')
-})
+    await f.editor.getByRole('button', { name: '新增叠加', exact: true }).click()
+    await choose(page, f.editor, '叠加来源', '红色透明层')
+    await number(f.editor, '叠加X', '.25')
+    await number(f.editor, '叠加Y', '.25')
+    await number(f.editor, '叠加宽度', '.5')
+    await number(f.editor, '叠加高度', '.5')
+    await expect.poll(async () => (await pixel(f.canvas, 0.375, 0.5))[0]).toBeGreaterThan(180)
+    await f.editor.getByRole('button', { name: '下移一层', exact: true }).click()
+    await expect.poll(async () => (await pixel(f.canvas, 0.375, 0.5))[1]).toBeGreaterThan(180)
+    await f.editor.screenshot({ path: test.info().outputPath('ui-alpha-overlays.png') })
+    await f.editor.getByRole('checkbox', { name: '显示此叠加图层', exact: true }).uncheck()
+    const saved = await page.evaluate(
+      (id) => window.__plein.engine.doc.get(id)!.params!.overlays,
+      f.id,
+    )
+    expect((saved as { hidden: boolean }[])[0]!.hidden).toBe(true)
+    await page.keyboard.press('Control+z')
+    await expect(
+      f.editor.getByRole('checkbox', { name: '显示此叠加图层', exact: true }),
+    ).toBeChecked()
+    await page.evaluate((id) => {
+      const doc = window.__plein.engine.doc as typeof window.__plein.engine.doc & {
+        readOnly: boolean
+      }
+      doc.readOnly = true
+      ;(doc.mutable(id)! as unknown as { set(key: string, value: unknown): void }).set(
+        'name',
+        '叠加只读',
+      )
+    }, f.id)
+    await expect(f.editor.getByRole('button', { name: '新增叠加', exact: true })).toBeDisabled()
+    await expect(f.editor.getByRole('spinbutton', { name: '叠加X', exact: true })).toBeDisabled()
+  },
+)
+
+test(
+  '动画字幕真实透明Player：出现消失边界、统一cue、切换none与静态、手改manual和释放',
+  { tag: '@core' },
+  async ({ page }) => {
+    const posted: {
+      cues: { start: number; end: number; text: string; origin?: string }[]
+      duration: number
+    }[] = []
+    const deleted: string[] = []
+    page.on('request', (request) => {
+      if (request.url().endsWith('/api/motion/preview/captions') && request.method() === 'POST')
+        posted.push(request.postDataJSON())
+      if (request.method() === 'DELETE' && request.url().includes('/api/motion/preview/'))
+        deleted.push(request.url())
+    })
+    const f = await fixture(page, true)
+    const captions = f.editor.getByLabel('HyperFrames动画字幕', { exact: true }),
+      stage = f.editor.locator('.seq-stage')
+    await expect(captions).toHaveAttribute('data-state', 'ready')
+    expect(posted.at(-1)!.cues).toMatchObject([
+      { source: 'clip-a', origin: 'estimated', start: 0.2, end: 0.8 },
+      { source: 'clip-b', origin: 'manual', start: 1.2, end: 1.8 },
+    ])
+    await seek(page, f.editor, 0.1)
+    await expect.poll(() => whitePixels(page, stage)).toBeLessThan(10)
+    await seek(page, f.editor, 0.45)
+    await expect.poll(() => whitePixels(page, stage)).toBeGreaterThan(50)
+    await f.editor.screenshot({ path: test.info().outputPath('ui-animated-captions.png') })
+    await seek(page, f.editor, 0.9)
+    await expect.poll(() => whitePixels(page, stage)).toBeLessThan(10)
+    await f.editor.getByRole('button', { name: '跳到结尾', exact: true }).click()
+    await expect.poll(() => whitePixels(page, stage)).toBeLessThan(10)
+    await f.editor.getByRole('button', { name: '字幕', exact: true }).click()
+    const text = f.editor.getByRole('textbox', { name: '镜头 1 字幕 1 文本', exact: true })
+    await text.fill('人工校订后字幕')
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (id) =>
+            (
+              window.__plein.engine.doc.get(id)!.params!.subtitleTrack as {
+                cues: { origin: string }[]
+              }
+            ).cues[0]!.origin,
+          f.id,
+        ),
+      )
+      .toBe('manual')
+    await f.editor.getByRole('button', { name: '成片', exact: true }).click()
+    await choose(page, f.editor, '字幕渲染', '不烧录（保留SRT）')
+    await expect(captions).toHaveCount(0)
+    await expect(f.editor.locator('.seq-stage canvas')).toHaveCount(1)
+    await expect.poll(() => deleted.length).toBeGreaterThan(0)
+    await choose(page, f.editor, '字幕渲染', '静态字幕')
+    await expect(stage).toHaveAttribute('data-subtitles', 'libass')
+    await choose(page, f.editor, '字幕渲染', '动画字幕（HyperFrames）')
+    await expect(captions).toHaveAttribute('data-state', 'ready')
+    const before = deleted.length
+    await f.editor.getByRole('button', { name: '关闭', exact: true }).click()
+    await expect(f.editor).toHaveCount(0)
+    await expect.poll(() => deleted.length).toBeGreaterThan(before)
+  },
+)

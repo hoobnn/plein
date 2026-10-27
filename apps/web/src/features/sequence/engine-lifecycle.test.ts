@@ -351,3 +351,60 @@ describe('透明叠加原生video与唯一播放头', () => {
     expect(video.load).toHaveBeenCalled()
   })
 })
+
+it('图片失败暂停并提示，重试清除失败且保留播放头，成功后重新绘制', () => {
+  const images: Array<{
+    onload: (() => void) | null
+    onerror: (() => void) | null
+    src: string
+    complete: boolean
+    naturalWidth: number
+    naturalHeight: number
+  }> = []
+  vi.stubGlobal(
+    'Image',
+    class {
+      onload = null
+      onerror = null
+      src = ''
+      complete = false
+      naturalWidth = 0
+      naturalHeight = 0
+      constructor() {
+        images.push(this)
+      }
+    },
+  )
+  const issues = vi.fn()
+  const playhead = new Playhead()
+  playhead.setTotal(2)
+  const engine = new PreviewEngine(playhead, issues)
+  engines.push(engine)
+  engine.setScene({
+    width: 96,
+    height: 64,
+    total: 2,
+    sounds: [],
+    clips: [
+      { key: 'image', assetId: 'still', kind: 'image', start: 0, length: 2, in: 0, speed: 1 },
+    ],
+  })
+  engine.attach({
+    width: 0,
+    height: 0,
+    dataset: {},
+    getContext: () => ({ fillRect: vi.fn(), drawImage: calls.draw }),
+  } as unknown as HTMLCanvasElement)
+  playhead.seek(0.5)
+  playhead.play()
+  images[0]!.onerror?.()
+  expect(issues).toHaveBeenLastCalledWith(1)
+  expect(playhead.playing).toBe(false)
+  engine.retryFailed()
+  expect(issues).toHaveBeenLastCalledWith(0)
+  expect(playhead.t).toBeCloseTo(0.5, 1)
+  expect(images[0]!.onload).toBeNull()
+  Object.assign(images[1]!, { complete: true, naturalWidth: 96, naturalHeight: 64 })
+  images[1]!.onload?.()
+  expect(calls.draw).toHaveBeenCalledWith(images[1], 0, 0, 96, 64)
+})

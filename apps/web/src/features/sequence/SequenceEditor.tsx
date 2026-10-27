@@ -1372,7 +1372,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
               draft={!!animatic}
               overlays={resolvedOverlays}
               selectedOverlay={selectedOverlay}
-              readOnly={engine.doc.readOnly}
+              readOnly={readonly}
               onSelectOverlay={selectOverlay}
               onPatchOverlay={patchOverlayGeometry}
             />
@@ -1399,7 +1399,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                   {tab === 'overlays' ? (
                     <OverlayEditor
                       overlays={params.overlays}
-                      readOnly={engine.doc.readOnly}
+                      readOnly={readonly}
                       sources={read.overlaySources.map((source) => ({
                         ...source,
                         duration: duration(
@@ -1451,22 +1451,40 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       onMove={(to) => move(current, to)}
                       onChange={(patch) => {
                         if (!writable()) return
+                        const latest = readSequence(engine, id).animatic
+                        if (!latest) return
+                        const original = animatic.shots[current]
+                        const shot = latest.shots.find((s) => s.shotId === row.source)
+                        if (!original || !shot) return
+                        if (
+                          Object.keys(patch).some(
+                            (key) =>
+                              !Object.is(
+                                original[key as keyof AnimaticShot],
+                                shot[key as keyof AnimaticShot],
+                              ),
+                          )
+                        ) {
+                          setAnimaticError('镜头设置已更新，本次未覆盖；请核对最新数值后重新修改。')
+                          return
+                        }
                         setParam(
                           engine.doc,
                           id,
                           'shots',
-                          animatic.shots.map((s) =>
+                          latest.shots.map((s) =>
                             s.shotId === row.source ? { ...s, ...patch } : s,
                           ),
                         )
                         engine.doc.flush()
+                        setAnimaticError(null)
                       }}
                     />
                   ) : row ? (
                     <>
                       {row.clipInstanceId && (
                         <SequenceInstanceTools
-                          key={row.clipInstanceId}
+                          key={`instance:${row.clipInstanceId}`}
                           engine={engine}
                           canvasId={canvasId}
                           sequenceId={id}

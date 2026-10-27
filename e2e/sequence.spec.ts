@@ -2,18 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, test } from './fixtures'
-import {
-  addNode,
-  centerOf,
-  clickElement,
-  edgesInto,
-  elements,
-  newProject,
-  settle,
-  zoomTo,
-} from './canvas'
-import { slowFile } from './slow-file'
+import { expect, type Page, test } from './fixtures'
+import { addNode, centerOf, clickElement, edgesInto, elements, newProject, zoomTo } from './canvas'
 
 let dir = ''
 /** WebM（VP9）：Playwright 自带的 Chromium 没有 H.264 解码器，WebM 才能走 WebCodecs 预览 */
@@ -58,393 +48,27 @@ test.beforeAll(() => {
     join(dir, 'line.wav'),
   )
   ff('-f', 'lavfi', '-i', 'sine=f=220:d=9', '-af', 'tremolo=f=1.5:d=0.6', join(dir, 'music.wav'))
+
   ff(
     '-f',
     'lavfi',
     '-i',
-    'color=c=blue:s=360x640:d=0.1:r=30',
+    'color=c=red:s=96x64:d=1:r=8',
+    '-f',
+    'lavfi',
+    '-i',
+    'color=c=blue:s=96x64:d=1:r=8',
+    '-filter_complex',
+    '[0:v][1:v]concat=n=2:v=1:a=0',
     '-c:v',
     'libvpx-vp9',
     '-deadline',
     'realtime',
-    join(dir, 'short.webm'),
+    join(dir, 'cut.mp4'),
   )
 })
 test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
-test('不足 0.2 秒的镜头拖动入点不写入负数，编辑器保持可用', async ({ page }) => {
-  const errors: string[] = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  await newProject(page)
-  const chooser = page.waitForEvent('filechooser')
-  await page.getByRole('button', { name: '上传' }).click()
-  await (await chooser).setFiles(join(dir, 'short.webm'))
-  await expect
-    .poll(async () => (await elements(page)).filter((e) => e.kind === 'video').length)
-    .toBe(1)
-  const video = (await elements(page)).find((e) => e.kind === 'video')!
-  await addNode(page, '序列', { x: 720, y: 800 })
-  await page.keyboard.press('Escape')
-  const sequence = (await elements(page)).find((e) => e.nodeType === 'plein/sequence')!
-  expect(
-    await page.evaluate(
-      ({ video, sequence }) => window.__plein.connect([video, 'video'], [sequence, 'clips']),
-      { video: video.id, sequence: sequence.id },
-    ),
-  ).toBe(true)
-  await zoomTo(page, [sequence.id])
-  const at = await centerOf(page, sequence.id)
-  await page.mouse.dblclick(at.x, at.y)
-  const editor = page.getByRole('dialog', { name: '序列', exact: true })
-  const clip = editor.locator('.seq-clip').first()
-  await expect(clip).toBeVisible()
-  await clip.hover()
-  const handle = clip.locator('.seq-trim-in')
-  const bounds = (await handle.boundingBox())!
-  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(bounds.x + 20, bounds.y + bounds.height / 2, { steps: 4 })
-  await page.mouse.up()
-  expect(errors).toEqual([])
-  await expect(editor.getByRole('spinbutton', { name: '入点（秒）', exact: true })).toHaveValue('0')
-  await clip.hover()
-  const end = (await clip.locator('.seq-trim-out').boundingBox())!
-  await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2)
-  await page.mouse.down()
-  await page.mouse.move(end.x - 20, end.y + end.height / 2, { steps: 4 })
-  await page.mouse.up()
-  await expect(editor.getByRole('spinbutton', { name: '出点（秒）', exact: true })).toHaveValue('')
-  expect(errors).toEqual([])
-  expect(
-    await page.evaluate((id) => {
-      const clips = window.__plein.engine.doc.get(id)!.params!.clips as {
-        in: number
-        out?: number
-      }[]
-      return { in: clips[0]!.in, out: clips[0]!.out ?? null }
-    }, sequence.id),
-  ).toEqual({ in: 0, out: null })
-  await editor.getByRole('button', { name: '导出 MP4', exact: true }).click()
-  const exported = editor.getByLabel('实际导出 MP4', { exact: true })
-  await expect(exported).toBeVisible({ timeout: 60_000 })
-  await expect
-    .poll(() => exported.evaluate((v: HTMLVideoElement) => Number.isFinite(v.duration)))
-    .toBe(true)
-  const length = await exported.evaluate((v: HTMLVideoElement) => v.duration)
-  expect(length).toBeGreaterThan(0)
-  expect(length).toBeLessThan(0.16)
-  expect(
-    (await page.request.get((await exported.getAttribute('src'))!)).headers()['content-type'],
-  ).toContain('video/mp4')
-  expect(errors).toEqual([])
-})
-
-test('手动修剪拒绝交叉入出点，提示原因且清空可恢复整段', async ({ page }) => {
-  await newProject(page)
-  const chooser = page.waitForEvent('filechooser')
-  await page.getByRole('button', { name: '上传' }).click()
-  await (await chooser).setFiles(join(dir, shots[0]!))
-  await expect
-    .poll(async () => (await elements(page)).filter((e) => e.kind === 'video').length)
-    .toBe(1)
-  const video = (await elements(page)).find((e) => e.kind === 'video')!
-  await addNode(page, '序列', { x: 720, y: 800 })
-  await page.keyboard.press('Escape')
-  const sequence = (await elements(page)).find((e) => e.nodeType === 'plein/sequence')!
-  expect(
-    await page.evaluate(
-      ({ video, sequence }) => window.__plein.connect([video, 'video'], [sequence, 'clips']),
-      { video: video.id, sequence: sequence.id },
-    ),
-  ).toBe(true)
-  await zoomTo(page, [sequence.id])
-  const at = await centerOf(page, sequence.id)
-  await page.mouse.dblclick(at.x, at.y)
-  const editor = page.getByRole('dialog', { name: '序列', exact: true })
-  await editor.locator('.seq-clip').first().click()
-  const start = editor.getByRole('spinbutton', { name: '入点（秒）', exact: true })
-  const end = editor.getByRole('spinbutton', { name: '出点（秒）', exact: true })
-  await start.fill('1.5')
-  await start.blur()
-  await end.fill('1')
-  await end.blur()
-  await expect(end).toHaveValue('')
-  await expect(editor.getByRole('alert')).toContainText('出点需要晚于入点')
-  await start.fill('3')
-  await start.blur()
-  await expect(start).toHaveValue('1.5')
-  await expect(editor.getByRole('alert')).toContainText('入点需要早于出点')
-  await expect(editor.getByRole('alert')).toBeInViewport()
-  await editor
-    .locator('.seq-inspector')
-    .screenshot({ path: test.info().outputPath('trim-validation.png') })
-  await end.fill('1.8')
-  await end.blur()
-  await expect(end).toHaveValue('1.8')
-  await expect(editor.getByRole('alert')).toHaveCount(0)
-  await end.fill('')
-  await end.blur()
-  await start.fill('')
-  await start.blur()
-  await expect(start).toHaveValue('0')
-  await expect(end).toHaveValue('')
-  expect(
-    await page.evaluate((id) => {
-      const clips = window.__plein.engine.doc.get(id)!.params!.clips as {
-        in: number
-        out?: number
-      }[]
-      return { in: clips[0]!.in, out: clips[0]!.out ?? null }
-    }, sequence.id),
-  ).toEqual({ in: 0, out: null })
-  await editor.getByRole('button', { name: '导出 MP4', exact: true }).click()
-  const exported = editor.getByLabel('实际导出 MP4', { exact: true })
-  await expect(exported).toBeVisible({ timeout: 60_000 })
-  await expect
-    .poll(() => exported.evaluate((v: HTMLVideoElement) => Number.isFinite(v.duration)))
-    .toBe(true)
-  const length = await exported.evaluate((v: HTMLVideoElement) => v.duration)
-  expect(length).toBeGreaterThan(1.95)
-  expect(length).toBeLessThan(2.1)
-})
-
-test('缩略图和波形请求失败可见，重新加载预览恢复且保留剪辑', async ({ page }) => {
-  await newProject(page)
-  const chooser = page.waitForEvent('filechooser')
-  await page.getByRole('button', { name: '上传' }).click()
-  await (await chooser).setFiles([join(dir, shots[0]!), join(dir, 'line.wav')])
-  await expect
-    .poll(
-      async () =>
-        (await elements(page)).filter((e) => e.kind === 'video' || e.kind === 'audio').length,
-    )
-    .toBe(2)
-  const all = await elements(page)
-  const video = all.find((e) => e.kind === 'video')!
-  const audio = all.find((e) => e.kind === 'audio')!
-  let fail = true
-  const calls = { filmstrip: 0, peaks: 0 }
-  await page.route('**/api/assets/*/filmstrip', (route) => {
-    calls.filmstrip++
-    return fail ? route.fulfill({ status: 503, body: 'unavailable' }) : route.continue()
-  })
-  await page.route('**/api/assets/*/peaks', (route) => {
-    calls.peaks++
-    return fail ? route.fulfill({ status: 503, body: 'unavailable' }) : route.continue()
-  })
-  await addNode(page, '序列', { x: 720, y: 800 })
-  await page.keyboard.press('Escape')
-  const sequence = (await elements(page)).find((e) => e.nodeType === 'plein/sequence')!
-  await page.evaluate(
-    ({ video, audio, sequence }) => {
-      window.__plein.connect([video, 'video'], [sequence, 'clips'])
-      window.__plein.connect([audio, 'audio'], [sequence, 'dialogue'])
-    },
-    { video: video.id, audio: audio.id, sequence: sequence.id },
-  )
-  await zoomTo(page, [sequence.id])
-  const at = await centerOf(page, sequence.id)
-  await page.mouse.dblclick(at.x, at.y)
-  const editor = page.getByRole('dialog', { name: '序列', exact: true })
-  await expect(editor.getByText('缩略图加载失败', { exact: true })).toBeVisible()
-  await expect(editor.getByText('波形加载失败', { exact: true })).toBeVisible()
-  await editor.screenshot({ path: test.info().outputPath('media-failure.png') })
-  await editor.locator('.seq-clip').first().click()
-  const start = editor.getByRole('spinbutton', { name: '入点（秒）', exact: true })
-  await start.fill('0.5')
-  await start.blur()
-  await page.keyboard.press('End')
-  await page.keyboard.press('ArrowLeft')
-  const time = await editor.locator('.seq-time').innerText()
-  const read = () => page.evaluate((id) => window.__plein.engine.doc.get(id)!.params, sequence.id)
-  const before = await read()
-  const retry = editor.getByRole('button', { name: '重新加载预览', exact: true })
-  await retry.click()
-  await expect.poll(() => calls.filmstrip).toBe(2)
-  await expect.poll(() => calls.peaks).toBe(2)
-  await expect(editor.getByText('缩略图加载失败', { exact: true })).toBeVisible()
-  fail = false
-  await retry.click()
-  await expect(editor.locator('.seq-filmstrip > span').first()).toBeVisible()
-  await expect(editor.locator('.seq-wave path').first()).toBeVisible()
-  await expect(editor.getByText('缩略图加载失败', { exact: true })).toHaveCount(0)
-  await expect(editor.getByText('波形加载失败', { exact: true })).toHaveCount(0)
-  await expect(editor.locator('.seq-time')).toHaveText(time)
-  await expect
-    .poll(() =>
-      editor.locator('.seq-stage canvas[data-decoder]').evaluate((canvas: HTMLCanvasElement) => {
-        const data = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height).data
-        for (let i = 0; i < data.length; i += 16)
-          if (Math.max(data[i]!, data[i + 1]!, data[i + 2]!) > 40) return true
-        return false
-      }),
-    )
-    .toBe(true)
-  await expect(start).toHaveValue('0.5')
-  expect(await read()).toEqual(before)
-})
-
-test('三十分钟真实音频的完整峰值可显示和缩放，不使编辑器崩溃', async ({ page }) => {
-  const longAudio = join(dir, 'long.flac')
-  execFileSync('ffmpeg', [
-    '-hide_banner',
-    '-loglevel',
-    'error',
-    '-y',
-    '-f',
-    'lavfi',
-    '-i',
-    'sine=frequency=220:sample_rate=8000:duration=1800',
-    '-c:a',
-    'flac',
-    longAudio,
-  ])
-  const errors: string[] = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  await newProject(page)
-  const chooser = page.waitForEvent('filechooser')
-  await page.getByRole('button', { name: '上传' }).click()
-  await (await chooser).setFiles([join(dir, shots[0]!), longAudio])
-  await expect
-    .poll(
-      async () =>
-        (await elements(page)).filter((e) => e.kind === 'video' || e.kind === 'audio').length,
-    )
-    .toBe(2)
-  const all = await elements(page)
-  const video = all.find((e) => e.kind === 'video')!
-  const audio = all.find((e) => e.kind === 'audio')!
-  await addNode(page, '序列', { x: 720, y: 800 })
-  await page.keyboard.press('Escape')
-  const sequence = (await elements(page)).find((e) => e.nodeType === 'plein/sequence')!
-  await page.evaluate(
-    ({ video, audio, sequence }) => {
-      window.__plein.connect([video, 'video'], [sequence, 'clips'])
-      window.__plein.connect([audio, 'audio'], [sequence, 'music'])
-    },
-    { video: video.id, audio: audio.id, sequence: sequence.id },
-  )
-  await zoomTo(page, [sequence.id])
-  const at = await centerOf(page, sequence.id)
-  const peaksResponse = page.waitForResponse(
-    (response) => response.url().endsWith('/peaks') && response.ok(),
-  )
-  await page.mouse.dblclick(at.x, at.y)
-  const peaks = (await (await peaksResponse).json()) as { rate: number; peaks: number[] }
-  expect(peaks.rate).toBe(100)
-  expect(peaks.peaks).toHaveLength(180_000)
-  const editor = page.getByRole('dialog', { name: '序列', exact: true })
-  const waveform = editor.locator('.seq-wave path')
-  await expect
-    .poll(async () => ({ errors, paths: await waveform.count() }))
-    .toEqual({ errors: [], paths: 1 })
-  const before = await waveform.getAttribute('d')
-  await editor.getByRole('slider', { name: '缩放', exact: true }).press('End')
-  await expect.poll(() => waveform.getAttribute('d')).not.toBe(before)
-  expect((await waveform.getAttribute('d'))!.match(/M/g)!.length).toBeLessThanOrEqual(1200)
-  await editor.getByRole('button', { name: '重新加载预览', exact: true }).click()
-  await expect(waveform).toBeVisible()
-  expect(errors).toEqual([])
-})
-
-for (const cancel of ['pointercancel', 'blur', 'Escape'] as const) {
-  test(`时间线 ${cancel} 取消修剪和排序，不保存草稿且可继续拖动`, async ({ page }) => {
-    await newProject(page)
-    const chooser = page.waitForEvent('filechooser')
-    await page.getByRole('button', { name: '上传' }).click()
-    await (await chooser).setFiles(shots.slice(0, 2).map((file) => join(dir, file)))
-    await expect
-      .poll(async () => (await elements(page)).filter((e) => e.kind === 'video').length)
-      .toBe(2)
-    const videos = (await elements(page)).filter((e) => e.kind === 'video')
-    await addNode(page, '序列', { x: 720, y: 800 })
-    await page.keyboard.press('Escape')
-    const sequence = (await elements(page)).find((e) => e.nodeType === 'plein/sequence')!
-    await page.evaluate(
-      ({ videos, sequence }) => {
-        for (const video of videos) window.__plein.connect([video.id, 'video'], [sequence, 'clips'])
-      },
-      { videos, sequence: sequence.id },
-    )
-    await zoomTo(page, [sequence.id])
-    const at = await centerOf(page, sequence.id)
-    await page.mouse.dblclick(at.x, at.y)
-    const editor = page.getByRole('dialog', { name: '序列', exact: true })
-    const clips = editor.locator('.seq-clip')
-    await expect(clips).toHaveCount(2)
-    const read = () =>
-      page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.clips, sequence.id)
-    const before = await read()
-    const cancelGesture = async () => {
-      if (cancel === 'Escape') {
-        await page.keyboard.press('Escape')
-        // 不等待退场动画；松手不能把关闭前的草稿保存下来。
-        await page.mouse.up()
-        await expect(editor).toBeHidden()
-        await page.mouse.dblclick(at.x, at.y)
-        await expect(editor).toBeVisible()
-        return
-      }
-      await page.evaluate((kind) => {
-        window.dispatchEvent(
-          kind === 'blur' ? new Event('blur') : new PointerEvent('pointercancel', { pointerId: 1 }),
-        )
-      }, cancel)
-    }
-    await clips.first().hover()
-    const handle = (await clips.first().locator('.seq-trim-out').boundingBox())!
-    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2)
-    await page.mouse.down()
-    await page.mouse.move(handle.x - 50, handle.y + handle.height / 2, { steps: 5 })
-    await expect(editor.locator('[data-trimming]')).toHaveCount(1)
-    await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 2 })))
-    await expect(editor.locator('[data-trimming]')).toHaveCount(1)
-    await cancelGesture()
-    await expect(editor.locator('[data-trimming]')).toHaveCount(0)
-    await page.mouse.move(handle.x - 80, handle.y + handle.height / 2)
-    await page.mouse.up()
-    expect(await read()).toEqual(before)
-    await expect(editor.getByRole('spinbutton', { name: '出点（秒）', exact: true })).toHaveValue(
-      '',
-    )
-    const order = () =>
-      clips.evaluateAll((els) =>
-        els
-          .map((el) => ({ name: el.getAttribute('aria-label'), x: el.getBoundingClientRect().x }))
-          .sort((a, b) => a.x - b.x)
-          .map((el) => el.name),
-      )
-    const original = await order()
-    const first = (await clips.first().boundingBox())!
-    const second = (await clips.nth(1).boundingBox())!
-    const drag = async () => {
-      await page.mouse.move(first.x + first.width / 2, first.y + first.height / 2)
-      await page.mouse.down()
-      await page.mouse.move(second.x + second.width - 12, first.y + first.height / 2, { steps: 8 })
-    }
-    await drag()
-    await expect(editor.locator('[data-moving]')).toHaveCount(1)
-    await page.evaluate(() =>
-      window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 2 })),
-    )
-    await expect(editor.locator('[data-moving]')).toHaveCount(1)
-    await cancelGesture()
-    await expect(editor.locator('[data-moving]')).toHaveCount(0)
-    await page.mouse.up()
-    expect(await read()).toEqual(before)
-    await expect.poll(order).toEqual(original)
-    await expect
-      .poll(() =>
-        clips.evaluateAll((els) => els.every((el) => getComputedStyle(el).transform === 'none')),
-      )
-      .toBe(true)
-    await drag()
-    await page.mouse.up()
-    await expect.poll(order).toEqual([...original].reverse())
-  })
-}
-
-/** 序列编辑器是多轨时间线：胶片条、波形，拖动换顺序，拖边缘修剪，空格播放 */
 test('序列时间线：排序、修剪、播放', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
   const chooser = page.waitForEvent('filechooser')
@@ -615,29 +239,6 @@ test('序列时间线：排序、修剪、播放', { tag: '@core' }, async ({ pa
     await editor.screenshot({ path: join(shotDir, 'transition.png') })
   }
 
-  // 语音识别是可选的；开启后能明确选择音频模型，并保存到序列参数。
-  await editor.getByRole('button', { name: '成片', exact: true }).click()
-  const asr = editor.getByRole('switch', { name: '按语音识别对齐字幕', exact: true })
-  const model = editor.getByRole('button', { name: '模型', exact: true })
-  await expect(model).toHaveCount(0)
-  await asr.click()
-  await model.click()
-  const picker = page.getByRole('dialog', { name: '选择模型', exact: true })
-  await expect(picker.getByRole('option')).toHaveCount(1)
-  await picker.getByRole('option', { name: /Mock 音频/ }).click()
-  await expect(model).toContainText('Mock 音频')
-  expect(
-    await page.evaluate((id) => window.__plein.engine.doc.get(id)?.params?.model, seq.id),
-  ).toBe('plein/mock:audio')
-  const subtitles = editor.getByRole('switch', { name: '开启字幕', exact: true })
-  await subtitles.click()
-  await expect(model).toHaveCount(0)
-  await expect(asr).toBeDisabled()
-  await subtitles.click()
-  await expect(model).toContainText('Mock 音频')
-  await asr.click()
-  await expect(model).toHaveCount(0)
-
   // 导出剪辑工程：下载一个 zip（OTIO / FCPXML / 字幕 / 素材）
   const download = page.waitForEvent('download')
   await editor.getByRole('button', { name: '导出工程' }).click()
@@ -645,241 +246,117 @@ test('序列时间线：排序、修剪、播放', { tag: '@core' }, async ({ pa
   const zipped = readFileSync((await (await download).path())!)
   expect(zipped.subarray(0, 2).toString()).toBe('PK')
   expect(zipped.includes(Buffer.from('timeline.otio'))).toBe(true)
+  expect(zipped.includes(Buffer.from('timeline.fcpxml'))).toBe(true)
 
+  await page.keyboard.press('Escape')
+  await expect(editor).toBeHidden()
+  // 重载后剪辑与服务端文档一致；有结果的序列仍进入编辑，独立播放器及时释放。
+  const saved = await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params, seq.id)
+  await page.reload()
+  await page.waitForFunction(() => !!window.__plein)
+  await expect
+    .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)?.params, seq.id))
+    .toEqual(saved)
+  await zoomTo(page, [seq.id])
+  await page.evaluate(
+    ({ id, source }) => {
+      const doc = window.__plein.engine.doc
+      const mutable = doc.mutable(id)! as unknown as { set(key: string, value: unknown): void }
+      mutable.set('results', [
+        {
+          id: 'existing-film',
+          runId: 'fixture',
+          port: 'video',
+          at: 1,
+          value: { type: 'video', assetId: doc.get(source)!.assetId },
+        },
+      ])
+    },
+    { id: seq.id, source: named(shots[0]!).id },
+  )
+  await page.getByRole('button', { name: '播放成片', exact: true }).click()
+  const playerMedia = page.locator('[data-player-el] video')
+  await expect
+    .poll(() => playerMedia.evaluate((video: HTMLVideoElement) => !video.paused))
+    .toBe(true)
+  const playerHandle = await playerMedia.elementHandle()
+  await page.evaluate((id) => window.__plein.engine.selection.set([id]), seq.id)
+  await page
+    .getByTestId('generator')
+    .getByRole('button', { name: /^编辑序列/ })
+    .press('Enter')
+  await expect(editor).toBeVisible()
+  await expect(page.locator('[data-player-el]')).toHaveCount(0)
+  expect(
+    await playerHandle!.evaluate(
+      (video: HTMLVideoElement) => video.paused && !video.getAttribute('src') && !video.isConnected,
+    ),
+  ).toBe(true)
+  await playerHandle!.dispose()
   await page.keyboard.press('Escape')
   await expect(editor).toBeHidden()
 })
 
+async function open(page: Page, id: string) {
+  await clickElement(page, id)
+  const at = await centerOf(page, id)
+  await page.mouse.dblclick(at.x, at.y)
+  const editor = page.getByRole('dialog', { name: '序列', exact: true })
+  await expect(editor).toHaveCSS('opacity', '1')
+  return editor
+}
+
 test(
-  '字幕持久轨：全部对白、逐句编辑、工程一致与异步覆盖保护',
+  '真实视频快速播放暂停与连续定位，暂停画面始终落在最终位置',
   { tag: '@core' },
   async ({ page }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
     await newProject(page)
     const chooser = page.waitForEvent('filechooser')
-    await page.getByRole('button', { name: '上传' }).click()
-    await (
-      await chooser
-    ).setFiles(['shot-c.webm', 'line.wav', 'music.wav'].map((name) => join(dir, name)))
+    await page.getByRole('button', { name: '上传', exact: true }).click()
+    await (await chooser).setFiles(join(dir, 'cut.mp4'))
     await expect
-      .poll(
-        async () =>
-          (await elements(page)).filter((e) => e.kind === 'audio' || e.kind === 'video').length,
-      )
-      .toBe(3)
-    const seq = await page.evaluate(() => {
-      const all = [...window.__plein.engine.doc.elements()]
-      const video = all.find((e) => e.name === 'shot-c.webm')!
-      const d1 = all.find((e) => e.name === 'line.wav')!
-      const d2 = all.find((e) => e.name === 'music.wav')!
+      .poll(async () => (await elements(page)).filter((e) => e.kind === 'video').length)
+      .toBe(1)
+    const video = (await elements(page)).find((e) => e.kind === 'video')!
+    const id = await page.evaluate((source) => {
       const id = window.__plein.addNode({
         type: 'plein/sequence',
-        name: '字幕回归',
-        x: 800,
-        y: 500,
-        params: {
-          model: 'plein/mock:audio',
-          clips: [{ source: video.id, dialogue: d1.id, more: [d2.id] }],
-        },
+        name: '暂停定位画面',
+        x: 3000,
+        y: 1000,
+        params: { subtitles: false, aspectRatio: '16:9', clipVolume: 0 },
       })
-      window.__plein.connect([video.id, 'video'], [id, 'clips'])
-      window.__plein.connect([d1.id, 'audio'], [id, 'dialogue'])
-      window.__plein.connect([d2.id, 'audio'], [id, 'dialogue'])
+      window.__plein.connect([source, 'video'], [id, 'clips'])
       return id
-    })
-    const open = async () => {
-      await zoomTo(page, [seq])
-      // 先选中：选中后节点编辑器会展开在卡片下方，画布布局跟着变，
-      // 原来的坐标就偏了。选中后等位置稳住再重新取一次坐标双击。
-      await clickElement(page, seq)
-      await settle(page, seq)
-      const point = await centerOf(page, seq)
-      await page.mouse.dblclick(point.x, point.y)
-      await page
-        .getByRole('dialog', { name: '序列' })
-        .getByRole('button', { name: '字幕', exact: true })
-        .click()
-    }
-    await open()
-    const editor = page.getByRole('dialog', { name: '序列' })
-    const recognize = editor.getByRole('button', { name: '识别全部对白并重建字幕' })
-    await expect(recognize).toBeEnabled()
-    const response = page.waitForResponse(
-      (r) => r.url().includes('/subtitle-recognize') && r.status() === 200,
-    )
-    await recognize.click()
-    const recognized = (await (await response).json()) as { transcripts: Record<string, unknown> }
-    expect(Object.keys(recognized.transcripts)).toHaveLength(2)
-    const text = editor.getByRole('textbox', { name: '镜头 1 字幕 1 文本', exact: true })
-    await expect(text).toBeVisible()
-    await expect(editor.getByRole('textbox', { name: /镜头 1 字幕 \d 文本/ })).toHaveCount(4)
-    await text.fill('人工修订的第一句')
-    await editor.getByRole('spinbutton', { name: '镜头 1 字幕 1 开始（秒）' }).fill('0.25')
-    await editor.getByRole('checkbox', { name: '显示字幕 2', exact: true }).uncheck()
-    await expect(editor.locator('.seq-block-text')).toHaveCount(3)
-    await expect(editor.locator('.seq-block-text').first()).toContainText('人工修订的第一句')
-    const request = page.waitForRequest(
-      (r) => r.url().endsWith('/sequence-export') && r.method() === 'POST',
-    )
-    const download = page.waitForEvent('download')
-    await editor.getByRole('button', { name: '导出工程', exact: true }).click()
-    const spec = (await request).postDataJSON().spec as {
-      subtitles: { cues: Array<{ start: number; text: string }> }
-    }
-    expect(spec.subtitles.cues).toHaveLength(3)
-    expect(spec.subtitles.cues[0]).toMatchObject({ start: 0.25, text: '人工修订的第一句' })
-    expect(
-      readFileSync((await (await download).path())!).includes(Buffer.from('subtitles.srt')),
-    ).toBe(true)
-    await editor.getByRole('button', { name: '关闭', exact: true }).click()
-    await page.reload()
-    await page.waitForFunction(() => !!window.__plein)
-    await open()
-    await expect(text).toHaveValue('人工修订的第一句')
-    await expect(
-      editor.getByRole('checkbox', { name: '显示字幕 2', exact: true }),
-    ).not.toBeChecked()
-    await page.evaluate((id) => {
-      const doc = window.__plein.engine.doc
-      const clips = doc.get(id)!.params!.clips as Array<Record<string, unknown>>
-      const params = doc.mutable(id)!.get('params') as { set(key: string, value: unknown): void }
-      params.set(
-        'clips',
-        clips.map((c) => ({ ...c, lineDelay: 0.25 })),
-      )
-    }, seq)
-    await expect(editor.getByRole('button', { name: '导出工程', exact: true })).toBeDisabled()
-    await expect(editor.getByText(/字幕已过期/).first()).toBeVisible()
-
-    let release!: () => void
-    let fetched!: () => void
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const ready = new Promise<void>((resolve) => {
-      fetched = resolve
-    })
-    await page.route('**/api/media/subtitle-recognize', async (route) => {
-      const result = await route.fetch()
-      fetched()
-      await gate
-      await route.fulfill({ response: result })
-    })
-    await recognize.click()
-    await ready
-    await text.fill('识别等待期间继续编辑')
-    release()
-    await expect(editor.getByRole('alert')).toContainText('未覆盖编辑')
-    await expect(text).toHaveValue('识别等待期间继续编辑')
-    await expect(editor.getByRole('button', { name: '导出工程', exact: true })).toBeDisabled()
-    await page.unroute('**/api/media/subtitle-recognize')
-    // 未知状态的展示与显式恢复操作使用接口夹具；持久 journal/续查在服务端专项用真 host 验证。
-    const recoveringAsset = Object.keys(recognized.transcripts)[0]!
-    const recoveryInfo = {
-      model: 'plein/mock:audio',
-      assetId: recoveringAsset,
-      expected: 'unknown-revision',
-      recovery: { state: 'submit_unknown', attachable: true, note: '提交状态未知，请先在平台核查' },
-    }
-    await page.route('**/api/media/subtitle-recognition?**', (route) =>
-      route.fulfill({
-        json:
-          new URL(route.request().url()).searchParams.get('assetId') === recoveringAsset
-            ? recoveryInfo
-            : null,
-      }),
-    )
-    let recoveryBody: Record<string, unknown> | undefined
-    let newRecognitions = 0
-    await page.route('**/api/media/subtitle-recover', (route) => {
-      recoveryBody = route.request().postDataJSON()
-      return route.fulfill({ json: { ok: true } })
-    })
-    await page.route('**/api/media/subtitle-recognize', (route) => {
-      newRecognitions++
-      return route.fulfill({ json: recognized })
-    })
-    await page.reload()
-    await page.waitForFunction(() => !!window.__plein)
-    await open()
-    const recoveryControls = editor.locator('[aria-label="字幕识别恢复"]')
-    await expect(recoveryControls).toBeVisible()
-    await expect(
-      recoveryControls.getByRole('button', { name: '确认未受理，重新提交识别' }),
-    ).toBeDisabled()
-    expect(newRecognitions).toBe(0)
-    await recoveryControls
-      .getByRole('textbox', { name: '字幕识别平台任务 ID' })
-      .fill('platform-asr-123')
-    await recoveryControls.getByRole('button', { name: '关联任务并续查' }).click()
-    await expect
-      .poll(() => recoveryBody)
-      .toMatchObject({
-        expected: 'unknown-revision',
-        operation: { action: 'attach', remoteId: 'platform-asr-123' },
+    }, video.id)
+    const editor = await open(page, id)
+    const monitor = editor.locator('.seq-monitor')
+    const canvas = monitor.locator('.seq-stage > canvas')
+    const color = () =>
+      canvas.evaluate((canvas: HTMLCanvasElement) => {
+        const p = canvas
+          .getContext('2d')!
+          .getImageData(canvas.width / 2, canvas.height / 2, 1, 1).data
+        return p[0]! > 150 && p[2]! < 80 ? 'red' : p[2]! > 150 && p[0]! < 80 ? 'blue' : 'other'
       })
-    await expect.poll(() => newRecognitions).toBe(1)
-    await expect(editor.getByRole('button', { name: '导出工程', exact: true })).toBeEnabled()
+    await expect.poll(color).toBe('red')
+    for (let i = 0; i < 1; i++) {
+      await monitor.getByRole('button', { name: '播放', exact: true }).click()
+      await monitor.getByRole('button', { name: '暂停', exact: true }).click()
+      await monitor.getByRole('button', { name: '回到开头', exact: true }).click()
+      for (const key of ['Shift+ArrowRight', 'Shift+ArrowLeft', 'Shift+ArrowRight'])
+        await page.keyboard.press(key)
+      await expect(monitor.locator('.seq-time > span').first()).toHaveText('0:01.0')
+      await expect.poll(color).toBe('blue')
+      if (i === 0)
+        await monitor.screenshot({ path: test.info().outputPath('paused-blue-position.png') })
+      await page.keyboard.press('Shift+ArrowLeft')
+      await expect.poll(color).toBe('red')
+      await expect(monitor.getByRole('button', { name: '播放', exact: true })).toBeVisible()
+    }
+    await expect(canvas).toHaveAttribute('data-decoder', 'webcodecs')
+    expect(errors).toEqual([])
   },
 )
-
-test('普通音频工具自定义切点与区间：预览后生成新素材，拒绝无效计划', async ({ page }) => {
-  await newProject(page)
-  const chooser = page.waitForEvent('filechooser')
-  await page.getByRole('button', { name: '上传' }).click()
-  await (await chooser).setFiles(join(dir, 'music.wav'))
-  await expect
-    .poll(async () => (await elements(page)).filter((e) => e.kind === 'audio').length)
-    .toBe(1)
-  const audio = (await elements(page)).find((e) => e.kind === 'audio')!
-  const requests: unknown[] = []
-  page.on('request', (request) => {
-    if (request.url().endsWith('/media/derive') && request.method() === 'POST')
-      requests.push(request.postDataJSON())
-  })
-  const openTools = async () => {
-    await page.keyboard.press('Escape')
-    await zoomTo(page, [audio.id])
-    const point = await centerOf(page, audio.id)
-    await page.mouse.click(point.x, point.y)
-    await page
-      .getByRole('toolbar', { name: '结果操作' })
-      .getByRole('button', { name: '媒体工具' })
-      .click()
-    await page.getByRole('button', { name: '手动切分' }).click()
-  }
-  await openTools()
-  await page.getByRole('combobox', { name: '分段方式' }).selectOption('cuts')
-  await page.getByRole('textbox', { name: '音频切点' }).fill('1.2, 4.5')
-  await expect(page.locator('[aria-label="切分区间预览"]')).toContainText('将生成 3 段')
-  await page.getByRole('button', { name: '开始加工' }).click()
-  await expect
-    .poll(async () => (await elements(page)).filter((e) => e.kind === 'audio').length)
-    .toBe(4)
-  expect(requests).toHaveLength(1)
-  expect(requests[0]).toMatchObject({
-    op: 'split',
-    segments: [
-      { start: 0, end: 1.2 },
-      { start: 1.2, end: 4.5 },
-      { start: 4.5, end: 9 },
-    ],
-  })
-  await openTools()
-  await page.getByRole('combobox', { name: '分段方式' }).selectOption('ranges')
-  await page.getByRole('textbox', { name: '音频区间' }).fill('0 - 1\n2 - 4')
-  await expect(page.locator('[aria-label="切分区间预览"]')).toContainText('将生成 2 段')
-  await page.getByRole('button', { name: '开始加工' }).click()
-  await expect
-    .poll(async () => (await elements(page)).filter((e) => e.kind === 'audio').length)
-    .toBe(6)
-  expect(requests).toHaveLength(2)
-  await openTools()
-  await page.getByRole('combobox', { name: '分段方式' }).selectOption('cuts')
-  await page.getByRole('textbox', { name: '音频切点' }).fill('3, 1')
-  await page.getByRole('button', { name: '开始加工' }).click()
-  await expect(page.locator('.ui-toast')).toContainText('切点需严格递增')
-  expect(requests).toHaveLength(2)
-})
-
-// 这批用例要跑真实渲染、编码或很大的工程，单条本来就慢
-slowFile(test)

@@ -22,7 +22,17 @@ export class PeaksCache {
     let request = this.pending.get(assetId)
     if (!request) {
       request = fetch(assetUrls.variant(assetId, 'peaks'))
-        .then((r) => (r.ok ? (r.json() as Promise<AudioPeaks>) : null))
+        .then((r) => (r.ok ? r.json() : null))
+        .then((value: unknown): AudioPeaks | null => {
+          if (!value || typeof value !== 'object') return null
+          const peaks = value as AudioPeaks
+          return Number.isFinite(peaks.rate) &&
+            peaks.rate > 0 &&
+            Array.isArray(peaks.peaks) &&
+            peaks.peaks.every((peak) => Number.isFinite(peak) && peak >= 0)
+            ? peaks
+            : null
+        })
         .catch(() => null)
         .then((peaks) => {
           this.pending.delete(assetId)

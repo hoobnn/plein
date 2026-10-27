@@ -422,6 +422,7 @@ export class PreviewEngine {
   private audio: AudioContext | null = null
   private master: GainNode | null = null
   private buffers = new Map<string, Promise<AudioBuffer | null>>()
+  private audioRequests = new Map<string, AbortController>()
   private playing = new Set<AudioBufferSourceNode>()
   private soundsKey = ''
   private gen = 0
@@ -485,7 +486,12 @@ export class PreviewEngine {
     const sounds = new Set(scene.sounds.map((s) => s.assetId))
     // 移出的来源释放缓存（包括失败和读取中的 Promise）；恢复后要重新读取，
     // 旧请求的回调也不能把错误写进恢复后的同一素材。
-    for (const id of this.buffers.keys()) if (!sounds.has(id)) this.buffers.delete(id)
+    for (const id of this.buffers.keys()) {
+      if (sounds.has(id)) continue
+      this.buffers.delete(id)
+      this.audioRequests.get(id)?.abort()
+      this.audioRequests.delete(id)
+    }
     for (const id of this.failedSounds) if (!sounds.has(id)) this.failedSounds.delete(id)
     this.reportIssues()
     const soundsKey = JSON.stringify(scene.sounds)
@@ -500,6 +506,9 @@ export class PreviewEngine {
     this.disposed = true
     for (const off of this.off) off()
     this.stopAudio()
+    for (const request of this.audioRequests.values()) request.abort()
+    this.audioRequests.clear()
+    this.buffers.clear()
     for (const f of this.frames.values()) f.dispose()
     this.frames.clear()
     this.nativeFrames.clear()
@@ -787,6 +796,8 @@ export class PreviewEngine {
     let p = this.buffers.get(assetId)
     if (!p) {
       const ctx = this.audio!
+      const request = new AbortController()
+      this.audioRequests.set(assetId, request)
       const current = () =>
         !this.disposed &&
         this.buffers.get(assetId) === p &&
@@ -797,7 +808,7 @@ export class PreviewEngine {
         this.reportIssues()
         this.playhead.pause()
       }
-      p = fetch(assetUrls.original(assetId))
+      p = fetch(assetUrls.original(assetId), { signal: request.signal })
         .then((r) => {
           if (!r.ok) throw new Error(String(r.status))
           return r.arrayBuffer()
@@ -807,7 +818,7 @@ export class PreviewEngine {
           return null
         })
         .then(async (b) => {
-          if (!b) return null
+          if (!b || !current()) return null
           try {
             const buffer = await ctx.decodeAudioData(b)
             if (current()) {
@@ -820,6 +831,9 @@ export class PreviewEngine {
             if (!this.scene.clips.some((c) => c.assetId === assetId)) fail()
             return null
           }
+        })
+        .finally(() => {
+          if (this.audioRequests.get(assetId) === request) this.audioRequests.delete(assetId)
         })
       this.buffers.set(assetId, p)
     }
