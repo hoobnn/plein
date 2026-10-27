@@ -8,7 +8,11 @@ import {
   watchAssetRequests,
 } from './perf/probe'
 
-test('真实媒体低缩放只取小图，离屏及退出画布后释放资源', async ({ browser, page, baseURL }) => {
+test('真实媒体低缩放只取小图，离屏及退出画布后释放资源 @core', async ({
+  browser,
+  page,
+  baseURL,
+}) => {
   const base = baseURL!
   const fixture = await createMediaFixture(base, { elements: 400, imageAssets: 8 })
   const canvas = await seedMediaCanvas(page, base, fixture)
@@ -75,7 +79,7 @@ test('真实媒体低缩放只取小图，离屏及退出画布后释放资源',
   }
 })
 
-test('真实预览请求失败会让首屏验收失败，不把引擎就绪当媒体成功', async ({
+test('真实预览请求失败会让首屏验收失败，不把引擎就绪当媒体成功 @core', async ({
   browser,
   page,
   baseURL,

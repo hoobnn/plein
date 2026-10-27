@@ -309,8 +309,8 @@ export const api = {
   runNode: (canvasId: string, nodeId: string, opts: NodeRunOptions = {}) =>
     request<NodeRunStarted>(API.nodeRun(canvasId, nodeId), json('POST', opts)),
   /** 节点的实际输入预览（不调用付费生成） */
-  nodeInput: (canvasId: string, nodeId: string) =>
-    request<PreparedInput>(API.nodeInput(canvasId, nodeId)),
+  nodeInput: (canvasId: string, nodeId: string, signal?: AbortSignal) =>
+    request<PreparedInput>(API.nodeInput(canvasId, nodeId), { signal }),
   cancelNode: (canvasId: string, nodeId: string, opts: NodeCancelOptions = {}) =>
     request<void>(API.nodeCancel(canvasId, nodeId), json('POST', opts)),
   /** 整组运行 Frame 里的节点 */

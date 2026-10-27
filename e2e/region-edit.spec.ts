@@ -1,19 +1,5 @@
-import { join } from 'node:path'
-import { expect, type Page, test } from './fixtures'
+import { expect, test } from './fixtures'
 import { addNode, edgesInto, elements, newProject, revealGenerator, waitNode } from './canvas'
-
-/** 设了就把界面截图存到这个目录（亮色、暗色各一张） */
-const shotDir = process.env.PLEIN_E2E_SHOTS
-
-async function shoot(page: Page, name: string) {
-  if (!shotDir) return
-  for (const scheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme: scheme })
-    await page.waitForTimeout(300)
-    await page.screenshot({ path: join(shotDir, `${name}-${scheme}.png`) })
-  }
-  await page.emulateMedia({ colorScheme: null })
-}
 
 test(
   '局部重绘：在图上框选、涂抹出区域，接出局部重绘节点并生成',
@@ -48,7 +34,10 @@ test(
     await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.7, { steps: 10 })
     await page.mouse.up()
     await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.3)
-    await shoot(page, '1-mask')
+    await page.keyboard.press('ControlOrMeta+z')
+    await page.keyboard.press('ControlOrMeta+Shift+z')
+    await dialog.getByRole('button', { name: '清空', exact: true }).click()
+    await dialog.getByRole('button', { name: '撤销', exact: true }).click()
     await dialog.getByRole('button', { name: '完成' }).click()
     await expect(dialog).toBeHidden()
 
@@ -61,15 +50,30 @@ test(
       edit.id,
     )
     expect(mask).toMatchObject({ width: expect.any(Number), height: expect.any(Number) })
+    // 真实 PNG 解码证明画板历史经过导出和存储后仍保留区域。
+    const pixels = await page.evaluate(async (mask) => {
+      const image = new Image()
+      image.src = `/api/assets/${mask.assetId}`
+      await image.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = image.naturalWidth
+      canvas.height = image.naturalHeight
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(image, 0, 0)
+      const at = (x: number, y: number) => [
+        ...ctx.getImageData(Math.floor(x * canvas.width), Math.floor(y * canvas.height), 1, 1).data,
+      ]
+      return { inside: at(0.65, 0.5), outside: at(0.95, 0.95) }
+    }, mask)
+    expect(pixels).toEqual({ inside: [255, 255, 255, 255], outside: [0, 0, 0, 255] })
     await expect(page.getByTestId('mask-field')).toContainText('高亮处会被重画')
 
     await generator.locator('textarea').first().fill('把杯子换成红色马克杯')
     await page.mouse.move(700, 120)
-    await shoot(page, '2-node')
+
     await revealGenerator(page, generate)
     await generate.click()
     await waitNode(page, edit.id)
     await page.mouse.move(700, 120)
-    await shoot(page, '3-result')
   },
 )

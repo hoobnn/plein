@@ -2060,7 +2060,7 @@ function ClipSettings({
 }
 
 /** 秒数输入：失焦或回车时写入，清空表示用默认值 */
-function NumberField(props: {
+export function NumberField(props: {
   label: string
   value: number | undefined
   readValue(): number | undefined
@@ -2131,7 +2131,7 @@ function NumberField(props: {
           }}
           onBlur={(e) => commit(e.currentTarget)}
           onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return
+            if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
             if (e.key === 'Enter') e.currentTarget.blur()
           }}
         />
@@ -2223,7 +2223,7 @@ function ChoiceField(props: {
 }
 
 /** 字幕：留空用对白的台词；失焦时写入 */
-function SubtitleField(props: {
+export function SubtitleField(props: {
   value: string | undefined
   readValue(): string | undefined
   placeholder: string
@@ -2259,7 +2259,7 @@ function SubtitleField(props: {
         }}
         onBlur={() => commit()}
         onKeyDown={(e) => {
-          if (e.nativeEvent.isComposing) return
+          if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
           if (e.key === 'Enter') e.currentTarget.blur()
         }}
       />
@@ -2388,7 +2388,7 @@ function Volume(props: {
 }
 
 /** 必填秒数保留逐字草稿，回车／失焦后校验；不把清空过程当作 0。 */
-function RequiredSecondsField({
+export function RequiredSecondsField({
   label,
   value,
   min,
@@ -2448,6 +2448,7 @@ function RequiredSecondsField({
         }}
         onBlur={commit}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
           if (e.key === 'Enter') {
             e.preventDefault()
             e.currentTarget.blur()

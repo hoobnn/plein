@@ -112,6 +112,7 @@ export function MaskEditor({
   )
   const [draft, setDraft] = useState<MaskOp | null>(null)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [prepared, setPrepared] = useState(false)
   const [sourceReady, setSourceReady] = useState(false)
@@ -261,6 +262,7 @@ export function MaskEditor({
     saveRequest.current = request
     cancelDrag()
     setSaving(true)
+    setSaveError(null)
     try {
       const blob = await exportMask(ops, size)
       if (request.signal.aborted || !alive.current) return
@@ -280,7 +282,8 @@ export function MaskEditor({
         sourceAssetId: assetId,
       })
     } catch (err) {
-      if (!request.signal.aborted && alive.current) notify((err as Error).message)
+      if (!request.signal.aborted && alive.current)
+        setSaveError(err instanceof Error ? err.message : '保存失败，请稍后重试')
     } finally {
       if (saveRequest.current === request) {
         saveRequest.current = null
@@ -382,6 +385,11 @@ export function MaskEditor({
           {saving ? '保存中…' : '完成'}
         </button>
       </ModalHeader>
+      {saveError && (
+        <p role="alert" className="px-6 py-3 text-sm text-danger">
+          重绘区域尚未保存：{saveError}。已保留绘制内容，请点击完成重试。
+        </p>
+      )}
       <div
         ref={setStage}
         aria-busy={!ready && !loadError}

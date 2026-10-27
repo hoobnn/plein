@@ -64,13 +64,6 @@ const EDITOR_H = 440
 const MIN_EDITOR_W = 320
 const MIN_EDITOR_H = 180
 
-/** 损坏的历史值仅在显示时按空表单呈现；用户明确修改或恢复默认才写回。 */
-function optionRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
-}
-
 export function Generator() {
   const engine = useCanvas((s) => s.engine)
   if (!engine) return null
@@ -225,10 +218,10 @@ export function GeneratorPanel({
           readValue: () =>
             optionRecord(optionRecord(engine.doc.get(el.id)?.params?.[optionsKey])[model.ref]),
           onChange: (next: Record<string, unknown>) =>
-            set(optionsKey, {
-              ...optionRecord(engine.doc.get(el.id)?.params?.[optionsKey]),
-              [model.ref]: next,
-            }),
+            set(
+              optionsKey,
+              replaceModelOptions(engine.doc.get(el.id)?.params?.[optionsKey], model.ref, next),
+            ),
         }
       : undefined
   const main = fields.filter(([k, f]) => k !== pk && f.widget !== 'videoMode' && isMainField(k, f))
@@ -801,3 +794,4 @@ function NameField({
     </div>
   )
 }
+import { optionRecord, replaceModelOptions } from './modelOptions'

@@ -22,9 +22,20 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
   const [rev, setRev] = useState(0)
   // 取这份预览时的文档版本；文档又变了，这份预览就不是当前状态了。
   const dataRev = useRef(-1)
+  const previewTarget = useRef<string | null>(null)
+  const activeRequest = useRef<AbortController | null>(null)
   useEffect(() => engine.doc.subscribe(() => setRev((r) => r + 1)), [engine])
   useEffect(() => {
-    if (!canvasId) return
+    if (!canvasId) {
+      previewTarget.current = null
+      setLoading(false)
+      setError(null)
+      return
+    }
+    const target = `${canvasId}:${nodeId}`
+    const first = previewTarget.current !== target
+    const request = new AbortController()
+    activeRequest.current = request
     let live = true
     const id = ++requestId.current
     const current = () => live && id === requestId.current
@@ -32,21 +43,27 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
     const asked = rev
     setLoading(true)
     setError(null)
-    const timer = setTimeout(() => {
-      api
-        .nodeInput(canvasId, nodeId)
-        .then((r) => {
-          if (!current()) return
-          dataRev.current = asked
-          setData(r)
-        })
-        // 保留旧输入供查看，但必须标明刷新失败；不能把旧阻断当成现在的状态。
-        .catch((err: unknown) => current() && setError((err as Error).message))
-        .finally(() => current() && setLoading(false))
-    }, DEBOUNCE_MS)
+    const timer = setTimeout(
+      () => {
+        if (!current() || request.signal.aborted) return
+        previewTarget.current = target
+        api
+          .nodeInput(canvasId, nodeId, request.signal)
+          .then((r) => {
+            if (!current()) return
+            dataRev.current = asked
+            setData(r)
+          })
+          // 保留旧输入供查看，但必须标明刷新失败；不能把旧阻断当成现在的状态。
+          .catch((err: unknown) => current() && setError((err as Error).message))
+          .finally(() => current() && setLoading(false))
+      },
+      first ? 0 : DEBOUNCE_MS,
+    )
     return () => {
       live = false
       clearTimeout(timer)
+      request.abort()
     }
   }, [canvasId, nodeId, rev])
   // 换画布或节点时不显示上一个对象的结果。
@@ -55,6 +72,7 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
     (next: PreparedInput) => {
       // 提交的 409 回执比此前发出的预览请求新，尚在路上的响应不能覆盖它。
       requestId.current++
+      activeRequest.current?.abort()
       dataRev.current = rev
       setData(next)
       setError(null)
