@@ -34,10 +34,10 @@ pnpm typecheck
 | `pnpm test:e2e-lifecycle` | 用最小 Playwright 服务验证自动目录所有权及成功、失败、中断后的回收                                       |
 | `pnpm smoke`              | 启动真实服务，经 HTTP 和 Yjs WebSocket 读写，重启后确认数据没丢                                          |
 | `pnpm verify`             | 依次运行 lint、typecheck、桌面 test:profile、E2E 生命周期合同、test:coverage、smoke，pre-push 与 CI 共用 |
-| `pnpm e2e`                | Playwright 界面冒烟：基于 mock 平台覆盖从短剧模板到导出的完整流程，按文件并行                            |
-| `pnpm e2e:core`           | 只跑标记为 `@core` 的核心用例：主创作流程、导入导出、协作基础与关键恢复，几分钟跑完                      |
+| `pnpm e2e`                | Playwright 界面冒烟：基于 mock 平台覆盖关键创作旅程及桌面更新界面，按文件并行                            |
+| `pnpm e2e:core`           | 只跑标记为 `@core` 的核心用例：主创作流程、导入导出、协作基础与关键恢复，不含桌面更新独立验收            |
 | `pnpm e2e:auth`           | 密码登录回归：真实账号创建、登录退出、会话失效与界面恢复，使用隔离数据库                                 |
-| `pnpm e2e:file`           | 只跑指定文件：`pnpm e2e:file e2e/canvas.spec.ts`                                                         |
+| `pnpm e2e:file`           | 只跑指定文件：`pnpm e2e:file e2e/canvas-interaction.spec.ts`                                             |
 | `pnpm e2e:grep`           | 按用例标题筛选：`pnpm e2e:grep "新建画布"`                                                               |
 | `pnpm e2e:fail`           | 只重跑上一轮失败的用例                                                                                   |
 | `pnpm perf`               | 画布渲染性能基准                                                                                         |
@@ -45,22 +45,22 @@ pnpm typecheck
 
 本地检查由 git 钩子（husky）完成，`pnpm install` 时自动装好：pre-commit 运行 `vp staged`，只格式化、检查暂存文件；pre-push 运行 `pnpm verify`，改了 `package.json` 或 `pnpm-lock.yaml` 时再跑 `pnpm audit:deps`。推送 main 不触发云端 CI，云端只在 Dependabot PR、打 `v*` 标签发版和手动运行（Actions → CI → Run workflow）时跑检查与性能（perf）；发版说明写在 `docs/releases/<标签>.md`，打标签时自动用作 Release 正文；依赖安全检查另有每周定时。急用可 `git push --no-verify` 跳过钩子，之后在 Actions 里手动补跑一次 CI。
 
-E2E 只在本地跑，云端不再跑：发版前运行 `pnpm e2e:core`，核心冒烟全绿才打标签。测试选层、迁移规则与受保护范围见 [测试指南](docs/dev/testing.md)。
+E2E 只在本地跑，云端不再跑：发版前运行 `pnpm e2e:core`，核心冒烟全绿才打标签。测试选层、新增 e2e 的准入规则与独立验收范围见 [测试指南](docs/dev/testing.md)。
 
 ```bash
-pnpm e2e                          # 全部界面冒烟用例，并行跑
+pnpm e2e                          # 主配置全量浏览器回归，并行跑
 pnpm e2e:core                     # 发版前冒烟：只跑 @core 的核心用例
 pnpm e2e:auth                     # 密码登录回归，隔离数据库
-pnpm e2e:file e2e/canvas.spec.ts  # 只跑指定的文件
+pnpm e2e:file e2e/canvas-interaction.spec.ts  # 只跑指定的文件
 pnpm e2e:grep "新建画布"           # 按用例标题筛选
 pnpm e2e:fail                     # 只重跑上一轮失败的用例
 ```
 
-E2E 按文件并行：每个 worker 带一份自己的后端（独立端口 + 独立数据目录），文件之间并行、文件内部串行（一条用例走完整条流水线，状态前后相依）。默认并行度取核数的一半，可用 `PLEIN_E2E_WORKERS` 覆盖。端口基准默认 8800，可用 `PLEIN_E2E_BASE_PORT` 覆盖；每个 worker 用 `基准 + worker 序号`，撞上占用端口时自动往后顺延。多个 e2e 进程同时跑时，各自设不同的 `PLEIN_E2E_BASE_PORT` 避免撞车。
+E2E 按文件并行：每个 worker 带一份自己的后端（独立端口 + 独立数据目录），文件之间并行、文件内部串行（一条用例走完整条流水线，状态前后相依）。默认并行度取核数的一半，可用 `PLEIN_E2E_WORKERS` 覆盖。默认由系统分配空闲端口；显式设置 `PLEIN_E2E_BASE_PORT` 时，每个 worker 占用从 `基准 + worker 序号 × 64` 开始的独立端口区间。并行运行若指定基准，应按 worker 总数预留互不重叠的区间。
 
 前端产物按源码哈希缓存：`pnpm e2e` 只在 `apps/web` 或 `packages` 的源码变了才重建 `dist-e2e`，没变就直接复用。强制重建用 `node scripts/build-e2e-web.mjs --force`，完全跳过用 `PLEIN_E2E_BUILD=0`。
 
-并行时每个 worker 的数据目录是 `plein-e2e-w<worker 序号>`，用例里 `process.env.PLEIN_E2E_DATA` 指向当前 worker 那一份。
+每轮运行的数据目录包含仓库标识、运行标识和 worker 序号，失败截图与 trace 也按运行隔离。用例里 `process.env.PLEIN_E2E_DATA` 指向当前 worker 的数据目录；`PLEIN_E2E_DATA_ROOT` 可覆盖自动目录的父目录。
 
 ### 验收分层
 
@@ -77,7 +77,7 @@ L1–L3 是合并门禁，L4 是发布门禁。mock 通过不能替代 L4；流�
 
 工具链是 [Vite+](https://viteplus.dev)（命令 `vp`）：Oxfmt 负责格式化代码、样式、Markdown、YAML 和 HTML，Oxlint 做代码检查（含类型感知规则），Vitest 运行单元测试，`vp pack`（tsdown）打包服务端和桌面端。规则和格式选项都写在根目录的 `vite.config.ts`。
 
-覆盖率包括未被测试导入的 `apps/*/src` 和 `packages/*/src` 源码，只排除测试、类型声明、生成代码及测试辅助文件。桌面端也属于测试项目。CI 和 `pnpm verify` 使用同一套覆盖率门槛：全局底线防止回退，本次收敛的调度、输入准备、列表快照及桌面状态模块另设更高门槛。单元测试覆盖率和浏览器端到端测试分别计数，不能把 mock 平台通过解释为真实平台验收。门槛数值写在根目录的 `vite.config.ts`。
+覆盖率包括未被测试导入的 `apps/*/src` 和 `packages/*/src` 源码，只排除测试、类型声明、生成代码及测试辅助文件。桌面端也属于测试项目。CI 和 `pnpm verify` 使用同一套覆盖率门槛：全局底线防止回退，调度、输入准备、列表快照及桌面状态模块另设更高门槛。单元测试覆盖率和浏览器端到端测试分别计数，不能把 mock 平台通过解释为真实平台验收。门槛数值写在根目录的 `vite.config.ts`。
 
 E2E 自动数据目录在启动服务时独占创建，服务停止后回收；`--list` 不建目录。显式设置 `PLEIN_E2E_DATA` 的目录由调用者管理，测试失败或中断后仍保留。目录监护支持 macOS/Linux；监护进程自身遭 `SIGKILL` 或机器崩溃不保证回收。
 
