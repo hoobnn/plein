@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { clickElement, newProject, revealGenerator, waitNode } from './canvas'
+import { clickElement, clickRun, newProject, revealGenerator, waitNode } from './canvas'
 
 for (const format of ['audio', 'video', 'h264'] as const) {
   const kind = format === 'h264' ? 'video' : format
@@ -29,7 +29,7 @@ for (const format of ['audio', 'video', 'h264'] as const) {
     // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
     await revealGenerator(page)
     const generator = page.getByTestId('generator')
-    await generator.getByRole('button', { name: '生成', exact: true }).click()
+    await clickRun(page)
     await waitNode(page, id)
     await generator.getByRole('button', { name: '重新生成', exact: true }).click()
     await expect

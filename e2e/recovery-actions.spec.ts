@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { JobInfo } from '../packages/protocol/src/runs'
-import { addNode, clickElement, elements, newProject, revealGenerator } from './canvas'
+import { addNode, clickElement, clickRun, elements, newProject, revealGenerator } from './canvas'
 
 for (const state of [
   'fetch_failed',
@@ -66,7 +66,7 @@ for (const state of [
         await revealGenerator(page)
         const generator = page.getByTestId('generator')
         await generator.locator('textarea').first().fill('明确处理旧任务后生成')
-        await generator.getByRole('button', { name: '生成', exact: true }).click()
+        await clickRun(page)
         await expect.poll(() => submissions).toBe(1)
         expect(calls).toEqual([{ action: 'dismiss' }])
       }

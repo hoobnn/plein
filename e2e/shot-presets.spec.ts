@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
-import { addNode, elements, newProject, revealGenerator, waitNode } from './canvas'
+import { addNode, clickRun, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 /** 设了就把界面截图存到这个目录（亮色、暗色各一张） */
 const shotDir = process.env.PLEIN_E2E_SHOTS
@@ -79,7 +79,7 @@ test(
     // 选择记在节点上，照常生成
     const video = (await elements(page)).find((e) => e.nodeType === 'plein/video')!
     await page.evaluate((id) => window.__plein.engine.selection.set([id]), video.id)
-    await generator.getByRole('button', { name: '生成', exact: true }).click()
+    await clickRun(page)
     await waitNode(page, video.id)
   },
 )

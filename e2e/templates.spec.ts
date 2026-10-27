@@ -1,6 +1,14 @@
 import { expect, test } from '@playwright/test'
 import type { JobList } from '../packages/protocol/src/runs'
-import { addNode, contextMenu, deselect, elements, newProject, revealGenerator } from './canvas'
+import {
+  addNode,
+  clickRun,
+  contextMenu,
+  deselect,
+  elements,
+  newProject,
+  revealGenerator,
+} from './canvas'
 
 const MOCK = '/api/providers/plein/mock/config'
 
@@ -64,7 +72,7 @@ test('生成中途取消：记录已取消，核查原远端任务结束后能�
   await revealGenerator(page)
   const generator = page.getByTestId('generator')
   await generator.locator('textarea').first().fill('雨夜天台上的铁盒')
-  await generator.getByRole('button', { name: '生成', exact: true }).click()
+  await clickRun(page)
   const [node] = (await elements(page)).filter((e) => e.kind === 'node')
   await expect
     .poll(async () => (await elements(page)).find((e) => e.id === node!.id)?.status)
@@ -101,7 +109,7 @@ test('生成中途取消：记录已取消，核查原远端任务结束后能�
   await page.getByRole('button', { name: '任务', exact: true }).click()
 
   await request.put(MOCK, { data: { settings: { latencyMs: 0 } } })
-  await generator.getByRole('button', { name: '生成', exact: true }).click()
+  await clickRun(page)
   await expect
     .poll(async () => (await elements(page)).find((e) => e.id === node!.id)?.status, {
       timeout: 30_000,

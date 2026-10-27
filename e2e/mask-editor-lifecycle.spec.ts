@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from '@playwright/test'
 import { solidPng } from '../packages/providers/src/mock/media'
-import { newProject, revealGenerator, waitNode, zoomTo } from './canvas'
+import { clickRun, newProject, revealGenerator, waitNode, zoomTo } from './canvas'
 
 async function fixture(page: Page, edit = false) {
   await newProject(page)
@@ -315,7 +315,7 @@ test('真实模拟生成的图片切换采用结果后关闭旧蒙版，重新�
   // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
   await revealGenerator(page)
   const generator = page.getByTestId('generator')
-  await generator.getByRole('button', { name: '生成', exact: true }).click()
+  await clickRun(page)
   await waitNode(page, source)
   const results = await page.evaluate((id) => window.__plein.engine.doc.get(id)!.results!, source)
   expect(results).toHaveLength(2)

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import {
   addNode,
+  clickRun,
   edgesInto,
   elements,
   newProject,
@@ -51,7 +52,7 @@ test(
     // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
     await revealGenerator(page)
     await generator.locator('textarea').first().fill('雨夜天台，她走到栏杆边')
-    await generator.getByRole('button', { name: '生成', exact: true }).click()
+    await clickRun(page)
     const [parent] = (await elements(page)).filter((e) => e.kind === 'node')
     await waitNode(page, parent!.id)
 
