@@ -8,14 +8,14 @@ import {
 } from '@plein/plugin-sdk'
 import { afterAll, beforeAll, describe, expect, it } from 'vite-plus/test'
 import { z } from 'zod'
-import { bootServer, createCanvas, request, startTestServer } from '../testing'
+import { bootServer, createCanvas, request } from '../testing'
 
-let running: Awaited<ReturnType<typeof startTestServer>>
+let running: Awaited<ReturnType<typeof bootServer>>
 let canvasId: string
 let seq = 0
 
 beforeAll(async () => {
-  running = await startTestServer()
+  running = await bootServer()
   const canvas = await request(running.server, '/api/canvases', { method: 'POST', body: '{}' })
   canvasId = ((await canvas.json()) as Canvas).id
 })
@@ -177,8 +177,15 @@ describe('对外开放 MCP', () => {
       ).json()) as { result: { content: Array<{ text: string }>; isError?: boolean } }
       return { error: r.result.isError === true, text: r.result.content[0]?.text ?? '' }
     }
-    const canvases = JSON.parse((await call('list_canvases')).text) as Array<{ id: string }>
+    rooms.get(canvasId).awareness.setLocalState({
+      view: { selection: [], viewport: { x: 0, y: 0, w: 800, h: 600 }, at: Date.now() },
+    })
+    const canvases = JSON.parse((await call('list_canvases')).text) as Array<{
+      id: string
+      viewing?: boolean
+    }>
     expect(canvases.map((c) => c.id)).toContain(canvasId)
+    expect(canvases.find((c) => c.id === canvasId)?.viewing).toBe(true)
     const made = await call('create_element', {
       canvas_id: canvasId,
       kind: 'markdown',

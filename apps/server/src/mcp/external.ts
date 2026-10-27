@@ -52,16 +52,17 @@ export class ExternalMcp {
   /** 生成新令牌（旧的作废），返回明文令牌 */
   issue(ownerId: string) {
     const token = `plein_${randomBytes(32).toString('base64url')}`
-    this.saved = { hash: hash(token).toString('hex'), ownerId, createdAt: Date.now() }
+    const next = { hash: hash(token).toString('hex'), ownerId, createdAt: Date.now() }
     const tmp = `${this.file}.tmp`
-    writeFileSync(tmp, JSON.stringify(this.saved), { mode: 0o600 })
+    writeFileSync(tmp, JSON.stringify(next), { mode: 0o600 })
     renameSync(tmp, this.file)
-    return { token, createdAt: this.saved.createdAt }
+    this.saved = next
+    return { token, createdAt: next.createdAt }
   }
 
   revoke() {
-    this.saved = null
     rmSync(this.file, { force: true })
+    this.saved = null
   }
 
   matches(token: string) {

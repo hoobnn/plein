@@ -12,11 +12,14 @@ const CLIENTS: Array<{ value: Client; label: string }> = [
   { value: 'claude-desktop', label: 'Claude Desktop' },
 ]
 
-const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.mcpExternal })
-
 /** 对外开放 MCP：生成令牌，给 Claude Code、Cursor、Claude Desktop 一段能直接贴的配置 */
 export function ExternalMcp() {
-  const { data: status } = useQuery({ queryKey: queryKeys.mcpExternal, queryFn: api.externalMcp })
+  const {
+    data: status,
+    error: loadError,
+    isFetching,
+    refetch,
+  } = useQuery({ queryKey: queryKeys.mcpExternal, queryFn: api.externalMcp })
   const [token, setToken] = useState<string | null>(null)
   const [client, setClient] = useState<Client>('claude-code')
   const [busy, setBusy] = useState(false)
@@ -33,8 +36,13 @@ export function ExternalMcp() {
     setBusy(true)
     setError(null)
     try {
-      setToken((await api.issueExternalMcp()).token)
-      await refresh()
+      const issued = await api.issueExternalMcp()
+      await queryClient.cancelQueries({ queryKey: queryKeys.mcpExternal, exact: true })
+      queryClient.setQueryData(queryKeys.mcpExternal, {
+        enabled: true,
+        createdAt: issued.createdAt,
+      })
+      setToken(issued.token)
     } catch (err) {
       setError(`生成令牌失败：${(err as Error).message}`)
     } finally {
@@ -46,8 +54,9 @@ export function ExternalMcp() {
     setError(null)
     try {
       await api.revokeExternalMcp()
+      await queryClient.cancelQueries({ queryKey: queryKeys.mcpExternal, exact: true })
+      queryClient.setQueryData(queryKeys.mcpExternal, { enabled: false })
       setToken(null)
-      await refresh()
     } catch (err) {
       setError(`关闭连接失败：${(err as Error).message}`)
     } finally {
@@ -67,7 +76,26 @@ export function ExternalMcp() {
     }
   }
 
-  if (!status) return null
+  if (!status)
+    return loadError ? (
+      <div className="flex flex-col gap-3">
+        <p role="alert" className="text-sm text-danger">
+          读取连接状态失败：{loadError.message}
+        </p>
+        <button
+          type="button"
+          className="ui-btn ui-btn-secondary self-start"
+          disabled={isFetching}
+          onClick={() => void refetch()}
+        >
+          {isFetching ? '正在重试…' : '重试'}
+        </button>
+      </div>
+    ) : (
+      <p role="status" className="text-sm text-ink-subtle">
+        正在读取连接状态…
+      </p>
+    )
   return (
     <div className="flex flex-col gap-3">
       {token ? (
