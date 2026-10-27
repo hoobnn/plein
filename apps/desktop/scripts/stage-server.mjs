@@ -11,13 +11,13 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'vite-plus/pack'
 
 const desktop = fileURLToPath(new URL('..', import.meta.url))
 const serverSrc = join(desktop, '../server')
-const out = join(desktop, 'stage/server')
+const out = process.argv[2] ? resolve(process.argv[2]) : join(desktop, 'stage/server')
 /** 带 .node 二进制或平台子包的依赖，不能打进 bundle */
 const NATIVE = ['better-sqlite3', 'sharp']
 const EXTERNAL = [
@@ -27,6 +27,8 @@ const EXTERNAL = [
   '@hyperframes/player',
   'gsap',
   '@fontsource/noto-sans-sc',
+  // Node SDK 的 CRC 运行时使用 CommonJS __dirname；必须连同其文件布局保留。
+  '@volcengine/tos-sdk',
 ]
 const isExternal = (id) =>
   id.startsWith('@hyperframes/') ||
@@ -79,7 +81,8 @@ function copyPackage(name, fromDir, dependentDir = out) {
   cpSync(dir, target, {
     recursive: true,
     dereference: true,
-    // 嵌套的 node_modules 单独处理；源码、测试和构建中间文件不带
+    // 嵌套依赖单独处理；保留 src 内发布的运行时 JS（如 debug 的入口）。
+    // 类型源码、测试和原生构建中间文件不带。
     filter: (src) => {
       const rel = src.slice(dir.length)
       if (name === 'gsap' && rel === '/README.md') return true
@@ -87,7 +90,7 @@ function copyPackage(name, fromDir, dependentDir = out) {
         if (rel.startsWith('/files/')) return /-(400|700)-normal\.woff2$/.test(rel)
         if (rel.endsWith('.css')) return rel === '/400.css' || rel === '/700.css'
       }
-      return !/\/node_modules(\/|$)|\/(src|deps|test|docs)(\/|$)|\.(md|ts|map|gyp|cc|h)$|\/build\/(Release\/obj|deps)/.test(
+      return !/\/node_modules(\/|$)|\/(deps|test|docs)(\/|$)|\.(md|ts|map|gyp|cc|h)$|\/build\/(Release\/obj|deps)/.test(
         rel,
       )
     },
@@ -104,7 +107,11 @@ function findPackage(name, fromDir) {
   }
 }
 
-for (const name of EXTERNAL) copyPackage(name, serverSrc)
+for (const name of EXTERNAL)
+  copyPackage(
+    name,
+    name === '@volcengine/tos-sdk' ? join(desktop, '../../packages/providers') : serverSrc,
+  )
 
 // better-sqlite3 自带所有平台的预编译文件（<平台>-<架构>.node，Linux 另有 linuxmusl-），只留当前平台和架构的
 const prebuilds = join(out, 'node_modules/better-sqlite3/prebuilds')
