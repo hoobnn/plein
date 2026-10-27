@@ -74,7 +74,7 @@ async function setup(
   }
   const remove = async (item = a) => {
     await rendered.user.click(button(`删除检查点 ${item.name}`, item))
-    const dialog = screen.getByRole('dialog', { name: `删除检查点「${item.name}」？` })
+    const dialog = await screen.findByRole('dialog', { name: `删除检查点「${item.name}」？` })
     await rendered.user.click(within(dialog).getByRole('button', { name: '删除检查点' }))
   }
   const reopen = async (projectId = 'p') => {
@@ -164,12 +164,13 @@ it('取消和 Escape 不删除；失败保留预览，显式重试成功才清�
   for (const cancel of ['button', 'escape']) {
     const target = button(`删除检查点 ${a.name}`, a)
     await f.user.click(target)
+    await screen.findByRole('dialog', { name: `删除检查点「${a.name}」？` })
     if (cancel === 'button') await f.user.click(screen.getByRole('button', { name: '取消' }))
     else await f.user.keyboard('{Escape}')
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: `删除检查点「${a.name}」？` })).toBeNull(),
     )
-    expect(document.activeElement).toBe(target)
+    await waitFor(() => expect(document.activeElement).toBe(target))
     expect(writes).toBe(0)
   }
   await f.remove()

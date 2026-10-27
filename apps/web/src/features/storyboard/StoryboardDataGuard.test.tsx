@@ -125,9 +125,8 @@ it('删除确认期间其他镜头损坏，不删除镜头或脱离已有素材'
   const f = storyboardFixture({ expanded: true })
   const { user } = renderApp(<StoryboardEditor />)
   await user.click(screen.getByRole('button', { name: '删除镜头 1' }))
-  const button = within(screen.getByRole('dialog', { name: '删除镜头 01？' })).getByRole('button', {
-    name: '删除镜头',
-  })
+  const confirmation = await screen.findByRole('dialog', { name: '删除镜头 01？' })
+  const button = within(confirmation).getByRole('button', { name: '删除镜头' })
   const materials = [...f.doc.elements()].filter((el) => el.id !== f.board)
   const broken = f.read().map((s, i) => (i ? { ...s, duration: -2 } : s))
   f.write(broken)
