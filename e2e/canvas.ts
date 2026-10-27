@@ -41,6 +41,17 @@ declare global {
         worldToClient(x: number, y: number): { x: number; y: number }
         zoomToFit(ids?: Iterable<string>): void
         selection: { values(): string[]; set(ids: string[]): void }
+        /** 相机：平移、缩放和侧栏留出的边距 */
+        camera: {
+          insets: { left: number; top: number; right: number; bottom: number }
+          panBy(dx: number, dy: number): void
+          zoomAt(sx: number, sy: number, factor: number): void
+        }
+        /** 场景：元素和它的世界坐标矩形 */
+        scene: {
+          get(id: string): { id: string; kind: string } | undefined
+          rect(id: string): { x: number; y: number; w: number; h: number } | undefined
+        }
       }
       /** 按节点声明建节点、连线（L4 实验脚本批量搭画布用） */
       addNode(input: {
@@ -314,6 +325,17 @@ export async function waitNode(page: Page, id: string, timeout = 60_000) {
       { timeout, message: `节点 ${id} 应运行成功` },
     )
     .toBe('succeeded')
+}
+
+/**
+ * 点节点编辑器里的生成按钮。
+ * 生成前要等服务端把实际输入备好，按钮才会解禁；不等就点，按钮还是禁用的，
+ * 请求发不出去，用例只能等到超时。
+ */
+export async function clickRun(page: Page, name = '生成') {
+  const button = page.getByTestId('generator').getByRole('button', { name, exact: true })
+  await expect(button, '生成前要等服务端备好实际输入').toBeEnabled()
+  await button.click()
 }
 
 /** 连到某个元素输入口的连线：[来源元素, 来源端口, 目标端口] */
