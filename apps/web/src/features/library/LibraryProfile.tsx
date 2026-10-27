@@ -1,6 +1,5 @@
 import {
   type CharacterProfile,
-  emptyProfile,
   EXPRESSION_PRESETS,
   nameProblem,
   noVoice,
@@ -129,6 +128,25 @@ const emptyLook = (name: string): ProfileLook => ({
   description: '',
   images: [],
 })
+
+/**
+ * 谁占用了这个名字：只说"用过了"用户不知道该改哪一项，这里点名到具体的那一项。
+ */
+function nameOwner(p: CharacterProfile, name: string): string | null {
+  for (const period of p.periods) {
+    if (period.name === name || period.aliases.includes(name)) return `时期「${period.name}」`
+    for (const outfit of period.outfits)
+      if (outfit.name === name || outfit.aliases.includes(name))
+        return `服饰「${period.name} · ${outfit.name}」`
+    for (const state of period.voiceStates)
+      if (state.name === name || state.aliases.includes(name))
+        return `次音色「${period.name} · ${state.name}」`
+  }
+  for (const expression of p.expressions)
+    if (expression.name === name || expression.aliases.includes(name))
+      return `表情「${expression.name}」`
+  return null
+}
 
 const emptyPeriod = (name: string): ProfilePeriod => ({
   ...emptyLook(name),
@@ -283,6 +301,18 @@ export function PeriodsTab({
         </p>
       )}
 
+      <span className="ui-label flex items-center gap-2">
+        时期
+        <span className="font-normal text-ink-subtle tabular-nums">
+          {profile.periods.length}/{PROFILE_LIMITS.periods}
+        </span>
+      </span>
+      {full && (
+        <p className="text-xs text-ink-subtle">
+          已达 {PROFILE_LIMITS.periods} 个时期上限，删掉一个才能继续添加。
+        </p>
+      )}
+
       <ol aria-label="时期与服饰" className="lib-lanes">
         {profile.periods.map((p) => {
           const on = p.id === period?.id
@@ -344,8 +374,14 @@ export function PeriodsTab({
                       presets={OUTFIT_PRESETS.filter((n) => !outfitsUsed.has(n))}
                       onAdd={(n) => addOutfit(p, n)}
                       icon="outfit"
+                      profile={profile}
                       tile
                     />
+                  </li>
+                )}
+                {p.outfits.length >= PROFILE_LIMITS.outfits && (
+                  <li className="px-1 text-2xs text-ink-subtle">
+                    已达 {PROFILE_LIMITS.outfits} 套服饰上限
                   </li>
                 )}
               </ul>
@@ -360,6 +396,7 @@ export function PeriodsTab({
               onAdd={addPeriod}
               placeholder="如：大学"
               icon="period"
+              profile={profile}
             />
           </li>
         )}
@@ -667,6 +704,7 @@ function VoiceStates({
       )}
       {states.length < PROFILE_LIMITS.voiceStates && (
         <PresetChips
+          profile={profile}
           presets={unused}
           onAdd={(name) => {
             const state = {
@@ -808,7 +846,14 @@ function LookGrid({
         ))}
         {looks.length < max && (
           <li>
-            <AddMenu label={`添加${title}`} presets={unused} onAdd={add} icon={icon} tile />
+            <AddMenu
+              label={`添加${title}`}
+              presets={unused}
+              onAdd={add}
+              icon={icon}
+              profile={profile}
+              tile
+            />
           </li>
         )}
       </ul>
@@ -1125,9 +1170,12 @@ function ImageStrip({
 
 /** 预设名的快捷添加：点一下加一项；预设都用过了只剩「自定义」 */
 function PresetChips({
+  profile,
   presets,
   onAdd,
 }: {
+  /** 新名字要跟整个档案比重名，光看预设列表会漏掉已有的时期和表情 */
+  profile: CharacterProfile
   presets: readonly string[]
   onAdd(name: string): void
 }) {
@@ -1221,8 +1269,9 @@ function PresetChips({
                 e.preventDefault()
                 e.stopPropagation()
                 const next = custom.trim()
-                const error = nameProblem(emptyProfile(), next)
-                setProblem(error)
+                const error = nameProblem(profile, next)
+                const owner = error ? nameOwner(profile, next) : null
+                setProblem(owner ? `${error}（已被${owner}占用）` : error)
                 if (error) return
                 focus.to('[data-profile-custom]')
                 onAdd(next)
@@ -1248,6 +1297,7 @@ function AddMenu({
   onAdd,
   icon,
   placeholder,
+  profile,
   tile = false,
 }: {
   label: string
@@ -1255,6 +1305,8 @@ function AddMenu({
   onAdd(name: string): void
   icon: IconName
   placeholder?: string
+  /** 传给自定义输入，用来跟整个档案比重名 */
+  profile: CharacterProfile
   tile?: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -1295,6 +1347,7 @@ function AddMenu({
             </button>
           </div>
           <PresetChips
+            profile={profile}
             presets={presets}
             onAdd={(n) => {
               collapse()

@@ -17,6 +17,8 @@ export async function uploadBatch(
   if (!files.length) return empty
   const label = want === 'image' ? '图片' : '视频'
   const unit = want === 'image' ? '张' : '个'
+  /** 单个的说法：一张图片、一个视频，不能混用 */
+  const one = want === 'image' ? '一张' : '一个'
   const valid = files.filter((file) => file.type.startsWith(`${want}/`))
   if (!valid.length) return { ...empty, failed: true, message: `只能放${label}` }
   const room = Math.max(0, capacity)
@@ -24,7 +26,10 @@ export async function uploadBatch(
     return {
       ...empty,
       failed: true,
-      message: `本次选择了 ${valid.length} ${unit}${label}，最多还能添加 ${room} ${unit}，请减少后重试。`,
+      message:
+        room > 0
+          ? `本次选择了 ${valid.length} ${unit}${label}，最多还能添加 ${room} ${unit}${label}，请减少后重试。`
+          : `已达到${label}数量上限，最多还能添加 0 ${unit}${label}，请先移除${one}已有${label}再添加。`,
     }
   const seen = new Set(used)
   const ids: string[] = []

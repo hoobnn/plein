@@ -11,14 +11,13 @@ const keyOf = (input: PlaceInput) => input.libraryId ?? `${input.kind.id}:${inpu
 /** 放置请求属于当前入口与引擎；迟到的读取不得修改旧文档或操作新的面板。 */
 export function useLibraryPlacement(engine: Engine | null, scope: unknown = null) {
   const sourcePicker = useCompositionSourcePicker(scope, !!engine && !engine.doc.readOnly, engine)
-  const lifetime = useRef<{ active: boolean } | null>(null)
-  const pending = useRef(new Set<string>())
+  // 待办集合跟着会话走：会话结束时请求仍要清掉自己那条，不能把条目永久卡在「正在放入」。
+  const lifetime = useRef<{ active: boolean; pending: Set<string> } | null>(null)
   const [placing, setPlacing] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
-    const session = { active: true }
+    const session = { active: true, pending: new Set<string>() }
     lifetime.current = session
-    pending.current = new Set()
     setPlacing([])
     setError(null)
     return () => {
@@ -28,12 +27,13 @@ export function useLibraryPlacement(engine: Engine | null, scope: unknown = null
 
   const place = async (input: PlaceInput) => {
     const session = lifetime.current
-    const current = () => !!session?.active && useCanvas.getState().engine === engine
+    if (!session) return null
+    const current = () => session.active && useCanvas.getState().engine === engine
     const key = keyOf(input)
-    if (!engine || !current() || pending.current.has(key)) return null
-    pending.current.add(key)
+    if (!engine || !current() || session.pending.has(key)) return null
+    session.pending.add(key)
     setError(null)
-    setPlacing([...pending.current])
+    setPlacing([...session.pending])
     try {
       const result = await placeLibraryItem(
         engine,
@@ -54,10 +54,9 @@ export function useLibraryPlacement(engine: Engine | null, scope: unknown = null
       }
       return null
     } finally {
-      if (current()) {
-        pending.current.delete(key)
-        setPlacing([...pending.current])
-      }
+      session.pending.delete(key)
+      // 只有还活着的会话能刷新「正在放入」；换会话后由新会话自己管这份状态。
+      if (lifetime.current === session) setPlacing([...session.pending])
     }
   }
   return {

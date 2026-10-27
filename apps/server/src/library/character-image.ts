@@ -24,17 +24,20 @@ export function archiveCharacterImage(
   const node = doc.get(input.nodeId)
   const target = node && characterAssetTargetOf(node)
   const candidate = node && currentResult(node, 'images')
-  if (
-    doc.readOnly ||
-    !node ||
-    node.locked ||
-    target?.libraryId !== libraryId ||
-    target.slot !== input.sourceSlot ||
-    candidate?.id !== input.resultId ||
-    candidate.value.type !== 'image' ||
-    candidate.value.assetId !== input.assetId
-  )
-    throw new CharacterImageConflict('来源候选、角色关联或编辑权限已变化，请重新核对后归档')
+  // 每种原因单独说清：只回一句"来源已变化"时，用户不知道该解锁、重新选还是关掉重开。
+  if (doc.readOnly) throw new CharacterImageConflict('当前画布是只读的，无法归档到角色档案')
+  if (!node) throw new CharacterImageConflict('来源节点已不存在，请重新选择要归档的生成结果')
+  if (node.locked) throw new CharacterImageConflict('来源节点已锁定，请先解锁再归档')
+  if (target?.libraryId !== libraryId)
+    throw new CharacterImageConflict('来源节点已经不再关联这个角色，请重新核对归档目标')
+  if (target.slot !== input.sourceSlot)
+    throw new CharacterImageConflict('来源节点的角色槽位已变化，请重新核对归档目标')
+  if (!candidate || candidate.id !== input.resultId)
+    throw new CharacterImageConflict('来源候选已更新，请重新选择要归档的生成结果')
+  if (candidate.value.type !== 'image')
+    throw new CharacterImageConflict('来源候选不是图片，无法归档')
+  if (candidate.value.assetId !== input.assetId)
+    throw new CharacterImageConflict('来源候选已经换成别的图片，请重新核对归档目标')
   if (
     assets.get(owner, input.assetId)?.kind !== 'image' ||
     !existsSync(assets.originalPath(input.assetId))

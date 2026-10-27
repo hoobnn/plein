@@ -107,9 +107,9 @@ function CharacterImageArchiveAction({
   )
 }
 
-function ArchiveDialog({
+export function ArchiveDialog({
   source,
-  item,
+  item: initialItem,
   sourceIsCurrent,
   onClose,
 }: {
@@ -119,10 +119,12 @@ function ArchiveDialog({
   onClose(): void
 }) {
   const [slot, setSlot] = useState<CharacterImageSlot>(source.slot)
-  const [cover, setCover] = useState(item.coverAssetId === source.assetId)
+  const [cover, setCover] = useState(initialItem.coverAssetId === source.assetId)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [conflicted, setConflicted] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [item, setItem] = useState(initialItem)
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -130,6 +132,24 @@ function ArchiveDialog({
       mounted.current = false
     }
   }, [])
+  /** 冲突后就在弹层里重新读一次角色：不用关掉重开，也不用重新找生成结果。 */
+  const reload = async () => {
+    if (refreshing) return
+    setRefreshing(true)
+    setError(null)
+    try {
+      const latest = await api.libraryItem(source.libraryId)
+      if (!mounted.current) return
+      setItem(latest)
+      setCover(latest.coverAssetId === source.assetId)
+      setConflicted(false)
+    } catch (cause) {
+      if (!mounted.current) return
+      setError(`无法读取最新角色：${(cause as Error).message}`)
+    } finally {
+      if (mounted.current) setRefreshing(false)
+    }
+  }
   const confirm = async () => {
     if (busy || conflicted) return
     if (!sourceIsCurrent()) {
@@ -153,7 +173,7 @@ function ArchiveDialog({
       setConflicted(conflict)
       setError(
         conflict
-          ? `${(cause as Error).message}。请关闭后重新打开，读取最新角色并再次确认。`
+          ? `${(cause as Error).message}。请重新读取角色后再确认。`
           : (cause as Error).message,
       )
     } finally {
@@ -207,6 +227,17 @@ function ArchiveDialog({
           <p role="alert" className="rounded-lg bg-danger/5 px-3 py-2 text-sm text-danger">
             {error}
           </p>
+        )}
+        {conflicted && (
+          <button
+            type="button"
+            className="ui-btn self-start"
+            disabled={refreshing}
+            onClick={() => void reload()}
+          >
+            <Icon name="retry" size={14} />
+            {refreshing ? '读取中…' : '重新读取角色'}
+          </button>
         )}
       </div>
       <footer className="flex flex-none justify-end gap-2 border-t border-line px-5 py-3">

@@ -61,6 +61,27 @@ describe('资产库批量上传', () => {
       message: '只能放图片',
     })
   })
+  it('没有余量时说明是已达上限，而不是让用户「减少后再试」', async () => {
+    const upload = vi.fn()
+    const result = await uploadBatch([image('a.png')], 'image', upload, { capacity: 0 })
+    expect(result.failed).toBe(true)
+    expect(result.message).toContain('最多还能添加 0 张')
+    expect(result.message).toContain('已达到图片数量上限')
+    expect(result.message).toContain('请先移除一张已有图片再添加')
+    expect(upload).not.toHaveBeenCalled()
+  })
+  it('满额文案按类型用量词：视频说「一个已有视频」，不说「一张」', async () => {
+    const upload = vi.fn()
+    const video = new File(['video'], 'a.mp4', { type: 'video/mp4' })
+    const result = await uploadBatch([video], 'video', upload, { capacity: 0 })
+    expect(result.failed).toBe(true)
+    expect(result.message).toContain('已达到视频数量上限')
+    expect(result.message).toContain('最多还能添加 0 个视频')
+    expect(result.message).toContain('请先移除一个已有视频再添加')
+    expect(result.message).not.toContain('一张')
+    expect(upload).not.toHaveBeenCalled()
+  })
+
   it('取消不产生错误；单文件错误保留原说明，网络异常也可恢复', async () => {
     const upload = vi
       .fn()

@@ -95,11 +95,13 @@ export function LibraryThumbnail(props: ThumbnailProps) {
   useLayoutEffect(() => {
     const wanted = restore.current
     restore.current = false
-    if (wanted && document.activeElement === document.body)
-      (
-        root.current?.querySelector<HTMLButtonElement>('button[aria-pressed]:enabled') ??
-        root.current
-      )?.focus()
+    if (wanted && document.activeElement === document.body) {
+      // 自己判断可用，不用 :enabled 选择器：它依赖浏览器的伪类实现，测试环境里并不可靠。
+      const pressed = [
+        ...(root.current?.querySelectorAll<HTMLButtonElement>('button[aria-pressed]') ?? []),
+      ]
+      ;(pressed.find((button) => !button.disabled) ?? root.current)?.focus()
+    }
   }, [attempt])
   return (
     <div
@@ -132,6 +134,8 @@ function ThumbnailAttempt({
   onRetry,
 }: ThumbnailProps & { onRetry(button: HTMLButtonElement): void }) {
   const [failed, setFailed] = useState(false)
+  // 缩略图加载失败不代表素材不能用，按钮仍可选择；要说清楚，别让用户误删素材。
+  const hint = failed ? `${title ?? label}加载失败，仍可选用` : title
   const content = failed ? (
     <span
       role="img"
@@ -156,7 +160,7 @@ function ThumbnailAttempt({
         <button
           type="button"
           aria-label={label}
-          title={title ?? label}
+          title={hint ?? label}
           aria-pressed={!!selected}
           disabled={disabled || selected}
           onClick={onSelect}

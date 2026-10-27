@@ -198,6 +198,37 @@ describe('角色候选精确归档', () => {
     expect(f.server.library.get('local', f.item.id)?.coverAssetId).toBeNull()
   })
 
+  it('四类图保存后重新读取仍按分类保留，归档也不串槽位', async () => {
+    const f = await fixture()
+    const body = await f.server.assets.ingest(
+      'local',
+      Readable.from([solidPng(32, 24, [10, 20, 200])]),
+      { mime: 'image/png', name: 'body.png' },
+    )
+    const saved = f.server.library.update('local', f.item.id, {
+      images: [
+        { slot: 'full_body', assetId: body.id },
+        { slot: 'portrait', assetId: f.images[0]!.id },
+        { slot: 'face_grid', assetId: f.images[1]!.id },
+      ],
+    })!
+    // 重新读取相当于重开档案：分类必须原样还在。
+    const reopened = f.server.library.get('local', f.item.id)!
+    expect(reopened.images).toEqual(saved.images)
+
+    const response = await f.archive({
+      expected: characterImageRevision(reopened),
+      slot: 'character_3view',
+      cover: false,
+    })
+    expect(response.status).toBe(200)
+    expect(f.server.library.get('local', f.item.id)?.images).toEqual([
+      { slot: 'full_body', assetId: body.id },
+      { slot: 'portrait', assetId: f.images[0]!.id },
+      { slot: 'character_3view', assetId: f.images[1]!.id },
+    ])
+  })
+
   it.each(['plein/image', 'plein/image-edit', 'plein/image-process'])(
     '仅 %s 制作草稿也打包角色与封面，导入映射目标ID',
     async (type) => {

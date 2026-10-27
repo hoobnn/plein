@@ -25,6 +25,8 @@ const SLOT_ICONS: Record<string, IconName> = {
   face_grid: 'expression',
   character_3view: 'gridSplit',
 }
+/** 参考图满额时，被禁用的格子要说明原因，不能只把按钮变灰。 */
+const LIMIT_REASON = '参考图已达 24 张上限，先移除一张再添加'
 
 /** 四类形象放在一起审看；原始素材和尚未分类的参考保留在下方。 */
 export function CharacterAssets({
@@ -71,6 +73,10 @@ export function CharacterAssets({
   const count = slots.filter((s) => images.some((image) => image.slot === s.id)).length
   const [error, setError] = useState<string | null>(null)
   const used = images.map((image) => image.assetId)
+  const atLimit = images.length >= 24
+  /** 满额时空着的分类不能再加新图，但已有的仍可替换。 */
+  const blockedOf = (slot: string) =>
+    atLimit && !images.some((image) => image.slot === slot) ? LIMIT_REASON : null
   const change: ChangeImages = (update) =>
     onChange((current) => {
       const next = update(current)
@@ -101,6 +107,11 @@ export function CharacterAssets({
         </div>
         <span className="ui-chip shrink-0 tabular-nums">{count} / 4 已添加</span>
       </div>
+      {atLimit && (
+        <p role="status" className="text-xs text-ink-subtle">
+          参考图已达 24 张上限，先移除一张再添加新的分类。
+        </p>
+      )}
       <div className="lib-character-assets" aria-label="四类角色图片">
         {slots.map((slot) => (
           <CharacterAssetTile
@@ -110,9 +121,8 @@ export function CharacterAssets({
             media={media}
             selected={selected}
             used={used}
-            disabled={
-              busy || (images.length >= 24 && !images.some((image) => image.slot === slot.id))
-            }
+            blocked={blockedOf(slot.id)}
+            disabled={busy || blockedOf(slot.id) !== null}
             onBusyChange={onBusyChange}
             onSelect={onSelect}
             onAdd={(assetId) => assign(slot.id, assetId)}
@@ -227,7 +237,7 @@ export function CharacterAssets({
           }}
           onRemove={() => {}}
         />
-        {images.length >= 24 && <p className="text-xs text-ink-subtle">已达到 24 张参考图上限。</p>}
+        {atLimit && <p className="text-xs text-ink-subtle">已达到 24 张参考图上限。</p>}
         {error && (
           <p role="alert" className="text-xs text-danger">
             {error}
@@ -250,6 +260,7 @@ function CharacterAssetTile({
   onProduce,
   canProduce,
   disabled,
+  blocked,
   onBusyChange,
 }: {
   slot: LibrarySlot
@@ -263,6 +274,8 @@ function CharacterAssetTile({
   onProduce?(): void
   canProduce: boolean
   disabled: boolean
+  /** 被禁用时给用户看的原因；没有就不显示额外说明。 */
+  blocked?: string | null
   onBusyChange(busy: boolean): void
 }) {
   const input = useRef<HTMLInputElement>(null)
@@ -310,7 +323,7 @@ function CharacterAssetTile({
         aria-label={assetId ? `预览${slot.label}` : `添加${slot.label}`}
         aria-pressed={!!assetId && selected === assetId}
         disabled={busy || disabled}
-        title={slot.hint}
+        title={blocked ?? slot.hint}
         onClick={() => (assetId ? onSelect(assetId, slot.label) : input.current?.click())}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
@@ -386,6 +399,7 @@ function CharacterAssetTile({
           <button
             type="button"
             disabled={busy || disabled}
+            title={blocked ?? undefined}
             onClick={() => input.current?.click()}
             className="ui-btn ui-btn-quiet ui-btn-xs"
           >
