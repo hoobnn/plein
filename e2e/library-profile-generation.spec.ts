@@ -1,7 +1,7 @@
 import { expect, type Page, test } from '@playwright/test'
 import type { JobList, PreparedInput } from '../packages/protocol/src/runs'
 import { solidPng } from '../packages/providers/src/mock/media'
-import { clickElement, newProject, waitEngine, waitNode } from './canvas'
+import { clickElement, newProject, revealGenerator, waitEngine, waitNode, zoomTo } from './canvas'
 import { openLibraryPanel } from './library-ui'
 
 async function fixture(page: Page) {
@@ -166,12 +166,17 @@ test('资产库移动服饰并手动同步后，旧名引用生成使用新时�
     if (await edit.isVisible()) await edit.click()
     const ui = page.getByTestId('input-preview')
     await expect(ui).toHaveAttribute('aria-busy', 'false')
-    await ui.getByRole('button', { name: /实际输入/ }).click()
+    // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+    const actual = ui.getByRole('button', { name: /实际输入/ })
+    await revealGenerator(page, actual)
+    await actual.click()
     await expect(ui).toContainText('成年·校服')
     if (node === nodes.image)
       await expect(ui.locator(`img[src*="${assets[1]}"]`).first()).toBeVisible()
     else await expect(ui).toContainText('mock-male')
-    await page.getByRole('button', { name: '生成', exact: true }).click()
+    const generate = page.getByRole('button', { name: '生成', exact: true })
+    await revealGenerator(page, generate)
+    await generate.click()
     await waitNode(page, node)
     const jobs = (await (await page.request.get(`/api/canvases/${canvas}/jobs`)).json()) as JobList
     expect(
@@ -198,11 +203,17 @@ test('服饰改名保留旧引用，删除后的必需引用明确阻断，修�
     if (await expand.isVisible()) await expand.click()
     const input = page.getByTestId('input-preview')
     const toggle = input.getByRole('button', { name: /实际输入/ })
-    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+      // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+      await revealGenerator(page, toggle)
+      await toggle.click()
+    }
     return { generator, input }
   }
   let ui = await openInput()
-  await ui.generator.getByRole('button', { name: '生成', exact: true }).click()
+  const run = ui.generator.getByRole('button', { name: '生成', exact: true })
+  await revealGenerator(page, run)
+  await run.click()
   await waitNode(page, node)
   const original = await page.evaluate(
     (id) => window.__plein.engine.doc.get(id)!.results![0]!,
@@ -249,7 +260,9 @@ test('服饰改名保留旧引用，删除后的必需引用明确阻断，修�
   await expect(ui.generator.getByRole('button', { name: '重新生成', exact: true })).toBeEnabled()
   const fixed = await f.preview(node)
   expect(fixed.inputs.references?.map((v) => v.assetId)).toEqual([f.assets[0]])
-  await ui.generator.getByRole('button', { name: '重新生成', exact: true }).click()
+  const again = ui.generator.getByRole('button', { name: '重新生成', exact: true })
+  await revealGenerator(page, again)
+  await again.click()
   await expect
     .poll(() => page.evaluate((id) => window.__plein.engine.doc.get(id)!.results!.length, node))
     .toBe(2)
@@ -261,8 +274,9 @@ test('服饰改名保留旧引用，删除后的必需引用明确阻断，修�
   ).toEqual([f.assets[0]])
   const adopted = () => page.evaluate((id) => window.__plein.engine.doc.get(id)!.adopted, node)
   const current = await adopted()
-  // 编辑器固定在卡片下方，不再有收起模式；候选直接在卡片上翻，
-  // 翻到的按钮要够得着。
+  // 0.6.0 起编辑器固定展开在卡片下方，不再有「收起编辑器」；
+  // 候选直接在卡片上翻，把卡片移进窗口再点它，翻到的按钮要够得着。
+  await zoomTo(page, [node])
   const next = page.locator('.plein-node').getByRole('button', { name: '下一个结果', exact: true })
   await expect(next).toBeInViewport({ ratio: 1 })
   await page.screenshot({ path: test.info().outputPath('collapsed-editor-candidate.png') })
@@ -294,7 +308,11 @@ test('服饰与次音色同时跨时期冲突时逐项说明，实际图片与�
       .fill(`@${f.name}/成年/旧校服/生病 走到窗边。`)
     const input = page.getByTestId('input-preview')
     const toggle = input.getByRole('button', { name: /实际输入/ })
-    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+      // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+      await revealGenerator(page, toggle)
+      await toggle.click()
+    }
     await expect(input).toContainText('已忽略服饰「校服」')
     await expect(input).toContainText('已忽略次音色「生病」')
     await expect(input).toContainText('与「成年」时期不一致')
@@ -315,7 +333,9 @@ test('服饰与次音色同时跨时期冲突时逐项说明，实际图片与�
     if (node === f.nodes.image)
       expect(prepared.inputs.references?.map((v) => v.assetId)).toEqual([f.assets[1]])
     else expect(prepared.voice?.voiceId).toBe('mock-male')
-    await generator.getByRole('button', { name: '生成', exact: true }).click()
+    const generate = generator.getByRole('button', { name: '生成', exact: true })
+    await revealGenerator(page, generate)
+    await generate.click()
     await waitNode(page, node)
     const jobs = (await (
       await page.request.get(`/api/canvases/${f.canvas}/jobs`)
