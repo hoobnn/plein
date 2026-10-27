@@ -70,7 +70,6 @@ const log = (event) => appendFileSync(process.env.E2E_CONTRACT_TRACE, JSON.strin
   mock: process.env.PLEIN_MOCK_PROVIDER, agent: process.env.PLEIN_AGENT,
   custom: process.env.E2E_CONTRACT_CUSTOM }) + '\\n');
 writeFileSync(directory + '/server-open', 'open');
-log('started');
 if (process.env.E2E_CONTRACT_MODE === 'start-failure') process.exit(7);
 const server = createServer((request, response) => { response.writeHead(200); response.end('ok'); });
 const listen = () => server.listen(Number(process.env.PLEIN_PORT), '127.0.0.1', () =>
@@ -89,6 +88,8 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
   server.close(() => {});
   setTimeout(() => { log('stopped'); process.exit(0); }, 100);
 });
+// 信号处理安装完成后才宣告启动，调用方此时可以安全发起关停。
+log('started');
 `,
   )
   return { backend, descendant }
