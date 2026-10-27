@@ -1,8 +1,28 @@
 import { expect, type Page, test } from '@playwright/test'
 import { solidPng } from '../packages/providers/src/mock/media'
-import { newProject, waitEngine, zoomTo } from './canvas'
+import { newProject, revealGenerator, waitEngine, zoomTo } from './canvas'
 
 type Engine = import('../packages/canvas-core/src/engine').Engine
+
+/**
+ * 打开重绘区域编辑器。
+ * 节点编辑器固定 840px 宽（0.6.0 契约），窄窗口里右侧的文字按钮会被裁掉，
+ * 够不到；左侧的缩略图按钮做的是同一件事，就用它打开。
+ */
+async function openMaskEditor(page: Page, mode: 'mask' | 'instance') {
+  const field = page.getByTestId('mask-field')
+  const text = field.getByRole('button', {
+    name: mode === 'mask' ? '画区域' : '重画区域',
+    exact: true,
+  })
+  const box = await text.last().boundingBox()
+  if (box && box.x + box.width <= (page.viewportSize()?.width ?? 0)) {
+    await text.last().click()
+    return
+  }
+  await field.locator('button[title="重画区域"]').first().click()
+}
+
 async function fixture(page: Page) {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
@@ -74,11 +94,9 @@ async function fixture(page: Page) {
   await expect
     .poll(() => peer.evaluate((id) => !!window.__plein.engine.doc.get(id)?.params?.mask, node))
     .toBe(true)
-  await page
-    .getByTestId('mask-field')
-    .getByRole('button', { name: '重画区域', exact: true })
-    .last()
-    .click()
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
+  await openMaskEditor(page, 'instance')
   await expect(canvas).toBeVisible()
   const original = await pixels()
   await draw(0.6, 0.85)
@@ -172,11 +190,9 @@ for (const mode of ['mask', 'instance'] as const) {
         expect(
           await page.evaluate((id) => window.__plein.engine.doc.get(id)!.params!.mask, f.node),
         ).toEqual(mode === 'mask' ? null : f.mask)
-        await page
-          .getByTestId('mask-field')
-          .getByRole('button', { name: mode === 'mask' ? '画区域' : '重画区域', exact: true })
-          .last()
-          .click()
+        // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+        await revealGenerator(page)
+        await openMaskEditor(page, mode)
         await expect(f.canvas).toBeVisible()
         // 在当前实例和远端区域上重新编辑，保存应正常完成。
         const box = (await f.canvas.boundingBox())!
