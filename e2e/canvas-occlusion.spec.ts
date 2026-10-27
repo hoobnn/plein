@@ -172,26 +172,32 @@ test('窗口缩窄后生成器仍贴在卡片下方，不被窗口和侧栏裁�
   await clickElement(page, id)
   await expect(page.getByTestId('generator')).toBeVisible()
   await page.setViewportSize({ width: 800, height: 900 })
-  // 编辑器固定 840px 宽、贴在卡片下方，不随窗口变窄；宽度超出窗口时由画布平移带出来。
+  // 编辑器固定在卡片下方；窗口不够宽时按可用宽度收，整块留在可见画布里，
+  // 右边的关闭按钮和底部的生成按钮都够得着。
   const editor = page.getByTestId('node-editor')
-  await expect
-    .poll(async () => Math.round((await editor.boundingBox())!.width), { timeout: 3000 })
-    .toBe(840)
   await expect
     .poll(
       async () => {
         const box = (await editor.boundingBox())!
-        const anchor = await page.evaluate((id) => {
-          const engine = window.__plein.engine
-          const rect = engine.doc.worldRect(id)
-          const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
-          return br.y + 12
-        }, id)
-        return Math.abs(box.y - anchor)
+        const inset = await page.evaluate(() => window.__plein.engine.camera.insets.left)
+        return Math.round(box.width) === Math.max(320, Math.min(840, 800 - inset))
       },
       { timeout: 3000 },
     )
-    .toBeLessThan(1)
+    .toBe(true)
+  await expect
+    .poll(
+      async () => {
+        const box = (await editor.boundingBox())!
+        const visible = await page.evaluate(() => {
+          const engine = window.__plein.engine
+          return { left: engine.camera.insets.left, right: innerWidth - engine.camera.insets.right }
+        })
+        return box.x >= visible.left - 1 && box.x + box.width <= visible.right + 1
+      },
+      { timeout: 3000 },
+    )
+    .toBe(true)
 })
 
 test('创作引导不会盖住所选节点的生成器和按钮', async ({ page }) => {

@@ -62,6 +62,9 @@ const EDITOR_W = 840
 const EDITOR_H = 440
 /** 顶栏占的高度；编辑器往上收时不能压到它。 */
 const TOP_RESERVED = 64
+/** 可见画布再窄，编辑器也要留得下这些控件。 */
+const MIN_EDITOR_W = 320
+const MIN_EDITOR_H = 180
 
 /** 损坏的历史值仅在显示时按空表单呈现；用户明确修改或恢复默认才写回。 */
 function optionRecord(value: unknown): Record<string, unknown> {
@@ -121,43 +124,25 @@ function NodeBelow({
     if (!rect) return null
     const tl = engine.worldToClient(rect.x, rect.y)
     const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
-    const width = 840
-    const top = br.y + 12
+    // 编辑器固定在卡片下方、不翻到上方；整块要留在可见画布里：
+    // 横向让开侧栏、纵向避开顶栏和底栏，窗口不够大就按可用空间收，
+    // 内容在面板里滚动。这样右边的关闭按钮、结果操作和底部的生成按钮始终够得着。
+    const left = engine.camera.insets.left
+    const right = window.innerWidth - engine.camera.insets.right
+    const bottom = window.innerHeight - canvasBottomSpace(window.innerWidth, left).generator
+    const width = Math.max(MIN_EDITOR_W, Math.min(EDITOR_W, right - left))
+    const height = Math.max(MIN_EDITOR_H, Math.min(EDITOR_H, bottom - TOP_RESERVED))
+    const top = Math.min(br.y + 12, Math.max(TOP_RESERVED, bottom - height))
     return {
-      left: (tl.x + br.x - width) / 2,
+      left: Math.max(left, Math.min((tl.x + br.x - width) / 2, right - width)),
       top,
       width,
-      maxHeight: 480,
+      height,
+      maxHeight: height,
     }
   }
   const ref = useFollow<HTMLElement>(engine, place)
   const style = place()
-  // 编辑器固定在卡片下方、固定 440px 高，卡片靠下时它会落到窗口外，
-  // 底部的生成按钮就点不到。开出来时把相机挪一点，让编辑器整个落在窗口里。
-  const revealed = useRef(false)
-  useEffect(() => {
-    if (revealed.current) return
-    revealed.current = true
-    const rect = engine.doc.worldRect(nodeId)
-    if (!rect) return
-    const tl = engine.worldToClient(rect.x, rect.y)
-    const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
-    const limit =
-      window.innerHeight - canvasBottomSpace(window.innerWidth, engine.camera.insets.left).generator
-    const panelBottom = br.y + 12 + EDITOR_H
-    // 挪到底栏之上就行；挪动量不能把卡片本身顶出窗口
-    const down = Math.min(panelBottom - limit, br.y - TOP_RESERVED)
-    if (down > 0) engine.camera.panBy(0, down)
-    const left = (tl.x + br.x - EDITOR_W) / 2
-    const right = window.innerWidth - engine.camera.insets.right
-    const dx =
-      left < engine.camera.insets.left
-        ? engine.camera.insets.left - left
-        : left + EDITOR_W > right
-          ? right - (left + EDITOR_W)
-          : 0
-    if (dx !== 0) engine.camera.panBy(dx, 0)
-  }, [engine, nodeId])
   if (!style) return null
   return (
     <aside
@@ -166,7 +151,7 @@ function NodeBelow({
       data-testid="node-editor"
       data-placement="below"
       className="plein-node-editor pointer-events-auto fixed z-20 flex min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface"
-      style={{ ...style, height: EDITOR_H }}
+      style={style}
     >
       <button
         type="button"

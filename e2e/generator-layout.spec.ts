@@ -41,6 +41,10 @@ async function placeCard(page: import('@playwright/test').Page, id: string) {
   }, id)
 }
 
+/** 左侧栏占掉的宽度；编辑器要避开它 */
+const sidebarInset = (page: import('@playwright/test').Page) =>
+  page.evaluate(() => window.__plein.engine.camera.insets.left)
+
 async function expectBelow(page: import('@playwright/test').Page, id: string) {
   await expect
     .poll(async () =>
@@ -50,10 +54,12 @@ async function expectBelow(page: import('@playwright/test').Page, id: string) {
         const tl = engine.worldToClient(rect.x, rect.y)
         const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
         const panel = document.querySelector('[data-testid="node-editor"]')!.getBoundingClientRect()
-        return Math.max(
-          Math.abs(panel.top - br.y - 12),
-          Math.abs(panel.x + panel.width / 2 - (tl.x + br.x) / 2),
-        )
+        // 编辑器固定在卡片下方；横向留在可见画布里，窗口不够宽就按可用宽度收
+        const left = engine.camera.insets.left
+        const right = innerWidth - engine.camera.insets.right
+        const width = Math.max(320, Math.min(840, right - left))
+        const expected = Math.max(left, Math.min((tl.x + br.x - width) / 2, right - width))
+        return Math.max(Math.abs(panel.top - br.y - 12), Math.abs(panel.x - expected))
       }, id),
     )
     .toBeLessThan(1)
@@ -100,7 +106,6 @@ for (const type of ['plein/text', 'plein/image', 'plein/video', 'plein/character
     await expectBelow(page, ids[1]!)
     await page.evaluate((id) => window.__plein.engine.selection.set([id]), ids[0]!)
     await expect(prompt).toHaveValue('节点内容保留 🌧️')
-    const beforeResize = await editor.boundingBox()
     await page.setViewportSize({ width: 390, height: 800 })
     await placeCard(page, ids[0]!)
     await expectBelow(page, ids[0]!)
@@ -108,8 +113,10 @@ for (const type of ['plein/text', 'plein/image', 'plein/video', 'plein/character
     await expect(panel).toHaveAttribute('data-compact', 'false')
     await expect(prompt).toHaveValue('节点内容保留 🌧️')
     const box = await editor.boundingBox()
-    expect(box!.width).toBe(840)
-    expect(Math.abs(box!.height - beforeResize!.height)).toBeLessThan(1)
+    // 窗口够宽时仍是 840px；不够宽时收到可用宽度，右边的操作才够得着
+    expect(box!.width).toBe(Math.max(320, Math.min(840, 390 - (await sidebarInset(page)))))
+    expect(box!.height).toBeLessThanOrEqual(440)
+    expect(box!.height).toBeGreaterThanOrEqual(180)
     await page.evaluate(() =>
       (
         window.__plein.engine as Window['__plein']['engine'] & {
@@ -119,8 +126,9 @@ for (const type of ['plein/text', 'plein/image', 'plein/video', 'plein/character
     )
     await expectBelow(page, ids[0]!)
     const nearEdge = await editor.boundingBox()
-    expect(nearEdge!.width).toBe(840)
-    expect(Math.abs(nearEdge!.height - beforeResize!.height)).toBeLessThan(1)
+    expect(nearEdge!.width).toBe(Math.max(320, Math.min(840, 390 - (await sidebarInset(page)))))
+    expect(nearEdge!.height).toBeLessThanOrEqual(440)
+    expect(nearEdge!.height).toBeGreaterThanOrEqual(180)
     await page.setViewportSize({ width: 1440, height: 900 })
     await placeCard(page, ids[0]!)
     await editor.getByRole('button', { name: '关闭节点编辑器', exact: true }).click()
