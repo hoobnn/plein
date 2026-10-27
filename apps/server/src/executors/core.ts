@@ -348,7 +348,11 @@ const sequence = defineExecutor(sequenceNode, async (ctx) => {
         !Number.isFinite(info.duration) ||
         !info.duration ||
         row.in >= info.videoDuration ||
-        (row.out !== undefined && (row.out <= row.in || row.out > info.videoDuration + 0.001))
+        // 固定段的时长是约定好的，出点越过素材结尾说明这段坏了；
+        // 跟随来源的实例在素材换成更短的版本时按素材结尾收，和预览一致。
+        (row.out !== undefined &&
+          (row.out <= row.in ||
+            (row.segment !== undefined && row.out > info.videoDuration + 0.001)))
       )
         throw new ProviderError(
           'invalid_input',
