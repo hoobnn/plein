@@ -347,6 +347,8 @@
 .plein-generator-toolbar {
   display: flex;
   align-items: center;
+  /* 窗口窄时一行放不下模型、参数和生成：换行排，别把控件挤出面板 */
+  flex-wrap: wrap;
   gap: 8px;
 }
 .plein-generator-models,
