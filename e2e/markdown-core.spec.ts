@@ -228,7 +228,19 @@ test('便签的超宽代码块可用滚轮横向查看，不移动画布或节�
     }
   }, f.id)
   await region.focus()
+  // 等方向键的原生滚动结束，再清零并发送滚轮，避免两次输入落在同一段动画里。
+  await region.evaluate((el) => {
+    el.dataset.scrollSettled = 'false'
+    el.addEventListener(
+      'scrollend',
+      () => {
+        el.dataset.scrollSettled = 'true'
+      },
+      { once: true },
+    )
+  })
   await page.keyboard.press('ArrowRight')
+  await expect(region).toHaveAttribute('data-scroll-settled', 'true')
   await expect.poll(() => region.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0)
   await region.evaluate((el) => {
     el.scrollLeft = 0
