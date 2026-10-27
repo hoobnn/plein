@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 
 test('连接恢复前目标画布已被删除，恢复后回首页且不创建替代内容', async ({ page }) => {
@@ -34,7 +34,8 @@ test('连接恢复前目标画布已被删除，恢复后回首页且不创建�
 })
 
 test('正在打开的画布被删除后返回首页，浏览器后退不重新连接已删除画布', async ({ page }) => {
-  await newProject(page)
+  // 先过首页：浏览器历史里要有首页这一条，后退才回得到首页
+  await newProject(page, { visitHome: true })
   const id = new URL(page.url()).hash.split('/').at(-1)!
   let connections = 0
   page.on('websocket', (socket) => {

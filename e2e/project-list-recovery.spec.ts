@@ -1,11 +1,11 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 
 for (const operation of ['rename', 'delete'] as const) {
   test(`${operation === 'rename' ? '改名' : '删除'}已成功但列表刷新失败时保留已确认结果，重试列表不重复写入`, async ({
     page,
   }) => {
-    await newProject(page)
+    await newProject(page, { visitHome: true })
     const canvasId = decodeURIComponent(page.url().split('#/c/')[1]!)
     const canvas = await (await page.request.get(`/api/canvases/${canvasId}`)).json()
     const projectId = canvas.projectId as string
@@ -150,7 +150,7 @@ test('首次加载项目失败可在当前页面重试，等待期间禁用重�
 })
 
 test('画布页改名后返回首页，列表刷新失败也显示已保存的项目名', async ({ page }) => {
-  await newProject(page)
+  await newProject(page, { visitHome: true })
   const canvasId = decodeURIComponent(page.url().split('#/c/')[1]!)
   const canvas = await (await page.request.get(`/api/canvases/${canvasId}`)).json()
   let writes = 0
@@ -178,7 +178,7 @@ for (const operation of ['rename', 'delete'] as const) {
   test(`${operation === 'rename' ? '改名' : '删除'}期间迟到的旧列表不能恢复旧项目数据`, async ({
     page,
   }) => {
-    await newProject(page)
+    await newProject(page, { visitHome: true })
     const canvasId = decodeURIComponent(page.url().split('#/c/')[1]!)
     const canvas = await (await page.request.get(`/api/canvases/${canvasId}`)).json()
     const snapshot = await (await page.request.get('/api/projects')).json()

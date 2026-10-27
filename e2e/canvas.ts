@@ -112,13 +112,38 @@ export async function waitEngine(page: Page) {
   await page.waitForFunction(() => !!window.__plein)
 }
 
-/** 从首页新建一个项目，进到它的第一张画布 */
-export async function newProject(page: Page) {
-  await page.goto('/')
-  await page.getByRole('button', { name: '新建项目', exact: true }).click()
-  await expect(page).toHaveURL(/#\/c\//)
+/** 新建项目的可选行为 */
+export interface NewProjectOptions {
+  /**
+   * 先打开首页再进画布。
+   *
+   * 首页会拉一次项目列表并缓存（查询层 staleTime 10s）。少数用例要验证
+   * 「列表刷新失败时仍显示旧数据」这类行为，依赖这份已经预热的缓存；
+   * 默认不走首页，测试的就是刷新本身。
+   */
+  visitHome?: boolean
+}
+
+/**
+ * 新建一个项目并进到它的第一张画布。
+ *
+ * 走接口建项目，不点首页的「新建项目」按钮：绝大多数用例要的是「有一张空画布可用」，
+ * 不是首页那个按钮本身（测按钮的用例自己点）。接口建项目省掉首页渲染和
+ * 「首页卡片放大成画布」的 View Transition，每条用例都能省下几百毫秒。
+ */
+export async function newProject(page: Page, options: NewProjectOptions = {}) {
+  const project = await page.request.post('/api/projects', { data: {} })
+  expect(project.status(), await project.text()).toBe(201)
+  const { lastCanvasId } = (await project.json()) as { lastCanvasId: string | null }
+  expect(lastCanvasId, '新建项目应同时建好第一张画布').toBeTruthy()
+  if (options.visitHome) {
+    // 首页拉一次项目列表，把列表缓存预热起来
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: '我的项目' })).toBeVisible()
+  }
+  await page.goto(`/#/c/${encodeURIComponent(lastCanvasId!)}`)
   await waitEngine(page)
-  // 首页卡片放大成画布走 View Transition，过渡期间点击落在过渡层上、打不到画布
+  // 画布元素就位前不接受点击，等它真的渲染出来
   await page.waitForFunction(() => {
     const at = document.elementFromPoint(innerWidth / 2, innerHeight / 2)
     return at?.tagName === 'CANVAS' || !!at?.closest('[aria-label="选择创作起点"]')
