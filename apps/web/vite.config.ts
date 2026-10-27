@@ -12,6 +12,7 @@ const cssomEntry = createRequire(sdkRequire.resolve('linkedom')).resolve('@acemi
 export default defineConfig({
   resolve: { alias: { '@acemir/cssom': cssomEntry } },
   plugins: lazyPlugins(() => [react(), tailwindcss()]),
+  test: { setupFiles: ['./src/testing/setup.ts'] },
   // JASSUB 用 new URL(..., import.meta.url) 找自己的 worker 和 wasm，预构建会打乱相对路径
   optimizeDeps: {
     exclude: ['jassub'],

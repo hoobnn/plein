@@ -86,6 +86,7 @@ export default defineConfig({
         '**/*.d.ts',
         '**/*.gen.ts',
         '**/testing.ts',
+        '**/testing/**',
         // Child-process test drivers are terminated with SIGKILL before V8 can flush coverage.
         'apps/server/src/runs/fixtures/submission-crash.child.ts',
         'apps/server/src/runs/fixtures/output-spool-crash.child.ts',
