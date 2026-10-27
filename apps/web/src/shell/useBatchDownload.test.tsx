@@ -3,7 +3,7 @@ import type { Engine } from '@plein/canvas-core'
 import { expect, it, vi } from 'vite-plus/test'
 import { useCanvas } from '../stores/canvas'
 import { mockFetch } from '../testing/fetch'
-import { act, renderApp, screen } from '../testing/render'
+import { act, renderApp, screen, waitFor } from '../testing/render'
 import { useBatchDownload } from './useBatchDownload'
 import { shellFixture } from './testing'
 
@@ -141,6 +141,40 @@ it.each(['close', 'canvas'] as const)(
     expect(f.state().total).toBe(0)
   },
 )
+it('取消后通知里的「继续下载」接着下载未交出的原文件，已交出的不重复读取', async () => {
+  const f = setup()
+  let held = true
+  const fetch = mockFetch((request) =>
+    request.url.endsWith('/b') && held ? new Promise<Response>(() => {}) : bytes(request),
+  )
+  await f.user.click(screen.getByRole('button', { name: '下载' }))
+  await act(() => vi.advanceTimersByTimeAsync(250))
+  expect(f.files).toEqual(['原图片-1.png'])
+
+  // 取消后要给用户一个「继续下载」的入口，未交出的那份留在队列里
+  await f.user.click(screen.getByRole('button', { name: '取消' }))
+  await waitFor(() => expect(useCanvas.getState().noticeAction?.label).toBe('继续下载'))
+  expect(useCanvas.getState().notice).toContain('已取消后续下载')
+  expect(f.state()).toMatchObject({ running: false, cancelled: true, remaining: [items[1]] })
+
+  held = false
+  await act(async () => useCanvas.getState().noticeAction!.run())
+  await waitFor(() => expect(f.files).toEqual(['原图片-1.png', '原音频-2.wav']))
+  expect(
+    fetch.mock.calls.map(
+      ([request]) =>
+        new URL(
+          typeof request === 'string'
+            ? request
+            : request instanceof URL
+              ? request.href
+              : request.url,
+          location.href,
+        ).pathname,
+    ),
+  ).toEqual(['/api/assets/a', '/api/assets/b', '/api/assets/b'])
+  await act(() => vi.advanceTimersByTimeAsync(1000))
+})
 it('关闭失败面板清理其通知与重试动作，不清理其他来源的新通知', async () => {
   const f = setup()
   mockFetch(() => Response.json({ error: '失败' }, { status: 503 }))
