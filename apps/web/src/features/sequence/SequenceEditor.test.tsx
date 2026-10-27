@@ -737,3 +737,52 @@ it('连续新增字幕、修改与重建各自可撤销，空时间草稿失焦�
   expect(start.value).toBe('0')
   expect(f.params().subtitleTrack).toEqual(before)
 })
+
+it('时间线全局 Space 播放暂停，Home 和 End 定位且不修改剪辑', async () => {
+  vi.useFakeTimers()
+  const f = setup()
+  const timeline = screen.getByRole('region', { name: '时间线' })
+  const time = screen.getByTestId('preview').querySelector('.seq-time')!
+  const original = structuredClone(f.params())
+  act(() => timeline.focus())
+  await f.user.keyboard(' ')
+  expect(screen.getByRole('button', { name: '暂停' })).toBeTruthy()
+  await f.user.keyboard(' ')
+  expect(screen.getByRole('button', { name: '播放' })).toBeTruthy()
+  await f.user.keyboard('{End}')
+  expect(time.textContent).toBe('0:03.0 / 0:03.0')
+  await f.user.keyboard('{Home}')
+  expect(time.textContent).toBe('0:00.0 / 0:03.0')
+  expect(document.activeElement).toBe(timeline)
+  expect(f.params()).toEqual(original)
+})
+
+it('文本框 Space 保留文本输入，缩放 range 的 Arrow Home End 不控制全局播放头', async () => {
+  vi.useFakeTimers()
+  const f = await videoSetup()
+  const timeline = screen.getByRole('region', { name: '时间线' })
+  const time = screen.getByTestId('preview').querySelector('.seq-time')!
+  act(() => timeline.focus())
+  await f.user.keyboard('{Shift>}{ArrowRight}{/Shift}')
+  expect(time.textContent).toBe('0:01.0 / 0:01.8')
+  const subtitle = screen.getByRole<HTMLInputElement>('textbox', { name: '字幕' })
+  await f.user.click(subtitle)
+  await f.user.keyboard('{End} ')
+  expect(subtitle.value).toBe('初始字幕 ')
+  expect(clip(f).subtitle).toBe('初始字幕')
+  expect(screen.getByRole('button', { name: '播放' })).toBeTruthy()
+  expect(time.textContent).toBe('0:01.0 / 0:01.8')
+  act(() => timeline.focus())
+  await f.user.keyboard(' ')
+  expect(screen.getByRole('button', { name: '暂停' })).toBeTruthy()
+  const zoom = screen.getByRole<HTMLInputElement>('slider', { name: '缩放' })
+  expect(zoom.type).toBe('range')
+  act(() => zoom.focus())
+  for (const key of ['ArrowLeft', 'ArrowRight', 'Home', 'End']) {
+    // DOM 层验证事件仍可交给原生range，不声称happy-dom实现浏览器滑杆步进。
+    expect(fireEvent.keyDown(zoom, { key })).toBe(true)
+    expect(time.textContent).toBe('0:01.0 / 0:01.8')
+    expect(screen.getByRole('button', { name: '暂停' })).toBeTruthy()
+  }
+  expect(document.activeElement).toBe(zoom)
+})
