@@ -64,7 +64,17 @@ export function Modal({
     <Dialog.Root
       open={!closing}
       onOpenChange={(open, details) => {
-        const owner = escapeOwners.current.get(details.event)
+        const event = details.event
+        if (
+          !open &&
+          details.reason === 'escape-key' &&
+          (event.defaultPrevented ||
+            (event instanceof KeyboardEvent && (event.isComposing || event.keyCode === 229)))
+        ) {
+          details.cancel()
+          return
+        }
+        const owner = escapeOwners.current.get(event)
         if (!open && details.reason === 'escape-key' && owner && owner !== popup.current) {
           details.cancel()
           details.allowPropagation()

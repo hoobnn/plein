@@ -28,6 +28,7 @@ export function TooltipHost() {
     let visible = false
     let lastHidden = 0
     let observer: MutationObserver | null = null
+    const automaticLabels = new WeakMap<HTMLElement, string>()
 
     const restore = () => {
       // 回调前退出悬停时，也要尊重 React 已经清空或移除标题的决定。
@@ -41,6 +42,11 @@ export function TooltipHost() {
         if (!changed && target.getAttribute('title') === '')
           target.setAttribute('title', target.dataset.tip)
         delete target.dataset.tip
+      }
+      if (target && automaticLabels.has(target)) {
+        if (target.getAttribute('aria-label') === automaticLabels.get(target))
+          target.removeAttribute('aria-label')
+        automaticLabels.delete(target)
       }
       target = null
     }
@@ -81,8 +87,13 @@ export function TooltipHost() {
       el.dataset.tip = el.getAttribute('title') ?? ''
       el.setAttribute('title', '')
       // 图标按钮常只靠 title 说明用途，移走后补上无障碍名称
-      if (!el.hasAttribute('aria-label') && !el.textContent?.trim())
+      if (
+        (!el.hasAttribute('aria-label') && !el.textContent?.trim()) ||
+        automaticLabels.get(el) === el.getAttribute('aria-label')
+      ) {
         el.setAttribute('aria-label', text)
+        automaticLabels.set(el, text)
+      }
       const show = () => {
         const latest = el.dataset.tip?.trim()
         if (target === el && el.isConnected && latest) {
@@ -105,6 +116,10 @@ export function TooltipHost() {
           delete el.dataset.tip
           hide()
           return
+        }
+        if (automaticLabels.has(el) && el.getAttribute('aria-label') === automaticLabels.get(el)) {
+          el.setAttribute('aria-label', latest.trim())
+          automaticLabels.set(el, latest.trim())
         }
         el.dataset.tip = latest
         // 不观察自己写入的空占位，后续 React 的空值／移除才能被区分出来。

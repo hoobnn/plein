@@ -292,7 +292,7 @@ export function AddMenu({
             setActive(0)
           }}
           onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return
+            if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return
             if (e.key === 'ArrowDown') {
               e.preventDefault()
               setActive((a) => Math.max(0, Math.min(items.length - 1, a + 1)))
