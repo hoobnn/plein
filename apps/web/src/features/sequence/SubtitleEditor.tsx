@@ -10,7 +10,7 @@ import { findNode } from '../../canvas/nodes'
 import { useCatalog } from '../../stores/catalog'
 import { ModelPicker } from '../generator/ModelPicker'
 import type { RecoverJobOptions, SubtitleRecognitionInfo } from '@plein/protocol'
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 
 /** 字幕编辑的是保存到文档的同一条轨；隐藏不删除，方便逐句恢复。 */
 export function SubtitleEditor({
@@ -43,6 +43,20 @@ export function SubtitleEditor({
   const node = findNode(catalog, sequenceNode.type)
   const track = params.subtitleTrack
   const stale = subtitleTrackStale(params, rows)
+  // 本地草稿：字幕轨过期时编辑写不进文档，用户刚输入的文字不能被回滚冲掉
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  useEffect(() => {
+    // 文档里的字幕真的变了才丢掉草稿；被拒绝的编辑要留着
+    setDrafts((old) => {
+      if (!Object.keys(old).length) return old
+      const next: Record<string, string> = {}
+      for (const [id, text] of Object.entries(old)) {
+        const cue = track?.cues.find((q) => q.id === id)
+        if (cue && cue.text !== text) next[id] = text
+      }
+      return Object.keys(next).length ? next : old
+    })
+  }, [track])
   const unmappedOccurrences = new Map<string, number>()
   const unmapped = (track?.unmappedCues ?? []).map((item) => {
     const value = JSON.stringify(item)
@@ -156,7 +170,8 @@ export function SubtitleEditor({
             <section key={source} className="seq-section">
               <h3 className="ui-section-title">镜头 {index + 1}</h3>
               {cues.map((q, i) => {
-                const empty = !q.hidden && !q.text.trim()
+                const text = drafts[q.id] ?? q.text
+                const empty = !q.hidden && !text.trim()
                 const invalidTime = !q.hidden && q.end <= q.start
                 const textError = `${validationId}-${encodeURIComponent(q.id)}-text`
                 const timeError = `${validationId}-${encodeURIComponent(q.id)}-time`
@@ -176,10 +191,13 @@ export function SubtitleEditor({
                     <textarea
                       aria-label={`镜头 ${index + 1} 字幕 ${i + 1} 文本`}
                       className="ui-input w-full"
-                      value={q.text}
+                      value={drafts[q.id] ?? q.text}
                       aria-invalid={empty || undefined}
                       aria-describedby={empty ? textError : undefined}
-                      onChange={(e) => patch(q.id, { text: e.target.value })}
+                      onChange={(e) => {
+                        setDrafts((old) => ({ ...old, [q.id]: e.target.value }))
+                        patch(q.id, { text: e.target.value })
+                      }}
                     />
                     {empty && (
                       <p id={textError} className="text-xs text-danger">

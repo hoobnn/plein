@@ -344,6 +344,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const [subtitleRecovery, setSubtitleRecovery] = useState<SubtitleRecognitionInfo | null>(null)
   const subtitleStateRevision = useRef(0)
   const subtitleRequest = useRef<object | null>(null)
+  /** 用户动过字幕的次数：识别等结果回来时用它判断编辑有没有被顶掉 */
+  const subtitleEditRevision = useRef(0)
   // 在时间线上点了镜头就切回镜头设置
   const select = (key: string | undefined) => {
     setSelected(key)
@@ -724,6 +726,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   }
   const editSubtitles = (track: SequenceSubtitleTrack) => {
     if (!writable()) return
+    // 用户动过字幕就算改过：哪怕这次编辑因为字幕轨过期没写进文档，
+    // 等待中的识别结果也不能把用户刚输入的文字顶掉。
+    subtitleEditRevision.current++
     const latest = readSequence(engine, id)
     if (JSON.stringify(latest.params.subtitleTrack) !== JSON.stringify(params.subtitleTrack)) {
       setSubtitleError('字幕轨已由其他操作更新，本次未覆盖，请重新核对')
@@ -752,6 +757,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     const snapshot = { ...params, asrTiming: true }
     const inputKey = subtitleInputKey(snapshot, read.rows)
     const originalTrack = JSON.stringify(params.subtitleTrack)
+    const editRevision = subtitleEditRevision.current
     const request = beginSubtitleRequest()
     if (!request) return
     subtitleStateRevision.current++
@@ -766,7 +772,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         !writable() ||
         latest.params.asrTiming !== params.asrTiming ||
         subtitleInputKey({ ...latest.params, asrTiming: true }, latest.rows) !== inputKey ||
-        JSON.stringify(latest.params.subtitleTrack) !== originalTrack
+        JSON.stringify(latest.params.subtitleTrack) !== originalTrack ||
+        // 等待期间用户动过字幕：结果留着，但不能把用户刚输入的内容顶掉
+        subtitleEditRevision.current !== editRevision
       ) {
         setSubtitleError(
           '识别期间素材或字幕已修改，本次结果已缓存，未覆盖编辑；请按当前内容重新识别（相同音频不重复提交）',
@@ -1664,14 +1672,21 @@ function ClipSettings({
       .filter(Boolean)
       .join(' / ') || undefined
   const trimmed = length !== undefined && full !== undefined && Math.abs(length - full) > 0.01
-  const [trimError, setTrimError] = useState<string | null>(null)
+  // 修剪出错时说清是哪个点，并把它显示在对应输入框下面：
+  // 提示在面板底部时用户看不到，等于没说。
+  const [trimError, setTrimError] = useState<{ field: 'in' | 'out'; text: string } | null>(null)
+  const trimErrorRef = useRef<HTMLParagraphElement | null>(null)
   useLayoutEffect(() => setTrimError(null), [row.clip.assetId])
+  // 提示出现在视野外时要滚进来，用户才知道哪里填错了
+  useLayoutEffect(() => {
+    trimErrorRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [trimError])
   const changeIn = (value: number | undefined) => {
     const latest = readRow()
     if (!latest || latest.clip.assetId !== row.clip.assetId) return
     const start = value ?? 0
     if (start >= Math.min(latest.out ?? Infinity, full ?? Infinity)) {
-      setTrimError('入点需要早于出点和素材结尾，已保留原设置')
+      setTrimError({ field: 'in', text: '入点需要早于出点和素材结尾，已保留原设置' })
       return
     }
     setTrimError(null)
@@ -1681,7 +1696,7 @@ function ClipSettings({
     const latest = readRow()
     if (!latest || latest.clip.assetId !== row.clip.assetId) return
     if ((value ?? full ?? Infinity) <= latest.in) {
-      setTrimError('出点需要晚于入点，已保留原设置')
+      setTrimError({ field: 'out', text: '出点需要晚于入点，已保留原设置' })
       return
     }
     setTrimError(null)
@@ -1739,6 +1754,11 @@ function ClipSettings({
                 unit="秒"
                 onChange={changeIn}
               />
+              {trimError?.field === 'in' && (
+                <p ref={trimErrorRef} role="alert" className="mt-1 block text-xs text-danger">
+                  {trimError.text}
+                </p>
+              )}
             </Field>
             <Field label="出点">
               <NumberField
@@ -1751,6 +1771,11 @@ function ClipSettings({
                 unit="秒"
                 onChange={changeOut}
               />
+              {trimError?.field === 'out' && (
+                <p ref={trimErrorRef} role="alert" className="mt-1 block text-xs text-danger">
+                  {trimError.text}
+                </p>
+              )}
             </Field>
             <Field label="速度">
               <Select
@@ -1761,11 +1786,6 @@ function ClipSettings({
                 onChange={(v) => onPatch({ speed: Number(v) === 1 ? undefined : Number(v) })}
               />
             </Field>
-            {trimError && (
-              <p role="alert" className="text-xs text-danger">
-                {trimError}
-              </p>
-            )}
           </Section>
           {index > 0 && (
             <Section title="转场">

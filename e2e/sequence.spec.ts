@@ -3,7 +3,16 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { addNode, centerOf, edgesInto, elements, newProject, zoomTo } from './canvas'
+import {
+  addNode,
+  centerOf,
+  clickElement,
+  edgesInto,
+  elements,
+  newProject,
+  settle,
+  zoomTo,
+} from './canvas'
 
 let dir = ''
 /** WebM（VP9）：Playwright 自带的 Chromium 没有 H.264 解码器，WebM 才能走 WebCodecs 预览 */
@@ -678,6 +687,10 @@ test(
     })
     const open = async () => {
       await zoomTo(page, [seq])
+      // 先选中：选中后节点编辑器会展开在卡片下方，画布布局跟着变，
+      // 原来的坐标就偏了。选中后等位置稳住再重新取一次坐标双击。
+      await clickElement(page, seq)
+      await settle(page, seq)
       const point = await centerOf(page, seq)
       await page.mouse.dblclick(point.x, point.y)
       await page
