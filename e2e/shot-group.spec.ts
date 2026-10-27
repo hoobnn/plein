@@ -257,4 +257,173 @@ test.describe('镜头素材浏览器冒烟', { tag: '@core' }, () => {
       expect.objectContaining({ from: [source.id, 'image'], to: [derived!.id, 'images'] }),
     )
   })
+
+  test('结果操作条在宽窄视口避让侧栏与任务面板，所有操作真实命中', async ({ page }) => {
+    const source = await uploadImage(page, 160, 90)
+    await page.evaluate((id) => window.__plein.engine.selection.set([id]), source.id)
+    const bar = resultBar(page)
+    const fits = async () => {
+      await expect
+        .poll(() =>
+          bar.evaluate((el) => {
+            const r = el.getBoundingClientRect()
+            const sidebar = document.querySelector('[aria-label="侧栏"]')
+            const left =
+              sidebar?.getAttribute('aria-hidden') === 'true'
+                ? 0
+                : (sidebar?.getBoundingClientRect().right ?? 0)
+            const right =
+              document.querySelector('aside[aria-label="任务"]')?.getBoundingClientRect().left ??
+              innerWidth
+            return {
+              inside:
+                r.left >= left + 4 &&
+                r.right <= right - 4 &&
+                r.top >= 64 &&
+                r.bottom <= innerHeight - 64 &&
+                el.scrollWidth <= el.clientWidth,
+              hit: [...el.querySelectorAll('button:enabled')].every((button) => {
+                const box = button.getBoundingClientRect()
+                return (
+                  document
+                    .elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+                    ?.closest('button') === button
+                )
+              }),
+            }
+          }),
+        )
+        .toEqual({ inside: true, hit: true })
+    }
+    for (const width of [1440, 320]) {
+      await page.setViewportSize({ width, height: 900 })
+      await zoomTo(page, [source.id])
+      await fits()
+      if (width === 1440) {
+        const tasks = page.getByRole('complementary', { name: '任务', exact: true })
+        if (!(await tasks.isVisible()))
+          await page.getByRole('button', { name: '任务', exact: true }).click()
+        await expect(tasks).toBeVisible()
+        await fits()
+        await tasks.getByRole('button', { name: '关闭', exact: true }).click()
+        await expect(tasks).toBeHidden()
+        await fits()
+      }
+    }
+  })
+
+  test('镜头工作台宽屏两栏并排，窄屏弹窗与导航操作不溢出且可点击', async ({ page }) => {
+    await newProject(page)
+    const board = await page.evaluate(() =>
+      window.__plein.addNode({
+        type: 'plein/storyboard',
+        name: '布局验收分镜',
+        x: 100,
+        y: 100,
+        params: {
+          shots: [1, 2].map((no) => ({
+            id: `layout-${no}`,
+            no,
+            duration: 5,
+            description: `镜头 ${no} 的画面`,
+            characters: [],
+            dialogue: [],
+            imagePrompt: '雨夜街道',
+            motionPrompt: '缓慢推进',
+          })),
+        },
+      }),
+    )
+    await zoomTo(page, [board])
+    const point = await centerOf(page, board)
+    await page.mouse.dblclick(point.x, point.y)
+    const editor = page.getByRole('dialog', { name: '分镜表', exact: true })
+    await editor.getByRole('button', { name: '详细卡片', exact: true }).click()
+    await editor.getByRole('button', { name: '镜头 1 工作台', exact: true }).click()
+    const workspace = page.getByRole('dialog', { name: '镜头工作台', exact: true })
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 763 })
+      await expect
+        .poll(() =>
+          workspace.evaluate((el) => {
+            const box = el.getBoundingClientRect()
+            const nav = el.querySelector('[aria-label="镜头导航"]')!
+            const close = el.querySelector('button[aria-label="关闭"]')!
+            const within = (r: DOMRect) =>
+              r.left >= box.left &&
+              r.right <= box.right &&
+              r.top >= box.top &&
+              r.bottom <= box.bottom
+            const buttons = [
+              ...nav.querySelectorAll(
+                'button[aria-label="上一镜"]:enabled, button[aria-label="下一镜"]:enabled',
+              ),
+              close,
+            ]
+            return {
+              inside:
+                box.left >= 0 &&
+                box.top >= 0 &&
+                box.right <= innerWidth &&
+                box.bottom <= innerHeight &&
+                el.scrollWidth <= el.clientWidth &&
+                within(nav.getBoundingClientRect()) &&
+                within(close.getBoundingClientRect()),
+              hit: buttons.every((button) => {
+                const r = button.getBoundingClientRect()
+                return (
+                  within(r) &&
+                  document
+                    .elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+                    ?.closest('button') === button
+                )
+              }),
+            }
+          }),
+        )
+        .toEqual({ inside: true, hit: true })
+      if (width === 1440) {
+        await expect
+          .poll(() =>
+            workspace.evaluate((el) => {
+              const plan = el.querySelector('[aria-label="当前镜头计划"]')!.getBoundingClientRect()
+              const preview = el
+                .querySelector('[aria-label="本镜候选与执行依据"]')!
+                .getBoundingClientRect()
+              return plan.right <= preview.left + 1 && Math.abs(plan.y - preview.y) < 2
+            }),
+          )
+          .toBe(true)
+      }
+      await workspace.getByRole('button', { name: '下一镜', exact: true }).click()
+      await expect(
+        workspace.getByRole('textbox', { name: '工作台画面描述', exact: true }),
+      ).toHaveValue('镜头 2 的画面')
+      await workspace.getByRole('button', { name: '上一镜', exact: true }).click()
+      // 镜头缩略条允许横向滚动，逐个滚入可见区后验证真实命中。
+      for (const no of [2, 1]) {
+        const thumbnail = workspace.getByRole('button', { name: `切换到镜头 ${no}`, exact: true })
+        await thumbnail.scrollIntoViewIfNeeded()
+        await expect
+          .poll(() =>
+            thumbnail.evaluate((button) => {
+              const r = button.getBoundingClientRect()
+              return (
+                document
+                  .elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+                  ?.closest('button') === button
+              )
+            }),
+          )
+          .toBe(true)
+        await thumbnail.click()
+        await expect(
+          workspace.getByRole('textbox', { name: '工作台画面描述', exact: true }),
+        ).toHaveValue(`镜头 ${no} 的画面`)
+      }
+    }
+    await workspace.getByRole('button', { name: '关闭', exact: true }).click()
+    await expect(workspace).toBeHidden()
+    await expect(editor).toBeHidden()
+  })
 })

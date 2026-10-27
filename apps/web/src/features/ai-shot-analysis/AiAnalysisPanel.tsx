@@ -451,15 +451,8 @@ export function AiAnalysisPanel({
                     onChange={(event) =>
                       setSelected((previous) => {
                         const next = new Set(previous)
-                        if (event.target.checked) {
-                          for (const other of refs)
-                            if (
-                              other.value.request.scope.scene.id ===
-                              ref.value.request.scope.scene.id
-                            )
-                              next.delete(`${other.origin.nodeId}/${other.origin.resultId}`)
-                          next.add(key)
-                        } else next.delete(key)
+                        if (event.target.checked) next.add(key)
+                        else next.delete(key)
                         return next
                       })
                     }

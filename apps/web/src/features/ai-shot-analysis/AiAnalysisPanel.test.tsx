@@ -326,7 +326,7 @@ it('本地依据失效时不展示画布其他来源的归纳结果', () => {
   expect(screen.queryByText('采样归纳草稿 · 非完整影片审片')).toBeNull()
 })
 
-it('同 scene 勾选新历史版本会取消旧版本', async () => {
+it('同 scene 的历史版本可同时勾选，取消一份不影响另一份', async () => {
   const { doc, engine, target } = fixture()
   const first = createElement(doc, { ...rect, kind: 'node', nodeType: AI_SCENE_TYPE })
   const second = createElement(doc, { ...rect, kind: 'node', nodeType: AI_SCENE_TYPE })
@@ -339,6 +339,10 @@ it('同 scene 勾选新历史版本会取消旧版本', async () => {
   await user.click(versions[0]!)
   expect((versions[0] as HTMLInputElement).checked).toBe(true)
   await user.click(versions[1]!)
+  expect((versions[0] as HTMLInputElement).checked).toBe(true)
+  expect((versions[1] as HTMLInputElement).checked).toBe(true)
+  expect(drafts.textContent).toContain('归纳仅读取所选 2 份文字草稿')
+  await user.click(versions[0]!)
   expect((versions[0] as HTMLInputElement).checked).toBe(false)
   expect((versions[1] as HTMLInputElement).checked).toBe(true)
   expect(drafts.textContent).toContain('归纳仅读取所选 1 份文字草稿')

@@ -2,7 +2,7 @@
 import { createElement, type PleinDoc } from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
 import { afterEach, expect, it } from 'vite-plus/test'
-import { act, renderApp, screen, waitFor } from '../testing/render'
+import { act, renderApp, screen, waitFor, within } from '../testing/render'
 import { mockFetch } from '../testing/fetch'
 import { useCanvas } from '../stores/canvas'
 import { MediaTools } from './MediaTools'
@@ -39,6 +39,7 @@ function setup(kind: 'audio' | 'video') {
         },
   )
   const engine = mediaTestEngine(doc)
+  engine.selection.values = () => [source]
   useCanvas.setState({ engine, canvasId: 'canvas' })
   const bodies: Record<string, unknown>[] = []
   let release: (() => void) | undefined
@@ -77,6 +78,7 @@ function setup(kind: 'audio' | 'video') {
   return {
     ...view,
     source,
+    engine,
     assetId,
     bodies,
     open,
@@ -86,6 +88,37 @@ function setup(kind: 'audio' | 'video') {
     release: () => release?.(),
   }
 }
+
+it.each(['video', 'audio'] as const)(
+  '%s 显示各自加工内容，Escape关闭表单并恢复触发按钮焦点和选区',
+  async (kind) => {
+    const f = setup(kind)
+    const trigger = screen.getByRole('button', { name: '媒体工具' })
+    const before = doc.get(f.source)
+    await f.user.click(trigger)
+    const popup = await screen.findByRole('dialog', { name: '媒体工具' })
+    if (kind === 'video') {
+      expect(within(popup).getByRole('button', { name: '片段替换' })).toBeTruthy()
+      expect(within(popup).getByRole('button', { name: '本地拉片' })).toBeTruthy()
+      await f.user.click(within(popup).getByRole('button', { name: '裁剪' }))
+      expect(within(popup).getByRole('textbox', { name: '宽' })).toBeTruthy()
+      expect(popup.textContent).toContain('输出新 MP4')
+    } else {
+      expect(within(popup).queryByRole('button', { name: '裁剪' })).toBeNull()
+      expect(within(popup).queryByRole('button', { name: '片段替换' })).toBeNull()
+      await f.user.click(within(popup).getByRole('button', { name: '变速' }))
+      expect(within(popup).getByRole('checkbox', { name: '保留音频素材的音调' })).toBeTruthy()
+      expect(within(popup).getByRole('textbox', { name: '倍数' })).toBeTruthy()
+    }
+    await f.user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '媒体工具' })).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
+    expect(f.engine.selection.values()).toEqual([f.source])
+    expect(f.engine.selection.set).not.toHaveBeenCalled()
+    expect(doc.get(f.source)).toEqual(before)
+    expect(f.bodies).toEqual([])
+  },
+)
 
 it('生成视频裁剪绑定采用候选，提交精确像素且不改原节点，单步撤销产物', async () => {
   const f = setup('video')

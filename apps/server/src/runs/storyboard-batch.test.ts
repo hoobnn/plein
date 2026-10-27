@@ -1,5 +1,12 @@
 import { expandShots, expandedNodes, type ShotSource } from '@plein/capabilities'
-import { addResults, connect, currentResult, setParams, updateElement } from '@plein/doc'
+import {
+  addResults,
+  connect,
+  currentResult,
+  removeEdges,
+  setParams,
+  updateElement,
+} from '@plein/doc'
 import type { Shot } from '@plein/nodes'
 import { API, type StoryboardBatchPlan, type StoryboardBatchRequest } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
@@ -72,6 +79,41 @@ const setup = async (extra: Partial<Shot> = {}) => {
 }
 
 describe('批量清单预检与确认', () => {
+  it('本镜视频清单只提交指定一镜，返回202与total=1且不生成其他镜头', async () => {
+    const f = await setup()
+    for (const index of [0, 1]) {
+      const video = f.node(index, 'video')
+      setParams(f.doc, video, { mode: 'text' })
+      removeEdges(
+        f.doc,
+        [...f.doc.edges()].filter((edge) => edge.to[0] === video).map((edge) => edge.id),
+      )
+    }
+    const submit = vi.spyOn(mockProvider, 'submit')
+    const target = f.node(0, 'video')
+    const plan = await f.preview({
+      shotIds: [f.shots[0]!.id],
+      role: 'video',
+      reuseExisting: true,
+    })
+    expect(plan.rows.map((row) => row.nodeId)).toEqual([target])
+    expect(plan.summary).toMatchObject({ run: 1, blocked: 0, calls: 1 })
+    expect(submit).not.toHaveBeenCalled()
+    const response = await f.commit(plan.token)
+    expect(response.status).toBe(202)
+    const started = (await response.json()) as { groupId: string; total: number }
+    expect(started.total).toBe(1)
+    expect((await f.wait(started.groupId)).summary?.succeeded).toBe(1)
+    expect(f.server.runs.store.batchItems(started.groupId).map((item) => item.node_id)).toEqual([
+      target,
+    ])
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect(submit.mock.calls[0]![0].capability).toBe('video.generate')
+    expect(currentResult(f.doc.get(target)!)?.value.type).toBe('video')
+    expect(f.doc.get(f.node(1, 'video'))?.results ?? []).toEqual([])
+    expect(f.doc.get(f.node(0))?.results ?? []).toEqual([])
+  })
+
   it('预检零提交，已采用沿用、未就绪阻塞、空台词跳过；确认仅运行已批准目标', async () => {
     const f = await setup()
     addResults(f.doc, f.node(0), [

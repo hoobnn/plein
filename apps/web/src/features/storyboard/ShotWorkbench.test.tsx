@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { Engine } from '@plein/canvas-core'
-import { addResults, createDoc, createElement, setParam, type PleinDoc } from '@plein/doc'
+import { addResults, connect, createDoc, createElement, setParam, type PleinDoc } from '@plein/doc'
 import { Shot } from '@plein/nodes'
 import type { PreparedInput } from '@plein/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
@@ -8,7 +8,7 @@ import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { useSession } from '../../stores/session'
 import { mockFetch } from '../../testing/fetch'
-import { act, fireEvent, renderApp, screen, waitFor } from '../../testing/render'
+import { act, fireEvent, renderApp, screen, waitFor, within } from '../../testing/render'
 import { resetStoreAfterEach } from '../../testing/render'
 import { ShotWorkbench } from './ShotWorkbench'
 
@@ -58,6 +58,7 @@ function fixture(expanded = false) {
         id: `video-${shot.id}`,
         kind: 'node',
         nodeType: 'plein/video',
+        ports: { inputs: [], outputs: [{ id: 'video', label: '视频', type: 'video' }] },
         params: {
           prompt: shot.motionPrompt,
           model: 'mock:video',
@@ -252,6 +253,50 @@ function workbenchReads(doc: PleinDoc, reads: string[]) {
       return Response.json({ jobs: [] })
   })
 }
+
+it('保存为可用记录当前候选，本镜下游影响定位真实序列并关闭工作台', async () => {
+  const { doc, engine, videos } = fixture(true)
+  const sequence = createElement(doc, {
+    id: 'delivery-sequence',
+    kind: 'node',
+    nodeType: 'plein/sequence',
+    nodeVersion: 2,
+    ports: { inputs: [{ id: 'clips', label: '镜头', type: 'video', multiple: true }], outputs: [] },
+    name: '两镜成片',
+    x: 500,
+    y: 0,
+    w: 200,
+    h: 100,
+  })
+  expect(connect(doc, [videos[0]!, 'video'], [sequence, 'clips'])).not.toBeNull()
+  const original = doc.get(videos[0]!)!
+  workbenchReads(doc, [])
+  const { user } = renderApp(<ShotWorkbench />)
+  const note = await screen.findByRole('textbox', { name: '创作验收备注 · video-one' })
+  await user.type(note, '动作和构图可用')
+  await user.click(screen.getByRole('checkbox', { name: '构图' }))
+  await user.click(screen.getByRole('button', { name: '保存为可用' }))
+  await waitFor(() =>
+    expect(doc.get(videos[0]!)?.reviews).toEqual([
+      expect.objectContaining({
+        status: 'usable',
+        note: '动作和构图可用',
+        tags: ['composition'],
+        target: { resultId: 'candidate-one', assetId: 'a'.repeat(64), kind: 'video' },
+      }),
+    ]),
+  )
+  expect(doc.get(videos[0]!)?.adopted).toBe(original.adopted)
+  expect(doc.get(videos[1]!)?.reviews ?? []).toEqual([])
+  const impact = screen.getByRole('region', { name: '本镜下游影响' })
+  expect(impact.textContent).toContain('1 个关联节点')
+  await user.click(within(impact).getByRole('button', { name: '两镜成片' }))
+  expect(engine.selection.set).toHaveBeenCalledWith([sequence])
+  expect(engine.zoomToFit).toHaveBeenCalledWith([sequence])
+  expect(useCanvas.getState().sequence).toBe(sequence)
+  expect(useCanvas.getState().shotWorkbench).toBeNull()
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '镜头工作台' })).toBeNull())
+})
 
 it('历史预览不自动采用，切候选和关闭回收媒体，重开立即读取新输入', async () => {
   const { doc } = fixture(true)
