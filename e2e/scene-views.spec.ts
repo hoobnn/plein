@@ -114,6 +114,7 @@ test('视角图可作库封面，缺图与未知视角阻断且同场景多个�
     .getByRole('button', { name: '全部', exact: true })
     .click()
   const card = panel.getByRole('listitem').filter({ hasText: name })
+  await expect(card).toContainText('2 个视角 · 1 张视角图')
   await expect(card.locator('img').first()).toHaveAttribute('src', new RegExp(imageId))
   await card.getByRole('button').first().click()
   await expect(

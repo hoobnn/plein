@@ -607,6 +607,10 @@ function Card({
   const profile = item.profile ? profileSize(item.profile) : null
   // 悬停时从底部升起：一行一个时期，后面跟着这个时期的服饰
   const peek = item.profile ? profilePeek(item.profile) : []
+  const sceneSummary =
+    kind.id === 'scene' && item.images.length === 0 && (item.sceneViews?.length ?? 0) > 0
+      ? `${item.sceneViews!.length} 个视角 · ${sceneViewImages(item.sceneViews).length} 张视角图`
+      : ''
   const characterImages = kind.id === 'character' ? normalizeLibraryImages(kind, item.images) : []
   const imageKinds = CHARACTER_IMAGE_SLOTS.filter((slot) =>
     characterImages.some((image) => image.slot === slot.id),
@@ -676,7 +680,7 @@ function Card({
               {source && <>{source} · </>}
               {item.profile && profile && (profile.periods || profile.expressions)
                 ? profileLine(item.profile, profile)
-                : tagLine(kind, item.tags) || `${item.images.length} 张参考图`}
+                : tagLine(kind, item.tags) || sceneSummary || `${item.images.length} 张参考图`}
             </div>
           </div>
         </button>
