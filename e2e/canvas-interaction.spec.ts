@@ -594,54 +594,47 @@ test.describe('画布实际渲染与输入关键旅程', { tag: '@core' }, () =>
     ).toBe(true)
   })
 
-  for (const width of [320]) {
-    test(`${width}px 底栏所有按钮留在窗口内且不被助手遮挡`, async ({ page }, testInfo) => {
-      const errors: string[] = []
-      page.on('pageerror', (error) => errors.push(error.message))
-      await newProject(page)
-      await page.setViewportSize({ width, height: 700 })
-      if (width === 800 || width === 1440) {
-        const resize = page.getByRole('separator', { name: '调整侧栏宽度', exact: true })
-        await resize.focus()
-        for (let i = 0; i < 8; i++) await page.keyboard.press('Shift+ArrowRight')
-      }
-      const footer = page.getByRole('contentinfo')
-      await expect
-        .poll(
-          () =>
-            footer.locator('button:visible').evaluateAll(
-              (buttons) =>
-                buttons.length > 0 &&
-                buttons.every((button) => {
-                  const r = button.getBoundingClientRect()
-                  return (
-                    r.left >= 0 &&
-                    r.right <= window.innerWidth &&
-                    r.top >= 64 &&
-                    r.bottom <= window.innerHeight &&
-                    ((button instanceof HTMLButtonElement && button.disabled) ||
-                      document
-                        .elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
-                        ?.closest('button') === button)
-                  )
-                }),
-            ),
-          { timeout: 2500 },
-        )
-        .toBe(true)
-      expect(
-        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-      ).toBe(true)
-      const trigger = page.getByRole('button', { name: '快捷键', exact: true })
-      await trigger.click()
-      await expect(page.getByRole('dialog', { name: '快捷键', exact: true })).toBeVisible()
-      await page.keyboard.press('Escape')
-      await expect(page.getByRole('dialog', { name: '快捷键', exact: true })).toHaveCount(0)
-      await expect(trigger).toBeFocused()
-      await page.screenshot({ path: testInfo.outputPath('footer-fit.png'), animations: 'disabled' })
-      expect(errors).toEqual([])
-    })
-  }
+  test('320px 底栏所有按钮留在窗口内且不被助手遮挡', async ({ page }, testInfo) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await newProject(page)
+    await page.setViewportSize({ width: 320, height: 700 })
+    const footer = page.getByRole('contentinfo')
+    await expect
+      .poll(
+        () =>
+          footer.locator('button:visible').evaluateAll(
+            (buttons) =>
+              buttons.length > 0 &&
+              buttons.every((button) => {
+                const r = button.getBoundingClientRect()
+                return (
+                  r.left >= 0 &&
+                  r.right <= window.innerWidth &&
+                  r.top >= 64 &&
+                  r.bottom <= window.innerHeight &&
+                  ((button instanceof HTMLButtonElement && button.disabled) ||
+                    document
+                      .elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+                      ?.closest('button') === button)
+                )
+              }),
+          ),
+        { timeout: 2500 },
+      )
+      .toBe(true)
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true)
+    const trigger = page.getByRole('button', { name: '快捷键', exact: true })
+    await trigger.click()
+    await expect(page.getByRole('dialog', { name: '快捷键', exact: true })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: '快捷键', exact: true })).toHaveCount(0)
+    await expect(trigger).toBeFocused()
+    await page.screenshot({ path: testInfo.outputPath('footer-fit.png'), animations: 'disabled' })
+    expect(errors).toEqual([])
+  })
 
   test('分行底栏下文本生成器仍完整可编辑，正文保留', async ({ page }, testInfo) => {
     await newProject(page)

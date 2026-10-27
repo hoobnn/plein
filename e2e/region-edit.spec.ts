@@ -34,10 +34,23 @@ test(
     await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.7, { steps: 10 })
     await page.mouse.up()
     await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.3)
+    const coverage = () =>
+      board.evaluate((canvas: HTMLCanvasElement) => {
+        const ctx = canvas.getContext('2d')!
+        const covered = (x: number, y: number) =>
+          ctx.getImageData(Math.floor(x * canvas.width), Math.floor(y * canvas.height), 1, 1)
+            .data[3]! > 0
+        return { rect: covered(0.65, 0.5), brush: covered(0.3, 0.65) }
+      })
+    await expect.poll(coverage).toEqual({ rect: true, brush: true })
     await page.keyboard.press('ControlOrMeta+z')
+    await expect.poll(coverage).toEqual({ rect: true, brush: false })
     await page.keyboard.press('ControlOrMeta+Shift+z')
+    await expect.poll(coverage).toEqual({ rect: true, brush: true })
     await dialog.getByRole('button', { name: '清空', exact: true }).click()
+    await expect.poll(coverage).toEqual({ rect: false, brush: false })
     await dialog.getByRole('button', { name: '撤销', exact: true }).click()
+    await expect.poll(coverage).toEqual({ rect: true, brush: true })
     await dialog.getByRole('button', { name: '完成' }).click()
     await expect(dialog).toBeHidden()
 
@@ -63,9 +76,13 @@ test(
       const at = (x: number, y: number) => [
         ...ctx.getImageData(Math.floor(x * canvas.width), Math.floor(y * canvas.height), 1, 1).data,
       ]
-      return { inside: at(0.65, 0.5), outside: at(0.95, 0.95) }
+      return { rect: at(0.65, 0.5), brush: at(0.3, 0.65), outside: at(0.95, 0.95) }
     }, mask)
-    expect(pixels).toEqual({ inside: [255, 255, 255, 255], outside: [0, 0, 0, 255] })
+    expect(pixels).toEqual({
+      rect: [255, 255, 255, 255],
+      brush: [255, 255, 255, 255],
+      outside: [0, 0, 0, 255],
+    })
     await expect(page.getByTestId('mask-field')).toContainText('高亮处会被重画')
 
     await generator.locator('textarea').first().fill('把杯子换成红色马克杯')
