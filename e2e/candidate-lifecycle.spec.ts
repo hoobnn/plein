@@ -138,16 +138,21 @@ test(
           y: 600,
         })
         const doc = window.__plein.engine.doc
-        doc.mutable(id)!.set('results', [
+        const element = doc.mutable(id)! as {
+          get(key: string): unknown
+          set(key: string, value: unknown): void
+        }
+        const ports = element.get('ports') as { outputs: { id: string }[] }
+        element.set('results', [
           {
             id: 'long-text-result',
             runId: 'long-text-run',
-            port: doc.get(id)!.ports!.outputs[0]!.id,
+            port: ports.outputs[0]!.id,
             at: Date.now(),
             value: { type: 'text', text },
           },
         ])
-        doc.mutable(id)!.set('adopted', null)
+        element.set('adopted', null)
         return id
       }, longText)
       await clickElement(page, textId)

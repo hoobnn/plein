@@ -3,7 +3,7 @@ import { createElement } from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
 import { corePlugin } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
-import type { Catalog } from '@plein/protocol'
+import { PREPARED_INPUT_VERSION, type Catalog, type PreparedInput } from '@plein/protocol'
 import { expect, it } from 'vite-plus/test'
 import { Generator } from '../features/generator/Generator'
 import { useCanvas } from '../stores/canvas'
@@ -71,8 +71,19 @@ it('生成视频只为采用结果显示唯一工具入口，锁定后移至浮�
         height: 90,
         duration: 3,
       })
-    if (path.endsWith('/input'))
-      return Response.json({ nodeId: id, inputs: {}, refs: [], blocked: [], notices: [] })
+    if (request.method === 'GET' && path === `/api/canvases/canvas/nodes/${id}/input`)
+      return Response.json({
+        v: PREPARED_INPUT_VERSION,
+        nodeId: id,
+        nodeType: 'plein/video',
+        preparedAt: 1,
+        status: 'ready',
+        params: {},
+        inputs: {},
+        refs: [],
+        blocked: [],
+        notices: [],
+      } satisfies PreparedInput)
   })
   const set = async (key: string, value: unknown) =>
     await act(async () => {
