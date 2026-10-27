@@ -15,6 +15,9 @@ import {
 const ROOT = resolve(import.meta.dirname, '../../../..')
 const loader = createRequire(join(ROOT, 'apps/server/package.json')).resolve('tsx')
 const temporary: string[] = []
+// git 钩子里跑时会带上外层仓库的 GIT_DIR 等变量，临时仓库不能继承
+for (const key of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_PREFIX'])
+  delete process.env[key]
 afterEach(() => {
   for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true })
 })
