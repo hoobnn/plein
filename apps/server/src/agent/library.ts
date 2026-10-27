@@ -11,7 +11,7 @@ import {
   placeLibraryCard,
 } from '@plein/capabilities'
 import { spotAfterContent, spotRightOf } from '@plein/doc'
-import { libraryKind, libraryReferenceImageIds } from '@plein/nodes'
+import { libraryKind, libraryReferenceImageIds, sceneViewAssets } from '@plein/nodes'
 import { LibraryKind } from '@plein/protocol'
 import { z } from 'zod'
 import type { ServerContext } from './tools'
@@ -132,7 +132,14 @@ export const placeLibraryItem = serverCapability({
       return { ...card, existed: false }
     })
     if (!result.existed) library(ctx).markUsed(ctx.env.ownerId, item.id)
-    const skipped = requested.length - refs.length
+    const baseIds = new Set(requested.map((ref) => ref.assetId))
+    const missingViewAssets =
+      item.kind === 'scene'
+        ? sceneViewAssets(item.sceneViews).filter(
+            (assetId) => !baseIds.has(assetId) && ctx.assetMeta(assetId)?.kind !== 'image',
+          ).length
+        : 0
+    const skipped = requested.length - refs.length + missingViewAssets
     return {
       id: result.id,
       existed: result.existed,
