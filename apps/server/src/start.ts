@@ -41,13 +41,23 @@ export async function startServer(config: Config): Promise<RunningServer> {
     url: `http://${host}:${port}`,
     close() {
       closing ??= (async () => {
+        // 先停止接入并排空传输，避免旧连接在数据库关闭后继续处理请求。
+        const drained = Promise.all([
+          new Promise<void>((resolve) => http.close(() => resolve())),
+          new Promise<void>((resolve) => wss.close(() => resolve())),
+        ])
         for (const ws of wss.clients) ws.close(1001, 'server shutdown')
+        const timer = setTimeout(() => {
+          for (const ws of wss.clients) ws.terminate()
+          if ('closeAllConnections' in http) http.closeAllConnections()
+        }, 3000).unref()
+        try {
+          await drained
+        } finally {
+          clearTimeout(timer)
+        }
+        // 传输排空的期限不限制备份完成；SQLite 仍由应用清理的最后一步关闭。
         await server.close()
-        await new Promise<void>((resolve) => {
-          http.close(() => resolve())
-          // Only bound HTTP draining; never close SQLite underneath a backup.
-          setTimeout(resolve, 3000).unref()
-        })
       })()
       return closing
     },
