@@ -3,10 +3,31 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { edgesInto, elements, newProject, waitEngine, waitNode, zoomTo } from './canvas'
+import {
+  edgesInto,
+  elements,
+  newProject,
+  revealGenerator,
+  waitEngine,
+  waitNode,
+  zoomTo,
+} from './canvas'
 
 let dir = ''
 const files = () => ['still.png', 'clip.mp4', 'voice.wav', 'notes.md'].map((f) => join(dir, f))
+
+/**
+ * 上传到节点编辑器的某个输入口。
+ * 0.6.0 起素材入口收成一个「上传参考」按钮，端口在弹层里选。
+ */
+async function uploadToPort(page: import('@playwright/test').Page, port: string) {
+  const generator = page.getByTestId('generator')
+  await generator.getByRole('button', { name: '上传参考', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: '上传参考' })
+    .getByRole('button', { name: port, exact: true })
+    .click()
+}
 
 test.beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'plein-e2e-media-'))
@@ -236,6 +257,8 @@ for (const first of ['reference'] as const) {
       }),
     )
     await page.getByRole('treeitem', { name: '混合上传角色 定位到画布', exact: true }).click()
+    // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+    await revealGenerator(page)
     const releases: Array<() => void> = []
     await page.route('**/api/assets', async (route) => {
       if (route.request().method() !== 'POST') return route.continue()
@@ -244,7 +267,7 @@ for (const first of ['reference'] as const) {
       await route.fulfill({ response })
     })
     const reference = page.waitForEvent('filechooser')
-    await page.getByTestId('generator').getByRole('button', { name: '参考图', exact: true }).click()
+    await uploadToPort(page, '参考图')
     await (await reference).setFiles(join(dir, 'reference.png'))
     await expect.poll(() => releases.length).toBe(1)
     const toolbar = page.waitForEvent('filechooser')
@@ -363,6 +386,8 @@ test('参考图上传期间选中其他卡片，完成后保持当前选择并�
     }),
   }))
   await page.getByRole('treeitem', { name: '上传参考的角色 定位到画布', exact: true }).click()
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
   let held = false
   let release = () => {}
   await page.route('**/api/assets', async (route) => {
@@ -375,7 +400,7 @@ test('参考图上传期间选中其他卡片，完成后保持当前选择并�
     await route.fulfill({ response })
   })
   const chooser = page.waitForEvent('filechooser')
-  await page.getByTestId('generator').getByRole('button', { name: '参考图', exact: true }).click()
+  await uploadToPort(page, '参考图')
   await (await chooser).setFiles(join(dir, 'reference.png'))
   await expect.poll(() => held).toBe(true)
   await page.getByRole('treeitem', { name: '继续编辑的文本 定位到画布', exact: true }).click()
