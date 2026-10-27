@@ -11,6 +11,8 @@ import { Presence } from '../../ui/Presence'
 
 type Mode = 'optimize' | 'translate'
 const NO_CHAT = '没有可用的对话模型：在设置的「模型平台」里启用支持对话的平台'
+/** 提示词为空时的原因：按钮禁用也要说清楚，否则用户不知道为什么点不动 */
+const NO_TEXT = '先写点提示词，才能优化或翻译'
 
 /** 改写先成为草稿，用户明确采用时才修改画布。 */
 export function PromptTools({
@@ -133,7 +135,7 @@ export function PromptTools({
           <button
             type="button"
             aria-label="优化提示词"
-            title={hasChat ? '优化提示词：先查看建议再采用' : NO_CHAT}
+            title={!hasChat ? NO_CHAT : text.trim() ? '优化提示词：先查看建议再采用' : NO_TEXT}
             disabled={!hasChat || !text.trim()}
             className="ui-btn ui-btn-lg ui-btn-quiet ui-icon-btn"
             onClick={() => void rewrite('optimize')}
@@ -144,7 +146,7 @@ export function PromptTools({
         <button
           type="button"
           aria-label="翻译提示词"
-          title={hasChat ? '翻译提示词：先查看建议再采用' : NO_CHAT}
+          title={!hasChat ? NO_CHAT : text.trim() ? '翻译提示词：先查看建议再采用' : NO_TEXT}
           disabled={!hasChat || !text.trim()}
           className="ui-btn ui-btn-lg ui-btn-quiet ui-icon-btn"
           onClick={() => void rewrite('translate')}
