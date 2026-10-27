@@ -154,6 +154,13 @@ export class CanvasOverlays {
     return this.active?.id ?? null
   }
 
+  get stats() {
+    return {
+      fittedEntries: this.fitted.size,
+      fittedCharacters: [...this.fitted.values()].reduce((sum, key) => sum + key.length, 0),
+    }
+  }
+
   /** content 为 false：更新几何和交互范围，已有正文与量高结果可复用 */
   sync(content = true) {
     if (this.active?.valid && !this.active.valid()) {
@@ -169,6 +176,10 @@ export class CanvasOverlays {
       for (const id of engine.visibleIds) {
         if (id !== this.active?.id && engine.scene.get(id)?.kind === 'markdown') want.add(id)
       }
+    }
+    // 量高结果含完整正文，只保留当前预览和编辑项，离开视口后随预览释放。
+    for (const id of this.fitted.keys()) {
+      if (!want.has(id) && id !== this.active?.id) this.fitted.delete(id)
     }
     for (const [id, p] of this.previews) {
       if (!want.has(id)) {
@@ -376,6 +387,7 @@ export class CanvasOverlays {
     for (const d of this.disposers) d()
     for (const p of this.previews.values()) p.node.remove()
     this.previews.clear()
+    this.fitted.clear()
     this.measurer.remove()
   }
 

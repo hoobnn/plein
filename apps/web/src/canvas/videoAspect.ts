@@ -12,19 +12,32 @@ export type RatioOf = (assetId: string) => Promise<number | null>
  */
 export function watchVideoAspect(engine: Engine, ratioOf: RatioOf) {
   const { doc } = engine
-  const cache = new Map<string, Promise<number | null>>()
+  const cache = new Map<string, { ratio: Promise<number | null>; refs: number }>()
+  const sources = new Map<string, string>()
   let disposed = false
 
   const check = (id: string) => {
     const el = doc.get(id)
     const assetId = el?.kind === 'node' ? videoAssetOf(el) : undefined
-    if (!assetId) return
-    let ratio = cache.get(assetId)
-    if (!ratio) {
-      ratio = ratioOf(assetId).catch(() => null)
-      cache.set(assetId, ratio)
+    const previous = sources.get(id)
+    if (previous !== assetId) {
+      if (previous) {
+        const entry = cache.get(previous)!
+        if (--entry.refs === 0) cache.delete(previous)
+        sources.delete(id)
+      }
+      if (assetId) {
+        let entry = cache.get(assetId)
+        if (!entry) {
+          entry = { ratio: ratioOf(assetId).catch(() => null), refs: 0 }
+          cache.set(assetId, entry)
+        }
+        entry.refs++
+        sources.set(id, assetId)
+      }
     }
-    void ratio.then((r) => {
+    if (!assetId) return
+    void cache.get(assetId)!.ratio.then((r) => {
       // 等尺寸期间结果可能又换了，按当前展示的视频为准
       if (disposed || !r || videoAssetOf(doc.get(id)) !== assetId) return
       fitAspect(doc, id, r)
@@ -38,5 +51,7 @@ export function watchVideoAspect(engine: Engine, ratioOf: RatioOf) {
   return () => {
     disposed = true
     off()
+    sources.clear()
+    cache.clear()
   }
 }

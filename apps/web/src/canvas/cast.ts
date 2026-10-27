@@ -6,8 +6,8 @@ import {
 } from '@plein/capabilities'
 import type { Engine } from '@plein/canvas-core'
 import type { CastEntry } from '@plein/nodes'
-import type { Catalog } from '@plein/protocol'
-import { assetMetaNow, loadAssetMeta } from '../stores/assetMeta'
+import type { Asset, Catalog } from '@plein/protocol'
+import { loadAssetMeta } from '../stores/assetMeta'
 import { useLibrary } from '../features/library/store'
 import { localContext } from './capabilities'
 import { nodeFactory } from './nodes'
@@ -46,10 +46,18 @@ export async function castLibrary(entries: CastEntry[]): Promise<CastOptions['li
   if (!useLibrary.getState().loaded) await useLibrary.getState().load()
   const { items, projectId } = useLibrary.getState()
   const names = new Set(entries.map((e) => e.name))
+  const assets = new Map<string, Asset>()
   await Promise.all(
     items
       .filter((i) => names.has(i.name))
-      .flatMap((i) => i.images.map((img) => loadAssetMeta(img.assetId).catch(() => null))),
+      .flatMap((i) =>
+        i.images.map((img) =>
+          loadAssetMeta(img.assetId).then(
+            (asset) => assets.set(img.assetId, asset),
+            () => {},
+          ),
+        ),
+      ),
   )
-  return { items, projectId, assetMeta: assetMetaNow }
+  return { items, projectId, assetMeta: (id) => assets.get(id) }
 }

@@ -22,7 +22,7 @@ import * as Y from 'yjs'
 import { assetUrls, syncUrl } from '../api/client'
 import { navigate } from '../router'
 import { useAgent } from '../features/agent/store'
-import { loadAssetMeta } from '../stores/assetMeta'
+import { assetMetaCache, loadAssetMeta } from '../stores/assetMeta'
 import { type NoticeAction, useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import { canvasTheme, useTheme } from '../stores/theme'
@@ -171,6 +171,7 @@ export function CanvasView({
           if (e2e)
             (window as { __plein?: unknown }).__plein = {
               engine,
+              memoryStats: () => ({ markdown: overlays.stats, assetMeta: assetMetaCache.stats }),
               // 模拟小满改动了这些元素（光晕 + 光标）
               agentTouch: (ids: string[]) => {
                 engine.flash(ids)

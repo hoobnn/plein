@@ -1,8 +1,11 @@
 import type { Engine } from '@plein/canvas-core'
 import { addResults, createDoc, createElement } from '@plein/doc'
-import type { Catalog } from '@plein/protocol'
-import { describe, expect, it } from 'vite-plus/test'
-import { applyCast, castOf, describeCast } from './cast'
+import type { Catalog, LibraryItem } from '@plein/protocol'
+import { describe, expect, it, vi } from 'vite-plus/test'
+import { api } from '../api/client'
+import { useLibrary } from '../features/library/store'
+import { ASSET_META_CACHE_LIMIT, assetMetaNow, loadAssetMeta } from '../stores/assetMeta'
+import { applyCast, castLibrary, castOf, describeCast } from './cast'
 
 const card = (type: string, title: string) =>
   ({
@@ -242,5 +245,40 @@ describe('抽取结果落成设定卡', () => {
     const again = applyCast(engine, catalog, llm, castOf(engine, llm))
     expect(again.created).toEqual([])
     expect(again.kept).toEqual(['林晚', '老周', '天台'])
+  })
+
+  it('备好的资产尺寸不受共享缓存淘汰影响', async () => {
+    const previous = useLibrary.getState()
+    const load = vi.spyOn(api, 'assetMeta').mockImplementation(async (id) => ({
+      id,
+      kind: 'image',
+      mime: 'image/png',
+      name: id,
+      size: 1,
+      width: 640,
+      height: 360,
+      variants: [],
+      createdAt: 1,
+    }))
+    try {
+      useLibrary.setState({
+        loaded: true,
+        items: [
+          {
+            id: 'library',
+            kind: 'character',
+            name: '林晚',
+            images: [{ slot: 'main', assetId: 'cast-image' }],
+          },
+        ] as LibraryItem[],
+      })
+      const library = await castLibrary([{ kind: 'character', name: '林晚', description: '' }])
+      for (let i = 0; i < ASSET_META_CACHE_LIMIT; i++) await loadAssetMeta(`cast-other-${i}`)
+      expect(assetMetaNow('cast-image')).toBeUndefined()
+      expect(library?.assetMeta?.('cast-image')).toMatchObject({ width: 640, height: 360 })
+    } finally {
+      load.mockRestore()
+      useLibrary.setState(previous)
+    }
   })
 })

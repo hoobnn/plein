@@ -1,0 +1,153 @@
+// @vitest-environment happy-dom
+import type { Asset } from '@plein/protocol'
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
+import { api } from '../api/client'
+import {
+  ASSET_META_CACHE_LIMIT,
+  AssetMetaCache,
+  assetMetaCache,
+  loadAssetMeta,
+  useAssetMeta,
+  useAssetMetas,
+} from './assetMeta'
+
+const asset = (id: string): Asset => ({
+  id,
+  kind: 'image',
+  mime: 'image/png',
+  name: id,
+  size: 1024,
+  variants: [],
+  createdAt: 1,
+})
+const deferred = () => {
+  let resolve!: (asset: Asset) => void
+  const promise = new Promise<Asset>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
+
+describe('资产元信息缓存', () => {
+  it('请求中去重，完成后释放 Promise，只缓存最近使用的资产', async () => {
+    const cache = new AssetMetaCache(2)
+    const request = deferred()
+    const load = vi.spyOn(api, 'assetMeta').mockReturnValueOnce(request.promise)
+    const first = cache.load('a')
+    expect(cache.load('a')).toBe(first)
+    expect(cache.stats).toEqual({ pending: 1, ready: 0, limit: 2 })
+    request.resolve(asset('a'))
+    const a = await first
+    expect(cache.stats).toEqual({ pending: 0, ready: 1, limit: 2 })
+    load.mockImplementation(async (id) => asset(id))
+    await cache.load('b')
+    expect(cache.get('a')).toBe(a)
+    await cache.load('c')
+    expect(cache.get('a')).toBe(a)
+    expect(cache.get('b')).toBeUndefined()
+    expect(cache.stats.ready).toBe(2)
+    await cache.load('b')
+    expect(load).toHaveBeenCalledTimes(4)
+  })
+
+  it('连续读取三倍容量后仍有界，失败移除并发项且允许重试', async () => {
+    const cache = new AssetMetaCache()
+    const load = vi.spyOn(api, 'assetMeta').mockImplementation(async (id) => asset(id))
+    for (let i = 0; i < ASSET_META_CACHE_LIMIT * 3; i++) await cache.load(`asset-${i}`)
+    expect(cache.stats).toEqual({
+      pending: 0,
+      ready: ASSET_META_CACHE_LIMIT,
+      limit: ASSET_META_CACHE_LIMIT,
+    })
+    expect(cache.get('asset-0')).toBeUndefined()
+    load.mockRejectedValueOnce(new Error('offline'))
+    await expect(cache.load('retry')).rejects.toThrow('offline')
+    expect(cache.stats.pending).toBe(0)
+    expect(await cache.load('retry')).toEqual(asset('retry'))
+  })
+
+  it('乱序完成仍受容量限制，未完成请求不会被淘汰后重复发送', async () => {
+    const cache = new AssetMetaCache(1)
+    const request = deferred()
+    const load = vi
+      .spyOn(api, 'assetMeta')
+      .mockReturnValueOnce(request.promise)
+      .mockImplementation(async (id) => asset(id))
+    const first = cache.load('slow')
+    await cache.load('fast')
+    expect(cache.load('slow')).toBe(first)
+    request.resolve(asset('slow'))
+    await first
+    expect(cache.get('fast')).toBeUndefined()
+    expect(cache.stats).toEqual({ pending: 0, ready: 1, limit: 1 })
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('活跃元信息读取', () => {
+  it('列表超过共享缓存容量仍全部就绪，重试不会重读已完成项', async () => {
+    const load = vi.spyOn(api, 'assetMeta').mockImplementation(async (id) => asset(id))
+    const ids = Array.from({ length: ASSET_META_CACHE_LIMIT + 3 }, (_, i) => `list-${i}`)
+    const { result, rerender } = renderHook(({ reload }) => useAssetMetas(ids, reload), {
+      initialProps: { reload: 0 },
+    })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(ids.every((id) => result.current.get(id)?.id === id)).toBe(true)
+    expect(assetMetaCache.stats.ready).toBe(ASSET_META_CACHE_LIMIT)
+    rerender({ reload: 1 })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(load).toHaveBeenCalledTimes(ids.length)
+  })
+
+  it('切换列表后丢弃旧返回，失败重试只请求失败项', async () => {
+    const pending = deferred()
+    const load = vi
+      .spyOn(api, 'assetMeta')
+      .mockReturnValueOnce(pending.promise)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockImplementation(async (id) => asset(id))
+    const { result, rerender } = renderHook(({ ids, reload }) => useAssetMetas(ids, reload), {
+      initialProps: { ids: ['old-list'], reload: 0 },
+    })
+    rerender({ ids: ['failed-list', 'ready-list'], reload: 0 })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.errors).toEqual([{ id: 'failed-list', message: 'offline' }])
+    await act(async () => pending.resolve(asset('old-list')))
+    expect(result.current.get('old-list')).toBeUndefined()
+    rerender({ ids: ['failed-list', 'ready-list'], reload: 1 })
+    await waitFor(() => expect(result.current.get('failed-list')).toEqual(asset('failed-list')))
+    expect(result.current.errors).toEqual([])
+    expect(load.mock.calls.map(([id]) => id)).toEqual([
+      'old-list',
+      'failed-list',
+      'ready-list',
+      'failed-list',
+    ])
+  })
+
+  it('共享缓存淘汰后活跃单项保持结果，切换时不显示旧请求结果', async () => {
+    const load = vi.spyOn(api, 'assetMeta').mockImplementation(async (id) => asset(id))
+    const { result, rerender } = renderHook(({ id }) => useAssetMeta(id), {
+      initialProps: { id: 'active-single' },
+    })
+    await waitFor(() => expect(result.current?.id).toBe('active-single'))
+    await act(async () => {
+      for (let i = 0; i < ASSET_META_CACHE_LIMIT; i++) await loadAssetMeta(`other-${i}`)
+    })
+    expect(assetMetaCache.get('active-single')).toBeUndefined()
+    expect(result.current?.id).toBe('active-single')
+    const pending = deferred()
+    load.mockReturnValueOnce(pending.promise)
+    rerender({ id: 'slow-single' })
+    rerender({ id: 'new-single' })
+    await waitFor(() => expect(result.current?.id).toBe('new-single'))
+    await act(async () => pending.resolve(asset('slow-single')))
+    expect(result.current?.id).toBe('new-single')
+  })
+})
