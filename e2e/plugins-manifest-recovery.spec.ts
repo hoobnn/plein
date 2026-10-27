@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
-import { addNode, elements, newProject, waitNode } from './canvas'
+import { addNode, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 const endpoint = '/api/plugins/local/acme/echo'
 const directory = () => join(process.env.PLEIN_E2E_DATA!, 'plugins/acme-echo')
@@ -66,7 +66,10 @@ for (const recovery of ['reload', 'disable'] as const) {
       const node = (await elements(page)).find((element) => element.nodeType === 'acme/shout')!
       const generator = page.getByTestId('generator')
       await generator.getByRole('textbox', { name: '提示词', exact: true }).fill('recovered')
-      await generator.getByRole('button', { name: '生成', exact: true }).click()
+      // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+      const generate = generator.getByRole('button', { name: '生成', exact: true })
+      await revealGenerator(page, generate)
+      await generate.click()
       await waitNode(page, node.id)
       await expect(page.getByText('RECOVERED!', { exact: true })).toBeVisible()
     } finally {

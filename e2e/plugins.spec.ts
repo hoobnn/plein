@@ -2,7 +2,7 @@ import { openCanvasSettings } from './settings-ui'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
-import { addNode, elements, newProject, waitNode } from './canvas'
+import { addNode, elements, newProject, revealGenerator, waitNode } from './canvas'
 
 /** 设了就把界面截图存到这个目录（亮色、暗色各一张） */
 const shotDir = process.env.PLEIN_E2E_SHOTS
@@ -52,7 +52,10 @@ test(
     // 执行器在插件子进程里跑
     const generator = page.getByTestId('generator')
     await generator.getByRole('textbox', { name: '提示词' }).fill('hello')
-    await generator.getByRole('button', { name: '生成', exact: true }).click()
+    // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+    const generate = generator.getByRole('button', { name: '生成', exact: true })
+    await revealGenerator(page, generate)
+    await generate.click()
     await waitNode(page, node.id)
     await expect(page.getByText('HELLO!')).toBeVisible()
     await shoot(page, 'node')

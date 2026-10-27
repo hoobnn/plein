@@ -2,7 +2,7 @@ import { openCanvasSettings } from './settings-ui'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
-import { clickElement, elements, newProject, waitEngine, waitNode } from './canvas'
+import { clickElement, elements, newProject, revealGenerator, waitEngine, waitNode } from './canvas'
 
 async function openPlugins(page: Page) {
   await openCanvasSettings(page)
@@ -76,7 +76,12 @@ test('另一客户端启停插件时，已打开的插件面板和随后使用�
     await expect(restored.toggle).toBeChecked()
     await page.keyboard.press('Escape')
     await clickElement(page, node.id)
-    await page.getByTestId('generator').getByRole('button', { name: '生成', exact: true }).click()
+    // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+    const generate = page
+      .getByTestId('generator')
+      .getByRole('button', { name: '生成', exact: true })
+    await revealGenerator(page, generate)
+    await generate.click()
     await waitNode(page, node.id)
     await expect(page.getByText('TWO CLIENTS!', { exact: true })).toBeVisible()
   } finally {
