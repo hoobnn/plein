@@ -108,7 +108,10 @@ export function PromptTools({
       setDraft({ ...draft, error: '当前画布只读，建议已保留；恢复编辑权限后可重新采用。' })
       return
     }
-    if (useCanvas.getState().engine !== engine) return
+    if (useCanvas.getState().engine !== engine) {
+      setDraft({ ...draft, error: '画布已切换，建议未采用。请复制建议后在新画布重试。' })
+      return
+    }
     const current = engine.doc.get(elId)
     if (
       !current ||

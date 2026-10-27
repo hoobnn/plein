@@ -1,6 +1,12 @@
 // @vitest-environment happy-dom
 import type { Engine } from '@plein/canvas-core'
-import { addResults, createElement, deleteElements, type NodeResult, type PleinDoc } from '@plein/doc'
+import {
+  addResults,
+  createElement,
+  deleteElements,
+  type NodeResult,
+  type PleinDoc,
+} from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { useCanvas } from '../stores/canvas'

@@ -105,3 +105,26 @@ it('只读竞态保留建议并说明恢复方法，恢复后能采用', async (
   await f.user.click(screen.getByRole('button', { name: '采用建议' }))
   expect(f.doc.get(f.id)?.params?.prompt).toBe('优化后的雨夜天台')
 })
+it('采用前切换画布保留建议并解释未采用，两个画布都不写入', async () => {
+  const f = setup()
+  await f.suggest()
+  const other = openDoc()
+  docs.push(other)
+  const target = createElement(other, {
+    kind: 'node',
+    nodeType: 'plein/image',
+    params: { prompt: '另一块画布的文字' },
+    x: 0,
+    y: 0,
+    w: 200,
+    h: 100,
+  })
+  act(() => useCanvas.setState({ engine: { doc: other } as Engine, canvasId: 'other' }))
+  await f.user.click(screen.getByRole('button', { name: '采用建议' }))
+  expect(screen.getByRole('alert').textContent).toContain('画布已切换，建议未采用')
+  expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: '建议提示词' }).value).toBe(
+    '优化后的雨夜天台',
+  )
+  expect(f.doc.get(f.id)?.params?.prompt).toBe('雨夜天台')
+  expect(other.get(target)?.params?.prompt).toBe('另一块画布的文字')
+})

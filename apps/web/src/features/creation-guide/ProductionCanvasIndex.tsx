@@ -43,8 +43,6 @@ export function ProductionCanvasIndex({ canvasId }: { canvasId: string }) {
           </p>
         ) : canvas.isPending || list.isPending ? (
           <p role="status">正在读取画布索引…</p>
-        ) : !list.data?.length ? (
-          <p role="status">这个项目暂时没有可打开的画布。</p>
         ) : (
           <ul aria-label="制作画布索引">
             {list.data?.map((item) => (

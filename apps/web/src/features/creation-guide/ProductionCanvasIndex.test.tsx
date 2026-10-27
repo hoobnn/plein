@@ -5,7 +5,7 @@ import { mockFetch } from '../../testing/fetch'
 import { act, renderApp, screen, waitFor } from '../../testing/render'
 import { ProductionCanvasIndex } from './ProductionCanvasIndex'
 
-it('折叠时零请求，展开只读本项目索引，空态说明并能导航现有画布', async () => {
+it('折叠时零请求，展开只读本项目索引并能导航现有画布', async () => {
   const paths: string[] = []
   mockFetch((request) => {
     const path = new URL(request.url).pathname
@@ -24,8 +24,6 @@ it('折叠时零请求，展开只读本项目索引，空态说明并能导航�
     '#/c/other',
   )
   expect(paths).toEqual(['/api/canvases/c', '/api/projects/p/canvases'])
-  await act(() => f.queryClient.setQueryData(queryKeys.projectCanvases('p'), []))
-  expect(await screen.findByText('这个项目暂时没有可打开的画布。')).toBeTruthy()
 })
 it('已缓存项目身份的画布读取失败时，重试实际失败的画布请求', async () => {
   let failed = true,
