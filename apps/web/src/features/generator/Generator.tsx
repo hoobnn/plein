@@ -378,6 +378,8 @@ export function GeneratorPanel({
     if (input.loading || input.stale) return
     // 调模型的节点要等实际输入备好；执行器节点没有也照样能生成。
     if (requiresInput && !input.data?.inputHash) return
+    // 已经有任务在跑时不取消它：这次生成等任务结束再提交
+    if (running) return
     pendingRun.current = false
     run()
   })
@@ -385,7 +387,8 @@ export function GeneratorPanel({
   /** 输入还在准备时按下：记下来等它备好，不用让用户再点一次 */
   const requestRun = () => {
     // 实际输入还在准备或正在刷新：先记下，等拿到这份输入再提交，
-    // 否则会拿着上一版的哈希提交，被服务端判成输入已变。
+    // 否则会拿着上一版的哈希提交，被服务端判成输入已变；
+    // 这次也不能先提交一遍：刷新完再提交会多跑一次。
     if (!running && (input.loading || input.stale || (requiresInput && !input.data?.inputHash)))
       pendingRun.current = true
     // 这一步已经提交过了就别再记着：输入刷新完再补一次会重复生成。
