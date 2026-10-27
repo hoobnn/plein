@@ -3,10 +3,14 @@ import {
   addNode,
   byName,
   centerOf,
+  clickElement,
   contextMenu,
   deselect,
   newProject,
+  openStoryboardActions,
   runBatch,
+  settle,
+  showStoryboardCards,
   waitIdle,
   waitNode,
   zoomTo,
@@ -68,6 +72,10 @@ test(
     const openBoard = async () => {
       await deselect(page)
       await zoomTo(page, [board.id])
+      // 先选中再双击：选中后节点编辑器展开在卡片下方，画布布局跟着变，
+      // 原来的坐标就偏了。选中后等位置稳住再重新取一次坐标双击。
+      await clickElement(page, board.id)
+      await settle(page, board.id)
       const p = await centerOf(page, board.id)
       await page.mouse.dblclick(p.x, p.y)
       const dialog = page.getByRole('dialog', { name: '分镜表' })
@@ -90,10 +98,14 @@ test(
     await dialog.getByLabel('台词').nth(2).fill('林晚：铁盒是谁放在这儿的？')
     await dialog.getByLabel('台词').nth(2).blur()
     expect(await durations()).toEqual(originalDurations)
+    // 批量操作收在折叠区里，先展开再点
+    await openStoryboardActions(dialog)
     await dialog.getByRole('button', { name: '展开为节点' }).click()
     await expect(page.locator('.ui-toast')).toContainText('已展开 6 个镜头')
 
     dialog = await openBoard()
+    // 批量按钮收在折叠区里，每次打开分镜表都要重新展开
+    await openStoryboardActions(dialog)
     for (const role of ['批量出分镜图', '批量生成视频', '批量配音'])
       await runBatch(page, dialog, role)
     const before = await snapshot(page)
@@ -103,6 +115,8 @@ test(
 
     // 改第三镜头的台词和分镜图提示词，从分镜表进「查看影响」
     dialog = await openBoard()
+    // 逐镜头的台词和分镜图提示词在详细卡片视图上，表格视图没有这些输入框
+    await showStoryboardCards(dialog)
     await dialog.getByLabel('台词').nth(2).fill('林晚：这盒子不是我的。')
     await dialog.getByLabel('台词').nth(2).blur()
     await dialog.getByLabel('分镜图提示词').nth(2).fill('铁盒特写，雨水顺着锁扣往下流')

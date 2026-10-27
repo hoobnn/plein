@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { JobList } from '../packages/protocol/src/runs'
-import { addNode, contextMenu, deselect, elements, newProject } from './canvas'
+import { addNode, contextMenu, deselect, elements, newProject, revealGenerator } from './canvas'
 
 const MOCK = '/api/providers/plein/mock/config'
 
@@ -60,6 +60,8 @@ test('生成中途取消：记录已取消，核查原远端任务结束后能�
   await request.put(MOCK, { data: { settings: { latencyMs: 20_000 } } })
   await newProject(page)
   await addNode(page, '生成图片')
+  // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+  await revealGenerator(page)
   const generator = page.getByTestId('generator')
   await generator.locator('textarea').first().fill('雨夜天台上的铁盒')
   await generator.getByRole('button', { name: '生成', exact: true }).click()

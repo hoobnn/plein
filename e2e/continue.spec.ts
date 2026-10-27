@@ -149,6 +149,8 @@ test(
       }
       await page.emulateMedia({ colorScheme: null })
     }
+    // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+    await revealGenerator(page)
     await continued.getByRole('button', { name: '换成新画面' }).click()
     await expect(page.locator('.ui-toast')).toContainText('已换成上一个镜头的新画面')
     await expect(continued).not.toContainText('首帧已旧')

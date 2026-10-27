@@ -271,7 +271,17 @@ export async function contextMenu(page: Page, id: string, item: string) {
   // 先取消选中：选中节点的生成器面板会浮在画布上，可能正好盖住要右键的元素
   await deselect(page)
   await settle(page, id)
-  const p = await centerOf(page, id)
+  // 分组（Frame）里有子节点，右键落在中心会打到子节点上；
+  // 分组自己的标题条在顶端，那里才是分组的菜单。
+  const p = await page.evaluate((id) => {
+    const { engine } = window.__plein
+    const r = engine.doc.worldRect(id)!
+    const el = engine.scene.get(id)
+    const tl = engine.worldToClient(r.x, r.y)
+    if (el?.kind === 'frame') return { x: tl.x + 60, y: tl.y + 8 }
+    const br = engine.worldToClient(r.x + r.w, r.y + r.h)
+    return { x: (tl.x + br.x) / 2, y: (tl.y + br.y) / 2 }
+  }, id)
   await expect
     .poll(() => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.tagName, p), {
       message: '右键落点应在画布上，没有被浮层挡住',
