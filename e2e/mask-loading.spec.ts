@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from '@playwright/test'
 import { solidPng } from '../packages/providers/src/mock/media'
-import { newProject, zoomTo } from './canvas'
+import { newProject, revealGenerator, zoomTo } from './canvas'
 
 type Engine = import('../packages/canvas-core/src/engine').Engine
 async function source(page: Page, metadataFailure = false) {
@@ -96,13 +96,15 @@ for (const mode of ['source', 'corrupt', 'mask', 'metadata'] as const) {
             ? route.fulfill({ status: 200, contentType: 'image/png', body: 'not a PNG' })
             : route.fulfill({ status: 503, body: '读取暂不可用' }),
       )
-    if (mode === 'mask')
-      await page
+    if (mode === 'mask') {
+      // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+      const redraw = page
         .getByTestId('mask-field')
         .getByRole('button', { name: '重画区域', exact: true })
         .last()
-        .click()
-    else await page.getByRole('button', { name: '局部重绘', exact: true }).click()
+      await revealGenerator(page, redraw)
+      await redraw.click()
+    } else await page.getByRole('button', { name: '局部重绘', exact: true }).click()
     const alert = f.dialog.getByRole('alert')
     await expect(alert).toContainText(
       mode === 'mask'
