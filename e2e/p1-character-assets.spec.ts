@@ -140,7 +140,8 @@ test('角色槽位保存后制作草稿，手动 mock 生成并采用后归档�
 
   await generator.getByRole('button', { name: '全屏查看', exact: true }).click()
   const viewer = page.getByRole('dialog', { name: `查看「${draftName}」`, exact: true })
-  await page.keyboard.press('ArrowRight')
+  // 第一个候选已经是采用状态，先翻到第二个再采用，才能验证“换候选后重新归档”。
+  await viewer.getByRole('button', { name: '预览下一个候选', exact: true }).click()
   await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
   const adopted = await page.evaluate((id) => window.__plein.engine.doc.get(id)?.adopted, draftId)
   expect(typeof adopted).toBe('string')
