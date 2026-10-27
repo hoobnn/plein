@@ -71,11 +71,20 @@ function catalog(): Catalog {
   } as unknown as Catalog
 }
 
-/** 服务端每次读目录给什么，由它说了算 */
+/** 服务端每次读目录给什么，由它说了算；其余请求不模拟，跑请求会被抓出来 */
 function serve(read: () => Catalog | Promise<Catalog>) {
   return mockFetch(async (request) => {
     if (new URL(request.url).pathname === '/api/catalog') return Response.json(await read())
-    return Response.json({})
+    return undefined
+  })
+}
+
+/** 运行请求的次数：模板只插入节点，不该触发任何运行 */
+function runCalls(fetch: ReturnType<typeof mockFetch>) {
+  return fetch.mock.calls.filter(([, init]) => {
+    const method = init?.method ?? 'GET'
+    const path = String(init?.body ?? '')
+    return method === 'POST' && path.includes('/run')
   })
 }
 
@@ -100,7 +109,7 @@ const open = () =>
 
 describe('插件模板在添加菜单里的行为', () => {
   it('按来源分组，整组插入、只占一次撤销，也不自动运行', async () => {
-    serve(() => catalog())
+    const fetch = serve(() => catalog())
     const { doc } = setup()
     const { user } = open()
     await screen.findByText('插件模板 · Acme 工具')
@@ -116,12 +125,21 @@ describe('插件模板在添加菜单里的行为', () => {
     expect([...doc.elements()].find((el) => el.name === '第一步')?.params).toEqual({
       text: '自定义',
     })
-    // 模板不触发任何运行
+    // 模板不触发任何运行：既没有节点状态，也一次运行请求都没发
     expect([...doc.elements()].every((el) => !el.run && !el.results)).toBe(true)
+    expect(runCalls(fetch)).toHaveLength(0)
 
     doc.undo.undo()
     expect([...doc.elements()]).toHaveLength(0)
     expect([...doc.edges()]).toHaveLength(0)
+
+    // 重做后节点与连线都回来
+    doc.undo.redo()
+    expect([...doc.elements()]).toHaveLength(3)
+    expect([...doc.edges()]).toHaveLength(1)
+    expect([...doc.elements()].find((el) => el.name === '第一步')?.params).toEqual({
+      text: '自定义',
+    })
   })
 
   it('点下去之前目录里的模板变了：提示重新打开，不插半份', async () => {
