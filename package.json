@@ -47,7 +47,7 @@
     "@types/node": "^26.6.5",
     "@vitest/coverage-v8": "5.0.5",
     "husky": "^9.1.7",
-    "markdownlint-cli": "0.49.1",
+    "markdownlint-cli": "0.50.0",
     "typescript": "^7.0.2",
     "vite": "catalog:",
     "vite-plus": "catalog:"
