@@ -27,6 +27,22 @@ describe('运行状态的展示', () => {
     expect(describeActive({ ...base, phase: 'waiting' }, 120_000).notice).toBeUndefined()
   })
 
+  it('提交响应慢才提醒可能已受理，其余阶段和短等待不提醒', () => {
+    const run = { ...base, phase: 'submitting', via: '火山方豆 · 配音模型' } as const
+    // 等待本地空位的时间不算进平台响应
+    expect(describeActive(run, 1000 + 29_000)).toMatchObject({
+      label: '等待响应',
+      notice: undefined,
+    })
+    expect(describeActive(run, 1000 + 30_000)).toMatchObject({
+      label: '响应较慢',
+      notice: '平台响应较慢，请继续等待；请求可能已受理，请勿重复生成。',
+    })
+    // 换阶段后提醒立即消失
+    expect(describeActive({ ...run, phase: 'generating' }, 1000 + 60_000).notice).toBeUndefined()
+    expect(describeActive({ ...run, phase: 'accepted' }, 1000 + 60_000).notice).toBeUndefined()
+  })
+
   it('等待重试时倒计时', () => {
     const run = { ...base, phase: 'retrying', retryAt: 10_000, message: '限流' } as const
     expect(describeActive(run, 6_500)).toMatchObject({
