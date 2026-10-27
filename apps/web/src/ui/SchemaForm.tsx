@@ -33,6 +33,7 @@ export function SchemaForm({
   value,
   onChange,
   onNumberEdit,
+  onNumberEditEnd,
   readValue,
   dense = false,
 }: {
@@ -41,6 +42,8 @@ export function SchemaForm({
   onChange(next: Record<string, unknown>): void
   /** 数字草稿开始编辑；正式值仍在失焦或回车时提交。 */
   onNumberEdit?(): void
+  /** 数字草稿作废（输入不合法，已退回原值）；调用方据此结束「正在编辑」。 */
+  onNumberEditEnd?(): void
   readValue?(): Record<string, unknown>
   /** 弹层里用 32 高的控件；默认是设置页的 36 高 */
   dense?: boolean
@@ -104,6 +107,7 @@ export function SchemaForm({
               readValue={readValue ? () => readValue()[key] as number | undefined : undefined}
               onChange={(v) => set(key, v)}
               onEdit={onNumberEdit}
+              onEditEnd={onNumberEditEnd}
             />
           )
         } else if (f.widget === 'textarea') {
@@ -177,6 +181,7 @@ function NumberControl({
   value,
   onChange,
   onEdit,
+  onEditEnd,
   readValue,
   describedBy,
 }: {
@@ -186,6 +191,7 @@ function NumberControl({
   value: number | undefined
   onChange(v: number | undefined): void
   onEdit?(): void
+  onEditEnd?(): void
   readValue?(): number | undefined
   describedBy?: string
 }) {
@@ -212,7 +218,14 @@ function NumberControl({
     )
     if (result.kind === 'conflict') return setDraft({ ...draft })
     setDraft(null)
-    if (result.kind === 'invalid') return setInvalid(true)
+    if (result.kind === 'invalid') {
+      // 输入不合法：草稿作废，值退回原样。
+      // 这里必须把「正在编辑」收尾，否则调用方会一直以为还有未保存的草稿，
+      // 把检查按钮永久禁用，用户再也不知道自己到底改没改。
+      setInvalid(true)
+      onEditEnd?.()
+      return
+    }
     choose(result.value)
   }
   const input = (

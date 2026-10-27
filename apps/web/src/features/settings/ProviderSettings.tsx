@@ -9,6 +9,7 @@ import { Select } from '../../ui/Select'
 import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
 import { Switch } from '../../ui/Switch'
 import { Group } from './SettingsGroup'
+import { providerDirty } from './providerDirty'
 
 const input = 'ui-input ui-input-lg w-full'
 
@@ -135,11 +136,7 @@ export function ProviderRow({
 
   const state = providerState(provider)
   const bodyId = `provider-${provider.id}`
-  const dirty =
-    numberEditing ||
-    (!!config &&
-      (Object.values(secrets).some((value) => value !== '') ||
-        JSON.stringify(settings) !== JSON.stringify(config.settings)))
+  const dirty = providerDirty(settings, config?.settings, secrets, numberEditing)
   const feedback = test
     ? {
         message: test.ok
@@ -254,6 +251,11 @@ export function ProviderRow({
                   onNumberEdit={() => {
                     clearFeedback()
                     setNumberEditing(true)
+                  }}
+                  onNumberEditEnd={() => {
+                    // 数字输入不合法、草稿已退回原值：这里没有未保存的改动，
+                    // 要把「正在编辑」收尾，否则检查按钮会被永久禁用。
+                    setNumberEditing(false)
                   }}
                   onChange={(next) => {
                     clearFeedback()
