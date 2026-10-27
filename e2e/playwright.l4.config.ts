@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
+import { configurationPort, outputPath } from './run-scope'
 
-const PORT = Number(process.env.PLEIN_L4_PORT ?? 8796)
+const PORT = await configurationPort('PLEIN_L4_PORT')
 process.env.PLEIN_L4_PORT = String(PORT)
 
 /**
@@ -10,7 +11,7 @@ process.env.PLEIN_L4_PORT = String(PORT)
  */
 export default defineConfig({
   testDir: 'real',
-  outputDir: '../test-results/playwright-l4',
+  outputDir: outputPath('l4'),
   testMatch: '**/*.l4.ts',
   workers: 1,
   timeout: 90 * 60_000,

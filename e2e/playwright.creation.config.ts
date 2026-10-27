@@ -1,11 +1,12 @@
 import { join } from 'node:path'
 import { defineConfig, devices } from '@playwright/test'
+import { configurationPort, outputPath } from './run-scope'
 
 // 此用例自己管理临时服务和重启；不能借用普通 dev 回归的共享后端。
 const root = join(import.meta.dirname, '..')
 const development = process.env.PLEIN_FLOW_DEV === '1'
-const backendPort = Number(process.env.PLEIN_FLOW_PORT ?? 8793)
-const webPort = Number(process.env.PLEIN_E2E_WEB_PORT ?? 8794)
+const backendPort = development ? await configurationPort('PLEIN_FLOW_PORT') : 0
+const webPort = development ? await configurationPort('PLEIN_E2E_WEB_PORT', 1) : 0
 if (development) {
   process.env.PLEIN_FLOW_PORT = String(backendPort)
   process.env.PLEIN_FLOW_BASE_URL = `http://127.0.0.1:${webPort}`
@@ -14,7 +15,7 @@ if (development) {
 export default defineConfig({
   testDir: '.',
   testMatch: 'creation-end-to-end.spec.ts',
-  outputDir: '../test-results/playwright-creation',
+  outputDir: outputPath('creation'),
   workers: 1,
   fullyParallel: false,
   timeout: 240_000,

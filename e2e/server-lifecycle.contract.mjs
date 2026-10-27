@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
+import { startWorkerServer } from './worker-server.ts'
 
 /**
  * 服务监护的合同：只回收本轮独占创建的数据，先停后端再删目录。
@@ -72,10 +73,12 @@ writeFileSync(directory + '/server-open', 'open');
 log('started');
 if (process.env.E2E_CONTRACT_MODE === 'start-failure') process.exit(7);
 const server = createServer((request, response) => { response.writeHead(200); response.end('ok'); });
+const listen = () => server.listen(Number(process.env.PLEIN_PORT), '127.0.0.1', () =>
+  console.log('plein 已启动：http://127.0.0.1:' + server.address().port));
 if (process.env.E2E_CONTRACT_MODE === 'force') {
   const child = spawn(process.execPath, [process.env.E2E_CONTRACT_CHILD], { stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
-  child.once('message', () => server.listen(Number(process.env.PLEIN_PORT), '127.0.0.1'));
-} else if (process.env.E2E_CONTRACT_MODE !== 'start-timeout') server.listen(Number(process.env.PLEIN_PORT), '127.0.0.1');
+  child.once('message', listen);
+} else if (process.env.E2E_CONTRACT_MODE !== 'start-timeout') listen();
 else setInterval(() => {}, 1000);
 let stopping = false;
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
@@ -227,6 +230,90 @@ void test('自动目录已存在时不启动服务，也不删除既存内容', 
     assert.deepEqual(events(run.trace), [])
     assert.equal(readFileSync(join(dataDir, 'not-owned'), 'utf8'), 'preserve')
   } finally {
+    rmSync(scratch, { recursive: true, force: true })
+  }
+})
+
+void test('worker 启动入口不清空已有目录，也不在失败收尾时删除它', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'plein-lifecycle-contract-'))
+  const { backend } = writeBackend(scratch)
+  const dataDir = join(scratch, 'worker-data')
+  mkdirSync(dataDir)
+  writeFileSync(join(dataDir, 'not-owned'), 'preserve')
+  try {
+    await assert.rejects(
+      startWorkerServer({
+        port: await freePort(),
+        dataDir,
+        serverCommand: `${quote(process.execPath)} ${quote(backend)}`,
+        webDist: '',
+        extraEnv: { E2E_CONTRACT_TRACE: join(scratch, 'events.jsonl') },
+      }),
+      /提前退出/,
+    )
+    assert.equal(readFileSync(join(dataDir, 'not-owned'), 'utf8'), 'preserve')
+    assert.deepEqual(events(join(scratch, 'events.jsonl')), [])
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
+  }
+})
+
+void test('不同运行的 worker 和输出路径隔离，显式数据根只作为父目录', () => {
+  const script = `import { dataPath, outputPath } from './e2e/run-scope.ts';
+console.log(JSON.stringify({ data: dataPath('w0'), output: outputPath('main') }));`
+  const scratch = mkdtempSync(join(tmpdir(), 'plein-lifecycle-contract-'))
+  try {
+    const env = { ...process.env, PLEIN_E2E_DATA_ROOT: scratch }
+    delete env.PLEIN_E2E_RUN_ID
+    const run = () =>
+      JSON.parse(
+        execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+          cwd: root,
+          env,
+          encoding: 'utf8',
+        }),
+      )
+    const first = run(),
+      second = run()
+    assert.notEqual(first.data, second.data)
+    assert.notEqual(first.output, second.output)
+    assert.equal(dirname(first.data), scratch)
+    assert.equal(dirname(second.data), scratch)
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
+  }
+})
+
+void test('并行 worker 使用系统端口，停止一方不影响另一方，端口冲突不借用已有服务', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'plein-lifecycle-contract-'))
+  const { backend } = writeBackend(scratch)
+  const start = (name, port = 0) =>
+    startWorkerServer({
+      port,
+      dataDir: join(scratch, name),
+      serverCommand: `${quote(process.execPath)} ${quote(backend)}`,
+      webDist: '',
+      extraEnv: { E2E_CONTRACT_TRACE: join(scratch, `${name}.jsonl`) },
+    })
+  const settled = await Promise.allSettled([start('first'), start('second')])
+  const handles = settled
+    .filter((result) => result.status === 'fulfilled')
+    .map((result) => result.value)
+  try {
+    for (const result of settled) if (result.status === 'rejected') throw result.reason
+    const [first, second] = handles
+    assert.notEqual(first.server.port, second.server.port)
+    assert.ok(first.server.port > 0)
+    await assert.rejects(start('conflict', second.server.port), /提前退出/)
+    assert.equal(existsSync(join(scratch, 'conflict')), false)
+    await first.stop()
+    assert.equal(existsSync(first.server.dataDir), false)
+    assert.equal(readFileSync(join(second.server.dataDir, 'server-open'), 'utf8'), 'open')
+    assert.equal((await fetch(`${second.server.baseURL}/api/health`)).status, 200)
+    await second.stop()
+    assert.equal(existsSync(second.server.dataDir), false)
+  } finally {
+    for (const handle of handles) await handle.stop()
     rmSync(scratch, { recursive: true, force: true })
   }
 })

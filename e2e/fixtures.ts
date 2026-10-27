@@ -10,7 +10,7 @@
  */
 import { test as base, expect } from '@playwright/test'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { basePort, dataPath, portSpan } from './run-scope'
 import type { Catalog } from '../packages/protocol/src/plugins'
 import {
   pickPort,
@@ -43,11 +43,6 @@ export type {
 } from '@playwright/test'
 export { expect }
 
-/** 端口基准：与 8790/8795 错开，避免和别的 agent 正在跑的 e2e 撞车 */
-const BASE_PORT = Number(process.env.PLEIN_E2E_BASE_PORT ?? 8800)
-/** 每个 worker 最多顺延的端口数 */
-const PORT_SPAN = 64
-
 /**
  * 配置里写了真地址（开发态回归的 dev server）时，后端由配置自己的 webServer 管，
  * fixture 不再另起一份，baseURL 也用配置给的那个。
@@ -69,11 +64,10 @@ const webDist = process.env.PLEIN_E2E_DIST ?? join(import.meta.dirname, '../apps
  */
 export const workerIndex = Number(process.env.TEST_PARALLEL_INDEX ?? 0)
 
-/** 当前 worker 的数据目录：worker 序号决定，各 worker 互不相干 */
-export const workerDataDir = join(
-  process.env.PLEIN_E2E_DATA_ROOT ?? tmpdir(),
-  `plein-e2e-w${workerIndex}`,
-)
+/** 重启的 worker 也使用新目录，不接管可能仍在退出的旧服务。 */
+export const workerDataDir =
+  process.env.PLEIN_E2E_EXTERNAL_DATA ??
+  dataPath(`w${process.env.TEST_WORKER_INDEX ?? workerIndex}`)
 
 /**
  * 让 `process.env.PLEIN_E2E_DATA` 指向当前 worker 的数据目录。
@@ -195,8 +189,10 @@ export const test = base.extend<E2EFixtures, E2EWorkerFixtures>({
         await use({ port: 0, dataDir: workerDataDir, baseURL: external })
         return
       }
-      // worker 序号在整轮里唯一，重启后复用同一个序号
-      const port = await pickPort(BASE_PORT, workerInfo.parallelIndex, PORT_SPAN)
+      // 顺延区间互不重叠，不能探测到相邻 worker 尚未绑定的首选端口。
+      const port = process.env.PLEIN_E2E_BASE_PORT
+        ? await pickPort(basePort, workerInfo.parallelIndex * portSpan, portSpan)
+        : 0
       const handle = await startWorkerServer({
         port,
         dataDir: workerDataDir,
@@ -207,8 +203,11 @@ export const test = base.extend<E2EFixtures, E2EWorkerFixtures>({
           ...(process.env.PLEIN_E2E_AUTH === '1' ? { PLEIN_AUTH: 'password' } : {}),
         },
       })
-      await use(handle.server)
-      await handle.stop()
+      try {
+        await use(handle.server)
+      } finally {
+        await handle.stop()
+      }
     },
     { scope: 'worker' },
   ],

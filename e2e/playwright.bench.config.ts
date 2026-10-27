@@ -1,5 +1,6 @@
 import { defineConfig } from '@playwright/test'
 import base from './playwright.config'
+import { outputPath } from './run-scope'
 
 /**
  * 发布指标的测量（不进 `pnpm e2e`）：同样起真服务 + mock 平台，跑 bench/ 下的 *.bench.ts，
@@ -7,6 +8,7 @@ import base from './playwright.config'
  */
 export default defineConfig({
   ...base,
+  outputDir: outputPath('bench'),
   testDir: 'bench',
   testMatch: '*.bench.ts',
   timeout: 600_000,

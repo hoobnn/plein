@@ -3,15 +3,16 @@
  *
  * 并行跑的关键约束是隔离：worker 之间不能共用端口或数据目录，否则用例会互相
  * 看到对方的画布、任务和资产。Playwright 的 `webServer` 是整轮一次，没法按 worker
- * 分开，所以在 worker 作用域的 fixture 里自己起服务，端口按 `basePort + workerIndex`
- * 分配，数据目录同样按 worker 拆开。
+ * 分开，所以在 worker 作用域的 fixture 里自己起服务，默认由系统分配端口，
+ * 显式指定基准时按 worker 拆开顺延区间，数据目录也各自独占。
  *
  * 服务的启动与回收复用 `server-lifecycle.ts` 的监护逻辑（同一套目录所有权规则），
  * 所以单 worker 与多 worker 的生命周期语义一致：先停后端再删目录。
  */
 import { fork, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:net'
-import { rm } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 
@@ -48,6 +49,29 @@ async function waitHealthy(url: string, timeoutMs: number, child: ChildProcess) 
   throw new Error(`E2E 后端在 ${timeoutMs}ms 内未就绪：${String(lastError)}`)
 }
 
+function waitListening(child: ChildProcess, timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const done = (error?: Error, url?: string) => {
+      clearTimeout(timer)
+      child.off('message', message)
+      child.off('exit', exited)
+      child.off('error', failed)
+      if (error) reject(error)
+      else resolve(url!)
+    }
+    const message = (value: unknown) => {
+      const ready = value as { type?: string; url?: string } | null
+      if (ready?.type === 'listening' && typeof ready.url === 'string') done(undefined, ready.url)
+    }
+    const exited = (code: number | null) => done(new Error(`E2E 后端进程提前退出（code=${code}）`))
+    const failed = (error: Error) => done(error)
+    const timer = setTimeout(() => done(new Error('E2E 后端未宣告监听成功')), timeoutMs)
+    child.on('message', message)
+    child.once('exit', exited)
+    child.once('error', failed)
+  })
+}
+
 /**
  * 起一个 worker 专属后端。返回句柄，调用方负责 `stop()`。
  * 数据目录由监护进程独占创建，进程组停止后再删除。
@@ -62,8 +86,8 @@ export async function startWorkerServer(options: {
 }): Promise<{ server: WorkerServer; stop: () => Promise<void> }> {
   const { port, dataDir, serverCommand, webDist, extraEnv = {} } = options
   const timeoutMs = options.timeoutMs ?? 60_000
-  // 上一轮崩溃可能留下同名目录；监护进程要求目录不存在才肯独占创建，先清掉
-  await rm(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  // 只准备父目录。已有叶目录属于其他服务，必须由监护进程拒绝认领。
+  await mkdir(dirname(dataDir), { recursive: true })
   const child = fork(fileURLToPath(import.meta.url), ['--serve'], {
     // 监护进程与后端各自成组：监护进程负责把后端整组停干净
     detached: true,
@@ -75,6 +99,7 @@ export async function startWorkerServer(options: {
       // 监护进程独占创建这个目录，停止后由它回收
       PLEIN_E2E_OWN_DATA: dataDir,
       PLEIN_E2E_RUNNER_PID: String(process.pid),
+      PLEIN_E2E_REPORT_READY: '1',
       PLEIN_PORT: String(port),
       PLEIN_DATA_DIR: dataDir,
       PLEIN_WEB_DIST: webDist,
@@ -83,19 +108,21 @@ export async function startWorkerServer(options: {
       ...extraEnv,
     },
   })
-  const baseURL = `http://127.0.0.1:${port}`
+  let baseURL: string
   try {
+    baseURL = await waitListening(child, timeoutMs)
+    if (port !== 0 && Number(new URL(baseURL).port) !== port)
+      throw new Error('E2E 后端监听端口与分配端口不一致')
     await waitHealthy(`${baseURL}/api/health`, timeoutMs, child)
   } catch (error) {
     await stopChild(child)
     throw error
   }
   return {
-    server: { port, dataDir, baseURL },
+    server: { port: Number(new URL(baseURL).port), dataDir, baseURL },
     stop: async () => {
       await stopChild(child)
-      // 监护进程正常退出时会自己删目录；这里再兜一次，兜住它被强杀的情况
-      await rm(dataDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+      // 只有监护进程知道是否已取得所有权、后端整组是否退出；不能在这里盲删。
     },
   }
 }

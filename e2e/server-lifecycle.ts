@@ -96,8 +96,25 @@ export async function ownServer() {
     const child = spawn(command, {
       shell: true,
       detached: true,
-      stdio: 'inherit',
+      stdio: [
+        'inherit',
+        process.env.PLEIN_E2E_REPORT_READY === '1' ? 'pipe' : 'inherit',
+        'inherit',
+      ],
       env: process.env,
+    })
+    // 只接受自己启动的后端宣告监听成功，不能把占用同一端口的其他服务当作就绪。
+    // 同时把端口 0 分配到的实际地址交回 worker，默认不再先探测再绑定。
+    let stdout = ''
+    child.stdout?.on('data', (chunk: Buffer) => {
+      process.stdout.write(chunk)
+      stdout += chunk.toString()
+      const lines = stdout.split(/\r?\n/)
+      stdout = (lines.pop() ?? '').slice(-8192)
+      for (const line of lines) {
+        const url = /^plein 已启动：(http:\/\/\S+)$/.exec(line)?.[1]
+        if (url && process.connected) process.send?.({ type: 'listening', url })
+      }
     })
     const exited = new Promise<number>((resolve) => {
       child.once('error', (error) => {

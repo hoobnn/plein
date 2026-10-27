@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 import { cpus } from 'node:os'
 import { PLACEHOLDER_BASE_URL } from './worker-server'
+import { outputPath } from './run-scope'
 
 /**
  * 界面冒烟（L3 的界面部分）：真服务 + mock 平台 + e2e 构建的前端。
@@ -9,8 +10,7 @@ import { PLACEHOLDER_BASE_URL } from './worker-server'
  * 文件内部串行。baseURL 由 worker 作用域的 fixture 覆盖，见 `e2e/fixtures.ts`。
  * 数据目录由各 worker 的服务监护进程独占创建、结束后回收，不留状态。
  *
- * 端口基准可用 `PLEIN_E2E_BASE_PORT` 覆盖；每个 worker 用 basePort + workerIndex。
- * 注意别和别的进程抢端口：默认从 8800 起，避开 8790/8795 这类常用值。
+ * 默认由系统分配端口；`PLEIN_E2E_BASE_PORT` 可指定基准，每个 worker 占 64 个顺延端口。
  */
 
 /** 并行度：默认取核数的一半，浏览器本身吃 CPU，留一半给服务和工具链 */
@@ -19,8 +19,7 @@ const workers = Number(process.env.PLEIN_E2E_WORKERS ?? defaultWorkers)
 
 export default defineConfig({
   testDir: '.',
-  // Keep the runner's destructive cleanup inside its own directory.
-  outputDir: '../test-results/playwright-main',
+  outputDir: outputPath('main'),
   // 文件之间并行，文件内部保持串行（一条用例走完整条流水线，状态前后相依）
   workers,
   fullyParallel: false,

@@ -1,8 +1,8 @@
-import { randomUUID } from 'node:crypto'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { defineConfig } from '@playwright/test'
 import base from './playwright.config'
+import { configurationPort, dataPath, outputPath } from './run-scope'
 
 /**
  * 开发态回归：保留 React StrictMode 的 effect 重放，后端与数据仍完全隔离。
@@ -11,13 +11,16 @@ import base from './playwright.config'
  * 所以这里自己起一份固定端口的后端；配置里的 baseURL 不是占位值，
  * fixture 就不会再另起后端，也不会改写页面访问的地址。
  */
-const backendPort = Number(process.env.PLEIN_E2E_PORT ?? 8790)
-const webPort = Number(process.env.PLEIN_E2E_WEB_PORT ?? 8792)
+const backendPort = await configurationPort('PLEIN_E2E_PORT')
+const webPort = await configurationPort('PLEIN_E2E_WEB_PORT', 1)
 const root = join(import.meta.dirname, '..')
-const dataDir = join(tmpdir(), `plein-e2e-dev-${randomUUID()}`)
+const dataDir = dataPath('dev')
+mkdirSync(dirname(dataDir), { recursive: true })
+process.env.PLEIN_E2E_EXTERNAL_DATA = dataDir
 
 export default defineConfig({
   ...base,
+  outputDir: outputPath('dev'),
   // 与生产配置发现相同的普通用例，避免手工白名单遗漏新增或早期主流程。
   // 完整创作用例自行重启后端，开发态由 playwright.creation.config.ts 单独运行。
   testIgnore: ['**/creation-end-to-end.spec.ts'],
