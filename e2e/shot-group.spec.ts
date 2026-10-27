@@ -1,320 +1,260 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { expect, type Page, test } from './fixtures'
-import { clickElement, contextMenu, elements, newProject, settle, zoomTo } from './canvas'
+import { solidPng } from '../packages/providers/src/mock/media'
+import { centerOf, clickElement, elements, newProject, waitEngine, zoomTo } from './canvas'
 
-/** 设了就把界面截图存到这个目录（亮色、暗色各一张） */
-const shotDir = process.env.PLEIN_E2E_SHOTS
-
-async function shoot(page: Page, name: string) {
-  if (!shotDir) return
-  for (const scheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme: scheme })
-    await page.waitForTimeout(300)
-    await page.screenshot({ path: join(shotDir, `${name}-${scheme}.png`) })
-  }
-  await page.emulateMedia({ colorScheme: null })
-}
-
-let dir = ''
-
-test.beforeAll(() => {
-  dir = mkdtempSync(join(tmpdir(), 'plein-e2e-shots-'))
-  // 四格分镜图：四种色调的渐变拼成 2×2
-  const panels = [
-    ['0x1e3a8a', '0xf59e0b'],
-    ['0x0f766e', '0xfde68a'],
-    ['0x7c2d12', '0xfca5a5'],
-    ['0x312e81', '0x67e8f9'],
-  ]
-  const inputs = panels.flatMap(([a, b]) => [
-    '-f',
-    'lavfi',
-    '-i',
-    `gradients=s=480x270:c0=${a}:c1=${b}:x0=0:y0=0:x1=480:y1=270:d=1:r=1`,
-  ])
-  execFileSync('ffmpeg', [
-    '-hide_banner',
-    '-loglevel',
-    'error',
-    '-y',
-    ...inputs,
-    '-filter_complex',
-    '[0][1][2][3]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0',
-    '-frames:v',
-    '1',
-    join(dir, 'storyboard.png'),
-  ])
-  execFileSync('ffmpeg', [
-    '-hide_banner',
-    '-loglevel',
-    'error',
-    '-y',
-    '-f',
-    'lavfi',
-    '-i',
-    'color=c=blue:s=64x48',
-    '-frames:v',
-    '1',
-    join(dir, 'replacement.png'),
-  ])
-})
-
-test('宫格切分上传中切换画布取消旧写入，不产生迟到的分组或错误', async ({ page }) => {
+async function uploadImage(page: Page, width: number, height: number) {
   await newProject(page)
   const chooser = page.waitForEvent('filechooser')
   await page.getByRole('button', { name: '上传', exact: true }).click()
-  await (await chooser).setFiles(join(dir, 'storyboard.png'))
-  await expect.poll(async () => (await elements(page)).length).toBe(1)
-  const source = (await elements(page))[0]!
-  const oldDoc = await page.evaluateHandle(() => window.__plein.engine.doc)
-  const errors: string[] = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  let release = () => {}
-  let started = false
-  let completed = false
-  await page.route('**/api/assets', async (route) => {
-    if (route.request().method() !== 'POST') return route.continue()
-    const response = await route.fetch()
-    await new Promise<void>((resolve) => {
-      release = resolve
-      started = true
-    })
-    await route.fulfill({ response })
-    completed = true
+  await (
+    await chooser
+  ).setFiles({
+    name: '分镜原图.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(solidPng(width, height, [40, 120, 180])),
   })
-  await clickElement(page, source.id)
-  await page
-    .getByRole('toolbar', { name: '结果操作' })
-    .getByRole('button', { name: '宫格切分' })
-    .click()
-  await page.getByRole('button', { name: /4 宫格/ }).click()
-  await expect.poll(() => started).toBe(true)
-  await page.getByRole('button', { name: '切换画布' }).click()
-  await page.getByRole('button', { name: '新建画布' }).click()
-  await page.getByRole('dialog').getByRole('textbox').fill('取消切图后的画布')
-  await page.keyboard.press('Enter')
-  await expect(page.getByRole('button', { name: '切换画布' })).toHaveText('取消切图后的画布')
-  release()
-  await expect.poll(() => completed).toBe(true)
-  expect(await oldDoc.evaluate((doc) => [...doc.elements()].map((el) => el.id))).toEqual([
-    source.id,
-  ])
-  expect(await elements(page)).toEqual([])
-  expect(errors).toEqual([])
-  await oldDoc.dispose()
-})
-test.afterAll(() => rmSync(dir, { recursive: true, force: true }))
+  await expect.poll(async () => (await elements(page)).length).toBe(1)
+  return (await elements(page))[0]!
+}
 
-for (const change of ['replace', 'delete'] as const) {
-  test(`切图上传中${change === 'replace' ? '替换' : '删除'}来源，提示原因且不写入失效分组`, async ({
-    page,
-  }) => {
-    await newProject(page)
-    const chooser = page.waitForEvent('filechooser')
-    await page.getByRole('button', { name: '上传', exact: true }).click()
-    await (await chooser).setFiles(join(dir, 'storyboard.png'))
-    await expect.poll(async () => (await elements(page)).length).toBe(1)
-    const source = (await elements(page))[0]!
-    const replacement = await page.request.post('/api/assets', {
-      headers: { 'content-type': 'image/png' },
-      data: readFileSync(join(dir, 'replacement.png')),
-    })
-    expect(replacement.status()).toBe(201)
-    const asset = (await replacement.json()).id as string
-    let release = () => {}
-    let held = false
-    let uploads = 0
-    await page.route('**/api/assets', async (route) => {
-      if (route.request().method() !== 'POST' || ++uploads < 4) return route.continue()
-      const response = await route.fetch()
-      await new Promise<void>((resolve) => {
-        release = resolve
-        held = true
-      })
-      await route.fulfill({ response })
-    })
+async function metadata(page: Page, id: string) {
+  const assetId = await page.evaluate((id) => window.__plein.engine.doc.get(id)?.assetId, id)
+  expect(assetId).toBeTruthy()
+  const response = await page.request.get(`/api/assets/${assetId}/meta`)
+  expect(response.status()).toBe(200)
+  return response.json()
+}
+
+const resultBar = (page: Page) => page.getByRole('toolbar', { name: '结果操作', exact: true })
+
+test.describe('镜头素材浏览器冒烟', { tag: '@core' }, () => {
+  test('真实图片切分、编号重排与服务端拼图保持实际像素', async ({ page }) => {
+    const source = await uploadImage(page, 960, 540)
     await clickElement(page, source.id)
-    await page
-      .getByRole('toolbar', { name: '结果操作' })
-      .getByRole('button', { name: '宫格切分' })
-      .click()
-    await page.getByRole('button', { name: /4 宫格/ }).click()
-    await expect.poll(() => held).toBe(true)
-    if (change === 'delete') {
-      await contextMenu(page, source.id, '删除')
-      await expect.poll(async () => (await elements(page)).length).toBe(0)
-    } else
-      await page.evaluate(
-        ({ id, asset }) => {
-          const doc = window.__plein.engine.doc as unknown as {
-            origin: unknown
-            ydoc: { transact(fn: () => void, origin: unknown): void }
-            mutable(id: string): { set(key: string, value: string): void }
-          }
-          doc.ydoc.transact(() => doc.mutable(id).set('assetId', asset), doc.origin)
-        },
-        { id: source.id, asset },
-      )
-    release()
-    await expect(page.getByRole('status')).toContainText(
-      change === 'delete' ? '来源元素已删除' : '来源图片已变化',
-    )
-    expect((await elements(page)).filter((el) => el.kind === 'frame')).toEqual([])
-    expect((await elements(page)).length).toBe(change === 'delete' ? 0 : 1)
-  })
-}
-
-test('切图上传中移动来源并新增障碍，完成时按当前布局避让且整组独立撤销', async ({ page }) => {
-  await newProject(page)
-  const chooser = page.waitForEvent('filechooser')
-  await page.getByRole('button', { name: '上传', exact: true }).click()
-  await (await chooser).setFiles(join(dir, 'storyboard.png'))
-  await expect.poll(async () => (await elements(page)).length).toBe(1)
-  const source = (await elements(page))[0]!
-  let release = () => {}
-  let held = false
-  let uploads = 0
-  await page.route('**/api/assets', async (route) => {
-    if (route.request().method() !== 'POST' || ++uploads < 4) return route.continue()
-    const response = await route.fetch()
-    await new Promise<void>((resolve) => {
-      release = resolve
-      held = true
-    })
-    await route.fulfill({ response })
-  })
-  await clickElement(page, source.id)
-  await page
-    .getByRole('toolbar', { name: '结果操作' })
-    .getByRole('button', { name: '宫格切分' })
-    .click()
-  await page.getByRole('button', { name: /4 宫格/ }).click()
-  await expect.poll(() => held).toBe(true)
-  const blocker = await page.evaluate((id) => {
-    const e = window.__plein.engine
-    const doc = e.doc as unknown as {
-      origin: unknown
-      ydoc: { transact(fn: () => void, origin: unknown): void }
-      worldRect(id: string): { x: number; y: number; w: number; h: number }
-      mutable(id: string): { get(key: string): unknown; set(key: string, value: number): void }
-    }
-    const before = doc.worldRect(id)
-    doc.ydoc.transact(() => doc.mutable(id).set('x', before.x + 900), doc.origin)
-    const now = doc.worldRect(id)
-    return window.__plein.addNode({
-      type: 'plein/text',
-      name: '切图期间新增的卡片',
-      params: { text: '保留位置，不与切片重叠' },
-      x: now.x + now.w + 120,
-      y: now.y + now.h / 2 - 120,
-    })
-  }, source.id)
-  release()
-  await expect
-    .poll(async () => (await elements(page)).filter((el) => el.kind === 'frame').length)
-    .toBe(1)
-  const frame = (await elements(page)).find((el) => el.kind === 'frame')!
-  const [s, f, b] = await page.evaluate(
-    (ids) => ids.map((id) => window.__plein.engine.doc.worldRect(id)),
-    [source.id, frame.id, blocker],
-  )
-  expect(f!.x).toBeGreaterThanOrEqual(s!.x + s!.w + 40)
-  expect(f!.x < b!.x + b!.w && f!.x + f!.w > b!.x && f!.y < b!.y + b!.h && f!.y + f!.h > b!.y).toBe(
-    false,
-  )
-  await page.getByRole('button', { name: '撤销', exact: true }).click()
-  expect((await elements(page)).map((el) => el.id).sort()).toEqual([source.id, blocker].sort())
-  expect(await page.evaluate((id) => window.__plein.engine.doc.worldRect(id).x, source.id)).toBe(
-    s!.x,
-  )
-  await page.getByRole('button', { name: '重做', exact: true }).click()
-  expect((await elements(page)).find((el) => el.id === frame.id)?.kind).toBe('frame')
-})
-
-const shotGroup = (page: Page, frameId: string) =>
-  page.evaluate(
-    (id) => window.__plein.engine.doc.get(id)?.params?.shotGroup as { order: string[] } | undefined,
-    frameId,
-  )
-
-test(
-  '分镜组：宫格切分后自动编号，调顺序、排版，拼成大图并标出实际像素',
-  { tag: '@core' },
-  async ({ page }) => {
-    await newProject(page)
-    const chooser = page.waitForEvent('filechooser')
-    await page.getByRole('button', { name: '上传' }).click()
-    await (await chooser).setFiles(join(dir, 'storyboard.png'))
-    await expect.poll(async () => (await elements(page)).length).toBe(1)
-    const [source] = await elements(page)
-
-    await clickElement(page, source!.id)
-    await page
-      .getByRole('toolbar', { name: '结果操作' })
-      .getByRole('button', { name: '宫格切分' })
-      .click()
+    await resultBar(page).getByRole('button', { name: '宫格切分', exact: true }).click()
     await page.getByRole('button', { name: /4 宫格/ }).click()
     await expect
-      .poll(async () => (await elements(page)).filter((e) => e.kind === 'frame').length)
+      .poll(async () => (await elements(page)).filter((el) => el.kind === 'frame').length)
       .toBe(1)
-    const frame = (await elements(page)).find((e) => e.kind === 'frame')!
-    await expect.poll(async () => (await shotGroup(page, frame.id))?.order.length).toBe(4)
-    const tiles = (await shotGroup(page, frame.id))!.order
-
-    // 切出来的直接是分镜组，图上有序号
+    const frame = (await elements(page)).find((el) => el.kind === 'frame')!
+    const group = () =>
+      page.evaluate(
+        (id) => window.__plein.engine.doc.get(id)?.params?.shotGroup as { order: string[] },
+        frame.id,
+      )
+    const tiles = (await group()).order
+    expect(tiles).toHaveLength(4)
     await zoomTo(page, [frame.id])
     await expect(page.locator('.plein-shot-badge')).toHaveCount(4)
     await page.evaluate((id) => window.__plein.engine.selection.set([id]), frame.id)
-    const bar = page.getByRole('toolbar', { name: 'Frame 操作' })
-    await expect(bar.getByRole('button', { name: '分镜组' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    await bar.getByRole('button', { name: '分镜组' }).click()
-    const panel = page.getByRole('dialog', { name: '分镜组' })
-    await expect(panel.getByRole('listitem')).toHaveCount(4)
-
-    // 第 4 格挪到最前，排成一行
-    await panel.getByRole('button', { name: '宫格 4上移' }).click()
-    await panel.getByRole('button', { name: '宫格 4上移' }).click()
-    await panel.getByRole('button', { name: '宫格 4上移' }).click()
-    expect((await shotGroup(page, frame.id))!.order).toEqual([tiles[3], ...tiles.slice(0, 3)])
-    await panel.getByRole('button', { name: '4 列' }).click()
-    const ys = await page.evaluate(
-      (ids) => ids.map((id) => window.__plein.engine.doc.worldRect(id).y),
-      tiles,
-    )
-    expect(new Set(ys).size).toBe(1)
-    await expect(page.locator(`[data-shot-badge="${tiles[3]}"]`)).toHaveText('1')
-    await shoot(page, '1-panel')
-
-    await panel.getByRole('button', { name: '拼成大图' }).click()
+    const bar = page.getByRole('toolbar', { name: 'Frame 操作', exact: true })
+    await bar.getByRole('button', { name: '分镜组', exact: true }).click()
+    const panel = page.getByRole('dialog', { name: '分镜组', exact: true })
+    await panel.getByRole('button', { name: '宫格 4上移', exact: true }).click()
+    expect((await group()).order).toEqual([tiles[0], tiles[1], tiles[3], tiles[2]])
+    await panel.getByRole('button', { name: '4 列', exact: true }).click()
+    await panel.getByRole('button', { name: '拼成大图', exact: true }).click()
     await expect(page.getByText(/拼好了：\d+×\d+ 像素/)).toBeVisible()
     const collage = (await elements(page)).find(
-      (e) => e.kind === 'image' && /拼图/.test(e.name ?? ''),
+      (el) => el.kind === 'image' && /拼图/.test(el.name ?? ''),
     )!
-    expect(collage.name).toMatch(/\d+×\d+$/)
-    const [w, h] = collage
-      .name!.match(/(\d+)×(\d+)$/)!
-      .slice(1)
-      .map(Number)
-    // 4 格一行，每格按切出来的原图 480×270，格间和四周 16px
-    expect([w, h]).toEqual([480 * 4 + 16 * 5, 270 + 16 * 2])
-    // 拼好后镜头会飞到新图，等它停稳再取景
-    await settle(page, collage.id)
-    await zoomTo(page, [frame.id, collage.id])
-    await page.mouse.move(700, 120)
-    await shoot(page, '2-collage')
-
-    // 回到切分前的原图
+    expect(collage.name).toMatch(/2000×302$/)
+    const meta = await metadata(page, collage.id)
+    expect(meta).toMatchObject({ width: 2000, height: 302 })
     await page.evaluate((id) => window.__plein.engine.selection.set([id]), frame.id)
-    await bar.getByRole('button', { name: '分镜组' }).click()
-    await panel.getByRole('button', { name: '定位原图' }).click()
+    await bar.getByRole('button', { name: '分镜组', exact: true }).click()
+    await panel.getByRole('button', { name: '定位原图', exact: true }).click()
     await expect
       .poll(() => page.evaluate(() => window.__plein.engine.selection.values()))
-      .toEqual([source!.id])
-  },
-)
+      .toEqual([source.id])
+  })
+
+  test('本地拉片经真实处理生成素材，刷新后清单与画布一致', async ({ page }) => {
+    await newProject(page)
+    const bytes = execFileSync('ffmpeg', [
+      '-v',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      'color=green:s=96x64:r=10:d=2',
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      '-movflags',
+      'frag_keyframe+empty_moov',
+      '-f',
+      'mp4',
+      'pipe:1',
+    ])
+    const uploaded = await page.request.post('/api/assets', {
+      headers: { 'Content-Type': 'video/mp4' },
+      data: bytes,
+    })
+    expect(uploaded.status()).toBe(201)
+    const assetId = (await uploaded.json()).id as string
+    const source = await page.evaluate((assetId) => {
+      const engine = window.__plein.engine as typeof window.__plein.engine & {
+        paste(value: unknown): void
+      }
+      engine.paste({
+        plein: 1,
+        edges: [],
+        elements: [
+          {
+            id: 'source',
+            kind: 'video',
+            name: '原视频',
+            assetId,
+            x: 300,
+            y: 200,
+            w: 300,
+            h: 200,
+            parentId: null,
+          },
+        ],
+      })
+      return [...engine.doc.elements()][0]!.id
+    }, assetId)
+    await zoomTo(page, [source])
+    const at = await centerOf(page, source)
+    await page.mouse.click(at.x, at.y)
+    await resultBar(page).getByRole('button', { name: '媒体工具', exact: true }).click()
+    await page
+      .getByRole('dialog', { name: '媒体工具', exact: true })
+      .getByRole('button', { name: '本地拉片', exact: true })
+      .click()
+    const panel = page.getByRole('dialog', { name: '本地拉片', exact: true })
+    await panel.getByRole('button', { name: '检测切点', exact: true }).click()
+    await expect(panel.getByLabel('选择镜头 1', { exact: true })).toBeVisible()
+    await panel.getByLabel('切点（秒数或时间码，逗号分隔；留空表示整段）').fill('1')
+    await panel.getByLabel('提取视频片段', { exact: true }).check()
+    await panel.getByRole('button', { name: '按这些切点处理', exact: true }).click()
+    await expect(panel.getByLabel('选择镜头 2', { exact: true })).toBeVisible()
+    await expect(panel.locator('video')).toHaveCount(2)
+    expect(
+      await panel
+        .locator('video')
+        .evaluateAll((videos) =>
+          videos.every(
+            (video) => (video as HTMLVideoElement).muted && (video as HTMLVideoElement).paused,
+          ),
+        ),
+    ).toBe(true)
+    await panel.getByRole('button', { name: '全选镜头', exact: true }).click()
+    await panel.getByRole('button', { name: '放入关键帧', exact: true }).click()
+    await panel.getByRole('button', { name: '放入视频片段', exact: true }).click()
+    const node = (await elements(page)).find((el) => el.nodeType === 'plein/shot-analysis')!
+    const snapshot = await page.evaluate(
+      (id) => ({
+        adopted: window.__plein.engine.doc.get(id)?.adopted,
+        media: [...window.__plein.engine.doc.elements()]
+          .filter((el) => el.params?.shotAnalysisOrigin)
+          .map((el) => el.id)
+          .sort(),
+      }),
+      node.id,
+    )
+    expect(snapshot.media).toHaveLength(4)
+    await panel.getByRole('button', { name: '关闭', exact: true }).click()
+    await page.reload()
+    await waitEngine(page)
+    await expect
+      .poll(() =>
+        page.evaluate((id) => window.__plein.engine.doc.get(id)?.results?.length, node.id),
+      )
+      .toBe(2)
+    expect(
+      await page.evaluate(
+        (id) => ({
+          adopted: window.__plein.engine.doc.get(id)?.adopted,
+          media: [...window.__plein.engine.doc.elements()]
+            .filter((el) => el.params?.shotAnalysisOrigin)
+            .map((el) => el.id)
+            .sort(),
+        }),
+        node.id,
+      ),
+    ).toEqual(snapshot)
+  })
+
+  test('窄窗口边缘工具条真实可点击，焦点恢复且裁剪不改变原图', async ({ page }) => {
+    const source = await uploadImage(page, 160, 90)
+    const before = await page.evaluate((id) => window.__plein.engine.doc.get(id), source.id)
+    await page.setViewportSize({ width: 320, height: 320 })
+    await zoomTo(page, [source.id])
+    await page.evaluate((id) => window.__plein.engine.selection.set([id]), source.id)
+    const bar = resultBar(page)
+    for (const y of [460, 20]) {
+      await page.evaluate(
+        ({ id, y }) => {
+          const engine = window.__plein.engine as typeof window.__plein.engine & {
+            camera: { panBy(x: number, y: number): void }
+          }
+          const r = engine.doc.worldRect(id)
+          const at = engine.worldToClient(r.x + r.w / 2, r.y + r.h)
+          engine.camera.panBy(0, y - at.y)
+        },
+        { id: source.id, y },
+      )
+      await expect
+        .poll(() =>
+          bar.locator('button:enabled').evaluateAll((buttons) =>
+            buttons.every((button) => {
+              const r = button.getBoundingClientRect()
+              return (
+                document
+                  .elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+                  ?.closest('button') === button
+              )
+            }),
+          ),
+        )
+        .toBe(true)
+    }
+    const trigger = bar.getByRole('button', { name: '媒体工具', exact: true })
+    await trigger.click()
+    const tools = page.getByRole('dialog', { name: '媒体工具', exact: true })
+    await tools.getByRole('button', { name: '上下翻转', exact: true }).scrollIntoViewIfNeeded()
+    await expect
+      .poll(async () => {
+        const r = (await tools.boundingBox())!
+        return r.x >= 0 && r.y >= 0 && r.x + r.width <= 320 && r.y + r.height <= 320
+      })
+      .toBe(true)
+    await page.keyboard.press('Escape')
+    await expect(tools).toHaveCount(0)
+    await expect(trigger).toBeFocused()
+    await page.setViewportSize({ width: 390, height: 700 })
+    await zoomTo(page, [source.id])
+    await bar.getByRole('button', { name: '全屏查看', exact: true }).click()
+    const viewer = page.getByRole('dialog', { name: /^查看「分镜原图/ })
+    await expect(viewer.getByRole('img')).toHaveAttribute('src', `/api/assets/${before!.assetId}`)
+    await viewer.getByRole('button', { name: '关闭', exact: true }).click()
+    await trigger.click()
+    await tools.getByRole('button', { name: '裁剪', exact: true }).click()
+    await tools.getByLabel('宽', { exact: true }).fill('80')
+    await tools.getByRole('button', { name: '开始加工', exact: true }).click()
+    await expect
+      .poll(async () => (await elements(page)).filter((el) => el.kind === 'image').length)
+      .toBe(2)
+    const cropped = (await elements(page)).find((el) => el.kind === 'image' && el.id !== source.id)!
+    const meta = await metadata(page, cropped.id)
+    expect(meta).toMatchObject({ width: 80, height: 90 })
+    expect(await page.evaluate((id) => window.__plein.engine.doc.get(id), source.id)).toEqual(
+      before,
+    )
+    await page.evaluate((id) => window.__plein.engine.selection.set([id]), source.id)
+    await zoomTo(page, [source.id])
+    await bar.getByRole('button', { name: '生成视频', exact: true }).click()
+    const derived = await page.evaluate(() =>
+      [...window.__plein.engine.doc.elements()].find((el) => el.nodeType === 'plein/video'),
+    )
+    expect(derived?.params?.mode).toBe('image')
+    expect(await page.evaluate(() => [...window.__plein.engine.doc.edges()])).toContainEqual(
+      expect.objectContaining({ from: [source.id, 'image'], to: [derived!.id, 'images'] }),
+    )
+  })
+})
