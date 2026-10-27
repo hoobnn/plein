@@ -67,9 +67,10 @@ export class Camera {
     this.emit()
   }
 
-  /** 以视口中心缩放到指定倍数 */
+  /** 以可见画布中心缩放，侧栏打开时不把当前内容推向挡板。 */
   zoomTo(zoom: number) {
-    this.setZoomAt(this.width / 2, this.height / 2, zoom)
+    const { cx, cy } = this.safe
+    this.setZoomAt(cx, cy, zoom)
   }
 
   /** 面板边距只通知布局订阅者，不移动相机或触发画面变化。 */

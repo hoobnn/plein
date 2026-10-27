@@ -87,3 +87,36 @@ describe('新建元素尚未派发变更时立即定位', () => {
     expect(inView(engine, doc.worldRect(id)!)).toBe(true)
   })
 })
+
+it('连续平滑定位取最后目标，滚轮和中键在首帧之前立即接管', async () => {
+  let ids: string[] = []
+  const { engine, tick, host } = await setup((doc) => {
+    ids = [0, 4000, -3000].map((x) => createElement(doc, node({ x, y: x / 2 })))
+  })
+  engine.flyTo([ids[1]!])
+  engine.flyTo([ids[2]!])
+  tick(1700)
+  expect(inView(engine, engine.doc.worldRect(ids[2]!)!)).toBe(true)
+  for (const type of ['wheel', 'pointerdown']) {
+    engine.flyTo([ids[1]!])
+    const event = new Event(type, { cancelable: true })
+    for (const [key, value] of Object.entries({
+      button: 1,
+      pointerId: 1,
+      clientX: 100,
+      clientY: 100,
+      deltaX: 0,
+      deltaY: 160,
+      deltaMode: 0,
+    }))
+      Object.defineProperty(event, key, { value })
+    host.dispatchEvent(event)
+    const manual = view(engine)
+    tick(2500)
+    expect(flying(engine)).toBe(false)
+    expect(view(engine)).toEqual(manual)
+    const cancel = new Event('pointercancel')
+    Object.defineProperty(cancel, 'pointerId', { value: 1 })
+    host.dispatchEvent(cancel)
+  }
+})

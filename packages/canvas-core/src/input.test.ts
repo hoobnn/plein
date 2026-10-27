@@ -364,3 +364,20 @@ it('右键越过阈值后平移，回到原点也不弹菜单；取消和相机�
   f.pointer('pointermove', 3, 300, 300)
   expect([f.camera.x, f.camera.y]).toEqual([40, 30])
 })
+
+it.each([{ keyCode: 229 }, { ctrlKey: true }, { metaKey: true }, { altKey: true }])(
+  '组字或修饰键空格 %j 保留系统操作，不误进入抓手',
+  (props) => {
+    const f = setup()
+    const e = event('keydown', { code: 'Space', ...props })
+    f.win.dispatchEvent(e)
+    expect(e.defaultPrevented).toBe(false)
+    expect(f.pan.space).toBe(false)
+    f.pointer('pointerdown', 1, 100, 100)
+    f.pointer('pointermove', 1, 200, 150)
+    expect([f.camera.x, f.camera.y]).toEqual([0, 0])
+    f.pointer('pointerup', 1, 200, 150)
+    f.win.dispatchEvent(event('keydown', { code: 'Space' }))
+    expect(f.pan.space).toBe(true)
+  },
+)

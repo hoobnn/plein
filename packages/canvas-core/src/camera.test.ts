@@ -120,3 +120,14 @@ describe('Camera', () => {
     expect(changed).toBe(0)
   })
 })
+
+it('菜单缩放以面板之外的可见中心为锚点，保留正在查看的内容', () => {
+  const camera = new Camera()
+  camera.setViewport(1200, 800)
+  camera.setInsets({ left: 400, right: 80, top: 64, bottom: 96 })
+  camera.lookAt(2300, -1700, 1)
+  const center = camera.center
+  camera.zoomTo(2)
+  expect(camera.center).toEqual(center)
+  expect(camera.worldToScreen(center.x, center.y)).toEqual({ x: 760, y: 384 })
+})

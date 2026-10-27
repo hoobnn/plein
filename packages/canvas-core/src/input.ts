@@ -200,6 +200,10 @@ export function attachInput(
       !e.repeat &&
       !e.defaultPrevented &&
       !e.isComposing &&
+      e.keyCode !== 229 &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
       !isEditableTarget(e.target) &&
       !isControlTarget(e.target)
     ) {

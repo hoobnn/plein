@@ -281,3 +281,78 @@ describe('取帧请求取消的最终写入保护', () => {
     doc.destroy()
   })
 })
+
+it.each([
+  { width: 320, height: 180, aspect: '16:9' },
+  { width: 180, height: 320, aspect: '9:16' },
+])(
+  '两份 $aspect 续镜在文档通知前完成，避让并保留各自参考和单步撤销',
+  async ({ width, height, aspect }) => {
+    const doc = createDoc(undefined, { schedule: () => {} })
+    const engine = { doc } as Engine
+    const sources = [0, 1].map((i) =>
+      createElement(doc, {
+        kind: 'video',
+        assetId: `video-${i}`,
+        name: `镜头 ${i}`,
+        x: 300,
+        y: 200 + i * 360,
+        w: 240,
+        h: 180,
+      }),
+    )
+    doc.flush()
+    doc.undo.clear()
+    const pending: Array<() => void> = []
+    vi.mocked(api.mediaDerive).mockImplementation(
+      (request) =>
+        new Promise((resolve) => {
+          pending.push(() =>
+            resolve({
+              assets: [
+                {
+                  id: `frame-${request.assetId}`,
+                  kind: 'image',
+                  name: `${request.assetId}.png`,
+                  width,
+                  height,
+                },
+              ],
+              params: { at: 4 },
+            } as never),
+          )
+        }),
+    )
+    const operations = sources.map((id) =>
+      continueShot(engine, { nodes: [video] } as never, id, { last: true }, { focus: false }),
+    )
+    pending.forEach((finish) => finish())
+    const nodes = await Promise.all(operations)
+    const elements = [...doc.elements()]
+    for (let i = 0; i < elements.length; i++)
+      for (let j = i + 1; j < elements.length; j++) {
+        const a = doc.worldRect(elements[i]!.id)!,
+          b = doc.worldRect(elements[j]!.id)!
+        expect(a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y).toBe(false)
+      }
+    for (const [i, id] of nodes.entries()) {
+      const next = doc.get(id)!
+      expect(next.params?.aspectRatio).toBe(aspect)
+      expect(continuesFromOf(next)).toMatchObject({
+        elementId: sources[i],
+        assetId: `video-${i}`,
+        frameAssetId: `frame-video-${i}`,
+      })
+      const edge = [...doc.edges()].find((e) => e.to[0] === id)!
+      expect(doc.get(edge.from[0])?.assetId).toBe(`frame-video-${i}`)
+    }
+    const edges = [...doc.edges()]
+    doc.undo.undo()
+    expect([...doc.elements()]).toHaveLength(4)
+    expect([...doc.edges()]).toHaveLength(1)
+    doc.undo.redo()
+    expect([...doc.elements()]).toEqual(elements)
+    expect([...doc.edges()]).toEqual(edges)
+    doc.destroy()
+  },
+)
