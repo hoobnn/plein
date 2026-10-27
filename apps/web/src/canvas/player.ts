@@ -254,7 +254,8 @@ export function createPlayer(
     render()
   }
   track.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0 || scrubbing) return
+    if (e.button !== 0 || scrubbing || !Number.isFinite(media.duration) || media.duration <= 0)
+      return
     track.focus({ preventScroll: true })
     scrubbing = true
     scrubPointer = e.pointerId

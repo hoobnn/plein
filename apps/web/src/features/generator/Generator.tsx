@@ -50,6 +50,7 @@ import { LibrarySave } from './LibrarySave'
 import { ProfileSummary } from './ProfileSummary'
 import { ModelPicker } from './ModelPicker'
 import { ModePicker } from './ModePicker'
+import { SpeechInstruction } from './SpeechInstruction'
 import { countUnit, isMainField, type ModelOptions, ParamsPill } from './ParamsPill'
 import { ShotPresets } from './ShotPresets'
 import { PromptBox } from './PromptBox'
@@ -577,24 +578,12 @@ export function GeneratorPanel({
         // 生成工具栏保持一行，独立于正文滚动。
         <footer className="plein-generator-footer flex flex-col gap-1 px-4 py-2">
           {hiddenInstruction && (
-            <div className="flex items-start gap-2 px-1 text-xs text-ink-muted">
-              <p
-                className="min-w-0 flex-1 line-clamp-2 break-words"
-                title={String(params.instruction)}
-              >
-                当前模型不支持自由语气，已保留指令：{String(params.instruction)}
-              </p>
-              <button
-                type="button"
-                className="ui-btn ui-btn-xs ui-btn-secondary shrink-0"
-                onClick={() => {
-                  focusPrompt()
-                  set('instruction', '')
-                }}
-              >
-                清空语气指令
-              </button>
-            </div>
+            <SpeechInstruction
+              doc={engine.doc}
+              nodeId={el.id}
+              instruction={String(params.instruction)}
+              focusPrompt={focusPrompt}
+            />
           )}
           {notes.length > 0 && !problem && (
             <p className="px-1 text-xs text-ink-subtle">{notes.join('；')}</p>

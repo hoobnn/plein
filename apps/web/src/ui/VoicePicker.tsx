@@ -51,7 +51,8 @@ export function VoicePicker({
 }) {
   const catalog = useCatalog((s) => s.catalog)
   const presets = voicePresets(catalog)
-  const mine = (useVoices().data ?? []).map((v) => {
+  const voices = useVoices()
+  const mine = (voices.data ?? []).map((v) => {
     const traits = voiceTraits(v)
     return {
       provider: v.provider,
@@ -103,7 +104,29 @@ export function VoicePicker({
     </div>
   )
   // 没有预置音色也没有我的音色：只能手填
-  if (!listed.length) return inputs
+  const feedback = voices.isError ? (
+    <p role="alert" className="text-xs text-danger">
+      我的音色读取失败，当前选择已保留。
+      <button
+        type="button"
+        className="ui-btn ui-btn-quiet ui-btn-xs"
+        onClick={() => void voices.refetch()}
+      >
+        重试
+      </button>
+    </p>
+  ) : voices.isPending ? (
+    <p role="status" className="ui-help">
+      正在读取我的音色…
+    </p>
+  ) : null
+  if (!listed.length)
+    return (
+      <div className="flex flex-col gap-2">
+        {inputs}
+        {feedback}
+      </div>
+    )
   return (
     <div className="flex flex-col gap-2">
       <Select
@@ -129,6 +152,7 @@ export function VoicePicker({
         }}
       />
       {showCustom && inputs}
+      {feedback}
     </div>
   )
 }

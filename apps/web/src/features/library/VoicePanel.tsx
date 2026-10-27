@@ -124,7 +124,11 @@ export function VoicePanel() {
               重试
             </button>
           </p>
-        ) : !voices.data ? null : voices.data.length === 0 ? (
+        ) : !voices.data ? (
+          <p role="status" className="text-sm text-ink-muted">
+            正在读取音色…
+          </p>
+        ) : voices.data.length === 0 ? (
           <EmptyState
             fill
             icon="mic"
