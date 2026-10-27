@@ -261,8 +261,8 @@ test('服饰改名保留旧引用，删除后的必需引用明确阻断，修�
   ).toEqual([f.assets[0]])
   const adopted = () => page.evaluate((id) => window.__plein.engine.doc.get(id)!.adopted, node)
   const current = await adopted()
-  await ui.generator.getByRole('button', { name: '收起编辑器', exact: true }).click()
-  await expect(ui.generator).toHaveAttribute('data-compact', 'true')
+  // 编辑器固定在卡片下方，不再有收起模式；候选直接在卡片上翻，
+  // 翻到的按钮要够得着。
   const next = page.locator('.plein-node').getByRole('button', { name: '下一个结果', exact: true })
   await expect(next).toBeInViewport({ ratio: 1 })
   await page.screenshot({ path: test.info().outputPath('collapsed-editor-candidate.png') })
