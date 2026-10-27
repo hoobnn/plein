@@ -283,7 +283,7 @@ it.each(['content', 'structure', 'readonly'] as const)(
       })
     const before = [...f.doc.elements()]
     await f.user.click(
-      within(screen.getByRole('dialog', { name: '删除镜头 01？' })).getByRole('button', {
+      within(await screen.findByRole('dialog', { name: '删除镜头 01？' })).getByRole('button', {
         name: '删除镜头',
       }),
     )
@@ -295,7 +295,7 @@ it.each(['content', 'structure', 'readonly'] as const)(
     act(f.flush)
     await f.user.click(screen.getByRole('button', { name: '删除镜头 1' }))
     await f.user.click(
-      within(screen.getByRole('dialog', { name: '删除镜头 01？' })).getByRole('button', {
+      within(await screen.findByRole('dialog', { name: '删除镜头 01？' })).getByRole('button', {
         name: '删除镜头',
       }),
     )
@@ -316,7 +316,7 @@ it('已展开镜头取消无写入，确认后节点保留，撤销重做整体�
   await f.user.click(screen.getByRole('button', { name: '取消' }))
   expect([...f.doc.elements()]).toEqual(before)
   await remove()
-  const confirm = within(screen.getByRole('dialog', { name: '删除镜头 01？' }))
+  const confirm = within(await screen.findByRole('dialog', { name: '删除镜头 01？' }))
   fireEvent.keyDown(confirm.getByRole('button', { name: '删除镜头' }), { key: 'z', ctrlKey: true })
   expect([...f.doc.elements()]).toEqual(before)
   await f.user.click(confirm.getByRole('button', { name: '删除镜头' }))

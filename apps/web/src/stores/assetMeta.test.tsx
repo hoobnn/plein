@@ -166,6 +166,56 @@ describe('活跃元信息读取', () => {
     expect(load.mock.calls.map(([id]) => id)).toEqual(['late-error-old', 'late-error-current'])
   })
 
+  it('await 前取得的 getter 能读取外部重试成功值，并在共享缓存淘汰后保留', async () => {
+    const load = vi
+      .spyOn(api, 'assetMeta')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockImplementation(async (id) => asset(id))
+    const { result, rerender } = renderHook(
+      ({ reload }) => useAssetMetas(['external-retry'], reload),
+      {
+        initialProps: { reload: 0 },
+      },
+    )
+    await waitFor(() => expect(result.current.errors).toHaveLength(1))
+    const read = result.current.get
+    const retried = await loadAssetMeta('external-retry')
+    expect(read('external-retry')).toBe(retried)
+    for (let i = 0; i < ASSET_META_CACHE_LIMIT; i++) await loadAssetMeta(`external-other-${i}`)
+    expect(assetMetaCache.get('external-retry')).toBeUndefined()
+    expect(read('external-retry')).toBe(retried)
+    expect(result.current.get('external-retry')).toBe(retried)
+    rerender({ reload: 1 })
+    await waitFor(() => expect(result.current.errors).toEqual([]))
+    expect(result.current.loading).toBe(false)
+    expect(result.current.get('external-retry')).toBe(retried)
+    expect(load.mock.calls.filter(([id]) => id === 'external-retry')).toHaveLength(2)
+  })
+
+  it('重新加载期间旧 getter 跟随同一列表的新结果，切换列表后不会写入新快照', async () => {
+    const retry = deferred()
+    vi.spyOn(api, 'assetMeta')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockReturnValueOnce(retry.promise)
+      .mockImplementation(async (id) => asset(id))
+    const { result, rerender } = renderHook(({ ids, reload }) => useAssetMetas(ids, reload), {
+      initialProps: { ids: ['getter-retry'], reload: 0 },
+    })
+    await waitFor(() => expect(result.current.errors).toHaveLength(1))
+    const read = result.current.get
+    rerender({ ids: ['getter-retry'], reload: 1 })
+    await act(async () => retry.resolve(asset('getter-retry')))
+    for (let i = 0; i < ASSET_META_CACHE_LIMIT; i++) await loadAssetMeta(`getter-other-${i}`)
+    expect(assetMetaCache.get('getter-retry')).toBeUndefined()
+    expect(read('getter-retry')).toEqual(asset('getter-retry'))
+    rerender({ ids: ['getter-current'], reload: 1 })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(read('getter-current')).toBeUndefined()
+    expect(result.current.errors).toEqual([])
+    expect(result.current.get('getter-retry')).toBeUndefined()
+    expect(result.current.get('getter-current')).toEqual(asset('getter-current'))
+  })
+
   it('共享缓存淘汰后活跃单项保持结果，切换时不显示旧请求结果', async () => {
     const load = vi.spyOn(api, 'assetMeta').mockImplementation(async (id) => asset(id))
     const { result, rerender } = renderHook(({ id }) => useAssetMeta(id), {

@@ -73,8 +73,9 @@ export function useAssetMeta(id: string | undefined): Asset | null {
 
 /** 一组资产的元信息；reload 只重试尚未成功读取的项，保留不可变资产缓存。 */
 export function useAssetMetas(ids: string[], reload = 0) {
-  const key = JSON.stringify([...new Set(ids.filter(Boolean))])
-  const retained = useRef(new Map<string, Asset>())
+  const requested = new Set(ids.filter(Boolean))
+  const key = JSON.stringify([...requested])
+  const retained = useRef({ key: '', assets: new Map<string, Asset>() })
   const [state, setState] = useState<{
     key: string
     revision: number
@@ -89,10 +90,10 @@ export function useAssetMetas(ids: string[], reload = 0) {
     let live = true
     const assets = new Map<string, Asset>()
     for (const id of current) {
-      const asset = retained.current.get(id) ?? assetMetaNow(id)
+      const asset = retained.current.assets.get(id) ?? assetMetaNow(id)
       if (asset) assets.set(id, asset)
     }
-    retained.current = assets
+    retained.current = { key, assets }
     setState({ key, revision: 0, errors: {} })
     for (const id of current) {
       if (assets.has(id)) continue
@@ -120,13 +121,21 @@ export function useAssetMetas(ids: string[], reload = 0) {
       live = false
     }
   }, [key, reload])
-  const assets = state.key === key ? retained.current : new Map<string, Asset>()
+  const assets = state.key === key ? retained.current.assets : new Map<string, Asset>()
+  const get = (id: string | undefined) => {
+    if (!id || !requested.has(id)) return undefined
+    // 异步操作可能持有重试前的 getter；同一列表读最新快照，外部成功重试也补入本地保留。
+    const current = retained.current.key === key ? retained.current.assets : assets
+    const asset = current.get(id) ?? assetMetaNow(id)
+    if (asset) current.set(id, asset)
+    return asset
+  }
   const errors = Object.entries(state.key === key ? state.errors : {})
-    .filter(([id]) => !assets.has(id))
+    .filter(([id]) => !get(id))
     .map(([id, message]) => ({ id, message }))
   return {
-    get: (id: string | undefined) => (id ? assets.get(id) : undefined),
+    get,
     errors,
-    loading: ids.some((id) => id && !assets.has(id) && !errors.some((error) => error.id === id)),
+    loading: ids.some((id) => id && !get(id) && !errors.some((error) => error.id === id)),
   }
 }
