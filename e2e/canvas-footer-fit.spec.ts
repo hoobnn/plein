@@ -53,7 +53,8 @@ for (const width of [320, 640, 700, 800, 1440]) {
 
 test('分行底栏下文本生成器仍完整可编辑，正文保留', async ({ page }, testInfo) => {
   await newProject(page)
-  await page.setViewportSize({ width: 700, height: 600 })
+  // 编辑器固定 840×440，窗口要放得下它：顶栏之下、底栏之上都要留出位置
+  await page.setViewportSize({ width: 700, height: 700 })
   await expect
     .poll(() => page.evaluate(() => (window.__plein.engine as unknown as Engine).camera.width))
     .toBe(700)
