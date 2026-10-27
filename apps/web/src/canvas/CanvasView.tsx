@@ -16,7 +16,6 @@ import {
   STORYBOARD_TYPE,
 } from '@plein/nodes'
 import { useEffect, useRef } from 'react'
-import { IndexeddbPersistence } from 'y-indexeddb'
 import { WebsocketProvider } from 'y-websocket'
 import * as Y from 'yjs'
 import { assetUrls, syncUrl } from '../api/client'
@@ -30,7 +29,7 @@ import { demoAssetUrls, releaseDemoAssetUrls, seedDemo } from './demo'
 import { importFiles, importText, revealImports } from './import'
 import { beginImport } from './importProgress'
 import { importLocation, watchImportView } from './importView'
-import { localCacheName, watchCacheWrites } from './localCache'
+import { openLocalCache, watchCacheWrites } from './localCache'
 import { abortGroupRuns } from '../features/runs/groupRuns'
 import { watchStale } from '../features/runs/stale'
 import { NodeCards } from './nodeCards'
@@ -60,23 +59,6 @@ function previewUrl(assetId: string, kind: ElementKind, size: PreviewSize) {
 async function videoRatio(assetId: string) {
   const { width, height } = await loadAssetMeta(assetId)
   return width && height ? width / height : null
-}
-
-/** 打开本地缓存；隐私模式等 IndexedDB 不可用时返回 null，照常等服务端同步 */
-function openLocalCache(canvasId: string, ydoc: Y.Doc) {
-  try {
-    // 先同步探一下：被禁用时访问 indexedDB 本身就会抛错，不必再建 y-indexeddb（它内部的 Promise 没接 catch）
-    if (!globalThis.indexedDB) return null
-    const local = new IndexeddbPersistence(localCacheName(canvasId), ydoc)
-    // 打开失败（有的浏览器隐私模式下异步才报错）：按没有缓存算
-    ;(local as unknown as { _db?: Promise<unknown> })._db?.catch(() => {
-      const { sync, setSync } = useCanvas.getState()
-      setSync(sync, false)
-    })
-    return local
-  } catch {
-    return null
-  }
 }
 
 /** 画布被删除时服务端以 4404 关闭同步连接 */
@@ -254,7 +236,10 @@ export function CanvasView({
       setCanvasId(canvasId)
       const ydoc = new Y.Doc()
       // 本地缓存：上次打开过的画布不等服务端，先用缓存显示，同步完再补齐差异
-      const local = openLocalCache(canvasId, ydoc)
+      const local = openLocalCache(canvasId, ydoc, () => {
+        const { sync, setSync } = useCanvas.getState()
+        setSync(sync, false)
+      })
       setSync('connecting', !!local)
       let cachePending = false
       if (local) {

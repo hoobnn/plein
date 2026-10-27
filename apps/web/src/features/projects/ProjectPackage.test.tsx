@@ -279,6 +279,45 @@ it('取消后立即换文件：旧预检不覆盖新预览，取消新文件释�
   expect(callsOf(f.fetch, 'POST', '/api/project-imports/token-2')).toBe(0)
 })
 
+it('历史候选开关切换统计请求，导出 URL 带上范围参数', async () => {
+  const summaryUrls: string[] = []
+  let history = false
+  mockFetch((request) => {
+    const url = new URL(request.url)
+    if (
+      request.method === 'GET' &&
+      url.pathname === `/api/projects/${project.id}/package/summary`
+    ) {
+      if (url.searchParams.get('history') === '1') history = true
+      summaryUrls.push(`${url.pathname}${url.search}`)
+      return Response.json({ ...summary, assets: history ? 2 : 1 })
+    }
+  })
+  // 拦截下载锚点：导出按钮点击后核对它请求的 URL（happy-dom 里导航是空操作）
+  const hrefs: string[] = []
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    hrefs.push(this.href)
+  })
+  renderApp(<ExportPackageDialog project={project} onClose={() => {}} />)
+  const dialog = await screen.findByRole('dialog', { name: '导出项目包' })
+  await waitFor(() => expect(dialog.textContent).toContain('1 个素材'))
+  // 打开历史候选：统计按 history=1 重新请求
+  within(dialog).getByRole('switch', { name: '包含历史候选' }).click()
+  await waitFor(() => expect(dialog.textContent).toContain('2 个素材'))
+  expect(summaryUrls).toEqual([
+    `/api/projects/${project.id}/package/summary`,
+    `/api/projects/${project.id}/package/summary?history=1`,
+  ])
+  within(dialog).getByRole('button', { name: '导出' }).click()
+  // 下载地址与统计范围一致：带上 history=1
+  expect(hrefs).toEqual([
+    new URL(`/api/projects/${project.id}/package?history=1`, location.href).href,
+  ])
+  click.mockRestore()
+})
+
 it('导出统计失败可重试，恢复后展示范围且导出可用', async () => {
   let fail = true
   const fetch = mockFetch((request) => {

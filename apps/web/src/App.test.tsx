@@ -1,8 +1,13 @@
 // @vitest-environment happy-dom
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { mockFetch } from './testing/fetch'
 import { act, renderApp, screen, waitFor } from './testing/render'
 import { App } from './App'
+
+// 会话门控在画布路由上的行为只需要 DOM：画布引擎边界用可观测替身，不加载 Pixi
+vi.mock('./canvas/CanvasView', () => ({
+  CanvasView: () => <div data-testid="canvas-view-stub" />,
+}))
 
 const session = {
   principal: { id: 'local', role: 'owner' as const },
@@ -10,12 +15,37 @@ const session = {
   needsSetup: false,
 }
 
-/** 会话读取之外的首页读取：空目录与项目列表 */
+/** 会话读取之外的页面读取：空目录、项目列表与画布页头 */
 const homeReads = (request: Request) => {
   const url = new URL(request.url)
   if (request.method === 'GET' && url.pathname === '/api/catalog')
     return Response.json({ providers: [] })
   if (request.method === 'GET' && url.pathname === '/api/projects') return Response.json([])
+  if (request.method === 'GET' && url.pathname === '/api/canvases/canvas-1')
+    return Response.json({
+      id: 'canvas-1',
+      projectId: 'p-1',
+      title: '正在编辑的画布',
+      createdAt: 1,
+      updatedAt: 1,
+    })
+  if (request.method === 'GET' && url.pathname === '/api/projects/p-1')
+    return Response.json({
+      id: 'p-1',
+      title: '画布所在项目',
+      canvases: 1,
+      lastCanvasId: 'canvas-1',
+      createdAt: 1,
+      updatedAt: 1,
+    })
+  if (request.method === 'GET' && url.pathname === '/api/projects/p-1/canvases')
+    return Response.json([
+      { id: 'canvas-1', projectId: 'p-1', title: '正在编辑的画布', createdAt: 1, updatedAt: 1 },
+    ])
+  if (request.method === 'GET' && url.pathname === '/api/canvases/canvas-1/agent/sessions')
+    return Response.json([])
+  if (request.method === 'GET' && url.pathname === '/api/templates') return Response.json([])
+  if (request.method === 'GET' && url.pathname === '/api/library') return Response.json([])
 }
 
 it('首次连接等待显示状态，恢复后显示项目列表', async () => {
@@ -34,7 +64,9 @@ it('首次连接等待显示状态，恢复后显示项目列表', async () => {
   await waitFor(() => expect(screen.getByRole('heading', { name: /我的项目/ })).toBeTruthy())
 })
 
-it('连接失败保留具体原因，重试有防重，恢复后仍进入原画布', async () => {
+it('连接失败保留具体原因，重试有防重，恢复后仍留在原画布', async () => {
+  // 从原画布路由开始：会话恢复后必须仍在这张画布上
+  history.replaceState(null, '', '#/c/canvas-1')
   let mode: 'fail' | 'retry-fail' | 'success' = 'fail'
   let release!: () => void
   const held = new Promise<void>((resolve) => {
@@ -70,7 +102,14 @@ it('连接失败保留具体原因，重试有防重，恢复后仍进入原画�
   await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('服务仍在恢复'))
   mode = 'success'
   screen.getByRole('button', { name: '重试' }).click()
-  await waitFor(() => expect(screen.getByRole('heading', { name: /我的项目/ })).toBeTruthy())
+  // 恢复后仍在原画布：页头是这张画布（Editor 懒加载较重，放宽等待）
+  await waitFor(() => expect(screen.getByRole('button', { name: '切换画布' })).toBeTruthy(), {
+    timeout: 10_000,
+  })
+  expect(location.hash).toBe('#/c/canvas-1')
+  await waitFor(() => expect(screen.getByTestId('canvas-view-stub')).toBeTruthy(), {
+    timeout: 5_000,
+  })
   expect(retries).toBe(2)
 })
 

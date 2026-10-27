@@ -13,6 +13,10 @@ test.describe('本机数据安全', { tag: '@core' }, () => {
     ).toBeVisible()
     await settings.screenshot({ path: testInfo.outputPath('data-maintenance.png') })
     await settings.getByRole('button', { name: '恢复副本', exact: true }).first().click()
-    await expect(settings.getByText(/副本|恢复/).last()).toBeVisible()
+    // 等明确的成功状态：完整性校验通过 + 恢复到的目录路径，而不是按钮文案本身
+    await expect(settings.getByText('完整性校验通过，已恢复到新目录')).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(settings.getByText('已恢复到：')).toBeVisible()
   })
 })

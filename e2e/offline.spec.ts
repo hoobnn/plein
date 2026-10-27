@@ -80,4 +80,84 @@ test.describe('离线编辑与本机缓存', { tag: '@core' }, () => {
     await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected', { timeout: 30_000 })
     await expect.poll(() => serverNodes(context, url)).toBe(2)
   })
+
+  test('离线缓存尚未落盘时保护刷新，事务完成后才显示已保存', async ({ page, context }) => {
+    const net = await syncSwitch(context)
+    await newProject(page)
+    await addNode(page, '文本', { x: 400, y: 450 })
+    await page.keyboard.press('Escape')
+    await expect(syncStatus(page)).toHaveAttribute('data-cache', 'saved')
+    const canvasId = page.url().split('#/c/')[1]!.split(/[/?]/)[0]!
+    const blocker = await context.newPage()
+    try {
+      await blocker.goto('/')
+      // 同一数据库的写事务持续排队，确定性地阻止主页面的缓存写入提交。
+      await blocker.evaluate(
+        (id) =>
+          new Promise<void>((resolve, reject) => {
+            const open = indexedDB.open(`plein-canvas:${id}`)
+            open.onerror = () => reject(open.error)
+            open.onsuccess = () => {
+              const db = open.result
+              const tx = db.transaction('updates', 'readwrite')
+              const store = tx.objectStore('updates')
+              let held = true
+              ;(window as unknown as { releaseCache(): void }).releaseCache = () => {
+                held = false
+              }
+              const keep = () => {
+                const count = store.count()
+                count.onsuccess = () => {
+                  if (held) keep()
+                }
+              }
+              keep()
+              tx.oncomplete = () => db.close()
+              resolve()
+            }
+          }),
+        canvasId,
+      )
+      net.offline()
+      await expect(syncStatus(page)).toHaveAttribute('data-sync', 'disconnected')
+      await addNode(page, '文本', { x: 900, y: 450 })
+      await page.keyboard.press('Escape')
+      await expect.poll(() => nodeCount(page)).toBe(2)
+      await expect(syncStatus(page)).toHaveAttribute('data-cache', 'saving')
+      await expect(syncStatus(page)).toContainText('正在保存到本机')
+      const dialog = page.waitForEvent('dialog')
+      const reload = page.reload({ timeout: 2_000 }).catch(() => {})
+      const warning = await dialog
+      expect(warning.type()).toBe('beforeunload')
+      await warning.dismiss()
+      await reload
+      expect(await nodeCount(page)).toBe(2)
+      await blocker.evaluate(() => (window as unknown as { releaseCache(): void }).releaseCache())
+      await expect(syncStatus(page)).toHaveAttribute('data-cache', 'saved')
+      await page.reload()
+      await waitEngine(page)
+      await expect.poll(() => nodeCount(page)).toBe(2)
+    } finally {
+      await blocker.close()
+    }
+  })
+
+  test('打开已在别处删除的画布：清掉本机缓存并回首页', async ({ page, request }) => {
+    await newProject(page)
+    await expect(syncStatus(page)).toHaveAttribute('data-sync', 'connected')
+    const url = page.url()
+    const canvasId = decodeURIComponent(url.split('#/c/')[1]!.split(/[/?]/)[0]!)
+    const cacheName = `plein-canvas:${canvasId}`
+    const caches = () =>
+      page.evaluate(async () => (await indexedDB.databases()).map((d) => d.name ?? ''))
+    await expect.poll(caches).toContain(cacheName)
+
+    // 离开画布后，在别处（另一个窗口、另一台设备）删掉它；再打开时服务端以 4404 关闭同步
+    await page.goto('/')
+    expect((await request.delete(`/api/canvases/${encodeURIComponent(canvasId)}`)).ok()).toBe(true)
+    await page.goto(url)
+    await expect(page.getByText('画布不存在或已被删除')).toBeVisible()
+    await expect(page).not.toHaveURL(/#\/c\//)
+    await expect.poll(caches).not.toContain(cacheName)
+  })
 })

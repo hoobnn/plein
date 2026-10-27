@@ -255,14 +255,15 @@ it('新建画布迟到应答：关闭窗口或切走后不接管导航，列表�
   expect(location.hash).toBe(`#/c/${secondCanvas.id}`)
 })
 
-it('删除当前画布成功后按最新清单切到下一张', async () => {
-  // 删除后清单已被其他客户端更新：重拉到的最新画布优先于过期的旧清单。
-  // list 在 openMenu 之前声明，路由闭包立刻可用。
-  const created: Canvas = { ...secondCanvas, id: 'canvas-new', title: '同伴新建的画布' }
-  const list = { canvases: [canvas, secondCanvas] as Canvas[] }
-  const f = await openMenu([canvas, secondCanvas], {
+it('删除当前画布后按最新清单切到新出现的画布，而不是过期清单里的', async () => {
+  // 旧清单里除当前画布外是 old；删除后同伴又新建了 new 并删掉了 old：
+  // 重拉到的最新清单是 [new]，必须导航到 new 而不是过期的 old
+  const stale: Canvas = { ...secondCanvas, id: 'canvas-old', title: '旧清单里的画布' }
+  const fresh: Canvas = { ...secondCanvas, id: 'canvas-new', title: '同伴新建的画布' }
+  const list = { canvases: [canvas, stale] as Canvas[] }
+  const f = await openMenu([canvas, stale], {
     [`DELETE /api/canvases/${canvas.id}`]: () => {
-      list.canvases = [secondCanvas, created]
+      list.canvases = [fresh]
       return new Response(null, { status: 204 })
     },
     [`GET /api/projects/${project.id}/canvases`]: () => Response.json(list.canvases),
@@ -270,17 +271,19 @@ it('删除当前画布成功后按最新清单切到下一张', async () => {
   await f.user.click(within(f.menu).getByRole('button', { name: '删除当前画布' }))
   const dialog = await screen.findByRole('dialog', { name: `删除画布「${canvas.title}」？` })
   await f.user.click(within(dialog).getByRole('button', { name: '删除' }))
-  await waitFor(() => expect(location.hash).toBe(`#/c/${secondCanvas.id}`))
+  await waitFor(() => expect(location.hash).toBe(`#/c/${fresh.id}`))
 })
 
-it('删除后清单读取失败时退回旧清单，仍切到下一张画布', async () => {
-  const list = { canvases: [canvas, secondCanvas] as Canvas[], fail: false }
-  const f = await openMenu([canvas, secondCanvas], {
+it('删除后清单读取失败时才回退旧清单', async () => {
+  const stale: Canvas = { ...secondCanvas, id: 'canvas-old', title: '旧清单里的画布' }
+  const fresh: Canvas = { ...secondCanvas, id: 'canvas-new', title: '同伴新建的画布' }
+  const list = { canvases: [canvas, stale] as Canvas[], fail: false }
+  const f = await openMenu([canvas, stale], {
     [`DELETE /api/canvases/${canvas.id}`]: () => {
       list.fail = true
       return new Response(null, { status: 204 })
     },
-    // 首次加载成功（下拉里有旧清单），删除后的重拉失败
+    // 首次加载成功（下拉里有旧清单），删除后的重拉失败：退回旧清单里的下一张
     [`GET /api/projects/${project.id}/canvases`]: () =>
       list.fail
         ? Response.json({ message: '清单暂时不可用' }, { status: 503 })
@@ -289,7 +292,76 @@ it('删除后清单读取失败时退回旧清单，仍切到下一张画布', a
   await f.user.click(within(f.menu).getByRole('button', { name: '删除当前画布' }))
   const dialog = await screen.findByRole('dialog', { name: `删除画布「${canvas.title}」？` })
   await f.user.click(within(dialog).getByRole('button', { name: '删除' }))
-  await waitFor(() => expect(location.hash).toBe(`#/c/${secondCanvas.id}`))
+  await waitFor(() => expect(location.hash).toBe(`#/c/${stale.id}`))
+  void fresh
+})
+
+it('删除后清单请求挂起期间切走：迟到结果不接管导航，只更新数据', async () => {
+  const stale: Canvas = { ...secondCanvas, id: 'canvas-old', title: '旧清单里的画布' }
+  const fresh: Canvas = { ...secondCanvas, id: 'canvas-new', title: '同伴新建的画布' }
+  let held = false
+  let release!: (r: Response) => void
+  const pending = new Promise<Response>((resolve) => {
+    release = resolve
+  })
+  const list = { canvases: [canvas, stale] as Canvas[] }
+  const f = await openMenu([canvas, stale], {
+    [`DELETE /api/canvases/${canvas.id}`]: () => {
+      held = true
+      return new Response(null, { status: 204 })
+    },
+    [`GET /api/projects/${project.id}/canvases`]: () =>
+      held ? pending : Response.json(list.canvases),
+  })
+  await f.user.click(within(f.menu).getByRole('button', { name: '删除当前画布' }))
+  const dialog = await screen.findByRole('dialog', { name: `删除画布「${canvas.title}」？` })
+  await f.user.click(within(dialog).getByRole('button', { name: '删除' }))
+  // 清单读取挂起期间用户切到别的画布（带真实的引擎身份）
+  const engine = { id: 'engine-origin' }
+  useCanvas.setState({ canvasId: canvas.id, engine: engine as never })
+  await act(async () => {
+    navigate({ name: 'canvas', id: secondCanvas.id })
+    useCanvas.setState({ canvasId: secondCanvas.id, engine: { id: 'engine-other' } as never })
+  })
+  await act(async () => release(Response.json([fresh])))
+  await act(async () => {})
+  // 迟到的清单不把用户带走；查询缓存里已经是最新清单
+  expect(location.hash).toBe(`#/c/${secondCanvas.id}`)
+  expect(f.fetch.mock.calls.length).toBeGreaterThan(0)
+})
+
+it('清单挂起期间离开再回到原画布：新会话身份不被旧请求接管', async () => {
+  const stale: Canvas = { ...secondCanvas, id: 'canvas-old', title: '旧清单里的画布' }
+  let held = false
+  let release!: (r: Response) => void
+  const pending = new Promise<Response>((resolve) => {
+    release = resolve
+  })
+  const list = { canvases: [canvas, stale] as Canvas[] }
+  const f = await openMenu([canvas, stale], {
+    [`DELETE /api/canvases/${canvas.id}`]: () => {
+      held = true
+      return new Response(null, { status: 204 })
+    },
+    [`GET /api/projects/${project.id}/canvases`]: () =>
+      held ? pending : Response.json(list.canvases),
+  })
+  // 打开菜单时先声明本次会话的引擎身份
+  useCanvas.setState({ canvasId: canvas.id, engine: { id: 'engine-origin' } as never })
+  await f.user.click(within(f.menu).getByRole('button', { name: '删除当前画布' }))
+  const dialog = await screen.findByRole('dialog', { name: `删除画布「${canvas.title}」？` })
+  await f.user.click(within(dialog).getByRole('button', { name: '删除' }))
+  // 清单挂起期间离开再返回同一画布：引擎身份是新的会话，不是发起删除时那一个
+  await act(async () => {
+    navigate({ name: 'canvas', id: secondCanvas.id })
+    useCanvas.setState({ canvasId: secondCanvas.id, engine: { id: 'engine-away' } as never })
+    navigate({ name: 'canvas', id: canvas.id })
+    useCanvas.setState({ canvasId: canvas.id, engine: { id: 'engine-back' } as never })
+  })
+  await act(async () => release(Response.json([secondCanvas])))
+  await act(async () => {})
+  // 同一画布的新会话也不被旧请求带走，用户停在原画布
+  expect(location.hash).toBe(`#/c/${canvas.id}`)
 })
 
 it('删除最后一张画布成功后回首页', async () => {

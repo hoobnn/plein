@@ -148,17 +148,19 @@ export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
     // 已回到原画布时仍需离开刚被删除的文档；停留在其他画布则保持当前位置。
     if (!isCurrent()) return
     // 删除后重拉一次清单再选下一张：列表可能已被其他客户端更新，别把用户送回首页。
+    // 复用查询层的刷新（invalidateProjects 已把画布清单标为待重拉）：不另发重复读取。
     let others: Canvas[]
     try {
-      const fresh = await api.projectCanvases(canvas.projectId)
+      const fresh = (await canvasList.refetch({ throwOnError: false })).data ?? canvases
       others = fresh.filter((c) => c.id !== canvas.id)
-      queryClient.setQueryData(queryKeys.projectCanvases(canvas.projectId), fresh)
     } catch {
       // 清单读取失败时退回查询缓存里上一次已知的清单
       const cached =
         queryClient.getQueryData<Canvas[]>(queryKeys.projectCanvases(canvas.projectId)) ?? canvases
       others = cached.filter((c) => c.id !== canvas.id)
     }
+    // 清单读取期间用户可能已切走或换到新会话：迟到结果只完成数据更新，不再接管导航
+    if (!isCurrent()) return
     const next = others[0]
     navigate(next ? { name: 'canvas', id: next.id } : { name: 'home' }, { replace: true })
   }

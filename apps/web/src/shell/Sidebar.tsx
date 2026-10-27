@@ -157,10 +157,16 @@ function Count({ engine }: { engine: Engine }) {
 }
 
 function AssetCount() {
-  const { items, projectId, loading, error } = useLibrary()
+  const { items, projectId, loaded, loading, error } = useLibrary()
   const n = items.filter((item) => projectId && item.projectId === projectId).length
-  // 读取中 / 失败时如实说明，不给出没有依据的计数
-  const label = error ? '资产库未读取' : loading ? '正在读取资产库…' : `共 ${n} 项资产`
+  // 读取中如实说明；失败时首次与刷新分开：已有列表保留计数并说明未更新
+  const label = loading
+    ? '正在读取资产库…'
+    : error
+      ? loaded
+        ? `共 ${n} 项 · 未更新`
+        : '资产库未读取'
+      : `共 ${n} 项资产`
   return <span className="px-2 text-xs text-ink-subtle tabular-nums">{label}</span>
 }
 

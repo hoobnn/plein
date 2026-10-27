@@ -282,24 +282,44 @@ it.each([
   const f = setup(
     { jobs: [job({ recovery })], groups: [] },
     {
-      [`POST ${JOBS_PATH}/job-1/recover`]: () => {
-        f.state.list = { jobs: [job({ recovery: { ...recovery, dismissed: true } })], groups: [] }
-        return Response.json(job({ recovery: { ...recovery, dismissed: true } }))
+      [`POST ${JOBS_PATH}/job-1/recover`]: async (request) => {
+        // 按动作返回结果：refetch 后平台已受理；dismiss 后恢复提示整体收起
+        const body = (await request.json()) as { action: string }
+        if (body.action === 'refetch') {
+          const recovered = job({ recovery: { state: 'remote_pending', refetchable: true } })
+          f.state.list = { jobs: [recovered], groups: [] }
+          return Response.json(recovered)
+        }
+        const dismissed = job({ recovery: { ...recovery, dismissed: true } })
+        f.state.list = { jobs: [dismissed], groups: [] }
+        return Response.json(dismissed)
       },
     },
   )
   await within(panel()).findByRole('button', { name: '任务目标原名' })
   expect(within(panel()).queryByRole('button', { name: '重试' })).toBeNull()
   within(panel()).getByRole('button', { name: action }).click()
-  await waitFor(() => {
-    const sent = f.fetch.mock.calls.some(
-      ([input, init]) =>
-        init?.method === 'POST' &&
-        new URL(typeof input === 'string' ? input : (input as Request).url, location.href)
-          .pathname === `${JOBS_PATH}/job-1/recover`,
-    )
-    expect(sent).toBe(true)
-  })
+  const bodies = () =>
+    f.fetch.mock.calls
+      .filter(([input, init]) => {
+        const url = new URL(
+          typeof input === 'string' ? input : (input as Request).url,
+          location.href,
+        )
+        return init?.method === 'POST' && url.pathname === `${JOBS_PATH}/job-1/recover`
+      })
+      .map(([, init]) => JSON.parse(String(init!.body)))
+  // 请求体必须与按钮的动作一致，而不是随便发一个恢复请求
+  await waitFor(() =>
+    expect(bodies()).toEqual([{ action: action === '重新获取' ? 'refetch' : 'dismiss' }]),
+  )
+  if (action === '重新获取')
+    await waitFor(() => expect(within(panel()).getByText('平台已受理，结果尚未取回')).toBeTruthy())
+  else
+    // 标记已处理后恢复提示收起，只剩状态行
+    await waitFor(() => expect(within(panel()).queryByTestId('job-recovery')).toBeNull())
+  // 两种恢复动作都不触发重新生成
+  expect(callsOf(f.fetch, 'POST', `/api/canvases/${CANVAS}/nodes/node-1/run`)).toHaveLength(0)
 })
 
 it('填平台任务 ID 续查：失败保留输入，成功清理表单', async () => {

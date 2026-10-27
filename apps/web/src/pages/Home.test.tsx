@@ -529,6 +529,45 @@ it('快速开始等待期间防重复，失败后可从同一入口重试', asyn
   expect(writes).toBe(2)
 })
 
+it('改名后迟到的旧列表不覆盖已确认的名称', async () => {
+  // 回首页时先显示缓存的项目（查询正在重拉）；改名确认后，挂起的旧列表响应迟到
+  queryClient.setQueryData(queryKeys.projects, [project()])
+  let release!: (r: Response) => void
+  const held = new Promise<Response>((resolve) => {
+    release = resolve
+  })
+  let reads = 0
+  const f = await setup([project()], (state) => ({
+    'PATCH /api/projects/p-1': async (request) => {
+      const { title } = (await request.json()) as { title: string }
+      state.projects = state.projects.map((item) => (item.id === 'p-1' ? { ...item, title } : item))
+      return Response.json({ ...project(), title, covers: undefined })
+    },
+    'GET /api/projects': () => {
+      reads++
+      // 挂起的是回首页后的第一次重拉；改名触发的失效重拉按最新状态回放
+      if (reads === 1) return held
+      return Response.json(state.projects)
+    },
+  }))
+  const card = await cardOf('雨后的项目')
+  await f.user.click(within(card).getByRole('button', { name: '重命名' }))
+  const input = within(card).getByRole('textbox', { name: '项目名称' })
+  await f.user.clear(input)
+  await f.user.type(input, '不能被旧列表撤销的名称')
+  fireEvent.keyDown(input, { key: 'Enter' })
+  await waitFor(() =>
+    expect(within(card).getByRole('link', { name: '不能被旧列表撤销的名称' })).toBeTruthy(),
+  )
+  // 改名触发的失效重拉已经接管了挂起的旧请求；迟到的旧列表不能再覆盖确认写入
+  await act(async () => release(Response.json([project()])))
+  await act(async () => {})
+  await waitFor(() =>
+    expect(within(card).getByRole('link', { name: '不能被旧列表撤销的名称' })).toBeTruthy(),
+  )
+  expect(callsOf(f.fetch, 'PATCH', '/api/projects/p-1')).toBe(1)
+})
+
 it('首页助手入口唯一且置于顶栏', async () => {
   await setup([project()])
   const banner = await screen.findByRole('banner')

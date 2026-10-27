@@ -1,3 +1,5 @@
+import { IndexeddbPersistence } from 'y-indexeddb'
+
 /** 画布在浏览器本地缓存（IndexedDB，y-indexeddb）里的库名 */
 export const localCacheName = (canvasId: string) => `plein-canvas:${canvasId}`
 
@@ -69,5 +71,22 @@ export function watchCacheWrites(
     doc.off('update', update)
     database?.removeEventListener('abort', fail)
     database?.removeEventListener('error', fail)
+  }
+}
+
+/**
+ * 打开本地缓存；隐私模式等 IndexedDB 不可用时返回 null，照常等服务端同步。
+ * onVolatile 在缓存异步打开失败（按没有缓存算）时回调。
+ */
+export function openLocalCache(canvasId: string, ydoc: import('yjs').Doc, onVolatile?: () => void) {
+  try {
+    // 先同步探一下：被禁用时访问 indexedDB 本身就会抛错，不必再建 y-indexeddb（它内部的 Promise 没接 catch）
+    if (!globalThis.indexedDB) return null
+    const local = new IndexeddbPersistence(localCacheName(canvasId), ydoc)
+    // 打开失败（有的浏览器隐私模式下异步才报错）：按没有缓存算
+    ;(local as unknown as { _db?: Promise<unknown> })._db?.catch(() => onVolatile?.())
+    return local
+  } catch {
+    return null
   }
 }

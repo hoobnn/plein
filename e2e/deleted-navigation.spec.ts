@@ -2,15 +2,28 @@ import { expect, test } from './fixtures'
 import { newProject } from './canvas'
 
 test.describe('已删除目标的导航恢复', { tag: '@core' }, () => {
-  test('旧画布链接清楚说明已删除并返回首页，不创建替代画布', async ({ page }) => {
-    await newProject(page)
+  test('打开中的画布被删除后回首页说明原因，后退不重连也不建替代画布', async ({ page }) => {
+    // 先过首页：浏览器历史里有首页这一条，后退才回得到首页
+    await newProject(page, { visitHome: true })
     const id = new URL(page.url()).hash.split('/').at(-1)!
     const canvas = await (await page.request.get(`/api/canvases/${id}`)).json()
-    await page.goto('/')
+    // 画布打开期间在别处删掉它：同步以 4404 关闭，页面回首页并说明原因
+    let connections = 0
+    page.on('websocket', (socket) => {
+      if (socket.url().includes(id)) connections++
+    })
     expect((await page.request.delete(`/api/canvases/${id}`)).ok()).toBe(true)
-    await page.goto(`/#/c/${id}`)
     await expect(page.getByText('画布不存在或已被删除', { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: '我的项目' })).toBeVisible()
+    // 浏览器后退不能把已删除的画布重新连接起来
+    const before = connections
+    await page.goBack()
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+    await expect(page.getByRole('heading', { name: '我的项目' })).toBeVisible()
+    expect(connections).toBe(before)
+    // 不创建替代画布
     expect(
       (await (await page.request.get(`/api/projects/${canvas.projectId}/canvases`)).json()).length,
     ).toBe(0)

@@ -577,6 +577,40 @@ it('资产页签：读取失败说明原因并原地重试，恢复后显示空�
   expect(tree().getByText('共 0 项资产')).toBeTruthy()
 })
 
+it('资产页签刷新失败但有缓存时保留计数并说明未更新', async () => {
+  const { engine } = makeEngine()
+  useCanvas.setState({ engine, canvasId: 'canvas-1' })
+  const item = {
+    id: 'lib-1',
+    kind: 'character',
+    name: '缓存中的角色',
+    projectId: 'canvas-1',
+    description: '',
+    tags: {},
+    voice: null,
+    images: [],
+    video: null,
+    models: [],
+    profile: null,
+    favorite: false,
+    usedAt: null,
+    createdAt: 1,
+    updatedAt: 1,
+  } satisfies LibraryItem
+  // 已读取过一条；刷新失败：正文保留条目，页脚计数保留并说明未更新
+  useLibrary.setState({
+    items: [item],
+    loaded: true,
+    loading: false,
+    error: '刷新暂不可用',
+    projectId: 'canvas-1',
+  })
+  renderApp(<Sidebar open />)
+  tree().getByRole('tab', { name: '资产' }).click()
+  expect(await tree().findByRole('button', { name: /缓存中的角色/ })).toBeTruthy()
+  expect(tree().getByText('共 1 项 · 未更新')).toBeTruthy()
+})
+
 it('资产页签读取期间显示进行中状态，完成后给出计数', async () => {
   const { engine } = makeEngine()
   useCanvas.setState({ engine, canvasId: 'canvas-1' })

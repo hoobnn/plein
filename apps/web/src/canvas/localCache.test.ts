@@ -1,7 +1,19 @@
 import type { IndexeddbPersistence } from 'y-indexeddb'
 import * as Y from 'yjs'
 import { describe, expect, it, vi } from 'vite-plus/test'
-import { watchCacheWrites } from './localCache'
+import { openLocalCache, watchCacheWrites } from './localCache'
+
+/** openLocalCache 的用例把 y-indexeddb 换成可注入的假实现：名字带 throw 时同步抛错 */
+vi.mock('y-indexeddb', () => {
+  class Fake {
+    _db: Promise<unknown>
+    constructor(name: string, _doc: Y.Doc) {
+      if (name === 'plein-canvas:throw') throw new Error('blocked')
+      this._db = (globalThis as { __failDb?: Promise<never> }).__failDb ?? Promise.resolve()
+    }
+  }
+  return { IndexeddbPersistence: Fake }
+})
 
 function cache() {
   const transactions: Array<{
@@ -74,6 +86,56 @@ describe('本机缓存落盘确认', () => {
     transactions[0]!.oncomplete!()
     await Promise.resolve()
     expect(state).not.toHaveBeenCalled()
+    doc.destroy()
+  })
+})
+
+describe('打开本地缓存', () => {
+  it('IndexedDB 不可用时返回 null，照常等服务端同步', () => {
+    const doc = new Y.Doc()
+    const saved = globalThis.indexedDB
+    vi.stubGlobal('indexedDB', undefined)
+    try {
+      expect(openLocalCache('c1', doc)).toBeNull()
+    } finally {
+      if (saved === undefined) vi.unstubAllGlobals()
+      else vi.stubGlobal('indexedDB', saved)
+      vi.unstubAllGlobals()
+    }
+    doc.destroy()
+  })
+
+  it('构造同步抛错时返回 null', () => {
+    const doc = new Y.Doc()
+    const saved = globalThis.indexedDB
+    vi.stubGlobal('indexedDB', {})
+    try {
+      expect(openLocalCache('throw', doc)).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+      if (saved !== undefined) vi.stubGlobal('indexedDB', saved)
+    }
+    doc.destroy()
+  })
+
+  it('缓存异步打开失败时回调，按没有缓存处理', async () => {
+    const doc = new Y.Doc()
+    const volatile = vi.fn()
+    const saved = globalThis.indexedDB
+    const failing = Promise.reject(new Error('denied'))
+    vi.stubGlobal('indexedDB', {})
+    ;(globalThis as { __failDb?: Promise<never> }).__failDb = failing
+    try {
+      const local = openLocalCache('c3', doc, volatile)
+      expect(local).toBeTruthy()
+      await expect((local as unknown as { _db: Promise<unknown> })._db).rejects.toThrow('denied')
+      await Promise.resolve()
+      expect(volatile).toHaveBeenCalledTimes(1)
+    } finally {
+      delete (globalThis as { __failDb?: Promise<never> }).__failDb
+      vi.unstubAllGlobals()
+      if (saved !== undefined) vi.stubGlobal('indexedDB', saved)
+    }
     doc.destroy()
   })
 })
