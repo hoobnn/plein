@@ -9,6 +9,15 @@ import { API } from '../packages/protocol/src/api'
 import type { GenerationOrigin } from '../packages/doc/src/video-segment'
 import { centerOf, newProject, waitEngine, waitNode, zoomTo } from './canvas'
 
+/** 本机 ffmpeg 是否带 libass：烧字幕要用 ass 滤镜，缺了就跑不了这条 */
+const hasLibass = () => {
+  try {
+    return / ass /.test(execFileSync('ffmpeg', ['-hide_banner', '-filters'], { encoding: 'utf8' }))
+  } catch {
+    return false
+  }
+}
+
 let directory = ''
 test.beforeAll(() => {
   directory = mkdtempSync(join(tmpdir(), 'plein-instance-ui-'))
@@ -201,6 +210,8 @@ async function fix(page: Page, sound = 'native') {
 test('同一固定段两实例：明确声音与叙事、独立修剪重排字幕、实际重叠输出和双来源回到具体实例，零Provider提交', async ({
   page,
 }, info) => {
+  // 导出要烧字幕，本机 ffmpeg 没有 libass 时跑不了（属环境限制，用例留在这里）
+  test.skip(!hasLibass(), '本机 ffmpeg 无 libass，烧字幕的成片导不出来')
   const f = await fixture(page)
   await open(page, f.sequence)
   await expect(
@@ -585,6 +596,8 @@ async function mappedFixture(page: Page) {
 const workbench = (page: Page) => page.getByRole('dialog', { name: '镜头工作台', exact: true })
 const checklist = (page: Page) => page.getByRole('dialog', { name: '批量生成清单', exact: true })
 async function openShot(page: Page, board: string, no: number) {
+  // 节点编辑器浮在画布上，可能盖住分镜卡：先收起它，卡片才点得到
+  await page.evaluate(() => window.__plein.engine.selection.set([]))
   await zoomTo(page, [board])
   const point = await centerOf(page, board)
   await page.mouse.dblclick(point.x, point.y)
