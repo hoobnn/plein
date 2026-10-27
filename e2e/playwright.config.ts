@@ -23,7 +23,7 @@ export default defineConfig({
   // 文件之间并行，文件内部保持串行（一条用例走完整条流水线，状态前后相依）
   workers,
   fullyParallel: false,
-  // CI 每次全量一千六百多条，偶发的时序抖动重试一次；稳定失败仍然算失败，重试通过的会标成 flaky
+  // CI 重试通过的用例仍标成 flaky，稳定失败仍然算失败；本地验收不重试。
   retries: process.env.CI ? 1 : 0,
   // 默认超时收紧到一分钟：界面冒烟里没有一条该跑更久；
   // 确实需要长时间的用例在自己的文件里调大

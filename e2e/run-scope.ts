@@ -3,7 +3,7 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-export const repositoryRoot = resolve(import.meta.dirname, '..')
+const repositoryRoot = resolve(import.meta.dirname, '..')
 const repositoryId = createHash('sha256').update(repositoryRoot).digest('hex').slice(0, 12)
 // 配置进程先分配，随后由所有 worker 继承；同一检出的并行运行也各自独占。
 const runId = (process.env.PLEIN_E2E_RUN_ID ??= randomUUID())

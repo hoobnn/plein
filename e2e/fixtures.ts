@@ -1,8 +1,7 @@
 /**
  * e2e 的并行基础设施：worker 作用域的服务与 baseURL。
  *
- * 整轮 e2e 有三百多个文件、上千条用例，串行跑一个多小时。文件之间其实互不相干，
- * 所以让每个 worker 带一份自己的后端（独立端口 + 独立数据目录）并行跑，文件内部仍然串行。
+ * 每个 worker 带一份自己的后端（独立端口 + 独立数据目录），文件之间并行，文件内部串行。
  *
  * 用 `baseURL` 覆盖而不是改配置里的 `use.baseURL`：Playwright 的 `baseURL` 可以在
  * fixture 里按 worker 覆盖，`page.goto('/')` 和 `request.get('/api/...')` 都会跟着走，
@@ -28,18 +27,10 @@ export type {
   BrowserContext,
   Download,
   ElementHandle,
-  FileChooser,
-  Frame,
-  JSHandle,
   Locator,
   Page,
-  Request,
-  Response,
   Route,
-  TestInfo,
-  WebSocket,
   WebSocketRoute,
-  Worker,
 } from '@playwright/test'
 export { expect }
 
@@ -62,10 +53,10 @@ const webDist = process.env.PLEIN_E2E_DIST ?? join(import.meta.dirname, '../apps
  * 少数用例要直接读服务的数据目录（断言落盘结果），靠这个序号推导出目录路径，
  * 不必等 fixture 起来之后才知道。
  */
-export const workerIndex = Number(process.env.TEST_PARALLEL_INDEX ?? 0)
+const workerIndex = Number(process.env.TEST_PARALLEL_INDEX ?? 0)
 
 /** 重启的 worker 也使用新目录，不接管可能仍在退出的旧服务。 */
-export const workerDataDir =
+const workerDataDir =
   process.env.PLEIN_E2E_EXTERNAL_DATA ??
   dataPath(`w${process.env.TEST_WORKER_INDEX ?? workerIndex}`)
 
@@ -76,7 +67,7 @@ export const workerDataDir =
 process.env.PLEIN_E2E_DATA = workerDataDir
 
 /** worker 级的 fixture 与开关 */
-export interface E2EWorkerFixtures {
+interface E2EWorkerFixtures {
   /** 当前 worker 的后端地址：页面与 request fixture 都用它 */
   workerServer: WorkerServer
   /**
@@ -84,16 +75,16 @@ export interface E2EWorkerFixtures {
    * 自管服务的用例用 `test.use({ ownService: true })` 标出来。
    */
   ownService: boolean
-  /** worker 启动时各平台的配置：每个文件跑完恢复回去 */
+  /** worker 启动时各平台的配置：每条用例结束恢复回去 */
   providerSnapshot: ProviderSnapshot[]
 }
 
 /** 用例级的 fixture */
-export interface E2EFixtures {
+interface E2EFixtures {
   /**
-   * 文件跑完后把平台配置恢复成 worker 启动时的样子。
+   * 用例结束后把平台配置恢复成 worker 启动时的样子。
    * 有用例会改 mock 平台的开关和参数（模拟报错、排队、鉴权失败），
-   * 改完不复原的话，同一 worker 里后面��文件会带着这些改动跑，行为就不确定了。
+   * 改完不复原的话，同一 worker 里后续的用例会带着这些改动跑，行为就不确定了。
    */
   resetProviders: void
 }
@@ -150,8 +141,8 @@ export const test = base.extend<E2EFixtures, E2EWorkerFixtures>({
   resetProviders: [
     async ({ request, providerSnapshot }, use) => {
       await use()
-      // 文件跑完（不论成败）都把平台配置恢复成 worker 启动时的样子，
-      // 别把改动留给后面的文件
+      // 用例结束（不论成败）都把平台配置恢复成 worker 启动时的样子，
+      // 别把改动留给后续的用例
       for (const snapshot of providerSnapshot) {
         const url = `/api/providers/${snapshot.id}/config`
         const current = await request
@@ -211,7 +202,7 @@ export const test = base.extend<E2EFixtures, E2EWorkerFixtures>({
     },
     { scope: 'worker' },
   ],
-  // 平台配置的初始状态：worker 起来时记一次，后面每个文件跑完都恢复回去
+  // 平台配置的初始状态：worker 起来时记一次，后面每条用例结束都恢复回去
   providerSnapshot: [
     async ({ workerServer }, use) => {
       // 自管服务的用例没有 worker 后端，也就无从恢复

@@ -149,7 +149,7 @@ async function stopChild(child: ChildProcess) {
 }
 
 /** 端口是否可用：并行时避免撞上别的进程已经占住的端口 */
-export function portFree(port: number): Promise<boolean> {
+function portFree(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const probe = createServer()
     probe.once('error', () => resolve(false))

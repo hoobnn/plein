@@ -79,7 +79,7 @@ declare global {
 }
 
 /** 画布元素的精简视图：测试只关心种类、名字、节点类型与运行状态 */
-export interface ElementView {
+interface ElementView {
   id: string
   kind: string
   name?: string
@@ -125,7 +125,7 @@ export async function waitEngine(page: Page) {
 }
 
 /** 新建项目的可选行为 */
-export interface NewProjectOptions {
+interface NewProjectOptions {
   /**
    * 先打开首页再进画布。
    *
@@ -206,35 +206,6 @@ export async function settle(page: Page, id: string) {
         requestAnimationFrame(tick)
       }),
     id,
-  )
-}
-
-/**
- * 等镜头停稳：相机位置连续几帧不变，且没有正在进行的飞行动画。
- * 飞行动画（flyTo）由引擎按时间推进，等它自然结束要按动画时长猜；
- * 直接读相机的位置，连续几帧不动就是停稳了。
- */
-export async function settleCamera(page: Page) {
-  await page.waitForFunction(
-    () =>
-      new Promise<boolean>((done) => {
-        const engine = window.__plein.engine as Window['__plein']['engine'] & {
-          flight?: unknown
-        }
-        const camera = engine.camera as unknown as { x: number; y: number; zoom: number }
-        const at = () => `${camera.x},${camera.y},${camera.zoom}`
-        let last = at()
-        let same = 0
-        const tick = () => {
-          const now = at()
-          same = now === last ? same + 1 : 0
-          last = now
-          // 没有飞行、位置连续几帧不变，才算停稳
-          if (!engine.flight && same >= 5) done(true)
-          else requestAnimationFrame(tick)
-        }
-        requestAnimationFrame(tick)
-      }),
   )
 }
 
@@ -478,7 +449,7 @@ export async function runBatch(page: Page, dialog: Locator, label: string, timeo
 }
 
 /** 批量按钮先只预检；测试也必须显式审阅和确认，不能绕过清单入口。 */
-export async function confirmBatchChecklist(page: Page) {
+async function confirmBatchChecklist(page: Page) {
   const checklist = page.getByRole('dialog', { name: '批量生成清单', exact: true })
   await expect(checklist).toBeVisible()
   const confirm = checklist.getByRole('button', { name: '确认并开始生成', exact: true })
