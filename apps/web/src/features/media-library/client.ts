@@ -22,12 +22,10 @@ export async function mediaRequest<T>(path: string, init: RequestInit = {}): Pro
       message?: string
     } | null
     if (response.status === 401) reportUnauthorized()
-    throw new ApiError(
-      response.status,
-      body?.error ?? 'http_error',
-      body?.message ?? response.statusText,
-      body,
-    )
+    // 服务端没给可读文案时也要说清发生了什么，不能只留一个空提示。
+    const message =
+      body?.message?.trim() || response.statusText?.trim() || `请求失败（${response.status}）`
+    throw new ApiError(response.status, body?.error ?? 'http_error', message, body)
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>

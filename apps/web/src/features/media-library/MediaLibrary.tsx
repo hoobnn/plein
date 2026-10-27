@@ -1,4 +1,3 @@
-import type { CanvasElement } from '@plein/doc'
 import type { CompositionSourceRef } from '@plein/plugin-sdk'
 import {
   MEDIA_SEARCH_MAX_LENGTH,
@@ -31,25 +30,11 @@ import { Select } from '../../ui/Select'
 import { useLibrary } from '../library/store'
 import { mediaApi } from './client'
 import { useCompositionSourcePicker } from './CompositionSourcePicker'
+import { referencesAsset, sourceHint } from './source'
 import { useMediaLibrary } from './store'
 
 function invalidCursor(reason: unknown) {
   return reason instanceof ApiError && reason.status === 400 && reason.code === 'invalid'
-}
-
-function referencesAsset(node: CanvasElement, assetId: string) {
-  const contains = (value: unknown): boolean =>
-    typeof value === 'string'
-      ? value === assetId
-      : Array.isArray(value)
-        ? value.some(contains)
-        : !!value && typeof value === 'object' && Object.values(value).some(contains)
-  return (
-    node.assetId === assetId ||
-    node.results?.some((result) => 'assetId' in result.value && result.value.assetId === assetId) ||
-    node.deliveries?.some((delivery) => delivery.assetId === assetId) ||
-    contains(node.params)
-  )
 }
 
 export function MediaLibraryPanel() {
@@ -93,6 +78,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
   const [selected, setSelected] = useState<MediaLibraryItem | null>(null)
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
+    [placeError, setPlaceError] = useState(''),
     [refresh, setRefresh] = useState(0)
   const [failedMore, setFailedMore] = useState<'retry' | 'restart' | null>(null)
   const request = useRef<AbortController | null>(null)
@@ -245,7 +231,8 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
     const entry = useMediaLibrary.getState().open
     placement.current = controller
     setPlacing(true)
-    setError('')
+    // 放入失败单独提示，不能盖掉列表自己的错误，重试也要重试放入而不是重读列表。
+    setPlaceError('')
     try {
       const source = await sourcePicker.resolve(asset)
       if (controller.signal.aborted || !canPlace() || useMediaLibrary.getState().open !== entry)
@@ -253,7 +240,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
       finishPlace(asset, source)
     } catch (reason) {
       if (!controller.signal.aborted && canPlace() && (reason as Error).name !== 'AbortError')
-        setError(`读取素材源工程失败：${(reason as Error).message}`)
+        setPlaceError(`读取素材源工程失败：${(reason as Error).message}`)
     } finally {
       if (placement.current === controller) placement.current = null
       if (!controller.signal.aborted) setPlacing(false)
@@ -450,6 +437,7 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
                 asset={selected}
                 onPreview={() => setPreview(selected)}
                 onPlace={() => void place(selected)}
+                placeError={placeError}
                 placeDisabledReason={
                   !engine || !canvasId
                     ? '打开一张画布后可以放入'
@@ -475,35 +463,18 @@ function Panel({ projectId: initialProject }: { projectId?: string }) {
   )
 }
 
-/** 同名来源只有目的地不同时才需要额外标识，避免正常来源列表堆满 ID。 */
-function sourceHint(source: MediaSource, sources: MediaSource[]) {
-  if (!source.locatable || !source.canvasId || !source.nodeId) return ''
-  const peers = sources.filter((item) => item.locatable && item.label === source.label)
-  if (!peers.some((item) => item.canvasId !== source.canvasId || item.nodeId !== source.nodeId))
-    return ''
-  const suffix = (id: string, key: 'canvasId' | 'nodeId') => {
-    let size = 6
-    while (
-      peers.some(
-        (item) => item[key] && item[key] !== id && item[key]!.slice(-size) === id.slice(-size),
-      )
-    )
-      size++
-    return id.slice(-size)
-  }
-  return `画布 ${suffix(source.canvasId, 'canvasId')} · 元素 ${suffix(source.nodeId, 'nodeId')}`
-}
-
 function MediaDetail({
   asset,
   onPreview,
   onPlace,
+  placeError,
   placeDisabledReason,
   onClose,
 }: {
   asset: MediaLibraryItem
   onPreview(): void
   onPlace(): void
+  placeError?: string
   placeDisabledReason?: string
   onClose(): void
 }) {
@@ -619,6 +590,11 @@ function MediaDetail({
       {placeDisabledReason && (
         <p id={placeReasonId} role="status" className="text-xs text-ink-subtle">
           {placeDisabledReason}
+        </p>
+      )}
+      {placeError && (
+        <p role="alert" className="text-xs text-danger">
+          {placeError}
         </p>
       )}
       {asset.kind !== 'audio' && (

@@ -522,15 +522,40 @@ export class MediaIndex {
     const more = rows.length > query.limit
     const shown = rows.slice(0, query.limit)
     const canvasNodes = new Map<string, Set<string>>()
-    const items = shown.map((r) => {
-      const sourceCount = this.one<{ n: number }>(
-        'SELECT count(*) n FROM media_sources WHERE owner_id=? AND asset_id=?',
+    // 一页素材的来源数与来源行一起查，避免每条素材再查两次。
+    const ids = shown.map((r) => r.id as string)
+    const counts = new Map<string, number>()
+    const rowsByAsset = new Map<string, SourceRow[]>()
+    if (ids.length) {
+      const placeholders = ids.map(() => '?').join(',')
+      for (const row of this.rows<{ asset_id: string; n: number }>(
+        `SELECT asset_id, count(*) n FROM media_sources WHERE owner_id=? AND asset_id IN (${placeholders}) GROUP BY asset_id`,
         owner,
-        r.id,
-      )!.n
-      const sources = this.sourceRows(owner, r.id as string, 3).map((s) =>
-        this.source(s, canvasNodes),
-      )
+        ...ids,
+      ))
+        counts.set(row.asset_id, row.n)
+      for (const row of this.rows<SourceRow>(
+        // 每个素材只在 SQL 层取前三条来源：来源多的素材不会把整页的行都拉进内存。
+        `SELECT * FROM (
+           SELECT *, ROW_NUMBER() OVER (
+             PARTITION BY asset_id ORDER BY source_type,source_id,locator
+           ) AS rn
+           FROM media_sources
+           WHERE owner_id=? AND asset_id IN (${placeholders})
+         ) WHERE rn<=3 ORDER BY asset_id,source_type,source_id,locator`,
+        owner,
+        ...ids,
+      )) {
+        const list = rowsByAsset.get(row.asset_id)
+        if (list) list.push(row)
+        else rowsByAsset.set(row.asset_id, [row])
+      }
+    }
+    const items = shown.map((r) => {
+      const id = r.id as string
+      const sourceCount = counts.get(id) ?? 0
+      // 每条素材的来源行已经在 SQL 层限到三条
+      const sources = (rowsByAsset.get(id) ?? []).map((s) => this.source(s, canvasNodes))
       return {
         id: r.id,
         kind: r.kind,
@@ -553,14 +578,6 @@ export class MediaIndex {
     }
   }
 
-  private sourceRows(owner: string, asset: string, limit: number) {
-    return this.rows<SourceRow>(
-      'SELECT * FROM media_sources WHERE owner_id=? AND asset_id=? ORDER BY source_type,source_id,locator LIMIT ?',
-      owner,
-      asset,
-      limit,
-    )
-  }
   private source(r: SourceRow, canvasNodes: Map<string, Set<string>>): MediaSource {
     if (
       r.canvas_id &&
