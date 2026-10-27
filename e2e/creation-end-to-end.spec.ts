@@ -24,6 +24,14 @@ let server: RunningServer
 let data: string
 let config: ReturnType<typeof loadConfig>
 const submits: Array<{ capability: string; model: string }> = []
+/** 本机 ffmpeg 是否带 libass：成片要烧字幕，缺了就导不出来 */
+const hasLibass = () => {
+  try {
+    return / ass /.test(execFileSync('ffmpeg', ['-hide_banner', '-filters'], { encoding: 'utf8' }))
+  } catch {
+    return false
+  }
+}
 function observeSubmits() {
   // 只观测本次隔离服务的 registry，不修改共享 provider 定义。
   const mock = server.server.plugins.registry.providers.get('plein/mock')!
@@ -67,6 +75,8 @@ test(
   { tag: '@core' },
   async ({ page }) => {
     test.setTimeout(240_000)
+    // 成片要烧字幕，本机 ffmpeg 没有 libass 时导不出来（属环境限制，用例留在这里）
+    test.skip(!hasLibass(), '本机 ffmpeg 无 libass，烧字幕的成片导不出来')
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.goto(process.env.PLEIN_FLOW_BASE_URL ?? server.url)
