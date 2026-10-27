@@ -353,6 +353,9 @@ export function GeneratorPanel({
     }
     // 带上用户看到的实际输入：提交时输入已经变了就不运行，换成新的预览
     if (problem) return false
+    // 实际输入还在准备或已经过期：这时提交会被服务端判成输入已变，
+    // 白跑一次还把这次生成丢掉。等新的实际输入备好再提交。
+    if (input.loading || input.stale) return false
     void runNode(
       el.id,
       input.data?.inputHash
@@ -367,7 +370,7 @@ export function GeneratorPanel({
   const pendingRun = useRef(false)
   useEffect(() => {
     if (!pendingRun.current) return
-    if (input.loading || !input.data?.inputHash) return
+    if (input.loading || input.stale || !input.data?.inputHash) return
     pendingRun.current = false
     run()
   })
@@ -376,7 +379,8 @@ export function GeneratorPanel({
   const requestRun = () => {
     // 实际输入还在准备或正在刷新：先记下，等拿到这份输入再提交，
     // 否则会拿着上一版的哈希提交，被服务端判成输入已变。
-    if (!running && (input.loading || !input.data?.inputHash)) pendingRun.current = true
+    if (!running && (input.loading || input.stale || !input.data?.inputHash))
+      pendingRun.current = true
     // 这一步已经提交过了就别再记着：输入刷新完再补一次会重复生成。
     if (run()) pendingRun.current = false
   }
@@ -658,7 +662,9 @@ export function GeneratorPanel({
                     awaitingAcceptance ||
                     (!running && !!problem) ||
                     // 输入还在准备：按下先记下，备好后自动提交
-                    (!running && !input.loading && !input.data?.inputHash)
+                    (!running && !input.loading && !input.data?.inputHash) ||
+                    // 预览已经过期：这份 inputHash 提交上去会被服务端判成输入已变
+                    (!running && input.stale)
                   }
                   aria-busy={canceling || awaitingAcceptance}
                   title={problem ?? (running ? runLabel : withShortcut(runLabel, 'mod+enter'))}

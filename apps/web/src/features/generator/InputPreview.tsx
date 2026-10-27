@@ -20,18 +20,26 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
   const [error, setError] = useState<string | null>(null)
   const requestId = useRef(0)
   const [rev, setRev] = useState(0)
+  // 取这份预览时的文档版本；文档又变了，这份预览就不是当前状态了。
+  const dataRev = useRef(-1)
   useEffect(() => engine.doc.subscribe(() => setRev((r) => r + 1)), [engine])
   useEffect(() => {
     if (!canvasId) return
     let live = true
     const id = ++requestId.current
     const current = () => live && id === requestId.current
+    // 发起时的文档版本：回来时若已经变了，这份预览一落地就是旧的。
+    const asked = rev
     setLoading(true)
     setError(null)
     const timer = setTimeout(() => {
       api
         .nodeInput(canvasId, nodeId)
-        .then((r) => current() && setData(r))
+        .then((r) => {
+          if (!current()) return
+          dataRev.current = asked
+          setData(r)
+        })
         // 保留旧输入供查看，但必须标明刷新失败；不能把旧阻断当成现在的状态。
         .catch((err: unknown) => current() && setError((err as Error).message))
         .finally(() => current() && setLoading(false))
@@ -43,16 +51,25 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
   }, [canvasId, nodeId, rev])
   // 换画布或节点时不显示上一个对象的结果。
   useEffect(() => setData(null), [canvasId, nodeId])
-  const replaceData = useCallback((next: PreparedInput) => {
-    // 提交的 409 回执比此前发出的预览请求新，尚在路上的响应不能覆盖它。
-    requestId.current++
-    setData(next)
-    setError(null)
-    setLoading(false)
-  }, [])
+  const replaceData = useCallback(
+    (next: PreparedInput) => {
+      // 提交的 409 回执比此前发出的预览请求新，尚在路上的响应不能覆盖它。
+      requestId.current++
+      dataRev.current = rev
+      setData(next)
+      setError(null)
+      setLoading(false)
+    },
+    [rev],
+  )
+  const shown = data?.nodeId === nodeId ? data : null
+  // 文档改过之后，预览没重新取到之前它就不再是当前输入：
+  // 拿旧预览的 inputHash 去提交，服务端会判成输入已变。
+  const stale = !!shown && dataRev.current !== rev
   return {
-    data: data?.nodeId === nodeId ? data : null,
+    data: shown,
     loading,
+    stale,
     error,
     retry: () => setRev((r) => r + 1),
     setData: replaceData,
