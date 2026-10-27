@@ -1,5 +1,5 @@
 import type { ArrangeResult, Engine } from '@plein/canvas-core'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useEngineVersion, useFollow } from '../canvas/hooks'
 import { canvasBottomSpace } from '../canvas/floatingPanel'
 import { useCanvas } from '../stores/canvas'
@@ -23,6 +23,14 @@ function ArrangeToastHost({ engine }: { engine: Engine }) {
   const version = useEngineVersion(engine)
   const arranged = useCanvas((s) => s.arranged)
   const setArranged = useCanvas((s) => s.setArranged)
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
+  useEffect(() => {
+    if (!arranged) {
+      setHovered(false)
+      setFocused(false)
+    }
+  }, [arranged])
   const place = () => ({
     bottom: canvasBottomSpace(window.innerWidth, engine.camera.insets.left).generator + 8,
   })
@@ -34,10 +42,11 @@ function ArrangeToastHost({ engine }: { engine: Engine }) {
   }, [arranged, setArranged, version])
 
   useEffect(() => {
-    if (!arranged) return
+    // 用户正在读提示、选择按钮或等待恢复写权限时，不自动收走还原入口。
+    if (!arranged || hovered || focused || engine.doc.readOnly) return
     const t = setTimeout(() => setArranged(null), AUTO_HIDE_MS)
     return () => clearTimeout(t)
-  }, [arranged, setArranged])
+  }, [arranged, setArranged, hovered, focused, engine.doc.readOnly])
 
   return (
     <Presence>
@@ -45,6 +54,12 @@ function ArrangeToastHost({ engine }: { engine: Engine }) {
         <div
           ref={ref}
           style={place()}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          onFocusCapture={() => setFocused(true)}
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false)
+          }}
           className="pointer-events-none absolute inset-x-0 z-30 flex justify-center"
         >
           <Bar

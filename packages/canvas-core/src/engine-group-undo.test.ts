@@ -19,7 +19,7 @@ async function setup(grouped: boolean) {
   if (grouped) engine.groupSelection()
   doc.flush()
   doc.undo.stopCapturing()
-  return { doc, engine }
+  return { doc, engine, first, second }
 }
 
 const read = (doc: PleinDoc) =>
@@ -50,4 +50,31 @@ describe('打组 / 解组与紧邻位置修改的撤销边界', () => {
     engine.undo()
     expect(read(doc)).toEqual(expected)
   })
+})
+
+it.each([
+  [false, false],
+  [true, false],
+  [true, true],
+])('批量解组 nested=%s reverse=%s 保留世界位置且整步撤销重做', async (nested, reverse) => {
+  const { doc, engine, first, second } = await setup(true)
+  const inner = engine.selection.values()[0]!
+  const third = createElement(doc, node({ x: 1400, y: 300 }))
+  engine.selection.set(nested ? [inner, third] : [third])
+  engine.groupSelection()
+  doc.flush()
+  const frames = [...doc.elements()].filter((el) => el.kind === 'frame').map((el) => el.id)
+  engine.selection.set(reverse ? frames.reverse() : frames)
+  doc.undo.stopCapturing()
+  const before = read(doc)
+  engine.ungroupSelection()
+  doc.flush()
+  const after = read(doc)
+  expect(after.map((el) => el.id).sort()).toEqual([first, second, third].sort())
+  for (const el of after) expect(el.rect).toEqual(before.find((item) => item.id === el.id)!.rect)
+  expect(engine.selection.values().sort()).toEqual([first, second, third].sort())
+  engine.undo()
+  expect(read(doc)).toEqual(before)
+  engine.redo()
+  expect(read(doc)).toEqual(after)
 })

@@ -1,4 +1,4 @@
-import { createElement } from '@plein/doc'
+import { createElement, groupElements, ungroupElements } from '@plein/doc'
 import { node, openDoc } from '@plein/doc/testing'
 import { afterEach, describe, expect, it } from 'vite-plus/test'
 import { initEngine, pointerEvent } from './testing'
@@ -7,6 +7,34 @@ const cleanups: Array<() => void> = []
 afterEach(() => {
   for (const cleanup of cleanups.splice(0).reverse()) cleanup()
 })
+
+it.each(['move', 'ungroup', 'lock'] as const)(
+  '拖动子节点时外部 %s 父分组，预览取消并保持最新世界坐标',
+  async (change) => {
+    const { doc, engine, host, first } = await setup()
+    const frame = groupElements(doc, [first])!
+    doc.flush()
+    const before = doc.worldRect(first)!
+    const at = engine.camera.worldToScreen(before.x + before.w / 2, before.y + before.h / 2)
+    host.dispatchEvent(pointerEvent('pointerdown', { clientX: at.x, clientY: at.y }))
+    host.dispatchEvent(pointerEvent('pointermove', { clientX: at.x + 80, clientY: at.y - 40 }))
+    expect(engine.scene.rect(first)).not.toEqual(before)
+    doc.ydoc.transact(() => {
+      if (change === 'ungroup') ungroupElements(doc, frame)
+      else
+        doc.mutable(frame)!.set(change === 'move' ? 'x' : 'locked', change === 'move' ? 777 : true)
+    }, 'external-parent-change')
+    const latest = doc.worldRect(first)
+    doc.flush()
+    const undoDepth = doc.undo.undoStack.length
+    expect(engine.scene.rect(first)).toEqual(latest)
+    host.dispatchEvent(pointerEvent('pointermove', { clientX: at.x + 120, clientY: at.y - 80 }))
+    host.dispatchEvent(pointerEvent('pointerup', { clientX: at.x + 120, clientY: at.y - 80 }))
+    expect(doc.worldRect(first)).toEqual(latest)
+    expect(engine.scene.rect(first)).toEqual(latest)
+    expect(doc.undo.undoStack).toHaveLength(undoDepth)
+  },
+)
 
 async function setup() {
   const doc = openDoc()
