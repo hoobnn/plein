@@ -1,6 +1,7 @@
 name: Release
 
-# v* 标签：测试 → 构建 → 签名、公证 macOS 安装包（Apple 芯片）并发布 GitHub Release。
+# v* 标签：检查与性能 → 构建 → 签名、公证 macOS 安装包（Apple 芯片）并发布 GitHub Release。
+# e2e 在本地发版前跑，云端不再跑 e2e。
 # 手动运行只出 Artifacts 不发布；取消勾选 sign 时试运行（ad-hoc 签名、不公证），不需要凭据。
 # 签名、公证、打包与发布由 hoobnn/ci-workflows 的复用工作流完成，凭据见它的 README：
 #   Secrets：APPLE_CERT_APPLICATION_P12_BASE64、APPLE_CERT_APPLICATION_P12_PASSWORD、
@@ -25,6 +26,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 云端只跑检查与性能；e2e 在本地发版前跑
   test:
     uses: ./.github/workflows/ci.yml
 
