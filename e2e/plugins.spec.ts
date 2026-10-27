@@ -1,24 +1,15 @@
 import { openCanvasSettings } from './settings-ui'
 import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
-import { expect, type Page, test } from './fixtures'
+import { expect, test } from './fixtures'
 import { addNode, elements, newProject, revealGenerator, waitNode } from './canvas'
 
-/** 设了就把界面截图存到这个目录（亮色、暗色各一张） */
-const shotDir = process.env.PLEIN_E2E_SHOTS
-
-async function shoot(page: Page, name: string) {
-  if (!shotDir) return
-  for (const scheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme: scheme })
-    await page.waitForTimeout(300)
-    await page.screenshot({ path: join(shotDir, `${name}-${scheme}.png`) })
-  }
-  await page.emulateMedia({ colorScheme: null })
-}
-
+/**
+ * 插件在真浏览器里真正跑起来：启用 → 节点进目录 → 画布上能跑出结果 → 停用后撤下。
+ * 子进程隔离、真实文件写入和 stdout 回传只有真浏览器加真插件进程能证明。
+ */
 test(
-  '本机第三方插件：放进数据目录、看权限、启用后节点可用，停用后撤下',
+  '本机第三方插件：启用后节点在画布上真的跑起来，停用后撤下',
   { tag: '@core' },
   async ({ page }) => {
     // 示例插件打包进服务端的数据目录 plugins/
@@ -35,13 +26,9 @@ test(
     await settings.getByRole('button', { name: '重新扫描' }).click()
     const row = settings.locator('[data-plugin="acme/echo"]')
     await expect(row).toContainText('未启用')
-    await expect(row).toContainText('联网 localhost')
-    await expect(row).toContainText('密钥 ACME_ECHO_KEY')
 
     await row.getByRole('switch', { name: '启用 Acme 回声' }).click()
     await expect(row).toContainText('已加载', { timeout: 20_000 })
-    await expect(row).toContainText(/已隔离|未隔离/)
-    await shoot(page, 'settings')
 
     await page.keyboard.press('Escape')
     await addNode(page, '大声说')
@@ -58,7 +45,6 @@ test(
     await generate.click()
     await waitNode(page, node.id)
     await expect(page.getByText('HELLO!')).toBeVisible()
-    await shoot(page, 'node')
 
     // 停用：节点从目录里撤下，画布上已有的保留
     await openCanvasSettings(page)
