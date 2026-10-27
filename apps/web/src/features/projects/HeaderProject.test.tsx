@@ -6,6 +6,7 @@ import { mockFetch } from '../../testing/fetch'
 import { act, renderApp, screen, waitFor } from '../../testing/render'
 import { queryKeys } from '../../api/query'
 import { ProjectSwitcher } from './ProjectSwitcher'
+import { navigate } from '../../router'
 
 const canvas: Canvas = {
   id: 'canvas-header',
@@ -74,22 +75,50 @@ it('首次读取失败可重试，等待时保留错误并禁止重复，成功�
   )
 })
 
-it('初次读取等待有状态，卸载后的迟到成功不夺走新入口焦点', async () => {
+it('保持切换器挂载时切项目关闭旧信息弹窗，迟到读取不改写新标题或焦点', async () => {
   const pending = deferred<Response>()
-  const { user, rerender } = setup(() => pending.promise)
+  const nextPending = deferred<Response>()
+  const nextCanvas = { ...canvas, id: 'other-canvas', projectId: 'other-project' }
+  const nextProject = { ...project, id: nextCanvas.projectId, title: '新项目' }
+  mockFetch((request) => {
+    if (request.method !== 'GET') return
+    const path = new URL(request.url).pathname
+    if (path === `/api/projects/${project.id}`) return pending.promise
+    if (path === `/api/projects/${nextProject.id}`) return nextPending.promise
+    if (path === `/api/projects/${project.id}/canvases`) return Response.json([canvas])
+    if (path === `/api/projects/${nextProject.id}/canvases`) return Response.json([nextCanvas])
+  })
+  useCanvas.setState({ canvasId: canvas.id })
+  const { user, rerender, queryClient } = renderApp(<ProjectSwitcher canvas={canvas} />, {
+    route: { name: 'canvas', id: canvas.id },
+  })
   await user.click(screen.getByRole('button', { name: '项目信息正在加载' }))
   expect(screen.getByRole('status').textContent).toContain('正在读取')
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '重新加载项目信息' }).disabled).toBe(
     true,
   )
-  rerender(<button type="button">新项目</button>)
-  const button = screen.getByRole('button', { name: '新项目' })
+  act(() => {
+    useCanvas.setState({ canvasId: nextCanvas.id })
+    navigate({ name: 'canvas', id: nextCanvas.id })
+  })
+  rerender(<ProjectSwitcher canvas={nextCanvas} />)
+  const oldPopupAfterSwitch = screen.queryByRole('dialog', { name: '项目信息' })
+  await act(async () => {
+    nextPending.resolve(Response.json(nextProject))
+  })
+  const button = await screen.findByRole('button', { name: nextProject.title })
   button.focus()
   await act(async () => {
     pending.resolve(Response.json(project))
   })
+  expect(oldPopupAfterSwitch).toBeNull()
   expect(document.activeElement).toBe(button)
   expect(screen.queryByRole('dialog')).toBeNull()
+  expect(screen.getByRole('button', { name: nextProject.title })).toBe(button)
+  expect(screen.queryByRole('button', { name: project.title })).toBeNull()
+  expect(location.hash).toBe(`#/c/${nextCanvas.id}`)
+  expect(queryClient.getQueryData(queryKeys.project(project.id))).toEqual(project)
+  expect(queryClient.getQueryData(queryKeys.project(nextProject.id))).toEqual(nextProject)
 })
 
 it('缓存刷新失败保留已确认名称，仍可打开改名并重试', async () => {

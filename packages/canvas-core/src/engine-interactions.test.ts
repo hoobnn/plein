@@ -131,7 +131,7 @@ it.each(
   ['initial', 'during', 'same-frame'].flatMap((phase) =>
     (['center', 'resize'] as const).map((side) => ({ phase, side })),
   ),
-)('只读 $phase 阻止 $side 写入', async ({ phase, side }) => {
+)('只读 $phase 阻止 $side 写入，恢复权限后下一次手势可提交和撤销', async ({ phase, side }) => {
   const f = await setup()
   const before = f.snapshot()
   if (phase === 'initial') f.doc.readOnly = true
@@ -143,6 +143,14 @@ it.each(
   expect(f.engine.scene.rect(f.a)).toEqual(f.doc.worldRect(f.a))
   expect(f.doc.undo.undoStack).toHaveLength(0)
   f.doc.readOnly = false
+  const next = f.start(side)
+  f.pointer('pointerup', { x: next.x + 40, y: next.y + 30 })
+  expect(f.doc.worldRect(f.a)).toMatchObject(
+    side === 'center' ? { x: 140, y: 130, w: 200, h: 160 } : { x: 100, y: 100, w: 240, h: 190 },
+  )
+  expect(f.doc.undo.undoStack).toHaveLength(1)
+  f.engine.undo()
+  expect(f.snapshot()).toEqual(before)
 })
 
 it.each([{ isComposing: true }, { keyCode: 229 }])(
@@ -439,6 +447,25 @@ it.each(['dialog', 'menu', 'listbox'] as const)(
       expect(text).toBe(original)
       expect(f.snapshot()).toEqual(before)
     }
+  },
+)
+
+it.each(['Tab', 'dblclick'] as const)(
+  '只读画布 %s 不打开创建菜单，恢复权限后可打开',
+  async (action) => {
+    const f = await setup()
+    let menus = 0
+    f.engine.onMenu(() => menus++)
+    const open = () => {
+      if (action === 'Tab') window.dispatchEvent(pointerEvent('keydown', { key: 'Tab' }))
+      else f.host.dispatchEvent(pointerEvent('dblclick', { clientX: 1100, clientY: 700 }))
+    }
+    f.doc.readOnly = true
+    open()
+    expect(menus).toBe(0)
+    f.doc.readOnly = false
+    open()
+    expect(menus).toBe(1)
   },
 )
 

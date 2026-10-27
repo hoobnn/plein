@@ -148,6 +148,32 @@ it('创建菜单已打开时变为只读，旧 Enter 不创建并退出', () => 
   expect(onClose).toHaveBeenCalledTimes(1)
 })
 
+it('工具条添加节点随只读状态禁用，恢复可写后可再次打开创建菜单', async () => {
+  const doc = createDoc()
+  docs.push(doc)
+  const engine = new Engine({ host: document.createElement('div'), doc })
+  engine.doc.readOnly = true
+  useCanvas.setState({ engine })
+  const { user } = renderApp(<Toolbar canImport={false} />)
+  const button = screen.getByRole<HTMLButtonElement>('button', { name: '添加节点' })
+  expect(button.disabled).toBe(true)
+  await user.click(button)
+  expect(screen.queryByRole('textbox', { name: '搜索节点' })).toBeNull()
+  act(() => {
+    engine.doc.readOnly = false
+    engine.refreshState()
+  })
+  expect(button.disabled).toBe(false)
+  await user.click(button)
+  expect(screen.getByRole('textbox', { name: '搜索节点' })).toBeTruthy()
+  act(() => {
+    engine.doc.readOnly = true
+    engine.refreshState()
+  })
+  expect(button.disabled).toBe(true)
+  expect(screen.queryByRole('textbox', { name: '搜索节点' })).toBeNull()
+})
+
 it('分组右键解组入口写入真实文档，单步撤销恢复父子结构', async () => {
   const engine = engineForMenu()
   const frame = createElement(engine.doc, {

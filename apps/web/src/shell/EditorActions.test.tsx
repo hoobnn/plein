@@ -1,9 +1,30 @@
 // @vitest-environment happy-dom
 import { expect, it, vi } from 'vite-plus/test'
-import { act, fireEvent, renderApp, screen, waitFor } from '../testing/render'
+import { act, fireEvent, renderApp, resetStoreAfterEach, screen, waitFor } from '../testing/render'
 import { mockMatchMedia } from '../testing/browser'
 import { EditorActions } from './EditorActions'
 import { useTheme } from '../stores/theme'
+import { useCheckpoints } from '../features/checkpoints/store'
+
+resetStoreAfterEach(useCheckpoints)
+
+it('画布项目信息就绪后检查点入口启用，并传递当前项目和画布', async () => {
+  const { user, rerender } = renderApp(
+    <EditorActions remote canvasId="canvas" onOpenSettings={() => {}} />,
+  )
+  const button = screen.getByRole<HTMLButtonElement>('button', { name: '检查点' })
+  expect(button.disabled).toBe(true)
+  await user.click(button)
+  expect(useCheckpoints.getState().open).toBeNull()
+  await user.click(screen.getByRole('button', { name: '画布工具' }))
+  const item = screen.getByRole('menuitem', { name: '检查点' })
+  expect(item.getAttribute('aria-disabled')).toBe('true')
+  rerender(<EditorActions remote projectId="project" canvasId="canvas" onOpenSettings={() => {}} />)
+  expect(button.disabled).toBe(false)
+  expect(item.getAttribute('aria-disabled')).not.toBe('true')
+  await user.click(item)
+  expect(useCheckpoints.getState().open).toEqual({ projectId: 'project', canvasId: 'canvas' })
+})
 
 it('紧凑工具可打开设置、切换主题，恢复宽窗口后清理菜单状态', async () => {
   const media = mockMatchMedia((query) => query === '(prefers-reduced-motion: reduce)')
