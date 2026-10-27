@@ -1,9 +1,18 @@
 import { Scene, type Engine } from '@plein/canvas-core'
-import { createDoc, createElement, deleteElements, groupShots, updateElement, type PleinDoc } from '@plein/doc'
+import {
+  createDoc,
+  createElement,
+  deleteElements,
+  groupShots,
+  updateElement,
+  type PleinDoc,
+} from '@plein/doc'
 import { openDoc } from '@plein/doc/testing'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { api } from '../api/client'
+import { useCanvas } from '../stores/canvas'
 import { splitGrid } from './grid'
+import { beginImport } from './importProgress'
 
 describe('像素与来源边界', () => {
   const cleanups: Array<() => void> = []
@@ -128,8 +137,11 @@ describe('像素与来源边界', () => {
 })
 
 describe('上传结束时的异步边界', () => {
+  const initial = useCanvas.getState()
   const docs: PleinDoc[] = []
   afterEach(() => {
+    useCanvas.getState().notify(null)
+    useCanvas.setState(initial, true)
     docs.splice(0).forEach((doc) => doc.destroy())
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
@@ -203,15 +215,19 @@ describe('上传结束时的异步边界', () => {
 
   it('切换画布取消切图，旧文档不产生迟到分组', async () => {
     const f = fixture()
-    const controller = new AbortController()
-    const pending = splitGrid(f.engine, f.source, 'source', 2, 2, undefined, controller.signal)
+    useCanvas.setState({ engine: f.engine, canvasId: 'old-canvas' })
+    const batch = beginImport(f.engine, 4)
+    const pending = splitGrid(f.engine, f.source, 'source', 2, 2, batch.progress, batch.signal)
     await f.accepted
-    controller.abort()
+    useCanvas.setState({ engine: null, canvasId: 'new-canvas', importing: null })
     const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
     f.release()
     await rejected
+    expect(batch.signal.aborted).toBe(true)
     expect([...f.doc.elements()].map((el) => el.id)).toEqual([f.source])
     expect(f.bitmap.close).toHaveBeenCalledOnce()
+    expect(useCanvas.getState().importing).toBeNull()
+    expect(useCanvas.getState().notice).toBeNull()
   })
 
   it('切图使用上传后的布局避让，完整分组可单步撤销与重做', async () => {
