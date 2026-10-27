@@ -72,7 +72,10 @@ describe('本机插件 HTTP 合同', () => {
     expect(rescan.status).toBe(200)
     expect((await rescan.json()) as unknown[]).toHaveLength(1)
 
-    // 启用意图写进数据目录：重启后服务端仍按这个意图把插件拉起来
+    // 启用意图写进数据目录：重启后服务端仍按这个意图把插件拉起来。
+    // 先关掉旧服务再起第二个，否则两个进程同时占着同一个数据目录，
+    // 测的就不是「重启后」而是「另一个进程读同一份数据」。
+    await f.close()
     const again = await bootServer({ dataDir: f.dataDir })
     expect(await list(again)).toMatchObject([{ id: 'acme/echo', enabled: true, status: 'active' }])
   }, 60_000)

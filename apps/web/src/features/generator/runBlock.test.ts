@@ -63,4 +63,21 @@ describe('生成按钮的禁用原因', () => {
     const running = { ...base, running: true, requiresInput: true }
     expect(runDisabled(running)).toBe(false)
   })
+
+  it('任务在跑时不显示输入相关的理由（按钮是取消）', () => {
+    // 取消按钮可用时，标题不该说「正在准备实际输入」
+    expect(runBlockReason({ ...base, running: true, requiresInput: true })).toBeNull()
+    expect(runBlockReason({ ...base, running: true, stale: true, requiresInput: true })).toBeNull()
+    // 但取消与提交等待仍然说清楚
+    expect(runBlockReason({ ...base, running: true, canceling: true })).toBe('正在停止任务…')
+    expect(runBlockReason({ ...base, running: true, awaitingAcceptance: true })).toBe(
+      '正在提交生成请求…',
+    )
+  })
+
+  it('按钮能点时不给原因', () => {
+    expect(runBlockReason({ ...base, requiresInput: true, loading: true })).toBeNull()
+    expect(runBlockReason({ ...base, stale: true, error: true })).toBeNull()
+    expect(runBlockReason({ ...base, hasInput: true })).toBeNull()
+  })
 })

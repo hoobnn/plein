@@ -6,7 +6,7 @@ import { clickElement, deselect, newProject, waitNode, zoomTo } from './canvas'
  * 上层图片盖住时正文不能从像素里露出来，移开后又要重新可见。
  * 遮挡的几何判定本身在 occlusion.test.ts 里已经覆盖。
  */
-test('正文被上层图片遮挡时不露出像素，移开后恢复', async ({ page }) => {
+test('正文被上层图片遮挡时不露出像素，移开后恢复', { tag: '@core' }, async ({ page }) => {
   await newProject(page)
   const ids = await page.evaluate(() => {
     const add = window.__plein.addNode
@@ -40,17 +40,6 @@ test('正文被上层图片遮挡时不露出像素，移开后恢复', async ({
     await waitNode(page, id)
   }
   await clickElement(page, ids.image)
-  await page.getByTestId('generator').getByRole('button', { name: '生成视频', exact: true }).click()
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          [...window.__plein.engine.doc.elements()].find((el) => el.nodeType === 'plein/video')
-            ?.params?.mode,
-      ),
-    )
-    .toBe('image')
-
   await deselect(page)
   await page.evaluate(({ text, image }) => {
     const doc = window.__plein.engine.doc

@@ -73,17 +73,27 @@ describe('维护设置的数值编辑', () => {
     expect(fetch.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(0)
   })
 
-  it('超出范围的值不提交，写明要整数并聚焦该字段', async () => {
+  // 每个字段各自的边界：负数、小数、超过上限
+  it.each([
+    { label: '备份间隔（小时）', bad: '-1', hint: /请输入 1–720 之间的整数/ },
+    { label: '保留最近几份', bad: '1.5', hint: /请输入 1–100 之间的整数/ },
+    { label: '未引用素材保留（天）', bad: '3651', hint: /请输入 1–3650 之间的整数/ },
+  ])('$label 的 $bad 不提交，写明范围并把焦点留在该字段', async ({ label, bad, hint }) => {
     const fetch = serve()
     renderApp(<DataMaintenance />)
-    await waitFor(() => expect(field('备份间隔（小时）').value).toBe('24'))
+    await waitFor(() => expect(field(label).value).not.toBe(''))
 
-    const interval = field('备份间隔（小时）')
-    fireEvent.change(interval, { target: { value: '-1' } })
+    const input = field(label)
+    fireEvent.change(input, { target: { value: bad } })
+    // 原生约束校验在 happy-dom 里不会自己触发，按浏览器的顺序补上
+    fireEvent.invalid(input)
     save().click()
 
-    await waitFor(() => expect(interval.getAttribute('aria-invalid')).toBe('true'))
-    expect(screen.getByText(/请输入 1–720 之间的整数/)).toBeTruthy()
+    await waitFor(() => expect(input.getAttribute('aria-invalid')).toBe('true'))
+    expect(screen.getByText(hint)).toBeTruthy()
+    // 焦点留在出错的字段上，用户不用再找一次
+    expect(document.activeElement).toBe(input)
+    // 没有真正保存
     expect(fetch.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(0)
   })
 

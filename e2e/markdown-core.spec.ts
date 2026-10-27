@@ -301,3 +301,55 @@ test('长便签首尾光标保持可见，滚动不移动相机', { tag: '@core'
     await page.evaluate(() => document.querySelector('.plein-overlay')!.parentElement!.scrollTop),
   ).toBe(0)
 })
+
+/**
+ * 图片迟到与加载失败：真实图片加载与真实排版，happy-dom 证明不了。
+ * 只测必要的一种情形：图片没到位时正文不被裁掉，改成有效地址后能恢复排版。
+ */
+test(
+  '图片加载失败仍显示替代文字和后文，改成有效地址后恢复排版',
+  { tag: '@core' },
+  async ({ page }) => {
+    await page.route('**/markdown-missing.svg', (route) =>
+      route.fulfill({ status: 503, body: 'fixture offline' }),
+    )
+    await page.route('**/markdown-recovered.svg', (route) =>
+      route.fulfill({
+        contentType: 'image/svg+xml',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400"><rect width="800" height="400" fill="orange"/></svg>',
+      }),
+    )
+    const { id } = await note(
+      page,
+      '# 图文便签\n\n![参考图](/markdown-missing.svg)\n\n图片之后的结尾正文。',
+    )
+    const previewBox = preview(page).first()
+    await expect(previewBox).toBeVisible()
+
+    // 图片失败时仍能看到替代文字与后文，正文没有被裁掉
+    await expect(previewBox.getByRole('img', { name: '参考图' })).toBeVisible()
+    await expect(previewBox).toContainText('图片之后的结尾正文。')
+    const heightWhenFailed = await page.evaluate(
+      (id) => window.__plein.engine.doc.worldRect(id).h,
+      id,
+    )
+    expect(heightWhenFailed).toBeGreaterThan(0)
+
+    // 编辑成有效地址后图片加载成功，排版跟着恢复
+    const editor = await open(page, id)
+    await editor.press('ControlOrMeta+a')
+    await page.keyboard.insertText(
+      '# 图文便签\n\n![参考图](/markdown-recovered.svg)\n\n图片之后的结尾正文。',
+    )
+    await editor.press('Escape')
+    await expect(editor).toHaveCount(0)
+    const image = preview(page).first().getByRole('img', { name: '参考图' })
+    await expect.poll(() => image.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(800)
+    // 刷新后仍是改正后的正文
+    await page.reload()
+    await waitEngine(page)
+    await expect
+      .poll(() => page.evaluate((id) => window.__plein.engine.doc.getText(id)?.toString(), id))
+      .toContain('markdown-recovered.svg')
+  },
+)

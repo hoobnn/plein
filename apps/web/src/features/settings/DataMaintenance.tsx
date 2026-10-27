@@ -210,8 +210,10 @@ export function DataMaintenance() {
                       event.preventDefault()
                       event.currentTarget.setCustomValidity(hint)
                       setInvalid((previous) => ({ ...previous, [key]: true }))
+                      // 焦点留在出错的字段上：用应用自己标的 aria-invalid 找，
+                      // 不依赖 :invalid 选择器（各环境支持不一）
                       event.currentTarget.form
-                        ?.querySelector<HTMLInputElement>('input:invalid')
+                        ?.querySelector<HTMLInputElement>('[aria-invalid="true"]')
                         ?.focus()
                     }}
                   />
