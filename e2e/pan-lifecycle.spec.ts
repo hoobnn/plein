@@ -1,5 +1,5 @@
-import { expect, type Page, test } from '@playwright/test'
-import { newProject } from './canvas'
+import { expect, type Page, test } from './fixtures'
+import { newProject, settleCamera } from './canvas'
 
 type PanEngine = Window['__plein']['engine'] & {
   camera: { x: number; y: number; zoom: number }
@@ -52,7 +52,7 @@ for (const action of ['fly'] as const) {
     const ids = await setup(page)
     await flick(page)
     await page.evaluate((id) => (window.__plein.engine as PanEngine).flyTo([id]), ids.far)
-    await page.waitForTimeout(800)
+    await settleCamera(page)
     // 旧惯性不能在新动画的首帧把它取消；到达位置应与同目标的适应结果一致。
     const arrived = await position(page)
     await page.evaluate((id) => window.__plein.engine.zoomToFit([id]), ids.far)
@@ -78,7 +78,7 @@ for (const cancel of ['pointercancel'] as const) {
     ).toBe('')
     await page.mouse.move(1270, 790)
     await page.mouse.up({ button: 'middle' })
-    await page.waitForTimeout(800)
+    await settleCamera(page)
     expect(await position(page)).toEqual(cancelled)
     await drag(page)
     expect(await position(page)).not.toEqual(cancelled)
@@ -100,7 +100,7 @@ for (const control of ['侧栏', '单击'] as const) {
         .click()
     if (control === '单击') await page.mouse.click(1350, 720)
     const stopped = await position(page)
-    await page.waitForTimeout(800)
+    await settleCamera(page)
     expect(await position(page)).toEqual(stopped)
     expect(
       await page.evaluate(() => JSON.stringify([...window.__plein.engine.doc.elements()])),
@@ -161,7 +161,7 @@ for (const motion of ['拖动', '惯性'] as const) {
       if (motion === '拖动') await page.mouse.up({ button: 'middle' })
       const old = await oldCamera.evaluate(({ x, y, zoom }) => ({ x, y, zoom }))
       const fresh = await position(page)
-      await page.waitForTimeout(800)
+      await settleCamera(page)
       expect(await oldCamera.evaluate(({ x, y, zoom }) => ({ x, y, zoom }))).toEqual(old)
       expect(await position(page)).toEqual(fresh)
       expect(

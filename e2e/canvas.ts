@@ -173,6 +173,35 @@ export async function settle(page: Page, id: string) {
 }
 
 /**
+ * 等镜头停稳：相机位置连续几帧不变，且没有正在进行的飞行动画。
+ * 飞行动画（flyTo）由引擎按时间推进，等它自然结束要按动画时长猜；
+ * 直接读相机的位置，连续几帧不动就是停稳了。
+ */
+export async function settleCamera(page: Page) {
+  await page.waitForFunction(
+    () =>
+      new Promise<boolean>((done) => {
+        const engine = window.__plein.engine as Window['__plein']['engine'] & {
+          flight?: unknown
+        }
+        const camera = engine.camera as unknown as { x: number; y: number; zoom: number }
+        const at = () => `${camera.x},${camera.y},${camera.zoom}`
+        let last = at()
+        let same = 0
+        const tick = () => {
+          const now = at()
+          same = now === last ? same + 1 : 0
+          last = now
+          // 没有飞行、位置连续几帧不变，才算停稳
+          if (!engine.flight && same >= 5) done(true)
+          else requestAnimationFrame(tick)
+        }
+        requestAnimationFrame(tick)
+      }),
+  )
+}
+
+/**
  * 取消选中，并等选中节点的生成器浮层收起：浮层会盖住画布上的元素，
  * 有时第一下 Esc 被别的弹层（关闭中的对话框、提示）接走，所以按到真的清空为止
  */

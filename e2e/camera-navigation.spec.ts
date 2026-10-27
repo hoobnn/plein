@@ -1,5 +1,5 @@
-import { expect, type Page, test } from '@playwright/test'
-import { centerOf, newProject } from './canvas'
+import { expect, type Page, test } from './fixtures'
+import { centerOf, newProject, settleCamera } from './canvas'
 
 type NavigationEngine = Window['__plein']['engine'] & {
   camera: { x: number; y: number; zoom: number }
@@ -31,7 +31,7 @@ test('连续平滑定位以最后一个目标为准，滚轮操作能停止正�
     engine.flyTo([ids.far])
     engine.flyTo([ids.latest])
   }, ids)
-  await page.waitForTimeout(700)
+  await settleCamera(page)
   const p = await centerOf(page, ids.latest)
   expect(p.x).toBeGreaterThan(296)
   expect(p.x).toBeLessThan(1428)
@@ -44,7 +44,7 @@ test('连续平滑定位以最后一个目标为准，滚轮操作能停止正�
     .poll(() => page.evaluate(() => !!(window.__plein.engine as NavigationEngine).flight))
     .toBe(false)
   const manual = await camera(page)
-  await page.waitForTimeout(700)
+  await settleCamera(page)
   expect(await camera(page)).toEqual(manual)
 })
 
@@ -81,7 +81,7 @@ for (const control of ['侧栏', '缩放菜单', '小地图'] as const) {
       false,
     )
     const expected = await camera(page)
-    await page.waitForTimeout(700)
+    await settleCamera(page)
     expect(await camera(page)).toEqual(expected)
     expect(
       await page.evaluate(() => JSON.stringify([...window.__plein.engine.doc.elements()])),
@@ -105,7 +105,7 @@ test('动画中中键拖动画布立即接管，按住期间镜头不回弹', as
   const dragged = await camera(page)
   expect(dragged.x).toBeGreaterThan(before.x + 90)
   expect(dragged.y).toBeGreaterThan(before.y + 40)
-  await page.waitForTimeout(700)
+  await settleCamera(page)
   expect(await camera(page)).toEqual(dragged)
   await page.mouse.up({ button: 'middle' })
 })
