@@ -1,6 +1,7 @@
 import { MaintenanceSettings, MaintenanceToken } from '@plein/protocol'
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
+import { validationMessage } from '../http/validation'
 import { MaintenanceError, type MaintenanceService } from './service'
 
 /** 维护可以看到整库和本机路径，登录模式下不开放；须放在常规鉴权和跨站防护之后。 */
@@ -26,7 +27,8 @@ export function maintenanceRoutes(service: MaintenanceService | null) {
   app.get('/api/maintenance/space', async (c) => c.json(await service.space()))
   app.put('/api/maintenance/settings', async (c) => {
     const body = MaintenanceSettings.safeParse(await c.req.json().catch(() => null))
-    if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
+    if (!body.success)
+      return c.json({ error: 'invalid', message: validationMessage(body.error) }, 400)
     return c.json(await service.settings(body.data))
   })
   app.post('/api/maintenance/backups', async (c) => c.json(await service.backup(), 201))
@@ -36,7 +38,8 @@ export function maintenanceRoutes(service: MaintenanceService | null) {
   app.post('/api/maintenance/cleanup/preview', async (c) => c.json(await service.preview()))
   app.post('/api/maintenance/cleanup', async (c) => {
     const body = MaintenanceToken.safeParse(await c.req.json().catch(() => null))
-    if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
+    if (!body.success)
+      return c.json({ error: 'invalid', message: validationMessage(body.error) }, 400)
     return c.json(await service.cleanup(body.data.token))
   })
   app.post('/api/maintenance/trash/:id/restore', async (c) =>

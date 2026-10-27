@@ -18,6 +18,7 @@ import {
 import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AuthEnv } from '../auth'
+import { validationMessage } from '../http/validation'
 import type { ExternalPlugins } from './external'
 import type { PluginHost } from './host'
 
@@ -102,11 +103,13 @@ export function pluginRoutes(host: PluginHost) {
       const entry = registry.providers.get(id)
       if (!entry) return c.json(notFound, 404)
       const body = ProviderConfigUpdate.safeParse(await c.req.json().catch(() => null))
-      if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
+      if (!body.success)
+        return c.json({ error: 'invalid', message: validationMessage(body.error) }, 400)
       const { settings, secrets } = body.data
       if (settings) {
         const parsed = entry.def.settings.safeParse(settings)
-        if (!parsed.success) return c.json({ error: 'invalid', message: parsed.error.message }, 400)
+        if (!parsed.success)
+          return c.json({ error: 'invalid', message: validationMessage(parsed.error) }, 400)
       }
       const known = new Set(entry.def.secrets.map((s) => s.name))
       const unknown = Object.keys(secrets ?? {}).filter((k) => !known.has(k))
