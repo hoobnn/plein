@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { JobInfo } from '../packages/protocol/src/runs'
-import { addNode, clickElement, elements, newProject } from './canvas'
+import { addNode, clickElement, elements, newProject, revealGenerator } from './canvas'
 
 for (const state of [
   'fetch_failed',
@@ -62,6 +62,8 @@ for (const state of [
         await expect(panel.getByTestId('job-recovery')).toHaveCount(0)
         expect(submissions).toBe(0)
         await page.getByRole('button', { name: '任务', exact: true }).click()
+        // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
+        await revealGenerator(page)
         const generator = page.getByTestId('generator')
         await generator.locator('textarea').first().fill('明确处理旧任务后生成')
         await generator.getByRole('button', { name: '生成', exact: true }).click()

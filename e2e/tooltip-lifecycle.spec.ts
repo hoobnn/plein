@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { clickElement, newProject } from './canvas'
+import { clickElement, newProject, revealGenerator } from './canvas'
 
 test('悬停中的生成按钮随任务状态更新提示，移出后不恢复旧说明', async ({ page }) => {
   await newProject(page)
@@ -24,6 +24,8 @@ test('悬停中的生成按钮随任务状态更新提示，移出后不恢复�
       ).ok(),
     ).toBe(true)
     await clickElement(page, id)
+    // 编辑器固定在卡片下方，先把它移进窗口再悬停里面的控件
+    await revealGenerator(page)
     const generator = page.getByTestId('generator')
     await generator.getByRole('button', { name: '生成', exact: true }).hover()
     const tip = page.getByRole('tooltip')
@@ -132,6 +134,8 @@ test('协作删除悬停控件所属节点后，提示立即退场，不悬挂�
       .toBe(true)
     await page.bringToFront()
     await clickElement(page, id)
+    // 编辑器固定在卡片下方，先把它移进窗口再悬停里面的控件
+    await revealGenerator(page)
     await page.getByTestId('generator').getByRole('button', { name: '生成', exact: true }).hover()
     const tip = page.getByRole('tooltip')
     await expect(tip).toContainText('生成')
@@ -196,6 +200,8 @@ for (const change of ['empty', 'remove', 'replace'] as const) {
       }),
     )
     await clickElement(page, id)
+    // 编辑器固定在卡片下方，先把它移进窗口再悬停里面的控件
+    await revealGenerator(page)
     const button = page.getByTestId('generator').getByRole('button', { name: '生成', exact: true })
     await button.hover()
     const tip = page.getByRole('tooltip')
