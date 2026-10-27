@@ -168,6 +168,38 @@ export function AgentDock() {
     if (ready) void enter(canvasId)
   }, [ready, canvasId, enter])
 
+  // 节点编辑器固定在卡片下方，可能压住右下角的助手入口：
+  // 入口被压住时先让开，编辑器里的生成按钮才点得到。
+  useEffect(() => {
+    if (!engine) return
+    const sync = () => {
+      const button = trigger.current
+      if (!button) return
+      const editor = document.querySelector('[data-testid="node-editor"]')
+      if (!editor) {
+        button.style.visibility = ''
+        return
+      }
+      const a = button.getBoundingClientRect()
+      const b = editor.getBoundingClientRect()
+      // 用 visibility 收起：按钮还占着原来的位置，下次量到的还是同一块地方
+      button.style.visibility =
+        a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top ? 'hidden' : ''
+    }
+    const offs = [
+      engine.onMove(sync),
+      engine.onStateChange(sync),
+      engine.selection.onChange(sync),
+      engine.camera.onInsetsChange(sync),
+    ]
+    window.addEventListener('resize', sync)
+    sync()
+    return () => {
+      for (const off of offs) off()
+      window.removeEventListener('resize', sync)
+    }
+  }, [engine, ready])
+
   // Esc 关闭面板（输入框里的 Esc 也算）
   useEffect(() => {
     if (!open) return
