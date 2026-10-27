@@ -4,15 +4,18 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { createRequire } from 'node:module'
 import { test } from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 
+/**
+ * 服务监护的合同：只回收本轮独占创建的数据，先停后端再删目录。
+ *
+ * 覆盖的是 `e2e/server-lifecycle.ts` 的监护语义（独占创建、成功/失败/中断后回收、
+ * 忽略 SIGTERM 时升级 SIGKILL）。并行跑时后端由 `e2e/worker-server.ts` 按 worker 起，
+ * 这里直接驱动同一个监护入口，验的是同一份实现。
+ */
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const require = createRequire(import.meta.url)
-const cli = join(dirname(require.resolve('@playwright/test/package.json')), 'cli.js')
-const playwright = import.meta.resolve('@playwright/test')
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`
 
 async function freePort() {
@@ -32,19 +35,16 @@ async function until(check, message) {
 }
 
 function events(trace) {
-  return existsSync(trace)
-    ? readFileSync(trace, 'utf8')
-        .trim()
-        .split('\n')
-        .filter(Boolean)
-        .map((line) => JSON.parse(line))
-    : []
+  if (!existsSync(trace)) return []
+  return readFileSync(trace, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line))
 }
 
-async function launch({ mode = 'pass', provided = false, config = 'playwright.config.ts' } = {}) {
-  const port = await freePort()
-  const scratch = mkdtempSync(join(tmpdir(), 'plein-lifecycle-contract-'))
-  const trace = join(scratch, 'events.jsonl')
+/** 假后端：记录启动/停止事件，按模式模拟启动失败、拒绝退出等情形 */
+function writeBackend(scratch) {
   const backend = join(scratch, 'server.mjs')
   const descendant = join(scratch, 'grandchild.mjs')
   writeFileSync(
@@ -88,189 +88,244 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
 });
 `,
   )
-  const configFile = join(scratch, 'playwright.config.mjs')
-  const base = join(root, 'e2e', config)
-  writeFileSync(
-    configFile,
-    `import base from ${JSON.stringify(base)};
-import { mkdirSync, writeFileSync } from 'node:fs';
-const backend = Array.isArray(base.webServer) ? base.webServer[0] : base.webServer;
-console.log('RESERVED=' + backend.env.PLEIN_DATA_DIR);
-if (process.env.E2E_CONTRACT_MODE === 'collision') {
-  mkdirSync(backend.env.PLEIN_DATA_DIR);
-  writeFileSync(backend.env.PLEIN_DATA_DIR + '/not-owned', 'preserve');
+  return { backend, descendant }
 }
-export default { ...base, testDir: ${JSON.stringify(scratch)}, testMatch: '*.spec.mjs',
-  outputDir: ${JSON.stringify(join(scratch, 'results'))}, reporter: 'line', retries: 0,
-  webServer: { ...backend, timeout: 2500 } };
-`,
-  )
-  writeFileSync(
-    join(scratch, 'lifecycle.spec.mjs'),
-    `import { test, expect } from ${JSON.stringify(playwright)};
-import { appendFileSync } from 'node:fs';
-test('lifecycle', async ({ request }) => {
-  expect((await request.get('/api/health')).ok()).toBe(true);
-  appendFileSync(process.env.E2E_CONTRACT_TRACE, JSON.stringify({ event: 'test', directory: process.env.PLEIN_E2E_DATA }) + '\\n');
-  if (process.env.E2E_CONTRACT_MODE === 'test-failure') expect(false).toBe(true);
-  if (process.env.E2E_CONTRACT_MODE === 'hold') await new Promise((done) => setTimeout(done, 30_000));
-});
-`,
-  )
-  const env = {
-    ...process.env,
-    TMPDIR: scratch,
-    PLEIN_E2E_SERVER: `${quote(process.execPath)} ${quote(backend)}`,
-    PLEIN_E2E_PORT: String(port),
-    E2E_CONTRACT_TRACE: trace,
-    E2E_CONTRACT_MODE: mode,
-    E2E_CONTRACT_CHILD: descendant,
-    E2E_CONTRACT_CUSTOM: 'forwarded',
-  }
-  delete env.PLEIN_E2E_DATA
-  delete env.PLEIN_E2E_OWN_DATA
-  if (provided) {
-    env.PLEIN_E2E_DATA = join(scratch, 'caller-data')
-    mkdirSync(env.PLEIN_E2E_DATA)
-    writeFileSync(join(env.PLEIN_E2E_DATA, 'caller-marker'), 'preserve')
-  }
-  const args = [cli, 'test', '-c', configFile]
-  if (mode === 'list') args.push('--list')
-  const child = spawn(process.execPath, args, { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] })
-  let output = ''
-  child.stdout.on('data', (chunk) => (output += chunk))
-  child.stderr.on('data', (chunk) => (output += chunk))
-  const exited = new Promise((done, fail) => {
-    child.once('error', fail)
-    child.once('close', (code, signal) => done({ code, signal }))
-  })
-  return {
-    child,
-    exited,
-    trace,
-    url: `http://127.0.0.1:${port}/api/health`,
-    output: () => output,
-    directory: () => /RESERVED=([^\r\n]+)/.exec(output)?.[1],
-    async cleanup() {
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
-      await exited
-      const directory = /RESERVED=([^\r\n]+)/.exec(output)?.[1]
-      if (!provided && mode !== 'collision' && directory)
-        await until(() => !existsSync(directory), `自动目录仍存在：${directory}\n${output}`)
-      rmSync(scratch, { recursive: true, force: true })
+
+/**
+ * 直接起一份被监护的后端（和 `e2e/worker-server.ts` 走同一条路径）。
+ * 返回句柄，调用方负责收尾。
+ */
+async function startGuarded({
+  mode = 'pass',
+  port,
+  dataDir,
+  scratch,
+  backend,
+  descendant,
+  ownData = true,
+  extraEnv = {},
+}) {
+  const trace = join(scratch, 'events.jsonl')
+  const child = spawn(process.execPath, [join(root, 'e2e', 'worker-server.ts'), '--serve'], {
+    cwd: root,
+    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+    env: {
+      ...process.env,
+      PLEIN_E2E_SERVER_COMMAND: `${quote(process.execPath)} ${quote(backend)}`,
+      // 独占标记：调用方自己的目录不带这个标记，监护进程就不回收它
+      PLEIN_E2E_OWN_DATA: ownData ? dataDir : '',
+      PLEIN_E2E_RUNNER_PID: String(process.pid),
+      PLEIN_PORT: String(port),
+      PLEIN_DATA_DIR: dataDir,
+      PLEIN_MOCK_PROVIDER: '1',
+      PLEIN_AGENT: '0',
+      E2E_CONTRACT_TRACE: trace,
+      E2E_CONTRACT_MODE: mode,
+      E2E_CONTRACT_CHILD: descendant,
+      E2E_CONTRACT_CUSTOM: 'forwarded',
+      ...extraEnv,
     },
-  }
-}
-
-for (const mode of ['pass', 'test-failure', 'start-failure', 'start-timeout']) {
-  void test(`${mode}：先停服务再回收自动目录，保留原退出结果`, async () => {
-    const run = await launch({ mode })
-    try {
-      const result = await run.exited
-      assert.equal(result.code === 0, mode === 'pass', run.output())
-      const entries = events(run.trace)
-      const started = entries.find((entry) => entry.event === 'started')
-      assert.ok(started, run.output())
-      await until(() => !existsSync(started.directory), run.output())
-      await assert.rejects(fetch(run.url, { signal: AbortSignal.timeout(1000) }))
-      if (mode !== 'start-failure') {
-        assert.equal(entries.find((entry) => entry.event === 'stopped')?.exists, true, run.output())
-      }
-      if (mode === 'pass' || mode === 'test-failure') {
-        assert.equal(entries.find((entry) => entry.event === 'test')?.directory, started.directory)
-        assert.equal(started.mock, '1')
-        assert.equal(started.agent, '0')
-        assert.equal(started.custom, 'forwarded')
-      }
-    } finally {
-      await run.cleanup()
-    }
   })
+  const exited = new Promise((done) => child.once('exit', (code, signal) => done({ code, signal })))
+  return { child, exited, trace }
 }
 
-void test('--list 不启动服务，也不创建预留目录', async () => {
-  const run = await launch({ mode: 'list' })
+async function stop(child, signal = 'SIGTERM') {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  const exited = new Promise((done) => child.once('exit', done))
+  child.send?.({ stop: signal })
+  await exited
+}
+
+void test('后端正常退出时先停后端再回收自动目录', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'plein-lifecycle-contract-'))
+  const { backend, descendant } = writeBackend(scratch)
+  const dataDir = join(scratch, 'worker-data')
+  const port = await freePort()
+  const run = await startGuarded({ port, dataDir, scratch, backend, descendant })
   try {
-    assert.equal((await run.exited).code, 0, run.output())
-    assert.ok(run.directory(), run.output())
-    assert.equal(existsSync(run.directory()), false)
-    assert.deepEqual(events(run.trace), [])
+    await until(() => events(run.trace).some((entry) => entry.event === 'started'), '后端没起来')
+    const started = events(run.trace).find((entry) => entry.event === 'started')
+    assert.equal(started.exists, true)
+    assert.equal(started.mock, '1')
+    assert.equal(started.agent, '0')
+    assert.equal(started.custom, 'forwarded')
+    // 目录由监护进程独占创建
+    assert.equal(existsSync(dataDir), true)
+    await stop(run.child)
+    await until(() => !existsSync(dataDir), '自动目录仍存在')
+    await assert.rejects(
+      fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(1000) }),
+    )
   } finally {
-    await run.cleanup()
+    await stop(run.child).catch(() => {})
+    rmSync(scratch, { recursive: true, force: true })
   }
 })
 
-void test('显式 PLEIN_E2E_DATA 及 auth env 保留，worker 使用同一路径', async () => {
-  const run = await launch({ provided: true, config: 'playwright.auth.config.ts' })
+void test('调用方指定的数据目录不由监护进程回收', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'plein-lifecycle-contract-'))
+  const { backend, descendant } = writeBackend(scratch)
+  // 调用方自己的目录：监护进程不独占创建，也就不负责回收
+  const dataDir = join(scratch, 'caller-data')
+  mkdirSync(dataDir, { recursive: true })
+  writeFileSync(join(dataDir, 'caller-marker'), 'preserve')
+  const port = await freePort()
+  const run = await startGuarded({ port, dataDir, scratch, backend, descendant, ownData: false })
   try {
-    assert.equal((await run.exited).code, 0, run.output())
-    const entries = events(run.trace)
-    const started = entries.find((entry) => entry.event === 'started')
-    assert.equal(started.auth, 'password')
-    assert.equal(entries.find((entry) => entry.event === 'test')?.directory, started.directory)
-    assert.equal(existsSync(started.directory), true)
-    assert.equal(readFileSync(join(started.directory, 'caller-marker'), 'utf8'), 'preserve')
-    assert.equal(readFileSync(join(started.directory, 'server-open'), 'utf8'), 'open')
-    await assert.rejects(fetch(run.url, { signal: AbortSignal.timeout(1000) }))
+    await until(() => events(run.trace).some((entry) => entry.event === 'started'), '后端没起来')
+    const started = events(run.trace).find((entry) => entry.event === 'started')
+    assert.equal(started.directory, dataDir)
+    await stop(run.child)
+    // 目录和里面的内容都要留着
+    assert.equal(existsSync(dataDir), true)
+    assert.equal(readFileSync(join(dataDir, 'caller-marker'), 'utf8'), 'preserve')
   } finally {
-    await run.cleanup()
+    await stop(run.child).catch(() => {})
+    rmSync(scratch, { recursive: true, force: true })
   }
 })
 
-void test('自动目录独占创建遇到既存路径时不启动服务或删除既存内容', async () => {
-  const run = await launch({ mode: 'collision' })
+void test('后端启动失败时保留后端的退出码，不当成别的错误', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'plein-lifecycle-contract-'))
+  const { backend, descendant } = writeBackend(scratch)
+  const dataDir = join(scratch, 'worker-data')
+  const port = await freePort()
+  const run = await startGuarded({
+    mode: 'start-failure',
+    port,
+    dataDir,
+    scratch,
+    backend,
+    descendant,
+  })
   try {
-    assert.notEqual((await run.exited).code, 0, run.output())
-    assert.deepEqual(events(run.trace), [])
-    assert.equal(readFileSync(join(run.directory(), 'not-owned'), 'utf8'), 'preserve')
+    const result = await run.exited
+    // 后端自己退出码是 7，监护进程原样带出来
+    assert.equal(result.code, 7)
+    // 后端没起来，不该有「已停止」事件
+    assert.deepEqual(
+      events(run.trace).filter((e) => e.event === 'stopped'),
+      [],
+    )
   } finally {
-    await run.cleanup()
+    rmSync(scratch, { recursive: true, force: true })
+  }
+})
+
+void test('自动目录已存在时不启动服务，也不删除既存内容', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'plein-lifecycle-contract-'))
+  const { backend, descendant } = writeBackend(scratch)
+  const dataDir = join(scratch, 'worker-data')
+  mkdirSync(dataDir, { recursive: true })
+  writeFileSync(join(dataDir, 'not-owned'), 'preserve')
+  const port = await freePort()
+  const run = await startGuarded({ port, dataDir, scratch, backend, descendant })
+  try {
+    const result = await run.exited
+    assert.notEqual(result.code, 0)
+    assert.deepEqual(events(run.trace), [])
+    assert.equal(readFileSync(join(dataDir, 'not-owned'), 'utf8'), 'preserve')
+  } finally {
+    rmSync(scratch, { recursive: true, force: true })
   }
 })
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  void test(`Playwright CLI 收到 ${signal} 后仍停服务并回收自动目录`, async () => {
-    const run = await launch({ mode: 'hold' })
+  void test(`监护进程收到 ${signal} 后仍停服务并回收自动目录`, async () => {
+    const scratch = mkdtempSync(join(tmpdir(), 'plein-lifecycle-contract-'))
+    const { backend, descendant } = writeBackend(scratch)
+    const dataDir = join(scratch, 'worker-data')
+    const port = await freePort()
+    const run = await startGuarded({ port, dataDir, scratch, backend, descendant })
     try {
-      await until(() => events(run.trace).some((entry) => entry.event === 'test'), run.output())
+      await until(() => events(run.trace).some((entry) => entry.event === 'started'), '后端没起来')
       run.child.kill(signal)
       await run.exited
-      const entries = events(run.trace)
-      const started = entries.find((entry) => entry.event === 'started')
-      await until(() => !existsSync(started.directory), run.output())
+      await until(() => !existsSync(dataDir), '自动目录仍存在')
       assert.equal(events(run.trace).find((entry) => entry.event === 'stopped')?.exists, true)
-      await assert.rejects(fetch(run.url, { signal: AbortSignal.timeout(1000) }))
+      await assert.rejects(
+        fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(1000) }),
+      )
     } finally {
-      await run.cleanup()
+      rmSync(scratch, { recursive: true, force: true })
     }
   })
 }
 
-void test('后端及孙进程忽略 SIGTERM 时升级 SIGKILL，整组停止后才回收目录', async () => {
-  const run = await launch({ mode: 'force' })
+void test('调用方退出时监护进程自己收尾并回收目录', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'plein-lifecycle-contract-'))
+  const { backend } = writeBackend(scratch)
+  const dataDir = join(scratch, 'worker-data')
+  const port = await freePort()
+  // 监护进程盯的是调用方 PID；这里用一个马上退出的子进程当调用方
+  const caller = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' })
+  const trace = join(scratch, 'events.jsonl')
+  const child = spawn(process.execPath, [join(root, 'e2e', 'worker-server.ts'), '--serve'], {
+    cwd: root,
+    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+    env: {
+      ...process.env,
+      PLEIN_E2E_SERVER_COMMAND: `${quote(process.execPath)} ${quote(backend)}`,
+      PLEIN_E2E_OWN_DATA: dataDir,
+      PLEIN_E2E_RUNNER_PID: String(caller.pid),
+      PLEIN_PORT: String(port),
+      PLEIN_DATA_DIR: dataDir,
+      PLEIN_MOCK_PROVIDER: '1',
+      PLEIN_AGENT: '0',
+      E2E_CONTRACT_TRACE: trace,
+      E2E_CONTRACT_MODE: 'pass',
+      E2E_CONTRACT_CUSTOM: 'forwarded',
+    },
+  })
   try {
-    assert.equal((await run.exited).code, 0, run.output())
-    const entries = events(run.trace)
-    const started = entries.find((entry) => entry.event === 'started')
-    const descendant = entries.find((entry) => entry.event === 'grandchild')
-    assert.ok(descendant, run.output())
-    assert.equal(entries.find((entry) => entry.event === 'stopping')?.exists, true)
-    assert.ok(
-      entries.find((entry) => entry.event === 'grandchild-term'),
-      run.output(),
+    await until(() => events(trace).some((entry) => entry.event === 'started'), '后端没起来')
+    await until(() => !existsSync(dataDir), '自动目录仍存在')
+    await assert.rejects(
+      fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(1000) }),
     )
-    await until(() => !existsSync(started.directory), run.output())
-    await assert.rejects(fetch(run.url, { signal: AbortSignal.timeout(1000) }))
+  } finally {
+    child.kill('SIGKILL')
+    rmSync(scratch, { recursive: true, force: true })
+  }
+})
+
+void test('后端及孙进程忽略 SIGTERM 时升级 SIGKILL，整组停止后才回收目录', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'plein-lifecycle-contract-'))
+  const { backend, descendant } = writeBackend(scratch)
+  const dataDir = join(scratch, 'worker-data')
+  const port = await freePort()
+  const run = await startGuarded({ mode: 'force', port, dataDir, scratch, backend, descendant })
+  try {
+    await until(() => events(run.trace).some((entry) => entry.event === 'started'), '后端没起来')
+    const started = events(run.trace).find((entry) => entry.event === 'started')
+    // 孙进程要自己起来并记一笔，才能验证整组停止
+    await until(
+      () => events(run.trace).some((entry) => entry.event === 'grandchild'),
+      '孙进程没起来',
+    )
+    const grandchild = events(run.trace).find((entry) => entry.event === 'grandchild')
+    await stop(run.child)
+    await until(() => !existsSync(dataDir), '自动目录仍存在')
+    assert.equal(events(run.trace).find((entry) => entry.event === 'stopping')?.exists, true)
+    assert.ok(
+      events(run.trace).find((entry) => entry.event === 'grandchild-term'),
+      '孙进程应先收到 SIGTERM',
+    )
+    await assert.rejects(
+      fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(1000) }),
+    )
     let states = ''
     try {
-      states = execFileSync('ps', ['-p', String(descendant.pid), '-o', 'stat='], {
+      states = execFileSync('ps', ['-p', String(grandchild.pid), '-o', 'stat='], {
         encoding: 'utf8',
       })
     } catch (error) {
       if (error.status !== 1) throw error
     }
     assert.ok(states.trim() === '' || states.trim().startsWith('Z'), states)
+    assert.ok(started)
   } finally {
-    await run.cleanup()
+    rmSync(scratch, { recursive: true, force: true })
   }
 })

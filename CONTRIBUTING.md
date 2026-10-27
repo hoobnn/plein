@@ -34,9 +34,12 @@ pnpm typecheck
 | `pnpm test:e2e-lifecycle` | 用最小 Playwright 服务验证自动目录所有权及成功、失败、中断后的回收                                       |
 | `pnpm smoke`              | 启动真实服务，经 HTTP 和 Yjs WebSocket 读写，重启后确认数据没丢                                          |
 | `pnpm verify`             | 依次运行 lint、typecheck、桌面 test:profile、E2E 生命周期合同、test:coverage、smoke，pre-push 与 CI 共用 |
-| `pnpm e2e`                | Playwright 界面冒烟：基于 mock 平台覆盖从短剧模板到导出的完整流程                                        |
+| `pnpm e2e`                | Playwright 界面冒烟：基于 mock 平台覆盖从短剧模板到导出的完整流程，按文件并行                            |
 | `pnpm e2e:core`           | 只跑标记为 `@core` 的核心用例：主创作流程、导入导出、协作基础与关键恢复，几分钟跑完                      |
 | `pnpm e2e:auth`           | 密码登录回归：真实账号创建、登录退出、会话失效与界面恢复，使用隔离数据库                                 |
+| `pnpm e2e:file`           | 只跑指定文件：`pnpm e2e:file e2e/canvas.spec.ts`                                                         |
+| `pnpm e2e:grep`           | 按用例标题筛选：`pnpm e2e:grep "新建画布"`                                                               |
+| `pnpm e2e:fail`           | 只重跑上一轮失败的用例                                                                                   |
 | `pnpm perf`               | 画布渲染性能基准                                                                                         |
 | `pnpm perf:compare`       | 在同一 runner 顺序构建和测量基线、候选，比较完整样本并拒绝明显回退                                       |
 
@@ -45,10 +48,19 @@ pnpm typecheck
 E2E 只在本地跑，云端不再跑：发版前本地跑完整 e2e，全绿才打标签。
 
 ```bash
-pnpm e2e       # 全部界面冒烟用例
-pnpm e2e:core  # 只跑 @core 的核心用例，几分钟跑完
-pnpm e2e:auth  # 密码登录回归，隔离数据库
+pnpm e2e                          # 全部界面冒烟用例，并行跑
+pnpm e2e:core                     # 只跑 @core 的核心用例，几分钟跑完
+pnpm e2e:auth                     # 密码登录回归，隔离数据库
+pnpm e2e:file e2e/canvas.spec.ts  # 只跑指定的文件
+pnpm e2e:grep "新建画布"           # 按用例标题筛选
+pnpm e2e:fail                     # 只重跑上一轮失败的用例
 ```
+
+E2E 按文件并行：每个 worker 带一份自己的后端（独立端口 + 独立数据目录），文件之间并行、文件内部串行（一条用例走完整条流水线，状态前后相依）。默认并行度取核数的一半，可用 `PLEIN_E2E_WORKERS` 覆盖。端口基准默认 8800，可用 `PLEIN_E2E_BASE_PORT` 覆盖；每个 worker 用 `基准 + worker 序号`，撞上占用端口时自动往后顺延。多个 e2e 进程同时跑时，各自设不同的 `PLEIN_E2E_BASE_PORT` 避免撞车。
+
+前端产物按源码哈希缓存：`pnpm e2e` 只在 `apps/web` 或 `packages` 的源码变了才重建 `dist-e2e`，没变就直接复用。强制重建用 `node scripts/build-e2e-web.mjs --force`，完全跳过用 `PLEIN_E2E_BUILD=0`。
+
+并行时每个 worker 的数据目录是 `plein-e2e-w<worker 序号>`，用例里 `process.env.PLEIN_E2E_DATA` 指向当前 worker 那一份。
 
 ### 验收分层
 
