@@ -13,6 +13,8 @@ out/
 .vite/
 .turbo/
 .cache/
+# e2e 前端构建的缓存标记（按源码哈希判断要不要重建）
+apps/web/.e2e-build-stamp.json
 
 # 桌面安装包：打包前准备的服务端与 ffmpeg、ffmpeg 构建缓存、安装包输出
 apps/desktop/stage/
