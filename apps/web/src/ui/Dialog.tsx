@@ -1,6 +1,7 @@
-import { Dialog } from '@base-ui/react/dialog'
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { Presence, useClosing, useExit } from './Presence'
+import { lazy, Suspense, useEffect, useSyncExternalStore } from 'react'
+import { Presence } from './Presence'
+
+const DialogView = lazy(() => import('./DialogView').then((m) => ({ default: m.DialogView })))
 
 /**
  * 应用内的确认框 / 输入框，替代浏览器原生的 confirm() / prompt()。
@@ -29,22 +30,26 @@ interface PromptOptions {
   onConfirm?(value: string): Promise<void>
 }
 
-type Request = { id: number } & (
+export type DialogRequest = { id: number } & (
   | { kind: 'confirm'; options: ConfirmOptions; resolve(v: boolean): void }
   | { kind: 'prompt'; options: PromptOptions; resolve(v: string | null): void }
 )
 
-let current: Request | null = null
+let current: DialogRequest | null = null
 let nextId = 0
 const listeners = new Set<() => void>()
 const emit = () => {
   for (const l of listeners) l()
 }
 
-type Pending = Request extends infer R ? (R extends Request ? Omit<R, 'id'> : never) : never
+type Pending = DialogRequest extends infer R
+  ? R extends DialogRequest
+    ? Omit<R, 'id'>
+    : never
+  : never
 
 function open(pending: Pending) {
-  const req = { ...pending, id: ++nextId } as Request
+  const req = { ...pending, id: ++nextId } as DialogRequest
   // 已有对话框时，先按取消关掉旧的
   if (current) settle(null)
   current = req
@@ -84,147 +89,19 @@ export function DialogHost({ active = true }: { active?: boolean } = {}) {
     if (!active && req) settle(null)
   }, [active, req])
   if (!active) return null
-  return <Presence>{req && <DialogView key={req.id} req={req} />}</Presence>
+  return (
+    <Suspense fallback={null}>
+      <Presence>
+        {req && <DialogView key={req.id} req={req} isCurrent={isCurrent} onFinish={finish} />}
+      </Presence>
+    </Suspense>
+  )
 }
 
-function DialogView({ req }: { req: Request }) {
-  const { options } = req
-  const [text, setText] = useState(req.kind === 'prompt' ? (req.options.defaultValue ?? '') : '')
-  const inputRef = useRef<HTMLInputElement>(null)
-  const confirmRef = useRef<HTMLButtonElement>(null)
-  const closing = useClosing()
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const busyRef = useRef(false)
-  const finish = useCallback(
-    (value: boolean | string | null) => {
-      if (current?.id === req.id) settle(value)
-    },
-    [req.id],
-  )
+function isCurrent(id: number) {
+  return current?.id === id
+}
 
-  // Esc 自己处理并停止传播，不交给 Base UI：外层面板的 Esc 处理用 dialogOpen() 让位
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (current?.id !== req.id) return
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        if (e.isComposing || e.keyCode === 229) return
-        finish(null)
-      }
-    }
-    window.addEventListener('keydown', key, true)
-    return () => window.removeEventListener('keydown', key, true)
-  }, [finish, req.id])
-
-  const value = text.trim()
-  const canConfirm = req.kind === 'confirm' || value !== ''
-  const confirm = async () => {
-    if (!canConfirm || busyRef.current || current?.id !== req.id) return
-    if (req.kind === 'confirm' || !req.options.onConfirm) {
-      finish(req.kind === 'confirm' ? true : value)
-      return
-    }
-    busyRef.current = true
-    setBusy(true)
-    setError(null)
-    try {
-      await req.options.onConfirm(value)
-      finish(value)
-    } catch (err) {
-      if (current?.id === req.id) {
-        setError(err instanceof Error ? err.message : String(err))
-        requestAnimationFrame(() => {
-          if (current?.id === req.id) inputRef.current?.focus()
-        })
-      }
-    } finally {
-      busyRef.current = false
-      setBusy(false)
-    }
-  }
-  const danger = req.kind === 'confirm' && req.options.danger
-  const exit = useExit()
-
-  return (
-    <Dialog.Root
-      open={!closing}
-      onOpenChange={(open, details) => {
-        if (!open && details.reason !== 'escape-key') finish(null)
-      }}
-    >
-      <Dialog.Portal>
-        <Dialog.Backdrop {...exit} className="ui-dialog-scrim fixed inset-0 z-60 bg-scrim" />
-        <Dialog.Viewport className="fixed inset-0 z-60 flex items-center justify-center p-4 sm:p-6">
-          <Dialog.Popup
-            {...exit}
-            aria-label={options.title}
-            initialFocus={
-              req.kind === 'prompt'
-                ? () => {
-                    inputRef.current?.select()
-                    return inputRef.current
-                  }
-                : confirmRef
-            }
-            render={
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  void confirm()
-                }}
-              />
-            }
-            className="ui-dialog ui-scrollbar relative flex max-h-full w-full max-w-100 flex-col gap-5 overflow-y-auto rounded-2xl bg-surface p-5 shadow-4 outline-none sm:p-6 [&>*]:shrink-0"
-          >
-            <div className="flex flex-col gap-1.5">
-              <h2 className="text-lg font-semibold break-words">{options.title}</h2>
-              {options.message && (
-                <p className="text-sm leading-5 break-words text-ink-muted">{options.message}</p>
-              )}
-            </div>
-            {req.kind === 'prompt' && (
-              <input
-                ref={inputRef}
-                aria-label={req.options.placeholder ?? options.title}
-                className="ui-input ui-input-lg w-full"
-                value={text}
-                placeholder={req.options.placeholder}
-                maxLength={req.options.maxLength}
-                disabled={busy}
-                onChange={(e) => setText(e.target.value)}
-              />
-            )}
-            {error && (
-              <p role="alert" className="break-words text-sm text-danger">
-                {error}
-              </p>
-            )}
-            {busy && (
-              <p role="status" className="text-xs text-ink-muted">
-                正在{options.confirmLabel ?? '提交'}，关闭窗口后仍会继续执行。
-              </p>
-            )}
-            <div className="flex shrink-0 flex-wrap justify-end gap-2">
-              <button
-                type="button"
-                className="ui-btn ui-btn-secondary ui-btn-lg"
-                onClick={() => finish(null)}
-              >
-                {busy ? '关闭' : (options.cancelLabel ?? '取消')}
-              </button>
-              <button
-                ref={confirmRef}
-                type="submit"
-                disabled={!canConfirm || busy}
-                className={`ui-btn ui-btn-lg ${danger ? 'ui-btn-danger-solid' : 'ui-btn-primary'}`}
-              >
-                {busy ? `${options.confirmLabel ?? '提交'}中…` : (options.confirmLabel ?? '确定')}
-              </button>
-            </div>
-          </Dialog.Popup>
-        </Dialog.Viewport>
-      </Dialog.Portal>
-    </Dialog.Root>
-  )
+function finish(id: number, value: boolean | string | null) {
+  if (isCurrent(id)) settle(value)
 }

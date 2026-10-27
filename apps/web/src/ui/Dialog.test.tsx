@@ -22,7 +22,7 @@ it.each([{ isComposing: true }, { keyCode: 229 }])(
       </button>,
     )
     await user.click(screen.getByText('新建'))
-    const input = screen.getByRole<HTMLInputElement>('textbox')
+    const input = await screen.findByRole<HTMLInputElement>('textbox')
     expect(document.activeElement).toBe(input)
     expect(input.selectionEnd! - input.selectionStart!).toBe(input.value.length)
     await user.clear(input)
@@ -52,6 +52,6 @@ it('确认框取消不触发删除，新的对话框替换旧请求时旧请求�
     next = promptDialog({ title: '新建画布' })
   })
   await expect(old).resolves.toBe(false)
-  fireEvent.click(screen.getByRole('button', { name: '取消' }))
+  fireEvent.click(await screen.findByRole('button', { name: '取消' }))
   await expect(next).resolves.toBeNull()
 })

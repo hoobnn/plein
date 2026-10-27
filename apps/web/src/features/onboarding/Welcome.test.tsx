@@ -24,7 +24,7 @@ const project: Project = {
   canvases: 1,
   lastCanvasId: 'created-canvas',
 }
-function setup() {
+async function setup() {
   let finish!: (response: Response) => void
   let writes = 0
   mockFetch((request) => {
@@ -40,6 +40,7 @@ function setup() {
   })
   useCatalog.setState({ catalog })
   const rendered = renderApp(<Welcome />)
+  await screen.findByRole('dialog', { name: '欢迎使用 Plein' })
   return {
     ...rendered,
     writes: () => writes,
@@ -51,7 +52,7 @@ function setup() {
   }
 }
 it('首次无平台显示引导，跳过后创建短剧登记意图，完成后不再显示', async () => {
-  const f = setup()
+  const f = await setup()
   expect(screen.getByRole<HTMLButtonElement>('button', { name: '下一步' }).disabled).toBe(true)
   await f.user.click(screen.getByRole('button', { name: '跳过' }))
   await f.user.click(screen.getByRole('button', { name: /从短剧模板开始/ }))
@@ -64,7 +65,7 @@ it('首次无平台显示引导，跳过后创建短剧登记意图，完成后�
   expect(screen.queryByRole('dialog', { name: '欢迎使用 Plein' })).toBeNull()
 })
 it('等待说明、同帧双击仅一次提交，失败保留步骤并能重试', async () => {
-  const f = setup()
+  const f = await setup()
   await f.user.click(screen.getByRole('button', { name: '跳过' }))
   const start = screen.getByRole('button', { name: /空白画布/ })
   act(() => {
@@ -84,7 +85,7 @@ it('等待说明、同帧双击仅一次提交，失败保留步骤并能重试'
 it.each(['关闭', 'Escape'] as const)(
   '创建期间 %s，迟到完成只提示项目并保留短剧意图，不接管新导航',
   async (exit) => {
-    const f = setup()
+    const f = await setup()
     await f.user.click(screen.getByRole('button', { name: '跳过' }))
     await f.user.click(screen.getByRole('button', { name: /从短剧模板开始/ }))
     if (exit === '关闭') await f.user.click(screen.getByRole('button', { name: '关闭' }))
@@ -99,7 +100,7 @@ it.each(['关闭', 'Escape'] as const)(
   },
 )
 it('旧引导卸载重开后迟到失败不关闭新引导，保留可操作的新步骤', async () => {
-  const f = setup()
+  const f = await setup()
   await f.user.click(screen.getByRole('button', { name: '跳过' }))
   await f.user.click(screen.getByRole('button', { name: /空白画布/ }))
   f.unmount()

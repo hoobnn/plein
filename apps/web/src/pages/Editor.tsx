@@ -8,7 +8,7 @@ import {
   useSyncExternalStore,
 } from 'react'
 import { api } from '../api/client'
-import { ShotWorkbench } from '../features/storyboard/ShotWorkbench'
+import { EditorPanels } from './EditorPanels'
 import { queryKeys } from '../api/query'
 import { type CanvasSource, CanvasView } from '../canvas/CanvasView'
 import { placeStartNode } from '../canvas/start'
@@ -30,12 +30,10 @@ import { Viewer } from '../shell/Viewer'
 import { SelectionBar } from '../shell/SelectionBar'
 import { Shortcuts } from '../shell/Shortcuts'
 import { Sidebar } from '../shell/Sidebar'
-import { SequenceEditor } from '../features/sequence/SequenceEditor'
 import { StageEditor } from '../features/stage/StageEditor'
 import { ShotAnalysisEditor } from '../features/shot-analysis/ShotAnalysisEditor'
 import { AiAnalysisEditor } from '../features/ai-shot-analysis/AiAnalysisEditor'
 import { MotionEditor } from '../features/motion/MotionEditor'
-import { StoryboardEditor } from '../features/storyboard/StoryboardEditor'
 import { Tasks } from '../features/runs/Tasks'
 import { ImpactPanel } from '../features/runs/ImpactPanel'
 import { Toolbar, ViewControls } from '../shell/Toolbar'
@@ -275,9 +273,7 @@ export function Editor({
           </footer>
         </>
       )}
-      <StoryboardEditor />
-      <ShotWorkbench />
-      <SequenceEditor />
+      <EditorPanels />
       <StageEditor />
       <ShotAnalysisEditor />
       <AiAnalysisEditor />

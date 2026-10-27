@@ -14,8 +14,8 @@ import { Presence } from './ui/Presence'
 import { Mascot } from './ui/Mascot'
 import { useMediaLibrary } from './features/media-library/store'
 import { useCheckpoints } from './features/checkpoints/store'
+import { EditorLoader as Editor } from './pages/EditorLoader'
 
-const Editor = lazy(() => import('./pages/Editor').then((m) => ({ default: m.Editor })))
 const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })))
 const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })))
 const ProjectOpen = lazy(() =>
