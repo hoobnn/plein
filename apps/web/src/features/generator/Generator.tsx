@@ -242,6 +242,9 @@ export function GeneratorPanel({
   // 生成前的实际输入：所有要跑的节点都要（插件节点可能没有 capability，
   // 但服务端照样能准备输入；不取预览，生成按钮就一直是禁用的）
   const input = useInputPreview(engine, !pure ? canvasId : null, el.id)
+  // 调模型的节点必须等这份实际输入；执行器节点（插件节点等）没有模型能力，
+  // 服务端可能备不出实际输入，这时照样能生成，不因为等它把按钮卡住。
+  const requiresInput = !pure && !!node.capability
   // 必需参考用不上这类问题只有服务端准备过才知道；输入刚改、还在重新准备时先不拦
   const blocked =
     !input.loading && !input.error && input.data?.blocked.length
@@ -346,7 +349,7 @@ export function GeneratorPanel({
   ) : null
 
   const run = () => {
-    if (canceling || awaitingAcceptance || (!running && !input.data?.inputHash)) return false
+    if (canceling || awaitingAcceptance) return false
     if (running) {
       void cancelNode(el.id, el.run?.id)
       return true
@@ -356,6 +359,8 @@ export function GeneratorPanel({
     // 实际输入还在准备或已经过期：这时提交会被服务端判成输入已变，
     // 白跑一次还把这次生成丢掉。等新的实际输入备好再提交。
     if (input.loading || input.stale) return false
+    // 调模型的节点要有实际输入才能提交；执行器节点没有也照样能生成。
+    if (requiresInput && !input.data?.inputHash) return false
     void runNode(
       el.id,
       input.data?.inputHash
@@ -370,7 +375,9 @@ export function GeneratorPanel({
   const pendingRun = useRef(false)
   useEffect(() => {
     if (!pendingRun.current) return
-    if (input.loading || input.stale || !input.data?.inputHash) return
+    if (input.loading || input.stale) return
+    // 调模型的节点要等实际输入备好；执行器节点没有也照样能生成。
+    if (requiresInput && !input.data?.inputHash) return
     pendingRun.current = false
     run()
   })
@@ -379,7 +386,7 @@ export function GeneratorPanel({
   const requestRun = () => {
     // 实际输入还在准备或正在刷新：先记下，等拿到这份输入再提交，
     // 否则会拿着上一版的哈希提交，被服务端判成输入已变。
-    if (!running && (input.loading || input.stale || !input.data?.inputHash))
+    if (!running && (input.loading || input.stale || (requiresInput && !input.data?.inputHash)))
       pendingRun.current = true
     // 这一步已经提交过了就别再记着：输入刷新完再补一次会重复生成。
     if (run()) pendingRun.current = false
@@ -662,7 +669,7 @@ export function GeneratorPanel({
                     awaitingAcceptance ||
                     (!running && !!problem) ||
                     // 输入还在准备：按下先记下，备好后自动提交
-                    (!running && !input.loading && !input.data?.inputHash) ||
+                    (!running && requiresInput && !input.loading && !input.data?.inputHash) ||
                     // 预览已经过期：这份 inputHash 提交上去会被服务端判成输入已变
                     (!running && input.stale)
                   }
