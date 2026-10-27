@@ -358,7 +358,9 @@ export function GeneratorPanel({
     if (problem) return false
     // 实际输入还在准备或已经过期：这时提交会被服务端判成输入已变，
     // 白跑一次还把这次生成丢掉。等新的实际输入备好再提交。
-    if (input.loading || input.stale) return false
+    // 刷新失败除外：这时拿不到新的实际输入，锁死生成会让用户动不了，
+    // 照旧提交，由服务端判成输入已变后带回新的实际输入。
+    if (input.loading || (input.stale && !input.error)) return false
     // 调模型的节点要有实际输入才能提交；执行器节点没有也照样能生成。
     if (requiresInput && !input.data?.inputHash) return false
     void runNode(
@@ -375,7 +377,7 @@ export function GeneratorPanel({
   const pendingRun = useRef(false)
   useEffect(() => {
     if (!pendingRun.current) return
-    if (input.loading || input.stale) return
+    if (input.loading || (input.stale && !input.error)) return
     // 调模型的节点要等实际输入备好；执行器节点没有也照样能生成。
     if (requiresInput && !input.data?.inputHash) return
     // 已经有任务在跑时不取消它：这次生成等任务结束再提交
@@ -389,7 +391,10 @@ export function GeneratorPanel({
     // 实际输入还在准备或正在刷新：先记下，等拿到这份输入再提交，
     // 否则会拿着上一版的哈希提交，被服务端判成输入已变；
     // 这次也不能先提交一遍：刷新完再提交会多跑一次。
-    if (!running && (input.loading || input.stale || (requiresInput && !input.data?.inputHash)))
+    if (
+      !running &&
+      (input.loading || (input.stale && !input.error) || (requiresInput && !input.data?.inputHash))
+    )
       pendingRun.current = true
     // 这一步已经提交过了就别再记着：输入刷新完再补一次会重复生成。
     if (run()) pendingRun.current = false
@@ -673,8 +678,9 @@ export function GeneratorPanel({
                     (!running && !!problem) ||
                     // 输入还在准备：按下先记下，备好后自动提交
                     (!running && requiresInput && !input.loading && !input.data?.inputHash) ||
-                    // 预览已经过期：这份 inputHash 提交上去会被服务端判成输入已变
-                    (!running && input.stale)
+                    // 预览已经过期：这份 inputHash 提交上去会被服务端判成输入已变；
+                    // 刷新失败时拿不到新输入，不锁死生成
+                    (!running && input.stale && !input.error)
                   }
                   aria-busy={canceling || awaitingAcceptance}
                   title={problem ?? (running ? runLabel : withShortcut(runLabel, 'mod+enter'))}
