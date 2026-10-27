@@ -20,7 +20,8 @@ test('新建项目等待时有明确状态，连续触发只创建一次', async
       ;(el as HTMLButtonElement).click()
       ;(el as HTMLButtonElement).click()
     })
-    await expect(page.getByRole('status')).toContainText('正在创建项目')
+    // 首页加载中也有一个 role=status（「正在加载项目…」），这里只认创建状态
+    await expect(page.getByRole('status').filter({ hasText: '正在创建项目' })).toBeVisible()
     await expect.poll(() => writes).toBe(1)
     for (const button of await page.locator('.home-quick, .home-new').all())
       await expect(button).toBeDisabled()
