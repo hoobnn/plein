@@ -80,6 +80,12 @@ test(
     const editor = page.getByRole('dialog', { name: '序列', exact: true })
     await expect(editor.getByText('样片 / 草稿', { exact: true }).first()).toBeVisible()
     await expect(editor.getByText('缺少分镜图', { exact: false }).first()).toBeVisible()
+    const viewport = page.viewportSize()!
+    await page.setViewportSize({ width: 390, height: 700 })
+    await expect(editor.getByRole('button', { name: '关闭', exact: true })).toBeInViewport()
+    const play = editor.getByRole('button', { name: '播放', exact: true })
+    await play.scrollIntoViewIfNeeded()
+    await expect(play).toBeInViewport()
     await editor.getByRole('spinbutton', { name: '样片镜头时长（秒）' }).fill('2.5')
     await editor.getByRole('spinbutton', { name: '对白起始延迟（秒）' }).fill('0.2')
     await editor.getByRole('spinbutton', { name: '对白句间停顿（秒）' }).fill('0.4')
@@ -98,6 +104,13 @@ test(
       )
       .toBe(2.5)
     await expect(editor.locator('.seq-clip').first().locator('img')).toBeVisible()
+    await editor.locator('.seq-clip').first().scrollIntoViewIfNeeded()
+    await expect(editor.locator('.seq-clip').first()).toBeInViewport()
+    await expect(editor.getByRole('button', { name: '关闭', exact: true })).toBeInViewport()
+    expect(await editor.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    )
+    await page.setViewportSize(viewport)
     // 此用例验证本地合成与交付；字幕字库的烧录在字幕专项验证，避免宿主 libass 差异。
     await editor.getByRole('button', { name: '成片', exact: true }).click()
     const subtitles = editor.getByRole('switch', { name: '开启字幕', exact: true })
