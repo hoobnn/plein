@@ -3,6 +3,9 @@
  *
  *   pnpm perf            # 先构建 apps/web/dist-e2e，再跑全部场景（约 10 分钟）
  *   PERF_N=3000 pnpm perf
+ *   PERF_RENDERER=hardware pnpm perf  # 显式使用完整 Chromium，并校验实际 GPU
+ *   PERF_PROFILE=会话 PERF_SESSION_MS=600000 pnpm perf  # 十分钟诊断，不作完整门禁报告
+ *   PERF_OPEN_ONLY=1 pnpm perf  # 只重复打开，诊断报告不会被 perf:compare 接受
  *
  * 容器里的 Chromium 用软件光栅（SwiftShader），GPU 帧率不可信；
  * 这里只看主线程：每帧脚本 / 布局 / 样式耗时、长任务、DOM 写入次数，以及打开画布的耗时。
@@ -37,14 +40,17 @@ import {
   PERF_FORMAT_VERSION,
   type PerfReport,
 } from './report'
+import { measureMarkdownRetention, measureSession } from './memory'
 
 /** 被测的仓库根目录：服务端和前端构建都从这里取；对比改动前后时指向另一个检出 */
 const ROOT = process.env.PERF_ROOT ?? join(import.meta.dirname, '../..')
-const PORT = Number(process.env.PERF_PORT ?? 8791)
+const PORT = Number(process.env.PERF_PORT ?? 9510)
 const BASE = `http://127.0.0.1:${PORT}`
 const N = Number(process.env.PERF_N ?? 1000)
 /** 每个场景跑几轮取中位数 */
 const ROUNDS = Number(process.env.PERF_ROUNDS ?? 3)
+const SESSION_MS = Number(process.env.PERF_SESSION_MS ?? 30_000)
+const SESSION_ITERATIONS = Number(process.env.PERF_SESSION_ITERATIONS ?? 12)
 const WEB_DIST = process.env.PERF_DIST ?? join(ROOT, 'apps/web/dist-e2e')
 const failureContext: Record<string, unknown> = {
   environment: {
@@ -247,6 +253,14 @@ function printTop(self: Map<string, number>) {
     console.log(`${v.toFixed(1).padStart(8)} ms  ${k}`)
 }
 
+function logOpen(mode: string, round: number, sample: OpenSample) {
+  const { resources, ...summary } = sample
+  console.error(
+    `[perf] ${mode} ${round}/${ROUNDS}`,
+    JSON.stringify({ ...summary, resources: resources.length }),
+  )
+}
+
 async function measure(page: Page, cdp: CDPSession, run: () => Promise<void>): Promise<Result> {
   await page.waitForTimeout(300)
   const before = await metrics(cdp)
@@ -286,40 +300,71 @@ function median(rs: Result[]): Result {
 
 /** 页内连续派发滚轮事件：每帧 perFrame 个，模拟高频触控板 */
 function wheel(page: Page, opts: { frames: number; perFrame: number; zoom: boolean }) {
-  return page.evaluate(
-    ({ frames, perFrame, zoom }) =>
-      new Promise<void>((done) => {
-        const host = document.querySelector('canvas')!.parentElement!
-        const r = host.getBoundingClientRect()
-        let i = 0
-        const step = () => {
-          for (let k = 0; k < perFrame; k++) {
-            const phase = Math.sin((i / frames) * Math.PI * 2)
-            host.dispatchEvent(
-              new WheelEvent('wheel', {
-                bubbles: true,
-                cancelable: true,
-                clientX: r.left + r.width / 2,
-                clientY: r.top + r.height / 2,
-                deltaX: zoom ? 0 : 6 * phase,
-                deltaY: zoom ? 3 * phase : 4,
-                ctrlKey: zoom,
-              }),
-            )
+  return deadline(
+    page,
+    page.evaluate(
+      ({ frames, perFrame, zoom }) =>
+        new Promise<void>((done) => {
+          const host = document.querySelector('canvas')!.parentElement!
+          const r = host.getBoundingClientRect()
+          let i = 0
+          const step = () => {
+            for (let k = 0; k < perFrame; k++) {
+              const phase = Math.sin((i / frames) * Math.PI * 2)
+              host.dispatchEvent(
+                new WheelEvent('wheel', {
+                  bubbles: true,
+                  cancelable: true,
+                  clientX: r.left + r.width / 2,
+                  clientY: r.top + r.height / 2,
+                  deltaX: zoom ? 0 : 6 * phase,
+                  deltaY: zoom ? 3 * phase : 4,
+                  ctrlKey: zoom,
+                }),
+              )
+            }
+            if (++i < frames) requestAnimationFrame(step)
+            else requestAnimationFrame(() => done())
           }
-          if (++i < frames) requestAnimationFrame(step)
-          else requestAnimationFrame(() => done())
-        }
-        requestAnimationFrame(step)
-      }),
-    opts,
+          requestAnimationFrame(step)
+        }),
+      opts,
+    ),
   )
+}
+
+/** rAF 在页面挂起时可能永不继续，超时关闭自己的页面并让基准失败。 */
+async function deadline<T>(page: Page, pending: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      pending,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error('Performance interaction timed out after 60 seconds'))
+          void page.close().catch(() => {})
+        }, 60_000)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 async function engineReady(page: Page) {
   await page.waitForFunction(() => !!(window as unknown as PerfWindow).__plein?.engine, null, {
     timeout: 60_000,
   })
+}
+
+async function openFixture(page: Page, url: string, elements: number) {
+  await page.goto(`${BASE}/#/`)
+  await page.waitForFunction(() => !(window as unknown as PerfWindow).__plein)
+  await page.goto(url)
+  await page.waitForFunction((expected) => {
+    const engine = (window as unknown as PerfWindow).__plein?.engine
+    return !!engine && [...engine.doc.elements()].length === expected
+  }, elements)
 }
 
 /** 选中视口中央附近一个某种类型的元素，返回它的屏幕中心 */
@@ -344,10 +389,35 @@ async function pickVisible(page: Page, kind: string | null, count = 1) {
 
 type Scenario = (page: Page) => Promise<void>
 
+async function sessionInteraction(page: Page) {
+  await wheel(page, { frames: 60, perFrame: 2, zoom: false })
+  await wheel(page, { frames: 60, perFrame: 2, zoom: true })
+  // 每个采样点回到同一视口，不能拿离屏剔除后的堆与全画布相减。
+  await page.evaluate(() => (window as unknown as PerfWindow).__plein!.engine.zoomToFit())
+  await page.waitForTimeout(300)
+}
+
 async function main() {
+  const startedAt = performance.now()
   if (!Number.isSafeInteger(N) || N < 1 || !Number.isSafeInteger(ROUNDS) || ROUNDS < 1)
     throw new Error('PERF_N and PERF_ROUNDS must be positive integers')
+  if (!Number.isSafeInteger(SESSION_MS) || SESSION_MS < 1000)
+    throw new Error('PERF_SESSION_MS must be an integer of at least 1000 ms')
+  if (!Number.isSafeInteger(SESSION_ITERATIONS) || SESSION_ITERATIONS < 1)
+    throw new Error('PERF_SESSION_ITERATIONS must be a positive integer')
+  const load = () => ({
+    at: new Date().toISOString(),
+    uptime: execFileSync('uptime', { encoding: 'utf8' }).trim(),
+  })
+  const hostLoad = [load()]
+  console.error('[perf] host load', JSON.stringify(hostLoad[0]))
   const renderMode = process.env.PERF_RENDERER ?? 'software'
+  const browserExecutable =
+    process.env.PERF_CHROMIUM ?? (renderMode === 'hardware' ? chromium.executablePath() : undefined)
+  const browserKind =
+    browserExecutable && !/headless[-_]shell/i.test(browserExecutable)
+      ? 'chromium'
+      : 'headless-shell'
   if (!['software', 'hardware'].includes(renderMode))
     throw new Error('PERF_RENDERER must be software or hardware')
   const fingerprint = buildFingerprint()
@@ -366,7 +436,15 @@ async function main() {
   const samples: Record<string, number[]> = {}
   const interactionSamples: Record<string, Result[]> = {}
   const openSamples: { cold: OpenSample[]; warm: OpenSample[] } = { cold: [], warm: [] }
+  let mediaCanvasId: string | undefined
   const details = {
+    durationMs: 0,
+    hostLoad,
+    browserExecutable: browserExecutable ?? 'playwright headless shell',
+    memory: [] as Array<{
+      markdown: Awaited<ReturnType<typeof measureMarkdownRetention>>
+      session: Awaited<ReturnType<typeof measureSession>>
+    }>,
     openSamples,
     interactions: report,
     interactionSamples,
@@ -381,10 +459,23 @@ async function main() {
     serializedBytes: 0,
     contentHash: '',
     demoContentHash: '',
+    sessionIterations: SESSION_ITERATIONS,
   }
   failureContext.fixture = fixture
   failureContext.samples = samples
   failureContext.details = details
+  const diagnostic = (extra: Record<string, unknown>) => {
+    if (buildFingerprint() !== fingerprint)
+      throw new Error('Frontend build changed during measurement')
+    hostLoad.push(load())
+    details.durationMs = performance.now() - startedAt
+    writeReport({
+      ...failureContext,
+      status: 'diagnostic',
+      measuredAt: new Date().toISOString(),
+      ...extra,
+    })
+  }
   const observeRenderer = (page: Page) =>
     page.evaluate(() => {
       const canvas = document.querySelector('canvas')
@@ -395,41 +486,63 @@ async function main() {
     })
   try {
     browser = await chromium.launch({
-      executablePath: process.env.PERF_CHROMIUM,
+      // Playwright 默认的 headless shell 可能静默退回软件光栅；硬件模式明确用完整 Chromium。
+      executablePath: browserExecutable,
       args:
         renderMode === 'software'
           ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']
           : [],
     })
     browserVersion = browser.version()
-    Object.assign(failureContext.environment as object, { browserVersion, viewport })
+    Object.assign(failureContext.environment as object, { browserVersion, browserKind, viewport })
     const ctx = await browser.newContext({ viewport })
     await installFunctionSerialization(ctx)
     const page = await ctx.newPage()
+    page.setDefaultTimeout(60_000)
     const cdp = await ctx.newCDPSession(page)
     await cdp.send('Performance.enable')
 
     // ── 打开画布 ──────────────────────────────────────
     const profileWarm = process.env.PERF_PROFILE === '热开'
+    const profileSession = process.env.PERF_PROFILE === '会话'
     const profileOpen = process.env.PERF_PROFILE === '打开' || profileWarm
-    if ((!process.env.PERF_PROFILE || profileOpen) && !process.env.PERF_SKIP_OPEN) {
+    if (
+      (!process.env.PERF_PROFILE || profileOpen || profileSession) &&
+      !process.env.PERF_SKIP_OPEN
+    ) {
       const media = await createMediaFixture(BASE, {
         elements: N,
         imageAssets: Number(process.env.PERF_MEDIA_ASSETS ?? 32),
       })
       const { data: _data, ...metadata } = media
-      fixture = { ...metadata, demoContentHash: '' }
+      fixture = { ...metadata, demoContentHash: '', sessionIterations: SESSION_ITERATIONS }
       failureContext.fixture = fixture
       const canvasId = await seedMediaCanvas(page, BASE, media)
+      mediaCanvasId = canvasId
       renderer = await observeRenderer(page)
       Object.assign(failureContext.environment as object, { renderer })
       assertRendererMode(renderMode, renderer)
+      if (profileSession) {
+        const session = await measureSession(page, cdp, SESSION_MS, () => sessionInteraction(page))
+        diagnostic({ session, hostLoad })
+        console.log(
+          '[perf] sustained session',
+          JSON.stringify({
+            durationMs: session.samples.at(-1)!.elapsedMs,
+            retainedBytes: session.retainedBytes,
+            tailBytes: session.tailBytes,
+            hostLoad,
+          }),
+        )
+        return
+      }
       await page.goto(`${BASE}/#/`)
       for (let i = 0; i < ROUNDS; i++) {
         // 冷开：全新的浏览器上下文（没有任何本地缓存）
         const cold = await browser.newContext({ viewport })
         await installFunctionSerialization(cold)
         const p = await cold.newPage()
+        p.setDefaultTimeout(60_000)
         const pcdp = profileOpen ? await cold.newCDPSession(p) : null
         const network = watchAssetRequests(p)
         try {
@@ -437,12 +550,13 @@ async function main() {
           if (pcdp && !profileWarm) await startProfile(pcdp)
           await p.goto(`${BASE}/#/c/${canvasId}`)
           openSamples.cold.push(await readOpenSample(p, network.requests))
-          console.error(`[perf] cold ${i + 1}/${ROUNDS}`, JSON.stringify(openSamples.cold.at(-1)))
+          logOpen('cold', i + 1, openSamples.cold.at(-1)!)
           network.stop()
           if (pcdp && !profileWarm) {
             const { self } = await stopProfile(pcdp)
             console.log(`冷开首个预览 ${openSamples.cold[0]!.firstVisiblePreviewMs.toFixed(0)} ms`)
             printTop(self)
+            diagnostic({ profile: [...self], mode: 'cold' })
             return
           }
           // Warm route: reuse the browser's HTTP/IndexedDB caches after releasing the old engine.
@@ -458,13 +572,14 @@ async function main() {
               location.hash = `#/c/${id}`
             }, canvasId)
             openSamples.warm.push(await readOpenSample(p, warmNetwork.requests))
-            console.error(`[perf] warm ${i + 1}/${ROUNDS}`, JSON.stringify(openSamples.warm.at(-1)))
+            logOpen('warm', i + 1, openSamples.warm.at(-1)!)
             if (pcdp && profileWarm) {
               const { self } = await stopProfile(pcdp)
               console.log(
                 `热开首个预览 ${openSamples.warm[0]!.firstVisiblePreviewMs.toFixed(0)} ms`,
               )
               printTop(self)
+              diagnostic({ profile: [...self], mode: 'warm' })
               return
             }
           } finally {
@@ -487,6 +602,10 @@ async function main() {
         }
       }
       console.error('[perf] 真实媒体冷开/热开', JSON.stringify(report))
+      if (process.env.PERF_OPEN_ONLY) {
+        diagnostic({ metrics: report })
+        return
+      }
     }
 
     // ── 交互场景（演示画布，纯前端）────────────────────
@@ -560,9 +679,7 @@ async function main() {
       const rs: Result[] = []
       interactionSamples[name] = rs
       for (let i = 0; i < ROUNDS; i++) {
-        await page.goto(`${BASE}/#/`)
-        await page.goto(`${BASE}/#/demo?n=${N}`)
-        await engineReady(page)
+        await openFixture(page, `${BASE}/#/demo?n=${N}`, N)
         if (renderer === 'unobserved') renderer = await observeRenderer(page)
         Object.assign(failureContext.environment as object, { renderer })
         assertRendererMode(renderMode, renderer)
@@ -592,6 +709,42 @@ async function main() {
       report[name] = median(rs)
       samples[`${name}.jsMs`] = rs.map((sample) => sample.js)
     }
+
+    if (!process.env.PERF_SKIP_MEMORY) {
+      for (let i = 0; i < ROUNDS; i++) {
+        await openFixture(page, `${BASE}/#/demo?n=0`, 0)
+        const markdown = await deadline(page, measureMarkdownRetention(page, cdp))
+        await openFixture(
+          page,
+          mediaCanvasId ? `${BASE}/#/c/${mediaCanvasId}` : `${BASE}/#/demo?n=${N}`,
+          N,
+        )
+        await page.evaluate(() => (window as unknown as PerfWindow).__plein!.engine.zoomToFit())
+        const session = await measureSession(
+          page,
+          cdp,
+          SESSION_MS,
+          () => sessionInteraction(page),
+          SESSION_ITERATIONS,
+        )
+        details.memory.push({ markdown, session })
+        hostLoad.push(load())
+        console.error(
+          `[perf] memory ${i + 1}/${ROUNDS}`,
+          JSON.stringify({
+            markdownRetainedBytes: markdown.retainedBytes,
+            sessionRetainedBytes: session.retainedBytes,
+            sessionTailBytes: session.tailBytes,
+            hostLoad: hostLoad.at(-1),
+          }),
+        )
+      }
+      for (const kind of ['markdown', 'session'] as const) {
+        const metric = `${kind}.retainedBytes`
+        samples[metric] = details.memory.map((sample) => sample[kind].retainedBytes)
+        report[metric] = medianSample(samples[metric])
+      }
+    }
   } finally {
     try {
       await browser?.close()
@@ -606,6 +759,9 @@ async function main() {
     throw new Error(
       'Frontend build changed during measurement; discard this run and repeat against a frozen build',
     )
+
+  hostLoad.push(load())
+  details.durationMs = performance.now() - startedAt
 
   assertRendererMode(renderMode, renderer)
 
@@ -636,6 +792,7 @@ async function main() {
       runtime: `node ${process.versions.node}`,
       platform: `${process.platform}/${process.arch}`,
       browserVersion,
+      browserKind,
       renderer,
       renderMode,
       viewport,

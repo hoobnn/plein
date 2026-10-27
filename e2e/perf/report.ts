@@ -1,4 +1,4 @@
-export const PERF_FORMAT_VERSION = 2
+export const PERF_FORMAT_VERSION = 3
 export const PERF_SCENARIO_NAMES = [
   '平移',
   '缩放',
@@ -13,6 +13,8 @@ export const EXPECTED_METRIC_KEYS: readonly string[] = [
   'warm.engineReadyMs',
   'warm.firstVisiblePreviewMs',
   'warm.visibleMediaSettledMs',
+  'markdown.retainedBytes',
+  'session.retainedBytes',
   ...PERF_SCENARIO_NAMES.map((name) => `${name}.jsMs`),
 ]
 
@@ -27,6 +29,7 @@ export interface PerfReport {
     runtime: string
     platform: string
     browserVersion: string
+    browserKind: string
     renderer: string
     renderMode: string
     viewport: { width: number; height: number }
@@ -40,6 +43,7 @@ export interface PerfReport {
     serializedBytes: number
     contentHash: string
     demoContentHash: string
+    sessionIterations: number
   }
   rounds: number
   metrics: Record<string, number>
@@ -109,6 +113,7 @@ export function assertCompletePerfReport(value: unknown): asserts value is PerfR
     !['runtime', 'platform', 'browserVersion', 'renderer'].every((key) => nonempty(env[key])) ||
     env.renderer === 'unobserved' ||
     (env.renderMode !== 'software' && env.renderMode !== 'hardware') ||
+    !['chromium', 'headless-shell'].includes(String(env.browserKind)) ||
     !record(env.viewport) ||
     !positiveInteger(env.viewport.width) ||
     !positiveInteger(env.viewport.height)
@@ -125,6 +130,7 @@ export function assertCompletePerfReport(value: unknown): asserts value is PerfR
       (key) => Number.isSafeInteger(fixture[key]) && nonnegative(fixture[key]),
     ) ||
     !positiveInteger(fixture.serializedBytes) ||
+    !positiveInteger(fixture.sessionIterations) ||
     !hash(fixture.contentHash) ||
     !hash(fixture.demoContentHash)
   )
@@ -175,11 +181,13 @@ export function comparePerfReports(current: PerfReport, baseline: PerfReport): P
     const after = current.metrics[metric]!
     if (!Number.isFinite(before) || before < 0 || !Number.isFinite(after) || after < 0)
       throw new Error(`Invalid performance measurement: ${metric}`)
-    const absolute = metric.endsWith('.jsMs')
-      ? 2
-      : metric.endsWith('.visibleMediaSettledMs')
-        ? 200
-        : 100
+    const absolute = metric.endsWith('.retainedBytes')
+      ? 2 * 1024 * 1024
+      : metric.endsWith('.jsMs')
+        ? 2
+        : metric.endsWith('.visibleMediaSettledMs')
+          ? 200
+          : 100
     if (after > before * 1.5 && after - before > absolute)
       regressions.push({ metric, baseline: before, current: after })
   }

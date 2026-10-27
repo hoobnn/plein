@@ -27,6 +27,7 @@ function report(): PerfReport {
       runtime: 'node test',
       platform: 'test/test',
       browserVersion: 'test',
+      browserKind: 'headless-shell',
       renderer: 'SwiftShader',
       renderMode: 'software',
       viewport: { width: 1440, height: 900 },
@@ -40,6 +41,7 @@ function report(): PerfReport {
       serializedBytes: 1234,
       contentHash: 'b'.repeat(64),
       demoContentHash: 'c'.repeat(64),
+      sessionIterations: 12,
     },
     rounds: 3,
     metrics,
@@ -85,6 +87,9 @@ test.each([
 test('refuses to compare incompatible fixtures and execution environments', () => {
   for (const change of [
     (value: PerfReport) => {
+      value.fixture.sessionIterations = 24
+    },
+    (value: PerfReport) => {
       value.fixture.version++
     },
     (value: PerfReport) => {
@@ -106,6 +111,9 @@ test('refuses to compare incompatible fixtures and execution environments', () =
       value.environment.browserVersion = 'different browser'
     },
     (value: PerfReport) => {
+      value.environment.browserKind = 'chromium'
+    },
+    (value: PerfReport) => {
       value.environment.platform = 'different/platform'
     },
     (value: PerfReport) => {
@@ -116,6 +124,21 @@ test('refuses to compare incompatible fixtures and execution environments', () =
     change(current)
     expect(() => comparePerfReports(current, report())).toThrow(/does not match/)
   }
+})
+
+test('内存保留量超过相对与 2 MiB 绝对阈值才判回退，缺长会话样本不能通过', () => {
+  const baseline = report()
+  const current = report()
+  const key = 'markdown.retainedBytes'
+  setMeasurement(baseline, key, 1024 * 1024)
+  setMeasurement(current, key, 3 * 1024 * 1024)
+  expect(comparePerfReports(current, baseline)).toEqual([])
+  setMeasurement(current, key, 3 * 1024 * 1024 + 1)
+  expect(comparePerfReports(current, baseline)).toEqual([
+    { metric: key, baseline: 1024 * 1024, current: 3 * 1024 * 1024 + 1 },
+  ])
+  delete current.samples['session.retainedBytes']
+  expect(() => assertCompletePerfReport(current)).toThrow(/complete metric/)
 })
 
 test('refuses mismatched scenarios, insufficient rounds, and invalid measurements', () => {
@@ -138,7 +161,7 @@ test.each([undefined, 'failed', 'partial'])('rejects non-complete report status:
   }
 })
 
-test.each([undefined, 1, 3, '2'])('rejects unsupported versions even when both match: %s', (v) => {
+test.each([undefined, 1, 2, '3'])('rejects unsupported versions even when both match: %s', (v) => {
   const current = report()
   const baseline = report()
   Object.assign(current, { formatVersion: v })

@@ -97,7 +97,9 @@ async function measureBoth() {
     const env = { ...process.env }
     for (const key of [
       'PERF_PROFILE',
+      'PERF_OPEN_ONLY',
       'PERF_SKIP_OPEN',
+      'PERF_SKIP_MEMORY',
       'PERF_SCENARIOS',
       'PERF_DIST',
       'PERF_BASELINE',

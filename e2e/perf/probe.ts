@@ -24,9 +24,18 @@ export interface OpenSample {
     variants: Record<string, number>
     runtimeErrors: string[]
   }
+  /** 相对本次打开起点；保留缓存命中与加载瀑布，避免把等待模块误判成引擎耗时。 */
+  resources: Array<{
+    name: string
+    initiator: string
+    startMs: number
+    durationMs: number
+    transferBytes: number
+  }>
 }
 
 interface OpenProbe {
+  startedAt: number
   engineReadyMs?: number
   firstVisiblePreviewMs?: number
   visibleMediaSettledMs?: number
@@ -48,6 +57,7 @@ function instrumentOpen(expected: number) {
   let alive = true
   const start = performance.now()
   const probe: OpenProbe = {
+    startedAt: start,
     stop: () => {
       alive = false
     },
@@ -185,6 +195,19 @@ export async function readOpenSample(
     visibleMediaSettledMs: probe.visibleMediaSettledMs,
     stats: probe.stats,
     requests: structuredClone(requests),
+    resources: await page.evaluate(
+      (start) =>
+        (performance.getEntriesByType('resource') as PerformanceResourceTiming[])
+          .filter((entry) => entry.startTime >= start)
+          .map((entry) => ({
+            name: new URL(entry.name).pathname,
+            initiator: entry.initiatorType,
+            startMs: entry.startTime - start,
+            durationMs: entry.duration,
+            transferBytes: entry.transferSize,
+          })),
+      probe.startedAt,
+    ),
   }
 }
 
