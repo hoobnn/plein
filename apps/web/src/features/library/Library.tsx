@@ -600,7 +600,8 @@ function Card({
     try {
       await update(item.id, { favorite: !item.favorite })
     } catch (error) {
-      if (favoriteLive.current) setFavoriteError(`收藏未更改：${(error as Error).message}`)
+      if (favoriteLive.current)
+        setFavoriteError(`收藏未更改：${(error as Error).message}。点击星标重试。`)
     } finally {
       favoritePending.current = false
       if (favoriteLive.current) setFavoriteBusy(false)
@@ -844,6 +845,8 @@ function Editor({
   latestDraft.current = draft
   const [saveNotice, setSaveNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /** 删除等待期间锁定设定输入 */
+  const [deleting, setDeleting] = useState(false)
   const mutation = useRef(false)
   const lifetime = useRef({ active: true })
   useEffect(() => {
@@ -956,11 +959,17 @@ function Editor({
       const normalized = draftOf(kind, saved, undefined, projectId)
       const outcome = settleSavedDraft(submitted, latestDraft.current, normalized, placingAfterSave)
       setDraft((current) => settleSavedDraft(submitted, current, normalized, false).draft)
-      setSaveNotice(outcome.notice)
+      // 等待期间又改了内容时要说清楚：这次存的是提交时的内容，最新的还没存。
+      const changed = JSON.stringify(latestDraft.current) !== JSON.stringify(submitted)
+      setSaveNotice(
+        outcome.notice ??
+          (!placingAfterSave && changed ? '已保存提交时的内容，仍有新修改，请再次保存。' : null),
+      )
       if (!item) onCreated(saved.id)
       return outcome.continuePlacement ? saved : null
     } catch (err) {
-      if (current(session) && (err as Error).name !== 'AbortError') setError((err as Error).message)
+      if (current(session) && (err as Error).name !== 'AbortError')
+        setError(`保存失败：${(err as Error).message}。请稍后重试。`)
       return null
     } finally {
       finishMutation(session)
@@ -1050,6 +1059,8 @@ function Editor({
     if (!item) return
     const session = beginMutation()
     if (!session) return
+    // 删除期间锁定设定输入：这份内容马上要消失，继续输入只会白写。
+    setDeleting(true)
     try {
       const ok = await confirmDialog({
         title: `删除${kind.title}「${item.name}」？`,
@@ -1061,8 +1072,9 @@ function Editor({
       await lib.remove(item.id)
       if (current(session)) onBack()
     } catch (err) {
-      if (current(session)) setError((err as Error).message)
+      if (current(session)) setError(`删除失败：${(err as Error).message}。请稍后重试。`)
     } finally {
+      setDeleting(false)
       finishMutation(session)
     }
   }
@@ -1280,6 +1292,7 @@ function Editor({
               aria-label="名称"
               value={draft.name}
               maxLength={60}
+              disabled={deleting}
               placeholder="给角色起个名字"
               onChange={(e) => patch({ name: e.target.value })}
             />
@@ -1343,7 +1356,7 @@ function Editor({
         <section aria-label="设定" className="flex min-w-0 flex-col gap-4">
           {character && !readOnly ? (
             <fieldset
-              disabled={busy || pendingUploads > 0}
+              disabled={busy || pendingUploads > 0 || deleting}
               className="contents"
               aria-label="角色档案编辑"
             >
@@ -1433,7 +1446,11 @@ function Editor({
               </ProfileUploadContext.Provider>
             </fieldset>
           ) : (
-            <fieldset disabled={pendingUploads > 0} className="contents" aria-label="资产设定编辑">
+            <fieldset
+              disabled={pendingUploads > 0 || deleting}
+              className="contents"
+              aria-label="资产设定编辑"
+            >
               {basics}
               {kind.id === 'scene' && (
                 <SceneViews
