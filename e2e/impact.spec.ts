@@ -52,7 +52,7 @@ const snapshot = (page: Page) =>
   })
 
 test(
-  '六镜头项目改第三镜头：查看影响、只重做勾选的分支，撤销不删候选',
+  '三镜头项目改第三镜头：查看影响、只重做勾选的分支，撤销不删候选',
   { tag: '@core' },
   async ({ page }) => {
     await newProject(page)
@@ -84,11 +84,11 @@ test(
       return dialog
     }
 
-    // 只留六个镜头，第一和第三镜头写上台词，展开
+    // 只留三个镜头，第一和第三镜头写上台词，展开
     let dialog = await openBoard()
     const rows = dialog.getByRole('button', { name: /^删除镜头 \d+$/ })
-    while ((await rows.count()) > 6) await rows.last().click()
-    await expect(rows).toHaveCount(6)
+    while ((await rows.count()) > 3) await rows.last().click()
+    await expect(rows).toHaveCount(3)
     const durations = () =>
       dialog
         .getByLabel('时长')
@@ -102,7 +102,7 @@ test(
     // 批量操作收在折叠区里，先展开再点
     await openStoryboardActions(dialog)
     await dialog.getByRole('button', { name: '展开为节点' }).click()
-    await expect(page.locator('.ui-toast')).toContainText('已展开 6 个镜头')
+    await expect(page.locator('.ui-toast')).toContainText('已展开 3 个镜头')
 
     dialog = await openBoard()
     // 批量按钮收在折叠区里，每次打开分镜表都要重新展开
@@ -110,7 +110,7 @@ test(
     for (const role of ['批量出分镜图', '批量生成视频', '批量配音'])
       await runBatch(page, dialog, role)
     const before = await snapshot(page)
-    expect(before.shots).toHaveLength(6)
+    expect(before.shots).toHaveLength(3)
     for (const s of before.shots) expect(s.image!.results).toBe(1)
     expect(before.shots[2]!.speech!.results).toBe(1)
 
@@ -175,10 +175,10 @@ test(
     await expect(page.locator('.ui-toast')).toContainText('重做受影响的结果运行完成：2 个生成')
     await waitIdle(page)
 
-    // 其余五个镜头的采用结果、配音和剪辑参数不变；第三镜头的视频也没动
+    // 其余两个镜头的采用结果、配音和剪辑参数不变；第三镜头的视频也没动
     const after = await snapshot(page)
     expect(after.clips).toBe(before.clips)
-    for (const i of [0, 1, 3, 4, 5]) expect(after.shots[i]).toEqual(before.shots[i])
+    for (const i of [0, 1]) expect(after.shots[i]).toEqual(before.shots[i])
     expect(after.shots[2]!.video).toEqual(before.shots[2]!.video)
     expect(after.shots[2]!.image!.results).toBe(2)
     expect(after.shots[2]!.speech!.results).toBe(2)

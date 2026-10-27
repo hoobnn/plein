@@ -14,6 +14,7 @@ import { Presence } from '../../ui/Presence'
 import { StoryboardSync } from '../storyboard/StoryboardSync'
 import { refreshStale } from './stale'
 import { groupRunSignal } from './groupRuns'
+import { impactPrices } from './impactPrices'
 
 /** 保留决定不写文档；当前打开的同画布面板仍需获知后台完成的变更。 */
 const impactChanges = new Set<(engine: Engine, canvasId: string) => void>()
@@ -181,10 +182,7 @@ function Panel({
   const chosen = nodes.filter((n) => picked?.has(n.nodeId))
   const reuse = chosen.filter((n) => n.cached).length
   const calls = chosen.filter((n) => !n.cached)
-  const priced = calls.filter((n) => n.price)
-  const unknown = calls.length - priced.length
-  const currency = priced[0]?.price?.currency
-  const amount = priced.reduce((t, n) => t + (n.price?.amount ?? 0), 0)
+  const { prices, unknown } = impactPrices(chosen)
 
   const toggle = (id: string, on: boolean) => {
     const next = new Set(picked)
@@ -313,8 +311,10 @@ function Panel({
           </p>
         ) : null}
         {!report ? (
-          <p className="py-6 text-center text-xs text-ink-subtle">{!error && '正在分析…'}</p>
-        ) : nodes.length === 0 && report.sequence.length === 0 ? (
+          <p role="status" className="py-6 text-center text-xs text-ink-subtle">
+            {!error && '正在分析…'}
+          </p>
+        ) : nodes.length === 0 && report.sequence.length === 0 && report.plan.length === 0 ? (
           <EmptyState
             icon="check"
             title="没有受影响的结果"
@@ -432,8 +432,8 @@ function Panel({
                 已选 {chosen.length} 个{reuse > 0 && ` · ${reuse} 个沿用已有候选`}
                 {calls.length > 0 && ` · ${calls.length} 个调用平台`}
                 {calls.length > 0 &&
-                  (priced.length
-                    ? ` · 预估 ${amount.toFixed(2)} ${currency}${unknown ? `，${unknown} 个价格未知` : ''}`
+                  (prices.length
+                    ? ` · 预估 ${prices.map(({ currency, amount }) => `${amount.toFixed(2)} ${currency}`).join(' + ')}${unknown ? `，${unknown} 个价格未知` : ''}`
                     : ' · 价格未知')}
               </>
             )}
