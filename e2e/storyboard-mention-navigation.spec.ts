@@ -85,7 +85,12 @@ for (const choice of ['使用最新内容', '保留当前输入']) {
   test(`引用定位遇到未决文本冲突时保留编辑，${choice}后才离开`, async ({ page }) => {
     const { ids, editor, cell, input, saved } = await setup(page)
     const narrow = choice === '保留当前输入'
-    if (narrow) await page.setViewportSize({ width: 800, height: 560 })
+    if (narrow) {
+      await page.setViewportSize({ width: 800, height: 560 })
+      // 卡片视图里画面框更高，冲突提示会被顶到视野外：
+      // 定位时界面要自己把它滚回来。
+      await editor.getByRole('button', { name: '详细卡片', exact: true }).click()
+    }
     const mine = '本机草稿 @引用角色，尚未提交。' + (narrow ? '\n补充长镜头说明。'.repeat(40) : '')
     const latest = '其他位置更新 @引用角色。'
     await input.fill(mine)

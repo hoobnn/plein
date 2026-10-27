@@ -80,7 +80,8 @@ for (const action of ['添加台词', '删除第 1 句', '下移第 1 句']) {
     }, action)
     const after = await f.read()
     expect(after).not.toEqual(edited)
-    await f.dialog.getByRole('button', { name: '编辑分镜', exact: true }).focus()
+    // 焦点移出输入框，撤销才作用在文档上
+    await f.dialog.getByRole('button', { name: '添加台词', exact: true }).focus()
     await page.keyboard.press('ControlOrMeta+z')
     await expect.poll(f.read).toEqual(edited)
     await page.keyboard.press('ControlOrMeta+Shift+z')
@@ -181,8 +182,9 @@ test('重名角色绑定后移动台词，批量配音实际输入仍使用各�
     })
   }
   const checklist = page.getByRole('dialog', { name: '批量生成清单', exact: true })
+  // 「查看实际输入」里套着「生效参数与参考顺序」，只展开每层自己的折叠块
   for (const detail of await checklist.locator('details').all()) {
-    await detail.locator('summary').click()
+    await detail.locator(':scope > summary').click()
   }
   await expect(checklist).toContainText('原始第一句')
   await expect(checklist).toContainText('原始第二句')

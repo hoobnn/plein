@@ -96,7 +96,7 @@ test('固定原文、显式已读、人工范围、双向定位、改编提案�
   await panel.getByRole('region', { name: '镜头对应原文' }).getByRole('button').click()
   await expect(original).toBeFocused()
   await unit.getByRole('button', { name: '定位镜头 2', exact: true }).click()
-  await expect(page.getByRole('article', { name: '镜头 02' })).toBeVisible()
+  await expect(page.getByRole('row', { name: '镜头 02' })).toBeVisible()
   await page.getByRole('button', { name: '剧情来源', exact: true }).click()
   panel = page.getByTestId('source-mapping')
   await panel.getByRole('textbox', { name: '新增改编提案' }).fill('新增等待动作，尚待人工判断')
