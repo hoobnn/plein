@@ -136,6 +136,15 @@ export function MotionPreview({
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [key, active, retry])
 
+  useEffect(() => {
+    if (!session || !active || state !== 'loading') return
+    const timer = setTimeout(() => {
+      setState('error')
+      setMessage('预览加载超时，请重试预览')
+    }, 20_000)
+    return () => clearTimeout(timer)
+  }, [session, active, state])
+
   const size = motionSize(params)
   return (
     <section className="motion-preview" aria-label="动态合成预览" data-state={state}>
@@ -189,6 +198,7 @@ export function MotionPreview({
             playback.current = { time: at, playing: false }
             setTime(at)
             setPlaying(false)
+            send('pause')
             send('seek', at)
           }}
         />

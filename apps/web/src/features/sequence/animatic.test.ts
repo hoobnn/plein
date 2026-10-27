@@ -1,5 +1,16 @@
+import { describeNode } from '@plein/plugin-sdk'
+import type { Catalog } from '@plein/protocol'
+import { useCanvas } from '../../stores/canvas'
+import { useCatalog } from '../../stores/catalog'
 import type { Engine } from '@plein/canvas-core'
-import { connect, createDoc, createElement, setParam } from '@plein/doc'
+import {
+  connect,
+  createDoc,
+  createElement,
+  deleteElements,
+  setParam,
+  updateElement,
+} from '@plein/doc'
 import {
   ANIMATIC_TYPE,
   animaticNode,
@@ -8,7 +19,7 @@ import {
   sequenceTimeline,
 } from '@plein/nodes'
 import { describe, expect, it } from 'vite-plus/test'
-import { relatedSequences, snapshotAnimatic } from './animatic'
+import { openAnimatic, refreshAnimatic, relatedSequences, snapshotAnimatic } from './animatic'
 import { previewScene } from './scene'
 
 const image = 'a'.repeat(64)
@@ -298,5 +309,87 @@ describe('样片的成片关联', () => {
     ['当前音效', 'sfx', {}, { sfx: '雷声' }],
   ] as const)('当前镜头的%s有效连线会关联到成片', (_, role, source, shot) => {
     expect(related(role, source, shot)).toEqual(['当前成片'])
+  })
+})
+
+describe('样片创建与刷新原子性', () => {
+  function setup() {
+    const canvas = useCanvas.getState()
+    const catalog = useCatalog.getState()
+    const doc = createDoc(undefined, { schedule: () => {} })
+    const board = createElement(doc, {
+      kind: 'node',
+      nodeType: 'plein/storyboard',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+      params: { shots: [{ id: 'one', no: 1, duration: 3 }] },
+    })
+    const engine = { doc } as unknown as Engine
+    useCatalog.setState({
+      catalog: { nodes: [describeNode(animaticNode, 'plein/core')] } as unknown as Catalog,
+    })
+    useCanvas.setState({ engine, canvasId: 'canvas', sequence: null })
+    const dispose = () => {
+      doc.destroy()
+      useCanvas.setState(canvas, true)
+      useCatalog.setState(catalog, true)
+    }
+    return { doc, board, engine, dispose }
+  }
+  it('损坏来源拒绝首次创建，修复后创建一次；只读可打开已有快照且不刷新', () => {
+    const f = setup()
+    try {
+      setParam(f.doc, f.board, 'shots', null)
+      expect(openAnimatic(f.engine, f.board)).toBeUndefined()
+      expect([...f.doc.elements()].filter((el) => el.nodeType === ANIMATIC_TYPE)).toHaveLength(0)
+      setParam(f.doc, f.board, 'shots', [{ id: 'one', no: 1, duration: 3 }])
+      const id = openAnimatic(f.engine, f.board)!
+      expect(f.doc.get(id)!.params!.shots).toMatchObject([{ shotId: 'one', duration: 3 }])
+      setParam(f.doc, f.board, 'shots', [{ id: 'one', no: 1, duration: 8 }])
+      f.doc.readOnly = true
+      expect(openAnimatic(f.engine, f.board)).toBe(id)
+      expect(useCanvas.getState().sequence).toBe(id)
+      expect(f.doc.get(id)!.params!.shots).toMatchObject([{ duration: 3 }])
+      expect([...f.doc.elements()].filter((el) => el.nodeType === ANIMATIC_TYPE)).toHaveLength(1)
+    } finally {
+      f.dispose()
+    }
+  })
+  it('只读首次创建零写入，恢复后可创建；错误刷新保留整个快照，重试独立撤销', () => {
+    const f = setup()
+    try {
+      f.doc.readOnly = true
+      expect(openAnimatic(f.engine, f.board)).toBeUndefined()
+      f.doc.readOnly = false
+      const id = openAnimatic(f.engine, f.board)!
+      const before = f.doc.get(id)!.params
+      setParam(f.doc, f.board, 'shots', [{ id: 'one', no: 1, duration: -1 }])
+      expect(refreshAnimatic(f.engine, id)).toContain('已有样片与节奏已保留')
+      expect(f.doc.get(id)!.params).toEqual(before)
+      setParam(f.doc, f.board, 'shots', [
+        { id: 'one', no: 1, duration: 9 },
+        { id: 'two', no: 2, duration: 4 },
+      ])
+      f.doc.undo.clear()
+      updateElement(f.doc, id, { name: '保留改名' })
+      expect(refreshAnimatic(f.engine, id)).toBeNull()
+      const after = f.doc.get(id)!.params
+      expect(after!.shots).toMatchObject([{ duration: 3 }, { duration: 4 }])
+      f.doc.undo.undo()
+      expect(f.doc.get(id)!.params).toEqual(before)
+      expect(f.doc.get(id)!.name).toBe('保留改名')
+      f.doc.undo.redo()
+      expect(f.doc.get(id)!.params).toEqual(after)
+      f.doc.readOnly = true
+      expect(refreshAnimatic(f.engine, id)).toContain('只读')
+      f.doc.readOnly = false
+      deleteElements(f.doc, [f.board])
+      expect(refreshAnimatic(f.engine, id)).toContain('来源分镜已删除')
+      expect(f.doc.get(id)!.params).toEqual(after)
+    } finally {
+      f.dispose()
+    }
   })
 })

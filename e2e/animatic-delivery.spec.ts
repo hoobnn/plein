@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from './fixtures'
-import { centerOf, elements, newProject, waitNode, zoomTo } from './canvas'
+import { addNode, centerOf, elements, newProject, waitNode, zoomTo } from './canvas'
 import { slowFile } from './slow-file'
 
 const canvasId = (url: string) => decodeURIComponent(url.split('#/c/')[1]!.split('?')[0]!)
@@ -144,6 +144,8 @@ test(
         video.evaluate((v: HTMLVideoElement) => v.readyState >= HTMLMediaElement.HAVE_METADATA),
       )
       .toBe(true)
+    await page.setViewportSize({ width: 390, height: 700 })
+    await expect.poll(async () => (await video.boundingBox())?.width ?? 0).toBeGreaterThan(240)
     await editor.getByRole('textbox', { name: '成片时间码意见' }).fill('第一镜停顿需要复查')
     await editor.getByRole('button', { name: '在当前时间添加意见', exact: true }).click()
     await expect(
@@ -173,7 +175,55 @@ test(
     await page.getByRole('button', { name: '实际 MP4 回看 / 交付', exact: true }).click()
     await expect(page.getByText('已人工确认此版本', { exact: false })).toBeVisible()
     await expect(page.getByText('第一镜停顿需要复查', { exact: true })).toBeVisible()
+    await expect(editor.getByRole('button', { name: '关闭', exact: true })).toBeInViewport()
+    expect(await editor.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    )
     await expect(page.getByText('片尾镜头需要复查', { exact: true })).toBeVisible()
+  },
+)
+
+test(
+  '动态合成隔离预览：真实桥接播放寻址，编辑后重载并恢复位置',
+  { tag: '@core' },
+  async ({ page }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await newProject(page)
+    await addNode(page, '动态合成')
+    await expect
+      .poll(
+        async () => (await elements(page)).filter((el) => el.nodeType === 'plein/motion').length,
+      )
+      .toBe(1)
+    const node = (await elements(page)).find((el) => el.nodeType === 'plein/motion')!
+    await page.keyboard.press('Escape')
+    await zoomTo(page, [node.id])
+    const at = await centerOf(page, node.id)
+    await page.mouse.dblclick(at.x, at.y)
+    const panel = page.getByRole('dialog', { name: '动态合成', exact: true })
+    await expect(panel.locator('.motion-preview')).toHaveAttribute('data-state', 'ready')
+    const firstUrl = await panel.locator('iframe').getAttribute('src')
+    expect(new URL(firstUrl!).origin).not.toBe(new URL(page.url()).origin)
+    expect(new URL(firstUrl!).hostname).toBe('localhost')
+    await panel.getByRole('button', { name: '播放预览', exact: true }).click()
+    await expect(panel.getByRole('button', { name: '暂停预览', exact: true })).toBeVisible()
+    await panel.getByRole('button', { name: '暂停预览', exact: true }).click()
+    const seek = panel.getByRole('slider', { name: '预览时间' })
+    await seek.focus()
+    await seek.press('End')
+    await expect(panel.getByLabel('当前预览时间')).toContainText(/0:0[56]\./)
+    const title = panel.getByRole('textbox', { name: '标题文案', exact: true })
+    await title.fill('在 Plein 中继续创作')
+    await title.press('Tab')
+    await expect.poll(() => panel.locator('iframe').getAttribute('src')).not.toBe(firstUrl)
+    await expect(panel.locator('.motion-preview')).toHaveAttribute('data-state', 'ready')
+    await expect(panel.getByLabel('当前预览时间')).toContainText(/0:0[56]\./)
+    const bar = await seek.boundingBox()
+    await page.mouse.click(bar!.x + bar!.width * 0.4, bar!.y + bar!.height / 2)
+    await expect(panel.getByLabel('当前预览时间')).toContainText('0:02.')
+    expect((await elements(page)).find((el) => el.id === node.id)?.results).toBe(0)
+    expect(errors).toEqual([])
   },
 )
 

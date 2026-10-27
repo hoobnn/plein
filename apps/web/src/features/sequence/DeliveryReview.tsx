@@ -516,6 +516,7 @@ function DeliveryVideoAttempt({
   onRetry(): void
 }) {
   const [failed, setFailed] = useState(false)
+  const [loading, setLoading] = useState(true)
   useEffect(() => {
     const element = video.current
     return () => {
@@ -536,8 +537,14 @@ function DeliveryVideoAttempt({
         controls
         onTimeUpdate={(event) => onTime(event.currentTarget.currentTime)}
         onSeeked={(event) => onTime(event.currentTarget.currentTime)}
-        onError={() => setFailed(true)}
+        aria-busy={loading || undefined}
+        onError={() => {
+          setLoading(false)
+          setFailed(true)
+        }}
         onLoadedMetadata={(e) => {
+          setLoading(false)
+          setFailed(false)
           const at = positions.get(identity)
           if (at !== undefined && Number.isFinite(e.currentTarget.duration))
             e.currentTarget.currentTime = Math.max(0, Math.min(at, e.currentTarget.duration))
@@ -546,6 +553,11 @@ function DeliveryVideoAttempt({
         className="max-h-[65vh] w-full bg-black"
         aria-label="实际导出 MP4"
       />
+      {loading && (
+        <p role="status" className="ui-help mt-2">
+          正在加载实际 MP4…
+        </p>
+      )}
       {failed && (
         <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-sm text-danger">
           <span>实际 MP4 加载失败，请重新加载后继续回看。</span>
