@@ -1,18 +1,18 @@
-import { defaultKeymap } from '@codemirror/commands'
-import { markdown } from '@codemirror/lang-markdown'
-import { EditorState } from '@codemirror/state'
-import { EditorView, drawSelection, keymap } from '@codemirror/view'
 import type { Engine } from '@plein/canvas-core'
 import { currentResult, elementMedia, type Rect } from '@plein/doc'
 import { ANIMATIC_TYPE, SEQUENCE_TYPE } from '@plein/nodes'
 import { useCanvas } from '../stores/canvas'
-import { yCollab, ySyncAnnotation, yUndoManagerKeymap } from 'y-codemirror.next'
-import * as Y from 'yjs'
 import { renderMarkdown } from './markdown'
 import { createPlayer } from './player'
 import { assetUrls } from '../api/client'
 import { clipOverlay } from './occlusion'
 import { editorViewport } from './editorViewport'
+import {
+  attachEditorEscape,
+  attachPreviewInteractions,
+  createMarkdownEditor,
+  createMarkdownTarget,
+} from './markdownOverlay'
 
 interface Preview {
   node: HTMLDivElement
@@ -49,24 +49,6 @@ function place(node: HTMLElement, r: Rect) {
   node.style.width = `${r.w}px`
   node.style.height = `${r.h}px`
 }
-
-const editorTheme = EditorView.theme(
-  {
-    '&': { height: '100%', fontSize: '14px', color: 'var(--ink)', backgroundColor: 'transparent' },
-    '&.cm-focused': { outline: 'none' },
-    '.cm-scroller': {
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-      lineHeight: '1.6',
-    },
-    '.cm-content': { padding: '16px 0', caretColor: 'var(--accent)' },
-    '.cm-line': { padding: '0 16px' },
-    '.cm-cursor': { borderLeftColor: 'var(--accent)' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
-      backgroundColor: 'var(--accent-soft) !important',
-    },
-  },
-  // 颜色全部取 CSS 令牌，明暗主题共用一套
-)
 
 /**
  * DOM 覆盖层：挂在跟随相机变换的容器里，按世界坐标定位。
@@ -204,59 +186,7 @@ export class CanvasOverlays {
       if (!p) {
         const node = document.createElement('div')
         node.className = 'plein-md plein-md-preview'
-        node.addEventListener(
-          'wheel',
-          (event) => {
-            if (event.defaultPrevented) return
-            const scroll = (event.target as Element).closest<HTMLElement>('[data-plein-scroll]')
-            if (
-              scroll &&
-              !event.ctrlKey &&
-              !event.metaKey &&
-              (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) &&
-              scroll.scrollWidth > scroll.clientWidth
-            ) {
-              if (event.shiftKey && Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
-                const unit =
-                  event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scroll.clientWidth : 1
-                scroll.scrollLeft += event.deltaY * unit
-                event.preventDefault()
-              }
-              event.stopPropagation()
-              return
-            }
-            // DOM 预览与画布宿主是兄弟层，未消费的滚轮需要转交给画布输入。
-            const canvasEvent = new WheelEvent('wheel', event)
-            this.host.dispatchEvent(canvasEvent)
-            if (canvasEvent.defaultPrevented) event.preventDefault()
-            event.stopPropagation()
-          },
-          { passive: false },
-        )
-        node.addEventListener('keydown', (event) => {
-          if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return
-          const scroll = (event.target as Element).closest<HTMLElement>('[data-plein-scroll]')
-          if (!scroll) return
-          const selection = window.getSelection()
-          if (
-            (event.metaKey || event.ctrlKey) &&
-            !event.altKey &&
-            !event.shiftKey &&
-            event.key.toLowerCase() === 'a'
-          ) {
-            selection?.selectAllChildren(scroll)
-            event.preventDefault()
-          } else if (
-            event.key === 'Escape' &&
-            selection &&
-            !selection.isCollapsed &&
-            scroll.contains(selection.anchorNode) &&
-            scroll.contains(selection.focusNode)
-          ) {
-            selection.collapseToEnd()
-            event.preventDefault()
-          }
-        })
+        attachPreviewInteractions(node, this.host)
         const content = document.createElement('div')
         content.className = 'plein-md-content'
         content.dataset.markdownId = id
@@ -338,33 +268,8 @@ export class CanvasOverlays {
     else if (m && m.kind !== 'image') this.active = this.openPlayer(id, m.kind, m.assetId)
     if (this.active) {
       this.active.node.dataset.pleinActive = ''
-      let composing = false
-      this.active.node.addEventListener(
-        'compositionstart',
-        () => {
-          composing = true
-        },
-        true,
-      )
-      this.active.node.addEventListener(
-        'compositionend',
-        () => {
-          composing = false
-        },
-        true,
-      )
       // Esc 退出；其余按键留给编辑器 / 播放器
-      this.active.node.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-          if (e.isComposing || e.keyCode === 229 || composing) {
-            e.stopPropagation()
-            return
-          }
-          if (e.defaultPrevented) return
-          e.preventDefault()
-          this.deactivate()
-        }
-      })
+      attachEditorEscape(this.active.node, () => this.deactivate())
       this.root.appendChild(this.active.node)
       this.sync()
       this.active.focus?.()
@@ -392,84 +297,42 @@ export class CanvasOverlays {
   }
 
   private openEditor(id: string): Active | null {
-    const doc = this.engine.doc
-    const element = doc.elementMaps.get(id)
-    const ytext = doc.getText(id)
-    const valid = () =>
-      !doc.readOnly &&
-      !doc.ydoc.isDestroyed &&
-      doc.elementMaps.get(id) === element &&
-      element?.get('kind') === 'markdown' &&
-      !element.get('locked') &&
-      doc.getText(id) === ytext
+    const target = createMarkdownTarget(this.engine.doc, id)
+    const { ytext, valid } = target
     if (!ytext || !valid()) return null
     const node = document.createElement('div')
     node.className = 'plein-md-editor'
-    const undoManager = new Y.UndoManager(ytext)
-    let scrollFrame = 0
-    const view = new EditorView({
-      parent: node,
-      doc: ytext.toString(),
-      extensions: [
-        EditorState.transactionFilter.of((transaction) =>
-          !transaction.docChanged || transaction.annotation(ySyncAnnotation) || valid()
-            ? transaction
-            : [],
-        ),
-        yCollab(ytext, this.opts.awareness ?? null, { undoManager }),
-        // 正文历史直接操作 Y.Text，必须在调用 Yjs UndoManager 之前拦截。
-        keymap.of([
-          ...yUndoManagerKeymap.map((binding) => ({
-            ...binding,
-            run: (editor: EditorView) => (valid() ? (binding.run?.(editor) ?? false) : true),
-          })),
-          ...defaultKeymap,
-        ]),
-        drawSelection(),
-        markdown(),
-        EditorView.lineWrapping,
-        EditorView.domEventHandlers({
-          focus: (_event, editor) => {
-            cancelAnimationFrame(scrollFrame)
-            scrollFrame = requestAnimationFrame(() => editor.dispatch({ scrollIntoView: true }))
-          },
-        }),
-        EditorView.updateListener.of((update) => {
-          if (!update.geometryChanged) return
-          cancelAnimationFrame(scrollFrame)
-          // 换行高度可能经过多轮测量，按最终布局恢复当前选区。
-          scrollFrame = requestAnimationFrame(() => update.view.dispatch({ scrollIntoView: true }))
-        }),
-        editorTheme,
-      ],
+    const editor = createMarkdownEditor({
+      ytext,
+      valid,
+      awareness: this.opts.awareness,
     })
-    view.dom.style.position = 'absolute'
+    node.appendChild(editor.dom)
+    editor.dom.style.position = 'absolute'
     let layoutKey = ''
     return {
       id,
       node,
       valid,
-      focus: () => view.focus(),
+      focus: () => editor.focus(),
       layout: (rect, viewport) => {
         const { zoom, insets } = this.engine.camera
         const area = editorViewport(rect, viewport, insets, zoom)
         const key = JSON.stringify(area)
         if (key === layoutKey) return
         layoutKey = key
-        view.dom.style.visibility = area ? '' : 'hidden'
+        editor.dom.style.visibility = area ? '' : 'hidden'
         if (area)
-          Object.assign(view.dom.style, {
+          Object.assign(editor.dom.style, {
             left: `${area.x}px`,
             top: `${area.y}px`,
             width: `${area.w}px`,
             height: `${area.h}px`,
           })
-        view.requestMeasure()
+        editor.requestMeasure()
       },
       dispose() {
-        cancelAnimationFrame(scrollFrame)
-        view.destroy()
-        undoManager.destroy()
+        editor.destroy()
       },
     }
   }
