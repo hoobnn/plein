@@ -125,7 +125,7 @@ function readSequence(engine: Engine, id: string, catalog = useCatalog.getState(
       (c) =>
         !c.source ||
         engine.doc.has(c.source) ||
-        (c.sourceCanvasId !== undefined && c.sourceCanvasId !== canvasId),
+        (c.clip.sourceCanvasId !== undefined && c.clip.sourceCanvasId !== canvasId),
     )
     .map((c) => ({
       ...c,
