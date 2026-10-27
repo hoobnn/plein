@@ -78,7 +78,7 @@ describe.skipIf(!available)('实际成片技术检查', () => {
   it('完整真实解码、像素规格/时长/轨道与哈希；重复静帧不宣称实际动作', async () => {
     const f = await fixture(make(tempDir(), 'color=yellow:s=1280x720:r=10:d=2'))
     const report = await f.run()
-    expect(report.status).toBe('passed')
+    expect(report.status, JSON.stringify(report)).toBe('passed')
     const actual = JSON.parse(
       execFileSync(
         'ffprobe',
@@ -120,6 +120,46 @@ describe.skipIf(!available)('实际成片技术检查', () => {
     expect(report.checks.find((c) => c.id === 'audio')?.status).toBe('issues')
     expect(report.checks.find((c) => c.id === 'subtitles')?.status).toBe('unchecked')
     expect(report.checks.find((c) => c.id === 'silence')?.status).toBe('unchecked')
+  })
+
+  it('音视频诊断独立解码，交错日志不会丢帧或误报未覆盖音频', async () => {
+    const directory = tempDir(),
+      f = await fixture(make(directory, 'color=yellow:s=1280x720:r=10:d=2')),
+      real = ffmpegBin(),
+      wrapper = join(directory, 'interleaved-diagnostics.cjs')
+    // 真实 stderr 中音频 checksum 后接视频帧正文，视频前缀已丢失；不能靠放宽解析猜回它。
+    await writeFile(
+      wrapper,
+      `#!${process.execPath}
+const { spawn } = require('node:child_process');
+const args = process.argv.slice(2);
+const child = spawn(${JSON.stringify(real)}, args, { stdio: ['ignore', 'inherit', 'pipe'] });
+let stderr = '';
+child.stderr.on('data', data => { stderr += data });
+child.on('close', code => {
+  if (args.includes('-vf') && args.includes('-af'))
+    stderr = stderr.replace(/\\[Parsed_showinfo_[^\\]]+\\](\\s+n:\\s*2\\s+pts:)/,
+      '[Parsed_ashowinfo_0 @ 0x1] n:28 pts:28672 pts_time:0.650159 checksum:023A9381$1');
+  process.stderr.write(stderr);
+  process.exitCode = code ?? 1;
+});
+process.on('SIGTERM', () => child.kill('SIGTERM'));
+`,
+      { mode: 0o700 },
+    )
+    try {
+      setMediaTools({ ffmpeg: wrapper, ffprobe: 'ffprobe' })
+      const report = await f.run()
+      expect(report.status, JSON.stringify(report)).toBe('passed')
+      expect(report.observed).toMatchObject({
+        decodedFrames: 20,
+        complete: true,
+        audioDecoded: true,
+        audioUncovered: [],
+      })
+    } finally {
+      setMediaTools({ ffmpeg: real, ffprobe: 'ffprobe' })
+    }
   })
 
   it('黑场与静音候选保留实际区间；两个明确允许目标变体不制造人工通过', async () => {
@@ -280,7 +320,8 @@ describe.skipIf(!available)('实际成片技术检查', () => {
     } finally {
       setMediaTools({ ffmpeg: real, ffprobe: 'ffprobe' })
     }
-    expect((await f.run()).status).toBe('passed')
+    const restored = await f.run()
+    expect(restored.status, JSON.stringify(restored)).toBe('passed')
   })
 
   it('帧数/尺寸/时长/报告预算故障注入不发布部分通过，后续任务可正常检查', async () => {

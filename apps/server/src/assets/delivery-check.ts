@@ -209,36 +209,100 @@ export async function checkVideo(
           if (list.length >= LIMITS.intervals) throw new Error('检测区间超过 1000 项，检查未完成')
           if (end > start) list.push({ start, end })
         }
-        const audioFilter =
-          observed.audioTracks === 1
-            ? [
-                '-af',
-                `ashowinfo,silencedetect=noise=${RULES.silenceDb}dB:d=${RULES.silenceSeconds}`,
-              ]
-            : []
+        const inspect = (line: string) => {
+          // Audio/video log fragments may share a physical stderr line. Match the video frame
+          // record itself; a showinfo color-description prefix followed by ashowinfo is not a frame.
+          const videoRecord =
+            /\[Parsed_showinfo_[^\]]+\]\s+n:\s*(\d+)\s+pts:\s*[-\d]+\s+pts_time:/.exec(line)
+          if (videoRecord) {
+            const frame = line.slice(videoRecord.index)
+            const frameNumber = Number(videoRecord[1])
+            if (frameNumber !== lastFrame + 1) throw new Error('解码帧日志不连续，不能宣称检查完成')
+            lastFrame = frameNumber
+            const at = number(frame, 'pts_time')
+            if (at === undefined) throw new Error('无法读取解码视频时间戳')
+            first ??= at
+            if (last !== undefined && at < last)
+              throw new Error('视频时间戳倒序，无法建立可靠检查时间轴')
+            if (observed.decodedFrames >= LIMITS.frames) throw new Error('视频解码帧数超过资源上限')
+            observed.decodedFrames++
+            last = at
+            frameDuration = number(frame, 'duration_time') ?? 0
+            observed.firstVideoPts = first
+            observed.lastVideoPts = at
+            observed.lastFrameDuration = frameDuration
+            const size = /\bs:(\d+)x(\d+)/.exec(frame),
+              sar = /\bsar:(\d+)\/(\d+)/.exec(frame)
+            if (size) {
+              observed.width = Number(size[1])
+              observed.height = Number(size[2])
+              if (Math.max(observed.width, observed.height) > LIMITS.dimension)
+                throw new Error('实际解码尺寸超过 4096 像素')
+            }
+            if (sar && Number(sar[2]) > 0) observed.sar = Number(sar[1]) / Number(sar[2])
+            if (at - first > LIMITS.duration) throw new Error('实际解码时长超过 600 秒')
+            progress(
+              Math.min(0.95, (at - first) / Math.max(1, metadata.duration ?? LIMITS.duration)),
+            )
+          }
+          const audioRecord =
+            /\[Parsed_ashowinfo_[^\]]+\]\s+n:\s*\d+\s+pts:\s*[-\d]+\s+pts_time:/.exec(line)
+          if (audioRecord) {
+            const frame = line.slice(audioRecord.index),
+              at = number(frame, 'pts_time')
+            const rate = number(frame, 'rate'),
+              samples = number(frame, 'nb_samples')
+            if (at !== undefined) {
+              if (
+                observed.audioEndPts !== undefined &&
+                at > observed.audioEndPts + RULES.durationTolerance
+              )
+                add(audioGaps, observed.audioEndPts, at)
+              observed.firstAudioPts ??= at
+              if (rate && samples) observed.audioEndPts = at + samples / rate
+              observed.audioDecoded = true
+            }
+          }
+          if (line.includes('black_start:')) {
+            const start = number(line, 'black_start'),
+              end = number(line, 'black_end')
+            if (start !== undefined && end !== undefined) add(black, start, end)
+          }
+          if (observed.audioTracks === 1 && line.includes('silence_start:'))
+            silenceStart = number(line, 'silence_start')
+          if (observed.audioTracks === 1 && line.includes('silence_end:')) {
+            const end = number(line, 'silence_end')
+            if (silenceStart !== undefined && end !== undefined) add(silence, silenceStart, end)
+            silenceStart = undefined
+          }
+        }
+        // 音视频滤镜各在线程中分段写 stderr，同一行甚至会丢失 showinfo 前缀。
+        // 分开解码，让两种诊断各自拥有输出流；两轮都完成后才发布完整报告。
+        const input = [
+          '-v',
+          'info',
+          '-nostats',
+          '-xerror',
+          '-err_detect',
+          'explode',
+          '-copyts',
+          '-threads',
+          '2',
+          '-i',
+          file,
+          '-sn',
+          '-dn',
+          '-filter_threads',
+          '1',
+        ]
         await processCheck(
           [
-            '-v',
-            'info',
-            '-xerror',
-            '-err_detect',
-            'explode',
-            '-copyts',
-            '-threads',
-            '2',
-            '-i',
-            file,
+            ...input,
             '-map',
             '0:V:0',
-            '-map',
-            '0:a?',
-            '-sn',
-            '-dn',
-            '-filter_threads',
-            '1',
+            '-an',
             '-vf',
             `showinfo=checksum=0,blackdetect=d=${RULES.blackSeconds}:pix_th=${RULES.blackPixel}:pic_th=${RULES.blackRatio}`,
-            ...audioFilter,
             '-fps_mode',
             'passthrough',
             '-f',
@@ -246,76 +310,28 @@ export async function checkVideo(
             '-',
           ],
           signal,
-          (line) => {
-            // Audio/video log fragments may share a physical stderr line. Match the video frame
-            // record itself; a showinfo color-description prefix followed by ashowinfo is not a frame.
-            const videoRecord =
-              /\[Parsed_showinfo_[^\]]+\]\s+n:\s*(\d+)\s+pts:\s*[-\d]+\s+pts_time:/.exec(line)
-            if (videoRecord) {
-              const frame = line.slice(videoRecord.index)
-              const frameNumber = Number(videoRecord[1])
-              if (frameNumber !== lastFrame + 1)
-                throw new Error('解码帧日志不连续，不能宣称检查完成')
-              lastFrame = frameNumber
-              const at = number(frame, 'pts_time')
-              if (at === undefined) throw new Error('无法读取解码视频时间戳')
-              first ??= at
-              if (last !== undefined && at < last)
-                throw new Error('视频时间戳倒序，无法建立可靠检查时间轴')
-              if (observed.decodedFrames >= LIMITS.frames)
-                throw new Error('视频解码帧数超过资源上限')
-              observed.decodedFrames++
-              last = at
-              frameDuration = number(frame, 'duration_time') ?? 0
-              observed.firstVideoPts = first
-              observed.lastVideoPts = at
-              observed.lastFrameDuration = frameDuration
-              const size = /\bs:(\d+)x(\d+)/.exec(frame),
-                sar = /\bsar:(\d+)\/(\d+)/.exec(frame)
-              if (size) {
-                observed.width = Number(size[1])
-                observed.height = Number(size[2])
-                if (Math.max(observed.width, observed.height) > LIMITS.dimension)
-                  throw new Error('实际解码尺寸超过 4096 像素')
-              }
-              if (sar && Number(sar[2]) > 0) observed.sar = Number(sar[1]) / Number(sar[2])
-              if (at - first > LIMITS.duration) throw new Error('实际解码时长超过 600 秒')
-              progress(
-                Math.min(0.95, (at - first) / Math.max(1, metadata.duration ?? LIMITS.duration)),
-              )
-            }
-            const audioRecord =
-              /\[Parsed_ashowinfo_[^\]]+\]\s+n:\s*\d+\s+pts:\s*[-\d]+\s+pts_time:/.exec(line)
-            if (audioRecord) {
-              const frame = line.slice(audioRecord.index),
-                at = number(frame, 'pts_time')
-              const rate = number(frame, 'rate'),
-                samples = number(frame, 'nb_samples')
-              if (at !== undefined) {
-                if (
-                  observed.audioEndPts !== undefined &&
-                  at > observed.audioEndPts + RULES.durationTolerance
-                )
-                  add(audioGaps, observed.audioEndPts, at)
-                observed.firstAudioPts ??= at
-                if (rate && samples) observed.audioEndPts = at + samples / rate
-                observed.audioDecoded = true
-              }
-            }
-            if (line.includes('black_start:')) {
-              const start = number(line, 'black_start'),
-                end = number(line, 'black_end')
-              if (start !== undefined && end !== undefined) add(black, start, end)
-            }
-            if (observed.audioTracks === 1 && line.includes('silence_start:'))
-              silenceStart = number(line, 'silence_start')
-            if (observed.audioTracks === 1 && line.includes('silence_end:')) {
-              const end = number(line, 'silence_end')
-              if (silenceStart !== undefined && end !== undefined) add(silence, silenceStart, end)
-              silenceStart = undefined
-            }
-          },
+          inspect,
         )
+        if (observed.audioTracks)
+          await processCheck(
+            [
+              ...input,
+              '-map',
+              '0:a',
+              '-vn',
+              ...(observed.audioTracks === 1
+                ? [
+                    '-af',
+                    `ashowinfo,silencedetect=noise=${RULES.silenceDb}dB:d=${RULES.silenceSeconds}`,
+                  ]
+                : []),
+              '-f',
+              'null',
+              '-',
+            ],
+            signal,
+            inspect,
+          )
         if (first === undefined || last === undefined || !observed.decodedFrames)
           throw new Error('视频没有实际解码帧')
         const duration = last - first + frameDuration
