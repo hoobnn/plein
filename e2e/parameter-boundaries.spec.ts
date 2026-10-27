@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { newProject } from './canvas'
+import { newProject, revealGenerator } from './canvas'
 
 test('数值参数保留零值、失焦夹紧范围，清空恢复默认且不会自动生成', async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 560 })
@@ -19,8 +19,11 @@ test('数值参数保留零值、失焦夹紧范围，清空恢复默认且不�
     if (r.method() === 'POST' && /\/nodes\/[^/]+\/run$/.test(r.url())) submitted++
   })
   const generator = page.getByTestId('generator')
-  await generator.getByRole('button', { name: '编辑LLM', exact: true }).click()
-  await generator.getByRole('button', { name: '参数', exact: true }).click()
+  // 0.6.0 起编辑器固定展开在卡片下方，不再有「编辑LLM」展开按钮
+  // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+  const params = generator.getByRole('button', { name: '参数', exact: true })
+  await revealGenerator(page, params)
+  await params.click()
   const panel = page.getByRole('dialog', { name: '参数', exact: true })
   await panel.getByRole('button', { name: '更多参数', exact: true }).click()
   const number = panel.getByRole('spinbutton', { name: '温度', exact: true })
@@ -78,11 +81,10 @@ for (const incomplete of ['1e']) {
       }),
     )
     await page.getByRole('treeitem', { name: '未完成数值 定位到画布', exact: true }).click()
-    await page
-      .getByTestId('generator')
-      .getByRole('button', { name: '编辑LLM', exact: true })
-      .click()
-    await page.getByRole('button', { name: '参数', exact: true }).click()
+    // 编辑器固定在卡片下方，控件可能在窗口外：先把它移进窗口
+    const params = page.getByTestId('generator').getByRole('button', { name: '参数', exact: true })
+    await revealGenerator(page, params)
+    await params.click()
     const panel = page.getByRole('dialog', { name: '参数', exact: true })
     await panel.getByRole('button', { name: '更多参数', exact: true }).click()
     const number = panel.getByRole('spinbutton', { name: '温度', exact: true })
