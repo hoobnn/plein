@@ -58,6 +58,7 @@ export function CreationGuide({
   if (!engine || attachedCanvasId !== canvasId) return null
   return (
     <Guide
+      key={canvasId}
       engine={engine}
       canvasId={canvasId}
       onOpenText={onOpenText}

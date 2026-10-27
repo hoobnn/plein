@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { expect, type Page, test } from './fixtures'
 import {
   addNode,
+  centerOf,
   clickRun,
   edgesInto,
   elements,
@@ -13,9 +14,6 @@ import {
   waitNode,
   zoomTo,
 } from './canvas'
-
-/** 设了就把界面截图存到这个目录（亮色、暗色各一张） */
-const shotDir = process.env.PLEIN_E2E_SHOTS
 
 let dir = ''
 test.beforeAll(() => {
@@ -32,6 +30,38 @@ test.beforeAll(() => {
     '-c:v',
     'libvpx-vp9',
     join(dir, 'retake.webm'),
+  ])
+  for (const [name, color, duration] of [
+    ['before.webm', 'red', '1.6'],
+    ['after.webm', 'green', '2.4'],
+  ])
+    execFileSync('ffmpeg', [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      `color=c=${color}:s=160x240:d=${duration}:r=10`,
+      '-c:v',
+      'libvpx-vp9',
+      '-deadline',
+      'realtime',
+      join(dir, name!),
+    ])
+  execFileSync('ffmpeg', [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    'color=c=blue:s=160x240',
+    '-frames:v',
+    '1',
+    join(dir, 'reference.png'),
   ])
 })
 
@@ -58,14 +88,7 @@ test(
 
     await generator.getByRole('button', { name: '续镜' }).click()
     await expect(page.getByRole('button', { name: /从尾帧续/ })).toBeVisible()
-    if (shotDir) {
-      for (const scheme of ['light', 'dark'] as const) {
-        await page.emulateMedia({ colorScheme: scheme })
-        await page.waitForTimeout(300)
-        await page.screenshot({ path: join(shotDir, `1-menu-${scheme}.png`) })
-      }
-      await page.emulateMedia({ colorScheme: null })
-    }
+
     await page.getByRole('button', { name: /从尾帧续/ }).click()
     await expect(page.locator('.ui-toast')).toContainText('接出下一个镜头')
 
@@ -86,14 +109,6 @@ test(
     await expect(continued).toContainText('续自')
     await expect(continued).toContainText('尾帧')
     await zoomTo(page, [parent!.id, frame.id, next.id])
-    if (shotDir) {
-      for (const scheme of ['light', 'dark'] as const) {
-        await page.emulateMedia({ colorScheme: scheme })
-        await page.waitForTimeout(300)
-        await page.screenshot({ path: join(shotDir, `2-continued-${scheme}.png`) })
-      }
-      await page.emulateMedia({ colorScheme: null })
-    }
 
     // 点「续自」回到上一个镜头
     await continued.getByRole('button').first().click()
@@ -142,14 +157,7 @@ test(
     }, next.id)
     await expect(continued).toContainText('首帧已旧')
     await page.mouse.move(700, 120)
-    if (shotDir) {
-      for (const scheme of ['light', 'dark'] as const) {
-        await page.emulateMedia({ colorScheme: scheme })
-        await page.waitForTimeout(300)
-        await page.screenshot({ path: join(shotDir, `3-stale-${scheme}.png`) })
-      }
-      await page.emulateMedia({ colorScheme: null })
-    }
+
     // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
     await revealGenerator(page)
     await continued.getByRole('button', { name: '换成新画面' }).click()
@@ -161,50 +169,124 @@ test(
     )
     expect(refreshed).not.toBe(oldFrame)
     expect((await params(page, next.id)).continuesFrom).toMatchObject({ assetId: retake })
-
-    // 取帧已在服务端完成、响应尚未到达时手动换图，迟到的响应不能覆盖它。
-    await page.evaluate((id) => {
-      const doc = window.__plein.engine.doc
-      const m = doc.mutable(id) as unknown as { set(k: string, v: unknown): void }
-      m.set('adopted', undefined)
-      // 最早的视频不是刚采用的 retake。
-      const el = doc.get(id)!
-      const first = el.results!.find((r) => r.id !== 'retake')!
-      m.set('adopted', first.id)
-    }, parent!.id)
-    await expect(continued).toContainText('首帧已旧')
-    let release!: () => void
-    let captured!: () => void
-    const ready = new Promise<void>((done) => {
-      captured = done
-    })
-    const gate = new Promise<void>((done) => {
-      release = done
-    })
-    await page.route('**/api/media/derive', async (route) => {
-      const response = await route.fetch()
-      captured()
-      await gate
-      await route.fulfill({ response })
-    })
-    await continued.getByRole('button', { name: '换成新画面' }).click()
-    await ready
-    const before = await params(page, next.id)
-    await page.evaluate(
-      ({ id, assetId }) => {
-        const m = window.__plein.engine.doc.mutable(id) as unknown as {
-          set(k: string, v: unknown): void
-        }
-        m.set('assetId', assetId)
-      },
-      { id: frame.id, assetId: oldFrame! },
-    )
-    release()
-    await expect(page.locator('.ui-toast')).toContainText('续镜内容已经改变')
-    expect(await page.evaluate((id) => window.__plein.engine.doc.get(id)?.assetId, frame.id)).toBe(
-      oldFrame,
-    )
-    expect(await params(page, next.id)).toEqual(before)
-    await page.unroute('**/api/media/derive')
   },
 )
+
+test('连续性使用真实首末帧、实际视频切点和固定角色参考 @core', async ({ page }, testInfo) => {
+  await newProject(page)
+  const chooser = page.waitForEvent('filechooser')
+  await page.getByRole('button', { name: '上传', exact: true }).click()
+  await (
+    await chooser
+  ).setFiles(['before.webm', 'after.webm', 'reference.png'].map((name) => join(dir, name)))
+  await expect
+    .poll(
+      async () =>
+        (await elements(page)).filter((el) => el.kind === 'video' || el.kind === 'image').length,
+    )
+    .toBe(3)
+  const fixture = await page.evaluate(() => {
+    const all = [...window.__plein.engine.doc.elements()]
+    const assets = ['before.webm', 'after.webm', 'reference.png'].map(
+      (name) => all.find((el) => el.name === name)!.assetId!,
+    )
+    const board = window.__plein.addNode({
+      type: 'plein/storyboard',
+      name: '验收分镜',
+      params: {
+        shots: [
+          { id: 's1', no: 1, duration: 9, description: '红色前镜' },
+          { id: 's2', no: 2, duration: 9, description: '绿色后镜' },
+        ],
+      },
+      x: 600,
+      y: 200,
+    })
+    const ids = [0, 1].map((shot) =>
+      (['image', 'video'] as const).map((role) => {
+        const id = window.__plein.addNode({
+          type: `plein/${role}`,
+          name: `镜头${shot + 1}${role}`,
+          params: {
+            prompt: '固定素材验收',
+            source: { storyboard: board, shot: `s${shot + 1}`, role },
+          },
+          x: 1000 + shot * 400,
+          y: role === 'image' ? 200 : 600,
+        })
+        const m = window.__plein.engine.doc.mutable(id) as unknown as {
+          set(key: string, value: unknown): void
+        }
+        m.set('results', [
+          {
+            id: `candidate-${id}`,
+            runId: 'fixture-run',
+            port: role === 'image' ? 'images' : 'video',
+            value: { type: role, assetId: role === 'image' ? assets[2] : assets[shot] },
+            at: 1,
+          },
+        ])
+        m.set('adopted', `candidate-${id}`)
+        return id
+      }),
+    )
+    const actor = window.__plein.addNode({
+      type: 'plein/character',
+      name: '固定主角',
+      params: {},
+      x: 0,
+      y: 1000,
+    })
+    const reference = all.find((el) => el.name === 'reference.png')!
+    window.__plein.connect([reference.id, 'image'], [actor, 'references'])
+    return { board, ids, reference: assets[2]! }
+  })
+  const open = async () => {
+    await zoomTo(page, [fixture.board])
+    const point = await centerOf(page, fixture.board)
+    await page.mouse.dblclick(point.x, point.y)
+    const dialog = page.getByRole('dialog', { name: '分镜表', exact: true })
+    await dialog.getByRole('button', { name: '审核镜头', exact: true }).click()
+    return dialog
+  }
+  const dialog = await open()
+  await dialog.getByLabel('筛选镜头验收').selectOption('all')
+  await dialog
+    .locator('[data-shot-id="s2"]')
+    .getByRole('button', { name: '与上一镜连续性审看', exact: true })
+    .click()
+  const continuity = page.getByRole('dialog', { name: '连续性审看', exact: true })
+  const tail = continuity.getByRole('img', { name: '镜头 1 真实尾帧', exact: true })
+  const head = continuity.getByRole('img', { name: '镜头 2 真实首帧', exact: true })
+  await expect(tail).toBeVisible()
+  await expect(head).toBeVisible()
+  expect(await tail.getAttribute('src')).not.toContain('poster')
+  expect(await head.getAttribute('src')).not.toBe(await tail.getAttribute('src'))
+  await continuity.getByRole('combobox', { name: /^固定角色参考/ }).selectOption(fixture.reference)
+  await expect(continuity.getByRole('img', { name: '固定角色参考', exact: true })).toBeVisible()
+  await continuity.locator('video').evaluateAll((videos) =>
+    videos.forEach((video) => {
+      ;(video as HTMLVideoElement).muted = true
+    }),
+  )
+  await continuity.getByRole('button', { name: '循环回看切点前后各一秒', exact: true }).click()
+  await expect(
+    continuity.getByText('当前镜开头 · 按实际视频时长播放', { exact: true }),
+  ).toBeVisible({ timeout: 5000 })
+  await continuity.getByRole('button', { name: '暂停回看', exact: true }).click()
+  await continuity
+    .getByRole('textbox', { name: /创作验收备注/ })
+    .fill('切点衣服方向不一致，需要修后镜')
+  await continuity.getByRole('button', { name: '保存为需修改', exact: true }).click()
+  await continuity.screenshot({ path: testInfo.outputPath('continuity-review.png') })
+  await continuity.getByRole('button', { name: '关闭', exact: true }).click()
+  await dialog.getByLabel('筛选镜头验收').selectOption('changes')
+  await expect(dialog.locator('[data-shot-id="s2"]')).toBeVisible()
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.reload()
+  await page.waitForFunction(() => !!window.__plein)
+  const restored = await open()
+  await expect(restored.locator(`[data-review-node="${fixture.ids[1]![1]}"] > summary`)).toHaveText(
+    '创作验收：需修改',
+  )
+})

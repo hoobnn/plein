@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
-import { deleteElements, type NodeResult } from '@plein/doc'
-import { expect, it, vi } from 'vite-plus/test'
+import type { Engine } from '@plein/canvas-core'
+import { addResults, createElement, deleteElements, type NodeResult, type PleinDoc } from '@plein/doc'
+import { openDoc } from '@plein/doc/testing'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { useCanvas } from '../stores/canvas'
 import { act, fireEvent, renderApp, screen } from '../testing/render'
 import { Viewer } from './Viewer'
@@ -315,4 +317,77 @@ it('全部候选移除后 Enter 不采用或定位，也不混入副输出；恢
   f.update([f.results[1]!])
   await f.user.click(screen.getByRole('button', { name: '预览下一个候选' }))
   expect(f.image().getAttribute('src')).toBe(`/api/assets/${f.id}-asset-1`)
+})
+
+const reviewDocs: PleinDoc[] = []
+afterEach(() => reviewDocs.splice(0).forEach((doc) => doc.destroy()))
+function setupReview() {
+  const doc = openDoc()
+  reviewDocs.push(doc)
+  const id = createElement(doc, {
+    kind: 'node',
+    nodeType: 'plein/image',
+    name: '候选审核',
+    x: 0,
+    y: 0,
+    w: 200,
+    h: 100,
+  })
+  addResults(
+    doc,
+    id,
+    ['first', 'second'].map((id, at) => ({
+      id,
+      at,
+      runId: 'run',
+      port: 'images',
+      value: { type: 'image' as const, assetId: id },
+    })),
+    { adopt: true },
+  )
+  const original = doc.get(id)!.adopted
+  useCanvas.setState({
+    engine: { doc } as Engine,
+    canvasId: 'c',
+    viewer: { kind: 'result', name: '候选审核', nodeId: id, resultId: original! },
+  })
+  const rendered = renderApp(<Viewer />)
+  return { ...rendered, doc, id, original }
+}
+it('浏览及对比不采用，明确采用更新文档且可撤销', async () => {
+  const f = setupReview()
+  await f.user.click(screen.getByRole('button', { name: '预览下一个候选' }))
+  expect(f.doc.get(f.id)?.adopted).toBe(f.original)
+  await f.user.selectOptions(screen.getByRole('combobox', { name: '对比候选' }), f.original!)
+  expect(screen.getByRole('img', { name: '候选 A' })).toBeTruthy()
+  expect(screen.getByRole('img', { name: '候选 B' })).toBeTruthy()
+  await f.user.selectOptions(screen.getByRole('combobox', { name: '对比方式' }), 'slider')
+  fireEvent.change(screen.getByRole('slider', { name: '图片对比滑杆' }), {
+    target: { value: '70' },
+  })
+  expect(f.doc.get(f.id)?.adopted).toBe(f.original)
+  await f.user.click(screen.getByRole('button', { name: '采用此候选' }))
+  act(() => f.doc.flush())
+  expect(f.doc.get(f.id)?.adopted).not.toBe(f.original)
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '已采用' }).disabled).toBe(true)
+  act(() => {
+    f.doc.undo.undo()
+    f.doc.flush()
+  })
+  expect(f.doc.get(f.id)?.adopted).toBe(f.original)
+})
+it('按钮 Enter 执行本意，预览区 Enter 才采用，组字 Enter 不采用', async () => {
+  const f = setupReview()
+  screen.getByRole('button', { name: '预览下一个候选' }).focus()
+  await f.user.keyboard('{Enter}')
+  expect(f.doc.get(f.id)?.adopted).toBe(f.original)
+  const group = screen.getByRole('group', { name: '候选审片操作' })
+  fireEvent.keyDown(group, { key: 'Enter', isComposing: true })
+  expect(f.doc.get(f.id)?.adopted).toBe(f.original)
+  group.focus()
+  await f.user.keyboard('{Enter}')
+  expect(f.doc.get(f.id)?.adopted).not.toBe(f.original)
+  screen.getByRole('button', { name: '关闭' }).focus()
+  await f.user.keyboard('{Enter}')
+  expect(useCanvas.getState().viewer).toBeNull()
 })

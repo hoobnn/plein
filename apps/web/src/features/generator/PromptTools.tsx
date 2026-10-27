@@ -104,6 +104,11 @@ export function PromptTools({
   }
   const adopt = () => {
     if (!draft || draft.busy || !draft.text.trim()) return
+    if (engine.doc.readOnly) {
+      setDraft({ ...draft, error: '当前画布只读，建议已保留；恢复编辑权限后可重新采用。' })
+      return
+    }
+    if (useCanvas.getState().engine !== engine) return
     const current = engine.doc.get(elId)
     if (
       !current ||

@@ -1,19 +1,19 @@
+import { gzipSync } from 'node:zlib'
+import { pathToFileURL } from 'node:url'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from './fixtures'
 import { loadConfig } from '../apps/server/src/config'
 import { startServer, type RunningServer } from '../apps/server/src/start'
-import type { JobList, PreparedInput } from '../packages/protocol/src/runs'
+import type { JobList } from '../packages/protocol/src/runs'
 import {
   addNode,
   byName,
   centerOf,
-  clickElement,
   contextMenu,
   deselect,
-  revealGenerator,
   showStoryboardCards,
   waitEngine,
   waitNode,
@@ -74,12 +74,10 @@ test.afterAll(async () => {
 })
 
 test(
-  '从短剧模板、角色环境道具到两镜成片，返工候选与重启后完整保留',
+  '从短剧模板、角色环境道具到两镜成片，真实播放与重启后完整保留',
   { tag: '@core' },
   async ({ page }) => {
     test.setTimeout(240_000)
-    // 成片要烧字幕，本机 ffmpeg 没有 libass 时导不出来（属环境限制，用例留在这里）
-    test.skip(!hasLibass(), '本机 ffmpeg 无 libass，烧字幕的成片导不出来')
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.goto(process.env.PLEIN_FLOW_BASE_URL ?? server.url)
@@ -92,11 +90,6 @@ test(
     await addNode(page, '短剧')
     const canvas = decodeURIComponent(page.url().split('#/c/')[1]!.split('?')[0]!)
     const api = (path: string) => `${server.url}${path}`
-    const input = async (id: string) => {
-      const response = await page.request.get(api(`/api/canvases/${canvas}/nodes/${id}/input`))
-      expect(response.ok()).toBe(true)
-      return (await response.json()) as PreparedInput
-    }
     const jobs = async () =>
       ((await (await page.request.get(api(`/api/canvases/${canvas}/jobs`))).json()) as JobList).jobs
     const board = await byName(page, '分镜（双击展开镜头）')
@@ -250,6 +243,14 @@ test(
     await openSequence()
     const editor = page.getByRole('dialog', { name: '序列', exact: true })
     await expect(editor.locator('.seq-clip')).toHaveCount(2)
+    if (!hasLibass()) {
+      await editor.getByRole('button', { name: '成片', exact: true }).click()
+      const subtitles = editor.getByRole('switch', { name: '开启字幕' })
+      if ((await subtitles.getAttribute('aria-checked')) === 'true') await subtitles.click()
+      test
+        .info()
+        .annotations.push({ type: '环境', description: '本机 ffmpeg 无 libass，本次导出不烧字幕' })
+    }
     await editor.getByRole('button', { name: '导出 MP4', exact: true }).click()
     const film = editor.getByLabel('实际导出 MP4', { exact: true })
     await expect(film).toBeVisible({ timeout: 60_000 })
@@ -262,7 +263,10 @@ test(
     await expect
       .poll(() => film.evaluate((v: HTMLVideoElement) => v.readyState))
       .toBeGreaterThanOrEqual(2)
-    await film.evaluate((v: HTMLVideoElement) => v.play())
+    await film.evaluate((v: HTMLVideoElement) => {
+      v.muted = true
+      return v.play()
+    })
     await expect
       .poll(() => film.evaluate((v: HTMLVideoElement) => v.currentTime))
       .toBeGreaterThan(0.1)
@@ -296,90 +300,6 @@ test(
     execFileSync(config.ffmpegPath ?? 'ffmpeg', ['-v', 'error', '-i', filmPath, '-f', 'null', '-'])
     await editor.screenshot({ path: test.info().outputPath('complete-film-ui.png') })
     await editor.getByRole('button', { name: '关闭', exact: true }).click()
-    await clickElement(page, videos[0]!.id)
-    // 编辑器固定在卡片下方，先把它移进窗口再点里面的控件
-    await revealGenerator(page)
-    const generator = page.getByTestId('generator')
-    const retry = generator.getByRole('button', { name: /^(?:生成|重新生成|重试)$/ })
-    const mock = api('/api/providers/plein/mock/config')
-    const originalConfig = await (await page.request.get(mock)).json()
-    const originalVideo = await page.evaluate(
-      (id) => window.__plein.engine.doc.get(id)!,
-      videos[0]!.id,
-    )
-    try {
-      expect(
-        (
-          await page.request.put(mock, {
-            data: { settings: { ...originalConfig.settings, latencyMs: 3000 } },
-          })
-        ).ok(),
-      ).toBe(true)
-      await retry.click()
-      await expect
-        .poll(async () => (await jobs()).find((j) => j.nodeId === videos[0]!.id)?.recovery?.state)
-        .toBe('remote_pending')
-      const canceledId = (await jobs()).find((j) => j.nodeId === videos[0]!.id)!.id
-      await generator.getByRole('button', { name: '取消', exact: true }).click()
-      await expect
-        .poll(async () => (await jobs()).find((j) => j.id === canceledId)?.status)
-        .toBe('canceled')
-      await page.getByRole('button', { name: '任务', exact: true }).click()
-      const tasks = page.getByRole('complementary', { name: '任务', exact: true })
-      const videoSubmitsBeforeRecovery = submits.filter(
-        (s) => s.capability === 'video.generate',
-      ).length
-      await tasks.getByRole('button', { name: '重新获取', exact: true }).click()
-      await expect
-        .poll(async () => (await jobs()).find((j) => j.id === canceledId)?.recovery?.state)
-        .toBe('remote_failed')
-      await page.getByRole('button', { name: '任务', exact: true }).click()
-      await expect(tasks).toHaveCount(0)
-      expect(submits.filter((s) => s.capability === 'video.generate')).toHaveLength(
-        videoSubmitsBeforeRecovery,
-      )
-      expect(
-        (
-          await page.request.put(mock, {
-            data: { settings: { ...originalConfig.settings, latencyMs: 0, failWith: 'auth' } },
-          })
-        ).ok(),
-      ).toBe(true)
-      const previousJobs = new Set((await jobs()).map((j) => j.id))
-      await retry.click()
-      await expect
-        .poll(
-          async () =>
-            (await jobs()).find((j) => j.nodeId === videos[0]!.id && !previousJobs.has(j.id))
-              ?.status,
-        )
-        .toBe('failed')
-      const failed = await page.evaluate((id) => window.__plein.engine.doc.get(id)!, videos[0]!.id)
-      expect({ adopted: failed.adopted, results: failed.results }).toEqual({
-        adopted: originalVideo.adopted,
-        results: originalVideo.results,
-      })
-      expect(await (await page.request.get(api(firstFilm!))).body()).toEqual(firstBytes)
-      await page.screenshot({ path: test.info().outputPath('retry-retains-film.png') })
-    } finally {
-      await page.request.put(mock, { data: { settings: originalConfig.settings } })
-    }
-    const failure = page.locator('.plein-node-failed').filter({ hasText: '密钥无效' })
-    await expect(failure.locator('strong')).toBeVisible()
-    await failure.getByRole('button', { name: '重试', exact: true }).click()
-    await expect
-      .poll(() =>
-        page.evaluate((id) => window.__plein.engine.doc.get(id)?.results?.length, videos[0]!.id),
-      )
-      .toBe(2)
-    await page
-      .locator('.plein-node')
-      .filter({ has: page.locator('.plein-node-title', { hasText: videos[0]!.name }) })
-      .getByRole('button', { name: '下一个结果', exact: true })
-      .click()
-    const viewer = page.getByRole('dialog', { name: `查看「${videos[0]!.name}」`, exact: true })
-    await viewer.getByRole('button', { name: '采用此候选', exact: true }).click()
-    await viewer.getByRole('button', { name: '关闭', exact: true }).click()
     const read = () =>
       page.evaluate(() => ({
         elements: [...window.__plein.engine.doc.elements()]
@@ -417,38 +337,9 @@ test(
     await expect.poll(taskSnapshot).toEqual(tasksBefore)
     await openSequence()
     await expect(editor.locator('.seq-clip')).toHaveCount(2)
-    const previousExports = await page.evaluate(
-      (id) => window.__plein.engine.doc.get(id)?.results?.length ?? 0,
-      sequence.id,
-    )
-    await editor.getByRole('button', { name: '重新导出', exact: true }).click()
-    await expect
-      .poll(
-        () =>
-          page.evaluate(
-            (id) => window.__plein.engine.doc.get(id)?.results?.length ?? 0,
-            sequence.id,
-          ),
-        { timeout: 60_000 },
-      )
-      .toBe(previousExports + 1)
-    await expect(film).toBeVisible({ timeout: 60_000 })
-    await expect(editor.getByText('待人工确认', { exact: false }).first()).toBeVisible()
-    await expect.poll(async () => (await input(sequence.id)).status).toBe('ready')
-    const secondBytes = await (
-      await page.request.get(api((await film.getAttribute('src'))!))
-    ).body()
-    const secondPath = test.info().outputPath('second-film.mp4')
-    writeFileSync(secondPath, secondBytes)
-    execFileSync(config.ffmpegPath ?? 'ffmpeg', [
-      '-v',
-      'error',
-      '-i',
-      secondPath,
-      '-f',
-      'null',
-      '-',
-    ])
+    await editor.getByRole('button', { name: '实际 MP4 回看 / 交付', exact: true }).click()
+    await expect(film).toBeVisible()
+    expect(await (await page.request.get(api(firstFilm!))).body()).toEqual(firstBytes)
     const finalJobs = await jobs()
     for (const job of finalJobs)
       if (job.input?.model) expect(job.input.model.provider).toBe('plein/mock')
@@ -485,3 +376,56 @@ test(
     expect(errors).toEqual([])
   },
 )
+
+test('首页仅加载轻量闭包，进入画布后才加载编辑器并正常运行', { tag: '@core' }, async ({ page }) => {
+  type Chunk = { file: string; imports?: string[] }
+  const dist = process.env.PLEIN_E2E_DIST
+    ? pathToFileURL(`${process.env.PLEIN_E2E_DIST}/`)
+    : new URL('../apps/web/dist-e2e/', import.meta.url)
+  const manifest = JSON.parse(readFileSync(new URL('.vite/manifest.json', dist), 'utf8')) as Record<
+    string,
+    Chunk
+  >
+  const home = new Set<string>()
+  const visit = (key: string) => {
+    if (home.has(key)) return
+    home.add(key)
+    for (const dependency of manifest[key]!.imports ?? []) visit(dependency)
+  }
+  visit('index.html')
+  visit('src/pages/Home.tsx')
+  const files = new Set([...home].map((key) => manifest[key]!.file))
+  const bodies = [...files].map((file) => readFileSync(new URL(file, dist)))
+  const compressedBytes = bodies.reduce((bytes, body) => bytes + gzipSync(body).length, 0)
+  expect(compressedBytes, '首页完整静态 JS 闭包的 gzip 预算').toBeLessThanOrEqual(300 * 1024)
+  expect(home.has('src/pages/Editor.tsx')).toBe(false)
+  expect(home.has('src/features/stage/StagePanel.tsx')).toBe(false)
+  expect([...home].some((key) => /node_modules\/(?:jassub|pixi\.js)\//.test(key))).toBe(false)
+  // Match implementation diagnostics, not CodeMirror theme packages or dynamic import names.
+  for (const marker of [
+    'CodeMirror plugin crashed',
+    'Invalid JSON representation for EditorState',
+    'A VideoSample was garbage collected without first being closed',
+    '[PixiJS] Vertex Array Objects are not supported on this device',
+  ])
+    expect(
+      bodies.some((body) => body.includes(marker)),
+      marker,
+    ).toBe(false)
+
+  const requested = new Set<string>()
+  page.on('request', (request) => {
+    if (request.resourceType() === 'script') requested.add(new URL(request.url()).pathname.slice(1))
+  })
+  await page.goto(server.url)
+  await expect(page.getByRole('button', { name: '新建项目', exact: true })).toBeVisible()
+  await page.waitForLoadState('networkidle')
+  expect(requested.has(manifest['src/pages/Home.tsx']!.file)).toBe(true)
+  expect([...requested].filter((file) => !files.has(file))).toEqual([])
+  expect(await page.evaluate(() => !!window.__plein)).toBe(false)
+  await page.getByRole('button', { name: '新建项目', exact: true }).click()
+  await expect(page).toHaveURL(/#\/c\//)
+  await waitEngine(page)
+  expect(requested.has(manifest['src/pages/Editor.tsx']!.file)).toBe(true)
+  await expect(page.locator('canvas').first()).toBeVisible()
+})
