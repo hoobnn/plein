@@ -27,6 +27,8 @@ function Review({ viewer }: { viewer: View }) {
   const originalUrl = (id: string) => localAssets?.get(id) ?? assetUrls.original(id)
   const canvasId = useCanvas((s) => s.canvasId)
   const [actionError, setActionError] = useState<string | null>(null)
+  const controls = useRef<HTMLDivElement>(null)
+  const focusControls = () => controls.current?.focus({ preventScroll: true })
   const doc = engine?.doc
   useSyncExternalStore(
     (fn) => doc?.subscribe(fn) ?? (() => {}),
@@ -157,6 +159,7 @@ function Review({ viewer }: { viewer: View }) {
       className="h-[90vh] max-w-[96vw]"
     >
       <div
+        ref={controls}
         role="group"
         aria-label="候选审片操作"
         tabIndex={-1}
@@ -432,12 +435,13 @@ function Review({ viewer }: { viewer: View }) {
                           type="button"
                           className="ui-btn ui-btn-secondary"
                           aria-label={`重新加载${label}`}
-                          onClick={() =>
+                          onClick={() => {
+                            focusControls()
                             setImageLoads((old) => ({
                               ...old,
                               [id]: { attempt: (old[id]?.attempt ?? 0) + 1, failed: false },
                             }))
-                          }
+                          }}
                         >
                           <Icon name="retry" />
                           重试
@@ -459,7 +463,15 @@ function Review({ viewer }: { viewer: View }) {
               )}
             </>
           ) : (kind === 'video' || kind === 'audio') && assetId ? (
-            <ReviewMedia key={`${kind}:${assetId}`} assetId={assetId} kind={kind} name={name} />
+            <ReviewMedia
+              key={`${kind}:${originalUrl(assetId)}`}
+              assetId={assetId}
+              src={originalUrl(assetId)}
+              local={!!localAssets?.has(assetId)}
+              kind={kind}
+              name={name}
+              onRetry={focusControls}
+            />
           ) : value ? (
             <div
               data-review-text=""
@@ -499,12 +511,18 @@ function Review({ viewer }: { viewer: View }) {
 
 function ReviewMedia({
   assetId,
+  src,
+  local,
   kind,
   name,
+  onRetry,
 }: {
   assetId: string
+  src: string
+  local: boolean
   kind: 'video' | 'audio'
   name: string
+  onRetry(): void
 }) {
   const [failed, setFailed] = useState(false)
   const [attempt, setAttempt] = useState(0)
@@ -517,13 +535,13 @@ function ReviewMedia({
     const media = ref.current
     // StrictMode 会保留 DOM 并重放 effect，清理后需要恢复来源。
     if (closing) media?.pause()
-    else if (media && !media.getAttribute('src')) media.src = assetUrls.original(assetId)
+    else if (media && !media.getAttribute('src')) media.src = src
     return () => {
       media?.pause()
       media?.removeAttribute('src')
       media?.load()
     }
-  }, [assetId, attempt, failed, closing])
+  }, [src, attempt, failed, closing])
   if (failed)
     return (
       <div className="flex flex-col items-center gap-3 text-white">
@@ -533,6 +551,7 @@ function ReviewMedia({
           className="ui-btn ui-btn-secondary"
           aria-label="重新加载媒体"
           onClick={() => {
+            onRetry()
             setAttempt((value) => value + 1)
             setFailed(false)
           }}
@@ -547,7 +566,7 @@ function ReviewMedia({
     ref: (media: HTMLMediaElement | null) => {
       ref.current = media
     },
-    src: assetUrls.original(assetId),
+    src,
     controls: true,
     autoPlay: !closing,
     className: 'max-h-full max-w-full',
@@ -561,11 +580,11 @@ function ReviewMedia({
       key={attempt}
       {...props}
       className="max-h-full w-full object-contain"
-      poster={assetUrls.variant(assetId, 'poster')}
+      poster={local ? undefined : assetUrls.variant(assetId, 'poster')}
     />
   ) : (
     <div className="flex w-full max-w-3xl flex-col items-center gap-6 px-8">
-      {!waveformFailed && (
+      {!local && !waveformFailed && (
         <img
           src={assetUrls.variant(assetId, 'waveform')}
           alt=""

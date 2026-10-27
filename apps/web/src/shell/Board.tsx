@@ -1,22 +1,22 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, elementMedia, primaryResult } from '@plein/doc'
 import type { MentionTarget } from '@plein/nodes'
-import type { Catalog } from '@plein/protocol'
 import { useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../api/client'
 import { useDocVersion } from '../canvas/hooks'
 import { selectedModel } from '../canvas/modelParams'
-import { findNode, isPure, promptKey, mentionTargets } from '../canvas/nodes'
+import { findNode, mentionTargets } from '../canvas/nodes'
 import { type OutlineType, outlineIcon, outlineTitle, outlineType } from '../canvas/outline'
 import { useAssetMeta } from '../stores/assetMeta'
 import { switchMode, useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
-import { type StaleKind, STALE_TEXT, STALE_HINT, useStale } from '../features/runs/stale'
+import { useStale } from '../features/runs/stale'
 import { Icon } from '../ui/icons'
 import { MenuSelect } from '../ui/MenuSelect'
 import { EmptyState } from '../ui/EmptyState'
 import { BoardTextPreview } from './BoardTextPreview'
 import { boardReadingOrder } from './boardReadingOrder'
+import { candidatesOf, contentOf, statusOf } from './boardContent'
 
 /** 故事板卡片的最大高度 */
 const MEDIA_MAX_H = 320
@@ -37,54 +37,6 @@ const FILTERS: Array<{ value: Filter; label: string }> = [
   { value: 'done', label: '已生成' },
   { value: 'todo', label: '待生成' },
 ]
-
-type Status = { label: string; tone: string; hint?: string }
-
-const STATUS: Record<string, Status> = {
-  queued: { label: '排队中', tone: '' },
-  running: { label: '生成中', tone: 'ui-tag-accent' },
-  failed: { label: '失败', tone: 'ui-tag-danger' },
-  canceled: { label: '已取消', tone: '' },
-}
-
-/** 审片只读主输出的候选，避免副输出或说明文字混入。 */
-function candidatesOf(el: CanvasElement) {
-  if (el.kind !== 'node') return []
-  const port = el.ports?.outputs[0]?.id ?? primaryResult(el)?.port ?? el.results?.[0]?.port
-  return (el.results ?? []).filter((result) => result.port === port)
-}
-
-function statusOf(el: CanvasElement, stale?: StaleKind): Status | undefined {
-  if (stale && !['queued', 'running', 'failed'].includes(el.run?.status ?? ''))
-    return {
-      label: STALE_TEXT[stale],
-      hint: STALE_HINT[stale],
-      tone: stale === 'kept' ? '' : 'ui-tag-warning',
-    }
-  if (el.run?.status === 'canceled' && primaryResult(el)?.runId === el.run.id)
-    return { label: '已取回', tone: 'ui-tag-accent' }
-  return el.run && STATUS[el.run.status]
-}
-
-/** 元素当前展示的内容：素材本身，或节点当前采用的结果 */
-type Content =
-  | { type: 'text'; text: string }
-  | { type: 'image' | 'video' | 'audio'; assetId: string }
-  | null
-
-function contentOf(el: CanvasElement, catalog: Catalog | null): Content {
-  if (el.kind === 'markdown') return el.text?.trim() ? { type: 'text', text: el.text } : null
-  const info = el.kind === 'node' ? findNode(catalog, el.nodeType) : undefined
-  // 就地计算的文本参数即正文；历史运行结果可能已经过期。
-  if (info && isPure(info) && info.outputs[0]?.type === 'text') {
-    const text = el.params?.[promptKey(info) ?? 'text']
-    return typeof text === 'string' && text.trim() ? { type: 'text', text } : null
-  }
-  const v = el.kind === 'node' ? primaryResult(el)?.value : undefined
-  if (v?.type === 'text') return v.text.trim() ? { type: 'text', text: v.text } : null
-  const m = elementMedia(el)
-  return m && { type: m.kind, assetId: m.assetId }
-}
 
 /**
  * 故事板视图（左上角的“工作流 / 故事板”切换）：

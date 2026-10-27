@@ -69,6 +69,8 @@ function HistoryPanel({ engine }: { engine: Engine }) {
   const [size, setSize] = useState(160)
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
   const [busy, setBusy] = useState(false)
+  const pending = useRef(false)
+  const [placeError, setPlaceError] = useState<string | null>(null)
   const mounted = useRef(false)
   const close = () => toggle(false)
 
@@ -125,7 +127,15 @@ function HistoryPanel({ engine }: { engine: Engine }) {
   }
 
   const place = async () => {
+    if (pending.current || closing || !selected.length || useCanvas.getState().engine !== engine)
+      return
+    if (doc.readOnly) {
+      setPlaceError('当前画布只读，恢复编辑权限后再放入素材。')
+      return
+    }
+    pending.current = true
     setBusy(true)
+    setPlaceError(null)
     const batch = beginImport(engine, selected.length)
     const view = watchImportView(engine, batch.signal)
     const viewport = engine.camera.viewRect
@@ -142,6 +152,7 @@ function HistoryPanel({ engine }: { engine: Engine }) {
         }),
       )
       batch.signal.throwIfAborted()
+      if (doc.readOnly) throw new Error('画布已变为只读，恢复编辑权限后再试')
       // 以视口中央为中心排成网格，每行 ROW 个，一次写入（一步撤销）
       const items = inputs.filter((i) => i !== null)
       const rows: Array<typeof items> = []
@@ -169,8 +180,13 @@ function HistoryPanel({ engine }: { engine: Engine }) {
       } else if (created.length) action = importLocation(engine, created)
       notes.push(`已放到画布上：${created.length} 个素材`)
     } catch (err) {
-      if (!batch.signal.aborted) notes.push((err as Error).message)
+      if (!batch.signal.aborted) {
+        const message = `放入失败：${err instanceof Error ? err.message : '素材读取失败'}。选择已保留，请重试。`
+        notes.push(message)
+        if (mounted.current) setPlaceError(message)
+      }
     } finally {
+      pending.current = false
       view.dispose()
       batch.finish(notes, action)
       if (mounted.current) setBusy(false)
@@ -309,9 +325,14 @@ function HistoryPanel({ engine }: { engine: Engine }) {
               onClick={() => void place()}
             >
               <Icon name="upload" />
-              放到画布上
+              {busy ? '正在读取素材…' : '放到画布上'}
             </button>
           </div>
+          {placeError && (
+            <p role="alert" className="w-full text-xs text-danger">
+              {placeError}
+            </p>
+          )}
           {downloads.total > 0 && !downloads.running && (
             <span
               role="status"
