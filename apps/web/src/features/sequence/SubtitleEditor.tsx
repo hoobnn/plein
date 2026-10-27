@@ -12,6 +12,9 @@ import { ModelPicker } from '../generator/ModelPicker'
 import type { RecoverJobOptions, SubtitleRecognitionInfo } from '@plein/protocol'
 import { useEffect, useId, useState } from 'react'
 
+/** 字幕草稿：用户刚输入的文字，以及这次编辑有没有写进文档 */
+type SubtitleDraft = { text: string; saved: boolean }
+
 /** 字幕编辑的是保存到文档的同一条轨；隐藏不删除，方便逐句恢复。 */
 export function SubtitleEditor({
   params,
@@ -44,17 +47,24 @@ export function SubtitleEditor({
   const track = params.subtitleTrack
   const stale = subtitleTrackStale(params, rows)
   // 本地草稿：字幕轨过期时编辑写不进文档，用户刚输入的文字不能被回滚冲掉
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [drafts, setDrafts] = useState<Record<string, SubtitleDraft>>({})
   useEffect(() => {
-    // 文档里的字幕真的变了才丢掉草稿；被拒绝的编辑要留着
+    // 文档里的字幕和草稿一致：这次编辑已经写进文档，之后按文档走，
+    // 撤销重做和别人的改动都要跟得上，不能被草稿挡住。
+    // 一直对不上：这次编辑被拒（字幕轨过期），草稿留着给用户核对。
     setDrafts((old) => {
       if (!Object.keys(old).length) return old
-      const next: Record<string, string> = {}
-      for (const [id, text] of Object.entries(old)) {
+      const next: Record<string, SubtitleDraft> = {}
+      for (const [id, draft] of Object.entries(old)) {
         const cue = track?.cues.find((q) => q.id === id)
-        if (cue && cue.text !== text) next[id] = text
+        if (!cue) continue
+        if (cue.text === draft.text) {
+          if (!draft.saved) next[id] = { ...draft, saved: true }
+          continue
+        }
+        if (!draft.saved) next[id] = draft
       }
-      return Object.keys(next).length ? next : old
+      return next
     })
   }, [track])
   const unmappedOccurrences = new Map<string, number>()
@@ -170,7 +180,7 @@ export function SubtitleEditor({
             <section key={source} className="seq-section">
               <h3 className="ui-section-title">镜头 {index + 1}</h3>
               {cues.map((q, i) => {
-                const text = drafts[q.id] ?? q.text
+                const text = drafts[q.id]?.text ?? q.text
                 const empty = !q.hidden && !text.trim()
                 const invalidTime = !q.hidden && q.end <= q.start
                 const textError = `${validationId}-${encodeURIComponent(q.id)}-text`
@@ -191,11 +201,14 @@ export function SubtitleEditor({
                     <textarea
                       aria-label={`镜头 ${index + 1} 字幕 ${i + 1} 文本`}
                       className="ui-input w-full"
-                      value={drafts[q.id] ?? q.text}
+                      value={drafts[q.id]?.text ?? q.text}
                       aria-invalid={empty || undefined}
                       aria-describedby={empty ? textError : undefined}
                       onChange={(e) => {
-                        setDrafts((old) => ({ ...old, [q.id]: e.target.value }))
+                        setDrafts((old) => ({
+                          ...old,
+                          [q.id]: { text: e.target.value, saved: false },
+                        }))
                         patch(q.id, { text: e.target.value })
                       }}
                     />
