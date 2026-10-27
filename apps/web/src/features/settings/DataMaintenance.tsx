@@ -55,7 +55,10 @@ export function DataMaintenance() {
       cleanupPreview.current?.focus({ preventScroll: true })
     }
   }, [preview])
-  const perform = async (fn: () => Promise<string | void>) => {
+  const perform = async (
+    fn: () => Promise<string | void>,
+    options?: { dropsPreview?: boolean },
+  ) => {
     setBusy(true)
     setError(null)
     setMessage(null)
@@ -65,7 +68,9 @@ export function DataMaintenance() {
       await Promise.all([status.refetch(), space.refetch()])
     } catch (e) {
       setError((e as Error).message)
-      setPreview(null)
+      // 只有清理这一步失败才作废预检结果：预检的令牌是一次性的，
+      // 别的操作失败不该把用户已经看过的「可清理素材」预览一起清掉。
+      if (options?.dropsPreview) setPreview(null)
     } finally {
       setBusy(false)
     }
@@ -339,11 +344,15 @@ export function DataMaintenance() {
                   className="ui-btn ui-btn-secondary"
                   disabled={locked}
                   onClick={() =>
-                    void perform(async () => {
-                      const result = await maintenanceApi.cleanup(preview.token)
-                      setPreview(null)
-                      return `已将 ${result.assets} 个素材移入回收站`
-                    })
+                    void perform(
+                      async () => {
+                        const result = await maintenanceApi.cleanup(preview.token)
+                        setPreview(null)
+                        return `已将 ${result.assets} 个素材移入回收站`
+                      },
+                      // 清理的令牌用过即废：失败后必须重新预检，不能拿旧结果再试。
+                      { dropsPreview: true },
+                    )
                   }
                 >
                   确认移入回收站
