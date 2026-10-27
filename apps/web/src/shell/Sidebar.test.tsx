@@ -123,10 +123,8 @@ function setupLayers(opts: { frame?: boolean } = {}) {
 const tree = () => within(screen.getByRole('complementary', { name: '侧栏' }))
 const rows = () => tree().queryAllByRole('treeitem')
 
-it('搜索过滤实时响应，Escape 与按钮关闭后焦点返回搜索入口并恢复结果', async () => {
+it('搜索过滤实时响应，Escape 先清空查询，再按才收起并归还焦点', async () => {
   const f = setupLayers()
-  const { user } = { user: null as never }
-  void user
   expect(rows()).toHaveLength(3)
   tree().getByRole('button', { name: '搜索' }).click()
   const query = await tree().findByRole<HTMLInputElement>('textbox', {
@@ -137,9 +135,14 @@ it('搜索过滤实时响应，Escape 与按钮关闭后焦点返回搜索入口
     fireEvent.input(query, { target: { value: '海边' } })
   })
   await waitFor(() => expect(rows()).toHaveLength(2))
+  // 第一次 Esc 只清空查询：搜索上下文和焦点都保留
+  fireEvent.keyDown(query, { key: 'Escape' })
+  await waitFor(() => expect(rows()).toHaveLength(3))
+  expect(tree().getByRole('textbox', { name: '搜索画布元素' })).toBe(query)
+  expect(document.activeElement).toBe(query)
+  // 第二次 Esc 收起搜索，焦点回到入口
   fireEvent.keyDown(query, { key: 'Escape' })
   await waitFor(() => expect(tree().queryByRole('textbox')).toBeNull())
-  expect(rows()).toHaveLength(3)
   const open = tree().getByRole('button', { name: '搜索' })
   expect(document.activeElement).toBe(open)
   open.click()
@@ -259,7 +262,8 @@ it('筛选期间停用分组折叠并说明，退出后保留折叠偏好', asyn
   expect(group.getAttribute('aria-expanded')).toBe('true')
   expect((caret as HTMLButtonElement).disabled).toBe(true)
   expect(caret.getAttribute('title')).toBe('筛选时分组保持展开，清除筛选后可折叠')
-  // 退出筛选：偏好恢复为收起
+  // 退出搜索（Esc 清空后再 Esc 收起）：偏好恢复为收起
+  fireEvent.keyDown(query, { key: 'Escape' })
   fireEvent.keyDown(query, { key: 'Escape' })
   await waitFor(() => expect(rows()).toHaveLength(2))
   expect(group.getAttribute('aria-expanded')).toBe('false')
@@ -553,17 +557,35 @@ it('资产页签：读取失败说明原因并原地重试，恢复后显示空�
       return Response.json([])
     }
   })
-  useLibrary.setState({ error: '资产列表暂不可用', loaded: false, loading: false })
+  useLibrary.setState({
+    error: '资产列表暂不可用',
+    loaded: false,
+    loading: false,
+    projectId: 'canvas-1',
+  })
   renderApp(<Sidebar open />)
   tree().getByRole('tab', { name: '资产' }).click()
   expect(await tree().findByRole('alert')).toBeTruthy()
   expect(tree().getByRole('alert').textContent).toContain('资产列表暂不可用')
   expect(tree().queryByText('本项目还没有资产')).toBeNull()
+  // 读取失败时计数如实说明状态，不给没有依据的数字
+  expect(tree().getByText('资产库未读取')).toBeTruthy()
   fail = false
   tree().getByRole('button', { name: '重新读取' }).click()
   await waitFor(() => expect(tree().queryByRole('alert')).toBeNull())
   expect(tree().getByText('本项目还没有资产')).toBeTruthy()
   expect(tree().getByText('共 0 项资产')).toBeTruthy()
+})
+
+it('资产页签读取期间显示进行中状态，完成后给出计数', async () => {
+  const { engine } = makeEngine()
+  useCanvas.setState({ engine, canvasId: 'canvas-1' })
+  useLibrary.setState({ loaded: false, loading: true, error: null, projectId: 'canvas-1' })
+  renderApp(<Sidebar open />)
+  tree().getByRole('tab', { name: '资产' }).click()
+  // 正文状态与页脚计数都说明读取进行中
+  expect((await tree().findByRole('status')).textContent).toContain('正在读取资产库')
+  expect(tree().getAllByText('正在读取资产库…')).toHaveLength(2)
 })
 
 it('资产页签：已有条目按类别分组显示并统计', async () => {

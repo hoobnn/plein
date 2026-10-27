@@ -640,8 +640,9 @@ it('重试只对最新一次的失败任务出现，并带上原运行身份', a
     },
   )
   expect(await within(panel()).findAllByRole('button', { name: '任务目标原名' })).toHaveLength(2)
-  // 两条记录都在，但只有节点当前这次（newer 已成功）之后的旧失败不提供重试
+  // 两条记录都在，但只有节点当前这次（newer 已成功）之后的旧失败不提供重试，并说明原因
   expect(within(panel()).queryByRole('button', { name: '重试' })).toBeNull()
+  expect(within(panel()).getByText('失败 · 已有更新的运行')).toBeTruthy()
   f.state.list = {
     jobs: [job({ id: 'latest', status: 'failed', createdAt: 2 })],
     groups: [],

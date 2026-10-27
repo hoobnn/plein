@@ -157,13 +157,11 @@ function Count({ engine }: { engine: Engine }) {
 }
 
 function AssetCount() {
-  const { items, projectId, loaded } = useLibrary()
+  const { items, projectId, loading, error } = useLibrary()
   const n = items.filter((item) => projectId && item.projectId === projectId).length
-  return (
-    <span className="px-2 text-xs text-ink-subtle tabular-nums">
-      {loaded ? `共 ${n} 项资产` : '项目资产'}
-    </span>
-  )
+  // 读取中 / 失败时如实说明，不给出没有依据的计数
+  const label = error ? '资产库未读取' : loading ? '正在读取资产库…' : `共 ${n} 项资产`
+  return <span className="px-2 text-xs text-ink-subtle tabular-nums">{label}</span>
 }
 
 /** 元素中心是否落在没被侧栏等浮层挡住的视口里 */
@@ -213,6 +211,15 @@ function Layers({ engine }: { engine: Engine }) {
     restoreSearchFocus.current = true
     setQuery('')
     setSearching(false)
+  }
+  // 第一次 Esc 只清空查询（输入了半天别一按就全丢），清空后再按才收起搜索。
+  const searchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    e.stopPropagation()
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return
+    if (e.key !== 'Escape') return
+    e.preventDefault()
+    if (query) setQuery('')
+    else closeSearch()
   }
   const listRef = useRef<HTMLDivElement>(null)
   const activeRow = useRef<{ element: HTMLElement; index: number } | null>(null)
@@ -460,14 +467,7 @@ function Layers({ engine }: { engine: Engine }) {
               aria-label="搜索画布元素"
               aria-describedby={type !== 'all' ? typeHintId : undefined}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                e.stopPropagation()
-                if (e.nativeEvent.isComposing || e.keyCode === 229) return
-                if (e.key === 'Escape') {
-                  e.preventDefault()
-                  closeSearch()
-                }
-              }}
+              onKeyDown={searchKeyDown}
               className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-subtle"
             />
             <button

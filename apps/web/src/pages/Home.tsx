@@ -314,7 +314,7 @@ export function Home({ onOpenSettings }: { onOpenSettings(): void }) {
           </p>
         )}
         {error && (
-          <p role="alert" className="text-sm text-danger">
+          <p ref={reveal} role="alert" className="text-sm text-danger">
             操作失败：{error}
           </p>
         )}

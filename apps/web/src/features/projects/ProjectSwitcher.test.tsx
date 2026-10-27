@@ -89,17 +89,20 @@ interface SwitcherHarness {
   fetch: ReturnType<typeof mockFetch>
   user: ReturnType<typeof renderApp>['user']
   menu: HTMLElement
+  /** 画布清单的当前状态：默认路由按它回放，测试可改写 */
+  state: { canvases: Canvas[] }
   unmount(): void
 }
 
-/** 渲染切换器并打开画布下拉 */
+/** 渲染切换器并打开画布下拉；canvases 可在路由里改写（模拟服务端最新状态） */
 async function openMenu(
-  canvases: Canvas[] = [canvas],
+  initial: Canvas[] = [canvas],
   routes: Record<
     string,
     (request: Request, url: URL) => Response | Promise<Response> | undefined
   > = {},
 ): Promise<SwitcherHarness> {
+  const state = { canvases: [...initial] }
   const fetch = mockFetch((request) => {
     const url = new URL(request.url)
     const route = routes[`${request.method} ${url.pathname}`]
@@ -107,7 +110,7 @@ async function openMenu(
     if (request.method === 'GET' && url.pathname === `/api/projects/${project.id}`)
       return Response.json(project)
     if (request.method === 'GET' && url.pathname === `/api/projects/${project.id}/canvases`)
-      return Response.json(canvases)
+      return Response.json(state.canvases)
   })
   useCanvas.setState({ canvasId: canvas.id })
   const rendered = renderApp(<ProjectSwitcher canvas={canvas} />, {
@@ -116,7 +119,7 @@ async function openMenu(
   const { user } = rendered
   await user.click(await screen.findByRole('button', { name: '切换画布' }))
   const menu = await screen.findByRole('dialog', { name: '画布' })
-  return { fetch, user, menu, unmount: () => rendered.unmount() }
+  return { fetch, user, menu, state, unmount: () => rendered.unmount() }
 }
 
 it('画布清单首次加载等待有反馈，完成后可切换', async () => {
@@ -252,9 +255,36 @@ it('新建画布迟到应答：关闭窗口或切走后不接管导航，列表�
   expect(location.hash).toBe(`#/c/${secondCanvas.id}`)
 })
 
-it('删除当前画布成功后切到下一张画布', async () => {
+it('删除当前画布成功后按最新清单切到下一张', async () => {
+  // 删除后清单已被其他客户端更新：重拉到的最新画布优先于过期的旧清单。
+  // list 在 openMenu 之前声明，路由闭包立刻可用。
+  const created: Canvas = { ...secondCanvas, id: 'canvas-new', title: '同伴新建的画布' }
+  const list = { canvases: [canvas, secondCanvas] as Canvas[] }
   const f = await openMenu([canvas, secondCanvas], {
-    [`DELETE /api/canvases/${canvas.id}`]: () => new Response(null, { status: 204 }),
+    [`DELETE /api/canvases/${canvas.id}`]: () => {
+      list.canvases = [secondCanvas, created]
+      return new Response(null, { status: 204 })
+    },
+    [`GET /api/projects/${project.id}/canvases`]: () => Response.json(list.canvases),
+  })
+  await f.user.click(within(f.menu).getByRole('button', { name: '删除当前画布' }))
+  const dialog = await screen.findByRole('dialog', { name: `删除画布「${canvas.title}」？` })
+  await f.user.click(within(dialog).getByRole('button', { name: '删除' }))
+  await waitFor(() => expect(location.hash).toBe(`#/c/${secondCanvas.id}`))
+})
+
+it('删除后清单读取失败时退回旧清单，仍切到下一张画布', async () => {
+  const list = { canvases: [canvas, secondCanvas] as Canvas[], fail: false }
+  const f = await openMenu([canvas, secondCanvas], {
+    [`DELETE /api/canvases/${canvas.id}`]: () => {
+      list.fail = true
+      return new Response(null, { status: 204 })
+    },
+    // 首次加载成功（下拉里有旧清单），删除后的重拉失败
+    [`GET /api/projects/${project.id}/canvases`]: () =>
+      list.fail
+        ? Response.json({ message: '清单暂时不可用' }, { status: 503 })
+        : Response.json(list.canvases),
   })
   await f.user.click(within(f.menu).getByRole('button', { name: '删除当前画布' }))
   const dialog = await screen.findByRole('dialog', { name: `删除画布「${canvas.title}」？` })
@@ -263,8 +293,13 @@ it('删除当前画布成功后切到下一张画布', async () => {
 })
 
 it('删除最后一张画布成功后回首页', async () => {
+  const list = { canvases: [canvas] as Canvas[] }
   const f = await openMenu([canvas], {
-    [`DELETE /api/canvases/${canvas.id}`]: () => new Response(null, { status: 204 }),
+    [`DELETE /api/canvases/${canvas.id}`]: () => {
+      list.canvases = []
+      return new Response(null, { status: 204 })
+    },
+    [`GET /api/projects/${project.id}/canvases`]: () => Response.json(list.canvases),
   })
   await f.user.click(within(f.menu).getByRole('button', { name: '删除当前画布' }))
   const dialog = await screen.findByRole('dialog', { name: `删除画布「${canvas.title}」？` })

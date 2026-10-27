@@ -408,6 +408,9 @@ function JobRow(props: {
       : undefined
   let detail =
     job.status === 'canceled' && job.canceledBy ? CANCELED_BY[job.canceledBy] : STATUS[job.status]
+  // 不是节点最新一次的失败记录不能再重试（会重放旧输入），说明原因而不是悄悄隐藏按钮
+  if ((job.status === 'failed' || job.status === 'canceled') && !props.latest)
+    detail += ' · 已有更新的运行'
   // 不到一秒就结束的（多半是一提交就被拒）不写用时
   if (!active && job.startedAt && job.finishedAt && job.finishedAt - job.startedAt >= 1000)
     detail += ` · 用时 ${duration(job.finishedAt - job.startedAt)}`

@@ -2,7 +2,13 @@ import type { Canvas } from '@plein/protocol'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../../api/client'
-import { cacheCanvas, cacheProject, invalidateProjects, queryKeys } from '../../api/query'
+import {
+  cacheCanvas,
+  cacheProject,
+  invalidateProjects,
+  queryClient,
+  queryKeys,
+} from '../../api/query'
 import { navigate } from '../../router'
 import { useCanvas } from '../../stores/canvas'
 import { confirmDialog, promptDialog } from '../../ui/Dialog'
@@ -140,8 +146,20 @@ export function ProjectSwitcher({ canvas }: { canvas: Canvas }) {
       return
     }
     // 已回到原画布时仍需离开刚被删除的文档；停留在其他画布则保持当前位置。
-    if (useCanvas.getState().canvasId !== canvas.id) return
-    const next = canvases.find((c) => c.id !== canvas.id)
+    if (!isCurrent()) return
+    // 删除后重拉一次清单再选下一张：列表可能已被其他客户端更新，别把用户送回首页。
+    let others: Canvas[]
+    try {
+      const fresh = await api.projectCanvases(canvas.projectId)
+      others = fresh.filter((c) => c.id !== canvas.id)
+      queryClient.setQueryData(queryKeys.projectCanvases(canvas.projectId), fresh)
+    } catch {
+      // 清单读取失败时退回查询缓存里上一次已知的清单
+      const cached =
+        queryClient.getQueryData<Canvas[]>(queryKeys.projectCanvases(canvas.projectId)) ?? canvases
+      others = cached.filter((c) => c.id !== canvas.id)
+    }
+    const next = others[0]
     navigate(next ? { name: 'canvas', id: next.id } : { name: 'home' }, { replace: true })
   }
 

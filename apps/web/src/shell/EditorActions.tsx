@@ -43,6 +43,8 @@ export function EditorActions({
           label: '检查点',
           icon: 'history' as const,
           disabled: !projectId,
+          // 禁用时说明原因，而不是只变灰
+          disabledHint: '项目信息还在读取，稍后即可打开检查点',
           run: () => {
             if (projectId && canvasId) useCheckpoints.getState().show({ projectId, canvasId })
           },
@@ -63,7 +65,7 @@ export function EditorActions({
             key={action.label}
             type="button"
             onClick={action.run}
-            title={action.hint}
+            title={action.disabled ? action.disabledHint : action.hint}
             disabled={action.disabled}
             className="ui-bar-btn gap-1.5"
           >
@@ -134,6 +136,7 @@ export function EditorActions({
                     key={action.label}
                     onClick={action.run}
                     disabled={action.disabled}
+                    title={action.disabled ? action.disabledHint : action.hint}
                     className="ui-menu-item"
                   >
                     <Icon name={action.icon} />
