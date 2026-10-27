@@ -118,11 +118,20 @@ function readSequence(engine: Engine, id: string, catalog = useCatalog.getState(
   const inputs = { clips: values('clips'), dialogue: values('dialogue'), sfx: values('sfx') }
   const named = new Map<string, CanvasElement>()
   for (const list of ups.values()) for (const u of list) named.set(u.source.id, u.source)
-  const rows: Row[] = arrangeSequence(params, inputs).map((c) => ({
-    ...c,
-    el: c.source ? (engine.doc.get(c.source) ?? named.get(c.source)) : undefined,
-    pending: !c.clip.assetId,
-  }))
+  const canvasId = useCanvas.getState().canvasId
+  const rows: Row[] = arrangeSequence(params, inputs)
+    // 来源被删掉的剪辑实例不再占一行：素材已经没有了，列出来也播不出来
+    .filter(
+      (c) =>
+        !c.source ||
+        engine.doc.has(c.source) ||
+        (c.sourceCanvasId !== undefined && c.sourceCanvasId !== canvasId),
+    )
+    .map((c) => ({
+      ...c,
+      el: c.source ? (engine.doc.get(c.source) ?? named.get(c.source)) : undefined,
+      pending: !c.clip.assetId,
+    }))
   const options = (port: 'dialogue' | 'sfx') =>
     (ups.get(port) ?? []).map((u, i) => ({
       value: u.source.id,
