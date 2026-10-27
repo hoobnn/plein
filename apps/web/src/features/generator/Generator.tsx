@@ -54,6 +54,7 @@ import { SpeechInstruction } from './SpeechInstruction'
 import { countUnit, isMainField, type ModelOptions, ParamsPill } from './ParamsPill'
 import { ShotPresets } from './ShotPresets'
 import { PromptBox } from './PromptBox'
+import { runBlockReason, runDisabled as runDisabledState } from './runBlock'
 import { PromptTools } from './PromptTools'
 import { AiAnalysisEntry } from '../ai-shot-analysis/AiAnalysisEditor'
 import { RecipeLibrary } from './RecipeLibrary'
@@ -264,6 +265,26 @@ export function GeneratorPanel({
   const countField = fieldsOf(node).find(([k]) => k === 'count')
   const hasParams = paramFields.length > 0 || Object.keys(rest).length > 0 || !!modelOptions
   const runLabel = running ? '取消' : el.results?.length ? '重新生成' : '生成'
+  // 按钮被禁用时把原因写清楚：只有校验问题会显示在面板上，
+  // 其余（正在提交、实际输入还没备好、输入已过期重算）不写就只剩一个点不动的按钮。
+  const blockInput = {
+    canceling,
+    awaitingAcceptance,
+    problem,
+    running,
+    requiresInput,
+    loading: input.loading,
+    hasInput: !!input.data?.inputHash,
+    stale: input.stale,
+    error: !!input.error,
+  }
+  const blockReason = runBlockReason(blockInput)
+  const runDisabled = runDisabledState(blockInput)
+  // 只差实际输入这一种（没有校验问题、任务没在跑），才需要在面板上说明
+  const inputWaiting =
+    !running &&
+    !problem &&
+    (input.stale || (requiresInput && !input.loading && !input.data?.inputHash))
 
   // 双击节点、套用预设后聚焦提示词；有【占位】时选中第一个，直接打字替换
   useEffect(() => {
@@ -661,18 +682,9 @@ export function GeneratorPanel({
                 <button
                   type="button"
                   onClick={requestRun}
-                  disabled={
-                    canceling ||
-                    awaitingAcceptance ||
-                    (!running && !!problem) ||
-                    // 输入还在准备：按下先记下，备好后自动提交
-                    (!running && requiresInput && !input.loading && !input.data?.inputHash) ||
-                    // 预览已经过期：这份 inputHash 提交上去会被服务端判成输入已变；
-                    // 刷新失败时拿不到新输入，不锁死生成
-                    (!running && input.stale && !input.error)
-                  }
+                  disabled={runDisabled}
                   aria-busy={canceling || awaitingAcceptance}
-                  title={problem ?? (running ? runLabel : withShortcut(runLabel, 'mod+enter'))}
+                  title={blockReason ?? (running ? runLabel : withShortcut(runLabel, 'mod+enter'))}
                   aria-label={runLabel}
                   className={`ui-btn ui-icon-btn size-8 shrink-0 rounded-lg ${running ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
                 >
@@ -693,6 +705,12 @@ export function GeneratorPanel({
           {awaitingAcceptance && (
             <p role="status" className="text-xs text-ink-muted">
               正在提交生成请求…
+            </p>
+          )}
+          {/* 实际输入还没备好或已过期：按钮是禁用的，不说清楚就只剩一个点不动的按钮 */}
+          {!canceling && !awaitingAcceptance && inputWaiting && (
+            <p role="status" className="text-xs text-ink-muted">
+              {blockReason}
             </p>
           )}
         </footer>

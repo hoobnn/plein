@@ -1,5 +1,5 @@
 import type { Catalog } from '@plein/protocol'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { NodeInfo } from '../../canvas/nodes'
 import { Icon } from '../../ui/icons'
 import { Popover } from '../../ui/Popover'
@@ -7,6 +7,7 @@ import { Presence } from '../../ui/Presence'
 import { ProviderIcon } from '../../ui/ProviderIcon'
 import { SlidePill, SlideSwap } from '../../ui/Slide'
 import { useSession } from '../../stores/session'
+import { pushRecentModel, readRecentModels, recentModelsKey } from './recentModels'
 
 /** 模型选择：左栏选平台、右栏列该平台的模型。不替用户挑，没选时按钮提示去选 */
 export function ModelPicker({
@@ -22,17 +23,13 @@ export function ModelPicker({
 }) {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
   const [query, setQuery] = useState('')
-  const recentKey = `plein:recent-models:${useSession((s) => s.info?.principal?.id) ?? 'local'}`
-  const [recent, setRecent] = useState<string[]>(() => {
-    try {
-      const stored: unknown = JSON.parse(localStorage.getItem(recentKey) ?? '[]')
-      return Array.isArray(stored)
-        ? stored.filter((v): v is string => typeof v === 'string').slice(0, 6)
-        : []
-    } catch {
-      return []
-    }
-  })
+  const recentKey = recentModelsKey(useSession((s) => s.info?.principal?.id))
+  // 会话是异步就绪的：挂载时读到的键可能还没带上用户 id，
+  // 用户就绪后要按新键重读一次，否则「最近」一直空着。
+  const [recent, setRecent] = useState<string[]>(() => readRecentModels(recentModelsKey(null)))
+  useEffect(() => {
+    setRecent(readRecentModels(recentKey))
+  }, [recentKey])
   const providers = (catalog?.providers ?? [])
     .filter((p) => p.enabled && p.configured)
     .map((p) => ({
@@ -46,13 +43,7 @@ export function ModelPicker({
     )
     .find((m) => m.ref === value)
   const pick = (v: string) => {
-    const next = [v, ...recent.filter((r) => r !== v)].slice(0, 6)
-    setRecent(next)
-    try {
-      localStorage.setItem(recentKey, JSON.stringify(next))
-    } catch {
-      /* 隐私模式不影响选择 */
-    }
+    setRecent(pushRecentModel(recentKey, v))
     onChange(v)
     setAnchor(null)
   }

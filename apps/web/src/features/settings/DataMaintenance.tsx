@@ -19,7 +19,7 @@ const bytes = (value: number) => {
   return `${(value / (unit === 'GB' ? 1024 ** 3 : unit === 'MB' ? 1024 ** 2 : 1024)).toFixed(1)} ${unit}`
 }
 const date = (value: number | null) =>
-  value == null ? '尚无记录' : new Date(value).toLocaleString()
+  value == null ? '尚无记录' : new Date(value).toLocaleString('zh-CN', { hour12: false })
 
 /** 设置中的数据维护；接口仅在本机模式开放。 */
 export function DataMaintenance() {
