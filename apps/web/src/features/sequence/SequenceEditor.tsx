@@ -121,9 +121,11 @@ function readSequence(engine: Engine, id: string, catalog = useCatalog.getState(
   const canvasId = useCanvas.getState().canvasId
   const rows: Row[] = arrangeSequence(params, inputs)
     // 来源被删掉的剪辑实例不再占一行：素材已经没有了，列出来也播不出来
+    // （固定段自己带着文件，来源删了照样能播，界面上另有一句说明）
     .filter(
       (c) =>
         !c.source ||
+        !!c.segment ||
         engine.doc.has(c.source) ||
         (c.clip.sourceCanvasId !== undefined && c.clip.sourceCanvasId !== canvasId),
     )
