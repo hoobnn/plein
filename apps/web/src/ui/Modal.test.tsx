@@ -88,6 +88,42 @@ it('同级上层设置只消费一次 Escape，关闭后保留编辑器及原焦
   await waitFor(() => expect(document.activeElement).toBe(settings))
 })
 
+it('内层编辑器消费 Escape 取消草稿后，下一次普通 Escape 才关闭父弹窗', async () => {
+  function Editor() {
+    const [open, setOpen] = useState(true)
+    const [draft, setDraft] = useState('原名称')
+    return (
+      <Presence>
+        {open && (
+          <Modal label="改名面板" onClose={() => setOpen(false)}>
+            <input
+              aria-label="名称"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape' && draft !== '原名称') {
+                  event.preventDefault()
+                  setDraft('原名称')
+                }
+              }}
+            />
+          </Modal>
+        )}
+      </Presence>
+    )
+  }
+  const { user } = renderApp(<Editor />)
+  const input = screen.getByRole<HTMLInputElement>('textbox', { name: '名称' })
+  await user.clear(input)
+  await user.type(input, '未保存草稿')
+  await user.keyboard('{Escape}')
+  expect(screen.getByRole('dialog', { name: '改名面板' })).toBeTruthy()
+  expect(input.value).toBe('原名称')
+  expect(document.activeElement).toBe(input)
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+
 it.each(['{Enter}', ' ', '{Escape}'])('下拉键盘 %s 只处理当前选择，不关闭父编辑器', async (key) => {
   const { user } = renderApp(<Panels />)
   await user.click(screen.getByText('打开'))

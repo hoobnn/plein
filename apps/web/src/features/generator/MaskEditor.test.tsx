@@ -5,7 +5,7 @@ import { act, fireEvent, renderApp, screen, waitFor } from '../../testing/render
 import { mockFetch } from '../../testing/fetch'
 import { mockResizeObserver } from '../../testing/browser'
 import { MaskEditor } from './MaskEditor'
-import { mockMaskCanvas } from './maskTesting'
+import { mockMaskCanvas } from './testing/maskCanvas'
 
 let serial = 0
 async function setup(options: { failMeta?: boolean; initial?: boolean; failMask?: boolean } = {}) {
@@ -88,8 +88,10 @@ async function setup(options: { failMeta?: boolean; initial?: boolean; failMask?
   const ready = async () => {
     resize()
     await waitFor(() => expect(screen.queryByRole('img')).toBeTruthy())
-    for (const image of images.splice(0)) await act(() => fireEvent.load(image))
-    fireEvent.load(screen.getByRole('img'))
+    await act(async () => {
+      for (const image of images.splice(0)) fireEvent.load(image)
+      fireEvent.load(screen.getByRole('img'))
+    })
     const canvas = (await screen.findByTestId('mask-canvas')) as HTMLCanvasElement
     vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 320, 192))
     return canvas

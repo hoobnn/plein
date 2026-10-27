@@ -42,6 +42,7 @@ import { ResultActions } from '../../shell/ResultBar'
 import { AssetDownloadButton } from '../../shell/AssetDownloadButton'
 import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
 import { InputPreview, issueText, useInputPreview } from './InputPreview'
+import { optionRecord, replaceModelOptions } from './modelOptions'
 import { ContinuedFrom } from './ContinuedFrom'
 import { MaskField } from './MaskField'
 import { Inputs } from './Inputs'
@@ -794,4 +795,3 @@ function NameField({
     </div>
   )
 }
-import { optionRecord, replaceModelOptions } from './modelOptions'

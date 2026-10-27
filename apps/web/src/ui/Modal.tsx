@@ -65,6 +65,9 @@ export function Modal({
       open={!closing}
       onOpenChange={(open, details) => {
         const event = details.event
+        // 内层若在 Base UI 请求关闭前 preventDefault，约定为已处理本次 Esc，父弹窗保留。
+        // 内层自己关闭时应直接调用 onClose；只需阻止浏览器默认行为的处理器不能借此请求父层关闭。
+        // Base UI 自己的 preventDefault 在 onOpenChange 之后，不会拦住普通 Esc。
         if (
           !open &&
           details.reason === 'escape-key' &&

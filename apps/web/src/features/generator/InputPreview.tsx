@@ -22,6 +22,7 @@ export function useInputPreview(engine: Engine, canvasId: string | null, nodeId:
   const [rev, setRev] = useState(0)
   // 取这份预览时的文档版本；文档又变了，这份预览就不是当前状态了。
   const dataRev = useRef(-1)
+  // 记已发起读取的目标；未发请求就被取消的首次计时仍应立即重排（含 StrictMode）。
   const previewTarget = useRef<string | null>(null)
   const activeRequest = useRef<AbortController | null>(null)
   useEffect(() => engine.doc.subscribe(() => setRev((r) => r + 1)), [engine])

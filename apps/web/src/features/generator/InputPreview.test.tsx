@@ -113,6 +113,33 @@ it('StrictMode 首次立即读取，文档连续变化防抖，失败可重试�
   expect(methods).toEqual(['GET', 'GET', 'GET'])
 })
 
+it('首次计时触发前连续改动只读取最新版本，不重复请求或退回防抖等待', async () => {
+  vi.useFakeTimers()
+  const { engine, doc, id } = fixture()
+  const requests = mockFetch((request) => {
+    if (request.method === 'GET' && new URL(request.url).pathname.endsWith('/input'))
+      return Response.json(prepared(id, { prompt: String(doc.get(id)!.params?.prompt) }))
+  })
+  const { user } = renderApp(
+    <StrictMode>
+      <Harness engine={engine} id={id} />
+    </StrictMode>,
+  )
+  for (const prompt of ['a', 'ab', 'abc'])
+    act(() => {
+      setParam(doc, id, 'prompt', prompt)
+      doc.flush()
+    })
+  expect(requests).not.toHaveBeenCalled()
+  await advance()
+  expect(requests).toHaveBeenCalledOnce()
+  expect(screen.getByTestId('stale').textContent).toBe('false')
+  await user.click(screen.getByRole('button', { name: /实际输入/ }))
+  expect(screen.getByText('abc')).toBeTruthy()
+  await advance(400)
+  expect(requests).toHaveBeenCalledOnce()
+})
+
 it('失败保留上次输入但不显示旧阻断，新的提交回执取消在途预览且不被覆盖', async () => {
   vi.useFakeTimers()
   const { engine, doc, id } = fixture()
