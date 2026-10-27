@@ -3,6 +3,14 @@ import { sineWav, solidPng } from '../packages/providers/src/mock/media'
 import { MOCK_WEBM_BASE64 } from '../packages/providers/src/mock/video-fixture'
 import { clickElement, revealGenerator, newProject, waitEngine } from './canvas'
 
+// 平台配置在共享服务上：用过的用例要还原，
+// 否则后面的用例会看到「已有可用平台」，首次启动引导就不再弹出。
+test.afterEach(async ({ request }) => {
+  await request.put('/api/providers/volc/ark/config', {
+    data: { enabled: false, secrets: { ARK_API_KEY: null } },
+  })
+})
+
 test('多模态参考按类型编号、插入提示词、重排、预览并在刷新后保留', async ({ page }) => {
   await newProject(page)
   const chooser = page.waitForEvent('filechooser')
