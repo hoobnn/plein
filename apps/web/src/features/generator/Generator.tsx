@@ -60,8 +60,6 @@ import { CharacterImageArchiveButton } from '../library/ArchiveCharacterImage'
 /** 卡片下方的编辑器尺寸：固定 840px 宽、440px 高。 */
 const EDITOR_W = 840
 const EDITOR_H = 440
-/** 顶栏占的高度；编辑器往上收时不能压到它。 */
-const TOP_RESERVED = 64
 /** 可见画布再窄，编辑器也要留得下这些控件。 */
 const MIN_EDITOR_W = 320
 const MIN_EDITOR_H = 180
@@ -124,15 +122,17 @@ function NodeBelow({
     if (!rect) return null
     const tl = engine.worldToClient(rect.x, rect.y)
     const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
-    // 编辑器固定在卡片下方、不翻到上方；整块要留在可见画布里：
-    // 横向让开侧栏、纵向避开顶栏和底栏，窗口不够大就按可用空间收，
-    // 内容在面板里滚动。这样右边的关闭按钮、结果操作和底部的生成按钮始终够得着。
+    // 编辑器固定在卡片下方、不翻到上方，也不压住自己的卡片：卡片上的输出端口
+    // 要能直接拖线。横向让开侧栏、纵向避开底栏，窗口不够大就按可用空间收，
+    // 内容在面板里滚动，右边的关闭按钮和底部的生成按钮始终够得着。
     const left = engine.camera.insets.left
     const right = window.innerWidth - engine.camera.insets.right
     const bottom = window.innerHeight - canvasBottomSpace(window.innerWidth, left).generator
     const width = Math.max(MIN_EDITOR_W, Math.min(EDITOR_W, right - left))
-    const height = Math.max(MIN_EDITOR_H, Math.min(EDITOR_H, bottom - TOP_RESERVED))
-    const top = Math.min(br.y + 12, Math.max(TOP_RESERVED, bottom - height))
+    const top = br.y + 12
+    // 卡片下方放得下多少就占多少；实在放不下就保持高度、伸到窗口外，
+    // 也不能盖住卡片：卡片上的输出端口要能直接拖线。
+    const height = Math.min(EDITOR_H, Math.max(bottom - top, MIN_EDITOR_H))
     return {
       left: Math.max(left, Math.min((tl.x + br.x - width) / 2, right - width)),
       top,

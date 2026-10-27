@@ -59,7 +59,9 @@ async function expectBelow(page: import('@playwright/test').Page, id: string) {
         const right = innerWidth - engine.camera.insets.right
         const width = Math.max(320, Math.min(840, right - left))
         const expected = Math.max(left, Math.min((tl.x + br.x - width) / 2, right - width))
-        return Math.max(Math.abs(panel.top - br.y - 12), Math.abs(panel.x - expected))
+        // 纵向：编辑器固定在卡片下方，不盖住卡片（卡片上的输出端口要能直接拖线）
+        const top = br.y + 12
+        return Math.max(Math.abs(panel.top - top), Math.abs(panel.x - expected))
       }, id),
     )
     .toBeLessThan(1)

@@ -21,7 +21,7 @@ async function setup(page: import('@playwright/test').Page) {
   return id
 }
 
-/** 编辑器固定在卡片下方；左侧栏占着位置时它让开，两边都不挡着 */
+/** 编辑器固定在卡片下方；横向留在可见画布里，窗口不够宽就按可用宽度收 */
 async function expectBelow(page: import('@playwright/test').Page, id: string) {
   await expect
     .poll(() =>
@@ -31,10 +31,13 @@ async function expectBelow(page: import('@playwright/test').Page, id: string) {
         const tl = engine.worldToClient(rect.x, rect.y)
         const br = engine.worldToClient(rect.x + rect.w, rect.y + rect.h)
         const panel = document.querySelector('[data-testid="node-editor"]')!.getBoundingClientRect()
-        return Math.max(
-          Math.abs(panel.top - br.y - 12),
-          Math.abs(panel.x + panel.width / 2 - (tl.x + br.x) / 2),
-        )
+        const left = engine.camera.insets.left
+        const right = innerWidth - engine.camera.insets.right
+        const width = Math.max(320, Math.min(840, right - left))
+        const expected = Math.max(left, Math.min((tl.x + br.x - width) / 2, right - width))
+        // 纵向：编辑器固定在卡片下方，不盖住卡片（卡片上的输出端口要能直接拖线）
+        const top = br.y + 12
+        return Math.max(Math.abs(panel.top - top), Math.abs(panel.x - expected))
       }, id),
     )
     .toBeLessThan(1)
