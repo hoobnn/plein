@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 import { cpus } from 'node:os'
+import { PLACEHOLDER_BASE_URL } from './worker-server'
 
 /**
  * 界面冒烟（L3 的界面部分）：真服务 + mock 平台 + e2e 构建的前端。
@@ -35,7 +36,7 @@ export default defineConfig({
   use: {
     ...devices['Desktop Chrome'],
     // baseURL 由 worker fixture 覆盖，这里给一个占位值，保证单跑一条用例时也有地址
-    baseURL: 'http://127.0.0.1:0',
+    baseURL: PLACEHOLDER_BASE_URL,
     viewport: { width: 1440, height: 900 },
     actionTimeout: 10_000,
     trace: 'retain-on-failure',

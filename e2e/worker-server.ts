@@ -15,6 +15,13 @@ import { rm } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 
+/**
+ * baseURL 的占位值：真正的地址由 worker 作用域的 fixture 按 worker 填。
+ * 配置里写了别的地址（开发态的 dev server）时，说明后端由配置自己的 webServer 管，
+ * fixture 就不再另起一份。
+ */
+export const PLACEHOLDER_BASE_URL = 'http://127.0.0.1:0'
+
 /** worker 专属后端：端口、数据目录和健康检查地址 */
 export interface WorkerServer {
   port: number
