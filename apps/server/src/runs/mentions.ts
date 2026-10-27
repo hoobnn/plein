@@ -165,6 +165,7 @@ export async function applyMentions(
   inputs: Inputs,
   collect: (id: string) => Promise<Inputs>,
   maxRefs?: number,
+  validateSceneViewImage?: (assetId: string) => Promise<boolean>,
 ): Promise<AppliedMentions> {
   const params = { ...el.params }
   const targets = mentionTargets(doc)
@@ -214,6 +215,18 @@ export async function applyMentions(
   const voices: Array<{ name: string; voice: VoiceRef }> = []
   /** 参考图来自生成失败的上游：和「还没生成或没连」分开提示 */
   const failedRefs = new Set<string>()
+  const imageValidation = new Map<string, Promise<boolean>>()
+  const sceneImageUsable = (assetId: string) => {
+    if (!validateSceneViewImage) return Promise.resolve(true)
+    let checked = imageValidation.get(assetId)
+    if (!checked) {
+      checked = Promise.resolve()
+        .then(() => validateSceneViewImage(assetId))
+        .catch(() => false)
+      imageValidation.set(assetId, checked)
+    }
+    return checked
+  }
   for (const h of hit.values()) {
     const target = h.el
     const priority = required.get(target.id) ?? -1
@@ -239,14 +252,27 @@ export async function applyMentions(
     const own = await collect(target.id)
     const base = (own.references ?? []).filter((v) => v.type === 'image')
     if (base.length === 0 && referenceFailed(doc, target.id)) failedRefs.add(target.id)
+    // 只校验实际送入模型的截图；全景原始来源缺失不会误阻断已有截图。
+    const invalidViewImages = h.sceneView
+      ? (
+          await Promise.all(
+            h.sceneView.images.map(async (assetId) =>
+              (await sceneImageUsable(assetId)) ? null : assetId,
+            ),
+          )
+        ).filter((assetId): assetId is string => assetId !== null)
+      : []
+    const invalidViewIds = new Set(invalidViewImages)
     // 写了档案项：命中项的图排前面，再补卡片的参考图，每个角色截到上限
     const candidates = h.sceneView
-      ? h.sceneView.images.map((assetId): PortValue => ({
-          type: 'image',
-          assetId,
-          kind: 'image',
-          source: target.id,
-        }))
+      ? h.sceneView.images
+          .filter((assetId) => !invalidViewIds.has(assetId))
+          .map((assetId): PortValue => ({
+            type: 'image',
+            assetId,
+            kind: 'image',
+            source: target.id,
+          }))
       : pickEmpty(h.pick)
         ? base
         : pickImages(h.pick, imageIds(base)).map(
@@ -258,7 +284,13 @@ export async function applyMentions(
                 source: target.id,
               },
           )
-    if (h.sceneView && candidates.length === 0)
+    if (h.sceneView && invalidViewImages.length > 0)
+      blocked.push({
+        code: 'prepare_failed',
+        elementId: target.id,
+        message: `「${label(h)}」的参考图不可用（不存在、类型不符或原件缺失），请重新选择视角图片`,
+      })
+    else if (h.sceneView && candidates.length === 0)
       blocked.push({
         code: 'prepare_failed',
         elementId: target.id,

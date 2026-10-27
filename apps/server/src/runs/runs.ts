@@ -2178,6 +2178,15 @@ export class NodeRuns implements BatchHost {
       // @ 引用是软依赖：卡片的参考图节点还没结果（生成失败、被审核拦下）时只附文字设定
       (id) => this.collectInputs(doc, id, ownerId, signal, 0, origins, true, canvasId),
       this.resolveModel(el.params?.model)?.limit,
+      async (assetId) => {
+        if (this.host.assetInfo(ownerId, assetId)?.kind !== 'image') return false
+        try {
+          await this.host.verifyAsset(ownerId, assetId)
+          return true
+        } catch {
+          return false
+        }
+      },
     )
     if (continuation.issue) blocked.push(continuation.issue)
     const modelRef = typeof params.model === 'string' ? parseModelRef(params.model) : null

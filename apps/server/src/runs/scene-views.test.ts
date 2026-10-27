@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import { connect, createElement, setParams } from '@plein/doc'
 import type { PreparedInput } from '@plein/protocol'
@@ -106,4 +107,36 @@ it('基础场景保持兼容，视角旧名只用该视角图；强引用、删�
   const missingRun = server.runs.start(id, image, 'local')
   expect(await server.runs.wait(missingRun)).toBe('failed')
   expect(seen).toHaveLength(1)
+
+  const expectInvalid = async (images: string[]) => {
+    setParams(doc, scene, { sceneViews: [{ ...views[0], images }] })
+    const invalid = await preview()
+    expect(invalid.status).toBe('blocked')
+    expect(invalid.blocked.map((issue) => issue.message).join('；')).toContain('参考图不可用')
+    expect(invalid.inputs.references ?? []).toEqual([])
+  }
+  await expectInvalid(['f'.repeat(64)])
+
+  const video = await server.assets.ingest('local', Readable.from(['not-an-image']), {
+    mime: 'video/mp4',
+    name: 'wrong-kind.mp4',
+  })
+  await expectInvalid([video.id])
+
+  const missingImage = assets[1]!
+  await rm(server.assets.originalPath(missingImage), { force: true })
+  await expectInvalid([missingImage])
+
+  setParams(doc, scene, {
+    sceneViews: [
+      {
+        ...views[0],
+        images: [assets[2]],
+        panorama: { assetId: missingImage, yaw: 0, pitch: 0, fov: 55, format: 'landscape' },
+      },
+    ],
+  })
+  const screenshot = await preview()
+  expect(screenshot.status).toBe('ready')
+  expect(screenshot.inputs.references?.map((value) => value.assetId)).toEqual([assets[2]])
 })
