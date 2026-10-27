@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { clickElement, newProject, waitNode } from './canvas'
+import { clickElement, newProject, revealGenerator, waitNode } from './canvas'
 
 test(`窄窗口长语气指令不适用时可显式清空、撤销重做并换模型生成`, async ({ page }) => {
   const config = '/api/providers/minimax/api/config'
@@ -69,7 +69,11 @@ test(`窄窗口长语气指令不适用时可显式清空、撤销重做并换�
     await expect(clear).toHaveCount(0)
     await expect(preview).not.toContainText('不会提交')
     expect(submitted).toEqual([])
-    await generator.getByRole('button', { name: '模型', exact: true }).click()
+    const model = generator.getByRole('button', { name: '模型', exact: true })
+    // 窄窗口里编辑器固定在卡片下方，底部的按钮会落到画布工具栏后面：
+    // 先把编辑器平移进窗口再点。
+    await revealGenerator(page, model)
+    await model.click()
     await page.getByRole('textbox', { name: '搜索模型', exact: true }).fill('Mock 音频')
     await page.getByRole('option', { name: /Mock 音频/ }).click()
     await expect(generator.getByRole('button', { name: '生成', exact: true })).toBeEnabled()
