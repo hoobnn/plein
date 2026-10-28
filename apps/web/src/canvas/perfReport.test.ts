@@ -87,6 +87,9 @@ test.each([
 test('refuses to compare incompatible fixtures and execution environments', () => {
   for (const change of [
     (value: PerfReport) => {
+      value.fixture.sessionStepsPerFrame = 5
+    },
+    (value: PerfReport) => {
       value.fixture.sessionIterations = 24
     },
     (value: PerfReport) => {
@@ -124,6 +127,22 @@ test('refuses to compare incompatible fixtures and execution environments', () =
     change(current)
     expect(() => comparePerfReports(current, report())).toThrow(/does not match/)
   }
+})
+
+test('v3 旧报告的会话节奏等价于默认值，CI 节奏只能与相同节奏比较', () => {
+  const baseline = report()
+  const current = report()
+  current.fixture.sessionStepsPerFrame = 1
+  expect(comparePerfReports(current, baseline)).toEqual([])
+  baseline.fixture.sessionStepsPerFrame = 5
+  current.fixture.sessionStepsPerFrame = 5
+  expect(comparePerfReports(current, baseline)).toEqual([])
+})
+
+test.each([0, 6, 1.5, '5', null, NaN])('拒绝无效会话节奏 %s', (cadence) => {
+  const value = report()
+  Object.assign(value.fixture, { sessionStepsPerFrame: cadence })
+  expect(() => assertCompletePerfReport(value)).toThrow(/Invalid performance fixture/)
 })
 
 test('内存保留量超过相对与 2 MiB 绝对阈值才判回退，缺长会话样本不能通过', () => {

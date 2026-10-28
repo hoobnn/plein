@@ -44,6 +44,8 @@ export interface PerfReport {
     contentHash: string
     demoContentHash: string
     sessionIterations: number
+    /** v3 早期报告省略此字段，等价于每帧一个步骤。 */
+    sessionStepsPerFrame?: number
   }
   rounds: number
   metrics: Record<string, number>
@@ -131,6 +133,8 @@ export function assertCompletePerfReport(value: unknown): asserts value is PerfR
     ) ||
     !positiveInteger(fixture.serializedBytes) ||
     !positiveInteger(fixture.sessionIterations) ||
+    (fixture.sessionStepsPerFrame !== undefined &&
+      ![1, 2, 3, 4, 5].includes(fixture.sessionStepsPerFrame as number)) ||
     !hash(fixture.contentHash) ||
     !hash(fixture.demoContentHash)
   )
@@ -166,7 +170,14 @@ export function comparePerfReports(current: PerfReport, baseline: PerfReport): P
   if (
     baseline.formatVersion !== current.formatVersion ||
     canonical(baseline.environment) !== canonical(current.environment) ||
-    canonical(baseline.fixture) !== canonical(current.fixture)
+    canonical({
+      ...baseline.fixture,
+      sessionStepsPerFrame: baseline.fixture.sessionStepsPerFrame ?? 1,
+    }) !==
+      canonical({
+        ...current.fixture,
+        sessionStepsPerFrame: current.fixture.sessionStepsPerFrame ?? 1,
+      })
   )
     throw new Error(
       'Performance baseline fixture, runtime, browser, renderer or platform does not match',

@@ -209,6 +209,25 @@ describe('性能比较命令的真实退出状态', () => {
     })
   })
 
+  it.each(['markdown.retainedBytes', 'session.retainedBytes'])(
+    'CI 节奏下 %s 回退仍返回 exit 1，阈值边界不变',
+    (key) => {
+      const baseline = report('a'.repeat(40))
+      const candidate = report('d'.repeat(40))
+      baseline.fixture.sessionStepsPerFrame = candidate.fixture.sessionStepsPerFrame = 5
+      measurement(baseline, key, 1024 * 1024)
+      measurement(candidate, key, 3 * 1024 * 1024)
+      expect(compare(baseline, candidate).status).toBe(0)
+      measurement(candidate, key, 3 * 1024 * 1024 + 1)
+      const result = compare(baseline, candidate)
+      expect(result.status, result.stderr).toBe(1)
+      expect(JSON.parse(result.stdout)).toEqual({
+        baselineCompared: true,
+        regressions: [{ metric: key, baseline: 1024 * 1024, current: 3 * 1024 * 1024 + 1 }],
+      })
+    },
+  )
+
   it.each(['missing-metric', 'missing-samples', 'missing-round'] as const)(
     '%s 报告返回 exit 1，不能将场景缺失算成无回退',
     (kind) => {

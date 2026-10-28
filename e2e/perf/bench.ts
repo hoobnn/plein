@@ -20,6 +20,7 @@ import type { CanvasElement, Edge } from '../../packages/doc/src/types'
 import {
   createMediaFixture,
   fixtureContentHash,
+  fitDemoMarkdown,
   MEDIA_FIXTURE_VERSION,
   normalizeDemoFixture,
   seedMediaCanvas,
@@ -41,6 +42,7 @@ import {
   type PerfReport,
 } from './report'
 import { measureMarkdownRetention, measureSession } from './memory'
+import { dispatchWheel } from './wheel'
 
 /** 被测的仓库根目录：服务端和前端构建都从这里取；对比改动前后时指向另一个检出 */
 const ROOT = process.env.PERF_ROOT ?? join(import.meta.dirname, '../..')
@@ -51,6 +53,7 @@ const N = Number(process.env.PERF_N ?? 1000)
 const ROUNDS = Number(process.env.PERF_ROUNDS ?? 3)
 const SESSION_MS = Number(process.env.PERF_SESSION_MS ?? 30_000)
 const SESSION_ITERATIONS = Number(process.env.PERF_SESSION_ITERATIONS ?? 12)
+const SESSION_STEPS_PER_FRAME = Number(process.env.PERF_SESSION_STEPS_PER_FRAME ?? 1)
 const WEB_DIST = process.env.PERF_DIST ?? join(ROOT, 'apps/web/dist-e2e')
 const failureContext: Record<string, unknown> = {
   environment: {
@@ -298,39 +301,9 @@ function median(rs: Result[]): Result {
   }
 }
 
-/** 页内连续派发滚轮事件：每帧 perFrame 个，模拟高频触控板 */
-function wheel(page: Page, opts: { frames: number; perFrame: number; zoom: boolean }) {
-  return deadline(
-    page,
-    page.evaluate(
-      ({ frames, perFrame, zoom }) =>
-        new Promise<void>((done) => {
-          const host = document.querySelector('canvas')!.parentElement!
-          const r = host.getBoundingClientRect()
-          let i = 0
-          const step = () => {
-            for (let k = 0; k < perFrame; k++) {
-              const phase = Math.sin((i / frames) * Math.PI * 2)
-              host.dispatchEvent(
-                new WheelEvent('wheel', {
-                  bubbles: true,
-                  cancelable: true,
-                  clientX: r.left + r.width / 2,
-                  clientY: r.top + r.height / 2,
-                  deltaX: zoom ? 0 : 6 * phase,
-                  deltaY: zoom ? 3 * phase : 4,
-                  ctrlKey: zoom,
-                }),
-              )
-            }
-            if (++i < frames) requestAnimationFrame(step)
-            else requestAnimationFrame(() => done())
-          }
-          requestAnimationFrame(step)
-        }),
-      opts,
-    ),
-  )
+/** 页内连续派发滚轮事件：默认每帧 perFrame 个，内存场景可合并相邻步骤。 */
+function wheel(page: Page, opts: Parameters<typeof dispatchWheel>[1]) {
+  return deadline(page, dispatchWheel(page, opts))
 }
 
 /** rAF 在页面挂起时可能永不继续，超时关闭自己的页面并让基准失败。 */
@@ -390,8 +363,9 @@ async function pickVisible(page: Page, kind: string | null, count = 1) {
 type Scenario = (page: Page) => Promise<void>
 
 async function sessionInteraction(page: Page) {
-  await wheel(page, { frames: 60, perFrame: 2, zoom: false })
-  await wheel(page, { frames: 60, perFrame: 2, zoom: true })
+  const cadence = { frames: 60, perFrame: 2, stepsPerFrame: SESSION_STEPS_PER_FRAME }
+  await wheel(page, { ...cadence, zoom: false })
+  await wheel(page, { ...cadence, zoom: true })
   // 每个采样点回到同一视口，不能拿离屏剔除后的堆与全画布相减。
   await page.evaluate(() => (window as unknown as PerfWindow).__plein!.engine.zoomToFit())
   await page.waitForTimeout(300)
@@ -405,6 +379,8 @@ async function main() {
     throw new Error('PERF_SESSION_MS must be an integer of at least 1000 ms')
   if (!Number.isSafeInteger(SESSION_ITERATIONS) || SESSION_ITERATIONS < 1)
     throw new Error('PERF_SESSION_ITERATIONS must be a positive integer')
+  if (![1, 2, 3, 4, 5].includes(SESSION_STEPS_PER_FRAME))
+    throw new Error('PERF_SESSION_STEPS_PER_FRAME must be an integer between 1 and 5')
   const load = () => ({
     at: new Date().toISOString(),
     uptime: execFileSync('uptime', { encoding: 'utf8' }).trim(),
@@ -439,9 +415,13 @@ async function main() {
   let mediaCanvasId: string | undefined
   const details = {
     durationMs: 0,
+    timings: { openMs: 0, interactionsMs: 0, memoryMs: 0 },
     hostLoad,
     browserExecutable: browserExecutable ?? 'playwright headless shell',
     memory: [] as Array<{
+      durationMs: number
+      markdownMs: number
+      sessionMs: number
       markdown: Awaited<ReturnType<typeof measureMarkdownRetention>>
       session: Awaited<ReturnType<typeof measureSession>>
     }>,
@@ -460,6 +440,7 @@ async function main() {
     contentHash: '',
     demoContentHash: '',
     sessionIterations: SESSION_ITERATIONS,
+    sessionStepsPerFrame: SESSION_STEPS_PER_FRAME,
   }
   failureContext.fixture = fixture
   failureContext.samples = samples
@@ -503,6 +484,7 @@ async function main() {
     await cdp.send('Performance.enable')
 
     // ── 打开画布 ──────────────────────────────────────
+    const openStartedAt = performance.now()
     const profileWarm = process.env.PERF_PROFILE === '热开'
     const profileSession = process.env.PERF_PROFILE === '会话'
     const profileOpen = process.env.PERF_PROFILE === '打开' || profileWarm
@@ -515,7 +497,12 @@ async function main() {
         imageAssets: Number(process.env.PERF_MEDIA_ASSETS ?? 32),
       })
       const { data: _data, ...metadata } = media
-      fixture = { ...metadata, demoContentHash: '', sessionIterations: SESSION_ITERATIONS }
+      fixture = {
+        ...metadata,
+        demoContentHash: '',
+        sessionIterations: SESSION_ITERATIONS,
+        sessionStepsPerFrame: SESSION_STEPS_PER_FRAME,
+      }
       failureContext.fixture = fixture
       const canvasId = await seedMediaCanvas(page, BASE, media)
       mediaCanvasId = canvasId
@@ -609,6 +596,8 @@ async function main() {
     }
 
     // ── 交互场景（演示画布，纯前端）────────────────────
+    details.timings.openMs = performance.now() - openStartedAt
+    const interactionsStartedAt = performance.now()
     const scenarios: Record<string, Scenario> = {
       平移: (p) => wheel(p, { frames: 120, perFrame: 2, zoom: false }),
       缩放: (p) => wheel(p, { frames: 120, perFrame: 2, zoom: true }),
@@ -685,6 +674,7 @@ async function main() {
         assertRendererMode(renderMode, renderer)
         await page.evaluate(() => (window as unknown as PerfWindow).__plein!.engine.zoomTo(1))
         await page.waitForTimeout(500)
+        await fitDemoMarkdown(page)
         const snapshot = await page.evaluate(() => {
           const doc = (window as unknown as PerfWindow).__plein!.engine.doc
           return { elements: [...doc.elements()], edges: [...doc.edges()] }
@@ -710,10 +700,14 @@ async function main() {
       samples[`${name}.jsMs`] = rs.map((sample) => sample.js)
     }
 
+    details.timings.interactionsMs = performance.now() - interactionsStartedAt
+    const memoryStartedAt = performance.now()
     if (!process.env.PERF_SKIP_MEMORY) {
       for (let i = 0; i < ROUNDS; i++) {
+        const roundStartedAt = performance.now()
         await openFixture(page, `${BASE}/#/demo?n=0`, 0)
         const markdown = await deadline(page, measureMarkdownRetention(page, cdp))
+        const markdownMs = performance.now() - roundStartedAt
         await openFixture(
           page,
           mediaCanvasId ? `${BASE}/#/c/${mediaCanvasId}` : `${BASE}/#/demo?n=${N}`,
@@ -727,11 +721,19 @@ async function main() {
           () => sessionInteraction(page),
           SESSION_ITERATIONS,
         )
-        details.memory.push({ markdown, session })
+        const durationMs = performance.now() - roundStartedAt
+        details.memory.push({
+          markdown,
+          session,
+          durationMs,
+          markdownMs,
+          sessionMs: durationMs - markdownMs,
+        })
         hostLoad.push(load())
         console.error(
           `[perf] memory ${i + 1}/${ROUNDS}`,
           JSON.stringify({
+            durationMs,
             markdownRetainedBytes: markdown.retainedBytes,
             sessionRetainedBytes: session.retainedBytes,
             sessionTailBytes: session.tailBytes,
@@ -745,6 +747,7 @@ async function main() {
         report[metric] = medianSample(samples[metric])
       }
     }
+    details.timings.memoryMs = performance.now() - memoryStartedAt
   } finally {
     try {
       await browser?.close()

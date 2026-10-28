@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Page } from '@playwright/test'
+import type { Engine } from '../../packages/canvas-core/src/engine'
 import type { ClipboardData } from '../../packages/doc/src/clipboard'
 import type { CanvasElement, Edge } from '../../packages/doc/src/types'
 import { sineWav, solidPng } from '../../packages/providers/src/mock/media'
@@ -30,6 +31,28 @@ export function fixtureContentHash(data: unknown): string {
 /** Hash the actual demo graph without random identifiers or transient run status. */
 export function demoContentHash(data: { elements: CanvasElement[]; edges: Edge[] }): string {
   return fixtureContentHash(normalizeDemoFixture(data))
+}
+
+/** 演示便签宽度、行结构相同；用实际量高统一几何，避免初始视口的异步量高竞态。 */
+export async function fitDemoMarkdown(page: Page) {
+  await page.evaluate(() => {
+    const { engine } = (window as unknown as { __plein: { engine: Engine } }).__plein
+    const markdown = [...engine.doc.elements()].filter((el) => el.kind === 'markdown')
+    if (!markdown.length) return
+    if (markdown.some((el) => el.w !== 240 || !/^# 镜头 \d+\n画面描述$/.test(el.text ?? '')))
+      throw new Error('Demo markdown fixture no longer has uniform width and line structure')
+    const heights = new Set(
+      [...document.querySelectorAll<HTMLElement>('[data-markdown-id]')].map(
+        (node) => engine.scene.get(node.dataset.markdownId!)!.h,
+      ),
+    )
+    if (heights.size !== 1) throw new Error('Demo markdown layout has not settled')
+    const [height] = heights
+    engine.doc.ydoc.transact(() => {
+      for (const el of markdown) engine.doc.mutable(el.id)!.set('h', height)
+    })
+    engine.doc.undo.clear()
+  })
 }
 
 export function normalizeDemoFixture(data: { elements: CanvasElement[]; edges: Edge[] }) {

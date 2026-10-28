@@ -72,6 +72,7 @@ function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEn
 }
 
 async function measureBoth() {
+  const startedAt = performance.now()
   const root = resolve(process.env.PERF_ROOT ?? HARNESS_ROOT)
   if (!process.env.PERF_BASE_ROOT)
     throw new Error(
@@ -91,6 +92,7 @@ async function measureBoth() {
     harnessCommit: git(HARNESS_ROOT, 'rev-parse', 'HEAD'),
     harnessDirty: !!git(HARNESS_ROOT, 'status', '--porcelain'),
     measuredAt: new Date().toISOString(),
+    timings: {} as Record<string, { buildMs: number; benchmarkMs: number }>,
   }
   try {
     // 诊断开关不能悄悄把 A/B 门禁变成场景子集；两边使用同一 Chromium 二进制。
@@ -108,17 +110,20 @@ async function measureBoth() {
       delete env[key]
     env.PERF_CHROMIUM = process.env.PERF_CHROMIUM ?? chromium.executablePath()
     const loader = createRequire(join(HARNESS_ROOT, 'apps/server/package.json')).resolve('tsx')
-    for (const [target, reportPath] of [
-      [baselineRoot, baselinePath],
-      [root, candidatePath],
+    for (const [name, target, reportPath] of [
+      ['baseline', baselineRoot, baselinePath],
+      ['candidate', root, candidatePath],
     ] as const) {
       console.log(`[perf] measuring ${target}`)
+      const buildStartedAt = performance.now()
       await run(
         join(target, 'node_modules/.bin/vp'),
         ['build', '--mode', 'e2e', '--outDir', 'dist-e2e'],
         join(target, 'apps/web'),
         env,
       )
+      const buildMs = performance.now() - buildStartedAt
+      const benchmarkStartedAt = performance.now()
       await run(
         process.execPath,
         ['--import', loader, join(HARNESS_ROOT, 'e2e/perf/bench.ts')],
@@ -129,6 +134,8 @@ async function measureBoth() {
           PERF_OUTPUT: reportPath,
         },
       )
+      manifest.timings[name] = { buildMs, benchmarkMs: performance.now() - benchmarkStartedAt }
+      console.log(`[perf] ${name} timings`, JSON.stringify(manifest.timings[name]))
     }
     const { baseline, candidate, regressions } = compareReportFiles(baselinePath, candidatePath)
     if (
@@ -141,6 +148,7 @@ async function measureBoth() {
       )
     const result = {
       ...manifest,
+      durationMs: performance.now() - startedAt,
       status: regressions.length ? 'regressed' : 'passed',
       baselineCompared: true,
       regressions,
@@ -151,7 +159,7 @@ async function measureBoth() {
   } catch (error) {
     writeFileSync(
       summaryPath,
-      `${JSON.stringify({ ...manifest, status: 'failed', baselineCompared: false, error: String(error) }, null, 2)}\n`,
+      `${JSON.stringify({ ...manifest, durationMs: performance.now() - startedAt, status: 'failed', baselineCompared: false, error: String(error) }, null, 2)}\n`,
     )
     throw error
   }
