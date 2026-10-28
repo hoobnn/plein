@@ -9,6 +9,8 @@ PERF_RENDERER=hardware PERF_OUTPUT="$PWD/test-results/perf/metal.json" pnpm perf
 
 硬件模式显式选择 Playwright 安装的完整 Chromium，也可用 `PERF_CHROMIUM` 指定二进制；读取到软件光栅或无法辨认的 GPU 会失败。比较报告必须具有相同的浏览器种类、版本、渲染器、运行环境、夹具和轮数。每批及内存每轮记录 `uptime`，机器有其他测试负载时交替运行冻结的旧、新构建，保留全部样本。
 
+`PERF_ROUNDS` 控制交互和内存轮数，`PERF_OPEN_ROUNDS` 独立控制冷开／热开轮数，缺省沿用 `PERF_ROUNDS`，因此本地默认仍为每项三轮。CI 将打开增至五轮，减少软件渲染启动抖动对中位数的影响；不丢弃首轮或慢样本，不改变中位数算法和回退阈值。v3 报告以 `rounds`、可选 `openRounds` 记录轮数，旧报告缺省 `openRounds=rounds`；两侧各类轮数必须一致且至少三轮，原始样本数量和中位数都需通过校验。
+
 完整基准包括真实媒体冷开／热开、五个演示画布交互场景，以及两种 GC 后保留量：
 
 - `markdown.retainedBytes`：预热后创建、显示并删除 96 份正文，清空撤销，再比较堆。每批必须显示全部八个预览。正文缓存计数与堆差一起看；堆还含渲染器及文档的内部保留，不能把全部差值都叫作正文泄漏。
@@ -21,7 +23,7 @@ PERF_RENDERER=hardware PERF_OUTPUT="$PWD/test-results/perf/metal.json" pnpm perf
 `pnpm perf:compare` 用候选侧同一套 harness、Chromium 和夹具，顺序构建并测量独立检出的基线与候选，包括两侧全部内存场景。演示画布的同宽、同结构便签在计时前按可见正文的实际排版高度统一几何，消除异步量高时序导致的夹具差异；高度仍参与完整内容哈希校验。基线自身是否带有 memory 脚本不影响测量，不能据此跳过内存比较或减少基线轮数。基线目录必须干净并已按锁文件安装依赖。与 CI 相同的运行方式：
 
 ```sh
-PERF_N=1000 PERF_ROUNDS=3 PERF_SESSION_STEPS_PER_FRAME=5 \
+PERF_N=1000 PERF_ROUNDS=3 PERF_OPEN_ROUNDS=5 PERF_SESSION_STEPS_PER_FRAME=5 \
   PERF_BASE_REF=v0.6.0 PERF_BASE_ROOT=/absolute/path/to/clean-baseline \
   PERF_COMPARE_OUTPUT="$PWD/test-results/perf-comparison" pnpm perf:compare
 ```

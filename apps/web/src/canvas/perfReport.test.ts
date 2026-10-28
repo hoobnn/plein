@@ -139,6 +139,51 @@ test('v3 旧报告的会话节奏等价于默认值，CI 节奏只能与相同�
   expect(comparePerfReports(current, baseline)).toEqual([])
 })
 
+function openingRounds(value: PerfReport, rounds: number) {
+  value.openRounds = rounds
+  for (const key of EXPECTED_METRIC_KEYS)
+    if (/^(cold|warm)\./.test(key))
+      value.samples[key] = Array.from({ length: rounds }, () => value.metrics[key]!)
+}
+
+test('打开可独立增加样本，旧 v3 报告等价于所有场景使用 rounds', () => {
+  const baseline = report()
+  const current = report()
+  openingRounds(current, 3)
+  expect(comparePerfReports(current, baseline)).toEqual([])
+  openingRounds(current, 5)
+  expect(() => comparePerfReports(current, baseline)).toThrow(/same sample count/)
+  openingRounds(baseline, 5)
+  expect(comparePerfReports(current, baseline)).toEqual([])
+  expect(current.samples[PAN]).toHaveLength(3)
+  expect(current.samples['session.retainedBytes']).toHaveLength(3)
+  current.samples['warm.firstVisiblePreviewMs']!.pop()
+  expect(() => assertCompletePerfReport(current)).toThrow(/round samples/)
+})
+
+test.each([0, 1, 2, 3.5, '5', null, NaN])('拒绝无效打开轮数 %s', (rounds) => {
+  const value = report()
+  Object.assign(value, { openRounds: rounds })
+  expect(() => assertCompletePerfReport(value)).toThrow(/at least three opening rounds/)
+})
+
+test('五轮中位数保留全部启动抖动样本，持续回退仍按原阈值失败', () => {
+  const baseline = report()
+  const current = report()
+  openingRounds(baseline, 5)
+  openingRounds(current, 5)
+  current.samples[OPEN] = [199, 200, 201, 1200, 1500]
+  current.metrics[OPEN] = 201
+  expect(comparePerfReports(current, baseline)).toEqual([])
+  current.samples[OPEN] = [199, 200, 401, 1200, 1500]
+  current.metrics[OPEN] = 401
+  expect(comparePerfReports(current, baseline)).toEqual([
+    { metric: OPEN, baseline: 200, current: 401 },
+  ])
+  current.metrics[OPEN] = 200
+  expect(() => assertCompletePerfReport(current)).toThrow(/sample median/)
+})
+
 test.each([0, 6, 1.5, '5', null, NaN])('拒绝无效会话节奏 %s', (cadence) => {
   const value = report()
   Object.assign(value.fixture, { sessionStepsPerFrame: cadence })

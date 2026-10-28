@@ -48,6 +48,8 @@ export interface PerfReport {
     sessionStepsPerFrame?: number
   }
   rounds: number
+  /** Cold/warm samples per metric; older v3 reports use rounds for every scenario. */
+  openRounds?: number
   metrics: Record<string, number>
   /** Raw observations in measurement order, before taking each metric's median. */
   samples: Record<string, number[]>
@@ -141,6 +143,9 @@ export function assertCompletePerfReport(value: unknown): asserts value is PerfR
     throw new Error('Invalid performance fixture or content hash')
   if (!positiveInteger(value.rounds) || (value.rounds as number) < 3)
     throw new Error('Performance comparisons require at least three rounds')
+  const openRounds = value.openRounds === undefined ? value.rounds : value.openRounds
+  if (!positiveInteger(openRounds) || (openRounds as number) < 3)
+    throw new Error('Performance comparisons require at least three opening rounds')
   if (
     !record(value.metrics) ||
     !record(value.samples) ||
@@ -154,7 +159,7 @@ export function assertCompletePerfReport(value: unknown): asserts value is PerfR
     if (
       !nonnegative(measurement) ||
       !Array.isArray(samples) ||
-      samples.length !== value.rounds ||
+      samples.length !== (/^(cold|warm)\./.test(metric) ? openRounds : value.rounds) ||
       ![...samples].every(nonnegative)
     )
       throw new Error(`Invalid performance measurement or round samples: ${metric}`)
@@ -182,7 +187,10 @@ export function comparePerfReports(current: PerfReport, baseline: PerfReport): P
     throw new Error(
       'Performance baseline fixture, runtime, browser, renderer or platform does not match',
     )
-  if (current.rounds !== baseline.rounds)
+  if (
+    current.rounds !== baseline.rounds ||
+    (current.openRounds ?? current.rounds) !== (baseline.openRounds ?? baseline.rounds)
+  )
     throw new Error(
       'Performance comparisons require the same sample count and at least three rounds',
     )

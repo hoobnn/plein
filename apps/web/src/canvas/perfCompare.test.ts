@@ -215,6 +215,11 @@ describe('性能比较命令的真实退出状态', () => {
       const baseline = report('a'.repeat(40))
       const candidate = report('d'.repeat(40))
       baseline.fixture.sessionStepsPerFrame = candidate.fixture.sessionStepsPerFrame = 5
+      for (const value of [baseline, candidate]) {
+        value.openRounds = 5
+        for (const metric of EXPECTED_METRIC_KEYS)
+          if (/^(cold|warm)\./.test(metric)) value.samples[metric] = [1, 1, 1, 1, 1]
+      }
       measurement(baseline, key, 1024 * 1024)
       measurement(candidate, key, 3 * 1024 * 1024)
       expect(compare(baseline, candidate).status).toBe(0)
@@ -227,6 +232,24 @@ describe('性能比较命令的真实退出状态', () => {
       })
     },
   )
+
+  it('打开五轮、其他三轮时，冷开回退仍返回 exit 1', () => {
+    const baseline = report('a'.repeat(40))
+    const candidate = report('d'.repeat(40))
+    for (const value of [baseline, candidate]) {
+      value.openRounds = 5
+      for (const key of EXPECTED_METRIC_KEYS)
+        if (/^(cold|warm)\./.test(key)) value.samples[key] = [1, 1, 1, 1, 1]
+    }
+    candidate.metrics['cold.firstVisiblePreviewMs'] = 200
+    candidate.samples['cold.firstVisiblePreviewMs'] = [1, 1, 200, 201, 202]
+    const result = compare(baseline, candidate)
+    expect(result.status, result.stderr).toBe(1)
+    expect(JSON.parse(result.stdout)).toEqual({
+      baselineCompared: true,
+      regressions: [{ metric: 'cold.firstVisiblePreviewMs', baseline: 1, current: 200 }],
+    })
+  })
 
   it.each(['missing-metric', 'missing-samples', 'missing-round'] as const)(
     '%s 报告返回 exit 1，不能将场景缺失算成无回退',

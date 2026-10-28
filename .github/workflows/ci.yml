@@ -78,6 +78,8 @@ jobs:
         env:
           PERF_N: "1000"
           PERF_ROUNDS: "3"
+          # 软件渲染打开有启动抖动，单独增加样本；交互与内存仍为三轮。
+          PERF_OPEN_ROUNDS: "5"
           # 仅内存场景合并相邻滚轮步骤，保留事件序列、12 次交互和三轮中位数。
           PERF_SESSION_STEPS_PER_FRAME: "5"
           PERF_BASE_REF: ${{ inputs.perf-baseline-ref }}

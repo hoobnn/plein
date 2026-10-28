@@ -49,8 +49,9 @@ const ROOT = process.env.PERF_ROOT ?? join(import.meta.dirname, '../..')
 const PORT = Number(process.env.PERF_PORT ?? 9510)
 const BASE = `http://127.0.0.1:${PORT}`
 const N = Number(process.env.PERF_N ?? 1000)
-/** 每个场景跑几轮取中位数 */
+/** 交互与内存场景跑几轮取中位数；打开场景可独立增加样本。 */
 const ROUNDS = Number(process.env.PERF_ROUNDS ?? 3)
+const OPEN_ROUNDS = Number(process.env.PERF_OPEN_ROUNDS ?? ROUNDS)
 const SESSION_MS = Number(process.env.PERF_SESSION_MS ?? 30_000)
 const SESSION_ITERATIONS = Number(process.env.PERF_SESSION_ITERATIONS ?? 12)
 const SESSION_STEPS_PER_FRAME = Number(process.env.PERF_SESSION_STEPS_PER_FRAME ?? 1)
@@ -63,6 +64,7 @@ const failureContext: Record<string, unknown> = {
   },
   fixture: { version: MEDIA_FIXTURE_VERSION, elements: N },
   rounds: ROUNDS,
+  openRounds: OPEN_ROUNDS,
 }
 
 function writeReport(value: unknown) {
@@ -259,7 +261,7 @@ function printTop(self: Map<string, number>) {
 function logOpen(mode: string, round: number, sample: OpenSample) {
   const { resources, ...summary } = sample
   console.error(
-    `[perf] ${mode} ${round}/${ROUNDS}`,
+    `[perf] ${mode} ${round}/${OPEN_ROUNDS}`,
     JSON.stringify({ ...summary, resources: resources.length }),
   )
 }
@@ -375,6 +377,8 @@ async function main() {
   const startedAt = performance.now()
   if (!Number.isSafeInteger(N) || N < 1 || !Number.isSafeInteger(ROUNDS) || ROUNDS < 1)
     throw new Error('PERF_N and PERF_ROUNDS must be positive integers')
+  if (!Number.isSafeInteger(OPEN_ROUNDS) || OPEN_ROUNDS < 1)
+    throw new Error('PERF_OPEN_ROUNDS must be a positive integer')
   if (!Number.isSafeInteger(SESSION_MS) || SESSION_MS < 1000)
     throw new Error('PERF_SESSION_MS must be an integer of at least 1000 ms')
   if (!Number.isSafeInteger(SESSION_ITERATIONS) || SESSION_ITERATIONS < 1)
@@ -524,7 +528,7 @@ async function main() {
         return
       }
       await page.goto(`${BASE}/#/`)
-      for (let i = 0; i < ROUNDS; i++) {
+      for (let i = 0; i < OPEN_ROUNDS; i++) {
         // 冷开：全新的浏览器上下文（没有任何本地缓存）
         const cold = await browser.newContext({ viewport })
         await installFunctionSerialization(cold)
@@ -768,7 +772,7 @@ async function main() {
 
   assertRendererMode(renderMode, renderer)
 
-  console.log(`\n元素数 ${N}，每项 ${ROUNDS} 轮取中位数`)
+  console.log(`\n元素数 ${N}，打开 ${OPEN_ROUNDS} 轮，交互与内存 ${ROUNDS} 轮取中位数`)
   for (const [k, v] of Object.entries(report)) {
     if (typeof v === 'number') console.log(`${k}: ${v}`)
     else
@@ -802,6 +806,7 @@ async function main() {
     },
     fixture,
     rounds: ROUNDS,
+    openRounds: OPEN_ROUNDS,
     metrics,
     samples,
     details,
