@@ -38,6 +38,7 @@ import {
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import { mediaCaps, missingCapability, withMediaAbort } from '../assets/media'
+import { DIRECTION_RULES } from '../prompt/direction'
 import { animaticExecutor } from './animatic'
 import { shotAnalysisExecutor } from './shot-analysis'
 import { aiSceneExecutor, aiSummaryExecutor } from './ai-shot-analysis'
@@ -242,10 +243,13 @@ const music = defineExecutor(musicNode, async (ctx) => {
 })
 
 /** 基础节点插件的服务端部分：声明来自 @plein/nodes，执行器在这里 */
-const STORYBOARD_SYSTEM = `你是短剧分镜师。把剧本拆成镜头，按 JSON Schema 输出。
-每个镜头写清：景别、画面描述、出场的角色、所在场景和画面里的关键道具（characters 字段；给了角色 / 场景 / 道具设定清单时，名字照清单原样写，清单外的不写）、情绪、光影氛围、音效、台词（说话人与台词）、
-用于生成分镜图的画面提示词（具体可画：人物外观动作、构图、环境、光线）、用于图生视频的运动提示词（镜头运动与人物动作）。
-镜号从 1 开始连续编号，时长以秒计。`
+const STORYBOARD_SYSTEM = `你是短剧导演兼分镜师。把剧本拆成镜头，按 JSON Schema 输出。
+每个镜头按分镜表的各列写清：时长（秒，按台词量和动作量估算）、画面描述（只写看得见的画面，会直接用作生成提示词）、景别、光影氛围（lighting）、对白（说话人与台词）、音效、运镜（cameraMotion，这一镜唯一的主运镜）。
+另外写：出场的角色、所在场景和画面里的关键道具（characters 字段；给了角色 / 场景 / 道具设定清单时，名字照清单原样写，清单外的不写）、情绪（也用作配音语气）、
+用于生成分镜图的画面提示词（这一镜开始那一刻的画面，具体可画：人物外观动作、构图、环境、光线）、用于图生视频的运动提示词（从首帧接着按时间顺序写人物动作和表演反应；运镜已单列，这里不重复）。
+镜号从 1 开始连续编号。
+
+${DIRECTION_RULES}`
 
 /** 分镜：剧本 → 结构化分镜表（写回参数由节点声明的 applyOutputs 完成） */
 const storyboard = defineExecutor(storyboardNode, async (ctx) => {

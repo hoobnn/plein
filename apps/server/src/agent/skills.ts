@@ -15,6 +15,7 @@ import { basename, isAbsolute, join } from 'node:path'
 import type { AgentKind, AgentSkill, AgentSkillCatalog, AgentSkillDetail } from '@plein/protocol'
 import type { PluginHost } from '../plugins/host'
 import type { CliEnvironment } from './cli'
+import { DIRECTION_RULES } from '../prompt/direction'
 import { capabilitiesOf } from './tools'
 import { CodexSkillCache, codexSkillRpc } from './cli-skills'
 
@@ -82,7 +83,7 @@ export const PLEIN_SKILLS: readonly AgentSkillDetail[] = [
       'propose_edit',
       'ui_focus',
     ],
-    instructions: `# 优化选中镜头\n${BOUNDARY}\n1. 仅以本轮选区快照作为目标，用 get_element_field 读完整提示词/镜头参数、inspect_node_input 查参考来源，必要时 view_media 查看已有结果。不要把别的客户端后来变更的选区当成本轮目标。\n2. 结合用户要求说明改进方向；复用角色和场景设定，不擅自改对白、身份或镜头数量。\n3. 用 propose_edit 列出每个已有目标与参数差异，await_approval 等用户选只改文字、候选图或完整方案。不得先 update_element 再请求确认，不把上轮批准当成本轮授权。完成后展示实际采用范围并 ui_focus 定位。`,
+    instructions: `# 优化选中镜头\n${BOUNDARY}\n1. 仅以本轮选区快照作为目标，用 get_element_field 读完整提示词/镜头参数、inspect_node_input 查参考来源，必要时 view_media 查看已有结果。不要把别的客户端后来变更的选区当成本轮目标。\n2. 结合用户要求说明改进方向，按下面的导演分镜准则找出镜头目的、首帧衔接、轴线、表演因果、台词时长与前后镜连续性上的问题；修改按分镜表的列落到画面描述、景别、光影氛围、对白、音效、运镜和两段提示词上，用户手改过的列保留，除非本轮要求改它；复用角色和场景设定，不擅自改对白、身份或镜头数量。\n3. 用 propose_edit 列出每个已有目标与参数差异，await_approval 等用户选只改文字、候选图或完整方案。不得先 update_element 再请求确认，不把上轮批准当成本轮授权。完成后展示实际采用范围并 ui_focus 定位。\n\n${DIRECTION_RULES}`,
   },
   {
     id: 'plein:storyboard',
@@ -106,7 +107,7 @@ export const PLEIN_SKILLS: readonly AgentSkillDetail[] = [
       'run_storyboard',
       'view_media',
     ],
-    instructions: `# 分镜规划与生成\n${BOUNDARY}\n1. 完整读取故事来源：get_canvas_page 找到文档后用 get_element_field 的 /text 沿 next_text_offset 读到 complete=true。索引预览不能代替完整原文。\n2. search_library 查已有角色/场景，place_library_item 复用。先说明镜头数量、时长、画面与对白安排；较大任务 propose_plan 并 await_approval。\n3. 按目标用 place_drama_template 铺骨架、extract_cast 建设定、expand_storyboard 展开，已有分镜改动用 propose_edit；需要时 sync_storyboard。不要为了使用本技能自动生成；仅在本轮明确范围内调用 run_storyboard，并走原确认与去重规则。结果用 view_media 核对，不盲目重跑失败或状态未知的任务。`,
+    instructions: `# 分镜规划与生成\n${BOUNDARY}\n1. 完整读取故事来源：get_canvas_page 找到文档后用 get_element_field 的 /text 沿 next_text_offset 读到 complete=true。索引预览不能代替完整原文。\n2. search_library 查已有角色/场景，place_library_item 复用。按下面的导演分镜准则先说明镜头数量、每镜目的、时长、景别与运镜、画面与对白安排；较大任务 propose_plan 并 await_approval。\n3. 按目标用 place_drama_template 铺骨架、extract_cast 建设定、expand_storyboard 展开，已有分镜改动用 propose_edit；需要时 sync_storyboard。不要为了使用本技能自动生成；仅在本轮明确范围内调用 run_storyboard，并走原确认与去重规则。结果用 view_media 核对，不盲目重跑失败或状态未知的任务。\n\n${DIRECTION_RULES}`,
   },
   {
     id: 'plein:media-edit',
