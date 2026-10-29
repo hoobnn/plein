@@ -434,105 +434,13 @@ function Workbench({
                   {error}
                 </p>
               )}
-              <div className="flex-1 overflow-auto">
-                <ShotSummary
-                  engine={engine}
-                  shot={shot}
-                  promptText={summaryPrompt.text}
-                  promptSource={summaryPrompt.source}
-                  targets={mentionTargetList}
-                  speechVoices={speechVoices}
-                  input={assetInput}
-                  onLocate={locate}
-                  onChoose={() => useCanvas.getState().openStoryboard(boardId)}
-                />
-                <ShotComparison
-                  engine={engine}
-                  canvasId={canvasId}
-                  boardId={boardId}
-                  previous={previous}
-                  shot={shot}
-                  groups={groups}
-                  onReview={() => setChild('pair')}
-                  candidatePrimary={candidatePrimary}
-                  canReview={
-                    !!beforeVideo &&
-                    !!video &&
-                    currentResult(beforeVideo)?.value.type === 'video' &&
-                    currentResult(video)?.value.type === 'video'
-                  }
-                />
-                <div className="flex flex-col gap-2">
-                  <details className="p-4" aria-label="本镜参考资产">
-                    <summary>上游引用 · {references.length} 项</summary>
-                    <h3 className="font-medium">本镜参考</h3>
-                    <p className="text-xs text-ink-subtle">出场设定</p>
-                    {shot.characters.length ? (
-                      shot.characters.map((name) => (
-                        <span key={name} className="plein-shot-subject">
-                          {name}
-                        </span>
-                      ))
-                    ) : (
-                      <p className="text-xs text-ink-subtle">尚未指定出场资产</p>
-                    )}
-                    <h4 className="mt-4 text-xs font-medium">当前阶段上游</h4>
-                    {references.length ? (
-                      references.map((ref) => (
-                        <button
-                          key={ref.edgeId}
-                          type="button"
-                          className="plein-shot-reference"
-                          onClick={() => locate(ref.source.id)}
-                        >
-                          <Icon
-                            name={
-                              ref.value?.type === 'image'
-                                ? 'image'
-                                : ref.value?.type === 'video'
-                                  ? 'video'
-                                  : ref.value?.type === 'audio'
-                                    ? 'audio'
-                                    : 'doc'
-                            }
-                          />
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm">
-                              {ref.source.name ?? '未命名素材'}
-                            </span>
-                            <span className="block text-xs text-ink-subtle">
-                              {ref.value ? '定位来源' : '等待上游素材'}
-                            </span>
-                          </span>
-                        </button>
-                      ))
-                    ) : (
-                      <p className="text-xs text-ink-subtle">
-                        暂无上游引用，选择阶段后可查看来源。
-                      </p>
-                    )}
-                    {!!shot.dialogue.length && (
-                      <details className="mt-4 text-xs">
-                        <summary>本镜对白 · {shot.dialogue.length} 句</summary>
-                        <div className="space-y-2 pt-2">
-                          {shot.dialogue.map((line) => (
-                            <p key={line.id}>
-                              <span className="font-medium">{line.character}</span>：{line.line}
-                            </p>
-                          ))}
-                        </div>
-                      </details>
-                    )}
-                  </details>
-                  <details aria-label="当前镜头计划" className="p-4 space-y-3">
-                    <summary>镜头计划</summary>
+              <div className="plein-shot-workspace-columns">
+                <section aria-label="当前镜头计划" className="plein-shot-workspace-plan space-y-3">
+                  <div className="space-y-3">
                     <div>
                       <p className="text-xs text-ink-subtle">脚本与提示词</p>
                       <h3 className="font-medium">当前镜头计划</h3>
                     </div>
-                    <p className="text-xs text-ink-subtle">
-                      保存镜头计划后，可核对并同步到生成节点。
-                    </p>
                     {changed && (
                       <p role="status" className="text-warning">
                         镜头内容已有新版本，当前草稿保留，请重新载入后再保存。
@@ -601,37 +509,68 @@ function Workbench({
                         核对本镜计划差异
                       </button>
                     </div>
-
-                    <details>
-                      <summary>固定原文与本镜映射</summary>
-                      <SourceQuotes
-                        engine={engine}
-                        boardId={boardId}
-                        shotId={shotId}
-                        onLocateSource={(id) => locate(id)}
-                      />
-                    </details>
-                    <details>
-                      <summary>本镜当前与历史观察</summary>
-                      <ObservationSummary
-                        engine={engine}
-                        canvasId={canvasId}
-                        boardId={boardId}
-                        shotId={shotId}
-                      />
-                    </details>
-                    <details>
-                      <summary>镜头目的与起止状态</summary>
-                      <ShotPlanForm
-                        engine={engine}
-                        canvasId={canvasId}
-                        boardId={boardId}
-                        shotId={shotId}
-                        isCurrent={writable}
-                      />
-                    </details>
+                  </div>
+                  <ShotSummary
+                    engine={engine}
+                    shot={shot}
+                    promptText={summaryPrompt.text}
+                    promptSource={summaryPrompt.source}
+                    targets={mentionTargetList}
+                    speechVoices={speechVoices}
+                    input={assetInput}
+                    onLocate={locate}
+                    onChoose={() => useCanvas.getState().openStoryboard(boardId)}
+                  />
+                  <details>
+                    <summary>固定原文与本镜映射</summary>
+                    <SourceQuotes
+                      engine={engine}
+                      boardId={boardId}
+                      shotId={shotId}
+                      onLocateSource={(id) => locate(id)}
+                    />
                   </details>
-                  <section aria-label="本镜候选与执行依据" className="p-4 space-y-3">
+                  <details>
+                    <summary>本镜当前与历史观察</summary>
+                    <ObservationSummary
+                      engine={engine}
+                      canvasId={canvasId}
+                      boardId={boardId}
+                      shotId={shotId}
+                    />
+                  </details>
+                  <details>
+                    <summary>镜头目的与起止状态</summary>
+                    <ShotPlanForm
+                      engine={engine}
+                      canvasId={canvasId}
+                      boardId={boardId}
+                      shotId={shotId}
+                      isCurrent={writable}
+                    />
+                  </details>
+                </section>
+                <section
+                  aria-label="本镜候选与执行依据"
+                  className="plein-shot-workspace-preview space-y-3"
+                >
+                  <ShotComparison
+                    engine={engine}
+                    canvasId={canvasId}
+                    boardId={boardId}
+                    previous={previous}
+                    shot={shot}
+                    groups={groups}
+                    onReview={() => setChild('pair')}
+                    candidatePrimary={candidatePrimary}
+                    canReview={
+                      !!beforeVideo &&
+                      !!video &&
+                      currentResult(beforeVideo)?.value.type === 'video' &&
+                      currentResult(video)?.value.type === 'video'
+                    }
+                  />
+                  <div className="space-y-3">
                     <div>
                       <p className="text-xs text-ink-subtle">预览与审片</p>
                       <h3 className="font-medium">候选</h3>
@@ -736,43 +675,97 @@ function Workbench({
                         isCurrent={active}
                       />
                     </details>
-                  </section>
-                </div>
-                <details className="p-4 text-sm" aria-label="本镜下游影响">
-                  <summary>
-                    下游影响 · {downstream.length} 个节点 · {dependents.length} 项引用
-                  </summary>
-                  {!!downstream.length && (
-                    <div className="flex w-full flex-wrap gap-2">
-                      {downstream.map((id) => (
+                  </div>
+                  <details className="text-sm" aria-label="本镜参考资产">
+                    <summary>上游引用 · {references.length} 项</summary>
+                    <h3 className="font-medium">本镜参考</h3>
+                    {shot.characters.map((name) => (
+                      <span key={name} className="plein-shot-subject">
+                        {name}
+                      </span>
+                    ))}
+                    <h4 className="mt-4 text-xs font-medium">当前阶段上游</h4>
+                    {references.length ? (
+                      references.map((ref) => (
                         <button
+                          key={ref.edgeId}
                           type="button"
-                          className="ui-btn ui-btn-secondary ui-btn-xs"
-                          key={id}
-                          onClick={() =>
-                            locate(id, engine.doc.get(id)?.nodeType === 'plein/sequence')
-                          }
+                          className="plein-shot-reference"
+                          onClick={() => locate(ref.source.id)}
                         >
-                          {engine.doc.get(id)?.name ?? id}
+                          <Icon
+                            name={
+                              ref.value?.type === 'image'
+                                ? 'image'
+                                : ref.value?.type === 'video'
+                                  ? 'video'
+                                  : ref.value?.type === 'audio'
+                                    ? 'audio'
+                                    : 'doc'
+                            }
+                          />
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm">
+                              {ref.source.name ?? '未命名素材'}
+                            </span>
+                            <span className="block text-xs text-ink-subtle">
+                              {ref.value ? '定位来源' : '等待上游素材'}
+                            </span>
+                          </span>
                         </button>
-                      ))}
-                    </div>
-                  )}
-                  {dependents.map((ref) => (
-                    <p
-                      key={JSON.stringify([
-                        ref.toPlanRevisionId,
-                        ref.planRevisionId,
-                        ref.subjectId,
-                        ref.fields,
-                      ])}
-                    >
-                      镜头 {shots.find((s) => s.id === ref.toShotId)?.no ?? ref.toShotId} 引用{' '}
-                      {ref.fields.join('、')}：{ref.status}
-                    </p>
-                  ))}
-                </details>
+                      ))
+                    ) : (
+                      <p className="text-xs text-ink-subtle">暂无上游引用。</p>
+                    )}
+                    {!!shot.dialogue.length && (
+                      <details className="mt-4 text-xs">
+                        <summary>本镜对白 · {shot.dialogue.length} 句</summary>
+                        <div className="space-y-2 pt-2">
+                          {shot.dialogue.map((line) => (
+                            <p key={line.id}>
+                              <span className="font-medium">{line.character}</span>：{line.line}
+                            </p>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </details>
+                </section>
               </div>
+              <details className="plein-shot-workspace-impact text-sm" aria-label="本镜下游影响">
+                <summary>
+                  下游影响 · {downstream.length} 个节点 · {dependents.length} 项引用
+                </summary>
+                {!!downstream.length && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {downstream.map((id) => (
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn-secondary ui-btn-xs"
+                        key={id}
+                        onClick={() =>
+                          locate(id, engine.doc.get(id)?.nodeType === 'plein/sequence')
+                        }
+                      >
+                        {engine.doc.get(id)?.name ?? id}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {dependents.map((ref) => (
+                  <p
+                    key={JSON.stringify([
+                      ref.toPlanRevisionId,
+                      ref.planRevisionId,
+                      ref.subjectId,
+                      ref.fields,
+                    ])}
+                  >
+                    镜头 {shots.find((s) => s.id === ref.toShotId)?.no ?? ref.toShotId} 引用{' '}
+                    {ref.fields.join('、')}：{ref.status}
+                  </p>
+                ))}
+              </details>
             </>
           )}
         </div>
@@ -924,11 +917,17 @@ function ShotSummary({
   onChoose(): void
 }) {
   const mentions = useMemo(() => findMentions(promptText, targets), [promptText, targets])
+  // 没有出场资产时摘要只留一行，不占版面
+  if (!shot.characters.length)
+    return (
+      <section className="space-y-2" aria-label="本镜用到的">
+        <p className="text-xs text-ink-subtle">本镜用到的 · 尚未指定出场资产</p>
+      </section>
+    )
   return (
-    <section className="p-4 space-y-2" aria-label="本镜用到的">
+    <section className="space-y-2" aria-label="本镜用到的">
       <h3 className="font-medium">本镜用到的</h3>
       <p className="text-xs text-ink-subtle">档案项{promptSource}</p>
-      {!shot.characters.length && <p className="text-xs">尚未指定出场资产</p>}
       <div className="flex flex-wrap gap-2">
         {shot.characters.map((name) => {
           const asset = resolveShotAsset(engine.doc, name, shot.assetBindings?.[name])
@@ -1106,6 +1105,14 @@ function ShotComparison({
   candidatePrimary: boolean
 }) {
   const record = continuityOf(engine.doc, boardId)
+  // 第一镜没有可对照的内容，只留一行，不占版面
+  if (!previous)
+    return (
+      <section className="space-y-2" aria-label="上一镜结束到本镜开始">
+        <h3 className="font-medium">上一镜结束 → 本镜开始</h3>
+        <p className="text-xs text-ink-subtle">第一镜，无需对照</p>
+      </section>
+    )
   const side = (item: Shot | undefined, phase: 'start' | 'end') => {
     if (!item) return <p>没有上一镜</p>
     const currents = currentContinuityObservations(engine.doc, { canvasId, boardId }, item.id)
@@ -1191,7 +1198,7 @@ function ShotComparison({
     )
   }
   return (
-    <section className="p-4 space-y-2" aria-label="上一镜结束到本镜开始">
+    <section className="space-y-2" aria-label="上一镜结束到本镜开始">
       <h3 className="font-medium">上一镜结束 → 本镜开始</h3>
       <div className="grid grid-cols-2 gap-3">
         {side(previous, 'end')}
