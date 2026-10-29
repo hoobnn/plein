@@ -853,6 +853,8 @@ describe('模型调用记录', () => {
     expect(records.get('k')).toMatchObject({
       credentialId: originalId,
       credentialLabel: '默认',
+      credentialSource: 'voice',
+      credentialVoice: '旁白',
     })
   })
 
@@ -873,8 +875,8 @@ describe('模型调用记录', () => {
     await expect(speech()).rejects.toMatchObject({
       code: 'auth',
       retryable: false,
-      message:
-        '音色「旁白」属于 Key「默认」，这组 Key 已删除。请在设置里把它加回来，或改用其他音色',
+      credentialLost: { reason: 'missing', voice: '旁白' },
+      message: '音色「旁白」所属的 Key 已删除，请在节点上改用其他音色，或重新复刻后再运行。',
     })
     expect(submit).not.toHaveBeenCalled()
   })
@@ -894,10 +896,39 @@ describe('模型调用记录', () => {
     await expect(speech()).rejects.toMatchObject({
       code: 'auth',
       retryable: false,
-      message:
-        '音色「旁白」所属的 Key「默认」已被替换为其他内容，平台上可能已找不到这个音色。请恢复原 Key，或重新复刻',
+      credentialLost: { reason: 'replaced', voice: '旁白' },
+      message: '音色「旁白」所属的 Key 已被替换，请在节点上改用其他音色，或重新复刻后再运行。',
     })
     expect(submit).not.toHaveBeenCalled()
+  })
+
+  it('配音恢复按调用记录保留音色来源，不重提', async () => {
+    let originalId = ''
+    const fixture = asyncHost(undefined, () => ({
+      credentialId: originalId,
+      credentialFingerprint: credentialFingerprint({ ASYNC_KEY: 'one' }),
+      credentialLabel: '默认',
+      voiceName: '旁白',
+    }))
+    const { configs, submit, poll, records, speech } = fixture
+    originalId = configs.get('acme/async').activeCredential!
+    poll.mockRejectedValueOnce(new ProviderError('unavailable', '稍后再查', { retryable: true }))
+    await expect(speech()).rejects.toMatchObject({ code: 'unavailable' })
+    expect(records.get('k')).toMatchObject({
+      state: 'pending',
+      credentialSource: 'voice',
+      credentialVoice: '旁白',
+    })
+    const withTeam = configs.addCredential('acme/async', '团队', { ASYNC_KEY: 'two' })
+    configs.setActiveCredential('acme/async', withTeam.credentials[1]!.id)
+    configs.removeCredential('acme/async', originalId)
+
+    await expect(speech()).rejects.toMatchObject({
+      code: 'auth',
+      credentialLost: { reason: 'missing', voice: '旁白' },
+      message: '音色「旁白」所属的 Key 已删除，请在节点上改用其他音色，或重新复刻后再运行。',
+    })
+    expect(submit).toHaveBeenCalledTimes(1)
   })
 
   it('没有所属密钥组的音色仍使用当前组', async () => {
@@ -954,9 +985,8 @@ describe('模型调用记录', () => {
     await expect(call()).rejects.toMatchObject({
       code: 'auth',
       retryable: false,
-      credentialLost: true,
-      message:
-        '平台 Async 提交该任务时用的 Key「默认」已删除，无法取回结果。为避免重复计费没有自动重新提交：恢复这组 Key 后可重新获取；不需要原结果的话，可以用当前 Key 重新提交（会再次计费）。',
+      credentialLost: { reason: 'missing' },
+      message: '原来的 Key「默认」已删除，无法取回之前的结果。为避免重复计费没有自动重新提交。',
     })
     expect(submit).toHaveBeenCalledTimes(1)
     expect(poll).toHaveBeenCalledTimes(1)
@@ -986,9 +1016,9 @@ describe('模型调用记录', () => {
     await expect(call()).rejects.toMatchObject({
       code: 'auth',
       retryable: false,
-      credentialLost: true,
+      credentialLost: { reason: 'replaced' },
       message:
-        '平台 Async 提交该任务时用的 Key「默认」已被替换，无法取回结果。为避免重复计费没有自动重新提交：恢复这组 Key 后可重新获取；不需要原结果的话，可以用当前 Key 重新提交（会再次计费）。',
+        '原来的 Key「默认」已被替换，暂时无法取回结果。把这组 Key 改回原来的内容后可重新获取；不需要原结果的话，可以用当前 Key 重新提交（会再次计费）。',
     })
     expect(submit).not.toHaveBeenCalled()
     expect(lookup).not.toHaveBeenCalled()

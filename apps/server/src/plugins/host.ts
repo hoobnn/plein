@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { SequenceExportRequest, type SubmissionAudit } from '@plein/protocol'
+import { type CredentialLost, SequenceExportRequest, type SubmissionAudit } from '@plein/protocol'
 import { createReadStream } from 'node:fs'
 import { readFile, rm } from 'node:fs/promises'
 import { Readable } from 'node:stream'
@@ -104,13 +104,13 @@ export function stageOf(err: unknown): FailureStage | undefined {
   return (err as { stage?: FailureStage } | undefined)?.stage
 }
 
-/** 原密钥组已删除或内容已换：可以放弃原结果，明确确认后改用当前组重新提交 */
-function lostCredential<E extends Error>(err: E): E {
-  return Object.assign(err, { credentialLost: true as const })
+/** 原密钥组已删除或内容已换；音色来源决定任务能不能改用当前组重提 */
+function lostCredential<E extends Error>(err: E, credentialLost: CredentialLost): E {
+  return Object.assign(err, { credentialLost })
 }
 
-export function credentialLostOf(err: unknown): boolean {
-  return (err as { credentialLost?: boolean } | undefined)?.credentialLost === true
+export function credentialLostOf(err: unknown): CredentialLost | undefined {
+  return (err as { credentialLost?: CredentialLost } | undefined)?.credentialLost
 }
 
 /** 文件结果在调用记录里的样子：直接给的字节转成 base64，过大时丢掉（只能重新查询平台） */
@@ -145,6 +145,9 @@ export type CallRecord = {
   credentialId?: string
   credentialFingerprint?: string
   credentialLabel?: string
+  /** 组是否由配音音色解析；恢复时禁止绕过音色改用当前组重提 */
+  credentialSource?: 'voice'
+  credentialVoice?: string
 } & (
   | { state: 'submitting'; at: number }
   | { state: 'unknown'; at: number; message: string }
@@ -499,6 +502,7 @@ export class PluginHost {
       credentialId,
       credentialFingerprint,
       credentialLabel,
+      credentialVoice: voiceName,
       voiceName,
     })
     try {
@@ -562,6 +566,8 @@ export class PluginHost {
     let credentialId = recorded?.credentialId
     let credentialFingerprint = recorded?.credentialFingerprint
     let credentialLabel = recorded?.credentialLabel
+    let credentialSource = recorded?.credentialSource
+    let credentialVoice = recorded?.credentialVoice
     const record = (r: CallRecord, kind?: SubmissionAudit['kind']) => {
       journal?.store.set(
         journal.key,
@@ -572,6 +578,8 @@ export class PluginHost {
           ...(credentialId ? { credentialId } : {}),
           ...(credentialFingerprint ? { credentialFingerprint } : {}),
           ...(credentialLabel ? { credentialLabel } : {}),
+          ...(credentialSource ? { credentialSource } : {}),
+          ...(credentialVoice ? { credentialVoice } : {}),
         },
         kind
           ? {
@@ -623,6 +631,8 @@ export class PluginHost {
     if (voiceCredential) {
       credentialId = voiceCredential.credentialId
       credentialFingerprint = voiceCredential.credentialFingerprint
+      credentialSource = 'voice'
+      credentialVoice = voiceCredential.voiceName
     }
     const providerConfig = this.configs.get(parsed.provider)
     credentialId ??= providerConfig.activeCredential
@@ -633,9 +643,10 @@ export class PluginHost {
       throw lostCredential(
         new ProviderError(
           'auth',
-          `音色「${voiceCredential.voiceName}」属于 Key「${voiceCredential.credentialLabel ?? credentialId!.slice(0, 8)}」，这组 Key 已删除。请在设置里把它加回来，或改用其他音色`,
+          `音色「${voiceCredential.voiceName}」所属的 Key 已删除，请在节点上改用其他音色，或重新复刻后再运行。`,
           { retryable: false },
         ),
+        { reason: 'missing', voice: voiceCredential.voiceName },
       )
     if (
       voiceCredential &&
@@ -645,9 +656,10 @@ export class PluginHost {
       throw lostCredential(
         new ProviderError(
           'auth',
-          `音色「${voiceCredential.voiceName}」所属的 Key「${credential?.label ?? voiceCredential.credentialLabel ?? credentialId!.slice(0, 8)}」已被替换为其他内容，平台上可能已找不到这个音色。请恢复原 Key，或重新复刻`,
+          `音色「${voiceCredential.voiceName}」所属的 Key 已被替换，请在节点上改用其他音色，或重新复刻后再运行。`,
           { retryable: false },
         ),
+        { reason: 'replaced', voice: voiceCredential.voiceName },
       )
     const ctx = this.providerContext(parsed.provider, opts.ownerId, signal, {
       requireEnabled: true,
@@ -655,6 +667,7 @@ export class PluginHost {
       credentialId,
       credentialFingerprint,
       credentialLabel,
+      credentialVoice,
     })
     const { onDelta } = opts
     if (onDelta) ctx.stream = (d) => onDelta(d.text)
@@ -768,7 +781,13 @@ export class PluginHost {
               parsed.provider,
               opts.ownerId,
               AbortSignal.timeout(10_000),
-              { requireEnabled: false, credentialId, credentialFingerprint, credentialLabel },
+              {
+                requireEnabled: false,
+                credentialId,
+                credentialFingerprint,
+                credentialLabel,
+                credentialVoice,
+              },
             )
             await def.cancel(remoteId, cancelCtx).catch(() => {})
           }
@@ -1032,6 +1051,7 @@ export class PluginHost {
       credentialId?: string
       credentialFingerprint?: string
       credentialLabel?: string
+      credentialVoice?: string
       voiceName?: string
     },
   ): ProviderContext {
@@ -1041,27 +1061,24 @@ export class PluginHost {
     const credential = this.configs.credential(id, opts.credentialId)
     const label =
       opts.credentialLabel ?? credential?.label ?? opts.credentialId?.slice(0, 8) ?? '默认'
-    if (opts.credentialId && !credential)
-      throw lostCredential(
-        new ProviderError(
-          'auth',
-          opts.voiceName
-            ? `音色「${opts.voiceName}」所属的 Key「${label}」已删除，无法查询训练状态。请恢复原 Key，或重新复刻`
-            : `平台 ${def.title} 提交该任务时用的 Key「${label}」已删除，无法取回结果。为避免重复计费没有自动重新提交：恢复这组 Key 后可重新获取；不需要原结果的话，可以用当前 Key 重新提交（会再次计费）。`,
-          { retryable: false },
-        ),
-      )
+    const credentialError = (reason: CredentialLost['reason']) => {
+      const missing = reason === 'missing'
+      const message = opts.voiceName
+        ? `音色「${opts.voiceName}」所属的 Key「${label}」${missing ? '已删除' : '已被替换'}，无法查询训练状态。请恢复原 Key，或重新复刻`
+        : opts.credentialVoice
+          ? `音色「${opts.credentialVoice}」所属的 Key ${missing ? '已删除' : '已被替换'}，请在节点上改用其他音色，或重新复刻后再运行。`
+          : missing
+            ? `原来的 Key「${label}」已删除，无法取回之前的结果。为避免重复计费没有自动重新提交。`
+            : `原来的 Key「${label}」已被替换，暂时无法取回结果。把这组 Key 改回原来的内容后可重新获取；不需要原结果的话，可以用当前 Key 重新提交（会再次计费）。`
+      return lostCredential(new ProviderError('auth', message, { retryable: false }), {
+        reason,
+        ...(opts.credentialVoice ? { voice: opts.credentialVoice } : {}),
+      })
+    }
+    if (opts.credentialId && !credential) throw credentialError('missing')
     const secrets = credential?.secrets ?? config.secrets
     if (opts.credentialFingerprint && fingerprintOf(secrets) !== opts.credentialFingerprint)
-      throw lostCredential(
-        new ProviderError(
-          'auth',
-          opts.voiceName
-            ? `音色「${opts.voiceName}」所属的 Key「${label}」已被替换，无法查询训练状态。请恢复原 Key，或重新复刻`
-            : `平台 ${def.title} 提交该任务时用的 Key「${label}」已被替换，无法取回结果。为避免重复计费没有自动重新提交：恢复这组 Key 后可重新获取；不需要原结果的话，可以用当前 Key 重新提交（会再次计费）。`,
-          { retryable: false },
-        ),
-      )
+      throw credentialError('replaced')
     if (opts.requireEnabled && !config.enabled)
       throw new ProviderError('unavailable', `平台 ${def.title} 未启用`)
     const settings = def.settings.safeParse(config.settings)
@@ -1217,7 +1234,8 @@ export class PluginHost {
       const e = toError(err)
       const wrapped = new NodeRunError(e.code, e.message, e.retryable)
       wrapped.stage = stageOf(err)
-      if (credentialLostOf(e)) Object.assign(wrapped, { credentialLost: true as const })
+      const credentialLost = credentialLostOf(e)
+      if (credentialLost) Object.assign(wrapped, { credentialLost })
       throw wrapped
     }
     for (const [port, values] of Object.entries(outputs)) {

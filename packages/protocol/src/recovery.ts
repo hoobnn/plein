@@ -38,6 +38,12 @@ export type HeldReason =
   | 'superseded'
   | 'candidate_only'
 
+export interface CredentialLost {
+  reason: 'missing' | 'replaced'
+  /** 这组 Key 是按音色解析出来的；此类任务不能改用当前组盲目重提 */
+  voice?: string
+}
+
 export interface JobRecovery {
   state: RecoveryState
   /** 平台上的任务 ID（有的话），人工核查时对照 */
@@ -53,8 +59,10 @@ export interface JobRecovery {
   attachable?: boolean
   /** fetch_failed / remote_pending：能「重新获取」（不重新提交） */
   refetchable?: boolean
-  /** 原密钥组已删除或内容已换；可放弃原结果，二次确认后用当前组重新提交 */
-  credentialLost?: true
+  /** 原密钥组已删除或内容已换，以及该组是否来自音色 */
+  credentialLost?: CredentialLost
+  /** 提交时的组标签，用于说明哪组 Key 已失效 */
+  credentialLabel?: string
   /** credentialLost 时当前组的标签，用于重新提交确认 */
   currentCredentialLabel?: string
   /** 不能恢复或需要说明的情况 */
