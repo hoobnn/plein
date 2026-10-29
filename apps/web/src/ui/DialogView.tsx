@@ -16,6 +16,7 @@ export function DialogView({
   const [text, setText] = useState(req.kind === 'prompt' ? (req.options.defaultValue ?? '') : '')
   const inputRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
+  const alternateRef = useRef<HTMLButtonElement>(null)
   const closing = useClosing()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -89,7 +90,9 @@ export function DialogView({
                     inputRef.current?.select()
                     return inputRef.current
                   }
-                : confirmRef
+                : () =>
+                    (req.options.initialFocus === 'alternate' ? alternateRef.current : undefined) ??
+                    confirmRef.current
             }
             render={
               <form
@@ -104,7 +107,9 @@ export function DialogView({
             <div className="flex flex-col gap-1.5">
               <h2 className="text-lg font-semibold break-words">{options.title}</h2>
               {options.message && (
-                <p className="text-sm leading-5 break-words text-ink-muted">{options.message}</p>
+                <p className="text-sm leading-5 break-words whitespace-pre-line text-ink-muted">
+                  {options.message}
+                </p>
               )}
             </div>
             {req.kind === 'prompt' && (
@@ -139,6 +144,7 @@ export function DialogView({
               </button>
               {req.kind === 'confirm' && req.options.alternateLabel && (
                 <button
+                  ref={alternateRef}
                   type="button"
                   disabled={busy}
                   className="ui-btn ui-btn-secondary ui-btn-lg"

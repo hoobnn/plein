@@ -83,3 +83,33 @@ it('三选一确认框区分第三个选项、确认与取消', async () => {
   await user.click(await screen.findByRole('button', { name: '仍然替换' }))
   await waitFor(() => expect(settled).toHaveBeenLastCalledWith(true))
 })
+
+it('三选一确认框可把初始焦点交给第三个选项，普通确认仍落在确认按钮', async () => {
+  const { user } = renderApp(
+    <button
+      type="button"
+      onClick={() =>
+        void choiceDialog({
+          title: '替换仍在使用的密钥？',
+          confirmLabel: '仍然替换',
+          alternateLabel: '改为添加新组',
+          initialFocus: 'alternate',
+        })
+      }
+    >
+      替换
+    </button>,
+  )
+  await user.click(screen.getByText('替换'))
+  const alternate = await screen.findByRole('button', { name: '改为添加新组' })
+  await waitFor(() => expect(document.activeElement).toBe(alternate))
+
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+  act(() => {
+    void confirmDialog({ title: '删除密钥组？', confirmLabel: '删除', danger: true })
+  })
+  const confirm = await screen.findByRole('button', { name: '删除' })
+  await waitFor(() => expect(document.activeElement).toBe(confirm))
+})

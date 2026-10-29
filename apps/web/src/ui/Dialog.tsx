@@ -17,6 +17,8 @@ interface ConfirmOptions {
   danger?: boolean
   /** 第三个选项的文案（如「改为添加新组」）；要区分它和取消时用 choiceDialog */
   alternateLabel?: string
+  /** 三选一时的初始焦点：默认落在确认按钮，推荐另一个做法时给 'alternate' */
+  initialFocus?: 'confirm' | 'alternate'
 }
 
 interface PromptOptions {
@@ -75,7 +77,7 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
   )
 }
 
-/** 三选一确认：确认返回 true，第三个选项返回 'alternate'，取消或 Esc 返回 false */
+/** 三选一确认：确认返回 true，第三个选项返回 'alternate'，取消或 Esc 返回 false；可用 initialFocus 把初始焦点交给推荐项 */
 export function choiceDialog(
   options: ConfirmOptions & { alternateLabel: string },
 ): Promise<boolean | 'alternate'> {
