@@ -32,7 +32,7 @@ test(
     await settings.getByRole('button', { name: /^模型平台/ }).click()
     const row = settings.locator('[data-provider="plein/compatible"]')
     await row.getByRole('button', { expanded: false }).click()
-    await row.getByLabel('API Key', { exact: true }).fill('test-only-not-a-real-key')
+    await row.getByLabel('「默认」的API Key', { exact: true }).fill('test-only-not-a-real-key')
     await row
       .getByRole('textbox', { name: 'Base URL', exact: true })
       .fill('https://gateway.example.com/v1')
