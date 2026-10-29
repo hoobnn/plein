@@ -475,6 +475,21 @@ describe('密钥组', () => {
     expect(body.credentials.update).toEqual([{ id: 'cred-1', label: '个人' }])
   })
 
+  it('只改密钥组时负载不带 settings，不把别的窗口保存的设置冲掉', async () => {
+    const one = credView([credential('cred-1', '个人', true)], 'cred-1')
+    const { user, fetch } = renderRow({}, { view: one })
+    await screen.findByLabelText('「个人」的标签')
+    // 本地没动设置（别的窗口可能刚改过并保存），只添加一组密钥
+    await user.click(screen.getByRole('button', { name: '添加一组密钥' }))
+    await user.type(card('draft').getByLabelText('「新密钥组 1」的API Key'), 'team-key')
+    await user.type(card('draft').getByLabelText('「新密钥组 1」的标签'), '团队')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('已保存'))
+    const body = JSON.parse(writes(fetch)[0]![1]!.body as string)
+    expect(body).not.toHaveProperty('settings')
+    expect(body.credentials.add).toEqual([{ label: '团队', secrets: { MOCK_API_KEY: 'team-key' } }])
+  })
+
   it('已保存组只填密钥即可保存，不需要标签', async () => {
     const { user, fetch } = renderRow({}, { row: configuredProvider, view: twoGroups() })
     await screen.findByLabelText('「个人」的标签')

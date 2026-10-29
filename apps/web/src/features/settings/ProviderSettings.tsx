@@ -181,9 +181,11 @@ export function ProviderRow({
       const add = drafts
         .filter((d) => d.baseline === undefined || credentialCardDirty(d))
         .map((d) => ({ label: d.label.trim(), secrets: typedSecrets(d.secrets) }))
+      // settings 与已保存一致时不带：服务端整体替换，带上旧值会把别的窗口刚保存的设置冲掉
+      const settingsChanged = !sameSettings(settings, config?.settings)
       const next = await api.updateProviderConfig(provider.id, {
         ...(enableOnSave ? { enabled: true } : {}),
-        settings,
+        ...(settingsChanged ? { settings } : {}),
         ...(update.length || add.length
           ? {
               credentials: {
