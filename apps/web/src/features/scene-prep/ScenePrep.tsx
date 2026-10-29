@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { useDocVersion } from '../../canvas/hooks'
 import { useCanvas } from '../../stores/canvas'
@@ -7,6 +7,7 @@ import { EmptyState } from '../../ui/EmptyState'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
 import { Presence } from '../../ui/Presence'
+import { saveCardToLibrary } from '../library/canvas'
 import { useLibrary } from '../library/store'
 import {
   scenePrep,
@@ -35,6 +36,13 @@ export function ScenePrep() {
 function ScenePrepContent({ engine, sceneId }: { engine: Engine; sceneId: string }) {
   useDocVersion(engine.doc)
   const [opening, setOpening] = useState(false)
+  const mounted = useRef(false)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   const localAssets = useCanvas((s) => s.localAssetUrls)
   const model = scenePrep(engine.doc, sceneId)
   const close = () => useCanvas.getState().openScenePrep(null)
@@ -50,19 +58,44 @@ function ScenePrepContent({ engine, sceneId }: { engine: Engine; sceneId: string
     localAssets?.get(assetId) ?? assetUrls.variant(assetId, 'thumb-256')
   const editViews = async () => {
     if (opening) return
-    const current = engine.doc.get(sceneId)
-    if (!current) return
+    const canvasId = useCanvas.getState().canvasId
+    const currentEngine = () => useCanvas.getState().engine === engine
+    const active = () => mounted.current && currentEngine()
+    if (!active()) return
+    if (!canvasId) {
+      useCanvas.getState().notify('打不开场景编辑：当前画布尚未保存')
+      return
+    }
     setOpening(true)
-    engine.selection.set([sceneId])
-    engine.zoomToFit([sceneId])
-    close()
-    const libraryId = current.params?.libraryId
-    if (typeof libraryId !== 'string' || !libraryId) return
-    await useLibrary.getState().load()
-    if (useCanvas.getState().engine !== engine) return
-    const latestLibraryId = engine.doc.get(sceneId)?.params?.libraryId
-    const item = useLibrary.getState().items.find((item) => item.id === latestLibraryId)
-    if (item) useLibrary.getState().edit(item)
+    try {
+      const lib = useLibrary.getState()
+      await lib.load()
+      if (!active()) return
+      const loadError = useLibrary.getState().error
+      if (loadError) throw new Error(loadError)
+      const current = engine.doc.get(sceneId)
+      if (!current) throw new Error('来源卡片已删除')
+      const rawLibraryId = current.params?.libraryId
+      const libraryId = typeof rawLibraryId === 'string' && rawLibraryId ? rawLibraryId : undefined
+      const linked = useLibrary.getState().items.find((item) => item.id === libraryId)
+      if (libraryId && !linked) throw new Error('关联的资产库条目已删除')
+      const item =
+        linked ??
+        (
+          await saveCardToLibrary(engine, current, lib.projectId, useLibrary.getState(), {
+            canvasId,
+            current: currentEngine,
+          })
+        ).item
+      if (active()) {
+        useLibrary.getState().edit(item)
+        close()
+      }
+    } catch (err) {
+      if (active()) useCanvas.getState().notify(`打不开场景编辑：${(err as Error).message}`)
+    } finally {
+      if (mounted.current) setOpening(false)
+    }
   }
   const openShot = (shot: ScenePrepShot) =>
     useCanvas.getState().openShotWorkbench({ boardId: shot.boardId, shotId: shot.shotId })
@@ -127,7 +160,7 @@ function ScenePrepContent({ engine, sceneId }: { engine: Engine; sceneId: string
                   disabled={opening}
                   onClick={() => void editViews()}
                 >
-                  编辑视角
+                  {opening ? '打开中…' : '编辑视角'}
                 </button>
               }
             />
