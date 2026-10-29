@@ -91,9 +91,12 @@ it('只有成功读取的空目录才显示没有平台的结论', () => {
   expect(html).not.toContain('role="alert"')
 })
 
-it('配置未读取时行摘要只显示本地状态，不提前显示密钥组标签', () => {
-  // 配置是展开时才读的：行摘要先只有配置状态，多组时才补上当前组标签
-  const html = render(catalog())
-  expect(html).toContain('已配置')
-  expect(html).not.toContain('已配置 · ')
+it('多组密钥的平台在行摘要里显示当前组标签，单组保持安静', () => {
+  const multi = catalog()
+  multi.providers[0]!.credentialCount = 2
+  multi.providers[0]!.activeCredentialLabel = '团队'
+  expect(render(multi)).toContain('已配置 · 团队')
+  // 单组不给标签，摘要只有配置状态
+  expect(render(catalog())).toContain('已配置')
+  expect(render(catalog())).not.toContain('已配置 · ')
 })

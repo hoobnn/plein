@@ -112,7 +112,12 @@ const testOk: ProviderTestResult = {
 }
 
 /** 已配置好的平台：密钥组的用例都用它，摘要才能显示组标签 */
-const configuredProvider: ProviderInfo = { ...provider, configured: true }
+const configuredProvider: ProviderInfo = {
+  ...provider,
+  configured: true,
+  credentialCount: 2,
+  activeCredentialLabel: '个人',
+}
 
 interface Handlers {
   get?(request: Request): Response | Promise<Response>
@@ -542,7 +547,6 @@ describe('密钥组', () => {
     expect(JSON.parse(writes(fetch)[0]![1]!.body as string)).toEqual({
       activeCredential: 'cred-2',
     })
-    expect(screen.getByText('已配置 · 团队')).toBeTruthy()
   })
 
   it('添加一组密钥：草稿卡保存时作为 credentials.add 提交', async () => {

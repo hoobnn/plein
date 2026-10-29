@@ -20,18 +20,13 @@ import {
 } from './providerDirty'
 
 /** 平台行仅表示本地配置，不把填写密钥标成远端可用；多组密钥时顺带显示当前用哪一组 */
-function providerState(
-  p: ProviderInfo,
-  config?: ProviderConfigView | null,
-): { label: string; tone: string } {
+function providerState(p: ProviderInfo): { label: string; tone: string } {
   if (!p.enabled) return { label: '已停用', tone: '' }
   if (!p.configured) return { label: '缺少密钥', tone: 'ui-tag-warning' }
-  // 老版服务端的配置视图没有 credentials 字段：退回只显示配置状态
-  const current =
-    config && (config.credentials?.length ?? 0) >= 2
-      ? config.credentials?.find((c) => c.id === config.activeCredential)
-      : undefined
-  return current ? { label: `已配置 · ${current.label}`, tone: '' } : { label: '已配置', tone: '' }
+  // 目录在多组时带当前组标签；保存、删除、设为使用后 onSaved 会刷新目录
+  return p.activeCredentialLabel
+    ? { label: `已配置 · ${p.activeCredentialLabel}`, tone: '' }
+    : { label: '已配置', tone: '' }
 }
 
 /** 单个平台：一行摘要（状态、启用开关），展开后是设置表单（由插件声明的 schema 生成）、密钥、测试连接 */
@@ -301,7 +296,7 @@ export function ProviderRow({
     }
   }
 
-  const state = providerState(provider, config)
+  const state = providerState(provider)
   const bodyId = `provider-${provider.id}`
   const dirty = providerDirty(settings, config?.settings, [...savedCards, ...drafts], numberEditing)
   const feedback = test
