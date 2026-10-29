@@ -262,7 +262,7 @@ export const voices = sqliteTable(
     voice_id: text().notNull(),
     name: text().notNull(),
     status: text().notNull(),
-    /** message / sampleAssetId / gender / age，JSON */
+    /** message / sampleAssetId / gender / age / credentialId 等，JSON */
     data: text().notNull(),
     created_at: integer().notNull(),
     updated_at: integer().notNull(),

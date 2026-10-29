@@ -397,11 +397,13 @@ export class PluginHost {
     ownerId: string,
     input: VoiceCloneInput,
     signal?: AbortSignal,
+    credentialId?: string,
   ): Promise<VoiceCreationResult> {
     const spec = this.voiceClone(id)
     if (!spec) throw new ProviderError('invalid_input', `平台 ${id} 不支持声音复刻`)
     const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
       requireEnabled: true,
+      credentialId,
     })
     try {
       return await spec.clone(input, ctx)
@@ -419,11 +421,13 @@ export class PluginHost {
     ownerId: string,
     input: VoiceDesignInput,
     signal?: AbortSignal,
+    credentialId?: string,
   ): Promise<VoiceCreationResult> {
     const spec = this.voiceDesign(id)
     if (!spec) throw new ProviderError('invalid_input', `平台 ${id} 不支持音色设计`)
     const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
       requireEnabled: true,
+      credentialId,
     })
     try {
       return await spec.design(input, ctx)
@@ -438,11 +442,13 @@ export class PluginHost {
     ownerId: string,
     voiceId: string,
     signal?: AbortSignal,
+    credentialId?: string,
   ): Promise<VoiceCreationResult | null> {
     const spec = this.voiceClone(id)
     if (!spec?.status) return null
     const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
       requireEnabled: true,
+      credentialId,
     })
     try {
       return await spec.status(voiceId, ctx)

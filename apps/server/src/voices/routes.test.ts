@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream'
 import { ProviderError } from '@plein/plugin-sdk'
 import type { Voice } from '@plein/protocol'
+import { mockProvider } from '@plein/providers'
 import { describe, expect, it, vi } from 'vite-plus/test'
 import { bootServer, request } from '../testing'
 
@@ -72,6 +73,35 @@ describe('我的音色', () => {
     expect((await list()).map((v) => v.name).sort()).toEqual(['控制台音色', '旁白'])
   })
 
+  it('复刻记录创建时的密钥组，切换当前组后仍用原组查训练状态', async () => {
+    const { server, sample, post } = await setup()
+    const configs = server.plugins.configs
+    configs.update('plein/mock', { secrets: { MOCK_API_KEY: 'one' } })
+    const credentialId = configs.get('plein/mock').activeCredential!
+    const voice = (await (
+      await post({ provider: 'plein/mock', name: '旁白', sampleAssetId: sample.id })
+    ).json()) as Voice
+    expect(voice.credentialId).toBe(credentialId)
+    const withTeam = configs.addCredential('plein/mock', '团队', { MOCK_API_KEY: 'two' })
+    configs.setActiveCredential('plein/mock', withTeam.credentials[1]!.id)
+    const seen: Array<string | undefined> = []
+    const status = vi
+      .spyOn(mockProvider.voiceClone!, 'status')
+      .mockImplementationOnce(async (_voiceId, ctx) => {
+        seen.push(ctx.secret('MOCK_API_KEY'))
+        return { status: 'ready' }
+      })
+    try {
+      const refreshed = await request(server, `/api/voices/${voice.id}/refresh`, {
+        method: 'POST',
+      })
+      expect(await refreshed.json()).toMatchObject({ status: 'ready', credentialId })
+      expect(seen).toEqual(['one'])
+    } finally {
+      status.mockRestore()
+    }
+  })
+
   it('同一音色再登记覆盖原记录；改名、删除', async () => {
     const { server, post, list } = await setup()
     const first = (await (
@@ -110,6 +140,8 @@ describe('我的音色', () => {
 
 it('音色设计走独立能力并持久保存试听资产；模式不混用', async () => {
   const { server, post, sample, list } = await setup()
+  server.plugins.configs.update('plein/mock', { secrets: { MOCK_API_KEY: 'design' } })
+  const credentialId = server.plugins.configs.get('plein/mock').activeCredential
   const response = await post({
     mode: 'design',
     provider: 'plein/mock',
@@ -124,6 +156,7 @@ it('音色设计走独立能力并持久保存试听资产；模式不混用', a
     status: 'ready',
     sampleAssetId: null,
     previewAssetId: expect.any(String),
+    credentialId,
   })
   expect(server.assets.get('local', voice.previewAssetId!)).toMatchObject({
     kind: 'audio',
@@ -132,6 +165,7 @@ it('音色设计走独立能力并持久保存试听资产；模式不混用', a
   expect((await list())[0]).toMatchObject({
     previewAssetId: voice.previewAssetId,
     source: 'design',
+    credentialId,
   })
   expect(
     (

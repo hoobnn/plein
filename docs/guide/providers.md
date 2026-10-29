@@ -17,6 +17,8 @@
 3. 百炼 / 豆包只提供「检查配置」：只校验本地凭据，并明确告诉你远端密钥、网络、模型权限和余额都还没验证。
 4. 启用平台，然后在图片、视频、配音等节点里选模型、运行。选择器支持按平台、模型名称或 ID 搜索，标出默认模型，并按当前用户记住最近六个选择。设置页的「已配置」仅表示所需配置完整；远端调用是否可用仍以连接检查和实际任务回执为准。密钥由宿主保存，不会写进画布。
 
+同一平台可以添加多组带标签的密钥，并在设置里切换当前使用的一组；地域、存储等非敏感设置仍由整个平台共用。
+
 MiniMax 默认走中国区 `api.minimax.cn`，也可以选国际区 `api.minimax.io`，密钥要和地域对应。百炼支持北京、新加坡、美国三个地域；业务空间 ID 留空时，使用该地域的 DashScope 兼容端点。方舟默认北京地域；要用自定义模型，先在平台设置里填好模型 / Endpoint ID，再在模型列表里选「自定义」。
 
 火山方舟 Agent Plan 套餐单独作为一个平台「火山方舟 Agent Plan」（`volc/ark-plan`），填写 Agent Plan 专属 API Key（其他方舟 Key 不能混用），扣套餐额度。请求走套餐数据面 `https://ark.cn-beijing.volces.com/api/plan/v3`，模型名自动换成套餐里的预置名（如 `doubao-seedream-5.0-pro`、`doubao-seedance-2.5`）；模型 ID 与按量的方舟平台相同，节点换平台不用改参数。套餐覆盖 Seedream 5.0 Pro / Flash 和 Seedance 2.5 / 2.0 / 2.0 Fast / 2.0 Mini，Small / Medium 档不含视频。官方规定套餐里的文本模型只能在编程 / Agent 工具里用，所以这个平台不提供对话；Seedream Lite 不在套餐内，Seedance 草稿模式会在提交前拦下。视频参考的 TOS 配置要在这个平台里单独填写。参见 [Agent Plan 套餐概览](https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh)。

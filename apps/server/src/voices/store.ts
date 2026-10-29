@@ -9,7 +9,7 @@ type VoiceRow = typeof voices.$inferSelect
 /** data 列里存的字段 */
 type VoiceData = Pick<
   Voice,
-  'message' | 'sampleAssetId' | 'gender' | 'age' | 'source' | 'previewAssetId'
+  'message' | 'sampleAssetId' | 'gender' | 'age' | 'source' | 'previewAssetId' | 'credentialId'
 >
 
 const toVoice = (r: VoiceRow): Voice => {
@@ -23,6 +23,7 @@ const toVoice = (r: VoiceRow): Voice => {
     message: d.message ?? null,
     source: d.source ?? (d.sampleAssetId ? 'clone' : 'register'),
     previewAssetId: d.previewAssetId ?? null,
+    credentialId: d.credentialId ?? null,
     sampleAssetId: d.sampleAssetId ?? null,
     gender: d.gender ?? null,
     age: d.age ?? null,
@@ -36,6 +37,7 @@ const dataOf = (v: VoiceData) =>
     message: v.message,
     source: v.source,
     previewAssetId: v.previewAssetId,
+    credentialId: v.credentialId ?? null,
     sampleAssetId: v.sampleAssetId,
     gender: v.gender,
     age: v.age,

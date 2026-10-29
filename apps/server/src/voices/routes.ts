@@ -56,6 +56,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
         owner,
         voice.voiceId,
         AbortSignal.timeout(20_000),
+        voice.credentialId ?? undefined,
       )
       if (!state) return voice
       return savePreview(
@@ -117,6 +118,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
         spec.voiceId === 'slot' && !custom ? input.voiceId : input.voiceId || generatedVoiceId()
       if (!voiceId)
         return c.json({ error: 'invalid', message: '请填写控制台分配的音色槽位 ID' }, 400)
+      const credentialId = host.configs.get(provider).activeCredential
       const ref = (id: string | null, kind: 'audio' | 'image'): AssetRef | undefined => {
         if (!id) return undefined
         const asset = assets.get(owner, id)
@@ -142,6 +144,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
                   language: input.language,
                 },
                 signal,
+                credentialId,
               )
             : await host.cloneVoice(
                 provider,
@@ -158,12 +161,14 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
                   promptText: input.promptText,
                 },
                 signal,
+                credentialId,
               )
         const voice = voices.save(owner, {
           ...fields,
           voiceId: state.voiceId ?? voiceId,
           status: state.status,
           message: state.status === 'failed' ? state.message : null,
+          credentialId,
         })
         checkedAt.set(voice.id, Date.now())
         return c.json(await savePreview(owner, voice, state), 201)
@@ -175,6 +180,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
             voiceId,
             status: 'training',
             message: `提交结果未知，请先在平台核查音色 ID ${voiceId}，不要重复创建：${e.message}`,
+            credentialId,
           })
           return c.json(voice, 201)
         }

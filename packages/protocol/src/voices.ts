@@ -82,6 +82,8 @@ export interface Voice {
   age: 'young' | 'mature' | null
   source?: 'clone' | 'design' | 'register'
   previewAssetId?: string | null
+  /** 创建时使用的密钥组；旧音色没有记录时用当前组查询训练状态 */
+  credentialId?: string | null
   createdAt: number
   updatedAt: number
 }
