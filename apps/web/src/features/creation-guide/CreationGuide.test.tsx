@@ -260,6 +260,29 @@ it('代表镜头删除后保留失效身份、禁止审片；撤销恢复且只�
   f.host.remove()
 })
 
+it('当前步骤只有一个主操作，试做子步骤按固定顺序定位并拒绝旧目标', () => {
+  const f = fixture()
+  expect(document.querySelectorAll('[data-guide-step] .ui-btn-primary')).toHaveLength(1)
+  const trial = step('trial')
+  expect(
+    [...trial.querySelectorAll<HTMLElement>('[data-guide-substep]')].map(
+      (el) => el.dataset.guideSubstep,
+    ),
+  ).toEqual(['shot', 'input', 'generate', 'review', 'sample'])
+  const generate = within(trial).getByRole('button', { name: /^生成并采用候选 / })
+  fireEvent.click(generate)
+  expect(useCanvas.getState().shotWorkbench).toEqual({ boardId: f.ids[0], shotId: 's1' })
+  fireEvent.click(within(trial).getByRole('button', { name: /选代表镜头/ }))
+  expect(document.activeElement?.id).toBe('c1-guide-shot')
+  act(() => {
+    selectProductionTarget(f.doc, f.ids[0]!, { trialShotId: 's2' })
+    fireEvent.click(generate)
+  })
+  expect(screen.getByRole('alert').textContent).toContain('定位目标已变化')
+  expect(useCanvas.getState().shotWorkbench).toEqual({ boardId: f.ids[0], shotId: 's1' })
+  f.host.remove()
+})
+
 it('制作目标追加独立版本、撤销保留旧版；同帧只读不保存草稿', async () => {
   const f = fixture()
   await f.user.click(screen.getByText('编辑制作目标', { exact: true }))
@@ -342,7 +365,7 @@ it('只读时已有样片可打开，无样片时说明原因且不创建', () =
     f.doc.readOnly = true
     f.doc.mutable(f.ids[0]!)!.set('name', '只读分镜')
   })
-  fireEvent.click(screen.getByRole('button', { name: '打开低成本分镜样片' }))
+  fireEvent.click(screen.getByRole('button', { name: /做样片/ }))
   expect(screen.getByRole('alert').textContent).toContain('不能创建新样片')
   expect([...f.doc.elements()]).toHaveLength(1)
   f.doc.readOnly = false
@@ -359,7 +382,7 @@ it('只读时已有样片可打开，无样片时说明原因且不创建', () =
     })
     f.doc.readOnly = true
   })
-  fireEvent.click(screen.getByRole('button', { name: '打开低成本分镜样片' }))
+  fireEvent.click(screen.getByRole('button', { name: /做样片/ }))
   expect(useCanvas.getState().sequence).toBe(animatic)
   expect([...f.doc.elements()]).toHaveLength(2)
   f.host.remove()

@@ -10,20 +10,31 @@ import { Modal } from '../../ui/Modal'
 import { Presence } from '../../ui/Presence'
 import { useStale } from '../runs/stale'
 import { openAnimatic } from '../sequence/animatic'
-import { creationGuideFacts, type GuideState, type GuideStepId, type GuideTarget } from './facts'
+import {
+  creationGuideFacts,
+  type GuideFacts,
+  type GuideState,
+  type GuideStepId,
+  type GuideTarget,
+  type TrialSubstepId,
+} from './facts'
 import { ProductionDetails } from './ProductionDetails'
 import { ProductionOverview } from './ProductionOverview'
 import { useSession } from '../../stores/session'
 import { readGuidePreferences, writeGuidePreferences, type GuidePreferences } from './preferences'
 
 const states: Record<GuideState, string> = {
-  todo: '待完成',
-  ready: '待操作',
+  todo: '未开始',
+  ready: '可开始',
   working: '进行中',
   done: '已完成',
   attention: '待检查',
   skipped: '可跳过',
 }
+
+type GuideAction =
+  | { kind: 'step' | 'primary'; stepId: GuideStepId; target: GuideTarget }
+  | { kind: 'substep'; stepId: GuideStepId; substepId: TrialSubstepId; target: GuideTarget }
 
 const targetOptions = (items: Array<{ id: string; name: string }>) =>
   items.map((item) => {
@@ -152,23 +163,53 @@ function Guide({
     }
     return current
   }
-  const locate = (stepId: GuideStepId, target: GuideTarget | undefined) => {
+  const actionTarget = (current: GuideFacts, action: GuideAction) => {
+    const step = current.steps.find((entry) => entry.id === action.stepId)
+    if (action.kind === 'primary') return step?.primary?.target
+    if (action.kind === 'substep')
+      return step?.substeps?.find((entry) => entry.id === action.substepId)?.target
+    return step?.target
+  }
+  const focusSelect = (suffix: 'shot' | 'sequence') => {
+    const trigger = document.getElementById(`${canvasId}-guide-${suffix}`)
+    trigger?.scrollIntoView({ block: 'nearest' })
+    trigger?.focus()
+  }
+  const runAction = (action: GuideAction) => {
     const current = readCurrent()
     if (!current) return
-    if (
-      !target ||
-      JSON.stringify(current.steps.find((step) => step.id === stepId)?.target) !==
-        JSON.stringify(target)
-    ) {
+    if (JSON.stringify(actionTarget(current, action)) !== JSON.stringify(action.target)) {
       setError('定位目标已变化，请核对当前步骤后重试')
       return
     }
     setError('')
+    const target = action.target
+    // 选择控件在本面板里，定位到它而不是关闭面板。
+    if (target.kind === 'shot-select' || target.kind === 'sequence-select') {
+      focusSelect(target.kind === 'shot-select' ? 'shot' : 'sequence')
+      return
+    }
+    // 样片可能因只读或素材问题打不开；失败时保留面板显示原因。
+    if (target.kind === 'animatic') {
+      if (!openAnimatic(engine, target.nodeId)) {
+        setError(
+          engine.doc.readOnly
+            ? '画布为只读，不能创建新样片；已有样片仍可打开查看'
+            : '样片未打开，请根据通知检查后重试',
+        )
+        return
+      }
+      setModalOpen(false)
+      engine.selection.set([target.nodeId])
+      engine.zoomToFit([target.nodeId])
+      return
+    }
     setModalOpen(false)
     const state = useCanvas.getState()
     state.setMode('flow')
     state.openStoryboard(null)
     state.openSequence(null)
+    state.openShotWorkbench(null)
     state.openStage(null)
     state.view(null)
     engine.selection.set([target.nodeId])
@@ -176,6 +217,8 @@ function Guide({
     if (target.kind === 'text') onOpenText(target.nodeId)
     else if (target.kind === 'storyboard') state.openStoryboard(target.nodeId)
     else if (target.kind === 'sequence') state.openSequence(target.nodeId, target.clipInstanceId)
+    else if (target.kind === 'workbench' && target.shotId)
+      state.openShotWorkbench({ boardId: target.nodeId, shotId: target.shotId })
     else if (target.kind === 'review' && target.resultId)
       state.view({
         kind: 'result',
@@ -186,11 +229,7 @@ function Guide({
     else
       requestAnimationFrame(() => {
         const latest = readCurrent()
-        if (
-          latest &&
-          JSON.stringify(latest.steps.find((step) => step.id === stepId)?.target) ===
-            JSON.stringify(target)
-        )
+        if (latest && JSON.stringify(actionTarget(latest, action)) === JSON.stringify(target))
           window.dispatchEvent(new CustomEvent('plein:focus-generator', { detail: target.nodeId }))
       })
   }
@@ -247,6 +286,7 @@ function Guide({
                 update({ boardId, trialShotId: undefined, sequenceId: undefined })
               }}
             />
+            <span className="ui-help">画布上有多份分镜，先选定要继续的那份。</span>
           </label>
         )}
         {!facts.board ? (
@@ -300,6 +340,7 @@ function Guide({
                       selectProductionTarget(engine.doc, latest.board.id, { trialShotId })
                   }}
                 />
+                <span className="ui-help">试做只针对这一镜，先定它再看进度。</span>
               </label>
             )}
             {(facts.sequences.length > 1 ||
@@ -341,6 +382,7 @@ function Guide({
                       selectProductionTarget(engine.doc, latest.board.id, { sequenceId })
                   }}
                 />
+                <span className="ui-help">有多条成片序列时，先选定这次交付到哪条。</span>
               </label>
             )}
             {!online && (
@@ -353,50 +395,19 @@ function Guide({
                   : '离线：可以查看和修改，生成与导出执行不可用'}
               </p>
             )}
-            {!!facts.shots.length && (
-              <button
-                type="button"
-                className="ui-btn ui-btn-secondary ui-btn-sm"
-                onClick={() => {
-                  const current = readCurrent(true)
-                  if (!current?.board) return
-                  const opened = openAnimatic(engine, current.board.id)
-                  if (opened) setModalOpen(false)
-                  setError(
-                    opened
-                      ? ''
-                      : engine.doc.readOnly
-                        ? '画布为只读，不能创建新样片；已有样片仍可打开查看'
-                        : '样片未打开，请根据通知检查后重试',
-                  )
-                }}
-              >
-                打开低成本分镜样片
-              </button>
-            )}
-            <ProductionOverview
-              engine={engine}
-              canvasId={canvasId}
-              facts={facts}
-              writable={writable}
-              readCurrent={() => readCurrent()}
-              onError={setError}
-            />
             <ol className="flex flex-col gap-1">
-              {facts.steps.map((step, i) => (
-                <li key={step.id} data-guide-step={step.id} data-guide-state={step.state}>
-                  <button
-                    type="button"
-                    disabled={!step.target}
-                    aria-current={facts.next === step.id ? 'step' : undefined}
-                    className={`flex w-full gap-2 rounded-lg p-2 text-left transition-colors hover:bg-hover disabled:opacity-60 ${facts.next === step.id ? 'bg-accent-soft' : ''}`}
-                    onClick={() => locate(step.id, step.target)}
+              {facts.steps.map((step, i) => {
+                const current = facts.next === step.id
+                const marker = (
+                  <span
+                    className={`flex size-5 shrink-0 items-center justify-center rounded-full text-2xs ${step.state === 'done' ? 'bg-accent text-white' : 'bg-surface-2 text-ink-muted'}`}
                   >
-                    <span
-                      className={`flex size-5 shrink-0 items-center justify-center rounded-full text-2xs ${step.state === 'done' ? 'bg-accent text-white' : 'bg-surface-2 text-ink-muted'}`}
-                    >
-                      {step.state === 'done' ? <Icon name="check" size={12} /> : i + 1}
-                    </span>
+                    {step.state === 'done' ? <Icon name="check" size={12} /> : i + 1}
+                  </span>
+                )
+                const body = (
+                  <>
+                    {marker}
                     <span className="min-w-0 flex-1">
                       <span className="flex justify-between gap-2 text-xs">
                         <span className="font-medium">{step.title}</span>
@@ -412,10 +423,99 @@ function Guide({
                         {step.detail}
                       </span>
                     </span>
-                  </button>
-                </li>
-              ))}
+                  </>
+                )
+                return (
+                  <li key={step.id} data-guide-step={step.id} data-guide-state={step.state}>
+                    <div
+                      className={`rounded-lg p-2 ${current ? 'bg-accent-soft' : ''}`}
+                      aria-current={current ? 'step' : undefined}
+                    >
+                      {current ? (
+                        <div className="flex gap-2">{body}</div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="flex w-full gap-2 rounded text-left hover:bg-hover disabled:opacity-60"
+                          title={`定位到${step.title}`}
+                          disabled={!step.target}
+                          onClick={() =>
+                            step.target &&
+                            runAction({ kind: 'step', stepId: step.id, target: step.target })
+                          }
+                        >
+                          {body}
+                        </button>
+                      )}
+                      {current && step.primary && (
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn-primary ui-btn-sm mt-2 w-full"
+                          onClick={() =>
+                            runAction({
+                              kind: 'primary',
+                              stepId: step.id,
+                              target: step.primary!.target,
+                            })
+                          }
+                        >
+                          {step.primary.label}
+                        </button>
+                      )}
+                      {step.id === 'trial' && step.substeps && (
+                        <ol className="mt-2 flex flex-col gap-1 border-l border-line pl-2">
+                          {step.substeps.map((sub) => (
+                            <li
+                              key={sub.id}
+                              data-guide-substep={sub.id}
+                              data-guide-state={sub.state}
+                            >
+                              <button
+                                type="button"
+                                className="flex w-full gap-1.5 rounded px-1 py-0.5 text-left text-2xs hover:bg-hover disabled:opacity-50"
+                                disabled={!sub.target}
+                                onClick={() =>
+                                  sub.target &&
+                                  runAction({
+                                    kind: 'substep',
+                                    stepId: step.id,
+                                    substepId: sub.id,
+                                    target: sub.target,
+                                  })
+                                }
+                              >
+                                <span
+                                  className={`mt-0.5 flex size-3 shrink-0 items-center justify-center rounded-full ${sub.state === 'done' ? 'bg-accent text-white' : 'bg-surface-2 text-ink-muted'}`}
+                                >
+                                  {sub.state === 'done' && <Icon name="check" size={12} />}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="flex justify-between gap-2">
+                                    <span>{sub.title}</span>
+                                    <span className="shrink-0 text-ink-subtle">
+                                      {states[sub.state]}
+                                    </span>
+                                  </span>
+                                  <span className="block text-ink-subtle">{sub.detail}</span>
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
             </ol>
+            <ProductionOverview
+              engine={engine}
+              canvasId={canvasId}
+              facts={facts}
+              writable={writable}
+              readCurrent={() => readCurrent()}
+              onError={setError}
+            />
             <ProductionDetails
               key={facts.board.id}
               doc={engine.doc}
@@ -425,9 +525,6 @@ function Guide({
               readCurrent={() => readCurrent(true)}
               onError={setError}
             />
-            <p className="text-2xs text-ink-subtle">
-              可以跳步定位。这里只打开编辑器；付费生成仍需点击原有生成按钮。人工审片记录与任务运行状态分别显示。
-            </p>
           </>
         )}
       </div>

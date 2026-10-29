@@ -18,11 +18,37 @@ import { matchLines, SEQUENCE_TYPE, STORYBOARD_TYPE, type Shot } from '@plein/no
 
 export type GuideStepId = 'brief' | 'storyboard' | 'trial' | 'review' | 'batch' | 'delivery'
 export type GuideState = 'todo' | 'ready' | 'working' | 'done' | 'attention' | 'skipped'
+export type GuideTargetKind =
+  | 'text'
+  | 'generator'
+  | 'storyboard'
+  | 'review'
+  | 'sequence'
+  | 'workbench'
+  | 'animatic'
+  | 'shot-select'
+  | 'sequence-select'
 export interface GuideTarget {
-  kind: 'text' | 'generator' | 'storyboard' | 'review' | 'sequence'
+  kind: GuideTargetKind
   nodeId: string
   resultId?: string
   clipInstanceId?: string
+  /** 代表镜头工作台的镜头 */
+  shotId?: string
+}
+/** 试做一步里的固定子步骤；只按已有事实判断完成与否。 */
+export type TrialSubstepId = 'shot' | 'input' | 'generate' | 'review' | 'sample'
+export interface TrialSubstep {
+  id: TrialSubstepId
+  title: string
+  state: GuideState
+  detail: string
+  target?: GuideTarget
+}
+/** 当前步骤唯一的主操作：直接去做这一步该做的事。 */
+export interface GuidePrimary {
+  label: string
+  target: GuideTarget
 }
 export interface GuideStep {
   id: GuideStepId
@@ -30,6 +56,8 @@ export interface GuideStep {
   state: GuideState
   detail: string
   target?: GuideTarget
+  primary?: GuidePrimary
+  substeps?: TrialSubstep[]
 }
 export interface GuideOptions {
   canvasId?: string
@@ -278,12 +306,24 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
     ? undefined
     : (fixedTrialTarget ??
       (sample?.missing ? { kind: 'generator', nodeId: sample.missing.id } : boardTarget))
+  const workbenchTarget: GuideTarget | undefined =
+    trialShot && !trialMissing
+      ? { kind: 'workbench', nodeId: board.id, shotId: trialShot.id }
+      : undefined
+  const animaticTarget: GuideTarget = { kind: 'animatic', nodeId: board.id }
+  const shotSelectTarget: GuideTarget | undefined =
+    shots.length > 1 || trialMissing ? { kind: 'shot-select', nodeId: board.id } : undefined
   const reviewNode =
     sample?.nodes.find(
       (el) =>
         currentResult(el) && (getCreativeReview(el)?.status !== 'usable' || staleIds.has(el.id)),
     ) ?? sample?.nodes.find((el) => currentResult(el)?.value.type === 'video')
   const reviewResult = reviewNode && currentResult(reviewNode)
+  const reviewTarget: GuideTarget | undefined =
+    fixedTrialTarget ??
+    (reviewNode && reviewResult
+      ? { kind: 'review', nodeId: reviewNode.id, resultId: reviewResult.id }
+      : undefined)
   const generated = progress.filter((entry) => entry.value.complete).length
   const allGenerated = shots.length > 0 && generated === shots.length
   const deliveryStale = sequence && staleIds.has(sequence.id)
@@ -291,6 +331,106 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
   const animation = elements.find(
     (el) => el.nodeType === ANIMATIC && el.params?.boardId === board.id,
   )
+  // 试做的固定子步骤：只用已有事实判断完成与否，不新增任何记录状态。
+  const adopted = (sample?.nodes ?? []).filter(
+    (el) => currentResult(el)?.value.type === resultType(sourceOf(el)!.role),
+  ).length
+  const inputNode =
+    sample?.nodes.find((el) => sourceOf(el)?.role === 'video') ??
+    sample?.nodes.find((el) => sourceOf(el)?.role === 'image')
+  const trialSubsteps: TrialSubstep[] = [
+    {
+      id: 'shot',
+      title: '选代表镜头',
+      state: trialMissing
+        ? 'attention'
+        : !shots.length
+          ? 'todo'
+          : shots.length <= 1 || trialShotId
+            ? 'done'
+            : 'todo',
+      detail: trialMissing
+        ? '原试做镜头已移除，请重新选择'
+        : !shots.length
+          ? '还没有镜头，先到分镜表补充'
+          : shots.length <= 1
+            ? `当前试做镜头：镜头 ${trialShot?.no}`
+            : trialShotId
+              ? `当前试做镜头：镜头 ${trialShot?.no} · ${trialShot?.description || '未填写画面'}`
+              : '顶部选择要试做的一镜',
+      target: shotSelectTarget ?? boardTarget,
+    },
+    {
+      id: 'input',
+      title: '核对实际送入模型的输入',
+      state: fixedTrial.length ? 'ready' : sample?.stale ? 'attention' : adopted ? 'done' : 'todo',
+      detail: fixedTrial.length
+        ? '固定段不经过生成节点，实际文件到序列里核对'
+        : sample?.stale
+          ? '输入已变化，请重新核对'
+          : adopted
+            ? '已采用候选的输入与当前节点一致'
+            : '还没有采用的候选，先生成后再对照输入',
+      target: fixedTrial.length
+        ? fixedTrialTarget
+        : inputNode
+          ? { kind: 'generator', nodeId: inputNode.id }
+          : workbenchTarget,
+    },
+    {
+      id: 'generate',
+      title: '生成并采用候选',
+      state: fixedTrial.length
+        ? 'skipped'
+        : sample?.ambiguous
+          ? 'attention'
+          : sample?.complete
+            ? 'done'
+            : sample?.running
+              ? 'working'
+              : 'todo',
+      detail: fixedTrial.length
+        ? '本镜是固定段，无需重新生成'
+        : sample?.ambiguous
+          ? '本镜有重复生成节点，请先在分镜表检查'
+          : sample?.complete
+            ? '画面、视频与所需声音均已采用'
+            : sample?.running
+              ? '正在生成'
+              : '按所需阶段生成并采用候选',
+      target: fixedTrial.length ? fixedTrialTarget : workbenchTarget,
+    },
+    {
+      id: 'review',
+      title: '人工审阅',
+      state: fixedTrial.length
+        ? 'ready'
+        : sample?.needsChanges
+          ? 'attention'
+          : sample?.approved
+            ? 'done'
+            : sample?.complete
+              ? 'ready'
+              : 'todo',
+      detail: fixedTrial.length
+        ? '到序列审看固定段用于当前叙事的效果'
+        : sample?.needsChanges
+          ? '有采用项被标记为需修改'
+          : sample?.approved
+            ? '当前采用项均已人工确认可用'
+            : sample?.complete
+              ? '逐项试听、看片并标记可用'
+              : '先生成并采用候选再审阅',
+      target: fixedTrialTarget ?? reviewTarget ?? workbenchTarget,
+    },
+    {
+      id: 'sample',
+      title: '做样片',
+      state: animation ? 'done' : 'ready',
+      detail: animation ? '已有低成本样片' : '用低成本样片先看节奏',
+      target: animaticTarget,
+    },
+  ]
   result.shots = shots
   result.trialShot = trialShot
   result.sequence = sequence
@@ -309,6 +449,12 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
       target: briefTarget
         ? { kind: briefTarget.kind === 'markdown' ? 'text' : 'generator', nodeId: briefTarget.id }
         : { kind: 'generator', nodeId: board.id },
+      primary: {
+        label: briefTarget?.kind === 'markdown' ? '打开梗概文字' : '打开生成节点',
+        target: briefTarget
+          ? { kind: briefTarget.kind === 'markdown' ? 'text' : 'generator', nodeId: briefTarget.id }
+          : { kind: 'generator', nodeId: board.id },
+      },
     },
     {
       id: 'storyboard',
@@ -328,6 +474,7 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
             : `逐行核对 ${shots.length} 镜后，在此明确确认`
           : '尚无分镜，先填写或生成分镜表',
       target: boardTarget,
+      primary: { label: '打开分镜表', target: boardTarget },
     },
     {
       id: 'trial',
@@ -357,6 +504,14 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
                 ? '已有低成本样片计划；也可先只做选定的一镜'
                 : '先展开并只试做选定镜头，避免整批试错',
       target: trialTarget,
+      primary: trialMissing
+        ? shots.length
+          ? { label: '重新选择试做镜头', target: shotSelectTarget! }
+          : { label: '打开分镜表补充镜头', target: boardTarget }
+        : workbenchTarget
+          ? { label: '打开代表镜头工作台', target: workbenchTarget }
+          : undefined,
+      substeps: trialSubsteps,
     },
     {
       id: 'review',
@@ -389,6 +544,16 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
           : trialMissing
             ? undefined
             : boardTarget),
+      primary: fixedTrialTarget
+        ? { label: '打开成片序列', target: fixedTrialTarget }
+        : reviewNode && reviewResult
+          ? {
+              label: '打开候选审阅',
+              target: { kind: 'review', nodeId: reviewNode.id, resultId: reviewResult.id },
+            }
+          : workbenchTarget
+            ? { label: '打开代表镜头工作台', target: workbenchTarget }
+            : undefined,
     },
     {
       id: 'batch',
@@ -402,6 +567,7 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
             : 'todo',
       detail: `${generated}/${shots.length} 镜已有完整节点采用项；固定段复用由清单另行核验，在分镜表明确选择要运行的阶段`,
       target: boardTarget,
+      primary: { label: '打开分镜表批量生成', target: boardTarget },
     },
     {
       id: 'delivery',
@@ -431,6 +597,14 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
         : sequences.length
           ? undefined
           : boardTarget,
+      primary: sequence
+        ? { label: '打开成片序列', target: { kind: 'sequence', nodeId: sequence.id } }
+        : sequences.length
+          ? {
+              label: '选择成片序列',
+              target: { kind: 'sequence-select', nodeId: board.id },
+            }
+          : undefined,
     },
   ]
   result.next = result.steps.find((step) => step.state !== 'done' && step.state !== 'skipped')?.id
