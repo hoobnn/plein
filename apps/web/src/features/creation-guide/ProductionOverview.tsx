@@ -49,6 +49,7 @@ export function ProductionOverview({
     ? goalDurationState(heads, overview.planDuration)
     : ({ state: 'unscoped' } as const)
   const tasksKnown = nodeIds.length === 0 || (tasksChecked && jobs.isSuccess)
+  const localIssueCount = overview.issues.filter((issue) => !issue.task).length
   const tasksLoading = tasksChecked && nodeIds.length > 0 && !jobs.isSuccess && jobs.isPending
   const deliveryMeta = overview.delivery
     ? `${overview.delivery.duration.toFixed(1)} 秒 · ${overview.delivery.width}×${overview.delivery.height}`
@@ -146,7 +147,7 @@ export function ProductionOverview({
         <div className="flex items-center justify-between gap-2">
           <h4 className="font-medium">
             阻塞、待审与任务（
-            {tasksKnown ? overview.issues.length : `本地 ${overview.issues.length}`}）
+            {tasksKnown ? overview.issues.length : `本地 ${localIssueCount}`}）
           </h4>
           {!!nodeIds.length && (
             <button
