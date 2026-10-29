@@ -250,7 +250,7 @@ function ShotList({
         <li key={`${shot.boardId}:${shot.shotId}`}>
           <button
             type="button"
-            title="打开镜头工作台，编辑镜头目的与起止状态"
+            title="打开镜头工作台，核对提示词与起止状态"
             className="flex w-full items-start gap-3 rounded-lg border border-line bg-surface px-3 py-2.5 text-left transition-colors hover:border-accent hover:bg-accent-soft"
             onClick={() => onOpen(shot)}
           >
