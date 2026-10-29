@@ -252,6 +252,32 @@ describe('平台配置接口', () => {
     }
   })
 
+  it('目录里的平台带密钥组数，多组时带当前组标签', async () => {
+    const { call } = await boot()
+    const provider = async () =>
+      (await call<Catalog>('/api/catalog')).body.providers.find((p) => p.id === 'plein/mock')!
+    expect((await provider()).credentialCount).toBe(0)
+
+    await call('/api/providers/plein/mock/config', 'PUT', {
+      secrets: { MOCK_API_KEY: 'personal' },
+    })
+    const single = await provider()
+    expect(single.credentialCount).toBe(1)
+    expect(single.activeCredentialLabel).toBeUndefined()
+
+    await call('/api/providers/plein/mock/config', 'PUT', {
+      credentials: { add: [{ label: '团队', secrets: { MOCK_API_KEY: 'team' } }] },
+    })
+    const multi = await provider()
+    expect(multi.credentialCount).toBe(2)
+    expect(multi.activeCredentialLabel).toBe('默认')
+
+    const view = (await call<ProviderConfigView>('/api/providers/plein/mock/config')).body
+    const teamId = view.credentials.find((c) => c.label === '团队')!.id
+    await call('/api/providers/plein/mock/config', 'PUT', { activeCredential: teamId })
+    expect((await provider()).activeCredentialLabel).toBe('团队')
+  })
+
   it('同一请求后续动作校验失败时，内存与磁盘都不保留前面的改动', async () => {
     const { server, dataDir, call } = await boot()
     const initial = (

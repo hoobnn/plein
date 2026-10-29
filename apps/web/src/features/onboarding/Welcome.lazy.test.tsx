@@ -23,6 +23,7 @@ const catalog = (configured = false): Catalog => ({
           title: '测试平台',
           enabled: true,
           configured: true,
+          credentialCount: 1,
           settingsSchema: {},
           secrets: [],
           models: [],

@@ -51,10 +51,14 @@ export function catalogOf(host: PluginHost): Catalog {
     })),
     providers: [...registry.providers].map(([id, p]) => {
       const cfg = configs.get(id)
+      const current = cfg.credentials.find((c) => c.id === cfg.activeCredential)
       return {
         ...describeProvider(p.def, p.plugin),
         enabled: cfg.enabled,
         configured: providerConfigured(p.def, cfg.secrets),
+        credentialCount: cfg.credentials.length,
+        // 摘要只在多组时需要标出当前用哪一组
+        ...(cfg.credentials.length >= 2 && current ? { activeCredentialLabel: current.label } : {}),
       }
     }),
     defaultModels: host.defaultModels(),

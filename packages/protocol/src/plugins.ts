@@ -47,6 +47,10 @@ export interface ProviderInfo extends ProviderDescriptor {
   enabled: boolean
   /** 必填密钥是否都已填写 */
   configured: boolean
+  /** 平台保存的密钥组数 */
+  credentialCount: number
+  /** 多组密钥时当前组的标签，摘要用；一组或还没选时不给 */
+  activeCredentialLabel?: string
 }
 
 /** 已安装插件提供的全部能力，前端据此生成节点菜单、表单和设置页 */

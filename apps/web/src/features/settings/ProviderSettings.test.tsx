@@ -17,6 +17,7 @@ const catalog = (): Catalog => ({
       title: '测试平台',
       enabled: true,
       configured: true,
+      credentialCount: 1,
       settingsSchema: {},
       secrets: [],
       models: [{ id: 'chat', title: '测试对话', capabilities: ['text.chat'] }],

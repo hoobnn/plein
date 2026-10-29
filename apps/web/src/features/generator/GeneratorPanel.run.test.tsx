@@ -34,6 +34,7 @@ const catalog = {
       title: 'Mock',
       enabled: true,
       configured: true,
+      credentialCount: 1,
       settingsSchema: {},
       secrets: [],
       models: [{ id: 'image', title: 'Mock 图片', capabilities: ['image.generate'] }],

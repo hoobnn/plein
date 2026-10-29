@@ -13,6 +13,7 @@ const provider: ProviderInfo = {
   description: '不联网的假平台',
   enabled: true,
   configured: false,
+  credentialCount: 0,
   testScope: 'connection',
   settingsSchema: {
     type: 'object',

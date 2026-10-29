@@ -37,6 +37,7 @@ const catalogOf = (): Catalog => ({
       ],
       enabled: true,
       configured: true,
+      credentialCount: 1,
     },
   ],
 })

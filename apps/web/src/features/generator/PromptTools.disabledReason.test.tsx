@@ -14,6 +14,7 @@ const catalog = (withChat: boolean): Catalog =>
             title: '对话平台',
             enabled: true,
             configured: true,
+            credentialCount: 1,
             settingsSchema: {},
             secrets: [],
             models: [{ id: 'chat', title: '对话', capabilities: ['text.chat'] }],

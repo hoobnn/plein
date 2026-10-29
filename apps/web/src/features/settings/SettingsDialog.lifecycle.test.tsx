@@ -36,6 +36,7 @@ const provider = {
   title: 'Mock 平台',
   enabled: true,
   configured: false,
+  credentialCount: 0,
   settingsSchema: {
     type: 'object',
     properties: { note: { type: 'string', title: '备注' } },

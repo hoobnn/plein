@@ -13,6 +13,7 @@ const provider: ProviderInfo = {
   description: '不联网的假平台',
   enabled: true,
   configured: false,
+  credentialCount: 0,
   testScope: 'connection',
   settingsSchema: {
     type: 'object',
@@ -57,6 +58,7 @@ const compatible: ProviderInfo = {
   description: '按 OpenAI 协议自建渠道',
   enabled: false,
   configured: false,
+  credentialCount: 0,
   testScope: 'configuration',
   settingsSchema: {
     type: 'object',
