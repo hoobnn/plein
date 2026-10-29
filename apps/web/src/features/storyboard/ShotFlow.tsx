@@ -143,7 +143,8 @@ export function ShotFlow({
   onBatch(): void
 }) {
   const allShots = shotsOf(engine.doc.get(boardId))
-  const read = (id: string) => allShots.find((shot) => shot.id === id)
+  // 失焦提交可能早于文档订阅重绘，冲突检查必须读当前文档而不是渲染快照。
+  const read = (id: string) => shotsOf(engine.doc.get(boardId)).find((shot) => shot.id === id)
   const operationShots = operationPicked.size
     ? allShots.filter((shot) => operationPicked.has(shot.id))
     : allShots

@@ -7,8 +7,17 @@ import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
 import { useSession } from '../../stores/session'
 import { mockFetch } from '../../testing/fetch'
-import { renderApp, resetStoreAfterEach, screen, waitFor, within } from '../../testing/render'
+import {
+  act,
+  fireEvent,
+  renderApp,
+  resetStoreAfterEach,
+  screen,
+  waitFor,
+  within,
+} from '../../testing/render'
 import { StoryboardEditor } from './StoryboardEditor'
+import { storyboardFixture } from './testing'
 
 resetStoreAfterEach(useCatalog)
 const docs: ReturnType<typeof createDoc>[] = []
@@ -93,4 +102,20 @@ it('本地补齐只改所选空字段，保留手写内容，关闭提示词窗�
   expect(rows()[0]?.imagePrompt).toBe('关闭也保留')
   expect(screen.getByRole('dialog', { name: '分镜表' })).toBe(editor)
   expect(fetch).not.toHaveBeenCalled()
+})
+
+it('表格字段在协作者写入后、重绘前失焦，不覆盖远端新内容', () => {
+  const f = storyboardFixture({ count: 1 })
+  renderApp(<StoryboardEditor />)
+  const input = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '画面' })
+  fireEvent.change(input, { target: { value: '本机草稿' } })
+  f.write([{ ...f.read()[0]!, description: '协作者的新画面' }])
+  // 不 flush：模拟文档订阅尚未触发重绘时失焦。
+  fireEvent.blur(input)
+  expect(f.read()[0]?.description).toBe('协作者的新画面')
+  act(f.flush)
+  expect(input.value).toBe('本机草稿')
+  expect(
+    within(input.closest('[data-storyboard-field]') as HTMLElement).getByRole('status').textContent,
+  ).toContain('已在其他位置更新')
 })
