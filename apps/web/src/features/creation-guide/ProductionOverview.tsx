@@ -48,9 +48,9 @@ export function ProductionOverview({
   const duration = scope
     ? goalDurationState(heads, overview.planDuration)
     : ({ state: 'unscoped' } as const)
-  const tasksKnown = nodeIds.length === 0 || (tasksChecked && jobs.isSuccess)
+  const tasksKnown = nodeIds.length === 0 || (tasksChecked && jobs.isSuccess && !jobs.isFetching)
   const localIssueCount = overview.issues.filter((issue) => !issue.task).length
-  const tasksLoading = tasksChecked && nodeIds.length > 0 && !jobs.isSuccess && jobs.isPending
+  const tasksLoading = tasksChecked && nodeIds.length > 0 && jobs.isFetching
   const deliveryMeta = overview.delivery
     ? `${overview.delivery.duration.toFixed(1)} 秒 · ${overview.delivery.width}×${overview.delivery.height}`
     : ''
@@ -163,8 +163,8 @@ export function ProductionOverview({
           )}
         </div>
         {!!nodeIds.length && !tasksChecked && <p role="status">任务尚未检查</p>}
-        {tasksLoading && !jobs.error && <p role="status">正在读取任务</p>}
-        {jobs.error && (
+        {tasksLoading && <p role="status">正在读取任务</p>}
+        {jobs.error && !jobs.isFetching && (
           <p role="status">
             任务读取失败（重试）：{jobs.error.message}{' '}
             <button type="button" className="underline" onClick={() => void jobs.refetch()}>

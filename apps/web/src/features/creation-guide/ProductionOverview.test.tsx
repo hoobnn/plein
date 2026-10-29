@@ -198,6 +198,15 @@ it('任务未检查、读取中或失败时不断言无待处理事项', async (
   release!(Response.json({ jobs: [] }))
   expect(await screen.findByText('当前未发现待处理事项。')).toBeTruthy()
   expect(screen.getByText('阻塞、待审与任务（0）')).toBeTruthy()
+  mode = 'pending'
+  await view.user.click(screen.getByRole('button', { name: '刷新任务' }))
+  expect(await screen.findByText('正在读取任务')).toBeTruthy()
+  expect(screen.getByText('阻塞、待审与任务（本地 0）')).toBeTruthy()
+  expect(screen.queryByText('当前未发现待处理事项。')).toBeNull()
+  mode = 'success'
+  release!(Response.json({ jobs: [] }))
+  expect(await screen.findByText('当前未发现待处理事项。')).toBeTruthy()
+  expect(screen.getByText('阻塞、待审与任务（0）')).toBeTruthy()
   mode = 'fail'
   await view.user.click(screen.getByRole('button', { name: '刷新任务' }))
   expect(await screen.findByText(/任务读取失败（重试）/)).toBeTruthy()
