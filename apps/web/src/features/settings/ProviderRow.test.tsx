@@ -728,6 +728,33 @@ describe('密钥组', () => {
     await user.click(within(dialog).getByRole('button', { name: '取消' }))
   })
 
+  it('删除前按使用情况说明后果，没有使用时保持简短确认', async () => {
+    const two = credView(
+      [
+        { ...credential('cred-1', '个人', true), usage: { tasks: 2, voices: 3 } },
+        credential('cred-2', '团队', true),
+      ],
+      'cred-1',
+    )
+    const { user } = renderRow({ put: () => Response.json(two) }, { view: two })
+    await screen.findByLabelText('「个人」的标签')
+
+    await user.click(card('cred-1').getByRole('button', { name: '删除「个人」' }))
+    const dialog = await screen.findByRole('dialog', { name: '删除密钥组「个人」？' })
+    expect(dialog.textContent).toContain('有 2 个任务的结果还没取回')
+    expect(dialog.textContent).toContain('3 个音色属于这组 Key')
+    expect(dialog.textContent).toContain('删除后这些结果无法再取回，这些音色也无法再配音')
+    // 正在使用的组：后果之后仍说明会切换到哪一组
+    expect(dialog.textContent).toContain('删除后会改用「团队」的密钥')
+    await user.click(within(dialog).getByRole('button', { name: '取消' }))
+
+    await user.click(card('cred-2').getByRole('button', { name: '删除「团队」' }))
+    const short = await screen.findByRole('dialog', { name: '删除密钥组「团队」？' })
+    expect(short.textContent).not.toContain('还没取回')
+    expect(short.textContent).not.toContain('音色')
+    await user.click(within(short).getByRole('button', { name: '取消' }))
+  })
+
   it('卡片上的检查连接指定用那一组密钥，有没保存的输入时先禁用', async () => {
     const bodies: unknown[] = []
     const two = credView(

@@ -11,6 +11,7 @@ import { Switch } from '../../ui/Switch'
 import { confirmDialog } from '../../ui/Dialog'
 import { Group } from './SettingsGroup'
 import { ProviderCredentials } from './ProviderCredentials'
+import { removalImpact } from './credentialUsage'
 import {
   credentialCardDirty,
   credentialLabelChanged,
@@ -245,9 +246,14 @@ export function ProviderRow({
     if (!target) return
     const rest = groups.filter((c) => c.id !== key)
     const switching = config.activeCredential === key && rest.length > 0
+    // 名下还有未取回的结果或音色时先说清后果；正在使用的组顺带说明会切到哪一组
+    const notes = [
+      removalImpact(target.usage),
+      switching ? `这一组正在使用，删除后会改用「${rest[0]!.label}」的密钥。` : '',
+    ].filter(Boolean)
     const ok = await confirmDialog({
       title: `删除密钥组「${target.label}」？`,
-      message: switching ? `这一组正在使用，删除后会改用「${rest[0]!.label}」的密钥。` : undefined,
+      message: notes.length > 0 ? notes.join('') : undefined,
       confirmLabel: '删除',
       danger: true,
     })
