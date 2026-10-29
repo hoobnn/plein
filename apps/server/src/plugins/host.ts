@@ -933,6 +933,14 @@ export class PluginHost {
         if (outputs.some((o) => o.type === 'file')) stage('saving')
         let assets: AssetRef[]
         try {
+          // 只有远端 URL 的结果仍需下载；本地字节或 spool 完整的恢复不校验 Key。
+          if (
+            outputs.some(
+              (output, index) =>
+                output.type === 'file' && !!output.url && !output.data && !spools.has(index),
+            )
+          )
+            providerCtx()
           assets = await this.storeOutputs(
             parsed.provider,
             outputs,
