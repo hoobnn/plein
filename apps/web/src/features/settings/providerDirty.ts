@@ -36,14 +36,31 @@ export function sameSettings(
   return sameValue(a ?? {}, b ?? {})
 }
 
-/** 是否有未保存的改动：密钥填了内容，或设置值与已保存的不同 */
+/** 是否有未保存的改动：密钥卡有草稿、设置值与已保存的不同，或正在编辑数字 */
 export function providerDirty(
   settings: Record<string, unknown>,
   saved: Record<string, unknown> | undefined,
-  secrets: Record<string, string>,
+  cards: readonly CredentialCardDraft[],
   numberEditing: boolean,
 ): boolean {
   if (numberEditing) return true
-  if (Object.values(secrets).some((value) => value !== '')) return true
-  return !sameSettings(settings, saved)
+  if (!sameSettings(settings, saved)) return true
+  return cards.some(credentialCardDirty)
+}
+
+/** 一张密钥卡的草稿：key 是已保存组的 id，新卡用临时键 */
+export interface CredentialCardDraft {
+  key: string
+  /** 标签输入；已保存组留空表示不修改 */
+  label: string
+  /** 密钥输入；已保存组留空表示不修改 */
+  secrets: Record<string, string>
+  /** 基线标签：已保存组是空串，新平台的预填卡是预填值；手动添加的新卡没有基线，总是未保存 */
+  baseline?: string
+}
+
+/** 一张密钥卡是否有没保存的改动：没有基线的新卡总是算，其余改了标签或填了密钥才算 */
+export function credentialCardDirty(card: CredentialCardDraft): boolean {
+  if (card.baseline === undefined) return true
+  return card.label.trim() !== card.baseline || Object.values(card.secrets).some((v) => v !== '')
 }

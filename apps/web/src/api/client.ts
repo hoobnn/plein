@@ -252,7 +252,12 @@ export const api = {
     request<LocalPluginInfo>(`${API.localPlugin(id)}/reload`, json('POST', {})),
   rescanLocalPlugins: () =>
     request<LocalPluginInfo[]>(`${API.localPlugins}/rescan`, json('POST', {})),
-  testProvider: (id: string) => request<ProviderTestResult>(API.providerTest(id), json('POST', {})),
+  /** 检查平台；credential 指定用哪一组密钥（缺省用当前组） */
+  testProvider: (id: string, credential?: string) =>
+    request<ProviderTestResult>(
+      API.providerTest(id),
+      json('POST', credential ? { credential } : {}),
+    ),
   rewritePrompt: (body: RewritePrompt, signal?: AbortSignal) =>
     request<RewritePromptResult>(API.promptRewrite, { ...json('POST', body), signal }),
 

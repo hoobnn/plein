@@ -8,16 +8,24 @@ import { ProviderIcon } from '../../ui/ProviderIcon'
 import { Select } from '../../ui/Select'
 import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
 import { Switch } from '../../ui/Switch'
+import { confirmDialog } from '../../ui/Dialog'
 import { Group } from './SettingsGroup'
-import { providerDirty } from './providerDirty'
+import { ProviderCredentials } from './ProviderCredentials'
+import { credentialCardDirty, providerDirty, type CredentialCardDraft } from './providerDirty'
 
-const input = 'ui-input ui-input-lg w-full'
-
-/** 平台行仅表示本地配置，不把填写密钥标成远端可用。 */
-function providerState(p: ProviderInfo): { label: string; tone: string } {
+/** 平台行仅表示本地配置，不把填写密钥标成远端可用；多组密钥时顺带显示当前用哪一组 */
+function providerState(
+  p: ProviderInfo,
+  config?: ProviderConfigView | null,
+): { label: string; tone: string } {
   if (!p.enabled) return { label: '已停用', tone: '' }
   if (!p.configured) return { label: '缺少密钥', tone: 'ui-tag-warning' }
-  return { label: '已配置', tone: '' }
+  // 老版服务端的配置视图没有 credentials 字段：退回只显示配置状态
+  const current =
+    config && (config.credentials?.length ?? 0) >= 2
+      ? config.credentials?.find((c) => c.id === config.activeCredential)
+      : undefined
+  return current ? { label: `已配置 · ${current.label}`, tone: '' } : { label: '已配置', tone: '' }
 }
 
 /** 单个平台：一行摘要（状态、启用开关），展开后是设置表单（由插件声明的 schema 生成）、密钥、测试连接 */
@@ -41,7 +49,12 @@ export function ProviderRow({
 }) {
   const [config, setConfig] = useState<ProviderConfigView | null>(null)
   const [settings, setSettings] = useState<Record<string, unknown>>({})
-  const [secrets, setSecrets] = useState<Record<string, string>>({})
+  // 已保存组的草稿（键为组 id）：标签留空表示不修改，密钥留空表示不修改
+  const [labels, setLabels] = useState<Record<string, string>>({})
+  const [groupSecrets, setGroupSecrets] = useState<Record<string, Record<string, string>>>({})
+  // 没保存过的新卡；新平台没有任何组时预填一张「默认」
+  const [drafts, setDrafts] = useState<CredentialCardDraft[]>([])
+  const nextDraft = useRef(0)
   const [status, setStatus] = useState<{ message: string; error?: boolean } | null>(null)
   const [test, setTest] = useState<ProviderTestResult | null>(null)
   const [busy, setBusy] = useState(false)
@@ -80,7 +93,45 @@ export function ProviderRow({
     }
   }, [active, open, config, provider.id, loadAttempt])
 
+  // 新平台还没有任何组：预填一张「默认」卡，填完保存即创建第一组（服务端自动设为使用）
+  useEffect(() => {
+    if (!config || provider.secrets.length === 0 || (config.credentials?.length ?? 0) > 0) return
+    setDrafts((current) =>
+      current.length
+        ? current
+        : [{ key: `draft-${nextDraft.current++}`, label: '默认', secrets: {}, baseline: '默认' }],
+    )
+  }, [config, provider.secrets.length])
+
+  const isSavedGroup = (key: string) => config?.credentials?.some((c) => c.id === key) ?? false
+
+  const setCardLabel = (key: string, value: string) => {
+    clearFeedback()
+    if (isSavedGroup(key)) setLabels({ ...labels, [key]: value })
+    else setDrafts(drafts.map((d) => (d.key === key ? { ...d, label: value } : d)))
+  }
+
+  const setCardSecret = (key: string, name: string, value: string) => {
+    clearFeedback()
+    if (isSavedGroup(key))
+      setGroupSecrets({ ...groupSecrets, [key]: { ...groupSecrets[key], [name]: value } })
+    else
+      setDrafts(
+        drafts.map((d) => (d.key === key ? { ...d, secrets: { ...d.secrets, [name]: value } } : d)),
+      )
+  }
+
+  const addDraft = () => {
+    clearFeedback()
+    setDrafts([...drafts, { key: `draft-${nextDraft.current++}`, label: '', secrets: {} }])
+  }
+
+  /** 非空输入；已保存组留空表示不修改，不进请求 */
+  const typedSecrets = (values: Record<string, string> = {}) =>
+    Object.fromEntries(Object.entries(values).filter(([, v]) => v !== ''))
+
   const save = async () => {
+    // 必填标签或数字没填好时先聚焦问题输入，不发出请求
     const invalid = formFields.current?.querySelector<HTMLElement>('[aria-invalid="true"]')
     if (invalid) {
       invalid.focus()
@@ -89,14 +140,39 @@ export function ProviderRow({
     setBusy(true)
     clearFeedback()
     try {
+      // 只提交改过的标签与非空密钥；新卡作为 credentials.add 创建（改动过的预填卡也算）
+      const update = (config?.credentials ?? []).flatMap((c) => {
+        const label = labels[c.id]?.trim()
+        const secrets = typedSecrets(groupSecrets[c.id])
+        return label || Object.keys(secrets).length
+          ? [
+              {
+                id: c.id,
+                ...(label ? { label } : {}),
+                ...(Object.keys(secrets).length ? { secrets } : {}),
+              },
+            ]
+          : []
+      })
+      const add = drafts
+        .filter((d) => d.baseline === undefined || credentialCardDirty(d))
+        .map((d) => ({ label: d.label.trim(), secrets: typedSecrets(d.secrets) }))
       const next = await api.updateProviderConfig(provider.id, {
         ...(enableOnSave ? { enabled: true } : {}),
         settings,
-        // 只提交改过的密钥；留空表示不修改
-        secrets: Object.fromEntries(Object.entries(secrets).filter(([, v]) => v !== '')),
+        ...(update.length || add.length
+          ? {
+              credentials: {
+                ...(update.length ? { update } : {}),
+                ...(add.length ? { add } : {}),
+              },
+            }
+          : {}),
       })
       setConfig(next)
-      setSecrets({})
+      setLabels({})
+      setGroupSecrets({})
+      setDrafts([])
       setNumberEditing(false)
       setStatus({ message: '已保存' })
       await onSaved()
@@ -121,6 +197,68 @@ export function ProviderRow({
     }
   }
 
+  /** 设为使用是即时操作：单独保存 activeCredential，不牵动其他草稿 */
+  const useCredential = async (key: string) => {
+    setBusy(true)
+    clearFeedback()
+    try {
+      setConfig(await api.updateProviderConfig(provider.id, { activeCredential: key }))
+      await onSaved()
+    } catch (err) {
+      setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 删除已保存的组也是即时操作；删当前组时服务端会改用剩下的第一组 */
+  const removeCredential = async (key: string) => {
+    if (!config) return
+    const groups = config.credentials ?? []
+    const target = groups.find((c) => c.id === key)
+    if (!target) return
+    const rest = groups.filter((c) => c.id !== key)
+    const switching = config.activeCredential === key && rest.length > 0
+    const ok = await confirmDialog({
+      title: `删除密钥组「${target.label}」？`,
+      message: switching ? `这一组正在使用，删除后会改用「${rest[0]!.label}」的密钥。` : undefined,
+      confirmLabel: '删除',
+      danger: true,
+    })
+    if (!ok) return
+    setBusy(true)
+    clearFeedback()
+    try {
+      setConfig(await api.updateProviderConfig(provider.id, { credentials: { remove: [key] } }))
+      const keep = <T,>(current: Record<string, T>) =>
+        Object.fromEntries(Object.entries(current).filter(([id]) => id !== key)) as Record<
+          string,
+          T
+        >
+      setLabels((current) => keep(current))
+      setGroupSecrets((current) => keep(current))
+      await onSaved()
+    } catch (err) {
+      setStatus({ message: `保存失败：${(err as Error).message}`, error: true })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 卡片上的检查连接指定用哪一组密钥 */
+  const testCard = async (key: string) => {
+    clearFeedback()
+    setBusy(true)
+    try {
+      setTest(await api.testProvider(provider.id, key))
+    } catch (err) {
+      // 传输失败没有服务端检查结果，不能伪造 scope 或完成时间。
+      setStatus({ error: true, message: `检查请求失败：${(err as Error).message}` })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const runTest = async () => {
     clearFeedback()
     setBusy(true)
@@ -134,9 +272,22 @@ export function ProviderRow({
     }
   }
 
-  const state = providerState(provider)
+  const state = providerState(provider, config)
   const bodyId = `provider-${provider.id}`
-  const dirty = providerDirty(settings, config?.settings, secrets, numberEditing)
+  const dirty = providerDirty(
+    settings,
+    config?.settings,
+    [
+      ...(config?.credentials ?? []).map((c) => ({
+        key: c.id,
+        label: labels[c.id] ?? '',
+        secrets: groupSecrets[c.id] ?? {},
+        baseline: '',
+      })),
+      ...drafts,
+    ],
+    numberEditing,
+  )
   const feedback = test
     ? {
         message: test.ok
@@ -225,26 +376,23 @@ export function ProviderRow({
                 disabled={locked}
                 className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
               >
-                {provider.secrets.map((s) => (
-                  <label key={s.name} className="ui-field">
-                    <span className="ui-label">
-                      {s.title}
-                      {s.required ? '' : '（可选）'}
-                    </span>
-                    <input
-                      type="password"
-                      autoComplete="off"
-                      className={input}
-                      placeholder={config.secrets[s.name] ? '已填写，留空表示不修改' : '未填写'}
-                      value={secrets[s.name] ?? ''}
-                      onChange={(e) => {
-                        clearFeedback()
-                        setSecrets({ ...secrets, [s.name]: e.target.value })
-                      }}
-                    />
-                    {s.help && <span className="ui-help">{s.help}</span>}
-                  </label>
-                ))}
+                <ProviderCredentials
+                  provider={provider}
+                  config={config}
+                  labels={labels}
+                  groupSecrets={groupSecrets}
+                  drafts={drafts}
+                  onLabel={setCardLabel}
+                  onSecret={setCardSecret}
+                  onUse={(key) => void useCredential(key)}
+                  onRemove={(key) => void removeCredential(key)}
+                  onDiscard={(key) => {
+                    clearFeedback()
+                    setDrafts(drafts.filter((d) => d.key !== key))
+                  }}
+                  onTest={(key) => void testCard(key)}
+                  onAdd={addDraft}
+                />
                 <SchemaForm
                   schema={provider.settingsSchema as ObjectSchema}
                   value={settings}
