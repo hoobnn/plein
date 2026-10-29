@@ -360,6 +360,7 @@ function RecognitionRecovery({
   const credentialLost = !!lost
   const unknown = info.recovery.state === 'submit_unknown'
   const confirmTrigger = useRef<HTMLButtonElement>(null)
+  const currentKeyTrigger = useRef<HTMLButtonElement>(null)
   const confirmCancel = useRef<HTMLButtonElement>(null)
   const restoreConfirmFocus = useRef(false)
   const confirmDescription = useId()
@@ -367,12 +368,19 @@ function RecognitionRecovery({
     if (credentialConfirm) confirmCancel.current?.focus()
     else if (restoreConfirmFocus.current) {
       restoreConfirmFocus.current = false
-      confirmTrigger.current?.focus()
+      const target = confirmTrigger.current?.isConnected
+        ? confirmTrigger.current
+        : currentKeyTrigger.current
+      target?.focus()
     }
   }, [credentialConfirm])
   const cancelConfirm = () => {
     restoreConfirmFocus.current = true
     setCredentialConfirm(false)
+  }
+  const openConfirm = (trigger: HTMLButtonElement) => {
+    confirmTrigger.current = trigger
+    setCredentialConfirm(true)
   }
   const current = info.recovery.currentCredentialLabel ?? '默认'
   const label = info.recovery.credentialLabel ?? '原组'
@@ -401,11 +409,11 @@ function RecognitionRecovery({
       )}
       {credentialLost && !credentialConfirm && (
         <button
-          ref={confirmTrigger}
+          ref={currentKeyTrigger}
           type="button"
           className="ui-btn ui-btn-secondary"
           disabled={busy}
-          onClick={() => setCredentialConfirm(true)}
+          onClick={(event) => openConfirm(event.currentTarget)}
         >
           用当前 Key 重新提交
         </button>
@@ -452,7 +460,11 @@ function RecognitionRecovery({
             type="button"
             className="ui-btn ui-btn-secondary"
             disabled={busy || !confirmed}
-            onClick={() => onRecover({ action: 'resubmit' }, true)}
+            onClick={(event) =>
+              credentialLost
+                ? openConfirm(event.currentTarget)
+                : onRecover({ action: 'resubmit' }, true)
+            }
           >
             确认未受理，重新提交识别
           </button>
@@ -473,7 +485,7 @@ function RecognitionRecovery({
               type="button"
               className="ui-btn ui-btn-danger"
               disabled={busy}
-              onClick={() => onRecover({ action: 'resubmit' }, true)}
+              onClick={() => onRecover({ action: 'resubmit', credentialChange: true }, true)}
             >
               重新提交识别
             </button>

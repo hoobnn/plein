@@ -139,6 +139,61 @@ describe('字幕显式识别与持久恢复', () => {
     )
   })
 
+  it('配音来源即使提交未知也拒绝换组重提识别', async () => {
+    const s = await setup()
+    const config = s.server.plugins.configs.update('plein/mock', {
+      secrets: { MOCK_API_KEY: 'one' },
+    })
+    const originalId = config.activeCredential!
+    s.entry.def.lookup = undefined
+    s.entry.def.idempotent = false
+    vi.spyOn(s.entry.def, 'submit').mockRejectedValueOnce(
+      new ProviderError('unknown', '连接中断', { outcome: 'unknown' }),
+    )
+    expect((await s.call()).status).toBe(422)
+    const file = readdirSync(join(s.dataDir, 'subtitle-recognition')).find((f) =>
+      f.endsWith('.json'),
+    )!
+    const path = join(s.dataDir, 'subtitle-recognition', file)
+    const stored = journal.readRecord(path)!
+    journal.writeRecord(path, {
+      ...stored,
+      record: { ...stored.record!, credentialSource: 'voice', credentialVoice: '旁白' },
+    })
+    const withTeam = s.server.plugins.configs.addCredential('plein/mock', '团队', {
+      MOCK_API_KEY: 'two',
+    })
+    s.server.plugins.configs.setActiveCredential('plein/mock', withTeam.credentials[1]!.id)
+    s.server.plugins.configs.removeCredential('plein/mock', originalId)
+    const lookup = await s
+      .app()
+      .request(
+        `${API.subtitleRecognition}?${new URLSearchParams({ model: mockModel('audio.transcribe'), assetId: s.assetId })}`,
+      )
+    const current = (await lookup.json()) as SubtitleRecognitionInfo
+    expect(current.recovery).toMatchObject({
+      state: 'submit_unknown',
+      attachable: true,
+      credentialLost: { reason: 'missing', voice: '旁白' },
+    })
+
+    const response = await s.app().request(API.subtitleRecover, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: current.model,
+        assetId: current.assetId,
+        expected: current.expected,
+        operation: { action: 'resubmit', credentialChange: true },
+        confirmedNotAccepted: true,
+      }),
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      message: '音色「旁白」所属的 Key 已失效，请改用其他音色或重新复刻后再运行',
+    })
+  })
+
   it('原 Key 删除后可确认用当前组重提识别，新记录使用当前组', async () => {
     const s = await setup()
     const config = s.server.plugins.configs.update('plein/mock', {
@@ -174,17 +229,24 @@ describe('字幕显式识别与持久恢复', () => {
       currentCredentialLabel: '团队',
       note: '原来的 Key「默认」已删除，无法取回之前的结果。为避免重复计费没有自动重新提交。',
     })
-    const recovered = await s.app().request(API.subtitleRecover, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        model: current.model,
-        assetId: current.assetId,
-        expected: current.expected,
-        operation: { action: 'resubmit' },
-        confirmedNotAccepted: true,
-      }),
+    const resubmit = (credentialChange?: true) =>
+      s.app().request(API.subtitleRecover, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: current.model,
+          assetId: current.assetId,
+          expected: current.expected,
+          operation: { action: 'resubmit', ...(credentialChange ? { credentialChange } : {}) },
+          confirmedNotAccepted: true,
+        }),
+      })
+    const unconfirmed = await resubmit()
+    expect(unconfirmed.status).toBe(400)
+    expect(await unconfirmed.json()).toMatchObject({
+      message: '原来的 Key 已不可用，重新提交需要确认改用当前 Key',
     })
+    const recovered = await resubmit(true)
     expect(recovered.status).toBe(200)
     const submit = vi.spyOn(s.entry.def, 'submit')
     expect((await s.call()).status).toBe(200)
@@ -198,6 +260,55 @@ describe('字幕显式识别与持久恢复', () => {
       credentialId: teamId,
       credentialLabel: '团队',
     })
+  })
+
+  it('标记已处理后再次识别会重开恢复，原 Key 恢复后可续查', async () => {
+    const s = await setup()
+    const config = s.server.plugins.configs.update('plein/mock', {
+      secrets: { MOCK_API_KEY: 'one' },
+    })
+    const credentialId = config.activeCredential!
+    mockSettings(s.server, { latencyMs: 1 })
+    const submit = vi.spyOn(s.entry.def, 'submit')
+    const poll = vi
+      .spyOn(s.entry.def, 'poll')
+      .mockRejectedValueOnce(new ProviderError('unavailable', '稍后再查', { retryable: true }))
+    expect((await s.call()).status).toBe(422)
+    poll.mockRestore()
+    mockSettings(s.server, { latencyMs: 0 })
+    s.server.plugins.configs.patchCredential('plein/mock', credentialId, {
+      secrets: { MOCK_API_KEY: 'two' },
+    })
+    const lookup = await s
+      .app()
+      .request(
+        `${API.subtitleRecognition}?${new URLSearchParams({ model: mockModel('audio.transcribe'), assetId: s.assetId })}`,
+      )
+    const current = (await lookup.json()) as SubtitleRecognitionInfo
+    const dismissed = await s.app().request(API.subtitleRecover, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: current.model,
+        assetId: current.assetId,
+        expected: current.expected,
+        operation: { action: 'dismiss' },
+      }),
+    })
+    expect(dismissed.status).toBe(200)
+
+    const reopened = await s.call()
+    expect(reopened.status).toBe(422)
+    expect(await reopened.json()).toMatchObject({
+      recovery: {
+        recovery: { state: 'remote_pending', credentialLost: { reason: 'replaced' } },
+      },
+    })
+    s.server.plugins.configs.patchCredential('plein/mock', credentialId, {
+      secrets: { MOCK_API_KEY: 'one' },
+    })
+    expect((await s.call()).status).toBe(200)
+    expect(submit).toHaveBeenCalledTimes(1)
   })
 
   it.each(

@@ -429,7 +429,7 @@ it('字幕原 Key 失效时用当前组重提必须二次确认', async () => {
     path: '/api/media/subtitle-recover',
     body: {
       expected: 'revision',
-      operation: { action: 'resubmit' },
+      operation: { action: 'resubmit', credentialChange: true },
       confirmedNotAccepted: true,
     },
   })
@@ -442,13 +442,28 @@ it('字幕原 Key 失效时用当前组重提必须二次确认', async () => {
 it('字幕提交未知且原 Key 失效时保留人工核查，确认重提提示可能重复生成', async () => {
   const f = await subtitleSetup('credential-unknown')
   expect(await screen.findByRole('textbox', { name: '字幕识别平台任务 ID' })).toBeTruthy()
-  expect(
-    screen.getByRole('checkbox', { name: '我已在平台核查，确认未受理；重新提交可能计费' }),
-  ).toBeTruthy()
-  await f.user.click(screen.getByRole('button', { name: '用当前 Key 重新提交' }))
+  const checked = screen.getByRole('checkbox', {
+    name: '我已在平台核查，确认未受理；重新提交可能计费',
+  })
+  expect(checked).toBeTruthy()
+  await f.user.click(checked)
+  await f.user.click(screen.getByRole('button', { name: '确认未受理，重新提交识别' }))
   const confirm = await screen.findByRole('group', { name: '重新提交识别确认' })
   expect(confirm.textContent).toContain('原来的 Key「默认」已删除，无法取回之前的结果。')
   expect(confirm.textContent).toContain('平台若其实已受理，会再生成一次。')
+  expect(f.calls).toEqual([])
+  await f.user.click(screen.getByRole('button', { name: '重新提交识别' }))
+  await waitFor(() => expect(f.calls).toHaveLength(1))
+  expect(f.calls[0]).toMatchObject({
+    body: {
+      operation: { action: 'resubmit', credentialChange: true },
+      confirmedNotAccepted: true,
+    },
+  })
+  await act(async () => {
+    f.release(Response.json({ ok: true }))
+    await f.pending
+  })
 })
 
 it('字幕原 Key 失效可标记已处理，不自动重新识别', async () => {

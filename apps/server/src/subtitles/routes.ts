@@ -133,6 +133,11 @@ export function subtitleRoutes({
     const work = assets.activity
       .run(async () => {
         let stored = readRecord(file) ?? { assetId, model }
+        if (stored.dismissed) {
+          // 再次识别表示用户要重新处理；保留原调用作证据，同时让恢复操作重新可见。
+          stored = { ...stored, dismissed: undefined }
+          writeRecord(file, stored)
+        }
         let record = stored.record ?? undefined
         if (!record && !stored.confirmedReset && version) {
           const legacy = legacySubtitleRecord(db, {
@@ -279,9 +284,12 @@ export function subtitleRoutes({
               history: [...(stored.history ?? []), { record, at: Date.now(), action: 'attach' }],
             })
           } else if (operation.action === 'resubmit') {
+            const credentialResubmit = credentialLost(context.provider.def.id, record)
+            if (credentialResubmit?.voice) return { voice: credentialResubmit.voice } as const
+            if (credentialResubmit && operation.credentialChange !== true)
+              return 'credential_confirm' as const
             const unknownResubmit =
               confirmedNotAccepted && (record.state === 'unknown' || record.state === 'submitting')
-            const credentialResubmit = credentialLost(context.provider.def.id, record)
             if (!unknownResubmit && !credentialResubmit) return 'invalid' as const
             writeRecord(context.file, {
               ...stored,
@@ -313,6 +321,19 @@ export function subtitleRoutes({
             return 'invalid' as const
           return 'ok' as const
         })
+        if (typeof result === 'object')
+          return c.json(
+            {
+              error: 'invalid',
+              message: `音色「${result.voice}」所属的 Key 已失效，请改用其他音色或重新复刻后再运行`,
+            },
+            400,
+          )
+        if (result === 'credential_confirm')
+          return c.json(
+            { error: 'invalid', message: '原来的 Key 已不可用，重新提交需要确认改用当前 Key' },
+            400,
+          )
         if (result === 'changed')
           return c.json({ error: 'conflict', message: '识别记录已变化，请重新查看状态' }, 409)
         if (result === 'busy')
