@@ -214,7 +214,10 @@ it('添加、移动及删除台词恢复相邻输入焦点，删除至空仍可�
 
 it.each([false, true])('审核模式 %s 添加镜头直接聚焦新画面', async (review) => {
   const f = await setup()
-  if (review) await f.user.click(screen.getByRole('button', { name: '审核镜头' }))
+  if (review) {
+    await f.user.click(screen.getByRole('button', { name: '更多分镜操作' }))
+    await f.user.click(screen.getByRole('menuitem', { name: '审核镜头' }))
+  }
   await f.user.click(screen.getByRole('button', { name: '添加镜头' }))
   const input = f.dialog().getAllByRole<HTMLTextAreaElement>('textbox', { name: '画面' }).at(-1)!
   expect(document.activeElement).toBe(input)

@@ -25,8 +25,6 @@ import { StoryboardReview } from './StoryboardReview'
 import { BatchChecklist } from './BatchChecklist'
 import { openAnimatic } from '../sequence/animatic'
 import { AssetBindingSelect, DialogueCell } from './ShotBindings'
-import { Menu } from '@base-ui/react/menu'
-import { useDialogMenu } from '../../ui/useDialogMenu'
 import { StoryboardDataGuard } from './StoryboardDataGuard'
 import { storyboardDataProblem } from './dataRecovery'
 import { SourceMappingPanel } from './SourceMappingPanel'
@@ -35,6 +33,10 @@ import { ShotStatePanel } from './ShotStatePanel'
 import { DurationCell, TextCell } from './StoryboardCells'
 import { goalDurationCheck, type GoalDurationCheck } from '../creation-guide/productionGoalScope'
 import { ShotFlow, ShotFlowHeader, ShotPromptDialog } from './ShotFlow'
+import { shotScenes, storyboardPrep, storyboardSceneOptions, type PrepIssue } from './prepModel'
+import { ShotPrepCount, StoryboardPrepPanel, syncShotPrepCount } from './StoryboardPrepPanel'
+import { StoryboardPrepFilter } from './StoryboardPrepFilter'
+import { StoryboardToolbar } from './StoryboardToolbar'
 
 const seconds = (n?: number) => (n === undefined ? '不限' : `${n}`)
 /** 没有制作目标的表不提示，避免给自由创作加噪音；范围不明确时说明为什么不比较。 */
@@ -123,34 +125,95 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const [stateShot, setStateShot] = useState<string | null>(null)
   const [structureError, setStructureError] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
-  const regenerate = useDialogMenu()
+  const [prepOpen, setPrepOpen] = useState(false)
+  const [prepFolded, setPrepFolded] = useState<Set<string>>(new Set())
+  const [sceneFilter, setSceneFilter] = useState('')
+  const [missingOnly, setMissingOnly] = useState(false)
   const shotElements = useRef(new Map<string, HTMLElement>())
   const addButton = useRef<HTMLButtonElement>(null)
   const [focusTarget, setFocusTarget] = useState<{
     shotId: string | null
     description?: boolean
+    field?: PrepIssue['field']
+    assetName?: string
+    dialogueId?: string
+    sourceUnitId?: string
+    review?: boolean
   } | null>(null)
   useEffect(() => {
     if (!focusTarget) return
-    // 只消费本次结构操作；目标已被撤销或删除时，不在之后重做时补抢焦点。
+    // 只消费本次定位；目标已被撤销或删除时，不在之后重做时补抢焦点。
     setFocusTarget(null)
-    const article = focusTarget.shotId ? shotElements.current.get(focusTarget.shotId) : null
-    const target = focusTarget.shotId
-      ? article?.querySelector<HTMLElement>(
-          focusTarget.description
-            ? '[data-storyboard-field="画面"] textarea'
-            : layout === 'table'
-              ? 'input[type="checkbox"]'
-              : 'h3 button',
+    if (focusTarget.sourceUnitId) {
+      requestAnimationFrame(() => {
+        const unit = [...document.querySelectorAll<HTMLElement>('[data-unit-id]')].find(
+          (node) => node.dataset.unitId === focusTarget.sourceUnitId,
         )
-      : addButton.current
+        unit?.querySelector<HTMLButtonElement>('button')?.click()
+      })
+      return
+    }
+    const article = focusTarget.shotId ? shotElements.current.get(focusTarget.shotId) : null
+    let target: HTMLElement | null | undefined
+    if (focusTarget.review && focusTarget.shotId) {
+      const row = [...document.querySelectorAll<HTMLElement>('[data-shot-id]')].find(
+        (node) => node.dataset.shotId === focusTarget.shotId,
+      )
+      target = row?.querySelector<HTMLElement>('button')
+      row?.scrollIntoView({ block: 'center', inline: 'nearest' })
+    } else if (focusTarget.field && focusTarget.shotId) {
+      const labels = {
+        description: '画面',
+        characters: '出场',
+        imagePrompt: '分镜图提示词',
+        motionPrompt: layout === 'table' ? '视频运动提示词' : '运动提示词',
+        dialogue: '台词',
+      } as const
+      const fieldRoot = () => {
+        if (!focusTarget.dialogueId) return article
+        return [...(article?.querySelectorAll<HTMLElement>('[data-dialogue-id]') ?? [])].find(
+          (node) => node.dataset.dialogueId === focusTarget.dialogueId,
+        )
+      }
+      if (focusTarget.assetName) {
+        const label = `${focusTarget.field === 'dialogue' ? '说话人' : '出场资产'}绑定：${focusTarget.assetName}`
+        target = [...(fieldRoot()?.querySelectorAll<HTMLElement>('[aria-label]') ?? [])].find(
+          (node) => node.getAttribute('aria-label') === label,
+        )
+      } else if (focusTarget.dialogueId) {
+        target = fieldRoot()?.querySelector<HTMLElement>('textarea')
+      } else {
+        const selector = `[data-storyboard-field="${labels[focusTarget.field]}"] textarea`
+        target = (article ?? document).querySelector<HTMLElement>(selector)
+      }
+    } else {
+      target = focusTarget.shotId
+        ? article?.querySelector<HTMLElement>(
+            focusTarget.description
+              ? '[data-storyboard-field="画面"] textarea'
+              : layout === 'table'
+                ? 'input[type="checkbox"]'
+                : 'h3 button',
+          )
+        : addButton.current
+    }
     if (!target) return
     target.focus({ preventScroll: true })
     target.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [focusTarget, layout])
-  const allCollapsed = shots.length > 0 && shots.every((s) => collapsed.has(s.id))
   const expanded = expandedNodes(engine, id)
   const diffs = planDiffs(engine, id)
+  const prep = storyboardPrep(engine.doc, id, shots)
+  const prepByShot = new Map(prep.shots.map((row) => [row.shotId, row]))
+  const sceneOptions = storyboardSceneOptions(engine.doc, shots)
+  const sceneValue = sceneOptions.some((option) => option.key === sceneFilter) ? sceneFilter : ''
+  const visibleShots = shots.filter(
+    (shot) =>
+      (!sceneValue || shotScenes(engine.doc, shot).some((scene) => scene.key === sceneValue)) &&
+      (!missingOnly || (prepByShot.get(shot.id)?.missingCount ?? 0) > 0),
+  )
+  const visiblePicked = new Set(visibleShots.filter((shot) => picked.has(shot.id)).map((s) => s.id))
+  const allCollapsed = visibleShots.length > 0 && visibleShots.every((s) => collapsed.has(s.id))
   const targets = picked.size ? shots.filter((s) => picked.has(s.id)) : shots
   const targetIds = targets.map((s) => s.id)
   /** 每个镜头有出入的字段数：表格改动后在行尾提示 */
@@ -182,8 +245,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         e.target instanceof Element &&
         (e.target.closest('.ui-select, .ui-menu') ||
           (e.target.closest('[aria-haspopup="menu"]') &&
-            (regenerate.open ||
-              !((e.metaKey || e.ctrlKey) && ['z', 'y'].includes(e.key.toLowerCase())))))
+            !((e.metaKey || e.ctrlKey) && ['z', 'y'].includes(e.key.toLowerCase()))))
       )
         return
       e.stopPropagation()
@@ -231,18 +293,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
     window.addEventListener('keydown', key, true)
     return () => window.removeEventListener('keydown', key, true)
-  }, [
-    onClose,
-    syncScope,
-    batchRequest,
-    controlShot,
-    stateShot,
-    promptShot,
-    regenerate.open,
-    engine,
-    id,
-    canvasId,
-  ])
+  }, [onClose, syncScope, batchRequest, controlShot, stateShot, promptShot, engine, id, canvasId])
 
   const writable = () =>
     !engine.doc.readOnly &&
@@ -416,6 +467,45 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
     setBatchRequest({ shotIds: targetIds, role, reuseExisting: !force && !picked.size })
   }
+  const locatePrep = (issue: PrepIssue) => {
+    setPrepOpen(false)
+    if (issue.assetId && engine.doc.has(issue.assetId)) {
+      engine.selection.set([issue.assetId])
+      engine.zoomToFit([issue.assetId])
+      onClose()
+      return
+    }
+    if (issue.sourceUnitId) {
+      setMode('sources')
+      setFocusTarget({ shotId: null, sourceUnitId: issue.sourceUnitId })
+      return
+    }
+    if (!issue.shotId) return
+    setSceneFilter('')
+    setMissingOnly(false)
+    if (issue.category === 'review') {
+      setMode('review')
+      setFocusTarget({ shotId: issue.shotId, review: true })
+      return
+    }
+    setMode('edit')
+    const openCard = issue.field !== 'description'
+    if (openCard) setLayout('cards')
+    if (layout === 'cards' || openCard) {
+      setCollapsed((previous) => {
+        const next = new Set(previous)
+        next.delete(issue.shotId!)
+        return next
+      })
+    }
+    if (layout === 'table' && issue.field === 'description') setFlowStage(1)
+    setFocusTarget({
+      shotId: issue.shotId,
+      field: issue.field,
+      assetName: issue.assetName,
+      dialogueId: issue.dialogueId,
+    })
+  }
 
   const btn = 'ui-btn ui-btn-secondary'
   const planned = shots.reduce((t, s) => t + s.duration, 0)
@@ -432,6 +522,15 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             <span className="ui-chip">
               {shots.length} 个镜头 · 计划 {planned} 秒
             </span>
+            <button
+              type="button"
+              className="ui-chip cursor-pointer hover:brightness-110"
+              aria-expanded={prepOpen}
+              aria-controls="storyboard-prep-panel"
+              onClick={() => setPrepOpen((open) => !open)}
+            >
+              {prep.count ? `准备 ${prep.count} 项` : '准备就绪'}
+            </button>
             {goalNote && (
               <span
                 className="ui-chip"
@@ -447,7 +546,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         <div role="group" aria-label="分镜视图" className="flex gap-1">
           <button
             type="button"
-            className={mode === 'edit' && layout === 'table' ? 'ui-btn ui-btn-primary' : btn}
+            className={mode === 'edit' && layout === 'table' ? `${btn} bg-active` : btn}
             onClick={() => {
               setMode('edit')
               setLayout('table')
@@ -457,7 +556,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           </button>
           <button
             type="button"
-            className={layout === 'cards' && mode === 'edit' ? 'ui-btn ui-btn-primary' : btn}
+            className={layout === 'cards' && mode === 'edit' ? `${btn} bg-active` : btn}
             onClick={() => {
               setMode('edit')
               setLayout('cards')
@@ -465,31 +564,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           >
             详细卡片
           </button>
-          <button
-            type="button"
-            className={mode === 'review' ? 'ui-btn ui-btn-primary' : btn}
-            onClick={() => setMode('review')}
-          >
-            审核镜头
-          </button>
-          <button
-            type="button"
-            className={mode === 'sources' ? 'ui-btn ui-btn-primary' : btn}
-            onClick={() => setMode('sources')}
-          >
-            剧情来源
-          </button>
         </div>
-        <button
-          type="button"
-          className={btn}
-          disabled={!shots.length}
-          onClick={() => {
-            if (openAnimatic(engine, id, true)) onClose()
-          }}
-        >
-          节奏样片
-        </button>
         {!(mode === 'edit' && layout === 'table') && (
           <button ref={addButton} type="button" className={btn} onClick={addShot}>
             <Icon name="plus" />
@@ -497,6 +572,21 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           </button>
         )}
       </ModalHeader>
+      {prepOpen && (
+        <StoryboardPrepPanel
+          prep={prep}
+          folded={prepFolded}
+          onToggleFold={(key) =>
+            setPrepFolded((previous) => {
+              const next = new Set(previous)
+              if (next.has(key)) next.delete(key)
+              else next.add(key)
+              return next
+            })
+          }
+          onLocate={locatePrep}
+        />
+      )}
       <ShotFlowHeader
         engine={engine}
         shots={shots}
@@ -512,150 +602,46 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           {structureError}
         </p>
       )}
-      <details
-        open={layout === 'cards' || mode !== 'edit'}
-        className="border-b border-line px-5 py-2"
-      >
-        <summary className="cursor-pointer text-xs text-ink-subtle">
-          节点与批量操作 · {scope}
-        </summary>
-        <div
-          role="toolbar"
-          aria-label="分镜批量操作"
-          className="flex flex-none flex-wrap items-center gap-2 border-b border-line px-5 py-3"
-        >
-          <span className="mr-1 text-xs text-ink-subtle">作用于{scope}</span>
-          <button
-            type="button"
-            className={btn}
-            disabled={!shots.length}
-            onClick={() => expand('new')}
-          >
-            <Icon name="workflow" />
-            展开为节点
-          </button>
-          <button
-            type="button"
-            className={btn}
-            disabled={!expanded.size}
-            title="给已展开的镜头补齐缺的角色和新增的台词，已有节点不动"
-            onClick={() => expand('update')}
-          >
-            <Icon name="retry" />
-            更新展开
-          </button>
-          <button
-            type="button"
-            className={btn}
-            disabled={!expanded.size}
-            title="把来源明确的镜头、配音和音效关联到画布中唯一的序列，保留手动设置"
-            onClick={() => {
-              if (!writable()) return
-              const result = linkExistingShots(engine.doc, id, targetIds)
-              if (result.sequence === 'none') notify('画布上没有序列，请先创建序列')
-              else if (result.sequence === 'ambiguous')
-                notify('画布上有多个序列，请手动连接到目标序列')
-              else
-                notify(
-                  `已检查 ${result.linked} 个镜头并尝试关联${result.skipped ? `，${result.skipped} 个来源不完整或不唯一，已跳过` : ''}；已有声音设置保持不变，请在序列中检查配音和原声。`,
-                )
-            }}
-          >
-            关联已有序列
-          </button>
-          <span aria-hidden="true" className="ui-bar-sep" />
-          <Menu.Root modal={false} open={regenerate.open} onOpenChange={regenerate.onOpenChange}>
-            <Menu.Trigger {...regenerate.triggerProps} className={btn} disabled={!expanded.size}>
-              全部重新生成
-              <Icon name="chevronDown" size={12} />
-            </Menu.Trigger>
-            <Menu.Portal>
-              <Menu.Positioner
-                side="bottom"
-                align="start"
-                sideOffset={8}
-                collisionPadding={8}
-                className="z-70"
-              >
-                <Menu.Popup
-                  aria-label="全部重新生成"
-                  className="ui-menu pointer-events-auto w-44 outline-none"
-                >
-                  {(['image', 'video', 'speech', 'sfx'] as const).map((role) => (
-                    <Menu.Item
-                      key={role}
-                      className="ui-menu-item"
-                      onClick={() => batch(role, true)}
-                    >
-                      {{ image: '分镜图', video: '视频', speech: '配音', sfx: '音效' }[role]}
-                    </Menu.Item>
-                  ))}
-                </Menu.Popup>
-              </Menu.Positioner>
-            </Menu.Portal>
-          </Menu.Root>
-          <button
-            type="button"
-            className={btn}
-            disabled={!expanded.size}
-            onClick={() => batch('image')}
-          >
-            <Icon name="image" />
-            批量出分镜图
-          </button>
-          <button
-            type="button"
-            className={btn}
-            disabled={!expanded.size}
-            onClick={() => batch('video')}
-          >
-            <Icon name="video" />
-            批量生成视频
-          </button>
-          <button
-            type="button"
-            className="ui-btn ui-btn-primary"
-            disabled={!expanded.size}
-            onClick={() => batch('speech')}
-          >
-            <Icon name="mic" />
-            批量配音
-          </button>
-          <button
-            type="button"
-            className={btn}
-            disabled={!expanded.size}
-            onClick={() => batch('sfx')}
-          >
-            批量音效
-          </button>
-          <button
-            type="button"
-            className={btn}
-            disabled={!scopeDiffs}
-            title="看分镜表改动和已展开节点的出入，确认后才同步"
-            onClick={() => setSyncScope(targetIds)}
-          >
-            <Icon name="layers" />
-            查看差异{scopeDiffs ? `（${scopeDiffs}）` : ''}
-          </button>
-          {canvasId && (
-            <button
-              type="button"
-              className={btn}
-              disabled={!expanded.size}
-              title="改了之后哪些镜头图、视频、配音受影响，保留还是重做"
-              onClick={() => {
-                onClose()
-                useCanvas.getState().toggleImpact(true)
-              }}
-            >
-              <Icon name="layers" />
-              查看影响
-            </button>
-          )}
-        </div>
-      </details>
+      <StoryboardToolbar
+        scope={scope}
+        hasShots={!!shots.length}
+        hasExpanded={!!expanded.size}
+        scopeDiffs={scopeDiffs}
+        hasCanvas={!!canvasId}
+        onExpand={expand}
+        onLink={() => {
+          if (!writable()) return
+          const result = linkExistingShots(engine.doc, id, targetIds)
+          if (result.sequence === 'none') notify('画布上没有序列，请先创建序列')
+          else if (result.sequence === 'ambiguous') notify('画布上有多个序列，请手动连接到目标序列')
+          else
+            notify(
+              `已检查 ${result.linked} 个镜头并尝试关联${result.skipped ? `，${result.skipped} 个来源不完整或不唯一，已跳过` : ''}；已有声音设置保持不变，请在序列中检查配音和原声。`,
+            )
+        }}
+        onBatch={batch}
+        onSync={() => setSyncScope(targetIds)}
+        onImpact={() => {
+          onClose()
+          useCanvas.getState().toggleImpact(true)
+        }}
+        onReview={() => setMode('review')}
+        onSources={() => setMode('sources')}
+        onAnimatic={() => {
+          if (openAnimatic(engine, id, true)) onClose()
+        }}
+      />
+      {mode === 'edit' && (
+        <StoryboardPrepFilter
+          scenes={sceneOptions}
+          scene={sceneValue}
+          missingOnly={missingOnly}
+          shown={visibleShots.length}
+          total={shots.length}
+          onScene={setSceneFilter}
+          onMissingOnly={setMissingOnly}
+        />
+      )}
       {mode === 'sources' ? (
         <SourceMappingPanel
           engine={engine}
@@ -697,9 +683,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         <ShotFlow
           engine={engine}
           boardId={id}
-          shots={shots}
+          shots={visibleShots}
           stage={flowStage}
-          picked={picked}
+          picked={visiblePicked}
           onPick={(shotId, on) =>
             setPicked((previous) => {
               const next = new Set(previous)
@@ -708,7 +694,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
               return next
             })
           }
-          onPickAll={(on) => setPicked(new Set(on ? shots.map((shot) => shot.id) : []))}
+          onPickAll={(on) => setPicked(new Set(on ? visibleShots.map((shot) => shot.id) : []))}
           onPatch={patch}
           onAdd={() => {
             setFlowStage(1)
@@ -730,8 +716,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           onExpand={() => expand('new')}
           onBatch={() => batch('video')}
           onRowRef={(shotId, node) => {
-            if (node) shotElements.current.set(shotId, node)
-            else shotElements.current.delete(shotId)
+            if (node) {
+              shotElements.current.set(shotId, node)
+              const shot = shots.find((item) => item.id === shotId)
+              if (shot) syncShotPrepCount(node, shot.no, prepByShot.get(shotId)?.missingCount ?? 0)
+            } else shotElements.current.delete(shotId)
           }}
           onNext={() => setFlowStage(flowStage === 3 ? 3 : ((flowStage + 1) as 2 | 3))}
         />
@@ -745,21 +734,29 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
               <input
                 type="checkbox"
                 aria-label="全选"
-                checked={picked.size > 0 && picked.size === shots.length}
-                onChange={(e) => setPicked(new Set(e.target.checked ? shots.map((s) => s.id) : []))}
+                checked={visiblePicked.size > 0 && visiblePicked.size === visibleShots.length}
+                onChange={(e) =>
+                  setPicked(new Set(e.target.checked ? visibleShots.map((s) => s.id) : []))
+                }
               />
-              {picked.size ? `已选择 ${picked.size} / ${shots.length} 个镜头` : '选择全部镜头'}
+              {visiblePicked.size
+                ? `已选择 ${visiblePicked.size} / ${visibleShots.length} 个${sceneValue || missingOnly ? '可见' : ''}镜头`
+                : sceneValue || missingOnly
+                  ? '选择当前筛选镜头'
+                  : '选择全部镜头'}
             </label>
             <button
               type="button"
               className="ui-btn ui-btn-secondary ui-btn-xs"
-              onClick={() => setCollapsed(new Set(allCollapsed ? [] : shots.map((s) => s.id)))}
+              onClick={() =>
+                setCollapsed(new Set(allCollapsed ? [] : visibleShots.map((s) => s.id)))
+              }
             >
               {allCollapsed ? '展开全部镜头' : '收起全部镜头'}
             </button>
           </div>
           <div className="space-y-2">
-            {shots.map((s) => (
+            {visibleShots.map((s) => (
               <article
                 key={s.id}
                 ref={(node) => {
@@ -810,6 +807,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                       镜头 {String(s.no).padStart(2, '0')}
                     </button>
                   </h3>
+                  <ShotPrepCount shotNo={s.no} count={prepByShot.get(s.id)?.missingCount ?? 0} />
                   <DurationCell
                     value={s.duration}
                     onChange={(duration) => patch(s.id, { duration })}
@@ -955,6 +953,9 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                 </div>
               </article>
             ))}
+            {!visibleShots.length && (
+              <p className="py-8 text-center text-sm text-ink-subtle">没有符合条件的镜头</p>
+            )}
           </div>
         </div>
       )}
