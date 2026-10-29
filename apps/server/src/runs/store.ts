@@ -1,6 +1,17 @@
-import type { GroupRunOptions, GroupRunSummary, JobStatus, SubmissionAudit } from '@plein/protocol'
+import type {
+  GroupRunOptions,
+  GroupRunSummary,
+  JobStatus,
+  PreparedInput,
+  SubmissionAudit,
+} from '@plein/protocol'
 import { randomUUID } from 'node:crypto'
-import type { CallJournal, CallRecord } from '../plugins/host'
+import {
+  addCredentialUsage,
+  type CallJournal,
+  type CallRecord,
+  type CredentialUsage,
+} from '../plugins/host'
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
 import type { DB } from '../storage/db'
 import { batchItems, impactDecisions, jobGroups, jobs } from '../storage/schema'
@@ -166,6 +177,21 @@ export class JobStore {
     }
   }
 
+  /** 设置页低频查询：扫描调用 JSON，按平台汇总还没完成结果入库的密钥组调用。 */
+  credentialUsage(): CredentialUsage {
+    const usage: CredentialUsage = {}
+    const rows = this.db.select({ calls: jobs.calls, input: jobs.input }).from(jobs).all()
+    for (const row of rows) {
+      const input = row.input ? (JSON.parse(row.input) as PreparedInput) : undefined
+      const calls = JSON.parse(row.calls) as Record<string, CallRecord>
+      for (const record of Object.values(calls)) {
+        const provider = record.provider ?? input?.model?.provider
+        if (provider) addCredentialUsage(usage, provider, record)
+      }
+    }
+    return usage
+  }
+
   /** 人工决策、旧未知证据和活动调用/排队状态一次落盘；失败时全部回滚。 */
   manualRecovery(
     id: string,
@@ -201,6 +227,7 @@ export class JobStore {
             state: 'pending',
             remoteId: remoteId!,
             ...(old?.trace ? { trace: old.trace } : {}),
+            ...(old?.provider ? { provider: old.provider } : {}),
             ...(old?.credentialId ? { credentialId: old.credentialId } : {}),
             ...(old?.credentialFingerprint
               ? { credentialFingerprint: old.credentialFingerprint }

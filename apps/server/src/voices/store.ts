@@ -161,6 +161,21 @@ export class VoiceStore {
     return this.get(owner, id)
   }
 
+  /** 设置页统计全 owner 的音色；音色仍按平台隔离，避免不同平台的组 id 混算。 */
+  credentialUsage(provider: string): Record<string, number> {
+    const usage: Record<string, number> = {}
+    const rows = this.db
+      .select({ data: voices.data })
+      .from(voices)
+      .where(eq(voices.provider, provider))
+      .all()
+    for (const row of rows) {
+      const credentialId = (JSON.parse(row.data) as Partial<VoiceData>).credentialId
+      if (credentialId) usage[credentialId] = (usage[credentialId] ?? 0) + 1
+    }
+    return usage
+  }
+
   remove(owner: string, id: string): boolean {
     return this.db.delete(voices).where(this.mine(owner, id)).run().changes > 0
   }

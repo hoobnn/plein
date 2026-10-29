@@ -212,7 +212,7 @@ export async function createServer(config: Config): Promise<Server> {
   // 资产与素材路由已经并进 creative，动态合成路由沿用它们之后的顺序
   app.route('/', motionRoutes({ assets, previews: motionPreviews, db, rooms }))
   app.route('/', syncRoutes(db, rooms))
-  app.route('/', pluginRoutes(plugins))
+  app.route('/', pluginRoutes(plugins, { jobs: runs.store, voices, dataDir: config.dataDir }))
   app.route('/', localPluginRoutes(local))
   app.route('/', pluginInstallRoutes(pluginInstaller))
   app.route('/', promptRoutes(plugins))

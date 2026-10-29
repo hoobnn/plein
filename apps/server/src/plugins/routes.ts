@@ -17,8 +17,12 @@ import {
 } from '@plein/plugin-sdk'
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { join } from 'node:path'
 import type { AuthEnv } from '../auth'
 import { validationMessage } from '../http/validation'
+import type { JobStore } from '../runs/store'
+import { subtitleCredentialUsage } from '../subtitles/journal'
+import type { VoiceStore } from '../voices/store'
 import { ConfigError } from './config-store'
 import type { ExternalPlugins } from './external'
 import type { PluginHost } from './host'
@@ -80,12 +84,20 @@ export function catalogOf(host: PluginHost): Catalog {
 }
 
 /** 插件目录与平台设置接口 */
-export function pluginRoutes(host: PluginHost) {
+export function pluginRoutes(
+  host: PluginHost,
+  deps: { jobs?: JobStore; voices?: VoiceStore; dataDir?: string } = {},
+) {
   const { registry, configs } = host
 
   const view = (id: string): ProviderConfigView => {
     const c = configs.get(id)
     const def = registry.providers.get(id)!.def
+    const taskUsage = deps.jobs?.credentialUsage() ?? {}
+    const subtitleUsage = deps.dataDir
+      ? subtitleCredentialUsage(join(deps.dataDir, 'subtitle-recognition'))
+      : {}
+    const voiceUsage = deps.voices?.credentialUsage(id) ?? {}
     return {
       enabled: c.enabled,
       settings: c.settings,
@@ -97,6 +109,10 @@ export function pluginRoutes(host: PluginHost) {
           def.secrets.map((s) => [s.name, Boolean(credential.secrets[s.name])]),
         ),
         configured: providerConfigured(def, credential.secrets),
+        usage: {
+          tasks: (taskUsage[id]?.[credential.id] ?? 0) + (subtitleUsage[id]?.[credential.id] ?? 0),
+          voices: voiceUsage[credential.id] ?? 0,
+        },
       })),
       activeCredential: c.activeCredential ?? null,
     }

@@ -242,6 +242,7 @@ export function subtitleRoutes({
                 state: 'pending',
                 remoteId: operation.remoteId,
                 ...(record.trace ? { trace: record.trace } : {}),
+                ...(record.provider ? { provider: record.provider } : {}),
                 ...(record.credentialId ? { credentialId: record.credentialId } : {}),
                 ...(record.credentialFingerprint
                   ? { credentialFingerprint: record.credentialFingerprint }

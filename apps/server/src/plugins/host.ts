@@ -132,6 +132,7 @@ export interface SubmissionTrace {
 }
 export type CallRecord = {
   trace?: SubmissionTrace
+  provider?: string
   credentialId?: string
   credentialFingerprint?: string
   credentialLabel?: string
@@ -153,6 +154,15 @@ export type CallRecord = {
       dataAssets?: Record<number, AssetRef>
     }
 )
+
+/** 平台 → 密钥组 → 还在提交、等待平台结果或等待结果入库的调用数 */
+export type CredentialUsage = Record<string, Record<string, number>>
+
+export function addCredentialUsage(usage: CredentialUsage, provider: string, record: CallRecord) {
+  if (!record.credentialId || record.state === 'done') return
+  const credentials = (usage[provider] ??= {})
+  credentials[record.credentialId] = (credentials[record.credentialId] ?? 0) + 1
+}
 
 /**
  * 服务退出时中止运行用的 reason：不取消远端任务、不清调用记录，重启后接着轮询
@@ -537,6 +547,7 @@ export class PluginHost {
       }
     }
     let trace = recorded?.trace
+    let provider = recorded?.provider
     let credentialId = recorded?.credentialId
     let credentialFingerprint = recorded?.credentialFingerprint
     let credentialLabel = recorded?.credentialLabel
@@ -546,6 +557,7 @@ export class PluginHost {
         {
           ...r,
           ...(trace ? { trace } : {}),
+          ...(provider ? { provider } : {}),
           ...(credentialId ? { credentialId } : {}),
           ...(credentialFingerprint ? { credentialFingerprint } : {}),
           ...(credentialLabel ? { credentialLabel } : {}),
@@ -565,6 +577,7 @@ export class PluginHost {
     this.refreshConfiguredProviders()
     const parsed = parseModelRef(ref)
     if (!parsed) throw new ProviderError('invalid_input', `模型引用格式不正确：${ref}`)
+    provider ??= parsed.provider
     const entry = this.registry.providers.get(parsed.provider)
     if (!entry) throw new ProviderError('unavailable', `平台 ${parsed.provider} 未安装`)
     const model = entry.def.models.find((m) => m.id === parsed.model)

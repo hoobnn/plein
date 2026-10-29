@@ -89,6 +89,7 @@ const credential = (id: string, label: string, filled = false) => ({
   label,
   secrets: { MOCK_API_KEY: filled },
   configured: filled,
+  usage: { tasks: 0, voices: 0 },
 })
 
 /** 带密钥组的配置视图：settings 默认与 mock 平台的已保存值一致 */

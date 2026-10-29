@@ -5,7 +5,8 @@ import { mockProvider } from '@plein/providers'
 import { Hono } from 'hono'
 import { describe, expect, it, vi } from 'vite-plus/test'
 import type { AuthEnv } from '../auth'
-import { bootServer, request, tempDir } from '../testing'
+import { bootServer, createCanvas, request, tempDir } from '../testing'
+import { VoiceStore } from '../voices/store'
 import { ProviderConfigStore } from './config-store'
 import { pluginRoutes } from './routes'
 
@@ -193,6 +194,53 @@ describe('平台配置接口', () => {
     })
   })
 
+  it('配置视图按密钥组汇总未完成的平台调用和音色', async () => {
+    const { server, call } = await boot()
+    const config = server.plugins.configs.update('plein/mock', {
+      secrets: { MOCK_API_KEY: 'personal' },
+    })
+    const credentialId = config.activeCredential!
+    const { id: canvasId } = await createCanvas(server)
+    server.runs.store.insert({
+      id: 'credential-usage-job',
+      ownerId: 'local',
+      canvasId,
+      nodeId: 'speech',
+      nodeType: 'plein/speech',
+    })
+    const journal = server.runs.store.journal('credential-usage-job')
+    journal.set('pending', {
+      state: 'pending',
+      remoteId: 'remote-1',
+      provider: 'plein/mock',
+      credentialId,
+    })
+    journal.set('done', {
+      state: 'done',
+      result: { outputs: [], assets: [] },
+      provider: 'plein/mock',
+      credentialId,
+    })
+    new VoiceStore(server.db).save('local', {
+      provider: 'plein/mock',
+      voiceId: 'voice-1',
+      name: '旁白',
+      status: 'ready',
+      message: null,
+      source: 'clone',
+      sampleAssetId: null,
+      gender: null,
+      age: null,
+      credentialId,
+      credentialFingerprint: 'fingerprint',
+      credentialLabel: '默认',
+    })
+
+    const view = (await call<ProviderConfigView>('/api/providers/plein/mock/config')).body
+    expect(view.credentials).toHaveLength(1)
+    expect(view.credentials[0]!.usage).toEqual({ tasks: 1, voices: 1 })
+  })
+
   it('按顺序执行密钥组动作，标签与组 id 不合法时返回 400', async () => {
     const { call } = await boot()
     const initial = (
@@ -214,12 +262,14 @@ describe('平台配置接口', () => {
         label: '个人',
         secrets: { MOCK_API_KEY: false },
         configured: true,
+        usage: { tasks: 0, voices: 0 },
       },
       {
         id: expect.any(String),
         label: '团队',
         secrets: { MOCK_API_KEY: true },
         configured: true,
+        usage: { tasks: 0, voices: 0 },
       },
     ])
     expect(added.body.secrets).toEqual({ MOCK_API_KEY: false })

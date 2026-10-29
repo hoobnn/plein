@@ -81,6 +81,8 @@ export interface ProviderConfigView {
     label: string
     secrets: Record<string, boolean>
     configured: boolean
+    /** 仍在等平台结果的调用数，以及关联到这组密钥的音色数 */
+    usage: { tasks: number; voices: number }
   }>
   activeCredential: string | null
 }
