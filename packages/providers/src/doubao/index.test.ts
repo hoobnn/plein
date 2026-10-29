@@ -414,6 +414,56 @@ describe('Doubao Speech HTTP contracts', () => {
     expect(init.headers).toMatchObject({ 'X-Api-Resource-Id': 'seed-icl-2.0' })
   })
 
+  it('明确选择复刻 1.0 时使用对应资源，并拒绝普通音色', async () => {
+    const ctx = context(new Response('{"code":20000000,"data":"AQI="}'))
+    await doubaoProvider.submit(
+      {
+        capability: 'audio.speech',
+        model: 'seed-icl-1.0',
+        input: { text: '你好', voice: 'S_abc' },
+      },
+      ctx,
+    )
+    expect(vi.mocked(ctx.fetch).mock.calls[0]![1]!.headers).toMatchObject({
+      'X-Api-Resource-Id': 'seed-icl-1.0',
+    })
+    const other = context()
+    await expect(
+      doubaoProvider.submit(
+        {
+          capability: 'audio.speech',
+          model: 'seed-icl-1.0',
+          input: { text: '你好', voice: 'zh_female_vv_uranus_bigtts' },
+        },
+        other,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+    expect(other.fetch).not.toHaveBeenCalled()
+  })
+
+  it('资源与音色不匹配时提示核实版本，且不自动重试', async () => {
+    const ctx = context(
+      new Response(
+        '{"code":55000000,"message":"resource ID is mismatched with speaker related resource"}',
+      ),
+    )
+    await expect(
+      doubaoProvider.submit(
+        {
+          capability: 'audio.speech',
+          model: 'seed-icl-2.0',
+          input: { text: '你好', voice: 'S_abc' },
+        },
+        ctx,
+      ),
+    ).rejects.toMatchObject({
+      code: 'invalid_input',
+      retryable: false,
+      message: expect.stringContaining('声音复刻 1.0 或 2.0'),
+    })
+    expect(ctx.fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('复刻上传样本到控制台分配的音色 ID，训练状态按 get_voice 归一', async () => {
     const ctx = fakeContext(
       doubaoProvider,

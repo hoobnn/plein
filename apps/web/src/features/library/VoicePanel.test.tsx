@@ -7,6 +7,26 @@ import { VoicePanel } from './VoicePanel'
 import { voiceCatalog, designedVoice } from './voiceFixtures'
 
 resetStoreAfterEach(useCatalog)
+
+it('登记的豆包音色显示为未经验证，而不是已验证可用', async () => {
+  useCatalog.setState({ catalog: voiceCatalog })
+  mockFetch((request) => {
+    if (new URL(request.url).pathname === '/api/voices' && request.method === 'GET')
+      return Response.json([
+        {
+          ...designedVoice,
+          provider: 'doubao/speech',
+          source: 'register',
+          voiceId: 'S_existing',
+          previewAssetId: null,
+        },
+      ])
+  })
+  renderApp(<VoicePanel />)
+  expect(await screen.findByText('已登记 · 未验证')).toBeTruthy()
+  expect(screen.getByText(/登记不会验证平台音色或资源版本/)).toBeTruthy()
+})
+
 function setup() {
   useCatalog.setState({ catalog: voiceCatalog })
   const writes: unknown[] = []

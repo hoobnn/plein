@@ -5,7 +5,7 @@
 | 平台 / Provider ID              | 已接入能力                                                                                                              | 密钥                                                                      |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | MiniMax `minimax/api`           | M3 / M2.7 对话、image-01 图片、H3 / Highspeed / Lite / Max 视频、speech-2.8 配音、声音复刻 / 音色设计、Music 3.0 纯音乐 | `MINIMAX_API_KEY`                                                         |
-| 豆包语音 `doubao/speech`        | TTS 2.0、声音复刻 2.0 / 音色设计、Seed Audio 音乐 / 音效、极速录音识别                                                  | `VOLC_SPEECH_API_KEY`，或 `VOLC_SPEECH_APP_ID` + `VOLC_SPEECH_ACCESS_KEY` |
+| 豆包语音 `doubao/speech`        | TTS 2.0、已有声音复刻 1.0 / 2.0 合成、声音复刻 2.0 / 音色设计、Seed Audio 音乐 / 音效、极速录音识别                     | `VOLC_SPEECH_API_KEY`，或 `VOLC_SPEECH_APP_ID` + `VOLC_SPEECH_ACCESS_KEY` |
 | 百炼 `aliyun/bailian`           | 千问对话、Qwen Image / 万相图片、万相局部重绘、Wan 3.0 视频、Qwen TTS                                                   | `DASHSCOPE_API_KEY`                                                       |
 | 方舟 `volc/ark`                 | Seed 对话、Seedream 图片、Seedance 视频                                                                                 | `ARK_API_KEY`                                                             |
 | 方舟 Agent Plan `volc/ark-plan` | 套餐内 Seedream 图片、Seedance 视频                                                                                     | `ARK_AGENT_PLAN_API_KEY`                                                  |
@@ -49,7 +49,7 @@ SDK 新增了两个字段：`testScope` 用来标出「只检查本地配置」�
 
 - **豆包音色设计**：`POST /api/v3/tts/voice_design`，使用控制台购买的 `S_` 槽位，文字描述最多 200 字、试听文本最多 300 字；可上传 10 MB 以内的角色图片，文字与图片同时提供时图片优先。设计结果通过同一个 `/api/v3/tts/get_voice` 查询，2、4 可合成，3 失败。
 - **MiniMax 音色设计**：`POST /v1/voice_design`，发送 `prompt`、`preview_text` 和宿主生成的 `voice_id`，不上传复刻样本。试听文本最多 500 字，返回的 `trial_audio` 按 hex 解码保存；音色描述的 2000 字上限是 Plein 本地限制。
-- **豆包声音复刻**：`POST /api/v3/tts/voice_clone`，`audio.data` 为 Base64，`extra_params` 为对象。支持预付费 `S_` 槽位及后付费 `custom_speaker_id`；后者 ID 可自动生成，首次正式合成会转正计费，转正后不能重新复刻，未正式合成的音色 7 天后删除。后付费音色也会自动走 `seed-icl-2.0` 合成资源。WAV / MP3 / OGG / M4A / AAC 样本不超过 10 MB；官方 V3 参数文档未明确最低时长，2.0 最佳实践建议 14–30 秒以改善效果。Plein 不按建议时长拦截短样本，最终是否接受以平台响应为准。
+- **豆包声音复刻**：`POST /api/v3/tts/voice_clone`，`audio.data` 为 Base64，`extra_params` 为对象。支持预付费 `S_` 槽位及后付费 `custom_speaker_id`；后者 ID 可自动生成，首次正式合成会转正计费，转正后不能重新复刻，未正式合成的音色 7 天后删除。登记已有音色不会验证资源版本；合成时可明确选择 `seed-icl-1.0` 或 `seed-icl-2.0`，旧配置仍默认使用 2.0，需与平台音色所属资源一致。WAV / MP3 / OGG / M4A / AAC 样本不超过 10 MB；官方 V3 参数文档未明确最低时长，2.0 最佳实践建议 14–30 秒以改善效果。Plein 不按建议时长拦截短样本，最终是否接受以平台响应为准。
 - **MiniMax 声音复刻**：先 multipart `/v1/files/upload`（`purpose=voice_clone`），再 `/v1/voice_clone`。主样本要求 MP3 / M4A / WAV、10 秒至 5 分钟、20 MB 以内。可选增强参考是另外一段小于 8 秒的音频，用 `purpose=prompt_audio` 上传，搭配对应文字放入 `clone_prompt`；不能混用主样本和增强参考的时长要求。实名认证后才能使用，复刻音色 7 天未正式调用会被删除。可选试听文本最多 1000 字，同时传入 `speech-2.8-hd` 试听模型。
 
 两家的降噪和音量归一化都可选，Plein 默认关闭，干净样本不强制处理。豆包映射为 `enable_audio_denoise`、`disable_volume_normalization`（反向布尔值）；MiniMax 映射为 `need_noise_reduction`、`need_volume_normalization`。试听合成可能计费；不会为了激活音色而自动调用正式合成。

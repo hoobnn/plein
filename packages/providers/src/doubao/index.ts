@@ -61,6 +61,13 @@ function scrub(value: string, ctx: Context) {
 function failure(status: number, code: unknown, message: unknown, ctx: Context): ProviderError {
   const detail = scrub(typeof message === 'string' ? message : '请求失败', ctx).slice(0, 500)
   let normalized: ProviderErrorCode = 'unknown'
+  if (/resource id is mismatched with speaker related resource/i.test(detail)) {
+    return new ProviderError(
+      'invalid_input',
+      `豆包语音 ${scrub(String(code ?? status), ctx)}: 音色与所选复刻资源不匹配。请核实音色支持的版本，再选择声音复刻 1.0 或 2.0；不要重复提交相同配置。`,
+      { retryable: false },
+    )
+  }
   // 只匹配完整词：“sample_rate”“max tokens”这类参数错误不能被当成限流或鉴权
   if (
     status === 401 ||
@@ -395,6 +402,12 @@ export const doubaoProvider = defineProvider({
       voices: TTS_VOICES,
     },
     {
+      id: 'seed-icl-1.0',
+      title: '豆包声音复刻 1.0（已有音色）',
+      capabilities: ['audio.speech'],
+      limits: { speed: { min: 0.5, max: 2 } },
+    },
+    {
       id: 'seed-icl-2.0',
       title: '豆包声音复刻 2.0（已有音色）',
       capabilities: ['audio.speech'],
@@ -423,11 +436,15 @@ export const doubaoProvider = defineProvider({
       const content = text(input.text, '合成文本')
       const voice = input.voice ?? ctx.settings.voice
       const cloned = voice.startsWith('S_') || customVoiceId(voice)
-      if (req.model === 'seed-icl-2.0' && !cloned) {
+      if (req.model.startsWith('seed-icl-') && !cloned) {
         throw new ProviderError('invalid_input', '声音复刻模型需要已创建的复刻或设计音色 ID')
       }
-      // 复刻音色只能走复刻资源；角色卡沿用的音色常配默认的合成 2.0，这里自动改走复刻 2.0
-      const resource = cloned ? 'seed-icl-2.0' : req.model
+      // 登记音色的资源版本不能由 ID 判断；显式选择 1.0 时尊重选择，旧配置保留 2.0 默认值。
+      const resource = cloned
+        ? req.model === 'seed-icl-1.0'
+          ? 'seed-icl-1.0'
+          : 'seed-icl-2.0'
+        : req.model
       const speed = input.speed ?? 1
       if (!Number.isFinite(speed) || speed < 0.5 || speed > 2)
         throw new ProviderError('invalid_input', '语速须在 0.5 至 2 之间')

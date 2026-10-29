@@ -164,7 +164,9 @@ function VoiceRow({ voice }: { voice: Voice }) {
   const [error, setError] = useState<string | null>(null)
   const status = voice.message?.startsWith('提交结果未知')
     ? { label: '待核查', tone: 'ui-tag-warning' }
-    : STATUS[voice.status]
+    : voice.source === 'register' && voice.status === 'ready'
+      ? { label: '已登记 · 未验证', tone: 'ui-tag-warning' }
+      : STATUS[voice.status]
   const traits = voiceTraits(voice)
   const run = async (fn: () => Promise<void>) => {
     setPending(true)
@@ -185,6 +187,11 @@ function VoiceRow({ voice }: { voice: Voice }) {
           <span className={`ui-tag ${status.tone}`}>{status.label}</span>
           {traits && <span className="ui-tag">{traits}</span>}
         </div>
+        {voice.source === 'register' && voice.provider === 'doubao/speech' && (
+          <p className="text-xs text-ink-muted">
+            登记不会验证平台音色或资源版本；合成时请选择该音色所属的声音复刻资源。
+          </p>
+        )}
         <div className="text-xs text-ink-subtle">
           {provider?.title ?? voice.provider} · <span className="font-mono">{voice.voiceId}</span>
           {voice.source === 'design'
