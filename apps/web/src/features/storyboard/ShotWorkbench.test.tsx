@@ -396,7 +396,7 @@ it('Alt 方向键切镜，但不打断文本编辑', async () => {
   expect(engine.doc.get('board')).toBeDefined()
 })
 
-it('摘要只按实际送入的参考图标记，且不把丢弃的图说成已送入', async () => {
+it('摘要按当前输入预览标记参考图将送入，不把丢弃的图说成已送入', async () => {
   const { doc, board, shots } = fixture(true)
   createElement(doc, {
     id: 'actor',
@@ -418,6 +418,7 @@ it('摘要只按实际送入的参考图标记，且不把丢弃的图说成已�
     },
     shots[1]!,
   ])
+  setParam(doc, 'video-one', 'prompt', '@角色')
   const input = prepared('video-one', '@角色')
   input.refs = [
     {
@@ -438,7 +439,7 @@ it('摘要只按实际送入的参考图标记，且不把丢弃的图说成已�
       return Response.json({ id: 'run-one', nodeId: 'video-one', input })
   })
   renderApp(<ShotWorkbench />)
-  expect(await screen.findByText('有参考图且实际送入模型')).toBeTruthy()
+  expect(await screen.findByText('参考图将送入模型')).toBeTruthy()
   expect(screen.queryByText('仅文字设定')).toBeNull()
 })
 
@@ -615,6 +616,7 @@ function bindCharacter(
   shots: ReturnType<typeof rows>,
   prompt: string,
 ) {
+  setStagePrompt(doc, prompt)
   setParam(doc, board, 'shots', [
     {
       ...shots[0]!,
@@ -624,6 +626,11 @@ function bindCharacter(
     },
     shots[1]!,
   ])
+}
+
+/** 摘要在有节点时读所展示阶段的实际提示词；测试夹具里分镜图阶段就是 video-one */
+function setStagePrompt(doc: PleinDoc, prompt: string) {
+  setParam(doc, 'video-one', 'prompt', prompt)
 }
 
 // setParam 整组替换 shots；基于文档里当前行合并，避免丢掉 characters / 绑定
@@ -692,6 +699,7 @@ it('摘要提示需要选择：档案项写错、多处引用不一致都不猜�
   // 同一资产多处引用但档案项完全一致时不算歧义
   act(() => {
     setParam(doc, board, 'shots', withShotPrompt(doc, board, 0, '@角色 @角色'))
+    setStagePrompt(doc, '@角色 @角色')
     doc.flush()
   })
   await waitFor(() => expect(screen.getByText(/时期：默认/)).toBeTruthy())
@@ -699,6 +707,7 @@ it('摘要提示需要选择：档案项写错、多处引用不一致都不猜�
   // 多处引用档案项不一致时不猜
   act(() => {
     setParam(doc, board, 'shots', withShotPrompt(doc, board, 0, '@角色/青年 @角色'))
+    setStagePrompt(doc, '@角色/青年 @角色')
     doc.flush()
   })
   await waitFor(() =>
@@ -708,6 +717,7 @@ it('摘要提示需要选择：档案项写错、多处引用不一致都不猜�
   )
   act(() => {
     setParam(doc, board, 'shots', withShotPrompt(doc, board, 0, '天台夜戏，没有引用'))
+    setStagePrompt(doc, '天台夜戏，没有引用')
     doc.flush()
   })
   await waitFor(() => expect(screen.getByText(/时期：默认/)).toBeTruthy())
@@ -736,6 +746,7 @@ it('同名卡未消歧或序号越界时提示引用不唯一，点击去分镜�
   expect(badge.closest('button')?.getAttribute('title')).toContain('分镜表')
   act(() => {
     setParam(doc, board, 'shots', withShotPrompt(doc, board, 0, '@角色#3'))
+    setStagePrompt(doc, '@角色#3')
     doc.flush()
   })
   await waitFor(() =>
@@ -751,10 +762,10 @@ it('有参考图但本次未送入时不标成仅文字设定，原因收进 tit
   bindCharacter(doc, board, shots, '@角色')
   mockSummary(summaryInput('video-one', '', [], ['ref'], 'over_limit'))
   renderApp(<ShotWorkbench />)
-  const badge = await screen.findByText('参考图未送入')
+  const badge = await screen.findByText('参考图将不送入')
   expect(badge.getAttribute('title')).toContain('上限')
   expect(screen.queryByText('仅文字设定')).toBeNull()
-  expect(screen.queryByText('有参考图且实际送入模型')).toBeNull()
+  expect(screen.queryByText('参考图将送入模型')).toBeNull()
 })
 
 it('摘要按已有字段区分仅文字设定与已人工认可', async () => {
@@ -790,8 +801,8 @@ it('摘要按已有字段区分仅文字设定与已人工认可', async () => {
   renderApp(<ShotWorkbench />)
   expect(await screen.findByText('仅文字设定')).toBeTruthy()
   expect(screen.getByText('已人工认可')).toBeTruthy()
-  expect(screen.queryByText('有参考图且实际送入模型')).toBeNull()
-  expect(screen.queryByText('参考图未送入')).toBeNull()
+  expect(screen.queryByText('参考图将送入模型')).toBeNull()
+  expect(screen.queryByText('参考图将不送入')).toBeNull()
 })
 
 it('对照观察绑定候选：当前候选有观察则计数，失效后提示重新审阅', async () => {
@@ -829,4 +840,217 @@ it('对照观察绑定候选：当前候选有观察则计数，失效后提示�
     doc.flush()
   })
   await waitFor(() => expect(screen.getByText('旧观察已失效，请重新审阅')).toBeTruthy())
+})
+
+it('同一档案项重复引用时摘要照常显示，不再退回默认', async () => {
+  const { doc, board, shots } = fixture(true)
+  addActor(doc, youngProfile)
+  bindCharacter(doc, board, shots, '@角色/青年 @角色/青年')
+  mockSummary(summaryInput('video-one', '', []))
+  renderApp(<ShotWorkbench />)
+  expect(await screen.findByText(/时期：青年/)).toBeTruthy()
+  expect(screen.queryByText('档案项需要选择')).toBeNull()
+})
+
+it('场景重复同一视角时显示视角与截图，不同视角时提示需要选择', async () => {
+  const { doc, board, shots } = fixture(true)
+  createElement(doc, {
+    id: 'roof',
+    kind: 'node',
+    nodeType: 'plein/scene',
+    name: '天台',
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 80,
+    params: {
+      sceneViews: [
+        { id: 'night', name: '夜景', images: ['e'.repeat(64)] },
+        { id: 'day', name: '日景' },
+      ],
+    },
+  })
+  setParam(doc, board, 'shots', [
+    {
+      ...shots[0]!,
+      characters: ['天台'],
+      assetBindings: { 天台: { elementId: 'roof' } },
+    },
+    shots[1]!,
+  ])
+  setParam(doc, 'video-one', 'prompt', '@天台/夜景 @天台/夜景')
+  mockSummary(summaryInput('video-one', '', []))
+  renderApp(<ShotWorkbench />)
+  expect(await screen.findByText('视角：夜景')).toBeTruthy()
+  expect(screen.getByAltText('场景视角截图')).toBeTruthy()
+  act(() => {
+    setParam(doc, 'video-one', 'prompt', '@天台/夜景 @天台/日景')
+    doc.flush()
+  })
+  await waitFor(() => expect(screen.getByText('视角：需要选择')).toBeTruthy())
+  expect(screen.queryByAltText('场景视角截图')).toBeNull()
+})
+
+it('video-only 镜头摘要读视频阶段的实际提示词并标注来源', async () => {
+  const { doc, board, shots } = fixture(true)
+  addActor(doc, youngProfile)
+  setParam(doc, board, 'shots', [
+    {
+      ...shots[0]!,
+      characters: ['角色'],
+      assetBindings: { 角色: { elementId: 'actor' } },
+    },
+    shots[1]!,
+  ])
+  setParam(doc, 'video-one', 'prompt', '天台夜戏 @角色/青年')
+  mockSummary(summaryInput('video-one', '', []))
+  renderApp(<ShotWorkbench />)
+  expect(await screen.findByText(/时期：青年/)).toBeTruthy()
+  expect(screen.getByText(/按视频阶段/)).toBeTruthy()
+  expect(screen.queryByText('按镜头计划推导')).toBeNull()
+})
+
+it('没有生成节点时按回退规则读 description 并标注按镜头计划推导', async () => {
+  const { doc, board, shots } = fixture()
+  addActor(doc, youngProfile)
+  setParam(doc, board, 'shots', [
+    {
+      ...shots[0]!,
+      description: '天台夜戏 @角色/青年',
+      imagePrompt: '',
+      characters: ['角色'],
+      assetBindings: { 角色: { elementId: 'actor' } },
+    },
+    shots[1]!,
+  ])
+  renderApp(<ShotWorkbench />)
+  expect(await screen.findByText(/时期：青年/)).toBeTruthy()
+  expect(screen.getByText(/按镜头计划推导/)).toBeTruthy()
+})
+
+it('分镜图节点提示词未同步时摘要如实显示默认并标注按分镜图阶段', async () => {
+  const { doc, board, shots } = fixture(true)
+  addActor(doc, youngProfile)
+  createElement(doc, {
+    id: 'image-one',
+    kind: 'node',
+    nodeType: 'plein/image',
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 80,
+    params: { source: { storyboard: 'board', shot: 'one', role: 'image' } },
+  })
+  setParam(doc, board, 'shots', [
+    {
+      ...shots[0]!,
+      characters: ['角色'],
+      assetBindings: { 角色: { elementId: 'actor' } },
+      imagePrompt: '@角色/青年',
+    },
+    shots[1]!,
+  ])
+  mockSummary(prepared('image-one', ''))
+  renderApp(<ShotWorkbench />)
+  expect(await screen.findByText(/按分镜图阶段/)).toBeTruthy()
+  expect(screen.getByText(/时期：默认/)).toBeTruthy()
+})
+
+it('配音节点显式指定音色时摘要不再显示沿用默认', async () => {
+  const { doc, board, shots } = fixture(true)
+  addActor(doc)
+  createElement(doc, {
+    id: 'speech-one',
+    kind: 'node',
+    nodeType: 'plein/speech',
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 80,
+    params: {
+      source: { storyboard: 'board', shot: 'one', role: 'speech' },
+      prompt: '@角色',
+      voice: { provider: 'mock', voiceId: 'V1' },
+    },
+  })
+  bindCharacter(doc, board, shots, '@角色')
+  mockSummary(summaryInput('video-one', '', []))
+  renderApp(<ShotWorkbench />)
+  expect(await screen.findByText(/音色：配音另指定/)).toBeTruthy()
+  expect(
+    screen
+      .getByText(/音色：配音另指定/)
+      .closest('button')
+      ?.getAttribute('title'),
+  ).toContain('V1')
+})
+
+it('查看历史候选时对照区主按钮让位给采用候选', async () => {
+  const { doc } = fixture(true)
+  const currentTwo = doc.get('video-two')!.results![0]!
+  doc.mutable('video-two')!.set('results', [currentTwo, { ...currentTwo, id: 'history' }])
+  expect(
+    recordCreativeReview(doc, 'video-two', {
+      target: { kind: 'video', assetId: 'a'.repeat(64), resultId: currentTwo.id },
+      status: 'usable',
+    }),
+  ).toBeTruthy()
+  useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
+  workbenchReads(doc, [])
+  const { user } = renderApp(<ShotWorkbench />)
+  const entry = () => screen.getByRole('button', { name: '记录衔接意见' })
+  await waitFor(() => expect(entry().className).toContain('ui-btn-primary'))
+  await user.selectOptions(screen.getByLabelText('工作台候选'), 'history')
+  await waitFor(() => expect(entry().className).not.toContain('ui-btn-primary'))
+  expect(screen.getByRole('button', { name: '采用候选' })).toBeTruthy()
+})
+
+it('对照取同阶段的末帧观察，跳过其他时间点的帧样本', async () => {
+  const { doc } = fixture(true)
+  const scope = { canvasId: 'canvas', boardId: 'board' }
+  const subjectId = registerContinuitySubject(doc, {
+    scope,
+    kind: 'character',
+    label: '主角',
+  })!
+  const base = {
+    scope,
+    shotId: 'one',
+    phase: 'end' as const,
+    nodeId: 'video-one',
+    port: 'video',
+    target: { kind: 'video' as const, assetId: 'a'.repeat(64), resultId: 'candidate-one' },
+    states: {
+      [subjectId]: { condition: { certainty: 'unknown' as const, note: '观察' } },
+    },
+    origin: { kind: 'manual' as const, userId: 'local' },
+  }
+  expect(
+    recordContinuityObservation(doc, {
+      ...base,
+      evidence: {
+        kind: 'frame',
+        position: { at: 0.5 },
+        frameAssetId: '9'.repeat(64),
+        aspects: ['visual'],
+      },
+    }),
+  ).toBeTruthy()
+  expect(
+    recordContinuityObservation(doc, {
+      ...base,
+      evidence: {
+        kind: 'frame',
+        position: 'end',
+        frameAssetId: 'f'.repeat(64),
+        aspects: ['visual'],
+      },
+    }),
+  ).toBeTruthy()
+  useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
+  workbenchReads(doc, [])
+  renderApp(<ShotWorkbench />)
+  await waitFor(() =>
+    expect((screen.getByAltText('视频末帧') as HTMLImageElement).src).toContain('f'.repeat(64)),
+  )
 })

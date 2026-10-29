@@ -23,8 +23,10 @@ import {
   pickVoice,
   voiceOf,
   type Mention,
+  type MentionTarget,
   type Shot,
   type ShotRole,
+  type VoiceRef,
 } from '@plein/nodes'
 import type { InputRef, PreparedInput } from '@plein/protocol'
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
@@ -199,8 +201,9 @@ function Workbench({
   const node =
     (selectedNode ? nodes.find((n) => n.id === selectedNode) : undefined) ??
     (videoReady ? videoNode : imageReady ? (videoNode ?? imageNode) : (imageNode ?? nodes[0]))
-  // 摘要与送入状态以分镜图阶段为准：角色 / 场景参考图从这里实际送入模型；没有分镜图节点时看视频节点
+  // 摘要与送入状态以分镜图阶段为准（无分镜图节点时看视频节点）；角色 / 场景参考图从这里送入模型（按当前输入预览）
   const statusNode = imageNode ?? videoNode
+  const statusRole: 'image' | 'video' = statusNode === videoNode && !imageNode ? 'video' : 'image'
   const assetInput = useQuery({
     queryKey: ['shot-asset-input', canvasId, boardId, shotId, statusNode?.id, version],
     enabled: !!statusNode && active(),
@@ -213,8 +216,15 @@ function Workbench({
       return value
     },
   })
-  // 候选区在默认查看的候选上是否已有主操作；对照区只在没有时才升为主按钮，保持全屏一个主动作
-  const inspected = node ? (currentResult(node) ?? node.results?.[0]) : undefined
+  // 候选区在默认查看的候选上是否已有主操作；对照区只在没有时才升为主按钮，保持全屏一个主动作。
+  // 查看的候选状态提升到父层，切历史候选时对照区能同步回退为次要按钮
+  const [viewing, setViewing] = useState<{ nodeId: string; candidateId: string } | null>(null)
+  const viewedCandidateId = viewing && node && viewing.nodeId === node.id ? viewing.candidateId : ''
+  const inspected = node
+    ? viewedCandidateId
+      ? node.results?.find((r) => r.id === viewedCandidateId)
+      : (currentResult(node) ?? node.results?.[0])
+    : undefined
   const inspectedAdopted = !!(
     node &&
     inspected &&
@@ -237,6 +247,36 @@ function Workbench({
     !inspectedAdopted ||
     (inspectedAdopted && !nextRole && inspectedReview?.status !== 'usable')
   const currentDraft = workbenchDraft(engine.doc, boardId, shotId)
+  // 摘要档案项的来源：有生成节点时读所展示阶段的实际提示词（未同步就是空，如实显示），
+  // 否则按生成计划回退（分镜图用 imagePrompt，缺则 description）
+  const summaryPrompt = statusNode
+    ? {
+        text: typeof statusNode.params?.prompt === 'string' ? statusNode.params.prompt : '',
+        source: statusRole === 'image' ? '按分镜图阶段' : '按视频阶段',
+      }
+    : {
+        text:
+          [shot?.imagePrompt, shot?.description].find(
+            (text) => typeof text === 'string' && text.trim(),
+          ) ?? '',
+        source: '按镜头计划推导',
+      }
+  // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化，重扫全画布提及目标
+  const mentionTargetList = useMemo(() => mentionTargets(engine), [engine, version])
+  // oxlint-enable react-hooks/exhaustive-deps
+  // 配音节点显式指定的音色优先于角色卡沿用；按其提示词里的角色提及映射
+  const speechVoices = useMemo(() => {
+    const map = new Map<string, VoiceRef>()
+    for (const speech of groups.get(shotId) ?? []) {
+      if ((speech.params?.source as ShotSource | undefined)?.role !== 'speech') continue
+      const voice = voiceOf(speech.params)
+      if (!hasVoice(voice)) continue
+      const text = typeof speech.params?.prompt === 'string' ? speech.params.prompt : ''
+      for (const mention of findMentions(text, mentionTargetList))
+        if (mention.id) map.set(mention.id, voice)
+    }
+    return map
+  }, [groups, shotId, mentionTargetList])
   const changed = draft?.source !== currentDraft?.source
   const downstream = workbenchDownstream(
     engine.doc,
@@ -384,6 +424,10 @@ function Workbench({
                 <ShotSummary
                   engine={engine}
                   shot={shot}
+                  promptText={summaryPrompt.text}
+                  promptSource={summaryPrompt.source}
+                  targets={mentionTargetList}
+                  speechVoices={speechVoices}
                   input={assetInput}
                   onLocate={locate}
                   onChoose={() => useCanvas.getState().openStoryboard(boardId)}
@@ -596,6 +640,8 @@ function Workbench({
                         stale={staleNodes.has(node.id)}
                         onLocate={() => locate(node.id)}
                         generationRole={nextRole}
+                        selected={viewedCandidateId}
+                        onSelect={(candidateId) => setViewing({ nodeId: node.id, candidateId })}
                         sharedInput={statusNode?.id === node.id ? assetInput : undefined}
                         onGenerate={(role) => {
                           if (writable()) setBatch({ role, reuseExisting: false })
@@ -844,26 +890,30 @@ function Workbench({
 function ShotSummary({
   engine,
   shot,
+  promptText,
+  promptSource,
+  targets,
+  speechVoices,
   input,
   onLocate,
   onChoose,
 }: {
   engine: Engine
   shot: Shot
+  /** 所展示阶段的实际提示词，或无节点时按回退规则推导的结果 */
+  promptText: string
+  promptSource: string
+  targets: MentionTarget[]
+  speechVoices: ReadonlyMap<string, VoiceRef>
   input: UseQueryResult<PreparedInput>
   onLocate(id: string): void
   onChoose(): void
 }) {
-  const version = useDocVersion(engine.doc)
-  // 摘要描述本镜本身：档案项取自分镜图提示词，不随候选区选中的阶段变化
-  const prompt = typeof shot.imagePrompt === 'string' ? shot.imagePrompt : ''
-  // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化，重扫全画布提及目标
-  const targets = useMemo(() => mentionTargets(engine), [engine, version])
-  // oxlint-enable react-hooks/exhaustive-deps
-  const mentions = useMemo(() => findMentions(prompt, targets), [prompt, targets])
+  const mentions = useMemo(() => findMentions(promptText, targets), [promptText, targets])
   return (
     <section className="p-4 space-y-2" aria-label="本镜用到的">
       <h3 className="font-medium">本镜用到的</h3>
+      <p className="text-xs text-ink-subtle">档案项{promptSource}</p>
       {!shot.characters.length && <p className="text-xs">尚未指定出场资产</p>}
       <div className="flex flex-wrap gap-2">
         {shot.characters.map((name) => {
@@ -883,25 +933,27 @@ function ShotSummary({
           const matches = mentions.filter((m) => m.id === asset.id)
           // 同名未消歧或 #序号 越界时生成会被阻断，摘要不装作没看见
           const broken = mentions.some((m) => m.id === undefined && m.ids.includes(asset.id))
-          const match = matches.length === 1 ? matches[0] : undefined
+          // 档案项一致性与场景视角一起判断；一致的多处引用取第一个展示，不再误报也不丢设置
           const pickKey = (m: Mention) =>
             JSON.stringify([
               m.pick?.period?.id,
               m.pick?.outfit?.id,
               m.pick?.expression?.id,
               m.pick?.voiceState?.id,
+              m.sceneView?.id,
             ])
-          const samePick =
+          const consistent =
             matches.length > 1 &&
             new Set(matches.map(pickKey)).size === 1 &&
             matches.every(
               (m) =>
                 m.profileMiss === undefined && !m.profileConflict && m.sceneViewMiss === undefined,
             )
+          const match = matches.length === 1 || consistent ? matches[0] : undefined
           // 提示词写法对不上唯一档案项 / 视角时不猜，让用户去选
           const unclear =
             broken ||
-            (matches.length > 1 && !samePick) ||
+            (matches.length > 1 && !consistent) ||
             (match !== undefined &&
               (match.profileMiss !== undefined ||
                 !!match.profileConflict ||
@@ -937,22 +989,24 @@ function ShotSummary({
             return '参考图没有送入'
           }
           const review = getCreativeReview(asset)
+          // 配音节点显式指定的音色优先于角色卡沿用（服务端同一规则）
+          const speechVoice = speechVoices.get(asset.id)
+          const voicePart = speechVoice
+            ? '配音另指定'
+            : (pick.voiceState?.name ?? (hasVoice(voice) ? '默认' : '未选'))
+          const voiceText = `时期：${pick.period?.name ?? '默认'} · 服装：${pick.outfit?.name ?? '默认'} · 表情：${pick.expression?.name ?? '默认'} · 音色：${voicePart}`
           return (
             <button
               type="button"
               className="plein-shot-subject text-left"
               key={name}
-              title={hint}
+              title={speechVoice ? `配音节点指定了音色 ${speechVoice.voiceId}` : hint}
               onClick={broken ? onChoose : () => onLocate(asset.id)}
             >
               <span className="block font-medium">{name} · 调整资产</span>
               {asset.nodeType === 'plein/character' && (
-                <span className={unclear ? 'block text-warning' : 'block'}>
-                  {broken
-                    ? '提示词引用不唯一'
-                    : unclear
-                      ? '档案项需要选择'
-                      : `时期：${pick.period?.name ?? '默认'} · 服装：${pick.outfit?.name ?? '默认'} · 表情：${pick.expression?.name ?? '默认'} · 音色：${pick.voiceState?.name ?? (hasVoice(voice) ? '默认' : '未选')}`}
+                <span className={unclear && !speechVoice ? 'block text-warning' : 'block'}>
+                  {broken ? '提示词引用不唯一' : unclear ? '档案项需要选择' : voiceText}
                 </span>
               )}
               {asset.nodeType === 'plein/scene' && (
@@ -972,7 +1026,14 @@ function ShotSummary({
                   )}
                 </span>
               )}
-              {hasSent && <span className="block text-ink-subtle">有参考图且实际送入模型</span>}
+              {hasSent && (
+                <span
+                  className="block text-ink-subtle"
+                  title="按当前输入预览；已采用候选实际送入的素材以其生成依据为准"
+                >
+                  参考图将送入模型
+                </span>
+              )}
               {!hasSent && notSent && (
                 <span
                   className="block text-ink-subtle"
@@ -981,7 +1042,7 @@ function ShotSummary({
                     .map(reasonText)
                     .join('；')}
                 >
-                  参考图未送入
+                  参考图将不送入
                 </span>
               )}
               {!hasSent && !notSent && onlyText && (
@@ -1023,7 +1084,9 @@ function ShotComparison({
   const side = (item: Shot | undefined, phase: 'start' | 'end') => {
     if (!item) return <p>没有上一镜</p>
     const currents = currentContinuityObservations(engine.doc, { canvasId, boardId }, item.id)
-    const observation = currents.find((o) => o.phase === phase && o.evidence.kind === 'frame')
+    const observation = currents.find(
+      (o) => o.phase === phase && o.evidence.kind === 'frame' && o.evidence.position === phase,
+    )
     const video = (groups.get(item.id) ?? []).find(
       (n) => (n.params?.source as ShotSource)?.role === 'video',
     )
@@ -1308,6 +1371,8 @@ function CandidateInspection({
   stale,
   onLocate,
   generationRole,
+  selected,
+  onSelect,
   sharedInput,
   onGenerate,
 }: {
@@ -1321,6 +1386,9 @@ function CandidateInspection({
   stale: boolean
   onLocate(): void
   generationRole?: 'image' | 'video'
+  /** 当前查看的候选 id（受控于工作台，切历史候选时对照区同步回退主按钮） */
+  selected: string
+  onSelect(candidateId: string): void
   /** 摘要已取过的同一节点输入，避免重复请求；查看其他节点时为空 */
   sharedInput?: UseQueryResult<PreparedInput>
   onGenerate(role: ShotRole): void
@@ -1342,8 +1410,7 @@ function CandidateInspection({
   }
   const [sourceIdentity] = useState(() => identity(node))
   const [readEpoch] = useState(() => ++nextInspectionRead)
-  const [selected, setSelected] = useState(''),
-    [error, setError] = useState('')
+  const [error, setError] = useState('')
   const adoptedResult = currentResult(node)
   const candidate = selected
     ? node.results?.find((r) => r.id === selected)
@@ -1431,7 +1498,7 @@ function CandidateInspection({
           aria-label="工作台候选"
           className="ui-input w-full"
           value={candidate?.id ?? selected}
-          onChange={(e) => setSelected(e.target.value)}
+          onChange={(e) => onSelect(e.target.value)}
         >
           <option value="">{adoptedResult ? '当前采用候选' : '尚未采用'}</option>
           {(node.results ?? []).map((r) => (
