@@ -72,8 +72,49 @@ export function storyboardPrep(
         field: 'motionPrompt',
       })
 
-    const assets = new Map<string, { field: PrepField; dialogueId?: string }>()
-    for (const name of new Set(shot.characters)) assets.set(name, { field: 'characters' })
+    const referenced = new Set<string>()
+    const checkAsset = (
+      name: string,
+      binding: Parameters<typeof resolveShotAsset>[2],
+      target: { id: string; field: PrepField; dialogueId?: string; prefix?: string },
+    ) => {
+      const el = resolveShotAsset(doc, name, binding)
+      if (!el) {
+        const count = named.get(name)?.length ?? 0
+        const problem = binding
+          ? `「${name}」的绑定已失效或不唯一，请重新选择`
+          : count > 1
+            ? `「${name}」有重名，需要选择唯一资产卡`
+            : `「${name}」尚未绑定资产卡`
+        add({
+          id: target.id,
+          category: 'missing',
+          label: `${target.prefix ?? ''}${problem}`,
+          field: target.field,
+          assetName: name,
+          dialogueId: target.dialogueId,
+        })
+        return
+      }
+      if (
+        !referenced.has(el.id) &&
+        (el.nodeType === 'plein/character' || el.nodeType === 'plein/scene') &&
+        referenceAssets(doc, el, 'image').length === 0
+      ) {
+        referenced.add(el.id)
+        add({
+          id: `reference:${name}:${el.id}`,
+          category: 'missing',
+          label: `${el.nodeType === 'plein/character' ? '角色卡' : '场景卡'}「${mentionName(el) ?? name}」缺少参考图`,
+          field: target.field,
+          assetName: name,
+          dialogueId: target.dialogueId,
+          assetId: el.id,
+        })
+      }
+    }
+    for (const name of new Set(shot.characters))
+      checkAsset(name, shot.assetBindings?.[name], { id: `binding:${name}`, field: 'characters' })
     shot.dialogue.forEach((line, index) => {
       if (!line.line.trim()) return
       const name = line.character.trim()
@@ -85,45 +126,16 @@ export function storyboardPrep(
           field: 'dialogue',
           dialogueId: line.id,
         })
-      } else if (!assets.has(name)) {
-        assets.set(name, { field: 'dialogue', dialogueId: line.id })
-      }
-    })
-    for (const [name, target] of assets) {
-      const binding =
-        target.field === 'characters'
-          ? shot.assetBindings?.[name]
-          : (shot.dialogue.find((line) => line.id === target.dialogueId)?.speaker ??
-            shot.assetBindings?.[name])
-      const el = resolveShotAsset(doc, name, binding)
-      const base = {
-        category: 'missing' as const,
-        field: target.field,
-        assetName: name,
-        dialogueId: target.dialogueId,
-      }
-      if (!el) {
-        const count = named.get(name)?.length ?? 0
-        const label = binding
-          ? `「${name}」的绑定已失效或不唯一，请重新选择`
-          : count > 1
-            ? `「${name}」有重名，需要选择唯一资产卡`
-            : `「${name}」尚未绑定资产卡`
-        add({ ...base, id: `binding:${name}`, label })
-        continue
-      }
-      if (
-        (el.nodeType === 'plein/character' || el.nodeType === 'plein/scene') &&
-        referenceAssets(doc, el, 'image').length === 0
-      ) {
-        add({
-          ...base,
-          id: `reference:${name}`,
-          label: `${el.nodeType === 'plein/character' ? '角色卡' : '场景卡'}「${mentionName(el) ?? name}」缺少参考图`,
-          assetId: el.id,
+      } else {
+        // 展开优先使用逐句 speaker；出场绑定有效不能掩盖某一句的失效绑定。
+        checkAsset(name, line.speaker ?? shot.assetBindings?.[name], {
+          id: `dialogue-binding:${line.id ?? index}`,
+          field: 'dialogue',
+          dialogueId: line.id,
+          prefix: `第 ${index + 1} 句台词：`,
         })
       }
-    }
+    })
 
     const nodes = reviewNodesForShot(shot, groups.get(shot.id) ?? [])
     if (nodes.length) {

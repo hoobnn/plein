@@ -115,6 +115,47 @@ describe('逐镜准备模型', () => {
     )
   })
 
+  it('同名多句台词逐句检查 speaker，出场绑定有效也不掩盖失效台词绑定', () => {
+    const shot = Shot.parse({
+      id: 'one',
+      no: 1,
+      description: '画面',
+      imagePrompt: '图',
+      motionPrompt: '动',
+      characters: ['林夏'],
+      assetBindings: { 林夏: { elementId: 'character-one' } },
+      dialogue: [
+        {
+          id: 'line-one',
+          character: '林夏',
+          line: '第一句',
+          speaker: { elementId: 'character-one' },
+        },
+        { id: 'line-two', character: '林夏', line: '第二句', speaker: { elementId: 'deleted' } },
+        {
+          id: 'line-three',
+          character: '林夏',
+          line: '第三句',
+          speaker: { elementId: 'character-two' },
+        },
+      ],
+    })
+    const { doc, boardId } = fixture([shot])
+    card(doc, 'plein/character', '林夏', 'character-one')
+    card(doc, 'plein/character', '林夏', 'character-two')
+    const bindings = storyboardPrep(doc, boardId, [shot]).shots[0]!.issues.filter((issue) =>
+      issue.id.includes('binding'),
+    )
+    expect(bindings).toEqual([
+      expect.objectContaining({
+        id: 'dialogue-binding:line-two',
+        field: 'dialogue',
+        dialogueId: 'line-two',
+        label: expect.stringContaining('第 2 句台词'),
+      }),
+    ])
+  })
+
   it('角色和场景参考图复用卡片连线事实，场景筛选保留未唯一绑定分组', () => {
     const { doc, boardId, shot } = fixture([])
     const character = card(doc, 'plein/character', '林夏')
@@ -122,8 +163,8 @@ describe('逐镜准备模型', () => {
     const shots = [shot(1, { characters: ['林夏', '教室'] })]
     const initial = storyboardPrep(doc, boardId, shots)
     expect(initial.shots[0]?.issues.map((issue) => issue.id)).toEqual([
-      'reference:林夏',
-      'reference:教室',
+      `reference:林夏:${character}`,
+      `reference:教室:${scene}`,
     ])
     expect(shotScenes(doc, shots[0]!)).toEqual([{ key: `asset:${scene}`, label: '教室' }])
 

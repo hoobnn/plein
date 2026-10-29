@@ -143,22 +143,13 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     field?: PrepIssue['field']
     assetName?: string
     dialogueId?: string
-    sourceUnitId?: string
     review?: boolean
   } | null>(null)
+  const [sourceUnitTarget, setSourceUnitTarget] = useState<string | null>(null)
   useEffect(() => {
     if (!focusTarget) return
     // 只消费本次定位；目标已被撤销或删除时，不在之后重做时补抢焦点。
     setFocusTarget(null)
-    if (focusTarget.sourceUnitId) {
-      requestAnimationFrame(() => {
-        const unit = [...document.querySelectorAll<HTMLElement>('[data-unit-id]')].find(
-          (node) => node.dataset.unitId === focusTarget.sourceUnitId,
-        )
-        unit?.querySelector<HTMLButtonElement>('button')?.click()
-      })
-      return
-    }
     const article = focusTarget.shotId ? shotElements.current.get(focusTarget.shotId) : null
     let target: HTMLElement | null | undefined
     if (focusTarget.review && focusTarget.shotId) {
@@ -492,7 +483,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     }
     if (issue.sourceUnitId) {
       setMode('sources')
-      setFocusTarget({ shotId: null, sourceUnitId: issue.sourceUnitId })
+      setSourceUnitTarget(issue.sourceUnitId)
       return
     }
     if (!issue.shotId) return
@@ -667,6 +658,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           engine={engine}
           boardId={id}
           shots={shots}
+          locateUnitId={sourceUnitTarget}
+          onLocateUnitHandled={() => setSourceUnitTarget(null)}
           onLocateShot={(shotId) => {
             setMode('edit')
             setPicked(new Set([shotId]))
@@ -706,6 +699,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           shots={visibleShots}
           stage={flowStage}
           picked={visiblePicked}
+          operationPicked={picked}
           onPick={(shotId, on) =>
             setPicked((previous) => {
               const next = new Set(previous)

@@ -104,6 +104,7 @@ export function ShotFlow({
   shots,
   stage,
   picked,
+  operationPicked,
   onPick,
   onPickAll,
   onPatch,
@@ -123,7 +124,9 @@ export function ShotFlow({
   boardId: string
   shots: Shot[]
   stage: Stage
+  /** 行选择只表示可见部分；本地写入仍以完整选择为范围。 */
   picked: Set<string>
+  operationPicked: ReadonlySet<string>
   onPick(id: string, on: boolean): void
   onPickAll(on: boolean): void
   onPatch(id: string, patch: Partial<Shot> | ((current: Shot) => Partial<Shot>)): void
@@ -139,7 +142,11 @@ export function ShotFlow({
   onExpand(): void
   onBatch(): void
 }) {
-  const read = (id: string) => shotsOf(engine.doc.get(boardId)).find((shot) => shot.id === id)
+  const allShots = shotsOf(engine.doc.get(boardId))
+  const read = (id: string) => allShots.find((shot) => shot.id === id)
+  const operationShots = operationPicked.size
+    ? allShots.filter((shot) => operationPicked.has(shot.id))
+    : allShots
   const rawStyle = engine.doc.get(boardId)?.params?.visualStyle
   const style = typeof rawStyle === 'string' ? rawStyle : ''
   const assets = assetsOf(engine, shots)
@@ -162,7 +169,7 @@ export function ShotFlow({
       engine.doc,
       boardId,
       latest.map((shot) => {
-        if (picked.size && !picked.has(shot.id)) return shot
+        if (operationPicked.size && !operationPicked.has(shot.id)) return shot
         if (shot.imagePrompt.trim() && shot.motionPrompt.trim()) return shot
         const prompt = composeShotPrompts(engine.doc, shot, latestStyle)
         return {
@@ -496,16 +503,13 @@ export function ShotFlow({
               className="ui-btn ui-btn-primary"
               disabled={
                 readOnly ||
-                !shots.some(
-                  (s) =>
-                    (!picked.size || picked.has(s.id)) &&
-                    s.description.trim() &&
-                    (!s.imagePrompt.trim() || !s.motionPrompt.trim()),
+                !operationShots.some(
+                  (s) => s.description.trim() && (!s.imagePrompt.trim() || !s.motionPrompt.trim()),
                 )
               }
               onClick={composeMissing}
             >
-              {picked.size ? '本地补齐所选提示词' : '本地补齐全部提示词'}
+              {operationPicked.size ? '本地补齐所选提示词' : '本地补齐全部提示词'}
             </button>
             <button
               type="button"

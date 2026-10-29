@@ -1,6 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import type { Shot } from '@plein/nodes'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   addAdaptationProposal,
   addSourceUnit,
@@ -46,12 +46,16 @@ export function SourceMappingPanel({
   shots,
   onLocateShot,
   onLocateSource,
+  locateUnitId,
+  onLocateUnitHandled,
 }: {
   engine: Engine
   boardId: string
   shots: Shot[]
   onLocateShot(shotId: string): void
   onLocateSource(elementId: string): void
+  locateUnitId?: string | null
+  onLocateUnitHandled?(): void
 }) {
   useDocVersion(engine.doc)
   const canvasId = useCanvas((s) => s.canvasId)
@@ -68,6 +72,7 @@ export function SourceMappingPanel({
   const [proposal, setProposal] = useState('')
   const [error, setError] = useState('')
   const text = useRef<HTMLTextAreaElement>(null)
+  const handledUnit = useRef<string | null>(null)
   const record = sourceMapOf(engine.doc, boardId)
   const inputs = listSourceInputs(engine.doc, boardId)
   const key = (v: { elementId: string; port: string }) => JSON.stringify([v.elementId, v.port])
@@ -129,6 +134,22 @@ export function SourceMappingPanel({
       )
     })
   }
+  const request = useRef({ locate, units: record.units, onLocateUnitHandled })
+  request.current = { locate, units: record.units, onLocateUnitHandled }
+  useEffect(() => {
+    if (!locateUnitId) {
+      handledUnit.current = null
+      return
+    }
+    if (handledUnit.current === locateUnitId) return
+    handledUnit.current = locateUnitId
+    const current = request.current
+    const unit = current.units.find((item) => item.id === locateUnitId)
+    if (unit) current.locate(unit)
+    else setError('目标原文标注已变化，请重新打开准备清单')
+    current.onLocateUnitHandled?.()
+    // 每次只消费一个准备清单定位请求；最新快照和标注由本面板订阅读取。
+  }, [locateUnitId])
   return (
     <section
       aria-label="剧情来源与镜头覆盖"
