@@ -12,9 +12,10 @@ import {
   type CallRecord,
   type CredentialUsage,
 } from '../plugins/host'
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm'
 import type { DB } from '../storage/db'
 import { batchItems, impactDecisions, jobGroups, jobs } from '../storage/schema'
+import { parseRecovery } from './recovery'
 
 export type { JobStatus }
 
@@ -177,14 +178,23 @@ export class JobStore {
     }
   }
 
-  /** 设置页低频查询：扫描调用 JSON，按平台汇总还没完成结果入库的密钥组调用。 */
+  /**
+   * 设置页低频查询：SQL 先排除空调用，再按平台汇总还没完成结果入库的密钥组调用；
+   * dismissed 不再提示、排除在外，canceled 的平台任务可能仍在生成，保留计入。
+   */
   credentialUsage(): CredentialUsage {
     const usage: CredentialUsage = {}
-    const rows = this.db.select({ calls: jobs.calls, input: jobs.input }).from(jobs).all()
+    const rows = this.db
+      .select({ calls: jobs.calls, input: jobs.input, recovery: jobs.recovery })
+      .from(jobs)
+      .where(ne(jobs.calls, '{}'))
+      .all()
     for (const row of rows) {
-      const input = row.input ? (JSON.parse(row.input) as PreparedInput) : undefined
+      if (parseRecovery(row.recovery).dismissed) continue
       const calls = JSON.parse(row.calls) as Record<string, CallRecord>
+      let input: PreparedInput | undefined
       for (const record of Object.values(calls)) {
+        if (!record.provider && !input && row.input) input = JSON.parse(row.input) as PreparedInput
         const provider = record.provider ?? input?.model?.provider
         if (provider) addCredentialUsage(usage, provider, record)
       }

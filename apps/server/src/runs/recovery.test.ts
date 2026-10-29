@@ -15,6 +15,7 @@ import { mockProvider } from '@plein/providers'
 import sharp from 'sharp'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vite-plus/test'
 import type { Server } from '../app'
+import type { CallRecord } from '../plugins/host'
 import {
   addNode,
   bootServer,
@@ -248,6 +249,63 @@ describe('提交状态未知', () => {
 })
 
 describe('远端成功、本地获取失败', () => {
+  it('原 Key 删除后可用当前组重新提交，新调用记录绑定当前组', async () => {
+    const { server } = await boot()
+    ;(server.runs as unknown as { retryDelays: number[] }).retryDelays = [1, 1]
+    mock(server, { latencyMs: 1 })
+    const originalConfig = server.plugins.configs.update('plein/mock', {
+      secrets: { MOCK_API_KEY: 'one' },
+    })
+    const originalId = originalConfig.activeCredential!
+    const seen: Array<string | undefined> = []
+    const realSubmit = mockProvider.submit
+    const submit = vi.spyOn(mockProvider, 'submit').mockImplementation(async (req, ctx) => {
+      seen.push(ctx.secret('MOCK_API_KEY'))
+      return realSubmit(req, ctx)
+    })
+    const poll = vi
+      .spyOn(mockProvider, 'poll')
+      .mockRejectedValue(new ProviderError('unavailable', '稍后再查', { retryable: true }))
+    const { id, doc } = await canvas(server)
+    const node = addNode(doc, 'plein/image', { params: { prompt: '换组重提', count: 1 } })
+    const run = server.runs.start(id, node, 'local')
+    expect(await server.runs.wait(run)).toBe('failed')
+    await until(() => !server.runs.isRunning(id, node))
+    poll.mockRestore()
+    mock(server, { latencyMs: 0 })
+    const withTeam = server.plugins.configs.addCredential('plein/mock', '团队', {
+      MOCK_API_KEY: 'two',
+    })
+    const teamId = withTeam.credentials[1]!.id
+    server.plugins.configs.setActiveCredential('plein/mock', teamId)
+    server.plugins.configs.removeCredential('plein/mock', originalId)
+
+    expect((await recover(server, id, run, { action: 'refetch' })).status).toBe(200)
+    expect(await server.runs.wait(run)).toBe('failed')
+    await until(() => !server.runs.isRunning(id, node))
+    expect(job(server, id, run).recovery).toMatchObject({
+      state: 'remote_pending',
+      refetchable: true,
+      credentialLost: true,
+      currentCredentialLabel: '团队',
+    })
+    expect(submit).toHaveBeenCalledTimes(1)
+
+    expect((await recover(server, id, run, { action: 'resubmit' })).status).toBe(200)
+    expect(await server.runs.wait(run)).toBe('succeeded')
+    expect(seen).toEqual(['one', 'two'])
+    expect(submit).toHaveBeenCalledTimes(2)
+    const calls = Object.values(
+      JSON.parse(server.runs.store.get(run)!.calls) as Record<string, CallRecord>,
+    )
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      state: 'done',
+      credentialId: teamId,
+      credentialLabel: '团队',
+    })
+  })
+
   it.each(['fetch_failed', 'remote_pending'] as const)(
     '%s 无法重新查询时，明确标记已处理只解锁生成，不重提原任务',
     async (state) => {

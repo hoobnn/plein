@@ -33,6 +33,11 @@ it.each([
     { state: 'remote_pending', refetchable: false },
     { ...none, dismiss: true },
   ],
+  [
+    '原密钥失效时可重新获取、用当前组重提或标记已处理',
+    { state: 'remote_pending', refetchable: true, credentialLost: true },
+    { ...none, refetch: true, resubmit: true, dismiss: true },
+  ],
   ['输入已变', { state: 'review' }, { ...none, review: true }],
   ['提交结果未知', { state: 'submit_unknown' }, { ...none, resubmit: true, dismiss: true }],
   [

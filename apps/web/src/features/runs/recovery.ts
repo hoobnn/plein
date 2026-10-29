@@ -29,9 +29,10 @@ export function recoveryActions(recovery: JobInfo['recovery']) {
     retry: !recovery || state === 'remote_failed',
     refetch: !!recovery?.refetchable,
     attach: state === 'submit_unknown' && !!recovery?.attachable,
-    resubmit: state === 'submit_unknown',
+    resubmit: state === 'submit_unknown' || !!recovery?.credentialLost,
     dismiss:
       state === 'submit_unknown' ||
+      !!recovery?.credentialLost ||
       ((state === 'fetch_failed' || state === 'remote_pending') && !recovery?.refetchable),
     review: state === 'review',
   }
@@ -42,6 +43,9 @@ export function describeRecovery(job: JobInfo): RecoveryView | null {
   if (!r || r.dismissed) return null
   const platform = r.provider ?? '平台'
   const id = r.remoteId ? `任务 ID ${r.remoteId}` : undefined
+  const credentialNote = r.credentialLost
+    ? '原来的 Key 已不可用；恢复原 Key 后可重新获取，或用当前 Key 重新提交（会再次计费）'
+    : undefined
   switch (r.state) {
     case 'submit_unknown':
       return {
@@ -54,7 +58,7 @@ export function describeRecovery(job: JobInfo): RecoveryView | null {
     case 'fetch_failed':
       return {
         title: '平台已生成，结果没存到本地',
-        detail: [r.refetchable ? '可以重新获取，不会重新提交' : r.note, id]
+        detail: [credentialNote ?? (r.refetchable ? '可以重新获取，不会重新提交' : r.note), id]
           .filter(Boolean)
           .join(' · '),
         tone: 'warning',
@@ -64,7 +68,8 @@ export function describeRecovery(job: JobInfo): RecoveryView | null {
         ? {
             title: '平台上的任务可能仍在生成',
             detail: [
-              r.refetchable ? '取消前平台已受理，费用按平台规则计算；可以去取回结果' : r.note,
+              credentialNote ??
+                (r.refetchable ? '取消前平台已受理，费用按平台规则计算；可以去取回结果' : r.note),
               id,
             ]
               .filter(Boolean)
@@ -74,7 +79,10 @@ export function describeRecovery(job: JobInfo): RecoveryView | null {
         : job.status === 'failed'
           ? {
               title: '平台已受理，结果尚未取回',
-              detail: [r.refetchable ? '可以重新获取，不会重新提交' : r.note, id]
+              detail: [
+                credentialNote ?? (r.refetchable ? '可以重新获取，不会重新提交' : r.note),
+                id,
+              ]
                 .filter(Boolean)
                 .join(' · '),
               tone: 'warning',

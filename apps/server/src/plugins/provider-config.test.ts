@@ -201,21 +201,35 @@ describe('平台配置接口', () => {
     })
     const credentialId = config.activeCredential!
     const { id: canvasId } = await createCanvas(server)
-    server.runs.store.insert({
-      id: 'credential-usage-job',
-      ownerId: 'local',
-      canvasId,
-      nodeId: 'speech',
-      nodeType: 'plein/speech',
-    })
-    const journal = server.runs.store.journal('credential-usage-job')
-    journal.set('pending', {
-      state: 'pending',
-      remoteId: 'remote-1',
-      provider: 'plein/mock',
-      credentialId,
-    })
-    journal.set('done', {
+    const pendingJob = (
+      id: string,
+      status: 'queued' | 'canceled' | 'failed',
+      dismissed = false,
+    ) => {
+      server.runs.store.insert({
+        id,
+        ownerId: 'local',
+        canvasId,
+        nodeId: 'speech',
+        nodeType: 'plein/speech',
+      })
+      server.runs.store.update(id, {
+        status,
+        ...(dismissed
+          ? { recovery: JSON.stringify({ state: 'remote_pending', dismissed: true }) }
+          : {}),
+      })
+      server.runs.store.journal(id).set('pending', {
+        state: 'pending',
+        remoteId: `remote-${id}`,
+        provider: 'plein/mock',
+        credentialId,
+      })
+    }
+    pendingJob('credential-usage-job', 'queued')
+    pendingJob('credential-usage-canceled', 'canceled')
+    pendingJob('credential-usage-dismissed', 'failed', true)
+    server.runs.store.journal('credential-usage-job').set('done', {
       state: 'done',
       result: { outputs: [], assets: [] },
       provider: 'plein/mock',
@@ -238,7 +252,8 @@ describe('平台配置接口', () => {
 
     const view = (await call<ProviderConfigView>('/api/providers/plein/mock/config')).body
     expect(view.credentials).toHaveLength(1)
-    expect(view.credentials[0]!.usage).toEqual({ tasks: 1, voices: 1 })
+    // canceled 的平台任务可能仍在生成；dismissed 不再计入，done 也不计入。
+    expect(view.credentials[0]!.usage).toEqual({ tasks: 2, voices: 1 })
   })
 
   it('按顺序执行密钥组动作，标签与组 id 不合法时返回 400', async () => {

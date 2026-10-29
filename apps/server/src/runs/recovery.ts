@@ -6,7 +6,13 @@ import type {
   PreparedInput,
   RecoveryState,
 } from '@plein/protocol'
-import { type CallRecord, type FailureStage, NodeRunError, stageOf } from '../plugins/host'
+import {
+  type CallRecord,
+  credentialLostOf,
+  type FailureStage,
+  NodeRunError,
+  stageOf,
+} from '../plugins/host'
 import type { JobRow, JobStatus } from './store'
 
 /**
@@ -22,6 +28,7 @@ export interface StoredRecovery {
   resultIds?: string[]
   assets?: string[]
   dismissed?: true
+  credentialLost?: true
 }
 
 export function parseRecovery(raw: string | null | undefined): StoredRecovery {
@@ -47,6 +54,8 @@ export interface ProviderAbility {
   poll: boolean
   /** 有按幂等键查询或幂等提交的合同 */
   verify: boolean
+  /** 原密钥失效时，重新提交确认里展示当前组 */
+  currentCredentialLabel?: string
 }
 
 /** 用户取消、系统取消（删除画布或节点）用的中止原因 */
@@ -79,6 +88,7 @@ export function recoveryAfter(
   const out: StoredRecovery = { ...extra }
   const stage = stageOf(err)
   if (stage) out.state = STAGE_STATE[stage]
+  if (credentialLostOf(err)) out.credentialLost = true
   // 用户取消过、平台随后也确认停下：仍记为用户取消
   if (stage === 'remote_canceled' && out.canceledBy !== 'user') out.canceledBy = 'remote'
   if ((err as { code?: string } | undefined)?.code === 'input_changed') out.state = 'review'
@@ -133,6 +143,10 @@ export function describeRecovery(
       ...(provider ? { provider: provider.title } : {}),
       ...(stored.note ? { note: stored.note } : {}),
       ...(stored.dismissed ? { dismissed: true as const } : {}),
+      ...(stored.credentialLost ? { credentialLost: true as const } : {}),
+      ...(stored.credentialLost && provider?.currentCredentialLabel
+        ? { currentCredentialLabel: provider.currentCredentialLabel }
+        : {}),
     }
   }
 

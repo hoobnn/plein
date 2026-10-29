@@ -1349,7 +1349,12 @@ export class NodeRuns implements BatchHost {
     const parsed = ref ? parseModelRef(ref) : undefined
     const def = parsed ? this.host.registry.providers.get(parsed.provider)?.def : undefined
     if (!def) return undefined
-    return { title: def.title, poll: !!def.poll, verify: !!def.lookup || !!def.idempotent }
+    return {
+      title: def.title,
+      poll: !!def.poll,
+      verify: !!def.lookup || !!def.idempotent,
+      currentCredentialLabel: this.host.configs.credential(parsed.provider)?.label,
+    }
   }
 
   // ── 任务恢复 ─────────────────────────────────────
@@ -1386,16 +1391,23 @@ export class NodeRuns implements BatchHost {
       if (!rec?.refetchable)
         throw new NodeRunError('invalid_input', rec?.note ?? '这个任务没有可以重新获取的结果')
     } else {
-      if (rec?.state !== 'submit_unknown' || !unknown.length)
+      const credentialResubmit =
+        opt.action === 'resubmit' &&
+        !!rec?.credentialLost &&
+        (rec.state === 'remote_pending' || rec.state === 'fetch_failed')
+      if (!credentialResubmit && (rec?.state !== 'submit_unknown' || !unknown.length))
         throw new NodeRunError('invalid_input', '这个任务的提交状态不是未知')
       if (opt.action === 'attach') {
         if (!rec.attachable || !row.frozen)
           throw new NodeRunError('invalid_input', '这个平台不支持按任务 ID 查询，无法接着取结果')
       }
+      const keys = credentialResubmit
+        ? Object.keys(calls).filter((key) => calls[key]!.state !== 'done')
+        : unknown
       this.store.manualRecovery(
         jobId,
         opt.action,
-        unknown,
+        keys,
         {
           status: 'queued',
           error: null,

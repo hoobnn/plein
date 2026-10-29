@@ -434,6 +434,42 @@ it('重新提交确认：取消只退回入口，确认失败可重试', async (
   )
 })
 
+it('原 Key 失效：保留重新获取和标记已处理，当前组重提必须二次确认', async () => {
+  const bodies: unknown[] = []
+  const f = setup(
+    {
+      jobs: [
+        job({
+          recovery: {
+            state: 'remote_pending',
+            refetchable: true,
+            credentialLost: true,
+            currentCredentialLabel: '团队',
+          },
+        }),
+      ],
+      groups: [],
+    },
+    {
+      [`POST ${JOBS_PATH}/job-1/recover`]: async (request) => {
+        bodies.push(await request.json())
+        return Response.json(job())
+      },
+    },
+  )
+  await within(panel()).findByTestId('job-recovery')
+  expect(within(panel()).getByRole('button', { name: '重新获取' })).toBeTruthy()
+  expect(within(panel()).getByRole('button', { name: '标记已处理' })).toBeTruthy()
+  await f.user.click(within(panel()).getByRole('button', { name: '用当前 Key 重新提交' }))
+  const confirm = await within(panel()).findByRole('group', { name: '重新提交确认' })
+  expect(confirm.textContent).toContain(
+    '原来的 Key 已不可用，无法取回之前的结果。用当前 Key「团队」重新提交会再次计费，确定吗？',
+  )
+  expect(bodies).toEqual([])
+  await f.user.click(within(confirm).getByRole('button', { name: '重新提交' }))
+  await waitFor(() => expect(bodies).toEqual([{ action: 'resubmit' }]))
+})
+
 it('恢复请求迟到失败不通知别的画布，回来后仍可重试', async () => {
   let release!: (r: Response) => void
   const held = new Promise<Response>((resolve) => {
