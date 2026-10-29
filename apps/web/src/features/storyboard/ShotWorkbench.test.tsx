@@ -260,6 +260,17 @@ function workbenchReads(doc: PleinDoc, reads: string[]) {
         createdAt: 1,
         input: prepared('video-one', '生成时冻结输入'),
       })
+    const job = path.match(/^\/api\/canvases\/canvas\/jobs\/([^/]+)$/)
+    if (request.method === 'GET' && job && job[1] !== 'latest')
+      return Response.json({
+        id: job[1],
+        nodeId: 'video-two',
+        nodeType: 'plein/video',
+        status: 'succeeded',
+        attempts: 1,
+        createdAt: 1,
+        input: prepared('video-two', ''),
+      })
     if (request.method === 'POST' && path === '/api/canvases/canvas/jobs/latest')
       return Response.json({ jobs: [] })
   })
@@ -1191,6 +1202,85 @@ it('查看历史候选时只读并显示该候选自己的衔接意见', async (
     expect((screen.getByRole('button', { name: '标记需修改' }) as HTMLButtonElement).disabled).toBe(
       false,
     ),
+  )
+})
+
+it('查看尾帧时按同组关联到所属视频候选，多组不串', async () => {
+  const { doc } = fixture(true)
+  const base = doc.get('video-two')!.results![0]!
+  doc.mutable('video-two')!.set('results', [
+    { ...base, runId: 'run-two', outputGroup: 'a' },
+    {
+      ...base,
+      id: 'tail-a',
+      runId: 'run-two',
+      outputGroup: 'a',
+      port: 'lastFrame',
+      value: { type: 'image' as const, assetId: 't'.repeat(64) },
+    },
+    { ...base, id: 'video-b', runId: 'run-two', outputGroup: 'b', at: 2 },
+    {
+      ...base,
+      id: 'tail-b',
+      runId: 'run-two',
+      outputGroup: 'b',
+      port: 'lastFrame',
+      at: 2,
+      value: { type: 'image' as const, assetId: 'u'.repeat(64) },
+    },
+  ])
+  // b 组曾是采用项时记录了衔接意见，随后切回 a 组
+  doc.mutable('video-two')!.set('adopted', 'video-b')
+  expect(
+    recordCreativeReview(doc, 'video-two', {
+      target: { kind: 'video', assetId: 'a'.repeat(64), resultId: 'video-b' },
+      status: 'changes',
+      tags: ['continuity', 'continuity-costume'],
+      note: '衔接：上衣颜色变了',
+    }),
+  ).toBeTruthy()
+  doc.mutable('video-two')!.set('adopted', base.id)
+  useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
+  workbenchReads(doc, [])
+  const { user } = renderApp(<ShotWorkbench />)
+  const region = () => screen.getByLabelText('衔接意见')
+  await user.selectOptions(screen.getByLabelText('工作台候选'), 'tail-b')
+  await waitFor(() => expect(region().textContent).toContain('衔接需修改：服装'))
+  expect(region().textContent).toContain('衔接：上衣颜色变了')
+  expect((screen.getByRole('button', { name: '标记需修改' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  )
+  await user.selectOptions(screen.getByLabelText('工作台候选'), 'tail-a')
+  await waitFor(() =>
+    expect((screen.getByRole('button', { name: '标记需修改' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    ),
+  )
+})
+
+it('旧数据无法唯一确定尾帧所属视频候选时只读并说明', async () => {
+  const { doc } = fixture(true)
+  const base = doc.get('video-two')!.results![0]!
+  doc.mutable('video-two')!.set('results', [
+    base,
+    { ...base, id: 'video-c', runId: 'run-two', at: 2 },
+    { ...base, id: 'video-d', runId: 'run-two', at: 3 },
+    {
+      ...base,
+      id: 'tail-x',
+      runId: 'run-two',
+      port: 'lastFrame',
+      value: { type: 'image' as const, assetId: 'v'.repeat(64) },
+    },
+  ])
+  useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
+  workbenchReads(doc, [])
+  const { user } = renderApp(<ShotWorkbench />)
+  await user.selectOptions(screen.getByLabelText('工作台候选'), 'tail-x')
+  const region = () => screen.getByLabelText('衔接意见')
+  await waitFor(() => expect(region().textContent).toContain('无法确定这张尾帧属于哪个视频候选'))
+  expect((screen.getByRole('button', { name: '标记需修改' }) as HTMLButtonElement).disabled).toBe(
+    true,
   )
 })
 

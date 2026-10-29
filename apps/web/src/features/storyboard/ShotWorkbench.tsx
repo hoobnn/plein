@@ -11,6 +11,7 @@ import {
   getCreativeReview,
   currentResult,
   readSourceSlice,
+  relatedResult,
   sameCreativeReviewTarget,
   sourceMapOf,
   sourceSnapshotState,
@@ -341,17 +342,22 @@ function Workbench({
       : undefined
   // 没有采用项且未指定候选时不默认挑待选，提示先采用
   const continuityViewed = continuityViewedRaw ?? continuityAdoptedResult
-  // 视频节点查看尾帧等非视频结果时取同组视频结果，不把帧图当衔接目标
-  const continuityViewedPrimary = (() => {
-    if (!continuityNode || !continuityViewed) return undefined
-    const primaryType = continuityNode === videoNode ? 'video' : 'image'
-    if (continuityViewed.value.type === primaryType) return continuityViewed
-    return (
-      continuityNode.results?.find(
-        (r) => r.runId === continuityViewed!.runId && r.value.type === primaryType,
-      ) ?? continuityAdoptedResult
-    )
-  })()
+  // 视频节点查看尾帧等非视频结果时，复用同组关联规则找所属视频候选，唯一匹配才映射；
+  // 同次运行多组或旧数据无法唯一配对时不猜，表单只读并说明
+  const continuityPrimaryType =
+    continuityNode === videoNode ? ('video' as const) : ('image' as const)
+  const continuityPrimaryPort = continuityNode?.ports?.outputs[0]?.id
+  const continuityViewedPrimary = !continuityViewed
+    ? undefined
+    : continuityViewed.value.type === continuityPrimaryType
+      ? continuityViewed
+      : continuityPrimaryPort
+        ? relatedResult(continuityNode?.results ?? [], continuityViewed, continuityPrimaryPort)
+        : undefined
+  const continuityTailUnmapped =
+    !!continuityViewed &&
+    continuityViewed.value.type !== continuityPrimaryType &&
+    !continuityViewedPrimary
   const continuityViewedTarget = continuityTargetOf(continuityViewedPrimary)
   const continuityViewingAdopted = sameCreativeReviewTarget(
     continuityViewedTarget,
@@ -371,6 +377,7 @@ function Workbench({
         ? undefined
         : adoptedContinuityText(continuityAdoptedReview),
       needAdopt: !!continuityNode && !continuityAdoptedTarget && !continuityViewedRaw,
+      unmappedTail: continuityTailUnmapped,
     } satisfies ContinuityNoteView,
   }
   const changeShot = (id: string) => {

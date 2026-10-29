@@ -13,7 +13,6 @@ import {
 import { expect, it } from 'vite-plus/test'
 import { useCanvas } from '../../stores/canvas'
 import { mockFetch } from '../../testing/fetch'
-import { useCanvas } from '../../stores/canvas'
 import { act, fireEvent, renderApp, screen, waitFor, within } from '../../testing/render'
 import { StoryboardEditor } from './StoryboardEditor'
 import { storyboardFixture } from './testing'

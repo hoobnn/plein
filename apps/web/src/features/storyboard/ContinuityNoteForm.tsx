@@ -68,6 +68,8 @@ export interface ContinuityNoteView {
   adoptedOpinion?: string
   /** 节点有候选但还没有采用项 */
   needAdopt?: boolean
+  /** 查看的是尾帧，但同组关联无法唯一确定所属的视频候选 */
+  unmappedTail?: boolean
 }
 
 /**
@@ -135,7 +137,9 @@ export function ContinuityNoteForm({
         <p className="text-ink-subtle">先采用一个候选再记衔接意见</p>
       ) : !view.viewingAdopted ? (
         <div className="space-y-2">
-          {viewedOpinion && view.viewedReview ? (
+          {view.unmappedTail ? (
+            <p className="text-warning">无法确定这张尾帧属于哪个视频候选</p>
+          ) : viewedOpinion && view.viewedReview ? (
             <div className="text-warning">
               <p>{continuityIssueText(view.viewedReview.tags)}</p>
               {continuityNoteLines(view.viewedReview.note).map((line) => (

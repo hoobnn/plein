@@ -483,6 +483,18 @@ export function currentResult(el: CanvasElement, port?: string): NodeResult | un
   const all = el.results ?? []
   const chosen = all.find((r) => r.id === el.adopted) ?? all[0]
   if (!chosen || port === undefined || chosen.port === port) return chosen
+  return relatedResult(all, chosen, port)
+}
+
+/**
+ * 同组关联：按候选关联键（outputGroup）取同次运行的指定端口结果；
+ * 旧数据没有关联键时只有跨端口唯一配对才兼容，不猜第一条。
+ */
+export function relatedResult(
+  all: readonly NodeResult[],
+  chosen: NodeResult,
+  port: string,
+): NodeResult | undefined {
   const related = all.filter((r) => r.runId === chosen.runId)
   const list = related.filter((r) => r.port === port)
   if (chosen.outputGroup !== undefined) {
@@ -492,7 +504,6 @@ export function currentResult(el: CanvasElement, port?: string): NodeResult | un
       ? outputs[0]
       : undefined
   }
-  // 旧数据没有候选关联键，多个同端口结果之间无法确认对应关系，不能猜第一条。
   return related.filter((r) => r.port === chosen.port).length === 1 &&
     list.length === 1 &&
     list[0]!.outputGroup === undefined
