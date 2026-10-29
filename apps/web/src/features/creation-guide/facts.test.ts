@@ -265,17 +265,24 @@ describe('持续创作引导的事实推导', () => {
     expect(step(doc, 'review').state).toBe('attention')
   })
 
-  it('选定试做镜头后不沿用另一镜头的人工结论，批量进度单独计算', () => {
+  it('多镜未选代表镜头时不沿用首镜结论，选定后才进入审核', () => {
     const doc = open(),
       id = board(doc, [shot(1), shot(2)])
     for (const role of ['image', 'video'] as const) approve(doc, generated(doc, id, role))
-    expect(step(doc, 'review').state).toBe('done')
+    expect(creationGuideFacts(doc).trialShot).toBeUndefined()
+    expect(step(doc, 'review').state).toBe('todo')
+    expect(step(doc, 'trial').state).toBe('ready')
+    expect(step(doc, 'trial').primary).toEqual({
+      label: '选择代表镜头',
+      target: { kind: 'shot-select', nodeId: id },
+    })
+    expect(step(doc, 'review', { trialShotId: 'shot-1' }).state).toBe('done')
     expect(step(doc, 'review', { trialShotId: 'shot-2' }).state).toBe('todo')
     expect(step(doc, 'batch').detail).toContain('1/2')
     expect(step(doc, 'batch').state).toBe('ready')
   })
 
-  it('显式试做镜头移除后不替换为其他已完成镜头，恢复原镜头后继续原状态', () => {
+  it('多镜移除已选镜头后保留失效身份，只剩单镜时自动视为已选', () => {
     const doc = open(),
       id = board(doc, [shot(1), shot(2)])
     for (const no of [1, 2])
@@ -283,26 +290,71 @@ describe('持续创作引导的事实推导', () => {
         approve(doc, generated(doc, id, role, `shot-${no}`))
     const options = { trialShotId: 'shot-2' }
     expect(step(doc, 'review', options).state).toBe('done')
-    setParams(doc, id, { shots: [shot(1)] })
+    setParams(doc, id, { shots: [shot(1), shot(3)] })
     expect(creationGuideFacts(doc, options).trialShot).toBeUndefined()
     expect(step(doc, 'trial', options)).toMatchObject({ state: 'attention', target: undefined })
     expect(step(doc, 'review', options)).toMatchObject({ state: 'attention', target: undefined })
-    expect(step(doc, 'batch', options).state).toBe('done')
+    setParams(doc, id, { shots: [shot(1)] })
+    expect(creationGuideFacts(doc, options).trialShot?.id).toBe('shot-1')
+    expect(step(doc, 'trial', options).state).toBe('done')
     setParams(doc, id, { shots: [shot(1), shot(2)] })
     expect(creationGuideFacts(doc, options).trialShot?.id).toBe('shot-2')
     expect(step(doc, 'review', options).state).toBe('done')
   })
 
-  it('试做镜头删空时保留待检查而不指向历史产物，新增其他镜头也需明确选择', () => {
+  it('核对输入没有人工完成态，只有旧输入才待检查并定位节点', () => {
+    const doc = open(),
+      id = board(doc),
+      image = generated(doc, id, 'image'),
+      video = generated(doc, id, 'video')
+    const input = (options = {}) =>
+      creationGuideFacts(doc, options)
+        .steps.find((entry) => entry.id === 'trial')!
+        .substeps!.find((entry) => entry.id === 'input')!
+    expect(input()).toMatchObject({
+      state: 'ready',
+      target: { kind: 'workbench', nodeId: id, shotId: 'shot-1' },
+    })
+    expect(input().detail).not.toContain('一致')
+    expect(input({ staleIds: new Set([video]) })).toMatchObject({
+      state: 'attention',
+      target: { kind: 'generator', nodeId: video },
+    })
+    expect(input({ keptIds: new Set([video]) })).toMatchObject({
+      state: 'attention',
+      target: { kind: 'generator', nodeId: video },
+    })
+    expect(input({ keptIds: new Set([video]) }).detail).toContain('保留旧输入')
+    expect(input({ keptIds: new Set([image]) }).target).toEqual({
+      kind: 'generator',
+      nodeId: image,
+    })
+  })
+
+  it('试做镜头删空时保留待检查并指向分镜表，新增单镜时自动视为已选', () => {
     const doc = open(),
       id = board(doc)
     generated(doc, id, 'image')
     generated(doc, id, 'video')
     setParams(doc, id, { shots: [] })
-    expect(step(doc, 'trial', { trialShotId: 'shot-1' }).target).toBeUndefined()
+    const empty = creationGuideFacts(doc, { trialShotId: 'shot-1' })
+    expect(empty.steps.find((entry) => entry.id === 'trial')?.target).toBeUndefined()
+    expect(empty.steps.find((entry) => entry.id === 'trial')?.primary).toEqual({
+      label: '打开分镜表补充镜头',
+      target: { kind: 'storyboard', nodeId: id },
+    })
+    expect(empty.steps.find((entry) => entry.id === 'trial')?.substeps?.[0]).toMatchObject({
+      state: 'attention',
+      target: { kind: 'storyboard', nodeId: id },
+    })
+    expect(
+      empty.steps
+        .find((entry) => entry.id === 'trial')
+        ?.substeps?.find((entry) => entry.id === 'sample'),
+    ).toMatchObject({ state: 'todo', target: { kind: 'storyboard', nodeId: id } })
     expect(step(doc, 'review', { trialShotId: 'shot-1' }).state).toBe('attention')
     setParams(doc, id, { shots: [shot(2)] })
-    expect(creationGuideFacts(doc, { trialShotId: 'shot-1' }).trialShot).toBeUndefined()
+    expect(creationGuideFacts(doc, { trialShotId: 'shot-1' }).trialShot?.id).toBe('shot-2')
     expect(creationGuideFacts(doc, { trialShotId: 'shot-2' }).trialShot?.id).toBe('shot-2')
   })
 
@@ -335,6 +387,10 @@ describe('持续创作引导的事实推导', () => {
       setParams(doc, id, { shots: [shot(1)] })
       expect(creationGuideFacts(doc).sequences).toEqual([])
       expect(step(doc, 'delivery').target).toMatchObject({ kind: 'storyboard', nodeId: id })
+      expect(step(doc, 'delivery').primary).toEqual({
+        label: '打开分镜表连接序列',
+        target: { kind: 'storyboard', nodeId: id },
+      })
       expect(step(doc, 'delivery', { sequenceId: films[0] }).detail).toContain(
         '原交付序列已移除或不再关联',
       )
@@ -486,6 +542,71 @@ describe('固定段的制作范围', () => {
     expect(facts.steps.find((entry) => entry.id === 'delivery')?.state).toBe('todo')
     expect(JSON.stringify([...doc.elements()])).toBe(before)
     expect(writes).toBe(0)
+  })
+
+  it('固定段与 Live 混用时仍按 Live 节点推导生成与审阅', () => {
+    const doc = open(),
+      id = board(doc, [shot(1)])
+    const live = node(doc, 'plein/video', {
+      source: { storyboard: id, shot: 'shot-1', role: 'video' },
+    })
+    updateElement(doc, live, {
+      ports: { inputs: [], outputs: [{ id: 'video', label: '视频', type: 'video' }] },
+    })
+    const sequenceId = node(doc, SEQUENCE_TYPE, {
+      instanceVersion: 2,
+      clips: [
+        {
+          clipInstanceId: 'fixed-clip',
+          source: 'deleted-original-generator',
+          port: 'video',
+          sound: 'native',
+          in: 0,
+          out: 2,
+          speed: 1,
+          segment: {
+            version: 1,
+            segmentId: 'fixed-segment',
+            asset: { assetId: 'a'.repeat(64), kind: 'video' },
+            duration: 8,
+          },
+          narrative: { canvasId: 'canvas', boardId: id, shotId: 'shot-1' },
+        },
+        {
+          clipInstanceId: 'live-clip',
+          source: live,
+          port: 'video',
+          sound: 'native',
+          in: 0,
+          out: 2,
+          speed: 1,
+          narrative: { canvasId: 'canvas', boardId: id, shotId: 'shot-1' },
+        },
+      ],
+    })
+    updateElement(doc, sequenceId, {
+      ports: {
+        inputs: [{ id: 'clips', label: '镜头', type: 'video', multiple: true }],
+        outputs: [],
+      },
+    })
+    expect(connect(doc, [live, 'video'], [sequenceId, 'clips'])).toBeTruthy()
+    const facts = creationGuideFacts(doc, {
+      canvasId: 'canvas',
+      boardId: id,
+      trialShotId: 'shot-1',
+    })
+    const trial = facts.steps.find((entry) => entry.id === 'trial')!
+    const substep = (id: string) => trial.substeps!.find((entry) => entry.id === id)!
+    expect(substep('generate')).toMatchObject({ state: 'todo' })
+    expect(substep('generate').detail).not.toContain('固定段')
+    expect(substep('review')).toMatchObject({ state: 'todo' })
+    expect(substep('review').detail).not.toContain('固定段')
+    expect(trial.state).toBe('ready')
+    expect(trial.primary).toEqual({
+      label: '打开代表镜头工作台',
+      target: { kind: 'workbench', nodeId: id, shotId: 'shot-1' },
+    })
   })
 
   it('多个序列等待明确范围，历史、其他画布及已删镜头映射不能混入', () => {
