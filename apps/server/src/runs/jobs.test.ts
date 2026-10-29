@@ -401,6 +401,26 @@ describe('整组运行', () => {
     expect(list.groups[0]).toMatchObject({ frameId: b, scope: 'downstream' })
   })
 
+  it('过期上游正在重跑时，下游旧结果仍提示上游已改', async () => {
+    const { server } = await boot()
+    mock(server, {})
+    const { id, doc } = await canvas(server)
+    const { frame, a, b } = chain(doc)
+    await runFrame(server, id, frame)
+    setParams(doc, a, { prompt: '新的画面' })
+    mock(server, { latencyMs: 60_000 })
+    const job = server.runs.start(id, a, 'local')
+    try {
+      await until(() => doc.get(a)?.run?.status === 'running')
+      const result = await server.runs.staleNodes(id, 'local')
+      expect(result.stale).not.toContain(a)
+      expect(result.upstream).toContain(b)
+    } finally {
+      server.runs.cancel(id, a, job)
+      await server.runs.wait(job)
+    }
+  })
+
   it('上游失败时下游跳过', async () => {
     const { server } = await boot()
     mock(server, { failWith: 'content_policy' })

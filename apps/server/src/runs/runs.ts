@@ -1252,14 +1252,18 @@ export class NodeRuns implements BatchHost {
     try {
       const signal = new AbortController().signal
       const stale: string[] = []
+      const staleRoots: string[] = []
       for (const el of doc.elements()) {
-        if (!this.isJobNode(el) || !el.results?.length || this.isRunning(canvasId, el.id)) continue
-        if (!(await this.isFresh(doc, el, ownerId, signal))) stale.push(el.id)
+        if (!this.isJobNode(el) || !el.results?.length) continue
+        if (!(await this.isFresh(doc, el, ownerId, signal))) {
+          staleRoots.push(el.id)
+          if (!this.isRunning(canvasId, el.id)) stale.push(el.id)
+        }
       }
       const graph = runGraph(doc)
-      const marked = new Set(stale)
+      const marked = new Set(staleRoots)
       const upstream: string[] = []
-      for (const id of stale) {
+      for (const id of staleRoots) {
         for (const d of graph.descendants(id)) {
           const el = doc.get(d)
           if (marked.has(d) || !this.isJobNode(el) || !el?.results?.length) continue
