@@ -1,4 +1,9 @@
-import { productionGoalHeads, type PleinDoc, type ProductionGoalScope } from '@plein/doc'
+import {
+  productionGoalHeads,
+  type PleinDoc,
+  type ProductionGoalRevision,
+  type ProductionGoalScope,
+} from '@plein/doc'
 import { creationGuideFacts, type GuideFacts } from './facts'
 import { readGuidePreferences } from './preferences'
 
@@ -37,7 +42,14 @@ export function goalDurationCheck(
   })
   const scope = goalScopeOf(facts, canvasId)
   if (!scope) return { state: 'unscoped' }
-  const heads = productionGoalHeads(facts.board, scope)
+  return goalDurationState(productionGoalHeads(facts.board, scope), planned)
+}
+
+/** 已确定范围与目标版本后的时长比较；范围未明确或目标并存时只说明为什么不比较。 */
+export function goalDurationState(
+  heads: ProductionGoalRevision[],
+  planned: number,
+): GoalDurationCheck {
   if (heads.length > 1) return { state: 'concurrent' }
   const duration = heads[0]?.content.duration
   if (!heads[0]) return { state: 'missing' }

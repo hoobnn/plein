@@ -77,9 +77,12 @@ export function ProductionDetails({
           我已人工核对这份分镜
         </button>
       )}
-      <p className="text-ink-subtle">
-        内容核对不授权执行。代表镜头的可用结论继续记录在具体候选的创作验收中。
-      </p>
+      <details>
+        <summary className="cursor-pointer text-ink-muted">说明</summary>
+        <p className="mt-1 text-ink-subtle">
+          内容核对不授权执行。代表镜头的可用结论继续记录在具体候选的创作验收中。
+        </p>
+      </details>
       {!writable && (
         <p role="status" className="text-ink-subtle">
           当前只读：可查看制作记录，不能保存确认或选择。

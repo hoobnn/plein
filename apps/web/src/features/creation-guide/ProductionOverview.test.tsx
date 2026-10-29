@@ -96,7 +96,7 @@ it('未展开节点明确显示未完成，当前项目索引只在展开后读�
   for (const label of ['已有产物 0/0 节点', '已采用 0/0 节点', '人工可用 0/0 节点'])
     expect(stats.getByText(label)).toBeTruthy()
   expect(stats.getByText('已交付 未确认当前成片')).toBeTruthy()
-  expect(screen.getByText('尚未展开当前分镜的生成节点；零节点不表示制作完成。')).toBeTruthy()
+  expect(screen.getByText('尚未展开当前分镜的生成节点。')).toBeTruthy()
   expect(paths).toEqual([])
   await view.user.click(screen.getByText('当前项目的画布'))
   expect((await screen.findByRole('link', { name: '第二集' })).getAttribute('href')).toBe(
@@ -155,7 +155,7 @@ it('产物、采用、人工可用与进行中分列，失败任务重试后定�
   ])
     expect(stats.getByText(label)).toBeTruthy()
   expect(requests).toEqual([])
-  await view.user.click(screen.getByText(/^阻塞、待审与任务/))
+  await view.user.click(screen.getByRole('button', { name: '检查任务' }))
   expect(await screen.findByText(/任务读取失败：任务读取暂时中断/)).toBeTruthy()
   fail = false
   await view.user.click(screen.getByRole('button', { name: '重试' }))
