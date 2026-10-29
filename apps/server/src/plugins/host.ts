@@ -134,6 +134,7 @@ export type CallRecord = {
   trace?: SubmissionTrace
   credentialId?: string
   credentialFingerprint?: string
+  credentialLabel?: string
 } & (
   | { state: 'submitting'; at: number }
   | { state: 'unknown'; at: number; message: string }
@@ -309,6 +310,19 @@ export class PluginHost {
       log?: (plugin: string, message: string, data?: unknown) => void
       /** 平台请求用的 fetch；测试里可换掉 */
       fetch?: typeof fetch
+      /** 配音音色创建时所用的密钥组；旧音色和平台预置音色不返回 */
+      voiceCredential?: (
+        ownerId: string,
+        provider: string,
+        voiceId: string,
+      ) =>
+        | {
+            credentialId: string
+            credentialFingerprint?: string
+            credentialLabel?: string
+            voiceName: string
+          }
+        | undefined
     } = {},
   ) {}
 
@@ -519,6 +533,7 @@ export class PluginHost {
     let trace = recorded?.trace
     let credentialId = recorded?.credentialId
     let credentialFingerprint = recorded?.credentialFingerprint
+    let credentialLabel = recorded?.credentialLabel
     const record = (r: CallRecord, kind?: SubmissionAudit['kind']) => {
       journal?.store.set(
         journal.key,
@@ -527,6 +542,7 @@ export class PluginHost {
           ...(trace ? { trace } : {}),
           ...(credentialId ? { credentialId } : {}),
           ...(credentialFingerprint ? { credentialFingerprint } : {}),
+          ...(credentialLabel ? { credentialLabel } : {}),
         },
         kind
           ? {
@@ -568,15 +584,43 @@ export class PluginHost {
     const idempotencyKey = journal?.store.id
       ? `plein-${createHash('sha256').update(`${journal.store.id}\n${journal.key}`).digest('hex').slice(0, 32)}`
       : undefined
+    const voiceId =
+      capability === 'audio.speech' ? (input as CapabilityInput<'audio.speech'>).voice : undefined
+    const voiceCredential =
+      !credentialId && voiceId
+        ? this.opts.voiceCredential?.(opts.ownerId, parsed.provider, voiceId)
+        : undefined
+    if (voiceCredential) {
+      credentialId = voiceCredential.credentialId
+      credentialFingerprint = voiceCredential.credentialFingerprint
+    }
     const providerConfig = this.configs.get(parsed.provider)
     credentialId ??= providerConfig.activeCredential
     const credential = providerConfig.credentials.find((item) => item.id === credentialId)
+    credentialLabel ??= credential?.label ?? voiceCredential?.credentialLabel
     credentialFingerprint ??= credential ? fingerprintOf(credential.secrets) : undefined
+    if (voiceCredential && !credential)
+      throw new ProviderError(
+        'auth',
+        `音色「${voiceCredential.voiceName}」属于 Key「${voiceCredential.credentialLabel ?? credentialId!.slice(0, 8)}」，这组 Key 已删除。请在设置里把它加回来，或改用其他音色`,
+        { retryable: false },
+      )
+    if (
+      voiceCredential &&
+      credentialFingerprint &&
+      fingerprintOf(credential!.secrets) !== credentialFingerprint
+    )
+      throw new ProviderError(
+        'auth',
+        `音色「${voiceCredential.voiceName}」所属的 Key「${credential?.label ?? voiceCredential.credentialLabel ?? credentialId!.slice(0, 8)}」已被替换为其他内容，平台上可能已找不到这个音色。请恢复原 Key，或重新复刻`,
+        { retryable: false },
+      )
     const ctx = this.providerContext(parsed.provider, opts.ownerId, signal, {
       requireEnabled: true,
       idempotencyKey,
       credentialId,
       credentialFingerprint,
+      credentialLabel,
     })
     const { onDelta } = opts
     if (onDelta) ctx.stream = (d) => onDelta(d.text)
@@ -690,7 +734,7 @@ export class PluginHost {
               parsed.provider,
               opts.ownerId,
               AbortSignal.timeout(10_000),
-              { requireEnabled: false, credentialId, credentialFingerprint },
+              { requireEnabled: false, credentialId, credentialFingerprint, credentialLabel },
             )
             await def.cancel(remoteId, cancelCtx).catch(() => {})
           }
@@ -953,6 +997,7 @@ export class PluginHost {
       idempotencyKey?: string
       credentialId?: string
       credentialFingerprint?: string
+      credentialLabel?: string
     },
   ): ProviderContext {
     const { def, plugin } = this.registry.providers.get(id)!

@@ -686,7 +686,10 @@ describe('模型调用记录', () => {
   })
 
   /** 异步平台：提交得到远端任务，轮询结果由各用例决定；模型不支持种子 */
-  function asyncHost(timeoutMs?: number) {
+  function asyncHost(
+    timeoutMs?: number,
+    voiceCredential?: NonNullable<ConstructorParameters<typeof PluginHost>[3]>['voiceCredential'],
+  ) {
     const submit = vi.fn(
       async (_req: ProviderRequest, _ctx: ProviderContext): Promise<SubmitResult> => ({
         state: 'pending',
@@ -703,7 +706,10 @@ describe('模型调用记录', () => {
       title: 'Async',
       settings: z.object({}),
       secrets: [{ name: 'ASYNC_KEY', title: 'Key', required: true }],
-      models: [{ id: 'm', title: 'M', capabilities: ['image.generate'], limits: { seed: false } }],
+      models: [
+        { id: 'm', title: 'M', capabilities: ['image.generate'], limits: { seed: false } },
+        { id: 'speech', title: 'Speech', capabilities: ['audio.speech'] },
+      ],
       submit,
       poll,
     })
@@ -712,6 +718,7 @@ describe('模型调用记录', () => {
     const host = new PluginHost(new PluginRegistry(), configs, s.server.assets, {
       timeoutMs,
       log: () => {},
+      voiceCredential,
     })
     host.load(
       [
@@ -745,7 +752,14 @@ describe('模型调用记录', () => {
           },
         },
       )
-    return { configs, provider, submit, poll, records, stages, vias, call }
+    const speech = () =>
+      host.call(
+        'audio.speech',
+        'acme/async:speech',
+        { text: '你好', voice: 'voice-1' },
+        { ownerId: 'local', journal: { store: records, key: 'k' } },
+      )
+    return { configs, provider, submit, poll, records, stages, vias, call, speech }
   }
 
   it('提交受理后立即更新，只有平台明确报告时才展示排队或生成', async () => {
@@ -815,6 +829,89 @@ describe('模型调用记录', () => {
     await call()
     expect(submit).toHaveBeenCalledTimes(1)
     expect(records.get('k')).toMatchObject({ state: 'done', remoteId: 'r1' })
+  })
+
+  it('配音首次提交使用音色所属的密钥组并记录标签', async () => {
+    let originalId = ''
+    const fixture = asyncHost(undefined, () => ({
+      credentialId: originalId,
+      credentialFingerprint: credentialFingerprint({ ASYNC_KEY: 'one' }),
+      voiceName: '旁白',
+    }))
+    const { configs, submit, records, speech } = fixture
+    originalId = configs.get('acme/async').activeCredential!
+    const withTeam = configs.addCredential('acme/async', '团队', { ASYNC_KEY: 'two' })
+    configs.setActiveCredential('acme/async', withTeam.credentials[1]!.id)
+    const seen: string[] = []
+    submit.mockImplementationOnce(async (_req, ctx) => {
+      seen.push(ctx.secret('ASYNC_KEY')!)
+      return { state: 'succeeded', outputs: [{ type: 'text', text: '好了' }] }
+    })
+
+    await speech()
+    expect(seen).toEqual(['one'])
+    expect(records.get('k')).toMatchObject({
+      credentialId: originalId,
+      credentialLabel: '默认',
+    })
+  })
+
+  it('音色所属密钥组已删除时给出处理办法且不提交', async () => {
+    let originalId = ''
+    const fixture = asyncHost(undefined, () => ({
+      credentialId: originalId,
+      credentialFingerprint: credentialFingerprint({ ASYNC_KEY: 'one' }),
+      credentialLabel: '默认',
+      voiceName: '旁白',
+    }))
+    const { configs, submit, speech } = fixture
+    originalId = configs.get('acme/async').activeCredential!
+    const withTeam = configs.addCredential('acme/async', '团队', { ASYNC_KEY: 'two' })
+    configs.setActiveCredential('acme/async', withTeam.credentials[1]!.id)
+    configs.removeCredential('acme/async', originalId)
+
+    await expect(speech()).rejects.toMatchObject({
+      code: 'auth',
+      retryable: false,
+      message:
+        '音色「旁白」属于 Key「默认」，这组 Key 已删除。请在设置里把它加回来，或改用其他音色',
+    })
+    expect(submit).not.toHaveBeenCalled()
+  })
+
+  it('音色所属密钥内容改变时给出处理办法且不提交', async () => {
+    let originalId = ''
+    const fixture = asyncHost(undefined, () => ({
+      credentialId: originalId,
+      credentialFingerprint: credentialFingerprint({ ASYNC_KEY: 'one' }),
+      credentialLabel: '默认',
+      voiceName: '旁白',
+    }))
+    const { configs, submit, speech } = fixture
+    originalId = configs.get('acme/async').activeCredential!
+    configs.patchCredential('acme/async', originalId, { secrets: { ASYNC_KEY: 'two' } })
+
+    await expect(speech()).rejects.toMatchObject({
+      code: 'auth',
+      retryable: false,
+      message:
+        '音色「旁白」所属的 Key「默认」已被替换为其他内容，平台上可能已找不到这个音色。请恢复原 Key，或重新复刻',
+    })
+    expect(submit).not.toHaveBeenCalled()
+  })
+
+  it('没有所属密钥组的音色仍使用当前组', async () => {
+    const { configs, submit, speech } = asyncHost(undefined, () => undefined)
+    const withTeam = configs.addCredential('acme/async', '团队', { ASYNC_KEY: 'two' })
+    configs.setActiveCredential('acme/async', withTeam.credentials[1]!.id)
+    const seen: string[] = []
+    submit.mockImplementationOnce(async (_req, ctx) => {
+      seen.push(ctx.secret('ASYNC_KEY')!)
+      return { state: 'succeeded', outputs: [{ type: 'text', text: '好了' }] }
+    })
+
+    await speech()
+    expect(seen).toEqual(['two'])
   })
 
   it('切换当前密钥组后，恢复轮询仍使用提交时的组', async () => {

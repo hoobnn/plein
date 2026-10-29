@@ -246,6 +246,7 @@ export function subtitleRoutes({
                 ...(record.credentialFingerprint
                   ? { credentialFingerprint: record.credentialFingerprint }
                   : {}),
+                ...(record.credentialLabel ? { credentialLabel: record.credentialLabel } : {}),
               },
               audit: [...(stored.audit ?? []), audit('manual_attach')],
               history: [...(stored.history ?? []), { record, at: Date.now(), action: 'attach' }],

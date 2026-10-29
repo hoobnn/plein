@@ -82,7 +82,7 @@ describe('我的音色', () => {
     const voice = (await (
       await post({ provider: 'plein/mock', name: '旁白', sampleAssetId: sample.id })
     ).json()) as Voice
-    expect(voice.credentialId).toBe(credentialId)
+    expect(voice).toMatchObject({ credentialId, credentialLabel: '默认' })
     const withTeam = configs.addCredential('plein/mock', '团队', { MOCK_API_KEY: 'two' })
     configs.setActiveCredential('plein/mock', withTeam.credentials[1]!.id)
     const seen: Array<string | undefined> = []

@@ -17,6 +17,7 @@ type VoiceData = Pick<
   | 'previewAssetId'
   | 'credentialId'
   | 'credentialFingerprint'
+  | 'credentialLabel'
 >
 
 const toVoice = (r: VoiceRow): Voice => {
@@ -32,6 +33,7 @@ const toVoice = (r: VoiceRow): Voice => {
     previewAssetId: d.previewAssetId ?? null,
     credentialId: d.credentialId ?? null,
     credentialFingerprint: d.credentialFingerprint ?? null,
+    credentialLabel: d.credentialLabel ?? null,
     sampleAssetId: d.sampleAssetId ?? null,
     gender: d.gender ?? null,
     age: d.age ?? null,
@@ -47,6 +49,7 @@ const dataOf = (v: VoiceData) =>
     previewAssetId: v.previewAssetId,
     credentialId: v.credentialId ?? null,
     credentialFingerprint: v.credentialFingerprint ?? null,
+    credentialLabel: v.credentialLabel ?? null,
     sampleAssetId: v.sampleAssetId,
     gender: v.gender,
     age: v.age,

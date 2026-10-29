@@ -205,6 +205,7 @@ export class JobStore {
             ...(old?.credentialFingerprint
               ? { credentialFingerprint: old.credentialFingerprint }
               : {}),
+            ...(old?.credentialLabel ? { credentialLabel: old.credentialLabel } : {}),
           }
       }
       tx.update(jobs)

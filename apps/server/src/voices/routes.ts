@@ -123,6 +123,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
       const credential = host.configs.credential(provider)
       const credentialId = credential?.id
       const credentialFingerprint = credential ? fingerprintOf(credential.secrets) : undefined
+      const credentialLabel = credential?.label
       const ref = (id: string | null, kind: 'audio' | 'image'): AssetRef | undefined => {
         if (!id) return undefined
         const asset = assets.get(owner, id)
@@ -176,6 +177,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
           message: state.status === 'failed' ? state.message : null,
           credentialId,
           credentialFingerprint,
+          credentialLabel,
         })
         checkedAt.set(voice.id, Date.now())
         return c.json(await savePreview(owner, voice, state), 201)
@@ -189,6 +191,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
             message: `提交结果未知，请先在平台核查音色 ID ${voiceId}，不要重复创建：${e.message}`,
             credentialId,
             credentialFingerprint,
+            credentialLabel,
           })
           return c.json(voice, 201)
         }

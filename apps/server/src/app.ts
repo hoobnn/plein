@@ -82,10 +82,23 @@ export async function createServer(config: Config): Promise<Server> {
   const assets = new AssetStore(config.dataDir, db, config.maxUpload)
   await assets.init()
   const motionPreviews = new MotionPreviews(assets)
+  const voices = new VoiceStore(db)
   const plugins = new PluginHost(
     new PluginRegistry(),
     new ProviderConfigStore(config.dataDir, new Set(config.mockProvider ? ['plein/mock'] : [])),
     assets,
+    {
+      voiceCredential: (ownerId, provider, voiceId) => {
+        const voice = voices.find(ownerId, provider, voiceId)
+        if (!voice?.credentialId) return undefined
+        return {
+          credentialId: voice.credentialId,
+          credentialFingerprint: voice.credentialFingerprint ?? undefined,
+          credentialLabel: voice.credentialLabel ?? undefined,
+          voiceName: voice.name,
+        }
+      },
+    },
   )
   plugins.load(builtinPlugins({ mock: config.mockProvider }), true)
   // 本机第三方插件：数据目录 plugins/ 下，每个一个子进程，默认不启用
@@ -119,7 +132,7 @@ export async function createServer(config: Config): Promise<Server> {
   creative.route('/', subtitleRoutes({ db, host: plugins, assets, dataDir: config.dataDir }))
   creative.route('/', libraryRoutes(db, library))
   creative.route('/', librarySyncRoutes({ db, library, rooms, assets }))
-  creative.route('/', voiceRoutes({ voices: new VoiceStore(db), host: plugins, assets }))
+  creative.route('/', voiceRoutes({ voices, host: plugins, assets }))
   creative.route('/', templateRoutes(db))
   creative.route('/', mediaRoutes(assets))
   creative.route('/', assetRoutes(assets))
