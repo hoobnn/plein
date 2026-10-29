@@ -4,6 +4,7 @@
  */
 
 import type { ProviderConfigView, ProviderInfo } from '@plein/protocol'
+import { usageSummary } from './credentialUsage'
 import { credentialCardDirty, type CredentialCardDraft } from './providerDirty'
 
 interface CardProps {
@@ -46,6 +47,8 @@ function CredentialCard({
   const name =
     saved?.label ??
     (card.label.trim() || (draftIndex === undefined ? '新密钥组' : `新密钥组 ${draftIndex + 1}`))
+  // 名下还有未取回的结果或音色时给一行轻量说明，全为 0 不显示
+  const summary = saved ? usageSummary(saved.usage) : null
   // 标签必填只约束要创建的新卡：预填卡改动后提交时必须带标签；已保存组留空表示不修改，
   // 只填新密钥也要能保存
   const labelRequired =
@@ -101,6 +104,7 @@ function CredentialCard({
           )
         )}
       </div>
+      {saved && summary && <p className="text-xs text-ink-subtle">{summary}</p>}
       {provider.secrets.map((s) => (
         <label key={s.name} className="ui-field">
           <span className="ui-label">

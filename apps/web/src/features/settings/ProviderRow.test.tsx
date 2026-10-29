@@ -755,6 +755,21 @@ describe('密钥组', () => {
     await user.click(within(short).getByRole('button', { name: '取消' }))
   })
 
+  it('卡片上按使用情况显示轻量摘要，全为 0 时不显示', async () => {
+    const two = credView(
+      [
+        { ...credential('cred-1', '个人', true), usage: { tasks: 2, voices: 3 } },
+        credential('cred-2', '团队', true),
+      ],
+      'cred-1',
+    )
+    renderRow({}, { view: two })
+    await screen.findByLabelText('「个人」的标签')
+    expect(card('cred-1').getByText('2 个任务待取回 · 3 个音色')).toBeTruthy()
+    expect(card('cred-2').queryByText(/待取回/)).toBeNull()
+    expect(card('cred-2').queryByText(/音色/)).toBeNull()
+  })
+
   it('卡片上的检查连接指定用那一组密钥，有没保存的输入时先禁用', async () => {
     const bodies: unknown[] = []
     const two = credView(

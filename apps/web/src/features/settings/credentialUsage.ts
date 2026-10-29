@@ -19,6 +19,14 @@ export function replaceWarning(usage: CredentialUsage): string {
   return `这组 Key 下有 ${items.join('、')}。如果新 Key 属于另一个账号，它们会失效；换账号建议「添加一组密钥」。`
 }
 
+/** 卡片上的轻量摘要：「2 个任务待取回 · 3 个音色」；全为 0 时返回 null，不显示 */
+export function usageSummary(usage: CredentialUsage): string | null {
+  const items: string[] = []
+  if (usage.tasks > 0) items.push(`${usage.tasks} 个任务待取回`)
+  if (usage.voices > 0) items.push(`${usage.voices} 个音色`)
+  return items.length > 0 ? items.join(' · ') : null
+}
+
 /** 删除确认的后果说明；全为 0 时返回 null，保持原来的简短确认 */
 export function removalImpact(usage: CredentialUsage): string | null {
   const items: string[] = []

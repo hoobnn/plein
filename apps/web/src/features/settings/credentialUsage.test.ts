@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { credentialUsed, removalImpact, replaceWarning } from './credentialUsage'
+import { credentialUsed, removalImpact, replaceWarning, usageSummary } from './credentialUsage'
 
 describe('密钥组使用情况的文案', () => {
   it('删除确认按数量说明任务与音色的后果', () => {
@@ -28,5 +28,12 @@ describe('密钥组使用情况的文案', () => {
     expect(replaceWarning({ tasks: 0, voices: 1 })).toBe(
       '这组 Key 下有 1 个音色。如果新 Key 属于另一个账号，它们会失效；换账号建议「添加一组密钥」。',
     )
+  })
+
+  it('卡片摘要只列非零项，全为 0 时不显示', () => {
+    expect(usageSummary({ tasks: 2, voices: 3 })).toBe('2 个任务待取回 · 3 个音色')
+    expect(usageSummary({ tasks: 1, voices: 0 })).toBe('1 个任务待取回')
+    expect(usageSummary({ tasks: 0, voices: 2 })).toBe('2 个音色')
+    expect(usageSummary({ tasks: 0, voices: 0 })).toBeNull()
   })
 })
