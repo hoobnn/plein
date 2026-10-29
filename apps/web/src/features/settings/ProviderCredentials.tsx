@@ -17,6 +17,8 @@ interface CardProps {
   multi: boolean
   /** 平台级设置还有没保存的改动：检查连接查的是整体配置，得先保存 */
   settingsDirty: boolean
+  /** 在草稿卡里的序号：没填标签时用「新密钥组 N」作名字，多张卡不重名 */
+  draftIndex?: number
   onLabel(key: string, value: string): void
   onSecret(key: string, name: string, value: string): void
   onUse(key: string): void
@@ -32,6 +34,7 @@ function CredentialCard({
   active,
   multi,
   settingsDirty,
+  draftIndex,
   onLabel,
   onSecret,
   onUse,
@@ -39,7 +42,10 @@ function CredentialCard({
   onDiscard,
   onTest,
 }: CardProps) {
-  const name = saved?.label ?? '新密钥组'
+  // 新卡用草稿标签作名字，没填时退回序号；已保存组用已保存的标签
+  const name =
+    saved?.label ??
+    (card.label.trim() || (draftIndex === undefined ? '新密钥组' : `新密钥组 ${draftIndex + 1}`))
   // 标签必填只约束要创建的新卡：预填卡改动后提交时必须带标签；已保存组留空表示不修改，
   // 只填新密钥也要能保存
   const labelRequired =
@@ -66,6 +72,7 @@ function CredentialCard({
           <button
             type="button"
             className="ui-btn ui-btn-secondary flex-none"
+            aria-label={`设为使用「${name}」`}
             onClick={() => onUse(card.key)}
           >
             设为使用
@@ -118,6 +125,7 @@ function CredentialCard({
           type="button"
           className="ui-btn ui-btn-secondary self-start"
           disabled={settingsDirty || Object.values(card.secrets).some((v) => v !== '')}
+          aria-label={`检查「${name}」的连接`}
           onClick={() => onTest(card.key)}
         >
           检查连接
@@ -191,7 +199,7 @@ export function ProviderCredentials({
             onTest={onTest}
           />
         ))}
-        {drafts.map((card) => (
+        {drafts.map((card, draftIndex) => (
           <CredentialCard
             key={card.key}
             provider={provider}
@@ -199,6 +207,7 @@ export function ProviderCredentials({
             active={false}
             multi={multi}
             settingsDirty={settingsDirty}
+            draftIndex={draftIndex}
             onLabel={onLabel}
             onSecret={onSecret}
             onUse={onUse}

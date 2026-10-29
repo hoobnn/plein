@@ -504,16 +504,18 @@ describe('密钥组', () => {
       { row: configuredProvider, view: twoGroups() },
     )
     await screen.findByLabelText('「个人」的标签')
-    expect(card('cred-1').getByRole('button', { name: '检查连接' }).disabled).toBe(false)
+    expect(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }).disabled).toBe(false)
     fireEvent.change(latency(), { target: { value: '321' } })
     fireEvent.focusOut(latency())
-    expect(card('cred-1').getByRole('button', { name: '检查连接' }).disabled).toBe(true)
-    expect(card('cred-2').getByRole('button', { name: '检查连接' }).disabled).toBe(true)
+    expect(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }).disabled).toBe(true)
+    expect(card('cred-2').getByRole('button', { name: '检查「团队」的连接' }).disabled).toBe(true)
 
     // 保存后恢复可用
     await user.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() =>
-      expect(card('cred-1').getByRole('button', { name: '检查连接' }).disabled).toBe(false),
+      expect(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }).disabled).toBe(
+        false,
+      ),
     )
   })
 
@@ -535,7 +537,7 @@ describe('密钥组', () => {
     expect(card('cred-1').getByText('使用中')).toBeTruthy()
     expect(card('cred-2').queryByText('使用中')).toBeNull()
 
-    await user.click(card('cred-2').getByRole('button', { name: '设为使用' }))
+    await user.click(card('cred-2').getByRole('button', { name: '设为使用「团队」' }))
     await waitFor(() => expect(card('cred-2').queryByText('使用中')).not.toBeNull())
     expect(JSON.parse(writes(fetch)[0]![1]!.body as string)).toEqual({
       activeCredential: 'cred-2',
@@ -561,8 +563,13 @@ describe('密钥组', () => {
     )
     await screen.findByLabelText('「个人」的标签')
     await user.click(screen.getByRole('button', { name: '添加一组密钥' }))
-    await user.type(card('draft').getByLabelText('「新密钥组」的标签'), '团队')
-    await user.type(card('draft').getByLabelText('「新密钥组」的API Key'), 'key-2')
+    // 多张草稿按序号命名，不重名
+    expect(screen.getByLabelText('「新密钥组 1」的标签')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: '添加一组密钥' }))
+    expect(screen.getByLabelText('「新密钥组 2」的标签')).toBeTruthy()
+    await user.click(card('draft').getByRole('button', { name: '移除「新密钥组 2」' }))
+    await user.type(card('draft').getByLabelText('「新密钥组 1」的API Key'), 'key-2')
+    await user.type(card('draft').getByLabelText('「新密钥组 1」的标签'), '团队')
     await user.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('已保存'))
     const body = JSON.parse(writes(fetch)[0]![1]!.body as string)
@@ -574,7 +581,7 @@ describe('密钥组', () => {
 
   it('新平台预填一张默认卡，没动过不提交，填完保存即创建第一组', async () => {
     const { user, fetch } = renderRow()
-    const label = await screen.findByLabelText('「新密钥组」的标签')
+    const label = await screen.findByLabelText('「默认」的标签')
     expect(label).toBeTruthy()
     expect((label as HTMLInputElement).value).toBe('默认')
 
@@ -598,7 +605,7 @@ describe('密钥组', () => {
     const { user, fetch } = renderRow({}, { row: configuredProvider, view: twoGroups() })
     await screen.findByLabelText('「个人」的标签')
     await user.click(screen.getByRole('button', { name: '添加一组密钥' }))
-    const label = screen.getByLabelText('「新密钥组」的标签')
+    const label = screen.getByLabelText('「新密钥组 1」的标签')
     await user.click(screen.getByRole('button', { name: '保存' }))
     expect(writes(fetch)).toHaveLength(0)
     expect(document.activeElement).toBe(label)
@@ -606,7 +613,7 @@ describe('密钥组', () => {
 
   it('预填卡标签被清空后填了密钥：保存先要求补标签', async () => {
     const { user, fetch } = renderRow()
-    const label = await screen.findByLabelText('「新密钥组」的标签')
+    const label = await screen.findByLabelText('「默认」的标签')
     fireEvent.change(label, { target: { value: '' } })
     await user.type(secret(), 'first-key')
     await user.click(screen.getByRole('button', { name: '保存' }))
@@ -639,11 +646,11 @@ describe('密钥组', () => {
       ),
     )
     // 已保存组没了，剩一张手动加的草稿卡
-    await waitFor(() => expect(card('draft').getByLabelText('「新密钥组」的标签')).toBeTruthy())
+    await waitFor(() => expect(card('draft').getByLabelText('「新密钥组 1」的标签')).toBeTruthy())
 
-    await user.click(card('draft').getByRole('button', { name: '移除「新密钥组」' }))
+    await user.click(card('draft').getByRole('button', { name: '移除「新密钥组 1」' }))
     // 一个组都不剩：预填卡重新出现，新平台仍能创建第一组
-    const seed = await screen.findByLabelText('「新密钥组」的标签')
+    const seed = await screen.findByLabelText('「默认」的标签')
     expect((seed as HTMLInputElement).value).toBe('默认')
   })
 
@@ -707,13 +714,14 @@ describe('密钥组', () => {
       { view: two },
     )
     await screen.findByLabelText('「个人」的标签')
-    await user.click(card('cred-2').getByRole('button', { name: '检查连接' }))
+    await user.click(card('cred-2').getByRole('button', { name: '检查「团队」的连接' }))
     await waitFor(() => expect(bodies).toEqual([{ credential: 'cred-2' }]))
 
     // 这张卡填了没保存的密钥：先保存才能检查
     await user.type(card('cred-2').getByLabelText('「团队」的API Key'), 'new-key')
     expect(
-      card('cred-2').getByRole<HTMLButtonElement>('button', { name: '检查连接' }).disabled,
+      card('cred-2').getByRole<HTMLButtonElement>('button', { name: '检查「团队」的连接' })
+        .disabled,
     ).toBe(true)
   })
 })
