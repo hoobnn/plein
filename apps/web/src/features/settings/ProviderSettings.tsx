@@ -102,14 +102,18 @@ export function ProviderRow({
   // 新平台还没有任何组：预填一张「默认」卡，填完保存即创建第一组（服务端自动设为使用）
   useEffect(() => {
     if (!config || provider.secrets.length === 0 || (config.credentials?.length ?? 0) > 0) return
-    setDrafts((current) =>
-      current.length
-        ? current
-        : [{ key: `draft-${nextDraft.current++}`, label: '默认', secrets: {}, baseline: '默认' }],
-    )
+    setDrafts((current) => (current.length ? current : [seedDraft()]))
   }, [config, provider.secrets.length])
 
   const isSavedGroup = (key: string) => config?.credentials?.some((c) => c.id === key) ?? false
+
+  /** 新平台的预填卡：固定的临时键，同一时刻最多存在一张 */
+  const seedDraft = (): CredentialCardDraft => ({
+    key: 'draft-seed',
+    label: '默认',
+    secrets: {},
+    baseline: '默认',
+  })
 
   // 已保存组的卡：基线是已保存的标签，留空表示不修改
   const savedCards: CredentialCardDraft[] = (config?.credentials ?? []).map((c) => ({
@@ -140,6 +144,15 @@ export function ProviderRow({
   const addDraft = () => {
     clearFeedback()
     setDrafts([...drafts, { key: `draft-${nextDraft.current++}`, label: '', secrets: {} }])
+  }
+
+  const discardDraft = (key: string) => {
+    clearFeedback()
+    setDrafts((current) => {
+      const rest = current.filter((d) => d.key !== key)
+      // 移除后一个组都不剩：重新给出预填卡，保留新平台创建第一组的入口
+      return rest.length || (config?.credentials?.length ?? 0) > 0 ? rest : [seedDraft()]
+    })
   }
 
   /** 非空输入；已保存组留空表示不修改，不进请求 */
@@ -390,10 +403,7 @@ export function ProviderRow({
                   onSecret={setCardSecret}
                   onUse={(key) => void useCredential(key)}
                   onRemove={(key) => void removeCredential(key)}
-                  onDiscard={(key) => {
-                    clearFeedback()
-                    setDrafts(drafts.filter((d) => d.key !== key))
-                  }}
+                  onDiscard={discardDraft}
                   onTest={(key) => void testCard(key)}
                   onAdd={addDraft}
                 />

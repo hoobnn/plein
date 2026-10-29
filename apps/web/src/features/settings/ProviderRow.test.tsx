@@ -614,6 +614,39 @@ describe('密钥组', () => {
     expect(document.activeElement).toBe(label)
   })
 
+  it('删掉已保存组和最后一张草稿后，预填卡重新出现', async () => {
+    const one = credView([credential('cred-1', '个人', true)], 'cred-1')
+    const { user } = renderRow(
+      {
+        put: async (request) => {
+          const body = await request.json()
+          return Response.json(
+            body.credentials?.remove?.length
+              ? { ...one, credentials: [], activeCredential: null }
+              : one,
+          )
+        },
+      },
+      { row: configuredProvider, view: one },
+    )
+    await screen.findByLabelText('「个人」的标签')
+    await user.click(screen.getByRole('button', { name: '添加一组密钥' }))
+    await user.click(card('cred-1').getByRole('button', { name: '删除「个人」' }))
+    await user.click(
+      within(await screen.findByRole('dialog', { name: '删除密钥组「个人」？' })).getByRole(
+        'button',
+        { name: '删除' },
+      ),
+    )
+    // 已保存组没了，剩一张手动加的草稿卡
+    await waitFor(() => expect(card('draft').getByLabelText('「新密钥组」的标签')).toBeTruthy())
+
+    await user.click(card('draft').getByRole('button', { name: '移除「新密钥组」' }))
+    // 一个组都不剩：预填卡重新出现，新平台仍能创建第一组
+    const seed = await screen.findByLabelText('「新密钥组」的标签')
+    expect((seed as HTMLInputElement).value).toBe('默认')
+  })
+
   it('删除已保存的组需要确认，取消不发请求', async () => {
     const two = credView(
       [credential('cred-1', '个人', true), credential('cred-2', '团队', true)],
