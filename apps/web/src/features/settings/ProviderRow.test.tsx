@@ -73,7 +73,13 @@ const compatible: ProviderInfo = {
 /** 平台配置视图：服务端只回报已保存的设置与密钥是否填写 */
 const mockView = (
   settings: Record<string, unknown> = { latencyMs: 0, queueMs: 0, failWith: 'none' },
-): ProviderConfigView => ({ enabled: true, settings, secrets: {} })
+): ProviderConfigView => ({
+  enabled: true,
+  settings,
+  secrets: {},
+  credentials: [],
+  activeCredential: null,
+})
 
 const testOk: ProviderTestResult = {
   ok: true,

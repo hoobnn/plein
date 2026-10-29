@@ -34,6 +34,8 @@ const view = (settings: Record<string, unknown>): ProviderConfigView => ({
   enabled: true,
   settings,
   secrets: {},
+  credentials: [],
+  activeCredential: null,
 })
 
 function renderRow() {

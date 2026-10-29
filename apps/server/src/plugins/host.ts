@@ -371,12 +371,13 @@ export class PluginHost {
   }
 
   /** 测试连接：校验配置与密钥；没有 test 方法的平台只校验配置 */
-  async testProvider(id: string, ownerId: string, signal?: AbortSignal) {
+  async testProvider(id: string, ownerId: string, signal?: AbortSignal, credentialId?: string) {
     this.refreshConfiguredProviders()
     const entry = this.registry.providers.get(id)
     if (!entry) throw new ProviderError('invalid_input', `平台 ${id} 未安装`)
     const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
       requireEnabled: false,
+      credentialId,
     })
     try {
       await entry.def.test?.(ctx)
@@ -915,11 +916,20 @@ export class PluginHost {
     id: string,
     ownerId: string,
     signal: AbortSignal,
-    opts: { requireEnabled: boolean; idempotencyKey?: string },
+    opts: { requireEnabled: boolean; idempotencyKey?: string; credentialId?: string },
   ): ProviderContext {
     const { def, plugin } = this.registry.providers.get(id)!
     const manifest = this.manifest(plugin)
     const config = this.configs.get(id)
+    const credential = opts.credentialId
+      ? this.configs.credential(id, opts.credentialId)
+      : undefined
+    if (opts.credentialId && !credential)
+      throw new ProviderError(
+        'auth',
+        `平台 ${def.title} 提交该任务时使用的密钥「${opts.credentialId.slice(0, 8)}」已删除，无法继续`,
+      )
+    const secrets = credential?.secrets ?? config.secrets
     if (opts.requireEnabled && !config.enabled)
       throw new ProviderError('unavailable', `平台 ${def.title} 未启用`)
     const settings = def.settings.safeParse(config.settings)
@@ -929,10 +939,10 @@ export class PluginHost {
         `平台 ${def.title} 的设置不正确：${settings.error.message}`,
       )
     for (const s of def.secrets) {
-      if (s.required && !config.secrets[s.name])
+      if (s.required && !secrets[s.name])
         throw new ProviderError('auth', `平台 ${def.title} 缺少 ${s.title}`)
     }
-    if (!providerConfigured(def, config.secrets))
+    if (!providerConfigured(def, secrets))
       throw new ProviderError('auth', `平台 ${def.title} 缺少一组完整的鉴权密钥`)
     const fetchScoped = scopedFetch(
       manifest,
@@ -944,7 +954,7 @@ export class PluginHost {
     )
     return {
       settings: settings.data,
-      secret: scopedSecrets(manifest, config.secrets),
+      secret: scopedSecrets(manifest, secrets),
       fetch: ((input: string | URL | Request, init?: RequestInit) =>
         fetchScoped(input, {
           ...init,

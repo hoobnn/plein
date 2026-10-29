@@ -70,7 +70,15 @@ export interface Catalog {
 export interface ProviderConfigView {
   enabled: boolean
   settings: Record<string, unknown>
+  /** 当前组的密钥填写状态 */
   secrets: Record<string, boolean>
+  credentials: Array<{
+    id: string
+    label: string
+    secrets: Record<string, boolean>
+    configured: boolean
+  }>
+  activeCredential: string | null
 }
 
 /** 设置某能力的默认模型 */
@@ -83,7 +91,30 @@ export type DefaultModelUpdate = z.infer<typeof DefaultModelUpdate>
 export const ProviderConfigUpdate = z.object({
   enabled: z.boolean().optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
-  /** 值为 null 或空串表示删除 */
+  credentials: z
+    .object({
+      add: z
+        .array(
+          z.object({
+            label: z.string(),
+            secrets: z.record(z.string(), z.string()),
+          }),
+        )
+        .optional(),
+      update: z
+        .array(
+          z.object({
+            id: z.string(),
+            label: z.string().optional(),
+            secrets: z.record(z.string(), z.string().nullable()).optional(),
+          }),
+        )
+        .optional(),
+      remove: z.array(z.string()).optional(),
+    })
+    .optional(),
+  activeCredential: z.string().optional(),
+  /** 值为 null 或空串表示删除；作用于当前组 */
   secrets: z.record(z.string(), z.string().nullable()).optional(),
 })
 export type ProviderConfigUpdate = z.infer<typeof ProviderConfigUpdate>

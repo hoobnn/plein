@@ -1,8 +1,9 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Catalog, ProviderConfigView, ProviderTestResult } from '@plein/protocol'
+import { mockProvider } from '@plein/providers'
 import { Hono } from 'hono'
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, it, vi } from 'vite-plus/test'
 import type { AuthEnv } from '../auth'
 import { bootServer, request, tempDir } from '../testing'
 import { ProviderConfigStore } from './config-store'
@@ -124,6 +125,16 @@ describe('平台配置接口', () => {
     })
     expect(unknown.status).toBe(400)
     expect(unknown.body.message).toContain('未知的密钥：OTHER')
+    for (const credentials of [
+      { add: [{ label: '团队', secrets: { OTHER: 'x' } }] },
+      { update: [{ id: 'missing', secrets: { OTHER: 'x' } }] },
+    ]) {
+      const response = await call<{ message: string }>('/api/providers/plein/mock/config', 'PUT', {
+        credentials,
+      })
+      expect(response.status).toBe(400)
+      expect(response.body.message).toContain('未知的密钥：OTHER')
+    }
   })
 
   it('保存后回读设置与密钥状态，密钥本身不回显', async () => {
@@ -140,7 +151,77 @@ describe('平台配置接口', () => {
     })
     expect(JSON.stringify(saved.body)).not.toContain('sk-123')
     const view = (await call<ProviderConfigView>('/api/providers/plein/mock/config')).body
-    expect(view).toMatchObject({ secrets: { MOCK_API_KEY: true }, settings: { latencyMs: 321 } })
+    expect(view).toMatchObject({
+      secrets: { MOCK_API_KEY: true },
+      settings: { latencyMs: 321 },
+      activeCredential: expect.any(String),
+      credentials: [
+        {
+          label: '默认',
+          secrets: { MOCK_API_KEY: true },
+          configured: true,
+        },
+      ],
+    })
+  })
+
+  it('按顺序执行密钥组动作，标签与组 id 不合法时返回 400', async () => {
+    const { call } = await boot()
+    const initial = (
+      await call<ProviderConfigView>('/api/providers/plein/mock/config', 'PUT', {
+        secrets: { MOCK_API_KEY: 'personal' },
+      })
+    ).body
+    const personalId = initial.activeCredential!
+    const added = await call<ProviderConfigView>('/api/providers/plein/mock/config', 'PUT', {
+      credentials: {
+        update: [{ id: personalId, label: '个人', secrets: { MOCK_API_KEY: null } }],
+        add: [{ label: '团队', secrets: { MOCK_API_KEY: 'team' } }],
+      },
+    })
+    expect(added.status).toBe(200)
+    expect(added.body.credentials).toEqual([
+      {
+        id: personalId,
+        label: '个人',
+        secrets: { MOCK_API_KEY: false },
+        configured: true,
+      },
+      {
+        id: expect.any(String),
+        label: '团队',
+        secrets: { MOCK_API_KEY: true },
+        configured: true,
+      },
+    ])
+    expect(added.body.secrets).toEqual({ MOCK_API_KEY: false })
+    const teamId = added.body.credentials[1]!.id
+    const activated = await call<ProviderConfigView>('/api/providers/plein/mock/config', 'PUT', {
+      activeCredential: teamId,
+    })
+    expect(activated.body).toMatchObject({
+      activeCredential: teamId,
+      secrets: { MOCK_API_KEY: true },
+    })
+    const removed = await call<ProviderConfigView>('/api/providers/plein/mock/config', 'PUT', {
+      credentials: { remove: [teamId] },
+    })
+    expect(removed.body.activeCredential).toBe(personalId)
+
+    for (const [body, message] of [
+      [{ credentials: { add: [{ label: '个人', secrets: {} }] } }, '不可重复'],
+      [{ credentials: { add: [{ label: 'x'.repeat(41), secrets: {} }] } }, '1–40'],
+      [{ activeCredential: 'missing' }, '密钥组不存在'],
+      [{ credentials: { remove: ['missing'] } }, '密钥组不存在'],
+    ] as const) {
+      const response = await call<{ message: string }>(
+        '/api/providers/plein/mock/config',
+        'PUT',
+        body,
+      )
+      expect(response.status).toBe(400)
+      expect(response.body.message).toContain(message)
+    }
   })
 
   it('不是所有者不能改平台设置', async () => {
@@ -204,6 +285,39 @@ describe('平台检查接口', () => {
       message: '连接检查通过；尚未验证具体模型、资源权限或余额',
     })
     expect((await call('/api/providers/acme/none/test', 'POST')).status).toBe(404)
+  })
+
+  it('可检查指定密钥组，默认检查当前组，未知组返回 400', async () => {
+    const { call } = await boot()
+    const initial = (
+      await call<ProviderConfigView>('/api/providers/plein/mock/config', 'PUT', {
+        secrets: { MOCK_API_KEY: 'personal' },
+      })
+    ).body
+    const added = await call<ProviderConfigView>('/api/providers/plein/mock/config', 'PUT', {
+      credentials: { add: [{ label: '团队', secrets: { MOCK_API_KEY: 'team' } }] },
+    })
+    const teamId = added.body.credentials[1]!.id
+    const seen: Array<string | undefined> = []
+    const test = vi.spyOn(mockProvider, 'test').mockImplementation(async (ctx) => {
+      seen.push(ctx.secret('MOCK_API_KEY'))
+    })
+    try {
+      expect(
+        (await call('/api/providers/plein/mock/test', 'POST', { credential: teamId })).status,
+      ).toBe(200)
+      expect(seen).toEqual(['team'])
+      expect((await call('/api/providers/plein/mock/test', 'POST')).status).toBe(200)
+      expect(seen).toEqual(['team', 'personal'])
+      const missing = await call<{ message: string }>('/api/providers/plein/mock/test', 'POST', {
+        credential: initial.activeCredential + '-missing',
+      })
+      expect(missing.status).toBe(400)
+      expect(missing.body.message).toContain('密钥组不存在')
+      expect(test).toHaveBeenCalledTimes(2)
+    } finally {
+      test.mockRestore()
+    }
   })
 })
 

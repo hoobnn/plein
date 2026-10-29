@@ -85,6 +85,15 @@ export function pluginRoutes(host: PluginHost) {
       enabled: c.enabled,
       settings: c.settings,
       secrets: Object.fromEntries(def.secrets.map((s) => [s.name, Boolean(c.secrets[s.name])])),
+      credentials: c.credentials.map((credential) => ({
+        id: credential.id,
+        label: credential.label,
+        secrets: Object.fromEntries(
+          def.secrets.map((s) => [s.name, Boolean(credential.secrets[s.name])]),
+        ),
+        configured: providerConfigured(def, credential.secrets),
+      })),
+      activeCredential: c.activeCredential ?? null,
     }
   }
 
@@ -105,17 +114,35 @@ export function pluginRoutes(host: PluginHost) {
       const body = ProviderConfigUpdate.safeParse(await c.req.json().catch(() => null))
       if (!body.success)
         return c.json({ error: 'invalid', message: validationMessage(body.error) }, 400)
-      const { settings, secrets } = body.data
+      const { settings, secrets, credentials, activeCredential } = body.data
       if (settings) {
         const parsed = entry.def.settings.safeParse(settings)
         if (!parsed.success)
           return c.json({ error: 'invalid', message: validationMessage(parsed.error) }, 400)
       }
       const known = new Set(entry.def.secrets.map((s) => s.name))
-      const unknown = Object.keys(secrets ?? {}).filter((k) => !known.has(k))
+      const patches = [
+        secrets ?? {},
+        ...(credentials?.add ?? []).map((item) => item.secrets),
+        ...(credentials?.update ?? []).map((item) => item.secrets ?? {}),
+      ]
+      const unknown = [
+        ...new Set(patches.flatMap((patch) => Object.keys(patch).filter((k) => !known.has(k)))),
+      ]
       if (unknown.length)
         return c.json({ error: 'invalid', message: `未知的密钥：${unknown.join('、')}` }, 400)
-      configs.update(id, body.data)
+      try {
+        for (const credentialId of credentials?.remove ?? [])
+          configs.removeCredential(id, credentialId)
+        for (const credential of credentials?.update ?? [])
+          configs.patchCredential(id, credential.id, credential)
+        for (const credential of credentials?.add ?? [])
+          configs.addCredential(id, credential.label, credential.secrets)
+        if (activeCredential) configs.setActiveCredential(id, activeCredential)
+        configs.update(id, { enabled: body.data.enabled, settings, secrets })
+      } catch (err) {
+        return c.json({ error: 'invalid', message: (err as Error).message }, 400)
+      }
       host.refreshConfiguredProviders()
       return c.json(view(id))
     })
@@ -135,9 +162,21 @@ export function pluginRoutes(host: PluginHost) {
       const id = `${c.req.param('vendor')}/${c.req.param('name')}`
       const provider = registry.providers.get(id)
       if (!provider) return c.json(notFound, 404)
+      const body = z
+        .object({ credential: z.string().min(1).optional() })
+        .safeParse((await c.req.json().catch(() => ({}))) ?? {})
+      if (!body.success)
+        return c.json({ error: 'invalid', message: validationMessage(body.error) }, 400)
+      if (body.data.credential && !configs.credential(id, body.data.credential))
+        return c.json({ error: 'invalid', message: '密钥组不存在' }, 400)
       const scope = providerTestScope(provider.def)
       try {
-        await host.testProvider(id, c.var.principal.id, AbortSignal.timeout(30_000))
+        await host.testProvider(
+          id,
+          c.var.principal.id,
+          AbortSignal.timeout(30_000),
+          body.data.credential,
+        )
         return c.json({
           ok: true,
           scope,
