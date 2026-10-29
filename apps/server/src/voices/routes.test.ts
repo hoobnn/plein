@@ -103,7 +103,7 @@ describe('我的音色', () => {
     }
   })
 
-  it('同组密钥修改后不查询音色训练状态', async () => {
+  it.each(['deleted', 'replaced'] as const)('原 Key %s 后不查询音色训练状态', async (mode) => {
     const { server, sample, post } = await setup()
     const configs = server.plugins.configs
     configs.update('plein/mock', { secrets: { MOCK_API_KEY: 'one' } })
@@ -115,7 +115,13 @@ describe('我的音色', () => {
     expect(voice).toMatchObject({ credentialId, credentialFingerprint: fingerprint })
     const status = vi.spyOn(mockProvider.voiceClone!, 'status')
     try {
-      configs.patchCredential('plein/mock', credentialId, { secrets: { MOCK_API_KEY: 'two' } })
+      if (mode === 'deleted') {
+        const withTeam = configs.addCredential('plein/mock', '团队', { MOCK_API_KEY: 'two' })
+        configs.setActiveCredential('plein/mock', withTeam.credentials[1]!.id)
+        configs.removeCredential('plein/mock', credentialId)
+      } else {
+        configs.patchCredential('plein/mock', credentialId, { secrets: { MOCK_API_KEY: 'two' } })
+      }
       const refreshed = await request(server, `/api/voices/${voice.id}/refresh`, {
         method: 'POST',
       })
@@ -124,7 +130,7 @@ describe('我的音色', () => {
         credentialId,
         credentialFingerprint: fingerprint,
         message: expect.stringContaining(
-          'Key「默认」已被替换为其他内容，任务无法继续查询结果。为避免重复计费，没有自动重新提交；可恢复原 Key 后重试',
+          `音色「旁白」所属的 Key「默认」${mode === 'deleted' ? '已删除' : '已被替换'}，无法查询训练状态。请恢复原 Key，或重新复刻`,
         ),
       })
       expect(status).not.toHaveBeenCalled()

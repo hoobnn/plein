@@ -60,6 +60,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
         voice.credentialId ?? undefined,
         voice.credentialFingerprint ?? undefined,
         voice.credentialLabel ?? undefined,
+        voice.name,
       )
       if (!state) return voice
       return savePreview(

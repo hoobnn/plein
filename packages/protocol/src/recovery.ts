@@ -53,6 +53,10 @@ export interface JobRecovery {
   attachable?: boolean
   /** fetch_failed / remote_pending：能「重新获取」（不重新提交） */
   refetchable?: boolean
+  /** 原密钥组已删除或内容已换；可放弃原结果，二次确认后用当前组重新提交 */
+  credentialLost?: true
+  /** credentialLost 时当前组的标签，用于重新提交确认 */
+  currentCredentialLabel?: string
   /** 不能恢复或需要说明的情况 */
   note?: string
   /** stored / adopted：这次运行产生的结果 */
@@ -69,7 +73,7 @@ export interface JobRecovery {
  * 任务恢复操作：
  * - refetch：重新获取（按调用记录续查或重新下载保存，不重新提交）
  * - attach：填平台上查到的任务 ID，接着取结果
- * - resubmit：核查后确认平台没有受理，重新提交（平台若其实已受理，可能重复计费）
+ * - resubmit：核查后确认平台没有受理，或原密钥失效后放弃原结果，重新提交（可能重复计费）
  * - dismiss：标记已处理，不再提示
  */
 export const RecoverJobOptions = z.discriminatedUnion('action', [
