@@ -129,6 +129,42 @@ it('平台有多组密钥时我的音色选项带所属 Key，单组不带', asy
   expect(screen.getByRole('option', { name: '我的 · 测试音色' }).textContent).not.toContain('团队')
 })
 
+it('所属 Key 失效时单组也提示，并把失效音色排到末尾', async () => {
+  useCatalog.setState({ catalog: withCredentialCount(1) })
+  mockFetch((request) =>
+    new URL(request.url).pathname === '/api/voices'
+      ? Response.json([
+          {
+            ...designedVoice,
+            id: 'missing',
+            voiceId: 'missing',
+            name: '已删音色',
+            credentialLabel: '团队',
+            credentialState: 'missing',
+          },
+          { ...designedVoice, credentialState: 'ok' },
+          {
+            ...designedVoice,
+            id: 'replaced',
+            voiceId: 'replaced',
+            name: '已换音色',
+            credentialLabel: '团队',
+            credentialState: 'replaced',
+          },
+        ])
+      : undefined,
+  )
+  const { user } = renderApp(<VoicePicker value={noVoice} onChange={() => {}} />)
+  await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+  await user.click(screen.getByRole('combobox'))
+  const labels = screen.getAllByRole('option').map((option) => option.textContent)
+  expect(labels.slice(-3)).toEqual([
+    '我的 · 已删音色 · 所属 Key 已删除',
+    '我的 · 已换音色 · 所属 Key 已更换',
+    '自定义音色 ID…',
+  ])
+})
+
 it('没记录所属 Key 的音色选项不显示标签', async () => {
   useCatalog.setState({ catalog: withCredentialCount(2) })
   mockFetch((request) =>

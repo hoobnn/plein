@@ -1,5 +1,5 @@
 import { noVoice, type VoiceRef } from '@plein/nodes'
-import type { Catalog } from '@plein/protocol'
+import type { Catalog, Voice } from '@plein/protocol'
 import { useState } from 'react'
 import { useVoices, voiceCredentialTag, voiceTraits } from '../features/library/voices'
 import { useCatalog } from '../stores/catalog'
@@ -32,6 +32,8 @@ export function voicePresets(catalog: Catalog | null) {
 }
 
 const CUSTOM = '__custom'
+const credentialLost = (state: Voice['credentialState']) =>
+  state === 'missing' || state === 'replaced'
 
 /**
  * 音色选择：平台声明的预置音色和资产库里「我的音色」（复刻或登记的）从下拉里挑，
@@ -62,6 +64,7 @@ export function VoicePicker({
       provider: v.provider,
       providerTitle: catalog?.providers.find((p) => p.id === v.provider)?.title ?? v.provider,
       id: v.voiceId,
+      credentialState: v.credentialState,
       label: `我的 · ${v.name}${credential ? ` · ${credential}` : ''}${
         traits ? ` · ${traits}` : ''
       }${v.status === 'training' ? '（训练中）' : v.status === 'failed' ? '（复刻失败）' : ''}`,
@@ -76,8 +79,10 @@ export function VoicePicker({
     ...mine,
     ...presets
       .filter((p) => !mine.some((m) => keyOf(m) === keyOf(p)))
-      .map((p) => ({ ...p, disabled: false })),
-  ]
+      .map((p) => ({ ...p, disabled: false, credentialState: null })),
+  ].sort(
+    (a, b) => Number(credentialLost(a.credentialState)) - Number(credentialLost(b.credentialState)),
+  )
   // 手动选择自定义是本地编辑意图；外部传入的未知音色始终显示可编辑字段。
   const [custom, setCustom] = useState(false)
   const showCustom = custom || (!!key && !listed.some(known))

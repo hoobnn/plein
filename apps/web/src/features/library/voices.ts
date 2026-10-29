@@ -35,11 +35,15 @@ export const voiceTraits = (v: Pick<Voice, 'gender' | 'age'>) =>
     .join(' · ')
 
 /**
- * 音色所属密钥组的标签：平台有多组密钥且音色记录了组标签时才显示，单组用户不多看到东西。
- * 协议里目录只有组数、音色只有创建时的快照，判断不了组是否已删除，这里不展示失效状态。
+ * 音色所属密钥组的标签：失效状态始终提示；正常标签只在多组时显示，单组保持安静。
  */
 export const voiceCredentialTag = (
-  voice: Pick<Voice, 'credentialLabel'>,
+  voice: Pick<Voice, 'credentialLabel' | 'credentialState'>,
   provider: Pick<ProviderInfo, 'credentialCount'> | undefined,
-): string | null =>
-  voice.credentialLabel && (provider?.credentialCount ?? 0) >= 2 ? voice.credentialLabel : null
+): string | null => {
+  if (voice.credentialState === 'missing') return '所属 Key 已删除'
+  if (voice.credentialState === 'replaced') return '所属 Key 已更换'
+  return voice.credentialLabel && (provider?.credentialCount ?? 0) >= 2
+    ? voice.credentialLabel
+    : null
+}
