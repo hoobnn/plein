@@ -7,6 +7,7 @@ import {
   addNode,
   centerOf,
   clickRun,
+  clickStoryboardAction,
   edgesInto,
   elements,
   newProject,
@@ -246,7 +247,7 @@ test('连续性使用真实首末帧、实际视频切点和固定角色参考 @
     const point = await centerOf(page, fixture.board)
     await page.mouse.dblclick(point.x, point.y)
     const dialog = page.getByRole('dialog', { name: '分镜表', exact: true })
-    await dialog.getByRole('button', { name: '审核镜头', exact: true }).click()
+    await clickStoryboardAction(dialog, '审核镜头')
     return dialog
   }
   const dialog = await open()

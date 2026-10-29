@@ -1,5 +1,5 @@
 import { expect, test, type Page, type WebSocketRoute } from './fixtures'
-import { clickElement, newProject, openStoryboardActions } from './canvas'
+import { clickElement, clickStoryboardAction, newProject } from './canvas'
 
 /** 一个分镜节点并展开成节点，作为批量清单的输入。 */
 async function fixture(page: Page) {
@@ -35,11 +35,10 @@ async function fixture(page: Page) {
       .getByRole('button', { name: /^编辑分镜表/ })
       .click()
     const dialog = page.getByRole('dialog', { name: '分镜表', exact: true })
-    await openStoryboardActions(dialog)
     return dialog
   }
   const initial = await open()
-  await initial.getByRole('button', { name: '展开为节点', exact: true }).click()
+  await clickStoryboardAction(initial, '展开为节点')
   await expect(initial).toBeHidden()
   return { board, open }
 }

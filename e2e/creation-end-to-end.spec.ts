@@ -12,6 +12,7 @@ import {
   addNode,
   byName,
   centerOf,
+  clickStoryboardAction,
   contextMenu,
   deselect,
   showStoryboardCards,
@@ -163,7 +164,7 @@ test(
       await row.getByLabel('台词', { exact: true }).fill(lines[i]!)
       await row.getByLabel('台词', { exact: true }).blur()
     }
-    await dialog.getByRole('button', { name: '展开为节点', exact: true }).click()
+    await clickStoryboardAction(dialog, '展开为节点')
     await expect(dialog).toHaveCount(0)
     const nodes = await page.evaluate(
       (id) =>
@@ -184,7 +185,7 @@ test(
     expect(speech).toHaveLength(2)
     const batch = async (label: string) => {
       if (!(await dialog.isVisible())) await openBoard()
-      await dialog.getByRole('button', { name: label, exact: true }).click()
+      await clickStoryboardAction(dialog, label)
       const checklist = page.getByRole('dialog', { name: '批量生成清单', exact: true })
       await expect(
         checklist.getByRole('button', { name: '确认并开始生成', exact: true }),

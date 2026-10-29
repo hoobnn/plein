@@ -407,14 +407,19 @@ async function jobs(page: Page) {
   return list.jobs
 }
 
-/**
- * 分镜表的「节点与批量操作」在表格视图里是折叠的，展开为节点、批量生成这些
- * 按钮都收在里面。要用它们先把这块展开。
- */
+/** 分镜表次要操作收在「更多」菜单；弹层挂在页面上，不在分镜窗口的 DOM 子树里。 */
 export async function openStoryboardActions(dialog: Locator) {
-  const section = dialog.locator('details').first()
-  if ((await section.getAttribute('open')) === null) await section.locator('summary').click()
   await expect(dialog.getByRole('toolbar', { name: '分镜批量操作' })).toBeVisible()
+  const menu = dialog.page().getByRole('menu', { name: '更多分镜操作', exact: true })
+  if (!(await menu.isVisible()))
+    await dialog.getByRole('button', { name: '更多分镜操作', exact: true }).click()
+  await expect(menu).toBeVisible()
+  return menu
+}
+
+export async function clickStoryboardAction(dialog: Locator, name: string | RegExp) {
+  const menu = await openStoryboardActions(dialog)
+  await menu.getByRole('menuitem', { name, exact: true }).click()
 }
 
 /** 分镜表的逐镜头字段（分镜图提示词、台词等）在详细卡片视图上，表格视图没有这些输入框。 */
@@ -432,7 +437,7 @@ export async function runBatch(page: Page, dialog: Locator, label: string, timeo
   const noun = { 批量出分镜图: '分镜图', 批量生成视频: '视频', 批量配音: '配音' }[label]
   if (!noun) throw new Error(`不认识的批量按钮：${label}`)
   const seen = new Set((await jobs(page)).map((j) => j.id))
-  await dialog.getByRole('button', { name: label }).click()
+  await clickStoryboardAction(dialog, label)
   const started = await confirmBatchChecklist(page)
   await expect
     .poll(

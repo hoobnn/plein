@@ -14,9 +14,11 @@ import {
   addNode,
   byName,
   centerOf,
+  clickStoryboardAction,
   contextMenu,
   deselect,
   newProject,
+  openStoryboardActions,
   runBatch,
   waitIdle,
   waitNode,
@@ -107,7 +109,7 @@ async function sixShots(page: Page) {
   await dialog.getByLabel('台词').nth(0).fill('林晚：雨这么大，谁会来天台？')
   await dialog.getByLabel('台词').nth(2).fill('林晚：铁盒是谁放在这儿的？')
   await dialog.getByLabel('时长').first().click()
-  await dialog.getByRole('button', { name: '展开为节点' }).click()
+  await clickStoryboardAction(dialog, '展开为节点')
   await expect(page.locator('.ui-toast')).toContainText('已展开 6 个镜头')
   dialog = await openBoard()
   for (const role of ['批量出分镜图', '批量生成视频', '批量配音'])
@@ -182,7 +184,7 @@ test('分镜表选中第三镜头后批量重跑', async ({ page }) => {
   const row = await measure(page, '分镜表选中第三镜头后批量按钮', async ({ op, openBoard }) => {
     const dialog = await openBoard()
     await editShot3(dialog, op)
-    await op(() => dialog.getByRole('button', { name: /^查看差异/ }).click())
+    await op(() => clickStoryboardAction(dialog, /^查看差异/))
     await syncPlan(page, op)
     await op(() => dialog.getByRole('checkbox', { name: '选择镜头 3', exact: true }).check())
     for (const role of ['批量出分镜图', '批量生成视频', '批量配音'])
@@ -196,7 +198,7 @@ test('右键只跑第三镜头', async ({ page }) => {
   const row = await measure(page, '右键运行下游 + 生成配音', async ({ op, openBoard, before }) => {
     const dialog = await openBoard()
     await editShot3(dialog, op)
-    await op(() => dialog.getByRole('button', { name: /^查看差异/ }).click())
+    await op(() => clickStoryboardAction(dialog, /^查看差异/))
     await syncPlan(page, op)
     await op(() => page.keyboard.press('Escape'))
     await expect(dialog).toBeHidden()
@@ -218,12 +220,15 @@ for (const keepVideo of [false, true]) {
       keepVideo ? '查看影响·推荐默认' : '查看影响·三项重做',
       async ({ op, openBoard }) => {
         const dialog = await openBoard()
-        test.skip(
-          (await dialog.getByRole('button', { name: '查看影响' }).count()) === 0,
-          '基线没有查看影响',
-        )
         await editShot3(dialog, op)
-        await op(() => dialog.getByRole('button', { name: '查看影响' }).click())
+        await op(async () => {
+          const menu = await openStoryboardActions(dialog)
+          test.skip(
+            (await menu.getByRole('menuitem', { name: '查看影响', exact: true }).count()) === 0,
+            '基线没有查看影响',
+          )
+          await menu.getByRole('menuitem', { name: '查看影响', exact: true }).click()
+        })
         const impact = page.getByRole('dialog', { name: '查看影响' })
         await expect(impact).toBeVisible()
         await op(() => impact.getByRole('button', { name: '查看差异' }).click())

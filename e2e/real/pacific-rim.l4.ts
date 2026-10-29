@@ -8,6 +8,7 @@ import {
   byName,
   centerOf,
   clickElement,
+  clickStoryboardAction,
   contextMenu,
   deselect,
   edgesInto,
@@ -390,7 +391,7 @@ test('真实平台：《环太平洋：彼岸》6 镜头短剧从模板到字幕
   let dialog: Awaited<ReturnType<typeof openBoard>>
   if (!RESUME) {
     dialog = await openBoard(page, board.id)
-    await dialog.getByRole('button', { name: '展开为节点' }).click()
+    await clickStoryboardAction(dialog, '展开为节点')
     await expect(page.locator('.ui-toast')).toContainText('已展开')
     note('展开', (await page.locator('.ui-toast').textContent()) ?? '')
   }
@@ -482,7 +483,7 @@ test('真实平台：《环太平洋：彼岸》6 镜头短剧从模板到字幕
   }
 
   dialog = await openBoard(page, board.id)
-  await dialog.getByRole('button', { name: '批量生成视频' }).click()
+  await clickStoryboardAction(dialog, '批量生成视频')
   await expect(page.locator('.ui-toast')).toContainText('已开始生成')
 
   // 等至少一个视频已经提交到平台（调用记录里有远端任务），再强杀服务端
@@ -520,7 +521,7 @@ test('真实平台：《环太平洋：彼岸》6 镜头短剧从模板到字幕
   await toggleVideoVendor(false)
 
   dialog = await openBoard(page, board.id)
-  await dialog.getByRole('button', { name: '批量配音' }).click()
+  await clickStoryboardAction(dialog, '批量配音')
   await waitIdle(page, 20 * 60_000)
 
   const all = await elements(page)
@@ -751,7 +752,7 @@ test('0.2：实际输入、查看影响返工、项目包迁移、修改方案',
   const shotPrompt = dialog.getByLabel('分镜图提示词').nth(2)
   await shotPrompt.fill(`${await shotPrompt.inputValue()}，监测屏的冷光映在玻璃上`)
   await dialog.getByLabel('时长').first().click()
-  await dialog.getByRole('button', { name: '查看影响' }).click()
+  await clickStoryboardAction(dialog, '查看影响')
   const impact = page.getByRole('dialog', { name: '查看影响' })
   await expect(impact).toBeVisible()
   await impact.getByRole('button', { name: '查看差异' }).click()

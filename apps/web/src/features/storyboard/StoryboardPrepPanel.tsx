@@ -6,6 +6,7 @@ export function ShotPrepCount({ shotNo, count }: { shotNo: number; count: number
   return (
     <span
       data-shot-prep-count=""
+      role="img"
       className="inline-flex shrink-0 items-center gap-1 text-2xs font-normal text-warning"
       aria-label={`镜头 ${shotNo} 有 ${count} 项准备缺失`}
       title={`${count} 项准备缺失`}
@@ -31,6 +32,7 @@ export function syncShotPrepCount(row: HTMLElement | null, shotNo: number, count
     badge.className = 'inline-flex shrink-0 items-center gap-1 text-2xs font-normal text-warning'
     label.append(badge)
   }
+  badge.setAttribute('role', 'img')
   badge.setAttribute('aria-label', `镜头 ${shotNo} 有 ${count} 项准备缺失`)
   badge.title = `${count} 项准备缺失`
   badge.replaceChildren()

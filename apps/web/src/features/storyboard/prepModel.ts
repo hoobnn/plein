@@ -4,7 +4,7 @@ import {
   referenceAssets,
   resolveShotAsset,
 } from '@plein/capabilities'
-import { sourceMapOf, type PleinDoc } from '@plein/doc'
+import { sourceMapOf, type CanvasElement, type PleinDoc } from '@plein/doc'
 import { mentionName, type Shot } from '@plein/nodes'
 import { reviewNodesForShot, shotReviewStatus } from './reviewModel'
 import { sourceExcerpt, sourceUnitStatus } from './sourceMapping'
@@ -151,6 +151,7 @@ export function storyboardPrep(
     .sort((a, b) => a.start - b.start || a.id.localeCompare(b.id))
     .flatMap((unit): PrepIssue[] => {
       const status = sourceUnitStatus(doc, boardId, record, unit)
+      if (status === '未读') return []
       const linked = record.links.some(
         (link) => link.unitId === unit.id && currentShots.has(link.shotId),
       )
@@ -174,30 +175,51 @@ export function storyboardPrep(
   }
 }
 
+export interface ShotSceneIndex {
+  byName: ReadonlyMap<string, CanvasElement[]>
+}
+
+export function createShotSceneIndex(doc: PleinDoc): ShotSceneIndex {
+  const byName = new Map<string, CanvasElement[]>()
+  for (const el of doc.elements()) {
+    if (el.nodeType !== 'plein/scene') continue
+    const name = mentionName(el)
+    if (!name) continue
+    byName.set(name, [...(byName.get(name) ?? []), el])
+  }
+  return { byName }
+}
+
 /** 场景筛选沿用镜头资产绑定；尚未唯一绑定的场景名仍可作为显示分组。 */
-export function shotScenes(doc: PleinDoc, shot: Shot): ShotScene[] {
-  const scenes = [...doc.elements()].filter(
-    (el) => el.nodeType === 'plein/scene' && mentionName(el),
-  )
+export function shotScenes(
+  doc: PleinDoc,
+  shot: Shot,
+  index = createShotSceneIndex(doc),
+): ShotScene[] {
   const out = new Map<string, ShotScene>()
   for (const name of new Set(shot.characters)) {
     const el = resolveShotAsset(doc, name, shot.assetBindings?.[name])
     if (el?.nodeType === 'plein/scene') {
       const title = mentionName(el) ?? name
-      const duplicate = scenes.filter((item) => mentionName(item) === title).length > 1
+      const duplicate = (index.byName.get(title)?.length ?? 0) > 1
       out.set(`asset:${el.id}`, {
         key: `asset:${el.id}`,
         label: duplicate ? `${title} · ${el.id.slice(-6)}` : title,
       })
-    } else if (scenes.some((item) => mentionName(item) === name)) {
+    } else if (index.byName.has(name)) {
       out.set(`name:${name}`, { key: `name:${name}`, label: `${name}（待绑定）` })
     }
   }
   return [...out.values()]
 }
 
-export function storyboardSceneOptions(doc: PleinDoc, shots: readonly Shot[]): ShotScene[] {
+export function storyboardSceneOptions(
+  doc: PleinDoc,
+  shots: readonly Shot[],
+  index = createShotSceneIndex(doc),
+): ShotScene[] {
   const out = new Map<string, ShotScene>()
-  for (const shot of shots) for (const scene of shotScenes(doc, shot)) out.set(scene.key, scene)
+  for (const shot of shots)
+    for (const scene of shotScenes(doc, shot, index)) out.set(scene.key, scene)
   return [...out.values()]
 }

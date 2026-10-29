@@ -1,5 +1,11 @@
 // @vitest-environment happy-dom
-import { addSourceUnit, captureSourceSnapshot, connect, createElement } from '@plein/doc'
+import {
+  addSourceUnit,
+  captureSourceSnapshot,
+  connect,
+  createElement,
+  markSourceRead,
+} from '@plein/doc'
 import { expect, it } from 'vite-plus/test'
 import { mockFetch } from '../../testing/fetch'
 import { act, fireEvent, renderApp, screen, waitFor, within } from '../../testing/render'
@@ -129,6 +135,7 @@ it('场景与缺失筛选只改显示，全选仅保留当前可见镜头', asyn
   ])
   expect(screen.getByRole('row', { name: '镜头 01' })).toBeDefined()
   expect(screen.queryByRole('row', { name: '镜头 02' })).toBeNull()
+  expect(screen.getByText('作用于全部镜头（含未显示）')).toBeDefined()
   await app.user.click(screen.getByRole('checkbox', { name: '全选镜头' }))
   expect(screen.getByRole('checkbox', { name: '选择镜头 1' })).toHaveProperty('checked', true)
   expect(screen.getByText('作用于选中的 1 个镜头')).toBeDefined()
@@ -141,10 +148,29 @@ it('场景与缺失筛选只改显示，全选仅保留当前可见镜头', asyn
   await app.user.selectOptions(screen.getByRole('combobox', { name: '按场景筛选' }), [''])
   expect(screen.getByRole('checkbox', { name: '选择镜头 1' })).toHaveProperty('checked', false)
 
+  await app.user.click(screen.getByRole('checkbox', { name: '全选镜头' }))
   await app.user.click(screen.getByRole('checkbox', { name: '只看有缺失的镜头' }))
+  expect(screen.getByText('作用于选中的 2 个镜头，其中 1 个可见')).toBeDefined()
   expect(screen.queryByRole('row', { name: '镜头 01' })).toBeNull()
   expect(screen.getByRole('row', { name: '镜头 02' })).toBeDefined()
   expect(f.read()).toEqual(before)
+})
+
+it('场景筛选中添加镜头会退出筛选并聚焦新画面', async () => {
+  const f = storyboardFixture({ count: 1 })
+  f.write([{ ...f.read()[0]!, characters: ['教室'], dialogue: [] }])
+  const classroom = assetCard(f.doc, '教室')
+  act(f.flush)
+  const app = renderApp(<StoryboardEditor />)
+  await app.user.selectOptions(screen.getByRole('combobox', { name: '按场景筛选' }), [
+    `asset:${classroom}`,
+  ])
+  await app.user.click(screen.getByRole('button', { name: '添加镜头' }))
+  expect(screen.getAllByRole('row', { name: /^镜头 \d/ })).toHaveLength(2)
+  expect(screen.getByRole('combobox', { name: '按场景筛选' })).toHaveProperty('value', '')
+  const descriptions = screen.getAllByRole<HTMLTextAreaElement>('textbox', { name: '画面' })
+  expect(document.activeElement).toBe(descriptions.at(-1))
+  expect(f.read()).toHaveLength(2)
 })
 
 it('原文覆盖建议定位到对应标注的原文范围', async () => {
@@ -171,6 +197,7 @@ it('原文覆盖建议定位到对应标注的原文范围', async () => {
     expectedText: '尚未关联的原文段落。',
   })!
   addSourceUnit(f.doc, f.board, { snapshotId, start: 0, end: 5, kind: 'event' })
+  markSourceRead(f.doc, f.board, snapshotId)
   act(f.flush)
   const app = renderApp(<StoryboardEditor />)
   await app.user.click(screen.getByRole('button', { name: '准备 1 项' }))
@@ -178,6 +205,7 @@ it('原文覆盖建议定位到对应标注的原文范围', async () => {
     screen.getByRole('button', { name: '定位准备项：原文段落尚未关联镜头，建议核对' }),
   )
   const original = await screen.findByRole<HTMLTextAreaElement>('textbox', { name: '固定原文' })
+  expect(screen.getByTestId('storyboard-current-mode').textContent).toBe('当前：剧情来源')
   await waitFor(() => expect(document.activeElement).toBe(original))
   expect(original.selectionEnd).toBeGreaterThan(0)
 })
@@ -192,5 +220,6 @@ it('人工审核待办定位到已有镜头的审核视图', async () => {
   await app.user.click(screen.getByRole('button', { name: '准备 3 项' }))
   await app.user.click(screen.getByRole('button', { name: '定位准备项：已有节点待人工审核' }))
   expect(await screen.findByRole('table', { name: '逐镜审核' })).toBeDefined()
+  expect(screen.getByTestId('storyboard-current-mode').textContent).toBe('当前：审核镜头')
   expect(screen.getByRole('row', { name: /镜头 01/ })).toBeDefined()
 })

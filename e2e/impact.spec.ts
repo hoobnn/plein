@@ -4,10 +4,10 @@ import {
   byName,
   centerOf,
   clickElement,
+  clickStoryboardAction,
   contextMenu,
   deselect,
   newProject,
-  openStoryboardActions,
   runBatch,
   settle,
   showStoryboardCards,
@@ -99,14 +99,10 @@ test(
     await dialog.getByLabel('台词').nth(2).fill('林晚：铁盒是谁放在这儿的？')
     await dialog.getByLabel('台词').nth(2).blur()
     expect(await durations()).toEqual(originalDurations)
-    // 批量操作收在折叠区里，先展开再点
-    await openStoryboardActions(dialog)
-    await dialog.getByRole('button', { name: '展开为节点' }).click()
+    await clickStoryboardAction(dialog, '展开为节点')
     await expect(page.locator('.ui-toast')).toContainText('已展开 3 个镜头')
 
     dialog = await openBoard()
-    // 批量按钮收在折叠区里，每次打开分镜表都要重新展开
-    await openStoryboardActions(dialog)
     for (const role of ['批量出分镜图', '批量生成视频', '批量配音'])
       await runBatch(page, dialog, role)
     const before = await snapshot(page)
@@ -126,7 +122,7 @@ test(
       '铁盒特写，雨水顺着锁扣往下流',
     )
     expect(await durations()).toEqual(originalDurations)
-    await dialog.getByRole('button', { name: '查看影响' }).click()
+    await clickStoryboardAction(dialog, '查看影响')
     const impact = page.getByRole('dialog', { name: '查看影响' })
     await expect(impact).toBeVisible()
 

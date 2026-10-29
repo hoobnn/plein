@@ -180,6 +180,7 @@ describe('逐镜准备模型', () => {
       kind: 'event',
     })!
     setUnitDisposition(doc, boardId, third, 'out_of_scope')
+    expect(storyboardPrep(doc, boardId, shots).sourceIssues).toEqual([])
     markSourceRead(doc, boardId, snapshotId)
     expect(
       storyboardPrep(doc, boardId, shots).sourceIssues.map((issue) => issue.sourceUnitId),

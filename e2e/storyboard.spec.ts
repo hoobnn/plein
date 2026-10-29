@@ -4,6 +4,7 @@ import {
   byName,
   centerOf,
   clickElement,
+  clickStoryboardAction,
   contextMenu,
   deselect,
   newProject,
@@ -53,7 +54,7 @@ test(
       return dialog
     }
     let dialog = await openBoard()
-    await dialog.getByRole('button', { name: '展开为节点' }).click()
+    await clickStoryboardAction(dialog, '展开为节点')
     await expect(page.locator('.ui-toast')).toContainText('已展开')
 
     // 用户在第二个镜头的分镜图节点上自己改了提示词
@@ -79,7 +80,7 @@ test(
     await expect(prompts.nth(1)).toHaveValue('铁盒特写，锁扣崩开')
     expect(await durations()).toEqual(originalDurations)
 
-    await dialog.getByRole('button', { name: /^查看差异/ }).click()
+    await clickStoryboardAction(dialog, /^查看差异/)
     const diff = page.getByRole('dialog', { name: '计划差异' })
     const shot1 = diff
       .getByRole('listitem')

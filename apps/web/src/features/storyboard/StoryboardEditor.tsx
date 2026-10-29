@@ -33,7 +33,13 @@ import { ShotStatePanel } from './ShotStatePanel'
 import { DurationCell, TextCell } from './StoryboardCells'
 import { goalDurationCheck, type GoalDurationCheck } from '../creation-guide/productionGoalScope'
 import { ShotFlow, ShotFlowHeader, ShotPromptDialog } from './ShotFlow'
-import { shotScenes, storyboardPrep, storyboardSceneOptions, type PrepIssue } from './prepModel'
+import {
+  createShotSceneIndex,
+  shotScenes,
+  storyboardPrep,
+  storyboardSceneOptions,
+  type PrepIssue,
+} from './prepModel'
 import { ShotPrepCount, StoryboardPrepPanel, syncShotPrepCount } from './StoryboardPrepPanel'
 import { StoryboardPrepFilter } from './StoryboardPrepFilter'
 import { StoryboardToolbar } from './StoryboardToolbar'
@@ -166,7 +172,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
         description: '画面',
         characters: '出场',
         imagePrompt: '分镜图提示词',
-        motionPrompt: layout === 'table' ? '视频运动提示词' : '运动提示词',
+        motionPrompt: '运动提示词',
         dialogue: '台词',
       } as const
       const fieldRoot = () => {
@@ -205,11 +211,13 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   const diffs = planDiffs(engine, id)
   const prep = storyboardPrep(engine.doc, id, shots)
   const prepByShot = new Map(prep.shots.map((row) => [row.shotId, row]))
-  const sceneOptions = storyboardSceneOptions(engine.doc, shots)
+  const sceneIndex = createShotSceneIndex(engine.doc)
+  const sceneOptions = storyboardSceneOptions(engine.doc, shots, sceneIndex)
   const sceneValue = sceneOptions.some((option) => option.key === sceneFilter) ? sceneFilter : ''
   const visibleShots = shots.filter(
     (shot) =>
-      (!sceneValue || shotScenes(engine.doc, shot).some((scene) => scene.key === sceneValue)) &&
+      (!sceneValue ||
+        shotScenes(engine.doc, shot, sceneIndex).some((scene) => scene.key === sceneValue)) &&
       (!missingOnly || (prepByShot.get(shot.id)?.missingCount ?? 0) > 0),
   )
   const visiblePicked = new Set(visibleShots.filter((shot) => picked.has(shot.id)).map((s) => s.id))
@@ -333,6 +341,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       setStructureError('画布已变为只读，本次添加未执行')
       return
     }
+    setSceneFilter('')
+    setMissingOnly(false)
     const current = readShots()
     const no = (current.at(-1)?.no ?? 0) + 1
     const shotId = newShotId()
@@ -420,7 +430,12 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       setFocusTarget({ shotId: (next.shots[index] ?? next.shots[index - 1])?.id ?? null })
     notify(nodes ? `已删除镜头，${nodes} 个节点保留在画布上（Ctrl+Z 可撤销）` : '已删除镜头')
   }
-  const scope = picked.size ? `选中的 ${picked.size} 个镜头` : '全部镜头'
+  const filtering = !!sceneValue || missingOnly
+  const scope = picked.size
+    ? `选中的 ${picked.size} 个镜头${filtering && picked.size !== visiblePicked.size ? `，其中 ${visiblePicked.size} 个可见` : ''}`
+    : filtering
+      ? '全部镜头（含未显示）'
+      : '全部镜头'
 
   const expand = (mode: 'new' | 'update') => {
     if (!writable()) return
@@ -531,6 +546,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
             >
               {prep.count ? `准备 ${prep.count} 项` : '准备就绪'}
             </button>
+            {mode !== 'edit' && (
+              <span className="ui-chip" data-testid="storyboard-current-mode">
+                当前：{mode === 'review' ? '审核镜头' : '剧情来源'}
+              </span>
+            )}
             {goalNote && (
               <span
                 className="ui-chip"
@@ -740,8 +760,8 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
                 }
               />
               {visiblePicked.size
-                ? `已选择 ${visiblePicked.size} / ${visibleShots.length} 个${sceneValue || missingOnly ? '可见' : ''}镜头`
-                : sceneValue || missingOnly
+                ? `已选择 ${visiblePicked.size} / ${visibleShots.length} 个${filtering ? '可见' : ''}镜头`
+                : filtering
                   ? '选择当前筛选镜头'
                   : '选择全部镜头'}
             </label>

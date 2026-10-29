@@ -1,6 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from './fixtures'
-import { addNode, centerOf, elements, newProject, waitNode, zoomTo } from './canvas'
+import {
+  addNode,
+  centerOf,
+  clickStoryboardAction,
+  elements,
+  newProject,
+  waitNode,
+  zoomTo,
+} from './canvas'
 import { slowFile } from './slow-file'
 
 const canvasId = (url: string) => decodeURIComponent(url.split('#/c/')[1]!.split('?')[0]!)
@@ -76,7 +84,10 @@ test(
     await zoomTo(page, [ids.board])
     const point = await centerOf(page, ids.board)
     await page.mouse.dblclick(point.x, point.y)
-    await page.getByRole('button', { name: '节奏样片', exact: true }).click()
+    await clickStoryboardAction(
+      page.getByRole('dialog', { name: '分镜表', exact: true }),
+      '节奏样片',
+    )
     const editor = page.getByRole('dialog', { name: '序列', exact: true })
     await expect(editor.getByText('样片 / 草稿', { exact: true }).first()).toBeVisible()
     await expect(editor.getByText('缺少分镜图', { exact: false }).first()).toBeVisible()
