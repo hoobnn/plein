@@ -508,9 +508,11 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
         ? shots.length
           ? { label: '重新选择试做镜头', target: shotSelectTarget! }
           : { label: '打开分镜表补充镜头', target: boardTarget }
-        : workbenchTarget
-          ? { label: '打开代表镜头工作台', target: workbenchTarget }
-          : undefined,
+        : fixedTrialTarget
+          ? { label: '打开成片序列', target: fixedTrialTarget }
+          : workbenchTarget
+            ? { label: '打开代表镜头工作台', target: workbenchTarget }
+            : undefined,
       substeps: trialSubsteps,
     },
     {

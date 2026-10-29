@@ -474,6 +474,10 @@ describe('固定段的制作范围', () => {
     expect(facts.steps.find((entry) => entry.id === 'trial')?.detail).toContain(
       '实际文件由清单核验',
     )
+    expect(facts.steps.find((entry) => entry.id === 'trial')?.primary).toEqual({
+      label: '打开成片序列',
+      target: { kind: 'sequence', nodeId: sequenceId, clipInstanceId: 'current-clip-2' },
+    })
     expect(facts.steps.find((entry) => entry.id === 'review')).toMatchObject({
       state: 'ready',
       target: { clipInstanceId: 'current-clip-2' },
@@ -497,6 +501,10 @@ describe('固定段的制作范围', () => {
     const ambiguous = creationGuideFacts(doc, options)
     expect(ambiguous.sequences.map((entry) => entry.id)).toEqual([first, second])
     expect(ambiguous.sequence).toBeUndefined()
+    expect(ambiguous.steps.find((entry) => entry.id === 'delivery')?.primary).toEqual({
+      label: '选择成片序列',
+      target: { kind: 'sequence-select', nodeId: id },
+    })
     const selected = creationGuideFacts(doc, { ...options, sequenceId: second })
     expect(selected.steps.find((entry) => entry.id === 'trial')?.target).toEqual({
       kind: 'sequence',
