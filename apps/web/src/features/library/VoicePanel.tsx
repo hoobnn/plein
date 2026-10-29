@@ -12,7 +12,7 @@ import { Segmented } from '../../ui/Segmented'
 import { Select } from '../../ui/Select'
 import { KIND_ICONS } from './LibraryAdd'
 import { type LibraryTab, useLibrary } from './store'
-import { cacheVoice, dropVoice, useVoices, voiceTraits } from './voices'
+import { cacheVoice, dropVoice, useVoices, voiceCredentialTag, voiceTraits } from './voices'
 
 type CloseRef = { current: () => void }
 const CloseContext = createContext<CloseRef | null>(null)
@@ -160,6 +160,7 @@ export function VoicePanel() {
 function VoiceRow({ voice }: { voice: Voice }) {
   const catalog = useCatalog((s) => s.catalog)
   const provider = catalog?.providers.find((p) => p.id === voice.provider)
+  const credentialTag = voiceCredentialTag(voice, provider)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const status = voice.message?.startsWith('提交结果未知')
@@ -185,6 +186,7 @@ function VoiceRow({ voice }: { voice: Voice }) {
         <div className="flex items-center gap-2">
           <span className="font-medium">{voice.name}</span>
           <span className={`ui-tag ${status.tone}`}>{status.label}</span>
+          {credentialTag && <span className="ui-tag">{credentialTag}</span>}
           {traits && <span className="ui-tag">{traits}</span>}
         </div>
         {voice.source === 'register' && voice.provider === 'doubao/speech' && (

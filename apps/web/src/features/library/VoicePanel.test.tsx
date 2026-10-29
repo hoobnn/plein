@@ -125,3 +125,40 @@ it('首次读取给出等待状态，失败可重试恢复空态', async () => {
   await user.click(screen.getByRole('button', { name: '重试' }))
   await screen.findByText('还没有自己的音色')
 })
+
+/** 平台目录副本：指定 plein/mock 的密钥组数 */
+const withCredentialCount = (count: number) => ({
+  ...voiceCatalog,
+  providers: voiceCatalog.providers.map((p) =>
+    p.id === 'plein/mock' ? { ...p, credentialCount: count } : p,
+  ),
+})
+
+it('平台有多组密钥时音色显示所属 Key 标签，单组不显示', async () => {
+  useCatalog.setState({ catalog: withCredentialCount(2) })
+  mockFetch((request) => {
+    if (new URL(request.url).pathname === '/api/voices' && request.method === 'GET')
+      return Response.json([{ ...designedVoice, credentialLabel: '团队' }])
+  })
+  renderApp(<VoicePanel />)
+  await screen.findByText('测试音色')
+  expect(screen.getByText('团队')).toBeTruthy()
+
+  // 同一音色在单组平台上不再显示标签
+  useCatalog.setState({ catalog: withCredentialCount(1) })
+  await waitFor(() => expect(screen.queryByText('团队')).toBeNull())
+})
+
+it('没记录所属 Key 或平台组数不明的音色不显示标签', async () => {
+  useCatalog.setState({ catalog: withCredentialCount(2) })
+  mockFetch((request) => {
+    if (new URL(request.url).pathname === '/api/voices' && request.method === 'GET')
+      return Response.json([{ ...designedVoice, credentialLabel: null }])
+  })
+  renderApp(<VoicePanel />)
+  await screen.findByText('测试音色')
+  expect(screen.queryByText('团队')).toBeNull()
+  // 目录没返回组数时同样保持安静，不猜
+  useCatalog.setState({ catalog: voiceCatalog })
+  await waitFor(() => expect(screen.queryByText('团队')).toBeNull())
+})

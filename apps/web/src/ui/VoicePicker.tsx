@@ -1,7 +1,7 @@
 import { noVoice, type VoiceRef } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
-import { useVoices, voiceTraits } from '../features/library/voices'
+import { useVoices, voiceCredentialTag, voiceTraits } from '../features/library/voices'
 import { useCatalog } from '../stores/catalog'
 import { Select } from './Select'
 import { ProviderIcon } from './ProviderIcon'
@@ -54,13 +54,17 @@ export function VoicePicker({
   const voices = useVoices()
   const mine = (voices.data ?? []).map((v) => {
     const traits = voiceTraits(v)
+    const credential = voiceCredentialTag(
+      v,
+      catalog?.providers.find((p) => p.id === v.provider),
+    )
     return {
       provider: v.provider,
       providerTitle: catalog?.providers.find((p) => p.id === v.provider)?.title ?? v.provider,
       id: v.voiceId,
-      label: `我的 · ${v.name}${traits ? ` · ${traits}` : ''}${
-        v.status === 'training' ? '（训练中）' : v.status === 'failed' ? '（复刻失败）' : ''
-      }`,
+      label: `我的 · ${v.name}${credential ? ` · ${credential}` : ''}${
+        traits ? ` · ${traits}` : ''
+      }${v.status === 'training' ? '（训练中）' : v.status === 'failed' ? '（复刻失败）' : ''}`,
       disabled: v.status !== 'ready',
     }
   })

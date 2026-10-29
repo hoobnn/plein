@@ -5,7 +5,7 @@ import { expect, it, vi } from 'vite-plus/test'
 import { mockFetch } from '../testing/fetch'
 import { act, renderApp, resetStoreAfterEach, screen, waitFor } from '../testing/render'
 import { useCatalog } from '../stores/catalog'
-import { voiceCatalog } from '../features/library/voiceFixtures'
+import { designedVoice, voiceCatalog } from '../features/library/voiceFixtures'
 import { VoicePicker } from './VoicePicker'
 
 resetStoreAfterEach(useCatalog)
@@ -99,4 +99,45 @@ it('音色读取失败不静默变成空列表，重试保留当前选择', asyn
   await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   expect(screen.getByRole('combobox').textContent).toContain('Mock 女声')
   expect(changed).not.toHaveBeenCalled()
+})
+
+/** 平台目录副本：指定 plein/mock 的密钥组数 */
+const withCredentialCount = (count: number) => ({
+  ...voiceCatalog,
+  providers: voiceCatalog.providers.map((p) =>
+    p.id === 'plein/mock' ? { ...p, credentialCount: count } : p,
+  ),
+})
+
+it('平台有多组密钥时我的音色选项带所属 Key，单组不带', async () => {
+  useCatalog.setState({ catalog: withCredentialCount(2) })
+  mockFetch((request) =>
+    new URL(request.url).pathname === '/api/voices'
+      ? Response.json([{ ...designedVoice, credentialLabel: '团队' }])
+      : undefined,
+  )
+  const { user } = renderApp(<VoicePicker value={noVoice} onChange={() => {}} />)
+  await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+  await user.click(screen.getByRole('combobox'))
+  expect(screen.getByRole('option', { name: '我的 · 测试音色 · 团队' })).toBeTruthy()
+
+  // 单组平台：同一音色不带标签
+  useCatalog.setState({ catalog: withCredentialCount(1) })
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())
+  await user.click(screen.getByRole('combobox'))
+  expect(screen.getByRole('option', { name: '我的 · 测试音色' }).textContent).not.toContain('团队')
+})
+
+it('没记录所属 Key 的音色选项不显示标签', async () => {
+  useCatalog.setState({ catalog: withCredentialCount(2) })
+  mockFetch((request) =>
+    new URL(request.url).pathname === '/api/voices'
+      ? Response.json([{ ...designedVoice, credentialLabel: null }])
+      : undefined,
+  )
+  const { user } = renderApp(<VoicePicker value={noVoice} onChange={() => {}} />)
+  await waitFor(() => expect(screen.queryByRole('status')).toBeNull())
+  await user.click(screen.getByRole('combobox'))
+  expect(screen.getByRole('option', { name: '我的 · 测试音色' })).toBeTruthy()
 })
