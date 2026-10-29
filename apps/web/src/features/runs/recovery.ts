@@ -1,4 +1,4 @@
-import type { BatchItem, CanceledBy, HeldReason, JobInfo } from '@plein/protocol'
+import type { BatchItem, CanceledBy, HeldReason, JobInfo, JobRecovery } from '@plein/protocol'
 
 /** 任务恢复状态的说法：一句话现状、补充说明和提示色；不需要提示时为 null */
 export interface RecoveryView {
@@ -21,6 +21,29 @@ export const CANCELED_BY: Record<CanceledBy, string> = {
   system: '已停止（画布或节点已删除）',
 }
 
+export function credentialNote(recovery: JobRecovery): string | undefined {
+  const lost = recovery.credentialLost
+  if (!lost) return undefined
+  const reason = lost.reason === 'missing' ? '已删除' : '已被替换'
+  if (lost.voice)
+    return `音色「${lost.voice}」所属的 Key ${reason}，请在节点上改用其他音色，或重新复刻后再运行。`
+  const label = recovery.credentialLabel ?? '原组'
+  return lost.reason === 'missing'
+    ? `原来的 Key「${label}」已删除，无法取回之前的结果。为避免重复计费没有自动重新提交。`
+    : `原来的 Key「${label}」已被替换，暂时无法取回结果。把这组 Key 改回原来的内容后可重新获取；不需要原结果的话，可以用当前 Key 重新提交（会再次计费）。`
+}
+
+export function credentialConfirmation(recovery: JobRecovery): string | undefined {
+  const lost = recovery.credentialLost
+  if (!lost || lost.voice) return undefined
+  const label = recovery.credentialLabel ?? '原组'
+  const current = recovery.currentCredentialLabel ?? '默认'
+  const uncertain = recovery.state === 'submit_unknown' ? '平台若其实已受理，会再生成一次。' : ''
+  return lost.reason === 'missing'
+    ? `原来的 Key「${label}」已删除，无法取回之前的结果。用当前 Key「${current}」重新提交会再次计费。${uncertain}确定吗？`
+    : `原来的 Key「${label}」已被替换，暂时无法取回结果。把这组 Key 改回原来的内容后可重新获取；不需要原结果的话，用当前 Key「${current}」重新提交会再次计费。${uncertain}确定吗？`
+}
+
 /** 任务记录本身决定的恢复操作；节点是否还在、是否最新一次等界面条件由调用处再判断 */
 export function recoveryActions(recovery: JobInfo['recovery']) {
   const state = recovery?.state
@@ -29,7 +52,9 @@ export function recoveryActions(recovery: JobInfo['recovery']) {
     retry: !recovery || state === 'remote_failed',
     refetch: !!recovery?.refetchable,
     attach: state === 'submit_unknown' && !!recovery?.attachable,
-    resubmit: state === 'submit_unknown' || !!recovery?.credentialLost,
+    resubmit:
+      !recovery?.credentialLost?.voice &&
+      (state === 'submit_unknown' || !!recovery?.credentialLost),
     dismiss:
       state === 'submit_unknown' ||
       !!recovery?.credentialLost ||
@@ -43,22 +68,25 @@ export function describeRecovery(job: JobInfo): RecoveryView | null {
   if (!r || r.dismissed) return null
   const platform = r.provider ?? '平台'
   const id = r.remoteId ? `任务 ID ${r.remoteId}` : undefined
-  const credentialNote = r.credentialLost
-    ? '原来的 Key 已不可用；恢复原 Key 后可重新获取，或用当前 Key 重新提交（会再次计费）'
-    : undefined
+  const credentialDetail = credentialNote(r)
   switch (r.state) {
     case 'submit_unknown':
       return {
         title: '提交结果未知',
-        detail: r.verifiable
-          ? `没收到${platform}的确认，可以让系统按平台的查询接口再核查一次`
-          : `没收到${platform}的确认，无法判断是否已受理。请先到${platform}控制台核对；重新提交可能重复计费`,
+        detail: [
+          r.verifiable
+            ? `没收到${platform}的确认，可以让系统按平台的查询接口再核查一次`
+            : `没收到${platform}的确认，无法判断是否已受理。请先到${platform}控制台核对；重新提交可能重复计费`,
+          credentialDetail,
+        ]
+          .filter(Boolean)
+          .join(' · '),
         tone: 'warning',
       }
     case 'fetch_failed':
       return {
         title: '平台已生成，结果没存到本地',
-        detail: [credentialNote ?? (r.refetchable ? '可以重新获取，不会重新提交' : r.note), id]
+        detail: [credentialDetail ?? (r.refetchable ? '可以重新获取，不会重新提交' : r.note), id]
           .filter(Boolean)
           .join(' · '),
         tone: 'warning',
@@ -68,7 +96,7 @@ export function describeRecovery(job: JobInfo): RecoveryView | null {
         ? {
             title: '平台上的任务可能仍在生成',
             detail: [
-              credentialNote ??
+              credentialDetail ??
                 (r.refetchable ? '取消前平台已受理，费用按平台规则计算；可以去取回结果' : r.note),
               id,
             ]
@@ -80,7 +108,7 @@ export function describeRecovery(job: JobInfo): RecoveryView | null {
           ? {
               title: '平台已受理，结果尚未取回',
               detail: [
-                credentialNote ?? (r.refetchable ? '可以重新获取，不会重新提交' : r.note),
+                credentialDetail ?? (r.refetchable ? '可以重新获取，不会重新提交' : r.note),
                 id,
               ]
                 .filter(Boolean)

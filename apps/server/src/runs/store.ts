@@ -243,6 +243,8 @@ export class JobStore {
               ? { credentialFingerprint: old.credentialFingerprint }
               : {}),
             ...(old?.credentialLabel ? { credentialLabel: old.credentialLabel } : {}),
+            ...(old?.credentialSource ? { credentialSource: old.credentialSource } : {}),
+            ...(old?.credentialVoice ? { credentialVoice: old.credentialVoice } : {}),
           }
       }
       tx.update(jobs)

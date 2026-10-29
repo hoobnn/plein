@@ -286,7 +286,8 @@ describe('远端成功、本地获取失败', () => {
     expect(job(server, id, run).recovery).toMatchObject({
       state: 'remote_pending',
       refetchable: true,
-      credentialLost: true,
+      credentialLost: { reason: 'missing' },
+      credentialLabel: '默认',
       currentCredentialLabel: '团队',
     })
     expect(submit).toHaveBeenCalledTimes(1)

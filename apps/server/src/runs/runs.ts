@@ -1394,6 +1394,7 @@ export class NodeRuns implements BatchHost {
       const credentialResubmit =
         opt.action === 'resubmit' &&
         !!rec?.credentialLost &&
+        !rec.credentialLost.voice &&
         (rec.state === 'remote_pending' || rec.state === 'fetch_failed')
       if (!credentialResubmit && (rec?.state !== 'submit_unknown' || !unknown.length))
         throw new NodeRunError('invalid_input', '这个任务的提交状态不是未知')

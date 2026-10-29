@@ -24,6 +24,7 @@ import {
   BATCH_OUTCOME,
   BATCH_STAGE,
   CANCELED_BY,
+  credentialConfirmation,
   describeRecovery,
   recoveryActions,
 } from './recovery'
@@ -1020,9 +1021,8 @@ export function RecoveryBlock(props: {
           }}
         >
           <p className="text-2xs text-ink-muted">
-            {r.credentialLost
-              ? `原来的 Key 已不可用，无法取回之前的结果。用当前 Key「${r.currentCredentialLabel ?? '默认'}」重新提交会再次计费，确定吗？`
-              : `只在确认${r.provider ?? '平台'}上没有这次任务时重新提交；平台若其实已受理，会再生成一次、可能重复计费。`}
+            {credentialConfirmation(r) ??
+              `只在确认${r.provider ?? '平台'}上没有这次任务时重新提交；平台若其实已受理，会再生成一次、可能重复计费。`}
           </p>
           <div className="flex gap-1">
             <button

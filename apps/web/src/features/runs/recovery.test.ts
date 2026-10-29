@@ -35,8 +35,17 @@ it.each([
   ],
   [
     '原密钥失效时可重新获取、用当前组重提或标记已处理',
-    { state: 'remote_pending', refetchable: true, credentialLost: true },
+    { state: 'remote_pending', refetchable: true, credentialLost: { reason: 'missing' } },
     { ...none, refetch: true, resubmit: true, dismiss: true },
+  ],
+  [
+    '配音音色所属密钥失效时不能改用当前组重提',
+    {
+      state: 'remote_pending',
+      refetchable: true,
+      credentialLost: { reason: 'replaced', voice: '旁白' },
+    },
+    { ...none, refetch: true, dismiss: true },
   ],
   ['输入已变', { state: 'review' }, { ...none, review: true }],
   ['提交结果未知', { state: 'submit_unknown' }, { ...none, resubmit: true, dismiss: true }],
@@ -58,6 +67,35 @@ it.each([
     {
       title: '平台已受理，结果尚未取回',
       detail: '可以重新获取，不会重新提交 · 任务 ID remote-existing',
+      tone: 'warning',
+    },
+  ],
+  [
+    '原 Key 删除后不再提示可以恢复取回',
+    job('failed', {
+      state: 'remote_pending',
+      refetchable: true,
+      credentialLost: { reason: 'missing' },
+      credentialLabel: '默认',
+    }),
+    {
+      title: '平台已受理，结果尚未取回',
+      detail: '原来的 Key「默认」已删除，无法取回之前的结果。为避免重复计费没有自动重新提交。',
+      tone: 'warning',
+    },
+  ],
+  [
+    '原 Key 替换后说明改回可获取及换组重提代价',
+    job('failed', {
+      state: 'remote_pending',
+      refetchable: true,
+      credentialLost: { reason: 'replaced' },
+      credentialLabel: '默认',
+    }),
+    {
+      title: '平台已受理，结果尚未取回',
+      detail:
+        '原来的 Key「默认」已被替换，暂时无法取回结果。把这组 Key 改回原来的内容后可重新获取；不需要原结果的话，可以用当前 Key 重新提交（会再次计费）。',
       tone: 'warning',
     },
   ],

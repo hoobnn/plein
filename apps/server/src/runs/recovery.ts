@@ -1,6 +1,7 @@
 import { currentResult, type PleinDoc } from '@plein/doc'
 import type {
   CanceledBy,
+  CredentialLost,
   HeldReason,
   JobRecovery,
   PreparedInput,
@@ -28,7 +29,7 @@ export interface StoredRecovery {
   resultIds?: string[]
   assets?: string[]
   dismissed?: true
-  credentialLost?: true
+  credentialLost?: CredentialLost
 }
 
 export function parseRecovery(raw: string | null | undefined): StoredRecovery {
@@ -88,7 +89,8 @@ export function recoveryAfter(
   const out: StoredRecovery = { ...extra }
   const stage = stageOf(err)
   if (stage) out.state = STAGE_STATE[stage]
-  if (credentialLostOf(err)) out.credentialLost = true
+  const credentialLost = credentialLostOf(err)
+  if (credentialLost) out.credentialLost = credentialLost
   // 用户取消过、平台随后也确认停下：仍记为用户取消
   if (stage === 'remote_canceled' && out.canceledBy !== 'user') out.canceledBy = 'remote'
   if ((err as { code?: string } | undefined)?.code === 'input_changed') out.state = 'review'
@@ -128,6 +130,9 @@ export function describeRecovery(
     ...(canceledBy && row.status === 'canceled' ? { canceledBy } : {}),
   }
   const provider = ctx.provider
+  const credentialLabel = stored.credentialLost
+    ? calls.find((call) => call.credentialLabel)?.credentialLabel
+    : undefined
   const remoteOf = () =>
     stored.remoteId ??
     calls.flatMap((c) =>
@@ -143,7 +148,8 @@ export function describeRecovery(
       ...(provider ? { provider: provider.title } : {}),
       ...(stored.note ? { note: stored.note } : {}),
       ...(stored.dismissed ? { dismissed: true as const } : {}),
-      ...(stored.credentialLost ? { credentialLost: true as const } : {}),
+      ...(stored.credentialLost ? { credentialLost: stored.credentialLost } : {}),
+      ...(credentialLabel ? { credentialLabel } : {}),
       ...(stored.credentialLost && provider?.currentCredentialLabel
         ? { currentCredentialLabel: provider.currentCredentialLabel }
         : {}),
