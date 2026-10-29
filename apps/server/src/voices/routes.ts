@@ -4,6 +4,7 @@ import { API, CreateVoice, UpdateVoice, type Voice } from '@plein/protocol'
 import { Hono } from 'hono'
 import type { AssetStore } from '../assets/store'
 import type { AuthEnv } from '../auth'
+import { credentialFingerprint as fingerprintOf } from '../plugins/config-store'
 import type { PluginHost } from '../plugins/host'
 import { generatedVoiceId, type VoiceStore } from './store'
 
@@ -57,6 +58,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
         voice.voiceId,
         AbortSignal.timeout(20_000),
         voice.credentialId ?? undefined,
+        voice.credentialFingerprint ?? undefined,
       )
       if (!state) return voice
       return savePreview(
@@ -118,7 +120,9 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
         spec.voiceId === 'slot' && !custom ? input.voiceId : input.voiceId || generatedVoiceId()
       if (!voiceId)
         return c.json({ error: 'invalid', message: '请填写控制台分配的音色槽位 ID' }, 400)
-      const credentialId = host.configs.get(provider).activeCredential
+      const credential = host.configs.credential(provider)
+      const credentialId = credential?.id
+      const credentialFingerprint = credential ? fingerprintOf(credential.secrets) : undefined
       const ref = (id: string | null, kind: 'audio' | 'image'): AssetRef | undefined => {
         if (!id) return undefined
         const asset = assets.get(owner, id)
@@ -145,6 +149,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
                 },
                 signal,
                 credentialId,
+                credentialFingerprint,
               )
             : await host.cloneVoice(
                 provider,
@@ -162,6 +167,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
                 },
                 signal,
                 credentialId,
+                credentialFingerprint,
               )
         const voice = voices.save(owner, {
           ...fields,
@@ -169,6 +175,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
           status: state.status,
           message: state.status === 'failed' ? state.message : null,
           credentialId,
+          credentialFingerprint,
         })
         checkedAt.set(voice.id, Date.now())
         return c.json(await savePreview(owner, voice, state), 201)
@@ -181,6 +188,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
             status: 'training',
             message: `提交结果未知，请先在平台核查音色 ID ${voiceId}，不要重复创建：${e.message}`,
             credentialId,
+            credentialFingerprint,
           })
           return c.json(voice, 201)
         }

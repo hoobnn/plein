@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -6,6 +6,15 @@ export interface ProviderCredential {
   id: string
   label: string
   secrets: Record<string, string>
+}
+
+export function credentialFingerprint(secrets: Record<string, string>): string {
+  const sorted = Object.fromEntries(
+    Object.keys(secrets)
+      .sort()
+      .map((key) => [key, secrets[key]]),
+  )
+  return createHash('sha256').update(JSON.stringify(sorted)).digest('hex').slice(0, 16)
 }
 
 /** 一个平台的配置：开关、非敏感设置、密钥组（明文存在仅本用户可读的文件里，不进文档和日志） */

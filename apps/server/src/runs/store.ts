@@ -202,6 +202,9 @@ export class JobStore {
             remoteId: remoteId!,
             ...(old?.trace ? { trace: old.trace } : {}),
             ...(old?.credentialId ? { credentialId: old.credentialId } : {}),
+            ...(old?.credentialFingerprint
+              ? { credentialFingerprint: old.credentialFingerprint }
+              : {}),
           }
       }
       tx.update(jobs)

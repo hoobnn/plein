@@ -52,7 +52,7 @@ import { renderCaptionLayer } from '../motion/captions'
 import { motionChromePath, motionRendererIdentity } from '../motion/identity'
 import type { AssetStore } from '../assets/store'
 import type { OutputSpoolRef, SpoolBinding } from '../assets/output-spool'
-import type { ProviderConfigStore } from './config-store'
+import { credentialFingerprint as fingerprintOf, type ProviderConfigStore } from './config-store'
 import { Limiter, sleep } from './limiter'
 import type { PluginRegistry } from './registry'
 import { PermissionError, scopedFetch, scopedSecrets } from './sandbox'
@@ -130,7 +130,11 @@ export interface SubmissionTrace {
   logId?: string
   httpStatus?: number
 }
-export type CallRecord = { trace?: SubmissionTrace; credentialId?: string } & (
+export type CallRecord = {
+  trace?: SubmissionTrace
+  credentialId?: string
+  credentialFingerprint?: string
+} & (
   | { state: 'submitting'; at: number }
   | { state: 'unknown'; at: number; message: string }
   | { state: 'pending'; remoteId: string; canceled?: true }
@@ -398,12 +402,14 @@ export class PluginHost {
     input: VoiceCloneInput,
     signal?: AbortSignal,
     credentialId?: string,
+    credentialFingerprint?: string,
   ): Promise<VoiceCreationResult> {
     const spec = this.voiceClone(id)
     if (!spec) throw new ProviderError('invalid_input', `平台 ${id} 不支持声音复刻`)
     const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
       requireEnabled: true,
       credentialId,
+      credentialFingerprint,
     })
     try {
       return await spec.clone(input, ctx)
@@ -422,12 +428,14 @@ export class PluginHost {
     input: VoiceDesignInput,
     signal?: AbortSignal,
     credentialId?: string,
+    credentialFingerprint?: string,
   ): Promise<VoiceCreationResult> {
     const spec = this.voiceDesign(id)
     if (!spec) throw new ProviderError('invalid_input', `平台 ${id} 不支持音色设计`)
     const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
       requireEnabled: true,
       credentialId,
+      credentialFingerprint,
     })
     try {
       return await spec.design(input, ctx)
@@ -443,12 +451,14 @@ export class PluginHost {
     voiceId: string,
     signal?: AbortSignal,
     credentialId?: string,
+    credentialFingerprint?: string,
   ): Promise<VoiceCreationResult | null> {
     const spec = this.voiceClone(id)
     if (!spec?.status) return null
     const ctx = this.providerContext(id, ownerId, signal ?? new AbortController().signal, {
       requireEnabled: true,
       credentialId,
+      credentialFingerprint,
     })
     try {
       return await spec.status(voiceId, ctx)
@@ -508,10 +518,16 @@ export class PluginHost {
     }
     let trace = recorded?.trace
     let credentialId = recorded?.credentialId
+    let credentialFingerprint = recorded?.credentialFingerprint
     const record = (r: CallRecord, kind?: SubmissionAudit['kind']) => {
       journal?.store.set(
         journal.key,
-        { ...r, ...(trace ? { trace } : {}), ...(credentialId ? { credentialId } : {}) },
+        {
+          ...r,
+          ...(trace ? { trace } : {}),
+          ...(credentialId ? { credentialId } : {}),
+          ...(credentialFingerprint ? { credentialFingerprint } : {}),
+        },
         kind
           ? {
               id: randomUUID(),
@@ -554,16 +570,18 @@ export class PluginHost {
       : undefined
     const providerConfig = this.configs.get(parsed.provider)
     credentialId ??= providerConfig.activeCredential
+    const credential = providerConfig.credentials.find((item) => item.id === credentialId)
+    credentialFingerprint ??= credential ? fingerprintOf(credential.secrets) : undefined
     const ctx = this.providerContext(parsed.provider, opts.ownerId, signal, {
       requireEnabled: true,
       idempotencyKey,
       credentialId,
+      credentialFingerprint,
     })
     const { onDelta } = opts
     if (onDelta) ctx.stream = (d) => onDelta(d.text)
     const { def } = entry
     const limiter = this.limiter(parsed.provider, def.limits)
-    const credential = providerConfig.credentials.find((item) => item.id === credentialId)
     const via =
       providerConfig.credentials.length >= 2 && credential
         ? `${def.title}（${credential.label}）· ${model.title}`
@@ -672,7 +690,7 @@ export class PluginHost {
               parsed.provider,
               opts.ownerId,
               AbortSignal.timeout(10_000),
-              { requireEnabled: false, credentialId },
+              { requireEnabled: false, credentialId, credentialFingerprint },
             )
             await def.cancel(remoteId, cancelCtx).catch(() => {})
           }
@@ -930,20 +948,29 @@ export class PluginHost {
     id: string,
     ownerId: string,
     signal: AbortSignal,
-    opts: { requireEnabled: boolean; idempotencyKey?: string; credentialId?: string },
+    opts: {
+      requireEnabled: boolean
+      idempotencyKey?: string
+      credentialId?: string
+      credentialFingerprint?: string
+    },
   ): ProviderContext {
     const { def, plugin } = this.registry.providers.get(id)!
     const manifest = this.manifest(plugin)
     const config = this.configs.get(id)
-    const credential = opts.credentialId
-      ? this.configs.credential(id, opts.credentialId)
-      : undefined
+    const credential = this.configs.credential(id, opts.credentialId)
     if (opts.credentialId && !credential)
       throw new ProviderError(
         'auth',
         `平台 ${def.title} 提交该任务时使用的密钥「${opts.credentialId.slice(0, 8)}」已删除，无法继续`,
       )
     const secrets = credential?.secrets ?? config.secrets
+    if (opts.credentialFingerprint && fingerprintOf(secrets) !== opts.credentialFingerprint)
+      throw new ProviderError(
+        'auth',
+        `平台 ${def.title} 提交该任务时使用的密钥「${credential?.label ?? '默认'}」已被修改，无法继续；为避免重复计费不会重新提交`,
+        { retryable: false },
+      )
     if (opts.requireEnabled && !config.enabled)
       throw new ProviderError('unavailable', `平台 ${def.title} 未启用`)
     const settings = def.settings.safeParse(config.settings)

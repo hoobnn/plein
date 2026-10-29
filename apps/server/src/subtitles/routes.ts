@@ -243,6 +243,9 @@ export function subtitleRoutes({
                 remoteId: operation.remoteId,
                 ...(record.trace ? { trace: record.trace } : {}),
                 ...(record.credentialId ? { credentialId: record.credentialId } : {}),
+                ...(record.credentialFingerprint
+                  ? { credentialFingerprint: record.credentialFingerprint }
+                  : {}),
               },
               audit: [...(stored.audit ?? []), audit('manual_attach')],
               history: [...(stored.history ?? []), { record, at: Date.now(), action: 'attach' }],

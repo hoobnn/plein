@@ -22,8 +22,8 @@ import { Agent } from 'undici'
 import { beforeAll, describe, expect, it, vi } from 'vite-plus/test'
 import { z } from 'zod'
 import { startTestServer, tempDir } from '../testing'
-import { ProviderConfigStore } from './config-store'
-import { type CallRecord, type CallStage, NodeRunError, PluginHost } from './host'
+import { credentialFingerprint, ProviderConfigStore } from './config-store'
+import { type CallRecord, type CallStage, NodeRunError, PluginHost, SHUTDOWN } from './host'
 import { Limiter } from './limiter'
 import { PluginRegistry } from './registry'
 import { PermissionError, scopedFetch, scopedSecrets } from './sandbox'
@@ -730,13 +730,14 @@ describe('模型调用记录', () => {
     const records = Object.assign(new Map<string, CallRecord>(), { id: 'async-host-journal' })
     const stages: CallStage['phase'][] = []
     const vias: string[] = []
-    const call = () =>
+    const call = (signal?: AbortSignal) =>
       host.call(
         'image.generate',
         'acme/async:m',
         { prompt: '天台', seed: 7 },
         {
           ownerId: 'local',
+          signal,
           journal: { store: records, key: 'k' },
           onStage: ({ phase, via }) => {
             stages.push(phase)
@@ -744,7 +745,7 @@ describe('模型调用记录', () => {
           },
         },
       )
-    return { configs, submit, poll, records, stages, vias, call }
+    return { configs, provider, submit, poll, records, stages, vias, call }
   }
 
   it('提交受理后立即更新，只有平台明确报告时才展示排队或生成', async () => {
@@ -860,6 +861,36 @@ describe('模型调用记录', () => {
     expect(submit).toHaveBeenCalledTimes(1)
     expect(poll).toHaveBeenCalledTimes(1)
     expect(records.get('k')).toMatchObject({ state: 'pending', credentialId: originalId })
+  })
+
+  it('同组密钥修改后恢复为 auth 失败，不核查也不重新提交', async () => {
+    const { configs, provider, submit, records, call } = asyncHost()
+    const originalId = configs.get('acme/async').activeCredential!
+    const lookup = vi.fn(async () => null)
+    provider.lookup = lookup
+    provider.idempotent = true
+    const controller = new AbortController()
+    submit.mockImplementationOnce(async () => {
+      controller.abort(SHUTDOWN)
+      throw new ProviderError('unknown', '服务退出', { outcome: 'unknown' })
+    })
+    await expect(call(controller.signal)).rejects.toMatchObject({ code: 'unknown' })
+    expect(records.get('k')).toMatchObject({
+      state: 'submitting',
+      credentialId: originalId,
+      credentialFingerprint: credentialFingerprint({ ASYNC_KEY: 'one' }),
+    })
+
+    configs.patchCredential('acme/async', originalId, { secrets: { ASYNC_KEY: 'two' } })
+    submit.mockClear()
+    await expect(call()).rejects.toMatchObject({
+      code: 'auth',
+      retryable: false,
+      message:
+        '平台 Async 提交该任务时使用的密钥「默认」已被修改，无法继续；为避免重复计费不会重新提交',
+    })
+    expect(submit).not.toHaveBeenCalled()
+    expect(lookup).not.toHaveBeenCalled()
   })
 
   it('提交发出后取消，未知记录不能当成未提交丢弃', async () => {

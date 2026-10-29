@@ -4,6 +4,7 @@ import type { Voice } from '@plein/protocol'
 import { mockProvider } from '@plein/providers'
 import { describe, expect, it, vi } from 'vite-plus/test'
 import { bootServer, request } from '../testing'
+import { credentialFingerprint } from '../plugins/config-store'
 
 /** 一秒静音的 16 位单声道 WAV */
 function wav() {
@@ -97,6 +98,34 @@ describe('我的音色', () => {
       })
       expect(await refreshed.json()).toMatchObject({ status: 'ready', credentialId })
       expect(seen).toEqual(['one'])
+    } finally {
+      status.mockRestore()
+    }
+  })
+
+  it('同组密钥修改后不查询音色训练状态', async () => {
+    const { server, sample, post } = await setup()
+    const configs = server.plugins.configs
+    configs.update('plein/mock', { secrets: { MOCK_API_KEY: 'one' } })
+    const credentialId = configs.get('plein/mock').activeCredential!
+    const voice = (await (
+      await post({ provider: 'plein/mock', name: '旁白', sampleAssetId: sample.id })
+    ).json()) as Voice
+    const fingerprint = credentialFingerprint({ MOCK_API_KEY: 'one' })
+    expect(voice).toMatchObject({ credentialId, credentialFingerprint: fingerprint })
+    const status = vi.spyOn(mockProvider.voiceClone!, 'status')
+    try {
+      configs.patchCredential('plein/mock', credentialId, { secrets: { MOCK_API_KEY: 'two' } })
+      const refreshed = await request(server, `/api/voices/${voice.id}/refresh`, {
+        method: 'POST',
+      })
+      expect(await refreshed.json()).toMatchObject({
+        status: 'training',
+        credentialId,
+        credentialFingerprint: fingerprint,
+        message: expect.stringContaining('已被修改，无法继续；为避免重复计费不会重新提交'),
+      })
+      expect(status).not.toHaveBeenCalled()
     } finally {
       status.mockRestore()
     }
