@@ -130,9 +130,8 @@ export function describeRecovery(
     ...(canceledBy && row.status === 'canceled' ? { canceledBy } : {}),
   }
   const provider = ctx.provider
-  const credentialLabel = stored.credentialLost
-    ? calls.find((call) => call.credentialLabel)?.credentialLabel
-    : undefined
+  const credential = stored.credentialLost ? calls.find((call) => call.credentialId) : undefined
+  const credentialLabel = credential?.credentialLabel ?? credential?.credentialId?.slice(0, 8)
   const remoteOf = () =>
     stored.remoteId ??
     calls.flatMap((c) =>

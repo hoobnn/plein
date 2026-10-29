@@ -292,7 +292,15 @@ describe('远端成功、本地获取失败', () => {
     })
     expect(submit).toHaveBeenCalledTimes(1)
 
-    expect((await recover(server, id, run, { action: 'resubmit' })).status).toBe(200)
+    const unconfirmed = await recover(server, id, run, { action: 'resubmit' })
+    expect(unconfirmed.status).toBe(400)
+    expect(unconfirmed.body).toMatchObject({
+      message: '原来的 Key 已不可用，重新提交需要确认改用当前 Key',
+    })
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect(
+      (await recover(server, id, run, { action: 'resubmit', credentialChange: true })).status,
+    ).toBe(200)
     expect(await server.runs.wait(run)).toBe('succeeded')
     expect(seen).toEqual(['one', 'two'])
     expect(submit).toHaveBeenCalledTimes(2)
@@ -305,6 +313,43 @@ describe('远端成功、本地获取失败', () => {
       credentialId: teamId,
       credentialLabel: '团队',
     })
+  })
+
+  it('配音来源即使提交未知也拒绝换组重提', async () => {
+    const { server } = await boot()
+    const submit = vi.spyOn(mockProvider, 'submit')
+    const { id, doc } = await canvas(server)
+    const node = addNode(doc, 'plein/speech', { params: { text: '你好' } })
+    server.runs.store.insert({
+      id: 'voice-submit-unknown',
+      ownerId: 'local',
+      canvasId: id,
+      nodeId: node,
+      nodeType: 'plein/speech',
+    })
+    server.runs.store.update('voice-submit-unknown', {
+      status: 'failed',
+      recovery: JSON.stringify({
+        state: 'submit_unknown',
+        credentialLost: { reason: 'missing', voice: '旁白' },
+      }),
+    })
+    server.runs.store.journal('voice-submit-unknown').set('speech', {
+      state: 'unknown',
+      at: 1,
+      message: '未知',
+      provider: 'plein/mock',
+      credentialId: 'old-key',
+      credentialSource: 'voice',
+      credentialVoice: '旁白',
+    })
+
+    const response = await recover(server, id, 'voice-submit-unknown', { action: 'resubmit' })
+    expect(response.status).toBe(400)
+    expect(response.body).toMatchObject({
+      message: '音色「旁白」所属的 Key 已失效，请改用其他音色或重新复刻后再运行',
+    })
+    expect(submit).not.toHaveBeenCalled()
   })
 
   it.each(['fetch_failed', 'remote_pending'] as const)(

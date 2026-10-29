@@ -468,7 +468,7 @@ it('原 Key 失效：保留重新获取和标记已处理，当前组重提必�
   )
   expect(bodies).toEqual([])
   await f.user.click(within(confirm).getByRole('button', { name: '重新提交' }))
-  await waitFor(() => expect(bodies).toEqual([{ action: 'resubmit' }]))
+  await waitFor(() => expect(bodies).toEqual([{ action: 'resubmit', credentialChange: true }]))
 })
 
 it('配音音色所属 Key 失效时不提供重提，只提示换音色并允许标记已处理', async () => {
@@ -479,6 +479,7 @@ it('配音音色所属 Key 失效时不提供重提，只提示换音色并允�
           state: 'remote_pending',
           refetchable: true,
           credentialLost: { reason: 'missing', voice: '旁白' },
+          credentialLabel: '默认',
         },
       }),
     ],
@@ -486,7 +487,7 @@ it('配音音色所属 Key 失效时不提供重提，只提示换音色并允�
   })
   const recovery = await within(panel()).findByTestId('job-recovery')
   expect(recovery.textContent).toContain(
-    '音色「旁白」所属的 Key 已删除，请在节点上改用其他音色，或重新复刻后再运行。',
+    '音色「旁白」所属的 Key「默认」已删除，请在节点上改用其他音色，或重新复刻后再运行。',
   )
   expect(within(recovery).queryByRole('button', { name: '用当前 Key 重新提交' })).toBeNull()
   expect(within(recovery).queryByRole('button', { name: '确认未受理，重新提交' })).toBeNull()

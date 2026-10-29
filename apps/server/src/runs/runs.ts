@@ -1391,6 +1391,13 @@ export class NodeRuns implements BatchHost {
       if (!rec?.refetchable)
         throw new NodeRunError('invalid_input', rec?.note ?? '这个任务没有可以重新获取的结果')
     } else {
+      if (opt.action === 'resubmit' && rec?.credentialLost?.voice)
+        throw new NodeRunError(
+          'invalid_input',
+          `音色「${rec.credentialLost.voice}」所属的 Key 已失效，请改用其他音色或重新复刻后再运行`,
+        )
+      if (opt.action === 'resubmit' && rec?.credentialLost && opt.credentialChange !== true)
+        throw new NodeRunError('invalid_input', '原来的 Key 已不可用，重新提交需要确认改用当前 Key')
       const credentialResubmit =
         opt.action === 'resubmit' &&
         !!rec?.credentialLost &&

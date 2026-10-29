@@ -1029,7 +1029,12 @@ export function RecoveryBlock(props: {
               type="button"
               className="ui-btn ui-btn-danger ui-btn-xs"
               disabled={busy}
-              onClick={() => void act({ action: 'resubmit' })}
+              onClick={() =>
+                void act({
+                  action: 'resubmit',
+                  ...(r.credentialLost ? { credentialChange: true as const } : {}),
+                })
+              }
             >
               重新提交
             </button>

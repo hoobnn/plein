@@ -25,9 +25,9 @@ export function credentialNote(recovery: JobRecovery): string | undefined {
   const lost = recovery.credentialLost
   if (!lost) return undefined
   const reason = lost.reason === 'missing' ? '已删除' : '已被替换'
-  if (lost.voice)
-    return `音色「${lost.voice}」所属的 Key ${reason}，请在节点上改用其他音色，或重新复刻后再运行。`
   const label = recovery.credentialLabel ?? '原组'
+  if (lost.voice)
+    return `音色「${lost.voice}」所属的 Key「${label}」${reason}，请在节点上改用其他音色，或重新复刻后再运行。`
   return lost.reason === 'missing'
     ? `原来的 Key「${label}」已删除，无法取回之前的结果。为避免重复计费没有自动重新提交。`
     : `原来的 Key「${label}」已被替换，暂时无法取回结果。把这组 Key 改回原来的内容后可重新获取；不需要原结果的话，可以用当前 Key 重新提交（会再次计费）。`
