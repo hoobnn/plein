@@ -1156,7 +1156,45 @@ it('对照区直接标记衔接意见挂到当前候选，摘要与已解决联�
   )
 })
 
-it('换候选后之前的候选有衔接意见时提示重审', async () => {
+it('查看历史候选时只读并显示该候选自己的衔接意见', async () => {
+  const { doc } = fixture(true)
+  const a = doc.get('video-two')!.results![0]!
+  const b = { ...a, id: 'history-b' }
+  doc.mutable('video-two')!.set('results', [a, b])
+  // 先在 b 是采用项时记录，再切回 a；b 的意见只随 b 显示
+  doc.mutable('video-two')!.set('adopted', 'history-b')
+  expect(
+    recordCreativeReview(doc, 'video-two', {
+      target: { kind: 'video', assetId: 'a'.repeat(64), resultId: 'history-b' },
+      status: 'changes',
+      tags: ['continuity', 'continuity-lighting'],
+      note: '衔接：光向反了',
+    }),
+  ).toBeTruthy()
+  doc.mutable('video-two')!.set('adopted', a.id)
+  useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
+  workbenchReads(doc, [])
+  const { user } = renderApp(<ShotWorkbench />)
+  await user.selectOptions(screen.getByLabelText('工作台候选'), 'history-b')
+  const region = () => screen.getByLabelText('衔接意见')
+  await waitFor(() => expect(region().textContent).toContain('衔接需修改：光线'))
+  expect(region().textContent).toContain('衔接：光向反了')
+  expect(region().textContent).toContain('衔接意见记在已采用的候选上')
+  expect((screen.getByRole('button', { name: '标记需修改' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  )
+  await user.click(screen.getByRole('button', { name: '标记需修改' }))
+  expect(doc.get('video-two')?.reviews).toHaveLength(1)
+  expect(doc.get('video-two')?.reviews?.[0]?.target.resultId).toBe('history-b')
+  await user.selectOptions(screen.getByLabelText('工作台候选'), a.id)
+  await waitFor(() =>
+    expect((screen.getByRole('button', { name: '标记需修改' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    ),
+  )
+})
+
+it('查看非采用候选时提示已采用候选的衔接意见', async () => {
   const { doc } = fixture(true)
   expect(
     recordCreativeReview(doc, 'video-two', {
@@ -1167,15 +1205,29 @@ it('换候选后之前的候选有衔接意见时提示重审', async () => {
     }),
   ).toBeTruthy()
   const currentTwo = doc.get('video-two')!.results![0]!
-  doc.mutable('video-two')!.set('results', [currentTwo, { ...currentTwo, id: 'newest' }])
-  doc.mutable('video-two')!.set('adopted', 'newest')
+  doc.mutable('video-two')!.set('results', [currentTwo, { ...currentTwo, id: 'history-b' }])
+  useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
+  workbenchReads(doc, [])
+  const { user } = renderApp(<ShotWorkbench />)
+  await user.selectOptions(screen.getByLabelText('工作台候选'), 'history-b')
+  const region = () => screen.getByLabelText('衔接意见')
+  await waitFor(() => expect(region().textContent).toContain('此候选没有衔接意见'))
+  expect(region().textContent).toContain('衔接意见记在已采用的候选上')
+  expect(region().textContent).toContain('已采用候选有衔接意见：服装')
+  expect((screen.getByRole('button', { name: '标记需修改' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  )
+})
+
+it('有候选但没有采用项时提示先采用再记衔接意见', async () => {
+  const { doc } = fixture(true)
+  doc.mutable('video-two')!.set('adopted', null)
   useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
   workbenchReads(doc, [])
   renderApp(<ShotWorkbench />)
   const region = await screen.findByLabelText('衔接意见')
-  await waitFor(() =>
-    expect(region.textContent).toContain('之前的候选有衔接意见，当前候选尚未审阅衔接'),
-  )
+  await waitFor(() => expect(region.textContent).toContain('先采用一个候选再记衔接意见'))
+  expect(region.textContent).not.toContain('本镜还没有候选')
 })
 
 it('对照取同阶段的末帧观察，跳过其他时间点的帧样本', async () => {

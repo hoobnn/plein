@@ -6,8 +6,8 @@ import {
 } from '@plein/capabilities'
 import { getCreativeReview, sourceMapOf, type CanvasElement, type PleinDoc } from '@plein/doc'
 import { mentionName, type Shot } from '@plein/nodes'
-import { continuityIssueText } from './CreativeReviewForm'
 import { reviewNodesForShot, shotReviewStatus } from './reviewModel'
+import { continuityIssueText, hasContinuityOpinion } from './reviewTags'
 import { sourceExcerpt, sourceUnitStatus } from './sourceMapping'
 
 export type PrepCategory = 'missing' | 'source' | 'review'
@@ -148,7 +148,7 @@ export function storyboardPrep(
         const tags = new Set(
           nodes.flatMap((node) => {
             const review = getCreativeReview(node)
-            return review?.status === 'changes' ? review.tags : []
+            return hasContinuityOpinion(review) ? review!.tags : []
           }),
         )
         const continuity = continuityIssueText([...tags])

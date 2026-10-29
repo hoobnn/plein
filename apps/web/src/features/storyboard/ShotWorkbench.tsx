@@ -11,10 +11,10 @@ import {
   getCreativeReview,
   currentResult,
   readSourceSlice,
+  sameCreativeReviewTarget,
   sourceMapOf,
   sourceSnapshotState,
   type CanvasElement,
-  type CreativeReview,
   type CreativeReviewTarget,
   type NodeResult,
   type SourceSnapshot,
@@ -48,7 +48,8 @@ import { describeRecovery } from '../runs/recovery'
 import { submittedMedia } from '../generator/submittedMedia'
 import { BatchChecklist } from './BatchChecklist'
 import { CreativeReviewForm, reviewLabels } from './CreativeReviewForm'
-import { ContinuityNoteForm, hasContinuityOpinion } from './ContinuityNoteForm'
+import { ContinuityNoteForm, type ContinuityNoteView } from './ContinuityNoteForm'
+import { adoptedContinuityText } from './reviewTags'
 import { expandedNodes, shotsOf, type ShotSource } from './model'
 import { reviewNodesForShot, shotReviewStatus } from './reviewModel'
 import { ShotControls } from './ShotControls'
@@ -88,6 +89,14 @@ let nextInspectionRead = 0
 function engineKey(engine: Engine) {
   if (!engineKeys.has(engine)) engineKeys.set(engine, ++nextEngineKey)
   return engineKeys.get(engine)!
+}
+
+/** 候选结果 → 验收目标；只有图片 / 视频结果可挂意见。 */
+function continuityTargetOf(result: NodeResult | undefined): CreativeReviewTarget | undefined {
+  const value = result?.value
+  return result && value && (value.type === 'video' || value.type === 'image')
+    ? { kind: value.type, assetId: value.assetId, resultId: result.id }
+    : undefined
 }
 
 export function ShotWorkbench() {
@@ -313,31 +322,57 @@ function Workbench({
     (groups.get(previous.id) ?? []).find((n) => (n.params?.source as ShotSource)?.role === 'video')
   const currentIndex = shots.findIndex((item) => item.id === shotId)
   const references = node ? [...upstreams(engine, node.id, catalog).values()].flat() : []
-  // 衔接意见挂在本镜当前查看的候选上：有视频候选用视频，否则用镜头图
+  // 衔接意见记在本镜已采用候选上（有视频候选用视频，否则用镜头图）；
+  // 查看其他候选时表单只读，展示该候选自己的意见
   const continuityNode = [
     { node: videoNode, type: 'video' as const },
     { node: imageNode, type: 'image' as const },
   ].find(
     ({ node, type }) => !!node && (node.results ?? []).some((r) => r.value.type === type),
   )?.node
-  const continuityViewed =
+  const continuityAdoptedTarget = continuityNode ? creativeReviewTarget(continuityNode) : undefined
+  const continuityAdoptedReview = continuityNode
+    ? getCreativeReview(continuityNode, continuityAdoptedTarget)
+    : undefined
+  const continuityAdoptedResult = continuityNode ? currentResult(continuityNode) : undefined
+  const continuityViewedRaw =
     continuityNode && viewing?.nodeId === continuityNode.id
       ? continuityNode.results?.find((r) => r.id === viewing.candidateId)
       : undefined
-  const continuityCandidate = continuityNode
-    ? (continuityViewed ?? currentResult(continuityNode) ?? continuityNode.results?.[0])
-    : undefined
-  const continuityTarget =
-    continuityNode && continuityCandidate
-      ? creativeReviewTarget(continuityNode, continuityCandidate.port)
-      : undefined
-  const continuityReview = continuityNode
-    ? getCreativeReview(continuityNode, continuityTarget)
-    : undefined
-  const continuityPrior =
-    !!continuityTarget &&
-    !hasContinuityOpinion(continuityReview) &&
-    (continuityNode?.reviews ?? []).some((r) => hasContinuityOpinion(r))
+  // 没有采用项且未指定候选时不默认挑待选，提示先采用
+  const continuityViewed = continuityViewedRaw ?? continuityAdoptedResult
+  // 视频节点查看尾帧等非视频结果时取同组视频结果，不把帧图当衔接目标
+  const continuityViewedPrimary = (() => {
+    if (!continuityNode || !continuityViewed) return undefined
+    const primaryType = continuityNode === videoNode ? 'video' : 'image'
+    if (continuityViewed.value.type === primaryType) return continuityViewed
+    return (
+      continuityNode.results?.find(
+        (r) => r.runId === continuityViewed!.runId && r.value.type === primaryType,
+      ) ?? continuityAdoptedResult
+    )
+  })()
+  const continuityViewedTarget = continuityTargetOf(continuityViewedPrimary)
+  const continuityViewingAdopted = sameCreativeReviewTarget(
+    continuityViewedTarget,
+    continuityAdoptedTarget,
+  )
+  const continuity = {
+    node: continuityNode,
+    view: {
+      target: continuityAdoptedTarget,
+      targetReview: continuityAdoptedReview,
+      viewingAdopted: continuityViewingAdopted,
+      viewedTarget: continuityViewingAdopted ? undefined : continuityViewedTarget,
+      viewedReview: continuityViewingAdopted
+        ? undefined
+        : getCreativeReview(continuityNode, continuityViewedTarget),
+      adoptedOpinion: continuityViewingAdopted
+        ? undefined
+        : adoptedContinuityText(continuityAdoptedReview),
+      needAdopt: !!continuityNode && !continuityAdoptedTarget && !continuityViewedRaw,
+    } satisfies ContinuityNoteView,
+  }
   const changeShot = (id: string) => {
     if (!active() || id === shotId || !shots.some((item) => item.id === id)) return
     if (draft) drafts.set(shotId, draft)
@@ -599,12 +634,7 @@ function Workbench({
                       currentResult(beforeVideo)?.value.type === 'video' &&
                       currentResult(video)?.value.type === 'video'
                     }
-                    continuity={{
-                      node: continuityNode,
-                      target: continuityTarget,
-                      review: continuityReview,
-                      prior: continuityPrior,
-                    }}
+                    continuity={continuity}
                     writable={writable}
                   />
                   <div className="space-y-3">
@@ -1144,9 +1174,7 @@ function ShotComparison({
   candidatePrimary: boolean
   continuity: {
     node: CanvasElement | undefined
-    target: CreativeReviewTarget | undefined
-    review: CreativeReview | undefined
-    prior: boolean
+    view: ContinuityNoteView
   }
   writable(): boolean
 }) {
@@ -1251,12 +1279,10 @@ function ShotComparison({
         {side(shot, 'start')}
       </div>
       <ContinuityNoteForm
-        key={`${continuity.target ? creativeReviewKey(continuity.target) : 'none'}/${continuity.review?.at ?? 0}`}
+        key={`${continuity.view.target ? creativeReviewKey(continuity.view.target) : 'none'}/${continuity.view.targetReview?.at ?? 0}`}
         doc={engine.doc}
         node={continuity.node}
-        target={continuity.target}
-        review={continuity.review}
-        priorOpinion={continuity.prior}
+        view={continuity.view}
         writable={writable}
         primary={!candidatePrimary}
         canReview={canReview}
