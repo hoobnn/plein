@@ -6,12 +6,16 @@ import {
   continuityOf,
   currentContinuityObservations,
   currentShotPlan,
+  creativeReviewKey,
+  creativeReviewTarget,
   getCreativeReview,
   currentResult,
   readSourceSlice,
   sourceMapOf,
   sourceSnapshotState,
   type CanvasElement,
+  type CreativeReview,
+  type CreativeReviewTarget,
   type NodeResult,
   type SourceSnapshot,
   type SourceUnit,
@@ -44,6 +48,7 @@ import { describeRecovery } from '../runs/recovery'
 import { submittedMedia } from '../generator/submittedMedia'
 import { BatchChecklist } from './BatchChecklist'
 import { CreativeReviewForm, reviewLabels } from './CreativeReviewForm'
+import { ContinuityNoteForm, hasContinuityOpinion } from './ContinuityNoteForm'
 import { expandedNodes, shotsOf, type ShotSource } from './model'
 import { reviewNodesForShot, shotReviewStatus } from './reviewModel'
 import { ShotControls } from './ShotControls'
@@ -308,6 +313,31 @@ function Workbench({
     (groups.get(previous.id) ?? []).find((n) => (n.params?.source as ShotSource)?.role === 'video')
   const currentIndex = shots.findIndex((item) => item.id === shotId)
   const references = node ? [...upstreams(engine, node.id, catalog).values()].flat() : []
+  // 衔接意见挂在本镜当前查看的候选上：有视频候选用视频，否则用镜头图
+  const continuityNode = [
+    { node: videoNode, type: 'video' as const },
+    { node: imageNode, type: 'image' as const },
+  ].find(
+    ({ node, type }) => !!node && (node.results ?? []).some((r) => r.value.type === type),
+  )?.node
+  const continuityViewed =
+    continuityNode && viewing?.nodeId === continuityNode.id
+      ? continuityNode.results?.find((r) => r.id === viewing.candidateId)
+      : undefined
+  const continuityCandidate = continuityNode
+    ? (continuityViewed ?? currentResult(continuityNode) ?? continuityNode.results?.[0])
+    : undefined
+  const continuityTarget =
+    continuityNode && continuityCandidate
+      ? creativeReviewTarget(continuityNode, continuityCandidate.port)
+      : undefined
+  const continuityReview = continuityNode
+    ? getCreativeReview(continuityNode, continuityTarget)
+    : undefined
+  const continuityPrior =
+    !!continuityTarget &&
+    !hasContinuityOpinion(continuityReview) &&
+    (continuityNode?.reviews ?? []).some((r) => hasContinuityOpinion(r))
   const changeShot = (id: string) => {
     if (!active() || id === shotId || !shots.some((item) => item.id === id)) return
     if (draft) drafts.set(shotId, draft)
@@ -569,6 +599,13 @@ function Workbench({
                       currentResult(beforeVideo)?.value.type === 'video' &&
                       currentResult(video)?.value.type === 'video'
                     }
+                    continuity={{
+                      node: continuityNode,
+                      target: continuityTarget,
+                      review: continuityReview,
+                      prior: continuityPrior,
+                    }}
+                    writable={writable}
                   />
                   <div className="space-y-3">
                     <div>
@@ -1093,6 +1130,8 @@ function ShotComparison({
   onReview,
   canReview,
   candidatePrimary,
+  continuity,
+  writable,
 }: {
   engine: Engine
   canvasId: string
@@ -1103,6 +1142,13 @@ function ShotComparison({
   onReview(): void
   canReview: boolean
   candidatePrimary: boolean
+  continuity: {
+    node: CanvasElement | undefined
+    target: CreativeReviewTarget | undefined
+    review: CreativeReview | undefined
+    prior: boolean
+  }
+  writable(): boolean
 }) {
   const record = continuityOf(engine.doc, boardId)
   // 第一镜没有可对照的内容，只留一行，不占版面
@@ -1204,19 +1250,18 @@ function ShotComparison({
         {side(previous, 'end')}
         {side(shot, 'start')}
       </div>
-      <button
-        type="button"
-        className={`ui-btn ${canReview && !candidatePrimary ? 'ui-btn-primary' : 'ui-btn-secondary'}`}
-        disabled={!canReview}
-        title={
-          canReview
-            ? '意见记录在本镜当前视频候选上，换候选后需重新审阅'
-            : '相邻两镜都有已采用的视频后，可循环回看切点并记录衔接意见'
-        }
-        onClick={onReview}
-      >
-        记录衔接意见
-      </button>
+      <ContinuityNoteForm
+        key={`${continuity.target ? creativeReviewKey(continuity.target) : 'none'}/${continuity.review?.at ?? 0}`}
+        doc={engine.doc}
+        node={continuity.node}
+        target={continuity.target}
+        review={continuity.review}
+        priorOpinion={continuity.prior}
+        writable={writable}
+        primary={!candidatePrimary}
+        canReview={canReview}
+        onReview={onReview}
+      />
     </section>
   )
 }

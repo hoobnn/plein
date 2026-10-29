@@ -284,4 +284,47 @@ describe('逐镜准备模型', () => {
     doc.flush()
     expect(storyboardPrep(doc, boardId, [current]).count).toBe(0)
   })
+
+  it('changes 含衔接细分时列出细分项并指到镜头工作台，非衔接维持原样', () => {
+    const { doc, boardId, shot } = fixture([])
+    const current = shot(1, { dialogue: [], sfx: '' })
+    const id = createElement(
+      doc,
+      node({
+        nodeType: 'plein/video',
+        params: { source: { storyboard: boardId, shot: current.id, role: 'video' } },
+        ports: { inputs: [], outputs: [{ id: 'video', label: '视频', type: 'video' }] },
+      }),
+    )
+    addResults(doc, id, [
+      {
+        id: 'result-video',
+        runId: 'run-video',
+        port: 'video',
+        at: 1,
+        value: { type: 'video', assetId: 'asset-video' },
+      },
+    ])
+    const target = () => creativeReviewTarget(doc.get(id))!
+    recordCreativeReview(doc, id, {
+      target: target(),
+      status: 'changes',
+      tags: ['continuity', 'continuity-costume', 'continuity-lighting'],
+    })
+    doc.flush()
+    expect(storyboardPrep(doc, boardId, [current]).shots[0]?.issues).toContainEqual({
+      id: 'review',
+      category: 'review',
+      label: '衔接需修改：服装、光线',
+      shotId: current.id,
+      workbench: true,
+    })
+    recordCreativeReview(doc, id, { target: target(), status: 'changes', tags: ['composition'] })
+    doc.flush()
+    const issue = storyboardPrep(doc, boardId, [current]).shots[0]?.issues.find(
+      (item) => item.id === 'review',
+    )
+    expect(issue).toMatchObject({ id: 'review', label: '审核提出的修改待处理' })
+    expect(issue?.workbench).toBeUndefined()
+  })
 })

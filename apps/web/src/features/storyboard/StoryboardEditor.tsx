@@ -489,6 +489,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     if (!issue.shotId) return
     setSceneFilter('')
     setMissingOnly(false)
+    if (issue.workbench) {
+      // 工作台打开时会接管整个面板，直接把镜头交给它
+      useCanvas.getState().openShotWorkbench({ boardId: id, shotId: issue.shotId })
+      return
+    }
     if (issue.category === 'review') {
       setMode('review')
       setFocusTarget({ shotId: issue.shotId, review: true })

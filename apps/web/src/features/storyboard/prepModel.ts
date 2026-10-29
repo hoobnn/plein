@@ -4,8 +4,9 @@ import {
   referenceAssets,
   resolveShotAsset,
 } from '@plein/capabilities'
-import { sourceMapOf, type CanvasElement, type PleinDoc } from '@plein/doc'
+import { getCreativeReview, sourceMapOf, type CanvasElement, type PleinDoc } from '@plein/doc'
 import { mentionName, type Shot } from '@plein/nodes'
+import { continuityIssueText } from './CreativeReviewForm'
 import { reviewNodesForShot, shotReviewStatus } from './reviewModel'
 import { sourceExcerpt, sourceUnitStatus } from './sourceMapping'
 
@@ -23,6 +24,8 @@ export interface PrepIssue {
   assetId?: string
   dialogueId?: string
   sourceUnitId?: string
+  /** 在镜头工作台处理（如衔接意见），不去分镜表定位字段 */
+  workbench?: boolean
 }
 
 export interface ShotPrep {
@@ -140,12 +143,23 @@ export function storyboardPrep(
     const nodes = reviewNodesForShot(shot, groups.get(shot.id) ?? [])
     if (nodes.length) {
       const status = shotReviewStatus(nodes, shot)
-      if (status !== 'usable')
+      if (status !== 'usable') {
+        // 衔接细分项来自采用候选的验收标签；列出后直接去镜头工作台处理
+        const tags = new Set(
+          nodes.flatMap((node) => {
+            const review = getCreativeReview(node)
+            return review?.status === 'changes' ? review.tags : []
+          }),
+        )
+        const continuity = continuityIssueText([...tags])
         add({
           id: 'review',
           category: 'review',
-          label: status === 'changes' ? '审核提出的修改待处理' : '已有节点待人工审核',
+          label:
+            status === 'changes' ? (continuity ?? '审核提出的修改待处理') : '已有节点待人工审核',
+          ...(continuity ? { workbench: true as const } : {}),
         })
+      }
     }
     return {
       shotId: shot.id,

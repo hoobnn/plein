@@ -1,13 +1,17 @@
 // @vitest-environment happy-dom
 import {
+  addResults,
   addSourceUnit,
   captureSourceSnapshot,
   connect,
+  creativeReviewTarget,
   createElement,
   markSourceRead,
+  recordCreativeReview,
   sourceMapOf,
 } from '@plein/doc'
 import { expect, it } from 'vite-plus/test'
+import { useCanvas } from '../../stores/canvas'
 import { mockFetch } from '../../testing/fetch'
 import { useCanvas } from '../../stores/canvas'
 import { act, fireEvent, renderApp, screen, waitFor, within } from '../../testing/render'
@@ -363,4 +367,55 @@ it('人工审核待办定位到已有镜头的审核视图', async () => {
   expect(await screen.findByRole('table', { name: '逐镜审核' })).toBeDefined()
   expect(screen.getByTestId('storyboard-current-mode').textContent).toBe('当前：审核镜头')
   expect(screen.getByRole('row', { name: /镜头 01/ })).toBeDefined()
+})
+
+it('衔接需修改列出细分项并定位到镜头工作台', async () => {
+  const f = storyboardFixture({ count: 2, expanded: true })
+  const video = [...f.doc.elements()].find((el) => {
+    const source = el.params?.source as { role?: string; shot?: string } | undefined
+    return source?.role === 'video' && source.shot === 'shot-1'
+  })!
+  addResults(f.doc, video.id, [
+    {
+      id: 'video-result',
+      runId: 'run-video',
+      port: 'video',
+      at: 1,
+      value: { type: 'video', assetId: 'a'.repeat(64) },
+    },
+  ])
+  recordCreativeReview(f.doc, video.id, {
+    target: creativeReviewTarget(f.doc.get(video.id))!,
+    status: 'changes',
+    tags: ['continuity', 'continuity-costume'],
+  })
+  act(f.flush)
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    const input = path.match(/\/nodes\/([^/]+)\/input$/)
+    if (input)
+      return Response.json({
+        v: 1,
+        nodeId: input[1],
+        nodeType: 'plein/video',
+        preparedAt: 1,
+        status: 'ready',
+        inputHash: `hash-${input[1]}`,
+        params: {},
+        model: null,
+        prompt: '',
+        inputs: {},
+        refs: [],
+        blocked: [],
+        notices: [],
+      })
+    if (path.endsWith('/jobs/latest')) return Response.json({ jobs: [], groups: [] })
+    return undefined
+  })
+  const app = renderApp(<StoryboardEditor />)
+  await app.user.click(screen.getByRole('button', { name: /准备 \d+ 项/ }))
+  await app.user.click(screen.getByRole('button', { name: '定位准备项：衔接需修改：服装' }))
+  await waitFor(() => expect(useCanvas.getState().shotWorkbench?.shotId).toBe('shot-1'))
+  expect(useCanvas.getState().storyboard).toBeNull()
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: '分镜表' })).toBeNull())
 })
