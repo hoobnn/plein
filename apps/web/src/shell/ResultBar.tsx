@@ -1,6 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import { type CanvasElement, primaryResult, elementMedia, videoAssetOf } from '@plein/doc'
-import { presetsFor, SHOT_ANALYSIS_TYPE } from '@plein/nodes'
+import { presetsFor, SHOT_ANALYSIS_TYPE, STAGE_TYPE } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { useState } from 'react'
 import { mediaOf, splitGrid } from '../canvas/grid'
@@ -161,7 +161,7 @@ function ResultBarHost({ engine }: { engine: Engine }) {
           />
         )
       )}
-      {!engine.doc.readOnly && asset && canvasId && (
+      {!engine.doc.readOnly && asset && canvasId && el.nodeType !== STAGE_TYPE && (
         // key 跟着素材走：换选一个素材时把已读的元信息和打开的表单一起丢掉
         <MediaTools
           key={`${el.id}:${asset.assetId}`}
@@ -203,7 +203,9 @@ export function ResultActions({
   const { pending } = continuation
   const busy = !!pending
   const [masking, setMasking] = useState(false)
-  const editNode = media.kind === 'image' ? regionEditNode(catalog) : undefined
+  // 构图截图是空间参考，不应把灰模当作普通成图去重绘、切宫格或直接生成视频。
+  const stage = el.kind === 'node' && el.nodeType === STAGE_TYPE
+  const editNode = media.kind === 'image' && !stage ? regionEditNode(catalog) : undefined
   const [at, setAt] = useState('')
   const { notify, view } = useCanvas.getState()
   const imageNode = nodeFor(catalog, 'image.generate')
@@ -290,7 +292,7 @@ export function ResultActions({
   const image = media.kind === 'image'
   return (
     <>
-      {image && imageNode && presets.length > 0 && (
+      {!stage && image && imageNode && presets.length > 0 && (
         <button
           type="button"
           className={`${btn} ui-btn-menu`}
@@ -303,7 +305,7 @@ export function ResultActions({
           <Icon name="chevronDown" size={12} />
         </button>
       )}
-      {image && videoNode && (
+      {!stage && image && videoNode && (
         <button
           type="button"
           className={btn}
@@ -355,7 +357,7 @@ export function ResultActions({
           {pending.signal.aborted ? '取消中…' : '取消取帧'}
         </button>
       )}
-      {image && remote && (
+      {!stage && image && remote && (
         <button
           type="button"
           className={`${btn} ui-btn-menu`}
@@ -368,7 +370,7 @@ export function ResultActions({
           <Icon name="chevronDown" size={12} />
         </button>
       )}
-      {remote && variant === 'inline' && (
+      {!stage && remote && variant === 'inline' && (
         <MediaTools
           key={`${el.id}:${media.assetId}`}
           engine={engine}
@@ -376,9 +378,9 @@ export function ResultActions({
           variant="inline"
         />
       )}
-      {remote && <SourceRestoreButton engine={engine} element={el} className={btn} />}
-      {remote && <LibraryAdd media={[resultActionMedia(el, media)]} variant={variant} />}
-      {(remote || (image && (imageNode || videoNode)) || continueNode || editNode) && (
+      {!stage && remote && <SourceRestoreButton engine={engine} element={el} className={btn} />}
+      {!stage && remote && <LibraryAdd media={[resultActionMedia(el, media)]} variant={variant} />}
+      {!stage && (remote || (image && (imageNode || videoNode)) || continueNode || editNode) && (
         <span aria-hidden="true" className="ui-bar-sep" />
       )}
       <AssetDownloadButton

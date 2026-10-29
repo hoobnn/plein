@@ -4,6 +4,7 @@ import { createDoc, createElement, currentResult, setParam, updateElement } from
 import { defaultStageScene, recordStageKeyframe, stageSceneOf, STAGE_TYPE } from '@plein/nodes'
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 import { useCanvas } from '../../stores/canvas'
+import * as canvasImport from '../../canvas/import'
 import { mockFetch } from '../../testing/fetch'
 import { act, fireEvent, renderApp, screen, waitFor, within } from '../../testing/render'
 import { Modal } from '../../ui/Modal'
@@ -104,6 +105,53 @@ function uploads() {
   })
   return () => count
 }
+
+it('将 Blender 渲染作为独立素材导入画布，关闭构图后定位结果', async () => {
+  const { engine, onClose } = setup()
+  const load = vi
+    .spyOn(canvasImport, 'importFiles')
+    .mockResolvedValue({ created: ['new-render'], skipped: [] })
+  const reveal = vi.spyOn(canvasImport, 'revealImports').mockImplementation(() => {})
+  const file = new File(['movie'], 'render.mp4', { type: 'video/mp4' })
+  const input = document.querySelector<HTMLInputElement>(
+    'input[aria-label="选择 Blender 渲染文件"]',
+  )!
+  fireEvent.change(input, { target: { files: [file] } })
+  await waitFor(() => expect(onClose).toHaveBeenCalled())
+  expect(load).toHaveBeenCalledWith(
+    engine,
+    [file],
+    { x: 520, y: 135 },
+    undefined,
+    expect.objectContaining({ select: false }),
+  )
+  expect(reveal).toHaveBeenCalledWith(engine, ['new-render'])
+})
+
+it('关闭构图时中止尚未完成的 Blender 渲染导入', async () => {
+  const { user } = setup()
+  let signal: AbortSignal | undefined
+  let finish!: (value: { created: string[]; skipped: never[] }) => void
+  vi.spyOn(canvasImport, 'importFiles').mockImplementation(
+    (_engine, _files, _at, _progress, options) => {
+      signal = options?.signal
+      return new Promise((resolve) => {
+        finish = resolve
+      })
+    },
+  )
+  const reveal = vi.spyOn(canvasImport, 'revealImports').mockImplementation(() => {})
+  const input = document.querySelector<HTMLInputElement>(
+    'input[aria-label="选择 Blender 渲染文件"]',
+  )!
+  fireEvent.change(input, {
+    target: { files: [new File(['png'], 'render.png', { type: 'image/png' })] },
+  })
+  await user.click(screen.getByRole('button', { name: '关闭' }))
+  expect(signal?.aborted).toBe(true)
+  await act(async () => finish({ created: [], skipped: [] }))
+  expect(reveal).not.toHaveBeenCalled()
+})
 
 it('坐标负数草稿、空白、取消和越界提交不会误移动对象', async () => {
   const { user, read, onClose } = setup()

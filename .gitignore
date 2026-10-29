@@ -81,3 +81,6 @@ Desktop.ini
 .vitest/
 # Playwright MCP 的截图、快照与日志输出
 .playwright-mcp/
+
+# Python 运行缓存（Blender 插件测试脚本）
+__pycache__/

@@ -16,6 +16,7 @@ export function Modal({
   align = 'center',
   top = false,
   isolateKeys = false,
+  fullScreen = false,
   initialFocus,
   className = '',
   children,
@@ -28,6 +29,8 @@ export function Modal({
   top?: boolean
   /** 焦点在面板里时，画布不响应键盘（删除、方向键等） */
   isolateKeys?: boolean
+  /** 占满应用窗口，适合需要大面积操作的编辑器 */
+  fullScreen?: boolean
   /** 编辑类面板可直接聚焦正文，省去再次点击 */
   initialFocus?: React.RefObject<HTMLElement | null>
   /** 面板的尺寸和布局 */
@@ -97,7 +100,7 @@ export function Modal({
           className={`ui-dialog-scrim pointer-events-auto fixed inset-0 bg-scrim ${top ? 'z-50' : 'z-40'}`}
         />
         <Dialog.Viewport
-          className={`pointer-events-auto fixed inset-0 flex justify-center p-4 sm:p-6 ${
+          className={`pointer-events-auto fixed inset-0 flex justify-center ${fullScreen ? 'p-0' : 'p-4 sm:p-6'} ${
             top ? 'z-50' : 'z-40'
           } ${align === 'bottom' ? 'items-end pb-16 sm:pb-16' : 'items-center'}`}
         >
@@ -122,7 +125,7 @@ export function Modal({
             initialFocus={initialFocus}
             data-plein-active={isolateKeys ? '' : undefined}
             {...exit}
-            className={`ui-dialog relative flex max-h-full w-full flex-col overflow-hidden rounded-2xl bg-surface shadow-4 outline-none ${className}`}
+            className={`ui-dialog relative flex max-h-full w-full flex-col overflow-hidden ${fullScreen ? 'rounded-none' : 'rounded-2xl'} bg-surface shadow-4 outline-none ${className}`}
           >
             {children}
           </Dialog.Popup>

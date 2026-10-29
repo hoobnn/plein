@@ -22,6 +22,7 @@ import { Menu } from '@base-ui/react/menu'
 import { useEffect, useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { useDocVersion } from '../../canvas/hooks'
+import { importFiles, revealImports } from '../../canvas/import'
 import { useCanvas } from '../../stores/canvas'
 import { Icon } from '../../ui/icons'
 import { Modal, ModalHeader } from '../../ui/Modal'
@@ -33,6 +34,7 @@ import { stageRecordsOf } from './records'
 import { applyStageHistory, canStageHistory, writeStageEdit } from './history'
 import { stageObjectName, stageObjectPosition } from './placement'
 import { type StageMode, type StageTool, StageView } from './view'
+import { downloadBlenderStage } from './blender'
 
 /** 人物颜色：灰模上区分人物，优先使用未占用的颜色 */
 const FIGURE_COLORS = ['#7aa2ff', '#ff8a7a', '#6fd3a8', '#f2c14e', '#b18cff', '#5cc8e0']
@@ -98,6 +100,28 @@ export function StagePanel({
   const [mode, setMode] = useState<StageMode>('shot')
   const [tool, setTool] = useState<StageTool>('move')
   const [busy, setBusy] = useState(false)
+  const blenderFile = useRef<HTMLInputElement | null>(null)
+  const blenderImport = useRef<AbortController | null>(null)
+  useEffect(() => {
+    const guard = () => {
+      if (
+        engine.doc.readOnly ||
+        engine.doc.get(id)?.locked ||
+        engine.doc.elementMaps.get(id) !== target.current ||
+        target.current?.get('nodeType') !== STAGE_TYPE
+      )
+        blenderImport.current?.abort()
+    }
+    engine.doc.ydoc.on('afterTransaction', guard)
+    const unsubscribe = useCanvas.subscribe((state) => {
+      if (state.engine !== engine || state.stage !== id) blenderImport.current?.abort()
+    })
+    return () => {
+      unsubscribe()
+      engine.doc.ydoc.off('afterTransaction', guard)
+      blenderImport.current?.abort()
+    }
+  }, [engine, id])
   const capturing = useRef(false)
   const [preview, setPreview] = useState<'loading' | 'ready' | 'error'>('loading')
   const [previewAttempt, retryPreview] = useState(0)
@@ -373,8 +397,49 @@ export function StagePanel({
     setSelected(null)
   }
   const close = () => {
+    blenderImport.current?.abort()
     view.current?.finishCamera()
     onClose()
+  }
+  const importBlenderRender = async (file: File | undefined) => {
+    if (!file || !canWrite() || blenderImport.current) return
+    if (
+      !/^(image|video)\//.test(file.type) &&
+      !/\.(png|jpe?g|webp|gif|mp4|mov|webm)$/i.test(file.name)
+    ) {
+      notify('请选择 Blender 导出的图片或视频')
+      return
+    }
+    const rect = engine.doc.worldRect(id)
+    if (!rect) return
+    const controller = new AbortController()
+    blenderImport.current = controller
+    setBusy(true)
+    try {
+      const result = await importFiles(
+        engine,
+        [file],
+        { x: rect.x + rect.w + 40, y: rect.y + rect.h / 2 },
+        undefined,
+        {
+          signal: controller.signal,
+          select: false,
+        },
+      )
+      if (controller.signal.aborted || !isTarget() || !canWrite()) return
+      if (!result.created.length) {
+        notify(`导入失败：${result.skipped[0]?.reason ?? '无法识别该文件'}`)
+        return
+      }
+      notify('已将 Blender 渲染结果添加到画布')
+      onClose()
+      revealImports(engine, result.created)
+    } catch (error) {
+      if (!controller.signal.aborted) notify(`导入失败：${(error as Error).message}`)
+    } finally {
+      if (blenderImport.current === controller) blenderImport.current = null
+      if (!controller.signal.aborted) setBusy(false)
+    }
   }
   const shoot = async () => {
     const v = view.current
@@ -414,13 +479,55 @@ export function StagePanel({
   }
 
   return (
-    <Modal label="3D 构图" onClose={close} className="h-full max-w-7xl" isolateKeys>
+    <Modal label="3D 构图" onClose={close} className="h-full max-w-none" isolateKeys fullScreen>
       <ModalHeader
         title={el?.name ?? '3D 构图'}
         onClose={close}
         meta={<span className="ui-chip">实验</span>}
       >
         <span className="text-xs text-ink-subtle tabular-nums">第 {scene.rev} 版</span>
+        <a
+          className="ui-btn ui-btn-quiet"
+          href="/plein_blender_bridge.py"
+          download="plein_blender_bridge.py"
+          title="下载 Blender 插件，在 Blender 的插件设置中安装"
+        >
+          Blender 插件
+        </a>
+        <button
+          type="button"
+          className="ui-btn ui-btn-secondary"
+          title="导出当前构图和预演关键帧，使用 Plein Blender 插件导入"
+          onClick={() => {
+            view.current?.finishCamera()
+            downloadBlenderStage(el?.name ?? 'Plein 构图', readScene(), timeRef.current)
+            notify('已导出 Blender 场景文件；在 Blender 中用 Plein 插件导入')
+          }}
+        >
+          <Icon name="download" size={16} />
+          导出到 Blender
+        </button>
+        <input
+          ref={blenderFile}
+          type="file"
+          accept="image/*,video/*"
+          aria-label="选择 Blender 渲染文件"
+          hidden
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0]
+            event.currentTarget.value = ''
+            void importBlenderRender(file)
+          }}
+        />
+        <button
+          type="button"
+          className="ui-btn ui-btn-secondary"
+          title="将 Blender 导出的图片或视频添加到画布"
+          disabled={locked || busy}
+          onClick={() => blenderFile.current?.click()}
+        >
+          {blenderImport.current ? '导入中…' : '导入 Blender 渲染'}
+        </button>
         {(['undo', 'redo'] as const).map((direction) => (
           <button
             key={direction}
@@ -446,7 +553,11 @@ export function StagePanel({
           title="按机位截一张灰模构图，作为这个节点的新结果"
           onClick={() => void shoot()}
         >
-          {busy ? <span className="ui-spinner size-3.5" /> : <Icon name="image" size={16} />}
+          {capturing.current ? (
+            <span className="ui-spinner size-3.5" />
+          ) : (
+            <Icon name="image" size={16} />
+          )}
           截图
         </button>
       </ModalHeader>

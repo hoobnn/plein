@@ -5,13 +5,13 @@ import { openDoc } from '@plein/doc/testing'
 import type { Catalog } from '@plein/protocol'
 import type { ComponentProps } from 'react'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { act, renderApp, resetStoreAfterEach, screen } from '../testing/render'
+import { act, renderApp, resetStoreAfterEach, screen, within } from '../testing/render'
 import { mockFetch } from '../testing/fetch'
 import { mockResizeObserver } from '../testing/browser'
 import { useCanvas } from '../stores/canvas'
 import { useCatalog } from '../stores/catalog'
 import type { MaskEditor } from '../features/generator/MaskEditor'
-import { ResultBar } from './ResultBar'
+import { ResultActions, ResultBar } from './ResultBar'
 
 const editor = vi.hoisted(() => ({ props: null as ComponentProps<typeof MaskEditor> | null }))
 vi.mock('../features/generator/MaskEditor', () => ({
@@ -114,3 +114,31 @@ for (const label of ['局部重绘', '预设', '宫格切分']) {
     }
   })
 }
+
+it('3D 构图截图只提供查看和下载，不套用普通图片的编辑工具', () => {
+  const f = setup()
+  const id = createElement(f.doc, {
+    kind: 'node',
+    nodeType: 'plein/stage',
+    name: '宿舍构图',
+    x: 400,
+    y: 0,
+    w: 320,
+    h: 240,
+  })
+  const { container } = renderApp(
+    <ResultActions
+      engine={f.engine}
+      el={f.doc.get(id)!}
+      media={{ assetId: 'stage-shot', kind: 'image' }}
+      catalog={catalog}
+      remote
+      variant="inline"
+    />,
+  )
+  const actions = within(container)
+  expect(actions.getByRole('button', { name: '全屏查看' })).toBeTruthy()
+  expect(actions.getByRole('button', { name: /下载/ })).toBeTruthy()
+  for (const name of ['预设', '生成视频', '局部重绘', '宫格切分', '媒体工具', '存入资产库'])
+    expect(actions.queryByRole('button', { name })).toBeNull()
+})
