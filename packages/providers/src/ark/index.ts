@@ -1,5 +1,5 @@
 import { videoReferenceProblem, videoReferencePrompt } from '@plein/plugin-sdk'
-import { referenceUploader } from './reference-upload'
+import { referenceStorageHost, referenceUploader } from './reference-upload'
 import { videoReferences } from '../shared/video-references'
 import {
   type AssetRef,
@@ -14,6 +14,7 @@ import {
   type ProviderErrorCode,
   type ProviderContext,
   type ProviderOutput,
+  type PollResult,
 } from '@plein/plugin-sdk'
 import { z } from 'zod'
 import {
@@ -30,18 +31,71 @@ import { chatCompletion, requireSseDone } from '../shared/llm'
 import { sizeByArea, tierEdge } from '../size'
 
 const BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
+// Agent Plan 个人版的专属数据面，只认专属 Key 和套餐模型名
+const PLAN_BASE_URL = 'https://ark.cn-beijing.volces.com/api/plan/v3'
 const NETWORK = ['*.volces.com', '*.byteimg.com', '*.ibytedtos.com', '*.byteicdn.com']
 const settings = z.object({
+  referenceStorage: z
+    .enum(['tos', 'oss', 'cos', 's3'])
+    .default('tos')
+    .meta({
+      title: '视频参考存储',
+      description: '仅本地参考视频需要；图片和音频参考直接随请求发送',
+      labels: {
+        tos: '火山引擎 TOS',
+        oss: '阿里云 OSS',
+        cos: '腾讯云 COS',
+        s3: '自建 S3 兼容（RustFS / MinIO / SeaweedFS 等）',
+      },
+    }),
+  referenceEndpoint: z.string().default('').meta({
+    title: 'S3 兼容地址',
+    description:
+      '仅「自建 S3 兼容」填写，须为方舟能从公网访问的 https 地址，如 https://s3.example.com:9000',
+  }),
+  referencePathStyle: z.boolean().default(false).meta({
+    title: '路径式访问',
+    description: '仅「自建 S3 兼容」生效：桶名放在路径而不是域名里，RustFS / MinIO 通常需要开启',
+  }),
   referenceBucket: z.string().default('').meta({
-    title: '视频参考 TOS 桶',
+    title: '视频参考存储桶',
     description: '私有桶；上传至 plein/video-references/，建议为此前缀配置生命周期清理',
   }),
-  referenceRegion: z.string().default('cn-beijing').meta({ title: '视频参考 TOS 地域' }),
+  referenceRegion: z.string().default('cn-beijing').meta({
+    title: '视频参考存储地域',
+    description:
+      'TOS 如 cn-beijing；OSS 如 cn-hangzhou；COS 如 ap-guangzhou；自建服务一般为 us-east-1',
+  }),
   customChatModel: z.string().default('').meta({ title: '自定义对话模型 / Endpoint ID' }),
   customImageModel: z.string().default('').meta({ title: '自定义图片模型 / Endpoint ID' }),
   customVideoModel: z.string().default('').meta({ title: '自定义视频模型 / Endpoint ID' }),
 })
-type Context = ProviderContext<z.output<typeof settings>>
+// Agent Plan 的文本模型不许 API 调用，不留自定义对话槽
+const planSettings = settings.omit({ customChatModel: true })
+type Context = ProviderContext<z.output<typeof planSettings>>
+/** 按量付费数据面，或 Agent Plan 套餐数据面 */
+type Plane = 'api' | 'plan'
+
+// 套餐内的预置模型名与按量版本号不同；未列出的模型（对话、Seedream Lite）不在套餐内
+const PLAN_MODELS: Record<string, string> = {
+  'doubao-seedream-5-0-pro-260628': 'doubao-seedream-5.0-pro',
+  'doubao-seedream-5-0-flash-260915': 'doubao-seedream-5.0-flash',
+  'doubao-seedance-2-5-260628': 'doubao-seedance-2.5',
+  'doubao-seedance-2-0-260128': 'doubao-seedance-2.0',
+  'doubao-seedance-2-0-fast-260128': 'doubao-seedance-2.0-fast',
+  'doubao-seedance-2-0-mini-260615': 'doubao-seedance-2.0-mini',
+}
+
+const SECRET = { api: 'ARK_API_KEY', plan: 'ARK_AGENT_PLAN_API_KEY' } as const
+
+function apiKey(plane: Plane, ctx: Context) {
+  return ctx.secret(SECRET[plane])
+}
+
+/** 请求体里的模型名：套餐换成套餐模型名，自定义模型原样透传 */
+function wireModel(plane: Plane, model: string) {
+  return plane === 'plan' ? (PLAN_MODELS[model] ?? model) : model
+}
 
 // Seedream 宽高比 1/16–16 都能给；auto 只传分辨率档位，比例由模型按提示词决定
 const SEEDREAM_ASPECTS = ['auto', '21:9', '16:9', '3:2', '4:3', '1:1', '3:4', '2:3', '9:16']
@@ -272,13 +326,14 @@ function errorInfo(value: unknown, status = 0, secret?: string): ProviderError {
 }
 
 async function request(
+  plane: Plane,
   ctx: Context,
   path: string,
   body?: Json,
   method: Method = body ? 'POST' : 'GET',
 ): Promise<Json> {
-  const key = ctx.secret('ARK_API_KEY')
-  if (!key) throw new ProviderError('auth', '请先配置 ARK_API_KEY')
+  const key = apiKey(plane, ctx)
+  if (!key) throw new ProviderError('auth', `请先配置 ${SECRET[plane]}`)
   const encoded = body ? JSON.stringify(body) : undefined
   if (encoded && Buffer.byteLength(encoded, 'utf8') > 64 * 1024 * 1024)
     invalid('火山方舟请求体超过 64 MB，请缩小参考素材')
@@ -288,7 +343,7 @@ async function request(
   }
   const response = await send(
     ctx,
-    `${BASE_URL}${path}`,
+    `${plane === 'plan' ? PLAN_BASE_URL : BASE_URL}${path}`,
     {
       method,
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
@@ -392,7 +447,12 @@ async function chat(model: string, input: CapabilityInput<'text.chat'>, ctx: Con
   })
 }
 
-async function image(model: string, input: CapabilityInput<'image.generate'>, ctx: Context) {
+async function image(
+  plane: Plane,
+  model: string,
+  input: CapabilityInput<'image.generate'>,
+  ctx: Context,
+) {
   if (!input.prompt.trim()) invalid('图片提示词不能为空')
   if (input.negativePrompt) invalid('Seedream 不支持独立 negativePrompt，请合并到 prompt')
   if (input.seed !== undefined && model.startsWith('doubao-seedream-5-'))
@@ -415,7 +475,7 @@ async function image(model: string, input: CapabilityInput<'image.generate'>, ct
       'output_format',
       'optimize_prompt_options',
     ]),
-    model,
+    model: wireModel(plane, model),
     prompt: input.prompt,
     response_format: 'b64_json',
   }
@@ -507,13 +567,13 @@ async function image(model: string, input: CapabilityInput<'image.generate'>, ct
     body.sequential_image_generation = 'auto'
     body.sequential_image_generation_options = { max_images: count }
   }
-  const data = await request(ctx, '/images/generations', body)
+  const data = await request(plane, ctx, '/images/generations', body)
   if (!Array.isArray(data.data) || !data.data.length)
     throw new ProviderError('unknown', '火山方舟响应缺少图片')
   const outputs = data.data.map((item): ProviderOutput => {
     const result = asJson(item)
     if (result.error) {
-      const error = errorInfo(result.error, 0, ctx.secret('ARK_API_KEY'))
+      const error = errorInfo(result.error, 0, apiKey(plane, ctx))
       throw new ProviderError(error.code, error.message, { retryable: false })
     }
     const format = result.output_format ?? body.output_format ?? 'jpeg'
@@ -534,7 +594,12 @@ async function image(model: string, input: CapabilityInput<'image.generate'>, ct
   return { state: 'succeeded' as const, outputs, usage: { images: outputs.length } }
 }
 
-async function cutout(model: string, input: CapabilityInput<'image.process'>, ctx: Context) {
+async function cutout(
+  plane: Plane,
+  model: string,
+  input: CapabilityInput<'image.process'>,
+  ctx: Context,
+) {
   if (input.operation !== 'cutout') invalid('当前 Seedream 精修仅支持透明图层抠图')
   if (input.image.kind !== 'image') invalid('图层抠图需要图片原图')
   const source = await ctx.files.read(input.image)
@@ -555,8 +620,8 @@ async function cutout(model: string, input: CapabilityInput<'image.process'>, ct
     width * height > 36000000
   )
     invalid('图层抠图原图需要有效尺寸，宽高比为 1/16–16，总像素为 262144–36000000')
-  const data = await request(ctx, '/images/generations', {
-    model,
+  const data = await request(plane, ctx, '/images/generations', {
+    model: wireModel(plane, model),
     image: `data:${source.mime};base64,${Buffer.from(source.data).toString('base64')}`,
     prompt: input.prompt || '将主体与背景拆分，主体作为独立透明图层，保留边缘细节',
     layer_decomposition: true,
@@ -622,7 +687,12 @@ async function cutout(model: string, input: CapabilityInput<'image.process'>, ct
   return { state: 'succeeded' as const, outputs }
 }
 
-async function video(model: string, input: CapabilityInput<'video.generate'>, ctx: Context) {
+async function video(
+  plane: Plane,
+  model: string,
+  input: CapabilityInput<'video.generate'>,
+  ctx: Context,
+) {
   if (!input.prompt.trim() && !input.firstFrame && !input.references?.length)
     invalid('视频需要提示词或图片参考')
   if (input.lastFrame && !input.firstFrame) invalid('尾帧需要同时提供首帧')
@@ -642,7 +712,7 @@ async function video(model: string, input: CapabilityInput<'video.generate'>, ct
       'omni_reference_task_type',
     ]),
     ...(input.audio !== undefined ? { generate_audio: input.audio } : {}),
-    model,
+    model: wireModel(plane, model),
     content: [],
     resolution: input.resolution ?? '720p',
     ratio:
@@ -694,6 +764,7 @@ async function video(model: string, input: CapabilityInput<'video.generate'>, ct
     (input.references ?? []).filter((ref) => ref.kind === 'image').length > (v25 ? 30 : 9)
   )
     invalid('Seedance 参考图片过多')
+  if (body.draft && plane === 'plan') invalid('Agent Plan 不支持 Seedance 草稿模式')
   if (body.draft && (!v25 || body.resolution !== '480p'))
     invalid('draft 仅支持 Seedance 2.5 的 480p 输出')
   if (
@@ -736,10 +807,110 @@ async function video(model: string, input: CapabilityInput<'video.generate'>, ct
     )
   }
   body.content = content
-  const data = await request(ctx, '/contents/generations/tasks', body)
+  const data = await request(plane, ctx, '/contents/generations/tasks', body)
   if (typeof data.id !== 'string' || !data.id)
     throw new ProviderError('unknown', '火山方舟响应缺少任务 ID；不会自动重新提交')
   return { state: 'pending' as const, remoteId: data.id, pollAfterMs: 5000 }
+}
+
+// 沿用 TOS 时期的密钥名，已有配置不用重填；S3 兼容存储也用这一对
+const TOS_SECRETS = [
+  { name: 'ARK_TOS_ACCESS_KEY', title: '存储 Access Key（视频参考）' },
+  { name: 'ARK_TOS_SECRET_KEY', title: '存储 Secret Key（视频参考）' },
+]
+
+/** 解析模型槽并按能力分派；对话只走按量数据面 */
+async function submitTo(
+  plane: Plane,
+  specs: ModelSpec[],
+  req: { capability: string; model: string; input: unknown },
+  ctx: Context & { settings: { customChatModel?: string } },
+) {
+  const spec = specs.find((model) => model.id === req.model)
+  if (!spec || !(spec.capabilities as readonly string[]).includes(req.capability))
+    invalid('所选火山方舟模型不支持此能力')
+  const custom =
+    req.model === 'custom-chat'
+      ? (ctx.settings.customChatModel ?? '')
+      : req.model === 'custom-image'
+        ? ctx.settings.customImageModel
+        : req.model === 'custom-video'
+          ? ctx.settings.customVideoModel
+          : req.model
+  const model = custom.trim()
+  if (!model) invalid('请在火山方舟设置中填写自定义模型 / Endpoint ID')
+  if (req.capability === 'text.chat' && plane === 'api')
+    return chat(model, req.input as CapabilityInput<'text.chat'>, ctx)
+  if (req.capability === 'image.generate')
+    return image(plane, model, req.input as CapabilityInput<'image.generate'>, ctx)
+  if (req.capability === 'image.process')
+    return cutout(plane, model, req.input as CapabilityInput<'image.process'>, ctx)
+  if (req.capability === 'video.generate')
+    return video(plane, model, req.input as CapabilityInput<'video.generate'>, ctx)
+  return invalid('火山方舟不支持此能力')
+}
+
+/** 视频任务的测试、轮询与取消；两个数据面接口相同，只是前缀和 Key 不同 */
+function tasks(plane: Plane) {
+  const path = (remoteId: string) => `/contents/generations/tasks/${encodeURIComponent(remoteId)}`
+  return {
+    async test(ctx: Context) {
+      await request(plane, ctx, '/contents/generations/tasks?page_size=1')
+    },
+    async poll(remoteId: string, ctx: Context): Promise<PollResult> {
+      const data = await request(plane, ctx, path(remoteId))
+      if (data.status === 'succeeded') {
+        const mov = data.output_format === 'mov'
+        const content = asJson(data.content)
+        const outputs = [
+          remoteFile(content.video_url, 'video', mov ? 'video/quicktime' : 'video/mp4'),
+        ]
+        // 开了「返回尾帧」时多一张尾帧图片
+        if (typeof content.last_frame_url === 'string' && content.last_frame_url)
+          outputs.push(remoteFile(content.last_frame_url, 'image', 'image/jpeg'))
+        return {
+          state: 'succeeded',
+          outputs,
+          usage: {
+            seconds: typeof data.duration === 'number' ? data.duration : undefined,
+            outputTokens:
+              typeof asJson(data.usage).completion_tokens === 'number'
+                ? (asJson(data.usage).completion_tokens as number)
+                : undefined,
+          },
+        }
+      }
+      if (['failed', 'cancelled', 'expired'].includes(String(data.status))) {
+        const error = errorInfo(
+          data.error ?? { code: data.status, message: `火山方舟视频任务 ${data.status}` },
+          0,
+          apiKey(plane, ctx),
+        )
+        return {
+          state: 'failed',
+          error: { code: error.code, message: error.message, retryable: false },
+        }
+      }
+      if (data.status !== 'queued' && data.status !== 'running')
+        throw new ProviderError('unknown', '火山方舟返回未知任务状态')
+      return {
+        state: 'pending',
+        pollAfterMs: 5000,
+        remote: data.status === 'queued' ? 'queued' : 'running',
+      }
+    },
+    async cancel(remoteId: string, ctx: Context) {
+      const data = await request(plane, ctx, path(remoteId))
+      if (data.status === 'queued') {
+        await request(plane, ctx, path(remoteId), undefined, 'DELETE')
+        return
+      }
+      if (data.status === 'running')
+        throw new ProviderError('invalid_input', '火山方舟不支持取消已经运行的视频任务')
+      if (!['succeeded', 'failed', 'cancelled', 'expired'].includes(String(data.status)))
+        throw new ProviderError('unknown', '火山方舟返回未知任务状态，未执行取消')
+    },
+  }
 }
 
 export const arkProvider = defineProvider({
@@ -748,94 +919,34 @@ export const arkProvider = defineProvider({
   description: 'Doubao Seed 对话、Seedream 图片及 Seedance 视频；支持自定义模型 / Endpoint ID',
   docsUrl: 'https://docs.volcengine.com/docs/ark/model-list?lang=zh',
   settings,
-  secrets: [
-    { name: 'ARK_API_KEY', title: '火山方舟 API Key', required: true },
-    { name: 'ARK_TOS_ACCESS_KEY', title: 'TOS Access Key（视频参考）' },
-    { name: 'ARK_TOS_SECRET_KEY', title: 'TOS Secret Key（视频参考）' },
-  ],
+  secrets: [{ name: 'ARK_API_KEY', title: '火山方舟 API Key', required: true }, ...TOS_SECRETS],
   models: models.map((model) => ({ ...model, capabilities: [...model.capabilities] })),
-  async test(ctx) {
-    await request(ctx, '/contents/generations/tasks?page_size=1')
-  },
-  async submit(req, ctx) {
-    const spec = models.find((model) => model.id === req.model)
-    if (!spec || !(spec.capabilities as readonly string[]).includes(req.capability))
-      invalid('所选火山方舟模型不支持此能力')
-    const custom =
-      req.model === 'custom-chat'
-        ? ctx.settings.customChatModel
-        : req.model === 'custom-image'
-          ? ctx.settings.customImageModel
-          : req.model === 'custom-video'
-            ? ctx.settings.customVideoModel
-            : req.model
-    const model = custom.trim()
-    if (!model) invalid('请在火山方舟设置中填写自定义模型 / Endpoint ID')
-    if (req.capability === 'text.chat')
-      return chat(model, req.input as CapabilityInput<'text.chat'>, ctx)
-    if (req.capability === 'image.generate')
-      return image(model, req.input as CapabilityInput<'image.generate'>, ctx)
-    if (req.capability === 'image.process')
-      return cutout(model, req.input as CapabilityInput<'image.process'>, ctx)
-    if (req.capability === 'video.generate')
-      return video(model, req.input as CapabilityInput<'video.generate'>, ctx)
-    return invalid('火山方舟不支持此能力')
-  },
-  async poll(remoteId, ctx) {
-    const data = await request(ctx, `/contents/generations/tasks/${encodeURIComponent(remoteId)}`)
-    if (data.status === 'succeeded') {
-      const mov = data.output_format === 'mov'
-      const content = asJson(data.content)
-      const outputs = [
-        remoteFile(content.video_url, 'video', mov ? 'video/quicktime' : 'video/mp4'),
-      ]
-      // 开了「返回尾帧」时多一张尾帧图片
-      if (typeof content.last_frame_url === 'string' && content.last_frame_url)
-        outputs.push(remoteFile(content.last_frame_url, 'image', 'image/jpeg'))
-      return {
-        state: 'succeeded',
-        outputs,
-        usage: {
-          seconds: typeof data.duration === 'number' ? data.duration : undefined,
-          outputTokens:
-            typeof asJson(data.usage).completion_tokens === 'number'
-              ? (asJson(data.usage).completion_tokens as number)
-              : undefined,
-        },
-      }
-    }
-    if (['failed', 'cancelled', 'expired'].includes(String(data.status))) {
-      const error = errorInfo(
-        data.error ?? { code: data.status, message: `火山方舟视频任务 ${data.status}` },
-        0,
-        ctx.secret('ARK_API_KEY'),
-      )
-      return {
-        state: 'failed',
-        error: { code: error.code, message: error.message, retryable: false },
-      }
-    }
-    if (data.status !== 'queued' && data.status !== 'running')
-      throw new ProviderError('unknown', '火山方舟返回未知任务状态')
-    return {
-      state: 'pending',
-      pollAfterMs: 5000,
-      remote: data.status === 'queued' ? 'queued' : 'running',
-    }
-  },
-  async cancel(remoteId, ctx) {
-    const path = `/contents/generations/tasks/${encodeURIComponent(remoteId)}`
-    const data = await request(ctx, path)
-    if (data.status === 'queued') {
-      await request(ctx, path, undefined, 'DELETE')
-      return
-    }
-    if (data.status === 'running')
-      throw new ProviderError('invalid_input', '火山方舟不支持取消已经运行的视频任务')
-    if (!['succeeded', 'failed', 'cancelled', 'expired'].includes(String(data.status)))
-      throw new ProviderError('unknown', '火山方舟返回未知任务状态，未执行取消')
-  },
+  ...tasks('api'),
+  submit: (req, ctx) => submitTo('api', models, req, ctx),
 })
+
+// 模型 ID 与按量平台一致，画布节点换平台不用改模型参数；请求时再换成套餐模型名
+const planModels = models.filter(
+  (model) => PLAN_MODELS[model.id] || model.id === 'custom-image' || model.id === 'custom-video',
+)
+
+export const arkPlanProvider = defineProvider({
+  id: 'volc/ark-plan',
+  title: '火山方舟 Agent Plan',
+  description:
+    'Agent Plan 套餐内的 Seedream 图片和 Seedance 视频，扣套餐额度；套餐文本模型不支持 API 调用，未接入对话',
+  docsUrl: 'https://docs.volcengine.com/docs/ark/agent-plan-personal-plan-overview?lang=zh',
+  settings: planSettings,
+  secrets: [
+    { name: 'ARK_AGENT_PLAN_API_KEY', title: 'Agent Plan 专属 API Key', required: true },
+    ...TOS_SECRETS,
+  ],
+  models: planModels.map((model) => ({ ...model, capabilities: [...model.capabilities] })),
+  ...tasks('plan'),
+  submit: (req, ctx) => submitTo('plan', planModels, req, ctx),
+})
+
+export { referenceStorageHost }
 
 export const arkPlugin = defineServerPlugin(
   definePlugin({
@@ -853,4 +964,22 @@ export const arkPlugin = defineServerPlugin(
     },
   }),
   { providers: [arkProvider] },
+)
+
+export const arkPlanPlugin = defineServerPlugin(
+  definePlugin({
+    manifest: {
+      id: 'volc/ark-plan',
+      version: '0.1.0',
+      name: '火山方舟 Agent Plan',
+      engines: { plein: `^${PLUGIN_API_VERSION}` },
+      contributes: { providers: ['volc/ark-plan'] },
+      permissions: {
+        network: NETWORK,
+        secrets: ['ARK_AGENT_PLAN_API_KEY', 'ARK_TOS_ACCESS_KEY', 'ARK_TOS_SECRET_KEY'],
+        assets: 'read',
+      },
+    },
+  }),
+  { providers: [arkPlanProvider] },
 )

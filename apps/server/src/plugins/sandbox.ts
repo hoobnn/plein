@@ -11,6 +11,7 @@ const MAX_REDIRECTS = 5
 
 /**
  * 按清单 permissions.network 裁剪的 fetch：只能访问声明过的域名，重定向也逐跳检查。
+ * extraHosts 是宿主按用户设置额外放行的确切主机名（如自备的对象存储），不做通配。
  * 内置插件与宿主同进程，这层是约定而非安全边界；第三方插件以后在子进程里运行，
  * 由宿主代理网络请求，用的是同一套检查。
  */
@@ -18,6 +19,7 @@ export function scopedFetch(
   manifest: PluginManifest,
   base: typeof fetch = fetch,
   origin?: string,
+  extraHosts: string[] = [],
 ): typeof fetch {
   const allowed = manifest.permissions.network
   const check = (url: URL) => {
@@ -27,7 +29,7 @@ export function scopedFetch(
     if (url.protocol !== 'https:' && url.protocol !== 'http:') {
       throw new PermissionError(`插件 ${manifest.id} 不能访问 ${url.protocol} 地址`)
     }
-    if (!domainAllowed(allowed, url.hostname)) {
+    if (!domainAllowed(allowed, url.hostname) && !extraHosts.includes(url.hostname)) {
       throw new PermissionError(`插件 ${manifest.id} 没有声明访问 ${url.hostname} 的权限`)
     }
   }

@@ -1,7 +1,7 @@
 import { describeProvider } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
 import { fakeContext, sse } from '../testing'
-import { arkProvider } from './index'
+import { arkPlanProvider, arkProvider } from './index'
 
 const harness = (replies?: unknown[]) => fakeContext(arkProvider, replies)
 
@@ -546,3 +546,70 @@ it.each([408, 500, 502, 503, 504])(
     }
   },
 )
+
+describe('Agent Plan 套餐（volc/ark-plan）', () => {
+  const plan = (replies?: unknown[]) =>
+    fakeContext(arkPlanProvider, replies, { secret: { ARK_AGENT_PLAN_API_KEY: 'plan-secret' } })
+  const headers = {
+    Authorization: 'Bearer plan-secret',
+    'Content-Type': 'application/json',
+  }
+
+  it('只列套餐内的图片 / 视频模型，不提供对话', () => {
+    const ids = describeProvider(arkPlanProvider, 'volc/ark-plan').models.map((m) => m.id)
+    expect(ids).toContain(IMAGE)
+    expect(ids).toContain(VIDEO)
+    expect(ids).not.toContain(CHAT)
+    expect(ids).not.toContain('custom-chat')
+    expect(ids).not.toContain('doubao-seedream-5-0-260128')
+  })
+
+  it('图片走专属数据面、专属 Key 和套餐模型名', async () => {
+    const { ctx, fetch, body } = plan([{ data: [{ b64_json: 'AQID' }] }])
+    await arkPlanProvider.submit(
+      { capability: 'image.generate', model: IMAGE, input: { prompt: 'apple' } },
+      ctx,
+    )
+    expect(fetch).toHaveBeenCalledWith(
+      'https://ark.cn-beijing.volces.com/api/plan/v3/images/generations',
+      expect.objectContaining({ headers }),
+    )
+    expect(body().model).toBe('doubao-seedream-5.0-pro')
+  })
+
+  it('视频提交与轮询都在套餐数据面', async () => {
+    const { ctx, fetch, body } = plan([{ id: 'cgt-1' }, { id: 'cgt-1', status: 'running' }])
+    const submitted = await arkPlanProvider.submit(
+      { capability: 'video.generate', model: VIDEO, input: { prompt: 'sea' } },
+      ctx,
+    )
+    expect(body().model).toBe('doubao-seedance-2.5')
+    expect(submitted).toMatchObject({ remoteId: 'cgt-1' })
+    await arkPlanProvider.poll!('cgt-1', ctx)
+    expect(fetch).toHaveBeenLastCalledWith(
+      'https://ark.cn-beijing.volces.com/api/plan/v3/contents/generations/tasks/cgt-1',
+      expect.objectContaining({ method: 'GET', headers }),
+    )
+  })
+
+  it.each([
+    ['text.chat', CHAT, { messages: [{ role: 'user', content: 'hi' }] }],
+    ['image.generate', 'doubao-seedream-5-0-260128', { prompt: 'apple' }],
+    ['video.generate', VIDEO, { prompt: 'sea', extra: { draft: true }, resolution: '480p' }],
+  ] as const)('套餐不支持的 %s / %s 在计费请求前失败', async (capability, model, input) => {
+    const { ctx, fetch } = plan()
+    await expect(
+      arkPlanProvider.submit({ capability, model, input } as never, ctx),
+    ).rejects.toMatchObject({ code: 'invalid_input' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('连接测试用专属 Key 查询套餐任务列表', async () => {
+    const { ctx, fetch } = plan([{ items: [] }])
+    await arkPlanProvider.test!(ctx)
+    expect(fetch).toHaveBeenCalledWith(
+      'https://ark.cn-beijing.volces.com/api/plan/v3/contents/generations/tasks?page_size=1',
+      expect.objectContaining({ headers }),
+    )
+  })
+})

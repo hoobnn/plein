@@ -126,7 +126,7 @@ describe('本地多模态参考输入合同', () => {
     const ctx = context()
     await expect(
       videoReferences([ref('video')], ctx, { ...limits, platform: 'ark' }),
-    ).rejects.toThrow('TOS 上传通路')
+    ).rejects.toThrow('视频参考存储')
     expect(ctx.files.read).not.toHaveBeenCalled()
   })
   it('空文件、错误 MIME 和编码后超限的文件均阻断', async () => {

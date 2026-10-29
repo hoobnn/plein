@@ -106,7 +106,8 @@ export function videoTaskOverrides(params: Record<string, unknown>) {
     ['image', 'lastFrame', 'frames'].includes(String(params.mode))
   )
     return { aspectRatio: 'auto' }
-  if (!model.startsWith('volc/ark:doubao-seedance-2-')) return {}
+  // Agent Plan 与按量平台共用 Seedance 模型 ID
+  if (!/^volc\/ark(-plan)?:doubao-seedance-2-/.test(model)) return {}
   const extra = (params.options as Record<string, Record<string, unknown>> | undefined)?.[
     String(params.model)
   ]
@@ -115,7 +116,7 @@ export function videoTaskOverrides(params: Record<string, unknown>) {
     ...(extra?.adaptive_duration === true || task === 'edit' ? { duration: -1 } : {}),
     ...(task === 'edit' ||
     task === 'extend' ||
-    (model.startsWith('volc/ark:doubao-seedance-2-5-') &&
+    (/^volc\/ark(-plan)?:doubao-seedance-2-5-/.test(model) &&
       ['image', 'frames'].includes(String(params.mode)))
       ? { aspectRatio: 'auto' }
       : {}),

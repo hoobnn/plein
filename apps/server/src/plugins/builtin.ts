@@ -1,4 +1,5 @@
 import {
+  arkPlanPlugin,
   arkPlugin,
   bailianPlugin,
   compatiblePlugin,
@@ -18,6 +19,7 @@ export function builtinPlugins(opts: { mock: boolean }): ServerPluginDefinition[
     doubaoPlugin,
     bailianPlugin,
     arkPlugin,
+    arkPlanPlugin,
     compatiblePlugin,
   ]
 }

@@ -6,7 +6,7 @@ export { mockPlugin, mockProvider } from './mock'
 export { minimaxPlugin, minimaxProvider } from './minimax'
 export { doubaoPlugin, doubaoProvider } from './doubao'
 export { bailianPlugin, bailianProvider } from './bailian'
-export { arkPlugin, arkProvider } from './ark'
+export { arkPlanPlugin, arkPlanProvider, arkPlugin, arkProvider, referenceStorageHost } from './ark'
 export {
   compatiblePlugin,
   createCompatiblePlugin,

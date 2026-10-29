@@ -4,6 +4,7 @@ import {
   videoReferenceProblem,
   videoReferencePrompt,
   videoReferenceTokens,
+  videoTaskOverrides,
 } from './video-input'
 import type { ModelInfo } from './provider'
 
@@ -80,3 +81,17 @@ it('模型声明的输入模式在运行前阻断；服务端仍校验最终编�
     }),
   ).toBeNull()
 })
+
+it.each(['volc/ark', 'volc/ark-plan'])(
+  '%s 的 Seedance 2.5 首帧跟随画幅、自动时长取 -1',
+  (provider) => {
+    const model = `${provider}:doubao-seedance-2-5-260628`
+    expect(
+      videoTaskOverrides({
+        model,
+        mode: 'image',
+        options: { [model]: { adaptive_duration: true } },
+      }),
+    ).toEqual({ duration: -1, aspectRatio: 'auto' })
+  },
+)

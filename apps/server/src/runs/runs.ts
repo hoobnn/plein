@@ -936,8 +936,9 @@ export class NodeRuns implements BatchHost {
       : undefined
     if (def?.capability === 'video.generate' && prompt && params.mode === 'reference') {
       const provider = parseModelRef(String(params.model ?? ''))?.provider
-      if (provider === 'volc/ark' || provider === 'minimax/api')
-        prompt = videoReferencePrompt(prompt, provider === 'volc/ark' ? 'ark' : 'minimax')
+      if (provider === 'minimax/api') prompt = videoReferencePrompt(prompt, 'minimax')
+      else if (provider === 'volc/ark' || provider === 'volc/ark-plan')
+        prompt = videoReferencePrompt(prompt, 'ark')
     }
     const shown: Record<string, unknown> = {
       ...cacheParams(params),

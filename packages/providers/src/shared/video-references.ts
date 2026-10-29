@@ -28,7 +28,10 @@ export async function videoReferences(
   const counts = { image: 0, video: 0, audio: 0 }
   for (const ref of refs) {
     if (ark && ref.kind === 'video' && !limits.uploadVideo)
-      throw new ProviderError('invalid_input', '火山方舟本地视频参考需要配置 TOS 上传通路')
+      throw new ProviderError(
+        'invalid_input',
+        '火山方舟本地视频参考需要配置视频参考存储（TOS 或 S3 兼容）',
+      )
     if (!Object.hasOwn(counts, ref.kind))
       throw new ProviderError('invalid_input', '不支持这种参考素材')
     const kind = ref.kind as keyof typeof counts

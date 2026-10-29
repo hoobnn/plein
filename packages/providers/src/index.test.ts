@@ -1,6 +1,6 @@
 import { domainAllowed } from '@plein/plugin-sdk'
 import { describe, expect, it } from 'vite-plus/test'
-import { arkPlugin, bailianPlugin, doubaoPlugin, minimaxPlugin } from './index'
+import { arkPlanPlugin, arkPlugin, bailianPlugin, doubaoPlugin, minimaxPlugin } from './index'
 
 describe('内置平台插件的权限声明', () => {
   it.each([
@@ -8,6 +8,13 @@ describe('内置平台插件的权限声明', () => {
       '火山方舟',
       arkPlugin,
       ['ARK_API_KEY', 'ARK_TOS_ACCESS_KEY', 'ARK_TOS_SECRET_KEY'],
+      ['volces.com', 'byteimg.com', 'ibytedtos.com', 'byteicdn.com'],
+      ['ark.cn-beijing.volces.com', 'test-bucket.tos-cn-beijing.volces.com'],
+    ],
+    [
+      '火山方舟 Agent Plan',
+      arkPlanPlugin,
+      ['ARK_AGENT_PLAN_API_KEY', 'ARK_TOS_ACCESS_KEY', 'ARK_TOS_SECRET_KEY'],
       ['volces.com', 'byteimg.com', 'ibytedtos.com', 'byteicdn.com'],
       ['ark.cn-beijing.volces.com', 'test-bucket.tos-cn-beijing.volces.com'],
     ],

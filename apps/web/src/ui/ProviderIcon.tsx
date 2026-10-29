@@ -9,6 +9,7 @@ const PROVIDER_ICONS: Record<string, string> = {
   'doubao/speech': doubao,
   'minimax/api': minimax,
   'volc/ark': volcengine,
+  'volc/ark-plan': volcengine,
 }
 
 /** 渠道品牌随文字配色，兼容明暗主题；未知插件使用通用接入图标。 */

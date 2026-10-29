@@ -400,7 +400,11 @@ export async function applyMentions(
         }
       : inputs
   const provider = parseModelRef(String(params.model ?? ''))?.provider
-  if (video && send && (provider === 'minimax/api' || provider === 'volc/ark')) {
+  if (
+    video &&
+    send &&
+    (provider === 'minimax/api' || provider === 'volc/ark' || provider === 'volc/ark-plan')
+  ) {
     const images = merged[port] ?? []
     const bindings = details.flatMap((d) => {
       const tokens = d.sent.flatMap((id) => {

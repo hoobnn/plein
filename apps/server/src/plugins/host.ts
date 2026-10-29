@@ -33,7 +33,12 @@ import {
   type VoiceDesignInput,
 } from '@plein/plugin-sdk'
 import { stableStringify } from '@plein/flow'
-import { compatibleBaseURL, COMPATIBLE_ID, createCompatiblePlugin } from '@plein/providers'
+import {
+  compatibleBaseURL,
+  COMPATIBLE_ID,
+  createCompatiblePlugin,
+  referenceStorageHost,
+} from '@plein/providers'
 import { Agent, Dispatcher1Wrapper } from 'undici'
 import { composeVideo, compositionDuration, validateComposeOverlays } from '../assets/compose'
 import { analyzeVideo } from '../assets/shot-analysis'
@@ -898,6 +903,14 @@ export class PluginHost {
     throw unknownSubmit(def.title, message)
   }
 
+  /** 内置方舟平台按设置额外放行用户自备的 S3 兼容存储主机，只放行上传会用到的那一个 */
+  private storageHosts(id: string, plugin: string, settings: Record<string, unknown>) {
+    if (!['volc/ark', 'volc/ark-plan'].includes(id) || !this.registry.plugin(plugin)?.builtin)
+      return []
+    const host = referenceStorageHost(settings)
+    return host ? [host] : []
+  }
+
   private providerContext(
     id: string,
     ownerId: string,
@@ -927,6 +940,7 @@ export class PluginHost {
       id === COMPATIBLE_ID && this.registry.plugin(plugin)?.builtin && settings.data.baseURL
         ? compatibleBaseURL(String(settings.data.baseURL)).origin
         : undefined,
+      this.storageHosts(id, plugin, settings.data),
     )
     return {
       settings: settings.data,
