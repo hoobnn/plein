@@ -3,6 +3,7 @@ import {
   connect,
   createDoc,
   createElement,
+  deleteElements,
   inputEdges,
   sequenceInstancesOf,
   setParams,
@@ -12,7 +13,7 @@ import {
 import { corePlugin, sequenceNode, Shot } from '@plein/nodes'
 import { describeNode } from '@plein/plugin-sdk'
 import { nodeElementOf } from './nodes'
-import { expandShots, expandedNodes, type ShotSource } from './storyboard'
+import { expandShots, expandedNodes, linkExistingShots, type ShotSource } from './storyboard'
 import { shotSegmentMapping } from './segment-mapping'
 
 const make = (type: string) => {
@@ -55,6 +56,82 @@ function fixture(version = 2) {
 }
 
 describe('P11分镜展开到实际序列生产者', () => {
+  it('有重复来源的视频或多个序列时不猜测目标', () => {
+    const f = fixture()
+    try {
+      deleteElements(f.doc, [f.sequence])
+      f.expand()
+      const source = f.doc.get(f.role(0, 'video'))!.params!.source
+      createElement(f.doc, { ...make('plein/video')!, params: { source }, x: 0, y: 0 })
+      const seq = createElement(f.doc, { ...make('plein/sequence')!, nodeVersion: 2, x: 900, y: 0 })
+      expect(
+        linkExistingShots(
+          f.doc,
+          f.board,
+          f.shots.map((shot) => shot.id),
+        ),
+      ).toMatchObject({ linked: 1, skipped: 1 })
+      expect(sequenceInstancesOf(f.doc.get(seq)!)).toHaveLength(1)
+      createElement(f.doc, { ...make('plein/sequence')!, nodeVersion: 2, x: 1000, y: 0 })
+      expect(
+        linkExistingShots(
+          f.doc,
+          f.board,
+          f.shots.map((shot) => shot.id),
+        ).sequence,
+      ).toBe('ambiguous')
+    } finally {
+      f.doc.destroy()
+    }
+  })
+  it('先展开再创建序列，可安全补关联配音并保留已有声音设置', () => {
+    const f = fixture()
+    try {
+      deleteElements(f.doc, [f.sequence])
+      expect(f.expand().sequence).toBe('none')
+      const sequence = createElement(f.doc, {
+        ...make('plein/sequence')!,
+        nodeVersion: 2,
+        x: 900,
+        y: 0,
+      })
+      expect(
+        linkExistingShots(
+          f.doc,
+          f.board,
+          f.shots.map((shot) => shot.id),
+        ),
+      ).toMatchObject({
+        sequence: 'linked',
+        linked: 2,
+        skipped: 0,
+      })
+      const rows = sequenceInstancesOf(f.doc.get(sequence)!)
+      expect(rows.map((row) => row.dialogue)).toEqual([f.role(0, 'speech'), f.role(1, 'speech')])
+      const edited = rows.map((row, index) =>
+        index === 0 ? { ...row, sound: 'native' as const, dialogue: '' } : row,
+      )
+      setParams(f.doc, sequence, { clips: edited })
+      linkExistingShots(
+        f.doc,
+        f.board,
+        f.shots.map((shot) => shot.id),
+      )
+      expect(sequenceInstancesOf(f.doc.get(sequence)!)[0]).toEqual(edited[0])
+      const muted = edited.map((row, index) =>
+        index === 0 ? { ...row, sound: 'legacy' as const, dialogue: '' } : row,
+      )
+      setParams(f.doc, sequence, { clips: muted })
+      linkExistingShots(
+        f.doc,
+        f.board,
+        f.shots.map((shot) => shot.id),
+      )
+      expect(sequenceInstancesOf(f.doc.get(sequence)!)[0]).toEqual(muted[0])
+    } finally {
+      f.doc.destroy()
+    }
+  })
   it('先放真实catalog v2空序列再展开，保留connect生成的精确实例而不是覆盖回v1', () => {
     const f = fixture()
     try {

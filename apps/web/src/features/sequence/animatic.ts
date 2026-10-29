@@ -127,14 +127,18 @@ export function refreshAnimatic(engine: Engine, id: string): string | null {
 }
 
 /** 从分镜打开已存在的草稿；首次创建快照。后续素材更新必须显式刷新。 */
-export function openAnimatic(engine: Engine, boardId: string): string | undefined {
+export function openAnimatic(
+  engine: Engine,
+  boardId: string,
+  returnToBoard = false,
+): string | undefined {
   const board = engine.doc.get(boardId)
   if (!board) return
   const existing = [...engine.doc.elements()].find(
     (n) => n.nodeType === ANIMATIC_TYPE && n.params?.boardId === boardId,
   )
   if (existing) {
-    useCanvas.getState().openSequence(existing.id)
+    useCanvas.getState().openSequence(existing.id, undefined, returnToBoard ? boardId : undefined)
     return existing.id
   }
   if (engine.doc.readOnly) {
@@ -177,7 +181,7 @@ export function openAnimatic(engine: Engine, boardId: string): string | undefine
   })
   engine.doc.undo.stopCapturing()
   engine.doc.flush()
-  useCanvas.getState().openSequence(id)
+  useCanvas.getState().openSequence(id, undefined, returnToBoard ? boardId : undefined)
   return id
 }
 

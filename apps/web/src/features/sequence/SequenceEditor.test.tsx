@@ -67,6 +67,20 @@ const field = (name: string) => screen.getByRole<HTMLInputElement>('spinbutton',
 const clip = (f: ReturnType<typeof setup>) =>
   (f.params().clips as Array<Record<string, unknown>>)[0]!
 
+it('从分镜表打开样片后返回原分镜；直接打开样片则关闭回画布', async () => {
+  const f = setup()
+  const board = f.add({ name: '镜头计划', nodeType: 'plein/storyboard' })
+  act(() => useCanvas.getState().openSequence(f.id, undefined, board))
+  await f.user.click(screen.getByRole('button', { name: '返回分镜表' }))
+  expect(useCanvas.getState().sequence).toBeNull()
+  expect(useCanvas.getState().storyboard).toBe(board)
+  act(() => {
+    useCanvas.getState().openStoryboard(null)
+    useCanvas.getState().openSequence(f.id)
+  })
+  expect(screen.queryByRole('button', { name: '返回分镜表' })).toBeNull()
+})
+
 it('异常参数仅显式恢复无效字段，撤销重做保留镜头和其他设置', async () => {
   const f = setup({
     params: {

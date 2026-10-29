@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { setParam } from '@plein/doc'
+import { linkExistingShots, writeStoryboardShots } from '@plein/capabilities'
 import {
   dropShot,
   newShotId,
@@ -231,7 +231,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
       notify('分镜数据或可写状态已变化，本次修改未执行；请检查后重试')
       return
     }
-    setParam(engine.doc, id, 'shots', next)
+    writeStoryboardShots(engine.doc, id, next)
   }
   const textValue = (
     shotId: string,
@@ -338,7 +338,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
     const next = dropShot(latest, shotId)
     engine.doc.undo.stopCapturing()
     engine.doc.ydoc.transact(() => {
-      setParam(engine.doc, id, 'shots', next.shots)
+      writeStoryboardShots(engine.doc, id, next.shots)
       detachShot(engine, id, shotId)
     }, engine.doc.origin)
     engine.doc.flush()
@@ -448,7 +448,7 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           className={btn}
           disabled={!shots.length}
           onClick={() => {
-            if (openAnimatic(engine, id)) onClose()
+            if (openAnimatic(engine, id, true)) onClose()
           }}
         >
           节奏样片
@@ -506,6 +506,25 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           >
             <Icon name="retry" />
             更新展开
+          </button>
+          <button
+            type="button"
+            className={btn}
+            disabled={!expanded.size}
+            title="把来源明确的镜头、配音和音效关联到画布中唯一的序列，保留手动设置"
+            onClick={() => {
+              if (!writable()) return
+              const result = linkExistingShots(engine.doc, id, targetIds)
+              if (result.sequence === 'none') notify('画布上没有序列，请先创建序列')
+              else if (result.sequence === 'ambiguous')
+                notify('画布上有多个序列，请手动连接到目标序列')
+              else
+                notify(
+                  `已检查 ${result.linked} 个镜头并尝试关联${result.skipped ? `，${result.skipped} 个来源不完整或不唯一，已跳过` : ''}；已有声音设置保持不变，请在序列中检查配音和原声。`,
+                )
+            }}
+          >
+            关联已有序列
           </button>
           <span aria-hidden="true" className="ui-bar-sep" />
           <Menu.Root modal={false} open={regenerate.open} onOpenChange={regenerate.onOpenChange}>

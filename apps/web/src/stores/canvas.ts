@@ -47,6 +47,7 @@ interface CanvasStore extends EngineState {
   shotWorkbench: { boardId: string; shotId: string } | null
   /** 打开编辑器的序列节点 */
   sequence: string | null
+  sequenceReturn: { sequenceId: string; boardId: string; canvasId: string | null } | null
   sequenceFocus: { sequenceId: string; clipInstanceId: string; requestId: number } | null
   /** 打开编辑器的 3D 构图节点 */
   stage: string | null
@@ -84,7 +85,7 @@ interface CanvasStore extends EngineState {
   setMenu(menu: CanvasMenuEvent | null): void
   openStoryboard(id: string | null): void
   openShotWorkbench(target: { boardId: string; shotId: string } | null): void
-  openSequence(id: string | null, clipInstanceId?: string): void
+  openSequence(id: string | null, clipInstanceId?: string, returnBoardId?: string): void
   consumeSequenceFocus(requestId: number): void
   openStage(id: string | null): void
   openShotAnalysis(id: string | null): void
@@ -127,6 +128,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
   storyboard: null,
   shotWorkbench: null,
   sequence: null,
+  sequenceReturn: null,
   sequenceFocus: null,
   stage: null,
   shotAnalysis: null,
@@ -165,6 +167,7 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
         storyboard: null,
         shotWorkbench: null,
         sequence: null,
+        sequenceReturn: null,
         sequenceFocus: null,
         stage: null,
         shotAnalysis: null,
@@ -189,12 +192,22 @@ export const useCanvas = create<CanvasStore>((set, get) => ({
     set({
       shotWorkbench,
       ...(shotWorkbench
-        ? { storyboard: null, sequence: null, sequenceFocus: null, viewer: null }
+        ? {
+            storyboard: null,
+            sequence: null,
+            sequenceReturn: null,
+            sequenceFocus: null,
+            viewer: null,
+          }
         : {}),
     }),
-  openSequence: (sequence, clipInstanceId) =>
+  openSequence: (sequence, clipInstanceId, returnBoardId) =>
     set({
       sequence,
+      sequenceReturn:
+        sequence && returnBoardId
+          ? { sequenceId: sequence, boardId: returnBoardId, canvasId: get().canvasId }
+          : null,
       sequenceFocus:
         sequence && clipInstanceId
           ? { sequenceId: sequence, clipInstanceId, requestId: ++sequenceFocusRequest }

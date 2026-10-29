@@ -1,6 +1,6 @@
 import type { Engine } from '@plein/canvas-core'
 import { setParam } from '@plein/doc'
-import { resolveShotAsset, shotsOf } from '@plein/capabilities'
+import { resolveShotAsset, shotsOf, writeStoryboardShots } from '@plein/capabilities'
 import { planParams, SHOT_SIZES, shotPresets, type Shot } from '@plein/nodes'
 import { assetUrls } from '../../api/client'
 import { targetImages } from '../../canvas/nodes'
@@ -158,10 +158,9 @@ export function ShotFlow({
     const latestStyle =
       typeof board.params?.visualStyle === 'string' ? board.params.visualStyle : ''
     engine.doc.undo.stopCapturing()
-    setParam(
+    writeStoryboardShots(
       engine.doc,
       boardId,
-      'shots',
       latest.map((shot) => {
         if (picked.size && !picked.has(shot.id)) return shot
         if (shot.imagePrompt.trim() && shot.motionPrompt.trim()) return shot

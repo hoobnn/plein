@@ -161,6 +161,8 @@ export function planParams(
 export const ShotPlan = z.object({
   version: z.string(),
   params: z.record(z.string(), z.unknown()),
+  /** 上次确认时的计划值，和节点现状分别保存，避免其他字段变化时重复提示。 */
+  accepted: z.record(z.string(), z.unknown()).optional(),
   /** 用户接管的字段：这些键不再被「同步未改字段」覆盖，直到重新展开该镜头 */
   keep: z.array(z.string()).default([]),
 })
@@ -256,14 +258,15 @@ export function diffPlan(role: ShotRole, ctx: PlanContext): PlanDiff[] {
   const legacy = !plan
   return PLAN_PARAMS[role].map((key) => {
     const expanded = plan?.params[key]
+    const changed = plan?.accepted ? !same(plan.accepted[key], wanted[key]) : !settled
     return {
       key,
       expanded,
       wanted: wanted[key],
       actual: actual[key],
-      stale: !settled && !same(expanded, wanted[key]),
+      stale: changed && (plan?.accepted ? true : !same(expanded, wanted[key])),
       // 没有快照的老节点分不清是不是手改过，按未手改处理（同步前会先展示差异）
-      overridden: !settled && (keep.includes(key) || (!legacy && !same(expanded, actual[key]))),
+      overridden: changed && (keep.includes(key) || (!legacy && !same(expanded, actual[key]))),
       legacy,
     }
   })
@@ -291,13 +294,19 @@ export function syncPlan(role: ShotRole, mode: SyncMode, ctx: PlanContext): Plan
   const snapshot: Record<string, unknown> = {}
   const keep = new Set(ctx.plan?.keep ?? [])
   for (const d of diffPlan(role, ctx)) {
-    const write = mode === 'unmodified' && !d.overridden && !same(d.wanted, d.actual)
+    const modified = !!ctx.plan && (keep.has(d.key) || !same(d.expanded, d.actual))
+    const write = mode === 'unmodified' && d.stale && !modified && !same(d.wanted, d.actual)
     if (write) params[d.key] = d.wanted
-    else if (d.overridden) keep.add(d.key)
+    else if (modified) keep.add(d.key)
     // 节点上没设过的字段按计划记，快照里不留 undefined（Yjs 里也会被当成删除）
     snapshot[d.key] = write ? d.wanted : (d.actual ?? d.expanded ?? d.wanted)
   }
-  return { params, plan: { version: ctx.version, params: snapshot, keep: [...keep] } }
+  const accepted = Object.fromEntries(
+    PLAN_PARAMS[role]
+      .filter((key) => ctx.wanted[key] !== undefined)
+      .map((key) => [key, ctx.wanted[key]]),
+  )
+  return { params, plan: { version: ctx.version, params: snapshot, accepted, keep: [...keep] } }
 }
 
 /** 一个已展开的配音节点：记下的台词序号和展开 / 上次同步时的台词 */

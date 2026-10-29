@@ -84,17 +84,21 @@ for (const label of ['同步计划改动', '不同步，按节点现状']) {
   })
 }
 
-it('手改空台词与自定义音色显示当前值和计划值，同步保留手改', async () => {
+it('手改空台词在计划改台词时显示当前值和计划值；计划未变的音色不重报，同步保留手改', async () => {
   const f = setup()
   const speech = f.nodes.find((el) => (el.params!.source as { role: string }).role === 'speech')!
   act(() => {
     setParam(f.doc, speech.id, 'text', '')
     setParam(f.doc, speech.id, 'voice', { provider: 'custom-provider', voiceId: 'custom-voice' })
+    const shot = f.read()[0]!
+    f.write([
+      { ...shot, dialogue: shot.dialogue.map((line) => ({ ...line, line: `${line.line}（改）` })) },
+    ])
     f.flush()
   })
   expect(screen.getAllByText('（空）').length).toBeGreaterThan(0)
-  expect(screen.getByText('custom-voice（custom-provider）')).toBeDefined()
-  expect(screen.getAllByText('你改过')).toHaveLength(2)
+  expect(screen.queryByText('custom-voice（custom-provider）')).toBeNull()
+  expect(screen.getAllByText('你改过')).toHaveLength(1)
   await f.user.click(screen.getByRole('button', { name: '同步计划改动' }))
   expect(f.doc.get(speech.id)!.params).toMatchObject({
     text: '',

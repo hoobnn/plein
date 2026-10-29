@@ -338,6 +338,21 @@ describe('样片创建与刷新原子性', () => {
     }
     return { doc, board, engine, dispose }
   }
+  it('从分镜进入时记录返回目标，直接打开同一样片不会沿用旧目标', () => {
+    const f = setup()
+    try {
+      const id = openAnimatic(f.engine, f.board, true)!
+      expect(useCanvas.getState().sequenceReturn).toEqual({
+        sequenceId: id,
+        boardId: f.board,
+        canvasId: 'canvas',
+      })
+      expect(openAnimatic(f.engine, f.board)).toBe(id)
+      expect(useCanvas.getState().sequenceReturn).toBeNull()
+    } finally {
+      f.dispose()
+    }
+  })
   it('损坏来源拒绝首次创建，修复后创建一次；只读可打开已有快照且不刷新', () => {
     const f = setup()
     try {

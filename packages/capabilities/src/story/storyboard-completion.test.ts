@@ -11,6 +11,7 @@ import {
   runExpanded,
   shotsOf,
   syncExpanded,
+  writeStoryboardShots,
   type ShotSource,
 } from './storyboard'
 
@@ -51,6 +52,31 @@ const fixture = (extra: Partial<Shot> = {}) => {
 }
 
 describe('分镜创作闭环', () => {
+  it('旧快照确认后仅修改音效，不重报其他已确认的手改字段', () => {
+    const f = fixture({ sfx: '夜间环境声', dialogue: [{ id: 'd1', character: '', line: '你好' }] })
+    try {
+      expandShots(f.doc, f.board, [f.shot.id], make)
+      setParams(f.doc, f.role('video').id, { prompt: '用户定制视频提示词' })
+      f.write({ description: '更新的画面' })
+      syncExpanded(f.doc, f.board, [f.shot.id], 'keep-overrides')
+      // 模拟升级前已经确认但没有逐字段计划基线的快照。
+      for (const node of f.expanded()) {
+        const source = node.params?.source as ShotSource | undefined
+        if (!source?.plan) continue
+        const { accepted: _accepted, ...oldPlan } = source.plan
+        setParams(f.doc, node.id, { source: { ...source, plan: oldPlan } })
+      }
+      expect(planDiffs(f.doc, f.board).size).toBe(0)
+      const shot = shotsOf(f.doc.get(f.board))[0]!
+      writeStoryboardShots(f.doc, f.board, [{ ...shot, sfx: '新增翻页声' }])
+      const diffs = [...planDiffs(f.doc, f.board).values()].flat()
+      expect(diffs.map((item) => item.role)).toEqual(['sfx'])
+      expect(diffs[0]!.diffs[0]).toMatchObject({ key: 'prompt', stale: true })
+      expect(f.role('video').params?.prompt).toBe('用户定制视频提示词')
+    } finally {
+      f.doc.destroy()
+    }
+  })
   it('景别、光影、情绪进入实际参数；语气同步保留用户覆盖', () => {
     const f = fixture({
       shotSize: '特写',

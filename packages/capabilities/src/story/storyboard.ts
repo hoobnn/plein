@@ -245,6 +245,43 @@ export function planDiffs(doc: PleinDoc, boardId: string): Map<string, ShotNodeD
   return out
 }
 
+/** 编辑前给已确认的旧快照补充当时的计划值，无法确定基线的旧差异维持原行为。 */
+export function rememberAcceptedPlan(doc: PleinDoc, boardId: string) {
+  const env = planEnv(doc, boardId)
+  const shots = new Map(shotsOf(doc.get(boardId)).map((shot) => [shot.id, shot]))
+  for (const [shotId, nodes] of expandedNodes(doc, boardId)) {
+    const shot = shots.get(shotId)
+    if (!shot) continue
+    const lines = linesOf(nodes, shot)
+    for (const node of nodes) {
+      const src = sourceOf(node)
+      const line = lineFor(node, lines)
+      if (
+        !src ||
+        src.detached ||
+        line === undefined ||
+        !src.plan ||
+        src.plan.accepted ||
+        src.plan.version !== env.version
+      )
+        continue
+      const wanted = contextOf(node, env, shot, line).wanted
+      const accepted = Object.fromEntries(
+        Object.entries(wanted).filter(([, value]) => value !== undefined),
+      )
+      setParams(doc, node.id, { source: { ...src, plan: { ...src.plan, accepted } } })
+    }
+  }
+}
+
+/** 保持旧计划基线与分镜编辑在同一个可撤销事务里。 */
+export function writeStoryboardShots(doc: PleinDoc, boardId: string, shots: Shot[]) {
+  doc.ydoc.transact(() => {
+    rememberAcceptedPlan(doc, boardId)
+    setParams(doc, boardId, { shots })
+  }, doc.origin)
+}
+
 export interface SyncResult {
   /** 参数被改动的节点数 */
   nodes: number
@@ -283,8 +320,8 @@ export function syncExpanded(
       const line = lineFor(el, lines)
       if (!src || src.detached || line === undefined) continue
       const ctx = contextOf(el, env, shot, line)
-      kept += diffPlan(src.role, ctx).filter((d) => d.overridden).length
       const sync = syncPlan(src.role, mode, ctx)
+      kept += sync.plan.keep.length
       const patch = Object.keys(sync.params)
       // 台词增删后对应到了新位置：序号一并回写，下次兜底才不会错
       const moved =
@@ -358,6 +395,7 @@ function sequenceAspect(doc: PleinDoc): string | undefined {
 function linkSequence(
   doc: PleinDoc,
   shots: Array<{ video: string; speeches: string[]; sfx?: string }>,
+  preserveAssigned = false,
 ): SequenceLink {
   const seqs = [...doc.elements()].filter((e) => e.kind === 'node' && e.nodeType === SEQUENCE_TYPE)
   if (seqs.length !== 1) return seqs.length ? 'ambiguous' : 'none'
@@ -421,6 +459,11 @@ function linkSequence(
     const edges = [...doc.edges()]
     const clips = rows.map((row) => {
       if (row.segment || row.sound !== 'legacy') return row
+      if (
+        preserveAssigned &&
+        (row.dialogue !== undefined || row.more !== undefined || row.sfx !== undefined)
+      )
+        return row
       const shot = active.find((shot) => shot.video === row.source)
       const video = shot && sourceOf(doc.get(shot.video)!)
       if (
@@ -480,6 +523,14 @@ function linkSequence(
       continue
     }
     const c = clips[at]!
+    if (
+      preserveAssigned &&
+      ((c.sound && c.sound !== 'legacy') ||
+        c.dialogue !== undefined ||
+        c.more !== undefined ||
+        c.sfx !== undefined)
+    )
+      continue
     const videoSource = sourceOf(doc.get(s.video)!)
     const managed = (id: string | undefined, role: ShotRole) => {
       const el = id ? doc.get(id) : undefined
@@ -502,6 +553,48 @@ function linkSequence(
   }
   setParams(doc, seq.id, { clips })
   return 'linked'
+}
+
+/** 将已展开且身份明确的镜头接到唯一序列；不创建节点，也不猜测重复视频。 */
+export function linkExistingShots(doc: PleinDoc, boardId: string, shotIds: string[]) {
+  const board = doc.get(boardId)
+  const existing = expandedNodes(doc, boardId)
+  const linked: Array<{ video: string; speeches: string[]; sfx?: string }> = []
+  let skipped = 0
+  for (const shot of shotsOf(board).filter((item) => shotIds.includes(item.id))) {
+    const nodes = (existing.get(shot.id) ?? []).filter((node) => !sourceOf(node)?.detached)
+    const videos = nodes.filter((node) => sourceOf(node)?.role === 'video')
+    const voices = nodes.filter((node) => sourceOf(node)?.role === 'speech')
+    const matches = linesOf(voices, shot)
+    const sfx = nodes.filter((node) => sourceOf(node)?.role === 'sfx')
+    const lines = shot.dialogue.filter((line) => line.line.trim())
+    const ids = voices.map((node) => sourceOf(node)?.dialogueId)
+    if (
+      videos.length !== 1 ||
+      voices.length !== lines.length ||
+      lines.some((line) => !line.id || ids.filter((id) => id === line.id).length !== 1) ||
+      matches.size !== voices.length ||
+      sfx.length > 1
+    ) {
+      skipped++
+      continue
+    }
+    const speeches = voices
+      .map((node) => ({ id: node.id, line: matches.get(node.id)! }))
+      .sort((a, b) => a.line - b.line)
+      .map((node) => node.id)
+    linked.push({ video: videos[0]!.id, speeches, sfx: sfx[0]?.id })
+  }
+  const result: { sequence: SequenceLink } = { sequence: 'none' }
+  doc.ydoc.transact(() => {
+    result.sequence = linkSequence(doc, linked, true)
+  }, doc.origin)
+  doc.flush()
+  return {
+    sequence: result.sequence,
+    linked: result.sequence === 'linked' ? linked.length : 0,
+    skipped,
+  }
 }
 
 export interface ExpandOptions {
@@ -596,6 +689,7 @@ export function expandShots(
       const snapshot = (params: Record<string, unknown>): ShotPlan => ({
         version: env.version,
         params,
+        accepted: params,
         keep: [],
       })
       const source = (role: ShotRole, extra: object = {}): ShotSource => ({

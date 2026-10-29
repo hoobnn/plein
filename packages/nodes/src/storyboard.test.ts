@@ -159,6 +159,7 @@ describe('同步的两种选择', () => {
     expect(sync.plan).toEqual({
       version: 'v2',
       params: { prompt: '我自己写的画面', duration: 8 },
+      accepted: wanted,
       keep: ['prompt'],
     })
   })
@@ -169,6 +170,7 @@ describe('同步的两种选择', () => {
     expect(sync.plan).toEqual({
       version: 'v2',
       params: { prompt: '我自己写的画面', duration: 5 },
+      accepted: wanted,
       keep: ['prompt'],
     })
   })

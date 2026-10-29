@@ -208,26 +208,52 @@ function sequenceInteractionKey(
 export function SequenceEditor() {
   const engine = useCanvas((s) => s.engine)
   const id = useCanvas((s) => s.sequence)
+  const returnTarget = useCanvas((s) => s.sequenceReturn)
   const close = () => {
     const state = useCanvas.getState()
-    if (state.engine === engine && state.sequence === id) state.openSequence(null)
+    if (state.engine !== engine || state.sequence !== id) return
+    const target = state.sequenceReturn
+    state.openSequence(null)
+    if (
+      target?.sequenceId === id &&
+      target.canvasId === state.canvasId &&
+      engine?.doc.get(target.boardId)?.nodeType === 'plein/storyboard'
+    )
+      state.openStoryboard(target.boardId)
   }
   return (
     <Presence>
       {engine && id && engine.doc.get(id) && (
-        <GuardedEditor key={id} engine={engine} id={id} onClose={close} />
+        <GuardedEditor
+          key={id}
+          engine={engine}
+          id={id}
+          onClose={close}
+          returnToBoard={returnTarget?.sequenceId === id}
+        />
       )}
     </Presence>
   )
 }
 
-function GuardedEditor({ engine, id, onClose }: { engine: Engine; id: string; onClose(): void }) {
+function GuardedEditor({
+  engine,
+  id,
+  onClose,
+  returnToBoard,
+}: {
+  engine: Engine
+  id: string
+  onClose(): void
+  returnToBoard: boolean
+}) {
   useEngineVersion(engine)
   const principal = useSession((s) => s.info?.principal)
   const el = engine.doc.get(id)
   if (!el) return null
   const problem = sequenceParameterProblem(el.params, el.nodeType === ANIMATIC_TYPE)
-  if (!problem) return <Editor engine={engine} id={id} onClose={onClose} />
+  if (!problem)
+    return <Editor engine={engine} id={id} onClose={onClose} returnToBoard={returnToBoard} />
   const readOnly = engine.doc.readOnly || !!el.locked || !principal || principal.role === 'viewer'
   const captured = engine.doc.elementMaps.get(id),
     canvasId = useCanvas.getState().canvasId
@@ -320,7 +346,17 @@ const typing = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
 
-function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose(): void }) {
+function Editor({
+  engine,
+  id,
+  onClose,
+  returnToBoard,
+}: {
+  engine: Engine
+  id: string
+  onClose(): void
+  returnToBoard: boolean
+}) {
   // 协作者改了顺序也能看到
   useDocVersion(engine.doc)
   const closing = useClosing()
@@ -1089,6 +1125,11 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
           </span>
         }
       >
+        {returnToBoard && (
+          <button type="button" className="ui-btn ui-btn-quiet" onClick={onClose}>
+            返回分镜表
+          </button>
+        )}
         {view === 'edit' && (
           <button
             type="button"

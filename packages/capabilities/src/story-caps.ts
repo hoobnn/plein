@@ -125,14 +125,17 @@ export const syncStoryboard = defineCapability({
   name: 'sync_storyboard',
   title: '同步分镜改动',
   description:
-    '分镜表改过之后，把改动同步到已展开的节点。unmodified：只更新没被手改过的字段；keep-overrides：同上，并记住手改过的字段以后不再提示。不填 mode 时只返回差异，不改。',
+    '分镜表改过之后处理已展开节点的差异。unmodified：更新未手改字段，保留并记住手改字段；keep-overrides：不修改任何节点参数，将当前节点值记为已确认。不填 mode 时只返回差异，不改。',
   group: 'story',
   where: 'doc',
   effect: (a) => (a.mode ? 'edit' : 'read'),
   input: z.object({
     id: id.describe('分镜节点'),
     shot_ids: z.array(z.string()).optional(),
-    mode: z.enum(['unmodified', 'keep-overrides']).optional(),
+    mode: z
+      .enum(['unmodified', 'keep-overrides'])
+      .optional()
+      .describe('unmodified 同步未手改字段；keep-overrides 不同步任何字段并确认节点现状'),
   }),
   run: (ctx, a) => {
     isBoard(ctx, a.id)
