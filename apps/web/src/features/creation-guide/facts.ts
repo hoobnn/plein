@@ -342,6 +342,10 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
   // 核对输入没有人工记录，只区分待检查与可核对，永不判为完成。
   const staleInput = sample?.nodes.find((el) => staleIds.has(el.id))
   const keptInput = sample?.nodes.find((el) => keptIds.has(el.id))
+  const staleReview =
+    sample?.nodes.find((el) => staleIds.has(el.id) && !!currentResult(el)) ??
+    sample?.nodes.find((el) => staleIds.has(el.id))
+  const staleReviewResult = staleReview && currentResult(staleReview)
   const inputTarget = staleInput ?? keptInput
   const trialSubsteps: TrialSubstep[] = [
     {
@@ -402,25 +406,35 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
     {
       id: 'review',
       title: '人工审阅',
-      state: allFixed
-        ? 'ready'
-        : sample?.needsChanges
-          ? 'attention'
-          : sample?.approved
-            ? 'done'
-            : sample?.complete
-              ? 'ready'
-              : 'todo',
-      detail: allFixed
-        ? '到序列审看固定段用于当前叙事的效果'
-        : sample?.needsChanges
-          ? '有采用项被标记为需修改'
-          : sample?.approved
-            ? '当前采用项均已人工确认可用'
-            : sample?.complete
-              ? '逐项试听、看片并标记可用'
-              : '先生成并采用候选再审阅',
-      target: allFixed ? fixedTrialTarget : (reviewTarget ?? workbenchTarget),
+      state: sample?.stale
+        ? 'attention'
+        : allFixed
+          ? 'ready'
+          : sample?.needsChanges
+            ? 'attention'
+            : sample?.approved
+              ? 'done'
+              : sample?.complete
+                ? 'ready'
+                : 'todo',
+      detail: sample?.stale
+        ? '输入已变化，请重新审阅'
+        : allFixed
+          ? '到序列审看固定段用于当前叙事的效果'
+          : sample?.needsChanges
+            ? '有采用项被标记为需修改'
+            : sample?.approved
+              ? '当前采用项均已人工确认可用'
+              : sample?.complete
+                ? '逐项试听、看片并标记可用'
+                : '先生成并采用候选再审阅',
+      target: staleReview
+        ? staleReviewResult
+          ? { kind: 'review', nodeId: staleReview.id, resultId: staleReviewResult.id }
+          : { kind: 'generator', nodeId: staleReview.id }
+        : allFixed
+          ? fixedTrialTarget
+          : (reviewTarget ?? workbenchTarget),
     },
     {
       id: 'sample',

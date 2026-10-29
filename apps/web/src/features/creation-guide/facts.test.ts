@@ -346,6 +346,43 @@ describe('持续创作引导的事实推导', () => {
     })
   })
 
+  it('输入变化后人工审阅子步骤优先待检查，并定位候选或节点', () => {
+    const doc = open(),
+      id = board(doc),
+      image = generated(doc, id, 'image'),
+      video = generated(doc, id, 'video')
+    approve(doc, image)
+    approve(doc, video)
+    const review = (options = {}) =>
+      creationGuideFacts(doc, options)
+        .steps.find((entry) => entry.id === 'trial')!
+        .substeps!.find((entry) => entry.id === 'review')!
+    expect(review().state).toBe('done')
+    expect(review({ staleIds: new Set([video]) })).toMatchObject({
+      state: 'attention',
+      detail: '输入已变化，请重新审阅',
+      target: {
+        kind: 'review',
+        nodeId: video,
+        resultId: creativeReviewTarget(doc.get(video))!.resultId!,
+      },
+    })
+    const bareDoc = open(),
+      bareId = board(bareDoc),
+      bare = node(bareDoc, 'plein/image', {
+        source: { storyboard: bareId, shot: 'shot-1', role: 'image' },
+      })
+    expect(
+      creationGuideFacts(bareDoc, { staleIds: new Set([bare]) })
+        .steps.find((entry) => entry.id === 'trial')!
+        .substeps!.find((entry) => entry.id === 'review')!,
+    ).toMatchObject({
+      state: 'attention',
+      detail: '输入已变化，请重新审阅',
+      target: { kind: 'generator', nodeId: bare },
+    })
+  })
+
   it('试做镜头删空时保留待检查并指向分镜表，新增单镜时自动视为已选', () => {
     const doc = open(),
       id = board(doc)
