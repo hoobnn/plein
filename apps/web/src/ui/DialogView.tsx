@@ -137,6 +137,16 @@ export function DialogView({
               >
                 {busy ? '关闭' : (options.cancelLabel ?? '取消')}
               </button>
+              {req.kind === 'confirm' && req.options.alternateLabel && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  className="ui-btn ui-btn-secondary ui-btn-lg"
+                  onClick={() => finish('alternate')}
+                >
+                  {req.options.alternateLabel}
+                </button>
+              )}
               <button
                 ref={confirmRef}
                 type="submit"

@@ -8,7 +8,7 @@ import { ProviderIcon } from '../../ui/ProviderIcon'
 import { Select } from '../../ui/Select'
 import { type ObjectSchema, SchemaForm } from '../../ui/SchemaForm'
 import { Switch } from '../../ui/Switch'
-import { confirmDialog } from '../../ui/Dialog'
+import { confirmDialog, choiceDialog } from '../../ui/Dialog'
 import { Group } from './SettingsGroup'
 import { ProviderCredentials } from './ProviderCredentials'
 import { removalImpact } from './credentialUsage'
@@ -19,6 +19,7 @@ import {
   sameSettings,
   type CredentialCardDraft,
 } from './providerDirty'
+import { credentialUsed, replaceWarning } from './credentialUsage'
 
 /** 平台行仅表示本地配置，不把填写密钥标成远端可用；多组密钥时顺带显示当前用哪一组 */
 function providerState(p: ProviderInfo): { label: string; tone: string } {
@@ -57,6 +58,8 @@ export function ProviderRow({
   // 没保存过的新卡；新平台没有任何组时预填一张「默认」
   const [drafts, setDrafts] = useState<CredentialCardDraft[]>([])
   const nextDraft = useRef(0)
+  // 替换改成新组后要聚焦的草稿卡：渲染完成后把焦点交给它的标签输入
+  const focusDraft = useRef<string | null>(null)
   const [status, setStatus] = useState<{ message: string; error?: boolean } | null>(null)
   const [test, setTest] = useState<ProviderTestResult | null>(null)
   const [busy, setBusy] = useState(false)
@@ -102,6 +105,18 @@ export function ProviderRow({
   }, [config, provider.secrets.length])
 
   const isSavedGroup = (key: string) => config?.credentials?.some((c) => c.id === key) ?? false
+
+  // 聚焦刚移入的草稿卡标签：卡片列表渲染完成后执行一次
+  useEffect(() => {
+    if (!focusDraft.current) return
+    const input = formFields.current?.querySelector<HTMLInputElement>(
+      `[data-credential="${focusDraft.current}"] input[type="text"]`,
+    )
+    if (input) {
+      focusDraft.current = null
+      input.focus()
+    }
+  })
 
   /** 新平台的预填卡：固定的临时键，同一时刻最多存在一张 */
   const seedDraft = (): CredentialCardDraft => ({
@@ -155,6 +170,22 @@ export function ProviderRow({
   const typedSecrets = (values: Record<string, string> = {}) =>
     Object.fromEntries(Object.entries(values).filter(([, v]) => v !== ''))
 
+  /** 把已保存卡里刚输入的密钥移到新草稿卡（标签留空），原组保持不变 */
+  const moveToDraft = (cards: CredentialCardDraft[]) => {
+    const moved: CredentialCardDraft[] = []
+    let secrets = groupSecrets
+    for (const card of cards) {
+      const typed = typedSecrets(card.secrets)
+      if (Object.keys(typed).length === 0) continue
+      moved.push({ key: `draft-${nextDraft.current++}`, label: '', secrets: typed })
+      secrets = { ...secrets, [card.key]: {} }
+    }
+    if (moved.length === 0) return
+    focusDraft.current = moved[0]!.key
+    setGroupSecrets(secrets)
+    setDrafts([...drafts, ...moved])
+  }
+
   const save = async () => {
     // 必填标签或数字没填好时先聚焦问题输入，不发出请求
     const invalid = formFields.current?.querySelector<HTMLElement>('[aria-invalid="true"]')
@@ -162,26 +193,56 @@ export function ProviderRow({
       invalid.focus()
       return
     }
+    // 只提交改过的标签与非空密钥，与脏检查共用同一判断；新卡作为 credentials.add 创建（改动过的预填卡也算）
+    const update = savedCards.flatMap((card) => {
+      const labelChanged = credentialLabelChanged(card)
+      const secrets = typedSecrets(card.secrets)
+      return labelChanged || Object.keys(secrets).length
+        ? [
+            {
+              id: card.key,
+              ...(labelChanged ? { label: card.label.trim() } : {}),
+              ...(Object.keys(secrets).length ? { secrets } : {}),
+            },
+          ]
+        : []
+    })
+    const add = drafts
+      .filter((d) => d.baseline === undefined || credentialCardDirty(d))
+      .map((d) => ({ label: d.label.trim(), secrets: typedSecrets(d.secrets) }))
+    // 已保存组填了新密钥且名下还有任务或音色：替换前先确认，新 Key 可能属于另一个账号
+    const replacing = savedCards.filter(
+      (card) =>
+        Object.values(card.secrets).some((v) => v !== '') &&
+        credentialUsed(
+          config?.credentials?.find((c) => c.id === card.key)?.usage ?? { tasks: 0, voices: 0 },
+        ),
+    )
+    if (replacing.length > 0) {
+      const usage = replacing.reduce(
+        (sum, card) => {
+          const u = config?.credentials?.find((c) => c.id === card.key)?.usage
+          return { tasks: sum.tasks + (u?.tasks ?? 0), voices: sum.voices + (u?.voices ?? 0) }
+        },
+        { tasks: 0, voices: 0 },
+      )
+      const choice = await choiceDialog({
+        title: '替换仍在使用的密钥？',
+        message: replaceWarning(usage),
+        confirmLabel: '仍然替换',
+        alternateLabel: '改为添加新组',
+      })
+      if (!choice) return
+      // 改为添加新组：刚输入的密钥移到新草稿卡，原组保持不变，本次不保存
+      if (choice === 'alternate') {
+        clearFeedback()
+        moveToDraft(replacing)
+        return
+      }
+    }
     setBusy(true)
     clearFeedback()
     try {
-      // 只提交改过的标签与非空密钥，与脏检查共用同一判断；新卡作为 credentials.add 创建（改动过的预填卡也算）
-      const update = savedCards.flatMap((card) => {
-        const labelChanged = credentialLabelChanged(card)
-        const secrets = typedSecrets(card.secrets)
-        return labelChanged || Object.keys(secrets).length
-          ? [
-              {
-                id: card.key,
-                ...(labelChanged ? { label: card.label.trim() } : {}),
-                ...(Object.keys(secrets).length ? { secrets } : {}),
-              },
-            ]
-          : []
-      })
-      const add = drafts
-        .filter((d) => d.baseline === undefined || credentialCardDirty(d))
-        .map((d) => ({ label: d.label.trim(), secrets: typedSecrets(d.secrets) }))
       // settings 与已保存一致时不带：服务端整体替换，带上旧值会把别的窗口刚保存的设置冲掉
       const settingsChanged = !sameSettings(settings, config?.settings)
       const next = await api.updateProviderConfig(provider.id, {

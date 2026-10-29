@@ -781,4 +781,110 @@ describe('密钥组', () => {
         .disabled,
     ).toBe(true)
   })
+
+  it('替换仍在使用的密钥前确认：仍然替换按 update 提交，取消不发请求', async () => {
+    const two = credView(
+      [
+        { ...credential('cred-1', '个人', true), usage: { tasks: 2, voices: 3 } },
+        credential('cred-2', '团队', true),
+      ],
+      'cred-1',
+    )
+    const { user, fetch } = renderRow({ put: () => Response.json(two) }, { view: two })
+    await screen.findByLabelText('「个人」的标签')
+    await user.type(card('cred-1').getByLabelText('「个人」的API Key'), 'brand-new-key')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '替换仍在使用的密钥？' })
+    expect(dialog.textContent).toContain('2 个任务的结果还没取回')
+    expect(dialog.textContent).toContain('3 个音色')
+    expect(dialog.textContent).toContain('如果新 Key 属于另一个账号，它们会失效')
+    expect(dialog.textContent).toContain('换账号建议「添加一组密钥」')
+    // 取消：不动任何东西
+    await user.click(within(dialog).getByRole('button', { name: '取消' }))
+    expect(writes(fetch)).toHaveLength(0)
+
+    // 仍然替换：按 update 提交
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    const second = await screen.findByRole('dialog', { name: '替换仍在使用的密钥？' })
+    await user.click(within(second).getByRole('button', { name: '仍然替换' }))
+    await waitFor(() => expect(writes(fetch)).toHaveLength(1))
+    expect(JSON.parse(writes(fetch)[0]![1]!.body as string).credentials.update).toEqual([
+      { id: 'cred-1', secrets: { MOCK_API_KEY: 'brand-new-key' } },
+    ])
+  })
+
+  it('改为添加新组：刚输入的密钥移到新草稿卡并聚焦标签，原组不变，保存时按 add 提交', async () => {
+    const two = credView(
+      [
+        { ...credential('cred-1', '个人', true), usage: { tasks: 0, voices: 2 } },
+        credential('cred-2', '团队', true),
+      ],
+      'cred-1',
+    )
+    let replaced = false
+    const { user, fetch } = renderRow(
+      {
+        put: async (request) => {
+          const body = await request.json()
+          if (body.credentials?.add?.length) replaced = true
+          return Response.json(
+            replaced
+              ? credView(
+                  [
+                    { ...credential('cred-1', '个人', true), usage: { tasks: 0, voices: 2 } },
+                    credential('cred-2', '团队', true),
+                    credential('cred-3', '备用', true),
+                  ],
+                  'cred-1',
+                )
+              : two,
+          )
+        },
+      },
+      { view: two },
+    )
+    await screen.findByLabelText('「个人」的标签')
+    await user.type(card('cred-1').getByLabelText('「个人」的API Key'), 'moved-key')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '替换仍在使用的密钥？' })
+    await user.click(within(dialog).getByRole('button', { name: '改为添加新组' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    // 没有发出保存：原组不变，刚输入的密钥落到新草稿卡，标签留空并聚焦
+    expect(writes(fetch)).toHaveLength(0)
+    const label = card('draft').getByLabelText('「新密钥组 1」的标签') as HTMLInputElement
+    expect(label.value).toBe('')
+    expect(document.activeElement).toBe(label)
+    expect((card('cred-1').getByLabelText('「个人」的API Key') as HTMLInputElement).value).toBe('')
+    expect(card('draft').getByLabelText('「新密钥组 1」的API Key').getAttribute('value')).toBe(
+      'moved-key',
+    )
+
+    // 补上标签再保存：负载是 credentials.add 而不是 update
+    await user.type(label, '备用')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(writes(fetch)).toHaveLength(1))
+    const body = JSON.parse(writes(fetch)[0]![1]!.body as string)
+    expect(body.credentials.add).toEqual([
+      { label: '备用', secrets: { MOCK_API_KEY: 'moved-key' } },
+    ])
+    expect(body.credentials.update).toBeUndefined()
+  })
+
+  it('替换没有使用的密钥组不打扰，直接保存', async () => {
+    const two = credView(
+      [credential('cred-1', '个人', true), credential('cred-2', '团队', true)],
+      'cred-1',
+    )
+    const { user, fetch } = renderRow({ put: () => Response.json(two) }, { view: two })
+    await screen.findByLabelText('「个人」的标签')
+    await user.type(card('cred-2').getByLabelText('「团队」的API Key'), 'fresh-key')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(writes(fetch)).toHaveLength(1))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(JSON.parse(writes(fetch)[0]![1]!.body as string).credentials.update).toEqual([
+      { id: 'cred-2', secrets: { MOCK_API_KEY: 'fresh-key' } },
+    ])
+  })
 })

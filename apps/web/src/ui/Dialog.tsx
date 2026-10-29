@@ -15,6 +15,8 @@ interface ConfirmOptions {
   cancelLabel?: string
   /** 删除等不可撤销的操作：确认按钮用危险色 */
   danger?: boolean
+  /** 第三个选项的文案（如「改为添加新组」）；要区分它和取消时用 choiceDialog */
+  alternateLabel?: string
 }
 
 interface PromptOptions {
@@ -30,7 +32,7 @@ interface PromptOptions {
 }
 
 export type DialogRequest = { id: number } & (
-  | { kind: 'confirm'; options: ConfirmOptions; resolve(v: boolean): void }
+  | { kind: 'confirm'; options: ConfirmOptions; resolve(v: boolean | 'alternate'): void }
   | { kind: 'prompt'; options: PromptOptions; resolve(v: string | null): void }
 )
 
@@ -60,7 +62,7 @@ function settle(value: boolean | string | null) {
   if (!req) return
   current = null
   emit()
-  if (req.kind === 'confirm') req.resolve(value === true)
+  if (req.kind === 'confirm') req.resolve(value === true || value === 'alternate' ? value : false)
   else req.resolve(typeof value === 'string' ? value : null)
 }
 
@@ -68,7 +70,18 @@ function settle(value: boolean | string | null) {
 export const dialogOpen = () => current !== null
 
 export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
-  return new Promise((resolve) => open({ kind: 'confirm', options, resolve }))
+  return new Promise((resolve) =>
+    open({ kind: 'confirm', options, resolve: (v) => resolve(v === 'alternate' ? false : v) }),
+  )
+}
+
+/** 三选一确认：确认返回 true，第三个选项返回 'alternate'，取消或 Esc 返回 false */
+export function choiceDialog(
+  options: ConfirmOptions & { alternateLabel: string },
+): Promise<boolean | 'alternate'> {
+  return new Promise((resolve) =>
+    open({ kind: 'confirm', options, resolve: (v) => resolve(v === 'alternate' ? v : !!v) }),
+  )
 }
 
 /** 取消或留空时返回 null，否则返回去掉首尾空白的文本 */

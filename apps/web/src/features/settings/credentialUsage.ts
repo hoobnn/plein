@@ -11,6 +11,14 @@ export interface CredentialUsage {
 /** 这组 Key 名下还有没有未取回的结果或音色 */
 export const credentialUsed = (usage: CredentialUsage) => usage.tasks > 0 || usage.voices > 0
 
+/** 替换确认的提示：新 Key 可能属于另一个账号，未取回的结果和音色会失效 */
+export function replaceWarning(usage: CredentialUsage): string {
+  const items: string[] = []
+  if (usage.tasks > 0) items.push(`${usage.tasks} 个任务的结果还没取回`)
+  if (usage.voices > 0) items.push(`${usage.voices} 个音色`)
+  return `这组 Key 下有 ${items.join('、')}。如果新 Key 属于另一个账号，它们会失效；换账号建议「添加一组密钥」。`
+}
+
 /** 删除确认的后果说明；全为 0 时返回 null，保持原来的简短确认 */
 export function removalImpact(usage: CredentialUsage): string | null {
   const items: string[] = []
