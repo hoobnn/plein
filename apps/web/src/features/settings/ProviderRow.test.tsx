@@ -509,18 +509,28 @@ describe('密钥组', () => {
       { row: configuredProvider, view: twoGroups() },
     )
     await screen.findByLabelText('「个人」的标签')
-    expect(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }).disabled).toBe(false)
+    expect(
+      card('cred-1').getByRole<HTMLButtonElement>('button', { name: '检查「个人」的连接' })
+        .disabled,
+    ).toBe(false)
     fireEvent.change(latency(), { target: { value: '321' } })
     fireEvent.focusOut(latency())
-    expect(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }).disabled).toBe(true)
-    expect(card('cred-2').getByRole('button', { name: '检查「团队」的连接' }).disabled).toBe(true)
+    expect(
+      card('cred-1').getByRole<HTMLButtonElement>('button', { name: '检查「个人」的连接' })
+        .disabled,
+    ).toBe(true)
+    expect(
+      card('cred-2').getByRole<HTMLButtonElement>('button', { name: '检查「团队」的连接' })
+        .disabled,
+    ).toBe(true)
 
     // 保存后恢复可用
     await user.click(screen.getByRole('button', { name: '保存' }))
     await waitFor(() =>
-      expect(card('cred-1').getByRole('button', { name: '检查「个人」的连接' }).disabled).toBe(
-        false,
-      ),
+      expect(
+        card('cred-1').getByRole<HTMLButtonElement>('button', { name: '检查「个人」的连接' })
+          .disabled,
+      ).toBe(false),
     )
   })
 
