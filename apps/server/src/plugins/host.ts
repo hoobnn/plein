@@ -643,7 +643,7 @@ export class PluginHost {
       throw lostCredential(
         new ProviderError(
           'auth',
-          `音色「${voiceCredential.voiceName}」所属的 Key 已删除，请在节点上改用其他音色，或重新复刻后再运行。`,
+          `音色「${voiceCredential.voiceName}」所属的 Key「${voiceCredential.credentialLabel ?? credentialId!.slice(0, 8)}」已删除，请在节点上改用其他音色，或重新复刻后再运行。`,
           { retryable: false },
         ),
         { reason: 'missing', voice: voiceCredential.voiceName },
@@ -656,21 +656,27 @@ export class PluginHost {
       throw lostCredential(
         new ProviderError(
           'auth',
-          `音色「${voiceCredential.voiceName}」所属的 Key 已被替换，请在节点上改用其他音色，或重新复刻后再运行。`,
+          `音色「${voiceCredential.voiceName}」所属的 Key「${credential?.label ?? voiceCredential.credentialLabel ?? credentialId!.slice(0, 8)}」已被替换，请在节点上改用其他音色，或重新复刻后再运行。`,
           { retryable: false },
         ),
         { reason: 'replaced', voice: voiceCredential.voiceName },
       )
-    const ctx = this.providerContext(parsed.provider, opts.ownerId, signal, {
-      requireEnabled: true,
-      idempotencyKey,
-      credentialId,
-      credentialFingerprint,
-      credentialLabel,
-      credentialVoice,
-    })
     const { onDelta } = opts
-    if (onDelta) ctx.stream = (d) => onDelta(d.text)
+    let ctx: ProviderContext | undefined
+    const providerCtx = () => {
+      if (!ctx) {
+        ctx = this.providerContext(parsed.provider, opts.ownerId, signal, {
+          requireEnabled: true,
+          idempotencyKey,
+          credentialId,
+          credentialFingerprint,
+          credentialLabel,
+          credentialVoice,
+        })
+        if (onDelta) ctx.stream = (d) => onDelta(d.text)
+      }
+      return ctx
+    }
     const { def } = entry
     const limiter = this.limiter(parsed.provider, def.limits)
     const via =
@@ -755,7 +761,7 @@ export class PluginHost {
       try {
         for (;;) {
           await sleep(wait, signal)
-          const r: PollResult = await def.poll!(remoteId, ctx)
+          const r: PollResult = await def.poll!(remoteId, providerCtx())
           if (r.state === 'succeeded') return r
           if (r.state === 'failed') {
             remoteFailed = true
@@ -836,7 +842,7 @@ export class PluginHost {
           }
           if (recorded?.state === 'submitting' || recorded?.state === 'unknown') {
             // 上次提交没收到回应：有查询合同就先查，查不到或没有查询合同时，只有幂等才用同一个键重新提交
-            const found = await this.verifySubmit(def, ctx, idempotencyKey, recorded)
+            const found = await this.verifySubmit(def, providerCtx(), idempotencyKey, recorded)
             if (found) {
               remote = found.remoteId
               record({ state: 'pending', remoteId: found.remoteId })
@@ -846,12 +852,13 @@ export class PluginHost {
           }
           let submitted: Awaited<ReturnType<typeof def.submit>>
           let verified = false
+          const context = providerCtx()
           for (;;) {
             stage('submitting')
             trace = { attemptId: randomUUID(), requestId: randomUUID() }
             // 同步落盘失败时不会进入 submit，更不会发请求。
             record({ state: 'submitting', at: Date.now() }, 'submit_started')
-            ctx.submission = {
+            context.submission = {
               requestId: trace.requestId,
               response: ({ logId, httpStatus }) => {
                 const safeLog = logId?.replace(/[^a-zA-Z0-9_.:-]/g, '').slice(0, 160)
@@ -861,7 +868,7 @@ export class PluginHost {
               },
             }
             try {
-              submitted = await def.submit({ capability, model: parsed.model, input }, ctx)
+              submitted = await def.submit({ capability, model: parsed.model, input }, context)
               break
             } catch (err) {
               // 服务退出：留着 submitting，重启后按状态未知核查
@@ -879,7 +886,7 @@ export class PluginHost {
               if (verified || !(def.lookup || def.idempotent))
                 throw unknownSubmit(def.title, message, err)
               verified = true
-              const found = await this.verifySubmit(def, ctx, idempotencyKey, unknown)
+              const found = await this.verifySubmit(def, providerCtx(), idempotencyKey, unknown)
               if (found) {
                 remote = found.remoteId
                 record({ state: 'pending', remoteId: found.remoteId })
@@ -939,7 +946,7 @@ export class PluginHost {
           const status = (err as { status?: number }).status
           if (status && EXPIRED.has(status) && remote && def.poll && !storeSignal.aborted) {
             try {
-              const again = await def.poll(remote, ctx)
+              const again = await def.poll(remote, providerCtx())
               if (again.state !== 'succeeded') throw err
               outputs = again.outputs
               await saveFetched(outputs, fetched.usage)
@@ -1066,7 +1073,7 @@ export class PluginHost {
       const message = opts.voiceName
         ? `音色「${opts.voiceName}」所属的 Key「${label}」${missing ? '已删除' : '已被替换'}，无法查询训练状态。请恢复原 Key，或重新复刻`
         : opts.credentialVoice
-          ? `音色「${opts.credentialVoice}」所属的 Key ${missing ? '已删除' : '已被替换'}，请在节点上改用其他音色，或重新复刻后再运行。`
+          ? `音色「${opts.credentialVoice}」所属的 Key「${label}」${missing ? '已删除' : '已被替换'}，请在节点上改用其他音色，或重新复刻后再运行。`
           : missing
             ? `原来的 Key「${label}」已删除，无法取回之前的结果。为避免重复计费没有自动重新提交。`
             : `原来的 Key「${label}」已被替换，暂时无法取回结果。把这组 Key 改回原来的内容后可重新获取；不需要原结果的话，可以用当前 Key 重新提交（会再次计费）。`

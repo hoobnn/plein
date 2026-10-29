@@ -797,6 +797,41 @@ describe('模型调用记录', () => {
     expect(poll).not.toHaveBeenCalled()
   })
 
+  it('fetched 本地字节完整时删组也能入库，不校验 Key 或查询平台', async () => {
+    const { configs, submit, poll, records, call } = asyncHost()
+    const originalId = configs.get('acme/async').activeCredential!
+    records.set('k', {
+      state: 'fetched',
+      remoteId: 'r1',
+      provider: 'acme/async',
+      credentialId: originalId,
+      credentialFingerprint: credentialFingerprint({ ASYNC_KEY: 'one' }),
+      outputs: [
+        {
+          type: 'file',
+          kind: 'audio',
+          mime: 'audio/wav',
+          base64: Buffer.from('local-output').toString('base64'),
+        },
+      ],
+    })
+    const withTeam = configs.addCredential('acme/async', '团队', { ASYNC_KEY: 'two' })
+    configs.setActiveCredential('acme/async', withTeam.credentials[1]!.id)
+    configs.removeCredential('acme/async', originalId)
+
+    await expect(call()).resolves.toMatchObject({
+      outputs: [
+        expect.objectContaining({
+          type: 'file',
+          data: new Uint8Array(Buffer.from('local-output')),
+        }),
+      ],
+      assets: [expect.objectContaining({ kind: 'audio' })],
+    })
+    expect(submit).not.toHaveBeenCalled()
+    expect(poll).not.toHaveBeenCalled()
+  })
+
   it('模型声明不支持的参数不传给平台；成功后记下结果', async () => {
     const { submit, records, call } = asyncHost()
     await call()
@@ -876,7 +911,7 @@ describe('模型调用记录', () => {
       code: 'auth',
       retryable: false,
       credentialLost: { reason: 'missing', voice: '旁白' },
-      message: '音色「旁白」所属的 Key 已删除，请在节点上改用其他音色，或重新复刻后再运行。',
+      message: '音色「旁白」所属的 Key「默认」已删除，请在节点上改用其他音色，或重新复刻后再运行。',
     })
     expect(submit).not.toHaveBeenCalled()
   })
@@ -897,7 +932,8 @@ describe('模型调用记录', () => {
       code: 'auth',
       retryable: false,
       credentialLost: { reason: 'replaced', voice: '旁白' },
-      message: '音色「旁白」所属的 Key 已被替换，请在节点上改用其他音色，或重新复刻后再运行。',
+      message:
+        '音色「旁白」所属的 Key「默认」已被替换，请在节点上改用其他音色，或重新复刻后再运行。',
     })
     expect(submit).not.toHaveBeenCalled()
   })
@@ -926,7 +962,7 @@ describe('模型调用记录', () => {
     await expect(speech()).rejects.toMatchObject({
       code: 'auth',
       credentialLost: { reason: 'missing', voice: '旁白' },
-      message: '音色「旁白」所属的 Key 已删除，请在节点上改用其他音色，或重新复刻后再运行。',
+      message: '音色「旁白」所属的 Key「默认」已删除，请在节点上改用其他音色，或重新复刻后再运行。',
     })
     expect(submit).toHaveBeenCalledTimes(1)
   })

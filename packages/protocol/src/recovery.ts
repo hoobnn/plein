@@ -87,7 +87,11 @@ export interface JobRecovery {
 export const RecoverJobOptions = z.discriminatedUnion('action', [
   z.object({ action: z.literal('refetch') }),
   z.object({ action: z.literal('attach'), remoteId: z.string().trim().min(1).max(200) }),
-  z.object({ action: z.literal('resubmit') }),
+  z.object({
+    action: z.literal('resubmit'),
+    /** 原 Key 失效后，用户已在二次确认中明确接受改用当前组并再次计费 */
+    credentialChange: z.literal(true).optional(),
+  }),
   z.object({ action: z.literal('dismiss') }),
 ])
 export type RecoverJobOptions = z.infer<typeof RecoverJobOptions>
