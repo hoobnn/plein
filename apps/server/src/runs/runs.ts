@@ -1346,14 +1346,14 @@ export class NodeRuns implements BatchHost {
 
   /** 平台在恢复上的能力：能不能按任务 ID 查询、有没有查询或幂等合同 */
   private abilityOf(ref: string | undefined): ProviderAbility | undefined {
-    const parsed = ref ? parseModelRef(ref) : undefined
-    const def = parsed ? this.host.registry.providers.get(parsed.provider)?.def : undefined
-    if (!def) return undefined
+    const providerId = ref ? parseModelRef(ref)?.provider : undefined
+    const def = providerId ? this.host.registry.providers.get(providerId)?.def : undefined
+    if (!providerId || !def) return undefined
     return {
       title: def.title,
       poll: !!def.poll,
       verify: !!def.lookup || !!def.idempotent,
-      currentCredentialLabel: this.host.configs.credential(parsed.provider)?.label,
+      currentCredentialLabel: this.host.configs.credential(providerId)?.label,
     }
   }
 
