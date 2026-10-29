@@ -355,7 +355,9 @@ function RecognitionRecovery({
 }) {
   const [remoteId, setRemoteId] = useState('')
   const [confirmed, setConfirmed] = useState(false)
-  const unknown = info.recovery.state === 'submit_unknown'
+  const [credentialConfirm, setCredentialConfirm] = useState(false)
+  const credentialLost = !!info.recovery.credentialLost
+  const unknown = info.recovery.state === 'submit_unknown' && !credentialLost
   return (
     <section
       aria-label="字幕识别恢复"
@@ -371,6 +373,26 @@ function RecognitionRecovery({
           onClick={() => onRecover({ action: 'refetch' })}
         >
           重新获取识别结果
+        </button>
+      )}
+      {credentialLost && !credentialConfirm && (
+        <button
+          type="button"
+          className="ui-btn ui-btn-secondary"
+          disabled={busy}
+          onClick={() => setCredentialConfirm(true)}
+        >
+          用当前 Key 重新提交
+        </button>
+      )}
+      {credentialLost && (
+        <button
+          type="button"
+          className="ui-btn ui-btn-quiet"
+          disabled={busy}
+          onClick={() => onRecover({ action: 'dismiss' })}
+        >
+          标记已处理
         </button>
       )}
       {unknown && (
@@ -410,6 +432,35 @@ function RecognitionRecovery({
             确认未受理，重新提交识别
           </button>
         </>
+      )}
+      {credentialConfirm && (
+        <div
+          role="group"
+          aria-label="重新提交识别确认"
+          className="flex flex-col gap-2 rounded-md bg-hover px-2 py-1.5"
+        >
+          <p className="text-sm">
+            {`原来的 Key 已不可用，无法取回之前的结果。用当前 Key「${info.recovery.currentCredentialLabel ?? '默认'}」重新提交会再次计费，确定吗？`}
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="ui-btn ui-btn-danger"
+              disabled={busy}
+              onClick={() => onRecover({ action: 'resubmit' }, true)}
+            >
+              重新提交识别
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn-quiet"
+              disabled={busy}
+              onClick={() => setCredentialConfirm(false)}
+            >
+              取消
+            </button>
+          </div>
+        </div>
       )}
     </section>
   )

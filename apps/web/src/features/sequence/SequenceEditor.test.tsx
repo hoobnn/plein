@@ -294,7 +294,7 @@ it('打开唯一关联成片之前同步增加歧义时不使用旧按钮导航'
   expect(f.doc.has(target)).toBe(true)
 })
 
-async function subtitleSetup(recovery = false) {
+async function subtitleSetup(recovery: boolean | 'credential' = false) {
   const asset = crypto.randomUUID().replaceAll('-', '').repeat(2)
   let release!: (response: Response) => void
   const pending = new Promise<Response>((resolve) => {
@@ -311,7 +311,15 @@ async function subtitleSetup(recovery = false) {
               model: 'plein/mock:audio',
               assetId: asset,
               expected: 'revision',
-              recovery: { state: 'submit_unknown', attachable: true },
+              recovery:
+                recovery === 'credential'
+                  ? {
+                      state: 'remote_pending',
+                      refetchable: true,
+                      credentialLost: true,
+                      currentCredentialLabel: '团队',
+                    }
+                  : { state: 'submit_unknown', attachable: true },
             }
           : null,
       )
@@ -389,6 +397,46 @@ it('恢复等待中关闭重开，恢复仍完成但不自动发起旧会话识�
   })
   expect(f.calls).toHaveLength(1)
   expect(f.params().subtitleTrack).toBeUndefined()
+})
+
+it('字幕原 Key 失效时用当前组重提必须二次确认', async () => {
+  const f = await subtitleSetup('credential')
+  await f.user.click(await screen.findByRole('button', { name: '用当前 Key 重新提交' }))
+  const confirm = await screen.findByRole('group', { name: '重新提交识别确认' })
+  expect(confirm.textContent).toContain(
+    '原来的 Key 已不可用，无法取回之前的结果。用当前 Key「团队」重新提交会再次计费，确定吗？',
+  )
+  expect(f.calls).toEqual([])
+  await f.user.click(screen.getByRole('button', { name: '重新提交识别' }))
+  await waitFor(() => expect(f.calls).toHaveLength(1))
+  expect(f.calls[0]).toMatchObject({
+    path: '/api/media/subtitle-recover',
+    body: {
+      expected: 'revision',
+      operation: { action: 'resubmit' },
+      confirmedNotAccepted: true,
+    },
+  })
+  await act(async () => {
+    f.release(Response.json({ ok: true }))
+    await f.pending
+  })
+})
+
+it('字幕原 Key 失效可标记已处理，不自动重新识别', async () => {
+  const f = await subtitleSetup('credential')
+  await f.user.click(await screen.findByRole('button', { name: '标记已处理' }))
+  await waitFor(() => expect(f.calls).toHaveLength(1))
+  expect(f.calls[0]).toMatchObject({
+    path: '/api/media/subtitle-recover',
+    body: { operation: { action: 'dismiss' } },
+  })
+  await act(async () => {
+    f.release(Response.json({ ok: true }))
+    await f.pending
+  })
+  await waitFor(() => expect(screen.queryByRole('region', { name: '字幕识别恢复' })).toBeNull())
+  expect(f.calls).toHaveLength(1)
 })
 
 it('持久字幕逐句修改、隐藏和撤销；等待中的识别不能覆盖过期轨上的输入草稿', async () => {

@@ -15,7 +15,8 @@ import {
 import { Hono } from 'hono'
 import type { AuthEnv } from '../auth'
 import type { AssetStore } from '../assets/store'
-import type { PluginHost } from '../plugins/host'
+import { credentialFingerprint as fingerprintOf } from '../plugins/config-store'
+import type { CallRecord, PluginHost } from '../plugins/host'
 import type { DB } from '../storage/db'
 import { legacySubtitleRecord } from './legacy'
 import { readRecord, writeRecord } from './journal'
@@ -58,6 +59,15 @@ export function subtitleRoutes({
       .digest('hex')
     return { key, file: join(root, `${key}.json`), provider, spec, version }
   }
+  const credentialLost = (providerId: string, record: CallRecord) => {
+    if (!record.credentialId) return false
+    const credential = host.configs.credential(providerId, record.credentialId)
+    return (
+      !credential ||
+      (!!record.credentialFingerprint &&
+        fingerprintOf(credential.secrets) !== record.credentialFingerprint)
+    )
+  }
   const info = (
     ownerId: string,
     assetId: string,
@@ -66,7 +76,11 @@ export function subtitleRoutes({
     const context = describe(ownerId, assetId, model)
     const stored = readRecord(context.file)
     const record = stored?.record
-    if (!record || record.state === 'done') return null
+    if (!record || record.state === 'done' || stored?.dismissed) return null
+    const lost = credentialLost(context.provider.def.id, record)
+    const currentCredentialLabel = lost
+      ? host.configs.credential(context.provider.def.id)?.label
+      : undefined
     const state =
       record.state === 'pending'
         ? 'remote_pending'
@@ -94,9 +108,12 @@ export function subtitleRoutes({
         state,
         attachable: !!context.provider.def.poll,
         refetchable: record.state === 'pending' || record.state === 'fetched',
+        ...(lost ? { credentialLost: true as const } : {}),
+        ...(currentCredentialLabel ? { currentCredentialLabel } : {}),
         ...('remoteId' in record && record.remoteId ? { remoteId: record.remoteId } : {}),
-        note:
-          state === 'submit_unknown'
+        note: lost
+          ? '原来的 Key 已不可用，无法取回之前的结果；恢复这组 Key 后可重新获取，或用当前 Key 重新提交（会再次计费）。'
+          : state === 'submit_unknown'
             ? '提交状态未知，请先在平台核查；填平台任务 ID 续查，或确认未受理后再重新提交。'
             : '平台已受理，重新获取只续查或复用已返回结果。',
       },
@@ -253,20 +270,32 @@ export function subtitleRoutes({
               history: [...(stored.history ?? []), { record, at: Date.now(), action: 'attach' }],
             })
           } else if (operation.action === 'resubmit') {
-            if (
-              !confirmedNotAccepted ||
-              (record.state !== 'unknown' && record.state !== 'submitting')
-            )
-              return 'invalid' as const
+            const unknownResubmit =
+              confirmedNotAccepted && (record.state === 'unknown' || record.state === 'submitting')
+            const credentialResubmit = credentialLost(context.provider.def.id, record)
+            if (!unknownResubmit && !credentialResubmit) return 'invalid' as const
             writeRecord(context.file, {
               ...stored,
               record: null,
               confirmedReset: true,
+              dismissed: undefined,
               audit: [...(stored.audit ?? []), audit('manual_resubmit')],
               history: [
                 ...(stored.history ?? []),
-                { record, at: Date.now(), action: 'confirmed_not_accepted' },
+                {
+                  record,
+                  at: Date.now(),
+                  action: credentialResubmit ? 'credential_lost' : 'confirmed_not_accepted',
+                },
               ],
+            })
+          } else if (operation.action === 'dismiss') {
+            if (!credentialLost(context.provider.def.id, record)) return 'invalid' as const
+            writeRecord(context.file, {
+              ...stored,
+              dismissed: true,
+              audit: [...(stored.audit ?? []), audit('manual_dismiss')],
+              history: [...(stored.history ?? []), { record, at: Date.now(), action: 'dismiss' }],
             })
           } else if (
             operation.action !== 'refetch' ||

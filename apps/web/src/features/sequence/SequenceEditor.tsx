@@ -911,6 +911,10 @@ function Editor({
       })
       if (!request.current()) return
       setSubtitleRecovery(null)
+      if (operation.action === 'dismiss') {
+        setSubtitleError(null)
+        return
+      }
       const latest = readSequence(engine, id)
       if (subtitleInputKey(latest.params, latest.rows) !== inputKey) {
         setSubtitleError('素材在恢复期间已变化，恢复记录已保存，请重新检查字幕后再识别')

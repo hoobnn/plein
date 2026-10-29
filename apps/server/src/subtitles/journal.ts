@@ -22,6 +22,7 @@ export interface StoredRecognition {
   history?: Array<{ record: CallRecord; at: number; action: string }>
   audit?: SubmissionAudit[]
   confirmedReset?: boolean
+  dismissed?: true
 }
 
 export function readRecord(file: string): StoredRecognition | undefined {
@@ -46,11 +47,15 @@ export function subtitleCredentialUsage(root: string): CredentialUsage {
   }
   for (const file of files) {
     if (!file.endsWith('.json')) continue
-    const stored = readRecord(join(root, file))
-    const record = stored?.record
-    if (!stored || !record) continue
-    const provider = record.provider ?? parseModelRef(stored.model)?.provider
-    if (provider) addCredentialUsage(usage, provider, record)
+    try {
+      const stored = readRecord(join(root, file))
+      const record = stored?.record
+      if (!stored || !record) continue
+      const provider = record.provider ?? parseModelRef(stored.model)?.provider
+      if (provider) addCredentialUsage(usage, provider, record)
+    } catch {
+      // 单个损坏或写入中断的识别文件不影响设置页读取其他用量。
+    }
   }
   return usage
 }

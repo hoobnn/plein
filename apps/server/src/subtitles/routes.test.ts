@@ -139,6 +139,65 @@ describe('字幕显式识别与持久恢复', () => {
     )
   })
 
+  it('原 Key 删除后可确认用当前组重提识别，新记录使用当前组', async () => {
+    const s = await setup()
+    const config = s.server.plugins.configs.update('plein/mock', {
+      secrets: { MOCK_API_KEY: 'one' },
+    })
+    const originalId = config.activeCredential!
+    mockSettings(s.server, { latencyMs: 1 })
+    const poll = vi
+      .spyOn(s.entry.def, 'poll')
+      .mockRejectedValue(new ProviderError('unavailable', '稍后再查', { retryable: true }))
+    const first = await s.call()
+    expect(first.status).toBe(422)
+    poll.mockRestore()
+    mockSettings(s.server, { latencyMs: 0 })
+    const withTeam = s.server.plugins.configs.addCredential('plein/mock', '团队', {
+      MOCK_API_KEY: 'two',
+    })
+    const teamId = withTeam.credentials[1]!.id
+    s.server.plugins.configs.setActiveCredential('plein/mock', teamId)
+    s.server.plugins.configs.removeCredential('plein/mock', originalId)
+
+    const lookup = await s
+      .app()
+      .request(
+        `${API.subtitleRecognition}?${new URLSearchParams({ model: mockModel('audio.transcribe'), assetId: s.assetId })}`,
+      )
+    const current = (await lookup.json()) as SubtitleRecognitionInfo
+    expect(current.recovery).toMatchObject({
+      state: 'remote_pending',
+      refetchable: true,
+      credentialLost: true,
+      currentCredentialLabel: '团队',
+    })
+    const recovered = await s.app().request(API.subtitleRecover, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: current.model,
+        assetId: current.assetId,
+        expected: current.expected,
+        operation: { action: 'resubmit' },
+        confirmedNotAccepted: true,
+      }),
+    })
+    expect(recovered.status).toBe(200)
+    const submit = vi.spyOn(s.entry.def, 'submit')
+    expect((await s.call()).status).toBe(200)
+    expect(submit.mock.calls[0]![1].secret('MOCK_API_KEY')).toBe('two')
+    const file = readdirSync(join(s.dataDir, 'subtitle-recognition')).find((f) =>
+      f.endsWith('.json'),
+    )!
+    const stored = journal.readRecord(join(s.dataDir, 'subtitle-recognition', file))!
+    expect(stored.record).toMatchObject({
+      state: 'done',
+      credentialId: teamId,
+      credentialLabel: '团队',
+    })
+  })
+
   it.each(
     (['current-source', 'legacy-no-source'] as const).flatMap((encoding) =>
       (['matching', 'owner', 'asset', 'model', 'adapter', 'unknown', 'checksum'] as const).map(
