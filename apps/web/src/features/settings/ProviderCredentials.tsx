@@ -1,10 +1,10 @@
-import type { ProviderConfigView, ProviderInfo } from '@plein/protocol'
-import { credentialCardDirty, type CredentialCardDraft } from './providerDirty'
-
 /**
  * 平台的「密钥」区：一组密钥一张紧凑卡片（标签、各密钥输入、使用中标记、检查连接、删除），
  * 没保存过的新卡接在后面。草稿由行组件持有，保存时随设置一起提交；这里只渲染并转发操作。
  */
+
+import type { ProviderConfigView, ProviderInfo } from '@plein/protocol'
+import { credentialCardDirty, type CredentialCardDraft } from './providerDirty'
 
 interface CardProps {
   provider: ProviderInfo
@@ -120,6 +120,7 @@ function CredentialCard({
   )
 }
 
+/** 密钥区的入口：按服务端视图加本地草稿拼出卡片列表，末尾是「添加一组密钥」 */
 export function ProviderCredentials({
   provider,
   config,
