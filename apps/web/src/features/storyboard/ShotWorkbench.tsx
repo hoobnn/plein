@@ -264,19 +264,33 @@ function Workbench({
   // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化，重扫全画布提及目标
   const mentionTargetList = useMemo(() => mentionTargets(engine), [engine, version])
   // oxlint-enable react-hooks/exhaustive-deps
-  // 配音节点显式指定的音色优先于角色卡沿用；按其提示词里的角色提及映射
+  // 配音节点显式指定的音色优先于角色卡沿用（服务端同一规则）。
+  // 展开出的配音节点没有 prompt：按 source.dialogueId 找到台词，
+  // 再按台词 speaker 绑定（缺省用出场绑定）映射到角色；同一角色多句不一致时单独提示
   const speechVoices = useMemo(() => {
-    const map = new Map<string, VoiceRef>()
-    for (const speech of groups.get(shotId) ?? []) {
-      if ((speech.params?.source as ShotSource | undefined)?.role !== 'speech') continue
-      const voice = voiceOf(speech.params)
+    const map = new Map<string, VoiceRef[]>()
+    if (!shot) return map
+    for (const node of groups.get(shotId) ?? []) {
+      const source = node.params?.source as ShotSource | undefined
+      if (source?.role !== 'speech' || source.detached || !source.dialogueId) continue
+      const voice = voiceOf(node.params)
       if (!hasVoice(voice)) continue
-      const text = typeof speech.params?.prompt === 'string' ? speech.params.prompt : ''
-      for (const mention of findMentions(text, mentionTargetList))
-        if (mention.id) map.set(mention.id, voice)
+      const line = shot.dialogue.find((d) => d.id === source.dialogueId)
+      if (!line) continue
+      const asset = resolveShotAsset(
+        engine.doc,
+        line.character,
+        line.speaker ?? shot.assetBindings?.[line.character],
+      )
+      if (!asset) continue
+      const list = map.get(asset.id) ?? []
+      if (!list.some((v) => v.provider === voice.provider && v.voiceId === voice.voiceId))
+        list.push(voice)
+      map.set(asset.id, list)
     }
     return map
-  }, [groups, shotId, mentionTargetList])
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- version 变化即文档变化
+  }, [engine, shot, shotId, groups, version])
   const changed = draft?.source !== currentDraft?.source
   const downstream = workbenchDownstream(
     engine.doc,
@@ -904,7 +918,7 @@ function ShotSummary({
   promptText: string
   promptSource: string
   targets: MentionTarget[]
-  speechVoices: ReadonlyMap<string, VoiceRef>
+  speechVoices: ReadonlyMap<string, VoiceRef[]>
   input: UseQueryResult<PreparedInput>
   onLocate(id: string): void
   onChoose(): void
@@ -989,23 +1003,34 @@ function ShotSummary({
             return '参考图没有送入'
           }
           const review = getCreativeReview(asset)
-          // 配音节点显式指定的音色优先于角色卡沿用（服务端同一规则）
-          const speechVoice = speechVoices.get(asset.id)
-          const voicePart = speechVoice
-            ? '配音另指定'
-            : (pick.voiceState?.name ?? (hasVoice(voice) ? '默认' : '未选'))
+          // 配音节点显式指定的音色优先于角色卡沿用；同一角色多句不一致时单独提示
+          const speechVoicesFor = speechVoices.get(asset.id) ?? []
+          const voicePart =
+            speechVoicesFor.length > 1
+              ? '多句音色不同'
+              : speechVoicesFor.length === 1
+                ? '配音另指定'
+                : (pick.voiceState?.name ?? (hasVoice(voice) ? '默认' : '未选'))
           const voiceText = `时期：${pick.period?.name ?? '默认'} · 服装：${pick.outfit?.name ?? '默认'} · 表情：${pick.expression?.name ?? '默认'} · 音色：${voicePart}`
+          const speechTitle =
+            speechVoicesFor.length > 1
+              ? `各句配音音色：${speechVoicesFor.map((v) => v.voiceId).join('、')}`
+              : speechVoicesFor.length === 1
+                ? `配音节点指定了音色 ${speechVoicesFor[0]!.voiceId}`
+                : undefined
           return (
             <button
               type="button"
               className="plein-shot-subject text-left"
               key={name}
-              title={speechVoice ? `配音节点指定了音色 ${speechVoice.voiceId}` : hint}
+              title={speechTitle ?? hint}
               onClick={broken ? onChoose : () => onLocate(asset.id)}
             >
               <span className="block font-medium">{name} · 调整资产</span>
               {asset.nodeType === 'plein/character' && (
-                <span className={unclear && !speechVoice ? 'block text-warning' : 'block'}>
+                <span
+                  className={unclear && !speechVoicesFor.length ? 'block text-warning' : 'block'}
+                >
                   {broken ? '提示词引用不唯一' : unclear ? '档案项需要选择' : voiceText}
                 </span>
               )}

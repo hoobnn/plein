@@ -12,7 +12,7 @@ import {
   type PleinDoc,
 } from '@plein/doc'
 import { Shot } from '@plein/nodes'
-import type { InputRef, PreparedInput } from '@plein/protocol'
+import type { Catalog, InputRef, PreparedInput } from '@plein/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { useCanvas } from '../../stores/canvas'
 import { useCatalog } from '../../stores/catalog'
@@ -20,6 +20,7 @@ import { useSession } from '../../stores/session'
 import { mockFetch } from '../../testing/fetch'
 import { act, fireEvent, renderApp, screen, waitFor, within } from '../../testing/render'
 import { resetStoreAfterEach } from '../../testing/render'
+import { expandShots } from './model'
 import { ShotWorkbench } from './ShotWorkbench'
 
 resetStoreAfterEach(useCatalog)
@@ -956,25 +957,110 @@ it('分镜图节点提示词未同步时摘要如实显示默认并标注按分�
   expect(screen.getByText(/时期：默认/)).toBeTruthy()
 })
 
-it('配音节点显式指定音色时摘要不再显示沿用默认', async () => {
-  const { doc, board, shots } = fixture(true)
-  addActor(doc)
-  createElement(doc, {
-    id: 'speech-one',
-    kind: 'node',
-    nodeType: 'plein/speech',
+/** 最小 catalog：只需要真实展开用到的节点声明（同 model.test） */
+const expandInfo = (
+  type: string,
+  title: string,
+  inputs: { id: string; label: string; type: string; multiple?: boolean }[],
+  outputs: { id: string; label: string; type: string }[],
+) =>
+  ({
+    type,
+    version: 1,
+    title,
+    capability: 'x.generate',
+    executable: true,
+    defaults: {},
+    paramsSchema: { properties: {} },
+    inputs,
+    outputs,
+  }) as unknown as Catalog['nodes'][number]
+
+const expandCatalog = {
+  nodes: [
+    expandInfo(
+      'plein/image',
+      '生成图片',
+      [
+        { id: 'prompt', label: '提示词', type: 'text', multiple: true },
+        { id: 'references', label: '参考图', type: 'image', multiple: true },
+      ],
+      [{ id: 'images', label: '图片', type: 'image' }],
+    ),
+    expandInfo(
+      'plein/video',
+      '生成视频',
+      [
+        { id: 'prompt', label: '提示词', type: 'text', multiple: true },
+        { id: 'images', label: '图片', type: 'image', multiple: true },
+      ],
+      [
+        { id: 'video', label: '视频', type: 'video' },
+        { id: 'lastFrame', label: '尾帧', type: 'image' },
+      ],
+    ),
+    expandInfo(
+      'plein/speech',
+      '配音',
+      [{ id: 'text', label: '台词', type: 'text', multiple: true }],
+      [{ id: 'audio', label: '语音', type: 'audio' }],
+    ),
+  ],
+} as unknown as Catalog
+
+/** 真实展开后的配音节点（带 source.dialogueId / text / voice），再由用户显式指定音色 */
+function expandWithSpeech(dialogue: Array<{ character: string; line: string }>) {
+  const doc = createDoc()
+  docs.push(doc)
+  const shots = rows()
+  const board = createElement(doc, {
+    id: 'board',
     x: 0,
     y: 0,
-    w: 100,
-    h: 80,
+    w: 400,
+    h: 300,
+    kind: 'node',
+    nodeType: 'plein/storyboard',
     params: {
-      source: { storyboard: 'board', shot: 'one', role: 'speech' },
-      prompt: '@角色',
-      voice: { provider: 'mock', voiceId: 'V1' },
+      shots: [{ ...shots[0]!, characters: ['角色'], dialogue }, shots[1]!],
     },
   })
-  bindCharacter(doc, board, shots, '@角色')
-  mockSummary(summaryInput('video-one', '', []))
+  createElement(doc, {
+    id: 'actor',
+    kind: 'node',
+    nodeType: 'plein/character',
+    name: '角色',
+    x: 0,
+    y: 400,
+    w: 200,
+    h: 100,
+    params: {},
+  })
+  const engine = {
+    doc,
+    selection: { set: vi.fn(), values: vi.fn(() => []) },
+    zoomToFit: vi.fn(),
+  } as unknown as Engine
+  expect(expandShots(engine, 'board', ['one'], expandCatalog).created).toBeGreaterThan(0)
+  const speeches = [...doc.elements()].filter(
+    (el) => (el.params?.source as { role?: string } | undefined)?.role === 'speech',
+  )
+  return { doc, board, engine, speeches }
+}
+
+it('配音节点显式指定音色时按台词 speaker 绑定映射到角色，不再显示未选', async () => {
+  const { doc, board, engine, speeches } = expandWithSpeech([{ character: '角色', line: '第一句' }])
+  expect(speeches).toHaveLength(1)
+  expect(String(speeches[0]!.params?.text)).toBe('第一句')
+  setParam(doc, speeches[0]!.id, 'voice', { provider: 'mock', voiceId: 'V1' })
+  useCanvas.setState({
+    engine,
+    canvasId: 'canvas',
+    shotWorkbench: { boardId: board, shotId: 'one' },
+  })
+  useSession.setState({ info: { principal: { id: 'local', role: 'owner' } } as never })
+  useCatalog.setState({ catalog: null })
+  mockSummary(prepared('none', ''))
   renderApp(<ShotWorkbench />)
   expect(await screen.findByText(/音色：配音另指定/)).toBeTruthy()
   expect(
@@ -983,6 +1069,32 @@ it('配音节点显式指定音色时摘要不再显示沿用默认', async () =
       .closest('button')
       ?.getAttribute('title'),
   ).toContain('V1')
+})
+
+it('同一角色多句配音音色不同时提示并列出各句音色', async () => {
+  const { doc, board, engine, speeches } = expandWithSpeech([
+    { character: '角色', line: '第一句' },
+    { character: '角色', line: '第二句' },
+  ])
+  expect(speeches).toHaveLength(2)
+  setParam(doc, speeches[0]!.id, 'voice', { provider: 'mock', voiceId: 'V1' })
+  setParam(doc, speeches[1]!.id, 'voice', { provider: 'mock', voiceId: 'V2' })
+  useCanvas.setState({
+    engine,
+    canvasId: 'canvas',
+    shotWorkbench: { boardId: board, shotId: 'one' },
+  })
+  useSession.setState({ info: { principal: { id: 'local', role: 'owner' } } as never })
+  useCatalog.setState({ catalog: null })
+  mockSummary(prepared('none', ''))
+  renderApp(<ShotWorkbench />)
+  expect(await screen.findByText(/音色：多句音色不同/)).toBeTruthy()
+  const title = screen
+    .getByText(/音色：多句音色不同/)
+    .closest('button')
+    ?.getAttribute('title')
+  expect(title).toContain('V1')
+  expect(title).toContain('V2')
 })
 
 it('查看历史候选时对照区主按钮让位给采用候选', async () => {
