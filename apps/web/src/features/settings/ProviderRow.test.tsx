@@ -1026,6 +1026,104 @@ describe('密钥组', () => {
     expect(body.credentials.update).toBeUndefined()
   })
 
+  it('确认前重新读取最新 usage：缓存为 0 时删除也提示影响', async () => {
+    const cached = credView(
+      [credential('cred-1', '个人', true), credential('cred-2', '团队', true)],
+      'cred-1',
+    )
+    const fresh = credView(
+      [
+        { ...credential('cred-1', '个人', true), usage: { tasks: 2, voices: 0 } },
+        credential('cred-2', '团队', true),
+      ],
+      'cred-1',
+    )
+    let reads = 0
+    const { user } = renderRow(
+      {
+        get: () => {
+          reads++
+          return Response.json(reads === 1 ? cached : fresh)
+        },
+      },
+      { view: cached },
+    )
+    await screen.findByLabelText('「个人」的标签')
+    // 缓存里的 usage 是 0，卡片上没有摘要；确认前重新读取才发现有未取回的结果
+    expect(card('cred-1').queryByText(/待取回/)).toBeNull()
+    await user.click(card('cred-1').getByRole('button', { name: '删除「个人」' }))
+    const dialog = await screen.findByRole('dialog', { name: '删除密钥组「个人」？' })
+    expect(dialog.textContent).toContain('有 2 个任务的结果还没取回')
+    await user.click(within(dialog).getByRole('button', { name: '取消' }))
+  })
+
+  it('确认前重新读取最新 usage：缓存为 0 时替换也弹确认，草稿不被覆盖', async () => {
+    const cached = credView(
+      [credential('cred-1', '个人', true), credential('cred-2', '团队', true)],
+      'cred-1',
+    )
+    const fresh = credView(
+      [
+        { ...credential('cred-1', '个人', true), usage: { tasks: 0, voices: 2 } },
+        credential('cred-2', '团队', true),
+      ],
+      'cred-1',
+    )
+    let reads = 0
+    const { user, fetch } = renderRow(
+      {
+        get: () => {
+          reads++
+          return Response.json(reads === 1 ? cached : fresh)
+        },
+      },
+      { view: cached },
+    )
+    await screen.findByLabelText('「个人」的标签')
+    await user.type(card('cred-1').getByLabelText('「个人」的API Key'), 'brand-new-key')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '替换仍在使用的密钥？' })
+    expect(dialog.textContent).toContain('「个人」：2 个音色')
+    // 取消：刚输入的密钥还在，服务端数据已同步但不覆盖草稿
+    await user.click(within(dialog).getByRole('button', { name: '取消' }))
+    expect(writes(fetch)).toHaveLength(0)
+    expect((card('cred-1').getByLabelText('「个人」的API Key') as HTMLInputElement).value).toBe(
+      'brand-new-key',
+    )
+  })
+
+  it('重新读取配置失败时退回缓存值照常进行，不阻断', async () => {
+    const cached = credView(
+      [credential('cred-1', '个人', true), credential('cred-2', '团队', true)],
+      'cred-1',
+    )
+    let reads = 0
+    const { user, fetch } = renderRow(
+      {
+        get: () => {
+          reads++
+          return reads === 1
+            ? Response.json(cached)
+            : Response.json({ error: 'unavailable', message: '暂不可用' }, { status: 503 })
+        },
+      },
+      { view: cached },
+    )
+    await screen.findByLabelText('「个人」的标签')
+    // 删除：拿不到最新值就按缓存（usage 0）给简短确认
+    await user.click(card('cred-1').getByRole('button', { name: '删除「个人」' }))
+    const dialog = await screen.findByRole('dialog', { name: '删除密钥组「个人」？' })
+    expect(dialog.textContent).not.toContain('还没取回')
+    await user.click(within(dialog).getByRole('button', { name: '取消' }))
+
+    // 替换：同样不弹确认，直接保存
+    await user.type(card('cred-2').getByLabelText('「团队」的API Key'), 'fresh-key')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(writes(fetch)).toHaveLength(1))
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
   it('替换没有使用的密钥组不打扰，直接保存', async () => {
     const two = credView(
       [credential('cred-1', '个人', true), credential('cred-2', '团队', true)],

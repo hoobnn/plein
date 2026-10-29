@@ -106,6 +106,18 @@ export function ProviderRow({
 
   const isSavedGroup = (key: string) => config?.credentials?.some((c) => c.id === key) ?? false
 
+  /** 确认前重新读取配置：usage 随任务与音色变化，缓存可能是展开时的旧值；失败退回缓存值不阻断 */
+  const refreshConfig = async (): Promise<ProviderConfigView | null> => {
+    try {
+      const next = await api.providerConfig(provider.id)
+      // 只换服务端视图，不动 labels / groupSecrets / drafts：用户正在编辑的草稿保留
+      setConfig(next)
+      return next
+    } catch {
+      return null
+    }
+  }
+
   // 聚焦刚移入的草稿卡标签：卡片列表渲染完成后执行一次
   useEffect(() => {
     if (!focusDraft.current) return
@@ -213,17 +225,18 @@ export function ProviderRow({
     const add = drafts
       .filter((d) => d.baseline === undefined || credentialCardDirty(d))
       .map((d) => ({ label: d.label.trim(), secrets: typedSecrets(d.secrets) }))
-    // 已保存组填了新密钥且名下还有任务或音色：替换前先确认，新 Key 可能属于另一个账号
+    // 已保存组填了新密钥且名下还有任务或音色：替换前先确认；usage 取最新，缓存可能是展开时的旧值
+    const view = (await refreshConfig()) ?? config
     const replacing = savedCards.filter(
       (card) =>
         Object.values(card.secrets).some((v) => v !== '') &&
         credentialUsed(
-          config?.credentials?.find((c) => c.id === card.key)?.usage ?? { tasks: 0, voices: 0 },
+          view?.credentials?.find((c) => c.id === card.key)?.usage ?? { tasks: 0, voices: 0 },
         ),
     )
     if (replacing.length > 0) {
       const groups = replacing.map((card) => {
-        const saved = config?.credentials?.find((c) => c.id === card.key)
+        const saved = view?.credentials?.find((c) => c.id === card.key)
         return { label: saved?.label ?? card.key, usage: saved?.usage ?? { tasks: 0, voices: 0 } }
       })
       const choice = await choiceDialog({
@@ -303,11 +316,13 @@ export function ProviderRow({
   /** 删除已保存的组也是即时操作；删当前组时服务端会改用剩下的第一组 */
   const removeCredential = async (key: string) => {
     if (!config) return
-    const groups = config.credentials ?? []
+    // 确认文案用最新 usage：缓存可能是展开时的旧值，新产生的任务与音色也算
+    const view = (await refreshConfig()) ?? config
+    const groups = view.credentials ?? []
     const target = groups.find((c) => c.id === key)
     if (!target) return
     const rest = groups.filter((c) => c.id !== key)
-    const switching = config.activeCredential === key && rest.length > 0
+    const switching = view.activeCredential === key && rest.length > 0
     // 名下还有未取回的结果或音色时先说清后果；正在使用的组顺带说明会切到哪一组
     const notes = [
       removalImpact(target.usage),
