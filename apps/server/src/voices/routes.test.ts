@@ -160,7 +160,11 @@ describe('我的音色', () => {
       method: 'PATCH',
       body: JSON.stringify({ name: '丙', age: 'mature' }),
     })
-    expect(await renamed.json()).toMatchObject({ name: '丙', age: 'mature' })
+    expect(await renamed.json()).toMatchObject({
+      name: '丙',
+      age: 'mature',
+      credentialState: null,
+    })
     expect((await request(server, `/api/voices/${first.id}`, { method: 'DELETE' })).status).toBe(
       204,
     )
