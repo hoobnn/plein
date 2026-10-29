@@ -170,19 +170,22 @@ export function ProviderRow({
   const typedSecrets = (values: Record<string, string> = {}) =>
     Object.fromEntries(Object.entries(values).filter(([, v]) => v !== ''))
 
-  /** 把已保存卡里刚输入的密钥移到新草稿卡（标签留空），原组保持不变 */
+  /** 把已保存卡里刚输入的密钥移到新草稿卡（标签留空），原组保持不变：密钥输入清空，刚改的标签也退回 */
   const moveToDraft = (cards: CredentialCardDraft[]) => {
     const moved: CredentialCardDraft[] = []
     let secrets = groupSecrets
+    let nextLabels = labels
     for (const card of cards) {
       const typed = typedSecrets(card.secrets)
       if (Object.keys(typed).length === 0) continue
       moved.push({ key: `draft-${nextDraft.current++}`, label: '', secrets: typed })
       secrets = { ...secrets, [card.key]: {} }
+      nextLabels = { ...nextLabels, [card.key]: '' }
     }
     if (moved.length === 0) return
     focusDraft.current = moved[0]!.key
     setGroupSecrets(secrets)
+    setLabels(nextLabels)
     setDrafts([...drafts, ...moved])
   }
 
@@ -219,18 +222,16 @@ export function ProviderRow({
         ),
     )
     if (replacing.length > 0) {
-      const usage = replacing.reduce(
-        (sum, card) => {
-          const u = config?.credentials?.find((c) => c.id === card.key)?.usage
-          return { tasks: sum.tasks + (u?.tasks ?? 0), voices: sum.voices + (u?.voices ?? 0) }
-        },
-        { tasks: 0, voices: 0 },
-      )
+      const groups = replacing.map((card) => {
+        const saved = config?.credentials?.find((c) => c.id === card.key)
+        return { label: saved?.label ?? card.key, usage: saved?.usage ?? { tasks: 0, voices: 0 } }
+      })
       const choice = await choiceDialog({
         title: '替换仍在使用的密钥？',
-        message: replaceWarning(usage),
+        message: replaceWarning(groups),
         confirmLabel: '仍然替换',
         alternateLabel: '改为添加新组',
+        initialFocus: 'alternate',
       })
       if (!choice) return
       // 改为添加新组：刚输入的密钥移到新草稿卡，原组保持不变，本次不保存

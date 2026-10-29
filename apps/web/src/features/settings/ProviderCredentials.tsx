@@ -104,7 +104,8 @@ function CredentialCard({
           )
         )}
       </div>
-      {saved && summary && <p className="text-xs text-ink-subtle">{summary}</p>}
+      {/* 单组无从切换，只在删除/替换确认里说影响；≥2 组时才在卡片上常驻摘要 */}
+      {multi && saved && summary && <p className="text-xs text-ink-subtle">{summary}</p>}
       {provider.secrets.map((s) => (
         <label key={s.name} className="ui-field">
           <span className="ui-label">

@@ -11,12 +11,10 @@ export interface CredentialUsage {
 /** 这组 Key 名下还有没有未取回的结果或音色 */
 export const credentialUsed = (usage: CredentialUsage) => usage.tasks > 0 || usage.voices > 0
 
-/** 替换确认的提示：新 Key 可能属于另一个账号，未取回的结果和音色会失效 */
-export function replaceWarning(usage: CredentialUsage): string {
-  const items: string[] = []
-  if (usage.tasks > 0) items.push(`${usage.tasks} 个任务的结果还没取回`)
-  if (usage.voices > 0) items.push(`${usage.voices} 个音色`)
-  return `这组 Key 下有 ${items.join('、')}。如果新 Key 属于另一个账号，它们会失效；换账号建议「添加一组密钥」。`
+/** 替换确认的提示：按组分行列出使用情况；新 Key 可能属于另一个账号，这些 Key 名下会失效 */
+export function replaceWarning(groups: Array<{ label: string; usage: CredentialUsage }>): string {
+  const lines = groups.map((g) => `「${g.label}」：${usageSummary(g.usage) ?? '使用中'}`)
+  return `${lines.join('\n')}\n如果新 Key 属于另一个账号，这些 Key 名下的结果和音色会失效；换账号建议「添加一组密钥」。`
 }
 
 /** 卡片上的轻量摘要：「2 个任务待取回 · 3 个音色」；全为 0 时返回 null，不显示 */

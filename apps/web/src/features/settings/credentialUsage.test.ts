@@ -21,12 +21,17 @@ describe('密钥组使用情况的文案', () => {
     expect(credentialUsed({ tasks: 0, voices: 2 })).toBe(true)
   })
 
-  it('替换提示列出名下的任务与音色，并指向添加新组', () => {
-    expect(replaceWarning({ tasks: 2, voices: 3 })).toBe(
-      '这组 Key 下有 2 个任务的结果还没取回、3 个音色。如果新 Key 属于另一个账号，它们会失效；换账号建议「添加一组密钥」。',
+  it('替换提示按组分行列出使用情况，主语用这些 Key', () => {
+    expect(
+      replaceWarning([
+        { label: '个人', usage: { tasks: 2, voices: 3 } },
+        { label: '团队', usage: { tasks: 1, voices: 0 } },
+      ]),
+    ).toBe(
+      '「个人」：2 个任务待取回 · 3 个音色\n「团队」：1 个任务待取回\n如果新 Key 属于另一个账号，这些 Key 名下的结果和音色会失效；换账号建议「添加一组密钥」。',
     )
-    expect(replaceWarning({ tasks: 0, voices: 1 })).toBe(
-      '这组 Key 下有 1 个音色。如果新 Key 属于另一个账号，它们会失效；换账号建议「添加一组密钥」。',
+    expect(replaceWarning([{ label: '个人', usage: { tasks: 0, voices: 1 } }])).toBe(
+      '「个人」：1 个音色\n如果新 Key 属于另一个账号，这些 Key 名下的结果和音色会失效；换账号建议「添加一组密钥」。',
     )
   })
 
