@@ -1,8 +1,11 @@
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Catalog, ProviderConfigView, ProviderTestResult } from '@plein/protocol'
 import { Hono } from 'hono'
 import { describe, expect, it } from 'vite-plus/test'
 import type { AuthEnv } from '../auth'
-import { bootServer, request } from '../testing'
+import { bootServer, request, tempDir } from '../testing'
+import { ProviderConfigStore } from './config-store'
 import { pluginRoutes } from './routes'
 
 /** 直接调应用：免认证模式要求 Host 是本机名 */
@@ -22,6 +25,88 @@ async function boot() {
   }
   return { server, call }
 }
+
+describe('平台密钥组存储', () => {
+  it('加载时迁移旧扁平密钥，重复加载保持幂等', () => {
+    const dir = tempDir()
+    const file = join(dir, 'providers.json')
+    writeFileSync(
+      file,
+      JSON.stringify({
+        'acme/demo': {
+          enabled: true,
+          settings: { region: 'cn' },
+          secrets: { APP_ID: 'app', TOKEN: 'token' },
+        },
+      }),
+    )
+    const store = new ProviderConfigStore(dir)
+    const config = store.get('acme/demo')
+    expect(config.credentials).toHaveLength(1)
+    expect(config.credentials[0]).toMatchObject({
+      label: '默认',
+      secrets: { APP_ID: 'app', TOKEN: 'token' },
+    })
+    expect(config.activeCredential).toBe(config.credentials[0]!.id)
+    expect(config.secrets).toEqual({ APP_ID: 'app', TOKEN: 'token' })
+    const saved = readFileSync(file, 'utf8')
+    expect(JSON.parse(saved)['acme/demo']).not.toHaveProperty('secrets')
+
+    const restored = new ProviderConfigStore(dir)
+    expect(readFileSync(file, 'utf8')).toBe(saved)
+    expect(restored.get('acme/demo')).toEqual(config)
+  })
+
+  it('扁平 secrets 补丁作用于当前组，没有组时自动创建默认组', () => {
+    const store = new ProviderConfigStore(tempDir())
+    const created = store.update('acme/demo', { secrets: { APP_ID: 'app', TOKEN: 'token' } })
+    expect(created.credentials[0]).toMatchObject({ label: '默认' })
+    expect(created.activeCredential).toBe(created.credentials[0]!.id)
+
+    const team = store.addCredential('acme/demo', '团队', { APP_ID: 'team', TOKEN: 'team-token' })
+    store.setActiveCredential('acme/demo', team.credentials[1]!.id)
+    const updated = store.update('acme/demo', {
+      secrets: { APP_ID: null, TOKEN: '', EXTRA: 'extra' },
+    })
+    expect(updated.secrets).toEqual({ EXTRA: 'extra' })
+    expect(updated.credentials[0]!.secrets).toEqual({ APP_ID: 'app', TOKEN: 'token' })
+  })
+
+  it('支持新增、修改、切换和删除密钥组，删除当前组后选择剩余第一组', () => {
+    const store = new ProviderConfigStore(tempDir())
+    const personal = store.addCredential('acme/demo', ' 个人 ', { TOKEN: 'one' })
+    const personalId = personal.credentials[0]!.id
+    expect(personal.activeCredential).toBe(personalId)
+    const withTeam = store.addCredential('acme/demo', '团队', { TOKEN: 'two' })
+    const teamId = withTeam.credentials[1]!.id
+    expect(withTeam.activeCredential).toBe(personalId)
+
+    const patched = store.patchCredential('acme/demo', personalId, {
+      label: ' 私人 ',
+      secrets: { TOKEN: null, OTHER: 'other' },
+    })
+    expect(patched.credentials[0]).toMatchObject({ label: '私人', secrets: { OTHER: 'other' } })
+    expect(store.setActiveCredential('acme/demo', teamId).secrets).toEqual({ TOKEN: 'two' })
+    const removed = store.removeCredential('acme/demo', teamId)
+    expect(removed.activeCredential).toBe(personalId)
+    expect(removed.credentials.map((credential) => credential.id)).toEqual([personalId])
+    const empty = store.removeCredential('acme/demo', personalId)
+    expect(empty.activeCredential).toBeUndefined()
+    expect(empty.secrets).toEqual({})
+  })
+
+  it('标签去空白，同平台不可重复且最长 40 字', () => {
+    const store = new ProviderConfigStore(tempDir())
+    const config = store.addCredential('acme/demo', '个人', {})
+    expect(() => store.addCredential('acme/demo', ' PERSONAL ', {})).not.toThrow()
+    expect(() => store.addCredential('acme/demo', ' 个人 ', {})).toThrow('不可重复')
+    expect(() =>
+      store.patchCredential('acme/demo', config.credentials[0]!.id, { label: 'personal' }),
+    ).toThrow('不可重复')
+    expect(() => store.addCredential('acme/demo', '   ', {})).toThrow('1–40')
+    expect(() => store.addCredential('acme/demo', 'x'.repeat(41), {})).toThrow('1–40')
+  })
+})
 
 describe('平台配置接口', () => {
   it('未知平台返回 404，不合规设置与未知密钥都被拒绝', async () => {
