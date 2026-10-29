@@ -111,9 +111,24 @@ export function BatchPlanDetails({
                       <p className="mt-1 whitespace-pre-wrap break-words">
                         {row.input.prompt ?? ''}
                       </p>
+                      {row.input.nodeType === 'plein/video' &&
+                        row.input.params.mode === 'image' && (
+                          <p>
+                            图生视频首帧：送入 {(row.input.inputs.images ?? []).length} 张
+                            （来自视频节点的图片输入）
+                          </p>
+                        )}
+                      {row.input.nodeType === 'plein/video' &&
+                        row.input.params.mode === 'reference' && (
+                          <p>
+                            实际送入模型：{(row.input.inputs.images ?? []).length} 张图片、
+                            {(row.input.inputs.videos ?? []).length} 段视频、
+                            {(row.input.inputs.audios ?? []).length} 段音频（包含连线和 @ 引用）
+                          </p>
+                        )}
                       {row.input.refs.map((ref) => (
                         <p key={ref.elementId}>
-                          {ref.name}：送入 {ref.sent.length} 张参考图
+                          {ref.name}：作为 @ 引用直接送入 {ref.sent.length} 张参考图
                         </p>
                       ))}
                       {row.input.voice && <p>音色：{row.input.voice.voiceId}</p>}

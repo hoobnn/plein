@@ -72,6 +72,25 @@ function Harness({
 }
 const advance = (ms = 0) => act(() => vi.advanceTimersByTimeAsync(ms))
 
+it('本地序列显示本地处理，模型节点未选模型仍保留提示', () => {
+  const { engine, doc, id } = fixture()
+  const renderPreview = (nodeType: string) => (
+    <InputPreview
+      engine={engine}
+      el={doc.get(id)!}
+      node={definition}
+      data={prepared(id, { nodeType })}
+      loading={false}
+      error={null}
+      onRetry={() => {}}
+    />
+  )
+  const view = renderApp(renderPreview('plein/sequence'))
+  expect(screen.getByRole('button', { name: /实际输入 本地处理/ })).toBeTruthy()
+  view.rerender(renderPreview('plein/video'))
+  expect(screen.getByRole('button', { name: /实际输入 未选模型/ })).toBeTruthy()
+})
+
 it('StrictMode 首次立即读取，文档连续变化防抖，失败可重试且不提交生成', async () => {
   vi.useFakeTimers()
   const { engine, doc, id } = fixture()

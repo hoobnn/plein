@@ -135,7 +135,10 @@ function previewSummary(p: PreparedInput) {
   const refs = Object.values(p.inputs)
     .flat()
     .filter((v) => v.type === 'image').length
-  const parts = [p.model ? `${p.model.title}${p.model.auto ? '（自动）' : ''}` : '未选模型']
+  const local = p.nodeType === 'plein/sequence' || p.nodeType === 'plein/animatic'
+  const parts = [
+    p.model ? `${p.model.title}${p.model.auto ? '（自动）' : ''}` : local ? '本地处理' : '未选模型',
+  ]
   if (refs) parts.push(`${refs} 张参考图`)
   const values = Object.values(p.inputs).flat()
   const videos = values.filter((value) => value.type === 'video').length
