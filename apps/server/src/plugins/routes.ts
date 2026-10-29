@@ -19,6 +19,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import type { AuthEnv } from '../auth'
 import { validationMessage } from '../http/validation'
+import { ConfigError } from './config-store'
 import type { ExternalPlugins } from './external'
 import type { PluginHost } from './host'
 
@@ -114,7 +115,7 @@ export function pluginRoutes(host: PluginHost) {
       const body = ProviderConfigUpdate.safeParse(await c.req.json().catch(() => null))
       if (!body.success)
         return c.json({ error: 'invalid', message: validationMessage(body.error) }, 400)
-      const { settings, secrets, credentials, activeCredential } = body.data
+      const { settings, secrets, credentials } = body.data
       if (settings) {
         const parsed = entry.def.settings.safeParse(settings)
         if (!parsed.success)
@@ -132,16 +133,11 @@ export function pluginRoutes(host: PluginHost) {
       if (unknown.length)
         return c.json({ error: 'invalid', message: `未知的密钥：${unknown.join('、')}` }, 400)
       try {
-        for (const credentialId of credentials?.remove ?? [])
-          configs.removeCredential(id, credentialId)
-        for (const credential of credentials?.update ?? [])
-          configs.patchCredential(id, credential.id, credential)
-        for (const credential of credentials?.add ?? [])
-          configs.addCredential(id, credential.label, credential.secrets)
-        if (activeCredential) configs.setActiveCredential(id, activeCredential)
-        configs.update(id, { enabled: body.data.enabled, settings, secrets })
+        configs.apply(id, body.data)
       } catch (err) {
-        return c.json({ error: 'invalid', message: (err as Error).message }, 400)
+        if (err instanceof ConfigError)
+          return c.json({ error: 'invalid', message: err.message }, 400)
+        throw err
       }
       host.refreshConfiguredProviders()
       return c.json(view(id))

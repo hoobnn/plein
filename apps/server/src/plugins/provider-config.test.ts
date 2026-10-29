@@ -11,7 +11,7 @@ import { pluginRoutes } from './routes'
 
 /** 直接调应用：免认证模式要求 Host 是本机名 */
 async function boot() {
-  const { server } = await bootServer()
+  const { server, dataDir } = await bootServer()
   const call = async <T = Record<string, unknown>>(
     path: string,
     method = 'GET',
@@ -24,7 +24,7 @@ async function boot() {
     const text = await res.text()
     return { status: res.status, body: (text ? JSON.parse(text) : undefined) as T }
   }
-  return { server, call }
+  return { server, dataDir, call }
 }
 
 describe('平台密钥组存储', () => {
@@ -58,6 +58,26 @@ describe('平台密钥组存储', () => {
     expect(restored.get('acme/demo')).toEqual(config)
   })
 
+  it('空 credentials 与旧扁平密钥并存时也迁移为默认组', () => {
+    const dir = tempDir()
+    writeFileSync(
+      join(dir, 'providers.json'),
+      JSON.stringify({
+        'acme/demo': {
+          enabled: true,
+          settings: {},
+          credentials: [],
+          secrets: { TOKEN: 'token' },
+        },
+      }),
+    )
+    const config = new ProviderConfigStore(dir).get('acme/demo')
+    expect(config.credentials).toHaveLength(1)
+    expect(config.credentials[0]).toMatchObject({ label: '默认', secrets: { TOKEN: 'token' } })
+    expect(config.activeCredential).toBe(config.credentials[0]!.id)
+    expect(config.secrets).toEqual({ TOKEN: 'token' })
+  })
+
   it('扁平 secrets 补丁作用于当前组，没有组时自动创建默认组', () => {
     const store = new ProviderConfigStore(tempDir())
     const created = store.update('acme/demo', { secrets: { APP_ID: 'app', TOKEN: 'token' } })
@@ -71,6 +91,14 @@ describe('平台密钥组存储', () => {
     })
     expect(updated.secrets).toEqual({ EXTRA: 'extra' })
     expect(updated.credentials[0]!.secrets).toEqual({ APP_ID: 'app', TOKEN: 'token' })
+  })
+
+  it('空扁平 secrets 补丁不创建默认组', () => {
+    const store = new ProviderConfigStore(tempDir())
+    const config = store.update('acme/demo', { secrets: {} })
+    expect(config.credentials).toEqual([])
+    expect(config.activeCredential).toBeUndefined()
+    expect(config.secrets).toEqual({})
   })
 
   it('支持新增、修改、切换和删除密钥组，删除当前组后选择剩余第一组', () => {
@@ -222,6 +250,33 @@ describe('平台配置接口', () => {
       expect(response.status).toBe(400)
       expect(response.body.message).toContain(message)
     }
+  })
+
+  it('同一请求后续动作校验失败时，内存与磁盘都不保留前面的改动', async () => {
+    const { server, dataDir, call } = await boot()
+    const initial = (
+      await call<ProviderConfigView>('/api/providers/plein/mock/config', 'PUT', {
+        secrets: { MOCK_API_KEY: 'personal' },
+      })
+    ).body
+    await call('/api/providers/plein/mock/config', 'PUT', {
+      credentials: { add: [{ label: '团队', secrets: { MOCK_API_KEY: 'team' } }] },
+    })
+    const before = server.plugins.configs.get('plein/mock')
+    const file = join(dataDir, 'providers.json')
+    const saved = readFileSync(file, 'utf8')
+    const response = await call<{ message: string }>('/api/providers/plein/mock/config', 'PUT', {
+      credentials: {
+        update: [
+          { id: initial.activeCredential!, secrets: { MOCK_API_KEY: null } },
+          { id: initial.activeCredential!, label: '团队' },
+        ],
+      },
+    })
+    expect(response.status).toBe(400)
+    expect(response.body.message).toContain('不可重复')
+    expect(server.plugins.configs.get('plein/mock')).toEqual(before)
+    expect(readFileSync(file, 'utf8')).toBe(saved)
   })
 
   it('不是所有者不能改平台设置', async () => {

@@ -23,6 +23,29 @@ type StoredProviderConfig = Omit<ProviderConfig, 'secrets' | 'credentials'> & {
   credentials?: ProviderCredential[]
 }
 
+export interface ProviderConfigPatch {
+  enabled?: boolean
+  settings?: Record<string, unknown>
+  secrets?: Record<string, string | null>
+  credentials?: {
+    add?: Array<{ label: string; secrets: Record<string, string> }>
+    update?: Array<{
+      id: string
+      label?: string
+      secrets?: Record<string, string | null>
+    }>
+    remove?: string[]
+  }
+  activeCredential?: string
+}
+
+export class ConfigError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ConfigError'
+  }
+}
+
 export class ProviderConfigStore {
   private file: string
   private data: Record<string, StoredProviderConfig>
@@ -41,7 +64,7 @@ export class ProviderConfigStore {
       : {}
     let migrated = false
     for (const config of Object.values(this.data)) {
-      if (!config.credentials) {
+      if (!config.credentials?.length) {
         config.credentials = []
         if (config.secrets && Object.keys(config.secrets).length) {
           const credential = { id: randomUUID(), label: '默认', secrets: { ...config.secrets } }
@@ -92,6 +115,21 @@ export class ProviderConfigStore {
     return credential ? cloneCredential(credential) : undefined
   }
 
+  /** 在克隆上执行完整补丁，全部校验通过后一次落盘 */
+  apply(id: string, patch: ProviderConfigPatch): ProviderConfig {
+    const next = this.get(id)
+    for (const credentialId of patch.credentials?.remove ?? []) removeCredential(next, credentialId)
+    for (const credential of patch.credentials?.update ?? [])
+      patchCredential(next, credential.id, credential)
+    for (const credential of patch.credentials?.add ?? [])
+      addCredential(next, credential.label, credential.secrets)
+    if (patch.activeCredential !== undefined) setActiveCredential(next, patch.activeCredential)
+    patchSecrets(next, patch.secrets)
+    if (patch.enabled !== undefined) next.enabled = patch.enabled
+    if (patch.settings) next.settings = patch.settings
+    return this.commit(id, next)
+  }
+
   /** 合并更新；扁平 secrets 作用于当前组，值为 null 或空串表示删除 */
   update(
     id: string,
@@ -101,34 +139,12 @@ export class ProviderConfigStore {
       secrets?: Record<string, string | null>
     },
   ): ProviderConfig {
-    const next = this.get(id)
-    if (patch.enabled !== undefined) next.enabled = patch.enabled
-    if (patch.settings) next.settings = patch.settings
-    if (patch.secrets) {
-      if (!next.credentials.length) {
-        const credential = { id: randomUUID(), label: '默认', secrets: {} }
-        next.credentials = [credential]
-        next.activeCredential = credential.id
-      }
-      const active = next.credentials.find((credential) => credential.id === next.activeCredential)
-      if (!active) throw new Error('当前密钥组不存在')
-      for (const [k, v] of Object.entries(patch.secrets)) {
-        if (v) active.secrets[k] = v
-        else delete active.secrets[k]
-      }
-    }
-    return this.commit(id, next)
+    return this.apply(id, patch)
   }
 
   addCredential(id: string, label: string, secrets: Record<string, string>): ProviderConfig {
     const next = this.get(id)
-    const credential = {
-      id: randomUUID(),
-      label: credentialLabel(next.credentials, label),
-      secrets: { ...secrets },
-    }
-    next.credentials.push(credential)
-    if (next.credentials.length === 1) next.activeCredential = credential.id
+    addCredential(next, label, secrets)
     return this.commit(id, next)
   }
 
@@ -138,28 +154,19 @@ export class ProviderConfigStore {
     patch: { label?: string; secrets?: Record<string, string | null> },
   ): ProviderConfig {
     const next = this.get(id)
-    const credential = findCredential(next.credentials, credentialId)
-    if (patch.label !== undefined)
-      credential.label = credentialLabel(next.credentials, patch.label, credentialId)
-    for (const [k, v] of Object.entries(patch.secrets ?? {})) {
-      if (v) credential.secrets[k] = v
-      else delete credential.secrets[k]
-    }
+    patchCredential(next, credentialId, patch)
     return this.commit(id, next)
   }
 
   removeCredential(id: string, credentialId: string): ProviderConfig {
     const next = this.get(id)
-    findCredential(next.credentials, credentialId)
-    next.credentials = next.credentials.filter((credential) => credential.id !== credentialId)
-    if (next.activeCredential === credentialId) next.activeCredential = next.credentials[0]?.id
+    removeCredential(next, credentialId)
     return this.commit(id, next)
   }
 
   setActiveCredential(id: string, credentialId: string): ProviderConfig {
     const next = this.get(id)
-    findCredential(next.credentials, credentialId)
-    next.activeCredential = credentialId
+    setActiveCredential(next, credentialId)
     return this.commit(id, next)
   }
 
@@ -183,9 +190,67 @@ function cloneCredential(credential: ProviderCredential): ProviderCredential {
   return { ...credential, secrets: { ...credential.secrets } }
 }
 
-function findCredential(credentials: ProviderCredential[], id: string): ProviderCredential {
+function patchSecrets(config: ProviderConfig, secrets?: Record<string, string | null>) {
+  if (!secrets) return
+  if (!config.credentials.length) {
+    if (!Object.values(secrets).some(Boolean)) return
+    const credential = { id: randomUUID(), label: '默认', secrets: {} }
+    config.credentials = [credential]
+    config.activeCredential = credential.id
+  }
+  const active = findCredential(
+    config.credentials,
+    config.activeCredential ?? '',
+    '当前密钥组不存在',
+  )
+  for (const [k, v] of Object.entries(secrets)) {
+    if (v) active.secrets[k] = v
+    else delete active.secrets[k]
+  }
+}
+
+function addCredential(config: ProviderConfig, label: string, secrets: Record<string, string>) {
+  const credential = {
+    id: randomUUID(),
+    label: credentialLabel(config.credentials, label),
+    secrets: { ...secrets },
+  }
+  config.credentials.push(credential)
+  if (config.credentials.length === 1) config.activeCredential = credential.id
+}
+
+function patchCredential(
+  config: ProviderConfig,
+  credentialId: string,
+  patch: { label?: string; secrets?: Record<string, string | null> },
+) {
+  const credential = findCredential(config.credentials, credentialId)
+  if (patch.label !== undefined)
+    credential.label = credentialLabel(config.credentials, patch.label, credentialId)
+  for (const [k, v] of Object.entries(patch.secrets ?? {})) {
+    if (v) credential.secrets[k] = v
+    else delete credential.secrets[k]
+  }
+}
+
+function removeCredential(config: ProviderConfig, credentialId: string) {
+  findCredential(config.credentials, credentialId)
+  config.credentials = config.credentials.filter((credential) => credential.id !== credentialId)
+  if (config.activeCredential === credentialId) config.activeCredential = config.credentials[0]?.id
+}
+
+function setActiveCredential(config: ProviderConfig, credentialId: string) {
+  findCredential(config.credentials, credentialId)
+  config.activeCredential = credentialId
+}
+
+function findCredential(
+  credentials: ProviderCredential[],
+  id: string,
+  message = '密钥组不存在',
+): ProviderCredential {
   const credential = credentials.find((item) => item.id === id)
-  if (!credential) throw new Error('密钥组不存在')
+  if (!credential) throw new ConfigError(message)
   return credential
 }
 
@@ -195,14 +260,14 @@ function credentialLabel(
   excludeId?: string,
 ): string {
   const trimmed = label.trim()
-  if (!trimmed || trimmed.length > 40) throw new Error('密钥组标签须为 1–40 个字符')
+  if (!trimmed || trimmed.length > 40) throw new ConfigError('密钥组标签须为 1–40 个字符')
   if (
     credentials.some(
       (credential) =>
         credential.id !== excludeId && credential.label.toLowerCase() === trimmed.toLowerCase(),
     )
   )
-    throw new Error('同一平台的密钥组标签不可重复')
+    throw new ConfigError('同一平台的密钥组标签不可重复')
   return trimmed
 }
 
