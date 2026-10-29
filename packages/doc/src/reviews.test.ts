@@ -114,6 +114,24 @@ describe('独立的创作验收元数据', () => {
     })
     expect(doc.get(id)?.params).toEqual({ prompt: '雨夜' })
     expect(doc.get(id)?.adopted).toBe('r1')
+    // 上限与审阅表单的可选项对齐：顶层标签加衔接细分共 13 个，超出才截断
+    const full = [
+      'character',
+      'composition',
+      'motion',
+      'camera',
+      'speech',
+      'sound',
+      'continuity',
+      'continuity-costume',
+      'continuity-facing',
+      'continuity-position',
+      'continuity-lighting',
+      'continuity-action',
+      'other',
+    ]
+    expect(recordCreativeReview(doc, id, { target, status: 'changes', tags: full })).toBe(true)
+    expect(getCreativeReview(doc.get(id))?.tags).toEqual(full)
     addResults(doc, id, [
       {
         id: 'r2',

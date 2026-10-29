@@ -34,6 +34,9 @@ export function getCreativeReview(
   return target ? el?.reviews?.find((r) => sameCreativeReviewTarget(r.target, target)) : undefined
 }
 
+/** 验收标签数量上限；与审阅表单可勾选的问题标签数（含衔接细分）对齐。 */
+export const CREATIVE_REVIEW_TAG_LIMIT = 16
+
 /** 调用方传入审看片刻捕获的目标，迟到的操作不能给新候选写上旧结论。 */
 export function recordCreativeReview(
   doc: PleinDoc,
@@ -52,7 +55,7 @@ export function recordCreativeReview(
     status: input.status,
     tags: [...new Set(input.tags ?? [])]
       .filter((tag) => tag.trim())
-      .slice(0, 8)
+      .slice(0, CREATIVE_REVIEW_TAG_LIMIT)
       .map((tag) => tag.slice(0, 80)),
     note: (input.note ?? '').trim().slice(0, 2000),
     at: Date.now(),
