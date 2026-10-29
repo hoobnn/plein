@@ -270,6 +270,16 @@ describe('持续创作引导的事实推导', () => {
       id = board(doc, [shot(1), shot(2)])
     for (const role of ['image', 'video'] as const) approve(doc, generated(doc, id, role))
     expect(creationGuideFacts(doc).trialShot).toBeUndefined()
+    expect(
+      creationGuideFacts(doc)
+        .steps.find((entry) => entry.id === 'trial')
+        ?.substeps?.find((entry) => entry.id === 'input'),
+    ).toMatchObject({ state: 'ready', target: undefined })
+    expect(
+      creationGuideFacts(doc)
+        .steps.find((entry) => entry.id === 'trial')
+        ?.substeps?.find((entry) => entry.id === 'input')?.detail,
+    ).toContain('先选定代表镜头')
     expect(step(doc, 'review').state).toBe('todo')
     expect(step(doc, 'trial').state).toBe('ready')
     expect(step(doc, 'trial').primary).toEqual({

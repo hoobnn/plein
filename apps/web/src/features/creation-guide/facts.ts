@@ -367,7 +367,11 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
         ? '输入已变化，先核对再继续'
         : keptInput
           ? '已保留旧输入的结果，先核对是否仍适用'
-          : '对照提示词、参考图与实际参数',
+          : !shots.length
+            ? '先到分镜表补充镜头'
+            : !trialShot
+              ? '先选定代表镜头，再核对输入'
+              : '对照提示词、参考图与实际参数',
       target: inputTarget
         ? { kind: 'generator', nodeId: inputTarget.id }
         : (workbenchTarget ?? fixedTrialTarget),
