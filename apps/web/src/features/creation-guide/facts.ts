@@ -425,13 +425,15 @@ export function creationGuideFacts(doc: PleinDoc, options: GuideOptions = {}): G
     {
       id: 'sample',
       title: '做样片',
-      state: !shots.length ? 'todo' : animation ? 'done' : 'ready',
+      state: !shots.length ? 'todo' : !trialShot ? 'todo' : animation ? 'done' : 'ready',
       detail: !shots.length
         ? '先到分镜表补充镜头'
-        : animation
-          ? '已有样片草稿'
-          : '用低成本样片先看节奏',
-      target: shots.length ? animaticTarget : boardTarget,
+        : !trialShot
+          ? '先选定代表镜头，再做样片'
+          : animation
+            ? '已有样片草稿'
+            : '用低成本样片先看节奏',
+      target: !shots.length ? boardTarget : trialShot ? animaticTarget : undefined,
     },
   ]
   result.shots = shots

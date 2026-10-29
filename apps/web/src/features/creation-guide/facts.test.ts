@@ -280,6 +280,11 @@ describe('持续创作引导的事实推导', () => {
         .steps.find((entry) => entry.id === 'trial')
         ?.substeps?.find((entry) => entry.id === 'input')?.detail,
     ).toContain('先选定代表镜头')
+    expect(
+      creationGuideFacts(doc)
+        .steps.find((entry) => entry.id === 'trial')
+        ?.substeps?.find((entry) => entry.id === 'sample'),
+    ).toMatchObject({ state: 'todo', target: undefined })
     expect(step(doc, 'review').state).toBe('todo')
     expect(step(doc, 'trial').state).toBe('ready')
     expect(step(doc, 'trial').primary).toEqual({

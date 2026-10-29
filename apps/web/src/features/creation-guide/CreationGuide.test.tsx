@@ -318,6 +318,7 @@ it('多镜未选时显示占位，选择首镜也会保存并推进进度', asyn
 
 it('同帧分镜计划变化时拒绝用旧界面创建样片', () => {
   const f = fixture()
+  change(f, () => selectProductionTarget(f.doc, f.ids[0]!, { trialShotId: 's1' }))
   const sample = within(step('trial')).getByRole('button', { name: /^做样片 / })
   act(() => {
     setParams(f.doc, f.ids[0]!, {
@@ -448,6 +449,7 @@ it('制作决策追加修订后旧记录保留，撤销重做不改写原记录'
 
 it('只读时已有样片可打开，无样片时说明原因且不创建', () => {
   const f = fixture()
+  change(f, () => selectProductionTarget(f.doc, f.ids[0]!, { trialShotId: 's1' }))
   change(f, () => {
     f.doc.readOnly = true
     f.doc.mutable(f.ids[0]!)!.set('name', '只读分镜')
