@@ -59,6 +59,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
         AbortSignal.timeout(20_000),
         voice.credentialId ?? undefined,
         voice.credentialFingerprint ?? undefined,
+        voice.credentialLabel ?? undefined,
       )
       if (!state) return voice
       return savePreview(
@@ -151,6 +152,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
                 signal,
                 credentialId,
                 credentialFingerprint,
+                credentialLabel,
               )
             : await host.cloneVoice(
                 provider,
@@ -169,6 +171,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
                 signal,
                 credentialId,
                 credentialFingerprint,
+                credentialLabel,
               )
         const voice = voices.save(owner, {
           ...fields,

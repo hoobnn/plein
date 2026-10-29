@@ -123,7 +123,9 @@ describe('我的音色', () => {
         status: 'training',
         credentialId,
         credentialFingerprint: fingerprint,
-        message: expect.stringContaining('已被修改，无法继续；为避免重复计费不会重新提交'),
+        message: expect.stringContaining(
+          'Key「默认」已被替换为其他内容，任务无法继续查询结果。为避免重复计费，没有自动重新提交；可恢复原 Key 后重试',
+        ),
       })
       expect(status).not.toHaveBeenCalled()
     } finally {

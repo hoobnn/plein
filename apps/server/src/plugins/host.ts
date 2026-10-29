@@ -417,6 +417,7 @@ export class PluginHost {
     signal?: AbortSignal,
     credentialId?: string,
     credentialFingerprint?: string,
+    credentialLabel?: string,
   ): Promise<VoiceCreationResult> {
     const spec = this.voiceClone(id)
     if (!spec) throw new ProviderError('invalid_input', `平台 ${id} 不支持声音复刻`)
@@ -424,6 +425,7 @@ export class PluginHost {
       requireEnabled: true,
       credentialId,
       credentialFingerprint,
+      credentialLabel,
     })
     try {
       return await spec.clone(input, ctx)
@@ -443,6 +445,7 @@ export class PluginHost {
     signal?: AbortSignal,
     credentialId?: string,
     credentialFingerprint?: string,
+    credentialLabel?: string,
   ): Promise<VoiceCreationResult> {
     const spec = this.voiceDesign(id)
     if (!spec) throw new ProviderError('invalid_input', `平台 ${id} 不支持音色设计`)
@@ -450,6 +453,7 @@ export class PluginHost {
       requireEnabled: true,
       credentialId,
       credentialFingerprint,
+      credentialLabel,
     })
     try {
       return await spec.design(input, ctx)
@@ -466,6 +470,7 @@ export class PluginHost {
     signal?: AbortSignal,
     credentialId?: string,
     credentialFingerprint?: string,
+    credentialLabel?: string,
   ): Promise<VoiceCreationResult | null> {
     const spec = this.voiceClone(id)
     if (!spec?.status) return null
@@ -473,6 +478,7 @@ export class PluginHost {
       requireEnabled: true,
       credentialId,
       credentialFingerprint,
+      credentialLabel,
     })
     try {
       return await spec.status(voiceId, ctx)
@@ -1007,13 +1013,14 @@ export class PluginHost {
     if (opts.credentialId && !credential)
       throw new ProviderError(
         'auth',
-        `平台 ${def.title} 提交该任务时使用的密钥「${opts.credentialId.slice(0, 8)}」已删除，无法继续`,
+        `平台 ${def.title} 提交该任务时用的 Key「${opts.credentialLabel ?? opts.credentialId.slice(0, 8)}」已删除，任务无法继续查询结果。为避免重复计费，没有自动重新提交；如需重做，请在任务上选择重新提交`,
+        { retryable: false },
       )
     const secrets = credential?.secrets ?? config.secrets
     if (opts.credentialFingerprint && fingerprintOf(secrets) !== opts.credentialFingerprint)
       throw new ProviderError(
         'auth',
-        `平台 ${def.title} 提交该任务时使用的密钥「${credential?.label ?? '默认'}」已被修改，无法继续；为避免重复计费不会重新提交`,
+        `平台 ${def.title} 提交该任务时用的 Key「${opts.credentialLabel ?? credential?.label ?? opts.credentialId?.slice(0, 8) ?? '默认'}」已被替换为其他内容，任务无法继续查询结果。为避免重复计费，没有自动重新提交；可恢复原 Key 后重试`,
         { retryable: false },
       )
     if (opts.requireEnabled && !config.enabled)

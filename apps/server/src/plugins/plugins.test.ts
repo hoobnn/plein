@@ -953,7 +953,8 @@ describe('模型调用记录', () => {
 
     await expect(call()).rejects.toMatchObject({
       code: 'auth',
-      message: expect.stringContaining('已删除'),
+      retryable: false,
+      message: `平台 Async 提交该任务时用的 Key「默认」已删除，任务无法继续查询结果。为避免重复计费，没有自动重新提交；如需重做，请在任务上选择重新提交`,
     })
     expect(submit).toHaveBeenCalledTimes(1)
     expect(poll).toHaveBeenCalledTimes(1)
@@ -984,7 +985,7 @@ describe('模型调用记录', () => {
       code: 'auth',
       retryable: false,
       message:
-        '平台 Async 提交该任务时使用的密钥「默认」已被修改，无法继续；为避免重复计费不会重新提交',
+        '平台 Async 提交该任务时用的 Key「默认」已被替换为其他内容，任务无法继续查询结果。为避免重复计费，没有自动重新提交；可恢复原 Key 后重试',
     })
     expect(submit).not.toHaveBeenCalled()
     expect(lookup).not.toHaveBeenCalled()
