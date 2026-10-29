@@ -15,6 +15,21 @@ export const certaintyLabels = {
   unknown: '无法判断',
   inferred: '推测',
 } as const
+
+/** 计划状态里一个字段的人话：holder 用主体 label 加左右手，不暴露内部 id */
+export function stateValueText(
+  field: StateField,
+  value: unknown,
+  subjects: ReadonlyArray<{ id: string; label: string }>,
+): string {
+  if (field === 'holder' && !!value && typeof value === 'object' && !Array.isArray(value)) {
+    const holder = value as { subjectId?: string; hand?: 'left' | 'right' | 'both' }
+    const label = subjects.find((s) => s.id === holder.subjectId)?.label ?? '未知主体'
+    const hand = { right: '右手', left: '左手', both: '双手' }[holder.hand ?? 'right']
+    return `${label} · ${hand}`
+  }
+  return typeof value === 'string' ? value : JSON.stringify(value)
+}
 export function continuityWriteContext(
   engine: Engine,
   canvasId: string,
