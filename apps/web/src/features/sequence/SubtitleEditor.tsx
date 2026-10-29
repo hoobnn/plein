@@ -10,7 +10,7 @@ import { findNode } from '../../canvas/nodes'
 import { useCatalog } from '../../stores/catalog'
 import { ModelPicker } from '../generator/ModelPicker'
 import type { RecoverJobOptions, SubtitleRecognitionInfo } from '@plein/protocol'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 
 /** 字幕草稿：用户刚输入的文字，以及这次编辑有没有写进文档 */
 type SubtitleDraft = { text: string; saved: boolean }
@@ -356,8 +356,32 @@ function RecognitionRecovery({
   const [remoteId, setRemoteId] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [credentialConfirm, setCredentialConfirm] = useState(false)
-  const credentialLost = !!info.recovery.credentialLost
-  const unknown = info.recovery.state === 'submit_unknown' && !credentialLost
+  const lost = info.recovery.credentialLost
+  const credentialLost = !!lost
+  const unknown = info.recovery.state === 'submit_unknown'
+  const confirmTrigger = useRef<HTMLButtonElement>(null)
+  const confirmCancel = useRef<HTMLButtonElement>(null)
+  const restoreConfirmFocus = useRef(false)
+  const confirmDescription = useId()
+  useLayoutEffect(() => {
+    if (credentialConfirm) confirmCancel.current?.focus()
+    else if (restoreConfirmFocus.current) {
+      restoreConfirmFocus.current = false
+      confirmTrigger.current?.focus()
+    }
+  }, [credentialConfirm])
+  const cancelConfirm = () => {
+    restoreConfirmFocus.current = true
+    setCredentialConfirm(false)
+  }
+  const current = info.recovery.currentCredentialLabel ?? '默认'
+  const label = info.recovery.credentialLabel ?? '原组'
+  const uncertain = unknown ? '平台若其实已受理，会再生成一次。' : ''
+  const confirmation = lost
+    ? lost.reason === 'missing'
+      ? `原来的 Key「${label}」已删除，无法取回之前的结果。用当前 Key「${current}」重新提交会再次计费。${uncertain}确定吗？`
+      : `原来的 Key「${label}」已被替换，暂时无法取回结果。把这组 Key 改回原来的内容后可重新获取；不需要原结果的话，用当前 Key「${current}」重新提交会再次计费。${uncertain}确定吗？`
+    : ''
   return (
     <section
       aria-label="字幕识别恢复"
@@ -377,6 +401,7 @@ function RecognitionRecovery({
       )}
       {credentialLost && !credentialConfirm && (
         <button
+          ref={confirmTrigger}
           type="button"
           className="ui-btn ui-btn-secondary"
           disabled={busy}
@@ -437,10 +462,11 @@ function RecognitionRecovery({
         <div
           role="group"
           aria-label="重新提交识别确认"
+          aria-describedby={confirmDescription}
           className="flex flex-col gap-2 rounded-md bg-hover px-2 py-1.5"
         >
-          <p className="text-sm">
-            {`原来的 Key 已不可用，无法取回之前的结果。用当前 Key「${info.recovery.currentCredentialLabel ?? '默认'}」重新提交会再次计费，确定吗？`}
+          <p id={confirmDescription} className="text-sm">
+            {confirmation}
           </p>
           <div className="flex gap-2">
             <button
@@ -452,10 +478,11 @@ function RecognitionRecovery({
               重新提交识别
             </button>
             <button
+              ref={confirmCancel}
               type="button"
               className="ui-btn ui-btn-quiet"
               disabled={busy}
-              onClick={() => setCredentialConfirm(false)}
+              onClick={cancelConfirm}
             >
               取消
             </button>

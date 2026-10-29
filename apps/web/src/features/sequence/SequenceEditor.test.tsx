@@ -294,7 +294,7 @@ it('打开唯一关联成片之前同步增加歧义时不使用旧按钮导航'
   expect(f.doc.has(target)).toBe(true)
 })
 
-async function subtitleSetup(recovery: boolean | 'credential' = false) {
+async function subtitleSetup(recovery: boolean | 'credential' | 'credential-unknown' = false) {
   const asset = crypto.randomUUID().replaceAll('-', '').repeat(2)
   let release!: (response: Response) => void
   const pending = new Promise<Response>((resolve) => {
@@ -316,10 +316,19 @@ async function subtitleSetup(recovery: boolean | 'credential' = false) {
                   ? {
                       state: 'remote_pending',
                       refetchable: true,
-                      credentialLost: true,
+                      credentialLost: { reason: 'missing' },
+                      credentialLabel: '默认',
                       currentCredentialLabel: '团队',
                     }
-                  : { state: 'submit_unknown', attachable: true },
+                  : recovery === 'credential-unknown'
+                    ? {
+                        state: 'submit_unknown',
+                        attachable: true,
+                        credentialLost: { reason: 'missing' },
+                        credentialLabel: '默认',
+                        currentCredentialLabel: '团队',
+                      }
+                    : { state: 'submit_unknown', attachable: true },
             }
           : null,
       )
@@ -404,9 +413,16 @@ it('字幕原 Key 失效时用当前组重提必须二次确认', async () => {
   await f.user.click(await screen.findByRole('button', { name: '用当前 Key 重新提交' }))
   const confirm = await screen.findByRole('group', { name: '重新提交识别确认' })
   expect(confirm.textContent).toContain(
-    '原来的 Key 已不可用，无法取回之前的结果。用当前 Key「团队」重新提交会再次计费，确定吗？',
+    '原来的 Key「默认」已删除，无法取回之前的结果。用当前 Key「团队」重新提交会再次计费。确定吗？',
   )
+  const descriptionId = confirm.getAttribute('aria-describedby')!
+  expect(document.getElementById(descriptionId)).toBe(confirm.querySelector('p'))
+  expect((document.activeElement as HTMLElement)?.textContent).toBe('取消')
+  await f.user.click(screen.getByRole('button', { name: '取消' }))
+  await waitFor(() => expect(screen.queryByRole('group', { name: '重新提交识别确认' })).toBeNull())
+  expect((document.activeElement as HTMLElement)?.textContent).toBe('用当前 Key 重新提交')
   expect(f.calls).toEqual([])
+  await f.user.click(screen.getByRole('button', { name: '用当前 Key 重新提交' }))
   await f.user.click(screen.getByRole('button', { name: '重新提交识别' }))
   await waitFor(() => expect(f.calls).toHaveLength(1))
   expect(f.calls[0]).toMatchObject({
@@ -421,6 +437,18 @@ it('字幕原 Key 失效时用当前组重提必须二次确认', async () => {
     f.release(Response.json({ ok: true }))
     await f.pending
   })
+})
+
+it('字幕提交未知且原 Key 失效时保留人工核查，确认重提提示可能重复生成', async () => {
+  const f = await subtitleSetup('credential-unknown')
+  expect(await screen.findByRole('textbox', { name: '字幕识别平台任务 ID' })).toBeTruthy()
+  expect(
+    screen.getByRole('checkbox', { name: '我已在平台核查，确认未受理；重新提交可能计费' }),
+  ).toBeTruthy()
+  await f.user.click(screen.getByRole('button', { name: '用当前 Key 重新提交' }))
+  const confirm = await screen.findByRole('group', { name: '重新提交识别确认' })
+  expect(confirm.textContent).toContain('原来的 Key「默认」已删除，无法取回之前的结果。')
+  expect(confirm.textContent).toContain('平台若其实已受理，会再生成一次。')
 })
 
 it('字幕原 Key 失效可标记已处理，不自动重新识别', async () => {

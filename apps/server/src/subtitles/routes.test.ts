@@ -169,8 +169,10 @@ describe('字幕显式识别与持久恢复', () => {
     expect(current.recovery).toMatchObject({
       state: 'remote_pending',
       refetchable: true,
-      credentialLost: true,
+      credentialLost: { reason: 'missing' },
+      credentialLabel: '默认',
       currentCredentialLabel: '团队',
+      note: '原来的 Key「默认」已删除，无法取回之前的结果。为避免重复计费没有自动重新提交。',
     })
     const recovered = await s.app().request(API.subtitleRecover, {
       method: 'POST',

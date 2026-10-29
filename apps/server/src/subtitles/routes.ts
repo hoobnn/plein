@@ -5,6 +5,7 @@ import { stableStringify } from '@plein/flow'
 import { parseModelRef, ProviderError, type TranscriptSegment } from '@plein/plugin-sdk'
 import {
   API,
+  type CredentialLost,
   SubtitleRecognizeRequest,
   SubtitleRecognitionLookup,
   SubtitleRecoverRequest,
@@ -59,14 +60,17 @@ export function subtitleRoutes({
       .digest('hex')
     return { key, file: join(root, `${key}.json`), provider, spec, version }
   }
-  const credentialLost = (providerId: string, record: CallRecord) => {
-    if (!record.credentialId) return false
+  const credentialLost = (providerId: string, record: CallRecord): CredentialLost | undefined => {
+    if (!record.credentialId) return undefined
     const credential = host.configs.credential(providerId, record.credentialId)
-    return (
-      !credential ||
-      (!!record.credentialFingerprint &&
-        fingerprintOf(credential.secrets) !== record.credentialFingerprint)
+    const voice = record.credentialSource === 'voice' ? record.credentialVoice : undefined
+    if (!credential) return { reason: 'missing', ...(voice ? { voice } : {}) }
+    if (
+      record.credentialFingerprint &&
+      fingerprintOf(credential.secrets) !== record.credentialFingerprint
     )
+      return { reason: 'replaced', ...(voice ? { voice } : {}) }
+    return undefined
   }
   const info = (
     ownerId: string,
@@ -81,6 +85,7 @@ export function subtitleRoutes({
     const currentCredentialLabel = lost
       ? host.configs.credential(context.provider.def.id)?.label
       : undefined
+    const credentialLabel = record.credentialLabel ?? record.credentialId?.slice(0, 8) ?? '默认'
     const state =
       record.state === 'pending'
         ? 'remote_pending'
@@ -108,11 +113,13 @@ export function subtitleRoutes({
         state,
         attachable: !!context.provider.def.poll,
         refetchable: record.state === 'pending' || record.state === 'fetched',
-        ...(lost ? { credentialLost: true as const } : {}),
+        ...(lost ? { credentialLost: lost, credentialLabel } : {}),
         ...(currentCredentialLabel ? { currentCredentialLabel } : {}),
         ...('remoteId' in record && record.remoteId ? { remoteId: record.remoteId } : {}),
         note: lost
-          ? '原来的 Key 已不可用，无法取回之前的结果；恢复这组 Key 后可重新获取，或用当前 Key 重新提交（会再次计费）。'
+          ? lost.reason === 'missing'
+            ? `原来的 Key「${credentialLabel}」已删除，无法取回之前的结果。为避免重复计费没有自动重新提交。`
+            : `原来的 Key「${credentialLabel}」已被替换，暂时无法取回结果。把这组 Key 改回原来的内容后可重新获取；不需要原结果的话，可以用当前 Key 重新提交（会再次计费）。`
           : state === 'submit_unknown'
             ? '提交状态未知，请先在平台核查；填平台任务 ID 续查，或确认未受理后再重新提交。'
             : '平台已受理，重新获取只续查或复用已返回结果。',
@@ -265,6 +272,8 @@ export function subtitleRoutes({
                   ? { credentialFingerprint: record.credentialFingerprint }
                   : {}),
                 ...(record.credentialLabel ? { credentialLabel: record.credentialLabel } : {}),
+                ...(record.credentialSource ? { credentialSource: record.credentialSource } : {}),
+                ...(record.credentialVoice ? { credentialVoice: record.credentialVoice } : {}),
               },
               audit: [...(stored.audit ?? []), audit('manual_attach')],
               history: [...(stored.history ?? []), { record, at: Date.now(), action: 'attach' }],
