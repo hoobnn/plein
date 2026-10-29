@@ -1179,6 +1179,50 @@ it('查看镜头图阶段时只读并提示切回视频阶段', async () => {
   expect((screen.getByLabelText('工作台阶段节点') as HTMLSelectElement).value).toBe('video-two')
 })
 
+it('展示节点没有候选的默认状态不算不一致：可写并标明写入目标', async () => {
+  const { doc } = fixture(true)
+  // 本镜镜头图已就绪，视频节点已展开但还没有候选：衔接目标在镜头图候选上
+  doc.mutable('video-two')!.set('results', [])
+  createElement(doc, {
+    id: 'image-two',
+    kind: 'node',
+    nodeType: 'plein/image',
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 80,
+    params: { source: { storyboard: 'board', shot: 'two', role: 'image' } },
+    results: [
+      {
+        id: 'image-result-two',
+        port: 'image',
+        runId: 'image-run-two',
+        at: 1,
+        value: { type: 'image', assetId: 'e'.repeat(64) },
+      },
+    ],
+  })
+  useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
+  workbenchReads(doc, [])
+  const { user } = renderApp(<ShotWorkbench />)
+  const region = () => screen.getByLabelText('衔接意见')
+  await waitFor(() => expect(region().textContent).toContain('记在镜头图候选上'))
+  expect((screen.getByRole('button', { name: '标记需修改' }) as HTMLButtonElement).disabled).toBe(
+    false,
+  )
+  await user.click(screen.getByRole('checkbox', { name: '服装' }))
+  await user.click(screen.getByRole('button', { name: '标记需修改' }))
+  await waitFor(() =>
+    expect(doc.get('image-two')?.reviews).toEqual([
+      expect.objectContaining({
+        status: 'changes',
+        tags: ['continuity', 'continuity-costume'],
+        target: { kind: 'image', assetId: 'e'.repeat(64), resultId: 'image-result-two' },
+      }),
+    ]),
+  )
+})
+
 it('第一镜无需对照，不显示衔接意见表单', () => {
   const { doc } = fixture(true)
   workbenchReads(doc, [])

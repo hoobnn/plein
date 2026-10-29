@@ -358,9 +358,14 @@ function Workbench({
     !!continuityViewed &&
     continuityViewed.value.type !== continuityPrimaryType &&
     !continuityViewedPrimary
-  // 查看的是其他阶段节点（如镜头图），衔接目标在另一节点上：只读并引导切回
-  const continuityStageMismatch = !!continuityNode && !!node && node.id !== continuityNode.id
-  const continuityStageHint = `衔接意见记在${continuityNode === videoNode ? '视频' : '镜头图'}候选上`
+  // 查看的阶段节点与衔接目标不同，且该节点上有候选可看时才视为不一致：只读并引导切回。
+  // 展示节点没有候选的默认状态不算，表单可写并用一行标明写入目标
+  const continuityStageDiff = !!continuityNode && !!node && node.id !== continuityNode.id
+  const continuityStageHasCandidates = !!node && !!(node.results ?? []).length
+  const continuityStageMismatch = continuityStageDiff && continuityStageHasCandidates
+  const continuityTargetName = continuityNode === videoNode ? '视频' : '镜头图'
+  const continuityStageHint = `衔接意见记在${continuityTargetName}候选上`
+  const continuityNeedAdopt = !!continuityNode && !continuityAdoptedTarget && !continuityViewedRaw
   const continuityViewedTarget = continuityTargetOf(continuityViewedPrimary)
   const continuityViewingAdopted = sameCreativeReviewTarget(
     continuityViewedTarget,
@@ -379,12 +384,16 @@ function Workbench({
       adoptedOpinion: continuityViewingAdopted
         ? undefined
         : adoptedContinuityText(continuityAdoptedReview),
-      needAdopt: !!continuityNode && !continuityAdoptedTarget && !continuityViewedRaw,
+      needAdopt: continuityNeedAdopt,
       unmappedTail: continuityTailUnmapped,
+      targetStageLabel:
+        continuityStageDiff && !continuityStageMismatch && !continuityNeedAdopt
+          ? `记在${continuityTargetName}候选上`
+          : undefined,
       stageMismatch: continuityStageMismatch
         ? {
             hint: continuityStageHint,
-            switchLabel: continuityNode === videoNode ? '切到视频阶段' : '切到镜头图阶段',
+            switchLabel: `切到${continuityTargetName}阶段`,
           }
         : undefined,
     } satisfies ContinuityNoteView,

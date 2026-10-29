@@ -70,6 +70,8 @@ export interface ContinuityNoteView {
   needAdopt?: boolean
   /** 查看的是尾帧，但同组关联无法唯一确定所属的视频候选 */
   unmappedTail?: boolean
+  /** 展示节点与写入目标不在同一阶段但没有候选可看时，标明写入目标，如「记在视频候选上」 */
+  targetStageLabel?: string
   /** 查看的是其他阶段节点（如镜头图），衔接目标在另一节点上；附提示与切回按钮文案 */
   stageMismatch?: { hint: string; switchLabel: string }
 }
@@ -147,6 +149,7 @@ export function ContinuityNoteForm({
   return (
     <section aria-label="衔接意见" className="space-y-2 rounded-lg border border-line p-3 text-xs">
       <p className="text-sm font-medium">衔接意见</p>
+      {view.targetStageLabel && <p className="text-ink-subtle">{view.targetStageLabel}</p>}
       {!node ? (
         <p className="text-ink-subtle">本镜还没有候选</p>
       ) : view.needAdopt ? (
