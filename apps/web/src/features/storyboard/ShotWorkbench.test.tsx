@@ -1128,6 +1128,57 @@ it('查看历史候选时对照区主按钮让位给采用候选', async () => {
   expect(screen.getByRole('button', { name: '采用候选' })).toBeTruthy()
 })
 
+it('查看镜头图阶段时只读并提示切回视频阶段', async () => {
+  const { doc } = fixture(true)
+  expect(
+    recordCreativeReview(doc, 'video-two', {
+      target: { kind: 'video', assetId: 'a'.repeat(64), resultId: 'candidate-two' },
+      status: 'changes',
+      tags: ['continuity', 'continuity-costume'],
+      note: '衔接：上衣颜色变了',
+    }),
+  ).toBeTruthy()
+  createElement(doc, {
+    id: 'image-two',
+    kind: 'node',
+    nodeType: 'plein/image',
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 80,
+    params: { source: { storyboard: 'board', shot: 'two', role: 'image' } },
+    results: [
+      {
+        id: 'image-result-two',
+        port: 'image',
+        runId: 'image-run-two',
+        at: 1,
+        value: { type: 'image', assetId: 'e'.repeat(64) },
+      },
+    ],
+  })
+  useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
+  workbenchReads(doc, [])
+  const { user } = renderApp(<ShotWorkbench />)
+  await user.click(screen.getByText('阶段节点 · 2 个'))
+  await user.selectOptions(screen.getByLabelText('工作台阶段节点'), 'image-two')
+  const region = () => screen.getByLabelText('衔接意见')
+  await waitFor(() => expect(region().textContent).toContain('衔接意见记在视频候选上'))
+  // 显示的是目标视频候选上的衔接意见，且不可写
+  expect(region().textContent).toContain('衔接需修改：服装')
+  expect(region().textContent).toContain('衔接：上衣颜色变了')
+  expect((screen.getByRole('button', { name: '标记需修改' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  )
+  await user.click(screen.getByRole('button', { name: '切到视频阶段' }))
+  await waitFor(() =>
+    expect((screen.getByRole('button', { name: '标记需修改' }) as HTMLButtonElement).disabled).toBe(
+      false,
+    ),
+  )
+  expect((screen.getByLabelText('工作台阶段节点') as HTMLSelectElement).value).toBe('video-two')
+})
+
 it('第一镜无需对照，不显示衔接意见表单', () => {
   const { doc } = fixture(true)
   workbenchReads(doc, [])

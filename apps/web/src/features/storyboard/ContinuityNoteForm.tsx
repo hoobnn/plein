@@ -70,6 +70,8 @@ export interface ContinuityNoteView {
   needAdopt?: boolean
   /** 查看的是尾帧，但同组关联无法唯一确定所属的视频候选 */
   unmappedTail?: boolean
+  /** 查看的是其他阶段节点（如镜头图），衔接目标在另一节点上；附提示与切回按钮文案 */
+  stageMismatch?: { hint: string; switchLabel: string }
 }
 
 /**
@@ -85,6 +87,7 @@ export function ContinuityNoteForm({
   primary = false,
   canReview = false,
   onReview,
+  onSwitchStage,
 }: {
   doc: PleinDoc
   node?: CanvasElement
@@ -95,6 +98,8 @@ export function ContinuityNoteForm({
   primary?: boolean
   canReview?: boolean
   onReview?(): void
+  /** 从其他阶段节点切回衔接目标所在的阶段 */
+  onSwitchStage?(): void
 }) {
   const [picked, setPicked] = useState<string[]>([])
   const [note, setNote] = useState('')
@@ -103,7 +108,18 @@ export function ContinuityNoteForm({
   const opinion = hasContinuityOpinion(review)
   const lines = review ? continuityNoteLines(review.note) : []
   const viewedOpinion = hasContinuityOpinion(view.viewedReview)
-  const controlsDisabled = !view.viewingAdopted || !writable()
+  const controlsDisabled = !view.viewingAdopted || !!view.stageMismatch || !writable()
+  const summary =
+    opinion && review ? (
+      <div className="text-warning">
+        <p>{continuityIssueText(review.tags)}</p>
+        {lines.map((line) => (
+          <p key={line} className="whitespace-pre-wrap">
+            {line}
+          </p>
+        ))}
+      </div>
+    ) : null
   const apply = (
     build: (latest: CreativeReview | undefined) => {
       status: CreativeReviewStatus
@@ -135,6 +151,18 @@ export function ContinuityNoteForm({
         <p className="text-ink-subtle">本镜还没有候选</p>
       ) : view.needAdopt ? (
         <p className="text-ink-subtle">先采用一个候选再记衔接意见</p>
+      ) : view.stageMismatch ? (
+        <div className="space-y-2">
+          {summary}
+          <p className="text-ink-subtle">{view.stageMismatch.hint}</p>
+          <button
+            type="button"
+            className="ui-btn ui-btn-secondary ui-btn-xs"
+            onClick={onSwitchStage}
+          >
+            {view.stageMismatch.switchLabel}
+          </button>
+        </div>
       ) : !view.viewingAdopted ? (
         <div className="space-y-2">
           {view.unmappedTail ? (
@@ -157,16 +185,7 @@ export function ContinuityNoteForm({
           {view.adoptedOpinion && <p className="text-warning">{view.adoptedOpinion}</p>}
         </div>
       ) : (
-        opinion && (
-          <div className="text-warning">
-            <p>{continuityIssueText(review!.tags)}</p>
-            {lines.map((line) => (
-              <p key={line} className="whitespace-pre-wrap">
-                {line}
-              </p>
-            ))}
-          </div>
-        )
+        summary
       )}
       {!node || view.needAdopt ? null : (
         <>
@@ -198,7 +217,7 @@ export function ContinuityNoteForm({
           <div className="flex flex-wrap gap-1">
             <button
               type="button"
-              className={`ui-btn ui-btn-xs ${primary && view.viewingAdopted ? 'ui-btn-primary' : 'ui-btn-secondary'}`}
+              className={`ui-btn ui-btn-xs ${primary && view.viewingAdopted && !view.stageMismatch ? 'ui-btn-primary' : 'ui-btn-secondary'}`}
               disabled={controlsDisabled}
               onClick={() => apply((latest) => markContinuityChanges(latest, picked, note))}
             >

@@ -358,6 +358,9 @@ function Workbench({
     !!continuityViewed &&
     continuityViewed.value.type !== continuityPrimaryType &&
     !continuityViewedPrimary
+  // 查看的是其他阶段节点（如镜头图），衔接目标在另一节点上：只读并引导切回
+  const continuityStageMismatch = !!continuityNode && !!node && node.id !== continuityNode.id
+  const continuityStageHint = `衔接意见记在${continuityNode === videoNode ? '视频' : '镜头图'}候选上`
   const continuityViewedTarget = continuityTargetOf(continuityViewedPrimary)
   const continuityViewingAdopted = sameCreativeReviewTarget(
     continuityViewedTarget,
@@ -378,6 +381,12 @@ function Workbench({
         : adoptedContinuityText(continuityAdoptedReview),
       needAdopt: !!continuityNode && !continuityAdoptedTarget && !continuityViewedRaw,
       unmappedTail: continuityTailUnmapped,
+      stageMismatch: continuityStageMismatch
+        ? {
+            hint: continuityStageHint,
+            switchLabel: continuityNode === videoNode ? '切到视频阶段' : '切到镜头图阶段',
+          }
+        : undefined,
     } satisfies ContinuityNoteView,
   }
   const changeShot = (id: string) => {
@@ -643,6 +652,9 @@ function Workbench({
                     }
                     continuity={continuity}
                     writable={writable}
+                    onSwitchStage={() => {
+                      if (continuityNode) setSelectedNode(continuityNode.id)
+                    }}
                   />
                   <div className="space-y-3">
                     <div>
@@ -1169,6 +1181,7 @@ function ShotComparison({
   candidatePrimary,
   continuity,
   writable,
+  onSwitchStage,
 }: {
   engine: Engine
   canvasId: string
@@ -1184,6 +1197,7 @@ function ShotComparison({
     view: ContinuityNoteView
   }
   writable(): boolean
+  onSwitchStage(): void
 }) {
   const record = continuityOf(engine.doc, boardId)
   // 第一镜没有可对照的内容，只留一行，不占版面
@@ -1294,6 +1308,7 @@ function ShotComparison({
         primary={!candidatePrimary}
         canReview={canReview}
         onReview={onReview}
+        onSwitchStage={onSwitchStage}
       />
     </section>
   )
