@@ -1,6 +1,16 @@
 // @vitest-environment happy-dom
 import type { Engine } from '@plein/canvas-core'
-import { addResults, connect, createDoc, createElement, setParam, type PleinDoc } from '@plein/doc'
+import {
+  addResults,
+  connect,
+  createDoc,
+  createElement,
+  recordContinuityObservation,
+  recordCreativeReview,
+  registerContinuitySubject,
+  setParam,
+  type PleinDoc,
+} from '@plein/doc'
 import { Shot } from '@plein/nodes'
 import type { PreparedInput } from '@plein/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
@@ -290,7 +300,7 @@ it('保存为可用记录当前候选，本镜下游影响定位真实序列并�
   expect(doc.get(videos[1]!)?.reviews ?? []).toEqual([])
   const impact = screen.getByLabelText('本镜下游影响')
   await user.click(within(impact).getByText(/下游影响 · 1 个节点/))
-  expect(impact.textContent).toContain('1 个关联节点')
+  expect(impact.textContent).toContain('两镜成片')
   await user.click(within(impact).getByRole('button', { name: '两镜成片' }))
   expect(engine.selection.set).toHaveBeenCalledWith([sequence])
   expect(engine.zoomToFit).toHaveBeenCalledWith([sequence])
@@ -348,7 +358,7 @@ it('同帧阶段改绑拒绝采用与审片，只读转换拒绝保存草稿', a
   const source = doc.get('video-one')!.params!.source
   act(() => {
     setParam(doc, 'video-one', 'source', { storyboard: board, shot: 'two', role: 'video' })
-    fireEvent.click(screen.getByRole('button', { name: '明确采用此候选' }))
+    fireEvent.click(screen.getByRole('button', { name: '采用候选' }))
     doc.flush()
   })
   expect(doc.get('video-one')?.adopted).toBe(old.id)
@@ -384,4 +394,332 @@ it('Alt 方向键切镜，但不打断文本编辑', async () => {
   fireEvent.keyDown(input, { key: 'ArrowLeft', altKey: true })
   expect(useCanvas.getState().shotWorkbench?.shotId).toBe('two')
   expect(engine.doc.get('board')).toBeDefined()
+})
+
+it('摘要只按实际送入的参考图标记，且不把丢弃的图说成已送入', async () => {
+  const { doc, board, shots } = fixture(true)
+  createElement(doc, {
+    id: 'actor',
+    kind: 'node',
+    nodeType: 'plein/character',
+    name: '角色',
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 80,
+    params: {},
+  })
+  setParam(doc, board, 'shots', [
+    { ...shots[0]!, characters: ['角色'], assetBindings: { 角色: { elementId: 'actor' } } },
+    shots[1]!,
+  ])
+  setParam(doc, 'video-one', 'prompt', '@角色')
+  const input = prepared('video-one', '@角色')
+  input.refs = [
+    {
+      elementId: 'actor',
+      name: '角色',
+      kind: 'character',
+      required: false,
+      available: ['ref'],
+      sent: ['ref'],
+    },
+  ]
+  input.inputs = { images: [{ type: 'image', assetId: 'ref', source: 'actor' }] }
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    if (path.endsWith('/input')) return Response.json(input)
+    if (path.endsWith('/jobs/latest')) return Response.json({ jobs: [] })
+    if (path.endsWith('/jobs/run-one'))
+      return Response.json({ id: 'run-one', nodeId: 'video-one', input })
+  })
+  renderApp(<ShotWorkbench />)
+  expect(await screen.findByText('有参考图且实际送入模型')).toBeTruthy()
+  expect(screen.queryByText('仅文字设定')).toBeNull()
+})
+
+it('对照只取采用视频同组的末帧，缺失时回退分镜图', async () => {
+  const { doc } = fixture(true)
+  const video = doc.get('video-one')!.results![0]!
+  doc.mutable('video-one')!.set('results', [
+    video,
+    {
+      ...video,
+      id: 'tail',
+      port: 'lastFrame',
+      value: { type: 'image', assetId: 'b'.repeat(64) },
+    },
+  ])
+  createElement(doc, {
+    id: 'image-one',
+    kind: 'node',
+    nodeType: 'plein/image',
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 80,
+    params: { source: { storyboard: 'board', shot: 'one', role: 'image' } },
+    results: [
+      {
+        id: 'still',
+        port: 'image',
+        runId: 'still-run',
+        at: 1,
+        value: { type: 'image', assetId: 'c'.repeat(64) },
+      },
+    ],
+  })
+  useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
+  workbenchReads(doc, [])
+  renderApp(<ShotWorkbench />)
+  expect((screen.getByAltText('视频末帧') as HTMLImageElement).src).toContain('b'.repeat(64))
+  act(() => {
+    doc.mutable('video-one')!.set('results', [video])
+    doc.flush()
+  })
+  await waitFor(() =>
+    expect((screen.getByAltText('分镜图') as HTMLImageElement).src).toContain('c'.repeat(64)),
+  )
+})
+
+it('候选操作随镜头图、视频与采用状态变化', async () => {
+  const { doc } = fixture()
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    const input = path.match(/\/nodes\/([^/]+)\/input$/)
+    if (input) return Response.json(prepared(input[1]!, ''))
+    if (path.endsWith('/jobs/latest')) return Response.json({ jobs: [] })
+    if (path.endsWith('/jobs/image-run'))
+      return Response.json({
+        id: 'image-run',
+        nodeId: 'image-one',
+        input: prepared('image-one', ''),
+      })
+    if (path.endsWith('/jobs/video-run'))
+      return Response.json({
+        id: 'video-run',
+        nodeId: 'video-one',
+        input: prepared('video-one', ''),
+      })
+  })
+  const { user } = renderApp(<ShotWorkbench />)
+  expect(screen.getByRole('button', { name: '生成镜头图' })).toBeTruthy()
+  act(() => {
+    createElement(doc, {
+      id: 'image-one',
+      kind: 'node',
+      nodeType: 'plein/image',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 80,
+      params: { source: { storyboard: 'board', shot: 'one', role: 'image' } },
+      results: [
+        {
+          id: 'image-result',
+          port: 'image',
+          runId: 'image-run',
+          at: 1,
+          value: { type: 'image', assetId: 'c'.repeat(64) },
+        },
+      ],
+    })
+    doc.flush()
+  })
+  await waitFor(() => expect(screen.getByRole('button', { name: '生成视频' })).toBeTruthy())
+  act(() => {
+    createElement(doc, {
+      id: 'video-one',
+      kind: 'node',
+      nodeType: 'plein/video',
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 80,
+      params: { source: { storyboard: 'board', shot: 'one', role: 'video' } },
+      results: [
+        {
+          id: 'video-result',
+          port: 'video',
+          runId: 'video-run',
+          at: 1,
+          value: { type: 'video', assetId: 'a'.repeat(64) },
+        },
+      ],
+      adopted: null,
+    })
+    doc.flush()
+  })
+  await waitFor(() => expect(screen.getByRole('button', { name: '采用候选' })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: '采用候选' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: '审阅' })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: '审阅' }))
+  expect(screen.getByLabelText('创作验收备注 · video-one')).toBeTruthy()
+})
+
+function addActor(doc: PleinDoc, profile?: unknown) {
+  createElement(doc, {
+    id: 'actor',
+    kind: 'node',
+    nodeType: 'plein/character',
+    name: '角色',
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 80,
+    params: profile ? { profile } : {},
+  })
+}
+
+function bindCharacter(
+  doc: PleinDoc,
+  board: string,
+  shots: ReturnType<typeof rows>,
+  prompt: string,
+) {
+  setParam(doc, board, 'shots', [
+    { ...shots[0]!, characters: ['角色'], assetBindings: { 角色: { elementId: 'actor' } } },
+    shots[1]!,
+  ])
+  setParam(doc, 'video-one', 'prompt', prompt)
+}
+
+const youngProfile = {
+  periods: [
+    {
+      id: 'young',
+      name: '青年',
+      aliases: [],
+      description: '',
+      images: [],
+      voice: null,
+      voiceStates: [],
+      outfits: [],
+    },
+  ],
+  expressions: [],
+}
+
+function summaryInput(nodeId: string, prompt: string, sent: string[]): PreparedInput {
+  const input = prepared(nodeId, prompt)
+  input.refs = [
+    {
+      elementId: 'actor',
+      name: '角色',
+      kind: 'character',
+      required: false,
+      available: ['ref'],
+      sent,
+    },
+  ]
+  if (sent.length)
+    input.inputs = { images: [{ type: 'image', assetId: sent[0]!, source: 'actor' }] }
+  return input
+}
+
+function mockSummary(input: PreparedInput) {
+  mockFetch((request) => {
+    const path = new URL(request.url).pathname
+    if (path.endsWith('/input')) return Response.json(input)
+    if (path.endsWith('/jobs/latest')) return Response.json({ jobs: [] })
+    if (path.endsWith('/jobs/run-one'))
+      return Response.json({ id: 'run-one', nodeId: 'video-one', input })
+  })
+}
+
+it('摘要提示需要选择：档案项写错、多处引用都不猜；没提及时显示默认', async () => {
+  const { doc, board, shots } = fixture(true)
+  addActor(doc, youngProfile)
+  bindCharacter(doc, board, shots, '@角色/老年')
+  mockSummary(summaryInput('video-one', '@角色/老年', []))
+  renderApp(<ShotWorkbench />)
+  expect(await screen.findByText('档案项需要选择')).toBeTruthy()
+  act(() => {
+    setParam(doc, 'video-one', 'prompt', '@角色 @角色')
+    doc.flush()
+  })
+  await waitFor(() =>
+    expect(screen.getByText('档案项需要选择').closest('button')?.getAttribute('title')).toContain(
+      '多处引用',
+    ),
+  )
+  act(() => {
+    setParam(doc, 'video-one', 'prompt', '天台夜戏，没有引用')
+    doc.flush()
+  })
+  await waitFor(() => expect(screen.getByText(/时期：默认/)).toBeTruthy())
+  expect(screen.queryByText('档案项需要选择')).toBeNull()
+})
+
+it('摘要按已有字段区分仅文字设定与已人工认可', async () => {
+  const { doc, board, shots } = fixture(true)
+  createElement(doc, {
+    id: 'actor',
+    kind: 'node',
+    nodeType: 'plein/character',
+    name: '角色',
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 80,
+    params: {},
+    results: [
+      {
+        id: 'ref',
+        port: 'image',
+        runId: 'ref-run',
+        at: 1,
+        value: { type: 'image', assetId: 'd'.repeat(64) },
+      },
+    ],
+  })
+  expect(
+    recordCreativeReview(doc, 'actor', {
+      target: { kind: 'image', assetId: 'd'.repeat(64), resultId: 'ref' },
+      status: 'usable',
+    }),
+  ).toBeTruthy()
+  bindCharacter(doc, board, shots, '@角色')
+  mockSummary(summaryInput('video-one', '@角色', []))
+  renderApp(<ShotWorkbench />)
+  expect(await screen.findByText('仅文字设定')).toBeTruthy()
+  expect(screen.getByText('已人工认可')).toBeTruthy()
+  expect(screen.queryByText('有参考图且实际送入模型')).toBeNull()
+})
+
+it('对照观察绑定候选：当前候选有观察则计数，换候选后提示重新审阅', async () => {
+  const { doc } = fixture(true)
+  const scope = { canvasId: 'canvas', boardId: 'board' }
+  const subjectId = registerContinuitySubject(doc, {
+    scope,
+    kind: 'character',
+    label: '主角',
+  })!
+  expect(
+    recordContinuityObservation(doc, {
+      scope,
+      shotId: 'one',
+      phase: 'end',
+      nodeId: 'video-one',
+      port: 'video',
+      target: { kind: 'video', assetId: 'a'.repeat(64), resultId: 'candidate-one' },
+      evidence: {
+        kind: 'frame',
+        position: 'end',
+        frameAssetId: 'f'.repeat(64),
+        aspects: ['visual'],
+      },
+      states: { [subjectId]: { condition: { certainty: 'unknown', note: '手持道具' } } },
+      origin: { kind: 'manual', userId: 'local' },
+    }),
+  ).toBeTruthy()
+  useCanvas.setState({ shotWorkbench: { boardId: 'board', shotId: 'two' } })
+  workbenchReads(doc, [])
+  renderApp(<ShotWorkbench />)
+  expect(await screen.findByText('已记录 1 条衔接观察')).toBeTruthy()
+  act(() => {
+    doc.mutable('video-one')!.set('adopted', null)
+    doc.flush()
+  })
+  await waitFor(() => expect(screen.getByText('候选已换，请重新审阅')).toBeTruthy())
 })

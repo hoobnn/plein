@@ -6,6 +6,7 @@ import {
   continuityOf,
   currentContinuityObservations,
   currentShotPlan,
+  getCreativeReview,
   currentResult,
   readSourceSlice,
   sourceMapOf,
@@ -30,6 +31,7 @@ import { Modal, ModalHeader } from '../../ui/Modal'
 import { Icon } from '../../ui/icons'
 import { useStale } from '../runs/stale'
 import { describeRecovery } from '../runs/recovery'
+import { submittedMedia } from '../generator/submittedMedia'
 import { BatchChecklist } from './BatchChecklist'
 import { CreativeReviewForm, reviewLabels } from './CreativeReviewForm'
 import { expandedNodes, shotsOf, type ShotSource } from './model'
@@ -167,7 +169,17 @@ function Workbench({
     shot = shots.find((s) => s.id === shotId)
   const groups = expandedNodes(engine, boardId),
     nodes = shot ? reviewNodesForShot(shot, groups.get(shotId) ?? []) : []
-  const node = selectedNode ? nodes.find((n) => n.id === selectedNode) : nodes[0]
+  const imageNode = nodes.find((n) => (n.params?.source as ShotSource)?.role === 'image')
+  const videoNode = nodes.find((n) => (n.params?.source as ShotSource)?.role === 'video')
+  const imageReady = imageNode && currentResult(imageNode)?.value.type === 'image'
+  const videoReady = videoNode && currentResult(videoNode)?.value.type === 'video'
+  // 本镜的下一步：无镜头图 → 补镜头图；有图无视频 → 补视频（清单会创建缺失节点）
+  const nextRole = imageReady ? (videoReady ? undefined : ('video' as const)) : ('image' as const)
+  const node = selectedNode
+    ? nodes.find((n) => n.id === selectedNode)
+    : imageReady
+      ? (videoNode ?? imageNode)
+      : (imageNode ?? nodes[0])
   const currentDraft = workbenchDraft(engine.doc, boardId, shotId)
   const changed = draft?.source !== currentDraft?.source
   const downstream = workbenchDownstream(
@@ -300,6 +312,8 @@ function Workbench({
                   engine={engine}
                   shot={shot}
                   node={node}
+                  canvasId={canvasId}
+                  active={active}
                   onLocate={locate}
                   onChoose={() => useCanvas.getState().openStoryboard(boardId)}
                 />
@@ -492,30 +506,10 @@ function Workbench({
                       <p className="text-xs text-ink-subtle">预览与审片</p>
                       <h3 className="font-medium">候选</h3>
                     </div>
-                    <label className="block text-sm">
-                      阶段节点{' '}
-                      <select
-                        aria-label="工作台阶段节点"
-                        className="ui-input w-full"
-                        value={node?.id ?? selectedNode}
-                        onChange={(e) => setSelectedNode(e.target.value)}
-                      >
-                        <option value="">请选择阶段</option>
-                        {nodes.map((n) => (
-                          <option key={n.id} value={n.id}>
-                            {roles[(n.params?.source as ShotSource)?.role] ?? '节点'} ·{' '}
-                            {n.name ?? n.id}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
                     {!node ? (
                       <div className="plein-shot-preview-empty" role="status">
                         <Icon name="video" size={24} />
-                        <p>从当前镜头开始制作</p>
-                        <p className="text-xs text-ink-subtle">
-                          此阶段没有生成节点；已有固定段可在下方映射中核对，生成清单会先检查复用。
-                        </p>
+                        <p>从此镜的镜头图开始</p>
                       </div>
                     ) : (
                       <CandidateInspection
@@ -529,32 +523,46 @@ function Workbench({
                         writable={writable}
                         stale={staleNodes.has(node.id)}
                         onLocate={() => locate(node.id)}
+                        generationRole={nextRole}
+                        onGenerate={(role) => {
+                          if (writable()) setBatch({ role, reuseExisting: false })
+                        }}
                       />
                     )}
-                    <button
-                      type="button"
-                      className={`ui-btn ${node && currentResult(node) ? 'ui-btn-secondary' : 'ui-btn-primary'}`}
-                      disabled={!canWrite}
-                      onClick={() =>
-                        setBatch({
-                          role: nodes.some(
-                            (n) =>
-                              (n.params?.source as ShotSource)?.role === 'image' &&
-                              currentResult(n),
-                          )
-                            ? 'video'
-                            : 'image',
-                          reuseExisting: false,
-                        })
-                      }
-                    >
-                      {nodes.some(
-                        (n) =>
-                          (n.params?.source as ShotSource)?.role === 'image' && currentResult(n),
-                      )
-                        ? '生成视频'
-                        : '生成镜头图'}
-                    </button>
+                    {!node && (
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn-primary"
+                        disabled={!canWrite}
+                        onClick={() => {
+                          if (writable()) setBatch({ role: 'image', reuseExisting: false })
+                        }}
+                      >
+                        生成镜头图
+                      </button>
+                    )}
+                    {!!nodes.length && (
+                      <details>
+                        <summary>阶段节点 · {nodes.length} 个</summary>
+                        <label className="block text-sm">
+                          阶段节点{' '}
+                          <select
+                            aria-label="工作台阶段节点"
+                            className="ui-input w-full"
+                            value={node?.id ?? selectedNode}
+                            onChange={(e) => setSelectedNode(e.target.value)}
+                          >
+                            <option value="">请选择阶段</option>
+                            {nodes.map((n) => (
+                              <option key={n.id} value={n.id}>
+                                {roles[(n.params?.source as ShotSource)?.role] ?? '节点'} ·{' '}
+                                {n.name ?? n.id}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </details>
+                    )}
                     <details>
                       <summary>更多生成选项</summary>
                       <div className="flex flex-wrap gap-2">
@@ -598,26 +606,6 @@ function Workbench({
                   <summary>
                     下游影响 · {downstream.length} 个节点 · {dependents.length} 项引用
                   </summary>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-medium">本镜下游影响</h3>
-                    <p className="text-xs text-ink-subtle">
-                      {downstream.length} 个关联节点 · {dependents.length} 项镜头状态引用
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    className="ui-btn ui-btn-secondary"
-                    disabled={
-                      !previous ||
-                      !beforeVideo ||
-                      !video ||
-                      currentResult(beforeVideo)?.value.type !== 'video' ||
-                      currentResult(video)?.value.type !== 'video'
-                    }
-                    onClick={() => setChild('pair')}
-                  >
-                    与前镜连续性审看
-                  </button>
                   {!!downstream.length && (
                     <div className="flex w-full flex-wrap gap-2">
                       {downstream.map((id) => (
@@ -781,15 +769,32 @@ function ShotSummary({
   engine,
   shot,
   node,
+  canvasId,
+  active,
   onLocate,
   onChoose,
 }: {
   engine: Engine
   shot: Shot
   node: CanvasElement | undefined
+  canvasId: string
+  active(): boolean
   onLocate(id: string): void
   onChoose(): void
 }) {
+  const version = useDocVersion(engine.doc)
+  const input = useQuery({
+    queryKey: ['shot-summary-input', canvasId, shot.id, node?.id, version],
+    enabled: !!node && active(),
+    retry: false,
+    gcTime: 0,
+    queryFn: async () => {
+      const value = await api.nodeInput(canvasId, node!.id)
+      if (!active() || value.nodeId !== node!.id || !engine.doc.has(node!.id))
+        throw new Error('阶段已变化')
+      return value
+    },
+  })
   const prompt = typeof node?.params?.prompt === 'string' ? node.params.prompt : ''
   const mentions = findMentions(prompt, mentionTargets(engine))
   return (
@@ -805,6 +810,7 @@ function ShotSummary({
                 type="button"
                 className="ui-btn ui-btn-secondary"
                 key={name}
+                title="按名字或绑定无法唯一确定资产卡，去分镜表重新选择"
                 onClick={onChoose}
               >
                 {name} · 需要选择资产
@@ -812,32 +818,51 @@ function ShotSummary({
             )
           const matches = mentions.filter((m) => m.id === asset.id)
           const match = matches.length === 1 ? matches[0] : undefined
-          const ambiguous =
-            !match ||
+          // 提示词写法对不上唯一档案项 / 视角时不猜，让用户去选
+          const unclear =
             matches.length > 1 ||
-            !!match?.profileMiss ||
-            !!match?.profileConflict ||
-            !!match?.sceneViewMiss
+            (match !== undefined &&
+              (match.profileMiss !== undefined ||
+                !!match.profileConflict ||
+                match.sceneViewMiss !== undefined))
+          let hint: string | undefined
+          if (matches.length > 1) hint = '提示词里多处引用了此资产，请核对写法'
+          else if (match?.profileMiss !== undefined)
+            hint = `档案里没有「${match.profileMiss}」，点开卡片重新选择`
+          else if (match?.profileConflict) hint = match.profileConflict
+          else if (match?.sceneViewMiss !== undefined)
+            hint = `场景没有「/${match.sceneViewMiss}」视角，点开卡片重新选择`
           const pick = match?.pick ?? {}
           const voice = pickVoice(pick, voiceOf(asset.params))
+          const data = input.data && input.data.status !== 'unprepared' ? input.data : undefined
+          const refs = data?.refs.filter((ref) => ref.elementId === asset.id)
+          const sentImages = data
+            ? submittedMedia(data).filter((item) => item.type === 'image')
+            : []
+          const hasSent =
+            !!refs?.some((ref) => ref.sent.length) ||
+            sentImages.some((item) => item.source === asset.id)
+          const onlyText = !!refs?.length && !hasSent && refs.every((ref) => !ref.sent.length)
+          const review = getCreativeReview(asset)
           return (
             <button
               type="button"
               className="plein-shot-subject text-left"
               key={name}
+              title={hint}
               onClick={() => onLocate(asset.id)}
             >
               <span className="block font-medium">{name} · 调整资产</span>
               {asset.nodeType === 'plein/character' && (
-                <span className="block">
-                  {ambiguous
-                    ? '档案选择需核对'
+                <span className={unclear ? 'block text-warning' : 'block'}>
+                  {unclear
+                    ? '档案项需要选择'
                     : `时期：${pick.period?.name ?? '默认'} · 服装：${pick.outfit?.name ?? '默认'} · 表情：${pick.expression?.name ?? '默认'} · 音色：${pick.voiceState?.name ?? (hasVoice(voice) ? '默认' : '未选')}`}
                 </span>
               )}
               {asset.nodeType === 'plein/scene' && (
                 <span className="block">
-                  视角：{ambiguous ? '需要选择' : (match?.sceneView?.name ?? '默认')}
+                  视角：{unclear ? '需要选择' : (match?.sceneView?.name ?? '默认')}
                   {match?.sceneView?.images[0] && (
                     <img
                       className="mt-1 h-20 w-32 object-contain"
@@ -847,7 +872,11 @@ function ShotSummary({
                   )}
                 </span>
               )}
-              <span className="block text-ink-subtle">实际送入以候选的生成依据为准</span>
+              {hasSent && <span className="block text-ink-subtle">有参考图且实际送入模型</span>}
+              {!hasSent && onlyText && <span className="block text-ink-subtle">仅文字设定</span>}
+              {review?.status === 'usable' && (
+                <span className="block text-ink-subtle">已人工认可</span>
+              )}
             </button>
           )
         })}
@@ -878,20 +907,41 @@ function ShotComparison({
   const record = continuityOf(engine.doc, boardId)
   const side = (item: Shot | undefined, phase: 'start' | 'end') => {
     if (!item) return <p>没有上一镜</p>
-    const observation = currentContinuityObservations(
-      engine.doc,
-      { canvasId, boardId },
-      item.id,
-    ).find((o) => o.phase === phase && o.evidence.kind === 'frame')
+    const currents = currentContinuityObservations(engine.doc, { canvasId, boardId }, item.id)
+    const observation = currents.find((o) => o.phase === phase && o.evidence.kind === 'frame')
+    const video = (groups.get(item.id) ?? []).find(
+      (n) => (n.params?.source as ShotSource)?.role === 'video',
+    )
+    const tail =
+      phase === 'end' && video && currentResult(video)?.value.type === 'video'
+        ? currentResult(video, 'lastFrame')?.value
+        : undefined
     const frame =
-      observation?.evidence.kind === 'frame' ? observation.evidence.frameAssetId : undefined
+      tail?.type === 'image'
+        ? tail.assetId
+        : observation?.evidence.kind === 'frame' && observation.evidence.position === phase
+          ? observation.evidence.frameAssetId
+          : undefined
     const imageNode = (groups.get(item.id) ?? []).find(
       (n) => (n.params?.source as ShotSource)?.role === 'image',
     )
     const image = imageNode && currentResult(imageNode)?.value
     const imageId = frame ?? (image?.type === 'image' ? image.assetId : undefined)
+    const frameLabel =
+      tail?.type === 'image' || observation?.target.kind === 'video'
+        ? phase === 'end'
+          ? '视频末帧'
+          : '视频首帧'
+        : '候选观察画面'
     const plan = currentShotPlan(record, item.id)
     const states = plan.plan?.content[phase]
+    // 观察绑定在具体候选上：换候选后旧观察不再算当前，提醒重新审阅
+    const phaseCurrents = currents.filter((o) => o.phase === phase)
+    const outdated =
+      !phaseCurrents.length &&
+      record.observations.some(
+        (o) => o.shotId === item.id && o.phase === phase && !currents.some((c) => c.id === o.id),
+      )
     return (
       <div className="space-y-1">
         <p className="font-medium">
@@ -900,13 +950,13 @@ function ShotComparison({
         {imageId ? (
           <img
             src={assetUrls.original(imageId)}
-            alt={frame ? '候选观察画面' : '分镜图'}
+            alt={frame ? frameLabel : '分镜图'}
             className="h-36 w-full rounded bg-black object-contain"
           />
         ) : (
           <p>画面未知</p>
         )}
-        <p className="text-xs">{frame ? '候选观察画面' : imageId ? '分镜图' : ''}</p>
+        <p className="text-xs">{frame ? frameLabel : imageId ? '来源：分镜图' : ''}</p>
         {plan.state === 'conflict' ? (
           <p>计划版本冲突，请核对</p>
         ) : states && Object.keys(states).length ? (
@@ -924,6 +974,11 @@ function ShotComparison({
         ) : (
           <p className="text-xs">状态未知</p>
         )}
+        {phaseCurrents.length ? (
+          <p className="text-xs text-success">已记录 {phaseCurrents.length} 条衔接观察</p>
+        ) : outdated ? (
+          <p className="text-xs text-warning">候选已换，请重新审阅</p>
+        ) : null}
       </div>
     )
   }
@@ -936,13 +991,17 @@ function ShotComparison({
       </div>
       <button
         type="button"
-        className="ui-btn ui-btn-secondary"
+        className={`ui-btn ${canReview ? 'ui-btn-primary' : 'ui-btn-secondary'}`}
         disabled={!canReview}
+        title={
+          canReview
+            ? '意见记录在本镜当前视频候选上，换候选后需重新审阅'
+            : '相邻两镜都有已采用的视频后，可循环回看切点并记录衔接意见'
+        }
         onClick={onReview}
       >
         记录衔接意见
       </button>
-      <p className="text-xs text-ink-subtle">意见绑定当前视频候选，换候选后需重新审阅。</p>
     </section>
   )
 }
@@ -1128,6 +1187,8 @@ function CandidateInspection({
   writable,
   stale,
   onLocate,
+  generationRole,
+  onGenerate,
 }: {
   engine: Engine
   boardId: string
@@ -1138,7 +1199,10 @@ function CandidateInspection({
   writable(): boolean
   stale: boolean
   onLocate(): void
+  generationRole?: 'image' | 'video'
+  onGenerate(role: 'image' | 'video'): void
 }) {
+  const reviewContainer = useRef<HTMLDivElement>(null)
   const version = useDocVersion(engine.doc),
     catalog = useCatalog((s) => s.catalog)
   const [element] = useState(() => engine.doc.elementMaps.get(node.id))
@@ -1157,7 +1221,9 @@ function CandidateInspection({
   const [readEpoch] = useState(() => ++nextInspectionRead)
   const [selected, setSelected] = useState(''),
     [error, setError] = useState('')
-  const candidate = selected ? node.results?.find((r) => r.id === selected) : currentResult(node)
+  const candidate = selected
+    ? node.results?.find((r) => r.id === selected)
+    : (currentResult(node) ?? node.results?.[0])
   const binding = JSON.stringify([node.id, candidate?.id, candidate?.runId, candidate?.value])
   const validNode = () => {
     const now = engine.doc.get(node.id),
@@ -1270,7 +1336,7 @@ function CandidateInspection({
           </p>
           <button
             type="button"
-            className="ui-btn ui-btn-secondary"
+            className="ui-btn ui-btn-primary"
             disabled={!writable() || !validNode()}
             onClick={() => {
               const now = engine.doc.get(node.id)?.results?.find((r) => r.id === candidate.id)
@@ -1280,19 +1346,49 @@ function CandidateInspection({
               setError('')
             }}
           >
-            明确采用此候选
+            采用候选
           </button>
         </>
       )}
+      {generationRole && (!candidate || adopted) && (
+        <button
+          type="button"
+          className="ui-btn ui-btn-primary"
+          disabled={!writable() || !validNode()}
+          onClick={() => onGenerate(generationRole)}
+        >
+          {generationRole === 'image' ? '生成镜头图' : '生成视频'}
+        </button>
+      )}
+      {adopted &&
+        candidate &&
+        !generationRole &&
+        (!historyReview || historyReview.status === 'pending') && (
+          <button
+            type="button"
+            className="ui-btn ui-btn-primary"
+            disabled={!writable() || !validNode()}
+            onClick={() => {
+              const details = reviewContainer.current?.querySelector('details')
+              if (details) {
+                details.open = true
+                details.querySelector('textarea')?.focus()
+              }
+            }}
+          >
+            审阅
+          </button>
+        )}
       {adopted && candidate && (
-        <CreativeReviewForm
-          doc={engine.doc}
-          node={node}
-          port={candidate.port}
-          stale={stale}
-          defaultOpen
-          isCurrent={() => validNode() && writable()}
-        />
+        <div ref={reviewContainer}>
+          <CreativeReviewForm
+            doc={engine.doc}
+            node={node}
+            port={candidate.port}
+            stale={stale}
+            isCurrent={() => validNode() && writable()}
+          />
+        </div>
       )}
       {refs.length > 0 && (
         <details>
