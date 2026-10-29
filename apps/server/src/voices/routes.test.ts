@@ -70,7 +70,11 @@ describe('我的音色', () => {
     const refreshed = await request(server, `/api/voices/${voice.id}/refresh`, { method: 'POST' })
     expect(await refreshed.json()).toMatchObject({ status: 'ready', message: null })
     const existing = await post({ provider: 'doubao/speech', name: '控制台音色', voiceId: 'S_abc' })
-    expect(await existing.json()).toMatchObject({ status: 'ready', voiceId: 'S_abc' })
+    expect(await existing.json()).toMatchObject({
+      status: 'ready',
+      voiceId: 'S_abc',
+      credentialState: null,
+    })
     expect((await list()).map((v) => v.name).sort()).toEqual(['控制台音色', '旁白'])
   })
 
@@ -82,7 +86,7 @@ describe('我的音色', () => {
     const voice = (await (
       await post({ provider: 'plein/mock', name: '旁白', sampleAssetId: sample.id })
     ).json()) as Voice
-    expect(voice).toMatchObject({ credentialId, credentialLabel: '默认' })
+    expect(voice).toMatchObject({ credentialId, credentialLabel: '默认', credentialState: 'ok' })
     const withTeam = configs.addCredential('plein/mock', '团队', { MOCK_API_KEY: 'two' })
     configs.setActiveCredential('plein/mock', withTeam.credentials[1]!.id)
     const seen: Array<string | undefined> = []
@@ -104,7 +108,7 @@ describe('我的音色', () => {
   })
 
   it.each(['deleted', 'replaced'] as const)('原 Key %s 后不查询音色训练状态', async (mode) => {
-    const { server, sample, post } = await setup()
+    const { server, sample, post, list } = await setup()
     const configs = server.plugins.configs
     configs.update('plein/mock', { secrets: { MOCK_API_KEY: 'one' } })
     const credentialId = configs.get('plein/mock').activeCredential!
@@ -129,9 +133,13 @@ describe('我的音色', () => {
         status: 'training',
         credentialId,
         credentialFingerprint: fingerprint,
+        credentialState: mode === 'deleted' ? 'missing' : 'replaced',
         message: expect.stringContaining(
           `音色「旁白」所属的 Key「默认」${mode === 'deleted' ? '已删除' : '已被替换'}，无法查询训练状态。请恢复原 Key，或重新复刻`,
         ),
+      })
+      expect((await list())[0]).toMatchObject({
+        credentialState: mode === 'deleted' ? 'missing' : 'replaced',
       })
       expect(status).not.toHaveBeenCalled()
     } finally {

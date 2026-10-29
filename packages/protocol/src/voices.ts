@@ -86,6 +86,8 @@ export interface Voice {
   credentialId?: string | null
   credentialFingerprint?: string | null
   credentialLabel?: string | null
+  /** 读取时按当前密钥组计算；不落库。null 表示旧数据或预置音色没有所属组 */
+  credentialState?: 'ok' | 'missing' | 'replaced' | null
   createdAt: number
   updatedAt: number
 }

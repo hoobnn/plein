@@ -24,6 +24,17 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
   const forbidden = { error: 'forbidden', message: '只读成员不能修改音色' }
   const checkedAt = new Map<string, number>()
 
+  /** 密钥状态只反映读取当下，不写回音色，避免配置恢复后留下过期标记。 */
+  const withCredentialState = (voice: Voice): Voice => {
+    if (!voice.credentialId) return { ...voice, credentialState: null }
+    const credential = host.configs.credential(voice.provider, voice.credentialId)
+    if (!credential) return { ...voice, credentialState: 'missing' }
+    const replaced =
+      !!voice.credentialFingerprint &&
+      fingerprintOf(credential.secrets) !== voice.credentialFingerprint
+    return { ...voice, credentialState: replaced ? 'replaced' : 'ok' }
+  }
+
   async function savePreview(
     owner: string,
     voice: Voice,
@@ -89,7 +100,8 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
   return new Hono<AuthEnv>()
     .get(API.voices, async (c) => {
       const owner = c.var.principal.id
-      return c.json(await Promise.all(voices.list(owner).map((v) => refresh(owner, v))))
+      const result = await Promise.all(voices.list(owner).map((v) => refresh(owner, v)))
+      return c.json(result.map(withCredentialState))
     })
     .post(API.voices, async (c) => {
       if (c.var.principal.role === 'viewer') return c.json(forbidden, 403)
@@ -102,7 +114,14 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
       const fields = { provider, name, gender, age, sampleAssetId, source: mode }
       if (mode === 'register') {
         return c.json(
-          voices.save(owner, { ...fields, voiceId: input.voiceId, status: 'ready', message: null }),
+          withCredentialState(
+            voices.save(owner, {
+              ...fields,
+              voiceId: input.voiceId,
+              status: 'ready',
+              message: null,
+            }),
+          ),
           201,
         )
       }
@@ -184,7 +203,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
           credentialLabel,
         })
         checkedAt.set(voice.id, Date.now())
-        return c.json(await savePreview(owner, voice, state), 201)
+        return c.json(withCredentialState(await savePreview(owner, voice, state)), 201)
       } catch (err) {
         const e = providerError(err)
         if (e.outcome === 'unknown') {
@@ -197,7 +216,7 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
             credentialFingerprint,
             credentialLabel,
           })
-          return c.json(voice, 201)
+          return c.json(withCredentialState(voice), 201)
         }
         return c.json({ error: e.code, message: e.message }, e.code === 'invalid_input' ? 400 : 422)
       }
@@ -207,13 +226,13 @@ export function voiceRoutes(deps: { voices: VoiceStore; host: PluginHost; assets
       const body = UpdateVoice.safeParse(await c.req.json().catch(() => null))
       if (!body.success) return c.json({ error: 'invalid', message: body.error.message }, 400)
       const voice = voices.update(c.var.principal.id, c.req.param('id'), body.data)
-      return voice ? c.json(voice) : c.json(notFound, 404)
+      return voice ? c.json(withCredentialState(voice)) : c.json(notFound, 404)
     })
     .post('/api/voices/:id/refresh', async (c) => {
       const owner = c.var.principal.id
       const voice = voices.get(owner, c.req.param('id'))
       if (!voice) return c.json(notFound, 404)
-      return c.json(await refresh(owner, voice, true))
+      return c.json(withCredentialState(await refresh(owner, voice, true)))
     })
     .delete('/api/voices/:id', (c) => {
       if (c.var.principal.role === 'viewer') return c.json(forbidden, 403)
