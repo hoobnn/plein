@@ -1,4 +1,8 @@
-import { mentionElements as mentionElementsIn, type NodeFactory } from '@plein/capabilities'
+import {
+  mentionElements as mentionElementsIn,
+  mentionTargetsIn,
+  type NodeFactory,
+} from '@plein/capabilities'
 import type { Engine } from '@plein/canvas-core'
 import {
   type CanvasElement,
@@ -22,7 +26,7 @@ import {
   findFreeSpot,
   setParam,
 } from '@plein/doc'
-import { type MentionTarget, mentionName, profileOf, sceneViewsOf } from '@plein/nodes'
+import type { MentionTarget } from '@plein/nodes'
 import type { Catalog } from '@plein/protocol'
 import { CompositionSourceRef } from '@plein/plugin-sdk'
 import { modelProblem, selectedModel } from './modelParams'
@@ -392,19 +396,7 @@ export function validate(
  * 重名要保留成多条——名字指不明时由用户写 `@林夏#2` 消歧，这里合并掉就再也提示不了了。
  */
 export function mentionTargets(engine: Engine): MentionTarget[] {
-  const out: MentionTarget[] = []
-  for (const el of engine.doc.elements()) {
-    const name = mentionName(el)
-    if (!name) continue
-    const profile = el.nodeType === 'plein/character' ? profileOf(el.params?.profile) : undefined
-    out.push({
-      id: el.id,
-      name,
-      ...(profile ? { profile } : {}),
-      ...(el.nodeType === 'plein/scene' ? { sceneViews: sceneViewsOf(el.params?.sceneViews) } : {}),
-    })
-  }
-  return out
+  return mentionTargetsIn(engine.doc)
 }
 
 /** 按名字取可引用元素；重名的全部返回，调用方要自己判断指不指得准 */

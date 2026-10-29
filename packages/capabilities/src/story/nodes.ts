@@ -6,7 +6,7 @@ import {
   parseAspect,
   type Port,
 } from '@plein/doc'
-import { mentionName } from '@plein/nodes'
+import { mentionName, profileOf, sceneViewsOf, type MentionTarget } from '@plein/nodes'
 import type { NodeDescriptor } from '@plein/plugin-sdk'
 
 /** 按节点类型给出新建卡片的骨架（端口、默认参数、默认大小）；目录里没有时返回 undefined */
@@ -33,6 +33,25 @@ export function nodeElementOf(
     ports: { inputs: desc.inputs.map(port), outputs: desc.outputs.map(port) },
     ...nodeSize(desc.outputs[0]?.type, parseAspect(params.aspectRatio)),
   }
+}
+
+/** 可被 @ 引用的目标；角色档案和场景视角随卡片参数一并提供。 */
+export function mentionTargetsIn(doc: PleinDoc): MentionTarget[] {
+  return [...doc.elements()].flatMap((el) => {
+    const name = mentionName(el)
+    if (!name) return []
+    const profile = el.nodeType === 'plein/character' ? profileOf(el.params?.profile) : undefined
+    return [
+      {
+        id: el.id,
+        name,
+        ...(profile ? { profile } : {}),
+        ...(el.nodeType === 'plein/scene'
+          ? { sceneViews: sceneViewsOf(el.params?.sceneViews) }
+          : {}),
+      },
+    ]
+  })
 }
 
 /** 按名字取可 @ 引用的元素；重名的全部返回，调用方要自己判断指不指得准 */

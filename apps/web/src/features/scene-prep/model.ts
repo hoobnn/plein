@@ -1,12 +1,10 @@
-import { referenceAssets, shotsOf } from '@plein/capabilities'
+import { mentionTargetsIn, referenceAssets, shotsOf } from '@plein/capabilities'
 import { continuityOf, currentShotPlan, type PleinDoc } from '@plein/doc'
 import {
   findMentions,
   matchSceneView,
-  mentionName,
   mentionProblem,
   sceneViewsOf,
-  type MentionTarget,
   type SceneView,
 } from '@plein/nodes'
 import { createShotSceneIndex, shotScenes } from '../storyboard/prepModel'
@@ -79,20 +77,7 @@ export function scenePrep(doc: PleinDoc, sceneElementId: string): ScenePrepResul
   const scene = doc.get(sceneElementId)
   if (scene?.nodeType !== 'plein/scene') return null
   const views = sceneViewsOf(scene.params?.sceneViews)
-  const targets: MentionTarget[] = [...doc.elements()].flatMap((el) => {
-    const name = mentionName(el)
-    return name
-      ? [
-          {
-            id: el.id,
-            name,
-            ...(el.nodeType === 'plein/scene'
-              ? { sceneViews: sceneViewsOf(el.params?.sceneViews) }
-              : {}),
-          },
-        ]
-      : []
-  })
+  const targets = mentionTargetsIn(doc)
   const sceneIndex = createShotSceneIndex(doc)
   const byView = new Map(views.map((view) => [view.id, [] as ScenePrepShot[]]))
   const unspecified: ScenePrepShot[] = []

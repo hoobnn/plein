@@ -1,5 +1,5 @@
 import type { Engine } from '@plein/canvas-core'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { assetUrls } from '../../api/client'
 import { useDocVersion } from '../../canvas/hooks'
 import { useCanvas } from '../../stores/canvas'
@@ -34,7 +34,7 @@ export function ScenePrep() {
 }
 
 function ScenePrepContent({ engine, sceneId }: { engine: Engine; sceneId: string }) {
-  useDocVersion(engine.doc)
+  const version = useDocVersion(engine.doc)
   const [opening, setOpening] = useState(false)
   const mounted = useRef(false)
   useEffect(() => {
@@ -44,7 +44,9 @@ function ScenePrepContent({ engine, sceneId }: { engine: Engine; sceneId: string
     }
   }, [])
   const localAssets = useCanvas((s) => s.localAssetUrls)
-  const model = scenePrep(engine.doc, sceneId)
+  // oxlint-disable react-hooks/exhaustive-deps -- version 变化即文档变化，重算当前场景准备模型
+  const model = useMemo(() => scenePrep(engine.doc, sceneId), [engine, sceneId, version])
+  // oxlint-enable react-hooks/exhaustive-deps
   const close = () => useCanvas.getState().openScenePrep(null)
   if (!model)
     return (
