@@ -62,11 +62,15 @@ import { AiAnalysisEntry } from '../ai-shot-analysis/AiAnalysisEditor'
 import { RecipeLibrary } from './RecipeLibrary'
 import { CharacterImageArchiveButton } from '../library/ArchiveCharacterImage'
 
-/** 卡片下方的编辑器尺寸：固定 840px 宽、440px 高。 */
+/** 生成节点需要提示词和输入预览；只有入口的节点使用紧凑面板。 */
 const EDITOR_W = 840
 const EDITOR_H = 440
-/** 可见画布再窄，编辑器也要留得下这些控件。 */
-const MIN_EDITOR_W = 320
+const STAGE_EDITOR_W = 420
+const STAGE_EDITOR_H = 180
+const ANALYSIS_ENTRY_W = 560
+const ANALYSIS_ENTRY_H = 96
+const ASSET_EDITOR_W = 720
+const INLINE_EDITOR_W = 640
 const MIN_EDITOR_H = 180
 
 export function Generator() {
@@ -84,8 +88,20 @@ function GeneratorHost({ engine }: { engine: Engine }) {
   if (!el || !node) return null
   if (el.locked || engine.doc.readOnly)
     return isAiAnalysisType(node.type) ? <AiAnalysisEntry engine={engine} el={el} /> : null
+  const size = isAiAnalysisType(node.type)
+    ? { width: ANALYSIS_ENTRY_W, height: ANALYSIS_ENTRY_H }
+    : node.type === STAGE_TYPE
+      ? { width: STAGE_EDITOR_W, height: STAGE_EDITOR_H }
+      : {
+          width: ASSET_NODE_TYPES.has(node.type)
+            ? ASSET_EDITOR_W
+            : isPure(node)
+              ? INLINE_EDITOR_W
+              : EDITOR_W,
+          height: EDITOR_H,
+        }
   return (
-    <NodeBelow engine={engine} nodeId={el.id} title={el.name ?? node.title}>
+    <NodeBelow engine={engine} nodeId={el.id} title={el.name ?? node.title} size={size}>
       {isAiAnalysisType(node.type) ? (
         <div className="p-4">
           <button
@@ -108,11 +124,13 @@ function NodeBelow({
   engine,
   nodeId,
   title,
+  size,
   children,
 }: {
   engine: Engine
   nodeId: string
   title: string
+  size: { width: number; height: number }
   children: ReactNode
 }) {
   const place = () => {
@@ -126,11 +144,14 @@ function NodeBelow({
     const left = engine.camera.insets.left
     const right = window.innerWidth - engine.camera.insets.right
     const bottom = window.innerHeight - canvasBottomSpace(window.innerWidth, left).generator
-    const width = Math.max(MIN_EDITOR_W, Math.min(EDITOR_W, right - left))
+    const width = Math.max(1, Math.min(size.width, right - left))
     const top = br.y + 12
     // 卡片下方放得下多少就占多少；实在放不下就保持高度、伸到窗口外，
     // 也不能盖住卡片：卡片上的输出端口要能直接拖线。
-    const height = Math.min(EDITOR_H, Math.max(bottom - top, MIN_EDITOR_H))
+    const height = Math.min(
+      size.height,
+      Math.max(bottom - top, Math.min(MIN_EDITOR_H, size.height)),
+    )
     return {
       left: Math.max(left, Math.min((tl.x + br.x - width) / 2, right - width)),
       top,
