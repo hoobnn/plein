@@ -55,12 +55,18 @@ export interface CredentialCardDraft {
   label: string
   /** 密钥输入；已保存组留空表示不修改 */
   secrets: Record<string, string>
-  /** 基线标签：已保存组是空串，新平台的预填卡是预填值；手动添加的新卡没有基线，总是未保存 */
+  /** 基线标签：已保存组是已保存的标签，新平台的预填卡是预填值；手动添加的新卡没有基线，总是未保存 */
   baseline?: string
+}
+
+/** 卡片的标签是否算改过：留空表示不修改，去掉首尾空白后与基线相同也不算 */
+export function credentialLabelChanged(card: CredentialCardDraft): boolean {
+  const label = card.label.trim()
+  return label !== '' && label !== card.baseline
 }
 
 /** 一张密钥卡是否有没保存的改动：没有基线的新卡总是算，其余改了标签或填了密钥才算 */
 export function credentialCardDirty(card: CredentialCardDraft): boolean {
   if (card.baseline === undefined) return true
-  return card.label.trim() !== card.baseline || Object.values(card.secrets).some((v) => v !== '')
+  return credentialLabelChanged(card) || Object.values(card.secrets).some((v) => v !== '')
 }

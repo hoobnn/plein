@@ -445,6 +445,10 @@ describe('平台草稿', () => {
 })
 
 describe('密钥组', () => {
+  /** 两组已保存的密钥：个人（当前使用）和团队 */
+  const twoGroups = () =>
+    credView([credential('cred-1', '个人', true), credential('cred-2', '团队', true)], 'cred-1')
+
   it('只有一组时不显示切换控件，标签留空表示不修改', async () => {
     const { user, fetch } = renderRow(
       {},
@@ -464,6 +468,53 @@ describe('密钥组', () => {
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('已保存'))
     const body = JSON.parse(writes(fetch)[0]![1]!.body as string)
     expect(body.credentials.update).toEqual([{ id: 'cred-1', label: '个人' }])
+  })
+
+  it('已保存组只填密钥即可保存，不需要标签', async () => {
+    const { user, fetch } = renderRow({}, { row: configuredProvider, view: twoGroups() })
+    await screen.findByLabelText('「个人」的标签')
+    await user.type(card('cred-2').getByLabelText('「团队」的API Key'), 'new-key')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('已保存'))
+    const body = JSON.parse(writes(fetch)[0]![1]!.body as string)
+    expect(body.credentials.update).toEqual([
+      { id: 'cred-2', secrets: { MOCK_API_KEY: 'new-key' } },
+    ])
+  })
+
+  it('已保存组输入与当前标签相同的值不算改动，不重复提交', async () => {
+    const { user, fetch } = renderRow({}, { row: configuredProvider, view: twoGroups() })
+    await screen.findByLabelText('「个人」的标签')
+    await user.type(card('cred-2').getByLabelText('「团队」的标签'), ' 团队 ')
+    // 与当前标签同值：不算未保存，行级检查也保持可用
+    expect(screen.queryByText(/修改尚未保存/)).toBeNull()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '测试连接' }).disabled).toBe(false)
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('已保存'))
+    expect(JSON.parse(writes(fetch)[0]![1]!.body as string).credentials).toBeUndefined()
+  })
+
+  it('设置没保存时各卡的检查连接一并禁用', async () => {
+    const { user } = renderRow(
+      {
+        // 保存后服务端存的就是提交的设置：回显才能回到未脏状态
+        put: async (request) =>
+          Response.json({ ...twoGroups(), settings: (await request.json()).settings }),
+      },
+      { row: configuredProvider, view: twoGroups() },
+    )
+    await screen.findByLabelText('「个人」的标签')
+    expect(card('cred-1').getByRole('button', { name: '检查连接' }).disabled).toBe(false)
+    fireEvent.change(latency(), { target: { value: '321' } })
+    fireEvent.focusOut(latency())
+    expect(card('cred-1').getByRole('button', { name: '检查连接' }).disabled).toBe(true)
+    expect(card('cred-2').getByRole('button', { name: '检查连接' }).disabled).toBe(true)
+
+    // 保存后恢复可用
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() =>
+      expect(card('cred-1').getByRole('button', { name: '检查连接' }).disabled).toBe(false),
+    )
   })
 
   it('两组时标记当前组，行摘要显示当前组标签，设为使用单独保存', async () => {
@@ -543,10 +594,21 @@ describe('密钥组', () => {
     ])
   })
 
-  it('新卡没填标签时阻止保存并聚焦标签输入', async () => {
+  it('新加的草稿卡没填标签时阻止保存并聚焦标签输入', async () => {
+    const { user, fetch } = renderRow({}, { row: configuredProvider, view: twoGroups() })
+    await screen.findByLabelText('「个人」的标签')
+    await user.click(screen.getByRole('button', { name: '添加一组密钥' }))
+    const label = screen.getByLabelText('「新密钥组」的标签')
+    await user.click(screen.getByRole('button', { name: '保存' }))
+    expect(writes(fetch)).toHaveLength(0)
+    expect(document.activeElement).toBe(label)
+  })
+
+  it('预填卡标签被清空后填了密钥：保存先要求补标签', async () => {
     const { user, fetch } = renderRow()
     const label = await screen.findByLabelText('「新密钥组」的标签')
     fireEvent.change(label, { target: { value: '' } })
+    await user.type(secret(), 'first-key')
     await user.click(screen.getByRole('button', { name: '保存' }))
     expect(writes(fetch)).toHaveLength(0)
     expect(document.activeElement).toBe(label)

@@ -11,7 +11,13 @@ import { Switch } from '../../ui/Switch'
 import { confirmDialog } from '../../ui/Dialog'
 import { Group } from './SettingsGroup'
 import { ProviderCredentials } from './ProviderCredentials'
-import { credentialCardDirty, providerDirty, type CredentialCardDraft } from './providerDirty'
+import {
+  credentialCardDirty,
+  credentialLabelChanged,
+  providerDirty,
+  sameSettings,
+  type CredentialCardDraft,
+} from './providerDirty'
 
 /** 平台行仅表示本地配置，不把填写密钥标成远端可用；多组密钥时顺带显示当前用哪一组 */
 function providerState(
@@ -105,6 +111,16 @@ export function ProviderRow({
 
   const isSavedGroup = (key: string) => config?.credentials?.some((c) => c.id === key) ?? false
 
+  // 已保存组的卡：基线是已保存的标签，留空表示不修改
+  const savedCards: CredentialCardDraft[] = (config?.credentials ?? []).map((c) => ({
+    key: c.id,
+    label: labels[c.id] ?? '',
+    secrets: groupSecrets[c.id] ?? {},
+    baseline: c.label,
+  }))
+  // 设置或数字没保存时，密钥卡的检查连接也得等：检查的是设置加密钥的整体配置
+  const settingsDirty = numberEditing || !sameSettings(settings, config?.settings)
+
   const setCardLabel = (key: string, value: string) => {
     clearFeedback()
     if (isSavedGroup(key)) setLabels({ ...labels, [key]: value })
@@ -140,15 +156,15 @@ export function ProviderRow({
     setBusy(true)
     clearFeedback()
     try {
-      // 只提交改过的标签与非空密钥；新卡作为 credentials.add 创建（改动过的预填卡也算）
-      const update = (config?.credentials ?? []).flatMap((c) => {
-        const label = labels[c.id]?.trim()
-        const secrets = typedSecrets(groupSecrets[c.id])
-        return label || Object.keys(secrets).length
+      // 只提交改过的标签与非空密钥，与脏检查共用同一判断；新卡作为 credentials.add 创建（改动过的预填卡也算）
+      const update = savedCards.flatMap((card) => {
+        const labelChanged = credentialLabelChanged(card)
+        const secrets = typedSecrets(card.secrets)
+        return labelChanged || Object.keys(secrets).length
           ? [
               {
-                id: c.id,
-                ...(label ? { label } : {}),
+                id: card.key,
+                ...(labelChanged ? { label: card.label.trim() } : {}),
                 ...(Object.keys(secrets).length ? { secrets } : {}),
               },
             ]
@@ -274,20 +290,7 @@ export function ProviderRow({
 
   const state = providerState(provider, config)
   const bodyId = `provider-${provider.id}`
-  const dirty = providerDirty(
-    settings,
-    config?.settings,
-    [
-      ...(config?.credentials ?? []).map((c) => ({
-        key: c.id,
-        label: labels[c.id] ?? '',
-        secrets: groupSecrets[c.id] ?? {},
-        baseline: '',
-      })),
-      ...drafts,
-    ],
-    numberEditing,
-  )
+  const dirty = providerDirty(settings, config?.settings, [...savedCards, ...drafts], numberEditing)
   const feedback = test
     ? {
         message: test.ok
@@ -382,6 +385,7 @@ export function ProviderRow({
                   labels={labels}
                   groupSecrets={groupSecrets}
                   drafts={drafts}
+                  settingsDirty={settingsDirty}
                   onLabel={setCardLabel}
                   onSecret={setCardSecret}
                   onUse={(key) => void useCredential(key)}

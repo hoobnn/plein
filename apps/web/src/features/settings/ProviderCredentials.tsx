@@ -15,6 +15,8 @@ interface CardProps {
   active: boolean
   /** 组数 ≥2 时才显示「使用中」和「设为使用」，单组界面保持安静 */
   multi: boolean
+  /** 平台级设置还有没保存的改动：检查连接查的是整体配置，得先保存 */
+  settingsDirty: boolean
   onLabel(key: string, value: string): void
   onSecret(key: string, name: string, value: string): void
   onUse(key: string): void
@@ -29,6 +31,7 @@ function CredentialCard({
   saved,
   active,
   multi,
+  settingsDirty,
   onLabel,
   onSecret,
   onUse,
@@ -37,8 +40,12 @@ function CredentialCard({
   onTest,
 }: CardProps) {
   const name = saved?.label ?? '新密钥组'
-  // 标签必填只约束会提交的卡：新卡、以及改动过的预填卡；已保存组留空表示不修改
-  const labelRequired = !card.label.trim() && (saved === undefined || credentialCardDirty(card))
+  // 标签必填只约束要创建的新卡：预填卡改动后提交时必须带标签；已保存组留空表示不修改，
+  // 只填新密钥也要能保存
+  const labelRequired =
+    saved === undefined &&
+    (card.baseline === undefined || credentialCardDirty(card)) &&
+    !card.label.trim()
   return (
     <li
       className="flex flex-col gap-2.5 rounded-lg p-3 ring-1 ring-line"
@@ -106,11 +113,11 @@ function CredentialCard({
         </label>
       ))}
       {saved && (
-        // 有没保存的密钥输入时禁用：检查的是已保存的密钥，不先保存会查到旧值
+        // 有没保存的密钥输入或平台设置时禁用：检查的是已保存的整体配置，不先保存会查到旧值
         <button
           type="button"
           className="ui-btn ui-btn-secondary self-start"
-          disabled={Object.values(card.secrets).some((v) => v !== '')}
+          disabled={settingsDirty || Object.values(card.secrets).some((v) => v !== '')}
           onClick={() => onTest(card.key)}
         >
           检查连接
@@ -127,6 +134,7 @@ export function ProviderCredentials({
   labels,
   groupSecrets,
   drafts,
+  settingsDirty,
   onLabel,
   onSecret,
   onUse,
@@ -143,6 +151,8 @@ export function ProviderCredentials({
   groupSecrets: Record<string, Record<string, string>>
   /** 还没保存过的新卡 */
   drafts: CredentialCardDraft[]
+  /** 平台级设置还有没保存的改动，存在时禁用各卡的检查连接 */
+  settingsDirty: boolean
   onLabel(key: string, value: string): void
   onSecret(key: string, name: string, value: string): void
   onUse(key: string): void
@@ -167,11 +177,12 @@ export function ProviderCredentials({
               key: saved.id,
               label: labels[saved.id] ?? '',
               secrets: groupSecrets[saved.id] ?? {},
-              baseline: '',
+              baseline: saved.label,
             }}
             saved={saved}
             active={config.activeCredential === saved.id}
             multi={multi}
+            settingsDirty={settingsDirty}
             onLabel={onLabel}
             onSecret={onSecret}
             onUse={onUse}
@@ -187,6 +198,7 @@ export function ProviderCredentials({
             card={card}
             active={false}
             multi={multi}
+            settingsDirty={settingsDirty}
             onLabel={onLabel}
             onSecret={onSecret}
             onUse={onUse}

@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vite-plus/test'
 import {
   credentialCardDirty,
+  credentialLabelChanged,
   providerDirty,
   sameSettings,
   type CredentialCardDraft,
 } from './providerDirty'
 
-/** 已保存组的卡：标签与密钥输入都留空（不改） */
+/** 已保存组的卡：标签与密钥输入都留空（不改），基线是已保存的标签 */
 const savedCard = (over: Partial<CredentialCardDraft> = {}): CredentialCardDraft => ({
   key: 'cred-1',
   label: '',
   secrets: {},
-  baseline: '',
+  baseline: '个人',
   ...over,
 })
 
@@ -29,17 +30,29 @@ describe('平台设置的脏检查', () => {
     expect(providerDirty({ a: 1 }, { a: 1 }, [], false)).toBe(false)
     expect(providerDirty({ a: 2 }, { a: 1 }, [], false)).toBe(true)
     expect(providerDirty({ a: 1 }, { a: 1 }, [savedCard()], false)).toBe(false)
-    // 密钥输入非空算改动，留空（不修改）不算
+    // 密钥输入非空算改动，留空（不修改）不算；只填密钥也是未保存
     expect(providerDirty({ a: 1 }, { a: 1 }, [savedCard({ secrets: { k: 'v' } })], false)).toBe(
       true,
     )
     expect(providerDirty({ a: 1 }, { a: 1 }, [savedCard({ secrets: { k: '' } })], false)).toBe(
       false,
     )
-    // 已保存组的标签输入非空算改动，留空不算
+    // 标签改了才算，留空不算
     expect(providerDirty({ a: 1 }, { a: 1 }, [savedCard({ label: '团队' })], false)).toBe(true)
     expect(providerDirty({ a: 1 }, { a: 1 }, [savedCard({ label: '  ' })], false)).toBe(false)
     expect(providerDirty({ a: 1 }, { a: 1 }, [], true)).toBe(true)
+  })
+
+  it('已保存组输入与当前标签相同不算改动，不重复提交', () => {
+    expect(credentialLabelChanged(savedCard({ label: '个人' }))).toBe(false)
+    // 去掉首尾空白后与已保存标签一致也不算
+    expect(credentialLabelChanged(savedCard({ label: ' 个人 ' }))).toBe(false)
+    expect(credentialLabelChanged(savedCard({ label: '团队' }))).toBe(true)
+    expect(providerDirty({ a: 1 }, { a: 1 }, [savedCard({ label: '个人' })], false)).toBe(false)
+    // 只填密钥不算改标签：保存时 update 只带密钥，不需要标签
+    const card = savedCard({ secrets: { k: 'v' } })
+    expect(credentialCardDirty(card)).toBe(true)
+    expect(credentialLabelChanged(card)).toBe(false)
   })
 
   it('没有基线的新卡总是未保存，预填卡改过才算', () => {
