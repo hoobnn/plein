@@ -89,3 +89,10 @@ it('只有成功读取的空目录才显示没有平台的结论', () => {
   expect(html).not.toContain('读取模型平台')
   expect(html).not.toContain('role="alert"')
 })
+
+it('配置未读取时行摘要只显示本地状态，不提前显示密钥组标签', () => {
+  // 配置是展开时才读的：行摘要先只有配置状态，多组时才补上当前组标签
+  const html = render(catalog())
+  expect(html).toContain('已配置')
+  expect(html).not.toContain('已配置 · ')
+})
