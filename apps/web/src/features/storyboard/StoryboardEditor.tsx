@@ -33,7 +33,29 @@ import { SourceMappingPanel } from './SourceMappingPanel'
 import { ShotControls } from './ShotControls'
 import { ShotStatePanel } from './ShotStatePanel'
 import { DurationCell, TextCell } from './StoryboardCells'
+import { goalDurationCheck, type GoalDurationCheck } from '../creation-guide/productionGoalScope'
 import { ShotFlow, ShotFlowHeader, ShotPromptDialog } from './ShotFlow'
+
+const seconds = (n?: number) => (n === undefined ? '不限' : `${n}`)
+/** 没有制作目标的表不提示，避免给自由创作加噪音；范围不明确时说明为什么不比较。 */
+function goalDurationNote(check: GoalDurationCheck) {
+  switch (check.state) {
+    case 'missing':
+      return ''
+    case 'unscoped':
+      return '成片序列未明确，不比较目标时长'
+    case 'concurrent':
+      return '制作目标有并发修订，暂不比较时长'
+    case 'unbounded':
+      return '目标未限定时长'
+    default: {
+      const range = `目标 ${seconds(check.min)}–${seconds(check.max)} 秒`
+      return check.state === 'within'
+        ? `${range} · 计划在范围内`
+        : `${range} · 计划${check.state === 'short' ? '偏短' : '偏长'}`
+    }
+  }
+}
 
 const splitNames = (text: string) =>
   text
@@ -396,15 +418,30 @@ function Editor({ engine, id, onClose }: { engine: Engine; id: string; onClose()
   }
 
   const btn = 'ui-btn ui-btn-secondary'
+  const planned = shots.reduce((t, s) => t + s.duration, 0)
+  const goalNote = canvasId
+    ? goalDurationNote(goalDurationCheck(engine.doc, canvasId, id, planned))
+    : ''
   return (
     <Modal label="分镜表" onClose={onClose} className="storyboard-editor max-w-[1800px]">
       <ModalHeader
         title={el?.name ?? '分镜'}
         onClose={onClose}
         meta={
-          <span className="ui-chip">
-            {shots.length} 个镜头 · {shots.reduce((t, s) => t + s.duration, 0)} 秒
-          </span>
+          <>
+            <span className="ui-chip">
+              {shots.length} 个镜头 · 计划 {planned} 秒
+            </span>
+            {goalNote && (
+              <span
+                className="ui-chip"
+                data-testid="storyboard-goal-duration"
+                title="计划时长是分镜里各镜秒数之和，不代表实际成片；目标在创作引导的制作总览中设置"
+              >
+                {goalNote}
+              </span>
+            )}
+          </>
         }
       >
         <div role="group" aria-label="分镜视图" className="flex gap-1">
